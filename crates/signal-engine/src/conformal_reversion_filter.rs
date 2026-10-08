@@ -321,7 +321,7 @@ mod qo_621_tests {
         // z=0.5, tendencia=positiva (todos iguales): la significancia de
         // z=0.5 al 10% es ~0 => score=0 => abstención.
         // (El score conformal exige z lo bastante lejos de 0.)
-        let alguno = voto_debil.dominante();
+        let _alguno = voto_debil.dominante();
         // Con z=0.5 uniforme la significancia puede no ser cero — verificamos
         // que es MENOR que con z=2.0 (la significancia crece con |z|).
         let fuerte = ConformalReversionFilterEngine::voto_espectral(&[2.0; ESCALAS_VOTO], 0.10);

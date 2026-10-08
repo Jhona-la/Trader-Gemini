@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-08 — Antigravity: OLA Ω21 CERRADA — RONDA 5: PRECISIÓN MATEMÁTICA Y FÍSICA (R5-B2, R5-B4, R5-C1, R5-B5)
+
+- Rama: `antigravity/quant-sr-ronda5-universo-espectral` (worktree `.antigravity`), rebase limpio sobre `origin/main` (`a73d2ce4`).
+- **R5-B4 [LOW-MED] CERRADO**:
+  - En `crates/dark-alpha-engine/src/lib.rs:407-412`: `forward_quantized` verificaba el clamp(±700) sin comprobar `raw_total.is_finite()`, lo que convertía sesgos no finitos (+Inf) en 700.0 y consecuentemente en probabilidades espurias de 1.0 («pseudo-evidencia»). Blindado retornando `f64::NAN` ante valores no finitos. Nuevo test `test_r5_b4_forward_quantized_nan_on_infinite_raw_total` pasando en verde (32/32 tests verdes en `dark-alpha-engine`).
+- **R5-B2 [LOW] CERRADO**:
+  - En `crates/god-engine-core/src/darwin.rs:385-395`: La rejilla de muestreo periódico DSR de 1s se re-anclaba al timestamp del tick (`last_sample_ts = tick.timestamp`), provocando deriva acumulativa de fase $\Delta t \in [1\text{s}, 2\text{s})$ ante ticks espaciados o gaps de altcoins. Blindado avanzando estrictamente por múltiplos de período uniforme `while tick.timestamp >= last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS) { last_sample_ts += SAMPLE_INTERVAL_MS; }`. 11/11 tests darwin en verde.
+- **R5-C1 [MED] CERRADO**:
+  - En `crates/signal-engine/src/supersonic_shockwave.rs:172-184`: Con `spread_speed_of_sound` ausente, el motor recurre al fallback `atr_pct` (velocidad fraccional por segundo). Si `mid_price <= 1e-8`, `speed` no se puede convertir a fracción/s y permanece en dólares/s, rompiendo la coherencia dimensional e inflando Mach artificialmente por el factor `mid_price`. Corregido para abstenerse (`return 0.0`) cuando falta `mid_price` bajo fallback fraccional. Test `r5_c1_abstiene_sin_mid_price_con_fallback_fraccional` pasando en verde.
+- **R5-B5 [ERRATA] & HIGIENE CERRADOS**:
+  - `crates/signal-engine/src/supersonic_shockwave.rs:211`: Corregida errata en docstring: $\tanh(5) = 0.99991$ (no 0.9997).
+  - `crates/signal-engine/src/conformal_reversion_filter.rs:324`: Limpieza de variable no usada `let _alguno` erradicando advertencias. 117/117 tests en `signal-engine` pasando en verde con 0 warnings.
+- **ESTADO DE LA RED**: Sincronización completa con GLM 109 y Qoder Ola 70.
+
 ## 2026-10-08 — Qoder: OLA 70 CERRADA — MEDs RONDA 5 — ORÁCULO PASA 16/144
 
 - **OLA 70 CERRADA** (qoder/ola70-paridad-consenso, base 58d5914d +

@@ -1275,18 +1275,23 @@ un camino y el otro queda con la calibración vieja o clave muerta.
   «inalcanzable con g4≥3» es FALSO — con γ₃>√2 el denom_sq cruza ≤0 (ej
   γ₃=2, sr=2 → −1) y cae al gaussiano sub-gaussiano anti-conservador
   justo con asimetría positiva fuerte. Fix: acotar γ₃ al discriminante.
-- R5-B2 [LOW] rejilla se re-ancla al tick de cruce (Δt∈[1s,2s) con huecos
-  de altcoins). Fix: `while ts ≥ last+1000 { last += 1000 }`.
-- R5-B4 [LOW-MED] dark-alpha sigmoid clamp(±700) convierte bias=+Inf en
-  salida 1.0 «evidencia» finita (inalcanzable hoy: load valida; blindaje
-  de papel). Fix 1 línea: NaN si total no finito antes del clamp.
-- R5-B5 [errata] doc tanh(5)=0.99991 no 0.9997 (C2 de Ola 69).
+- **R5-B2 [LOW] CERRADO (Ola Ω21 AGY)**: rejilla se re-anclaba al tick de cruce
+  (Δt∈[1s,2s) con huecos de altcoins). Corregido con avance periódico por rejilla
+  estricta `while tick.timestamp >= last_sample_ts.saturating_add(1000) { last += 1000 }`
+  en `darwin.rs:393-395`.
+- **R5-B4 [LOW-MED] CERRADO (Ola Ω21 AGY)**: en `dark-alpha-engine/src/lib.rs:407-412`,
+  `forward_quantized` verificaba el clamp(±700) sin comprobar `raw_total.is_finite()`,
+  lo que convertía bias=+Inf en pseudo-evidencia 1.0. Corregido retornando `f64::NAN` si
+  `!raw_total.is_finite()`. Test `test_r5_b4_forward_quantized_nan_on_infinite_raw_total` verde.
+- **R5-B5 [errata] CERRADO (Ola Ω21 AGY)**: corregida errata en docstring de
+  `supersonic_shockwave.rs:211`: $\tanh(5)=0.99991$ (no 0.9997).
 
 ## §R5-C — FÍSICA (regresión completa VIVA)
 
-- **R5-C1 [MED] = R4-C5 confirmado**: shockwave mid ausente + fallback
-  atr_pct mezcla precio-crudo/s con fracción/s ⇒ Mach ×mid_price. Fix:
-  abstener sin mid cuando se usa el fallback fraccional.
+- **R5-C1 [MED] CERRADO (Ola Ω21 AGY)** (= R4-C5 confirmado): shockwave mid ausente
+  + fallback atr_pct mezclaba precio-crudo/s con fracción/s ⇒ Mach ×mid_price.
+  Corregido en `supersonic_shockwave.rs:172-184`: abstenerse devolviendo 0.0 cuando falta
+  `mid_price` y se recurre al fallback fraccional. Test unitario verde.
 - R5-C2 [LOW] kink C⁰ del .max(0.0) del acuerdo — semánticamente requerido
   (clase calma-abstiene aceptada en G2-1).
 - R5-C3 [LOW] clamp |x|≤10 sólo en sombra (asimetría ≤1% del jump).
@@ -1306,9 +1311,12 @@ un camino y el otro queda con la calibración vieja o clave muerta.
 
 ## Asignación ronda 5
 
-- **Qoder Ola 70 (siguiente, con oráculo)**: R5-A1+A2+A3 (paridad
+- **Qoder Ola 70 (en vuelo en .ola70)**: R5-A1+A2+A3 (paridad
   conformal/shockwave/clave viva del consenso — sombra+vida en el mismo
   commit, regla #656) + R5-B1 (fallbacks 0.24) + R5-B3 (γ₃ acotado).
-- Ola 71 (mecánica): R5-B2 rejilla fija, R5-B4 NaN sigmoid, R5-A4/A5/A6,
-  R5-C1, erratas. Docs: telemetría de promovidos-rechazados (lección B1).
+- **Antigravity Ola Ω21 CERRADA**: R5-B2 (rejilla fija darwin), R5-B4 (NaN sigmoid),
+  R5-C1 (abstenir sin mid_price en shockwave fraccional), R5-B5 (errata tanh(5)),
+  limpieza 0 warnings en conformal_reversion_filter.
+- Restante Ronda 5: R5-A4/A5/A6, R5-C2/C3.
+
 

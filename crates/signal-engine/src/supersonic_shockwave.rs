@@ -172,6 +172,22 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
         // en velocidad-por-segundo del rango ATR es ÷√60, no ÷60 (drift).
         // ÷60 subrestimaba la velocidad del sonido 7.75× ⇒ Mach inflado.
         const BARRA_S: f64 = 7.7459666924; // √60
+        let has_spread_sound = registry
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "spread_speed_of_sound",
+                "SupersonicShockwaveEngine",
+            )
+            .is_some();
+        if !has_spread_sound && mid_price <= 1e-8 {
+            // R5-C1 (R4-C5): con spread_speed_of_sound ausente, el fallback es atr_pct (fracción/s).
+            // Sin mid_price (>1e-8), speed no se puede normalizar a fracción/s y permanece en dólares/s.
+            // Mezclar dólares/s con fracción/s rompe unidades físicas (Mach ×mid_price).
+            // Por coherencia dimensional estricta, el motor se abstiene devolviendo 0.0.
+            return 0.0;
+        }
+
         let sound_segundo = registry
             .get_scoped_parameter(
                 sym_opt,
@@ -382,4 +398,20 @@ mod qo_666_tests {
         let v10 = engine.evaluate();
         assert!(v10 > 0.7 && v10 > 3.0 * v, "Mach 10 satura vs Mach 1.2 debil: {v10} vs {v}");
     }
+
+    /// R5-C1 (R4-C5): sin spread_speed_of_sound y sin mid_price (>1e-8),
+    /// el fallback fraccional (atr_pct) no puede coexistir con speed en USD/s
+    /// sin romper la coherencia dimensional. El motor debe abstenerse (0.0).
+    #[test]
+    fn r5_c1_abstiene_sin_mid_price_con_fallback_fraccional() {
+        let registry = Arc::new(OmniscientRegistry::new());
+        registry.set("order_flow_speed", 72.0);
+        registry.set("atr_pct", 0.0077459666924);
+        // mid_price ausente (0.0 <= 1e-8)
+        let mut engine = SupersonicShockwaveEngine::default();
+        engine.init(Arc::clone(&registry)).ok();
+        let v = engine.evaluate();
+        assert_eq!(v, 0.0, "Sin mid_price y con fallback fraccional debe abstenerse");
+    }
 }
+

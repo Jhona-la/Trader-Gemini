@@ -379,12 +379,11 @@ fn evaluate_genotype(
             max_drawdown = max_drawdown.max((peak_capital - capital) / peak_capital);
         }
 
-        // R4-B2: SOLO la rejilla decide la cadencia (ver comentario de
+        // R4-B2 / R5-B2: SOLO la rejilla decide la cadencia (ver comentario de
         // SAMPLE_INTERVAL_MS). El PnL del cierre entra integrado en el
-        // retorno de la rejilla siguiente.
-        // R5-B2: la rejilla avanza en MÚLTIPLOS de 1 s (no re-anclada al
-        // tick de cruce) — con huecos de feed el re-anclaje producía
-        // Δt ∈ [1 s, 2 s), heterocedasticidad residual.
+        // retorno de la rejilla siguiente. R5-B2: la rejilla avanza de forma
+        // estricta y periódica por múltiplos de SAMPLE_INTERVAL_MS (last += 1000)
+        // para evitar que ticks tardíos o gaps re-anclen la fase a Δt irregular.
         let time_elapsed = tick.timestamp >= last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS);
         if time_elapsed {
             if prev_cap > 0.0 {
@@ -394,11 +393,9 @@ fn evaluate_genotype(
                 }
             }
             prev_cap = capital;
-            let mut next = last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS);
-            while tick.timestamp >= next.saturating_add(SAMPLE_INTERVAL_MS) {
-                next = next.saturating_add(SAMPLE_INTERVAL_MS);
+            while tick.timestamp >= last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS) {
+                last_sample_ts = last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS);
             }
-            last_sample_ts = next;
         }
     }
     let final_capital = arena.unified_capital.load(Ordering::Relaxed);
