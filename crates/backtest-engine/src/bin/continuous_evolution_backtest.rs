@@ -346,7 +346,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         current_genome.scalp_tp_base = 0.0160;
     }
     if !current_genome.tech_threshold.is_finite() || current_genome.tech_threshold <= 0.0 {
-        current_genome.tech_threshold = 0.1487;
+        current_genome.tech_threshold = 0.24; // R5-B1: bound slot-21 (D-625) — 0.1487 hacia promote al rechazo
     }
     if !current_genome.scalp_kelly_fraction.is_finite()
         || current_genome.scalp_kelly_fraction <= 0.0
@@ -968,7 +968,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Sanitización ligera para evitar NaNs sin restringir la adaptabilidad genética
         if !current_genome.tech_threshold.is_finite() {
-            current_genome.tech_threshold = 0.12;
+            current_genome.tech_threshold = 0.24; // R5-B1: bound slot-21 (D-625)
         }
         if !current_genome.scalp_kelly_fraction.is_finite() {
             current_genome.scalp_kelly_fraction = 0.55;
