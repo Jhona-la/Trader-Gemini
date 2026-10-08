@@ -1,5 +1,56 @@
 # PLAN MAESTRO DE SINCRONIZACIÓN — Crecimiento Exponencial Compuesto
 
+## Estado vigente de coordinación — 2026-10-08
+
+Candidato local `e9c6a435eb1780da7f2c6e29103f3bd7d227d94c`, árbol
+`10b8a427dfbdd5b203595b039b2dad50c69d6f68`: unión de la recuperación
+`7acf36aa` y remoto `5842c8e3` (incluye Ω26/Ω27). **T1: APROBADO en e9: 16/144 sensibles (11,1%), mínimo 0,110 intacto, 1 test exacto y 1 filtrado; fixture sintético; publicación pendiente del recibo remoto.** El registro de 209 tests describe `f3f8696`; requiere recibos
+propios la nueva composición. T1 mide expresividad genética y no rentabilidad
+ni cumplimiento del objetivo financiero; la paridad requiere sus contratos.
+
+El [plan por archivo](PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md)
+conserva las fases R0–R9 y la sección 11 de Sol. El nuevo ledger
+[ledger anotado de código](audit/REVISION_CODIGO_2026-10-08.json) censa 1.478 rutas/474 Rust/655
+`graphify-out` en `e9c6a435`. Su generación inicial dejó todas las filas en
+`inventariado`; la anotación posterior registra **1.469 inventariado, 8
+hallazgo_abierto con alcance parcial y 1 verificado**. Sólo está verificado
+el archivo de tests C07 completo (139 líneas; 4/4 dentro de 54/54 en riesgo),
+con revisión independiente; ningún archivo de runtime queda certificado
+completamente por esas nueve anotaciones. El check posterior tuvo exit 0 y
+valida cobertura/metadatos, no la verdad de la revisión ni resultados OOS.
+Los censos 1.434/460 y 1.474/473 pertenecen a bases anteriores. El siguiente
+delta debe capturar el cierre documental después del merge, sin autorreferencia.
+
+| Responsable | Reserva/estado observado; no equivale a acuse nuevo |
+|---|---|
+| Qoder | Rama `qoder/ola72-lows-residuales`, checkout `.ola72`, trabajo activo que se preserva. Coordinar knobs de `quantum_oscillator.rs` y cambios de `soliton.rs` frente al contrato GLM112. |
+| Antigravity | Rama `antigravity/quant-sr-ronda6-f9-honestidad-tests`, checkout `.antigravity`, activa. Ω24/Ω25 se preservan en el candidato; cualquier corrección nueva de OU/registry requiere reserva del consumidor. |
+| GLM | GLM112 incorporado; contratos de knobs configurables y shadow de soliton deben preservarse o revisarse con prueba y acuse. No se presupone una reserva nueva. |
+| Sol | Reporting SOL-R5-01 publicado (`f8c433f8`) e incorporado. Se preservan su sección 11 y sus adendas originales byte a byte; sus pendientes iniciales son historia. Checkout detached de evidencia conservado. |
+| Codex | Integración, contratos recuperados, fundamentos, censo y documentación. Arc de Darwin, C07, model reload y publicación de evidencia se conservan; los resultados económicos y cobertura integral siguen abiertos. |
+| Claude | Dominio histórico de ejecución, sin acuse nuevo observado. |
+
+Los estados del 7 de octubre y olas anteriores que siguen debajo son
+snapshots con evidencia acotada. En particular, ola67/flow en vuelo y
+reporting Sol pendiente no representan la reserva ni el estado actual.
+La nueva observación sustituye esos estados, no sus aportaciones históricas.
+
+Limpieza sólo de refs verificadas por OID y ancestría en `main` y
+`origin/main` publicado, después del censo final y de excluir actividad.
+No eliminar directorios de worktrees. Los checkouts históricos sucios se
+preservan; un detach autorizado al mismo HEAD exige status y hashes iguales
+antes/después. `main`, ramas activas Qoder/Antigravity y ramas externas nuevas
+quedan excluidas. La publicación y la limpieza aún requieren sus recibos.
+
+
+Validación aplicable: 736 regresiones aplicables + T1 (1 test exacto, 16/144 sensibles, mínimo 0,110 intacto); total 737 aprobadas, 0 fallidas y 1 ignorada. 729 aprobadas se retienen por identidad desde 7acf y 8 se ejecutaron en e9, incluido T1. Check all-targets aprobado antes del merge; estos resultados no validan crecimiento económico. Los recibos conservan sus SHA
+de ejecución: la matriz de equivalencia compara todas las entradas
+versionadas y 530 inputs compilables/de fixtures, con modo/kind/OID.
+Reporta por separado los dos archivos afectados y reejecutados en
+`e9c6a435`: reporting continuo 2/2 y stateful_open 5/5. Los estados
+externos no registrados por Git tienen límites explícitos; no se
+finge que las suites anteriores corrieron en este SHA.
+
 > **Documento vivo de los tres agentes** (Qoder, GLM/Antigravity, Claude).
 > Creado por Qoder (Ola 55, #655) el 2026-10-04 sobre main `0580e267`.
 >
@@ -13,7 +64,7 @@
 > `FORENSIC_INTELLIGENCE_AUDIT.md` (Qoder), `docs/adr/` (GLM) y
 > `docs/HOJA_DE_RUTA_CIMIENTOS_2026-10-01.md` (Claude).
 
-> **R4 — reinicio 2026-10-07 sobre adeb8d1b:** recorrido operativo en
+> **Snapshot histórico R4 — reinicio 2026-10-07 sobre adeb8d1b:** recorrido operativo en
 > [PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md](PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md).
 > Base inventariada: 1.434 rutas/460 Rust, sin transferencia de cobertura
 > histórica. Codex revisa fundamentos y recupera ramas pendientes; GLM
@@ -42,16 +93,21 @@ por el oráculo T-1 ni por la complejidad de las teorías incorporadas.
 La estrategia honesta hacia la meta (consenso de seniors, 2026-09-28):
 maximizar el crecimiento log con tope de ruina y **medirlo fuera de
 muestra**. El T-1 mide expresividad genética, no rentabilidad; la
-cadena de paridades bt↔vivo (GLM, 10/10) garantiza que lo medido es lo
-que opera. El eslabón que falta es el edge OOS estable — ese es el foco
-de las tres líneas de trabajo de abajo.
+cadena de paridades bt↔vivo (GLM registra 10/10 históricos) aporta
+evidencia para sus versiones y fixtures; no garantiza paridad universal
+ni certifica esta composición por herencia. Siguen abiertos el edge
+OOS, la conciliación económica y la inferencia bajo dependencia,
+según el protocolo R4. Las líneas de trabajo de abajo conservan sus
+responsabilidades históricas y requieren revalidación por consumidor.
 
 ## 0b. Barrido exhaustivo (mandato 2026-10-04)
 
 El operador ordenó recorrer TODOS los archivos uno por uno en fases
 (metas → conceptos → matemática → física → código):
-**docs/BARRIDO_EXHAUSTIVO_FASES.md** — 8 fases, ~377 archivos, ~137k
-líneas, división por línea dueña, verificación por fase.
+**docs/BARRIDO_EXHAUSTIVO_FASES.md** conserva las 8 fases y el censo
+histórico aproximado (~377 archivos/~137k líneas). Para cobertura
+actual se usa el ledger R4 por SHA, su delta y las fases R0–R9 del
+plan por archivo; contar rutas no acredita revisarlas.
 
 ## 1. Las tres líneas ( quién es dueño de qué )
 
@@ -114,7 +170,12 @@ de Kelly EN RIESGO AL STOP.
 | Oráculo T-1 | Trinquete 11.0%, margen 0.1 pts: **toda ola que toca pipeline vivo lo corre antes del push**. Sin excepciones — 10 olas consecutivas lo han demostrado. |
 | Buzón | UNIÓN en conflictos; cada cierre de ola lleva entrada; las revisiones cruzadas (Claude↔Qoder ya funcionan) se responden en la misma ola o la siguiente. |
 
-## 3. Cadencia hacia la meta
+## 3. Cadencia hacia la meta — snapshot del plan original
+
+La cadencia siguiente conserva el registro original. «Certificado» no es
+certificación universal del sistema, «sin fricción» no describe costes reales
+y la sesión viva propuesta no constituye una autorización actual. Para R4
+prevalecen los recibos, pendientes y reservas de la adenda del 8 de octubre.
 
 1. **Ya**: sistema espectral vivo + certificado; ejecución íntegra;
    dataset de aprendizaje servible.
@@ -404,9 +465,11 @@ de los consumidores afectados. Ningún archivo se marca revisado por un `rg`.
    actualizar **la propia sección** del plan operativo y los contratos aquí.
 4. Integración: comparar cada padre, ejecutar controles pertinentes, preservar
    todas las entradas en conflictos; publicar sólo el alcance autorizado.
-5. Borrar una rama sólo tras comprobar en main el SHA o equivalencia revisada,
-   ausencia de exclusivos y de worktree/actividad. Una PR merged no prueba que
-   su rama actual carezca de commits posteriores. Revalidar refs antes de borrar.
+5. Limpiar sólo refs tras comprobar nombre/OID y ancestría en `main` y
+   `origin/main` publicado, ausencia de exclusivos y actividad reservada.
+   Conservar directorios y archivos. Un worktree histórico sucio requiere
+   detach al mismo HEAD con status/hashes idénticos antes/después, sin force.
+   Una PR merged no prueba ausencia de commits posteriores; revalidar cada ref.
 
 Primer entregable Codex: recibos RA/T-1 y consolidación documental; segundo:
 censo de cobertura y cierre de G1–G4 en lotes con pruebas negativas, coordinando

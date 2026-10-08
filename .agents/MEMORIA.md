@@ -1,5 +1,64 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-08 — Codex R4: nueva base, recuperación y recibos separados
+
+- El operador renovó el mandato: plan desde metas/conceptos/ciencias hasta
+  código, revisión por archivo, coordinación y reconciliación de commits,
+  push/merge a main y limpieza de refs ya fusionadas. Esta instrucción
+  explícita autoriza la publicación/reconciliación de las ramas pendientes,
+  incluidas SA/OOS; las restricciones históricas se conservan como historia.
+- Entrada del plan: `docs/PLAN_AUDITORIA_BASE_2026-10-08.md`, R0–R9;
+  recorrido exhaustivo y reservas en planes por archivo/compartido. Modelo
+  rector: estado causal multiactivo/temporal/espectral con incertidumbre;
+  malla, banda operativa y frecuencia observada se distinguen.
+- Base integrada de código `e9c6a435eb1780da7f2c6e29103f3bd7d227d94c`, árbol `10b8a427dfbdd5b203595b039b2dad50c69d6f68`.
+  Recupera root-audit/PR28, OOS, SA, forest, reloj, evidencia, model reload y
+  la línea documental/científica propia; incorpora main hasta `5842c8e33231131e5f2c5c600ffce15f1babaa55`.
+  Cada merge tiene contraste contra ambos padres y check all-targets.
+- C07: rechazar producto Kelly/convicción no finito antes de convertirlo
+  a cero y mezclarlo con exposición positiva. RED causal histórico reprodujo
+  exposición admitida; GREEN18/18 en f3 y riesgo54/54 en7acf, con SHA/árbol
+  separados. Mantiene fórmulas/límites para entradas finitas.
+- Host legacy opt-in comparte Arc Darwin entre rondas; no persiste entre
+  reinicios ni acredita inferencia anytime. MW registra sólo cargas exitosas
+  para permitir reintentos. OOS valida antes de activar modelos; SA utiliza
+  criterios explícitos y no llama crecimiento72h a utilidad interna.
+- CI guarda el candidato original al retirar el commit normalizador que
+  desplazaba HEAD; prueba Git RED/controles documentada. Conserva suites y
+  toolchain. Una revisión local del workflow no certifica CI remoto.
+- Regresiones y T1: 736 regresiones aplicables + T1 (1 test exacto, 16/144 sensibles, mínimo 0,110 intacto); total 737 aprobadas, 0 fallidas y 1 ignorada. 729 aprobadas se retienen por identidad desde 7acf y 8 se ejecutaron en e9, incluido T1. Check all-targets aprobado antes del merge; estos resultados no validan crecimiento económico. Recibos durables en
+  `docs/audit/RECIBOS_INTEGRACION_R4_2026-10-07.json`; cada resultado conserva
+  su SHA ejecutado. Transferir un resultado a una composición posterior
+  requiere matriz explícita de fuentes/manifests/entorno y sus límites.
+- Ledger `docs/audit/REVISION_CODIGO_2026-10-08.json`: censo exacto de su
+  snapshot, ocho archivos con hallazgos parciales abiertos y sólo el test C07 completo
+  verificado; ningún archivo runtime entero. Histórico Sol preservado.
+  El siguiente censo/delta documental registra las nuevas rutas sin
+  autorreferencia. `check` prueba metadatos, no verdad de evidencia.
+- Q2 cash/DD de cierres; Q3 gaps sin duración uniforme; Q4 dependencia,
+  contaminación y dispersión entre ensayos permanecen abiertos. Testigo
+  Rust exacto DSR0.235773→0.999557 por duplicación sin innovaciones nuevas.
+  OU opt-in reproduce fallback legacy/tiempo no creciente con señal duración0;
+  no caller productivo encontrado. Diagnósticos5comandos exit0, no repairs.
+- Residuales: timestampAggTrade, mutaciones legacy sin efecto en curvas,
+  identidad/revocación de modelos y dominio real de familia multiactivo.
+  Conteo26configurados/30capacidad no demuestra subcobertura viva universal.
+  Primero contratos de patrimonio/tiempo/procedencia; después calibración
+  estadística y comparaciones OOS de teorías/algoritmos.
+- Durante T1 se leyeron completamente selection_stats (427 líneas/11 tests)
+  y parser (462 líneas/19 pruebas existentes). R2 precisa dominio muestral,
+  numérico y selección; R4-I6 reproduce mezcla de lados bids/asks con fuente
+  exacta. BinanceStreamer carece de instanciación productiva localizada y
+  su esquema no acepta b/a USD-M; god_engine usa otro parser. No se demuestra
+  incidencia en el feed activo. Informes revisados independientemente,
+  contratos abiertos y testigos caracterizan defectos, sin repararlos.
+- Publicación y limpieza: pendiente del recibo remoto y del censo final de refs. Sólo refs cerradas por OID/
+  ancestría; las ramas activas y todos los archivos/worktrees se preservan.
+  T1 mide expresividad; crecimiento100%/72h, paridad económica completa y
+  cobertura semántica de todo el repo siguen sin certificación. Sin trading,
+  entrenamiento, promoción ni cambios a procesos vivos en esta ronda.
+
+
 ## 2026-10-07 — Codex R4: revisión desde base y recuperación Git EN CURSO
 
 - Base fijada `adeb8d1b`; trabajo en ramas aisladas

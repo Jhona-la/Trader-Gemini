@@ -16,6 +16,30 @@ tasa de fallo observada del bot. El JSON incluye HEAD de ejecución y SHA-256
 de los blobs Git de la base inmutable. Reejecutarlo en un HEAD posterior
 reproduce el contraejemplo histórico; no declara que ese HEAD conserve el bug.
 
+## Revalidación del 8 de octubre
+
+Este expediente conserva los contraejemplos históricos de `adeb8d1b`.
+La [revalidación actual](REVALIDACION_FUNDAMENTOS_R4_2026-10-08.md) fija
+blobs de `18bbd1d9` y del candidato integrado `7acf36aa`:
+
+- Q1: el host conserva un Arc Darwin entre rondas del proceso; no hay
+  persistencia tras reinicios ni garantía de inferencia anytime por ese cambio.
+- Q2: el evaluador conserva saldo realizado; su comentario ahora lo reconoce.
+- Q3: se retiró el trigger adicional por cierre. La fase nominal avanza por
+  segundos, pero un hueco produce un retorno agregado sin duración registrada;
+  la homogeneidad bajo huecos sigue pendiente.
+- Q4: el floor de curtosis y el fallback de skew no añaden autocovarianzas
+  ni la distribución de Sharpes entre candidatos. El testigo Rust exacto
+  actual cambia DSR de 0.235773213910289 a 0.999556946880623 al copiar
+  cada observación diez veces, sin nueva innovación independiente.
+
+Los valores Python y las líneas de las secciones siguientes describen la
+base histórica. Las suites Cargo y T1 pertenecen al
+[recibo de integración](../INTEGRACION_RAMAS_2026-10-07.md).
+Los diagnósticos aislados se pueden repetir con
+`python scripts/audit_r4_rust_witnesses.py --repo .`; un éxito confirma
+la presencia caracterizada del defecto, no su reparación ni rentabilidad.
+
 ## Meta y contrato de evidencia
 
 La meta solicitada de duplicación en 72 h equivale a `ln(2)/3 =
@@ -34,7 +58,7 @@ cada ventana de 72 h. El plan debe medir distribución OOS del crecimiento
 log neto, incertidumbre, drawdown, ruina y capacidad. No se validó aquí la
 comparación histórica de Sharpe de fondos presente en otros planes.
 
-## Hallazgos confirmados
+## Hallazgos confirmados en la base histórica adeb8d1b
 
 | ID | Severidad | Contrato roto | Alcance / activación |
 |---|---|---|---|

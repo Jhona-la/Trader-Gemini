@@ -1,5 +1,80 @@
 # Revisión desde la base: plan y recibos por archivo
 
+## Estado vigente — 2026-10-08, candidato de integración R4
+
+Esta adenda prevalece para estados operativos; las secciones 1–10 conservan
+el recorrido y sus snapshots del 7 de octubre. La sección 11 de Sol se
+preserva íntegra como bitácora con su propio cierre. No se transfieren
+porcentajes históricos de revisión a esta composición.
+
+Base de código: `e9c6a435eb1780da7f2c6e29103f3bd7d227d94c`, árbol
+`10b8a427dfbdd5b203595b039b2dad50c69d6f68`; padres `7acf36aa` y
+`5842c8e3`. El código recuperado y las aportaciones remotas están unidos en
+ese commit local. **T1: APROBADO en e9: 16/144 sensibles (11,1%), mínimo 0,110 intacto, 1 test exacto y 1 filtrado; fixture sintético; publicación pendiente del recibo remoto.**
+Un commit de integración no acredita por sí solo llegada a `main` remoto.
+
+El censo nuevo [ledger anotado de código](audit/REVISION_CODIGO_2026-10-08.json) fija ese commit y contiene
+**1.478 rutas versionadas, 474 Rust y 655 bajo `graphify-out`**. La generación
+inicial dejó las 1.478 filas en `inventariado`. Una anotación posterior sobre
+los mismos blobs registra **1.469 inventariado, 8 hallazgo_abierto y 1
+verificado**. Los ocho hallazgos describen alcances parciales por contrato,
+con blob, informe y `whole_file_closed=false`; no son ocho archivos completos
+auditados. El único `verificado` es el archivo de tests
+`crates/risk-engine/tests/c07_ruin_composition_contract.rs`: lectura 1–139,
+revisión independiente y C07 4/4 dentro del recibo de riesgo 54/54 en
+`7acf36aa`. Ese cierre no se extiende a `risk-engine/src/lib.rs` ni certifica
+configuraciones completas o resultados económicos.
+
+El check posterior de la anotación tuvo exit 0: valida estructura, cobertura
+y metadatos de blobs, no la verdad de las conclusiones ni una auditoría total.
+[Delta de integración](audit/DELTA_INTEGRACION_2026-10-08.json) conserva el contraste entre bases. Los
+1.434/460 iniciales y 1.474/473 de `f3f8696` son snapshots distintos.
+El cierre documental posterior requiere un siguiente delta por SHA; no se
+incluye a sí mismo por autorreferencia ni se declara ese censo aún generado.
+
+| Frente | Estado de esta composición y continuación |
+|---|---|
+| Recuperación Git | Root-audit, satélites y model reload están incorporados en la línea integrada. Faltan publicación verificada y censo final de refs antes de limpiar. |
+| Riesgo C07 | Guard y contrato incorporados; el registro de 209 tests pertenece a `f3f8696`, no a este candidato. RED usó el árbol `6d6eb1daf1e27056664f01aa347da208c355de09`; no es el árbol corregido `462e1c69c4d08c7e95f22a81893ad23855bb5495` de `f3f8696`. Los recibos y su alcance quedan en [recuperación de ruina](audit/RECUPERACION_RUIN_R4_2026-10-07.md). |
+| Aprendizaje | El caller mantiene un `Arc` compartido de Darwin entre workers; sigue pendiente persistencia entre reinicios. Q2 conserva cash/DD de cierres; Q3 quitó el disparador extra de cierre, pero gaps de ticks aún producen duraciones desiguales. DSR es nominal; dependencia, contaminación de entradas y dispersión entre ensayos requieren contratos nuevos. |
+| Medición Sol | SOL-R5-01 de reporting diario ya fue publicado en su línea (`f8c433f8`) y está incorporado aquí. Su conciliación diaria y dos tests históricos no certifican equity común del core vivo, costes completos ni crecimiento OOS. |
+| Continuidad y extensiones Ω24/Ω25 | Se preservan OU y registro de órdenes. El modo OU opt-in puede caer al evaluador legacy; el testigo Rust aislado de 8 de octubre reproduce duplicación/regresión temporal, sin demostrar uso vivo. Abrir contrato de reloj/fallback con su dueño antes de alterar runtime. Las discontinuidades R4 siguen necesitando replay y contrafactual OOS. |
+
+Reservas observadas, sin inventar acuses: Qoder mantiene
+`qoder/ola72-lows-residuales` en `.ola72`; Antigravity mantiene
+`antigravity/quant-sr-ronda6-f9-honestidad-tests` en `.antigravity`. GLM112
+está incorporado. Sol cerró/publicó reporting y su checkout separado se
+preserva como evidencia; no se infiere actividad por conservar una ref.
+Codex coordina esta recuperación, recibos y lotes R0–R9. Antes del próximo
+lote se renuevan owner, rutas, base y revisor. La eliminación propuesta de
+knobs por Qoder debe acordarse con el contrato GLM112 que los conserva
+configurables; las modificaciones concurrentes de `quantum_oscillator.rs`
+y `soliton.rs` no se importan de archivos sucios por su mera presencia.
+
+La limpieza se limita a refs con nombre/OID verificados, ancestros de `main`
+y `origin/main` publicado, sin actividad reservada ni commits exclusivos.
+`main`, Qoder, Antigravity y toda rama externa nueva quedan fuera. Un checkout
+histórico sucio sólo admite detach al MISMO HEAD, sin force, con status y
+hashes de archivos iguales antes/después; se conserva el directorio y todo
+archivo. Cualquier discrepancia aborta. Ningún borrado automático de worktrees.
+
+Próximos recibos: validación aplicable del candidato y T1, publicación con
+SHA remoto comprobado, delta documental/censo de refs y lotes semánticos
+por blob y consumidor. La revisión económica exige protocolo causal,
+costes/MTM, modelos y datos identificados y examen OOS separado de selección.
+Ninguno de esos resultados se presume por completar estos documentos.
+
+
+Validación aplicable: 736 regresiones aplicables + T1 (1 test exacto, 16/144 sensibles, mínimo 0,110 intacto); total 737 aprobadas, 0 fallidas y 1 ignorada. 729 aprobadas se retienen por identidad desde 7acf y 8 se ejecutaron en e9, incluido T1. Check all-targets aprobado antes del merge; estos resultados no validan crecimiento económico. Los recibos conservan sus SHA
+de ejecución: la matriz de equivalencia compara todas las entradas
+versionadas y 530 inputs compilables/de fixtures, con modo/kind/OID.
+Reporta por separado los dos archivos afectados y reejecutados en
+`e9c6a435`: reporting continuo 2/2 y stateful_open 5/5. Los estados
+externos no registrados por Git tienen límites explícitos; no se
+finge que las suites anteriores corrieron en este SHA.
+
+## Contexto histórico de inicio R4 — 2026-10-07
+
 Fecha: 2026-10-07, America/Bogota. Coordinación inicial R4: Codex; revisión independiente y continuación: Sol.
 Base histórica de R4: `adeb8d1b1f8171b14fffa8abc9f54c396e4794dd`.
 Base nueva verificada por Sol: `8938cf41d5b2d181e807de1a3fa41f36b09dfc32`.
@@ -127,6 +202,13 @@ Fuentes estadísticas y contraejemplos: [informe R4](audit/FUNDAMENTOS_R4_2026-1
 | R8 | UI, scripts, datos generados y documentación | Unidades/estado exactos, procedencia del generador, validación de consumidores. |
 | R9 | Integración y evidencia económica | Revisión contra padres, regresión, T-1 aplicable, OOS sellado y recibo de main. |
 
+Los dueños por lote de §11.2 son propuestas hasta acuse. Antes de iniciar
+un lote R0–R9 se fijan escritor y revisor, rutas/blobs, comprobaciones
+apropiadas a su tipo, criterio de aceptación y recibo de salida. Para runtime
+incluir comportamiento adverso y regresión; para documentos/derivados,
+esquema, procedencia, enlaces y consumidores. No se inventa ejecución por
+completar el censo ni se exige una prueba duplicativa a cada archivo.
+
 R0→R1→R2/R3 preceden interpretar el código como teoría válida. Después se
 priorizan rutas que pueden perder capital o contaminar evidencia, y luego
 el resto del censo. Ninguna fase se cierra por ausencia de matches de `rg`.
@@ -139,10 +221,13 @@ los intervalos y todas las rutas dependientes.
 
 ## 5. Inventario exhaustivo y recibos
 
+> Snapshot de inicio del 7 de octubre. Para estados, cifras y reservas actuales
+> prevalece la adenda del 8 de octubre; se conservan los contratos metodológicos.
+
 La base contiene **1.434 archivos versionados, 460 Rust y 23 crates miembros
 más el paquete raíz**. De ellos, 655 pertenecen a `graphify-out`: el total
 incluye derivados, no sólo código. El conteo anterior de ~377 Rust no se
-traslada a esta base. [Ledger por archivo](audit/REVISION_2026-10-07.json),
+traslada a esta base. [Ledger histórico de inicio R4](audit/REVISION_2026-10-07.json),
 generado por `scripts/audit_inventory.py`, registra blobs y clasificación.
 La clasificación automática NO acredita lectura ni auditoría.
 
@@ -177,6 +262,9 @@ la extensión no justifican omitir una ruta.
 
 ## 6. Auditoría de vetos: composición y recuperación
 
+> Snapshot de inicio del 7 de octubre. Para estados, cifras y reservas actuales
+> prevalece la adenda del 8 de octubre; se conservan los contratos metodológicos.
+
 | Tipo | Condición que debe preservar |
 |---|---|
 | Exchange/integridad | Identidad, precio/cantidad, reglas actuales, datos finitos, causalidad y terminales. |
@@ -200,6 +288,9 @@ anterior y cambios locales de `ruin-input-contract`. Su estado es **pendiente
 de reejecución/revisión**, no integrado por aparecer en disco.
 
 ## 7. Autoadaptación y evolución: criterios verificables
+
+> Snapshot de inicio del 7 de octubre. Para estados, cifras y reservas actuales
+> prevalece la adenda del 8 de octubre; se conservan los contratos metodológicos.
 
 No basta con mutar genes. El ciclo completo debe demostrar observación causal,
 predicción previa, etiqueta madura, puntuación contra nulos, adaptación,
@@ -233,6 +324,9 @@ no convierte estos pendientes en hallazgos cerrados.
 
 ## 8. Consejo de agentes y sincronización
 
+> Snapshot de inicio del 7 de octubre. Para estados, cifras y reservas actuales
+> prevalece la adenda del 8 de octubre; se conservan los contratos metodológicos.
+
 Estado observado, no aceptación inventada:
 
 - Qoder: `qoder/ola67-lows-limpieza`, worktree `.ola67`, cambios activos.
@@ -254,6 +348,9 @@ resuelven por unión; conflictos de código por contrato y pruebas, revisando
 ambos padres aunque Git no marque conflicto.
 
 ## 9. Recuperación Git, pruebas y publicación
+
+> Snapshot de inicio del 7 de octubre. Para estados, cifras y reservas actuales
+> prevalece la adenda del 8 de octubre; se conservan los contratos metodológicos.
 
 La auditoría encontró `codex/root-audit-2026-10-04` publicado pero sin merge,
 satélites locales y `model-reload-contract` con commits exclusivos. No todos
@@ -281,6 +378,9 @@ reservadas/activas; conservar archivos nuevos aunque su rama ya esté fusionada.
 No borrar worktrees sucios ni interpretarlos como basura.
 
 ## 10. Próximos lotes y criterios para declarar avance
+
+> Snapshot de inicio del 7 de octubre. Para estados, cifras y reservas actuales
+> prevalece la adenda del 8 de octubre; se conservan los contratos metodológicos.
 
 1. Cerrar R0 con erratas y ledger comprobado, sin afirmar revisión de 1.434 archivos.
 2. Registrar/reproducir R2 estadística y R5 composición de riesgo; acordar

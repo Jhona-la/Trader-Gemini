@@ -3,7 +3,7 @@
 Fecha: 2026-10-07, America/Bogota. Auditor: Codex / `system_inventory`.
 Base: `42652f70badadb9be66c0fb138b88918c8cc54dc`.
 Severidad: MED. Estado: **CORREGIDO_Y_VERIFICADO_EN_FIXTURE_GIT**;
-pendiente de commit, integración y ejecución del workflow remoto.
+fix incorporado al candidato `7acf36aa`; CI remoto del conjunto aún pendiente.
 
 ## Defecto y cambio
 
@@ -100,3 +100,19 @@ La prueba demuestra la semántica Git del bypass y su eliminación. No es una
 ejecución de GitHub Actions ni una certificación de todas las suites Rust. El
 guard sólo examina cambios del candidato contra su primer padre, como antes;
 no se lo presenta como un escáner de todo el historial.
+
+## Composición sobre el candidato local del 8 de octubre
+
+El candidato `7acf36aa` conserva checkout, compiler fijado, concurrencia,
+all-targets y todas las suites del padre `18bbd1d9`; añade los contratos
+recuperados de parser, riesgo/C07, OOS, SA, reloj, evidencia y MW. La
+comparación contra ambos padres mantuvo la retirada del normalizador:
+el guard observa el candidato original. El guard con blancos cosméticos
+tolerados pasó en todo el rango `18bbd1d9..7acf36aa`.
+
+Estos son recibos locales y una revisión del workflow. El último corte
+remoto consultado registraba Replay contracts run 37822504981 sobre
+`18bbd1d9` en progreso; no es un éxito de esta recuperación. Consultar el
+recibo de publicación para el estado de CI del SHA efectivamente publicado.
+El guard sigue limitado al primer padre del candidato; no analiza todo
+el historial ni una sucesión de commits ocultada en un push.

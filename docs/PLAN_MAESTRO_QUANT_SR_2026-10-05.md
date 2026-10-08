@@ -3,7 +3,54 @@
 ### Crecimiento Exponencial e Interés Compuesto (100% cada 3 Días) sobre Micro-Capital de $13 USD
 *Revisión Integral desde la Base · Sincronización Inter-Agentes (Antigravity, Qoder, GLM, Codex, Claude)*
 
-> Revalidación R4, 2026-10-07: [plan por archivo](PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md).
+## Vigencia científica y estado de integración — 2026-10-08
+
+Este documento conserva las contribuciones históricas del consejo y la
+adenda de Sol íntegra. Los estados de cierre de sus olas no certifican la
+composición nueva `e9c6a435eb1780da7f2c6e29103f3bd7d227d94c`, árbol
+`10b8a427dfbdd5b203595b039b2dad50c69d6f68`, unión de `7acf36aa` y `5842c8e3` (incluye Ω26/Ω27).
+**T1: APROBADO en e9: 16/144 sensibles (11,1%), mínimo 0,110 intacto, 1 test exacto y 1 filtrado; fixture sintético; publicación pendiente del recibo remoto.** Los 209 tests
+registrados corresponden a `f3f8696`; no se traslada ese verde a otro árbol.
+T1 no acredita rentabilidad ni la meta de duplicar equity neta cada 72 h.
+
+El [plan por archivo](PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md)
+gobierna la nueva cobertura: 1.478 rutas/474 Rust/655 `graphify-out` en el
+ledger [ledger anotado de código](audit/REVISION_CODIGO_2026-10-08.json). El censo inicial dejó todas las filas
+en `inventariado`; la anotación posterior registra **1.469 inventariado,
+8 hallazgo_abierto de alcance parcial y 1 verificado**. Sólo cierra el archivo
+de tests C07 completo (139 líneas, revisión independiente, 4/4 dentro del
+recibo de riesgo 54/54 en `7acf36aa`); no cierra archivos enteros de runtime
+ni la validación económica. El check posterior tuvo exit 0 y verifica
+cobertura/metadatos, no la verdad semántica de la evidencia. Los censos
+anteriores y fases cerradas conservan sus fechas; el cierre documental debe
+entrar en el siguiente delta por SHA, aún pendiente de generación.
+
+Qoder ola72 y Antigravity f9 mantienen reservas activas; GLM112 está
+incorporado y Sol publicó SOL-R5-01 de reporting diario. Su avance no elimina
+las limitaciones económicas del core. En este candidato Q1 comparte Darwin
+mediante Arc entre workers, pero no acredita persistencia entre reinicios.
+Q3 quitó el muestreo extra por cierre; todavía requiere contrato de gaps y
+duración de retornos. Q2 (cash/MTM) y Q4 (DSR, dependencia, contaminación y
+dispersión entre ensayos) permanecen abiertos. OU opt-in conserva un fallback
+legacy que requiere contrato con su dueño; un testigo aislado no prueba uso
+vivo, error financiero ni un arreglo ya realizado.
+
+Las precisiones de esta edición separan capacidad de roster, malla de reloj
+observado, esquemas de features y familias estadísticas. Las fórmulas de
+Ville/DSR requieren sus supuestos y procedencia; no otorgan una tasa global
+de error por el mero hecho de aparecer en el código. La física y las
+analogías cuánticas requieren identificación y contraste OOS con costes.
+
+
+Validación aplicable: 736 regresiones aplicables + T1 (1 test exacto, 16/144 sensibles, mínimo 0,110 intacto); total 737 aprobadas, 0 fallidas y 1 ignorada. 729 aprobadas se retienen por identidad desde 7acf y 8 se ejecutaron en e9, incluido T1. Check all-targets aprobado antes del merge; estos resultados no validan crecimiento económico. Los recibos conservan sus SHA
+de ejecución: la matriz de equivalencia compara todas las entradas
+versionadas y 530 inputs compilables/de fixtures, con modo/kind/OID.
+Reporta por separado los dos archivos afectados y reejecutados en
+`e9c6a435`: reporting continuo 2/2 y stateful_open 5/5. Los estados
+externos no registrados por Git tienen límites explícitos; no se
+finge que las suites anteriores corrieron en este SHA.
+
+> Snapshot histórico de revalidación R4, 2026-10-07: [plan por archivo](PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md).
 > Las olas cerradas conservan su evidencia histórica; no certifican toda la
 > base actual. La meta financiera continúa sin validación económica OOS.
 > Las analogías físicas siguientes requieren correspondencia y falsación;
@@ -56,14 +103,15 @@ Queda estrictamente prohibido pensar en categorías binarias o compartimentadas:
    Corresponde a `HorizonCurve::eval` en `temporal_spectrum.rs`: el código recibe el valor numérico de $\tau$ en milisegundos. Un cambio de unidad requiere transformar el intercepto; los consumidores deben respetar su dominio operativo.
 2. **Representación continua del estado**: la volatilidad es una variable continua. El código también usa un símplex $\Delta^3 = \{p \in [0, 1]^4 : \sum p_i = 1\}$ para cuatro componentes de estado; es una representación finita, no una prueba de calibración probabilística. La métrica de Fisher siguiente es una propuesta de geometría que requiere consumidor y validación explícitos:
    $$ds^2 = g_{ij}(\theta) d\theta^i d\theta^j, \quad g_{ij} = \mathbb{E}\left[\frac{\partial \ln p}{\partial \theta^i} \frac{\partial \ln p}{\partial \theta^j}\right]$$
-3. **Multiactivo Cuántico Unificado**: Los 30 activos del universo dinámico no son series temporales aisladas. Forman un **grafo interactuante continuo** acoplado por flujos de órdenes, flujos de contagio de Hawkes, cópulas de cola extrema y paridades de cambio.
+3. **Estado multiactivo acoplado**: `MAX_COINS=30` es capacidad del arena, no un roster observado. En `7acf36aa`, el bootloader configura 26 símbolos USDT; eso no acredita que los 26 reciban datos u operen. El grafo por activo y escala debe identificar nodos observados, flujos, dependencia y antigüedad de cada relación, sin confundir capacidad con evidencia.
 
 ### 2.2 Representación Espectral del Estado del Mercado
 El estado del universo se describe mediante el tensor continuo espectral $S(\omega, \tau, \mathbf{x}, t)$:
 - $\omega$: Frecuencia espectral de microestructura (libro de órdenes, flujo de trades).
-- $\tau$: Escala de agregación temporal del banco de 32 anclas espectrales logarítmicas de base 4:
-  $$\tau_k = \tau_0 \cdot 4^k, \quad k \in [0, 31]$$
-- $\mathbf{x} \in \mathbb{R}^{54}$: Tensor macro y microestructural continuo.
+- $\tau$: Banco de 32 filtros sobre una malla representable logarítmica de razón 4:
+  $$\tau_k = \tau_0 \cdot 4^k, \quad k \in \{0,\ldots,31\},\quad \tau_0=10^{-6}\text{ ms}=1\text{ ns}$$
+  `SPECTRUM_SCALES_MS` define los nodos; `update` recibe milisegundos enteros y `FEED_CLOCK_RESOLUTION_MS=1`. Representar un nodo de 1 ns no demuestra observaciones con esa resolución. La banda observada y las salidas operativas de 30 s–12 h requieren sus propios contratos.
+- $\mathbf{x}$: Vector definido por productor y consumidor. `OmniState::get_features` y `build_54d_tensor` tienen 54 componentes con esquemas distintos; NanoForest consume 48 (34 universales + 10 espectrales + 4 macro). Otros contratos usan 12, 64 o 144. No existe una dimensión universal de todo el estado, y número de slots no equivale a señales disponibles o independientes.
 - $t$: Tiempo del evento y tiempo local con procedencia explícita. `/fapi/v1/time` consulta la hora del servidor por REST; no es un protocolo NTP. Medir offset, RTT e incertidumbre y preservar un reloj monotónico para duraciones.
 
 ---
@@ -84,7 +132,7 @@ El estado del universo se describe mediante el tensor continuo espectral $S(\ome
   - $\nabla \phi$ (**Flujo de Gradiente / Potencial**): Componente irrotacional libre de bucles (arbitraje transitivo de paridades).
   - $\nabla \times \mathbf{A}$ (**Flujo Rotacional / Curl**): Componente solenoidal asociada a bucles cerrados de liquidación y contagio asimétrico (`curl_share`).
   - $\mathbf{h}$ (**Flujo Armónico**): Modos topológicos globales del mercado cripto.
-  - **Implementación**: [`crates/risk-engine/src/hodge.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/risk-engine/src/hodge.rs).
+  - **Implementación**: [`crates/risk-engine/src/hodge.rs`](../crates/risk-engine/src/hodge.rs).
 
 ### 3.3 Procesos Estocásticos Continuos Ornstein-Uhlenbeck y Fokker-Planck
 - **SDE Continuo de Reversión**:
@@ -93,29 +141,30 @@ El estado del universo se describe mediante el tensor continuo espectral $S(\ome
   $$\frac{\partial P(x, t)}{\partial t} = -\theta \frac{\partial}{\partial x}[(\mu - x) P(x, t)] + \frac{\sigma^2}{2} \frac{\partial^2 P(x, t)}{\partial x^2}$$
   - Vida media analítica continua: $t_{1/2} = \frac{\ln 2}{\theta}$ (en segundos reales).
   - Varianza ergódica estacionaria: $\text{Var}_\infty = \frac{\sigma^2}{2\theta}$.
-  - Estimación recursiva exacta ponderada por pesos exponenciales $s_w$.
-  - **Implementación**: [`crates/strategy-core/src/vecm_arbitrage.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/strategy-core/src/vecm_arbitrage.rs) (Cerrado en Ola Ω7, commit `5663d1f1`).
+  - Estimación recursiva con pesos exponenciales $s_w$; esos pesos no demuestran exactitud estadística, identificación ni calibración. El contrato del estimador y su reloj debe contrastarse por separado de las identidades analíticas del modelo OU.
+  - **Implementación**: [`crates/strategy-core/src/vecm_arbitrage.rs`](../crates/strategy-core/src/vecm_arbitrage.rs) (Cerrado en Ola Ω7, commit `5663d1f1`).
 
 ### 3.4 Martingalas de Ville y E-Values (Anytime-Valid Sequential Testing)
 - **Desigualdad Maximal de Ville**:
   $$\mathbb{P}\left(\exists t \ge 1: M_t \ge \frac{1}{\alpha}\right) \le \alpha$$
   - Control de observación secuencial sólo si $M_t$ es un e-proceso válido bajo la hipótesis nula y su filtración. La selección de escalas/motores/activos necesita además una familia y corrección declaradas; datos reutilizados o apuestas no predecibles pueden invalidar la garantía.
-  - Corrección de Familia Bonferroni para el banco espectral (32 escalas $\times$ 13 motores = 416 pares):
+  - Familias distintas por instancia/activo: 32 escalas usan umbral 640 en la selección temporal; 13 motores $\times$ 32 escalas = 416 pares usan umbral 8320 en pesos por habilidad:
     $$\text{Umbral de Familia} = \frac{M}{\alpha} = \frac{416}{0.05} = 8320$$
-  - **Implementación**: [`crates/quantum-arena/src/evalues.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/quantum-arena/src/evalues.rs) (Cerrado por Qoder en Olas 60 y 62, commits `5b83168e` y `e4bed5dc`).
+  - El veto multiactivo usa otra familia, 2175/43500. Su conteo de escalas y dominio tiene una reserva R4-I4 en [residuales de integración](audit/RESIDUALES_INTEGRACION_R4_2026-10-07.md); no se confunde con 32/416. La corrección familiar no exige independencia entre procesos, pero sí procesos válidos y una familia completa. Ninguna cifra aquí certifica control global entre activos, reinicios y búsquedas adicionales.
+  - **Implementación**: [`crates/quantum-arena/src/evalues.rs`](../crates/quantum-arena/src/evalues.rs) (Cerrado por Qoder en Olas 60 y 62, commits `5b83168e` y `e4bed5dc`).
 
 ### 3.5 Teoría de Matrices Aleatorias (RMT)
 - **Filtrado Espectral de Correlación (Marchenko-Pastur & Wigner-Dyson)**:
-  Para una matriz de covarianza empírica $\mathbf{C}$ con $N=30$ activos y ventana $T$:
+  Para una matriz de covarianza empírica $\mathbf{C}$ de $N$ series observadas válidas y ventana de $T$ observaciones bajo el nulo declarado (la capacidad de 30 slots no fija automáticamente $N$):
   $$\lambda_{\max}^{\text{ruido}} = \sigma^2 \left(1 + \sqrt{\frac{N}{T}}\right)^2$$
   El borde es una referencia bajo supuestos del modelo nulo, no una clasificación infalible de cada autovalor. Dependencia temporal, asincronía, colas y tamaño efectivo modifican su interpretación; validar la matriz reconstruida y la utilidad del filtro. No se deduce edge financiero de conexiones con la hipótesis de Riemann.
-  - **Implementación**: [`crates/risk-engine/src/random_matrix.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/risk-engine/src/random_matrix.rs).
+  - **Implementación**: [`crates/risk-engine/src/random_matrix.rs`](../crates/risk-engine/src/random_matrix.rs).
 
 ### 3.6 Deflated Sharpe Ratio (DSR) y Control de Multiplicidad de Bailey-López de Prado
 - **Aproximación de Valores Extremos de Gumbel**:
   $$E[\max \text{SR}] \approx \sigma_{\text{SR}} \cdot \left[ (1 - \gamma)\Phi^{-1}\left(1 - \frac{1}{N}\right) + \gamma \Phi^{-1}\left(1 - \frac{1}{N \cdot e}\right) \right]$$
-  - Exigencia estricta de $DSR \ge 0.95$ sobre retornos fuera de muestra (OOS) en la promoción genética de genomas (`darwin.rs:601`).
-  - **Implementación**: [`crates/risk-engine/src/selection_stats.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/risk-engine/src/selection_stats.rs) (Centralizado DRY en Ola Ω11).
+  - El código usa el umbral nominal $DSR \ge 0.95$ en promoción genética; ese umbral no certifica su tasa de error bajo dependencia temporal ni reutilización de OOS. El informe [FUNDAMENTOS_R4](audit/FUNDAMENTOS_R4_2026-10-07.md) distingue el error estándar del Sharpe ganador de la dispersión entre ensayos, y conserva esos problemas abiertos.
+  - **Implementación**: [`crates/risk-engine/src/selection_stats.rs`](../crates/risk-engine/src/selection_stats.rs) (Centralizado DRY en Ola Ω11).
 
 ---
 
@@ -142,7 +191,7 @@ El estado del universo se describe mediante el tensor continuo espectral $S(\ome
 
 ## 🗺️ 5. RECORRIDO EXHAUSTIVO POR FASES (F0 - F8)
 
-El barrido del sistema cubre los **23 crates** del espacio de trabajo (~377 archivos, ~137,000 líneas de Rust):
+El barrido histórico documentó **23 crates** y aproximadamente 377 archivos/137.000 líneas de Rust. Sus etiquetas CERRADA son recibos de aquellas olas, no cobertura transferida al candidato actual; la adenda vigente fija el nuevo censo y las fases R0–R9:
 
 ```mermaid
 graph TD
@@ -203,9 +252,9 @@ Para garantizar ejecución paralela estricta sin pérdida de trabajo ni choques:
    - Verificación de whitespace sin falsos positivos: `git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD^ HEAD`.
    - Rebase / Merge fast-forward sobre `main`.
    - `git push origin main`.
-   - Eliminación del worktree y de la rama local temporal.
+   - Limpieza únicamente de refs tras comprobar nombre/OID, ancestría en `main` y `origin/main` publicado y ausencia de actividad o commits exclusivos. Excluir `main`, Qoder, Antigravity y nuevas ramas externas. Conservar directorios y archivos de worktrees; un detach autorizado de un checkout histórico sucio sólo al mismo HEAD, sin force y con status/hashes idénticos antes/después. Abortar ante cualquier discrepancia.
 3. **Buzón Vivo de Coordinación**:
-   - Toda interacción, hallazgo o cierre se notifica en [`COORDINACION_CODEX_2026-09-28.md`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/COORDINACION_CODEX_2026-09-28.md) y [`.agents/MEMORIA.md`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/.agents/MEMORIA.md).
+   - Toda interacción, hallazgo o cierre se notifica en [`COORDINACION_CODEX_2026-09-28.md`](../COORDINACION_CODEX_2026-09-28.md) y [`.agents/MEMORIA.md`](../.agents/MEMORIA.md).
 
 ---
 

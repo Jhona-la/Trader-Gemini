@@ -1,5 +1,38 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## 2026-10-08 — Codex: reinicio desde la base y contrato de continuación R4
+
+- Mandato renovado del operador: sincronizar planes, recorrer todos los
+  archivos, auditar fundamentos/vetos/aprendizaje y llevar ramas pendientes
+  a main verificando publicación y preservando trabajo paralelo.
+- Base propia `e9c6a435eb1780da7f2c6e29103f3bd7d227d94c`, árbol `10b8a427dfbdd5b203595b039b2dad50c69d6f68`; main incorporado hasta
+  `5842c8e33231131e5f2c5c600ffce15f1babaa55`. Estado de publicación y limpieza: pendiente del recibo remoto y del censo final de refs.
+- Entregables: `docs/PLAN_AUDITORIA_BASE_2026-10-08.md`, plan por archivo,
+  plan compartido, ledger anotado por blob, fundamentos/OOS actualizados,
+  testigos Rust exactos y recibos por composición. Adendas Sol conservadas.
+- Consejo Codex: git_reconciliation tiene Git/source/Cargo en integración;
+  quant_foundations revisa ciencias y límites; system_inventory revisa
+  cobertura/documentos. Revisiones independientes separadas de ejecución.
+- Validación: 736 regresiones aplicables + T1 (1 test exacto, 16/144 sensibles, mínimo 0,110 intacto); total 737 aprobadas, 0 fallidas y 1 ignorada. 729 aprobadas se retienen por identidad desde 7acf y 8 se ejecutaron en e9, incluido T1. Check all-targets aprobado antes del merge; estos resultados no validan crecimiento económico. Los209tests de f3 son historia; cada
+  corrida nueva conserva su HEAD. Ningún resultado T1 se trata como retorno.
+- Observación de actividad: Qoder `qoder/ola72-lows-residuales` / `.ola72`, HEAD8a98ce7c, oscillator sucio; Antigravity `antigravity/quant-sr-ronda6-f9-honestidad-tests` / `.antigravity`, HEAD5842c8e3, limpio en el corte19:30UTC. Avisos locales no son
+  acuses; reservar base/rutas/contrato antes de cada lote. Conflicto Qoder72
+  versus GLM112 sobre knobs requiere decisión explícita y prueba; no importar
+  fuentes sucias de otro escritor. Ω26/Ω27 incorporadas con su alcance
+  latencia-reporting/renombre de test; CategoryA no cierra todos los defectos del runtime.
+- Siguiente trabajo prioritario: curva económica y reloj común (R1/R5),
+  procedencia de labels/modelos/OOS (R4/R6), inferencia dependiente y familia
+  real de ensayos (R2), OU/T sin mutación y sensibilidad genética. El censo
+  guía todos los archivos; una revisión parcial no cierra un módulo completo.
+- Lotes R2 y parser/Depth ya tienen lectura integral e informes independientes;
+  ambos siguen abiertos. Depth mezcla lados en API bids/asks, con ruta viva
+  no demostrada y esquema b/a distinto. Reservar contratos/consumidores antes
+  de corregir; no convertir exit0 del testigo defectuoso en un fix aprobado.
+- No modificar umbrales de riesgo o trinquete para satisfacer la meta.
+  100% cada72h sigue como hipótesis económica a medir. No ejecución viva,
+  promoción/modelos reales ni exclusión de pérdidas del examen.
+
+
 ## Antigravity (Quant Sr.) — OLA Ω27 CERRADA (2026-10-08 ~14:20)
 - Rama: `antigravity/quant-sr-ronda6-f9-honestidad-tests` (worktree `.antigravity`), base `912becfa`.
 - Alcance: `crates/god-engine-core/tests/stateful_open_diagnostics.rs`, `docs/TRIAJE_ROJOS_PERPETUOS.md`, docs.

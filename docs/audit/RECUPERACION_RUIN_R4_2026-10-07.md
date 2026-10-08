@@ -3,7 +3,10 @@
 Fecha: 2026-10-07, America/Bogota. Autor: Codex / quant_foundations.
 Base científica contrastada: `adeb8d1b1f8171b14fffa8abc9f54c396e4794dd`.
 HEAD del worktree receptor al editar: `42652f70badadb9be66c0fb138b88918c8cc54dc`.
-Estado: **candidato local; RED/GREEN, compilación y T-1 pendientes**.
+Estado: **guard incorporado a `f3f8696`, con RED causal y GREEN 18/18**.
+El oráculo, la publicación y la limpieza tienen recibos separados en
+[la integración](../INTEGRACION_RAMAS_2026-10-07.md); no se certifica
+validación económica ni toda la configuración de riesgo.
 
 ## Procedencia y decisión de recuperación
 
@@ -84,13 +87,57 @@ serializan mediante mutex dentro del ejecutable. Se necesitan controles
 saludables verdes para descartar que otro veto o un fixture obsoleto oculte
 el defecto. La prueba no ejecuta órdenes, red, core vivo ni exchange.
 
-**No se ha ejecutado Rust/Cargo en esta revisión.** Los logs históricos
+**La preparación inicial no ejecutó Rust/Cargo; la reejecución se registra
+abajo.** Los logs históricos
 std-only del helper existen y terminan RED 6/3 y GREEN 9/0 sobre la base
 antigua; no son pruebas del consumidor ni del árbol integrado actual.
-El coordinador separará test y fix para intentar RED previo al guard y
-GREEN posterior, y registrará SHA, comando, salida, entorno y duración.
-Antes de publicar: all-targets, contratos afectados, regresión y T-1
-aplicable del árbol exacto. Esta nota no sustituye esos recibos.
+El coordinador separó test y fix para reejecutar RED/GREEN como se detalla
+a continuación. All-targets, otras regresiones y T-1 tienen sus propios
+recibos; esta nota no los sustituye.
+
+## Reejecución RED/GREEN del consumidor
+
+HEAD e índice de integración permanecieron en
+`f3f86960190d99aeacdb75b14cdfab0adceaa186` / árbol
+`462e1c69c4d08c7e95f22a81893ad23855bb5495`. Para RED se revirtió únicamente
+el hunk del guard en el worktree aislado; el árbol de trabajo probado fue
+`6d6eb1daf1e27056664f01aa347da208c355de09`, no el árbol corregido de HEAD.
+No se creó commit ni ref del código RED.
+
+- **RED:** 1 test ejecutado, 1 fallo esperado, exit 101. La salida contiene
+  `nonfinite product admitted` para capitales 25 y 100, ambos Long/Short.
+  Eso demuestra reapertura de exposición; no se deduce del mero cambio de
+  diagnóstico del caso con capital 13. Duración total 129.430 s, incluido
+  rebuild; ejecución del test 0.19 s.
+- **Restauración:** `risk-engine/src/lib.rs` recuperó byte por byte SHA-256
+  `888b974ecfb3cbf866c084cbdedcf1351049add0ce8ecb3cb1a1707610311e60`.
+  El diff posterior estaba vacío; HEAD e índice no cambiaron.
+- **GREEN:** C07 4/4, admisión no finita 7/7 y portafolio 7/7: 18/18,
+  cero fallos, exit 0. Duración total 16.581 s, incluido rebuild.
+
+Ambos usaron perfil release, `TG_GENOME_ENV=backtest`, un job y caché raíz.
+`nightly` correspondía al compilador `1.98.0-nightly (096694416 2026-06-29)`
+registrado en los recibos. Comandos exactos:
+
+```text
+cargo +nightly test --release -p risk-engine --locked --test c07_ruin_composition_contract c07_t02_nonfinite_micro_product_cannot_reopen_through_lerp -- --exact --nocapture --test-threads=1
+cargo +nightly test --release -p risk-engine --locked --test nonfinite_admission_contract --test portfolio_admission_contract --test c07_ruin_composition_contract -- --test-threads=1
+```
+
+Hash SHA-256 del log RED:
+`76384385b8bb66449bd3663b55c356e3427788f34c96b9f0a16a9f0563fa38d9`.
+Hash del log GREEN:
+`0096f4c77940c976140c482398820c6dac49d44bcd0aa9116de0363bc683e401`.
+Los metadatos durables están en
+[RECIBOS_INTEGRACION_R4_2026-10-07.json](RECIBOS_INTEGRACION_R4_2026-10-07.json).
+Dos intentos previos se cancelaron durante compilación, antes de ejecutar
+tests; no se cuentan como RED ni como resultados del contrato.
+
+La revisión independiente no halló bloqueantes en el fixture: los tests de
+admisión comparten mutex, usan arena/motor nuevos y verifican controles
+saludables, causa exacta y EWMA intacta. T02 inyecta `-Inf`; no demuestra
+overflow causado exclusivamente por operandos finitos. Los límites de
+configuración e inferencia siguientes permanecen abiertos.
 
 ## Límites y riesgos de compatibilidad
 
@@ -111,6 +158,16 @@ aplicable del árbol exacto. Esta nota no sustituye esos recibos.
 - No se transfiere a main ninguna afirmación de rentabilidad, calibración
   estadística ni seguridad total a partir de este cambio numérico.
 
-Esta subauditoría no hizo commits, push, merge, cambios de procesos ni
+La preparación inicial de esta subauditoría no hizo commits, push, merge, cambios de procesos ni
 limpieza de worktrees. Sólo preparó el hunk, C07 y esta nota bajo ownership
 asignado por el coordinador.
+
+## Revalidación del 8 de octubre
+
+`7acf36aa` conserva el mismo blob corregido de `risk-engine/src/lib.rs`,
+`554e02d060059d9d15247a2194df6d65f0f3ea36`, y la misma suite C07.
+La nueva corrida de riesgo registra 54/54 sobre ese candidato: C07 4,
+correlación 30, no finitos 7, portafolio 7 y vetos 6. Exit 0, 131.645 s,
+incluidos compilación/enlace. No se reetiqueta el RED histórico de f3
+como una ejecución sobre el SHA nuevo. Las validaciones posteriores
+conservan sus propios árboles y límites en el recibo de integración.
