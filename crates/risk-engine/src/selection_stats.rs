@@ -405,7 +405,7 @@ mod tests {
 /// JAMÁS sub-gaussiano, a diferencia del fallback 1/√(n−1) viejo.
 #[test]
 fn r5_b3_discriminante_degenerado_jamas_sub_gaussiano() {
-    let m = ReturnMoments { n: 100, mean: 0.0, variance: 1.0, skewness: 2.0, kurtosis: 3.0 };
+    let m = ReturnMoments { n: 100, mean: 0.0, sd: 1.0, skewness: 2.0, kurtosis: 3.0 };
     let sr = 2.0_f64;
     let se = sharpe_std_error(&m, sr);
     // Con γ₃=0 y γ₄=3: denom = 1 + (2/4)·4 = 3 ⇒ se = √(3/99).
@@ -420,7 +420,7 @@ fn r5_b3_discriminante_degenerado_jamas_sub_gaussiano() {
         "jamás sub-gaussiano donde la muestra es débil: {se} vs {gaussiano}"
     );
     // Región legítima intacta: γ₃=0.5, SR=1, γ₄=5 → denom = 1 − 0.5 + 1 = 1.5.
-    let m_legit = ReturnMoments { n: 100, mean: 0.0, variance: 1.0, skewness: 0.5, kurtosis: 5.0 };
+    let m_legit = ReturnMoments { n: 100, mean: 0.0, sd: 1.0, skewness: 0.5, kurtosis: 5.0 };
     let se_legit = sharpe_std_error(&m_legit, 1.0);
     assert!((se_legit - (1.5_f64 / 99.0).sqrt()).abs() < 1e-12);
 }
