@@ -1,5 +1,19 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω26 CERRADA (2026-10-08 ~14:05)
+- Rama: `antigravity/quant-sr-ronda6-f8-backtest-paridad` (worktree `.antigravity`), base `18bbd1d9`.
+- Alcance: `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs`, docs.
+- **FASE F8: PARIDAD 1:1 DE LATENCIA GENÓMICA EN BACKTEST CONTINUO Y REPLAY SIN OVERRIDES ESTÁTICOS**:
+  - Erradicado el override arbitrario `engine.arena.config.latency_penalty_ms.store(25.0, Ordering::Relaxed)` en líneas 385 y 535 de `continuous_evolution_backtest.rs`.
+  - Ahora tanto el motor maestro como los shadow engines mutantes respetan la latencia calibrada o evolucionada en el genoma (`current_genome.latency_penalty_ms`) aplicada a la arena (`apply_to_arena`), en perfecta paridad 1:1 con el runtime de producción (`src/bin/god_engine.rs`).
+  - Eliminado import no utilizado `use std::sync::Arc;` en el binario.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo check --bin continuous_evolution_backtest -p backtest-engine`: **0 advertencias** (100% limpio).
+  - `cargo test -p backtest-engine --test bt_vivo_parity_audit`: **8/8 tests verdes** (2 ignorados manuales), 0 fallos.
+  - `cargo test -p backtest-engine --lib`: **53/53 tests unitarios verdes** (13.63s).
+  - `cargo test -p backtest-engine --bin continuous_evolution_backtest`: **2/2 tests verdes**.
+  - Total `backtest-engine`: **63/63 tests pasando en verde (100%)**.
+
 ## Antigravity (Quant Sr.) — OLA Ω25 CERRADA (2026-10-08 ~13:10)
 - Rama: `antigravity/quant-sr-ronda6-f7-telemetria-guardianes` (worktree `.antigravity`), base `ca302616`.
 - Alcance: `crates/omniscient-registry/src/lib.rs`, docs.

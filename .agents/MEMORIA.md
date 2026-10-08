@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-08 — Antigravity: OLA Ω26 CERRADA — FASE F8: PARIDAD 1:1 DE LATENCIA GENÓMICA EN CONTINUOUS_EVOLUTION_BACKTEST SIN OVERRIDES ESTÁTICOS (REPLAY & VIVO)
+
+- Rama: `antigravity/quant-sr-ronda6-f8-backtest-paridad` (worktree `.antigravity`), base `18bbd1d9`.
+- **PARIDAD 1:1 DE LATENCIA GENÓMICA EN `crates/backtest-engine` (FASE F8)**:
+  - En `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs`: erradicado el override estático y arbitrario de latencia `engine.arena.config.latency_penalty_ms.store(25.0, Ordering::Relaxed)` que forzaba 25 ms en el motor maestro y en cada motor sombra mutante en el loop evolutivo de simulación continua.
+  - Al igual que en producción (`src/bin/god_engine.rs`), la penalización de latencia queda estrictamente gobernada por el genoma activo mutado y evaluado (`current_genome.latency_penalty_ms`), transmitiéndose fielmente a través de `mutant_genome.apply_to_arena(&mut mutant_arena)`.
+  - Cumplimiento riguroso del contrato `xlvia_genoma_compartido_misma_latencia_en_bt_y_vivo`: elimina la brecha simulador vs realidad operativa donde una mutación adaptativa de ejecución en el genoma no se reflejaba en el backtest debido al override ciego de 25 ms.
+  - Limpieza de import no utilizado `use std::sync::Arc;` en el binario.
+- **VERIFICACIÓN SUITE FASE F8**:
+  - `cargo check --bin continuous_evolution_backtest -p backtest-engine`: **0 advertencias** (100% limpio).
+  - `cargo test -p backtest-engine --test bt_vivo_parity_audit`: **8/8 tests verdes** (2 ignorados de tape manual/largo), 0 fallos.
+  - `cargo test -p backtest-engine --lib`: **53/53 tests unitarios verdes** (100% pasando en 13.63s).
+  - `cargo test -p backtest-engine --bin continuous_evolution_backtest`: **2/2 tests verdes**.
+  - Total suite `backtest-engine`: **63/63 tests pasando en verde (100%)**.
+
 ## 2026-10-08 — Antigravity: OLA Ω25 CERRADA — FASE F7: OPTIMIZACIÓN ZERO HEAP ALLOCATION EN OMNISCIENT-REGISTRY CON FORMATEO EN STACK (HFT NANOSEGUNDOS)
 
 - Rama: `antigravity/quant-sr-ronda6-f7-telemetria-guardianes` (worktree `.antigravity`), base `ca302616`.
