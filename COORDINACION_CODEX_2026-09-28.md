@@ -5819,3 +5819,27 @@ Suites: execution-engine completa con env (80/80 lib + 13 targets).
 TRIAJE B = 8 (ensemble×5, reality-physics×3). Nota ALGO: los brackets
 TP/SL no viven en este registry (viven en openAlgoOrders con su propio
 gap de visibilidad) — el fix no los toca.
+
+## 2026-10-07 — GLM: 108 CIERRE — TRIAJE B 8→5: los 3 de reality-physics drenados
+
+- **D1 (CON oráculo — camino vivo de fills)**: precio base finito
+  extremo desbordaba la multiplicación → fill a `inf` que escapaba del
+  guard del caller (sólo cubría <=0.0; qty = nominal/inf = 0).
+  CONTRATO DE SALIDA: no finito ⇒ (0,0) no-fill, paridad entrada/salida.
+  Nota fina: el desborda ocurre multiplicando HACIA ARRIBA (entry long /
+  exit short); el exit long con extremo queda ≈MAX finito (documentado).
+  **Oráculo T-1: PASA 2/2 (4817 s)**.
+- **D2 (higiene)**: calculate_maker_entry = MUERTA-POR-CONTRATO — el
+  guard CL-14 prohíbe llamarla (host siempre MARKET; simular pasivas
+  ahorraría al backtest lo que el vivo paga). Sin datos de cola no hay
+  probabilidad de fill que modelar: la estimación incondicional ES el
+  contrato deliberado (patrón A-H4).
+- **D3 (higiene D-747)**: campo struct latency_penalty_ms REMOVIDO —
+  jamás leído; honrarlo crearía una SEGUNDA fuente de latencia (la
+  viva: arena.config + muestreo lognormal). Contrato pasa a ser de
+  compilación: sin campo, dos instancias no pueden divergir.
+
+Suites: reality 4/4, core 170/170, parity 8/8+2i, vecinos 58.
+**TRIAJE B = 5: SOLO queda ensemble×5 de signal-engine** (piso 0.7,
+clones, baseline-lift, trend-shrink, momentum — alimentan gates vivos:
+análisis cuidadoso la próxima). 11 ítems B drenados por GLM en 4 ciclos.
