@@ -140,7 +140,7 @@ fn main() {
 
     let file = std::fs::File::create(&output).expect("crear salida");
     let mut out = std::io::BufWriter::new(file);
-    let mut manifiesto = json!({
+    let manifiesto = json!({
         "kind": "votes_dataset", "schema": "tgm.l2_votes.v1", "research_only": true,
         "symbol": simbolo, "input": input, "stride_ms": stride_ms,
         "horizon_ms": horizon_ms, "tau_matched": tau_matched, "genome": genoma_fuente,
@@ -157,8 +157,8 @@ fn main() {
     let mut proximo_grid = 0usize; // índice en grid
     {
         let grid_ref = &grid;
-        let mut filas_ref = &mut fila;
-        let mut pg_ref = &mut proximo_grid;
+        let filas_ref = &mut fila;
+        let pg_ref = &mut proximo_grid;
         let stats = run_booktick_replay_with_observer(
             &replay_ticks, &genome, None, &cfg,
             |idx, core| {

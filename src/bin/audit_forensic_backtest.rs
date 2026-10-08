@@ -442,7 +442,6 @@ async fn run_forensic_backtest() {
         warmup_ticks
     );
 
-    let mut prev_is_buyer_maker = false;
     for i in 0..warmup_ticks {
         let t = &ticks_slice[i];
         let price = (t.bid_price + t.ask_price) / 2.0;

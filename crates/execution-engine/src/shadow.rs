@@ -37,7 +37,8 @@ impl ShadowExecutor {
         }
     }
 
-    fn kill_active(&self) -> bool {
+    #[allow(dead_code)]
+    pub fn kill_active(&self) -> bool {
         self.kill_switch.load(std::sync::atomic::Ordering::Relaxed)
     }
 

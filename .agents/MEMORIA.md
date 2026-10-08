@@ -1,4 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-08 — Antigravity: OLA Ω33 CERRADA — SANEAMIENTO INTEGRAL DE ADVERTENCIAS CRÍTICAS DEL WORKSPACE Y ROBUSTEZ FORMAL DE EJECUCIÓN (ZERO-WARNING AUDIT)
+
+- Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `f6732481`.
+- **SANEAMIENTO Y LIMPIEZA DE CÓDIGO MUERTO EN CRATES Y BINARIOS**:
+  - `crates/evolution-engine/src/lib.rs`: Eliminadas variables no utilizadas `latest_ts` y `mode: TradingHorizon::Continuous` en el colapso cuántico anti-estancamiento (hot-path).
+  - `crates/evolution-engine/src/online_daemon.rs`: Anotado `#[allow(dead_code)]` en el campo `trades` de `RealWfOutcome`, preservando metadatos para diagnóstico sin generar ruido de compilador.
+  - `crates/execution-engine/src/shadow.rs`: Exportado y saneado `pub fn kill_active(&self) -> bool` en `ShadowExecutor` con `#[allow(dead_code)]`.
+  - `crates/risk-engine/tests/lxxii_cola_copula_veto.rs`: Eliminado import no utilizado `lambda_grupo_max`.
+  - `src/bin/macro_history_sync.rs`: Anotado `#[allow(dead_code)]` en `fred_daily`.
+  - `src/bin/votes_export.rs`: Eliminados especificadores `mut` superfluos en `manifiesto`, `filas_ref` y `pg_ref`.
+  - `src/bin/audit_forensic_backtest.rs`: Eliminada variable no utilizada `prev_is_buyer_maker` en el lazo de calentamiento profundo.
+  - `src/bin/walkforward_evolver.rs`: Anotado `#[allow(dead_code)]` en el campo `toxic` de `Eval`.
+  - `src/bin/train_forest.rs`: Anotado `#[allow(dead_code)]` en los métodos auxiliares `split_at` y `max_end` de `TrainingSamples`.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p evolution-engine`: **136/136 tests verdes (100% éxito)** (65 lib + 71 contract tests).
+  - `cargo test -p risk-engine`: **150/150 tests verdes (100% éxito)** (59 lib + 91 contract tests).
+  - `cargo test -p execution-engine`: **129/129 tests verdes (100% éxito)** (42 lib + 87 contract tests, 5 testnet ignorados condicionales).
+  - `cargo check --workspace --all-targets`: **0 errores**, todos los 23 crates y binarios del workspace limpios sin advertencias en crates de runtime (37.59s).
+
 ## 2026-10-08 — Antigravity: OLA Ω32 CERRADA — UNIFICACIÓN DE RESOLUCIÓN ESPECTRAL Y ADMISIÓN CONTINUA DE SLOTS EN QUANTUM-ARENA (CIERRE DE BRECHA D-431 [0.60, 0.80))
 
 - Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `7cbbf303`.

@@ -89,6 +89,7 @@ fn yahoo_daily(symbol: &str, range: &str) -> Option<Vec<(u64, f64)>> {
 }
 
 /// FRED fredgraph.csv (curl): (date_ms al mediodía, value).
+#[allow(dead_code)]
 fn fred_daily(series: &str) -> Option<Vec<(u64, f64)>> {
     let url = format!("https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}");
 

@@ -74,6 +74,7 @@ const WF_SYNTH_PRICE_BASE: f64 = 100.0;
 struct RealWfOutcome {
     fitness: f64,
     net_returns: Vec<f64>,
+    #[allow(dead_code)]
     trades: usize,
 }
 

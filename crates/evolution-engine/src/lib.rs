@@ -643,10 +643,6 @@ impl EvolutionEngine {
                 mutation_rate = (mutation_rate * 1.5).min(0.5);
 
                 // FIX BLOQUEO #7: Colapso cuántico para salir del pozo de estancamiento local
-                let latest_ts = all_ticks.last().map(|t| t.timestamp).unwrap_or(42);
-                use metacortex_engine::consejo_seniors::TradingHorizon;
-                // U-6: motor continuo — un solo modo.
-                let mode = TradingHorizon::Continuous;
                 // QO-M2.1: quantum_evolver DELETED — valor neutro del genoma
                 current_alpha.dynamic_atr_min = 0.0012;
                 current_alpha.target_volatility =

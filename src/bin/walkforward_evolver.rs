@@ -68,6 +68,7 @@ struct Eval {
     sl: u32,
     trail: u32,
     zombie: u32,
+    #[allow(dead_code)]
     toxic: u32,
 }
 
