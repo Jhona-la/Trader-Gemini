@@ -128,24 +128,25 @@ impl MultivariateCointegrationEngine {
 
             let sde_z = sde.update(spread, timestamp_ms);
             let sde_hl_sec = sde.half_life_seconds();
-            if sde.count >= 10 && sde_hl_sec.is_finite() && sde_hl_sec <= 3600.0 {
+            // R6-B17: Abarcar el rango espectral continuo completo hasta 12 horas (43,200 s)
+            if sde.count >= 10 && sde_hl_sec.is_finite() && sde_hl_sec <= 43_200.0 {
                 let tau_rev_ms = (sde_hl_sec * 1000.0).clamp(500.0, 43_200_000.0) as u64;
                 let sd = sde.stationary_variance().sqrt().max(1e-8);
                 let expected_magnitude = (sde_z.abs() * sd).clamp(0.002, 0.20);
-                if sde_z < -self.z_score_threshold {
-                    let confidence = (-sde_z / 3.0).clamp(0.5, 0.99);
+                let z_abs = sde_z.abs();
+                if z_abs > self.z_score_threshold {
+                    // R6-B17: Escalamiento continuo C1 de confianza sin quiebre discontinuo ni piso estático en 0.50
+                    // En el umbral de entrada |z| = z_th, la confianza arranca exactamente en 0.50 y satura
+                    // de forma suave y cóncava hacia 0.99 para desviaciones ergódicas extremas (|z| >> z_th).
+                    let excess = z_abs - self.z_score_threshold;
+                    let confidence = (0.50 + 0.49 * (excess / (excess + 1.0))).clamp(0.50, 0.99);
+                    let signal = if sde_z < 0.0 {
+                        SignalType::Long
+                    } else {
+                        SignalType::Short
+                    };
                     return Some(SignalIntent {
-                        signal: SignalType::Long,
-                        confidence,
-                        horizon: TradeHorizon::Continuous,
-                        expected_duration_ms: tau_rev_ms,
-                        expected_magnitude,
-                        ..Default::default()
-                    });
-                } else if sde_z > self.z_score_threshold {
-                    let confidence = (sde_z / 3.0).clamp(0.5, 0.99);
-                    return Some(SignalIntent {
-                        signal: SignalType::Short,
+                        signal,
                         confidence,
                         horizon: TradeHorizon::Continuous,
                         expected_duration_ms: tau_rev_ms,

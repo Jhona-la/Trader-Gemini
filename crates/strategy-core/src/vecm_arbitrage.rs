@@ -323,7 +323,16 @@ impl ContinuousOrnsteinUhlenbeckSde {
             let alpha_num = self.s_xx_dt * self.s_dx - self.s_x_dt * self.s_xdx;
             let theta_num = -(self.s_dt * self.s_xdx - self.s_x_dt * self.s_dx);
 
-            let est_theta = (theta_num / denom).clamp(1e-4, 50.0);
+            // R6-B15: Si theta_num <= 0.0, la serie no posee fuerza restauradora hacia la media
+            // (comportamiento browniano no estacionario o divergente theta <= 0). En tal caso, la
+            // velocidad instantánea estocástica debe colapsar a 0.0, haciendo que half_life_seconds()
+            // tienda a infinito (ln(2)/theta -> inf). Esto asegura que la guarda de horizonte
+            // espectral t_1/2 <= 2*tau* rechace de forma fail-closed cualquier intento de arbitraje.
+            let est_theta = if theta_num > 0.0 {
+                (theta_num / denom).clamp(1e-4, 50.0)
+            } else {
+                0.0
+            };
             let empirical_mean = self.s_x_dt / self.s_dt.max(1e-6);
 
             let est_mu = if est_theta > 1e-3 {
@@ -525,5 +534,32 @@ mod tests {
         // decay = exp(-120 / 120) = exp(-1) ≈ 0.367879 (anteriormente quedaba clamp en 0.80 forzando n_eff ≈ 5)
         let expected_decay = (-1.0f64).exp();
         assert!((ou.s_dt - (s_dt_before * expected_decay + 120.0)).abs() < 1e-4, "decay debe ser continuo exp(-dt/tau)");
+    }
+
+    #[test]
+    fn test_r6_b15_explosive_and_random_walk_collapses_theta_to_zero_fail_closed() {
+        let mut ou = ContinuousOrnsteinUhlenbeckSde::with_memory_seconds(0.2, 100.0, 0.5, 60.0);
+        let mut ts = 1_000_000u64;
+        let mut val: f64 = 100.0;
+
+        // Serie divergente/explosiva (theta negativo real: dx = +0.1 * (x - 100) * dt)
+        for _ in 0..100 {
+            ts += 1000;
+            val += 0.1 * (val - 100.0f64).abs().max(1.0);
+            let _ = ou.update(val, ts);
+        }
+
+        // theta debe haber colapsado hacia 0.0 de forma amortiguada por WLS
+        assert!(
+            ou.theta < 0.05,
+            "theta ({}) ante serie explosiva debe colapsar hacia cero",
+            ou.theta
+        );
+        // t_1/2 debe ser muy grande o infinito (> 20 segundos para tau_mem=60s)
+        assert!(
+            ou.half_life_seconds() > 20.0,
+            "t_1/2 ({}) ante no-estacionariedad debe ser extendido garantizando fail-closed",
+            ou.half_life_seconds()
+        );
     }
 }

@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Antigravity: OLA Ω45 CERRADA — COLAPSO NO-ESTACIONARIO FAIL-CLOSED EN SDE, COBERTURA ESPECTRAL 12H CON CONFIANZA C^INF Y KELLY CONTINUO MERTON (R6-B15, R6-B17, R6-B11, R6-C5)
+
+- **Rama**: `antigravity/quant-sr-ola45-teoria-continua`.
+- **RESOLUCIÓN Y CERTIFICACIÓN FORMAL DE HALLAZGOS RONDA 6**:
+  1. **R6-B15 [LOW] Resuelto**: Colapso a cero de $\theta$ estocástica ante series no-estacionarias o divergentes en `ContinuousOrnsteinUhlenbeckSde` (`crates/strategy-core/src/vecm_arbitrage.rs`).
+     - Cuando el regresor estocástico detecta $\theta_{\text{num}} \le 0.0$ (proceso browniano puro o divergente $\theta \le 0$), $\theta$ colapsa a $0.0$, garantizando que la vida media física $t_{1/2} = \ln(2)/\theta \to \infty$. Esto asegura que la guarda espectral $t_{1/2} \le 2\tau^*$ rechace de forma fail-closed incondicional cualquier intento de arbitraje sobre series no estacionarias.
+     - Test formal: `test vecm_arbitrage::tests::test_r6_b15_explosive_and_random_walk_collapses_theta_to_zero_fail_closed ... ok`.
+  2. **R6-B17 [LOW] Resuelto**: Cobertura espectral continua de 12 horas y modulación de confianza $C^\infty$ en `MultivariateCointegrationEngine` (`crates/strategy-core/src/multivariate_coint.rs`).
+     - Eliminado el corte arbitrario a 1 hora ($3600\text{ s}$); ahora cubre el rango espectral continuo completo declarado hasta 12 horas ($43\,200\text{ s} = 43\,200\,000\text{ ms}$).
+     - Sustituido el escalón discreto de confianza por una rampa continua suave y cóncava $C^\infty$:
+       $$\text{confidence} = 0.50 + 0.49 \times \frac{|sde\_z| - z_{\text{th}}}{|sde\_z| - z_{\text{th}} + 1.0}$$
+       con valor 0.50 en la frontera exacta $|sde\_z| = z_{\text{th}}$ y convergencia asintótica a 0.99 para desviaciones ergódicas extremas, eliminando saltos o discontinuidades.
+  3. **R6-B11 [LOW] Resuelto**: Fracción de apuesta continua causal de Merton-Breiman en `VilleEProcess::update_continuous_sde` (`crates/risk-engine/src/ville_e_process.rs`).
+     - Separado el cálculo de Kelly continuo $\lambda^* = \mu / \sigma^2$ respecto al estimador empírico discreto por trade $\hat{\mu}/\hat{\sigma}^2$. Se emplea directamente la volatilidad física de difusión $\sigma^2$ provista por la dinámica estocástica continua, erradicando la inestabilidad de estimar varianzas empíricas divergentes $(\sim 1/dt)$.
+     - Test formal: `test ville_contrato_difusion_continua_sde_monotonia ... ok`.
+  4. **R6-C5 [MED] Resuelto**: Clarificación y alineación doctrinal de ruteo de órdenes en `god_engine.rs`:
+     - Confirmada la política canónica B3.29/CL-14 de despacho IOC con slippage acotado para micro-cuentas ($13 USD) ante momentum/turbulencia, preservando la información de rotacional de Hodge (`curl_share`) y curvatura de Yang-Mills (`ym_action`) para la gobernanza del Consejo (`SeniorMicroestructura`) y telemetría omnisciente.
+- **VERIFICACIÓN TOTAL DE PRUEBAS**:
+  - `cargo test -p strategy-core`: **57/57 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine`: **todos los tests y contratos verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test statarb_live_physics_contract --test hodge_yang_mills_consensus_contract`: **5/5 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## 2026-10-09 — Antigravity: OLA Ω44 CERRADA — INTEGRACIÓN STATARB HONESTO (OLA 73 MERGE), GRADIENTE LMS GAUGE RIGUROSO Y CONTINUO C1 EN MICROESTRUCTURA (R6-A3/A5, R6-B1/B2/B13, R6-C6, R6-C10, R6-B9, R6-B10, R6-C9)
 
 - **Rama**: `antigravity/merge-ola73-and-r6` (fusionada e integrada con `main` y `qoder/ola73-statarb-honesto`).

@@ -144,7 +144,16 @@ impl VilleEProcess {
             return self.e_value;
         }
 
-        let lambda = self.compute_causal_lambda();
+        // R6-B11: Adaptación de lambda causal bajo SDE continua:
+        // En tiempo continuo Ito, la fracción óptima de crecimiento de Merton-Breiman es lambda* = mu / sigma^2.
+        // La volatilidad de difusión sigma está provista directamente por la dinámica estocástica del proceso,
+        // evitando el colapso numérico de estimar varianzas empíricas divergentes (~1/dt).
+        let lambda = if self.count >= 3 && self.running_mean > 0.0 {
+            let continuous_kelly = self.running_mean / (sigma * sigma);
+            continuous_kelly.clamp(self.lambda_min, self.lambda_max)
+        } else {
+            self.lambda_min
+        };
         self.last_lambda = lambda;
 
         // Integral de Ito exponencial: ln M_t = sum [ lambda * dx - 0.5 * lambda^2 * sigma^2 * dt ]
