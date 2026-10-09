@@ -1690,3 +1690,46 @@ Hodge con flujo real ANTES de que esa gobernanza signifique algo.
 abre 4 HIGH NUEVOS, todos concentrados en el stack Ω36-Ω39 integrado SIN
 barrido previo — confirma la necesidad del re-barrido por base del
 operador.
+
+## Estado de drenaje RONDA-6 (actualización Ola 73, 2026-10-09)
+
+- **R6-A3/B1 [HIGH] CERRADO en código (Qoder, Ola 73, 8b0daf01)**: se
+  CABLEÓ la física viva en lugar de renombrar la clave.
+  `GodEngineCore::statarb_ou_engines` (por moneda) avanza
+  `update_with_clock(mid_futuro, mid_spot, event_time_ms, tau_dom)` en
+  `process_tick_dual` y publica `statarb_ou_zscore` /
+  `statarb_half_life_ms` / `statarb_beta`; la instancia del orquestador es
+  lectora pura (antes llevaba una SDE propia que nunca observaba nada).
+  Con ella caen **R6-B2** (θ calibrada en producción: t½ abandona el
+  default congelado ⇒ la guarda t½ ≤ 2τ* deja de ser decorativa), **R6-A4**
+  (β del RLS publicada como `statarb_beta`) y **R6-B13** (fallback τ* único
+  = 1 138 419.6 ms, centro geométrico de la banda, guardas fail-closed).
+- **R6-A5 [MED] CERRADO por ETIQUETA, no por renombre**: `vecm_zscore` no
+  se renombró a `basis_atr_z` porque tiene un segundo lector vivo
+  (`conformal_reversion_filter.rs:183-184`) y renombrar sin tocarlo habría
+  roto paridad. El lector documenta ahora su naturaleza real (basis
+  futuro-spot/ATR con feed de spot; desviación al EMA lento de klines sin
+  él) como fallback de reversión a la media, no de paridad multiactivo.
+- **Paridad lector↔escritor (mea culpa de la propia ola)**: la primera
+  versión publicaba `statarb_ou_zscore = 0.0` incondicional y su contrato
+  lo certificaba en verde — silenciaba el voto vivo del fallback. Fix:
+  publicación condicional (sólo con SDE madura). Semántica: **AUSENTE = sin
+  física ⇒ fallback**; **0.0 = física presente con spot stale > 30 s ⇒
+  abstención**. Contratos `statarb_live_physics_contract` 3/3.
+- **RESIDUAL NUEVO C-02 [MED] — asignado a la zona data-ingest/host**:
+  `GlobalArena::update_spot_data` (quantum-arena/src/state.rs:679) no tiene
+  caller productivo; `god_engine.rs` no menciona "spot";
+  `OmniState::binance_spot` nunca se escribe; `OmniDataHub::start_feeds` y
+  sus pollers son código muerto y el contrato preexistente
+  `xcv_dims_cross_exchange_muertas_por_contrato.rs` (F6-A-H4/XCV) declara
+  esas dims muertas por contrato con cláusula de re-entrenamiento. La OU
+  queda cableada pero hambrienta de spot: en host y backtest la clave sigue
+  AUSENTE y el voto usa el fallback etiquetado (conducta idéntica a main).
+  Ola propuesta (AGY/Codex, con oráculo): productor del feed spot-futuro en
+  host + paridad BT del mismo feed + contrato escritor↔lector con spot
+  real. Sin productor de spot no hay cointegración spot-perp posible.
+- **R6-A1/C1, R6-A2, R6-C2/A9**: reportados como resueltos por AGY en sus
+  olas Ω41/Ω42 (recibos en `.agents/MEMORIA.md`); su verificación física
+  corresponde a esos recibos, no a esta ola.
+- **Pendientes tras Ola 73**: cola Qoder R6-B5/B6/B7/B8 (Ville daemon);
+  GLM/Codex R6-B4 (decay en tiempo) y R6-B3 (estratificar Δt).

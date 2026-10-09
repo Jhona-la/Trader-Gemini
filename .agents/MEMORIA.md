@@ -1,5 +1,57 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Qoder: OLA 73 CERRADA — STATARB HONESTO: FÍSICA OU VIVA EN EL CORE Y PARIDAD LECTOR↔ESCRITOR (R6-A3/B1 HIGH, B2, A4, B13, A5)
+
+- **Rama**: `qoder/ola73-statarb-honesto` (worktree `.ola73`, base f07b79a3 +
+  merge c5b72755 de main tras AGY Ω41/Ω42). Código 986e1197 + 12d32029 +
+  8b0daf01.
+- **R6-A3/B1 [HIGH] RESUELTO CABLEANDO LA FÍSICA (no renombrando)**:
+  `GodEngineCore::statarb_ou_engines` (un motor OU por moneda) avanza en el
+  hot-path con `update_with_clock(mid_futuro, mid_spot, event_time_ms,
+  tau_dom)` y publica `statarb_ou_zscore`/`statarb_half_life_ms`/
+  `statarb_beta` (lib.rs:5062-5095). La instancia del orquestador es ahora
+  **LECTORA PURA** (lib.rs:1006-1014): antes se construía con
+  `.with_continuous_ou_sde()`, una SDE propia que nunca observaba nada.
+  No se renombró `vecm_zscore` → `basis_atr_z` porque tiene un segundo
+  lector vivo (`conformal_reversion_filter.rs:183-184`); la honestidad se
+  logró por etiqueta (R6-A5), no por renombre.
+- **DEFECTO PROPIO CAZADO ANTES DE FUSIONAR (séptima confirmación del
+  patrón "dos caras sin reconciliar")**: la primera versión publicaba
+  `statarb_ou_zscore = 0.0` INCONDICIONAL y MI contrato lo certificaba en
+  verde — ese 0.0 sombreaba para siempre el fallback `vecm_zscore` que el
+  core ya escribía, silenciando el voto StatArb que HOY SÍ está vivo. Fix
+  8b0daf01: publicación **CONDICIONAL** (`last_ou_zscore()` sólo es `Some`
+  con SDE madura ≥ 10 pares causales). Semántica: clave **AUSENTE** = no
+  hay física ⇒ fallback etiquetado; clave **0.0** = física presente pero
+  spot stale > TTL (30 s, anti-staleness R6-C4) ⇒ abstención con autoridad.
+  Contrato reescrito para certificar ambas caras y el valor exacto del lector.
+- **R6-B2 θ viva** (`statarb_half_life_ms` = ln 2/θ calibrada en
+  producción; el contrato exige abandonar el default congelado
+  6 931,471 805 599 453 ms ⇒ la guarda t½ ≤ 2τ* deja de ser decorativa),
+  **R6-A4 β on** (`statarb_beta` del RLS), **R6-B13 τ\* unificada**
+  (`DEFAULT_DOMINANT_TAU_MS = 1 138 419.6`, centro geométrico de la banda
+  [30 s, 12 h], guardas fail-closed ante NaN), **R6-A5 etiqueta honesta**
+  del fallback (basis futuro-spot/ATR o desviación al EMA lento de klines;
+  NO cointegración Johansen ni spread multiactivo).
+- **RESIDUAL VERIFICADO Y PUBLICADO (C-02, zona data-ingest/host)**:
+  `GlobalArena::update_spot_data` (state.rs:679) NO tiene caller
+  productivo — sólo tests; `god_engine.rs` no contiene "spot";
+  `OmniState::binance_spot` nunca se escribe; `OmniDataHub::start_feeds` y
+  `run_bybit_ws`/`run_okx_ws` son código muerto y el contrato PREEXISTENTE
+  `xcv_dims_cross_exchange_muertas_por_contrato.rs` (F6-A-H4/XCV) declara
+  esas dims muertas por contrato con cláusula de re-entrenamiento.
+  **Consecuencia: la OU queda cableada pero hambrienta de spot** — en host
+  y BT la clave sigue AUSENTE y el voto usa el fallback (conducta
+  bit-a-bit idéntica a main, ahora con nombre propio). La resolución
+  COMPLETA exige productor del feed spot en host + paridad BT +
+  re-entrenar si se despiertan los pollers XCV: **otra ola, otro oráculo**.
+- **VERIFICACIÓN**: strategy-core 48/48; god-engine-core
+  `statarb_live_physics_contract` **3/3** y `--lib` **170/170**;
+  `cargo check --workspace --all-targets` exit 0 sin advertencias (41.35 s).
+  Diff contra CADA padre revisado tras el merge. **ORÁCULO T-1: ver
+  FORENSIC #675** (en vuelo sobre 8b0daf01 al redactar este bloque).
+- Detalle: FORENSIC_INTELLIGENCE_AUDIT.md #675. Buzón: cierre Ola 73.
+
 ## 2026-10-09 — Antigravity: OLA Ω42 CERRADA — PARIDAD BT↔VIVO DE STALENESS MACRO, SUAVIDAD C¹ GAUGE Y ÁMBITO POR ACTIVO (R6-A6, R6-C12, R6-C11, R6-C5, R6-A10)
 
 - **Rama**: `antigravity/quant-sr-ola42-paridad-bt-macro-staleness` (base `724f8c9f`).
