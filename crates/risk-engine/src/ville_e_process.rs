@@ -207,11 +207,12 @@ impl VilleEProcess {
     }
 
     /// Indica si el proceso ha agotado el capital de prueba ($M_t < 10^{-4}$),
-    /// o si habiendo tenido evidencia previa, su riqueza cayó bajo 1.0 con deriva negativa persistente.
+    /// o si habiendo tenido evidencia previa sustancial ($M_{\text{peak}} \ge 2.0$),
+    /// su riqueza colapsó bajo 1.0 con deriva negativa persistente (R6-B5).
     #[inline]
     pub fn is_exhausted(&self) -> bool {
         self.e_value <= E_EXHAUSTION_FLOOR
-            || (self.peak_e_value > 1.0 && self.e_value < 1.0 && self.running_mean <= 0.0)
+            || (self.peak_e_value >= 2.0 && self.e_value < 1.0 && self.running_mean <= 0.0)
     }
 
     /// Cota superior del p-valor en cualquier momento (*anytime p-value bound*):

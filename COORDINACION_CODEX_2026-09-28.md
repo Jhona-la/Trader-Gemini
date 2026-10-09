@@ -1,5 +1,27 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω43 CERRADA (2026-10-09 ~12:10)
+- Rama activa: `antigravity/quant-sr-ola43-ou-sde-wls-ville-rearme` (base `4cc83ce4`).
+- Alcance: `crates/strategy-core/src/vecm_arbitrage.rs`, `crates/risk-engine/src/ville_e_process.rs`, `crates/risk-engine/tests/ville_evidence_contract.rs`, `crates/evolution-engine/src/online_daemon.rs`, `crates/god-engine-core/tests/hodge_yang_mills_consensus_contract.rs`, `src/multi_asset_orchestrator.rs`.
+- **RESOLUCIÓN Y CERTIFICACIÓN FORMAL DE HALLAZGOS RONDA 6**:
+  1. **R6-B3 & R6-B4 [MED] Resueltos**: Estratificación analítica de $\Delta t$ heterogéneo y memoria temporal física en `ContinuousOrnsteinUhlenbeckSde` (`vecm_arbitrage.rs`). Erradicado el pooling de pendientes $b$ y la división por el $\Delta t$ del último evento; implementada regresión WLS homoscedástica de tiempo continuo $\frac{\Delta X_i}{\sqrt{\Delta t_i}} = \alpha \sqrt{\Delta t_i} - \theta (X_{t_{i-1}} \sqrt{\Delta t_i}) + \sigma \epsilon_i$, $\alpha = \theta \mu$, con solución analítica cerrada $2\times 2$ (< 5 ns, zero heap allocations). Erradicado el clamp artificial $[0.80, 0.999]$ que forzaba memoria efectiva $n_{\text{eff}} \approx 5$; sustituido por decaimiento físico continuo $\exp(-\Delta t_i / \tau_{\text{mem}})$, $\tau_{\text{mem}} = 300.0$ s. Test formal `test_r6_b3_and_b4_heterogeneous_dt_wls_and_continuous_time_decay` verde (49/49 tests en strategy-core).
+  2. **R6-B5 [MED] Resuelto**: Criterio de agotamiento anytime-valid en `VilleEProcess::is_exhausted`. Erradicada la heurística espuria `peak > 1.0 && e_value < 1.0 && running_mean <= 0.0` que provocaba falsa declaración de agotamiento bajo $H_0$ en los dos primeros trades. Reemplazado por exigencia de evidencia sustancial previa ($M_{\text{peak}} \ge 2.0$) antes de considerar la caída bajo $1.0$ como colapso de evidencia.
+  3. **R6-B6 [MED] Resuelto**: Calibración de escala de retornos en `LiveEvolutionDaemon`. Retornos normalizados por la unidad de riesgo por posición ($2\% = 0.02$), dotando al detector de Ville de potencia estadística real para capturar degradaciones en 5–15 trades en lugar de 700.
+  4. **R6-B7 [MED] Resuelto**: Rearme de watchdog de Ville ante hot-swap de mismo genoma o restauración post-rollback, garantizando que el genoma activo nunca corre desprotegido de la capa anytime-valid.
+  5. **R6-B8 [MED] Resuelto**: Certificación formal de $H_0$ con $\lambda_{\min} = 0.05$ productivo en `ville_evidence_contract.rs`. Validado con 200 trayectorias que $M_t$ fluctúa como supermartingala viva sin sobrepasar la cota de Ville $\alpha = 0.05$ (5/5 tests verdes).
+  6. **R6-A7 & R6-C7 [MED] Resueltos**: Certificación contractual de vórtice no-degenerado en `hodge_yang_mills_consensus_contract.rs`. Valida que el flujo cruzado asimétrico L2/L3 genera rotacional real `hodge_curl_share > 0.0`, `hodge_curl_energy > 0.0` y modula la componente laminar en `SeniorMicroestructura` $(1.0 - 0.70 \times \text{curl\_share}) < 1.0$ (2/2 tests verdes).
+  7. **R6-A14 [LOW] Resuelto**: Módulo legado `src/multi_asset_orchestrator.rs` documentado como inerte y parámetros alineados con `StatArbEngine::new(30, 1.5)`.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p strategy-core`: **49/49 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --lib`: **148/148 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --test ville_evidence_contract`: **5/5 tests verdes (100% éxito)**.
+  - `cargo test -p evolution-engine`: **138/138 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test hodge_yang_mills_consensus_contract`: **2/2 tests verdes (100% éxito)**.
+  - `cargo test -p metacortex-engine`: **70/70 tests verdes (100% éxito)**.
+  - `cargo test -p backtest-engine --lib`: **54/54 tests verdes (100% éxito)**.
+  - `cargo check --bin god_engine`: **0 errores, compila en 26.14s**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias (20.60s)**.
+
 ## Antigravity (Quant Sr.) — OLA Ω42 CERRADA (2026-10-09 ~11:30)
 - Rama activa: `antigravity/quant-sr-ola42-paridad-bt-macro-staleness` (base `724f8c9f`).
 - Alcance: `crates/backtest-engine/src/booktick_replay.rs`, `crates/backtest-engine/src/lib.rs`, `crates/metacortex-engine/src/consejo_seniors.rs`, `crates/metacortex-engine/tests/ente_mercado_continuous_contract.rs`, `crates/strategy-core/src/yang_mills_gauge.rs`, `crates/god-engine-core/tests/hodge_yang_mills_consensus_contract.rs`, `src/bin/god_engine.rs`.

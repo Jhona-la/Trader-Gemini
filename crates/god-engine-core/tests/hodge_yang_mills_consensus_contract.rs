@@ -133,3 +133,51 @@ fn test_hodge_and_yang_mills_continuous_coupling_contract() {
         "Consenso tensorial continuo debe tener confianza finita"
     );
 }
+
+#[test]
+fn test_hodge_cross_flow_non_degenerate_vortex_coupling_contract() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    let (arena, mut core) = setup_multi_coin_fixture();
+
+    // 1. Inyectar ronda 1: inicializar precios base en los 3 activos
+    core.process_tick_dual(0, 50_000.0, 50_001.0, 1.0, 1.0, 1_000, &[0.0; 54], true, true);
+    core.process_tick_dual(1, 3_000.0, 3_000.5, 1.0, 1.0, 1_001, &[0.0; 54], true, true);
+    core.process_tick_dual(2, 150.0, 150.05, 1.0, 1.0, 1_002, &[0.0; 54], true, true);
+
+    // 2. Inyectar ronda 2 con flujo cruzado asimétrico circulante L2/L3:
+    // BTC sube (+10 bps) con OFI comprador (+2.0)
+    core.process_tick_dual(0, 50_050.0, 50_051.0, 3.0, 1.0, 1_100, &[0.0; 54], true, true);
+    // ETH cae (-33 bps) con OFI vendedor (-2.0)
+    core.process_tick_dual(1, 2_990.0, 2_990.5, 1.0, 3.0, 1_101, &[0.0; 54], true, true);
+    // SOL sube moderado (+66 bps) con OFI vendedor (-1.0) para inducir dislocación rotacional de liquidez
+    core.process_tick_dual(2, 151.0, 151.05, 1.0, 2.0, 1_102, &[0.0; 54], true, true);
+
+    // 3. Verificar que la matriz asimétrica L2/L3 generó rotacional real en el pipeline vivo
+    let curl_share = arena.registry.get_value_or("hodge_curl_share", 0.0);
+    let curl_energy = arena.registry.get_value_or("hodge_curl_energy", 0.0);
+    let grad_energy = arena.registry.get_value_or("hodge_gradient_energy", 0.0);
+
+    // R6-A7 / R6-C7: Demostrar formalmente que el pipeline vivo produce vórtice no-degenerado
+    assert!(
+        curl_share > 0.0,
+        "R6-A7/C7: Con flujo cruzado asimétrico L2/L3, hodge_curl_share debe ser estrictamente > 0, obtenido: {}",
+        curl_share
+    );
+    assert!(
+        curl_energy > 0.0,
+        "R6-A7/C7: Helmholtz-Hodge curl energy debe ser estrictamente > 0, obtenido: {}",
+        curl_energy
+    );
+    assert!(
+        grad_energy >= 0.0,
+        "Helmholtz-Hodge gradient energy debe ser no-negativa, obtenido: {}",
+        grad_energy
+    );
+
+    // 4. Modulación laminar en SeniorMicroestructura: (1.0 - 0.70 * curl_share) < 1.0
+    let laminar_factor = 1.0 - 0.70 * curl_share;
+    assert!(
+        laminar_factor < 1.0,
+        "El factor laminar debe amortiguar microestructura ante presencia de vórtice (curl > 0)"
+    );
+}

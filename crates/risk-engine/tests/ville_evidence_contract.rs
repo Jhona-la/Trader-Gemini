@@ -173,3 +173,46 @@ fn ville_contrato_difusion_continua_sde_monotonia() {
     assert!(process.count == 60);
     assert!(process.peak_e_value >= process.e_value);
 }
+
+#[test]
+fn ville_contrato_cota_maximal_bajo_h0_con_lambda_min_productivo() {
+    // R6-B8: Ejercitar formalmente H0 con la configuración productiva de online_daemon (lambda_min = 0.05)
+    let alpha = 0.05;
+    let num_paths = 200;
+    let steps_per_path = 150;
+    let mut falsas_certificaciones = 0;
+    let mut fluctuaciones_reales = 0;
+
+    for seed in 0..num_paths {
+        let mut rng = LcgRng::new(5000 + seed as u64);
+        // Configuración productiva idéntica a online_daemon.rs: lambda_min = 0.05, lambda_max = 0.50
+        let mut process = VilleEProcess::with_bounds(alpha, 0.05, 0.50).expect("bounds productivos válidos");
+
+        for _ in 0..steps_per_path {
+            // H0: ruido de media cero en [-0.04, 0.04]
+            let return_t = rng.uniform_symmetric(0.04);
+            process.update(return_t);
+
+            if process.is_edge_certified() {
+                falsas_certificaciones += 1;
+                break;
+            }
+        }
+
+        // Verificar que M_t fluctúa honestamente y no permanece trivialmente clavado en 1.0
+        if (process.e_value - 1.0).abs() > 1e-4 {
+            fluctuaciones_reales += 1;
+        }
+    }
+
+    assert!(
+        fluctuaciones_reales > 180,
+        "Con lambda_min = 0.05, M_t debe fluctuar activamente como supermartingala viva"
+    );
+
+    let tasa_falsas_certificaciones = falsas_certificaciones as f64 / num_paths as f64;
+    assert!(
+        tasa_falsas_certificaciones <= alpha,
+        "La tasa de falsas alarmas bajo H0 productivo ({tasa_falsas_certificaciones}) superó la cota de Ville ({alpha})"
+    );
+}

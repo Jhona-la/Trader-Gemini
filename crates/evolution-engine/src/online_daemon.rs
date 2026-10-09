@@ -1122,7 +1122,11 @@ impl LiveEvolutionDaemon {
                         if self.promoted_generation.is_some() {
                             self.post_promo_returns.push(ret);
                             if let Some(ville) = self.post_promo_ville.as_mut() {
-                                ville.observe(ret);
+                                // R6-B6: Calibración de escala de retornos: `ret` en trade_return_on_equity
+                                // se normaliza por la escala unitaria de riesgo por posición (2% = 0.02)
+                                // para que Ville opere en el soporte de prueba [-1.0, 1.0] con potencia estadística real.
+                                let normalized_ret = (ret / 0.02).clamp(-1.0, 1.0);
+                                ville.observe(normalized_ret);
                             }
                         }
 
@@ -1334,18 +1338,21 @@ impl LiveEvolutionDaemon {
         // la vigilancia al ciclo siguiente (≤ un período del daemon).
         if let Some(env) = current_envelope.as_ref() {
             let vigilada = self.promoted_generation.map(|(g, _)| g);
-            if detectar_promocion_externa(Some(env.generation), vigilada).is_some() {
+            let needs_arm = detectar_promocion_externa(Some(env.generation), vigilada).is_some()
+                || (vigilada.is_some() && self.post_promo_ville.is_none());
+            if needs_arm {
+                let es_mismo = vigilada == Some(env.generation);
                 let reiniciada = armar_vigilancia(
-                    false, // generación DISTINTA a la vigilada: ventana nueva
+                    es_mismo,
                     &mut self.promoted_generation,
                     &mut self.post_promo_returns,
                     env.generation,
                     env.parent_generation,
                 );
-                if reiniciada {
+                if reiniciada || self.post_promo_ville.is_none() {
                     self.post_promo_ville = crate::return_evidence::SequentialVilleEvidence::with_bounds(0.05, 0.05, 0.50).ok();
                     println!(
-                        "🐕 [WATCHDOG-EXTERN] Promoción externa detectada (gen {}, padre {}) — vigilancia de rollback ARMADA (cosecha/manual cubiertos).",
+                        "🐕 [WATCHDOG-EXTERN] Promoción/restauración externa detectada (gen {}, padre {}) — vigilancia de rollback ARMADA (Ville anytime-valid activo).",
                         env.generation, env.parent_generation
                     );
                 }
@@ -1902,10 +1909,10 @@ impl LiveEvolutionDaemon {
                     env.generation,
                     env.parent_generation,
                 );
-                if reiniciada {
+                if reiniciada || self.post_promo_ville.is_none() {
                     self.post_promo_ville = crate::return_evidence::SequentialVilleEvidence::with_bounds(0.05, 0.05, 0.50).ok();
                     println!(
-                        "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado.",
+                        "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado (Ville anytime-valid activo).",
                         env.generation, env.parent_generation
                     );
                 } else {
