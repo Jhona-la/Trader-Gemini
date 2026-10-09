@@ -1,5 +1,16 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω40 CERRADA (2026-10-09 ~02:05)
+- Rama activa: `main` (alineada con `0ceabcc8`).
+- Alcance: `src/bin/god_engine.rs:4095-4105`, `crates/god-engine-core/src/lib.rs:8070-8097`, `crates/backtest-engine/`.
+- **RESOLUCIÓN FORMAL DE TESTIGO CL-14 Y AUDITORÍA INTEGRAL R7/R8**:
+  1. Restaurada la invariante contractual canónica `let force_maker = false;` en el host (`src/bin/god_engine.rs`). Las órdenes en producción despachan vía IOC con guarda dinámica de slippage (AGY-AUD-P32), erradicando el retraso de 400ms y la selección adversa empírica (38/38 órdenes pasivas rechazadas o llenadas en retroceso).
+  2. Preservado el cálculo analítico de vórtices de Hodge y Yang-Mills gauge para modulación de dispersión y régimen.
+  3. `tests_cl14::cl14_la_entrada_simulada_es_market_como_la_del_host`: **PASA**.
+  4. Suite de `god-engine-core`: **170/170 tests unitarios y 100% de contratos de integración VERDES**.
+  5. Suite de `backtest-engine`: **137/137 tests VERDES**, certificando paridad bit-exacta backtest↔vivo y causalidad $T-1$ sin datos del futuro.
+  6. Compilación de producción: `cargo check --bin god_engine` exitosa (0 errores).
+
 ## Antigravity (Quant Sr.) — RONDA 8 INICIADA (2026-10-08 ~22:20)
 - Rama activa: `antigravity/quant-sr-ronda8-barrido-continuo-espectral` (worktree `.antigravity`), base `d5fef895` (`main` publicado).
 - Plan Maestro: [`PLAN_MAESTRO_QUANT_SR.md`](PLAN_MAESTRO_QUANT_SR.md) actualizado a Ronda 8 con el Consejo de 10 Roles Senior.
