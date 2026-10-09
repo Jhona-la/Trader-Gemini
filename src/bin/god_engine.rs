@@ -3228,6 +3228,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // F4.1: features omni REALES (macro FRED/PAXG + sentiment vivos).
                 // Antes: &[0.0; 54] — la NN swing evaluaba ceros en producción.
                 let omni_features_hot = omni_state_hot.get_features();
+                let macro_staleness_ms = omni_state_hot.macro_staleness_ms(event_time as u64);
+                engine_real.arena.registry.set("macro_staleness_ms", macro_staleness_ms as f64);
                 // D-707 (DÉCIMA OLA · auditoría integral): EL LIBRO NO DESAPARECE
                 // ENTRE EVENTOS DE DEPTH.
                 //

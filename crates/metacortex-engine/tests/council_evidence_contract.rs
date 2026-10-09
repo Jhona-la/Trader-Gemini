@@ -24,6 +24,7 @@ fn snapshot() -> MarketSnapshotPayload {
         crowd_ls_ratio: 1.0,
         crowd_taker_ratio: 1.0,
         ml_model_base: 0.5,
+        ..Default::default()
     }
 }
 

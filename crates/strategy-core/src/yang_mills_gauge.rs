@@ -30,7 +30,10 @@
 //!    $$\mathcal{J}_i = \frac{1}{\binom{N-1}{2}} \sum_{j < k, j \neq i, k \neq i} F_{ijk}$$
 //!    Proporciona la fuerza de gradiente topológico para restaurar la paridad del activo $i$.
 
+use crate::{QuantumStrategy, TradeHorizon};
+use omniscient_registry::OmniscientRegistry;
 use std::f64;
+use std::sync::Arc;
 
 pub const MAX_GAUGE_ASSETS: usize = 16;
 
@@ -47,6 +50,8 @@ pub struct YangMillsGaugeEngine {
     pub last_ln_prices: [f64; MAX_GAUGE_ASSETS],
     /// Conteo de observaciones válidas
     pub count: u64,
+    /// Registro omnisciente para deliberación y lectura de parámetros continuos
+    pub registry: Option<Arc<OmniscientRegistry>>,
 }
 
 impl Default for YangMillsGaugeEngine {
@@ -69,6 +74,7 @@ impl YangMillsGaugeEngine {
             adaptation_rate: 0.005,
             last_ln_prices: [0.0; MAX_GAUGE_ASSETS],
             count: 0,
+            registry: None,
         }
     }
 
@@ -185,5 +191,46 @@ impl YangMillsGaugeEngine {
         let a_jk = ln_p[j] - self.beta_matrix[j][k] * ln_p[k];
         let a_ki = ln_p[k] - self.beta_matrix[k][i] * ln_p[i];
         a_ij + a_jk + a_ki
+    }
+}
+
+impl QuantumStrategy for YangMillsGaugeEngine {
+    fn name(&self) -> &str {
+        "YangMillsGaugeEngine"
+    }
+
+    fn init(&mut self, registry: Arc<OmniscientRegistry>) -> Result<(), String> {
+        self.registry = Some(registry);
+        Ok(())
+    }
+
+    fn evaluate(&self) -> f64 {
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return 0.0,
+        };
+
+        let current = r
+            .get_scoped_parameter(sym_opt, cid_opt, "yang_mills_current", "YangMillsGaugeEngine")
+            .map(|p| p.get_value())
+            .unwrap_or(0.0);
+
+        if !current.is_finite() {
+            return 0.0;
+        }
+
+        // Corriente gauge restauradora J_i:
+        // Si J_i > 0, fuerza restauradora alcista; si J_i < 0, fuerza bajista.
+        current.clamp(-1.0, 1.0)
+    }
+
+    fn horizon(&self) -> TradeHorizon {
+        TradeHorizon::Continuous
     }
 }

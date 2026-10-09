@@ -31,6 +31,7 @@ fn test_quantum_organism_components() {
             crowd_ls_ratio: 1.0,
             crowd_taker_ratio: 1.0,
             ml_model_base: 0.5,
+            ..Default::default()
     };
     let result = consejo.deliberar(&healthy_payload, 0.65);
     assert!(

@@ -242,6 +242,22 @@ impl OmniState {
         }
         feats
     }
+
+    /// Devuelve el tiempo en milisegundos transcurrido desde el último fetch macro exitoso.
+    /// Si nunca se ha realizado un fetch exitoso, devuelve `u64::MAX`.
+    pub fn macro_staleness_ms(&self, now_ms: u64) -> u64 {
+        let last = self.macro_last_success_ms.load(Ordering::Relaxed);
+        if last == 0 {
+            u64::MAX
+        } else {
+            now_ms.saturating_sub(last)
+        }
+    }
+
+    /// Comprueba si los datos macro están frescos dentro de la ventana de tolerancia.
+    pub fn is_macro_fresh(&self, now_ms: u64, max_staleness_ms: u64) -> bool {
+        self.macro_staleness_ms(now_ms) <= max_staleness_ms
+    }
 }
 
 pub async fn run_bybit_ws(state: Arc<OmniState>, symbol: String) {
@@ -1055,6 +1071,8 @@ mod tests {
     fn test_omni_state_macro_staleness_flag() {
         let state = OmniState::new();
         assert_eq!(state.macro_last_success_ms.load(Ordering::Relaxed), 0);
+        assert_eq!(state.macro_staleness_ms(1700000000000), u64::MAX);
+        assert!(!state.is_macro_fresh(1700000000000, 60_000));
 
         state
             .macro_last_success_ms
@@ -1063,5 +1081,8 @@ mod tests {
             state.macro_last_success_ms.load(Ordering::Relaxed),
             1700000000000
         );
+        assert_eq!(state.macro_staleness_ms(1700000005000), 5000);
+        assert!(state.is_macro_fresh(1700000005000, 10_000));
+        assert!(!state.is_macro_fresh(1700000005000, 2_000));
     }
 }

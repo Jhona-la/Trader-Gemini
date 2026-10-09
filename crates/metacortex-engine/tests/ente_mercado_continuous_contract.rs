@@ -25,6 +25,7 @@ fn base_payload() -> MarketSnapshotPayload {
         crowd_ls_ratio: 1.0,
         crowd_taker_ratio: 1.0,
         ml_model_base: 0.5,
+        ..Default::default()
     }
 }
 
@@ -110,5 +111,37 @@ fn ente_mercado_taker_exhaustion_modula_suavemente() {
         let op = ente.evaluate(&p, 0.5);
         assert!(op.confidence <= prev_conf + 1e-12, "exhausted taker flow must smoothly decay conviction");
         prev_conf = op.confidence;
+    }
+}
+
+#[test]
+fn ente_mercado_modulacion_macro_staleness_continua_y_monotona() {
+    let ente = SeniorEnteMercado;
+    let mut prev_conf: f64 = 1.01;
+
+    // Con staleness < 180s (180_000 ms), no debe haber penalización (p_macro = 1.0)
+    let mut p_fresh = base_payload();
+    p_fresh.macro_staleness_ms = 60_000;
+    let conf_fresh = ente.evaluate(&p_fresh, 0.6).confidence;
+    assert_eq!(conf_fresh, 1.0);
+
+    // De 180s a 1800s, el factor p_macro debe decaer monótonamente y de forma continua
+    for step in 0..=50 {
+        let stale_ms = 180_000 + step * 20_000;
+        let mut p = base_payload();
+        p.macro_staleness_ms = stale_ms;
+        let conf = ente.evaluate(&p, 0.6).confidence;
+        assert!(
+            conf <= prev_conf + 1e-12,
+            "Staleness debe ser monótonamente no creciente: step={} conf={} prev={}",
+            step,
+            conf,
+            prev_conf
+        );
+        assert!(
+            conf >= 0.40,
+            "No debe caer por debajo del suelo de amortiguamiento 0.40"
+        );
+        prev_conf = conf;
     }
 }

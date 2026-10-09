@@ -1,5 +1,7 @@
 use crate::vecm_arbitrage::ContinuousOrnsteinUhlenbeckSde;
-use crate::{SignalIntent, SignalType};
+use crate::{QuantumStrategy, SignalIntent, SignalType, TradeHorizon};
+use omniscient_registry::OmniscientRegistry;
+use std::sync::Arc;
 
 pub struct StatArbEngine {
     window_size: usize,
@@ -15,6 +17,8 @@ pub struct StatArbEngine {
     pub adaptive_beta: bool,
     /// Estimador analítico SDE continuo de Ornstein-Uhlenbeck / Fokker-Planck con reloj físico
     pub physical_sde: Option<ContinuousOrnsteinUhlenbeckSde>,
+    /// Registro omnisciente para deliberación y lectura de parámetros continuos
+    pub registry: Option<Arc<OmniscientRegistry>>,
 }
 
 impl StatArbEngine {
@@ -36,6 +40,7 @@ impl StatArbEngine {
             beta_hedge_ratio: 1.0,
             adaptive_beta: false,
             physical_sde: None,
+            registry: None,
         }
     }
 
@@ -263,6 +268,70 @@ impl StatArbEngine {
 
         // Si no hay SDE físico, delegar a la ventana discreta estándar
         self.update(price_a, price_b)
+    }
+}
+
+impl QuantumStrategy for StatArbEngine {
+    fn name(&self) -> &str {
+        "StatArbEngine"
+    }
+
+    fn init(&mut self, registry: Arc<OmniscientRegistry>) -> Result<(), String> {
+        self.registry = Some(registry);
+        Ok(())
+    }
+
+    fn evaluate(&self) -> f64 {
+        self.evaluate_for_coin(0, "")
+    }
+
+    fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return 0.0,
+        };
+
+        // Leer z-score de cointegración / arbitraje estadístico publicado en el registro
+        let z = r
+            .get_scoped_parameter(sym_opt, cid_opt, "vecm_zscore", "StatArbEngine")
+            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "cointegration_zscore", "StatArbEngine"))
+            .map(|p| p.get_value())
+            .unwrap_or(0.0);
+
+        if !z.is_finite() {
+            return 0.0;
+        }
+
+        // Acoplamiento espectral continuo (Ola Ω36):
+        // Si el estimador continuo SDE OU tiene una vida media mayor al doble del horizonte
+        // dominante tau*, no absorbe la deriva secular y se inhibe el voto.
+        if let Some(sde) = &self.physical_sde {
+            let half_life_s = sde.half_life_seconds();
+            let dominant_tau_s = r
+                .get_scoped_parameter(sym_opt, cid_opt, "dominant_tau_ms", "StatArbEngine")
+                .map(|p| p.get_value() / 1000.0)
+                .unwrap_or(1138.0);
+            if half_life_s > 2.0 * dominant_tau_s {
+                return 0.0;
+            }
+        }
+
+        // Activación suave y continua:
+        // z > thresh => Short (voto negativo hacia reversión), z < -thresh => Long (voto positivo)
+        let thresh = self.z_score_threshold.max(0.5);
+        if z.abs() > thresh {
+            let excess = z.abs() - thresh;
+            let norm_signal = -z.signum() * (excess / thresh).tanh();
+            norm_signal.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    fn horizon(&self) -> TradeHorizon {
+        TradeHorizon::Continuous
     }
 }
 

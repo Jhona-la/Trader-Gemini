@@ -816,6 +816,12 @@ pub struct GodEngineCore {
     pub lakehouse: Option<Arc<storage_engine::LakehouseWarehouse>>,
     pub consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion,
     pub lead_lag_engine: feature_engine::LeadLagAlphaEngine,
+    /// OLA Ω37/Ω38: Motor de descomposición ortogonal de Helmholtz-Hodge sobre flujos L2/L3
+    pub hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine,
+    /// OLA Ω36/Ω38: Motor de fibrado gauge y curvatura de Yang-Mills sobre el universo multiactivo
+    pub yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine,
+    latest_prices: Vec<f64>,
+    latest_ofis: Vec<f64>,
     pub ppo_engine: dark_alpha_engine::online_ppo::OnlinePpoPolicyEngine,
     pub online_learner: metacortex_engine::online_learning::OnlineLearningModule,
     /// #26: Sistema inmune vivo para registro y amortiguación de traumas de predicción
@@ -988,6 +994,13 @@ impl GodEngineCore {
         tensor_orchestrator.add_strategy(Box::new(
             strategy_core::vecm_arbitrage::JohansenVecmEngine::default(),
         ));
+        // OLA Ω38: Registrar StatArbEngine SDE continuo y YangMillsGaugeEngine en el orquestador central
+        tensor_orchestrator.add_strategy(Box::new(
+            strategy_core::stat_arb::StatArbEngine::new(30, 1.5).with_continuous_ou_sde(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            strategy_core::yang_mills_gauge::YangMillsGaugeEngine::new(n_coins),
+        ));
 
         let swing_nn = if let Ok(json_data) =
             std::fs::read_to_string("models/DarkAlpha_BTCUSDT.json")
@@ -1085,6 +1098,10 @@ impl GodEngineCore {
             lakehouse: None,
             consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion::new(),
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
+            hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine::new(n_coins),
+            yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine::new(n_coins),
+            latest_prices: vec![0.0; n_coins],
+            latest_ofis: vec![0.0; n_coins],
             ppo_engine,
             online_learner,
             immune_system: metacortex_engine::immune_system::LivingImmuneSystem::new_deferred("."),
@@ -2907,6 +2924,10 @@ impl GodEngineCore {
             // D-220 & D-247: Depth snapshots must NOT corrupt OrderFlow with synthetic trades. Real trades update order flow via process_event when is_trade=true.
 
             let ofi_value = feature_engine.update_ofi(bid, ask, bid_qty, ask_qty);
+            if coin_id < self.latest_prices.len() {
+                self.latest_prices[coin_id] = mid_price;
+                self.latest_ofis[coin_id] = ofi_value;
+            }
             let sym = quantum_arena::symbol_registry::try_spec(coin_id)
                 .map(|s| s.symbol)
                 .unwrap_or_default();
@@ -4725,6 +4746,7 @@ impl GodEngineCore {
                 .get(coin_id)
                 .map(|s| s.dominant_tau_ms)
                 .unwrap_or(30_000.0);
+            set_reg("dominant_tau_ms", tau_dom);
             // D-756 — LOS UMBRALES SALEN DE LA DISTRIBUCIÓN MEDIDA, NO DE UN
             // RECORTE A MANO.
             //
@@ -4998,6 +5020,28 @@ impl GodEngineCore {
             let pos_dev =
                 ((mid_price - ema_macro) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0);
             set_reg("quantum_position_deviation", pos_dev);
+
+            // OLA Ω36/Ω38: Fibrado gauge Yang-Mills y corrientes de restauración gauge
+            let (ym_action, ym_currents) = self.yang_mills_engine.update_and_calculate_curvature(&self.latest_prices);
+            let ym_coin_current = if coin_id < ym_currents.len() { ym_currents[coin_id] } else { 0.0 };
+            set_reg("yang_mills_action", ym_action);
+            set_reg("yang_mills_current", ym_coin_current);
+
+            // OLA Ω37/Ω38: Descomposición ortogonal de Helmholtz-Hodge sobre flujos continuos L2/L3
+            let (hodge_curl_share, hodge_grad_energy, hodge_curl_energy) = if let Some((flow_mat, n_nodes)) =
+                feature_engine::HelmholtzHodgeFlowEngine::build_gradient_flow_matrix(&self.latest_ofis)
+            {
+                if let Some((decomp, _potentials)) = self.hodge_flow_engine.decompose(&flow_mat, n_nodes) {
+                    (decomp.curl_share, decomp.gradient_energy, decomp.curl_energy)
+                } else {
+                    (0.0, 0.0, 0.0)
+                }
+            } else {
+                (0.0, 0.0, 0.0)
+            };
+            set_reg("hodge_curl_share", hodge_curl_share);
+            set_reg("hodge_gradient_energy", hodge_grad_energy);
+            set_reg("hodge_curl_energy", hodge_curl_energy);
             // #625 (Ola 46) — EL SLOT HAWKES DEL PPO LLEVA LA EXCITACIÓN
             // REAL λ/μ̂. La decisión de consejo abierta desde #554 se
             // ejecuta: el slot 2 llevaba la magnitud del OBI con nombre
@@ -7360,6 +7404,18 @@ impl GodEngineCore {
                                 .registry
                                 .get_scoped_value_or(&sym, "taker_ratio", 1.0),
                             ml_model_base,
+                            hodge_curl_share: self
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "hodge_curl_share", 0.0),
+                            yang_mills_current: self
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "yang_mills_current", 0.0),
+                            macro_staleness_ms: self
+                                .arena
+                                .registry
+                                .get_value_or("macro_staleness_ms", 0.0) as u64,
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let council_decision = self.consejo_deliberacion.deliberar_traced(
