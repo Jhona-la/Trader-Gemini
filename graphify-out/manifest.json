@@ -174,15 +174,15 @@
     "semantic_hash": ""
   },
   "crates/backtest-engine/src/booktick_replay.rs": {
-    "mtime": 1791404051.8726192,
-    "seen": 1791504033.1749043,
-    "ast_hash": "09ce877a21dff79797674e5253097792",
+    "mtime": 1791563424.9448578,
+    "seen": 1791564028.0513933,
+    "ast_hash": "471fe5e9f9f48ce37967624fbf446bd5",
     "semantic_hash": ""
   },
   "crates/backtest-engine/src/lib.rs": {
-    "mtime": 1791490028.2558618,
-    "seen": 1791504033.1749043,
-    "ast_hash": "5980c5abb3a63159cd8a5beaaefbda36",
+    "mtime": 1791563424.949632,
+    "seen": 1791564028.0513933,
+    "ast_hash": "238b4d1b4b8161a3959fbdb0368023ba",
     "semantic_hash": ""
   },
   "crates/backtest-engine/src/network_jitter.rs": {
@@ -798,8 +798,8 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/lib.rs": {
-    "mtime": 1791559768.3921008,
-    "seen": 1791560250.107443,
+    "mtime": 1791560442.768939,
+    "seen": 1791564028.052401,
     "ast_hash": "0ff2c0e93acb64e8d99ac8d76ca92845",
     "semantic_hash": ""
   },
@@ -906,9 +906,9 @@
     "semantic_hash": "4dff921ffc58a0a01cf8cbdb026dc305"
   },
   "crates/metacortex-engine/src/consejo_seniors.rs": {
-    "mtime": 1791515280.2231033,
-    "seen": 1791515632.683763,
-    "ast_hash": "5f1b62604c3d9128cd348504d56989c5",
+    "mtime": 1791563424.9607053,
+    "seen": 1791564028.052401,
+    "ast_hash": "7d7a4cf7a7b218aaa8fb413226705dab",
     "semantic_hash": ""
   },
   "crates/metacortex-engine/src/epigenoma_store.rs": {
@@ -1710,9 +1710,9 @@
     "semantic_hash": "96ec29a84ce7bc90b1747ce6fecd62ea"
   },
   "src/bin/god_engine.rs": {
-    "mtime": 1791527358.1425726,
-    "seen": 1791529837.0501754,
-    "ast_hash": "3f357a9c873db93cfbdda2ae85e2db8f",
+    "mtime": 1791563424.979506,
+    "seen": 1791564028.0533984,
+    "ast_hash": "66aa41cf8db326eb66a0b61622639643",
     "semantic_hash": ""
   },
   "src/bin/graph_server.rs": {
@@ -3708,9 +3708,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791530736.9147236,
-    "seen": 1791560250.107443,
-    "ast_hash": "1e3f771665d0a06f7022a4954b7006fc",
+    "mtime": 1791563424.92688,
+    "seen": 1791564028.0533984,
+    "ast_hash": "eacc5f2083469083d813e2727595ce17",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3732,9 +3732,9 @@
     "semantic_hash": ""
   },
   "COORDINACION_CODEX_2026-09-28.md": {
-    "mtime": 1791530736.9231718,
-    "seen": 1791560250.1090317,
-    "ast_hash": "8b47cbf8c400a16e2c70be92901a4250",
+    "mtime": 1791563424.9369905,
+    "seen": 1791564028.054404,
+    "ast_hash": "46ea45b3e2a3587387daa9e19bba9f7c",
     "semantic_hash": ""
   },
   "TABLERO.md": {
@@ -4404,9 +4404,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_SINCRONIZACION.md": {
-    "mtime": 1791529568.2933195,
-    "seen": 1791529837.052182,
-    "ast_hash": "5bc96c3b8fbb189376b856569a08c0c4",
+    "mtime": 1791560442.7842052,
+    "seen": 1791564028.0554037,
+    "ast_hash": "fdb1f6358dc3ab96fe07046d72ef976a",
     "semantic_hash": ""
   },
   "docs/TRIAJE_ROJOS_PERPETUOS.md": {
@@ -9372,9 +9372,9 @@
     "semantic_hash": ""
   },
   "crates/metacortex-engine/tests/ente_mercado_continuous_contract.rs": {
-    "mtime": 1791515280.2341442,
-    "seen": 1791515632.683763,
-    "ast_hash": "bd0d97d6feff33299b0566a0b4359e9e",
+    "mtime": 1791563424.9653585,
+    "seen": 1791564028.052401,
+    "ast_hash": "b64e074f67dba9cab0698db16435c9eb",
     "semantic_hash": ""
   },
   "crates/strategy-core/tests/omega28_consumer_clock_contract.rs": {
@@ -9384,9 +9384,9 @@
     "semantic_hash": ""
   },
   "crates/strategy-core/src/yang_mills_gauge.rs": {
-    "mtime": 1791559483.3120122,
-    "seen": 1791560250.107443,
-    "ast_hash": "9bc2a9e625c2aa9f90dcd4238ba4f7a1",
+    "mtime": 1791563424.971634,
+    "seen": 1791564028.0533984,
+    "ast_hash": "e0f3550195217266b612b55b7f7278e6",
     "semantic_hash": ""
   },
   "crates/strategy-core/tests/yang_mills_gauge_contract.rs": {
@@ -9396,21 +9396,21 @@
     "semantic_hash": ""
   },
   "crates/feature-engine/src/hodge_flow.rs": {
-    "mtime": 1791559415.205067,
-    "seen": 1791560250.107443,
+    "mtime": 1791560442.7502704,
+    "seen": 1791564028.0513933,
     "ast_hash": "97fc67e3edc8c30e3bcd8476cd3e1edd",
     "semantic_hash": ""
   },
   "crates/feature-engine/tests/hodge_flow_contract.rs": {
-    "mtime": 1791559496.8035867,
-    "seen": 1791560250.107443,
+    "mtime": 1791560442.7567737,
+    "seen": 1791564028.052401,
     "ast_hash": "b691520a427b430f1ad896175f095b67",
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/hodge_yang_mills_consensus_contract.rs": {
-    "mtime": 1791515280.2191038,
-    "seen": 1791515632.683763,
-    "ast_hash": "d4577aef4acac0a0cedcf85c0c85ccaf",
+    "mtime": 1791563424.955948,
+    "seen": 1791564028.052401,
+    "ast_hash": "4e4a5edd2c3a142c564954082f2f200b",
     "semantic_hash": ""
   },
   ".ola73/Cargo.toml": {
@@ -10710,9 +10710,9 @@
     "semantic_hash": ""
   },
   ".ola73/crates/god-engine-core/src/lib.rs": {
-    "mtime": 1791530805.6874647,
-    "seen": 1791560250.1041195,
-    "ast_hash": "785c4435ab7f3b65040c501b67364a20",
+    "mtime": 1791561325.95662,
+    "seen": 1791564028.0474036,
+    "ast_hash": "bc46c38907aa312e35fb68190d6c3f35",
     "semantic_hash": ""
   },
   ".ola73/crates/god-engine-core/src/liquidation_feed.rs": {
@@ -12060,9 +12060,9 @@
     "semantic_hash": ""
   },
   ".ola73/crates/strategy-core/src/stat_arb.rs": {
-    "mtime": 1791531395.3396413,
-    "seen": 1791560250.1041195,
-    "ast_hash": "211b8cf4ee1cf0bdc38880fcd164f5e5",
+    "mtime": 1791560936.862111,
+    "seen": 1791564028.048407,
+    "ast_hash": "a754b70b31e90f229048e92f692f4c39",
     "semantic_hash": ""
   },
   ".ola73/crates/strategy-core/src/strategy_telemetry.rs": {
@@ -14241,6 +14241,12 @@
     "mtime": 1791530809.7050607,
     "seen": 1791560250.107443,
     "ast_hash": "fd06498f5cdc62810f954cc5e098d086",
+    "semantic_hash": ""
+  },
+  ".ola73/crates/god-engine-core/tests/statarb_live_physics_contract.rs": {
+    "mtime": 1791561604.4897099,
+    "seen": 1791564028.0474036,
+    "ast_hash": "3b4da48d325c7d9519849d8ffae53e44",
     "semantic_hash": ""
   }
 }

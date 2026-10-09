@@ -97,3 +97,44 @@ fn yang_mills_contrato_inmunidad_a_nan_y_precios_no_positivos() {
     let (action_zero, _) = engine.update_and_calculate_curvature(&[0.0, 50.0, 25.0]);
     assert_eq!(action_zero, 0.0);
 }
+
+#[test]
+fn yang_mills_contrato_retornos_dinamicos_y_estabilidad_lms() {
+    let mut engine = YangMillsGaugeEngine::new(3)
+        .with_beta(0, 1, 1.25)
+        .with_beta(1, 2, 0.90)
+        .with_beta(2, 0, 1.0);
+
+    // Tick 1: Inicialización con precios base (count = 0 -> 1)
+    let (action_1, _) = engine.update_and_calculate_curvature(&[100.0, 50.0, 25.0]);
+    assert_eq!(engine.count, 1);
+    assert!(action_1 >= 0.0);
+
+    // Tick 2: Retornos de innovación. Activo 0 sube +2%, Activo 1 sube +1%, Activo 2 no se mueve (0%)
+    // Con r_2 = 0, el par (0, 2) no debe sufrir deriva espuria en beta_matrix[0][2]
+    let beta_02_inicial = engine.beta_matrix[0][2];
+    let (action_2, currents_2) = engine.update_and_calculate_curvature(&[102.0, 50.5, 25.0]);
+    assert_eq!(engine.count, 2);
+
+    // La curvatura no debe colapsar a cero trivialmente: se evalúa sobre retornos dinámicos
+    assert!(
+        action_2.is_finite() && action_2 > 0.0,
+        "La acción de Yang-Mills con innovaciones asimétricas debe ser estrictamente > 0, got {}",
+        action_2
+    );
+    assert!(
+        currents_2[0].is_finite() && currents_2[0].abs() > 1e-6,
+        "La corriente gauge del activo 0 debe ser no-nula tras innovación"
+    );
+
+    // R6-C6: Dado que el Activo 2 tuvo retorno r_2 = 0, el paso de LMS sobre beta_02 es exactamente 0
+    assert_eq!(
+        engine.beta_matrix[0][2], beta_02_inicial,
+        "El coeficiente beta hacia un activo que no cotizó (r=0) no debe mutar por gradiente espurio"
+    );
+
+    // Tick 3: Choque opuesto en Activo 1 mientras 0 y 2 se mantienen constantes
+    let (action_3, currents_3) = engine.update_and_calculate_curvature(&[102.0, 49.0, 25.0]);
+    assert!(action_3.is_finite() && action_3 > 0.0);
+    assert!(currents_3[1].is_finite() && currents_3[1].abs() > 1e-6);
+}

@@ -110,16 +110,13 @@ impl VilleEProcess {
         self.last_lambda = lambda;
 
         // 2) Factor de multiplicación de la martingala: M_t = M_{t-1} * (1 + lambda * x)
-        let wealth_mult = 1.0 + lambda * x;
-        if wealth_mult > 0.0 {
-            let log_increment = wealth_mult.ln();
-            self.log_wealth += log_increment;
-            self.e_value = self.log_wealth.exp();
-        } else {
-            // Protección contra pérdida terminal de capital
-            self.e_value = 0.0;
-            self.log_wealth = f64::NEG_INFINITY;
-        }
+        // R6-B10: Cota inferior numérica estricta contra singularidad logarítmica.
+        // Dado que lambda <= lambda_max < 1.0 y x in [-1, 1], 1 + lambda * x >= 1 - lambda_max > 0 por construcción.
+        // El suelo positivo 1e-12 previene bajo flujo de precisión IEEE-754 y absorción terminal espuria.
+        let wealth_mult = (1.0 + lambda * x).max(1e-12);
+        let log_increment = wealth_mult.ln();
+        self.log_wealth += log_increment;
+        self.e_value = self.log_wealth.exp();
 
         if self.e_value > self.peak_e_value {
             self.peak_e_value = self.e_value;
@@ -170,7 +167,8 @@ impl VilleEProcess {
         self.e_value
     }
 
-    /// Calcula la fracción de apuesta causal lambda adaptada mediante la ratio de Sharpe empírica acotada.
+    /// Calcula la fracción de apuesta causal lambda adaptada mediante ratio de Kelly empírica
+    /// predecible F_{t-1} acotada en [lambda_min, lambda_max] (R6-B9).
     #[inline]
     fn compute_causal_lambda(&self) -> f64 {
         if self.count < 3 || self.running_mean <= 0.0 {

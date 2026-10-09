@@ -1,6 +1,34 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-09 — Antigravity: OLA Ω43 CERRADA — OU SDE WLS CONTINUO, VILLE ANYTIME-VALID CALIBRADO Y REARME DE WATCHDOG (R6-B3, R6-B4, R6-B5, R6-B6, R6-B7, R6-B8, R6-A7, R6-C7, R6-A14)
+## 2026-10-09 — Antigravity: OLA Ω44 CERRADA — INTEGRACIÓN STATARB HONESTO (OLA 73 MERGE), GRADIENTE LMS GAUGE RIGUROSO Y CONTINUO C1 EN MICROESTRUCTURA (R6-A3/A5, R6-B1/B2/B13, R6-C6, R6-C10, R6-B9, R6-B10, R6-C9)
+
+- **Rama**: `antigravity/merge-ola73-and-r6` (fusionada e integrada con `main` y `qoder/ola73-statarb-honesto`).
+- **RESOLUCIÓN Y CERTIFICACIÓN FORMAL DE HALLAZGOS RONDA 6**:
+  1. **Integración Completa de Ola 73 (Qoder)** (`R6-A3`, `R6-A5`, `R6-B1`, `R6-B2`, `R6-B13`):
+     - Escritor vivo de la física StatArb en `GodEngineCore::process_tick_dual`: SDE OU sobre la basis futuro-spot con reloj físico y $\beta$ RLS viva por moneda.
+     - Publicación condicional de `statarb_ou_zscore`, `statarb_half_life_ms` y `statarb_beta` tras madurez ($\ge 10$ pares causales) y TTL anti-staleness de 30 s.
+     - Guarda espectral $t_{1/2} \le 2\tau^*$ fail-closed contra deriva secular en `StatArbEngine::evaluate_for_coin`.
+     - Fallback unificado al centro geométrico de la banda operativa $[30\text{ s}, 12\text{ h}]$: $\tau^* = 1\,138\,419.6\text{ ms}$.
+     - Contrato formal: `statarb_live_physics_contract.rs` (3/3 tests verdes).
+  2. **R6-C6 & R6-A9 [MED] Resueltos**: Paso de gradiente LMS exacto y precomputación de retornos en `YangMillsGaugeEngine` (`crates/strategy-core/src/yang_mills_gauge.rs`).
+     - Derivada exacta del error cuadrático normalizado: $\text{step} = \gamma \frac{e \cdot r_j}{1 + r_j^2}$. Al multiplicar por el regresor $r_j$, cuando un activo no cotiza ($r_j = 0$), el paso es idénticamente 0.0, erradicando cualquier deriva espuria o dependencia del camino de llegada de ticks entre monedas.
+     - Precomputación de retornos de innovación $r_i$ antes de cualquier mutación de estado: subsanado el defecto de timing donde `self.last_ln_prices` se actualizaba prematuramente provocando $F_{ijk} \to 0$.
+     - Nuevo test contractual: `yang_mills_contrato_retornos_dinamicos_y_estabilidad_lms` verde (5/5 tests de Yang-Mills contract verdes).
+  3. **R6-C10 [LOW] Resuelto**: Suavizado $C^1$ Hermite cúbico en `MakerEngine` (`crates/strategy-core/src/maker.rs`).
+     - Rampa de skew OBI continua con derivadas nulas en frontera: $S(u) = 3u^2 - 2u^3$ sobre $u = \text{clamp}((|obi| - \text{th}) / (1 - \text{th}), 0, 1)$. Erradica quiebres de pendiente en microestructura.
+     - Test formal: `maker_obi_skew_es_continuo_c1_smoothstep_sin_quiebre_de_pendiente` verde (4/4 tests de maker contract verdes).
+  4. **R6-B9 & R6-B10 [LOW] Resueltos**: Rigor matemático y suelo numérico en `VilleEProcess` (`crates/risk-engine/src/ville_e_process.rs`).
+     - Formalización documental del esquema de apuesta de Kelly empírica predecible $\mathcal{F}_{t-1}$.
+     - Suelo de riqueza multiplicativa $(1 + \lambda x).max(10^{-12})$ para inmunizar el logaritmo contra bajo flujo IEEE-754 y absorción terminal espuria. 5/5 tests en `ville_evidence_contract` verdes.
+  5. **R6-C9 [LOW] Resuelto**: Proyección diagnóstica espectral en `quantum-arena/src/position.rs`.
+     - Documentada la naturaleza estrictamente diagnóstica/telemetría humana de `spectral_regime_name`, `is_micro_scalp`, `is_macro_swing`, certificando que todo el motor y dimensionamiento de riesgo operan incondicionalmente sobre el continuo temporal físico `entry_tau_ms` sin bifurcaciones discretas.
+- **VERIFICACIÓN TOTAL DE PRUEBAS**:
+  - `cargo test -p strategy-core`: **56/56 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test statarb_live_physics_contract`: **3/3 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test hodge_yang_mills_consensus_contract`: **2/2 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --test ville_evidence_contract`: **5/5 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
 
 - **Rama**: `antigravity/quant-sr-ola43-ou-sde-wls-ville-rearme` (base `4cc83ce4`).
 - **RESOLUCIÓN Y CERTIFICACIÓN FORMAL DE HALLAZGOS RONDA 6**:

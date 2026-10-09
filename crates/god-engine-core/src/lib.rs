@@ -5094,8 +5094,8 @@ impl GodEngineCore {
                 set_reg("statarb_beta", statarb_beta);
             }
 
-            // OLA Ω36/Ω38/Ω41: Fibrado gauge Yang-Mills con filtrado dinámico TTL anti-staleness
-            // y normalización intensiva de densidad de acción por plaqueta triangular (R6-A2, R6-C2, R6-C3, R6-A8)
+            // OLA Ω36/Ω38/Ω41/R6-C6: Evaluación de geometría gauge Yang-Mills y Helmholtz-Hodge en tiempo real
+            // La adaptación LMS en YangMillsGaugeEngine ya es invariante a ticks inactivos (step ∝ r_j).
             let mut fresh_prices = self.latest_prices.clone();
             for c in 0..fresh_prices.len() {
                 let last_ts = self.latest_timestamps.get(c).copied().unwrap_or(0);

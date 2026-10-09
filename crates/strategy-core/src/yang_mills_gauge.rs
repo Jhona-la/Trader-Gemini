@@ -124,23 +124,36 @@ impl YangMillsGaugeEngine {
             return (0.0, [0.0; MAX_GAUGE_ASSETS]);
         }
 
-        // Actualización adaptativa online de coeficientes beta sobre pares válidos
+        // 1. Precomputar innovaciones/retornos para activos válidos antes de cualquier mutación de estado
+        let mut returns = [0.0_f64; MAX_GAUGE_ASSETS];
+        for vi in 0..n_valid {
+            let i = valid_indices[vi];
+            let p_i = ln_p[i];
+            let prev_p_i = self.last_ln_prices[i];
+            returns[i] = if self.count > 0 && prev_p_i != 0.0 {
+                p_i - prev_p_i
+            } else {
+                p_i
+            };
+        }
+
+        // 2. Actualización adaptativa online de coeficientes beta sobre pares válidos
+        // Paso de gradiente exacto LMS normalizado: d/dβ 1/2(r_i - β r_j)^2 = - (r_i - β r_j) * r_j
+        // step = gamma * (err * r_j) / (1.0 + r_j^2)
+        // R6-C6: Si r_j == 0 (el activo j no cotizó en este tick), step == 0 exactamente,
+        // eliminando cualquier deriva espuria o dependencia del camino de llegada de ticks.
         if self.count > 0 {
             let gamma = self.adaptation_rate;
             for vi in 0..n_valid {
                 let i = valid_indices[vi];
-                let p_i = ln_p[i];
-                let prev_p_i = self.last_ln_prices[i];
-                let r_i = if prev_p_i != 0.0 { p_i - prev_p_i } else { p_i };
+                let r_i = returns[i];
                 for vj in (vi + 1)..n_valid {
                     let j = valid_indices[vj];
-                    let p_j = ln_p[j];
-                    let prev_p_j = self.last_ln_prices[j];
-                    let r_j = if prev_p_j != 0.0 { p_j - prev_p_j } else { p_j };
+                    let r_j = returns[j];
 
                     let err = r_i - self.beta_matrix[i][j] * r_j;
-                    if err.is_finite() {
-                        let step = gamma * (err / (1.0 + r_j * r_j));
+                    if err.is_finite() && r_j.abs() > 1e-12 {
+                        let step = gamma * ((err * r_j) / (1.0 + r_j * r_j));
                         let new_beta = (self.beta_matrix[i][j] + step).clamp(0.01, 100.0);
                         self.beta_matrix[i][j] = new_beta;
                         self.beta_matrix[j][i] = (1.0 / new_beta).clamp(0.01, 100.0);
@@ -149,13 +162,7 @@ impl YangMillsGaugeEngine {
             }
         }
 
-        for vi in 0..n_valid {
-            let i = valid_indices[vi];
-            self.last_ln_prices[i] = ln_p[i];
-        }
-        self.count += 1;
-
-        // Cómputo de la curvatura 2-forma F_{ijk} para todos los 3-ciclos válidos (vi < vj < vk)
+        // 3. Cómputo de la curvatura 2-forma F_{ijk} para todos los 3-ciclos válidos (vi < vj < vk)
         let mut total_action = 0.0_f64;
         let mut currents = [0.0_f64; MAX_GAUGE_ASSETS];
         let mut cycle_counts = [0.0_f64; MAX_GAUGE_ASSETS];
@@ -163,19 +170,15 @@ impl YangMillsGaugeEngine {
 
         for vi in 0..n_valid {
             let i = valid_indices[vi];
+            let r_i = returns[i];
             for vj in (vi + 1)..n_valid {
                 let j = valid_indices[vj];
+                let r_j = returns[j];
                 for vk in (vj + 1)..n_valid {
                     let k = valid_indices[vk];
+                    let r_k = returns[k];
 
                     // Conexión de paridad A_{ab} sobre log-retornos o innovaciones
-                    let prev_i = self.last_ln_prices[i];
-                    let prev_j = self.last_ln_prices[j];
-                    let prev_k = self.last_ln_prices[k];
-                    let r_i = if self.count > 1 && prev_i != 0.0 { ln_p[i] - prev_i } else { ln_p[i] };
-                    let r_j = if self.count > 1 && prev_j != 0.0 { ln_p[j] - prev_j } else { ln_p[j] };
-                    let r_k = if self.count > 1 && prev_k != 0.0 { ln_p[k] - prev_k } else { ln_p[k] };
-
                     let a_ij = r_i - self.beta_matrix[i][j] * r_j;
                     let a_jk = r_j - self.beta_matrix[j][k] * r_k;
                     let a_ki = r_k - self.beta_matrix[k][i] * r_i;
@@ -198,6 +201,13 @@ impl YangMillsGaugeEngine {
                 }
             }
         }
+
+        // 4. Actualizar memoria de precios y conteo causal SOLO al finalizar la curvatura (R6-C6)
+        for vi in 0..n_valid {
+            let i = valid_indices[vi];
+            self.last_ln_prices[i] = ln_p[i];
+        }
+        self.count += 1;
 
         // Normalización de corrientes por el número de ciclos incidentes y clamp suave a [-1.0, 1.0]
         for vi in 0..n_valid {

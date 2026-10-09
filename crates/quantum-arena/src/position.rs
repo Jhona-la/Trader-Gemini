@@ -581,11 +581,14 @@ impl Position {
         None
     }
 
-    /// Clasificación espectral continua en nanosegundos (branchless/O(1)):
-    /// Determina la naturaleza física de la posición según su escala intrínseca `entry_tau_ms`.
-    /// - Micro (alta reactividad / microestructura / scalping): τ <= 60_000 ms (≤ 1 min)
-    /// - Meso (dinámica intermedia / táctica): 60_000 ms < τ <= 900_000 ms (1 min - 15 min)
-    /// - Macro (baja frecuencia / tendencia / swing): τ > 900_000 ms (> 15 min)
+    /// Proyección espectral diagnóstica/informativa en nanosegundos (branchless/O(1), R6-C9):
+    /// Proyecta la escala continua intrínseca `entry_tau_ms` en bandas semánticas humanas para telemetría.
+    /// NOTA ARQUITECTURAL (U-ERR-5 / R6-C9): El motor de trading, el dimensionamiento de riesgo
+    /// y los brackets TP/SL operan sobre el continuo físico estocástico `entry_tau_ms` incondicionalmente,
+    /// sin bifurcaciones if/else discretas scalping vs swing en la toma de decisiones.
+    /// - Micro: τ <= 60_000 ms (≤ 1 min)
+    /// - Meso: 60_000 ms < τ <= 900_000 ms (1 min - 15 min)
+    /// - Macro: τ > 900_000 ms (> 15 min)
     #[inline(always)]
     pub fn spectral_regime_name(&self) -> &'static str {
         let tau = self.entry_tau_ms.load(Ordering::Relaxed);
@@ -598,14 +601,14 @@ impl Position {
         }
     }
 
-    /// Retorna si la posición fue abierta en régimen de microescala (scalping de alta frecuencia).
+    /// Retorna si la posición pertenece a la banda de microescala diagnóstica (telemetría/diagnóstico).
     #[inline(always)]
     pub fn is_micro_scalp(&self) -> bool {
         let tau = self.entry_tau_ms.load(Ordering::Relaxed);
         tau > 0 && tau <= 60_000
     }
 
-    /// Retorna si la posición fue abierta en régimen de macroescala (swing multiactivo).
+    /// Retorna si la posición pertenece a la banda de macroescala diagnóstica (telemetría/diagnóstico).
     #[inline(always)]
     pub fn is_macro_swing(&self) -> bool {
         let tau = self.entry_tau_ms.load(Ordering::Relaxed);

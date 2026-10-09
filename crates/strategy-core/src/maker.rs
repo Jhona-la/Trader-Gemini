@@ -108,14 +108,13 @@ impl MakerEngine {
         let half_spread = mid * dynamic_spread_pct;
 
         // Skews
-        // Si OBI > threshold (gran presión compradora), subimos los precios asimétricamente
-        // Skews
         // Si OBI excede el umbral de equilibrio, modulamos continuamente los precios asimétricamente.
-        // Erradica el salto escalón discontinuo que cambiaba bruscamente de 0 a dynamic_obi_skew.
+        // R6-C10: Rampa C^1 suave mediante smoothstep cúbico de Hermite S(u) = 3u^2 - 2u^3.
+        // Erradica los quiebres de pendiente (derivada discontinua) en |obi| = th y en la saturación.
         let dynamic_obi_skew = mid * (safe_poly_a * 0.01);
-        let obi_excess = (obi.abs() - safe_obi_th).max(0.0);
         let obi_scale = if safe_obi_th < 1.0 {
-            (obi_excess / (1.0 - safe_obi_th).max(1e-4)).min(1.0)
+            let u = ((obi.abs() - safe_obi_th) / (1.0 - safe_obi_th).max(1e-4)).clamp(0.0, 1.0);
+            u * u * (3.0 - 2.0 * u)
         } else {
             0.0
         };
