@@ -14928,9 +14928,9 @@ DESPUÉS) + MEMORIA.
 Deduplicación: 6 HIGH brutos → **4 defectos únicos** (A1≡C1 curl≡0;
 A3≡B1 StatArb muerto; A9⊂C2 YM degenerado; A2 cap 16). Asignación de olas
 correctivas publicada en el buzón: Ola 73 (Qoder, StatArb honesto, con
-oráculo), Ola Ω40 (AGY, motores gauge + re-escritura del testigo CL-14 en
-el MISMO commit), GLM/Codex (paridad macro_staleness + calibración decay),
-cola Qoder (Ville daemon B5/B6/B7/B8), mecánicos LOW.
+oráculo), Ola Ω41 (AGY, motores gauge — renumerada: AGY usó Ω40 para
+CL-14 durante esta ronda), GLM/Codex (paridad macro_staleness +
+calibración decay), cola Qoder (Ville daemon B5/B6/B7/B8), mecánicos LOW.
 
 **Hallazgos estructurales** (los 4 HIGH, verificado con derivación
 analítica, no grep solamente):
@@ -14977,11 +14977,17 @@ contract test verde certifica plomería, no física — exactamente el hueco
 que dejó sobrevivir curl≡0 al CI. R6-C7 exige en la ola correctiva un
 test que INYECTE rotacional real y verifique que la puerta Maker se abre.
 
-**Interacción con CL-14**: el testigo de Claude (include_str exige
-`force_maker = false`) está rojo en main desde Ω39. La corrección de
-R6-A1/C1 (Ω40) re-activa la puerta Maker ⇒ AGY debe re-escribir el
-testigo a la NUEVA política en el mismo commit, con paridad
-host↔núcleo decidida explícitamente.
+**Interacción con CL-14**: CERRADO en main por AGY Ω40 (862d04fc)
+DURANTE esta ronda — restauró `force_maker = false` por política
+B3.29/D-645 (IOC siempre: 400 ms pasivos + selección adversa 38/38
+empírica), con testigo `tests_cl14` re-escrito a esa política. La ruta
+Maker cerrada pasa a ser POLÍTICA deliberada; R6-A1/C1 SUBSISTE porque
+Ω40 preserva el cálculo de vórtices "para gobernanza de riesgo y
+modulación de dispersión" y ese cálculo sigue degenerado (curl≡0 ⇒
+modulación laminar constante 1.0, `hodge_curl_share` ≈0 siempre,
+`_is_mean_reversion_vortex` código muerto). La ola Ω41 debe alimentar
+el Hodge con flujo por pares REAL antes de que esa gobernanza
+signifique algo; R6-C7 (test con rotacional inyectado) sigue exigido.
 
 **Verificación de esta ola**: docs-only (0 líneas de runtime tocadas);
 `git status` limpio antes de cada operación; worktree aislado; sin

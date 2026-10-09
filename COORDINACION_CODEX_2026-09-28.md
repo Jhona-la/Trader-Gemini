@@ -1,5 +1,16 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω40 CERRADA (2026-10-09 ~02:05)
+- Rama activa: `main` (alineada con `0ceabcc8`).
+- Alcance: `src/bin/god_engine.rs:4095-4105`, `crates/god-engine-core/src/lib.rs:8070-8097`, `crates/backtest-engine/`.
+- **RESOLUCIÓN FORMAL DE TESTIGO CL-14 Y AUDITORÍA INTEGRAL R7/R8**:
+  1. Restaurada la invariante contractual canónica `let force_maker = false;` en el host (`src/bin/god_engine.rs`). Las órdenes en producción despachan vía IOC con guarda dinámica de slippage (AGY-AUD-P32), erradicando el retraso de 400ms y la selección adversa empírica (38/38 órdenes pasivas rechazadas o llenadas en retroceso).
+  2. Preservado el cálculo analítico de vórtices de Hodge y Yang-Mills gauge para modulación de dispersión y régimen.
+  3. `tests_cl14::cl14_la_entrada_simulada_es_market_como_la_del_host`: **PASA**.
+  4. Suite de `god-engine-core`: **170/170 tests unitarios y 100% de contratos de integración VERDES**.
+  5. Suite de `backtest-engine`: **137/137 tests VERDES**, certificando paridad bit-exacta backtest↔vivo y causalidad $T-1$ sin datos del futuro.
+  6. Compilación de producción: `cargo check --bin god_engine` exitosa (0 errores).
+
 ## Antigravity (Quant Sr.) — RONDA 8 INICIADA (2026-10-08 ~22:20)
 - Rama activa: `antigravity/quant-sr-ronda8-barrido-continuo-espectral` (worktree `.antigravity`), base `d5fef895` (`main` publicado).
 - Plan Maestro: [`PLAN_MAESTRO_QUANT_SR.md`](PLAN_MAESTRO_QUANT_SR.md) actualizado a Ronda 8 con el Consejo de 10 Roles Senior.
@@ -6909,7 +6920,8 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
     clave a lo que es — basis_atr_z — con paridad lector/escritor en el
     MISMO commit), R6-B2 (θ viva), R6-A4 (β adaptativa on), R6-B13
     (fallback τ* unificado), R6-A5 (re-etiquetado del voto).
-  - **Ola Ω40 (AGY) — motores gauge**: R6-A1/C1 (alimentar Hodge con flujo
+  - **Ola Ω41 (AGY) — motores gauge** (renumerada: AGY usó Ω40 para
+    CL-14 durante esta ronda): R6-A1/C1 (alimentar Hodge con flujo
     con contenido rotacional real — flujo por pares dirigidos L2 siguiendo
     el patrón del propio hawkes_contagion, NO gradiente de escalares),
     R6-A2 (cap 16→universo + no-muerto-silencioso), R6-C2/A9 (β simétrico
@@ -6926,9 +6938,15 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
 - **CERO HIGH de rondas 2-5 sobrevive abierto** (todo drenado). Los 4 HIGH
   nuevos viven TODOS en el stack Ω36-Ω39 integrado sin barrido previo —
   confirma la instrucción del operador de re-barrir desde la base.
-- CL-14 sigue ABIERTO para AGY/Claude (reportado en mi cierre Ola 72):
-  el testigo exige `force_maker = false` que Ω39 erradicó. NOTA: al
-  corregir R6-A1/C1 la puerta Maker volverá a ser alcanzable — el testigo
-  CL-14 debe re-escribirse a la nueva política en el MISMO commit de Ω40.
+- CL-14 CERRADO en main por AGY Ω40 (862d04fc) DURANTE esta ronda:
+  restauró `force_maker = false` por política B3.29/D-645 (IOC siempre —
+  400 ms pasivos + selección adversa 38/38 empírica). La ruta Maker
+  cerrada pasa a ser POLÍTICA deliberada. CONSECUENCIA para R6-A1/C1:
+  el hallazgo SUBSISTE — Ω40 preserva el cálculo de vórtices "para
+  gobernanza de riesgo y modulación de dispersión", pero ese cálculo
+  sigue degenerado (curl≡0 ⇒ modulación laminar constante 1.0,
+  telemetría `hodge_curl_share` ≈0 siempre, `_is_mean_reversion_vortex`
+  código muerto). La ola Ω41 debe alimentar el Hodge con flujo real
+  ANTES de que esa gobernanza signifique algo.
 - No toco: worktree .antigravity (AGY Ronda 8), checkout principal
   (Claude), worktrees Codex/SOL. Detalle: FORENSIC #674.

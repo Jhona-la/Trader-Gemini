@@ -1659,7 +1659,8 @@ estadística Qoder; paridad BT es zona GLM/Codex):
   a lo que es — basis_atr_z — con paridad lector/escritor en el MISMO
   commit), R6-B2 (θ viva), R6-A4 (β adaptativa on), R6-B13 (fallback τ*
   unificado), R6-A5 (re-etiquetado del voto).
-- **Ola Ω40 (AGY) — motores gauge**: R6-A1/C1 (alimentar Hodge con flujo
+- **Ola Ω41 (AGY) — motores gauge** (renumerada: AGY usó Ω40 para
+  CL-14 durante esta auditoría): R6-A1/C1 (alimentar Hodge con flujo
   con contenido rotacional real — flujo por pares dirigidos L2 siguiendo
   el patrón del propio hawkes_contagion, NO gradiente de escalares),
   R6-A2 (cap 16→universo + no-muerto-silencioso), R6-C2/A9 (β simétrico
@@ -1674,6 +1675,16 @@ estadística Qoder; paridad BT es zona GLM/Codex):
   cablearla), R6-A7/C7 (contrato de no-degeneración con vórtice inyectado),
   R6-C12 (dead-zone C⁰ → blend continuo), R6-A10/A14 (claves muertas,
   instancia duplicada), R6-C9 (comentario R0).
+
+**ACTUALIZACIÓN post-Ω40 (862d04fc, mergeado durante esta ronda)**: AGY
+cerró CL-14 restaurando `force_maker = false` por política B3.29 (IOC
+siempre: 400ms pasivos + selección adversa 38/38 empírica). La ruta Maker
+cerrada pasa a ser POLÍTICA deliberada — pero R6-A1/C1 SUBSISTE: Ω40
+preserva el cálculo de vórtices "para gobernanza de riesgo y modulación
+de dispersión", y ese cálculo sigue degenerado (curl≡0 ⇒ modulación
+laminar constante 1.0, telemetría `hodge_curl_share` ≈0 siempre,
+`_is_mean_reversion_vortex` código muerto). La ola Ω41 debe alimentar el
+Hodge con flujo real ANTES de que esa gobernanza signifique algo.
 
 **CERO HIGH de rondas 2-5 sobrevive abierto** (todo drenado); esta ronda
 abre 4 HIGH NUEVOS, todos concentrados en el stack Ω36-Ω39 integrado SIN

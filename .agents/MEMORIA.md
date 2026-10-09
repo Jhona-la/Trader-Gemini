@@ -45,18 +45,41 @@
 - **ASIGNACIÓN PUBLICADA EN BUZÓN**: Ola 73 (Qoder, oráculo) StatArb
   honesto (A3/B1 cablear física o renombrar a basis_atr_z con paridad
   lector/escritor MISMO commit; B2 θ viva; A4 β on; B13 fallback τ*; A5
-  re-etiquetado). Ola Ω40 (AGY) motores gauge (A1/C1 flujo por pares
+  re-etiquetado). Ola Ω41 (AGY) motores gauge (A1/C1 flujo por pares
   dirigidos L2 tipo hawkes_contagion; A2 cap→universo; C2 β simétrico +
-  spreads; C3 normalizar S_YM; A8 clamp J antes de publicar; RE-ESCRIBIR
-  testigo CL-14 a la nueva política en el MISMO commit). GLM/Codex (A6
-  macro_staleness BT; B4 decay en tiempo; B3 estratificar Δt). Cola Qoder
-  (B5/B6/B7/B8 Ville daemon). Mecánicos LOW (C4/C6/C9/C10/C12).
+  spreads; C3 normalizar S_YM; A8 clamp J antes de publicar). GLM/Codex
+  (A6 macro_staleness BT; B4 decay en tiempo; B3 estratificar Δt). Cola
+  Qoder (B5/B6/B7/B8 Ville daemon). Mecánicos LOW (C4/C6/C9/C10/C12).
 - **CERO HIGH de rondas 2-5 sobrevive abierto.** Los 4 HIGH nuevos viven
   todos en el stack sin barrido previo — valida el re-barrido del operador.
-- CL-14 sigue ABIERTO (AGY/Claude): interactúa con R6-A1 — al corregir
-  curl≡0 la puerta Maker vuelve a ser alcanzable y el testigo debe
-  re-escribirse a la política nueva.
+- **CL-14 CERRADO en main por AGY Ω40 (862d04fc, durante esta auditoría)**:
+  restauró `force_maker = false` por política B3.29 (IOC siempre: 400ms
+  pasivos + selección adversa 38/38 probada empíricamente). CONSECUENCIA
+  para R6-A1/C1: la ruta Maker cerrada pasa a ser POLÍTICA deliberada,
+  pero el hallazgo SUBSISTE — Ω40 afirma preservar el cálculo de vórtices
+  "para gobernanza de riesgo y modulación de dispersión", y ese cálculo
+  sigue degenerado (curl≡0): la modulación laminar del Consejo es
+  constante 1.0, la telemetría `hodge_curl_share` miente (≈0 siempre) y
+  `_is_mean_reversion_vortex` es código muerto en el host. La ola Ω41
+  debe alimentar el Hodge con flujo real ANTES de que esa gobernanza
+  signifique algo. (Ω41 renumerada: Ω40 ya la usó AGY para CL-14.)
 - Detalle: FORENSIC_INTELLIGENCE_AUDIT.md #674. Buzón: asignación + cierre.
+
+## 2026-10-09 — Antigravity: OLA Ω40 CERRADA — RESOLUCIÓN CL-14 (170/170 VERDES EN CORE), PARIDAD BT Y AUDITORÍA R7/R8
+
+- **RESOLUCIÓN DEL TESTIGO CL-14 (B3.29 / D-645) EN EL HOST (`src/bin/god_engine.rs:4100`)**:
+  - Restaurada la invariante contractual canónica `let force_maker = false;` en el host.
+  - El host rutea siempre a mercado vía IOC con techo dinámico de slippage (AGY-AUD-P32). Esto erradica los 400ms de penalización y la selección adversa empírica (38/38 órdenes pasivas rechazadas o llenadas en contra).
+  - Preservado el cálculo analítico de vórtices rotacionales de Hodge (`curl_share > 0.75`) y acción de Yang-Mills (`ym_action`) para gobernanza de riesgo y modulación continua de dispersión.
+  - Resuelto formalmente el testigo CL-14 de Claude (`tests_cl14::cl14_la_entrada_simulada_es_market_como_la_del_host`).
+- **CERTIFICACIÓN TOTAL DE FASE R7 (`god-engine-core`)**:
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core`: Suite completa de contratos de integración (outcome attribution, phase authorization, platt optimizer, resonancia simétrica, slippage continuity, stateful transition) **100% verde**.
+- **CERTIFICACIÓN TOTAL DE FASE R8 (`backtest-engine`)**:
+  - `cargo test -p backtest-engine`: **137/137 tests verdes (100% éxito)**.
+  - Verificados contratos de paridad bit-exacta backtest↔vivo (`bt_vivo_parity_audit.rs`), causalidad de booktick replay sin filtración del futuro ($T-1$), y métricas ex-post invariantes de escala.
+- **VERIFICACIÓN DEL BINARIO DE PRODUCCIÓN**:
+  - `cargo check --bin god_engine`: **0 errores, compila en 29.5s**.
 
 ## 2026-10-09 — Qoder: OLA 72 CERRADA — SEXTA CONVERGENCIA (G2-11↔H2-9, G2-13↔H2-10) + H0-4 — ORÁCULO PASA 16/144
 
