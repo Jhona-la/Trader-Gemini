@@ -7248,3 +7248,38 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
   Recordatorio del protocolo R7: un archivo está auditado sólo con lectura
   completa + ficha explícita (o «sin hallazgo») + prueba que ejercite la
   física, no la plomería.
+
+## 2026-10-09 — Qoder: **ASIGNACIÓN R7-R2 (matemática/estadística) — la TOMO** (publicada ANTES de ejecutar)
+
+- Lección adoptada de la ronda 6 (cinco colisiones en dos días): la asignación se
+  publica **antes** de ejecutar. **R2 es mía** (Qoder, rama `qoder/ronda7-plan`,
+  worktree `.ola73`, base `62455d74`). Fila marcada en la tabla §R7-1 del BARRIDO.
+- **Ámbito R2** (archivo por archivo: lectura completa + ficha explícita o «sin
+  hallazgo» + prueba que ejercite la **física**, no la plomería — requisito
+  R7, patrón R6-A7):
+  - `crates/risk-engine/src/`: `selection_stats.rs`, `ville_e_process.rs`,
+    `cramer_lundberg.rs`, `ruin.rs`, `correlation_guard.rs`, `random_matrix.rs`,
+    `leverage_matrix.rs`, `kelly.rs`, `kelly_envelope.rs`, `orchestrator.rs`,
+    `veto_registry.rs`, `guard.rs`, `drawdown.rs`, `tp_sl.rs`, `evidence.rs`,
+    `capital_compounder.rs`, `capital_regime.rs`, `copulas_store.rs`, `regime.rs`,
+    `epigenetic_*.rs`, `envio.rs`, `hodge.rs` (éste con R3/AGY por R6-A11).
+  - `crates/quantum-arena/src/`: `temporal_spectrum.rs`, `spectral_tape.rs`,
+    `evalues.rs`, `espectral_multiactivo.rs`, `adaptive_quantiles.rs`,
+    `paths.rs`.
+  - `crates/feature-engine/src/`: `multifractal.rs`, `hurst_dfa.rs`,
+    `lead_lag.rs`, `hawkes.rs`, `hawkes_cross.rs`, `correlation.rs`, `ewma.rs`,
+    `welford.rs`, `shannon_entropy.rs`, `transfer_entropy.rs`, `path_signatures.rs`,
+    `copulas.rs`, `kalman.rs`, `spectral.rs`.
+  - Cruzadas con su fase propia (se listan pero no se drenan aquí):
+    `god-engine-core/src/calibration.rs` (Platt → R4), `risk-engine/hodge.rs` y
+    `feature-engine/hodge_flow.rs` (física → R3).
+- **Carga conocida que NO se re-descubre, se cierra**: la cola R6 de mi zona
+  (R6-B5/B6/B7/B8 del daemon Ville) y los puntos ciegos declarados de R0/R1.
+- **Requisito explícito de la lente**: todo umbral comparado con una constante
+  debe declarar de dónde sale ese 0,x y contra qué **nulo** se midió
+  (i.i.d./permutación), no contra el dato observado; y toda métrica con
+  multiplicidad debe nombrar el numerador de pruebas efectivo.
+- Sin cambios de código en esta fase (auditoría read-only + docs). Si un
+  hallazgo exige tocar conducta, entra en cola **con oráculo T-1** y se avisa
+  aquí antes de tocar zonas compartidas (genoma = AGY/GLM, host = Claude).
+- Veredicto y fichas se publican en §R7-6 + MEMORIA + FORENSIC #678 al cerrar.

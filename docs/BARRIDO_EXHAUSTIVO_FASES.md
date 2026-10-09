@@ -1797,7 +1797,7 @@ veredicto se escribe abajo al cerrarse.
 |---|---|---|---|---|
 | R0 | ledger de cobertura 488 `.rs` + censo código muerto/duplicado | inventario | Qoder | **CERRADA** (§R7-4) |
 | R1 | doctrina/nomenclatura (`AGENTS.md`, MEMORIA, planes maestros, `ARQUITECTURA_VIVA`, ADRs) + grep `scalp\|swing` | metas/conceptos | Qoder | **CERRADA** (§R7-5: 9 fichas, 0 HIGH / 2 MED / 4 LOW / 3 INFO) |
-| R2 | matemática/estadística (risk-engine stats, Ville, Cramér-Lundberg, ruin, correlation_guard, leverage_matrix, orchestrator, vetos, multifractal, lead-lag, temporal_spectrum, spectral_tape) | matemática | — | ABIERTA |
+| R2 | matemática/estadística (risk-engine stats, Ville, Cramér-Lundberg, ruin, correlation_guard, leverage_matrix, orchestrator, vetos, multifractal, lead-lag, temporal_spectrum, spectral_tape) | matemática | Qoder | **EN CURSO** (§R7-6 al cerrar) |
 | R3 | física/cuántica (hodge ×2, hodge_flow, yang_mills, stat_arb, vecm, multivariate_coint, maker + 13 motores signal-engine) | física | — | ABIERTA |
 | R4 | núcleo vivo (`god-engine-core/src/lib.rs` por bloques, `src/bin/god_engine.rs`, orquestador, state/position) | integración viva | — | ABIERTA |
 | R5 | dinero/ejecución (risk-engine completo + execution-engine) | ejecución | — | ABIERTA |
