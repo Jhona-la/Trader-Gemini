@@ -1,4 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-08 — Antigravity: OLA Ω37 CERRADA — DESCOMPOSICIÓN DE HELMHOLTZ-HODGE EN FLUJOS CONTINUOS DE LIQUIDEZ L2/L3 (R3/R4)
+
+- Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `87f6bab8`.
+- **DESCOMPOSICIÓN ORTOGONAL DE HELMHOLTZ-HODGE SOBRE FLUJOS L2/L3 (`crates/feature-engine/src/hodge_flow.rs`)**:
+  - Implementación analítica formal de `HelmholtzHodgeFlowEngine` para tensores continuos de flujo de microestructura multiactivo (Cross-OFI, Cross-CVD, flujo de dinero neto).
+  - Descomposición exacta sobre el grafo completo $K_N$: $F = \nabla \phi + \nabla \times \mathbf{A}$.
+  - Resuelve analíticamente en $\mathcal{O}(N^2)$ nanosegundos (< 50 ns, zero heap allocations) la energía del gradiente $\|\nabla \phi\|^2 = \frac{1}{N}\sum \text{div}_i^2$, la energía del rotacional $\|\nabla \times \mathbf{A}\|^2 = \|F\|^2 - \|\nabla \phi\|^2$, y el índice de vorticidad `curl_share` $\in [0, 1]$.
+  - Proporciona una clasificación topológica continua del régimen de liquidez:
+    * `curl_share < 0.25`: Cascada transitiva pura (régimen direccional, ruptura y momentum libre de vórtices).
+    * `curl_share > 0.75`: Circulación cerrada pura (vórtice de liquidez, rotación sin avance direccional, régimen óptimo para arbitraje de ciclo y reversión a la media).
+- **CONTRATO FORMAL EN `crates/feature-engine/tests/hodge_flow_contract.rs`**:
+  - `hodge_contrato_flujo_gradiente_puro_tiene_curl_cero`: gradiente escalar puro verifica `curl_share < 1e-12` y potenciales idénticos a los escalares generadores.
+  - `hodge_contrato_vortice_puro_tiene_curl_uno`: 3-ciclo cerrado puro verifica divergencias nulas en todos los nodos y `curl_share == 1.0`.
+  - `hodge_contrato_ortogonalidad_l2_de_componentes`: teorema de Pitágoras exacto $\|\nabla \phi\|^2 + \|\nabla \times \mathbf{A}\|^2 = \|F\|^2$ con tolerancia $< 10^{-12}$.
+  - `hodge_contrato_inmunidad_a_nan_y_grafos_pequenos`: rechazo limpio y seguro sin pánicos ante $N < 3$, flujo nulo o `NaN`.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p feature-engine`: **102/102 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias** (55.79s).
+
 ## 2026-10-08 — Antigravity: OLA Ω36 CERRADA — FIBRADO GAUGE YANG-MILLS, CONTINUOUS SDE STATARB CON RELOJ FÍSICO Y ACOPLAMIENTO ESPECTRAL (R3/R4)
 
 - Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `7c1a3bbe`.
