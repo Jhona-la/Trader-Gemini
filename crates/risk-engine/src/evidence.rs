@@ -124,6 +124,47 @@ pub fn win_rate_lcb(win_rate: f64, trades: f64) -> Option<f64> {
     }
 }
 
+/// Cota inferior bayesiana jerárquica (Empirical Bayes Shrinkage).
+///
+/// Para muestras pequeñas (n < 20), el estimador no colapsa a 0.0 ante una pérdida
+/// ni a un valor sub-umbral que bloquee la acumulación de datos (evitando el deadlock
+/// absorbente de rej(4)). Contrae la evidencia local hacia el prior del ensamble `p_prior`
+/// con masa pseudo-muestral `n_prior`.
+#[inline]
+pub fn win_rate_hierarchical_lcb(
+    win_rate: f64,
+    trades: f64,
+    p_prior: f64,
+    n_prior: f64,
+) -> f64 {
+    let p0 = if p_prior.is_finite() && p_prior > 0.0 && p_prior < 1.0 {
+        p_prior
+    } else {
+        0.55 // Prior por defecto del ensamble
+    };
+    let k0 = if n_prior.is_finite() && n_prior > 0.0 {
+        n_prior
+    } else {
+        10.0 // 10 pseudomuestras de regularización
+    };
+    if !trades.is_finite() || trades < 1.0 || !win_rate.is_finite() {
+        return p0;
+    }
+    let n = trades.min(1e9);
+    let w = win_rate.clamp(0.0, 1.0);
+    // Posterior Beta jerárquico: prior Beta(k0 * p0, k0 * (1 - p0)) + observaciones (n * w, n * (1 - w))
+    let post = EdgePosterior {
+        alpha: k0 * p0 + n * w,
+        beta: k0 * (1.0 - p0) + n * (1.0 - w),
+    };
+    let lcb = post.lcb(Z_LCB);
+    if lcb.is_finite() {
+        lcb.clamp(0.05, 0.95)
+    } else {
+        p0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,5 +219,23 @@ mod tests {
         let p1000 = win_rate_lcb(0.6, 1_000.0).unwrap();
         assert!(p10 < 0.6 && p1000 < 0.6, "la cota va por debajo de la media");
         assert!(p1000 > p10, "más evidencia, cota más alta: {p10} {p1000}");
+    }
+
+    #[test]
+    fn cota_jerarquica_no_colapsa_a_cero_en_n_1_evitando_deadlock() {
+        // En n=0 devuelve el prior intacto
+        assert_eq!(win_rate_hierarchical_lcb(0.5, 0.0, 0.55, 10.0), 0.55);
+
+        // En n=1 con pérdida, NO colapsa a 0.0 (evita deadlock de rej(4))
+        let p_loss_1 = win_rate_hierarchical_lcb(0.0, 1.0, 0.55, 10.0);
+        assert!(p_loss_1 > 0.20, "n=1 con perdida no debe colapsar a 0: {p_loss_1}");
+
+        // En n=1 con ganancia, refleja convicción inicial
+        let p_win_1 = win_rate_hierarchical_lcb(1.0, 1.0, 0.55, 10.0);
+        assert!(p_win_1 > p_loss_1 && p_win_1 > 0.30, "n=1 con ganancia: {p_win_1}");
+
+        // Con muestra grande (n=1000), converge al valor medido y lava el prior
+        let p_grande = win_rate_hierarchical_lcb(0.70, 1000.0, 0.55, 10.0);
+        assert!((p_grande - 0.70).abs() < 0.05, "n grande converge a la media: {p_grande}");
     }
 }
