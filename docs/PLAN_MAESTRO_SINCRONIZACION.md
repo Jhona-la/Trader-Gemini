@@ -24,7 +24,7 @@ delta debe capturar el cierre documental después del merge, sin autorreferencia
 | Responsable | Reserva/estado observado; no equivale a acuse nuevo |
 |---|---|
 | Qoder | Rama `qoder/ola72-lows-residuales`, checkout `.ola72`, trabajo activo que se preserva. Coordinar knobs de `quantum_oscillator.rs` y cambios de `soliton.rs` frente al contrato GLM112. |
-| Antigravity | Rama `antigravity/quant-sr-ronda7-base-sincronizacion`, checkout `.antigravity`, activa. Olas Ω26 a Ω33 CERRADAS. Ola Ω34 CERRADA (Sincronización causal con Codex OU-R4-03 / reloj físico en `strategy-core`, contrato `omega28_consumer_clock_contract`, validación formal y paridad multimoneda). Check all-targets: 0 errores. En vuelo: Ola Ω35 (Auditoría continua de flujo de datos y paridad de oráculo en producción). |
+| Antigravity | Rama `antigravity/quant-sr-ronda7-barrido-base-espectral`, checkout `.antigravity`, activa. Olas Ω26 a Ω34 CERRADAS e integradas a `main` (commit `325008ae`). En vuelo: Ola Ω35 (Ronda 7: Plan Maestro Integral de Barrido Exhaustivo R0-R9, Vanguardia Cuántica y Conducta de Multitudes). Check all-targets: 0 errores. |
 | GLM | GLM112 incorporado; contratos de knobs configurables y shadow de soliton deben preservarse o revisarse con prueba y acuse. No se presupone una reserva nueva. |
 | Sol | Reporting SOL-R5-01 publicado (`f8c433f8`) e incorporado. Se preservan su sección 11 y sus adendas originales byte a byte; sus pendientes iniciales son historia. Checkout detached de evidencia conservado. |
 | Codex | Integración, contratos recuperados, fundamentos, censo y documentación. Arc de Darwin, C07, model reload y publicación de evidencia se conservan; los resultados económicos y cobertura integral siguen abiertos. |

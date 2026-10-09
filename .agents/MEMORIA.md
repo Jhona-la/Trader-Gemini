@@ -1,4 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-08 — Antigravity: OLA Ω35 EN VUELO — RONDA 7: BARRIDO BASE ESPECTRAL, VANGUARDIA CUÁNTICA Y CONDUCTA DE MULTITUDES (R0–R9)
+
+- Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `325008ae`.
+- **PLAN MAESTRO DE VANGUARDIA EVOLUTIVA Y BARRIDO EXHAUSTIVO (RONDA 7)**:
+  - Apertura formal del plan por fases R0-R9 recorriendo todos los archivos del sistema desde sus fundamentos matemáticos hasta el hot-path en Rust.
+  - Mapeo de la frontera evolutiva ("el siguiente paso de cada cálculo"):
+    * De media móvil escalar $\to$ Fokker-Planck de distribución condicional $\mathcal{P}(x, t)$.
+    * De volatilidad gaussiana $\to$ Multifractalidad $D(h)$ e intermitencia de Kolmogorov.
+    * De cointegración estática $\to$ Fibrado de Gauge Yang-Mills con tensor de curvatura de arbitraje $F_{\mu\nu}$.
+    * De regímenes HMM discretos $\to$ Descomposición ortogonal de Helmholtz-Hodge (potencial $\nabla\phi$, solenoidal $\nabla\times\mathbf{A}$, armónico $\mathbf{h}$).
+    * De Machine Learning tabular $\to$ Online Mirror Descent / FTRL y programación genética epigenética cuántica.
+    * De dicotomía scalping/swing $\to$ Continuo temporal espectral $\tau \in [30\text{ s}, 43\,200\text{ s}]$ gobernado por difusión $\sigma(\tau) \propto \tau^H$.
+  - Formalización de la conducta de multitudes:
+    * Ratio minorista long/short (`ls_account_by_symbol`) como señal contrarian de riesgo de squeeze.
+    * Taker buy/sell ratio vs absorción institucional en libro L2.
+    * Continuous VPIN para detección anticipada de microestructura tóxica.
+  - Blindaje innegociable de capital micro \$13.00 USD: piso \$5.10 notional, apalancamiento 5.0x, \$1.02 margen por posición, máx 2 concurrentes, colchón libre $\ge \$10.96$ (84.3%).
+- **ESTADO DE LA RED**: Rama anterior `antigravity/quant-sr-ronda7-base-sincronizacion` fusionada en `main` (`325008ae`) y eliminada localmente. Worktrees `.ola72` y `.codex` preservados.
+
 ## 2026-10-08 — Antigravity: OLA Ω34 CERRADA — RONDA 7: SINCRONIZACIÓN CAUSAL CON CODEX (OU-R4-03 / RELOJ FÍSICO CONTINUO EN STRATEGY-CORE) Y AUDITORÍA MULTIMONEDA
 
 - Rama: `antigravity/quant-sr-ronda7-base-sincronizacion` (worktree `.antigravity`), base `77ab77b6`.
