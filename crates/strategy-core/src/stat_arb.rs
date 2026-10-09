@@ -3,6 +3,12 @@ use crate::{QuantumStrategy, SignalIntent, SignalType, TradeHorizon};
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
 
+/// Fallback canónico de τ* dominante en milisegundos: centro geométrico de la
+/// banda operativa [30 s, 12 h] (√(30 000 · 43 200 000) ≈ 1 138 419,6 ms).
+/// Único valor para TODOS los caminos del motor (R6-B13: antes 30.0 s en
+/// `update_with_clock` vs 1138.0 s en `evaluate_for_coin`).
+const DEFAULT_DOMINANT_TAU_MS: f64 = 1_138_419.6;
+
 pub struct StatArbEngine {
     window_size: usize,
     history: Vec<f64>,
@@ -80,6 +86,30 @@ impl StatArbEngine {
         } else {
             1.0
         }
+    }
+
+    /// Z-score estacionario del spread bajo la SDE viva, si está madura
+    /// (≥ 10 observaciones causales). `None` durante el calentamiento o sin SDE.
+    /// Este es el estadístico que el core publica como `statarb_ou_zscore` y
+    /// que `evaluate_for_coin` prefiere como física propia (R6-A3/B1).
+    pub fn last_ou_zscore(&self) -> Option<f64> {
+        let sde = self.physical_sde.as_ref()?;
+        if sde.count < 10 {
+            return None;
+        }
+        let z = sde.stationary_zscore(sde.last_value);
+        if z.is_finite() {
+            Some(z)
+        } else {
+            None
+        }
+    }
+
+    /// Timestamp físico (ms) del último update causal aceptado por la SDE.
+    /// 0 si la SDE nunca ha observado. Permite al publicador detectar
+    /// staleness del feed de pares (R6-A3).
+    pub fn last_ou_ts_ms(&self) -> u64 {
+        self.physical_sde.as_ref().map(|s| s.last_ts_ms).unwrap_or(0)
     }
 
     /// Configura el umbral de spread mínimo para cubrir comisiones y fricción dinámicamente.
@@ -216,7 +246,9 @@ impl StatArbEngine {
             let tau_sec = if dominant_tau_ms.is_finite() && dominant_tau_ms > 0.0 {
                 dominant_tau_ms / 1000.0
             } else {
-                30.0
+                // R6-B13: fallback unificado al centro geométrico de la banda
+                // operativa (antes 30.0 s aquí vs 1138.0 s en evaluate_for_coin).
+                DEFAULT_DOMINANT_TAU_MS / 1000.0
             };
 
             // Guarda de acoplamiento espectral:
@@ -293,29 +325,49 @@ impl QuantumStrategy for StatArbEngine {
             None => return 0.0,
         };
 
-        // Leer z-score de cointegración / arbitraje estadístico publicado en el registro
-        let z = r
-            .get_scoped_parameter(sym_opt, cid_opt, "vecm_zscore", "StatArbEngine")
-            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "cointegration_zscore", "StatArbEngine"))
-            .map(|p| p.get_value())
-            .unwrap_or(0.0);
+        // OLA 73 (R6-A3/B1/A5): preferir la física PROPIA — z estacionario de
+        // la SDE OU que el CORE calibra sobre la basis fut-spot con reloj
+        // físico real (clave `statarb_ou_zscore`). El 0.0 explícito del core
+        // (spot ausente/stale/SDE fría) entra por aquí como abstención.
+        // Fallback legacy: `vecm_zscore` (basis/ATR) — paridad de conducta
+        // con el árbol previo mientras la física viva no publica.
+        let own_z = r
+            .get_scoped_parameter(sym_opt, cid_opt, "statarb_ou_zscore", "StatArbEngine")
+            .map(|p| p.get_value());
+
+        let z = match own_z {
+            Some(z) if z.is_finite() => {
+                // Guarda espectral con la MISMA física viva (R6-B2): t½ del
+                // registro (θ calibrada en producción) contra τ* dominante del
+                // espectro de la moneda. Si la reversión tarda más del doble
+                // del ciclo dominante, el spread absorbe deriva secular: veto.
+                let t_half_ms = r
+                    .get_scoped_parameter(sym_opt, cid_opt, "statarb_half_life_ms", "StatArbEngine")
+                    .map(|p| p.get_value())
+                    .unwrap_or(f64::INFINITY);
+                let tau_dom_ms = r
+                    .get_scoped_parameter(sym_opt, cid_opt, "dominant_tau_ms", "StatArbEngine")
+                    .map(|p| p.get_value())
+                    .unwrap_or(DEFAULT_DOMINANT_TAU_MS);
+                // Fail-closed: NaN en cualquiera de las dos cotas ⇒ veto.
+                if !(t_half_ms <= 2.0 * tau_dom_ms) {
+                    return 0.0;
+                }
+                z
+            }
+            // Clave presente pero venenosa (NaN/Inf): abstención honesta.
+            Some(_) => return 0.0,
+            None => r
+                .get_scoped_parameter(sym_opt, cid_opt, "vecm_zscore", "StatArbEngine")
+                .or_else(|| {
+                    r.get_scoped_parameter(sym_opt, cid_opt, "cointegration_zscore", "StatArbEngine")
+                })
+                .map(|p| p.get_value())
+                .unwrap_or(0.0),
+        };
 
         if !z.is_finite() {
             return 0.0;
-        }
-
-        // Acoplamiento espectral continuo (Ola Ω36):
-        // Si el estimador continuo SDE OU tiene una vida media mayor al doble del horizonte
-        // dominante tau*, no absorbe la deriva secular y se inhibe el voto.
-        if let Some(sde) = &self.physical_sde {
-            let half_life_s = sde.half_life_seconds();
-            let dominant_tau_s = r
-                .get_scoped_parameter(sym_opt, cid_opt, "dominant_tau_ms", "StatArbEngine")
-                .map(|p| p.get_value() / 1000.0)
-                .unwrap_or(1138.0);
-            if half_life_s > 2.0 * dominant_tau_s {
-                return 0.0;
-            }
         }
 
         // Activación suave y continua:
@@ -486,5 +538,105 @@ mod tests {
 
         // El beta adaptativo debe haber evolucionado lejos de 1.0 hacia la verdadera elasticidad
         assert!(engine.beta_hedge_ratio > 1.05);
+    }
+
+    // ===== OLA 73 (R6-A3/A4/A5/B1/B2/B13): StatArb honesto =====
+
+    #[test]
+    fn test_stat_arb_ola73_last_ou_zscore_maturity_gates() {
+        let mut engine = StatArbEngine::new(20, 1.5).with_continuous_ou_sde();
+        // SDE fría: sin estadístico propio
+        assert_eq!(engine.last_ou_ts_ms(), 0);
+        assert!(engine.last_ou_zscore().is_none());
+
+        let mut t = 1_000_000_u64;
+        for i in 0..9 {
+            t += 1000;
+            let _ = engine.update_with_clock(100.0 + (i as f64 * 0.01), 100.0, t, 60_000.0);
+        }
+        // 9 observaciones causales: aún bajo el umbral de madurez (count < 10)
+        assert!(engine.last_ou_ts_ms() > 0);
+        assert!(engine.last_ou_zscore().is_none());
+
+        t += 1000;
+        let _ = engine.update_with_clock(101.0, 100.0, t, 60_000.0);
+        // Madura: z estacionario finito
+        let z = engine.last_ou_zscore().expect("z propio tras madurez");
+        assert!(z.is_finite());
+    }
+
+    #[test]
+    fn test_stat_arb_ola73_fallback_tau_unificado_centro_geometrico() {
+        // R6-B13: un único fallback de τ* — centro geométrico de la banda
+        // operativa [30 s, 12 h]: √(30 000 · 43 200 000) ≈ 1 138 419,6 ms.
+        let centro = (30_000.0_f64 * 43_200_000.0).sqrt();
+        assert!((DEFAULT_DOMINANT_TAU_MS - centro).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_stat_arb_ola73_evaluate_prefiere_fisica_propia_con_guarda_espectral() {
+        let reg = Arc::new(OmniscientRegistry::new());
+        let mut engine = StatArbEngine::new(30, 1.5);
+        assert!(engine.init(reg.clone()).is_ok());
+
+        // Física propia publicada: z = 2.5 (dislocación corta), t½ = 60 s,
+        // τ* dominante = 60 s ⇒ t½ ≤ 2τ* ⇒ el voto vive y apunta a Short.
+        reg.set("statarb_ou_zscore", 2.5);
+        reg.set("statarb_half_life_ms", 60_000.0);
+        reg.set("dominant_tau_ms", 60_000.0);
+        // vecm_zscore legacy con signo OPUESTO: la física propia debe ganar.
+        reg.set("vecm_zscore", -2.5);
+        let voto = engine.evaluate();
+        assert!(voto < -0.5, "voto Short por z propio positivo, got {voto}");
+
+        // Guarda espectral: t½ = 250 s > 2 · 100 s ⇒ veto (deriva secular).
+        reg.set("statarb_half_life_ms", 250_000.0);
+        reg.set("dominant_tau_ms", 100_000.0);
+        assert_eq!(engine.evaluate(), 0.0);
+
+        // τ* envenenada (el registro sanea NaN → 0.0 al escribir): 2·0 = 0 ⇒
+        // cualquier t½ finita viola la guarda ⇒ veto fail-closed.
+        reg.set("dominant_tau_ms", f64::NAN);
+        assert_eq!(engine.evaluate(), 0.0);
+
+        // Half-life AUSENTE (SDE nunca observó) ⇒ cota INFINITA ⇒ veto honesto
+        // aunque la z propia llegue publicada.
+        let reg2 = Arc::new(OmniscientRegistry::new());
+        let mut engine2 = StatArbEngine::new(30, 1.5);
+        assert!(engine2.init(reg2.clone()).is_ok());
+        reg2.set("statarb_ou_zscore", 2.5);
+        reg2.set("dominant_tau_ms", 60_000.0);
+        assert_eq!(engine2.evaluate(), 0.0);
+    }
+
+    #[test]
+    fn test_stat_arb_ola73_evaluate_fallback_legacy_bit_a_bit() {
+        let reg = Arc::new(OmniscientRegistry::new());
+        let mut engine = StatArbEngine::new(30, 1.5);
+        assert!(engine.init(reg.clone()).is_ok());
+
+        // Sin clave propia: fallback legacy a vecm_zscore (basis/ATR),
+        // conducta idéntica al árbol previo.
+        reg.set("vecm_zscore", 2.0);
+        let voto = engine.evaluate();
+        let esperado = -(0.5_f64 / 1.5).tanh();
+        assert!((voto - esperado).abs() < 1e-12);
+
+        // z dentro del umbral: silencio.
+        reg.set("vecm_zscore", 0.5);
+        assert_eq!(engine.evaluate(), 0.0);
+    }
+
+    #[test]
+    fn test_stat_arb_ola73_evaluate_zscore_cero_abstiene() {
+        let reg = Arc::new(OmniscientRegistry::new());
+        let mut engine = StatArbEngine::new(30, 1.5);
+        assert!(engine.init(reg.clone()).is_ok());
+
+        // El core publica 0.0 explícito cuando el feed spot está ausente o
+        // la SDE está fría: abstención, sin caer al fallback legacy.
+        reg.set("statarb_ou_zscore", 0.0);
+        reg.set("vecm_zscore", 2.5);
+        assert_eq!(engine.evaluate(), 0.0);
     }
 }
