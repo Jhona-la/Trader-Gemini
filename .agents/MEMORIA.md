@@ -1,4 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-08 — Antigravity: OLA Ω39 — RONDA 8 INICIADA & RUTEO CUÁNTICO ADAPTATIVO MAKER (R6/R7)
+
+- Rama: `antigravity/quant-sr-ronda8-barrido-continuo-espectral` (worktree `.antigravity`), base `d5fef895` (`main`).
+- **RUTEO CUÁNTICO ADAPTATIVO MAKER EN VÓRTICES DE HODGE (`src/bin/god_engine.rs:4086-4100`)**:
+  - Erradicado el `force_maker = false` hardcodeado que bloqueaba el 100% de la captura de spread y ahorro de comisiones maker.
+  - Activada la detección física de régimen mediante `HelmholtzHodgeFlowEngine` y `YangMillsGaugeEngine`:
+    * En vórtices rotacionales cerrados (`hodge_curl_share > 0.75` o `curl_share > 0.60 && ym_action > 0.10`) con libro sano (`dbp > 0 && dap > 0`), el flujo no tiene avance direccional y el motor enruta automáticamente como **Maker pasivo al libro vivo** (`EntryRoute::Maker { price: maker_price }`). Esto captura el spread, cobra rebates/zero fees y elimina la selección adversa.
+    * En cascadas laminares de tendencia (`hodge_curl_share < 0.25`), se preserva el ruteo agresivo IOC con ceiling dinámico para evitar colgar órdenes en rupturas genuinas.
+- **PLAN MAESTRO DE SINCRONIZACIÓN RONDA 8 PUBLICADO**:
+  - Actualizado artefacto `PLAN_MAESTRO_QUANT_SR.md` y `docs/PLAN_MAESTRO_SINCRONIZACION.md` estableciendo el Consejo de 10 Seniors, la matriz de "El Siguiente Paso Cuántico", y el plan de barrido exhaustivo en 10 fases (R0–R9) sobre los 295 archivos.
+
 ## 2026-10-08 — Antigravity: OLA Ω38 CERRADA — ACOPLAMIENTO DE FLUJOS DE CONSENSO HODGE, GAUGE YANG-MILLS Y TENSOR MACRO (R3/R4/R5)
 
 - Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `566d7170`.

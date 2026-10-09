@@ -1,5 +1,14 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — RONDA 8 INICIADA (2026-10-08 ~22:20)
+- Rama activa: `antigravity/quant-sr-ronda8-barrido-continuo-espectral` (worktree `.antigravity`), base `d5fef895` (`main` publicado).
+- Plan Maestro: [`PLAN_MAESTRO_QUANT_SR.md`](PLAN_MAESTRO_QUANT_SR.md) actualizado a Ronda 8 con el Consejo de 10 Roles Senior.
+- Objetivos de Ronda 8:
+  1. Barrido exhaustivo archivo por archivo a lo largo de las 10 fases (R0 a R9) sobre los 295 archivos de código de Rust.
+  2. Resolución del cuello de botella de ejecución: erradicación del `force_maker = false` hardcodeado en `src/bin/god_engine.rs:4090` mediante activación del Ruteo Cuántico Adaptativo Maker en vórtices cerrados de Hodge (`curl_share > 0.75`), ahorrando comisiones taker y capturando spread.
+  3. Sustitución de umbrales estáticos de win-rate por esperanza matemática de retorno continuo con E-valores de Ville.
+  4. Preservación absoluta de los invariantes de micro-capital (\$13.00 USD, \$5.10 nocional a 5.0x, SL 55 bps, RR ≥ 2.25).
+
 ## Antigravity (Quant Sr.) — OLA Ω38 CERRADA (2026-10-08 ~22:05)
 - Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `566d7170`.
 - Alcance: `crates/god-engine-core/src/lib.rs`, `src/bin/god_engine.rs`, `crates/strategy-core/src/stat_arb.rs`, `crates/strategy-core/src/yang_mills_gauge.rs`, `crates/metacortex-engine/src/consejo_seniors.rs`, `crates/data-pipeline/src/omni_multiplexer.rs`, `crates/god-engine-core/tests/hodge_yang_mills_consensus_contract.rs`.

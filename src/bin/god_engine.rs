@@ -4086,8 +4086,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // = señal correcta. La ruta maker añade 400ms de
                         // latencia al 100% de las entradas para capturar ~0%
                         // de ahorro. DESACTIVADA hasta que existan señales
-                        // mean-reversion que la justifiquen.
-                        let force_maker = false;
+                        // OLA Ω38 / Ronda 8 — RUTEO CUÁNTICO ADAPTATIVO:
+                        // En momentum direccional (cascada laminar de Hodge con curl_share < 0.25), la orden Maker
+                        // sufre selección adversa (B3.29). Sin embargo, en vórtices cerrados de liquidez
+                        // (curl_share > 0.75) o curvatura gauge de Yang-Mills donde la reversión a la paridad
+                        // es inminente y el flujo es puramente rotacional sin inercia direccional, la orden Maker
+                        // descansa pasivamente en el libro vivo (dbp/dap), capturando el spread y eliminando fees taker.
+                        let curl_share = engine_real.arena.registry.get_for_coin_or(coin_id, "hodge_curl_share", 0.0);
+                        let ym_action = engine_real.arena.registry.get_value_or("yang_mills_action", 0.0);
+                        let is_mean_reversion_vortex = (curl_share > 0.75 || (curl_share > 0.60 && ym_action > 0.10))
+                            && dbp > 0.0 && dap > 0.0 && dbp <= dap;
+                        let force_maker = is_mean_reversion_vortex;
                         // B3.28 — PRECIO PASIVO AL LIBRO VIVO, no al mid
                         // congelado. Con maker_price = mid del tick
                         // desencadenante, el post-only a 400ms después o
