@@ -455,20 +455,24 @@ impl ShannonEntropy {
         self.bins[bin_idx] += 1.0;
         self.total_count += 1.0;
 
-        let mut entropy = 0.0;
-        if self.total_count > 0.0 {
-            for &count in self.bins.iter() {
-                if count > 0.0 {
-                    let p = count / self.total_count;
-                    entropy -= p * p.ln();
-                }
-            }
-        }
-        entropy
+        self.current()
     }
 
+    /// Máxima entropía teórica para 10 bins en nats: ln(10.0).
+    pub const MAX_SHANNON_NATS_10BINS: f64 = 2.302_585_092_994_046;
+
+    /// Entropía normalizada en [0, 1] (D-1 / R7-R2-D-1).
+    /// El gemelo de feature-engine normaliza por log2(num_bins).
+    /// Aquí normalizamos por ln(10) para calibración uniforme en [0, 1].
     #[inline(always)]
     pub fn current(&self) -> f64 {
+        let nats = self.current_nats();
+        (nats / Self::MAX_SHANNON_NATS_10BINS).clamp(0.0, 1.0)
+    }
+
+    /// Entropía en nats puros sin normalizar [0, ln(10)].
+    #[inline(always)]
+    pub fn current_nats(&self) -> f64 {
         let mut entropy = 0.0;
         if self.total_count > 0.0 {
             for &count in self.bins.iter() {
@@ -1244,8 +1248,10 @@ mod tests {
             x = (u + v + w) * 5e-5;
             ultimo = e.update(x);
         }
-        assert!(ultimo > 1.5, "una distribución extendida sobre diez bins debe dar entropía alta: {ultimo}");
-        assert!(ultimo <= (10.0f64).ln() + 1e-9, "la entropía no puede superar ln(10): {ultimo}");
+        assert!(ultimo > 0.65, "una distribución extendida sobre diez bins debe dar entropía normalizada alta: {ultimo}");
+        assert!(ultimo <= 1.0 + 1e-9, "la entropía normalizada no puede superar 1.0: {ultimo}");
+        assert!(e.current_nats() > 1.5, "los nats sin normalizar deben superar 1.5: {}", e.current_nats());
+        assert!(e.current_nats() <= (10.0f64).ln() + 1e-9, "los nats no pueden superar ln(10): {}", e.current_nats());
         let _ = x;
     }
 

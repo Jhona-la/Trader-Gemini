@@ -122,6 +122,12 @@ fn factor_de_resolucion(tau_ms: f64, resolucion_ms: f64) -> f64 {
 }
 pub const TAU_ANCHOR_SLOW_MS: f64 = 43_200_000.0;
 
+/// Número exacto de escalas en la malla log-espaciada base 4 que caen dentro de
+/// la banda operable [TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS] (índices 18 a 22).
+/// C-1 (R7-R2-C-1): Las pruebas de hipótesis del máximo entre escalas concurrentes
+/// solo compiten sobre estas 5 escalas, no sobre la malla entera de 32 escalas.
+pub const ESCALAS_OPERATIVAS_BANDA: usize = 5;
+
 /// D-638b (DÉCIMA OLA) — MAPEO ÚNICO DEL HORIZONTE OPERATIVO.
 ///
 /// Tras ampliar el espectro a 1 ns–146 años convivían TRES conversiones del
@@ -650,16 +656,12 @@ impl TemporalSpectrum {
                 continue;
             }
             if let Some(ic) = s.habilidad_medida() {
-                // #599/#661/#663: τ* toma el MÁXIMO entre escalas — un IC
-                // positivo aislado es el típico máximo de ruido (sesgo de
-                // selección, señalización de CL sobre #594). Ville decide la
-                // significancia con corrección de FAMILIA M/α (Bonferroni
-                // sobre los 32 e-procesos de la malla: umbral 640, no 20
-                // por proceso). H1-5: sólo los nodos de banda [30 s, 12 h]
-                // (≤5) compiten de facto — M=32 es el paraguas conservador
-                // de la malla completa; la cobertura sigue válida, el gate
-                // queda ~6× más duro que el mínimo por banda.
-                let significativo = s.skill_e.significativo_familia(32);
+                // #599/#661/#663 / C-1 (R7-R2-C-1): τ* toma el MÁXIMO entre las escalas
+                // que efectivamente compiten dentro de la banda operable [30 s, 12 h].
+                // Son exactamente ESCALAS_OPERATIVAS_BANDA = 5 escalas en concurso, NO 32.
+                // Bonferroni sobre las 5 escalas concurrentes fija M = 5 ⇒ umbral 5/α = 100
+                // en lugar de inflar artificialmente a 640 bloques (que exigía meses en escalas lentas).
+                let significativo = s.skill_e.significativo_familia(ESCALAS_OPERATIVAS_BANDA);
                 if significativo && ic > best_skill {
                     best_skill = ic;
                     dominant_skill = s.tau_ms;
@@ -1186,6 +1188,23 @@ impl TemporalSpectrum {
         } else {
             self.dominant_tau_ms.max(30_000.0)
         }
+    }
+
+    /// C-2 (R7-R2-C-2): Horizonte temporal unificado para el tick en curso.
+    /// Reconcilia la escala autoritativa de habilidad demostrada por Ville
+    /// (`dominant_tau_ms`) con el centroide continuo de Hilbert (`continuous_resonant_tau_ms`).
+    /// Si existe habilidad medida positiva (IC > 0 validado), manda la escala con ventaja estadística.
+    /// Si aún no hay evidencia madura, opera con el centroide continuo resonante.
+    /// Garantiza que el veto de grupo, el dimensionador de TP/SL y las ramas de señal hablen
+    /// exactamente del MISMO horizonte temporal sin disparidades.
+    #[inline]
+    pub fn tau_operativa_unificada(&self) -> f64 {
+        if let Some(h) = self.habilidad_en(self.dominant_tau_ms) {
+            if h > 0.0 {
+                return self.dominant_tau_ms.clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS);
+            }
+        }
+        self.continuous_resonant_tau_ms()
     }
 
     /// Escala resonante continua de alta frecuencia (modo reactivo del espectro continuo sin cortes fijos).

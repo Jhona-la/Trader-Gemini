@@ -1704,11 +1704,12 @@ impl GodEngineCore {
                 // TODO evento, también sin depth y antes de retornos por
                 // kill-switch. Escala fría o tau inválida retira el IC
                 // anterior; el lector conserva exactamente su rho escalar.
+                // C-2 (R7-R2-C-2): IC SIGNED a la escala operativa unificada del tick
                 evidence_publication::publicar_coherencia(
                     &self.arena.registry,
                     &self.espectral_ma,
                     coin_id,
-                    spec.dominant_tau_ms,
+                    spec.tau_operativa_unificada(),
                 );
                 // #648/H3 (Ola 48) — EXPIRACIÓN del veredicto espectral:
                 // si el stream de depth cayó, el último dominante no-cero
@@ -1941,13 +1942,14 @@ impl GodEngineCore {
                 // risk-engine dimensione en el mismo horizonte en el que el
                 // núcleo gestionará la posición.
                 if let Some(spec) = self.temporal_spectrum.get(coin_id) {
+                    let tau_unificada = spec.tau_operativa_unificada();
                     self.arena.coins[coin_id]
                         .dominant_tau_ms
-                        .store(spec.dominant_tau_ms, Ordering::Relaxed);
+                        .store(tau_unificada, Ordering::Relaxed);
                     // #594: habilidad medida de la escala elegida (≤ 0 si τ*
                     // vino del respaldo de energía o no hay evidencia —
                     // contable para el consejo).
-                    let habilidad = spec.habilidad_en(spec.dominant_tau_ms).unwrap_or(0.0);
+                    let habilidad = spec.habilidad_en(tau_unificada).unwrap_or(0.0);
                     self.arena.coins[coin_id]
                         .tau_habilidad
                         .store(habilidad, Ordering::Relaxed);
@@ -4301,7 +4303,11 @@ impl GodEngineCore {
             let total_vol = (bid_qty + ask_qty).max(1e-8);
             let p_bid = (bid_qty / total_vol).clamp(0.0001, 0.9999);
             let p_ask = (ask_qty / total_vol).clamp(0.0001, 0.9999);
-            let tsallis_ent = ((1.0 - (p_bid.powf(1.5) + p_ask.powf(1.5))) / 0.5).clamp(0.0, 1.0);
+            // D-2 (R7-R2-D-2): Normalización exacta de Tsallis binario q=1.5 a [0, 1]
+            // Para p=0.5, S_max = (1 - 2*(0.5)^1.5) / 0.5 ≈ 0.585786437626905
+            const TSALLIS_Q15_BINARY_MAX: f64 = 0.585_786_437_626_905;
+            let tsallis_raw = (1.0 - (p_bid.powf(1.5) + p_ask.powf(1.5))) / 0.5;
+            let tsallis_ent = (tsallis_raw / TSALLIS_Q15_BINARY_MAX).clamp(0.0, 1.0);
 
             let micro_v = (v_t.abs() / mid_price.max(1e-8)).clamp(atr_pct * 0.1, atr_pct * 5.0);
             // CERT-M2-C02 — λ/μ verdadero del proceso excitado por TRADES
@@ -6371,14 +6377,15 @@ impl GodEngineCore {
             }
 
             // Ruta de Resonancia Cuántica Espectral Continua (Centroide de Hilbert tau* de 32 Escalas)
+            // C-2 (R7-R2-C-2): Reconciliación con tau_operativa_unificada del tick
             if slow_intent.signal == SignalType::Flat {
                 if let Some(spec) = self.temporal_spectrum.get(coin_id) {
-                    let tau_star = spec.continuous_resonant_tau_ms();
+                    let tau_star = spec.tau_operativa_unificada();
                     let field_long = spec.spectral_field(true);
                     let field_short = spec.spectral_field(false);
                     let fused = spec.fused_score;
                     let tau_star_hurst = spec.hurst_at(tau_star);
-                    let tau_star_duration = (tau_star.clamp(5_000.0, 86_400_000.0)).round() as u64;
+                    let tau_star_duration = tau_star.round() as u64;
 
                     // Confluencia armónica constructiva en el centroide espectral tau*
                     // (condiciones en `confluencia_resonante`, CL-31).
