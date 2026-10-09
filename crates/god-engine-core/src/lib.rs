@@ -758,6 +758,13 @@ pub struct GodEngineCore {
     pub risk_engine: RiskEngine,
     pub maker_engines: Vec<MakerEngine>,
     pub feature_engines: Vec<StatefulEngine>,
+    /// OLA 73 (R6-A3/B1/A4): ESCRITOR real de la física StatArb por moneda —
+    /// SDE OU continua sobre la basis futuro-spot con reloj físico y β RLS
+    /// adaptativa. Publica `statarb_ou_zscore`/`statarb_half_life_ms`/
+    /// `statarb_beta` al registro; la instancia del orquestador es lectora
+    /// pura de esas claves (antes su SDE nunca corría y el voto leía
+    /// `vecm_zscore` = basis/ATR sin cointegración).
+    pub statarb_ou_engines: Vec<strategy_core::stat_arb::StatArbEngine>,
     pub tensor_orchestrator: signal_engine::orchestrator::TensorVoteOrchestrator,
     /// #592 — ancla de la deriva de régimen por moneda: (bits de ln(τ*),
     /// ts_ms de la observación anclada). El crash_flux necesita la deriva de
@@ -994,9 +1001,14 @@ impl GodEngineCore {
         tensor_orchestrator.add_strategy(Box::new(
             strategy_core::vecm_arbitrage::JohansenVecmEngine::default(),
         ));
-        // OLA Ω38: Registrar StatArbEngine SDE continuo y YangMillsGaugeEngine en el orquestador central
+        // OLA 73 (R6-A5): LECTOR PURO del registro. La fisica viva OU no vive
+        // aqui: `statarb_ou_engines` (por moneda) es la unica instancia con
+        // SDE + beta RLS que avanza en el hot-path y publica
+        // `statarb_ou_zscore`/`statarb_half_life_ms`/`statarb_beta`. Antes se
+        // construia con `.with_continuous_ou_sde()`, una SDE propia que nunca
+        // observaba nada: la etiqueta promitia fisica que no existia.
         tensor_orchestrator.add_strategy(Box::new(
-            strategy_core::stat_arb::StatArbEngine::new(30, 1.5).with_continuous_ou_sde(),
+            strategy_core::stat_arb::StatArbEngine::new(30, 1.5),
         ));
         tensor_orchestrator.add_strategy(Box::new(
             strategy_core::yang_mills_gauge::YangMillsGaugeEngine::new(n_coins),
@@ -1066,6 +1078,13 @@ impl GodEngineCore {
             risk_engine: RiskEngine::new(initial_capital),
             maker_engines,
             feature_engines,
+            statarb_ou_engines: (0..n_coins)
+                .map(|_| {
+                    strategy_core::stat_arb::StatArbEngine::new(30, 1.5)
+                        .with_continuous_ou_sde()
+                        .with_adaptive_beta(true)
+                })
+                .collect(),
             tensor_orchestrator,
             scalp_forest,
             swing_nn,
@@ -5030,6 +5049,36 @@ impl GodEngineCore {
             let pos_dev =
                 ((mid_price - ema_macro) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0);
             set_reg("quantum_position_deviation", pos_dev);
+
+            // OLA 73 (R6-A3/B1/A4/B2): ESCRITOR vivo de la física StatArb —
+            // SDE OU continua sobre la basis futuro-spot (ln P_fut − β·ln P_spot)
+            // con reloj físico del exchange y β RLS adaptativa, por moneda.
+            // `statarb_ou_zscore` = z estacionario de la SDE madura (≥10 obs
+            // causales); 0.0 EXPLÍCITO = abstención honesta (spot ausente,
+            // feed stale > 30 s = suelo de la banda operativa, o SDE fría).
+            // `statarb_half_life_ms` = ln(2)/θ CALIBRADA EN PRODUCCIÓN (θ ya
+            // no está congelada en 0.1: la guarda t½ ≤ 2τ* del lector deja de
+            // ser decorativa — R6-B2).
+            const STATARB_SPOT_TTL_MS: u64 = 30_000;
+            let eng_st = &mut self.statarb_ou_engines[coin_id];
+            if spot_bid > 0.0 && spot_ask > 0.0 && mid_price > 0.0 {
+                let spot_mid_st = (spot_bid + spot_ask) / 2.0;
+                let _ = eng_st.update_with_clock(mid_price, spot_mid_st, event_time_ms, tau_dom);
+            }
+            let statarb_z = match eng_st.last_ou_zscore() {
+                Some(z)
+                    if event_time_ms.saturating_sub(eng_st.last_ou_ts_ms())
+                        <= STATARB_SPOT_TTL_MS =>
+                {
+                    z
+                }
+                _ => 0.0,
+            };
+            let statarb_half_ms = eng_st.half_life_seconds() * 1000.0;
+            let statarb_beta = eng_st.beta_hedge_ratio;
+            set_reg("statarb_ou_zscore", statarb_z);
+            set_reg("statarb_half_life_ms", statarb_half_ms);
+            set_reg("statarb_beta", statarb_beta);
 
             // OLA Ω36/Ω38: Fibrado gauge Yang-Mills y corrientes de restauración gauge
             let (ym_action, ym_currents) = self.yang_mills_engine.update_and_calculate_curvature(&self.latest_prices);
