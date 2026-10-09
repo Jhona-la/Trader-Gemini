@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Antigravity: OLA Ω50 CERRADA E INTEGRADA EN MAIN (`a640a121`) — RESOLUCIÓN R7-R2-E-3 (UMBRAL ADAPTATIVO t-STUDENT EN LEAD-LAG), R7-R2-E-1 (μ̂ EMPÍRICO ADAPTATIVO EN HAWKES) Y R7-R2-A-1 (MÉTODOS ANALÍTICOS DE PRIMER TOQUE EN TpSl)
+
+- **Rama**: `antigravity/quant-sr-ola50-leadlag-hawkes-firsttouch` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#683**.
+- **Cambios en Código Rust**:
+  1. `crates/feature-engine/src/lead_lag.rs:36-58, 185-195, 237-270, 420-474`: Erradicado el umbral estático $\rho_{\min} = 0.25$ que aceptaba firmas en ruido con $N=12$ ($p \approx 0.43$). Implementada la función de significancia inferencial $t$-Student adaptativa $\rho_{\text{crit}}(n) = \text{clamp}(2.0 / \sqrt{n + 2}, 0.25, 0.99)$ al 95% de confianza bilateral ($t \ge 2.0$), eliminando los falsos positivos por muestras pequeñas. Clarificada la semántica de la guarda `lag <= 0.0` (ausencia de lag estadísticamente significativo acreditado). Tests `test_r7_r2_e3_rho_critico_adaptativo_monotonia` y `test_r7_r2_e3_ruido_n12_no_supera_umbral_adaptativo` añadidos y verdes (E-3).
+  2. `crates/feature-engine/src/hawkes.rs:6-105, 195-225`: Erradicado el decaimiento hacia $\mu = 0.05$ fijo. Incorporada estimación empírica adaptativa de $\hat{\mu}$ con EWMA ($\tau = 60\text{ s}$) y siembra rápida en el segundo evento (idéntica formulación que `signal_engine::hawkes_bessel` #535). Expuestos métodos `mu_hat()`, `branching_ratio()`, `steady_state_ratio()` e `intensity_ratio()`. Test `test_r7_r2_e1_hawkes_mu_hat_adaptacion_empirica` añadido y verde (E-1).
+  3. `crates/risk-engine/src/tp_sl.rs:88-125, 965-1005`: Las soluciones analíticas exactas en forma cerrada de Fokker-Planck para movimiento Browniano con drift (`probabilidad_tocar_sl_antes_de_tp` y `probabilidad_primer_toque_stop_antes_de_tau`) ahora se consumen como métodos operativos en `impl TpSl`: `probabilidad_sl_antes_de_tp`, `probabilidad_sl_neutral`, `probabilidad_primer_toque_stop` y `ev_primer_toque`. Test `test_r7_r2_a1_tpsl_analitico_primer_toque` añadido y verde (A-1).
+- **Certificación**: Suite completa de `feature-engine` (86/86), `risk-engine` (150+ tests) y `god-engine-core` verdes al 100% (0 errores).
+
 ## 2026-10-09 — Antigravity: OLA Ω49 CERRADA E INTEGRADA EN MAIN (`e1a5f195`) — CONTRATO COMPUERTA DE SONDA F-1 (NO-DEADLOCK, ALCANZABILIDAD DE REJ(4) Y VETO LCB)
 
 - **Rama**: `antigravity/quant-sr-ola49-probe-gate-contract` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#682**.

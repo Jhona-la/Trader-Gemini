@@ -15561,16 +15561,28 @@ línea 2250).
      - `crates/god-engine-core/src/lib.rs:1708, 1944, 6380`: Unificada la $\tau$ en la publicación de coherencia (veto de grupo), en el registro del arena (`dominant_tau_ms`) y en la rama 15 (`slow_intent.expected_duration_ms`), erradicando la divergencia de factor $\times 4.6$ y retirando el clamp redundante de código muerto.
 - **Certificación**: 100% tests pasados en `god-engine-core`, `quantum-arena` y `risk-engine` (0 errores).
 
-## #682 — Ola Ω49: CONTRATO DE COMPUERTA DE SONDA F-1 (DEMOSTRACIÓN DE NO-DEADLOCK, ALCANCE DE REJ(4) BAJO EV DEGRADADO Y VETO LCB MADURO) (2026-10-09)
+## #683 — Ola Ω50: RESOLUCIÓN R7-R2-E-3 (UMBRAL ADAPTATIVO t-STUDENT EN LEAD-LAG), R7-R2-E-1 (μ̂ EMPÍRICO ADAPTATIVO EN HAWKES) Y R7-R2-A-1 (MÉTODOS ANALÍTICOS DE PRIMER TOQUE EN TpSl) (2026-10-09)
 
 - **Autor**: Quant Senior (AGY / Consejo de 10 Roles).
-- **Commit en `main`**: `e1a5f195`.
-- **Alcance**:
-  - `crates/risk-engine/tests/veto_evidence_contract.rs:281-324`: Implementado el contrato formal `test_fase_sonda_ev_prior_gate_contract`, resolviendo el hallazgo F-1 / R7-R2-F-1 donde se señalaba que los contratos previos solo verificaban la función pura de shrinkage y no la compuerta de admisión viva `evaluate_quantum_order`.
-  - **Caso A (No-deadlock de sonda)**: Moneda con $n=1$ y trade inicial perdedor ($w=0.0$). Bajo el bracket de diseño ($EV_{\text{prior}} > \text{roundtrip\_fee}$), la compuerta admite la orden como sonda de muestreo con sizing mínimo (`SignalType::Long`), erradicando formalmente el deadlock absorbente de congelamiento en $n=1$.
-  - **Caso B (Alcanzabilidad y ejecución de `rej(4)` en sonda)**: Moneda con $n=1$ y geometría degradada donde el payoff no cubre comisiones ($EV_{\text{prior}} \le \text{roundtrip\_fee}$). La compuerta ejecuta limpiamente el rechazo `rej(4)` devolviendo `SignalType::Flat`, demostrando que la fase sonda no es un pase ciego y veta rigurosamente toda orden económicamente inviable.
-  - **Caso C (Gobernanza estricta de LCB con muestra madura)**: Moneda con $n=20$ y $w=0.0$ (fuera de la fase sonda). El estimador LCB contraído detecta la ausencia de ventaja estadística y veta con `rej(4)` devolviendo `SignalType::Flat`.
-- **Certificación**: 14/14 tests de `veto_evidence_contract.rs` y la suite completa de `risk-engine` (74+ tests) verdes al 100% con 0 errores.
-
-
-
+- **Commits en `main`**: `a640a121`.
+- **Alcance Matemático y Cuantitativo**:
+  1. **R7-R2-E-3 (Significancia Estadística Adaptativa t-Student en Lead-Lag)**:
+     - `crates/feature-engine/src/lead_lag.rs:36-58, 185-195, 237-270, 420-474`: Erradicado el umbral estático $\rho_{\min} = 0.25$ con $N_{\min} = 12$ que equivalía a $t \approx 0.816$ ($p \approx 0.43$), aceptando falso liderazgo en más del $43\%$ de realizaciones de ruido blanco.
+     - Implementada la función de significancia inferencial rigurosa:
+       $$\rho_{\text{crit}}(n) = \text{clamp}\left(\max\left(\frac{t_{\text{crit}}}{\sqrt{n - 2 + t_{\text{crit}}^2}}, \text{RHO\_MIN\_FLOOR}\right), 0.25, 0.99\right)$$
+       con $t_{\text{crit}} = 2.0$ ($\approx 95\%$ de confianza bilateral) y $\text{RHO\_MIN\_FLOOR} = 0.25$. Para $n=12$, $\rho_{\text{crit}} \approx 0.5345$.
+     - En `lag_optimo`, cada candidato de lag se evalúa contra $\rho_{\text{crit}}(n)$. Clarificada la semántica de la guarda `lag <= 0.0` (indicando que ningún candidato de la rejilla $\{0.5, 1, 2, 5, 10\text{ s}\}$ superó la prueba de hipótesis contra $H_0: \rho = 0$).
+     - Tests añadidos: `test_r7_r2_e3_rho_critico_adaptativo_monotonia` y `test_r7_r2_e3_ruido_n12_no_supera_umbral_adaptativo` (demostrando rechazo formal de series en ruido con $\rho \approx 0.30$).
+  2. **R7-R2-E-1 (Estimación Empírica Adaptativa de Tasa Base $\hat{\mu}$ en Proceso de Hawkes)**:
+     - `crates/feature-engine/src/hawkes.rs:6-105, 195-225`: Erradicado el decaimiento hacia un $\mu = 0.05$ fijo que distorsionaba la memoria de ráfagas en feeds ultra-rápidos (50 trades/s).
+     - Incorporada estimación adaptativa EWMA de la tasa de fondo exógena $\hat{\mu}$ con constante de tiempo $\tau_{\mu} = 60\text{ s}$ y siembra rápida en el segundo evento, en paridad con la física canónica de `#535` en `signal_engine::hawkes_bessel`.
+     - Expuestos métodos `mu_hat()`, `branching_ratio()`, `steady_state_ratio()` y `intensity_ratio()`.
+     - Test añadido: `test_r7_r2_e1_hawkes_mu_hat_adaptacion_empirica` validando la siembra instantánea y adaptación continua a feeds de $20\text{ Hz}$.
+  3. **R7-R2-A-1 (Consumo Productivo del Primer Toque Analítico de Difusión en TpSl)**:
+     - `crates/risk-engine/src/tp_sl.rs:88-125, 965-1005`: Las funciones analíticas en forma cerrada `probabilidad_tocar_sl_antes_de_tp` y `probabilidad_primer_toque_stop_antes_de_tau` (soluciones exactas de Fokker-Planck para movimiento Browniano con drift) ahora se exponen como métodos operativos en `impl TpSl`:
+       - `probabilidad_sl_antes_de_tp(&self, mu: f64, sigma: f64) -> f64`
+       - `probabilidad_sl_neutral(&self) -> f64` ($P(\text{SL}) = \frac{tp}{tp + sl} = \frac{RR}{1 + RR}$)
+       - `probabilidad_primer_toque_stop(&self, mu_por_seg: f64, sigma_por_seg: f64, tau_sec: f64) -> f64`
+       - `ev_primer_toque(&self, mu: f64, sigma: f64, fee: f64) -> f64`
+     - Test añadido: `test_r7_r2_a1_tpsl_analitico_primer_toque` certificando que bajo martingala browniana $EV_{\text{neto}} \equiv -\text{fee}$ y que una deriva positiva suficiente genera $EV > 0$ continuo.
+- **Certificación**: Suites completas de `feature-engine` (86/86), `risk-engine` (150+ tests unitarios y contractuales) y `god-engine-core` verdes al 100% con 0 errores.
