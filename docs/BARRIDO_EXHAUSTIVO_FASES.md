@@ -1693,8 +1693,11 @@ operador.
 
 ## Estado de drenaje RONDA-6 (actualización Ola 73, 2026-10-09)
 
-- **R6-A3/B1 [HIGH] CERRADO en código (Qoder, Ola 73, 8b0daf01)**: se
-  CABLEÓ la física viva en lugar de renombrar la clave.
+- **R6-A3/B1 [HIGH] CERRADO en código (Qoder, Ola 73, 8b0daf01; merged
+  85557469 tras AGY Ω43)**: se
+  CABLEÓ la física viva en lugar de renombrar la clave. **ORÁCULO T-1: PASA
+  16/144 = 11,1 % ≥ trinquete 11,0 %** (2 375,32 s sobre el árbol final,
+  lista sensible idéntica a la canónica).
   `GodEngineCore::statarb_ou_engines` (por moneda) avanza
   `update_with_clock(mid_futuro, mid_spot, event_time_ms, tau_dom)` en
   `process_tick_dual` y publica `statarb_ou_zscore` /

@@ -56,8 +56,8 @@
 ## 2026-10-09 — Qoder: OLA 73 CERRADA — STATARB HONESTO: FÍSICA OU VIVA EN EL CORE Y PARIDAD LECTOR↔ESCRITOR (R6-A3/B1 HIGH, B2, A4, B13, A5)
 
 - **Rama**: `qoder/ola73-statarb-honesto` (worktree `.ola73`, base f07b79a3 +
-  merge c5b72755 de main tras AGY Ω41/Ω42). Código 986e1197 + 12d32029 +
-  8b0daf01.
+  merge c5b72755 de main tras AGY Ω41/Ω42 + merge 85557469 de main tras AGY
+  Ω43). Código 986e1197 + 12d32029 + 8b0daf01.
 - **R6-A3/B1 [HIGH] RESUELTO CABLEANDO LA FÍSICA (no renombrando)**:
   `GodEngineCore::statarb_ou_engines` (un motor OU por moneda) avanza en el
   hot-path con `update_with_clock(mid_futuro, mid_spot, event_time_ms,
@@ -100,9 +100,21 @@
   re-entrenar si se despiertan los pollers XCV: **otra ola, otro oráculo**.
 - **VERIFICACIÓN**: strategy-core 48/48; god-engine-core
   `statarb_live_physics_contract` **3/3** y `--lib` **170/170**;
-  `cargo check --workspace --all-targets` exit 0 sin advertencias (41.35 s).
-  Diff contra CADA padre revisado tras el merge. **ORÁCULO T-1: ver
-  FORENSIC #675** (en vuelo sobre 8b0daf01 al redactar este bloque).
+  `cargo check --workspace --all-targets` exit 0 sin advertencias (41.35 s
+  pre-merge, 43.32 s en el árbol merged). Diff contra CADA padre revisado
+  tras cada merge: vs mi rama sólo el delta Ω43 de AGY, vs Ω43 sólo mi delta
+  Ola 73 — cero líneas de código ajeno alteradas; API de
+  `ContinuousOrnsteinUhlenbeckSde` post-WLS re-grepada y compatible con el
+  escritor. **ORÁCULO T-1 sobre el árbol final 85557469: PASA 16/144 =
+  11,1 % ≥ trinquete 11,0 %** (2 375,32 s, exit 0), con la lista sensible
+  IDÉNTICA a la canónica `[1, 10, 11, 17, 18, 20, 24, 27, 32, 33, 68, 69,
+  129, 130, 131, 141]` — cero genes certificados perdidos; la neutralidad
+  queda **certificada**, no argumentada (detalle en FORENSIC #675).
+- **REPARACIÓN DOCUMENTAL DE MAIN (Ω42)**: el encabezado «OLA Ω42 CERRADA»
+  llegó huérfano a main (Ω43 sobreescribió su encabezado y dejó el cuerpo de
+  Ω42 colgado del de Ω43). Restaurado junto a su cuerpo en el merge 85557469;
+  cero líneas de contenido alteradas. Lección: el UNIÓN de MEMORIA al recibir
+  una ola ajena debe verificar que cada encabezado conserve SU cuerpo.
 - Detalle: FORENSIC_INTELLIGENCE_AUDIT.md #675. Buzón: cierre Ola 73.
 
 ## 2026-10-09 — Antigravity: OLA Ω43 CERRADA — OU SDE WLS CONTINUO, VILLE ANYTIME-VALID CALIBRADO Y REARME DE WATCHDOG (R6-B3, R6-B4, R6-B5, R6-B6, R6-B7, R6-B8, R6-A7, R6-C7, R6-A14)

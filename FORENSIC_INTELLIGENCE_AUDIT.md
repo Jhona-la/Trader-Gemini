@@ -15080,16 +15080,34 @@ contrato XCV prohíbe sin re-entrenar.
 
 **Verificación**: strategy-core 48/48; god-engine-core
 `statarb_live_physics_contract` **3/3** y `--lib` **170/170**;
-`cargo check --workspace --all-targets` exit 0 sin advertencias (41.35 s).
-Diff contra CADA padre revisado tras el merge con main (regla
-post-incidente 2026-09-25).
+`cargo check --workspace --all-targets` exit 0 sin advertencias (41.35 s
+pre-merge y **43.32 s** en el árbol merged). Diff contra CADA padre revisado
+tras el merge con main (regla post-incidente 2026-09-25): vs mi rama sólo el
+delta Ω43 de AGY (vecm_arbitrage WLS, Ville, online_daemon, orquestador,
+contratos) y vs Ω43 sólo mi delta Ola 73 (`crates/god-engine-core/src/lib.rs`
++58, `crates/strategy-core/src/stat_arb.rs`, el contrato y docs) — cero
+líneas de código de AGY alteradas. La API de
+`ContinuousOrnsteinUhlenbeckSde` post-WLS re-grepada y compatible con mi
+escritor (`new`/`update`/`half_life_seconds`/`stationary_zscore` intactas).
 
-**ORÁCULO T-1**: EN VUELO sobre 8b0daf01. Argumento de neutralidad
-(documentado, no certificado): sin feed de spot la OU nunca madura ⇒ la
-clave no se publica ⇒ el lector toma el fallback igual que main ⇒ conducta
-bit-a-bit idéntica en el fixture; el oráculo sirve para certificar que la
-protección del fallback es real y que ningún gen certificado pierde
-sensibilidad.
+**ORÁCULO T-1**: **PASA — 16/144 genes sensibles = 11,1 % ≥ trinquete
+11,0 %** (exit 0, 2 375,32 s, `--test-threads=1 --nocapture`, sobre el
+árbol **final merged 85557469** = mi rama + AGY Ω43, no sobre el árbol
+intermedio `8b0daf01`). El build se lanzó primero sobre `8b0daf01` y se
+**detuvo deliberadamente** al detectar que Ω43 había cambiado código de
+runtime durante la ventana (`vecm_arbitrage.rs` WLS, `online_daemon.rs`,
+`ville_e_process.rs`): certificar un árbol obsoleto no certifica el que se
+empuja. Log: `%TEMP%/qoder-cli/t1-ola73-merged.log`.
+
+**Lista sensible: IDÉNTICA** a la canónica certificada desde la ola de #594
+y reafirmada en las olas 62-72 — `[1, 10, 11, 17, 18, 20, 24, 27, 32,
+33, 68, 69, 129, 130, 131, 141]` (16 genes; los otros 128 sin cambio
+observado). Cero genes certificados perdieron sensibilidad y cero aparecieron
+nuevos: el argumento de neutralidad queda **certificado, no documentado** —
+sin feed de spot la OU nunca madura, la clave `statarb_ou_zscore` permanece
+AUSENTE y el lector toma el fallback etiquetado, exactamente la conducta de
+main. El oráculo prueba además que la protección del fallback (paridad
+lector-escritor de `8b0daf01`) no desactivó ningún gen vivo.
 
 Lecciones: (a) **un contrato verde puede certificar MI propio defecto** —
 el test mal especificado lo escribió el mismo autor del defecto. Antes de

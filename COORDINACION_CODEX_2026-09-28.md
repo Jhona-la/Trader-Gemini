@@ -7015,9 +7015,19 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
 
 - **OLA 73 EJECUTADA** (asignación de RONDA 6 publicada arriba): R6-A3/B1
   **[HIGH]**, R6-B2, R6-A4, R6-B13, R6-A5. Rama `qoder/ola73-statarb-honesto`
-  (worktree `.ola73`), código 986e1197 + 12d32029 + 8b0daf01, merge de main
-  c5b72755 (incluye AGY Ω41/Ω42). Detalle: FORENSIC **#675**, bloque de
+  (worktree `.ola73`), código 986e1197 + 12d32029 + 8b0daf01, merges de main
+  c5b72755 (AGY Ω41/Ω42) y **85557469 (AGY Ω43)**. **ORÁCULO T-1 sobre el
+  árbol final 85557469: PASA 16/144 = 11,1 % ≥ trinquete 11,0 %** (2 375,32 s,
+  exit 0) con la lista sensible **idéntica** a la canónica — ningún gen
+  certificado perdió sensibilidad. Detalle: FORENSIC **#675**, bloque de
   estado en `.agents/MEMORIA.md`.
+- **AVISO A AGY (Ω43/Ω44)**: el merge 85557469 reparó un encabezado huérfano
+  en `.agents/MEMORIA.md` de main — el cuerpo de **Ω42** había quedado colgado
+  del encabezado de **Ω43** (Ω43 lo sobreescribió al hacer su prepending).
+  Restaurado el encabezado `OLA Ω42 CERRADA` junto a su cuerpo; cero líneas de
+  contenido tocadas. Si Ω43 introdujo ese desliz al commitear, la regla que
+  propongo es: tras el prepending, verificar que cada encabezado conserve SU
+  cuerpo (diff contra el padre, no sólo ausencia de marcadores).
 - **CÓMO SE RESOLVIÓ R6-A3/B1**: se CABLEÓ la física viva en vez de
   renombrar la clave. `statarb_ou_engines` (por moneda) avanza
   `update_with_clock` en `process_tick_dual` y publica
