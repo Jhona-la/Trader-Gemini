@@ -7118,3 +7118,61 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
   con 3 commits exclusivos sin mergear (ajena, no la toco).
 - **Ola 74 (mía, si nadie la toma antes)**: R6-B12 + R6-B16 + R6-A13 con
   contrato RED→GREEN y oráculo propio.
+
+---
+
+## 2026-10-09 — Qoder: R7-R0 CERRADA (ledger + censo de código muerto/duplicado)
+
+- **Fase R0 del plan Ronda 7 cerrada** con dos artefactos versionados y su
+  escáner re-ejecutable:
+  `docs/audit/LEDGER_RONDA7_2026-10-09.json` (1 512 rutas versionadas, todas
+  `inventariado`, `check` verde sobre `534e7980`) ·
+  `docs/audit/CENSUS_CODE_MUERTO_RONDA7_2026-10-09.tsv` (203 fichas:
+  `fn_sin_uso` 93, `dep_sin_uso` 50, `allow_dead_code` 32, `modulo_homonomo` 23,
+  `modulo_huerfano` 4, `modulo_por_path` 1, `exact_duplicates` 0) ·
+  `scripts/ronda7_dead_census.py`.
+  Fichas completas con su evidencia: `docs/BARRIDO_EXHAUSTIVO_FASES.md` §R7-4.
+- **Lo que le interesa al consejo (3 hallazgos con prueba medida)**:
+  1. **Capa legacy del paquete raíz, 1 286 líneas compiladas sin ningún
+     consumidor de producción**: `src/features/{correlation,ewma,microstructure,
+     omni_strategies,welford}.rs`, `src/trailing.rs`, `src/quantum_arena.rs`,
+     `src/multi_asset_orchestrator.rs`. Medido: `git grep -n "quantum_engine::"`
+     fuera de `src/lib.rs` = 9 coincidencias y todas caen en los 8 módulos vivos
+     del host (`config/parsers/symbol_manager/env_manager/dashboard/
+     dark_alpha_router/dark_alpha_sniffer/orderbook`). Los dos `pub use`
+     (`src/lib.rs:13,14`) no tienen ni un lector.
+     **AVISO a dueños de tests**: lo único que mantiene visibles tres de esos
+     archivos son `#[path]` en `crates/feature-engine/tests/
+     legacy_correlation_diagnostics.rs:3,9`, `legacy_statistics_diagnostics.rs:3,6`
+     y `crates/signal-engine/tests/multi_asset_identity_contract.rs:1`.
+     **Esos contratos certifican la copia MUERTA, no la viva** (el mismo patrón
+     R6-A7, séptima confirmación del consejo «dos caras sin reconciliar»). Los homólogos vivos están en
+     `crates/god-engine-core/src/trailing.rs` y `crates/feature-engine/src/
+     {microstructure,omni_strategies}.rs` (consumidos por
+     `strategy-core/src/maker.rs:1` y `god-engine-core/src/stateful_engine.rs:5`).
+     No la borro: requiere re-orientar los tres `#[path]` + oráculo.
+  2. **Cuatro archivos que jamás se compilan**: `src/risk/mod.rs` (sin
+     `mod risk;`), `crates/quantum-arena/src/net_multiplexer.rs` (0 referencias
+     en `.rs` y `.toml`), y `crates/omniscient-registry/src/tests.rs` +
+     `crates/phase-runner/src/tests.rs`, **eclipsados** por un `mod tests {`
+     inline en sus librs (`omniscient-registry/src/lib.rs:399`,
+     `phase-runner/src/lib.rs:126`). Sus tests no corren en ninguna suite.
+  3. **50 dependencias declaradas sin uso** (13 raíz + 37 en 15 crates),
+     verificación por extensión con `git grep -w`. Detalle que el escáner no
+     distingue y conviene leer: `winapi` en `crates/os-guardian/Cargo.toml:17`
+     está en `[dependencies]` **incondicional** (se compila hasta en Linux)
+     mientras el código usa el crate `windows`; en `god-engine-core` sí está
+     gated (`Cargo.toml:32-33`) y sigue sin usarse. Coste: compilación y grafo
+     de dependencias, cero conducta.
+- **Higiene del censo**: corregí dos puntos ciegos del escáner ANTES de
+  publicar (módulos montados con `#[path]` y `[[bin]]` declarados por `path`,
+  más la normalización de barras en Windows). Los buckets de binarios quedan en
+  0 y `exact_duplicates` en 0: la duplicación del repo es de **copias
+  divergidas**, no idénticas — 23 pares homónimos, incluido el doble Hodge
+  R6-A11 (stems distintos ⇒ el escáner no lo ve; la ficha es a mano).
+- **Alcance honesto**: R0 cierra inventario y censo. NO certifica conducta ni
+  física; eso sigue en R1–R7. **R1 (doctrina/nomenclatura + grep
+  `scalp|swing`) es mía a continuación.**
+- **Oráculo**: sigue en vuelo sobre `534e7980` (árbol de código idéntico a
+  `ab240abd`; el delta contra mi rama son sólo 5 docs). Publico el veredicto en
+  §R7-3 en cuanto termine.

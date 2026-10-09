@@ -1795,7 +1795,7 @@ veredicto se escribe abajo al cerrarse.
 
 | fase | ámbito | lente | dueño | estado |
 |---|---|---|---|---|
-| R0 | ledger de cobertura 488 `.rs` + censo código muerto/duplicado | inventario | Qoder | PENDIENTE |
+| R0 | ledger de cobertura 488 `.rs` + censo código muerto/duplicado | inventario | Qoder | **CERRADA** (§R7-4) |
 | R1 | doctrina/nomenclatura (`AGENTS.md`, MEMORIA, planes maestros, `ARQUITECTURA_VIVA`, ADRs) + grep `scalp\|swing` | metas/conceptos | Qoder | PENDIENTE |
 | R2 | matemática/estadística (risk-engine stats, Ville, Cramér-Lundberg, ruin, correlation_guard, leverage_matrix, orchestrator, vetos, multifractal, lead-lag, temporal_spectrum, spectral_tape) | matemática | — | ABIERTA |
 | R3 | física/cuántica (hodge ×2, hodge_flow, yang_mills, stat_arb, vecm, multivariate_coint, maker + 13 motores signal-engine) | física | — | ABIERTA |
@@ -1838,3 +1838,154 @@ cierra): **R6-A11, R6-A13 (residual), R6-B12, R6-B16, R6-C8, C-02**.
 - Árbol: `ab240abd` (main post-Ω44/Ω45). Base previa certificada: `85557469`
   (16/144 = 11,1 %, 2 375,32 s).
 - Resultado: **EN VUELO** al publicar esta sección.
+
+## §R7-4 — Fase R0 cerrada: ledger de cobertura + censo de código muerto/duplicado
+
+Ejecutor: **Qoder** (rama `qoder/ronda7-plan`). Medido contra el árbol del
+merge `534e7980`, cuyo contenido de código es **idéntico a `ab240abd`**
+(verificado: `git diff ab240abd 534e7980 -- '*.rs' Cargo.toml crates/` vacío;
+el delta son 5 archivos de documentación).
+
+Artefactos versionados:
+
+| archivo | contenido |
+|---|---|
+| `docs/audit/LEDGER_RONDA7_2026-10-09.json` | 1 512 rutas versionadas, todas en estado `inventariado`; `check` verde sobre `534e7980` |
+| `docs/audit/CENSUS_CODE_MUERTO_RONDA7_2026-10-09.tsv` | 203 fichas de censo, una por fila, con su evidencia contable |
+| `scripts/ronda7_dead_census.py` | el escáner determinista que las produjo (re-ejecutable) |
+
+Conteo por bucket: `fn_sin_uso` 93 · `dep_sin_uso` 50 · `allow_dead_code` 32 ·
+`modulo_homonomo` 23 · `modulo_huerfano` 4 · `modulo_por_path` 1 ·
+`exact_duplicates` 0 · binarios 0.
+
+Cada fila del TSV lleva el conteo de apariciones medido, así que es
+re-verificable con `git grep -w <símbolo>`; ninguna ficha se apoya en el
+escáner como prueba suficiente sin esa comprobación manual.
+
+### R7-R0-1 [MED] — la capa legacy del paquete raíz no tiene ningún consumidor de producción (1 286 líneas compiladas)
+
+El lib raíz (`Cargo.toml:189` → `[lib] name = "quantum_engine"`) declara 12
+módulos. Medición del consumo real:
+
+- Los únicos consumidores del lib son `src/bin/god_engine.rs` y
+  `src/bin/config_compiler.rs`. `git grep -n "quantum_engine::"` fuera de
+  `src/lib.rs` devuelve **9 coincidencias**, todas sobre 8 módulos:
+  `config`, `parsers`, `symbol_manager`, `env_manager`, `dashboard`,
+  `dark_alpha_router`, `dark_alpha_sniffer`, `orderbook`.
+- **Cero** usos de `quantum_engine::features`, `::trailing`, `::quantum_arena`
+  y `::multi_asset_orchestrator` en los 488 `.rs` versionados.
+- Los dos reexports del lib (`src/lib.rs:13` `QuantumRingBuffer`/
+  `QuantumStateArena`/`FEATURE_SIZE`; `src/lib.rs:14`
+  `evaluate_quantum_trailing`/`TrailingResult`) no tienen **un solo lector**
+  fuera del propio `src/lib.rs`.
+- Lo que los mantiene visibles son tres tests de otros crates que los montan
+  con `#[path]`: `crates/feature-engine/tests/legacy_correlation_diagnostics.rs:3,9`
+  y `legacy_statistics_diagnostics.rs:3,6` (ewma/correlation/welford) y
+  `crates/signal-engine/tests/multi_asset_identity_contract.rs:1`
+  (orquestador). `src/features/microstructure.rs`, `src/features/omni_strategies.rs`,
+  `src/trailing.rs` y `src/quantum_arena.rs` ni siquiera tienen ese consumidor.
+
+Prueba de compilación (no de conducta): `cargo check -p trader-gemini-v5 --lib
+--offline --locked -j1` → **0 errores, 35,86 s** — el `#[path]` del test de
+signal-engine y el lib raíz son sintácticamente compatibles; compilar no
+implica que nadie llame.
+
+Consecuencia — es el **patrón R6-A7 repetido en el árbol raíz**: esos dos
+contratos `legacy_*` certifican la copia MUERTA, no la viva. Los homólogos
+vivos están en los crates y sí tienen consumidores medidos:
+`crates/god-engine-core/src/trailing.rs:5,13` (`TrailingResult`,
+`evaluate_quantum_trailing`, con 8 llamadas dentro del propio crate),
+`crates/strategy-core/src/maker.rs:1` (`use feature_engine::microstructure::OFIModel`)
+y `crates/god-engine-core/src/stateful_engine.rs:5` (`feature_engine::OrderFlowTracker`).
+La divergencia entre las dos copias ya está documentada para el caso Hodge
+(R6-A11).
+
+**No se borra en esta ola**: retirar la capa exige re-orientar o retirar los
+tres `#[path]` (decisiones de contrato, zona de otros dueños) y pasar el
+oráculo. Riesgo de dejarla: cero conducta; coste real ~1 286 líneas de
+superficie de confusión + dos contratos que dan falsa cobertura.
+
+### R7-R0-2 [LOW] — `src/risk/mod.rs` nunca se compila
+
+4 líneas. No existe `mod risk;` en `src/lib.rs` ni en ningún `.rs` versionado,
+y ningún `#[path]` lo monta. Está fuera del binario y del lib: es archivo
+muerto puro (no lo cubre el `cargo check --lib` verde de R7-R0-1).
+
+### R7-R0-3 [LOW] — `crates/quantum-arena/src/net_multiplexer.rs` sin declaración ni referencia
+
+`git grep -w net_multiplexer` en `*.rs` y `*.toml` → 0 coincidencias fuera del
+propio archivo. Nunca entra en la compilación del crate.
+
+### R7-R0-4 [LOW] — dos `src/tests.rs` eclipsados: sus tests no corren jamás
+
+`crates/omniscient-registry/src/tests.rs` y `crates/phase-runner/src/tests.rs`.
+Ambos crates declaran su módulo de tests **inline**
+(`crates/omniscient-registry/src/lib.rs:399` `mod tests {`,
+`crates/phase-runner/src/lib.rs:126` `mod tests {`) y no existe
+`mod tests;` apuntando al archivo. Los archivos nunca se compilan ni se
+ejecutan: su contenido no cuenta en ninguna suite y su existencia invita a
+creer que hay cobertura donde no la hay.
+
+### R7-R0-5 [MED] — 50 dependencias declaradas sin uso medido
+
+13 en el paquete raíz (`syn`, `petgraph`, `rkyv`, `uuid`, `crossbeam`, `hmac`,
+`hex`, `lazy_static`, `libm`, `itoa`, `ryu` y los crate-deps
+`omniscient-registry`/`strategy-core`) y 37 repartidas en 15
+crates (mayoría en `evolution-engine` 6 y `strategy-core` 5). Verificación por
+extensión con `git grep -w` dentro de cada crate: 0 apariciones.
+
+Distinción que el escáner no hace y sí importa:
+`crates/os-guardian/Cargo.toml:17` declara `winapi` en `[dependencies]`
+**incondicional** — se resuelve y compila también en Linux, mientras el código
+usa el crate `windows`; en `crates/god-engine-core/Cargo.toml:32-33` en cambio
+está gated bajo `[target.'cfg(windows)'.dependencies]` y aun así tiene 0
+apariciones. Coste: tiempo de compilación y superficie del grafo de
+dependencias; no cambia conducta. Retiro requiere decisión del dueño por
+crate (no lo hago en docs-only).
+
+### R7-R0-6 [INFO] — 32 `#[allow(dead_code)]` en 22 archivos = deuda explícita, no cubierta
+
+Cada uno es una confesión escrita de «muerto pero lo dejo». Ninguno se
+reclasifica como seguro de borrar sin leer el consumidor que prometía; se
+usan como lista de trabajo en R3/R4/R6 por archivo.
+
+### R7-R0-7 [INFO] — 93 funciones públicas sin llamador en el árbol
+
+Criterio estricto: exactamente **una** aparición del identificador en `.rs`
+(su propia definición). Es una lista de CANDIDATOS, no una sentencia: el
+escáner no ve derives, macros, FFI ni despacho por string. Los 93 fueron
+re-verificados por extensión (los 91 que antes parecían tener llamadores los
+tenían sólo en `.md`/`.json`/`.py`, no en código).
+
+### R7-R0-8 [INFO] — 0 duplicados idénticos; 23 pares de homónimos divergentes
+
+`exact_duplicates` (digest de contenido sobre las 1 512 rutas) no encontró
+ninguna copia byte a byte. La duplicación real del repo es de **copias
+divergidas**: 23 módulos homónimos por stem, entre ellos o
+`orchestrator` (risk-engine, signal-engine y el raíz
+`multi_asset_orchestrator`), `trailing` (god-engine-core y raíz), `hodge` vs
+`hodge_flow` (R6-A11, no lo detecta el escáner por stem — ficha a mano),
+`microstructure`/`omni_strategies`/`correlation`/`ewma`/`welford`
+(feature-engine vs raíz).
+
+### R7-R0-9 — dos puntos ciegos del escáner corregidos ANTES de publicar el censo
+
+(a) **`#[path]`**: 18 atributos montan módulos fuera del árbol de
+declaraciones; sin tratarlos, el escáner marcaba huérfanos falsos — incluido
+`crates/backtest-engine/src/booktick_causality_contract.rs`, que sí se compila
+como `mod causality_contract;` desde `booktick_replay.rs:853`, sólo bajo
+`#[cfg(test)]` (clasificado como `modulo_por_path`, no como huérfano).
+(b) **`[[bin]]` declarados por `path`**: `quantum_benchmark` →
+`src/bin/benchmark.rs` (`Cargo.toml:120-122`). Comparar sólo el `name` producía
+un falso `bin_no_declarado`; y `os.path.normpath` en Windows invierte las
+barras, lo que generó 35 falsos `bin_ruta_inexistente`. Corregido con
+normalización única a `/` y declaración por `name` **o** `path`. El censo
+final tiene ambos buckets de binarios en 0: 35 `[[bin]]` en el manifiesto raíz
+sobre 34 archivos en `src/bin/` — la diferencia es legítima, una declaración
+apunta fuera de la carpeta (`continuous_evolution_backtest` →
+`crates/backtest-engine/src/bin/continuous_evolution_backtest.rs`); verificado
+que no hay paths duplicados ni manifests apuntando a rutas inexistentes.
+
+**Alcance honesto de R0**: cierra el ledger de cobertura y el censo. NO
+certifica conducta ni física de ningún archivo; la lectura archivo por archivo
+continúa en R1–R7.
