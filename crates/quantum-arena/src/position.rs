@@ -580,6 +580,37 @@ impl Position {
         // posiblemente inconsistentes.
         None
     }
+
+    /// Clasificación espectral continua en nanosegundos (branchless/O(1)):
+    /// Determina la naturaleza física de la posición según su escala intrínseca `entry_tau_ms`.
+    /// - Micro (alta reactividad / microestructura / scalping): τ <= 60_000 ms (≤ 1 min)
+    /// - Meso (dinámica intermedia / táctica): 60_000 ms < τ <= 900_000 ms (1 min - 15 min)
+    /// - Macro (baja frecuencia / tendencia / swing): τ > 900_000 ms (> 15 min)
+    #[inline(always)]
+    pub fn spectral_regime_name(&self) -> &'static str {
+        let tau = self.entry_tau_ms.load(Ordering::Relaxed);
+        if tau == 0 || tau <= 60_000 {
+            "MicroScalp"
+        } else if tau <= 900_000 {
+            "MesoTactical"
+        } else {
+            "MacroSwing"
+        }
+    }
+
+    /// Retorna si la posición fue abierta en régimen de microescala (scalping de alta frecuencia).
+    #[inline(always)]
+    pub fn is_micro_scalp(&self) -> bool {
+        let tau = self.entry_tau_ms.load(Ordering::Relaxed);
+        tau > 0 && tau <= 60_000
+    }
+
+    /// Retorna si la posición fue abierta en régimen de macroescala (swing multiactivo).
+    #[inline(always)]
+    pub fn is_macro_swing(&self) -> bool {
+        let tau = self.entry_tau_ms.load(Ordering::Relaxed);
+        tau > 900_000
+    }
 }
 
 /// Vista coherente de una posición en un instante. Producida por
@@ -602,6 +633,29 @@ pub struct PositionSnapshot {
     pub entry_tau_ms: u64,
     pub confidence: f64,
     pub ml_prediction: f64,
+}
+
+impl PositionSnapshot {
+    #[inline(always)]
+    pub fn spectral_regime_name(&self) -> &'static str {
+        if self.entry_tau_ms == 0 || self.entry_tau_ms <= 60_000 {
+            "MicroScalp"
+        } else if self.entry_tau_ms <= 900_000 {
+            "MesoTactical"
+        } else {
+            "MacroSwing"
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_micro_scalp(&self) -> bool {
+        self.entry_tau_ms > 0 && self.entry_tau_ms <= 60_000
+    }
+
+    #[inline(always)]
+    pub fn is_macro_swing(&self) -> bool {
+        self.entry_tau_ms > 900_000
+    }
 }
 
 pub const MAX_SPECTRAL_SLOTS: usize = 3;
@@ -667,6 +721,50 @@ impl PositionManager {
             }
         }
         count
+    }
+
+    /// Desglose en tiempo real de posiciones abiertas por horizonte espectral:
+    /// Retorna `(micro_scalp_count, meso_tactical_count, macro_swing_count)`.
+    #[inline(always)]
+    pub fn open_positions_by_regime(&self) -> (usize, usize, usize) {
+        let mut micro = 0;
+        let mut meso = 0;
+        let mut macro_cnt = 0;
+        for p in self.slots() {
+            if p.is_open() {
+                let tau = p.entry_tau_ms.load(Ordering::Relaxed);
+                if tau == 0 || tau <= 60_000 {
+                    micro += 1;
+                } else if tau <= 900_000 {
+                    meso += 1;
+                } else {
+                    macro_cnt += 1;
+                }
+            }
+        }
+        (micro, meso, macro_cnt)
+    }
+
+    /// Retorna true si hay alguna posición abierta en régimen de microescala (scalping).
+    #[inline(always)]
+    pub fn has_open_micro_scalp(&self) -> bool {
+        for p in self.slots() {
+            if p.is_open() && p.is_micro_scalp() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Retorna true si hay alguna posición abierta en régimen de macroescala (swing).
+    #[inline(always)]
+    pub fn has_open_macro_swing(&self) -> bool {
+        for p in self.slots() {
+            if p.is_open() && p.is_macro_swing() {
+                return true;
+            }
+        }
+        false
     }
 
     /// Distancia logarítmica espectral por defecto: Δln(τ) = 0.80 (ratio de escala ~2.23).
@@ -1430,5 +1528,85 @@ mod tests {
             PositionManager::RAZON_CAPACIDAD_LLENA
         );
         assert!(pm2.find_resonant_slot(30_000.0, true).is_none());
+    }
+
+    #[test]
+    fn test_position_spectral_classification_and_regime_breakdown() {
+        let pm = PositionManager::default();
+
+        // 1. Slot 0: MicroScalp (τ = 15s = 15_000 ms <= 60_000 ms)
+        assert!(pm.scalp.open_with_tau_and_fee(
+            true,
+            100.0,
+            0.05,
+            1.02,
+            1_000,
+            101.5,
+            99.5,
+            PositionHorizon::Continuous,
+            0.75,
+            0.85,
+            0.0004,
+            15_000
+        ));
+        assert_eq!(pm.scalp.spectral_regime_name(), "MicroScalp");
+        assert!(pm.scalp.is_micro_scalp());
+        assert!(!pm.scalp.is_macro_swing());
+
+        // 2. Slot 1: MacroSwing (τ = 1h = 3_600_000 ms > 900_000 ms)
+        assert!(pm.swing.open_with_tau_and_fee(
+            false,
+            200.0,
+            0.02,
+            1.02,
+            1_000,
+            195.0,
+            202.0,
+            PositionHorizon::Continuous,
+            0.80,
+            0.90,
+            0.0004,
+            3_600_000
+        ));
+        assert_eq!(pm.swing.spectral_regime_name(), "MacroSwing");
+        assert!(!pm.swing.is_micro_scalp());
+        assert!(pm.swing.is_macro_swing());
+
+        // 3. Slot 2: MesoTactical (τ = 5m = 300_000 ms)
+        assert!(pm.position.open_with_tau_and_fee(
+            true,
+            50.0,
+            0.10,
+            1.02,
+            1_000,
+            51.0,
+            49.5,
+            PositionHorizon::Continuous,
+            0.70,
+            0.80,
+            0.0004,
+            300_000
+        ));
+        assert_eq!(pm.position.spectral_regime_name(), "MesoTactical");
+        assert!(!pm.position.is_micro_scalp());
+        assert!(!pm.position.is_macro_swing());
+
+        // 4. Verificación de agregación del PositionManager
+        let (micro, meso, macro_cnt) = pm.open_positions_by_regime();
+        assert_eq!(micro, 1, "debe registrar exactamente 1 posición de MicroScalp");
+        assert_eq!(meso, 1, "debe registrar exactamente 1 posición de MesoTactical");
+        assert_eq!(macro_cnt, 1, "debe registrar exactamente 1 posición de MacroSwing");
+
+        assert!(pm.has_open_micro_scalp());
+        assert!(pm.has_open_macro_swing());
+
+        // 5. Verificación de snapshot coherente
+        let snap_scalp = pm.scalp.snapshot().expect("snapshot scalp");
+        assert_eq!(snap_scalp.spectral_regime_name(), "MicroScalp");
+        assert!(snap_scalp.is_micro_scalp());
+
+        let snap_swing = pm.swing.snapshot().expect("snapshot swing");
+        assert_eq!(snap_swing.spectral_regime_name(), "MacroSwing");
+        assert!(snap_swing.is_macro_swing());
     }
 }
