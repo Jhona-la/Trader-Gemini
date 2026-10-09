@@ -1,5 +1,18 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Antigravity: OLA Ω48 CERRADA E INTEGRADA EN MAIN (`dbaf0ccb`) — D-1/D-2 (NORMALIZACIÓN DE ENTROPÍA), C-3 (REGULARIZACIÓN CONTINUA DE DRIFT), C-1 (GATE DE FAMILIA OPERABLE EN τ*) Y C-2 (RECONCILIACIÓN UNIFICADA DE τ)
+
+- **Rama**: `antigravity/quant-sr-ola48-entropia-y-drift` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#681**.
+- **Cambios en Código Rust**:
+  1. `crates/god-engine-core/src/math_kernels.rs:455-485`: `ShannonEntropy::current()` y `update()` normalizados a $[0, 1]$ dividiendo por $\ln(10.0)$ (`MAX_SHANNON_NATS_10BINS = 2.302585...`). Resuelto el choque D-1 con calibradores de `flow_impulse.rs`. `current_nats()` expone nats brutos. Test `d713_la_entropia_mide_la_forma_y_no_es_cero_constante` actualizado y verde.
+  2. `crates/god-engine-core/src/lib.rs:4304`: Normalización exacta de Tsallis binario $q=1.5$ a $[0, 1]$ dividiendo por $S_{q,\max} = 2(1 - 2^{-0.5}) \approx 0.585786...$ (D-2).
+  3. `crates/quantum-arena/src/spectral_regime.rs:74-90`: Regularización continua $C^1$ Hermite cúbico ($w_t = 3u_t^2 - 2u_t^3$) para la derivada temporal de régimen $d\ln\tau/dt$, eliminando la singularidad/saturación de 1 bit en $\Delta t = 1.0\text{ ms}$ (C-3). Test contractual `test_c3_regularizacion_continua_dominant_drift_inmune_a_salto_1ms` añadido y verde.
+  4. `crates/quantum-arena/src/temporal_spectrum.rs:125, 656-668`: En el concurso del máximo de $\tau^*$, sustituido umbral Bonferroni $M=32$ ($32/\alpha = 640$ bloques inalcanzables) por $M = \text{ESCALAS\_OPERATIVAS\_BANDA} = 5$ ($5/\alpha = 100$ bloques), preservando FWER $\le 0.05$ sobre las 5 escalas que realmente compiten en la banda operable $[30\text{ s}, 12\text{ h}]$ (C-1).
+  5. `crates/quantum-arena/src/temporal_spectrum.rs:1190-1205`: Implementado `tau_operativa_unificada(&self) -> f64` que reconcilia la escala dominante con ventaja demostrada con el centroide continuo de Hilbert (C-2).
+  6. `crates/god-engine-core/src/lib.rs:1708, 1944, 6380`: Unificado el consumo de $\tau$ en `publicar_coherencia` (veto de grupo), en `arena.coins[coin_id].dominant_tau_ms` y en la rama 15 (`slow_intent.expected_duration_ms`). Erradicado el clamp redundante de código muerto.
+- **Certificación**: Suite completa de `god-engine-core`, `quantum-arena` y `risk-engine` verde al 100% (0 errores).
+- **Siguiente asignación AGY (Ola Ω49)**: F-1 (analizar y certificar compuerta probe phase), certificar oráculo T-1 conjunto de Ω46–Ω48.
+
 ## 2026-10-09 — Antigravity: OLA Ω47 CERRADA E INTEGRADA EN MAIN (`0485b934`, `f6b14ba4`) — R7-R1-6 (RANKING CONTINUO) Y R7-R2-F-2 (SUAVIZADO C¹ HERMITE CÚBICO EN MICRO SUELO Y CAP DE STOP LOSS)
 
 - **Rama**: `antigravity/quant-sr-ola47-suavizado-micro-suelo` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#680**.

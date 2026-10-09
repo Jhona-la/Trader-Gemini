@@ -15544,3 +15544,21 @@ línea 2250).
   3. `crates/risk-engine/tests/veto_evidence_contract.rs:268-280`: Añadido test contractual `test_suavizado_c1_micro_suelo_no_tiene_escalon_discreto`, validando que la transición suave opera de forma monótona, finita y continua para \$13, \$15, \$20, \$50 y \$100 USD sin panics, desbordes ni NaNs.
 - **Certificación**: Suite completa de `risk-engine` (13/13 en veto_evidence_contract, 73+ tests totales) verde al 100% con 0 errores.
 
+## #681 — Ola Ω48: RESOLUCIÓN D-1/D-2 (NORMALIZACIÓN DE ENTROPÍA), C-3 (REGULARIZACIÓN CONTINUA DE DRIFT), C-1 (GATE DE FAMILIA OPERABLE EN τ*) Y C-2 (RECONCILIACIÓN UNIFICADA DE τ) (2026-10-09)
+
+- **Autor**: Quant Senior (AGY / Consejo de 10 Roles).
+- **Commit en `main`**: `dbaf0ccb`.
+- **Alcance**:
+  1. **D-1 / D-2 (Normalización de Entropía a $[0, 1]$)**:
+     - `crates/god-engine-core/src/math_kernels.rs:455-485`: `ShannonEntropy::current()` y `update()` ahora normalizan dividiendo por $\ln(10.0)$ (`MAX_SHANNON_NATS_10BINS = 2.302585...`), eliminando la divergencia donde se publicaban ~1.95 nats contra un calibrador (`flow_impulse.rs`) calibrado en $[0, 1]$ que colapsaba la confianza a 0. `current_nats()` expone el valor bruto.
+     - `crates/god-engine-core/src/lib.rs:4304`: Normalización exacta de Tsallis binario $q=1.5$ a $[0, 1]$ dividiendo por $S_{q,\max} = 2(1 - 2^{-0.5}) \approx 0.585786...$.
+  2. **C-3 (Regularización Continua $C^1$ de `dominant_drift`)**:
+     - `crates/quantum-arena/src/spectral_regime.rs:74-90`: Regularización continua $C^1$ con spline cúbico de Hermite ($w_t = 3u_t^2 - 2u_t^3$) para la derivada $d\ln\tau/dt$, eliminando la singularidad donde $\Delta t = 1.0\text{ ms}$ producía una aceleración espuria saturando a $\pm 1.0$ y drenando margen. Añadido test contractual `test_c3_regularizacion_continua_dominant_drift_inmune_a_salto_1ms`.
+  3. **C-1 (Gate de Evidencia de $\tau^*$ con Familia Operable Concurrente)**:
+     - `crates/quantum-arena/src/temporal_spectrum.rs:125, 656-668`: En el concurso del máximo de $\tau^*$, se reemplazó el umbral inflado $M=32$ ($32/\alpha = 640$ bloques, que exigía meses en escalas lentas) por $M = \text{ESCALAS\_OPERATIVAS\_BANDA} = 5$ ($5/\alpha = 100$ bloques), preservando la garantía FWER $\le 0.05$ sobre las únicas escalas que realmente compiten en la banda operable $[30\text{ s}, 12\text{ h}]$.
+  4. **C-2 (Reconciliación Unificada de $\tau$)**:
+     - `crates/quantum-arena/src/temporal_spectrum.rs:1190-1205`: Implementado `tau_operativa_unificada(&self) -> f64` que ancla la $\tau$ en la escala con ventaja comprobada por Ville si existe, o en el centroide continuo en caso contrario.
+     - `crates/god-engine-core/src/lib.rs:1708, 1944, 6380`: Unificada la $\tau$ en la publicación de coherencia (veto de grupo), en el registro del arena (`dominant_tau_ms`) y en la rama 15 (`slow_intent.expected_duration_ms`), erradicando la divergencia de factor $\times 4.6$ y retirando el clamp redundante de código muerto.
+- **Certificación**: 100% tests pasados en `god-engine-core`, `quantum-arena` y `risk-engine` (0 errores).
+
+
