@@ -76,6 +76,15 @@ impl NavierStokesReynoldsEngine {
         }
     }
 
+    /// Calcula la fracción laminar suave C^∞ a partir del número de Reynolds continuo:
+    /// laminar_share = 1.0 / (1.0 + (Re / Re_crit)^2) ∈ [0.0, 1.0].
+    #[inline(always)]
+    pub fn compute_laminar_share(re: f64) -> f64 {
+        let safe_re = if re.is_finite() && re >= 0.0 { re } else { 0.0 };
+        let re_ratio = safe_re / Self::CRITICAL_REYNOLDS_LAMINAR;
+        (1.0 / (1.0 + re_ratio * re_ratio)).clamp(0.0, 1.0)
+    }
+
     /// Actualiza el estado hidrodinámico en tiempo real ante cada evento de mercado.
     ///
     /// # Argumentos
@@ -170,8 +179,7 @@ impl NavierStokesReynoldsEngine {
         self.sample_count = self.sample_count.saturating_add(1);
 
         // 9. Fracción laminar suave C^∞: 1 / (1 + (Re/Re_crit)^2)
-        let re_ratio = self.reynolds_number / Self::CRITICAL_REYNOLDS_LAMINAR;
-        self.laminar_share = (1.0 / (1.0 + re_ratio * re_ratio)).clamp(0.0, 1.0);
+        self.laminar_share = Self::compute_laminar_share(self.reynolds_number);
 
         // 10. Tasa de disipación de energía de Kolmogorov: ε = ν * (u / L)^2
         let velocity_gradient = (self.velocity / characteristic_length).abs();
@@ -273,17 +281,14 @@ mod tests {
 
     #[test]
     fn test_monotonicidad_de_laminar_share() {
-        let mut engine = NavierStokesReynoldsEngine::new();
-        engine.reynolds_number = 0.0;
-        let l0 = 1.0 / (1.0 + (0.0 / 1.0f64).powi(2));
+        let l0 = NavierStokesReynoldsEngine::compute_laminar_share(0.0);
         assert_eq!(l0, 1.0);
 
-        engine.reynolds_number = 1.0;
-        let l1 = 1.0 / (1.0 + (1.0 / 1.0f64).powi(2));
+        let l1 = NavierStokesReynoldsEngine::compute_laminar_share(1.0);
         assert_eq!(l1, 0.50);
 
-        engine.reynolds_number = 5.0;
-        let l5 = 1.0 / (1.0 + (5.0 / 1.0f64).powi(2));
+        let l5 = NavierStokesReynoldsEngine::compute_laminar_share(5.0);
         assert!(l5 < 0.05);
+        assert!(l0 > l1 && l1 > l5);
     }
 }
