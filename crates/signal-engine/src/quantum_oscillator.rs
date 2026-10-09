@@ -90,15 +90,10 @@ impl QuantumOscillatorEngine {
     /// (bit a bit intacto hasta el cambio ordenado con oráculo).
     pub fn voto_espectral(
         desplazamientos: &[f64; ESCALAS_OSCILADOR],
+        k_spring: f64,
+        lambda_anharmonic: f64,
+        alpha: f64,
     ) -> VotoEspectral {
-        // G2-11 (F3-A4): los knobs del registro (quantum_k_spring /
-        // lambda_anharmonic / alpha) no tenían ESCRITOR ni gen — lecturas
-        // decorativas congeladas a los defaults. Retiradas: consts internas
-        // bit-idénticas, la ilusión de configurabilidad eliminada.
-        const K_SPRING: f64 = 1.0;
-        const LAMBDA_ANHARMONIC: f64 = 0.1;
-        const ALPHA_CONFINAMIENTO: f64 = 0.5;
-        let alpha = ALPHA_CONFINAMIENTO;
         let safe_alpha = if alpha.is_finite() && alpha > 0.0 {
             alpha.clamp(0.01, 10.0)
         } else {
@@ -106,7 +101,7 @@ impl QuantumOscillatorEngine {
         };
         VotoEspectral::desde_espectro(desplazamientos, |x| {
             let safe_x = if x.is_finite() { x.clamp(-10.0, 10.0) } else { 0.0 };
-            let force = Self::compute_quantum_restoring_force(safe_x, K_SPRING, LAMBDA_ANHARMONIC);
+            let force = Self::compute_quantum_restoring_force(safe_x, k_spring, lambda_anharmonic);
             // #650 (Ola 50) — PARIDAD con el vivo (AGY-P14): la MISMA
             // envolvente C(x) = e^{−α·x²} ∈ (0,1] que modula la fuerza del
             // motor vivo. La sombra usaba √|ψ|² = (α/π)^{1/4}·e^{−αx²/2}:
@@ -174,17 +169,45 @@ impl QuantumStrategy for QuantumOscillatorEngine {
             })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
-        // G2-11 (F3-A4): knobs sin escritor NI gen — retiradas del registro;
-        // consts bit-idénticas a los defaults congelados (paridad por
-        // construcción entre vivo y sombra, ahora evidente).
-        const K_SPRING: f64 = 1.0;
-        const LAMBDA_ANHARMONIC: f64 = 0.1;
-        const ALPHA_CONFINAMIENTO: f64 = 0.5;
-        let k_spring = K_SPRING;
-        let lambda = LAMBDA_ANHARMONIC;
-        let alpha = ALPHA_CONFINAMIENTO;
+        // H2-9 (RONDA 3, GLM 112) — CONTRATO: los tres knobs cuánticos
+        // (k_spring=1.0, lambda=0.1, alpha=0.5) NO tienen escritor
+        // productivo — sus defaults SON la física del motor, pinneada
+        // por los tests (F=−k·x−λ·x³, confinamiento e^(−α·x²)). Esto es
+        // deliberado, no deriva: publicarlos del genoma abriría un canal
+        // evolutivo sobre el oscilador vivo del ensamble (precedente
+        // #535 hawkes_excitation_gene) — ola con oráculo si el consejo
+        // lo pide. El contrato h2_9 pinnéa defaults + ausencia-de-escritor.
+        let k_spring = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "quantum_k_spring",
+                "QuantumOscillatorEngine",
+            )
+            .map(|p| p.get_value())
+            .unwrap_or(1.0);
+        let lambda = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "quantum_lambda_anharmonic",
+                "QuantumOscillatorEngine",
+            )
+            .map(|p| p.get_value())
+            .unwrap_or(0.1);
 
-        if !pos.is_finite() {
+        let alpha = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "quantum_alpha",
+                "QuantumOscillatorEngine",
+            )
+            .map(|p| p.get_value())
+            .unwrap_or(0.5)
+            .clamp(0.01, 10.0);
+
+        if !pos.is_finite() || !k_spring.is_finite() || !lambda.is_finite() {
             return 0.0;
         }
         let force = Self::compute_quantum_restoring_force(pos, k_spring, lambda);
@@ -228,6 +251,8 @@ mod tests {
     fn test_quantum_oscillator_engine_evaluate_with_registry() {
         let registry = Arc::new(OmniscientRegistry::new());
         registry.set("quantum_position_deviation", 0.5);
+        registry.set("quantum_k_spring", 1.0);
+        registry.set("quantum_lambda_anharmonic", 0.1);
 
         let mut engine = QuantumOscillatorEngine::new();
         assert!(engine.init(registry).is_ok());
@@ -245,6 +270,8 @@ mod tests {
         let registry = Arc::new(OmniscientRegistry::new());
         // Desviación extrema de breakout (pos = 6.0)
         registry.set("quantum_position_deviation", 6.0);
+        registry.set("quantum_k_spring", 1.0);
+        registry.set("quantum_lambda_anharmonic", 0.1);
         registry.set("quantum_alpha", 0.5);
 
         let mut engine = QuantumOscillatorEngine::new();
@@ -255,6 +282,56 @@ mod tests {
         assert!(
             eval.abs() < 1e-4,
             "Breakout cuántico extremo debe tener voto amortiguado, no luchar contra la tendencia: {eval}"
+        );
+    }
+
+    /// H2-9 (RONDA 3, GLM 112) — CONTRATO de los knobs cuánticos: los
+    /// defaults (1.0/0.1/0.5) SON la física del motor. La AUSENCIA de
+    /// escritor productivo no es deriva: sin las claves, el motor evalúa
+    /// BIT-IDÉNTICO a como evalúa con los defaults escritos explícitos.
+    /// Si una ola futura los publica del genoma (canal evolutivo,
+    /// precedente #535), este test no cambia — pero el oráculo sí será
+    /// obligatorio (motor vivo del ensamble).
+    #[test]
+    fn h2_9_ausencia_de_knobs_es_bit_identica_a_los_defaults_de_fisica() {
+        // Sin ninguna clave en el registro (arranque limpio).
+        let registry_vacio = Arc::new(OmniscientRegistry::new());
+        registry_vacio.set("quantum_position_deviation", 2.5);
+        let mut engine_vacio = QuantumOscillatorEngine::new();
+        engine_vacio.init(registry_vacio).unwrap();
+        let eval_vacio = engine_vacio.evaluate();
+
+        // Con los defaults ESCRITOS explícitos (mismos valores).
+        let registry_explicito = Arc::new(OmniscientRegistry::new());
+        registry_explicito.set("quantum_position_deviation", 2.5);
+        registry_explicito.set("quantum_k_spring", 1.0);
+        registry_explicito.set("quantum_lambda_anharmonic", 0.1);
+        registry_explicito.set("quantum_alpha", 0.5);
+        let mut engine_explicito = QuantumOscillatorEngine::new();
+        engine_explicito.init(registry_explicito).unwrap();
+        let eval_explicito = engine_explicito.evaluate();
+
+        assert!(
+            eval_vacio.is_finite() && eval_explicito.is_finite(),
+            "ambos finitos: {eval_vacio} / {eval_explicito}"
+        );
+        assert_eq!(
+            eval_vacio.to_bits(),
+            eval_explicito.to_bits(),
+            "ausencia de knobs == defaults de física (bit-identico): {eval_vacio} vs {eval_explicito}"
+        );
+
+        // Y un knob DISTINTO sí cambia la física (el pin no es vacuo).
+        let registry_distinto = Arc::new(OmniscientRegistry::new());
+        registry_distinto.set("quantum_position_deviation", 2.5);
+        registry_distinto.set("quantum_k_spring", 4.0);
+        let mut engine_distinto = QuantumOscillatorEngine::new();
+        engine_distinto.init(registry_distinto).unwrap();
+        let eval_distinto = engine_distinto.evaluate();
+        assert_ne!(
+            eval_distinto.to_bits(),
+            eval_vacio.to_bits(),
+            "k_spring=4.0 cambia la fuerza restauradora: el contrato discrimina"
         );
     }
 }
@@ -274,9 +351,10 @@ mod qo_609_tests {
             x_neg[k] = -*v;
             x_extremo[k] = 10.0; // estado del continuo (ruptura)
         }
-        let voto_pos = QuantumOscillatorEngine::voto_espectral(&x_pos);
-        let voto_neg = QuantumOscillatorEngine::voto_espectral(&x_neg);
-        let voto_extremo = QuantumOscillatorEngine::voto_espectral(&x_extremo);
+        let (k, l, a) = (1.0, 0.1, 0.5);
+        let voto_pos = QuantumOscillatorEngine::voto_espectral(&x_pos, k, l, a);
+        let voto_neg = QuantumOscillatorEngine::voto_espectral(&x_neg, k, l, a);
+        let voto_extremo = QuantumOscillatorEngine::voto_espectral(&x_extremo, k, l, a);
         // Antisimetría: x → −x ⇒ voto → −voto (el pozo es impar).
         for kk in 0..ESCALAS_VOTO {
             let vp = voto_pos.en_escala(kk);
@@ -289,7 +367,7 @@ mod qo_609_tests {
             assert!(voto_extremo.en_escala(kk).abs() < 1e-3);
         }
         // Desplazamientos nulos ⇒ voto nulo.
-        let cero = QuantumOscillatorEngine::voto_espectral(&[0.0; ESCALAS_VOTO]);
+        let cero = QuantumOscillatorEngine::voto_espectral(&[0.0; ESCALAS_VOTO], k, l, a);
         assert_eq!(cero.dominante(), None, "sin convicción no hay dominante");
     }
 
@@ -301,7 +379,7 @@ mod qo_609_tests {
         let mut x = [0.0; ESCALAS_VOTO];
         x[5] = 1.0; // desplazamiento moderado (confinado)
         x[25] = 6.0; // desplazamiento extremo (ruptura)
-        let voto = QuantumOscillatorEngine::voto_espectral(&x);
+        let voto = QuantumOscillatorEngine::voto_espectral(&x, 1.0, 0.1, 0.5);
         assert!(
             voto.en_escala(25).abs() < voto.en_escala(5).abs(),
             "la escala de ruptura debe votar más débil: moderada={} extrema={}",

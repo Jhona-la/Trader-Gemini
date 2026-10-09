@@ -16,6 +16,8 @@ use tokio::time::sleep;
 pub mod fitness;
 // G1-5 (Ola Ω11): unificar selection_stats en risk_engine como fuente canónica única (DRY).
 pub use risk_engine::selection_stats;
+pub mod score_retention;
+pub mod sa_selection;
 pub mod anti_bias_governor;
 pub mod ast_mutator;
 pub mod cma_es;
@@ -26,6 +28,7 @@ pub mod moe_neat_arena;
 pub mod neat;
 pub mod online_daemon;
 pub mod return_evidence;
+pub use return_evidence::SequentialVilleEvidence;
 pub mod online_random_forest;
 pub mod polars_evolver;
 pub mod random_forest;
@@ -640,10 +643,6 @@ impl EvolutionEngine {
                 mutation_rate = (mutation_rate * 1.5).min(0.5);
 
                 // FIX BLOQUEO #7: Colapso cuántico para salir del pozo de estancamiento local
-                let latest_ts = all_ticks.last().map(|t| t.timestamp).unwrap_or(42);
-                use metacortex_engine::consejo_seniors::TradingHorizon;
-                // U-6: motor continuo — un solo modo.
-                let mode = TradingHorizon::Continuous;
                 // QO-M2.1: quantum_evolver DELETED — valor neutro del genoma
                 current_alpha.dynamic_atr_min = 0.0012;
                 current_alpha.target_volatility =

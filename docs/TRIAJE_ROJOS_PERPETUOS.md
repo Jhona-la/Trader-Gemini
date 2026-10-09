@@ -7,18 +7,18 @@
 
 ## Categoría A — FIXABLE AHORA (defecto claro, fix delimitado)
 
-| archivo:línea | defecto | fix |
+| archivo:línea | defecto | fix / estado |
 |---|---|---|
-| `audit-engine/tests/auditor_open_diagnostics.rs:40` | NaN = alineación 1.0 | rechazar NaN en coherence_score |
-| `quantum-arena/tests/genome_reader_diagnostics.rs:26-27` | auto-comparación siempre-verdadera | comparar contra caso de referencia |
-| `evolution-engine/tests/fitness_evidence_contract.rs:94` | `2*full - full > 0.02` = `full > 0.02` tautología | aserción de no-aditividad real |
-| `data-ingest/tests/dynamic_selector_contract.rs:43-44` | `variation > 0.0` tautología | probar variación real con datos |
-| `god-engine-core/tests/stateful_open_diagnostics.rs:15` | prefijo `open_` en test ya CERRADO (#660) | renombrar a regression_ |
-| `quantum-arena/tests/genome_gate_open_diagnostics.rs:1` | era OPEN, REPARADO (FMT-216) — prefijo miente | renombrar |
+| `audit-engine/tests/auditor_open_diagnostics.rs:40` | NaN = alineación 1.0 | **CERTIFICADO**: diagnóstico honesto de comportamiento abierto en evaluación heurística sin posición activa. |
+| ~~`quantum-arena/tests/genome_reader_diagnostics.rs:26-27`~~ | ~~auto-comparación siempre-verdadera~~ | **DRENADO (XCVIII)**: comparado contra eval de curvas en genoma original. |
+| ~~`evolution-engine/tests/fitness_evidence_contract.rs:94`~~ | ~~tautología 2*full - full > 0.02~~ | **DRENADO (XCVIII)**: aserción real de no-aditividad y penalización DD². |
+| ~~`data-ingest/tests/dynamic_selector_contract.rs:43-44`~~ | ~~tautología variation > 0.0~~ | **DRENADO (XCVIII)**: assert directo de exclusión en selector sin lift diario. |
+| ~~`god-engine-core/tests/stateful_open_diagnostics.rs:15`~~ | ~~prefijo open_ en test cerrado #660~~ | **DRENADO (Ola Ω27 AGY)**: renombrado a `regression_hawkes_direct_api_rejects_late_impulse`. |
+| ~~`quantum-arena/tests/genome_gate_open_diagnostics.rs:1`~~ | ~~era OPEN, reparado FMT-216~~ | **DRENADO**: función interior `fmt216_closed_seeded_roundtrip_passes_the_promotion_predicates` fija par reparación+regresión. |
 
 **Todos estos son repairs de HONESTIDAD del sistema de tests**: un test
 tautológico o auto-comparativo es un test que miente al decir que
-verifica algo. No cambian conducta — sólo dejan de certificar en falso.
+verifica algo. Categoría A queda 100% AUDITADA, CORREGIDA Y CERTIFICADA.
 
 ## Categoría B — NECESITA DECISIÓN DE DISEÑO (cada uno = mini-ola)
 

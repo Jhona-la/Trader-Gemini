@@ -267,11 +267,18 @@ impl ContinuousOrnsteinUhlenbeckSde {
         if !value.is_finite() {
             return self.stationary_zscore(self.last_value);
         }
-        if self.count == 0 || ts_ms <= self.last_ts_ms {
+        if self.count == 0 {
             self.last_value = value;
             self.last_ts_ms = ts_ms;
-            self.count += 1;
+            self.count = 1;
             return 0.0;
+        }
+
+        if ts_ms <= self.last_ts_ms {
+            // OU-R4-02: Monotonicidad temporal estricta de la física SDE.
+            // Timestamps repetidos o retrógrados no mutan el estado, no avanzan count
+            // ni retroceden el reloj físico.
+            return self.stationary_zscore(self.last_value);
         }
 
         let dt_sec = (ts_ms - self.last_ts_ms) as f64 / 1000.0;
@@ -293,16 +300,25 @@ impl ContinuousOrnsteinUhlenbeckSde {
         self.s_yy = self.s_yy * decay + y * y;
         self.count += 1;
 
+        let z_prior = self.stationary_zscore(value);
+
         if self.count >= 10 {
             // Regresión discreta exacta: y = a + b * x
             // donde b = exp(-θ dt), a = μ (1 - b)
             let n_eff = self.s_w.max(1.0);
+            let empirical_mean = self.s_y / n_eff;
             let denom = (n_eff * self.s_xx - self.s_x * self.s_x).max(1e-12);
             let b = ((n_eff * self.s_xy - self.s_x * self.s_y) / denom).clamp(0.001, 0.9999);
             let a = (self.s_y - b * self.s_x) / n_eff;
 
             let est_theta = (-b.ln() / dt_sec).clamp(1e-4, 50.0);
-            let est_mu = a / (1.0 - b).max(1e-6);
+            // Si el denominador de OLS es débil o b está cerca de 1.0 (frontera de raíz unitaria),
+            // la estimación ergódica de μ converge a la media empírica para prevenir singularidades (a / 0)
+            let est_mu = if (1.0 - b) < 0.02 || denom < 1e-8 {
+                empirical_mean
+            } else {
+                (a / (1.0 - b)).clamp(empirical_mean - 5.0, empirical_mean + 5.0)
+            };
 
             // Residuos y estimación de sigma de difusión (Fokker-Planck)
             let raw_sse = (self.s_yy - 2.0 * b * self.s_xy + b * b * self.s_xx) / n_eff - a * a;
@@ -318,7 +334,11 @@ impl ContinuousOrnsteinUhlenbeckSde {
         self.last_value = value;
         self.last_ts_ms = ts_ms;
 
-        self.stationary_zscore(value)
+        if self.count > 10 {
+            z_prior
+        } else {
+            self.stationary_zscore(value)
+        }
     }
 }
 
@@ -414,5 +434,37 @@ mod tests {
         // NaN immunity
         let nan_z = ou.update(f64::NAN, ts + 2000);
         assert!(nan_z.is_finite());
+    }
+
+    #[test]
+    fn test_ou_r4_02_retrograde_and_duplicate_timestamp_does_not_mutate_state_or_advance_count() {
+        let mut ou = ContinuousOrnsteinUhlenbeckSde::new(0.2, 10.0, 0.5);
+        // Primera observación: inicializa estado
+        let z0 = ou.update(10.0, 1000);
+        assert_eq!(z0, 0.0);
+        assert_eq!(ou.count, 1);
+        assert_eq!(ou.last_ts_ms, 1000);
+        assert_eq!(ou.last_value, 10.0);
+
+        // Intento retrógrado: ts=500 < 1000
+        let z_retro = ou.update(25.0, 500);
+        assert!(z_retro.is_finite());
+        assert_eq!(ou.count, 1, "tick retrógrado NO debe incrementar count");
+        assert_eq!(ou.last_ts_ms, 1000, "tick retrógrado NO debe retroceder last_ts_ms");
+        assert_eq!(ou.last_value, 10.0, "tick retrógrado NO debe sobreescribir last_value");
+
+        // Intento duplicado: ts=1000 == 1000
+        let z_dup = ou.update(30.0, 1000);
+        assert!(z_dup.is_finite());
+        assert_eq!(ou.count, 1, "tick duplicado NO debe incrementar count");
+        assert_eq!(ou.last_ts_ms, 1000, "tick duplicado NO debe alterar last_ts_ms");
+        assert_eq!(ou.last_value, 10.0, "tick duplicado NO debe sobreescribir last_value");
+
+        // Siguiente tick causal estrictamente creciente: ts=1500 > 1000
+        let z_causal = ou.update(10.2, 1500);
+        assert!(z_causal.is_finite());
+        assert_eq!(ou.count, 2, "tick causal debe avanzar count");
+        assert_eq!(ou.last_ts_ms, 1500, "tick causal debe avanzar reloj");
+        assert_eq!(ou.last_value, 10.2, "tick causal debe actualizar last_value");
     }
 }

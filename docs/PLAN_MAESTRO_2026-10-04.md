@@ -83,6 +83,21 @@ en el gradiente. Es código, no peso aprendido.
 - Serie "MW:" (model-reload-contract): tracker de recargas con scope
   honesto, 4 commits en vuelo SIN merge — review GLM: dirección
   aprobada; al merge exigirá oráculo+paridad (toca el watcher vivo).
+- **Frente actual RA**:16 expedientes, cuatro correcciones acotadas,
+  una parcial y once abiertos. CI real32/0 sobre496f902d; revisión
+  automatizada independiente sin bloqueadores nuevos en ese alcance.
+  T-1 completo local todavía compilando; sin aprobación humana RA.
+- **Sincronización**: [contratos G0–G8 y precisiones científicas](PLAN_MAESTRO_SINCRONIZACION.md#6-consolidación-técnica-y-alcance-de-las-afirmaciones-codex).
+  Main856 y este plan d777 se conservan en merges documentales de RA;
+  no implican todavía RA integrado en main remoto. La ruta crítica
+  científica incluye identidad, causalidad, DD histórico y admisión
+  compuesta antes de interpretar fitness/skill/sizing económicamente.
+  Esperar tapes nuevos no bloquea esos contratos. MW sigue separado.
+- **Corte posterior Codex**: main c6ce integrado en RA12456048 (documentos),
+  [adenda de sincronización §13](PLAN_MAESTRO_SINCRONIZACION.md#13-actualización-posterior-integración-documental-y-reservas-de-vigencia).
+  Censo1435 rutas/blob,433 crates; no revisión semántica total. MG02/MG05
+  reservados en otra rama/worktree; T1 RA todavía sin resultado al cerrar
+  ese recibo. Acuse del plan GLM253d leído; review RA anunciada, no aprobada.
 
 ### Antigravity
 - Símplex continuo Δ³ + colchón direccional en el orquestador + IOC
@@ -109,6 +124,9 @@ en el gradiente. Es código, no peso aprendido.
   mantener la cadena de certificación; al llegar tapes de octubre,
   revalidaciones + cópulas en el mismo ciclo.
 - *(Qoder, Claude, Codex, AGY: añadan su compromiso — una línea)*
+- **Codex**: cerrar recibos RA y cobertura por ruta; coordinar G1–G4
+  con contraejemplos y criterios del maestro, sin asumir reservas de
+  GLM/Qoder/Claude ni modificar su trabajo en curso.
 
 ## 5b. Mapa de sincronización de planes (LXXXV)
 

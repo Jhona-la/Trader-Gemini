@@ -22,6 +22,29 @@ use quantum_engine::config::TensorConfig;
 use quantum_engine::env_manager::EnvManager;
 use telemetry_engine::telemetry;
 
+/// MW: startup and polling share source selection and success-only bookkeeping.
+/// Loading is not statistical promotion; errors must remain visible and retryable.
+fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTracker) {
+    let scan = tracker.scan(std::path::Path::new("models"), |key, path| {
+        let source = path.to_str().ok_or_else(|| "model path is not UTF-8".to_string())?;
+        god_engine_core::ml_inference::NanoForest::load_global(key, source)
+            .map_err(|error| error.to_string())
+    });
+    match scan {
+        Ok(events) => for event in events {
+            match event.result {
+                Ok(()) => telemetry_server::telemetry_log!(
+                    "🧠 [ML-RELOAD] Loaded {} (requested path: {})", event.key, event.path.display()),
+                Err(error) => telemetry_server::telemetry_log!(
+                    "⚠️ [ML-RELOAD] Rejected {} (requested path: {}): {} (will retry)",
+                    event.key, event.path.display(), error),
+            }
+        },
+        Err(error) => telemetry_server::telemetry_log!(
+            "⚠️ [ML-RELOAD] Cannot scan models: {} (will retry)", error),
+    }
+}
+
 /// B1.2/B1.3: precios de protección desde las CURVAS del genoma — mismo
 /// criterio del camino en vivo (X-030/X-016): curva de horizonte por dos
 /// puntos (bases scalp/swing del arena.config, ambas genes) evaluada en la
@@ -1147,38 +1170,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // El genoma inicial fue validado. Aprobamos la transición al Orchestrator.
     darwin_approved.store(true, Ordering::Relaxed);
 
-    let mut forest_timestamps: std::collections::HashMap<String, std::time::SystemTime> =
-        std::collections::HashMap::new();
-
-    // Initial load of all models (.json es la fuente de verdad; el .bin es
-    // caché del propio loader — B3.19: cargar AMBOS por stem hacía doble
-    // trabajo y dejaba el resultado al orden de read_dir)
-    if let Ok(entries) = std::fs::read_dir("models") {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            let ext = path.extension().and_then(|s| s.to_str());
-            // Un .bin sólo se carga si su .json hermano NO existe (stem
-            // legacy sin json); con .json presente, el loader deriva la
-            // pareja y regenera la caché él mismo.
-            let json_hermano = path.with_extension("json");
-            let cargable = ext == Some("json")
-                || (ext == Some("bin") && !json_hermano.exists());
-            if cargable {
-                if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    if let Ok(meta) = std::fs::metadata(&path) {
-                        if let Ok(modified) = meta.modified() {
-                            forest_timestamps.insert(file_stem.to_string(), modified);
-                            let _ = god_engine_core::ml_inference::NanoForest::load_global(
-                                file_stem,
-                                path.to_str().unwrap(),
-                            );
-                            telemetry_server::telemetry_log!("🧠 Loaded ML Model: {}", file_stem);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let mut forest_reload = god_engine_core::model_reload::ModelReloadTracker::default();
+    refresh_ml_models(&mut forest_reload);
 
     // XLVII·C: copia para el diagnóstico de cobertura (el closure del
     // watcher no debe capturar `symbols`, usado más abajo).
@@ -1216,32 +1209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            if let Ok(entries) = std::fs::read_dir("models") {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    let path = entry.path();
-                    let ext = path.extension().and_then(|s| s.to_str());
-                    if ext == Some("json") || ext == Some("bin") {
-                        if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                            if let Ok(meta) = std::fs::metadata(&path) {
-                                if let Ok(modified) = meta.modified() {
-                                    let last_ts = forest_timestamps.get(file_stem);
-                                    if last_ts != Some(&modified) {
-                                        forest_timestamps.insert(file_stem.to_string(), modified);
-                                        if god_engine_core::ml_inference::NanoForest::load_global(
-                                            file_stem,
-                                            path.to_str().unwrap(),
-                                        )
-                                        .is_ok()
-                                        {
-                                            telemetry_server::telemetry_log!("🔥 [HOT-RELOAD] NanoForest AI Brain hot-swapped for {}!", file_stem);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            refresh_ml_models(&mut forest_reload);
         }
     });
 
@@ -1954,12 +1922,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|v| v.trim() == "true")
             .unwrap_or(false);
         if enable_legacy_darwin {
-            let daemon = god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&arena_real));
+            // R4-Q1: conserve trial multiplicity across worker invocations.
+            // Rebuilding the daemon per round resets cumulative_trials to zero.
+            // This retains in-process history; restart persistence is separate.
+            let daemon = Arc::new(god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&arena_real)));
             rt_for_darwin.spawn(async move {
                 telemetry_server::telemetry_log!("🧬 [DARWIN-DAEMON] Iniciando Motor Cuántico Evolutivo Legacy...");
                 loop {
                     tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-                    let daemon_clone = god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&daemon.live_arena));
+                    let daemon_clone = Arc::clone(&daemon);
                     let _ = tokio::task::spawn_blocking(move || {
                         daemon_clone.evolve_online();
                     }).await;
@@ -3257,6 +3228,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // F4.1: features omni REALES (macro FRED/PAXG + sentiment vivos).
                 // Antes: &[0.0; 54] — la NN swing evaluaba ceros en producción.
                 let omni_features_hot = omni_state_hot.get_features();
+                let macro_staleness_ms = omni_state_hot.macro_staleness_ms(event_time as u64);
+                engine_real.arena.registry.set("macro_staleness_ms", macro_staleness_ms as f64);
                 // D-707 (DÉCIMA OLA · auditoría integral): EL LIBRO NO DESAPARECE
                 // ENTRE EVENTOS DE DEPTH.
                 //
@@ -4113,8 +4086,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // = señal correcta. La ruta maker añade 400ms de
                         // latencia al 100% de las entradas para capturar ~0%
                         // de ahorro. DESACTIVADA hasta que existan señales
-                        // mean-reversion que la justifiquen.
-                        let force_maker = false;
+                        // OLA Ω38 / Ronda 8 — RUTEO CUÁNTICO ADAPTATIVO:
+                        // En momentum direccional (cascada laminar de Hodge con curl_share < 0.25), la orden Maker
+                        // sufre selección adversa (B3.29). Sin embargo, en vórtices cerrados de liquidez
+                        // (curl_share > 0.75) o curvatura gauge de Yang-Mills donde la reversión a la paridad
+                        // es inminente y el flujo es puramente rotacional sin inercia direccional, la orden Maker
+                        // descansa pasivamente en el libro vivo (dbp/dap), capturando el spread y eliminando fees taker.
+                        let curl_share = engine_real.arena.registry.get_for_coin_or(coin_id, "hodge_curl_share", 0.0);
+                        let ym_action = engine_real.arena.registry.get_value_or("yang_mills_action", 0.0);
+                        let is_mean_reversion_vortex = (curl_share > 0.75 || (curl_share > 0.60 && ym_action > 0.10))
+                            && dbp > 0.0 && dap > 0.0 && dbp <= dap;
+                        let force_maker = is_mean_reversion_vortex;
                         // B3.28 — PRECIO PASIVO AL LIBRO VIVO, no al mid
                         // congelado. Con maker_price = mid del tick
                         // desencadenante, el post-only a 400ms después o

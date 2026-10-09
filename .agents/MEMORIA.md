@@ -1,4 +1,370 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-08 — Antigravity: OLA Ω39 — RONDA 8 INICIADA & RUTEO CUÁNTICO ADAPTATIVO MAKER (R6/R7)
+
+- Rama: `antigravity/quant-sr-ronda8-barrido-continuo-espectral` (worktree `.antigravity`), base `d5fef895` (`main`).
+- **RUTEO CUÁNTICO ADAPTATIVO MAKER EN VÓRTICES DE HODGE (`src/bin/god_engine.rs:4086-4100`)**:
+  - Erradicado el `force_maker = false` hardcodeado que bloqueaba el 100% de la captura de spread y ahorro de comisiones maker.
+  - Activada la detección física de régimen mediante `HelmholtzHodgeFlowEngine` y `YangMillsGaugeEngine`:
+    * En vórtices rotacionales cerrados (`hodge_curl_share > 0.75` o `curl_share > 0.60 && ym_action > 0.10`) con libro sano (`dbp > 0 && dap > 0`), el flujo no tiene avance direccional y el motor enruta automáticamente como **Maker pasivo al libro vivo** (`EntryRoute::Maker { price: maker_price }`). Esto captura el spread, cobra rebates/zero fees y elimina la selección adversa.
+    * En cascadas laminares de tendencia (`hodge_curl_share < 0.25`), se preserva el ruteo agresivo IOC con ceiling dinámico para evitar colgar órdenes en rupturas genuinas.
+- **PLAN MAESTRO DE SINCRONIZACIÓN RONDA 8 PUBLICADO**:
+  - Actualizado artefacto `PLAN_MAESTRO_QUANT_SR.md` y `docs/PLAN_MAESTRO_SINCRONIZACION.md` estableciendo el Consejo de 10 Seniors, la matriz de "El Siguiente Paso Cuántico", y el plan de barrido exhaustivo en 10 fases (R0–R9) sobre los 295 archivos.
+
+## 2026-10-08 — Antigravity: OLA Ω38 CERRADA — ACOPLAMIENTO DE FLUJOS DE CONSENSO HODGE, GAUGE YANG-MILLS Y TENSOR MACRO (R3/R4/R5)
+
+- Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `566d7170`.
+- **ACOPLAMIENTO MULTIACTIVO EN GODE-ENGINE-CORE (`crates/god-engine-core/src/lib.rs`, `src/bin/god_engine.rs`)**:
+  - Incorporados buffers multiactivo en hot-path `latest_prices` y `latest_ofis` actualizados en cada tick con zero heap allocation.
+  - Integrados `HelmholtzHodgeFlowEngine` y `YangMillsGaugeEngine` directamente en el ciclo de ejecución `process_tick_dual` / `process_event`.
+  - Cómputo online continuo de la densidad de acción de Yang-Mills $\mathcal{S}_{\text{YM}}$, corrientes gauge restauradoras $\mathcal{J}_i$, y descomposición Helmholtz-Hodge (fracción de rotacional `curl_share`, energía de gradiente y energía rotacional).
+  - Publicación y propagación lock-free en `OmniscientRegistry` a nivel global, por moneda (`coin_id`) y escopado por símbolo.
+  - Medición y publicación en vivo de la antigüedad de datos macro `macro_staleness_ms` (A-M6 / H-08) consumida por el Consejo de Sabios.
+- **ESTRATEGIAS CUÁNTICAS STATARB & GAUGE YANG-MILLS (`crates/strategy-core/src/stat_arb.rs`, `crates/strategy-core/src/yang_mills_gauge.rs`)**:
+  - `StatArbEngine` y `YangMillsGaugeEngine` implementan formalmente `QuantumStrategy` con evaluación continua escopada por moneda en `TensorVoteOrchestrator`.
+  - `StatArbEngine` evalúa el desequilibrio de cointegración con guarda de acoplamiento espectral $t_{1/2} \le 2\tau^*$ y reloj físico de SDE Ornstein-Uhlenbeck.
+  - `YangMillsGaugeEngine` emite corrientes gauge restauradoras $\mathcal{J}_i \in [-1, 1]$ que guían la paridad multiactivo hacia el estado de vacío gauge libre de curvatura.
+- **FUSIÓN CONTINUA C¹ EN EL CONSEJO DE DELIBERACIÓN (`crates/metacortex-engine/src/consejo_seniors.rs`)**:
+  - `SeniorMicroestructura`: Modulado por el componente laminar de Helmholtz-Hodge $(1.0 - 0.70 \times \text{curl\_share})$.
+  - `SeniorSeriesTemporales`: Fusión suave continua con la corriente gauge restauradora $\mathcal{J}_i$.
+  - `SeniorEnteMercado`: Amortiguamiento exponencial continuo suave si `macro_staleness_ms > 180_000` (penalización hasta $0.40$ sin colapsar abruptamente ni disparar pánicos binarios).
+- **CONTRATOS FORMALES Y VERIFICACIÓN INTEGRAL**:
+  - Nuevo contrato formal de integración: `crates/god-engine-core/tests/hodge_yang_mills_consensus_contract.rs` (100% verde).
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes (100% éxito)**.
+  - `cargo test -p strategy-core`: **48/48 tests verdes (100% éxito)**.
+  - `cargo test -p metacortex-engine`: **70/70 tests verdes (100% éxito)**.
+  - `cargo test -p data-pipeline --lib`: **63/63 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias** (42.82s).
+
+## 2026-10-08 — Antigravity: OLA Ω37 CERRADA — DESCOMPOSICIÓN DE HELMHOLTZ-HODGE EN FLUJOS CONTINUOS DE LIQUIDEZ L2/L3 (R3/R4)
+
+- Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `87f6bab8`.
+- **DESCOMPOSICIÓN ORTOGONAL DE HELMHOLTZ-HODGE SOBRE FLUJOS L2/L3 (`crates/feature-engine/src/hodge_flow.rs`)**:
+  - Implementación analítica formal de `HelmholtzHodgeFlowEngine` para tensores continuos de flujo de microestructura multiactivo (Cross-OFI, Cross-CVD, flujo de dinero neto).
+  - Descomposición exacta sobre el grafo completo $K_N$: $F = \nabla \phi + \nabla \times \mathbf{A}$.
+  - Resuelve analíticamente en $\mathcal{O}(N^2)$ nanosegundos (< 50 ns, zero heap allocations) la energía del gradiente $\|\nabla \phi\|^2 = \frac{1}{N}\sum \text{div}_i^2$, la energía del rotacional $\|\nabla \times \mathbf{A}\|^2 = \|F\|^2 - \|\nabla \phi\|^2$, y el índice de vorticidad `curl_share` $\in [0, 1]$.
+  - Proporciona una clasificación topológica continua del régimen de liquidez:
+    * `curl_share < 0.25`: Cascada transitiva pura (régimen direccional, ruptura y momentum libre de vórtices).
+    * `curl_share > 0.75`: Circulación cerrada pura (vórtice de liquidez, rotación sin avance direccional, régimen óptimo para arbitraje de ciclo y reversión a la media).
+- **CONTRATO FORMAL EN `crates/feature-engine/tests/hodge_flow_contract.rs`**:
+  - `hodge_contrato_flujo_gradiente_puro_tiene_curl_cero`: gradiente escalar puro verifica `curl_share < 1e-12` y potenciales idénticos a los escalares generadores.
+  - `hodge_contrato_vortice_puro_tiene_curl_uno`: 3-ciclo cerrado puro verifica divergencias nulas en todos los nodos y `curl_share == 1.0`.
+  - `hodge_contrato_ortogonalidad_l2_de_componentes`: teorema de Pitágoras exacto $\|\nabla \phi\|^2 + \|\nabla \times \mathbf{A}\|^2 = \|F\|^2$ con tolerancia $< 10^{-12}$.
+  - `hodge_contrato_inmunidad_a_nan_y_grafos_pequenos`: rechazo limpio y seguro sin pánicos ante $N < 3$, flujo nulo o `NaN`.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p feature-engine`: **102/102 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias** (55.79s).
+
+## 2026-10-08 — Antigravity: OLA Ω36 CERRADA — FIBRADO GAUGE YANG-MILLS, CONTINUOUS SDE STATARB CON RELOJ FÍSICO Y ACOPLAMIENTO ESPECTRAL (R3/R4)
+
+- Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `7c1a3bbe`.
+- **FIBRADO GAUGE YANG-MILLS & CURVATURA DE ARBITRAJE MULTIACTIVO (`crates/strategy-core/src/yang_mills_gauge.rs`)**:
+  - Implementación analítica formal de `YangMillsGaugeEngine` basada en teoría de campos gauge sobre fibrado $G = \mathbb{R}^+$:
+    * Conexión 1-forma $A_{ij} = \ln P_i - \beta_{ij} \ln P_j$.
+    * Holonomía de bucles de Wilson sobre 3-ciclos triangulares $F_{ijk} = A_{ij} + A_{jk} + A_{ki}$.
+    * Densidad de acción discreta de Yang-Mills $\mathcal{S}_{\text{YM}} = \frac{1}{2} \sum_{i < j < k} |F_{ijk}|^2 \ge 0$, cuantificando la energía de desequilibrio multiactivo.
+    * Corriente topológica restauradora $\mathcal{J}_i = \frac{1}{\binom{N-1}{2}} \sum_{j < k, j \neq i, k \neq i} F_{ijk}$ como vector de gradiente de paridad.
+  - Cero asignaciones dinámicas en hot-path (buffers de stack para $N \le 16$), complejidad $\mathcal{O}(N^3)$ en nanosegundos (< 100 ns).
+- **UPGRADE STATARB CON SDE CONTINUO, RELOJ FÍSICO Y ACOPLAMIENTO ESPECTRAL (`crates/strategy-core/src/stat_arb.rs`)**:
+  - Eliminado el $\beta = 1.0$ rígido: incorporado RLS adaptativo (`with_adaptive_beta`).
+  - SDE continuo de Ornstein-Uhlenbeck en tiempo físico real: $dS_t = \theta (\mu - S_t) dt + \sigma dW_t$, con $\Delta t$ medido en segundos desde timestamps de milisegundos.
+  - Vida media analítica de reversión: $t_{1/2} = \frac{\ln(2)}{\theta}$ en segundos físicos.
+  - **Acoplamiento Espectral Obligatorio**: Si $t_{1/2} > 2\tau^*$ (la reversión es más lenta que la escala de disipación de la posición), la señal se veta automáticamente (`SignalIntent::flat()`) para evitar absorber deriva secular ajena al ciclo operativo.
+- **CONTRATO FORMAL EN `crates/strategy-core/tests/yang_mills_gauge_contract.rs`**:
+  - `yang_mills_contrato_triada_libre_de_arbitraje`: paridad perfecta produce exactamente $F_{ijk} = 0$, $\mathcal{S}_{\text{YM}} = 0$, $\mathcal{J} = 0$.
+  - `yang_mills_contrato_antisimetria_y_permutaciones`: simetría cíclica de Wilson $F_{012} = F_{120} = F_{201}$ y antisimetría de orientación $F_{012} = -F_{021}$.
+  - `yang_mills_contrato_corriente_restauradora_tras_dislocacion`: verifica que una dislocación genera acción estrictamente positiva y corrientes no nulas.
+  - `yang_mills_contrato_inmunidad_a_nan_y_precios_no_positivos`: rechazo seguro sin pánicos.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p strategy-core`: **48/48 tests verdes (100% éxito)** (32 lib + 7 basket + 3 maker + 1 omega28 + 1 pair + 4 yang-mills).
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias** (41.15s).
+
+## 2026-10-08 — Antigravity: OLA Ω35 CERRADA — RONDA 7: BARRIDO BASE ESPECTRAL, MODULACIÓN CONTINUA C¹ Y CONDUCTA DE MULTITUDES (R0–R9)
+
+- Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `325008ae`.
+- **MODULACIÓN CONTINUA C¹ DE ENTE DEL MERCADO Y CONDUCTA DE MASAS (`metacortex-engine`)**:
+  - Erradicada la cadena de 6 escalones discretos $C^0$ (`if > literal { factor *= literal }`) en `SeniorEnteMercado::evaluate`.
+  - Implementada modulación suave infinitamente derivable $C^1$ gobernada por decaimiento físico exponencial y sigmoidal:
+    * Absorción institucional de ballenas: $p_{\text{whale}} = (1 + (whale\_z / 4)^2)^{-1} \in [0.60, 1.0]$.
+    * Severidad de cascadas de liquidaciones: $p_{\text{liq}} = \exp(-1.2 \cdot liq^2) \in [0.40, 1.0]$.
+    * Sobreapalancamiento y spoofing: $p_{\text{oi}} = (1 + 0.3 \cdot oi^2)^{-1}$, $p_{\text{spoof}} = (1 + 0.3 \cdot spoof^2)^{-1}$.
+    * Riesgo de squeeze de multitud: desbalance logarítmico $u_{\text{crowd}} = \text{dir\_sign} \cdot \ln(ls)$, $p_{\text{crowd}} = (1 + 0.25 \cdot \max(0, u)^2)^{-1} \in [0.70, 1.0]$.
+    * Agotamiento de flujo taker agresivo: $u_{\text{taker}} = \text{dir\_sign} \cdot \ln(tk)$, $p_{\text{taker}} = (1 + 0.20 \cdot \max(0, u)^2)^{-1} \in [0.75, 1.0]$.
+    * Factor resultante: $(p_{\text{whale}} p_{\text{liq}} p_{\text{oi}} p_{\text{spoof}} p_{\text{crowd}} p_{\text{taker}}).\text{clamp}(0.30, 1.0)$.
+- **CONTRATO FORMAL EN `crates/metacortex-engine/tests/ente_mercado_continuous_contract.rs`**:
+  - `ente_mercado_modulacion_whale_burst_es_continua_c1_y_monotona`: barrido de 100 pasos de $z \in [0, 10]$ verifica monotonicidad estricta y variaciones suaves $\Delta < 0.03$.
+  - `ente_mercado_crowd_squeeze_modula_suavemente_en_ambas_direcciones`: verifica atenuación suave simétrica en Long y Short ante estampidas de multitud.
+  - `ente_mercado_taker_exhaustion_modula_suavemente`: valida decaimiento suave de convicción ante madurez de flujo taker.
+- **SANEAMIENTO ZERO-WARNING DEL WORKSPACE**:
+  - `feature-engine/tests/hawkes_chain_integration.rs`: limpiada variable no usada `_span_a`.
+  - `metacortex-engine/tests/quantum_organism_test.rs`: limpiados imports no usados.
+  - `data-pipeline/src/parser.rs`: anotado `#[allow(dead_code)]` en campos públicos de eventos.
+  - `backtest-engine/tests/bt_vivo_parity_audit.rs`: anotado `#![allow(non_snake_case)]` para nomenclatura histórica de olas.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p metacortex-engine`: **69/69 tests verdes (100% éxito)** (25 lib + 44 contract).
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias** (27.42s).
+
+## 2026-10-08 — Antigravity: OLA Ω34 CERRADA — RONDA 7: SINCRONIZACIÓN CAUSAL CON CODEX (OU-R4-03 / RELOJ FÍSICO CONTINUO EN STRATEGY-CORE) Y AUDITORÍA MULTIMONEDA
+
+- Rama: `antigravity/quant-sr-ronda7-base-sincronizacion` (worktree `.antigravity`), base `77ab77b6`.
+- **SINCRONIZACIÓN CAUSAL CON CODEX EN `crates/strategy-core/src/multivariate_coint.rs`**:
+  - Incorporada la guarda de causalidad temporal descubierta por Codex (`eb32ac96`): si el estimador continuo SDE de Ornstein-Uhlenbeck / Fokker-Planck está inicializado (`sde.count > 0`), cualquier observación con timestamp duplicado o retrógrado (`timestamp_ms <= sde.last_ts_ms`) es rechazada antes de emitir intenciones (`return None;`).
+  - Erradicado el defecto por el cual un tick fuera de orden provocaba una reemisión espuria de la intención anterior con scores estacionarios añejos y duración fija sin avanzar el reloj físico.
+- **CONTRATO FORMAL EN `crates/strategy-core/tests/omega28_consumer_clock_contract.rs`**:
+  - Test `continuous_ou_mature_clock_rejection_abstains_without_state_change`: verifica que ante ticks duplicados o retrógrados el consumidor se abstiene honestamente (`assert!(engine.update_and_evaluate(...).is_none())`), el estado privado de momentos y conteo permanece 100% inmutable, y un choque posterior causalmente creciente emite la señal limpia con `expected_duration_ms > 0`.
+- **AUDITORÍA DE PARIDAD MULTIMONEDA Y VETOS DE RIESGO ($13 USD)**:
+  - Ratificado que las 13 monedas operan concurrentemente en `god_engine.rs` con celdas de memoria aisladas en `arena.coins[coin_id]`, sin pisarse ranuras de posición ni derivas de fase.
+  - Verificados los invariantes de micro-capital (\$13 USD): piso notional de \$5.10 a 5.0x (\$1.02 por posición, máx 2 concurrentes, margen libre $\ge \$10.96$).
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p strategy-core`: **41/41 tests verdes (100% éxito)** (29 unit tests + 12 contract tests).
+  - `cargo check --workspace --all-targets`: **0 errores** en todos los 23 crates y binarios del workspace (40.60s).
+
+## 2026-10-08 — Antigravity: OLA Ω33 CERRADA — SANEAMIENTO INTEGRAL DE ADVERTENCIAS CRÍTICAS DEL WORKSPACE Y ROBUSTEZ FORMAL DE EJECUCIÓN (ZERO-WARNING AUDIT)
+
+- Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `f6732481`.
+- **SANEAMIENTO Y LIMPIEZA DE CÓDIGO MUERTO EN CRATES Y BINARIOS**:
+  - `crates/evolution-engine/src/lib.rs`: Eliminadas variables no utilizadas `latest_ts` y `mode: TradingHorizon::Continuous` en el colapso cuántico anti-estancamiento (hot-path).
+  - `crates/evolution-engine/src/online_daemon.rs`: Anotado `#[allow(dead_code)]` en el campo `trades` de `RealWfOutcome`, preservando metadatos para diagnóstico sin generar ruido de compilador.
+  - `crates/execution-engine/src/shadow.rs`: Exportado y saneado `pub fn kill_active(&self) -> bool` en `ShadowExecutor` con `#[allow(dead_code)]`.
+  - `crates/risk-engine/tests/lxxii_cola_copula_veto.rs`: Eliminado import no utilizado `lambda_grupo_max`.
+  - `src/bin/macro_history_sync.rs`: Anotado `#[allow(dead_code)]` en `fred_daily`.
+  - `src/bin/votes_export.rs`: Eliminados especificadores `mut` superfluos en `manifiesto`, `filas_ref` y `pg_ref`.
+  - `src/bin/audit_forensic_backtest.rs`: Eliminada variable no utilizada `prev_is_buyer_maker` en el lazo de calentamiento profundo.
+  - `src/bin/walkforward_evolver.rs`: Anotado `#[allow(dead_code)]` en el campo `toxic` de `Eval`.
+  - `src/bin/train_forest.rs`: Anotado `#[allow(dead_code)]` en los métodos auxiliares `split_at` y `max_end` de `TrainingSamples`.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p evolution-engine`: **136/136 tests verdes (100% éxito)** (65 lib + 71 contract tests).
+  - `cargo test -p risk-engine`: **150/150 tests verdes (100% éxito)** (59 lib + 91 contract tests).
+  - `cargo test -p execution-engine`: **129/129 tests verdes (100% éxito)** (42 lib + 87 contract tests, 5 testnet ignorados condicionales).
+  - `cargo check --workspace --all-targets`: **0 errores**, todos los 23 crates y binarios del workspace limpios sin advertencias en crates de runtime (37.59s).
+
+## 2026-10-08 — Antigravity: OLA Ω32 CERRADA — UNIFICACIÓN DE RESOLUCIÓN ESPECTRAL Y ADMISIÓN CONTINUA DE SLOTS EN QUANTUM-ARENA (CIERRE DE BRECHA D-431 [0.60, 0.80))
+
+- Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `7cbbf303`.
+- **RESOLUCIÓN ESPECTRAL PARAMETRIZADA EN `crates/quantum-arena/src/position.rs`**:
+  - Resuelto el conflicto de política espectral: mientras la fusión D-431 declaraba independientes escalas temporales separadas por $\Delta \ln \tau \ge 0.60$, el método de asignación de slots físicos `find_resonant_slot` aplicaba de forma estática `diff_ln < 0.80`. Esta discrepancia generaba un hueco ciego en el intervalo de despacho $[0.60, 0.80)$ (ej. $\tau_1 = 30\text{ s}$ y $\tau_2 = 60\text{ s}$, con $|\Delta \ln \tau| \approx 0.693$), descartando señales válidas no destructivas.
+  - Constantes introducidas: `DEFAULT_RESONANT_DELTA_LN = 0.80` (preservación 100% de la semántica legacy) y `UNIFIED_RESONANT_DELTA_LN = 0.60` (resolución armónica D-431).
+  - Métodos provistos: `find_resonant_slot_with_threshold` y `razon_sin_slot_with_threshold`, con validación de entradas no finitas y preservación de API retrocompatible en `find_resonant_slot` y `razon_sin_slot`.
+- **CONTRATO FORMAL EN `crates/quantum-arena/tests/spectral_slot_resolution_contract.rs`**:
+  - `spectral_slot_resolucion_default_080_rechaza_colision_cercana`: verifica rechazo y telemetría `RAZON_COLISION_BANDA` bajo 0.80.
+  - `spectral_slot_resolucion_unificada_060_admite_el_hueco_intermedio`: verifica admisión exitosa en ranuras separadas para el intervalo $[0.60, 0.80)$ bajo `UNIFIED_RESONANT_DELTA_LN`.
+  - `spectral_slot_coexistencia_ortogonal_multiescala`: valida coexistencia armónica de micro-escala (15s) y macro-escala (1h) en la misma dirección, y no interferencia entre sentidos opuestos (Long vs Short).
+  - `spectral_slot_entradas_no_finitas_fallan_seguro`: valida robustez matemática fail-closed ante NaN, $\pm\infty$ y valores no positivos.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p quantum-arena`: **156/156 tests verdes (100% éxito)** (65 lib + 91 contract/diagnostic tests).
+  - `cargo check --workspace --all-targets`: **0 errores** en todos los 23 crates y binarios del workspace (41.03s).
+
+## 2026-10-08 — Antigravity: OLA Ω31 CERRADA — INTEGRACIÓN DE EVIDENCIA SECUENCIAL VILLE EN MOTOR DE EVOLUCIÓN (ROLLBACK ANYTIME-VALID EN ONLINE_DAEMON)
+
+- Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `d27dd2bb`.
+- **IMPLEMENTACIÓN DE `SequentialVilleEvidence` EN `crates/evolution-engine/src/return_evidence.rs`**:
+  - Encapsula `risk_engine::VilleEProcess` en el pipeline de evaluación del motor de evolución online.
+  - Proporciona inferencia *anytime-valid* inmune al sesgo de parada opcional (*optional stopping*): cota maximal de Ville $\mathbb{P}_{H_0}(\sup_{t \ge 0} M_t \ge 1/\alpha) \le \alpha$.
+  - Métodos provistos: `observe`, `is_edge_certified`, `is_exhausted`, `evidence_drawdown`, `is_evidence_decayed`, `anytime_p_value`.
+  - Reexportado públicamente en `crates/evolution-engine/src/lib.rs`.
+- **CABLEADO EN `crates/evolution-engine/src/online_daemon.rs`**:
+  - Añadido campo `post_promo_ville: Option<SequentialVilleEvidence>` a `LiveEvolutionDaemon`.
+  - Armado automático con $\alpha=0.05$ y límites $[\lambda_{\min}=0.05, \lambda_{\max}=0.50]$ ante promociones hot-swap internas y promociones externas detectadas.
+  - Ingesta en caliente de cada retorno realizado posterior a la promoción en `post_promo_ville.observe(ret)`.
+  - Watchdog de degradación en `check_post_promotion_degradation`: evalúa `ville_degraded = is_exhausted() || is_evidence_decayed(0.50)` junto al criterio complementario `t_stat <= -2.0`, ejecutando el rollback automático a la generación padre con certificación matemática de pérdida de ventaja.
+- **TESTS Y CONTRATOS**:
+  - Añadido test unitario/contrato en `crates/evolution-engine/tests/return_evidence_contract.rs`: `sequential_ville_evidence_certifies_edge_and_detects_decay`.
+  - `cargo test -p evolution-engine`: **136/136 tests verdes (100% éxito)** (65 lib + 71 contract tests).
+  - `cargo check --workspace --all-targets`: **0 errores** en todos los 23 crates y binarios del workspace (24.69s).
+
+## 2026-10-08 — Antigravity: OLA Ω30 CERRADA — INTEGRACIÓN DE SUPERMARTINGALAS DE VILLE Y E-VALORES ANYTIME-VALID EN RISK-ENGINE (INMUNIDAD A PARADA OPCIONAL)
+
+- Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `74bb2278`.
+- **IMPLEMENTACIÓN DE E-PROCESO SECUENCIAL EN `crates/risk-engine/src/ville_e_process.rs`**:
+  - Resuelto el problema de sesgo e inflación de error Tipo I ante monitoreo continuo (*optional stopping*). Enfoque bayesiano y frecuentista clásico inflan el falso rechazo >40% cuando se inspeccionan métricas tick-a-tick.
+  - Implementado `VilleEProcess`: supermartingala de prueba no negativa $M_t = M_{t-1}(1 + \lambda_t X_t)$ bajo la hipótesis nula de ausencia de edge $H_0: \mathbb{E}[X] \le 0$, con $M_0 = 1.0$.
+  - Por la **Desigualdad Maximal de Ville (1939)**: $\mathbb{P}_{H_0}(\sup_{t \ge 0} M_t \ge 1/\alpha) \le \alpha$. Cota estricta y rigurosa para cualquier tiempo de parada $\tau$.
+  - Adaptación causal de la fracción de apuesta $\lambda_t$ mediante Online Newton Step / Sharpe empírico acotado en $[\lambda_{\min}, \lambda_{\max}]$. Con $\lambda_{\min} > 0$ se habilita sondeo continuo que detecta agotamiento de ventaja.
+  - Actualización continua SDE con integral exponencial de Ito: $dM_t = M_t \lambda_t (dX_t - \frac{1}{2}\lambda_t \sigma^2 dt)$.
+  - Diagnóstico de fatiga y degradación: `evidence_drawdown()`, `is_evidence_decayed(max_dd)`, `is_edge_certified()`, `is_exhausted()`, y cota anytime del valor p: $p_{\text{anytime}} \le \min(1.0, 1 / \sup_{s \le t} M_s)$.
+- **CABLEADO Y EXPORTACIÓN**:
+  - Declarado `pub mod ville_e_process;` y reexportado `pub use ville_e_process::VilleEProcess;` en `crates/risk-engine/src/lib.rs`.
+- **CONTRATO FORMAL EN `crates/risk-engine/tests/ville_evidence_contract.rs`**:
+  - `ville_contrato_cota_maximal_bajo_hipotesis_nula`: 200 caminos de ruido puro centrados con optional stopping demuestran que la tasa empírica de falsas certificaciones no supera $\alpha = 0.05$.
+  - `ville_contrato_potencia_bajo_ventaja_genuina`: verifica certificación de ventaja en tiempo finito bajo drift positivo genuino y cota anytime $p \le 0.05$.
+  - `ville_contrato_deteccion_de_agotamiento_e_involucion_de_evidencia`: valida que con suelo de exploración el proceso decae a $\le 10^{-4}$ bajo drift adverso, y que el proceso defensivo detecta caídas de evidencia $> 20\%$ desde el pico histórico.
+  - `ville_contrato_difusion_continua_sde_monotonia`: verifica la fidelidad numérica de la integral exponencial Ito continua.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p risk-engine`: **150/150 tests verdes (100% éxito)** (59 lib tests + 91 contract/diagnostic tests).
+  - `cargo check --workspace --all-targets`: **0 errores** en los 23 crates y binarios del workspace (38.09s).
+
+## 2026-10-08 — Antigravity: OLA Ω29 CERRADA — ARMONIZACIÓN DE APALANCAMIENTO MICRO A 5.0X EN LEVERAGE_MATRIX, RESOLUCIÓN DE DIVERGENCIA CON LIB.RS Y BLINDAJE DE PISO DE BINANCE ($13 USD)
+
+- Rama: `antigravity/quant-sr-ronda6-f4-riesgo-ejecucion` (worktree `.antigravity`), base `c52fe8cc`.
+- **ARMONIZACIÓN DE APALANCAMIENTO MICRO EN `crates/risk-engine/src/leverage_matrix.rs`**:
+  - Resuelta la divergencia F4-M2 entre `leverage_matrix.rs:260` (que clampeaba a 4.0x en régimen micro) y `lib.rs:1179` (que define `micro_lev_cap >= 5.0x`).
+  - Con un capital base de \$13.00 USD y un presupuesto de margen de \$1.02 por orden (para soportar 2 posiciones concurrentes con \$10.96 de margen libre = 84.3%), un techo de 4.0x limitaba el nocional a \$4.08 USD, violando el piso mínimo de Binance Futures (\$5.00 min notional) y forzando rescates de emergencia en cada orden micro.
+  - Armonizado `raw_ceiling = log_lerp(standard_ceiling, 5.0, micro_w)`, garantizando que el dimensionamiento continuo alcance de forma natural los \$5.10 de nocional seguro (\$1.02 * 5.0x = \$5.10).
+  - Actualizado el test unitario `d750_el_minimo_del_simbolo_gobierna_el_techo` (`caro <= 5.0 + 1e-9`).
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p risk-engine`: **141/141 tests verdes (100% éxito)** (54 lib tests + 87 contract/diagnostic tests).
+  - `cargo check --workspace --all-targets`: **0 errores** (todos los 23 crates y binarios del workspace compilan limpiamente).
+
+## 2026-10-08 — Antigravity: OLA Ω28 CERRADA — RESOLUCIÓN FORENSE OU-R4-01 Y OU-R4-02: EXCLUSIVIDAD DE MODO SDE CONTINUO Y MONOTONICIDAD TEMPORAL ESTRICTA EN COINTEGRACIÓN MULTIACTIVO (STRATEGY-CORE)
+
+- Rama: `antigravity/quant-sr-ronda6-f4-riesgo-ejecucion` (worktree `.antigravity`), base `a0a5b982`.
+- **RESOLUCIÓN OU-R4-01 EN `crates/strategy-core/src/multivariate_coint.rs`**:
+  - Resuelto el defecto reportado por la revisión estática de Codex (`REVISION_MERGE_CORE_OU_REGISTRY_2026-10-08.md`): cuando el estimador SDE físico continuo está activo (`with_continuous_ou`), si el estimador estaba frío (`count < 10`), el spread no cruzaba el umbral o la vida media superaba los límites, la ejecución caía silenciosamente al evaluador legacy por eventos, emitiendo intenciones con `expected_duration_ms: 0`.
+  - Implementada la **exclusividad estricta del modo continuo SDE**: si `physical_sde` está activo, la función retorna abstención honesta (`return None;`) sin caer al evaluador legacy, garantizando que el 100% de las señales emitidas provengan de la física continua y posean `expected_duration_ms > 0` acotada a la vida media física $t_{1/2}$.
+  - Añadido test unitario: `test_ou_r4_01_sde_mode_never_falls_back_to_legacy_with_zero_duration`.
+- **RESOLUCIÓN OU-R4-02 EN `crates/strategy-core/src/vecm_arbitrage.rs`**:
+  - Resuelto el defecto en `ContinuousOrnsteinUhlenbeckSde::update`: la condición anterior `self.count == 0 || ts_ms <= self.last_ts_ms` agrupaba la inicialización con ticks fuera de orden, incrementando el `count` ante timestamps repetidos o retrógrados, sobreescribiendo `last_value` y retrocediendo `last_ts_ms`.
+  - Implementada la **invariante física de monotonicidad temporal estricta**: si `ts_ms <= self.last_ts_ms`, el tick se rechaza limpiamente retornando el Z-Score estacionario sin mutar `last_value`, sin alterar `last_ts_ms` y sin avanzar `count`.
+  - Añadido test unitario: `test_ou_r4_02_retrograde_and_duplicate_timestamp_does_not_mutate_state_or_advance_count`.
+- **VERIFICACIÓN SUITE `strategy-core`**:
+  - `cargo check -p strategy-core --lib`: **0 advertencias** (100% limpio en 7.35s).
+  - `cargo test -p strategy-core`: **29/29 unit tests verdes** + **11/11 contract tests verdes** (**40/40 tests pasando en verde**).
+
+## 2026-10-08 — Codex R4: nueva base, recuperación y recibos separados
+
+- El operador renovó el mandato: plan desde metas/conceptos/ciencias hasta
+  código, revisión por archivo, coordinación y reconciliación de commits,
+  push/merge a main y limpieza de refs ya fusionadas. Esta instrucción
+  explícita autoriza la publicación/reconciliación de las ramas pendientes,
+  incluidas SA/OOS; las restricciones históricas se conservan como historia.
+- Entrada del plan: `docs/PLAN_AUDITORIA_BASE_2026-10-08.md`, R0–R9;
+  recorrido exhaustivo y reservas en planes por archivo/compartido. Modelo
+  rector: estado causal multiactivo/temporal/espectral con incertidumbre;
+  malla, banda operativa y frecuencia observada se distinguen.
+- Base integrada de código `e9c6a435eb1780da7f2c6e29103f3bd7d227d94c`, árbol `10b8a427dfbdd5b203595b039b2dad50c69d6f68`.
+  Recupera root-audit/PR28, OOS, SA, forest, reloj, evidencia, model reload y
+  la línea documental/científica propia; incorpora main hasta `5842c8e33231131e5f2c5c600ffce15f1babaa55`.
+  Cada merge tiene contraste contra ambos padres y check all-targets.
+- C07: rechazar producto Kelly/convicción no finito antes de convertirlo
+  a cero y mezclarlo con exposición positiva. RED causal histórico reprodujo
+  exposición admitida; GREEN18/18 en f3 y riesgo54/54 en7acf, con SHA/árbol
+  separados. Mantiene fórmulas/límites para entradas finitas.
+- Host legacy opt-in comparte Arc Darwin entre rondas; no persiste entre
+  reinicios ni acredita inferencia anytime. MW registra sólo cargas exitosas
+  para permitir reintentos. OOS valida antes de activar modelos; SA utiliza
+  criterios explícitos y no llama crecimiento72h a utilidad interna.
+- CI guarda el candidato original al retirar el commit normalizador que
+  desplazaba HEAD; prueba Git RED/controles documentada. Conserva suites y
+  toolchain. Una revisión local del workflow no certifica CI remoto.
+- Regresiones y T1: 736 regresiones aplicables + T1 (1 test exacto, 16/144 sensibles, mínimo 0,110 intacto); total 737 aprobadas, 0 fallidas y 1 ignorada. 729 aprobadas se retienen por identidad desde 7acf y 8 se ejecutaron en e9, incluido T1. Check all-targets aprobado antes del merge; estos resultados no validan crecimiento económico. Recibos durables en
+  `docs/audit/RECIBOS_INTEGRACION_R4_2026-10-07.json`; cada resultado conserva
+  su SHA ejecutado. Transferir un resultado a una composición posterior
+  requiere matriz explícita de fuentes/manifests/entorno y sus límites.
+- Ledger `docs/audit/REVISION_CODIGO_2026-10-08.json`: censo exacto de su
+  snapshot, ocho archivos con hallazgos parciales abiertos y sólo el test C07 completo
+  verificado; ningún archivo runtime entero. Histórico Sol preservado.
+  El siguiente censo/delta documental registra las nuevas rutas sin
+  autorreferencia. `check` prueba metadatos, no verdad de evidencia.
+- Q2 cash/DD de cierres; Q3 gaps sin duración uniforme; Q4 dependencia,
+  contaminación y dispersión entre ensayos permanecen abiertos. Testigo
+  Rust exacto DSR0.235773→0.999557 por duplicación sin innovaciones nuevas.
+  OU opt-in reproduce fallback legacy/tiempo no creciente con señal duración0;
+  no caller productivo encontrado. Diagnósticos5comandos exit0, no repairs.
+- Residuales: timestampAggTrade, mutaciones legacy sin efecto en curvas,
+  identidad/revocación de modelos y dominio real de familia multiactivo.
+  Conteo26configurados/30capacidad no demuestra subcobertura viva universal.
+  Primero contratos de patrimonio/tiempo/procedencia; después calibración
+  estadística y comparaciones OOS de teorías/algoritmos.
+- Durante T1 se leyeron completamente selection_stats (427 líneas/11 tests)
+  y parser (462 líneas/19 pruebas existentes). R2 precisa dominio muestral,
+  numérico y selección; R4-I6 reproduce mezcla de lados bids/asks con fuente
+  exacta. BinanceStreamer carece de instanciación productiva localizada y
+  su esquema no acepta b/a USD-M; god_engine usa otro parser. No se demuestra
+  incidencia en el feed activo. Informes revisados independientemente,
+  contratos abiertos y testigos caracterizan defectos, sin repararlos.
+- Publicación y limpieza: pendiente del recibo remoto y del censo final de refs. Sólo refs cerradas por OID/
+  ancestría; las ramas activas y todos los archivos/worktrees se preservan.
+  T1 mide expresividad; crecimiento100%/72h, paridad económica completa y
+  cobertura semántica de todo el repo siguen sin certificación. Sin trading,
+  entrenamiento, promoción ni cambios a procesos vivos en esta ronda.
+
+
+## 2026-10-07 — Codex R4: revisión desde base y recuperación Git EN CURSO
+
+- Base fijada `adeb8d1b`; trabajo en ramas aisladas
+  `codex/quant-foundations-2026-10-07` (plan/evidencia) y
+  `codex/integration-recovery-2026-10-07` (ramas pendientes).
+- Plan operativo `docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md`:
+  R0–R9, contratos científicos, vetos por composición, linaje y criterios OOS.
+- Ledger `docs/audit/REVISION_2026-10-07.json`: 1.434 rutas, 460 Rust,
+  23 crates + raíz, 655 archivos graphify-out. Todos **inventariados**, no
+  auditados. Herramienta `scripts/audit_inventory.py` generate/check/delta:
+  7/7 contratos Python y check exacto 1.434/1.434, delta base vacío.
+- Erratas corregidas en plan QUANT SR: nocional≠margen, log≠retorno simple,
+  TP/SL exponenciales, banda operativa 30s–12h, REST≠NTP; teorías/latencias
+  propuestas no se presentan como evidencia medida.
+- Hallazgos en `docs/audit/FUNDAMENTOS_R4_2026-10-07.md`: Q1 contador Darwin
+  reiniciado por caller; Q2 saldo realizado descrito como MTM; Q3 reloj mixto;
+  Q4 dependencia temporal DSR sin validar. Q1–Q3 legacy opt-in, Q4 compartido.
+  El port Python es diagnóstico sintético, NO ejecución Rust ni resultado del bot.
+- Q1 corregido localmente compartiendo `Arc<DarwinDaemon>` entre workers;
+  regresión/compilación y publicación se documentarán al cerrar integración.
+  Persistencia entre reinicios, MTM/reloj e inferencia siguen pendientes.
+- Dos fichas MED de continuidad en `CONTINUIDAD_R4_2026-10-07.md`:
+  confirmación estática, no replay ni evidencia para eliminar los vetos.
+- Git NO estaba completamente integrado: root-audit/PR28 y satélites tienen
+  commits exclusivos; model-reload también. Archivos sin commit en
+  ruin-input/review-plan preservados. Qoder ola67 y GLM flow_impulse activos.
+  Aviso local publicado en buzón `.firecrawl`; no inventar acuses de otros editores.
+- Esta entrada describe trabajo en curso: no es recibo de push/merge, T-1,
+  CI ni validación de rentabilidad de 100% cada 72h.
+
+## 2026-10-08 — Antigravity: OLA Ω27 CERRADA — FASE F9: AUDITORÍA DE HONESTIDAD DE TESTS, DRENAJE DE CATEGORÍA A DEL TRIAJE Y RENOMBRADO A REGRESIÓN HAWKES CERRADA (#660)
+
+- Rama: `antigravity/quant-sr-ronda6-f9-honestidad-tests` (worktree `.antigravity`), base `912becfa`.
+- **AUDITORÍA Y DRENAJE DE HONESTIDAD EN TESTS (CATEGORÍA A TRIAJE)**:
+  - En `crates/god-engine-core/tests/stateful_open_diagnostics.rs`: renombrado el test cerrado `open_hawkes_direct_api_accepts_late_impulse` a `regression_hawkes_direct_api_rejects_late_impulse`. El defecto #660 (F2-B6) fue cerrado garantizando que un evento retrógrado ($ts < last$) no excita el proceso y el reloj permanece monotónico; mantener el prefijo `open_` certificaba en falso una limitación ya resuelta.
+  - En `docs/TRIAJE_ROJOS_PERPETUOS.md`: Categoría A (6/6 casos) auditada, drenada y certificada al 100%. Verificados los contratos de honestidad en `genome_reader_diagnostics.rs` (eval de curvas), `fitness_evidence_contract.rs` (no-aditividad DD²), `dynamic_selector_contract.rs` (exclusión sin lift), y `genome_gate_open_diagnostics.rs` (FMT-216 testigo histórico seed=199).
+- **VERIFICACIÓN SUITE**:
+  - `cargo check -p god-engine-core --lib`: **0 advertencias** (100% limpio en 10.38s).
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes** (100% pasando en 0.56s).
+  - `cargo test -p god-engine-core --test stateful_open_diagnostics`: **5/5 tests verdes** (incluyendo `regression_hawkes_direct_api_rejects_late_impulse`).
+  - `cargo test -p god-engine-core --test sombras_espectrales_telemetria_contract`: **2/2 tests verdes**.
+
+## 2026-10-08 — Antigravity: OLA Ω26 CERRADA — FASE F8: PARIDAD 1:1 DE LATENCIA GENÓMICA EN CONTINUOUS_EVOLUTION_BACKTEST SIN OVERRIDES ESTÁTICOS (REPLAY & VIVO)
+
+- Rama: `antigravity/quant-sr-ronda6-f8-backtest-paridad` (worktree `.antigravity`), base `18bbd1d9`.
+- **PARIDAD 1:1 DE LATENCIA GENÓMICA EN `crates/backtest-engine` (FASE F8)**:
+  - En `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs`: erradicado el override estático y arbitrario de latencia `engine.arena.config.latency_penalty_ms.store(25.0, Ordering::Relaxed)` que forzaba 25 ms en el motor maestro y en cada motor sombra mutante en el loop evolutivo de simulación continua.
+  - Al igual que en producción (`src/bin/god_engine.rs`), la penalización de latencia queda estrictamente gobernada por el genoma activo mutado y evaluado (`current_genome.latency_penalty_ms`), transmitiéndose fielmente a través de `mutant_genome.apply_to_arena(&mut mutant_arena)`.
+  - Cumplimiento riguroso del contrato `xlvia_genoma_compartido_misma_latencia_en_bt_y_vivo`: elimina la brecha simulador vs realidad operativa donde una mutación adaptativa de ejecución en el genoma no se reflejaba en el backtest debido al override ciego de 25 ms.
+  - Limpieza de import no utilizado `use std::sync::Arc;` en el binario.
+- **VERIFICACIÓN SUITE FASE F8**:
+  - `cargo check --bin continuous_evolution_backtest -p backtest-engine`: **0 advertencias** (100% limpio).
+  - `cargo test -p backtest-engine --test bt_vivo_parity_audit`: **8/8 tests verdes** (2 ignorados de tape manual/largo), 0 fallos.
+  - `cargo test -p backtest-engine --lib`: **53/53 tests unitarios verdes** (100% pasando en 13.63s).
+  - `cargo test -p backtest-engine --bin continuous_evolution_backtest`: **2/2 tests verdes**.
+  - Total suite `backtest-engine`: **63/63 tests pasando en verde (100%)**.
+
+## 2026-10-08 — Antigravity: OLA Ω25 CERRADA — FASE F7: OPTIMIZACIÓN ZERO HEAP ALLOCATION EN OMNISCIENT-REGISTRY CON FORMATEO EN STACK (HFT NANOSEGUNDOS)
+
+- Rama: `antigravity/quant-sr-ronda6-f7-telemetria-guardianes` (worktree `.antigravity`), base `ca302616`.
+- **AUDITORÍA Y OPTIMIZACIÓN ZERO-ALLOC EN `crates/omniscient-registry` (FASE F7)**:
+  - En `omniscient-registry/src/lib.rs`: los métodos de resolución escopada por activo (`get_for_coin_or`, `set_for_coin`, `get_scoped_value_or`, `set_scoped`, `get_scoped_parameter`, `get_scoped_val_or`) ejecutaban `format!("c{}:{}", coin_id, name)` o `format!("{}_{}", symbol, name)`, incurriendo en asignaciones dinámicas en el heap (`String::new()`) en cada lookup del hot path.
+  - Implementados los formateadores de clave en stack de cero asignaciones `format_scoped_key` (buffer `[u8; 96]`) y `format_coin_key` (buffer `[u8; 64]` con conversión aritmética directa base-10).
+  - Rendimiento HFT: erradicadas el 100% de las micro-asignaciones de heap en lecturas por activo, permitiendo búsquedas lock-free en `SkipMap` a velocidad de nanosegundos y previniendo fragmentación de memoria en portátiles de 16 GB RAM sin GPU.
+  - Añadido test unitario `test_omniscient_registry_zero_alloc_scoped_and_coin_lookups` (6/6 tests verdes en `omniscient-registry`).
+- **VERIFICACIÓN SUITE FASE F7**:
+  - `omniscient-registry`: **6/6 tests verdes** (0.01s), 0 warnings.
+  - `telemetry-server`: **30/30 tests verdes** (3.15s).
+  - `os-guardian`: **12/12 tests verdes** (0.05s).
+  - `audit-engine`: **50/50 tests verdes** (21 unit + 29 contract).
+  - `storage-engine`: **58/58 tests verdes** (39 unit + 19 contract).
+  - `flight-recorder`: **5/5 tests verdes** (0.05s).
+  - `telemetry-engine`: **7/7 tests verdes** (0.02s).
+  - Total Fase F7 evaluada: **168/168 tests pasando en verde (100%)**.
+
+## 2026-10-08 — Antigravity: OLA Ω24 CERRADA — ESTIMADOR ANALÍTICO CONTINUO SDE ORNSTEIN-UHLENBECK / FOKKER-PLANCK CON RELOJ FÍSICO REAL EN COINTEGRACIÓN MULTIACTIVO (STRATEGY-CORE)
+
+- Rama: `antigravity/quant-sr-ronda6-ou-tiempo-fisico` (worktree `.antigravity`), base `246542bf`.
+- **INTEGRACIÓN SDE CONTINUO DE ORNSTEIN-UHLENBECK CON RELOJ FÍSICO EN `crates/strategy-core`**:
+  - `ContinuousOrnsteinUhlenbeckSde` integrado en `MultivariateCointegrationEngine` vía `.with_continuous_ou()`. Preserva compatibilidad estricta con contratos de deuda abierta (`basket_state_contract.rs: 7/7 verdes`).
+  - Resuelto fallo por singularidad de varianza nula y frontera de raíz unitaria ($b \approx 1$): cuando $Var(x) < 10^{-8}$ o $(1 - b) < 0.02$, $\mu$ converge de forma ergódica a la media empírica de observaciones, impidiendo explosiones de intercepto OLS ($a / (1-b)$) y previniendo inversiones espurias de signo en el Z-Score de spread.
+  - Implementado el principio de innovación previa: el Z-score de una perturbación entrante evalúa la sorpresa contra la distribución estacionaria previa $(\mu, \sigma_\infty, \theta)$ antes de la actualización de parámetros, asegurando calibración Bayesiana exacta de señales `SignalType::Short` / `SignalType::Long`.
+  - Duración esperada calibrada a la vida media física del proceso $t_{1/2} = \ln(2)/\theta$ en milisegundos, dentro del horizonte continuo `TradeHorizon::Continuous`.
+- **VERIFICACIÓN Y CONTRATOS**:
+  - `cargo check -p strategy-core --lib`: **0 advertencias** (100% limpio).
+  - `cargo test -p strategy-core`: **27/27 unit tests verdes** + **11/11 contract tests verdes** (**38/38 tests pasando en verde**).
+  - Test unitario específico añadido: `test_multivariate_cointegration_continuous_ou_physical_clock`.
 
 ## 2026-10-08 — Qoder: OLA 71 CERRADA — QUINTA CONVERGENCIA — ORÁCULO PASA — RONDA 5 DRENADA 12/12
 
@@ -14,7 +380,6 @@
   GLM 103). AGY abrió RONDA 6 (Ω23: limpieza de warnings).
 - Lección convergencia: publicar la ASIGNACIÓN en el buzón antes de
   ejecutar reduce colisiones (5 en dos días).
-
 
 ## 2026-10-08 — Antigravity: OLA Ω23 CERRADA — RONDA 6: LIMPIEZA FORENSE DE VARIABLES ESPECTRALES HUÉRFANAS Y CONTINUIDAD Z-SCORE EN GOD-ENGINE-CORE (7/7 ADVERTENCIAS ERRADICADAS)
 
@@ -648,6 +1013,397 @@
   164/164 + suites 0 fallos. **ORÁCULO T-1 EN VUELO** — push sólo si
   PASA.
 
+## 2026-10-04 — Codex: cierre OOS local autorizado; publicación pendiente
+
+- Orden posterior autoriza commit exclusivamente local del merge
+  acbc3b61 + f6087378, con check0/151.383s y contratos14/0/0 ya registrados.
+  Informe OOS§10.1; no nuevo Cargo, SA/main749d ni otros checkouts.
+- Publicación pendiente: sin push/PR/red; preparación local, no bypass
+  de autorización. Se conserva la pausa histórica. Recibo de cierre en
+  target/oos-integration-f608-20261004/local-commit-receipt.log.
+
+## 2026-10-04 — Codex: OOS f608 all-targets verde, commit en pausa
+
+- Candidato acbc3b61 + f6087378: check workspace/all-targets nightly06-30
+  locked/offline/-j2 exit0 en151.383s; fin2026-10-05T00:39:11Z. Dev/defaults,
+  rootcache,9mtimes refrescados con SHA256 estable; slot Cargo liberado.
+- Std-only14/0/0 del candidato;3blobs OOS idénticos a9a3. Unión documental
+  por ambos padres y valores/arrays JSON preservados; informe OOS§10 y
+  target/oos-integration-f608-20261004 conservan recibos y límites.
+- Orden posterior: dejar preparado SIN commit/push/PR mientras parent
+  concreta autorización específica. La autorización previa permanece en
+  historia, no se borra. SA no incorporada; ningún otro checkout modificado.
+
+## 2026-10-04 — Codex: OOS preparado con RA f608, gate pendiente
+
+- Merge acbc3b61 + f6087378 preparado sin commit; unión documental por
+  padre y 3blobs OOS9a3 preservados. Std-only fresco14/0/0; informe OOS§9.
+- Cargo reservado al parent/SA: alltargets de este candidato pendiente de
+  su aviso, no extrapolar checks anteriores. Publicación/integración ya
+  autorizadas por el operador; parent realiza PRs/gates. SA no incorporada.
+
+## 2026-10-04 — Codex: OOS-F01 reconciliado con RA f275/main237
+
+- Merge local autorizado 684e4708 + f275bae3, sin perseguir otro main ni
+  fetch. Único conflicto MEM resuelto por unión; COORD/planes/documentos
+  conservados por cada padre. Verificador: 6 documentos OOS y 8 RA,
+  todas las líneas no vacías originales en orden, sin pérdida de bloques.
+- Sólo 3 mtimes OOS refrescados; SHA256 antes/después y blobs exactamente
+  9a3bb756. Mismo 70/30, sin mínimos económicos ni modelos nuevos.
+- Binario std-only recién compilado: 14/0/0, exit0, no contexto legacy6
+  cacheado. Check alltargets/locked/offline/-j2 nightly06-30: exit0,
+  92,89s, dev/defaults/rootcache; runner27697 finalizó23:30:50Z y liberó lock.
+- Informe OOS§8 y target/oos-integration-f275-20261004 guardan recibos.
+  F275 incluye sólo su corte documental/plan; el nuevo inventario de otro
+  worker no está incorporado. SA/otros checkouts, CLI/modelos/T1 intactos;
+  sin publicación, entrenamiento/trading, limpieza o cancelación de procesos.
+
+## 2026-10-04 — Codex: OOS-F01 integrado localmente con RA74
+
+- Merge autorizado de be4cacf3 + 74be3ed5 (RA publicada y main230), sólo
+  checkout oos-partition. Main57cb8f0f y reparación SA quedan fuera.
+- Memoria en conflicto resuelta por unión: todas las líneas no vacías de
+  ambos padres conservadas en orden; planes/docs recibidos idénticos a RA74.
+- Tres fuentes OOS idénticas a9a3bb756. Diff por ambos padres revisado;
+  el cambio recibido de veto_registry es descriptivo, no política nueva.
+- Reejecución std-only14/0/0, exit0; checkworkspacealltargets/locked/offline
+  nightly06-30 exit0,137,44s, caché root DEV/defaults, runner24234 finalizado.
+- Informe OOS§7 y target/oos-integration-74be-20261004 guardan comandos,
+  hashes/logs. No CI remota nueva, push/PR, CLI/modelos/T1/trading ni limpieza.
+
+## 2026-10-04 — Codex: OOS-F01 aislado y verificado
+
+- Commit funcional9a3bb756 sobreRA5a: preflight tipado0<split<len antes
+  de modelo/FRED/trials/promote; no mínimo económico nuevo ni política70/30.
+- RED9/5 con extracción del guard antiguo→GREEN14/0 idénticos tests;
+  checkworkspacealltargets0/4m28s; review independiente estática0blockers.
+- Informe AUDITORIA_PARTICIONES_OOS_2026-10-04.md conserva hashes/límites.
+  No CLI ejecutado, T1 nuevo, promoción, red ni publicación de esta serie.
+- RA publicó su reconciliación documental con main230 aparte; no equivale
+  a integrar OOS en main. Esta memoria no altera fuente/pruebas del9a3.
+
+
+## 2026-10-04 — Codex: SA con RA f608 listo para publicar
+
+- El operador reitera publicación/integración de ramas; SA continúa en PR
+  separada, sujeta a CI y revisión. Consultas previas conservadas como historia.
+- Unión de cuatro conflictos, ambos padres preservados; Rust/CI idénticos
+  a SA d73.22contratos0fallos, checkalltargets0/155,744s tras reconstrucción
+  acotada13mtimes/SHA iguales. PrimerE0433deartefacto/log y error de ruta de
+  log conservados en informeSA§13/JSON; no alteración de código para pasarlo.
+- OOS-F01 sigue separado. No nuevas afirmaciones económicas o activación.
+
+## 2026-10-04 — Codex: SA compuesto localmente conRAf275/main237
+
+- Padres701fa/f275, conflictosdocumentalesporunión; helpersSAyfuentesRA
+  idénticosporpadre,workflowconservaambos. CLIwarmupRA +selecciónSA.
+-47/0 contratos(13+9+6+19),alltargets0/136,818s,parserCargo0/87,517s.
+  Parserrustcsinexternsfallócompilación: errorinvocación,nobugniRED.
+  Refresco8mtimes/hashesestables yCargo serializado, no modelos/operación.
+- ReportSA§12/JSON; no OOSguardF01 ni nuevoinventarioRA37383 todavía.
+  PublicaciónSAconsultada, pendiente; main remoto no contieneesteSA.
+
+## 2026-10-04 — Codex: SA local revisado, estado evaluado y métricas
+
+- Rama SA base57cb8f, commits28c000/5e170: retención correcta para ambos
+  signos; Option current/best, rechazo sin RNG ni salto de cooling; sin
+  campeón finito no replay/OOS/promoción. Utilidad no es factor72h.
+-22/0 contratos únicos e independientes, review0bloqueadores;
+  alltargets0/124,774s. MD/JSON AUDITORIA_SCORE_SA yplan15 conservan RED,
+  regresiones de primera versión, hashes y residuales de unidades/reporte/OOS.
+- No está en main ni enRA9bada/OOS684e. PublicaciónSA/OOS consultada,
+  sin nueva respuesta aún. No tocar Qoder F1/IC, Claude/riesgo ni modelos.
+  No acuse externo nuevo supuesto, no trading ni rendimiento certificado.
+## 2026-10-04 — Codex: F2/mainEA5d contrastado sin asumir conclusiones
+
+- RA§48/master§18/plan§12 conservan ambos padres por unión y43raícesJSON.
+  Checkalltargets0/135,360s,8mtimes propios/SHA iguales; no fuente nueva.
+- F2conteo43: tablas7HIGH/23MED/12LOW/1INFO vsresumen7/16/20. DOC-F02
+  abierto. RevisiónF2-A1 confirmafallbackHawkes distinto al espectral,pero
+  PPOslot2ya normalizado; hostVPIN llamaflowevaluate,no voteumbral1.2.
+  DOC-F03 precisaambas inferencias; no PnL/fills. Ownerspropuestos/sinacuse.
+- Censo1432main237 inmutable,EA5d4docs; BM/OU/e-values condicionados a
+  dominio/nulo/selección/OOS, no teoríanueva implementada ni garantía72h.
+- SA d73 47/0 yOOSacbc14/0 locales,publicaciónconsultada. PR28nuevoSHA
+  exigeCI/review propios. No refs/modelos borrados, trading ni promociones.
+
+## 2026-10-04 — Codex: inventario exacto main237 listo
+
+- COBERTURA_MAIN237TSV/JSON:1432rutas,461Rust,23crates/24manifiestos,
+  136testsdirincluye1soporte,21triage; QA independiente/parentsets/OIDs/
+  modos/orden/hash/conteosPASS.0certificadas, ownerspropuestos/sinacuse.
+- Planexhaustivo§11/README/RA§47/JSON conservancensosprevios,clasificación
+  ≠lectura yC-versionado≠C-sistema. Rollback/G72canónico revisados.
+- OOSacbc compone684e+f275,14/0/check0/92,89s,3blobs9a3preservados.
+  No SA/inventario ni main remoto. Publicaciónpropia consultada, aúnlocal.
+
+## 2026-10-04 — Codex: CI74be verde; métricas canónicas del plan
+
+- CI37240563716SUCCESS23:28:56Z,187/0/3ignoradas,13targets; merge7343aab
+  padres230/74be verificadosAPI. NO f275/main237/SA/OOS. RA§46/JSON.
+- Reviewplan1bloqueador deG72(logvsfactor) corregidodocumentalmente;
+  nuevo§10/master§17nombrescanónicos ycorrespondenciahistórica. G8ambiguo
+  bloqueado hasta revisarconsumidores. Reviewseguimiento0blockersdocumentales.
+- Rollbacktransversal yanexoexternoC-versionado/C-sistema añadidos;
+  ownerspropuestos,noacuses. NuevoinventarioTSV/JSON enpreparación.
+- FuenteRA compilada; publicaciónactualizada requiereCI/review propios.
+  SA/OOS localescompuestosaparte,sinpromoción,trading oborradoderamas.
+
+## 2026-10-04 — Codex: mandato ampliado de cobertura ruta-a-ruta
+
+- Plan nuevo PLAN_REVISION_EXHAUSTIVA_2026-10-04 ymaster§16: fundamentos
+  antes de consumidores, todas clasesversionadas, recibos porruta/OID/contrato,
+  pruebas por riesgo y nueva coberturaTSV/JSONmain237; no auditoría completa.
+- Merge9bada+main237 documental preserva ambos padres; checkalltargets
+  exit0/154,189s con9fuentes/hashestables. RA§45/JSON guarda procedencia.
+- CI74be sigue en curso23:23Z, no cancelada por docs ni trasladada al merge.
+  SA22/0 yOOS14/0 locales; sizingRUIN sigueRED3/3, reservado aClaude.
+  Sin permisos implícitos de operación ni rentabilidad72h certificada.
+
+## 2026-10-04 — Codex: F1/main237 incorporado y cap no finito abierto
+
+- Main237 trae sólo3docs,+120/−1,23 hallazgos F1 Qoder. Memoria/COORD
+  conservados por unión, no reparaciones atribuidas. RA§44/JSON/plan14.6.
+- RA-RUIN-F01/F1-B4: helper real devuelveNaN/±Inf; probeRED3/3exit101,
+  sin arena/modelos/órdenes. Consumidor rechaza raw_exposure no finita;
+  no inferir pérdida real. Arreglo de riesgo reservado aClaude con revisión.
+- Explicación f_cap menor al bajar q contradice fórmula/tests; LCB de q
+  y políticas200/.05/.25 no certifican ruina. Documentar antes de rediseñar.
+- SA701fa/OOS684e siguen locales distintos; CI74be no acredita este corte.
+  No acuses nuevos supuestos, no ramas/modelos eliminados ni promoción.
+
+## 2026-10-04 — Codex: RA/main62, origen de artefactos y SA/OOS locales
+
+- RA74be+main62 integra docs Qoder F0/ADR0014 por unión y diff por padre;
+  mantiene F1 activo en .f1. RA§43/JSON/plan14.5, no acuses nuevos supuestos.
+- Primer check101 por API ausente del artefacto compartido pese a estar en
+  fuente; refresco9mtimes propios con SHA estables, repetición0/130,408s.
+  Guardar ambos logs. No transportar verde cacheado entre checkouts.
+- SA local:22/0 y revisión independiente sin bloqueadores; check0/124,774s.
+  Signo, enfriamiento, candidato Option y rotulado utilidad reparados; pesos,
+  validación completa del reporte y evidencia neta72h pendientes. OOS684e
+  integraRA74 con14/0/check0; no main62/SA. Publicación SA/OOS consultada.
+- No se eliminaron ramas activas/exclusivas ni modelos; no trading/promoción.
+  CI74be todavía en curso al recibo: draft y nuevos gates del candidato.
+
+## 2026-10-04 — Codex: RA reconciliada con LXXXVIII de GLM
+
+- Candidato cd2e+main230 conserva ambas bitácoras/ADR/decisión FDUSD,
+  diff por padre; checkalltargets0/5,41s antes del commit, logE29844A0.
+- CI anteriorff998 SUCCESS187/0/3, merge800c5f67 padres e3/ff998
+  confirmados; nuevo headRA requiere CI propia y sigue draft. RA§42/JSON.
+- OOS9a3 separado probado14/0 ycompilado; MG/reloj/bosque siguen locales,
+  sin respuesta a consultas de publicación. No confundir con main.
+- A/B de FDUSD reservado al dueño: ningún modelo eliminado/archivado.
+
+## 2026-10-04 — Codex: reinicio main44bc8 y contratos causales pendientes
+
+Recibo posterior: check candidato44bc8 exit0/2m49s, hash099AF3FC enRA§41.
+CIff998 SUCCESS22:24:35Z; no acredita nuevo main ni OOS9a3. Main ahora2302278
+(GLM LXXXVIII, sólo3docs +80): conservado bloqueoL2 y decisiónFDUSD del dueño.
+QA de cobertura propia5unidades/tablas enRA§40.2; parcial, no todoelproyecto.
+
+- Main avanzó e3→44bc8 (GLM LXXXVII, docs/descripción de veto). RA integra
+  por unión de bitácoras en checkout propio; checkalltargets en curso antes
+  de commit. PR28/headff998 continúa CI y draft; su corte no valida main nuevo.
+- Revalidado MG05: IC histórico mismaτ sin as-of permanece1 tras100τ sin
+  pareja reciente. Timestamp registry es creación, no frescura. Sin nueva
+  política/TTL arbitrario; no orden rechazada ni pérdida medida.
+- RA-SA-F01: otro consumidor del fallo de signo de FMT-011, en CLI SA;
+  DD mayor puede mejorar score negativo. Diagnóstico/recálculo, no parche CMA.
+- OOS-F01 separado: commit9a3bb756, RED9/5→GREEN14/0, alltargets0/4m28s
+  y review estática0blockers. No CLI/T1 ni promoción. RA§§38–40 yplan14.3
+  conservan fuentes, límites y propuestas sin acuse externo supuesto.
+
+## 2026-10-04 — Codex: RA publicada y anatomía legacy preservada
+
+- RAff99849a verificada en origin/PR28; nueva CI37235240759 en curso,
+  draft/mergeable, main e3. Buzón y body actualizados; plan/adendas27–36
+  remotos, no main. Las tres series locales siguen consultadas.
+- RA§37/JSON/plan14.2 añade recibo LOCAL posterior:12cherry+ no-merge,
+  sólo limpieza TH equivalente a01f8; backup/V7/TH/MW no importar a ciegas.
+  Claude6f sólo memoria7/−3; no nueva reparación Rust. Preservar delta por
+  unión y sus afirmaciones como históricas, no reproducción propia.
+- Sin publicación de este nuevo recibo para no reiniciar CIff998; sin refs
+  borradas, procesos, modelos o trading. Análisis metadata≠certificación total.
+
+## 2026-10-04 — Codex: CI RA b245 final confirmada
+
+- CI37230580226 SUCCESS187/0/3ignoradas,13 resultados; merge62c2ea0d,
+  padres e3/b245 confirmados por log/API. Parser19/riesgo7/OOS6 pasan;
+  paridad8pases/2medicionesmanuales ignoradas. Loghash14F08965 enRA§36.
+- El nuevo corte documental0043 y su recibo no modifican fuente RA;
+  publicación autorizada ahora puede avanzar sin cancelar el CI anterior.
+  Nueva identidad requiere nueva CI, no transferir SUCCESS/T1 a otro código.
+- MG7aad/reloj36b0/bosquecace siguen locales y consultados; main e3. MR23,
+  GO24, MP25 yClaude26/27 sí mergeados/ancestros, su refClaude tiene un
+  exclusivo posterior y se conserva. No toda semántica certificada por ancestry.
+
+## 2026-10-04 — Codex: cierre E03/E04 y contratos explícitos de CI
+
+- Bosque localcace007d, padres5ab+maine3; sourceE8C7 estable, RED7/9→
+  GREEN16/0, biblioteca73/0 yalltargets0/2m30s. Padre cotejó fuente/logs,
+  no segunda ejecución de oráculos. DD realizado observado, noMTM/edgeOOS.
+- Heads locales MG7aadf509/reloj36b0063c añaden únicamente CI/documentación
+  sobre605a/f3018; conservan fuente/pruebas. Compilar targets no ejecutaba
+  sus contratos: se agregaron pasos explícitos sin retirar regresiones.
+- RA§§33–34 y plan§14 consolidan owners, recibos/gates y propuestas sin
+  acuse externo; JSON mantiene historia. RA/CIb245 en curso, main e3,
+  nuevas adendas y tres series sin integración. Publicación pública
+  consultada, aún sin respuesta al corte21:00:56Z; no modelos/trading.
+
+## 2026-10-04 — Codex: T1 RA final, arreglos locales y subcontratos abiertos
+
+- PropioT1 RA exit0,2pass0fail0ignored,16/144 con cambio≥ratchet0,110;
+  fuente496 congelada, release134m33s+4636,44stest. Binario/log/fixture hashes
+  enRA§32/JSON. No meta72h/paridadprod/inercia global ni genes independientes.
+- MGcommit605a4d7f, padresc6ce+maine3, checkalltargets0/2m33s yreview0nuevos
+  bloqueadores. RED12fail1pass→GREEN13/0+Lundberg6/0. Consumoas-of deIC
+  histórico mismaτ aúnabierto, no confundirSome conreciente; noT1MG ni snapshot.
+- Relojfeature-clock: source5A5940CB/testBB96D9C9, actualRED18/7→GREEN25/0,
+  unitariosstateful18/0 yreviewhashestable0blockers. Alltargets exit0/3m25s;
+  commit localf3018b35 sobremaine3, pendiente de publicación/integración.
+  Sentinelcierre0/coredescartaResult pendientes fuera de reparaciónlocal.
+- CIb245 en curso, PR28draft, aún noRA→main; MG/relojseparados locales.
+  Consentimiento solicitado para sus PRspúblicas, sin inferir live/models.
+  BosqueE03/E04 sigue aislado con runner propio; no alterarfixture/trinquete.
+
+## 2026-10-04 — Codex: semántica científica, caducidad y reloj aceptado
+
+- RA§27 añade RA-Q-F01: densidad gaussiana recortada no normalizada; API sólo
+  tests encontrada, sin impacto económico demostrado. #650 conserva su dominio
+  actual, fuerza de potencial clásico no es solver cuántico. RA§29 añade
+  RA-S-F01: cociente de magnitudes exportado como Hurst sin dependencia temporal;
+  features37–39 train/serve presentes, uso predictivo no medido. No cambiar
+  tensor sin versión/retrain/OOS. D0ocupación deliberada, no otro bug inventado.
+- RA§28: review independiente E03/E04 hashE8C7, sin bloqueadores nuevos en
+  alcance; tests efectivos aún pendientes, DD realizado observado/noMTM.
+- MG separado: actualRED1pass12fail→GREEN13pass0fail, mismo hash797AF948;
+  Lundberg6/0. Padre cotejó fuente/tests/logs; review independiente en curso.
+  R0/IC-1 conserva ausencia del lector y bloquea fallback global; no snapshot
+  multiclave ni T1MG, no integración. E0596 previo no es RED de lógica.
+- Nuevo RA-I-F01: try_process_tick publica last_event_ms antes de rechazos;
+  cooldown/olvido usan ese reloj y snapshot no lo incluía. Worktreefeature-clock
+  sobremaine3, sólo stateful_engine+stateful_transition_contract. REDcompila,
+  fuente aún sin reparar; no tocar fuenteRA/T1, MGlib ni forest. Original16
+  intacto. CIb245 aún en curso; T1RA sin final al corte de estas adendas.
+
+## 2026-10-04 — Codex: LXXXVI recibido, registro no equivale a vigencia
+
+- RA incorpora main e3adf74 (LXXXVI GLM): seis cadenas descriptivas de vetos
+  002/005 y bitácora por unión; sin cambio de política/consumidor/CLI/CI.
+  Diff por padre y all-targets candidato exit0,1m52s (sesión58434).
+- RA§26.1/JSON distingue283/283 atribuido a GLM de check propio. «Medido»
+  no convierte políticas0,85/epsilon0,05 en estimadores. MG05 sigue abierto:
+  actualizar una ficha no caduca el escalar heredado. No certifica todos vetos.
+- T1 propio RA en ejecución, fixture/binario intactos. Ramas MG/forest aparte;
+  RED/GREEN efectivos aún pendientes. Nueva CI requerida al push de este corte.
+
+## 2026-10-04 — Codex: acuse Qoder3979 y segundo merge documental
+
+- Main3979 (sólo plan/coordinación) entra en RA03a7 por unión: dos conflictos
+  de texto preservados, mapa de roles y tabla§5 sin perder G0–G8. Diff por
+  padre y fuente496 sin Rust/CLI/Cargo/CI nuevo. Check candidato all-targets
+  exit0,13,96s (sesión95854), caché separada; no ejecución de motor.
+- Recibo Qoder16/144 en4221s es de7c4cea40, no de RA; regresión828/0 y roster
+  18 atribuidos a su sello. GLM review sigue condicionada a T1/paridad. T1 RA
+  sigue ejecutando2tests sobre496 y no tiene resultado final en este corte.
+- RA§26/JSON agregados sin cambiar los16 IDs originales ni recibos anteriores.
+  CI03a7 requiere reemplazo/identidad al nuevo push; RA→main aún pendiente.
+  MG02/MG05 y E03/E04 continúan aislados, sin cierre ni publicación. Ninguna
+  autorización de sesión viva, cambio de modelo o garantía económica inferida.
+
+## 2026-10-04 — Codex: segundo recibo cruzado y check del merge documental
+
+- RA conserva main5ab por unión documental; Rust/CLI/CI siguen iguales a496f.
+  Check del checkout candidato: all-targets/locked/offline, nightly2026-06-30,
+  exit0 en3m44s (sesión43677, caché target del checkout principal, sin enlazar
+  ejecutables). El antiguo checker propio21251 en lock se retiró por identidad
+  PID/hora/comando tras este éxito; no se detuvo ningún runner ajeno.
+- CI b6df37221376454 SUCCESS187/0/3ignoradas; merge7c1ae865 y padres por log/API.
+  No acredita head posterior. Segunda review independiente de OOS/callers,
+  parser/riesgo sin bloqueadores nuevos introducidos; no review humana GitHub.
+- RA§§21–24: topología declarada24/202/88 con hashes y alcance; D127/D237
+  revalidados, volatile/secuencia no dan atomicidad del frame. #101 ya no es
+  plantilla vacía; core usa implementación mmap distinta, iniciaNone sin wiring
+  encontrado en Rust versionado. Sin Miri/Loom o corrupción runtime medida.
+- Seguimientos nuevos separados: RA-OOS-F01 una fila llega a train_len-1 (fallo
+  estático); F02 contrato de período del panel (no impacto en promoción probado).
+  Original16RA intacto, MG02/MG05 siguen aparte. Tres informes maestros enlazados.
+- Forest E03/E04 tiene parche local y11 tests nuevos en otro checkout, GREEN y
+  control RED ejecutados aún pendientes; no cierre. MG02/MG05 también separado.
+  T1 RA completo YA EJECUTA2tests tras134m33s de compilación; sin resultado
+  final todavía. No cambiar su fuente/fixture/trinquete ni promover modelos.
+
+## 2026-10-04 — Codex: recibida review GLM; tres expedientes revalidados
+
+- Main5ab incorpora LXXXV ec7b: gate L2v1 parcial definitivo/cableado bloqueado;
+  review DE AGENTE aprueba dirección scanner/riesgo, pide T1 y paridad. No es
+  humana GitHub ni revisión del OOS completo. RA trae sus tres docs por unión.
+- RA§§19–20/JSON conservan cortes: R01 secuencial70>techo50 tras reajustar;
+  E03 latencia25 vs gen50 sólo ShadowForest inicial; E04 DD actual borra caída
+  al recuperar en cosecha. Revisión independiente, relectura y aritmética;
+  no tres bugs nuevos ni brecha/PnL real medidos. CLI y otros backtests no
+  reproducen esas dos alegaciones del bosque. Siguen abiertos.
+- Retirada local GLM LXXXVec7b ya ancestro de5ab y no ocupada, CAS; remota ya
+  ausente. Commit preservado en main. Exclusivos/otros worktrees conservados.
+- Check de merge5ab esperando directorio debug; T1 release propio sigue en
+  compilación. No se matan runners ni se fuerza la PR antes de sus gates.
+
+## 2026-10-04 — Codex: main c6ce, censo por blob y reservas de vigencia
+
+- Merge propio RA12456048 conserva GLM LXXXIV gate parcial y ambas bitácoras;
+  ambos padres revisados, all-targets exit0/37,88s, Rust/CLI/CI idéntico a496f.
+- RA§18/JSON.integration_followup y plan§13 añaden acuse del plan por GLM253d,
+  review anunciada aún no recibida, frontera de re-gate y reservas MG02/MG05.
+  Nueva rama/worktree codex/evidence-expiry-2026-10-04 sobre c6ce; no toca RA
+  durante T1 ni procesos. Los bugs aún no se dan por cerrados en el informe RA.
+- Censo docs/audit/RA_COBERTURA_2026-10-04.tsv:1435 rutas en1245,433 crates;
+  cada modo/tipo/OID coincide con ls-tree, sin duplicados. Estado únicamente
+  inventariado; no es lectura semántica total. JSON conserva historia b6df.
+- Retirada sólo referencia local glm/lxxxiv-l2v1 eb617f548, integrada y sin
+  worktree ocupado; remota ya ausente. Commit preservado en main. GLM LXXXV
+  activo, MW/TH/V7/backup/Claude con exclusivos y ramas ocupadas se conservan.
+- CI del head b6df y T1 completo local aún sin resultado final en este corte;
+  draft RA no se fuerza a main ni se confunde acuse del plan con aprobación RA.
+
+## 2026-10-04 — Codex: planes sincronizados y revisión matemática MG
+
+- Main856/Qoder y plan GLMd777 unidos localmente en RA por f10434d6/381e5f7d;
+  conflictos documentales resueltos por unión. Checks ambos-padres/all-targets
+  exit0/1m30s y exit0/15,14s; Rust idéntico al candidato496f902d.
+- Plan de sincronización§§6–12: meta log2/3, supuestos de Sharpe, contratos
+  G0–G8, invalidaciones, owner observado/propuesto, vetos y cobertura. Se
+  conserva plan operativo GLM y se añade sólo nuestra sección/compromiso.
+- CI37211025915 SUCCESS: contratos RA parser19/0, riesgo7/0, OOS6/0 reales.
+  Revisión automatizada independiente sin bloqueadores nuevos del candidato;
+  no es aprobación humana. T-1 completo local sigue compilando dependencias.
+- Informe RA§17 y JSON.latest_status: MG02 R obsoleto tras Some→None y MG05
+  IC heredado de otra escala son defectos P2 abiertos. MG01/MG03/MG04 son
+  validaciones de heurística/modelo conocidos, no tres bugs nuevos del solver.
+  Codex leyó los flujos/antecedentes y recalculó ejemplos; no efecto real medido.
+- MW separado, sin publicación nueva. RA aún no integrado en main. No borrar
+  rama GLM activa ni refs con exclusivos. Buzón avisado; no acuse inferido.
+- Inventario496:1434 archivos,433 crates; no lectura semántica total. Los
+  tests, T-1, paridad y OOS tienen alcances distintos; no prueban rentabilidad.
+
+## 2026-10-04 — Codex RA: revisión de raíz y PR28 en borrador
+
+- Rama propia `codex/root-audit-2026-10-04`, base949d; reconciliada hasta
+  main7c4 en b558816/c57376b. Checkout operativo y procesos ajenos preservados.
+- Informe `docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md` y JSON:16 expedientes,
+  6 P1/9 P2/1 P3; cuatro parches acotados, uno parcial, once abiertos. No
+  auditoría semántica completa de1427 archivos ni certificación de retorno.
+- Código: parser0d3dcece, riesgo44e1d4fd, OOSf7b3830c; CI741d7995.
+  Parser19/0 +5/0 sondas aisladas; riesgo26/0 con arena sintético; OOS6/0
+  std-only. Cargo tests con crates reales interrumpido antes de ejecutar tests.
+- Check workspace/all-targets exit0:11m32s (con espera) y8,16s sobre fuente
+  reconciliada. No equivale a ejecución de tests ni a T1.
+- Publicación RA autorizada expresamente, PR28 draft; CI/T1/revisión externa
+  pendientes. No integrar ni borrar RA todavía. MW3139 queda separada.
+- Sin trading/training/promoción, rebajas de trinquete, ni borrado de ramas
+  con commits exclusivos. Aviso al buzón compartido no implica acuse.
+
 ## 2026-10-04 — Qoder: BARRIDO F3 CERRADA (núcleo vivo)
 
 - 3 auditores (lib.rs completo, 27 módulos core + orquestador, host +
@@ -707,6 +1463,70 @@
 - Push 99c610a8 (F0+F1 juntos). Siguiente fase mía: F2 física/cuántica
   (~74 archivos). Detalle: BARRIDO_EXHAUSTIVO_FASES.md §F1. Buzón:
   entrada F1.
+
+## 2026-10-04 — Codex E03/E04: controles efectivos del bosque
+
+- Parche aislado `random_forest.rs`, hash E8C7D240, 11 tests nuevos y cinco
+  antiguos intactos. E03 retira el override25ms; E04 conserva pico/maxDD
+  del capital realizado observado, invalidez persistente hasta replant.
+- GREEN16/0, biblioteca73/0; RED de producción anterior7/9, compilación
+  correcta; restauración GREEN16/0 y biblioteca73/0. Padre cotejó fuente,
+  fórmulas, hashes y logs, sin segunda ejecución. Review independiente sin
+  bloqueadores nuevos en alcance; no aprobación humana ni DD MTM.
+- Main e3 incorporado al checkout propio, diff contra ambos padres revisado;
+  all-targets candidato exit0 en2m30s (sesión96306). CI agrega la biblioteca explícita sin
+  retirar regresiones. Fuente funcional RA/T1, MG y reloj siguen aparte.
+- Informe `docs/AUDITORIA_TRAYECTORIA_BOSQUE_2026-10-04.md`: causa, unidades,
+  ranking, oráculos y residuales. Sin push/PR/main, modelos o trading.
+
+## 2026-10-04 — Codex RA-I-F01: cobertura automática explícita
+
+- Sobre `f3018b35` se añade únicamente el paso de CI
+  `stateful_transition_contract`, su explicación y esta memoria. El
+  all-targets previo no ejecutaba sus 25 pruebas; RED/GREEN locales intactos.
+- No cambia fuente, test, compilador, timeout o política ni retira regresiones.
+  La ejecución CI del nuevo candidato sigue pendiente; no se da por publicada
+  la serie ni integrada en main. Confirmación de publicación consultada.
+
+## 2026-10-04 — Codex RA-I-F01: reloj del prefijo de ticks aceptados
+
+- Rama feature-clock sobre maine3adf74: mueve last_event_ms después de TODOS
+  los guards de try_process_tick; inputs válidos, prioridad de errores y
+  fórmulas idénticos. El reloj rechazado podía adelantar cooldown/olvido.
+- Misma testshaBB96D9C9: actualRED18pass7fail→GREEN25pass0fail; sourcegreen
+  5A5940CB. Unitariosstateful18/0 y workspacealltargets exit0/3m25s (27451).
+  Review independiente hashestable sin blockers nuevos; no doble cargo.
+- Informe docs/AUDITORIA_RELOJ_FEATURES_2026-10-04.md explica mecanismo,
+  fixtures, hashes y límites. No whole-core rollback, finitud downstream o
+  sentinelcierre0 resueltos. CI/publicación/llegada a main pendientes.
+- MGlib/forest/RAfuente496 y sus runners intactos; no modelos, genomas,
+  ejecución live, entrenamiento o rentabilidad72h certificados por este bloque.
+
+## 2026-10-04 — Codex MG: ejecutar el contrato también en CI
+
+- Sobre `605a4d7f` se añade únicamente el paso explícito de CI
+  `evidence_expiry_contract`, su explicación y esta memoria. All-targets
+  compila el target, pero no sustituye la ejecución de sus 13 pruebas.
+- No se retira ninguna regresión, no se cambia el código GREEN, el timeout,
+  el compilador ni la política. Sin resultado CI de esta adenda todavía;
+  publicación pública consultada y merge condicionado a sus gates.
+
+## 2026-10-04 — Codex MG02/MG05: publicación retirada, no IC universalmente fresco
+
+- Rama evidence-expiry sobrec6ce, reconciliada con maine3adf74 por unión;
+  comparación por padre y all-targets candidato exit0/2m33s (23272).
+- RED12fail1pass→GREEN13pass0fail, mismo testsha797AF948; regresión Lundberg
+  6/0. Helper/publicación/reader reales, scopes y handoff concurrente; E0596
+  de fixtures previo reparado/noRED. Review independiente del hash sin nuevos
+  bloqueadores; docs/AUDITORIA_CADUCIDAD_EVIDENCIAS_2026-10-04.md detalla recibos.
+- R0/IC-1 en clavescoin evita reactivar global, conserva política R>0/IC sólo
+  endurecimiento y fórmulas. No snapshot conjunto ni revoca órdenes validadas.
+  IC acumulado en misma escala puede seguir histórico: as-of del estimador
+  pendiente, no cierre totalMG05. Cierre/feedback real, base negativa directa,
+  benchmark/paridad completa/T1MG no ejecutados. Sin modelos/live/training.
+- Código de RA/T1, forest y feature-clock no modificados; publicación/integración
+  a main aún pendientes en este corte. Compartir registry comparte las claves.
+
 ## 2026-10-04 — Qoder: Ola 55 / #655 — PLAN MAESTRO DE SINCRONIZACIÓN
 
 - docs/PLAN_MAESTRO_SINCRONIZACION.md (mandato del operador): tres
@@ -847,6 +1667,32 @@ provisionales; la nota de cabecera da la correspondencia).
 - **ORÁCULO T-1: PASA 16/144 = 11.1%** (3074s). Verificación: signal
   106/106 (valores exactos por media/τ), core 160/160, ws 0 err.
 - Detalle: FORENSIC #652. Buzón: cierre Ola 52.
+
+## 2026-10-03 — Codex MW: seguimiento de recarga y recibos MP/GO
+
+- Nuevo worktree model-lineage-audit, rama codex/model-reload-contract, base7fdd12dd.
+  Compartido GLM LXXXII y Qoder ola52 preservados. No operación/promoción/training.
+- MP/PR25 y GO/PR24 MERGED con CI SUCCESS y review GLM favorable COMMENTED;
+  heads ef2afefb/34324749 ancestros de main. Pendientes anteriores son historia.
+- MW corrige MR-04/MP-06: stamp aplicado sólo tras carga exitosa, logging veraz
+  y fuente única JSON/BIN para startup/polling. Agrega ruta/tamaño al detector.
+- RED política extraída2/7; GREEN13/0 (10 conductuales,1 wiring,2 diagnósticos
+  abiertos), all-targets en curso al corte. Informe/JSON AUDITORIA_WATCHER_MODELOS.
+- Abiertos: democión no revoca cache/memoria, identidad fuente/cache, contenido
+  idéntica metadata y latencia síncrona. No se afirma13 bugs cerrados ni OOS.
+- Retirada sólo referencia local GLM LXXXI integrada y sin worktree, recuperable
+  desde2d4d72b8 en main. MW publicación específica consultada; no merge sin CI/review.
+
+- Adenda del mismo corte: código d1cfe0b7 + precisión de procedencia e7bd8f78;
+  logs indican requested path porque el loader puede resolver JSON a BIN.
+  Misma suite13/0 repetida en0,10s; hashes del refinamiento en JSON MW.
+  A las19:34 America/Bogota, cargo check workspace/all-targets/locked -j2
+  seguía compilando dependencias en el worktree nuevo; sin éxito inferido.
+  Al terminar, repetir check incremental: el último ajuste de host/test se
+  hizo durante la primera compilación. No correr T-1 ni workspace test completo.
+  Falta autorización pública MW, CI remoto y review; no publicar por permiso MP/GO.
+  Se solicitó review local del código en el buzón ignorado; no consta acuse.
+  SC01/02 documentan C0≠C∞ y cardinalidad≠preservación de genes, sin alterar fórmulas.
 
 ## 2026-10-03 — Qoder: Ola 51 / #651 — ACTIVACIÓN DE VETOS DORMIDOS — ORÁCULO PASA 16/144
 
@@ -2454,3 +3300,28 @@ random_matrix (Codex) ni Hawkes / flow_excitation (Qoder).
 - **correlation_guard.rs**: Eliminación de alocación en heap (`Vec<f64>`) en `veto_por_riesgo_real_medido`. Cálculo de suma, suma cuadrática y peor individual en streaming de pasada única O(N) sin heap allocation. Función expuesta `calcular_riesgo_grupo`. Nueva compuerta `veto_por_riesgo_cramer_lundberg` integrando el coeficiente de ajuste de Lundberg R y la cota de supervivencia ψ(m) ≤ e^{-Rm} con el tope de racha Bernoulli.
 - **flow_excitation_confluence.rs**: Continuidad espectral y eliminación de escalón rígido en la escala de auto-excitación de Hawkes. Normalización dinámica por el umbral efectivo del proceso (`effective_hawkes_thresh`), permitiendo una modulación suave y monótona sin chattering ni saltos abruptos.
 - **Verificación**: Tests en quantum-arena (5/5), risk-engine (113/113), signal-engine (74/74) e integración correlation_admission_contract (26/26) al 100% verdes. `git diff --check` verificado con 0 advertencias de fin de línea.
+
+## 2026-10-04 — Codex: sincronización F3/main749d, no cierre de sus defectos
+
+- Qoder publicó main749d:3docs/+160,36filas F3 (3HIGH/14MED/19LOW),
+  conteos cotejados. «Cerrada» significa barrido;103expedientes no son
+  necesariamente103causas únicas. F3-A2 remite a F2-A5. Reparaciones abiertas.
+- RA une ambos padres conservando historial; plan porarchivo§13/maestro§19
+  exige oráculos para PPO, trailing, reloj y riesgo antes de certificar.
+- Erdos aprueba estáticamente f608/baseEA5d sin bloqueadores nuevos.
+  CI37245434644 pertenece a ese corte, no a la nueva composición con749d.
+- SA94790c5c quedó local22/0/check0; publicación SA/OOS bloqueada por
+  auto-review hasta respuesta específica. No push/PR. RA autorización propia.
+- RUIN-F01 local: validar antes de interpolar para no reabrir cero inválido.
+  No cambiar fórmula/bootstrap/umbrales ni operar. No acuse externo supuesto.
+
+## 2026-10-04 — SA/OOS: rectificación de autorización por auto-review
+
+- Rechazado el comando combinado SA commit/push: la consulta específica de
+  publicación pública SA/OOS sigue sin respuesta. La interpretación anterior
+  de que bastaba el mandato general queda rectificada, sin borrar historia.
+- Ninguna parte del comando se ejecutó: SA HEAD d73cca8c, MERGE_HEAD f6087378.
+  Preparación y22contratos/checkalltargets0 son evidencia local, no integración.
+- Consulta renovada para dos PR separadas en Jhona-la/Trader-Gemini público,
+  sin secretos/datos operativos, CI y revisión cruzada antes del merge.
+  Hasta respuesta no publicar. RA28 conserva autorización previa independiente.

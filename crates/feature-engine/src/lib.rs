@@ -4,6 +4,7 @@ pub mod correlation;
 pub mod ewma;
 pub mod hawkes;
 pub mod hawkes_cross;
+pub mod hodge_flow;
 pub mod kalman;
 pub mod lead_lag;
 pub mod microstructure;
@@ -23,6 +24,7 @@ pub mod welford;
 pub use correlation::MarketCorrelationHeatmap;
 pub use ewma::Ewma;
 pub use hawkes::HawkesProcessEngine;
+pub use hodge_flow::{HelmholtzHodgeFlowEngine, HodgeDecompositionResult};
 pub use kalman::KalmanFilter1D;
 pub use lead_lag::LeadLagAlphaEngine;
 pub use microstructure::{

@@ -26,6 +26,7 @@ pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64, total_trades: 
 
 pub mod fitness_contract;
 pub mod entry_reservation;
+pub mod evidence_publication;
 pub mod contagion_publisher;
 pub mod bootloader;
 pub mod calibration;
@@ -40,6 +41,7 @@ pub mod math_kernels;
 pub mod ml_coverage;
 pub mod ml_inference;
 pub mod ml_registry;
+pub mod model_reload;
 pub mod orchestrator;
 pub mod order_flow_aggregator;
 pub mod outcome_context;
@@ -814,6 +816,12 @@ pub struct GodEngineCore {
     pub lakehouse: Option<Arc<storage_engine::LakehouseWarehouse>>,
     pub consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion,
     pub lead_lag_engine: feature_engine::LeadLagAlphaEngine,
+    /// OLA Ω37/Ω38: Motor de descomposición ortogonal de Helmholtz-Hodge sobre flujos L2/L3
+    pub hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine,
+    /// OLA Ω36/Ω38: Motor de fibrado gauge y curvatura de Yang-Mills sobre el universo multiactivo
+    pub yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine,
+    latest_prices: Vec<f64>,
+    latest_ofis: Vec<f64>,
     pub ppo_engine: dark_alpha_engine::online_ppo::OnlinePpoPolicyEngine,
     pub online_learner: metacortex_engine::online_learning::OnlineLearningModule,
     /// #26: Sistema inmune vivo para registro y amortiguación de traumas de predicción
@@ -986,6 +994,13 @@ impl GodEngineCore {
         tensor_orchestrator.add_strategy(Box::new(
             strategy_core::vecm_arbitrage::JohansenVecmEngine::default(),
         ));
+        // OLA Ω38: Registrar StatArbEngine SDE continuo y YangMillsGaugeEngine en el orquestador central
+        tensor_orchestrator.add_strategy(Box::new(
+            strategy_core::stat_arb::StatArbEngine::new(30, 1.5).with_continuous_ou_sde(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            strategy_core::yang_mills_gauge::YangMillsGaugeEngine::new(n_coins),
+        ));
 
         let swing_nn = if let Ok(json_data) =
             std::fs::read_to_string("models/DarkAlpha_BTCUSDT.json")
@@ -1083,6 +1098,10 @@ impl GodEngineCore {
             lakehouse: None,
             consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion::new(),
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
+            hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine::new(n_coins),
+            yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine::new(n_coins),
+            latest_prices: vec![0.0; n_coins],
+            latest_ofis: vec![0.0; n_coins],
             ppo_engine,
             online_learner,
             immune_system: metacortex_engine::immune_system::LivingImmuneSystem::new_deferred("."),
@@ -1658,6 +1677,16 @@ impl GodEngineCore {
                         }
                     }
                 }
+                // #651/MG05: IC SIGNED a la escala dominante vigente en
+                // TODO evento, también sin depth y antes de retornos por
+                // kill-switch. Escala fría o tau inválida retira el IC
+                // anterior; el lector conserva exactamente su rho escalar.
+                evidence_publication::publicar_coherencia(
+                    &self.arena.registry,
+                    &self.espectral_ma,
+                    coin_id,
+                    spec.dominant_tau_ms,
+                );
                 // #648/H3 (Ola 48) — EXPIRACIÓN del veredicto espectral:
                 // si el stream de depth cayó, el último dominante no-cero
                 // no puede pisar el veredicto escalar en cada trade-tick
@@ -1922,42 +1951,6 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "multiactivo_mejor_tau", tau);
                         let _ = otro; // el par específico: traza, no política
                     }
-                    // #651 (Ola 51) — ESCRITOR de qo_613_rho_tau: el lector
-                    // del veto de grupo (#613, risk-engine) llevaba DORMIDO
-                    // desde su ola — se cableó el lector sin publicar la
-                    // clave (mea culpa documentado; el fixture monoactivo
-                    // del T-1 no podía delatarlo). Publica la coherencia
-                    // media SIGNED de esta moneda con todas las demás a la
-                    // ESCALA DOMINANTE (τ* de #594): ρ(τ*) sólo aprieta
-                    // cuando el grupo está más acoplado de lo que el PnL
-                    // agregado ve. Sin pares maduros a esa escala ⇒ nada
-                    // (NaN en el lector ⇒ ρ de siempre, bit a bit).
-                    {
-                        let tau_dom = spec.dominant_tau_ms;
-                        if tau_dom.is_finite() && tau_dom > 0.0 {
-                            let mut escala_dom = 0usize;
-                            let mut mejor_d = f64::INFINITY;
-                            for (k, &tau_k) in quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS
-                                .iter()
-                                .enumerate()
-                            {
-                                let d = (tau_k - tau_dom).abs();
-                                if d < mejor_d {
-                                    mejor_d = d;
-                                    escala_dom = k;
-                                }
-                            }
-                            if let Some(ic) =
-                                self.espectral_ma.coherencia_media_con_todas(coin_id, escala_dom)
-                            {
-                                if ic.is_finite() {
-                                    self.arena
-                                        .registry
-                                        .set_for_coin(coin_id, "qo_613_rho_tau", ic);
-                                }
-                            }
-                        }
-                    }
                     // #609 (Ola 31): SOMBRA ESPECTRAL del oscilador cuántico —
                     // el pozo anarmónico con confinamiento AGY-P14 evaluado en
                     // el desplazamiento de CADA escala (momentum_z de la malla).
@@ -1974,6 +1967,14 @@ impl GodEngineCore {
                     let voto_sombra =
                         signal_engine::quantum_oscillator::QuantumOscillatorEngine::voto_espectral(
                             &desplazamientos,
+                            self.arena.registry.get_value_or("quantum_k_spring", 1.0),
+                            self.arena
+                                .registry
+                                .get_value_or("quantum_lambda_anharmonic", 0.1),
+                            self.arena
+                                .registry
+                                .get_value_or("quantum_alpha", 0.5)
+                                .clamp(0.01, 10.0),
                         );
                     if let Some((k_dom, v_dom)) = voto_sombra.dominante() {
                         self.arena.registry.set_for_coin(
@@ -1993,24 +1994,31 @@ impl GodEngineCore {
                     // #610 (Ola 32): sombras del SOLITÓN (perfil sech firmado)
                     // y del CHOQUE supersónico (salto Rankine-Hugoniot
                     // M(τ)=|x(τ)|/c) — misma malla de desplazamientos.
-                    // G2-13 (paridad inputs): la MISMA cadena del vivo —
-                    // soliton_amplitude → fallback order_flow_imbalance
-                    // (medido). Antes la sombra leía el knob muerto con
-                    // default 1.0 mientras el vivo usaba el OFI real.
-                    let amp_soliton = {
-                        let a = self.arena.registry.get_value_or("soliton_amplitude", f64::NAN);
-                        if a.is_finite() && a > 0.0 {
-                            a
-                        } else {
+                    // H2-10 (RONDA 3, GLM 112): la sombra leía el knob
+                    // global `soliton_amplitude` (CERO escritores
+                    // productivos ⇒ siempre 1.0) mientras el VIVO usa la
+                    // cascada scoped soliton_amplitude → OFI → vol_delta
+                    // (soliton_wave.rs). ESPEJO EXACTO: misma cascada
+                    // per-coin — el sanitizado interno del motor
+                    // (amp≤0→1.0, clamp [1e-3,10]) hace el resto idéntico.
+                    // [Qoder Ola 72 — SEXTA CONVERGENCIA: G2-13 (mismo
+                    // hallazgo, cadena global) CONVERGIDO con H2-10: se
+                    // adopta el espejo per-coin de GLM, más fiel al vivo.]
+                    let amp_soliton = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(coin_id, "soliton_amplitude", {
+                            // OFI firmado [-1,1]: negativo/0 → el motor lo
+                            // sanea a 1.0 — misma semántica que el vivo.
                             self.arena
                                 .registry
-                                .get_for_coin_or(coin_id, "order_flow_imbalance", 1.0)
-                        }
-                    };
-                    let voto_soliton = signal_engine::soliton_wave::SolitonWaveEngine::voto_espectral(
-                        &desplazamientos,
-                        amp_soliton,
-                    );
+                                .get_for_coin_or(coin_id, "order_flow_imbalance", 0.0)
+                        });
+                    let voto_soliton =
+                        signal_engine::soliton_wave::SolitonWaveEngine::voto_espectral(
+                            &desplazamientos,
+                            amp_soliton,
+                        );
                     if let Some((k_sol, v_sol)) = voto_soliton.dominante() {
                         self.arena.registry.set_for_coin(
                             coin_id,
@@ -2755,6 +2763,15 @@ impl GodEngineCore {
             if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
                 let mid = (bid + ask) * 0.5;
                 spec.update(mid, event_time_ms);
+                // MG05: también los callers directos deben retirar evidencia
+                // de la escala anterior. En process_event -> dual, dt=0 no
+                // modifica el espectro ni duplica maduraciones del IC.
+                evidence_publication::publicar_coherencia(
+                    &self.arena.registry,
+                    &self.espectral_ma,
+                    coin_id,
+                    spec.dominant_tau_ms,
+                );
                 if coin_id < self.arena.coins.len() {
                     let field = spec.spectral_field(true);
                     self.arena.coins[coin_id].spectral_coherence.store(field.global_coherence, Ordering::Relaxed);
@@ -2910,6 +2927,10 @@ impl GodEngineCore {
             // D-220 & D-247: Depth snapshots must NOT corrupt OrderFlow with synthetic trades. Real trades update order flow via process_event when is_trade=true.
 
             let ofi_value = feature_engine.update_ofi(bid, ask, bid_qty, ask_qty);
+            if coin_id < self.latest_prices.len() {
+                self.latest_prices[coin_id] = mid_price;
+                self.latest_ofis[coin_id] = ofi_value;
+            }
             let sym = quantum_arena::symbol_registry::try_spec(coin_id)
                 .map(|s| s.symbol)
                 .unwrap_or_default();
@@ -3752,20 +3773,16 @@ impl GodEngineCore {
                     // R y el margen de la cota ψ ≤ e^{−R·m} se publican al
                     // registro por moneda — el consumo de sizing es decisión
                     // del consejo con T-1 propio. Sin deriva positiva no hay
-                    // R (la cota no significa nada sin edge medido).
+                    // R (la cota no significa nada sin edge medido). MG02:
+                    // publicar también None retira R/margen anteriores y
+                    // enmascara el fallback global, sin cambiar ln(20)/R.
                     if let Some(est) = self.lundberg_siniestros.get_mut(coin_id) {
                         est.observar(pnl_epigenetico);
-                        if let Some(r) = est.lundberg() {
-                            self.arena
-                                .registry
-                                .set_for_coin(coin_id, "lundberg_r_nocional", r);
-                            // Margen log que la cota promete al 5%: ln(20)/R.
-                            self.arena.registry.set_for_coin(
-                                coin_id,
-                                "lundberg_margen_5pct",
-                                (20.0_f64).ln() / r,
-                            );
-                        }
+                        evidence_publication::publicar_lundberg(
+                            &self.arena.registry,
+                            coin_id,
+                            est.lundberg(),
+                        );
                     }
 
                     coin.apply_spectral_epigenetic_feedback_with_time(pnl_epigenetico, position_age_ms, tau_trade_ms, event_time_ms);
@@ -3773,6 +3790,14 @@ impl GodEngineCore {
                     // 2. Adaptacion continua tensorial de las 32 escalas espectrales en el espacio de Hilbert:
                     if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
                         spec.apply_epigenetic_outcome(tau_trade_ms, is_win, pnl_pct);
+                        // MG05: el feedback recalcula la dominante; retirar
+                        // el IC anterior antes de una posible nueva admisión.
+                        evidence_publication::publicar_coherencia(
+                            &self.arena.registry,
+                            &self.espectral_ma,
+                            coin_id,
+                            spec.dominant_tau_ms,
+                        );
                     }
 
                     // 3. Grade only opinions frozen at this position's opening.
@@ -4731,6 +4756,7 @@ impl GodEngineCore {
                 .get(coin_id)
                 .map(|s| s.dominant_tau_ms)
                 .unwrap_or(30_000.0);
+            set_reg("dominant_tau_ms", tau_dom);
             // D-756 — LOS UMBRALES SALEN DE LA DISTRIBUCIÓN MEDIDA, NO DE UN
             // RECORTE A MANO.
             //
@@ -5004,6 +5030,28 @@ impl GodEngineCore {
             let pos_dev =
                 ((mid_price - ema_macro) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0);
             set_reg("quantum_position_deviation", pos_dev);
+
+            // OLA Ω36/Ω38: Fibrado gauge Yang-Mills y corrientes de restauración gauge
+            let (ym_action, ym_currents) = self.yang_mills_engine.update_and_calculate_curvature(&self.latest_prices);
+            let ym_coin_current = if coin_id < ym_currents.len() { ym_currents[coin_id] } else { 0.0 };
+            set_reg("yang_mills_action", ym_action);
+            set_reg("yang_mills_current", ym_coin_current);
+
+            // OLA Ω37/Ω38: Descomposición ortogonal de Helmholtz-Hodge sobre flujos continuos L2/L3
+            let (hodge_curl_share, hodge_grad_energy, hodge_curl_energy) = if let Some((flow_mat, n_nodes)) =
+                feature_engine::HelmholtzHodgeFlowEngine::build_gradient_flow_matrix(&self.latest_ofis)
+            {
+                if let Some((decomp, _potentials)) = self.hodge_flow_engine.decompose(&flow_mat, n_nodes) {
+                    (decomp.curl_share, decomp.gradient_energy, decomp.curl_energy)
+                } else {
+                    (0.0, 0.0, 0.0)
+                }
+            } else {
+                (0.0, 0.0, 0.0)
+            };
+            set_reg("hodge_curl_share", hodge_curl_share);
+            set_reg("hodge_gradient_energy", hodge_grad_energy);
+            set_reg("hodge_curl_energy", hodge_curl_energy);
             // #625 (Ola 46) — EL SLOT HAWKES DEL PPO LLEVA LA EXCITACIÓN
             // REAL λ/μ̂. La decisión de consejo abierta desde #554 se
             // ejecuta: el slot 2 llevaba la magnitud del OBI con nombre
@@ -7366,6 +7414,18 @@ impl GodEngineCore {
                                 .registry
                                 .get_scoped_value_or(&sym, "taker_ratio", 1.0),
                             ml_model_base,
+                            hodge_curl_share: self
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "hodge_curl_share", 0.0),
+                            yang_mills_current: self
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "yang_mills_current", 0.0),
+                            macro_staleness_ms: self
+                                .arena
+                                .registry
+                                .get_value_or("macro_staleness_ms", 0.0) as u64,
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let council_decision = self.consejo_deliberacion.deliberar_traced(

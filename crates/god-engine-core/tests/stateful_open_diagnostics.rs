@@ -12,7 +12,7 @@ fn open_cooldown_has_a_hard_band_boundary() {
     assert!(e.can_open_at_tau(60_000.0, 10_000));
 }
 #[test]
-fn open_hawkes_direct_api_accepts_late_impulse() {
+fn regression_hawkes_direct_api_rejects_late_impulse() {
     // #660 (F2-B6): CERRADO — el evento retrógrado (ts < last) ya NO
     // excita el proceso (antes: excitaba con historia desalineada, era
     // la limitación OPEN que este test documentaba). El reloj permanece.

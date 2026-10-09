@@ -37,37 +37,10 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 2 # first parent is required for the candidate diff check
-      - name: Normalize trailing newlines in text files touched by the candidate
-        # XC (GLM, 2026-10-06): 4 blank-line-at-EOF failures in 2 days (Omega9,
-        # GLM, Qoder x2) each turned main red for a full runner cycle. The
-        # whitespace guard below still rejects conflict markers; this step only
-        # normalizes the FINAL newline of text files changed by the candidate
-        # so an append-only log file cannot fail the build on cosmetics.
-        run: |
-          $files = git diff --name-only HEAD^ HEAD
-          foreach ($f in $files) {
-            if ((Test-Path $f) -and ($f -match '\.(md|json|ya?ml|toml|rs|txt)$')) {
-              $content = [System.IO.File]::ReadAllText($f)
-              $normalized = $content.TrimEnd("`r`n") + "`n"
-              if ($normalized -ne $content) {
-                [System.IO.File]::WriteAllText($f, $normalized)
-                Write-Host "normalized trailing newline: $f"
-              }
-            }
-          }
-          # XCI (GLM): la versión XC usaba sintaxis POSIX (|| y ; en subshell)
-          # dentro de pwsh — ParserError rompió main 2 corridas. PowerShell puro:
-          git diff --quiet
-          if ($LASTEXITCODE -ne 0) {
-            git config user.name ci
-            git config user.email ci@local
-            git add -u
-            git commit -m "ci: normalize trailing newlines [skip ci]"
-          }
       - name: Reject conflict markers in candidate diff
-        # XCII (Antigravity): Blindaje estructural definitivo contra falsos positivos cosméticos (20+ caídas históricas en 16s).
-        # core.whitespace=-blank-at-eof,-blank-at-eol desactiva el fallo por saltos de línea al final de docs/logs (.md, .txt)
-        # y espacios al final de línea, pero preserva el bloqueo estricto de marcadores de conflicto (<<<<<<<, =======, >>>>>>>).
+        # R4: inspect the checkout candidate without rewriting files or moving HEAD.
+        # A normalization commit would make HEAD^..HEAD omit the candidate changes.
+        # Ignore cosmetic trailing whitespace while preserving conflict-marker checks.
         run: git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD^ HEAD
       - name: Install the compiler used for the local regression
         run: |
@@ -78,9 +51,31 @@ jobs:
       - name: Check all workspace targets
         run: cargo +nightly-2026-06-30 check --workspace --all-targets --locked
       - name: Model publication and loader contracts
+        # Existing model contracts are preserved below.
         # Synthetic models only. No real-model inventory, training or promotion.
-        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test model_publication_contract --test ml_model_contract --test ml_base_publication_contract -- --test-threads=1
+        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test model_publication_contract --test ml_model_contract --test ml_base_publication_contract --test model_reload_contract -- --test-threads=1
 
+      - name: Input, risk-state and OOS boundary contracts
+        # Synthetic inputs only; no training, exchange or real-model activation.
+        run: |
+          cargo +nightly-2026-06-30 test -p data-pipeline --locked --test parser_input_contract -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 test -p risk-engine --locked --test nonfinite_admission_contract --test c07_ruin_composition_contract -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 test -p backtest-engine --locked --test oos_context_contract -- --test-threads=1
+
+
+      - name: Shadow forest genome and observed capital contracts
+        # Offline library tests; no training, promotion or live engine session.
+        run: cargo +nightly-2026-06-30 test -p evolution-engine --lib --locked -- --test-threads=1
+
+      - name: Accepted feature clock transition contracts
+        # Synthetic rejected/accepted ticks; no live trading, models or training.
+        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test stateful_transition_contract -- --test-threads=1
+
+      - name: Scoped risk evidence withdrawal contracts
+        # Real estimators/readers with synthetic events; no live trading or training.
+        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test evidence_expiry_contract -- --test-threads=1
       - name: Model inventory structural evidence contracts
         # Synthetic files only; no training, promotion or live-model loading.
         run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --lib ml_registry::tests -- --test-threads=1
@@ -96,3 +91,15 @@ jobs:
         # Fast unit/contract suites (no --ignored: no testnet, no manual
         # measurements); adds ~2-4 min against the ~46 min replay suite.
         run: cargo +nightly-2026-06-30 test -p execution-engine -p audit-engine -p data-pipeline -p data-ingest -p dark-alpha-engine --locked -- --test-threads=1
+
+      - name: Signed SA score and selection contracts (no evolution process)
+        # Compile the actual standalone helpers; all-targets above checks the CLI wiring.
+        run: |
+          rustc +nightly-2026-06-30 --edition 2024 --test crates/evolution-engine/tests/score_retention_contract.rs -o target/score-retention-contract.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./target/score-retention-contract.exe --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustc +nightly-2026-06-30 --edition 2024 --test crates/evolution-engine/tests/sa_selection_contract.rs -o target/sa-selection-contract.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./target/sa-selection-contract.exe --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

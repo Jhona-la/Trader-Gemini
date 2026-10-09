@@ -1,6 +1,7 @@
 //! Pure numerical/control tests. No live daemon, exchange, ledger, or genome IO.
 use evolution_engine::return_evidence::{
-    EvidenceError, EvidenceEwma, EwmaError, MeanStatistic, latch_degradation, summarize_returns,
+    EvidenceError, EvidenceEwma, EwmaError, MeanStatistic, SequentialVilleEvidence,
+    latch_degradation, summarize_returns,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -199,4 +200,27 @@ fn simultaneous_daemon_requests_have_one_latch_transition_and_no_release() {
         .sum();
     assert_eq!(activations, 1);
     assert!(stop.load(Ordering::Acquire));
+}
+
+#[test]
+fn sequential_ville_evidence_certifies_edge_and_detects_decay() {
+    let mut ville = SequentialVilleEvidence::with_bounds(0.05, 0.05, 0.50).unwrap();
+    assert_eq!(ville.anytime_p_value(), 1.0);
+    assert!(!ville.is_edge_certified());
+    assert!(!ville.is_exhausted());
+
+    // Ingestar innovaciones positivas consistentes
+    for _ in 0..50 {
+        ville.observe(0.15);
+    }
+    assert!(ville.is_edge_certified());
+    assert!(ville.anytime_p_value() <= 0.05);
+    assert_eq!(ville.evidence_drawdown(), 0.0);
+
+    // Choque severo de retornos adversos
+    for _ in 0..80 {
+        ville.observe(-0.40);
+    }
+    assert!(ville.is_evidence_decayed(0.50));
+    assert!(ville.evidence_drawdown() > 0.50);
 }

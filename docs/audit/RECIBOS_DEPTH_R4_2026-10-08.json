@@ -1,0 +1,96 @@
+{
+  "scope": "Exact-source isolated parser characterization with synthetic JSON; not a repair or economic test",
+  "execution_receipt": {
+    "source_commit": "e9c6a435eb1780da7f2c6e29103f3bd7d227d94c",
+    "source_path": "crates/data-pipeline/src/parser.rs",
+    "created_utc": "2026-10-08T19:42:09.861611+00:00",
+    "runner_sha256": "c0e3302b1660d9349ff12477b58b96a71cb648ab06bd7694d837727810a79a2e",
+    "status": "EXISTING_DEPTH_DEFECT_REPRODUCED_NOT_REPAIRED",
+    "scope": "Exact-source isolated parser characterization with synthetic JSON; not a repair or economic test",
+    "commands": [
+      {
+        "label": "00-toolchain",
+        "argv": [
+          "rustup",
+          "run",
+          "nightly-2026-06-30",
+          "rustc",
+          "--version",
+          "--verbose"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 0.104553,
+        "log_sha256": "081f77c248a25b84a088f46e6879a14422c5732d1dfbe72a64f69e8fe50e8135"
+      },
+      {
+        "label": "01-compile",
+        "argv": [
+          "rustup",
+          "run",
+          "nightly-2026-06-30",
+          "rustc",
+          "--edition=2021",
+          "-C",
+          "panic=abort",
+          "r4_depth_witness.rs",
+          "--extern",
+          "memchr=C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\target\\release\\deps\\libmemchr-6a02b5eaa147a10f.rlib",
+          "--extern",
+          "fast_float=C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\target\\release\\deps\\libfast_float-6bab28d3dfddb777.rlib",
+          "--extern",
+          "serde_json=C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\target\\release\\deps\\libserde_json-6fbe93ebb8063cdf.rlib",
+          "-L",
+          "dependency=C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\target\\release\\deps",
+          "-o",
+          "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini\\target\\r4-depth-witnesses\\02c6b918-d0e2-40a1-abc7-617432fb6c76\\depth_witness.exe"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 0.648255,
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "label": "02-run",
+        "argv": [
+          "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini\\target\\r4-depth-witnesses\\02c6b918-d0e2-40a1-abc7-617432fb6c76\\depth_witness.exe"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 0.086877,
+        "log_sha256": "7290a0979235c69608335df0a562671044f67d577431b97394b5c7a0cd115869"
+      }
+    ],
+    "dependencies": {
+      "memchr": {
+        "path": "C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\target\\release\\deps\\libmemchr-6a02b5eaa147a10f.rlib",
+        "sha256": "b614132be2dc2068c306b76e50ce247935b88f43aa719d47d200ad232cd43441",
+        "size_bytes": 1439346
+      },
+      "fast_float": {
+        "path": "C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\target\\release\\deps\\libfast_float-6bab28d3dfddb777.rlib",
+        "sha256": "09a929c42258cc0b6e910a829eb96fe07e0bcda2e4d0409e8841ce5b67c1be9f",
+        "size_bytes": 274324
+      },
+      "serde_json": {
+        "path": "C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini\\target\\release\\deps\\libserde_json-6fbe93ebb8063cdf.rlib",
+        "sha256": "15bae85750e354db46e7f12c190bb3c09d88a2ec2f9bd018d090dab368092f13",
+        "size_bytes": 2097864
+      }
+    },
+    "source_blob": "6c47744a94f5bea150e8a65c750b2a2f58c73cc4",
+    "source_sha256": "2eaf3e07f6ef1ead73d996c3fcff537354ca37b57b39a0ee3fe45e77cf07f5a7",
+    "source_lines": 462,
+    "wrapper_sha256": "9bd8a19279d0660e7f0fb21a18249cca854d1fdeb936cbe45eb24e92219cf887"
+  },
+  "diagnostic_stdout": "wire={\"bids\":[[\"10\",\"2\"]],\"asks\":[[\"11\",\"3\"]]} reference=(2,3) observed=Some((2.0, 3.0))\nwire={\"bids\":[[\"10\",\"2\"] ],\"asks\":[[\"11\",\"3\"]]} reference=(2,3) observed=Some((5.0, 3.0))\nwire={\"bids\":[[\"10\",\"2\"] ],\"asks\" : [[\"11\",\"3\"]]} reference=(2,3) observed=Some((2.0, 3.0))\nwire={\"bids\":[],\"asks\":[[\"11\",\"3\"]]} reference=(-0,3) observed=Some((3.0, 3.0))\nwire={\"asks\":[[\"11\",\"3\"] ],\"bids\":[[\"10\",\"2\"]]} reference=(2,3) observed=Some((2.0, 5.0))\nwire={\"bids\":[[\"10\",\"1e308\"] ],\"asks\":[[\"11\",\"1e308\"]]} reference=(100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000) observed=None\nRESULT=CHARACTERIZED_EXISTING_DEPTH_BUG; not repaired, no live/replay/economic execution\n",
+  "extract_wall_sum_fragment_sha256_by_commit": {
+    "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd": "2e31b8acd3309b32d46ce402f96d7af9975031ce5625bd09456553c654a31119",
+    "f3f86960190d99aeacdb75b14cdfab0adceaa186": "2e31b8acd3309b32d46ce402f96d7af9975031ce5625bd09456553c654a31119",
+    "e9c6a435eb1780da7f2c6e29103f3bd7d227d94c": "2e31b8acd3309b32d46ce402f96d7af9975031ce5625bd09456553c654a31119"
+  },
+  "attempt_limit": "An earlier compile attempt used unwind against an abort rlib and was INCOMPLETE; no test execution or RED/fix evidence.",
+  "independent_review": {
+    "reference": "docs/audit/DEPTH_INDEPENDENT_REVIEW_2026-10-08.md",
+    "sha256": "8df031d79a8cd1ccc2d563a9a217d280119d939ea5685f0054c4a7101038d702",
+    "reviewer": "system_inventory",
+    "scope": "Static mechanism, source/fixture/direct dependency/log hashes and conditional reachability; no independent execution or hermetic build claim."
+  }
+}

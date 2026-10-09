@@ -784,6 +784,7 @@ impl TrainingSamples {
         }
         Ok(())
     }
+    #[allow(dead_code)]
     fn split_at(&mut self, at: usize) -> Self {
         Self {
             features: self.features.split_off(at),
@@ -791,6 +792,7 @@ impl TrainingSamples {
             intervals: self.intervals.split_off(at),
         }
     }
+    #[allow(dead_code)]
     fn max_end(&self) -> u64 {
         self.intervals.iter().map(|v| v.end).max().unwrap_or(0)
     }
