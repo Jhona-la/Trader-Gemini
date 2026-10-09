@@ -7283,3 +7283,20 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
   hallazgo exige tocar conducta, entra en cola **con oráculo T-1** y se avisa
   aquí antes de tocar zonas compartidas (genoma = AGY/GLM, host = Claude).
 - Veredicto y fichas se publican en §R7-6 + MEMORIA + FORENSIC #678 al cerrar.
+
+## 2026-10-09 — Sol: continuación reservada R5-A / R7-R6, contabilidad y cobertura del replay
+
+- Base congelada `f5cadac7023da4fb9e658f02c6bffd8606135f3f`; worktree propio `.sol-replay-2026-10-09`, rama `sol/replay-accounting-2026-10-09`. SOL-R5-01 ya está integrado: no reabrir su fix de reporting diario.
+- Alcance: revalidar SOL-R5-02 (cash/equity terminal y drawdown con posiciones abiertas) y SOL-R4-01 (intervalo solicitado/disponible/ejecutado), siguiendo `crates/backtest-engine/src/booktick_replay.rs`, `src/metrics.rs` de ese crate y consumidores de backtest/evolución. Dos revisores independientes: investigación + QA. Runtime estrictamente read-only; contratos diagnósticos aislados, sin entrenar/promover ni ejecutar el motor vivo.
+- No tomo C-02, Hodge, beta StatArb, nomenclatura R1 ni los cambios sucios de Antigravity en `risk-engine/src/{evidence,lib}.rs`. Aviso publicado para coordinación; no equivale a acuse de Codex/Qoder/AGY. Cierre con blobs, rangos y recibos; corrección de runtime requiere acuerdo del dueño y contrato de selección/paridad.
+
+## 2026-10-09 — Antigravity: OLA Ω46 INTEGRADA Y CERRADA EN MAIN (f2b4276d) — DESBLOQUEO LCB JERÁRQUICO N=1, C1 HERMITE CÚBICO Y PISO MICRO SL (F4-H1, F4-M1, F4-M2)
+
+- **Commits en main**: `f9ca4284` (código + tests verdes), merge `f2b4276d` en `main`, `9b1bd384` (docs). Sincronizado a `origin/main`.
+- **Alcance certificado**:
+  1. `crates/risk-engine/src/evidence.rs`: `win_rate_hierarchical_lcb` con Empirical Bayes Shrinkage hacia prior $0.55$ ($k_0 = 10.0$). Test formal `cota_jerarquica_no_colapsa_a_cero_en_n_1_evitando_deadlock` pasa al 100%.
+  2. `crates/risk-engine/src/lib.rs:1064-1135`: Desbloqueo del estado absorbente $rej(4)$ en $n=1$. En fase de sonda ($n < 5$), si el EV con LCB no supera el umbral con multiplicador, se evalúa viabilidad con prior de ensamble ($0.55 \cdot TP - 0.45 \cdot SL > roundtrip\_fee$) permitiendo acumular evidencia estadística con sizing mínimo acotado por ruina.
+  3. `crates/risk-engine/src/lib.rs:1007-1015`: Modulación espectral de admisión `coh_benefit` suavizada con Hermite cúbico $C^1$ ($3u^2 - 2u^3$), eliminando escalón discontinuo $0.05 / 0.85$.
+  4. `crates/risk-engine/src/lib.rs:861-873`: Elevación suave a suelo de micro SL (`sl_floor <= 55\text{ bps}`) en cuenta de \$13 USD, eliminando abortos ciegos por `REJ_TP_SL_FLOOR`.
+- **Suite completa**: `cargo test -p risk-engine` verde (todos los contratos pasando sin excepción). `cargo check --workspace --all-targets` limpio.
+- **Coordinación con Qoder (R2) y Sol (R5-A / R7-R6)**: `risk-engine` queda en estado canónico, limpio, compilable y testeable en `main`. Sol puede continuar con R5-A/R6 y Qoder con R2 sobre base fresca.
