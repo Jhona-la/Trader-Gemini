@@ -861,7 +861,15 @@ impl RiskEngine {
         // un teorema universal de EV negativo. Se conserva esta protección.
         // Se rechaza limpiamente con REJ_TP_SL_FLOOR en lugar de inflar artificialmente el stop.
         if tpsl_gate.below_tradeable_floor {
-            return rej(REJ_TP_SL_FLOOR);
+            // Ω46.3 / F4-M1: En régimen micro ($13 USD), si el suelo viable sl_floor (ej. 48 bps)
+            // cabe dentro del presupuesto estricto de stop loss (55 bps = 0.0055), se permite elevar
+            // el stop al suelo en lugar de abortar ciegamente con REJ_TP_SL_FLOOR.
+            // La compuerta de EV posterior verificará que la geometría resultante cubra comisiones.
+            let sl_floor = quantum_arena::genome::SuperGenotype::min_viable_sl(roundtrip_fee);
+            let micro_admite_suelo = micro_w_alloc > 0.5 && sl_floor <= 0.0055;
+            if !micro_admite_suelo {
+                return rej(REJ_TP_SL_FLOOR);
+            }
         }
         // Blindaje Cuántico Micro-Cuenta ($13 USD):
         // Dado el suelo de Binance de $5.00 min notional, el tamaño no puede comprimirse por debajo de ~$5.10.
@@ -999,11 +1007,12 @@ impl RiskEngine {
         } else {
             1.0
         };
-        let coh_benefit = if spec_coh > 0.05 && spec_ent < 0.85 {
-            (spec_coh * (1.0 - spec_ent * 0.5)).clamp(0.0, 0.80)
-        } else {
-            0.0
-        };
+        // Transición suave C^1 Hermite cúbico (smoothstep) erradicando la discontinuidad discreta.
+        let u_coh = (spec_coh / 0.10).clamp(0.0, 1.0);
+        let s_coh = u_coh * u_coh * (3.0 - 2.0 * u_coh);
+        let u_ent = ((1.0 - spec_ent) / 0.30).clamp(0.0, 1.0);
+        let s_ent = u_ent * u_ent * (3.0 - 2.0 * u_ent);
+        let coh_benefit = (spec_coh.max(0.0) * (1.0 - spec_ent * 0.5) * s_coh * s_ent).clamp(0.0, 0.80);
         let base_micro_ratio = 0.66 / 0.62;
         let effective_micro_ratio = base_micro_ratio - (base_micro_ratio - 1.0) * coh_benefit;
 
@@ -1055,31 +1064,33 @@ impl RiskEngine {
         // calibrada adjunta) el EV no se inventa ni bloquea: la orden sigue
         // como SONDA D-750, cuyo sizing mínimo ya está acotado por el control
         // de ruina. Con evidencia (aunque sea una) rige D-751 íntegro.
-        let arranque_frio_total = arena.coins[coin_id]
+        let trade_count = arena.coins[coin_id]
             .metrics
             .trade_count
-            .load(Ordering::Relaxed)
-            == 0;
+            .load(Ordering::Relaxed);
+        let arranque_frio_total = trade_count == 0;
+        let es_fase_sonda = trade_count < 5;
         let p_ganar = if intent.win_probability.is_finite()
             && intent.win_probability > 0.0
             && intent.win_probability < 1.0
         {
             Some(intent.win_probability)
+        } else if arranque_frio_total {
+            None
         } else {
-            match crate::evidence::win_rate_lcb(
+            // Ω46.1: Contracción jerárquica bayesiana (Empirical Bayes Shrinkage).
+            // Para muestras pequeñas (n < 20), el estimador no colapsa a 0.0 ni crea
+            // un estado absorbente de muerte en n=1. Contrae suavemente hacia el prior
+            // del ensamble (0.55) con pseudo-masa k0 = 10.0.
+            Some(crate::evidence::win_rate_hierarchical_lcb(
                 arena.coins[coin_id]
                     .metrics
                     .win_rate
                     .load(Ordering::Relaxed),
-                arena.coins[coin_id]
-                    .metrics
-                    .trade_count
-                    .load(Ordering::Relaxed) as f64,
-            ) {
-                Some(p) => Some(p),
-                None if arranque_frio_total => None,
-                None => return rej(REJ_SIN_EVIDENCIA),
-            }
+                trade_count as f64,
+                0.55,
+                10.0,
+            ))
         };
         let expected_value_pct = match p_ganar {
             Some(p) => (p * expected_win) - ((1.0 - p) * expected_loss),
@@ -1101,8 +1112,23 @@ impl RiskEngine {
         if !expected_value_pct.is_finite() || !ev_fee_multiplier.is_finite() {
             return rej(REJ_INVALID_INPUT);
         }
-        if p_ganar.is_some() && expected_value_pct <= (roundtrip_fee * ev_fee_multiplier) {
-            return rej(4);
+        // Ω46.2: En fase de sonda (n < 5), la orden es de muestreo exploratorio con
+        // sizing mínimo D-750. No se veta con rej(4) si el EV calculado con el prior
+        // del ensamble (p=0.55) cubre comisiones brutas (ev_prior > roundtrip_fee).
+        // Esto erradica el deadlock absorbente donde 1 trade perdedor congelaba
+        // permanentemente la moneda impidiéndole acumular muestra estadística.
+        if p_ganar.is_some() {
+            let ev_minimo_requerido = roundtrip_fee * ev_fee_multiplier;
+            if expected_value_pct <= ev_minimo_requerido {
+                if es_fase_sonda {
+                    let ev_prior = 0.55 * expected_win - 0.45 * expected_loss;
+                    if ev_prior <= roundtrip_fee {
+                        return rej(4);
+                    }
+                } else {
+                    return rej(4);
+                }
+            }
         }
 
         let max_acceptable_fee_pct = arena.config.max_fee_pct.load(Ordering::Relaxed);
