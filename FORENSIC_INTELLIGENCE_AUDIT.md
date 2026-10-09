@@ -15561,4 +15561,16 @@ línea 2250).
      - `crates/god-engine-core/src/lib.rs:1708, 1944, 6380`: Unificada la $\tau$ en la publicación de coherencia (veto de grupo), en el registro del arena (`dominant_tau_ms`) y en la rama 15 (`slow_intent.expected_duration_ms`), erradicando la divergencia de factor $\times 4.6$ y retirando el clamp redundante de código muerto.
 - **Certificación**: 100% tests pasados en `god-engine-core`, `quantum-arena` y `risk-engine` (0 errores).
 
+## #682 — Ola Ω49: CONTRATO DE COMPUERTA DE SONDA F-1 (DEMOSTRACIÓN DE NO-DEADLOCK, ALCANCE DE REJ(4) BAJO EV DEGRADADO Y VETO LCB MADURO) (2026-10-09)
+
+- **Autor**: Quant Senior (AGY / Consejo de 10 Roles).
+- **Commit en `main`**: `e1a5f195`.
+- **Alcance**:
+  - `crates/risk-engine/tests/veto_evidence_contract.rs:281-324`: Implementado el contrato formal `test_fase_sonda_ev_prior_gate_contract`, resolviendo el hallazgo F-1 / R7-R2-F-1 donde se señalaba que los contratos previos solo verificaban la función pura de shrinkage y no la compuerta de admisión viva `evaluate_quantum_order`.
+  - **Caso A (No-deadlock de sonda)**: Moneda con $n=1$ y trade inicial perdedor ($w=0.0$). Bajo el bracket de diseño ($EV_{\text{prior}} > \text{roundtrip\_fee}$), la compuerta admite la orden como sonda de muestreo con sizing mínimo (`SignalType::Long`), erradicando formalmente el deadlock absorbente de congelamiento en $n=1$.
+  - **Caso B (Alcanzabilidad y ejecución de `rej(4)` en sonda)**: Moneda con $n=1$ y geometría degradada donde el payoff no cubre comisiones ($EV_{\text{prior}} \le \text{roundtrip\_fee}$). La compuerta ejecuta limpiamente el rechazo `rej(4)` devolviendo `SignalType::Flat`, demostrando que la fase sonda no es un pase ciego y veta rigurosamente toda orden económicamente inviable.
+  - **Caso C (Gobernanza estricta de LCB con muestra madura)**: Moneda con $n=20$ y $w=0.0$ (fuera de la fase sonda). El estimador LCB contraído detecta la ausencia de ventaja estadística y veta con `rej(4)` devolviendo `SignalType::Flat`.
+- **Certificación**: 14/14 tests de `veto_evidence_contract.rs` y la suite completa de `risk-engine` (74+ tests) verdes al 100% con 0 errores.
+
+
 

@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Antigravity: OLA Ω49 CERRADA E INTEGRADA EN MAIN (`e1a5f195`) — CONTRATO COMPUERTA DE SONDA F-1 (NO-DEADLOCK, ALCANZABILIDAD DE REJ(4) Y VETO LCB)
+
+- **Rama**: `antigravity/quant-sr-ola49-probe-gate-contract` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#682**.
+- **Cambios en Código Rust**:
+  1. `crates/risk-engine/tests/veto_evidence_contract.rs:281-324`: Implementado `test_fase_sonda_ev_prior_gate_contract`, certificando formalmente:
+     - **Caso A**: En sonda ($n=1$, $w=0.0$), orden viable ($EV_{\text{prior}} > \text{fee}$) es admitida sin sufrir deadlock absorbente.
+     - **Caso B**: En sonda ($n=1$), orden con geometría degradada ($EV_{\text{prior}} \le \text{fee}$) es rechazada con `rej(4)` demostrando alcanzabilidad del veto y protección financiera.
+     - **Caso C**: En muestra madura ($n=20$, $w=0.0$), el LCB contraído veta estrictamente con `rej(4)`.
+- **Certificación**: 14/14 tests en `veto_evidence_contract.rs` y 74+ tests de `risk-engine` pasando al 100% (0 errores).
+- **Estado de Asignaciones AGY R7-R2**:
+  - ✅ **F-2**: Resuelto en Ω47 (`f6b14ba4`, #680) — Suavizado $C^1$ Hermite cúbico en micro suelo y SL cap.
+  - ✅ **D-1 / D-2**: Resuelto en Ω48 (`dbaf0ccb`, #681) — Normalización rigurosa de entropías a $[0, 1]$.
+  - ✅ **C-3**: Resuelto en Ω48 (`dbaf0ccb`, #681) — Regularización continua $C^1$ de $d\ln\tau/dt$.
+  - ✅ **C-1**: Resuelto en Ω48 (`dbaf0ccb`, #681) — Umbral de familia de $\tau^*$ reducido a 5 escalas operativas.
+  - ✅ **C-2**: Resuelto en Ω48 (`dbaf0ccb`, #681) — Reconciliación unificada de $\tau$ en veto de grupo, arena y rama 15.
+  - ✅ **F-1**: Resuelto en Ω49 (`e1a5f195`, #682) — Contrato formal de compuerta viva de sonda y alcanzabilidad de `rej(4)`.
+
 ## 2026-10-09 — Antigravity: OLA Ω48 CERRADA E INTEGRADA EN MAIN (`dbaf0ccb`) — D-1/D-2 (NORMALIZACIÓN DE ENTROPÍA), C-3 (REGULARIZACIÓN CONTINUA DE DRIFT), C-1 (GATE DE FAMILIA OPERABLE EN τ*) Y C-2 (RECONCILIACIÓN UNIFICADA DE τ)
 
 - **Rama**: `antigravity/quant-sr-ola48-entropia-y-drift` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#681**.
