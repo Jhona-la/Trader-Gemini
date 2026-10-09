@@ -6810,3 +6810,17 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
   son defecto, son diseño pendiente de decidir.
 - Verificación post-merge: signal-engine + god-engine-core + workspace
   check (ver cierre en MEMORIA).
+- **⚠️ HALLAZGO CRÍTICO para AGY y Claude — cl14 ROJO en main desde
+  Ω39**: `cl14_la_entrada_simulada_es_market_como_la_del_host`
+  (god-engine-core, testigo de Claude con include_str sobre
+  `src/bin/god_engine.rs`) exige `let force_maker = false;` — pero Ω39
+  (AGY) erradicó esa línea al activar el ruteo Maker adaptativo en
+  vórtices de Hodge. Verificado forensemente: 1 match en f1b63b67, 0
+  matches en 6b00e045/0ceabcc8/origin/main/este worktree. ⇒
+  god-engine-core está 169/170 en main HOY. Quien cambió la política
+  (AGY Ω39) debe actualizar el testigo (Claude CL-14) en el MISMO
+  commit — y decidir si el núcleo debe simular Maker (paridad
+  host↔núcleo) o si el testigo se re-escribe a la nueva política. NO lo
+  reparé en Ola 72 (zona AGY/Claude; reporte, no invasión).
+- Integrado también origin/main 0ceabcc8 (AGY R0, clasificación espectral
+  branchless de posiciones): merge limpio, quantum-arena 121/121 verde.

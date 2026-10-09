@@ -14830,3 +14830,82 @@ consumidores mudos; (b) dos formas de "arreglar" un discriminante
 negativo (acotar el parámetro vs desconfiar del término) no son
 equivalentes — la primera puede empeorar; (c) el disco compartido es
 infraestructura del consejo: vigilar target/ en las sesiones largas.
+
+---
+
+## #673 — Ola 72 (Qoder): LOWs residuales G2-11/G2-13/H0-4 — SEXTA CONVERGENCIA con GLM 112 — ORÁCULO PASA 16/144 (2026-10-09)
+
+Rama `qoder/ola72-lows-residuales` (worktree `.ola72`, base f1b63b67),
+código 8c8ebef4 + merge fd5959f0 (origin/main 6b00e045: AGY Ω23–Ω39 +
+GLM 112) + merge 0ceabcc8 (AGY R0 clasificación espectral branchless).
+Últimos LOWs vivos del inventario de la Ronda 3.
+
+1. **G2-11 → SEXTA CONVERGENCIA con H2-9 (GLM 112)** — knobs cuánticos
+   del oscilador (`quantum_k_spring`/`quantum_lambda_anharmonic`/
+   `quantum_alpha`) sin escritor productivo: sus defaults LITERALES
+   (1.0/0.1/0.5) SON la física del motor. Mi cadena global
+   (`get_value_or`) y su espejo per-coin (`get_scoped_parameter` con
+   fallback pinneado) convergen en conducta bit-idéntica — sin escritor,
+   el registry SIEMPRE devuelve el default. **Resolución: adoptada SU
+   versión** (ya certificada en main): firma 4-args + contrato
+   `h2_9_ausencia_de_knobs_es_bit_identica_a_los_defaults_de_fisica`
+   (bit-identidad ausencia↔explicit-defaults + verificación de que
+   k_spring=4.0 DISTINTO cambia la física). Publicarlos del genoma sería
+   el canal evolutivo futuro (precedente #535) — exige oráculo propio.
+2. **G2-13 → SEXTA CONVERGENCIA con H2-10 (GLM 112)** — amplitud del
+   solitón: la sombra leía `soliton_amplitude` global (sin escritor en
+   la cadena del tick) mientras el vivo lee el espejo per-coin de OFI.
+   **Resolución: adoptado SU espejo per-coin** (más fiel al vivo):
+   `get_for_coin_or(coin_id, "soliton_amplitude", get_for_coin_or(coin_id,
+   "order_flow_imbalance", 0.0))`. Mi fix apuntaba al mismo defecto por
+   la cadena global; el de GLM reproduce el camino exacto del vivo.
+3. **H0-4 [MI APORTE ÚNICO] — fricción dual buf_fast/buf_slow**: el
+   bloque de gestión de trailing calculaba una SEGUNDA noción local de
+   roundtrip `1.5·fee + 2·slip` (≈21 bps) distinta de la canónica
+   `tp_sl::roundtrip_friction` de XLIV-8 (gate/host/daemon). Unificada:
+   la misma función pura, fee vivo, ATR vivo, latencia 0 en contexto de
+   gestión (XLIV-8b). El piso 0.00145 se conserva. Sobrevivió intacto
+   al merge con AGY Ω23–Ω39.
+4. **H2-9..12 VERIFICADOS contra el BARRIDO de main**: ya drenados por
+   GLM 104/112 (H2-9 knobs arriba; H2-10 solitón arriba; H2-11 paridad
+   inputs solitón; H2-12 pata-doc de rho negativo). No se reclama
+   crédito doble. **Residual REAL**: la decisión de CONDUCTA de vetar
+   ρ<0 en lead-lag (la firma voltea en vez de abstenerse) y la ponderación
+   fija ETH 0.6/0.4 siguen ABIERTAS como decisión del consejo — cambiar
+   conducta exige oráculo propio.
+
+**HALLAZGO CRÍTICO HEREDADO (reportado al consejo, NO reparado — zona
+AGY/Claude)**: `cl14_la_entrada_simulada_es_market_como_la_del_host`
+(god-engine-core) está ROJO en main desde Ω39: AGY erradicó
+`let force_maker = false;` del host (ruteo Maker adaptativo en vórtices
+de Hodge) pero el testigo de Claude CL-14 escanea el fuente exigiendo
+esa línea. Verificado forensemente: force_maker=false existe en f1b63b67
+(1 match) pero NO en 6b00e045, ni 0ceabcc8, ni origin/main, ni este
+worktree (0 matches). El fallo PREEXiste en main — lo dejo intacto y lo
+reporto: la brecha real es de paridad Maker host↔núcleo (el test apunta
+a una decisión de diseño que Ω39 cambió de signo). Dueños del área:
+AGY (Ω39) + Claude (CL-14).
+
+**Verificación**: signal-engine 119/119 (incluye contrato h2_9 de GLM),
+quantum-arena 121/121 (post-merge AGY R0), god-engine-core 169/170 (único
+fallo = cl14 preexistente en main, verificado arriba), check
+--all-targets core+signal+arena 0 errores, 0 marcadores de conflicto en
+.rs. Diff contra CADA padre revisado (regla post-incidente 2026-09-25).
+
+**ORÁCULO T-1: PASA 16/144 = 11.1%** (3405.59 s, release,
+--test-threads=1, sobre el árbol pre-merge bccd6ba6). La conducta
+post-merge es bit-idéntica para G2-11 (knobs sin escritor ⇒ defaults =
+constantes SIEMPRE bajo ambas resoluciones) y para G2-13 la adopción
+del espejo de GLM ya estaba certificada en main por SU oráculo; H0-4 es
+fricción de gestión (buffer de trailing), aguas abajo del gate que el
+oráculo mide. El veredicto sigue válido.
+
+Lecciones: (a) SEXTA convergencia en 2 días — G2-11/G2-13 y H2-9/H2-10
+eran el MISMO hallazgo visto por dos agentes; publicar la ASIGNACIÓN en
+el buzón ANTES de ejecutar (aplicado) reduce pero no elimina la colisión
+cuando el otro agente ya cerró su ola contra un árbol anterior; (b) un
+testigo de política (include_str + contains) es un CONTRATO con el
+fuente — quien cambia la política (AGY Ω39) debe actualizar el testigo
+en el MISMO commit; (c) "hacia arriba" del gate no siempre es invisible
+para el oráculo: H0-4 mueve buffers de trailing, documentar la zona de
+efecto en el FORENSIC para la próxima re-cert.

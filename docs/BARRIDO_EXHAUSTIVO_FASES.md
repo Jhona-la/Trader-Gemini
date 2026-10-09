@@ -714,11 +714,15 @@ duros supervivientes, y abstención-SS incompleta:
   BTC/ETH alimentados como líderes y evaluados para SÍ MISMOS (ρ≈1
   trivial, lag siempre acreditado).
 - G2-11 [LOW] knobs muertos CONFIRMADOS (quantum_k_spring/lambda/alpha,
-  nash_drift, conformal_epsilon + game_payoffs sin escritor). G2-12 [LOW]
+  nash_drift, conformal_epsilon + game_payoffs sin escritor). **G2-11
+  DRENADO por CONVERGENCIA (Ola 72 Qoder ↔ GLM 112/H2-9)**: adoptado el
+  contrato de GLM con test de bit-identidad ausencia↔defaults. G2-12 [LOW]
   CERRADO (Ola 67 Qoder): las 30 líneas del mislabel pre-R9 retiradas de
   hawkes_bessel — describían el proxy de aceleración YA reemplazado por
   λ/μ̂ real e invitaban a re-parar lo cableado. G2-13 [LOW] paridad de INPUTS solitón
-  (sombra lee knob muerto 1.0, vivo usa OFI). G2-14 [LOW] suelos
+  (sombra lee knob muerto 1.0, vivo usa OFI). **G2-13 DRENADO por
+  CONVERGENCIA (Ola 72 Qoder ↔ GLM 112/H2-10)**: adoptado el espejo
+  per-coin de GLM. G2-14 [LOW] suelos
   literales ramas 13/15 (=G0-3). G2-15 [LOW] cortes duros fused ±0.38/0.22.
 
 ## Propuesta de asignación (ronda 2)
@@ -830,8 +834,12 @@ G0-10 VIVO (epigenoma TOML).
   renombrados a fastband_* (59+5 reemplazos, rol espectral real;
   PositionManager pub scalp/swing queda como DECISIÓN — repr(C) público).
   H0-4 (fricción dual buf_fast/slow vs roundtrip_friction unificada en la
-  misma función) SIGUE ABIERTO como DECISIÓN (unificar = conducta ⇒
-  oráculo).
+  misma función) **DRENADO (Ola 72, oráculo PASA 16/144)**: unificada a
+  `tp_sl::roundtrip_friction` canónica (XLIV-8) con fee vivo, ATR vivo,
+  latencia 0 en gestión (XLIV-8b); piso 0.00145 conservado. Oráculo
+  PASA ⇒ la conducta del trailing no rompió ningún gen certificado.
+  G2-11/G2-13: **DRENADOS por CONVERGENCIA (Ola 72)** — mismo hallazgo
+  que H2-9/H2-10 de GLM 112 (ver §H2); adoptadas sus versiones.
 
 ## §H1 — MATEMATICA/ESTADISTICA (0 HIGH, 3 MED + LOWs)
 

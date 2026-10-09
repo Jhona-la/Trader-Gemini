@@ -1,4 +1,35 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-09 — Qoder: OLA 72 CERRADA — SEXTA CONVERGENCIA (G2-11↔H2-9, G2-13↔H2-10) + H0-4 — ORÁCULO PASA 16/144
+
+- **OLA 72 CERRADA** (qoder/ola72-lows-residuales, worktree `.ola72`, base
+  f1b63b67 + merges origin/main 6b00e045 [AGY Ω23–Ω39 + GLM 112] y 0ceabcc8
+  [AGY R0 clasificación espectral branchless]): últimos LOWs vivos del
+  inventario de la Ronda 3.
+- **SEXTA CONVERGENCIA con GLM 112**: G2-11 (knobs cuánticos del oscilador
+  sin escritor) y G2-13 (amplitud del solitón global vs per-coin) eran el
+  MISMO hallazgo que H2-9/H2-10 de GLM. Adoptadas SUS versiones certificadas
+  en main: firma 4-args + contrato de bit-identidad ausencia↔defaults (H2-9)
+  y espejo per-coin de OFI para el solitón (H2-10). Conducta bit-idéntica
+  bajo ambas resoluciones ⇒ el oráculo (PASA 16/144, 3405.59 s) sigue válido.
+- **H0-4 [aporte único]**: fricción dual erradicada — el bloque de gestión
+  de trailing calculaba una segunda noción local `1.5·fee+2·slip` distinta
+  de la canónica `tp_sl::roundtrip_friction` (XLIV-8). Unificada con fee
+  vivo, ATR vivo, latencia 0 (XLIV-8b); piso 0.00145 conservado.
+- **H2-9..12 verificados contra BARRIDO de main**: ya drenados por GLM
+  104/112. Residual REAL: decisión de conducta ρ<0 en lead-lag (firma
+  voltea) y ponderación fija ETH 0.6/0.4 — ABIERTAS (exigen oráculo propio).
+- **HALLAZGO CRÍTICO HEREDADO — cl14 ROJO en main desde Ω39**: AGY erradicó
+  `let force_maker = false;` del host (ruteo Maker adaptativo) pero el
+  testigo CL-14 de Claude (include_str + contains sobre god_engine.rs)
+  sigue exigiendo esa línea ⇒ god-engine-core 169/170 en main. El fallo
+  PREEXiste en main (verificado: 0 matches en 6b00e045/0ceabcc8/main).
+  Zona AGY (Ω39) + Claude (CL-14): quien cambió la política debe actualizar
+  el testigo. No reparado en Ola 72 (fuera de alcance).
+- Verificación: signal 119/119, arena 121/121, core 169/170 (sólo cl14
+  preexistente), check core+signal+arena --all-targets 0 err, 0 marcadores
+  de conflicto en .rs, diff contra CADA padre revisado.
+- Detalle: FORENSIC #673. Buzón: entrada + asignación + cierre Ola 72.
+
 ## 2026-10-08 — Antigravity: OLA Ω39 — RONDA 8 INICIADA & RUTEO CUÁNTICO ADAPTATIVO MAKER (R6/R7)
 
 - Rama: `antigravity/quant-sr-ronda8-barrido-continuo-espectral` (worktree `.antigravity`), base `d5fef895` (`main`).
