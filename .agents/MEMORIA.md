@@ -1,4 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-08 — Antigravity: OLA Ω36 CERRADA — FIBRADO GAUGE YANG-MILLS, CONTINUOUS SDE STATARB CON RELOJ FÍSICO Y ACOPLAMIENTO ESPECTRAL (R3/R4)
+
+- Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `7c1a3bbe`.
+- **FIBRADO GAUGE YANG-MILLS & CURVATURA DE ARBITRAJE MULTIACTIVO (`crates/strategy-core/src/yang_mills_gauge.rs`)**:
+  - Implementación analítica formal de `YangMillsGaugeEngine` basada en teoría de campos gauge sobre fibrado $G = \mathbb{R}^+$:
+    * Conexión 1-forma $A_{ij} = \ln P_i - \beta_{ij} \ln P_j$.
+    * Holonomía de bucles de Wilson sobre 3-ciclos triangulares $F_{ijk} = A_{ij} + A_{jk} + A_{ki}$.
+    * Densidad de acción discreta de Yang-Mills $\mathcal{S}_{\text{YM}} = \frac{1}{2} \sum_{i < j < k} |F_{ijk}|^2 \ge 0$, cuantificando la energía de desequilibrio multiactivo.
+    * Corriente topológica restauradora $\mathcal{J}_i = \frac{1}{\binom{N-1}{2}} \sum_{j < k, j \neq i, k \neq i} F_{ijk}$ como vector de gradiente de paridad.
+  - Cero asignaciones dinámicas en hot-path (buffers de stack para $N \le 16$), complejidad $\mathcal{O}(N^3)$ en nanosegundos (< 100 ns).
+- **UPGRADE STATARB CON SDE CONTINUO, RELOJ FÍSICO Y ACOPLAMIENTO ESPECTRAL (`crates/strategy-core/src/stat_arb.rs`)**:
+  - Eliminado el $\beta = 1.0$ rígido: incorporado RLS adaptativo (`with_adaptive_beta`).
+  - SDE continuo de Ornstein-Uhlenbeck en tiempo físico real: $dS_t = \theta (\mu - S_t) dt + \sigma dW_t$, con $\Delta t$ medido en segundos desde timestamps de milisegundos.
+  - Vida media analítica de reversión: $t_{1/2} = \frac{\ln(2)}{\theta}$ en segundos físicos.
+  - **Acoplamiento Espectral Obligatorio**: Si $t_{1/2} > 2\tau^*$ (la reversión es más lenta que la escala de disipación de la posición), la señal se veta automáticamente (`SignalIntent::flat()`) para evitar absorber deriva secular ajena al ciclo operativo.
+- **CONTRATO FORMAL EN `crates/strategy-core/tests/yang_mills_gauge_contract.rs`**:
+  - `yang_mills_contrato_triada_libre_de_arbitraje`: paridad perfecta produce exactamente $F_{ijk} = 0$, $\mathcal{S}_{\text{YM}} = 0$, $\mathcal{J} = 0$.
+  - `yang_mills_contrato_antisimetria_y_permutaciones`: simetría cíclica de Wilson $F_{012} = F_{120} = F_{201}$ y antisimetría de orientación $F_{012} = -F_{021}$.
+  - `yang_mills_contrato_corriente_restauradora_tras_dislocacion`: verifica que una dislocación genera acción estrictamente positiva y corrientes no nulas.
+  - `yang_mills_contrato_inmunidad_a_nan_y_precios_no_positivos`: rechazo seguro sin pánicos.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p strategy-core`: **48/48 tests verdes (100% éxito)** (32 lib + 7 basket + 3 maker + 1 omega28 + 1 pair + 4 yang-mills).
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias** (41.15s).
+
 ## 2026-10-08 — Antigravity: OLA Ω35 CERRADA — RONDA 7: BARRIDO BASE ESPECTRAL, MODULACIÓN CONTINUA C¹ Y CONDUCTA DE MULTITUDES (R0–R9)
 
 - Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `325008ae`.
