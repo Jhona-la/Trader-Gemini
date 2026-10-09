@@ -15117,3 +15117,103 @@ PASA CON SU FALLBACK; (b) `OmniscientRegistry::set` sanea no-finitos a
 que reservar esa distinción para *física presente vs ausente*, nunca para
 *calibrado vs aún no calibrado*; (c) séptima confirmación del patrón "dos
 caras sin reconciliar", ahora también dentro de una sola ola propia.
+
+
+## #676 — R7-R0 (Qoder): LEDGER DE COBERTURA + CENSO DE CÓDIGO MUERTO/DUPLICADO, Y R7-3: ORÁCULO DE RE-CERTIFICACIÓN PASA 16/144 (2026-10-09)
+
+Rama `qoder/ronda7-plan` (worktree `.ola73`), base `534e7980` — contenido Rust
+**idéntico a `ab240abd`** (verificado: `git diff --stat ab240abd 534e7980 --
+crates src Cargo.toml scripts` vacío). Fase R0 del plan
+`docs/PLAN_RONDA7_BARRIDO_BASE_2026-10-09.md`; fichas en
+`docs/BARRIDO_EXHAUSTIVO_FASES.md` §R7-4 y veredicto en §R7-3.
+
+**Qué se produjo** (tres artefactos versionados, re-ejecutables):
+- `docs/audit/LEDGER_RONDA7_2026-10-09.json`: 1 512 rutas versionadas, todas en
+  estado `inventariado`; `check` verde sobre el árbol.
+- `docs/audit/CENSUS_CODE_MUERTO_RONDA7_2026-10-09.tsv`: 203 fichas con su
+  conteo medido. Buckets: `fn_sin_uso` 93 · `dep_sin_uso` 50 ·
+  `allow_dead_code` 32 · `modulo_homonomo` 23 · `modulo_huerfano` 4 ·
+  `modulo_por_path` 1 · `exact_duplicates` 0 · binarios 0.
+- `scripts/ronda7_dead_census.py`: el escáner determinista.
+
+**R7-R0-1 [MED] — la capa legacy raíz no tiene consumidor de producción.** El
+lib raíz (`Cargo.toml:189` `[lib] name = "quantum_engine"`, `autobins=false`)
+declara 12 módulos; `git grep -n "quantum_engine::"` fuera de `src/lib.rs`
+devuelve **9 coincidencias** y todas caen en 8 módulos vivos (`config`,
+`parsers`, `symbol_manager`, `env_manager`, `dashboard`, `dark_alpha_router`,
+`dark_alpha_sniffer`, `orderbook`). **Cero** usos de `::features`, `::trailing`,
+`::quantum_arena`, `::multi_asset_orchestrator` en los 488 `.rs`; los reexports
+`src/lib.rs:13,14` no tienen ni un lector. 1 286 líneas compiladas sin llamada.
+El único soporte de visibilidad son tres `#[path]` de tests de otros crates:
+`crates/feature-engine/tests/legacy_correlation_diagnostics.rs:3,9`,
+`legacy_statistics_diagnostics.rs:3,6` y
+`crates/signal-engine/tests/multi_asset_identity_contract.rs:1`. Consecuencia
+directa: **esos contratos certifican la copia MUERTA, no la viva** — los
+homólogos vivos (`crates/god-engine-core/src/trailing.rs`,
+`crates/feature-engine/src/microstructure.rs`,
+`crates/feature-engine/src/omni_strategies.rs`) sí tienen consumidores medidos
+(`strategy-core/src/maker.rs:1`, `god-engine-core/src/stateful_engine.rs:5`).
+Prueba de **compilación** (no de conducta): `cargo check -p trader-gemini-v5
+--lib --offline --locked -j1` → 0 errores, 35,86 s. No se borra: requiere
+re-orientar los tres `#[path]`, decisión del dueño y oráculo propio.
+
+**R7-R0-2/3/4 [LOW] — cuatro archivos que jamás se compilan**: `src/risk/mod.rs`
+(no existe `mod risk;` en ningún `.rs` ni `.toml`),
+`crates/quantum-arena/src/net_multiplexer.rs` (0 referencias),
+`crates/omniscient-registry/src/tests.rs` y `crates/phase-runner/src/tests.rs`,
+**eclipsados** porque sus librs declaran `mod tests { … }` inline
+(`omniscient-registry/src/lib.rs:399`, `phase-runner/src/lib.rs:126`) — el
+módulo inline gana y el archivo queda muerto. Sus pruebas no corren en ninguna
+suite: el verde de esos dos crates no las incluye.
+
+**R7-R0-5 [MED] — 50 dependencias declaradas sin uso** (13 en el manifiesto
+raíz: crossbeam, hex, hmac, itoa, lazy_static, libm, omniscient-registry,
+petgraph, rkyv, ryu, strategy-core, syn, uuid; 37 repartidas en 15 crates).
+Verificación por extensión con `git grep -w`. Matiz que el escáner no distingue
+y hay que leer antes de tocar: `winapi` en `crates/os-guardian/Cargo.toml:17`
+está en `[dependencies]` **incondicional** (se compila hasta en Linux) mientras
+el código usa el crate `windows`; en `god-engine-core` (`Cargo.toml:32-33`) sí
+está gated por target y sigue sin usarse. Coste real: tiempo de compilación y
+grafo; conducta: cero.
+
+**R7-R0-6/7/8 [INFO]**: 32 `#[allow(dead_code)]` (cada uno es una admisión
+explícita de muerte con dueño y fecha que hay que revisar, no borrar a ciegas);
+93 funciones públicas sin llamador versionado (muchas son API de crate o
+binarios de diagnóstico — ficha por ficha, no barrido); **0 duplicados
+caracter-a-caracter** y 23 pares de módulos homónimos (`orchestrator` ×3,
+`trailing` ×2, `selection_stats`, `router`, `genome_store`…). La duplicación del
+repo es de **copias divergidas**, no idénticas, así que el escáner textual no la
+ve: el doble Hodge de R6-A11 (`risk-engine/src/hodge.rs` vs
+`feature-engine/src/hodge_flow.rs`) va como ficha manual porque los stems
+difieren.
+
+**R7-R0-9 — higiene del escáner antes de publicar.** Dos puntos ciegos
+corregidos en la misma ola: (a) archivos montados con `#[path]` (sin `mod` que
+los nombre) se declaraban muertos; (b) `[[bin]]` se comparaba sólo por `name`
+contra el stem del archivo, lo que producía falsos positivos — `Cargo.toml:120-122`
+declara `quantum_benchmark` con `path = "src/bin/benchmark.rs"`, y en Windows
+`os.path.normpath` invertía las barras y generaba 35 filas espurias de rutas
+inexistentes. También se retiró la afirmación «un `[[bin]]` declarado dos
+veces»: 35 declaraciones contra 34 archivos es correcto porque
+`continuous_evolution_backtest` apunta a `crates/backtest-engine/src/bin/`.
+Lección: un censo se publica con sus falsos positivos eliminados, no con una
+nota de cautela.
+
+**R7-3 — veredicto del oráculo.** `t1_cobertura_genetica_del_oraculo_de_aptitud`
+sobre `534e7980` (--exact --nocapture --test-threads=1): **PASA**, 16/144 =
+11,1 % ≥ trinquete 11,0 %, exit 0, **1 748,60 s**. Lista sensible
+`[1,10,11,17,18,20,24,27,32,33,68,69,129,130,131,141]` **idéntica a la
+canónica** (el complemento, 128 coordenadas, se reporta como «sin cambio
+observado»). Base previa `85557469` (16/144, 2 375,32 s) — sin pérdida ni
+aparición de genes. Interpretación honesta: Ω44/Ω45, la Ola 73 y la Fase R0 son
+neutrales para el fixture (R0 fue censal: cero líneas de runtime). El trinquete
+mide **expresividad genética**, no edge ni rentabilidad; el fixture sigue dando
+acierto neto artificialmente alto (decisión del fixture: no se tocó).
+
+**Alcance**: R0 cierra inventario y censo con su evidencia contable. NO
+certifica conducta ni física — eso es R1–R7. R1 (doctrina/nomenclatura +
+`scalp|swing`, 1 027 ocurrencias medidas) queda EN CURSO; `PositionHorizon`
+(`quantum-arena/src/position.rs:18`, sólo `Continuous`) confirma la doctrina
+U-ERR-5 y `HorizonIntent` (`data-pipeline/src/state_db.rs:106-112`) conserva
+`Scalp`/`Swing` como etiquetas de migración sin consumidores fuera de su
+archivo.

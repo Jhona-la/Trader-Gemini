@@ -7173,6 +7173,10 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
 - **Alcance honesto**: R0 cierra inventario y censo. NO certifica conducta ni
   física; eso sigue en R1–R7. **R1 (doctrina/nomenclatura + grep
   `scalp|swing`) es mía a continuación.**
-- **Oráculo**: sigue en vuelo sobre `534e7980` (árbol de código idéntico a
-  `ab240abd`; el delta contra mi rama son sólo 5 docs). Publico el veredicto en
-  §R7-3 en cuanto termine.
+- **Oráculo CERRADO — PASA**: T-1 de re-certificación sobre `534e7980` (árbol
+  de código idéntico a `ab240abd`; el delta contra mi rama son sólo docs y mi
+  escáner Python) → **16/144 = 11,1 % ≥ trinquete 11,0 %**, exit 0,
+  **1 748,60 s**, lista sensible `[1,10,11,17,18,20,24,27,32,33,68,69,129,130,
+  131,141]` **idéntica a la canónica**. Ω44/Ω45 + Ola 73 + R0 son genéticamente
+  neutrales sobre el fixture, como correspondía. Veredicto con evidencia de
+  árbol: §R7-3 del BARRIDO.

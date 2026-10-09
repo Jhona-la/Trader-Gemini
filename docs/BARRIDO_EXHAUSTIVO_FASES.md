@@ -1796,7 +1796,7 @@ veredicto se escribe abajo al cerrarse.
 | fase | ámbito | lente | dueño | estado |
 |---|---|---|---|---|
 | R0 | ledger de cobertura 488 `.rs` + censo código muerto/duplicado | inventario | Qoder | **CERRADA** (§R7-4) |
-| R1 | doctrina/nomenclatura (`AGENTS.md`, MEMORIA, planes maestros, `ARQUITECTURA_VIVA`, ADRs) + grep `scalp\|swing` | metas/conceptos | Qoder | PENDIENTE |
+| R1 | doctrina/nomenclatura (`AGENTS.md`, MEMORIA, planes maestros, `ARQUITECTURA_VIVA`, ADRs) + grep `scalp\|swing` | metas/conceptos | Qoder | **EN CURSO** |
 | R2 | matemática/estadística (risk-engine stats, Ville, Cramér-Lundberg, ruin, correlation_guard, leverage_matrix, orchestrator, vetos, multifractal, lead-lag, temporal_spectrum, spectral_tape) | matemática | — | ABIERTA |
 | R3 | física/cuántica (hodge ×2, hodge_flow, yang_mills, stat_arb, vecm, multivariate_coint, maker + 13 motores signal-engine) | física | — | ABIERTA |
 | R4 | núcleo vivo (`god-engine-core/src/lib.rs` por bloques, `src/bin/god_engine.rs`, orquestador, state/position) | integración viva | — | ABIERTA |
@@ -1833,11 +1833,25 @@ cierra): **R6-A11, R6-A13 (residual), R6-B12, R6-B16, R6-C8, C-02**.
   mergeadas pendientes de borrar. Local ajena sin mergear:
   `codex/integration-recovery-2026-10-07` (3 commits exclusivos — NO tocar).
 
-## §R7-3 — Veredicto del oráculo de re-certificación (se escribe al cerrar)
+## §R7-3 — Veredicto del oráculo de re-certificación (CERRADO — PASA)
 
-- Árbol: `ab240abd` (main post-Ω44/Ω45). Base previa certificada: `85557469`
-  (16/144 = 11,1 %, 2 375,32 s).
-- Resultado: **EN VUELO** al publicar esta sección.
+- Árbol certificado: `534e7980` (merge de `origin/main` en `qoder/ronda7-plan`),
+  ejecutado desde el HEAD `114ecc7b`. Su contenido Rust es **idéntico a
+  `ab240abd`** (verificado: `git diff --stat ab240abd 534e7980 -- crates src
+  Cargo.toml scripts` **vacío**; el delta de `114ecc7b` frente a `534e7980` es
+  sólo `scripts/ronda7_dead_census.py`, herramienta Python que el oráculo no
+  ejercita). Base previa certificada: `85557469` (16/144 = 11,1 %, 2 375,32 s).
+- Resultado: **PASA 16/144 = 11,1 % ≥ trinquete 11,0 %** (`test result: ok.
+  1 passed; 0 failed`, exit 0, **1 748,60 s**, `--exact --nocapture
+  --test-threads=1`).
+- Lista sensible: `[1,10,11,17,18,20,24,27,32,33,68,69,129,130,131,141]` —
+  **IDÉNTICA a la canónica**. El complemento ("sin cambio observado") tiene las
+  otras 128 coordenadas. Cero genes certificados perdieron sensibilidad y cero
+  aparecieron ⇒ **Ω44, Ω45, la Ola 73 y la Fase R0 son genéticamente neutrales
+  sobre el fixture**, como correspondía (R0 fue censal/documental: no tocó
+  runtime).
+- Alcance honesto: el trinquete mide **expresividad genética** sobre el fixture
+  sintético, no rentabilidad ni edge fuera de muestra. No autoriza operación.
 
 ## §R7-4 — Fase R0 cerrada: ledger de cobertura + censo de código muerto/duplicado
 

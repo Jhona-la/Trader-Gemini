@@ -1,5 +1,67 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Qoder: R7-R0 CERRADA (ledger 1 512 rutas + censo 203 fichas) Y R7-3 CERRADA (ORÁCULO PASA 16/144)
+
+- **Rama**: `qoder/ronda7-plan` (worktree `.ola73`), base `534e7980` (= merge de
+  `origin/main` en el plan R7; contenido Rust **idéntico a `ab240abd`**).
+- **FASE R0 CERRADA** (inventario, no conducta) con tres artefactos
+  versionados y re-ejecutables:
+  `docs/audit/LEDGER_RONDA7_2026-10-09.json` (1 512 rutas versionadas, todas en
+  estado `inventariado`, `check` verde) ·
+  `docs/audit/CENSUS_CODE_MUERTO_RONDA7_2026-10-09.tsv` (203 fichas:
+  `fn_sin_uso` 93 · `dep_sin_uso` 50 · `allow_dead_code` 32 · `modulo_homonomo`
+  23 · `modulo_huerfano` 4 · `modulo_por_path` 1 · `exact_duplicates` 0) ·
+  `scripts/ronda7_dead_census.py`. Fichas y evidencia: BARRIDO §R7-4.
+- **TRES HALLAZGOS CON PRUEBA MEDIDA**:
+  1. **Capa legacy del paquete raíz: 1 286 líneas compiladas sin NINGÚN
+     consumidor de producción**. `git grep -n "quantum_engine::"` fuera de
+     `src/lib.rs` = 9 coincidencias, todas en los 8 módulos vivos del host;
+     cero usos de `::features`, `::trailing`, `::quantum_arena`,
+     `::multi_asset_orchestrator`, y los dos `pub use` (`src/lib.rs:13,14`) sin
+     un solo lector. Lo único que los mantiene visibles son tres `#[path]` de
+     tests ajenos (`feature-engine/tests/legacy_correlation_diagnostics.rs:3,9`,
+     `legacy_statistics_diagnostics.rs:3,6`,
+     `signal-engine/tests/multi_asset_identity_contract.rs:1`) ⇒ **esos
+     contratos certifican la copia MUERTA, no la viva** (séptima confirmación
+     del consejo «dos caras sin reconciliar»). No se borra: exige re-orientar
+     los tres `#[path]` + oráculo propio (decisión del dueño).
+  2. **Cuatro archivos que jamás se compilan**: `src/risk/mod.rs` (no hay
+     `mod risk;`), `crates/quantum-arena/src/net_multiplexer.rs` (0 referencias
+     en `.rs` y `.toml`), `crates/omniscient-registry/src/tests.rs` y
+     `crates/phase-runner/src/tests.rs` **eclipsados** por un `mod tests {`
+     inline (`omniscient-registry/src/lib.rs:399`, `phase-runner/src/lib.rs:126`).
+     Sus tests no corren en ninguna suite.
+  3. **50 dependencias declaradas sin uso** (13 raíz + 37 en 15 crates).
+     Matiz que el escáner no distingue: `winapi` en `os-guardian/Cargo.toml:17`
+     es `[dependencies]` **incondicional** (se compila también en Linux) mientras
+     el código usa el crate `windows`; en `god-engine-core` (`Cargo.toml:32-33`)
+     sí está gated y sigue sin usarse. Coste: compilación y grafo; cero conducta.
+- **HIGIENE DEL ESCÁNER**: dos puntos ciegos corregidos ANTES de publicar
+  (módulos montados con `#[path]`, y `[[bin]]` declarados por `path` más la
+  normalización de barras en Windows). La duplicación del repo es de **copias
+  divergidas**, no idénticas: 0 exactos, 23 pares homónimos — el doble Hodge
+  R6-A11 no lo ve el escáner (stems distintos) y va como ficha a mano.
+- **ORÁCULO T-1 DE RE-CERTIFICACIÓN: PASA 16/144 = 11,1 % ≥ trinquete 11,0 %**
+  (exit 0, **1 748,60 s**, `--exact --nocapture --test-threads=1` sobre
+  `534e7980`). Lista sensible `[1,10,11,17,18,20,24,27,32,33,68,69,129,130,131,
+  141]` **idéntica a la canónica** ⇒ Ω44, Ω45, la Ola 73 y la Fase R0 son
+  genéticamente neutrales sobre el fixture. Veredicto con evidencia de árbol:
+  BARRIDO §R7-3. Mide expresividad genética, NO rentabilidad: cero autorización
+  de operación.
+- **Git medido al cerrar**: `origin/main = 534e7980` (incuye el plan R7 y la
+  sincronización Ω46 de AGY `6ab9992b` como ancestro); la rama local `main`
+  estaba 2 commits atrás. Ramas remotas: **sólo `main`** ⇒ cero ramas mergeadas
+  pendientes de borrar. `codex/integration-recovery-2026-10-07` sigue con
+  commits exclusivos sin mergear (NO tocar). Disco 87 % (125 GB libres), RAM
+  libre 4,4 GB de 23,4, `god_engine.exe` no corre.
+- **SIGUIENTE**: R1 (doctrina/nomenclatura + `scalp|swing`) EN CURSO —
+  1 027 ocurrencias medidas; `PositionHorizon` (`quantum-arena/src/position.rs:18`)
+  confirma la doctrina (sólo `Continuous`); `HorizonIntent`
+  (`data-pipeline/src/state_db.rs:106-112`) conserva `Scalp`/`Swing` como
+  etiquetas de migración sin consumidores fuera de su propio archivo; falta
+  clasificar las restantes (mayoría en `genome.rs`, telemetría y docs).
+- Detalle: FORENSIC_INTELLIGENCE_AUDIT.md #676. Buzón: cierre R7-R0 + veredicto.
+
 ## 2026-10-09 — Qoder: RONDA 7 ABIERTA — PLAN DE BARRIDO ARCHIVO POR ARCHIVO (R0–R9), COLA R6 REAL RE-VERIFICADA Y AUDITORÍA DE RECURSOS + GIT MEDIDA
 
 - **Mandato del operador**: «revisa todo desde cero sin saltarte nada… un plan

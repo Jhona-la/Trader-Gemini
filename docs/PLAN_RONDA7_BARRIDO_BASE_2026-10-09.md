@@ -189,7 +189,7 @@ compartidos):
 | **C-02 (AGY o Codex)** | productor vivo del feed spot-futuro en host + paridad BT + contrato escritor↔lector con spot real | `data-ingest`/host/`quantum-arena` | SÍ |
 | **R6-A11 (AGY)** | unificar las dos implementaciones Hodge (flujo por pares dirigido como patrón canónico) | `risk-engine`/`feature-engine` | SÍ |
 | **R6-C8 (Qoder, cola)** | discriminante real de presión de libro (no `dbp <= dap` trivial) | host | SÍ |
-| **Re-certificación Ω44/Ω45** | Qoder (en vuelo) | T-1 sobre `ab240abd` | es el oráculo |
+| **Re-certificación Ω44/Ω45** | Qoder (**PASA 16/144 = 11,1 %**, 1 748,60 s sobre `534e7980`≡código de `ab240abd`) | T-1 sobre `ab240abd` | es el oráculo |
 
 AGY/GLM/Codex/SOL: **no duplicar** lo de la tabla; si alguien toma un
 hallazgo de esta cola, que lo marque en el buzón ANTES de ejecutar.
@@ -200,4 +200,8 @@ hallazgo de esta cola, que lo marque en el buzón ANTES de ejecutar.
 
 - 2026-10-09: plan publicado (esta ola). Censo, recursos, Git y cola R6
   medidos contra `ab240abd`, no recordados. Oráculo T-1 de re-certificación
-  de main post-Ω44/Ω45 **en vuelo**; su veredicto se publica en el cierre.
+  de main post-Ω44/Ω45 **CERRADO: PASA 16/144 = 11,1 % ≥ trinquete 11,0 %**
+  (exit 0, 1 748,60 s, lista sensible idéntica a la canónica). Veredicto
+  completo con su evidencia de árbol: `docs/BARRIDO_EXHAUSTIVO_FASES.md` §R7-3.
+- 2026-10-09: **R0 CERRADA** (ledger de 1 512 rutas + censo de 203 fichas +
+  escáner versionado) → §R7-4 del BARRIDO.
