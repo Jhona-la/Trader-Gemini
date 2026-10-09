@@ -827,6 +827,8 @@ pub struct GodEngineCore {
     pub hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine,
     /// OLA Ω36/Ω38: Motor de fibrado gauge y curvatura de Yang-Mills sobre el universo multiactivo
     pub yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine,
+    /// OLA Ω53: Motor hidrodinámico de Navier-Stokes y número de Reynolds para flujos L2/L3
+    pub navier_stokes_engines: Vec<feature_engine::NavierStokesReynoldsEngine>,
     latest_prices: Vec<f64>,
     latest_ofis: Vec<f64>,
     latest_timestamps: Vec<u64>,
@@ -1121,6 +1123,9 @@ impl GodEngineCore {
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
             hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine::new(n_coins),
             yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine::new(n_coins),
+            navier_stokes_engines: (0..n_coins)
+                .map(|_| feature_engine::NavierStokesReynoldsEngine::new())
+                .collect(),
             latest_prices: vec![0.0; n_coins],
             latest_ofis: vec![0.0; n_coins],
             latest_timestamps: vec![0; n_coins],
@@ -5139,6 +5144,19 @@ impl GodEngineCore {
             set_reg("hodge_curl_share", hodge_curl_share);
             set_reg("hodge_gradient_energy", hodge_grad_energy);
             set_reg("hodge_curl_energy", hodge_curl_energy);
+
+            // OLA Ω53: Ecuaciones del Milenio - Hidrodinámica de Navier-Stokes y Número de Reynolds L2/L3
+            if let Some(ns_engine) = self.navier_stokes_engines.get_mut(coin_id) {
+                let tick_vol = self.feature_engines[coin_id].ultima_cantidad_trade;
+                let re_number = ns_engine.update(
+                    bid, ask, bid_qty, ask_qty, tick_vol, atr_pct, event_time_ms,
+                );
+                let laminar_share = ns_engine.laminar_share;
+                let dissipation = ns_engine.energy_dissipation_rate;
+                set_reg("navier_reynolds_number", re_number);
+                set_reg("navier_laminar_share", laminar_share);
+                set_reg("navier_energy_dissipation", dissipation);
+            }
             // #625 (Ola 46) — EL SLOT HAWKES DEL PPO LLEVA LA EXCITACIÓN
             // REAL λ/μ̂. La decisión de consejo abierta desde #554 se
             // ejecuta: el slot 2 llevaba la magnitud del OBI con nombre
@@ -7514,6 +7532,14 @@ impl GodEngineCore {
                                 .arena
                                 .registry
                                 .get_value_or("macro_staleness_ms", 0.0) as u64,
+                            navier_reynolds_number: self
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "navier_reynolds_number", 0.0),
+                            navier_laminar_share: self
+                                .arena
+                                .registry
+                                .get_for_coin_or(coin_id, "navier_laminar_share", 1.0),
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let council_decision = self.consejo_deliberacion.deliberar_traced(

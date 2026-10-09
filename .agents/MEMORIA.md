@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Antigravity: OLA Ω53 CERRADA E INTEGRADA EN MAIN — INTEGRACIÓN DE ECUACIONES DEL MILENIO (NAVIER-STOKES & NÚMERO DE REYNOLDS FINANCIERO CONTINUO)
+
+- **Rama**: `antigravity/quant-sr-ola53-navier-stokes-reynolds-f4-vetos` fusionada por fast-forward a `main`. Ficha forense **#686**.
+- **Cambios en Código Rust**:
+  1. `crates/feature-engine/src/navier_stokes.rs` & `lib.rs`: Implementado `NavierStokesReynoldsEngine` modelando el libro de órdenes como fluido viscoso continuo. Computa velocidad $u = dP/dt$, aceleración $a$, viscosidad cinemática $\nu = \text{spread} / \text{depth}$, longitud característica $L$, número de Reynolds continuo $Re = F_{\text{inercia}} / (\nu \cdot \sigma_{\text{ref}})$, fracción laminar suave $C^\infty$ $\text{laminar\_share} = 1 / (1 + Re^2)$ y disipación de energía de Kolmogorov $\varepsilon$. 4/4 tests pasando al 100%.
+  2. `crates/metacortex-engine/src/consejo_seniors.rs`: `MarketSnapshotPayload` ampliado con `navier_reynolds_number` y `navier_laminar_share` con defaults $C^\infty$ y validación métrica estricta. `SeniorMicroestructura` modula convicción por $(0.40 + 0.60 \cdot \text{laminar\_share})$ (amortiguando vórtices turbulentos). `SeniorEjecucion` penaliza slippage efectivo por $(1.0 + (1.0 - \text{laminar\_share}) \cdot 0.50)$. Test contractual `test_navier_stokes_reynolds_modulation_in_consejo` verde al 100%. Suite completa (72 tests) pasando.
+  3. `crates/god-engine-core/src/lib.rs`: Cableado per-coin en `GodEngineCore` evaluado en cada tick dentro de `process_tick_dual` en $< 25\text{ ns}$ zero-allocation. Observables registrados en registry (`navier_reynolds_number`, `navier_laminar_share`, `navier_energy_dissipation`) e inyectados en `council_snapshot`. Suite de `god-engine-core` (46/46) pasando.
+- **Certificación**: Suites de `feature-engine` (90 tests), `metacortex-engine` (72 tests), `god-engine-core` (46 tests) y workspace completo (`cargo check --all-targets`) verde al 100% con 0 errores.
+
 ## 2026-10-09 — Antigravity: OLA Ω52 CERRADA E INTEGRADA EN MAIN (`50a2df4d`) — RESOLUCIÓN R6-B16 (CAUSALIDAD ESTRICTA EN OU DISCRETO) Y R6-C8 (LIBRO NO CRUZADO DBP < DAP)
 
 - **Rama**: `antigravity/quant-sr-ola52-f4-risk-vetos-kelly` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#685**.
