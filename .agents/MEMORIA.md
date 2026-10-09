@@ -1,5 +1,13 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Antigravity: OLA Ω52 CERRADA E INTEGRADA EN MAIN (`50a2df4d`) — RESOLUCIÓN R6-B16 (CAUSALIDAD ESTRICTA EN OU DISCRETO) Y R6-C8 (LIBRO NO CRUZADO DBP < DAP)
+
+- **Rama**: `antigravity/quant-sr-ola52-f4-risk-vetos-kelly` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#685**.
+- **Cambios en Código Rust**:
+  1. `crates/strategy-core/src/multivariate_coint.rs:214-218`: R6-B16 erradicado el timing anómalo post-actualización donde `spread_deviation` se calculaba como `self.last_spread - next_mean`, introduciendo un lookahead de $1$ paso al contaminar el regresor previo con la innovación del tick actual $S_t$. Reemplazado por la formulación estrictamente causal $S_{t-1} - \mu_{t-1} = \text{self.last\_spread} - \text{self.mean\_spread}$, eliminando el sesgo de atenuación en la estimación de $\theta$. Suite de `strategy-core` (40/40) verde.
+  2. `src/bin/god_engine.rs:4101, 4111`: R6-C8 sustituido `dbp <= dap` por la condición estricta `dbp < dap`, garantizando que libros bloqueados (`dbp == dap`) o cruzados (`dbp > dap`) sean formalmente rechazados de cotización pasiva.
+- **Certificación**: Suite de `strategy-core` (40/40), `god_engine` compilando limpiamente y workspace completo (`cargo check --all-targets`) verde al 100% con 0 errores.
+
 ## 2026-10-09 — Antigravity: OLA Ω51 CERRADA E INTEGRADA EN MAIN (`795746b3`) — RESOLUCIÓN R6-B12 (FILTRO RECURSIVO RLS ESTRICTO DE COINVERGENCIA EN STATARB) Y R6-A11 (PARIDAD CONTRACTUAL Y UNIFICACIÓN DE DESCOMPOSICIÓN DE HELMHOLTZ-HODGE)
 
 - **Rama**: `antigravity/quant-sr-ola51-rls-stat-arb-hodge-t1` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#684**.

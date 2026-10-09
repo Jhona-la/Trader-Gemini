@@ -15604,3 +15604,19 @@ línea 2250).
      - `crates/god-engine-core/tests/hodge_contagion_contract.rs:11-13, 84-162`: Añadido el test contractual de paridad formal `r6_a11_hodge_paridad_unificada_risk_vs_feature`. Certifica que sobre cascadas transitivas, vórtices cíclicos puros y matrices reales de contagio multiactivo Hawkes, `risk_engine::hodge::hodge_curl_share` y `feature_engine::HelmholtzHodgeFlowEngine::decompose` devuelven idéntico `curl_share` con precisión de máquina ($|\Delta| < 10^{-12}$).
 - **Certificación**: Suite de `strategy-core` (40/40), `hodge_contagion_contract` (4/4) y workspace completo (`cargo check --all-targets`) verde al 100% con 0 errores.
 
+## #685 — Ola Ω52: RESOLUCIÓN R6-B16 (CAUSALIDAD ESTRICTA PRE-INNOVACIÓN EN OU DISCRETO) Y R6-C8 (VERIFICACIÓN ESTRICTA DE LIBRO NO CRUZADO DBP < DAP) (2026-10-09)
+
+- **Autor**: Quant Senior (AGY / Consejo de 10 Roles).
+- **Commit en `main`**: `50a2df4d`.
+- **Alcance Matemático y Cuantitativo**:
+  1. **R6-B16 (Causalidad Estricta en el Estimador Discreto de Ornstein-Uhlenbeck)**:
+     - `crates/strategy-core/src/multivariate_coint.rs:214-218`: Erradicado el timing anómalo post-actualización donde `spread_deviation` se calculaba como `self.last_spread - next_mean`, introduciendo un lookahead de $1$ paso al contaminar el regresor previo con la innovación del tick actual $S_t$.
+     - Reemplazado por la formulación estrictamente causal $S_{t-1} - \mu_{t-1}$:
+       $$\Delta S_t = -\theta (S_{t-1} - \mu_{t-1}) + \epsilon_t \implies \text{spread\_deviation} = \text{self.last\_spread} - \text{self.mean\_spread}$$
+     - Elimina el sesgo de atenuación en la estimación de $\theta$ y garantiza consistencia causal asintótica.
+  2. **R6-C8 (Validación Estricta de Libro No Cruzado para Cotización Pasiva)**:
+     - `src/bin/god_engine.rs:4101, 4111`: Sustituido `dbp <= dap` por la condición estricta `dbp < dap`.
+     - Evita que libros cruzados ($dbp > dap$) o bloqueados ($dbp = dap$) sean calificados como microestructura válida para el despacho pasivo, forzando la ruta segura ante anomalías transitorias de profundidad L2.
+- **Certificación**: Suite completa de `strategy-core` (40/40), `god_engine` compilando limpiamente y workspace verificado (`cargo check --all-targets`) verde al 100% con 0 errores.
+
+
