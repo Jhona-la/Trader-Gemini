@@ -1,5 +1,70 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Qoder: R7-R3 CERRADA (física/cuántica) — 17 fichas, 2 HIGH, docs-only, base re-anclada contra `396a8503`
+
+- **Ejecutor**: Qoder, rama `qoder/ronda7-plan`. Cero `.rs` tocados, cero
+  oráculo nuevo. Detalle: `docs/BARRIDO_EXHAUSTIVO_FASES.md` §R7-7, ficha
+  forense **#687**, buzón (asignación + cierre).
+- **Método**: 3 lentes (A integración viva gauge/Hodge, B matemática del
+  fibrado Yang-Mills y OU/StatArb, C física de los 13 motores `signal-engine`)
+  + censo mecánico propio (D escritor↔lector, dead code, knobs, TTL, ámbito) +
+  residual (E/F). **29 hits brutos → 17 fichas: 2 HIGH, 8 MED, 5 LOW, 2 INFO.**
+- **RETRACTACIÓN publicada (metodológica, vale para todo el barrido)**: declaré
+  11 claves «sin escritor productivo» que **sí** lo tienen — el grep exigía
+  `set(` con la comilla pegada al paréntesis y el core publica por la closure
+  `set_reg` (`lib.rs:4327-4333`) en llamadas multilínea. Patrón válido:
+  `git grep -n -E "(set|set_reg|set_for_coin|set_scoped)\([[:space:]]{0,80}\"KEY\""`.
+  Además: 4 «escritores» vivían en el `#[cfg(test)]` del propio fuente; y
+  quedan **refutadas** «`S_YM` sin normalizar» (sí divide por `cycle_counts`),
+  la incoherencia dimensional del shockwave y `alpha_renyi`. B-1 HIGH→MED y
+  E-2 MED→LOW.
+- **HIGH R7-R3-A-1 — dilución por padding**: `decompose` calcula
+  `gradient_energy = Σ div² / n` con `n = MAX_HODGE_ASSETS = 30` mientras el
+  core refresca sólo `r` monedas con tick (`lib.rs:5126-5144`) ⇒
+  `curl_share ≥ 1 − r/30` **por construcción** (r=13 ⇒ ≥ 0,5667; r=3 ⇒ ≥ 0,90
+  con `laminar_factor ≤ 0,37`). **Ω53 agrava**: el Consejo ahora MULTIPLICA
+  `laminar_factor × hydro_factor` en la convicción (`consejo_seniors.rs:411-417`)
+  ⇒ entrada en ~0,15 sin vórtice medido. La telemetría `hodge_curl_share`
+  (`:5144`) y el ruteo del host (`god_engine.rs:4098`) leen el mismo número
+  inflado. Cambia conducta ⇒ **fix con oráculo T-1 obligatorio**.
+- **HIGH R7-R3-C-1 — `mid_price` sin escritor productivo**: la guarda de
+  unidades del solitón (`soliton_wave.rs:204-208`) nunca entra, `norm_vel` queda
+  en $/s y `SAT_MOMENTO = 1e4` satura en 0,1 bp/s ⇒ BTC a 1 pb/s da
+  `tanh(1e5)=1` y DOGE al mismo 1 pb/s da `tanh(0,1)=0,0997`.
+- **MED (8)**: A-2 contract test verde **por** el suelo de A-1 (8ª confirmación
+  de «contract test verde con física muerta») · B-1 `returns[i]` son **niveles**
+  en arranque y post-TTL (`lib.rs:5113`/`:5128`) y empujan el LMS de β contra su
+  clamp · B-2 reciprocidad β impuesta pero **cierre triádico no** + doc en
+  niveles · C-2 el comentario «ESPEJO EXACTO» de la sombra del solitón es falso
+  (9ª «dos caras sin reconciliar») · D-1 `_is_mean_reversion_vortex` muerto
+  (`god_engine.rs:4100-4101`) + ámbitos mezclados (curl per-coin vs acción
+  global) · D-2 **dos TTLs** (`10_000` literal vs `STATARB_SPOT_TTL_MS = 30_000`
+  en `:5087`) · D-3 `set_reg` global ⇒ «último coin gana» · D-4 `atr_1s/5s/1m`
+  con dos nociones y sin √τ.
+- **LOW (5) / INFO (2)**: E-1 cascadas con eslabones sin escritor · E-2
+  `nash_equilibrium_drift` decorativo · E-3 minimax ≡ `tanh(OFI·(1−presión))` ·
+  E-4 `loop_holonomy` sin consumidor · E-5 doc de `SAT_MOMENTO` sobrestima 10× ·
+  F-1 el `_` oculta la decisión de política · F-2 doble lookup
+  `spread_speed_of_sound`.
+- **Mapa positivo verificado**: álgebra Helmholtz-Hodge exacta en K_n con
+  paridad risk↔feature (Ω51) · Yang-Mills con caps 32 ≥ 30 y `S_YM` intensivo ·
+  StatArb con RLS recursivo cableado (Ω51) · OU causal + libro no cruzado (Ω52)
+  · 13 motores `tanh(A·x)` y calma-abstiene · ruteo maker con rampa continua ·
+  **Navier-Stokes Ω53 cableado de punta a punta con default neutro**
+  (`lib.rs:5149-5158` y `:7538`; `consejo_seniors.rs:411-416` y `:720-725`) —
+  el defecto A-1 es de Hodge, no de Navier.
+- **Divergencia doctrinal observada (sin severidad, concilia el dueño)**: Ω53
+  implementa NSE y Ω36 Yang-Mills mientras el PLAN MAESTRO los lista en
+  **TEORÍAS RECHAZADAS**.
+- **ASIGNACIÓN**: **AGY Ω54+** → A-1 (con oráculo), D-2, C-1, D-3, B-1.
+  **Qoder ola 74** → A-2, C-2, E-4/E-5 (oráculo cero). **GLM/Codex** →
+  E-1/E-2/E-3, B-2. **Claude** → D-1/F-1, D-4.
+- **AVISO TRANSVERSAL**: el veredicto T-1 vigente es `534e7980` (PASA 16/144 =
+  11,1 %) y **no cubre Ω47–Ω53** — siete olas tocaron `.rs` sin re-certificar.
+  **R8 debe re-certificar**, no leer el recibo viejo. Ninguna ficha de esta
+  fase autoriza push de código.
+
+
 ## 2026-10-09 — Antigravity: OLA Ω53 CERRADA E INTEGRADA EN MAIN — INTEGRACIÓN DE ECUACIONES DEL MILENIO (NAVIER-STOKES & NÚMERO DE REYNOLDS FINANCIERO CONTINUO)
 
 - **Rama**: `antigravity/quant-sr-ola53-navier-stokes-reynolds-f4-vetos` fusionada por fast-forward a `main`. Ficha forense **#686**.

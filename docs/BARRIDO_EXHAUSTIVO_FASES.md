@@ -1798,7 +1798,7 @@ veredicto se escribe abajo al cerrarse.
 | R0 | ledger de cobertura 488 `.rs` + censo código muerto/duplicado | inventario | Qoder | **CERRADA** (§R7-4) |
 | R1 | doctrina/nomenclatura (`AGENTS.md`, MEMORIA, planes maestros, `ARQUITECTURA_VIVA`, ADRs) + grep `scalp\|swing` | metas/conceptos | Qoder | **CERRADA** (§R7-5: 9 fichas, 0 HIGH / 2 MED / 4 LOW / 3 INFO) |
 | R2 | matemática/estadística (risk-engine stats, Ville, Cramér-Lundberg, ruin, correlation_guard, leverage_matrix, orchestrator, vetos, multifractal, lead-lag, temporal_spectrum, spectral_tape) | matemática | Qoder | **CERRADA** (§R7-6: 41 fichas, 9 HIGH / 23 MED / 1 LOW-MED / 6 LOW / 2 INFO) |
-| R3 | física/cuántica (hodge ×2, hodge_flow, yang_mills, stat_arb, vecm, multivariate_coint, maker + 13 motores signal-engine) | física | — | ABIERTA |
+| R3 | física/cuántica (hodge ×2, hodge_flow, yang_mills, stat_arb, vecm, multivariate_coint, maker + 13 motores signal-engine) | física | Qoder | **CERRADA** (§R7-7: 17 fichas, 2 HIGH / 8 MED / 5 LOW / 2 INFO) |
 | R4 | núcleo vivo (`god-engine-core/src/lib.rs` por bloques, `src/bin/god_engine.rs`, orquestador, state/position) | integración viva | — | ABIERTA |
 | R5 | dinero/ejecución (risk-engine completo + execution-engine) | ejecución | — | ABIERTA |
 | R6 | aprender/medir (evolution-engine, backtest-engine, dark-alpha) | aprender | — | ABIERTA |
@@ -1806,8 +1806,13 @@ veredicto se escribe abajo al cerrarse.
 | R8 | paridad BT↔vivo + suite workspace + oráculo T-1 del árbol final | integración | Qoder | PENDIENTE |
 | R9 | recursos + Git + honestidad documental | operaciones | Qoder | §R7-2 en curso |
 
-Cola R6 que entra como carga conocida de R3/R4/R5/R7 (no se re-descubre, se
-cierra): **R6-A11, R6-A13 (residual), R6-B12, R6-B16, R6-C8, C-02**.
+Cola R6 que entraba como carga de R3/R4/R5/R7 (no se re-descubre, se cierra):
+**R6-A11 y R6-B12 → CERRADAS POR AGY** (Ω51, `795746b3`: StatArb cableado con
+RLS recursivo); **R6-B16 y R6-C8 → CERRADAS POR AGY** (Ω52, `50a2df4d`:
+causalidad OU discreto + libro no cruzado). **R6-C2 y R6-C4 → CERRADAS
+PARCIALMENTE**, sus residuos viven como R7-R3-B-2 y R7-R3-D-2 (§R7-7).
+Residual real que sigue abierto: **R6-A13** (detección laminar→IOC sin
+consumidor; ver R7-R3-D-1) y **C-02** (fase R7, datos/telemetría).
 
 ## §R7-2 — Recursos y Git (medido 2026-10-09, dos pasadas)
 
@@ -2739,3 +2744,474 @@ publica, se registra como refutado.
   unidades/geometría (D-1, C-3) → **AGY** (ola Ω47, núcleo + quantum-arena);
   E-1/E-2/E-3 + A-1 → **GLM** (feature-engine/estadística); B-1/B-6 → **Codex**
   (riesgo/cartera). G-1 y G-2 son mecánica drenable por **Qoder** con oráculo cero.
+
+---
+
+## §R7-7 — Ronda 7 · Fase R3: física / cuántica — CIERRE
+
+Ejecutor: **Qoder** (rama `qoder/ronda7-plan`). Docs-only: cero cambios de
+código, cero oráculo nuevo.
+
+### Procedencia, base y método
+
+Tres lentes en paralelo + censo mecánico propio, todos contra el árbol de main:
+
+| lente | ámbito | fichas aportadas |
+|---|---|---|
+| A | integración viva del stack gauge/Hodge (escritor↔lector de registro, `decompose`, contract tests, Consejo, host) | 1 HIGH, 1 MED |
+| B | matemática del fibrado Yang-Mills y del OU/StatArb (holonomías, β, `S_YM`, `returns`) | 2 MED |
+| C | física de los 13 motores signal-engine (solitón, shockwave, coaxial, nash, renyi…) | 1 HIGH, 1 MED |
+| D | censo mecánico propio: claves sin escritor productivo, dead code, knobs, TTL, ámbito global/per-coin | 4 MED |
+| E/F | residual LOW/INFO del censo D | 5 LOW, 2 INFO |
+| **total bruto** | 29 hits (12 por A, 5 por B, 6 por C, 6 por D/E/F) | **17 tras dedup** |
+
+**Base declarada**: `ddff26aa` (Ω53 de AGY). La re-anchura se hizo **tres**
+veces porque main avanzó durante el barrido (`6f1be4d7` → `50a2df4d` →
+`8d6c4baa` → `ddff26aa`); cada `file:line` citado abajo se volvió a leer
+contra `ddff26aa`. Ω53 insertó 26 líneas en
+`crates/god-engine-core/src/lib.rs` (motor Navier-Stokes per-coin +
+telemetría `navier_*`) y 108 en `consejo_seniors.rs`, así que **toda cita del
+core se re-ancló por contenido, no por el comentario del propio archivo** (los
+`file:line` internos de los comentarios también están podridos: `lib.rs:2262`
+dice que `conformal_alpha` se publica «en :4566» y hoy está en `:4750`).
+Ω51 y Ω52 cerraron de verdad la carga R6-B12/A-11 y R6-B16/C-8 (ver «Cierres
+heredados»); Ω53 no cerró ninguna ficha R3 y **agrava** A-1 (véase). Tras este
+cierre main avanzó a `396a8503` (Ω53-re: método `compute_laminar_share` y
+limpieza de warnings en `navier_stokes.rs` exclusivamente), que **no** desplaza
+ninguna cita del core ni del Consejo: todas las anclas de abajo se re-verificaron
+por contenido contra `396a8503`.
+
+**Contra la colisión de IDs**: las fichas de esta fase llevan prefijo
+`R7-R3-<lente>-<n>`, distinto de `R7-A-1..G-2` (§R7-6, fase R2) y de `R6-*`
+(ronda 6). Los números forenses no colisionan: esto es **#687** — AGY ocupó
+#685 con Ω52 y **#686 con Ω53** mientras esta fase se redactaba.
+
+**Consolidación**: A-1 y A-2 son el mismo defecto visto desde el motor y desde
+el test (el test es verde *por* el suelo de dilución), pero se mantienen
+separados porque el fix es distinto (el primero exige oráculo; el segundo es
+honestidad de test, oráculo cero). C-1 y E-1 solapan en «claves sin escritor»:
+C-1 es la que rompe unidades (HIGH), E-1 es el resto de la lista (LOW).
+
+**Total R3: 17 fichas (2 HIGH, 8 MED, 5 LOW, 2 INFO).**
+
+### Retractación obligatoria
+
+- **11 claves que marqué como «sin escritor» y SÍ lo tienen**: el patrón de
+  grep inicial exigía `set(` con la comilla pegada al paréntesis. El core
+  publica vía el closure local `set_reg` (`god-engine-core/src/lib.rs:4327-4333`)
+  y en llamadas multilínea, así que no casaba. Re-verificadas y **retiradas**
+  de la lista de defectos: `weak_alpha_signal` (`:4357-4360`),
+  `obi_p80_medido` (`:4411-4414`), `microstructure_noise_variance`
+  (`:4461-4464`), `cvpin` (`:4371`), `spread_speed_of_sound` (`:4343`),
+  `price_velocity` (`:4344`), `order_flow_velocity` (`:4345`),
+  `price_acceleration` (`:4346`), `atr_1s/5s/1m` (`:4347-4352`),
+  `conformal_alpha` (`:4750`), `quantum_position_deviation` (`:5071`).
+- **Falsos positivos por tests**: los escritores «en src» de
+  `soliton_amplitude/velocity/time`, `order_flow_speed`, `mid_price`,
+  `entropy_threshold` y `book_bids_top5_ratio` viven dentro de
+  `#[cfg(test)] mod tests` del propio archivo de fuente
+  (`soliton_wave.rs:226`, `supersonic_shockwave.rs:242`,
+  `renyi_tsallis_entropy.rs:265`). No son producción: cuentan como sin escritor.
+- **«`S_YM` sin normalizar»**: REFUTADO. Ω41 sí divide por `cycle_counts`
+  (`yang_mills_gauge.rs:166-203`); es intensivo. Retirado.
+- **«shockwave mezcla $/s con fracción/s»**: REFUTADO — el defecto real está
+  en `soliton_wave` (C-1), no en el shockwave, porque
+  `spread_speed_of_sound` sí se publica (`lib.rs:4343`).
+- **`alpha_renyi`**: no es clave de registro, es campo del struct. Errata.
+
+### HIGH (2)
+
+#### R7-R3-A-1 [HIGH] — `curl_share` tiene suelo 1 − r/30 por dilución de `active_n` con nodos en cero
+
+- **Dónde**: `crates/feature-engine/src/hodge_flow.rs:79-141`
+  (`decompose(flow, active_n)`), consumidor
+  `crates/god-engine-core/src/lib.rs:5131-5144`; constructor
+  `hodge_flow.rs:201-231` (`build_cross_microstructure_flow_matrix`).
+- **Evidencia**: el builder devuelve `n = ofis.len().min(returns.len()).min(32)`
+  y el core le pasa los buffers de `MAX_COINS = 30`
+  (`lib.rs:951`, `:1124-1131`), rellenos con ceros por el TTL
+  (`:5126-5130`). `decompose` acumula `total_energy` y `Σdiv²` sólo sobre los
+  nodos con datos, pero normaliza por `n` con padding:
+  `gradient_energy = Σdiv²/n`. Con `r` nodos frescos,
+  `grad_30 = (r/30)·grad_r`, luego
+  `curl_share = 1 − (r/30)·(grad_r/total_r) ≥ 1 − r/30`. El padding **fabrica
+  vorticidad** a partir de la ausencia de datos, no de la circulación.
+- **Contraejemplo numérico**: r = 13 monedas con tick ⇒ `curl_share ≥ 0.5667`
+  aunque el flujo real sea gradiente puro (curl verdadero 0). Con r = 3 ⇒
+  `curl_share ≥ 0.90`, y el `laminar_factor = 1 − 0.70·curl` cae a **0.37**
+  sin ni una sola gota de rotacional medido.
+- **Consecuencia**: el Consejo modula dispersión por una magnitud que es
+  función del número de monedas sin tick
+  (`metacortex-engine/src/consejo_seniors.rs:399-406` y `:417`), la telemetría
+  `hodge_curl_share` (`lib.rs:5144`) es ininterpretable, y el flag de vórtice
+  del host (`src/bin/god_engine.rs:4090-4103`) se activa por oscuridad de
+  datos. Es el mismo fallo de Ω41 que R6-A1/C1 pretendía cerrar: el flujo
+  cruzado dirigido **sí** se cableó (retractado lo contrario), pero el
+  normalizador sigue contando nodos fantasma.
+- **Ω53 AGRAVA el defecto (nuevo)**: Ω53 añadió al mismo senior una segunda
+  modulación hidrodinámica `hydro_factor = (0.40 + 0.60·re_laminar).clamp(0.40,1.0)`
+  (`consejo_seniors.rs:411-416`) y multiplicó ambas en
+  `confidence = |imbalance|·laminar_factor·hydro_factor` (`:417`). Con la
+  dilución de A-1, `laminar_factor ≤ 0.37` (r = 3) ya no es un factor aislado:
+  **componerse con `hydro_factor` puede llevar la convicción del senior a
+  ~0.15 sin ni una gota de rotacional medido**. El NaN/0 de `navier_laminar_share`
+  cae al default 1.0 (`:411-415`), así que la nueva ruta es segura; la vieja
+  (curl) no.
+- **Fix mínimo**: `decompose` ya recibe `active_n`; exigir que el llamador
+  pase el número de nodos **frescos** (los mismos que sobrevivieron al TTL en
+  `:5110-5116`/`:5126-5130`) y que el builder lo devuelva coherente, o
+  normalizar `gradient_energy` por el conteo de aristas no nulas. **Cambia
+  conducta viva** ⇒ requiere re-certificación T-1 (la vigente `534e7980` ya
+  no cubre Ω47-Ω53).
+
+#### R7-R3-C-1 [HIGH] — `mid_price` no tiene escritor productivo: la guarda de unidades del solitón nunca entra
+
+- **Dónde**: `crates/signal-engine/src/soliton_wave.rs:189-192` (lectores),
+  `:204-208` (guarda), `:217-218` (`SAT_MOMENTO`); escritores buscados en todo
+  el árbol versionado.
+- **Evidencia**: `mid_price` se lee con
+  `get_for_coin_or(coin_id, "mid_price", 0.0)` y la normalización
+  `norm_vel = if mid_price > 1e-8 && |vel| > 1e-12 { (vel/mid)·10 } else { vel }`
+  sólo funciona si alguien publica `mid_price`. Los únicos `set("mid_price")`
+  del repo están en tests (`soliton_wave.rs:352`, `supersonic_shockwave.rs:376`,
+  ambos dentro de `mod tests`). En producción `mid_price = 0.0`, la guarda
+  D-348/AGY-P12 **nunca** entra y `norm_vel` queda en **dólares/segundo**.
+- **Contraejemplo numérico**: BTC a 100 000 USD con momentum fraccional de
+  1 pb/s ⇒ `vel = 10` $/s ⇒ `10·1e4 = 1e5` ⇒ `tanh = 1.0` permanente. DOGE a
+  0.10 USD con el MISMO 1 pb/s ⇒ `vel = 1e-5` $/s ⇒ `tanh(0.1) = 0.0997`.
+  El voto difiere 10× para idéntica física, y el orden lo decide el **precio
+  nominal** del activo.
+- **Consecuencia**: el solitón —uno de los 13 motores del consenso espectral—
+  satura en todos los valores altos y abstiene en los sub-dólar. La banda
+  operable del roster mezcla ambas clases.
+- **Fix mínimo**: publicar `mid_price` con `set_reg` junto a `spread_val` en
+  el bloque de microestructura (`lib.rs:4343-4352`). Es una escritura nueva al
+  registro que el motor ya consume, no cambia ninguna fórmula ⇒ **oráculo
+  requerido** sólo si el voto del solitón entra al consenso vivo (entra).
+
+### MED (8)
+
+#### R7-R3-A-2 [MED] — el contract test del vórtice es verde por el suelo de A-1, no por la física
+
+- **Dónde**: `crates/god-engine-core/tests/hodge_yang_mills_consensus_contract.rs:138-186`
+  (`test_hodge_cross_flow_non_degenerate_vortex_coupling_contract`).
+- **Evidencia**: alimenta `process_tick_dual` sólo para las monedas 0, 1, 2 con
+  `&[0.0; 54]` y luego afirma `curl_share > 0.0`, `curl_energy > 0.0` y
+  `laminar_factor < 1.0`. Con r = 3 el suelo de A-1 ya garantiza
+  `curl_share ≥ 0.90`: el test pasa **aunque el flujo cruzado esté muerto**.
+- **Consecuencia**: octava confirmación del patrón R6-A7 «contract test verde
+  con física muerta». El test certifica plomería y se lee como certificación
+  de vórtices.
+- **Fix mínimo**: de-ambiguar el assertion con un contra-test que verifique
+  `curl_share < 1e-9` cuando el flujo construido es gradiente puro sobre los
+  mismos 30 slots (espejo del contrato `hodge_flow_contract.rs` de Ω37, que sí
+  existe a nivel unitario pero no cruza el wiring del core). Oráculo cero.
+
+#### R7-R3-B-1 [MED] — `returns[i]` son NIVELES en el arranque y tras cada expiración de TTL
+
+- **Dónde**: `crates/strategy-core/src/yang_mills_gauge.rs:132-134`,
+  consumidor `lib.rs:5117,5126-5130`.
+- **Evidencia**: `returns[i] = if count > 0 && prev_p_i != 0.0 { p_i − prev_p_i }
+  else { p_i }`. El TTL pone a 0 los nodos viejos (`:5128`) y, al volver, el
+  primer tick entrega el precio absoluto como si fuera retorno. Con BTC a
+  100 000, la «innovación» pasa de ~10 a 1e5.
+- **Consecuencia**: el LMS (`:140-160`, `step = γ·err·r_j/(1+r_j²)`, γ = 0.005)
+  recibe un error dominado por niveles, empuja `beta[i][j]` contra su clamp
+  [0.01, 100] y contamina `F_ijk` durante varios ticks después de cada
+  reentrada de una moneda inactiva.
+- **Fix mínimo**: en el arranque/post-TTL, marcar el nodo como «sin innovación»
+  (retorno 0 con conteo de enfriamiento) en lugar de asignar `p_i`. Oráculo
+  cero a nivel de crate; en vivo cambia `yang_mills_action`.
+
+#### R7-R3-B-2 [MED] — el cierre gauge sigue sin imponerse y la documentación vive en otro espacio
+
+- **Dónde**: `crates/strategy-core/src/yang_mills_gauge.rs:11` (doc),
+  `:21-22` (doc del cierre), `:132-134` y `:232` (`loop_holonomy`).
+- **Evidencia**: la receta ya cumple `β_ji = 1/β_ij` (`:140-160`, cierre Ω41 de
+  R6-C2), pero el producto detriádico `β_ij·β_jk·β_ki = 1` que la propia doc
+  exige no se proyecta en ninguna parte. Además la doc describe
+  `A_ij = ln P_i − β_ij ln P_j` (niveles) mientras el código construye `A_ij`
+  con `returns` (`:132-134`), y `loop_holonomy` (`:232`) sigue exponiendo la
+  fórmula de niveles que ningún consumidor llama.
+- **Consecuencia**: residual de R6-C2/A9. Las holonomías de 3-ciclo miden una
+  curvatura que no es la del fibrado documentado; el valor de `S_YM` no tiene
+  interpretación de arbitraje cerrado.
+- **Fix mínimo**: o imponer la restricción (proyección multiplicativa sobre el
+  spanning tree de β) o reescribir la doc para que describa el estimador real
+  de retornos de innovación. Oráculo cero si sólo se documenta.
+
+#### R7-R3-C-2 [MED] — el comentario «ESPEJO EXACTO» de la sombra del solitón es falso
+
+- **Dónde**: `crates/god-engine-core/src/lib.rs:2023-2048` (sombra),
+  `crates/signal-engine/src/soliton_wave.rs:82-97` y `:126-141` (vivo).
+- **Evidencia**: el bloque lleva `[Qoder Ola 72 — SEXTA CONVERGENCIA]` y
+  afirma que la sombra replica al vivo porque «el sanitizado interno del motor
+  (amp ≤ 0 → 1.0, clamp [1e-3, 10]) hace el resto idéntico». El motor no tiene
+  ese sanitizado en la ruta compartida: la SOMBRA usa
+  `let a = if amplitud.is_finite() && amplitud > 0.0 { amplitud.clamp(1e-3,10) }
+  else { 1.0 }` mientras la cascada VIVA toma `soliton_amplitude →
+  order_flow_imbalance → vol_delta` (`:126-141`) y `compute_soliton_amplitude`
+  opera con `amplitude.abs()` (`:27-55`). Un OFI negativo da `a = 1.0` en la
+  sombra y `|OFI|` en el vivo.
+- **Consecuencia**: novena confirmación del patrón «dos caras sin reconciliar».
+  La paridad sombra↔vivo que el barrido daba por certificada no existe en el
+  signo de la amplitud.
+- **Fix mínimo**: extraer un helper puro de amplitud compartido por sombra y
+  vivo (fuente única, regla de `tp_sl::roundtrip_friction`) + contrato que
+  afirme igualdad bit a bit para OFI ∈ {−1, 0, +1}. Oráculo cero en la sombra;
+  el vivo no cambia si el helper replica al vivo.
+
+#### R7-R3-D-1 [MED] — dead code en el ruteo del host y ámbito mezclado (curl per-coin × acción global)
+
+- **Dónde**: `src/bin/god_engine.rs:4090-4103`.
+- **Evidencia**: `let _is_mean_reversion_vortex = (curl_share > 0.75 || …) && …`
+  tiene **una sola aparición** en el repo (su definición, con prefijo `_`) tras
+  la política B3.29/CL-14 de `force_maker = false`. Además lee
+  `hodge_curl_share` por moneda (`get_for_coin_or(coin_id, …)`) y
+  `yang_mills_action` global (`get_value_or`), que el core publica con
+  `set_reg` en los tres ámbitos — pero el valor global es el último coin del
+  tick en ganar (`:5119`).
+- **Consecuencia**: gobernanza de riesgo que Ω40 afirma preservar se computa
+  sobre un flag inútil y mezcla ámbitos. Telemetría engañosa para cualquier
+  lector futuro.
+- **Fix mínimo**: si la política IOC es permanente, retirar `:4090-4103` (o
+  publicarse como telemetría explícita, no como variable muerta); si no, leer
+  `yang_mills_action` por coin. Oráculo cero (código muerto).
+
+#### R7-R3-D-2 [MED] — dos TTLs para el mismo buffer: 10 000 ms literal y 30 000 ms nombrado
+
+- **Dónde**: `crates/god-engine-core/src/lib.rs:5087`
+  (`const STATARB_SPOT_TTL_MS: u64 = 30_000`), uso `:5095`; literales
+  `> 10_000` en `:5113` (precios) y `:5128` (OFI/retornos).
+- **Evidencia**: el TTL de la geometría multiactivo está escrito como literal
+  `> 10_000` en dos sitios (`:5113`, `:5128`) mientras la
+  única constante nombrada del bloque se usa solo para StatArb (`:5095`).
+  Residual de R6-C4 (Ω41 añadió el TTL pero no la constante).
+- **Consecuencia**: divergencia silenciosa garantizada: quien ajuste
+  `STATARB_SPOT_TTL_MS` no toca la antigüedad de `fresh_prices/fresh_ofis`, y
+  el parámetro evolucionable no gobierna lo que dice gobernar.
+- **Fix mínimo**: una constante `GEOMETRIA_MULTIACTIVO_TTL_MS` consumida por
+  los tres sitios, o nombrar explícitamente el literal. Oráculo cero si el
+  valor numérico no cambia.
+
+#### R7-R3-D-3 [MED] — `set_reg` publica el ámbito global sin asociación: «último coin gana»
+
+- **Dónde**: closure `crates/god-engine-core/src/lib.rs:4327-4333`; lectores
+  globales `src/bin/god_engine.rs:4099`
+  (`yang_mills_action`), `lib.rs:2189` y `:2264`.
+- **Evidencia**: `set_reg` escribe la misma clave en registry global,
+  per-coin y scoped por símbolo. Cualquier clave publicada dentro del bucle por
+  moneda queda en el global con el valor de la última moneda procesada, y
+  hay lectores globales reales.
+- **Consecuencia**: `yang_mills_action` global es un seudónimo de la última
+  moneda del roster, no un agregado de cartera; el host lo usa para decidir.
+- **Fix mínimo**: publicar sólo per-coin/scoped dentro del bucle y, si se
+  necesita un agregado, escribir una clave `*_portafolio` calculada fuera del
+  lazo. Requiere oráculo si el host pasa a leer la clave nueva.
+
+#### R7-R3-D-4 [MED] — `atr_1s/5s/1m` publican dos nociones distintas y rompen el escalamiento √τ
+
+- **Dónde**: escritores `crates/god-engine-core/src/lib.rs:4347-4352`; lector
+  `crates/signal-engine/src/coaxial_breakout.rs:150,158,163` (rampas `:57-84`).
+- **Evidencia**: `atr_1s = (micro_v·mid).max(1e-4)` (dispersion instantánea en
+  USD) y `atr_5s = (v_t·0.5 + atr_pct·mid·0.5).max(5e-4)` (mezcla de tendencia
+  y ATR fraccional) y `atr_1m = atr_pct·mid·7.746`. Cuando `v_t` es negativo,
+  el primer término cancela y `atr_5s` se pega al suelo 5e-4. coaxial calcula
+  compresión como ratios entre estos tres «ATR» y la doc AGY-P23 exige
+  √-escalamiento browniano (√5 ≈ 2.236, √60 ≈ 7.746).
+- **Consecuencia**: `atr_5s` no es √5·`atr_1s` en régimen normal (es un suelo
+  arbitrario), así que la compresión coaxial vota 0 o negativo sin que exista
+  compresión. La física que Ω23-P23 pretendía restaurar sólo se cumple en
+  `atr_1m`.
+- **Fix mínimo**: derivar los tres de una única σ por escala (mismo
+  multiplicador √τ) o re-etiquetar las claves como lo que son
+  (`dispersion_1s`, `rango_parcial_5s`). Oráculo cero si se re-etiqueta y el
+  lector se mueve en el mismo commit.
+
+### LOW (5)
+
+#### R7-R3-E-1 [LOW] — cascadas de resolución con eslabones sin escritor productivo
+
+- **Dónde**: `crates/signal-engine/src/soliton_wave.rs:126-141,144-162,183-187`,
+  `crates/signal-engine/src/renyi_tsallis_entropy.rs` (lectores de
+  `entropy_threshold`, `book_bids_top5_ratio`),
+  `supersonic_shockwave.rs` (`order_flow_speed`).
+- **Evidencia**: `soliton_amplitude`, `soliton_velocity`, `soliton_time`,
+  `order_flow_speed`, `entropy_threshold` y `book_bids_top5_ratio` sólo se
+  escriben dentro de `#[cfg(test)] mod tests` de su propio crate ⇒ en vivo
+  caen al `unwrap_or`: 0.0 y, en `soliton_time` (`:183-187`), el literal 0.05.
+- **Consecuencia**: la cascada degrada al siguiente eslabón de forma
+  silenciosa; el knob del núcleo temporal del solitón es un literal disfrazado
+  de parámetro del registro.
+- **Fix mínimo**: publicar lo que exista (`soliton_*` desde la sombra ya
+  calculada en `lib.rs:2023-2048`) o retirar el primer eslabón y documentar la
+  fuente real.
+
+#### R7-R3-E-2 [LOW] — `nash_equilibrium_drift`: cero escritores, un lector, default 0.50
+
+- **Dónde**: `crates/god-engine-core/src/lib.rs:2176-2195` (R5-A4).
+- **Evidencia**: la cadena de fallback es
+  `game_theory_adversarial_pressure → cvpin → nash_equilibrium_drift(0.50)`.
+  La última clave no la escribe nadie (ni tests), y el nivel intermedio `cvpin`
+  sí tiene escritor (`:4371`), así que el default es inalcanzable en la práctica.
+- **Consecuencia**: se presenta en docs como «parámetro evolucionado del
+  registro omnisciente» y es decorativo. Severidad bajada de MED a LOW por
+  ser inalcanzable.
+- **Fix mínimo**: retirarlo del fallback o conectarle un escritor.
+
+#### R7-R3-E-3 [LOW] — minimax del motor de Nash degenera a `tanh(OFI·(1−presión))`
+
+- **Dónde**: `crates/signal-engine/src/game_theoretic_nash.rs:52-80`,
+  `:156-205`.
+- **Evidencia**: `game_theory_long_payoff` (`:178`),
+  `game_theory_short_payoff` (`:187`) y `game_theory_adversarial_pressure`
+  (`:196`) no tienen ningún escritor en el repo versionado (ni tests). Con los
+  tres a cero, `net_payoff = max(OFI,0) − max(−OFI,0) = OFI`,
+  `defense_factor = 1 − 0.1 = 0.9`, y la salida es `tanh(0.9·OFI)`.
+- **Consecuencia**: el motor no resuelve ningún juego: es una sigmoidal de OFI
+  con ganancia 0.9. Su voto llega al consenso espectral como si fuera teoría de
+  juegos.
+- **Fix mínimo**: publicar pagos reales (PnL realizado por lado) o renombrar el
+  motor/re-etiquetar su voto. Oráculo cero si sólo se renombra.
+
+#### R7-R3-E-4 [LOW] — `loop_holonomy` sin consumidor productivo
+
+- **Dónde**: `crates/strategy-core/src/yang_mills_gauge.rs:232`.
+- **Evidencia**: sus únicos llamadores están en
+  `crates/strategy-core/tests/yang_mills_gauge_contract.rs:42,43,44,56`.
+- **Consecuencia**: la holonomía de Wilson (la pieza que da significado
+  geométrico a `S_YM`) no se usa en vivo; el contract test la ejercita y por
+  eso existe la ilusión de cobertura.
+- **Fix mínimo**: `#[allow(dead_code)]` con nota honesta o cablearla al voto.
+
+#### R7-R3-E-5 [LOW] — la doc de `SAT_MOMENTO` sobrestima su punto de saturación 10×
+
+- **Dónde**: `crates/signal-engine/src/soliton_wave.rs:214` (doc) y
+  `:217-218` (`const SAT_MOMENTO: f64 = 1e4`).
+- **Evidencia**: la doc afirma que 1 bp/s de momentum da `≈ tanh(1)`. Con la
+  normalización correcta (`norm_vel = 10·dlnP/dt`, véase C-1), 1 bp/s ⇒ 1e-3 ⇒
+  `1e-3·1e4 = 10` ⇒ `tanh(10) = 0.99999999`. La saturación real ocurre en
+  0,1 bp/s.
+- **Consecuencia**: el motor satura en cualquier momentum mayor de 0,1 bp/s;
+  la escala del voto es binaria en la práctica.
+- **Fix mínimo**: `SAT_MOMENTO = 1e3` (o dividir la doc por 10). Cambia
+  conducta ⇒ oráculo.
+
+### INFO (2)
+
+#### R7-R3-F-1 [INFO] — el prefijo `_` oculta la decisión de política en el host
+
+El `_is_mean_reversion_vortex` de `src/bin/god_engine.rs:4090-4103` (véase D-1)
+hace dos cosas informativas: documenta que Ω39 abrió el ruteo Maker y que Ω40
+lo cerró sin retirar el cálculo. Vale la pena convertirlo en comentario de
+política con referencia a B3.29/CL-14 en lugar de variable muerta.
+
+#### R7-R3-F-2 [INFO] — doble lookup de `spread_speed_of_sound`
+
+Se lee dos veces en la misma ventana del shockwave (`speed_of_sound` y luego
+otra consulta al registro). Ninguna fórmula depende de ello; es coste del hot
+path. Limpieza mecánica, oráculo cero.
+
+### Mapa positivo (lo que R3 encontró bien)
+
+- **Álgebra de Helmholtz-Hodge exacta** en `hodge_flow.rs:79-141`: teorema
+  analítico de `K_n` (`φ = div/n`, `‖∇φ‖² = Σdiv²/n`), Pitágoras sin residuo,
+  `None` honesto ante `n < 3`, energía ≤ 1e-15 o no finita, cero heap. El
+  problema es el `n` que le pasan (A-1), no el álgebra.
+- **Yang-Mills post-Ω41**: caps a 32 ≥ `MAX_COINS = 30` (R6-A2 cerrado),
+  `S_YM` normalizado por `cycle_counts` (R6-C3 cerrado), reciprocidad
+  `β_ji = 1/β_ij` impuesta (parte de R6-C2 cerrado).
+- **StatArb ya es física viva, no decoración** (post-Ω51): el consumidor
+  prefiere `statarb_ou_zscore` y etiqueta `vecm_zscore` como legacy con honestidad
+  (`crates/strategy-core/src/stat_arb.rs:373-390`), guarda espectral
+  `t_half_ms` vs τ\* (`:395-400`), y el RLS es recursivo estricto con `P`
+  acotada (`:151-170`, convergencia certificada en `:597-616`).
+- **OU discreto con causalidad** (Ω52) y **validación de libro no cruzado** —
+  las dos cargas R6-B16/C-8 quedan cerradas en código, no sólo en docs.
+- **maker.rs**: rampa continua del OBI sin escalón (AGY-P24), sigue intacta.
+- **Ω53 Navier-Stokes SÍ está cableado de punta a punta** (a diferencia del
+  patrón histórico): escritor productivo `lib.rs:5156-5158`
+  (`navier_reynolds_number`, `navier_laminar_share`,
+  `navier_energy_dissipation` vía `set_reg`), payload del Consejo
+  (`lib.rs:7538`, `get_for_coin_or` per-coin con default 0.0) y consumidor
+  doble (`consejo_seniors.rs:411-416` convicción, `:720-725` slippage). La
+  guarda `.is_finite() && > 0.0` con default neutro es la que A-1 no tiene en
+  el lado de Hodge.
+- **Los 13 motores** conservan `tanh(A·x)` con calma-abstiene tras Ola 65; en
+  R3 no se encontró ningún signum nuevo.
+
+### Refutado / sin evidencia
+
+- `S_YM` no normalizado (refutado, véase retractación).
+- Caps 16/26 del gauge: superado, `MAX_GAUGE_ASSETS = MAX_HODGE_ASSETS = 32`
+  (`yang_mills_gauge.rs:38`, `hodge_flow.rs:38`) ≥ 30.
+- «Buffers sin TTL»: existe zeroing (`lib.rs:5110-5116`, `:5126-5130`); el
+  defecto es su duplicación (D-2), no su ausencia.
+- Lead-lag sin consumidor: `predict_eth_impulse_con_reloj` existe y se llama
+  (`crates/feature-engine/src/lead_lag.rs:250`).
+- Las 11 claves del censo que sí publican (lista en retractación).
+- Formato de clave `c{id}:{name}` del closure vs `get_for_coin_or`: coincide.
+- Shockwave mezclando unidades: refutado (la guarda funciona porque
+  `spread_speed_of_sound` sí se publica).
+- `stochastic_noise_variance`: renombrado correctamente, no es huérfano.
+- Knobs `quantum_*` del oscilador: clase ya cerrada por GLM (H2-9), no se
+  reabre.
+- «Ω41 no cableó el flujo cruzado»: FALSO — el builder dirigido
+  `build_cross_microstructure_flow_matrix` está conectado (`:5131-5144`). El
+  defecto es el conteo de nodos con padding (A-1).
+
+### Divergencia doctrinal observada (sin ficha, para R1/R9)
+
+Ω53 implementa hidrodinámica de **Navier-Stokes** (`feature-engine/src/navier_stokes.rs`,
+`NavierStokesReynoldsEngine`) sobre el libro L2/L3. El `PLAN_MAESTRO_QUANT_SR_2026-10-05.md`
+y `.agents/MEMORIA.md` listan explícitamente **KPZ/NSE/NLS/Yang-Mills** entre las teorías
+**RECHAZADAS** («descartados tras verificar», sin edge que refinar). La implementación es
+correcta y está cableada (mapa positivo), pero el árbol ahora contradice su propio documento
+rector en dos frentes (NSE en Ω53, Yang-Mills desde Ω36). **No es un defecto numérico** — es
+coherencia doctrina↔código, y por eso no lleva severidad. Corresponde al dueño conciliar:
+o la doctrina acepta los fibrados/fluxiones como hipótesis de trabajo con criterio de
+validación, o el plan maestro se re-etiqueta. Registrado para **R7-R1** (doctrina/nomenclatura)
+y para el cierre **R9**.
+
+### Cierres heredados de R6 que esta fase confirma
+
+| ficha R6 | estado | dónde |
+|---|---|---|
+| R6-A11 / R6-B12 | **CERRADA POR AGY** (Ω51, `795746b3`) | `stat_arb.rs:373-390,151-170,597-616` |
+| R6-B16 / R6-C8 | **CERRADA POR AGY** (Ω52, `50a2df4d`) | causalidad OU discreto + libro no cruzado |
+| R6-C2 | **CERRADA PARCIAL** (Ω41 + Ω52) | reciprocidad sí; cierre triádico residual en **R7-R3-B-2** |
+| R6-A13 (residual) | **ABIERTA** | sigue sin consumidor productivo la detección laminar→IOC (host) — ver **R7-R3-D-1/F-1** |
+| R6-C4 | **CERRADA PARCIAL** (Ω41) | TTL existe; la constante única queda en **R7-R3-D-2** |
+
+Además, Ω47-Ω50 de AGY drenaron fichas ya emitidas en §R7-6 (R7-R2): D-1/D-2,
+C-1/C-2/C-3, A-1/E-1/E-3 y F-1 de esa fase. La tabla de fases de §R7-1 refleja
+esos cierres; no se re-abren.
+
+### Alcance honesto de R3
+
+- Docs-only: **cero** archivos `.rs` modificados, **cero** `cargo` ejecutado,
+  **cero** oráculo. Nada de este cierre valida conducta numérica nueva.
+- Las 17 fichas cubren `feature-engine/hodge_flow.rs`,
+  `risk-engine/hodge.rs`, `strategy-core/{yang_mills_gauge,stat_arb,vecm_arbitrage,
+  multivariate_coint,maker}.rs` y los 13 motores de `signal-engine` + el cable
+  del core/host que los alimenta. **No** cubren la matemática del resto de
+  `signal-engine` (R4/R5), ni backtest (R6), ni datos/telemetría (R7).
+- Los contraejemplos son derivaciones del autor sobre el árbol `396a8503`
+  (aritmética de `curl_share` con padding, unidades del solitón, tanh de
+  `SAT_MOMENTO`), **no** replays del motor ni PnL medido. Ninguna ficha valida
+  ni invalida la meta de crecimiento ≥ 100 % cada 72 h.
+- **La certificación T-1 vigente (`534e7980`, 16/144 = 11,1 %) NO cubre
+  Ω47-Ω53**: siete olas tocaron `.rs` después. Cualquier ola que mueva conducta
+  viva (A-1, C-1, B-1, E-5, D-3) debe re-certificar el oráculo antes de push.
+
+**Asignación (publicada en el buzón)**:
+- **AGY** (ola Ω54+, núcleo + feature-engine): R7-R3-A-1 (padding/`active_n`,
+  con oráculo), R7-R3-D-2 (TTL único), R7-R3-C-1 (publicar `mid_price`),
+  R7-R3-D-3 (ámbito global del `set_reg`), R7-R3-B-1 (niveles→innovación).
+- **Qoder** (ola 74): R7-R3-A-2 (contra-test no trivial del vórtice, oráculo
+  cero), R7-R3-C-2 (helper único sombra↔vivo del solitón), R7-R3-E-4/E-5
+  (holonomía muerta y doc de `SAT_MOMENTO`).
+- **GLM / Codex**: R7-R3-E-1/E-2/E-3 (knobs y pagos Nash/solitón/Rényi —
+  publicar o retirar), R7-R3-B-2 (cierre gauge o re-doc).
+- **Claude**: R7-R3-D-1/F-1 (dead code del ruteo en `src/bin/god_engine.rs`,
+  zona CL-14/B3.29).
