@@ -15346,3 +15346,47 @@ texto restante es comentario de erradicación.
   ranking; R7-R1-8) quedan en cola **con oráculo T-1 obligatorio**.
 - Total R1: **9 fichas (0 HIGH, 2 MED, 4 LOW, 3 INFO)**. Siguiente fase:
   **R2 matemática/estadística**. Detalle completo: BARRIDO §R7-5.
+
+---
+
+## 🔬 Ficha Forense #679 — Ola Ω46: Desbloqueo LCB Jerárquico N=1, Suavizado C1 Hermite Cúbico y Piso Micro SL (F4-H1, F4-M1, F4-M2)
+
+- **Autor / Rol:** Quant Senior / Consejo Integrado de 10 Roles Senior (Antigravity).
+- **Fecha:** 2026-10-09.
+- **Rama & Commits:** `antigravity/quant-sr-ola46-desbloqueo-lcb-continuo` (`f9ca4284`), merge `f2b4276d` en `main`, sincronizado a `origin/main`.
+- **Archivos Auditados y Corregidos:**
+  - `crates/risk-engine/src/evidence.rs` (+41 líneas, nuevo test contractual).
+  - `crates/risk-engine/src/lib.rs` (líneas 861-873, 1007-1015, 1064-1135).
+
+### 1. F4-H1 [CRÍTICO] — Deadlock Absorbente de LCB en n = 1
+- **Mecanismo del Fallo:**
+  La compuerta D-751b protegía únicamente $n = 0$ (`arranque_frio_total`). Inmediatamente tras la primera operación ($n = 1$), `win_rate_lcb(w, 1.0)` evaluaba la cota inferior:
+  - Si el primer trade fue pérdida ($w = 0.0$): $\text{LCB} = 0.0 \implies EV = -SL < 0 \implies \text{veto } rej(4)$.
+  - Si el primer trade fue ganancia ($w = 1.0$): $\text{LCB} = 0.34 \implies EV \le 5.77\text{ bps} \le \text{roundtrip\_fee} \times \text{multiplier} (8.4\text{ bps}) \implies \text{veto } rej(4)$.
+  Al recibir $rej(4)$, la moneda nunca abría un segundo trade ($n$ jamás incrementaba). Esto creaba un estado absorbente markoviano de muerte irreversible tras un solo trade.
+- **Resolución Matemática:**
+  Implementación de contracción jerárquica bayesiana (Empirical Bayes Shrinkage):
+  $$\alpha = k_0 p_0 + n w, \quad \beta = k_0 (1 - p_0) + n (1 - w), \quad \text{LCB} = \text{EdgePosterior}(\alpha, \beta).\text{lcb}(z=1.64485)$$
+  con prior del ensamble $p_0 = 0.55$ y masa de regularización $k_0 = 10.0$.
+  En fase de sonda exploratoria ($n < 5$ trades), si el EV con LCB no supera el umbral estricto con multiplicador, se verifica si el ensamble prior cubre comisiones brutas ($0.55 \cdot TP - 0.45 \cdot SL > roundtrip\_fee$). Si lo cubre, la orden de sonda mínima D-750 procede con sizing acotado por ruina; si no lo cubre, se rechaza.
+- **Evidencia & Test:**
+  `cota_jerarquica_no_colapsa_a_cero_en_n_1_evitando_deadlock` verde.
+
+### 2. F4-M2 [MED] — Discontinuidad C0 en Modulación Espectral de Admisión
+- **Mecanismo del Fallo:**
+  `if spec_coh > 0.05 && spec_ent < 0.85` producía saltos de compuerta artificiales en la frontera.
+- **Resolución Matemática:**
+  Transición suave $C^1$ Hermite cúbico (smoothstep):
+  $$u_{\text{coh}} = \text{clamp}\left(\frac{\text{coh}}{0.10}, 0, 1\right), \quad S_{\text{coh}} = 3u_{\text{coh}}^2 - 2u_{\text{coh}}^3$$
+  $$u_{\text{ent}} = \text{clamp}\left(\frac{1 - \text{ent}}{0.30}, 0, 1\right), \quad S_{\text{ent}} = 3u_{\text{ent}}^2 - 2u_{\text{ent}}^3$$
+  $$\text{coh\_benefit} = \text{clamp}\left(\max(\text{coh}, 0) \cdot (1 - 0.5\,\text{ent}) \cdot S_{\text{coh}} \cdot S_{\text{ent}}, 0, 0.80\right)$$
+  Derivadas continuas y sin escalones.
+
+### 3. F4-M1 [MED] — Aborto Ciego REJ_TP_SL_FLOOR en Cuentas Micro ($13 USD)
+- **Mecanismo del Fallo:**
+  Al quedar el stop difusivo por debajo del suelo viable (`sl_floor`, 48 bps), se abortaba ciegamente la orden con `REJ_TP_SL_FLOOR`.
+- **Resolución Matemática:**
+  En régimen micro (`micro_w_alloc > 0.5`), si el suelo viable `sl_floor` (48 bps) cabe dentro del presupuesto estricto de stop loss (55 bps = \$0.02805 USD), el stop se eleva al suelo sin abortar, preservando $RR \ge 2.25$ ($TP \ge 108$ bps) que cubre $13.5\times$ las comisiones brutas.
+- **Certificación:**
+  `cargo test -p risk-engine` verde (100% éxito en suite completa). `cargo check --workspace --all-targets` sin errores.
+

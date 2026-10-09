@@ -194,6 +194,32 @@
 - Cero trading, cero entrenamiento, cero promoción, cero borrado de ramas o
   worktrees ajenos en esta ola (docs-only + medición).
 
+## 2026-10-09 — Antigravity: OLA Ω46 CERRADA — DESBLOQUEO LCB JERÁRQUICO N=1, SUAVIZADO C1 HERMITE CÚBICO EN COHERENCIA Y PISO MICRO SL (F4-H1, F4-M1, F4-M2)
+
+- **Rama**: `antigravity/quant-sr-ola46-desbloqueo-lcb-continuo` (fusionada en `main` como `f2b4276d` y pusheada a `origin/main`).
+- **RESOLUCIÓN Y CERTIFICACIÓN FORMAL DE HALLAZGOS FASE F4 (DINERO Y RIESGO)**:
+  1. **F4-H1 [CRÍTICO] Resuelto**: Deadlock absorbente de LCB en $n = 1$ en `crates/risk-engine/src/lib.rs` y `evidence.rs`.
+     - *Defecto erradicado*: `arranque_frio_total` sólo eximía del veto EV en $n = 0$. Al ocurrir el primer trade ($n = 1$), el LCB colapsaba a $\le 0.34$, produciendo $EV \le \text{roundtrip\_fee} \times \text{multiplier}$ (veto `rej(4)`). La moneda quedaba atrapada en un estado absorbente permanente, incapaz de ejecutar trades futuros ni acumular evidencia.
+     - *Solución Matemática*:
+       - Implementado `win_rate_hierarchical_lcb(win_rate, trades, p_prior=0.55, n_prior=10.0)` con Empirical Bayes Shrinkage:
+         $$\alpha = k_0 p_0 + n w, \quad \beta = k_0 (1 - p_0) + n (1 - w), \quad \text{LCB} = \text{posterior.lcb}(z=1.64485)$$
+       - Para la fase de sonda exploratoria ($n < 5$ trades), si el EV con LCB no supera el umbral estricto de comisiones con multiplicador, se verifica si el ensamble prior ($p=0.55$) cubre las comisiones brutas ($ev_{prior} > roundtrip\_fee$). Si lo cubre, la orden de sonda mínima D-750 se autoriza con sizing acotado por ruina; si no lo cubre, se rechaza.
+       - Test contractual: `cota_jerarquica_no_colapsa_a_cero_en_n_1_evitando_deadlock` verde.
+  2. **F4-M2 [MED] Resuelto**: Discontinuidad $C^0$ en modulación espectral de admisión `coh_benefit` en `crates/risk-engine/src/lib.rs:1007-1015`.
+     - *Defecto erradicado*: Escalón discreto `if spec_coh > 0.05 && spec_ent < 0.85` producía quiebres artificiales en la compuerta de confianza requerida.
+     - *Solución Matemática*: Transición continua suave $C^1$ Hermite cúbico (smoothstep):
+       $$u_{\text{coh}} = \text{clamp}\left(\frac{\text{coh}}{0.10}, 0, 1\right), \quad S_{\text{coh}} = 3u_{\text{coh}}^2 - 2u_{\text{coh}}^3$$
+       $$u_{\text{ent}} = \text{clamp}\left(\frac{1 - \text{ent}}{0.30}, 0, 1\right), \quad S_{\text{ent}} = 3u_{\text{ent}}^2 - 2u_{\text{ent}}^3$$
+       $$\text{coh\_benefit} = \text{clamp}\left(\max(\text{coh}, 0) \cdot (1 - 0.5\,\text{ent}) \cdot S_{\text{coh}} \cdot S_{\text{ent}}, 0, 0.80\right)$$
+       Derivadas continuas en frontera, eliminación total de umbrales discontinuos duros.
+  3. **F4-M1 [MED] Resuelto**: Aborto ciego `REJ_TP_SL_FLOOR` en micro-cuentas (\$13 USD) en `crates/risk-engine/src/lib.rs:861-873`.
+     - *Defecto erradicado*: Cuando el stop difusivo del modelo quedaba por debajo del suelo viable por comisiones (`sl_floor`, ej. 48 bps), el motor abortaba la orden con `REJ_TP_SL_FLOOR`, destruyendo oportunidades de scalping de alta frecuencia.
+     - *Solución Matemática*: En régimen micro (`micro_w_alloc > 0.5`), si el suelo viable `sl_floor` (48 bps) cabe dentro del presupuesto estricto de stop loss (55 bps = \$0.02805 USD en cuenta de \$13 USD), el stop se eleva al suelo en lugar de abortar ciegamente. La compuerta de EV posterior garantiza que la geometría resultante ($RR \ge 2.25$) cubra comisiones holgadamente ($108\text{ bps} / 8\text{ bps} = 13.5\times$).
+- **VERIFICACIÓN Y CONTRATOS**:
+  - `cargo test -p risk-engine`: **100% verde (todos los tests y contratos pasan)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+  - Commits atómicos: `f9ca4284`, `f2b4276d` integrados en `main` y sincronizados en `origin/main`.
+
 ## 2026-10-09 — Antigravity: OLA Ω45 CERRADA — COLAPSO NO-ESTACIONARIO FAIL-CLOSED EN SDE, COBERTURA ESPECTRAL 12H CON CONFIANZA C^INF Y KELLY CONTINUO MERTON (R6-B15, R6-B17, R6-B11, R6-C5)
 
 - **Rama**: `antigravity/quant-sr-ola45-teoria-continua`.
