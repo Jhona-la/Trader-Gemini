@@ -4086,18 +4086,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // = señal correcta. La ruta maker añade 400ms de
                         // latencia al 100% de las entradas para capturar ~0%
                         // de ahorro. DESACTIVADA hasta que existan señales
-                        // OLA Ω38 / Ronda 8 — RUTEO CUÁNTICO ADAPTATIVO:
-                        // En momentum direccional (cascada laminar de Hodge con curl_share < 0.25), la orden Maker
-                        // sufre selección adversa (B3.29). Sin embargo, en vórtices cerrados de liquidez
-                        // (curl_share > 0.75) o curvatura gauge de Yang-Mills donde la reversión a la paridad
-                        // es inminente y el flujo es puramente rotacional sin inercia direccional, la orden Maker
-                        // descansa pasivamente en el libro vivo (dbp/dap), capturando el spread y eliminando fees taker.
+                        // B3.29 / CL-14 / R6-C5 (OLA Ω40/Ω42) — DESPACHO CANÓNICO IOC CON PROTECCIÓN DINÁMICA:
+                        // La política operativa canónica (B3.29 / CL-14) impone `force_maker = false` incondicionalmente,
+                        // despachando mediante IOC con guardia dinámica de slippage (AGY-AUD-P32). Esto elimina los
+                        // 400ms de latencia pasiva y la selección adversa probada empíricamente (38/38 órdenes pasivas
+                        // rechazadas o ejecutadas en retroceso adverso).
+                        // La rotación de Hodge (`curl_share`) y la curvatura de Yang-Mills (`ym_action`) se preservan
+                        // activamente en el OmniscientRegistry para la gobernanza continua del Consejo
+                        // (SeniorMicroestructura modula por componente laminar 1.0 - 0.70*curl_share) y para
+                        // telemetría forense de vórtices multiactivo.
                         let curl_share = engine_real.arena.registry.get_for_coin_or(coin_id, "hodge_curl_share", 0.0);
                         let ym_action = engine_real.arena.registry.get_value_or("yang_mills_action", 0.0);
                         let _is_mean_reversion_vortex = (curl_share > 0.75 || (curl_share > 0.60 && ym_action > 0.10))
                             && dbp > 0.0 && dap > 0.0 && dbp <= dap;
-                        // B3.29 / CL-14: Host envía siempre órdenes con guardia dinámica de slippage (IOC)
-                        // para evitar 400ms de latencia pasiva y selección adversa probada empíricamente.
                         let force_maker = false;
                         // B3.28 — PRECIO PASIVO AL LIBRO VIVO, no al mid
                         // congelado. Con maker_price = mid del tick

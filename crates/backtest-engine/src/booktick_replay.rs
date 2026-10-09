@@ -311,6 +311,7 @@ fn run_booktick_replay_observed(
 
     let omni_state = data_pipeline::omni_multiplexer::OmniState::new();
     let mut last_day = i64::MIN;
+    let mut last_macro_poll_ms: u64 = 0;
     // CX-06: (ATR, previous mid) exists only after a price row is admitted.
     // A rejected first row must not seed fills with NaN/Inf or a false gap.
     let mut atr_state: Option<(f64, f64)> = None;
@@ -375,9 +376,9 @@ fn run_booktick_replay_observed(
         // contrato del trainer y del poller vivo).
         if let Some(hist) = omni {
             let day = OmniHistory::day_of(t.ts_ms);
+            let prev_day = day - 1; // day zero has no previous observation
             if day != last_day {
                 last_day = day;
-                let prev_day = day - 1; // day zero has no previous observation
                 omni_state
                     .sp500
                     .store(hist.value_at(0, prev_day).to_bits(), Ordering::Relaxed);
@@ -397,8 +398,23 @@ fn run_booktick_replay_observed(
                     .oil_wti
                     .store(hist.value_at(5, prev_day).to_bits(), Ordering::Relaxed);
             }
+            // R6-A6 / OLA Ω42: PARIDAD MACRO BT↔VIVO
+            // En producción (god_engine.rs:3231-3232), run_macro_rest_poller refresca
+            // macro_last_success_ms cada 60s si la red responde. En replay, si la historia
+            // provee datos macro reales, simulamos la cadencia de 60s del poller.
+            if t.ts_ms >= last_macro_poll_ms.saturating_add(60_000) || last_macro_poll_ms == 0 {
+                let has_valid_macro = hist.value_at(0, prev_day) > 0.0
+                    || hist.value_at(1, prev_day) > 0.0
+                    || hist.value_at(2, prev_day) > 0.0;
+                if has_valid_macro {
+                    omni_state.macro_last_success_ms.store(t.ts_ms, Ordering::Relaxed);
+                    last_macro_poll_ms = t.ts_ms;
+                }
+            }
         }
         let omni_features = omni_state.get_features();
+        let macro_staleness_ms = omni_state.macro_staleness_ms(t.ts_ms);
+        arena.registry.set("macro_staleness_ms", macro_staleness_ms as f64);
 
         // D-705/D-708 (DÉCIMA OLA · auditoría integral): la frontera de vela es
         // por MINUTO, como en el forense, en el calentamiento (`interval=1m`) y
@@ -1238,5 +1254,44 @@ mod tests {
         // Sano en el modo paridad: capital finito positivo y DD acotado.
         assert!(a1.final_capital.is_finite() && a1.final_capital > 0.0);
         assert!(a1.max_dd < 1.0);
+    }
+
+    /// R6-A6 (Ola Ω42): Paridad BT↔vivo en publicación de macro_staleness_ms en registry.
+    /// Sin omni (omni_neutral), debe reportar u64::MAX (fail-safe amortiguado al 40%).
+    /// Con omni válido, debe reportar frescura <= 60_000 ms.
+    #[test]
+    fn r6_a6_macro_staleness_parity_with_registry() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        let ticks = synth_ticks(200);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let cfg = ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 50,
+            trade_only: false,
+            shift_atr_frac: 0.0,
+        };
+
+        // Caso 1: Sin historia macro (omni = None)
+        let mut staleness_seen_neutral = 0.0;
+        let _ = run_booktick_replay_observed(&ticks, &genome, None, &cfg, |_idx, core| {
+            staleness_seen_neutral = core.arena.registry.get_value_or("macro_staleness_ms", 0.0);
+        });
+        assert_eq!(
+            staleness_seen_neutral,
+            u64::MAX as f64,
+            "Sin macro en replay debe publicar u64::MAX como el host en vivo"
+        );
+
+        // Caso 2: Con historia macro válida
+        let hist = hist_with(vec![(100, 4500.0)]);
+        let mut staleness_seen_valid = u64::MAX as f64;
+        let _ = run_booktick_replay_observed(&ticks, &genome, Some(&hist), &cfg, |_idx, core| {
+            staleness_seen_valid = core.arena.registry.get_value_or("macro_staleness_ms", u64::MAX as f64);
+        });
+        assert!(
+            staleness_seen_valid <= 60_000.0,
+            "Con macro válido en replay debe publicar staleness <= 60s (fresco), visto: {}",
+            staleness_seen_valid
+        );
     }
 }

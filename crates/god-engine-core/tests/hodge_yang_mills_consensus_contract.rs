@@ -107,6 +107,13 @@ fn test_hodge_and_yang_mills_continuous_coupling_contract() {
         grad_energy
     );
 
+    let curl_energy = arena.registry.get_value_or("hodge_curl_energy", -1.0);
+    assert!(
+        curl_energy.is_finite() && curl_energy >= 0.0,
+        "Helmholtz-Hodge curl energy debe ser no-negativa, obtenido: {}",
+        curl_energy
+    );
+
     // 4. Verificar publicación y lectura de macro_staleness_ms en el registro
     arena.registry.set("macro_staleness_ms", 45_000.0);
     let stale_ms = arena.registry.get_value_or("macro_staleness_ms", 0.0) as u64;

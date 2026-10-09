@@ -247,7 +247,9 @@ impl QuantumStrategy for YangMillsGaugeEngine {
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
         let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
-        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        // R6-C11 / OLA Ω42: Preservar el ámbito por coin_id independientemente de si symbol está vacío,
+        // evitando que caiga al ámbito global ("") sujeto a condición de carrera del último escritor.
+        let cid_opt = Some(coin_id);
         let r = match self.registry.as_ref() {
             Some(reg) => reg,
             None => return 0.0,
