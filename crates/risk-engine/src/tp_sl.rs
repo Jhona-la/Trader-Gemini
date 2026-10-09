@@ -88,6 +88,39 @@ pub struct TpSl {
     pub below_tradeable_floor: bool,
 }
 
+impl TpSl {
+    /// R7-R2-A-1 (Ola Ω50): Probabilidad analítica en tiempo continuo de que un Movimiento
+    /// Browniano con deriva μ y volatilidad σ toque el Stop Loss (-sl) antes que el Take Profit (+tp).
+    #[inline]
+    pub fn probabilidad_sl_antes_de_tp(&self, mu: f64, sigma: f64) -> f64 {
+        probabilidad_tocar_sl_antes_de_tp(self.tp_pct, self.sl_pct, mu, sigma)
+    }
+
+    /// R7-R2-A-1 (Ola Ω50): Probabilidad analítica neutral (martingala browniana pura, μ = 0)
+    /// de tocar el Stop Loss antes que el Take Profit:
+    /// P(hit SL first | μ = 0) = tp / (tp + sl) = rr / (1 + rr).
+    #[inline]
+    pub fn probabilidad_sl_neutral(&self) -> f64 {
+        probabilidad_tocar_sl_antes_de_tp(self.tp_pct, self.sl_pct, 0.0, 0.001)
+    }
+
+    /// R7-R2-A-1 (Ola Ω50): Probabilidad analítica de primer toque del Stop Loss antes
+    /// del horizonte temporal τ en segundos (distribución Inversa-Gaussiana en forma cerrada).
+    #[inline]
+    pub fn probabilidad_primer_toque_stop(&self, mu_por_seg: f64, sigma_por_seg: f64, tau_sec: f64) -> f64 {
+        probabilidad_primer_toque_stop_antes_de_tau(self.sl_pct, mu_por_seg, sigma_por_seg, tau_sec)
+    }
+
+    /// R7-R2-A-1 (Ola Ω50): Esperanza matemática analítica continua de primer paso neta de comisiones:
+    /// EV_first_touch = (1 - P(SL)) · (tp - fee) - P(SL) · (sl + fee).
+    #[inline]
+    pub fn ev_primer_toque(&self, mu: f64, sigma: f64, roundtrip_fee: f64) -> f64 {
+        let p_sl = self.probabilidad_sl_antes_de_tp(mu, sigma);
+        let p_win = 1.0 - p_sl;
+        (p_win * (self.tp_pct - roundtrip_fee)) - (p_sl * (self.sl_pct + roundtrip_fee))
+    }
+}
+
 /// Horizonte de referencia de la curva de dispersión: la escala a la que se
 /// MIDE `atr_ratio`, de modo que `sigma(tau) = atr_ratio · (tau/TAU_REF)^H`.
 ///
@@ -934,5 +967,35 @@ mod tests {
         let p_long = probabilidad_primer_toque_stop_antes_de_tau(0.01, 0.0, 0.0001, 3600.0);
         assert!(p_long > p_short, "monotonía temporal: {p_long} > {p_short}");
         assert!(p_long <= 1.0);
+    }
+
+    #[test]
+    fn test_r7_r2_a1_tpsl_analitico_primer_toque() {
+        let inputs = base();
+        let tpsl = compute_tp_sl(inputs);
+
+        // 1. Probabilidad neutral: P(SL) = TP / (TP + SL) = RR / (1 + RR)
+        let p_sl_neutral = tpsl.probabilidad_sl_neutral();
+        let expected_neutral = tpsl.tp_pct / (tpsl.tp_pct + tpsl.sl_pct);
+        assert!((p_sl_neutral - expected_neutral).abs() < 1e-4);
+        assert!(p_sl_neutral < 0.75, "Con RR >= 2.0, P(SL neutral) debe ser <= 0.67");
+
+        // 2. Probabilidad con drift favorable (mu > 0)
+        let p_sl_fav = tpsl.probabilidad_sl_antes_de_tp(0.0002, 0.001);
+        assert!(p_sl_fav < p_sl_neutral, "Deriva positiva reduce P(SL)");
+
+        // 3. EV de primer toque continuo con comisiones
+        let fee = 0.0008;
+        let ev_neutral = tpsl.ev_primer_toque(0.0, 0.001, fee);
+        // Bajo martingala pura, EV bruto es 0, por lo que EV neto debe ser exactamente -fee
+        assert!((ev_neutral - (-fee)).abs() < 1e-5, "Bajo martingala EV neto = -fee: {ev_neutral}");
+
+        // Con deriva favorable, el EV de primer toque debe volverse positivo
+        let ev_fav = tpsl.ev_primer_toque(0.001, 0.001, fee);
+        assert!(ev_fav > 0.0, "Deriva positiva suficiente debe generar EV de primer toque positivo: {ev_fav}");
+
+        // 4. Probabilidad de primer toque antes de tau
+        let p_touch = tpsl.probabilidad_primer_toque_stop(0.0, 0.0001, 300.0);
+        assert!(p_touch > 0.0 && p_touch <= 1.0);
     }
 }

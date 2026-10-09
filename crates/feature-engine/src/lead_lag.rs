@@ -32,10 +32,30 @@ pub struct LeadLagAlphaEngine {
 const LAGS_MS: [f64; 5] = [500.0, 1_000.0, 2_000.0, 5_000.0, 10_000.0];
 /// Edad máxima de una muestra de líder para opinar (ms).
 const MAX_EDAD_MS: f64 = 8_000.0;
-/// Correlación mínima (en magnitud) para acreditar un lag.
-const RHO_MIN: f64 = 0.25;
 /// Muestras mínimas en la ventana común para medir ρ.
 const N_MIN: usize = 12;
+
+/// R7-R2-E-3 (Ola Ω50): Umbral adaptativo t-Student de significancia estadística al 95% de confianza (t >= 2.0).
+///
+/// Bajo el nulo de independencia H0: ρ = 0, el estadístico t = ρ · √(n - 2) / √(1 - ρ²) sigue una t de Student con n - 2 gl.
+/// Para n = 12 muestras, una correlación |ρ| = 0.25 equivale a t ≈ 0.816 (p ≈ 0.43), aceptando falso liderazgo en más del 43%
+/// de las realizaciones de puro ruido blanco.
+///
+/// La inversión analítica para t_crit = 2.0 arroja:
+///   ρ_crit(n) = t_crit / √(n - 2 + t_crit²) = 2.0 / √(n + 2)
+///
+/// Para n grandes (n > 62) donde ρ_crit decae por debajo de 0.25, se impone un piso de significancia física
+/// RHO_MIN_FLOOR = 0.25 para evitar que correlaciones microscópicas no predictivas acrediten divergencias de capital.
+#[inline]
+pub fn rho_critico_adaptativo(n: usize) -> f64 {
+    const RHO_MIN_FLOOR: f64 = 0.25;
+    if n < 4 {
+        return 1.0;
+    }
+    let t_crit = 2.0_f64;
+    let rho_student = t_crit / ((n as f64) + 2.0).sqrt();
+    rho_student.max(RHO_MIN_FLOOR).min(0.99)
+}
 
 impl LeadLagAlphaEngine {
     pub fn new(max_window: usize) -> Self {
@@ -163,8 +183,9 @@ impl LeadLagAlphaEngine {
     ) -> (f64, f64) {
         let mut mejor = (0.0f64, 0.0f64); // (lag, rho)
         for &lag in LAGS_MS.iter() {
-            let (rho, _) = Self::rho_con_lag(leader, alt, lag, ahora_ms);
-            if rho.abs() > RHO_MIN && rho.abs() > mejor.1.abs() {
+            let (rho, n) = Self::rho_con_lag(leader, alt, lag, ahora_ms);
+            let rho_umbral = rho_critico_adaptativo(n);
+            if rho.abs() >= rho_umbral && rho.abs() > mejor.1.abs() {
                 mejor = (lag, rho);
             }
         }
@@ -214,6 +235,8 @@ impl LeadLagAlphaEngine {
         } else {
             (lag_eth, rho_eth)
         };
+        // R7-R2-E-3: lag == 0.0 indica que ningún lag de la rejilla física {0.5, 1, 2, 5, 10 s}
+        // superó el umbral adaptativo t-Student de significancia contra el nulo (H0: ρ = 0).
         if lag <= 0.0 {
             return (leader_momentum, 0.0);
         }
@@ -242,6 +265,7 @@ impl LeadLagAlphaEngine {
         let (lag_btc, rho_btc) = self.lag_optimo(&self.btc_buf, alt, ts_ms);
         self.ultimo_lag_btc_ms = lag_btc;
         self.ultimo_lag_eth_ms = 0.0;
+        // R7-R2-E-3: lag_btc == 0.0 indica que ningún lag positivo superó el umbral adaptativo t-Student.
         if lag_btc <= 0.0 {
             return (leader_momentum, 0.0);
         }
@@ -391,5 +415,60 @@ mod tests {
         assert_eq!(e.ultimo_lag_btc_ms, 0.0, "Sin BTC no hay lag de BTC");
         assert_eq!(div, 0.0, "Sin liderazgo de BTC la divergencia debe ser 0.0");
         assert!(mom.abs() > 0.0, "Momentum de líder existe por ponderación");
+    }
+
+    #[test]
+    fn test_r7_r2_e3_rho_critico_adaptativo_monotonia() {
+        // Para n < 4, se exige 1.0 (imposible de superar sin datos)
+        assert_eq!(rho_critico_adaptativo(2), 1.0);
+        assert_eq!(rho_critico_adaptativo(3), 1.0);
+
+        // Para n = 12: t_crit / sqrt(14) ≈ 0.5345
+        let r12 = rho_critico_adaptativo(12);
+        assert!((r12 - 2.0 / 14.0_f64.sqrt()).abs() < 1e-6);
+        assert!(r12 > 0.53);
+
+        // Monotonía decreciente con n
+        let r20 = rho_critico_adaptativo(20);
+        let r30 = rho_critico_adaptativo(30);
+        let r50 = rho_critico_adaptativo(50);
+        assert!(r12 > r20);
+        assert!(r20 > r30);
+        assert!(r30 > r50);
+
+        // Piso físico de 0.25 para n grandes
+        let r100 = rho_critico_adaptativo(100);
+        let r500 = rho_critico_adaptativo(500);
+        assert_eq!(r100, 0.25);
+        assert_eq!(r500, 0.25);
+    }
+
+    #[test]
+    fn test_r7_r2_e3_ruido_n12_no_supera_umbral_adaptativo() {
+        let mut e = LeadLagAlphaEngine::new(50);
+        let t0 = 5_000_000.0;
+        // Simular dos series con correlación débil (~0.30) en n=12 muestras
+        // Con el umbral anterior (0.25) habría firmado falsamente como liderazgo institucional;
+        // con el umbral adaptativo (>= 0.5345 para n=12), se rechaza como ruido blanco indistinguible de H0.
+        let leader_vals = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
+        // y_i = 0.30 * x_i + 0.95 * z_i produce ρ ≈ 0.3012
+        let alt_vals = [1.25, 0.65, -0.65, -1.25, 1.25, 0.65, -0.65, -1.25, 1.25, 0.65, -0.65, -1.25];
+
+        for i in 0..12 {
+            let t = t0 + (i as f64) * 500.0;
+            e.update_leader(true, leader_vals[i], t);
+            e.push_alt(9, alt_vals[i], t + 1000.0);
+        }
+
+        // Consultar lag óptimo
+        let alt_buf = e.alt_bufs.get(&9).unwrap();
+        let (lag, rho) = e.lag_optimo(&e.btc_buf, alt_buf, t0 + 12.0 * 500.0);
+        // Debe ser 0.0 porque la correlación muestral pequeña no supera el umbral de significancia t-Student
+        assert_eq!(lag, 0.0, "Ruido con n=12 no debe acreditar lag óptimo: lag={lag}, rho={rho}");
+        assert_eq!(rho, 0.0);
+
+        // La divergencia debe ser 0.0 (abstención en ruido)
+        let (_, div) = e.predict_altcoin_impulse_con_reloj(9, 0.0, t0 + 12.0 * 500.0);
+        assert_eq!(div, 0.0, "La divergencia en ruido debe ser exactamente 0.0");
     }
 }
