@@ -6847,3 +6847,88 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
   (Claude cerrando CL-14 sin commit), worktrees Codex/SOL.
 - Entrega: BARRIDO_EXHAUSTIVO_FASES.md §RONDA-6 + asignación de olas
   correctivas al consejo.
+
+## [Qoder — CIERRE Ronda 6 del barrido] — 44 hallazgos: 6 HIGH brutos → 4 defectos únicos (2026-10-09)
+
+- **RONDA 6 CERRADA (docs-only, T-1 cero)**: 3 auditores READ-ONLY contra
+  f07b79a3 entregaron 44 hallazgos con etiqueta `R6-` (A integración: 3H/6M/5L;
+  B matemática: 1H/7M/10L; C física: 2H/5M/5L). Todo en
+  `docs/BARRIDO_EXHAUSTIVO_FASES.md` §RONDA-6, con evidencia archivo:línea
+  verificada en el worktree `.ronda6`.
+- **VEREDICTO EJECUTIVO**: la matemática INTERNA es correcta (Ville P1-P4,
+  álgebra OLS-OU exacta, unidades t½≤2τ* correctas — la sospecha de mezcla
+  s/ms NO se confirma, Mertens/Gumbel/DSR fieles, núcleo de hodge_flow.rs
+  exacto). El daño está en el CABLEADO: 2 de los 3 motores nuevos aportan
+  física NULA o DEGENERADA en producción, y el contract test verde sella la
+  ilusión (valida plomería, no física). **El patrón "dos caras sin
+  reconciliar" se confirma por SEXTA vez.**
+- **4 defectos HIGH únicos (tras deduplicación A1=C1; A3=B1; A9⊂C2)**:
+  1. **R6-A1/C1 [HIGH] hodge_curl_share ≡ 0.0 por construcción**: el camino
+     vivo alimenta la descomposición con `F_ij = OFI_i − OFI_j` (gradiente
+     potencial puro, identidad nΣX²−S²) ⇒ `curl_share ≡ 0` SIEMPRE ⇒ la
+     puerta Maker de Ω39 (`curl_share > 0.75`) es estructuralmente
+     inalcanzable, `force_maker ≡ false`, TODA entrada va por IOC; la
+     modulación laminar del Consejo es inerte (factor constante 1.0). El
+     constructor con rotacional real (`build_pure_vortex_matrix`) solo vive
+     en tests. **Ω39 es un no-op: el sistema enruta exactamente como antes.**
+  2. **R6-A3/B1 [HIGH] StatArb sin física viva**: `update_with_clock` (única
+     calibración SDE OU + β RLS + damping espectral + borde mínimo) tiene
+     CERO callers productivos. El camino vivo `evaluate_for_coin` lee
+     `vecm_zscore` que el CORE escribe como basis spot-perp normalizado por
+     ATR — NO cointegración. Guarda espectral decorativa (θ congelada 0.1 ⇒
+     t½=6.93s vs umbral 2·1138s: jamás dispara). El sistema opera creyendo
+     que tiene cointegración espectral con exclusividad SDE; en realidad
+     opera un basis simple.
+  3. **R6-A2 [HIGH] Yang-Mills capado a 16 de 26 monedas**: MAX_GAUGE_ASSETS=16
+     vs 26 símbolos bootloader ⇒ 10 monedas (NEAR..LDO) con corriente gauge
+     = 0 permanente; universo < 16 ⇒ motor entero publica ceros sin
+     telemetría que lo delate (el contract test pasa verde con el motor
+     muerto por slots-cero).
+  4. **R6-C2/A9 [HIGH] Yang-Mills degenerado**: β asimétrico por par
+     dirigido viola la condición de cierre gauge del propio módulo
+     (β_ij·β_jk·β_ki=1 jamás impuesta); con β=1 la holonomía telescópica
+     F ≡ 0 exacto; el RLS mide ruido de adaptación sobre una paridad de
+     NIVELES de precio (ln P_BTC ≈ β·ln P_DOGE) sin ley de un solo precio
+     — el contenido económico está en spreads/retornos, no aquí. J_i se
+     mezcla al 20% en votos reales (SeniorSeriesTemporales).
+- **MED clave**: A6 paridad BT↔vivo rota en `macro_staleness_ms` (backtest
+  nunca la publica ⇒ replay lee 0.0 y no amortigua; vivo sí amortigua);
+  A7 contract test trivialmente verde; C3 S_YM sin normalizar ante umbral
+  0.10; C4 sin sincronización temporal en latest_prices/ofis (moneda muerta
+  congela su valor para siempre); C6 recomputo O(N³) por tick de moneda (N
+  pasos RLS por ronda ⇒ γ_efectiva ≈ γ·N·cadencia); C7 test nunca ejercita
+  vórtice por la ruta viva.
+- **MAPA POSITIVO**: el patrón correcto YA existía en el árbol cuando Ω37
+  se cableó — `risk-engine/src/hodge.rs` (Ola XLVI·C) aplica la MISMA
+  identidad sobre un flujo por pares REAL (matriz Hawkes α_ij−α_ji vía
+  contagion_publisher) con consumidor vivo. Ω37 duplicó la matemática con
+  la entrada degenerada.
+- **ASIGNACIÓN DE OLAS CORRECTIVAS** (deduplicada, ver detalle en §RONDA-6):
+  - **Ola 73 (Qoder, con oráculo) — StatArb honesto**: R6-A3/B1 (cablear la
+    física viva: escritor real del spread con SDE+reloj, o renombrar la
+    clave a lo que es — basis_atr_z — con paridad lector/escritor en el
+    MISMO commit), R6-B2 (θ viva), R6-A4 (β adaptativa on), R6-B13
+    (fallback τ* unificado), R6-A5 (re-etiquetado del voto).
+  - **Ola Ω40 (AGY) — motores gauge**: R6-A1/C1 (alimentar Hodge con flujo
+    con contenido rotacional real — flujo por pares dirigidos L2 siguiendo
+    el patrón del propio hawkes_contagion, NO gradiente de escalares),
+    R6-A2 (cap 16→universo + no-muerto-silencioso), R6-C2/A9 (β simétrico
+    β_ij·β_ji=1 + regresar sobre spreads, no niveles), R6-C3 (normalizar
+    S_YM por C(N,3)), R6-A8 (clamp J_i ANTES de publicar).
+  - **Ola GLM/Codex — paridad y calibración**: R6-A6 (macro_staleness_ms en
+    backtest), R6-B4 (decay en TIEMPO no eventos), R6-B3 (estratificar Δt).
+  - **Cola Qoder posterior**: R6-B5/B6/B7 (Ville daemon: umbral real
+    anytime-valid en is_exhausted, λ_min a escala de retornos reales, gap
+    rearme mismo-genoma), R6-B8 (test H₀ con λ_min productivo).
+  - **Mecánicos LOW**: C4 (TTL/staleness buffers), C6 (recomputo por ronda
+    no por tick), C9 (escalones espectrales position.rs), C10 (rampa OBI
+    C⁰+signum maker), C12 (dead-zone blend YM).
+- **CERO HIGH de rondas 2-5 sobrevive abierto** (todo drenado). Los 4 HIGH
+  nuevos viven TODOS en el stack Ω36-Ω39 integrado sin barrido previo —
+  confirma la instrucción del operador de re-barrir desde la base.
+- CL-14 sigue ABIERTO para AGY/Claude (reportado en mi cierre Ola 72):
+  el testigo exige `force_maker = false` que Ω39 erradicó. NOTA: al
+  corregir R6-A1/C1 la puerta Maker volverá a ser alcanzable — el testigo
+  CL-14 debe re-escribirse a la nueva política en el MISMO commit de Ω40.
+- No toco: worktree .antigravity (AGY Ronda 8), checkout principal
+  (Claude), worktrees Codex/SOL. Detalle: FORENSIC #674.

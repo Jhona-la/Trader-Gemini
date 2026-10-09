@@ -1,4 +1,63 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-09 — Qoder: RONDA 6 DEL BARRIDO CERRADA — REVISIÓN DESDE LA BASE contra f07b79a3 — 44 hallazgos (4 HIGH únicos)
+
+- **Mandato del operador**: reiniciar la revisión desde la base ("han
+  cambiado muchas cosas"). Desde la Ronda 5 entraron ~15 olas sin auditar:
+  AGY Ω21-Ω39 (stack Hodge/Yang-Mills/StatArb-SDE/OU/Ville/ruteo Maker +
+  R0 branchless), GLM 110-112, SOL R5, Codex R4.
+- **PROTOCOLO**: worktree aislado `.ronda6` (rama `qoder/ronda6-barrido`),
+  3 auditores READ-ONLY en paralelo (A integración viva, B matemática, C
+  física). Docs-only, T-1 cero. BARRIDO §RONDA-6 + buzón (asignación ANTES,
+  cierre DESPUÉS) + FORENSIC #674.
+- **44 hallazgos `R6-`** (A: 3H/6M/5L; B: 1H/7M/10L; C: 2H/5M/5L).
+  Deduplicación: 6 HIGH brutos → **4 defectos únicos**, TODOS en el stack
+  Ω36-Ω39 integrado sin barrido previo:
+  1. **R6-A1/C1 — hodge_curl_share ≡ 0.0 por construcción**: el vivo
+     alimenta Hodge con F_ij = OFI_i − OFI_j (gradiente puro; identidad
+     nΣX²−S² ⇒ curl≡0 SIEMPRE). Puerta Maker de Ω39 inalcanzable,
+     force_maker≡false, modulación laminar del Consejo constante 1.0.
+     **Ω39 es un no-op**: enruta exactamente como antes (IOC/Market/
+     Iceberg). El patrón correcto YA existía en risk-engine/hodge.rs
+     (flujo Hawkes por pares con consumidor vivo).
+  2. **R6-A3/B1 — StatArb sin física viva**: update_with_clock (SDE OU +
+     β RLS + damping) sin callers productivos; el voto vivo lee
+     `vecm_zscore` = basis spot-perp/ATR, NO cointegración; guarda
+     t½≤2τ* decorativa (θ congelada 0.1 ⇒ 6.93s vs umbral 2276s).
+  3. **R6-A2 — Yang-Mills capado 16/26 monedas**: MAX_GAUGE_ASSETS=16 vs
+     26 símbolos; universo < 16 ⇒ motor entero en ceros silencioso.
+  4. **R6-C2/A9 — Yang-Mills degenerado**: β asimétrico viola cierre
+     gauge (β_ij·β_jk·β_ki=1 jamás impuesto); con β=1 F≡0 telescópico;
+     paridad de NIVELES de precio sin ley de un solo precio; mezclado
+     al 20% en votos reales.
+- **MED clave**: A6 macro_staleness_ms nunca publicado por backtest
+  (paridad BT↔vivo rota: replay lee 0.0 y no amortigua); A7 contract test
+  verde con motores muertos (certifica plomería, no física); C3 S_YM sin
+  normalizar ante umbral 0.10; C4 buffers sin TTL (moneda muerta congela
+  su precio/OFI); C6 recomputo O(N³)+RLS por tick de moneda (γ_efectiva
+  ≈ γ·N·cadencia); C5 "detección laminar→IOC" documentada pero inexistente.
+- **MAPA POSITIVO**: Ville P1-P4 sólido; álgebra OLS-OU exacta sin
+  lookahead; unidades t½≤2τ* CORRECTAS (sospecha refutada); Mertens/
+  Gumbel/DSR fieles; hodge_flow.rs núcleo exacto (el daño es el wiring);
+  cero heap-alloc en buffers multiactivo. **SEXTA confirmación del patrón
+  "dos caras sin reconciliar"**: cableado correcto (los votos SÍ llegan
+  como tensor_boost 40%), física nula o degenerada, contract test verde
+  sellando la ilusión.
+- **ASIGNACIÓN PUBLICADA EN BUZÓN**: Ola 73 (Qoder, oráculo) StatArb
+  honesto (A3/B1 cablear física o renombrar a basis_atr_z con paridad
+  lector/escritor MISMO commit; B2 θ viva; A4 β on; B13 fallback τ*; A5
+  re-etiquetado). Ola Ω40 (AGY) motores gauge (A1/C1 flujo por pares
+  dirigidos L2 tipo hawkes_contagion; A2 cap→universo; C2 β simétrico +
+  spreads; C3 normalizar S_YM; A8 clamp J antes de publicar; RE-ESCRIBIR
+  testigo CL-14 a la nueva política en el MISMO commit). GLM/Codex (A6
+  macro_staleness BT; B4 decay en tiempo; B3 estratificar Δt). Cola Qoder
+  (B5/B6/B7/B8 Ville daemon). Mecánicos LOW (C4/C6/C9/C10/C12).
+- **CERO HIGH de rondas 2-5 sobrevive abierto.** Los 4 HIGH nuevos viven
+  todos en el stack sin barrido previo — valida el re-barrido del operador.
+- CL-14 sigue ABIERTO (AGY/Claude): interactúa con R6-A1 — al corregir
+  curl≡0 la puerta Maker vuelve a ser alcanzable y el testigo debe
+  re-escribirse a la política nueva.
+- Detalle: FORENSIC_INTELLIGENCE_AUDIT.md #674. Buzón: asignación + cierre.
+
 ## 2026-10-09 — Qoder: OLA 72 CERRADA — SEXTA CONVERGENCIA (G2-11↔H2-9, G2-13↔H2-10) + H0-4 — ORÁCULO PASA 16/144
 
 - **OLA 72 CERRADA** (qoder/ola72-lows-residuales, worktree `.ola72`, base

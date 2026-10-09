@@ -14909,3 +14909,90 @@ fuente — quien cambia la política (AGY Ω39) debe actualizar el testigo
 en el MISMO commit; (c) "hacia arriba" del gate no siempre es invisible
 para el oráculo: H0-4 mueve buffers de trailing, documentar la zona de
 efecto en el FORENSIC para la próxima re-cert.
+
+
+# #674 — RONDA 6 DEL BARRIDO: revisión desde la base contra f07b79a3 (2026-10-09)
+
+**Mandato**: el operador reinició la revisión desde la base ("han cambiado
+muchas cosas"). Desde la Ronda 5 (árbol ~58d5914d) entraron ~15 olas sin
+auditar: AGY Ω21-Ω39 (stack Hodge/Yang-Mills/StatArb-SDE/OU continuo/
+Ville/ruteo Maker + R0 branchless), GLM 110-112, SOL R5, Codex R4, mi Ola 72.
+
+**Protocolo**: worktree aislado `.ronda6` (rama `qoder/ronda6-barrido`, base
+f07b79a3), 3 auditores READ-ONLY en paralelo (A integración viva, B
+matemática/estadística, C física/conducta). Docs-only: T-1 cero. Entrega:
+BARRIDO_EXHAUSTIVO_FASES.md §RONDA-6 + buzón (asignación ANTES, cierre
+DESPUÉS) + MEMORIA.
+
+**Resultado**: 44 hallazgos `R6-` (A: 3H/6M/5L; B: 1H/7M/10L; C: 2H/5M/5L).
+Deduplicación: 6 HIGH brutos → **4 defectos únicos** (A1≡C1 curl≡0;
+A3≡B1 StatArb muerto; A9⊂C2 YM degenerado; A2 cap 16). Asignación de olas
+correctivas publicada en el buzón: Ola 73 (Qoder, StatArb honesto, con
+oráculo), Ola Ω40 (AGY, motores gauge + re-escritura del testigo CL-14 en
+el MISMO commit), GLM/Codex (paridad macro_staleness + calibración decay),
+cola Qoder (Ville daemon B5/B6/B7/B8), mecánicos LOW.
+
+**Hallazgos estructurales** (los 4 HIGH, verificado con derivación
+analítica, no grep solamente):
+
+1. **curl_share ≡ 0 por construcción** — el camino vivo alimenta Hodge con
+   `F_ij = OFI_i − OFI_j`. Derivación: div_i = N(X_i−X̄), φ_i = X_i−X̄,
+   ∇φ_ij = X_i−X_j = F_ij exactamente ⇒ ‖∇φ‖² = ‖F‖² ⇒ curl = 0 idéntico.
+   La puerta Maker de Ω39 (`curl_share > 0.75`) NUNCA dispara; Ω39 es un
+   no-op operativo (el despacho sigue IOC/Market/Iceberg como B3.29). La
+   modulación laminar de SeniorMicroestructura es constante 1.0. El propio
+   doc de hodge_flow.rs:140-144 ADMITE la propiedad. La constructora con
+   rotacional real (build_pure_vortex_matrix) solo se invoca en tests.
+   El patrón correcto YA existía: risk-engine/src/hodge.rs (XLVI·C) usa
+   flujo por pares Hawkes α_ij−α_ji con consumidor vivo.
+2. **StatArb sin física viva** — `update_with_clock` (SDE OU con reloj
+   físico + β RLS + damping espectral + borde bps) tiene cero callers
+   productivos. El voto vivo lee `vecm_zscore` = basis spot-perp/ATR (no
+   cointegración). Guarda t½≤2τ* decorativa: θ congelada al valor inicial
+   0.1 (t½=6.93s) contra umbral 2·1138s. `MultivariateCointegrationEngine`
+   y `JohansenVecmEngine::update*` igual: solo tests.
+3. **Yang-Mills capado 16/26** — MAX_GAUGE_ASSETS=16 sobre universo de 26
+   símbolos: 10 monedas sin corriente gauge jamás; universo activo < 16 ⇒
+   motor entero en ceros sin telemetría de invalidación.
+4. **Yang-Mills degenerado** — β_ij adaptado independiente por par dirigido
+   (β_ij ≠ 1/β_ji) viola el cierre gauge del propio doc; F_ijk con β=1 es
+   telescópicamente 0; la señal S_YM mide drift de adaptación asimétrica
+   sobre una paridad de NIVELES de precio (sin ley de un solo precio entre
+   activos no intercambiables), mezclada al 20% en votos reales.
+
+**Mapa positivo verificado** (por qué esto NO es "todo está roto"): Ville
+P1-P4 (no-negatividad estructural, λ previsible, anytime_p_value exacto,
+λ_min>0 decae bajo H₀); álgebra OLS-EWMA→(θ,σ) exacta con z_prior sin
+lookahead; unidades t½≤2τ* CORRECTAS en ambos caminos (sospecha refutada);
+Mertens con fallback conservador, Gumbel eq.5 exacta, DSR conservador por
+diseño; hodge_flow.rs núcleo exacto (Σdiv=0 telescópico, Pitágoras,
+guardas NaN); OFI adimensional comparable; maker_price al top del libro;
+IOC con slippage dinámico dimensionalmente sano; N acumula entre épocas;
+cero heap-alloc en buffers multiactivo.
+
+**Sexta confirmación del patrón "dos caras sin reconciliar"**: cableado
+correcto (nombres/ámbitos/orden intra-tick sin mismatch; los votos de los
+motores nuevos SÍ llegan como tensor_boost 40% del composite), pero el
+contract test verde certifica plomería, no física — exactamente el hueco
+que dejó sobrevivir curl≡0 al CI. R6-C7 exige en la ola correctiva un
+test que INYECTE rotacional real y verifique que la puerta Maker se abre.
+
+**Interacción con CL-14**: el testigo de Claude (include_str exige
+`force_maker = false`) está rojo en main desde Ω39. La corrección de
+R6-A1/C1 (Ω40) re-activa la puerta Maker ⇒ AGY debe re-escribir el
+testigo a la NUEVA política en el mismo commit, con paridad
+host↔núcleo decidida explícitamente.
+
+**Verificación de esta ola**: docs-only (0 líneas de runtime tocadas);
+`git status` limpio antes de cada operación; worktree aislado; sin
+oráculo (regla: docs-only T-1 cero). Auditores trabajaron READ-ONLY: toda
+evidencia es archivo:línea verificada contra f07b79a3.
+
+Lecciones: (a) 15 olas sin barrido acumularon 4 HIGH en UN stack — el
+barrido por base del operador es el mecanismo que los atrapó; (b) un
+contract test de rangos (`curl ∈ [0,1]`) pasa trivialmente con el motor
+muerto — los contratos de física deben inyectar el régimen extremo y
+verificar la decisión, no el rango; (c) cuando un módulo nuevo replica
+matemática que YA existe en el árbol (hodge_flow vs risk-engine/hodge),
+la auditoría debe comparar AMBAS entradas — la diferencia de calidad
+estaba en el wiring, no en las fórmulas.

@@ -1330,3 +1330,352 @@ un camino y el otro queda con la calibración vieja o clave muerta.
 
 
 
+
+# RONDA 6 (2026-10-09, contra f07b79a3 — post Ω23-Ω39, GLM 110-112, SOL R5, Codex R4, Ola 72)
+
+Mandato del operador: «Vuelve a iniciar otra revisión desde la base, han
+cambiado muchas cosas». 3 auditores paralelo READ-ONLY contra el worktree
+`.ronda6` (código = f07b79a3): **A** = integración viva (callers/registro/
+consumidores de los motores Ω36-Ω39), **B** = matemática financiera y
+estadística (Ville/OU/StatArb/DSR/daemon), **C** = física (Hodge/Yang-Mills/
+ruteo Maker/continuidad C¹). Ámbito: TODO lo integrado tras la Ronda 5.
+
+**44 hallazgos brutos — 6 etiquetas HIGH (A1, A2, A3, B1, C1, C2) → 4
+defectos únicos tras deduplicación (A1=C1; A3=B1; A9⊂C2; A7≈C7; A12≈C4;
+A5⊂B1)**. El patrón histórico «dos caras sin reconciliar» se confirma por
+SEXTA vez, ahora en los motores nuevos de AGY: el cableado es correcto
+(nombres/ámbitos/orden intra-tick verificados SIN mismatch — los votos SÍ
+llegan a producción como tensor_boost 40% del composite), pero dos de los
+tres motores aportan física nula o degenerada y el contract test verde
+sella la ilusión: valida plomería, no física.
+
+## §R6-A — INTEGRACIÓN VIVA (14 hallazgos: 3 HIGH, 6 MED, 5 LOW)
+
+- **R6-A1 [HIGH] (= R6-C1) `hodge_curl_share ≡ 0.0` por construcción — el
+  ruteo Maker «vórtice» de Ω39 es código muerto y la modulación laminar del
+  Consejo nunca actúa.** El camino vivo construye `F_ij = OFI_i − OFI_j`
+  (`lib.rs:5042` → `hodge_flow.rs:145-167 build_gradient_flow_matrix`), un
+  gradiente potencial puro: `div_i = N(X_i−X̄)`, `φ_i = X_i−X̄`, `∇φ_ij =
+  X_i−X_j = F_ij` exacto ⇒ `curl_share = 1 − 1 = 0` idéntico (identidad
+  clásica `‖∇φ‖² = nΣX²−S² = ‖F‖²`; el doc del módulo lo declara). La
+  puerta `curl_share > 0.75 || (curl_share > 0.60 && ym_action > 0.10)`
+  (`god_engine.rs:4097`) jamás dispara ⇒ `force_maker` nunca true ⇒
+  `EntryRoute::Maker` (`god_engine.rs:4255-4256`) inalcanzable en
+  producción; `laminar_factor = (1−0.70·curl)` en
+  `consejo_seniors.rs:382-389` siempre 1.0. Ω39 es un no-op: el sistema
+  enruta exactamente como antes (B3.29 IOC/Market/Iceberg). El input
+  «Cross-CVD» que la misión Ω38 menciona ni siquiera existe en el cableado.
+- **R6-A2 [HIGH] Yang-Mills cap 16/26 monedas + motor muerto silencioso.**
+  `MAX_GAUGE_ASSETS = 16` (`yang_mills_gauge.rs:38`) vs 26 símbolos del
+  bootloader (`bootloader.rs:319-346`) y `MAX_COINS = 30`.
+  `update_and_calculate_curvature` computa sobre coin_id 0..15; para
+  coin_id ≥ 16 `lib.rs:5035-5038` publica `yang_mills_current = 0.0`.
+  10 de 26 monedas (NEAR, ICP, FIL, VET, AVAX, OP, APT, ARB, RENDER, LDO)
+  nunca reciben corriente gauge: voto YM 0 permanente, fusión del senior
+  (gate |J|>0.05) nunca activa. Además `yang_mills_gauge.rs:114-117`: si
+  CUALQUIER precio del rango 0..n es ≤0/no finito devuelve ceros —
+  universo activo < 16 (pool evoluciona cada hora, `symbol_manager.rs:
+  136-190`) ⇒ motor muerto sin telemetría que lo delate. El contract test
+  pasa en verde con el motor inerte (fixture de 3 monedas ⇒ 27 slots en 0
+  ⇒ aserciones de rango triviales, `hodge_yang_mills_consensus_contract.rs:
+  81-93`).
+- **R6-A3 [HIGH] (= R6-B1) StatArb: toda la física OU vive sólo en tests;
+  la guarda espectral `t_{1/2} ≤ 2τ*` es decorativa en el camino vivo.**
+  `update_with_clock` (`stat_arb.rs:188-271`) — único método que calibra la
+  SDE con reloj físico, adapta β por RLS, aplica damping espectral y borde
+  mínimo — tiene CERO callers de producción (grep `crates/`+`src/`: sólo
+  tests). El camino vivo `evaluate_for_coin` (`stat_arb.rs:288-331`) lee un
+  z-score ajeno (`vecm_zscore`) con guarda `half_life = ln2/θ` donde θ es
+  el valor INICIAL 0.1 (`stat_arb.rs:63`) ⇒ t½ congelado en 6.93 s para
+  siempre; τ* viene de `dominant_tau_ms` con fallback duro 1138 s ⇒ la
+  guarda `6.93 > 2·1138` jamás dispara. Ítem `JohansenVecmEngine::update*`
+  y `MultivariateCointegrationEngine`: sin caller productivo.
+- **R6-A4 [MED] β RLS adaptativa implementada pero no habilitada**: la
+  instancia viva es `StatArbEngine::new(30, 1.5).with_continuous_ou_sde()`
+  SIN `.with_adaptive_beta(true)` (`lib.rs:999`) ⇒ spread siempre
+  `ln A − 1.0·ln B`. El RLS existe con test propio pero es código muerto
+  en vivo.
+- **R6-A5 [MED] (⊂ R6-B1) El z que vota «StatArb» no es un spread de pares
+  cointegrados**: `vecm_zscore` es `((mid−spot_mid)/(mid·atr_pct)).clamp(−3,3)`
+  — basis spot-perp normalizado por ATR (`lib.rs:5013-5023`); y
+  `cointegration_zscore` es `leader_mom.clamp(-3,3)` (impulso lead-lag,
+  `lib.rs:5024`). El etiquetado describe una física que el flujo no tiene.
+- **R6-A6 [MED] Paridad BT↔vivo rota en `macro_staleness_ms`**: el host la
+  publica por evento (`god_engine.rs:3231-3232`, fail-safe `u64::MAX`),
+  pero backtest-engine NUNCA la escribe (grep: 0 escritores) ⇒ en replay el
+  Consejo lee 0.0 (`lib.rs:7425-7428`) y `SeniorEnteMercado` nunca amortigua
+  (p_macro ≡ 1.0), mientras en vivo sí (piso 0.40). Divergencia sistemática
+  replay↔producción en la rama de decisión (mismo patrón D-707).
+- **R6-A7 [MED] (≈ R6-C7) Contract test Ω38 = plomería verde, contrato de
+  física ausente**: aserciones de existencia/rango; pasa con los motores
+  estructuralmente muertos. Sin caso de no-degeneración (inyectar vórtice
+  puro — `build_pure_vortex_matrix` existe para eso, `hodge_flow.rs:
+  173-190` — y exigir curl≈1). La línea 111 del test escribe ella misma
+  `macro_staleness_ms` y la relee.
+- **R6-A8 [MED] `J_i` publicado sin acotar ⇒ `integrity_failure` ⇒ veto**:
+  la normalización (`yang_mills_gauge.rs:173-177`) divide por ciclos
+  incidentes pero NO clampa; dos lectores clampean (voto `:230`, senior
+  `consejo_seniors.rs:413`) pero el payload del Consejo lee el valor CRUDO
+  (`lib.rs:7421-7424`) y `MarketSnapshotPayload::validate()` RECHAZA
+  |J|>1 (`consejo_seniors.rs:223`) ⇒ en dislocación multi-moneda severa —
+  exactamente donde la reversión gauge operaría — el Consejo veta por
+  integridad del snapshot, no por mérito. El escritor debería acotar como
+  el resto del pipeline.
+- **R6-A9 [MED] (⊂ R6-C2) El estimador gauge aprende a anular la cantidad
+  que mide**: el LMS de β minimiza `err = ln P_i − β_ij·ln P_j` ⇒ β
+  converge a `ln P_i/ln P_j` ⇒ `A_ij → 0` ⇒ `F_ijk → 0` en estado
+  estacionario; el «detector» mide sólo innovaciones transitorias de una β
+  que persigue los precios tick a tick, no residuos persistentes de
+  cointegración. La invariancia gauge del doc (β_ij·β_jk·β_ki = 1) no está
+  impuesta.
+- **R6-A10 [LOW] Claves telemetry sin lectores**: `hodge_curl_energy` (0
+  lectores), `hodge_gradient_energy` (sólo test), `censo_total_{name}`/
+  `censo_no_cero_{name}` (`orchestrator.rs:433-439`). «Publicar sin medir»
+  — el lado que la doctrina del propio repo prohíbe.
+- **R6-A11 [LOW] Doble implementación Hodge con entradas de calidad
+  opuesta**: `risk-engine/src/hodge.rs` (Ola XLVI·C) aplica la MISMA
+  identidad sobre un flujo por pares REAL (Hawkes α_ij − α_ji vía
+  `contagion_publisher.rs:84-87`), publica `hawkes_contagion_curl_share` y
+  tiene consumidor vivo (`correlation_guard.rs:696`). Ω37 duplicó la
+  matemática con la entrada degenerada — el patrón correcto YA existía en
+  el árbol. Agrava A1.
+- **R6-A12 [LOW] (≈ R6-C4) `latest_prices`/`latest_ofis` sin TTL**: una
+  moneda expulsada del pool dinámico congela su último valor alimentando
+  YM/Hodge indefinidamente; nada distingue «fresco» de «congelado».
+- **R6-A13 [LOW] Guard `coin_id < ym_currents.len()` (len=16) = clamp
+  silencioso**: «sin corriente» y «fuera del fibrado» comparten la cara 0.0
+  en el registro; el consumidor no puede abstenerse conscientemente.
+- **R6-A14 [LOW] Instancia StatArb duplicada y muerta** en
+  `src/multi_asset_orchestrator.rs:25` (`new(100, 2.0)` vs la viva
+  `new(30, 1.5)`), módulo sin referencia desde `god_engine.rs`.
+
+## §R6-B — MATEMÁTICA (18 hallazgos: 1 HIGH, 7 MED, 10 LOW)
+
+Veredicto del auditor: la matemática central es CORRECTA — no hay HIGH por
+matemática rota ni lookahead. El hallazgo más grave es de cableado (B1=A3).
+
+- **R6-B1 [HIGH] (= R6-A3) La capa estocástica no está cableada a
+  producción; `vecm_zscore` no es cointegración.** Callers de
+  `update_with_clock`/`JohansenVecmEngine::update*`/
+  `MultivariateCointegrationEngine`: sólo tests. Los tres motores del
+  orquestador sólo ejecutan `evaluate_for_coin`, que LEE `vecm_zscore` — y
+  esa clave la escribe el CORE como basis spot-perp/ATR (`lib.rs:5013-5023`),
+  sin β, sin Welford, sin VECM, sin SDE. Toda la «exclusividad espectral»
+  P5/P6/P9 es matemática de biblioteca inerte; el nombre de la clave induce
+  a creer lo contrario.
+- **R6-B2 [MED] Guarda espectral estructuralmente muerta (θ congelada)**:
+  la guarda lee `self.physical_sde` que sólo avanza dentro de
+  `update_with_clock` (sin caller); SDE creada con θ=0.1 ⇒ t½=6.93 s
+  congelado, jamás supera 2τ* (τ*≥30 s ⇒ umbral ≥60 s; fallback 1138 s).
+  La «paridad espectral» del voto StatArb siempre pasa (`stat_arb.rs:
+  310-319`).
+- **R6-B3 [MED] Pooling de pares con Δt heterogéneo en la OLS de la SDE OU**
+  (`vecm_arbitrage.rs:290-331`): la regresión mezcla pares consecutivos con
+  Δt arbitrario; la pendiente única b = e^{−θΔt} sólo existe para Δt fijo ⇒
+  b̂ promedio incoherente de reversión a distintas escalas; θ̂ usa el Δt del
+  ÚLTIMO evento mientras el SSE mezcla todos; σ̂ divide por
+  (1−e^{−2θΔt_último}). Hoy inerte por B1, pero es el defecto que estallaría
+  al cablear.
+- **R6-B4 [MED] Decay clamp [0.80, 0.999]: memoria efectiva de 5 a 1000
+  eventos, no «~100 observaciones»** (`vecm_arbitrage.rs:293-294`): para
+  todo dt > 67 s — casi todo el rango espectral operativo de minutos a 12 h —
+  el decay queda congelado en 0.80 ⇒ n_eff ≈ 5 ⇒ Var(b̂) enorme, θ̂
+  esencialmente ruido clampeado; `count ≥ 10` se satisface con 10 eventos
+  (5 min) para calibrar un θ cuya escala puede ser de horas. El horizonte
+  de la EWMA debería fijarse en TIEMPO, no en eventos.
+- **R6-B5 [MED] `is_exhausted` heurístico no es anytime-valid y dispara
+  fácil bajo H₀** (`ville_e_process.rs:212-215`, consumido en
+  `online_daemon.rs:1201-1206`): `peak > 1 && e_value < 1 && running_mean
+  <= 0` mezcla el e-proceso con un estadístico no acotado bajo H₀. Con
+  retornos ±2% y λ=0.05, ln M se mueve ±0.001/trade: el PRIMER trade
+  ganador pone peak>1; luego M<1 ∧ media≤0 (≈50% del tiempo cada uno,
+  correlacionados) declara «agotamiento». La garantía de Ville sólo cubre
+  `anytime_p_value`/`is_edge_certified`, que NO se usan en el rollback.
+  Rollback agresivo (sensible, no válido) que corta estrategias con edge
+  ruidoso.
+- **R6-B6 [MED] λ∈[0.05,0.50] descalibrado vs retornos por-trade ±2% ⇒
+  watchdog Ville casi insensible** (`online_daemon.rs:1346`): con |x|≈0.02
+  cada trade mueve ln M en ±0.001; `is_evidence_decayed(0.50)` requiere ≈693
+  trades netos perdedores; mientras el t-stat clásico dispara a −2 con ≈4
+  trades. La detección real de degradación la hace íntegramente el t-stat
+  descriptivo — el Ville es respaldo válido pero prácticamente inerte en la
+  ventana de 500. Validez intacta (P2/P4); POTENCIA no corresponde a la
+  escala real de los datos.
+- **R6-B7 [MED] Gap de rearme del Ville**: hot-swap del MISMO genoma tras
+  rollback arma el watchdog clásico pero no el Ville (`online_daemon.rs:
+  310-334` no toca `post_promo_ville` en `armar_vigilancia`; l.1905-1906
+  sólo genoma distinto; camino externo ve `==` no `>`). Ese genoma corre
+  vigilado sólo por t-stat, sin capa anytime-valid, indefinidamente.
+- **R6-B8 [MED] El test de H₀ del e-proceso ejercita λ_min=0, no la
+  configuración productiva λ_min=0.05** (`ville_e_process.rs:63` vs
+  `online_daemon.rs:1346`): con λ_min=0 y media≤0, M≡1 ⇒ `!is_edge_
+  certified()` pasa trivial. El régimen productivo (M fluctúa bajo H₀, ver
+  B5) no tiene ninguna prueba empírica de control de falsos positivos.
+- **R6-B9 [LOW] «Online Newton Step» mal etiquetado**: es SGD con schedule
+  (sin matriz A ni proyección); la «ratio de Sharpe empírica» es un Kelly
+  μ̂/σ̂₂ clampado. Validez no depende de esto (λ previsible acotada).
+- **R6-B10 [LOW] Clamp |x|≤1 comprime colas de pérdida**: necesario para
+  no-negatividad (x < −1/λ destruiría la supermartingala), pero con λ=0.5
+  un retorno −150% (gap/liquidación) se reporta −100% ⇒ M multiplica 0.5
+  en vez de 0.25: el detector responde MENOS a los colapsos cuando más
+  importa. Escenario no imposible con micro-cuenta apalancada.
+- **R6-B11 [LOW] `update_continuous_sde` acumula TASAS en los momentos
+  mientras `update()` acumula retornos** (`ville_e_process.rs:145-171`):
+  si un mismo proceso recibiera ambos flujos, `compute_causal_lambda`
+  mezclaría escalas. Sin caller productivo hoy.
+- **R6-B12 [LOW] El «RLS» de β es LMS normalizado con gain fijo** (γ≈0.001,
+  clamp [0.1,10]): sin matriz P ni factor de olvido; absorbe un cambio
+  estructural en ~1000 eventos — más lento que la dinámica espectral
+  prometida. β negativo verdadero forzado a la frontera positiva.
+- **R6-B13 [LOW] Dos fallbacks distintos para τ\***: 30.0 s en
+  `update_with_clock` vs 1138.0 s en `evaluate_for_coin` (`stat_arb.rs:
+  216-220` vs `:312-315`).
+- **R6-B14 [LOW/POSITIVO] Sesgo de Jensen de θ̂ despreciable** (≈3-7e-4 vs
+  error de muestreo 30-45%): el problema real de precisión es B4 (n_eff),
+  no Jensen.
+- **R6-B15 [LOW] Clamps de frontera b∈[0.001,0.9999], θ∈[1e-4,50]**:
+  defensa razonable pero dependen del gate muerto (B2); spread
+  cuasi-random-walk reporta t½ ≤ 35 min para un no-estacionario.
+- **R6-B16 [LOW] Camino legacy de multivariate_coint**: `spread_deviation`
+  contra la media post-actualización (convención de timing inconsistente
+  con z_prior del resto del módulo); sin caller productivo.
+- **R6-B17 [LOW] Pisos/techos mágicos de la señal SDE**: `confidence`
+  piso 0.5 activo para thresholds <1.5; gate `t½ ≤ 3600 s` excluye la
+  mitad superior de la banda espectral declarada [30 s, 12 h]
+  (`multivariate_coint.rs:131-146`).
+- **R6-B18 [LOW/POSITIVO] DSR evalúa el SE en el SR observado, no en SR\***:
+  cota conservadora (SE mayor ⇒ z menor), decisión documentada. Informado
+  por trazabilidad con Bailey & LdP.
+
+## §R6-C — FÍSICA (12 hallazgos: 2 HIGH, 5 MED, 5 LOW)
+
+- **R6-C1 [HIGH] (= R6-A1) El feed vivo de Hodge es gradiente puro ⇒
+  `curl_share ≡ 0`; ruta Maker Ω39 muerta, modulación laminar inerte.**
+  Derivación completa en R6-A1. La única constructora que produce
+  rotacional real (`build_pure_vortex_matrix`) sólo se invoca en tests.
+  La física de la descomposición es correcta; el wiring degenera el objeto
+  matemático que gobierna órdenes reales.
+- **R6-C2 [HIGH] Yang-Mills: β asimétrico viola el cierre gauge del propio
+  módulo; con β=1 la holonomía es idénticamente 0 y la señal mide ruido de
+  adaptación sobre una «paridad» de NIVELES de precio sin contenido
+  económico.** `F_ijk = (1−β_ki)ln P_i + (1−β_ij)ln P_j + (1−β_jk)ln P_k`;
+  con inicialización β=1, F ≡ 0 exacto (telescópico — el «vacío gauge» es
+  trivial, no un logro físico). El RLS adapta cada β_ij independiente; β_ij
+  y β_ji divergen; la condición β_ij·β_jk·β_ki = 1 del doc jamás se
+  verifica/proyecta/penaliza ⇒ S_YM ≠ 0 surge SÓLO del drift asimétrico de
+  β, no de curvatura de arbitraje. Y el objetivo de regresión es paridad
+  entre NIVELES (ln P_BTC ≈ β·ln P_DOGE) — no existe ley de un solo precio
+  entre niveles de activos no intercambiables; el contenido económico está
+  en spreads/retornos. J_i se mezcla al 20% en SeniorSeriesTemporales
+  (`consejo_seniors.rs:412-414`) — contaminación de derivación en señal
+  que alimenta votos reales.
+- **R6-C3 [MED] S_YM sin normalizar escala con C(N,3) tríadas; el umbral
+  absoluto 0.10 no tiene anclaje dimensional** (`yang_mills_gauge.rs:
+  144-170` vs `god_engine.rs:4097`): C(13,3)=286 tríadas; la misma curvatura
+  física produce acción mayor en universos mayores (y el universo es
+  dinámico). Contenido hoy porque la puerta compuesta está muerta por C1,
+  pero al corregir C1 este umbral heredaría el defecto.
+- **R6-C4 [MED] (≈ R6-A12) Sin sincronización temporal ni TTL en los
+  buffers multiactivo**: la descomposición trata el vector como fotografía
+  simultánea; cada componente puede tener edades arbitrarias (moneda
+  ilíquida contribuye su OFI congelado). Sin ventana temporal contrastada
+  contra los 400 ms de latencia post-only que justifica la ruta Maker.
+- **R6-C5 [MED] La «detección de cascada laminar (curl < 0.25 → IOC)» está
+  documentada pero NO existe en el código**: MEMORIA/Ω39 y el comentario de
+  `god_engine.rs:4090` describen régimen bidireccional; el despacho real
+  (`god_engine.rs:4255-4290`) hace IOC default incondicional — no hay rama
+  que evalúe curl<0.25 para ELEGIR IOC. Divergencia docs↔código.
+- **R6-C6 [MED] Recomputo O(N³)+O(N²) y re-adaptación de β dentro del
+  bucle por moneda** (`lib.rs:5034-5054`): por ronda de N ticks ⇒ N
+  evaluaciones O(N³), N descomposiciones O(N²) y N pasos de RLS con el
+  mismo objetivo (γ_efectiva ≈ γ·N·cadencia); `ym_action` publicado queda
+  path-dependent del orden de llegada de los ticks.
+- **R6-C7 [MED] (≈ R6-A7) El contract test pasa trivialmente**: nunca
+  ejercita un vórtice por la ruta viva; «100% verde» no certifica la
+  física del ruteo.
+- **R6-C8 [LOW] `dbp <= dap` es trivialmente cierto en libro válido**
+  (sanidad, no indicador direccional); con C1 la puerta se reduce a falso
+  + validez de libro; en paths sin depth5 previo dbp=dap=0 desarma la
+  ruta.
+- **R6-C9 [LOW] R0 de AGY: clasificación espectral en escalones discretos
+  con comentario que proclama continuidad** (`position.rs:584-658`,
+  vocabulario scalp/swing que U-ERR-5 erradicó) — pero grep exhaustivo:
+  consumidores sólo tests; ninguna conducta de producción depende de estas
+  etiquetas. El τ continuo real (`entry_tau_ms`) sigue gobernando.
+- **R6-C10 [LOW] Maker: rampa OBI continua pero C⁰ (no C¹), `signum` en el
+  skew, literales mágicos sin anclaje** (`maker.rs:60-153`): quiebre de
+  pendiente en |obi|=th y en la saturación; daño hoy nulo (ruta muerta por
+  C1), heredaría al reactivar.
+- **R6-C11 [LOW] `evaluate()` de YM con símbolo vacío lee el valor GLOBAL
+  del registry (carrera last-writer)**: el orquestador real usa símbolo
+  scoped (correcto); trampa latente para callers futuros.
+- **R6-C12 [LOW] Dead-zone |ym_curr|>0.05 en SeniorSeriesTemporales =
+  salto C⁰ en la señal compuesta** (`consejo_seniors.rs:412-414`): viola la
+  doctrina C¹ en un punto de mezcla; si se corrige C2 pasa a ser el
+  defecto dominante del blend.
+
+## Mapa positivo (verificado por los 3 auditores)
+
+- **Cableado de registro SIN mismatch**: el host lee las claves que el core
+  escribe, en los TRES ámbitos (global/c{id}:/{sym}_), formateo en stack.
+  Umbrales del ruteo = especificación Ω39 exacta. El defecto NO es de
+  nombres.
+- **Ordenamiento intra-tick correcto**: acoplamiento (lib.rs:5035-5054)
+  ANTES de orquestador (lib.rs:5148) y snapshot del Consejo
+  (lib.rs:7417-7428), dentro del mismo `process_tick_dual`.
+- **Los votos nuevos SÍ llegan a producción**: consenso espectral como
+  tensor_boost 40% del composite (lib.rs:5152-5170); no es sombra pura.
+- **VilleEProcess matemáticamente sólido**: no-negatividad estructural
+  (P1), λ previsible F_{t−1}-medible (P2), anytime_p_value exacto = cota
+  maximal de Ville (P3), λ_min>0 decae bajo H₀ sin explotar (P4).
+- **Álgebra OLS-EWMA de la SDE OU EXACTA** (P5, verificada simbólicamente;
+  sin lookahead); unidades t½ ≤ 2τ* CORRECTAS en ambos caminos (P6 — la
+  sospecha NO se confirma); Mertens con fallback jamás sub-gaussiano (P7);
+  Gumbel eq.5 exacta y N SÍ sigue acumulando entre épocas (P8 — fix H1-3
+  persistente); exclusividad SDE real en el módulo (P9); honestidad
+  estadística del daemon (P10).
+- **`hodge_flow.rs` núcleo EXACTO**: Σdiv=0 por antisimetría telescópica,
+  identidad de Dirichlet exacta sobre K_N, Pitágoras por construcción,
+  guardas NaN/n<3 correctas, O(N²) sin allocs. Dimensionalidad de entradas
+  correcta (OFI adimensional). El daño está en qué matriz se le alimenta.
+- **El patrón correcto YA existía en el árbol**: el Hodge de contagio
+  (XLVI·C, risk-engine) con flujo por pares real (α_ij − α_ji) y
+  consumidor vivo — el wiring que Ω37 debería haber seguido.
+- **Fail-safes consistentes**: YM devuelve cero ante precios inválidos;
+  macro_staleness fail-safe (u64::MAX, no 0); damping continuo con piso;
+  maker_price al top-of-book vivo (no mid congelado); IOC con slippage
+  dinámico dimensionalmente sano; B3.29 desactivación de Maker para
+  momentum correcta (0% fills pasivos en 39 entradas).
+- **Cero heap alloc verificado** en buffers multiactivo y acoplamiento.
+
+## Asignación Ronda 6 (olas correctivas)
+
+Los 6 HIGH crudos → 4 defectos únicos, drenados en 3 olas por zona de
+autoría (los motores son de AGY; la capa estocástica/daemon es zona
+estadística Qoder; paridad BT es zona GLM/Codex):
+
+- **Ola 73 (Qoder, con oráculo) — StatArb honesto**: R6-A3/B1 (cablear la
+  física viva: escritor real del spread con SDE+reloj o renombrar la clave
+  a lo que es — basis_atr_z — con paridad lector/escritor en el MISMO
+  commit), R6-B2 (θ viva), R6-A4 (β adaptativa on), R6-B13 (fallback τ*
+  unificado), R6-A5 (re-etiquetado del voto).
+- **Ola Ω40 (AGY) — motores gauge**: R6-A1/C1 (alimentar Hodge con flujo
+  con contenido rotacional real — flujo por pares dirigidos L2 siguiendo
+  el patrón del propio hawkes_contagion, NO gradiente de escalares),
+  R6-A2 (cap 16→universo + no-muerto-silencioso), R6-C2/A9 (β simétrico
+  β_ij·β_ji=1 + regresar sobre spreads, no niveles), R6-C3 (normalizar
+  S_YM por C(N,3)), R6-A8 (clamp J_i ANTES de publicar).
+- **Ola GLM/Codex — paridad y calibración**: R6-A6 (macro_staleness_ms en
+  backtest), R6-B4 (decay en TIEMPO no eventos), R6-B3 (estratificar Δt).
+- **Cola Qoder posterior**: R6-B5/B6/B7 (Ville daemon: umbral real
+  anytime-valid en is_exhausted, λ_min a escala de retornos reales, gap
+  rearme mismo-genoma), R6-B8 (test H₀ con λ_min productivo).
+- **MED/LOW mecánicos**: R6-C5 (borrar docs de cascada laminar o
+  cablearla), R6-A7/C7 (contrato de no-degeneración con vórtice inyectado),
+  R6-C12 (dead-zone C⁰ → blend continuo), R6-A10/A14 (claves muertas,
+  instancia duplicada), R6-C9 (comentario R0).
+
+**CERO HIGH de rondas 2-5 sobrevive abierto** (todo drenado); esta ronda
+abre 4 HIGH NUEVOS, todos concentrados en el stack Ω36-Ω39 integrado SIN
+barrido previo — confirma la necesidad del re-barrido por base del
+operador.
