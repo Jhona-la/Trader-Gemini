@@ -326,11 +326,19 @@ impl QuantumStrategy for StatArbEngine {
         };
 
         // OLA 73 (R6-A3/B1/A5): preferir la física PROPIA — z estacionario de
-        // la SDE OU que el CORE calibra sobre la basis fut-spot con reloj
-        // físico real (clave `statarb_ou_zscore`). El 0.0 explícito del core
-        // (spot ausente/stale/SDE fría) entra por aquí como abstención.
-        // Fallback legacy: `vecm_zscore` (basis/ATR) — paridad de conducta
-        // con el árbol previo mientras la física viva no publica.
+        // la SDE OU que el CORE calibra sobre la basis futuro-spot con reloj
+        // físico real y β RLS (clave `statarb_ou_zscore`). El core sólo publica
+        // cuando esa física EXISTE (SDE madura ≥ 10 pares); un 0.0 publicado es
+        // por tanto abstención honesta (spot stale > TTL), no arranque frío.
+        // Clave AUSENTE = el core aún no observa pares spot-futuro para esta
+        // moneda ⇒ fallback bit a bit con el árbol previo.
+        //
+        // FALLBACK LEGACY (R6-A5, etiqueta honesta): `vecm_zscore` NO es
+        // cointegración Johansen ni un spread entre dos activos. El core lo
+        // publica como z de la basis futuro-spot / ATR cuando hay feed de spot
+        // y, en su ausencia, como desviación del mid al EMA lento de klines en
+        // unidades de ATR (god-engine-core/src/lib.rs, `vecm_basis_z`). Es un
+        // estadístico de reversión a la media propia, no de paridad multiactivo.
         let own_z = r
             .get_scoped_parameter(sym_opt, cid_opt, "statarb_ou_zscore", "StatArbEngine")
             .map(|p| p.get_value());
@@ -633,8 +641,9 @@ mod tests {
         let mut engine = StatArbEngine::new(30, 1.5);
         assert!(engine.init(reg.clone()).is_ok());
 
-        // El core publica 0.0 explícito cuando el feed spot está ausente o
-        // la SDE está fría: abstención, sin caer al fallback legacy.
+        // El core publica 0.0 explícito cuando su SDE ya maduró y el feed de
+        // spot quedó stale: abstención de la física propia, sin caer al
+        // fallback legacy (la clave publicada es la autoridad del lector).
         reg.set("statarb_ou_zscore", 0.0);
         reg.set("vecm_zscore", 2.5);
         assert_eq!(engine.evaluate(), 0.0);

@@ -5062,32 +5062,37 @@ impl GodEngineCore {
             // OLA 73 (R6-A3/B1/A4/B2): ESCRITOR vivo de la física StatArb —
             // SDE OU continua sobre la basis futuro-spot (ln P_fut − β·ln P_spot)
             // con reloj físico del exchange y β RLS adaptativa, por moneda.
-            // `statarb_ou_zscore` = z estacionario de la SDE madura (≥10 obs
-            // causales); 0.0 EXPLÍCITO = abstención honesta (spot ausente,
-            // feed stale > 30 s = suelo de la banda operativa, o SDE fría).
             // `statarb_half_life_ms` = ln(2)/θ CALIBRADA EN PRODUCCIÓN (θ ya
             // no está congelada en 0.1: la guarda t½ ≤ 2τ* del lector deja de
             // ser decorativa — R6-B2).
+            //
+            // PARIDAD LECTOR/ESCRITOR (R6-A3): la clave SÓLO se publica cuando
+            // la física OU EXISTE para esta moneda (SDE madura: ≥10 pares
+            // spot-futuro causalmente crecientes). Publicar 0.0 desde el
+            // arranque sombrea para siempre el fallback documentado del lector
+            // (`vecm_zscore`), silenciando una señal viva sin evidencia. Con la
+            // física madura, el 0.0 SÍ es honesto: abstención por feed de spot
+            // stale > TTL (R6-C4 anti-staleness).
             const STATARB_SPOT_TTL_MS: u64 = 30_000;
             let eng_st = &mut self.statarb_ou_engines[coin_id];
             if spot_bid > 0.0 && spot_ask > 0.0 && mid_price > 0.0 {
                 let spot_mid_st = (spot_bid + spot_ask) / 2.0;
                 let _ = eng_st.update_with_clock(mid_price, spot_mid_st, event_time_ms, tau_dom);
             }
-            let statarb_z = match eng_st.last_ou_zscore() {
-                Some(z)
-                    if event_time_ms.saturating_sub(eng_st.last_ou_ts_ms())
-                        <= STATARB_SPOT_TTL_MS =>
+            if let Some(z_madura) = eng_st.last_ou_zscore() {
+                let statarb_z = if event_time_ms.saturating_sub(eng_st.last_ou_ts_ms())
+                    <= STATARB_SPOT_TTL_MS
                 {
-                    z
-                }
-                _ => 0.0,
-            };
-            let statarb_half_ms = eng_st.half_life_seconds() * 1000.0;
-            let statarb_beta = eng_st.beta_hedge_ratio;
-            set_reg("statarb_ou_zscore", statarb_z);
-            set_reg("statarb_half_life_ms", statarb_half_ms);
-            set_reg("statarb_beta", statarb_beta);
+                    z_madura
+                } else {
+                    0.0
+                };
+                let statarb_half_ms = eng_st.half_life_seconds() * 1000.0;
+                let statarb_beta = eng_st.beta_hedge_ratio;
+                set_reg("statarb_ou_zscore", statarb_z);
+                set_reg("statarb_half_life_ms", statarb_half_ms);
+                set_reg("statarb_beta", statarb_beta);
+            }
 
             // OLA Ω36/Ω38/Ω41: Fibrado gauge Yang-Mills con filtrado dinámico TTL anti-staleness
             // y normalización intensiva de densidad de acción por plaqueta triangular (R6-A2, R6-C2, R6-C3, R6-A8)
