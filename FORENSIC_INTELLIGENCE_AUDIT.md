@@ -15390,3 +15390,142 @@ texto restante es comentario de erradicación.
 - **Certificación:**
   `cargo test -p risk-engine` verde (100% éxito en suite completa). `cargo check --workspace --all-targets` sin errores.
 
+
+## #678 — R7-R2 (Qoder): MATEMÁTICA/ESTADÍSTICA TRANSVERSAL — 6 lentes, 55 fichas brutas → **41 únicas (9 HIGH / 23 MED / 1 LOW-MED / 6 LOW / 2 INFO)** — docs-only, sin `.rs` tocados (2026-10-09)
+
+**Mandato**: fase R2 del plan Ronda 7 (`docs/PLAN_RONDA7_BARRIDO_BASE_2026-10-09.md`):
+revisar la capa de matemática y estadística del proyecto contra el árbol de
+HEAD — probabilidad de ruina y Kelly, Cramér-Lundberg, e-values/Ville y
+multiplicidad, selección estadística (DSR/PSR/Mertens), correlación y
+covarianza (`correlation_guard`, `random_matrix`), matriz de apalancamiento y
+orquestador de admisión, multifractal/Hurst/ζ(p), lead-lag, sustrato espectral
+(`temporal_spectrum`) y banda de pronóstico (`spectral_tape`). Regla de la
+ronda: toda ficha exige lectura completa de la función, `file:line` +
+fragmento, contraejemplo numérico o derivación algebraica, y `git grep` propio
+del consumidor con pathspec excluyente (fuera de `graphify-out/` y `docs/`).
+
+**Árbol medido**: base declarada `66f33092` (asignación R2) y consolidación
+contra `689efd86` (HEAD al cerrar). `git merge-base --is-ancestor 66f33092
+689efd86` → **0** (es ancestro); entre medias entró **Ω46 de AGY**
+(`f9ca4284` + merge `f2b4276d`), que toca justamente la zona F de esta ronda
+(`risk-engine/src/evidence.rs`, `lib.rs:861-873, 1007-1015, 1064-1135`). Cada
+ancla de las 41 fichas se re-grep-ó contra `689efd86` antes de publicar:
+**ninguna ficha quedó invalidada por el avance**, y la que colisiona con Ω46
+se re-escalró (ver abajo). Docs-only: **cero `.rs` tocados**; el veredicto T-1
+de §R7-3 (PASA 16/144 sobre `534e7980`) sigue siendo el último certificado —
+**Ω46 entró a main sin re-certificación**, y eso es hallazgo de proceso, no
+sólo de matemática.
+
+### Medición (re-ejecutable)
+
+| magnitud | valor | método |
+|---|---|---|
+| fichas brutas (6 lentes A-F) | **55** | conteo por auditor: A 9, B 11, C 12, D 6, E 12, F 5 |
+| absorbidas por la familia G-1 (código muerto) | −9 | A-8, B-2, B-3, B-4, B-5, D-3, E-12, F-4, F-5 |
+| absorbidas por la familia G-2 (tests que no certifican) | −7 | A-6, A-7, B-10, B-11, C-10, D-6, F-3 |
+| +2 fichas-familia creadas | +2 | G-1, G-2 |
+| **fichas únicas publicadas** | **41** | 33 con header `#### R7-R2-*` + 8 en viñetas (6 LOW, 2 INFO) |
+| severidades | **9 HIGH / 23 MED / 1 LOW-MED / 6 LOW / 2 INFO** | `grep -c '^#### R7-R2-.*\[HIGH\]'` = 9 |
+| retractaciones propias | 1 | F4-M1 (borrador R2): `tp_sl.rs:335` SÍ eleva el stop al piso |
+| re-designaciones por colisión de ID | 2 | auditor D → `R7-R2-D-*`, auditor E → `R7-R2-E-*` |
+
+### Los 9 HIGH (uno por línea)
+
+1. **R7-R2-A-1** — el primer toque analítico de Ω3 (`tp_sl.rs:436`
+   `probabilidad_tocar_sl_antes_de_tp`, `:464` `..._stop_antes_de_tau`) tiene
+   **cero consumidores productivos**: la probabilidad de ruina por trayectoria
+   está derivada, testada y publicada… y el gate de admisión usa la racha
+   Bernoulli de Cramér-Lundberg. La fórmula estrella del proyecto no gobierna
+   nada.
+2. **R7-R2-C-1** — el gate de evidencia del τ\* dominante es **inalcanzable en
+   tiempo de mercado**: exige 640 bloques maduros por escala
+   (`temporal_spectrum.rs:643-678`, `significativo_familia` con `M = 32`,
+   α = 0,05 ⇒ capital ≥ M/α = 640); con la cadencia viva de altcoins eso son
+   **24,6 h … 262 días** por moneda. El τ\* por habilidad (#594) nunca se
+   elige por habilidad en una sesión real.
+3. **R7-R2-C-2** — **dos τ\* vivas sin reconciliar**: `dominant_tau_ms` (gate
+   de habilidad) y `continuous_resonant_tau_ms` (`:1164-1189`, argmax de
+   energía SIN gate). El TP/SL se dimensiona con una y la señal vota con la
+   otra: factor **×4,6** de diferencia de horizonte en el contraejemplo.
+4. **R7-R2-C-3** — `dominant_drift` (`spectral_regime.rs:74-92`) es un
+   **escalón**, no una derivada: satura con |Δln τ| = 2,8e-7. Con
+   `crash_flux ≥ 0,35` el símplex quita **0,86 USD de 13** de margen — un
+   bit, no una magnitud continua.
+5. **R7-R2-D-1** — el lector vivo de entropía (`god-core lib.rs:4299` →
+   `crates/god-engine-core/src/math_kernels.rs:463`, 10 bins)
+   publica **nats sin normalizar** (`entropy -= p * p.ln()`) mientras el
+   consumidor (`flow_impulse.rs:155,162`) está calibrado para [0,1] en bits
+   (`feature-engine/shannon_entropy.rs:60` publica la versión correcta, sin
+   lector). Contraejemplo: ~7 bins ocupados de 10 ⇒ H ≈ **1,95 nats** > 1,8182
+   ⇒ `decay = 0` ⇒ `confidence = 0` permanente y la rama se calla por unidad,
+   no por física.
+6. **R7-R2-E-1** — el Hawkes de `feature-engine` se **auto-valida** (α̂ ← ŷ y
+   luego compara λ contra su propia media) y con 300 s de silencio la
+   intensidad residual da λ ≈ **940×** el estado estacionario; **0
+   consumidores** en el path vivo. Su telemetría es decorativa.
+7. **R7-R2-E-2** — el nulo del Hurst-DFA está mal declarado: el barajado
+   produce ±0,14 y la política exige ±0,02; además el test pide r² > 0,90 en
+   un paseo aleatorio, que un estimador honesto NO debe pasar. El «nulo
+   verde» es el sesgo, no la evidencia.
+8. **R7-R2-E-3** — `RHO_MIN = 0,25` (`lead_lag.rs:36-38`) con `N_MIN = 12`
+   ⇒ desviación estándar de ρ bajo H0 ≈ **0,30**: la puerta de firma es más
+   laxa que su propio ruido, y la guarda adicional `lag <= 0.0` es
+   inalcanzable (el lag estimado nunca es ≤ 0 en el rejilla física).
+9. **R7-R2-F-1** — **prueba algebraica cerrada**: con la geometría canónica
+   `min_rr_for(w, f, sl) = (1−w)/w + f/(w·sl)` (`genome.rs:2340`) evaluada en
+   `w = WORST_TOLERATED_WR = 0,40` (`tp_sl.rs:293`, `genome.rs:2412`) y el
+   piso `sl ≥ f/0,65`, el EV de la sonda cumple
+   `ev_prior = 0,55·tp − 0,45·sl ≥ 0,375·sl + 1,375·f > f`. Por tanto el
+   `rej(4)` de la fase sonda (`risk lib.rs:1106-1132`) **es inalcanzable**: la
+   compuerta D-751 no puede vetar nada en los primeros 5 trades por moneda.
+   El contrato de Ω46 (`evidence.rs:225`) sólo llama la función pura y nunca
+   la compuerta — sella la ilusión (patrón R6-A7).
+
+### Colisión con Ω46/#679 de AGY (re-escalre publicado en §R7-6)
+
+AGY cerró **F4-M1** en `#679` sobre el mismo hallazgo que mi **R7-R2-F-2**
+(aborto ciego `REJ_TP_SL_FLOOR` en micro). La ficha queda re-escalada, no
+retirada:
+
+- **Retirada mi alegación del techo de 55 bps** — el argumento de presupuesto
+  de ruina de AGY es correcto (0,0055 × 5,10 USD = 0,028 USD ≤ 2 % del
+  capital), y la tensión con D-639 figura como **decisión pendiente del dueño**
+  desde el barrido Claude de 2026-09-28.
+- **Subsiste el efecto del bypass `lib.rs:863-872`**: la condición
+  `micro_w_alloc > 0,5 && sl_floor <= 0,0055` ⇔ `f ≤ 0,003575` (35,75 bps
+  ida-y-vuelta). Con la fricción canónica `f = 0,00145` ⇒ `sl_floor = 22,3
+  bps`; con `REFERENCE_ROUNDTRIP_FEE = 0,0010` ⇒ `15,4 bps`. Para que
+  `REJ_TP_SL_FLOOR` vuelva a dispararse en micro harían falta comisiones ~**90×
+  la taker de Binance USDT-M**: el veto queda **muerto en todo el dominio
+  operativo**, y el «48 bps» de la justificación no es producible con ninguna
+  fricción real (exigiría `f = 0,00312`).
+- **Escalón C0 nuevo en el embudo**: con `micro_w_alloc` apenas sobre 0,5 las
+  intenciones `below_tradeable_floor` se admiten; apenas bajo 0,5 se abortan.
+  Contradicción con el suavizado Hermite C¹ que la propia Ω46 aplicó en
+  F4-M2.
+- **Sin contrato y sin oráculo**: `git grep -ln "micro_admite_suelo" -- crates`
+  devuelve sólo el `src`; ningún test de `crates/risk-engine/tests` ejercita
+  el bypass, y `f9ca4284` cambió gate EV + LCB + admisión de brackets sin
+  re-certificación T-1.
+
+### Mapa positivo (qué NO está roto)
+
+Álgebra OLS-OU exacta sin lookahead y unidades `t½ ≤ 2τ*` correctas;
+`selection_stats` (Mertens/PSR/DSR con σ̂_SR leptocúrtica) fiel a la
+literatura tras H1-4; e-proceso de Ville con λ acotada y cota maximal
+correcta bajo familia M/α; `correlation_guard` con signo correcto de
+exposición y admisión de coberturas ρ < 0; cero asignación de heap en los
+buffers de hot-path del espectro; y el shrinkage jerárquico de Ω46.1 como
+estimador (α = k₀p₀ + nw) es bayesianamente honesto — su defecto es el
+consumidor, no la fórmula.
+
+### Alcance honesto y asignación
+
+R2 **inventaría**, no arregla: 41 fichas con evidencia, **cero `.rs`
+tocados**, cero oráculo nuevo (docs-only). Asignación publicada en el buzón:
+**AGY Ω47** = F-1, C-1, C-2, D-1, C-3 (matemática del gate y del símplex);
+**GLM** = E-1, E-2, E-3, A-1 (estimadores y primer toque); **Codex** = B-1,
+B-6 (relojes y muestras dependientes); **Qoder** = familias G-1/G-2
+(código muerto y tests que no certifican) con su propia ola. Detalle completo
+de las 41 fichas: `docs/BARRIDO_EXHAUSTIVO_FASES.md` §R7-6 (cabecera en la
+línea 2250).

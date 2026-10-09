@@ -1797,7 +1797,7 @@ veredicto se escribe abajo al cerrarse.
 |---|---|---|---|---|
 | R0 | ledger de cobertura 488 `.rs` + censo código muerto/duplicado | inventario | Qoder | **CERRADA** (§R7-4) |
 | R1 | doctrina/nomenclatura (`AGENTS.md`, MEMORIA, planes maestros, `ARQUITECTURA_VIVA`, ADRs) + grep `scalp\|swing` | metas/conceptos | Qoder | **CERRADA** (§R7-5: 9 fichas, 0 HIGH / 2 MED / 4 LOW / 3 INFO) |
-| R2 | matemática/estadística (risk-engine stats, Ville, Cramér-Lundberg, ruin, correlation_guard, leverage_matrix, orchestrator, vetos, multifractal, lead-lag, temporal_spectrum, spectral_tape) | matemática | Qoder | **EN CURSO** (§R7-6 al cerrar) |
+| R2 | matemática/estadística (risk-engine stats, Ville, Cramér-Lundberg, ruin, correlation_guard, leverage_matrix, orchestrator, vetos, multifractal, lead-lag, temporal_spectrum, spectral_tape) | matemática | Qoder | **CERRADA** (§R7-6: 41 fichas, 9 HIGH / 23 MED / 1 LOW-MED / 6 LOW / 2 INFO) |
 | R3 | física/cuántica (hodge ×2, hodge_flow, yang_mills, stat_arb, vecm, multivariate_coint, maker + 13 motores signal-engine) | física | — | ABIERTA |
 | R4 | núcleo vivo (`god-engine-core/src/lib.rs` por bloques, `src/bin/god_engine.rs`, orquestador, state/position) | integración viva | — | ABIERTA |
 | R5 | dinero/ejecución (risk-engine completo + execution-engine) | ejecución | — | ABIERTA |
@@ -2246,3 +2246,496 @@ Dueño: **Qoder** (cola con R2).
 - NO se tocó código. Las acciones con cambio de conducta (R7-R1-2, R7-R1-6 si se
   toca el ranking, R7-R1-8) quedan en cola **con oráculo T-1 obligatorio**.
 - Total R1: **9 fichas (0 HIGH, 2 MED, 4 LOW, 3 INFO)**.
+
+## §R7-6 — Fase R2 cerrada: matemática/estadística (risk-engine, spectral, features)
+
+Ejecutor: **Qoder** (rama `qoder/ronda7-plan`). Docs-only: **cero cambios de
+código**, cero oráculo nuevo (ningún `.rs` se tocó; el veredicto vigente de
+`534e7980` — PASA 16/144 = 11,1 % — sigue siendo el último).
+
+### Procedencia, base y método
+
+| lente | ámbito | fichas brutas |
+|---|---|---|
+| A | riesgo/estadística dura (ruin, Kelly, Cramér-Lundberg, Ville, selection_stats, calibración) | 9 |
+| B | dependencia/cartera/crecimiento (correlation_guard, orchestrator, leverage_matrix, vetos, epigenética, régimen) | 11 |
+| C | sustrato espectral (temporal_spectrum, spectral_regime, espectral_multiactivo, spectral_tape, adaptive_quantiles) | 12 |
+| D | features y sus consumidores (god-engine-core publica → signal/feature-engine lee) | 6 |
+| E | estadística de features (Hawkes, Hurst DFA, lead-lag, Kalman, cópulas, correlación, multifractal) | 12 |
+| F | fichas propias de la ola 73 (gate D-751, tp_sl, anclas) | 5 |
+| | **total bruto** | **55** |
+
+**Base declarada**: los auditores D1/D2 trabajaron sobre `66f33092`; HEAD real
+`689efd86`. Verificado con `git merge-base --is-ancestor 66f33092 HEAD` (CIERTO),
+y **re-grep + re-lectura contra `689efd86`** de las 6 HIGH ajenas y de todas las
+fichas «sin consumidor»: ninguna la movió Ω46, todas siguen vigentes al centavo.
+
+**Contra la colisión de IDs**: D1 y D2 usaban ambos el prefijo `R2D-*` y
+solapaban contenido (entropía en nats, superficie sin llamante). Re-designado
+D1 → `R7-R2-D-*`, D2 → `R7-R2-E-*`, con dedups explícitos abajo.
+
+**Consolidación**: 55 fichas brutas → **41 defectos únicos** tras plegar dos
+familias acumulativas (R7-R2-G-1 código muerto: 9 fichas absorbidas;
+R7-R2-G-2 tests que certifican texto/plomería: 7 fichas absorbidas; las dos
+familias cuentan como 2 fichas propias). Dedups menores: la parte Shannon de
+E-7 se pliega en D-1; E-5 y E-2 cross-referencian G-2 sin plegarse (su defecto
+es el estimador, no el test).
+
+**Total R2: 41 fichas (9 HIGH, 23 MED, 1 LOW-MED, 6 LOW, 2 INFO)** — las 23 MED
+incluyen las dos familias acumulativas.
+
+### Retractación obligatoria
+
+Mi ficha **F4-M1** de la pasada («el código NO eleva el stop al piso de fricción
+cuando el gen lo pide») era **FALSA**. `crates/risk-engine/src/tp_sl.rs:335` sí
+eleva: `let sl_pct = sl_diffusive.max(sl_floor);`. Se retira. La versión correcta
+del hallazgo es la **R7-R2-F-2** de abajo (veto muerto en micro + techo de 55 bps
+que contradice D-639 + doc contradictoria). También quedó **refutado
+algebraicamente** el agujero hipotético del cap B3.24 (`sl <= tp/2`): no se
+publica, se registra como refutado.
+
+---
+
+### HIGH (9)
+
+#### R7-R2-A-1 [HIGH] — el primer toque analítico de Ω3 no tiene un solo consumidor
+- **Dónde**: `crates/risk-engine/src/tp_sl.rs:436` (`probabilidad_tocar_sl_antes_de_tp`)
+  y `:464` (`probabilidad_primer_toque_stop_antes_de_tau`), con sus tests internos
+  en `:911-934`.
+- **Evidencia**: `git grep -l` de ambos símbolos sobre `-- '*.rs'` devuelve **1
+  archivo** (el propio `tp_sl.rs`). Cero consumidores productivos.
+- **Por qué importa**: la ola Ω3 se cerró documentando «derivación matemática
+  exacta en forma cerrada del primer toque (BM con drift) e Inversa-Gaussiana»
+  como un pilar del dimensionamiento. No lo es: el sizing real sigue usando
+  `min_rr_for` y las curvas de horizonte. Es **R6-A7** otra vez (física certificada
+  por tests del propio módulo, no por su consumidor).
+
+#### R7-R2-C-1 [HIGH] — el gate de evidencia de la tau dominante es inalcanzable en la banda lenta
+- **Dónde**: `crates/quantum-arena/src/temporal_spectrum.rs:643-678` exige
+  `n >= M/alpha` con la política de familia ⇒ **640 bloques maduros** por escala.
+- **Contraejemplo numérico**: con probabilidad de acierto 0,55 el tiempo de muro
+  por nodo de la malla `4^k us` es nodo 18 ≈ **24,6 h**, nodo 19 ≈ 98 h, nodo 20 ≈
+  16 d, nodo 21 ≈ 66 d, nodo 22 ≈ **262 d**. La sesión típica no ve 640 bloques ni
+  en el nodo 18.
+- **Consecuencia**: la tau dominante efectiva es siempre el nodo más rápido que sí
+  madura, o el argmax de energía que **#594 declaró deshonesto** y del que
+  pretendía huir. Y esa tau dimensiona SL/TP/Kelly:
+  `crates/risk-engine/src/lib.rs:1410-1419` y `tp_sl.rs:50`.
+
+#### R7-R2-C-2 [HIGH] — dos tau dominantes vivas sin reconciliar
+- **Dónde**: `temporal_spectrum.rs:1164-1189` (`continuous_resonant_tau_ms`, **sin
+  gate de evidencia**) alimenta la rama 15
+  (`crates/god-engine-core/src/lib.rs:6374-6400`) y D-745 respeta esa declaración
+  en riesgo (`risk-engine/src/lib.rs:1405-1419`); mientras el rho(tau) del veto de
+  grupo lee la OTRA: `dominant_tau_ms` (`:1707-1711`, `:1945-1952`).
+- **Contraejemplo**: con `b = 0,35` mover la tau declarada de 68,7 s a 17 592 s
+  multiplica TP y SL por **×4,6**. Dos componentes del mismo tick usan dos nociones
+  del mismo concepto. El clamp adicional en `god-core lib.rs:6381` es código
+  muerto (la rama ya viene clampeada aguas arriba).
+
+#### R7-R2-C-3 [HIGH] — `dominant_drift` es un escalón, no una derivada
+- **Dónde**: `crates/quantum-arena/src/spectral_regime.rs:74-92`; su productor
+  `god-core lib.rs:245-259` retorna `elapsed.max(1.0)` **siempre** (no es
+  d ln tau / dt físico).
+- **Contraejemplo**: con `elapsed = 1 ms` la salida satura con |d ln| =
+  **2,8e-7**; cualquier ruido de ordering la lleva al extremo. Y
+  `crash_flux >= 0,35` se traduce en 8,75 pp de presión y `free_cap × 0,6675` ≈
+  **0,86 USD de los 13 USD**. El contrato `qo_592` (`spectral_regime.rs:9279-9311`)
+  pasa un d ln = 1,0: **60× sobre el punto de saturación**, así que certifica el
+  escalón, no la derivada.
+
+#### R7-R2-D-1 [HIGH] — la entropía se publica en nats y el calibrador está escrito para [0,1]
+- **Dónde**: productor `god-core lib.rs:4299` →
+  `crates/god-engine-core/src/math_kernels.rs:463`
+  (`ShannonEntropy::current()`, 10 bins, **sin normalizar por log(bin_count)**);
+  el gemelo correcto vive en `crates/feature-engine/src/shannon_entropy.rs:60`
+  (bits normalizados por `log2(num_bins)`). Consumidor
+  `crates/signal-engine/src/flow_impulse.rs:155,162`.
+- **Contraejemplo**: con ~7 bins ocupados de 10, H ≈ **1,95 nats** > 1,8182 ⇒
+  `decay = 0` ⇒ `confidence = 0`. El z-umbral que el consumidor aplica es 3,0
+  sobre una señal diseñada en [1,2]. La cadena entera (claves `shannon_entropy`
+  y `tsallis_q_entropy`) está descalibrada por unidades.
+- **Dedup**: cubre la mitad Shannon de E-7.
+
+#### R7-R2-E-1 [HIGH] — el Hawkes del feature-engine auto-valida y no referencia su propia lambda
+- **Dónde**: `crates/feature-engine/src/hawkes.rs:77-79` (la intensidad se
+  actualiza contra su propio kernel sin alpha × lambda), salida en `:88` con **0
+  consumidores** (`git grep` del símbolo con pathspec excluyente), alpha clampeado
+  en `:20`.
+- **Contraejemplo**: 300 s de silencio ⇒ lambda ≈ **940×** la tasa base. El
+  shot-noise resultante no es auto-excitante. El Hawkes **vivo** es
+  `signal_engine::hawkes_bessel` (producido en `god-core lib.rs:869`), así que el
+  módulo auditado es una segunda cara muerta de la misma física (#649).
+
+#### R7-R2-E-2 [HIGH] — el nulo del Hurst DFA se autoexime y la política vive en otro lado
+- **Dónde**: tolerancia del nulo ±0,14 en `crates/feature-engine/src/hurst_dfa.rs:363-377`,
+  y el test de `:494-506` **exige** r2 > 0,90 sobre un paseo aleatorio (afirma la
+  regresión del estimador, no su insesgamiento); la política de decisión es ±0,02
+  (`god-core lib.rs:8278-8279`, doc `:448`).
+- **Consecuencia**: entre ±0,02 y ±0,14 no hay contrato — la zona «persistencia
+  débil» se decide sin nulo medido. Red de seguridad que evita el desastre:
+  `risk-engine/src/tp_sl.rs:261-273` clampa `hurst.clamp(0.30, 0.75)`.
+
+#### R7-R2-E-3 [HIGH] — el lead-lag firma con rho de n=12 contra un nulo de sd 0,30
+- **Dónde**: `crates/feature-engine/src/lead_lag.rs:36-38` (`RHO_MIN = 0,25`),
+  ventana n = 12, `:165-171`, doc `:32`.
+- **Derivación**: sd de rho-bajo-H0 con n = 12 ≈ 1/sqrt(11) ≈ **0,30**.
+  `RHO_MIN = 0,25` está **bajo** el sd, y además se toma el máximo sobre 5
+  comparaciones de lag ⇒ tasa de falsos positivos de familia muy superior a la
+  nombrada.
+- **Extra**: la puerta `lag <= 0.0` (`:217`, `:245`) es inalcanzable porque
+  `LAGS_MS` no incluye el lag 0 — el «cero» que el código compara nunca puede
+  ocurrir.
+
+#### R7-R2-F-1 [HIGH] — el `rej(4)` de la fase sonda es inalcanzable: el gate D-751 no puede vetar nada en los primeros 5 trades
+- **Dónde**: `crates/risk-engine/src/lib.rs:1106-1132` (fase sonda `0 < n < 5`,
+  rechazo `rej(4)`) frente a la geometría canónica
+  `min_rr_for(w, f, sl) = (1-w)/w + f/(w*sl)`
+  (`crates/quantum-arena/src/genome.rs:2340`) y `min_viable_sl = f/0,65`
+  (`MAX_FRICTION_SHARE_OF_RISK = 0,65`, `genome.rs:2458/:2505`).
+- **Prueba (cerrada, algebraica)**: supongamos el bracket admitido,
+  `tp >= sl * min_rr_for(w, f, sl)`. Entonces
+  `ev_prior = 0,55*tp - 0,45*sl >= sl*[0,55(1-w)/w - 0,45] + 0,55*f/w`.
+  Ambas piezas son >= 0 y el término de fricción es >= f para todo **w <= 0,55**.
+  Con `sl >= f/0,65`: `ev_prior >= 0,375*sl + 1,375*f > f`. Por tanto la condición
+  de rechazo por EV de la sonda **nunca se cumple**: el gate D-751 no puede vetar
+  nada en los primeros 5 cierres por moneda.
+- **Vendava**: el contrato de Ω46
+  `cota_jerarquica_no_colapsa_a_cero_en_n_1_evitando_deadlock`
+  (`crates/risk-engine/src/evidence.rs:225`) **afirma** que no hay deadlock —
+  pero su cuerpo sólo llama la función pura
+  `win_rate_hierarchical_lcb(·)` en cuatro puntos (n = 0/1/1/1000); **nunca
+  invoca la compuerta de riesgo** ni `rej(4)`. Certifica la plomería
+  (patrón R6-A7), no la física del rechazo.
+- **Confirmación contra el árbol final**: `compute_tp_sl_with_target_rr` fija
+  `let w = SuperGenotype::WORST_TOLERATED_WR;` (`tp_sl.rs:293`) y ese
+  `WORST_TOLERATED_WR = 0,40` (`genome.rs:2412`), de modo que la condición
+  `w <= 0,55` de la prueba se cumple por construcción en TODA geometría
+  admitida (también en la rama con techo de 55 bps, que preserva
+  `tp >= sl * rr_applied >= sl * rr_required`). El `rej(4)` de la sonda es
+  inalcanzable en el árbol `689efd86`, no sólo en el de la R2.
+
+---
+
+### MED (21 individuales + 2 familias = 23)
+
+#### R7-R2-A-2 [MED] — `clamp_ruin` consume la q bruta aunque su doc pide la LCB
+- `crates/risk-engine/src/kelly.rs:115`, `risk lib.rs:382-387`, `:595-600`,
+  `leverage_matrix.rs:30` pasan `win_rate` crudo; la doc de `ruin.rs:27` declara
+  la cota inferior. **Contraejemplo**: wr = 0,60 con n = 10 ⇒ cap por q bruta
+  **0,404** vs por q_lcb **0,216** — el sistema admite **1,9× más riesgo** del que
+  su propio documento justifica.
+
+#### R7-R2-A-3 [MED] — la R de Cramer-Lundberg se usa puntual pese a tener bootstrap
+- `cramer_lundberg.rs:241-242` calcula la distribución; el consumidor
+  `risk lib.rs:625-629` toma el valor central y lo pasa a
+  `correlation_guard.rs:559 margen_de_cota(R, 0,05)`. **Sensibilidad**: −30 % en
+  la R estimada ⇒ **+43 %** en el tope grupal. La cota debió tomarse del percentil
+  adverso.
+
+#### R7-R2-A-4 [MED] — la cuantización `(ret/0,02).clamp(-1,1)` cambia la hipótesis nula de Ville
+- `crates/evolution-engine/src/online_daemon.rs:1128` alimenta
+  `SequentialVilleEvidence::observe` con retornos recortados. El e-proceso de
+  `ville_e_process.rs` asume `E[X] <= 0` bajo H0 sobre la variable **original**;
+  el clamp asimétrico introduce sesgo en las colas ⇒ certificación más fácil.
+
+#### R7-R2-A-5 [MED] — Kelly envoltura: p con LCB pero `b` crudo
+- `kelly_envelope.rs:248` usa la cota inferior de p; `:253` usa `b` puntual.
+  Como `d f*/d b = q/b^2 > 0`, el sesgo de optimismo en `b` **no** está cubierto
+  por la LCB de p: la asimetría conservadora es sólo mitad de la fórmula.
+
+#### R7-R2-B-1 [MED] — rho base de Hayashi-Yoshida sin centrar
+- `correlation_guard.rs:299-304,321-326`, y es el primario del veto
+  (`:632-633` → `risk lib.rs:571`). **El test que dice probarlo**
+  (`:1066-1087` «sincronizadas ⇒ Pearson») correlaciona la serie **consigo misma**
+  (rho identicamente 1 por construcción). **Contraejemplo**: k = 2, rho = −0,5 ⇒
+  varianza de grupo estimada **2,0 %** vs **2,83 %** real: descuento de **29 %**
+  exactamente donde el veto promete ser adversarial.
+
+#### R7-R2-B-6 [MED] — salto C0 de ×2,6 a ×5 en `fraction_multiplier`, aplicado al sizing de todas las monedas
+- `leverage_matrix.rs:135-141` multiplica por un factor que duplica al cruzar el
+  **umbral de veto BTC**; `:317` añade `.max(1.0)`. **Contraejemplo**: justo por
+  debajo del umbral el sizing sale en Kelly **pleno** en régimen rápido. Cobertura
+  de tests: nula sobre esa frontera.
+
+#### R7-R2-C-4 [MED] — Ville acumulativo de por vida contra IC con olvido 1/64
+- `evalues.rs:56-100` acumula sin descuento; `temporal_spectrum.rs:298,487-492,
+  662-666` y `espectral_multiactivo.rs:88-101` calculan IC con EWMA de olvido
+  1/64. Un e-valor construido sobre una estadística no-martingal (su distribución
+  marginal cambia con la memoria) no hereda la cota de Ville.
+
+#### R7-R2-C-5 [MED] — M = 2 175 es capacidad estática, no número de procesos consultados
+- `espectral_multiactivo.rs` define la familia por la capacidad del arreglo; los
+  tests sólo ejercitan rho identicamente 1. La política #651 («no se abre nunca»)
+  queda sin efecto. **Choque documental**: los comentarios del núcleo
+  (`god-core lib.rs:1679-1682`) describen otra cosa que el módulo
+  (`espectral_multiactivo.rs:48-52`).
+
+#### R7-R2-C-6 [MED] — media de rho sobre el subconjunto SELECCIONADO
+- `espectral_multiactivo.rs:320-340` promedia sobre el filtro `ic_veto`
+  (`:125-130`). Sesgo de selección: la media sube justo cuando el gate de
+  evidencia está duro — es decir, exactamente en el régimen donde el veto de grupo
+  decide.
+
+#### R7-R2-C-7 [MED] — ventanas solapadas con stride h/4 heredando la madurez de bloques no solapados
+- `spectral_tape.rs:456,463` con `MUESTRAS_MADURAS = 30` (heredado de CL-30, que
+  exige no solape). N efectivo ≈ **7,5** sobre 6 coeficientes ⇒ el «n >= 30» es
+  nominal. Warmup de 256 muestras: anclas lentas **nunca** maduran (5,5 h…4,9 d de
+  muro).
+
+#### R7-R2-C-8 [MED] — sigma publicada es la mediana `exp(E[ln X])`, no la media
+- `spectral_tape.rs:490,519,583,713-721`: se exponenta el log-medio sin el factor
+  de smearing de Duan. Por Jensen subestima. **Magnitud**: dispersión de
+  ln = 0,5 ⇒ sigma real es ~13 % mayor que la publicada.
+
+#### R7-R2-C-9 [MED] — el multiplicador `(1 + 0,5 chi)` destruye el percentil que la etiqueta declara
+- `adaptive_quantiles.rs:217-241` consumido por `god-core lib.rs:4813-4825` y
+  `:2739-2753`; el texto de `:4386` sigue llamándolo «percentil 80/85 MEDIDO».
+  Además el estimador es acumulativo de por vida (sin olvido).
+
+#### R7-R2-D-2 [MED] — `tsallis_q_entropy` publicado con máximo real 0,5858 frente a un lector que asume [0,1]
+- Productor `god-core lib.rs:4304`; lector
+  `crates/signal-engine/src/renyi_tsallis_entropy.rs:160-162`. El camino
+  `voto_espectral` (`:193`) **sí** normaliza: otra vez dos caras del mismo escalar.
+
+#### R7-R2-D-4 [MED] — el variance-difference-ratio acumulado de por vida entra como dimensión 6 del ML
+- `crates/feature-engine/src/microstructure.rs:41-42,66-83` (sin olvido) →
+  `crates/dark-alpha-engine/src/stateful_engine.rs:1081,1100`. Un estadístico con
+  memoria infinita hace que la característica dependa de la longitud de sesión, no
+  del régimen: el modelo ve un trend de sesión como señal de mercado.
+
+#### R7-R2-E-4 [MED] — H2-12 vigente: `rho.abs()` acredita coberturas y el signo se hereda
+- `lead_lag.rs:167` filtra por valor absoluto; `:220-221`, `:249` propagan el
+  signo del líder. La «DECISIÓN ABIERTA» está declarada en `:150-156`. **No se
+  resuelve en docs**: cambiar la firma invierte conducta ⇒ exige oráculo T-1.
+
+#### R7-R2-E-5 [MED] — espectro V2 honesto sin consumidores; el vivo es el legacy
+- `crates/feature-engine/src/spectral.rs:124-195` (V2, con Parseval) tiene **0
+  callers**; lo que corre es `:57-117` vía `stateful_engine.rs:756,759,1197-1217`,
+  que publica `ln(1 + power)` (compresión no lineal, no un espectro). El contrato
+  `event_spectrum_v2_contract.rs:138-149` se autodenomina «Diagnostic of OPEN
+  FMT-004» — honesto, pero el verde del V2 no certifica nada del camino vivo.
+
+#### R7-R2-E-6 [MED] — Kalman: doc de unidades al cuadrado, llamada con amplitud
+- `crates/feature-engine/src/kalman.rs:2` declara varianza;
+  `stateful_engine.rs:720` pasa desviación. **Contraejemplo**: con ruido de medida
+  60 000 USD la ganancia K ≈ **0,018** (el filtro ignora la observación); con 0,5
+  USD K ≈ **0,6** — un cambio de escala de 5 órdenes de magnitud invierte el
+  filtro. `update_with_instantaneous_volatility` (`:109-127`): 0 consumidores.
+
+#### R7-R2-E-7 [MED] — isla raíz muerta montada por `#[path]` dentro de tests de `crates/`
+- `crates/risk-engine/tests/legacy_correlation_diagnostics.rs:3-8` y
+  `legacy_statistics_diagnostics.rs:2-7` importan fuente de la raíz con `#[path]`,
+  fijando **la patología como contrato**. Su segunda mitad (Shannon opuestas:
+  decay 0,999 vs 0,995; bins z-score vs fijos; nats vs bits) se pliega en **D-1**.
+
+#### R7-R2-E-8 [MED] — el manifest de copulas sólo publica la lambda paramétrica
+- `crates/feature-engine/src/copulas.rs:282-289` + `src/bin/copulas_manifest.rs:18`;
+  `lambda_empirica` (`:294-336`) **0 consumidores**; la única prueba con datos
+  reales está `#[ignore]` (`crates/feature-engine/tests/copula_real.rs:113`). El
+  supuesto `rho_desde_tau = sin(pi*tau/2)` (`:67-69`) no está probado en ningún
+  dominio.
+
+#### R7-R2-E-9 [MED] — correlación EWMA actualiza la media ANTES de la desviación
+- `crates/feature-engine/src/correlation.rs:104-107,88-91`: el segundo momento
+  queda sesgado sistemáticamente; el clamp [-1,1] de `:119-124` **enmascara** el
+  signo del sesgo. `:49-54` colapsa `Err` y `None` en 0,0 (dos estados distintos
+  con la misma salida).
+
+#### R7-R2-F-2 [MED] — el bypass Ω46.3 deja el veto `REJ_TP_SL_FLOOR` muerto en micro y abre escalón en `micro_w_alloc = 0,5`
+- **Dónde**: `crates/risk-engine/src/lib.rs:863-872` (bypass Ω46.3) y
+  `:877-883` (techo de 55 bps), con `min_viable_sl = f / 0,65`
+  (`genome.rs:2505`, `MAX_FRICTION_SHARE_OF_RISK = 0,65`).
+- **Estado real (cotejado contra Ω46 / ficha #679 de AGY)**: esta ficha NACE
+  como la versión corregida de mi retractada F4-M1 (el código SÍ eleva el stop
+  al piso, `tp_sl.rs:335`), y AGY publicó `f9ca4284` sobre el mismo hallazgo
+  con el MISMO ID «F4-M1» **mientras mi barrido estaba en vuelo** (colisión de
+  ID documentada abajo). AGY resolvió el aborto con el bypass de `:869`; mi
+  alegación del **techo de 55 bps** NO la aborda y **se retira como defecto**:
+  el argumento de presupuesto de ruina (`:874-877`, 0,0055 × 5,10 USD = 0,028
+  USD ≤ 2 % del capital) es válido, y la tensión con D-639 ya está registrada
+  como **decisión pendiente del dueño** desde el barrido Claude de 2026-09-28
+  («política, no bug numérico»). Lo que SUBSISTE es el efecto del bypass, que
+  Ω46 introduce sin medirla:
+- **Contraejemplo numérico (el veto es inalcanzable en el dominio vivo de
+  fricción)**: la condición de bypass es `micro_w_alloc > 0,5 && sl_floor <=
+  0,0055`, es decir `f / 0,65 <= 0,0055` ⇔ `f <= 0,003575` (35,75 bps
+  ida-y-vuelta). La fricción real canónica es `f = 0,00145` (2 taker + piso
+  difusivo) ⇒ `sl_floor = 0,00223` (22,3 bps); con el `REFERENCE_ROUNDTRIP_FEE
+  = 0,0010` ⇒ `sl_floor = 0,00154` (15,4 bps). Para que `REJ_TP_SL_FLOOR`
+  vuelva a dispararse en micro harían falta comisiones de ~36 bps por ida,
+  **~90× la taker de Binance USDT-M**. El veto queda muerto en el 100 % del
+  dominio operativo, no acotado. El comentario de la ficha describe un
+  `sl_floor` de **48 bps** que no es producible con ninguna fricción real
+  (exigiría `f = 0,00312`, 31 bps por lado): los números de la justificación
+  son ficticios.
+- **Escalón C0 nuevo en el embudo de admisión**: con `micro_w_alloc` apenas
+  sobre 0,5 las intenciones con `below_tradeable_floor` se ADMITEN; apenas
+  bajo 0,5 se ABORTAN con `REJ_TP_SL_FLOOR`. Es un cambio discontinuo de
+  conducta en la misma puerta de riesgo — viola el estándar de continuidad
+  C¹ que la propia Ω46 aplicó en el suavizado Hermite (`F4-M2`) y que la
+  doctrina D-641/D-751 exige en los umbrales.
+- **Evidencia de proceso (sin contrato y sin oráculo)**: `git grep -ln
+  "micro_admite_suelo" -- crates` devuelve **sólo el src**
+  (`risk-engine/src/lib.rs:869`); ningún test de `crates/risk-engine/tests`
+  ejercita el bypass, así que la conducta admitida no está certificada. Y
+  `f9ca4284`/`f2b4276d` tocaron la pipeline viva (gate EV, LCB, admisión de
+  brackets) **sin re-certificación T-1**: el último oráculo verde es
+  `f5cadac7` (PASA 16/144) sobre un árbol ANTERIOR a Ω46. R8 debe re-certificar
+  antes de cualquier push de código adicional.
+- **Colisión de ID (higiene de coordinación)**: «F4-M1» es el ID que AGY usó
+  en `#679` para ESTE hallazgo, y también el ID de MI ficha retractada en el
+  borrador de la R2 (la retracté porque `tp_sl.rs:335` sí eleva el stop). Los
+  tres documentos quedan desambiguados así: ficha AGY = `#679 / Ω46 / F4-M1`;
+  ficha Qoder retractada = «F4-M1 (R2 borrador, retractada)»; ficha viva =
+  **R7-R2-F-2**. Para la R3+ se mantiene la regla de prefijo por agente.
+- **Asignación**: AGY (dueño de Ω46) — decidir si el bypass es política
+  deliberada (entonces: retirar `REJ_TP_SL_FLOOR` y su doc, nombrar la
+  condición con constante con dominio, y cerrar el escalón con rampa en
+  `micro_w_alloc`) o defecto (entonces: volver a abortar y dimensionar el
+  riesgo en dólares en el consumidor, como ya hace el techo). En ambos casos
+  falta el contrato de conducta.
+
+#### R7-R2-G-1 [MED] — familia: código muerto y superficie sin llamante (9 fichas plegadas)
+- Miembros: **A-8** (`update_continuous_sde`, `ville_e_process.rs:142`, 0
+  consumidores), **B-2** (`CapitalCompounderEngine` +
+  `orchestrator.rs:18 calculate_dynamic_allocation` sin caller; 4 perillas
+  sigmoide `:41-70` sin dominio, NaN → fallback 1,0 `:90-95`, decay negativo
+  **amplifica** `:82-88`), **B-3** (`epigenetic_fitness_landscape.rs:11`, 0
+  callers; saturación `sharpe*0,4` `:29-31`), **B-4** (`RegimeDetector` muerto;
+  borde `< 0,2 ⇒ Chaotic` `regime.rs:73` sin nulo; NaN fail-sticky `:61-63`),
+  **B-5** (gemelo fail-closed `guard.rs:5-52, :140-147`, 0 callers), **D-3**
+  (`transfer_entropy.rs` 361 L, `path_signatures.rs` 214 L, `QuantumTensorStore`,
+  `MultifractalSpectrumEngine`, `GarmanKlassVolatilityEstimator`,
+  `StatisticalNormalizer`, `ShannonEntropyEngine` — re-exportados en
+  `feature-engine/src/lib.rs:24-42` sin consumidor), **E-12** (superficie sin
+  llamante: `ewma.rs:58`, `multifractal.rs:305/:383/:389`,
+  `transfer_entropy.rs:110`, `path_signatures.rs` completo, `kalman.rs:109`,
+  `lead_lag.rs:255`, `copulas.rs:294`), **F-4** (`win_rate_lcb`,
+  `evidence.rs:109`, 0 callers — el único caller productivo es el jerárquico
+  `:134` vía `risk lib.rs:1085`), **F-5** (`REJ_SIN_EVIDENCIA: usize = 14`,
+  `risk lib.rs:105`, declarado y nunca leído).
+- **Cross-ref**: R7-R0-7 ya censó **93 funciones públicas sin llamador** — este
+  lote es su confirmación en la capa de matemática, no un censo nuevo.
+
+#### R7-R2-G-2 [MED] — familia: tests que certifican texto fuente, plomería o rango irreal (7 fichas plegadas)
+- Miembros: **A-6** (tests que no ejercitan la matemática:
+  `kelly_envelope.rs:572` pseudo-MC; `ville_e_process.rs:280` array fijo;
+  `selection_stats.rs` series pseudo-aritméticas; `drawdown.rs:48-50` clamp alpha
+  sin nulo), **A-7** (`tp_sl.rs:767` test de `include_str` + conteo de
+  ocurrencias), **B-10** (`random_matrix.rs:352-385` test vacuo), **B-11**
+  (`veto_registry.rs:442-463, 476-514` «diente» del censo por substring
+  `"fn {name}"`; typo `:650`), **C-10**
+  (`correlation_admission_contract.rs:652-680` escanea **texto fuente** con
+  `include_str` + `contains` y lee el LECTOR, no el publicador), **D-6**
+  (`flow_impulse.rs:332-386` barrido de entropy 0,01-0,1 que el motor nunca
+  produce — el rango real es 1,5-2,3 nats), **F-3** (test que pincha la paridad
+  por texto, no por valor).
+- **Patrón**: es la sexta confirmación de **R6-A7** (contract test verde con
+  física muerta). La regla propuesta para R8: todo contrato de física debe llamar
+  al **mismo** símbolo que llama el consumidor vivo.
+
+---
+
+### LOW-MED (1)
+
+#### R7-R2-C-11 [LOW-MED] — el tape no propaga D-742/CL-32
+- `spectral_tape.rs:457-461` fija `lo = base - 2`, así que 1,07 s y 4,3 s entran
+  como rasgos predictivos. `git grep resolucion` en el archivo: **0 coincidencias**
+  — la resolución efectiva (`resolucion_efectiva_ms`, CL-32) no se consulta aquí
+  aunque gobierna la malla del espectro.
+
+---
+
+### LOW (6)
+
+- **R7-R2-B-7** — `leverage_matrix.rs:69-108` sanitiza **fail-OPEN**: capital no
+  finito → 13,0 y leverage genómico → 20,0. El default de un fallo es el techo.
+- **R7-R2-B-8** — `leverage_matrix.rs:332-333`: `final_leverage` no finito → 1,0×
+  (silencioso, sin telemetría de degradación).
+- **R7-R2-C-12** — tabla de descriptores muertos sin gate: `confluence_ratio`
+  (`temporal_spectrum.rs:822`, `:1002-1004`), `spectral_tilt` (`:1040-1050`),
+  `spectral_bandwidth`, `soporte_efectivo_en_escalas` (`:48-51`),
+  `arena.spectral_resonant_tau` (fallback sqrt(30 s × 12 h) = **6 h**),
+  `spectral_w1_transport` (0 lecturas), `stateful_engine.quantiles` (write-only).
+- **R7-R2-D-5** — claves write-only (`vpin_toxicity` `god-core lib.rs:4359`,
+  `shannon_entropy` `:4352`) y alias duplicados (`:4343-4344`, `:4354-4355`).
+- **R7-R2-E-10** — `sum_q1`/`sum_q2` muertos pese al «recompute periódico» de
+  AGY-AUD-003 (`multifractal.rs:27-28,65-66,75-76,80-94`);
+  `multifractal_width` se descarta (`:414-416`).
+- **R7-R2-E-11** — `espectro_f_alpha`: la doc narra q en {-3..3}, b = 8 y descarte
+  −0,05 (`multifractal.rs:179-190`) pero el código usa Q = [-2..2] (`:200`),
+  B = {1,2,4} (`:201`) y descarte −0,25 (`:282`), con clamp de d0 (`:291`).
+
+### INFO (2)
+
+- **R7-R2-A-9** — doble prior: `win_rate_lcb` con prior propio más
+  `WR_PRIOR_PSEUDO_TRADES = 1,96^2` (`genome.rs:2428`); y el testigo
+  `r4_selection_stats_witness.rs` muestra que una duplicación 10× **pasa** el DSR
+  (la multiplicidad no castiga la repetición, sólo el conteo).
+- **R7-R2-B-9** — el inflado hacia +1 voltea coberturas:
+  `correlation_guard.rs:752-754` con z = 8 (`:821+`) lleva −0,4 → **+0,3**; el
+  test que lo documenta está mal-nombrado (`:1240-1249`).
+
+---
+
+### Mapa positivo (lo que R2 encontró CORRECTO)
+
+- **A**: Gumbel/DSR con Acklam y **dos productores vivos** verificados
+  (`god-core/src/darwin.rs:652-657`,
+  `evolution-engine/src/online_daemon.rs:1853-1857`); sigma_SR de Mertens; Ville
+  discreto **causal** con contrato sobre LCG real
+  (`risk-engine/tests/ville_evidence_contract.rs:38-66,178-218`);
+  Cramer-Lundberg con bisección sobre g convexa + bootstrap 100 k; D-744;
+  PF/Kelly `f* = W(1 - 1/PF)`; latencia y fricción con paridad bit-exacta
+  (`backtest-engine/tests/bt_vivo_parity_audit.rs:149-162`); envelope D-750
+  reject-don't-inflate (`kelly_envelope.rs:360-366`); `return_evidence.rs` con
+  studentización de dos pasadas (19 contratos).
+- **B**: rho firmada por lado (D-750b `correlation_guard.rs:649-653`, 8
+  combinaciones en `correlation_admission_contract.rs:276-294`); adversarial por
+  defecto (None/NaN ⇒ misma apuesta, `:835`); agregación equicorrelada exacta
+  (`:508-536`, paridad `0,05*sqrt(10)` `:1257-1264`); cuatro etapas de inflado
+  vivas con productores verificados (`contagion_publisher.rs:87`,
+  `copulas_manifest.json`, `evidence_publication.rs:76`); Cramer-Lundberg con
+  unidades (`risk lib.rs:617-629`); `capital_regime.rs:266-303` C1; `envio.rs:69-100`;
+  G0-1 vivo con fronteras de centavo.
+- **C**: P2 de Park-Jennermeister con contratos de invariancia; D-742/CL-32/CL-35
+  **sí** aplicados en la malla (`temporal_spectrum.rs:1389-1405`, `:1411-1418`,
+  tests `:2263`, `:2293`, `:2349`); IC prequential con Monte Carlo del sesgo de
+  selección (`:1767`); Ville anytime-valid; `.significativo()` simple sin
+  consumidores (correcto: se retiró a favor de la familia); CL-30; W1 con reloj
+  físico; #594 **no** revirtió al argmax; H1-1; G1-4; interpolantes; curvas de
+  horizonte; D-754b/c.
+- **D**: `ewma.rs:80` con ganancia `-expm1(-dt/tau)` exacta; `welford.rs:34-54`;
+  `hawkes.rs:49-79` con reloj monotónico; `flow_impulse.rs:126-181` en exceso
+  sobre SS; `lead_lag.rs:227-251` (G2-10); `transfer_entropy.rs:79-105` con CMI
+  Dirichlet; `hodge_flow.rs:114-127`.
+- **E**: Lo-MacKinlay exacto (`multifractal.rs:137,149`); 4 contratos DFA reales
+  (`hurst_dfa.rs:536`, `:564`, `:579`, `:611`); `welford`; `ewma` en tiempo físico;
+  dedup por generación (`god-core lib.rs:3076-3101`); clamp de H en
+  `tp_sl.rs:261-273`; ganancia Kalman anti-overflow (`kalman.rs:75-81`);
+  Stratonovich en path signatures; honestidad declarada en transfer entropy;
+  Parseval en el V2; lead-lag en tiempo físico; `hawkes_cross.rs:72-84, :203-212`.
+- **Verificación de «no repetir»**: G2-10 cerrado (`god-core lib.rs:2962-2987`);
+  S8/F2-C4 correcto; F2-B1/B5, G1-2/G1-4, Ω49, #649, H2-9/H2-10, R6-B2/R6-B13,
+  Ω34, CL-30/31/32 revisados y **no** re-reportados. XLIV-3 y D-744 buscados en
+  esta capa: **no aparecen** (viven en otra).
+
+### Alcance honesto de R2
+
+- **No** se auditaron semánticamente `execution-engine`, `data-pipeline`,
+  `storage-engine`, telemetría ni guardianes — caen en R5/R7.
+- **No** se tocó código. Las fichas cuya corrección cambia conducta viva
+  (C-1, C-2, C-3, D-1, E-3, E-4, E-9, F-1, B-1, B-6) requieren **oráculo T-1**
+  antes de su push. Ω41, Ω44-Ω46 y la ola 73 siguen **sin re-certificar**; el
+  último veredicto vigente es el de `534e7980` (PASA 16/144).
+- Las fichas «sin consumidor» se verificaron con `git grep` propio y **pathspec
+  excluyente** (sobre `*.rs` y fuera de `graphify-out`); sin él, los
+  `graphify-out/*.json` y `docs/*.md` inflan los conteos y producen falsos verdes.
+- Los contraejemplos numéricos son derivaciones del autor sobre el árbol
+  `689efd86`; **no** son replays del motor ni PnL medido. Ninguna de estas fichas
+  valida ni invalida la meta de crecimiento >= 100 % cada 72 h.
+- **Asignación (publicada en el buzón)**: HIGH de gate/EV (F-1, C-1, C-2) y de
+  unidades/geometría (D-1, C-3) → **AGY** (ola Ω47, núcleo + quantum-arena);
+  E-1/E-2/E-3 + A-1 → **GLM** (feature-engine/estadística); B-1/B-6 → **Codex**
+  (riesgo/cartera). G-1 y G-2 son mecánica drenable por **Qoder** con oráculo cero.

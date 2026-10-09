@@ -1,5 +1,69 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Qoder: R7-R2 CERRADA — MATEMÁTICA/ESTADÍSTICA TRANSVERSAL — 41 fichas (9 HIGH), docs-only
+
+- **Rama**: `qoder/ronda7-plan` (worktree `.ola73`), base `689efd86`
+  (origin/main verificado). **Docs-only: cero `.rs` tocados.** Ficha forense
+  **#678**; detalle en `docs/BARRIDO_EXHAUSTIVO_FASES.md` §R7-6.
+- **Cuenta**: 33 fichas `####` + 8 viñetas plegadas = **41 hallazgos (9 HIGH,
+  23 MED, 1 LOW-MED, 6 LOW, 2 INFO)**. Lentes A (riesgo/estadística dura), B
+  (cartera/crecimiento), C (sustrato espectral), D (kernels), E
+  (features/estadística estocástica), F (gates/EV/micro-capital), G (familias
+  de código muerto y tests).
+- **9 HIGH**: **A-1** el primer toque analítico de Ω3 (`tp_sl.rs:436`, `:464`) no tiene ni un
+  consumidor: `git grep` de ambos símbolos sobre `*.rs` devuelve **1 archivo**,
+  el propio módulo. **C-1** gate de
+  evidencia de la τ dominante inalcanzable en banda lenta (Ville de familia:
+  M = 32 ⇒ 640 bloques por celda; ≥ 1 h nunca madura). **C-2** dos τ dominantes
+  vivas sin reconciliar (`consenso_espectral_tau` #624 vs `dominant_tau_ms`).
+  **C-3** `dominant_drift` es un escalón, no una derivada
+  (`god-core lib.rs:4299` + `math_kernels.rs:463`). **D-1** entropía publicada
+  **en nats** frente a un calibrador escrito para [0,1]. **E-1** el Hawkes del
+  feature-engine auto-valida su λ sin referenciar μ̂. **E-2** el nulo del Hurst
+  DFA se autoexime y la política vive en otro lado. **E-3** el lead-lag firma
+  con ρ de n = 12 contra un nulo de sd 0,30 (`|ρ| > 0,25` ≈ 0,83 sd ⇒ firma en
+  ruido). **F-1** el `rej(4)` de la fase sonda es **inalcanzable**: con
+  `w = WORST_TOLERATED_WR = 0,40` y la geometría `min_rr_for` ⇒
+  `ev_prior ≥ 0,375·sl + 1,375·f > f`; su contrato (`evidence.rs:225`) sólo
+  prueba la función pura en n = 0/1/1/1000, **nunca la compuerta** — clase
+  R6-A7.
+- **HALLAZGO DE PROCESO (avisado a todo el consejo)**: **Ω46 (`f9ca4284`)
+  entró a main modificando la pipeline viva sin re-certificación T-1**.
+  Medido: el diff Rust entre el árbol certificado `f5cadac7`/`534e7980`
+  (PASA 16/144 = 11,1 %) y `origin/main` `689efd86` es exactamente
+  `crates/risk-engine/src/{evidence.rs,lib.rs}` (+106/−21). El último veredicto
+  vigente **no describe el árbol actual**; Ω41, Ω44–Ω46 y la Ola 73 siguen sin
+  re-certificar en conjunto. **R8 debe re-certificar antes de cualquier push de
+  código.**
+- **Cotejo con #679/Ω46 (F-2, resuelto con honestidad en ambas direcciones)**:
+  **retiro** mi alegación del techo de 55 bps — el argumento de ruina es válido
+  y la tensión con D-639 es **decisión del dueño** registrada desde 2026-09-28,
+  no un defecto nuevo. **Subsiste** lo verificado en HEAD: el bypass
+  `micro_admite_suelo = micro_w_alloc > 0.5 && sl_floor <= 0.0055`
+  (`risk lib.rs:863-872`) deja `REJ_TP_SL_FLOOR` **muerto en micro** (bypass ⇔
+  `f ≤ 0,003575`; con fricción real 0,00145 el suelo es 22,3 bps — los «48 bps»
+  exigían f = 0,00312 ficticio), abre un **escalón C0 admit/abort en
+  `micro_w_alloc = 0,5`** que contradice el F4-M2 suavizado del mismo commit, y
+  no lo ejercita **ningún** test (`git grep -ln micro_admite_suelo` → sólo
+  `src/`).
+- **Mapa positivo (R2 encontró CORRECTO y no re-reportable)**: Gumbel/DSR con
+  Acklam y **dos productores vivos**; sigma_SR de Mertens; Ville discreto
+  causal con contrato sobre LCG real; Cramér-Lundberg con bisección sobre g
+  convexa + bootstrap 100 k; D-744; PF/Kelly `f* = W(1 − 1/PF)`; paridad
+  bit-exacta de fricción BT↔vivo; envelope D-750 reject-don't-inflate; ρ
+  firmada por lado (D-750b) con adversarial por defecto; agregación
+  equicorrelada exacta; P2 de Park–Jennermeister con contratos de invariancia;
+  D-742/CL-32/CL-35 **sí** aplicados en la malla; Lo-MacKinlay exacto; `ewma.rs`
+  con ganancia `-expm1(-dt/tau)`; Welford; CMI Dirichlet; Hodge de flujo.
+- **Asignación publicada en el buzón**: **AGY Ω47** → F-1, C-1, C-2, D-1, C-3,
+  F-2 (cambian conducta ⇒ **oráculo T-1**, re-certificando Ω46 en la misma
+  pasada). **GLM** → E-1, E-2, E-3, A-1. **Codex** → B-1, B-6. **Qoder** → G-1,
+  G-2, A-2…A-5 y LOW/INFO (oráculo cero).
+- **Alcance**: sin auditoría semántica de `execution-engine`, `data-pipeline`,
+  `storage-engine`, telemetría ni guardianes (R5/R7). Contraejemplos =
+  derivaciones sobre `689efd86`, no replays ni PnL medido. Nada de esto valida
+  ni invalida la meta de crecimiento ≥ 100 % cada 72 h.
+
 ## 2026-10-09 — Qoder: R7-R1 CERRADA (doctrina/nomenclatura + grep `scalp|swing`) — 9 fichas, 0 HIGH, docs-only
 
 - **Rama**: `qoder/ronda7-plan` (worktree `.ola73`), HEAD `f5cadac7` + este

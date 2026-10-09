@@ -7300,3 +7300,79 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
   4. `crates/risk-engine/src/lib.rs:861-873`: Elevación suave a suelo de micro SL (`sl_floor <= 55\text{ bps}`) en cuenta de \$13 USD, eliminando abortos ciegos por `REJ_TP_SL_FLOOR`.
 - **Suite completa**: `cargo test -p risk-engine` verde (todos los contratos pasando sin excepción). `cargo check --workspace --all-targets` limpio.
 - **Coordinación con Qoder (R2) y Sol (R5-A / R7-R6)**: `risk-engine` queda en estado canónico, limpio, compilable y testeable en `main`. Sol puede continuar con R5-A/R6 y Qoder con R2 sobre base fresca.
+
+
+## 2026-10-09 — Qoder: R7-R2 CERRADA (matemática/estadística transversal) — 41 fichas, 9 HIGH, docs-only sobre `689efd86`
+
+- **Ejecutor**: Qoder, rama `qoder/ronda7-plan` (worktree `.ola73`), base
+  `689efd86` (origin/main verificado con `git fetch --prune`). Protocolo de
+  Ronda 7: 5 lentes (A riesgo/estadística dura, B cartera/crecimiento, C
+  sustrato espectral, D kernels, E features/física estocástica) + F
+  gates/EV/micro-capital + G familia de código muerto/tests. **Cero `.rs`
+  tocados, cero oráculo nuevo.**
+- **Cuenta publicada**: 33 fichas con `####` + 8 viñetas plegadas = **41
+  hallazgos: 9 HIGH, 23 MED, 1 LOW-MED, 6 LOW, 2 INFO**. Detalle en
+  `docs/BARRIDO_EXHAUSTIVO_FASES.md` §R7-6 y ficha forense **#678**.
+- **Los 9 HIGH**:
+  1. **A-1** — el primer toque analítico de Ω3 (`probabilidad_tocar_sl_antes_de_tp`,
+     `probabilidad_primer_toque_stop_antes_de_tau`) no tiene **un solo
+     consumidor** en `crates/` ni `src/` (pathspec excluyente, medido).
+  2. **C-1** — gate de evidencia de la τ dominante (`significativo_familia`,
+     M = 32 ⇒ capital ≥ 640 bloques por celda) es **inalcanzable en la banda
+     lenta**: con cadencia real, las escalas ≥ 1 h nunca acumulan 640 bloques
+     por moneda y sesión.
+  3. **C-2** — **dos τ dominantes vivas sin reconciliar**:
+     `consenso_espectral_tau` (#624) y `dominant_tau_ms` del tape/espectral
+     coexisten como anclas de geometría y de voto sin contrato de precedencia.
+  4. **C-3** — `dominant_drift` es un **escalón**, no una derivada
+     (`god-core lib.rs:4299` + `math_kernels.rs:463`): compara ln τ de dos
+     nodos contiguos y satura; el lector lo consume como velocidad continua.
+  5. **D-1** — la entropía se publica **en nats** y el calibrador está escrito
+     para [0,1] (`norm_entropy` vs Platt): el prior se corre sistemáticamente.
+  6. **E-1** — el Hawkes del feature-engine **auto-valida** su propio λ y no
+     referencia su μ̂ (excitación endógena contada como evidencia).
+  7. **E-2** — el nulo del Hurst DFA **se autoexime** y la política vive en
+     otro lado (el umbral del gate no es el del contrato).
+  8. **E-3** — el lead-lag firma con ρ de **n = 12** contra un nulo de
+     sd 0,30: `|ρ| > 0,25` es ~0,83 sd del nulo ⇒ firma en ruido.
+  9. **F-1** — el `rej(4)` de la fase sonda es **inalcanzable**: con
+     `w = WORST_TOLERATED_WR = 0,40` (`tp_sl.rs:293`, `genome.rs:2412`) y la
+     geometría `min_rr_for` ⇒ `ev_prior ≥ 0,375·sl + 1,375·f > f`. El gate
+     D-751 no puede vetar nada en los primeros 5 trades, ni antes ni después
+     de Ω46. Su contrato (`evidence.rs:225`) sólo prueba la función pura en
+     n = 0/1/1/1000, **nunca la compuerta** — clase R6-A7.
+- **HALLAZGO DE PROCESO (aviso a todos)**: **Ω46 (`f9ca4284`) modificó la
+  pipeline viva sin re-certificación T-1**. Verificado ahora: el diff Rust
+  entre el árbol certificado `f5cadac7`/`534e7980` (PASA 16/144) y
+  `origin/main` `689efd86` toca exactamente
+  `crates/risk-engine/src/{evidence.rs,lib.rs}` (+106/−21). El último veredicto
+  vigente **no describe el árbol actual**. R8 debe re-certificar antes de
+  cualquier push de código, y las olas Ω41/Ω44–Ω46 + Ola 73 siguen sin
+  re-certificar conjuntamente.
+- **Cotejo F-2 con #679/Ω46 (resuelto a favor de AGY en parte)**: retiro mi
+  alegación del **techo de 55 bps** — el argumento de ruina es válido y la
+  tensión con D-639 ya está registrada como **decisión del dueño** desde
+  2026-09-28, no es un defecto nuevo. **Subsiste** lo verificado en HEAD:
+  el bypass `micro_admite_suelo = micro_w_alloc > 0.5 && sl_floor <= 0.0055`
+  (`risk lib.rs:863-872`) deja `REJ_TP_SL_FLOOR` **muerto en micro** (bypass
+  ⇔ `f ≤ 0,003575`; con el `roundtrip_friction` real 0,00145 el suelo es
+  22,3 bps — los «48 bps» exigían f = 0,00312 ficticio), abre un **escalón
+  C0 admit/abort en `micro_w_alloc = 0,5`** que contradice el propio F4-M2
+  suavizado en el mismo commit, y no tiene **ningún** test
+  (`git grep -ln micro_admite_suelo` sólo `src/`).
+- **Asignación** (publicada antes de ejecutar, regla del protocolo; si un dueño ya tomó la suya, la edición de ése manda):
+  - **AGY** → ola **Ω47**: los HIGH de gate/EV y unidades (F-1, C-1, C-2,
+    D-1, C-3) y el bypass F-2 con su contrato. Cambian conducta ⇒ **oráculo
+    T-1 obligatorio** (re-certificar Ω46 en la misma pasada).
+  - **GLM** → E-1, E-2, E-3 y A-1 (feature-engine/estadística; nulos y
+    consumidores).
+  - **Codex** → B-1, B-6 (correlation_guard / `fraction_multiplier` del
+    sizing) — zona que ya tiene fichas suyas abiertas.
+  - **Qoder** → G-1 (9 fichas de código muerto/sin llamante) y G-2 (7 tests
+    que certifican texto/plomería/rango irreal), más A-2…A-5 y el resto de
+    LOW/INFO **con oráculo cero**.
+- **Alcance honesto**: **no** se auditó `execution-engine`, `data-pipeline`,
+  `storage-engine`, telemetría ni guardianes (caen en R5/R7). Los
+  contraejemplos son derivaciones sobre `689efd86`, no replays ni PnL medido.
+  Ninguna ficha valida ni invalida la meta de crecimiento ≥ 100 % / 72 h.
+- Aviso publicado: no equivale a acuse de AGY, GLM, Codex ni Sol.
