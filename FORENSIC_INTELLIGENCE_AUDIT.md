@@ -15002,3 +15002,100 @@ verificar la decisión, no el rango; (c) cuando un módulo nuevo replica
 matemática que YA existe en el árbol (hodge_flow vs risk-engine/hodge),
 la auditoría debe comparar AMBAS entradas — la diferencia de calidad
 estaba en el wiring, no en las fórmulas.
+
+## #675 — Ola 73 (Qoder): STATARB HONESTO — física OU viva en el core, paridad lector↔escritor y etiqueta honesta del fallback — ORÁCULO PENDIENTE (2026-10-09)
+
+Rama `qoder/ola73-statarb-honesto` (worktree `.ola73`, base f07b79a3 +
+merge c5b72755 de main tras AGY Ω41/Ω42). Código: 986e1197 (lector en
+strategy-core), 12d32029 (escritor vivo en el core + contrato de física),
+8b0daf01 (fix de paridad lector↔escritor). Asignación del buzón (RONDA 6):
+**R6-A3/B1 [HIGH], R6-B2, R6-A4 [MED], R6-B13, R6-A5 [LOW]**.
+
+1. **R6-A3/B1 — CABLEADA la física viva (no renombrada)**. El defecto:
+   `update_with_clock` (única calibración SDE OU + β RLS + damping
+   espectral) tenía CERO callers productivos y el voto vivo leía
+   `vecm_zscore` = basis spot-perp/ATR. Resolución: `GodEngineCore`
+   mantiene `statarb_ou_engines` (un motor OU por moneda, lib.rs:763-764)
+   que AVANZA en el hot-path — `update_with_clock(mid_futuro, mid_spot,
+   event_time_ms, tau_dom)` en `process_tick_dual` — y publica
+   `statarb_ou_zscore`/`statarb_half_life_ms`/`statarb_beta`
+   (lib.rs:5062-5095). La instancia del orquestador pasa a ser **LECTORA
+   PURA** (lib.rs:1006-1014): antes se construía con
+   `.with_continuous_ou_sde()`, una SDE propia que nunca observaba nada —
+   la etiqueta prometía física que no existía.
+   No se renombró la clave a `basis_atr_z` (la otra opción de la
+   asignación) porque `vecm_zscore` tiene un SEGUNDO lector vivo
+   (`conformal_reversion_filter.rs:183-184`): renombrar sin tocarlo habría
+   roto paridad en vez de erradicarla. La honestidad se logra por
+   ETIQUETA (punto 5), no por renombre.
+2. **PARIDAD LECTOR↔ESCRITOR — defecto que YO introduje en 12d32029 y
+   cacé antes de fusionar**. La primera versión publicaba
+   `statarb_ou_zscore = 0.0` INCONDICIONAL desde el primer tick, y MI
+   propio contrato lo certificaba en verde ("sin spot el core publica 0.0
+   explícito"). Ese 0.0 sombrea para siempre el fallback `vecm_zscore`
+   que el core ya escribía: silenciaba el voto StatArb que HOY SÍ está
+   vivo, sin evidencia física. **Séptima confirmación del patrón "dos
+   caras sin reconciliar", esta vez de fabricación propia.** Fix 8b0daf01:
+   publicación **CONDICIONAL** — `if let Some(z_madura) =
+   eng_st.last_ou_zscore()` (Some sólo con SDE madura, ≥10 pares
+   causalmente crecientes). Semántica final: clave **AUSENTE** = no hay
+   física ⇒ fallback etiquetado; clave **0.0** = física presente pero
+   feed de spot stale > TTL (30 s, anti-staleness R6-C4) ⇒ abstención
+   honesta con autoridad sobre el fallback. El contrato fue reescrito para
+   certificar AMBAS caras y el valor EXACTO que devuelve el lector.
+3. **R6-B2 — θ viva**: `statarb_half_life_ms` = ln 2/θ CALIBRADA EN
+   PRODUCCIÓN. El contrato exige que abandone el valor congelado del
+   default (6 931,471 805 599 453 ms) bajo reloj físico de 1 s con basis
+   oscilante ⇒ la guarda t½ ≤ 2τ* del lector deja de ser decorativa.
+4. **R6-A4 — β on**: `beta_hedge_ratio` del RLS se publica como
+   `statarb_beta`, finita y positiva.
+5. **R6-A5 — etiqueta honesta del fallback** (stat_arb.rs:320-391):
+   `vecm_zscore` NO es cointegración Johansen ni spread entre dos
+   activos; el core lo publica como basis futuro-spot/ATR cuando hay feed
+   de spot y, sin él, como desviación del mid al EMA lento de klines en
+   unidades de ATR (lib.rs:5041-5050, `vecm_basis_z`). Estadístico
+   propio de reversión a la media, no de paridad multiactivo.
+6. **R6-B13 — τ* unificada**: `DEFAULT_DOMINANT_TAU_MS = 1 138 419.6` =
+   centro geométrico de la banda operable [30 s, 12 h]; guardas
+   **fail-closed** `if !(t_half_ms <= 2.0 * tau_dom_ms)` (NaN en
+   cualquiera de las dos cotas ⇒ veto).
+
+**RESIDUAL VERIFICADO (C-02 — asignación a la ola de datos/host)**:
+`GlobalArena::update_spot_data` (quantum-arena/src/state.rs:679) NO tiene
+ningún caller productivo — sólo mi contrato de test. `src/bin/god_engine.rs`
+no contiene la palabra "spot"; `OmniState::binance_spot` (slot 0) nunca se
+escribe; `OmniDataHub::start_feeds` (omni_multiplexer.rs:863) y sus pollers
+`run_bybit_ws`/`run_okx_ws` son código muerto sin callers, y el contrato
+PREEXISTENTE `data-pipeline/tests/xcv_dims_cross_exchange_muertas_por_contrato.rs`
+(F6-A-H4/XCV) declara esas dims "muertas por contrato" con cláusula de
+re-entrenamiento si alguien las despierta. Consecuencia honesta: **la
+física OU queda cableada pero hambrienta de spot** — en host y en backtest
+la clave permanece AUSENTE y el voto sigue en el fallback etiquetado (que
+es exactamente la conducta de main, ahora con nombre propio). La resolución
+COMPLETA de R6-A3 exige (a) productor del feed spot en el host, (b) paridad
+BT del mismo feed, (c) re-entrenar y re-certificar si se despiertan los
+pollers XCV. Zona data-ingest/host: otra ola, otro oráculo. No lo hace esta
+ola porque cambiar la fuente de datos del tensor es justo lo que el
+contrato XCV prohíbe sin re-entrenar.
+
+**Verificación**: strategy-core 48/48; god-engine-core
+`statarb_live_physics_contract` **3/3** y `--lib` **170/170**;
+`cargo check --workspace --all-targets` exit 0 sin advertencias (41.35 s).
+Diff contra CADA padre revisado tras el merge con main (regla
+post-incidente 2026-09-25).
+
+**ORÁCULO T-1**: EN VUELO sobre 8b0daf01. Argumento de neutralidad
+(documentado, no certificado): sin feed de spot la OU nunca madura ⇒ la
+clave no se publica ⇒ el lector toma el fallback igual que main ⇒ conducta
+bit-a-bit idéntica en el fixture; el oráculo sirve para certificar que la
+protección del fallback es real y que ningún gen certificado pierde
+sensibilidad.
+
+Lecciones: (a) **un contrato verde puede certificar MI propio defecto** —
+el test mal especificado lo escribió el mismo autor del defecto. Antes de
+publicar una clave nueva en el registry, preguntar QUÉ LA CONSUME y QUÉ
+PASA CON SU FALLBACK; (b) `OmniscientRegistry::set` sanea no-finitos a
+0.0, así que la única distinción disponible es **AUSENTE vs 0.0** — hay
+que reservar esa distinción para *física presente vs ausente*, nunca para
+*calibrado vs aún no calibrado*; (c) séptima confirmación del patrón "dos
+caras sin reconciliar", ahora también dentro de una sola ola propia.
