@@ -202,13 +202,15 @@ pub struct ContinuousOrnsteinUhlenbeckSde {
     pub last_value: f64,
     pub last_ts_ms: u64,
     pub count: u64,
-    // Momentos de transición AR(1) continua
+    pub tau_mem_sec: f64,
+    // Momentos de regresión de tiempo continuo WLS (R6-B3, R6-B4)
     s_w: f64,
-    s_x: f64,
-    s_y: f64,
-    s_xx: f64,
-    s_xy: f64,
-    s_yy: f64,
+    s_dt: f64,
+    s_x_dt: f64,
+    s_xx_dt: f64,
+    s_dx: f64,
+    s_xdx: f64,
+    s_dxdx_dt: f64,
 }
 
 impl Default for ContinuousOrnsteinUhlenbeckSde {
@@ -219,6 +221,11 @@ impl Default for ContinuousOrnsteinUhlenbeckSde {
 
 impl ContinuousOrnsteinUhlenbeckSde {
     pub fn new(theta_init: f64, mu_init: f64, sigma_init: f64) -> Self {
+        Self::with_memory_seconds(theta_init, mu_init, sigma_init, 300.0)
+    }
+
+    /// Crea un nuevo estimador SDE OU con memoria temporal calibrada en segundos (R6-B4).
+    pub fn with_memory_seconds(theta_init: f64, mu_init: f64, sigma_init: f64, tau_mem_sec: f64) -> Self {
         Self {
             theta: theta_init.max(1e-5),
             mu: mu_init,
@@ -226,12 +233,14 @@ impl ContinuousOrnsteinUhlenbeckSde {
             last_value: 0.0,
             last_ts_ms: 0,
             count: 0,
+            tau_mem_sec: tau_mem_sec.clamp(10.0, 7200.0),
             s_w: 0.0,
-            s_x: 0.0,
-            s_y: 0.0,
-            s_xx: 0.0,
-            s_xy: 0.0,
-            s_yy: 0.0,
+            s_dt: 0.0,
+            s_x_dt: 0.0,
+            s_xx_dt: 0.0,
+            s_dx: 0.0,
+            s_xdx: 0.0,
+            s_dxdx_dt: 0.0,
         }
     }
 
@@ -289,43 +298,53 @@ impl ContinuousOrnsteinUhlenbeckSde {
 
         let x = self.last_value;
         let y = value;
+        let dx = y - x;
 
-        // Actualización recursiva exponencial con memoria decayente (vida media ~100 observaciones)
-        let decay = (-dt_sec / 300.0).exp().clamp(0.80, 0.999);
+        // R6-B4: Decaimiento continuo exponencial en tiempo físico real (segundos), sin clamp espurio a eventos
+        let decay = (-dt_sec / self.tau_mem_sec).exp();
         self.s_w = self.s_w * decay + 1.0;
-        self.s_x = self.s_x * decay + x;
-        self.s_y = self.s_y * decay + y;
-        self.s_xx = self.s_xx * decay + x * x;
-        self.s_xy = self.s_xy * decay + x * y;
-        self.s_yy = self.s_yy * decay + y * y;
+        self.s_dt = self.s_dt * decay + dt_sec;
+        self.s_x_dt = self.s_x_dt * decay + x * dt_sec;
+        self.s_xx_dt = self.s_xx_dt * decay + x * x * dt_sec;
+        self.s_dx = self.s_dx * decay + dx;
+        self.s_xdx = self.s_xdx * decay + x * dx;
+        self.s_dxdx_dt = self.s_dxdx_dt * decay + (dx * dx) / dt_sec;
         self.count += 1;
 
         let z_prior = self.stationary_zscore(value);
 
-        if self.count >= 10 {
-            // Regresión discreta exacta: y = a + b * x
-            // donde b = exp(-θ dt), a = μ (1 - b)
-            let n_eff = self.s_w.max(1.0);
-            let empirical_mean = self.s_y / n_eff;
-            let denom = (n_eff * self.s_xx - self.s_x * self.s_x).max(1e-12);
-            let b = ((n_eff * self.s_xy - self.s_x * self.s_y) / denom).clamp(0.001, 0.9999);
-            let a = (self.s_y - b * self.s_x) / n_eff;
+        if self.count >= 10 && self.s_dt >= 1.0 {
+            // R6-B3: Regresión de tiempo continuo homoscedástica WLS estratificada para Δt heterogéneo:
+            //   ΔX_i / √Δt_i = α √Δt_i - θ (X_{t_{i-1}} √Δt_i) + σ ε_i,  donde α = θ μ
+            // Matriz normal:
+            //   [ s_dt     -s_x_dt  ] [ α ] = [  s_dx  ]
+            //   [ -s_x_dt   s_xx_dt ] [ θ ] = [ -s_xdx ]
+            let denom = (self.s_dt * self.s_xx_dt - self.s_x_dt * self.s_x_dt).max(1e-12);
+            let alpha_num = self.s_xx_dt * self.s_dx - self.s_x_dt * self.s_xdx;
+            let theta_num = -(self.s_dt * self.s_xdx - self.s_x_dt * self.s_dx);
 
-            let est_theta = (-b.ln() / dt_sec).clamp(1e-4, 50.0);
-            // Si el denominador de OLS es débil o b está cerca de 1.0 (frontera de raíz unitaria),
-            // la estimación ergódica de μ converge a la media empírica para prevenir singularidades (a / 0)
-            let est_mu = if (1.0 - b) < 0.02 || denom < 1e-8 {
-                empirical_mean
+            let est_theta = (theta_num / denom).clamp(1e-4, 50.0);
+            let empirical_mean = self.s_x_dt / self.s_dt.max(1e-6);
+
+            let est_mu = if est_theta > 1e-3 {
+                let mu_ols = alpha_num / theta_num;
+                if mu_ols.is_finite() {
+                    mu_ols.clamp(empirical_mean - 5.0, empirical_mean + 5.0)
+                } else {
+                    empirical_mean
+                }
             } else {
-                (a / (1.0 - b)).clamp(empirical_mean - 5.0, empirical_mean + 5.0)
+                empirical_mean
             };
 
-            // Residuos y estimación de sigma de difusión (Fokker-Planck)
-            let raw_sse = (self.s_yy - 2.0 * b * self.s_xy + b * b * self.s_xx) / n_eff - a * a;
-            let sse = raw_sse.max(1e-12);
-            let est_sigma = (sse * 2.0 * est_theta / (1.0 - (-2.0 * est_theta * dt_sec).exp()).max(1e-6)).sqrt().clamp(1e-6, 10.0);
+            // Estimación de volatilidad de difusión continua σ (Fokker-Planck)
+            // RSS = s_dxdx_dt - α s_dx + θ s_xdx
+            let est_alpha = est_theta * est_mu;
+            let raw_rss = self.s_dxdx_dt - est_alpha * self.s_dx + est_theta * self.s_xdx;
+            let n_eff = self.s_w.max(1.0);
+            let est_sigma = (raw_rss.max(1e-12) / n_eff).sqrt().clamp(1e-6, 10.0);
 
-            // Suavizado C1 de parámetros
+            // Suavizado C1 de parámetros para garantizar trayectorias Lipschitz continuas
             self.theta = self.theta * 0.95 + est_theta * 0.05;
             self.mu = self.mu * 0.95 + est_mu * 0.05;
             self.sigma = self.sigma * 0.95 + est_sigma * 0.05;
@@ -466,5 +485,45 @@ mod tests {
         assert_eq!(ou.count, 2, "tick causal debe avanzar count");
         assert_eq!(ou.last_ts_ms, 1500, "tick causal debe avanzar reloj");
         assert_eq!(ou.last_value, 10.2, "tick causal debe actualizar last_value");
+    }
+
+    #[test]
+    fn test_r6_b3_and_b4_heterogeneous_dt_wls_and_continuous_time_decay() {
+        // R6-B4: Estimador configurado con memoria temporal en segundos (tau_mem = 120 s)
+        let mut ou = ContinuousOrnsteinUhlenbeckSde::with_memory_seconds(0.15, 100.0, 0.5, 120.0);
+        assert_eq!(ou.tau_mem_sec, 120.0);
+
+        // R6-B3: Muestreo con dt altamente heterogéneo (de 200ms a 20s)
+        let dt_sequence_ms = [200, 1500, 500, 10000, 300, 20000, 1000, 8000, 400, 12000];
+        let mut current_ts = 1_000_000u64;
+        let mut val = 100.0;
+        let target_mu = 100.0;
+        let target_theta = 0.15;
+
+        // Trayectoria que revierte hacia target_mu bajo Euler-Maruyama con dt heterogéneo
+        for iter in 0..150 {
+            let dt_ms = dt_sequence_ms[iter % dt_sequence_ms.len()];
+            current_ts += dt_ms;
+            let dt_sec = dt_ms as f64 / 1000.0;
+            let noise = if iter % 2 == 0 { 0.2 } else { -0.2 };
+            val = val + target_theta * (target_mu - val) * dt_sec + noise * dt_sec.sqrt();
+
+            let z = ou.update(val, current_ts);
+            assert!(z.is_finite());
+        }
+
+        // Verificar convergencia ergódica sana bajo WLS heterogéneo
+        assert!(ou.theta > 0.05 && ou.theta < 1.0, "theta estimador ({}) debe converger en rango físico", ou.theta);
+        assert!((ou.mu - 100.0).abs() < 5.0, "mu estimador ({}) debe converger cerca del centro ergódico 100.0", ou.mu);
+        assert!(ou.sigma > 0.05 && ou.sigma < 2.0, "sigma de difusión ({}) debe ser finito y positivo", ou.sigma);
+        assert!(ou.half_life_seconds() > 0.5 && ou.half_life_seconds() < 30.0, "t_1/2 ({}) debe ser coherente", ou.half_life_seconds());
+
+        // Verificar decaimiento continuo sin clamp espurio a 0.80
+        let s_dt_before = ou.s_dt;
+        let large_jump_ts = current_ts + 120_000; // Salto de 120 segundos (1 tau_mem)
+        ou.update(100.0, large_jump_ts);
+        // decay = exp(-120 / 120) = exp(-1) ≈ 0.367879 (anteriormente quedaba clamp en 0.80 forzando n_eff ≈ 5)
+        let expected_decay = (-1.0f64).exp();
+        assert!((ou.s_dt - (s_dt_before * expected_decay + 120.0)).abs() < 1e-4, "decay debe ser continuo exp(-dt/tau)");
     }
 }

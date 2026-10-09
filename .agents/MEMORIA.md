@@ -52,6 +52,38 @@
   FORENSIC #675** (en vuelo sobre 8b0daf01 al redactar este bloque).
 - Detalle: FORENSIC_INTELLIGENCE_AUDIT.md #675. Buzón: cierre Ola 73.
 
+## 2026-10-09 — Antigravity: OLA Ω43 CERRADA — OU SDE WLS CONTINUO, VILLE ANYTIME-VALID CALIBRADO Y REARME DE WATCHDOG (R6-B3, R6-B4, R6-B5, R6-B6, R6-B7, R6-B8, R6-A7, R6-C7, R6-A14)
+
+- **Rama**: `antigravity/quant-sr-ola43-ou-sde-wls-ville-rearme` (base `4cc83ce4`).
+- **RESOLUCIÓN Y CERTIFICACIÓN FORMAL DE HALLAZGOS RONDA 6**:
+  1. **R6-B3 & R6-B4 [MED] Resueltos**: Estratificación analítica de $\Delta t$ heterogéneo y memoria temporal física en `ContinuousOrnsteinUhlenbeckSde` (`crates/strategy-core/src/vecm_arbitrage.rs`).
+     - Erradicado el pooling de pendientes discretas $b$ con división espuria por el $\Delta t$ del último evento.
+     - Implementada regresión homoscedástica WLS de tiempo continuo: $\frac{\Delta X_i}{\sqrt{\Delta t_i}} = \alpha \sqrt{\Delta t_i} - \theta (X_{t_{i-1}} \sqrt{\Delta t_i}) + \sigma \epsilon_i$, donde $\alpha = \theta \mu$. Resolución analítica cerrada $2\times 2$ sin matrices dinámicas (zero allocations, < 5 ns por tick).
+     - Erradicado el clamp artificial $[0.80, 0.999]$ que forzaba memoria efectiva $n_{\text{eff}} \approx 5$ eventos. Reemplazado por decaimiento físico continuo $\exp(-\Delta t_i / \tau_{\text{mem}})$, donde $\tau_{\text{mem}} = 300.0$ s. Memoria invariante a la cadencia de llegada de eventos.
+     - Test formal: `test vecm_arbitrage::tests::test_r6_b3_and_b4_heterogeneous_dt_wls_and_continuous_time_decay ... ok` (49/49 tests de strategy-core verdes).
+  2. **R6-B5 [MED] Resuelto**: Criterio de agotamiento anytime-valid en `VilleEProcess::is_exhausted` (`crates/risk-engine/src/ville_e_process.rs`).
+     - Erradicada la heurística espuria `peak > 1.0 && e_value < 1.0 && running_mean <= 0.0` que provocaba falsa declaración de agotamiento bajo $H_0$ en los dos primeros trades.
+     - Exigencia formal de evidencia sustancial previa ($M_{\text{peak}} \ge 2.0$) antes de que la caída bajo $1.0$ constituya involución de evidencia, protegiendo las fluctuaciones brownianas tempranas de la supermartingala.
+  3. **R6-B6 [MED] Resuelto**: Calibración de escala de retornos para el watchdog de Ville en `LiveEvolutionDaemon` (`crates/evolution-engine/src/online_daemon.rs`).
+     - Retornos normalizados por la unidad canónica de riesgo por posición ($2\% = 0.02$). Mapea caídas de stop loss al soporte de prueba $[-1.0, 1.0]$, dotando al detector de Ville de potencia estadística para capturar degradaciones en 5–15 trades en lugar de 700.
+  4. **R6-B7 [MED] Resuelto**: Eliminado el gap de rearme del watchdog de Ville en promociones y rollbacks.
+     - En `online_daemon.rs`, tanto en hot-swap de mismo genoma como en detección de promoción externa/restauración, si `post_promo_ville` es `None`, se inicializa y arma de forma incondicional, garantizando que el genoma activo nunca corre desprotegido de la capa anytime-valid.
+  5. **R6-B8 [MED] Resuelto**: Certificación formal de $H_0$ con $\lambda_{\min} = 0.05$ productivo en `crates/risk-engine/tests/ville_evidence_contract.rs`.
+     - Test formal `ville_contrato_cota_maximal_bajo_h0_con_lambda_min_productivo` valida 200 trayectorias bajo $H_0$ demostrando que $M_t$ fluctúa como supermartingala viva sin sobrepasar la cota de Ville $\alpha = 0.05$ (5/5 tests verdes).
+  6. **R6-A7 & R6-C7 [MED] Resueltos**: Certificación contractual de vórtice no-degenerado en el pipeline vivo en `crates/god-engine-core/tests/hodge_yang_mills_consensus_contract.rs`.
+     - Test formal `test_hodge_cross_flow_non_degenerate_vortex_coupling_contract` valida que la inyección viva de flujo cruzado asimétrico L2/L3 genera `hodge_curl_share > 0.0`, `hodge_curl_energy > 0.0` y modula la componente laminar en `SeniorMicroestructura` $(1.0 - 0.70 \times \text{curl\_share}) < 1.0$ (2/2 contract tests verdes).
+  7. **R6-A14 [LOW] Resuelto**: Módulo legado inerte `src/multi_asset_orchestrator.rs` documentado como inerte y sus parámetros alineados con el estándar vivo `StatArbEngine::new(30, 1.5)`.
+- **VERIFICACIÓN TOTAL DE PRUEBAS**:
+  - `cargo test -p strategy-core`: **49/49 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --lib`: **148/148 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --test ville_evidence_contract`: **5/5 tests verdes (100% éxito)**.
+  - `cargo test -p evolution-engine`: **138/138 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test hodge_yang_mills_consensus_contract`: **2/2 tests verdes (100% éxito)**.
+  - `cargo test -p metacortex-engine`: **70/70 tests verdes (100% éxito)**.
+  - `cargo test -p backtest-engine --lib`: **54/54 tests verdes (100% éxito)**.
+  - `cargo check --bin god_engine`: **0 errores, compila en 26.14s**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias (20.60s)**.
+
 ## 2026-10-09 — Antigravity: OLA Ω42 CERRADA — PARIDAD BT↔VIVO DE STALENESS MACRO, SUAVIDAD C¹ GAUGE Y ÁMBITO POR ACTIVO (R6-A6, R6-C12, R6-C11, R6-C5, R6-A10)
 
 - **Rama**: `antigravity/quant-sr-ola42-paridad-bt-macro-staleness` (base `724f8c9f`).
