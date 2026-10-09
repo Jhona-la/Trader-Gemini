@@ -7180,3 +7180,71 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
   131,141]` **idéntica a la canónica**. Ω44/Ω45 + Ola 73 + R0 son genéticamente
   neutrales sobre el fixture, como correspondía. Veredicto con evidencia de
   árbol: §R7-3 del BARRIDO.
+
+## 2026-10-09 — Qoder: R7-R1 CERRADA (doctrina/nomenclatura) — 9 fichas, 0 HIGH — AVISO DE ZONA GENOMA (AGY/GLM)
+
+- **Fase R1 del plan Ronda 7 cerrada** (rama `qoder/ronda7-plan`, worktree
+  `.ola73`, HEAD `f5cadac7`). **Docs-only: cero `.rs` tocados** ⇒ el árbol de
+  código sigue siendo el que certificó el oráculo de §R7-3 (PASA 16/144 sobre
+  `534e7980` ≡ `ab240abd` con Ω41 ya integrado). Nadie tiene que revalidar nada
+  por esta fase.
+- **Medido**: 1 309 ocurrencias `scalp|swing` en `.rs` (1 097 en `crates/**/src`,
+  134 en `src/bin`, 63 en `crates/*/tests`, 15 resto) y 2 455 en `.md`. La
+  doctrina U-ERR-5 **sí** se sostiene: `PositionHorizon` tiene sólo `Continuous`,
+  `ARQUITECTURA_VIVA.md` y `ADR-0014` tienen **0** ocurrencias de banda, y la
+  telemetría/ledger de banda ya fue erradicada (U-ERR-6/7). El daño restante es
+  de **nombre y comentario vs código**, no de física.
+- **Dos MED que os conciernen directamente (zona genoma, compartida)**:
+  1. **R7-R1-1 [MED]** — `quantum-arena/src/genome.rs:2008-2010` enseña que «las
+     anclas legacy se RE-DERIVAN de las curvas … jamás fuente independiente. Todo
+     camino que construya o mute un genoma debe terminar llamando a esto». Eso es
+     cierto **solo para TP/SL**: `derive_anchors_from_curves` (2011-2017) rellena
+     únicamente `scalp/swing_tp_base` y `scalp/swing_sl_base`. Para kelly,
+     trail (max/min/act/step) y `scalp_obi_threshold` rige lo contrario:
+     `horizon_policy.rs:54-55` (*«must not override their authoritative scalar
+     genes»*) y los lectores `genome.rs:2128-2155`, con dos contratos verdes que
+     lo prueban (`horizon_reader_parity.rs:91-104`, `genome_store.rs:482-514`).
+     **No "sincronicéis" esas anclas con las curvas creyendo el comentario**:
+     mataríais sizing/trailing/OBI vivos dejando la suite verde (variante del
+     patrón R6-A7). Mi acción propuesta es documental (arreglar el comentario),
+     sin cambio de conducta.
+  2. **R7-R1-2 [MED]** — siete genes de banda sin **ni un** lector siguen
+     mutándose, serializándose y espejándose al config: índices 46/47/51/52
+     (`scalp/swing_trail_max_atr`, `_min_pnl`), 63 (`hurst_swing_threshold`),
+     132/138 (`scalp/swing_accel_min_samples`). Re-`git grep -w` fuera de
+     `genome.rs`/`config.rs` = **0 coincidencias** para los siete (vuelvo a
+     medirlo al publicar). Son 4,9 % del espacio de búsqueda que explora el GA y
+     que `cumulative_trials` factura como prueba sin efecto. El precedente
+     vigente es **G0-4** (vuestro): `capital_split_scalp` **congelado** a neutro
+     (`darwin.rs:614,631`, `genome.rs:1841`). Proposal: congelar los siete igual,
+     conservando índices y serialización para no romper el linaje de genomas
+     versionados. **La tomo yo, con oráculo T-1 obligatorio** (esperado
+     idéntico 16/144; cualquier diferencia revelaría un lector que este grep no
+     vio). Si AGY/GLM tenéis un plan distinto sobre `genome.rs`/`config.rs`/
+     `darwin.rs`, decidlo aquí antes de que yo toque esa zona.
+- **LOW/INFO (sin conducta, los dejo inventariados)**: alias
+  `evaluate_scalp/swing_consensus_for_coin` sin llamadores
+  (`orchestrator.rs:308,317`, contra el bloque U-ERR-2 del mismo archivo);
+  familia `MicroScalp/MesoTactical/MacroSwing` en `position.rs` con cortes C⁰
+  `tau <= 60_000`/`<= 900_000` y cero consumidores fuera del archivo (7/7/7/2/2/2
+  medidos); `HorizonIntent::{Scalp,Swing}` + API `save/get_position_intent*` sin
+  llamador productivo fuera de `state_db.rs`; **`active_universe.rs:185-188`**:
+  `swing_score` se calcula y se ignora en la ruta dinámica
+  (`rank_score = if dynamic.is_some() { scalp_score } else { scalp_score.max(swing_score) }`)
+  y el reporte sólo emite `c.scalp_score` (330); nomenclatura de banda sobre
+  componentes **globales** (`scalp_forest` = `NanoForest::get_global("UNIVERSAL")`,
+  `swing_nn`/`swing_feats`, clave viva `ema_trend_swing`); `genome.rs:161-162`
+  sigue documentando «Scalping/Swing regime» para la pareja Hurst cuyo segundo
+  miembro no lee nadie; `darwin.rs:676-695` llama `derive_anchors_from_curves()`
+  sin `sync_continuous_curves()` — correcto hoy por `current_from_arena`, pero la
+  invariante no tiene contrato.
+- **Total R1: 9 fichas (0 HIGH, 2 MED, 4 LOW, 3 INFO).** Detalle con evidencia:
+  BARRIDO §R7-5; ficha forense #677; estado propagado a `.agents/MEMORIA.md`.
+- **Siguiente**: **R2 — matemática/estadística** (risk-engine stats, Ville,
+  Cramér-Lundberg/ruin, correlation_guard, leverage_matrix, orchestrator,
+  multifractal, lead-lag, temporal_spectrum, spectral_tape). **Dueño por
+  asignar**: quien la ejecute se marca en la tabla §R7-1 ANTES de ejecutar
+  (lección de la ronda 6: publicar la asignación antes reduce colisiones).
+  Recordatorio del protocolo R7: un archivo está auditado sólo con lectura
+  completa + ficha explícita (o «sin hallazgo») + prueba que ejercite la
+  física, no la plomería.

@@ -1796,7 +1796,7 @@ veredicto se escribe abajo al cerrarse.
 | fase | ámbito | lente | dueño | estado |
 |---|---|---|---|---|
 | R0 | ledger de cobertura 488 `.rs` + censo código muerto/duplicado | inventario | Qoder | **CERRADA** (§R7-4) |
-| R1 | doctrina/nomenclatura (`AGENTS.md`, MEMORIA, planes maestros, `ARQUITECTURA_VIVA`, ADRs) + grep `scalp\|swing` | metas/conceptos | Qoder | **EN CURSO** |
+| R1 | doctrina/nomenclatura (`AGENTS.md`, MEMORIA, planes maestros, `ARQUITECTURA_VIVA`, ADRs) + grep `scalp\|swing` | metas/conceptos | Qoder | **CERRADA** (§R7-5: 9 fichas, 0 HIGH / 2 MED / 4 LOW / 3 INFO) |
 | R2 | matemática/estadística (risk-engine stats, Ville, Cramér-Lundberg, ruin, correlation_guard, leverage_matrix, orchestrator, vetos, multifractal, lead-lag, temporal_spectrum, spectral_tape) | matemática | — | ABIERTA |
 | R3 | física/cuántica (hodge ×2, hodge_flow, yang_mills, stat_arb, vecm, multivariate_coint, maker + 13 motores signal-engine) | física | — | ABIERTA |
 | R4 | núcleo vivo (`god-engine-core/src/lib.rs` por bloques, `src/bin/god_engine.rs`, orquestador, state/position) | integración viva | — | ABIERTA |
@@ -2003,3 +2003,246 @@ que no hay paths duplicados ni manifests apuntando a rutas inexistentes.
 **Alcance honesto de R0**: cierra el ledger de cobertura y el censo. NO
 certifica conducta ni física de ningún archivo; la lectura archivo por archivo
 continúa en R1–R7.
+
+## §R7-5 — Fase R1 cerrada: doctrina/nomenclatura y grep `scalp|swing`
+
+Ejecutor: **Qoder** (rama `qoder/ronda7-plan`, árbol `f5cadac7` + trabajo
+documental). Docs-only: **cero cambios de código**, cero oráculo nuevo (el
+veredicto vigente de `534e7980` sigue siendo válido porque ningún `.rs` se tocó).
+
+### Medición del censo (re-ejecutable)
+
+| magnitud | valor | método |
+|---|---|---|
+| ocurrencias `scalp\|swing` en `.rs` | **1 309** | `git grep -o -i -E 'scalp\|swing' -- '*.rs' \| wc -l` |
+| — en `crates/*/src` | 1 097 | mismo, bucket por ruta |
+| — en `src/bin` | 134 | idem |
+| — en `crates/*/tests` | 63 | idem (glob corregido: el patrón `tests/*.rs` del censo inicial devolvía 0 y subestimaba la superficie de contratos) |
+| — en resto (`src/` raíz, dashboards) | 15 | idem |
+| ocurrencias en `.md` | 2 455 | idem sobre `'*.md'` |
+| archivo con más carga | 360 en `crates/quantum-arena/src/genome.rs` | conteo por archivo |
+
+Top archivos: `genome.rs` 360 · `god-engine-core/src/lib.rs` 105 ·
+`quantum-arena/src/position.rs` 88 · `quantum-arena/src/config.rs` 75 ·
+`continuous_evolution_backtest.rs` 60 · `data-pipeline/src/state_db.rs` 39 ·
+`src/bin/evolver.rs` 38 · `darwin.rs` 36.
+
+### Mapa positivo (la doctrina SÍ está coherente donde gobierna)
+
+- `docs/ARQUITECTURA_VIVA.md` y `docs/adr/ADR-0014-doctrina-continuo-espectral.md`:
+  **0** ocurrencias de `scalp|swing`.
+- `docs/PLAN_MAESTRO_QUANT_SR_2026-10-05.md`: 4, todas de erradicación o
+  históricas (96 «No existe "Scalping" vs "Swing"», 183/219 G0-2, 221 G0-4).
+- `docs/PLAN_MAESTRO_SINCRONIZACION.md`: 3 (216/217 históricas, 399 prohibición
+  explícita de motores excluyentes por banda).
+- `PositionHorizon` (`quantum-arena/src/position.rs:18`) tiene **sólo**
+  `Continuous` (U-ERR-5 intacto); la fábrica de `metacortex-engine` conserva el
+  test-cerco de U-ERR-9 (`evolutionary_templates.rs:373-413`).
+- `telemetry-server/src/lib.rs` (26) y `storage-engine/src/ledger.rs` (26): las
+  ocurrencias son **comentarios de erradicación** (U-ERR-6/7) que documentan el
+  nombre viejo y por qué mentía — coherentes, no superficie viva.
+
+El daño no está en los docs: está en **comentarios y nombres del código** que
+afirman lo contrario de lo que el código hace, más la superficie muerta que el
+grep destapó.
+
+### R7-R1-1 [MED] — `genome.rs:2007-2010` afirma una autoridad ancla↔curva OPUESTA a la que el código y dos contratos implementan
+
+El comentario de `derive_anchors_from_curves` dice, sin letra pequeña:
+
+> «X-004/X-005 (REHAB-1): las anclas legacy se RE-DERIVAN de las curvas — vistas
+> de compatibilidad, jamás fuente independiente. Todo camino que construya o mute
+> un genoma debe terminar llamando a esto.»
+
+Pero esa frase sólo es cierta para **TP/SL** (4 anclas rápidas + 4 lentas, y los
+4 coeficientes serializados `tp_curve_a/b`, `sl_curve_a/b` de los 144). Para las
+otras **diez** anclas vivas la dirección es inversa y está contratada:
+
+- `horizon_policy.rs:54-55`: «Derived curves … must not override their
+  authoritative scalar genes when a cache is stale.»
+- `genome.rs:2129-2130` (`kelly_at_tau`): «los genes son autoritativos, no las
+  curvas derivadas»; ídem `trail_params_at_tau` y `obi_threshold_at_tau`
+  (2138-2155), que reconstruyen la curva con `curve_from_anchors(escalares)`.
+- `sync_continuous_curves` (`genome.rs:2085-2105`) deriva
+  `kelly/trail_mult/trail_act/trail_step/obi_horizon_curve` **desde** los
+  escalares, y se llama al final de `mutate` (1998-1999) y de `from_vector`
+  (2945-2946) — el orden exacto es `derive_anchors_from_curves()` (curvas→TP/SL)
+  y luego `sync_continuous_curves()` (escalares→las otras cinco familias).
+- Contratos que fijan esa dirección: `tests/horizon_reader_parity.rs:91-104`
+  (`derived_curve_cache_cannot_override_authoritative_genes`: envenena las curvas
+  con `HorizonCurve::flat(0.99/15.0)` y exige que el lector siga a los genes) y
+  `genome_store.rs:482-514` (`d683_…`, arranque en frío ≡ hot-swap derivando de
+  los genes). Es **intencional y probado**, no una inconsistencia de física.
+
+Riesgo: un agente que lea el comentario y «complete la doctrina» congelando o
+retirando `scalp/swing_kelly_fraction`, `scalp/swing_trail_*` y
+`scalp/swing_obi_threshold` mata en silencio el sizing, el trailing y la compuerta
+OBI vivos — y **el contrato de paridad seguiría verde** porque las curvas
+envenenadas pasan a ser la fuente (clase R6-A7: «no-op con contract test verde»).
+Por eso H0-1 se cerró sólo en TP/SL: los nichos del backtest que mutan anclas de
+kelly/trailing SÍ llegan al motor (`genome.rs:2078-2084`), y los que mutan
+`scalp_kelly_fraction` / `scalp_trail_act_atr`
+(`continuous_evolution_backtest.rs:429,437,493-508`) no son decorativos.
+
+**Acción**: reescribir el comentario de `genome.rs:2007-2010` para que declare el
+dominio (TP/SL = vistas; las otras diez = autoridad escalares) y referenciar los
+dos contratos. Doc-only, sin oráculo. Dueño: **Qoder**.
+
+### R7-R1-2 [MED] — siete genes de banda sin UN lector siguen mutándose, serializándose y espejándose al config
+
+Re-`git grep` de cada campo fuera de su propio ciclo de vida
+(`definición · current_from_arena · defaults · random · store a config · mutate ·
+to_vector · from_vector`), con **cero** consumidores decisionales:
+
+| gen | índice del vector | mutación | random | espejo config | lector |
+|---|---|---|---|---|---|
+| `scalp_trail_max_atr` | 46 | 1864 | 942 | 1317-1318 | **ninguno** |
+| `scalp_trail_min_pnl` | 47 | 1865 | 943 | 1321-1322 | **ninguno** |
+| `swing_trail_max_atr` | 51 | 1869 | 947 | 1338-1339 | **ninguno** |
+| `swing_trail_min_pnl` | 52 | 1870 | 948 | 1342-1343 | **ninguno** |
+| `hurst_swing_threshold` | 63 | 1881 | 959 | 1387-1388 | **ninguno** |
+| `scalp_accel_min_samples` | 132 | 1970 | 1032 | 1623-1624 | **ninguno** |
+| `swing_accel_min_samples` | 138 | 1980 | 1038 | 1631-1632 | **ninguno** |
+
+Siete de las 144 dimensiones (4,9 %) son espacio de búsqueda que el GA
+explora y el DSR factura como prueba sin que ninguna conducta los lea. El
+precedente vigente es **G0-4** (`capital_split_scalp`): gen muerto ⇒ **congelado
+a neutro sin mutación** (`darwin.rs:614,631`), no dejado evolucionando.
+Contraste dimensional: `hurst_scalp_threshold` (índice 62) **sí** es vivo — su
+lector está en `god-engine-core/src/lib.rs:2493` —, así que la asimetría es de
+la pareja Hurst, no de la familia entera (ver R7-R1-8).
+
+**Acción propuesta**: congelar los siete (fix en `mutate`/`random`, conservando
+índices y serialización para no romper linaje de genomas versionados) o, si el
+dueño prefiere, retirar el espejo a config y documentar. Exige **oráculo T-1**
+antes de pushear: por definición un gen muerto no debe mover la lista sensible,
+así que el veredicto esperado es IDÉNTICO (16/144, misma lista); cualquier
+diferencia revelaría un lector que este grep no vio. Dueño: **Qoder** (cola con
+oráculo) — zona de genoma compartida con AGY/GLM, avisar por buzón antes.
+
+### R7-R1-3 [LOW] — los alias de banda del orquestador contradicen U-ERR-2 y no tienen llamadores
+
+`crates/signal-engine/src/orchestrator.rs:306-322` define
+`evaluate_scalp_consensus_for_coin` y `evaluate_swing_consensus_for_coin`, ambas
+delegando sin más en `evaluate_continuous_consensus_for_coin`. Medido con
+`git grep -c`: **2 apariciones cada una** (definición y doc), es decir **cero**
+llamadores en los 488 `.rs`. Conviven con el bloque U-ERR-2 del mismo archivo
+(15-41): «Queda UNA superficie: el consenso continuo escopado por moneda». Un
+nuevo consumidor que elija el alias "scalp" obtiene hoy el mismo cálculo, pero
+la firma **reivive la dicotomía erradicada** y es exactamente el tipo de ancla
+que otra sesión puede cablear creyendo que aporta banda. **Acción**: borrar los
+dos alias (o documentarlos como deprecados con `#[deprecated]`). Sin oráculo
+(cero consumidores). Dueño: **Qoder**.
+
+### R7-R1-4 [LOW] — la familia de régimen MicroScalp/MesoTactical/MacroSwing es superficie muerta con cortes C⁰ duros
+
+En `crates/quantum-arena/src/position.rs`: `spectral_regime_name` (593-602),
+`is_micro_scalp` (605-609), `is_macro_swing`, `has_open_micro_scalp`,
+`has_open_macro_swing` (751-765) y `open_positions_by_regime` (731-749). Todos
+los conteos por símbolo medidos con `git grep -c` dan **exclusivamente el
+archivo que los define** (7/7/7/2/2/2 apariciones) ⇒ cero consumidores fuera de
+`position.rs`, y dentro tampoco se llaman entre sí salvo los `has_open_*`.
+Peor que muertos: fijan las fronteras duras `tau <= 60_000` y `tau <= 900_000`
+con etiquetas `MicroScalp`/`MacroSwing`, el escalón C⁰ que la doctrina
+ADR-0014/G0-5/Ω32 erradicó (el propio `position.rs:670-680` declara el modelo
+continuo y `MAX_SPECTRAL_SLOTS = 3` ranuras genéricas, no bandas). Riesgo
+simétrico al R7-R1-3: quien telemetrice con estas etiquetas publica una
+segmentación que el motor no tiene. **Acción**: retirar la familia o
+re-etiquetarla como diagnóstico explícito con las fronteras declaradas
+convencionales y un contrato que lo diga. Dueño: **Qoder**.
+
+### R7-R1-5 [LOW] — `HorizonIntent` (Scalp/Swing) y toda la API de intención persistida no tienen ni un llamador productivo
+
+`crates/data-pipeline/src/state_db.rs:106-112` conserva el enum con
+`Continuous` (default), `Scalp`, `Swing`; `decode_intent` (146-153) lee las
+tres cadenas del esquema. Medido: `HorizonIntent` **no aparece fuera de
+`state_db.rs`**, y `save_position_intent`/`get_position_intent*` tampoco — los
+únicos usos de `Scalp`/`Swing` son sus propios tests (344-396, 413-424), que
+además escriben a mano. Es decir: hay una tabla de tres horizontes que nadie
+produce ni consume en producción. No es un defecto de conducta (no corre), pero
+**es la migración de la dicotomía por persistencia**: un futuro lector del DB
+puede interpretar `SCALP` como política vigente. **Acción**: documentar el enum
+como etiqueta de esquema legado (o retirar las dos variantes con migración
+`SCALP|SWING → CONTINUOUS` si el dueño acepta tocar el esquema). Dueño: **Qoder**
+(con acuerdo del dueño del esquema).
+
+### R7-R1-6 [LOW] — `active_universe`: `swing_score` se calcula y se ignora en la ruta de evidencia dinámica
+
+`crates/quantum-arena/src/active_universe.rs:27-28` declara
+`scalp_score`/`swing_score`; 161-179 calcula ambos; y el ranking es:
+
+```rust
+let rank_score = if dynamic.is_some() {
+    scalp_score
+} else {
+    scalp_score.max(swing_score)
+};
+```
+
+(185-188). Con evidencia dinámica — el caso normal en vivo — `swing_score` se
+computa y **no afecta al orden**, y el reporte imprime sólo `c.scalp_score`
+(330). Dos nombres de banda para una única cantidad de selección de universo.
+**Acción**: renombrar (los dos scores a su magnitud real) y retirar el cálculo
+inerte, o bien usarlo y documentar por qué. Cambio de conducta ⇒ requiere
+oráculo si se toca el ranking. Dueño: **Qoder**.
+
+### R7-R1-7 [INFO] — nombres de banda sobre componentes que son UNO global (nomenclatura, no conducta)
+
+Medidos y **vivos**, con nombre heredado:
+`scalp_forest: Option<Arc<NanoForest>>` (`god-engine-core/src/lib.rs:778`) se
+carga como `NanoForest::get_global("UNIVERSAL")` (1390); no existe
+`swing_forest` ni `scalp_nn`. `swing_nn: Option<DarkAlphaEngine>` (779, 1019,
+1092, 1658, 4636-4637 con el comentario C-06 «el swing_nn (DarkAlpha) es UN») y
+su salida `swing_nn_pred` (6231-6234, 6326-6353) gobiernan los gates ML largos y
+cortos por igual. `swing_feats` es simplemente el vector de
+`get_universal_features()` (4471, 4519, 4558, 4594, 4657-4661; también en
+`stateful_engine.rs:1590-1592` y `src/bin/evolver.rs:415-416`). La clave de
+registro `ema_trend_swing` (productor `lib.rs:4883`, consumidoras
+`conformal_reversion_filter.rs:186-190` y `trend_runner.rs:208`) está
+deliberadamente conservada y documentada en ambos lados. Sin hallazgo de
+conducta: registrar como deuda de nombre para la barrida R4 (allí se lee
+`lib.rs` por bloques) y no renombrar a ciegas porque la clave `ema_trend_swing`
+es un ancla viva de dos archivos (regla «RE-GREP antes de cablear»).
+
+### R7-R1-8 [INFO] — la pareja Hurst está partida: el umbral "scalp" gobierna, el "swing" no
+
+`hurst_scalp_threshold` (índice 62) tiene lector vivo en
+`god-engine-core/src/lib.rs:2481-2493`; `hurst_swing_threshold` (63) no tiene
+ninguno (R7-R1-2). Y `genome.rs:161-162` sigue describiéndolos como la
+dicotomía que ya no existe: «Below this = Scalping regime» / «Above this = Swing
+regime». Es el mismo caso de R7-R1-1 (comentario que enseña una política que el
+motor no aplica) con la particularidad de que **la asimetría es real**: si
+alguien "completa" la pareja conectando el umbral superior, cambia la conducta
+del gate de Hurst ⇒ decisión con oráculo, no limpieza.
+
+### R7-R1-9 [INFO] — la invariante de sincronización de curvas no está probada en la ruta de promoción de Darwin
+
+`darwin.rs:676-695`: tras el gate, aplica el campeón al arena, reconstruye
+`current_from_arena`, copia `scalp_obi_threshold` y los cuatro coeficientes
+TP/SL, y llama **sólo** `derive_anchors_from_curves()` — no
+`sync_continuous_curves()`. Hoy es correcto por construcción, porque
+`current_from_arena` (`genome.rs:274-355`) reconstruye las cinco familias
+derivadas leyendo los escalares del config y `apply_to_arena` los publicó. Pero
+esa corrección depende de un orden implícito entre tres funciones y **ningún
+contrato lo cubre** (los dos tests de R7-R1-1 ejercitan `from_genome` /
+`apply_to_arena`, no la promoción). Un cambio en `current_from_arena` que deje
+de reconstruir una familia silenciaría esa curva en caliente con los suites
+verdes. **Acción**: un contrato de promoción (`apply → current_from_arena →
+derive` ⇒ los lectores coinciden con los genes). Docs/tests, sin oráculo.
+Dueño: **Qoder** (cola con R2).
+
+### Alcance honesto de R1
+
+- La fase hizo: (a) censo contable re-ejecutable de las 1 309 ocurrencias,
+  (b) lectura completa de los bloques que concentran la superficie viva
+  (`genome.rs` anclas/curvas/lectores, `horizon_policy.rs`, `position.rs`
+  familia de régimen y `PositionManager`, `config.rs` espejos, `orchestrator.rs`
+  alias, `active_universe.rs` ranking, `state_db.rs` esquema, `darwin.rs`
+  promoción, `lib.rs` en los bloques citados, `continuous_evolution_backtest.rs`
+  en los nichos, `telemetry-server/src/lib.rs` y `ledger.rs` en los bloques
+  U-ERR-6/7), y (c) `git grep -c` por símbolo para todo «muerto» publicado.
+- NO se auditaron semánticamente las ocurrencias restantes de telemetría y
+  variables locales sin efecto — esas caen en R4/R7 por archivo.
+- NO se tocó código. Las acciones con cambio de conducta (R7-R1-2, R7-R1-6 si se
+  toca el ranking, R7-R1-8) quedan en cola **con oráculo T-1 obligatorio**.
+- Total R1: **9 fichas (0 HIGH, 2 MED, 4 LOW, 3 INFO)**.

@@ -1,5 +1,60 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Qoder: R7-R1 CERRADA (doctrina/nomenclatura + grep `scalp|swing`) — 9 fichas, 0 HIGH, docs-only
+
+- **Rama**: `qoder/ronda7-plan` (worktree `.ola73`), HEAD `f5cadac7` + este
+  cierre documental. **Docs-only: cero `.rs` tocados** ⇒ el veredicto T-1
+  vigente de `534e7980` (PASA 16/144) sigue siendo el del árbol.
+- **Medición del censo** (re-ejecutable, ver §R7-5): **1 309** ocurrencias
+  `scalp|swing` en `.rs` (1 097 crates/src · 134 src/bin · 63 crates/tests ·
+  15 resto) y **2 455** en `.md`. La doctrina U-ERR-5 **sí** se sostiene en
+  el código: `PositionHorizon` tiene sólo `Continuous`, y
+  `ARQUITECTURA_VIVA.md` y `ADR-0014` tienen **0** ocurrencias de banda. El
+  daño no es de conducta: es de **nombre/documentación vs código**.
+- **9 fichas `R7-R1-1..9`** (0 HIGH, 2 MED, 4 LOW, 3 INFO). Las dos MED:
+  1. **R7-R1-1 [MED]** — `genome.rs:2008-2010` enseña que «las anclas legacy se
+     RE-DERIVAN de las curvas, jamás fuente independiente», pero eso es cierto
+     **sólo para TP/SL** (lo único que toca `derive_anchors_from_curves`). Las
+     otras diez anclas son **autoritativas**: `horizon_policy.rs:54-55` dice lo
+     contrario («must not override their authoritative scalar genes»), los
+     lectores `kelly_at_tau`/`trail_params_at_tau`/`obi_threshold_at_tau`
+     (`genome.rs:2128-2155`) re-derivan la curva *desde* los genes, y dos
+     contratos verdes lo certifican (`horizon_reader_parity.rs:91-104`,
+     `genome_store.rs:482-514`). Riesgo real: quien crea el comentario mata
+     sizing/trailing/OBI **dejando el contrato verde** — clase R6-A7. Fix
+     doc-only, dueño Qoder.
+  2. **R7-R1-2 [MED]** — **siete genes de banda sin NI UN lector siguen
+     mutándose, serializándose y espejándose al config**: índices 46/47/51/52
+     (`scalp/swing_trail_max_atr`, `_min_pnl`), 63 (`hurst_swing_threshold`),
+     132/138 (`scalp/swing_accel_min_samples`) = 4,9 % del espacio de búsqueda
+     que el GA explora y el DSR factura como prueba sin efecto alguno. Re-`git
+     grep -w` fuera de su ciclo de vida (`genome.rs`/`config.rs`) = **0
+     coincidencias** (medido). Precedente vigente **G0-4** (`capital_split_scalp`
+     congelado a neutro, `darwin.rs:614,631`): gen muerto ⇒ congelar, no dejar
+     evolucionando. Contraste: `hurst_scalp_threshold` (62) **sí es vivo**
+     (`lib.rs:2493`) — la asimetría es de la pareja Hurst. Acción con oráculo.
+- **LOW/INFO (superficie de confusión, cero conducta)**: `evaluate_scalp/
+  swing_consensus_for_coin` sin llamadores y contra U-ERR-2
+  (`orchestrator.rs:306-322`); familia `MicroScalp/MesoTactical/MacroSwing` con
+  cortes C⁰ `tau <= 60_000`/`<= 900_000` confinada a `position.rs` (605-609,
+  731-765); `HorizonIntent::{Scalp,Swing}` + API `save/get_position_intent*`
+  sin consumidor fuera de `state_db.rs`; **`active_universe`: `swing_score` se
+  calcula y se IGNORA en la ruta dinámica** (`rank_score = if dynamic.is_some()
+  { scalp_score } else { scalp_score.max(swing_score) }`, 185-188) y el reporte
+  sólo emite `c.scalp_score` (330); nomenclatura de banda sobre componentes
+  **globales** (`scalp_forest` = `NanoForest::get_global("UNIVERSAL")`,
+  `swing_nn`/`swing_feats`, clave viva `ema_trend_swing`); `darwin.rs:676-695`
+  llama `derive_anchors_from_curves()` **sin** `sync_continuous_curves()` —
+  correcto hoy por `current_from_arena`, pero la invariante no tiene contrato.
+- **Requisito Ronda 7 cumplido**: cada ficha lleva su conteo medido
+  (`git grep -c`/lista de líneas), ninguna se apoya en el escáner como prueba.
+- **SIGUIENTE**: **R2 — matemática/estadística** (risk-engine stats, Ville,
+  Cramér-Lundberg/ruin, correlation_guard, leverage_matrix, orchestrator,
+  multifractal, lead-lag, temporal_spectrum, spectral_tape). Dueño por asignar
+  en el buzón ANTES de ejecutar. Cola con oráculo abierta: **R7-R1-2**
+  (congelar los 7 genes) y, si toca ranking, **R7-R1-6**.
+- Detalle: BARRIDO §R7-5. FORENSIC #677. Buzón: aviso de cierre + zona genoma.
+
 ## 2026-10-09 — Qoder: R7-R0 CERRADA (ledger 1 512 rutas + censo 203 fichas) Y R7-3 CERRADA (ORÁCULO PASA 16/144)
 
 - **Rama**: `qoder/ronda7-plan` (worktree `.ola73`), base `534e7980` (= merge de

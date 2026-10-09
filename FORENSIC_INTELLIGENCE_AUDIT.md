@@ -15217,3 +15217,132 @@ certifica conducta ni física — eso es R1–R7. R1 (doctrina/nomenclatura +
 U-ERR-5 y `HorizonIntent` (`data-pipeline/src/state_db.rs:106-112`) conserva
 `Scalp`/`Swing` como etiquetas de migración sin consumidores fuera de su
 archivo.
+
+## #677 — R7-R1 (Qoder): DOCTRINA/NOMENCLATURA — grep `scalp|swing` sobre 1 309 ocurrencias en `.rs` — 9 fichas (0 HIGH, 2 MED, 4 LOW, 3 INFO), docs-only (2026-10-09)
+
+**Mandato**: fase R1 del plan Ronda 7 (`docs/PLAN_RONDA7_BARRIDO_BASE_2026-10-09.md`):
+verificar que la doctrina del continuo espectral (U-ERR-5: una posición, un
+horizonte físico `entry_tau_ms`; band labels diagnósticos) se sostiene en el
+código, y censar la superficie de nomenclatura `scalp|swing` que puede inducir
+a un agente a «arreglar» algo que no está roto o a matar un gen vivo.
+
+**Árbol medido**: `f5cadac7` (Rust ≡ `534e7980` ≡ `ab240abd` + Ω41 ya integrado
+en main). Docs-only: **cero `.rs` tocados**, el veredicto T-1 de §R7-3 sigue
+certificando el árbol.
+
+### Medición (re-ejecutable)
+
+| magnitud | valor | método |
+|---|---|---|
+| ocurrencias `scalp\|swing` en `.rs` | **1 309** | `git grep -o -i -E 'scalp\|swing' -- '*.rs' \| wc -l` |
+| — en `crates/**/src` | 1 097 | filtro por ruta |
+| — en `src/bin` | 134 | idem |
+| — en `crates/*/tests` | 63 | idem |
+| — resto (`src/`, `scripts`) | 15 | idem |
+| ocurrencias en `.md` | **2 455** | mismo con `-- '*.md'` |
+
+**Mapa positivo (la doctrina sobrevive)**: `ARQUITECTURA_VIVA.md` y
+`ADR-0014-doctrina-continuo-espectral` con **0** ocurrencias; `PLAN_MAESTRO`
+cuatro ocurrencias, todas históricas o prohibitivas; `PositionHorizon`
+(`quantum-arena/src/position.rs:18`) tiene **sólo** `Continuous`; la telemetría
+`scalp_pnl`/`swing_pnl` y el ledger `strategy` ya erradicados (U-ERR-6/7) — su
+texto restante es comentario de erradicación.
+
+### Hallazgos: qué SÍ está roto (o engaña)
+
+1. **R7-R1-1 [MED] — el comentario de autoridad ancla↔curva enseña la política
+   OPUESTA a la que implementan diez genes y dos contratos verdes.**
+   `genome.rs:2008-2010`: «las anclas legacy se RE-DERIVAN de las curvas —
+   vistas de compatibilidad, jamás fuente independiente. Todo camino que
+   construya o mute un genoma debe terminar llamando a esto». Cierto sólo para
+   TP/SL: `derive_anchors_from_curves` (`genome.rs:2011-2017`) rellena
+   **únicamente** `scalp/swing_tp_base` y `scalp/swing_sl_base`. Para la otra
+   familia rige lo contrario: `horizon_policy.rs:54-55` — *«Derived curves …
+   must not override their authoritative scalar genes when a cache is stale»* —
+   y los lectores `kelly_at_tau`/`trail_params_at_tau`/`obi_threshold_at_tau`
+   (`genome.rs:2128-2155`) re-derivan la curva **desde** los escalares. Dos
+   contratos lo certifican: `horizon_reader_parity.rs:91-104` y
+   `genome_store.rs:482-514`. **Riesgo medido**: un agente que crea el
+   comentario «sincroniza» y mata el escalar de kelly/trail/obi — deja la suite
+   verde (el contrato de TP/SL no mira ésos) y rompe sizing, trailing y OBI. Es
+   el patrón R6-A7 del barrido anterior (contrato verde que no ejercita la
+   física) en su variante inversa: comentario que sí ejercita la mentira.
+2. **R7-R1-2 [MED] — siete genes muertos siguen evolucionando e entrando en la
+   multiplicidad del DSR.** Índices del vector 144: 46 `scalp_trail_max_atr`,
+   47 `scalp_trail_min_pnl`, 51 `swing_trail_max_atr`, 52 `swing_trail_min_pnl`,
+   63 `hurst_swing_threshold`, 132 `scalp_accel_min_samples`, 138
+   `swing_accel_min_samples`. Para cada uno: mutación (`mutate` 1864-1881,
+   1970/1980), random (`defaults`/`random` 942-1038) y espejo a
+   `AtomicF64` (`to_config` 1317-1632), y **cero** lectores: re-`git grep -w`
+   del nombre fuera de `genome.rs`/`config.rs` = **0 coincidencias** (medido
+   otra vez al publicar esta ficha). 4,9 % del espacio de búsqueda que el GA
+   explora y que `selection_stats` factura como `cumulative_trials` sin que
+   ninguna conducta lo lea. Precedente vigente **G0-4**: el gen muerto
+   `capital_split_scalp` se **congeló** a neutro sin mutación
+   (`darwin.rs:614` comentario, `darwin.rs:631` `= 0.5`, `genome.rs:1841`), no
+   se dejó evolucionando. Contraste dimensional: la pareja Hurst está partida —
+   el índice 62 `hurst_scalp_threshold` **sí es vivo**
+   (`god-engine-core/src/lib.rs:2493`), su gemelo 63 no. Acción: congelar los
+   siete conservando índices/serialización (no romper linaje de genomas
+   versionados) — **con oráculo T-1 obligatorio**; por definición un gen muerto
+   no debe mover la lista sensible, así que el veredicto esperado es idéntico
+   (16/144) y cualquier diferencia revelaría un lector que este grep no vio.
+
+### Hallazgos: superficie de confusión sin conducta (LOW/INFO)
+
+3. **R7-R1-3 [LOW]** `evaluate_scalp_consensus_for_coin` /
+   `evaluate_swing_consensus_for_coin` (`signal-engine/src/orchestrator.rs:306-322`):
+   alias que delegan ambos en la ruta continua, con **2** apariciones cada
+   nombre (definición + mención en el doc-comment del propio archivo) y **cero**
+   llamadores. Contradicen el bloque U-ERR-2 del propio
+   archivo (15-41).
+4. **R7-R1-4 [LOW]** familia de régimen `MicroScalp/MesoTactical/MacroSwing` en
+   `quantum-arena/src/position.rs`: `spectral_regime_name` (593-602),
+   `is_micro_scalp` (605-609), `open_positions_by_regime` (731-749),
+   `has_open_*` (751-765). Cortes **C⁰** duros `tau <= 60_000` / `<= 900_000`
+   sobre un universo declarado continuo, y cero consumidores fuera del archivo
+   (conteos 7/7/7/2/2/2). Quien telemetrice con estas etiquetas publica una
+   dicotomía que el núcleo ya erradicó.
+5. **R7-R1-5 [LOW]** `HorizonIntent::{Scalp,Swing}` (`data-pipeline/src/
+   state_db.rs:106-112`, decodificador 146-153) y **toda** la API
+   `save/get_position_intent*` (344-424): sin un solo llamador productivo fuera
+   de `state_db.rs` y sus propios tests.
+6. **R7-R1-6 [LOW]** `quantum-arena/src/active_universe.rs`: `swing_score` se
+   calcula y se **ignora** en la ruta con evidencia dinámica — `rank_score = if
+   dynamic.is_some() { scalp_score } else { scalp_score.max(swing_score) }`
+   (185-188) — y el reporte sólo emite `c.scalp_score` (330). O sea: el nombre
+   del campo sobrevive a un ranking que ya no es de banda. Fix con oráculo si
+   toca el ranking.
+7. **R7-R1-7 [INFO]** nomenclatura de banda sobre componentes **globales**:
+   `scalp_forest` = `NanoForest::get_global("UNIVERSAL")`
+   (`god-engine-core/src/lib.rs:778`, `:1390`); `swing_nn`/`swing_nn_pred`
+   (779, 6231-6234, 6326-6353, con el comentario C-06 que ya lo aclara);
+   `swing_feats` = `get_universal_features()` (4471-4661); clave viva
+   `ema_trend_swing` (4883/4891). No es un defecto: es un nombre que hace creer
+   que existen dos modelos cuando existe uno.
+8. **R7-R1-8 [INFO]** `genome.rs:161-162` sigue documentando «Scalping regime» /
+   «Swing regime» para la pareja Hurst cuyo segundo miembro no lee nadie
+   (R7-R1-2). Mismo caso de R7-R1-1: comentario que enseña una política que el
+   código no aplica.
+9. **R7-R1-9 [INFO]** la ruta de promoción de Darwin (`darwin.rs:676-695`) llama
+   `derive_anchors_from_curves()` **sin** `sync_continuous_curves()`. Es
+   correcto hoy porque `current_from_arena` reconstruye desde el arena, pero la
+   invariante («todo camino que mute termina en la sincronización») no tiene
+   contrato: los dos tests verdes de R7-R1-1 ejercitan `from_genome`/`from_vector`,
+   no esta ruta.
+
+### Verificación y alcance honesto
+
+- Cero código tocado; el único artefacto nuevo es documental. Cada ficha lleva
+  (a) el conteo `git grep -c`/lista de líneas medida y (b) la lectura completa
+  del bloque citado (`genome.rs`, `horizon_policy.rs`, `position.rs`,
+  `orchestrator.rs`, `active_universe.rs`, `state_db.rs`, `darwin.rs`,
+  `lib.rs` en las líneas indicadas).
+- **NO** se auditaron semánticamente las ocurrencias restantes de telemetría ni
+  las variables locales sin efecto: eso cae en R4 (núcleo vivo) y R7
+  (datos/telemetría) por archivo.
+- **NO** se certifica conducta ni física en esta fase: R1 mide nombre vs
+  código. Las acciones con cambio de conducta (R7-R1-2; R7-R1-6 si toca
+  ranking; R7-R1-8) quedan en cola **con oráculo T-1 obligatorio**.
+- Total R1: **9 fichas (0 HIGH, 2 MED, 4 LOW, 3 INFO)**. Siguiente fase:
+  **R2 matemática/estadística**. Detalle completo: BARRIDO §R7-5.
