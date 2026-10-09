@@ -210,8 +210,10 @@ impl MultivariateCointegrationEngine {
             + (1.0 - self.memory_decay) * innovation_product.max(0.0))
         .max(1e-6);
 
-        // 3. Estimación discreta de velocidad de reversión Ornstein-Uhlenbeck: $\Delta S_t = -\theta (S_{t-1} - \mu) + \epsilon_t$
-        let spread_deviation = self.last_spread - next_mean;
+        // 3. Estimación discreta de velocidad de reversión Ornstein-Uhlenbeck: $\Delta S_t = -\theta (S_{t-1} - \mu_{t-1}) + \epsilon_t$
+        // R6-B16 (Ola Ω52): Se usa `self.mean_spread` (media previa t-1) en lugar de `next_mean` (post-innovación t),
+        // garantizando causalidad estricta y eliminando el lookahead del regressor.
+        let spread_deviation = self.last_spread - self.mean_spread;
         let mut next_theta = self.theta_reversion_speed;
         if spread_deviation.abs() > 1e-6 {
             let ratio = -diff_spread / spread_deviation;

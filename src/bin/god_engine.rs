@@ -4098,7 +4098,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let curl_share = engine_real.arena.registry.get_for_coin_or(coin_id, "hodge_curl_share", 0.0);
                         let ym_action = engine_real.arena.registry.get_value_or("yang_mills_action", 0.0);
                         let _is_mean_reversion_vortex = (curl_share > 0.75 || (curl_share > 0.60 && ym_action > 0.10))
-                            && dbp > 0.0 && dap > 0.0 && dbp <= dap;
+                            && dbp > 0.0 && dap > 0.0 && dbp < dap;
                         let force_maker = false;
                         // B3.28 — PRECIO PASIVO AL LIBRO VIVO, no al mid
                         // congelado. Con maker_price = mid del tick
@@ -4108,7 +4108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Pasivo al BID (para long) o ASK (para short): si
                         // el libro no se movió, descansa en top of book y
                         // llena con el próximo agresor opuesto.
-                        let maker_price = if dbp > 0.0 && dap > 0.0 && dbp <= dap {
+                        let maker_price = if dbp > 0.0 && dap > 0.0 && dbp < dap {
                             if final_is_long { dbp } else { dap }
                         } else {
                             current_price
