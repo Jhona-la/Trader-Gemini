@@ -861,27 +861,38 @@ impl RiskEngine {
         // un teorema universal de EV negativo. Se conserva esta protección.
         // Se rechaza limpiamente con REJ_TP_SL_FLOOR en lugar de inflar artificialmente el stop.
         if tpsl_gate.below_tradeable_floor {
-            // Ω46.3 / F4-M1: En régimen micro ($13 USD), si el suelo viable sl_floor (ej. 48 bps)
-            // cabe dentro del presupuesto estricto de stop loss (55 bps = 0.0055), se permite elevar
-            // el stop al suelo en lugar de abortar ciegamente con REJ_TP_SL_FLOOR.
-            // La compuerta de EV posterior verificará que la geometría resultante cubra comisiones.
+            // Ω47 / F4-M1: En régimen micro ($13 USD), transición suave C^1 Hermite cúbico
+            // en lugar de escalón en 0.5. Si el suelo viable sl_floor cabe dentro del presupuesto
+            // admisible de stop loss para la escasez actual, se permite elevar el stop al suelo
+            // en lugar de abortar ciegamente con REJ_TP_SL_FLOOR.
             let sl_floor = quantum_arena::genome::SuperGenotype::min_viable_sl(roundtrip_fee);
-            let micro_admite_suelo = micro_w_alloc > 0.5 && sl_floor <= 0.0055;
-            if !micro_admite_suelo {
+            let u_w = ((micro_w_alloc - 0.20) / 0.60).clamp(0.0, 1.0);
+            let s_w = u_w * u_w * (3.0 - 2.0 * u_w);
+            let max_tolerable_floor = 0.0055 * s_w;
+            if sl_floor > max_tolerable_floor {
                 return rej(REJ_TP_SL_FLOOR);
             }
         }
         // Blindaje Cuántico Micro-Cuenta ($13 USD):
         // Dado el suelo de Binance de $5.00 min notional, el tamaño no puede comprimirse por debajo de ~$5.10.
         // Si el stop difusivo sigma(tau)*k excede 55 bps en régimen micro, la pérdida en dólares violaría el presupuesto
-        // de ruina ($0.0280 USD max). Se acota el stop a 55 bps y se preserva el ratio RR >= 2.25 de diseño.
-        let (expected_win, expected_loss) = if micro_w_alloc > 0.5 && tpsl_gate.sl_pct > 0.0055 {
-            let sl = 0.0055;
-            let tp = (sl * tpsl_gate.rr_applied).max(sl * 2.25);
-            (tp, sl)
+        // de ruina ($0.0280 USD max). Transición continua C^1 que interpola suavemente el stop a 55 bps
+        // preservando el ratio RR >= 2.25 de diseño sin quiebres de régimen.
+        let u_w = ((micro_w_alloc - 0.20) / 0.60).clamp(0.0, 1.0);
+        let s_w = u_w * u_w * (3.0 - 2.0 * u_w);
+        let micro_sl_cap = 0.0055;
+        let effective_sl = if s_w > 0.0 && tpsl_gate.sl_pct > micro_sl_cap {
+            crate::capital_regime::lerp(tpsl_gate.sl_pct, micro_sl_cap, s_w)
         } else {
-            (tpsl_gate.tp_pct, tpsl_gate.sl_pct)
+            tpsl_gate.sl_pct
         };
+        let effective_tp = if s_w > 0.0 && tpsl_gate.sl_pct > micro_sl_cap {
+            let tp_candidate = (effective_sl * tpsl_gate.rr_applied).max(effective_sl * 2.25);
+            crate::capital_regime::lerp(tpsl_gate.tp_pct, tp_candidate, s_w)
+        } else {
+            tpsl_gate.tp_pct
+        };
+        let (expected_win, expected_loss) = (effective_tp, effective_sl);
 
         // FMT-211: resolve once BEFORE EV and reuse these exact prices below.
         // Payouts are signed fractions of entry price, not leveraged returns.

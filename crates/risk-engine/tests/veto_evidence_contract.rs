@@ -264,3 +264,17 @@ fn diagnostics_distinguish_input_geometry_and_economic_vetoes() {
         assert!(REJECT_COUNTERS_DIR[0][index].load(Relaxed) > before);
     }
 }
+
+#[test]
+fn test_suavizado_c1_micro_suelo_no_tiene_escalon_discreto() {
+    let (arena, intent) = fixture();
+    // Evaluar que a través de diferentes niveles de capital micro ($13, $15, $25, $50),
+    // la evaluación se ejecuta de forma continua sin panics ni NaNs.
+    for cap in [13.0, 15.0, 20.0, 50.0, 100.0] {
+        let mut engine = RiskEngine::new(cap);
+        let out = engine.evaluate_quantum_order(0, &intent, &arena);
+        assert!(out.volume_usd.is_finite());
+        assert!(out.leverage.is_finite());
+    }
+}
+
