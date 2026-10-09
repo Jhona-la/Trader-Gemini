@@ -228,8 +228,6 @@ mod tests {
     fn test_quantum_oscillator_engine_evaluate_with_registry() {
         let registry = Arc::new(OmniscientRegistry::new());
         registry.set("quantum_position_deviation", 0.5);
-        registry.set("quantum_k_spring", 1.0);
-        registry.set("quantum_lambda_anharmonic", 0.1);
 
         let mut engine = QuantumOscillatorEngine::new();
         assert!(engine.init(registry).is_ok());
@@ -247,8 +245,6 @@ mod tests {
         let registry = Arc::new(OmniscientRegistry::new());
         // Desviación extrema de breakout (pos = 6.0)
         registry.set("quantum_position_deviation", 6.0);
-        registry.set("quantum_k_spring", 1.0);
-        registry.set("quantum_lambda_anharmonic", 0.1);
         registry.set("quantum_alpha", 0.5);
 
         let mut engine = QuantumOscillatorEngine::new();
