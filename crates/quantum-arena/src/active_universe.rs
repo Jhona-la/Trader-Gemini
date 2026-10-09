@@ -182,11 +182,10 @@ fn select_universe(
             }
             continue;
         }
-        let rank_score = if dynamic.is_some() {
-            scalp_score
-        } else {
-            scalp_score.max(swing_score)
-        };
+        // Ω47 / R7-R1-6: Consistencia del continuo temporal espectral.
+        // El ranking evalúa el supremo espectral de aptitud max(rápido, lento) de forma
+        // unificada, erradicando la omisión arbitraria del horizonte lento ante evidencia dinámica.
+        let rank_score = scalp_score.max(swing_score);
         candidates.push((
             is_forced,
             rank_score,
