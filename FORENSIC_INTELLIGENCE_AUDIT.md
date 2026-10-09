@@ -15586,3 +15586,21 @@ línea 2250).
        - `ev_primer_toque(&self, mu: f64, sigma: f64, fee: f64) -> f64`
      - Test añadido: `test_r7_r2_a1_tpsl_analitico_primer_toque` certificando que bajo martingala browniana $EV_{\text{neto}} \equiv -\text{fee}$ y que una deriva positiva suficiente genera $EV > 0$ continuo.
 - **Certificación**: Suites completas de `feature-engine` (86/86), `risk-engine` (150+ tests unitarios y contractuales) y `god-engine-core` verdes al 100% con 0 errores.
+
+## #684 — Ola Ω51: RESOLUCIÓN R6-B12 (FILTRO RECURSIVO RLS ESTRICTO DE COINVERGENCIA EN STATARB) Y R6-A11 (PARIDAD CONTRACTUAL Y UNIFICACIÓN DE DESCOMPOSICIÓN DE HELMHOLTZ-HODGE) (2026-10-09)
+
+- **Autor**: Quant Senior (AGY / Consejo de 10 Roles).
+- **Commit en `main`**: `795746b3`.
+- **Alcance Matemático y Cuantitativo**:
+  1. **R6-B12 (Filtro Recursivo RLS Estricto de Elasticidad Cointegrada $\beta$ en StatArb)**:
+     - `crates/strategy-core/src/stat_arb.rs:21-72, 142-168, 280-285, 593-616`: Erradicada la heurística LMS con paso fijo $0.001 / (1 + \ln(P_b)^2 \cdot 0.001)$ que carecía de memoria de covarianza y no convergía a la elasticidad real de cointegración.
+     - Implementado el estimador RLS recursivo estricto para el modelo $\ln(P_a) = \beta_t \ln(P_b) + e_t$:
+       $$K_t = \frac{P_{t-1} x_t}{\lambda + x_t^2 P_{t-1}}, \quad \beta_t = \beta_{t-1} + K_t e_t, \quad P_t = \frac{P_{t-1} - K_t x_t P_{t-1}}{\lambda}$$
+       con covarianza escalar inicial $P_0 = 1.0$ (configurable en $[10^{-4}, 1000]$) y factor de olvido exponencial $\lambda \in [0.95, 0.9999]$ (por defecto $0.998$).
+     - Métodos expuestos: `with_rls_lambda(lambda)`, `with_rls_p(p)` y método de actualización `update_rls_beta(&mut self, ln_a: f64, ln_b: f64)`.
+     - Test contractual añadido: `test_r6_b12_rls_convergencia_exacta` demostrando que en 50 ticks bajo el modelo $\ln(P_a) = 2.5 \ln(P_b)$, $\beta_t$ converge a $2.5 \pm 0.15$ y la covarianza $P_t$ se contrae por debajo de $1.0$ conforme se acumula evidencia.
+  2. **R6-A11 (Unificación y Paridad Contractual de Descomposición Helmholtz-Hodge)**:
+     - `crates/risk-engine/src/hodge.rs:80-82`: Alineado el umbral de energía mínima de degeneración simétrica a $10^{-15}$ (en vez de $\le 0.0$) para evitar división por números subnormales y garantizar estabilidad numérica y paridad absoluta con `feature-engine`.
+     - `crates/god-engine-core/tests/hodge_contagion_contract.rs:11-13, 84-162`: Añadido el test contractual de paridad formal `r6_a11_hodge_paridad_unificada_risk_vs_feature`. Certifica que sobre cascadas transitivas, vórtices cíclicos puros y matrices reales de contagio multiactivo Hawkes, `risk_engine::hodge::hodge_curl_share` y `feature_engine::HelmholtzHodgeFlowEngine::decompose` devuelven idéntico `curl_share` con precisión de máquina ($|\Delta| < 10^{-12}$).
+- **Certificación**: Suite de `strategy-core` (40/40), `hodge_contagion_contract` (4/4) y workspace completo (`cargo check --all-targets`) verde al 100% con 0 errores.
+

@@ -1,5 +1,16 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Antigravity: OLA Ω51 CERRADA E INTEGRADA EN MAIN (`795746b3`) — RESOLUCIÓN R6-B12 (FILTRO RECURSIVO RLS ESTRICTO DE COINVERGENCIA EN STATARB) Y R6-A11 (PARIDAD CONTRACTUAL Y UNIFICACIÓN DE DESCOMPOSICIÓN DE HELMHOLTZ-HODGE)
+
+- **Rama**: `antigravity/quant-sr-ola51-rls-stat-arb-hodge-t1` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#684**.
+- **Cambios en Código Rust**:
+  1. `crates/strategy-core/src/stat_arb.rs:21-72, 142-168, 280-285, 593-616`: R6-B12 erradicada la heurística LMS con paso fijo $0.001 / (1 + \ln(P_b)^2 \cdot 0.001)$ sin covarianza. Implementado el filtro RLS recursivo estricto para el modelo $\ln(P_a) = \beta_t \ln(P_b) + e_t$:
+     $$K_t = \frac{P_{t-1} x_t}{\lambda + x_t^2 P_{t-1}}, \quad \beta_t = \beta_{t-1} + K_t e_t, \quad P_t = \frac{P_{t-1} - K_t x_t P_{t-1}}{\lambda}$$
+     con covarianza escalar inicial $P_0 = 1.0$ (configurable en $[10^{-4}, 1000]$) y factor de olvido exponencial $\lambda \in [0.95, 0.9999]$ (por defecto $0.998$). Test contractual `test_r6_b12_rls_convergencia_exacta` pasando al 100% (convergencia a $\beta=2.5$ y contracción de $P_t < 1.0$).
+  2. `crates/risk-engine/src/hodge.rs:80-82`: R6-A11 alineado el umbral de energía mínima de degeneración simétrica a $10^{-15}$ (en vez de $\le 0.0$) para evitar división por números subnormales y garantizar estabilidad numérica y paridad absoluta con `feature-engine`.
+  3. `crates/god-engine-core/tests/hodge_contagion_contract.rs:11-13, 84-162`: R6-A11 añadido el test contractual de paridad formal `r6_a11_hodge_paridad_unificada_risk_vs_feature`. Certifica que sobre cascadas transitivas, vórtices cíclicos puros y matrices reales de contagio multiactivo Hawkes, `risk_engine::hodge::hodge_curl_share` y `feature_engine::HelmholtzHodgeFlowEngine::decompose` devuelven idéntico `curl_share` con precisión de máquina ($|\Delta| < 10^{-12}$).
+- **Certificación**: Suite de `strategy-core` (40/40), `hodge_contagion_contract` (4/4) y workspace completo (`cargo check --all-targets`) verde al 100% con 0 errores.
+
 ## 2026-10-09 — Antigravity: OLA Ω50 CERRADA E INTEGRADA EN MAIN (`a640a121`) — RESOLUCIÓN R7-R2-E-3 (UMBRAL ADAPTATIVO t-STUDENT EN LEAD-LAG), R7-R2-E-1 (μ̂ EMPÍRICO ADAPTATIVO EN HAWKES) Y R7-R2-A-1 (MÉTODOS ANALÍTICOS DE PRIMER TOQUE EN TpSl)
 
 - **Rama**: `antigravity/quant-sr-ola50-leadlag-hawkes-firsttouch` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#683**.
