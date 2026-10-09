@@ -278,3 +278,46 @@ fn test_suavizado_c1_micro_suelo_no_tiene_escalon_discreto() {
     }
 }
 
+#[test]
+fn test_fase_sonda_ev_prior_gate_contract() {
+    let (arena, mut intent) = fixture();
+    // Caso A: Fase de sonda con n=1 y trade perdedor previo (w=0.0).
+    // Con geometría de diseño (EV prior viable > comisiones), la sonda NO entra en deadlock
+    // y es admitida con sizing mínimo.
+    arena.coins[0].metrics.trade_count.store(1, Relaxed);
+    arena.coins[0].metrics.win_rate.store(0.0, Relaxed);
+    intent.tp_price_target = 0.0;
+    intent.sl_price_target = 0.0;
+    let out_sonda = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(
+        out_sonda.signal,
+        SignalType::Long,
+        "en fase sonda n=1 la orden viable no debe sufrir deadlock absorbente"
+    );
+    assert!(out_sonda.volume_usd > 0.0);
+
+    // Caso B: Fase de sonda con geometría degradada donde EV prior <= fee.
+    // Demuestra que rej(4) SÍ es alcanzable en la fase de sonda si el payoff no cubre comisiones.
+    // tp = 100.01 (0.01%), sl = 99.00 (1.0%): ev_prior = 0.55*0.0001 - 0.45*0.01 = -0.004445 <= fee.
+    intent.tp_price_target = 100.01;
+    intent.sl_price_target = 99.00;
+    let out_degradada = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(
+        out_degradada.signal,
+        SignalType::Flat,
+        "en fase sonda una geometría con ev_prior negativo/insuficiente debe rechazarse con rej(4)"
+    );
+
+    // Caso C: Fuera de fase de sonda (n=20 maduro con w=0.0).
+    // El LCB estricto detecta ausencia de edge estadístico y rechaza con rej(4).
+    arena.coins[0].metrics.trade_count.store(20, Relaxed);
+    intent.tp_price_target = 0.0;
+    intent.sl_price_target = 0.0;
+    let out_maduro = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(
+        out_maduro.signal,
+        SignalType::Flat,
+        "con muestra madura n=20 y w=0.0 el LCB debe vetar limpiamente con rej(4)"
+    );
+}
+
