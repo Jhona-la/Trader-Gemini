@@ -1,6 +1,6 @@
 use metacortex_engine::{
     read_epigenoma_gene, set_epigenoma_gene, CazadorConstantes, ConsejoDeliberacion,
-    FaseAutonomous, FaseAutonomousManager, HealthMetrics, MarketSnapshotPayload,
+    MarketSnapshotPayload,
 };
 
 #[test]

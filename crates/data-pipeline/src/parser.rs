@@ -18,6 +18,7 @@ pub struct BookTickerEvent {
     pub bid_qty: f64,
     pub ask_price: f64,
     pub ask_qty: f64,
+    #[allow(dead_code)]
     pub coin_id: usize,
     pub event_time: u64,
 }
@@ -121,6 +122,7 @@ pub struct AggTradeEvent {
     pub is_buyer_maker: bool,
     /// #660 (F2-B5) — transact time del exchange (ms) para el decaimiento
     /// FÍSICO del flujo agregado; ausente ⇒ 0 (sin reloj).
+    #[allow(dead_code)]
     pub timestamp_ms: u64,
 }
 

@@ -64,7 +64,7 @@ fn xlvk_datos_independientes_sin_estructura() {
     let b: Vec<u64> = (0..50).map(|_| next() * 100 + 1_000).collect();
     let mut sa = a.clone(); sa.sort();
     let mut sb = b.clone(); sb.sort();
-    let span_a = sa.last().unwrap() - sa[0];
+    let _span_a = sa.last().unwrap() - sa[0];
     let span_b = sb.last().unwrap() - sb[0];
 
     let exc = cross_excitation(&sa, &sb, span_b, &[200, 500, 1_000]);

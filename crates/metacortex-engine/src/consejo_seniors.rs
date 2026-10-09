@@ -444,47 +444,51 @@ impl SeniorAgent for SeniorEnteMercado {
         // limpio de la entrada — el precio en ese momento lo mueven ELLOS,
         // no el flujo que motivó la señal. OI alto (apalancamiento denso)
         // amplifica movimientos: misma modulación.
-        let mut entity_factor = 1.0f64;
-        if whale_z > 4.0 {
-            entity_factor *= 0.7;
-        }
-        if liq > 0.6 {
-            entity_factor *= 0.5;
-        }
-        if oi > 0.8 {
-            entity_factor *= 0.85;
-        }
-        if spoof > 0.7 {
-            entity_factor *= 0.85; // muro que se evapora: el libro miente
-        }
-        // QO-U2 — CONTRARIAN: la multitud MUY a favor de nuestra dirección
-        // es riesgo de squeeze (todos saliendo por la misma puerta). L/S>3
-        // y entramos long: ×0.8; L/S<0.33 y entramos short: ×0.8. El flujo
-        // taker extremo (>2.5 o <0.4) en NUESTRA dirección: ya llegó tarde.
-        let ls = if payload.crowd_ls_ratio.is_finite() {
-            payload.crowd_ls_ratio.clamp(0.0, 20.0)
+        // Modulación continua C¹ autoadaptativa de entes adversariales y psicología de masas:
+        // En lugar de funciones de escalón discretas C⁰ (if > threshold), cada magnitud modula
+        // la convicción suavemente mediante leyes continuas de amortiguamiento físico.
+        let p_whale = if whale_z > 0.0 {
+            (1.0 / (1.0 + (whale_z / 4.0).powi(2))).clamp(0.60, 1.0)
         } else {
             1.0
         };
-        let tk = if payload.crowd_taker_ratio.is_finite() {
-            payload.crowd_taker_ratio.clamp(0.0, 20.0)
+        let p_liq = if liq > 0.0 {
+            (-1.2 * liq * liq).exp().clamp(0.40, 1.0)
+        } else {
+            1.0
+        };
+        let p_oi = if oi > 0.0 {
+            (1.0 / (1.0 + 0.3 * oi * oi)).clamp(0.80, 1.0)
+        } else {
+            1.0
+        };
+        let p_spoof = if spoof > 0.0 {
+            (1.0 / (1.0 + 0.3 * spoof * spoof)).clamp(0.80, 1.0)
+        } else {
+            1.0
+        };
+
+        // QO-U2 / Conducta de masas contrarian continua:
+        // Desbalance logarítmico de multitud: z = dir_sign * ln(L/S).
+        // Si z > 0, la masa está concentrada en nuestra misma dirección (riesgo de squeeze adverso).
+        let ls = if payload.crowd_ls_ratio.is_finite() && payload.crowd_ls_ratio > 0.0 {
+            payload.crowd_ls_ratio.clamp(0.01, 20.0)
+        } else {
+            1.0
+        };
+        let tk = if payload.crowd_taker_ratio.is_finite() && payload.crowd_taker_ratio > 0.0 {
+            payload.crowd_taker_ratio.clamp(0.01, 20.0)
         } else {
             1.0
         };
         let dir_sign = safe_signum(payload.intended_direction);
-        if dir_sign > 0.0 && ls > CROWD_LS_FEAR {
-            entity_factor *= 0.8; // multitud ya long: squeeze risk
-        }
-        if dir_sign < 0.0 && ls < 0.33 {
-            entity_factor *= 0.8; // multitud ya short: squeeze risk
-        }
-        if dir_sign > 0.0 && tk > 2.5 {
-            entity_factor *= 0.85; // takers ya compraron: llegamos tarde
-        }
-        if dir_sign < 0.0 && tk < 0.4 {
-            entity_factor *= 0.85; // takers ya vendieron: llegamos tarde
-        }
-        let entity_factor = entity_factor.max(0.3); // piso: nunca anula solo
+        let crowd_imbalance = (dir_sign * ls.ln()).max(0.0);
+        let p_crowd = (1.0 / (1.0 + 0.25 * crowd_imbalance * crowd_imbalance)).clamp(0.70, 1.0);
+
+        let taker_imbalance = (dir_sign * tk.ln()).max(0.0);
+        let p_taker = (1.0 / (1.0 + 0.20 * taker_imbalance * taker_imbalance)).clamp(0.75, 1.0);
+
+        let entity_factor = (p_whale * p_liq * p_oi * p_spoof * p_crowd * p_taker).clamp(0.30, 1.0);
         let dir = safe_signum(payload.intended_direction);
         SeniorOpinion {
             role: self.role(),

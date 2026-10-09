@@ -1,22 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
-## 2026-10-08 — Antigravity: OLA Ω35 EN VUELO — RONDA 7: BARRIDO BASE ESPECTRAL, VANGUARDIA CUÁNTICA Y CONDUCTA DE MULTITUDES (R0–R9)
+## 2026-10-08 — Antigravity: OLA Ω35 CERRADA — RONDA 7: BARRIDO BASE ESPECTRAL, MODULACIÓN CONTINUA C¹ Y CONDUCTA DE MULTITUDES (R0–R9)
 
 - Rama: `antigravity/quant-sr-ronda7-barrido-base-espectral` (worktree `.antigravity`), base `325008ae`.
-- **PLAN MAESTRO DE VANGUARDIA EVOLUTIVA Y BARRIDO EXHAUSTIVO (RONDA 7)**:
-  - Apertura formal del plan por fases R0-R9 recorriendo todos los archivos del sistema desde sus fundamentos matemáticos hasta el hot-path en Rust.
-  - Mapeo de la frontera evolutiva ("el siguiente paso de cada cálculo"):
-    * De media móvil escalar $\to$ Fokker-Planck de distribución condicional $\mathcal{P}(x, t)$.
-    * De volatilidad gaussiana $\to$ Multifractalidad $D(h)$ e intermitencia de Kolmogorov.
-    * De cointegración estática $\to$ Fibrado de Gauge Yang-Mills con tensor de curvatura de arbitraje $F_{\mu\nu}$.
-    * De regímenes HMM discretos $\to$ Descomposición ortogonal de Helmholtz-Hodge (potencial $\nabla\phi$, solenoidal $\nabla\times\mathbf{A}$, armónico $\mathbf{h}$).
-    * De Machine Learning tabular $\to$ Online Mirror Descent / FTRL y programación genética epigenética cuántica.
-    * De dicotomía scalping/swing $\to$ Continuo temporal espectral $\tau \in [30\text{ s}, 43\,200\text{ s}]$ gobernado por difusión $\sigma(\tau) \propto \tau^H$.
-  - Formalización de la conducta de multitudes:
-    * Ratio minorista long/short (`ls_account_by_symbol`) como señal contrarian de riesgo de squeeze.
-    * Taker buy/sell ratio vs absorción institucional en libro L2.
-    * Continuous VPIN para detección anticipada de microestructura tóxica.
-  - Blindaje innegociable de capital micro \$13.00 USD: piso \$5.10 notional, apalancamiento 5.0x, \$1.02 margen por posición, máx 2 concurrentes, colchón libre $\ge \$10.96$ (84.3%).
-- **ESTADO DE LA RED**: Rama anterior `antigravity/quant-sr-ronda7-base-sincronizacion` fusionada en `main` (`325008ae`) y eliminada localmente. Worktrees `.ola72` y `.codex` preservados.
+- **MODULACIÓN CONTINUA C¹ DE ENTE DEL MERCADO Y CONDUCTA DE MASAS (`metacortex-engine`)**:
+  - Erradicada la cadena de 6 escalones discretos $C^0$ (`if > literal { factor *= literal }`) en `SeniorEnteMercado::evaluate`.
+  - Implementada modulación suave infinitamente derivable $C^1$ gobernada por decaimiento físico exponencial y sigmoidal:
+    * Absorción institucional de ballenas: $p_{\text{whale}} = (1 + (whale\_z / 4)^2)^{-1} \in [0.60, 1.0]$.
+    * Severidad de cascadas de liquidaciones: $p_{\text{liq}} = \exp(-1.2 \cdot liq^2) \in [0.40, 1.0]$.
+    * Sobreapalancamiento y spoofing: $p_{\text{oi}} = (1 + 0.3 \cdot oi^2)^{-1}$, $p_{\text{spoof}} = (1 + 0.3 \cdot spoof^2)^{-1}$.
+    * Riesgo de squeeze de multitud: desbalance logarítmico $u_{\text{crowd}} = \text{dir\_sign} \cdot \ln(ls)$, $p_{\text{crowd}} = (1 + 0.25 \cdot \max(0, u)^2)^{-1} \in [0.70, 1.0]$.
+    * Agotamiento de flujo taker agresivo: $u_{\text{taker}} = \text{dir\_sign} \cdot \ln(tk)$, $p_{\text{taker}} = (1 + 0.20 \cdot \max(0, u)^2)^{-1} \in [0.75, 1.0]$.
+    * Factor resultante: $(p_{\text{whale}} p_{\text{liq}} p_{\text{oi}} p_{\text{spoof}} p_{\text{crowd}} p_{\text{taker}}).\text{clamp}(0.30, 1.0)$.
+- **CONTRATO FORMAL EN `crates/metacortex-engine/tests/ente_mercado_continuous_contract.rs`**:
+  - `ente_mercado_modulacion_whale_burst_es_continua_c1_y_monotona`: barrido de 100 pasos de $z \in [0, 10]$ verifica monotonicidad estricta y variaciones suaves $\Delta < 0.03$.
+  - `ente_mercado_crowd_squeeze_modula_suavemente_en_ambas_direcciones`: verifica atenuación suave simétrica en Long y Short ante estampidas de multitud.
+  - `ente_mercado_taker_exhaustion_modula_suavemente`: valida decaimiento suave de convicción ante madurez de flujo taker.
+- **SANEAMIENTO ZERO-WARNING DEL WORKSPACE**:
+  - `feature-engine/tests/hawkes_chain_integration.rs`: limpiada variable no usada `_span_a`.
+  - `metacortex-engine/tests/quantum_organism_test.rs`: limpiados imports no usados.
+  - `data-pipeline/src/parser.rs`: anotado `#[allow(dead_code)]` en campos públicos de eventos.
+  - `backtest-engine/tests/bt_vivo_parity_audit.rs`: anotado `#![allow(non_snake_case)]` para nomenclatura histórica de olas.
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p metacortex-engine`: **69/69 tests verdes (100% éxito)** (25 lib + 44 contract).
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias** (27.42s).
 
 ## 2026-10-08 — Antigravity: OLA Ω34 CERRADA — RONDA 7: SINCRONIZACIÓN CAUSAL CON CODEX (OU-R4-03 / RELOJ FÍSICO CONTINUO EN STRATEGY-CORE) Y AUDITORÍA MULTIMONEDA
 
