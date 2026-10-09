@@ -1734,5 +1734,107 @@ operador.
 - **R6-A1/C1, R6-A2, R6-C2/A9**: reportados como resueltos por AGY en sus
   olas Ω41/Ω42 (recibos en `.agents/MEMORIA.md`); su verificación física
   corresponde a esos recibos, no a esta ola.
-- **Pendientes tras Ola 73**: cola Qoder R6-B5/B6/B7/B8 (Ville daemon);
-  GLM/Codex R6-B4 (decay en tiempo) y R6-B3 (estratificar Δt).
+- **Pendientes REALES tras Ola 73 + AGY Ω42–Ω45** (re-verificados contra
+  `ab240abd` con ancla exacta; la cola que figuraba aquí — R6-B3..B8 — fue
+  drenada por AGY en Ω43, ver sus recibos en `.agents/MEMORIA.md`):
+  R6-A11 [LOW] doble implementación Hodge (`risk-engine/src/hodge.rs` vs
+  `feature-engine/src/hodge_flow.rs`); R6-A13 [residual] guard `coin_id <
+  ym_currents.len()` → `0.0` ambiguo (`god-engine-core/src/lib.rs:5107`,
+  Ω41 ya hizo fiel el índice: queda sóla la ambigüedad semántica);
+  R6-B12 [LOW] «RLS» de β es LMS con gain fijo, sin **P** ni olvido
+  (`strategy-core/src/stat_arb.rs:232-236`); R6-B16 [LOW] `spread_deviation`
+  legacy con timing post-actualización y sin caller productivo
+  (`strategy-core/src/multivariate_coint.rs:214-218`); R6-C8 [LOW] `dbp <=
+  dap` trivialmente cierto (`src/bin/god_engine.rs:4101`, `:4111`); C-02
+  [MED] sin productor vivo del feed spot-futuro. R6-B14/B18 son positivos
+  sin acción. Autoría del drenaje: **R6-A3/A4/A5/B1/B2/B13 = Qoder Ola 73
+  (código `8b0daf01`)**; Ω44 registró la integración/merge.
+- **Siguiente barrido: RONDA 7** (plan completo en
+  `docs/PLAN_RONDA7_BARRIDO_BASE_2026-10-09.md`).
+
+---
+
+# RONDA 7 (2026-10-09, contra ab240abd — post Ω40–Ω45 + Ola 73)
+
+Mandato del operador: «Revisa todo desde cero, sin saltarte nada… necesito un
+plan que recorra en una serie de fases hasta pasar por **todos los archivos uno
+por uno**, siempre ejecutando pruebas de comportamiento, compilación y
+resultados», ampliado el mismo día con: «verifica si hay código duplicado o
+muerto, archivos sin usar, variables/parámetros/funciones/imports/dependencias
+sin uso» y «revisa los recursos (memoria, disco, CPU, GPU, red) evitando usar
+recursos innecesarios».
+
+**Esta sección es el APERTURA de la ronda (plan + estado medido), NO un
+barrido cerrado.** El plan operativo completo, con el ámbito archivo por
+archivo, la lente y la prueba de cada fase, vive en
+`docs/PLAN_RONDA7_BARRIDO_BASE_2026-10-09.md`. Regla de la ronda: un archivo
+sólo se declara auditado con (a) lectura completa, (b) hallazgo explícito o
+«sin hallazgo», (c) prueba que lo certifica.
+
+## §R7-0 — Estado medido de partida (contra `ab240abd`)
+
+| magnitud | valor | método |
+|---|---|---|
+| crates | 23 | `ls crates/` |
+| archivos `.rs` versionados | 488 | `git ls-files '*.rs'` |
+| líneas Rust | 151 290 | `wc -l` |
+| contratos en `tests/` | 154 | `git ls-files '*/tests/*.rs'` |
+| binarios | 37 | `git ls-files` en `src/bin` |
+| `.md` versionados | 193 | `git ls-files '*.md'` |
+| `#[allow(dead_code)]` | 32 en 22 archivos | `grep -c` |
+
+**Hueco de certificación detectado (motivo de la ronda):** AGY Ω44 y Ω45
+cambiaron física del pipeline de votos (θ fail-closed, cobertura espectral
+12 h + rampa C^∞, Kelly continuo de Ville, gradiente LMS gauge, smoothstep
+C¹ del Maker) **sin oráculo T-1 registrado** — sólo suites por crate. El
+veredicto PASA anterior certificaba `85557469` (post-Ω43 + Ola 73), no
+`ab240abd`. Re-certificación **en vuelo** al publicar esta sección; su
+veredicto se escribe abajo al cerrarse.
+
+## §R7-1 — Fases y asignación (los dueños se marcan AQUÍ antes de ejecutar)
+
+| fase | ámbito | lente | dueño | estado |
+|---|---|---|---|---|
+| R0 | ledger de cobertura 488 `.rs` + censo código muerto/duplicado | inventario | Qoder | PENDIENTE |
+| R1 | doctrina/nomenclatura (`AGENTS.md`, MEMORIA, planes maestros, `ARQUITECTURA_VIVA`, ADRs) + grep `scalp\|swing` | metas/conceptos | Qoder | PENDIENTE |
+| R2 | matemática/estadística (risk-engine stats, Ville, Cramér-Lundberg, ruin, correlation_guard, leverage_matrix, orchestrator, vetos, multifractal, lead-lag, temporal_spectrum, spectral_tape) | matemática | — | ABIERTA |
+| R3 | física/cuántica (hodge ×2, hodge_flow, yang_mills, stat_arb, vecm, multivariate_coint, maker + 13 motores signal-engine) | física | — | ABIERTA |
+| R4 | núcleo vivo (`god-engine-core/src/lib.rs` por bloques, `src/bin/god_engine.rs`, orquestador, state/position) | integración viva | — | ABIERTA |
+| R5 | dinero/ejecución (risk-engine completo + execution-engine) | ejecución | — | ABIERTA |
+| R6 | aprender/medir (evolution-engine, backtest-engine, dark-alpha) | aprender | — | ABIERTA |
+| R7 | datos/telemetría/guardianes (data-pipeline, data-ingest, storage, registry, telemetry ×2, flight-recorder, os-guardian, audit-engine, graph-*) — incluye **C-02** | datos | — | ABIERTA |
+| R8 | paridad BT↔vivo + suite workspace + oráculo T-1 del árbol final | integración | Qoder | PENDIENTE |
+| R9 | recursos + Git + honestidad documental | operaciones | Qoder | §R7-2 en curso |
+
+Cola R6 que entra como carga conocida de R3/R4/R5/R7 (no se re-descubre, se
+cierra): **R6-A11, R6-A13 (residual), R6-B12, R6-B16, R6-C8, C-02**.
+
+## §R7-2 — Recursos y Git (medido 2026-10-09, dos pasadas)
+
+- Disco C: 929,7 GB / **125 GB libres**. Caches regenerables: `target/` raíz
+  169 978 MB (deps 148 294 / incremental 8 005 / release 13 125),
+  `.antigravity/target/debug` **52 576 MB huérfano** (directorio sin `.git`,
+  NO registrado como worktree, último write 2026-10-09 01:25), `.ola73/target`
+  16 204 MB, `.sol-plan-2026-10-07` 8 902 MB, `~/.codex/worktrees` 20 934 MB.
+  NO son cache: `data/` 24 501 MB (tapes del operador), `.git` 2 919 MB,
+  `graphify-out/` 504 MB.
+- RAM 23,4 GB, libre **4,6 → 3,6 GB** entre pasadas; CPU **97 % → 54 %**;
+  oráculo T-1 en un hilo (1 230 s de CPU acumulados). GPU: sólo iGPU AMD
+  Radeon, sin VRAM dedicada — ningún componente la usa.
+- Red: 48–57 conexiones TCP externas establecidas (IDEs/servicios).
+  **`god_engine` NO está corriendo** (cero procesos): hoy no hay feed WS ni
+  orden despachada; toda métrica es de backtest/contratos.
+- Política: limpiar sólo `debug/incremental` entre olas y nunca durante un
+  oráculo; **AVISO a AGY/dueño por los 51 GB de `.antigravity/target`** (no
+  lo borro sin su confirmación); oráculos largos con `-j2`.
+- Git: `origin/main = ab240abd`; ancestría EN_MAIN verificada por SHA para
+  Ω40–Ω45 y Ola 73 (`8b0daf01`, `f239ba5b`, `85557469`, `751db4d2`,
+  `32b38d96`, `ab240abd`). Ramas remotas: **sólo `origin/main`** ⇒ cero ramas
+  mergeadas pendientes de borrar. Local ajena sin mergear:
+  `codex/integration-recovery-2026-10-07` (3 commits exclusivos — NO tocar).
+
+## §R7-3 — Veredicto del oráculo de re-certificación (se escribe al cerrar)
+
+- Árbol: `ab240abd` (main post-Ω44/Ω45). Base previa certificada: `85557469`
+  (16/144 = 11,1 %, 2 375,32 s).
+- Resultado: **EN VUELO** al publicar esta sección.

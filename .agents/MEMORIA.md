@@ -1,5 +1,82 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Qoder: RONDA 7 ABIERTA — PLAN DE BARRIDO ARCHIVO POR ARCHIVO (R0–R9), COLA R6 REAL RE-VERIFICADA Y AUDITORÍA DE RECURSOS + GIT MEDIDA
+
+- **Mandato del operador**: «revisa todo desde cero sin saltarte nada… un plan
+  que recorra en fases hasta pasar por **todos los archivos uno por uno**, con
+  pruebas de comportamiento, compilación y resultados», más «verifica código
+  duplicado o muerto, archivos sin usar, variables/parámetros/funciones/imports/
+  dependencias sin uso» y «recursos: memoria, disco, CPU, GPU, red evitando uso
+  innecesario».
+- **PLAN PUBLICADO**: `docs/PLAN_RONDA7_BARRIDO_BASE_2026-10-09.md` + apertura
+  `docs/BARRIDO_EXHAUSTIVO_FASES.md §RONDA 7` (§R7-0 estado medido, §R7-1 fases
+  y dueños, §R7-2 recursos/Git, §R7-3 veredicto del oráculo).
+- **Censo medido contra `ab240abd`** (no recordado): 23 crates · **488 `.rs`** ·
+  151 290 líneas Rust · 154 contratos en `tests/` · 37 binarios · 193 `.md` ·
+  32 `#[allow(dead_code)]` en 22 archivos.
+- **Fases R0–R9** con ámbito archivo por archivo, lente y prueba: R0 ledger de
+  cobertura + censo de código muerto/duplicado (`scripts/audit_inventory.py` de
+  Codex reutilizado con atribución) · R1 doctrina/nomenclatura + grep
+  `scalp|swing` · R2 matemática/estadística · R3 física/cuántica (hodge ×2,
+  yang_mills, stat_arb, vecm, 13 motores) · R4 núcleo vivo (`lib.rs` por bloques,
+  host, orquestador) · R5 dinero/ejecución · R6 aprender/medir · R7
+  datos/telemetría/guardianes (**C-02** aquí) · R8 paridad BT↔vivo + suite
+  workspace + oráculo · R9 recursos + Git + honestidad documental.
+  Regla nueva: **un archivo sólo está auditado con lectura completa + hallazgo
+  explícito + prueba; un contract test que no ejercita su física NO cuenta**
+  (patrón R6-A7/C7 séptima confirmación).
+- **COLA R6 REAL re-verificada con ancla exacta** (anula la que yo mismo había
+  dejado en BARRIDO: R6-B3..B8 las cerró AGY en **Ω43**): **R6-A11** doble
+  implementación Hodge (`risk-engine/src/hodge.rs` vs
+  `feature-engine/src/hodge_flow.rs`); **R6-A13 residual** — el guard
+  `coin_id < ym_currents.len()` devuelve `0.0` ambiguo
+  (`crates/god-engine-core/src/lib.rs:5107`); Ω41 ya hizo **fiel** el índice
+  (`currents[i]` escribe en el índice original), así que queda sólo la
+  ambigüedad semántica ⇒ downgrade LOW→residual; **R6-B12** el «RLS» de β es
+  **LMS con gain fijo, sin matriz P ni factor de olvido**
+  (`crates/strategy-core/src/stat_arb.rs:232-236`); **R6-B16** `spread_deviation`
+  legacy con timing post-actualización y sin caller productivo
+  (`crates/strategy-core/src/multivariate_coint.rs:214-218`); **R6-C8** `dbp > 0
+  && dap > 0 && dbp <= dap` trivialmente cierto en libro válido
+  (`src/bin/god_engine.rs:4101`, `:4111`); **C-02 [MED]** sin productor vivo del
+  feed spot-futuro (la OU de Ola 73 queda hambrienta de spot). R6-B14/B18 son
+  positivos sin acción. De los 44 de Ronda 6: **38 cerrados, 5 abiertos + 2
+  positivos**.
+- **HUECO DE CERTIFICACIÓN detectado en main**: **AGY Ω44 y Ω45 cambiaron física
+  del pipeline de votos sin oráculo T-1 registrado** (θ fail-closed, cobertura
+  espectral 12 h + rampa C^∞, Kelly continuo de Ville, gradiente LMS gauge,
+  smoothstep C¹ del Maker) — sólo suites por crate. Mi PASA de Ola 73 certificó
+  `85557469` (post-Ω43), **no** `ab240abd`. **Re-certificación T-1 sobre
+  `ab240abd` en vuelo** al publicar esta ola; su veredicto se escribe en
+  `BARRIDO §R7-3`. Regla propuesta al consejo: todo commit que toque
+  votos/riesgo/ejecución lleva oráculo en el MISMO merge.
+- **RECURSOS medidos (dos pasadas, 2026-10-09)**: C: 929,7 GB / **125 GB
+  libres**; `target/` raíz **169 978 MB** (deps 148 294 · incremental 8 005 ·
+  release 13 125); **`.antigravity/target/debug` 52 576 MB huérfano** — el
+  directorio no tiene `.git` ni está registrado como worktree (sólo `target/` +
+  4 `.md`, último write 01:25) ⇒ **AVISO a AGY/dueño, no lo borro sin su
+  confirmación**; `.ola73/target` 16 204 MB; `~/.codex/worktrees` 20 934 MB;
+  `data/` 24 501 MB (tapes — NO es cache); `.git` 2 919 MB. RAM 23,4 GB, libre
+  **4,6 → 3,6 GB**; CPU **97 % → 54 %** con el oráculo en 1 hilo (1 230 s).
+  GPU: sólo iGPU AMD Radeon sin VRAM dedicada, sin uso en el repo. Red: 48–57
+  TCP externas; **`god_engine` NO corre** ⇒ cero feed vivo, toda métrica de hoy
+  es backtest/contratos. Política: limpiar sólo `debug/incremental` entre olas y
+  nunca durante un oráculo; oráculos largos con `-j2`.
+- **GIT verificado**: `origin/main = ab240abd`; ancestría **EN_MAIN** por SHA de
+  Ω40 (`862d04fc`), Ω41 (`724f8c9f`), Ω42 (`4cc83ce4`), Ω43 (`01ac0bd5`), Ω44
+  (`727b993e`), Ω45 (`c49516e3`) y Ola 73 (`8b0daf01` + merges `f239ba5b` /
+  `85557469` + cierres `751db4d2`, `32b38d96`, `ab240abd`). Ramas remotas:
+  **sólo `origin/main`** ⇒ cero ramas mergeadas pendientes de borrar (las mías
+  ya se borraron). Local ajena sin mergear: `codex/integration-recovery-2026-10-07`
+  (3 commits exclusivos — **no se toca**).
+- **ASIGNACIÓN publicada en el buzón**: **Ola 74 (Qoder)** = R6-B12 (β: LMS→RLS
+  real con **P** y olvido, o renombrar y documentar) + R6-B16 + R6-A13, con
+  contrato RED→GREEN y oráculo propio; **R6-A11 → AGY**; **C-02 → AGY/Codex**
+  (productor de spot + paridad BT + contrato escritor↔lector); **R6-C8** a cola
+  Qoder; R0/R1/R8/R9 míos.
+- Cero trading, cero entrenamiento, cero promoción, cero borrado de ramas o
+  worktrees ajenos en esta ola (docs-only + medición).
+
 ## 2026-10-09 — Antigravity: OLA Ω45 CERRADA — COLAPSO NO-ESTACIONARIO FAIL-CLOSED EN SDE, COBERTURA ESPECTRAL 12H CON CONFIANZA C^INF Y KELLY CONTINUO MERTON (R6-B15, R6-B17, R6-B11, R6-C5)
 
 - **Rama**: `antigravity/quant-sr-ola45-teoria-continua`.
