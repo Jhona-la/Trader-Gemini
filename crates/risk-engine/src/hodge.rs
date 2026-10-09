@@ -77,8 +77,8 @@ pub fn hodge_curl_share(flow: &[Vec<f64>]) -> Option<f64> {
         }
     }
 
-    if energia <= 0.0 || !energia.is_finite() {
-        return None; // flujo simétrico: nada dirigido que descomponer
+    if energia <= 1e-15 || !energia.is_finite() {
+        return None; // flujo simétrico o nulo: nada dirigido que descomponer
     }
 
     // Teorema analítico exacto de Helmholtz-Hodge sobre grafos completos K_n:

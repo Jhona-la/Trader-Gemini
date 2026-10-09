@@ -21,6 +21,10 @@ pub struct StatArbEngine {
     pub beta_hedge_ratio: f64,
     /// Si es true, adapta beta_hedge_ratio dinámicamente mediante RLS
     pub adaptive_beta: bool,
+    /// Covarianza estimada escalar P_t para el filtro RLS recursivo (R6-B12)
+    pub rls_p: f64,
+    /// Factor de olvido exponencial lambda in [0.95, 0.9999] (R6-B12)
+    pub rls_lambda: f64,
     /// Estimador analítico SDE continuo de Ornstein-Uhlenbeck / Fokker-Planck con reloj físico
     pub physical_sde: Option<ContinuousOrnsteinUhlenbeckSde>,
     /// Registro omnisciente para deliberación y lectura de parámetros continuos
@@ -45,6 +49,8 @@ impl StatArbEngine {
             min_spread_profit_bps: 0.0020,
             beta_hedge_ratio: 1.0,
             adaptive_beta: false,
+            rls_p: 1.0,
+            rls_lambda: 0.998,
             physical_sde: None,
             registry: None,
         }
@@ -61,6 +67,22 @@ impl StatArbEngine {
     /// Habilita o deshabilita la adaptación recursiva RLS del ratio beta.
     pub fn with_adaptive_beta(mut self, enabled: bool) -> Self {
         self.adaptive_beta = enabled;
+        self
+    }
+
+    /// R6-B12 (Ola Ω51): Configura el factor de olvido exponencial lambda in [0.95, 0.9999] del filtro RLS.
+    pub fn with_rls_lambda(mut self, lambda: f64) -> Self {
+        if lambda.is_finite() && (0.95..=0.9999).contains(&lambda) {
+            self.rls_lambda = lambda;
+        }
+        self
+    }
+
+    /// R6-B12 (Ola Ω51): Configura la covarianza inicial P_0 del filtro RLS.
+    pub fn with_rls_p(mut self, p: f64) -> Self {
+        if p.is_finite() && p > 0.0 {
+            self.rls_p = p.clamp(1e-4, 1000.0);
+        }
         self
     }
 
@@ -120,6 +142,31 @@ impl StatArbEngine {
         self
     }
 
+    /// R6-B12 (Ola Ω51): Actualización recursiva estricta por mínimos cuadrados (RLS) del ratio beta.
+    /// Modelo: ln(P_a) = beta_t * ln(P_b) + e_t.
+    /// Ganancia de Kalman / RLS: K_t = P_{t-1} * x_t / (lambda + x_t^2 * P_{t-1})
+    /// Parámetro: beta_t = beta_{t-1} + K_t * e_t
+    /// Covarianza: P_t = (P_{t-1} - K_t * x_t * P_{t-1}) / lambda
+    #[inline(always)]
+    fn update_rls_beta(&mut self, ln_a: f64, ln_b: f64) {
+        if !self.adaptive_beta || !ln_a.is_finite() || !ln_b.is_finite() {
+            return;
+        }
+        let beta_err = ln_a - self.beta_hedge_ratio * ln_b;
+        if !beta_err.is_finite() {
+            return;
+        }
+        let x = ln_b;
+        let p_prev = self.rls_p;
+        let lambda = self.rls_lambda.clamp(0.95, 0.9999);
+        let denom = lambda + x * x * p_prev;
+        if denom > 1e-12 {
+            let k = (p_prev * x) / denom;
+            self.beta_hedge_ratio = (self.beta_hedge_ratio + k * beta_err).clamp(0.01, 100.0);
+            self.rls_p = ((p_prev - k * x * p_prev) / lambda).clamp(1e-6, 1000.0);
+        }
+    }
+
     /// Toma los precios de dos activos correlacionados y devuelve la intención de arbitraje sobre el Activo A.
     /// (El Activo B debe operar en la dirección contraria).
     #[inline(always)]
@@ -128,7 +175,11 @@ impl StatArbEngine {
             return SignalIntent::flat();
         }
 
-        let spread = price_a.ln() - self.beta_hedge_ratio * price_b.ln();
+        let ln_a = price_a.ln();
+        let ln_b = price_b.ln();
+        self.update_rls_beta(ln_a, ln_b);
+
+        let spread = ln_a - self.beta_hedge_ratio * ln_b;
 
         let old_val = self.history[self.index];
         self.history[self.index] = spread;
@@ -229,13 +280,7 @@ impl StatArbEngine {
         let ln_a = price_a.ln();
         let ln_b = price_b.ln();
 
-        if self.adaptive_beta && ln_b.is_finite() {
-            let beta_err = ln_a - self.beta_hedge_ratio * ln_b;
-            if beta_err.is_finite() {
-                let gain = 0.001 / (1.0 + ln_b * ln_b * 0.001);
-                self.beta_hedge_ratio = (self.beta_hedge_ratio + gain * ln_b * beta_err).clamp(0.01, 100.0);
-            }
-        }
+        self.update_rls_beta(ln_a, ln_b);
 
         let spread = ln_a - self.beta_hedge_ratio * ln_b;
 
@@ -546,6 +591,29 @@ mod tests {
 
         // El beta adaptativo debe haber evolucionado lejos de 1.0 hacia la verdadera elasticidad
         assert!(engine.beta_hedge_ratio > 1.05);
+    }
+
+    #[test]
+    fn test_r6_b12_rls_convergencia_exacta() {
+        let mut engine = StatArbEngine::new(20, 1.5)
+            .with_adaptive_beta(true)
+            .with_beta_hedge_ratio(1.0)
+            .with_rls_lambda(0.99)
+            .with_rls_p(10.0);
+
+        // Modelo exacto: ln(P_a) = 2.5 * ln(P_b)
+        let mut t = 2_000_000_u64;
+        for i in 1..=50 {
+            t += 250;
+            let p_b = 10.0 + (i as f64) * 0.2;
+            let p_a = p_b.powf(2.5);
+            engine.update_with_clock(p_a, p_b, t, 60_000.0);
+        }
+
+        // Con RLS estricto y covarianza P_t, beta converge directamente hacia 2.5
+        assert!((engine.beta_hedge_ratio - 2.5).abs() < 0.15, "RLS debe converger hacia 2.5: got {}", engine.beta_hedge_ratio);
+        // Covarianza P_t debe haberse contraído
+        assert!(engine.rls_p < 1.0, "La covarianza P_t debe contraerse con la evidencia: got {}", engine.rls_p);
     }
 
     // ===== OLA 73 (R6-A3/A4/A5/B1/B2/B13): StatArb honesto =====
