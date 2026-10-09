@@ -1,4 +1,41 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+
+## 2026-10-09 — Antigravity: OLA Ω42 CERRADA — PARIDAD BT↔VIVO DE STALENESS MACRO, SUAVIDAD C¹ GAUGE Y ÁMBITO POR ACTIVO (R6-A6, R6-C12, R6-C11, R6-C5, R6-A10)
+
+- **Rama**: `antigravity/quant-sr-ola42-paridad-bt-macro-staleness` (base `724f8c9f`).
+- **RESOLUCIÓN Y CERTIFICACIÓN DE HALLAZGOS RONDA 6**:
+  1. **R6-A6 [MED] Resuelto**: Paridad estricta BT↔vivo en `macro_staleness_ms`. En `booktick_replay`, el poller macro simula la cadencia de 60s si existen datos reales en `OmniHistory`. Si `omni = None` (neutro), publica `u64::MAX` en `arena.registry`, activando el piso de amortiguamiento `p_macro = 0.40` en `SeniorEnteMercado` exactamente igual que en vivo ante corte de red. En replay sintético (`backtest-engine/src/lib.rs`), se establece explícitamente `core.arena.registry.set("macro_staleness_ms", 0.0);`. Test contractual: `r6_a6_macro_staleness_parity_with_registry` verde (54/54 tests de backtest-engine lib verdes).
+  2. **R6-C12 [LOW] Resuelto**: Erradicado el salto discontinuo $C^0$ (`if > 0.05`) en `SeniorSeriesTemporales`. Reemplazado por soft-switch continuo suave Lorentz-Cauchy $C^\infty$: $w_{\text{ym}} = 0.20 \cdot \frac{y^2}{y^2 + 0.05^2}$. En $y \to 0$, $w_{\text{ym}} \to 0$ con derivada nula; en $|y| = 0.05$, $w_{\text{ym}} = 0.10$; en $|y| \gg 0.05$, $w_{\text{ym}} \to 0.20$. Contrato formal: `series_temporales_modulacion_yang_mills_es_continua_c1_sin_salto_de_escalon` verde (5/5 tests verdes).
+  3. **R6-C11 [LOW] Resuelto**: `evaluate_for_coin` en `YangMillsGaugeEngine` preserva `cid_opt = Some(coin_id)` aun cuando `symbol` sea vacío, evitando que caiga al ámbito global `""` y sufra condiciones de carrera last-writer entre monedas.
+  4. **R6-C5 [MED] Resuelto**: Reconciliación de comentarios y documentación en `src/bin/god_engine.rs` con la política contractual B3.29 / CL-14 (`force_maker = false`, IOC siempre con techo dinámico de slippage).
+  5. **R6-A10 [LOW] Resuelto**: Lector contractual activo para `hodge_curl_energy` integrado en `hodge_yang_mills_consensus_contract.rs` (1/1 test verde).
+- **VERIFICACIÓN TOTAL DE PRUEBAS**:
+  - `cargo test -p backtest-engine --lib`: **54/54 tests verdes (100% éxito)**.
+  - `cargo test -p backtest-engine --test bt_vivo_parity_audit`: **8/8 tests verdes (100% éxito)**.
+  - `cargo test -p metacortex-engine`: **70/70 tests verdes (100% éxito)**.
+  - `cargo test -p strategy-core`: **48/48 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test hodge_yang_mills_consensus_contract`: **1/1 test verde**.
+  - `cargo check --bin god_engine`: **0 errores, compila en 3.71s**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias (51.31s)**.
+
+## 2026-10-09 — Antigravity: OLA Ω41 CERRADA — MOTORES GAUGE Y HODGE REALES (R6-A1/C1, R6-A2, R6-C2, R6-C3, R6-A8, R6-C4)
+
+- **Rama**: `antigravity/quant-sr-ola41-universo-multivariante` (base `adb0f7ef`).
+- **RESOLUCIÓN COMPLETA DE ASIGNACIONES R6 (MOTORES GAUGE Y HODGE)**:
+  1. **R6-A1/C1 [HIGH] Resuelto**: `HelmholtzHodgeFlowEngine::build_cross_microstructure_flow_matrix` implementado en `feature-engine/src/hodge_flow.rs`. Alimenta el grafo de Helmholtz-Hodge con flujo asimétrico cruzado L2/L3: $F_{ij} = \frac{1}{2} (\text{OFI}_i \tanh(100 \cdot \text{ret}_j) - \text{OFI}_j \tanh(100 \cdot \text{ret}_i))$. Erradica la degeneración de gradiente puro $F_{ij} = X_i - X_j$ (que fijaba $\text{curl\_share} \equiv 0$). Ahora `hodge_curl_share` refleja fielmente la circulación cíclica real de liquidez ($\text{curl} > 0$), activando la modulación continua laminar del Consejo (`metacortex-engine/src/consejo_seniors.rs`).
+  2. **R6-A2 [HIGH] Resuelto**: `MAX_GAUGE_ASSETS` y `MAX_HODGE_ASSETS` expandidos de 16 a 32 (cubriendo holgadamente los 30 slots de `MAX_COINS = 30`). Filtrado dinámico de activos con precio finito $> 0$ en `update_and_calculate_curvature`: ya no se devuelve ceros silenciosos cuando una moneda del universo aún no tiene tick.
+  3. **R6-C2 [HIGH] Resuelto**: Yang-Mills sobre retornos de innovación y paridades relativas con reciprocidad de cobertura $\beta_{ji} = 1 / \beta_{ij}$, rompiendo la cancelación telescópica trivial de log-precios estáticos.
+  4. **R6-C3 [MED] Resuelto**: Densidad de acción gauge normalizada por número de 3-ciclos válidos $\binom{N_{\text{valid}}}{3}$: $\bar{\mathcal{S}}_{\text{YM}} = \frac{1}{2 \cdot N_{\text{cycles}}} \sum |F_{ijk}|^2$. Convierte $\mathcal{S}_{\text{YM}}$ en una magnitud intensiva, adimensional y estrictamente invariante a la dimensión del universo $N$.
+  5. **R6-A8 [LOW] Resuelto**: Corrientes restauradoras gauge $\mathcal{J}_i$ acotadas suavemente en $[-1.0, 1.0]$ mediante $\tanh(\cdot)$ antes de publicarse en `OmniscientRegistry`.
+  6. **R6-C4 [MED] Resuelto**: Integrado TTL anti-staleness de 10 segundos (`10_000 ms`) con `latest_timestamps` y `latest_returns` en `StatefulEngine`. Monedas inactivas no congelan ni envenenan la geometría multiactivo.
+- **VERIFICACIÓN TOTAL DE PRUEBAS**:
+  - `cargo test -p feature-engine --test hodge_flow_contract`: **5/5 tests verdes (100% éxito)**.
+  - `cargo test -p strategy-core`: **48/48 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test hodge_yang_mills_consensus_contract`: **1/1 test verde**.
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes (100% éxito)**.
+  - `cargo check --bin god_engine`: **0 errores, compila en 22.09s**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias (33.81s)**.
+
 ## 2026-10-09 — Qoder: RONDA 6 DEL BARRIDO CERRADA — REVISIÓN DESDE LA BASE contra f07b79a3 — 44 hallazgos (4 HIGH únicos)
 
 - **Mandato del operador**: reiniciar la revisión desde la base ("han

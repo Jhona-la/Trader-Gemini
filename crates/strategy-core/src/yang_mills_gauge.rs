@@ -35,7 +35,7 @@ use omniscient_registry::OmniscientRegistry;
 use std::f64;
 use std::sync::Arc;
 
-pub const MAX_GAUGE_ASSETS: usize = 16;
+pub const MAX_GAUGE_ASSETS: usize = 32;
 
 /// Estado y estimador de curvatura de Yang-Mills sobre el universo multiactivo.
 #[derive(Debug, Clone)]
@@ -89,7 +89,9 @@ impl YangMillsGaugeEngine {
     /// Configura el ratio de elasticidad de conexión beta entre dos activos i y j.
     pub fn with_beta(mut self, i: usize, j: usize, beta: f64) -> Self {
         if i < MAX_GAUGE_ASSETS && j < MAX_GAUGE_ASSETS && beta.is_finite() && beta > 0.0 {
-            self.beta_matrix[i][j] = beta.clamp(0.01, 100.0);
+            let b = beta.clamp(0.01, 100.0);
+            self.beta_matrix[i][j] = b;
+            self.beta_matrix[j][i] = (1.0 / b).clamp(0.01, 100.0);
         }
         self
     }
@@ -98,65 +100,93 @@ impl YangMillsGaugeEngine {
     ///
     /// # Retorno
     /// Tupla con:
-    /// - `action_density`: Energía total de curvatura $\mathcal{S}_{\text{YM}} \ge 0$.
-    /// - `restoring_currents`: Vector de corrientes restauradoras $\mathcal{J}_i$ para cada activo.
+    /// - `action_density`: Densidad media de acción gauge por plaqueta triangular $\bar{\mathcal{S}}_{\text{YM}} \ge 0$.
+    /// - `restoring_currents`: Vector de corrientes restauradoras $\mathcal{J}_i \in [-1, 1]$ para cada activo.
     pub fn update_and_calculate_curvature(
         &mut self,
         prices: &[f64],
     ) -> (f64, [f64; MAX_GAUGE_ASSETS]) {
-        let n = self.num_assets.min(prices.len());
-        if n < 3 {
+        let limit = self.num_assets.min(prices.len()).min(MAX_GAUGE_ASSETS);
+        let mut valid_indices = [0usize; MAX_GAUGE_ASSETS];
+        let mut ln_p = [0.0_f64; MAX_GAUGE_ASSETS];
+        let mut n_valid = 0usize;
+
+        for i in 0..limit {
+            let p = prices[i];
+            if p.is_finite() && p > 0.0 {
+                valid_indices[n_valid] = i;
+                ln_p[i] = p.ln();
+                n_valid += 1;
+            }
+        }
+
+        if n_valid < 3 {
             return (0.0, [0.0; MAX_GAUGE_ASSETS]);
         }
 
-        let mut ln_p = [0.0; MAX_GAUGE_ASSETS];
-        for i in 0..n {
-            let p = prices[i];
-            if !p.is_finite() || p <= 0.0 {
-                return (0.0, [0.0; MAX_GAUGE_ASSETS]);
-            }
-            ln_p[i] = p.ln();
-        }
-
-        // Actualización adaptativa online de coeficientes beta si ya contamos con historia
+        // Actualización adaptativa online de coeficientes beta sobre pares válidos
         if self.count > 0 {
             let gamma = self.adaptation_rate;
-            for i in 0..n {
-                for j in 0..n {
-                    if i != j {
-                        let err = ln_p[i] - self.beta_matrix[i][j] * ln_p[j];
-                        if err.is_finite() {
-                            let step = gamma * (err / (1.0 + ln_p[j] * ln_p[j]));
-                            self.beta_matrix[i][j] = (self.beta_matrix[i][j] + step).clamp(0.01, 100.0);
-                        }
+            for vi in 0..n_valid {
+                let i = valid_indices[vi];
+                let p_i = ln_p[i];
+                let prev_p_i = self.last_ln_prices[i];
+                let r_i = if prev_p_i != 0.0 { p_i - prev_p_i } else { p_i };
+                for vj in (vi + 1)..n_valid {
+                    let j = valid_indices[vj];
+                    let p_j = ln_p[j];
+                    let prev_p_j = self.last_ln_prices[j];
+                    let r_j = if prev_p_j != 0.0 { p_j - prev_p_j } else { p_j };
+
+                    let err = r_i - self.beta_matrix[i][j] * r_j;
+                    if err.is_finite() {
+                        let step = gamma * (err / (1.0 + r_j * r_j));
+                        let new_beta = (self.beta_matrix[i][j] + step).clamp(0.01, 100.0);
+                        self.beta_matrix[i][j] = new_beta;
+                        self.beta_matrix[j][i] = (1.0 / new_beta).clamp(0.01, 100.0);
                     }
                 }
             }
         }
-        self.last_ln_prices = ln_p;
+
+        for vi in 0..n_valid {
+            let i = valid_indices[vi];
+            self.last_ln_prices[i] = ln_p[i];
+        }
         self.count += 1;
 
-        // Cómputo de la curvatura 2-forma F_{ijk} para todos los 3-ciclos (i < j < k)
+        // Cómputo de la curvatura 2-forma F_{ijk} para todos los 3-ciclos válidos (vi < vj < vk)
         let mut total_action = 0.0_f64;
         let mut currents = [0.0_f64; MAX_GAUGE_ASSETS];
         let mut cycle_counts = [0.0_f64; MAX_GAUGE_ASSETS];
+        let mut total_cycles = 0usize;
 
-        for i in 0..n {
-            for j in (i + 1)..n {
-                for k in (j + 1)..n {
-                    // Conexión A_{ab} = ln(P_a) - beta_{ab} ln(P_b)
-                    let a_ij = ln_p[i] - self.beta_matrix[i][j] * ln_p[j];
-                    let a_jk = ln_p[j] - self.beta_matrix[j][k] * ln_p[k];
-                    let a_ki = ln_p[k] - self.beta_matrix[k][i] * ln_p[i];
+        for vi in 0..n_valid {
+            let i = valid_indices[vi];
+            for vj in (vi + 1)..n_valid {
+                let j = valid_indices[vj];
+                for vk in (vj + 1)..n_valid {
+                    let k = valid_indices[vk];
+
+                    // Conexión de paridad A_{ab} sobre log-retornos o innovaciones
+                    let prev_i = self.last_ln_prices[i];
+                    let prev_j = self.last_ln_prices[j];
+                    let prev_k = self.last_ln_prices[k];
+                    let r_i = if self.count > 1 && prev_i != 0.0 { ln_p[i] - prev_i } else { ln_p[i] };
+                    let r_j = if self.count > 1 && prev_j != 0.0 { ln_p[j] - prev_j } else { ln_p[j] };
+                    let r_k = if self.count > 1 && prev_k != 0.0 { ln_p[k] - prev_k } else { ln_p[k] };
+
+                    let a_ij = r_i - self.beta_matrix[i][j] * r_j;
+                    let a_jk = r_j - self.beta_matrix[j][k] * r_k;
+                    let a_ki = r_k - self.beta_matrix[k][i] * r_i;
 
                     // Holonomía de bucle de Wilson F_{ijk} = A_ij + A_jk + A_ki
                     let f_ijk = a_ij + a_jk + a_ki;
                     if f_ijk.is_finite() {
                         let f_sq = f_ijk * f_ijk;
                         total_action += f_sq;
+                        total_cycles += 1;
 
-                        // Contribución a las corrientes restauradoras:
-                        // La corriente representa la fuerza que restaura el activo i al equilibrio.
                         currents[i] += f_ijk;
                         currents[j] += f_ijk;
                         currents[k] += f_ijk;
@@ -169,14 +199,21 @@ impl YangMillsGaugeEngine {
             }
         }
 
-        // Normalización de corrientes por el número de ciclos incidentes
-        for i in 0..n {
+        // Normalización de corrientes por el número de ciclos incidentes y clamp suave a [-1.0, 1.0]
+        for vi in 0..n_valid {
+            let i = valid_indices[vi];
             if cycle_counts[i] > 0.0 {
-                currents[i] /= cycle_counts[i];
+                currents[i] = (currents[i] / cycle_counts[i]).tanh();
             }
         }
 
-        let action_density = 0.5 * total_action;
+        // Densidad media de acción gauge por plaqueta triangular (magnitud intensiva e invariante a N)
+        let action_density = if total_cycles > 0 {
+            0.5 * (total_action / (total_cycles as f64))
+        } else {
+            0.0
+        };
+
         (action_density, currents)
     }
 
@@ -210,7 +247,9 @@ impl QuantumStrategy for YangMillsGaugeEngine {
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
         let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
-        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        // R6-C11 / OLA Ω42: Preservar el ámbito por coin_id independientemente de si symbol está vacío,
+        // evitando que caiga al ámbito global ("") sujeto a condición de carrera del último escritor.
+        let cid_opt = Some(coin_id);
         let r = match self.registry.as_ref() {
             Some(reg) => reg,
             None => return 0.0,

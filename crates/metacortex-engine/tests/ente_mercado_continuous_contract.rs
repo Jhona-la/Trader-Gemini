@@ -1,5 +1,5 @@
 use metacortex_engine::consejo_seniors::{
-    MarketSnapshotPayload, SeniorAgent, SeniorEnteMercado, TradingHorizon,
+    MarketSnapshotPayload, SeniorAgent, SeniorEnteMercado, SeniorSeriesTemporales, TradingHorizon,
 };
 
 fn base_payload() -> MarketSnapshotPayload {
@@ -143,5 +143,60 @@ fn ente_mercado_modulacion_macro_staleness_continua_y_monotona() {
             "No debe caer por debajo del suelo de amortiguamiento 0.40"
         );
         prev_conf = conf;
+    }
+}
+
+#[test]
+fn series_temporales_modulacion_yang_mills_es_continua_c1_sin_salto_de_escalon() {
+    let senior = SeniorSeriesTemporales;
+
+    // 1. Monotonicidad pura con señal base neutra (fused_score = 0, persistence = 0):
+    // La respuesta a la corriente gauge ym debe ser estrictamente monótona en todo el rango [-1.0, 1.0].
+    let mut prev_sig: Option<f64> = None;
+    for step in 0..=400 {
+        let ym = -1.0 + (step as f64) * 0.005;
+        let mut p = base_payload();
+        p.yang_mills_current = ym;
+        p.fused_score = 0.0;
+        p.persistence = 0.0;
+
+        let op = senior.evaluate(&p, 0.5);
+        assert!(op.signal_direction.is_finite(), "signal must be finite at ym={ym}");
+        if let Some(prev) = prev_sig {
+            assert!(
+                op.signal_direction >= prev - 1e-12,
+                "signal must increase monotonically with ym under neutral base: prev={prev}, curr={}",
+                op.signal_direction
+            );
+        }
+        prev_sig = Some(op.signal_direction);
+    }
+
+    // 2. Suavidad C1 Lipschitz en presencia de señal base espectral (fused_score = 0.50):
+    // La variación por cada micro-paso de 0.005 debe ser estrictamente suave (delta < 0.010),
+    // certificando la erradicación del salto de escalón C0 que existía en ym = 0.05.
+    let mut prev_sig_blend: Option<f64> = None;
+    for step in 0..=400 {
+        let ym = -1.0 + (step as f64) * 0.005;
+        let mut p = base_payload();
+        p.yang_mills_current = ym;
+        p.fused_score = 0.50;
+        p.persistence = 0.60;
+
+        let op = senior.evaluate(&p, 0.5);
+        assert!(op.signal_direction.is_finite(), "signal must be finite at ym={ym}");
+        assert!(
+            op.signal_direction >= -1.0 && op.signal_direction <= 1.0,
+            "signal out of bounds [-1, 1] at ym={ym}"
+        );
+
+        if let Some(prev) = prev_sig_blend {
+            let delta = (op.signal_direction - prev).abs();
+            assert!(
+                delta < 0.010,
+                "delta={delta} at ym={ym} is too abrupt (violates C1 smoothness)"
+            );
+        }
+        prev_sig_blend = Some(op.signal_direction);
     }
 }

@@ -829,6 +829,8 @@ pub struct GodEngineCore {
     pub yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine,
     latest_prices: Vec<f64>,
     latest_ofis: Vec<f64>,
+    latest_timestamps: Vec<u64>,
+    latest_returns: Vec<f64>,
     pub ppo_engine: dark_alpha_engine::online_ppo::OnlinePpoPolicyEngine,
     pub online_learner: metacortex_engine::online_learning::OnlineLearningModule,
     /// #26: Sistema inmune vivo para registro y amortiguación de traumas de predicción
@@ -1121,6 +1123,8 @@ impl GodEngineCore {
             yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine::new(n_coins),
             latest_prices: vec![0.0; n_coins],
             latest_ofis: vec![0.0; n_coins],
+            latest_timestamps: vec![0; n_coins],
+            latest_returns: vec![0.0; n_coins],
             ppo_engine,
             online_learner,
             immune_system: metacortex_engine::immune_system::LivingImmuneSystem::new_deferred("."),
@@ -2947,8 +2951,13 @@ impl GodEngineCore {
 
             let ofi_value = feature_engine.update_ofi(bid, ask, bid_qty, ask_qty);
             if coin_id < self.latest_prices.len() {
+                let prev_p = self.latest_prices[coin_id];
+                if prev_p > 0.0 && mid_price > 0.0 {
+                    self.latest_returns[coin_id] = (mid_price - prev_p) / prev_p;
+                }
                 self.latest_prices[coin_id] = mid_price;
                 self.latest_ofis[coin_id] = ofi_value;
+                self.latest_timestamps[coin_id] = event_time_ms;
             }
             let sym = quantum_arena::symbol_registry::try_spec(coin_id)
                 .map(|s| s.symbol)
@@ -5080,15 +5089,33 @@ impl GodEngineCore {
             set_reg("statarb_half_life_ms", statarb_half_ms);
             set_reg("statarb_beta", statarb_beta);
 
-            // OLA Ω36/Ω38: Fibrado gauge Yang-Mills y corrientes de restauración gauge
-            let (ym_action, ym_currents) = self.yang_mills_engine.update_and_calculate_curvature(&self.latest_prices);
+            // OLA Ω36/Ω38/Ω41: Fibrado gauge Yang-Mills con filtrado dinámico TTL anti-staleness
+            // y normalización intensiva de densidad de acción por plaqueta triangular (R6-A2, R6-C2, R6-C3, R6-A8)
+            let mut fresh_prices = self.latest_prices.clone();
+            for c in 0..fresh_prices.len() {
+                let last_ts = self.latest_timestamps.get(c).copied().unwrap_or(0);
+                if event_time_ms.saturating_sub(last_ts) > 10_000 {
+                    fresh_prices[c] = 0.0;
+                }
+            }
+            let (ym_action, ym_currents) = self.yang_mills_engine.update_and_calculate_curvature(&fresh_prices);
             let ym_coin_current = if coin_id < ym_currents.len() { ym_currents[coin_id] } else { 0.0 };
             set_reg("yang_mills_action", ym_action);
             set_reg("yang_mills_current", ym_coin_current);
 
-            // OLA Ω37/Ω38: Descomposición ortogonal de Helmholtz-Hodge sobre flujos continuos L2/L3
+            // OLA Ω37/Ω38/Ω41: Descomposición ortogonal de Helmholtz-Hodge sobre flujos cruzados L2/L3 reales
+            // (R6-A1/C1 resuelto: usa matriz de flujo cruzado microestructura asimétrica OFI x Retorno)
+            let mut fresh_ofis = self.latest_ofis.clone();
+            let mut fresh_returns = self.latest_returns.clone();
+            for c in 0..fresh_ofis.len() {
+                let last_ts = self.latest_timestamps.get(c).copied().unwrap_or(0);
+                if event_time_ms.saturating_sub(last_ts) > 10_000 {
+                    fresh_ofis[c] = 0.0;
+                    fresh_returns[c] = 0.0;
+                }
+            }
             let (hodge_curl_share, hodge_grad_energy, hodge_curl_energy) = if let Some((flow_mat, n_nodes)) =
-                feature_engine::HelmholtzHodgeFlowEngine::build_gradient_flow_matrix(&self.latest_ofis)
+                feature_engine::HelmholtzHodgeFlowEngine::build_cross_microstructure_flow_matrix(&fresh_ofis, &fresh_returns)
             {
                 if let Some((decomp, _potentials)) = self.hodge_flow_engine.decompose(&flow_mat, n_nodes) {
                     (decomp.curl_share, decomp.gradient_energy, decomp.curl_energy)

@@ -35,7 +35,7 @@
 
 use std::f64;
 
-pub const MAX_HODGE_ASSETS: usize = 16;
+pub const MAX_HODGE_ASSETS: usize = 32;
 
 /// Resultado de la descomposición ortogonal de Helmholtz-Hodge.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -187,5 +187,46 @@ impl HelmholtzHodgeFlowEngine {
         matrix[2][0] = mag;
         matrix[0][2] = -mag;
         (matrix, 3)
+    }
+
+    /// Construye una matriz de flujo cruzado asimétrico a partir de desequilibrios de órdenes (OFI)
+    /// y retornos de precio instantáneos de cada activo.
+    ///
+    /// El flujo neto dirigido entre el activo i y el activo j se modela como:
+    ///   F_{ij} = 0.5 * (OFI_i * tanh(ret_j * 100.0) - OFI_j * tanh(ret_i * 100.0))
+    ///
+    /// Esta construcción es estrictamente antisimétrica (F_{ji} = -F_{ij}), nula en la diagonal (F_{ii} = 0),
+    /// y captura la interacción cruzada L2/L3: cuando la presión de liquidez en i induce movimiento en j
+    /// de forma dislocada respecto a la reacción de i ante j, surge un rotacional genuino de Helmholtz-Hodge (curl_share > 0).
+    pub fn build_cross_microstructure_flow_matrix(
+        ofis: &[f64],
+        returns: &[f64],
+    ) -> Option<([[f64; MAX_HODGE_ASSETS]; MAX_HODGE_ASSETS], usize)> {
+        let n = ofis.len().min(returns.len()).min(MAX_HODGE_ASSETS);
+        if n < 3 {
+            return None;
+        }
+        let mut matrix = [[0.0_f64; MAX_HODGE_ASSETS]; MAX_HODGE_ASSETS];
+        for i in 0..n {
+            let ofi_i = ofis[i];
+            let ret_i = returns[i];
+            if !ofi_i.is_finite() || !ret_i.is_finite() {
+                return None;
+            }
+            let sig_i = (ret_i * 100.0).tanh();
+            for j in 0..n {
+                if i == j {
+                    continue;
+                }
+                let ofi_j = ofis[j];
+                let ret_j = returns[j];
+                if !ofi_j.is_finite() || !ret_j.is_finite() {
+                    return None;
+                }
+                let sig_j = (ret_j * 100.0).tanh();
+                matrix[i][j] = 0.5 * (ofi_i * sig_j - ofi_j * sig_i);
+            }
+        }
+        Some((matrix, n))
     }
 }

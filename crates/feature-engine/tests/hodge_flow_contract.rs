@@ -121,3 +121,18 @@ fn hodge_contrato_inmunidad_a_nan_y_grafos_pequenos() {
     let matrix_zero = [[0.0_f64; MAX_HODGE_ASSETS]; MAX_HODGE_ASSETS];
     assert!(engine.decompose(&matrix_zero, 3).is_none());
 }
+
+#[test]
+fn hodge_contrato_flujo_cruzado_microestructura_produce_curl_dinamico() {
+    let engine = HelmholtzHodgeFlowEngine::new(3);
+
+    let ofis_asym = [15.0, -5.0, 2.0];
+    let rets_asym = [0.005, 0.012, -0.008];
+    let (mat_asym, n_asym) = HelmholtzHodgeFlowEngine::build_cross_microstructure_flow_matrix(&ofis_asym, &rets_asym)
+        .expect("matriz asimétrica válida");
+    let (res, _) = engine.decompose(&mat_asym, n_asym).expect("descomposición válida");
+
+    assert!(res.total_energy > 0.0);
+    assert!(res.curl_share >= 0.0 && res.curl_share <= 1.0);
+    assert!(res.curl_share > 0.0, "El flujo cruzado asimétrico debe producir rotacional no nulo: got {}", res.curl_share);
+}

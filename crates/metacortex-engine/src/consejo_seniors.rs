@@ -414,9 +414,15 @@ impl SeniorAgent for SeniorSeriesTemporales {
         } else {
             0.0
         };
-        if ym_curr.abs() > 0.05 {
-            signal = (signal * 0.80 + ym_curr * 0.20).clamp(-1.0, 1.0);
-        }
+        // R6-C12 / OLA Ω42 — Modulación continua suave C¹:
+        // Sustituir el escalón discontinuo C⁰ (`if > 0.05`) por soft-switch Lorentz-Cauchy suave C∞.
+        // En ym_curr -> 0, w_ym -> 0 con derivada nula (sin ruido en reposo).
+        // A |ym_curr| = 0.05, w_ym = 0.10 (50% de la fuerza).
+        // En |ym_curr| >> 0.05, w_ym converge asintóticamente a 0.20 (fuerza de paridad plena).
+        let ym_sq = ym_curr * ym_curr;
+        const YM_THRESH_SQ: f64 = 0.05 * 0.05;
+        let w_ym = 0.20 * (ym_sq / (ym_sq + YM_THRESH_SQ));
+        signal = ((1.0 - w_ym) * signal + w_ym * ym_curr).clamp(-1.0, 1.0);
         let confidence = signal.abs().clamp(0.0, 1.0);
         let regime = if payload.persistence >= 0.0 {
             "momentum"
