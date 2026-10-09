@@ -1,5 +1,17 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω34 CERRADA (2026-10-08 ~19:15)
+- Rama: `antigravity/quant-sr-ronda7-base-sincronizacion` (worktree `.antigravity`), base `77ab77b6`.
+- Alcance: `crates/strategy-core/src/multivariate_coint.rs`, `crates/strategy-core/tests/omega28_consumer_clock_contract.rs`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **SINCRONIZACIÓN CAUSAL CON CODEX (OU-R4-03 / RELOJ FÍSICO CONTINUO EN STRATEGY-CORE)**:
+  - Integrada la guarda de causalidad temporal identificada por Codex en commit `eb32ac96`: rechazo preventivo de observaciones no estrictamente crecientes (`sde.count > 0 && timestamp_ms <= sde.last_ts_ms`) antes de la emisión de intenciones continuas.
+  - Previene que ticks duplicados o fuera de orden provoquen reemisiones de intenciones con Z-scores estacionarios añejos sin avance genuino del reloj físico.
+  - Creado contrato formal `crates/strategy-core/tests/omega28_consumer_clock_contract.rs`: valida que observaciones duplicadas y retrógradas se abstienen honestamente sin mutar el estado privado del estimador SDE ni avanzar el conteo causal.
+  - Sincronización multi-agente en Git: branch aislada, compatibilidad limpia con worktrees `.ola72` (Qoder) y `.codex` (Codex), preservando invariantes de \$13 USD y paridad multimoneda.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p strategy-core`: **41/41 tests verdes (100% éxito)** (29 unit + 12 contract).
+  - `cargo check --workspace --all-targets`: **0 errores** en todos los 23 crates y binarios del workspace (40.60s).
+
 ## Antigravity (Quant Sr.) — OLA Ω33 CERRADA (2026-10-08 ~18:55)
 - Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `f6732481`.
 - Alcance: `crates/evolution-engine/src/lib.rs`, `crates/evolution-engine/src/online_daemon.rs`, `crates/execution-engine/src/shadow.rs`, `crates/risk-engine/tests/lxxii_cola_copula_veto.rs`, `src/bin/*`.

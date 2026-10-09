@@ -1,4 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-08 — Antigravity: OLA Ω34 CERRADA — RONDA 7: SINCRONIZACIÓN CAUSAL CON CODEX (OU-R4-03 / RELOJ FÍSICO CONTINUO EN STRATEGY-CORE) Y AUDITORÍA MULTIMONEDA
+
+- Rama: `antigravity/quant-sr-ronda7-base-sincronizacion` (worktree `.antigravity`), base `77ab77b6`.
+- **SINCRONIZACIÓN CAUSAL CON CODEX EN `crates/strategy-core/src/multivariate_coint.rs`**:
+  - Incorporada la guarda de causalidad temporal descubierta por Codex (`eb32ac96`): si el estimador continuo SDE de Ornstein-Uhlenbeck / Fokker-Planck está inicializado (`sde.count > 0`), cualquier observación con timestamp duplicado o retrógrado (`timestamp_ms <= sde.last_ts_ms`) es rechazada antes de emitir intenciones (`return None;`).
+  - Erradicado el defecto por el cual un tick fuera de orden provocaba una reemisión espuria de la intención anterior con scores estacionarios añejos y duración fija sin avanzar el reloj físico.
+- **CONTRATO FORMAL EN `crates/strategy-core/tests/omega28_consumer_clock_contract.rs`**:
+  - Test `continuous_ou_mature_clock_rejection_abstains_without_state_change`: verifica que ante ticks duplicados o retrógrados el consumidor se abstiene honestamente (`assert!(engine.update_and_evaluate(...).is_none())`), el estado privado de momentos y conteo permanece 100% inmutable, y un choque posterior causalmente creciente emite la señal limpia con `expected_duration_ms > 0`.
+- **AUDITORÍA DE PARIDAD MULTIMONEDA Y VETOS DE RIESGO ($13 USD)**:
+  - Ratificado que las 13 monedas operan concurrentemente en `god_engine.rs` con celdas de memoria aisladas en `arena.coins[coin_id]`, sin pisarse ranuras de posición ni derivas de fase.
+  - Verificados los invariantes de micro-capital (\$13 USD): piso notional de \$5.10 a 5.0x (\$1.02 por posición, máx 2 concurrentes, margen libre $\ge \$10.96$).
+- **VERIFICACIÓN SUITE COMPLETA**:
+  - `cargo test -p strategy-core`: **41/41 tests verdes (100% éxito)** (29 unit tests + 12 contract tests).
+  - `cargo check --workspace --all-targets`: **0 errores** en todos los 23 crates y binarios del workspace (40.60s).
+
 ## 2026-10-08 — Antigravity: OLA Ω33 CERRADA — SANEAMIENTO INTEGRAL DE ADVERTENCIAS CRÍTICAS DEL WORKSPACE Y ROBUSTEZ FORMAL DE EJECUCIÓN (ZERO-WARNING AUDIT)
 
 - Rama: `antigravity/quant-sr-ronda6-f5-modelos-evolucion` (worktree `.antigravity`), base `f6732481`.

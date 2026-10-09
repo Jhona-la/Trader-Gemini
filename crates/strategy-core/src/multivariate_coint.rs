@@ -120,6 +120,12 @@ impl MultivariateCointegrationEngine {
         // a la vida media física t_{1/2} en ms. Si no supera umbral o está frío, se abstiene (None)
         // con honestidad matemática estricta, sin caer al evaluador discreto legacy (OU-R4-01).
         if let Some(sde) = &mut self.physical_sde {
+            // Rechazo de ticks duplicados o retrógrados para prevenir reemisión de intenciones
+            // basada en Z-scores viejos sin avance causal del tiempo físico (OU-R4-03 / Codex sync).
+            if sde.count > 0 && timestamp_ms <= sde.last_ts_ms {
+                return None;
+            }
+
             let sde_z = sde.update(spread, timestamp_ms);
             let sde_hl_sec = sde.half_life_seconds();
             if sde.count >= 10 && sde_hl_sec.is_finite() && sde_hl_sec <= 3600.0 {
