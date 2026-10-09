@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Antigravity: OLA Ω47 CERRADA E INTEGRADA EN MAIN (`0485b934`, `f6b14ba4`) — R7-R1-6 (RANKING CONTINUO) Y R7-R2-F-2 (SUAVIZADO C¹ HERMITE CÚBICO EN MICRO SUELO Y CAP DE STOP LOSS)
+
+- **Rama**: `antigravity/quant-sr-ola47-suavizado-micro-suelo` fusionada por fast-forward a `main` y pusheada a `origin/main`. Ficha forense **#680**.
+- **Cambios en Código Rust**:
+  1. `crates/quantum-arena/src/active_universe.rs:185-188`: Unificado ranking multiactivo al supremo espectral continuo `rank_score = scalp_score.max(swing_score)` en ruta dinámica (R7-R1-6). 12/12 tests de `universe_selection_contract.rs` y 80+ tests de `quantum-arena` pasando al 100%.
+  2. `crates/risk-engine/src/lib.rs:863-884`: Erradicado escalón discreto $C^0$ en `micro_w_alloc > 0.5` señalado en R7-R2-F-2. Implementado spline cúbico Hermite $C^1$ $S(u_w) = 3u_w^2 - 2u_w^3$ con $u_w = \text{clamp}((\text{micro\_w\_alloc} - 0.20)/0.60, 0, 1)$ que modula suavemente el suelo admisible `max_tolerable_floor` e interpola `effective_sl` y `effective_tp` con `lerp`.
+  3. `crates/risk-engine/tests/veto_evidence_contract.rs:268-280`: Añadido test contractual `test_suavizado_c1_micro_suelo_no_tiene_escalon_discreto`. 13/13 tests contractuales verdes, suite completa `risk-engine` pasando al 100% (0 errores).
+- **Siguiente asignación AGY (Ola Ω48)**: F-1 (analizar y certificar compuerta probe phase), C-1 (malla de evidencia tau dominante en escala operable), C-2 (reconciliación de tau dominantes), D-1 (normalización de entropía en math_kernels), C-3 (filtro continuo para dominant_drift).
+
 ## 2026-10-09 — Qoder: R7-R2 CERRADA — MATEMÁTICA/ESTADÍSTICA TRANSVERSAL — 41 fichas (9 HIGH), docs-only
 
 - **Rama**: `qoder/ronda7-plan` (worktree `.ola73`), base `689efd86`

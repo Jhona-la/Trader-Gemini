@@ -15529,3 +15529,18 @@ B-6 (relojes y muestras dependientes); **Qoder** = familias G-1/G-2
 (código muerto y tests que no certifican) con su propia ola. Detalle completo
 de las 41 fichas: `docs/BARRIDO_EXHAUSTIVO_FASES.md` §R7-6 (cabecera en la
 línea 2250).
+
+## #680 — Ola Ω47: RESOLUCIÓN R7-R1-6 (RANKING CONTINUO) Y R7-R2-F-2 (SUAVIZADO C¹ HERMITE CÚBICO EN MICRO SUELO Y CAP DE STOP LOSS) (2026-10-09)
+
+- **Autor**: Quant Senior (AGY / Consejo de 10 Roles).
+- **Commits en `main`**: `0485b934` (R7-R1-6: unificación ranking multiactivo), `f6b14ba4` (R7-R2-F-2: transición continua $C^1$ Hermite cúbica).
+- **Alcance**:
+  1. `crates/quantum-arena/src/active_universe.rs:185-188`: Erradicada la omisión de `swing_score` en la ruta dinámica señalada en R7-R1-6. El ranking unificado ahora evalúa el supremo del continuo espectral `rank_score = scalp_score.max(swing_score)`. 12/12 tests de `universe_selection_contract.rs` y 80+ tests de `quantum-arena` verdes.
+  2. `crates/risk-engine/src/lib.rs:863-884`: Erradicado el escalón discreto $C^0$ en `micro_w_alloc > 0.5` señalado en R7-R2-F-2 (#678). Implementada transición suave continua $C^1$ con spline cúbico de Hermite:
+     $$u_w = \text{clamp}\left(\frac{\text{micro\_w\_alloc} - 0.20}{0.60}, 0.0, 1.0\right), \quad S(u_w) = 3u_w^2 - 2u_w^3$$
+     $$\text{max\_tolerable\_floor} = 0.0055 \cdot S(u_w)$$
+     $$\text{effective\_sl} = \text{lerp}(\text{sl\_pct}, 0.0055, S(u_w)), \quad \text{effective\_tp} = \text{lerp}(\text{tp\_pct}, \text{tp\_candidate}, S(u_w))$$
+     Elimina discontinuidades entre cuentas con asignación micro y macro, respetando el presupuesto de ruina Cramér-Lundberg para capital de \$13 USD sin falsos rechazos en la frontera.
+  3. `crates/risk-engine/tests/veto_evidence_contract.rs:268-280`: Añadido test contractual `test_suavizado_c1_micro_suelo_no_tiene_escalon_discreto`, validando que la transición suave opera de forma monótona, finita y continua para \$13, \$15, \$20, \$50 y \$100 USD sin panics, desbordes ni NaNs.
+- **Certificación**: Suite completa de `risk-engine` (13/13 en veto_evidence_contract, 73+ tests totales) verde al 100% con 0 errores.
+
