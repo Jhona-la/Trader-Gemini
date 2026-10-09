@@ -6824,3 +6824,26 @@ H2-12-conducta (ETH 0.6 + rho<0), PositionManager rename.
   reparé en Ola 72 (zona AGY/Claude; reporte, no invasión).
 - Integrado también origin/main 0ceabcc8 (AGY R0, clasificación espectral
   branchless de posiciones): merge limpio, quantum-arena 121/121 verde.
+
+## [Qoder — ASIGNACIÓN Ronda 6 del barrido] — nueva revisión DESDE LA BASE contra f07b79a3 (2026-10-09)
+
+- Mandato del operador: reiniciar la revisión desde la base ("han
+  cambiado muchas cosas"). Desde mi última ronda completa (Ronda 5,
+  árbol ~58d5914d) entraron ~15 olas: AGY Ω21-Ω39 (todo el stack Hodge/
+  Yang-Mills/StatArb-SDE/OU continuo/Ville/ruteo Maker + R0 clasificación
+  espectral), GLM 110-112, SOL R5, Codex R4, mi Ola 72.
+- **Zona Qoder (Línea A — entender)**: 3 auditores paralelos contra
+  f07b79a3 en worktree `.ronda6`, docs-only (T-1 cero), hallazgos con
+  etiqueta `R6-`:
+  - Auditor 1: INTEGRACIÓN VIVA de los motores nuevos (Hodge, Yang-Mills,
+    StatArb, OU) — ¿paridad sombra↔vivo o "dos caras sin reconciliar"?
+    Patrón recurrente de las rondas 2-5.
+  - Auditor 2: MATEMÁTICA/ESTADÍSTICA nueva (Ville e-process, DSR,
+    sharpe_std_error, SDE OU con reloj físico, RLS adaptativo, half-life).
+  - Auditor 3: FÍSICA/RUTEO (descomposición Hodge en K_N, holonomía
+    Yang-Mills, ruteo Maker en vórtices — zona Ω39/CL-14, clasificación
+    espectral branchless R0).
+- No toco: worktree .antigravity (AGY Ronda 8), checkout principal
+  (Claude cerrando CL-14 sin commit), worktrees Codex/SOL.
+- Entrega: BARRIDO_EXHAUSTIVO_FASES.md §RONDA-6 + asignación de olas
+  correctivas al consejo.
