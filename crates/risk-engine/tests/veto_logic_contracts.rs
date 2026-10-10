@@ -93,3 +93,71 @@ pub fn insufficient_evidence_contract_without_deadlock() {
     assert_eq!(out_probe.signal, SignalType::Long, "Fase de sonda con prior no debe causar veto absorbente: {}", risk_engine::reject_report());
     assert!(out_probe.volume_usd > 0.0);
 }
+
+#[test]
+pub fn fee_impact_contract_rejects_excessive_friction_and_admits_viable_order() {
+    let (arena, intent) = fixture();
+
+    // 1. Fricción normal: comisiones estándar viables, orden Long admitida
+    let out_viable = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_viable.signal, SignalType::Long, "Fricción viable debe admitirse");
+    assert!(out_viable.volume_usd > 0.0);
+
+    // 2. Fricción colosal (50% de comisión por pierna): debe rechazarse limpiamente por fee_impact
+    arena.config.live_taker_fee.store(0.50, Relaxed);
+    let out_friction = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_friction.signal, SignalType::Flat, "Fricción exorbitante debe ser vetada por fee_impact");
+}
+
+#[test]
+pub fn orchestrator_contract_respects_directional_pressure_and_blocks_crash() {
+    let (arena, mut intent) = fixture();
+
+    // 1. Crash sistémico agudo (p_crash = 0.95): compras (Long) vetadas por orchestrator
+    arena.regime_p_crash.store(0.95, Relaxed);
+    arena.regime_p_bull.store(0.01, Relaxed);
+    arena.regime_p_chaos.store(0.04, Relaxed);
+    let out_long = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_long.signal, SignalType::Flat, "Compras en crash sistémico deben vetarse por orchestrator");
+
+    // 2. Operación Short en crash sistémico: admitida simétricamente
+    intent.signal = SignalType::Short;
+    let out_short = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_short.signal, SignalType::Short, "Shorts en crash deben admitirse");
+    assert!(out_short.volume_usd > 0.0);
+}
+
+#[test]
+pub fn spec_rejection_contract_handles_unregistered_coin() {
+    let (arena, intent) = fixture();
+
+    // Símbolo fuera del registro (coin_id = 999): rechazado limpiamente sin pánico
+    let out_unreg = RiskEngine::new(13.0).evaluate_quantum_order(999, &intent, &arena);
+    assert_eq!(out_unreg.signal, SignalType::Flat, "Moneda sin spec debe rechazarse como Flat");
+}
+
+#[test]
+pub fn invalid_input_contract_rejects_nan_and_infinities() {
+    let (arena, mut intent) = fixture();
+
+    // 1. Confianza NaN
+    intent.confidence = f64::NAN;
+    let out_nan_conf = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_nan_conf.signal, SignalType::Flat, "Confianza NaN debe rechazarse fail-closed");
+
+    // 2. Precio no finito
+    intent.confidence = 0.85;
+    arena.coins[0].current_price.store(f64::NAN, Relaxed);
+    let out_nan_price = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_nan_price.signal, SignalType::Flat, "Precio NaN debe rechazarse fail-closed");
+}
+
+#[test]
+pub fn flat_coin_contract_rejects_flat_intent() {
+    let (arena, mut intent) = fixture();
+
+    // Intención Flat: sin dirección, debe devolver Flat inmediatamente
+    intent.signal = SignalType::Flat;
+    let out_flat = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_flat.signal, SignalType::Flat, "Señal Flat debe evaluarse como Flat");
+}

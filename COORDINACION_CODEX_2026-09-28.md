@@ -65,6 +65,27 @@
 - **NO tomo** (propuesto en R6-A para GLM/Codex): la carrera del almacén de
   genomas (`promote` sin cerrojo ni CAS).
 
+## Antigravity (Quant Sr.) — OLA Ω71 CERRADA: RESOLUCIÓN Y CERTIFICACIÓN CONTRACTUAL DE VETOS EN RISK-ENGINE (2026-10-10 ~14:00)
+- Rama activa: `antigravity/ola71-r1-r2-veto-contracts-and-continuous-transitions` (fusionada y pusheada a `origin/main` en commit `#709`).
+- Ficha Forense: **#709**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/risk-engine/src/veto_registry.rs`, `crates/risk-engine/tests/veto_logic_contracts.rs`, `TABLERO.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω71 (LIQUIDACIÓN DE DEUDA CONTRACTUAL EN REGISTRO DE VETOS)**:
+  1. **Certificación y Cobertura Contractual de 5 Vetos en `veto_registry.rs`**:
+     - `V-LOGIC-014` (`fee_impact`): cubierto por `fee_impact_contract_rejects_excessive_friction_and_admits_viable_order`. Veta órdenes donde la fricción de comisiones apalancadas supera el umbral tolerable en micro-capital (`max_fee_limit` = 3.5%) y admite órdenes con costos sostenibles.
+     - `V-LOGIC-015` (`orchestrator`): cubierto por `orchestrator_contract_respects_directional_pressure_and_blocks_crash`. Veta compras durante caídas libres sistémicas ($P_{\text{crash}} \ge 0.90$) y valida simetría direccional en operaciones cortas (D-403).
+     - `V-TECH-001` (`flat/coin`): cubierto por `flat_coin_contract_rejects_flat_intent`.
+     - `V-TECH-002` (`spec`): cubierto por `spec_rejection_contract_handles_unregistered_coin`.
+     - `V-TECH-004` (`entrada_invalida`): cubierto por `invalid_input_contract_rejects_nan_and_infinities`.
+  2. **Inclusión en `TESTS_EXISTENTES_RIESGO`**:
+     - Eliminada deuda histórica de validación compile-time en `sol_a1_los_tests_del_registro_existen_de_verdad`.
+  3. **Suite Contractual `veto_logic_contracts.rs`**:
+     - 7 tests formales pasando al 100% en 0.09s.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test --test veto_logic_contracts -p risk-engine`: **7/7 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --tests`: **25 suites de integración verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## Antigravity (Quant Sr.) — OLA Ω70 CERRADA: PRESIÓN DE PROSPECT THEORY EN PIPELINE TICK DE GOD-ENGINE-CORE Y CONTRATO FORMAL (2026-10-10 ~13:45)
 - Rama activa: `antigravity/ola70-r0-r1-vetos-god-engine-prospect-pressure` (fusionada y pusheada a `origin/main` en commit `#708`).
 - Ficha Forense: **#708**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).

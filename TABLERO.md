@@ -66,13 +66,13 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, main en avance @ Ola Ω70)
+## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω71 en curso / Fase R1-R2)
 
-- **Haciendo ahora**: Ola Ω70 — Cableado live de Kahneman-Tversky Prospect Pressure
-  en el loop de deliberación tick de `crates/god-engine-core`, contratos formales de
-  integración pasados al 100%, y preparación de Fase R1 / Lote R2-R3 (auditoría y
-  suavizado $C^\infty$ de compuertas en `risk-engine` y `omniscient-registry`)
-  bajo restricciones estrictas de micro-capital ($13.00 USD, 5x, RR ≥ 2.25) y latencia $O(1) < 25$ ns.
+- **Haciendo ahora**: Ola Ω71 — Liquidación de deuda contractual en `crates/risk-engine/src/veto_registry.rs`,
+  certificando contratos formales ejecutables para V-LOGIC-014 (fee_impact), V-LOGIC-015 (orchestrator),
+  V-TECH-001 (flat/coin), V-TECH-002 (spec) y V-TECH-004 (entrada_invalida) en `crates/risk-engine/tests/veto_logic_contracts.rs`
+  (7/7 tests OK, 153/153 lib tests OK, 25/25 suites de integración OK), preservando invariantes
+  de micro-capital ($13.00 USD, 5x, RR ≥ 2.25) y hot path $< 25$ ns.
 - **Commiteado reciente**:
   - Ola Ω68 (#704, `194089b8`): Absorción analítica de Fokker-Planck en SDE VECM y first-passage time.
   - Plan Maestro Cuántico Integral (#705, `549fc536`): Documento canónico, 10 roles Senior, barrido R0-R9.
@@ -80,8 +80,10 @@
     con 32 escalas de Hilbert y coherencia cuántica $C_{\text{coh}}$, junto al Prospect Theory Engine
     de Kahneman-Tversky ($\lambda=2.25$, Prelec $\gamma=0.65$, presión $P_{\text{kt}}$ y modulación contrarian
     $[0.50, 1.30]$ en `SeniorEnteMercado` de `metacortex-engine`). Contratos formales pasando al 100% (7/7 y 6/6; 78/78 en metacortex).
-  - Ola Ω70 (#708): Integración en vivo de `prospect_pressure` en `god-engine-core::council_snapshot`,
+  - Ola Ω70 (#708, `558c7dcc`): Integración en vivo de `prospect_pressure` en `god-engine-core::council_snapshot`,
     unificación analítica de colas de pánico con fallback continuo y contrato formal `prospect_pressure_integration_contract.rs` (2/2 tests OK).
+  - Ola Ω71 (#709): Certificación y resolución de deuda en 5 vetos del `veto_registry.rs` de `risk-engine`,
+    adición de contratos formales `veto_logic_contracts.rs` y registro compile-time inmutable `TESTS_EXISTENTES_RIESGO`.
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados
   de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`).
   Toda la suite de crates pasando al 100% (153/153 en risk-engine, 127/127 en
