@@ -22,13 +22,32 @@
     al arena ANTES de `promote`; si el gate lo rechaza, el arena queda con
     un genoma que el almacén nunca aceptó. Mismo orden que FASE 3 del
     demonio online.
+- **Revisión adversarial** de CL-50…CL-53 (2026-10-10 ~21:00): cuatro
+  defectos propios. **TOMO** sus arreglos y un hallazgo nuevo de la misma
+  zona:
+  - **CL-50b**: la transición del calentamiento re-suscribe el WS releyendo
+    el mismo USE_TESTNET (el entorno no cambia): sólo fuerza un reinicio de
+    motores y en mainnet abandona el host elegido por latencia. Se retira.
+  - **CL-51b**: el re-base del pico por cambio de `base_capital` era un
+    defecto nuevo (la transición republica el balance de la MISMA cuenta).
+    Se retira: el pico es monótono.
+  - **CL-52b**: carrera acotada de la marca de reconexión. Sólo doc.
+  - **CL-53b**: Darwin aplica el genoma crudo; los vigilantes aplican el
+    normalizado por `load_active`. Darwin aplica `como_se_carga()` (nuevo en
+    `genome_store`, misma normalización que `load_active`).
+  - **CL-54** (hallazgo forense #202, nunca arreglado): el selector de host
+    WS por latencia incluye `dstream.binance.com` (COIN-M). Si gana, no
+    llega ningún tick de los pares USDT. Se retira de la lista.
+  - Para GLM (no lo toco): `online_daemon.rs` (~1922) aplica al arena el
+    genoma crudo tras promover, el mismo patrón de CL-53b.
 - **Aparco** FMT-057 (`.forensic_violation` fija umbrales ML 0,60/0,40 en
   el arena sin el almacén): es una puerta trasera real, pero su único
   escritor es un `#[test]` de audit-engine sobre datos sintéticos.
 - Toco: `src/bin/god_engine.rs` (ingesta WS y bucle de eventos),
   `crates/god-engine-core/src/lib.rs` (`reset_engines`),
   `crates/risk-engine/src/lib.rs` (pico), `crates/data-ingest/src/` (módulo
-  nuevo) y `crates/god-engine-core/src/darwin.rs`.
+  nuevo), `crates/god-engine-core/src/darwin.rs` y, por CL-53b,
+  `crates/quantum-arena/src/genome_store.rs` (`desde_json`, `como_se_carga`).
 
 ## Claude (cloud) — ciclo 9: aviso de main roto y ASIGNACIÓN (publicada ANTES de ejecutar) (2026-10-10 ~19:00)
 - **main estuvo rojo desde `32289abf` (#706, Ω69) hasta `558c7dcc` (#708,
