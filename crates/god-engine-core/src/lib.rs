@@ -7562,6 +7562,10 @@ impl GodEngineCore {
                                 .arena
                                 .registry
                                 .get_for_coin_or(coin_id, "navier_laminar_share", 1.0),
+                            // Ω69 añadió el campo al payload sin productor en el
+                            // núcleo: 0 deja el factor de Prospect Theory neutro
+                            // (p_prospect = 1), igual que el Default del payload.
+                            prospect_pressure: 0.0,
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let council_decision = self.consejo_deliberacion.deliberar_traced(
