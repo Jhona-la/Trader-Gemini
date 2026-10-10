@@ -1332,9 +1332,9 @@
     "semantic_hash": ""
   },
   "crates/signal-engine/src/lib.rs": {
-    "mtime": 1790990004.5374746,
-    "seen": 1791349202.7973285,
-    "ast_hash": "eeb48c88516236b87ff3eca2975b7195",
+    "mtime": 1791644389.0658147,
+    "seen": 1791644993.4600468,
+    "ast_hash": "e8eba3def91aada787be3acd697879a1",
     "semantic_hash": ""
   },
   "crates/signal-engine/src/orchestrator.rs": {
@@ -3708,9 +3708,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791642483.2509208,
-    "seen": 1791642511.4207568,
-    "ast_hash": "70908e0726b0abb6d162a138b881a9c0",
+    "mtime": 1791644389.0536847,
+    "seen": 1791644993.4600468,
+    "ast_hash": "990b673cdb3e9c17884f15095ff307d4",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3732,9 +3732,9 @@
     "semantic_hash": ""
   },
   "COORDINACION_CODEX_2026-09-28.md": {
-    "mtime": 1791642493.1938772,
-    "seen": 1791642511.4257476,
-    "ast_hash": "6c464356dac25d3602e27f6153d6998f",
+    "mtime": 1791644389.062628,
+    "seen": 1791644993.4631882,
+    "ast_hash": "c6f649deec3deb8c5469515e5eb3996d",
     "semantic_hash": ""
   },
   "TABLERO.md": {
@@ -4296,9 +4296,9 @@
     "semantic_hash": ""
   },
   "crates/signal-engine/src/voto_espectral.rs": {
-    "mtime": 1791611724.9727297,
-    "seen": 1791612590.9696476,
-    "ast_hash": "5d41dae3ec7bc03a929a4b3efb19d63e",
+    "mtime": 1791644389.069894,
+    "seen": 1791644993.4600468,
+    "ast_hash": "c7118b76f8c7a80fc32fe3d30f7753f8",
     "semantic_hash": ""
   },
   "crates/signal-engine/tests/censo_votantes_contract.rs": {
@@ -4404,9 +4404,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_SINCRONIZACION.md": {
-    "mtime": 1791641954.5017738,
-    "seen": 1791642511.4267466,
-    "ast_hash": "c2b28fd6b4fd1885f5ac20a2329723d4",
+    "mtime": 1791644389.07619,
+    "seen": 1791644993.4647787,
+    "ast_hash": "785eb1104065eb6ca06ecb25c74411d0",
     "semantic_hash": ""
   },
   "docs/TRIAJE_ROJOS_PERPETUOS.md": {
@@ -25104,8 +25104,8 @@
     "semantic_hash": ""
   },
   "crates/feature-engine/src/navier_stokes.rs": {
-    "mtime": 1791642245.6853275,
-    "seen": 1791642511.4181993,
+    "mtime": 1791642598.027642,
+    "seen": 1791644993.4584901,
     "ast_hash": "8ae27227de137300d2d78733d580cd73",
     "semantic_hash": ""
   },
@@ -28983,6 +28983,24 @@
     "mtime": 1791640627.4563048,
     "seen": 1791642511.4267466,
     "ast_hash": "7fae3fefb3fd514ff79c4f6492c7b637",
+    "semantic_hash": ""
+  },
+  "crates/feature-engine/tests/navier_stokes_reynolds_contract.rs": {
+    "mtime": 1791642598.0286453,
+    "seen": 1791644993.4584901,
+    "ast_hash": "8f07a5ff3bbfcbdb49e5f050cdf31be4",
+    "semantic_hash": ""
+  },
+  "crates/signal-engine/src/navier_stokes_manifold.rs": {
+    "mtime": 1791644389.067146,
+    "seen": 1791644993.4600468,
+    "ast_hash": "719d3893715cea9b8b7ee4298c9d0d9c",
+    "semantic_hash": ""
+  },
+  "crates/signal-engine/tests/navier_stokes_manifold_contract.rs": {
+    "mtime": 1791644389.071445,
+    "seen": 1791644993.4600468,
+    "ast_hash": "65c502b678f2d89a8b0d3a2d49b62e54",
     "semantic_hash": ""
   }
 }
