@@ -45,6 +45,11 @@ pub enum TradingHorizon {
     Continuous,
 }
 
+#[inline(always)]
+fn default_navier_laminar_share() -> f64 {
+    1.0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketSnapshotPayload {
     pub horizon: TradingHorizon,
@@ -95,6 +100,57 @@ pub struct MarketSnapshotPayload {
     pub crowd_taker_ratio: f64,
     /// CERT-M2-C04: base del modelo ML del símbolo
     pub ml_model_base: f64,
+    /// OLA Ω37/Ω38: Índice de rotacional de flujo de Helmholtz-Hodge curl_share ∈ [0, 1].
+    /// <= 0.25 cascada de gradiente pura (momentum laminar), >= 0.75 vórtice de liquidez cerrado (recirculación/arbitraje).
+    #[serde(default)]
+    pub hodge_curl_share: f64,
+    /// OLA Ω36/Ω38: Corriente gauge restauradora de Yang-Mills J_i ∈ [-1, 1].
+    /// Fuerza de paridad multiactivo derivada de la curvatura de holonomía triangular.
+    #[serde(default)]
+    pub yang_mills_current: f64,
+    /// OLA Ω38 (A-M6 / H-08): Antigüedad en ms del último fetch macro exitoso (0 si no aplica).
+    #[serde(default)]
+    pub macro_staleness_ms: u64,
+    /// OLA Ω53: Número de Reynolds financiero continuo Re = (F_inercia / (viscosidad * sigma_ref)).
+    /// Re < 1.0 régimen laminar; Re >= 5.0 régimen turbulento caótico con micro-vórtices.
+    #[serde(default)]
+    pub navier_reynolds_number: f64,
+    /// OLA Ω53: Fracción laminar suave C^∞: 1.0 / (1.0 + (Re / 1.0)^2) ∈ [0, 1].
+    #[serde(default = "default_navier_laminar_share")]
+    pub navier_laminar_share: f64,
+}
+
+impl Default for MarketSnapshotPayload {
+    fn default() -> Self {
+        Self {
+            horizon: TradingHorizon::Continuous,
+            book_imbalance: 0.0,
+            hurst_exponent: 0.5,
+            ml_prob: 0.5,
+            fused_score: 0.0,
+            persistence: 0.0,
+            atr_pct: 0.001,
+            loss_streak: 0,
+            intended_direction: 0.0,
+            do_calculus_risk: 0.0,
+            causal_veto_threshold: 0.75,
+            current_drawdown_pct: 0.0,
+            estimated_slippage_bps: 0.0,
+            dominant_tau_ms: 1_138_000.0,
+            whale_burst_z: 0.0,
+            liquidation_severity: 0.0,
+            open_interest_norm: 0.0,
+            spoof_score: 0.0,
+            crowd_ls_ratio: 1.0,
+            crowd_taker_ratio: 1.0,
+            ml_model_base: 0.5,
+            hodge_curl_share: 0.0,
+            yang_mills_current: 0.0,
+            macro_staleness_ms: 0,
+            navier_reynolds_number: 0.0,
+            navier_laminar_share: 1.0,
+        }
+    }
 }
 
 impl MarketSnapshotPayload {
@@ -134,6 +190,10 @@ impl MarketSnapshotPayload {
             ("crowd_ls_ratio", self.crowd_ls_ratio),
             ("crowd_taker_ratio", self.crowd_taker_ratio),
             ("ml_model_base", self.ml_model_base),
+            ("hodge_curl_share", self.hodge_curl_share),
+            ("yang_mills_current", self.yang_mills_current),
+            ("navier_reynolds_number", self.navier_reynolds_number),
+            ("navier_laminar_share", self.navier_laminar_share),
         ];
 
         for (name, val) in metrics {
@@ -175,6 +235,9 @@ impl MarketSnapshotPayload {
             ("open_interest_norm", self.open_interest_norm, 0.0, 1.0),
             ("spoof_score", self.spoof_score, 0.0, 1.0),
             ("ml_model_base", self.ml_model_base, 0.0, 1.0),
+            ("hodge_curl_share", self.hodge_curl_share, 0.0, 1.0),
+            ("yang_mills_current", self.yang_mills_current, -1.0, 1.0),
+            ("navier_laminar_share", self.navier_laminar_share, 0.0, 1.0),
         ] {
             if !(low..=high).contains(&value) {
                 return Err(format!("Out-of-bounds {name}: {value}"));
@@ -184,6 +247,7 @@ impl MarketSnapshotPayload {
             || self.estimated_slippage_bps < 0.0
             || self.crowd_ls_ratio < 0.0
             || self.crowd_taker_ratio < 0.0
+            || self.navier_reynolds_number < 0.0
         {
             return Err("Invalid time scale, slippage or crowd ratio".into());
         }
@@ -322,8 +386,10 @@ fn ml_opinion(ml_prob: f64, ml_base: f64) -> f64 {
     }
 }
 
-// 1. Senior Microestructura (Flujo) — MOD2/7-006: MANTIENE el OBI actual:
-// es la ÚNICA señal real de microestructura del consejo (presión del libro L2).
+// 1. Senior Microestructura (Flujo) — MOD2/7-006 & OLA Ω37/Ω38:
+// Evalúa la presión del libro L2 (OBI) modulada por el componente laminar
+// de Helmholtz-Hodge (curl_share): si la vorticidad es alta, la liquidez
+// está atrapada en circuitos cerrados/rotacionales y no hay empuje laminar.
 pub struct SeniorMicroestructura;
 impl SeniorAgent for SeniorMicroestructura {
     fn role(&self) -> SeniorRole {
@@ -331,21 +397,41 @@ impl SeniorAgent for SeniorMicroestructura {
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let imbalance = payload.book_imbalance;
+        let curl = if payload.hodge_curl_share.is_finite() && payload.hodge_curl_share > 0.0 {
+            payload.hodge_curl_share.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        // Modulación física continua: si curl -> 1 (vórtice cerrado), la confianza laminar se reduce suavemente
+        let laminar_factor = (1.0 - 0.70 * curl).clamp(0.30, 1.0);
+
+        // OLA Ω53: Modulación hidrodinámica Navier-Stokes (Reynolds).
+        // En flujo laminar (Re < 1.0, laminar_share -> 1.0), el desequilibrio de libro es fiel y altamente predecible.
+        // En flujo turbulento (Re >= 5.0, laminar_share -> 0.0), vórtices y ráfagas rompen la microestructura pasiva.
+        let re_laminar = if payload.navier_laminar_share.is_finite() && payload.navier_laminar_share > 0.0 {
+            payload.navier_laminar_share.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let hydro_factor = (0.40 + 0.60 * re_laminar).clamp(0.40, 1.0);
+        let confidence = (imbalance.abs().clamp(0.0, 1.0) * laminar_factor * hydro_factor).clamp(0.0, 1.0);
         SeniorOpinion {
             role: self.role(),
             signal_direction: safe_signum(imbalance),
-            confidence: imbalance.abs().clamp(0.0, 1.0),
+            confidence,
             weight: 1.0,
             is_veto: false,
-            justification: format!("Flujo L2 (OBI): {:.4}", imbalance),
+            justification: format!(
+                "Flujo L2 (OBI: {:.4}, Hodge curl: {:.3}, Re: {:.2}, Lam: {:.2})",
+                imbalance, curl, payload.navier_reynolds_number, re_laminar
+            ),
         }
     }
 }
 
-// 2. Senior Series Temporales (Espectral) — MOD2/7-006: ya NO lee Hurst·OBI
-// (colineal). Opina desde el espectro temporal: fused_score direcciona y
-// persistence decide si el momentum es sostenible (>0) o si impera la
-// mean-reversion (<0, se fadea la señal espectral).
+// 2. Senior Series Temporales (Espectral) — MOD2/7-006 & OLA Ω36/Ω38:
+// Opina desde el espectro temporal (fused_score y persistence) integrado con
+// la corriente restauradora gauge de Yang-Mills (yang_mills_current).
 pub struct SeniorSeriesTemporales;
 impl SeniorAgent for SeniorSeriesTemporales {
     fn role(&self) -> SeniorRole {
@@ -353,7 +439,21 @@ impl SeniorAgent for SeniorSeriesTemporales {
     }
     #[inline(always)]
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let signal = spectral_opinion(payload.fused_score, payload.persistence);
+        let mut signal = spectral_opinion(payload.fused_score, payload.persistence);
+        let ym_curr = if payload.yang_mills_current.is_finite() {
+            payload.yang_mills_current.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        // R6-C12 / OLA Ω42 — Modulación continua suave C¹:
+        // Sustituir el escalón discontinuo C⁰ (`if > 0.05`) por soft-switch Lorentz-Cauchy suave C∞.
+        // En ym_curr -> 0, w_ym -> 0 con derivada nula (sin ruido en reposo).
+        // A |ym_curr| = 0.05, w_ym = 0.10 (50% de la fuerza).
+        // En |ym_curr| >> 0.05, w_ym converge asintóticamente a 0.20 (fuerza de paridad plena).
+        let ym_sq = ym_curr * ym_curr;
+        const YM_THRESH_SQ: f64 = 0.05 * 0.05;
+        let w_ym = 0.20 * (ym_sq / (ym_sq + YM_THRESH_SQ));
+        signal = ((1.0 - w_ym) * signal + w_ym * ym_curr).clamp(-1.0, 1.0);
         let confidence = signal.abs().clamp(0.0, 1.0);
         let regime = if payload.persistence >= 0.0 {
             "momentum"
@@ -367,8 +467,8 @@ impl SeniorAgent for SeniorSeriesTemporales {
             weight: 1.0,
             is_veto: false,
             justification: format!(
-                "Espectral: fused={:.4}, persistence={:.4} ({}) → sig={:.3}",
-                payload.fused_score, payload.persistence, regime, signal
+                "Espectral: fused={:.4}, persistence={:.4} ({}), ym_curr={:.3} → sig={:.3}",
+                payload.fused_score, payload.persistence, regime, ym_curr, signal
             ),
         }
     }
@@ -444,47 +544,60 @@ impl SeniorAgent for SeniorEnteMercado {
         // limpio de la entrada — el precio en ese momento lo mueven ELLOS,
         // no el flujo que motivó la señal. OI alto (apalancamiento denso)
         // amplifica movimientos: misma modulación.
-        let mut entity_factor = 1.0f64;
-        if whale_z > 4.0 {
-            entity_factor *= 0.7;
-        }
-        if liq > 0.6 {
-            entity_factor *= 0.5;
-        }
-        if oi > 0.8 {
-            entity_factor *= 0.85;
-        }
-        if spoof > 0.7 {
-            entity_factor *= 0.85; // muro que se evapora: el libro miente
-        }
-        // QO-U2 — CONTRARIAN: la multitud MUY a favor de nuestra dirección
-        // es riesgo de squeeze (todos saliendo por la misma puerta). L/S>3
-        // y entramos long: ×0.8; L/S<0.33 y entramos short: ×0.8. El flujo
-        // taker extremo (>2.5 o <0.4) en NUESTRA dirección: ya llegó tarde.
-        let ls = if payload.crowd_ls_ratio.is_finite() {
-            payload.crowd_ls_ratio.clamp(0.0, 20.0)
+        // Modulación continua C¹ autoadaptativa de entes adversariales y psicología de masas:
+        // En lugar de funciones de escalón discretas C⁰ (if > threshold), cada magnitud modula
+        // la convicción suavemente mediante leyes continuas de amortiguamiento físico.
+        let p_whale = if whale_z > 0.0 {
+            (1.0 / (1.0 + (whale_z / 4.0).powi(2))).clamp(0.60, 1.0)
         } else {
             1.0
         };
-        let tk = if payload.crowd_taker_ratio.is_finite() {
-            payload.crowd_taker_ratio.clamp(0.0, 20.0)
+        let p_liq = if liq > 0.0 {
+            (-1.2 * liq * liq).exp().clamp(0.40, 1.0)
+        } else {
+            1.0
+        };
+        let p_oi = if oi > 0.0 {
+            (1.0 / (1.0 + 0.3 * oi * oi)).clamp(0.80, 1.0)
+        } else {
+            1.0
+        };
+        let p_spoof = if spoof > 0.0 {
+            (1.0 / (1.0 + 0.3 * spoof * spoof)).clamp(0.80, 1.0)
+        } else {
+            1.0
+        };
+
+        // QO-U2 / Conducta de masas contrarian continua:
+        // Desbalance logarítmico de multitud: z = dir_sign * ln(L/S).
+        // Si z > 0, la masa está concentrada en nuestra misma dirección (riesgo de squeeze adverso).
+        let ls = if payload.crowd_ls_ratio.is_finite() && payload.crowd_ls_ratio > 0.0 {
+            payload.crowd_ls_ratio.clamp(0.01, 20.0)
+        } else {
+            1.0
+        };
+        let tk = if payload.crowd_taker_ratio.is_finite() && payload.crowd_taker_ratio > 0.0 {
+            payload.crowd_taker_ratio.clamp(0.01, 20.0)
         } else {
             1.0
         };
         let dir_sign = safe_signum(payload.intended_direction);
-        if dir_sign > 0.0 && ls > CROWD_LS_FEAR {
-            entity_factor *= 0.8; // multitud ya long: squeeze risk
-        }
-        if dir_sign < 0.0 && ls < 0.33 {
-            entity_factor *= 0.8; // multitud ya short: squeeze risk
-        }
-        if dir_sign > 0.0 && tk > 2.5 {
-            entity_factor *= 0.85; // takers ya compraron: llegamos tarde
-        }
-        if dir_sign < 0.0 && tk < 0.4 {
-            entity_factor *= 0.85; // takers ya vendieron: llegamos tarde
-        }
-        let entity_factor = entity_factor.max(0.3); // piso: nunca anula solo
+        let crowd_imbalance = (dir_sign * ls.ln()).max(0.0);
+        let p_crowd = (1.0 / (1.0 + 0.25 * crowd_imbalance * crowd_imbalance)).clamp(0.70, 1.0);
+
+        let taker_imbalance = (dir_sign * tk.ln()).max(0.0);
+        let p_taker = (1.0 / (1.0 + 0.20 * taker_imbalance * taker_imbalance)).clamp(0.75, 1.0);
+
+        // OLA Ω38 (A-M6 / H-08) — Modulación continua por staleness de feeds macro:
+        // Antigüedad > 180s amortigua suavemente con decaimiento exponencial continuo
+        let p_macro = if payload.macro_staleness_ms > 180_000 {
+            let excess_s = (payload.macro_staleness_ms - 180_000) as f64 / 1000.0;
+            (-excess_s / 300.0).exp().clamp(0.40, 1.0)
+        } else {
+            1.0
+        };
+
+        let entity_factor = (p_whale * p_liq * p_oi * p_spoof * p_crowd * p_taker * p_macro).clamp(0.20, 1.0);
         let dir = safe_signum(payload.intended_direction);
         SeniorOpinion {
             role: self.role(),
@@ -493,11 +606,12 @@ impl SeniorAgent for SeniorEnteMercado {
             weight: 1.0,
             is_veto,
             justification: format!(
-                "EnteMercado: ballena_z={:.1} cascada={:.2} OI={:.2} spoof={:.2} → convicción {:.2}{}",
+                "EnteMercado: ballena_z={:.1} cascada={:.2} OI={:.2} spoof={:.2} macro_stale_ms={} → convicción {:.2}{}",
                 whale_z,
                 liq,
                 oi,
                 spoof,
+                payload.macro_staleness_ms,
                 entity_factor,
                 if is_veto { " [VETO CASCADA]" } else { "" }
             ),
@@ -600,12 +714,21 @@ impl SeniorAgent for SeniorEjecucion {
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         // FIX #387: estimated_slippage_bps ya está expresado en puntos básicos (bps)
         let slippage_bps = payload.estimated_slippage_bps.max(0.0);
+        // OLA Ω53: Modulación hidrodinámica Navier-Stokes sobre slippage efectivo:
+        // En régimen turbulento (Re >= 5.0, laminar_share -> 0.0), la rotura de capas límite
+        // y micro-vórtices de flujo amplifican el slippage efectivo por selección adversa.
+        let re_laminar = if payload.navier_laminar_share.is_finite() && payload.navier_laminar_share > 0.0 {
+            payload.navier_laminar_share.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let effective_slippage_bps = slippage_bps * (1.0 + (1.0 - re_laminar) * 0.50);
         // U-4: umbral de slippage continuo en τ — antes escalones por
         // horizonte (Scalping 35 / Continuous 65 / Swing 100 bps). Un trade
         // de τ corto no puede pagar 100 bps; uno de 12 h puede absorberlos.
         // D-113: extremo rápido conserva la tolerancia estrecha de altcoins.
         let max_slippage = 35.0 + 65.0 * payload.spectral_s();
-        let is_veto = slippage_bps > max_slippage;
+        let is_veto = effective_slippage_bps > max_slippage;
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent
@@ -613,8 +736,8 @@ impl SeniorAgent for SeniorEjecucion {
             weight: 1.0,
             is_veto,
             justification: format!(
-                "Execution impact slippage: {:.2} bps (mode={:?})",
-                slippage_bps, payload.horizon
+                "Execution impact slippage: {:.2} bps (eff: {:.2} bps, Re: {:.2}, mode={:?})",
+                slippage_bps, effective_slippage_bps, payload.navier_reynolds_number, payload.horizon
             ),
         }
     }
@@ -1378,6 +1501,11 @@ mod tests {
             crowd_ls_ratio: 1.0,
             crowd_taker_ratio: 1.0,
             ml_model_base: 0.5,
+            hodge_curl_share: 0.0,
+            yang_mills_current: 0.0,
+            macro_staleness_ms: 0,
+            navier_reynolds_number: 0.0,
+            navier_laminar_share: 1.0,
         }
     }
 
@@ -1420,6 +1548,7 @@ mod tests {
             crowd_ls_ratio: 1.0,
             crowd_taker_ratio: 1.0,
             ml_model_base: 0.5,
+            ..Default::default()
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -1498,6 +1627,7 @@ mod tests {
             crowd_ls_ratio: 1.0,
             crowd_taker_ratio: 1.0,
             ml_model_base: 0.5,
+            ..Default::default()
         };
 
         let result = consejo.deliberar(&payload, 0.70);
@@ -1678,5 +1808,61 @@ mod tests {
         // Y el veto llega a la deliberación completa.
         let res_shock = consejo.deliberar(&entity_shock, 0.70);
         assert!(!res_shock.approved, "cascada mayor en curso: no se aprueba entrada");
+    }
+
+    /// OLA Ω53: Test contractual de modulación hidrodinámica Navier-Stokes (Reynolds).
+    /// Verifica que un flujo laminar (Re bajo, laminar_share alto) maximiza la convicción
+    /// del SeniorMicroestructura, mientras que un régimen turbulento (Re alto, laminar_share bajo)
+    /// amortigua la convicción microestructural y penaliza el slippage efectivo en SeniorEjecucion.
+    #[test]
+    fn test_navier_stokes_reynolds_modulation_in_consejo() {
+        let base = diverse_bullish_payload();
+
+        // 1. Caso Laminar (Re = 0.2, laminar_share = 0.96)
+        let laminar_payload = MarketSnapshotPayload {
+            navier_reynolds_number: 0.20,
+            navier_laminar_share: 0.96,
+            ..base.clone()
+        };
+
+        // 2. Caso Turbulento (Re = 8.5, laminar_share = 0.013)
+        let turbulent_payload = MarketSnapshotPayload {
+            navier_reynolds_number: 8.50,
+            navier_laminar_share: 0.013,
+            ..base.clone()
+        };
+
+        let micro = SeniorMicroestructura;
+        let op_laminar = micro.evaluate(&laminar_payload, 0.5);
+        let op_turbulent = micro.evaluate(&turbulent_payload, 0.5);
+
+        assert!(
+            op_laminar.confidence > op_turbulent.confidence,
+            "Régimen laminar ({:.3}) debe tener mayor confianza que turbulento ({:.3})",
+            op_laminar.confidence, op_turbulent.confidence
+        );
+        assert!(
+            (op_laminar.confidence - op_turbulent.confidence) > 0.40,
+            "La amortiguación por vórtices turbulentos debe ser sustancial (>0.40)"
+        );
+
+        // 3. Impacto en SeniorEjecucion:
+        // Si slippage_bps = 30.0 y max_slippage = 35.0 (extremo rápido):
+        // En laminar: effective_slippage = 30.0 * (1.0 + (1.0 - 0.96)*0.5) = 30.6 bps < 35.0 -> NO VETO
+        // En turbulento: effective_slippage = 30.0 * (1.0 + (1.0 - 0.013)*0.5) = 44.8 bps > 35.0 -> VETO POR IMPACTO TURBULENTO
+        let ejecucion = SeniorEjecucion;
+        let mut exec_laminar = laminar_payload.clone();
+        exec_laminar.dominant_tau_ms = 30_000.0; // spectral_s = 0.0 -> max_slippage = 35 bps
+        exec_laminar.estimated_slippage_bps = 30.0;
+
+        let mut exec_turbulent = turbulent_payload.clone();
+        exec_turbulent.dominant_tau_ms = 30_000.0;
+        exec_turbulent.estimated_slippage_bps = 30.0;
+
+        let op_exec_lam = ejecucion.evaluate(&exec_laminar, 0.5);
+        let op_exec_turb = ejecucion.evaluate(&exec_turbulent, 0.5);
+
+        assert!(!op_exec_lam.is_veto, "En régimen laminar 30 bps no debe vetar");
+        assert!(op_exec_turb.is_veto, "En régimen turbulento 30 bps amplificado a ~45 bps DEBE VETAR");
     }
 }

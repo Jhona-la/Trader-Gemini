@@ -37,8 +37,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 2 # first parent is required for the candidate diff check
-      - name: Reject conflict markers and whitespace errors in candidate diff
-        run: git diff --check HEAD^ HEAD
+      - name: Reject conflict markers in candidate diff
+        # R4: inspect the checkout candidate without rewriting files or moving HEAD.
+        # A normalization commit would make HEAD^..HEAD omit the candidate changes.
+        # Ignore cosmetic trailing whitespace while preserving conflict-marker checks.
+        run: git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD^ HEAD
       - name: Install the compiler used for the local regression
         run: |
           rustup toolchain install nightly-2026-06-30 --profile minimal
@@ -48,9 +51,31 @@ jobs:
       - name: Check all workspace targets
         run: cargo +nightly-2026-06-30 check --workspace --all-targets --locked
       - name: Model publication and loader contracts
+        # Existing model contracts are preserved below.
         # Synthetic models only. No real-model inventory, training or promotion.
-        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test model_publication_contract --test ml_model_contract --test ml_base_publication_contract -- --test-threads=1
+        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test model_publication_contract --test ml_model_contract --test ml_base_publication_contract --test model_reload_contract -- --test-threads=1
 
+      - name: Input, risk-state and OOS boundary contracts
+        # Synthetic inputs only; no training, exchange or real-model activation.
+        run: |
+          cargo +nightly-2026-06-30 test -p data-pipeline --locked --test parser_input_contract -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 test -p risk-engine --locked --test nonfinite_admission_contract --test c07_ruin_composition_contract -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 test -p backtest-engine --locked --test oos_context_contract -- --test-threads=1
+
+
+      - name: Shadow forest genome and observed capital contracts
+        # Offline library tests; no training, promotion or live engine session.
+        run: cargo +nightly-2026-06-30 test -p evolution-engine --lib --locked -- --test-threads=1
+
+      - name: Accepted feature clock transition contracts
+        # Synthetic rejected/accepted ticks; no live trading, models or training.
+        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test stateful_transition_contract -- --test-threads=1
+
+      - name: Scoped risk evidence withdrawal contracts
+        # Real estimators/readers with synthetic events; no live trading or training.
+        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test evidence_expiry_contract -- --test-threads=1
       - name: Model inventory structural evidence contracts
         # Synthetic files only; no training, promotion or live-model loading.
         run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --lib ml_registry::tests -- --test-threads=1
@@ -59,3 +84,22 @@ jobs:
         run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --lib --test ex_post_metrics_contract --test label_evidence_contract --test spectral_risk_contract --test bt_vivo_parity_audit -- --test-threads=1
       - name: Fast genome measurement contracts (not the full T-1 oracle)
         run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --test t1_measurement_contract -- --test-threads=1
+      - name: Execution, audit and data-ingest contract suites
+        # XC (GLM, 2026-10-06, F8-A-H2 of the exhaustive sweep): these 5
+        # crates had 223 tests that CI only COMPILED (--all-targets) but
+        # never ran — ioc_fill_contract was red in HEAD for days, invisible.
+        # Fast unit/contract suites (no --ignored: no testnet, no manual
+        # measurements); adds ~2-4 min against the ~46 min replay suite.
+        run: cargo +nightly-2026-06-30 test -p execution-engine -p audit-engine -p data-pipeline -p data-ingest -p dark-alpha-engine --locked -- --test-threads=1
+
+      - name: Signed SA score and selection contracts (no evolution process)
+        # Compile the actual standalone helpers; all-targets above checks the CLI wiring.
+        run: |
+          rustc +nightly-2026-06-30 --edition 2024 --test crates/evolution-engine/tests/score_retention_contract.rs -o target/score-retention-contract.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./target/score-retention-contract.exe --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustc +nightly-2026-06-30 --edition 2024 --test crates/evolution-engine/tests/sa_selection_contract.rs -o target/sa-selection-contract.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./target/sa-selection-contract.exe --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

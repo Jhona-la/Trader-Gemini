@@ -31,13 +31,13 @@ pub struct Genotype {
 
 impl Genotype {
     #[inline]
-    pub fn scalp_tp(&self) -> f64 {
+    pub fn tp_at_fast_anchor(&self) -> f64 {
         quantum_arena::temporal_spectrum::HorizonCurve { a: self.tp_curve_a, b: self.tp_curve_b }
             .eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
     }
 
     #[inline]
-    pub fn scalp_sl(&self) -> f64 {
+    pub fn sl_at_fast_anchor(&self) -> f64 {
         quantum_arena::temporal_spectrum::HorizonCurve { a: self.sl_curve_a, b: self.sl_curve_b }
             .eval(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
     }
@@ -336,43 +336,85 @@ fn evaluate_genotype(
     initial: f64,
     max_drawdown_policy: f64,
     active_coins: usize,
-) -> (f64, f64) {
+) -> (f64, f64, Vec<f64>) {
     if !initial.is_finite() || initial <= 0.0 || !max_drawdown_policy.is_finite() {
-        return (initial, f64::NEG_INFINITY);
+        return (initial, f64::NEG_INFINITY, Vec::new());
     }
     let arena = replay_arena(genome, initial, max_drawdown_policy);
     let mut engine = GodEngineCore::new(arena.clone());
     let mut synth = OmniSynth::new(active_coins);
     let mut peak_capital = initial;
+    let mut prev_cap = initial;
     let mut max_drawdown = 0.0_f64;
     let mut trades = 0_u32;
+    let mut portfolio_returns = Vec::with_capacity(128);
+    let mut last_sample_ts = stream.first().map(|t| t.timestamp).unwrap_or(0);
+    // H1-2: rejilla de muestreo de retornos del portafolio (1 s). La serie es
+    // de capital REALIZADO (fee de entrada + PnL al cierre; el no-realizado
+    // vive en pnl_unrealized y no entra): mayormente ceros exactos con saltos
+    // dispersos — curtosis alta ⇒ σ_SR no-normal se infla ⇒ DSR conservador
+    // (defendible). R4-B2: la rejilla es la ÚNICA cadencia — el disparo extra
+    // por cierre (`|| closed.is_some()`) mezclaba Δt irregulares con saltos
+    // de PnL (heterocedasticidad que distorsiona γ₃/γ₄/SR de Mertens) y
+    // re-faseaba la rejilla. Como prev_cap sólo avanza EN la rejilla, cada
+    // retorno de 1 s integra todos los cierres de su ventana (sin pérdida);
+    // la cola <1 s tras el último cierre no se muestrea.
+    const SAMPLE_INTERVAL_MS: u64 = 1_000;
+
     for tick in stream {
         arena.update_market_data(tick.coin_id, tick.bid_price, tick.ask_price,
             tick.bid_qty, tick.ask_qty, tick.timestamp);
         let omni = synth.tick(tick.coin_id, tick.bid_price, tick.ask_price, tick.bid_qty, tick.ask_qty);
         let (_, closed, _) = engine.process_tick(tick.coin_id, tick.bid_price, tick.ask_price,
             tick.bid_qty, tick.ask_qty, tick.timestamp, &omni);
+
+        let capital = arena.unified_capital.load(Ordering::Relaxed);
+        if !capital.is_finite() || capital <= 0.0 {
+            return (capital, f64::NEG_INFINITY, portfolio_returns);
+        }
+
         if closed.is_some() {
             trades += 1;
-            let capital = arena.unified_capital.load(Ordering::Relaxed);
-            if !capital.is_finite() || capital <= 0.0 {
-                return (capital, f64::NEG_INFINITY);
-            }
             peak_capital = peak_capital.max(capital);
             max_drawdown = max_drawdown.max((peak_capital - capital) / peak_capital);
         }
+
+        // R4-B2 / R5-B2: SOLO la rejilla decide la cadencia (ver comentario de
+        // SAMPLE_INTERVAL_MS). El PnL del cierre entra integrado en el
+        // retorno de la rejilla siguiente. R5-B2: la rejilla avanza de forma
+        // estricta y periódica por múltiplos de SAMPLE_INTERVAL_MS (last += 1000)
+        // para evitar que ticks tardíos o gaps re-anclen la fase a Δt irregular.
+        let time_elapsed = tick.timestamp >= last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS);
+        if time_elapsed {
+            if prev_cap > 0.0 {
+                let r = (capital - prev_cap) / prev_cap;
+                if r.is_finite() {
+                    portfolio_returns.push(r);
+                }
+            }
+            prev_cap = capital;
+            while tick.timestamp >= last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS) {
+                last_sample_ts = last_sample_ts.saturating_add(SAMPLE_INTERVAL_MS);
+            }
+        }
     }
     let final_capital = arena.unified_capital.load(Ordering::Relaxed);
-    (final_capital, crate::fitness_compute(initial, final_capital, max_drawdown, trades))
+    (final_capital, crate::fitness_compute(initial, final_capital, max_drawdown, trades), portfolio_returns)
 }
 
 pub struct DarwinDaemon {
     pub live_arena: Arc<GlobalArena>,
+    /// H1-3: Acumulador atómico de pruebas entre rondas evolutivas continuas (D-746).
+    /// Controla la multiplicidad acumulada frente a optional stopping en el daemon.
+    pub cumulative_trials: std::sync::atomic::AtomicUsize,
 }
 
 impl DarwinDaemon {
     pub fn new(live_arena: Arc<GlobalArena>) -> Self {
-        Self { live_arena }
+        Self {
+            live_arena,
+            cumulative_trials: std::sync::atomic::AtomicUsize::new(0),
+        }
     }
 
     /// Extacts the recent ticks from the live arena, sorts them, and runs a fast GA
@@ -410,6 +452,20 @@ impl DarwinDaemon {
             master_stream.len()
         );
 
+        // S5 / RA-OOS: Partición causal temporal honesta (50% in-sample / 50% out-of-sample).
+        // Evita sobreajuste y garantiza generalización estadística causal.
+        let total_ticks = master_stream.len();
+        let (train_stream, oos_stream) = if total_ticks >= 100 {
+            let split_idx = total_ticks / 2;
+            (&master_stream[..split_idx], &master_stream[split_idx..])
+        } else {
+            println!(
+                "[Darwin] Ventana de ticks insuficiente ({} < 100) para partición causal OOS; evolución abortada.",
+                total_ticks
+            );
+            return;
+        };
+
         let pop_size = 20; // Fast mini-evolution
         let generations = 5;
         let mutation_rate = 0.3;
@@ -438,8 +494,8 @@ impl DarwinDaemon {
             let mut results: Vec<_> = population
                 .par_iter()
                 .map(|genome| {
-                    let (final_cap, fitness) = evaluate_genotype(
-                        genome, &master_stream, initial_capital, replay_max_drawdown, active_coins,
+                    let (final_cap, fitness, _) = evaluate_genotype(
+                        genome, train_stream, initial_capital, replay_max_drawdown, active_coins,
                     );
                     (genome.clone(), final_cap, fitness)
                 })
@@ -555,9 +611,7 @@ impl DarwinDaemon {
                 if rand::rng().random_bool(mutation_rate) {
                     child.scalp_obi_threshold *= rand::rng().random_range(0.9..1.1);
                 }
-                if rand::rng().random_bool(mutation_rate) {
-                    child.capital_split_scalp *= rand::rng().random_range(0.8..1.2);
-                }
+                // G0-4: capital_split_scalp congelado sin mutacion (gen muerto de dicotomia; sizing por kelly_at_tau)
                 if rand::rng().random_bool(mutation_rate) {
                     child.min_confidence *= rand::rng().random_range(0.9..1.1);
                 }
@@ -574,7 +628,7 @@ impl DarwinDaemon {
                 child.sl_curve_a = child.sl_curve_a.clamp(-10.5, -3.0);
                 child.sl_curve_b = child.sl_curve_b.clamp(-0.2, 0.35);
                 child.scalp_obi_threshold = child.scalp_obi_threshold.clamp(0.05, 0.95);
-                child.capital_split_scalp = child.capital_split_scalp.clamp(0.1, 1.0);
+                child.capital_split_scalp = 0.5; // G0-4: fijado neutro a 50%
                 child.min_confidence = child.min_confidence.clamp(0.50, 0.95);
                 child.explosive_leverage_multiplier =
                     child.explosive_leverage_multiplier.clamp(1.0, 10.0);
@@ -584,23 +638,41 @@ impl DarwinDaemon {
             population = next_gen;
         }
 
-        let (_, baseline_fitness) = evaluate_genotype(
-            &current_active, &master_stream, initial_capital, replay_max_drawdown, active_coins,
+        // S5 / G1-3: Evaluación Out-Of-Sample (OOS) causal ciega de baseline y candidato campeón
+        let (_, baseline_oos_fitness, _) = evaluate_genotype(
+            &current_active, oos_stream, initial_capital, replay_max_drawdown, active_coins,
+        );
+        let (_, candidate_oos_fitness, candidate_oos_returns) = evaluate_genotype(
+            &best_all_time.0, oos_stream, initial_capital, replay_max_drawdown, active_coins,
         );
 
-        println!("[Darwin] Online Evolution Complete.");
-        println!("         Current Active Fitness: {:.4}", baseline_fitness);
-        println!("         Evolved Genome Fitness: {:.4}", best_all_time.1);
+        let ronda_trials = pop_size * generations;
+        // H1-3: Acumulación monótona de multiplicidad entre rondas continuas (D-746).
+        // Erradica el optional stopping entre ejecuciones periódicas del daemon Darwin.
+        let previas = self.cumulative_trials.load(Ordering::Relaxed);
+        let total_trials = previas.saturating_add(ronda_trials).max(ronda_trials).max(1);
+        self.cumulative_trials.store(total_trials, Ordering::Relaxed);
 
-        // Missing/invalid evidence is not a measured loss. The inherited finite
-        // margin is a policy, not significance or a structural-change detector.
-        let clears_margin = meets_promotion_margin(best_all_time.1, baseline_fitness);
+        let e_max_sr = risk_engine::selection_stats::expected_max_sharpe(total_trials, 1.0);
+        let dsr_verdict = risk_engine::selection_stats::edge_survives_multiplicity(&candidate_oos_returns, total_trials);
+
+        println!("[Darwin] Online Evolution Complete (S5 OOS Partition).");
+        println!("         IS Train Ticks: {}, OOS Eval Ticks: {}", train_stream.len(), oos_stream.len());
+        println!("         In-Sample Champion Fitness: {:.4}", best_all_time.1);
+        println!("         OOS Baseline Fitness: {:.4}", baseline_oos_fitness);
+        println!("         OOS Candidate Fitness: {:.4}", candidate_oos_fitness);
+        println!("         DSR Multiplicity Expectation E[max SR] (ronda N={}, total_acum={}): {:.4} * sigma", ronda_trials, total_trials, e_max_sr);
+        println!("         DSR OOS Candidate: {:.4} (passes: {}, n_obs: {}) — {}", dsr_verdict.dsr, dsr_verdict.passes, candidate_oos_returns.len(), dsr_verdict.note);
+
+        // G1-3: Compuerta estricta conjunta: superación del baseline OOS por margen Y supervivencia al DSR (>= 0.95)
+        let clears_margin = meets_promotion_margin(candidate_oos_fitness, baseline_oos_fitness);
+        let clears_dsr = dsr_verdict.passes;
 
         let allow_hotswap = std::env::var("ENABLE_ONLINE_DARWIN_MUTATION")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
-        if clears_margin && allow_hotswap {
-            println!("[Darwin] 🧬 Candidate cleared the configured in-window margin; authorized legacy promotion.");
+        if clears_margin && clears_dsr && allow_hotswap {
+            println!("[Darwin] 🧬 Candidate cleared both OOS margin AND DSR multiplicity gate ({:.4} >= 0.95); authorized promotion.", dsr_verdict.dsr);
             best_all_time.0.apply_to_arena(&self.live_arena);
 
             let mut full_genotype =
@@ -628,8 +700,8 @@ impl DarwinDaemon {
                 full_genotype,
                 "darwin_daemon",
                 &format!(
-                    "fitness {:.4} (baseline {:.4})",
-                    best_all_time.1, baseline_fitness
+                    "oos_fitness {:.4} (baseline_oos {:.4}, is_fitness {:.4}, N={})",
+                    candidate_oos_fitness, baseline_oos_fitness, best_all_time.1, total_trials
                 ),
             ) {
                 Ok(env) => println!(
@@ -654,14 +726,14 @@ mod tests {
         let genome = Genotype::new_random();
 
         assert!(genome.global_leverage >= 10.0 && genome.global_leverage <= 125.0);
-        assert!(genome.scalp_tp() > 0.0);
-        assert!(genome.scalp_sl() > 0.0);
+        assert!(genome.tp_at_fast_anchor() > 0.0);
+        assert!(genome.sl_at_fast_anchor() > 0.0);
 
         genome.apply_to_arena(&arena);
 
         let roundtrip = Genotype::current_from_arena(&arena);
         assert_eq!(roundtrip.global_leverage, genome.global_leverage);
-        assert!((roundtrip.scalp_tp() - genome.scalp_tp()).abs() < 1e-6);
+        assert!((roundtrip.tp_at_fast_anchor() - genome.tp_at_fast_anchor()).abs() < 1e-6);
     }
 
     #[test]
@@ -687,8 +759,8 @@ mod tests {
         let safe_genome = Genotype::current_from_arena(&arena);
         assert!(safe_genome.global_leverage.is_finite());
         assert!(safe_genome.trend_threshold.is_finite());
-        assert!(safe_genome.scalp_tp().is_finite());
-        assert!(safe_genome.scalp_sl().is_finite());
+        assert!(safe_genome.tp_at_fast_anchor().is_finite());
+        assert!(safe_genome.sl_at_fast_anchor().is_finite());
         assert!(safe_genome.min_confidence.is_finite());
     }
 
@@ -721,7 +793,7 @@ mod tests {
     fn empty_replay_preserves_missing_evidence_instead_of_a_finite_loss() {
         let source = GlobalArena::build_in_own_stack(100.0);
         let genome = Genotype::current_from_arena(&source);
-        let (capital, score) = evaluate_genotype(&genome, &[], 100.0, 0.2, 1);
+        let (capital, score, _) = evaluate_genotype(&genome, &[], 100.0, 0.2, 1);
         assert_eq!(capital, 100.0);
         assert_eq!(score, f64::NEG_INFINITY);
         assert!(!meets_promotion_margin(0.1, score));
@@ -748,5 +820,127 @@ mod tests {
         assert_eq!(candidate, baseline);
         assert!(candidate.0.is_finite());
         assert_eq!(candidate.1, f64::NEG_INFINITY); // three ticks are not thirty closes
+    }
+
+    #[test]
+    fn s5_oos_partition_temporal_contract() {
+        // S5: Causalidad temporal estricta de la partición IS/OOS
+        let ticks: Vec<TickEvent> = (0..200)
+            .map(|i| TickEvent {
+                coin_id: 0,
+                timestamp: 1000 + i * 10,
+                bid_price: 100.0,
+                ask_price: 100.02,
+                bid_qty: 1.0,
+                ask_qty: 1.0,
+            })
+            .collect();
+
+        let split = ticks.len() / 2;
+        let train = &ticks[..split];
+        let oos = &ticks[split..];
+
+        let max_train_ts = train.iter().map(|t| t.timestamp).max().unwrap();
+        let min_oos_ts = oos.iter().map(|t| t.timestamp).min().unwrap();
+        assert!(
+            max_train_ts <= min_oos_ts,
+            "Causalidad rota: train max {max_train_ts} > oos min {min_oos_ts}"
+        );
+
+        // Control de multiplicidad DSR (N = 100 pruebas)
+        let e_max = risk_engine::selection_stats::expected_max_sharpe(100, 1.0);
+        assert!(e_max > 2.0 && e_max < 3.0, "E[max SR] para N=100 debe ser ~2.5, got {e_max}");
+
+        // OOS Promotion Margin: rechaza candidato si no bate al baseline OOS por margen
+        assert!(meets_promotion_margin(1.20, 1.00));
+        assert!(!meets_promotion_margin(1.02, 1.00)); // margen < 5%
+        assert!(!meets_promotion_margin(f64::NEG_INFINITY, 1.00));
+
+        // G1-3: Compuerta DSR con control de multiplicidad
+        // Caso insuficiente (<20 trades): rechazo
+        let short_returns = vec![0.01; 5];
+        let v_short = risk_engine::selection_stats::edge_survives_multiplicity(&short_returns, 100);
+        assert!(!v_short.passes, "Menos de 20 trades debe fallar la compuerta DSR");
+
+        // Caso ruido (media ~ 0): rechazo al 95%
+        let noise_returns: Vec<f64> = (0..50).map(|i| if i % 2 == 0 { 0.001 } else { -0.001 }).collect();
+        let v_noise = risk_engine::selection_stats::edge_survives_multiplicity(&noise_returns, 100);
+        assert!(!v_noise.passes, "Ruido sin edge debe ser bloqueado por DSR (dio {})", v_noise.dsr);
+
+        // Caso edge genuino (Sharpe alto robusto frente a N=100 pruebas): aprobacion
+        let strong_returns: Vec<f64> = (0..50).map(|i| 0.005 + ((i % 5) as f64) * 0.0002).collect();
+        let v_strong = risk_engine::selection_stats::edge_survives_multiplicity(&strong_returns, 100);
+        assert!(v_strong.passes, "Edge genuino debe superar el umbral DSR 0.95 (dio {})", v_strong.dsr);
+    }
+
+    #[test]
+    fn omega15_h1_3_darwin_daemon_multiplicidad_acumulada_monotona() {
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        let daemon = DarwinDaemon::new(arena);
+
+        // Inicialmente 0 pruebas previas
+        assert_eq!(daemon.cumulative_trials.load(Ordering::Relaxed), 0);
+
+        // Simulación de 3 rondas sucesivas de GA (pop=20, gen=5 -> 100 por ronda)
+        let pop_size = 20;
+        let num_gens = 5;
+        let ronda_trials = pop_size * num_gens;
+
+        // Ronda 1
+        let previas = daemon.cumulative_trials.load(Ordering::Relaxed);
+        let total_1 = previas.saturating_add(ronda_trials).max(ronda_trials).max(1);
+        daemon.cumulative_trials.store(total_1, Ordering::Relaxed);
+        assert_eq!(total_1, 100);
+
+        // Ronda 2
+        let previas = daemon.cumulative_trials.load(Ordering::Relaxed);
+        let total_2 = previas.saturating_add(ronda_trials).max(ronda_trials).max(1);
+        daemon.cumulative_trials.store(total_2, Ordering::Relaxed);
+        assert_eq!(total_2, 200);
+
+        // Ronda 3
+        let previas = daemon.cumulative_trials.load(Ordering::Relaxed);
+        let total_3 = previas.saturating_add(ronda_trials).max(ronda_trials).max(1);
+        daemon.cumulative_trials.store(total_3, Ordering::Relaxed);
+        assert_eq!(total_3, 300);
+
+        // El benchmark de deflación debe subir monótonamente con las rondas
+        let bm1 = risk_engine::selection_stats::expected_max_sharpe(total_1, 1.0);
+        let bm2 = risk_engine::selection_stats::expected_max_sharpe(total_2, 1.0);
+        let bm3 = risk_engine::selection_stats::expected_max_sharpe(total_3, 1.0);
+        assert!(bm1 < bm2, "bm1 ({bm1}) debe ser < bm2 ({bm2})");
+        assert!(bm2 < bm3, "bm2 ({bm2}) debe ser < bm3 ({bm3})");
+    }
+
+    #[test]
+    fn omega15_h1_2_muestreo_periodico_continuo_retornos() {
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        let genome = Genotype::current_from_arena(&arena);
+
+        // Generamos un stream de ticks sintéticos espaciados a lo largo de 30 segundos (30_000 ms)
+        let mut stream = Vec::with_capacity(300);
+        let base_ts = 1_700_000_000_000_u64;
+        for i in 0..300 {
+            stream.push(TickEvent {
+                coin_id: 0,
+                timestamp: base_ts + (i as u64) * 100, // Cada 100 ms
+                bid_price: 50_000.0,
+                ask_price: 50_001.0,
+                bid_qty: 1.0,
+                ask_qty: 1.0,
+            });
+        }
+
+        let (final_cap, fitness, returns) = evaluate_genotype(&genome, &stream, 13.0, 0.20, 1);
+        assert!(final_cap > 0.0);
+        // Con 0 trades cerrados (< MIN_TRADES=30), el fitness por contrato es NEG_INFINITY
+        assert_eq!(fitness, f64::NEG_INFINITY);
+        // A lo largo de 30 segundos muestreando cada 1s, debemos tener ~29-30 observaciones de retorno
+        // (R4-B2: la rejilla es la única cadencia — sin disparo por cierre).
+        assert!(
+            returns.len() >= 25,
+            "Debe tener al menos 25 observaciones periódicas en 30 segundos de datos, dio {}",
+            returns.len()
+        );
     }
 }

@@ -65,10 +65,18 @@ impl FlowExcitationConfluenceEngine {
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
     ) -> crate::voto_espectral::VotoEspectral {
+        // #663 (G2-1): la excitación es el EXCESO sobre el estado
+        // estacionario, recortado a ≥0 — la CALMA (λ/μ̂ → 0.1, excit
+        // ≈ −0.73) ABSTIENE como en los dos motores hermanos
+        // (hawkes_bessel .max(0.0), flow_impulse excit ≤ 0 ⇒ 0) y en
+        // el propio gate vivo (hawkes ≥ SS). El `.abs()` anterior
+        // invertía la semántica: la calma votaba 0.734, MÁS que una
+        // cascada 3× (0.703) — el motor opinaba fuerte en mercados
+        // muertos dentro del consenso vivo.
         let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
             ratio_lambda_mu,
         )
-        .abs();
+        .max(0.0);
         let mut por_escala = [0.0f64; 32];
         for k in 0..32 {
             let x = desplazamientos[k];
@@ -148,6 +156,13 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
+        // TRIAJE B (GLM 109) — CL-15: "no opina es AUSENCIA, no un 0,5".
+        // Los fallbacks 0.5 fabricaban lift: con ml_prob 0.36 real y base
+        // inventada 0.5, la pata short votaba −0.33 QUE NO EXISTIRÍA con la
+        // base honesta (CL-21: bases reales 0.18-0.23; lib.rs:4328 sólo
+        // cae a 0.5 cuando NO hay bosque). Sin prob o sin base medible, el
+        // motor ML NO OPINA (voto 0) — misma doctrina que el
+        // DarkAlpha-fallback-None de B-H1.
         let ml_prob = r
             .get_scoped_parameter(
                 sym_opt,
@@ -156,12 +171,16 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
                 "FlowExcitationConfluenceEngine",
             )
             .map(|p| p.get_value())
-            .unwrap_or(0.5);
+            .filter(|v| v.is_finite());
 
         // FIX #643: Guarda de finitud estricta en indicadores de entrada
-        if !hawkes.is_finite() || !obi.is_finite() || !ml_prob.is_finite() {
+        if !hawkes.is_finite() || !obi.is_finite() {
             return 0.0;
         }
+        let ml_prob = match ml_prob {
+            Some(v) if v.is_finite() => v,
+            _ => return 0.0, // CL-15: sin prob del modelo, no opina
+        };
 
         // CERT-M2-C03: el gate anterior usaba `ml_prob >= 0.5` absoluto —
         // con el etiquetado honesto HOST-010 (base ~0.30), la pata long
@@ -178,8 +197,11 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
                 "FlowExcitationConfluenceEngine",
             )
             .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v > 0.0 && *v < 1.0)
-            .unwrap_or(0.5);
+            .filter(|v| v.is_finite() && *v > 0.0 && *v < 1.0);
+        let ml_base = match ml_base {
+            Some(v) => v,
+            None => return 0.0, // CL-15: sin base medida, el lift no es medible — no opina
+        };
         let ml_lift = r
             .get_scoped_parameter(
                 sym_opt,
@@ -240,27 +262,46 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             .unwrap_or(0.15);
         let obi_floor = (obi_p80 * obi_gene).max(0.02);
 
-        if hawkes >= effective_hawkes_thresh && obi.abs() >= obi_floor {
-            let is_long = obi > 0.0 && ml_prob >= ml_base + ml_lift;
-            let is_short = obi < 0.0 && ml_prob <= ml_base - ml_lift;
+        // #664 (G2-3): pertenencia CONTINUA por exceso (rampas C¹
+        // smoothstep de ancho relativo) — con el gate duro el voto
+        // saltaba de 0 a obi·lift·4·hawkes_scale al cruzar cualquiera
+        // de los dos umbrales. Dentro de la región (exceso ≥ ancho)
+        // el peso es 1: el comportamiento en región se conserva.
+        let rampa = |exceso: f64, ancho: f64| {
+            let t = (exceso / ancho.max(1e-9)).clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        let w_hawkes = rampa(
+            hawkes - effective_hawkes_thresh,
+            0.30 * effective_hawkes_thresh.max(0.01),
+        );
+        let w_obi = rampa(obi.abs() - obi_floor, 0.50 * obi_floor);
 
-            // Ola 9 (SPECTRAL CONTINUITY): El factor de escala de excitación
-            // se normaliza contra el umbral crítico efectivo del proceso (anclado
-            // al estado estacionario + genoma), garantizando continuidad espectral:
-            // en el umbral exacto vale 1.0 y crece monótonamente hasta saturar en 2.0,
-            // eliminando el divisor literal 2.0 que desalineaba la señal según el gen.
-            let hawkes_scale = (hawkes / effective_hawkes_thresh.max(0.01)).min(2.0);
+        // #666 (H2-4): TERCERA puerta CONTINUA — el gate de ML
+        // (ml_prob ≥ base ± lift) quedaba binario: el voto saltaba de 0 a
+        // obi·lift·4·scale al cruzar el umbral. Rampa smoothstep de ancho
+        // lift: dentro (≥ 2·lift de exceso) peso 1, comportamiento en
+        // región profunda conservado.
+        let w_ml_long = rampa(ml_prob - (ml_base + ml_lift), ml_lift.max(1e-4));
+        let w_ml_short = rampa((ml_base - ml_lift) - ml_prob, ml_lift.max(1e-4));
+        let is_long = obi > 0.0;
+        let is_short = obi < 0.0;
 
-            if is_long {
-                (obi * (ml_prob - ml_base) * 4.0 * hawkes_scale).clamp(0.0, 1.0)
-            } else if is_short {
-                (obi * (ml_base - ml_prob) * 4.0 * hawkes_scale).clamp(-1.0, 0.0)
-            } else {
-                0.0
-            }
+        // Ola 9 (SPECTRAL CONTINUITY): El factor de escala de excitación
+        // se normaliza contra el umbral crítico efectivo del proceso (anclado
+        // al estado estacionario + genoma), garantizando continuidad espectral:
+        // en el umbral exacto vale 1.0 y crece monótonamente hasta saturar en 2.0,
+        // eliminando el divisor literal 2.0 que desalineaba la señal según el gen.
+        let hawkes_scale = (hawkes / effective_hawkes_thresh.max(0.01)).min(2.0);
+
+        let voto = if is_long {
+            (obi * (ml_prob - ml_base) * 4.0 * hawkes_scale).clamp(0.0, 1.0) * w_ml_long
+        } else if is_short {
+            (obi * (ml_base - ml_prob) * 4.0 * hawkes_scale).clamp(-1.0, 0.0) * w_ml_short
         } else {
             0.0
-        }
+        };
+        voto * w_hawkes * w_obi
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
@@ -278,6 +319,9 @@ mod tests {
         registry.set("hawkes_intensity", 2.0);
         registry.set("order_book_imbalance", 0.5);
         registry.set("ml_prob_motor", 0.85);
+        // GLM 109: base honesta explícita — el fallback 0.5 fue removido
+        // (CL-15: sin base medida el motor NO opina).
+        registry.set("ml_model_base", 0.30);
 
         let mut engine = FlowExcitationConfluenceEngine::new();
         assert!(engine.init(registry).is_ok());
@@ -326,6 +370,7 @@ mod tests {
         registry.set("hawkes_intensity", 2.0);
         registry.set("order_book_imbalance", 0.5);
         registry.set("ml_prob_motor", 0.85);
+        registry.set("ml_model_base", 0.30);
         registry.set("hawkes_excitation_gene", 0.95);
 
         let mut engine = FlowExcitationConfluenceEngine::new();
@@ -396,17 +441,35 @@ mod tests {
         let mut engine = FlowExcitationConfluenceEngine::new();
         assert!(engine.init(Arc::clone(&registry)).is_ok());
 
-        // En hawkes = 1.60 exacto: factor = 1.60 / 1.60 = 1.0
+        // #664 (G2-3): pertenencia CONTINUA — EN el umbral el voto es 0
+        // y crece suave hasta el pleno a umbral+ancho (30% del umbral,
+        // 0.48 aquí); el factor hawkes_scale sigue valiendo 1.0 en el
+        // umbral y saturando en 2.0.
         registry.set("hawkes_intensity", 1.60);
         let v_base = engine.evaluate();
-        assert!(v_base > 0.0);
-        // Formula esperada: 0.5 * (0.85 - 0.50) * 4.0 * 1.0 = 0.5 * 0.35 * 4.0 = 0.70
-        assert!((v_base - 0.70).abs() < 1e-6, "v_base esperado 0.70, dio {v_base}");
+        assert_eq!(v_base, 0.0, "en el umbral exacto el peso de exceso es 0");
+        // Punto medio de la rampa (umbral + ancho/2): smoothstep(0.5)=0.5
+        // y el factor de escala crece con la intensidad: 1.84/1.60 = 1.15
+        registry.set("hawkes_intensity", 1.60 + 0.24);
+        let v_medio = engine.evaluate();
+        assert!(
+            (v_medio - 0.70 * 1.15 * 0.5).abs() < 1e-6,
+            "punto medio de la rampa: {v_medio}"
+        );
+        // Pleno (umbral + ancho): peso 1; el factor de escala es
+        // 2.08/1.60 = 1.30 ⇒ 0.70 · 1.30 = 0.91
+        registry.set("hawkes_intensity", 1.60 + 0.48);
+        let v_pleno = engine.evaluate();
+        assert!(
+            (v_pleno - 0.70 * 1.30).abs() < 1e-6,
+            "v_pleno esperado 0.91, dio {v_pleno}"
+        );
+        assert!(v_medio < v_pleno, "monotonia en la rampa");
 
-        // En hawkes = 2.40: factor = 2.40 / 1.60 = 1.50
+        // En hawkes = 2.40: pleno y factor = 2.40 / 1.60 = 1.50
         registry.set("hawkes_intensity", 2.40);
         let v_high = engine.evaluate();
-        assert!(v_high > v_base, "mayor intensidad produce monotonicamente mayor senal");
+        assert!(v_high > v_pleno, "mayor intensidad produce monotonicamente mayor senal");
         // Formula esperada: 0.70 * 1.50 = 1.05 clamped to 1.0
         assert_eq!(v_high, 1.0, "satura suavemente en 1.0");
     }
@@ -461,5 +524,48 @@ mod qo_622_tests {
         for k in 0..ESCALAS_VOTO {
             assert!((cascada.en_escala(k) + neg.en_escala(k)).abs() < 1e-12);
         }
+    }
+}
+
+#[cfg(test)]
+mod qo_663_tests {
+    use super::*;
+
+    /// #663 (G2-1): la CALMA abstiene en el voto espectral del
+    /// confluence — excit = exceso .max(0). Antes el `.abs()` hacía que
+    /// λ/μ̂→0.1 (calma extrema) votara 0.734, MÁS que una cascada 3×.
+    #[test]
+    fn qo_663_calma_no_vota_mas_que_la_cascada() {
+        let desplazamientos = [0.5f64; 32];
+        let calma = FlowExcitationConfluenceEngine::voto_espectral(
+            &desplazamientos,
+            0.1,
+        );
+        let cascada = FlowExcitationConfluenceEngine::voto_espectral(
+            &desplazamientos,
+            4.8,
+        );
+        let ss = FlowExcitationConfluenceEngine::voto_espectral(
+            &desplazamientos,
+            1.6,
+        );
+        for k in 0..32 {
+            assert_eq!(
+                calma.en_escala(k), 0.0,
+                "calma extrema debe abstenerse en toda escala"
+            );
+            assert_eq!(
+                ss.en_escala(k), 0.0,
+                "estado estacionario debe abstenerse"
+            );
+        }
+        let max_calma = (0..32).map(|k| calma.en_escala(k)).fold(0.0, f64::max);
+        let max_cascada =
+            (0..32).map(|k| cascada.en_escala(k)).fold(0.0, f64::max);
+        assert!(
+            max_cascada > max_calma,
+            "cascada {max_cascada} debe superar calma {max_calma}"
+        );
+        assert!(max_cascada > 0.0, "cascada debe votar");
     }
 }

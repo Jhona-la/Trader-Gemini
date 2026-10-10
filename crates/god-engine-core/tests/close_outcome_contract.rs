@@ -658,10 +658,10 @@ fn cl5_una_perdida_cuenta_una_sola_vez_en_la_racha() {
     let (_arena, mut core) = core(OutcomeContext::IsolatedSimulation, false);
     assert!(close(&mut core, 97.0) < 0.0);
     let fe = &core.feature_engines[0];
-    assert_eq!(fe.scalp_loss_streak, 1, "racha global");
-    assert_eq!(fe.scalp_long_loss_streak, 1, "racha de largos");
-    assert_eq!(fe.scalp_short_loss_streak, 0, "racha de cortos");
-    assert!(fe.last_scalp_was_loss);
+    assert_eq!(fe.fastband_loss_streak, 1, "racha global");
+    assert_eq!(fe.fastband_long_loss_streak, 1, "racha de largos");
+    assert_eq!(fe.fastband_short_loss_streak, 0, "racha de cortos");
+    assert!(fe.last_exit_fastband_was_loss);
 }
 
 /// CL-10 — UNA ganancia no es evidencia de edge: el Kelly que publica el
@@ -683,3 +683,39 @@ fn cl10_una_ganancia_no_lleva_kelly_al_techo() {
         "tras una ganancia Kelly = {kelly}, por encima de la exploración (¼ de {piso})"
     );
 }
+
+/// R7-R4-C-1 — la confirmación de cierre real NO descarta ranuras 0 (scalp) ni 1 (swing)
+/// como papel, y el consumo atómico con swap(false) evita flags zombi añejos.
+#[test]
+fn r7_r4_c1_confirmacion_de_cierre_multi_ranura_no_descarta_scalp_ni_swing() {
+    let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
+    let _dir = FixtureDirectory::new();
+    let (arena, mut _core) = core(OutcomeContext::IsolatedSimulation, false);
+    let coin = &arena.coins[0];
+
+    // Verificar para cada ranura (0: scalp, 1: swing, 2: position)
+    for (slot_idx, pos) in coin.positions.slots().iter().enumerate() {
+        // Al abrir, last_close_confirmed debe nacer limpio en false
+        pos.open_with_horizon(true, 100.0, 1.0, 20.0, 1000, 105.0, 95.0, PositionHorizon::Continuous);
+        assert!(!pos.last_close_confirmed.load(Ordering::Relaxed), "slot {slot_idx} nace con last_close_confirmed limpio");
+
+        // Simular confirmación de exchange y cierre
+        pos.exchange_confirmed.store(true, Ordering::Relaxed);
+        pos.close();
+
+        // El verificador multi-ranura debe detectar la confirmación independientemente de la ranura
+        let close_was_real = coin.positions
+            .slots()
+            .iter()
+            .any(|p| p.last_close_confirmed.swap(false, Ordering::Relaxed));
+        assert!(close_was_real, "slot {slot_idx} debe ser reconocido como cierre real y no papel");
+
+        // El segundo swap debe ser false (consumido atómicamente)
+        let second_check = coin.positions
+            .slots()
+            .iter()
+            .any(|p| p.last_close_confirmed.swap(false, Ordering::Relaxed));
+        assert!(!second_check, "el flag debe quedar consumido inmediatamente tras el cierre");
+    }
+}
+

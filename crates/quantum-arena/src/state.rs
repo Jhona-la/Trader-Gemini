@@ -250,6 +250,10 @@ pub struct CoinArena {
     /// Tracking de CVD (Cumulative Volume Delta) - Flujo de Capital
     pub agg_buy_vol: AtomicF64,
     pub agg_sell_vol: AtomicF64,
+    /// #660 (F2-B5) — reloj del último agg trade: el decaimiento del flujo
+    /// agregado es TIEMPO FÍSICO (τ=60 s), no 0.995 por evento (la memoria
+    /// variaba ×100 entre feeds de 1 y 100 ev/s).
+    pub last_agg_trade_ms: AtomicU64,
     /// (Ola XLII·A3a) Estadística medida del CVD rodante para su
     /// z-tipificación: media EWMA y segundo momento EWMA (de donde sale
     /// σ). Los vetos/confluencias de flujo dejan de leer literales en
@@ -469,6 +473,7 @@ impl CoinArena {
             spot_bid_qty: AtomicF64::new(0.0),
             spot_ask_qty: AtomicF64::new(0.0),
             agg_buy_vol: AtomicF64::new(0.0),
+            last_agg_trade_ms: AtomicU64::new(0),
             cvd_mean_ewma: AtomicF64::new(0.0),
             cvd_sq_ewma: AtomicF64::new(0.0),
             cvd_ewma_peso: AtomicF64::new(0.0),
@@ -513,8 +518,6 @@ pub struct GlobalArena {
     /// una caída observada en evidencia: sin ella, un tope de drawdown es una
     /// opinión. 0 = todavía no se ha dimensionado ninguna orden.
     pub riesgo_por_operacion: AtomicF64,
-    pub scalp_used_margin: AtomicF64,
-    pub swing_used_margin: AtomicF64,
     pub tick_counter: AtomicU64,
     pub kill_switch_active: AtomicBool,
     pub last_ws_latency_ms: AtomicU64,
@@ -606,8 +609,6 @@ impl GlobalArena {
             unified_capital: AtomicF64::new(initial_capital),
             used_margin: AtomicF64::new(0.0),
             riesgo_por_operacion: AtomicF64::new(0.0),
-            scalp_used_margin: AtomicF64::new(0.0),
-            swing_used_margin: AtomicF64::new(0.0),
             tick_counter: AtomicU64::new(0),
             kill_switch_active: AtomicBool::new(false),
             last_ws_latency_ms: AtomicU64::new(0),
@@ -683,7 +684,7 @@ impl GlobalArena {
         bid_qty: f64,
         ask_qty: f64,
     ) {
-        if coin_id < crate::symbols::get_active_universe_size() {
+        if coin_id < self.coins.len() {
             self.coins[coin_id]
                 .spot_bid
                 .store(bid_price, Ordering::Relaxed);
@@ -699,18 +700,34 @@ impl GlobalArena {
 
             // FASE 8: Propagación paralela al Tensor
             if let Some(tensor) = &self.tensor_arena {
-                tensor.spot_bid[coin_id].store(bid_price.to_bits(), Ordering::Relaxed);
-                tensor.spot_ask[coin_id].store(ask_price.to_bits(), Ordering::Relaxed);
+                if coin_id < tensor.spot_bid.len() {
+                    tensor.spot_bid[coin_id].store(bid_price.to_bits(), Ordering::Relaxed);
+                    tensor.spot_ask[coin_id].store(ask_price.to_bits(), Ordering::Relaxed);
+                }
             }
         }
     }
 
+    /// #660 (F2-B5) — el decaimiento del CVD/OBI agregado vive en TIEMPO
+    /// FÍSICO: factor = exp(−dt/τ) con τ = 60 s (TAU_FLUJO_AGG_S), dt desde
+    /// el último trade con reloj monotónico. Antes: 0.995 POR EVENTO — la
+    /// memoria efectiva variaba ×100 entre feeds de 1 y 100 ev/s y rompía
+    /// la comparabilidad entre monedas (doctrina ADR-0014: tiempo continuo).
     #[inline(always)]
-    pub fn update_agg_trade(&self, coin_id: usize, is_buyer_maker: bool, qty: f64) {
+    pub fn update_agg_trade(&self, coin_id: usize, is_buyer_maker: bool, qty: f64, ts_ms: u64) {
         if coin_id < MAX_COINS {
-            let decay = 0.995; // EWMA decay for real-time microstructural order flow (Axioma II)
-            let current_buy = self.coins[coin_id].agg_buy_vol.load(Ordering::Relaxed) * decay;
-            let current_sell = self.coins[coin_id].agg_sell_vol.load(Ordering::Relaxed) * decay;
+            const TAU_FLUJO_AGG_S: f64 = 60.0;
+            let coin = &self.coins[coin_id];
+            let prev_ts = coin.last_agg_trade_ms.load(Ordering::Relaxed);
+            let decay = if prev_ts > 0 && ts_ms > prev_ts {
+                let dt_s = ((ts_ms - prev_ts) as f64 / 1000.0).min(3600.0);
+                (-(dt_s / TAU_FLUJO_AGG_S)).exp()
+            } else {
+                1.0 // primer trade o ticks intra-ms: sin doble decaimiento
+            };
+            coin.last_agg_trade_ms.store(ts_ms.max(prev_ts), Ordering::Relaxed);
+            let current_buy = coin.agg_buy_vol.load(Ordering::Relaxed) * decay;
+            let current_sell = coin.agg_sell_vol.load(Ordering::Relaxed) * decay;
 
             let (new_buy, new_sell) = if is_buyer_maker {
                 // El comprador es maker = agresivo VENTA (Sell)
@@ -803,5 +820,48 @@ impl CoinTensorArena {
             l2_bid_wall: init_f64(0.0),
             l2_ask_wall: init_f64(0.0),
         }
+    }
+}
+
+#[cfg(test)]
+mod qo_660_tests {
+    use super::*;
+
+    /// #660 (F2-B5) — la memoria del flujo agregado vive en TIEMPO FÍSICO
+    /// (τ=60 s), no en eventos: 60 s de silencio decaen el volumen a
+    /// exactamente e^{-1}; el mismo milisegundo no decae dos veces; un
+    /// ts retrógrado no altera el reloj.
+    #[test]
+    fn qo_660_decay_fisico_agg() {
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        // 100 unidades compradoras en t=0.
+        arena.update_agg_trade(0, false, 100.0, 1_000);
+        let v0 = arena.coins[0].agg_buy_vol.load(Ordering::Relaxed);
+        assert!((v0 - 100.0).abs() < 1e-9);
+
+        // 60 s después otra compra de 0: el fondo decae a e^{-1}.
+        arena.update_agg_trade(0, false, 0.0, 61_000);
+        let v1 = arena.coins[0].agg_buy_vol.load(Ordering::Relaxed);
+        let esperado = 100.0 * (-1.0f64).exp();
+        assert!(
+            (v1 - esperado).abs() < 1e-6,
+            "60 s ⇒ e^-1 del volumen: {v1} vs {esperado}"
+        );
+
+        // Intra-ms: sin doble decaimiento.
+        arena.update_agg_trade(0, false, 5.0, 61_000);
+        let v2 = arena.coins[0].agg_buy_vol.load(Ordering::Relaxed);
+        assert!((v2 - (esperado + 5.0)).abs() < 1e-6, "mismo ms no decae: {v2}");
+
+        // Retrógrado: el reloj guarda el máximo; el volumen no cambia por
+        // un ts menor (factor 1.0).
+        arena.update_agg_trade(0, false, 0.0, 50_000);
+        assert_eq!(
+            arena.coins[0].last_agg_trade_ms.load(Ordering::Relaxed),
+            61_000,
+            "reloj monotónico"
+        );
+        let v3 = arena.coins[0].agg_buy_vol.load(Ordering::Relaxed);
+        assert!((v3 - v2).abs() < 1e-9, "retrógrado no decae: {v3} vs {v2}");
     }
 }

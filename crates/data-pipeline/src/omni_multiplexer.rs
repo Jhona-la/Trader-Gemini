@@ -167,6 +167,17 @@ impl OmniState {
             }
         };
 
+        // [MUERTAS POR CONTRATO — censo F6-A-H4, declaración XCV 2026-10-06]
+        // Los slots 2..10 (bybit/okx/bitget/coinbase/kraken/htx/deribit/
+        // bitfinex) son CEROS ESTRUCTURALES: los pollers que los escribirían
+        // (run_bybit_ws/run_okx_ws) son código muerto (OmniDataHub sin
+        // callers) y norm_spread devuelve 0.0 con el default 0.0. Los
+        // modelos MOTOR entrenaron con estos ceros — la paridad
+        // trainer↔vivo existe POR CONSTRUCCIÓN sobre ellos. NO activar los
+        // pollers sin re-entrenar los modelos: rompería la paridad
+        // silenciosamente. El contrato lxxv... no, el contrato
+        // xcv_dims_cross_exchange_muertas_por_contrato (tests/) fija este
+        // comportamiento.
         let mut feats = [
             0.0, // Referencia base Binance Spot (retorno relativo = 0.0)
             norm_spread(self.binance_futures.load(Ordering::Relaxed)),
@@ -230,6 +241,22 @@ impl OmniState {
             }
         }
         feats
+    }
+
+    /// Devuelve el tiempo en milisegundos transcurrido desde el último fetch macro exitoso.
+    /// Si nunca se ha realizado un fetch exitoso, devuelve `u64::MAX`.
+    pub fn macro_staleness_ms(&self, now_ms: u64) -> u64 {
+        let last = self.macro_last_success_ms.load(Ordering::Relaxed);
+        if last == 0 {
+            u64::MAX
+        } else {
+            now_ms.saturating_sub(last)
+        }
+    }
+
+    /// Comprueba si los datos macro están frescos dentro de la ventana de tolerancia.
+    pub fn is_macro_fresh(&self, now_ms: u64, max_staleness_ms: u64) -> bool {
+        self.macro_staleness_ms(now_ms) <= max_staleness_ms
     }
 }
 
@@ -1044,6 +1071,8 @@ mod tests {
     fn test_omni_state_macro_staleness_flag() {
         let state = OmniState::new();
         assert_eq!(state.macro_last_success_ms.load(Ordering::Relaxed), 0);
+        assert_eq!(state.macro_staleness_ms(1700000000000), u64::MAX);
+        assert!(!state.is_macro_fresh(1700000000000, 60_000));
 
         state
             .macro_last_success_ms
@@ -1052,5 +1081,8 @@ mod tests {
             state.macro_last_success_ms.load(Ordering::Relaxed),
             1700000000000
         );
+        assert_eq!(state.macro_staleness_ms(1700000005000), 5000);
+        assert!(state.is_macro_fresh(1700000005000, 10_000));
+        assert!(!state.is_macro_fresh(1700000005000, 2_000));
     }
 }

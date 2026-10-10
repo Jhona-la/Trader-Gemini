@@ -90,16 +90,6 @@ fn evolve_main() {
     println!("🌌 RUST QUANTUM EVOLUTION ENGINE (SIMULATED ANNEALING)");
     println!("============================================================");
 
-    let path = format!("models/{}_MOTOR.json", symbol);
-    if let Err(_) = NanoForest::load_global(&format!("{}_MOTOR", symbol), &path) {
-        println!(
-            "⚠️ Failed to load NanoForest from {}. It might not exist yet.",
-            path
-        );
-    } else {
-        println!("✅ NanoForest Loaded for Evolution: {}", path);
-    }
-
     let file_path = format!("data/{}_ticks.bin", symbol);
     let file = match File::open(&file_path) {
         Ok(f) => f,
@@ -145,6 +135,34 @@ fn evolve_main() {
         return;
     }
 
+    // RA-OOS-F01: validar soporte estructural ANTES de activar modelos,
+    // consultar FRED, ensayar o promover. No cambia el split ni añade un
+    // mínimo de aprendizaje: dos segmentos presentes no acreditan calidad.
+    let requested_train_len = (len as f64 * 0.7) as usize;
+    let train_len = match backtest_engine::oos_context::validate_is_oos_split(
+        len,
+        requested_train_len,
+    ) {
+        Ok(split) => split,
+        Err(reason) => {
+            eprintln!(
+                "❌ Evolution dataset rejected: {:?} (ticks={}, IS={}, OOS={}). No trials or promotion performed.",
+                reason, len, requested_train_len, len.saturating_sub(requested_train_len)
+            );
+            return;
+        }
+    };
+
+    let path = format!("models/{}_MOTOR.json", symbol);
+    if let Err(_) = NanoForest::load_global(&format!("{}_MOTOR", symbol), &path) {
+        println!(
+            "⚠️ Failed to load NanoForest from {}. It might not exist yet.",
+            path
+        );
+    } else {
+        println!("✅ NanoForest Loaded for Evolution: {}", path);
+    }
+
     let ptr = mmap.as_ptr() as *const BinTick;
     let ticks = unsafe { std::slice::from_raw_parts(ptr.add(offset), len) };
 
@@ -167,8 +185,6 @@ fn evolve_main() {
         lows.push(t.bid_price);
         volumes.push(t.bid_qty + t.ask_qty);
     }
-
-    let train_len = (len as f64 * 0.7) as usize;
 
     // ── X-006 (REHAB-2b): preparación ÚNICA del motor honesto ──────────────
     // Ticks reales → ReplayTick (repr del disco), omni FRED histórico, config.
@@ -234,8 +250,8 @@ fn evolve_main() {
     let mut current_config = Genotype::load_or_default();
 
     let mut best_config = current_config.clone();
-    let mut current_score = -9999999.0;
-    let mut best_score = -9999999.0;
+    // No numerical sentinel may outrank an evaluated finite loss.
+    let mut selection = evolution_engine::sa_selection::SaScoreState::new();
     let mut temp = initial_temp;
 
     println!(
@@ -374,11 +390,20 @@ fn evolve_main() {
         };
         let mut score = total_growth.ln().max(-20.0) * 10_000.0; // 1.0x = 0 pts; e^x crece lineal en log
 
-        // FASE 17: Aplicar la penalización de Drawdown Bayesiana
+        // RA-SA-F01: retención heurística de drawdown, no un posterior bayesiano.
+        // Un score mayor gana: atenuar una pérdida hacia cero la premiaría.
         let dd_threshold = test_cfg.global_max_drawdown / 3.0; // Deseable is 1/3 of max drawdown
         if dd > dd_threshold {
             let decay = f64::exp(-(dd - dd_threshold) * 20.0).clamp(0.01, 1.0);
-            score *= decay; // Destruir la puntuación exponencialmente basado en Max Drawdown
+            score = match evolution_engine::score_retention::penalize_signed_score(score, decay) {
+                Ok(penalized) => penalized,
+                Err(reason) => {
+                    eprintln!("⚠️ Iter {i}: invalid drawdown score ({reason:?}); candidate excluded");
+                    // Invalid utility reaches selection as a rejection, not a rank.
+                    // Keep the unconditional cooling/reheating step below.
+                    f64::NAN
+                }
+            };
         }
 
         // Regularity Penalties
@@ -399,27 +424,15 @@ fn evolve_main() {
         } // Aniquilación inmediata (Penalización Absoluta)
 
         if i % 20 == 0 {
-            println!("🔄 Iter {}: Curr Score = {:.2} (Best: {:.2}) | IS Cap: {:.2}, Trades: {}, WinRate: {:.2} | Temp: {:.2}", i, score, best_score, capital, trades, out_stats[0], temp);
+            println!("🔄 Iter {}: Curr Score = {:.2} (Best: {:.2}) | IS Cap: {:.2}, Trades: {}, WinRate: {:.2} | Temp: {:.2}", i, score, selection.best_score().unwrap_or(f64::NEG_INFINITY), capital, trades, out_stats[0], temp);
         }
 
         // Acceptance Probability (Metropolis-Hastings)
-        let mut accept = false;
-        if score > current_score {
-            accept = true;
-        } else {
-            let prob = std::f64::consts::E.powf((score - current_score) / temp);
-            if random_f64(0.0, 1.0) < prob {
-                accept = true;
-            }
-        }
-
-        if accept {
-            current_score = score;
+        let decision = selection.consider(score, temp, || random_f64(0.0, 1.0));
+        if decision.accepted {
             current_config = test_cfg.clone();
         }
-
-        if score > best_score {
-            best_score = score;
+        if decision.improved_best {
             best_config = test_cfg.clone();
         }
 
@@ -429,8 +442,9 @@ fn evolve_main() {
         } // Re-heating (Quantum Tunneling)
 
         if i % 1000 == 0 || i == iterations - 1 {
+            let best_score = selection.best_score().unwrap_or(f64::NEG_INFINITY);
             println!(
-                "🧬 Iter {}: Best Score = {:.2} | Compound 3D: {:.2}x | Temp: {:.2}",
+                "🧬 Iter {}: Best Score = {:.2} | Scaled utility (score/10000, NOT 3D growth) = {:.6} | Temp: {:.2}",
                 i,
                 best_score,
                 best_score / 10000.0,
@@ -438,6 +452,12 @@ fn evolve_main() {
             );
         }
     }
+
+    let Some(best_score) = selection.best_score() else {
+        eprintln!("❌ No finite SA candidate was evaluated; no champion, OOS test or promotion");
+        return;
+    };
+    println!("📋 Evaluated champion utility: {best_score:.2} points (not a capital factor)");
 
     let _best_out_pnl = vec![0.0; train_len];
     let mut best_out_stats = [0.0; 10];
@@ -526,22 +546,11 @@ fn evolve_main() {
     // el walk-forward estándar usa el final del training como warmup
     // para que Hurst/EMAs/espectro estén calientes al iniciar el test.
     // Sin esto: OOS arranca frío → Hurst=0.5 → price-action muerto → 0 trades.
-    let context_ticks: Vec<backtest_engine::booktick_replay::ReplayTick> = ticks
-        [train_len.saturating_sub(50_000)..train_len]
-        .iter()
-        .map(|t| backtest_engine::booktick_replay::ReplayTick {
-            ts_ms: t.timestamp,
-            bid: t.bid_price,
-            ask: t.ask_price,
-            bid_qty: t.bid_qty,
-            ask_qty: t.ask_qty,
-        })
-        .collect();
-    let mut oos_with_context = context_ticks;
-    oos_with_context.extend_from_slice(&oos_replay);
+    let (oos_with_context, warmup_ticks) =
+        backtest_engine::oos_context::prepend_is_context(&train_replay, &oos_replay, 50_000);
     let oos_cfg = backtest_engine::booktick_replay::ReplayConfig {
         initial_capital,
-        warmup_ticks: 50_000, // el contexto IS es warmup (PnL no se cuenta)
+        warmup_ticks, // sólo el prefijo IS realmente disponible (PnL no se cuenta)
         trade_only: true,
         shift_atr_frac: 0.10, // histórico (DIV-1)
     };

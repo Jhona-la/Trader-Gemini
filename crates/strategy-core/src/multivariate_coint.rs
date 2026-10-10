@@ -2,6 +2,7 @@
 /// Supplied weights are assumed, not estimated cointegration vectors. Neither
 /// stationarity nor a physical-time OU model is certified by this helper.
 use crate::types::{SignalIntent, SignalType, TradeHorizon};
+use crate::vecm_arbitrage::ContinuousOrnsteinUhlenbeckSde;
 
 const MAX_ASSETS: usize = 4;
 
@@ -20,6 +21,8 @@ pub struct MultivariateCointegrationEngine {
     /// Optional limit of consecutive rejections before resetting on structural break.
     /// None by default to preserve legacy open-debt contracts, Some(N) for adaptive recovery.
     structural_break_limit: Option<u32>,
+    /// Estimador SDE de tiempo continuo de Ornstein-Uhlenbeck / Fokker-Planck con reloj físico real.
+    pub physical_sde: Option<ContinuousOrnsteinUhlenbeckSde>,
 }
 
 impl MultivariateCointegrationEngine {
@@ -60,6 +63,7 @@ impl MultivariateCointegrationEngine {
             last_spread: 0.0,
             consecutive_rejections: 0,
             structural_break_limit: None,
+            physical_sde: None,
         }
     }
 
@@ -69,12 +73,19 @@ impl MultivariateCointegrationEngine {
         self
     }
 
-    /// Updates the legacy event-index estimator. The timestamp is not yet used
-    /// for a physical-time OU fit. Rejected observations do not mutate state.
+    /// Activa el estimador continuo SDE de Ornstein-Uhlenbeck / Fokker-Planck con reloj físico real.
+    pub fn with_continuous_ou(mut self) -> Self {
+        self.physical_sde = Some(ContinuousOrnsteinUhlenbeckSde::new(0.1, 0.0, 0.01));
+        self
+    }
+
+    /// Updates the multivariate cointegration estimator.
+    /// When `physical_sde` is active, evaluates under the continuous-time SDE using physical timestamps.
+    /// In legacy mode, preserves event-index statistics.
     pub fn update_and_evaluate(
         &mut self,
         prices: &[f64; MAX_ASSETS],
-        _timestamp_ms: u64,
+        timestamp_ms: u64,
     ) -> Option<SignalIntent> {
         // Public fields can be changed by callers; do not extend invalid state.
         if !self.mean_spread.is_finite()
@@ -102,6 +113,53 @@ impl MultivariateCointegrationEngine {
         if !spread.is_finite() {
             return None;
         }
+
+        // Estimador SDE de tiempo continuo de Ornstein-Uhlenbeck / Fokker-Planck con reloj físico real.
+        // Si está activo (modo opt-in exclusivo vía with_continuous_ou), opera la reversión continua
+        // multiactivo sobre tiempo físico y emite una intención con expected_duration_ms calibrada
+        // a la vida media física t_{1/2} en ms. Si no supera umbral o está frío, se abstiene (None)
+        // con honestidad matemática estricta, sin caer al evaluador discreto legacy (OU-R4-01).
+        if let Some(sde) = &mut self.physical_sde {
+            // Rechazo de ticks duplicados o retrógrados para prevenir reemisión de intenciones
+            // basada en Z-scores viejos sin avance causal del tiempo físico (OU-R4-03 / Codex sync).
+            if sde.count > 0 && timestamp_ms <= sde.last_ts_ms {
+                return None;
+            }
+
+            let sde_z = sde.update(spread, timestamp_ms);
+            let sde_hl_sec = sde.half_life_seconds();
+            // R6-B17: Abarcar el rango espectral continuo completo hasta 12 horas (43,200 s)
+            if sde.count >= 10 && sde_hl_sec.is_finite() && sde_hl_sec <= 43_200.0 {
+                let tau_rev_ms = (sde_hl_sec * 1000.0).clamp(500.0, 43_200_000.0) as u64;
+                let sd = sde.stationary_variance().sqrt().max(1e-8);
+                let expected_magnitude = (sde_z.abs() * sd).clamp(0.002, 0.20);
+                let z_abs = sde_z.abs();
+                if z_abs > self.z_score_threshold {
+                    // R6-B17: Escalamiento continuo C1 de confianza sin quiebre discontinuo ni piso estático en 0.50
+                    // En el umbral de entrada |z| = z_th, la confianza arranca exactamente en 0.50 y satura
+                    // de forma suave y cóncava hacia 0.99 para desviaciones ergódicas extremas (|z| >> z_th).
+                    let excess = z_abs - self.z_score_threshold;
+                    let confidence = (0.50 + 0.49 * (excess / (excess + 1.0))).clamp(0.50, 0.99);
+                    let signal = if sde_z < 0.0 {
+                        SignalType::Long
+                    } else {
+                        SignalType::Short
+                    };
+                    return Some(SignalIntent {
+                        signal,
+                        confidence,
+                        horizon: TradeHorizon::Continuous,
+                        expected_duration_ms: tau_rev_ms,
+                        expected_magnitude,
+                        ..Default::default()
+                    });
+                }
+            }
+            // En modo SDE continuo, la ausencia de señal o la fase de maduración inicial
+            // retorna abstención honesta (None). No cae al evaluador discreto legacy.
+            return None;
+        }
+
         let next_count = self.count.checked_add(1)?;
 
         // 2. Legacy hybrid mean/EW variance update, not unbiased sample Welford.
@@ -152,8 +210,10 @@ impl MultivariateCointegrationEngine {
             + (1.0 - self.memory_decay) * innovation_product.max(0.0))
         .max(1e-6);
 
-        // 3. Estimación discreta de velocidad de reversión Ornstein-Uhlenbeck: $\Delta S_t = -\theta (S_{t-1} - \mu) + \epsilon_t$
-        let spread_deviation = self.last_spread - next_mean;
+        // 3. Estimación discreta de velocidad de reversión Ornstein-Uhlenbeck: $\Delta S_t = -\theta (S_{t-1} - \mu_{t-1}) + \epsilon_t$
+        // R6-B16 (Ola Ω52): Se usa `self.mean_spread` (media previa t-1) en lugar de `next_mean` (post-innovación t),
+        // garantizando causalidad estricta y eliminando el lookahead del regressor.
+        let spread_deviation = self.last_spread - self.mean_spread;
         let mut next_theta = self.theta_reversion_speed;
         if spread_deviation.abs() > 1e-6 {
             let ratio = -diff_spread / spread_deviation;
@@ -435,5 +495,79 @@ mod tests {
         let signal = engine.update_and_evaluate(&shock_prices, 200000).expect("señal activa");
         assert!(signal.expected_magnitude > 0.002, "expected magnitude no debe ser cero");
         assert!(signal.expected_magnitude <= 0.20, "expected magnitude acotada");
+    }
+
+    #[test]
+    fn test_multivariate_cointegration_continuous_ou_physical_clock() {
+        let weights = [1.0, -0.5, -0.3, -0.2];
+        let mut engine = MultivariateCointegrationEngine::new(weights, 2.0).with_continuous_ou();
+
+        assert!(engine.physical_sde.is_some(), "estimador SDE físico debe estar activo");
+
+        let base_prices = [100.0, 50.0, 30.0, 20.0];
+        // Calibrar el proceso continuo con 60 observaciones físicas cada 1000 ms (1 segundo físico)
+        for i in 0..60 {
+            let noise = ((i % 5) as f64 - 2.0) * 0.05;
+            let prices = [
+                base_prices[0] + noise,
+                base_prices[1] + noise * 0.2,
+                base_prices[2] - noise * 0.1,
+                base_prices[3] + noise * 0.1,
+            ];
+            let _ = engine.update_and_evaluate(&prices, 10_000 + i * 1_000);
+        }
+
+        let sde = engine.physical_sde.as_ref().unwrap();
+        assert!(sde.count >= 60, "todas las observaciones físicas deben contarse");
+        assert!(sde.theta > 0.0, "velocidad física theta debe ser positiva");
+        assert!(sde.half_life_seconds().is_finite(), "vida media física debe ser finita");
+
+        // Shock positivo en el activo líder -> genera divergencia de spread y señal Short con duración espectral
+        let shock_prices = [180.0, 50.0, 30.0, 20.0];
+        let signal = engine
+            .update_and_evaluate(&shock_prices, 70_000)
+            .expect("debe emitir señal continua por shock de divergencia física");
+
+        assert_eq!(signal.signal, SignalType::Short);
+        assert_eq!(signal.horizon, TradeHorizon::Continuous);
+        assert!(
+            signal.expected_duration_ms >= 500 && signal.expected_duration_ms <= 43_200_000,
+            "duración esperada ({}) debe estar acotada al espectro temporal continuo",
+            signal.expected_duration_ms
+        );
+        assert!(signal.confidence >= 0.50, "confianza Bayesiana calibrada");
+    }
+
+    #[test]
+    fn test_ou_r4_01_sde_mode_never_falls_back_to_legacy_with_zero_duration() {
+        // OU-R4-01: En modo continuo SDE, el motor NUNCA debe caer silenciosamente al evaluador
+        // legacy basado en eventos que emite señales con expected_duration_ms=0.
+        let mut engine =
+            MultivariateCointegrationEngine::new([1.0, 0.0, 0.0, 0.0], 2.0).with_continuous_ou();
+
+        // 1. Inicialización en frío: primera observación devuelve None
+        let res0 = engine.update_and_evaluate(&[1.0, 1.0, 1.0, 1.0], 1000);
+        assert!(res0.is_none());
+
+        // 2. Segunda observación con salto que en el evaluador legacy dispararía señal:
+        // Pero en modo SDE (count < 10) está en fase de maduración física y DEBE abstenerse (None)
+        let res1 = engine.update_and_evaluate(&[(0.1f64).exp(), 1.0, 1.0, 1.0], 2000);
+        assert!(
+            res1.is_none(),
+            "en modo SDE frío debe abstenerse (None) sin caer al evaluador legacy"
+        );
+
+        // 3. Cuando emite señal tras maduración física, expected_duration_ms debe ser > 0 y finito
+        for i in 2..20 {
+            let _ = engine.update_and_evaluate(&[1.0, 1.0, 1.0, 1.0], 2000 + i * 1000);
+        }
+        let shock = engine.update_and_evaluate(&[1.5, 1.0, 1.0, 1.0], 25_000);
+        if let Some(intent) = shock {
+            assert_ne!(
+                intent.expected_duration_ms, 0,
+                "señal continua SDE jamás debe tener expected_duration_ms=0"
+            );
+            assert_eq!(intent.horizon, TradeHorizon::Continuous);
+        }
     }
 }

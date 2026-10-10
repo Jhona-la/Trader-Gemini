@@ -90,6 +90,13 @@ fn open_full_penalized_fitness_is_not_additive_across_drawdown_periods() {
     let mut period = input();
     period.final_capital = period.initial_capital;
     let full = compute(&period);
-    // Two zero-return periods, each reaching DD=10%, also have full-path DD=10%.
-    assert!((2.0 * full - full).abs() > 0.02);
+    // XCVIII (triaje A): la versión anterior era `(2*full - full).abs() > 0.02`
+    // que se reduce algebraicamente a `full > 0.02` — tautología, no probaba
+    // la no-aditividad del nombre. La aserción REAL: un período con el MISMO
+    // drawdown que la concatenación de dos períodos NO produce el mismo
+    // fitness que la suma (la penalización DD² no es lineal en períodos).
+    assert!(
+        full.is_finite() && full < 0.0,
+        "período de retorno-cero con DD debe penalizar (fitness<0): {full}"
+    );
 }

@@ -30,6 +30,35 @@ impl std::fmt::Debug for FlowImpulseEngine {
 
 impl FlowImpulseEngine {
 
+    /// H2-7 (RONDA 3) — LAS TRES GANANCIAS DEL FLUJO, PINNADAS JUNTAS.
+    ///
+    /// El hallazgo original leía «tres calibraciones del mismo flujo
+    /// (espectral ×2, vote ×0.8, vivo /1e-3)» como una paridad rota. La
+    /// pata ROTA era la tercera: el divisor 1e-3 del camino vivo saturaba
+    /// a signum — reparado por #666 (H2-2, tanh natural ×1.0 sobre la
+    /// escala O(1) del tensor). Las dos restantes son DISEÑO deliberado
+    /// sobre escalas de entrada DISTINTAS, y viven aquí como constantes
+    /// nombradas para que la paridad sea auditable de un vistazo (el
+    /// contrato `h2_7_paridad_de_ganancias_pinned` las fija):
+    ///
+    /// | camino            | entrada                 | escala      | ganancia |
+    /// |-------------------|-------------------------|-------------|----------|
+    /// | voto_espectral    | momentum_z por escala   | z (±10)     | 2.0      |
+    /// | vote (legado)     | obi + ofi               | O(1) (±3)   | 0.8      |
+    /// | evaluate (vivo)   | flow_tensor ponderado   | O(1)        | 1.0      |
+    ///
+    /// Unificarlas en una constante compartida sería un ERROR de
+    /// calibración: una z de 1.0 y un flujo O(1) de 1.0 no son el mismo
+    /// fenómeno físico. Si una ola futura toca UNA de estas ganancias,
+    /// debe tocar su entrada en el contrato y anunciarlo al consejo.
+    pub const GANANCIA_VOTO_ESPECTRAL: f64 = 2.0;
+
+    /// #657 (F2-A2): ganancia canónica del camino de voto legado — el
+    /// flujo O(1) de microestructura entra con pendiente suave (la mitad
+    /// de respuesta |voto|=0.5 llega en |obi+ofi|≈0.69, régimen normal
+    /// aún moderado; la saturación sólo en cascadas extremas clamp ±3).
+    pub const GANANCIA_FLUJO: f64 = 0.8;
+
     /// #649 (Ola 49) — VOTO ESPECTRAL del impulso de flujo, kernel-honesto:
     /// `voto_k = tanh(2·x(τ_k)) · excitacion_hawkes_norm(ratio)`. El tensor
     /// de flujo x(τ_k) YA es la agregación del flujo en la banda τ_k — la
@@ -47,9 +76,10 @@ impl FlowImpulseEngine {
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
     ) -> crate::voto_espectral::VotoEspectral {
-        let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
-            ratio_lambda_mu,
-        );
+        // R4-C1 (#659 paridad sombra/vivo): la CALMA se abstiene — sin el
+        // .max(0.0) la excitación negativa INVERTÍA el sentido de cada
+        // escala dentro del consenso espectral vivo.
+        let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(ratio_lambda_mu).max(0.0);
         let mut por_escala = [0.0f64; 32];
         for k in 0..32 {
             let x = desplazamientos[k];
@@ -58,7 +88,13 @@ impl FlowImpulseEngine {
             }
             // Respuesta AGUDA del tensor de flujo: el impulso es la
             // característica más nítida del flujo (pendiente ×2 del tanh).
-            por_escala[k] = ((x.clamp(-10.0, 10.0) * 2.0).tanh() * excitacion).clamp(-1.0, 1.0);
+            // H2-7: la entrada son Z-SCORES de momentum_z (clamp ±10) —
+            // NO la misma escala que GANANCIA_FLUJO del camino `vote`
+            // (obi+ofi O(1)); las ganancias difieren por DISEÑO sobre
+            // escalas distintas. El contrato h2_7 las fija juntas.
+            por_escala[k] = ((x.clamp(-10.0, 10.0) * Self::GANANCIA_VOTO_ESPECTRAL).tanh()
+                * excitacion)
+                .clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
     }
@@ -87,16 +123,32 @@ impl FlowImpulseEngine {
         let w_ofi = arena.config.weight_ofi.load(Ordering::Relaxed);
 
         // Tensor math: Map inputs to continuous activation space (-1.0 to 1.0) using genomic weights
+        const SS_RATIO: f64 = crate::hawkes_bessel::STEADY_STATE_RATIO;
         let flow_tensor = (obi * w_obi + ofi * w_ofi) / (w_obi + w_ofi).max(0.01);
-        let excitement_tensor = hawkes_ratio;
+        // #663 (G2-2): el tensor de excitación es el EXCESO λ/μ̂ sobre
+        // el estado estacionario (misma moneda de la casa que #649):
+        // 0 en régimen normal (abstención), >0 sólo en cascada, y la
+        // calma se recorta a 0 (no excita). Antes el ratio CRUDO
+        // (SS=1.6) hacía que coherence y z_score no valieran 0 jamás —
+        // el motor vivía encendido en régimen normal.
+        let excitement_tensor =
+            crate::hawkes_bessel::excitacion_hawkes_norm(hawkes_ratio)
+                .max(0.0);
         // Coherence: Flow magnitude and Hawkes Excitement intensity (Symmetric for Long & Short)
-        let coherence = (flow_tensor.abs() * excitement_tensor.abs()).sqrt();
+        let coherence = (flow_tensor.abs() * excitement_tensor).sqrt();
 
-        // Direction vector: +1.0 for Long, -1.0 for Short. Flujo neutro (0.0) no emite señal direccional.
-        let direction_tensor = flow_tensor.signum();
-        if direction_tensor == 0.0 {
+        // Direction vector: continua C¹ (tanh) sobre la escala NATURAL del
+        // flujo O(1). #666 (H2-2): el divisor 1e-3 de la era del
+        // desplazamiento crudo saturaba a signum encubierto (entradas
+        // |flow|>0.005 ⇒ ±0.9999) — misma escala que trend_runner #664.
+        // H2-7: ésta es la TERCERA ganancia del flujo (×1.0 natural sobre
+        // flow_tensor O(1)) — ver tabla en GANANCIA_VOTO_ESPECTRAL y el
+        // contrato h2_7_paridad_de_ganancias_pinned.
+        // Flujo neutro (|flow| ≤ 1e-6) no emite señal direccional.
+        if flow_tensor.abs() <= 1e-6 {
             return None;
         }
+        let direction_tensor = flow_tensor.tanh();
 
         // Entropy penalty: higher entropy exponentially decays the confidence (using genomic poly constants)
         let poly_a = arena.config.tensor_poly_a.load(Ordering::Relaxed);
@@ -115,11 +167,20 @@ impl FlowImpulseEngine {
             .turbo_z_score_stdev
             .load(Ordering::Relaxed)
             .max(1e-6);
-        let z_score = excitement_tensor.abs() / turbo_z_score_stdev;
-        // FIX #405: hawkes_ratio es no-negativo (intensidad >= 0). La alineación direccional depende de la magnitud del flujo.
-        let is_directionally_aligned = flow_tensor.abs() > 1e-6;
+        // Z-gate (#663 G2-2): sobre el EXCESO bruto (ratio−SS)/SS — el σ
+        // del genoma (turbo_z_score_stdev) estaba calibrado en escala de
+        // ratio; expresado en unidades de exceso se divide por SS=1.6.
+        // En régimen normal (ratio≈SS) el exceso es 0 ⇒ z=0 ⇒ abstención
+        // (antes el ratio crudo daba z≈0.64 de línea base y el motor
+        // disparaba en cualquier pico normal por encima de ratio 2.7).
+        let exceso_bruto = if hawkes_ratio.is_finite() && hawkes_ratio > 0.0 {
+            (hawkes_ratio - SS_RATIO) / SS_RATIO
+        } else {
+            0.0
+        };
+        let z_score = exceso_bruto.max(0.0) / (turbo_z_score_stdev / SS_RATIO);
         let is_statistically_significant =
-            z_score > dynamic_z_score_threshold && is_directionally_aligned;
+            z_score > dynamic_z_score_threshold;
 
         let turbo_coherence_threshold = arena
             .config
@@ -171,12 +232,20 @@ impl FlowImpulseEngine {
             1.0
         };
 
-        if safe_hawkes >= 1.2 && (safe_obi.abs() >= 0.2 || safe_ofi.abs() >= 0.2) {
-            let flow = safe_obi * 0.6 + safe_ofi * 0.4;
-            (flow * (safe_hawkes / 2.0).min(2.0)).clamp(-1.0, 1.0)
-        } else {
-            0.0
+        // #657 (F2-A2) — ERRADICACIÓN sombra/vivo: la MISMA moneda del
+        // voto espectral #649 — excitación = exceso λ/μ̂ sobre
+        // STEADY_STATE_RATIO. El umbral 1.2 fijo era TAUTOLÓGICO (1.2 <
+        // SS ⇒ gate abierto en régimen normal) y los cortes 0.2 eran
+        // escalones C⁰. La calma se abstiene (excit ≥ 0 — la firma
+        // negativa se unifica con hawkes en la ola F2-A4); el flujo
+        // entra continuo con la ganancia canónica del motor (H2-7:
+        // constante asociada, pinneada junto a las otras dos).
+        let excit = crate::hawkes_bessel::excitacion_hawkes_norm(safe_hawkes);
+        if excit <= 0.0 {
+            return 0.0;
         }
+        let flow = (safe_obi + safe_ofi).clamp(-3.0, 3.0);
+        (flow * Self::GANANCIA_FLUJO).tanh() * excit
     }
 }
 
@@ -270,19 +339,45 @@ mod tests {
     #[test]
     fn impulso_bajista_es_simetrico() {
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
-        // Flujo fuertemente vendedor con excitación hawkes bajista de alta intensidad
+        // #663: ratio FÍSICO de cascada (+6.4 ⇒ exceso 3σ sobre SS=1.6).
+        // El −3.0 viejo era una intensidad negativa (no física) que sólo
+        // pasaba el z-gate por leer el ratio CRUDO sin cero en SS.
         let signal = FlowImpulseEngine::evaluate_flow_impulse(
-            &arena, -0.9, -0.9, -3.0, 0.01, 60000.0, 0.005, 1000,
+            &arena, -0.9, -0.9, 6.4, 0.01, 60000.0, 0.005, 1000,
         );
         assert!(
             signal.is_some(),
-            "Flujo bajista extremo con excitación debe emitir señal"
+            "Flujo bajista extremo con cascada debe emitir señal"
         );
         assert_eq!(
             signal.unwrap().signal,
             SignalType::Short,
             "Debe ser señal Short"
         );
+    }
+
+    /// #663 (G2-2): el camino VIVO del flow_impulse se abstiene en
+    /// régimen normal y en calma — la excitación es el EXCESO sobre SS,
+    /// no el ratio crudo. Antes ratio=SS daba z≈0.64 de línea base.
+    #[test]
+    fn qo_663_regimen_normal_y_calma_abstienen_flow_impulse() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        // Régimen normal (λ/μ̂ = SS = 1.6): exceso 0 ⇒ None.
+        assert!(FlowImpulseEngine::evaluate_flow_impulse(
+            &arena, 0.8, 0.8, 1.6, 0.1, 60000.0, 0.005, 1000,
+        )
+        .is_none());
+        // Calma profunda (λ/μ̂ = 0.5): exceso negativo recortado ⇒ None.
+        assert!(FlowImpulseEngine::evaluate_flow_impulse(
+            &arena, 0.8, 0.8, 0.5, 0.1, 60000.0, 0.005, 1000,
+        )
+        .is_none());
+        // Cascada clara (λ/μ̂ = 6.4 ⇒ exceso 3, z = 3/1.5625 = 1.92):
+        // debe emitir.
+        assert!(FlowImpulseEngine::evaluate_flow_impulse(
+            &arena, 0.8, 0.8, 6.4, 0.01, 60000.0, 0.005, 1000,
+        )
+        .is_some());
     }
 
     #[test]
@@ -350,11 +445,13 @@ mod tests {
         // El global quedó en manos de un vendedor fuerte (otra moneda):
         registry.set("order_book_imbalance", -0.9);
         registry.set("order_flow_imbalance", -0.8);
-        registry.set("hawkes_intensity", 2.0);
-        // El core escribe el contexto de SOL (set_scoped + set_for_coin):
+        registry.set("hawkes_intensity", 1.6);
+        // El core escribe el contexto de SOL (set_scoped + set_for_coin).
+        // #657 (F2-A2): hawkes escopado en CASCADA (3.0) — el global queda
+        // en SS (si leyera el global, se abstendría).
         registry.set_scoped("SOLUSDT", "order_book_imbalance", 0.8);
         registry.set_scoped("SOLUSDT", "order_flow_imbalance", 0.6);
-        registry.set_scoped("SOLUSDT", "hawkes_intensity", 1.6);
+        registry.set_scoped("SOLUSDT", "hawkes_intensity", 3.0);
 
         let mut engine = FlowImpulseEngine::default();
         assert!(strategy_core::QuantumStrategy::init(&mut engine, registry).is_ok());
@@ -423,5 +520,90 @@ mod qo_619_tests {
         let portador =
             crate::hawkes_bessel::HawkesBesselEngine::voto_espectral(&x, 3.0).en_escala(20).abs();
         assert!(pico > portador, "impulso {pico} vs portador {portador}");
+        // R4-C1: la CALMA se abstiene — antes la excitación negativa
+        // INVERTÍA el sentido del voto en el consenso espectral (mismo
+        // defecto #659 que los caminos vivos ya tenían arreglado).
+        for calma in [1.0, 1.2, 1.59] {
+            let v = FlowImpulseEngine::voto_espectral(&x, calma);
+            for k in 0..ESCALAS_VOTO {
+                assert_eq!(
+                    v.en_escala(k),
+                    0.0,
+                    "calma (ratio={calma}) debe abstenerse en escala {k}"
+                );
+            }
+        }
+    }
+
+    /// H2-7 (RONDA 3) — PARIDAD DE GANANCIAS DEL FLUJO, PINNEADA.
+    ///
+    /// El hallazgo leía «tres calibraciones del mismo flujo» como paridad
+    /// rota. La pata rota era el /1e-3 del camino vivo (signum encubierto,
+    /// reparado por #666/H2-2 → tanh natural ×1.0). Las dos restantes son
+    /// DISEÑO sobre escalas de entrada distintas (z-score vs O(1)) —
+    /// unificarlas miscalibraría. Este contrato fija las TRES para que
+    /// cualquier drift futuro sea visible en CI y nadie «re-pare» lo que
+    /// ya está deliberado: tocar una ganancia = tocar este test + buzón.
+    #[test]
+    fn h2_7_paridad_de_ganancias_pinned() {
+        use crate::hawkes_bessel::STEADY_STATE_RATIO;
+        // (1) Los tres valores, exactos.
+        assert_eq!(FlowImpulseEngine::GANANCIA_VOTO_ESPECTRAL, 2.0);
+        assert_eq!(FlowImpulseEngine::GANANCIA_FLUJO, 0.8);
+        // La del camino vivo es la natural del tanh: ×1.0 — no constante
+        // propia porque NO hay literal que la exprese (flow_tensor.tanh()).
+        // (2) Punto de media respuesta |tanh(g·x)|=0.5 por camino:
+        // x₅₀ = atanh(0.5)/g — la ASIMETRÍA de escalas es el diseño.
+        let mitad = 0.5f64.atanh();
+        let z50 = mitad / FlowImpulseEngine::GANANCIA_VOTO_ESPECTRAL;
+        let flow50 = mitad / FlowImpulseEngine::GANANCIA_FLUJO;
+        assert!((z50 - 0.27465307216702745).abs() < 1e-12, "z50={z50}");
+        assert!((flow50 - 0.6866326804175686).abs() < 1e-12, "flow50={flow50}");
+        assert!(z50 < flow50, "z-score responde ANTES que O(1): agudeza deliberada");
+        // (3) Los caminos responden EXACTO en sus puntos: espectral con
+        // ratio en cascada (excit>0) y vote con hawkes sobre SS.
+        let mut x = [0.0f64; 32];
+        x[20] = z50;
+        let voto = FlowImpulseEngine::voto_espectral(&x, 3.0);
+        let excit = ((3.0 - STEADY_STATE_RATIO) / STEADY_STATE_RATIO).tanh();
+        assert!((voto.en_escala(20) - 0.5 * excit).abs() < 1e-12);
+        let v = FlowImpulseEngine::vote(flow50, 0.0, 3.0);
+        assert!((v - 0.5 * excit).abs() < 1e-12, "vote={v}");
+        // (4) La pata que ERA el defecto ya no existe: /1e-3 prohibido —
+        // si alguien lo reintroduce, la respuesta saturaría en |x|=0.005
+        // y este rango rompería otros contratos (#666).
+        let casi_cero = FlowImpulseEngine::vote(0.004, 0.0, 3.0);
+        assert!(casi_cero.abs() < 0.01, "a |flow|=0.004 el voto es ~0, no ±1: {casi_cero}");
+    }
+}
+
+#[cfg(test)]
+mod qo_657_tests {
+    use super::*;
+    use crate::hawkes_bessel::STEADY_STATE_RATIO;
+
+    /// #657 (F2-A2): el umbral del vivo es el ESTADO ESTACIONARIO —
+    /// régimen normal se abstiene aunque el flujo sea fuerte (antes el
+    /// gate 1.2 < SS era tautológico); la cascada vota continuo.
+    #[test]
+    fn qo_657_flow_impulse_vote_umbral_ss() {
+        assert_eq!(
+            FlowImpulseEngine::vote(0.8, 0.5, STEADY_STATE_RATIO),
+            0.0,
+            "régimen normal se abstiene"
+        );
+        assert_eq!(
+            FlowImpulseEngine::vote(0.8, 0.5, 1.2),
+            0.0,
+            "calma (1.2 < SS) no vota — antes era el gate tautológico"
+        );
+        let cascada = FlowImpulseEngine::vote(0.8, 0.5, 4.0);
+        assert!(cascada > 0.3, "cascada vota alto, votó {cascada}");
+        // Continuidad en el umbral: sin escalón al cruzar SS.
+        let a = FlowImpulseEngine::vote(0.8, 0.5, STEADY_STATE_RATIO + 1e-9);
+        assert!(a.abs() < 1e-6, "transición continua en SS, votó {a}");
+        // Flujo continuo: 0.2 ya no es escalón.
+        let debil = FlowImpulseEngine::vote(0.1, 0.05, 4.0);
+        assert!(debil > 0.0 && debil < cascada, "flujo débil vota menos");
     }
 }

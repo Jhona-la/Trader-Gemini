@@ -256,8 +256,9 @@ impl QuantumLeverageMatrix {
             safe_curr_cap,
             crate::capital_regime::effective_min_notional(min_notional_simbolo),
         );
-        // (fusión PR #5: D-750 re-auditó el techo micro de 5x (D-641) a 4x)
-        let raw_ceiling = crate::capital_regime::log_lerp(standard_ceiling, 4.0, micro_w);
+        // Ω29: Armonización con lib.rs (micro_lev_cap >= 5.0) para que $1.02 de margen
+        // en cuenta micro ($13 USD) alcance el piso de Binance Futures ($5.00 min notional).
+        let raw_ceiling = crate::capital_regime::log_lerp(standard_ceiling, 5.0, micro_w);
         let dynamic_ceiling = if raw_ceiling.is_finite() {
             raw_ceiling.clamp(1.0, 50.0)
         } else {
@@ -382,8 +383,8 @@ mod tests {
             "un símbolo con nocional mínimo mayor deja menos margen de \
              maniobra y debe recibir MENOS apalancamiento: {caro} vs {barato}"
         );
-        // En micro pleno el techo es 4×, no el del genoma.
-        assert!(caro <= 4.0 + 1e-9, "techo micro violado: {caro}");
+        // En micro pleno el techo es 5×, no el del genoma.
+        assert!(caro <= 5.0 + 1e-9, "techo micro violado: {caro}");
     }
 
     /// CL-2: el freno de volatilidad mide contra el stop REAL de la orden.

@@ -22,6 +22,29 @@ use quantum_engine::config::TensorConfig;
 use quantum_engine::env_manager::EnvManager;
 use telemetry_engine::telemetry;
 
+/// MW: startup and polling share source selection and success-only bookkeeping.
+/// Loading is not statistical promotion; errors must remain visible and retryable.
+fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTracker) {
+    let scan = tracker.scan(std::path::Path::new("models"), |key, path| {
+        let source = path.to_str().ok_or_else(|| "model path is not UTF-8".to_string())?;
+        god_engine_core::ml_inference::NanoForest::load_global(key, source)
+            .map_err(|error| error.to_string())
+    });
+    match scan {
+        Ok(events) => for event in events {
+            match event.result {
+                Ok(()) => telemetry_server::telemetry_log!(
+                    "🧠 [ML-RELOAD] Loaded {} (requested path: {})", event.key, event.path.display()),
+                Err(error) => telemetry_server::telemetry_log!(
+                    "⚠️ [ML-RELOAD] Rejected {} (requested path: {}): {} (will retry)",
+                    event.key, event.path.display(), error),
+            }
+        },
+        Err(error) => telemetry_server::telemetry_log!(
+            "⚠️ [ML-RELOAD] Cannot scan models: {} (will retry)", error),
+    }
+}
+
 /// B1.2/B1.3: precios de protección desde las CURVAS del genoma — mismo
 /// criterio del camino en vivo (X-030/X-016): curva de horizonte por dos
 /// puntos (bases scalp/swing del arena.config, ambas genes) evaluada en la
@@ -35,33 +58,20 @@ fn genome_protection_prices(
     entry_price: f64,
     entry_tau_ms: u64,
 ) -> (f64, f64) {
-    use quantum_arena::temporal_spectrum::{
-        HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS,
-    };
+    use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
     // C-05 (informe decimocuarto) — CLAMP AL DOMINIO DE LAS ANCLAS: la
     // fusión espectral viva puede degenerar (journal con tau_ms =
-    // 4 611 686 018 427 ≈ 146 años) y `HorizonCurve::eval` extrapola
-    // EXPONENCIALMENTE fuera de banda ⇒ brackets a +65%/−32%: el
-    // invariante de protección producía desnudez. La curva sólo tiene
+    // 4 611 686 018 427 ≈ 146 años) y la extrapolación exponencial
+    // fuera de banda producía desnudez (+65%/−32%). La curva sólo tiene
     // validez ENTRE sus anclas: τ≤0 (adoptada sin diario) colapsa al
-    // ancla rápida — igual que antes — y τ degenerada colapsa al ancla
-    // lenta (máximo de la curva, jamás más allá).
+    // ancla rápida y τ degenerada colapsa al ancla lenta.
     let tau_eff = (entry_tau_ms as f64).clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS);
     let o = Ordering::Relaxed;
-    let tp_frac = HorizonCurve::through_two_points(
-        TAU_ANCHOR_FAST_MS,
-        arena.config.scalp_tp_base.load(o),
-        TAU_ANCHOR_SLOW_MS,
-        arena.config.swing_tp_base.load(o),
-    )
-    .eval(tau_eff);
-    let sl_frac = HorizonCurve::through_two_points(
-        TAU_ANCHOR_FAST_MS,
-        arena.config.scalp_sl_base.load(o),
-        TAU_ANCHOR_SLOW_MS,
-        arena.config.swing_sl_base.load(o),
-    )
-    .eval(tau_eff);
+    // G0-5 (Ola Ω14): FUENTE ÚNICA de brackets continuos desde arena.config.tp_at_tau / sl_at_tau.
+    // Erradica la reconstrucción manual mediante anclas escalares legacy,
+    // preservando la geometría continua cuando el genoma muta (a, b) en caliente.
+    let tp_frac = arena.config.tp_at_tau(tau_eff);
+    let sl_frac = arena.config.sl_at_tau(tau_eff);
     // B3.2: VIABILIDAD POR FRICCIÓN como invariante de TODA protección
     // (entrada-fallback, watchdog, restore, adopción). La curva del genoma
     // decide la forma; la fricción pone el suelo: stop ≥ mínimo viable y
@@ -839,11 +849,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Telemetry Async Formatter (Lock-Free Offload)
     // Telemetry Async Formatter (Lock-Free Offload)
-    let (tx_log_worker, rx_log_worker) = crossbeam_channel::bounded::<(bool, bool, usize)>(1000);
+    let (tx_log_worker, rx_log_worker) = crossbeam_channel::bounded::<(u64, bool, usize)>(1000);
     let dash_tx_clone = telemetry_tx.clone();
     let symbols_for_log = symbols.clone();
     std::thread::spawn(move || {
-        while let Ok((is_scalp, is_long, coin_id)) = rx_log_worker.recv() {
+        while let Ok((tau_ms, is_long, coin_id)) = rx_log_worker.recv() {
             let side_str = if is_long { "LONG" } else { "SHORT" };
             // FIX #1518: Acceso seguro al símbolo por coin_id para evitar pánicos fuera de límites
             let default_sym = format!("COIN_{}", coin_id);
@@ -851,17 +861,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get(coin_id)
                 .map(|s| s.as_str())
                 .unwrap_or(&default_sym);
-            if is_scalp {
-                let _ = dash_tx_clone.send(telemetry_server::TelemetryEvent::LogUpdate(
-                    "success".to_string(),
-                    format!("⚡ SCALP {} on {}", side_str, parsed_sym),
-                ));
-            } else {
-                let _ = dash_tx_clone.send(telemetry_server::TelemetryEvent::LogUpdate(
-                    "success".to_string(),
-                    format!("🚀 SWING {} on {}", side_str, parsed_sym),
-                ));
-            }
+            let tau_sec = if tau_ms > 0 { tau_ms as f64 / 1000.0 } else { 30.0 };
+            let _ = dash_tx_clone.send(telemetry_server::TelemetryEvent::LogUpdate(
+                "success".to_string(),
+                format!("🌌 CONTINUO [τ={:.1}s] {} on {}", tau_sec, side_str, parsed_sym),
+            ));
         }
     });
 
@@ -1166,38 +1170,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // El genoma inicial fue validado. Aprobamos la transición al Orchestrator.
     darwin_approved.store(true, Ordering::Relaxed);
 
-    let mut forest_timestamps: std::collections::HashMap<String, std::time::SystemTime> =
-        std::collections::HashMap::new();
-
-    // Initial load of all models (.json es la fuente de verdad; el .bin es
-    // caché del propio loader — B3.19: cargar AMBOS por stem hacía doble
-    // trabajo y dejaba el resultado al orden de read_dir)
-    if let Ok(entries) = std::fs::read_dir("models") {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            let ext = path.extension().and_then(|s| s.to_str());
-            // Un .bin sólo se carga si su .json hermano NO existe (stem
-            // legacy sin json); con .json presente, el loader deriva la
-            // pareja y regenera la caché él mismo.
-            let json_hermano = path.with_extension("json");
-            let cargable = ext == Some("json")
-                || (ext == Some("bin") && !json_hermano.exists());
-            if cargable {
-                if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    if let Ok(meta) = std::fs::metadata(&path) {
-                        if let Ok(modified) = meta.modified() {
-                            forest_timestamps.insert(file_stem.to_string(), modified);
-                            let _ = god_engine_core::ml_inference::NanoForest::load_global(
-                                file_stem,
-                                path.to_str().unwrap(),
-                            );
-                            telemetry_server::telemetry_log!("🧠 Loaded ML Model: {}", file_stem);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let mut forest_reload = god_engine_core::model_reload::ModelReloadTracker::default();
+    refresh_ml_models(&mut forest_reload);
 
     // XLVII·C: copia para el diagnóstico de cobertura (el closure del
     // watcher no debe capturar `symbols`, usado más abajo).
@@ -1235,32 +1209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            if let Ok(entries) = std::fs::read_dir("models") {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    let path = entry.path();
-                    let ext = path.extension().and_then(|s| s.to_str());
-                    if ext == Some("json") || ext == Some("bin") {
-                        if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                            if let Ok(meta) = std::fs::metadata(&path) {
-                                if let Ok(modified) = meta.modified() {
-                                    let last_ts = forest_timestamps.get(file_stem);
-                                    if last_ts != Some(&modified) {
-                                        forest_timestamps.insert(file_stem.to_string(), modified);
-                                        if god_engine_core::ml_inference::NanoForest::load_global(
-                                            file_stem,
-                                            path.to_str().unwrap(),
-                                        )
-                                        .is_ok()
-                                        {
-                                            telemetry_server::telemetry_log!("🔥 [HOT-RELOAD] NanoForest AI Brain hot-swapped for {}!", file_stem);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            refresh_ml_models(&mut forest_reload);
         }
     });
 
@@ -1769,6 +1718,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::clone(&arena_real),
         );
 
+        // C-02 (Ola Ω57): Feed Spot-Futuro en vivo para StatArb y SDE continua OU
+        data_pipeline::start_spot_feed_sync(
+            &rt_handle_for_thread,
+            Arc::clone(&arena_real),
+            Arc::clone(&omni_state_hot),
+            symbols_clone.clone(),
+        );
+
         // Reality Physics: Shadow Simulator uses identical dynamic fees extracted from exchange
 
         // Phase 17: Apply Genotype Object Directly
@@ -1979,12 +1936,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|v| v.trim() == "true")
             .unwrap_or(false);
         if enable_legacy_darwin {
-            let daemon = god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&arena_real));
+            // R4-Q1: conserve trial multiplicity across worker invocations.
+            // Rebuilding the daemon per round resets cumulative_trials to zero.
+            // This retains in-process history; restart persistence is separate.
+            let daemon = Arc::new(god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&arena_real)));
             rt_for_darwin.spawn(async move {
                 telemetry_server::telemetry_log!("🧬 [DARWIN-DAEMON] Iniciando Motor Cuántico Evolutivo Legacy...");
                 loop {
                     tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-                    let daemon_clone = god_engine_core::darwin::DarwinDaemon::new(Arc::clone(&daemon.live_arena));
+                    let daemon_clone = Arc::clone(&daemon);
                     let _ = tokio::task::spawn_blocking(move || {
                         daemon_clone.evolve_online();
                     }).await;
@@ -3133,10 +3093,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     e as u64,
                                 );
                                 if score.is_finite() && score > 0.05 {
+                                    let clamped_score = score.clamp(0.0, 1.0);
                                     engine_real.arena.registry.set_scoped(
                                         &sym.to_uppercase(),
                                         "spoof_score",
-                                        score.clamp(0.0, 1.0),
+                                        clamped_score,
+                                    );
+                                    // R7-R4-A-2: Publicar también por coin_id para que get_for_coin_or en core lib.rs resuelva c{id}:spoof_score
+                                    engine_real.arena.registry.set_for_coin(
+                                        sym_id,
+                                        "spoof_score",
+                                        clamped_score,
                                     );
                                 }
                             }
@@ -3146,7 +3113,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // FASE 23: QUANTUM LATENCY KILL-SWITCH (Optimized via TSC)
-            let now_ms = epoch_baseline_ms + instant_baseline.elapsed().as_millis() as i64;
+            // #657 (F3-C1) — el reloj SIGUE al NTP: el hot-loop relee el
+            // offset ACTUAL (el sincronizador lo actualiza cada 15 s) en
+            // vez del offset congelado al arranque. La deriva del reloj
+            // local en sesiones largas sesgaba latency_ms — que alimenta
+            // el kill-switch de volatilidad sintética y los strikes del
+            // sistema inmune (aplanados falsos / stalls ocultos).
+            let ntp_offset_actual = engine_real
+                .arena
+                .server_time_offset_ms
+                .load(Ordering::Relaxed);
+            let now_ms = epoch_baseline_ms + (ntp_offset_actual - ntp_offset_ms)
+                + instant_baseline.elapsed().as_millis() as i64;
             let latency_ms = now_ms - event_time;
             let mut latency_panic = false;
 
@@ -3238,10 +3216,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .find(|(_, &v)| v == coin_id)
                                     .map(|(k, _)| k.to_uppercase())
                                     .unwrap_or_default();
-                                engine_real.arena.registry.set_scoped(
-                                    &sym_scoped,
+                                let clamped_z = z.clamp(0.0, 10.0);
+                                if !sym_scoped.is_empty() {
+                                    engine_real.arena.registry.set_scoped(
+                                        &sym_scoped,
+                                        "whale_burst_z",
+                                        clamped_z,
+                                    );
+                                }
+                                // R7-R4-A-2: Publicar también por coin_id para que get_for_coin_or en core lib.rs resuelva c{id}:whale_burst_z
+                                engine_real.arena.registry.set_for_coin(
+                                    coin_id,
                                     "whale_burst_z",
-                                    z.clamp(0.0, 10.0),
+                                    clamped_z,
                                 );
                             }
                         }
@@ -3277,6 +3264,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // F4.1: features omni REALES (macro FRED/PAXG + sentiment vivos).
                 // Antes: &[0.0; 54] — la NN swing evaluaba ceros en producción.
                 let omni_features_hot = omni_state_hot.get_features();
+                let macro_staleness_ms = omni_state_hot.macro_staleness_ms(event_time as u64);
+                engine_real.arena.registry.set("macro_staleness_ms", macro_staleness_ms as f64);
                 // D-707 (DÉCIMA OLA · auditoría integral): EL LIBRO NO DESAPARECE
                 // ENTRE EVENTOS DE DEPTH.
                 //
@@ -3567,15 +3556,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // exchange. Cierres de entradas vetadas/rechazadas
                         // (round-trips locales de papel, caso KOMA) no
                         // contaminan totales, WR ni el posterior de Kelly.
+                        // R7-R4-C-1: Verificar TODAS las ranuras activas (scalp, swing, position).
+                        // El núcleo cierra en cualquiera de los slots dinámicos, no sólo en slot 2.
+                        // Consumimos atómicamente con swap(false) en el mismo tick del evento de cierre.
                         let close_was_real = engine_real
                             .arena
                             .coins
                             .get(coin_id)
                             .map(|c| {
                                 c.positions
-                                    .position
-                                    .last_close_confirmed
-                                    .load(Ordering::Relaxed)
+                                    .slots()
+                                    .iter()
+                                    .any(|p| p.last_close_confirmed.swap(false, Ordering::Relaxed))
                             })
                             .unwrap_or(false);
                         if !close_was_real {
@@ -3683,6 +3675,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 timestamp_ms: ts_now,
                             };
                             let audit = drift_auditor.audit_execution_checked(&real_tr, &shadow_tr);
+                            // XCIV (F7-A-H2, fase medición): publicar la
+                            // divergencia REAL contra el universo de control
+                            // del ShadowForest (genoma sancionado, mismos
+                            // ticks). Doctrina D-751: el veto NO se toca —
+                            // primero observamos la distribución de esta
+                            // señal en vivo, el cableado del veto con
+                            // calibración es la ola subsiguiente.
+                            if let Some(control_pct) = shadow_forest.control_realized_pnl_pct() {
+                                    let cap = shadow_forest.initial_capital;
+                                    if cap.is_finite() && cap > 0.0 {
+                                        // PnL total realizado del motor vivo:
+                                        let real_realized: f64 = engine_real
+                                            .arena
+                                            .coins
+                                            .iter()
+                                            .map(|c| c.metrics.pnl_realized.load(Ordering::Relaxed))
+                                            .sum();
+                                        let real_pct = real_realized / cap;
+                                        let divergencia = control_pct - real_pct;
+                                        engine_real.arena.registry.set(
+                                            "drift_real_vs_control_pct",
+                                            divergencia,
+                                        );
+                                        engine_real.arena.registry.set(
+                                            "drift_control_pnl_pct",
+                                            control_pct,
+                                        );
+                                    }
+                            }
                             let was_blocked = drift_recovery.is_blocked();
                             drift_recovery.observe(&audit);
                             engine_real.set_drift_entry_veto(drift_recovery.is_blocked());
@@ -3864,11 +3885,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let stop_pct = if core_sl > 0.0 && entry_price > 0.0 {
                             ((entry_price - core_sl).abs() / entry_price).max(0.0015)
                         } else {
+                            // R4-A1 (G0-5 paridad Ω14): tercer sitio que leía el
+                            // ancla cruda `scalp_sl_base` — fuente única: la
+                            // curva viva evaluada al ancla rápida (hot-swap
+                            // seguro si el genoma muta curvas en caliente).
                             engine_real
                                 .arena
                                 .config
-                                .scalp_sl_base
-                                .load(Ordering::Relaxed)
+                                .sl_at_tau(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
                                 .max(engine_real.feature_engines.get(coin_id).map(|fe| fe.get_atr_pct()).unwrap_or(0.0) * 1.5)
                                 .max(0.0015)
                         };
@@ -3897,14 +3921,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let pos_margin = engine_real.arena.coins[coin_id].positions.slots().into_iter().find(|p| p.is_open()).map(|p| p.margin_used.load(Ordering::Relaxed)).unwrap_or(0.0);
                         let _core_leverage = if pos_margin > 0.0 && notional_ord > 0.0 {
                             (notional_ord / pos_margin).round().clamp(1.0, 50.0) as u32
+                        } else if cap_now <= 50.0 {
+                            // R5-H3 (MICRO-CAPITAL APALANCAMIENTO CANÓNICO):
+                            // Para cuentas micro (cap_now <= 50.0), el apalancamiento canónico
+                            // necesario para que el nocional mínimo de Binance ($5.10 USDT)
+                            // requiera exactamente $1.02 de margen (7.85% de $13 USDT) es 5x.
+                            // La fórmula previa (5.05 / 1.30 = 3.88 -> ceil = 4) arrojaba 4x,
+                            // requiriendo $1.275 USD de margen y consumiendo 25% más del presupuesto.
+                            5
                         } else {
-                            (5.05 / cap_now.max(1.0)).ceil().clamp(1.0, 20.0) as u32
+                            (5.05 / (cap_now * 0.10).max(1.0)).ceil().clamp(1.0, 10.0) as u32
                         };
+                        let tau_entry = entry_reservation
+                            .as_ref()
+                            .map(|r| {
+                                engine_real.arena.coins[coin_id]
+                                    .positions
+                                    .get_slot(r.slot)
+                                    .entry_tau_ms
+                                    .load(Ordering::Relaxed)
+                            })
+                            .unwrap_or(0)
+                            as f64;
                         if envelope_n < 30.0 {
-                            // BOOTSTRAP: riesgo mínimo para acumular evidencia.
-                            // La envolvente told "no" porque no sabe — dejamos
-                            // que el sistema APRENDA con skin in the game mínimo.
-                            exec_leverage = 1;
+                            // F4-H2 / R5-H3 (BOOTSTRAP MICRO): acumular evidencia con el apalancamiento
+                            // validado por el core/arena, garantizando que el nocional mínimo de Binance
+                            // ($5 USDT) no consuma más del margen presupuestado en una cuenta micro ($13 USDT).
+                            // A apalancamiento 1x, $5.05 de nocional consume 38.8% del capital en margen,
+                            // estrangulando el margen libre y provocando vetos de margen prematuros.
+                            let boot_lev = if pos_margin > 0.0 && notional_ord > 0.0 {
+                                (notional_ord / pos_margin).round().clamp(1.0, 10.0) as u32
+                            } else if cap_now <= 50.0 {
+                                5
+                            } else {
+                                _core_leverage.clamp(1, 10)
+                            };
+                            exec_leverage = boot_lev.clamp(1, 10);
                         } else if operable {
                             // C-08 (INFORME 14): la envolvente bayesiana
                             // (LCB + shrinkage + guard de ruina) es ahora
@@ -3933,17 +3985,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // CL-4: la τ es la de la RANURA RESERVADA para esta
                             // orden, no la de `positions.position` (ranura 2):
                             // el núcleo abre en la primera ranura libre.
-                            let tau_entry = entry_reservation
-                                .as_ref()
-                                .map(|r| {
-                                    engine_real.arena.coins[coin_id]
-                                        .positions
-                                        .get_slot(r.slot)
-                                        .entry_tau_ms
-                                        .load(Ordering::Relaxed)
-                                })
-                                .unwrap_or(0)
-                                as f64;
                             // D-745b: el apalancamiento se divide por el stop
                             // REAL DE ESTA ORDEN, no por la curva genómica
                             // evaluada en τ. `compute_tp_sl` fija el stop por
@@ -3993,7 +4034,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             exec_leverage = 0; // SIN ORDEN: la matemática dijo NO
                         }
-                        let _ = tx_log_worker.try_send((true, is_long, coin_id));
+                        let _ = tx_log_worker.try_send((tau_entry as u64, is_long, coin_id));
 
                         let ml_prob = engine_real.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
                         if ml_prob > 0.80 || ml_prob < 0.20 {
@@ -4016,19 +4057,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .get(coin_id)
                                 .filter(|s| s.dominant_tau_ms > 0.0)
                                 .map(|s| s.dominant_tau_ms)
-                                .unwrap_or(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS);
-                            let tp_frac = quantum_arena::temporal_spectrum::HorizonCurve::through_two_points(
-                                quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
-                                engine_real.arena.config.scalp_tp_base.load(Ordering::Relaxed),
-                                quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
-                                engine_real.arena.config.swing_tp_base.load(Ordering::Relaxed),
-                            ).eval(tau_eff);
-                            let sl_frac = quantum_arena::temporal_spectrum::HorizonCurve::through_two_points(
-                                quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
-                                engine_real.arena.config.scalp_sl_base.load(Ordering::Relaxed),
-                                quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
-                                engine_real.arena.config.swing_sl_base.load(Ordering::Relaxed),
-                            ).eval(tau_eff);
+                                .unwrap_or(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
+                                .clamp(
+                                    quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                                    quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                                );
+                            // G0-5 (Ola Ω14): FUENTE ÚNICA de brackets continuos desde arena.config.tp_at_tau / sl_at_tau.
+                            let tp_frac = engine_real.arena.config.tp_at_tau(tau_eff);
+                            let sl_frac = engine_real.arena.config.sl_at_tau(tau_eff);
                             // B3.2: el fallback de entrada también nace viable —
                             // pisos de fricción idénticos a genome_protection_prices.
                             // B3.19: + deslizamiento por latencia, como el gate.
@@ -4099,7 +4135,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // = señal correcta. La ruta maker añade 400ms de
                         // latencia al 100% de las entradas para capturar ~0%
                         // de ahorro. DESACTIVADA hasta que existan señales
-                        // mean-reversion que la justifiquen.
+                        // B3.29 / CL-14 / R6-C5 (OLA Ω40/Ω42) — DESPACHO CANÓNICO IOC CON PROTECCIÓN DINÁMICA:
+                        // La política operativa canónica (B3.29 / CL-14) impone `force_maker = false` incondicionalmente,
+                        // despachando mediante IOC con guardia dinámica de slippage (AGY-AUD-P32). Esto elimina los
+                        // 400ms de latencia pasiva y la selección adversa probada empíricamente (38/38 órdenes pasivas
+                        // rechazadas o ejecutadas en retroceso adverso).
+                        // La rotación de Hodge (`curl_share`) y la curvatura de Yang-Mills (`ym_action`) se preservan
+                        // activamente en el OmniscientRegistry para la gobernanza continua del Consejo
+                        // (SeniorMicroestructura modula por componente laminar 1.0 - 0.70*curl_share) y para
+                        // telemetría forense de vórtices multiactivo.
+                        let curl_share = engine_real.arena.registry.get_for_coin_or(coin_id, "hodge_curl_share", 0.0);
+                        let ym_action = engine_real.arena.registry.get_value_or("yang_mills_action", 0.0);
+                        let _is_mean_reversion_vortex = (curl_share > 0.75 || (curl_share > 0.60 && ym_action > 0.10))
+                            && dbp > 0.0 && dap > 0.0 && dbp < dap;
                         let force_maker = false;
                         // B3.28 — PRECIO PASIVO AL LIBRO VIVO, no al mid
                         // congelado. Con maker_price = mid del tick
@@ -4109,7 +4157,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Pasivo al BID (para long) o ASK (para short): si
                         // el libro no se movió, descansa en top of book y
                         // llena con el próximo agresor opuesto.
-                        let maker_price = if dbp > 0.0 && dap > 0.0 && dbp <= dap {
+                        let maker_price = if dbp > 0.0 && dap > 0.0 && dbp < dap {
                             if final_is_long { dbp } else { dap }
                         } else {
                             current_price
@@ -4662,31 +4710,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     f64::from_bits(unified_capital.load(std::sync::atomic::Ordering::Relaxed))
                 );
 
-                // FASE 18: Emitir al Zero-Copy Bus (Ring Buffer pre-allocado)
-                // Cero locks, cero allocations. 3-5ns delay en lugar de milisegundos.
-                let mut payload = [0.0; 6];
-                payload[0] = total_net_pnl; // NET PnL
-                payload[1] = 0.0;
-                payload[2] = total_unrealized_pnl;
-                payload[3] = 0.0;
-                payload[4] = win_rate;
-                payload[5] = 0.0;
+                // FASE 18 (XCIII, F7-A-H1): los emits al Zero-Copy Bus se
+                // RETIRAN — ver comentario de abajo. El payload que alimentaban
+                // se retira con ellos (era sólo para esos emits).
 
-                if latency_panic {
-                    telemetry_server::zero_copy_bus::GLOBAL_TELEMETRY.emit(
-                        telemetry_server::zero_copy_bus::SUBSYSTEM_GOD_ENGINE,
-                        telemetry_server::zero_copy_bus::EVT_LATENCY_PANIC,
-                        0,
-                        [lat as f64, 0.0, 0.0, 0.0, 0.0, 0.0]
-                    );
-                }
-
-                telemetry_server::zero_copy_bus::GLOBAL_TELEMETRY.emit(
-                    telemetry_server::zero_copy_bus::SUBSYSTEM_GOD_ENGINE,
-                    telemetry_server::zero_copy_bus::EVT_OMNI_UPDATE_FAST,
-                    0,
-                    payload
-                );
+                // XCIII (F7-A-H1 del barrido): los emits a zero_copy_bus se
+                // RETIRAN — el anillo de 64MB con RAM clavada (VirtualLock)
+                // no tiene LECTOR (read_recent_events/ghost_flusher: 0 callers;
+                // el flusher era simulado). Cada emit materializaba el Lazy y
+                // fijaba 64MB para escribir a /dev/null. El consumidor vivo de
+                // predicción-vs-realidad es storage-engine::mmap_bus (seqlock,
+                // persistido, el daemon lo lee) vía write_prediction_vs_reality_ext
+                // en god-engine-core — esa ruta NO se toca. Si algún día se
+                // cablea un lector real para este bus, restaurar los emits.
 
                 // Enviar también al ws clásico temporalmente si es estricto, o preferiblemente
                 // dejar que un background task procese el ring buffer.
@@ -5015,3 +5051,85 @@ fn format_tau(tau_ms: f64) -> String {
         format!("{:.1}d", tau_ms / 86_400_000.0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        
+        // Mutamos las curvas continuas en caliente para verificar que genome_protection_prices
+        // responde a la curva activa y no a las anclas fijas obsoletas.
+        // Curva TP: a = ln(0.04), b = 0.0 (plana en 4%)
+        // Curva SL: a = ln(0.02), b = 0.0 (plana en 2%)
+        arena.config.tp_curve_a.store(0.04f64.ln(), Ordering::Relaxed);
+        arena.config.tp_curve_b.store(0.0, Ordering::Relaxed);
+        arena.config.sl_curve_a.store(0.02f64.ln(), Ordering::Relaxed);
+        arena.config.sl_curve_b.store(0.0, Ordering::Relaxed);
+
+        // Sin fricción artificial para aislar la paridad geométrica
+        arena.config.live_taker_fee.store(0.0001, Ordering::Relaxed);
+        arena.config.base_slippage_floor.store(0.00001, Ordering::Relaxed);
+        arena.config.latency_penalty_ms.store(0.0, Ordering::Relaxed);
+
+        let entry_price = 50_000.0;
+        let tau_test_ms = 120_000; // 2 minutos
+
+        let (tp, sl) = genome_protection_prices(&arena, "BTCUSDT", true, entry_price, tau_test_ms);
+
+        let expected_tp_frac = arena.config.tp_at_tau(tau_test_ms as f64);
+        let expected_sl_frac = arena.config.sl_at_tau(tau_test_ms as f64);
+
+        // Verificamos que las curvas entreguen exactamente los valores mutados
+        assert!((expected_tp_frac - 0.04).abs() < 1e-6, "expected_tp_frac debe ser 0.04");
+        assert!((expected_sl_frac - 0.02).abs() < 1e-6, "expected_sl_frac debe ser 0.02");
+
+        // Verificamos que TP > entry_price y SL < entry_price para long
+        assert!(tp > entry_price, "TP debe ser superior al precio de entrada");
+        assert!(sl < entry_price, "SL debe ser inferior al precio de entrada");
+
+        // Calculamos paridad esperada considerando posibles friction_floors
+        let fee_rt = risk_engine::tp_sl::roundtrip_friction(0.0001, 0.00001, 0.0, 0.0);
+        let (expected_sl_floor, expected_tp_floor) =
+            quantum_arena::genome::SuperGenotype::friction_floors(fee_rt, expected_sl_frac, expected_tp_frac);
+
+        let expected_tp = entry_price * (1.0 + expected_tp_floor);
+        let expected_sl = entry_price * (1.0 - expected_sl_floor);
+
+        assert!(
+            (tp - expected_tp).abs() < 1e-4,
+            "TP calculado ({}) debe coincidir bit a bit con fuente única ({})",
+            tp,
+            expected_tp
+        );
+        assert!(
+            (sl - expected_sl).abs() < 1e-4,
+            "SL calculado ({}) debe coincidir bit a bit con fuente única ({})",
+            sl,
+            expected_sl
+        );
+    }
+
+    #[test]
+    fn omega14_g0_5_c05_clamp_anclas_invariante() {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        let entry_price = 100.0;
+
+        // Caso tau degenerada / no inicializada (0 ms) -> debe clamar a TAU_ANCHOR_FAST_MS
+        let (tp_fast, sl_fast) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, 0);
+        let (tp_anchor_fast, sl_anchor_fast) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, TAU_ANCHOR_FAST_MS as u64);
+        assert_eq!(tp_fast, tp_anchor_fast, "Tau = 0 debe colapsar a ancla rápida");
+        assert_eq!(sl_fast, sl_anchor_fast, "Tau = 0 debe colapsar a ancla rápida");
+
+        // Caso tau degenerada cósmica (146 años) -> debe clamar a TAU_ANCHOR_SLOW_MS
+        let (tp_slow, sl_slow) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, 4_611_686_018_427);
+        let (tp_anchor_slow, sl_anchor_slow) = genome_protection_prices(&arena, "ETHUSDT", true, entry_price, TAU_ANCHOR_SLOW_MS as u64);
+        assert_eq!(tp_slow, tp_anchor_slow, "Tau cósmica debe colapsar a ancla lenta");
+        assert_eq!(sl_slow, sl_anchor_slow, "Tau cósmica debe colapsar a ancla lenta");
+    }
+}
+

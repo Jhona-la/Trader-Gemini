@@ -84,7 +84,10 @@ impl SupersonicShockwaveEngine {
                 return 0.0;
             }
             let m = Self::compute_mach_number(x.abs().min(10.0), c_z);
-            (x.clamp(-10.0, 10.0).tanh() * Self::compute_shockwave_jump(m))
+            // R5-A2: firma a la ESCALA DEL ESTADÍSTICO en PARIDAD con el
+            // camino vivo ((speed/sound)/2 de la Ola 69) — antes tanh(x)
+            // crudo era 2× más empinado que el vivo del MISMO motor.
+            ((x.clamp(-10.0, 10.0) / c_z) / 2.0).tanh() * Self::compute_shockwave_jump(m)
                 .clamp(-1.0, 1.0)
         })
     }
@@ -144,27 +147,6 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
             })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
-        let sound = registry
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "spread_speed_of_sound",
-                "SupersonicShockwaveEngine",
-            )
-            .or_else(|| {
-                registry.get_scoped_parameter(
-                    sym_opt,
-                    cid_opt,
-                    "atr_pct",
-                    "SupersonicShockwaveEngine",
-                )
-            })
-            .map(|p| p.get_value())
-            .unwrap_or(0.001);
-
-        if !speed.is_finite() || !sound.is_finite() {
-            return 0.0;
-        }
 
         let mid_price = registry
             .get_scoped_parameter(sym_opt, cid_opt, "mid_price", "SupersonicShockwaveEngine")
@@ -178,15 +160,77 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
         } else {
             speed
         };
-        let sound_norm = if mid_price > 1e-8 && sound > 1.0 {
-            sound / mid_price
-        } else {
-            sound
-        };
+        // #664 (G2-8): la unidad se decide por la FUENTE del parámetro,
+        // no por su magnitud — el umbral `sound > 1.0` clasificaba mal
+        // el sonido de tokens sub-dólar (precio/s < 1) como «por barra»
+        // y el Mach quedaba inflado cientos de × (el defecto #650
+        // reaparecía para DOGE/PEPE).
+        // `spread_speed_of_sound` (escritor del core) es precio/s ⇒ se
+        // normaliza por mid_price; `atr_pct` es fracción POR BARRA de
+        // 60 s ⇒ se convierte a fracción/segundo aquí.
+        // #666 (H2-5): bajo difusión, E[rango_60s] = σ√60 — el análogo
+        // en velocidad-por-segundo del rango ATR es ÷√60, no ÷60 (drift).
+        // ÷60 subrestimaba la velocidad del sonido 7.75× ⇒ Mach inflado.
+        const BARRA_S: f64 = 7.7459666924; // √60
+        let has_spread_sound = registry
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "spread_speed_of_sound",
+                "SupersonicShockwaveEngine",
+            )
+            .is_some();
+        if !has_spread_sound && mid_price <= 1e-8 {
+            // R5-C1 (R4-C5): con spread_speed_of_sound ausente, el fallback es atr_pct (fracción/s).
+            // Sin mid_price (>1e-8), speed no se puede normalizar a fracción/s y permanece en dólares/s.
+            // Mezclar dólares/s con fracción/s rompe unidades físicas (Mach ×mid_price).
+            // Por coherencia dimensional estricta, el motor se abstiene devolviendo 0.0.
+            return 0.0;
+        }
+
+        let sound_segundo = registry
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "spread_speed_of_sound",
+                "SupersonicShockwaveEngine",
+            )
+            .map(|p| {
+                let v = p.get_value();
+                if mid_price > 1e-8 && v.is_finite() {
+                    v / mid_price
+                } else {
+                    v
+                }
+            })
+            .or_else(|| {
+                registry.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "atr_pct",
+                    "SupersonicShockwaveEngine",
+                )
+                .map(|p| p.get_value() / BARRA_S)
+            })
+            .unwrap_or(0.001);
+        // R5-C1 resuelto arriba por Ω21 (guarda previa al sonido — el
+        // auto-merge duplicó esta segunda guarda de la Ola 71; retirada).
+        let sound_norm = sound_segundo;
+
+        if !speed.is_finite() || !sound_norm.is_finite() || sound_norm <= 0.0 {
+            return 0.0;
+        }
 
         let mach = Self::compute_mach_number(speed_norm.abs(), sound_norm);
         let jump = Self::compute_shockwave_jump(mach);
-        speed.signum() * jump
+        // #659 (F2-A11): firma CONTINUA del flujo (familia tanh del
+        // solitón #657 — sin escalón de signum en speed=0).
+        // R4-C2: firma a la ESCALA DEL ESTADÍSTICO — el divisor 1e4
+        // saturaba speed_norm O(1e-4..1e-2)/s a signum disfrazado
+        // (media respuesta en 5e-5); tanh(mach/2) es el análogo vivo de
+        // la sombra (tanh natural en z) y conserva ambos contratos de
+        // qo_666: mach 1.2 → 0.53·jump, mach 10 → 0.99991·jump.
+        (speed_norm / sound_norm / 2.0).tanh() * jump
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
@@ -307,3 +351,52 @@ mod qo_610_tests {
     }
 
 }
+
+#[cfg(test)]
+mod qo_666_tests {
+    use super::*;
+    use omniscient_registry::OmniscientRegistry;
+    use std::sync::Arc;
+
+    /// #666 (H2-5): el fallback ATR como velocidad del sonido usa la
+    /// física DIFUSIVA /√60 — bajo difusión E|rango_60s|=σ√60, así el
+    /// análogo por segundo del rango es ÷√60. Con el drift /60 la
+    /// velocidad quedaba 7.75× subrestimada (Mach inflado).
+    #[test]
+    fn qo_666_fallback_atr_es_difusivo() {
+        // Registro con sólo atr_pct (sin spread_speed_of_sound) y mid alto
+        // para que speed_norm = speed/mid: 1.0/60 s = fracción/segundo.
+        let registry = Arc::new(OmniscientRegistry::new());
+        // speed_norm = 72/60000 = 0.0012/s; sound_difusivo = atr/√60 =
+        // 0.001/s ⇒ Mach = 1.2 ⇒ jump(1.2) = tanh(0.22) ≈ 0.21 débil.
+        // Con el VIEJO drift /60: sound = 1.29e-4 ⇒ Mach ≈ 9.3 ⇒ jump ≈ 1
+        // — el test discrimina difusión vs drift por la magnitud del voto.
+        registry.set("order_flow_speed", 72.0);
+        registry.set("atr_pct", 0.0077459666924); // = √60/1000
+        registry.set("mid_price", 60_000.0);
+        let mut engine = SupersonicShockwaveEngine::default();
+        engine.init(Arc::clone(&registry)).ok();
+        let v = engine.evaluate();
+        assert!(v > 0.0 && v < 0.2, "Mach 1.2 difusivo = salto debil: {v}");
+        // Y a Mach ~10 (0.01/s): jump saturado.
+        registry.set("order_flow_speed", 600.0);
+        let v10 = engine.evaluate();
+        assert!(v10 > 0.7 && v10 > 3.0 * v, "Mach 10 satura vs Mach 1.2 debil: {v10} vs {v}");
+    }
+
+    /// R5-C1 (R4-C5): sin spread_speed_of_sound y sin mid_price (>1e-8),
+    /// el fallback fraccional (atr_pct) no puede coexistir con speed en USD/s
+    /// sin romper la coherencia dimensional. El motor debe abstenerse (0.0).
+    #[test]
+    fn r5_c1_abstiene_sin_mid_price_con_fallback_fraccional() {
+        let registry = Arc::new(OmniscientRegistry::new());
+        registry.set("order_flow_speed", 72.0);
+        registry.set("atr_pct", 0.0077459666924);
+        // mid_price ausente (0.0 <= 1e-8)
+        let mut engine = SupersonicShockwaveEngine::default();
+        engine.init(Arc::clone(&registry)).ok();
+        let v = engine.evaluate();
+        assert_eq!(v, 0.0, "Sin mid_price y con fallback fraccional debe abstenerse");
+    }
+}
+

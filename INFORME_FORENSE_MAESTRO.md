@@ -8820,3 +8820,85 @@ Cierre MP-08: código6ec084e9 validado315/0/3, check25,41s; informe§18 y JSON
 qa_mp08_final conservan los resultados anteriores y añaden el nuevo corte.
 No corresponde a315 fallos reparados ni demuestra merge/CI remotos. Publicar
 y revisar este candidato mantiene separados prueba local y cierre integrado.
+
+## 2026-10-04 — RA: nueva revisión desde main949d, no certificación global
+
+Se añade el [informe RA](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md) y su
+[artefacto estructurado](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.json).
+Contienen 16 expedientes con causa, contraejemplo, efecto, antecedentes y criterio
+de cierre. Cinco familias reciben parches locales: enteros/reloj, booleanos,
+profundidad mixta/agregado finito, admisión no finita y frontera OOS real.
+Once expedientes y el residual estructural L2 siguen abiertos. Los conteos de
+tests no son conteos de bugs ni acreditan los 1427 archivos del inventario.
+PR24/25 ya están integradas; MW permanece separada. Los recibos anteriores
+no se borran: la adenda RA distingue versiones, runners y snapshots.
+
+### Adenda RA/MG — sincronización y contratos matemáticos
+
+El informe raíz§§16–17 y JSON.latest_status añaden CI real32/0, integración
+documental de planes Qoder/GLM y revisión automatizada acotada. T-1 local sigue
+en compilación; RA no está integrado en main. Dos defectos de vigencia (R e IC
+retenidos) y tres validaciones de modelos/políticas quedan separados de los16 RA.
+El plan compartido§§6–12 explica cálculos de compuesto, supuestos, grafo G0–G8,
+criterios de cierre y cobertura pendiente. No se borra evidencia previa ni se
+declara una certificación económica o auditoría semántica de todos los archivos.
+
+### Adenda RA — revalidación por versión y topología
+
+[RA §§19–23](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#19-recibo-posterior-de-revisión-glm-y-gates-no-equivalentes)
+conserva review GLM condicionada y CI b6df187/0/3ignoradas, sin transferir el
+recibo al head posterior. R01/E03/E04 siguen confirmados con mecanismos y
+contraejemplos precisados. El grafo Cargo24/202/88 es estructural, no runtime.
+D127/D237 siguen con contrato concurrente abierto: volatile y contador no hacen
+atómico el payload. #80 usa la implementación mmap distinta; #101 ya no es
+plantilla vacía en main5ab. No borrar históricos ni duplicar estos expedientes.
+
+### Adenda RA posterior — semántica, reloj y pruebas con identidad
+
+[RA§29](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#29-semántica-del-multifractalhurst-y-continuidad-temporal-real)
+documenta la frontera del proxy Hurst, ventanas por observación y D0ocupación:
+no son certificación de dependencia temporal/soporte universal. RA§30 detalla
+MG12fallos→13pases, review y máscara; IC histórico mismaescala aún pendiente.
+[RA§31](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#31-nuevo-seguimiento-de-reloj-aceptado-ra-i-f01)
+documenta reloj rechazado y reparación aislada7fallos→25pases, no wholecore.
+[RA§32](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#32-resultado-t1-completo-propio-de-ra-identidad-y-alcance)
+conserva T1 propio2/0/0 y16/144 bajo fixture/predictor históricos. No rentabilidad,
+inercia global, paridadprod, cierre de todos bugs o llegada automática a main.
+
+### Adenda posterior Codex: bosque verificado y contratos explícitos de CI
+
+[RA§34](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#34-e03e04-control-negativo-efectivo-y-cierre-técnico-local-del-bosque)
+recibe RED7/9→GREEN16/0, biblioteca73/0, hash y all-targets0 del candidato
+E03/E04. Reparación local, no main ni DD MTM; no duplicar esos IDs originales.
+[RA§33](docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md#33-brecha-de-ci-compilar-un-target-no-ejecutaba-sus-nuevos-contratos)
+documenta pasos explícitos de pruebas añadidos sin retirar regresiones. CI
+remota, T1/paridad pertinentes y confirmación de publicación siguen pendientes.
+
+## ADENDA MW — watcher, rechazos y aplicación real (2026-10-03)
+
+[Informe MW](docs/AUDITORIA_WATCHER_MODELOS_2026-10-03.md) y
+[artefacto MW](docs/artifacts/auditoria_watcher_modelos_2026-10-03.json):
+tres familias candidatas y cuatro expedientes abiertos. MR-04/MP-06 se
+revisan en código actual, no se cuentan como descubrimientos independientes.
+El watcher marcaba mtime antes del éxito, el arranque declaraba Loaded incluso
+al fallar y JSON/BIN alternaban la misma clave. Tracker compartido selecciona
+una fuente, confirma aplicación sólo tras éxito y conserva fallos reintentables.
+Ruta/mtime/tamaño detectan más cambios, pero no prueban identidad de contenido.
+
+RED de política extraída2/7; GREEN13/0:10 contratos conductuales,1 estático y
+2 testigos de límites abiertos. La compilación completa sigue pendiente en
+este corte. No se arrancó el host ni se ejecutó training/promoción/T-1.
+La democión por renombrado no revoca memoria ni BIN legacy; ADR-0008 propuesto
+no acredita ese efecto. Siguen abiertos linaje, contenido con igual metadata
+y latencia de E/S síncrona. No retirar guardas para ocultar esos fallos.
+
+Recibo remoto actualizado: MP/PR25 y GO/PR24 MERGED con CI SUCCESS y review
+GLM COMMENTED favorable; ambos heads son ancestros de main7fdd12dd. Los avisos
+históricos de espera se conservan, no representan el estado del2026-10-03.
+Sólo se retiró rama local GLM LXXXI integrada/sin worktree; historial en main.
+
+Informe MW§10 añade dos precisiones científicas sin cambiar fórmulas ajenas:
+SC-01, la rampa VECM es continua pero no C1/C∞ en sus esquinas; SC-02, igual
+cardinalidad de sensibilidad no prueba preservación de los mismos genes.
+Pruebas por derivadas laterales y contraejemplo de conjuntos. Son observaciones
+documentales/lógicas, no nuevas reparaciones productivas ni datos de rentabilidad.

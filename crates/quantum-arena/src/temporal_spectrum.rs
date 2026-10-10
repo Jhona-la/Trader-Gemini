@@ -122,6 +122,12 @@ fn factor_de_resolucion(tau_ms: f64, resolucion_ms: f64) -> f64 {
 }
 pub const TAU_ANCHOR_SLOW_MS: f64 = 43_200_000.0;
 
+/// Número exacto de escalas en la malla log-espaciada base 4 que caen dentro de
+/// la banda operable [TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS] (índices 18 a 22).
+/// C-1 (R7-R2-C-1): Las pruebas de hipótesis del máximo entre escalas concurrentes
+/// solo compiten sobre estas 5 escalas, no sobre la malla entera de 32 escalas.
+pub const ESCALAS_OPERATIVAS_BANDA: usize = 5;
+
 /// D-638b (DÉCIMA OLA) — MAPEO ÚNICO DEL HORIZONTE OPERATIVO.
 ///
 /// Tras ampliar el espectro a 1 ns–146 años convivían TRES conversiones del
@@ -198,6 +204,12 @@ pub struct ScaleState {
     /// Suma del núcleo de |dev| SIN corregir por la masa observada; la
     /// estimación pública `ewma_dev_vol` es `raw_dev_vol / masa` (D-742).
     raw_dev_vol: f64,
+    /// #664 (G1-4) / Ω12 — convergencia de dos sesiones: segundo momento
+    /// del núcleo, EWMA de dev² SIN corregir por masa (convención
+    /// raw_dev_vol). Da el verdadero E[dev²] = raw_dev_s2/masa, sin el
+    /// sesgo de Jensen de (E|dev|)² (~36% en gaussiana, >50% en colas
+    /// cripto) que sesgaba ζ₂ y χ=((3/2)ζ₂−ζ₃)⁺.
+    raw_dev_s2: f64,
     /// (Ola XLI·C2) Tercer momento absoluto del núcleo: EWMA de |dev|³ por
     /// escala, SIN corregir por masa (igual convención que raw_dev_vol).
     /// Alimenta las funciones de estructura de Kolmogorov.
@@ -210,6 +222,13 @@ pub struct ScaleState {
     skill_wr: f64,
     skill_wsr: f64,
     skill_n: u64,
+    /// #661 — e-proceso de Ville por escala: la significancia
+    /// anytime-valid del banco de τ*. El umbral fijo de Fisher es la
+    /// aproximación de-n-fijo; el capital del e-proceso no se cruza
+    /// por optional stopping. #663 (G1-1): la MULTIPLICIDAD del máximo
+    /// entre escalas se corrige con el umbral de familia M/α=640 en la
+    /// selección (`significativo_familia(32)`).
+    skill_e: crate::evalues::EProceso,
     /// #594 — señal al armar el bloque en curso (s(t₀); no ve el retorno
     /// que después la puntúa — causalidad por construcción).
     bloque_s0: f64,
@@ -268,6 +287,18 @@ const PERSISTENCIA_BLOQUES: f64 = 16.0;
 /// normalizar) para el transporte de Wasserstein: MASS_RING muestras.
 const MASS_RING: usize = 256;
 
+/// #662 (F2-B3) — cadencia mínima de captura del anillo de masas. Con una
+/// captura por UPDATE el anillo cubría 2,56 s de reloj a 100 ev/s y el lag
+/// físico de 60 s quedaba sin historia. A 250 ms/captura, 256 entradas
+/// cubren 64 s de reloj del exchange a CUALQUIER tasa de feed.
+const W1_SNAP_CADENCIA_MS: u64 = 250;
+
+/// #662 (F2-B3) — lag FÍSICO del transporte W₁ (60 s de reloj del
+/// exchange), no un conteo de updates: 64 updates eran 0,64 s a 100 ev/s
+/// y 64 s a 1 ev/s — la reestructuración del régimen es una cantidad
+/// temporal y se mide en tiempo, no en eventos.
+pub const W1_LAG_FISICO_MS: u64 = 60_000;
+
 /// #594 — olvido del IC prequential por escala: media de ~64 bloques de τ
 /// (vida media ≈ 44). Suficiente para estabilidad, corta para regímenes.
 const HABILIDAD_OLVIDO: f64 = 1.0 / 64.0;
@@ -275,23 +306,21 @@ const HABILIDAD_OLVIDO: f64 = 1.0 / 64.0;
 /// (misma disciplina que `MUESTRAS_MADURAS` del banco de pronóstico).
 pub const MUESTRAS_SKILL_MADURAS: u64 = 30;
 
-/// #599 — umbral de significancia del IC para la selección de τ* (t ≥ 2 con
-/// el error estándar de Fisher 1/√(n−3)). El MÁXIMO de varios IC de puro
-/// ruido suele ser positivo (sesgo de selección entre 32 escalas,
-/// señalización de CL sobre #594): exigir significancia hace el umbral
-/// autoajustable por muestra — ≈0.385 con 30 bloques, ≈0.215 con 90 — sin
-/// constantes mágicas. `None` sin muestras para el estadístico.
+/// #662 (F2-B4) — peso CONTINUO de la masa de una escala en la regresión
+/// ζ(p): rampa C¹ (smoothstep 3t²−2t³) centrada en el corte viejo de 0,10
+/// (0 en ≤0,05; 1 en ≥0,15; 0,5 en 0,10). Con pertenencia dura cada escala
+/// que maduraba cruzaba el umbral con peso PLENO y ζ/χ saltaban — y χ
+/// modula pisos vivos del sistema. Invariante 8: fronteras = centros de
+/// transición suave, no cortes.
 #[inline]
-pub fn umbral_ic_significativo(n_bloques: u64) -> Option<f64> {
-    if n_bloques < MUESTRAS_SKILL_MADURAS + 3 {
-        return None;
+pub fn peso_masa_continuo(mass: f64) -> f64 {
+    if !mass.is_finite() || mass <= 0.0 {
+        return 0.0;
     }
-    let umbral = 2.0 / ((n_bloques - 3) as f64).sqrt();
-    if umbral.is_finite() && umbral > 0.0 {
-        Some(umbral.min(1.0))
-    } else {
-        None
-    }
+    const LO: f64 = 0.05;
+    const HI: f64 = 0.15;
+    let t = ((mass - LO) / (HI - LO)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 pub struct TemporalSpectrum {
@@ -299,7 +328,12 @@ pub struct TemporalSpectrum {
     last_ts_ms: u64,
     /// (Ola XLII·D) Historial circular de masas por escala para W₁.
     mass_ring: [[f64; 32]; MASS_RING],
+    /// #662 (F2-B3): timestamp del exchange de cada captura del anillo —
+    /// el emparejamiento del transporte es contra RELOJ FÍSICO.
+    mass_ring_ts: [u64; MASS_RING],
     mass_ring_len: usize,
+    /// #662 (F2-B3): ts de la última captura (cadencia de 250 ms).
+    last_snap_ts: u64,
     /// Primer instante observado: define la masa del núcleo que los datos ya
     /// llenaron en cada escala (D-742).
     first_ts_ms: u64,
@@ -332,7 +366,9 @@ impl TemporalSpectrum {
             scales,
             last_ts_ms: 0,
             mass_ring: [[0.0; 32]; MASS_RING],
+            mass_ring_ts: [0; MASS_RING],
             mass_ring_len: 0,
+            last_snap_ts: 0,
             first_ts_ms: 0,
             updates: 0,
             fused_score: 0.0,
@@ -347,10 +383,17 @@ impl TemporalSpectrum {
         if !tau_ms.is_finite() || tau_ms <= 0.0 {
             return None;
         }
+        // #662 (F2-B2): la malla es multiplicativa (τ_k = 4^k µs) — el
+        // vecino de una τ arbitraria se mide en ln τ. Con distancia
+        // ABSOLUTA, τ*=35 s caía al nodo de 17,2 s aunque en ejes de
+        // escala estuviera más cerca del de 68,7 s, y la telemetría
+        // reportaba la habilidad de una escala que el sistema no opera
+        // (sesgo hacia el nodo inferior en cada frontera de la malla).
+        let target_ln = tau_ms.ln();
         let mut best = usize::MAX;
         let mut best_d = f64::INFINITY;
         for (i, s) in self.scales.iter().enumerate() {
-            let d = (s.tau_ms - tau_ms).abs();
+            let d = (s.tau_ms.ln() - target_ln).abs();
             if d < best_d {
                 best_d = d;
                 best = i;
@@ -393,6 +436,7 @@ impl TemporalSpectrum {
                 s.ewma_price = price;
                 s.ewma_dev_vol = 0.0;
                 s.raw_dev_vol = 0.0;
+                s.raw_dev_s2 = 0.0;
                 s.signal = 0.0;
                 s.bloque_armado = true;
                 s.bloque_t0_ms = ts_ms;
@@ -450,6 +494,8 @@ impl TemporalSpectrum {
                 s.skill_wr += (wr - s.skill_wr) * HABILIDAD_OLVIDO;
                 s.skill_wsr += (wsr - s.skill_wsr) * HABILIDAD_OLVIDO;
                 s.skill_n = s.skill_n.saturating_add(1);
+                // #661: la misma maduración alimenta el e-proceso.
+                s.skill_e.observar(s.bloque_s0, r);
                 let signo = |x: f64| {
                     if x > 0.0 {
                         1.0
@@ -500,9 +546,11 @@ impl TemporalSpectrum {
             // vol es la media observada (suma del núcleo / masa llenada) y el
             // peso de la fusión multiplica por esa masa: lo no observado no
             // opina.
-            s.raw_dev_vol = s.raw_dev_vol * (1.0 - alpha) + alpha * dev.abs();
             let abs_dev = dev.abs();
+            s.raw_dev_vol = s.raw_dev_vol * (1.0 - alpha) + alpha * abs_dev;
             s.raw_dev_s3 = s.raw_dev_s3 * (1.0 - alpha) + alpha * abs_dev * abs_dev * abs_dev;
+            // #664 (G1-4): S₂ verdadero (E[dev²]) para la regresión ζ(2).
+            s.raw_dev_s2 = s.raw_dev_s2 * (1.0 - alpha) + alpha * dev * dev;
             let mass = 1.0 - (-elapsed / s.tau_ms).exp();
             s.ewma_dev_vol = if mass > 0.0 { s.raw_dev_vol / mass } else { 0.0 };
 
@@ -516,14 +564,23 @@ impl TemporalSpectrum {
         }
         // (Ola XLII·D) Snapshot de masa para el transporte de Wasserstein:
         // energía cruda w·|señal| por escala, anillo de MASS_RING.
+        // #662 (F2-B3): el anillo indexa TIEMPO FÍSICO, no updates —
+        // captura con cadencia mínima W1_SNAP_CADENCIA_MS para que 256
+        // entradas cubran 64 s de reloj a cualquier tasa de feed (antes:
+        // una captura por update = 2,56 s de historia a 100 ev/s).
+        if self.mass_ring_len == 0
+            || ts_ms.saturating_sub(self.last_snap_ts) >= W1_SNAP_CADENCIA_MS
         {
             let pesos = self.pesos_espectrales();
             let mut snap = [0.0f64; 32];
             for (i, sc) in self.scales.iter().enumerate() {
                 snap[i] = (pesos[i] * sc.signal.abs()).max(0.0);
             }
-            self.mass_ring[self.mass_ring_len % MASS_RING] = snap;
+            let idx = self.mass_ring_len % MASS_RING;
+            self.mass_ring[idx] = snap;
+            self.mass_ring_ts[idx] = ts_ms;
             self.mass_ring_len = self.mass_ring_len.wrapping_add(1);
+            self.last_snap_ts = ts_ms;
         }
         self.refresh_fusion();
     }
@@ -599,11 +656,12 @@ impl TemporalSpectrum {
                 continue;
             }
             if let Some(ic) = s.habilidad_medida() {
-                // #599: un IC positivo aislado es el máximo típico de ruido
-                // entre 32 escalas — exige significancia t ≥ 2 para opinar.
-                let significativo = umbral_ic_significativo(s.skill_n)
-                    .map(|umbral| ic >= umbral)
-                    .unwrap_or(false);
+                // #599/#661/#663 / C-1 (R7-R2-C-1): τ* toma el MÁXIMO entre las escalas
+                // que efectivamente compiten dentro de la banda operable [30 s, 12 h].
+                // Son exactamente ESCALAS_OPERATIVAS_BANDA = 5 escalas en concurso, NO 32.
+                // Bonferroni sobre las 5 escalas concurrentes fija M = 5 ⇒ umbral 5/α = 100
+                // en lugar de inflar artificialmente a 640 bloques (que exigía meses en escalas lentas).
+                let significativo = s.skill_e.significativo_familia(ESCALAS_OPERATIVAS_BANDA);
                 if significativo && ic > best_skill {
                     best_skill = ic;
                     dominant_skill = s.tau_ms;
@@ -897,6 +955,7 @@ impl TemporalSpectrum {
             bloque_ln_p0: 0.0,
             bloque_r_prev: 0.0,
             raw_dev_vol: 0.0,
+            raw_dev_s2: 0.0,
             raw_dev_s3: 0.0,
             // #594: un nodo interpolado no es una escala de la malla con
             // bloques maduros — sin habilidad medida (0 muestras → None).
@@ -904,6 +963,7 @@ impl TemporalSpectrum {
             skill_wr: 0.0,
             skill_wsr: 0.0,
             skill_n: 0,
+            skill_e: crate::evalues::EProceso::new(),
             bloque_s0: 0.0,
             ultimo_bloque_ts: 0,
             ultimo_bloque_r: 0.0,
@@ -1128,6 +1188,23 @@ impl TemporalSpectrum {
         } else {
             self.dominant_tau_ms.max(30_000.0)
         }
+    }
+
+    /// C-2 (R7-R2-C-2): Horizonte temporal unificado para el tick en curso.
+    /// Reconcilia la escala autoritativa de habilidad demostrada por Ville
+    /// (`dominant_tau_ms`) con el centroide continuo de Hilbert (`continuous_resonant_tau_ms`).
+    /// Si existe habilidad medida positiva (IC > 0 validado), manda la escala con ventaja estadística.
+    /// Si aún no hay evidencia madura, opera con el centroide continuo resonante.
+    /// Garantiza que el veto de grupo, el dimensionador de TP/SL y las ramas de señal hablen
+    /// exactamente del MISMO horizonte temporal sin disparidades.
+    #[inline]
+    pub fn tau_operativa_unificada(&self) -> f64 {
+        if let Some(h) = self.habilidad_en(self.dominant_tau_ms) {
+            if h > 0.0 {
+                return self.dominant_tau_ms.clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS);
+            }
+        }
+        self.continuous_resonant_tau_ms()
     }
 
     /// Escala resonante continua de alta frecuencia (modo reactivo del espectro continuo sin cortes fijos).
@@ -1359,7 +1436,11 @@ impl TemporalSpectrum {
         FEED_CLOCK_RESOLUTION_MS.max(dt_medio)
     }
 
-    /// Regresión OLS de ln S_p contra ln τ sobre escalas con masa suficiente.
+    /// Regresión OLS ponderada de ln S_p contra ln τ. #662 (F2-B4): la
+    /// pertenencia de cada escala es un peso CONTINUO de su masa (rampa
+    /// C¹ centrada en el corte viejo de 0,10) — con pertenencia DURA,
+    /// ζ(p)/χ saltaban cada vez que una escala maduraba cruzando el umbral
+    /// (y χ modula pisos vivos).
     fn regress_log_log(&self, p: u32) -> Option<(f64, usize)> {
         let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
         // Ola XLIV: las escalas por debajo de la resolución efectiva publican
@@ -1367,7 +1448,7 @@ impl TemporalSpectrum {
         // arrastraba la pendiente: ζ₃ ≈ 0,56 en un precio browniano cuyo
         // valor sobre las escalas reales es 1,5.
         let resolucion = self.resolucion_efectiva_ms();
-        let mut n = 0usize;
+        let mut n_eff = 0.0f64;
         let mut sx = 0.0;
         let mut sy = 0.0;
         let mut sxx = 0.0;
@@ -1376,10 +1457,11 @@ impl TemporalSpectrum {
             if s.tau_ms < resolucion {
                 continue;
             }
-            // Sólo escalas cuyo núcleo tiene ≥10% de masa: por debajo, la EWMA
-            // es aún semilla y el momento no representa la escala.
+            // Sólo escalas con algo de masa en el núcleo: lo aún semilla no
+            // representa la escala, pero madura CONTINUAMENTE (sin salto).
             let mass = 1.0 - (-elapsed / s.tau_ms).exp();
-            if mass < 0.10 {
+            let w = peso_masa_continuo(mass);
+            if w <= 1e-9 {
                 continue;
             }
             let m = self.dev_moment_by(p, s, mass);
@@ -1388,26 +1470,39 @@ impl TemporalSpectrum {
             }
             let x = s.tau_ms.ln();
             let y = m.ln();
-            n += 1;
-            sx += x;
-            sy += y;
-            sxx += x * x;
-            sxy += x * y;
+            n_eff += w;
+            sx += w * x;
+            sy += w * y;
+            sxx += w * x * x;
+            sxy += w * x * y;
         }
-        if n < 4 {
+        // Sustancia mínima en tamaño efectivo de muestra (antes: 4 escalas
+        // con pertenencia dura).
+        if n_eff < 4.0 {
             return None;
         }
-        let denom = n as f64 * sxx - sx * sx;
+        let denom = n_eff * sxx - sx * sx;
         if denom.abs() < 1e-12 {
             return None;
         }
-        Some(((n as f64 * sxy - sx * sy) / denom, n))
+        Some(((n_eff * sxy - sx * sy) / denom, n_eff.round() as usize))
     }
 
     #[inline]
     fn dev_moment_by(&self, p: u32, s: &ScaleState, mass: f64) -> f64 {
         match p {
-            2 => s.ewma_dev_vol * s.ewma_dev_vol,
+            // #664 (G1-4) / Ω12 — convergencia de dos sesiones con el
+            // MISMO fix: S₂ = E[dev²] (raw corregido por masa), NO
+            // (E|dev|)² — la desigualdad de Jensen subestimaba el
+            // segundo momento (~36% en gaussiana, >50% en colas cripto),
+            // sesgando ζ₂ y χ=((3/2)ζ₂−ζ₃)⁺.
+            2 => {
+                if mass > 0.0 {
+                    s.raw_dev_s2 / mass
+                } else {
+                    0.0
+                }
+            }
             3 => {
                 if mass > 0.0 {
                     s.raw_dev_s3 / mass
@@ -1439,7 +1534,7 @@ impl TemporalSpectrum {
 
     // ═══════════════════════════════════════════════════════════════════
     // Ola XLII·D — TRANSPORTE ÓPTIMO DE WASSERSTEIN-1 ENTRE MASAS
-    // ESPECTRALES (ahora vs hace N eventos)
+    // ESPECTRALES (ahora vs hace un lag FÍSICO, #662/F2-B3)
     //
     // Contrato (protocolo del repo):
     // - Variable: dos distribuciones de masa espectral q_prev, q_now sobre
@@ -1480,15 +1575,21 @@ impl TemporalSpectrum {
         Some(e)
     }
 
-    /// W₁ entre la masa actual y la capturada hace `lag` updates.
-    /// `lag = 0` o sin masa en cualquiera de los dos instantes → None.
-    pub fn spectral_transport_w1(&self, lag: u32) -> Option<f64> {
-        if lag == 0 || self.updates < lag as u64 {
+    /// #662 (F2-B3) — W₁ entre la masa actual y la de hace `lag_ms` de
+    /// RELOJ FÍSICO (timestamp del exchange). El lag por UPDATES mezclaba
+    /// tasas de feed (64 updates = 0,64 s a 100 ev/s vs 64 s a 1 ev/s);
+    /// la reestructuración del régimen es temporal y se mide en tiempo.
+    /// Empareja contra el snapshot MÁS RECIENTE con ts ≤ last_ts − lag_ms;
+    /// sesión más corta que el lag o masa nula en cualquiera de los dos
+    /// instantes → None. `lag_ms = 0` → None.
+    pub fn spectral_transport_w1_fisico(&self, lag_ms: u64) -> Option<f64> {
+        if lag_ms == 0 {
             return None;
         }
+        let target = self.last_ts_ms.checked_sub(lag_ms)?;
         // Reconstruir la masa previa desde el snapshot de masas por escala.
         let now = self.spectral_mass()?;
-        let prev = self.mass_history_at(lag)?;
+        let (prev, _) = self.mass_history_before(target)?;
         let step = 4f64.ln();
         let mut cdf_prev = 0.0;
         let mut cdf_now = 0.0;
@@ -1501,15 +1602,24 @@ impl TemporalSpectrum {
         Some(w1)
     }
 
-    /// Masa de hace `lag` updates, reconstruida desde el anillo de masas por
-    /// escala que mantiene update(). El snapshot más reciente está en
-    /// (len−1) % RING; hace `lag` updates, en (len−1−lag) % RING — la
-    /// aritmética circular cubre vueltas completas del anillo.
-    fn mass_history_at(&self, lag: u32) -> Option<[f64; 32]> {
-        let back = (lag as usize).checked_add(1)?;
-        let cursor = self.mass_ring_len.checked_sub(back)?;
-        let idx = cursor % MASS_RING;
-        let raw = self.mass_ring[idx];
+    /// Snapshot de masa más reciente capturado en o antes de `target_ms`,
+    /// normalizado. El anillo guarda ≤ MASS_RING capturas ordenadas por
+    /// inserción; el índice absoluto (len−1−k) mod RING recupera el orden
+    /// cronológico también tras vueltas completas.
+    pub(crate) fn mass_history_before(&self, target_ms: u64) -> Option<([f64; 32], u64)> {
+        let vivos = self.mass_ring_len.min(MASS_RING);
+        let mut mejor_ts: Option<u64> = None;
+        let mut mejor_idx = 0usize;
+        for k in 0..vivos {
+            let idx = (self.mass_ring_len - 1 - k) % MASS_RING;
+            let ts = self.mass_ring_ts[idx];
+            if ts <= target_ms && mejor_ts.map_or(true, |m| ts > m) {
+                mejor_ts = Some(ts);
+                mejor_idx = idx;
+            }
+        }
+        let ts = mejor_ts?;
+        let raw = self.mass_ring[mejor_idx];
         let total: f64 = raw.iter().sum();
         if !(total > 1e-12) {
             return None;
@@ -1518,7 +1628,7 @@ impl TemporalSpectrum {
         for i in 0..32 {
             out[i] = raw[i] / total;
         }
-        Some(out)
+        Some((out, ts))
     }
 
     /// Información de Fisher 1-D de la masa espectral respecto a ln(τ).
@@ -1575,7 +1685,7 @@ mod tests {
     use super::*;
 
     /// #594 — escala de la banda operativa con IC forjado a mano.
-    fn escala_con_habilidad(idx: usize, n: u64, ic: f64) -> ScaleState {
+    pub(crate) fn escala_con_habilidad(idx: usize, n: u64, ic: f64) -> ScaleState {
         let mut s = ScaleState::default();
         s.tau_ms = SPECTRUM_SCALES_MS[idx];
         s.ewma_dev_vol = 0.01;
@@ -1583,6 +1693,21 @@ mod tests {
         s.skill_ws = 1.0;
         s.skill_wr = 1.0;
         s.skill_wsr = ic;
+        // #661: el e-proceso se alimenta con las mismas n observaciones
+        // del signo que fabrica el IC (ic>0 ⇒ productos positivos, ic<0
+        // ⇒ negativos): capital = (1+λ)^n para habilidad perfecta.
+        // #663 (G1-1): las escalas MADURAS reciben evidencia suficiente
+        // para cruzar el umbral de FAMILIA M/α=640 de la selección de τ*
+        // (1.1^69 ≈ 670) — los tests de selección por habilidad exigen
+        // capital de familia, no el 20 por proceso.
+        let n_e = if n >= MUESTRAS_SKILL_MADURAS && ic != 0.0 {
+            n.max(70)
+        } else {
+            n
+        };
+        for _ in 0..n_e {
+            s.skill_e.observar(1.0, ic.signum() * 0.01);
+        }
         s
     }
 
@@ -1675,7 +1800,11 @@ mod tests {
         let ensayos = 4000usize;
         let (mut sin_umbral, mut con_umbral) = (0usize, 0usize);
         let mut lcg = 0xA0761D6478BD642Fu64;
-        let umbral = umbral_ic_significativo(N).expect("33 bloques");
+        // Umbral t≥2 de Fisher (2/√(n−3)) — el criterio PRE-Ville que
+        // esta medición compara contra IC>0. La producción decidió por
+        // Ville de familia (#661/#663); el test conserva la medición
+        // del sesgo como evidencia de por qué el criterio crudo no basta.
+        let umbral = 2.0 / ((N - 3) as f64).sqrt();
         for _ in 0..ensayos {
             let (mut positiva, mut significativa) = (false, false);
             for _ in 0..ESCALAS_BANDA {
@@ -1729,17 +1858,13 @@ mod tests {
 
     #[test]
     fn qo_599_el_maximo_de_ics_de_ruido_no_opina_sin_significancia() {
-        // Umbral autoajustable: 2/√(n−3), None sin muestras suficientes.
-        assert_eq!(umbral_ic_significativo(MUESTRAS_SKILL_MADURAS), None);
-        let u33 = umbral_ic_significativo(MUESTRAS_SKILL_MADURAS + 3).expect("33 bloques");
-        let u90 = umbral_ic_significativo(90).expect("90 bloques");
-        assert!((u33 - 2.0 / 30.0_f64.sqrt()).abs() < 1e-12);
-        assert!((u90 - 2.0 / 87.0_f64.sqrt()).abs() < 1e-12);
-        assert!(u33 > u90, "el umbral se afloja con evidencia");
+        // La significancia la decide el e-proceso de Ville con umbral de
+        // FAMILIA 640 (32/α, #663): el helper fabrica capital (1+λ)^n con
+        // el signo del IC — n=30 ⇒ ~17 (ruido, no cruza), n=90 ⇒ ~5313.
 
         // Escenario del sesgo de selección (señalización de CL): la escala
-        // 19 lleva el IC más alto (0.35, típico MÁXIMO de ruido con n=30)
-        // y antes lideraba la selección; la 18 tiene IC 0.5 con n=90.
+        // 19 lleva el IC más alto PERO inmaduro (n=30, capital ~17 < 640)
+        // y no puede liderar; la 18 tiene IC 0.5 madura (n=90 ⇒ cruza).
         let mut spec = TemporalSpectrum::new();
         spec.first_ts_ms = 0;
         spec.last_ts_ms = 86_400_000;
@@ -1754,9 +1879,9 @@ mod tests {
         assert_eq!(
             spec.dominant_tau_ms,
             SPECTRUM_SCALES_MS[18],
-            "el máximo de ruido (0.35 < 0.385) no opina; la escala significativa lidera"
+            "el máximo de ruido (n=30, capital ~17 < 640) no opina; la escala madura significativa lidera"
         );
-        // Sin NINGUNA escala significativa (ambas n=30 con IC < umbral)
+        // Sin NINGUNA escala significativa (ambas n=30, capital ~17 < 640)
         // → respaldo de energía: manda la más energética (19, señal 0.9).
         spec.scales[18] = escala_con_habilidad(18, MUESTRAS_SKILL_MADURAS, 0.3);
         spec.scales[18].signal = 0.4;
@@ -2418,9 +2543,11 @@ fn xlii_d_w1_masa_identica_es_cero() {
         t += 100;
         spec.update(price, t);
     }
-    // lag dentro del anillo y con masa en ambos puntos: W1 >= 0 y finito.
-    let w1 = spec.spectral_transport_w1(50).expect("masa presente");
+    // Sesión de 30 s: lag físico de 5 s con masa en ambos puntos → W₁ ≥ 0
+    // y finito; lag de 60 s excede la historia observada → None.
+    let w1 = spec.spectral_transport_w1_fisico(5_000).expect("masa presente");
     assert!(w1 >= 0.0 && w1.is_finite());
+    assert!(spec.spectral_transport_w1_fisico(60_000).is_none());
     // Contra sí mismo (lag congelado no existe; el contrato minimo es que
     // masa identica daría 0 — verificado estructuralmente por la CDF).
 }
@@ -2437,10 +2564,168 @@ fn xlii_d_w1_reestructuracion_acota_por_malla() {
         t += 50;
         spec.update(price, t);
     }
-    let w1 = spec.spectral_transport_w1(100).expect("masa presente");
+    let w1 = spec.spectral_transport_w1_fisico(5_000).expect("masa presente");
     let rango = 31.0 * 4f64.ln();
     assert!(w1 <= rango, "w1={} > rango {}", w1, rango);
     // La reversión violenta alimenta escalas rapidas: la masa DEBE haberse
-    // movido algo entre hace 100 updates y ahora.
+    // movido algo entre hace 5 s y ahora.
     assert!(w1 > 0.0, "reestructuracion no trivial esperada");
 }
+
+// ═════════════════ Ola 61 / #662 (F2-B2/B3/B4): sustrato espectral ═════════════════
+
+#[test]
+fn qo_662_habilidad_en_vecino_es_en_ln_tau() {
+    use crate::temporal_spectrum::tests::escala_con_habilidad;
+    let mut spec = TemporalSpectrum::new();
+    // Malla 4^k/10^6 ms (4 µs .. 146 años, ratio 4): nodos 17 (17,2 s) y
+    // 18 (68,7 s) rodean la banda operable [30 s, 12 h].
+    spec.scales[17] = escala_con_habilidad(17, MUESTRAS_SKILL_MADURAS, 0.3);
+    spec.scales[18] = escala_con_habilidad(18, MUESTRAS_SKILL_MADURAS, 0.7);
+    // La malla es multiplicativa: el vecino honesto de una τ se decide en
+    // ln τ, con frontera en la media geométrica √(τ17·τ18) = 34,4 s. En
+    // (34,4 s .. 41 s) la distancia ABSOLUTA elegía el nodo INFERIOR
+    // (17,2 s) aunque τ estuviera más cerca de 68,7 s en ejes de escala:
+    // τ = 35 s → ln-d 0,68 (nodo 18) vs 0,71 (nodo 17), pero Δ-absoluta
+    // 17,8 s (nodo 17) vs 33,7 s (nodo 18). Sesgo hacia el nodo inferior
+    // en CADA frontera: la telemetría tau_habilidad de un τ* de banda
+    // baja caía al nodo de abajo, fuera de la banda operable.
+    assert_eq!(spec.habilidad_en(35_000.0), Some(0.7));
+    // Debajo de la media geométrica ambos criterios eligen el nodo 17:
+    // el clamp de banda 30 s pertenece honestamente al nodo 17,2 s.
+    assert_eq!(spec.habilidad_en(30_000.0), Some(0.3));
+    assert_eq!(spec.habilidad_en(10_000.0), Some(0.3));
+    assert_eq!(spec.habilidad_en(100_000.0), Some(0.7));
+}
+
+#[test]
+fn qo_662_w1_lag_fisico_alcanza_60s_a_cualquier_tasa_de_feed() {
+    // Fase 1 (0..35 s): reversión violenta — masa en escalas rápidas.
+    // Fase 2 (35..70 s): deriva monotónica — masa migrada a escalas lentas.
+    // El contrato ALCANCE: el emparejamiento resuelve 60 s de reloj ATRÁS
+    // con precisión de cadencia a 100 ev/s y a 1 ev/s. El anillo viejo
+    // (una captura por update) retenía 2,56 s a 100 ev/s: el lag de 64
+    // updates miraba 0,64 s, ambos extremos DENTRO de la fase 2.
+    let construir = |paso_ms: u64| {
+        let mut spec = TemporalSpectrum::new();
+        let mut t = 1_000u64;
+        let mut price = 100.0f64;
+        while t <= 70_000 {
+            let ret = if t > 35_000 {
+                0.001
+            } else if (t / paso_ms) % 2 == 0 {
+                0.004
+            } else {
+                -0.004
+            };
+            price *= 1.0 + ret;
+            spec.update(price, t);
+            t += paso_ms;
+        }
+        spec
+    };
+    let rapido = construir(10);
+    let lento = construir(1_000);
+    // El emparejamiento resuelve t=10 s con precisión de UNA cadencia
+    // (250 ms). El primer evento lo absorbe el arranque del espectro, así
+    // que la fase del anillo deriva del primer snapshot — el contrato es
+    // el ALCANCE (ts ≤ target, a ≤ 1 cadencia), no la fase exacta.
+    let (_, ts_rapido) = rapido
+        .mass_history_before(10_000)
+        .expect("historia de 60 s a 100 ev/s");
+    assert!(
+        ts_rapido <= 10_000 && ts_rapido >= 10_000 - 2 * 250,
+        "a 100 ev/s el emparejamiento derivo {ts_rapido} ms (target 10 s)"
+    );
+    let (_, ts_lento) = lento
+        .mass_history_before(10_000)
+        .expect("historia de 60 s a 1 ev/s");
+    assert!(
+        ts_lento <= 10_000 && ts_lento >= 10_000 - 2 * 250,
+        "a 1 ev/s el emparejamiento derivo {ts_lento} ms (target 10 s)"
+    );
+    let un_nodo = 4f64.ln();
+    let w_rapido = rapido
+        .spectral_transport_w1_fisico(60_000)
+        .expect("60 s de historia a 100 ev/s");
+    let w_lento = lento
+        .spectral_transport_w1_fisico(60_000)
+        .expect("60 s de historia a 1 ev/s");
+    assert!(
+        w_rapido > 0.5 * un_nodo,
+        "cambio de regimen en 60 s a 100 ev/s debe mover la masa: {w_rapido}"
+    );
+    assert!(
+        w_lento > 0.25 * un_nodo,
+        "cambio de regimen en 60 s a 1 ev/s debe mover la masa: {w_lento}"
+    );
+}
+
+#[test]
+fn qo_662_zeta_peso_continuo_sin_salto_al_madurar() {
+    // Rampa C¹: 0 bajo 0,05; 1 sobre 0,15; 0,5 exacto en el corte viejo.
+    assert_eq!(peso_masa_continuo(0.0), 0.0);
+    assert_eq!(peso_masa_continuo(0.049), 0.0);
+    assert!((peso_masa_continuo(0.10) - 0.5).abs() < 1e-12);
+    assert!((peso_masa_continuo(0.15) - 1.0).abs() < 1e-12);
+    assert_eq!(peso_masa_continuo(0.60), 1.0);
+    assert_eq!(peso_masa_continuo(f64::NAN), 0.0);
+
+    // Comportamiento: la escala 13 (τ = 67,1 s) cruza masa 0,10 en
+    // elapsed = −τ·ln(0,9) ≈ 7,24 s de sesión (t ≈ 8,24 s desde el primer
+    // evento en t = 1 s). Con pasos de 100 ms capturamos ζ en t = 8,0 s
+    // (masa 0,099, ANTES del corte) y t = 8,4 s (masa 0,104, DESPUÉS) con
+    // la MISMA paridad del ciclo de 2 pasos — los momentos de las escalas
+    // rápidas están en la misma fase y el único cambio real es la
+    // pertenencia de la escala 13. Con el corte duro el flip 0→1 movía la
+    // pendiente de golpe (χ modula pisos vivos); con la rampa es continuo.
+    let mut spec = TemporalSpectrum::new();
+    let mut price = 100.0f64;
+    let mut zeta_antes = 0.0;
+    let mut t = 1_000u64;
+    while t <= 8_400 {
+        price *= 1.0 + if (t / 100) % 2 == 0 { 0.002 } else { -0.002 };
+        spec.update(price, t);
+        if t == 8_000 {
+            zeta_antes = spec.regress_log_log(2).expect("regresion antes del cruce").0;
+        }
+        t += 100;
+    }
+    let (zeta_despues, n_eff) = spec.regress_log_log(2).expect("regresion despues del cruce");
+    assert!(n_eff >= 4, "muestra efectiva {n_eff}");
+    assert!(
+        (zeta_despues - zeta_antes).abs() < 1e-2,
+        "salto de zeta al madurar la escala 13: {zeta_antes} -> {zeta_despues}"
+    );
+}
+
+#[test]
+fn omega12_g1_4_segundo_momento_central_sin_sesgo_jensen() {
+    let mut spec = TemporalSpectrum::new();
+    let mut price = 100.0f64;
+    // Alimentar con fluctuaciones de retorno con varianza no nula
+    let mut t = 1_000u64;
+    for i in 0..1000 {
+        let ret = if i % 10 == 0 { 0.015 } else { -0.0015 };
+        price *= 1.0 + ret;
+        t += 100;
+        spec.update(price, t);
+    }
+    // Para las escalas que tienen masa observada:
+    let mut verificados = 0;
+    for s in &spec.scales {
+        let elapsed = (t - 1000) as f64;
+        let mass = 1.0 - (-elapsed / s.tau_ms).exp();
+        if mass > 0.10 {
+            let m2 = spec.dev_moment_by(2, s, mass);
+            let m1_sq = s.ewma_dev_vol * s.ewma_dev_vol;
+            // Desigualdad de Jensen: E[X²] >= (E[|X|])²
+            assert!(m2 >= m1_sq, "m2={m2} debe ser >= m1_sq={m1_sq} por desigualdad de Jensen");
+            assert!(m2 > 0.0);
+            verificados += 1;
+        }
+    }
+    assert!(verificados >= 4, "Debe haber al menos 4 escalas verificadas");
+}
+
+

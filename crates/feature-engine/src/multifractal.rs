@@ -57,12 +57,12 @@ impl MultifractalSpectrumEngine {
             return (0.50, 0.0);
         }
 
-        let ret = (price / self.last_price).ln().abs();
+        let ret = (price / self.last_price).ln();
         self.last_price = price;
 
         if self.count >= self.window_size {
             let old_ret = self.returns_history[self.head];
-            self.sum_q1 -= old_ret;
+            self.sum_q1 -= old_ret.abs();
             self.sum_q2 -= old_ret * old_ret;
         } else {
             self.count += 1;
@@ -71,7 +71,8 @@ impl MultifractalSpectrumEngine {
         self.returns_history[self.head] = ret;
         self.head = (self.head + 1) % self.window_size;
 
-        self.sum_q1 = (self.sum_q1 + ret).max(0.0);
+        let abs_ret = ret.abs();
+        self.sum_q1 = (self.sum_q1 + abs_ret).max(0.0);
         self.sum_q2 = (self.sum_q2 + ret * ret).max(0.0);
 
         // AGY-AUD-003: periodic exact recomputation to clear accumulated
@@ -85,7 +86,7 @@ impl MultifractalSpectrumEngine {
             for i in 0..n {
                 let idx = (self.head + self.window_size - n + i) % self.window_size;
                 let r = self.returns_history[idx];
-                exact_q1 += r;
+                exact_q1 += r.abs();
                 exact_q2 += r * r;
             }
             self.sum_q1 = exact_q1.max(0.0);
@@ -96,24 +97,75 @@ impl MultifractalSpectrumEngine {
             return (0.50, 0.0);
         }
 
-        let n_f64 = self.count as f64;
-        let mean_q1 = (self.sum_q1 / n_f64).max(1e-12);
-        let mean_q2 = (self.sum_q2 / n_f64).max(1e-12);
-        let rms_q2 = mean_q2.sqrt();
+        // F2-C4 (S8): ESTIMADOR HONESTO DE ESCALAMIENTO MULTIESCALA DE HURST / VARIANCE RATIO
+        // Reemplaza el ratio de amplitud marginal L1/L2 (que confundía curtosis/colas pesadas con anti-persistencia)
+        // por la ley de escalamiento temporal de varianza multiescala sobre retornos logarítmicos acumulados:
+        // Var(r^{(k)}) = k^{2H} Var(r^{(1)}) => 2H = d ln Var(k) / d ln k.
+        let n = self.count.min(self.window_size);
+        let start_idx = (self.head + self.window_size - n) % self.window_size;
 
-        // FIX #386: Normalizar momentos relativos a la escala gaussiana base (sqrt(2/pi) ≈ 0.797884)
-        // para evitar que ln(retorno_nominal) sature el clamp a -0.45 permanentemente.
-        let gaussian_ratio = 0.7978845608;
-        let scale_ratio = (mean_q1 / (rms_q2 * gaussian_ratio).max(1e-12)).max(1e-6);
-        let log_time = n_f64.ln().max(1.0);
+        let mut rets = [0.0f64; 50];
+        let mut mean_r = 0.0f64;
+        for i in 0..n {
+            let r = self.returns_history[(start_idx + i) % self.window_size];
+            rets[i] = r;
+            mean_r += r;
+        }
+        mean_r /= n as f64;
 
-        // Desviación del exponente de Hölder respecto al régimen monofractal
-        let delta_h = (scale_ratio.ln() / log_time).clamp(-0.45, 0.45);
-        let h_q1 = (0.50 + delta_h).clamp(0.05, 0.95);
-        let h_q2 = 0.50; // Línea base browniana
+        // Varianza escala 1 (1 tick) insesgada: divisor (n - 1)
+        let mut s1 = 0.0f64;
+        for i in 0..n {
+            let d = rets[i] - mean_r;
+            s1 += d * d;
+        }
+        if s1 < 1e-14 {
+            // Precio constante o fluctuaciones imperceptibles: régimen neutro
+            return (0.50, 0.0);
+        }
+        let var1 = (s1 / (n - 1) as f64).max(1e-16);
 
-        let multifractal_width = (h_q1 - h_q2).abs().clamp(0.0, 1.0);
-        let dynamic_hurst = h_q1.clamp(0.05, 0.95);
+        // Varianza escala 2 (2 ticks acumulados)
+        // Corrección de Lo & MacKinlay (1988) para estimador de retornos traslapados con media muestral:
+        // c_k = (n - k + 1) * (1 - k / n)
+        let mut s2 = 0.0f64;
+        let n2 = n - 1;
+        for i in 1..n {
+            let d = (rets[i] + rets[i - 1]) - 2.0 * mean_r;
+            s2 += d * d;
+        }
+        let c2 = (n2 as f64) * (1.0 - 2.0 / (n as f64));
+        let var2 = (s2 / c2.max(1.0)).max(1e-16);
+        let h2 = 0.5 * (var2 / var1).ln() / std::f64::consts::LN_2;
+
+        let (h_raw, multifractal_width) = if n >= 16 {
+            // Varianza escala 4 (4 ticks acumulados)
+            let mut s4 = 0.0f64;
+            let n4 = n - 3;
+            for i in 3..n {
+                let d = (rets[i] + rets[i - 1] + rets[i - 2] + rets[i - 3]) - 4.0 * mean_r;
+                s4 += d * d;
+            }
+            let c4 = (n4 as f64) * (1.0 - 4.0 / (n as f64));
+            let var4 = (s4 / c4.max(1.0)).max(1e-16);
+            let h4 = 0.5 * (var4 / var1).ln() / (2.0 * std::f64::consts::LN_2);
+
+            // Regresión conjunta multiescala (k=2, k=4): H = (y1 + 2*y2) / (10 * ln 2)
+            let y1 = (var2 / var1).ln();
+            let y2 = (var4 / var1).ln();
+            let h_reg = (y1 + 2.0 * y2) / (10.0 * std::f64::consts::LN_2);
+            let width = (h2 - h4).abs().clamp(0.0, 1.0);
+            (h_reg, width)
+        } else {
+            let width = (h2 - 0.50).abs().clamp(0.0, 1.0);
+            (h2, width)
+        };
+
+        // Regularización Bayesiana hacia el prior browniano H_0 = 0.50
+        // con peso muestral w = n / (n + 12.0) para estabilizar ventanas finitas.
+        let w = n as f64 / (n as f64 + 12.0);
+        let h_bayes = 0.50 + w * (h_raw - 0.50);
+        let dynamic_hurst = h_bayes.clamp(0.05, 0.95);
 
         (dynamic_hurst, multifractal_width)
     }
@@ -348,6 +400,15 @@ impl MultiScaleHurstConfluence {
         self.falpha_cache
     }
 
+    /// #659 (F1-C2) — GENERACIÓN del cache: número de consultas totales;
+    /// cambia exactamente cuando el cache refresca (cada 16). El consumidor
+    /// de la EWMA lo usa para DEDUP: sin esto, el mismo espectro contaba
+    /// 16× y la memoria efectiva del olvido 1/64 era ~4 espectros.
+    #[inline(always)]
+    pub fn cache_generation(&self) -> u64 {
+        self.falpha_calls
+    }
+
     #[inline(always)]
     pub fn update(&mut self, price: f64) -> (f64, f64, f64, f64, bool, bool) {
         let (h_micro, _) = self.engine_micro.update(price);
@@ -558,5 +619,65 @@ mod tests {
             h_alt
         );
         assert!(h_btc > 0.10 && h_btc < 0.90, "Hurst no debe estar bloqueado en extremos 0.10/0.90: {}", h_btc);
+    }
+
+    #[test]
+    fn f2_c4_honest_variance_ratio_hurst_scaling() {
+        // 1. Serie persistente pura (momentum / tendencia fuerte)
+        let mut e_trend = MultifractalSpectrumEngine::new(50);
+        let mut p = 100.0;
+        for i in 0..50 {
+            // Retornos predominantemente positivos con autocorrelación positiva
+            p *= 1.0 + 0.003 + (i as f64 * 0.05).sin() * 0.001;
+            e_trend.update(p);
+        }
+        let (h_trend, _) = e_trend.update(p * 1.003);
+        assert!(h_trend > 0.55, "Tendencia persistente debe dar H > 0.55, dio: {}", h_trend);
+
+        // 2. Serie anti-persistente pura (oscilador / mean reversion fuerte)
+        let mut e_revert = MultifractalSpectrumEngine::new(50);
+        let mut p_rev = 100.0;
+        for i in 0..50 {
+            let r = if i % 2 == 0 { 0.004 } else { -0.004 };
+            p_rev *= 1.0 + r;
+            e_revert.update(p_rev);
+        }
+        let (h_revert, _) = e_revert.update(p_rev * 1.004);
+        assert!(h_revert < 0.45, "Oscilación anti-persistente debe dar H < 0.45, dio: {}", h_revert);
+
+        // 3. Flat line (precio constante) -> régimen neutro exacto
+        let mut e_flat = MultifractalSpectrumEngine::new(50);
+        for _ in 0..30 {
+            e_flat.update(100.0);
+        }
+        let (h_flat, w_flat) = e_flat.update(100.0);
+        assert_eq!(h_flat, 0.50);
+        assert_eq!(w_flat, 0.0);
+
+        // 4. G1-2: Caso nulo i.i.d. puro (paseo aleatorio browniano sin sesgo)
+        let mut e_iid = MultifractalSpectrumEngine::new(50);
+        let mut p_iid = 100.0;
+        let mut rng_state: u64 = 0x853c49e6748fea9b;
+        let mut h_sum = 0.0;
+        let n_trials = 40;
+        for _ in 0..n_trials {
+            for _ in 0..50 {
+                rng_state ^= rng_state << 13;
+                rng_state ^= rng_state >> 7;
+                rng_state ^= rng_state << 17;
+                let u1 = ((rng_state & 0xFFFF_FFFF) as f64) / 4294967296.0;
+                let ret = (u1 - 0.5) * 0.005;
+                p_iid *= 1.0 + ret;
+                e_iid.update(p_iid);
+            }
+            let (h_sample, _) = e_iid.update(p_iid);
+            h_sum += h_sample;
+        }
+        let h_avg = h_sum / n_trials as f64;
+        assert!(
+            (h_avg - 0.50).abs() < 0.02,
+            "En nulo i.i.d. browniano, el Hurst promedio debe ser 0.50 +/- 0.02, dio: {}",
+            h_avg
+        );
     }
 }

@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "scope": "Exact historical Rust diagnostics; isolated synthetic inputs, no workspace/OOS/live or repairs.",
+  "execution_receipt": {
+    "source_commit": "18bbd1d90a073ae49ca8083c5898537013e4bfeb",
+    "created_utc": "2026-10-08T19:09:58.569950+00:00",
+    "runner_sha256": "7bd1276dfc83ab0676e41ad21da86aefe37184de331f046d53d2ac2da5ae5c5b",
+    "scope": "Immutable-source isolated Rust diagnostics; no Cargo, live pipeline, market replay or economic result",
+    "status": "DIAGNOSTICS_REPRODUCED_NOT_REPAIRED",
+    "sources": {
+      "selection_stats.rs": {
+        "path": "crates/risk-engine/src/selection_stats.rs",
+        "blob": "1e2ba9b194cf133bc614071c168003287558145d",
+        "whole_source_sha256": "a1995b82b66671b5083397e4e96a466020e13aadf32ec836808c868ffc9b88d6",
+        "copied_sha256": "a1995b82b66671b5083397e4e96a466020e13aadf32ec836808c868ffc9b88d6",
+        "extracted_lines": null
+      },
+      "types.rs": {
+        "path": "crates/strategy-core/src/types.rs",
+        "blob": "5ca8505c383039f06f57090f86c21b3e2a1d10a5",
+        "whole_source_sha256": "407f3298fbfffcce11d698db652fe7387b0587c940b86b05be04a0ecd8b6e766",
+        "copied_sha256": "407f3298fbfffcce11d698db652fe7387b0587c940b86b05be04a0ecd8b6e766",
+        "extracted_lines": null
+      },
+      "multivariate_coint.rs": {
+        "path": "crates/strategy-core/src/multivariate_coint.rs",
+        "blob": "3d87089163cf2011e7e9a4efb7d98c88985d4a51",
+        "whole_source_sha256": "4870ed67d5473acf032e1d27d743ea9bda0ce842b176637aca517f5990565138",
+        "copied_sha256": "4870ed67d5473acf032e1d27d743ea9bda0ce842b176637aca517f5990565138",
+        "extracted_lines": null
+      },
+      "vecm_arbitrage.rs": {
+        "path": "crates/strategy-core/src/vecm_arbitrage.rs",
+        "blob": "f3a2cc9d344995b7cdf40f7d96324fe2b42a3f4a",
+        "whole_source_sha256": "6bafb098daa80b16bc0aeb7d6b9de48132c983bd9b37ff4bcd4f36128aa05ae2",
+        "copied_sha256": "dabb8d2a2c86df2ec57fd7b70420893399538056924c953b5e892393619e49e3",
+        "extracted_lines": [
+          197,
+          337
+        ]
+      }
+    },
+    "commands": [
+      {
+        "label": "00-toolchain",
+        "argv": [
+          "rustup",
+          "run",
+          "nightly-2026-06-30",
+          "rustc",
+          "--version",
+          "--verbose"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 0.202906,
+        "log": "00-toolchain.log",
+        "log_sha256": "081f77c248a25b84a088f46e6879a14422c5732d1dfbe72a64f69e8fe50e8135"
+      },
+      {
+        "label": "01-selection-compile",
+        "argv": [
+          "rustup",
+          "run",
+          "nightly-2026-06-30",
+          "rustc",
+          "--edition=2021",
+          "r4_selection_stats_witness.rs",
+          "-o",
+          "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini\\target\\r4-rust-witnesses\\e607f319-cafd-4adc-aab0-c79ba3612d41\\selection_witness.exe"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 0.542597,
+        "log": "01-selection-compile.log",
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "label": "02-selection-run",
+        "argv": [
+          "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini\\target\\r4-rust-witnesses\\e607f319-cafd-4adc-aab0-c79ba3612d41\\selection_witness.exe"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 0.101727,
+        "log": "02-selection-run.log",
+        "log_sha256": "ebb4d6469a4dc4d0315b00c40a719aa9f2474d8d7a6bec01f75e7bcae077dbe3"
+      },
+      {
+        "label": "03-ou-compile",
+        "argv": [
+          "rustup",
+          "run",
+          "nightly-2026-06-30",
+          "rustc",
+          "--edition=2021",
+          "--test",
+          "r4_ou_witness.rs",
+          "-o",
+          "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini\\target\\r4-rust-witnesses\\e607f319-cafd-4adc-aab0-c79ba3612d41\\ou_witness.exe"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 0.819822,
+        "log": "03-ou-compile.log",
+        "log_sha256": "2ab2fa74272bfd448ca346201ab9e615bab6ed474f59c0fe37f6dded08ddebc2"
+      },
+      {
+        "label": "04-ou-run",
+        "argv": [
+          "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini\\target\\r4-rust-witnesses\\e607f319-cafd-4adc-aab0-c79ba3612d41\\ou_witness.exe",
+          "r4_ou_diagnostic::",
+          "--nocapture",
+          "--test-threads=1"
+        ],
+        "exit_code": 0,
+        "elapsed_seconds": 0.160631,
+        "log": "04-ou-run.log",
+        "log_sha256": "671c42e788125879e23a6308abbd589f29cab8e8069646b385d164b962ff4e16"
+      }
+    ],
+    "wrappers": {
+      "r4_selection_stats_witness.rs": "5ea3d91d4bc9bd79ba117d8c10b5c5db95123f6961095f9e668a169d34c0e86f",
+      "r4_ou_witness.rs": "f6af0547a3758ffed584318849180a555d672c8587d22b4eeb0fb2acae504f8d"
+    }
+  },
+  "diagnostic_stdout": {
+    "02-selection-run": "original input_n=40 accepted_n=40 sr=0.296226264871973 kurtosis=0.950625000000002 se=0.163603256816683 dsr=0.235773213910289 passes=false\neach_return_repeated_10_times input_n=400 accepted_n=400 sr=0.299624765331571 kurtosis=0.995006250000008 se=0.051173876774780 dsr=0.999556946880623 passes=true\nrepeated_plus_nan_posinf_neginf input_n=403 accepted_n=400 sr=0.299624765331571 kurtosis=0.995006250000008 se=0.051173876774780 dsr=0.999556946880623 passes=true\nrepeated_sorted input_n=400 accepted_n=400 sr=0.299624765331569 kurtosis=0.995006249999989 se=0.051173876774780 dsr=0.999556946880623 passes=true\nleptokurtic_positive_skew input_n=40 accepted_n=40 sr=0.500000000000001 kurtosis=36.148125000000043 se=0.082849590279387 dsr=0.999771163076773 passes=true\nleptokurtic_comparison skew=5.858119365461953 se=0.082849590279387 baseline_one_over_sqrt_n_minus_one=0.160128153805087\nRESULT=PASS characterization assertions; not an OOS result or production pipeline test\n",
+    "04-ou-run": "\nrunning 2 tests\ntest r4_ou_diagnostic::backward_timestamp_returns_zero_physical_z_but_legacy_short ... DIAGNOSTIC second_ts=500 physical_z=0 sde_count=2 sde_last_ts=500 legacy_count=2 legacy_z=3.553345272594 signal=Short duration_ms=0\nok\ntest r4_ou_diagnostic::duplicate_timestamp_returns_zero_physical_z_but_legacy_short ... DIAGNOSTIC second_ts=1000 physical_z=0 sde_count=2 sde_last_ts=1000 legacy_count=2 legacy_z=3.553345272594 signal=Short duration_ms=0\nok\n\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s\n\n"
+  },
+  "independent_review": "Sources, extraction, wrappers and all five exit/log hashes reviewed by quant_foundations; no additional execution claimed."
+}

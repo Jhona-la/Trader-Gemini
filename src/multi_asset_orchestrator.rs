@@ -2,6 +2,7 @@ use quantum_arena::GlobalArena;
 use signal_engine::{MakerEngine, MakerQuote, SignalIntent, SignalType, StatArbEngine};
 use std::sync::Arc;
 
+/// Módulo legado de par dual BTC/ETH (R6-A14: inerte en producción, reemplazado por `TensorVoteOrchestrator`).
 pub struct MultiAssetOrchestrator {
     pub arena: Arc<GlobalArena>,
     maker_engine: MakerEngine,
@@ -22,7 +23,7 @@ impl MultiAssetOrchestrator {
         Self {
             arena,
             maker_engine: MakerEngine::new(0.0002), // 2 bps base spread
-            stat_arb_engine: StatArbEngine::new(100, 2.0), // 100 ticks, umbral Z = 2.0
+            stat_arb_engine: StatArbEngine::new(30, 1.5), // R6-A14: unificado con la configuración viva (30 ticks, umbral Z = 1.5)
             btc_bid: 0.0,
             btc_ask: 0.0,
             eth_bid: 0.0,

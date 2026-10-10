@@ -137,7 +137,12 @@ impl HawkesBesselEngine {
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
     ) -> crate::voto_espectral::VotoEspectral {
-        let excitacion = excitacion_hawkes_norm(ratio_lambda_mu);
+        // R4-C1 (#659 paridad sombra/vivo): la CALMA se abstiene — sin el
+        // .max(0.0) la excitación negativa INVERTÍA el sentido de cada
+        // escala (calma + flujo alcista votaba bajista dentro del consenso
+        // que dirige desde #624). Con ratio sin proceso (fallback 1.0) el
+        // voto colapsa a 0 = abstención.
+        let excitacion = excitacion_hawkes_norm(ratio_lambda_mu).max(0.0);
         let mut por_escala = [0.0f64; 32];
         for k in 0..32 {
             let x = desplazamientos[k];
@@ -325,36 +330,22 @@ impl QuantumStrategy for HawkesBesselEngine {
             return 0.0;
         }
 
-        // M2-C02 — CERRADO (R9, 2026-09-19): el core AHORA excita el
-        // proceso real (record_event por trade en process_event) y publica
-        // λ/μ VERDADERO al registry — el proxy de aceleración fue retirado.
-        // El historial del mislabel se conserva abajo como advertencia.
+        // M2-C02 — CERRADO (R9, 2026-09-19; verificado H2-8 RONDA 3,
+        // 2026-10-07): el core excita el proceso real por SÍMBOLO
+        // (`hawkes_by_coin`, record_event por trade) y publica λ/μ
+        // VERDADERO al registry como 'hawkes_intensity'
+        // (god-engine-core/src/lib.rs:~4180,
+        // `hawkes_ratio_real.clamp(0.1, 10)`).
         //
-        // Lo que realmente pasa: este evaluate lee el param de registry
-        // 'hawkes_intensity', pero el ÚNICO escritor en producción
-        // (god-engine-core/src/lib.rs:1856-1859) publica
-        //     (1.0 + (a_t.abs()/atr_abs).clamp(0,4)).clamp(0.1,5)
-        // = `1 + |aceleración|/ATR`: un proxy de aceleración de
-        // volatilidad. NO es un proceso de Hawkes — no hay historia de
-        // eventos, ni suma de auto-excitación Σα·e^(−β·(t−tᵢ)), ni
-        // branching ratio. El comentario CERT anterior afirmaba que "el
-        // core ya computa el proceso de Hawkes con su propia historia de
-        // trades": FALSO.
-        //
-        // Consecuencia: la matemática Hawkes correcta de este engine
-        // (record_event / intensity / intensity_ratio / branching_ratio)
-        // es CÓDIGO MUERTO en producción — record_event sigue siendo
-        // &mut self (incallable vía el trait QuantumStrategy::evaluate que
-        // da &self) y tiene CERO llamadores de producción. La detección de
-        // cascadas de liquidación (auto-excitación con memoria) que motivó
-        // QO-M2.2 fue degradada en silencio a un proxy de aceleración.
-        // Otros consumidores del mismo proxy (clave 'hawkes_intensity'):
-        // flow_excitation_confluence.rs y flow_impulse.rs.
-        //
-        // FIX REAL (pendiente, NO hecho — requiere tocar el core, archivo
-        // caliente): cablear una fuente de eventos (trades/liquidaciones)
-        // hacia un HawkesBesselEngine por moneda y publicar
-        // intensity_ratio(now) como 'hawkes_intensity', en vez del proxy.
+        // HISTORIA CERRADA (no re-parar — era el riesgo de este bloque
+        // viejo, hallazgo H2-8): antes de M2-C02 el slot 'hawkes_intensity'
+        // llevaba un PROXY de aceleración 1+|a_t|/ATR (mislabel de la
+        // auditoría décima). Aquel texto advertía "FIX REAL pendiente, NO
+        // hecho" — PENDIENTE YA CUMPLIDO: la matemática Σα·e^(−βΔt) de
+        // este engine está VIVA en producción vía el proceso por símbolo
+        // del core. Los consumidores del slot
+        // (flow_excitation_confluence, flow_impulse) leen intensidad real
+        // desde entonces.
         let core_intensity = r
             .get_scoped_parameter(
                 sym_opt,
@@ -366,7 +357,18 @@ impl QuantumStrategy for HawkesBesselEngine {
             .filter(|v| v.is_finite() && *v > 0.0)
             .unwrap_or(1.0);
 
-        direction.signum() * core_intensity.tanh().clamp(0.0, 1.0)
+        // #657 (F2-A1) — ERRADICACIÓN sombra/vivo: el evaluate VIVO usa la
+        // MISMA moneda de la casa que el voto espectral #649 — exceso
+        // λ/μ̂ sobre STEADY_STATE_RATIO (0 en régimen normal = ABSTENCIÓN),
+        // firmado por el momentum CONTINUO (no signum: salto en dir=0).
+        // Antes: signum·tanh(λ/μ̂) votaba ±0.92 constante en régimen
+        // normal — el fallback escalar D-754 heredaba la física rota.
+        // #659 (F2-A4): la CALMA se abstiene (excit ≥ 0, paridad con
+        // flow_impulse #657) — antes la excitación negativa INVERTÍA el
+        // sentido del momentum: calma + flujo alcista votaba bajista.
+        // #666 (H2-2): divisor O(1) — direction es un flujo normalizado
+        // O(1); /1e-3 saturaba a signum encubierto.
+        direction.tanh() * excitacion_hawkes_norm(core_intensity).max(0.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
@@ -534,15 +536,25 @@ mod tests {
 
     #[test]
     fn test_hawkes_engine_evaluate_with_registry() {
+        // #657 (F2-A1): la física viva = #649 — ABSTENCIÓN en régimen
+        // normal (ratio SS ⇒ voto 0), cascada firma con el momentum.
         let registry = Arc::new(OmniscientRegistry::new());
         registry.set("order_flow_direction", 1.0);
-
+        registry.set("hawkes_intensity", STEADY_STATE_RATIO);
         let mut engine = HawkesBesselEngine::new();
-        assert!(engine.init(registry).is_ok());
+        assert!(engine.init(Arc::clone(&registry)).is_ok());
+        let en_ss = engine.evaluate();
+        assert!(
+            en_ss.abs() < 1e-9,
+            "régimen normal (λ/μ̂=SS) se abstiene, votó {en_ss}"
+        );
 
-        let eval = engine.evaluate();
-        assert!(eval > 0.0, "dirección positiva + intensidad > 0");
-        assert!(eval <= 1.0);
+        registry.set("hawkes_intensity", 4.0);
+        let mut engine2 = HawkesBesselEngine::new();
+        assert!(engine2.init(registry).is_ok());
+        let cascada = engine2.evaluate();
+        assert!(cascada > 0.3, "cascada con momentum + vota alto, votó {cascada}");
+        assert!(cascada <= 1.0);
     }
 }
 
@@ -600,6 +612,19 @@ mod qo_617_tests {
         for malo in [f64::NAN, 0.0, -3.0] {
             let v = HawkesBesselEngine::voto_espectral(&x, malo);
             assert_eq!(v.en_escala(4), 0.0);
+        }
+        // R4-C1: la CALMA se abstiene — antes la excitación negativa
+        // INVERTÍA el sentido del voto (calma + flujo alcista votaba
+        // bajista en el consenso espectral). Con flujo alcista fuerte:
+        for calma in [1.0, 1.2, 1.59] {
+            let v = HawkesBesselEngine::voto_espectral(&x, calma);
+            for k in 0..ESCALAS_VOTO {
+                assert_eq!(
+                    v.en_escala(k),
+                    0.0,
+                    "calma (ratio={calma}) debe abstenerse en escala {k}"
+                );
+            }
         }
     }
 

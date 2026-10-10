@@ -309,6 +309,9 @@ impl Position {
         // B3.14: toda apertura nace SIN confirmación de exchange — el host
         // la setea sólo tras el fill real (o la adopción FASE 5).
         self.exchange_confirmed.store(false, Ordering::Relaxed);
+        // R7-R4-C-1: toda apertura nueva limpia cualquier bandera de cierre previo
+        // para que una ranura reutilizada no retenga last_close_confirmed añejo.
+        self.last_close_confirmed.store(false, Ordering::Relaxed);
         // Publicar la posición completa: todo store previo es visible para
         // cualquier lector que observe is_open con Acquire.
         self.is_open.store(true, Ordering::Release);
@@ -631,6 +634,40 @@ impl Position {
         // posiblemente inconsistentes.
         None
     }
+
+    /// Proyección espectral diagnóstica/informativa en nanosegundos (branchless/O(1), R6-C9):
+    /// Proyecta la escala continua intrínseca `entry_tau_ms` en bandas semánticas humanas para telemetría.
+    /// NOTA ARQUITECTURAL (U-ERR-5 / R6-C9): El motor de trading, el dimensionamiento de riesgo
+    /// y los brackets TP/SL operan sobre el continuo físico estocástico `entry_tau_ms` incondicionalmente,
+    /// sin bifurcaciones if/else discretas scalping vs swing en la toma de decisiones.
+    /// - Micro: τ <= 60_000 ms (≤ 1 min)
+    /// - Meso: 60_000 ms < τ <= 900_000 ms (1 min - 15 min)
+    /// - Macro: τ > 900_000 ms (> 15 min)
+    #[inline(always)]
+    pub fn spectral_regime_name(&self) -> &'static str {
+        let tau = self.entry_tau_ms.load(Ordering::Relaxed);
+        if tau == 0 || tau <= 60_000 {
+            "MicroScalp"
+        } else if tau <= 900_000 {
+            "MesoTactical"
+        } else {
+            "MacroSwing"
+        }
+    }
+
+    /// Retorna si la posición pertenece a la banda de microescala diagnóstica (telemetría/diagnóstico).
+    #[inline(always)]
+    pub fn is_micro_scalp(&self) -> bool {
+        let tau = self.entry_tau_ms.load(Ordering::Relaxed);
+        tau > 0 && tau <= 60_000
+    }
+
+    /// Retorna si la posición pertenece a la banda de macroescala diagnóstica (telemetría/diagnóstico).
+    #[inline(always)]
+    pub fn is_macro_swing(&self) -> bool {
+        let tau = self.entry_tau_ms.load(Ordering::Relaxed);
+        tau > 900_000
+    }
 }
 
 /// Vista coherente de una posición en un instante. Producida por
@@ -653,6 +690,29 @@ pub struct PositionSnapshot {
     pub entry_tau_ms: u64,
     pub confidence: f64,
     pub ml_prediction: f64,
+}
+
+impl PositionSnapshot {
+    #[inline(always)]
+    pub fn spectral_regime_name(&self) -> &'static str {
+        if self.entry_tau_ms == 0 || self.entry_tau_ms <= 60_000 {
+            "MicroScalp"
+        } else if self.entry_tau_ms <= 900_000 {
+            "MesoTactical"
+        } else {
+            "MacroSwing"
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_micro_scalp(&self) -> bool {
+        self.entry_tau_ms > 0 && self.entry_tau_ms <= 60_000
+    }
+
+    #[inline(always)]
+    pub fn is_macro_swing(&self) -> bool {
+        self.entry_tau_ms > 900_000
+    }
 }
 
 pub const MAX_SPECTRAL_SLOTS: usize = 3;
@@ -720,10 +780,68 @@ impl PositionManager {
         count
     }
 
-    /// Legacy slot-admission heuristic: same-side log-scale distance must be >=0.80.
-    /// This discrete cutoff does NOT prove orthogonality or independent risk.
-    /// Invalid/small tau fallback and three-slot capacity remain audited limitations.
+    /// Desglose en tiempo real de posiciones abiertas por horizonte espectral:
+    /// Retorna `(micro_scalp_count, meso_tactical_count, macro_swing_count)`.
+    #[inline(always)]
+    pub fn open_positions_by_regime(&self) -> (usize, usize, usize) {
+        let mut micro = 0;
+        let mut meso = 0;
+        let mut macro_cnt = 0;
+        for p in self.slots() {
+            if p.is_open() {
+                let tau = p.entry_tau_ms.load(Ordering::Relaxed);
+                if tau == 0 || tau <= 60_000 {
+                    micro += 1;
+                } else if tau <= 900_000 {
+                    meso += 1;
+                } else {
+                    macro_cnt += 1;
+                }
+            }
+        }
+        (micro, meso, macro_cnt)
+    }
+
+    /// Retorna true si hay alguna posición abierta en régimen de microescala (scalping).
+    #[inline(always)]
+    pub fn has_open_micro_scalp(&self) -> bool {
+        for p in self.slots() {
+            if p.is_open() && p.is_micro_scalp() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Retorna true si hay alguna posición abierta en régimen de macroescala (swing).
+    #[inline(always)]
+    pub fn has_open_macro_swing(&self) -> bool {
+        for p in self.slots() {
+            if p.is_open() && p.is_macro_swing() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Distancia logarítmica espectral por defecto: Δln(τ) = 0.80 (ratio de escala ~2.23).
+    pub const DEFAULT_RESONANT_DELTA_LN: f64 = 0.80;
+    /// Distancia logarítmica espectral unificada (D-431): Δln(τ) = 0.60 (ratio de escala ~1.82).
+    pub const UNIFIED_RESONANT_DELTA_LN: f64 = 0.60;
+
+    /// Admisión de slot con umbral por defecto (0.80).
     pub fn find_resonant_slot(&self, tau_ms: f64, is_long: bool) -> Option<usize> {
+        self.find_resonant_slot_with_threshold(tau_ms, is_long, Self::DEFAULT_RESONANT_DELTA_LN)
+    }
+
+    /// Admisión de slot en el continuo espectral con resolución temporal configurable `threshold_ln`.
+    /// Si `diff_ln < threshold_ln`, se detecta interferencia destructiva en la misma escala/dirección.
+    pub fn find_resonant_slot_with_threshold(
+        &self,
+        tau_ms: f64,
+        is_long: bool,
+        threshold_ln: f64,
+    ) -> Option<usize> {
         let slots = [&self.scalp, &self.swing, &self.position];
         let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 {
             tau_ms
@@ -731,6 +849,11 @@ impl PositionManager {
             30_000.0
         };
         let ln_target = safe_tau.ln();
+        let safe_threshold = if threshold_ln.is_finite() && threshold_ln > 0.0 {
+            threshold_ln
+        } else {
+            Self::DEFAULT_RESONANT_DELTA_LN
+        };
 
         // 1. Verificar si hay colisión / interferencia destructiva con posiciones en la misma dirección
         for pos in slots.iter() {
@@ -739,16 +862,14 @@ impl PositionManager {
                 if open_is_long == is_long {
                     let open_tau = (pos.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
                     let diff_ln = (ln_target - open_tau.ln()).abs();
-                    // Retained policy cutoff (scale ratio ~2.23), not measured
-                    // dependence, destructive interference or a Hilbert inner product.
-                    if diff_ln < 0.80 {
+                    if diff_ln < safe_threshold {
                         return None;
                     }
                 }
             }
         }
 
-        // First free physical slot; no functional-space optimization is performed.
+        // Primer slot físico desocupado
         for (idx, pos) in slots.iter().enumerate() {
             if !pos.is_open() {
                 return Some(idx);
@@ -759,16 +880,19 @@ impl PositionManager {
     }
 
     /// QO-589 — RAZÓN del rechazo de slot (telemetría del embudo, no política).
-    /// `find_resonant_slot` devuelve None por DOS causas indistinguibles para
-    /// el llamador: colisión same-direction dentro de la banda (|Δlnτ| < 0.80)
-    /// o capacidad llena. Distinguirlas es obligatorio para medir el hueco de
-    /// despacho [0.60, 0.80) que la fusión D-431 declara independientes y el
-    /// slot bloquea: esos descartes caen en razón 1 y son los que el consejo
-    /// debe contar para decidir unificar el umbral.
     pub const RAZON_COLISION_BANDA: u8 = 1;
     pub const RAZON_CAPACIDAD_LLENA: u8 = 2;
 
     pub fn razon_sin_slot(&self, tau_ms: f64, is_long: bool) -> u8 {
+        self.razon_sin_slot_with_threshold(tau_ms, is_long, Self::DEFAULT_RESONANT_DELTA_LN)
+    }
+
+    pub fn razon_sin_slot_with_threshold(
+        &self,
+        tau_ms: f64,
+        is_long: bool,
+        threshold_ln: f64,
+    ) -> u8 {
         let slots = [&self.scalp, &self.swing, &self.position];
         let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 {
             tau_ms
@@ -776,13 +900,18 @@ impl PositionManager {
             30_000.0
         };
         let ln_target = safe_tau.ln();
+        let safe_threshold = if threshold_ln.is_finite() && threshold_ln > 0.0 {
+            threshold_ln
+        } else {
+            Self::DEFAULT_RESONANT_DELTA_LN
+        };
         for pos in slots.iter() {
             if pos.is_open() {
                 let open_is_long = pos.is_long.load(Ordering::Relaxed);
                 if open_is_long == is_long {
                     let open_tau = (pos.entry_tau_ms.load(Ordering::Relaxed) as f64).max(10.0);
                     let diff_ln = (ln_target - open_tau.ln()).abs();
-                    if diff_ln < 0.80 {
+                    if diff_ln < safe_threshold {
                         return Self::RAZON_COLISION_BANDA;
                     }
                 }
@@ -1456,5 +1585,85 @@ mod tests {
             PositionManager::RAZON_CAPACIDAD_LLENA
         );
         assert!(pm2.find_resonant_slot(30_000.0, true).is_none());
+    }
+
+    #[test]
+    fn test_position_spectral_classification_and_regime_breakdown() {
+        let pm = PositionManager::default();
+
+        // 1. Slot 0: MicroScalp (τ = 15s = 15_000 ms <= 60_000 ms)
+        assert!(pm.scalp.open_with_tau_and_fee(
+            true,
+            100.0,
+            0.05,
+            1.02,
+            1_000,
+            101.5,
+            99.5,
+            PositionHorizon::Continuous,
+            0.75,
+            0.85,
+            0.0004,
+            15_000
+        ));
+        assert_eq!(pm.scalp.spectral_regime_name(), "MicroScalp");
+        assert!(pm.scalp.is_micro_scalp());
+        assert!(!pm.scalp.is_macro_swing());
+
+        // 2. Slot 1: MacroSwing (τ = 1h = 3_600_000 ms > 900_000 ms)
+        assert!(pm.swing.open_with_tau_and_fee(
+            false,
+            200.0,
+            0.02,
+            1.02,
+            1_000,
+            195.0,
+            202.0,
+            PositionHorizon::Continuous,
+            0.80,
+            0.90,
+            0.0004,
+            3_600_000
+        ));
+        assert_eq!(pm.swing.spectral_regime_name(), "MacroSwing");
+        assert!(!pm.swing.is_micro_scalp());
+        assert!(pm.swing.is_macro_swing());
+
+        // 3. Slot 2: MesoTactical (τ = 5m = 300_000 ms)
+        assert!(pm.position.open_with_tau_and_fee(
+            true,
+            50.0,
+            0.10,
+            1.02,
+            1_000,
+            51.0,
+            49.5,
+            PositionHorizon::Continuous,
+            0.70,
+            0.80,
+            0.0004,
+            300_000
+        ));
+        assert_eq!(pm.position.spectral_regime_name(), "MesoTactical");
+        assert!(!pm.position.is_micro_scalp());
+        assert!(!pm.position.is_macro_swing());
+
+        // 4. Verificación de agregación del PositionManager
+        let (micro, meso, macro_cnt) = pm.open_positions_by_regime();
+        assert_eq!(micro, 1, "debe registrar exactamente 1 posición de MicroScalp");
+        assert_eq!(meso, 1, "debe registrar exactamente 1 posición de MesoTactical");
+        assert_eq!(macro_cnt, 1, "debe registrar exactamente 1 posición de MacroSwing");
+
+        assert!(pm.has_open_micro_scalp());
+        assert!(pm.has_open_macro_swing());
+
+        // 5. Verificación de snapshot coherente
+        let snap_scalp = pm.scalp.snapshot().expect("snapshot scalp");
+        assert_eq!(snap_scalp.spectral_regime_name(), "MicroScalp");
+        assert!(snap_scalp.is_micro_scalp());
+
+        let snap_swing = pm.swing.snapshot().expect("snapshot swing");
+        assert_eq!(snap_swing.spectral_regime_name(), "MacroSwing");
+        assert!(snap_swing.is_macro_swing());
     }
 }

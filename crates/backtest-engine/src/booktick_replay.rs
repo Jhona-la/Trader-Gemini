@@ -311,6 +311,7 @@ fn run_booktick_replay_observed(
 
     let omni_state = data_pipeline::omni_multiplexer::OmniState::new();
     let mut last_day = i64::MIN;
+    let mut last_macro_poll_ms: u64 = 0;
     // CX-06: (ATR, previous mid) exists only after a price row is admitted.
     // A rejected first row must not seed fills with NaN/Inf or a false gap.
     let mut atr_state: Option<(f64, f64)> = None;
@@ -375,9 +376,9 @@ fn run_booktick_replay_observed(
         // contrato del trainer y del poller vivo).
         if let Some(hist) = omni {
             let day = OmniHistory::day_of(t.ts_ms);
+            let prev_day = day - 1; // day zero has no previous observation
             if day != last_day {
                 last_day = day;
-                let prev_day = day - 1; // day zero has no previous observation
                 omni_state
                     .sp500
                     .store(hist.value_at(0, prev_day).to_bits(), Ordering::Relaxed);
@@ -397,8 +398,23 @@ fn run_booktick_replay_observed(
                     .oil_wti
                     .store(hist.value_at(5, prev_day).to_bits(), Ordering::Relaxed);
             }
+            // R6-A6 / OLA Ω42: PARIDAD MACRO BT↔VIVO
+            // En producción (god_engine.rs:3231-3232), run_macro_rest_poller refresca
+            // macro_last_success_ms cada 60s si la red responde. En replay, si la historia
+            // provee datos macro reales, simulamos la cadencia de 60s del poller.
+            if t.ts_ms >= last_macro_poll_ms.saturating_add(60_000) || last_macro_poll_ms == 0 {
+                let has_valid_macro = hist.value_at(0, prev_day) > 0.0
+                    || hist.value_at(1, prev_day) > 0.0
+                    || hist.value_at(2, prev_day) > 0.0;
+                if has_valid_macro {
+                    omni_state.macro_last_success_ms.store(t.ts_ms, Ordering::Relaxed);
+                    last_macro_poll_ms = t.ts_ms;
+                }
+            }
         }
         let omni_features = omni_state.get_features();
+        let macro_staleness_ms = omni_state.macro_staleness_ms(t.ts_ms);
+        arena.registry.set("macro_staleness_ms", macro_staleness_ms as f64);
 
         // D-705/D-708 (DÉCIMA OLA · auditoría integral): la frontera de vela es
         // por MINUTO, como en el forense, en el calentamiento (`interval=1m`) y
@@ -691,6 +707,9 @@ pub fn live_envelope_gate(
     let pos_margin = pos.margin_used.load(Ordering::Relaxed);
 
     // D-442: stop real de la orden; fallback = scalp_sl_base ⊔ ATR×1.5, piso 15 bps.
+    // H0-8 (RONDA 3): scalp_sl_base es VISTA de sl_horizon_curve (fuente
+    // única REHAB-1) — el fallback de telemetría la lee como atajo; el
+    // motor en vivo decide por sl_at_tau(curva), no por esta ancla.
     let stop_pct = if core_sl > 0.0 && entry_price > 0.0 {
         ((entry_price - core_sl).abs() / entry_price).max(0.0015)
     } else {
@@ -714,7 +733,13 @@ pub fn live_envelope_gate(
     let envelope_n = envelope.posterior.n();
     let notional_ord = qty.abs() * entry_price;
     let exec_leverage: u32 = if envelope_n < 30.0 {
-        1
+        // F4-H2 (BOOTSTRAP MICRO): paridad con god_engine.rs
+        let boot_lev = if pos_margin > 0.0 && notional_ord > 0.0 {
+            (notional_ord / pos_margin).round().clamp(1.0, 10.0) as u32
+        } else {
+            (5.05 / (cap_now * 0.10).max(1.0)).ceil().clamp(1.0, 10.0) as u32
+        };
+        boot_lev.clamp(1, 10)
     } else if operable {
         let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
         // CERT-M8-C01 — PARIDAD SIZING BT↔VIVO: el host (god_engine.rs
@@ -939,12 +964,14 @@ mod tests {
         assert!(kept, "bootstrap no veta entrada sostenible");
         assert_eq!(vetoes, 0);
         assert!(arena.coins[0].positions.position.is_open());
-        // CL-41b: la reserva retiene el margen del exchange. El riesgo validó
-        // 10× (margen 10 de nocional 100) y el arranque envía a 1×: el
-        // exchange retiene 100. El capital no cambia (sólo el fee de entrada).
+        // CL-41b + F4-H2 (Ω6-Ω7): la reserva retiene el margen del exchange.
+        // El riesgo validó 10× (margen 10 de nocional 100) y el arranque AHORA
+        // envía al apalancamiento VALIDADO (notional/margin = 10×, paridad con
+        // god_engine.rs): el exchange retiene 10 — igual a la reserva, sin
+        // margen fantasma. Antes enviaba a 1× y retenía 100.
         let margen_ranura = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
-        assert!((margen_ranura - 100.0).abs() < 1e-9);
-        assert!((arena.used_margin.load(Ordering::Relaxed) - 100.0).abs() < 1e-9);
+        assert!((margen_ranura - 10.0).abs() < 1e-9, "F4-H2: retiene el validado (10×); leído {margen_ranura}");
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 10.0).abs() < 1e-9);
         assert!((arena.unified_capital.load(Ordering::Relaxed) - 999.95).abs() < 1e-9);
     }
 
@@ -1021,19 +1048,26 @@ mod tests {
             );
             arena.used_margin.fetch_add(margen, Ordering::Relaxed);
         };
+        // F4-H2 (Ω6-Ω7): el arranque envía al apalancamiento VALIDADO
+        // (notional/margin) — A (reserva 2,6 de nocional 13) se envía a 5× y
+        // el exchange retiene 2,6 (antes el arranque 1× retenía 6,5).
         abrir(0, 2.6);
         assert!(live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes));
         let margen_a = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
-        assert!((margen_a - 6.5).abs() < 1e-9, "A se envía a 2×: el exchange retiene 6,5; leído {margen_a}");
-        assert!((arena.used_margin.load(Ordering::Relaxed) - 6.5).abs() < 1e-9);
+        assert!((margen_a - 2.6).abs() < 1e-9, "F4-H2: A retiene su reserva validada (5×); leído {margen_a}");
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 2.6).abs() < 1e-9);
 
-        abrir(1, 6.5);
+        // Invariante CL-41b preservado (recalibrado a F4-H2): B con reserva
+        // 10,5 se enviaría a 1× (round(13/10,5)=1) reteniendo 13 > 95% del
+        // margen libre (13 − 2,6 = 10,4 ⇒ 9,88) ⇒ VETO — el margen libre se
+        // mide contra lo RETENIDO, no contra la reserva.
+        abrir(1, 10.5);
         assert!(
             !live_envelope_gate(&arena, &mut env, 1, 100.0, 0.001, false, &mut vetoes),
             "B no cabe en el margen que el exchange tiene libre"
         );
         assert_eq!(vetoes, 1);
-        assert!((arena.used_margin.load(Ordering::Relaxed) - 6.5).abs() < 1e-9);
+        assert!((arena.used_margin.load(Ordering::Relaxed) - 2.6).abs() < 1e-9);
     }
 
     #[test]
@@ -1220,5 +1254,44 @@ mod tests {
         // Sano en el modo paridad: capital finito positivo y DD acotado.
         assert!(a1.final_capital.is_finite() && a1.final_capital > 0.0);
         assert!(a1.max_dd < 1.0);
+    }
+
+    /// R6-A6 (Ola Ω42): Paridad BT↔vivo en publicación de macro_staleness_ms en registry.
+    /// Sin omni (omni_neutral), debe reportar u64::MAX (fail-safe amortiguado al 40%).
+    /// Con omni válido, debe reportar frescura <= 60_000 ms.
+    #[test]
+    fn r6_a6_macro_staleness_parity_with_registry() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        let ticks = synth_ticks(200);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let cfg = ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 50,
+            trade_only: false,
+            shift_atr_frac: 0.0,
+        };
+
+        // Caso 1: Sin historia macro (omni = None)
+        let mut staleness_seen_neutral = 0.0;
+        let _ = run_booktick_replay_observed(&ticks, &genome, None, &cfg, |_idx, core| {
+            staleness_seen_neutral = core.arena.registry.get_value_or("macro_staleness_ms", 0.0);
+        });
+        assert_eq!(
+            staleness_seen_neutral,
+            u64::MAX as f64,
+            "Sin macro en replay debe publicar u64::MAX como el host en vivo"
+        );
+
+        // Caso 2: Con historia macro válida
+        let hist = hist_with(vec![(100, 4500.0)]);
+        let mut staleness_seen_valid = u64::MAX as f64;
+        let _ = run_booktick_replay_observed(&ticks, &genome, Some(&hist), &cfg, |_idx, core| {
+            staleness_seen_valid = core.arena.registry.get_value_or("macro_staleness_ms", u64::MAX as f64);
+        });
+        assert!(
+            staleness_seen_valid <= 60_000.0,
+            "Con macro válido en replay debe publicar staleness <= 60s (fresco), visto: {}",
+            staleness_seen_valid
+        );
     }
 }

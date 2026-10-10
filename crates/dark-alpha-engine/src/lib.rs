@@ -404,8 +404,13 @@ impl QuantizedDenseLayer {
                 j += 1;
             }
 
-            let total = (self.biases[i] + sum_dot * scale).clamp(-700.0, 700.0);
-            output[i] = 1.0 / (1.0 + (-total).exp());
+            let raw_total = self.biases[i] + sum_dot * scale;
+            output[i] = if raw_total.is_finite() {
+                let clamped = raw_total.clamp(-700.0, 700.0);
+                1.0 / (1.0 + (-clamped).exp())
+            } else {
+                f64::NAN
+            };
         }
     }
 }
@@ -735,18 +740,27 @@ impl DarkAlphaEngine {
     }
 
     /// Prepare scratch buffers only; never resize serialized statistical state.
+    #[inline(always)]
     fn ensure_inference_buffers(&mut self) {
-        self.buf_scaled.resize(self.layer1.in_features, 0.0);
-        self.buf_h1.resize(self.layer1.out_features, 0.0);
-        self.buf_h2.resize(self.layer2.out_features, 0.0);
-        self.buf_out.resize(1, 0.0);
+        if self.buf_scaled.len() != self.layer1.in_features {
+            self.buf_scaled.resize(self.layer1.in_features, 0.0);
+        }
+        if self.buf_h1.len() != self.layer1.out_features {
+            self.buf_h1.resize(self.layer1.out_features, 0.0);
+        }
+        if self.buf_h2.len() != self.layer2.out_features {
+            self.buf_h2.resize(self.layer2.out_features, 0.0);
+        }
+        if self.buf_out.len() != 1 {
+            self.buf_out.resize(1, 0.0);
+        }
     }
 
     /// Both entry points share validation and coordinate selection.
     /// Frozen inference never learns from evaluation observations.
     fn predict_in_context(&mut self, coin_id: Option<usize>, features: &[f64]) -> Option<f64> {
         let dim = self.layer1.in_features;
-        if self.validate().is_err()
+        if !self.layers_valid()
             || features.len() < dim
             || features[..dim].iter().any(|x| !x.is_finite())
         {
@@ -1407,4 +1421,18 @@ mod tests {
         // ocurre en las rutas de carga (god-engine-core / simulator), con
         // freeze() explícito.
     }
+
+    #[test]
+    fn test_r5_b4_forward_quantized_nan_on_infinite_raw_total() {
+        let mut layer = DenseLayer::new(2, 2);
+        layer.biases[0] = f64::INFINITY;
+        layer.biases[1] = 0.0;
+        let quantized = layer.quantize_int8();
+        let input: Vec<f64> = vec![1.0, 1.0];
+        let mut output: Vec<f64> = vec![0.0, 0.0];
+        quantized.forward_sigmoid(&input, &mut output);
+        assert!(output[0].is_nan(), "raw_total = +Inf debe producir NaN y no 1.0 por clamp espurio");
+        assert!(output[1].is_finite());
+    }
 }
+

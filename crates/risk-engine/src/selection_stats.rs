@@ -1,49 +1,19 @@
-//! QO-M1 — ESTADÍSTICA DE SELECCIÓN: Deflated Sharpe Ratio (DSR) y
-//! Probabilistic Sharpe Ratio (PSR), Bailey & López de Prado (2014).
+//! QO-M1 / S5 — ESTADÍSTICA DE SELECCIÓN Y CONTROL DE MULTIPLICIDAD:
+//! Deflated Sharpe Ratio (DSR) y Probabilistic Sharpe Ratio (PSR), Bailey & López de Prado (2014).
 //!
 //! # Por qué existe
-//! La auditoría matemática halló que TODAS las puertas de promoción
-//! (online_daemon, ShadowForest, walkforward) seleccionan sobre Sharpe/WR/PF
-//! crudos SIN control de multiplicidad: con 2000 candidatos × 26 monedas ×
-//! 32 escalas, el mejor por pura suerte supera cualquier umbral fijo. El
-//! DSR corrige el Sharpe por (a) el número de pruebas realizadas y (b) la
-//! curtosis de los retornos: sólo un edge que SOBREVIVE la corrección es
-//! estadísticamente real.
+//! La auditoría matemática halló que las compuertas de optimización y promoción
+//! seleccionan sobre Sharpe/WR/PF crudos SIN control de multiplicidad: con N candidatos,
+//! el mejor por puro azar supera cualquier umbral fijo. El DSR corrige el Sharpe por:
+//! (a) el número de pruebas realizadas N y (b) la asimetría y curtosis de los retornos.
+//! Sólo un edge que SOBREVIVE la corrección es estadísticamente real.
 //!
 //! # Matemática
 //! PSR(SR*) = Φ( (SR − SR*) · √(n−1) / √(1 − γ₃·SR + (γ₄−1)/4 · SR²) )
 //!   donde γ₃ = skewness, γ₄ = kurtosis (no exceso), Φ = CDF normal.
-//! DSR = PSR(SR*) con SR* = el Sharpe esperado del MEJOR de N pruebas bajo
-//!   H₀ (todas sin edge).
+//! DSR = PSR(SR*) con SR* = el Sharpe esperado del MEJOR de N pruebas bajo H₀ (Gumbel, eq. 5):
 //!
-//! ## D-741 (DÉCIMA OLA) — EL SR* ERA UNA FÓRMULA INVENTADA
-//!
-//! El código anterior usaba
-//! `SR* = √(ln N) · (4·ln N − γ) / (4·ln N − 2γ)`.
-//! Esa expresión **no aparece en Bailey & López de Prado (2014)** ni se
-//! deduce de la teoría de valores extremos: no es la esperanza del máximo
-//! de N Sharpes independientes. El resultado correcto (aproximación de
-//! Gumbel para el máximo de N normales, ec. 5 del paper) es
-//!
-//! ```text
 //! E[max SR] ≈ σ_SR · [ (1 − γ)·Φ⁻¹(1 − 1/N) + γ·Φ⁻¹(1 − 1/(N·e)) ]
-//! ```
-//!
-//! con γ = Euler–Mascheroni, e = base natural y σ_SR la desviación típica
-//! del Sharpe ENTRE pruebas. Sin la muestra de las N pruebas se usa la
-//! analítica bajo H₀ (retornos i.i.d., SR verdadero = 0):
-//! `σ_SR = 1/√(n−1)` con n = número de observaciones de la serie.
-//!
-//! Magnitud del defecto, en unidades de σ_SR y con N = 2 000:
-//!   * fórmula vieja: 2,8114·σ_SR
-//!   * fórmula correcta: 3,4473·σ_SR  (+22,6 %)
-//! El umbral que un candidato debía batir estaba **subestimado en un 23 %**:
-//! el DSR declaraba «edge real» a Sharpes que son el máximo esperado del
-//! ruido puro. (Ambos números están verificados en el test
-//! `d741_umbral_sube_respecto_de_la_formula_vieja`.)
-//!
-//! Regla de decisión: DSR > 0.95 ⇒ el edge es real al 95% DESPUÉS de
-//! corregir por N pruebas.
 
 /// Momentos de una serie de retornos (media, desviación, skewness, kurtosis).
 /// Kurtosis NO excesiva (normal = 3).
@@ -91,30 +61,58 @@ pub fn sharpe(m: &ReturnMoments) -> f64 {
 /// PSR — Probabilistic Sharpe Ratio (Bailey & LdP 2012, eq. 4).
 #[inline]
 pub fn psr(m: &ReturnMoments, sr: f64, sr_benchmark: f64) -> f64 {
-    let n = m.n as f64;
-    let denom_sq = 1.0 - m.skewness * sr + (m.kurtosis - 1.0) / 4.0 * sr * sr;
-    if denom_sq <= 1e-12 {
+    let se = sharpe_std_error(m, sr);
+    if se <= 1e-12 {
         return 0.5;
     }
-    let z = (sr - sr_benchmark) * (n - 1.0).sqrt() / denom_sq.sqrt();
+    let z = (sr - sr_benchmark) / se;
     normal_cdf(z)
+}
+
+/// Error estándar asintótico del estimador de Sharpe bajo retornos no-normales
+/// (Mertens 2002, Lo 2002, Bailey & López de Prado 2012 eq. 4, 2014 eq. 7).
+///
+/// ```text
+/// σ_SR = √[ (1 − γ₃·SR + ((γ₄ − 1)/4)·SR²) / (n − 1) ]
+/// ```
+///
+/// Para distribuciones leptocúrticas (γ₄ > 3) como retornos cripto, σ_SR es
+/// estrictamente mayor que el i.i.d. gaussiano 1/√(n−1), elevando el listón
+/// de deflación E[max SR] para evitar falsos positivos por colas pesadas.
+#[inline]
+pub fn sharpe_std_error(m: &ReturnMoments, sr: f64) -> f64 {
+    let n = m.n as f64;
+    if n < 2.0 {
+        return 0.0;
+    }
+    // R4-B3/B6 + R5-B3: γ₄ pisado al gaussiano (3.0) y γ₃ desconfiado en
+    // la región degenerada. El discriminante de Mertens 1−γ₃·SR+((γ₄−1)/4)SR²
+    // cruza ≤0 cuando γ₃² > γ₄−1 (ej γ₃=2, SR=2 → −1): ahí el fallback
+    // 1/√(n−1) era ANTI-conservador y la cota al discriminante dejaría σ→0
+    // en el vértice (peor aún). Resolución: si la asimetría medida vuelve
+    // IMAGINARIA la varianza asintótica, se desconfía del término de skew
+    // (γ₃→0) y se conserva el de curtosis — denom ≥ 1+((g4−1)/4)SR² ≥ 1:
+    // leptocúrtico honesto, jamás sub-gaussiano, justo donde la muestra
+    // es débil. La región legítima (denom > 0) usa la fórmula intacta.
+    let g4 = m.kurtosis.max(3.0);
+    let denom_raw = 1.0 - m.skewness * sr + (g4 - 1.0) / 4.0 * sr * sr;
+    let denom_sq = if denom_raw > 0.0 {
+        denom_raw
+    } else {
+        1.0 + (g4 - 1.0) / 4.0 * sr * sr
+    };
+    (denom_sq / (n - 1.0)).sqrt()
 }
 
 /// Constante de Euler–Mascheroni (γ), la que aparece en la aproximación de
 /// Gumbel al máximo de N variables normales.
 pub const EULER_MASCHERONI: f64 = 0.577_215_664_901_532_9;
 
-/// E[max SR] de N pruebas independientes bajo H₀ — Bailey & López de Prado
-/// (2014), ec. 5:
+/// E[max SR] de N pruebas independientes bajo H₀ — Bailey & López de Prado (2014), ec. 5:
 ///
 /// ```text
 /// E[max SR] ≈ σ_SR · [ (1 − γ)·Φ⁻¹(1 − 1/N) + γ·Φ⁻¹(1 − 1/(N·e)) ]
 /// ```
-///
-/// `sr_sigma` es la desviación típica del Sharpe ENTRE las N pruebas. Si el
-/// llamador no dispone de esa muestra, pasa la analítica bajo H₀ (ver `dsr`).
-/// Crece como √(2·ln N): duplicar las pruebas sube el listón, que es
-/// exactamente lo que la corrección por multiplicidad debe hacer.
 #[inline]
 pub fn expected_max_sharpe(n_trials: usize, sr_sigma: f64) -> f64 {
     let n = (n_trials.max(2)) as f64;
@@ -128,15 +126,10 @@ pub fn expected_max_sharpe(n_trials: usize, sr_sigma: f64) -> f64 {
     }
 }
 
-/// DSR — Deflated Sharpe Ratio (Bailey & LdP 2014).
-///
-/// D-741: el benchmark es ahora E[max SR] real (ver cabecera del módulo). La
-/// dispersión del Sharpe entre pruebas se toma de su valor analítico bajo H₀
-/// — retornos i.i.d. con SR verdadero 0 ⇒ Var(SR̂) = 1/(n−1) — porque el
-/// daemon no conserva la muestra de Sharpes de las N pruebas. Es la misma
-/// escala (por período, no anualizada) en la que `sharpe()` devuelve SR, de
-/// modo que SR y SR* son comparables sin factores de conversión: la división
-/// extra por √n que hacía el código viejo mezclaba dos escalas distintas.
+/// DSR — Deflated Sharpe Ratio (Bailey & LdP 2014, eq. 7 y 8).
+/// H1-4: Utiliza el error estándar asintótico no-normal `sharpe_std_error` que incorpora
+/// el sesgo γ₃ y la curtosis γ₄ pesada de la muestra, garantizando que el listón
+/// de deflación E[max SR] sea riguroso y conservador frente a ruido leptocúrtico.
 #[inline]
 pub fn dsr(m: &ReturnMoments, n_trials: usize) -> f64 {
     let sr = sharpe(m);
@@ -144,16 +137,12 @@ pub fn dsr(m: &ReturnMoments, n_trials: usize) -> f64 {
     if n_obs < 2.0 {
         return 0.0;
     }
-    let sr_sigma = 1.0 / (n_obs - 1.0).sqrt();
+    let sr_sigma = sharpe_std_error(m, sr);
     let sr_benchmark = expected_max_sharpe(n_trials, sr_sigma);
     psr(m, sr, sr_benchmark)
 }
 
-/// Φ⁻¹ — función cuantil de la normal estándar. Aproximación racional de
-/// Peter Acklam (dos ramas de cola + rama central), error relativo < 1,15e-9
-/// en todo el dominio abierto (0,1). Los coeficientes NO son constantes de
-/// decisión: son los de una aproximación publicada y verificados en
-/// `inverse_normal_cdf_valores_conocidos`.
+/// Φ⁻¹ — función cuantil de la normal estándar (Peter Acklam, error relativo < 1,15e-9).
 #[inline]
 pub fn inverse_normal_cdf(p: f64) -> f64 {
     if !p.is_finite() || p <= 0.0 {
@@ -191,8 +180,6 @@ pub fn inverse_normal_cdf(p: f64) -> f64 {
         2.445_134_137_142_996e0,
         3.754_408_661_907_416e0,
     ];
-    // Fronteras de la aproximación de Acklam entre la rama central y las de
-    // cola (propiedad de la aproximación, no un umbral de decisión).
     const P_LOW: f64 = 0.024_25;
     const P_HIGH: f64 = 1.0 - P_LOW;
 
@@ -303,9 +290,6 @@ mod tests {
         assert!(!v.passes);
     }
 
-    /// D-741 — Φ⁻¹ contra valores tabulados. Falla con el código viejo
-    /// porque `inverse_normal_cdf` no existía: el SR* se calculaba con una
-    /// fórmula cerrada que no necesitaba cuantiles normales… ni los cumplía.
     #[test]
     fn inverse_normal_cdf_valores_conocidos() {
         let casos = [
@@ -332,11 +316,9 @@ mod tests {
     #[test]
     fn d741_umbral_sube_respecto_de_la_formula_vieja() {
         let n_trials = 2_000usize;
-        // Fórmula VIEJA, reproducida aquí para dejar constancia del número.
         let ln_n = (n_trials as f64).ln();
         let viejo = ln_n.sqrt() * (4.0 * ln_n - EULER_MASCHERONI)
             / (4.0 * ln_n - 2.0 * EULER_MASCHERONI);
-        // Fórmula CORRECTA (Bailey & LdP 2014, ec. 5), en unidades de σ_SR.
         let nuevo = expected_max_sharpe(n_trials, 1.0);
         assert!(
             (viejo - 2.811_4).abs() < 1e-3,
@@ -361,7 +343,6 @@ mod tests {
             .collect();
         let m = compute_moments(&returns).unwrap();
         let n_obs = m.n as f64;
-        // DSR con el benchmark VIEJO (fórmula inventada / √n).
         let ln_n = 2000f64.ln();
         let sr_star_viejo = ln_n.sqrt() * (4.0 * ln_n - EULER_MASCHERONI)
             / (4.0 * ln_n - 2.0 * EULER_MASCHERONI);
@@ -373,7 +354,6 @@ mod tests {
         );
     }
 
-    /// D-741 — E[max SR] crece con el número de pruebas (√(2·ln N)).
     #[test]
     fn expected_max_sharpe_crece_con_las_pruebas() {
         let a = expected_max_sharpe(10, 1.0);
@@ -388,4 +368,60 @@ mod tests {
         assert!((normal_cdf(1.96) - 0.975).abs() < 1e-4);
         assert!((normal_cdf(-1.96) - 0.025).abs() < 1e-4);
     }
+
+    #[test]
+    fn omega15_h1_4_dsr_sharpe_std_error_leptocurtico() {
+        // Serie con alta curtosis (outliers / colas pesadas cripto)
+        let mut returns: Vec<f64> = vec![0.001; 100];
+        returns[10] = 0.05;
+        returns[20] = -0.05;
+        returns[30] = 0.08;
+        returns[40] = -0.07;
+
+        let m = compute_moments(&returns).unwrap();
+        assert!(m.kurtosis > 3.0, "Kurtosis debe ser leptocúrtica (>3), dio {}", m.kurtosis);
+
+        let sr = sharpe(&m);
+        let se_no_normal = sharpe_std_error(&m, sr);
+        let se_iid_gauss = 1.0 / (m.n as f64 - 1.0).sqrt();
+
+        // El error estándar no-normal debe ser estrictamente mayor que el gaussiano ingenuo
+        assert!(
+            se_no_normal > se_iid_gauss,
+            "se_no_normal ({:.6}) debe ser mayor que se_iid_gauss ({:.6})",
+            se_no_normal,
+            se_iid_gauss
+        );
+
+        // En consecuencia, el benchmark E[max SR] es más exigente
+        let bm_no_normal = expected_max_sharpe(100, se_no_normal);
+        let bm_gauss = expected_max_sharpe(100, se_iid_gauss);
+        assert!(bm_no_normal > bm_gauss, "El benchmark E[max SR] debe ser más estricto con colas pesadas");
+    }
+
+/// R5-B3 — el discriminante de Mertens puede volverse negativo (γ₃² > γ₄−1):
+/// con γ₃=2, SR=2 y γ₄=3 la varianza asintótica "vale" −1. La resolución
+/// desconfía del término de skew y conserva el de curtosis: denom ≥ 1 —
+/// JAMÁS sub-gaussiano, a diferencia del fallback 1/√(n−1) viejo.
+#[test]
+fn r5_b3_discriminante_degenerado_jamas_sub_gaussiano() {
+    let m = ReturnMoments { n: 100, mean: 0.0, sd: 1.0, skewness: 2.0, kurtosis: 3.0 };
+    let sr = 2.0_f64;
+    let se = sharpe_std_error(&m, sr);
+    // Con γ₃=0 y γ₄=3: denom = 1 + (2/4)·4 = 3 ⇒ se = √(3/99).
+    let esperado = (3.0_f64 / 99.0).sqrt();
+    assert!(
+        (se - esperado).abs() < 1e-12,
+        "región degenerada usa γ₃=0 con curtosis intacta: {se} vs {esperado}"
+    );
+    let gaussiano = 1.0_f64 / 99.0_f64.sqrt();
+    assert!(
+        se > gaussiano,
+        "jamás sub-gaussiano donde la muestra es débil: {se} vs {gaussiano}"
+    );
+    // Región legítima intacta: γ₃=0.5, SR=1, γ₄=5 → denom = 1 − 0.5 + 1 = 1.5.
+    let m_legit = ReturnMoments { n: 100, mean: 0.0, sd: 1.0, skewness: 0.5, kurtosis: 5.0 };
+    let se_legit = sharpe_std_error(&m_legit, 1.0);
+    assert!((se_legit - (1.5_f64 / 99.0).sqrt()).abs() < 1e-12);
+}
 }

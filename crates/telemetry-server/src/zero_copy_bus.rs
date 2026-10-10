@@ -1,3 +1,11 @@
+// [WRITE-ONLY SIN LECTOR — censo GLM F7-A-H1, desconectado XCIII 2026-10-06]
+// Este bus de 64MB con RAM clavada (VirtualLock) NO tiene consumidor:
+// read_recent_events/start_ghost_flusher tienen 0 callers y el "ghost
+// flusher" es una simulación que no persiste nada. Los emits del host se
+// retiraron en XCIII (el Lazy ya no se materializa — 0 bytes). El bus
+// vivo de predicción-vs-realidad es storage-engine::mmap_bus (seqlock,
+// persistido, con el daemon leyendo). NO reconectar sin cablear un lector
+// real primero — cada emit re-fija 64MB para escribir a /dev/null.
 use lazy_static::lazy_static;
 use std::cell::UnsafeCell;
 use std::sync::Arc;

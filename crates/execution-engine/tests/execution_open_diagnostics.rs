@@ -41,10 +41,13 @@ fn open_debt_commissions_mix_currencies_and_discard_rebates() {
 }
 
 #[test]
-fn open_debt_second_selector_fabricates_btc_without_observations() {
+// XCIX (triaje B-1) REPARADO: la entrada vacía ya NO fabrica BTCUSDT —
+// sin datos, universo vacío (fail-closed). El ancla sigue aplicando
+// cuando hay tickers reales.
+fn empty_ticker_feed_produces_empty_universe_not_fabricated_btc() {
     let (large, small) = DynamicSymbolSelector::parse_and_rank_json_tickers(&[], false);
-    assert_eq!(large, vec!["BTCUSDT"]);
-    assert_eq!(small, vec!["BTCUSDT"]);
+    assert!(large.is_empty(), "sin datos no se inventa universo: {large:?}");
+    assert!(small.is_empty(), "sin datos no se inventa top-10: {small:?}");
 }
 
 #[test]
@@ -55,16 +58,32 @@ fn open_debt_second_selector_accepts_invalid_price_and_duplicates() {
 }
 
 #[test]
-fn open_debt_symbol_score_total_order_contract_is_inconsistent() {
-    let score = SymbolScore {
+// C (triaje B-2) REPARADO: Ord ahora usa total_cmp — NaN es menor que
+// todo finito, el orden es TOTAL y consistente. La versión anterior
+// certificaba la inconsistencia (Ord=Equal + PartialEq=falso +
+// partial_cmp=None) como comportamiento esperado.
+fn symbol_score_ord_is_total_and_nan_is_least() {
+    let nan_score = SymbolScore {
         symbol: "AUDITUSDT".into(),
         volume_usd: 1.0,
         price_change_pct: 1.0,
         score: f64::NAN,
     };
-    assert_ne!(score, score);
-    assert_eq!(score.cmp(&score), std::cmp::Ordering::Equal);
-    assert_eq!(score.partial_cmp(&score), None);
+    let finito = SymbolScore {
+        symbol: "BTCUSDT".into(),
+        volume_usd: 1.0,
+        price_change_pct: 1.0,
+        score: 1.0,
+    };
+    // NaN < finito (explícito: NaN se hunde al fondo del max-heap)
+    assert_eq!(nan_score.cmp(&finito), std::cmp::Ordering::Less);
+    assert_eq!(finito.cmp(&nan_score), std::cmp::Ordering::Greater);
+    // NaN vs NaN: reflexivo
+    assert_eq!(nan_score.cmp(&nan_score), std::cmp::Ordering::Equal);
+    // Finito vs sí mismo: Equal (reflexivo)
+    assert_eq!(finito.cmp(&finito), std::cmp::Ordering::Equal);
+    // totalidad: cualquier par comparable, sin None
+    assert!(nan_score.partial_cmp(&finito).is_some());
 }
 
 #[test]

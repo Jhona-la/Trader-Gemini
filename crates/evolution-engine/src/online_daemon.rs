@@ -74,6 +74,7 @@ const WF_SYNTH_PRICE_BASE: f64 = 100.0;
 struct RealWfOutcome {
     fitness: f64,
     net_returns: Vec<f64>,
+    #[allow(dead_code)]
     trades: usize,
 }
 
@@ -289,6 +290,23 @@ pub fn accumulated_trials(previas: usize, ronda: usize) -> usize {
 /// incumbente gana su propia ronda) no borra nada: de lo contrario el
 /// watchdog de rollback jamás reúne las observaciones que necesita para
 /// vencer y un genoma degradado sobrevive re-promoviéndose a sí mismo.
+/// LXXXXI (A-H2 del barrido F5): ¿la generación ACTIVA del almacén es más
+/// nueva que la que el watchdog vigila? Cubre promociones EXTERNAS al daemon
+/// (cosecha del ShadowForest en el host, promoción manual): antes, la cosecha
+/// promovía sin armar la vigilancia y el genoma cosechado corría SIN red de
+/// seguridad post-promoción. Con esto el watchdog sigue a la generación activa,
+/// quien sea que la haya promovido.
+pub fn detectar_promocion_externa(
+    activa: Option<u64>,
+    vigilada: Option<u64>,
+) -> Option<()> {
+    match (activa, vigilada) {
+        (Some(a), Some(v)) if a > v => Some(()),
+        (Some(a), None) if a > 0 => Some(()),
+        _ => None,
+    }
+}
+
 pub fn armar_vigilancia(
     es_mismo_genoma: bool,
     promoted_generation: &mut Option<(u64, u64)>,
@@ -553,7 +571,7 @@ fn wf_replay_segment(
             backtest_engine::booktick_replay::live_envelope_gate(
                 arena, envelope, coin_id, mid, atr_now, was_open, &mut st.vetoes,
             );
-            st.pos_open_flags[coin_id] = arena.coins[coin_id].positions.position.is_open();
+            st.pos_open_flags[coin_id] = arena.coins[coin_id].positions.is_any_open();
 
             if let Some((_, pnl_net, _)) = closed {
                 if pnl_net >= 0.0 {
@@ -780,6 +798,8 @@ pub struct LiveEvolutionDaemon {
     /// NEGATIVO estadísticamente significativo, se revierte al padre.
     pub post_promo_returns: Vec<f64>,
     pub promoted_generation: Option<(u64, u64)>, // (generación, padre)
+    /// Ω31 — Supermartingala de Ville para watchdog anytime-valid inmune a optional stopping.
+    pub post_promo_ville: Option<crate::return_evidence::SequentialVilleEvidence>,
     /// D-746 (DÉCIMA OLA) — PRUEBAS ACUMULADAS PARA LA CORRECCIÓN POR
     /// MULTIPLICIDAD. El gate DSR recibía el literal `2_000` en cada ronda,
     /// como si cada evaluación de tres minutos fuese el primer experimento de
@@ -833,6 +853,7 @@ impl LiveEvolutionDaemon {
             returns_by_coin: std::collections::HashMap::new(),
             post_promo_returns: Vec::with_capacity(256),
             promoted_generation: None,
+            post_promo_ville: None,
             cumulative_trials: 0,
             market_returns_by_coin: std::collections::HashMap::new(),
             market_last_bar: std::collections::HashMap::new(),
@@ -867,6 +888,20 @@ impl LiveEvolutionDaemon {
         let mut telemetry_reader = Some(storage_engine::MmapTelemetryReader::new(
             quantum_arena::paths::data_join("telemetry.mmap"),
         ));
+        // LXXXXIV (B-M3): sesión nueva = ventana de observación nueva — saltar
+        // al head actual para NO re-ingresar frames de sesiones anteriores ya
+        // aprendidos (duplicación sistemática del dataset del Shadow Forest).
+        if let Some(reader) = telemetry_reader.as_mut() {
+            match reader.skip_to_head() {
+                Ok(n) if n > 0 => {
+                    println!(
+                        "⏭️ [TELEMETRY] sesión nueva: {n} frames de corridas previas NO re-ingeridos (B-M3)"
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => println!("⚠️ [TELEMETRY] skip_to_head falló ({e}); se intentará al leer"),
+            }
+        }
 
         let mut pending_new_obs = 0;
         let mut telemetry_read_failed = false;
@@ -1083,9 +1118,31 @@ impl LiveEvolutionDaemon {
                         if coin_window.len() > 400 {
                             coin_window.drain(0..coin_window.len() - 400);
                         }
-                        // FASE 3: evidencia post-promoción para el watchdog.
+                        // FASE 3 + Ω31: evidencia post-promoción para el watchdog clásico y anytime-valid.
                         if self.promoted_generation.is_some() {
                             self.post_promo_returns.push(ret);
+                            if let Some(ville) = self.post_promo_ville.as_mut() {
+                                // R7-R6-IG-1: Escala unitaria canónica de riesgo por operación:
+                                // `ret` en trade_return_on_equity se normaliza por el riesgo efectivo medido
+                                // de la orden (`arena.riesgo_por_operacion`), convirtiendo los retornos en
+                                // R-múltiplos reales. Si aún no está medido, recurre a la configuración del
+                                // arena antes de caer al suelo numérico de 2% (0.02).
+                                let unit_risk = {
+                                    let measured_risk = self.arena.riesgo_por_operacion.load(std::sync::atomic::Ordering::Relaxed);
+                                    if measured_risk.is_finite() && measured_risk > 1e-5 {
+                                        measured_risk
+                                    } else {
+                                        let cfg_risk = self.arena.config.scalp_sl_base.load(std::sync::atomic::Ordering::Relaxed);
+                                        if cfg_risk.is_finite() && cfg_risk > 1e-5 {
+                                            cfg_risk
+                                        } else {
+                                            0.02
+                                        }
+                                    }
+                                };
+                                let normalized_ret = (ret / unit_risk).clamp(-1.0, 1.0);
+                                ville.observe(normalized_ret);
+                            }
                         }
 
                         // E4a — FEATURES REALES para el Shadow Forest (antes:
@@ -1142,25 +1199,47 @@ impl LiveEvolutionDaemon {
         let Some((generation_id, parent)) = self.promoted_generation else {
             return;
         };
-        if self.post_promo_returns.len() < 20 {
-            return;
+        // R7-R6-EV-1: Desacoplamiento de la vigilancia anytime-valid de Ville:
+        // Ville posee validez matemática finita para cualquier tiempo de parada (N >= 3)
+        // y detecta colapso de evidencia en 5-15 operaciones sin esperar al tamaño asintótico N >= 20.
+        let ville_degraded = self
+            .post_promo_ville
+            .as_ref()
+            .map(|v| v.is_exhausted() || v.is_evidence_decayed(0.50))
+            .unwrap_or(false);
+
+        // Prueba Studentizada descriptiva asintótica (requiere N >= 20 para estabilidad de varianza)
+        let mut t_stat_opt: Option<f64> = None;
+        let mut t_stat_degraded = false;
+
+        if self.post_promo_returns.len() >= 20 {
+            match summarize_returns(&self.post_promo_returns) {
+                Ok(evidence) => {
+                    if let Some(t) = evidence.studentized() {
+                        t_stat_opt = Some(t);
+                        t_stat_degraded = t <= -2.0;
+                    } else if evidence.is_constant_loss() {
+                        let _ = latch_degradation(&self.arena.kill_switch_active, true);
+                        eprintln!("[ROLLBACK EVIDENCE] Pérdidas constantes detectadas tras 20 operaciones: activando degradación y kill-switch.");
+                        t_stat_degraded = true;
+                    }
+                }
+                Err(error) => {
+                    eprintln!("[ROLLBACK EVIDENCE] Lote inválido: {error:?}; no se inventa un t-stat.");
+                }
+            }
+        } else if self.post_promo_returns.len() >= 5 {
+            // Protección temprana contra pérdidas constantes severas (>= 5 pérdidas consecutivas)
+            if let Ok(evidence) = summarize_returns(&self.post_promo_returns) {
+                if evidence.is_constant_loss() {
+                    let _ = latch_degradation(&self.arena.kill_switch_active, true);
+                    eprintln!("[ROLLBACK EVIDENCE] Racha inicial de pérdidas constantes detectada: activando degradación temprana.");
+                    t_stat_degraded = true;
+                }
+            }
         }
-        let evidence = match summarize_returns(&self.post_promo_returns) {
-            Ok(evidence) => evidence,
-            Err(error) => {
-                eprintln!("[ROLLBACK EVIDENCE] Lote inválido: {error:?}; no se inventa un t-stat.");
-                return;
-            }
-        };
-        let Some(t_stat) = evidence.studentized() else {
-            // Constant losses are not a finite t-test. Latch safety, but do not
-            // fabricate significance or mutate a genome on this degenerate test.
-            if latch_degradation(&self.arena.kill_switch_active, evidence.is_constant_loss()) {
-                eprintln!("[ROLLBACK EVIDENCE] Pérdidas constantes: kill-switch armado; rollback requiere revisión de evidencia y linaje.");
-            }
-            return;
-        };
-        if t_stat <= -2.0 {
+
+        if t_stat_degraded || ville_degraded {
             use quantum_arena::genome_store::GenomeEnvelope;
             let destino = GenomeEnvelope::load_generation(generation_id)
                 .ok()
@@ -1169,10 +1248,14 @@ impl LiveEvolutionDaemon {
                         GenomeEnvelope::load_generation(g).ok()
                     })
                 });
+            let t_repr = t_stat_opt
+                .map(|t| format!("{:.2}", t))
+                .unwrap_or_else(|| "N/A".to_string());
             println!(
-                "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {:.2} sobre {} obs post-promoción. Destino del rollback: {:?} (padre registrado {}).",
+                "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {}, ville_degraded: {} sobre {} obs post-promoción. Destino del rollback: {:?} (padre registrado {}).",
                 generation_id,
-                t_stat,
+                t_repr,
+                ville_degraded,
                 self.post_promo_returns.len(),
                 destino,
                 parent
@@ -1203,6 +1286,7 @@ impl LiveEvolutionDaemon {
             // Watchdog consumido: no re-revertir en cada ciclo sobre la misma evidencia.
             self.promoted_generation = None;
             self.post_promo_returns.clear();
+            self.post_promo_ville = None;
         }
     }
 
@@ -1283,7 +1367,33 @@ impl LiveEvolutionDaemon {
         // almacén versionado (champion real), no un champion_path que
         // nadie escribe. Antes: cada ciclo clonaba SuperGenotype::default()
         // y las promociones destruían el linaje evolutivo acumulado.
-        let current_genome = quantum_arena::genome_store::GenomeEnvelope::load_active()
+        let current_envelope = quantum_arena::genome_store::GenomeEnvelope::load_active();
+        // LXXXXI (A-H2): watchdog sigue a la generación ACTIVA del almacén —
+        // una promoción externa (shadow_forest_harvest del host, manual) arma
+        // la vigilancia al ciclo siguiente (≤ un período del daemon).
+        if let Some(env) = current_envelope.as_ref() {
+            let vigilada = self.promoted_generation.map(|(g, _)| g);
+            let needs_arm = detectar_promocion_externa(Some(env.generation), vigilada).is_some()
+                || (vigilada.is_some() && self.post_promo_ville.is_none());
+            if needs_arm {
+                let es_mismo = vigilada == Some(env.generation);
+                let reiniciada = armar_vigilancia(
+                    es_mismo,
+                    &mut self.promoted_generation,
+                    &mut self.post_promo_returns,
+                    env.generation,
+                    env.parent_generation,
+                );
+                if reiniciada || self.post_promo_ville.is_none() {
+                    self.post_promo_ville = crate::return_evidence::SequentialVilleEvidence::with_bounds(0.05, 0.05, 0.50).ok();
+                    println!(
+                        "🐕 [WATCHDOG-EXTERN] Promoción/restauración externa detectada (gen {}, padre {}) — vigilancia de rollback ARMADA (Ville anytime-valid activo).",
+                        env.generation, env.parent_generation
+                    );
+                }
+            }
+        }
+        let current_genome = current_envelope
             .map(|env| env.genome)
             .or_else(|| {
                 std::fs::read(&self.champion_path).ok().and_then(|bytes| {
@@ -1834,9 +1944,10 @@ impl LiveEvolutionDaemon {
                     env.generation,
                     env.parent_generation,
                 );
-                if reiniciada {
+                if reiniciada || self.post_promo_ville.is_none() {
+                    self.post_promo_ville = crate::return_evidence::SequentialVilleEvidence::with_bounds(0.05, 0.05, 0.50).ok();
                     println!(
-                        "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado.",
+                        "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado (Ville anytime-valid activo).",
                         env.generation, env.parent_generation
                     );
                 } else {
@@ -1908,6 +2019,20 @@ mod evidence_regressions {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn lxxxxi_promocion_externa_detecta_salto_de_generacion() {
+        use super::detectar_promocion_externa;
+        // salto: activa > vigilada => promoción externa (cosecha/manual)
+        assert!(detectar_promocion_externa(Some(6), Some(5)).is_some());
+        assert!(detectar_promocion_externa(Some(7), None).is_some()); // nunca vigilada, gen>0
+        // misma generación (la que el daemon acaba de promover) => nada
+        assert!(detectar_promocion_externa(Some(6), Some(6)).is_none());
+        // genoma más viejo (rollback del almacén) => la vigilancia NO se toca
+        assert!(detectar_promocion_externa(Some(4), Some(5)).is_none());
+        assert!(detectar_promocion_externa(None, Some(5)).is_none());
+        assert!(detectar_promocion_externa(Some(0), None).is_none());
+    }
+
     use super::*;
 
     /// D-742 — el semi-spread del examen sale del MERCADO. Con el código

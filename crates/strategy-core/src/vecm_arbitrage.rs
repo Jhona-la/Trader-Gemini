@@ -182,6 +182,194 @@ impl Default for JohansenVecmEngine {
     }
 }
 
+/// 🔬 ESTIMADOR ANALÍTICO DE DIFUSIÓN ORNSTEIN-UHLENBECK / FOKKER-PLANCK EN TIEMPO CONTINUO
+///
+/// Modela el proceso continuo estocástico de reversión a la media:
+///   dX_t = θ (μ - X_t) dt + σ dW_t
+///
+/// Donde:
+///   - θ > 0: velocidad de reversión física (s⁻¹)
+///   - μ: media de equilibrio invariante
+///   - σ > 0: volatilidad instantánea de difusión (s⁻¹/²)
+///   - t_{1/2} = ln(2) / θ: vida media física en segundos
+///   - Var_∞ = σ² / (2θ): varianza estacionaria derivada de la ecuación de Fokker-Planck
+///   - Z_t = (X_t - μ) / √(σ² / (2θ)): Z-Score ergódico invariante
+#[derive(Debug, Clone)]
+pub struct ContinuousOrnsteinUhlenbeckSde {
+    pub theta: f64,
+    pub mu: f64,
+    pub sigma: f64,
+    pub last_value: f64,
+    pub last_ts_ms: u64,
+    pub count: u64,
+    pub tau_mem_sec: f64,
+    // Momentos de regresión de tiempo continuo WLS (R6-B3, R6-B4)
+    s_w: f64,
+    s_dt: f64,
+    s_x_dt: f64,
+    s_xx_dt: f64,
+    s_dx: f64,
+    s_xdx: f64,
+    s_dxdx_dt: f64,
+}
+
+impl Default for ContinuousOrnsteinUhlenbeckSde {
+    fn default() -> Self {
+        Self::new(0.1, 0.0, 0.01)
+    }
+}
+
+impl ContinuousOrnsteinUhlenbeckSde {
+    pub fn new(theta_init: f64, mu_init: f64, sigma_init: f64) -> Self {
+        Self::with_memory_seconds(theta_init, mu_init, sigma_init, 300.0)
+    }
+
+    /// Crea un nuevo estimador SDE OU con memoria temporal calibrada en segundos (R6-B4).
+    pub fn with_memory_seconds(theta_init: f64, mu_init: f64, sigma_init: f64, tau_mem_sec: f64) -> Self {
+        Self {
+            theta: theta_init.max(1e-5),
+            mu: mu_init,
+            sigma: sigma_init.max(1e-6),
+            last_value: 0.0,
+            last_ts_ms: 0,
+            count: 0,
+            tau_mem_sec: tau_mem_sec.clamp(10.0, 7200.0),
+            s_w: 0.0,
+            s_dt: 0.0,
+            s_x_dt: 0.0,
+            s_xx_dt: 0.0,
+            s_dx: 0.0,
+            s_xdx: 0.0,
+            s_dxdx_dt: 0.0,
+        }
+    }
+
+    /// Vida media de reversión física en segundos: t_{1/2} = ln(2) / θ
+    #[inline]
+    pub fn half_life_seconds(&self) -> f64 {
+        if self.theta > 1e-9 {
+            std::f64::consts::LN_2 / self.theta
+        } else {
+            f64::INFINITY
+        }
+    }
+
+    /// Varianza estacionaria ergódica (Fokker-Planck): σ² / (2θ)
+    #[inline]
+    pub fn stationary_variance(&self) -> f64 {
+        if self.theta > 1e-9 {
+            (self.sigma * self.sigma) / (2.0 * self.theta)
+        } else {
+            1.0
+        }
+    }
+
+    /// Z-Score estacionario del valor actual: (X - μ) / √(Var_∞)
+    #[inline]
+    pub fn stationary_zscore(&self, x: f64) -> f64 {
+        let sd = self.stationary_variance().sqrt().max(1e-8);
+        ((x - self.mu) / sd).clamp(-10.0, 10.0)
+    }
+
+    /// Actualiza el estimador con una nueva observación física (valor, timestamp en ms)
+    pub fn update(&mut self, value: f64, ts_ms: u64) -> f64 {
+        if !value.is_finite() {
+            return self.stationary_zscore(self.last_value);
+        }
+        if self.count == 0 {
+            self.last_value = value;
+            self.last_ts_ms = ts_ms;
+            self.count = 1;
+            return 0.0;
+        }
+
+        if ts_ms <= self.last_ts_ms {
+            // OU-R4-02: Monotonicidad temporal estricta de la física SDE.
+            // Timestamps repetidos o retrógrados no mutan el estado, no avanzan count
+            // ni retroceden el reloj físico.
+            return self.stationary_zscore(self.last_value);
+        }
+
+        let dt_sec = (ts_ms - self.last_ts_ms) as f64 / 1000.0;
+        if dt_sec < 1e-4 {
+            // Demasiado rápido para actualizar θ de tiempo continuo sin inestabilidad numérica
+            return self.stationary_zscore(value);
+        }
+
+        let x = self.last_value;
+        let y = value;
+        let dx = y - x;
+
+        // R6-B4: Decaimiento continuo exponencial en tiempo físico real (segundos), sin clamp espurio a eventos
+        let decay = (-dt_sec / self.tau_mem_sec).exp();
+        self.s_w = self.s_w * decay + 1.0;
+        self.s_dt = self.s_dt * decay + dt_sec;
+        self.s_x_dt = self.s_x_dt * decay + x * dt_sec;
+        self.s_xx_dt = self.s_xx_dt * decay + x * x * dt_sec;
+        self.s_dx = self.s_dx * decay + dx;
+        self.s_xdx = self.s_xdx * decay + x * dx;
+        self.s_dxdx_dt = self.s_dxdx_dt * decay + (dx * dx) / dt_sec;
+        self.count += 1;
+
+        let z_prior = self.stationary_zscore(value);
+
+        if self.count >= 10 && self.s_dt >= 1.0 {
+            // R6-B3: Regresión de tiempo continuo homoscedástica WLS estratificada para Δt heterogéneo:
+            //   ΔX_i / √Δt_i = α √Δt_i - θ (X_{t_{i-1}} √Δt_i) + σ ε_i,  donde α = θ μ
+            // Matriz normal:
+            //   [ s_dt     -s_x_dt  ] [ α ] = [  s_dx  ]
+            //   [ -s_x_dt   s_xx_dt ] [ θ ] = [ -s_xdx ]
+            let denom = (self.s_dt * self.s_xx_dt - self.s_x_dt * self.s_x_dt).max(1e-12);
+            let alpha_num = self.s_xx_dt * self.s_dx - self.s_x_dt * self.s_xdx;
+            let theta_num = -(self.s_dt * self.s_xdx - self.s_x_dt * self.s_dx);
+
+            // R6-B15: Si theta_num <= 0.0, la serie no posee fuerza restauradora hacia la media
+            // (comportamiento browniano no estacionario o divergente theta <= 0). En tal caso, la
+            // velocidad instantánea estocástica debe colapsar a 0.0, haciendo que half_life_seconds()
+            // tienda a infinito (ln(2)/theta -> inf). Esto asegura que la guarda de horizonte
+            // espectral t_1/2 <= 2*tau* rechace de forma fail-closed cualquier intento de arbitraje.
+            let est_theta = if theta_num > 0.0 {
+                (theta_num / denom).clamp(1e-4, 50.0)
+            } else {
+                0.0
+            };
+            let empirical_mean = self.s_x_dt / self.s_dt.max(1e-6);
+
+            let est_mu = if est_theta > 1e-3 {
+                let mu_ols = alpha_num / theta_num;
+                if mu_ols.is_finite() {
+                    mu_ols.clamp(empirical_mean - 5.0, empirical_mean + 5.0)
+                } else {
+                    empirical_mean
+                }
+            } else {
+                empirical_mean
+            };
+
+            // Estimación de volatilidad de difusión continua σ (Fokker-Planck)
+            // RSS = s_dxdx_dt - α s_dx + θ s_xdx
+            let est_alpha = est_theta * est_mu;
+            let raw_rss = self.s_dxdx_dt - est_alpha * self.s_dx + est_theta * self.s_xdx;
+            let n_eff = self.s_w.max(1.0);
+            let est_sigma = (raw_rss.max(1e-12) / n_eff).sqrt().clamp(1e-6, 10.0);
+
+            // Suavizado C1 de parámetros para garantizar trayectorias Lipschitz continuas
+            self.theta = self.theta * 0.95 + est_theta * 0.05;
+            self.mu = self.mu * 0.95 + est_mu * 0.05;
+            self.sigma = self.sigma * 0.95 + est_sigma * 0.05;
+        }
+
+        self.last_value = value;
+        self.last_ts_ms = ts_ms;
+
+        if self.count > 10 {
+            z_prior
+        } else {
+            self.stationary_zscore(value)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,5 +432,134 @@ mod tests {
         let eval_score = vecm.evaluate();
         // Since z > 1.5, evaluate returns a negative score for mean reversion
         assert!(eval_score < 0.0);
+    }
+
+    #[test]
+    fn test_continuous_ornstein_uhlenbeck_sde_properties() {
+        let mut ou = ContinuousOrnsteinUhlenbeckSde::new(0.2, 10.0, 0.5);
+        assert!((ou.half_life_seconds() - (std::f64::consts::LN_2 / 0.2)).abs() < 1e-6);
+        assert!(ou.stationary_variance() > 0.0);
+
+        // Feed trajectory that reverts around 10.0 with 1-second intervals
+        let mut ts = 1_000_000u64;
+        let mut val = 10.0;
+        for i in 0..100 {
+            ts += 1000;
+            // Mean reverting step + small noise
+            val = 10.0 + (val - 10.0) * (-0.2f64).exp() + (if i % 2 == 0 { 0.1 } else { -0.1 });
+            let z = ou.update(val, ts);
+            assert!(z.is_finite());
+        }
+
+        // Half-life must be positive and finite
+        let hl = ou.half_life_seconds();
+        assert!(hl.is_finite() && hl > 0.0);
+
+        // Large shock should yield significant Z-Score
+        let shock_z = ou.update(25.0, ts + 1000);
+        assert!(shock_z > 2.0);
+
+        // NaN immunity
+        let nan_z = ou.update(f64::NAN, ts + 2000);
+        assert!(nan_z.is_finite());
+    }
+
+    #[test]
+    fn test_ou_r4_02_retrograde_and_duplicate_timestamp_does_not_mutate_state_or_advance_count() {
+        let mut ou = ContinuousOrnsteinUhlenbeckSde::new(0.2, 10.0, 0.5);
+        // Primera observación: inicializa estado
+        let z0 = ou.update(10.0, 1000);
+        assert_eq!(z0, 0.0);
+        assert_eq!(ou.count, 1);
+        assert_eq!(ou.last_ts_ms, 1000);
+        assert_eq!(ou.last_value, 10.0);
+
+        // Intento retrógrado: ts=500 < 1000
+        let z_retro = ou.update(25.0, 500);
+        assert!(z_retro.is_finite());
+        assert_eq!(ou.count, 1, "tick retrógrado NO debe incrementar count");
+        assert_eq!(ou.last_ts_ms, 1000, "tick retrógrado NO debe retroceder last_ts_ms");
+        assert_eq!(ou.last_value, 10.0, "tick retrógrado NO debe sobreescribir last_value");
+
+        // Intento duplicado: ts=1000 == 1000
+        let z_dup = ou.update(30.0, 1000);
+        assert!(z_dup.is_finite());
+        assert_eq!(ou.count, 1, "tick duplicado NO debe incrementar count");
+        assert_eq!(ou.last_ts_ms, 1000, "tick duplicado NO debe alterar last_ts_ms");
+        assert_eq!(ou.last_value, 10.0, "tick duplicado NO debe sobreescribir last_value");
+
+        // Siguiente tick causal estrictamente creciente: ts=1500 > 1000
+        let z_causal = ou.update(10.2, 1500);
+        assert!(z_causal.is_finite());
+        assert_eq!(ou.count, 2, "tick causal debe avanzar count");
+        assert_eq!(ou.last_ts_ms, 1500, "tick causal debe avanzar reloj");
+        assert_eq!(ou.last_value, 10.2, "tick causal debe actualizar last_value");
+    }
+
+    #[test]
+    fn test_r6_b3_and_b4_heterogeneous_dt_wls_and_continuous_time_decay() {
+        // R6-B4: Estimador configurado con memoria temporal en segundos (tau_mem = 120 s)
+        let mut ou = ContinuousOrnsteinUhlenbeckSde::with_memory_seconds(0.15, 100.0, 0.5, 120.0);
+        assert_eq!(ou.tau_mem_sec, 120.0);
+
+        // R6-B3: Muestreo con dt altamente heterogéneo (de 200ms a 20s)
+        let dt_sequence_ms = [200, 1500, 500, 10000, 300, 20000, 1000, 8000, 400, 12000];
+        let mut current_ts = 1_000_000u64;
+        let mut val = 100.0;
+        let target_mu = 100.0;
+        let target_theta = 0.15;
+
+        // Trayectoria que revierte hacia target_mu bajo Euler-Maruyama con dt heterogéneo
+        for iter in 0..150 {
+            let dt_ms = dt_sequence_ms[iter % dt_sequence_ms.len()];
+            current_ts += dt_ms;
+            let dt_sec = dt_ms as f64 / 1000.0;
+            let noise = if iter % 2 == 0 { 0.2 } else { -0.2 };
+            val = val + target_theta * (target_mu - val) * dt_sec + noise * dt_sec.sqrt();
+
+            let z = ou.update(val, current_ts);
+            assert!(z.is_finite());
+        }
+
+        // Verificar convergencia ergódica sana bajo WLS heterogéneo
+        assert!(ou.theta > 0.05 && ou.theta < 1.0, "theta estimador ({}) debe converger en rango físico", ou.theta);
+        assert!((ou.mu - 100.0).abs() < 5.0, "mu estimador ({}) debe converger cerca del centro ergódico 100.0", ou.mu);
+        assert!(ou.sigma > 0.05 && ou.sigma < 2.0, "sigma de difusión ({}) debe ser finito y positivo", ou.sigma);
+        assert!(ou.half_life_seconds() > 0.5 && ou.half_life_seconds() < 30.0, "t_1/2 ({}) debe ser coherente", ou.half_life_seconds());
+
+        // Verificar decaimiento continuo sin clamp espurio a 0.80
+        let s_dt_before = ou.s_dt;
+        let large_jump_ts = current_ts + 120_000; // Salto de 120 segundos (1 tau_mem)
+        ou.update(100.0, large_jump_ts);
+        // decay = exp(-120 / 120) = exp(-1) ≈ 0.367879 (anteriormente quedaba clamp en 0.80 forzando n_eff ≈ 5)
+        let expected_decay = (-1.0f64).exp();
+        assert!((ou.s_dt - (s_dt_before * expected_decay + 120.0)).abs() < 1e-4, "decay debe ser continuo exp(-dt/tau)");
+    }
+
+    #[test]
+    fn test_r6_b15_explosive_and_random_walk_collapses_theta_to_zero_fail_closed() {
+        let mut ou = ContinuousOrnsteinUhlenbeckSde::with_memory_seconds(0.2, 100.0, 0.5, 60.0);
+        let mut ts = 1_000_000u64;
+        let mut val: f64 = 100.0;
+
+        // Serie divergente/explosiva (theta negativo real: dx = +0.1 * (x - 100) * dt)
+        for _ in 0..100 {
+            ts += 1000;
+            val += 0.1 * (val - 100.0f64).abs().max(1.0);
+            let _ = ou.update(val, ts);
+        }
+
+        // theta debe haber colapsado hacia 0.0 de forma amortiguada por WLS
+        assert!(
+            ou.theta < 0.05,
+            "theta ({}) ante serie explosiva debe colapsar hacia cero",
+            ou.theta
+        );
+        // t_1/2 debe ser muy grande o infinito (> 20 segundos para tau_mem=60s)
+        assert!(
+            ou.half_life_seconds() > 20.0,
+            "t_1/2 ({}) ante no-estacionariedad debe ser extendido garantizando fail-closed",
+            ou.half_life_seconds()
+        );
     }
 }

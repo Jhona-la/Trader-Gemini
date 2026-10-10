@@ -126,7 +126,15 @@ pub fn compute_with_bayesian_prior(inputs: &FitnessInputs, prior_fitness: f64) -
     if !raw_fitness.is_finite() {
         INVIABLE
     } else {
-        let value = weight * raw_fitness + (1.0 - weight) * prior_fitness;
+        // R7-R6-C-7 ≡ MD-2: Descuento de evidencia estricto en muestra insuficiente (N < N_req).
+        // Con N < N_req, una ganancia positiva no puede reclamar significancia plena
+        // sobre el prior conservador; se escala la ganancia positiva por el factor de evidencia (weight).
+        let effective_raw = if raw_fitness > 0.0 {
+            raw_fitness * weight
+        } else {
+            raw_fitness
+        };
+        let value = weight * effective_raw + (1.0 - weight) * prior_fitness;
         if value.is_finite() { value } else { INVIABLE }
     }
 }

@@ -15,6 +15,8 @@
 //! - Config: mismo genoma ⇒ mismo knob de latencia en ambas rutas (la
 //!   divergencia DIV-2 es "estática vs distribución", NUNCA config distinta).
 
+#![allow(non_snake_case)]
+
 use backtest_engine::network_jitter::NetworkJitterSimulator;
 use quantum_arena::genome::SuperGenotype;
 

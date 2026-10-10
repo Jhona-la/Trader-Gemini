@@ -70,6 +70,9 @@ fn main() {
     let mut stride_ms: u64 = 15_000;
     let mut horizon_ms: u64 = 300_000;
     let mut max_rows: usize = 200_000;
+    // LXXXII fase 2: etiqueta al horizonte = consenso_espectral_tau de CADA
+    // muestra (la escala propia del voto), no un horizonte fijo.
+    let mut tau_matched = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -78,6 +81,11 @@ fn main() {
             "--stride-ms" => stride_ms = args.get(i + 1).expect("--stride-ms N").parse().unwrap(),
             "--horizon-ms" => horizon_ms = args.get(i + 1).expect("--horizon-ms N").parse().unwrap(),
             "--max-rows" => max_rows = args.get(i + 1).expect("--max-rows N").parse().unwrap(),
+            "--tau-matched" => {
+                tau_matched = true;
+                i += 1;
+                continue;
+            }
             other if !other.starts_with("--") => {
                 simbolo = other.to_string();
                 i += 1;
@@ -117,7 +125,8 @@ fn main() {
     let tf = ticks.last().unwrap().ts_ms;
     let mut grid: Vec<u64> = Vec::new();
     let mut g = ((t0 + stride_ms - 1) / stride_ms) * stride_ms;
-    while g <= tf.saturating_sub(horizon_ms) && grid.len() < max_rows {
+    let margen = if tau_matched { 43_200_000 } else { horizon_ms };
+    while g <= tf.saturating_sub(margen) && grid.len() < max_rows {
         grid.push(g);
         g += stride_ms;
     }
@@ -131,10 +140,10 @@ fn main() {
 
     let file = std::fs::File::create(&output).expect("crear salida");
     let mut out = std::io::BufWriter::new(file);
-    let mut manifiesto = json!({
+    let manifiesto = json!({
         "kind": "votes_dataset", "schema": "tgm.l2_votes.v1", "research_only": true,
         "symbol": simbolo, "input": input, "stride_ms": stride_ms,
-        "horizon_ms": horizon_ms, "genome": genoma_fuente,
+        "horizon_ms": horizon_ms, "tau_matched": tau_matched, "genome": genoma_fuente,
         "features_point_in_time": true,
         "r_fwd_es_fuente_de_etiqueta": "el umbral de decisivas se aplica en fase 2",
         "cols": ["ts","sombra_osc","sombra_res","sombra_coax","sombra_trend","sombra_entropia",
@@ -148,8 +157,8 @@ fn main() {
     let mut proximo_grid = 0usize; // índice en grid
     {
         let grid_ref = &grid;
-        let mut filas_ref = &mut fila;
-        let mut pg_ref = &mut proximo_grid;
+        let filas_ref = &mut fila;
+        let pg_ref = &mut proximo_grid;
         let stats = run_booktick_replay_with_observer(
             &replay_ticks, &genome, None, &cfg,
             |idx, core| {
@@ -162,7 +171,20 @@ fn main() {
                     let reg = &core.arena.registry;
                     let v = |k: &str| reg.get_for_coin_or(0, k, f64::NAN);
                     let mid = mid_en(t_grid).unwrap_or(f64::NAN);
-                    let fwd = mid_en(t_grid + horizon_ms).unwrap_or(f64::NAN);
+                    // fase 2: horizonte de etiqueta = tau del consenso de ESTA
+                    // fila (ms, clamp a [1s, 12h]); sin tau finita se cae a
+                    // horizon_ms y la fila queda marcada tau_ms=fija.
+                    let tau_ms = if tau_matched {
+                        let t = v("consenso_espectral_tau");
+                        if t.is_finite() && t >= 1.0 {
+                            (t as u64).clamp(1_000, 43_200_000)
+                        } else {
+                            horizon_ms
+                        }
+                    } else {
+                        horizon_ms
+                    };
+                    let fwd = mid_en(t_grid + tau_ms).unwrap_or(f64::NAN);
                     let r_fwd = if mid.is_finite() && fwd.is_finite() && mid > 0.0 {
                         fwd / mid - 1.0
                     } else {
@@ -183,6 +205,7 @@ fn main() {
                         "p_crash": core.arena.regime_p_crash.load(std::sync::atomic::Ordering::Relaxed),
                         "p_chaos": core.arena.regime_p_chaos.load(std::sync::atomic::Ordering::Relaxed),
                         "mid": mid,
+                        "tau_ms": tau_ms,
                         "r_fwd": r_fwd,
                     });
                     serde_json::to_writer(&mut out, &fila_json).unwrap();

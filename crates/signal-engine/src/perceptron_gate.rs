@@ -30,9 +30,21 @@ impl PerceptronGateEngine {
         }
         let abs_score = signal_score.abs();
         let activation = abs_score * weight;
-        // Exploración mínima (0.15) para evitar bloqueo cognitivo permanente tras pérdidas
-        let gate_strength = ((activation - 0.5) * 5.0).tanh().clamp(0.15, 1.0);
-        signal_score.signum() * gate_strength
+        // R4-C4: rampa C¹ con piso de exploración — el viejo
+        // tanh((a−0.5)·5).clamp(0.15,1) tenía un kink C⁰ en a≈0.53
+        // (derivada 0→4.9 al salir del clamp). Smoothstep sobre
+        // [0.5, 1.5] con piso 0.15: misma intención (exploración
+        // mínima contra el bloqueo cognitivo tras pérdidas), sin
+        // quiebre de derivada.
+        let t = (activation - 0.5).clamp(0.0, 1.0);
+        let gate_strength = 0.15 + 0.85 * (t * t * (3.0 - 2.0 * t));
+        // #668 / H2-6 (RONDA 3): ganancia C¹ continua graduada (2.5) en vez
+        // de 10.0. Con 10.0 cualquier score moderado (|x| ≥ 0.3) saturaba a
+        // ±0.995 actuando como un signum encubierto (G2-4). Con ganancia 2.5,
+        // la amplitud se conserva graduada a lo largo de toda la región emisora
+        // [-1.0, 1.0], garantizando diferenciabilidad y sensibilidad continua.
+        const GANANCIA_PERCEPTRON: f64 = 2.5;
+        (signal_score * GANANCIA_PERCEPTRON).tanh() * gate_strength
     }
 
     /// #620 (Ola 42) — VOTO ESPECTRAL de la compuerta perceptrón: la
@@ -257,20 +269,63 @@ mod qo_620_tests {
                 k
             );
         }
-        // Señal débil ⇒ la compuerta NO se cierra del todo (piso 0.15 de
-        // exploración — el perceptrón mantiene curiosidad mínima).
+        // Señal débil ⇒ la compuerta NO se cierra del todo: con la
+        // dirección continua (#664/G2-4) el voto es pequeño pero NO CERO
+        // (la compuerta mantiene curiosidad proporcional a la señal; el
+        // piso duro 0.15 saltaba de 0 a 0.15 al cruzar score=0).
         let mut x_debil = [0.0; ESCALAS_VOTO];
         for v in x_debil.iter_mut() {
             *v = 0.01;
         }
         let voto_debil = PerceptronGateEngine::voto_espectral(&x_debil);
         assert!(
-            voto_debil.en_escala(15) >= 0.15,
-            "piso de exploración 0.15: {}",
+            voto_debil.en_escala(15) > 0.0,
+            "senal debil deja voto no nulo: {}",
+            voto_debil.en_escala(15)
+        );
+        assert!(
+            voto_debil.en_escala(15) < 0.15,
+            "senal debil no dispara el piso: {}",
             voto_debil.en_escala(15)
         );
         // Señal nula ⇒ voto 0.
         let cero = PerceptronGateEngine::voto_espectral(&[0.0; ESCALAS_VOTO]);
         assert_eq!(cero.dominante(), None);
+    }
+
+    /// H2-6 (RONDA 3): Con ganancia 2.5, la compuerta gradúa de manera continua y suave
+    /// sin colapsar a ±1 en la región operativa típica (|signal| ∈ [0.2, 0.8]).
+    #[test]
+    fn h2_6_graduacion_continua_sin_saturacion_prematura() {
+        // Con peso unitario y score moderado 0.3:
+        // Antes con ganancia 10.0: (0.3 * 10.0).tanh() = (3.0).tanh() ≈ 0.995 (SATURADO)
+        // Ahora con ganancia 2.5: (0.3 * 2.5).tanh() = (0.75).tanh() ≈ 0.635 (GRADUADO)
+        // R4-C4: el gate ahora es smoothstep C¹ con piso 0.15 (el
+        // tanh((a−0.5)·5).clamp tenía kink C⁰ en a≈0.53).
+        let out_moderado = PerceptronGateEngine::infer(0.3, 1.0);
+        let t = (0.3f64 * 1.0 - 0.5).clamp(0.0, 1.0);
+        let gate_strength = 0.15 + 0.85 * (t * t * (3.0 - 2.0 * t));
+        let tanh_esperado = (0.3 * 2.5f64).tanh();
+        assert!((out_moderado - tanh_esperado * gate_strength).abs() < 1e-10);
+        assert!(
+            out_moderado < 0.90,
+            "el score moderado 0.3 no debe saturar a ±1 (fue {out_moderado})"
+        );
+        // Piso de exploración intacto: score bajo ⇒ gate ≈ 0.15.
+        let out_bajo = PerceptronGateEngine::infer(0.05, 1.0);
+        let gate_bajo = 0.15 + 0.85 * (0.0f64 * 0.0 * 3.0);
+        assert!(
+            (out_bajo - (0.05 * 2.5f64).tanh() * gate_bajo).abs() < 1e-10,
+            "score bajo conserva el piso de exploración 0.15 (fue {out_bajo})"
+        );
+
+        // Monotonía estricta en el rango operativo:
+        let out_01 = PerceptronGateEngine::infer(0.1, 1.0);
+        let out_03 = PerceptronGateEngine::infer(0.3, 1.0);
+        let out_06 = PerceptronGateEngine::infer(0.6, 1.0);
+        let out_09 = PerceptronGateEngine::infer(0.9, 1.0);
+        assert!(out_01 < out_03, "monotonía 0.1 < 0.3: {out_01} vs {out_03}");
+        assert!(out_03 < out_06, "monotonía 0.3 < 0.6: {out_03} vs {out_06}");
+        assert!(out_06 < out_09, "monotonía 0.6 < 0.9: {out_06} vs {out_09}");
     }
 }

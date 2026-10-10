@@ -1,3 +1,10 @@
+// [SIN CONSUMIDOR — censo GLM F5-A H1, 2026-10-05] `start_evolution_loop`
+// NO tiene callers (reemplazado por LiveEvolutionDaemon en el host). Su gate
+// de promoción promueve basura (1 trade + PnL>0, sin DSR/incumbente/OOS) y
+// su `frozen_macro` inyecta literales de 2024 — NO cablear sin rediseño con
+// el embudo del daemon vivo (WF_MIN_TRADES=30, DSR D-746, incumbente D-740).
+// Isla extendida del censo qo-605 (ahora 6 módulos: +lib.rs +polars_evolver).
+
 use god_engine_core::GodEngineCore;
 use quantum_arena::{GlobalArena, TickEvent};
 use rayon::prelude::*;
@@ -7,7 +14,10 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 pub mod fitness;
-pub mod selection_stats;
+// G1-5 (Ola Ω11): unificar selection_stats en risk_engine como fuente canónica única (DRY).
+pub use risk_engine::selection_stats;
+pub mod score_retention;
+pub mod sa_selection;
 pub mod anti_bias_governor;
 pub mod ast_mutator;
 pub mod cma_es;
@@ -18,6 +28,7 @@ pub mod moe_neat_arena;
 pub mod neat;
 pub mod online_daemon;
 pub mod return_evidence;
+pub use return_evidence::SequentialVilleEvidence;
 pub mod online_random_forest;
 pub mod polars_evolver;
 pub mod random_forest;
@@ -632,10 +643,6 @@ impl EvolutionEngine {
                 mutation_rate = (mutation_rate * 1.5).min(0.5);
 
                 // FIX BLOQUEO #7: Colapso cuántico para salir del pozo de estancamiento local
-                let latest_ts = all_ticks.last().map(|t| t.timestamp).unwrap_or(42);
-                use metacortex_engine::consejo_seniors::TradingHorizon;
-                // U-6: motor continuo — un solo modo.
-                let mode = TradingHorizon::Continuous;
                 // QO-M2.1: quantum_evolver DELETED — valor neutro del genoma
                 current_alpha.dynamic_atr_min = 0.0012;
                 current_alpha.target_volatility =

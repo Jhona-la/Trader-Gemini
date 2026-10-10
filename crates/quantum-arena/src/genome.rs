@@ -771,7 +771,12 @@ impl SuperGenotype {
             fractional_clip_max: pi * 3.0,
             bft_consensus_tolerance: w_base * 0.3,
             turbo_coherence_threshold: pi / 10.0,
-            turbo_z_score_stdev: 2.5,
+            // #666 (H2-3): default DENTRO de la banda de mutación
+            // [0.1, 1.5] — 2.5 quedaba clamped a 1.5 por from_vector y
+            // dejaba el z-gate del flow_impulse apagado (disparaba sólo
+            // con exceso ≥ ~2.7σ; cascada típica 1-2σ nunca). 0.75 ⇒
+            // dispara desde exceso ≈ 0.5 (λ/μ̂ ≈ 2.4).
+            turbo_z_score_stdev: 0.75,
             sl_atr_multiplier: golden_ratio / 2.0,
             coaxial_squeeze_threshold: e_const / 8.0,
             tensor_op_add_bias: taker_base * 200.0,
@@ -1829,11 +1834,11 @@ impl SuperGenotype {
             maker_spread_pct: mutate_val(self.maker_spread_pct, 0.0001, 0.01),
             maker_obi_threshold: mutate_val(self.maker_obi_threshold, 0.1, 0.95),
             target_volatility: mutate_val(self.target_volatility, 0.005, 0.1),
-            dynamic_atr_min: mutate_val(self.dynamic_atr_min, 0.0001, 0.01),
+            dynamic_atr_min: mutate_val(self.dynamic_atr_min, 0.0000001, 0.01),
             dynamic_obi_threshold: mutate_val(self.dynamic_obi_threshold, 0.05, 0.95),
-            dynamic_ema_trend: mutate_val(self.dynamic_ema_trend, 0.0001, 0.01),
+            dynamic_ema_trend: mutate_val(self.dynamic_ema_trend, 0.0000001, 0.01),
             dynamic_ofi_threshold: mutate_val(self.dynamic_ofi_threshold, 0.05, 0.95),
-            capital_split_scalp: mutate_val(self.capital_split_scalp, 0.1, 1.0),
+            capital_split_scalp: self.capital_split_scalp, // G0-4: congelado sin mutacion (sizing gobernado por kelly_at_tau)
             kelly_clamp_min: mutate_val(self.kelly_clamp_min, 0.001, 0.1),
             kelly_clamp_max: mutate_val(self.kelly_clamp_max, 0.1, 1.0),
             explosive_leverage_multiplier: mutate_val(
@@ -2009,6 +2014,61 @@ impl SuperGenotype {
         self.swing_tp_base = self.tp_horizon_curve.eval(TAU_ANCHOR_SLOW_MS);
         self.scalp_sl_base = self.sl_horizon_curve.eval(TAU_ANCHOR_FAST_MS);
         self.swing_sl_base = self.sl_horizon_curve.eval(TAU_ANCHOR_SLOW_MS);
+    }
+
+    /// H0-1 (RONDA 3) — LA INTENCIÓN DE ANCLA DEL NICHO LLEGA AL MOTOR.
+    ///
+    /// Los nichos del walk-forward expresan su especialización escribiendo
+    /// las anclas legacy (`scalp_tp_base`…), pero desde REHAB-1 esas anclas
+    /// son VISTAS: `apply_to_arena` sólo lee las CURVAS — el fenotipo TP/SL
+    /// del nicho nunca llegaba al arena y el walk-forward exploraba
+    /// dimensiones muertas en ese eje (hallazgo H0-1). Este método convierte
+    /// las anclas ACTUALES del struct en la fuente de una reconstrucción:
+    /// curva por dos puntos canónicos (el patrón de
+    /// `QuantumConfig::update_tp_curve`), coeficientes a sus bandas fuente
+    /// única (la envolvente física GANA a la intención del nicho — si la
+    /// intención no es expresible, las anclas re-derivadas reportan lo
+    /// lograble), y el pipeline estándar de cierre (RR sobre el espectro,
+    /// piso de fricción del SL, re-derivación de vistas, sync continuo).
+    ///
+    /// IDEMPOTENTE cuando las anclas son las vistas derivadas (reconstruir
+    /// la curva por los mismos dos puntos la reproduce): el punto de cierre
+    /// único del blindaje puede llamarlo para TODOS los mutantes sin tocar
+    /// a los que no movieron anclas.
+    pub fn rebuild_tp_sl_curves_from_anchors(&mut self) {
+        use crate::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+        self.tp_horizon_curve = HorizonCurve::through_two_points(
+            TAU_ANCHOR_FAST_MS,
+            self.scalp_tp_base,
+            TAU_ANCHOR_SLOW_MS,
+            self.swing_tp_base,
+        );
+        self.sl_horizon_curve = HorizonCurve::through_two_points(
+            TAU_ANCHOR_FAST_MS,
+            self.scalp_sl_base,
+            TAU_ANCHOR_SLOW_MS,
+            self.swing_sl_base,
+        );
+        self.tp_horizon_curve.a = self
+            .tp_horizon_curve
+            .a
+            .clamp(Self::TP_A_BOUNDS.0, Self::TP_A_BOUNDS.1);
+        self.tp_horizon_curve.b = self
+            .tp_horizon_curve
+            .b
+            .clamp(Self::TP_B_BOUNDS.0, Self::TP_B_BOUNDS.1);
+        self.sl_horizon_curve.a = self
+            .sl_horizon_curve
+            .a
+            .clamp(Self::SL_A_BOUNDS.0, Self::SL_A_BOUNDS.1);
+        self.sl_horizon_curve.b = self
+            .sl_horizon_curve
+            .b
+            .clamp(Self::SL_B_BOUNDS.0, Self::SL_B_BOUNDS.1);
+        self.enforce_curve_rr();
+        self.sl_horizon_curve = Self::normalize_sl_curve_friction_floor(self.sl_horizon_curve);
+        self.derive_anchors_from_curves();
+        self.sync_continuous_curves();
     }
 
     /// Sincroniza las curvas continuas de horizonte para Kelly, Trailing y OBI
@@ -2877,6 +2937,9 @@ impl SuperGenotype {
         // SL(τ) en todo el espectro: a_sl -= ln(factor)) hasta restablecer el
         // invariante — determinista y sin tocar la pendiente evolucionada.
         g.enforce_curve_rr();
+        // F1-A4: Paridad con mutate (líneas 1772, 1992): el piso de fricción
+        // debe garantizarse en la reconstrucción por vector.
+        g.sl_horizon_curve = Self::normalize_sl_curve_friction_floor(g.sl_horizon_curve);
         g.derive_anchors_from_curves();
         g.sync_continuous_curves();
         g
@@ -3414,5 +3477,67 @@ mod tests {
         }
         let altered = SuperGenotype::from_vector(&v).to_vector();
         assert_eq!(base, altered);
+    }
+
+    /// H0-1 (RONDA 3) — LA INTENCIÓN TP/SL DEL NICHO LLEGA AL MOTOR.
+    ///
+    /// El nicho 2 del walk-forward escribe `scalp_tp_base.clamp(0.0120,
+    /// 0.0240)` — pero el ancla es una VISTA: sin reconstrucción, la curva
+    /// (lo único que `apply_to_arena` lee) quedaba bit-igual y el nicho
+    /// exploraba una dimensión muerta. Con `rebuild_tp_sl_curves_from_anchors`,
+    /// el TP a la ancla rápida SE MUEVE hacia la intención del nicho.
+    #[test]
+    fn h0_1_la_intencion_tp_del_nicho_llega_a_la_curva() {
+        use crate::temporal_spectrum::TAU_ANCHOR_FAST_MS;
+        let g = SuperGenotype::load_or_baseline(0.0002, 0.0005);
+        let tp_fast_antes = g.tp_horizon_curve.eval(TAU_ANCHOR_FAST_MS);
+        // Intención del nicho 2: TP de scalper más ancho que el incumbente
+        // (si el incumbente ya está arriba, abajo — el punto es que SE mueva).
+        let intencion = if tp_fast_antes < 0.018 {
+            (tp_fast_antes * 1.5).clamp(0.0120, 0.0240)
+        } else {
+            (tp_fast_antes * 0.7).clamp(0.0120, 0.0240)
+        };
+        assert!(
+            (intencion - tp_fast_antes).abs() > 1e-4,
+            "precondición: la intención difiere del incumbente"
+        );
+        let mut mutado = g.clone();
+        mutado.scalp_tp_base = intencion;
+        // SIN rebuild (el defecto): la curva no se mueve.
+        let tp_sin_rebuild = {
+            let mut m = g.clone();
+            m.scalp_tp_base = intencion;
+            m.tp_horizon_curve.eval(TAU_ANCHOR_FAST_MS)
+        };
+        assert_eq!(tp_sin_rebuild, tp_fast_antes, "el defecto H0-1: escribir el ancla sola no mueve la curva");
+        // CON rebuild: la intención llega (salvo el RR/fricción que la
+        // ajusten hacia lo lograble — tolerancia holgada para eso).
+        mutado.rebuild_tp_sl_curves_from_anchors();
+        let tp_despues = mutado.tp_horizon_curve.eval(TAU_ANCHOR_FAST_MS);
+        assert!(
+            (tp_despues - intencion).abs() < (tp_fast_antes - intencion).abs(),
+            "el rebuild acerca la curva a la intención: antes={tp_fast_antes:.5} intencion={intencion:.5} despues={tp_despues:.5}"
+        );
+    }
+
+    /// H0-1 — IDEMPOTENCIA: para un genoma cuyas anclas SON las vistas
+    /// derivadas (nadie movió intención), el rebuild reproduce la curva —
+    /// el punto de cierre único del blindaje no toca a los mutantes
+    /// neutrales (nichos 1/4/6/7/8/10).
+    #[test]
+    fn h0_1_rebuild_es_idempotente_sin_intencion() {
+        let g = SuperGenotype::load_or_baseline(0.0002, 0.0005);
+        let mut m = g.clone();
+        m.rebuild_tp_sl_curves_from_anchors();
+        // La curva TP se reproduce exactamente (mismo par de puntos).
+        assert!((m.tp_horizon_curve.a - g.tp_horizon_curve.a).abs() < 1e-9);
+        assert!((m.tp_horizon_curve.b - g.tp_horizon_curve.b).abs() < 1e-9);
+        // La de SL puede ser elevada al piso de fricción por el pipeline
+        // estándar (normalización que todo mutate ya aplica) — pero jamás
+        // debe ALEJARSE del incumbente: o igual o más segura.
+        assert!(m.sl_horizon_curve.eval(crate::temporal_spectrum::TAU_ANCHOR_FAST_MS) >= g.sl_horizon_curve.eval(crate::temporal_spectrum::TAU_ANCHOR_FAST_MS) - 1e-12);
+        // Y las vistas re-derivadas cuadran con la curva resultante.
+        assert!((m.scalp_tp_base - m.tp_horizon_curve.eval(crate::temporal_spectrum::TAU_ANCHOR_FAST_MS)).abs() < 1e-12);
     }
 }

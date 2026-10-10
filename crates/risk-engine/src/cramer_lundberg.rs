@@ -99,9 +99,8 @@ impl EstimadorSiniestros {
             var2 += d * d;
         }
         let var2 = (var2 / n).max(1e-18);
-        let _ = var2;
         // BISECCIÓN sobre g(R) = (1/n)Σ e^{−R·y_i} − 1. Con deriva positiva
-        // g(0⁺) < 0 (g'(0) = −media < 0); si g(100) > 0 hay cambio de signo
+        // g(0⁺) < 0 (g'(0) = −media < 0); si g(hi) > 0 hay cambio de signo
         // y la raíz es única en el intervalo (g es convexa: Σ e^{−Ry} tiene
         // a lo sumo DOS cruces con 0, el trivial en R=0 y la raíz buscada).
         // Newton es INFIABLE aquí: g' cambia de signo (crece a través de la
@@ -113,12 +112,27 @@ impl EstimadorSiniestros {
             }
             acc / n - 1.0
         };
-        let (mut lo, mut hi) = (1e-9_f64, 100.0_f64);
-        let g_hi = g(hi);
-        if !(g_hi.is_finite() && g_hi > 0.0) {
-            return None; // sin cruce en el rango acotado: raíz > 100 (edge
-                         // extremo) o muestra degenerada — sin cota honesta
+        // F1-B1 / F1-B3: Techo adaptativo derivado de la aproximación de difusión
+        // R ≈ 2μ/σ² usando var2. En micro-retornos (0.1%-0.5%) R puede ser 200-5000;
+        // un hi fijo de 100 devolvía None falsamente a pesar de existir edge legítimo.
+        let mut hi = (4.0 * media / var2).max(100.0).min(100_000.0);
+        let mut g_hi = g(hi);
+        if g_hi <= 0.0 {
+            for _ in 0..8 {
+                hi *= 2.0;
+                if hi > 100_000.0 {
+                    break;
+                }
+                g_hi = g(hi);
+                if g_hi.is_finite() && g_hi > 0.0 {
+                    break;
+                }
+            }
         }
+        if !(g_hi.is_finite() && g_hi > 0.0) {
+            return None; // sin cruce en el rango acotado
+        }
+        let mut lo = 1e-9_f64;
         if g(lo) > 0.0 {
             return None;
         }
@@ -139,6 +153,49 @@ impl EstimadorSiniestros {
         let r = 0.5 * (lo + hi);
         if r.is_finite() && r > 0.0 {
             Some(r)
+        } else {
+            None
+        }
+    }
+
+    /// Error estándar asintótico del estimador M de R:
+    /// SE(R̂) = sqrt( Σ (e^{-R̂ y_i} - 1)² ) / ( Σ y_i e^{-R̂ y_i} )
+    pub fn standard_error_r(&self, r: f64) -> Option<f64> {
+        if self.count < 30 || !r.is_finite() || r <= 0.0 {
+            return None;
+        }
+        let mut sum_sq_residuals = 0.0f64;
+        let mut denom = 0.0f64;
+        for i in 0..self.count {
+            let y = self.anillo[i];
+            let exp_term = (-r * y).exp();
+            let residual = exp_term - 1.0;
+            sum_sq_residuals += residual * residual;
+            denom += y * exp_term;
+        }
+        let denom_abs = denom.abs();
+        if !denom_abs.is_finite() || denom_abs <= 1e-18 || !sum_sq_residuals.is_finite() {
+            return None;
+        }
+        let se = sum_sq_residuals.sqrt() / denom_abs;
+        if se.is_finite() && se >= 0.0 {
+            Some(se)
+        } else {
+            None
+        }
+    }
+
+    /// Cota inferior conservadora (LCB) de R: R_lcb = R̂ - z · SE(R̂).
+    /// Resuelve R7-R2-A-3: bajo incertidumbre muestral o pocas observaciones,
+    /// R̂ puntual puede sobreestimar el coeficiente y desproteger el margen de ruina.
+    /// Retorna `None` si la cota inferior no garantiza un coeficiente estrictamente positivo.
+    pub fn lundberg_lcb(&self, z: f64) -> Option<f64> {
+        let r = self.lundberg()?;
+        let z_eff = if z.is_finite() && z >= 0.0 { z } else { 1.645 };
+        let se = self.standard_error_r(r)?;
+        let r_lcb = r - z_eff * se;
+        if r_lcb.is_finite() && r_lcb > 0.0 {
+            Some(r_lcb)
         } else {
             None
         }
@@ -267,6 +324,31 @@ mod tests {
                 cota + 3.0 * sigma,
                 r
             );
+        }
+    }
+
+    #[test]
+    fn test_r7_r2_a3_lundberg_lcb_conservador() {
+        let mut est = EstimadorSiniestros::new();
+        for i in 0..128 {
+            est.observar(if i % 2 == 0 { 0.015 } else { -0.01 });
+        }
+        let r_point = est.lundberg().expect("cota estimable");
+        let se = est.standard_error_r(r_point).expect("error estándar calculable");
+        assert!(se > 0.0 && se.is_finite(), "SE debe ser positivo finito: {se}");
+
+        let r_lcb_95 = est.lundberg_lcb(1.645).expect("lcb debe existir");
+        assert!(r_lcb_95 < r_point, "r_lcb={r_lcb_95} debe ser estrictamente menor que r_point={r_point}");
+        assert!((r_lcb_95 - (r_point - 1.645 * se)).abs() < 1e-10);
+
+        // Muestra ruidosa con drift apenas positivo debe dar None si z es alto
+        let mut marginal = EstimadorSiniestros::new();
+        for i in 0..60 {
+            marginal.observar(if i % 2 == 0 { 0.01001 } else { -0.01 });
+        }
+        if let Some(_r_marg) = marginal.lundberg() {
+            // Un z muy conservador (ej. 50.0) debe rechazar la cota (r_lcb <= 0 -> None)
+            assert_eq!(marginal.lundberg_lcb(50.0), None);
         }
     }
 }

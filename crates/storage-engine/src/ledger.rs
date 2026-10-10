@@ -1,3 +1,10 @@
+//! [TRAMPA DE REACTIVACIÓN — censo GLM F6-B H1/H2, 2026-10-05] Módulo muerto
+//! en prod CON DOS MINAS: (1) read_ownership consulta columna `strategy` que
+//! el esquema post-U-ERR-7 ya no escribe (falla "no such column" y devuelve
+//! None — que su propio doc dice que "no debe autorizar exposición"); los
+//! tests fabrican el esquema legacy a mano y verdean sobre precondición
+//! destruida. (2) try_send ignorado + qty=0 descartado = posesiones fantasma.
+//! NO revivir sin reparar ambos.
 use crossbeam_channel::{Receiver, Sender};
 use rusqlite::{params, Connection, OpenFlags};
 use std::thread;

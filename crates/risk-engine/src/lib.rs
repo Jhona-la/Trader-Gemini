@@ -19,8 +19,11 @@ pub mod envio;
 pub mod ruin;
 pub mod tp_sl;
 pub mod veto_registry;
+pub mod selection_stats;
+pub mod ville_e_process;
 
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
+pub use ville_e_process::VilleEProcess;
 
 use quantum_arena::GlobalArena;
 
@@ -376,11 +379,11 @@ impl RiskEngine {
             .metrics
             .win_rate
             .load(Ordering::Relaxed);
-        let q = if wr_coin > 0.0 && wr_coin < 1.0 {
-            1.0 - wr_coin
-        } else {
-            crate::ruin::CONSERVATIVE_Q
-        };
+        let trades_coin = arena.coins[coin_id]
+            .metrics
+            .trade_count
+            .load(Ordering::Relaxed) as f64;
+        let q = crate::ruin::conservative_loss_q(wr_coin, trades_coin);
         let kelly_frac = crate::ruin::clamp_ruin(kelly_frac, q);
         let temporal_scale = arena
             .config
@@ -521,9 +524,14 @@ impl RiskEngine {
         let conviccion = 1.0
             + (intent.confidence - arena.config.min_confidence_btc.load(Ordering::Relaxed))
                 .max(0.0);
+        let micro_kelly_input = kelly_adjusted * conviccion;
+        // A zero returned for invalid size must not be blended with the
+        // positive standard candidate, which would reopen this rejected input.
+        if !micro_kelly_input.is_finite() {
+            return rej(REJ_INVALID_INPUT);
+        }
         let micro_kelly =
-            crate::ruin::clamp_ruin(kelly_adjusted * conviccion, crate::ruin::CONSERVATIVE_Q)
-                .max(0.0);
+            crate::ruin::clamp_ruin(micro_kelly_input, crate::ruin::CONSERVATIVE_Q).max(0.0);
         let kelly_for_scale =
             crate::capital_regime::lerp(kelly_adjusted, micro_kelly, micro_w_alloc);
 
@@ -584,11 +592,15 @@ impl RiskEngine {
         // grupo (D-748). Continuidad: miembro no medido ⇒ proxy tope/8 (el
         // presupuesto lineal legado es el caso todos-no-medidos); riesgos
         // uniformes reducen bit a bit a r·√(k+k(k−1)ρ̄).
-        let q_perdida = 1.0 - arena.coins[coin_id]
+        let wr_coin = arena.coins[coin_id]
             .metrics
             .win_rate
-            .load(Ordering::Relaxed)
-            .clamp(0.0, 1.0);
+            .load(Ordering::Relaxed);
+        let trades_coin = arena.coins[coin_id]
+            .metrics
+            .trade_count
+            .load(Ordering::Relaxed) as f64;
+        let q_perdida = crate::ruin::conservative_loss_q(wr_coin, trades_coin);
         let tope = crate::ruin::clamp_ruin(1.0, q_perdida);
         let riesgo_ewma = arena.riesgo_por_operacion.load(Ordering::Relaxed);
         let riesgo_candidata = if riesgo_ewma.is_finite() && riesgo_ewma > 0.0 {
@@ -853,19 +865,38 @@ impl RiskEngine {
         // un teorema universal de EV negativo. Se conserva esta protección.
         // Se rechaza limpiamente con REJ_TP_SL_FLOOR en lugar de inflar artificialmente el stop.
         if tpsl_gate.below_tradeable_floor {
-            return rej(REJ_TP_SL_FLOOR);
+            // Ω47 / F4-M1: En régimen micro ($13 USD), transición suave C^1 Hermite cúbico
+            // en lugar de escalón en 0.5. Si el suelo viable sl_floor cabe dentro del presupuesto
+            // admisible de stop loss para la escasez actual, se permite elevar el stop al suelo
+            // en lugar de abortar ciegamente con REJ_TP_SL_FLOOR.
+            let sl_floor = quantum_arena::genome::SuperGenotype::min_viable_sl(roundtrip_fee);
+            let u_w = ((micro_w_alloc - 0.20) / 0.60).clamp(0.0, 1.0);
+            let s_w = u_w * u_w * (3.0 - 2.0 * u_w);
+            let max_tolerable_floor = 0.0055 * s_w;
+            if sl_floor > max_tolerable_floor {
+                return rej(REJ_TP_SL_FLOOR);
+            }
         }
         // Blindaje Cuántico Micro-Cuenta ($13 USD):
         // Dado el suelo de Binance de $5.00 min notional, el tamaño no puede comprimirse por debajo de ~$5.10.
         // Si el stop difusivo sigma(tau)*k excede 55 bps en régimen micro, la pérdida en dólares violaría el presupuesto
-        // de ruina ($0.0280 USD max). Se acota el stop a 55 bps y se preserva el ratio RR >= 2.25 de diseño.
-        let (expected_win, expected_loss) = if micro_w_alloc > 0.5 && tpsl_gate.sl_pct > 0.0055 {
-            let sl = 0.0055;
-            let tp = (sl * tpsl_gate.rr_applied).max(sl * 2.25);
-            (tp, sl)
+        // de ruina ($0.0280 USD max). Transición continua C^1 que interpola suavemente el stop a 55 bps
+        // preservando el ratio RR >= 2.25 de diseño sin quiebres de régimen.
+        let u_w = ((micro_w_alloc - 0.20) / 0.60).clamp(0.0, 1.0);
+        let s_w = u_w * u_w * (3.0 - 2.0 * u_w);
+        let micro_sl_cap = 0.0055;
+        let effective_sl = if s_w > 0.0 && tpsl_gate.sl_pct > micro_sl_cap {
+            crate::capital_regime::lerp(tpsl_gate.sl_pct, micro_sl_cap, s_w)
         } else {
-            (tpsl_gate.tp_pct, tpsl_gate.sl_pct)
+            tpsl_gate.sl_pct
         };
+        let effective_tp = if s_w > 0.0 && tpsl_gate.sl_pct > micro_sl_cap {
+            let tp_candidate = (effective_sl * tpsl_gate.rr_applied).max(effective_sl * 2.25);
+            crate::capital_regime::lerp(tpsl_gate.tp_pct, tp_candidate, s_w)
+        } else {
+            tpsl_gate.tp_pct
+        };
+        let (expected_win, expected_loss) = (effective_tp, effective_sl);
 
         // FMT-211: resolve once BEFORE EV and reuse these exact prices below.
         // Payouts are signed fractions of entry price, not leveraged returns.
@@ -890,6 +921,25 @@ impl RiskEngine {
             || !expected_loss.is_finite()
             || expected_loss <= 0.0
         {
+            return rej(REJ_TARGET_GEOMETRY);
+        }
+
+        // R7-R2-A-1: Activación analítica de la probabilidad en forma cerrada de primer toque (Ω3 / CL-34)
+        // Si la marea espectral adversa y la geometría del bracket hacen que la probabilidad
+        // de tocar el stop antes del take profit exceda el 88%, se veta la orden por geometría inviable.
+        let spectral_tide = arena.coins[coin_id].spectral_coherence.load(Ordering::Relaxed);
+        let directional_drift = if spectral_tide.is_finite() {
+            dir * spectral_tide * atr_pct
+        } else {
+            0.0
+        };
+        let p_hit_sl_first = crate::tp_sl::probabilidad_tocar_sl_antes_de_tp(
+            expected_win,
+            expected_loss,
+            directional_drift,
+            atr_pct,
+        );
+        if p_hit_sl_first > 0.88 {
             return rej(REJ_TARGET_GEOMETRY);
         }
 
@@ -991,11 +1041,12 @@ impl RiskEngine {
         } else {
             1.0
         };
-        let coh_benefit = if spec_coh > 0.05 && spec_ent < 0.85 {
-            (spec_coh * (1.0 - spec_ent * 0.5)).clamp(0.0, 0.80)
-        } else {
-            0.0
-        };
+        // Transición suave C^1 Hermite cúbico (smoothstep) erradicando la discontinuidad discreta.
+        let u_coh = (spec_coh / 0.10).clamp(0.0, 1.0);
+        let s_coh = u_coh * u_coh * (3.0 - 2.0 * u_coh);
+        let u_ent = ((1.0 - spec_ent) / 0.30).clamp(0.0, 1.0);
+        let s_ent = u_ent * u_ent * (3.0 - 2.0 * u_ent);
+        let coh_benefit = (spec_coh.max(0.0) * (1.0 - spec_ent * 0.5) * s_coh * s_ent).clamp(0.0, 0.80);
         let base_micro_ratio = 0.66 / 0.62;
         let effective_micro_ratio = base_micro_ratio - (base_micro_ratio - 1.0) * coh_benefit;
 
@@ -1047,31 +1098,33 @@ impl RiskEngine {
         // calibrada adjunta) el EV no se inventa ni bloquea: la orden sigue
         // como SONDA D-750, cuyo sizing mínimo ya está acotado por el control
         // de ruina. Con evidencia (aunque sea una) rige D-751 íntegro.
-        let arranque_frio_total = arena.coins[coin_id]
+        let trade_count = arena.coins[coin_id]
             .metrics
             .trade_count
-            .load(Ordering::Relaxed)
-            == 0;
+            .load(Ordering::Relaxed);
+        let arranque_frio_total = trade_count == 0;
+        let es_fase_sonda = trade_count < 5;
         let p_ganar = if intent.win_probability.is_finite()
             && intent.win_probability > 0.0
             && intent.win_probability < 1.0
         {
             Some(intent.win_probability)
+        } else if arranque_frio_total {
+            None
         } else {
-            match crate::evidence::win_rate_lcb(
+            // Ω46.1: Contracción jerárquica bayesiana (Empirical Bayes Shrinkage).
+            // Para muestras pequeñas (n < 20), el estimador no colapsa a 0.0 ni crea
+            // un estado absorbente de muerte en n=1. Contrae suavemente hacia el prior
+            // del ensamble (0.55) con pseudo-masa k0 = 10.0.
+            Some(crate::evidence::win_rate_hierarchical_lcb(
                 arena.coins[coin_id]
                     .metrics
                     .win_rate
                     .load(Ordering::Relaxed),
-                arena.coins[coin_id]
-                    .metrics
-                    .trade_count
-                    .load(Ordering::Relaxed) as f64,
-            ) {
-                Some(p) => Some(p),
-                None if arranque_frio_total => None,
-                None => return rej(REJ_SIN_EVIDENCIA),
-            }
+                trade_count as f64,
+                0.55,
+                10.0,
+            ))
         };
         let expected_value_pct = match p_ganar {
             Some(p) => (p * expected_win) - ((1.0 - p) * expected_loss),
@@ -1093,8 +1146,23 @@ impl RiskEngine {
         if !expected_value_pct.is_finite() || !ev_fee_multiplier.is_finite() {
             return rej(REJ_INVALID_INPUT);
         }
-        if p_ganar.is_some() && expected_value_pct <= (roundtrip_fee * ev_fee_multiplier) {
-            return rej(4);
+        // Ω46.2: En fase de sonda (n < 5), la orden es de muestreo exploratorio con
+        // sizing mínimo D-750. No se veta con rej(4) si el EV calculado con el prior
+        // del ensamble (p=0.55) cubre comisiones brutas (ev_prior > roundtrip_fee).
+        // Esto erradica el deadlock absorbente donde 1 trade perdedor congelaba
+        // permanentemente la moneda impidiéndole acumular muestra estadística.
+        if p_ganar.is_some() {
+            let ev_minimo_requerido = roundtrip_fee * ev_fee_multiplier;
+            if expected_value_pct <= ev_minimo_requerido {
+                if es_fase_sonda {
+                    let ev_prior = 0.55 * expected_win - 0.45 * expected_loss;
+                    if ev_prior <= roundtrip_fee {
+                        return rej(4);
+                    }
+                } else {
+                    return rej(4);
+                }
+            }
         }
 
         let max_acceptable_fee_pct = arena.config.max_fee_pct.load(Ordering::Relaxed);

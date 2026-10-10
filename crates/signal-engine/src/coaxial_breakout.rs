@@ -41,13 +41,10 @@ impl CoaxialBreakoutEngine {
             let comp_ab = (1.0 - a / b).max(0.0);
             let comp_bc = (1.0 - b / c).max(0.0);
             let squeeze = (comp_ab * comp_bc * 4.0).tanh().clamp(0.0, 1.0);
-            let signo = if desplazamientos[k] > 0.0 {
-                1.0
-            } else if desplazamientos[k] < 0.0 {
-                -1.0
-            } else {
-                0.0
-            };
+            // #664 (G2-5)/#666 (H2-2): dirección CONTINUA en la escala
+            // natural del z-score O(1) — el divisor 1e-4 saturaba a
+            // signum encubierto (paridad vivo/sombra en el mismo fix).
+            let signo = desplazamientos[k].tanh();
             por_escala[k] = (signo * squeeze).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
@@ -231,7 +228,8 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
             return 0.0;
         }
         let squeeze = (comp_1s * comp_5s * 4.0).tanh();
-        let dir_weight = (safe_dir / 1e-4).tanh();
+        // #666 (H2-2): divisor O(1) — safe_dir es z-score espectral O(1).
+        let dir_weight = safe_dir.tanh();
         dir_weight * squeeze
     }
 }
@@ -343,16 +341,24 @@ mod qo_616_tests {
         }
         let voto_rampa = CoaxialBreakoutEngine::voto_espectral(&rampa);
         // En una rampa ×2 por escala: comp = (1 - 0.5) = 0.5 en ambas caras.
-        // Producto = 0.5 * 0.5 * 4 = 1.0 ⇒ tanh(1.0) ≈ 0.76 en TODAS las
-        // escalas interiores — firmado por la dirección del desplazamiento.
+        // Producto = 0.5 * 0.5 * 4 = 1.0 ⇒ tanh(1.0) ≈ 0.76 de squeeze en
+        // TODAS las escalas interiores — firmado por la dirección GRADUADA
+        // tanh(2^(k-16)) (#666/H2-2: sin saturación, la amplitud esconde
+        // el tamaño del desplazamiento: 0.125→0.124, 0.25→0.24, ..., 2→0.96).
+        let mut prev = 0.0f64;
         for k in 14..19 {
             let v = voto_rampa.en_escala(k);
+            let esperado = 0.76_f64.min(rampa[k].tanh() * 0.76);
             assert!(
-                v.abs() > 0.5,
-                "rampa ×2 ⇒ squeeze tensorial fuerte en {}: {}",
+                (v.abs() - esperado).abs() < 0.02,
+                "rampa x2 en {}: {} vs esperado {}",
                 k,
-                v
+                v,
+                esperado
             );
+            assert!(v.abs() > prev, "graduacion monotona en {}: {} <= {}", k, v, prev);
+            prev = v.abs();
         }
+        assert!(prev > 0.5, "el extremo alto de la rampa llega a squeeze fuerte: {}", prev);
     }
 }

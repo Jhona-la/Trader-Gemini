@@ -2,6 +2,7 @@ pub mod booktick_replay;
 pub mod label_evidence;
 pub mod metrics;
 pub mod network_jitter;
+pub mod oos_context;
 pub mod tick_replayer;
 pub mod vectorized;
 
@@ -344,6 +345,7 @@ pub fn run_backtest_native(
             };
             omni_sim[39] = tick_ofi;
             omni_sim[49] = tick_ret.abs() * 100.0;
+            core.arena.registry.set("macro_staleness_ms", 0.0);
 
             let sim_is_buyer_maker = tick_ret < 0.0;
             let (_new_order, closed_order) = core.process_event(

@@ -182,9 +182,6 @@ impl QuantumStrategy for SolitonWaveEngine {
             .unwrap_or(0.0);
         let t_time = registry
             .get_scoped_parameter(sym_opt, cid_opt, "soliton_time", "SolitonWaveEngine")
-            .or_else(|| {
-                registry.get_scoped_parameter(sym_opt, cid_opt, "hawkes_dt", "SolitonWaveEngine")
-            })
             .map(|p| p.get_value())
             .unwrap_or(0.05)
             .clamp(0.001, 1.0);
@@ -212,7 +209,13 @@ impl QuantumStrategy for SolitonWaveEngine {
 
         let amp_val = Self::compute_soliton_amplitude(amp, norm_vel, pos, t_time).clamp(0.0, 1.0);
         if amp_val.is_finite() {
-            vel.signum() * amp_val
+            // #657 (F2-A3) — ERRADICACIÓN sombra/vivo: firma CONTINUA del
+            // momentum (familia tanh(A·x) del voto espectral #650 — sin
+            // escalón de signum en vel=0). SAT_MOMENTO: 1 bp/s de
+            // momentum adimensional ≈ tanh(1); el cosh sigue aportando la
+            // amplitud (pico donde hay momentum).
+            const SAT_MOMENTO: f64 = 1e4;
+            (norm_vel * SAT_MOMENTO).tanh() * amp_val
         } else {
             0.0
         }
@@ -336,5 +339,45 @@ mod qo_610_tests {
         // Amplitud inválida ⇒ 1.0 normalizador, sin inventar NaN.
         let voto_nan = SolitonWaveEngine::voto_espectral(&x, f64::NAN);
         assert!(voto_nan.en_escala(0).is_finite());
+    }
+}
+
+#[cfg(test)]
+mod qo_657_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn eval_con(vel: f64, amp: f64) -> f64 {
+        let registry = Arc::new(OmniscientRegistry::new());
+        registry.set("mid_price", 60_000.0);
+        registry.set("soliton_velocity", vel);
+        registry.set("soliton_amplitude", amp);
+        registry.set("soliton_pos", 0.5);
+        registry.set("soliton_time", 1.0);
+        let mut engine = SolitonWaveEngine::new();
+        assert!(engine.init(registry).is_ok());
+        engine.evaluate_for_coin(0, "TESTUSDT")
+    }
+
+    /// #657 (F2-A3): la firma del vivo es CONTINUA (familia tanh(A·x) del
+    /// voto espectral #650) — sin el salto de signum en vel=0, y con
+    /// paridad de signo.
+    #[test]
+    fn qo_657_soliton_vivo_firma_continua() {
+        let a = eval_con(1e-6, 1.0);
+        let b = eval_con(-1e-6, 1.0);
+        assert!(
+            (a - b).abs() < 0.05,
+            "sin salto en vel=0 (antes signum saltaba ±amplitud): {a} vs {b}"
+        );
+        let pos_v = eval_con(60.0, 1.0); // 60/60000*10 = 1e-2 ⇒ tanh(100)≈1
+        let neg_v = eval_con(-60.0, 1.0);
+        assert!(pos_v > 0.0 && neg_v < 0.0, "paridad de signo: {pos_v} vs {neg_v}");
+        // Paridad aproximada: la firma es antisimétrica; la ENVOLVENTE cosh
+        // depende de (pos − vel·t), no par en vel — el solitón viaja.
+        assert!(
+            (pos_v + neg_v).abs() < 0.05,
+            "paridad de signo/magnitud: {pos_v} vs {neg_v}"
+        );
     }
 }

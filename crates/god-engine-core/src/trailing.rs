@@ -64,10 +64,12 @@ pub fn evaluate_quantum_trailing_with_fee(
     fee_rate: f64,
     tp_frac: f64, // B3.27 — distancia al TP como fracción del precio
     // S-2 (ESPECTRALIZACIÓN): persistencia de la escala dominante [-1,+1].
-    // +1 (tendencial) ⇒ la escalera se EXTIENDE (be 50%, half 70%, profit
-    // 85%, runner 100%: el trade corre hasta el TP — la tendencia sostiene).
-    // −1 (mean-revert) ⇒ se COMPRIME (30/45/60/80%: cosecha temprana — la
-    // ganancia no se sostiene). 0 (browniano) ⇒ 40/60/80/95% (B3.27 exacto).
+    // +1 (tendencial) ⇒ la escalera se EXTIENDE (triggers half/profit/runner
+    // al 120%: el trade corre — la tendencia sostiene). −1 (mean-revert) ⇒
+    // se COMPRIME (al 80%: cosecha temprana — la ganancia no se sostiene).
+    // 0 (browniano) ⇒ extend=1: escalera base bit a bit. El breakeven de
+    // fees NO se modula (guarda neta). Los GAIN de cada nivel siguen
+    // derivados de sus triggers, como en B3.27.
     spectral_persistence: f64,
 ) -> TrailingResult {
     if current_atr <= 0.0
@@ -170,7 +172,13 @@ pub fn evaluate_quantum_trailing_with_fee(
     } else {
         0.5
     };
-    let _lvl = |mr: f64, tend: f64| mr + (tend - mr) * t;
+    // #657 (F3-B1) — MODULACIÓN ESPECTRAL REAL de la escalera: extend=1
+    // en browniano (t=0.5 ⇒ bit a bit), 0.8 en mean-revert puro (cosecha
+    // temprana: triggers al 80%) y 1.2 en tendencial puro (el trade corre:
+    // triggers al 120%). Antes el parámetro entraba a la función y no
+    // afectaba nada (closure muerto): la escalera prometida por S-2/#560
+    // no existía. El breakeven de fees NO se modula — es la guarda neta.
+    let extend = 0.80 + (1.20 - 0.80) * t;
     // B568 / F-025: be_buffer debe garantizar ganancia neta post-fees VIP0 reales.
     // Fee taker ida y vuelta: 2 * fee_rate (~10 bps) + 2 * slippage (~4-6 bps) + margen neto positivo (2-3 bps) = 16.5 a 21.0 bps.
     let roundtrip_taker_friction = effective_fee * 2.0 + 0.0005;
@@ -234,14 +242,22 @@ pub fn evaluate_quantum_trailing_with_fee(
             current_price + (dist_atr * current_atr)
         };
 
-        // Escalera progresiva continua armónica:
-        // be_trigger asegura ganancia neta post-fees;
-        // half, profit y runner ratchets aseguran la cosecha sin esperar al extremo del TP macro.
-        let half_lock_trigger = (be_trigger + min_breathing * 0.80).max(be_trigger * 1.25);
+        // Escalera progresiva continua armónica (modulada por extend #657):
+        // be_trigger asegura ganancia neta post-fees (INTOCADO por la
+        // modulación — es la guarda neta, no una política de cosecha);
+        // half, profit y runner ratchets aseguran la cosecha sin esperar al
+        // extremo del TP macro, y se EXTIENDEN/COMPRIMEN con la
+        // persistencia espectral de la escala dominante: TEND ⇒ triggers
+        // mayores (se activan más tarde) y — como cada gain deriva de su
+        // trigger — locks más lejanos: el trade corre. MR ⇒ lo contrario.
+        let half_lock_trigger =
+            ((be_trigger + min_breathing * 0.80).max(be_trigger * 1.25)) * extend;
         let half_lock_gain = (be_trigger * 0.65).max(be_buffer + 0.0006);
-        let profit_lock_trigger = (half_lock_trigger + min_breathing * 0.80).max(be_trigger * 1.60);
+        let profit_lock_trigger =
+            ((half_lock_trigger + min_breathing * 0.80).max(be_trigger * 1.60)) * extend;
         let profit_lock_gain = (profit_lock_trigger * 0.65).max(half_lock_gain + 0.0008);
-        let runner_lock_trigger = (profit_lock_trigger + min_breathing).max(be_trigger * 2.00);
+        let runner_lock_trigger = ((profit_lock_trigger + min_breathing).max(be_trigger * 2.00))
+            * extend;
         let runner_lock_gain = (runner_lock_trigger * 0.70).max(profit_lock_gain + 0.0010);
 
         if max_pnl_pct >= be_trigger {
@@ -515,6 +531,44 @@ mod tests {
             (d_largo - d_corto).abs() < entry * 1e-4,
             "el stop del largo queda a {d_largo} y el del corto a {d_corto}: la protección debe ser simétrica"
         );
+    }
+
+    #[test]
+    fn qo_657_trailing_modulacion_espectral_s2() {
+        // F3-B1/#657: spectral_persistence GOBIERNA la escalera (antes el
+        // parámetro no afectaba nada — closure muerto). En la zona donde
+        // todos los locks están activos: TENDENCIAL (+1) fija el stop MÁS
+        // LEJOS (el trade corre) y MEAN-REVERT (−1) lo aprieta (cosecha).
+        let base = |p: f64| {
+            // Precio RETRAÍDO (+0.5%) con MFE alto (+3%): la escalera de
+            // locks gobierna el stop (el trailing ATR queda por debajo).
+            evaluate_quantum_trailing_with_fee(
+                1, 60_000.0, 60_300.0, 100.0, 2, 0.0, 0.030, 0.0, 0.0006, 1.0, 1.5, 2.0, 3.0,
+                0.0004, 0.030, p,
+            )
+        };
+        let tend = base(1.0);
+        let mr = base(-1.0);
+        let brown = base(0.0);
+        assert!(
+            tend.stop_price > mr.stop_price,
+            "tendencial {} debe dejar el stop más lejos que mean-revert {}",
+            tend.stop_price,
+            mr.stop_price
+        );
+        // Browniano (t=0.5 ⇒ extend=1.0): entre los dos extremos y la
+        // escalera sigue monótona en p.
+        assert!(brown.stop_price >= mr.stop_price && brown.stop_price <= tend.stop_price);
+        // La guarda de fees NO se modula: mismo be_trigger implícito ⇒
+        // con MFE justo al be, ambos regímenes rompen (fase ≥1).
+        let fase = |p: f64| {
+            evaluate_quantum_trailing_with_fee(
+                1, 60_000.0, 60_600.0, 100.0, 0, 0.0, 0.010, 0.0, 0.0006, 1.0, 1.5, 2.0, 3.0,
+                0.0004, 0.012, p,
+            )
+        };
+        assert_eq!(fase(1.0).new_phase, 1);
+        assert_eq!(fase(-1.0).new_phase, 1);
     }
 
 }

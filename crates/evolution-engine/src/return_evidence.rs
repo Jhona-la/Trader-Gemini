@@ -151,3 +151,56 @@ impl EvidenceEwma {
 pub fn latch_degradation(stop: &AtomicBool, degraded: bool) -> bool {
     degraded && !stop.swap(true, Ordering::AcqRel)
 }
+
+use risk_engine::VilleEProcess;
+
+/// Secuenciador de evidencia anytime-valid basado en supermartingalas de Ville (Ω31).
+/// Inmune al sesgo de parada opcional (*optional stopping*) mediante la cota maximal de Ville:
+///
+/// $$\mathbb{P}\left(\sup_{t \ge 0} M_t \ge \frac{1}{\alpha}\right) \le \alpha$$
+#[derive(Clone, Debug, PartialEq)]
+pub struct SequentialVilleEvidence {
+    pub process: VilleEProcess,
+}
+
+impl SequentialVilleEvidence {
+    pub fn new(alpha: f64) -> Result<Self, &'static str> {
+        let process = VilleEProcess::new(alpha)?;
+        Ok(Self { process })
+    }
+
+    pub fn with_bounds(alpha: f64, lambda_min: f64, lambda_max: f64) -> Result<Self, &'static str> {
+        let process = VilleEProcess::with_bounds(alpha, lambda_min, lambda_max)?;
+        Ok(Self { process })
+    }
+
+    /// Ingiere una nueva observación de retorno o innovación de señal.
+    pub fn observe(&mut self, ret: f64) -> f64 {
+        self.process.update(ret)
+    }
+
+    /// Certifica si el proceso ha superado el umbral de Ville $M_t \ge 1 / \alpha$.
+    pub fn is_edge_certified(&self) -> bool {
+        self.process.is_edge_certified()
+    }
+
+    /// Indica si el proceso ha agotado el capital de prueba o revertido bajo su baseline.
+    pub fn is_exhausted(&self) -> bool {
+        self.process.is_exhausted()
+    }
+
+    /// Drawdown fraccional de evidencia acumulada respecto a su máximo histórico en [0.0, 1.0].
+    pub fn evidence_drawdown(&self) -> f64 {
+        self.process.evidence_drawdown()
+    }
+
+    /// Indica si la evidencia estadística ha sufrido un deterioro mayor a `max_drawdown`.
+    pub fn is_evidence_decayed(&self, max_drawdown: f64) -> bool {
+        self.process.is_evidence_decayed(max_drawdown)
+    }
+
+    /// Cota superior del p-valor en cualquier momento secuencial.
+    pub fn anytime_p_value(&self) -> f64 {
+        self.process.anytime_p_value()
+    }
+}

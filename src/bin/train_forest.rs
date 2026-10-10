@@ -348,7 +348,10 @@ fn regression_gate(mse_model: f64, mse_mean: f64, mse_persist: f64, margin: f64)
         return (r2_mean, 0.0, false);
     }
     let skill = (mse_persist - mse_model) / mse_persist;
-    (r2_mean, skill, skill >= margin)
+    // LXXXIX M1: un margen inválido nunca puede relajar el gate (defensa en
+    // profundidad — el contrato lo valida al inicio, esto cubre llamadas futuras).
+    let pasa = margin.is_finite() && margin >= 0.0 && skill >= margin;
+    (r2_mean, skill, pasa)
 }
 
 // ── PARIDAD ENTRENAMIENTO↔SERVICIO ───────────────────────────────────────
@@ -781,6 +784,7 @@ impl TrainingSamples {
         }
         Ok(())
     }
+    #[allow(dead_code)]
     fn split_at(&mut self, at: usize) -> Self {
         Self {
             features: self.features.split_off(at),
@@ -788,6 +792,7 @@ impl TrainingSamples {
             intervals: self.intervals.split_off(at),
         }
     }
+    #[allow(dead_code)]
     fn max_end(&self) -> u64 {
         self.intervals.iter().map(|v| v.end).max().unwrap_or(0)
     }
@@ -2065,6 +2070,14 @@ fn main() {
     // PERSISTENCIA que el modelo debe recortar (skill score). Default 0.001 =
     // 0,1% de mejora sobre repetir el valor reciente.
     let gate_margin: f64 = arg("--gate-margin", "0.001").parse().unwrap();
+    // LXXXIX (M1/M2 del barrido): margen negativo o no finito relaja el gate
+    // de regresión hasta promover modelos PEORES que la persistencia —
+    // validado aquí, ANTES de entrenar (antes se tiraba la corrida completa
+    // por unwrap y luego dejaba pasar margin<0).
+    assert!(
+        gate_margin.is_finite() && gate_margin >= 0.0,
+        "--gate-margin debe ser finito y >= 0 (recibido: {gate_margin})"
+    );
     // D-720 (DÉCIMA OLA · auditoría integral): EL GATE GOBIERNA EL DESTINO.
     //
     // La condición estaba invertida respecto al docstring de este fichero
@@ -2191,8 +2204,19 @@ fn main() {
     };
     // FMT-190/191: `model` es el artefacto EXACTO que puntuaron la validación
     // y el test (serializado antes del gate, XLIV-13).
-    let mut f = File::create(&out).unwrap();
-    serde_json::to_writer_pretty(&mut f, &model).unwrap();
+    // LXXXIX (H1 del barrido): escritura ATÓMICA tmp+rename+sync — File::create
+    // TRUNCABA el modelo vivo a 0 bytes ANTES de serializar; un crash a mitad
+    // dejaba el artefacto destruido y el host arrancaba sin modelo. El rename
+    // atómico garantiza que en disco hay siempre el modelo completo viejo o
+    // el nuevo, nunca un truncado.
+    std::fs::create_dir_all("models").ok(); // L5: sin dir, el unwrap tiraba tras el gate
+    let tmp = format!("{out}.tmp");
+    {
+        let mut f = File::create(&tmp).unwrap();
+        serde_json::to_writer_pretty(&mut f, &model).unwrap();
+        f.sync_all().unwrap();
+    }
+    std::fs::rename(&tmp, &out).unwrap();
     println!(
         "💾 {} ({} árboles, init {:.4}){}",
         out,

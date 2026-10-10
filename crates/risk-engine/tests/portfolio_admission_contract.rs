@@ -147,6 +147,10 @@ fn continuous_regime_simplex_contracts_margin_smoothly() {
     arena.regime_p_crash.store(0.40, Ordering::Relaxed);
     assert!(guard.allow_trade(true, 80.0, MarketRegime::Range, 5.0));
     assert!(!guard.allow_trade(true, 80.01, MarketRegime::Range, 5.0));
+    // G0-1: Verificación de fusión suave — incluso si el enum MAP discreto es Crash (p_crash fue argmax),
+    // el sistema no colapsa a X=0 si p_crash < 0.90, sino que modula continuamente con el tope de 80.0.
+    assert!(guard.allow_trade(true, 80.0, MarketRegime::Crash, 5.0));
+    assert!(!guard.allow_trade(true, 80.01, MarketRegime::Crash, 5.0));
 
     // Los cortos no son penalizados por p_crash (siguen en 90.0)
     assert!(guard.allow_trade(false, 90.0, MarketRegime::Range, 5.0));
@@ -158,9 +162,10 @@ fn continuous_regime_simplex_contracts_margin_smoothly() {
     assert!(!guard.allow_trade(false, 75.01, MarketRegime::Range, 5.0));
 
     // 3. Veto de Crash sistémico continuo: si p_crash >= 0.90, las compras quedan absolutamente vetadas
-    // incluso si el enum discreto está en Range.
+    // incluso si el enum discreto está en Range o Crash.
     arena.regime_p_crash.store(0.92, Ordering::Relaxed);
     assert!(!guard.allow_trade(true, 1.0, MarketRegime::Range, 5.0));
+    assert!(!guard.allow_trade(true, 1.0, MarketRegime::Crash, 5.0));
     // Los cortos permanecen permitidos (pueden surfear la caída con margen acotado por p_bull)
     assert!(guard.allow_trade(false, 75.0, MarketRegime::Range, 5.0));
 }

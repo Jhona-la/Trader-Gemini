@@ -1,0 +1,204 @@
+tipo	ruta	linea	simbolo	veces	nota
+allow_dead_code	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs	13	const COINS: [&str; 1] = ["BTCUSDT"];	-	anotacion explicita del autor
+allow_dead_code	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs	16	simple_kline_to_ticks	-	anotacion explicita del autor
+allow_dead_code	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs	103	nicho_curva_sl	-	anotacion explicita del autor
+allow_dead_code	crates/data-pipeline/src/api_client.rs	83	env_first	-	anotacion explicita del autor
+allow_dead_code	crates/data-pipeline/src/asset_selector.rs	6	Ticker24h	-	anotacion explicita del autor
+allow_dead_code	crates/data-pipeline/src/dynamic_ranker.rs	7	Ticker24h	-	anotacion explicita del autor
+allow_dead_code	crates/data-pipeline/src/dynamic_ranker.rs	17	ExchangeInfo	-	anotacion explicita del autor
+allow_dead_code	crates/data-pipeline/src/dynamic_ranker.rs	23	ExchangeSymbol	-	anotacion explicita del autor
+allow_dead_code	crates/data-pipeline/src/dynamic_ranker.rs	31	Filter	-	anotacion explicita del autor
+allow_dead_code	crates/data-pipeline/src/market_context.rs	8	BinanceFundingRate	-	anotacion explicita del autor
+allow_dead_code	crates/data-pipeline/src/parser.rs	21	pub coin_id: usize,	-	anotacion explicita del autor
+allow_dead_code	crates/data-pipeline/src/parser.rs	125	pub timestamp_ms: u64,	-	anotacion explicita del autor
+allow_dead_code	crates/evolution-engine/src/online_daemon.rs	77	trades: usize,	-	anotacion explicita del autor
+allow_dead_code	crates/execution-engine/src/shadow.rs	40	kill_active	-	anotacion explicita del autor
+allow_dead_code	crates/execution-engine/src/user_data_stream.rs	433	event_time_ms: u64,	-	anotacion explicita del autor
+allow_dead_code	crates/feature-engine/tests/legacy_correlation_diagnostics.rs	2	legacy_ewma	-	anotacion explicita del autor
+allow_dead_code	crates/feature-engine/tests/legacy_correlation_diagnostics.rs	8	legacy_correlation	-	anotacion explicita del autor
+allow_dead_code	crates/feature-engine/tests/legacy_statistics_diagnostics.rs	2	legacy_ewma	-	anotacion explicita del autor
+allow_dead_code	crates/feature-engine/tests/legacy_statistics_diagnostics.rs	5	legacy_welford	-	anotacion explicita del autor
+allow_dead_code	crates/os-guardian/src/ebpf_core.rs	27	target_pid: u32,	-	anotacion explicita del autor
+allow_dead_code	crates/os-guardian/src/pmu_sensor.rs	24	target_tid: u32,	-	anotacion explicita del autor
+allow_dead_code	crates/risk-engine/src/lib.rs	1390	horizon_tau_ms	-	anotacion explicita del autor
+allow_dead_code	crates/risk-engine/tests/sol_a2_margen_reducido_auditable.rs	101	_arena	-	anotacion explicita del autor
+allow_dead_code	crates/storage-engine/src/raw_zone.rs	19	const MAGIC: u32 = 0x54524757; // "TGRW"	-	anotacion explicita del autor
+allow_dead_code	crates/storage-engine/src/raw_zone.rs	21	const VERSION: u16 = 1;	-	anotacion explicita del autor
+allow_dead_code	scripts/fixtures/r4_depth_witness.rs	1	parser	-	anotacion explicita del autor
+allow_dead_code	scripts/fixtures/r4_selection_stats_witness.rs	1	selection_stats	-	anotacion explicita del autor
+allow_dead_code	src/bin/dashboard.rs	13	SystemState	-	anotacion explicita del autor
+allow_dead_code	src/bin/macro_history_sync.rs	92	fred_daily	-	anotacion explicita del autor
+allow_dead_code	src/bin/train_forest.rs	787	split_at	-	anotacion explicita del autor
+allow_dead_code	src/bin/train_forest.rs	795	max_end	-	anotacion explicita del autor
+allow_dead_code	src/bin/walkforward_evolver.rs	71	toxic: u32,	-	anotacion explicita del autor
+dep_sin_uso	Cargo.toml	0	crossbeam	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	hex	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	hmac	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	itoa	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	lazy_static	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	libm	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	omniscient-registry	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	petgraph	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	rkyv	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	ryu	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	strategy-core	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	syn	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	Cargo.toml	0	uuid	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/audit-engine/Cargo.toml	0	regex	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/audit-engine/Cargo.toml	0	walkdir	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/backtest-engine/Cargo.toml	0	chrono	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/backtest-engine/Cargo.toml	0	execution-engine	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/backtest-engine/Cargo.toml	0	lazy_static	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/data-ingest/Cargo.toml	0	crossbeam	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/data-pipeline/Cargo.toml	0	bincode	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/data-pipeline/Cargo.toml	0	rand	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/evolution-engine/Cargo.toml	0	arc-swap	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/evolution-engine/Cargo.toml	0	data-pipeline	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/evolution-engine/Cargo.toml	0	metacortex-engine	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/evolution-engine/Cargo.toml	0	polars	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/evolution-engine/Cargo.toml	0	signal-engine	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/evolution-engine/Cargo.toml	0	telemetry-server	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/god-engine-core/Cargo.toml	0	audit-engine	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/god-engine-core/Cargo.toml	0	data-pipeline	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/god-engine-core/Cargo.toml	0	telemetry-engine	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/god-engine-core/Cargo.toml	0	winapi	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/graph-4d/Cargo.toml	0	serde	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/graph-architecture/Cargo.toml	0	proc-macro2	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/graph-architecture/Cargo.toml	0	quote	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/metacortex-engine/Cargo.toml	0	lazy_static	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/metacortex-engine/Cargo.toml	0	proc-macro2	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/metacortex-engine/Cargo.toml	0	rkyv	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/metacortex-engine/Cargo.toml	0	walkdir	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/omniscient-registry/Cargo.toml	0	crossbeam	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/os-guardian/Cargo.toml	0	winapi	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/signal-engine/Cargo.toml	0	dark-alpha-engine	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/signal-engine/Cargo.toml	0	telemetry-engine	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/storage-engine/Cargo.toml	0	bincode	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/storage-engine/Cargo.toml	0	lazy_static	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/strategy-core/Cargo.toml	0	data-pipeline	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/strategy-core/Cargo.toml	0	polars	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/strategy-core/Cargo.toml	0	rand	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/strategy-core/Cargo.toml	0	smartcore	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/strategy-core/Cargo.toml	0	telemetry-server	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+dep_sin_uso	crates/telemetry-engine/Cargo.toml	0	crossbeam-channel	0	0 apariciones del identificador en los .rs del crate (verificar derive/macro)
+fn_sin_uso	crates/audit-engine/src/auditor_interno.rs	65	compute_metrics	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/audit-engine/src/auditor_interno.rs	188	with_capital	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/audit-engine/src/telemetry.rs	190	send_latency_warning	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/audit-engine/src/telemetry.rs	196	send_trade_execution	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/audit-engine/src/telemetry.rs	219	send_ml_prediction	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/dark-alpha-engine/src/lib.rs	188	forward_tanh	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/dark-alpha-engine/src/lib.rs	857	predict_with_plasticity	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/data-ingest/src/dynamic_selector.rs	52	select_top_10	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/data-ingest/src/world_bank.rs	65	start_polling	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/data-pipeline/src/api_client.rs	84	env_first	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/data-pipeline/src/api_client.rs	87	get_real_wallet_balance	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/data-pipeline/src/api_client.rs	160	get_commission_rate	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/data-pipeline/src/asset_selector.rs	23	fetch_top_dynamic_assets	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/data-pipeline/src/historical.rs	55	fetch_klines	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/data-pipeline/src/macro_feed.rs	61	run_macro_feed_poller	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/data-pipeline/src/onchain_feed.rs	142	run_onchain_feed	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/data-pipeline/src/resilient_stream.rs	54	on_reconnect_success	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/data-pipeline/src/resilient_stream.rs	61	on_network_disconnect	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/evolution-engine/src/online_daemon.rs	739	live_evolution_armed	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/execution-engine/src/client.rs	162	set_testnet	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/execution-engine/src/client.rs	166	update_api_key	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/execution-engine/src/dynamic_symbols.rs	69	refresh_universe	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/execution-engine/src/order_registry.rs	481	pending_qty_for_symbol	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/execution-engine/src/quantum_socket.rs	52	warmup_pool	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/execution-engine/tests/execution_open_diagnostics.rs	47	empty_ticker_feed_produces_empty_universe_not_fabricated_btc	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/execution-engine/tests/execution_open_diagnostics.rs	65	symbol_score_ord_is_total_and_nan_is_least	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/feature-engine/src/microstructure.rs	515	is_resonant	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/feature-engine/src/microstructure.rs	535	load_from_disk	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/feature-engine/src/multifractal.rs	389	d0_f_alpha	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/feature-engine/src/quantum_tensor_store.rs	83	update_kinematics_from_ring	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/bootloader.rs	104	execute_boot_sequence	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/lib.rs	1247	set_lakehouse	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/lib.rs	2688	revert_ghost_position	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/math_kernels.rs	347	sizing_fraction	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/math_kernels.rs	566	compute_kelly_fraction	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/math_kernels.rs	605	extract_kelly_stats	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/math_kernels.rs	642	compute_cvar	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/math_kernels.rs	679	compute_rsi_vectorized	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/math_kernels.rs	736	compute_bollinger_bands	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/math_kernels.rs	782	compute_macd	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/math_kernels.rs	816	predict_rf	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/math_kernels.rs	846	predict_gb	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/math_kernels.rs	882	fused_compute_step	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/stateful_engine.rs	408	get_active_total_loss_streak	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/stateful_engine.rs	438	get_active_directional_streak	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/stateful_engine.rs	1316	infer_simd_alpha	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/god-engine-core/src/stateful_engine.rs	1327	train_simd_step	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/cazador_constantes.rs	38	visit_item_const_mut	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/cazador_constantes.rs	41	visit_item_static_mut	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/compiler_sandbox.rs	59	compile_package_async	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/epigenoma_store.rs	123	init_epigenoma_gene	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/evolutionary_templates.rs	17	to_rust_expr	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/evolutionary_templates.rs	157	generate_volume_funding_predictor	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/evolutionary_templates.rs	309	stop_loss_at	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/immune_system.rs	145	archive_old_traumas	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/lib.rs	78	without_rate_limit	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/lib.rs	85	trigger_wavelet_mutation	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/online_learning.rs	185	new_with_kalman	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/src/online_learning.rs	217	spawn_telemetry_consumer	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/metacortex-engine/tests/quantum_organism_test.rs	65	compute_threshold	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/omniscient-registry/src/lib.rs	212	get_scoped	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/os-guardian/src/zero_latency_telemetry.rs	38	record_metric	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/config.rs	482	update_sl_curve	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/evalues.rs	78	con_parametros	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/net_multiplexer.rs	6	get_global_client	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/spectral_tape.rs	551	warmed_up	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/spectral_tape.rs	724	notional_at	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/spectral_tape.rs	736	concentracion_at	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/spectral_tape.rs	742	flujo_at	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/state.rs	431	apply_spectral_epigenetic_feedback	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/state.rs	436	apply_epigenetic_feedback	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/symbol_ranker_engine.rs	39	run_daemon	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/symbol_registry.rs	74	roundtrip_fee_cost	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/temporal_spectrum.rs	860	deviation_at	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/temporal_spectrum.rs	931	phase_resonance	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/temporal_spectrum.rs	1108	spectral_resonance_tau	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/quantum-arena/src/zero_alloc_pool.rs	27	acquire_zero_alloc_slot	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/risk-engine/src/correlation_guard.rs	1019	sin_riesgo_medido_el_proxy_acotado_permite_la_segunda_posicion	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/risk-engine/src/epigenetic_capital_alloc.rs	46	allocate_epigenetic_top10_margin	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/risk-engine/src/epigenetic_capital_alloc.rs	56	calculate_plasticity_tensor	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/risk-engine/src/lib.rs	407	evaluate_quantum_order_by_horizon	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/risk-engine/src/orchestrator.rs	18	calculate_dynamic_allocation	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/storage-engine/src/lakehouse.rs	267	record_tensor	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/storage-engine/src/mmap_bus.rs	57	write_prediction_vs_reality	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/strategy-core/src/lib.rs	31	evaluate_scoped	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/strategy-core/src/multivariate_coint.rs	283	get_half_life	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/strategy-core/src/yang_mills_gauge.rs	82	with_adaptation_rate	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/telemetry-engine/src/dns_optimizer.rs	20	run_continuous_monitoring	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/telemetry-server/src/stream.rs	25	ws_stream_handler	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	crates/telemetry-server/src/telegram_bot.rs	63	send_alert	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	src/bin/macro_history_sync.rs	93	fred_daily	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	src/dark_alpha_router.rs	156	ingest_l2_snapshot	1	unica aparicion en el arbol = su definicion
+fn_sin_uso	src/symbol_manager.rs	4	evolve_symbols_daemon	1	unica aparicion en el arbol = su definicion
+modulo_homonomo	crates/audit-engine/src/telemetry.rs	0	telemetry	2	otro crate tiene telemetry.rs con el mismo nombre: crates/audit-engine/src/telemetry.rs,crates/os-guardian/src/telemetry.rs
+modulo_homonomo	crates/backtest-engine/tests/spectral_risk_contract.rs	0	spectral_risk_contract	2	otro crate tiene spectral_risk_contract.rs con el mismo nombre: crates/backtest-engine/tests/spectral_risk_contract.rs,crates/risk-engine/tests/spectral_risk_contract.rs
+modulo_homonomo	crates/feature-engine/src/correlation.rs	0	correlation	2	otro crate tiene correlation.rs con el mismo nombre: crates/feature-engine/src/correlation.rs,src/features/correlation.rs
+modulo_homonomo	crates/feature-engine/src/ewma.rs	0	ewma	2	otro crate tiene ewma.rs con el mismo nombre: crates/feature-engine/src/ewma.rs,src/features/ewma.rs
+modulo_homonomo	crates/feature-engine/src/microstructure.rs	0	microstructure	2	otro crate tiene microstructure.rs con el mismo nombre: crates/feature-engine/src/microstructure.rs,src/features/microstructure.rs
+modulo_homonomo	crates/feature-engine/src/omni_strategies.rs	0	omni_strategies	2	otro crate tiene omni_strategies.rs con el mismo nombre: crates/feature-engine/src/omni_strategies.rs,src/features/omni_strategies.rs
+modulo_homonomo	crates/feature-engine/src/welford.rs	0	welford	2	otro crate tiene welford.rs con el mismo nombre: crates/feature-engine/src/welford.rs,src/features/welford.rs
+modulo_homonomo	crates/god-engine-core/src/orchestrator.rs	0	orchestrator	3	otro crate tiene orchestrator.rs con el mismo nombre: crates/god-engine-core/src/orchestrator.rs,crates/risk-engine/src/orchestrator.rs,crates/signal-engine/src/orchestrator.rs
+modulo_homonomo	crates/god-engine-core/src/trailing.rs	0	trailing	2	otro crate tiene trailing.rs con el mismo nombre: crates/god-engine-core/src/trailing.rs,src/trailing.rs
+modulo_homonomo	crates/omniscient-registry/src/tests.rs	0	tests	2	otro crate tiene tests.rs con el mismo nombre: crates/omniscient-registry/src/tests.rs,crates/phase-runner/src/tests.rs
+modulo_homonomo	crates/os-guardian/src/telemetry.rs	0	telemetry	2	otro crate tiene telemetry.rs con el mismo nombre: crates/audit-engine/src/telemetry.rs,crates/os-guardian/src/telemetry.rs
+modulo_homonomo	crates/phase-runner/src/tests.rs	0	tests	2	otro crate tiene tests.rs con el mismo nombre: crates/omniscient-registry/src/tests.rs,crates/phase-runner/src/tests.rs
+modulo_homonomo	crates/quantum-arena/src/config.rs	0	config	2	otro crate tiene config.rs con el mismo nombre: crates/quantum-arena/src/config.rs,src/config.rs
+modulo_homonomo	crates/risk-engine/src/orchestrator.rs	0	orchestrator	3	otro crate tiene orchestrator.rs con el mismo nombre: crates/god-engine-core/src/orchestrator.rs,crates/risk-engine/src/orchestrator.rs,crates/signal-engine/src/orchestrator.rs
+modulo_homonomo	crates/risk-engine/tests/spectral_risk_contract.rs	0	spectral_risk_contract	2	otro crate tiene spectral_risk_contract.rs con el mismo nombre: crates/backtest-engine/tests/spectral_risk_contract.rs,crates/risk-engine/tests/spectral_risk_contract.rs
+modulo_homonomo	crates/signal-engine/src/orchestrator.rs	0	orchestrator	3	otro crate tiene orchestrator.rs con el mismo nombre: crates/god-engine-core/src/orchestrator.rs,crates/risk-engine/src/orchestrator.rs,crates/signal-engine/src/orchestrator.rs
+modulo_homonomo	src/config.rs	0	config	2	otro crate tiene config.rs con el mismo nombre: crates/quantum-arena/src/config.rs,src/config.rs
+modulo_homonomo	src/features/correlation.rs	0	correlation	2	otro crate tiene correlation.rs con el mismo nombre: crates/feature-engine/src/correlation.rs,src/features/correlation.rs
+modulo_homonomo	src/features/ewma.rs	0	ewma	2	otro crate tiene ewma.rs con el mismo nombre: crates/feature-engine/src/ewma.rs,src/features/ewma.rs
+modulo_homonomo	src/features/microstructure.rs	0	microstructure	2	otro crate tiene microstructure.rs con el mismo nombre: crates/feature-engine/src/microstructure.rs,src/features/microstructure.rs
+modulo_homonomo	src/features/omni_strategies.rs	0	omni_strategies	2	otro crate tiene omni_strategies.rs con el mismo nombre: crates/feature-engine/src/omni_strategies.rs,src/features/omni_strategies.rs
+modulo_homonomo	src/features/welford.rs	0	welford	2	otro crate tiene welford.rs con el mismo nombre: crates/feature-engine/src/welford.rs,src/features/welford.rs
+modulo_homonomo	src/trailing.rs	0	trailing	2	otro crate tiene trailing.rs con el mismo nombre: crates/god-engine-core/src/trailing.rs,src/trailing.rs
+modulo_huerfano	crates/omniscient-registry/src/tests.rs	0	tests	0	ningun `mod tests;` declarable lo alcanza
+modulo_huerfano	crates/phase-runner/src/tests.rs	0	tests	0	ningun `mod tests;` declarable lo alcanza
+modulo_huerfano	crates/quantum-arena/src/net_multiplexer.rs	0	net_multiplexer	0	ningun `mod net_multiplexer;` declarable lo alcanza
+modulo_huerfano	src/risk/mod.rs	0	risk	0	ningun `mod risk;` declarable lo alcanza
+modulo_por_path	crates/backtest-engine/src/booktick_causality_contract.rs	0	causality_contract	0	booktick_causality_contract.rs se compila como `mod causality_contract;` desde crates/backtest-engine/src/booktick_replay.rs (solo bajo #[cfg(test)])

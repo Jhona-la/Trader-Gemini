@@ -1,12 +1,20 @@
 //! Legacy logging stub, NOT a fill/queue/fee/portfolio simulator.
-//! It does not establish demo-production parity; admission/kill-switch gaps are
-//! reproduced in shadow_open_diagnostics. Do not use its Ok(()) as fill evidence.
+//! It does not establish demo-production parity. Do not use its Ok(()) as
+//! fill evidence.
+//! TRIAJE B (GLM 105): el kill-switch YA NO es cosmético aquí — espeja la
+//! doctrina CL-3 del executor real (latch permanente que bloquea las
+//! rutas que AUMENTAN riesgo; salidas/cancelaciones/lecturas libres para
+//! que el apagado funcione). El stub sigue sin estar cableado a dinero.
 use crate::executor::ExecutionProvider;
 use risk_engine::ValidatedOrder;
 
 pub struct ShadowExecutor {
     pub simulated_capital: f64,
     active_leverage: std::sync::RwLock<std::collections::HashMap<String, u32>>,
+    /// TRIAJE B (GLM 105): latch del kill — espejo del `kill_switch`
+    /// AtomicBool del executor real (executor.rs:330). Permanente: una vez
+    /// armado, sólo el reinicio del proceso lo baja (doctrina CL-3).
+    kill_switch: std::sync::atomic::AtomicBool,
 }
 
 impl ShadowExecutor {
@@ -14,7 +22,24 @@ impl ShadowExecutor {
         Self {
             simulated_capital,
             active_leverage: std::sync::RwLock::new(std::collections::HashMap::new()),
+            kill_switch: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Espejo de `check_rate_limits` (CL-3): la gate de ENTRADAS del kill.
+    /// Las rutas que aumentan riesgo la consultan al inicio.
+    fn check_kill_entry(&self) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        if self.kill_switch.load(Ordering::Relaxed) {
+            Err("SHADOW KILL SWITCH ACTIVE. New-risk execution blocked.".to_string())
+        } else {
+            Ok(())
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn kill_active(&self) -> bool {
+        self.kill_switch.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn log_shadow_trade(
@@ -48,6 +73,7 @@ impl ExecutionProvider for ShadowExecutor {
         current_price: f64,
         step_size: f64,
     ) -> Result<(), String> {
+        self.check_kill_entry()?;
         if current_price <= 0.0 {
             return Err("SEGURIDAD: current_price inválido (<= 0.0). Orden abortada.".to_string());
         }
@@ -73,6 +99,7 @@ impl ExecutionProvider for ShadowExecutor {
         quantity: f64,
         _step_size: f64,
     ) -> Result<(), String> {
+        self.check_kill_entry()?;
         if quantity.is_infinite() || quantity.is_nan() || quantity <= 0.0 {
             return Err(
                 "SEGURIDAD: quantity inválido (infinito, NaN o <= 0.0). Orden abortada."
@@ -88,7 +115,11 @@ impl ExecutionProvider for ShadowExecutor {
     }
 
     fn trigger_kill_switch(&self) {
-        println!("👻 [SHADOW MODE] KILL SWITCH TRIGGERED");
+        use std::sync::atomic::Ordering;
+        // TRIAJE B (GLM 105): latch real, no println — el trait ya no
+        // puede ser ignorado silenciosamente por esta impl.
+        self.kill_switch.store(true, Ordering::Relaxed);
+        println!("👻 [SHADOW MODE] KILL SWITCH TRIGGERED — new-risk routes blocked");
     }
 
     async fn execute_maker_chase(
@@ -101,6 +132,7 @@ impl ExecutionProvider for ShadowExecutor {
         _tick_size: f64,
         _client_order_id: &str,
     ) -> Result<(), String> {
+        self.check_kill_entry()?;
         self.log_shadow_trade(symbol, "MAKER_CHASE", is_long, quantity, price);
         Ok(())
     }
@@ -115,6 +147,7 @@ impl ExecutionProvider for ShadowExecutor {
         _tick_size: f64,
         _client_order_id: &str,
     ) -> Result<(), String> {
+        self.check_kill_entry()?;
         self.log_shadow_trade(symbol, "LIMIT_IOC", is_long, quantity, price);
         Ok(())
     }
@@ -171,6 +204,7 @@ impl ExecutionProvider for ShadowExecutor {
         _tick_size: f64,
         client_order_id: &str,
     ) -> Result<(), String> {
+        self.check_kill_entry()?;
         let side = if is_long { "BUY" } else { "SELL" };
         println!(
             "👻 [SHADOW MODE] Limit {} {} {} @ {} (ID: {}) [Simulated]",
@@ -206,6 +240,7 @@ impl ExecutionProvider for ShadowExecutor {
     }
 
     async fn set_leverage(&self, symbol: &str, leverage: u32) -> Result<(), String> {
+        self.check_kill_entry()?;
         let mut map = self.active_leverage.write().unwrap();
         map.insert(symbol.to_string(), leverage);
         println!(
@@ -226,6 +261,7 @@ impl ExecutionProvider for ShadowExecutor {
         _tick_size: f64,
         _client_order_id: &str,
     ) -> Result<(), String> {
+        self.check_kill_entry()?;
         self.log_shadow_trade(symbol, "ICEBERG_LIMIT", is_long, quantity, price);
         Ok(())
     }
@@ -350,5 +386,52 @@ mod tests {
         let rates = shadow.fetch_commission_rate("ETHUSDT").await.unwrap();
         assert_eq!(rates.0, 0.0002);
         assert_eq!(rates.1, 0.0005);
+    }
+
+    /// TRIAJE B (GLM 105) — ESPEJO CL-3: el kill del shadow es un latch
+    /// que bloquea las rutas de NUEVO riesgo y deja libres las salidas
+    /// (cancelaciones, reduce-only, lecturas) para que el apagado funcione.
+    /// Antes era un println sin estado: el trait permitía ignorar el kill
+    /// silenciosamente y cualquier validación vía shadow era inmune a él.
+    #[tokio::test]
+    async fn triaje_b_kill_switch_espejo_cl3() {
+        let s = ShadowExecutor::new(100.0);
+        // Frío: las entradas pasan.
+        assert!(s.execute_raw_qty("BTCUSDT", true, 0.001, 0.001).await.is_ok());
+        assert!(!s.kill_active());
+        // Arma el latch.
+        s.trigger_kill_switch();
+        assert!(s.kill_active());
+        // Entradas (nuevo riesgo): TODAS bloqueadas.
+        assert!(s.execute_raw_qty("BTCUSDT", true, 0.001, 0.001).await.is_err());
+        assert!(s
+            .execute_limit_order("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "K1")
+            .await
+            .is_err());
+        assert!(s
+            .execute_ioc_order("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "K2")
+            .await
+            .is_err());
+        assert!(s
+            .execute_iceberg_limit("BTCUSDT", true, 0.005, 0.001, 50000.0, 0.001, 0.1, "K3")
+            .await
+            .is_err());
+        assert!(s
+            .execute_maker_chase("BTCUSDT", true, 0.001, 50000.0, 0.001, 0.1, "K4")
+            .await
+            .is_err());
+        assert!(s.set_leverage("BTCUSDT", 5).await.is_err());
+        // Salidas y lecturas: LIBRES durante el apagado (doctrina CL-3 —
+        // flatten/cancel/consulta deben funcionar con el kill armado).
+        assert!(s.cancel_order("BTCUSDT", "K1").await.is_ok());
+        assert!(s.cancel_all_symbol_orders("BTCUSDT").await.is_ok());
+        assert!(s
+            .execute_reduce_only_market("BTCUSDT", true, 0.001, 0.001)
+            .await
+            .is_ok());
+        assert!(s.fetch_account_balance().await.is_ok());
+        assert!(s.fetch_open_positions().await.is_ok());
+        // Latch PERMANENTE: no existe ruta de desarme (igual que el real).
+        assert!(s.kill_active());
     }
 }

@@ -26,20 +26,19 @@
 //!   redondeo FP) — la ponderación SÓLO entra con evidencia madura.
 
 use crate::voto_espectral::{VotoEspectral, ESCALAS_VOTO};
-use quantum_arena::temporal_spectrum::{umbral_ic_significativo, MUESTRAS_SKILL_MADURAS};
+use quantum_arena::evalues::EProceso;
+use quantum_arena::temporal_spectrum::MUESTRAS_SKILL_MADURAS;
 
 /// Los 13 motores con `voto_espectral()` de la composición del consenso
 /// (11 originales de #623 + trend-runner y RenyiTsallis, AGY P29).
 pub const MOTORES: usize = 13;
+/// #663 (G1-1): tamaño de la FAMILIA de e-procesos consultada por la
+/// composición del consenso (13 motores × 32 escalas) — alimenta el
+/// umbral Bonferroni M/α del gate de Ville.
+pub const NUM_PARES_MOTOR_ESCALA: usize = MOTORES * 32;
 pub const PISO_EXPLORACION: f64 = 0.15;
 const OLVIDO: f64 = 1.0 / 64.0;
 const EPS_VOTO: f64 = 1e-9;
-/// Ola 48 / H5 — tamaño efectivo del estimador EWMA (λ=1/64 ⇒ N_ef ≈
-/// 2/λ = 128): el umbral de significancia se ancla AQUÍ, no al conteo
-/// crudo n. Con n crudo el umbral decae a 0 en sesiones largas y admite
-/// ruido como habilidad — reabriendo el sesgo de selección que #599
-/// cerró para el espectro.
-pub const N_EFECTIVO_EWMA: u64 = 128;
 
 /// Acumuladores EWMA del IC (forma exacta de #594).
 #[derive(Clone, Copy)]
@@ -48,11 +47,25 @@ struct AcumIc {
     wr: f64,
     wsr: f64,
     n: u64,
+    /// #661 — E-PROCESO de Ville sobre el signo de voto·retorno: la
+    /// significancia anytime-valid que sustituye al umbral fijo. El IC
+    /// sigue midiendo la MAGNITUD (para el tamaño del peso); el
+    /// e-proceso decide SI hay habilidad (inmune al optional stopping
+    /// de la composición por evento). #663 (G1-1): la multiplicidad de
+    /// los 13×32=416 pares motor×escala se corrige con el umbral de
+    /// familia M/α=8320 en `ic_significativo`.
+    e_proceso: EProceso,
 }
 
 impl AcumIc {
-    const fn nuevo() -> Self {
-        Self { ws: 0.0, wr: 0.0, wsr: 0.0, n: 0 }
+    fn nuevo() -> Self {
+        Self {
+            ws: 0.0,
+            wr: 0.0,
+            wsr: 0.0,
+            n: 0,
+            e_proceso: EProceso::new(),
+        }
     }
 
     fn observar(&mut self, v: f64, r: f64) {
@@ -65,6 +78,8 @@ impl AcumIc {
         self.wr += (wr - self.wr) * OLVIDO;
         self.wsr += (wsr - self.wsr) * OLVIDO;
         self.n = self.n.saturating_add(1);
+        // #661: la misma observación alimenta el e-proceso.
+        self.e_proceso.observar(v, r);
     }
 
     /// IC maduro y SIGNIFICATIVO (umbral #599 contra el sesgo de
@@ -76,16 +91,21 @@ impl AcumIc {
         if self.n < MUESTRAS_SKILL_MADURAS {
             return None;
         }
+        // #661 — Ville REPLAZA el umbral fijo de Fisher: el e-proceso es
+        // anytime-valid (cualquier número de consultas). #663 (G1-1):
+        // la composición consulta 13 motores × 32 escalas = 416
+        // e-procesos — umbral de FAMILIA M/α = 8320 (Bonferroni), no
+        // el 20 por proceso: en ruido el máximo de 416 procesos con
+        // umbral 20 cruza casi seguro.
+        if !self.e_proceso.significativo_familia(NUM_PARES_MOTOR_ESCALA) {
+            return None;
+        }
         let den = self.ws * self.wr;
         if !den.is_finite() || den <= 0.0 {
             return None;
         }
         let ic = self.wsr / den.sqrt();
-        if !ic.is_finite() {
-            return None;
-        }
-        let umbral = umbral_ic_significativo(self.n.min(N_EFECTIVO_EWMA))?;
-        if ic > umbral {
+        if ic.is_finite() && ic > 0.0 {
             Some(ic)
         } else {
             None
@@ -106,6 +126,11 @@ pub struct SkillMotores {
     /// cierre (camino general), el re-arme con votos frescos en el
     /// siguiente depth. Dedup independiente del de score.
     ts_rearmado: [u64; ESCALAS_VOTO],
+    /// #659 (F1-C4) — snapshot del ÚLTIMO depth por escala: es el voto
+    /// CAUSAL para armar el bloque que nazca después — el voto del re-arme
+    /// diferido (t_d) contenía información de la propia ventana del bloque
+    /// nuevo e inflaba el IC.
+    voto_ultimo_depth: [[f64; ESCALAS_VOTO]; MOTORES],
 }
 
 impl Default for SkillMotores {
@@ -121,6 +146,7 @@ impl SkillMotores {
             voto_armado: [[0.0; ESCALAS_VOTO]; MOTORES],
             ts_procesado: [0; ESCALAS_VOTO],
             ts_rearmado: [0; ESCALAS_VOTO],
+            voto_ultimo_depth: [[0.0; ESCALAS_VOTO]; MOTORES],
         }
     }
 
@@ -146,6 +172,10 @@ impl SkillMotores {
                 self.voto_armado[m][escala] = v.en_escala(escala);
             }
         }
+        // #659: el re-arme INLINE de este camino es causal (votos al ts
+        // exacto del nacimiento) — marca el dedup para que el re-arme
+        // diferido del siguiente depth NO lo pise con un snapshot viejo.
+        self.ts_rearmado[escala] = ts;
     }
 
     /// Ola 48/H6 — puntúa la maduración SIN re-armar: para el camino de
@@ -164,10 +194,13 @@ impl SkillMotores {
         }
     }
 
-    /// Ola 48/H6 — RE-ARME con votos frescos (camino depth): si un bloque
-    /// cerró desde el último re-arme, el snapshot de armado pasa a ser el
-    /// voto actual — el voto con el que NACE el bloque nuevo. Barato: sin
-    /// lectura del espectro, usa el ts_procesado interno.
+    /// Ola 48/H6 — RE-ARME (camino depth): si un bloque cerró desde el
+    /// último re-arme, el snapshot de armado pasa a ser el voto con el que
+    /// NACE el bloque nuevo. #659 (F1-C4): ese voto es el snapshot del
+    /// ÚLTIMO DEPTH ANTERIOR al cierre (causal) — antes se usaba el voto
+    /// del propio depth del re-arme (t_d), que arrastra información de la
+    /// ventana del bloque nuevo e infla el IC. El snapshot se actualiza
+    /// SIEMPRE al final: es el candidato para el próximo nacimiento.
     #[inline]
     pub fn re_amar_con_votos(&mut self, escala: usize, votos_actuales: &[VotoEspectral]) {
         if escala >= ESCALAS_VOTO {
@@ -176,9 +209,12 @@ impl SkillMotores {
         if self.ts_procesado[escala] > self.ts_rearmado[escala] {
             self.ts_rearmado[escala] = self.ts_procesado[escala];
             for m in 0..MOTORES {
-                if let Some(v) = votos_actuales.get(m) {
-                    self.voto_armado[m][escala] = v.en_escala(escala);
-                }
+                self.voto_armado[m][escala] = self.voto_ultimo_depth[m][escala];
+            }
+        }
+        for m in 0..MOTORES {
+            if let Some(v) = votos_actuales.get(m) {
+                self.voto_ultimo_depth[m][escala] = v.en_escala(escala);
             }
         }
     }
@@ -315,7 +351,9 @@ mod tests {
         // Aún inmaduro (n=2): piso.
         assert_eq!(w[0][19], PISO_EXPLORACION);
         // Maduramos bloques alineados: armado +1, retorno +0.05 constante.
-        for i in 3..40u64 {
+        // #663 (G1-1): el gate de Ville ahora es de FAMILIA M/α=8320
+        // (416 pares) — 1.1^95 ≈ 8540 cruza; el bucle acumula n=100.
+        for i in 3..=100u64 {
             madurar(&mut sm, 19, i * 1_000, 0.05, 1.0);
         }
         let w = sm.pesos();
@@ -407,17 +445,31 @@ mod tests {
     fn qo_648_score_sin_rearmar_y_rearme() {
         let mut sm = SkillMotores::new();
         madurar(&mut sm, 4, 1_000, 0.0, 0.7); // arma con 0.7
-        // El bloque cierra en un TRADE: score sin re-armar.
+        // depth d1: el snapshot del último depth pasa a +0.9.
+        sm.re_amar_con_votos(4, &votos_constantes(0.9));
+        // El bloque cierra en un TRADE: score sin re-armar (arma sigue 0.7).
         sm.observar_maduracion_sin_rearmar(4, 2_000, 0.05);
         assert_eq!(sm.acum[0][4].n, 1);
-        // El depth re-arma con el voto fresco (−0.3) SIN puntuar de nuevo.
+        // depth d2 con voto −0.3 DESPUÉS del nacimiento del bloque nuevo:
+        // #659 (F1-C4) — el re-arme usa el snapshot PREVIO (+0.9), no el
+        // voto fresco de t_d (contenía información de la ventana del
+        // bloque nuevo — look-ahead que inflaba el IC).
         sm.re_amar_con_votos(4, &votos_constantes(-0.3));
         assert_eq!(sm.acum[0][4].n, 1, "el re-arme no debe puntuar");
-        // El siguiente cierre puntúa el ARMADO −0.3 contra su retorno.
+        assert_eq!(sm.voto_armado[0][4], 0.9, "arma con el último depth ANTERIOR al nacimiento");
+        assert_eq!(sm.voto_ultimo_depth[0][4], -0.3, "el snapshot ya prepara el próximo armado");
+        // El siguiente cierre puntúa el ARMADO +0.9 contra su retorno.
         sm.observar_maduracion_sin_rearmar(4, 3_000, -0.05);
         assert_eq!(sm.acum[0][4].n, 2);
-        // Re-arme repetido sin bloque nuevo: no-op.
-        sm.re_amar_con_votos(4, &votos_constantes(0.9));
+        // El cierre en 3_000 dejó maduración pendiente: este depth re-arma
+        // el bloque nacido en 3_000 con el snapshot previo (−0.3) y deja
+        // el snapshot listo para el próximo (0.4).
+        sm.re_amar_con_votos(4, &votos_constantes(0.4));
+        assert_eq!(sm.voto_armado[0][4], -0.3, "arma con el último depth previo al nacimiento");
+        assert_eq!(sm.voto_ultimo_depth[0][4], 0.4);
+        // Sin maduración nueva: no-op de armado.
+        sm.re_amar_con_votos(4, &votos_constantes(0.5));
+        assert_eq!(sm.voto_armado[0][4], -0.3, "sin maduración nueva el armado no cambia");
     }
 
     /// Ola 48/H3 — TTL: piso 30 s, escala dominante cuando es mayor.

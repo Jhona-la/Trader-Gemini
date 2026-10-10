@@ -77,10 +77,10 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     EntradaVeto {
         id: "V-RISK-002",
         nombre: "correlacion/exposición estructural",
-        causa: "grupo misma-apuesta excede el tope de ruina bajo agregación medida; LXXII: la ρ agregada incluye TRES etapas hacia 1 componiendo sobre el complemento de independencia (1−ρ = (1−base)(1−curl²)(1−λ̂)): media XLVI·D, vorticidad Hodge (AGY-P06), y dependencia de COLA de cópula t medida (λ̂ por par — 100/108 pares λ̂≥0.10 en la medición LXXI; BTC-SOL ρ̂0.77→λ̂0.51 donde gaussiana daría 0: la ρ lineal subestima el stop-out conjunto)",
+        causa: "grupo misma-apuesta excede el tope de ruina bajo agregación medida; LXXII: la ρ agregada incluye TRES etapas hacia 1 componiendo sobre el complemento de independencia (1−ρ = (1−base)(1−curl²)(1−λ̂)): media XLVI·D, vorticidad Hodge (AGY-P06), y dependencia de COLA de cópula t medida (λ̂ por par — 100/108 pares λ̂≥0.10 en la medición LXXI; BTC-SOL ρ̂0.77→λ̂0.51 donde gaussiana daría 0: la ρ lineal subestima el stop-out conjunto); CUARTA etapa (#613/Qoder, VIVA desde #651 activó el escritor): el call site consume max(ρ_con λ̂, IC espectral ρ(τ*)) — sólo aprieta, nunca afloja (audit LXXXVI: la entrada no lo documentaba)",
         fuente_umbral: "medido",
-        datos: "riesgo real por posición (snapshot qty·|entry−sl|/cap) + ρ_PnL HY×signo (base) + hawkes_contagion_curl_share (etapa 2) + λ̂ de config_dir/copulas_manifest.json generado por el bin copulas_manifest (etapa 3, telemetría lxxii_lambda_grupo)",
-        responsable: "XLVI·D/E (GLM), 2026-09-29; inflado de cola LXXII (GLM), 2026-10-01",
+        datos: "riesgo real por posición (snapshot qty·|entry−sl|/cap) + ρ_PnL HY×signo (base) + hawkes_contagion_curl_share (etapa 2) + λ̂ de config_dir/copulas_manifest.json generado por el bin copulas_manifest (etapa 3, telemetría lxxii_lambda_grupo) + qo_613_rho_tau (etapa 4: coherencia espectral media IC cruzado firmado a la escala τ*, publicado por el core #651; telemetría qo_613_aprietes)",
+        responsable: "XLVI·D/E (GLM), 2026-09-29; inflado de cola LXXII (GLM), 2026-10-01; etapa espectral #613 (Qoder Ola 35/51); entrada puesta al día por auditoría LXXXVI (GLM)",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
         test: Some("xlvie_riesgos_uniformes_reducen_a_la_formula_d748"),
@@ -113,10 +113,10 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     EntradaVeto {
         id: "V-RISK-005",
         nombre: "drawdown",
-        causa: "caída de cuenta ≥ máximo admisible derivado de la tasa de pérdida de Cartera",
+        causa: "caída de cuenta ≥ máximo admisible derivado de la tasa de pérdida de Cartera; #653 (Qoder Ola 53): el umbral es lerp(dd_max_medido, 0.85, micro_w) — la tolerancia micro relaja la cota MEDIDA de D-744b (antes código muerto: el gen crudo regía en todos los regímenes) — decisión del dueño documentada en revisión cruzada",
         fuente_umbral: "medido",
-        datos: "pico/capital unificados + q_perdida_cartera ponderada (CL-9)",
-        responsable: "CL-9 (Claude), 2026-09-29",
+        datos: "pico/capital unificados + q_perdida_cartera ponderada (CL-9) + dd_max medido + peso micro_w del régimen (#653)",
+        responsable: "CL-9 (Claude), 2026-09-29; dd-lerp #653 (Qoder Ola 53); entrada puesta al día por auditoría LXXXVI (GLM)",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
         test: Some("cl9_la_tasa_de_perdida_es_la_de_la_cartera_ponderada"),
@@ -127,7 +127,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         nombre: "tope Lundberg del grupo (#602, Ola 24)",
         causa: "el tope de ruina del grupo misma-apuesta se APRIETA con la cota actuarial ψ(m) ≤ e^{−R·m} cuando existe R medido por moneda: tope_efectivo = min(tope_streak, ln(1/ε)/R). LECTURA INTERPRETATIVA (Ola 26): el min mezcla horizontes — riesgo por EVENTO correlacionado (tope_streak) contra caída ACUMULADA que el edge regenera (cota, retorno-fracción lineal); la lectura defendible es «un solo evento correlacionado del grupo no debe poder consumir el margen total que el edge medido regenera con ψ ≤ ε». Si el consejo prefiere horizontes separados, exige diseño (horizonte explícito), no ajuste de constantes",
         fuente_umbral: "medido (R del estimador #600 sobre cierres netos por moneda; ε = 0.05 es POLÍTICA del dueño — ψ ≤ 5%, la convención del lundberg_margen_5pct publicado)",
-        datos: "c{id}:lundberg_r_nocional (registro, escrito por el core en cada cierre) + riesgo real del grupo same-bet al stop + ρ_PnL medida (D-748); telemetría qo_602_veto_lundberg",
+        datos: "c{id}:lundberg_r_nocional (registro, escrito por el core en cada cierre) + riesgo real del grupo same-bet al stop + ρ_PnL medida (D-748); telemetría qo_602_veto_lundberg. UNIDADES (#651, audit LXXXVII): el lector convierte a capital en el call site (R_capital = R_nocional/max_exchange_leverage) — la cota ln(1/ε)/R se evalúa en fracción de capital; contrato de la guardia actualizado por CL-42",
         responsable: "Qoder Ola 24 (#602), 2026-10-01; gate por Antigravity Ola 9",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
@@ -223,11 +223,11 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         causa: "fusión espectral/council por debajo del umbral del gen",
         fuente_umbral: "gen",
         datos: "council_fused, thresholds del genoma activo",
-        responsable: "heredado (ola X, sonda D-751b), 2026-09-24",
+        responsable: "heredado (ola X, sonda D-751b); certificado Ola Ω58",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: None,
-        deuda: Some("censo XLI D3/D4: modulación en frío; contrato pendiente"),
+        test: Some("council_confidence_threshold_respects_graceful_cold_modulation"),
+        deuda: None,
     },
     EntradaVeto {
         id: "V-LOGIC-008",
@@ -250,11 +250,11 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         causa: "sin historial suficiente para opinar (el gate exige evidencia, no fe)",
         fuente_umbral: "literal (mínimos de muestra)",
         datos: "métricas por símbolo (trade_count, win_rate)",
-        responsable: "heredado, censo XLI, 2026-09-26",
+        responsable: "heredado, censo XLI; certificado Ola Ω58",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: None,
-        deuda: Some("contrato de mínimos por símbolo pendiente"),
+        test: Some("insufficient_evidence_contract_without_deadlock"),
+        deuda: None,
     },
     EntradaVeto {
         id: "V-LOGIC-010",
@@ -262,15 +262,11 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         causa: "la confluencia de la rama 15 exige hurst_at(τ*) del mismo modo a largos y cortos",
         fuente_umbral: "gen (umbrales y suelos sin cambios en CL-31; sólo la condición simétrica)",
         datos: "core (god-engine-core confluencia_resonante): persistencia por bloques no solapados (CL-30) → hurst_at(τ*) → confluencia_resonante",
-        responsable: "CL-31 (Claude, PR#20 mergeado por GLM/LI), 2026-09-30",
+        responsable: "CL-31 (Claude, PR#20); certificado Ola Ω58",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: None,
-        deuda: Some(
-            "SOL-A1: 'resonancia_simetrica_contract' NO existe como fn en el workspace — \
-             nombre fantasma retirado; deuda explícita hasta que exista el contrato de \
-             simetría largos/cortos de la rama 15.",
-        ),
+        test: Some("cl31_el_espejo_de_una_entrada_es_la_entrada_contraria"),
+        deuda: None,
     },
     EntradaVeto {
         id: "V-LOGIC-011",
@@ -410,6 +406,9 @@ pub const TESTS_EXISTENTES_RIESGO: &[&str] = &[
     "cx_warmup_observes_but_never_opens_or_spends_capital",
     "qo_586_puerta_aplasta_tau_inoperable_y_deja_pasar_la_operable",
     "sol_a1_kill_switch_tiene_contrato_y_no_es_absorbente",
+    "council_confidence_threshold_respects_graceful_cold_modulation",
+    "insufficient_evidence_contract_without_deadlock",
+    "cl31_el_espejo_de_una_entrada_es_la_entrada_contraria",
 ];
 
 /// Fuentes cruzadas (mismo workspace) donde pueden vivir los contratos de
@@ -436,6 +435,8 @@ pub const FUENTES_CRUZADAS_CONTRATOS: &[&str] = &[
     "../../backtest-engine/tests/bt_vivo_parity_audit.rs",
     "../tests/geometry_hurst_contract.rs",
     "../../god-engine-core/src/lib.rs",
+    "tests/veto_logic_contracts.rs",
+    "../../god-engine-core/tests/resonancia_simetrica_contract.rs",
 ];
 
 /// Concatena en tiempo de compilación las fuentes declaradas en
@@ -461,6 +462,8 @@ macro_rules! corpus_contratos {
         c.push_str(include_str!("../tests/geometry_hurst_contract.rs"));
         c.push_str(include_str!("veto_registry.rs"));
         c.push_str(include_str!("../../god-engine-core/src/lib.rs"));
+        c.push_str(include_str!("../tests/veto_logic_contracts.rs"));
+        c.push_str(include_str!("../../god-engine-core/tests/resonancia_simetrica_contract.rs"));
         c
     }};
 }

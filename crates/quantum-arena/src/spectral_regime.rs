@@ -74,10 +74,18 @@ impl SpectralRegimeField {
         if let (Some(prev_ln), Some(cur_ln)) = (prev_dominant_ln_tau, nonzero_ln(field.resonant_tau_ms))
         {
             if elapsed_ms > 0.0 && elapsed_ms.is_finite() {
-                // Por hora, normalizado: 1 = τ* se mueve un eje completo (e≈2.72×) por hora.
-                let per_hour = (cur_ln - prev_ln) * 3_600_000.0 / elapsed_ms;
+                // C-3 (R7-R2-C-3): Regularización continua C^1 para la derivada de régimen d ln(tau)/dt.
+                // Evita que un elapsed_ms infinitesimal (ej. 1 ms tras renovar el ancla) sature
+                // artificialmente a +/-1.0 por micro-ruido de ordering.
+                // Modulación de confianza suave con Hermite cúbico hasta la ventana mínima de
+                // resolución macro (5.0 s = 5000 ms).
+                const TAU_MIN_DRIFT_RES_MS: f64 = 5_000.0;
+                let u_t = (elapsed_ms / TAU_MIN_DRIFT_RES_MS).clamp(0.0, 1.0);
+                let w_t = u_t * u_t * (3.0 - 2.0 * u_t);
+                let eff_elapsed = elapsed_ms.max(TAU_MIN_DRIFT_RES_MS);
+                let per_hour = (cur_ln - prev_ln) * 3_600_000.0 / eff_elapsed;
                 out.dominant_drift = if per_hour.is_finite() {
-                    (per_hour / 1.0).clamp(-1.0, 1.0)
+                    per_hour.clamp(-1.0, 1.0) * w_t
                 } else {
                     0.0
                 };
@@ -270,5 +278,31 @@ mod tests {
         assert_eq!(f.short_margin_multiplier(), 1.0);
         assert_eq!(f.margin_multiplier(true), 1.0);
         assert_eq!(f.margin_multiplier(false), 1.0);
+    }
+
+    #[test]
+    fn test_c3_regularizacion_continua_dominant_drift_inmune_a_salto_1ms() {
+        let mut spec = crate::temporal_spectrum::TemporalSpectrum::new();
+        for t in 0..100u64 {
+            let p = 100.0 + 0.5 * ((t % 10) as f64);
+            spec.update(p, 1_000 + t * 1_000);
+        }
+        let cur_ln = spec.spectral_field(true).resonant_tau_ms.max(1e-6).ln();
+        // A elapsed_ms = 1.0 ms con una micro-diferencia de 1e-4, el estimador antiguo
+        // calculaba 1e-4 * 3.6e6 / 1.0 = 360.0 y saturaba a 1.0.
+        // Con regularización C^1 Hermite, w_t ≈ 3*(1/5000)^2 = 1.2e-7, por lo que drift ≈ 0.
+        let f_1ms = SpectralRegimeField::from_spectrum(&spec, Some(cur_ln + 0.0001), 1.0);
+        assert!(
+            f_1ms.dominant_drift.abs() < 1e-4,
+            "a 1 ms de elapsed el micro-ruido debe quedar regularizado a cero: {}",
+            f_1ms.dominant_drift
+        );
+        // A elapsed_ms = 60_000 ms (cadencia macro madura), la derivada opera con sensibilidad plena:
+        let f_60s = SpectralRegimeField::from_spectrum(&spec, Some(cur_ln + 1.0), 60_000.0);
+        assert!(
+            f_60s.dominant_drift < -0.5,
+            "a 60 s la derivada de migración rápida debe reflejarse plenamente: {}",
+            f_60s.dominant_drift
+        );
     }
 }

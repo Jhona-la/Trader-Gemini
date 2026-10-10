@@ -1153,7 +1153,6 @@ impl OrderExecutor {
 
     pub fn hot_swap_credentials(&self, new_key: String, new_secret: String, is_testnet: bool) {
         self.api_secret.store(Arc::new(new_secret));
-        if true {}
         self.client.hot_swap_credentials(new_key, is_testnet);
     }
 
@@ -2150,11 +2149,9 @@ impl ExecutionProvider for OrderExecutor {
                     Ok(())
                 }
                 Err(e) => {
-                    // CL-47: como la IOC (CL-39b), un rechazo firme cierra la
-                    // intención; uno ambiguo la deja viva para la consulta.
+                    // F4-H4: rechazo firme cierra la intención en el OrderRegistry
                     if crate::ioc_evidence::error_cierra_la_intencion(e) {
-                        self.order_registry
-                            .mark_local_reject(&payload.client_order_id, payload.timestamp);
+                        self.order_registry.mark_local_reject(&payload.client_order_id, payload.timestamp);
                     }
                     if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
                         return Err(self.handle_rate_limit_error(e));
@@ -2334,8 +2331,7 @@ impl ExecutionProvider for OrderExecutor {
                 Ok(())
             }
             Err(e) => {
-                // CL-47: como la IOC (CL-39b), un rechazo firme cierra la
-                // intención; uno ambiguo la deja viva para la consulta.
+                // F4-H4: rechazo firme cierra la intención en el OrderRegistry
                 if crate::ioc_evidence::error_cierra_la_intencion(e) {
                     self.order_registry.mark_local_reject(&client_order_id, timestamp);
                 }
@@ -2462,6 +2458,10 @@ impl ExecutionProvider for OrderExecutor {
                 Ok(())
             }
             Err(e) => {
+                // F4-H4: rechazo firme cierra la intención en el OrderRegistry
+                if crate::ioc_evidence::error_cierra_la_intencion(e) {
+                    self.order_registry.mark_local_reject(client_order_id, timestamp);
+                }
                 if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
                     return Err(self.handle_rate_limit_error(e));
                 }

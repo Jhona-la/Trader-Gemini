@@ -4,7 +4,6 @@ use god_engine_core::GodEngineCore;
 
 use quantum_arena::{GlobalArena, TickEvent};
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 #[global_allocator]
@@ -81,6 +80,75 @@ fn simple_kline_to_ticks(coin_id: usize, kline: &Kline) -> Vec<TickEvent> {
     }
 
     ticks
+}
+
+
+/// #667 (H0-1): los nichos del walk-forward mutan las CURVAS continuas
+/// (tp a + b·ln τ — la fuente única que `apply_to_arena` sirve) y
+/// re-derivan las anclas como vistas. Antes mutaban `scalp_tp_base` /
+/// `swing_tp_base` escalares que `apply_to_arena` IGNORA (todo se deriva
+/// de las curvas): el walk-forward exploraba dimensiones muertas y sus
+/// nichos no diferenciaban lo que decían diferenciar.
+fn nicho_curva_tp(g: &mut quantum_arena::genome::SuperGenotype, tp_fast: f64, tp_slow: f64) {
+    use quantum_arena::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+    g.tp_horizon_curve = HorizonCurve::through_two_points(
+        TAU_ANCHOR_FAST_MS,
+        tp_fast,
+        TAU_ANCHOR_SLOW_MS,
+        tp_slow,
+    );
+    g.derive_anchors_from_curves();
+}
+
+#[allow(dead_code)]
+fn nicho_curva_sl(g: &mut quantum_arena::genome::SuperGenotype, sl_fast: f64, sl_slow: f64) {
+    use quantum_arena::temporal_spectrum::{HorizonCurve, TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+    g.sl_horizon_curve = HorizonCurve::through_two_points(
+        TAU_ANCHOR_FAST_MS,
+        sl_fast,
+        TAU_ANCHOR_SLOW_MS,
+        sl_slow,
+    );
+    g.derive_anchors_from_curves();
+}
+
+/// SOL-R5-01: daily reporting only. Keep the harness's existing mark,
+/// estimated exit fee, fallback and finite-value policy; this is not an
+/// exchange liquidation valuation or a concurrent live-arena snapshot.
+fn daily_report(
+    arena: &GlobalArena,
+    fallback_price: f64,
+    previous_equity: &mut f64,
+    cumulative_pnl: &mut f64,
+) -> (f64, f64, f64, f64, f64) {
+    let cash = arena.unified_capital.load(Ordering::Relaxed);
+    let mut floating = 0.0;
+    for coin in arena.coins.iter() {
+        for pos in coin.positions.slots() {
+            if pos.is_open() {
+                let entry = pos.entry_price.load(Ordering::Relaxed);
+                let qty = pos.quantity.load(Ordering::Relaxed);
+                let is_long = pos.is_long.load(Ordering::Relaxed);
+                let price = coin.current_price.load(Ordering::Relaxed);
+                let exit_price = if price > 0.0 { price } else { fallback_price };
+                let exit_fee = qty * exit_price * 0.0005;
+                let value = (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 }
+                    - exit_fee;
+                if value.is_finite() {
+                    floating += value;
+                }
+            }
+        }
+    }
+    let equity = cash + floating;
+    // Match endpoint equity on BOTH sides; carried floating PnL is not a
+    // new gain/loss on the next day. Initial reporting equity is the flat
+    // account's initial capital, independently of candidate sizing state.
+    let pnl = equity - *previous_equity;
+    let pct = if *previous_equity > 0.0 { pnl / *previous_equity * 100.0 } else { 0.0 };
+    *cumulative_pnl += pnl;
+    *previous_equity = equity;
+    (cash, floating, equity, pnl, pct)
 }
 
 #[tokio::main]
@@ -277,7 +345,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         current_genome.scalp_tp_base = 0.0160;
     }
     if !current_genome.tech_threshold.is_finite() || current_genome.tech_threshold <= 0.0 {
-        current_genome.tech_threshold = 0.1487;
+        current_genome.tech_threshold = 0.24; // R5-B1: bound slot-21 (D-625) — 0.1487 hacia promote al rechazo
     }
     if !current_genome.scalp_kelly_fraction.is_finite()
         || current_genome.scalp_kelly_fraction <= 0.0
@@ -291,6 +359,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let mut global_pnl = 0.0;
+    let mut report_equity = initial_capital;
     let mut day_idx = 0;
     let mut idx = 0;
 
@@ -308,17 +377,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut engine = GodEngineCore::new(arena.clone());
     engine.reality.mode = god_engine_core::reality_physics::EngineMode::HyperRealistic;
-    engine
-        .arena
-        .config
-        .latency_penalty_ms
-        .store(25.0, Ordering::Relaxed);
 
     while day_idx < total_simulation_days {
         let day_start_ts = first_ts + (day_idx * ms_per_day);
         let day_end_ts = day_start_ts + ms_per_day;
 
-        let day_start_capital = arena.unified_capital.load(Ordering::Relaxed);
         let mut day_trades = 0;
         let mut day_scalp_trades = 0;
         let mut day_scalp_pnl = 0.0;
@@ -360,29 +423,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else if i < (num_mutants * 20 / 100).max(2) {
                 // Nicho 2: Especialista en Scalping L2 y OFI (TP corto, SL ceñido, Kelly controlado)
                 let mut g = current_genome.mutate_cmaes_seeded(0.15, deterministic_seed);
-                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0120, 0.0240);
-                g.scalp_sl_base = (g.scalp_sl_base * 0.85).clamp(0.0030, 0.0075);
+                // #667 (H0-1): geometría por CURVA (fuente única).
+                nicho_curva_tp(&mut g, 0.0120, 0.0240);
+                nicho_curva_sl(&mut g, 0.0030, 0.0075);
                 g.scalp_kelly_fraction = g.scalp_kelly_fraction.clamp(0.15, 0.35);
                 g.base_duration_ms = 10_000.0;
                 g
             } else if i < (num_mutants * 30 / 100).max(3) {
                 // Nicho 3: Soliton Wavelet & Multiscale Trend (TP amplio, Trailing ATR)
                 let mut g = current_genome.mutate_cmaes_seeded(0.20, deterministic_seed);
-                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0180, 0.0400);
-                g.scalp_sl_base = (g.scalp_sl_base * 1.15).clamp(0.0050, 0.0120);
+                nicho_curva_tp(&mut g, 0.0180, 0.0400);
+                nicho_curva_sl(&mut g, 0.0050, 0.0120);
                 g.scalp_trail_act_atr = g.scalp_trail_act_atr.clamp(0.8, 1.8);
                 g
             } else if i < (num_mutants * 40 / 100).max(4) {
-                // Nicho 4: KAN Neural & DarkAlpha (Alta ponderación neural)
+                // Nicho 4: KAN Neural & DarkAlpha (Alta ponderación neural).
+                // R4-B1: banda DENTRO del bound evolutivo slot-21 [0.24, 0.30]
+                // (D-625) — el clamp viejo [0.120, 0.220] dejaba TODO el nicho
+                // en 0.24 tras apply_to_arena y promote RECHAZABA a los
+                // campeones por "gen 21 fuera de bounds". Banda baja = más
+                // señales tech pasan = mayor ponderación neural (la intención
+                // original del nicho, ahora factible).
                 let mut g = current_genome.mutate_cmaes_seeded(0.25, deterministic_seed);
-                g.tech_threshold = g.tech_threshold.clamp(0.120, 0.220);
+                g.tech_threshold = g.tech_threshold.clamp(0.240, 0.270);
                 g
             } else if i < (num_mutants * 50 / 100).max(5) {
                 // Nicho 5: Mean-Reversion & Wall Bounce (Absorción en muros L2)
                 let mut g = current_genome.mutate_cmaes_seeded(0.20, deterministic_seed);
                 g.weight_obi = (g.weight_obi * 1.8).clamp(0.5, 2.5);
-                g.scalp_tp_base = g.scalp_tp_base.clamp(0.0120, 0.0250);
-                g.scalp_sl_base = (g.scalp_sl_base * 0.90).clamp(0.0035, 0.0085);
+                nicho_curva_tp(&mut g, 0.0120, 0.0250);
+                nicho_curva_sl(&mut g, 0.0035, 0.0085);
                 g
             } else if i < (num_mutants * 60 / 100).max(6) {
                 // Nicho 6: Volatility Squeeze Breakout (Compresión y explosión ATR/Bollinger)
@@ -407,7 +477,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Nicho 9: Fractal Mandelbrot Trend Surfer (Hurst > 0.60, tendencias hiperbólicas)
                 let mut g = current_genome.mutate_cmaes_seeded(0.25, deterministic_seed);
                 g.trend_threshold = g.trend_threshold.clamp(0.55, 0.85);
-                g.swing_tp_base = g.swing_tp_base.clamp(0.020, 0.060);
+                // #667: TP lento amplio por curva (ancla lenta = swing view).
+                nicho_curva_tp(&mut g, 0.0120, 0.060);
                 g.swing_kelly_fraction = g.swing_kelly_fraction.clamp(0.15, 0.35);
                 g
             } else {
@@ -415,7 +486,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 current_genome.mutate_cmaes_seeded(0.55, deterministic_seed)
             };
             // Blindaje Cuántico: cotas estrictas para todos los mutantes (impedir que nazcan mutantes cobardes o suicidas)
-            mutant_genome.tech_threshold = mutant_genome.tech_threshold.clamp(0.080, 0.220);
+            // R4-B1: banda = bound evolutivo slot-21 [0.24, 0.30] (D-625) —
+            // el clamp viejo [0.080, 0.220] colapsaba TODOS los mutantes a
+            // 0.24 en el arena y promote/validate los rechazaba.
+            mutant_genome.tech_threshold = mutant_genome.tech_threshold.clamp(0.24, 0.30);
             mutant_genome.scalp_kelly_fraction =
                 mutant_genome.scalp_kelly_fraction.clamp(0.12, 0.38);
             mutant_genome.dynamic_obi_threshold =
@@ -423,21 +497,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             mutant_genome.dynamic_ofi_threshold =
                 mutant_genome.dynamic_ofi_threshold.clamp(0.15, 0.35);
             mutant_genome.scalp_sl_base = mutant_genome.scalp_sl_base.clamp(0.0030, 0.0150);
-            mutant_genome.swing_sl_base = mutant_genome.swing_sl_base.clamp(0.0080, 0.0350);
+            // R4-B7: el piso 0.0080 silenciaba el ancla lenta del nicho 2
+            // (0.0075) — el rebuild post-blindaje propagaba la distorsión
+            // (+6.7%) a la curva. Banda ⊇ los slow-anchors de los nichos
+            // 2/3/5 (0.0075/0.0120/0.0085).
+            mutant_genome.swing_sl_base = mutant_genome.swing_sl_base.clamp(0.0070, 0.0350);
             mutant_genome.scalp_trail_act_atr = mutant_genome.scalp_trail_act_atr.clamp(1.0, 2.5);
             mutant_genome.scalp_trail_step_atr = mutant_genome.scalp_trail_step_atr.clamp(1.0, 2.5);
             mutant_genome.scalp_trail_atr_mult_base =
                 mutant_genome.scalp_trail_atr_mult_base.clamp(1.0, 2.5);
 
+            // H0-1 (RONDA 3): las anclas TP/SL son VISTAS desde REHAB-1 —
+            // los nichos 2/3/5/9 y este blindaje escribían DIMENSIONES
+            // MUERTAS (apply_to_arena sólo lee curvas: el fenotipo
+            // "scalper TP corto / soliton amplio / wall-bounce / swing
+            // fractal" nunca llegaba al motor). Punto de cierre ÚNICO:
+            // reconstruir las curvas desde la intención de ancla. Es
+            // idempotente para los mutantes que no movieron anclas (los
+            // nichos 1/4/6/7/8/10 reproducen su curva) y efecto real para
+            // los que sí — el walk-forward deja de explorar el eje muerto.
+            mutant_genome.rebuild_tp_sl_curves_from_anchors();
+
             mutant_genome.apply_to_arena(&mutant_arena);
             let mut mutant_engine = GodEngineCore::new(mutant_arena);
             mutant_engine.reality.mode =
                 god_engine_core::reality_physics::EngineMode::HyperRealistic;
-            mutant_engine
-                .arena
-                .config
-                .latency_penalty_ms
-                .store(25.0, Ordering::Relaxed);
             shadow_engines.push(mutant_engine);
             shadow_genomes.push(mutant_genome);
         }
@@ -628,43 +712,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             idx
         );
 
-        let day_start_cap_real = day_start_capital;
-        let day_final_cap = arena.unified_capital.load(Ordering::Relaxed);
         let last_tick_price = if idx > 0 {
             ticks[idx - 1].bid_price
         } else {
             ticks[0].bid_price
         };
-        let mut open_unrealized = 0.0;
-        for coin in arena.coins.iter() {
-            for pos in coin.positions.slots() {
-                if pos.is_open() {
-                    let entry = pos.entry_price.load(Ordering::Relaxed);
-                    let qty = pos.quantity.load(Ordering::Relaxed);
-                    let is_long = pos.is_long.load(Ordering::Relaxed);
-                    let c_price = coin.current_price.load(Ordering::Relaxed);
-                    let exit_price = if c_price > 0.0 {
-                        c_price
-                    } else {
-                        last_tick_price
-                    };
-                    let exit_fee = qty * exit_price * 0.0005;
-                    let unrealized =
-                        (exit_price - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
-                    if unrealized.is_finite() {
-                        open_unrealized += unrealized;
-                    }
-                }
-            }
-        }
-        let total_equity = day_final_cap + open_unrealized;
-        let day_pnl = total_equity - day_start_cap_real;
-        global_pnl += day_pnl;
-        let pnl_pct = if day_start_cap_real > 0.0 {
-            (day_pnl / day_start_cap_real) * 100.0
-        } else {
-            0.0
-        };
+        let (day_final_cap, open_unrealized, total_equity, day_pnl, pnl_pct) = daily_report(
+            &arena,
+            last_tick_price,
+            &mut report_equity,
+            &mut global_pnl,
+        );
         current_capital = total_equity;
 
         println!(
@@ -899,7 +957,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Sanitización ligera para evitar NaNs sin restringir la adaptabilidad genética
         if !current_genome.tech_threshold.is_finite() {
-            current_genome.tech_threshold = 0.12;
+            current_genome.tech_threshold = 0.24; // R5-B1: bound slot-21 (D-625)
         }
         if !current_genome.scalp_kelly_fraction.is_finite() {
             current_genome.scalp_kelly_fraction = 0.55;
@@ -926,6 +984,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // PROMOTE AL ENVELOPE GLOBAL
+    // R4-B1 (lección): el rechazo silencioso de promote era invisible
+    // cuando el baseline siempre ganaba — el rechazo ahora es explícito
+    // y contable en logs.
     match quantum_arena::genome_store::GenomeEnvelope::promote(
         current_genome.clone(),
         "continuous_evolution_backtest",
@@ -935,7 +996,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "💾 [GUARDADO] Genoma Campeón persistido exitosamente en generación {}.",
             env.generation
         ),
-        Err(e) => println!("⚠️ [ERROR] No se pudo guardar el genoma: {}", e),
+        Err(e) => println!(
+            "🚫 [PROMOTE-RECHAZADO] el campeón NO se persistió (bounds/validate): {}",
+            e
+        ),
     }
 
     println!("============================================================");
@@ -943,6 +1007,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("💰 Capital Inicial: $13.00");
     println!("💰 Capital Final  : ${:.4}", current_capital);
     println!("💵 PnL Global     : ${:+.4}", global_pnl);
+    println!(
+        "PnL reconciliation residual: {:+.12}",
+        global_pnl - (current_capital - initial_capital)
+    );
     println!(
         "📈 Crecimiento    : {:.2}%",
         ((current_capital - 13.0) / 13.0) * 100.0
@@ -963,4 +1031,74 @@ struct SignalPathDiag {
     max_obi: f64,
     tech_thr: f64,
     max_micro_trend: f64,
+}
+
+#[cfg(test)]
+mod reporting_contract {
+    use super::*;
+    use quantum_arena::position::PositionHorizon;
+
+    fn near(actual: f64, expected: f64) {
+        assert!(actual.is_finite() && (actual - expected).abs() <= 2e-12 * expected.abs().max(1.0),
+            "actual={actual:?}, expected={expected:?}");
+    }
+
+    fn checkpoint(arena: &GlobalArena, previous: &mut f64, sum: &mut f64, expected_pnl: f64, expected_equity: f64) {
+        let cash = arena.unified_capital.load(Ordering::Relaxed);
+        let margin = arena.used_margin.load(Ordering::Relaxed);
+        let start_equity = *previous;
+        let (_, _, equity, pnl, pct) = daily_report(arena, 110.0, previous, sum);
+        near(pnl, expected_pnl);
+        near(equity, expected_equity);
+        near(*previous, expected_equity);
+        near(pct, expected_pnl / start_equity * 100.0);
+        near(*sum, expected_equity - 100.0);
+        near(arena.unified_capital.load(Ordering::Relaxed), cash);
+        near(arena.used_margin.load(Ordering::Relaxed), margin);
+    }
+
+    #[test]
+    fn sol_r5_01_carry_changes_close_fees_and_flat_cash_telescope() {
+        let arena = GlobalArena::build_in_own_stack(100.0);
+        let (mut previous, mut sum) = (100.0, 0.0);
+        checkpoint(&arena, &mut previous, &mut sum, 0.0, 100.0);
+        let pos = &arena.coins[0].positions.position;
+        assert!(pos.open_with_fee(true, 100.0, 1.0, 10.0, 1_000, 150.0, 50.0,
+            PositionHorizon::Continuous, 0.6, 0.5, 0.05));
+        arena.used_margin.fetch_add(10.0, Ordering::Relaxed);
+        arena.unified_capital.fetch_add(-0.05, Ordering::Relaxed);
+        arena.coins[0].current_price.store(110.0, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, 9.895, 109.895);
+        checkpoint(&arena, &mut previous, &mut sum, 0.0, 109.895);
+        arena.coins[0].current_price.store(120.0, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, 9.995, 119.89);
+        let (long, entry, qty, margin, entry_fee) = pos.close_with_fee();
+        assert!(long && !pos.is_open());
+        near(entry_fee, 0.05);
+        arena.used_margin.fetch_add(-margin, Ordering::Relaxed);
+        arena.unified_capital.fetch_add((120.0 - entry) * qty - qty * 120.0 * 0.0005, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, 0.0, 119.89);
+        arena.unified_capital.fetch_add(-0.25, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, -0.25, 119.64);
+        arena.unified_capital.fetch_add(2.0, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, 2.0, 121.64);
+    }
+
+    #[test]
+    fn sol_r5_01_multiactivo_multislot_negative_carry_is_not_counted_twice() {
+        let arena = GlobalArena::build_in_own_stack(100.0);
+        let (mut previous, mut sum) = (100.0, 0.0);
+        let long = &arena.coins[0].positions.position;
+        let short = &arena.coins[1].positions.position;
+        let second_slot = &arena.coins[0].positions.slots()[0];
+        for (pos, is_long, qty) in [(long, true, 1.0), (short, false, 2.0), (second_slot, true, 0.5)] {
+            assert!(pos.open_with_fee(is_long, 100.0, qty, 1.0, 1_000, 0.0, 0.0,
+                PositionHorizon::Continuous, 0.5, 0.5, 0.0));
+        }
+        arena.coins[0].current_price.store(90.0, Ordering::Relaxed);
+        arena.coins[1].current_price.store(105.0, Ordering::Relaxed);
+        checkpoint(&arena, &mut previous, &mut sum, -25.1725, 74.8275);
+        checkpoint(&arena, &mut previous, &mut sum, 0.0, 74.8275);
+        assert!(long.is_open() && short.is_open() && second_slot.is_open());
+    }
 }

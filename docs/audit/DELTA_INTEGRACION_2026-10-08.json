@@ -1,0 +1,598 @@
+{
+  "from_commit": "adeb8d1b1f8171b14fffa8abc9f54c396e4794dd",
+  "to_commit": "e9c6a435eb1780da7f2c6e29103f3bd7d227d94c",
+  "added": [
+    "crates/backtest-engine/src/oos_context.rs",
+    "crates/backtest-engine/tests/oos_context_contract.rs",
+    "crates/data-pipeline/tests/parser_input_contract.rs",
+    "crates/evolution-engine/src/sa_selection.rs",
+    "crates/evolution-engine/src/score_retention.rs",
+    "crates/evolution-engine/tests/sa_selection_contract.rs",
+    "crates/evolution-engine/tests/score_retention_contract.rs",
+    "crates/god-engine-core/src/evidence_publication.rs",
+    "crates/god-engine-core/src/model_reload.rs",
+    "crates/god-engine-core/tests/evidence_expiry_contract.rs",
+    "crates/god-engine-core/tests/model_reload_contract.rs",
+    "crates/god-engine-core/tests/sombras_espectrales_telemetria_contract.rs",
+    "crates/risk-engine/tests/c07_ruin_composition_contract.rs",
+    "crates/risk-engine/tests/nonfinite_admission_contract.rs",
+    "docs/AUDITORIA_CADUCIDAD_EVIDENCIAS_2026-10-04.md",
+    "docs/AUDITORIA_PARTICIONES_OOS_2026-10-04.md",
+    "docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.json",
+    "docs/AUDITORIA_RAIZ_REVALIDACION_2026-10-04.md",
+    "docs/AUDITORIA_RELOJ_FEATURES_2026-10-04.md",
+    "docs/AUDITORIA_SCORE_SA_2026-10-04.json",
+    "docs/AUDITORIA_SCORE_SA_2026-10-04.md",
+    "docs/AUDITORIA_TRAYECTORIA_BOSQUE_2026-10-04.md",
+    "docs/AUDITORIA_WATCHER_MODELOS_2026-10-03.md",
+    "docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md",
+    "docs/PLAN_REVISION_EXHAUSTIVA_2026-10-04.md",
+    "docs/artifacts/auditoria_watcher_modelos_2026-10-03.json",
+    "docs/audit/CI_CANDIDATE_GUARD_R4_2026-10-07.md",
+    "docs/audit/COBERTURA_MAIN237_2026-10-04.json",
+    "docs/audit/COBERTURA_MAIN237_2026-10-04.tsv",
+    "docs/audit/CONTINUIDAD_R4_2026-10-07.md",
+    "docs/audit/FUNDAMENTOS_R4_2026-10-07.json",
+    "docs/audit/FUNDAMENTOS_R4_2026-10-07.md",
+    "docs/audit/RA_COBERTURA_2026-10-04.tsv",
+    "docs/audit/RA_TOPOLOGIA_DECLARADA_2026-10-04.json",
+    "docs/audit/README_RA_COBERTURA_2026-10-04.md",
+    "docs/audit/RECUPERACION_RUIN_R4_2026-10-07.md",
+    "docs/audit/RESIDUALES_INTEGRACION_R4_2026-10-07.md",
+    "docs/audit/REVISION_2026-10-07.json",
+    "docs/audit/SOL_CONTRATOS_R4_2026-10-07.json",
+    "docs/audit/SOL_RAMAS_2026-10-07.md",
+    "scripts/audit_daily_equity_contract.py",
+    "scripts/audit_inventory.py",
+    "scripts/audit_selection_assumptions.py",
+    "scripts/tests/test_audit_inventory.py"
+  ],
+  "removed": [],
+  "changed": [
+    {
+      "path": ".agents/MEMORIA.md",
+      "old_blob": "5346cffed7df360dd05661bd32bb2c7b732c19ca",
+      "new_blob": "05b6b8e56d4ff30fdc3ad67513d7cbc6e365ac9e",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": ".github/workflows/replay-contracts.yml",
+      "old_blob": "1604eec7f9dc6a688161b99598cb0b410d18fcc9",
+      "new_blob": "fd97d52896d71db2ebe02c1fc21de41455294d02",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "ATLAS_ANALITICO.md",
+      "old_blob": "4ac1da80b850c73e6465800bc17f316a55dfd0d9",
+      "new_blob": "a2015cda11ec2a533d55861f438f90f0c2ec373a",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "COORDINACION_CODEX_2026-09-28.md",
+      "old_blob": "df20129f85a37ff27cc517b297aee6f75f37898c",
+      "new_blob": "a5fe0d1a4859cfefc1a7e49d51ff508887c571c5",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "FORENSIC_INTELLIGENCE_AUDIT.md",
+      "old_blob": "0a88dee6a94d438af204d5ae6304b401da019691",
+      "new_blob": "d4b0462d432b272e97ae3151432f7aacedfa7d50",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "INFORME_FORENSE_MAESTRO.md",
+      "old_blob": "32e732214a109e448012a6867efd83b474b8edb2",
+      "new_blob": "dbb71c75c8e1fa9e85787b8a9a71571d064ae193",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/backtest-engine/src/bin/continuous_evolution_backtest.rs",
+      "old_blob": "114ab1a47db5d8c16796962a845f16f0d3d29730",
+      "new_blob": "e3d29c736be66f5c18baaf2f78d577f88bdef7b9",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/backtest-engine/src/booktick_replay.rs",
+      "old_blob": "1ed78cc9673f1300b2c44a418360f53e9e5d86f5",
+      "new_blob": "7237beca53dcd5664a7f90bab01ae521e2bffdeb",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/backtest-engine/src/lib.rs",
+      "old_blob": "7ff1acbe735ea54b34984a790c5fce10a57051cb",
+      "new_blob": "c434762f8ce79a3e99e446983ed0efa4ce83ecec",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/backtest-engine/src/vectorized.rs",
+      "old_blob": "d693e30373c085f7836c7af9b01b669ea52567e3",
+      "new_blob": "491d1a40ae32245672839ff53a2f3258a62eb880",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/dark-alpha-engine/src/lib.rs",
+      "old_blob": "ec258f67b63d2446a6a10d62548a99bacce530de",
+      "new_blob": "0a48d41fa25938a6d29e963900e763681fd018a6",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/data-pipeline/src/parser.rs",
+      "old_blob": "f07fd917a23ecbef5a7ea557233df9aa89d9cc72",
+      "new_blob": "6c47744a94f5bea150e8a65c750b2a2f58c73cc4",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/evolution-engine/src/ast_mutator.rs",
+      "old_blob": "09891316547a635d9b63e80d136edd6bfb63d024",
+      "new_blob": "cabbf060a6a54ace1f72e8db4f1eab6a6de5b636",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/evolution-engine/src/lib.rs",
+      "old_blob": "2d3ed5c22607826a0ae701c2f36f7098aa0a07bf",
+      "new_blob": "6c60560c2be84f6e11e9978eca821b7a0b2893ce",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/evolution-engine/src/random_forest.rs",
+      "old_blob": "6f8bc8b27161bc63c0ea4f6df2d1a81f07f6cdfd",
+      "new_blob": "f701b9158941f39071d4f08ddcc5886af11524a1",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/execution-engine/src/order_registry.rs",
+      "old_blob": "bea7887221b18ff6613eec7fda0be9d0d07f6e35",
+      "new_blob": "c20352e1c62a64c1e6d409592479b06795cd9fd1",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/execution-engine/src/shadow.rs",
+      "old_blob": "c6405ac45837986d32243fce2961b728d0d7776c",
+      "new_blob": "6874cd83d36b1b2e526a65ef096421e4dd416bd7",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/execution-engine/src/user_data_stream.rs",
+      "old_blob": "5950bbeb212cb5e6036d89e53e669fdcd2cdb0fd",
+      "new_blob": "9b10be75e306ce06a53e7b5c68f627ff6101fd65",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/execution-engine/tests/registry_open_diagnostics.rs",
+      "old_blob": "a0d0891f8c6460a21fef3becaabf51a789143211",
+      "new_blob": "200879facf56ba7ea9cbb1b8dfd6304075456fb5",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/execution-engine/tests/shadow_open_diagnostics.rs",
+      "old_blob": "6421a4c1215f688ec149e21f3d11182f89d90a36",
+      "new_blob": "dca9a433531f36c565f4723825495a42eae6c7e0",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/feature-engine/src/lead_lag.rs",
+      "old_blob": "90c28e190180ba887688408564809f79652f6499",
+      "new_blob": "fef1658857ccab8ca2d1651d7eb2d74674790303",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/god-engine-core/src/darwin.rs",
+      "old_blob": "e2937a3d2dc1efe81826e376c575c4c01a003744",
+      "new_blob": "847a6e96e9b4de13cb0d473c25e159662a7e6cf0",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/god-engine-core/src/lib.rs",
+      "old_blob": "d5e196182972f1c3eff69093f621ff12e81673f2",
+      "new_blob": "b045efbf82766090478c9da17412b05acb7d2810",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/god-engine-core/src/reality_physics.rs",
+      "old_blob": "d0040e6990dc6f48520e6b66524438d8d30cd540",
+      "new_blob": "462dfb19003f2daa5d528d8a2486bbbb1b4de7ec",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/god-engine-core/src/stateful_engine.rs",
+      "old_blob": "60aa06f21974f537058e04eebce1bbe85a83fc0b",
+      "new_blob": "55b3ed4820c2ea7a74737f0c411b9f5bae14aef4",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/god-engine-core/tests/close_outcome_contract.rs",
+      "old_blob": "fa80be16ab320abb9935ac89025a4f2ce950a9c5",
+      "new_blob": "356d000dc2d4ecdd46407fc1b76253f2cae603f8",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/god-engine-core/tests/reality_physics_open_diagnostics.rs",
+      "old_blob": "201425647ba212ccced718a5926f23c9b7fbefce",
+      "new_blob": "d046c701defeece3b5a4c428076e0b4ba90f31eb",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/god-engine-core/tests/resonancia_simetrica_contract.rs",
+      "old_blob": "5e1f6a98389c33d3bad1311b128d2872f6225698",
+      "new_blob": "9d16a9810821670d92062875f0c423ab7d3851f3",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/god-engine-core/tests/stateful_open_diagnostics.rs",
+      "old_blob": "1c85c622d6ad45168a670669fea6189efcf16e27",
+      "new_blob": "9d2bfdd2d1a1b858f72e5a832b89fc03254f04a8",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/god-engine-core/tests/stateful_transition_contract.rs",
+      "old_blob": "20e432a641def1e3504defd282023ca0e1e549c4",
+      "new_blob": "139089a4c2c22dd9cb5ad171ecfde53303fb830c",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/metacortex-engine/src/hot_swap_controller.rs",
+      "old_blob": "dae2cc508491318998a761cc9bb19d55410e952f",
+      "new_blob": "f207f93fa5b4d470606dd2de09cf0c9887c17b37",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/metacortex-engine/tests/mutation_cycle_test.rs",
+      "old_blob": "9f1d1a7b12009fe3b496e5e5ff61c09bbec677ed",
+      "new_blob": "9e7d6a79b8db6ccc57e896067fdb5ee59096642c",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/omniscient-registry/src/lib.rs",
+      "old_blob": "8ec6145b705dca60973a8d250f8e00d33186c728",
+      "new_blob": "6cfd1a7b59d16ca6b88fea111a4667fdd06afbde",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/quantum-arena/src/espectral_multiactivo.rs",
+      "old_blob": "1f4eeeed9a913fd097f84487015c205e47c3e634",
+      "new_blob": "a480b0d2cc3449fc07ca569dbd0606af84fcbf8c",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/quantum-arena/src/evalues.rs",
+      "old_blob": "37a773e0a920b897a92af4e0b3b714e0df2f47aa",
+      "new_blob": "758ff0af9725b73ffdbb054e84e3e025c0435a94",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/quantum-arena/src/state.rs",
+      "old_blob": "1ec940502642a1cd1678364ced6eca557dd3d2ad",
+      "new_blob": "a9b0813d22d967458416c2e5b8c050cdb014a211",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/quantum-arena/src/temporal_spectrum.rs",
+      "old_blob": "a4fa286188e358eb00e94f350171a9b0f4d1002f",
+      "new_blob": "45c2bba7f8af60b3f160b1327de8468d8c094013",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/risk-engine/src/correlation_guard.rs",
+      "old_blob": "972e7b5d0f2d5b881495f965cd28c3f470d3b521",
+      "new_blob": "e51b53de148d83d69be3065d42b7d80a738b6880",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/risk-engine/src/guard.rs",
+      "old_blob": "f03fd98cdbbd049926a5b10e4d60fc4eef7dbf11",
+      "new_blob": "dc671182d413530532af0d43a768b1259b9ac274",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/risk-engine/src/lib.rs",
+      "old_blob": "35022083e831b8813d56d82b34041c232ef4abf2",
+      "new_blob": "554e02d060059d9d15247a2194df6d65f0f3ea36",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/risk-engine/src/orchestrator.rs",
+      "old_blob": "a30856f4e03f1d989bb7c593b522b4017b8f9626",
+      "new_blob": "3ee9650476fd1ab867a780cef6f01f3f2e3fcafc",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/risk-engine/src/selection_stats.rs",
+      "old_blob": "2bb2fa0d0a413a3d386852341318497959324298",
+      "new_blob": "1e2ba9b194cf133bc614071c168003287558145d",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/risk-engine/tests/correlation_admission_contract.rs",
+      "old_blob": "88a9bc0053c5c7fd29ac012de9f9d160c6cccd0c",
+      "new_blob": "b914ffa668f29f4a34d800b09f5d42a60a44a770",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/risk-engine/tests/veto_open_diagnostics.rs",
+      "old_blob": "0611b8f60849f24bad2964a81d04f9d60ed8e7b9",
+      "new_blob": "a92ceda1b6ff7f7337b258a6c2dcb5552107dc6d",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/conformal_reversion_filter.rs",
+      "old_blob": "d88e4ddfdb6bb6588f9c839eb9db760d22bcc734",
+      "new_blob": "0b8479934c15ecea7ca154e8ce357f6bd45317ba",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/flow_excitation_confluence.rs",
+      "old_blob": "d1b299e308fc907c5156c8657ff4c0645c36f614",
+      "new_blob": "d422fc9f99edc460fe5de24c1b62c660dd6b09f4",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/flow_impulse.rs",
+      "old_blob": "e92c98759b8ae6dbc5bc1c227bbeb04adc483a26",
+      "new_blob": "de4aff56f236aabf1c2fd9448522c217717c2b78",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/hawkes_bessel.rs",
+      "old_blob": "4831d6fc2a312e5295049858814e51a2650ca453",
+      "new_blob": "845ece564e717f4aad77fe77f2dc2a36d878b3c7",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/perceptron_gate.rs",
+      "old_blob": "85100d92cbfc1c973acc7b525e8d5a4d36f5fb2e",
+      "new_blob": "0c728e2a5c3a33869f4dd210c3ca8dac1bd037e9",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/quantum_oscillator.rs",
+      "old_blob": "d6c23aff84c9d2579155fa5faa23d424a7145817",
+      "new_blob": "f806208ffc76345d785e03f3c5b6208bb9be5d6c",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/renyi_tsallis_entropy.rs",
+      "old_blob": "132201a602a97014bebdd2d1898a557f8d776721",
+      "new_blob": "f210b51001c7a86642769feb3efaab3b7da01c6f",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/skill_motores.rs",
+      "old_blob": "d55d78f5500440597c0db22c6e4899822ecb2188",
+      "new_blob": "f8d1c9f81d2c145b4a20b6504658624b78fed579",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/supersonic_shockwave.rs",
+      "old_blob": "079d6ff88369145bfb0638052f92a62c1cb9890a",
+      "new_blob": "1d29d45f3c4713c25f2f99f812ab38a52cef88e3",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/trend_runner.rs",
+      "old_blob": "47936e09cfb597ef168ea1d6e35911323d562633",
+      "new_blob": "277f7542976e6cd083eca0a5db0f23933762c32f",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/tests/ensemble_characterization.rs",
+      "old_blob": "add0e91f7785f105502c2ba1d7508f72ecc9a5c9",
+      "new_blob": "c1bb70ea02ce155eb954a26c751aaf77aff8344d",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/storage-engine/src/mmap_bus.rs",
+      "old_blob": "0a04c9406f52fdec404e1885129e6c8e3772f151",
+      "new_blob": "caf9269389321117dfd506540537434662745313",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/storage-engine/tests/mmap_open_diagnostics.rs",
+      "old_blob": "1e3d73462e2a63340a48c3f3c383aa0341b18978",
+      "new_blob": "d6376e9520adf4f46b8b8b02fbee968fb3da0666",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/strategy-core/src/momentum_booster.rs",
+      "old_blob": "b78eeac55f5b2542a0845e5ab5e1cb38fa07be01",
+      "new_blob": "d42c771ae451bfd30014fd15a85646b95ee3e010",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/strategy-core/src/multivariate_coint.rs",
+      "old_blob": "a32a741e029284ff7e7c54f418a441d27407258c",
+      "new_blob": "3d87089163cf2011e7e9a4efb7d98c88985d4a51",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/strategy-core/src/vecm_arbitrage.rs",
+      "old_blob": "61fb4095828744e1b47bda657a451f6f63313ca0",
+      "new_blob": "f3a2cc9d344995b7cdf40f7d96324fe2b42a3f4a",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/BARRIDO_EXHAUSTIVO_FASES.md",
+      "old_blob": "d0d2e4da4148038bd8298fa21dc8b52ea8be5892",
+      "new_blob": "67c0f695d547147eba593f7f2258ff77c471e772",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_2026-10-04.md",
+      "old_blob": "9073d8d64212812bbe21da8bda17f9563f2343f6",
+      "new_blob": "0e4702099c4752feef6411f880c59d5a367e1fa6",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_QUANT_SR_2026-10-05.md",
+      "old_blob": "4b02781f3a19347f0a1d4c81b4584b019e264635",
+      "new_blob": "9921b90b2dd64d7565eac705b5d10a92680eddc6",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_SINCRONIZACION.md",
+      "old_blob": "cc76a6772f1acfe692f5dafb3ad203b959da6848",
+      "new_blob": "457dd4de505b82d962a2313cdf2353308d0a8af3",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/TRIAJE_ROJOS_PERPETUOS.md",
+      "old_blob": "56b9ad291d38b62aeb788b30c121111999ec0376",
+      "new_blob": "2f35f10aa3cbb5d7f6be2c22c13ef284146dadf7",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/adr/ADR-0014-doctrina-continuo-espectral.md",
+      "old_blob": "901719001bcba21de9a6ceb65b133aec27d91f7a",
+      "new_blob": "c699222976e826e4b215e53ff8242413a0be3a2b",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "src/bin/evolution.rs",
+      "old_blob": "44d7d0f58a4cea8efcaf1cc788ad69094a47c7b9",
+      "new_blob": "30f34f1b205edf7929fbcfa8ace181d5a546e1d4",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "src/bin/god_engine.rs",
+      "old_blob": "293bf90e847f3a21647cd2c6ecd075a7881b940e",
+      "new_blob": "eea831560cce74f00570b230724f5eef3f106420",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    }
+  ],
+  "unchanged_count": 1366
+}

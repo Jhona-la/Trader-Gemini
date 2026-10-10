@@ -169,6 +169,14 @@ impl QuantumStrategy for QuantumOscillatorEngine {
             })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
+        // H2-9 (RONDA 3, GLM 112) — CONTRATO: los tres knobs cuánticos
+        // (k_spring=1.0, lambda=0.1, alpha=0.5) NO tienen escritor
+        // productivo — sus defaults SON la física del motor, pinneada
+        // por los tests (F=−k·x−λ·x³, confinamiento e^(−α·x²)). Esto es
+        // deliberado, no deriva: publicarlos del genoma abriría un canal
+        // evolutivo sobre el oscilador vivo del ensamble (precedente
+        // #535 hawkes_excitation_gene) — ola con oráculo si el consejo
+        // lo pide. El contrato h2_9 pinnéa defaults + ausencia-de-escritor.
         let k_spring = r
             .get_scoped_parameter(
                 sym_opt,
@@ -274,6 +282,56 @@ mod tests {
         assert!(
             eval.abs() < 1e-4,
             "Breakout cuántico extremo debe tener voto amortiguado, no luchar contra la tendencia: {eval}"
+        );
+    }
+
+    /// H2-9 (RONDA 3, GLM 112) — CONTRATO de los knobs cuánticos: los
+    /// defaults (1.0/0.1/0.5) SON la física del motor. La AUSENCIA de
+    /// escritor productivo no es deriva: sin las claves, el motor evalúa
+    /// BIT-IDÉNTICO a como evalúa con los defaults escritos explícitos.
+    /// Si una ola futura los publica del genoma (canal evolutivo,
+    /// precedente #535), este test no cambia — pero el oráculo sí será
+    /// obligatorio (motor vivo del ensamble).
+    #[test]
+    fn h2_9_ausencia_de_knobs_es_bit_identica_a_los_defaults_de_fisica() {
+        // Sin ninguna clave en el registro (arranque limpio).
+        let registry_vacio = Arc::new(OmniscientRegistry::new());
+        registry_vacio.set("quantum_position_deviation", 2.5);
+        let mut engine_vacio = QuantumOscillatorEngine::new();
+        engine_vacio.init(registry_vacio).unwrap();
+        let eval_vacio = engine_vacio.evaluate();
+
+        // Con los defaults ESCRITOS explícitos (mismos valores).
+        let registry_explicito = Arc::new(OmniscientRegistry::new());
+        registry_explicito.set("quantum_position_deviation", 2.5);
+        registry_explicito.set("quantum_k_spring", 1.0);
+        registry_explicito.set("quantum_lambda_anharmonic", 0.1);
+        registry_explicito.set("quantum_alpha", 0.5);
+        let mut engine_explicito = QuantumOscillatorEngine::new();
+        engine_explicito.init(registry_explicito).unwrap();
+        let eval_explicito = engine_explicito.evaluate();
+
+        assert!(
+            eval_vacio.is_finite() && eval_explicito.is_finite(),
+            "ambos finitos: {eval_vacio} / {eval_explicito}"
+        );
+        assert_eq!(
+            eval_vacio.to_bits(),
+            eval_explicito.to_bits(),
+            "ausencia de knobs == defaults de física (bit-identico): {eval_vacio} vs {eval_explicito}"
+        );
+
+        // Y un knob DISTINTO sí cambia la física (el pin no es vacuo).
+        let registry_distinto = Arc::new(OmniscientRegistry::new());
+        registry_distinto.set("quantum_position_deviation", 2.5);
+        registry_distinto.set("quantum_k_spring", 4.0);
+        let mut engine_distinto = QuantumOscillatorEngine::new();
+        engine_distinto.init(registry_distinto).unwrap();
+        let eval_distinto = engine_distinto.evaluate();
+        assert_ne!(
+            eval_distinto.to_bits(),
+            eval_vacio.to_bits(),
+            "k_spring=4.0 cambia la fuerza restauradora: el contrato discrimina"
         );
     }
 }

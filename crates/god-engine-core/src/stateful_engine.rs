@@ -103,14 +103,18 @@ pub struct StatefulEngine {
     pub hurst_micro: f32,
     pub hurst_meso: f32,
     pub hurst_macro: f32,
-    pub last_scalp_exit_tick: u64,
-    pub last_scalp_exit_ts: u64,
+    // H0-7/G0-8 (RONDA 3, GLM 104): estos campos llevaban el prefijo
+    // `scalp_` de la era binaria — son el rastro de salida/racha de la
+    // BANDA RÁPIDA del espectro (fallback cuando spectral_loss_streaks
+    // aún no arma), no una etiqueta de estrategia. Renombrados al rol.
+    pub last_exit_fastband_tick: u64,
+    pub last_exit_fastband_ts: u64,
     pub last_exit_tau_ms: u64,
     pub current_ts: u64,
-    pub last_scalp_was_loss: bool,
-    pub scalp_loss_streak: u32,
-    pub scalp_short_loss_streak: u32,
-    pub scalp_long_loss_streak: u32,
+    pub last_exit_fastband_was_loss: bool,
+    pub fastband_loss_streak: u32,
+    pub fastband_short_loss_streak: u32,
+    pub fastband_long_loss_streak: u32,
     pub spectral_loss_streaks: [u32; 3], // [0: Micro (<60s), 1: Meso (60s..30m), 2: Macro (>=30m)]
     pub spectral_directional_loss_streaks: [[u32; 2]; 3], // [band][0: Short, 1: Long]
     pub spectral_exit_ts: [u64; 3],
@@ -144,8 +148,8 @@ pub struct StatefulEngine {
     /// tape denso y horas en uno ralo, de modo que la misma regla significaba
     /// cosas distintas según el símbolo, la hora y el entorno (vivo vs
     /// forense). El enfriamiento es TIEMPO.
-    pub last_scalp_exit_ms: u64,
-    /// Reloj de evento más reciente visto por el motor de features. Permite
+    pub last_exit_fastband_ms: u64,
+    /// Reloj del evento más reciente aceptado por el motor de features. Permite
     /// medir el enfriamiento sin cambiar la firma pública de
     /// `can_open_position`.
     pub last_event_ms: u64,
@@ -234,14 +238,14 @@ impl StatefulEngine {
             hurst_micro: 0.5,
             hurst_meso: 0.5,
             hurst_macro: 0.5,
-            last_scalp_exit_tick: 0,
-            last_scalp_exit_ts: 0,
+            last_exit_fastband_tick: 0,
+            last_exit_fastband_ts: 0,
             last_exit_tau_ms: 0,
             current_ts: 0,
-            last_scalp_was_loss: false,
-            scalp_loss_streak: 0,
-            scalp_short_loss_streak: 0,
-            scalp_long_loss_streak: 0,
+            last_exit_fastband_was_loss: false,
+            fastband_loss_streak: 0,
+            fastband_short_loss_streak: 0,
+            fastband_long_loss_streak: 0,
             spectral_loss_streaks: [0; 3],
             spectral_directional_loss_streaks: [[0; 2]; 3],
             spectral_exit_ts: [0; 3],
@@ -255,7 +259,7 @@ impl StatefulEngine {
             hawkes: feature_engine::HawkesProcessEngine::new(0.05, 0.35, 1.5),
             last_hawkes_ratio: 0.0,
             ultima_cantidad_trade: 0.0,
-            last_scalp_exit_ms: 0,
+            last_exit_fastband_ms: 0,
             last_event_ms: 0,
             tau_ultimo_cierre_ms: 0,
             ruido_retorno_tick: ObiNoise::new(),
@@ -286,28 +290,28 @@ impl StatefulEngine {
         let band = Self::spectral_band_index(tau_ms);
         self.last_exit_tau_ms = (tau_ms.max(10.0)).round() as u64;
         self.spectral_exit_ts[band] = ts;
-        self.last_scalp_exit_tick = tick;
-        self.last_scalp_exit_ts = ts;
-        self.last_scalp_was_loss = is_directional_loss;
+        self.last_exit_fastband_tick = tick;
+        self.last_exit_fastband_ts = ts;
+        self.last_exit_fastband_was_loss = is_directional_loss;
 
         let dir_idx = if is_long { 1 } else { 0 };
         if is_directional_loss {
             self.spectral_loss_streaks[band] += 1;
             self.spectral_directional_loss_streaks[band][dir_idx] += 1;
-            self.scalp_loss_streak += 1;
+            self.fastband_loss_streak += 1;
             if is_long {
-                self.scalp_long_loss_streak += 1;
+                self.fastband_long_loss_streak += 1;
             } else {
-                self.scalp_short_loss_streak += 1;
+                self.fastband_short_loss_streak += 1;
             }
         } else {
             self.spectral_loss_streaks[band] = 0;
             self.spectral_directional_loss_streaks[band][dir_idx] = 0;
-            self.scalp_loss_streak = 0;
+            self.fastband_loss_streak = 0;
             if is_long {
-                self.scalp_long_loss_streak = 0;
+                self.fastband_long_loss_streak = 0;
             } else {
-                self.scalp_short_loss_streak = 0;
+                self.fastband_short_loss_streak = 0;
             }
         }
     }
@@ -340,16 +344,16 @@ impl StatefulEngine {
         let last_band_ts = if self.spectral_exit_ts[band] > 0 {
             self.spectral_exit_ts[band]
         } else {
-            self.last_scalp_exit_ts
+            self.last_exit_fastband_ts
         };
         let elapsed_ms = if self.current_ts > 0 && last_band_ts > 0 {
             self.current_ts.saturating_sub(last_band_ts)
         } else {
-            self.tick_count.saturating_sub(self.last_scalp_exit_tick).saturating_mul(100)
+            self.tick_count.saturating_sub(self.last_exit_fastband_tick).saturating_mul(100)
         };
 
         let raw_streak = if same_spectral_band {
-            self.spectral_loss_streaks[band].max(self.scalp_loss_streak)
+            self.spectral_loss_streaks[band].max(self.fastband_loss_streak)
         } else {
             self.spectral_loss_streaks[band]
         };
@@ -413,7 +417,7 @@ impl StatefulEngine {
         let elapsed_ms = if self.current_ts > 0 && band_exit_ts > 0 {
             self.current_ts.saturating_sub(band_exit_ts)
         } else {
-            self.tick_count.saturating_sub(self.last_scalp_exit_tick).saturating_mul(100)
+            self.tick_count.saturating_sub(self.last_exit_fastband_tick).saturating_mul(100)
         };
         let raw = self.spectral_loss_streaks[band];
         // Decaimiento analítico continuo proporcional a la escala física tau:
@@ -444,7 +448,7 @@ impl StatefulEngine {
         let elapsed_ms = if self.current_ts > 0 && band_exit_ts > 0 {
             self.current_ts.saturating_sub(band_exit_ts)
         } else {
-            self.tick_count.saturating_sub(self.last_scalp_exit_tick).saturating_mul(100)
+            self.tick_count.saturating_sub(self.last_exit_fastband_tick).saturating_mul(100)
         };
         let raw = self.spectral_directional_loss_streaks[band][dir_idx];
         let decay_window_ms = (4.0 * tau_ms.max(10.0)).clamp(60_000.0, 7_200_000.0) as u64;
@@ -486,11 +490,11 @@ impl StatefulEngine {
     /// último cierre.
     #[inline(always)]
     fn racha_amortizada(&self, cruda: u32, base_ms: f64) -> u32 {
-        if self.last_scalp_exit_ms == 0 {
+        if self.last_exit_fastband_ms == 0 {
             return 0;
         }
         let transcurrido =
-            self.last_event_ms.saturating_sub(self.last_scalp_exit_ms) as f64;
+            self.last_event_ms.saturating_sub(self.last_exit_fastband_ms) as f64;
         cruda.saturating_sub(Self::niveles_amortizados(transcurrido, base_ms))
     }
 
@@ -520,12 +524,12 @@ impl StatefulEngine {
             // entrada sería inventar una regla con datos que no existen.
             return true;
         }
-        if self.last_scalp_exit_ms == 0 {
+        if self.last_exit_fastband_ms == 0 {
             return true; // aún no hubo cierre del que enfriarse
         }
         let transcurrido =
-            self.last_event_ms.saturating_sub(self.last_scalp_exit_ms) as f64;
-        let racha = self.racha_amortizada(self.scalp_loss_streak, enfriamiento_base_ms);
+            self.last_event_ms.saturating_sub(self.last_exit_fastband_ms) as f64;
+        let racha = self.racha_amortizada(self.fastband_loss_streak, enfriamiento_base_ms);
         let requerido = (enfriamiento_base_ms * (racha as f64).exp2())
             .min(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS);
         transcurrido >= requerido
@@ -541,9 +545,9 @@ impl StatefulEngine {
         enfriamiento_base_ms: f64,
     ) -> u32 {
         let cruda = if is_long {
-            self.scalp_long_loss_streak
+            self.fastband_long_loss_streak
         } else {
-            self.scalp_short_loss_streak
+            self.fastband_short_loss_streak
         };
         if !enfriamiento_base_ms.is_finite() || enfriamiento_base_ms <= 0.0 {
             return cruda;
@@ -592,14 +596,14 @@ impl StatefulEngine {
         self.dir_velocity = 0.0;
         self.last_trade_is_sell = false;
         self.tick_count = 0;
-        self.last_scalp_exit_tick = 0;
-        self.last_scalp_exit_ts = 0;
+        self.last_exit_fastband_tick = 0;
+        self.last_exit_fastband_ts = 0;
         self.last_exit_tau_ms = 0;
         self.current_ts = 0;
-        self.last_scalp_was_loss = false;
-        self.scalp_loss_streak = 0;
-        self.scalp_short_loss_streak = 0;
-        self.scalp_long_loss_streak = 0;
+        self.last_exit_fastband_was_loss = false;
+        self.fastband_loss_streak = 0;
+        self.fastband_short_loss_streak = 0;
+        self.fastband_long_loss_streak = 0;
         self.spectral_loss_streaks = [0; 3];
         self.spectral_directional_loss_streaks = [[0; 2]; 3];
         self.spectral_exit_ts = [0; 3];
@@ -652,7 +656,7 @@ impl StatefulEngine {
         // enfriamiento también son estado del feed. Tras una reconexión no
         // hay trade reciente ni continuidad temporal que defender.
         self.ultima_cantidad_trade = 0.0;
-        self.last_scalp_exit_ms = 0;
+        self.last_exit_fastband_ms = 0;
         self.last_event_ms = 0;
         self.tau_ultimo_cierre_ms = 0;
         // D-758: la σ por tick es una propiedad del feed vivo. Tras una
@@ -680,12 +684,6 @@ impl StatefulEngine {
         if price <= 0.0 || !price.is_finite() {
             return Err(FeatureInputError::InvalidPrice);
         }
-        // D-754: el reloj del motor de features. El enfriamiento y el olvido
-        // de rachas se miden contra EL, no contra `tick_count`.
-        if event_time_ms > self.last_event_ms {
-            self.last_event_ms = event_time_ms;
-        }
-
         if !_volume.is_finite() || _volume < 0.0 {
             return Err(FeatureInputError::InvalidVolume);
         }
@@ -701,6 +699,12 @@ impl StatefulEngine {
                 && !((price - self.last_price) / self.last_price).is_finite())
         {
             return Err(FeatureInputError::NonFiniteDerivedValue);
+        }
+        // D-754 / RA-I-F01: publish the accepted feature clock only after
+        // every input guard. Cooldown and streak amortization must not age
+        // on a rejected volume, exhausted counter or nonfinite derivative.
+        if event_time_ms > self.last_event_ms {
+            self.last_event_ms = event_time_ms;
         }
         self.current_ts = event_time_ms;
         // Kline warmup sets last_price but never initializes the tick EMA or
@@ -1689,9 +1693,9 @@ mod tests {
     fn test_can_open_at_tau_spectral_decoupling() {
         let mut engine = StatefulEngine::new();
         engine.current_ts = 1_000_000;
-        engine.last_scalp_exit_ts = 1_000_000;
+        engine.last_exit_fastband_ts = 1_000_000;
         engine.last_exit_tau_ms = 5_000; // Micro-scalp de 5 segundos
-        engine.scalp_loss_streak = 3;    // Racha severa de 3 pérdidas en micro-escala
+        engine.fastband_loss_streak = 3;    // Racha severa de 3 pérdidas en micro-escala
 
         // 1. A los 70 segundos (70_000 ms):
         // - El cooldown base min_cooldown_ms (60_000 ms) ya transcurrió.
@@ -1758,21 +1762,21 @@ mod tests_d753_d754 {
 
         // 30 s exactos de mercado en ambos, con cadencias que difieren ×100.
         let mut denso = StatefulEngine::new();
-        denso.last_scalp_exit_ms = t0;
+        denso.last_exit_fastband_ms = t0;
         alimentar(&mut denso, 3_001, 10, t0); // 30 s a 10 ms → 3 001 eventos
 
         let mut ralo = StatefulEngine::new();
-        ralo.last_scalp_exit_ms = t0;
+        ralo.last_exit_fastband_ms = t0;
         alimentar(&mut ralo, 31, 1_000, t0); // 30 s a 1 s → 31 eventos
 
         assert_eq!(
-            denso.last_event_ms.saturating_sub(denso.last_scalp_exit_ms),
+            denso.last_event_ms.saturating_sub(denso.last_exit_fastband_ms),
             30_000,
             "el motor denso debe haber visto 30 s"
         );
         assert_eq!(
-            denso.last_event_ms.saturating_sub(denso.last_scalp_exit_ms),
-            ralo.last_event_ms.saturating_sub(ralo.last_scalp_exit_ms),
+            denso.last_event_ms.saturating_sub(denso.last_exit_fastband_ms),
+            ralo.last_event_ms.saturating_sub(ralo.last_exit_fastband_ms),
             "los dos motores deben haber visto el MISMO tiempo de mercado"
         );
         assert_ne!(
@@ -1813,8 +1817,8 @@ mod tests_d753_d754 {
         // exigido por la racha que queda. A 2,5 s se han amortizado
         // log₂(1+2,5) = 1 nivel: quedan 2 y se exigen 4 s ⇒ todavía no.
         let mut e = StatefulEngine::new();
-        e.scalp_loss_streak = 3;
-        e.last_scalp_exit_ms = t0;
+        e.fastband_loss_streak = 3;
+        e.last_exit_fastband_ms = t0;
         e.last_event_ms = t0 + 2_500;
         assert!(
             !e.can_open_position_ms(base_ms),
@@ -1832,8 +1836,8 @@ mod tests_d753_d754 {
             let mut ms = 0u64;
             loop {
                 let mut m = StatefulEngine::new();
-                m.scalp_loss_streak = racha;
-                m.last_scalp_exit_ms = t0;
+                m.fastband_loss_streak = racha;
+                m.last_exit_fastband_ms = t0;
                 m.last_event_ms = t0 + ms;
                 if m.can_open_position_ms(base_ms) {
                     return ms;
@@ -1851,8 +1855,8 @@ mod tests_d753_d754 {
         // Amortización: la racha DIRECCIONAL efectiva baja al pasar el tiempo,
         // sin ninguna ventana de olvido escrita a mano.
         let mut d = StatefulEngine::new();
-        d.scalp_long_loss_streak = 3;
-        d.last_scalp_exit_ms = t0;
+        d.fastband_long_loss_streak = 3;
+        d.last_exit_fastband_ms = t0;
         d.last_event_ms = t0 + 1; // nada transcurrido
         assert_eq!(d.get_active_directional_streak_ms(true, base_ms), 3);
         d.last_event_ms = t0 + 1_000; // 1·base ⇒ log₂(2) = 1 nivel amortizado
@@ -1872,8 +1876,8 @@ mod tests_d753_d754 {
         );
 
         let mut c = StatefulEngine::new();
-        c.last_scalp_exit_ms = 1_800_000_000_000;
-        c.last_event_ms = c.last_scalp_exit_ms; // cero transcurrido
+        c.last_exit_fastband_ms = 1_800_000_000_000;
+        c.last_event_ms = c.last_exit_fastband_ms; // cero transcurrido
         assert!(
             c.can_open_position_ms(f64::NAN),
             "una base no medida no puede vetar"
@@ -2011,7 +2015,7 @@ mod tests_d753_d754 {
     fn d753_d754_reset_borra_relojes_y_cantidad() {
         let mut e = StatefulEngine::new();
         e.ultima_cantidad_trade = 7.0;
-        e.last_scalp_exit_ms = 123;
+        e.last_exit_fastband_ms = 123;
         e.last_event_ms = 456;
         e.tau_ultimo_cierre_ms = 789;
         for i in 0..(OBI_NOISE_EVENTS + 10) {
@@ -2020,7 +2024,7 @@ mod tests_d753_d754 {
         assert!(e.sigma_retorno_tick().is_some(), "premisa: σ calentada");
         e.reset();
         assert_eq!(e.ultima_cantidad_trade, 0.0);
-        assert_eq!(e.last_scalp_exit_ms, 0);
+        assert_eq!(e.last_exit_fastband_ms, 0);
         assert_eq!(e.last_event_ms, 0);
         assert_eq!(e.tau_ultimo_cierre_ms, 0);
         assert!(

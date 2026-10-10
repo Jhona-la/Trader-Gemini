@@ -24,7 +24,12 @@
 //!   maduración del bloque de `moneda` y la Empareja contra el ÚLTIMO
 //!   bloque maduro de cada otra moneda con |Δts| ≤ 0.5·τ (ventanas CONTEMPORÁNEAS — el bloque previo del otro, gap=τ, queda vetado: sino la mitad de las muestras son productos desalineados). La
 //!   detección de borde es por ts: re-alimentar el mismo bloque no duplica
-//!   muestra. r no finito se descarta.
+//!   muestra. H1-1: además, cada bloque se CONSUME por par-escala — un
+//!   bloque no puede alimentar dos muestras consecutivas del mismo par
+//!   (con desfase δ≈0.5·τ la guardia de recencia admitiría el bloque desde
+//!   ambos lados; eso haría las muestras 1-dependientes, rompería la
+//!   supermartingala del e-proceso bajo H0 y maduraría ~2× rápido).
+//!   r no finito se descarta.
 //! - `coherencia_par(a, b, escala)`: IC de la pareja-escala; `None` con
 //!   < 30 muestras (madurez, misma disciplina que MUESTRAS_SKILL_MADURAS)
 //!   o sin dispersión.
@@ -46,10 +51,23 @@
 //! sustituyendo el ρ̄ escalar por el ρ de la escala que opera la orden —
 //! es decisión del consejo con T-1 propio.
 
-use crate::temporal_spectrum::{SPECTRUM_SCALES_MS, MUESTRAS_SKILL_MADURAS};
+use crate::evalues::EProceso;
+use crate::temporal_spectrum::SPECTRUM_SCALES_MS;
 use std::collections::HashMap;
 
 const ESCALAS: usize = 32;
+
+/// #665: escalas de banda operable por par ([30 s, 12 h] = nodos 18..22
+/// de la malla 4^k µs) — las celdas que la ruta del veto consulta de
+/// facto (la escala dominante vive siempre en banda).
+const ESCALAS_BANDA_PAR: usize = 5;
+
+/// #665 (F2-B8): tamaño de la FAMILIA de e-procesos que el veto de
+/// grupo efectivamente escanea — C(MAX_COINS,2) pares × ESCALAS_BANDA_PAR.
+/// Alimenta el umbral Bonferroni M/α del gate Ville de la ruta del veto
+/// (`coherencia_media_con_todas` → qo_613_rho_tau).
+pub const FAMILIA_VETO_GRUPO: usize =
+    (crate::state::MAX_COINS * (crate::state::MAX_COINS - 1) / 2) * ESCALAS_BANDA_PAR;
 /// Guardia de recencia del emparejamiento: los bloques de ambos deben
 /// cerrar dentro de 0.5·τ el uno del otro (contemporáneos) (bloques de τ no solapados y
 /// aproximadamente contemporáneos — sino el par mezcla regímenes).
@@ -65,10 +83,19 @@ struct IcEscala {
     eb2: f64,
     eab: f64,
     n: u64,
+    /// #665 (F2-B8): e-proceso de Ville del IC CRUZADO — apuesta sobre
+    /// si el signo del co-movimiento (ra·rb) agrees con el signo del IC
+    /// acumulado ANTES de la observación (causal). Bajo H0 (IC=0) es
+    /// supermartingala; con acoplamiento real, el capital crece.
+    e: EProceso,
 }
 
 impl IcEscala {
     fn acumular(&mut self, ra: f64, rb: f64) {
+        // Causal: la señal es el signo del IC VIGENTE (pre-observación).
+        let senal = if self.eab >= 0.0 { 1.0 } else { -1.0 };
+        let retorno = (ra * rb).signum();
+        self.e.observar(senal, retorno);
         self.ea2 += (ra * ra - self.ea2) * OLVIDO;
         self.eb2 += (rb * rb - self.eb2) * OLVIDO;
         self.eab += (ra * rb - self.eab) * OLVIDO;
@@ -90,11 +117,30 @@ impl IcEscala {
             None
         }
     }
+
+    /// #665 (F2-B8): IC significativo bajo Ville con corrección de
+    /// FAMILIA — la ruta del veto de grupo escanea C(N,2)·banda celdas
+    /// (par, escala); sin la corrección, en ruido el máximo de varias
+    /// IC cruza (misma patología que #663 cerró en el banco de τ*).
+    fn ic_veto(&self) -> Option<f64> {
+        if !self.e.significativo_familia(FAMILIA_VETO_GRUPO) {
+            return None;
+        }
+        self.ic()
+    }
 }
 
 #[derive(Clone, Default)]
 struct EnlacePar {
     escalas: [IcEscala; ESCALAS],
+    /// H1-1 (RONDA 3): consumo de bloque por escala — los ts (moneda a,
+    /// moneda b) de la ÚLTIMA muestra acumulada. Un bloque que ya alimentó
+    /// una muestra de este par no puede re-alimentar: sin esta guardia, un
+    /// desfase de fases δ≈0.5·τ hace que el mismo bloque participe en DOS
+    /// muestras consecutivas (1-dependientes) — no solo infla n, rompe la
+    /// supermartingala del e-proceso bajo H0 (apuesta doble sobre el mismo
+    /// co-movimiento) y la madurez Ville llega ~2× rápido.
+    consumido: [(u64, u64); ESCALAS],
 }
 
 /// El universo espectral multivariante: un IC cruzado por par y escala,
@@ -164,7 +210,23 @@ impl EspectralMultiactivo {
             } else {
                 (otra as u16, moneda as u16, r_b, r)
             };
+            // Los ts en ORDEN CANÓNICO (a < b): el trigger y el partner
+            // según quién es a y quién b — el consumo se registra por
+            // posición de moneda, no por rol de evento.
+            let (ts_a, ts_b) = if moneda < otra {
+                (ts_ms, ts_b)
+            } else {
+                (ts_b, ts_ms)
+            };
             let enlace = self.enlaces.entry((a, b)).or_default();
+            let (ult_a, ult_b) = enlace.consumido[escala];
+            if ult_a == ts_a || ult_b == ts_b {
+                // H1-1: un bloque de esta muestra ya fue consumido por
+                // este par-escala — alimentarlo de nuevo crearía una
+                // muestra 1-dependiente con la anterior.
+                continue;
+            }
+            enlace.consumido[escala] = (ts_a, ts_b);
             enlace.escalas[escala].acumular(ra, rb);
         }
     }
@@ -176,6 +238,29 @@ impl EspectralMultiactivo {
         }
         let clave = if a < b { (a as u16, b as u16) } else { (b as u16, a as u16) };
         self.enlaces.get(&clave)?.escalas[escala].ic()
+    }
+
+    /// H1-1 (RONDA 3): n de muestras acumuladas del par-escala — el conteo
+    /// HONESTO tras el consumo de bloque (cada muestra usa dos bloques que
+    /// no participaron en la muestra anterior de este par). Telemetría de
+    /// auditoría de madurez; `None` si el par aún no tiene enlace.
+    pub fn muestras_par(&self, a: usize, b: usize, escala: usize) -> Option<u64> {
+        if a >= self.max_coins || b >= self.max_coins || a == b || escala >= ESCALAS {
+            return None;
+        }
+        let clave = if a < b { (a as u16, b as u16) } else { (b as u16, a as u16) };
+        Some(self.enlaces.get(&clave)?.escalas[escala].n)
+    }
+
+    /// #665 (F2-B8): versión de VETO — el IC sólo cuenta si su e-proceso
+    /// cruza el umbral de FAMILIA (C(N,2)·banda). Telemetría pura sigue
+    /// usando `coherencia_par`.
+    pub fn coherencia_par_veto(&self, a: usize, b: usize, escala: usize) -> Option<f64> {
+        if a >= self.max_coins || b >= self.max_coins || a == b || escala >= ESCALAS {
+            return None;
+        }
+        let clave = if a < b { (a as u16, b as u16) } else { (b as u16, a as u16) };
+        self.enlaces.get(&clave)?.escalas[escala].ic_veto()
     }
 
     fn escalas_en_banda(lo: f64, hi: f64) -> impl Iterator<Item = usize> {
@@ -242,7 +327,7 @@ impl EspectralMultiactivo {
             if otra == moneda {
                 continue;
             }
-            if let Some(ic) = self.coherencia_par(moneda, otra, escala) {
+            if let Some(ic) = self.coherencia_par_veto(moneda, otra, escala) {
                 suma += ic;
                 cuenta += 1;
             }
@@ -322,6 +407,90 @@ mod tests {
         assert_eq!(fresco.coherencia_par(0, 1, 19), None);
     }
 
+    /// H1-1 (RONDA 3): desfase de fases δ = 0.5·τ EXACTO — el caso donde
+    /// la guardia de recencia admite cada bloque desde AMBOS lados. Sin
+    /// consumo, cada bloque alimenta dos muestras consecutivas: n ≈ 2·rondas
+    /// y las muestras son 1-dependientes (comparten un bloque). Con el
+    /// consumo, n == rondas: cada bloque participa exactamente una vez.
+    #[test]
+    fn h1_1_defase_medio_tau_cada_bloque_participa_una_vez() {
+        let tau = 1000.0f64;
+        let rondas = 200u64;
+        let mut uni = EspectralMultiactivo::new(4);
+        let mut seed = 0x5EED_5EED_5EED_5EEDu64;
+        for i in 0..rondas {
+            // Grilla desde (i+1)·τ: ts=0 es el bloque semilla que el
+            // contrato descarta (línea del `ts_ms == 0`).
+            let ts_a = (i + 1) * 1000; // A cierra en 1000, 2000, ...
+            let ts_b = (i + 1) * 1000 + 500; // B: 1500, 2500, ... (δ=0.5·τ)
+            let ra = gauss(&mut seed);
+            let rb = gauss(&mut seed);
+            uni.observar_maduracion(0, tau, 19, ts_a, ra);
+            uni.observar_maduracion(1, tau, 19, ts_b, rb);
+        }
+        let n = uni
+            .muestras_par(0, 1, 19)
+            .expect("el par (0,1) acumuló muestras");
+        assert_eq!(n, rondas, "200 rondas ⇒ 200 muestras (una por bloque de B emparejado con su A contemporáneo); sin consumo serían ~2·rondas");
+    }
+
+    /// H1-1: jitter que CRUZA la frontera 0.5·τ — los gaps consecutivos
+    /// (B→A y A→B) alternan alrededor de la tolerancia. Sin consumo, cada
+    /// cruce produce una muestra que reutiliza el bloque previo. Con
+    /// consumo: ninguna muestra comparte bloque con la anterior.
+    #[test]
+    fn h1_1_jitter_alrededor_de_la_frontera_no_reutiliza_bloques() {
+        let tau = 1000.0f64;
+        let mut uni = EspectralMultiactivo::new(4);
+        let mut seed = 0xABAC_0FFE_2026_1004u64;
+        // A cierra cada 1000 ms; B alterna δ = 0.45·τ / 0.55·τ. Las rondas
+        // δ=550 no disparan desde B (gap 550 > 500) pero A de la ronda
+        // siguiente dispara contra ese B (gap 450): alternancia viva, un
+        // bloque por muestra, sin zona muerta y sin reutilización.
+        for i in 0..300u64 {
+            let ts_a = (i + 1) * 1000;
+            let delta = if i % 2 == 0 { 450u64 } else { 550u64 };
+            let ts_b = (i + 1) * 1000 + delta;
+            let ra = gauss(&mut seed);
+            let rb = gauss(&mut seed);
+            uni.observar_maduracion(0, tau, 19, ts_a, ra);
+            uni.observar_maduracion(1, tau, 19, ts_b, rb);
+        }
+        let n = uni.muestras_par(0, 1, 19).expect("par acumuló");
+        // Los disparadores efectivos: B0, luego A2, A4, ..., A298 (los B
+        // pares posteriores quedan vetados por consumo — su socio A ya fue
+        // usado; los impares por recencia 550 > 500). Una muestra por DOS
+        // rondas: 1 + 149 = 150. El código viejo contaba ~299 (cada A par
+        // alimentaba DOS muestras) — exactamente el "n efectivo ~mitad
+        // del contado" del hallazgo H1-1.
+        assert_eq!(n, 150, "jitter de frontera: cero reutilizaciones");
+    }
+
+
+    /// H1-1: la alternación de disparadores NO crea zonas muertas — con
+    /// δ > 0.5·τ fijo, las muestras llegan por los eventos de A (el socio
+    /// temprano) y cada bloque sigue participando exactamente una vez.
+    #[test]
+    fn h1_1_defase_mayor_sin_zona_muerta() {
+        let tau = 1000.0f64;
+        let rondas = 150u64;
+        let mut uni = EspectralMultiactivo::new(4);
+        let mut seed = 0xDEAD_BEEF_0000_0001u64;
+        for i in 0..rondas {
+            let ts_a = (i + 1) * 1000; // A temprano
+            let ts_b = (i + 1) * 1000 + 800; // B tardío (δ=0.8·τ > 0.5·τ)
+            let ra = gauss(&mut seed);
+            let rb = gauss(&mut seed);
+            uni.observar_maduracion(0, tau, 19, ts_a, ra);
+            uni.observar_maduracion(1, tau, 19, ts_b, rb);
+        }
+        // Disparadores: B@i+800 no ve a A@i (gap 800 > 500); A@(i+1)·1000
+        // sí ve a B@i·1000+800 (gap 200). Una muestra por ronda vía A,
+        // desde A1 (A0 no tiene socio) — el último B queda sin consumir.
+        let n = uni.muestras_par(0, 1, 19).expect("par acumuló vía eventos de A");
+        assert_eq!(n, rondas - 1, "δ=0.8·τ: una muestra por ronda sin zona muerta");
+    }
+
     #[test]
     fn qo_607_extremo_a_extremo_con_dos_espectros_reales() {
         // DOS TemporalSpectrum reales sobre LA MISMA serie: el accessor
@@ -386,7 +555,9 @@ mod qo_613_tests {
         // Pares (0,1) y (0,2) maduros con la misma serie (ic→1); (0,3) sin
         // madurar. La media de 0 contra todas debe promediar SOLO las maduras.
         // Serie determinista alternante (r_i = ±a): ra y rb idénticos ⇒ ic=1.
-        for i in 0..40u64 {
+        // #665: la ruta del veto exige además capital Ville de FAMILIA
+        // (2175 celdas ⇒ umbral 43500 ⇒ ≥104 aciertos con λ=0.10).
+        for i in 0..120u64 {
             let ts = (i + 1) * 1000;
             let r = if i % 2 == 0 { 0.02 } else { -0.02 };
             uni.observar_maduracion(0, tau, 19, ts, r);
@@ -399,5 +570,58 @@ mod qo_613_tests {
         assert!(media <= 1.0);
         // Escala sin evidencia en ninguna ⇒ None.
         assert_eq!(uni.coherencia_media_con_todas(0, 5), None);
+    }
+}
+
+#[cfg(test)]
+mod qo_665_tests {
+    use super::*;
+
+    /// #665 (F2-B8): el IC cruZado del VETO exige significancia Ville de
+    /// familia — 40 muestras perfectamente correlacionadas NO bastan
+    /// (capital 1.1^40≈45 < 43500); ~104 sí. La telemetría pura
+    /// (`coherencia_par`) sigue sin gate.
+    #[test]
+    fn qo_665_ic_veto_exige_capital_de_familia() {
+        let mut uni = EspectralMultiactivo::new(4);
+        let tau = 1000.0;
+        let feed = |uni: &mut EspectralMultiactivo, hasta: u64| {
+            for i in 0..hasta {
+                let ts = (i + 1) * 1000;
+                let r = if i % 2 == 0 { 0.02 } else { -0.02 };
+                uni.observar_maduracion(0, tau, 19, ts, r);
+                uni.observar_maduracion(1, tau, 19, ts, r);
+            }
+        };
+        feed(&mut uni, 40);
+        // Madurez n≥30 ✓, capital 45 < umbral ⇒ veto gate cerrado.
+        assert!(uni.coherencia_par(0, 1, 19).is_some(), "telemetria pura sin gate");
+        assert_eq!(uni.coherencia_par_veto(0, 1, 19), None, "40 perfectas no cruzan familia");
+        feed(&mut uni, 110);
+        assert!(uni.coherencia_par_veto(0, 1, 19).is_some(), "120 perfectas cruzan (1.1^120 ≈ 92k > 43500)");
+    }
+
+    /// #665: ruido independiente — el IC puro puede flotar, el gate del
+    /// veto NUNCA abre aunque n≫30 (la patología que #663 cerró en τ*).
+    #[test]
+    fn qo_665_ruido_no_abre_el_veto() {
+        let mut uni = EspectralMultiactivo::new(4);
+        let tau = 1000.0;
+        let mut lcg = 0x1234_5678_9ABC_DEF0u64;
+        for i in 0..600u64 {
+            let ts = (i + 1) * 1000;
+            lcg = lcg.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let ra = if (lcg >> 63) & 1 == 0 { 0.02 } else { -0.02 };
+            lcg = lcg.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let rb = if (lcg >> 63) & 1 == 0 { 0.02 } else { -0.02 };
+            uni.observar_maduracion(0, tau, 19, ts, ra);
+            uni.observar_maduracion(1, tau, 19, ts, rb);
+        }
+        // La telemetría puede madurar; el veto NO declara acoplamiento.
+        assert_eq!(
+            uni.coherencia_par_veto(0, 1, 19),
+            None,
+            "600 muestras de ruido independiente no abren el veto de familia"
+        );
     }
 }

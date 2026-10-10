@@ -1,40 +1,120 @@
-//! Four tests reproduce OPEN debt. The FMT-214 regression was closed locally
-//! in XXVI; neither category certifies whole-order financial feasibility.
+//! TRIAJE B (GLM 106): los 4 tests open_ de veto guards DRENADOS — las
+//! superficies auxiliares ahora son fail-closed con caps honrados. Las
+//! doctrinas: pico desconocido ≠ seguro; capital desconocido = veto; un
+//! cap explícito es la palabra del dueño (jamás elevado por pisos).
+//! Los gemelos VIVOS (lib.rs:279 peak-NaN del veto inline) quedan
+//! registrados en TRIAJE_ROJOS_PERPETUOS como ola futura con oráculo.
+//! FMT-214 (línea 41) sigue siendo la regresión cerrada.
 use risk_engine::{correlation_guard::CorrelationGuardEngine, guard};
 
+/// GEMELO VIVO (GLM 110) — RESUELTO-POR-VERIFICACIÓN: el camino VIVO ya
+/// es fail-closed con peak NaN/≤0. FMT-212 (risk-engine lib.rs:228-241)
+/// rechaza con REJ_INVALID_INPUT ANTES de que el circuit breaker O-04
+/// de drawdown pueda saltarse — y el Flat resultante hace que el bloque
+/// del consejo (god-engine lib.rs:7152) ni siquiera corra. Este test
+/// pinea ese contrato para que la garantía no dependa de la lectura
+/// cruzada de dos archivos. (El registro del gemelo en GLM 106 describía
+/// el estado pre-FMT-212 — corregido en TRIAJE.)
 #[test]
-fn auxiliary_drawdown_guard_still_assumes_unknown_peak_is_safe() {
-    assert!(guard::check_drawdown_limit(
-        13.0,
-        f64::NAN,
-        0.05,
-        13.0,
-        1.0,
-        1.0,
-        5.0
-    ));
+fn gemelo_vivo_peak_nan_es_rechazado_fail_closed_en_el_camino_vivo() {
+    use quantum_arena::{
+        symbol_registry::{update_registry, SymbolSpec},
+        GlobalArena,
+    };
+    use risk_engine::RiskEngine;
+    use signal_engine::{SignalIntent, SignalType};
+    use std::sync::atomic::Ordering::Relaxed;
+    update_registry(vec![SymbolSpec {
+        symbol: "BTCUSDT".into(),
+        step_size: 0.001,
+        tick_size: 0.01,
+        min_qty: 0.001,
+        min_notional: 5.0,
+        max_leverage: 20,
+        maker_fee: 0.0002,
+        taker_fee: 0.0004,
+        is_shadow: false,
+    }]);
+    let arena = GlobalArena::build_in_own_stack(13.0);
+    arena.coins[0].current_price.store(100.0, Relaxed);
+    arena.coins[0].current_atr.store(1.0, Relaxed);
+    arena.coins[0].hurst_exponent.store(0.5, Relaxed);
+    arena.config.kelly_clamp_min.store(0.01, Relaxed);
+    arena.config.kelly_clamp_max.store(0.25, Relaxed);
+    arena.config.latency_penalty_ms.store(0.0, Relaxed);
+    arena.config.live_taker_fee.store(0.0004, Relaxed);
+    arena.config.base_slippage_floor.store(0.00001, Relaxed);
+    let mut engine = RiskEngine::new(13.0);
+    let intent = SignalIntent {
+        signal: SignalType::Long,
+        confidence: 0.9,
+        expected_duration_ms: 60_000,
+        ..SignalIntent::default()
+    };
+    // Control: con pico sano, la orden pasa el gate de entrada.
+    let sana = engine.evaluate_quantum_order(0, &intent, &arena);
+    assert_ne!(sana.signal, SignalType::Flat, "con pico sano pasa: {}", risk_engine::reject_report());
+    // Pico envenenado (corrupción de estado): FAIL-CLOSED, no silencio.
+    engine.peak_capital = f64::NAN;
+    let out = engine.evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(
+        out.signal,
+        SignalType::Flat,
+        "peak NaN = drawdown no medible: el camino vivo RECHAZA (FMT-212), jamás omite el veto"
+    );
+    engine.peak_capital = 0.0;
+    let out = engine.evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out.signal, SignalType::Flat, "peak <= 0: mismo fail-closed");
 }
 
 #[test]
-fn correlation_helper_does_not_fail_closed_for_unknown_capital() {
-    assert!(!CorrelationGuardEngine::is_continuous_correlation_vetoed(
-        1,
-        f64::NAN,
-        5.0,
-        10
-    ));
+fn auxiliary_drawdown_guard_fails_closed_on_unknown_peak() {
+    // Peak NaN = drawdown no medible ⇒ NO asumir seguro (antes: true).
+    assert!(
+        !guard::check_drawdown_limit(13.0, f64::NAN, 0.05, 13.0, 1.0, 1.0, 5.0),
+        "pico desconocido no fabrica permiso"
+    );
+    // Peak 0 contra capital positivo = 100% de drawdown consumado.
+    assert!(!guard::check_drawdown_limit(13.0, 0.0, 0.05, 13.0, 1.0, 1.0, 5.0));
 }
 
 #[test]
-fn cluster_policy_does_not_honor_an_explicit_cap_of_one() {
-    assert!(!CorrelationGuardEngine::is_continuous_correlation_vetoed(
-        1, 1000.0, 5.0, 1
-    ));
+fn correlation_helper_fails_closed_for_unknown_capital() {
+    // Capital NaN = presupuesto de ruina desconocido ⇒ veto (antes: caía
+    // silenciosamente al bootstrap 13.0 y dejaba pasar).
+    assert!(
+        CorrelationGuardEngine::is_continuous_correlation_vetoed(1, f64::NAN, 5.0, 10),
+        "capital desconocido no dimensiona un clúster"
+    );
 }
 
 #[test]
-fn streak_policy_does_not_honor_an_explicit_cap_of_one() {
-    assert!(guard::check_streak_drawdown_limit(1, 1));
+fn cluster_policy_honors_an_explicit_cap_of_one() {
+    // Cap 1: la PRIMERA posición misma-apuesta ya cumple el umbral de veto
+    // (antes: el piso .max(2) autorizaba una de más).
+    assert!(
+        CorrelationGuardEngine::is_continuous_correlation_vetoed(1, 1000.0, 5.0, 1),
+        "un cap explícito de 1 se honra exacto"
+    );
+    // Y en régimen micro la interpolación D-641 no puede ELEVAR el cap.
+    assert!(
+        CorrelationGuardEngine::is_continuous_correlation_vetoed(1, 13.0, 5.0, 1),
+        "ni el régimen micro sube un cap más estricto"
+    );
+}
+
+#[test]
+fn streak_policy_honors_an_explicit_cap_of_one() {
+    // Cap 1: UNA pérdida ya bloquea (antes: .max(2) autorizaba la segunda).
+    assert!(
+        !guard::check_streak_drawdown_limit(1, 1),
+        "una pérdida con cap 1 bloquea"
+    );
+    // Semántica general preservada: 0 pérdidas siempre pasa; con cap 2,
+    // la segunda pérdida bloquea.
+    assert!(guard::check_streak_drawdown_limit(0, 1));
+    assert!(guard::check_streak_drawdown_limit(1, 2));
+    assert!(!guard::check_streak_drawdown_limit(2, 2));
 }
 
 #[test]

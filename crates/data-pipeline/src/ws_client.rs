@@ -446,6 +446,7 @@ impl BinanceStreamer {
                                                 self.coin_id,
                                                 agg_event.is_buyer_maker,
                                                 agg_event.qty,
+                                                agg_event.timestamp_ms,
                                             );
                                             self.arena.increment_tick();
                                             // D-421: Notificar callback ante transacciones AggTrade

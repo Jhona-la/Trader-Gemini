@@ -4,10 +4,12 @@ pub mod correlation;
 pub mod ewma;
 pub mod hawkes;
 pub mod hawkes_cross;
+pub mod hodge_flow;
 pub mod kalman;
 pub mod lead_lag;
 pub mod microstructure;
 pub mod multifractal;
+pub mod navier_stokes;
 pub mod normalizer;
 pub mod omni_strategies;
 pub mod path_signatures;
@@ -23,6 +25,7 @@ pub mod welford;
 pub use correlation::MarketCorrelationHeatmap;
 pub use ewma::Ewma;
 pub use hawkes::HawkesProcessEngine;
+pub use hodge_flow::{HelmholtzHodgeFlowEngine, HodgeDecompositionResult};
 pub use kalman::KalmanFilter1D;
 pub use lead_lag::LeadLagAlphaEngine;
 pub use microstructure::{
@@ -30,6 +33,7 @@ pub use microstructure::{
     InstitutionalVolumeTracker, OFIModel, OrderFlowTracker, SpoofingDetector,
 };
 pub use multifractal::{MultiScaleHurstConfluence, MultifractalSpectrumEngine};
+pub use navier_stokes::{HydrodynamicRegime, NavierStokesReynoldsEngine};
 pub use normalizer::{GarmanKlassVolatilityEstimator, StatisticalNormalizer};
 pub use omni_strategies::OmniStrategyEngine;
 pub use quantum_tensor_store::{QuantumTensorStore, NUM_FEATURES, NUM_TIMEFRAMES};

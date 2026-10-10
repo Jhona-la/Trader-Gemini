@@ -21,14 +21,31 @@ impl PartialEq for SymbolScore {
 impl Eq for SymbolScore {}
 impl PartialOrd for SymbolScore {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        // Rust's BinaryHeap is a max-heap by default.
-        // We want highest score at the top, so we order by score.
-        self.score.partial_cmp(&other.score)
+        // C (B-2): delega al Ord total — partial_cmp ya NUNCA es None.
+        // La versión anterior delegaba al partial_cmp de f64 que devuelve
+        // None con NaN: era la fuente de la inconsistencia.
+        Some(self.cmp(other))
     }
 }
 impl Ord for SymbolScore {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+        // C (triaje B-2): la versión anterior hacía
+        // `partial_cmp(other).unwrap_or(Ordering::Equal)` — con score NaN,
+        // Ord decía Equal mientras PartialEq decía falso: contratos
+        // mutuamente inconsistentes y orden indefinido en el BinaryHeap.
+        // Ahora: NaN EXPLÍCITAMENTE menor que todo finito (en un max-heap
+        // eso lo hunde al fondo — el peor candidato posible, que es la
+        // semántica correcta para un selector de "mejores"). total_cmp
+        // estándar haría NaN positivo el MAYOR (flotaría arriba) — malo
+        // para nuestra dirección de orden.
+        match (self.score.is_nan(), other.score.is_nan()) {
+            (true, true) => Ordering::Equal,
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            (false, false) => {
+                self.score.partial_cmp(&other.score).unwrap_or(Ordering::Equal)
+            }
+        }
     }
 }
 
@@ -89,6 +106,14 @@ impl DynamicSymbolSelector {
         items: &[Value],
         is_testnet: bool,
     ) -> (Vec<String>, Vec<String>) {
+        // XCIX (triaje B-1): entrada VACÍA ⇒ universo VACÍO. El ancla
+        // BTCUSDT "por decreto" aplica cuando HAY tickers pero BTC no hace
+        // el corte — fabricarla de literalmente cero datos (API caída,
+        // respuesta corrupta) es inventar un universo de la nada: sin
+        // datos, no se streamea nada y el caller decide.
+        if items.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
         let mut heap = BinaryHeap::new();
 
         for item in items {
@@ -221,8 +246,8 @@ mod tests {
             price_change_pct: 1.0,
             score: 10.0,
         };
-        // Verify cmp fallback does not panic
-        assert_eq!(s_nan.cmp(&s_valid), Ordering::Equal);
+        // C (B-2): NaN ahora es EXPLÍCITAMENTE menor que todo finito
+        assert_eq!(s_nan.cmp(&s_valid), Ordering::Less);
     }
 
     #[test]
