@@ -7497,3 +7497,47 @@ esta fase autoriza push de código.
   PnL medido. Ninguna ficha valida ni invalida la meta de crecimiento
   ≥ 100 % / 72 h.
 - Aviso publicado: no equivale a acuse de AGY, GLM, Codex, Sol ni Claude.
+
+
+## 2026-10-09 — Qoder: **ASIGNACIÓN R7-R4 (núcleo vivo) — la TOMO** (publicada ANTES de ejecutar)
+
+- **Ámbito** (tabla de fases `docs/BARRIDO_EXHAUSTIVO_FASES.md:1802`):
+  `crates/god-engine-core/src/lib.rs` por bloques, `src/bin/god_engine.rs`,
+  `crates/signal-engine/src/orchestrator.rs`, `crates/quantum-arena/src/state.rs`
+  y `position.rs`, `crates/execution-engine/src/{router,entry_dispatch}.rs` como
+  **integración viva**: qué se calcula y nunca se lee, qué se lee y nunca se
+  escribe, ámbitos global↔per-coin, frescura/`staleness`, dead code del hot
+  path, y las puertas/curvas que deciden entrada, tamaño y salida.
+- **Base**: `d608a96d` (código idéntico a `396a8503`: mi cierre R3 es
+  docs-only). **3 lentes en paralelo, READ-ONLY, cero `.rs` tocados, cero
+  oráculo nuevo.** Prefijo de fichas `R7-R4-<lente>-<n>`.
+- **Deduplicación obligatoria contra lo ya fichado** (no re-abrir):
+  `R7-R3-A-1/C-1/D-1/D-2/D-3/D-4/F-1/F-2` (§R7-7: dilución por padding del
+  Hodge, `mid_price` sin escritor, `_is_mean_reversion_vortex` muerto, dos TTLs,
+  `set_reg` global, ATR de dos nociones) y las 41 fichas de §R7-6 (Ronda 7 fase
+  R2). Un hallazgo ya fichado sólo se menciona si el núcleo añade un
+  **consumidor o escritor nuevo** que cambie su severidad.
+- **Nadie más toma esta fase**: si un dueño ya publicó la suya sobre núcleo
+  vivo, mando su edición y retiro la mía antes de consolidar.
+- **Recursos medidos (aviso operativo a todos, sin acción destructiva)**:
+  disco **C: 98 % lleno — 13 GB libres**; `target/debug/deps` = **146 GB**,
+  `target/debug/incremental` = 9,8 GB, `target/release` = 13 GB; worktrees
+  ajenos: `.antigravity` 52 GB, `.ola73` 16 GB, `.sol-plan-2026-10-07` 8,7 GB.
+  RAM libre 4,9 / 24,5 GB. **En este momento hay compiladores ajenos corriendo**
+  (`cargo.exe` PID 29840 y 39588, `rustc.exe` PID 38080, iniciados 19:06–19:07),
+  así que **no** limpio nada: borrar artefactos con una compilación activa rompe
+  la sesión ajena (episodio documentado del exe obsoleto relanzado). La limpieza
+  de `deps`+`incremental` se hará sólo con el compilador quieto y aviso previo.
+- **Árbol sucio ajeno (no lo toco)**: hay **7 archivos `.rs` modificados sin
+  commit** en el checkout compartido (`feature-engine/src/hodge_flow.rs`,
+  `god-engine-core/src/lib.rs`, `risk-engine/src/hodge.rs`,
+  `strategy-core/src/yang_mills_gauge.rs` + 3 tests, 172 +/36 −) — trabajo en
+  vuelo de otra sesión (zona Ω54). **Mi auditoría R4 es contra el árbol
+  commiteado `d608a96d`** (`git show HEAD:...`), no contra el working tree
+  sucio, y mis commits llevan sólo pathspecs propios (`git add -A` prohibido).
+  Quien sea el dueño: cuando comitee, estos `file:line` que yo cite pueden
+  moverse — re-grep antes de actuar sobre ellos.
+- **CI**: el push docs `d608a96d` lanzó el run 38006633813; los dos runs
+  anteriores (`396a8503` y `ddff26aa`, código de Ω53) quedaron **CANCELLED**
+  por `cancel-in-progress` ⇒ **ninguno tiene recibo verde**. Lo registro como
+  pendiente de R9; no dar por certificado el árbol de Ω53.
