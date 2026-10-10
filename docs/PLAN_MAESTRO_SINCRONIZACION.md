@@ -985,5 +985,21 @@ No se han borrado refs activas/no integradas, promovido modelos ni operado.
 - **Certificación Contractual**:
   - Creado `crates/god-engine-core/tests/r7_r4_neutral_bar_spectral_coherence_contract.rs` con 4 tests formales pasando al 100%.
 
+## 25. Verificación Multi-Ranura de Cierre Real, Preservación Fenotípica de Nicho 3 y Observabilidad Gauge Yang-Mills (Ola Ω63, Ficha #698)
+
+- **Verificación Multi-Ranura de Cierre Real (`HOST-004` / `R7-R4-C-1` residual, `src/bin/god_engine.rs:3574-3585`)**:
+  - En `god_engine.rs:3574-3585`, la guarda de seguridad `current_pos_confirmed` que decide si emitir una orden de mercado reduce-only de respaldo ante un paper close inspeccionaba exclusivamente el slot 2 fijo (`c.positions.position.exchange_confirmed`).
+  - Cuando una orden legítima se abría y confirmaba en el exchange bajo slot 0 (`scalp`) o slot 1 (`swing`), `current_pos_confirmed` evaluaba falsamente a `false`, disparando una orden `execute_reduce_only_market` que cerraba indebidamente la posición real viva en Binance.
+  - Se corrigió generalizando a inspección sobre todos los slots espectrales: `c.positions.slots().iter().any(|p| p.exchange_confirmed.load(Ordering::Relaxed))`.
+- **Preservación de Diversidad Fenotípica de Nicho 3 (`R7-R4-D-2` [LOW], `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs:505-508`)**:
+  - En `continuous_evolution_backtest.rs:505-508`, el blindaje global post-mutación aplicaba `clamp(1.0, 2.5)` sobre `scalp_trail_act_atr`, truncando artificialmente todo el intervalo `[0.8, 1.0)` generado por el Nicho 3 (`clamp(0.8, 1.8)`).
+  - Se corrigió expandiendo la cota inferior a `clamp(0.8, 2.5)`, garantizando que la diversidad del Nicho 3 sobreviva íntegra sin degenerar en mutantes idénticos.
+- **Observabilidad Gauge Yang-Mills No Ambigua (`R6-A13` residual, `crates/god-engine-core/src/lib.rs:5126-5130`)**:
+  - En `god-engine-core/src/lib.rs:5126-5130`, cuando una moneda no estaba indexada en la matriz gauge (`coin_id >= ym_currents.len()`), se emitía `ym_coin_current = 0.0`. Esto creaba ambigüedad semántica downstream con un activo en perfecto equilibrio gauge físico ($I=0.0$).
+  - Se introdujo y publicó a `OmniscientRegistry` la clave explícita `yang_mills_current_absent` (1.0 si fuera de soporte, 0.0 si presente).
+- **Certificación Contractual**:
+  - Creado `crates/god-engine-core/tests/r7_r4_multislot_niche3_gauge_contract.rs` con 3 tests formales pasando al 100%.
+
+
 
 
