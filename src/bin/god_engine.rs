@@ -3162,20 +3162,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     max_ask_wall,
                                     e as u64,
                                 );
-                                if score.is_finite() && score > 0.05 {
-                                    let clamped_score = score.clamp(0.0, 1.0);
-                                    engine_real.arena.registry.set_scoped(
-                                        &sym.to_uppercase(),
-                                        "spoof_score",
-                                        clamped_score,
-                                    );
-                                    // R7-R4-A-2: Publicar también por coin_id para que get_for_coin_or en core lib.rs resuelva c{id}:spoof_score
-                                    engine_real.arena.registry.set_for_coin(
-                                        sym_id,
-                                        "spoof_score",
-                                        clamped_score,
-                                    );
-                                }
+                                // CL-49: se publica cada evaluación, también el
+                                // valor nulo. Antes sólo un score > 0,05: el
+                                // último pico quedaba pegado aunque el detector
+                                // ya lo hubiera dejado decaer.
+                                god_engine_core::entes_consejo::publicar(
+                                    &engine_real.arena.registry,
+                                    sym_id,
+                                    sym,
+                                    god_engine_core::entes_consejo::SPOOF,
+                                    god_engine_core::entes_consejo::valor_spoof(score),
+                                );
                             }
                         }
                     }
@@ -3280,27 +3277,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let notional = qty * current_price;
                         if notional.is_finite() && notional > 0.0 {
                             let (z, _accel, is_burst) = whale_trackers[coin_id].update(notional);
-                            if is_burst {
-                                let sym_scoped = symbol_to_id
-                                    .iter()
-                                    .find(|(_, &v)| v == coin_id)
-                                    .map(|(k, _)| k.to_uppercase())
-                                    .unwrap_or_default();
-                                let clamped_z = z.clamp(0.0, 10.0);
-                                if !sym_scoped.is_empty() {
-                                    engine_real.arena.registry.set_scoped(
-                                        &sym_scoped,
-                                        "whale_burst_z",
-                                        clamped_z,
-                                    );
-                                }
-                                // R7-R4-A-2: Publicar también por coin_id para que get_for_coin_or en core lib.rs resuelva c{id}:whale_burst_z
-                                engine_real.arena.registry.set_for_coin(
-                                    coin_id,
-                                    "whale_burst_z",
-                                    clamped_z,
-                                );
-                            }
+                            // CL-49: cada trade publica su valor (0 si no es
+                            // burst). Antes sólo el burst: su z quedaba pegado
+                            // hasta el siguiente burst, horas después.
+                            god_engine_core::entes_consejo::publicar(
+                                &engine_real.arena.registry,
+                                coin_id,
+                                parsed_sym,
+                                god_engine_core::entes_consejo::BALLENA,
+                                god_engine_core::entes_consejo::valor_ballena(z, is_burst),
+                            );
                         }
                     }
                 } else if is_depth {

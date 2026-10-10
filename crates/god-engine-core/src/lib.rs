@@ -26,6 +26,7 @@ pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64, total_trades: 
 
 pub mod fitness_contract;
 pub mod entry_reservation;
+pub mod entes_consejo;
 pub mod evidence_publication;
 pub mod contagion_publisher;
 pub mod bootloader;
@@ -7517,21 +7518,24 @@ impl GodEngineCore {
                                 .map(|s| s.dominant_tau_ms)
                                 .unwrap_or(1_138_000.0),
                             // P-5b / R7-R4-A-2: datos EXCLUSIVOS del asiento Ente del
-                            // Mercado — lectura robusta bidireccional (coin_id y símbolo scoped)
-                            whale_burst_z: self
-                                .arena
-                                .registry
-                                .get_for_coin_or(coin_id, "whale_burst_z", 0.0)
-                                .max(self.arena.registry.get_scoped_value_or(&sym, "whale_burst_z", 0.0)),
+                            // Mercado — lectura robusta bidireccional (coin_id y símbolo scoped).
+                            // CL-49: escritura y lectura viven en `entes_consejo`.
+                            whale_burst_z: entes_consejo::leer(
+                                &self.arena.registry,
+                                coin_id,
+                                &sym,
+                                entes_consejo::BALLENA,
+                            ),
                             liquidation_severity,
                             open_interest_norm: coin
                                 .open_interest_norm
                                 .load(Ordering::Relaxed),
-                            spoof_score: self
-                                .arena
-                                .registry
-                                .get_for_coin_or(coin_id, "spoof_score", 0.0)
-                                .max(self.arena.registry.get_scoped_value_or(&sym, "spoof_score", 0.0)),
+                            spoof_score: entes_consejo::leer(
+                                &self.arena.registry,
+                                coin_id,
+                                &sym,
+                                entes_consejo::SPOOF,
+                            ),
                             // QO-U2: sentimiento de masas contrarian
                             crowd_ls_ratio: self
                                 .arena
