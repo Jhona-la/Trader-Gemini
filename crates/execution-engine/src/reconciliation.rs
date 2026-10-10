@@ -47,6 +47,12 @@ pub struct PositionRiskEntry {
     pub update_time: u64,
 }
 
+/// Apalancamiento canónico del régimen micro ($13 USD / N <= 3 operaciones).
+/// Con nocional mínimo de ~$5.10 USDT, 5.0x apalancamiento requiere exactamente
+/// $1.02 de margen (7.85% de la cuenta), permitiendo hasta 2 posiciones concurrentes ($2.04)
+/// y manteniendo >= $10.96 (84.31%) de margen libre.
+pub const CANONICAL_MICRO_LEVERAGE: f64 = 5.0;
+
 impl PositionRiskEntry {
     pub fn is_open(&self) -> bool {
         self.position_amt.is_finite() && self.position_amt != 0.0
@@ -565,14 +571,13 @@ pub fn reconcile_arena_checked(
                         .load(std::sync::atomic::Ordering::Relaxed)
                 };
                 let notional = abs_qty * price;
-                // S-06: usar el LEVERAGE REAL de la posición reportada por el
-                // exchange (antes: /10.0 hardcoded — inflaba used_margin 2-5x
-                // en cuentas 20x/50x → falsa escasez de margen).
+                // S-06 / R5-H1: usar el LEVERAGE REAL de la posición reportada por el
+                // exchange. Si no es válido, recurrir al apalancamiento canónico micro (5.0x).
                 let lev = remote_leverage;
                 let lev = if lev.is_finite() && lev >= 1.0 {
                     lev
                 } else {
-                    10.0
+                    CANONICAL_MICRO_LEVERAGE
                 };
                 let margin = notional / lev;
                 // CERT-M4-H05: imputar entry_fee de la adopción con el fee
@@ -664,9 +669,9 @@ pub fn reconcile_arena_checked(
                     let old_margin = target_slot
                         .margin_used
                         .load(std::sync::atomic::Ordering::Relaxed);
-                    // F4-H1: Sanitizar lev_deriva contra división por cero o NaN.
+                    // F4-H1 / R5-H1: Sanitizar lev_deriva contra división por cero o NaN.
                     // Si remote_leverage no es válido (<= 0 o no finito), deducir del apalancamiento previo
-                    // o usar 10.0 como piso seguro.
+                    // o usar CANONICAL_MICRO_LEVERAGE (5.0) como piso seguro micro.
                     let lev_deriva = if remote_leverage.is_finite() && remote_leverage >= 1.0 {
                         remote_leverage
                     } else {
@@ -676,10 +681,10 @@ pub fn reconcile_arena_checked(
                             if implied.is_finite() && implied >= 1.0 {
                                 implied
                             } else {
-                                10.0
+                                CANONICAL_MICRO_LEVERAGE
                             }
                         } else {
-                            10.0
+                            CANONICAL_MICRO_LEVERAGE
                         }
                     };
                     let computed_margin = if safe_price > 0.0 {
@@ -954,5 +959,31 @@ mod tests {
         let slot_margin = arena.coins[0].positions.position.margin_used.load(std::sync::atomic::Ordering::Relaxed);
         assert!(slot_margin.is_finite(), "slot margin must be finite, got {}", slot_margin);
         assert_eq!(slot_margin, 24.0, "slot margin must be 24.0, got {}", slot_margin);
+    }
+
+    #[test]
+    fn reconciliation_leverage_canonical_micro_leverage() {
+        assert_eq!(CANONICAL_MICRO_LEVERAGE, 5.0);
+        quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        arena.coins[0].current_price.store(50_000.0, std::sync::atomic::Ordering::Relaxed);
+
+        // Remote reports position with canonical micro leverage 5.0
+        let remote = vec![PositionRiskEntry {
+            symbol: "BTCUSDT".into(),
+            position_amt: 0.001,
+            entry_price: 50_000.0,
+            leverage: CANONICAL_MICRO_LEVERAGE,
+            update_time: 2000,
+            ..Default::default()
+        }];
+
+        let report = reconcile_arena_checked(&remote, &arena, 2000);
+        assert!(report.adjustments >= 1);
+
+        // Notional = 0.001 * 50_000 = 50.0.
+        // Margin = 50.0 / 5.0 = 10.0.
+        let slot_margin = arena.coins[0].positions.position.margin_used.load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(slot_margin, 10.0, "slot margin must be 10.0, got {}", slot_margin);
     }
 }

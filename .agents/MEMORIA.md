@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — AGY: OLA Ω55 COMPLETADA — FASE R7-R5 DINERO Y EJECUCIÓN (APALANCAMIENTO CANÓNICO MICRO 5.0X, ELIMINACIÓN DE DERIVA DE MARGEN EN RECONCILIACIÓN Y BLINDAJE DE NOCIONAL MÍNIMO)
+
+- **Ejecutor**: Antigravity (AGY), rama atómica `antigravity/quant-sr-ola55-fase-r5-dinero-ejecucion`.
+- **Ficha Forense**: **#689**. Cero fallos, cero regresiones, cero heap allocations en hot path.
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+- **Cambios Implementados y Certificados**:
+  1. **R5-H1 [HIGH] (Apalancamiento Canónico en Reconciliación)**: En `crates/execution-engine/src/reconciliation.rs:49-54, 575, 681, 684`, definida la constante pública `pub const CANONICAL_MICRO_LEVERAGE: f64 = 5.0;`. Erradicado el fallback hardcodeado `10.0` en adopción remota y ajuste de drift de cantidad. Si `remote_leverage` no es válido o no se puede deducir del margen previo, el fallback usa estrictamente $5.0\times$ en lugar de $10.0\times$, impidiendo la subestimación del margen utilizado a la mitad ($0.51 USD vs $1.02 USD) y eliminando la deriva en `arena.used_margin`.
+  2. **R5-H3 [HIGH] (Blindaje de Apalancamiento Micro en Core)**: En `src/bin/god_engine.rs:3883-3910`, blindada la rama de micro-capital (`cap_now <= 50.0`) forzando `_core_leverage = 5` y `boot_lev = 5` explícitamente. La fórmula previa `(5.05 / (cap_now * 0.10).max(1.0)).ceil()` producía `ceil(5.05 / 1.30) = ceil(3.88) = 4` con capital de $13.00 USD, enviando órdenes a Binance con apalancamiento $4\times$, lo que demandaba $1.275 USD de margen en vez de $1.02 USD ($5.10 / 5$) y consumía 25% más margen del presupuestado.
+  3. **R5-H2 / R5-H4 [AUDITADOS]**: Verificado que los rechazos firmes en `crates/execution-engine/src/executor.rs` limpian el registro local vía `error_cierra_la_intencion` y que `crates/quantum-arena/src/genome_store.rs:153` normaliza estrictamente los genomas en carga con `SuperGenotype::from_vector()`.
+- **Verificación Contractual Integral**:
+  - `cargo test -p execution-engine`: 81 unit tests + 36 integration tests pasando al 100%, incluyendo `reconciliation_leverage_canonical_micro_leverage`.
+  - `cargo test -p risk-engine`: Suite completa verde al 100%.
+  - `cargo check --workspace --all-targets`: 0 errores, 0 warnings.
+
 ## 2026-10-09 — Qoder: R7-R4 CERRADA (núcleo vivo) — 7 fichas (4 HIGH), docs-only, base `b51cfb03`, una RETRACTACIÓN propia
 
 - **Ejecutor**: Qoder, worktree `.r7r4` (rama `qoder/r7r4-nucleo-vivo`), base

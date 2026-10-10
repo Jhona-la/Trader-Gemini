@@ -15810,7 +15810,6 @@ PARCIAL** (reciprocidad sí, cierre triádico residual → R7-R3-B-2); R6-C4
 - `cargo test -p god-engine-core --test hodge_yang_mills_consensus_contract`: 3 tests aprobados, incluyendo `test_mid_price_published_and_multiasset_ttl_contract`.
 - `cargo check --workspace --all-targets`: 0 errores, 0 warnings en los 23 crates del workspace.
 
-
 ---
 
 ## #688 — Qoder Ronda 7 · Fase R4: núcleo vivo — 7 fichas (4 HIGH, 1 MED, 2 LOW) con una retractación propia (2026-10-09)
@@ -15982,3 +15981,23 @@ hubo que retractar 11 claves «sin escritor» que sí lo tenían.
   `R7-R4-D-1` (retirar el bloque muerto con lock), `R7-R4-D-2` (unificar
   bandas del nicho 3 y del blindaje).
 - **Acuerdo previo**: `R7-R4-A-3` (zona CL-14/B3.29).
+
+---
+
+## #689 — Ola Ω55: FASE R7-R5 DINERO Y EJECUCIÓN — ARMONIZACIÓN DE APALANCAMIENTO CANÓNICO MICRO ($5.0\times$), ELIMINACIÓN DE DERIVA DE MARGEN EN RECONCILIACIÓN Y BLINDAJE DE NOCIONAL MÍNIMO (2026-10-09)
+
+### 1. Resumen Ejecutivo y Metas Financieras
+- **Meta Financiera Sagrada**: Crecimiento exponencial e interés compuesto de $100\%$ cada 3 días ($T_d = 72\text{ h}$, $g = 25.992\%/\text{día}$, $32\times \to \$416\text{ USD}$ en 15 días, $1\,024\times \to \$13\,312\text{ USD}$ en 30 días) sobre micro-capital inicial de $\$13.00\text{ USD}$ en Binance Futures USD-M.
+- **Invariantes Sagrados de Micro-Capital Preservados**:
+  - Piso Nocional Binance Futures: $\$5.10\text{ USD}$ a $5.0\times$ apalancamiento $\implies$ Margen por posición = $\$1.02\text{ USD}$ ($7.85\%$).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $\$2.04\text{ USD}$ ($15.69\%$), margen libre $\ge \$10.96\text{ USD}$ ($84.31\%$), suelo de supervivencia absoluto $\$3.00\text{ USD}$ (Drawdown Max $76.92\%$).
+  - Stop Loss difusivo acotado a $55\text{ bps}$ ($\$0.02805\text{ USD}$, $0.215\%$ de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75\text{ bps}$, $\$0.06311\text{ USD}$, $+0.485\%$).
+- **Paradigmas y Axiomas Resueltos**:
+  1. **R5-H1 [HIGH]**: Erradicado el fallback hardcodeado `10.0` en `crates/execution-engine/src/reconciliation.rs:575, 681, 684`. Definida la constante canónica `pub const CANONICAL_MICRO_LEVERAGE: f64 = 5.0;`. En adopción remota y ajuste de drift de cantidad, si el apalancamiento reportado no es válido o no se puede deducir del margen previo, el fallback utiliza exactamente $5.0\times$ en lugar de $10.0\times$, erradicando la subestimación del margen utilizado a la mitad ($0.51\text{ USD}$ vs $\$1.02\text{ USD}$) y la consecuente deriva espuria en `arena.used_margin`.
+  2. **R5-H3 [HIGH]**: Corrección de apalancamiento micro en `src/bin/god_engine.rs:3883-3910`. La fórmula previa `(5.05 / (cap_now * 0.10).max(1.0)).ceil().clamp(1.0, 10.0) as u32` arrojaba `ceil(5.05 / 1.30) = ceil(3.88) = 4` para una cuenta de $\$13.00\text{ USD}$ (`cap_now = 13.0`). Esto provocaba que `boot_lev` y `exec_leverage` fueran `4` en lugar de `5`, enviando la orden a Binance a $4\times$ y consumiendo $\$1.275\text{ USD}$ de margen ($\$5.10 / 4$) en lugar del margen presupuestado de $\$1.02\text{ USD}$ ($\$5.10 / 5$), estrangulando el margen libre en un 25% extra. Se blindó la rama micro para `cap_now <= 50.0` fijando explícitamente el apalancamiento canónico en `5`.
+  3. **R5-H2 / R5-H4 [AUDITED]**: Auditoría de `mark_local_reject` en `crates/execution-engine/src/executor.rs` (rechazos firmes limpian las intenciones locales vía `error_cierra_la_intencion`) y confirmación del cierre de GENOME-GATE en `crates/quantum-arena/src/genome_store.rs:153` (`SuperGenotype::from_vector` normaliza en carga).
+
+### 2. Certificación de Pruebas Unitarias y Contratos
+- `cargo test -p execution-engine`: 81 tests unitarios + 36 integration tests aprobados con 0 fallos, incluyendo el nuevo test `reconciliation_leverage_canonical_micro_leverage`.
+- `cargo test -p risk-engine`: Todas las suites aprobadas con 0 fallos.
+- `cargo check --workspace --all-targets`: 0 errores, 0 warnings en los 23 crates del workspace.

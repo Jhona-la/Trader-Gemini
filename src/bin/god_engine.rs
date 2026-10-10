@@ -3882,6 +3882,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let pos_margin = engine_real.arena.coins[coin_id].positions.slots().into_iter().find(|p| p.is_open()).map(|p| p.margin_used.load(Ordering::Relaxed)).unwrap_or(0.0);
                         let _core_leverage = if pos_margin > 0.0 && notional_ord > 0.0 {
                             (notional_ord / pos_margin).round().clamp(1.0, 50.0) as u32
+                        } else if cap_now <= 50.0 {
+                            // R5-H3 (MICRO-CAPITAL APALANCAMIENTO CANÓNICO):
+                            // Para cuentas micro (cap_now <= 50.0), el apalancamiento canónico
+                            // necesario para que el nocional mínimo de Binance ($5.10 USDT)
+                            // requiera exactamente $1.02 de margen (7.85% de $13 USDT) es 5x.
+                            // La fórmula previa (5.05 / 1.30 = 3.88 -> ceil = 4) arrojaba 4x,
+                            // requiriendo $1.275 USD de margen y consumiendo 25% más del presupuesto.
+                            5
                         } else {
                             (5.05 / (cap_now * 0.10).max(1.0)).ceil().clamp(1.0, 10.0) as u32
                         };
@@ -3897,13 +3905,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .unwrap_or(0)
                             as f64;
                         if envelope_n < 30.0 {
-                            // F4-H2 (BOOTSTRAP MICRO): acumular evidencia con el apalancamiento
+                            // F4-H2 / R5-H3 (BOOTSTRAP MICRO): acumular evidencia con el apalancamiento
                             // validado por el core/arena, garantizando que el nocional mínimo de Binance
                             // ($5 USDT) no consuma más del margen presupuestado en una cuenta micro ($13 USDT).
                             // A apalancamiento 1x, $5.05 de nocional consume 38.8% del capital en margen,
                             // estrangulando el margen libre y provocando vetos de margen prematuros.
                             let boot_lev = if pos_margin > 0.0 && notional_ord > 0.0 {
                                 (notional_ord / pos_margin).round().clamp(1.0, 10.0) as u32
+                            } else if cap_now <= 50.0 {
+                                5
                             } else {
                                 _core_leverage.clamp(1, 10)
                             };

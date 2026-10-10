@@ -3220,7 +3220,6 @@ esos cierres; no se re-abren.
 - **Claude**: R7-R3-D-1/F-1 (dead code del ruteo en `src/bin/god_engine.rs`,
   zona CL-14/B3.29).
 
-
 ---
 
 # RONDA 7 — FASE R4: NÚCLEO VIVO (core + host + orquestador + arena + ruteo)
@@ -3452,3 +3451,31 @@ nicho ⊆ banda del blindaje (o unificar la constante), como en R4-B1/R4-B7.
 - **Acuerdo previo antes de tocar**: `R7-R4-A-3` (router muerto) es zona
   compartida CL-14 / B3.29 — quien cambie la política de ruteo decide si se
   retira la variante o se cablea.
+
+---
+
+# RONDA 7 — FASE R5: DINERO Y EJECUCIÓN — CIERRE OLA Ω55 (#689) (2026-10-09)
+
+Ejecutor: **Antigravity** (rama `antigravity/quant-sr-ola55-fase-r5-dinero-ejecucion`).
+
+### Resumen Ejecutivo y Resolución de Defectos Críticos
+
+1. **R5-H1 [HIGH] (Apalancamiento Canónico en Reconciliación)**:
+   - En `crates/execution-engine/src/reconciliation.rs:49-54, 575, 681, 684`, definida la constante pública:
+     ```rust
+     pub const CANONICAL_MICRO_LEVERAGE: f64 = 5.0;
+     ```
+   - Erradicado el fallback hardcodeado `10.0` en adopción remota y ajuste de drift de cantidad. Si `remote_leverage` no es válido o no se puede deducir del margen previo, el fallback usa estrictamente $5.0\times$ en lugar de $10.0\times$. Esto erradica la subestimación del margen utilizado a la mitad ($0.51\text{ USD}$ vs $\$1.02\text{ USD}$) y la consecuente deriva espuria en `arena.used_margin`. Test contractual `reconciliation_leverage_canonical_micro_leverage` verificado al 100%.
+
+2. **R5-H3 [HIGH] (Blindaje de Apalancamiento Micro en Core)**:
+   - En `src/bin/god_engine.rs:3883-3910`, blindada la rama de micro-capital (`cap_now <= 50.0`) forzando `_core_leverage = 5` y `boot_lev = 5` explícitamente.
+   - La fórmula previa `(5.05 / (cap_now * 0.10).max(1.0)).ceil()` producía `ceil(5.05 / 1.30) = ceil(3.88) = 4` con capital de $\$13.00\text{ USD}$, enviando órdenes a Binance con apalancamiento $4\times$, lo que demandaba $\$1.275\text{ USD}$ de margen en vez de $\$1.02\text{ USD}$ ($\$5.10 / 5$) y consumía 25% más margen del presupuestado. Con el fix, la orden opera exactamente a $5.0\times$.
+
+3. **R5-H2 / R5-H4 [AUDITADOS]**:
+   - Confirmado que los rechazos firmes en `crates/execution-engine/src/executor.rs` limpian el registro local vía `error_cierra_la_intencion`.
+   - Confirmado que `crates/quantum-arena/src/genome_store.rs:153` normaliza estrictamente los genomas en carga con `SuperGenotype::from_vector()`.
+
+### Certificación
+- `cargo test -p execution-engine`: 81 unit tests + 36 integration tests pasando al 100%.
+- `cargo test -p risk-engine`: Suite completa pasando al 100%.
+- `cargo check --workspace --all-targets`: 0 errores, 0 warnings en los 23 crates del workspace.
