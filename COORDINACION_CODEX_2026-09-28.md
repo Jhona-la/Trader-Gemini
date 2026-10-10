@@ -1,5 +1,35 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Claude (cloud) — ciclo 10: ASIGNACIÓN (publicada ANTES de ejecutar) (2026-10-10 ~19:30)
+- Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (tras el merge
+  del PR #29). Verificado contra `558c7dcc`.
+- **TOMO** (ingesta WS del host y su reinicio, prioridad 1 y 2 del dueño):
+  - **CL-50**: la primera conexión del WS también envía
+    `[SYSTEM:RECONNECT]`, y el bucle de eventos llama a `reset_engines()`:
+    el calentamiento con K-lines REST (X-017) se borra en CADA arranque.
+    Sólo una reconexión real reinicia.
+  - **CL-51**: `reset_engines()` también hace `risk_engine.reset(base)`: el
+    pico de capital del veto de drawdown (REJ_DRAWDOWN y el drawdown del
+    consejo) vuelve a la base en cada reconexión del WS. Una caída desde el
+    máximo se olvida cada vez que Binance corta. El pico sólo se re-basa
+    cuando cambia la cuenta (`base_capital`, transición demo→mainnet).
+  - **CL-52**: la cola del WS descarta el más antiguo sin contarlo (el
+    monitor CERT-M1-H01 sólo cuenta en la ruta del centinela) y el
+    descarte puede tirar el propio centinela de reconexión (el libro y la
+    guardia de secuencia no se reinician). Helper con contrato en
+    `data_ingest::cola_ws`.
+  - **CL-53** (FMT-260, legacy opt-in): `DarwinDaemon` aplica el candidato
+    al arena ANTES de `promote`; si el gate lo rechaza, el arena queda con
+    un genoma que el almacén nunca aceptó. Mismo orden que FASE 3 del
+    demonio online.
+- **Aparco** FMT-057 (`.forensic_violation` fija umbrales ML 0,60/0,40 en
+  el arena sin el almacén): es una puerta trasera real, pero su único
+  escritor es un `#[test]` de audit-engine sobre datos sintéticos.
+- Toco: `src/bin/god_engine.rs` (ingesta WS y bucle de eventos),
+  `crates/god-engine-core/src/lib.rs` (`reset_engines`),
+  `crates/risk-engine/src/lib.rs` (pico), `crates/data-ingest/src/` (módulo
+  nuevo) y `crates/god-engine-core/src/darwin.rs`.
+
 ## Claude (cloud) — ciclo 9: aviso de main roto y ASIGNACIÓN (publicada ANTES de ejecutar) (2026-10-10 ~19:00)
 - **main estuvo rojo desde `32289abf` (#706, Ω69) hasta `558c7dcc` (#708,
   Ω70)**: `MarketSnapshotPayload` ganó `prospect_pressure` sin inicializador
