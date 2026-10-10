@@ -3032,7 +3032,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // CL-52: la reconexión llega en banda (centinela) o, si la cola
             // llena se llevó el centinela, por la marca de la cola; en ese
             // caso el mensaje en la mano ya es posterior y se procesa tras
-            // reiniciar. Va antes de cualquier consumo del mensaje.
+            // reiniciar. Va antes de cualquier consumo del mensaje. CL-52b:
+            // la marca se publica justo después del descarte, así que en una
+            // carrera el reinicio puede llegar unos mensajes tarde (ver
+            // `EstadoCola::tomar_reconexion_perdida`).
             let es_centinela = msg_bytes == data_ingest::cola_ws::CENTINELA_RECONEXION;
             let centinela_perdido = estado_cola.tomar_reconexion_perdida();
             if es_centinela || centinela_perdido {

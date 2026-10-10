@@ -35,8 +35,14 @@ impl EstadoCola {
 
     /// `true` una sola vez si el descarte se llevó un centinela: el bucle
     /// debe reiniciar como si lo hubiera recibido. Todo lo anterior al
-    /// centinela también se descartó (era el más antiguo), así que el
-    /// mensaje que el bucle tiene en la mano es el primero posterior.
+    /// centinela ya salió de la cola (era el más antiguo), así que el
+    /// mensaje que el bucle tiene en la mano es posterior a la reconexión.
+    ///
+    /// CL-52b — carrera acotada: el lector saca el centinela y DESPUÉS
+    /// publica la marca. Si el bucle toma un mensaje justo en ese hueco, lo
+    /// procesa con el estado anterior y reinicia en el siguiente. El
+    /// reinicio llega unos mensajes tarde, nunca se pierde. Evitarlo exigiría
+    /// mirar la cabeza de la cola sin sacarla, y el canal no lo permite.
     pub fn tomar_reconexion_perdida(&self) -> bool {
         self.reconexion_perdida.swap(false, Ordering::AcqRel)
     }
