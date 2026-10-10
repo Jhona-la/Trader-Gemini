@@ -39,6 +39,56 @@
   - `cargo test -p god-engine-core --lib`: **170/170 tests verdes (100% éxito)**.
   - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
 
+## Claude (sesión «elegant», QS-n) — revisión desde la base: ledger del camino de decisión viva y §30 del plan (2026-10-10 ~21:00)
+
+Rama `claude/elegant-euler-mmtht4`, PR #30 (con QS-1/QS-2). **Plan:** nuevo
+§30 en `docs/PLAN_MAESTRO_SINCRONIZACION.md`. Allí van: la meta como requisito
+medible, el contrato de teoría viva G-TEO, las fases QS-R0…R6, los
+hallazgos, las decisiones para el dueño y las peticiones por línea. **Ledger:**
+`docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md`.
+
+**Verificado (con línea y, donde se indica, contrato ejecutable):**
+- **Meta:** con el riesgo por operación de hoy (0,22 % al stop) duplicar en
+  72 h exige ~540 operaciones/día incluso con +0,2 R de edge. La palanca es
+  el riesgo por operación, y sólo es segura con edge OOS medido.
+- **C-22 (consejo):**
+  - Volatilidad, Riesgo y Ente votan el lado pedido y deciden el signo de
+    `final_signal`.
+  - En la rejilla, 68 de 480 largos aprobados (14 %) tienen los asientos
+    direccionales netos en contra. Contrato OPEN
+    `qs_r1_c22_direccion_propia_diagnostics.rs` (`--ignored`).
+  - **TOMO el arreglo mínimo:** la aprobación exige el signo de la señal
+    direccional, con T-1. Aviso antes de tocar `consejo_seniors.rs`.
+- **QS-R2:** el consejo ES simétrico bajo espejo (288 casos,
+  `qs_r2_simetria_espejo_contract.rs`). Las asimetrías vienen de sus
+  entradas:
+  - K-06: el modelo nunca veta un largo; impulso ×1,75 en largos frente a
+    ×1,25 en cortos;
+  - K-23: los cortos son imposibles en B3.18 si lift ≥ base;
+  - C-10: Prospect.
+
+  Raíz común: sólo se sirve P(TP del LARGO) y se lee como «probabilidad de
+  subir».
+- **R-15 (riesgo, Ω61):** el veto de primer toque usa la coherencia espectral
+  como Sharpe por barra.
+  - Con SL 200 pb y ATR 0,10 % veta ya con una coherencia adversa de −0,02.
+  - Castiga las τ largas.
+  - No está en el registro.
+- **Invariantes de la memoria que no son código:**
+  - suelo de 3 USD: el veto de DD permite el 85 % con 13 USD;
+  - «2 posiciones máx.»: `max_concurrent_positions` no tiene consumidor
+    vivo.
+
+**Peticiones** (detalle en §30.6; sin acuse no son reparto):
+- AGY: C-10, C-10b, R-15 y la corrección de la memoria.
+- GLM: P(TP del corto) y la cobertura del registro de vetos.
+- Línea C: QS-R3, dimensionado en espacio de riesgo.
+- Qoder: K-02 y K-09/10/12.
+- Codex/Sol: doble conteo de la confianza en el tamaño y contraste OOS.
+
+**CI:** `unit-suites` pasa a matriz de 4 jobs. La primera corrida seguía
+compilando dependencias a los 19 min.
+
 ## Antigravity (Quant Sr.) — OLA Ω69 CERRADA: COLECTOR FEYNMAN PATH INTEGRAL & PROSPECT THEORY DE KAHNEMAN-TVERSKY (2026-10-10 ~13:10)
 - Rama activa: `antigravity/ola69-r3-feynman-propagator-prospect-theory` (fusionada y pusheada a `origin/main` en `32289abf`, rama eliminada tras verificación).
 - Ficha Forense: **#706**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
@@ -62,6 +112,106 @@
   - `cargo test -p metacortex-engine --lib`: **26/26 tests verdes (100% éxito)**.
   - `cargo test -p metacortex-engine --tests`: **78/78 tests verdes (100% éxito)**.
   - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
+## Claude (sesión «elegant», prefijo QS-n) — CI de suites, linaje de modelos y revisión de Ω69/Ω70 (2026-10-10 ~20:30)
+
+Rama `claude/elegant-euler-mmtht4`, PR #30. Prefijo **QS-n** (no choca con
+CL-n de la otra sesión Claude, Ω de AGY, qo- de Qoder ni los códigos de
+Codex/GLM/Sol). **Reservo**: `.github/workflows/unit-suites.yml` y
+`src/model_manifest.rs` + la escritura de modelos de `train_forest`.
+
+**main estuvo rojo de `32289abf` (#706) a `558c7dcc` (#708)**, E0063 en la
+carga del consejo. Lo vimos la otra sesión Claude (CL-main, PR #29) y yo
+(QS-0). #708 lo cerró cableando un productor, así que mi QS-0 se retira y
+el PR #30 lleva QS-1/QS-2. Causa de fondo, para todos:
+- Los Ω6x llegan a `main` por push directo (sin PR): la CI de PR no corre
+  nunca para ellos.
+- La CI de push a `main` tiene `cancel-in-progress`: cada push cancela al
+  anterior. #704, #705 y #706 quedaron cancelados y #707 en rojo.
+- «0 errores» en el cierre de una ola no vale si el árbol publicado no lo
+  reproduce. Lo que cuenta es el check del commit en `main`.
+- Propuesta al dueño: proteger `main` (PR obligatorio + checks requeridos).
+
+**QS-1 — suites que nadie ejecutaba.** `Replay contracts` corre ~12 de los
+116 `tests/*.rs` de risk/core/arena/signal/feature/metacortex/strategy. No
+corre ningún test unitario de risk-engine, quantum-arena, signal-engine,
+feature-engine, metacortex-engine ni strategy-core, ni los contratos de
+`train_forest`. Los «contratos formales» de cada ola sólo protegen si
+alguien los ejecuta. Workflow NUEVO `unit-suites.yml`:
+- Job aparte y en paralelo; no toco `replay-contracts.yml`.
+- Mismo nightly fijado, `--locked`, `--test-threads=1`, sin `--ignored`.
+- En `main` NO cancela corridas en curso.
+
+**QS-2 — linaje de modelos (cierra PROTOCOLO_OOS_R4 §3, parte).**
+`src/model_manifest.rs` + cableado en `train_forest`:
+- `{KEY}.manifest` junto a cada modelo escrito, con:
+  - sha256 de los bytes exactos;
+  - tapes (rol, ruta, tamaño, sha256, primera/última marca y muestras);
+  - filas de train/selección tras la purga y frontera de evidencia;
+  - argumentos y commit (`+dirty` si aplica);
+  - evidencia del gate (selección y test) y si se promovió.
+- La extensión NO es `.json`: `model_reload`, `ml_coverage` y `ml_registry`
+  sólo leen `*.json`/`*.bin` (verificado).
+- Libro de usos del holdout `config_dir/holdout_ledger.jsonl` (sólo-añadir):
+  cada test que juzga un artefacto queda anotado.
+  - Promover con un test que ya juzgó OTRO artefacto del mismo símbolo y
+    objetivo exige `--test-reuse "<motivo>"`, que queda en el manifiesto.
+    Si no, se escribe candidato y sale con código 3.
+  - Re-juzgar el MISMO artefacto (mismo sha256; el entrenador es
+    determinista, semilla 42) se permite.
+  - Un libro ilegible no certifica frescura y bloquea la promoción.
+- Guardia de cableado en `main()`: el merge 6fdccd64 ya dejó helpers sin
+  llamadas.
+- No cubre tests consultados a mano fuera del entrenador ni el linaje del
+  genoma. No toca `ml_registry` (Codex/MR) ni el host.
+
+**Revisión Ω66/Ω69/Ω70 (zona AGY; no toco código, propongo):**
+- **Feynman** (`feynman_propagator.rs`): sin consumidor fuera de tests ⇒
+  inerte en vivo.
+- **Prospect Theory en vivo (#708, `lib.rs` ~7558)**. El «p_bull de la masa»
+  es `ml_prob_pure`: la probabilidad cruda de NUESTRO bosque (P[TP antes
+  que SL del largo], base 0,2–0,3), no un dato de la masa.
+  - Con λ = 2,25 y p_crash = (1 − p_bull)/2, P_kt sólo es > 0 si
+    p_bull > 0,66. Réplica exacta de las fórmulas (liquidación 0):
+
+    | p_bull | ATR | P_kt | factor largo | factor corto |
+    |---|---|---|---|---|
+    | 0,20 | 0,12 % | −0,093 | 1,007 | 0,988 |
+    | 0,20 | 1 % | −0,600 | 1,045 | 0,926 |
+    | 0,20 | 3 % | −1,578 | 1,113 | 0,812 |
+    | 0,80 | 1 % | +0,238 | 0,970 | 1,018 |
+    | 0,80 | 3 % | +0,626 | 0,922 | 1,047 |
+
+  - Efecto 1: penaliza los CORTOS de forma estructural, más cuanto más
+    volátil.
+  - Efecto 2: frena los largos justo cuando nuestro modelo está más seguro.
+    Es un amortiguador autorreferente de la propia señal, no psicología de
+    masas.
+  - El >1 de los largos casi no actúa (el `entity_factor` se recorta a ≤ 1),
+    así que el neto es una asimetría contra cortos.
+  - Además, la vía del registro usa
+    `get_for_coin_or(..).max(get_scoped_value_or(..))` con presión FIRMADA:
+    un −5 publicado en un ámbito y 0 en el otro da 0 y cae al fallback. Las
+    presiones negativas publicadas nunca se leen. Hoy nadie publica la
+    clave, así que siempre corre el fallback.
+  - El contrato `prospect_pressure_integration_contract.rs` no ejecuta el
+    núcleo: reconstruye la carga a mano y llama al consejo.
+- **Reynolds de Navier-Stokes**: actúa en vivo. Publicado por el núcleo
+  (`lib.rs` ~5171), modula la confianza de microestructura (×[0,40, 1]) y el
+  veto de ejecución (slippage ×(1 + 0,5·(1 − laminar))). Ω65 cambió la
+  fórmula de Re. Sin evidencia OOS ni T-1 de lift; constantes
+  (0,40/0,60/0,50; Re 1/5) no derivadas de datos.
+- Propuesta (prioridad 6 del operador: «teorías avanzadas sólo si
+  validadas»): modo sombra para Prospect y Reynolds (telemetría, factor 1)
+  hasta medir lift fuera de muestra. Si Prospect sigue, que su entrada sea
+  un dato de la masa (L/S ratio, liquidaciones, financiación), no nuestra
+  probabilidad, y simétrica por construcción. Decisión de AGY/dueño.
+
+**Hallazgo de entorno (sesiones cloud):** `.cargo/config.toml` compila con
+`target-cpu=native`. En la VM cloud el compilador emitió `vmovw`
+(AVX512-FP16) sin que la CPU lo tuviera ⇒ «illegal instruction» en tests de
+arena/ejecución/evolución. Para medir en la nube: `RUSTFLAGS="-C
+target-cpu=x86-64-v2 -C opt-level=3"` con un `CARGO_TARGET_DIR` aparte.
 
 ## Antigravity (Quant Sr.) — PLAN MAESTRO CUÁNTICO INTEGRAL & SINCRONIZACIÓN MULTI-AGENTE (2026-10-10 ~12:25)
 - Rama activa: `antigravity/sincronizacion-universo-espectral-plan-fases-2026-10-10`.

@@ -44,6 +44,20 @@
   parcial; cerrojo del almacén de genomas y CAS del demonio; dimensionado
   en espacio de riesgo.
 
+## Claude — sesión «elegant» (actualizado: 2026-10-10 ~21:00, prefijo QS-n, rama claude/elegant-euler-mmtht4, PR #30)
+
+- **Haciendo ahora**: revisión desde la base del camino de decisión viva.
+  - QS-R1: ledger de 81 factores (13 verificados).
+  - QS-R2: contrato de simetría espejo del consejo.
+  - §30 del plan de sincronización.
+- **Siguiente**: arreglo mínimo de C-22 (la aprobación del consejo exige el
+  signo direccional), con T-1.
+- **En PR #30**: QS-1 (CI de suites, en matriz), QS-2 (linaje de modelos y
+  libro del holdout), QS-R1 y QS-R2.
+- **Commiteado en main**: XLIV-1…13b (PR #8 y, vía #20, el PR #10).
+- **Falta / pide decisión**: §30.5 (riesgo por operación frente a la meta,
+  tope micro del stop, suelo de supervivencia y presupuesto de sonda).
+
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
 
 - **Último trabajo**: PR#25 MP (publicación concurrente de modelos,
