@@ -1,7 +1,11 @@
 # PLAN RONDA 7 — BARRIDO EXHAUSTIVO DESDE LA BASE, ARCHIVO POR ARCHIVO
 
-Fecha: 2026-10-09 · Autor: Qoder (Quant Sr. / línea A del consejo) · Base
-auditada: **`ab240abd`** (= `origin/main`, incluye AGY Ω40–Ω45 y Ola 73).
+Fecha: 2026-10-09 (sincronizado el mismo día contra `75f1a89c`) · Autor: Qoder
+(Quant Sr. / línea A del consejo) · Base auditada al abrir la ronda:
+**`ab240abd`** (= `origin/main` entonces, incluye AGY Ω40–Ω45 y Ola 73) ·
+**Base vigente: `75f1a89c`** (= `origin/main` medido con `git rev-parse
+origin/main`, incluye AGY **Ω46–Ω55** y los cierres documentales Qoder
+#677/#678/#687/#688/#689).
 
 Mandato del operador (literal, vigente): «Vuelve a iniciar otra revisión
 desde la base, han cambiado muchas cosas», «recorra en una serie de fases
@@ -45,17 +49,29 @@ re-auditó desde cero):
 - Fases F0–F8 del plan maestro Codex/AGY (barrido por capa) — ver
   `docs/PLAN_AUDITORIA_BASE_2026-10-08.md` y `docs/PLAN_MAESTRO_SINCRONIZACION.md`.
 
-**Cola R6 REAL (pre-verificada contra `ab240abd` hoy, con ancla exacta):**
+**Cola R6 REAL (re-grepada contra `75f1a89c` al sincronizar este plan):**
 
-| hallazgo | estado | ancla re-grepada |
+Cuatro de los seis hallazgos que dejé atribuidos a la «Ola 74» **ya fueron
+cerrados por AGY** en Ω51/Ω52 mientras yo preparaba R4/R6. Queda un residuo
+y un hallazgo de otra fase:
+
+| hallazgo | estado | ancla re-grepada en `75f1a89c` |
 |---|---|---|
-| R6-A11 [LOW] doble implementación Hodge (`risk-engine/src/hodge.rs` vs `feature-engine/src/hodge_flow.rs`) | ABIERTO | `crates/risk-engine/src/hodge.rs` vive, `lib.rs` lo re-exporta |
-| R6-A13 [LOW] guard `coin_id < ym_currents.len()` → `0.0` ambiguo | RESIDUAL SEMÁNTICO | `crates/god-engine-core/src/lib.rs:5107` (el índice ya es fiel: `currents[i]` usa el índice original, Ω41) |
-| R6-B12 [LOW] «RLS» de β es LMS con gain fijo, sin matriz **P** ni olvido | ABIERTO | `crates/strategy-core/src/stat_arb.rs:232-236` |
-| R6-B16 [LOW] camino legacy `spread_deviation` con timing post-actualización, sin caller productivo | ABIERTO | `crates/strategy-core/src/multivariate_coint.rs:214-218` |
-| R6-C8 [LOW] `dbp <= dap` trivialmente cierto en libro válido | ABIERTO | `src/bin/god_engine.rs:4101`, `:4111` |
-| C-02 [MED] sin productor vivo del feed spot-futuro (OU cableada pero hambrienta) | ABIERTO, zona data-ingest/host | `GlobalArena::update_spot_data` sin caller productivo |
+| R6-A11 doble implementación Hodge | **CERRADO (Ω51 `795746b3`)** | `crates/risk-engine/src/hodge.rs:77` y `:93` ya usan `1e-15` (paridad con `feature-engine`) + contrato `r6_a11_hodge_paridad_unificada_risk_vs_feature` |
+| R6-A13 [LOW] guard `coin_id < ym_currents.len()` → `0.0` ambiguo | **ABIERTO (residuo semántico)** | `crates/god-engine-core/src/lib.rs:5121` (la ancla se desplazó de `:5107`) |
+| R6-B12 «RLS» de β era LMS con gain fijo | **CERRADO (Ω51)** | `crates/strategy-core/src/stat_arb.rs:24-27, 147-166` — `rls_p`/`rls_lambda` con `K_t = P_{t-1}x_t/(λ + x_t²P_{t-1})` y test `test_r6_b12_rls_convergencia_exacta` |
+| R6-B16 `spread_deviation` con timing post-actualización | **CERRADO (Ω52 `50a2df4d`)** | `crates/strategy-core/src/multivariate_coint.rs:217` — `self.last_spread - self.mean_spread` (S_{t-1} − μ_{t-1}) |
+| R6-C8 `dbp <= dap` trivialmente cierto | **CERRADO (Ω52)** | `src/bin/god_engine.rs:4111` y `:4121` — condición estricta `dbp < dap` |
+| C-02 [MED] sin productor vivo del feed spot-futuro | **ABIERTO → fase R7** | zona data-ingest/host; `GlobalArena::update_spot_data` sin caller productivo |
 | R6-B14 / R6-B18 [LOW/POSITIVO] diagnósticos sin defecto | SIN ACCIÓN | theta-sesgo Jensen y DSR correctos |
+
+**Hueco de certificación medido contra `75f1a89c`** (`git log --oneline
+534e7980..origin/main -- '*.rs' | wc -l` = **12 commits con código Rust**,
+Ω46 → Ω55): `f9ca4284` (Ω46) **no es ancestro** de `534e7980`
+(`git merge-base --is-ancestor` = falso), así que el recibo vigente
+**no describe el árbol actual en ningún punto de la cadena**. **R8 debe
+re-certificar el oráculo T-1 antes de cualquier push de código** — no leer
+el recibo viejo. Ninguna fase de barrido autoriza push de código.
 
 **Hueco de certificación detectado en main (motivación directa de esta
 ronda):** AGY Ω44 y Ω45 modificaron la física del pipeline de votos
@@ -116,83 +132,130 @@ certificación (patrón R6-A7/C7).
 
 ---
 
-## 3. Auditoría de recursos (medido hoy, 2026-10-09)
+## 3. Auditoría de recursos (re-medido contra `75f1a89c`, 2026-10-09)
 
-**Disco** (C: 929,7 GB total / **125,2 GB libres**, 86,5 % usado):
+**Disco** (C: 930 GB total / 800 GB usados / **131 GB disponibles**, 86 %):
 
 | ruta | MB | naturaleza |
 |---|---|---|
-| `target/` (compartido raíz) | 169 978 | regenerable; `debug/deps` 148 294, `debug/incremental` 8 005, `release` 13 125 |
-| `.antigravity/target/debug` | 52 576 | **huérfano**: `.antigravity` NO está registrado como worktree ni tiene `.git` (sólo `target/`, 4 `.md`) — último write 2026-10-09 01:25 |
-| `.ola73/` | 16 204 | mi worktree (incremental 3 752) — conserva recibos |
-| `.sol-plan-2026-10-07/` | 8 902 | worktree SOL registrado |
-| `C:/Users/jhona/.codex/worktrees` | 20 934 | 11 worktrees Codex (ajenos, no tocar) |
+| `target/` (compartido raíz) | **172 356** | regenerable; creció ≈ 2,4 GB desde la pasada de `ab240abd` |
+| `.antigravity/target/debug` | 52 576 | **huérfano**: sin `.git` ni registro de worktree — NO se borra sin aval de AGY/dueño |
 | `data/` | 24 501 | tapes/parquet del operador — NO es cache, no se borra |
+| `C:/Users/jhona/.codex/worktrees` | 20 934 | 10 worktrees Codex (ajenos, no tocar) |
 | `.git/` | 2 919 | historia versionada |
 | `graphify-out/` | 504 | artefactos de grafo |
 
-**RAM**: 23,4 GB total; **libre 4,6 GB → 3,6 GB** entre las dos pasadas de
-hoy (presión creciente mientras el oráculo avanza); `Memory Compression`
-1 494 → 1 117 MB. Consumidores: VS Code/`Code` ×3 (≈5,1 GB), Antigravity IDE
-565 MB, Qoder 540 MB.
+**No re-medido en esta pasada** (declaro el alcance, no lo infiero): el tamaño
+`target/` individual de `.ola73`, `.r7r4`, `.r7r6`, `.sol-plan-2026-10-07` y
+`.sol-replay-2026-10-09`. El barrido de `du` sobre los 8 worktrees superó el
+timeout de la herramienta y pasó a segundo plano; terminar con exit 0 pero su
+salida no resultó legible desde este shell, así que **no publico cifra** de esos
+directorios. Ninguna decisión de esta ola depende de ellos.
 
-**CPU**: **97 % → 54 %** entre pasadas. El binario `t1_cobertura_genetica`
-acumuló 1 230 s de CPU en un hilo; el ETA del T-1 se infla por contención con
-los IDE de las otras sesiones.
+**RAM**: 23,4 GB total; **4,9 GB libres** (← 3,6 GB en la pasada de `ab240abd`:
+algo de presión se liberó, sigue siendo holgura estrecha).
 
-**GPU**: sólo iGPU AMD Radeon integrada sin VRAM dedicada reportada; ningún
+**CPU**: sin compilaciones propias en esta sesión (docs-only), por lo que no
+mido contendores nuevos; los IDE de las otras sesiones siguen siendo los
+consumidores habituales.
+
+**GPU**: sólo iGPU AMD Radeon integrada, sin VRAM dedicada reportada; ningún
 componente del repo la invierte (inferencia en CPU, `dark-alpha`/bosques con
 buffers de stack). No hay trabajo de GPU en la agenda.
 
-**Red**: 57 conexiones TCP establecidas no-loopback (IDEs/servicios). **El
-motor vivo NO está corriendo**: cero procesos `god_engine`. Consecuencia
-operativa: hoy todo resultado es de backtest/contratos; no hay feed WS ni
-orden despachada. No lo relanzo sin confirmar PID+StartTime y sin instrucción
+**Red / motor vivo**: **cero procesos `god_engine`** ⇒ el motor NO está
+corriendo: no hay feed WS ni orden despachada; todo resultado de hoy es de
+backtest/contratos. No lo relanzo sin confirmar PID+StartTime y sin instrucción
 expresa (regla de sesiones concurrentes).
 
 **Política propuesta** (no ejecutada sin autorización, son caches ajenos o
 compartidos):
-1. `target/debug/incremental` (8 GB raíz + 3,75 GB `.ola73`) es lo único que
+1. `target/debug/incremental` (≈ 8 GB en la raíz compartida) es lo único que
    se limpia sin provocar recompilación de dependencias → hacerlo entre olas,
-   nunca durante un oráculo.
-2. `.antigravity/target/debug` **51 GB**: AVISO a AGY/dueño en el buzón;
-   si confirma que no tiene build vivo, es el mayor recuperable del repo.
-3. Oráculos largos: `CARGO_BUILD_JOBS=-j2` para no saturar los 4,6 GB libres.
+   nunca durante un oráculo. No mido el `incremental` de los worktrees ajenos
+   (ver «No re-medido» arriba) y no limpio en ellos.
+2. `.antigravity/target/debug` **52 576 MB**: AVISO a AGY/dueño en el buzón;
+   si confirma que no tiene build vivo, es el mayor recuperable del repo. Sin
+   ese aval, intocable.
+3. Oráculos largos: `CARGO_BUILD_JOBS=-j2` para no saturar los **4,9 GB** de
+   RAM libre.
 4. Worktrees cerrados: retirar la rama y dejar el `target` sólo si hay
    recibos que conservara (el mío: `.ola73`, lo borro al final de Ronda 7).
 
 ---
 
-## 4. Verificación Git (medida hoy)
+## 4. Verificación Git (re-medida contra el árbol vivo)
 
-- `origin/main` = `ab240abd`; `main` local idéntico (ahead 0).
-- Ancestría confirmada **EN_MAIN**: `724f8c9f` (Ω41), `4cc83ce4` (Ω42),
-  `01ac0bd5` (Ω43), `727b993e` (Ω44), `c49516e3` (Ω45), `8b0daf01` (Ola 73
-  código), `f239ba5b`/`85557469` (merges), `751db4d2`+`32b38d96` (cierre
-  documental), `ab240abd` (veredicto T-1).
-- Ramas remotas: **sólo `origin/main`** ⇒ no hay ramas mergeadas que borrar
-  en remoto (las mías ya se borraron al cerrar Ola 73).
-- Ramas locales: `main` (en main) y `codex/integration-recovery-2026-10-07`
-  (**3 commits exclusivos, NO mergeada — ajenа, no se toca**).
-- Worktrees registrados: raíz + 11 Codex (detached/ramas) + `.ola73` (mío) +
-  `.sol-plan-2026-10-07`. `.antigravity` aparece como directorio NO
-  registrado (ver §3).
+- `origin/main` = **`75f1a89c`** — `fix(ola55): apalancamiento micro canonico
+  5x en reconciliacion (R5-H1) y blindaje de nocional en core (R5-H3) (#689)`.
+  **RECTIFICACIÓN de lo que yo mismo publiqué en `1bf330ce`**: afirmé que la
+  Fase R5 de AGY seguía sin fusionar. **Ya está en main** (Ω55 = `75f1a89c`).
+  Lección aplicada: toda afirmación de estado Git se vuelve a medir antes de
+  publicarse, no se hereda de la pasada anterior.
+- **Hueco de certificación re-medido**: `git log --oneline 534e7980..origin/main
+  -- '*.rs' | wc -l` = **12 commits con código Rust**, y los **12** son
+  ancestrales de `origin/main` (`merge-base --is-ancestor`, verificados uno a
+  uno): `f9ca4284` (Ω46), `0485b934`+`f6b14ba4` (Ω47), `dbaf0ccb` (Ω48),
+  `e1a5f195` (Ω49), `a640a121` (Ω50), `795746b3` (Ω51), `50a2df4d` (Ω52),
+  `ddff26aa` (Ω53), `396a8503` (refactor `feature-engine` #686), `93c14fdf`
+  (Ω54), `75f1a89c` (Ω55). El veredicto T-1 vigente (`534e7980`, PASA 16/144)
+  **no describe el árbol actual**. `f9ca4284` no es ancestro de `534e7980`.
+  **R8 debe re-certificar sobre `75f1a89c` antes de cualquier push de código.**
+- **Ramas remotas: sólo `origin/main`** ⇒ cero ramas mergeadas que borrar en
+  remoto.
+- **Ramas locales (7)**: `main` `75f1a89c` · `qoder/r7r6-aprender-medir`
+  `75f1a89c` (la de esta ola) · `qoder/r7r4-nucleo-vivo` `ce5e0897` (cierre
+  R4 ya en main; la conservo hasta el final de Ronda 7) · `qoder/ronda7-plan`
+  `cc4ce8f5` · `antigravity/ola56-ronda8-auditoria-sistémica` `75f1a89c` ·
+  `codex/integration-recovery-2026-10-07` `eb32ac96` (**ahead 3, behind 78 —
+  ajena, NO se toca**) · `sol/replay-accounting-2026-10-09` `f5cadac7`.
+  Ninguna se borra en esta pasada: las mías cierran con Ronda 7 y las ajenas
+  exigen aval de su dueño aunque fueran redundantes por contenido.
+- **Worktrees (15)**. El **root** está sobre
+  `antigravity/ola56-ronda8-auditoria-sistémica` (`75f1a89c`) ⇒ **AGY tiene una
+  ola Ω56 / Ronda 8 activa en el directorio principal**: prohibido cualquier
+  operación Git destructiva (checkout/stash/clean/reset) en el root. Míos:
+  `.r7r6` (esta ola, `75f1a89c`), `.r7r4` (`ce5e0897`), `.ola73` (`cc4ce8f5`).
+  Ajenos: 10 Codex bajo `C:/Users/jhona/.codex/worktrees/…`
+  (`a054495c`, `7aadf509`, `36b0063c`, `cace007d`, `eb32ac96`, `d0e02da1`,
+  `db3171c1`, `639c3e0d`, `f6087378`, `94790c5c`), `.sol-plan-2026-10-07`
+  (`1bce45f2`), `.sol-replay-2026-10-09` (`f5cadac7`).
+- **CI de main medida con `gh run list --branch main --limit 12`**: **11 runs
+  `cancelled`** (`1bf330ce`, `ce5e0897`, `b51cfb03`, `85099cba`, `93c14fdf`,
+  `c1d43e17`, `d608a96d`, `396a8503`, `ddff26aa`, `8d6c4baa`, `6f1be4d7`) y
+  **1 `in_progress`** (`38011817148`, `75f1a89c`, desde 2026-10-10T01:05:51Z).
+  Causa raíz verificada en `.github/workflows/replay-contracts.yml`: disparo
+  `on: push: branches [main]` **sin `paths-ignore`** + `concurrency:
+  cancel-in-progress: true` ⇒ cada push a main (incluso docs-only) cancela la
+  run en vuelo de quien llegó antes. **Consecuencia real: los cierres
+  documentales de las olas no tienen recibo CI**, y el único candidato con run
+  viva es el de Ω55. Se lee y se reporta su resultado al cerrar; si alguien
+  quiere recibos por ola, la opción es añadir `paths-ignore` a `docs/**`
+  (decisión del dueño, no la tomo en una ola docs-only).
 
 ---
 
-## 5. Asignación y no-colisión
+## 5. Asignación y no-colisión (re-anclada tras Ω54/Ω55)
+
+**Corrección previa**: la versión anterior de esta tabla seguía listando
+R6-B12, R6-B16, R6-A11 y R6-C8 como abiertos. **Ya los cerró AGY** (Ω51 =
+RLS real en `stat_arb.rs` + paridad Hodge; Ω52 = causalidad OU `spread_deviation`
+y `dbp < dap` estricto). Queda sólo el residuo semántico de A13.
 
 | ola | dueño | contenido | oráculo |
 |---|---|---|---|
-| **Ola 74 (Qoder)** | R6-B12 (β: LMS→RLS real con **P** y olvido, o renombrar y documentar) + R6-B16 (camino legacy `spread_deviation`: eliminar o cablear con contrato) + R6-A13 (guard ambiguo → clave explícita `ym_current_absent`) | `strategy-core` + ancla en core | SÍ (toca votos) |
-| **R7-R0/R1 (Qoder)** | ledger de cobertura + auditoría doctrina/nomenclatura | docs + `scripts/` | NO (docs-only) |
-| **C-02 (AGY o Codex)** | productor vivo del feed spot-futuro en host + paridad BT + contrato escritor↔lector con spot real | `data-ingest`/host/`quantum-arena` | SÍ |
-| **R6-A11 (AGY)** | unificar las dos implementaciones Hodge (flujo por pares dirigido como patrón canónico) | `risk-engine`/`feature-engine` | SÍ |
-| **R6-C8 (Qoder, cola)** | discriminante real de presión de libro (no `dbp <= dap` trivial) | host | SÍ |
-| **Re-certificación Ω44/Ω45** | Qoder (**PASA 16/144 = 11,1 %**, 1 748,60 s sobre `534e7980`≡código de `ab240abd`) | T-1 sobre `ab240abd` | es el oráculo |
+| **Ola 74 (Qoder)** | R7-R4 **B-1** (etiqueta neutra `0.5_f64.signum()*0.0 == 0.0` pasa el gate BOTH en `ensemble.rs:114-116`), **B-2** (techo 0,6875/0,4375 de `coherencia_inter` por `media_banda(0,31)` vs gate de observabilidad — contrato que inyecta 0,8 inalcanzable), **D-1** (`if let Some(spec) = …get_mut(coin_id) { let _ = spec; }` = lock en SkipMap en el hot path sin efecto), **D-2** (bandas incompatibles del nicho 3: `[0.8,1.8]` truncado por el blindaje `[1.0,2.5]`) | `signal-engine`/`quantum-arena`/`strategy-core` | **SÍ** (B-1 y B-2 cambian conducta; oráculo en el MISMO merge) |
+| **Claude** | R7-R4 **A-2** (`get_for_coin_or` no hace cascada a `{SYM}_` ⇒ el Consejo de Seniors recibe 0,0 constante en `spoof_score`/`whale_burst_z`) + **C-1** (`close_was_real` lee la ranura fija `position` mientras el core escribe en `slot_idx` dinámico) — dueño de la contabilidad de cierre y del payload P-5b | host + `god-engine-core` | SÍ |
+| **AGY (Ω56 en vuelo)** | HIGHs de conducta de **R7-R6**: IG-1 (gen OBI de Darwin inerte en el juez), EV-1 (watchdog de Ville que nunca vence), M-1 (clamp pre-Ville invierte el signo bajo H0), C-1 (primer toque analítico sin consumidor: tres copias a mano), C-2 (el juez vivo evalúa mercado reconstruido con grid de 1 pb y macro colineal), C-3 (`t1_cobertura_genetica.rs` afirma que `run_backtest_native` alimenta a los promotores reales y el censo lo refuta) | `evolution-engine`/`risk-engine`/`backtest-engine` | **SÍ**, re-certificando Ω46–Ω55 en la misma pasada |
+| **A-3 (R7-R4)** | `EntryRoute::Maker` inalcanzable desde CL-14/B3.29: política deliberada con código vivo detrás ⇒ **acuerdo previo del dueño antes de tocar** | `execution-engine`/host | SÍ |
+| **Cola Qoder** | R6-A13 residual: el guard `coin_id < ym_currents.len()` devuelve `0.0` ambiguo (`god-engine-core/src/lib.rs:5121`, ancla re-verificada — ya no es `:5107`) → clave explícita `ym_current_absent` | `god-engine-core` | NO (telemetría) |
+| **R7-R7** | **C-02**: productor vivo del feed spot-futuro en host + paridad BT + contrato escritor↔lector con spot real (hoy la OU está cableada pero hambrienta de spot) | `data-ingest`/host/`quantum-arena` | SÍ |
+| **R7-R8** | Paridad BT↔vivo + **re-certificación T-1 sobre `75f1a89c`** (hueco de 12 commits `.rs` Ω46–Ω55) | T-1 | **es el oráculo**; sin su PASA no hay push de código |
 
-AGY/GLM/Codex/SOL: **no duplicar** lo de la tabla; si alguien toma un
-hallazgo de esta cola, que lo marque en el buzón ANTES de ejecutar.
+AGY/GLM/Codex/SOL/Claude: **no duplicar** lo de la tabla; si alguien toma un
+hallazgo de esta cola, que lo marque en el buzón **ANTES** de ejecutar
+(asignación publicada antes que ejecución — reduce colisiones, ya pasó seis
+veces).
 
 ---
 
@@ -205,3 +268,44 @@ hallazgo de esta cola, que lo marque en el buzón ANTES de ejecutar.
   completo con su evidencia de árbol: `docs/BARRIDO_EXHAUSTIVO_FASES.md` §R7-3.
 - 2026-10-09: **R0 CERRADA** (ledger de 1 512 rutas + censo de 203 fichas +
   escáner versionado) → §R7-4 del BARRIDO.
+- 2026-10-09: **R1 CERRADA** — 9 fichas `R7-R1-1..9` (0 HIGH, 2 MED, 4 LOW,
+  3 INFO), docs-only, censo medido de 1 309 ocurrencias `scalp|swing` en `.rs`.
+  Ficha forense **#677**.
+- 2026-10-09: **R2 CERRADA** — 41 fichas (9 HIGH, 23 MED, 1 LOW-MED, 6 LOW,
+  2 INFO), docs-only, base `689efd86`. Ficha forense **#678**. Su asignación
+  drenó Ω47–Ω50 (AGY) y la F-1 cerró en Ω49.
+- 2026-10-09: **R3 CERRADA** (física/cuántica) — 17 fichas (2 HIGH), docs-only,
+  base re-anclada contra `396a8503`. Ficha forense **#687**; **drenada por AGY
+  Ω54** (Hodge dilución, `mid_price`, TTL multiactivo, retornos Yang-Mills).
+- 2026-10-09: **R4 CERRADA** (núcleo vivo) — 7 fichas (4 HIGH, 1 MED, 2 LOW),
+  docs-only, worktree `.r7r4`, base `b51cfb03`, publicada en `ce5e0897`. Ficha
+  forense **#688**. Incluye una retractación propia publicada (genes
+  `*_trail_*` SÍ son vivos) y dos rectificaciones de datos propios
+  (disco y alcance del hueco del oráculo).
+- 2026-10-09: **R5 CERRADA por AGY (Ω55)** — dinero y ejecución, apalancamiento
+  canónico 5,0× en reconciliación y blindaje de nocional en el core. Ficha
+  forense **#689**. **Ya está en `main` como `75f1a89c`**, con código Rust.
+- 2026-10-09: **RECTIFICACIÓN publicada**: mi cierre anterior (`1bf330ce`)
+  afirmó que R5 seguía sin fusionar. **FALSO** — medido con
+  `git log origin/main`, Ω55 entró como `75f1a89c`. Lección adoptada como
+  regla: **toda afirmación de estado Git se vuelve a medir antes de
+  publicarse**, nunca se recuerda.
+- 2026-10-09: **R6 EN VUELO** (aprender y medir) — worktree `.r7r6`, rama
+  `qoder/r7r6-aprender-medir`, base `75f1a89c`. Seis lentes (IG / EV / M / ML /
+  MD / C) más dedup y re-grep de anclas contra el árbol vivo. **Ficha forense
+  #690 reservada ANTES de escribir** (la colisión de dos entradas #687 en el
+  árbol motivó la nueva regla de reserva numérica).
+- 2026-10-09: **HALLAZGO DE PROCESO 1 — hueco de certificación**. Medido con
+  `git log --oneline 534e7980..origin/main -- '*.rs' | wc -l` = **12 commits con
+  código Rust** (Ω46–Ω55), todos ancestrales de `main`. El veredicto T-1
+  vigente (`534e7980`, PASA 16/144) **no describe el árbol actual**. Queda
+  ordenado: **R7-R8 re-certifica sobre `75f1a89c` y sin su PASA no hay push de
+  código**. Avisado a todo el consejo en §4.
+- 2026-10-09: **HALLAZGO DE PROCESO 2 — la CI se auto-cancela**. Medido con
+  `gh run list --branch main --limit 12`: **11 runs `cancelled`** y 1
+  `in_progress` (`38011817148` sobre `75f1a89c`). Causa raíz en
+  `.github/workflows/replay-contracts.yml`: `on: push: branches [main]` **sin
+  `paths-ignore`** + `concurrency.cancel-in-progress: true` ⇒ cada push
+  —incluso docs-only— cancela la run en vuelo. Consecuencia: **los cierres
+  documentales no dejan recibo CI**. `paths-ignore` a `docs/**` queda como
+  decisión del dueño (§4). Run viva de Ω55: leer y reportar su resultado.
