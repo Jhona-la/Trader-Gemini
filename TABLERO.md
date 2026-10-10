@@ -84,12 +84,12 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω73 en curso / Fase R1-R3)
+## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω74 cerrada / Ficha #712)
 
-- **Haciendo ahora**: Ola Ω73 — Resolución de Asimetría Espejo Prospect Theory (C-10 / C-10b) y Calibración Dimensional de Primer Toque Browniano (R-15).
-  - C-10 / C-10b: `ProspectTheoryEngine::compute_crowd_net_prospect_pressure` anti-simétrico estricto ($P(1/LS) = -P(LS)$) basado en sentimiento de masa real (`crowd_ls_ratio` y liquidaciones), erradicando el sesgo estructural contra cortos; lectura firmada en registro sin `.max(0.0)`.
-  - R-15: Calibración dimensional de deriva por escala temporal $\tau_{\text{ratio}} = (30\text{s}/\tau)^{1/2}$ acorde a física de decorrelación espectral en `risk-engine`, eliminando el castigo artificial a brackets amplios; telemetría viva de `p_hit_sl_first` en el registro omnisciente y actualización en `V-LOGIC-008`.
-  - Sincronización documental de invariantes: clarificación del suelo de DD (85% / 1.95 USD en micro-w vs 3.00 USD objetivo) y concurrencia gobernada por margen/slots.
+- **Haciendo ahora**: Ola Ω74 (#712) — Resolución de Navier-Stokes EWMA (C-02), Rebalanceo de Pesos del Consejo (C-W) y Concordancia de Lado en Deliberación:
+  - C-02: `NavierStokesReynoldsEngine` evalúa `laminar_share`, `regime()`, `is_laminar()` e `is_turbulent()` sobre la EWMA continua `ewma_reynolds` en vez del `raw_reynolds` de un solo tick, erradicando micro-shocks espurios de confianza y slippage. Exportación de `ewma_reynolds` hacia `OmniscientRegistry` en `god-engine-core`.
+  - C-W: Rebalanceo semántico de pesos: `SeniorMicroestructura` ahora porta `SEAT_WEIGHT_FLOW` (1.2) por ser el observador de flujo L2 real; `SeniorCausal` fijado en 1.0; `SeniorRiesgo` (modulador de convicción) fijado en 1.0 (eliminando la sobre-amplificación de 1.5).
+  - Concordancia de Lado: En `deliberar()`, la aprobación exige que la dirección que alcanza consenso coincida con la dirección propuesta de la orden candidata (`intended_direction >= 0.0` para largos, `<= 0.0` para cortos), eliminando falsas aprobaciones cruzadas.
 - **Commiteado reciente**:
   - Ola Ω68 (#704, `194089b8`): Absorción analítica de Fokker-Planck en SDE VECM y first-passage time.
   - Plan Maestro Cuántico Integral (#705, `549fc536`): Documento canónico, 10 roles Senior, barrido R0-R9.
@@ -98,11 +98,12 @@
   - Ola Ω70 (#708, `558c7dcc`): Integración en vivo de `prospect_pressure` en `god-engine-core::council_snapshot`.
   - Ola Ω71 (#709, `7387b935`): Certificación y resolución de deuda en 5 vetos del `veto_registry.rs` de `risk-engine`.
   - Ola Ω72 (#710, `759f44ec`): Zero-alloc hot-path en `signal-engine::orchestrator` y `risk-engine::selection_stats`.
-  - Ola Ω73: Simetría espejo anti-simétrica en Prospect Theory (C-10 / C-10b) y calibración browniana R-15.
+  - Ola Ω73 (#711, `ab0967e8`): Simetría espejo anti-simétrica en Prospect Theory (C-10 / C-10b) y calibración browniana R-15.
+  - Ola Ω74 (#712): Navier-Stokes EWMA (C-02), pesos del consejo (C-W) y concordancia de lado en deliberar.
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados
   de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`).
   Toda la suite de crates pasando al 100% (153/153 en risk-engine, 120/120 en
-  signal-engine, 78/78 en metacortex-engine, 170/170 en god-engine-core, 54/54 en backtest-engine, 40/40 en
+  signal-engine, 81/81 en metacortex-engine, 170/170 en god-engine-core, 54/54 en backtest-engine, 40/40 en
   strategy-core). Workspace verificado con `cargo check --workspace --all-targets` limpio.
 
 ## Frentes del sistema (no por agente)

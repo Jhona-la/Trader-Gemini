@@ -67,6 +67,24 @@ markers» y se salta todos los pasos: en main no se compiló ni se probó #710.
 - **AGY**: antes de empujar a main, `git diff --check HEAD^ HEAD` y
   `cargo check --workspace --all-targets` en el árbol que se publica. Los Ω
   llegan a main sin PR y el aviso de la CI llega tarde.
+## Antigravity (Quant Sr.) — OLA Ω74 CERRADA: NAVIER-STOKES EWMA (C-02), REBALANCEO DE PESOS DEL CONSEJO (C-W) Y CONCORDANCIA DIRECCIONAL EN DELIBERACIÓN (2026-10-10 ~17:35)
+- Rama activa: `antigravity/ola74-r0-r9-revision-sistemica-cuantica-plan-maestro` (mergeada y pusheada a `origin/main` en commit `#712`).
+- Ficha Forense: **#712**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/feature-engine/src/navier_stokes.rs`, `crates/god-engine-core/src/lib.rs`, `crates/metacortex-engine/src/consejo_seniors.rs`, `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md`, `TABLERO.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω74**:
+  1. **Filtrado Continuo Navier-Stokes (C-02)**:
+     - En `feature-engine/src/navier_stokes.rs`: `laminar_share`, `regime()`, `is_laminar()` e `is_turbulent()` se evalúan sobre `ewma_reynolds` ($\alpha = 0.05$) eliminando colapsos espurios de confianza por ruido de tick aislado.
+     - En `god-engine-core/src/lib.rs:5170`: Publicación en vivo de `ewma_reynolds` como `"navier_reynolds_number"`.
+  2. **Rebalanceo Semántico de Pesos del Consejo (C-W)**:
+     - En `metacortex-engine/src/consejo_seniors.rs`: `SeniorMicroestructura` recibe `SEAT_WEIGHT_FLOW` (1.2) por ser el observador de flujo L2 real; `SeniorCausal` asignado a peso 1.0; `SeniorRiesgo` (modulador) asignado a peso 1.0 (erradicando la amplificación espuria de 1.5).
+  3. **Concordancia de Lado en Deliberación**:
+     - En `metacortex-engine/src/consejo_seniors.rs:1320-1335`: La deliberación exige que el consenso concuerde con `payload.intended_direction` de la orden candidata (`>= 0.0` para largos, `<= 0.0` para cortos), eliminando falsas aprobaciones cruzadas.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p feature-engine`: **100% verde (6/6 en navier_stokes_reynolds_contract)**.
+  - `cargo test -p metacortex-engine`: **100% verde (81/81 tests pasando, incluyendo qs_r1_c22_direccion_propia_diagnostics)**.
+  - `cargo test -p god-engine-core`: **100% verde (todos los contratos pasando)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## Antigravity (Quant Sr.) — OLA Ω73 CERRADA: SIMETRÍA ESPEJO PROSPECT THEORY (C-10/C-10b) Y CALIBRACIÓN PRIMER TOQUE (R-15) (2026-10-10 ~15:00)
 - Rama activa: `antigravity/ola73-r1-r3-prospect-symmetry-and-first-touch-calibration` (fusionada y pusheada a `origin/main` en commit `#711`).
 - Ficha Forense: **#711**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).

@@ -1376,4 +1376,23 @@ compilación.
   - **Suelo de Supervivencia (INV-2)**: El suelo operativo configurado en `crates/risk-engine/src/lib.rs:285-314` evalúa `lerp(dd_max_medido, 0.85, micro_w)`, estableciendo un techo de Drawdown del 85% ($1.95 USD) antes de la expulsión forzada, mientras que $3.00 USD representa el presupuesto estricto de riesgo activo asignado por el operador.
   - **Límite de Concurrencia (R-03)**: La concurrencia efectiva en tiempo de ejecución está gobernada físicamente por el margen libre disponible ($2.60 USD máx por orden) y la estructura de ranuras ortogonales (3 slots por moneda en `position.rs` separados por $\Delta \ln \tau \ge 0.80$), evitando solapamientos destructivos en la cartera.
 
+## 33. Resolución de Navier-Stokes EWMA (C-02), Rebalanceo de Pesos del Consejo (C-W) y Concordancia de Lado en Deliberación (Ola Ω74, Ficha #712)
+
+- **Resolución de Raíz C-02 (Filtrado Continuo de Microestructura Navier-Stokes)**:
+  - En `crates/feature-engine/src/navier_stokes.rs:200-240`, se corrigió la evaluación de la fracción laminar `laminar_share`, del clasificador `regime()`, y de los predicados `is_laminar()` / `is_turbulent()`. Previamente se calculaban directamente sobre el `raw_reynolds` instantáneo de un solo tick, lo que provocaba que un micro-shock de ruido aislado colapsara la confianza de flujo a $\times 0.40$ e inflara el slippage efectivo $\times 1.50$.
+  - Ahora se derivan rigurosamente de la media móvil exponencial continua `ewma_reynolds` ($\alpha = 0.05$), amortiguando perturbaciones espurias de alta frecuencia mientras se preserva la sensibilidad completa ante turbulencias persistentes.
+  - En `crates/god-engine-core/src/lib.rs:5170`, se exporta `ns_engine.ewma_reynolds` como observable al `OmniscientRegistry` bajo la clave `"navier_reynolds_number"`.
+  - Certificación: 6/6 tests de `navier_stokes_reynolds_contract` aprobados al 100%.
+
+- **Resolución de Raíz C-W (Rebalanceo Semántico de Pesos en Consejo de Seniors)**:
+  - En `crates/metacortex-engine/src/consejo_seniors.rs:429, 669, 713`, se alinearon los pesos de deliberación con su diseño teórico:
+    * `SeniorMicroestructura` (generador de dirección por flujo L2) ahora porta `SEAT_WEIGHT_FLOW` (1.2), otorgándole la prima del 20% que le corresponde por frescura de información de libro.
+    * `SeniorCausal` (agente de permiso/veto con dirección neutra 0.0) se reajustó a peso unitario 1.0.
+    * `SeniorRiesgo` (modulador de convicción que hereda la dirección pedida) se reajustó a peso unitario 1.0, erradicando la sobre-ponderación espuria de 1.5 (`SEAT_WEIGHT_META`) que inflaba y sesgaba artificialmente la señal neta.
+
+- **Concordancia de Lado en Deliberación (Blindaje de Aprobación Direccional)**:
+  - En `crates/metacortex-engine/src/consejo_seniors.rs:1320-1335`, se reforzó la compuerta de aprobación para que una orden candidata solo sea aprobada si el lado que alcanza consenso coincide con la dirección propuesta: `payload.intended_direction >= 0.0` para largos y `payload.intended_direction <= 0.0` para cortos. Esto previene que una deliberación fuertemente bajista emita `approved: true` ante una solicitud de largo (y viceversa).
+  - Certificación Contractual: 81/81 tests de `metacortex-engine` (incluyendo diagnóstico `qs_r1_c22_direccion_propia_diagnostics`) aprobados al 100%.
+
+
 
