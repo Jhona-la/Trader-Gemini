@@ -32,8 +32,26 @@ concurrency:
 
 jobs:
   unit-suites:
+    # Matriz: cada job compila y enlaza su propio grafo en paralelo. Los ~117
+    # binarios de test en un solo job secuencial no caben en el techo (en
+    # Windows cada binario de integración enlaza todo el grafo; la primera
+    # corrida seguía compilando dependencias a los 19 min).
+    name: unit-suites (${{ matrix.grupo }})
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - grupo: riesgo
+            paquetes: -p risk-engine --lib --tests
+          - grupo: nucleo
+            paquetes: -p god-engine-core --lib --tests
+          - grupo: espectro-y-consejo
+            paquetes: -p quantum-arena -p signal-engine -p feature-engine -p metacortex-engine -p strategy-core --lib --tests
+          - grupo: entrenador
+            # Sintético: ni entrenamiento, ni promoción, ni modelos reales.
+            paquetes: -p trader-gemini-v5 --lib --bin train_forest
     env:
       CARGO_BUILD_JOBS: '2'
       CARGO_INCREMENTAL: '0'
@@ -52,14 +70,5 @@ jobs:
           rustup toolchain install nightly-2026-06-30 --profile minimal
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo +nightly-2026-06-30 --version
-      - name: Risk engine (lib + all contract suites)
-        run: cargo +nightly-2026-06-30 test -p risk-engine --locked --lib --tests -- --test-threads=1
-      - name: Core (lib + all contract suites)
-        run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --lib --tests -- --test-threads=1
-      - name: Arena, signals, features, council, strategy
-        run: |
-          cargo +nightly-2026-06-30 test -p quantum-arena -p signal-engine -p feature-engine -p metacortex-engine -p strategy-core --locked --lib --tests -- --test-threads=1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Trainer contracts and model lineage
-        # Synthetic data only; no training run, promotion or real models.
-        run: cargo +nightly-2026-06-30 test -p trader-gemini-v5 --locked --lib --bin train_forest -- --test-threads=1
+      - name: Tests (${{ matrix.grupo }})
+        run: cargo +nightly-2026-06-30 test ${{ matrix.paquetes }} --locked -- --test-threads=1
