@@ -684,7 +684,7 @@ impl GlobalArena {
         bid_qty: f64,
         ask_qty: f64,
     ) {
-        if coin_id < crate::symbols::get_active_universe_size() {
+        if coin_id < self.coins.len() {
             self.coins[coin_id]
                 .spot_bid
                 .store(bid_price, Ordering::Relaxed);
@@ -700,8 +700,10 @@ impl GlobalArena {
 
             // FASE 8: Propagación paralela al Tensor
             if let Some(tensor) = &self.tensor_arena {
-                tensor.spot_bid[coin_id].store(bid_price.to_bits(), Ordering::Relaxed);
-                tensor.spot_ask[coin_id].store(ask_price.to_bits(), Ordering::Relaxed);
+                if coin_id < tensor.spot_bid.len() {
+                    tensor.spot_bid[coin_id].store(bid_price.to_bits(), Ordering::Relaxed);
+                    tensor.spot_ask[coin_id].store(ask_price.to_bits(), Ordering::Relaxed);
+                }
             }
         }
     }

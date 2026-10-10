@@ -172,3 +172,47 @@ fn ola73_spot_stale_mas_alla_del_ttl_re_publica_cero() {
     );
     assert_eq!(lector(&arena).evaluate(), 0.0, "abstención honesta leída por el orquestador");
 }
+
+#[test]
+fn ola57_c02_feed_spot_sync_madura_sde_y_publica_zscore() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    let (arena, mut core) = setup_btcusdt();
+    let omni = data_pipeline::omni_multiplexer::OmniState::new();
+
+    // Antes de alimentarse con spot: statarb_ou_zscore está ausente
+    tick(&mut core, 50_000.0, 50_001.0, 1_000);
+    assert!(arena.registry.get_value_fast("statarb_ou_zscore").is_none());
+
+    // Alimentar mediante apply_spot_tick (el pipeline de producción C-02)
+    let mut ts = 2_000_u64;
+    for i in 0..14 {
+        let spot_bid = 50_000.0 + (i as f64 * 0.5);
+        let spot_ask = spot_bid + 0.2;
+        data_pipeline::spot_feed::apply_spot_tick(&arena, &omni, 0, "BTCUSDT", spot_bid, spot_ask, 2.0, 2.0);
+
+        let fut_offset = if i % 2 == 0 { 1.0020 } else { 0.9980 };
+        let fut_mid = spot_bid * fut_offset;
+        tick(&mut core, fut_mid - 0.5, fut_mid + 0.5, ts);
+        ts += 1_000;
+    }
+
+    // Tras >= 10 pares, la SDE madura y publica z-score finito, half-life y beta
+    assert!(
+        arena.registry.get_value_fast("statarb_ou_zscore").is_some(),
+        "Defecto C-02 resuelto: statarb_ou_zscore debe publicarse con feed spot vivo"
+    );
+    let z = arena.registry.get_value_or("statarb_ou_zscore", 0.0);
+    assert!(z.is_finite(), "z-score publicado debe ser finito");
+    assert_ne!(z, 0.0, "con SDE madura y feed fresco el z-score debe votar");
+
+    let half_ms = arena.registry.get_value_or("statarb_half_life_ms", 0.0);
+    assert!(half_ms > 0.0 && half_ms.is_finite(), "half-life debe ser finita");
+
+    let beta = arena.registry.get_value_or("statarb_beta", 0.0);
+    assert!(beta > 0.0 && beta.is_finite(), "beta RLS debe ser finita y positiva");
+
+    // Verificar que el lector de producción evalúa la señal
+    let voto = lector(&arena).evaluate();
+    assert!(voto.is_finite(), "voto de StatArb debe ser finito");
+}
+

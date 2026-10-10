@@ -62,7 +62,7 @@ y un hallazgo de otra fase:
 | R6-B12 «RLS» de β era LMS con gain fijo | **CERRADO (Ω51)** | `crates/strategy-core/src/stat_arb.rs:24-27, 147-166` — `rls_p`/`rls_lambda` con `K_t = P_{t-1}x_t/(λ + x_t²P_{t-1})` y test `test_r6_b12_rls_convergencia_exacta` |
 | R6-B16 `spread_deviation` con timing post-actualización | **CERRADO (Ω52 `50a2df4d`)** | `crates/strategy-core/src/multivariate_coint.rs:217` — `self.last_spread - self.mean_spread` (S_{t-1} − μ_{t-1}) |
 | R6-C8 `dbp <= dap` trivialmente cierto | **CERRADO (Ω52)** | `src/bin/god_engine.rs:4111` y `:4121` — condición estricta `dbp < dap` |
-| C-02 [MED] sin productor vivo del feed spot-futuro | **ABIERTO → fase R7** | zona data-ingest/host; `GlobalArena::update_spot_data` sin caller productivo |
+| C-02 [MED] sin productor vivo del feed spot-futuro | **CERRADO (Ω57)** | `crates/data-pipeline/src/spot_feed.rs` bucle híbrido WS/REST alimenta `update_spot_data` + cableado en `god_engine.rs:1715` + contratos en `data-pipeline` y `god-engine-core` |
 | R6-B14 / R6-B18 [LOW/POSITIVO] diagnósticos sin defecto | SIN ACCIÓN | theta-sesgo Jensen y DSR correctos |
 
 **Hueco de certificación medido contra `75f1a89c`** (`git log --oneline

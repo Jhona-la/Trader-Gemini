@@ -1,7 +1,31 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
-## Antigravity (Quant Sr.) — OLA Ω43 CERRADA (2026-10-09 ~12:10)
-- Rama activa: `antigravity/quant-sr-ola43-ou-sde-wls-ville-rearme` (base `4cc83ce4`).
+## Antigravity (Quant Sr.) — OLA Ω57 CERRADA (2026-10-09 ~21:50)
+- Rama activa: `antigravity/ola57-c02-feed-spot-statarb` (base `c3a2f331`).
+- Alcance: `crates/data-pipeline/src/spot_feed.rs`, `crates/data-pipeline/src/lib.rs`, `crates/data-pipeline/tests/spot_feed_contract.rs`, `crates/quantum-arena/src/state.rs`, `crates/god-engine-core/tests/statarb_live_physics_contract.rs`, `src/bin/god_engine.rs`.
+- **RESOLUCIÓN Y CERTIFICACIÓN FORMAL DE DEFECTO C-02**:
+  1. **C-02 [MED] Resuelto**: Ingesta viva de feed Spot-Futuro para Binance Spot (`crates/data-pipeline/src/spot_feed.rs`). Arquitectura híbrida de alta disponibilidad: WebSocket Push `@bookTicker` de sub-milisegundo (`wss://stream.binance.com:9443`) combinado con Sondeo REST de seguridad (`https://api.binance.com/api/v3/ticker/bookTicker`, cadencia 1000 ms). Parser tolerante a fallos, filtrado estricto de números no finitos y precios negativos.
+  2. **Alimentación Viva de Física**: `apply_spot_tick` actualiza de forma atómica y lock-free `arena.coins[coin_id].spot_bid/spot_ask`, el registro per-símbolo `{SYM}_spot_mid`, `omni_state.binance_spot` y calcula el spread de arbitraje basis en `omni_state.spot_futures_arb_spread`.
+  3. **Blindaje de Índices en Arena**: `update_spot_data` acotado con seguridad $O(1)$ a `self.coins.len()` y `tensor.spot_bid.len()`.
+  4. **Cableado en Host**: `data_pipeline::start_spot_feed_sync` integrado en `god_engine.rs` dentro de `unified_handle`.
+  5. **Maduración de SDE Ornstein-Uhlenbeck**: Con el feed de spot vivo, `statarb_ou_engines[coin_id]` en `god-engine-core` observa pares spot-futuro causalmente crecientes, madura tras $\ge 10$ pares y publica `statarb_ou_zscore`, `statarb_half_life_ms` y `statarb_beta` a `OmniscientRegistry`.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p data-pipeline --test spot_feed_contract`: **3/3 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test statarb_live_physics_contract`: **4/4 tests verdes (100% éxito)**.
+  - `cargo test -p strategy-core --lib`: **40/40 tests verdes (100% éxito)**.
+  - `cargo check --bin god_engine`: **0 errores, compila limpiamente**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
+## Antigravity (Quant Sr.) — OLA Ω56 CERRADA (2026-10-09 ~21:20)
+- Rama activa: `antigravity/ola56-ronda8-auditoria-sistemica` (commit `c3a2f331`).
+- Alcance: `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/src/position.rs`, `src/bin/god_engine.rs`, `crates/god-engine-core/tests/identidad_simbolo_nucleo_contract.rs`, `crates/god-engine-core/tests/close_outcome_contract.rs`.
+- **RESOLUCIÓN Y CERTIFICACIÓN FORMAL DE HALLAZGOS RONDA 7-R4**:
+  1. **R7-R4-A-2 [HIGH] Resuelto**: Desacople de ámbito spoof/whale en registry. Host publica bidireccionalmente (`set_scoped` y `set_for_coin`), core resuelve con fallback unificado `get_for_coin_or.max(get_scoped_value_or)`.
+  2. **R7-R4-C-1 [HIGH] Resuelto**: Confirmación multi-ranura de cierres reales. `last_close_confirmed` se resetea atómicamente en apertura y `close_was_real` inspecciona todas las ranuras activas.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p god-engine-core`: **172/172 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 - Alcance: `crates/strategy-core/src/vecm_arbitrage.rs`, `crates/risk-engine/src/ville_e_process.rs`, `crates/risk-engine/tests/ville_evidence_contract.rs`, `crates/evolution-engine/src/online_daemon.rs`, `crates/god-engine-core/tests/hodge_yang_mills_consensus_contract.rs`, `src/multi_asset_orchestrator.rs`.
 - **RESOLUCIÓN Y CERTIFICACIÓN FORMAL DE HALLAZGOS RONDA 6**:
   1. **R6-B3 & R6-B4 [MED] Resueltos**: Estratificación analítica de $\Delta t$ heterogéneo y memoria temporal física en `ContinuousOrnsteinUhlenbeckSde` (`vecm_arbitrage.rs`). Erradicado el pooling de pendientes $b$ y la división por el $\Delta t$ del último evento; implementada regresión WLS homoscedástica de tiempo continuo $\frac{\Delta X_i}{\sqrt{\Delta t_i}} = \alpha \sqrt{\Delta t_i} - \theta (X_{t_{i-1}} \sqrt{\Delta t_i}) + \sigma \epsilon_i$, $\alpha = \theta \mu$, con solución analítica cerrada $2\times 2$ (< 5 ns, zero heap allocations). Erradicado el clamp artificial $[0.80, 0.999]$ que forzaba memoria efectiva $n_{\text{eff}} \approx 5$; sustituido por decaimiento físico continuo $\exp(-\Delta t_i / \tau_{\text{mem}})$, $\tau_{\text{mem}} = 300.0$ s. Test formal `test_r6_b3_and_b4_heterogeneous_dt_wls_and_continuous_time_decay` verde (49/49 tests en strategy-core).

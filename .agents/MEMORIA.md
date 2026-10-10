@@ -1,18 +1,49 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-09 — AGY: OLA Ω56 EN CURSO — RONDA 8 · GRAN AUDITORÍA SISTÉMICA Y BARRIDO INTEGRAL DESDE LA BASE (FASES R0 A R8)
+## 2026-10-09 — AGY: OLA Ω57 COMPLETADA — DEFECTO C-02 (ALIMENTACIÓN VIVA SPOT-FUTURO PARA STATARB, SDE CONTINUO DE ORNSTEIN-UHLENBECK / FOKKER-PLANCK Y TENSOR MACRO)
 
-- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola56-ronda8-auditoria-sistemica`.
-- **Ficha Forense Reservada**: **#691** (preserva #690 para Qoder R7-R6 en `.r7r6`).
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola57-c02-feed-spot-statarb`.
+- **Ficha Forense**: **#692**. Cero fallos, cero regresiones, cero heap allocations en hot path.
 - **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
   - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
   - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
   - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
-- **Foco Técnico y Axiomático de la Ola**:
-  1. **R7-R4-A-2 [HIGH]**: Corrección de ámbito en `spoof_score` y `whale_burst_z`. El host publica `{SYM}_*` y el core busca `c{id}:*`. Se unifica la escritura publicando bidireccionalmente con `set_for_coin` y `set_scoped`, garantizando que `SeniorEnteMercado` en Metacortex reciba la lectura viva real.
-  2. **R7-R4-C-1 [HIGH]**: Corrección de ranuras en `close_was_real`. `god_engine.rs:3523-3533` leía exclusivamente la ranura fija 2 (`position`), descartando cierres reales en ranuras 0 (`scalp`) y 1 (`swing`) como si fueran papel. Se unifica la lectura con el evento directo de cierre o ranura autoritativa.
-  3. **C-02 [MED]**: Reactivación del feed spot-futuro para StatArb. Conexión de alimentación para `update_spot_data` y activación viva del SDE continuo de Ornstein-Uhlenbeck / Fokker-Planck con $\beta$ RLS adaptativa.
-- **Sincronización Concurrente**: Qoder en `.r7r6` con Ficha #690 (R7-R6); Sol en `booktick_replay.rs` / `metrics.rs`. Cero colisiones de ramas ni worktrees.
+- **Cambios Implementados y Certificados (Defecto C-02)**:
+  1. **Módulo de Ingesta Spot (`crates/data-pipeline/src/spot_feed.rs`)**:
+     - Implementado bucle híbrido de alta disponibilidad: WebSocket Push `@bookTicker` de sub-milisegundo (`wss://stream.binance.com:9443`) combinado con Sondeo REST de seguridad (`https://api.binance.com/api/v3/ticker/bookTicker`, cadencia 1000 ms).
+     - Parser tolerante a fallos, filtrado estricto de números no finitos y precios negativos.
+     - Función atómica `apply_spot_tick` que alimenta en tiempo real:
+       a) `arena.update_spot_data(coin_id, bid, ask, bid_qty, ask_qty)`.
+       b) `arena.registry.set_scoped(&sym, "spot_bid/spot_ask/spot_mid", ...)`.
+       c) `omni_state.binance_spot` con el precio spot de BTC.
+       d) `omni_state.spot_futures_arb_spread` calculado en tiempo real contra futuros Binance.
+  2. **Blindaje de Índices en Arena (`crates/quantum-arena/src/state.rs:687`)**:
+     - En `update_spot_data`, sustituida la cota `crate::symbols::get_active_universe_size()` por `self.coins.len()` y añadida guarda de longitud en `tensor.spot_bid.len()`, garantizando acceso $O(1)$ sin riesgo de fuera de límites.
+  3. **Cableado en Host (`src/bin/god_engine.rs:1715-1721`)**:
+     - Inicializado `data_pipeline::start_spot_feed_sync` dentro de `unified_handle` tras la sincronización NTP, asegurando que el feed de spot corre concurrentemente con el event loop principal.
+  4. **Maduración de la Física StatArb en Core**:
+     - Con el feed de spot vivo, `statarb_ou_engines[coin_id].update_with_clock` en `god-engine-core/src/lib.rs:5090` observa pares spot-futuro causalmente crecientes, madura tras $\ge 10$ pares y publica `statarb_ou_zscore`, `statarb_half_life_ms` y `statarb_beta` a `OmniscientRegistry`, erradicando el silenciamiento perpetuo en producción.
+- **Verificación Contractual Integral**:
+  - `cargo test -p data-pipeline --test spot_feed_contract`: 3/3 tests PASSED (100%).
+  - `cargo test -p god-engine-core --test statarb_live_physics_contract`: 4/4 tests PASSED (100%), incluyendo `ola57_c02_feed_spot_sync_madura_sde_y_publica_zscore`.
+  - `cargo test -p strategy-core --lib`: 40/40 tests PASSED (100%).
+  - `cargo check --bin god_engine`: 0 errores, 0 advertencias.
+  - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias.
+
+## 2026-10-09 — AGY: OLA Ω56 COMPLETADA — FASE R7-R4 NÚCLEO VIVO (RESOLUCIÓN DE ÁMBITO SPOOF/WHALE R7-R4-A-2 Y CONFIRMACIÓN MULTI-RANURA DE CIERRES REALES R7-R4-C-1)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `c3a2f331`.
+- **Ficha Forense**: **#691**. Cero fallos, cero regresiones, cero heap allocations en hot path.
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+- **Cambios Implementados y Certificados**:
+  1. **R7-R4-A-2 [HIGH] (Desacople de Ámbito Spoof/Whale en Registry)**: Publicación bidireccional en host (`set_scoped` y `set_for_coin`) y lectura en core con fallback unificado `get_for_coin_or.max(get_scoped_value_or)`. Contrato `r7_r4_a2_spoof_y_whale_burst_se_resuelven_en_ambitos_simbolo_y_coin_id` verde.
+  2. **R7-R4-C-1 [HIGH] (Confirmación Multi-Ranura de Cierres Reales)**: Reseteo atómico en apertura y chequeo sobre todas las ranuras activas en `close_was_real`. Contrato `r7_r4_c1_confirmacion_de_cierre_multi_ranura_no_descarta_scalp_ni_swing` verde.
+- **Verificación Contractual Integral**:
+  - `cargo test -p god-engine-core`: 172/172 tests PASSED.
+  - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias.
 
 ## 2026-10-09 — AGY: OLA Ω55 COMPLETADA — FASE R7-R5 DINERO Y EJECUCIÓN (APALANCAMIENTO CANÓNICO MICRO 5.0X, ELIMINACIÓN DE DERIVA DE MARGEN EN RECONCILIACIÓN Y BLINDAJE DE NOCIONAL MÍNIMO)
 

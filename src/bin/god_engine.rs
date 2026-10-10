@@ -1712,6 +1712,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::clone(&arena_real),
         );
 
+        // C-02 (Ola Ω57): Feed Spot-Futuro en vivo para StatArb y SDE continua OU
+        data_pipeline::start_spot_feed_sync(
+            &rt_handle_for_thread,
+            Arc::clone(&arena_real),
+            Arc::clone(&omni_state_hot),
+            symbols_clone.clone(),
+        );
+
         // Reality Physics: Shadow Simulator uses identical dynamic fees extracted from exchange
 
         // Phase 17: Apply Genotype Object Directly

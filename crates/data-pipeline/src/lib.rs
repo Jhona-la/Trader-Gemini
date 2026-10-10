@@ -15,6 +15,7 @@ pub mod onchain_feed;
 pub mod parser;
 pub mod persistence;
 pub mod resilient_stream;
+pub mod spot_feed;
 pub mod state_db;
 pub mod storage;
 pub mod telemetry_bus;
@@ -26,4 +27,6 @@ pub mod ws_client;
 pub use macro_data::MacroFetcher;
 pub use market_context::MarketContextFetcher;
 pub use resilient_stream::ResilientStreamManager;
+pub use spot_feed::start_spot_feed_sync;
 pub use ws_client::BinanceStreamer;
+
