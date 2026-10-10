@@ -379,11 +379,11 @@ impl RiskEngine {
             .metrics
             .win_rate
             .load(Ordering::Relaxed);
-        let q = if wr_coin > 0.0 && wr_coin < 1.0 {
-            1.0 - wr_coin
-        } else {
-            crate::ruin::CONSERVATIVE_Q
-        };
+        let trades_coin = arena.coins[coin_id]
+            .metrics
+            .trade_count
+            .load(Ordering::Relaxed) as f64;
+        let q = crate::ruin::conservative_loss_q(wr_coin, trades_coin);
         let kelly_frac = crate::ruin::clamp_ruin(kelly_frac, q);
         let temporal_scale = arena
             .config
@@ -592,11 +592,15 @@ impl RiskEngine {
         // grupo (D-748). Continuidad: miembro no medido ⇒ proxy tope/8 (el
         // presupuesto lineal legado es el caso todos-no-medidos); riesgos
         // uniformes reducen bit a bit a r·√(k+k(k−1)ρ̄).
-        let q_perdida = 1.0 - arena.coins[coin_id]
+        let wr_coin = arena.coins[coin_id]
             .metrics
             .win_rate
-            .load(Ordering::Relaxed)
-            .clamp(0.0, 1.0);
+            .load(Ordering::Relaxed);
+        let trades_coin = arena.coins[coin_id]
+            .metrics
+            .trade_count
+            .load(Ordering::Relaxed) as f64;
+        let q_perdida = crate::ruin::conservative_loss_q(wr_coin, trades_coin);
         let tope = crate::ruin::clamp_ruin(1.0, q_perdida);
         let riesgo_ewma = arena.riesgo_por_operacion.load(Ordering::Relaxed);
         let riesgo_candidata = if riesgo_ewma.is_finite() && riesgo_ewma > 0.0 {
@@ -917,6 +921,25 @@ impl RiskEngine {
             || !expected_loss.is_finite()
             || expected_loss <= 0.0
         {
+            return rej(REJ_TARGET_GEOMETRY);
+        }
+
+        // R7-R2-A-1: Activación analítica de la probabilidad en forma cerrada de primer toque (Ω3 / CL-34)
+        // Si la marea espectral adversa y la geometría del bracket hacen que la probabilidad
+        // de tocar el stop antes del take profit exceda el 88%, se veta la orden por geometría inviable.
+        let spectral_tide = arena.coins[coin_id].spectral_coherence.load(Ordering::Relaxed);
+        let directional_drift = if spectral_tide.is_finite() {
+            dir * spectral_tide * atr_pct
+        } else {
+            0.0
+        };
+        let p_hit_sl_first = crate::tp_sl::probabilidad_tocar_sl_antes_de_tp(
+            expected_win,
+            expected_loss,
+            directional_drift,
+            atr_pct,
+        );
+        if p_hit_sl_first > 0.88 {
             return rej(REJ_TARGET_GEOMETRY);
         }
 

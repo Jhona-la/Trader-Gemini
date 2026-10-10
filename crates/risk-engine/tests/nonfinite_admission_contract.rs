@@ -56,6 +56,25 @@ fn nonfinite_systemic_bull_rejects_both_sides() {
 }
 
 #[test]
+fn nonfinite_systemic_chaos_rejects_both_sides() {
+    let arena = arena_with_known_budget(100.0);
+    let guard = PortfolioOrchestrator::new(&arena);
+    let mut admitted = Vec::new();
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        arena.regime_p_chaos.store(bad, Ordering::Relaxed);
+        for is_long in [true, false] {
+            if guard.allow_trade(is_long, 1.0, MarketRegime::Range, 5.0) {
+                admitted.push((bad, is_long));
+            }
+        }
+    }
+    assert!(admitted.is_empty(), "invalid chaos admitted: {admitted:?}");
+    arena.regime_p_chaos.store(0.0, Ordering::Relaxed);
+    assert!(guard.allow_trade(true, 90.0, MarketRegime::Range, 5.0));
+    assert!(guard.allow_trade(false, 90.0, MarketRegime::Range, 5.0));
+}
+
+#[test]
 fn nonfinite_coherence_cannot_hide_behind_direction_or_zero_flux() {
     let arena = arena_with_known_budget(100.0);
     let guard = PortfolioOrchestrator::new(&arena);

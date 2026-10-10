@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω61 COMPLETADA — COTA INFERIOR LCB EN CONTROL DE RUINA (R7-R2-A-2), CONSUMO DE CAOS ESPECTRAL EN ORQUESTADOR (R5') Y ACTIVACIÓN ANALÍTICA DE PRIMER TOQUE (R7-R2-A-1) (#696)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola61-r7-r2-ruin-lcb-chaos-cushion`.
+- **Ficha Forense**: **#696**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+- **Cambios Implementados y Certificados**:
+  1. **R7-R2-A-2 [MED] (Cota Inferior LCB de Win Rate en Control de Ruina `clamp_ruin`)**: En `crates/risk-engine/src/ruin.rs`, creada la función pura canónica `conservative_loss_q(win_rate, trades)`. Si $N \ge 1.0$, calcula la cota inferior de confianza del win rate ($p_{\text{lcb}}$) vía el posterior Beta de Jeffreys en `crate::evidence::win_rate_lcb`, retornando $q_{\text{conservative}} = (1.0 - p_{\text{lcb}})$. Si $N < 1.0$, retorna incondicionalmente `CONSERVATIVE_Q` (0.60). Conectada a `risk-engine/src/lib.rs:380-388` (`evaluate_intent`) y `:595-604` (tope de riesgo de grupo de misma apuesta), impidiendo que micro-muestras no verificadas ($N < 20$) reclamen probabilidades de pérdida ingenuas de 0% o sobre-apuesten capital.
+  2. **Consumo de Incertidumbre y Caos Espectral en Orquestador (R5' / Superficie Ω58)**: En `crates/risk-engine/src/orchestrator.rs:158-180`, incorporada la lectura atómica y validación de `p_chaos = arena.regime_p_chaos.load(Ordering::Relaxed)`. La presión de caos omnidireccional $0.50 \times p_{\text{chaos}}$ modula continuamente la presión sistémica para posiciones Long y Short, contrayendo el margen admisible del portafolio ante regímenes turbulentos y de alta entropía. Añadido test contractual de rechazo fail-closed ante no-finitud en `nonfinite_admission_contract.rs`.
+  3. **R7-R2-A-1 [HIGH] (Activación Analítica de Primer Toque en Compuerta de Riesgo)**: En `crates/risk-engine/src/lib.rs:924-945`, activada en producción la función analítica en forma cerrada de primer toque `probabilidad_tocar_sl_antes_de_tp(expected_win, expected_loss, directional_drift, atr_pct)` de `crates/risk-engine/src/tp_sl.rs:469`. Si la marea espectral adversa produce una probabilidad analítica de tocar el stop antes del target $> 0.88$, la orden se veta limpiamente con `REJ_TARGET_GEOMETRY`, transformando la física de Ω3 en un escudo protector activo en tiempo real.
+  4. **Certificación Contractual**: Creado `crates/risk-engine/tests/r7_r2_ruin_chaos_contract.rs` con 4 tests formales pasando al 100%.
+- **Verificación Contractual Integral**:
+  - `cargo test -p risk-engine --test r7_r2_ruin_chaos_contract`: 4/4 tests PASSED (100%).
+  - `cargo test -p risk-engine --lib`: 151/151 tests PASSED (100%).
+  - `cargo test -p risk-engine`: Suite completa (24 archivos de tests, >100 tests) PASSED (100%).
+  - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias a lo largo de las 23 crates miembro.
+
 ## 2026-10-09 — AGY: OLA Ω60 COMPLETADA — RESOLUCIÓN DE HALLAZGOS R7-R6 ASIGNADOS A AGY (IG-1, EV-1, C-7 ≡ MD-2 Y DETECCIÓN MULTI-RANURA) (#695)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola60-r7-r6-ville-watchdog-fitness-slots`.

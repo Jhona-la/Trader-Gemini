@@ -79,6 +79,25 @@ pub fn clamp_ruin(f: f64, q: f64) -> f64 {
 /// axioma: sin evidencia, el tope es el propio axioma).
 pub const CONSERVATIVE_Q: f64 = 0.60;
 
+/// Calcula la probabilidad conservadora de pérdida q utilizando la cota inferior
+/// de confianza (LCB) del win rate (Jeffreys Beta posterior vía [`crate::evidence::win_rate_lcb`])
+/// cuando se dispone de operaciones cerradas (`trades >= 1.0`).
+///
+/// Si no hay trades o trades < 1.0, retorna [`CONSERVATIVE_Q`] (0.60).
+/// Si win_rate_lcb retorna Some(p_lcb), entonces q = (1.0 - p_lcb).clamp(0.01, 0.99),
+/// garantizando que micro-muestras no reclamen rachas cortas de pérdida ficticias (R7-R2-A-2).
+#[inline]
+pub fn conservative_loss_q(win_rate: f64, trades: f64) -> f64 {
+    if trades.is_finite() && trades >= 1.0 {
+        if let Some(wr_lcb) = crate::evidence::win_rate_lcb(win_rate, trades) {
+            return (1.0 - wr_lcb).clamp(0.01, 0.99);
+        } else if win_rate.is_finite() && win_rate > 0.0 && win_rate < 1.0 {
+            return (1.0 - win_rate).clamp(0.01, 0.99);
+        }
+    }
+    CONSERVATIVE_Q
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,5 +128,20 @@ mod tests {
         assert_eq!(clamp_ruin(-0.1, 0.5), -0.1);
         // F1-B4: NaN se neutraliza a 0.0
         assert_eq!(clamp_ruin(f64::NAN, 0.5), 0.0);
+    }
+
+    #[test]
+    fn test_conservative_loss_q_accounts_for_small_samples() {
+        // Sin trades, retorna CONSERVATIVE_Q
+        assert_eq!(conservative_loss_q(0.80, 0.0), CONSERVATIVE_Q);
+
+        // Con 2 trades y 100% win-rate, el raw q sería 0.0 (peligro de sobre-apuesta),
+        // pero con la LCB de win-rate el q conservador es significativamente alto (> 0.40).
+        let q_micro = conservative_loss_q(1.0, 2.0);
+        assert!(q_micro > 0.40, "q_micro debe ser conservador ante N=2: {}", q_micro);
+
+        // Con 100 trades y 60% win-rate, q converge hacia ~0.48
+        let q_large = conservative_loss_q(0.60, 100.0);
+        assert!(q_large > 0.40 && q_large < 0.60, "q_large debe ser razonable: {}", q_large);
     }
 }

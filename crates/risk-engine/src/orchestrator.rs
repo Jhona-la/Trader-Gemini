@@ -157,7 +157,8 @@ impl<'a> PortfolioOrchestrator<'a> {
         // remain admissible. Reuse the values checked here for this decision.
         let p_crash = self.arena.regime_p_crash.load(Ordering::Relaxed);
         let p_bull = self.arena.regime_p_bull.load(Ordering::Relaxed);
-        if !p_crash.is_finite() || !p_bull.is_finite() {
+        let p_chaos = self.arena.regime_p_chaos.load(Ordering::Relaxed);
+        if !p_crash.is_finite() || !p_bull.is_finite() || !p_chaos.is_finite() {
             return false;
         }
         let mut directional_max = 0.0f64;
@@ -171,7 +172,10 @@ impl<'a> PortfolioOrchestrator<'a> {
                 directional_max = directional_max.max(flux);
             }
         }
-        let systemic_pressure = if intent_is_long { p_crash } else { p_bull };
+        let directional_adverse = if intent_is_long { p_crash } else { p_bull };
+        // Ficha #696: El caos espectral omnidireccional (p_chaos) eleva la presión sistémica
+        // en ambos lados, contrayendo el margen admisible ante regímenes turbulentos.
+        let systemic_pressure = directional_adverse.max(0.50 * p_chaos.clamp(0.0, 1.0));
         let directional_pressure = 0.25
             * directional_max
                 .clamp(0.0, 1.0)
