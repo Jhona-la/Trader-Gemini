@@ -88,6 +88,30 @@ impl VotoEspectral {
         Some(suma / n)
     }
 
+    /// Media de las escalas activas (con voto no nulo) en la banda [lo, hi].
+    /// Resuelve R7-R4-B-2: evita que escalas excluidas por el gate de observabilidad
+    /// (anuladas a 0.0) diluyan el denominador a un 32 fijo, lo que imponía un techo
+    /// artificial estricto a la coherencia inter-espectral (<= n_activas / 32)
+    /// penalizando arbitrariamente a símbolos con menor cadencia de ticks.
+    pub fn media_banda_activa(&self, lo: usize, hi: usize) -> Option<f64> {
+        if lo > hi || hi >= ESCALAS_VOTO {
+            return None;
+        }
+        let mut suma = 0.0f64;
+        let mut n_activas = 0usize;
+        for &v in &self.por_escala[lo..=hi] {
+            if v.is_finite() && v.abs() > 1e-9 {
+                suma += v;
+                n_activas += 1;
+            }
+        }
+        if n_activas > 0 {
+            Some(suma / n_activas as f64)
+        } else {
+            None
+        }
+    }
+
     /// Consenso espectral: media ponderada por escala, clampeada. Pesos no
     /// finitos o suma ~0 ⇒ espectro plano en 0 (sin inventar convicción).
     pub fn consenso(votos: &[VotoEspectral], pesos: &[f64]) -> VotoEspectral {
@@ -197,6 +221,24 @@ mod tests {
         let mix = VotoEspectral::consenso(&[resuelto, b], &[1.0, 1.0]);
         assert!((mix.en_escala(7) - 0.0).abs() < 1e-12);
         assert!((mix.en_escala(8) - (-0.5)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_r7_r4_b2_media_banda_activa_no_diluye_escalas_gated() {
+        let mut x = [0.0; ESCALAS_VOTO];
+        // Supongamos que las escalas 0..9 están anuladas por el gate de observabilidad (cadencia lenta)
+        // y las escalas 10..31 tienen voto 0.8
+        for k in 10..ESCALAS_VOTO {
+            x[k] = 0.8;
+        }
+        let voto = VotoEspectral::desde_arr(&x);
+        // media_banda(0, 31) divide por 32 -> 22 * 0.8 / 32 = 0.55
+        let media_fija = voto.media_banda(0, 31).unwrap();
+        assert!((media_fija - (22.0 * 0.8 / 32.0)).abs() < 1e-12);
+
+        // media_banda_activa(0, 31) divide sólo entre las 22 escalas activas -> exactamente 0.8!
+        let media_activa = voto.media_banda_activa(0, 31).unwrap();
+        assert!((media_activa - 0.8).abs() < 1e-12, "media_activa debe ser 0.8, got {media_activa}");
     }
 }
 

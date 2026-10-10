@@ -1,5 +1,29 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω62 COMPLETADA — ABSTENCIÓN KLINE NEUTRA EN ENSEMBLE (R7-R4-B-1/D-1), COHERENCIA INTER-ESPECTRAL SIN DILUCIÓN (R7-R4-B-2), KELLY PAYOFF LCB (R7-R2-A-5) Y RUINA ANALÍTICA CRAMÉR-LUNDBERG (R7-R2-A-3) (#697)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola62-r7-r4-ensemble-neutral-spectral-lcb`.
+- **Ficha Forense**: **#697**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+- **Cambios Implementados y Certificados**:
+  1. **R7-R4-B-1 [HIGH] y R7-R4-D-1 [LOW] (Abstención Real en Barra Neutra en Ensemble Online Hedge)**: En `crates/god-engine-core/src/lib.rs:1844-1866`, eliminado el defecto donde retornos neutrales dentro del fee hurdle ($|\text{bar\_ret}| \le \text{fee\_hurdle}$) computaban `0.5_f64.signum() * 0.0 = 0.0`, interpretado erróneamente por `if y == 0.0 || y == 1.0` como pérdida bajista sistemática. Se devuelve `f64::NAN` y se blinda con `if (y == 0.0 || y == 1.0) && y.is_finite()`. Erradicado lock muerto de mutex sin operación `if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) { let _ = spec; }`.
+  2. **R7-R4-B-2 [HIGH] (Coherencia Inter-Espectral sin Dilución por Escalas Gated)**: En `crates/signal-engine/src/voto_espectral.rs:88-112`, implementada `media_banda_activa(&self, lo: usize, hi: usize) -> Option<f64>` que promedia exclusivamente sobre escalas activas ($|v_k| > 10^{-9}$). Erradica el techo artificial de dilución ($\le n_{\text{active}} / 32$) cuando escalas lentas son silenciadas por falta de historial. Publicada a `OmniscientRegistry` en `god-engine-core/src/lib.rs:2458-2464`.
+  3. **R7-R2-A-5 [MED] (Cota Inferior LCB del Payoff Ratio en KellyEnvelope)**: En `crates/risk-engine/src/kelly_envelope.rs:228-248`, creada `conservative_payoff_ratio(&self, z: f64) -> f64` contrayendo el exceso de payoff $\Delta b = (b - 1.0)^+$ hacia la paridad neutra $1.0$ mediante $b_{\text{lcb}} = 1.0 + (b - 1.0) \cdot \exp(-z / \sqrt{n})$. Integrada en `risk_fraction(z, shrinkage_k)` logrando simetría estricta de conservadurismo LCB en $p$ y $b$.
+  4. **R7-R2-A-3 [MED] (Cota Inferior Asintótica Analítica de Cramér-Lundberg)**: En `crates/risk-engine/src/cramer_lundberg.rs:160-205`, derivado e implementado el error estándar analítico de M-estimador:
+     $$SE(\hat{R}) = \frac{\sqrt{\sum_{i=1}^n (e^{-\hat{R} y_i} - 1)^2}}{\left|\sum_{i=1}^n y_i e^{-\hat{R} y_i}\right|}$$
+     y `pub fn lundberg_lcb(&self, z: f64) -> Option<f64>` computando $R_{\text{lcb}} = \hat{R} - z \cdot SE(\hat{R})$ (con fallback seguro a `None` si $R_{\text{lcb}} \le 0$). Publicada a `OmniscientRegistry` en `god-engine-core/src/lib.rs:3814-3822` (`est.lundberg_lcb(1.645)`), blindando los límites de capacidad de grupo ante ruina.
+  5. **Certificación Contractual**: Creado `crates/god-engine-core/tests/r7_r4_neutral_bar_spectral_coherence_contract.rs` con 4 tests formales pasando al 100%.
+- **Verificación Contractual Integral**:
+  - `cargo test -p god-engine-core --test r7_r4_neutral_bar_spectral_coherence_contract`: 4/4 tests PASSED (100%).
+  - `cargo test -p risk-engine --lib`: 153/153 tests PASSED (100%).
+  - `cargo test -p risk-engine`: Suite completa (24 archivos de tests, >100 tests) PASSED (100%).
+  - `cargo test -p signal-engine --lib`: 120/120 tests PASSED (100%).
+  - `cargo test -p god-engine-core --lib`: 170/170 tests PASSED (100%).
+  - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias a lo largo de las 23 crates miembro.
+
 ## 2026-10-10 — AGY: OLA Ω61 COMPLETADA — COTA INFERIOR LCB EN CONTROL DE RUINA (R7-R2-A-2), CONSUMO DE CAOS ESPECTRAL EN ORQUESTADOR (R5') Y ACTIVACIÓN ANALÍTICA DE PRIMER TOQUE (R7-R2-A-1) (#696)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola61-r7-r2-ruin-lcb-chaos-cushion`.

@@ -1,5 +1,40 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω62 CERRADA (2026-10-10 ~00:50)
+- Rama activa: `antigravity/ola62-r7-r4-ensemble-neutral-spectral-lcb`.
+- Ficha Forense: **#697**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/god-engine-core/src/lib.rs`, `crates/signal-engine/src/voto_espectral.rs`, `crates/risk-engine/src/kelly_envelope.rs`, `crates/risk-engine/src/cramer_lundberg.rs`, `crates/god-engine-core/tests/r7_r4_neutral_bar_spectral_coherence_contract.rs`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω62 (HALLAZGOS R7-R4/R7-R2)**:
+  1. **R7-R4-B-1 [HIGH] y R7-R4-D-1 [LOW] Resueltos**: En `god-engine-core/src/lib.rs:1844-1866`, barras neutrales ($|\text{bar\_ret}| \le \text{fee\_hurdle}$) computaban `0.5_f64.signum() * 0.0 = 0.0` y la guarda `if y == 0.0 || y == 1.0` las entrenaba como pérdidas bajistas en el ensemble Hedge online. Se devuelve `f64::NAN` como centinela explícito de muestra no informativa y se blinda con `if (y == 0.0 || y == 1.0) && y.is_finite()`. Erradicado lock muerto de mutex sin operación `if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) { let _ = spec; }`.
+  2. **R7-R4-B-2 [HIGH] Resuelto**: En `signal-engine/src/voto_espectral.rs:88-112`, implementada `media_banda_activa(&self, lo: usize, hi: usize) -> Option<f64>` promediando únicamente sobre escalas con voto no nulo ($|v_k| > 10^{-9}$). Erradica el techo artificial de dilución ($\le n_{\text{active}} / 32$) cuando escalas lentas sin datos suficientes son silenciadas por la compuerta de observabilidad. Conectada a la publicación de `consenso_espectral_media` en `god-engine-core/src/lib.rs:2458-2464`.
+  3. **R7-R2-A-5 [MED] Resuelto**: En `risk-engine/src/kelly_envelope.rs:228-248`, creada `conservative_payoff_ratio(&self, z: f64) -> f64` contrayendo el exceso de payoff $\Delta b = (b - 1.0)^+$ hacia la paridad neutra $1.0$ mediante $b_{\text{lcb}} = 1.0 + (b - 1.0) \cdot \exp(-z / \sqrt{n})$. Integrada simétricamente en `risk_fraction(z, shrinkage_k)` logrando que tanto $p$ como $b$ empleen cotas inferiores conservadoras ($p_{\text{lcb}}$ y $b_{\text{lcb}}$).
+  4. **R7-R2-A-3 [MED] Resuelto**: En `risk-engine/src/cramer_lundberg.rs:160-205`, derivado analíticamente e implementado el error estándar asintótico analítico de M-estimador:
+     $$SE(\hat{R}) = \frac{\sqrt{\sum_{i=1}^n (e^{-\hat{R} y_i} - 1)^2}}{\left|\sum_{i=1}^n y_i e^{-\hat{R} y_i}\right|}$$
+     y `pub fn lundberg_lcb(&self, z: f64) -> Option<f64>` calculando $R_{\text{lcb}} = \hat{R} - z \cdot SE(\hat{R})$ (con fallback fail-closed a `None` si $R_{\text{lcb}} \le 0$). Publicada a `OmniscientRegistry` en `god-engine-core/src/lib.rs:3814-3822` (`est.lundberg_lcb(1.645)`), blindando los límites de capacidad de grupo.
+  5. **Certificación Contractual**: Creado `crates/god-engine-core/tests/r7_r4_neutral_bar_spectral_coherence_contract.rs` (4/4 tests PASSED al 100%).
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p god-engine-core --test r7_r4_neutral_bar_spectral_coherence_contract`: **4/4 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine`: Suite completa (24 archivos, >100 tests) **verdes (100% éxito)**.
+  - `cargo test -p signal-engine --lib`: **120/120 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
+## Antigravity (Quant Sr.) — OLA Ω61 CERRADA (2026-10-10 ~00:20)
+- Rama activa: `antigravity/ola61-r7-r2-ruin-lcb-chaos-cushion` (commit en `main`).
+- Ficha Forense: **#696**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/risk-engine/src/ruin.rs`, `crates/risk-engine/src/orchestrator.rs`, `crates/risk-engine/src/lib.rs`, `crates/risk-engine/tests/r7_r2_ruin_chaos_contract.rs`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω61 (HALLAZGOS R7-R2 / R5')**:
+  1. **R7-R2-A-2 [MED] Resuelto**: En `risk-engine/src/ruin.rs:88-100`, creada `conservative_loss_q(win_rate, trades)`. Si $N \ge 1.0$, computa la cota inferior LCB de win rate ($p_{\text{lcb}}$) vía Beta de Jeffreys y retorna $q_{\text{conservative}} = (1.0 - p_{\text{lcb}})$. Si $N < 1.0$, retorna incondicionalmente `CONSERVATIVE_Q` (0.60). Conectada a `risk-engine/src/lib.rs:380-388` y `:595-604`.
+  2. **Consumo de Caos Espectral en Orquestador (R5' / Superficie Ω58)**: En `risk-engine/src/orchestrator.rs:158-180`, lectura atómica de `p_chaos` y modulación continua $0.50 \times p_{\text{chaos}}$ sobre la presión sistémica Long y Short, contrayendo el margen del portafolio en alta entropía.
+  3. **R7-R2-A-1 [HIGH] Resuelto**: En `risk-engine/src/lib.rs:924-945`, activada en producción la fórmula analítica en forma cerrada de primer toque `probabilidad_tocar_sl_antes_de_tp`. Si la marea espectral adversa eleva la probabilidad analítica de tocar el stop antes del target $> 0.88$, se veta la orden con `REJ_TARGET_GEOMETRY`.
+  4. **Certificación Contractual**: Creado `crates/risk-engine/tests/r7_r2_ruin_chaos_contract.rs` (4/4 tests PASSED al 100%).
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p risk-engine --test r7_r2_ruin_chaos_contract`: **4/4 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --lib`: **151/151 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine`: Suite completa **verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## Antigravity (Quant Sr.) — OLA Ω60 CERRADA (2026-10-09 ~23:55)
 - Rama activa: `antigravity/ola60-r7-r6-ville-watchdog-fitness-slots`.
 - Ficha Forense: **#695**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).

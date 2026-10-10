@@ -964,5 +964,26 @@ No se han borrado refs activas/no integradas, promovido modelos ni operado.
 - **Activación Analítica de Primer Toque en Compuerta de Riesgo (`R7-R2-A-1` [HIGH], `crates/risk-engine/src/lib.rs:924-945`)**: Activada en producción la función analítica en forma cerrada de primer toque `probabilidad_tocar_sl_antes_de_tp(expected_win, expected_loss, directional_drift, atr_pct)` de `crates/risk-engine/src/tp_sl.rs:469`. Si la marea espectral adversa produce una probabilidad analítica de tocar el stop antes del target $> 0.88$, la orden se veta limpiamente con `REJ_TARGET_GEOMETRY`, transformando la física de Ω3 en un escudo protector activo en tiempo real.
 - **Contrato Formal**: `crates/risk-engine/tests/r7_r2_ruin_chaos_contract.rs` (4/4 tests PASSED al 100%).
 
+## 24. Abstención Real en Klines Neutras, Coherencia Inter-Espectral sin Dilución, LCB en Payoff de Kelly y Ruina Cramér-Lundberg Analítica (Ola Ω62, Ficha #697)
+
+- **Abstención Real en Barra Neutra en Ensemble Online Hedge (`R7-R4-B-1` [HIGH] y `R7-R4-D-1` [LOW], `crates/god-engine-core/src/lib.rs:1844-1866`)**:
+  - En `god-engine-core/src/lib.rs:1844-1866`, erradicado el bug crítico donde barras con retorno dentro del hurdle de comisiones ($|\text{bar\_ret}| \le \text{fee\_hurdle}$) computaban `0.5_f64.signum() * 0.0 = 0.0`. Dado que la guarda downstream era `if y == 0.0 || y == 1.0`, el valor `0.0` se interpretaba como pérdida bajista, envenenando los pesos online de Hedge en cada vela de consolidación.
+  - Se corrigió devolviendo `f64::NAN` como centinela explícito de muestra no informativa, y blindando la guarda con `if (y == 0.0 || y == 1.0) && y.is_finite()`.
+  - Eliminado lock muerto de mutex sin operación `if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) { let _ = spec; }` en `lib.rs:1853-1855`.
+- **Coherencia Inter-Espectral sin Dilución por Escalas Gated (`R7-R4-B-2` [HIGH], `crates/signal-engine/src/voto_espectral.rs:88-112`)**:
+  - Implementada `media_banda_activa(&self, lo: usize, hi: usize) -> Option<f64>` que promedia exclusivamente sobre las escalas con voto no nulo ($|v_k| > 10^{-9}$).
+  - Erradica el techo artificial de dilución ($\le n_{\text{active}} / 32$) causado cuando `aplicar_gate_observabilidad` silencia escalas lentas con historial insuficiente, permitiendo que la coherencia espectral alcance su rango pleno $[0, 1]$.
+  - Conectada a la publicación de `consenso_espectral_media` en `god-engine-core/src/lib.rs:2458-2464`.
+- **Cota Inferior LCB del Payoff Ratio en KellyEnvelope (`R7-R2-A-5` [MED], `crates/risk-engine/src/kelly_envelope.rs:228-248`)**:
+  - Implementada `conservative_payoff_ratio(&self, z: f64) -> f64` contrayendo el exceso de payoff $\Delta b = (b - 1.0)^+$ hacia la paridad neutra $1.0$ mediante $b_{\text{lcb}} = 1.0 + (b - 1.0) \cdot \exp(-z / \sqrt{n})$.
+  - Integrada simétricamente en `risk_fraction(z, shrinkage_k)` para que tanto $p$ como $b$ empleen cotas inferiores conservadoras ($p_{\text{lcb}}$ y $b_{\text{lcb}}$), logrando monotonicidad estricta y protección ante muestras pequeñas.
+- **Cota Inferior Asintótica Analítica de Cramér-Lundberg (`R7-R2-A-3` [MED], `crates/risk-engine/src/cramer_lundberg.rs:160-205`)**:
+  - Derivado e implementado el error estándar asintótico analítico de M-estimador:
+    $$SE(\hat{R}) = \frac{\sqrt{\sum_{i=1}^n (e^{-\hat{R} y_i} - 1)^2}}{\left|\sum_{i=1}^n y_i e^{-\hat{R} y_i}\right|}$$
+  - Implementada `pub fn lundberg_lcb(&self, z: f64) -> Option<f64>` computando $R_{\text{lcb}} = \hat{R} - z \cdot SE(\hat{R})$ (con fallo cerrado `None` si $R_{\text{lcb}} \le 0$).
+  - Publicada a `OmniscientRegistry` en `god-engine-core/src/lib.rs:3814-3822` (`est.lundberg_lcb(1.645)`), garantizando que downstream `risk/lib.rs:629-633` y `correlation_guard.rs:559` dimensionen la capacidad de grupo bajo la cota conservadora adversa de ruina.
+- **Certificación Contractual**:
+  - Creado `crates/god-engine-core/tests/r7_r4_neutral_bar_spectral_coherence_contract.rs` con 4 tests formales pasando al 100%.
+
 
 

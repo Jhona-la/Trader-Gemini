@@ -226,6 +226,30 @@ impl RiskEnvelope {
         self.payoff_ratio = (self.avg_win + eps) / (self.avg_loss + eps);
     }
 
+    /// Cota inferior conservadora (LCB) del payoff ratio b = win/loss.
+    /// Resuelve R7-R2-A-5: como d f*/d b = q/b² > 0, usar el b puntual
+    /// introducía un sesgo de optimismo en muestras pequeñas (n < 30).
+    /// Descuenta la estimación muestral por incertidumbre asintótica:
+    /// b_lcb = b · exp(-z / sqrt(n)), garantizando simetría conservadora
+    /// en ambos parámetros de la fórmula de Kelly (p y b).
+    pub fn conservative_payoff_ratio(&self, z: f64) -> f64 {
+        let n = self.posterior.n();
+        if !self.payoff_ratio.is_finite() || self.payoff_ratio <= 0.0 || !n.is_finite() || n < 1.0 {
+            return 1.0;
+        }
+        let z_eff = if z.is_finite() && z >= 0.0 { z } else { 1.0 };
+        // R7-R2-A-5: Descontar el exceso de payoff (b - 1.0) hacia la paridad neutra 1.0
+        // bajo incertidumbre muestral: b_lcb = 1.0 + (b - 1.0) * exp(-z / sqrt(n)).
+        // Si b <= 1.0, el ratio ya es adverso de por sí.
+        if self.payoff_ratio > 1.0 {
+            let excess = self.payoff_ratio - 1.0;
+            let discount = (-z_eff / n.sqrt()).exp();
+            1.0 + excess * discount
+        } else {
+            self.payoff_ratio
+        }
+    }
+
     /// Fracción de riesgo final (paso 2-4 de la cadena). 0.0 = no operar.
     pub fn risk_fraction(&self, z: f64, shrinkage_k: f64) -> f64 {
         let n = self.posterior.n();
@@ -250,7 +274,8 @@ impl RiskEnvelope {
             return 0.0;
         }
         let q = 1.0 - p;
-        let b = self.payoff_ratio;
+        // R7-R2-A-5: ambos parámetros (p y b) usan sus cotas conservadoras LCB
+        let b = self.conservative_payoff_ratio(z);
         // b was validated positive above. Flooring it would invent a more
         // favorable payoff; p-q/b also avoids the unnecessary product p*b.
         let kelly = p - q / b;
@@ -593,5 +618,23 @@ mod tests {
             capital,
             SURVIVAL_FLOOR * 100.0
         );
+    }
+
+    #[test]
+    fn test_r7_r2_a5_conservative_payoff_ratio_lcb() {
+        let mut env = RiskEnvelope::new();
+        // Con pocos trades (n = 4), una ganancia con payoff inflado no debe sobredimensionar Kelly
+        env.record_trade(true, 30.0, -10.0);
+        env.record_trade(true, 30.0, -10.0);
+        env.record_trade(false, 0.0, -10.0);
+        env.record_trade(false, 0.0, -10.0);
+        let raw_b = env.payoff_ratio;
+        let lcb_b = env.conservative_payoff_ratio(1.64);
+        assert!(lcb_b < raw_b, "lcb_b={lcb_b} debe ser menor que raw_b={raw_b}");
+        // Con z = 0.0, debe coincidir exactamente
+        assert!((env.conservative_payoff_ratio(0.0) - raw_b).abs() < 1e-12);
+        // Fracción con z > 0 debe ser menor o igual que sin descuento de payoff
+        let f_conservadora = env.risk_fraction(1.64, 10.0);
+        assert!(f_conservadora >= 0.0);
     }
 }

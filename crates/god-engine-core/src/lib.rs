@@ -1846,18 +1846,16 @@ impl GodEngineCore {
                     } else if bar_ret < -fee_hurdle {
                         0.0 // superó la barrera bajista
                     } else {
-                        // dentro del rango de fricción: neutro, DESCARTAR
-                        // (el ensemble no aprende de samples sin resolución)
+                        // R7-R4-B-1 & R7-R4-D-1: dentro del rango de fricción: neutro, DESCARTAR.
+                        // El ensemble no aprende de samples sin resolución de fee.
+                        // Retornar NaN explícito como centinela inmutable de abstención;
+                        // erradicado 0.5.signum() * 0.0 que evaluaba a 0.0 y entrenaba pérdidas falsas.
+                        // Retirado lock muerto a temporal_spectrum.
                         self.kline_close_memory[coin_id] = current_price;
-                        // skip update pero actualizar memoria
-                        if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
-                            let _ = spec; // ya actualizado arriba
-                        }
-                        // continue to next processing without calibrating
-                        0.5_f64.signum() * 0.0 // señal neutra — no usada
+                        f64::NAN
                     };
                     // Sólo calibrar con samples DECISIVOS (y ∈ {0.0, 1.0})
-                    if y == 0.0 || y == 1.0 {
+                    if (y == 0.0 || y == 1.0) && y.is_finite() {
                         if coin_id < self.ensembles.len() {
                             self.ensembles[coin_id].update_with_outcome(y);
                         } else {
@@ -2457,7 +2455,11 @@ impl GodEngineCore {
                             self.consenso_ts[coin_id] = event_time_ms;
                         }
                     }
-                    if let Some(media) = consenso_espectral.media_banda(0, 31) {
+                    // R7-R4-B-2: usar media de escalas activas para no diluir por ceros del gate de observabilidad
+                    let media_opt = consenso_espectral
+                        .media_banda_activa(0, 31)
+                        .or_else(|| consenso_espectral.media_banda(0, 31));
+                    if let Some(media) = media_opt {
                         self.arena
                             .registry
                             .set_for_coin(coin_id, "consenso_espectral_media", media);
@@ -3813,10 +3815,14 @@ impl GodEngineCore {
                     // enmascara el fallback global, sin cambiar ln(20)/R.
                     if let Some(est) = self.lundberg_siniestros.get_mut(coin_id) {
                         est.observar(pnl_epigenetico);
+                        // R7-R2-A-3: publicar cota inferior conservadora LCB (z = 1.645, 95% unilateral)
+                        // para evitar que muestras pequeñas con rachas ganadoras inflen R y
+                        // desprotejan el margen de ruina en correlation_guard y risk-engine.
+                        let r_lcb = est.lundberg_lcb(1.645);
                         evidence_publication::publicar_lundberg(
                             &self.arena.registry,
                             coin_id,
-                            est.lundberg(),
+                            r_lcb,
                         );
                     }
 
