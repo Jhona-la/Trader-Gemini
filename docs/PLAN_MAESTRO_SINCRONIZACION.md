@@ -1142,10 +1142,10 @@ función pura certifican la fórmula, no el cableado vivo. No cuentan para (1).
 | QS-R0 | Meta → requisitos medibles | §30.0 | hecho |
 | QS-R1 | Ledger del camino de decisión viva (consejo, núcleo, riesgo) | `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md` (81 factores inventariados, 13 verificados) | primer corte hecho |
 | QS-R2 | Simetría espejo por construcción | `qs_r2_simetria_espejo_contract.rs`: el consejo ES simétrico (288 casos); las asimetrías están aguas arriba (K-06, K-23, C-10) | consejo hecho; núcleo pendiente |
-| QS-R3 | Dimensionado en espacio de riesgo (con Línea C) | ADR + diseño; activable sólo con edge OOS medido | propuesto |
-| QS-R4 | Contrafactual en sombra de vetos y moduladores | tasa de activación y oportunidades bloqueadas por veto/modulador sobre tapes del operador | propuesto (necesita tapes) |
-| QS-R5 | Linaje de modelos y holdout de un solo uso | QS-2, PR #30 | en revisión |
-| QS-R6 | CI que ejecuta las suites | QS-1, PR #30 | en revisión |
+| QS-R3 | Dimensionado en espacio de riesgo (con Línea C) | ADR-0016 (D1); activable sólo con edge OOS medido | decidido, sin implementar |
+| QS-R4 | Contrafactual en sombra de vetos y moduladores | tasa de activación y oportunidades bloqueadas por veto/modulador sobre tapes del operador | libro (`audit_engine::shadow_ledger`) y razón del rechazo (`risk_engine::ultimo_rechazo`) hechos; falta el gancho en el núcleo y los tapes |
+| QS-R5 | Linaje de modelos y holdout de un solo uso | QS-2, PR #30 | CI verde |
+| QS-R6 | CI que ejecuta las suites | QS-1, PR #30 | CI verde |
 
 Las fases R0–R9 de Qoder/AGY siguen siendo el barrido por archivo. QS es una
 lente transversal sobre el CAMINO de la decisión, no otro barrido por
@@ -1161,6 +1161,12 @@ archivo. Cada hallazgo QS se cruza con su ficha R7 si ya existe.
   ejecución y sizing (Línea C), registro de vetos (GLM/AGY), métricas y
   replay (Sol), contratos raíz y calibración (Codex), motores espectrales
   (Qoder).
+- **Excepciones anunciadas (2026-10-10)**:
+  - el arreglo mínimo de C-22 en `consejo_seniors.rs` (tomado en el buzón);
+  - las decisiones D2/D3 que el dueño delegó, en la admisión de
+    `risk-engine` (ADR-0016).
+  - D1/D4 y el gancho del libro contrafactual en el núcleo esperan acuse
+    de la Línea C y de Qoder.
 
 ### 30.4 Primer corte de QS-R1: lo que el ledger obliga a priorizar
 
@@ -1221,6 +1227,23 @@ contrato ejecutable).
 6. **Presupuesto de sonda.** Las 5 primeras operaciones de cada moneda pasan
    sin gate EV con un prior 0,55. ¿Hace falta una cota explícita de
    exposición total en sonda?
+
+**Resolución (2026-10-10).** El dueño delegó estas cuatro decisiones
+(«Tú decide»). Quedan en ADR-0016 con sus derivaciones:
+
+- **3 → D1.** ½ Kelly en espacio de riesgo sobre la cota inferior p_LCB y el
+  pago neto de fricción; el apalancamiento es consecuencia. Sin edge medido
+  el tamaño es 0. La meta queda como requisito: del orden de +0,3 R por
+  operación con ~16 operaciones al día. Se implementa tras el libro
+  contrafactual en sombra de QS-R4.
+- **4 → D2.** No hay tope micro del stop: la geometría es la de su τ en
+  todo capital, y un τ que no paga la fricción se rechaza. Implementado
+  (QS-D2).
+- **5 → D3.** No hay suelo de 3 USD ni 0,85. El veto de drawdown no pasa de
+  la caída de falsación d* = 1 − 0,05^{1/3} ≈ 0,632 (½ Kelly, α = 0,05).
+  Implementado (QS-D3).
+- **6 → D4.** Una sonda abierta en toda la cartera, orden mínima, ≤ 5 por
+  moneda; sus pérdidas cuentan en D3. Pendiente (zona núcleo/riesgo).
 
 ### 30.6 Peticiones a cada línea (propuestas; sin acuse no son reparto)
 

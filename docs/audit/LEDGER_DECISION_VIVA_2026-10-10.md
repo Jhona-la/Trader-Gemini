@@ -191,3 +191,19 @@ después, más el T-1 si cambia conducta viva. Un contrato que sólo construye
 la carga a mano y llama a la función pura no cierra un hallazgo de cableado
 (punto 1 de G-TEO). Los OPEN de este ledger se ejecutan con
 `cargo test -p <crate> --test <fichero> -- --ignored`.
+
+## 7. Estado de cierre (2026-10-10, decisiones del dueño en ADR-0016)
+
+El dueño delegó las decisiones de §30.5 del plan («Tú decide»). Quedaron en
+`docs/adr/ADR-0016-riesgo-geometria-y-falsacion-de-la-meta.md`, con las
+derivaciones.
+
+| id | Estado | Commit / contrato |
+|---|---|---|
+| **C-22** | Arreglado: la aprobación exige además que la señal direccional neta (asientos con dirección propia) tenga el signo del lado. | QS-C22; `qs_r1_c22_direccion_propia_diagnostics.rs` sin `#[ignore]` (RED 68/480 → GREEN 0). T-1 en el PR. |
+| **R-12** | **Corrección de este ledger**: el atajo micro NO admitía un stop bajo el suelo. `compute_tp_sl` ya eleva el stop al suelo; el defecto era otro: con la τ intacta, el stop quedaba más ancho que la dispersión del horizonte. Arreglado: el suelo rechaza en todo capital. | QS-D2; `qs_d2_el_suelo_de_viabilidad_rechaza_en_todo_capital` (RED en micro). |
+| **R-13** | Arreglado: se retira el tope micro de 55 pb; la geometría no depende del capital. | QS-D2; `qs_d2_la_geometria_de_la_orden_no_depende_del_capital` (RED: 55 pb frente a 85,25 pb). |
+| **R-03** | Arreglado: umbral = min(lerp(dd_max_medido, d*, micro_w), d*) con d* = 1 − 0,05^{1/3} ≈ 0,632. | QS-D3; `qs_d3_drawdown_de_falsacion_derivado` (lib) y `qs_d3_el_veto_de_drawdown_no_pasa_de_la_caida_de_falsacion`. |
+| **R-18** | Decidido (D4): una sonda abierta en toda la cartera, orden mínima, ≤ 5 por moneda, sus pérdidas cuentan en D3; el prior 0,55 se mide antes de sustituirlo. | Pendiente (zona núcleo/riesgo, coordinar con la Línea C y el PR #29). |
+| **R-20 / cadena de tamaño** | Decidido (D1): ½ Kelly en espacio de RIESGO sobre p_LCB y b neto de fricción; el apalancamiento es consecuencia. | Pendiente (QS-R4: libro contrafactual en sombra antes de activarlo). |
+| **Freno del host** | Nuevo: `src/bin/god_engine.rs:1609-1619` usa `drawdown_maximo` sin la cota d*. Hay dos semánticas del cortacircuitos de drawdown. | Petición a la Línea C. |
