@@ -309,6 +309,9 @@ impl Position {
         // B3.14: toda apertura nace SIN confirmación de exchange — el host
         // la setea sólo tras el fill real (o la adopción FASE 5).
         self.exchange_confirmed.store(false, Ordering::Relaxed);
+        // R7-R4-C-1: toda apertura nueva limpia cualquier bandera de cierre previo
+        // para que una ranura reutilizada no retenga last_close_confirmed añejo.
+        self.last_close_confirmed.store(false, Ordering::Relaxed);
         // Publicar la posición completa: todo store previo es visible para
         // cualquier lector que observe is_open con Acquire.
         self.is_open.store(true, Ordering::Release);

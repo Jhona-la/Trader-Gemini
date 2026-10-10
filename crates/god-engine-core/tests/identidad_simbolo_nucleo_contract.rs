@@ -48,3 +48,43 @@ fn cl37_el_nucleo_encuentra_el_bosque_del_roster_con_el_universo_del_bootloader(
         "el slot 0 es IDNMUSDT y su bosque tiene base 0,30; leída {por_moneda}"
     );
 }
+
+/// R7-R4-A-2 — el desacople de ámbito en spoof_score y whale_burst_z queda resuelto:
+/// la lectura unificada bidireccional (por coin_id y por símbolo scoped)
+/// garantiza que el Consejo de Seniors recibe las señales reales tanto si
+/// el escritor usa set_scoped como si usa set_for_coin.
+#[test]
+fn r7_r4_a2_spoof_y_whale_burst_se_resuelven_en_ambitos_simbolo_y_coin_id() {
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    let sym = "BTCUSDT";
+    let coin_id = 0;
+
+    // Caso 1: Escritor usa set_scoped (como el host clásico)
+    arena.registry.set_scoped(sym, "spoof_score", 0.85);
+    arena.registry.set_scoped(sym, "whale_burst_z", 4.2);
+
+    let spoof_read_1 = arena.registry
+        .get_for_coin_or(coin_id, "spoof_score", 0.0)
+        .max(arena.registry.get_scoped_value_or(sym, "spoof_score", 0.0));
+    let whale_read_1 = arena.registry
+        .get_for_coin_or(coin_id, "whale_burst_z", 0.0)
+        .max(arena.registry.get_scoped_value_or(sym, "whale_burst_z", 0.0));
+
+    assert_eq!(spoof_read_1, 0.85, "spoof_score debe resolverse desde set_scoped");
+    assert_eq!(whale_read_1, 4.2, "whale_burst_z debe resolverse desde set_scoped");
+
+    // Caso 2: Escritor usa set_for_coin
+    arena.registry.set_for_coin(coin_id, "spoof_score", 0.92);
+    arena.registry.set_for_coin(coin_id, "whale_burst_z", 5.5);
+
+    let spoof_read_2 = arena.registry
+        .get_for_coin_or(coin_id, "spoof_score", 0.0)
+        .max(arena.registry.get_scoped_value_or(sym, "spoof_score", 0.0));
+    let whale_read_2 = arena.registry
+        .get_for_coin_or(coin_id, "whale_burst_z", 0.0)
+        .max(arena.registry.get_scoped_value_or(sym, "whale_burst_z", 0.0));
+
+    assert_eq!(spoof_read_2, 0.92, "spoof_score debe resolverse desde set_for_coin");
+    assert_eq!(whale_read_2, 5.5, "whale_burst_z debe resolverse desde set_for_coin");
+}
+

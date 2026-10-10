@@ -7497,14 +7497,13 @@ impl GodEngineCore {
                                 .get(coin_id)
                                 .map(|s| s.dominant_tau_ms)
                                 .unwrap_or(1_138_000.0),
-                            // P-5b: datos EXCLUSIVOS del asiento Ente del
-                            // Mercado — ballena (z de burst del @trade real),
-                            // cascada (misma vista as-of por símbolo que las
-                            // features), apalancamiento (OI per-símbolo).
+                            // P-5b / R7-R4-A-2: datos EXCLUSIVOS del asiento Ente del
+                            // Mercado — lectura robusta bidireccional (coin_id y símbolo scoped)
                             whale_burst_z: self
                                 .arena
                                 .registry
-                                .get_for_coin_or(coin_id, "whale_burst_z", 0.0),
+                                .get_for_coin_or(coin_id, "whale_burst_z", 0.0)
+                                .max(self.arena.registry.get_scoped_value_or(&sym, "whale_burst_z", 0.0)),
                             liquidation_severity,
                             open_interest_norm: coin
                                 .open_interest_norm
@@ -7512,7 +7511,8 @@ impl GodEngineCore {
                             spoof_score: self
                                 .arena
                                 .registry
-                                .get_for_coin_or(coin_id, "spoof_score", 0.0),
+                                .get_for_coin_or(coin_id, "spoof_score", 0.0)
+                                .max(self.arena.registry.get_scoped_value_or(&sym, "spoof_score", 0.0)),
                             // QO-U2: sentimiento de masas contrarian
                             crowd_ls_ratio: self
                                 .arena

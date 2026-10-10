@@ -3073,10 +3073,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     e as u64,
                                 );
                                 if score.is_finite() && score > 0.05 {
+                                    let clamped_score = score.clamp(0.0, 1.0);
                                     engine_real.arena.registry.set_scoped(
                                         &sym.to_uppercase(),
                                         "spoof_score",
-                                        score.clamp(0.0, 1.0),
+                                        clamped_score,
+                                    );
+                                    // R7-R4-A-2: Publicar también por coin_id para que get_for_coin_or en core lib.rs resuelva c{id}:spoof_score
+                                    engine_real.arena.registry.set_for_coin(
+                                        sym_id,
+                                        "spoof_score",
+                                        clamped_score,
                                     );
                                 }
                             }
@@ -3189,10 +3196,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .find(|(_, &v)| v == coin_id)
                                     .map(|(k, _)| k.to_uppercase())
                                     .unwrap_or_default();
-                                engine_real.arena.registry.set_scoped(
-                                    &sym_scoped,
+                                let clamped_z = z.clamp(0.0, 10.0);
+                                if !sym_scoped.is_empty() {
+                                    engine_real.arena.registry.set_scoped(
+                                        &sym_scoped,
+                                        "whale_burst_z",
+                                        clamped_z,
+                                    );
+                                }
+                                // R7-R4-A-2: Publicar también por coin_id para que get_for_coin_or en core lib.rs resuelva c{id}:whale_burst_z
+                                engine_real.arena.registry.set_for_coin(
+                                    coin_id,
                                     "whale_burst_z",
-                                    z.clamp(0.0, 10.0),
+                                    clamped_z,
                                 );
                             }
                         }
@@ -3520,15 +3536,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // exchange. Cierres de entradas vetadas/rechazadas
                         // (round-trips locales de papel, caso KOMA) no
                         // contaminan totales, WR ni el posterior de Kelly.
+                        // R7-R4-C-1: Verificar TODAS las ranuras activas (scalp, swing, position).
+                        // El núcleo cierra en cualquiera de los slots dinámicos, no sólo en slot 2.
+                        // Consumimos atómicamente con swap(false) en el mismo tick del evento de cierre.
                         let close_was_real = engine_real
                             .arena
                             .coins
                             .get(coin_id)
                             .map(|c| {
                                 c.positions
-                                    .position
-                                    .last_close_confirmed
-                                    .load(Ordering::Relaxed)
+                                    .slots()
+                                    .iter()
+                                    .any(|p| p.last_close_confirmed.swap(false, Ordering::Relaxed))
                             })
                             .unwrap_or(false);
                         if !close_was_real {
