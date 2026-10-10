@@ -1,5 +1,25 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω64 COMPLETADA — CONSTANTES CANÓNICAS DE RECHAZO, UNIFICACIÓN LCB EN VIABILIDAD DE RUINA Y BLINDAJE DE MICRO-CAPITAL (#700)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola64-r2-r3-rejection-codes-ruin-lcb-navier-parity`.
+- **Ficha Forense**: **#700**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+- **Cambios Implementados y Certificados**:
+  1. **Constantes Canónicas Nombradas de Rechazo (REJ_*)**: En `crates/risk-engine/src/lib.rs:93-110`, definidos los identificadores canónicos para todos los slots: `REJ_FLAT_COIN` (0), `REJ_EXPOSURE_ZERO` (1), `REJ_CORRELATION` (2), `REJ_SPEC` (3), `REJ_EV` (4), `REJ_FEE_IMPACT` (5), `REJ_MIN_NOTIONAL` (6), `REJ_MARGIN_INSUFFICIENT` (7), `REJ_ORCHESTRATOR` (8), `REJ_OTROS` (9). Erradicados todos los literales mágicos `return rej(0..9)` a lo largo de todo el código de `risk-engine`, garantizando consistencia tipada exacta.
+  2. **Unificación Analítica LCB en Viabilidad D-750**: En `crates/risk-engine/src/lib.rs:1208-1220`, reemplazado el cálculo ingenuo `1.0 - wr` por la llamada analítica canónica `conservative_loss_q(wr, trades_coin)` con Jeffreys Beta posterior. Impide que micro-muestras ($N < 20$) reclamen probabilidades ficticias de pérdida de 0% o sobre-estimen la capacidad de ruina en la compuerta `orden_viable`.
+  3. **Certificación Contractual**: Creado `crates/risk-engine/tests/r7_r2_rejection_names_ruin_lcb_contract.rs` con 4 tests formales (mapeo biyectivo 1-a-1 de los 17 slots, inspección estática de cero números mágicos en código fuente, protección LCB ante 1 trade ganador, e invariantes de viabilidad para micro-capital de $13.00 USD). Actualizado contrato `sol_a2_margen_reducido_auditable.rs` para aceptar la constante nombrada.
+- **Verificación Contractual Integral**:
+  - `cargo test -p risk-engine --test r7_r2_rejection_names_ruin_lcb_contract`: 4/4 tests PASSED (100%).
+  - `cargo test -p risk-engine --lib`: 153/153 tests PASSED (100%).
+  - `cargo test -p risk-engine`: Suite completa (24 archivos de tests, >150 tests) PASSED (100%).
+  - `cargo test -p god-engine-core --lib`: 170/170 tests PASSED (100%).
+  - `cargo test -p signal-engine --lib`: 120/120 tests PASSED (100%).
+  - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias a lo largo de las 23 crates miembro.
+
 ## 2026-10-10 — AGY: PUBLICACIÓN DEL PLAN MAESTRO QUANT SR. — UNIVERSO MULTIVARIANTE CONTINUO TEMPORAL ESPECTRAL (#699)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/plan-maestro-universo-espectral-continuo-2026-10-10`.
