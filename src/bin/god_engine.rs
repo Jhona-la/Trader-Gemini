@@ -578,6 +578,46 @@ struct RecoveredContext {
     age_hours: f64,
 }
 
+/// B2.7 — DIARIO DE CONTEXTO de una entrada confirmada: la τ con la que se
+/// dimensionó la ranura y el ml que la motivó, para re-protegerla con rigor
+/// espectral tras un reinicio (`recover_position_context`). CL-45b: con la
+/// cantidad llenada y la τ de la ranura de ESTA reserva; antes, la cantidad
+/// pedida y la τ de la primera ranura abierta del lado.
+fn anotar_diario_de_posicion(
+    arena: &quantum_arena::GlobalArena,
+    reserva: &god_engine_core::entry_reservation::EntryReservation,
+    symbol: &str,
+    is_long: bool,
+    qty: f64,
+    px: f64,
+) {
+    let tau_ms = arena
+        .coins
+        .get(reserva.coin_id)
+        .map(|c| c.positions.get_slot(reserva.slot))
+        .filter(|p| p.is_open() && p.generation.load(Ordering::Acquire) == reserva.generation)
+        .map(|p| p.entry_tau_ms.load(Ordering::Relaxed))
+        .unwrap_or(0);
+    let ml = arena
+        .coins
+        .get(reserva.coin_id)
+        .map(|c| c.ml_prob.load(Ordering::Relaxed))
+        .unwrap_or(0.5);
+    let jr = format!(
+        "{{\"ts\":{},\"sym\":\"{}\",\"long\":{},\"qty\":{:.8},\"px\":{:.4},\"tau_ms\":{},\"ml\":{:.4}}}\n",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        symbol, is_long, qty, px, tau_ms, ml
+    );
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(quantum_arena::paths::env_data_path("position_journal.jsonl"))
+        .and_then(|mut f| std::io::Write::write_all(&mut f, jr.as_bytes()));
+}
+
 /// B2.7: lee el position_journal.jsonl del entorno (CL-48) y devuelve el ÚLTIMO registro que
 /// matchea símbolo+lado — la τ espectral y la predicción ML que motivaron la
 /// entrada. Tolerante a diario ausente/corrupto (None ⇒ el llamador usa el
@@ -4490,6 +4530,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         quantum_arena::protection_health::mark_dirty();
                                         telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
                                     }
+                                    // CL-45b: lo llenado (≤ lo pedido) dimensiona el
+                                    // bracket y el diario. Con la cantidad pedida, un
+                                    // parcial apilado sobre otra ranura del mismo lado
+                                    // ponía TP/SL de esta ranura sobre la ajena.
+                                    let cantidad_llenada =
+                                        ejecutada.map_or(final_qty.abs(), |q| q.min(final_qty.abs()));
                                     if order_tp_price > 0.0 && order_sl_price > 0.0 {
                                         let tag = if is_high_confidence { "🎯 [OCO TENSOR]" } else { "🛡️ [OCO GUARD]" };
                                         telemetry_engine::telemetry!(
@@ -4541,7 +4587,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     break;
                                                 }
                                             }
-                                            let qty_intent = final_qty.abs();
+                                            let qty_intent = cantidad_llenada;
                                             let qty_bracket = exec_clone
                                                 .load()
                                                 .fetch_position_risk()
@@ -4582,33 +4628,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     // persiste la τ que motivó la entrada y la
                                                     // recuperación B2.7 re-protege con rigor
                                                     // espectral en vez del ancla rápida.
-                                                    let tau_entry = arena_clone
-                                                        .coins
-                                                        .get(coin_id)
-                                                        .and_then(|c| {
-                                                            c.positions
-                                                                .slots()
-                                                                .into_iter()
-                                                                .find(|p| p.is_open() && p.is_long.load(Ordering::Relaxed) == final_is_long)
-                                                                .or_else(|| c.positions.slots().into_iter().find(|p| p.is_open()))
-                                                                .map(|p| p.entry_tau_ms.load(Ordering::Relaxed))
-                                                        })
-                                                        .unwrap_or(0);
-                                                    let ml_entry = arena_clone
-                                                        .coins
-                                                        .get(coin_id)
-                                                        .map(|c| c.ml_prob.load(Ordering::Relaxed))
-                                                        .unwrap_or(0.5);
-                                                    let jr = format!(
-                                                        "{{\"ts\":{},\"sym\":\"{}\",\"long\":{},\"qty\":{:.8},\"px\":{:.4},\"tau_ms\":{},\"ml\":{:.4}}}\n",
-                                                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(),
-                                                        parsed_sym_str, final_is_long, final_qty.abs(), _entry_price, tau_entry, ml_entry
+                                                    // CL-45b: con lo ejecutado y la τ de la ranura
+                                                    // de ESTA reserva (antes: la cantidad pedida y la
+                                                    // primera ranura abierta del lado).
+                                                    anotar_diario_de_posicion(
+                                                        &arena_clone,
+                                                        &reservation,
+                                                        &parsed_sym_str,
+                                                        final_is_long,
+                                                        cantidad_llenada,
+                                                        _entry_price,
                                                     );
-                                                    let _ = std::fs::OpenOptions::new()
-                                                        .create(true)
-                                                        .append(true)
-                                                        .open(quantum_arena::paths::env_data_path("position_journal.jsonl"))
-                                                        .and_then(|mut f| std::io::Write::write_all(&mut f, jr.as_bytes()));
                                                     break;
                                                 }
                                                 Err(e) => {

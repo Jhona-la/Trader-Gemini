@@ -219,6 +219,35 @@ pub fn retorno_neto_pct(neto_usd: f64, nocional_usd: f64) -> Option<f64> {
 /// `prev = None` congelaba el 35 % del crash_flux).
 pub const CADENCIA_REGIMEN_MS: f64 = 60_000.0;
 
+/// CL-45b — la cantidad que se cierra es la que la ranura tenía bajo su
+/// cerrojo al cerrar, no la que el núcleo leyó al empezar a evaluarla. La
+/// confirmación de un llenado parcial (CL-45/CL-46, desde la tarea del envío)
+/// puede reescalar la ranura entre esa lectura y `close_with_fee`: el PnL
+/// bruto y la comisión de salida se habían calculado sobre la cantidad
+/// reservada y la propuesta al host pedía cerrar más de lo que el exchange
+/// tiene. Ambos son lineales en la cantidad al mismo precio de salida (la
+/// comisión es nocional × tasa), así que se escalan por cerrada/leída.
+/// Devuelve (pnl bruto, comisión de salida, cantidad); si no hubo cambio, o la
+/// cantidad cerrada no es una cantidad válida, devuelve lo leído intacto.
+pub fn escalar_a_lo_cerrado(
+    pnl_bruto: f64,
+    comision_salida: f64,
+    cantidad_leida: f64,
+    cantidad_cerrada: f64,
+) -> (f64, f64, f64) {
+    if cantidad_cerrada.is_finite()
+        && cantidad_cerrada > 0.0
+        && cantidad_leida.is_finite()
+        && cantidad_leida > 0.0
+        && cantidad_cerrada != cantidad_leida
+    {
+        let r = cantidad_cerrada / cantidad_leida;
+        (pnl_bruto * r, comision_salida * r, cantidad_cerrada)
+    } else {
+        (pnl_bruto, comision_salida, cantidad_leida)
+    }
+}
+
 /// #593 — UMBRAL DEL CONSEJO (decisión 2026-09-30): distancia armónica
 /// mínima |Δlnτ| para CO-DESPACHAR dos candidatos como bandas
 /// independientes. Misma dirección: 0.80 — exactamente la distancia que
@@ -3686,6 +3715,10 @@ impl GodEngineCore {
                     // cerrar, mientras el estado de la posicion sigue viva.
                     let tau_de_la_posicion = pos.entry_tau_ms.load(Ordering::Relaxed);
                     let (closed_side, closed_entry, closed_qty, margin_used, entry_fee_paid) = pos.close_with_fee();
+                    // CL-45b: lo cerrado manda (un llenado parcial confirmado
+                    // en paralelo pudo reescalar la ranura tras la lectura).
+                    let (gross_pnl, close_fee, qty) =
+                        escalar_a_lo_cerrado(gross_pnl, close_fee, qty, closed_qty);
                     // Consume even when economic eligibility later rejects this
                     // close. A subsequent adopted/reopened position must not
                     // inherit the previous occupant's learning evidence.
@@ -8142,6 +8175,48 @@ mod tests_d609 {
     fn respeta_los_limites_solo_en_la_direccion_del_cambio() {
         assert_eq!(hurst_duration_modulation(7_200_000, 0.60), 7_200_000);
         assert_eq!(hurst_duration_modulation(10_000, 0.40), 10_000);
+    }
+}
+
+#[cfg(test)]
+mod tests_cl45b {
+    use super::escalar_a_lo_cerrado;
+
+    /// Reserva de 0,010 a 100 con salida a 101 y comisión 0,0005·nocional;
+    /// la confirmación del parcial deja 0,004 antes del cierre.
+    #[test]
+    fn cl45b_el_cierre_se_contabiliza_con_lo_cerrado() {
+        let (bruto, comision, cantidad) =
+            escalar_a_lo_cerrado(1.0 * 0.010, 101.0 * 0.010 * 0.0005, 0.010, 0.004);
+        assert!((bruto - 1.0 * 0.004).abs() < 1e-15);
+        assert!((comision - 101.0 * 0.004 * 0.0005).abs() < 1e-15);
+        assert_eq!(cantidad, 0.004);
+    }
+
+    #[test]
+    fn cl45b_sin_cambio_o_sin_cantidad_valida_no_toca_nada() {
+        assert_eq!(escalar_a_lo_cerrado(2.0, 0.1, 0.5, 0.5), (2.0, 0.1, 0.5));
+        assert_eq!(escalar_a_lo_cerrado(2.0, 0.1, 0.5, 0.0), (2.0, 0.1, 0.5));
+        assert_eq!(escalar_a_lo_cerrado(2.0, 0.1, 0.5, f64::NAN), (2.0, 0.1, 0.5));
+        assert_eq!(escalar_a_lo_cerrado(2.0, 0.1, 0.0, 0.3), (2.0, 0.1, 0.0));
+    }
+
+    /// El núcleo escala lo calculado ANTES de usar la cantidad: evidencia,
+    /// PnL neto y la propuesta de cierre al host salen de lo cerrado.
+    #[test]
+    fn cl45b_el_nucleo_usa_lo_cerrado() {
+        let codigo: String = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<String>()
+            .split_whitespace()
+            .collect();
+        assert!(codigo.contains(
+            "pos.close_with_fee();let(gross_pnl,close_fee,qty)=escalar_a_lo_cerrado(gross_pnl,close_fee,qty,closed_qty);"
+        ));
     }
 }
 

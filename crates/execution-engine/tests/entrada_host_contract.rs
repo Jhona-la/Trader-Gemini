@@ -48,3 +48,21 @@ fn cl45_el_host_confirma_la_reserva_con_lo_ejecutado() {
         "una sola vía de confirmación"
     );
 }
+
+/// CL-45b: el bracket y el diario de la entrada usan lo LLENADO. Antes el
+/// bracket partía de la cantidad pedida y sólo se recortaba a la posición del
+/// lado en el exchange, que en hedge suma todas las ranuras del lado: un
+/// parcial apilado sobre otra ranura ponía TP/SL de esta ranura sobre la
+/// ajena. El diario anotaba la cantidad pedida y la τ de la primera ranura
+/// abierta del lado.
+#[test]
+fn cl45b_bracket_y_diario_usan_lo_llenado() {
+    let h = host();
+    let b = brazo(&h, "Ok(())=>{", "if!oco_success{");
+    assert!(b.contains(
+        "letcantidad_llenada=ejecutada.map_or(final_qty.abs(),|q|q.min(final_qty.abs()));"
+    ));
+    assert!(b.contains("letqty_intent=cantidad_llenada;"));
+    assert!(!b.contains("letqty_intent=final_qty.abs();"));
+    assert!(b.contains("anotar_diario_de_posicion(&arena_clone,&reservation,&parsed_sym_str,final_is_long,cantidad_llenada,"));
+}
