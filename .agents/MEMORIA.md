@@ -32,6 +32,23 @@
 - **main rojo desde #710**: una línea suelta `<<<<<<< HEAD` en el plan; la
   CI se para en el chequeo de marcadores y no compila nada. La retiro en el
   PR de QS-P.
+- **Paridad de QS-P1 certificada**: con 2 hilos, las 145 huellas son
+  iguales bit a bit a las de 4 hilos, y la lista coincide con la del
+  secuencial. Los T-1 de esta línea corren ya en paralelo.
+- **QS-P2b**: el sello del oráculo guarda el árbol git del estado
+  compilado; sólo se recompilan los ficheros que cambiaron (en el merge de
+  #712: 9 ficheros, 3 de código).
+- **QS-P3 medido SIN ganancia**: 17–24 min por job con 2 jobs frente a
+  19–23 con 4. Se mantiene, pero no es la palanca.
+- **Punto ciego del T-1** (ledger §7.4): base, PR #31, QS-K y #710/#711 dan
+  las 145 huellas idénticas. El fixture no ejercita consejo, micro ni bordes
+  de rango. Propuesta: fixture T-2.
+- **Corrección**: el gen 39 no lo gana C-22. El +39/−20 ya está en main
+  46269a05 (viene de olas entre 534e7980 y 46269a05).
+- **El dueño quiere que los oráculos corran en su PC (8 núcleos)**. Una
+  sesión cloud no llega a su máquina. Hace falta una sesión local: app de
+  escritorio o `claude remote-control` en el repo. El script ya usa todos
+  los hilos en Git Bash.
 - **Entorno**: el contenedor se reinició a las ~21:28 UTC y se perdieron
   los procesos en curso. Los worktrees de `/tmp/claude-0/…/scratchpad` y
   los `target-portable*` sobreviven.

@@ -44,22 +44,22 @@
   parcial; cerrojo del almacén de genomas y CAS del demonio; dimensionado
   en espacio de riesgo.
 
-## Claude — sesión «elegant» (actualizado: 2026-10-10 ~22:00, prefijo QS-n, rama claude/elegant-euler-mmtht4)
+## Claude — sesión «elegant» (actualizado: 2026-10-10 ~23:10 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
-- **Haciendo ahora**:
-  - cerrar el PR #31 (C-22, D2, D3, QS-R4): T-1 combinado 16/144 PASA;
-  - QS-P: oráculo T-1 en paralelo (≈3,1×), `scripts/t1_oraculo.sh`, CI
-    con 4 jobs;
-  - QS-K: espejo y umbrales de las ramas rápidas del núcleo, con T-1.
+- **Haciendo ahora**: PR #32.
+  - QS-P: oráculo en paralelo con paridad certificada, script con
+    recompilación incremental.
+  - QS-K: espejo y umbrales de las ramas rápidas.
+  - T-1 del árbol con #712.
 - **Siguiente**:
-  - QS-R4b: cablear el libro contrafactual en el núcleo (espera acuse de
-    la Línea C y Qoder);
-  - D1/D4 con la Línea C;
-  - QS-P4: perfil de producción con LTO, propuesta.
-- **Para otros**: ver el buzón.
-  - REV-1/REV-2: tests de Ω71 que no alcanzan su veto.
-  - main rojo por un marcador en #710.
-- **En main**: PR #30 (QS-1, QS-2, QS-R1, QS-R2), 46269a05.
+  - fixture T-2 que ejercite las puertas (ledger §7.4);
+  - REV-1/REV-2: tests de vetos de Ω71 que no alcanzan su veto, si
+    AGY/GLM no los toman;
+  - QS-R4b: libro sombra en el núcleo (espera acuse);
+  - D1/D4 con la Línea C.
+- **En main**:
+  - PR #30 (QS-1, QS-2, QS-R1, QS-R2);
+  - PR #31 (C-22, D2, D3, QS-R4).
 - **Decidido (el dueño lo delegó)**: ADR-0016 (D1–D4).
 
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)

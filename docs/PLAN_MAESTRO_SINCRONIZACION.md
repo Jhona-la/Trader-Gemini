@@ -1277,7 +1277,7 @@ entorno cloud (4 núcleos, 15 GB):
 |---|---|---|---|
 | Oráculo T-1 | 3 006 s con 1 núcleo de 4 (carga 2,4 con dos oráculos a la vez) | Los 144 genes se evaluaban uno tras otro | **QS-P1**: evaluación en paralelo (`T1_THREADS`, por defecto todos los núcleos), con una huella por gen para comparar corridas. 937 s con 4 hilos, misma lista (ver abajo) |
 | T-1 «base» | Corrió el binario de OTRA rama sin un solo «Compiling» | Cargo no distingue dos worktrees del mismo paquete con un `CARGO_TARGET_DIR` compartido | **QS-P2**: `scripts/t1_oraculo.sh` guarda un sello del árbol en el target; **QS-P2b**: si cambió, toca sólo los ficheros que difieren |
-| CI `unit-suites` | 23–31 min por job, casi todo compilación | `CARGO_BUILD_JOBS=2` en runners de 4 vCPU | **QS-P3**: 4 jobs |
+| CI `unit-suites` | 23–31 min por job, casi todo compilación | `CARGO_BUILD_JOBS=2` en runners de 4 vCPU | **QS-P3**: 4 jobs. **Medido sin ganancia**: 17–24 min con 2 jobs (PR #31) frente a 19–23 min con 4 (PR #32), ruido. El cuello no es el número de jobs (probablemente el enlazado de Windows y el crate grande del núcleo, que no se reparte). Se mantiene (no empeora) |
 | CI `replay-contracts` | 73 min: `check` 11 min y ~56 min de pasos de test que compilan el grafo en debug | Un solo job secuencial; `check` no deja artefactos que reutilicen los tests | Propuestas abajo (zona Codex/GLM) |
 
 **Paridad de QS-P1.** El veredicto no puede depender del número de hilos:
@@ -1323,6 +1323,19 @@ scripts/t1_oraculo.sh 12         # o un número fijo
 
 Coste: unos 46 min-núcleo por corrida (145 backtests de ~19 s), más la
 compilación.
+
+**Correr en el PC del dueño (8 núcleos).** Una sesión de agente en la nube
+no puede usar ese PC. Para que compilación y oráculos corran allí, el
+trabajo se abre en una sesión que se ejecute en ese ordenador: la app de
+escritorio de Claude o `claude remote-control` en una terminal dentro del
+repo, que aparece luego en la app de Claude Code. Si en ese PC corre
+`god_engine.exe`, el oráculo debe dejarle núcleos: `scripts/t1_oraculo.sh 6`.
+
+**Límite del T-1 (ledger §7.4).** El fixture es una tendencia fuerte: el
+consejo aprueba siempre, no es micro y las ramas de rango no llegan a sus
+bordes. Cinco cambios de puertas seguidos dieron huellas idénticas. El T-1
+certifica la no-regresión de parámetros y dimensionado, no las puertas.
+Siguiente paso: fixture T-2 (rango lateral, consejo dividido, 13 USD).
 
 **Propuestas para las otras líneas (sin acuse no son reparto):**
 

@@ -280,3 +280,48 @@ veto.
 - **Certificación**: ni #710 ni #711 corrieron T-1, y #711 cambia la
   conducta viva (consejo y veto de primer toque). Los certifica el T-1 del
   PR de QS-P/QS-K sobre el árbol candidato, que incluye los dos.
+
+### 7.4 El T-1 no ve las puertas: punto ciego medido (2026-10-10 noche)
+
+Con el oráculo en paralelo (paridad certificada, §30.7 del plan) se
+compararon las huellas por gen de seis árboles. Las 145 huellas son
+iguales bit a bit en todos:
+
+| Árbol | Qué añade | Lista |
+|---|---|---|
+| main 46269a05 (base) | — | 16/144 |
+| + PR #31 | C-22, D2, D3 | igual, huellas iguales |
+| + QS-K | K-27, K-27b, K-28 | igual, huellas iguales |
+| + #710, #711 | zero-alloc, Prospect de la masa, R-15 | igual, huellas iguales |
+| + #712 | pesos del consejo, Reynolds suavizado | igual, huellas iguales (T-1 con 4 hilos, 1 150 s) |
+
+- **Por qué**: el fixture es una tendencia determinista fuerte.
+  - El consejo aprueba siempre: todos los asientos direccionales coinciden.
+  - La cuenta corre con 1 000 USD (la rama micro no se ejecuta).
+  - Las ramas de rango no llegan a sus bordes.
+- **Qué certifica el T-1**: la no-regresión de parámetros, dimensionado y
+  riesgo. No certifica cambios en las puertas de decisión; esos los cubren
+  sus contratos.
+- **Corrección**: en el PR #31 atribuí a C-22 la ganancia del gen 39
+  (`weight_obi`). Era falso.
+  - El +39/−20 frente a la lista canónica ya está en la base.
+  - Viene de olas de main entre 534e7980 (certificación canónica) y
+    46269a05.
+  - Se puede bisecar con el oráculo en paralelo (≈16 min por punto con 4
+    núcleos).
+- **Propuesta (T-2)**: un segundo fixture con:
+  - rango lateral con reversiones (las ramas 7–10 llegan a sus bordes);
+  - microtendencia cerca de cero;
+  - libro con OBI opuesto al momento (el consejo vota dividido);
+  - cuenta de 13 USD (rama micro, D2/D3, suelo de viabilidad).
+  - El criterio no es un trinquete de cobertura: cada cambio de puerta
+    debe mover sus huellas en la dirección que predice su contrato.
+
+**Revisión de #712 (AGY)**: correcta.
+- C-W: Riesgo pasa de 1,5 a 1,0 y Microestructura de 1,0 a 1,2; Causal
+  vota 0, así que su peso no cambiaba nada.
+- La aprobación exige además que coincida `intended_direction`, con espejo.
+- C-02: el régimen hidrodinámico usa el Reynolds suavizado y la clave
+  `navier_reynolds_number` publica ahora la EWMA (cambio de semántica de
+  telemetría).
+- Llegó a main sin PR ni T-1, como #710 y #711.
