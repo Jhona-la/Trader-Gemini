@@ -155,7 +155,10 @@ fn finite_pressure_preserves_direction_maximum_and_existing_clamps() {
         (false, 0.7, 2.0, 0.0, 0.0, 65.0),
         (true, 0.0, 0.0, -2.0, 0.0, 90.0),
         (false, 0.0, 0.0, 0.0, -2.0, 90.0),
-        (false, 0.0, 0.0, 0.0, 2.0, 65.0),
+        // QS-REV4: p_bull ≥ 0,90 veta ahora los cortos (espejo del veto de
+        // largos con p_crash ≥ 0,90, que tampoco tiene fila aquí). La
+        // contracción continua de los cortos se comprueba bajo el veto.
+        (false, 0.0, 0.0, 0.0, 0.8, 70.0),
         (true, 0.0, 0.0, 0.4, 0.0, 80.0),
         (false, 0.0, 0.0, 0.0, 0.6, 75.0),
     ] {
