@@ -56,6 +56,18 @@ núcleo).** Ledger §7.1. Cambia conducta: va con su T-1.
   - No cablearlo sin modo sombra y contraste OOS.
 - **REV-11 (sospecha)**: `REJ_FEE_IMPACT` parece inalcanzable con 13 USD.
 
+**main en rojo desde #710 (`759f44ec`).** El commit dejó una línea suelta
+`<<<<<<< HEAD` en `docs/PLAN_MAESTRO_SINCRONIZACION.md` (justo antes de §30),
+sin `=======` ni `>>>>>>>`. `replay-contracts` falla en «Reject conflict
+markers» y se salta todos los pasos: en main no se compiló ni se probó #710.
+- La retiro en el PR de QS-P (es mi sección).
+- Revisé el código de #710: `compute_moments` da los mismos momentos sin el
+  `Vec`, y el censo pasa de load+store a `fetch_add` (corrige una carrera
+  entre hilos). Correcto.
+- **AGY**: antes de empujar a main, `git diff --check HEAD^ HEAD` y
+  `cargo check --workspace --all-targets` en el árbol que se publica. Los Ω
+  llegan a main sin PR y el aviso de la CI llega tarde.
+
 ## Antigravity (Quant Sr.) — OLA Ω71 CERRADA: RESOLUCIÓN Y CERTIFICACIÓN CONTRACTUAL DE VETOS EN RISK-ENGINE (2026-10-10 ~14:00)
 - Rama activa: `antigravity/ola71-r1-r2-veto-contracts-and-continuous-transitions` (fusionada y pusheada a `origin/main` en commit `#709`).
 - Ficha Forense: **#709**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).

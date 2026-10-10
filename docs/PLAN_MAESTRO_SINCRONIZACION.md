@@ -1267,3 +1267,56 @@ contrato ejecutable).
   - K-18/R-17: la confianza entra 4 veces en el tamaño;
   - contraste OOS de cada modulador marcado «sin evidencia», cuando haya
     tapes.
+
+### 30.7 QS-P — el ciclo de verificación (2026-10-10)
+
+El dueño observó que las verificaciones no usan toda la CPU. Medido en el
+entorno cloud (4 núcleos, 15 GB):
+
+| Paso | Medido | Causa | Acción |
+|---|---|---|---|
+| Oráculo T-1 | 3 006 s con 1 núcleo de 4 (carga 2,4 con dos oráculos a la vez) | Los 144 genes se evaluaban uno tras otro | **QS-P1**: evaluación en paralelo (`T1_THREADS`, por defecto todos los núcleos), con una huella por gen para comparar corridas. 937 s con 4 hilos, misma lista (ver abajo) |
+| T-1 «base» | Corrió el binario de OTRA rama sin un solo «Compiling» | Cargo no distingue dos worktrees del mismo paquete con un `CARGO_TARGET_DIR` compartido | **QS-P2**: `scripts/t1_oraculo.sh` guarda un sello del árbol en el target y fuerza la recompilación del workspace si cambió |
+| CI `unit-suites` | 23–31 min por job, casi todo compilación | `CARGO_BUILD_JOBS=2` en runners de 4 vCPU | **QS-P3**: 4 jobs |
+| CI `replay-contracts` | 73 min: `check` 11 min y ~56 min de pasos de test que compilan el grafo en debug | Un solo job secuencial; `check` no deja artefactos que reutilicen los tests | Propuestas abajo (zona Codex/GLM) |
+
+**Paridad de QS-P1.** El veredicto no puede depender del número de hilos:
+cada gen se evalúa con su propio arena, el spec del símbolo se registra antes
+del bucle, el bosque global sólo se lee, `feed_health::stall` sólo lo tocan
+tests y los contadores de rechazo son telemetría. Antes de usarlo para
+certificar se mide: la lista de genes debe coincidir con la corrida
+secuencial del mismo árbol, y las huellas por gen deben ser iguales entre
+corridas con distinto número de hilos.
+
+Medido el 2026-10-10 (código del backtest idéntico al árbol `9ddac8ca` del
+PR #31; sólo cambia el arnés del test):
+
+| Corrida | Hilos | Evaluación | Lista de genes |
+|---|---|---|---|
+| Secuencial (C-22 + D2 + D3) | 1 | 2 878 s (con otro oráculo y una compilación en paralelo) | 16/144: [1, 10, 11, 17, 18, 24, 27, 32, 33, 39, 68, 69, 129, 130, 131, 141] |
+| QS-P1 | 4 (sola en la máquina) | **937 s** (1 138 s con la recompilación del workspace) | idéntica |
+| QS-P1 | 2 | ver abajo | huellas por gen comparadas con la de 4 hilos |
+
+Aceleración ≈ 3,1× con 4 núcleos (techo 4×: el gen más lento y el arranque
+del proceso no se reparten).
+
+**Propuestas para las otras líneas (sin acuse no son reparto):**
+
+- **Codex/GLM (`replay-contracts`)**:
+  - `CARGO_BUILD_JOBS: '4'`;
+  - un paso inicial `cargo test --no-run` con los mismos paquetes que los
+    pasos siguientes, para compilar una vez y sustituir al `check`
+    (medirlo antes de adoptarlo);
+  - caché de dependencias con `actions/cache` fijado por SHA: v4.2.3 es
+    `5a3ec84eff668545956fd18022155c47e93e2684` (leído con `git ls-remote`).
+    Medir antes: la cuota es de 10 GB por repositorio y el `target/` de
+    cuatro jobs de Windows puede desalojarse en cada corrida.
+- **Todas las líneas**:
+  - para certificar, `scripts/t1_oraculo.sh` (o un `CARGO_TARGET_DIR` por
+    worktree);
+  - no medir dos árboles en el mismo target sin recompilar;
+  - `--test-threads=1` existe por el estado global de algunos tests. Si un
+    crate no lo tiene, sus tests pueden correr en paralelo. Inventariarlo es
+    una tarea pendiente de QS-P.
+- **Rendimiento en vivo** (nanosegundos del camino caliente): es otro eje,
+  no QS-P. Se mide con los benchmarks de cada crate antes de tocar nada.

@@ -44,21 +44,23 @@
   parcial; cerrojo del almacén de genomas y CAS del demonio; dimensionado
   en espacio de riesgo.
 
-## Claude — sesión «elegant» (actualizado: 2026-10-10 ~22:30, prefijo QS-n, rama claude/elegant-euler-mmtht4)
+## Claude — sesión «elegant» (actualizado: 2026-10-10 ~22:00, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
-- **Haciendo ahora**: publicar QS-C22, QS-D2, QS-D3 (ADR-0016) y QS-R4a con
-  su T-1.
+- **Haciendo ahora**:
+  - cerrar el PR #31 (C-22, D2, D3, QS-R4): T-1 combinado 16/144 PASA;
+  - QS-P: oráculo T-1 en paralelo (≈3,1×), `scripts/t1_oraculo.sh`, CI
+    con 4 jobs;
+  - QS-K: espejo y umbrales de las ramas rápidas del núcleo, con T-1.
 - **Siguiente**:
-  - QS-R4b: cablear el libro contrafactual en el núcleo (la razón del
-    rechazo ya está, `risk_engine::ultimo_rechazo`), prerrequisito de D1;
-    espera acuse de la Línea C y Qoder;
-  - D1/D4, coordinados con la Línea C.
-- **En main**: PR #30 (QS-1, QS-2, QS-R1, QS-R2) fusionado en 46269a05
-  con unit-suites (4 jobs) y replay-contracts verdes.
-- **Commiteado en main**: XLIV-1…13b (PR #8 y, vía #20, el PR #10).
-- **Decidido (el dueño lo delegó)**: §30.5 → ADR-0016 (D1 riesgo en
-  espacio de stop, D2 geometría ligada a τ, D3 caída de falsación 0,632,
-  D4 presupuesto de sonda).
+  - QS-R4b: cablear el libro contrafactual en el núcleo (espera acuse de
+    la Línea C y Qoder);
+  - D1/D4 con la Línea C;
+  - QS-P4: perfil de producción con LTO, propuesta.
+- **Para otros**: ver el buzón.
+  - REV-1/REV-2: tests de Ω71 que no alcanzan su veto.
+  - main rojo por un marcador en #710.
+- **En main**: PR #30 (QS-1, QS-2, QS-R1, QS-R2), 46269a05.
+- **Decidido (el dueño lo delegó)**: ADR-0016 (D1–D4).
 
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
 

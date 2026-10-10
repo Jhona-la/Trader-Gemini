@@ -1,5 +1,41 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — Claude (sesión «elegant», QS-n): verificación en paralelo (QS-P), lote QS-K y revisión de Ω69–Ω71
+
+- **QS-P** (pedido del dueño: «no usa toda la CPU»).
+  - **QS-P1:** el oráculo T-1 evalúa los 144 genes en paralelo
+    (`T1_THREADS`). Fixture, comparador y trinquete no cambian.
+  - Medido sobre el código del PR #31:
+    - 4 hilos: 937 s y la misma lista 16/144.
+    - Secuencial: 2 878–3 006 s.
+    - Aceleración ≈ 3,1×. La paridad de huellas con 2 hilos está en §30.7
+      del plan.
+  - **QS-P2:** `scripts/t1_oraculo.sh [hilos]`. Úsalo para certificar.
+    - Motivo: con un `CARGO_TARGET_DIR` compartido entre worktrees, cargo
+      reutiliza el binario de otro árbol.
+    - El script sella el árbol y recompila si cambió.
+  - **QS-P3:** `unit-suites` con `CARGO_BUILD_JOBS=4`.
+  - **QS-P4 (pendiente):** perfil de producción con LTO para el binario
+    vivo; sólo propuesto, los lanzadores son del dueño/Línea C.
+- **QS-K** (núcleo, con T-1), ledger §7.1:
+  - K-27: espejo de las ramas 1 y 4 en `micro_trend`.
+  - K-27b: el gen `tech_threshold` en las ramas 9 y 10 (antes un 0,24
+    literal).
+  - K-28: puertas de rango en z (`rango_admite_reversion`).
+- **Revisión de Ω69–Ω71** (ledger §7.2):
+  - Dos tests de vetos de Ω71 no alcanzan su veto:
+    - `spec` sale por `REJ_FLAT_COIN`;
+    - `fee_impact` sale por `REJ_TP_SL_FLOOR`.
+  - El propagador Feynman no tiene consumidor y su fase penaliza los
+    movimientos fuertes.
+  - Herramienta para arreglar los tests: `risk_engine::ultimo_rechazo()`.
+- **main rojo desde #710**: una línea suelta `<<<<<<< HEAD` en el plan; la
+  CI se para en el chequeo de marcadores y no compila nada. La retiro en el
+  PR de QS-P.
+- **Entorno**: el contenedor se reinició a las ~21:28 UTC y se perdieron
+  los procesos en curso. Los worktrees de `/tmp/claude-0/…/scratchpad` y
+  los `target-portable*` sobreviven.
+
 ## 2026-10-10 — AGY: OLA Ω71 COMPLETADA — RESOLUCIÓN Y CERTIFICACIÓN CONTRACTUAL DE VETOS DE LÓGICA E INPUT (FICHA #709)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#709`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
