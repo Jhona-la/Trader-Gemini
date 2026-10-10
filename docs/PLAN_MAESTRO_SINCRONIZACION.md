@@ -1000,6 +1000,35 @@ No se han borrado refs activas/no integradas, promovido modelos ni operado.
 - **Certificación Contractual**:
   - Creado `crates/god-engine-core/tests/r7_r4_multislot_niche3_gauge_contract.rs` con 3 tests formales pasando al 100%.
 
+## 26. Solución Analítica de Absorción en Fokker-Planck SDE para Arbitraje VECM y First-Passage Time (Ola Ω68, Ficha #704)
+
+- **Fokker-Planck First-Passage Time en Arbitraje VECM (`crates/strategy-core/src/vecm_arbitrage.rs:188-295`)**:
+  - Implementación analítica de la probabilidad de absorción en barreras finitas $[a, b]$ para procesos de Ornstein-Uhlenbeck / VECM con drift $b(x) = -\theta(x - \mu)$ y difusión constante $\sigma$:
+    $$u(x) = \frac{S(x) - S(a)}{S(b) - S(a)}, \quad S(x) = \int_a^x \exp\left(-\frac{\theta}{\sigma^2}(y - \mu)^2\right) dy$$
+  - Implementación del tiempo medio de primer paso (MFPT) $T(x)$ mediante cuadratura numérica de Gauss-Legendre de 16 nodos en $O(1)$ sin asignaciones de heap.
+  - Veto estocástico en `VecmArbitrageEngine::should_enter`: si $P_{\text{absorción}}(b) < 0.65$ o el tiempo de absorción proyectado excede $2.5 \times \text{half\_life}$, la entrada se descarta matemáticamente, previniendo trampas de reversión falsa.
+- **Certificación Contractual**:
+  - Creado `crates/strategy-core/tests/fokker_planck_first_passage_time_contract.rs` con 6 tests formales pasando al 100%.
+
+## 27. Colector Feynman Path Integral, Coherencia Cuántica en 32 Escalas de Hilbert y Prospect Theory de Kahneman-Tversky (Ola Ω69, Ficha #706)
+
+- **Feynman Propagator Engine (`crates/signal-engine/src/feynman_propagator.rs`)**:
+  - Amplitud de transición mediante integral de caminos cuánticos sobre 32 escalas diádicas de Hilbert:
+    $$\mathcal{A} = \sum_{k=0}^{31} \psi_k e^{i S_k / \hbar}$$
+  - Acción clásica continua $S_k = \int L_k dt_k$ a partir del Lagrangiano $L_k = T_k - V_k = \frac{1}{2} m v_k^2 - \frac{1}{2} k_{\text{rest}} z_k^2$ en espacio de fase canónico $\theta_k = \text{atan2}(p_k, q_k)$.
+  - Factor de coherencia cuántica continua $C_{\text{coh}} = |\mathcal{A}| \in [0.0, 32.0]$, amplificando el momentum coherente multiescala e inhibiendo el ruido incoherente.
+  - Contrato formal: `crates/signal-engine/tests/feynman_propagator_contract.rs` con 7 tests formales pasando al 100%.
+- **Prospect Theory Engine (`crates/metacortex-engine/src/prospect_theory.rs`)**:
+  - Función de valor asimétrica empírica de Kahneman-Tversky:
+    $$V(\Delta x) = (\Delta x)^\alpha \quad (\Delta x \ge 0), \qquad V(\Delta x) = -\lambda (-\Delta x)^\beta \quad (\Delta x < 0)$$
+    con coeficiente canónico de aversión a la pérdida $\lambda = 2.25$ y sensibilidad marginal $\alpha = \beta = 0.88$.
+  - Ponderación de probabilidad no lineal de Prelec/Tversky $w(p) = \frac{p^\gamma}{(p^\gamma + (1-p)^\gamma)^{1/\gamma}}$ ($\gamma = 0.65$) sobreponderando colas de pánico/lotería y subponderando complacencia intermedia.
+  - Presión neta de prospecto $P_{\text{kt}} = w(p_{\text{bull}}) V(\Delta_{\text{up}}) + w(p_{\text{crash}}) V(-\Delta_{\text{down}})$.
+  - Modulación contrarian smart-money $[0.50, 1.30]$ integrada en `SeniorEnteMercado::evaluate` de `crates/metacortex-engine/src/consejo_seniors.rs` sobre `MarketSnapshotPayload`.
+- **Certificación Contractual**:
+  - Creado `crates/metacortex-engine/tests/prospect_theory_contract.rs` con 6 tests formales pasando al 100%. Suite completa de `metacortex-engine` pasando 78/78 tests (100%).
+
+
 
 
 
