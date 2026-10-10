@@ -1,9 +1,10 @@
-//! CL-51 / CL-52: la ingesta del WS y su reinicio.
+//! CL-50 / CL-51 / CL-52: la ingesta del WS y su reinicio.
 //!
 //! El bucle de eventos reinicia el estado de mercado cuando el lector del WS
-//! se reconecta. Dos defectos: el reinicio devolvía el pico del drawdown a la
-//! base de la cuenta, y la cola llena podía descartar el centinela sin dejar
-//! rastro.
+//! se reconecta. Tres defectos: la primera conexión también se anunciaba
+//! como reconexión (borraba el calentamiento con K-lines REST de cada
+//! arranque), el reinicio devolvía el pico del drawdown a la base de la
+//! cuenta, y la cola llena podía descartar el centinela sin dejar rastro.
 //!
 //! Las guardias sobre la fuente siguen el estilo de
 //! `kill_switch_host_contract.rs`: sin comentarios de línea completa y con el
@@ -41,6 +42,18 @@ fn cl51_una_reconexion_no_olvida_el_pico_del_drawdown() {
     core.risk_engine.peak_capital = 20.0;
     core.reset_engines();
     assert_eq!(core.risk_engine.peak_capital, 20.0);
+}
+
+/// La primera conexión no envía el centinela: el calentamiento con K-lines
+/// REST se inyecta antes del bucle y el centinela lo borraba en cada arranque.
+#[test]
+fn cl50_solo_una_reconexion_anuncia_el_reinicio() {
+    let h = host();
+    let t = tramo(&h, "WebSocketTLSConnectedwithTCP_NODELAY", "ws_stream.split()");
+    assert!(
+        t.contains("ifconexiones.establecida(){data_ingest::cola_ws::encolar(&tx_events,&rx_events_dropper,data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),"),
+        "el centinela sólo sale en una reconexión"
+    );
 }
 
 /// Todo envío del lector pasa por la cola contada: ningún `try_send` suelto

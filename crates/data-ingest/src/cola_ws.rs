@@ -1,4 +1,4 @@
-//! CL-52 — COLA ENTRE EL LECTOR DEL WS Y EL BUCLE DE EVENTOS.
+//! CL-50 / CL-52 — COLA ENTRE EL LECTOR DEL WS Y EL BUCLE DE EVENTOS.
 //!
 //! La cola es acotada y descarta el mensaje más antiguo cuando se llena
 //! (un tick viejo vale menos que uno nuevo). Dos defectos vivían en el host:
@@ -6,6 +6,9 @@
 //!   que son los que ocurren, se perdían sin evidencia (CERT-M1-H01 a medias).
 //! - El descarte podía tirar el propio centinela de reconexión: el bucle no
 //!   reiniciaba el libro ni la guardia de secuencia tras reconectar.
+//!
+//! Y la primera conexión se anunciaba como reconexión: el bucle reiniciaba
+//! los motores y borraba el calentamiento con K-lines REST de cada arranque.
 
 use crossbeam::channel::{Receiver, Sender, TrySendError};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -66,6 +69,25 @@ pub fn encolar(
     }
 }
 
+/// Conexiones del lector. La primera no es una reconexión: anunciarla
+/// reiniciaba los motores recién calentados.
+#[derive(Debug, Default)]
+pub struct ConexionesWs {
+    establecidas: u64,
+}
+
+impl ConexionesWs {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registra una conexión nueva; `true` si hubo otra antes (reconexión).
+    pub fn establecida(&mut self) -> bool {
+        self.establecidas += 1;
+        self.establecidas > 1
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +128,13 @@ mod tests {
         drop(rx);
         let (_tx_otro, rx_otro) = bounded::<Vec<u8>>(1);
         assert!(!encolar(&tx, &rx_otro, vec![1], &estado));
+    }
+
+    #[test]
+    fn cl50_la_primera_conexion_no_es_reconexion() {
+        let mut c = ConexionesWs::new();
+        assert!(!c.establecida());
+        assert!(c.establecida());
+        assert!(c.establecida());
     }
 }

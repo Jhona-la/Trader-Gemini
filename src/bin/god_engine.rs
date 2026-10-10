@@ -4991,6 +4991,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         rt.block_on(async move {
             let mut retry_count = 0;
+            // CL-50: sólo una reconexión se anuncia; la primera conexión no
+            // debe reiniciar los motores recién calentados.
+            let mut conexiones = data_ingest::cola_ws::ConexionesWs::new();
         loop {
             let current_url = ws_url.load().to_string();
             let url = url::Url::parse(&current_url).expect("Invalid WS URL");
@@ -5058,12 +5061,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok((ws_stream, _)) => {
                     telemetry_server::telemetry_log!("✅ [WS] WebSocket TLS Connected with TCP_NODELAY.");
                     retry_count = 0; // Reset retries on success
-                    data_ingest::cola_ws::encolar(
-                        &tx_events,
-                        &rx_events_dropper,
-                        data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),
-                        &estado_cola,
-                    );
+                    if conexiones.establecida() {
+                        data_ingest::cola_ws::encolar(
+                            &tx_events,
+                            &rx_events_dropper,
+                            data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),
+                            &estado_cola,
+                        );
+                    }
                     let (_, mut read) = ws_stream.split();
 
                     let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
