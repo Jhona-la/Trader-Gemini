@@ -201,40 +201,17 @@ pub fn reject_report() -> String {
 
 pub struct RiskEngine {
     pub peak_capital: f64,
-    /// CL-51: base de la cuenta con la que se mide el pico.
-    base_de_cuenta: Option<f64>,
 }
 
 impl RiskEngine {
     pub fn new(initial_capital: f64) -> Self {
         Self {
             peak_capital: initial_capital,
-            base_de_cuenta: None,
         }
     }
 
     pub fn reset(&mut self, initial_capital: f64) {
         self.peak_capital = initial_capital;
-    }
-
-    /// CL-51: el pico del veto de drawdown es de la CUENTA. Antes el núcleo
-    /// lo devolvía a `base_capital` en cada reconexión del WS (`reset_engines`)
-    /// y una caída desde el máximo se olvidaba cada vez que Binance cortaba.
-    /// Sólo se re-basa cuando cambia la base de la cuenta (transición
-    /// demo→mainnet, que la publica cuando llega el balance): la primera
-    /// base que se ve sólo se anota.
-    pub fn seguir_base_de_cuenta(&mut self, base: f64) {
-        if !base.is_finite() || base <= 0.0 {
-            return;
-        }
-        match self.base_de_cuenta {
-            Some(previa) if previa == base => {}
-            Some(_) => {
-                self.peak_capital = base;
-                self.base_de_cuenta = Some(base);
-            }
-            None => self.base_de_cuenta = Some(base),
-        }
     }
 
     /// U-3 (MOTOR UNIVERSAL CONTINUO): la API dual `evaluate_order`
@@ -255,7 +232,6 @@ impl RiskEngine {
         }
 
         let current_capital = arena.unified_capital.load(Ordering::Relaxed);
-        self.seguir_base_de_cuenta(arena.config.base_capital.load(Ordering::Relaxed));
         // FMT-212: validate before clamps/comparisons can turn an unknown
         // probability, peak or configuration into permission (or a panic).
         let clamp_min = arena.config.kelly_clamp_min.load(Ordering::Relaxed);
