@@ -881,43 +881,27 @@ impl RiskEngine {
             },
             arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
         );
-        // D-636b & #585: Rechazo Físico Invariante de Suelo Operable (below_tradeable_floor).
-        // Política de presupuesto fricción/stop del modelo (FMT-041): no es
-        // un teorema universal de EV negativo. Se conserva esta protección.
-        // Se rechaza limpiamente con REJ_TP_SL_FLOOR en lugar de inflar artificialmente el stop.
+        // D-636b & #585 + QS-D2: un horizonte cuyo stop difusivo no paga la
+        // fricción se RECHAZA, en cualquier régimen de capital. Para informar,
+        // `compute_tp_sl` eleva el stop al suelo de viabilidad, pero esa orden
+        // llevaría un stop más ancho que la dispersión de su τ: durante la
+        // vida de la posición casi nunca toca TP ni SL y sale por tiempo. Lo
+        // que corresponde es otro τ (la puerta QO-586 del núcleo ya lo filtra
+        // antes), no otro stop. QS-D2 retira el atajo micro de Ω47/F4-M1, que
+        // admitía esa orden cuando el suelo cabía en 55 pb.
         if tpsl_gate.below_tradeable_floor {
-            // Ω47 / F4-M1: En régimen micro ($13 USD), transición suave C^1 Hermite cúbico
-            // en lugar de escalón en 0.5. Si el suelo viable sl_floor cabe dentro del presupuesto
-            // admisible de stop loss para la escasez actual, se permite elevar el stop al suelo
-            // en lugar de abortar ciegamente con REJ_TP_SL_FLOOR.
-            let sl_floor = quantum_arena::genome::SuperGenotype::min_viable_sl(roundtrip_fee);
-            let u_w = ((micro_w_alloc - 0.20) / 0.60).clamp(0.0, 1.0);
-            let s_w = u_w * u_w * (3.0 - 2.0 * u_w);
-            let max_tolerable_floor = 0.0055 * s_w;
-            if sl_floor > max_tolerable_floor {
-                return rej(REJ_TP_SL_FLOOR);
-            }
+            return rej(REJ_TP_SL_FLOOR);
         }
-        // Blindaje Cuántico Micro-Cuenta ($13 USD):
-        // Dado el suelo de Binance de $5.00 min notional, el tamaño no puede comprimirse por debajo de ~$5.10.
-        // Si el stop difusivo sigma(tau)*k excede 55 bps en régimen micro, la pérdida en dólares violaría el presupuesto
-        // de ruina ($0.0280 USD max). Transición continua C^1 que interpola suavemente el stop a 55 bps
-        // preservando el ratio RR >= 2.25 de diseño sin quiebres de régimen.
-        let u_w = ((micro_w_alloc - 0.20) / 0.60).clamp(0.0, 1.0);
-        let s_w = u_w * u_w * (3.0 - 2.0 * u_w);
-        let micro_sl_cap = 0.0055;
-        let effective_sl = if s_w > 0.0 && tpsl_gate.sl_pct > micro_sl_cap {
-            crate::capital_regime::lerp(tpsl_gate.sl_pct, micro_sl_cap, s_w)
-        } else {
-            tpsl_gate.sl_pct
-        };
-        let effective_tp = if s_w > 0.0 && tpsl_gate.sl_pct > micro_sl_cap {
-            let tp_candidate = (effective_sl * tpsl_gate.rr_applied).max(effective_sl * 2.25);
-            crate::capital_regime::lerp(tpsl_gate.tp_pct, tp_candidate, s_w)
-        } else {
-            tpsl_gate.tp_pct
-        };
-        let (expected_win, expected_loss) = (effective_tp, effective_sl);
+        // QS-D2: el stop y el TP de la orden son los de su horizonte. Se
+        // retira el tope micro de 55 pb (que interpolaba el stop hacia 55 pb
+        // sin tocar τ). Con barreras a y b de un movimiento browniano con
+        // deriva μ y volatilidad σ, la ganancia esperada por operación es
+        // μ·E[T], con E[T] ≈ a·b/σ² (tiempo medio de salida sin deriva).
+        // Acortar las dos barreras por un factor k reduce lo que la deriva
+        // cobra en k², mientras la comisión de ida y vuelta no cambia. Lo que
+        // se pierde en dólares lo acotan el dimensionado y la viabilidad
+        // (R-19: `orden_viable` con el stop real), no la geometría.
+        let (expected_win, expected_loss) = (tpsl_gate.tp_pct, tpsl_gate.sl_pct);
 
         // FMT-211: resolve once BEFORE EV and reuse these exact prices below.
         // Payouts are signed fractions of entry price, not leveraged returns.
