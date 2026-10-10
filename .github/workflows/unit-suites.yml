@@ -1,0 +1,74 @@
+name: Unit and contract suites
+
+# QS-1 (Claude, 2026-10-10). `Replay contracts` ejecuta una selección de
+# suites; el resto sólo se COMPILA (`check --all-targets`). Medido sobre
+# main 8c45fcdf: de 116 ficheros `tests/*.rs` en estos siete crates corrían
+# ~12, y no corría ningún test unitario de risk-engine, quantum-arena,
+# signal-engine, feature-engine, metacortex-engine ni strategy-core, ni los
+# contratos del entrenador (`train_forest`, XLIV-13 + QS-2). Los «contratos
+# formales» de cada ola sólo protegen si alguien los ejecuta.
+#
+# Job aparte y en paralelo: no alarga el de replay (techo de 90 min) ni toca
+# su fichero. Mismo compilador fijado, `--locked` y `--test-threads=1` (hay
+# tests con estado global: XLIV-12, F8 «mutación de estado global»).
+# Sin `--ignored`: nada de red, testnet, tapes reales ni el oráculo T-1.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unit-suites-${{ github.event.pull_request.number || github.ref }}
+  # En PRs, un push nuevo sustituye al anterior. En main NO se cancela: con
+  # cancelación, una ráfaga de pushes deja main sin ninguna corrida completa
+  # (2026-10-10: #704, #705 y #706 cancelados; main rojo sin aviso).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  unit-suites:
+    # Matriz: cada job compila y enlaza su propio grafo en paralelo. Los ~117
+    # binarios de test en un solo job secuencial no caben en el techo (en
+    # Windows cada binario de integración enlaza todo el grafo; la primera
+    # corrida seguía compilando dependencias a los 19 min).
+    name: unit-suites (${{ matrix.grupo }})
+    runs-on: windows-2022
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - grupo: riesgo
+            paquetes: -p risk-engine --lib --tests
+          - grupo: nucleo
+            paquetes: -p god-engine-core --lib --tests
+          - grupo: espectro-y-consejo
+            paquetes: -p quantum-arena -p signal-engine -p feature-engine -p metacortex-engine -p strategy-core --lib --tests
+          - grupo: entrenador
+            # Sintético: ni entrenamiento, ni promoción, ni modelos reales.
+            paquetes: -p trader-gemini-v5 --lib --bin train_forest
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout candidate merge
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # verified v4
+        with:
+          persist-credentials: false
+      - name: Install the compiler used for the local regression
+        run: |
+          rustup toolchain install nightly-2026-06-30 --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 --version
+      - name: Tests (${{ matrix.grupo }})
+        run: cargo +nightly-2026-06-30 test ${{ matrix.paquetes }} --locked -- --test-threads=1

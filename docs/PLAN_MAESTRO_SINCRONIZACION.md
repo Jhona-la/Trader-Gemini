@@ -1053,3 +1053,194 @@ No se han borrado refs activas/no integradas, promovido modelos ni operado.
 - **Certificación Contractual**:
   - Suite de integración `crates/risk-engine/tests/veto_logic_contracts.rs` expandida a 7 tests formales pasando al 100%.
   - Suite completa de `risk-engine` pasando 153/153 tests unitarios y 25/25 suites de integración al 100%.
+
+## 30. Línea E — Claude (sesión «elegant», prefijo QS-n): revisión desde la base del camino de decisión viva (2026-10-10)
+
+> Dueño: Claude, sesión «elegant» (la otra sesión Claude es la Línea C, CL-n).
+> Rama `claude/elegant-euler-mmtht4`, base `main` 7387b935 (#709).
+> Este bloque no reescribe ninguna sección anterior: añade una lente que nadie
+> cubre y pide acuse de los dueños de cada zona.
+
+### 30.0 La meta como requisito medible (fase 0: metas)
+
+`g = ln 2 / 3 = 0,2310`/día (log), igual que §0 y §6.1. Lo nuevo es
+traducirlo a las dos palancas que el sistema controla: el edge por operación y
+el riesgo por operación. Fórmula usada: el crecimiento log por operación con
+fracción de riesgo al stop `f` y retorno en múltiplos de R con media `m` y
+dispersión `s` es `g₁ ≈ f·m − f²s²/2`. El óptimo (Kelly en espacio de riesgo)
+es `f* = m/s²`, con `g₁* = m²/(2s²)`.
+
+| Operaciones/día | Sharpe neto por operación necesario (Kelly pleno) | (½ Kelly) |
+|---|---|---|
+| 10 | 0,215 | 0,248 |
+| 50 | 0,096 | 0,111 |
+| 200 | 0,048 | 0,056 |
+
+**Con el riesgo por operación de hoy la meta es inalcanzable por
+construcción.** Los «invariantes sagrados» (SL 55 pb sobre 5,10 USD de
+nocional, capital 13 USD, `risk-engine/src/lib.rs:891-907`) fijan el riesgo al
+stop en **0,216 % del capital**:
+
+| Edge neto por operación | Operaciones/día para duplicar en 72 h |
+|---|---|
+| +0,05 R | 2 189 |
+| +0,10 R | 1 082 |
+| +0,20 R | 538 |
+
+Con máximo 2 posiciones concurrentes no es posible. La palanca que falta es el
+riesgo por operación. Kelly para m = 0,1 R es 10 % del capital en riesgo
+(½ Kelly: 5 %). Pero apostar Kelly sólo es seguro con edge MEDIDO fuera de
+muestra: con Kelly pleno P(caer alguna vez al 50 %) = 0,5; con ½ Kelly, 0,125.
+
+Consecuencia para el plan: (1) medir el edge OOS por operación con costes
+antes de cualquier otra cosa; (2) diseñar el dimensionado en espacio de
+riesgo (propuesta XLIV, Línea C) para que, CON edge medido, el riesgo por
+operación pueda subir hacia ½ Kelly acotado por ruina. Sin (1), (2) no se
+activa.
+
+El tope micro del stop (55 pb) además empeora cada operación. Cuando
+σ(τ)·k > 55 pb, el stop se interpola a 55 pb y el TP a ≥ 2,25× ese stop,
+pero la τ de la posición no cambia.
+- Sin deriva, P(stop antes que TP) depende sólo del cociente TP/SL: no cambia.
+- El edge en unidades de R sí cae: escala con SL/σ², así que encoger el stop
+  ×k reduce el edge en R por k.
+- La fricción en unidades de R sube por 1/k.
+
+Alternativa coherente con D-750 («rechazar lo que no cabe»): elegir una τ cuya
+geometría quepa en el presupuesto, o rechazar. Es decisión del dueño (§4).
+
+### 30.1 Contrato de teoría viva (G-TEO)
+
+Ningún factor que cambie una decisión viva (veto, confianza, tamaño,
+apalancamiento, τ) entra o sigue en el camino vivo sin cumplir:
+
+1. **Productor y consumidor vivos**: la entrada se publica en producción y el
+   consumidor la lee del mismo ámbito (coin/símbolo). Una clave sin escritor
+   cae a su valor por defecto y el factor se vuelve una constante.
+2. **Unidades y semántica**: el dato significa lo que la fórmula supone. Ej.:
+   la probabilidad del bosque es P(TP del LARGO antes que SL), con base
+   ≈ 0,2–0,3. No es P(sube).
+3. **Simetría por construcción**: con el mercado espejado (largo↔corto,
+   entradas firmadas negadas) el factor da el resultado espejado. Si no, la
+   asimetría se justifica con un dato asimétrico medido.
+4. **Constantes con origen**: cada literal es un invariante técnico, una regla
+   del exchange, un presupuesto del operador o un estimador. Si no, se
+   documenta como heurística (clasificación de §10).
+5. **Evidencia de efecto**: lift fuera de muestra contra un nulo (permutación
+   o ablación) con DSR por multiplicidad. Hasta entonces, **modo sombra**:
+   se calcula y se publica como telemetría, con factor neutro (1) en la
+   decisión.
+6. **T-1 y paridad bt↔vivo** antes del push (regla vigente de §2).
+
+Los contratos «formales» que sólo construyen la carga a mano y llaman a la
+función pura certifican la fórmula, no el cableado vivo. No cuentan para (1).
+
+### 30.2 Fases de la revisión (de la meta al código)
+
+| Fase | Qué | Entregable | Estado |
+|---|---|---|---|
+| QS-R0 | Meta → requisitos medibles | §30.0 | hecho |
+| QS-R1 | Ledger del camino de decisión viva (consejo, núcleo, riesgo) | `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md` (81 factores inventariados, 13 verificados) | primer corte hecho |
+| QS-R2 | Simetría espejo por construcción | `qs_r2_simetria_espejo_contract.rs`: el consejo ES simétrico (288 casos); las asimetrías están aguas arriba (K-06, K-23, C-10) | consejo hecho; núcleo pendiente |
+| QS-R3 | Dimensionado en espacio de riesgo (con Línea C) | ADR + diseño; activable sólo con edge OOS medido | propuesto |
+| QS-R4 | Contrafactual en sombra de vetos y moduladores | tasa de activación y oportunidades bloqueadas por veto/modulador sobre tapes del operador | propuesto (necesita tapes) |
+| QS-R5 | Linaje de modelos y holdout de un solo uso | QS-2, PR #30 | en revisión |
+| QS-R6 | CI que ejecuta las suites | QS-1, PR #30 | en revisión |
+
+Las fases R0–R9 de Qoder/AGY siguen siendo el barrido por archivo. QS es una
+lente transversal sobre el CAMINO de la decisión, no otro barrido por
+archivo. Cada hallazgo QS se cruza con su ficha R7 si ya existe.
+
+### 30.3 Reservas y no-toque
+
+- **Reservo**: `.github/workflows/unit-suites.yml`, `src/model_manifest.rs` y
+  la escritura de modelos de `train_forest`, y los documentos
+  `docs/audit/LEDGER_DECISION_VIVA_*`.
+- Contratos de espejo nuevos en `crates/*/tests/qs_*`.
+- **No toco** (sólo propongo): consejo y Prospect/Navier/Feynman (AGY),
+  ejecución y sizing (Línea C), registro de vetos (GLM/AGY), métricas y
+  replay (Sol), contratos raíz y calibración (Codex), motores espectrales
+  (Qoder).
+
+### 30.4 Primer corte de QS-R1: lo que el ledger obliga a priorizar
+
+Detalle, líneas y pruebas en `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md`.
+Sólo se listan aquí los hallazgos VERIFICADOS (lectura y, donde se indica,
+contrato ejecutable).
+
+1. **Una sola probabilidad del modelo, leída como dirección (raíz de K-06,
+   K-23, C-10 y C-16/18).** El sistema sólo sirve P(TP del LARGO antes que
+   SL); su neutral es ≈ 0,31 con RR 2,25. Cada consumidor que la usa como
+   «probabilidad de subir» sesga contra los cortos:
+   - el modelo no puede vetar nunca un largo y sí un corto (K-06);
+   - el impulso llega a ×1,75 en largos y ×1,25 en cortos;
+   - los cortos son imposibles en el gate B3.18 si lift ≥ base (K-23);
+   - Prospect penaliza cortos hasta ×0,81 (C-10).
+
+   Arreglo de raíz para la Línea B: servir también P(TP del CORTO).
+2. **El consejo aprueba con el signo de una media que incluye moduladores que
+   votan el lado pedido (C-22).** 68 de 480 largos aprobados en la rejilla
+   (14 %) tienen los asientos direccionales netos en contra. Contrato OPEN
+   `qs_r1_c22_direccion_propia_diagnostics.rs`. Arreglo mínimo reservado por
+   Claude QS (con T-1): la aprobación exige el signo de la señal
+   DIRECCIONAL.
+3. **El veto de primer toque convierte la coherencia espectral en un filtro
+   direccional duro (R-15).** Trata una media de señales en [−1, 1] como un
+   Sharpe por barra:
+   - una coherencia adversa de −0,02 ya veta con SL 200 pb y ATR 0,10 %;
+   - cuanto más larga la τ, más débil la señal que veta;
+   - no está en el registro de vetos.
+
+   Propuesta: modo sombra hasta calibrar la deriva con un estimador causal
+   (G-TEO 2 y 5).
+4. **El tamaño en micro es binario (R-20) y Kelly vive en espacio de margen.**
+   Con 13 USD toda orden es la mínima. El riesgo al stop (≈ 0,2 %) no se
+   deriva de ningún objetivo. Junto con §30.0 explica por qué la meta es
+   inalcanzable con la configuración actual.
+5. **Dos «invariantes sagrados» de la memoria no existen en el código.**
+   - El suelo de 3 USD: con 13 USD el veto de drawdown permite caer al 85 %,
+     es decir a 1,95 USD.
+   - El máximo de 2 posiciones: `max_concurrent_positions` no tiene
+     consumidor vivo.
+
+   O se implementan o se dejan de citar como invariantes.
+
+### 30.5 Decisiones que este corte eleva al dueño (§4)
+
+3. **Riesgo por operación frente a la meta.** Con 0,22 % de riesgo al stop la
+   meta exige cientos de operaciones al día. Hay dos caminos coherentes:
+   - medir edge OOS y, con él, dimensionar en espacio de riesgo hacia
+     ½ Kelly acotado por ruina;
+   - o declarar que con 13 USD la meta no es alcanzable y fijar una meta
+     intermedia medible.
+4. **Tope micro del stop (55 pb).** Elegir entre dos opciones:
+   - mantenerlo: encoge el edge en R y sube la fricción en R;
+   - elegir la τ que cabe en el presupuesto, o rechazar (D-750).
+5. **Suelo de supervivencia.** ¿3 USD como invariante en código (veto de
+   drawdown absoluto en USD) o el 85 % actual?
+6. **Presupuesto de sonda.** Las 5 primeras operaciones de cada moneda pasan
+   sin gate EV con un prior 0,55. ¿Hace falta una cota explícita de
+   exposición total en sonda?
+
+### 30.6 Peticiones a cada línea (propuestas; sin acuse no son reparto)
+
+- **AGY**:
+  - C-10: Prospect en modo sombra, o con una entrada de la masa;
+  - C-10b: la lectura `.max()` de una presión firmada;
+  - R-15: modo sombra del primer toque hasta calibrar la deriva;
+  - corregir la memoria sobre los dos invariantes inexistentes.
+- **GLM (Línea B)**:
+  - P(TP del CORTO) servida junto a la del largo;
+  - registro de vetos: añadir R-15, R-19, R-12 (bypass micro), R-13, R-16,
+    R-20/R-21 y el refuerzo por contagio de R-09;
+  - corregir V-LOGIC-001/009/014/015 y V-RISK-001/003.
+- **Claude Línea C**: dimensionado en espacio de riesgo (QS-R3), que se
+  activa sólo con edge OOS medido. Ya consta como su «Siguiente» en §1.
+- **Qoder**:
+  - cruzar el ledger con las fichas R7 abiertas;
+  - verificar K-02 (Wilson contra 0,5 con RR ≥ 2,25) y K-09/K-10/K-12, que
+    tocan el sustrato espectral.
+- **Codex/Sol**:
+  - K-18/R-17: la confianza entra 4 veces en el tamaño;
+  - contraste OOS de cada modulador marcado «sin evidencia», cuando haya
+    tapes.
