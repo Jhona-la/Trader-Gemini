@@ -117,6 +117,74 @@ struct ProtectionAudit {
     sl_gap: f64,
 }
 
+/// B2.6 / D-698 — purga las piernas TP/SL sin posición debajo (en hedge,
+/// sin posición de su lado). Las usan el vigilante en cada auditoría y el
+/// apagado tras el aplanado final (CL-44b).
+async fn purge_orphan_legs(
+    executor: &execution_engine::executor::OrderExecutor,
+    positions: &[execution_engine::PositionRiskEntry],
+) {
+    // B2.6 — PURGA DE PIERNAS HUÉRFANAS: piernas TP/SL cuya
+    // posición ya cerró disparan al vacío (REJECTED benigno
+    // que quema slots algo y ensucia el stream). Cancelarlas.
+    if let Ok(all_legs) = executor.fetch_all_open_algo_orders().await {
+        for leg in &all_legs {
+            // D-698 (DÉCIMA OLA · auditoría integral): `positionSide`
+            // vacío es DESCONOCIDO, no «no coincide». Con el
+            // predicado anterior, una pierna sin ese campo —el mismo
+            // que ya llegó vacío con `algoStatus` (B1.3-fix)— daba
+            // `side_open = false` para toda posición LARGA viva, y el
+            // watchdog purgaba su TP y su SL dejándola desnuda.
+            let side_unknown = leg.position_side.is_empty();
+            let side_open = positions.iter().any(|p| {
+                p.symbol == leg.symbol
+                    && p.position_amt.abs() > 0.0
+                    && (leg.position_side == "BOTH"
+                        || side_unknown
+                        || (p.position_amt > 0.0) == (leg.position_side == "LONG"))
+            });
+            if !side_open {
+                // D-698: se cancela por `algoId` y el fallo se
+                // reporta: una pierna que sobrevive a la purga
+                // dispara sobre la posición siguiente.
+                match executor
+                    .cancel_algo_order_ids(
+                        &leg.symbol,
+                        leg.algo_id,
+                        &leg.client_algo_id,
+                    )
+                    .await
+                {
+                    Ok(()) => telemetry_server::telemetry_log!(
+                        "🧹 [PROTECTION-WATCHDOG] Pierna huérfana purgada: {} {} algoId {} (posición ya cerrada)",
+                        leg.symbol, leg.order_type, leg.algo_id
+                    ),
+                    Err(e) => telemetry_engine::telemetry_err!(
+                        "🚨 [PROTECTION-WATCHDOG] Pierna huérfana VIVA: {} {} algoId {} no se pudo cancelar: {}",
+                        leg.symbol, leg.order_type, leg.algo_id, e
+                    ),
+                }
+            }
+        }
+    }
+}
+
+/// CL-44b (ADR-0015): antes de un aplanado total espera a que acabe la
+/// auditoría del vigilante que estuviera en curso; las nuevas no empiezan
+/// mientras el aplanado está anunciado. Tope de 10 s: el vigilante sólo
+/// coloca piernas reductoras y el aplanado no espera indefinidamente.
+async fn esperar_auditoria_en_curso() {
+    for _ in 0..200 {
+        if quantum_arena::protection_health::audits_in_progress() == 0 {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    telemetry_server::telemetry_log!(
+        "⚠️ [APLANADO] La auditoría del vigilante sigue en curso tras 10 s: se aplana igual."
+    );
+}
+
 /// B1.3: audita la cobertura TP/SL de una posición viva contra las algo
 /// orders REALES del exchange y hace top-up QUIRÚRGICO por lado (solo el
 /// lado con shortfall — un OCO completo sobre-protegería el sano y el
@@ -1688,23 +1756,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         arena_imm.kill_switch_active.store(true, Ordering::Relaxed);
                         let executor = exec_imm.load_full();
                         executor.trigger_kill_switch();
-                        match executor.flatten_all_positions().await {
-                            Ok((syms, positions)) => telemetry_server::telemetry_log!(
-                                "🧹 [SISTEMA INMUNE] Aplanado: {} símbolos con órdenes canceladas, {} posiciones cerradas. Reinicio manual para rearmar.",
-                                syms,
-                                positions
-                            ),
-                            Err(e) => {
-                                telemetry_server::telemetry_log!(
+                        // CL-44b (ADR-0015): el aplanado cierra en el exchange
+                        // sin tocar las ranuras locales, que el núcleo sigue
+                        // gestionando bajo el latch (CL-43). Sin consumir su
+                        // confirmación, un SL o TP local posterior se
+                        // aprendía como cierre real a un precio inventado.
+                        let consumidas = arena_imm.consume_exchange_confirmations();
+                        {
+                            // CL-44b: el vigilante no audita mientras se
+                            // aplana (re-armaba piernas que quedaban huérfanas).
+                            let _aplanado = quantum_arena::protection_health::begin_flatten();
+                            esperar_auditoria_en_curso().await;
+                            match executor.flatten_all_positions().await {
+                                Ok((syms, positions)) => telemetry_server::telemetry_log!(
+                                    "🧹 [SISTEMA INMUNE] Aplanado: {} símbolos con órdenes canceladas, {} posiciones cerradas, {} ranuras dejan de contar como reales. Reinicio manual para rearmar.",
+                                    syms,
+                                    positions,
+                                    consumidas
+                                ),
+                                Err(e) => telemetry_server::telemetry_log!(
                                     "🚨 [SISTEMA INMUNE] Aplanado FALLÓ: {} — INTERVENCIÓN MANUAL URGENTE.",
                                     e
-                                );
-                                // CL-44 (ADR-0015): lo que quedó vivo se
-                                // re-protege ya (el vigilante corre bajo el
-                                // latch), no a los 60 s.
-                                quantum_arena::protection_health::mark_dirty();
+                                ),
                             }
                         }
+                        // CL-44 / CL-44b (ADR-0015): el vigilante audita ya, no
+                        // a los 60 s, también si el aplanado devolvió Ok:
+                        // `flatten_all_positions` devuelve Ok aunque un cierre
+                        // falle después de purgar las piernas de su símbolo.
+                        quantum_arena::protection_health::mark_dirty();
                         latched = true;
                     }
                 }
@@ -2482,17 +2562,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if !dirty && ticks % 12 != 0 {
                         continue;
                     }
+                    // CL-44b (ADR-0015): no audita durante un aplanado total.
+                    // Sus cancelaciones despiertan al vigilante, que veía la
+                    // posición aún abierta y le colocaba piernas nuevas antes
+                    // del cierre. La bandera sigue sucia: se audita al acabar.
+                    let Some(_auditoria) = quantum_arena::protection_health::try_begin_audit() else {
+                        continue;
+                    };
                     let executor = exec_wd.load_full();
                     // CL-44 (FMT-232, ADR-0015): la auditoría corre también con
                     // el kill-switch armado. Antes lo saltaba entera: tras X-009
                     // o un aplanado fallido la posición viva quedaba sin
                     // re-bracket ni cierre de escalada. Todo lo que hace aquí
                     // reduce riesgo: piernas protectoras (CL-20), purga de
-                    // huérfanas y cierre reduce-only (CL-3). Si el sistema
-                    // inmune aplana a la vez, una pierna colocada entre su
-                    // cancelación y su cierre queda huérfana sobre una posición
-                    // plana; es reductora (no abre exposición) y la purga de la
-                    // auditoría siguiente la cancela.
+                    // huérfanas y cierre reduce-only (CL-3).
                     let Ok(positions) = executor.fetch_position_risk().await else {
                         continue;
                     };
@@ -2505,49 +2588,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // posición sana cuyo bracket apenas estaba en vuelo.
                     let mut open_syms: std::collections::HashSet<String> =
                         std::collections::HashSet::new();
-                    // B2.6 — PURGA DE PIERNAS HUÉRFANAS: piernas TP/SL cuya
-                    // posición ya cerró disparan al vacío (REJECTED benigno
-                    // que quema slots algo y ensucia el stream). Cancelarlas.
-                    if let Ok(all_legs) = executor.fetch_all_open_algo_orders().await {
-                        for leg in &all_legs {
-                            // D-698 (DÉCIMA OLA · auditoría integral): `positionSide`
-                            // vacío es DESCONOCIDO, no «no coincide». Con el
-                            // predicado anterior, una pierna sin ese campo —el mismo
-                            // que ya llegó vacío con `algoStatus` (B1.3-fix)— daba
-                            // `side_open = false` para toda posición LARGA viva, y el
-                            // watchdog purgaba su TP y su SL dejándola desnuda.
-                            let side_unknown = leg.position_side.is_empty();
-                            let side_open = positions.iter().any(|p| {
-                                p.symbol == leg.symbol
-                                    && p.position_amt.abs() > 0.0
-                                    && (leg.position_side == "BOTH"
-                                        || side_unknown
-                                        || (p.position_amt > 0.0) == (leg.position_side == "LONG"))
-                            });
-                            if !side_open {
-                                // D-698: se cancela por `algoId` y el fallo se
-                                // reporta: una pierna que sobrevive a la purga
-                                // dispara sobre la posición siguiente.
-                                match executor
-                                    .cancel_algo_order_ids(
-                                        &leg.symbol,
-                                        leg.algo_id,
-                                        &leg.client_algo_id,
-                                    )
-                                    .await
-                                {
-                                    Ok(()) => telemetry_server::telemetry_log!(
-                                        "🧹 [PROTECTION-WATCHDOG] Pierna huérfana purgada: {} {} algoId {} (posición ya cerrada)",
-                                        leg.symbol, leg.order_type, leg.algo_id
-                                    ),
-                                    Err(e) => telemetry_engine::telemetry_err!(
-                                        "🚨 [PROTECTION-WATCHDOG] Pierna huérfana VIVA: {} {} algoId {} no se pudo cancelar: {}",
-                                        leg.symbol, leg.order_type, leg.algo_id, e
-                                    ),
-                                }
-                            }
-                        }
-                    }
+                    purge_orphan_legs(&executor, &positions).await;
                     let mut naked_total = 0usize;
                     for p in positions
                         .iter()
@@ -4858,6 +4899,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .kill_switch_active
                 .store(true, Ordering::SeqCst);
             executor.trigger_kill_switch();
+            // CL-44b (ADR-0015): el vigilante no audita durante el aplanado
+            // final. La guarda no se suelta: el proceso sale con ella puesta.
+            let _aplanado = quantum_arena::protection_health::begin_flatten();
+            rt_handle_for_thread.block_on(esperar_auditoria_en_curso());
             match rt_handle_for_thread.block_on(executor.flatten_all_positions()) {
                 Ok((closed, skipped)) => telemetry_server::telemetry_log!(
                     "🛑 [SHUTDOWN] Flatten-all completado: {} cerradas, {} ya planas.",
@@ -4868,6 +4913,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "🛑 [SHUTDOWN] Flatten-all con error: {:?} — el arranque próximo reconciliará.",
                     e
                 ),
+            }
+            // CL-44b: tras salir no queda auditoría que purgue; una pierna sin
+            // posición debajo dispararía sobre la siguiente posición del lado.
+            if let Ok(positions) = rt_handle_for_thread.block_on(executor.fetch_position_risk()) {
+                rt_handle_for_thread.block_on(purge_orphan_legs(&executor, &positions));
             }
             persist_kelly_envelope(&risk_envelope);
             telemetry_server::telemetry_log!(

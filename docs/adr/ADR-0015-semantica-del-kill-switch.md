@@ -41,7 +41,27 @@ protectoras) no (CL-3, CL-20). El resto del sistema no seguía esa regla:
    reduce-only, cancelaciones, lecturas y piernas protectoras.
 3. Toda vía que arma el latch y deja una posición viva despierta al
    vigilante (`protection_health::mark_dirty`), que la re-protege o escala
-   su cierre. El vigilante audita también con el latch armado.
+   su cierre. El vigilante audita también con el latch armado. El aplanado
+   del sistema inmune lo despierta siempre al terminar, también si devuelve
+   Ok: `flatten_all_positions` devuelve Ok aunque un cierre falle después
+   de purgar las piernas de su símbolo (CL-44b).
+4. Un aplanado total (sistema inmune o apagado) y una auditoría del
+   vigilante no se solapan (CL-44b). El aplanado se anuncia
+   (`protection_health::begin_flatten`) y espera a la auditoría en curso
+   (tope de 10 s); el vigilante no empieza una auditoría con un aplanado
+   anunciado (`try_begin_audit`). Antes las cancelaciones del aplanado
+   despertaban al vigilante, que re-armaba piernas sobre posiciones que se
+   cerraban a continuación. El apagado, además, purga las piernas sin
+   posición antes de salir, porque después no queda auditoría que lo haga.
+5. El aplanado del sistema inmune consume la confirmación de todas las
+   ranuras abiertas ANTES de aplanar
+   (`GlobalArena::consume_exchange_confirmations`, CL-44b). El aplanado
+   cierra en el exchange sin tocar las ranuras, que siguen abiertas hasta
+   la reconciliación y que el núcleo gestiona bajo el latch: sin esto, un SL
+   o TP local posterior se aprendía como cierre real a un precio que no era
+   el del aplanado (capital, Kelly, calibradores y el sobre de Kelly en
+   disco). Lo que el núcleo cierre después es papel; el host sigue enviando
+   su reduce-only de respaldo, que cierra lo que el aplanado no pudo.
 
 ## Consecuencias
 
@@ -53,9 +73,15 @@ protectoras) no (CL-3, CL-20). El resto del sistema no seguía esa regla:
 - `train_forest` sigue abortando si el latch se arma durante la
   reproducción del tape: allí sólo se arma con capital ≤ 0, y un tape que
   liquida el capital no produce etiquetas válidas.
-- Carrera conocida y aceptada: si el vigilante re-protege mientras el
-  aplanado del sistema inmune cierra la posición, puede quedar una pierna
-  protectora huérfana. Es reductora por construcción y la siguiente
-  auditoría la purga.
+- Contratos de CL-44b: `close_outcome_contract.rs`
+  (`cl44b_tras_el_aplanado_inmune_el_cierre_local_no_aprende`),
+  `kill_switch_host_contract.rs` (cuatro guardias) y
+  `protection_health::cl44b_aplanado_y_auditoria_no_se_solapan`.
+- Coste aceptado: si el aplanado inmune no logra cerrar una posición, su
+  cierre posterior tampoco se aprende (la confirmación ya se consumió). Se
+  pierde una observación real a cambio de no aprender ninguna inventada.
+- Si la auditoría en curso supera los 10 s de espera, el aplanado sigue y
+  puede quedar una pierna reductora huérfana; tras el aplanado inmune la
+  purga la siguiente auditoría, y tras el de apagado la purga final.
 - Abierto: el latch es permanente hasta reiniciar el proceso. El rearme
   con histéresis (V-LOGIC-005) no tiene prueba de runtime en el host.

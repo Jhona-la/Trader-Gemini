@@ -390,6 +390,40 @@ fn kill_switch_process_event_preserves_stop_close() {
     assert!(arena.kill_switch_active.load(Ordering::SeqCst));
 }
 
+/// CL-44b (ADR-0015): el aplanado del sistema inmune cierra la posición en
+/// el exchange sin tocar la ranura, que sigue abierta y confirmada hasta la
+/// reconciliación. Bajo el latch el núcleo la gestiona (CL-43): antes este SL
+/// local se contabilizaba como cierre real (capital, Kelly, calibradores) a un
+/// precio que no era el del aplanado. Consumida la confirmación, el cierre
+/// sigue viajando como propuesta defensiva, pero es papel.
+#[test]
+fn cl44b_tras_el_aplanado_inmune_el_cierre_local_no_aprende() {
+    let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
+    let _dir = FixtureDirectory::new();
+    let (arena, mut engine) = core(OutcomeContext::ExchangeLocalEstimate, true);
+    arena.kill_switch_active.store(true, Ordering::SeqCst);
+    assert_eq!(arena.consume_exchange_confirmations(), 1);
+    assert_eq!(arena.consume_exchange_confirmations(), 0, "se consume una sola vez");
+    let capital = arena.unified_capital.load(Ordering::Relaxed);
+    let (entry, proposal, _) =
+        engine.process_tick_dual(0, 97.0, 97.01, 5.0, 5.0, 2000, &[0.0; 54], true, true);
+    assert!(entry.is_none());
+    let (_, _, qty) = proposal.expect("el cierre defensivo sigue llegando al host");
+    assert_eq!(qty, 1.0);
+    assert_eq!(arena.unified_capital.load(Ordering::Relaxed), capital);
+    assert_eq!(arena.coins[0].metrics.trade_count.load(Ordering::Relaxed), 0);
+    assert_eq!(engine.diag_close_total, 0);
+    assert_eq!(engine.diag_unverified_close_total, 1);
+    assert!(
+        !arena.coins[0]
+            .positions
+            .position
+            .last_close_confirmed
+            .load(Ordering::Relaxed),
+        "el host no lo contabiliza ni persiste el sobre de Kelly"
+    );
+}
+
 #[test]
 fn drift_entry_veto_preserves_local_defensive_close_and_blocks_new_entry() {
     let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());

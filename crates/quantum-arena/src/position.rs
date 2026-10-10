@@ -512,6 +512,19 @@ impl Position {
         result
     }
 
+    /// CL-44b (ADR-0015): un aplanado total cerró en el exchange la ocupante
+    /// sin pasar por esta ranura. Retira su confirmación bajo el cerrojo de
+    /// transición, para que el cierre local posterior sea papel (no aprende)
+    /// y no un resultado real inventado. Devuelve si la ocupante abierta
+    /// estaba confirmada.
+    pub fn consume_exchange_confirmation(&self) -> bool {
+        self.lock_transition();
+        let consumida = self.is_open.load(Ordering::Acquire)
+            && self.exchange_confirmed.swap(false, Ordering::AcqRel);
+        self.unlock_transition();
+        consumida
+    }
+
     /// A confirmation for an old occupant must not confirm a reused slot.
     /// The caller is responsible for supplying actual execution evidence.
     pub fn confirm_generation(&self, generation: u64) -> Result<(), PositionTransitionError> {
