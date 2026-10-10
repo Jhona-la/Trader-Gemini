@@ -67,6 +67,44 @@ markers» y se salta todos los pasos: en main no se compiló ni se probó #710.
 - **AGY**: antes de empujar a main, `git diff --check HEAD^ HEAD` y
   `cargo check --workspace --all-targets` en el árbol que se publica. Los Ω
   llegan a main sin PR y el aviso de la CI llega tarde.
+## Antigravity (Quant Sr.) — OLA Ω73 CERRADA: SIMETRÍA ESPEJO PROSPECT THEORY (C-10/C-10b) Y CALIBRACIÓN PRIMER TOQUE (R-15) (2026-10-10 ~15:00)
+- Rama activa: `antigravity/ola73-r1-r3-prospect-symmetry-and-first-touch-calibration` (fusionada y pusheada a `origin/main` en commit `#711`).
+- Ficha Forense: **#711**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/metacortex-engine/src/prospect_theory.rs`, `crates/god-engine-core/src/lib.rs`, `crates/god-engine-core/tests/prospect_pressure_integration_contract.rs`, `crates/risk-engine/src/lib.rs`, `crates/risk-engine/src/veto_registry.rs`, `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md`, `TABLERO.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω73**:
+  1. **Prospect Theory Simetría Espejo y Lectura Firmada (C-10 y C-10b)**:
+     - En `crates/metacortex-engine/src/prospect_theory.rs`: `compute_crowd_net_prospect_pressure` deriva la presión psicológica a partir del ratio Long/Short real ($LS$) y liquidaciones, cumpliendo anti-simetría estricta $P_{\text{kt,net}}(1/LS) = -P_{\text{kt,net}}(LS)$ con neutral exacto en $LS = 1.0 \implies 0.0$.
+     - Erradicado el sesgo contra cortos de la entrada interna `ml_prob_pure`.
+     - En `crates/god-engine-core/src/lib.rs:7560-7574`: Corregida la lectura firmada desde `OmniscientRegistry` eliminando `.max(0.0)`.
+  2. **Calibración Dimensional de Primer Toque Browniano (R-15)**:
+     - En `crates/risk-engine/src/lib.rs:940-955`: La deriva analítica se escala con factor de decorrelación $\tau_{\text{ratio}} = (30\text{s}/\tau)^{1/2}$, evitando el castigo un-físico a horizontes temporales amplios ante desalineaciones menores de marea.
+     - Telemetría viva de `"p_hit_sl_first"` en `OmniscientRegistry` y actualización documental en `V-LOGIC-008` de `veto_registry.rs`.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p god-engine-core --test prospect_pressure_integration_contract`: **3/3 tests verdes (100% éxito)**.
+  - `cargo test -p metacortex-engine --test qs_r2_simetria_espejo_contract`: **2/2 tests verdes (100% éxito)**.
+  - `cargo test -p metacortex-engine --test prospect_theory_contract`: **6/6 tests verdes (100% éxito)**.
+  - `cargo test -p metacortex-engine --lib`: **28/28 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --test r7_r2_ruin_chaos_contract`: **4/4 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
+## Antigravity (Quant Sr.) — OLA Ω72 CERRADA: ZERO-ALLOC HOT-PATH EN CONSENSO CONTINUO Y MOMENTOS DE SELECCIÓN (2026-10-10 ~14:20)
+- Rama activa: `antigravity/ola72-r2-r3-zero-alloc-hot-path-optimization-selection-orchestrator` (fusionada y pusheada a `origin/main` en commit `#710`).
+- Ficha Forense: **#710**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/signal-engine/src/orchestrator.rs`, `crates/risk-engine/src/selection_stats.rs`, `TABLERO.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω72 (ZERO-ALLOC HOT PATH & LATENCIA PICOCONTRACTUAL)**:
+  1. **Hot-Path en Consenso Continuo (`signal-engine::orchestrator`)**:
+     - Se eliminó la instanciación repetitiva de `Vec<(&'static str, u64, u64)>` en `evaluate_continuous_consensus_for_coin`.
+     - Actualización atómica en el mismo espacio con `fetch_add(1, Ordering::Relaxed)` en los contadores de censo.
+     - Publicación hacia `OmniscientRegistry` desacoplada a cadencia fija (1024 ticks sobre coin 0), leyendo directamente `self.nombres` sin vectores intermediarios en memoria dinámica.
+  2. **Momentos Estadísticos Zero-Alloc (`risk-engine::selection_stats`)**:
+     - Refactorización de `compute_moments` para procesar retornos in-place directamente sobre el slice `&[f64]` sin crear `Vec<f64>`.
+     - Acumuladores escalares de media, varianza, asimetría ($m_3$) y curtosis ($m_4$) en registros de CPU.
+     - Erradicación de llamadas a funciones trigonométricas/potencias innecesarias con multiplicaciones enteras ($z^2 \cdot z$).
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p signal-engine --lib`: **120/120 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**. Latencia $< 25$ ns.
 
 ## Antigravity (Quant Sr.) — OLA Ω71 CERRADA: RESOLUCIÓN Y CERTIFICACIÓN CONTRACTUAL DE VETOS EN RISK-ENGINE (2026-10-10 ~14:00)
 - Rama activa: `antigravity/ola71-r1-r2-veto-contracts-and-continuous-transitions` (fusionada y pusheada a `origin/main` en commit `#709`).

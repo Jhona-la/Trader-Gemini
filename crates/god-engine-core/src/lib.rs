@@ -7555,21 +7555,35 @@ impl GodEngineCore {
                                 .arena
                                 .registry
                                 .get_for_coin_or(coin_id, "navier_laminar_share", 1.0),
-                            // OLA Ω69/Ω70: Presión psicológica continua de Kahneman-Tversky (Prospect Theory)
+                            // OLA Ω69/Ω70/Ω73: Presión psicológica continua anti-simétrica de Kahneman-Tversky (Prospect Theory)
+                            // FIX C-10b: Lectura firmada robusta sin .max(0.0) que destruía las lecturas negativas de pánico.
+                            // FIX C-10: Fallback anti-simétrico basado en sentimiento de masas (LS ratio real), eliminando el sesgo contra cortos.
                             prospect_pressure: {
-                                let reg_p = self
+                                let reg_coin = self
                                     .arena
                                     .registry
-                                    .get_for_coin_or(coin_id, "prospect_pressure", 0.0)
-                                    .max(self.arena.registry.get_scoped_value_or(&sym, "prospect_pressure", 0.0));
-                                if reg_p != 0.0 {
+                                    .get_for_coin_or(coin_id, "prospect_pressure", f64::NAN);
+                                let reg_sym = self
+                                    .arena
+                                    .registry
+                                    .get_scoped_value_or(&sym, "prospect_pressure", f64::NAN);
+                                let reg_p = if reg_coin.is_finite() && reg_coin.abs() > 1e-6 {
+                                    reg_coin
+                                } else if reg_sym.is_finite() && reg_sym.abs() > 1e-6 {
+                                    reg_sym
+                                } else {
+                                    f64::NAN
+                                };
+                                if reg_p.is_finite() {
                                     reg_p.clamp(-50.0, 50.0)
                                 } else {
-                                    let p_bull = ml_prob_pure.clamp(0.01, 0.99);
-                                    let p_crash = (liquidation_severity * 0.5 + (1.0 - p_bull) * 0.5).clamp(0.01, 0.99);
+                                    let ls_ratio = self
+                                        .arena
+                                        .registry
+                                        .get_scoped_value_or(&sym, "ls_account_ratio", 1.0);
                                     let delta_pts = (council_atr_pct * 100.0).clamp(0.1, 10.0);
                                     metacortex_engine::prospect_theory::ProspectTheoryEngine::new()
-                                        .compute_prospect_pressure(p_bull, p_crash, delta_pts, delta_pts)
+                                        .compute_crowd_net_prospect_pressure(ls_ratio, liquidation_severity, delta_pts)
                                 }
                             },
                         };
