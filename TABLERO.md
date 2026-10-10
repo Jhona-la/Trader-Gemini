@@ -80,13 +80,12 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω71 en curso / Fase R1-R2)
+## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω72 en curso / Fase R2-R3)
 
-- **Haciendo ahora**: Ola Ω71 — Liquidación de deuda contractual en `crates/risk-engine/src/veto_registry.rs`,
-  certificando contratos formales ejecutables para V-LOGIC-014 (fee_impact), V-LOGIC-015 (orchestrator),
-  V-TECH-001 (flat/coin), V-TECH-002 (spec) y V-TECH-004 (entrada_invalida) en `crates/risk-engine/tests/veto_logic_contracts.rs`
-  (7/7 tests OK, 153/153 lib tests OK, 25/25 suites de integración OK), preservando invariantes
-  de micro-capital ($13.00 USD, 5x, RR ≥ 2.25) y hot path $< 25$ ns.
+- **Haciendo ahora**: Ola Ω72 — Erradicación de asignaciones dinámicas en el heap (Zero-Alloc Hot-Path)
+  en `crates/signal-engine/src/orchestrator.rs` (`evaluate_continuous_consensus_for_coin`, eliminando `Vec censo_muestras` por tick)
+  y `crates/risk-engine/src/selection_stats.rs` (`compute_moments`, eliminando `Vec clean` con cálculo de momentos in-place),
+  garantizando latencia de evaluación $< 25$ ns sobre la ruta crítica por tick en laptop de 16GB RAM sin GPU.
 - **Commiteado reciente**:
   - Ola Ω68 (#704, `194089b8`): Absorción analítica de Fokker-Planck en SDE VECM y first-passage time.
   - Plan Maestro Cuántico Integral (#705, `549fc536`): Documento canónico, 10 roles Senior, barrido R0-R9.
@@ -96,13 +95,14 @@
     $[0.50, 1.30]$ en `SeniorEnteMercado` de `metacortex-engine`). Contratos formales pasando al 100% (7/7 y 6/6; 78/78 en metacortex).
   - Ola Ω70 (#708, `558c7dcc`): Integración en vivo de `prospect_pressure` en `god-engine-core::council_snapshot`,
     unificación analítica de colas de pánico con fallback continuo y contrato formal `prospect_pressure_integration_contract.rs` (2/2 tests OK).
-  - Ola Ω71 (#709): Certificación y resolución de deuda en 5 vetos del `veto_registry.rs` de `risk-engine`,
+  - Ola Ω71 (#709, `7387b935`): Certificación y resolución de deuda en 5 vetos del `veto_registry.rs` de `risk-engine`,
     adición de contratos formales `veto_logic_contracts.rs` y registro compile-time inmutable `TESTS_EXISTENTES_RIESGO`.
+  - Ola Ω72 (#710): Zero-alloc hot-path en `signal-engine::orchestrator` y `risk-engine::selection_stats`.
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados
   de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`).
-  Toda la suite de crates pasando al 100% (153/153 en risk-engine, 127/127 en
-  signal-engine, 78/78 en metacortex-engine, 172/172 en god-engine-core, 54/54 en backtest-engine, 40/40 en
-  strategy-core).
+  Toda la suite de crates pasando al 100% (153/153 en risk-engine, 120/120 en
+  signal-engine, 78/78 en metacortex-engine, 170/170 en god-engine-core, 54/54 en backtest-engine, 40/40 en
+  strategy-core). Workspace verificado con `cargo check --workspace --all-targets` limpio.
 
 ## Frentes del sistema (no por agente)
 

@@ -392,22 +392,19 @@ impl TensorVoteOrchestrator {
         // #611 — censo empírico: por estrategia, total de evaluaciones y
         // las que produjeron voto no-cero. Telemetría pura: no toca la
         // decisión (los acumuladores de abajo son los de siempre).
-        let mut censo_muestras: Vec<(&'static str, u64, u64)> = Vec::new();
+        // Ola Ω72 (#710): Zero-alloc hot-path. Se eliminó la reserva de Vec
+        // censo_muestras en cada tick. El censo atómico se incrementa in situ
+        // y se vuelca al registro sólo en la cadencia de publicación.
         for (idx, s) in all.iter().enumerate() {
             let output = s.evaluate_for_coin(coin_id, symbol);
-            let (total_prev, nc_prev) = (
-                self.censo_total.get(idx).map(|a| a.load(Ordering::Relaxed)).unwrap_or(0),
-                self.censo_no_cero.get(idx).map(|a| a.load(Ordering::Relaxed)).unwrap_or(0),
-            );
             let no_cero = u64::from(output.is_finite() && output.abs() > 1e-9);
             if let Some(a) = self.censo_total.get(idx) {
-                a.store(total_prev + 1, Ordering::Relaxed);
+                a.fetch_add(1, Ordering::Relaxed);
             }
             if let Some(a) = self.censo_no_cero.get(idx) {
-                a.store(nc_prev + no_cero, Ordering::Relaxed);
-            }
-            if let Some(nombre) = self.nombres.get(idx) {
-                censo_muestras.push((nombre, total_prev + 1, nc_prev + no_cero));
+                if no_cero != 0 {
+                    a.fetch_add(1, Ordering::Relaxed);
+                }
             }
             if !output.is_finite() {
                 continue;
@@ -430,14 +427,24 @@ impl TensorVoteOrchestrator {
                 .consensos_desde_publicacion
                 .fetch_add(1, Ordering::Relaxed);
             if n % 1024 == 0 {
-                for (nombre, total, no_cero) in &censo_muestras {
+                for (idx, &nombre) in self.nombres.iter().enumerate() {
+                    let total = self
+                        .censo_total
+                        .get(idx)
+                        .map(|a| a.load(Ordering::Relaxed))
+                        .unwrap_or(0);
+                    let no_cero = self
+                        .censo_no_cero
+                        .get(idx)
+                        .map(|a| a.load(Ordering::Relaxed))
+                        .unwrap_or(0);
                     self.arena.registry.set(
                         &format!("censo_total_{}", nombre),
-                        *total as f64,
+                        total as f64,
                     );
                     self.arena.registry.set(
                         &format!("censo_no_cero_{}", nombre),
-                        *no_cero as f64,
+                        no_cero as f64,
                     );
                 }
                 // #624 — adopción del consenso espectral: decisiones

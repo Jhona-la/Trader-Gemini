@@ -27,25 +27,47 @@ pub struct ReturnMoments {
 }
 
 pub fn compute_moments(returns: &[f64]) -> Option<ReturnMoments> {
-    let clean: Vec<f64> = returns.iter().copied().filter(|r| r.is_finite()).collect();
-    if clean.len() < 20 {
+    let mut n = 0usize;
+    let mut sum = 0.0f64;
+    for &r in returns {
+        if r.is_finite() {
+            n += 1;
+            sum += r;
+        }
+    }
+    if n < 20 {
         return None;
     }
-    let n = clean.len() as f64;
-    let mean = clean.iter().sum::<f64>() / n;
-    let var = clean.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (n - 1.0);
+    let nf = n as f64;
+    let mean = sum / nf;
+    let mut var_sum = 0.0f64;
+    for &r in returns {
+        if r.is_finite() {
+            let d = r - mean;
+            var_sum += d * d;
+        }
+    }
+    let var = var_sum / (nf - 1.0);
     let sd = var.sqrt();
     if sd <= 1e-12 {
         return None;
     }
-    let m3 = clean.iter().map(|r| ((r - mean) / sd).powi(3)).sum::<f64>() / n;
-    let m4 = clean.iter().map(|r| ((r - mean) / sd).powi(4)).sum::<f64>() / n;
+    let mut m3_sum = 0.0f64;
+    let mut m4_sum = 0.0f64;
+    for &r in returns {
+        if r.is_finite() {
+            let z = (r - mean) / sd;
+            let z2 = z * z;
+            m3_sum += z2 * z;
+            m4_sum += z2 * z2;
+        }
+    }
     Some(ReturnMoments {
         mean,
         sd,
-        skewness: m3,
-        kurtosis: m4,
-        n: clean.len(),
+        skewness: m3_sum / nf,
+        kurtosis: m4_sum / nf,
+        n,
     })
 }
 
