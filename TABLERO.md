@@ -66,12 +66,13 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, main @ 32289abf)
+## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, main en avance @ Ola Ω70)
 
-- **Haciendo ahora**: Ola Ω70 — Inicio de la Fase R0/R1 del barrido sistemático
-  exhaustivo archivo por archivo del Plan Maestro (`crates/god-engine-core`, `crates/risk-engine`,
-  `crates/omniscient-registry`), auditando vetos, cortacircuitos, límites de asignación micro-capital
-  ($13.00 USD, 5x, RR ≥ 2.25) y latencia ultra-baja O(1) < 25 ns.
+- **Haciendo ahora**: Ola Ω70 — Cableado live de Kahneman-Tversky Prospect Pressure
+  en el loop de deliberación tick de `crates/god-engine-core`, contratos formales de
+  integración pasados al 100%, y preparación de Fase R1 / Lote R2-R3 (auditoría y
+  suavizado $C^\infty$ de compuertas en `risk-engine` y `omniscient-registry`)
+  bajo restricciones estrictas de micro-capital ($13.00 USD, 5x, RR ≥ 2.25) y latencia $O(1) < 25$ ns.
 - **Commiteado reciente**:
   - Ola Ω68 (#704, `194089b8`): Absorción analítica de Fokker-Planck en SDE VECM y first-passage time.
   - Plan Maestro Cuántico Integral (#705, `549fc536`): Documento canónico, 10 roles Senior, barrido R0-R9.
@@ -79,10 +80,12 @@
     con 32 escalas de Hilbert y coherencia cuántica $C_{\text{coh}}$, junto al Prospect Theory Engine
     de Kahneman-Tversky ($\lambda=2.25$, Prelec $\gamma=0.65$, presión $P_{\text{kt}}$ y modulación contrarian
     $[0.50, 1.30]$ en `SeniorEnteMercado` de `metacortex-engine`). Contratos formales pasando al 100% (7/7 y 6/6; 78/78 en metacortex).
+  - Ola Ω70 (#708): Integración en vivo de `prospect_pressure` en `god-engine-core::council_snapshot`,
+    unificación analítica de colas de pánico con fallback continuo y contrato formal `prospect_pressure_integration_contract.rs` (2/2 tests OK).
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados
   de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`).
   Toda la suite de crates pasando al 100% (153/153 en risk-engine, 127/127 en
-  signal-engine, 78/78 en metacortex-engine, 170/170 en god-engine-core, 54/54 en backtest-engine, 40/40 en
+  signal-engine, 78/78 en metacortex-engine, 172/172 en god-engine-core, 54/54 en backtest-engine, 40/40 en
   strategy-core).
 
 ## Frentes del sistema (no por agente)

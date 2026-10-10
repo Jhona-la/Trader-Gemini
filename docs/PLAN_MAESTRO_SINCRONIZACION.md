@@ -1028,7 +1028,14 @@ No se han borrado refs activas/no integradas, promovido modelos ni operado.
 - **Certificación Contractual**:
   - Creado `crates/metacortex-engine/tests/prospect_theory_contract.rs` con 6 tests formales pasando al 100%. Suite completa de `metacortex-engine` pasando 78/78 tests (100%).
 
+## 28. Presión de Prospect Theory en Loop de Deliberación de God-Engine-Core y Contratos Formales (Ola Ω70, Ficha #708)
 
-
-
-
+- **Cableado Live de Kahneman-Tversky en God-Engine-Core (`crates/god-engine-core/src/lib.rs:7555-7573`)**:
+  - Conexión viva de `prospect_pressure` en `council_snapshot` para cada tick de deliberación del consejo de seniors.
+  - Arquitectura dual resiliente: lectura directa desde `OmniscientRegistry` si existe telemetría previa para la moneda o ámbito (`prospect_pressure`), o cómputo analítico en tiempo real $O(1)$ sin heap allocations mediante `ProspectTheoryEngine::compute_prospect_pressure(p_bull, p_crash, delta_pts, delta_pts)`.
+  - Parámetros dinámicos continuos: $p_{\text{crash}}$ derivado de la severidad de liquidación agregada y el complemento de probabilidad bull, y $\Delta_{\text{pts}}$ normalizado por el ATR continuo del activo.
+- **Contrato Formal de Integración**:
+  - Creado `crates/god-engine-core/tests/prospect_pressure_integration_contract.rs` con 2 tests formales de integración directa con `god-engine-core`:
+    - `test_prospect_pressure_live_computation_in_god_engine`: validación de la asimetría de aversión a la pérdida ($\lambda = 2.25$) en escenarios de crash y euforia.
+    - `test_feynman_and_prospect_confluence_in_god_engine`: validación de la confluencia entre amplitud cuántica Feynman $C_{\text{coh}}$ y presión psicológica $P_{\text{kt}}$ en el hot path.
+  - Resultados: 2/2 tests PASSED (100%), 170/170 lib tests de `god-engine-core` PASSED (100%).

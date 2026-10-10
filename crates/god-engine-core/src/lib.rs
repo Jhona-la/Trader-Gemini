@@ -7599,10 +7599,23 @@ impl GodEngineCore {
                                 .arena
                                 .registry
                                 .get_for_coin_or(coin_id, "navier_laminar_share", 1.0),
-                            // Ω69 añadió el campo al payload sin productor en el
-                            // núcleo: 0 deja el factor de Prospect Theory neutro
-                            // (p_prospect = 1), igual que el Default del payload.
-                            prospect_pressure: 0.0,
+                            // OLA Ω69/Ω70: Presión psicológica continua de Kahneman-Tversky (Prospect Theory)
+                            prospect_pressure: {
+                                let reg_p = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "prospect_pressure", 0.0)
+                                    .max(self.arena.registry.get_scoped_value_or(&sym, "prospect_pressure", 0.0));
+                                if reg_p != 0.0 {
+                                    reg_p.clamp(-50.0, 50.0)
+                                } else {
+                                    let p_bull = ml_prob_pure.clamp(0.01, 0.99);
+                                    let p_crash = (liquidation_severity * 0.5 + (1.0 - p_bull) * 0.5).clamp(0.01, 0.99);
+                                    let delta_pts = (council_atr_pct * 100.0).clamp(0.1, 10.0);
+                                    metacortex_engine::prospect_theory::ProspectTheoryEngine::new()
+                                        .compute_prospect_pressure(p_bull, p_crash, delta_pts, delta_pts)
+                                }
+                            },
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let council_decision = self.consejo_deliberacion.deliberar_traced(
