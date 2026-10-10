@@ -1606,8 +1606,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let unified_handle = std::thread::Builder::new().stack_size(32 * 1024 * 1024).spawn({
-        let loop_ws_url = Arc::clone(&ws_url);
-        let loop_streams_str = streams_str.clone();
         let historical_klines = historical_klines.clone();
         let omni_state_hot = Arc::clone(&omni_state_live);
         let rt_handle_for_thread = rt_handle.clone();
@@ -3630,9 +3628,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Arc::clone(&arena_real),
                         );
 
-                        let base_ws_url = if is_env_testnet { "wss://stream.binancefuture.com/stream" } else { "wss://fstream.binance.com/stream" };
-                        loop_ws_url.store(Arc::new(format!("{}?streams={}", base_ws_url, loop_streams_str)));
-                        let _ = tx_ws_control.try_send(());
+                        // CL-50b: la transición ya no re-suscribe el WS. Relee
+                        // el mismo USE_TESTNET que eligió el host al arrancar,
+                        // así que el entorno nunca cambia: sólo forzaba una
+                        // reconexión (y con ella `reset_engines` y la pérdida
+                        // del calentamiento) y en mainnet abandonaba el host
+                        // elegido por latencia o por BEST_WS_ENDPOINT.
                         let exec_clone = Arc::clone(&exec);
                         let db_tx_clone = db_tx.clone();
                         let arena_real_clone = Arc::clone(&engine_real.arena);

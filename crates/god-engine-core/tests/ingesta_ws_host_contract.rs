@@ -1,4 +1,4 @@
-//! CL-50 / CL-51 / CL-52: la ingesta del WS y su reinicio.
+//! CL-50 / CL-50b / CL-51 / CL-52: la ingesta del WS y su reinicio.
 //!
 //! El bucle de eventos reinicia el estado de mercado cuando el lector del WS
 //! se reconecta. Tres defectos: la primera conexión también se anunciaba
@@ -54,6 +54,18 @@ fn cl50_solo_una_reconexion_anuncia_el_reinicio() {
         t.contains("ifconexiones.establecida(){data_ingest::cola_ws::encolar(&tx_events,&rx_events_dropper,data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),"),
         "el centinela sólo sale en una reconexión"
     );
+}
+
+/// CL-50b — la transición del calentamiento no re-suscribe el WS. Releía
+/// el mismo USE_TESTNET que eligió el host al arrancar, así que sólo forzaba
+/// una reconexión (con su reinicio de motores) y en mainnet abandonaba el
+/// host elegido por latencia o por BEST_WS_ENDPOINT. Desde CL-38 nadie más
+/// escribe la URL del WS.
+#[test]
+fn cl50b_la_transicion_no_reconecta_el_ws() {
+    let h = host();
+    assert!(!h.contains("tx_ws_control.try_send("), "nadie fuerza la reconexión del WS");
+    assert!(!h.contains("ws_url.store("), "la URL del WS es la del arranque");
 }
 
 /// Todo envío del lector pasa por la cola contada: ningún `try_send` suelto
