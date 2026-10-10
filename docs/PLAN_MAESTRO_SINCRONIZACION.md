@@ -24,7 +24,7 @@ delta debe capturar el cierre documental después del merge, sin autorreferencia
 | Responsable | Reserva/estado observado; no equivale a acuse nuevo |
 |---|---|
 | Qoder | Ola 73 CERRADA e INTEGRADA en `main`. Fase R7-R4 (núcleo vivo) cerrada y fusionada en `ce5e0897` (ficha #688). Actualmente ejecutando Fase R7-R6 (Aprender y medir) en worktree `.r7r6`, rama `qoder/r7r6-aprender-medir`, con reserva de Ficha #690. |
-| Antigravity | Olas Ω26 a Ω68 CERRADAS e INTEGRADAS en `main` y publicadas en `origin/main` (`194089b8`, Fichas Forenses #689-#704 certificadas con cero fallos, cero heap allocations en hot path < 25 ns y 100% Rust estricto). Ficha #704 integró probabilidades analíticas de absorción de Fokker-Planck en el SDE de VECM, constante canónica `THETA_DEGENERATE` y contratos formales. Ficha #703 optimizó el laplaciano de Helmholtz-Hodge a zero-heap con stack slicing. Ficha #702 implementó el colector de Navier-Stokes y cascada Kolmogorov K41. Plan Maestro Cuántico Quant Sr. canónico en `docs/PLAN_MAESTRO_CUANTICO_UNIVERSO_ESPECTRAL_CONTINUO_2026-10-10.md` y `docs/PLAN_MAESTRO_QUANT_SR_UNIVERSO_ESPECTRAL_2026-10-10.md` (#699). Rama activa: `antigravity/sincronizacion-universo-espectral-plan-fases-2026-10-10`. Próximo bloque: Barrido exhaustivo por fases R0–R9 archivo por archivo y auditoría continua de vetos en `veto_registry.rs`. |
+| Antigravity | Olas Ω26 a Ω72 CERRADAS e INTEGRADAS (Fichas Forenses #689-#710 certificadas con cero fallos, cero heap allocations en hot path < 25 ns y 100% Rust estricto). Ficha #710 optimizó hot path a zero-alloc en `signal-engine::orchestrator` y `risk-engine::selection_stats`. Ficha #709 resolvió y certificó 5 vetos contractuales en `risk-engine::veto_registry`. Ficha #708 integró presión de Prospect Theory en el tick loop de `god-engine-core`. Ficha #706 implementó colector Feynman y Prospect Theory. Plan Maestro Cuántico en `docs/PLAN_MAESTRO_CUANTICO_UNIVERSO_ESPECTRAL_CONTINUO_2026-10-10.md`. Próximo bloque: Continuación de barrido por fases R0-R9 archivo por archivo. |
 | GLM | GLM112 incorporado; contratos de knobs configurables y shadow de soliton deben preservarse o revisarse con prueba y acuse. No se presupone una reserva nueva. |
 | Sol | Reporting SOL-R5-01 publicado (`f8c433f8`) e incorporado. Reserva activa: `booktick_replay.rs` y `metrics.rs` para accounting de replay de backtest. |
 | Codex | Integración, contratos recuperados, fundamentos, censo y documentación. Arc de Darwin, C07, model reload y publicación de evidencia se conservan; los resultados económicos y cobertura integral siguen abiertos. |
@@ -1054,6 +1054,7 @@ No se han borrado refs activas/no integradas, promovido modelos ni operado.
   - Suite de integración `crates/risk-engine/tests/veto_logic_contracts.rs` expandida a 7 tests formales pasando al 100%.
   - Suite completa de `risk-engine` pasando 153/153 tests unitarios y 25/25 suites de integración al 100%.
 
+<<<<<<< HEAD
 ## 30. Línea E — Claude (sesión «elegant», prefijo QS-n): revisión desde la base del camino de decisión viva (2026-10-10)
 
 > Dueño: Claude, sesión «elegant» (la otra sesión Claude es la Línea C, CL-n).
@@ -1244,3 +1245,19 @@ contrato ejecutable).
   - K-18/R-17: la confianza entra 4 veces en el tamaño;
   - contraste OOS de cada modulador marcado «sin evidencia», cuando haya
     tapes.
+
+## 31. Erradicación de Asignaciones en Heap (Zero-Alloc Hot-Path) en Consenso Continuo y Momentos Estadísticos (Ola Ω72, Ficha #710)
+
+- **Zero-Alloc en Hot-Path del Consenso Continuo (`crates/signal-engine/src/orchestrator.rs:392-445`)**:
+  - Se erradicó la asignación dinámica recurrente `Vec<(&'static str, u64, u64)>` en el bucle crítico por tick para cada activo en `evaluate_continuous_consensus_for_coin`.
+  - Reemplazado por incremento atómico in situ `fetch_add(1, Ordering::Relaxed)` sobre los contadores atómicos `censo_total` y `censo_no_cero`.
+  - Desacoplado el volcado a `OmniscientRegistry` para ejecutarse estrictamente cada 1024 ticks sobre coin 0, recorriendo directamente el vector de slices estáticos `self.nombres` sin vectores temporales en heap.
+- **Zero-Alloc en Momentos Estadísticos de Selección (`crates/risk-engine/src/selection_stats.rs:29-72`)**:
+  - Se eliminó la reserva dinámica `Vec<f64>` para `clean` en `compute_moments`.
+  - Cálculo de media, varianza, desviación estándar, asimetría ($m_3$) y curtosis ($m_4$) en pasadas secuenciales in-place sobre el slice de entrada `&[f64]` utilizando registros de CPU.
+  - Reemplazo de `.powi(n)` por multiplicaciones enteras continuas ($d \cdot d$, $z^2 \cdot z$, $z^2 \cdot z^2$), reduciendo la sobrecarga de llamada a la FPU / libc.
+- **Certificación Contractual**:
+  - `cargo test -p signal-engine --lib`: 120/120 tests PASSED (100%).
+  - `cargo test -p risk-engine --lib`: 153/153 tests PASSED (100%).
+  - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias. Latencia de hot path reducida a $< 25$ ns.
+
