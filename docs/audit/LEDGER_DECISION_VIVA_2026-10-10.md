@@ -219,6 +219,16 @@ derivaciones.
 Los tres cambian conducta en el núcleo: van juntos en un lote con su T-1 y se
 avisan antes en el buzón (zona compartida).
 
+**Resultado (lote QS-K, commit `10ecf0b6`):**
+- `god-engine-core --lib`: 173/173, con los tres contratos nuevos
+  (`tests_qs_k`): espejo en rejilla, cierre sólo con tendencia
+  significativa y guarda de fuente.
+- T-1: **PASA 16/144**, con la misma lista y las 145 huellas iguales bit a
+  bit a las del árbol del PR #31.
+- El fixture no llega a los bordes que QS-K cambia: el T-1 certifica que no
+  hay regresión, no ejercita el arreglo. Ejercitarlo pide un fixture con
+  rango lateral y microtendencia cerca de cero (pendiente).
+
 ### 7.2 Revisión cruzada de Ω69–Ω71 (AGY), 2026-10-10 noche
 
 Sobre `origin/main` 46269a05, leyendo código (sin compilar). REV-1, REV-2 y

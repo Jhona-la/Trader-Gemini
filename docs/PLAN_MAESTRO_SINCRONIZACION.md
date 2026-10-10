@@ -1276,7 +1276,7 @@ entorno cloud (4 núcleos, 15 GB):
 | Paso | Medido | Causa | Acción |
 |---|---|---|---|
 | Oráculo T-1 | 3 006 s con 1 núcleo de 4 (carga 2,4 con dos oráculos a la vez) | Los 144 genes se evaluaban uno tras otro | **QS-P1**: evaluación en paralelo (`T1_THREADS`, por defecto todos los núcleos), con una huella por gen para comparar corridas. 937 s con 4 hilos, misma lista (ver abajo) |
-| T-1 «base» | Corrió el binario de OTRA rama sin un solo «Compiling» | Cargo no distingue dos worktrees del mismo paquete con un `CARGO_TARGET_DIR` compartido | **QS-P2**: `scripts/t1_oraculo.sh` guarda un sello del árbol en el target y fuerza la recompilación del workspace si cambió |
+| T-1 «base» | Corrió el binario de OTRA rama sin un solo «Compiling» | Cargo no distingue dos worktrees del mismo paquete con un `CARGO_TARGET_DIR` compartido | **QS-P2**: `scripts/t1_oraculo.sh` guarda un sello del árbol en el target; **QS-P2b**: si cambió, toca sólo los ficheros que difieren |
 | CI `unit-suites` | 23–31 min por job, casi todo compilación | `CARGO_BUILD_JOBS=2` en runners de 4 vCPU | **QS-P3**: 4 jobs |
 | CI `replay-contracts` | 73 min: `check` 11 min y ~56 min de pasos de test que compilan el grafo en debug | Un solo job secuencial; `check` no deja artefactos que reutilicen los tests | Propuestas abajo (zona Codex/GLM) |
 
@@ -1295,10 +1295,34 @@ PR #31; sólo cambia el arnés del test):
 |---|---|---|---|
 | Secuencial (C-22 + D2 + D3) | 1 | 2 878 s (con otro oráculo y una compilación en paralelo) | 16/144: [1, 10, 11, 17, 18, 24, 27, 32, 33, 39, 68, 69, 129, 130, 131, 141] |
 | QS-P1 | 4 (sola en la máquina) | **937 s** (1 138 s con la recompilación del workspace) | idéntica |
-| QS-P1 | 2 | ver abajo | huellas por gen comparadas con la de 4 hilos |
+| QS-P1 | 2 (con otro oráculo de 2 hilos a la vez) | 1 565 s | idéntica; **las 145 huellas (base + 144 genes) iguales bit a bit** a las de 4 hilos |
 
 Aceleración ≈ 3,1× con 4 núcleos (techo 4×: el gen más lento y el arranque
 del proceso no se reparten).
+
+**Veredicto: QS-P1 certifica igual que la corrida secuencial.** Desde
+ahora los T-1 de esta línea corren en paralelo.
+
+**QS-P2b — recompilar sólo lo que cambió.** El sello guarda el árbol git
+del estado compilado: ficheros seguidos con sus cambios sin commitear más
+los nuevos no ignorados, construido con una copia del índice. La corrida
+siguiente toca sólo los ficheros que difieren entre ese árbol y el estado
+actual. Sin sello válido toca todos los `.rs`, como antes. Medido en seco:
+entre main `0043f889` y el árbol base cambian 21 ficheros; antes se
+recompilaba el workspace entero (3–5 min con 4 núcleos).
+
+**Dónde correrlo.** El entorno cloud tiene 4 núcleos; dos oráculos a la
+vez se reparten la máquina (≈ 30 min cada uno). En un PC con más hilos, el
+mismo comando escala casi lineal hasta 144 genes. En Windows, desde Git
+Bash y sin wine:
+
+```bash
+scripts/t1_oraculo.sh            # todos los hilos (NUMBER_OF_PROCESSORS)
+scripts/t1_oraculo.sh 12         # o un número fijo
+```
+
+Coste: unos 46 min-núcleo por corrida (145 backtests de ~19 s), más la
+compilación.
 
 **Propuestas para las otras líneas (sin acuse no son reparto):**
 
