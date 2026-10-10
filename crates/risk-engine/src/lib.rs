@@ -127,9 +127,14 @@ pub static REJECT_COUNTERS_DIR: [[AtomicU64; REJECT_SLOTS]; 2] = [REJECT_ZERO_RO
 thread_local! {
     /// Dirección de la intención en evaluación: 0 largo, 1 corto, 2 sin dirección.
     static REJECT_DIR: std::cell::Cell<usize> = const { std::cell::Cell::new(2) };
+    /// QS-R4b: razón (`REJ_*`) del último rechazo de la evaluación en curso
+    /// en este hilo; `usize::MAX` si no la hubo.
+    static ULTIMO_RECHAZO: std::cell::Cell<usize> = const { std::cell::Cell::new(usize::MAX) };
 }
 
 /// Fija la dirección con la que se atribuyen los rechazos siguientes del hilo.
+/// Marca además el inicio de una evaluación: borra la razón del rechazo
+/// anterior (ver [`ultimo_rechazo`]).
 pub fn set_reject_direction(signal: SignalType) {
     let d = match signal {
         SignalType::Long => 0,
@@ -137,6 +142,20 @@ pub fn set_reject_direction(signal: SignalType) {
         SignalType::Flat => 2,
     };
     REJECT_DIR.with(|cell| cell.set(d));
+    ULTIMO_RECHAZO.with(|cell| cell.set(usize::MAX));
+}
+
+/// QS-R4b — razón (`REJ_*`) por la que la última evaluación de este hilo
+/// devolvió una orden rechazada. `None` si la admitió, y también en el único
+/// rechazo que no pasa por los contadores (intención plana o capital
+/// asignado ≤ 0 en `evaluate_single_intent`): el llamador mira primero la
+/// señal de la orden. El libro
+/// contrafactual (`audit_engine::shadow_ledger`) la usa como fuente del
+/// veto sin cambiar la forma de `ValidatedOrder`. Léase en el mismo hilo,
+/// justo después de `evaluate_quantum_order`.
+pub fn ultimo_rechazo() -> Option<usize> {
+    let v = ULTIMO_RECHAZO.with(|cell| cell.get());
+    (v < REJECT_SLOTS).then_some(v)
 }
 
 fn rej(i: usize) -> ValidatedOrder {
@@ -145,6 +164,7 @@ fn rej(i: usize) -> ValidatedOrder {
     if d < 2 {
         REJECT_COUNTERS_DIR[d][i].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
+    ULTIMO_RECHAZO.with(|cell| cell.set(i));
     ValidatedOrder::rejected()
 }
 

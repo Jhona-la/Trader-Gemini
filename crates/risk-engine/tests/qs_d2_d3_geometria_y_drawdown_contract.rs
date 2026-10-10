@@ -152,3 +152,17 @@ fn qs_d3_el_veto_de_drawdown_no_pasa_de_la_caida_de_falsacion() {
         );
     }
 }
+
+/// QS-R4b — la evaluación deja en el hilo la razón de su rechazo, y la borra
+/// cuando admite: el libro contrafactual sabe qué veto bloqueó cada intención.
+#[test]
+fn qs_r4b_el_rechazo_deja_su_razon_en_el_hilo() {
+    let (a, intent) = fixture(13.0, 0.001);
+    let out = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &a);
+    assert_eq!(out.signal, SignalType::Flat);
+    assert_eq!(risk_engine::ultimo_rechazo(), Some(REJ_TP_SL_FLOOR));
+    let (b, intent) = fixture(13.0, 1.0);
+    let ok = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &b);
+    assert_eq!(ok.signal, SignalType::Long, "{}", risk_engine::reject_report());
+    assert_eq!(risk_engine::ultimo_rechazo(), None);
+}
