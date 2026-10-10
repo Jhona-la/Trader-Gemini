@@ -363,7 +363,7 @@ fn is_symbol_suspended(symbol: &str) -> bool {
 }
 
 /// B3.6b (auditoría) — persiste las suspensiones VIVAS en
-/// data/fee_breaker.json con escritura ATÓMICA (tmp + rename): un crash a
+/// data/{demo|prod}/fee_breaker.json (CL-48) con escritura ATÓMICA (tmp + rename): un crash a
 /// media escritura dejaba JSON corrupto que la restauración del arranque
 /// descartaba EN SILENCIO — una mañana mala perdonada por corrupción.
 /// Las entradas expiradas se purgan: el archivo no crece sin cota.
@@ -378,9 +378,11 @@ fn persist_fee_breaker(now_ms: u64) {
         .collect::<Vec<_>>()
         .join(",");
     drop(guard);
-    let tmp = "data/fee_breaker.json.tmp";
-    if std::fs::write(tmp, format!("{{{file_body}}}")).is_ok() {
-        let _ = std::fs::rename(tmp, "data/fee_breaker.json");
+    // CL-48: por entorno (`data/{demo|prod}/`), como la envolvente Kelly.
+    let path = quantum_arena::paths::env_data_path("fee_breaker.json");
+    let tmp = format!("{path}.tmp");
+    if std::fs::write(&tmp, format!("{{{file_body}}}")).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
     }
 }
 
@@ -398,22 +400,28 @@ fn persist_kelly_envelope(env: &risk_engine::kelly_envelope::RiskEnvelope) {
         "avg_win": env.avg_win,
         "avg_loss": env.avg_loss,
     });
-    let tmp = "data/kelly_envelope.json.tmp";
-    if std::fs::write(tmp, body.to_string()).is_ok() {
-        let _ = std::fs::rename(tmp, "data/kelly_envelope.json");
+    // CL-48: por entorno. Antes `data/kelly_envelope.json` era común a demo
+    // y producción: los cierres de testnet sembraban el posterior real.
+    let path = quantum_arena::paths::env_data_path("kelly_envelope.json");
+    let tmp = format!("{path}.tmp");
+    if std::fs::write(&tmp, body.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
     }
 }
 
-/// HOST-005 — restaura la envolvente desde data/kelly_envelope.json.
+/// HOST-005 — restaura la envolvente desde el kelly_envelope.json del
+/// entorno (CL-48).
 /// Tolerante a archivo ausente/corrupto/incompleto (false ⇒ el llamador
 /// continúa con el posterior fresco de Jeffreys — degradación, no pánico).
 fn restore_kelly_envelope(env: &mut risk_engine::kelly_envelope::RiskEnvelope) -> bool {
-    let Ok(content) = std::fs::read_to_string("data/kelly_envelope.json") else {
+    let Ok(content) =
+        std::fs::read_to_string(quantum_arena::paths::env_data_path("kelly_envelope.json"))
+    else {
         return false; // primera ejecución — nada que restaurar
     };
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) else {
         telemetry_server::telemetry_log!(
-            "⚠️ [KELLY] data/kelly_envelope.json corrupto — envolvente fresca"
+            "⚠️ [KELLY] kelly_envelope.json corrupto — envolvente fresca"
         );
         return false;
     };
@@ -422,7 +430,7 @@ fn restore_kelly_envelope(env: &mut risk_engine::kelly_envelope::RiskEnvelope) -
         (g("alpha"), g("beta"), g("avg_win"), g("avg_loss"))
     else {
         telemetry_server::telemetry_log!(
-            "⚠️ [KELLY] data/kelly_envelope.json incompleto — envolvente fresca"
+            "⚠️ [KELLY] kelly_envelope.json incompleto — envolvente fresca"
         );
         return false;
     };
@@ -439,7 +447,7 @@ fn restore_kelly_envelope(env: &mut risk_engine::kelly_envelope::RiskEnvelope) -
         || avg_loss < 0.0
     {
         telemetry_server::telemetry_log!(
-            "⚠️ [KELLY] data/kelly_envelope.json con valores inválidos — envolvente fresca"
+            "⚠️ [KELLY] kelly_envelope.json con valores inválidos — envolvente fresca"
         );
         return false;
     }
@@ -502,12 +510,14 @@ struct RecoveredContext {
     age_hours: f64,
 }
 
-/// B2.7: lee data/position_journal.jsonl y devuelve el ÚLTIMO registro que
+/// B2.7: lee el position_journal.jsonl del entorno (CL-48) y devuelve el ÚLTIMO registro que
 /// matchea símbolo+lado — la τ espectral y la predicción ML que motivaron la
 /// entrada. Tolerante a diario ausente/corrupto (None ⇒ el llamador usa el
 /// piso espectral conservador).
 fn recover_position_context(symbol: &str, is_long: bool) -> Option<RecoveredContext> {
-    let content = std::fs::read_to_string("data/position_journal.jsonl").ok()?;
+    let content =
+        std::fs::read_to_string(quantum_arena::paths::env_data_path("position_journal.jsonl"))
+            .ok()?;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -538,7 +548,7 @@ fn recover_position_context(symbol: &str, is_long: bool) -> Option<RecoveredCont
     })
 }
 
-/// B3.8 — compacta data/position_journal.jsonl al ÚLTIMO registro por
+/// B3.8 — compacta data/{demo|prod}/position_journal.jsonl al ÚLTIMO registro por
 /// (símbolo, lado) — lo único que `recover_position_context` consulta. Sin
 /// esto el diario crece sin cota y cada reconexión re-lee todo el historial.
 /// Umbral conservador: compactar sólo cuando supera 500 líneas. Escritura
@@ -610,8 +620,8 @@ fn record_emergency_close(
 
 fn compact_position_journal() {
     const COMPACT_THRESHOLD: usize = 500;
-    let path = "data/position_journal.jsonl";
-    let Ok(content) = std::fs::read_to_string(path) else {
+    let path = quantum_arena::paths::env_data_path("position_journal.jsonl");
+    let Ok(content) = std::fs::read_to_string(&path) else {
         return; // diario ausente: primera ejecución — nada que compactar
     };
     let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -635,8 +645,8 @@ fn compact_position_journal() {
             latest.insert(key, (ts, line));
         }
     }
-    let tmp = "data/position_journal.jsonl.tmp";
-    let Ok(mut f) = std::fs::File::create(tmp) else {
+    let tmp = format!("{path}.tmp");
+    let Ok(mut f) = std::fs::File::create(&tmp) else {
         return;
     };
     use std::io::Write;
@@ -650,7 +660,7 @@ fn compact_position_journal() {
         }
     }
     drop(f);
-    if std::fs::rename(tmp, path).is_ok() {
+    if std::fs::rename(&tmp, &path).is_ok() {
         telemetry_server::telemetry_log!(
             "🧹 [DIARIO] compactado: {} → {} registros ({} corruptos descartados) — rotación B3.8",
             lines.len(),
@@ -2143,7 +2153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // fees −$3.21 dominaron el −$4.44 neto del día.
         // B3.6b — VENTANA RODANTE 24h (antes: desde el arranque — un símbolo
         // que quemó fees ayer amanecía limpio tras cada reinicio) y
-        // SUSPENSIONES PERSISTIDAS en data/fee_breaker.json: sobreviven
+        // SUSPENSIONES PERSISTIDAS en data/{demo|prod}/fee_breaker.json: sobreviven
         // reinicios del motor. Una mañana mala ahora cuesta el día entero,
         // no un arranque.
         {
@@ -2155,7 +2165,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_default()
                     .as_millis() as u64;
                 // Restaurar suspensiones vivas del disco.
-                if let Ok(content) = std::fs::read_to_string("data/fee_breaker.json") {
+                if let Ok(content) = std::fs::read_to_string(
+                    quantum_arena::paths::env_data_path("fee_breaker.json"),
+                ) {
                     match serde_json::from_str::<serde_json::Value>(&content) {
                         Ok(v) if v.as_object().is_some() => {
                             let map = v.as_object().unwrap();
@@ -2178,7 +2190,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Ok(_) => {
                             telemetry_server::telemetry_log!(
-                                "⚠️ [FEE-BREAKER] data/fee_breaker.json con esquema inesperado — se ignora (fail-safe: sin suspensiones)"
+                                "⚠️ [FEE-BREAKER] fee_breaker.json con esquema inesperado — se ignora (fail-safe: sin suspensiones)"
                             );
                         }
                         Err(e) => {
@@ -2186,7 +2198,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // silenciosa — se reporta; la próxima suspensión
                             // reescribe el archivo saneado.
                             telemetry_server::telemetry_log!(
-                                "⚠️ [FEE-BREAKER] data/fee_breaker.json corrupto ({}) — se ignora y se reescribirá al próximo disparo",
+                                "⚠️ [FEE-BREAKER] fee_breaker.json corrupto ({}) — se ignora y se reescribirá al próximo disparo",
                                 e
                             );
                         }
@@ -2764,6 +2776,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut risk_envelope = risk_engine::kelly_envelope::RiskEnvelope::new();
         let mut avg_win_abs: f64 = 0.0;
         let mut avg_loss_abs: f64 = 0.0;
+        // CL-48: el estado aprendido de antes vivía en `data/` común a demo y
+        // producción. No se migra (su procedencia no se puede atribuir): se
+        // avisa y cada entorno arranca con el suyo.
+        for heredado in [
+            "kelly_envelope.json",
+            "fee_breaker.json",
+            "position_journal.jsonl",
+            "trade_fills.jsonl",
+        ] {
+            if std::path::Path::new("data").join(heredado).exists() {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [ESTADO] data/{} (común a demo y producción) se ignora; este entorno usa {}",
+                    heredado,
+                    quantum_arena::paths::env_data_path(heredado)
+                );
+            }
+        }
         // HOST-005 — RESTAURAR la envolvente persistida: sin esto cada
         // reinicio borraba el posterior del edge (bootstrap perpetuo). Las
         // EMAs locales de payoff arrancan desde la memoria restaurada, no
@@ -4548,7 +4577,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     let _ = std::fs::OpenOptions::new()
                                                         .create(true)
                                                         .append(true)
-                                                        .open("data/position_journal.jsonl")
+                                                        .open(quantum_arena::paths::env_data_path("position_journal.jsonl"))
                                                         .and_then(|mut f| std::io::Write::write_all(&mut f, jr.as_bytes()));
                                                     break;
                                                 }
