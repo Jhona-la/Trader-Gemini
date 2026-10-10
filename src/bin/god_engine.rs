@@ -1131,13 +1131,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // CERT-M1-H01: contador de eventos descartados por backpressure —
     // antes los ticks se perdían silenciosamente sin evidencia forense.
-    let dropped_events = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    // CL-52: la cola cuenta TODO descarte (antes sólo los de la ruta del
+    // centinela) y recuerda si se llevó un centinela de reconexión.
+    let estado_cola = Arc::new(data_ingest::cola_ws::EstadoCola::new());
     {
-        let dropped_events = Arc::clone(&dropped_events);
+        let estado_cola = Arc::clone(&estado_cola);
         std::thread::Builder::new().name("ws-backpressure-monitor".into()).spawn(move || {
             loop {
                 std::thread::sleep(std::time::Duration::from_secs(60));
-                let d = dropped_events.load(std::sync::atomic::Ordering::Relaxed);
+                let d = estado_cola.descartados();
                 if d > 0 {
                     println!("⚠️ [BACKPRESSURE] {} eventos WS descartados (drop-oldest) — throughput del lector insuficiente", d);
                 }
@@ -1610,6 +1612,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let omni_state_hot = Arc::clone(&omni_state_live);
         let rt_handle_for_thread = rt_handle.clone();
         let shutdown_flag = Arc::clone(&shutdown_requested);
+        let estado_cola = Arc::clone(&estado_cola);
         move || {
         if let Some(core_ids) = core_affinity::get_core_ids() {
             if core_ids.len() > 1 {
@@ -3028,6 +3031,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
                 break;
             }
+            // CL-52: la reconexión llega en banda (centinela) o, si la cola
+            // llena se llevó el centinela, por la marca de la cola; en ese
+            // caso el mensaje en la mano ya es posterior y se procesa tras
+            // reiniciar. Va antes de cualquier consumo del mensaje.
+            let es_centinela = msg_bytes == data_ingest::cola_ws::CENTINELA_RECONEXION;
+            let centinela_perdido = estado_cola.tomar_reconexion_perdida();
+            if es_centinela || centinela_perdido {
+                telemetry_server::telemetry_log!("🧹 [AUTO-HEALING] Reconnect signal received. Purging Quantum Engine state to prevent time-glitches...");
+                engine_real.reset_engines();
+                for ob in local_orderbooks.iter_mut() {
+                    ob.clear();
+                }
+                // CERT-M1-H02: resetear el guard de secuencia del libro —
+                // sin esto, cada símbolo descartaba hasta 50 mensajes depth
+                // consecutivos tras la reconexión (>1300 actualizaciones de
+                // libro perdidas por reconnect con 26+ símbolos).
+                book_seq_guard = parsers::BookSequenceGuard::new(local_orderbooks.len());
+                telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed + book sequence guard reset. Entering Warmup Phase (50 ticks).");
+
+                let rx_rest = Arc::clone(&exec);
+                rt_handle.spawn(async move {
+                    telemetry_server::telemetry_log!("🔄 [REST-SYNC] Fetching truth from Binance API...");
+                    if let Ok(positions) = rx_rest.load().fetch_open_positions().await {
+                        telemetry_server::telemetry_log!("✅ [REST-SYNC] Binance reports {} active open positions.", positions.len());
+                    }
+                });
+                if es_centinela {
+                    continue;
+                }
+            }
+
             let start = Instant::now();
 
             let is_trade = memchr::memmem::find(&msg_bytes, b"\"e\":\"trade\"").is_some();
@@ -3060,30 +3094,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 msg_count += 1;
-                continue;
-            }
-            let is_reconnect = msg_bytes == b"[SYSTEM:RECONNECT]";
-
-            if is_reconnect {
-                telemetry_server::telemetry_log!("🧹 [AUTO-HEALING] Reconnect signal received. Purging Quantum Engine state to prevent time-glitches...");
-                engine_real.reset_engines();
-                for ob in local_orderbooks.iter_mut() {
-                    ob.clear();
-                }
-                // CERT-M1-H02: resetear el guard de secuencia del libro —
-                // sin esto, cada símbolo descartaba hasta 50 mensajes depth
-                // consecutivos tras la reconexión (>1300 actualizaciones de
-                // libro perdidas por reconnect con 26+ símbolos).
-                book_seq_guard = parsers::BookSequenceGuard::new(local_orderbooks.len());
-                telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed + book sequence guard reset. Entering Warmup Phase (50 ticks).");
-
-                let rx_rest = Arc::clone(&exec);
-                rt_handle.spawn(async move {
-                    telemetry_server::telemetry_log!("🔄 [REST-SYNC] Fetching truth from Binance API...");
-                    if let Ok(positions) = rx_rest.load().fetch_open_positions().await {
-                        telemetry_server::telemetry_log!("✅ [REST-SYNC] Binance reports {} active open positions.", positions.len());
-                    }
-                });
                 continue;
             }
 
@@ -5048,16 +5058,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok((ws_stream, _)) => {
                     telemetry_server::telemetry_log!("✅ [WS] WebSocket TLS Connected with TCP_NODELAY.");
                     retry_count = 0; // Reset retries on success
-                    let sys_data = b"[SYSTEM:RECONNECT]".to_vec();
-                    loop {
-                        match tx_events.try_send(sys_data.clone()) {
-                            Ok(_) => break,
-                            Err(crossbeam_channel::TrySendError::Full(_)) => {
-                                { let _ = rx_events_dropper.try_recv(); dropped_events.fetch_add(1, std::sync::atomic::Ordering::Relaxed); } // CERT-M1-H01: contar
-                            }
-                            Err(crossbeam_channel::TrySendError::Disconnected(_)) => break,
-                        }
-                    }
+                    data_ingest::cola_ws::encolar(
+                        &tx_events,
+                        &rx_events_dropper,
+                        data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),
+                        &estado_cola,
+                    );
                     let (_, mut read) = ws_stream.split();
 
                     let is_testnet = std::env::var("USE_TESTNET").unwrap_or_default().trim().to_lowercase() == "true";
@@ -5071,16 +5077,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             msg_opt = tokio::time::timeout(std::time::Duration::from_secs(watchdog_secs), read.next()) => {
                                 match msg_opt {
                                     Ok(Some(Ok(msg))) => {
-                                        let data = msg.into_data();
-                                        loop {
-                                            match tx_events.try_send(data.clone()) {
-                                                Ok(_) => break,
-                                                Err(crossbeam_channel::TrySendError::Full(_)) => {
-                                                    let _ = rx_events_dropper.try_recv(); // Bounded Drop Oldest (Drop backpressure)
-                                                }
-                                                Err(crossbeam_channel::TrySendError::Disconnected(_)) => break,
-                                            }
-                                        }
+                                        // Bounded Drop Oldest, contado (CL-52).
+                                        data_ingest::cola_ws::encolar(
+                                            &tx_events,
+                                            &rx_events_dropper,
+                                            msg.into_data(),
+                                            &estado_cola,
+                                        );
                                     }
                                     Ok(Some(Err(e))) => {
                                         telemetry_server::telemetry_log!("⚠️ [WS] Connection Error: {:?}", e);
