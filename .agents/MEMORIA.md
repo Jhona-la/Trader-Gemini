@@ -1,5 +1,60 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — Qoder: R7-R4 CERRADA (núcleo vivo) — 7 fichas (4 HIGH), docs-only, base `b51cfb03`, una RETRACTACIÓN propia
+
+- **Ejecutor**: Qoder, worktree `.r7r4` (rama `qoder/r7r4-nucleo-vivo`), base
+  `b51cfb03` (post-Ω54, actualizada por fast-forward). Cero `.rs` tocados,
+  cero oráculo nuevo. Detalle: `docs/BARRIDO_EXHAUSTIVO_FASES.md` §R7-8,
+  ficha forense **#688**, buzón (asignación + cierre + rectificación).
+- **Método**: 3 lentes (A integración viva del registry y sus ámbitos, B
+  matemática del aprendizaje y la composición espectral, C contabilidad de
+  cierre y ranuras) + residual D (código muerto/bandas). **27 hits brutos →
+  7 fichas: 4 HIGH, 1 MED, 2 LOW.** Dedup previo: A-2 y C-1 ya estaban
+  fichadas (HOJA_DE_RUTA y MEMORIA de Claude) ⇒ publicadas como
+  **subsistencias** con anclas re-verificadas, no como HIGH nuevos.
+- **HIGH**: **B-1** la barra neutra etiqueta `0.5_f64.signum()*0.0` =
+  **exactamente 0.0** y pasa BOTH el gate `y==0.0||y==1.0` y
+  `valid_label` (`ensemble.rs:114-116`) ⇒ todo tiempo sin edge sobre la
+  fricción entrena el ensemble como «bajó» (cuarta aparición de la clase
+  XLIV-9/9b/9c). **B-2** `media_banda(0,31)` divide siempre por 32 mientras
+  `aplicar_gate_observabilidad` anula filas a 0.0 ⇒ `coherencia_inter` tiene
+  techo **0.6875** a ~1 ev/s y **0.4375** a 30 s de resolución; el contrato
+  inyecta 0.8 a mano y certifica un valor **inalcanzable** (11ª confirmación
+  de «contract test verde con física muerta»; misma familia que R7-R3-A-1).
+  **A-2** el host publica `{SYM}_spoof_score`/`{SYM}_whale_burst_z`
+  (`set_scoped`) y el core lee con `get_for_coin_or`, que **no** hace cascada
+  a `{SYM}_` ⇒ el Consejo de Seniors recibe 0.0 constante (patrón XLV·G).
+  **C-1** `close_was_real` lee la ranura **fija** `position`
+  (`god_engine.rs:3520-3536`) mientras el core escribe en la ranura que cerró
+  (`slots()` con `slot_idx` dinámico) y la apertura no limpia el flag ⇒ doble
+  dirección de error (papel↔real).
+- **MED/LOW**: **A-3** `EntryRoute::Maker` inalcanzable desde CL-14/B3.29 —
+  política deliberada con código vivo detrás (acuerdo previo antes de tocar).
+  **D-1** `if let Some(spec) = …get_mut(coin_id) { let _ = spec; }` =
+  **lock en SkipMap dentro del hot path** sin efecto. **D-2** bandas
+  incompatibles del nicho 3: `[0.8,1.8]` de la rejilla truncado por el
+  blindaje `[1.0,2.5]` del mutante (intersección `[1.0,1.8]`).
+- **RETRACTACIÓN publicada**: afirmé que los genes `scalp_trail_*`/
+  `swing_trail_*` eran decorativos. **FALSO**: `genome.rs:1098` llama
+  `with_synced_continuous_curves()` y `:1117-1128` publica los átomos
+  `trail_act_curve_a/b`/`trail_step_curve_a/b`, consumidos en
+  `config.rs:176-178, 262-268, 394-396, 433-448`. Reducido a D-2. Lección:
+  la retractación aplica también a las afirmaciones **propias** antes de
+  publicar, no sólo a las ajenas.
+- **RECTIFICACIÓN DE DOS DATOS PROPIOS YA PUBLICADOS**: (1) el disco **no**
+  está al 98 % con 13 GB libres — medido `df -h /c`: 930 GB totales,
+  **132 GB disponibles, 86 %**. (2) el hueco del oráculo es **Ω46–Ω54 (11
+  commits con `.rs`, medido con `git log 534e7980..b51cfb03 -- '*.rs'`)**, no
+  «Ω47–Ω53 siete olas» — `f9ca4284` (Ω46) **no es ancestro** de `534e7980`.
+  **R8 debe re-certificar** antes de cualquier push de código.
+- **Colisión de numeración**: el árbol tiene **dos entradas #687** (la mía
+  R7-R3 en L15654 y la de AGY Ω54 en L15793). Este cierre usa **#688** y
+  deja la colisión como está; la próxima ola debe reservar número antes de
+  escribir.
+- **Asignación**: **Claude** → A-2 y C-1 (dueño de la contabilidad de cierre
+  y del payload P-5b). **Qoder ola 74** → B-1, B-2, D-1, D-2. **A-3** exige
+  acuerdo previo (zona CL-14/B3.29).
+
 ## 2026-10-09 — AGY: OLA Ω54 COMPLETADA — DILUCIÓN DE HODGE (R7-R3-A-1), MID_PRICE (R7-R3-C-1), TTL MULTIACTIVO (R7-R3-D-2) Y RETORNOS YANG-MILLS (R7-R3-B-1)
 
 - **Ejecutor**: Antigravity (AGY), rama atómica `antigravity/quant-sr-ola54-hodge-dilution-midprice-ttl`.

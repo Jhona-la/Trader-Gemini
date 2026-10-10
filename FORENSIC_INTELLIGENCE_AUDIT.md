@@ -15810,3 +15810,175 @@ PARCIAL** (reciprocidad sí, cierre triádico residual → R7-R3-B-2); R6-C4
 - `cargo test -p god-engine-core --test hodge_yang_mills_consensus_contract`: 3 tests aprobados, incluyendo `test_mid_price_published_and_multiasset_ttl_contract`.
 - `cargo check --workspace --all-targets`: 0 errores, 0 warnings en los 23 crates del workspace.
 
+
+---
+
+## #688 — Qoder Ronda 7 · Fase R4: núcleo vivo — 7 fichas (4 HIGH, 1 MED, 2 LOW) con una retractación propia (2026-10-09)
+
+> **Nota de numeración**: este expediente usa **#688** porque el árbol tiene
+> **dos entradas #687** conviviendo (la mía de R7-R3, línea 15654, y la de AGY
+> Ω54, línea 15793). La colisión es real y se deja como está — renumerar la
+> entrada ajena sería reescribir el trabajo de otra sesión. Se reporta al
+> consejo para que la próxima ola reserve número antes de escribir.
+
+### 1. Alcance y método
+
+- **Base**: `origin/main = b51cfb03` (post-Ω54). Todas las anclas se
+  re-verificaron contra ese commit con `git show origin/main:<ruta>` antes de
+  escribirlas (regla de re-grep previa al cableado).
+- **Método**: 3 lentes en paralelo, READ-ONLY, cero `.rs` tocados, cero
+  oráculo nuevo: **A** integración viva del registry/ámbitos, **B** matemática
+  del aprendizaje y la composición espectral, **C** contabilidad de cierre y
+  ranuras de posición. Residual **D** (código muerto/bandas) propio.
+- **27 hits brutos → 7 fichas**: `R7-R4-B-1`, `R7-R4-B-2`, `R7-R4-A-2`,
+  `R7-R4-C-1` (4 HIGH), `R7-R4-A-3` (MED), `R7-R4-D-1`, `R7-R4-D-2` (2 LOW).
+- **Dedupe previo obligatorio**: A-2 ya estaba fichado en
+  `docs/HOJA_DE_RUTA_CIMIENTOS_2026-10-01.md:65` y C-1 en el bloque «Claude
+  ciclo 8» de `.agents/MEMORIA.md`. Se publican como **subsistencias** (con
+  anclas re-verificadas y dueño asignado), no como hallazgos nuevos.
+
+### 2. HIGH
+
+- **R7-R4-B-1 — la barra neutra entrena como pérdida.**
+  `crates/god-engine-core/src/lib.rs:1845-1866`: la etiqueta del semáforo de
+  barra es `1.0` si `bar_ret > fee_hurdle`, `0.0` si `< -fee_hurdle`, y en la
+  zona neutra `0.5_f64.signum() * 0.0`. `0.5.signum()` es `1.0`, así que el
+  producto es **exactamente `0.0`**, no NaN ni abstención. Inmediatamente
+  después `if y == 0.0 || y == 1.0 { …update_with_outcome(y) }` acepta la
+  etiqueta, y `crates/god-engine-core/src/ensemble.rs:114-116`
+  (`fn valid_label(y: f64) -> bool { y == 0.0 || y == 1.0 }`) la re-valida.
+  Conclusión: **toda barra sin edge sobre la fricción alimenta el ensemble como
+  «el mercado bajó»**, en proporción directamente creciente con el tiempo en
+  régimen calmado (que es la mayoría del tape). Es el defecto que XLIV-9/9b/9c
+  ya erradicaron en otras tres rutas de etiquetado; queda ésta.
+- **R7-R4-B-2 — dilución por denominador fijo en `coherencia_inter`.**
+  `crates/signal-engine/src/voto_espectral.rs:81-89` promedia la banda
+  `(0, 31)` dividiendo por `hi - lo + 1 = 32` **siempre**, mientras
+  `crates/signal-engine/src/skill_motores.rs:283-301`
+  (`aplicar_gate_observabilidad`) anula a `0.0` las filas por debajo de
+  `resolucion_efectiva_ms` (`:137-141` publica 0.0 cuando `suma_w ≤ 1e-12`).
+  El numerador pierde esas escalas pero el denominador no ⇒
+  `coherencia_inter = |media_espectral / v_dom|` tiene techo
+  `(32 − n_gated)/32`. A ~1 evento/s dos tercios de la malla está anulada:
+  techo **0.6875**; con resolución de 30 s el techo cae a **0.4375**.
+  El lector vivo es `crates/signal-engine/src/orchestrator.rs:500-522`
+  (`net_confidence = v_dom·(0.70 + 0.30·coherencia_inter)`), así que el
+  término de coherencia **nunca alcanza su rango**. Peor: los contratos
+  inyectan a mano `set_for_coin(0, "consenso_espectral_media", 0.8)` (L794) y
+  `-0.8` (L808) y certifican la salida con ese valor — un valor inalcanzable
+  en el camino productivo. **11ª confirmación del patrón «contract test verde
+  con física muerta»** y misma familia que `R7-R3-A-1` (Hodge, cerrado por Ω54
+  con `non_isolated_nodes`) y `gradient_energy = Σdiv²/30`.
+- **R7-R4-A-2 [SUBSISTENCIA] — escritor y lector en ámbitos distintos.**
+  El host publica `crates/…/src/bin/god_engine.rs:3076-3080`
+  (`set_scoped(&sym.to_uppercase(), "spoof_score", …)`) y `:3192-3196`
+  (`set_scoped(&sym_scoped, "whale_burst_z", …)`) ⇒ claves
+  `{SYM}_spoof_score` / `{SYM}_whale_burst_z`. El núcleo lee
+  `crates/god-engine-core/src/lib.rs:7504-7516` con
+  `get_for_coin_or(coin_id, "…", 0.0)`, y esa resolución
+  (`omniscient-registry/src/lib.rs:204-208, 236-250`) prueba **sólo**
+  `c{id}:clave` y la clave global desnuda — **sin cascada a `{SYM}_`**.
+  Por tanto el Consejo de Seniors
+  (`crates/metacortex-engine/src/consejo_seniors.rs:186, 189, 236, 518, 533`)
+  recibe **0.0 constante** para ballenas y spoofing: la modulación
+  `p_whale`/`p_spoof` de Ω35 está multiplicando por su valor neutro.
+  Mismo patrón XLV·G ya erradicado una vez en el proyecto.
+- **R7-R4-C-1 [SUBSISTENCIA] — `close_was_real` lee la ranura equivocada.**
+  `src/bin/god_engine.rs:3520-3536` consulta
+  `c.positions.position.last_close_confirmed` — la **ranura fija 2** de
+  `PositionManager { scalp, swing, position }`
+  (`crates/quantum-arena/src/position.rs:681-700`). El core, en cambio,
+  recorre `coin.positions.slots()` con su `slot_idx` dinámico
+  (`crates/god-engine-core/src/lib.rs:3137`) y escribe el flag en la ranura
+  que realmente cerró (`:3705-3709`, y `store` en
+  `position.rs:521` dentro de `close_locked_with_fee`). La apertura no limpia
+  el flag (`position.rs:111` lo inicializa una sola vez en `false`).
+  Con `find_resonant_slot`/`get_slot(target_pos_slot)` (`lib.rs:7809`) la
+  ranura ocupada es dinámica ⇒ el host lee **el cierre de otra posición o un
+  cierre de una operación que ya no existe**. Doble dirección del error:
+  papel→real (confirmado cuando no hubo cierre) y real→papel (perdido cuando
+  cerró en otra ranura). Claude ya arregló la clase gemela para `tau_entry`
+  en la apertura (CL-38/adopción); falta el cierre.
+
+### 3. MED y LOW
+
+- **R7-R4-A-3 [MED]** — `execution-engine/src/router.rs` conserva la variante
+  `EntryRoute::Maker` y su ruteo, pero el host decide `force_maker = false`
+  por política B3.29/CL-14 (`862d04fc`), así que la rama es inalcanzable en
+  producción. No es un bug: es **política deliberada con código vivo detrás**.
+  Quien cambie la ruteo decide si se retira la variante o se cablea; zona
+  compartida CL-14/B3.29, de ahí el acuerdo previo exigido.
+- **R7-R4-D-1 [LOW]** — `crates/god-engine-core/src/lib.rs` (bloque de la
+  barra, junto a B-1) contiene `if let Some(spec) =
+  self.temporal_spectrum.get_mut(coin_id) { let _ = spec; }`: un `get_mut` de
+  **SkipMap con lock en el hot path** cuyo cuerpo es un `let _`. Coste sin
+  efecto; retirar.
+- **R7-R4-D-2 [LOW]** — doble clamp del nicho 3:
+  `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs:437`
+  restringe `scalp_trail_act_atr` a `[0.8, 1.8]` y acto seguido `:505-507`
+  blindaje del mutante a `[1.0, 2.5]` (igual para `scalp_trail_step_atr` y
+  `scalp_trail_atr_mult_base`). La intersección es `[1.0, 1.8]`: la mitad
+  inferior del nicho se trunca en silencio y el mutante puede subir por
+  encima del techo del nicho. Bandas incompatibles sin dueño explícito.
+
+### 4. Retractación publicada (metodológica)
+
+Fiché como HIGH «los genes `scalp_trail_*`/`swing_trail_*` son decorativos».
+**Es falso.** `crates/quantum-arena/src/genome.rs:1098` llama
+`with_synced_continuous_curves()`, que materializa los anclas de trailing en
+las curvas continuas, y `:1117-1128` publica los átomos
+`trail_act_curve_a/b` y `trail_step_curve_a/b` en el registry;
+`config.rs:176-178, 262-268, 394-396, 433-448` los consume y
+`genome.rs:2139-2146` (`trail_params_at_tau`) los sirve vía
+`curve_from_anchors(self.scalp_trail_act_atr, self.swing_trail_act_atr)`.
+El hallazgo queda reducido a `R7-R4-D-2` (bandas incompatibles). Lección para
+el consejo: **la retractación aplica también sobre las afirmaciones propias
+antes de publicarlas**, no sólo sobre las ajenas — igual que en #687, donde
+hubo que retractar 11 claves «sin escritor» que sí lo tenían.
+
+### 5. Mapa positivo (verificado, no a arreglar)
+
+- El gate `y == 0.0 || y == 1.0` **sí** excluye NaN/±Inf correctamente; el
+  problema es únicamente el valor de la rama neutra.
+- `voto_espectral` publica 0.0 honesto cuando `suma_w ≤ 1e-12` (no divide por
+  cero) — la dilución está en el denominador de la media, no en la guarda.
+- `aplicar_gate_observabilidad` es correcto en su propósito (D-742/CL-35): la
+  ficha pide que la **normalización** acompañe al gate, no que se quite el
+  gate.
+- `last_close_confirmed` sí se escribe con el cerrojo y en el sitio correcto
+  del core; el defecto es exclusivo del lector del host.
+- Cero asignaciones de heap nuevas en el hot path de la barra; los buffers
+  espectrales siguen en stack.
+
+### 6. Límites declarados
+
+- Docs-only: **cero `.rs` tocados, cero oráculo ejecutado** en esta fase.
+- B-1, B-2, A-2 y C-1 cambian conducta viva ⇒ **exigen oráculo T-1** antes de
+  push de código.
+- El oráculo vigente es `534e7980` (16/144 = 11,1 %) y **no cubre Ω46–Ω54**.
+  Medido con `git log 534e7980..b51cfb03 -- '*.rs'`: **11 commits** con código
+  vivo entre el árbol certificado y `main` actual, correspondientes a **nueve
+  olas** (Ω46, Ω47 ×2, Ω48, Ω49, Ω50, Ω51, Ω52, Ω53 ×2, Ω54) sin
+  re-certificación. La nota de R7-R3 («Ω47–Ω53, siete olas») era **incorrecta
+  por debajo**: `f9ca4284` (Ω46) **no es ancestro** de `534e7980`
+  (`git merge-base --is-ancestor` → falso). R8 es obligatoria.
+- R4 cubre `god-engine-core/{lib,ensemble}.rs`, `signal-engine/{voto_espectral,
+  skill_motores,orchestrator}.rs`, `quantum-arena/{position,genome,config}.rs`,
+  `omniscient-registry`, `execution-engine/router.rs` y
+  `backtest-engine/continuous_evolution_backtest.rs`. **No** cubre
+  riesgo/ejecución a fondo (R5), aprender/medir (R6), datos/telemetría (R7,
+  incluida la residual **C-02**) ni paridad BT↔vivo (R8).
+
+### 7. Asignación (publicada en el buzón antes de ejecutar)
+
+- **Claude**: `R7-R4-A-2` (unificar ámbito — `set_for_coin` en el host o
+  cascada `{SYM}_` en la lectura, con telemetría de que la clave llegó
+  no-nula) y `R7-R4-C-1` (publicar el flag por `slot_idx` y consumir en el
+  mismo tick). Dueño histórico de la contabilidad de cierre y del payload
+  P-5b.
+- **Qoder (ola 74)**: `R7-R4-B-1` (abstención real en barra neutra + contrato
+  «muestra neutra no muta el ensemble»), `R7-R4-B-2` (`media_banda`
+  normalizada por escalas efectivas + contrato con valor alcanzable),
+  `R7-R4-D-1` (retirar el bloque muerto con lock), `R7-R4-D-2` (unificar
+  bandas del nicho 3 y del blindaje).
+- **Acuerdo previo**: `R7-R4-A-3` (zona CL-14/B3.29).

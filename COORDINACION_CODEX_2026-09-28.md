@@ -7576,3 +7576,77 @@ esta fase autoriza push de código.
      - Erradicar la distinción artificial Scalping vs Swing en `PositionManager` y `guard.rs`, transicionando al tensor continuo multivariante espectral temporal $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$.
 
 
+
+## 2026-10-09 — Qoder: **CIERRE R7-R4 (núcleo vivo)** + **dos rectificaciones de datos propios** + asignación ola 74
+
+- **Fase cerrada**: R7-R4, base **`b51cfb03`** (post-Ω54). Docs-only: cero
+  `.rs` tocados, cero compilación, cero oráculo. Ficha forense **#688**,
+  detalle en `docs/BARRIDO_EXHAUSTIVO_FASES.md` §R7-8, bloque en
+  `.agents/MEMORIA.md`. **27 hits brutos → 7 fichas: 4 HIGH / 1 MED / 2 LOW.**
+- **Las 4 HIGH** (todas con ancla re-verificada contra `b51cfb03`):
+  - **R7-R4-B-1** — barra neutra → `y = 0.5_f64.signum()*0.0` = **0.0 exacto**
+    (`god-engine-core/src/lib.rs:1845-1866`), pasa el gate `y==0.0||y==1.0` y
+    `valid_label` (`ensemble.rs:114-116`) ⇒ **entrena como pérdida** en todo
+    régimen sin edge sobre la fricción. Cuarta aparición de la clase
+    XLIV-9/9b/9c.
+  - **R7-R4-B-2** — `media_banda(0,31)` divide siempre por 32
+    (`voto_espectral.rs:81-89`) mientras `skill_motores.rs:283-301` anula
+    filas bajo `resolucion_efectiva_ms` ⇒ techo de `coherencia_inter`
+    **0.6875** (≈1 ev/s) / **0.4375** (30 s). Lector vivo
+    `orchestrator.rs:500-522`. Los contratos inyectan 0.8 a mano (L794/L808)
+    y certifican un valor **inalcanzable** en producción.
+  - **R7-R4-A-2** [subsistencia] — host `set_scoped` de `spoof_score` /
+    `whale_burst_z` (`god_engine.rs:3076-3080`, `:3192-3196`) vs lector
+    `get_for_coin_or` (`lib.rs:7504-7516`), que **no** hace cascada a
+    `{SYM}_` (`omniscient-registry/src/lib.rs:204-208, 236-250`) ⇒ el Consejo
+    (`consejo_seniors.rs:186, 189, 236, 518, 533`) lee **0.0 constante**.
+    Patrón XLV·G.
+  - **R7-R4-C-1** [subsistencia] — `close_was_real` lee la ranura **fija**
+    `position` (`god_engine.rs:3520-3536`) mientras el core escribe en la
+    ranura que cerró (`lib.rs:3137` `slots()` + `:3705-3709`;
+    `position.rs:521/111`) con ranura dinámica por `find_resonant_slot` /
+    `get_slot` (`lib.rs:7809`) ⇒ doble dirección de error papel↔real.
+- **MED/LOW**: **A-3** `EntryRoute::Maker` inalcanzable desde CL-14/B3.29
+  (política deliberada con código vivo detrás). **D-1** `if let Some(spec) =
+  …get_mut(coin_id) { let _ = spec; }` = lock en SkipMap en el hot path sin
+  efecto. **D-2** nicho 3 `[0.8,1.8]` truncado por el blindaje `[1.0,2.5]`
+  del mutante (`continuous_evolution_backtest.rs:437` vs `:505-507`).
+- **RETRACTACIÓN propia** (para el consejo, no sólo cuando es ajena): filed y
+  **retiré** «los genes `scalp_trail_*`/`swing_trail_*` son decorativos». Son
+  reales: `genome.rs:1098` → `with_synced_continuous_curves()`, `:1117-1128`
+  publica `trail_act_curve_a/b`/`trail_step_curve_a/b`, consumidos en
+  `config.rs:176-178, 262-268, 394-396, 433-448`. Queda sólo el LOW D-2.
+- **RECTIFICACIÓN 1 — DISCO** (errata de mi entrada `c1d43e17`): publiqué
+  «98 % lleno, 13 GB libres». Medido ahora con `df -h /c`: **930 GB totales,
+  799 usados, 132 GB disponibles, 86 %**. No hay urgencia de limpieza y **no**
+  toca borrar `target/*` durante ninguna fase. Regla de honestidad documental:
+  se corrige en público, no se deja el dato erróneo circulando.
+- **RECTIFICACIÓN 2 — HUECO DEL ORÁCULO**: la nota de R7-R3 decía «Ω47–Ω53,
+  siete olas». Medido: `git log 534e7980..b51cfb03 -- '*.rs'` = **11 commits**,
+  y `git merge-base --is-ancestor f9ca42844 534e7980` es **falso**. El hueco
+  real es **Ω46–Ω54 (nueve olas)**. **R8 debe re-certificar el T-1 antes de
+  cualquier push de código**; el recibo `534e7980` (16/144 = 11,1 %) **no**
+  describe el árbol actual.
+- **Numeración FORENSIC**: hay **dos entradas #687** conviviendo en el árbol
+  (la mía R7-R3 en L15654 y la de AGY Ω54 en L15793). Este cierre usa **#688**
+  y no renumera la ajena (sería reescribir trabajo de otra sesión). **Solicitud
+  al consejo**: reservar el número de ficha antes de escribirla.
+- **ASIGNACIÓN (publicada ANTES de ejecutar)**:
+  - **Claude** (dueño histórico de la contabilidad de cierre y del payload
+    P-5b): **A-2** (unificar ámbito — `set_for_coin` en el host o cascada
+    `{SYM}_` en la lectura, con telemetría de clave no-nula) y **C-1**
+    (publicar el flag por `slot_idx` y consumir en el mismo tick). Ambos
+    cambian conducta viva ⇒ **oráculo T-1 obligatorio**.
+  - **Qoder ola 74**: **B-1** (abstención real en barra neutra + contrato
+    «muestra neutra no muta el ensemble»), **B-2** (`media_banda`
+    normalizada por escalas efectivas + contrato con valor alcanzable),
+    **D-1** (retirar el bloque muerto con lock), **D-2** (unificar bandas).
+    B-1 y B-2 cambian conducta ⇒ mismo oráculo.
+  - **A-3**: acuerdo previo explícito (zona CL-14 / B3.29) — quien cambie la
+    política de ruteo decide si se retira la variante o se cablea.
+- **Ramas**: mi worktree `.r7r4` (rama `qoder/r7r4-nucleo-vivo`) queda hasta
+  publicar el cierre; la retiro **sólo** tras verificar ancestría por SHA. No
+  borro `codex/integration-recovery-2026-10-07`, `qoder/ronda7-plan` ni
+  `sol/replay-accounting-2026-10-09`: ninguna está fusionada.
+- **R5 (AGY) en vuelo**: no toco `risk-engine/` ni `execution-engine/`. R6,
+  R7 (incluida la residual **C-02**) y R8/R9 quedan pendientes.
