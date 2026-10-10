@@ -25,6 +25,48 @@
   - `cargo test -p risk-engine --tests`: 25 suites de integración **PASSED (100%)**.
   - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
 
+## 2026-10-10 — Claude (sesión «elegant», QS-n): C-22 y decisiones D1–D4 (ADR-0016)
+
+El dueño delegó las cuatro decisiones de §30.5 del plan («Tú decide»).
+Quedan en `docs/adr/ADR-0016-riesgo-geometria-y-falsacion-de-la-meta.md`
+con sus derivaciones. El PR #30 (QS-1/QS-2/QS-R1/QS-R2) entró en main
+(46269a05) con toda la CI verde. Este bloque va en un PR nuevo desde la
+rama designada, reiniciada sobre main.
+
+- **QS-C22 (consejo)**: la aprobación exige además que la señal DIRECCIONAL
+  neta (asientos con dirección propia) tenga el signo del lado. Antes los
+  moduladores que votan el lado pedido decidían el signo de `final_signal`:
+  68 de 480 largos aprobados en la rejilla iban con los direccionales en
+  contra. El diagnóstico pasa a contrato (sin `#[ignore]`).
+- **QS-D2 (riesgo)**: la geometría de la orden es la de su τ en todo
+  capital.
+  - Se retira el tope micro de 55 pb (R-13). Acortar el stop sin acortar
+    τ reduce lo que cobra la deriva en k², con E[ganancia] = μ·E[T] y
+    E[T] ≈ sl·tp/σ².
+  - Se retira el atajo micro del suelo (R-12): ahora rechaza siempre.
+  - Corrección del ledger: R-12 no admitía un stop bajo el suelo; dejaba
+    el stop elevado al suelo con la τ intacta.
+- **QS-D3 (riesgo)**: el veto de drawdown no pasa de d* = 1 − α^{c/(2−c)}
+  (½ Kelly, α = 0,05 ⇒ 0,632; con 13 USD el piso es 4,79 USD). El 0,85 micro
+  y el «suelo de 3 USD» de la memoria dejan de regir. El freno del host
+  (`god_engine.rs:1609`, Línea C) sigue sin esta cota: pedido.
+- **D1 (pendiente)**: ½ Kelly en espacio de riesgo sobre p_LCB; el
+  apalancamiento es consecuencia. Sin edge medido el tamaño es 0. La meta
+  exige del orden de +0,3 R por operación con ~16 operaciones al día; nada
+  medido lo muestra. Se implementa tras el libro contrafactual en sombra de
+  QS-R4.
+- **D4 (pendiente)**: una sonda abierta en toda la cartera, orden mínima,
+  ≤ 5 por moneda; sus pérdidas cuentan en D3.
+- **QS-R4a**: `audit_engine::shadow_ledger::LibroSombra`, libro
+  contrafactual de intenciones vetadas resueltas por primer toque (R neto
+  de fricción por fuente de veto; veredicto AhorraDinero /
+  BloqueaGanadoras / SinEvidencia). `risk_engine::ultimo_rechazo()` da la
+  razón del rechazo por hilo (QS-R4b, parte de riesgo). Falta el gancho en
+  el núcleo, que se coordina antes con la Línea C y Qoder.
+- **Verificación**: risk-engine completo verde; god-engine-core +
+  metacortex 508/0/1. Contratos D2/D3: RED 3/3 sobre el código anterior,
+  GREEN 3/3. T-1: ver el PR.
+
 ## 2026-10-10 — AGY: OLA Ω70 COMPLETADA — PRESIÓN DE PROSPECT THEORY EN PIPELINE TICK DE GOD-ENGINE-CORE Y CONTRATO FORMAL (#708)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#708`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
