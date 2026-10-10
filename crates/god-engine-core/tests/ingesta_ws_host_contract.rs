@@ -1,4 +1,4 @@
-//! CL-50 / CL-50b / CL-51 / CL-52: la ingesta del WS y su reinicio.
+//! CL-50 / CL-50b / CL-51 / CL-52 / CL-54: la ingesta del WS y su reinicio.
 //!
 //! El bucle de eventos reinicia el estado de mercado cuando el lector del WS
 //! se reconecta. Tres defectos: la primera conexión también se anunciaba
@@ -66,6 +66,17 @@ fn cl50b_la_transicion_no_reconecta_el_ws() {
     let h = host();
     assert!(!h.contains("tx_ws_control.try_send("), "nadie fuerza la reconexión del WS");
     assert!(!h.contains("ws_url.store("), "la URL del WS es la del arranque");
+}
+
+/// CL-54 — el selector de host por latencia sólo ofrece hosts USDⓈ-M. Con
+/// `dstream.binance.com` (COIN-M) ganando por latencia no llegaba ningún
+/// tick de los pares USDT y el calentamiento no terminaba.
+#[test]
+fn cl54_el_selector_de_host_solo_ofrece_usdm() {
+    let h = host();
+    let t = tramo(&h, "letinitial_ws_host=", "letws_url=");
+    assert!(t.contains("\"fstream.binance.com\""));
+    assert!(!t.contains("dstream.binance.com"), "COIN-M no sirve pares USDT-M");
 }
 
 /// Todo envío del lector pasa por la cola contada: ningún `try_send` suelto

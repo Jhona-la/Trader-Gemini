@@ -1034,11 +1034,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if is_env_testnet {
             "stream.binancefuture.com".to_string()
         } else {
-            let endpoints = vec![
-                "fstream.binance.com",
-                "fstream-auth.binance.com",
-                "dstream.binance.com",
-            ];
+            // CL-54 (hallazgo forense #202): sólo hosts USDⓈ-M. La lista
+            // incluía `dstream.binance.com` (COIN-M): si ganaba por latencia,
+            // los streams `<par>usdt@...` no existen allí, no llegaba ningún
+            // tick y el calentamiento no terminaba nunca. Misma lista que
+            // `data_pipeline::ws_client`.
+            let endpoints = vec!["fstream.binance.com", "fstream-auth.binance.com"];
             let mut best_host = "fstream.binance.com".to_string();
             let mut best_latency = u128::MAX;
 
