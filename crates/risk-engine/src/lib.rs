@@ -305,9 +305,20 @@ impl RiskEngine {
                 q_perdida,
                 arena.config.global_max_drawdown.load(Ordering::Relaxed),
             );
-            // D-641 × D-744b compuestos: la tolerancia micro (0.85 pleno)
-            // relaja la COTA MEDIDA continuamente; el estándar la respeta.
-            let umbral = crate::capital_regime::lerp(dd_max_medido, 0.85, micro_w);
+            // D-641 × D-744b compuestos: la tolerancia micro relaja la COTA
+            // MEDIDA continuamente; el estándar la respeta. QS-D3 (ADR-0016):
+            // la tolerancia micro es la caída que FALSIFICA el modelo de ½
+            // Kelly a α = 0,05 (d* = 0,632), no el literal 0,85 (que con 13
+            // USD permitía caer a 1,95 USD). d* es además la COTA SUPERIOR de
+            // todo el veto: ninguna política ≤ ½ Kelly sobrevive con
+            // probabilidad ≥ α a una caída mayor, así que tampoco el respaldo
+            // del gen (hasta 0,95 sin riesgo medido) puede superarla.
+            let d_falsacion = crate::drawdown::drawdown_de_falsacion(
+                crate::drawdown::FRACCION_KELLY_MAXIMA,
+                crate::drawdown::ALFA_FALSACION,
+            );
+            let umbral = crate::capital_regime::lerp(dd_max_medido, d_falsacion, micro_w)
+                .min(d_falsacion);
             if dd >= umbral {
                 return rej(REJ_DRAWDOWN);
             }
