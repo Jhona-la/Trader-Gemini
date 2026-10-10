@@ -51,6 +51,53 @@
   - `cargo test -p metacortex-engine --tests`: **78/78 tests PASSED (100%)**.
   - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
 
+## 2026-10-10 — Claude (sesión «elegant», prefijo QS-n): CI de suites, linaje de modelos y revisión de Ω69/Ω70
+
+Rama `claude/elegant-euler-mmtht4` (reiniciada sobre `main`). El PR #10 lo
+cerró el dueño como integrado vía #20. Verificado en `main`: XLIV-8c y los
+contratos XLIV-13 de `train_forest` están.
+
+- **main estuvo rojo** de `32289abf` (#706) a `558c7dcc` (#708). E0063:
+  `prospect_pressure` faltaba en la carga viva del consejo. Mi QS-0 (valor
+  neutro 0, igual que CL-main del PR #29) quedó superado por #708; el PR #30
+  pasa a llevar QS-1/QS-2.
+  - Causa de fondo: los Ω6x entran por push directo a `main`. La CI de push
+    a `main` se cancela con cada push nuevo: #704, #705 y #706 cancelados,
+    #707 rojo.
+  - Propuesto al dueño: proteger `main` (PR obligatorio y checks requeridos).
+- **QS-1**: `.github/workflows/unit-suites.yml`. Job aparte que ejecuta lib y
+  todos los `tests/*.rs` de risk, núcleo, arena, señales, rasgos, consejo y
+  estrategia, más los tests de `train_forest` y de la lib raíz. Antes corrían
+  ~12 de 116 ficheros de contratos y ningún test unitario de esos crates. En
+  `main` no cancela corridas en curso.
+- **QS-2**: `src/model_manifest.rs` y su cableado en `train_forest`.
+  - Cada modelo se escribe con un `{KEY}.manifest` que guarda: sha256 de los
+    bytes; tapes con sha256 y cobertura temporal; filas tras la purga;
+    frontera de evidencia; argumentos; commit; evidencia del gate; si se
+    promovió.
+  - Libro de usos del holdout `config_dir/holdout_ledger.jsonl`. Si el test
+    ya juzgó OTRO artefacto del mismo símbolo y objetivo, la promoción exige
+    `--test-reuse "<motivo>"`; si no, sale con código 3. Re-juzgar el mismo
+    sha256 se permite (semilla fija).
+  - Cierra en parte PROTOCOLO_OOS_R4 §3.
+- **Revisión Ω66/Ω69/Ω70** (zona AGY, sin tocar; detalle y tabla en el buzón):
+  - Feynman: inerte, sin consumidor.
+  - Prospect Theory (#708): usa como «p_bull de la masa» la probabilidad
+    cruda del bosque (base 0,2–0,3) y sólo es positiva con p > 0,66. Por eso:
+    - penaliza los CORTOS de forma estructural: ×0,99 con ATR 0,12 %, ×0,81
+      con ATR 3 %;
+    - frena los largos justo cuando el modelo está más seguro (p = 0,8 ⇒
+      ×0,92 con ATR 3 %).
+    - La lectura del registro con `.max()` descarta presiones negativas
+      publicadas.
+  - Reynolds de Navier-Stokes: actúa en vivo sobre la confianza de
+    microestructura y el veto de ejecución, sin evidencia OOS.
+  - Propuesta: modo sombra para ambos hasta medir lift fuera de muestra.
+- Entorno cloud: `target-cpu=native` emitió `vmovw` (AVX512-FP16) en una VM
+  sin esa extensión ⇒ «illegal instruction». Medir con
+  `RUSTFLAGS="-C target-cpu=x86-64-v2 -C opt-level=3"` y
+  `CARGO_TARGET_DIR=target-portable`.
+
 ## 2026-10-10 — AGY: PLAN MAESTRO CUÁNTICO INTEGRAL & BARRIDO EXHAUSTIVO ARCHIVO POR ARCHIVO R0-R9 (#704+)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), rama `antigravity/sincronizacion-universo-espectral-plan-fases-2026-10-10`.

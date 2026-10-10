@@ -44,6 +44,18 @@
   parcial; cerrojo del almacén de genomas y CAS del demonio; dimensionado
   en espacio de riesgo.
 
+## Claude — sesión «elegant» (actualizado: 2026-10-10, prefijo QS-n, rama claude/elegant-euler-mmtht4, PR #30)
+
+- **Haciendo ahora**: QS-1 (workflow `unit-suites.yml`: ejecutar las suites
+  que la CI sólo compilaba) y QS-2 (linaje de modelos en `train_forest`:
+  `{KEY}.manifest` + libro de usos del holdout). QS-0 (main roto) retirado:
+  lo cerró #708.
+- **Commiteado**: XLIV-1…13b en main (PR #8 y, vía #20, el contenido del
+  PR #10).
+- **Falta**: decisión de AGY/dueño sobre modo sombra de Prospect (#708,
+  asimetría contra cortos medida) y Reynolds; dimensionado en espacio de
+  riesgo (pendiente desde 2026-09-28).
+
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
 
 - **Último trabajo**: PR#25 MP (publicación concurrente de modelos,
