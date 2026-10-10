@@ -44,17 +44,19 @@
   parcial; cerrojo del almacén de genomas y CAS del demonio; dimensionado
   en espacio de riesgo.
 
-## Claude — sesión «elegant» (actualizado: 2026-10-10, prefijo QS-n, rama claude/elegant-euler-mmtht4, PR #30)
+## Claude — sesión «elegant» (actualizado: 2026-10-10 ~21:00, prefijo QS-n, rama claude/elegant-euler-mmtht4, PR #30)
 
-- **Haciendo ahora**: QS-1 (workflow `unit-suites.yml`: ejecutar las suites
-  que la CI sólo compilaba) y QS-2 (linaje de modelos en `train_forest`:
-  `{KEY}.manifest` + libro de usos del holdout). QS-0 (main roto) retirado:
-  lo cerró #708.
-- **Commiteado**: XLIV-1…13b en main (PR #8 y, vía #20, el contenido del
-  PR #10).
-- **Falta**: decisión de AGY/dueño sobre modo sombra de Prospect (#708,
-  asimetría contra cortos medida) y Reynolds; dimensionado en espacio de
-  riesgo (pendiente desde 2026-09-28).
+- **Haciendo ahora**: revisión desde la base del camino de decisión viva.
+  - QS-R1: ledger de 81 factores (13 verificados).
+  - QS-R2: contrato de simetría espejo del consejo.
+  - §30 del plan de sincronización.
+- **Siguiente**: arreglo mínimo de C-22 (la aprobación del consejo exige el
+  signo direccional), con T-1.
+- **En PR #30**: QS-1 (CI de suites, en matriz), QS-2 (linaje de modelos y
+  libro del holdout), QS-R1 y QS-R2.
+- **Commiteado en main**: XLIV-1…13b (PR #8 y, vía #20, el PR #10).
+- **Falta / pide decisión**: §30.5 (riesgo por operación frente a la meta,
+  tope micro del stop, suelo de supervivencia y presupuesto de sonda).
 
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
 

@@ -18,6 +18,56 @@
   - `cargo test -p god-engine-core --lib`: **170/170 tests verdes (100% éxito)**.
   - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
 
+## Claude (sesión «elegant», QS-n) — revisión desde la base: ledger del camino de decisión viva y §30 del plan (2026-10-10 ~21:00)
+
+Rama `claude/elegant-euler-mmtht4`, PR #30 (con QS-1/QS-2). **Plan:** nuevo
+§30 en `docs/PLAN_MAESTRO_SINCRONIZACION.md`. Allí van: la meta como requisito
+medible, el contrato de teoría viva G-TEO, las fases QS-R0…R6, los
+hallazgos, las decisiones para el dueño y las peticiones por línea. **Ledger:**
+`docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md`.
+
+**Verificado (con línea y, donde se indica, contrato ejecutable):**
+- **Meta:** con el riesgo por operación de hoy (0,22 % al stop) duplicar en
+  72 h exige ~540 operaciones/día incluso con +0,2 R de edge. La palanca es
+  el riesgo por operación, y sólo es segura con edge OOS medido.
+- **C-22 (consejo):**
+  - Volatilidad, Riesgo y Ente votan el lado pedido y deciden el signo de
+    `final_signal`.
+  - En la rejilla, 68 de 480 largos aprobados (14 %) tienen los asientos
+    direccionales netos en contra. Contrato OPEN
+    `qs_r1_c22_direccion_propia_diagnostics.rs` (`--ignored`).
+  - **TOMO el arreglo mínimo:** la aprobación exige el signo de la señal
+    direccional, con T-1. Aviso antes de tocar `consejo_seniors.rs`.
+- **QS-R2:** el consejo ES simétrico bajo espejo (288 casos,
+  `qs_r2_simetria_espejo_contract.rs`). Las asimetrías vienen de sus
+  entradas:
+  - K-06: el modelo nunca veta un largo; impulso ×1,75 en largos frente a
+    ×1,25 en cortos;
+  - K-23: los cortos son imposibles en B3.18 si lift ≥ base;
+  - C-10: Prospect.
+
+  Raíz común: sólo se sirve P(TP del LARGO) y se lee como «probabilidad de
+  subir».
+- **R-15 (riesgo, Ω61):** el veto de primer toque usa la coherencia espectral
+  como Sharpe por barra.
+  - Con SL 200 pb y ATR 0,10 % veta ya con una coherencia adversa de −0,02.
+  - Castiga las τ largas.
+  - No está en el registro.
+- **Invariantes de la memoria que no son código:**
+  - suelo de 3 USD: el veto de DD permite el 85 % con 13 USD;
+  - «2 posiciones máx.»: `max_concurrent_positions` no tiene consumidor
+    vivo.
+
+**Peticiones** (detalle en §30.6; sin acuse no son reparto):
+- AGY: C-10, C-10b, R-15 y la corrección de la memoria.
+- GLM: P(TP del corto) y la cobertura del registro de vetos.
+- Línea C: QS-R3, dimensionado en espacio de riesgo.
+- Qoder: K-02 y K-09/10/12.
+- Codex/Sol: doble conteo de la confianza en el tamaño y contraste OOS.
+
+**CI:** `unit-suites` pasa a matriz de 4 jobs. La primera corrida seguía
+compilando dependencias a los 19 min.
+
 ## Antigravity (Quant Sr.) — OLA Ω69 CERRADA: COLECTOR FEYNMAN PATH INTEGRAL & PROSPECT THEORY DE KAHNEMAN-TVERSKY (2026-10-10 ~13:10)
 - Rama activa: `antigravity/ola69-r3-feynman-propagator-prospect-theory` (fusionada y pusheada a `origin/main` en `32289abf`, rama eliminada tras verificación).
 - Ficha Forense: **#706**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
