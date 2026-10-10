@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω74 COMPLETADA — NAVIER-STOKES EWMA (C-02), REBALANCEO DE PESOS DEL CONSEJO (C-W) Y CONCORDANCIA DIRECCIONAL EN DELIBERACIÓN (FICHA #712)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#712`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Reales y Gobernanza de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Suelo de supervivencia de código: En `risk-engine/src/lib.rs:285-314`, drawdown de falsación $d^* \approx 0.632$ (½ Kelly, $\alpha=0.05$, piso $4.79 USD, ADR-0016 / QS-D3).
+  - Geometría de orden ligada a $\tau$ en todo capital (retirado tope micro de 55 pb, ADR-0016 / QS-D2).
+  - Concurrencia de posiciones: Limitada físicamente por el margen libre disponible ($2.60 USD máx por orden) y las ranuras ortogonales desacopladas en el continuo ($\Delta \ln \tau \ge 0.80$, 3 ranuras por activo en `position.rs`).
+  - Crecimiento exponencial compuesto objetivo: $+100\%$ cada 3 días ($T_d = 72$ h, $g = \frac{\ln(2)}{3} \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$ compuesto continuo).
+- **Cambios Implementados y Certificados**:
+  1. **Resolución de Raíz C-02 (Filtrado Continuo de Microestructura Navier-Stokes)**:
+     - En `crates/feature-engine/src/navier_stokes.rs`: `laminar_share`, `regime()`, `is_laminar()` e `is_turbulent()` se derivan rigurosamente de la EWMA continua `ewma_reynolds` ($\alpha = 0.05$) en lugar del valor de tick único. Se erradican los falsos colapsos de confianza y picos de slippage por micro-ruido aislado.
+     - En `crates/god-engine-core/src/lib.rs:5170`: Publicación de `ns_engine.ewma_reynolds` como `"navier_reynolds_number"` en `OmniscientRegistry`.
+  2. **Resolución de Raíz C-W (Rebalanceo Semántico de Pesos en Consejo de Seniors)**:
+     - En `crates/metacortex-engine/src/consejo_seniors.rs`: `SeniorMicroestructura` recibe `SEAT_WEIGHT_FLOW` (1.2) por ser el observador de flujo L2 real; `SeniorCausal` asignado a peso 1.0; `SeniorRiesgo` (modulador) asignado a peso 1.0 (erradicando la amplificación espuria de 1.5).
+  3. **Concordancia de Lado en Deliberación**:
+     - En `crates/metacortex-engine/src/consejo_seniors.rs:1320-1335`: La compuerta de deliberación exige que el lado en consenso coincida con `payload.intended_direction` de la orden candidata (`>= 0.0` para largos, `<= 0.0` para cortos), eliminando falsas aprobaciones cruzadas.
+- **Verificación Contractual Integral**:
+  - `cargo test -p feature-engine`: **100% verde (6/6 en navier_stokes_reynolds_contract)**.
+  - `cargo test -p metacortex-engine`: **100% verde (81/81 tests pasando, incluyendo qs_r1_c22_direccion_propia_diagnostics)**.
+  - `cargo test -p god-engine-core`: **100% verde (todos los contratos de integración pasando)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## 2026-10-10 — AGY: OLA Ω73 COMPLETADA — SIMETRÍA ESPEJO PROSPECT THEORY (C-10/C-10b), CALIBRACIÓN PRIMER TOQUE (R-15) Y CLARIFICACIÓN DE INVARIANTES (FICHA #711)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#711`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).

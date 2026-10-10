@@ -5163,12 +5163,12 @@ impl GodEngineCore {
             // OLA Ω53: Ecuaciones del Milenio - Hidrodinámica de Navier-Stokes y Número de Reynolds L2/L3
             if let Some(ns_engine) = self.navier_stokes_engines.get_mut(coin_id) {
                 let tick_vol = self.feature_engines[coin_id].ultima_cantidad_trade;
-                let re_number = ns_engine.update(
+                let _re_raw = ns_engine.update(
                     bid, ask, bid_qty, ask_qty, tick_vol, atr_pct, event_time_ms,
                 );
                 let laminar_share = ns_engine.laminar_share;
                 let dissipation = ns_engine.energy_dissipation_rate;
-                set_reg("navier_reynolds_number", re_number);
+                set_reg("navier_reynolds_number", ns_engine.ewma_reynolds);
                 set_reg("navier_laminar_share", laminar_share);
                 set_reg("navier_energy_dissipation", dissipation);
             }

@@ -426,7 +426,7 @@ impl SeniorAgent for SeniorMicroestructura {
             role: self.role(),
             signal_direction: safe_signum(imbalance),
             confidence,
-            weight: 1.0,
+            weight: SEAT_WEIGHT_FLOW,
             is_veto: false,
             justification: format!(
                 "Flujo L2 (OBI: {:.4}, Hodge curl: {:.3}, Re: {:.2}, Lam: {:.2})",
@@ -666,7 +666,7 @@ impl SeniorAgent for SeniorCausal {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent (not a trend predictor)
             confidence: (1.0 - do_calculus_risk).clamp(0.0, 1.0),
-            weight: SEAT_WEIGHT_FLOW,
+            weight: 1.0, // C-W RESOLUCIÓN: Agente de permiso/veto neutral sin prima de flujo
             is_veto,
             justification: format!(
                 "Causal manipulation risk: {:.4} (Threshold: {:.4}, aligned={})",
@@ -710,7 +710,7 @@ impl SeniorAgent for SeniorRiesgo {
             role: self.role(),
             signal_direction: dir, // Modula la entrada bajo deliberación
             confidence: if dir != 0.0 { conviction } else { 0.0 },
-            weight: SEAT_WEIGHT_META,
+            weight: 1.0, // C-W RESOLUCIÓN: Modulador neutral (no inflar con peso meta 1.5 que amplifica sesgos)
             is_veto,
             justification: format!(
                 "Riesgo: DD={:.4}, racha={} → convicción {:.2} (dir={:+.0})",
@@ -1321,11 +1321,13 @@ impl ConsejoDeliberacion {
         } else if long_consensus_pct >= self.params.approval_threshold
             && final_signal > 0.0
             && directional_signal > 0.0
+            && payload.intended_direction >= 0.0
         {
             (true, long_consensus_pct)
         } else if short_consensus_pct >= self.params.approval_threshold
             && final_signal < 0.0
             && directional_signal < 0.0
+            && payload.intended_direction <= 0.0
         {
             (true, short_consensus_pct)
         } else if total_directional_capacity == 0.0 {
