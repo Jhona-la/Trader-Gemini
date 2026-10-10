@@ -207,3 +207,41 @@ derivaciones.
 | **R-18** | Decidido (D4): una sonda abierta en toda la cartera, orden mínima, ≤ 5 por moneda, sus pérdidas cuentan en D3; el prior 0,55 se mide antes de sustituirlo. | Pendiente (zona núcleo/riesgo, coordinar con la Línea C y el PR #29). |
 | **R-20 / cadena de tamaño** | Decidido (D1): ½ Kelly en espacio de RIESGO sobre p_LCB y b neto de fricción; el apalancamiento es consecuencia. | Pendiente (QS-R4: libro contrafactual en sombra antes de activarlo). |
 | **Freno del host** | Nuevo: `src/bin/god_engine.rs:1609-1619` usa `drawdown_maximo` sin la cota d*. Hay dos semánticas del cortacircuitos de drawdown. | Petición a la Línea C. |
+
+### 7.1 Verificados después (2026-10-10, tarde): núcleo, ramas de entrada
+
+| id | Dónde | Qué pasa | Arreglo propuesto (lote QS-K, con T-1) |
+|---|---|---|---|
+| **K-27** | `god-engine-core/src/lib.rs:5821` frente a `:5903` | La rama 1 corta admite `micro_trend <= 0.00003`; su espejo largo (rama 4) exige `>= 0.0`. Deja entrar cortos con microtendencia levemente alcista, contra el propio comentario F8-P9 de la línea anterior. | `micro_trend <= 0.0`, espejo exacto. |
+| **K-27b** | `lib.rs:6014`, `:6039` | Las ramas 9 y 10 (rango, estiramiento > 1) exigen `|composite_score| ≥ 0.24` literal; las ramas 7 y 8 del mismo régimen usan `range_thr` (umbral medido × 1,15). 0,24 es el borde inferior de la banda del gen 21 (`tech_threshold`, [0,24; 0,30]): cuando el gen mutaba o el régimen era antipersistente (×1,20), estas dos ramas no lo veían. | `dynamic_tech_thr` (el gen). Se mantiene la relación con 7/8 (`range_thr` = `dynamic_tech_thr` × 1,15): las ramas de estiramiento extremo piden menos score porque ya piden más OBI y más estiramiento. |
+| **K-28** | `lib.rs:5967-5974` | Las compuertas de tendencia del régimen de rango usan literales en unidades de precio: `macro_trend ≥ −0,00010` y `secular_trend < 0,0025` (y sus espejos). Es la clase que D-756 eliminó en la rama 2: el mismo literal es un desplome en un símbolo tranquilo y ruido en uno volátil. `z_macro` y `z_secular` ya están calculados en el mismo ámbito (`:4962-4968`). | `z_macro ≥ −Z95` y `z_secular < Z95`, en una función pura `rango_admite_reversion` (espejo exacto por construcción). Se retira `!(h < 0 && s < 0)`, redundante tras `h ≥ 0`. |
+
+Los tres cambian conducta en el núcleo: van juntos en un lote con su T-1 y se
+avisan antes en el buzón (zona compartida).
+
+### 7.2 Revisión cruzada de Ω69–Ω71 (AGY), 2026-10-10 noche
+
+Sobre `origin/main` 46269a05, leyendo código (sin compilar). REV-1, REV-2 y
+REV-5 los verifiqué yo contra el código. El resto es lectura de un
+subagente: el propagador está portado línea a línea a un script, sin
+ejecutar el Rust. C-10/C-10b (Prospect) ya estaban arriba y no se repiten.
+
+| id | Dónde | Qué pasa | Arreglo propuesto | Dueño |
+|---|---|---|---|---|
+| **REV-1** HIGH | `risk-engine/tests/veto_logic_contracts.rs:131-137` (V-TECH-002 `spec`) | Usa `coin_id = 999`. `lib.rs:230` sale por `coin_id >= arena.coins.len()` (30 ranuras) con `REJ_FLAT_COIN`; `REJ_SPEC` (`:459`) nunca se alcanza. El test sigue verde si se borra el veto que dice certificar. | `coin_id` dentro del arena sin spec registrado y comprobar la razón (`risk_engine::ultimo_rechazo() == Some(REJ_SPEC)`, QS-R4b, o el delta de `REJECT_COUNTERS_DIR`). | AGY/GLM (registro) |
+| **REV-2** HIGH | `veto_logic_contracts.rs:97-110` (V-LOGIC-014 `fee_impact`) | Con `live_taker_fee = 0,50` la fricción de ida y vuelta es ≈ 1,0, el stop viable `f/0,65` ≈ 1,54 y sale antes `REJ_TP_SL_FLOOR` (`lib.rs:887`, también tras D2). `REJ_FEE_IMPACT` (`:1354`) no se alcanza. | Fee que pase el suelo y supere el tope de impacto, y comprobar la razón. Ver REV-11: en 13 USD quizá no exista tal fee. | AGY/GLM |
+| **REV-3** MED | `veto_registry.rs:484-525` | `sol_a1_…` sólo busca el texto `fn <nombre>` en el corpus: vale un comentario, un prefijo (`fn foo` casa con `fn foo_bar`) o un test `#[ignore]`, y no mira qué veto alcanza. No puede detectar REV-1 ni REV-2. | Cada entrada del registro declara su `REJ_*`; el test comprueba `ultimo_rechazo()`. | AGY/GLM |
+| **REV-4** LOW | `veto_registry.rs:341-349`, test `:112-128` (V-LOGIC-015) | El registro lo describe como orquestador de signal-engine con umbral de gen; el veto real es `PortfolioOrchestrator::allow_trade` en risk-engine con el literal `p_crash ≥ 0,90`. MEMORIA dice «shorts simétricos», pero no hay veto corto espejo (`p_bull ≥ 0,90`) y el caso corto se prueba con `p_bull = 0,01`, que no es el espejo. La contracción continua no se ejercita. | Corregir la ficha; decidir si el espejo existe. | AGY |
+| **REV-5** MED | `signal-engine/src/feynman_propagator.rs` (Ω69) | Código muerto: ningún consumidor fuera de tests (`git grep`). `evaluate_for_coin` lee `feynman_coherence`, que sólo escribe un test a mano. El contrato 7 certifica un valor inyectado. | Modo sombra con su contraste OOS antes de cablear, o retirarlo. | AGY |
+| **REV-6** MED | `feynman_propagator.rs:199-202` | La fase de la acción es `0,1·L/(1+|z|)`: −0,08 rad con z = 2 y −2,73 rad con z = 10. Un movimiento MÁS fuerte en la misma dirección destruye la coherencia. 16 escalas a +2 y 16 a +10 dan C = 2,65 frente a 32 todas a +2; voto máx. 0,08 frente a 0,76. | La fase no debe depender de |z| así. | AGY |
+| **REV-7** MED | `feynman_propagator.rs:210` | Normaliza la coherencia por 32 (C ≤ N_activas por Cauchy-Schwarz). Con las 5 escalas operables alineadas a +2,5: normalizada 0,14, voto máx. 0,117. Misma familia que R7-R4-B-2. | Dividir por el número de escalas activas. | AGY |
+| **REV-8** LOW | `feynman_propagator.rs:186` | Una escala no finita se salta, pero la siguiente lee `desplazamientos[k-1]` sin filtrar: NaN se propaga a la suma y la coherencia vale 0 en las 32. El test sólo cubre «todo NaN». | Filtrar también el vecino. | AGY |
+| **REV-9** INFO | doc de `feynman_propagator.rs` y MEMORIA Ω69 | La doc dice S = L·Δt_k, pero no hay Δt; la «velocidad» es z_k − z_{k−1} entre escalas, no en el tiempo. MEMORIA llama C = |A|, el código usa |A|²/Σ|ψ|². En ruido N(0,1), C ≈ 0,88, no 0. Los dos tests «físicos» usan vectores constantes. | Corregir la doc. | AGY |
+| **REV-10** LOW | `god-engine-core/tests/prospect_pressure_integration_contract.rs` | No construye `GodEngineCore`: no ejercita el cableado de `lib.rs:7558-7573`. Fija `p_crash = 0,05`, cuando la fórmula del núcleo con p_bull 0,62 y liquidación 0,05 da 0,215. «Certificado en el hot path» (MEMORIA Ω70) no lo respalda este test. | Test que pase por el núcleo. | AGY |
+| **REV-11** (sospecha) | `risk-engine/src/lib.rs:1185`, `:1354` | En 13 USD: `max_fee_limit` = 0,035; pasar el suelo exige f ≤ 0,65·0,0055 (antes de D2); superar el tope exige lev > 9,8×, y el micro va a 5–6,5×. `REJ_FEE_IMPACT` parece inalcanzable en micro. Falta trazar las ramas de rescate de apalancamiento. | Medirlo con `ultimo_rechazo()` en una rejilla. | AGY/GLM |
+
+Verificado correcto: función de valor KT (x^0,88; −2,25(−x)^0,88); la
+ponderación es Tversky-Kahneman 1992 (MEMORIA dice «Prelec», que es otra);
+`modulation_factor` es invariante al espejo; el Lagrangiano y el módulo de
+fase son correctos; los tests `flat_coin` e `invalid_input` sí alcanzan su
+veto.
