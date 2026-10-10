@@ -13,6 +13,7 @@ pub mod flow_excitation_confluence;
 pub mod flow_impulse;
 pub mod game_theoretic_nash;
 pub mod hawkes_bessel;
+pub mod navier_stokes_manifold;
 pub mod orchestrator;
 pub mod perceptron_gate;
 pub mod skill_motores;
@@ -26,6 +27,7 @@ pub mod supersonic_shockwave;
 pub mod trend_runner;
 
 pub use maker::{MakerEngine, MakerQuote};
+pub use navier_stokes_manifold::NavierStokesManifoldEngine;
 pub use renyi_tsallis_entropy::RenyiTsallisEntropyEngine;
 pub use stat_arb::StatArbEngine;
 pub use strategy_core::{SignalIntent, SignalType, TradeHorizon};
