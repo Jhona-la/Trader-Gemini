@@ -164,9 +164,64 @@ pub fn actualizar_riesgo_ewma(previo: f64, nuevo: f64, memoria: f64) -> f64 {
     previo + (nuevo - previo) / m
 }
 
+/// QS-D3 (ADR-0016) — Fracción de Kelly máxima que admite el sistema
+/// (½ Kelly: el 75 % del crecimiento óptimo con 1/8 de probabilidad de caer
+/// alguna vez a la mitad, frente a 1/2 con Kelly pleno).
+pub const FRACCION_KELLY_MAXIMA: f64 = 0.5;
+
+/// QS-D3 — Nivel de la prueba de falsación (el α = 0,05 del z95 del sistema).
+pub const ALFA_FALSACION: f64 = 0.05;
+
+/// QS-D3 — LA CAÍDA QUE FALSIFICA EL MODELO DE CRECIMIENTO.
+///
+/// Con riqueza browniana geométrica apostando una fracción `c` del Kelly
+/// óptimo (`c = f/f*`), la probabilidad de caer ALGUNA VEZ a `x·W₀` es
+/// `x^(2/c − 1)` (Kelly pleno: `x`; ½ Kelly: `x³`). Igualándola a `α`:
+///
+/// `P(DD ≥ d) = (1 − d)^(2/c − 1) = α  ⇒  d* = 1 − α^(c/(2 − c))`
+///
+/// Una caída mayor que `d*` rechaza al nivel `α` que la estrategia tenga el
+/// edge con el que se dimensiona: el veto no protege una «opinión» de riesgo,
+/// detiene un modelo refutado. Con `c ≤ ½`, `d*(½, 0,05) = 0,632` es la COTA
+/// SUPERIOR: cualquier política más conservadora tiene un `d*` menor. Por eso
+/// la tolerancia micro (D-641) nunca puede exceder este valor; antes era el
+/// literal 0,85, que con 13 USD permitía caer a 1,95 USD.
+///
+/// Entradas no finitas o fuera de dominio devuelven el `d*` de ½ Kelly a α =
+/// 0,05 (el valor más tolerante que el sistema admite), nunca 1.
+#[inline]
+pub fn drawdown_de_falsacion(c: f64, alfa: f64) -> f64 {
+    let c = if c.is_finite() && c > 0.0 { c.min(FRACCION_KELLY_MAXIMA) } else { FRACCION_KELLY_MAXIMA };
+    let alfa = if alfa.is_finite() && alfa > 0.0 && alfa < 1.0 { alfa } else { ALFA_FALSACION };
+    1.0 - alfa.powf(c / (2.0 - c))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// QS-D3 — d* = 1 − α^(c/(2−c)): ½ Kelly a α = 0,05 ⇒ 0,6316; Kelly
+    /// pleno se recorta a ½; políticas más conservadoras toleran MENOS caída;
+    /// y en d* la probabilidad de la caída bajo el modelo es exactamente α.
+    #[test]
+    fn qs_d3_drawdown_de_falsacion_derivado() {
+        let d = drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION);
+        assert!((d - (1.0 - 0.05f64.powf(1.0 / 3.0))).abs() < 1e-15);
+        assert!((d - 0.6316).abs() < 1e-4, "{d}");
+        assert_eq!(drawdown_de_falsacion(1.0, 0.05), d, "c > ½ se recorta a ½");
+        let cuarto = drawdown_de_falsacion(0.25, 0.05);
+        assert!(cuarto < d, "¼ Kelly tolera menos caída: {cuarto} vs {d}");
+        assert!(drawdown_de_falsacion(0.5, 0.01) > d, "α menor ⇒ umbral mayor");
+        // P(DD ≥ d*) = (1 − d*)^(2/c − 1) = α
+        for c in [0.1, 0.25, 0.5] {
+            let ds = drawdown_de_falsacion(c, 0.05);
+            assert!(((1.0 - ds).powf(2.0 / c - 1.0) - 0.05).abs() < 1e-12);
+        }
+        for malo in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
+            assert_eq!(drawdown_de_falsacion(malo, 0.05), d);
+            assert_eq!(drawdown_de_falsacion(0.5, malo), d);
+        }
+    }
 
     /// D-744b — sin riesgo medido (arranque del proceso) el freno NO se
     /// desarma: rige el gen como fracción de caída, en el mismo rango.

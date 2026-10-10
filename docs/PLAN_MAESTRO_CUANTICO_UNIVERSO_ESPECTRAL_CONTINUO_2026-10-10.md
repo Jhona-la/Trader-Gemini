@@ -380,10 +380,9 @@ El recorrido sistemático cubre los 488 archivos Rust en las 23 crates miembro:
 ┌───────────────┬─────────────────────────────┬────────────────────────────────────────────────────────────────────────┐
 │ Agente        │ Rama / Worktree             │ Estado Operativo y Tareas Vigentes                                     │
 ├───────────────┼─────────────────────────────┼────────────────────────────────────────────────────────────────────────┤
-│ Antigravity   │ antigravity/ola72-r2-r3-    │ • Olas Ω68 (#704), Ω69 (#706), Ω70 (#708), Ω71 (#709, 7387b935)        │
-│ (Quant Lead)  │ zero-alloc-hot-path-        │   mergeadas e integradas en origin/main (100% verde).                  │
-│               │ optimization-selection-     │ • Ola Ω72 (#710): Zero-alloc hot path en `signal-engine::orchestrator` │
-│               │ orchestrator                │   y `risk-engine::selection_stats`. Latencia $< 25$ ns por tick.       │
+│ Antigravity   │ antigravity/ola74-r0-r9-    │ • Olas Ω68-Ω73 (#704-#711) mergeadas en origin/main (100% verde).      │
+│ (Quant Lead)  │ revision-sistemica-cuantica-│ • Ola Ω74 (#712): Resuelto C-02 (Navier-Stokes EWMA), C-W (pesos       │
+│               │ plan-maestro                │   consejo) y concordancia direccional de aprobación en deliberar.      │
 ├───────────────┼─────────────────────────────┼────────────────────────────────────────────────────────────────────────┤
 │ Qoder         │ qoder/r7r6-aprender-medir   │ • En worktree aislado .r7r6. Cerrando Fase R7-R6 (Aprender y medir).   │
 │ (Línea A)     │ (Ficha #690)                │ • Barrido de consistencia de fitness y oráculo T-1.                   │

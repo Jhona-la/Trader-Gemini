@@ -1,5 +1,57 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω74 COMPLETADA — NAVIER-STOKES EWMA (C-02), REBALANCEO DE PESOS DEL CONSEJO (C-W) Y CONCORDANCIA DIRECCIONAL EN DELIBERACIÓN (FICHA #712)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#712`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Reales y Gobernanza de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Suelo de supervivencia de código: En `risk-engine/src/lib.rs:285-314`, drawdown de falsación $d^* \approx 0.632$ (½ Kelly, $\alpha=0.05$, piso $4.79 USD, ADR-0016 / QS-D3).
+  - Geometría de orden ligada a $\tau$ en todo capital (retirado tope micro de 55 pb, ADR-0016 / QS-D2).
+  - Concurrencia de posiciones: Limitada físicamente por el margen libre disponible ($2.60 USD máx por orden) y las ranuras ortogonales desacopladas en el continuo ($\Delta \ln \tau \ge 0.80$, 3 ranuras por activo en `position.rs`).
+  - Crecimiento exponencial compuesto objetivo: $+100\%$ cada 3 días ($T_d = 72$ h, $g = \frac{\ln(2)}{3} \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$ compuesto continuo).
+- **Cambios Implementados y Certificados**:
+  1. **Resolución de Raíz C-02 (Filtrado Continuo de Microestructura Navier-Stokes)**:
+     - En `crates/feature-engine/src/navier_stokes.rs`: `laminar_share`, `regime()`, `is_laminar()` e `is_turbulent()` se derivan rigurosamente de la EWMA continua `ewma_reynolds` ($\alpha = 0.05$) en lugar del valor de tick único. Se erradican los falsos colapsos de confianza y picos de slippage por micro-ruido aislado.
+     - En `crates/god-engine-core/src/lib.rs:5170`: Publicación de `ns_engine.ewma_reynolds` como `"navier_reynolds_number"` en `OmniscientRegistry`.
+  2. **Resolución de Raíz C-W (Rebalanceo Semántico de Pesos en Consejo de Seniors)**:
+     - En `crates/metacortex-engine/src/consejo_seniors.rs`: `SeniorMicroestructura` recibe `SEAT_WEIGHT_FLOW` (1.2) por ser el observador de flujo L2 real; `SeniorCausal` asignado a peso 1.0; `SeniorRiesgo` (modulador) asignado a peso 1.0 (erradicando la amplificación espuria de 1.5).
+  3. **Concordancia de Lado en Deliberación**:
+     - En `crates/metacortex-engine/src/consejo_seniors.rs:1320-1335`: La compuerta de deliberación exige que el lado en consenso coincida con `payload.intended_direction` de la orden candidata (`>= 0.0` para largos, `<= 0.0` para cortos), eliminando falsas aprobaciones cruzadas.
+- **Verificación Contractual Integral**:
+  - `cargo test -p feature-engine`: **100% verde (6/6 en navier_stokes_reynolds_contract)**.
+  - `cargo test -p metacortex-engine`: **100% verde (81/81 tests pasando, incluyendo qs_r1_c22_direccion_propia_diagnostics)**.
+  - `cargo test -p god-engine-core`: **100% verde (todos los contratos de integración pasando)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
+## 2026-10-10 — AGY: OLA Ω73 COMPLETADA — SIMETRÍA ESPEJO PROSPECT THEORY (C-10/C-10b), CALIBRACIÓN PRIMER TOQUE (R-15) Y CLARIFICACIÓN DE INVARIANTES (FICHA #711)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#711`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Reales y Gobernanza de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Suelo de supervivencia de código: En `risk-engine/src/lib.rs:285-314`, el drawdown máximo admisible es `lerp(dd_max_medido, 0.85, micro_w)`, permitiendo un drawdown de hasta el 85% ($1.95 USD de capital restante) en régimen micro puro, mientras que $3.00 USD (DD 76.92%) se mantiene como el umbral de alerta / límite de riesgo del operador.
+  - Concurrencia de posiciones: Limitada físicamente por el margen libre disponible (tope de $2.60 USD por orden) y las ranuras ortogonales desacopladas en el continuo ($\Delta \ln \tau \ge 0.80$, 3 ranuras por activo en `position.rs`).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+  - Crecimiento exponencial compuesto objetivo: $+100\%$ cada 3 días ($T_d = 72$ h, $g = \frac{\ln(2)}{3} \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$ compuesto continuo).
+- **Cambios Implementados y Certificados**:
+  1. **Resolución de Asimetría Prospect Theory (Hallazgos C-10 y C-10b del Ledger QS-R1)**:
+     - En `crates/metacortex-engine/src/prospect_theory.rs`: Creada la función analítica `compute_crowd_net_prospect_pressure(ls_ratio, liquidation_severity, delta_pts)`, derivando la presión psicológica de la masa directamente del ratio Long/Short del mercado real ($LS$) y no de la probabilidad de largo interna del modelo (`ml_prob_pure`).
+     - Cumplimiento formal de simetría espejo anti-simétrica estricta: $P_{\text{kt,net}}(1/LS) = -P_{\text{kt,net}}(LS)$, con neutral exacto en $LS = 1.0 \implies 0.0$.
+     - Erradicación de la penalización estructural contra operaciones en corto. Modulación contrarian en `ProspectTheoryEngine::modulation_factor` idéntica bit a bit para pares espejados (`test_crowd_prospect_pressure_mirror_symmetry` y `test_modulation_factor_mirror_symmetry`).
+     - En `crates/god-engine-core/src/lib.rs:7560-7574`: Corregida la lectura firmada desde `OmniscientRegistry` con comprobación de finitud, eliminando la operación `.max(0.0)` que clobber-eaba lecturas legítimas de pánico extremo negativo (C-10b).
+  2. **Calibración Dimensional por Escala Temporal de Primer Toque Browniano (Hallazgo R-15)**:
+     - En `crates/risk-engine/src/lib.rs:940-955`: Calibrada la deriva direccional $\mu$ en la compuerta analítica browniana de primer toque `probabilidad_tocar_sl_antes_de_tp`.
+     - Introducido el factor de escala de decorrelación espectral temporal $\tau_{\text{ratio}} = (30\text{ s} / \tau)^{1/2}$, reconociendo que la coherencia espectral en $[-1, 1]$ es una correlación instantánea que decorrelaciona con el tiempo según el proceso de Hurst.
+     - Se previene el veto prematuro en brackets de escalas extendidas ante ruidos menores ($-0.02$), mientras se preserva el veto duro ante mareas genuinamente adversas ($-0.95$ en `test_r7_r2_a1_analytical_first_hitting_gate_contract`).
+     - Telemetría en vivo: Se publica `"p_hit_sl_first"` en `OmniscientRegistry` para trazabilidad forense continua y se actualizó la entrada `V-LOGIC-008` en `veto_registry.rs`.
+- **Verificación Contractual Integral**:
+  - `cargo test -p god-engine-core --test prospect_pressure_integration_contract`: **3/3 tests PASSED (100%)**.
+  - `cargo test -p metacortex-engine --test qs_r2_simetria_espejo_contract`: **2/2 tests PASSED (100%)**.
+  - `cargo test -p metacortex-engine --test prospect_theory_contract`: **6/6 tests PASSED (100%)**.
+  - `cargo test -p metacortex-engine --lib`: **28/28 tests PASSED (100%)**.
+  - `cargo test -p risk-engine --test r7_r2_ruin_chaos_contract`: **4/4 tests PASSED (100%)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests PASSED (100%)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## 2026-10-10 — AGY: OLA Ω72 COMPLETADA — ZERO-ALLOC HOT PATH EN CONSENSO CONTINUO Y MOMENTOS DE SELECCIÓN (FICHA #710)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#710`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
@@ -46,6 +98,48 @@
   - `cargo test -p risk-engine --lib`: **153/153 tests PASSED (100%)**.
   - `cargo test -p risk-engine --tests`: 25 suites de integración **PASSED (100%)**.
   - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
+## 2026-10-10 — Claude (sesión «elegant», QS-n): C-22 y decisiones D1–D4 (ADR-0016)
+
+El dueño delegó las cuatro decisiones de §30.5 del plan («Tú decide»).
+Quedan en `docs/adr/ADR-0016-riesgo-geometria-y-falsacion-de-la-meta.md`
+con sus derivaciones. El PR #30 (QS-1/QS-2/QS-R1/QS-R2) entró en main
+(46269a05) con toda la CI verde. Este bloque va en un PR nuevo desde la
+rama designada, reiniciada sobre main.
+
+- **QS-C22 (consejo)**: la aprobación exige además que la señal DIRECCIONAL
+  neta (asientos con dirección propia) tenga el signo del lado. Antes los
+  moduladores que votan el lado pedido decidían el signo de `final_signal`:
+  68 de 480 largos aprobados en la rejilla iban con los direccionales en
+  contra. El diagnóstico pasa a contrato (sin `#[ignore]`).
+- **QS-D2 (riesgo)**: la geometría de la orden es la de su τ en todo
+  capital.
+  - Se retira el tope micro de 55 pb (R-13). Acortar el stop sin acortar
+    τ reduce lo que cobra la deriva en k², con E[ganancia] = μ·E[T] y
+    E[T] ≈ sl·tp/σ².
+  - Se retira el atajo micro del suelo (R-12): ahora rechaza siempre.
+  - Corrección del ledger: R-12 no admitía un stop bajo el suelo; dejaba
+    el stop elevado al suelo con la τ intacta.
+- **QS-D3 (riesgo)**: el veto de drawdown no pasa de d* = 1 − α^{c/(2−c)}
+  (½ Kelly, α = 0,05 ⇒ 0,632; con 13 USD el piso es 4,79 USD). El 0,85 micro
+  y el «suelo de 3 USD» de la memoria dejan de regir. El freno del host
+  (`god_engine.rs:1609`, Línea C) sigue sin esta cota: pedido.
+- **D1 (pendiente)**: ½ Kelly en espacio de riesgo sobre p_LCB; el
+  apalancamiento es consecuencia. Sin edge medido el tamaño es 0. La meta
+  exige del orden de +0,3 R por operación con ~16 operaciones al día; nada
+  medido lo muestra. Se implementa tras el libro contrafactual en sombra de
+  QS-R4.
+- **D4 (pendiente)**: una sonda abierta en toda la cartera, orden mínima,
+  ≤ 5 por moneda; sus pérdidas cuentan en D3.
+- **QS-R4a**: `audit_engine::shadow_ledger::LibroSombra`, libro
+  contrafactual de intenciones vetadas resueltas por primer toque (R neto
+  de fricción por fuente de veto; veredicto AhorraDinero /
+  BloqueaGanadoras / SinEvidencia). `risk_engine::ultimo_rechazo()` da la
+  razón del rechazo por hilo (QS-R4b, parte de riesgo). Falta el gancho en
+  el núcleo, que se coordina antes con la Línea C y Qoder.
+- **Verificación**: risk-engine completo verde; god-engine-core +
+  metacortex 508/0/1. Contratos D2/D3: RED 3/3 sobre el código anterior,
+  GREEN 3/3. T-1: ver el PR.
 
 ## 2026-10-10 — AGY: OLA Ω70 COMPLETADA — PRESIÓN DE PROSPECT THEORY EN PIPELINE TICK DE GOD-ENGINE-CORE Y CONTRATO FORMAL (#708)
 

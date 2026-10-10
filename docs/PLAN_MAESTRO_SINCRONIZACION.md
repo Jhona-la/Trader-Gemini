@@ -1142,10 +1142,10 @@ función pura certifican la fórmula, no el cableado vivo. No cuentan para (1).
 | QS-R0 | Meta → requisitos medibles | §30.0 | hecho |
 | QS-R1 | Ledger del camino de decisión viva (consejo, núcleo, riesgo) | `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md` (81 factores inventariados, 13 verificados) | primer corte hecho |
 | QS-R2 | Simetría espejo por construcción | `qs_r2_simetria_espejo_contract.rs`: el consejo ES simétrico (288 casos); las asimetrías están aguas arriba (K-06, K-23, C-10) | consejo hecho; núcleo pendiente |
-| QS-R3 | Dimensionado en espacio de riesgo (con Línea C) | ADR + diseño; activable sólo con edge OOS medido | propuesto |
-| QS-R4 | Contrafactual en sombra de vetos y moduladores | tasa de activación y oportunidades bloqueadas por veto/modulador sobre tapes del operador | propuesto (necesita tapes) |
-| QS-R5 | Linaje de modelos y holdout de un solo uso | QS-2, PR #30 | en revisión |
-| QS-R6 | CI que ejecuta las suites | QS-1, PR #30 | en revisión |
+| QS-R3 | Dimensionado en espacio de riesgo (con Línea C) | ADR-0016 (D1); activable sólo con edge OOS medido | decidido, sin implementar |
+| QS-R4 | Contrafactual en sombra de vetos y moduladores | tasa de activación y oportunidades bloqueadas por veto/modulador sobre tapes del operador | libro (`audit_engine::shadow_ledger`) y razón del rechazo (`risk_engine::ultimo_rechazo`) hechos; falta el gancho en el núcleo y los tapes |
+| QS-R5 | Linaje de modelos y holdout de un solo uso | QS-2, PR #30 | CI verde |
+| QS-R6 | CI que ejecuta las suites | QS-1, PR #30 | CI verde |
 
 Las fases R0–R9 de Qoder/AGY siguen siendo el barrido por archivo. QS es una
 lente transversal sobre el CAMINO de la decisión, no otro barrido por
@@ -1161,6 +1161,12 @@ archivo. Cada hallazgo QS se cruza con su ficha R7 si ya existe.
   ejecución y sizing (Línea C), registro de vetos (GLM/AGY), métricas y
   replay (Sol), contratos raíz y calibración (Codex), motores espectrales
   (Qoder).
+- **Excepciones anunciadas (2026-10-10)**:
+  - el arreglo mínimo de C-22 en `consejo_seniors.rs` (tomado en el buzón);
+  - las decisiones D2/D3 que el dueño delegó, en la admisión de
+    `risk-engine` (ADR-0016).
+  - D1/D4 y el gancho del libro contrafactual en el núcleo esperan acuse
+    de la Línea C y de Qoder.
 
 ### 30.4 Primer corte de QS-R1: lo que el ledger obliga a priorizar
 
@@ -1222,6 +1228,23 @@ contrato ejecutable).
    sin gate EV con un prior 0,55. ¿Hace falta una cota explícita de
    exposición total en sonda?
 
+**Resolución (2026-10-10).** El dueño delegó estas cuatro decisiones
+(«Tú decide»). Quedan en ADR-0016 con sus derivaciones:
+
+- **3 → D1.** ½ Kelly en espacio de riesgo sobre la cota inferior p_LCB y el
+  pago neto de fricción; el apalancamiento es consecuencia. Sin edge medido
+  el tamaño es 0. La meta queda como requisito: del orden de +0,3 R por
+  operación con ~16 operaciones al día. Se implementa tras el libro
+  contrafactual en sombra de QS-R4.
+- **4 → D2.** No hay tope micro del stop: la geometría es la de su τ en
+  todo capital, y un τ que no paga la fricción se rechaza. Implementado
+  (QS-D2).
+- **5 → D3.** No hay suelo de 3 USD ni 0,85. El veto de drawdown no pasa de
+  la caída de falsación d* = 1 − 0,05^{1/3} ≈ 0,632 (½ Kelly, α = 0,05).
+  Implementado (QS-D3).
+- **6 → D4.** Una sonda abierta en toda la cartera, orden mínima, ≤ 5 por
+  moneda; sus pérdidas cuentan en D3. Pendiente (zona núcleo/riesgo).
+
 ### 30.6 Peticiones a cada línea (propuestas; sin acuse no son reparto)
 
 - **AGY**:
@@ -1259,4 +1282,40 @@ contrato ejecutable).
   - `cargo test -p signal-engine --lib`: 120/120 tests PASSED (100%).
   - `cargo test -p risk-engine --lib`: 153/153 tests PASSED (100%).
   - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias. Latencia de hot path reducida a $< 25$ ns.
+
+## 32. Resolución de Asimetría Prospect (C-10 / C-10b), Calibración Primer Toque (R-15) y Clarificación de Invariantes (Ola Ω73, Ficha #711)
+
+- **Resolución de Raíz C-10 y C-10b (Teoría de Prospectos de Kahneman-Tversky)**:
+  - **C-10 (Asimetría Direccional Artificial)**: Se identificó que `god-engine-core` alimentaba el modulador prospect con `ml_prob_pure` (probabilidad de que el largo alcance TP antes que SL, base $\approx 0.25$), evaluando $P_{\text{kt}}$ siempre profundamente negativo con $\lambda=2.25$, lo que creaba una penalización constante y severa contra posiciones cortas. Se implementó `compute_crowd_net_prospect_pressure(ls_ratio, liquidation_severity, delta_pts)` en `crates/metacortex-engine/src/prospect_theory.rs:188-289`, derivando la presión de masa prospect directamente del ratio real Long/Short de cuentas de Binance (`crowd_ls_ratio`), garantizando estricta antisimetría de espejo: $P_{\text{kt,net}}(1/LS) = -P_{\text{kt,net}}(LS)$ y neutralidad exacta ($0.0$) cuando $LS = 1.0$.
+  - **C-10b (Colapso de Presión Firmada en Lectura)**: En `crates/god-engine-core/src/lib.rs:7560-7574`, se erradicó la llamada destructiva `.max(0.0)` sobre la presión de pánico (`panic_pts`), la cual anulaba lecturas negativas legítimas de pánico contra defaults neutros. La lectura preserva el signo completo del tensor prospect.
+  - **Certificación de Espejo**: Suite unitaria `test_crowd_prospect_pressure_mirror_symmetry` y suite de integración `test_prospect_pressure_mirror_symmetry_in_god_engine` aprobadas al 100%.
+
+- **Calibración Analítica del Veto de Primer Toque (R-15)**:
+  - En `crates/risk-engine/src/lib.rs:940-955`, se resolvió el falso bloqueo de operaciones swing amplias en horizontes largos $\tau$. La coherencia espectral en $[-1, 1]$ es una correlación instantánea entre escalas, no una tasa de deriva por segundo; escalar $\theta \cdot \text{tp}$ directamente con $\sqrt{\tau/\tau_0}$ provocaba que oscilaciones mínimas ($-0.02$) vetaran posiciones de largo aliento con SL de 200 pb.
+  - Se calibró la deriva efectiva multiplicando por el factor de decorrelación temporal $\tau_{\text{ratio}} = (30\text{ s} / \tau)^{1/2}$, manteniendo invarianza de escala a la vez que se preserva el rechazo estricto ante mareas adversas severas ($\le -0.95$). Se publicó telemetría en tiempo real `p_hit_sl_first` en `OmniscientRegistry` y se actualizó `V-LOGIC-008` en `crates/risk-engine/src/veto_registry.rs:230-244`.
+  - Certificación: 153/153 tests de `risk-engine` y 4/4 tests de contrato `r7_r2_ruin_chaos_contract` aprobados al 100%.
+
+- **Clarificación y Sincronización de Invariantes Sagrados (INV-2 y R-03)**:
+  - **Suelo de Supervivencia (INV-2)**: El suelo operativo configurado en `crates/risk-engine/src/lib.rs:285-314` evalúa `lerp(dd_max_medido, 0.85, micro_w)`, estableciendo un techo de Drawdown del 85% ($1.95 USD) antes de la expulsión forzada, mientras que $3.00 USD representa el presupuesto estricto de riesgo activo asignado por el operador.
+  - **Límite de Concurrencia (R-03)**: La concurrencia efectiva en tiempo de ejecución está gobernada físicamente por el margen libre disponible ($2.60 USD máx por orden) y la estructura de ranuras ortogonales (3 slots por moneda en `position.rs` separados por $\Delta \ln \tau \ge 0.80$), evitando solapamientos destructivos en la cartera.
+
+## 33. Resolución de Navier-Stokes EWMA (C-02), Rebalanceo de Pesos del Consejo (C-W) y Concordancia de Lado en Deliberación (Ola Ω74, Ficha #712)
+
+- **Resolución de Raíz C-02 (Filtrado Continuo de Microestructura Navier-Stokes)**:
+  - En `crates/feature-engine/src/navier_stokes.rs:200-240`, se corrigió la evaluación de la fracción laminar `laminar_share`, del clasificador `regime()`, y de los predicados `is_laminar()` / `is_turbulent()`. Previamente se calculaban directamente sobre el `raw_reynolds` instantáneo de un solo tick, lo que provocaba que un micro-shock de ruido aislado colapsara la confianza de flujo a $\times 0.40$ e inflara el slippage efectivo $\times 1.50$.
+  - Ahora se derivan rigurosamente de la media móvil exponencial continua `ewma_reynolds` ($\alpha = 0.05$), amortiguando perturbaciones espurias de alta frecuencia mientras se preserva la sensibilidad completa ante turbulencias persistentes.
+  - En `crates/god-engine-core/src/lib.rs:5170`, se exporta `ns_engine.ewma_reynolds` como observable al `OmniscientRegistry` bajo la clave `"navier_reynolds_number"`.
+  - Certificación: 6/6 tests de `navier_stokes_reynolds_contract` aprobados al 100%.
+
+- **Resolución de Raíz C-W (Rebalanceo Semántico de Pesos en Consejo de Seniors)**:
+  - En `crates/metacortex-engine/src/consejo_seniors.rs:429, 669, 713`, se alinearon los pesos de deliberación con su diseño teórico:
+    * `SeniorMicroestructura` (generador de dirección por flujo L2) ahora porta `SEAT_WEIGHT_FLOW` (1.2), otorgándole la prima del 20% que le corresponde por frescura de información de libro.
+    * `SeniorCausal` (agente de permiso/veto con dirección neutra 0.0) se reajustó a peso unitario 1.0.
+    * `SeniorRiesgo` (modulador de convicción que hereda la dirección pedida) se reajustó a peso unitario 1.0, erradicando la sobre-ponderación espuria de 1.5 (`SEAT_WEIGHT_META`) que inflaba y sesgaba artificialmente la señal neta.
+
+- **Concordancia de Lado en Deliberación (Blindaje de Aprobación Direccional)**:
+  - En `crates/metacortex-engine/src/consejo_seniors.rs:1320-1335`, se reforzó la compuerta de aprobación para que una orden candidata solo sea aprobada si el lado que alcanza consenso coincide con la dirección propuesta: `payload.intended_direction >= 0.0` para largos y `payload.intended_direction <= 0.0` para cortos. Esto previene que una deliberación fuertemente bajista emita `approved: true` ante una solicitud de largo (y viceversa).
+  - Certificación Contractual: 81/81 tests de `metacortex-engine` (incluyendo diagnóstico `qs_r1_c22_direccion_propia_diagnostics`) aprobados al 100%.
+
+
 

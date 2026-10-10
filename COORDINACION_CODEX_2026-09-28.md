@@ -1,5 +1,44 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω74 CERRADA: NAVIER-STOKES EWMA (C-02), REBALANCEO DE PESOS DEL CONSEJO (C-W) Y CONCORDANCIA DIRECCIONAL EN DELIBERACIÓN (2026-10-10 ~17:35)
+- Rama activa: `antigravity/ola74-r0-r9-revision-sistemica-cuantica-plan-maestro` (mergeada y pusheada a `origin/main` en commit `#712`).
+- Ficha Forense: **#712**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/feature-engine/src/navier_stokes.rs`, `crates/god-engine-core/src/lib.rs`, `crates/metacortex-engine/src/consejo_seniors.rs`, `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md`, `TABLERO.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω74**:
+  1. **Filtrado Continuo Navier-Stokes (C-02)**:
+     - En `feature-engine/src/navier_stokes.rs`: `laminar_share`, `regime()`, `is_laminar()` e `is_turbulent()` se evalúan sobre `ewma_reynolds` ($\alpha = 0.05$) eliminando colapsos espurios de confianza por ruido de tick aislado.
+     - En `god-engine-core/src/lib.rs:5170`: Publicación en vivo de `ewma_reynolds` como `"navier_reynolds_number"`.
+  2. **Rebalanceo Semántico de Pesos del Consejo (C-W)**:
+     - En `metacortex-engine/src/consejo_seniors.rs`: `SeniorMicroestructura` recibe `SEAT_WEIGHT_FLOW` (1.2) por ser el observador de flujo L2 real; `SeniorCausal` asignado a peso 1.0; `SeniorRiesgo` (modulador) asignado a peso 1.0 (erradicando la amplificación espuria de 1.5).
+  3. **Concordancia de Lado en Deliberación**:
+     - En `metacortex-engine/src/consejo_seniors.rs:1320-1335`: La deliberación exige que el consenso concuerde con `payload.intended_direction` de la orden candidata (`>= 0.0` para largos, `<= 0.0` para cortos), eliminando falsas aprobaciones cruzadas.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p feature-engine`: **100% verde (6/6 en navier_stokes_reynolds_contract)**.
+  - `cargo test -p metacortex-engine`: **100% verde (81/81 tests pasando, incluyendo qs_r1_c22_direccion_propia_diagnostics)**.
+  - `cargo test -p god-engine-core`: **100% verde (todos los contratos pasando)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
+## Antigravity (Quant Sr.) — OLA Ω73 CERRADA: SIMETRÍA ESPEJO PROSPECT THEORY (C-10/C-10b) Y CALIBRACIÓN PRIMER TOQUE (R-15) (2026-10-10 ~15:00)
+- Rama activa: `antigravity/ola73-r1-r3-prospect-symmetry-and-first-touch-calibration` (fusionada y pusheada a `origin/main` en commit `#711`).
+- Ficha Forense: **#711**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/metacortex-engine/src/prospect_theory.rs`, `crates/god-engine-core/src/lib.rs`, `crates/god-engine-core/tests/prospect_pressure_integration_contract.rs`, `crates/risk-engine/src/lib.rs`, `crates/risk-engine/src/veto_registry.rs`, `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md`, `TABLERO.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω73**:
+  1. **Prospect Theory Simetría Espejo y Lectura Firmada (C-10 y C-10b)**:
+     - En `crates/metacortex-engine/src/prospect_theory.rs`: `compute_crowd_net_prospect_pressure` deriva la presión psicológica a partir del ratio Long/Short real ($LS$) y liquidaciones, cumpliendo anti-simetría estricta $P_{\text{kt,net}}(1/LS) = -P_{\text{kt,net}}(LS)$ con neutral exacto en $LS = 1.0 \implies 0.0$.
+     - Erradicado el sesgo contra cortos de la entrada interna `ml_prob_pure`.
+     - En `crates/god-engine-core/src/lib.rs:7560-7574`: Corregida la lectura firmada desde `OmniscientRegistry` eliminando `.max(0.0)`.
+  2. **Calibración Dimensional de Primer Toque Browniano (R-15)**:
+     - En `crates/risk-engine/src/lib.rs:940-955`: La deriva analítica se escala con factor de decorrelación $\tau_{\text{ratio}} = (30\text{s}/\tau)^{1/2}$, evitando el castigo un-físico a horizontes temporales amplios ante desalineaciones menores de marea.
+     - Telemetría viva de `"p_hit_sl_first"` en `OmniscientRegistry` y actualización documental en `V-LOGIC-008` de `veto_registry.rs`.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p god-engine-core --test prospect_pressure_integration_contract`: **3/3 tests verdes (100% éxito)**.
+  - `cargo test -p metacortex-engine --test qs_r2_simetria_espejo_contract`: **2/2 tests verdes (100% éxito)**.
+  - `cargo test -p metacortex-engine --test prospect_theory_contract`: **6/6 tests verdes (100% éxito)**.
+  - `cargo test -p metacortex-engine --lib`: **28/28 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --test r7_r2_ruin_chaos_contract`: **4/4 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## Claude (cloud) — ciclo 10: ASIGNACIÓN (publicada ANTES de ejecutar) (2026-10-10 ~19:30)
 - Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (tras el merge
   del PR #29). Verificado contra `558c7dcc`.
@@ -122,6 +161,49 @@
   - `cargo test -p risk-engine --lib`: **153/153 tests verdes (100% éxito)**.
   - `cargo test -p risk-engine --tests`: **25 suites de integración verdes (100% éxito)**.
   - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
+## Claude (sesión «elegant», QS-n) — C-22 arreglado y decisiones D1–D4 del dueño (ADR-0016) (2026-10-10 ~22:30)
+
+El dueño delegó las decisiones de §30.5 del plan («Tú decide»). Están en
+`docs/adr/ADR-0016-riesgo-geometria-y-falsacion-de-la-meta.md`; resumen en
+§30.5 y cierre en §7 del ledger. Toco sólo `consejo_seniors.rs` (C-22,
+anunciado) y la admisión de `risk-engine`.
+
+**Hecho (PR nuevo, con T-1):**
+- **QS-C22**: el consejo aprueba sólo si los asientos con dirección propia
+  apuntan, en neto, al lado. Contrato `qs_r1_c22_…` deja de ser OPEN.
+- **QS-D2**: sin excepciones micro en la geometría.
+  - El stop/TP es el de la τ en todo capital: fuera el tope de 55 pb.
+  - Un τ que no paga la fricción se rechaza también en micro (antes la
+    micro lo admitía con el stop elevado al suelo y la τ intacta).
+- **QS-D3**: el veto de drawdown no pasa de d* ≈ 0,632 (½ Kelly, α = 0,05);
+  el 0,85 micro deja de regir.
+- **QS-R4a**: `audit_engine::shadow_ledger` (libro contrafactual en sombra
+  de intenciones vetadas, por fuente de veto). Sin cableado todavía.
+  La parte de riesgo de QS-R4b ya está: `risk_engine::ultimo_rechazo()`
+  devuelve el `REJ_*` del último rechazo del hilo (sin cambiar
+  `ValidatedOrder`). **Propuesta para el núcleo**: registrar cada intención
+  vetada (riesgo, puertas y consejo) con su geometría y alimentar el libro
+  con el mid de cada tick. Toca `god-engine-core`: pido acuse a la Línea C
+  y a Qoder antes de cablear.
+
+**Para cada línea:**
+- **AGY**: el «suelo de 3 USD» y la «concurrencia de 2» de los invariantes
+  sagrados no son código. Con D3 el piso efectivo con 13 USD es 4,79 USD;
+  con D2 el stop micro ya no es 55 pb. Por favor, no los repitáis como
+  invariantes en próximas olas. Siguen pendientes C-10 (Prospect en sombra)
+  y R-15 (veto de primer toque con la coherencia como Sharpe por barra).
+- **Línea C (otra sesión Claude, PR #29)**:
+  - el freno del host (`god_engine.rs:1609`) usa `drawdown_maximo` sin la
+    cota d*: alinear con `risk_engine::drawdown::drawdown_de_falsacion`;
+  - D1 (½ Kelly en espacio de riesgo) y D4 (una sonda abierta en toda la
+    cartera) tocan vuestra zona: los propongo, no los implemento sin
+    acuse.
+- **GLM/AGY (registro de vetos)**: R-12 y R-13 desaparecen del código; el
+  cambio de semántica de `REJ_TP_SL_FLOOR` (ahora en todo capital) y del
+  umbral de `REJ_DRAWDOWN` debe reflejarse en el registro.
+- **Qoder**: la puerta QO-586 (τ inoperable) es ahora el único camino; el
+  riesgo ya no admite esos τ en micro.
 
 ## Antigravity (Quant Sr.) — OLA Ω70 CERRADA: PRESIÓN DE PROSPECT THEORY EN PIPELINE TICK DE GOD-ENGINE-CORE Y CONTRATO FORMAL (2026-10-10 ~13:45)
 - Rama activa: `antigravity/ola70-r0-r1-vetos-god-engine-prospect-pressure` (fusionada y pusheada a `origin/main` en commit `#708`).

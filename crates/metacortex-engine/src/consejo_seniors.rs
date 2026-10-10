@@ -426,7 +426,7 @@ impl SeniorAgent for SeniorMicroestructura {
             role: self.role(),
             signal_direction: safe_signum(imbalance),
             confidence,
-            weight: 1.0,
+            weight: SEAT_WEIGHT_FLOW,
             is_veto: false,
             justification: format!(
                 "Flujo L2 (OBI: {:.4}, Hodge curl: {:.3}, Re: {:.2}, Lam: {:.2})",
@@ -666,7 +666,7 @@ impl SeniorAgent for SeniorCausal {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent (not a trend predictor)
             confidence: (1.0 - do_calculus_risk).clamp(0.0, 1.0),
-            weight: SEAT_WEIGHT_FLOW,
+            weight: 1.0, // C-W RESOLUCIÓN: Agente de permiso/veto neutral sin prima de flujo
             is_veto,
             justification: format!(
                 "Causal manipulation risk: {:.4} (Threshold: {:.4}, aligned={})",
@@ -710,7 +710,7 @@ impl SeniorAgent for SeniorRiesgo {
             role: self.role(),
             signal_direction: dir, // Modula la entrada bajo deliberación
             confidence: if dir != 0.0 { conviction } else { 0.0 },
-            weight: SEAT_WEIGHT_META,
+            weight: 1.0, // C-W RESOLUCIÓN: Modulador neutral (no inflar con peso meta 1.5 que amplifica sesgos)
             is_veto,
             justification: format!(
                 "Riesgo: DD={:.4}, racha={} → convicción {:.2} (dir={:+.0})",
@@ -1298,11 +1298,37 @@ impl ConsejoDeliberacion {
         // independientes alineadas», no «el mismo OBI visto desde 5 ángulos».
         // El ML (B3.18) y el risk-engine ya gatearon la entrada; el consejo es
         // la última deliberación cualitativa, no un segundo embudo cuantitativo.
+        // QS-C22: el signo que aprueba es TAMBIÉN el de los asientos con
+        // dirección propia. Volatilidad, Riesgo y Ente votan
+        // `intended_direction` (modulan convicción, no generan dirección) y
+        // cuentan en `final_signal`: con moduladores tranquilos sumaban hasta
+        // +3,4 de capacidad al lado pedido y daban `final_signal` > 0 con los
+        // asientos direccionales netos EN CONTRA (68 de 480 largos aprobados
+        // en la rejilla del contrato qs_r1_c22). Misma ponderación que
+        // `final_signal` (señal · confianza · peso), restringida a los
+        // asientos direccionales.
+        let directional_signal: f64 = opinions
+            .iter()
+            .filter(|o| is_directional_seat(o) && o.signal_direction != 0.0 && o.confidence > 0.0)
+            .map(|o| o.signal_direction * o.confidence * o.weight)
+            .sum();
+        if !directional_signal.is_finite() {
+            return CouncilDecisionTrace::integrity_failure("directional signal overflow".into());
+        }
+
         let (approved, consensus_pct) = if vetoed_by.is_some() {
             (false, 0.0)
-        } else if long_consensus_pct >= self.params.approval_threshold && final_signal > 0.0 {
+        } else if long_consensus_pct >= self.params.approval_threshold
+            && final_signal > 0.0
+            && directional_signal > 0.0
+            && payload.intended_direction >= 0.0
+        {
             (true, long_consensus_pct)
-        } else if short_consensus_pct >= self.params.approval_threshold && final_signal < 0.0 {
+        } else if short_consensus_pct >= self.params.approval_threshold
+            && final_signal < 0.0
+            && directional_signal < 0.0
+            && payload.intended_direction <= 0.0
+        {
             (true, short_consensus_pct)
         } else if total_directional_capacity == 0.0 {
             // D-165: Con cero capacidad direccional de los seniors, rechazar para evitar operaciones a ciegas

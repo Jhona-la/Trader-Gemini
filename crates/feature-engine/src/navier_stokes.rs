@@ -201,7 +201,10 @@ impl NavierStokesReynoldsEngine {
         self.sample_count = self.sample_count.saturating_add(1);
 
         // 10. Fracción laminar suave C^∞: 1 / (1 + (Re/Re_crit)^2)
-        self.laminar_share = Self::compute_laminar_share(self.reynolds_number);
+        // C-02 RESOLUCIÓN: Calculada sobre la EWMA continua ewma_reynolds en lugar
+        // del valor instantáneo de un solo tick, erradicando falsos colapsos de confianza
+        // y saltos artificiales de slippage provocados por ruido de microestructura aislado.
+        self.laminar_share = Self::compute_laminar_share(self.ewma_reynolds);
 
         // 11. Tasa de disipación de energía de Kolmogorov: ε = ν * (u / L)^2 en [USD^2 / s^3]
         let velocity_gradient = (self.velocity / characteristic_length).abs();
@@ -214,12 +217,12 @@ impl NavierStokesReynoldsEngine {
         self.reynolds_number
     }
 
-    /// Retorna el régimen hidrodinámico clasificado según el número de Reynolds
+    /// Retorna el régimen hidrodinámico clasificado según la EWMA del número de Reynolds (C-02)
     #[inline(always)]
     pub fn regime(&self) -> HydrodynamicRegime {
-        if self.reynolds_number < Self::CRITICAL_REYNOLDS_LAMINAR {
+        if self.ewma_reynolds < Self::CRITICAL_REYNOLDS_LAMINAR {
             HydrodynamicRegime::Laminar
-        } else if self.reynolds_number < Self::CRITICAL_REYNOLDS_TURBULENT {
+        } else if self.ewma_reynolds < Self::CRITICAL_REYNOLDS_TURBULENT {
             HydrodynamicRegime::Transitional
         } else {
             HydrodynamicRegime::Turbulent
@@ -229,13 +232,13 @@ impl NavierStokesReynoldsEngine {
     /// Retorna si el régimen actual es estrictamente laminar
     #[inline(always)]
     pub fn is_laminar(&self) -> bool {
-        self.reynolds_number < Self::CRITICAL_REYNOLDS_LAMINAR
+        self.ewma_reynolds < Self::CRITICAL_REYNOLDS_LAMINAR
     }
 
     /// Retorna si el régimen actual es turbulento (riesgo inercial extremo)
     #[inline(always)]
     pub fn is_turbulent(&self) -> bool {
-        self.reynolds_number >= Self::CRITICAL_REYNOLDS_TURBULENT
+        self.ewma_reynolds >= Self::CRITICAL_REYNOLDS_TURBULENT
     }
 }
 

@@ -17,6 +17,7 @@
 | [0013](ADR-0013-autoridad-del-riesgo-en-el-envio.md) | El host nunca envía más apalancamiento que el validado | Aceptado | 2026-10-03 |
 | [0014](ADR-0014-doctrina-continuo-espectral.md) | Doctrina del continuo espectral: los seis principios del motor | Aceptado | 2026-10-04 |
 | [0015](ADR-0015-semantica-del-kill-switch.md) | El kill-switch bloquea lo que aumenta el riesgo, nunca las salidas | Aceptado | 2026-10-10 |
+| [0016](ADR-0016-riesgo-geometria-y-falsacion-de-la-meta.md) | Riesgo en espacio de stop, geometría ligada a τ y caída de falsación | Aceptado | 2026-10-10 |
 
 ## Convención
 

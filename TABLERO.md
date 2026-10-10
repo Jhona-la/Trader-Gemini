@@ -44,19 +44,21 @@
   parcial; cerrojo del almacén de genomas y CAS del demonio; dimensionado
   en espacio de riesgo.
 
-## Claude — sesión «elegant» (actualizado: 2026-10-10 ~21:00, prefijo QS-n, rama claude/elegant-euler-mmtht4, PR #30)
+## Claude — sesión «elegant» (actualizado: 2026-10-10 ~22:30, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
-- **Haciendo ahora**: revisión desde la base del camino de decisión viva.
-  - QS-R1: ledger de 81 factores (13 verificados).
-  - QS-R2: contrato de simetría espejo del consejo.
-  - §30 del plan de sincronización.
-- **Siguiente**: arreglo mínimo de C-22 (la aprobación del consejo exige el
-  signo direccional), con T-1.
-- **En PR #30**: QS-1 (CI de suites, en matriz), QS-2 (linaje de modelos y
-  libro del holdout), QS-R1 y QS-R2.
+- **Haciendo ahora**: publicar QS-C22, QS-D2, QS-D3 (ADR-0016) y QS-R4a con
+  su T-1.
+- **Siguiente**:
+  - QS-R4b: cablear el libro contrafactual en el núcleo (la razón del
+    rechazo ya está, `risk_engine::ultimo_rechazo`), prerrequisito de D1;
+    espera acuse de la Línea C y Qoder;
+  - D1/D4, coordinados con la Línea C.
+- **En main**: PR #30 (QS-1, QS-2, QS-R1, QS-R2) fusionado en 46269a05
+  con unit-suites (4 jobs) y replay-contracts verdes.
 - **Commiteado en main**: XLIV-1…13b (PR #8 y, vía #20, el PR #10).
-- **Falta / pide decisión**: §30.5 (riesgo por operación frente a la meta,
-  tope micro del stop, suelo de supervivencia y presupuesto de sonda).
+- **Decidido (el dueño lo delegó)**: §30.5 → ADR-0016 (D1 riesgo en
+  espacio de stop, D2 geometría ligada a τ, D3 caída de falsación 0,632,
+  D4 presupuesto de sonda).
 
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
 
@@ -80,28 +82,26 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω72 en curso / Fase R2-R3)
+## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω74 cerrada / Ficha #712)
 
-- **Haciendo ahora**: Ola Ω72 — Erradicación de asignaciones dinámicas en el heap (Zero-Alloc Hot-Path)
-  en `crates/signal-engine/src/orchestrator.rs` (`evaluate_continuous_consensus_for_coin`, eliminando `Vec censo_muestras` por tick)
-  y `crates/risk-engine/src/selection_stats.rs` (`compute_moments`, eliminando `Vec clean` con cálculo de momentos in-place),
-  garantizando latencia de evaluación $< 25$ ns sobre la ruta crítica por tick en laptop de 16GB RAM sin GPU.
+- **Haciendo ahora**: Ola Ω74 (#712) — Resolución de Navier-Stokes EWMA (C-02), Rebalanceo de Pesos del Consejo (C-W) y Concordancia de Lado en Deliberación:
+  - C-02: `NavierStokesReynoldsEngine` evalúa `laminar_share`, `regime()`, `is_laminar()` e `is_turbulent()` sobre la EWMA continua `ewma_reynolds` en vez del `raw_reynolds` de un solo tick, erradicando micro-shocks espurios de confianza y slippage. Exportación de `ewma_reynolds` hacia `OmniscientRegistry` en `god-engine-core`.
+  - C-W: Rebalanceo semántico de pesos: `SeniorMicroestructura` ahora porta `SEAT_WEIGHT_FLOW` (1.2) por ser el observador de flujo L2 real; `SeniorCausal` fijado en 1.0; `SeniorRiesgo` (modulador de convicción) fijado en 1.0 (eliminando la sobre-amplificación de 1.5).
+  - Concordancia de Lado: En `deliberar()`, la aprobación exige que la dirección que alcanza consenso coincida con la dirección propuesta de la orden candidata (`intended_direction >= 0.0` para largos, `<= 0.0` para cortos), eliminando falsas aprobaciones cruzadas.
 - **Commiteado reciente**:
   - Ola Ω68 (#704, `194089b8`): Absorción analítica de Fokker-Planck en SDE VECM y first-passage time.
   - Plan Maestro Cuántico Integral (#705, `549fc536`): Documento canónico, 10 roles Senior, barrido R0-R9.
   - Ola Ω69 (#706, `32289abf`): Integración del Feynman Path Integral Propagator (`signal-engine`)
-    con 32 escalas de Hilbert y coherencia cuántica $C_{\text{coh}}$, junto al Prospect Theory Engine
-    de Kahneman-Tversky ($\lambda=2.25$, Prelec $\gamma=0.65$, presión $P_{\text{kt}}$ y modulación contrarian
-    $[0.50, 1.30]$ en `SeniorEnteMercado` de `metacortex-engine`). Contratos formales pasando al 100% (7/7 y 6/6; 78/78 en metacortex).
-  - Ola Ω70 (#708, `558c7dcc`): Integración en vivo de `prospect_pressure` en `god-engine-core::council_snapshot`,
-    unificación analítica de colas de pánico con fallback continuo y contrato formal `prospect_pressure_integration_contract.rs` (2/2 tests OK).
-  - Ola Ω71 (#709, `7387b935`): Certificación y resolución de deuda en 5 vetos del `veto_registry.rs` de `risk-engine`,
-    adición de contratos formales `veto_logic_contracts.rs` y registro compile-time inmutable `TESTS_EXISTENTES_RIESGO`.
-  - Ola Ω72 (#710): Zero-alloc hot-path en `signal-engine::orchestrator` y `risk-engine::selection_stats`.
+    con 32 escalas de Hilbert y coherencia cuántica $C_{\text{coh}}$, junto al Prospect Theory Engine.
+  - Ola Ω70 (#708, `558c7dcc`): Integración en vivo de `prospect_pressure` en `god-engine-core::council_snapshot`.
+  - Ola Ω71 (#709, `7387b935`): Certificación y resolución de deuda en 5 vetos del `veto_registry.rs` de `risk-engine`.
+  - Ola Ω72 (#710, `759f44ec`): Zero-alloc hot-path en `signal-engine::orchestrator` y `risk-engine::selection_stats`.
+  - Ola Ω73 (#711, `ab0967e8`): Simetría espejo anti-simétrica en Prospect Theory (C-10 / C-10b) y calibración browniana R-15.
+  - Ola Ω74 (#712): Navier-Stokes EWMA (C-02), pesos del consejo (C-W) y concordancia de lado en deliberar.
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados
   de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`).
   Toda la suite de crates pasando al 100% (153/153 en risk-engine, 120/120 en
-  signal-engine, 78/78 en metacortex-engine, 170/170 en god-engine-core, 54/54 en backtest-engine, 40/40 en
+  signal-engine, 81/81 en metacortex-engine, 170/170 en god-engine-core, 54/54 en backtest-engine, 40/40 en
   strategy-core). Workspace verificado con `cargo check --workspace --all-targets` limpio.
 
 ## Frentes del sistema (no por agente)
