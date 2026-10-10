@@ -92,17 +92,27 @@ impl ValidatedOrder {
 /// no podía decir qué compuerta rechazaba.
 use std::sync::atomic::AtomicU64;
 pub const REJECT_SLOTS: usize = 17;
+pub const REJ_FLAT_COIN: usize = 0;
+pub const REJ_EXPOSURE_ZERO: usize = 1;
+pub const REJ_CORRELATION: usize = 2;
+pub const REJ_SPEC: usize = 3;
+pub const REJ_EV: usize = 4;
+pub const REJ_FEE_IMPACT: usize = 5;
+pub const REJ_MIN_NOTIONAL: usize = 6;
+pub const REJ_MARGIN_INSUFFICIENT: usize = 7;
+pub const REJ_ORCHESTRATOR: usize = 8;
+pub const REJ_OTROS: usize = 9;
 pub const REJ_DRAWDOWN: usize = 10;
 pub const REJ_TP_SL_FLOOR: usize = 11;
 pub const REJ_CONFIDENCE: usize = 12;
-pub const REJ_INVALID_INPUT: usize = 15;
-pub const REJ_TARGET_GEOMETRY: usize = 16;
 /// D-750 — la orden más pequeña que el símbolo acepta ya arriesga más de lo que
 /// el control de ruina permite: la operación es INVIABLE, no «pequeña».
 pub const REJ_VIABILIDAD: usize = 13;
 /// D-751 — no hay probabilidad de ganar (ni calibrada ni observada) con la que
 /// evaluar el valor esperado: se rechaza por falta de evidencia.
 pub const REJ_SIN_EVIDENCIA: usize = 14;
+pub const REJ_INVALID_INPUT: usize = 15;
+pub const REJ_TARGET_GEOMETRY: usize = 16;
 
 #[allow(clippy::declare_interior_mutable_const)]
 const REJECT_ZERO: AtomicU64 = AtomicU64::new(0);
@@ -218,7 +228,7 @@ impl RiskEngine {
     ) -> ValidatedOrder {
         set_reject_direction(intent.signal);
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
-            return rej(0);
+            return rej(REJ_FLAT_COIN);
         }
 
         let current_capital = arena.unified_capital.load(Ordering::Relaxed);
@@ -446,7 +456,7 @@ impl RiskEngine {
         // evaluación razone con el mismo mínimo.
         let spec = match quantum_arena::symbol_registry::try_spec(coin_id) {
             Some(s) => s,
-            None => return rej(3),
+            None => return rej(REJ_SPEC),
         };
         let max_exchange_leverage = spec.max_leverage as f64;
         let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
@@ -547,7 +557,7 @@ impl RiskEngine {
             return rej(REJ_INVALID_INPUT);
         }
         if raw_exposure == 0.0 {
-            return rej(1);
+            return rej(REJ_EXPOSURE_ZERO);
         }
 
         // D-748 / SPECTRAL-003/004: medir dependencia de PnL en TODOS los
@@ -647,7 +657,7 @@ impl RiskEngine {
             Some(base) => {
                 if rho_ic.is_finite() && rho_ic > base {
                     if rho_ic > 1.0 {
-                        return rej(2); // IC clampeado a 1 en el módulo; defensa
+                        return rej(REJ_CORRELATION); // IC clampeado a 1 en el módulo; defensa
                     }
                     let previo = arena
                         .registry
@@ -679,7 +689,7 @@ impl RiskEngine {
                     .registry
                     .set_for_coin(coin_id, "qo_602_veto_lundberg", previo + 1.0);
             }
-            return rej(2);
+            return rej(REJ_CORRELATION);
         }
 
         // D-750: el spec y el nocional mínimo del símbolo se resolvieron al
@@ -1157,10 +1167,10 @@ impl RiskEngine {
                 if es_fase_sonda {
                     let ev_prior = 0.55 * expected_win - 0.45 * expected_loss;
                     if ev_prior <= roundtrip_fee {
-                        return rej(4);
+                        return rej(REJ_EV);
                     }
                 } else {
-                    return rej(4);
+                    return rej(REJ_EV);
                 }
             }
         }
@@ -1198,17 +1208,15 @@ impl RiskEngine {
         // inflaba la fracción apostada hasta el 10 % del capital para alcanzar
         // el mínimo, que es exactamente el modo de fallo que CERT-M5-C02
         // decía haber cerrado.
-        let q_para_ruina = {
-            let wr = arena.coins[coin_id]
-                .metrics
-                .win_rate
-                .load(Ordering::Relaxed);
-            if wr > 0.0 && wr < 1.0 {
-                1.0 - wr
-            } else {
-                crate::ruin::CONSERVATIVE_Q
-            }
-        };
+        let wr = arena.coins[coin_id]
+            .metrics
+            .win_rate
+            .load(Ordering::Relaxed);
+        let trades_coin = arena.coins[coin_id]
+            .metrics
+            .trade_count
+            .load(Ordering::Relaxed) as f64;
+        let q_para_ruina = crate::ruin::conservative_loss_q(wr, trades_coin);
         let tope_riesgo_evento = crate::ruin::clamp_ruin(1.0, q_para_ruina);
         if !crate::capital_regime::orden_viable(
             dynamic_min_notional,
@@ -1280,13 +1288,13 @@ impl RiskEngine {
         let (meets_min_notional, _) =
             guard::enforce_minimum_notional(final_margin, safe_min_notional, dynamic_leverage);
         if !meets_min_notional {
-            if REJECT_COUNTERS[6].load(std::sync::atomic::Ordering::Relaxed) % 200 == 0 {
+            if REJECT_COUNTERS[REJ_MIN_NOTIONAL].load(std::sync::atomic::Ordering::Relaxed) % 200 == 0 {
                 println!(
                     "🔍 [REJ6] margin={:.4} lev={:.4} min_notional={:.4} allocated={:.4} kelly={:.4}",
                     final_margin, dynamic_leverage, safe_min_notional, allocated_capital, kelly_fraction
                 );
             }
-            return rej(6);
+            return rej(REJ_MIN_NOTIONAL);
         }
 
         // D-641 (completo): límite de margen por operación continuo. En régimen
@@ -1343,13 +1351,13 @@ impl RiskEngine {
         }
         let final_fee_impact = roundtrip_fee * dynamic_leverage;
         if !final_fee_impact.is_finite() || final_fee_impact > max_fee_limit {
-            return rej(5);
+            return rej(REJ_FEE_IMPACT);
         }
         // CL-6: ninguna orden validada queda bajo el nocional mínimo del
         // símbolo. Antes nada lo re-verificaba tras el segundo rescate y la
         // orden salía con un nocional que el exchange rechaza.
         if !(final_margin * dynamic_leverage >= safe_min_notional * (1.0 - 1e-9)) {
-            return rej(6);
+            return rej(REJ_MIN_NOTIONAL);
         }
         // (fusión PR #5: la viabilidad de margen mínimo ya se exigió arriba con
         // rej(6); el duplicado del hunk se elimina)
@@ -1364,7 +1372,7 @@ impl RiskEngine {
             regime,
             dynamic_min_notional,
         ) {
-            return rej(8);
+            return rej(REJ_ORCHESTRATOR);
         }
 
         // Reuse the prices evaluated above, including explicit intent targets.

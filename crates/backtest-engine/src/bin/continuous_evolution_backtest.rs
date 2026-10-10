@@ -502,10 +502,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // (+6.7%) a la curva. Banda ⊇ los slow-anchors de los nichos
             // 2/3/5 (0.0075/0.0120/0.0085).
             mutant_genome.swing_sl_base = mutant_genome.swing_sl_base.clamp(0.0070, 0.0350);
-            mutant_genome.scalp_trail_act_atr = mutant_genome.scalp_trail_act_atr.clamp(1.0, 2.5);
-            mutant_genome.scalp_trail_step_atr = mutant_genome.scalp_trail_step_atr.clamp(1.0, 2.5);
+            // R7-R4-D-2: la banda del blindaje global [0.8, 2.5] ⊇ nicho 3 [0.8, 1.8],
+            // impidiendo que el intervalo [0.8, 1.0) colapse artificialmente a 1.0.
+            mutant_genome.scalp_trail_act_atr = mutant_genome.scalp_trail_act_atr.clamp(0.8, 2.5);
+            mutant_genome.scalp_trail_step_atr = mutant_genome.scalp_trail_step_atr.clamp(0.8, 2.5);
             mutant_genome.scalp_trail_atr_mult_base =
-                mutant_genome.scalp_trail_atr_mult_base.clamp(1.0, 2.5);
+                mutant_genome.scalp_trail_atr_mult_base.clamp(0.8, 2.5);
 
             // H0-1 (RONDA 3): las anclas TP/SL son VISTAS desde REHAB-1 —
             // los nichos 2/3/5/9 y este blindaje escribían DIMENSIONES

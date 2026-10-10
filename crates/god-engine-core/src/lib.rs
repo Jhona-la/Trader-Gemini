@@ -5131,9 +5131,15 @@ impl GodEngineCore {
                 }
             }
             let (ym_action, ym_currents) = self.yang_mills_engine.update_and_calculate_curvature(&fresh_prices);
-            let ym_coin_current = if coin_id < ym_currents.len() { ym_currents[coin_id] } else { 0.0 };
+            // R6-A13: Semántica no ambigua para monedas fuera de la matriz gauge (clave explícita yang_mills_current_absent)
+            let (ym_coin_current, ym_current_absent) = if coin_id < ym_currents.len() {
+                (ym_currents[coin_id], 0.0)
+            } else {
+                (0.0, 1.0)
+            };
             set_reg("yang_mills_action", ym_action);
             set_reg("yang_mills_current", ym_coin_current);
+            set_reg("yang_mills_current_absent", ym_current_absent);
 
             // OLA Ω37/Ω38/Ω41: Descomposición ortogonal de Helmholtz-Hodge sobre flujos cruzados L2/L3 reales
             // (R6-A1/C1 resuelto: usa matriz de flujo cruzado microestructura asimétrica OFI x Retorno)

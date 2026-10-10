@@ -82,7 +82,7 @@ fn el_recorte_puede_rescatar_apalancamiento_y_eso_sigue_siendo_deuda() {
     // El invariante terminal posterior (rej por nocional mínimo) sigue
     // siendo la red de seguridad; el contrato lo deja constancia.
     assert!(
-        src.contains("returnrej(6);"),
+        src.contains("returnrej(6);") || src.contains("returnrej(REJ_MIN_NOTIONAL);"),
         "debe existir el rechazo terminal por nocional mínimo"
     );
 }

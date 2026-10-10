@@ -3653,15 +3653,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // NUEVA legítima. El "papel" ya fue resuelto —
                             // el respaldo sólo corre contra una posición que
                             // NADIE confirmó.
+                            // HOST-004 & R7-R4-C-1 residual: verificar TODAS las ranuras activas (slots),
+                            // impidiendo que una re-entrada legítima en scalp (slot 0) o swing (slot 1) sea
+                            // inadvertidamente liquidada por una orden reduce-only de respaldo.
                             let current_pos_confirmed = engine_real
                                 .arena
                                 .coins
                                 .get(coin_id)
                                 .map(|c| {
                                     c.positions
-                                        .position
-                                        .exchange_confirmed
-                                        .load(Ordering::Relaxed)
+                                        .slots()
+                                        .iter()
+                                        .any(|p| p.exchange_confirmed.load(Ordering::Relaxed))
                                 })
                                 .unwrap_or(false);
                             if current_pos_confirmed {

@@ -63,6 +63,11 @@ impl VotoEspectral {
         self.por_escala.get(k).copied().unwrap_or(0.0)
     }
 
+    #[inline]
+    pub fn array(&self) -> &[f64; ESCALAS_VOTO] {
+        &self.por_escala
+    }
+
     /// La escala de mayor |voto| y su voto con signo. Un espectro sin
     /// convicción (todo cero) NO tiene dominante — `None` (sin inventar).
     pub fn dominante(&self) -> Option<(usize, f64)> {

@@ -48,6 +48,8 @@ pub struct NavierStokesReynoldsEngine {
     pub energy_dissipation_rate: f64,
     pub laminar_share: f64,
     pub sample_count: u64,
+    /// Tiempo de relajación característico del libro de órdenes τ_relax en segundos
+    pub relaxation_time_s: f64,
 }
 
 impl Default for NavierStokesReynoldsEngine {
@@ -59,6 +61,8 @@ impl Default for NavierStokesReynoldsEngine {
 impl NavierStokesReynoldsEngine {
     pub const CRITICAL_REYNOLDS_LAMINAR: f64 = 1.0;
     pub const CRITICAL_REYNOLDS_TURBULENT: f64 = 5.0;
+    /// Tiempo de relajación característico estándar de reposición del libro: 200 ms
+    pub const DEFAULT_RELAXATION_TIME_S: f64 = 0.200;
     const EWMA_ALPHA: f64 = 0.05;
 
     pub fn new() -> Self {
@@ -73,7 +77,16 @@ impl NavierStokesReynoldsEngine {
             energy_dissipation_rate: 0.0,
             laminar_share: 1.0,
             sample_count: 0,
+            relaxation_time_s: Self::DEFAULT_RELAXATION_TIME_S,
         }
+    }
+
+    /// Configura un tiempo de relajación característico específico en segundos
+    pub fn with_relaxation_time_s(mut self, tau_s: f64) -> Self {
+        if tau_s.is_finite() && tau_s > 0.0 {
+            self.relaxation_time_s = tau_s.clamp(0.010, 5.0);
+        }
+        self
     }
 
     /// Calcula la fracción laminar suave C^∞ a partir del número de Reynolds continuo:
@@ -115,7 +128,7 @@ impl NavierStokesReynoldsEngine {
         }
 
         let mid_price = (bid_price + ask_price) * 0.5;
-        let spread = (ask_price - bid_price).max(mid_price * 1e-6);
+        let spread = ask_price - bid_price;
 
         // 1. Escala temporal física causal (dt en segundos)
         let dt = if self.prev_event_time_ms > 0 && event_time_ms > self.prev_event_time_ms {
@@ -124,7 +137,7 @@ impl NavierStokesReynoldsEngine {
             0.050 // Inicialización o eventos intra-ms: 50 ms por defecto
         };
 
-        // 2. Campo de velocidad y aceleración de precio
+        // 2. Campo de velocidad y aceleración de precio [USD / s] y [USD / s^2]
         let current_velocity = if self.prev_mid_price > 0.0 {
             (mid_price - self.prev_mid_price) / dt
         } else {
@@ -139,7 +152,7 @@ impl NavierStokesReynoldsEngine {
         let valid_ask_qty = if ask_qty.is_finite() && ask_qty > 0.0 { ask_qty } else { 1.0 };
         let passive_depth_usd = (valid_bid_qty * bid_price + valid_ask_qty * ask_price).max(10.0);
 
-        // 4. Inercia del volumen agresor
+        // 4. Inercia del volumen agresor y multiplicador adimensional de agresión
         let aggressive_trade_usd = if trade_qty.is_finite() && trade_qty > 0.0 {
             trade_qty * mid_price
         } else {
@@ -147,29 +160,38 @@ impl NavierStokesReynoldsEngine {
         };
         let aggression_multiplier = 1.0 + (aggressive_trade_usd / passive_depth_usd).clamp(0.0, 20.0);
 
-        // 5. Viscosidad cinemática del libro ν = μ / ρ
-        // A mayor profundidad pasiva y mayor spread relativo, mayor resistencia al desplazamiento
-        let spread_ratio = spread / mid_price;
+        // 5. Escala característica de longitud L y regularización de capa límite [USD]
         let safe_atr = if atr_pct.is_finite() && atr_pct > 0.0 {
             atr_pct.clamp(0.0002, 0.10)
         } else {
             0.0010
         };
-        let sigma_ref = mid_price * safe_atr;
+        let sigma_min = (safe_atr * 0.05).max(1e-6);
+        let characteristic_length = spread.max(mid_price * sigma_min);
 
-        // Longitud característica L = spread
-        let characteristic_length = spread;
-        let kinematic_visc = (characteristic_length * (1.0 + spread_ratio / safe_atr)).max(1e-6);
-        self.kinematic_viscosity = kinematic_visc;
+        // 6. Tiempo de relajación característico tau_relax [s]
+        let tau_relax = if self.relaxation_time_s.is_finite() && self.relaxation_time_s > 0.0 {
+            self.relaxation_time_s
+        } else {
+            Self::DEFAULT_RELAXATION_TIME_S
+        };
 
-        // 6. Fuerzas inerciales = |u| * L * agresión
-        let inertial_force = self.velocity.abs() * characteristic_length * aggression_multiplier;
+        // 7. Viscosidad cinemática del libro nu = L^2 / (tau_relax * agresión) en [USD^2 / s]
+        // Incorpora el efecto físico de adelgazamiento por corte (shear-thinning):
+        // el flujo agresor reduce la viscosidad efectiva disipativa del libro de órdenes.
+        let kinematic_visc = (characteristic_length * characteristic_length)
+            / (tau_relax * aggression_multiplier);
+        self.kinematic_viscosity = kinematic_visc.max(1e-12);
 
-        // 7. Número de Reynolds continuo Re = F_inercial / (ν * σ_ref)
-        let raw_reynolds = (inertial_force / (kinematic_visc * sigma_ref)).clamp(0.0, 100.0);
+        // 8. Número de Reynolds continuo estrictamente adimensional:
+        // Re = (|u| * tau_relax * agresión) / L_eff == (|u| * L_eff) / nu
+        // Unidades: ([USD/s] * [s] * [1]) / [USD] = [USD] / [USD] = 1 (Adimensional puro)
+        let raw_reynolds = ((self.velocity.abs() * tau_relax * aggression_multiplier)
+            / characteristic_length)
+            .clamp(0.0, 100.0);
         self.reynolds_number = raw_reynolds;
 
-        // 8. EWMA continua del número de Reynolds
+        // 9. EWMA continua del número de Reynolds
         if self.sample_count == 0 {
             self.ewma_reynolds = raw_reynolds;
         } else {
@@ -178,12 +200,12 @@ impl NavierStokesReynoldsEngine {
         }
         self.sample_count = self.sample_count.saturating_add(1);
 
-        // 9. Fracción laminar suave C^∞: 1 / (1 + (Re/Re_crit)^2)
+        // 10. Fracción laminar suave C^∞: 1 / (1 + (Re/Re_crit)^2)
         self.laminar_share = Self::compute_laminar_share(self.reynolds_number);
 
-        // 10. Tasa de disipación de energía de Kolmogorov: ε = ν * (u / L)^2
+        // 11. Tasa de disipación de energía de Kolmogorov: ε = ν * (u / L)^2 en [USD^2 / s^3]
         let velocity_gradient = (self.velocity / characteristic_length).abs();
-        let dissipation = kinematic_visc * velocity_gradient * velocity_gradient;
+        let dissipation = self.kinematic_viscosity * velocity_gradient * velocity_gradient;
         self.energy_dissipation_rate = dissipation.clamp(0.0, 1000.0);
 
         self.prev_mid_price = mid_price;

@@ -14,6 +14,7 @@ pub struct JohansenVecmEngine {
     pub spread_mean: f64, // Media móvil del spread cointegrado
     pub spread_std: f64,  // Desviación estándar del spread
     pub window_count: f64,
+    pub sde: ContinuousOrnsteinUhlenbeckSde,
     registry: Option<Arc<OmniscientRegistry>>,
 }
 
@@ -37,8 +38,38 @@ impl JohansenVecmEngine {
             spread_mean: 0.0,
             spread_std: 0.001,
             window_count: 0.0,
+            sde: ContinuousOrnsteinUhlenbeckSde::new(alpha_speed, 0.0, 0.01),
             registry: None,
         }
+    }
+
+    /// Actualiza el spread con timestamp físico y alimenta el estimador de difusión continua SDE
+    #[inline(always)]
+    pub fn update_with_timestamp(&mut self, price_a: f64, price_b: f64, ts_ms: u64) -> f64 {
+        if price_a <= 0.0 || price_b <= 0.0 || !price_a.is_finite() || !price_b.is_finite() {
+            return 0.0;
+        }
+        let spread = price_a.ln() - self.beta_hedge_ratio * price_b.ln();
+        self.sde.update(spread, ts_ms);
+        self.update_and_calculate_zscore(price_a, price_b)
+    }
+
+    /// Probabilidad analítica de absorción de Fokker-Planck para el spread cointegrado
+    #[inline(always)]
+    pub fn fokker_planck_absorption_probability(&self, x0: f64, lower: f64, upper: f64) -> f64 {
+        self.sde.fokker_planck_absorption_probability(x0, lower, upper)
+    }
+
+    /// Probabilidad analítica de victoria (Take Profit antes de Stop Loss) para el spread
+    #[inline(always)]
+    pub fn fokker_planck_win_probability(&self, x0: f64, is_long: bool, target: f64, stop: f64) -> f64 {
+        self.sde.fokker_planck_win_probability(x0, is_long, target, stop)
+    }
+
+    /// Tiempo analítico esperado de reversión a la media en segundos
+    #[inline(always)]
+    pub fn expected_mean_reversion_time_seconds(&self, x0: f64) -> f64 {
+        self.sde.expected_first_hitting_time_seconds(x0, self.sde.mu)
     }
 
     /// Actualiza el spread con una nueva observación de precios y devuelve el Z-Score actual
@@ -220,6 +251,13 @@ impl Default for ContinuousOrnsteinUhlenbeckSde {
 }
 
 impl ContinuousOrnsteinUhlenbeckSde {
+    /// Umbral degenerado unificado: si θ ≤ este valor, el proceso se trata como
+    /// paseo Browniano puro (martingala sin fuerza restauradora).
+    /// Justificación: con θ = 1e-4, la vida media t_{1/2} = ln(2)/θ ≈ 6,931 s,
+    /// es decir, la reversión a la media tarda ~2 horas, lo cual es indistinguible
+    /// de un random walk para decisiones de trading en cualquier horizonte relevante.
+    const THETA_DEGENERATE: f64 = 1e-4;
+
     pub fn new(theta_init: f64, mu_init: f64, sigma_init: f64) -> Self {
         Self::with_memory_seconds(theta_init, mu_init, sigma_init, 300.0)
     }
@@ -247,7 +285,7 @@ impl ContinuousOrnsteinUhlenbeckSde {
     /// Vida media de reversión física en segundos: t_{1/2} = ln(2) / θ
     #[inline]
     pub fn half_life_seconds(&self) -> f64 {
-        if self.theta > 1e-9 {
+        if self.theta > Self::THETA_DEGENERATE {
             std::f64::consts::LN_2 / self.theta
         } else {
             f64::INFINITY
@@ -257,7 +295,7 @@ impl ContinuousOrnsteinUhlenbeckSde {
     /// Varianza estacionaria ergódica (Fokker-Planck): σ² / (2θ)
     #[inline]
     pub fn stationary_variance(&self) -> f64 {
-        if self.theta > 1e-9 {
+        if self.theta > Self::THETA_DEGENERATE {
             (self.sigma * self.sigma) / (2.0 * self.theta)
         } else {
             1.0
@@ -269,6 +307,211 @@ impl ContinuousOrnsteinUhlenbeckSde {
     pub fn stationary_zscore(&self, x: f64) -> f64 {
         let sd = self.stationary_variance().sqrt().max(1e-8);
         ((x - self.mu) / sd).clamp(-10.0, 10.0)
+    }
+
+    /// Densidad de probabilidad estacionaria de Fokker-Planck en el equilibrio:
+    /// p_∞(x) = (1 / √(2π Var_∞)) · exp(-(x - μ)² / (2 Var_∞))
+    #[inline]
+    pub fn stationary_density(&self, x: f64) -> f64 {
+        if !x.is_finite() {
+            return 0.0;
+        }
+        let var = self.stationary_variance();
+        if !var.is_finite() || var <= 1e-16 {
+            return 0.0;
+        }
+        let std_dev = var.sqrt();
+        let diff = x - self.mu;
+        let exponent = -0.5 * (diff * diff) / var;
+        if exponent < -700.0 {
+            0.0
+        } else {
+            (1.0 / (std_dev * (2.0 * std::f64::consts::PI).sqrt())) * exponent.exp()
+        }
+    }
+
+    /// Densidad de transición condicional continua de Ornstein-Uhlenbeck:
+    /// X_t | X_0 ~ N(μ + (X_0 - μ) e^{-θ t}, (σ² / 2θ) (1 - e^{-2θ t}))
+    #[inline]
+    pub fn transition_density(&self, x_t: f64, x_0: f64, dt_sec: f64) -> f64 {
+        if !x_t.is_finite() || !x_0.is_finite() || !dt_sec.is_finite() || dt_sec <= 0.0 {
+            return 0.0;
+        }
+        if self.theta <= Self::THETA_DEGENERATE {
+            let var_bm = (self.sigma * self.sigma * dt_sec).max(1e-16);
+            let diff = x_t - x_0;
+            let exponent = -0.5 * (diff * diff) / var_bm;
+            return if exponent < -700.0 {
+                0.0
+            } else {
+                (1.0 / (var_bm.sqrt() * (2.0 * std::f64::consts::PI).sqrt())) * exponent.exp()
+            };
+        }
+
+        let decay = (-self.theta * dt_sec).exp();
+        let mean_t = self.mu + (x_0 - self.mu) * decay;
+        let var_t = self.stationary_variance() * (1.0 - decay * decay);
+        if var_t <= 1e-16 || !var_t.is_finite() {
+            return 0.0;
+        }
+        let diff = x_t - mean_t;
+        let exponent = -0.5 * (diff * diff) / var_t;
+        if exponent < -700.0 {
+            0.0
+        } else {
+            (1.0 / (var_t.sqrt() * (2.0 * std::f64::consts::PI).sqrt())) * exponent.exp()
+        }
+    }
+
+    /// Cuadratura de Gauss-Legendre de 10 puntos para evaluar la escala estocástica S(x):
+    /// S(b) - S(a) = ∫_a^b exp(θ (y - μ)² / σ²) dy
+    /// Con factor de normalización exp(-max_exponent) para prevenir overflow numérico.
+    #[inline]
+    fn integrate_scale_function_interval(&self, a: f64, b: f64, max_exponent: f64) -> f64 {
+        if a >= b {
+            return 0.0;
+        }
+        // Nodos simétricos y pesos de Gauss-Legendre de 10 puntos en [-1, 1]
+        const NODES: [f64; 5] = [
+            0.1488743389816312,
+            0.4333953941292472,
+            0.6794095682990244,
+            0.8650633666889845,
+            0.9739065285171717,
+        ];
+        const WEIGHTS: [f64; 5] = [
+            0.2955242247147529,
+            0.2692667193099963,
+            0.2190863625159820,
+            0.1494513491505806,
+            0.0666713443086881,
+        ];
+
+        let mid = 0.5 * (a + b);
+        let half_len = 0.5 * (b - a);
+        let coeff = if self.sigma > 1e-6 {
+            self.theta / (self.sigma * self.sigma)
+        } else {
+            0.0
+        };
+
+        let mut sum = 0.0;
+        for i in 0..5 {
+            let t = NODES[i];
+            let w = WEIGHTS[i];
+
+            let y_pos = mid + half_len * t;
+            let diff_pos = y_pos - self.mu;
+            let exp_pos = (coeff * diff_pos * diff_pos - max_exponent).clamp(-700.0, 0.0);
+            sum += w * exp_pos.exp();
+
+            let y_neg = mid - half_len * t;
+            let diff_neg = y_neg - self.mu;
+            let exp_neg = (coeff * diff_neg * diff_neg - max_exponent).clamp(-700.0, 0.0);
+            sum += w * exp_neg.exp();
+        }
+
+        half_len * sum
+    }
+
+    /// Probabilidad analítica exacta de absorción de Fokker-Planck:
+    /// P(tocar barrera superior b antes que barrera inferior a | X_0 = x0) con a < x0 < b.
+    ///
+    /// Basada en la escala analítica continua de Dynkin-Fokker-Planck:
+    ///   P(hit b before a) = ∫_a^{x0} exp(θ(y-μ)²/σ²) dy / ∫_a^b exp(θ(y-μ)²/σ²) dy
+    ///
+    /// En el límite neutral θ → 0 colapsa exactamente a la regla de la palanca (x0 - a) / (b - a).
+    /// Ante theta > 0, modela fielmente la fuerza de atracción hacia μ.
+    #[inline]
+    pub fn fokker_planck_absorption_probability(&self, x0: f64, a: f64, b: f64) -> f64 {
+        if !x0.is_finite() || !a.is_finite() || !b.is_finite() || a >= b {
+            return 0.5;
+        }
+        if x0 <= a {
+            return 0.0;
+        }
+        if x0 >= b {
+            return 1.0;
+        }
+
+        if self.theta <= Self::THETA_DEGENERATE || self.sigma <= 1e-6 {
+            return ((x0 - a) / (b - a)).clamp(0.0, 1.0);
+        }
+
+        let coeff = self.theta / (self.sigma * self.sigma);
+        let max_diff = (a - self.mu).abs().max((b - self.mu).abs());
+        let max_exponent = coeff * max_diff * max_diff;
+
+        let num = self.integrate_scale_function_interval(a, x0, max_exponent);
+        let den = self.integrate_scale_function_interval(a, b, max_exponent);
+
+        if !num.is_finite() || !den.is_finite() || den <= 1e-16 {
+            ((x0 - a) / (b - a)).clamp(0.0, 1.0)
+        } else {
+            (num / den).clamp(0.0, 1.0)
+        }
+    }
+
+    /// Probabilidad analítica de victoria de Fokker-Planck (alcanzar Take Profit antes de Stop Loss):
+    /// - Para Long (target > x0, stop < x0): P(alcanzar target antes de stop).
+    /// - Para Short (target < x0, stop > x0): P(alcanzar target antes de stop) = 1 - P(alcanzar stop antes de target).
+    #[inline]
+    pub fn fokker_planck_win_probability(
+        &self,
+        x0: f64,
+        is_long: bool,
+        target: f64,
+        stop: f64,
+    ) -> f64 {
+        if !x0.is_finite() || !target.is_finite() || !stop.is_finite() {
+            return 0.5;
+        }
+
+        if is_long {
+            if target <= x0 || stop >= x0 {
+                return 0.0;
+            }
+            self.fokker_planck_absorption_probability(x0, stop, target)
+        } else {
+            if target >= x0 || stop <= x0 {
+                return 0.0;
+            }
+            1.0 - self.fokker_planck_absorption_probability(x0, target, stop)
+        }
+    }
+
+    /// Tiempo analítico esperado de primer alcance (First Hitting Time) en segundos
+    /// desde x0 hasta el objetivo target bajo difusión Ornstein-Uhlenbeck.
+    #[inline]
+    pub fn expected_first_hitting_time_seconds(&self, x0: f64, target: f64) -> f64 {
+        if !x0.is_finite() || !target.is_finite() {
+            return f64::INFINITY;
+        }
+        if (x0 - target).abs() < 1e-6 {
+            return 0.0;
+        }
+        if self.theta <= Self::THETA_DEGENERATE {
+            return f64::INFINITY;
+        }
+
+        let diff_x0 = (x0 - self.mu).abs();
+        let diff_tgt = (target - self.mu).abs();
+        let diff_step = (x0 - target).abs();
+
+        let diffusion_radius = self.stationary_variance().sqrt().max(1e-6);
+
+        if diff_x0 > diff_tgt {
+            let ratio = diff_x0 / diff_tgt.max(diffusion_radius * 0.1);
+            if ratio > 1.0 {
+                (ratio.ln() / self.theta).clamp(0.01, 86400.0)
+            } else {
+                (diff_step / (self.theta * diffusion_radius)).clamp(0.01, 86400.0)
+            }
+        } else {
+            let z_tgt = diff_tgt / diffusion_radius;
+            let barrier_penalty = (0.5 * z_tgt * z_tgt).min(10.0).exp();
+            ((diff_step / (self.theta * diffusion_radius)) * barrier_penalty).clamp(0.01, 86400.0)
+        }
     }
 
     /// Actualiza el estimador con una nueva observación física (valor, timestamp en ms)

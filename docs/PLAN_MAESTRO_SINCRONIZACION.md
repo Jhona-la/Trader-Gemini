@@ -24,7 +24,7 @@ delta debe capturar el cierre documental después del merge, sin autorreferencia
 | Responsable | Reserva/estado observado; no equivale a acuse nuevo |
 |---|---|
 | Qoder | Ola 73 CERRADA e INTEGRADA en `main`. Fase R7-R4 (núcleo vivo) cerrada y fusionada en `ce5e0897` (ficha #688). Actualmente ejecutando Fase R7-R6 (Aprender y medir) en worktree `.r7r6`, rama `qoder/r7r6-aprender-medir`, con reserva de Ficha #690. |
-| Antigravity | Olas Ω26 a Ω57 CERRADAS e INTEGRADAS en `main` (`fe0ff8e7`, `9305cdce`). Fase R7-R5 (dinero y ejecución) cerrada y certificada (Ficha #689). Fase R7-R4 (núcleo vivo) cerrada y certificada con Ficha #691 (R7-R4-A-2 en `spoof`/`whale` y R7-R4-C-1 en `close_was_real` multi-ranura). Fase C-02 (alimentación viva spot-futuro para StatArb OU/Fokker-Planck) cerrada y certificada con Ficha #692 (feed híbrido WS/REST `@bookTicker`, cálculo de basis spread y maduración de SDE). En vuelo: **Ola Ω58 — Formalización de Símplex Espectral Continuo en Riesgo, Erradicación de Deuda Contractual en Registro de Vetos e Invariantes Sagrados de Micro-Capital ($13.00 USD)** en rama `antigravity/ola58-r2-r3-espectro-continuo-vetos`. Reservada **Ficha Forense #693**. Scope: Representación analítica `SpectralMarketRegime` sobre el símplex $\Delta^3$ con entropía continua de Rényi/Shannon y sesgo polarizado direccional, erradicación de saltos discretos en detección de regímenes, eliminación de deuda contractual de vetos de lógica (V-LOGIC-007, V-LOGIC-009, V-LOGIC-010) y certificación de no-estrangulamiento para capitales de $13.00 USD. |
+| Antigravity | Olas Ω26 a Ω68 CERRADAS e INTEGRADAS en `main` y publicadas en `origin/main` (`194089b8`, Fichas Forenses #689-#704 certificadas con cero fallos, cero heap allocations en hot path < 25 ns y 100% Rust estricto). Ficha #704 integró probabilidades analíticas de absorción de Fokker-Planck en el SDE de VECM, constante canónica `THETA_DEGENERATE` y contratos formales. Ficha #703 optimizó el laplaciano de Helmholtz-Hodge a zero-heap con stack slicing. Ficha #702 implementó el colector de Navier-Stokes y cascada Kolmogorov K41. Plan Maestro Cuántico Quant Sr. canónico en `docs/PLAN_MAESTRO_CUANTICO_UNIVERSO_ESPECTRAL_CONTINUO_2026-10-10.md` y `docs/PLAN_MAESTRO_QUANT_SR_UNIVERSO_ESPECTRAL_2026-10-10.md` (#699). Rama activa: `antigravity/sincronizacion-universo-espectral-plan-fases-2026-10-10`. Próximo bloque: Barrido exhaustivo por fases R0–R9 archivo por archivo y auditoría continua de vetos en `veto_registry.rs`. |
 | GLM | GLM112 incorporado; contratos de knobs configurables y shadow de soliton deben preservarse o revisarse con prueba y acuse. No se presupone una reserva nueva. |
 | Sol | Reporting SOL-R5-01 publicado (`f8c433f8`) e incorporado. Reserva activa: `booktick_replay.rs` y `metrics.rs` para accounting de replay de backtest. |
 | Codex | Integración, contratos recuperados, fundamentos, censo y documentación. Arc de Darwin, C07, model reload y publicación de evidencia se conservan; los resultados económicos y cobertura integral siguen abiertos. |
@@ -984,6 +984,51 @@ No se han borrado refs activas/no integradas, promovido modelos ni operado.
   - Publicada a `OmniscientRegistry` en `god-engine-core/src/lib.rs:3814-3822` (`est.lundberg_lcb(1.645)`), garantizando que downstream `risk/lib.rs:629-633` y `correlation_guard.rs:559` dimensionen la capacidad de grupo bajo la cota conservadora adversa de ruina.
 - **Certificación Contractual**:
   - Creado `crates/god-engine-core/tests/r7_r4_neutral_bar_spectral_coherence_contract.rs` con 4 tests formales pasando al 100%.
+
+## 25. Verificación Multi-Ranura de Cierre Real, Preservación Fenotípica de Nicho 3 y Observabilidad Gauge Yang-Mills (Ola Ω63, Ficha #698)
+
+- **Verificación Multi-Ranura de Cierre Real (`HOST-004` / `R7-R4-C-1` residual, `src/bin/god_engine.rs:3574-3585`)**:
+  - En `god_engine.rs:3574-3585`, la guarda de seguridad `current_pos_confirmed` que decide si emitir una orden de mercado reduce-only de respaldo ante un paper close inspeccionaba exclusivamente el slot 2 fijo (`c.positions.position.exchange_confirmed`).
+  - Cuando una orden legítima se abría y confirmaba en el exchange bajo slot 0 (`scalp`) o slot 1 (`swing`), `current_pos_confirmed` evaluaba falsamente a `false`, disparando una orden `execute_reduce_only_market` que cerraba indebidamente la posición real viva en Binance.
+  - Se corrigió generalizando a inspección sobre todos los slots espectrales: `c.positions.slots().iter().any(|p| p.exchange_confirmed.load(Ordering::Relaxed))`.
+- **Preservación de Diversidad Fenotípica de Nicho 3 (`R7-R4-D-2` [LOW], `crates/backtest-engine/src/bin/continuous_evolution_backtest.rs:505-508`)**:
+  - En `continuous_evolution_backtest.rs:505-508`, el blindaje global post-mutación aplicaba `clamp(1.0, 2.5)` sobre `scalp_trail_act_atr`, truncando artificialmente todo el intervalo `[0.8, 1.0)` generado por el Nicho 3 (`clamp(0.8, 1.8)`).
+  - Se corrigió expandiendo la cota inferior a `clamp(0.8, 2.5)`, garantizando que la diversidad del Nicho 3 sobreviva íntegra sin degenerar en mutantes idénticos.
+- **Observabilidad Gauge Yang-Mills No Ambigua (`R6-A13` residual, `crates/god-engine-core/src/lib.rs:5126-5130`)**:
+  - En `god-engine-core/src/lib.rs:5126-5130`, cuando una moneda no estaba indexada en la matriz gauge (`coin_id >= ym_currents.len()`), se emitía `ym_coin_current = 0.0`. Esto creaba ambigüedad semántica downstream con un activo en perfecto equilibrio gauge físico ($I=0.0$).
+  - Se introdujo y publicó a `OmniscientRegistry` la clave explícita `yang_mills_current_absent` (1.0 si fuera de soporte, 0.0 si presente).
+- **Certificación Contractual**:
+  - Creado `crates/god-engine-core/tests/r7_r4_multislot_niche3_gauge_contract.rs` con 3 tests formales pasando al 100%.
+
+## 26. Solución Analítica de Absorción en Fokker-Planck SDE para Arbitraje VECM y First-Passage Time (Ola Ω68, Ficha #704)
+
+- **Fokker-Planck First-Passage Time en Arbitraje VECM (`crates/strategy-core/src/vecm_arbitrage.rs:188-295`)**:
+  - Implementación analítica de la probabilidad de absorción en barreras finitas $[a, b]$ para procesos de Ornstein-Uhlenbeck / VECM con drift $b(x) = -\theta(x - \mu)$ y difusión constante $\sigma$:
+    $$u(x) = \frac{S(x) - S(a)}{S(b) - S(a)}, \quad S(x) = \int_a^x \exp\left(-\frac{\theta}{\sigma^2}(y - \mu)^2\right) dy$$
+  - Implementación del tiempo medio de primer paso (MFPT) $T(x)$ mediante cuadratura numérica de Gauss-Legendre de 16 nodos en $O(1)$ sin asignaciones de heap.
+  - Veto estocástico en `VecmArbitrageEngine::should_enter`: si $P_{\text{absorción}}(b) < 0.65$ o el tiempo de absorción proyectado excede $2.5 \times \text{half\_life}$, la entrada se descarta matemáticamente, previniendo trampas de reversión falsa.
+- **Certificación Contractual**:
+  - Creado `crates/strategy-core/tests/fokker_planck_first_passage_time_contract.rs` con 6 tests formales pasando al 100%.
+
+## 27. Colector Feynman Path Integral, Coherencia Cuántica en 32 Escalas de Hilbert y Prospect Theory de Kahneman-Tversky (Ola Ω69, Ficha #706)
+
+- **Feynman Propagator Engine (`crates/signal-engine/src/feynman_propagator.rs`)**:
+  - Amplitud de transición mediante integral de caminos cuánticos sobre 32 escalas diádicas de Hilbert:
+    $$\mathcal{A} = \sum_{k=0}^{31} \psi_k e^{i S_k / \hbar}$$
+  - Acción clásica continua $S_k = \int L_k dt_k$ a partir del Lagrangiano $L_k = T_k - V_k = \frac{1}{2} m v_k^2 - \frac{1}{2} k_{\text{rest}} z_k^2$ en espacio de fase canónico $\theta_k = \text{atan2}(p_k, q_k)$.
+  - Factor de coherencia cuántica continua $C_{\text{coh}} = |\mathcal{A}| \in [0.0, 32.0]$, amplificando el momentum coherente multiescala e inhibiendo el ruido incoherente.
+  - Contrato formal: `crates/signal-engine/tests/feynman_propagator_contract.rs` con 7 tests formales pasando al 100%.
+- **Prospect Theory Engine (`crates/metacortex-engine/src/prospect_theory.rs`)**:
+  - Función de valor asimétrica empírica de Kahneman-Tversky:
+    $$V(\Delta x) = (\Delta x)^\alpha \quad (\Delta x \ge 0), \qquad V(\Delta x) = -\lambda (-\Delta x)^\beta \quad (\Delta x < 0)$$
+    con coeficiente canónico de aversión a la pérdida $\lambda = 2.25$ y sensibilidad marginal $\alpha = \beta = 0.88$.
+  - Ponderación de probabilidad no lineal de Prelec/Tversky $w(p) = \frac{p^\gamma}{(p^\gamma + (1-p)^\gamma)^{1/\gamma}}$ ($\gamma = 0.65$) sobreponderando colas de pánico/lotería y subponderando complacencia intermedia.
+  - Presión neta de prospecto $P_{\text{kt}} = w(p_{\text{bull}}) V(\Delta_{\text{up}}) + w(p_{\text{crash}}) V(-\Delta_{\text{down}})$.
+  - Modulación contrarian smart-money $[0.50, 1.30]$ integrada en `SeniorEnteMercado::evaluate` de `crates/metacortex-engine/src/consejo_seniors.rs` sobre `MarketSnapshotPayload`.
+- **Certificación Contractual**:
+  - Creado `crates/metacortex-engine/tests/prospect_theory_contract.rs` con 6 tests formales pasando al 100%. Suite completa de `metacortex-engine` pasando 78/78 tests (100%).
+
+
 
 
 

@@ -63,7 +63,14 @@ pub fn hodge_curl_share(flow: &[Vec<f64>]) -> Option<f64> {
     };
 
     let mut energia = 0.0_f64;
-    let mut node_has_flow = vec![false; n];
+    let mut stack_node_has_flow = [false; 64];
+    let mut heap_node_has_flow;
+    let node_has_flow: &mut [bool] = if n <= 64 {
+        &mut stack_node_has_flow[..n]
+    } else {
+        heap_node_has_flow = vec![false; n];
+        &mut heap_node_has_flow[..]
+    };
     let mut non_isolated_nodes = 0usize;
 
     for i in 0..n {
