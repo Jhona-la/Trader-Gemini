@@ -1799,8 +1799,8 @@ veredicto se escribe abajo al cerrarse.
 | R1 | doctrina/nomenclatura (`AGENTS.md`, MEMORIA, planes maestros, `ARQUITECTURA_VIVA`, ADRs) + grep `scalp\|swing` | metas/conceptos | Qoder | **CERRADA** (§R7-5: 9 fichas, 0 HIGH / 2 MED / 4 LOW / 3 INFO) |
 | R2 | matemática/estadística (risk-engine stats, Ville, Cramér-Lundberg, ruin, correlation_guard, leverage_matrix, orchestrator, vetos, multifractal, lead-lag, temporal_spectrum, spectral_tape) | matemática | Qoder | **CERRADA** (§R7-6: 41 fichas, 9 HIGH / 23 MED / 1 LOW-MED / 6 LOW / 2 INFO) |
 | R3 | física/cuántica (hodge ×2, hodge_flow, yang_mills, stat_arb, vecm, multivariate_coint, maker + 13 motores signal-engine) | física | Qoder | **CERRADA** (§R7-7: 17 fichas, 2 HIGH / 8 MED / 5 LOW / 2 INFO) |
-| R4 | núcleo vivo (`god-engine-core/src/lib.rs` por bloques, `src/bin/god_engine.rs`, orquestador, state/position) | integración viva | — | ABIERTA |
-| R5 | dinero/ejecución (risk-engine completo + execution-engine) | ejecución | — | ABIERTA |
+| R4 | núcleo vivo (`god-engine-core/src/lib.rs` por bloques, `src/bin/god_engine.rs`, orquestador, state/position) | integración viva | Qoder | EN EJECUCIÓN (worktree .r7r4) |
+| R5 | dinero/ejecución (risk-engine completo + execution-engine, 44 archivos) | ejecución | Antigravity | EN EJECUCIÓN |
 | R6 | aprender/medir (evolution-engine, backtest-engine, dark-alpha) | aprender | — | ABIERTA |
 | R7 | datos/telemetría/guardianes (data-pipeline, data-ingest, storage, registry, telemetry ×2, flight-recorder, os-guardian, audit-engine, graph-*) — incluye **C-02** | datos | — | ABIERTA |
 | R8 | paridad BT↔vivo + suite workspace + oráculo T-1 del árbol final | integración | Qoder | PENDIENTE |

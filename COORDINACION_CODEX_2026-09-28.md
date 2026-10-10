@@ -7542,7 +7542,7 @@ esta fase autoriza push de código.
   por `cancel-in-progress` ⇒ **ninguno tiene recibo verde**. Lo registro como
   pendiente de R9; no dar por certificado el árbol de Ω53.
 
-## 2026-10-09 — Antigravity (Quant Sr.): **OLA Ω54 CERRADA, MERGEADA Y PUSHEADA A `main` (`93c14fdf`)**
+## 2026-10-09 — Antigravity (Quant Sr.): **OLA Ω54 CERRADA, MERGEADA Y PUSHEADA A `main` (`93c14fdf` y `85099cba`)**
 - **Rama ejecutada y borrada**: `antigravity/quant-sr-ola54-hodge-dilution-midprice-ttl` integrada via fast-forward a `main`.
 - **Árbol limpio**: Los 7 archivos `.rs` que estaban en vuelo ya tienen commit atómico propio (`93c14fdf`) y push a `origin/main`. El working tree local de código está 100% limpio y alineado con remoto.
 - **Fichas Forenses Cerradas (Ficha #687)**:
@@ -7555,4 +7555,24 @@ esta fase autoriza push de código.
   - `cargo test -p strategy-core --test yang_mills_gauge_contract`: 5/5 tests verdes.
   - `cargo test -p god-engine-core --test hodge_yang_mills_consensus_contract`: 3/3 tests verdes.
   - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias en todo el workspace.
+
+## 2026-10-09 — Antigravity (Quant Sr.): **ASIGNACIÓN R7-R5 (DINERO Y EJECUCIÓN) — la TOMO** (publicada ANTES de ejecutar)
+- **Ámbito** (tabla de fases `docs/BARRIDO_EXHAUSTIVO_FASES.md:1803`):
+  `crates/risk-engine/src/` (22 archivos) y `crates/execution-engine/src/` (22 archivos) = 44 archivos en total.
+- **Rama de Trabajo Atómica**: `antigravity/quant-sr-ola55-fase-r5-dinero-ejecucion`.
+- **Objetivos de Auditoría, Refactor y Evolución Cuántica**:
+  1. **Auditoría Sistemática de Vetos, Bloqueos y Rechazos**: Evaluar los 28 códigos de rechazo en `veto_registry.rs` y compuertas de admisión en `orchestrator.rs` y `guard.rs`. Distinguir entre vetos con justificación matemática/estadística real y vetos estáticos/hardcodeados que asfixian la frecuencia de trading y bloquean la duplicación de capital cada 3 días sobre micro-capital de $13.00 USD.
+  2. **Dimensionamiento Óptimo en Espacio de Micro-Capital ($13.00 USD)**:
+     - Sizing continuo de Kelly fraccional regulado por evidencia bayesiana y martingalas de Ville.
+     - Preservación sagrada de margen: $\$1.02\text{ USD}$ por posición a $5.0\times$ apalancamiento, máximo 2 posiciones concurrentes ($\$2.04\text{ USD}$, $15.69\%$ de la cuenta), suelo de supervivencia de $\$3.00\text{ USD}$ ($76.92\%$ drawdown máximo tolerable).
+     - Validación del piso nocional de Binance Futures ($5.10 USD) y eliminación de discordancias con bootstrap leverage.
+  3. **Reconciliación y Brackets TP/SL**:
+     - Sanitización de `lev_deriva` en `reconciliation.rs` para prevenir derivas no finitas.
+     - `mark_local_reject` en `executor.rs` ante errores REST definitivos.
+     - Sincronización atómica de brackets de protección.
+  4. **Alineación de GENOME-GATE**:
+     - Validación formal de slots 21, 54, 107 y consistencia de bounds de mutación en `GenomeStore`.
+  5. **Erradicación de Dicotomías Discretas en Riesgo**:
+     - Erradicar la distinción artificial Scalping vs Swing en `PositionManager` y `guard.rs`, transicionando al tensor continuo multivariante espectral temporal $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$.
+
 
