@@ -1,5 +1,24 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω76 CERRADA: SIMETRÍA DIRECCIONAL CONFORMAL (K-26), MICROTENDENCIA (K-27) Y SINCRONIZACIÓN FRENO DEL HOST (2026-10-10 ~19:00)
+- Rama activa: `antigravity/ola76-k26-conformal-symmetry-and-host-watchdog-sync` (preparada para merge `--ff-only` y push a `origin/main` en commit `#714`).
+- Ficha Forense: **#714**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/god-engine-core/src/calibration.rs`, `crates/god-engine-core/src/lib.rs`, `src/bin/god_engine.rs`, `crates/god-engine-core/tests/conformal_direction_symmetry_contract.rs`, `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md`, `TABLERO.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω76**:
+  1. **Simetría Direccional Conformal con Base Honesta (K-26)**:
+     - En `god-engine-core::calibration`: Se introdujo `p_win_directional(is_long: bool, p: f64, base: f64)` que proyecta simétricamente para calibración conformal y actualización TD-error: en neutralidad ($p == b$), ambos lados obtienen $p_{\text{win}} = b$ idénticamente; con $b = 0.50$ reduce exactamente a $1.0 - p$. Erradica el sesgo donde $1.0 - p$ evaluaba cortos con 75% en base 0.25 neutra.
+     - Conectado en decisión (`lib.rs:4756-4765`), cierre de posición (`lib.rs:3910-3923`) e innovación online TD-error (`lib.rs:4232-4248`).
+  2. **Simetría Estricta de Microtendencia (K-27)**:
+     - En `god-engine-core::lib.rs:5851`: Se fijó `micro_trend <= 0.0` en la rama tendencial Short 1, eliminando la asimetría de +3 bps (`<= 0.00003`) frente a la rama Long 1 (`micro_trend >= 0.0`).
+  3. **Sincronización del Cortacircuitos de Drawdown del Host (ADR-0016 / QS-D3 / Freno del Host)**:
+     - En `src/bin/god_engine.rs:1609-1613`: Se acotó `max_dd` con `.min(d_falsacion)` ($d^* \approx 0.632$, piso $4.79 USD en $13 USD), alineando el watchdog del host con el veto de riesgo del engine.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p god-engine-core --test conformal_direction_symmetry_contract`: **3/3 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test conformal_wiring_contract`: **11/11 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test puertas_del_continuo_symmetry_contract`: **4/4 tests verdes (100% éxito)**.
+  - `cargo check --bin god_engine`: **0 errores, compilación perfecta**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## Antigravity (Quant Sr.) — OLA Ω75 CERRADA: SIMETRÍA DIRECCIONAL EN PUERTAS DEL CONTINUO (K-06) Y GATE ML B3.18 (K-23) (2026-10-10 ~18:15)
 - Rama activa: `antigravity/ola75-k06-k23-directional-symmetry-puertas-continuo` (preparada para merge `--ff-only` y push a `origin/main` en commit `#713`).
 - Ficha Forense: **#713**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).

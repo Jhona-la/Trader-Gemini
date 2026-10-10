@@ -1344,5 +1344,29 @@ contrato ejecutable).
   - Suite unitaria `calibration::tests::ola75_k06_k23_divergencia_direccional_normalizada_simetrica` OK.
   - Suite completa de `god-engine-core` (100% de tests OK) y `metacortex-engine` (81/81 OK).
 
+## 35. Resolución de Simetría Direccional Conformal (K-26), Microtendencia (K-27) y Sincronización Freno del Host (Ola Ω76, Ficha #714)
+
+- **Causa Raíz y Solución de K-26 (Simetría Direccional Conformal con Base Honesta)**:
+  - En `crates/god-engine-core/src/lib.rs:4756-4759` (evaluación analítica conformal), `3917` (actualización de calibrador conformal al cierre) y `4238` (innovación online del filtro de Kalman TD-error), el sistema evaluaba o actualizaba la probabilidad de éxito de cortos asumiendo `1.0 - ml_prob`.
+  - Con etiquetado honesto donde $b = ml\_model\_base \approx 0.25$, bajo condiciones de mercado neutro ($ml\_prob = 0.25$), el corto se evaluaba con $1.0 - 0.25 = 0.75$, inflando artificialmente la probabilidad corta al $75\%$ y penalizando masivamente los cierres o corrompiendo los puntajes de no-conformidad y la innovación TD.
+  - **Solución Implementada**: Se introdujo `p_win_directional(is_long: bool, p: f64, base: f64)` en `crates/god-engine-core/src/calibration.rs:338-365`:
+    * Para Long: $p_{\text{win}} = p$.
+    * Para Short: Proyección continua vía divergencia direccional normalizada: en neutralidad ($p = b$), $p_{\text{win}} = b$ idénticamente para ambos lados; en $b = 0.50$ reduce exactamente a $1.0 - p$.
+    * Conectado en decisión (`lib.rs:4756-4765`), cierre de posición (`lib.rs:3910-3923`) e innovación online TD-error (`lib.rs:4232-4248`).
+
+- **Causa Raíz y Solución de K-27 (Simetría Estricta de Microtendencia)**:
+  - En `crates/god-engine-core/src/lib.rs:5851`, la rama tendencial Short 1 relajaba la condición de microtendencia adversa con `micro_trend <= 0.00003` (+3 bps de asimetría), mientras que la rama Long 1 (`lib.rs:5918`) exigía estrictamente `micro_trend >= 0.0`.
+  - Se restauró la simetría exacta de reflexión fijando `micro_trend <= 0.0` en la rama corta tendencial 1.
+
+- **Sincronización del Cortacircuitos de Drawdown del Host (QS-D3 / ADR-0016 / Freno del Host)**:
+  - En `src/bin/god_engine.rs:1609-1613`, el watchdog del host evaluaba `drawdown_maximo`, que al arrancar el proceso o sin riesgo medido recurría al gen uncalibrado (0.95), permitiendo caer a $0.65 USD en una cuenta de $13 USD antes del aplanamiento inmune.
+  - Se sincronizó acotando `max_dd` con `.min(d_falsacion)` ($d^* \approx 0.632$, suelo $4.79 USD en $13 USD), derivado rigurosamente de la prueba de hipótesis de ½ Kelly a $\alpha = 0.05$ (`risk_engine::drawdown::drawdown_de_falsacion`). Ahora el host immune system y el veto de riesgo del core operan con exactamente la misma cota teórica.
+
+- **Certificación Contractual**:
+  - Contrato de integración `crates/god-engine-core/tests/conformal_direction_symmetry_contract.rs` (3/3 tests OK).
+  - Contrato de regresión `crates/god-engine-core/tests/conformal_wiring_contract.rs` (11/11 tests OK).
+  - Compilación binaria y workspace exhaustiva: `cargo check --bin god_engine` OK, `cargo check --workspace --all-targets` OK.
+
+
 
 

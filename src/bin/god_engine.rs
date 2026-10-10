@@ -1603,14 +1603,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 c.metrics.trade_count.load(Ordering::Relaxed) as f64,
                             )
                         }));
-                    // D-744b: sin riesgo medido (p. ej. tras reiniciar con
-                    // posiciones reconciliadas) rige el gen — antes ∞, es
-                    // decir, el sistema inmune desarmado.
+                    // D-744b / QS-D3 (Ola Ω76): sin riesgo medido rige el gen acotado por la cota
+                    // superior de falsación del modelo de ½ Kelly a α = 0,05 (d* ≈ 0,632, suelo $4,79 en cuenta de $13).
+                    // Sincroniza el cortacircuitos del host con el veto de entradas de risk-engine (lib.rs:341).
+                    let d_falsacion = risk_engine::drawdown::drawdown_de_falsacion(
+                        risk_engine::drawdown::FRACCION_KELLY_MAXIMA,
+                        risk_engine::drawdown::ALFA_FALSACION,
+                    );
                     let max_dd = risk_engine::drawdown::drawdown_maximo(
                         arena_imm.riesgo_por_operacion.load(Ordering::Relaxed),
                         q_perdida_global,
                         arena_imm.config.global_max_drawdown.load(Ordering::Relaxed),
-                    );
+                    ).min(d_falsacion);
                     // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
                     // inmune, no desarmarlo: el guard `cap > 0.0` anterior
                     // dejaba todos los frenos apagados exactamente en el único

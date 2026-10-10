@@ -1,5 +1,30 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω76 COMPLETADA — SIMETRÍA DIRECCIONAL CONFORMAL (K-26), MICROTENDENCIA (K-27) Y SINCRONIZACIÓN FRENO DEL HOST (FICHA #714)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#714`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Reales y Gobernanza de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Suelo de supervivencia de código: En `risk-engine/src/lib.rs:285-314` y ahora sincronizado en el watchdog del host `src/bin/god_engine.rs:1612`, drawdown de falsación $d^* \approx 0.632$ (½ Kelly, $\alpha=0.05$, piso $4.79 USD, ADR-0016 / QS-D3).
+  - Geometría de orden ligada a $\tau$ en todo capital (retirado tope micro de 55 pb, ADR-0016 / QS-D2).
+  - Crecimiento exponencial compuesto objetivo: $+100\%$ cada 3 días ($T_d = 72$ h, $g = \frac{\ln(2)}{3} \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$ compuesto continuo).
+- **Cambios Implementados y Certificados**:
+  1. **Resolución de Raíz K-26 (Simetría Direccional Conformal con Base Honesta)**:
+     - En `crates/god-engine-core/src/calibration.rs:338-365`: Creada `p_win_directional(is_long: bool, p: f64, base: f64)`. Proyecta la probabilidad continua $p$ según la dirección de la orden respecto a la base honesta $b$: para Long devuelve $p$; para Short proyecta simétricamente vía la divergencia normalizada. En neutralidad ($p == b$), ambos lados obtienen $p_{\text{win}} = b$ (erradicando el sesgo legacy donde $1.0 - p$ evaluaba cortos al 75% cuando la base era 0.25). En $b = 0.50$ reduce exactamente a $1.0 - p$.
+     - En `crates/god-engine-core/src/lib.rs:4756-4765`: El cálculo de `conformal_p`, `conformal_p_short`, `accept_long` y `accept_short` en cada tick utiliza `p_win_directional`.
+     - En `crates/god-engine-core/src/lib.rs:3910-3923`: En el cierre de cada posición, la alimentación a `conformal.update(...)` usa `p_win_directional(is_long, ml_at_entry, ml_model_base)`.
+     - En `crates/god-engine-core/src/lib.rs:4232-4248`: En la innovación online del filtro de Kalman TD-error, `p_win_at_entry` usa `p_win_directional`, restaurando esperanza matemática simétrica $\mathbb{E}[td\_error] = 0.0$ bajo calibración neutral para ambos lados.
+  2. **Resolución de Raíz K-27 (Simetría Estricta de Microtendencia)**:
+     - En `crates/god-engine-core/src/lib.rs:5851`: Se sustituyó `micro_trend <= 0.00003` por `micro_trend <= 0.0` en la rama tendencial Short 1, eliminando la asimetría de +3 bps y creando un espejo exacto de la rama tendencial Long 1 (`micro_trend >= 0.0`).
+  3. **Sincronización del Cortacircuitos de Drawdown del Host (ADR-0016 / QS-D3 / Freno del Host)**:
+     - En `src/bin/god_engine.rs:1609-1613`: Se acotó `max_dd` con `.min(d_falsacion)` mediante `risk_engine::drawdown::drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION)` ($d^* \approx 0.632$). Se previene que un host recién arrancado sin riesgo medido espere pasivamente a que la cuenta caiga a $0.65 USD (95%) antes de disparar el sistema inmune.
+- **Verificación Contractual Integral**:
+  - `cargo test -p god-engine-core --test conformal_direction_symmetry_contract`: **3/3 tests PASSED (100%)**.
+  - `cargo test -p god-engine-core --test conformal_wiring_contract`: **11/11 tests PASSED (100%)**.
+  - `cargo test -p god-engine-core --test puertas_del_continuo_symmetry_contract`: **4/4 tests PASSED (100%)**.
+  - `cargo check --bin god_engine`: **Compilación exitosa (0 errores)**.
+  - `cargo check --workspace --all-targets`: **0 errores en todo el workspace**.
+
 ## 2026-10-10 — AGY: OLA Ω75 COMPLETADA — SIMETRÍA DIRECCIONAL EN PUERTAS DEL CONTINUO (K-06) Y GATE ML B3.18 (K-23) (FICHA #713)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#713`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).

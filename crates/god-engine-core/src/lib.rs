@@ -3908,13 +3908,22 @@ impl GodEngineCore {
                     self.diag_pnl_sum += net_trade_pnl;
 
                     if ml_at_entry > 0.0 {
-                        // D-676 (DÉCIMA OLA): la posición guarda `ml_prob` crudo, la
-                        // probabilidad de que el precio SUBA. La convención del
-                        // calibrador es la probabilidad de que la operación gane EN
-                        // SU DIRECCIÓN: para un corto es la complementaria. Antes los
-                        // cortos entraban invertidos y contaminaban la calibración
-                        // de todas las operaciones.
-                        let p_win_at_entry = if is_long { ml_at_entry } else { 1.0 - ml_at_entry };
+                        // K-26 (Ola Ω76 / D-676): la posición guarda `ml_prob` crudo (P(subida)).
+                        // La convención del calibrador es la probabilidad direccional de éxito P(win).
+                        // Se proyecta mediante `p_win_directional(is_long, ml_at_entry, ml_model_base)`.
+                        let ml_model_base = {
+                            let reg_base = self.arena.registry.get_for_coin_or(coin_id, "ml_model_base", f64::NAN);
+                            if reg_base.is_finite() && reg_base > 0.05 && reg_base < 0.95 {
+                                reg_base
+                            } else {
+                                let coin_model_key = format!("{}_MOTOR", sym);
+                                crate::ml_inference::NanoForest::get_global(&coin_model_key)
+                                    .map(|f| f.base_prob())
+                                    .unwrap_or(0.5)
+                                    .clamp(0.05, 0.95)
+                            }
+                        };
+                        let p_win_at_entry = crate::calibration::p_win_directional(is_long, ml_at_entry, ml_model_base);
                         if coin_id < self.conformal_by_coin.len() {
                             self.conformal_by_coin[coin_id].update(p_win_at_entry, is_win);
                         } else {
@@ -4229,13 +4238,25 @@ impl GodEngineCore {
                     for (idx, &f) in cur_features.iter().enumerate().take(64) {
                         online_feat[idx] = f;
                     }
-                    // F8 / CUÁNTICO: Corrección de coherencia dimensional en innovación online.
+                    // F8 / CUÁNTICO / K-26 (Ola Ω76): Corrección de coherencia dimensional y simetría en innovación online.
                     // Antes: (realized_ret - ml_at_entry) restaba una probabilidad (~0.50) de un retorno
                     // (~+0.0014), produciendo un sesgo sistemático de -0.4986 en el 100% de los casos.
-                    // Ahora: Innovación en el espacio canónico de probabilidad de acierto direccional:
+                    // Ahora: Innovación en el espacio canónico de probabilidad de acierto direccional proyectada:
                     //   td_error = (if is_win { 1.0 } else { 0.0 }) - p_win_at_entry
-                    // con esperanza matemática E[td_error] = 0.0 bajo calibración neutral.
-                    let p_win_at_entry = if is_long { ml_at_entry } else { 1.0 - ml_at_entry };
+                    // con esperanza matemática E[td_error] = 0.0 bajo calibración neutral (p_win = base para ambos lados).
+                    let ml_model_base = {
+                        let reg_base = self.arena.registry.get_for_coin_or(coin_id, "ml_model_base", f64::NAN);
+                        if reg_base.is_finite() && reg_base > 0.05 && reg_base < 0.95 {
+                            reg_base
+                        } else {
+                            let coin_model_key = format!("{}_MOTOR", sym);
+                            crate::ml_inference::NanoForest::get_global(&coin_model_key)
+                                .map(|f| f.base_prob())
+                                .unwrap_or(0.5)
+                                .clamp(0.05, 0.95)
+                        }
+                    };
+                    let p_win_at_entry = crate::calibration::p_win_directional(is_long, ml_at_entry, ml_model_base);
                     let outcome = if is_win { 1.0 } else { 0.0 };
                     let td_error = outcome - p_win_at_entry;
                     self.diag_dir.record_online_update(td_error);
@@ -4752,11 +4773,15 @@ impl GodEngineCore {
                 .get_mut(coin_id)
                 .unwrap_or(&mut self.conformal);
             calibrator.set_target_alpha(conf_alpha);
-            // Convención direccional D-676; no identifica por sí sola P(PnL>0).
-            let conformal_p = calibrator.p_value(ml_prob);
-            let conformal_p_short = calibrator.p_value(1.0 - ml_prob);
-            let accept_long = calibrator.accepts(ml_prob);
-            let accept_short = calibrator.accepts(1.0 - ml_prob);
+            // K-26 (Ola Ω76 / D-676): Proyección direccional simétrica con base honesta.
+            // Para Long: p_win = ml_prob. Para Short: proyectado vía p_win_directional(false, ml_prob, ml_model_base).
+            // Erradica el sesgo donde 1.0 - ml_prob en base ~0.25 inflaba la probabilidad corta neutral a 0.75.
+            let p_win_long = crate::calibration::p_win_directional(true, ml_prob, ml_model_base);
+            let p_win_short = crate::calibration::p_win_directional(false, ml_prob, ml_model_base);
+            let conformal_p = calibrator.p_value(p_win_long);
+            let conformal_p_short = calibrator.p_value(p_win_short);
+            let accept_long = calibrator.accepts(p_win_long);
+            let accept_short = calibrator.accepts(p_win_short);
             set_reg("conformal_p_value", conformal_p);
             set_reg("conformal_p_value_short", conformal_p_short);
             set_reg("conformal_alpha", conf_alpha);
@@ -5823,7 +5848,9 @@ impl GodEngineCore {
                         && effective_obi_short < -d_obi_trend
                         && !is_adverse_momentum_short
                         && macro_trend <= 0.0
-                        && micro_trend <= 0.00003
+                        // K-27 (Ola Ω76) — Espejo EXACTO de la rama tendencial larga 1 (micro_trend >= 0.0).
+                        // Antes: <= 0.00003 relajaba asimétricamente +3 bps la microtendencia adversa en cortos.
+                        && micro_trend <= 0.0
                         && ofi <= 0.05
                         // (A3a) techo de confluencia contraria: medio σ
                         && if cvd_z_warm { cvd_z <= 0.5 } else { rolling_cvd <= 0.15 }
