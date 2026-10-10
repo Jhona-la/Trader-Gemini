@@ -1284,9 +1284,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/lib.rs": {
-    "mtime": 1791610213.8026524,
-    "seen": 1791610969.0810695,
-    "ast_hash": "88750db2a8e9554a2457dca1a5ee5d38",
+    "mtime": 1791641954.488753,
+    "seen": 1791642511.4192214,
+    "ast_hash": "d61b64e4fde2dacdb5a85fee48a515c2",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/orchestrator.rs": {
@@ -3708,9 +3708,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791636578.9048264,
-    "seen": 1791637053.5453777,
-    "ast_hash": "8d3f6ed9c1294d948e1960401895bc96",
+    "mtime": 1791642483.2509208,
+    "seen": 1791642511.4207568,
+    "ast_hash": "70908e0726b0abb6d162a138b881a9c0",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3732,9 +3732,9 @@
     "semantic_hash": ""
   },
   "COORDINACION_CODEX_2026-09-28.md": {
-    "mtime": 1791636578.914338,
-    "seen": 1791637053.5500848,
-    "ast_hash": "795df71dc350b14f9f94f21de139bd15",
+    "mtime": 1791642493.1938772,
+    "seen": 1791642511.4257476,
+    "ast_hash": "6c464356dac25d3602e27f6153d6998f",
     "semantic_hash": ""
   },
   "TABLERO.md": {
@@ -4284,9 +4284,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/sol_a2_margen_reducido_auditable.rs": {
-    "mtime": 1790878584.305675,
-    "seen": 1791349202.796764,
-    "ast_hash": "720595cc82332a5d5abd0e2e223f1eab",
+    "mtime": 1791641954.496769,
+    "seen": 1791642511.4192214,
+    "ast_hash": "240c675a68f60cf3c25ecc94b3773491",
     "semantic_hash": ""
   },
   "crates/signal-engine/src/skill_motores.rs": {
@@ -4404,9 +4404,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_SINCRONIZACION.md": {
-    "mtime": 1791636578.9332514,
-    "seen": 1791637053.5500848,
-    "ast_hash": "0fcf6aa56e18c491626680a7d65e2a5b",
+    "mtime": 1791641954.5017738,
+    "seen": 1791642511.4267466,
+    "ast_hash": "c2b28fd6b4fd1885f5ac20a2329723d4",
     "semantic_hash": ""
   },
   "docs/TRIAJE_ROJOS_PERPETUOS.md": {
@@ -25104,9 +25104,9 @@
     "semantic_hash": ""
   },
   "crates/feature-engine/src/navier_stokes.rs": {
-    "mtime": 1791589199.287787,
-    "seen": 1791601136.998483,
-    "ast_hash": "44d399e3d45d7d49bc708fbe1da0e02c",
+    "mtime": 1791642245.6853275,
+    "seen": 1791642511.4181993,
+    "ast_hash": "8ae27227de137300d2d78733d580cd73",
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/statarb_live_physics_contract.rs": {
@@ -28971,6 +28971,18 @@
     "mtime": 1791636578.928471,
     "seen": 1791637053.5453777,
     "ast_hash": "520fab49f643ed8ed0525b416e74d71f",
+    "semantic_hash": ""
+  },
+  "crates/risk-engine/tests/r7_r2_rejection_names_ruin_lcb_contract.rs": {
+    "mtime": 1791641954.490759,
+    "seen": 1791642511.4192214,
+    "ast_hash": "93359c1d0b5c7ecd88d258ba14de704c",
+    "semantic_hash": ""
+  },
+  "docs/PLAN_MAESTRO_QUANT_SR_UNIVERSO_ESPECTRAL_2026-10-10.md": {
+    "mtime": 1791640627.4563048,
+    "seen": 1791642511.4267466,
+    "ast_hash": "7fae3fefb3fd514ff79c4f6492c7b637",
     "semantic_hash": ""
   }
 }
