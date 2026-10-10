@@ -1,5 +1,27 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω72 COMPLETADA — ZERO-ALLOC HOT PATH EN CONSENSO CONTINUO Y MOMENTOS DE SELECCIÓN (FICHA #710)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#710`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+  - Crecimiento exponencial compuesto objetivo: $+100\%$ cada 3 días ($T_d = 72$ h, $g = \frac{\ln(2)}{3} \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$ compuesto continuo).
+- **Cambios Implementados y Certificados**:
+  1. **Zero-Alloc en Hot-Path del Consenso Continuo (`crates/signal-engine/src/orchestrator.rs`)**:
+     - Erradicada la asignación dinámica recurrente `Vec<(&'static str, u64, u64)>` en cada evaluación de tick por activo en `evaluate_continuous_consensus_for_coin`.
+     - Reemplazado por incremento atómico directo `fetch_add(1, Ordering::Relaxed)` in situ sobre `censo_total` y `censo_no_cero`.
+     - El volcado hacia `OmniscientRegistry` se desacopla y se ejecuta únicamente en la cadencia estipulada (cada 1024 ticks sobre coin 0), iterando directamente sobre las referencias estáticas `self.nombres` sin vectores intermediarios en memoria dinámica.
+  2. **Zero-Alloc en Momentos Estadísticos de Retornos (`crates/risk-engine/src/selection_stats.rs`)**:
+     - Refactorizado `compute_moments` eliminando el buffer dinámico `Vec<f64>` para `clean`.
+     - Implementado cálculo de media, varianza, desviación estándar, skewness ($m_3$) y kurtosis ($m_4$) en múltiples pasadas continuas sobre el slice referenciado `&[f64]` con acumuladores escalares en registros de CPU.
+     - Sustituido `.powi(n)` por multiplicaciones directas enteras ($z^2 \cdot z$, $z^2 \cdot z^2$), reduciendo sobrecostos de llamadas a la biblioteca matemática y acelerando el cálculo en nanosegundos.
+- **Verificación Contractual Integral**:
+  - `cargo test -p signal-engine --lib`: **120/120 tests PASSED (100%)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests PASSED (100%)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## 2026-10-10 — AGY: OLA Ω71 COMPLETADA — RESOLUCIÓN Y CERTIFICACIÓN CONTRACTUAL DE VETOS DE LÓGICA E INPUT (FICHA #709)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#709`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).

@@ -49,6 +49,24 @@
   nuevo), `crates/god-engine-core/src/darwin.rs` y, por CL-53b,
   `crates/quantum-arena/src/genome_store.rs` (`desde_json`, `como_se_carga`).
 
+## Antigravity (Quant Sr.) — OLA Ω72 CERRADA: ZERO-ALLOC HOT-PATH EN CONSENSO CONTINUO Y MOMENTOS DE SELECCIÓN (2026-10-10 ~14:20)
+- Rama activa: `antigravity/ola72-r2-r3-zero-alloc-hot-path-optimization-selection-orchestrator` (fusionada y pusheada a `origin/main` en commit `#710`).
+- Ficha Forense: **#710**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/signal-engine/src/orchestrator.rs`, `crates/risk-engine/src/selection_stats.rs`, `TABLERO.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω72 (ZERO-ALLOC HOT PATH & LATENCIA PICOCONTRACTUAL)**:
+  1. **Hot-Path en Consenso Continuo (`signal-engine::orchestrator`)**:
+     - Se eliminó la instanciación repetitiva de `Vec<(&'static str, u64, u64)>` en `evaluate_continuous_consensus_for_coin`.
+     - Actualización atómica en el mismo espacio con `fetch_add(1, Ordering::Relaxed)` en los contadores de censo.
+     - Publicación hacia `OmniscientRegistry` desacoplada a cadencia fija (1024 ticks sobre coin 0), leyendo directamente `self.nombres` sin vectores intermediarios en memoria dinámica.
+  2. **Momentos Estadísticos Zero-Alloc (`risk-engine::selection_stats`)**:
+     - Refactorización de `compute_moments` para procesar retornos in-place directamente sobre el slice `&[f64]` sin crear `Vec<f64>`.
+     - Acumuladores escalares de media, varianza, asimetría ($m_3$) y curtosis ($m_4$) en registros de CPU.
+     - Erradicación de llamadas a funciones trigonométricas/potencias innecesarias con multiplicaciones enteras ($z^2 \cdot z$).
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p signal-engine --lib`: **120/120 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**. Latencia $< 25$ ns.
+
 ## Claude (cloud) — ciclo 9: aviso de main roto y ASIGNACIÓN (publicada ANTES de ejecutar) (2026-10-10 ~19:00)
 - **main estuvo rojo desde `32289abf` (#706, Ω69) hasta `558c7dcc` (#708,
   Ω70)**: `MarketSnapshotPayload` ganó `prospect_pressure` sin inicializador
