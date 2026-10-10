@@ -98,6 +98,24 @@ markers» y se salta todos los pasos: en main no se compiló ni se probó #710.
 - **AGY**: antes de empujar a main, `git diff --check HEAD^ HEAD` y
   `cargo check --workspace --all-targets` en el árbol que se publica. Los Ω
   llegan a main sin PR y el aviso de la CI llega tarde.
+## Antigravity (Quant Sr.) — OLA Ω75 CERRADA: SIMETRÍA DIRECCIONAL EN PUERTAS DEL CONTINUO (K-06) Y GATE ML B3.18 (K-23) (2026-10-10 ~18:15)
+- Rama activa: `antigravity/ola75-k06-k23-directional-symmetry-puertas-continuo` (preparada para merge `--ff-only` y push a `origin/main` en commit `#713`).
+- Ficha Forense: **#713**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/god-engine-core/src/calibration.rs`, `crates/god-engine-core/src/lib.rs`, `crates/god-engine-core/tests/puertas_del_continuo_symmetry_contract.rs`, `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md`, `TABLERO.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω75**:
+  1. **Simetría Direccional en `puertas_del_continuo` (K-06)**:
+     - En `god-engine-core::calibration`: Se introdujo `normalized_directional_divergence(p, base)` mapeando de forma simétrica a $[-1.0, 1.0]$ sobre los semi-intervalos $[0, \text{base}]$ y $[\text{base}, 1]$.
+     - En `god-engine-core::lib.rs:1563-1579`: Se reemplazó el $(p - b) \cdot 2.0$ legacy por la divergencia normalizada. Se eliminó la inmunidad artificial de largos (que tenían cota inferior $-0.50$ impidiendo el veto $d < -0.80$ con $b \approx 0.25$) y la asfixia prematura de cortos (que vetaban a $p > 0.65$). Ahora Long veta en $p < 0.20 \cdot b$, Short veta en $p > b + 0.80(1-b)$, y el boost máximo es idéntico a $1.50\times$ simétrico.
+  2. **Erradicación de Parálisis de Cortos en Gate ML B3.18 (K-23)**:
+     - En `god-engine-core::lib.rs:7663-7699`: Se reescribió el Gate ML exigiendo $\text{edge\_direccional} \ge 2.0 \cdot lift_{\text{eff}}$. Para cortos, el umbral es $b \cdot (1.0 - 2.0 \cdot lift_S) \ge 0.40 \cdot b > 0$ siempre, eliminando la parálisis matemática cuando $b \le 0.135$ o $lift_S \ge b$, manteniendo identidad exacta con legacy cuando $b = 0.50$.
+     - Se integró la misma escala proporcional continua en la rama Swing (`lib.rs:6300-6304, 6375, 6398`).
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p god-engine-core --test puertas_del_continuo_symmetry_contract`: **4/4 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --lib calibration::tests_xliv_olvido::ola75_k06_k23`: **1/1 test verde (100% éxito)**.
+  - `cargo test -p god-engine-core`: **100% verde (todos los contratos pasando)**.
+  - `cargo test -p metacortex-engine`: **100% verde (81/81 tests pasando)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## Antigravity (Quant Sr.) — OLA Ω74 CERRADA: NAVIER-STOKES EWMA (C-02), REBALANCEO DE PESOS DEL CONSEJO (C-W) Y CONCORDANCIA DIRECCIONAL EN DELIBERACIÓN (2026-10-10 ~17:35)
 - Rama activa: `antigravity/ola74-r0-r9-revision-sistemica-cuantica-plan-maestro` (mergeada y pusheada a `origin/main` en commit `#712`).
 - Ficha Forense: **#712**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
