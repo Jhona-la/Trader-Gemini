@@ -1557,17 +1557,22 @@ impl GodEngineCore {
         }
 
         // 3. Ponderación continua por el modelo (F-009 / D-411, desasfixia
-        //    direccional): la dirección se mide contra la base del propio
-        //    modelo; sólo una contradicción FUERTE (< −0,80) veta, y la
-        //    penalización blanda conserva convicción no nula (piso 0,20).
+        //    direccional / K-06 resuelto en Ola Ω75): la divergencia direccional
+        //    se normaliza simétricamente sobre los semi-intervalos [0, base] y
+        //    [base, 1] mediante `normalized_directional_divergence`.
+        //    Tanto Long como Short tienen rango d \in [-1.0, 1.0].
+        //    Sólo una contradicción FUERTE (< -0,80) veta en ambos lados;
+        //    la penalización blanda conserva convicción no nula (piso 0,20),
+        //    y el impulso tiene el mismo tope simétrico (1,50x antes del min(0.99)).
         let ml_base = if ml_model_base > 0.05 && ml_model_base < 0.95 {
             ml_model_base
         } else {
             0.5
         };
+        let ml_div = crate::calibration::normalized_directional_divergence(ml_prob, ml_base);
         let ml_directional = match out.signal {
-            SignalType::Long => (ml_prob - ml_base) * 2.0,
-            SignalType::Short => (ml_base - ml_prob) * 2.0,
+            SignalType::Long => ml_div,
+            SignalType::Short => -ml_div,
             _ => 0.0,
         };
         if ml_directional < -0.80 && price_stretch.abs() < 2.5 {
@@ -6294,8 +6299,9 @@ impl GodEngineCore {
             );
             let ml_lift_long = (ml_thr_long - 0.50).clamp(0.02, 0.25);
             let ml_lift_short = (0.50 - ml_thr_short).clamp(0.02, 0.25);
-            let effective_ml_long = ml_model_base + ml_lift_long;
-            let effective_ml_short = ml_model_base - ml_lift_short;
+            // Ola Ω75: Escala simétrica continua acorde a los semi-intervalos [0, base] y [base, 1]
+            let effective_ml_long = ml_model_base + 2.0 * ml_lift_long * (1.0 - ml_model_base);
+            let effective_ml_short = ml_model_base - 2.0 * ml_lift_short * ml_model_base;
 
             let macro_tau = self
                 .temporal_spectrum
@@ -6367,7 +6373,7 @@ impl GodEngineCore {
                         && not_chasing_swing_long
                     {
                         let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
-                            .max((swing_nn_pred - ml_model_base).max(0.0) * 2.0);
+                            .max(crate::calibration::normalized_directional_divergence(swing_nn_pred, ml_model_base).max(0.0));
                         let piso_magnitud = if raw_conf.is_finite() {
                             sig_conf(raw_conf.tanh())
                         } else {
@@ -6389,7 +6395,7 @@ impl GodEngineCore {
                         && not_chasing_swing_short
                     {
                         let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
-                            .max((ml_model_base - swing_nn_pred).max(0.0) * 2.0);
+                            .max((-crate::calibration::normalized_directional_divergence(swing_nn_pred, ml_model_base)).max(0.0));
                         let piso_magnitud = if raw_conf.is_finite() {
                             sig_conf(raw_conf.tanh())
                         } else {
@@ -7690,13 +7696,29 @@ impl GodEngineCore {
                             .load(Ordering::Relaxed)
                             == 0
                         && !self.arena.coins[coin_id].positions.is_any_open();
+                    // K-23 resuelto (Ola Ω75): normalización proporcional al espacio disponible
+                    // [0, base] y [base, 1] mediante `normalized_directional_divergence`.
+                    // En base = 0.50 coincide de forma exacta con la lógica legacy.
+                    // Para cualquier base honesta (e.g. 0.25), la exigencia para cortos escala con
+                    // el semi-intervalo [0, base] impidiendo que el umbral sea <= 0.0 y permitiendo
+                    // que las órdenes short compitan con idéntico rigor estadístico relativo.
+                    let ml_div = crate::calibration::normalized_directional_divergence(
+                        ml_now,
+                        ml_model_base,
+                    );
+                    let ml_edge_now = if order.signal == SignalType::Long {
+                        ml_div
+                    } else {
+                        -ml_div
+                    };
+                    let required_edge = 2.0
+                        * if order.signal == SignalType::Long {
+                            lift_eff_long
+                        } else {
+                            lift_eff_short
+                        };
                     let ml_gate_ok = arranque_frio_sin_roster
-                        || (has_roster_model
-                            && if order.signal == SignalType::Long {
-                                ml_now >= ml_model_base + lift_eff_long
-                            } else {
-                                ml_now <= ml_model_base - lift_eff_short
-                            });
+                        || (has_roster_model && ml_edge_now >= required_edge);
                     if aprobado_por_consejo && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;
                         if self.diag_ml_vetoes % 50 == 1 {

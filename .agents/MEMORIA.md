@@ -1,5 +1,29 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω75 COMPLETADA — SIMETRÍA DIRECCIONAL EN PUERTAS DEL CONTINUO (K-06) Y GATE ML B3.18 (K-23) (FICHA #713)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#713`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Reales y Gobernanza de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Suelo de supervivencia de código: En `risk-engine/src/lib.rs:285-314`, drawdown de falsación $d^* \approx 0.632$ (½ Kelly, $\alpha=0.05$, piso $4.79 USD, ADR-0016 / QS-D3).
+  - Geometría de orden ligada a $\tau$ en todo capital (retirado tope micro de 55 pb, ADR-0016 / QS-D2).
+  - Concurrencia de posiciones: Limitada físicamente por el margen libre disponible ($2.60 USD máx por orden) y las ranuras ortogonales desacopladas en el continuo ($\Delta \ln \tau \ge 0.80$, 3 ranuras por activo en `position.rs`).
+  - Crecimiento exponencial compuesto objetivo: $+100\%$ cada 3 días ($T_d = 72$ h, $g = \frac{\ln(2)}{3} \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$ compuesto continuo).
+- **Cambios Implementados y Certificados**:
+  1. **Resolución de Raíz K-06 (Simetría Direccional en `puertas_del_continuo`)**:
+     - En `crates/god-engine-core/src/calibration.rs:311-335`: Creada `normalized_directional_divergence(p, base)` que proyecta de forma continua a $[-1.0, 1.0]$ sobre los semi-intervalos $[0, \text{base}]$ y $[\text{base}, 1]$.
+     - En `crates/god-engine-core/src/lib.rs:1563-1579`: Se sustituyó la fórmula legacy $(p - b) \cdot 2.0$ por la divergencia simétrica. Se erradicó la inmunidad artificial de las órdenes Long (que antes tenían cota inferior en $-0.50$, impidiendo alcanzar el veto $d < -0.80$ cuando $b \approx 0.25$) y la asfixia prematura de Short (que antes se vetaba tan pronto $p > 0.65$). Ahora Long veta en $p < 0.20 \cdot b$, Short veta en $p > b + 0.80(1-b)$, y el impulso simétrico máximo es idéntico a $1.50\times$ en ambos lados.
+  2. **Resolución de Raíz K-23 (Erradicación de Parálisis de Cortos en Gate ML B3.18)**:
+     - En `crates/god-engine-core/src/lib.rs:7663-7699`: Se reformuló el Gate ML para que exija un lift proporcional al espacio disponible mediante `normalized_directional_divergence(ml_now, ml_model_base)`. La condición unificada es $\text{edge\_direccional} \ge 2.0 \cdot lift_{\text{eff}}$.
+     - Para órdenes cortas, el umbral es $b \cdot (1.0 - 2.0 \cdot lift_S) \ge 0.40 \cdot b > 0$ siempre, eliminando la parálisis matemática cuando $b \le 0.135$ o $lift_S \ge b$, a la vez que preserva coincidencia exacta con legacy en base $0.50$.
+     - Se integró la misma escala proporcional continua en la rama Swing (`crates/god-engine-core/src/lib.rs:6300-6304, 6375, 6398`).
+- **Verificación Contractual Integral**:
+  - `cargo test -p god-engine-core --test puertas_del_continuo_symmetry_contract`: **4/4 tests PASSED (100%)**.
+  - `cargo test -p god-engine-core --lib calibration::tests_xliv_olvido::ola75_k06_k23`: **1/1 test PASSED (100%)**.
+  - `cargo test -p god-engine-core`: **100% verde (todos los contratos de integración pasando)**.
+  - `cargo test -p metacortex-engine`: **100% verde (81/81 tests pasando)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## 2026-10-10 — AGY: OLA Ω74 COMPLETADA — NAVIER-STOKES EWMA (C-02), REBALANCEO DE PESOS DEL CONSEJO (C-W) Y CONCORDANCIA DIRECCIONAL EN DELIBERACIÓN (FICHA #712)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#712`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).

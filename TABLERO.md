@@ -82,12 +82,13 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω74 cerrada / Ficha #712)
+## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω75 cerrada / Ficha #713)
 
-- **Haciendo ahora**: Ola Ω74 (#712) — Resolución de Navier-Stokes EWMA (C-02), Rebalanceo de Pesos del Consejo (C-W) y Concordancia de Lado en Deliberación:
-  - C-02: `NavierStokesReynoldsEngine` evalúa `laminar_share`, `regime()`, `is_laminar()` e `is_turbulent()` sobre la EWMA continua `ewma_reynolds` en vez del `raw_reynolds` de un solo tick, erradicando micro-shocks espurios de confianza y slippage. Exportación de `ewma_reynolds` hacia `OmniscientRegistry` en `god-engine-core`.
-  - C-W: Rebalanceo semántico de pesos: `SeniorMicroestructura` ahora porta `SEAT_WEIGHT_FLOW` (1.2) por ser el observador de flujo L2 real; `SeniorCausal` fijado en 1.0; `SeniorRiesgo` (modulador de convicción) fijado en 1.0 (eliminando la sobre-amplificación de 1.5).
-  - Concordancia de Lado: En `deliberar()`, la aprobación exige que la dirección que alcanza consenso coincida con la dirección propuesta de la orden candidata (`intended_direction >= 0.0` para largos, `<= 0.0` para cortos), eliminando falsas aprobaciones cruzadas.
+- **Haciendo ahora**: Ola Ω75 (#713) — Resolución de Simetría Direccional en Puertas del Continuo (K-06) y Gate ML B3.18 (K-23):
+  - K-06: `puertas_del_continuo` normaliza la divergencia direccional sobre los semi-intervalos continuos [0, base] y [base, 1] mediante `normalized_directional_divergence(p, base)`. Erradica la inmunidad artificial de largos (ahora vetan en d < −0.80 cuando p < 0.20·b) y la asfixia prematura de cortos (veto en p > b + 0.80(1−b)), unificando el techo de boost a 1.50× simétrico en ambos lados.
+  - K-23: El Gate ML B3.18 evalúa el lift requerido proporcionalmente al espacio disponible (`edge_direccional >= 2.0 * lift_eff`). Para órdenes cortas, el umbral es b·(1 − 2·lift_S) >= 0.40·b > 0 siempre, erradicando la parálisis matemática de posiciones cortas cuando b <= 0.135 o lift_S >= b, manteniendo coincidencia exacta con legacy en base = 0.50.
+  - Rama Swing: Escala proporcional continua integrada en `effective_ml_long/short` y `raw_conf` en `god-engine-core::lib.rs:6300-6304, 6375, 6398`.
+  - Certificación: 4/4 tests en `puertas_del_continuo_symmetry_contract.rs`, 100% tests de `god-engine-core` y `metacortex-engine` (81/81 OK).
 - **Commiteado reciente**:
   - Ola Ω68 (#704, `194089b8`): Absorción analítica de Fokker-Planck en SDE VECM y first-passage time.
   - Plan Maestro Cuántico Integral (#705, `549fc536`): Documento canónico, 10 roles Senior, barrido R0-R9.
@@ -97,7 +98,8 @@
   - Ola Ω71 (#709, `7387b935`): Certificación y resolución de deuda en 5 vetos del `veto_registry.rs` de `risk-engine`.
   - Ola Ω72 (#710, `759f44ec`): Zero-alloc hot-path en `signal-engine::orchestrator` y `risk-engine::selection_stats`.
   - Ola Ω73 (#711, `ab0967e8`): Simetría espejo anti-simétrica en Prospect Theory (C-10 / C-10b) y calibración browniana R-15.
-  - Ola Ω74 (#712): Navier-Stokes EWMA (C-02), pesos del consejo (C-W) y concordancia de lado en deliberar.
+  - Ola Ω74 (#712, `95412dd7`): Navier-Stokes EWMA (C-02), pesos del consejo (C-W) y concordancia de lado en deliberar.
+  - Ola Ω75 (#713): Simetría direccional en puertas del continuo (K-06) y gate ML B3.18 (K-23).
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados
   de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`).
   Toda la suite de crates pasando al 100% (153/153 en risk-engine, 120/120 en

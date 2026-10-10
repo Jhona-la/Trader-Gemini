@@ -308,6 +308,33 @@ pub fn ml_gate_thresholds(long_threshold: f64, short_threshold: f64) -> (f64, f6
     (long.clamp(0.5, 1.0), short.clamp(0.0, 0.5))
 }
 
+/// K-06 / K-23 — DIVERGENCIA DIRECCIONAL NORMALIZADA SIMÉTRICA (Ola Ω75).
+///
+/// Mapea la probabilidad del modelo `p \in [0, 1]` relativa a la tasa base `base \in (0, 1)`
+/// al intervalo simétrico [-1.0, 1.0]:
+///   - Si p == base: devuelve 0.0 (neutralidad exacta).
+///   - Si p > base: devuelve +(p - base) / (1.0 - base) \in [0.0, 1.0] (soporte alcista).
+///   - Si p < base: devuelve -(base - p) / base = (p - base) / base \in [-1.0, 0.0] (soporte bajista si se niega).
+///
+/// Propiedades matemáticas demostradas:
+/// 1. Coincidencia legacy en base 0.5: Si base == 0.5, (p - 0.5) / 0.5 == (p - 0.5) * 2.0.
+/// 2. Simetría de rango: Tanto el soporte alcista (p = 1.0) como el bajista (p = 0.0) alcanzan
+///    la magnitud máxima unitaria (+1.0 y -1.0 respectivamente) para CUALQUIER base honesta.
+/// 3. Resuelve K-06: Permite vetar órdenes Long con d < -0.80 cuando p < 0.20 * base, e
+///    impide vetos prematuros a Short, equiparando los techos de boost a 1.50x en ambos lados.
+/// 4. Resuelve K-23: Elimina la parálisis de cortos cuando base <= lift_short, garantizando
+///    que el umbral bajista escale proporcionalmente al espacio inferior [0, base].
+#[inline(always)]
+pub fn normalized_directional_divergence(p: f64, base: f64) -> f64 {
+    let p_clamped = if p.is_finite() { p.clamp(0.0, 1.0) } else { 0.5 };
+    let base_clamped = if base.is_finite() { base.clamp(0.01, 0.99) } else { 0.5 };
+    if p_clamped >= base_clamped {
+        (p_clamped - base_clamped) / (1.0 - base_clamped)
+    } else {
+        (p_clamped - base_clamped) / base_clamped
+    }
+}
+
 
 /// D-749 — EL VETO DEL MURO COMPARABA UNA RAZÓN CONTRA UNA FRACCIÓN.
 ///
@@ -652,5 +679,45 @@ mod tests_xliv_olvido {
         let t = 5 * SEMIVIDA_EVIDENCIA_MS as u64;
         c.update_at(0.80, false, t);
         assert_eq!(c.calibrate_at(0.80, t), c.calibrate(0.80));
+    }
+
+    #[test]
+    fn ola75_k06_k23_divergencia_direccional_normalizada_simetrica() {
+        // 1. En base 0.50 coincide EXACTAMENTE con la formulación legacy (p - 0.5) * 2.0
+        for &p in &[0.0, 0.2, 0.35, 0.5, 0.65, 0.8, 1.0] {
+            let legacy = (p - 0.5) * 2.0;
+            let div = normalized_directional_divergence(p, 0.5);
+            assert!((div - legacy).abs() < 1e-12, "p={p}: legacy={legacy}, div={div}");
+        }
+
+        // 2. Neutralidad exacta: en p == base, divergencia es 0.0 para cualquier base
+        for &b in &[0.10, 0.25, 0.33, 0.50, 0.75, 0.90] {
+            let div = normalized_directional_divergence(b, b);
+            assert_eq!(div, 0.0, "base={b}");
+        }
+
+        // 3. Simetría de extremos: p = 1.0 -> +1.0 y p = 0.0 -> -1.0 para cualquier base
+        for &b in &[0.10, 0.25, 0.33, 0.50, 0.75, 0.90] {
+            let max_bull = normalized_directional_divergence(1.0, b);
+            let max_bear = normalized_directional_divergence(0.0, b);
+            assert!((max_bull - 1.0).abs() < 1e-12, "base={b} max_bull={max_bull}");
+            assert!((max_bear - (-1.0)).abs() < 1e-12, "base={b} max_bear={max_bear}");
+        }
+
+        // 4. Monotonía estricta: para p1 < p2, div(p1, b) <= div(p2, b)
+        let b = 0.25;
+        let mut prev = -1.0;
+        for i in 0..=100 {
+            let p = i as f64 / 100.0;
+            let div = normalized_directional_divergence(p, b);
+            assert!(div >= prev - 1e-15, "fallo de monotonía en p={p}");
+            assert!(div >= -1.0 && div <= 1.0, "fuera de rango: {div}");
+            prev = div;
+        }
+
+        // 5. Robustez numérica ante NaN / infinitos
+        let nan_div = normalized_directional_divergence(f64::NAN, 0.25);
+        assert!((nan_div - 0.25 / 0.75).abs() < 1e-12); // p cae a 0.50 -> (0.50 - 0.25) / 0.75 = 1/3
+        assert_eq!(normalized_directional_divergence(0.5, f64::NAN), 0.0); // base cae a 0.50 -> neutral
     }
 }

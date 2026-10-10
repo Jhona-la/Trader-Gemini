@@ -1318,5 +1318,31 @@ contrato ejecutable).
   - En `crates/metacortex-engine/src/consejo_seniors.rs:1320-1335`, se reforzó la compuerta de aprobación para que una orden candidata solo sea aprobada si el lado que alcanza consenso coincide con la dirección propuesta: `payload.intended_direction >= 0.0` para largos y `payload.intended_direction <= 0.0` para cortos. Esto previene que una deliberación fuertemente bajista emita `approved: true` ante una solicitud de largo (y viceversa).
   - Certificación Contractual: 81/81 tests de `metacortex-engine` (incluyendo diagnóstico `qs_r1_c22_direccion_propia_diagnostics`) aprobados al 100%.
 
+## 34. Resolución de Simetría Direccional en Puertas del Continuo (K-06) y Gate ML B3.18 (K-23) (Ola Ω75, Ficha #713)
+
+- **Causa Raíz de K-06 (Asimetría Estructural de `puertas_del_continuo`)**:
+  - En `crates/god-engine-core/src/lib.rs:1563-1579`, la divergencia direccional se calculaba como:
+    `SignalType::Long => (ml_prob - ml_base) * 2.0`
+    `SignalType::Short => (ml_base - ml_prob) * 2.0`
+  - El factor multiplicador `2.0` fue heredado del supuesto legacy de que la base era `b = 0.50` ($1 / (1 - b) = 2.0$). Cuando el sistema evolucionó al etiquetado honesto donde $b = ml\_model\_base \approx 0.25$, el factor `2.0` rompió completamente la escala:
+    * Para Long: $d \in [-0.50, +1.50]$. La cota inferior $-0.50$ hacía **matemáticamente imposible** alcanzar el umbral de veto $d < -0.80$, mientras que el impulso se inflaba hasta $\times 1.75$.
+    * Para Short: $d \in [-1.50, +0.50]$. El veto se disparaba prematuramente tan pronto $p > 0.65$ ($d < -0.80$), mientras que el impulso quedaba asfixiado a $\times 1.25$.
+  - **Solución Implementada**: Se introdujo `normalized_directional_divergence(p, base)` en `crates/god-engine-core/src/calibration.rs:311-335`, normalizando sobre los semi-intervalos continuos $[0, \text{base}]$ y $[\text{base}, 1]$:
+    $$\text{div}(p, b) = \begin{cases} \frac{p - b}{1.0 - b} & \text{si } p \ge b \\ \frac{p - b}{b} & \text{si } p < b \end{cases}$$
+    Para ambos lados, $d \in [-1.0, 1.0]$. Ambos lados vetan en $d < -0.80$ (Long veta en $p < 0.20 \cdot b$, Short veta en $p > b + 0.80(1-b)$) y ambos lados tienen el mismo techo simétrico de impulso ($\times 1.50$). Para $b = 0.50$, coincide exactamente con la fórmula legacy.
+
+- **Causa Raíz de K-23 (Parálisis Matemática de Cortos en Gate ML B3.18)**:
+  - En `crates/god-engine-core/src/lib.rs:7663-7699`, el gate ML exigía para órdenes cortas $ml\_now \le ml\_model\_base - lift\_eff\_short$.
+  - Con un genoma activo donde $lift\_S \approx 0.08$ y $b \le 0.135$ (o en extremos donde $lift_S \ge b$), $b - lift_S \le 0.0$. Dado que las probabilidades son estrictamente no negativas, las órdenes Short quedaban **matemáticamente paralizadas**. Además, sustraer un lift absoluto $0.08$ de una base $0.25$ consumía el $32\%$ del espacio inferior, mientras que para largos sumaba solo el $10.6\%$ del espacio superior.
+  - **Solución Implementada**: El gate evalúa el lift requerido como fracción del espacio disponible mediante `normalized_directional_divergence(ml_now, ml_model_base)`. La condición unificada es:
+    $$\text{edge\_direccional} \ge 2.0 \cdot lift_{\text{eff}}$$
+    Para cortos, esto se traduce analíticamente en $ml\_now \le b \cdot (1.0 - 2.0 \cdot lift_S)$. Como $lift_S \le 0.30$, el umbral es siempre $\ge 0.40 \cdot b > 0$, erradicando la parálisis de cortos y garantizando simetría estadística relativa exacta en ambos lados.
+  - Se extendió la misma escala proporcional continua a la rama de baja frecuencia Swing (`crates/god-engine-core/src/lib.rs:6300-6304, 6375, 6398`).
+
+- **Certificación Contractual**:
+  - Contrato de integración formal `crates/god-engine-core/tests/puertas_del_continuo_symmetry_contract.rs` (4/4 tests OK).
+  - Suite unitaria `calibration::tests::ola75_k06_k23_divergencia_direccional_normalizada_simetrica` OK.
+  - Suite completa de `god-engine-core` (100% de tests OK) y `metacortex-engine` (81/81 OK).
+
 
 
