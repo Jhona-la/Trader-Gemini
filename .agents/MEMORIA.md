@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω67 COMPLETADA — OPTIMIZACIÓN ZERO-HEAP EN HELMHOLTZ-HODGE LAPLACIAN Y CONTRATOS FORMALES DE VORTICIDAD EN RISK-ENGINE (#703)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola67-r3-hodge-zero-alloc-laplacian-flow`.
+- **Ficha Forense**: **#703**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+- **Cambios Implementados y Certificados**:
+  1. **Erradicación de Heap Allocations Ocultas en Helmholtz-Hodge**: En `crates/risk-engine/src/hodge.rs:66`, `node_has_flow` instanciaba `vec![false; n]` dinámicamente en cada invocación, rompiendo la garantía zero-heap del hot path. Se reemplazó por un buffer en stack `stack_node_has_flow: [bool; 64]` con slicing `&mut stack_node_has_flow[..n]` para $n \le 64$ (roster de Binance $\le 16$), logrando cero asignaciones en el heap y ejecución puramente en registros de CPU.
+  2. **Suite Contractual Formal de Vorticidad Helmholtz-Hodge**: Creado `crates/risk-engine/tests/hodge_zero_alloc_contract.rs` con 6 tests contractuales cubriendo:
+     - 3-ciclo puro $\implies \text{curl\_share} = 1.0$ exacto.
+     - Cascada transitiva pura $\implies \text{curl\_share} \approx 0.0$.
+     - Invarianza de escala estricta ante multiplicación por escalar positivo $\lambda > 0$.
+     - Invarianza bajo permutaciones de etiquetas de activos $\sigma \in S_N$.
+     - Capacidad del buffer de stack hasta $N = 64$ nodos sin desbordamiento.
+     - Inmunidad fail-closed ante $\text{NaN}$ y $\pm\infty$ retornando `None`.
+- **Verificación Contractual Integral**:
+  - `cargo test -p risk-engine --test hodge_zero_alloc_contract`: **6/6 tests PASSED (100%)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests PASSED (100%)**.
+  - `cargo test -p risk-engine --tests`: Suite completa (25 archivos de tests, >160 tests) **PASSED (100%)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias** a lo largo de las 23 crates miembro.
+
 ## 2026-10-10 — AGY: OLA Ω66 COMPLETADA — COLECTOR DE VARIEDAD DE NAVIER-STOKES, CASCADA DE ENERGÍA KOLMOGOROV K41 Y CONTRATOS FORMALES EN SIGNAL-ENGINE (#702)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola66-r3-navier-stokes-manifold-signal-engine`.

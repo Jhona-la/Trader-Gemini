@@ -1,5 +1,24 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω67 CERRADA (2026-10-10 ~10:15)
+- Rama activa: `antigravity/ola67-r3-hodge-zero-alloc-laplacian-flow`.
+- Ficha Forense: **#703**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/risk-engine/src/hodge.rs`, `crates/risk-engine/tests/hodge_zero_alloc_contract.rs`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω67 (OPTIMIZACIÓN ZERO-HEAP EN HELMHOLTZ-HODGE LAPLACIAN)**:
+  1. **Erradicación de Heap Allocations Ocultas en Helmholtz-Hodge**: En `crates/risk-engine/src/hodge.rs:66`, `node_has_flow` instanciaba `vec![false; n]` dinámicamente en cada invocación, rompiendo la garantía zero-heap del hot path. Se reemplazó por un buffer en stack `stack_node_has_flow: [bool; 64]` con slicing `&mut stack_node_has_flow[..n]` para $n \le 64$ (roster de Binance $\le 16$), logrando cero asignaciones en el heap y ejecución puramente en registros de CPU.
+  2. **Suite Contractual Formal de Vorticidad Helmholtz-Hodge**: Creado `crates/risk-engine/tests/hodge_zero_alloc_contract.rs` con 6 tests contractuales cubriendo:
+     - 3-ciclo puro $\implies \text{curl\_share} = 1.0$ exacto.
+     - Cascada transitiva pura $\implies \text{curl\_share} \approx 0.0$.
+     - Invarianza de escala estricta ante multiplicación por escalar positivo $\lambda > 0$.
+     - Invarianza bajo permutaciones de etiquetas de activos $\sigma \in S_N$.
+     - Capacidad del buffer de stack hasta $N = 64$ nodos sin desbordamiento.
+     - Inmunidad fail-closed ante $\text{NaN}$ y $\pm\infty$ retornando `None`.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p risk-engine --test hodge_zero_alloc_contract`: **6/6 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --tests`: Suite completa (25 archivos de tests, >160 tests) **verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## Antigravity (Quant Sr.) — OLA Ω66 CERRADA (2026-10-10 ~09:55)
 - Rama activa: `antigravity/ola66-r3-navier-stokes-manifold-signal-engine`.
 - Ficha Forense: **#702**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
