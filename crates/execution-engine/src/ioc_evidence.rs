@@ -103,6 +103,23 @@ pub enum DestinoReserva {
     Conservar,
 }
 
+/// CL-46b: error del remanente taker del maker-chase tal como lo ve el host.
+/// El remanente es una orden HIJA (`mcT_…`) y el host sólo sabe consultar la
+/// orden padre: con el error crudo, un `AMBIGUOUS` del remanente llevaba al
+/// host a consultar la GTX padre ya cancelada y a revertir (padre sin
+/// ejecución) o a confirmar sólo lo del padre, aunque el remanente pudiera
+/// haber llenado. Se marca `MAKER_CHASE_UNVERIFIED` (la reserva se conserva
+/// y la reconciliación la ajusta) si el padre ya ejecutó algo o si el error
+/// del remanente es ambiguo. Sólo un rechazo firme con el padre sin ejecutar
+/// deja el error tal cual: no se llenó nada y la reserva se revierte.
+pub fn error_del_remanente(ejecutado_padre: f64, remanente_id: &str, error: String) -> String {
+    if ejecutado_padre > 0.0 || error.starts_with("AMBIGUOUS") {
+        format!("MAKER_CHASE_UNVERIFIED (REMNANT {remanente_id}, padre ejecutó {ejecutado_padre}): {error}")
+    } else {
+        error
+    }
+}
+
 /// CL-46: destino de la reserva tras consultar por REST una entrada cuyo
 /// envío salió `AMBIGUOUS`. Antes el host sólo registraba la consulta: un
 /// `Rejected` concluyente (terminal sin ejecución, identidad verificada)

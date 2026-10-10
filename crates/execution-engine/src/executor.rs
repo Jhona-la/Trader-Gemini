@@ -2603,8 +2603,10 @@ impl ExecutionProvider for OrderExecutor {
         let micros_str = itoa_buf.format(micros);
         id_buf[4..4 + micros_str.len()].copy_from_slice(micros_str.as_bytes());
         let remnant_id = std::str::from_utf8(&id_buf[..4 + micros_str.len()]).unwrap_or("mcT_0");
+        // CL-46b: el host no resuelve esta orden hija consultando la padre.
         self.execute_raw_qty_with_client_id(symbol, is_long, remaining, step_size, remnant_id)
             .await
+            .map_err(|e| crate::ioc_evidence::error_del_remanente(executed, remnant_id, e))
     }
 
     /// FASE 8: Immediate-Or-Cancel. Intenta llenar limit; si no puede, se cancela automáticamente por Binance.

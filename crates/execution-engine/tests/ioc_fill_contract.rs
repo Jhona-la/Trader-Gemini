@@ -3,7 +3,7 @@
 //! sintéticas; sin red.
 use execution_engine::ioc_evidence::{
     cantidad_ejecutada_terminal, clasificar_respuesta_ioc, destino_tras_consulta,
-    error_cierra_la_intencion, resultado_para_el_host, DestinoReserva, ResultadoIoc, IOC_UNFILLED,
+    error_cierra_la_intencion, error_del_remanente, resultado_para_el_host, DestinoReserva, ResultadoIoc, IOC_UNFILLED,
 };
 use execution_engine::{OrderRegistry, OrderResolution, TrackedOrder};
 
@@ -229,4 +229,32 @@ fn cl46_destino_de_la_reserva_tras_la_consulta() {
     for (error, consulta, o, esperado) in casos {
         assert_eq!(destino_tras_consulta(error, consulta, o), esperado, "{error} {consulta:?}");
     }
+}
+
+/// CL-46b: el error del remanente taker del maker-chase llega al host como
+/// orden hija sin resolver si el padre ejecutó algo o si el remanente es
+/// ambiguo. Antes llegaba crudo: un `AMBIGUOUS` del remanente hacía que el
+/// host consultara la GTX padre (cancelada) y revirtiera la reserva o la
+/// confirmara sólo con lo del padre, aunque el remanente pudiera haber llenado.
+#[test]
+fn cl46b_el_remanente_del_maker_no_se_resuelve_con_la_padre() {
+    let ambiguo = "AMBIGUOUS: Network Error: tcp reset".to_string();
+    let firme = "Binance API Error: {\"code\":-2019,\"msg\":\"Margin is insufficient.\"}".to_string();
+    let casos = [
+        (0.0, ambiguo.clone(), OrderResolution::Rejected, DestinoReserva::Conservar),
+        (0.4, ambiguo, OrderResolution::Accepted, DestinoReserva::Conservar),
+        (0.4, firme.clone(), OrderResolution::Rejected, DestinoReserva::Conservar),
+    ];
+    for (padre, error, consulta, esperado) in casos {
+        let visto = error_del_remanente(padre, "mcT_1", error);
+        assert!(visto.starts_with("MAKER_CHASE_UNVERIFIED"), "{visto}");
+        assert_eq!(destino_tras_consulta(&visto, consulta, None), esperado, "{visto}");
+    }
+    // Sin nada ejecutado y con un rechazo firme no se llenó nada: tal cual.
+    assert_eq!(error_del_remanente(0.0, "mcT_1", firme.clone()), firme);
+    // Y el maker-chase lo aplica a su remanente.
+    let src: String = include_str!("../src/executor.rs").split_whitespace().collect();
+    assert!(src.contains(
+        ".map_err(|e|crate::ioc_evidence::error_del_remanente(executed,remnant_id,e))"
+    ));
 }

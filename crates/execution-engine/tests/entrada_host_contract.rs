@@ -66,3 +66,15 @@ fn cl45b_bracket_y_diario_usan_lo_llenado() {
     assert!(!b.contains("letqty_intent=final_qty.abs();"));
     assert!(b.contains("anotar_diario_de_posicion(&arena_clone,&reservation,&parsed_sym_str,final_is_long,cantidad_llenada,"));
 }
+
+/// CL-46b: el brazo AMBIGUOUS que confirma también anota el diario B2.7.
+/// Antes sólo lo hacía el brazo Ok: tras un reinicio, la posición confirmada
+/// por la consulta se re-protegía con la τ de una entrada anterior del mismo
+/// símbolo y lado (o con la τ de respaldo).
+#[test]
+fn cl46b_la_confirmacion_tras_consulta_anota_el_diario() {
+    let h = host();
+    let b = brazo(&h, "DestinoReserva::Confirmar{ejecutada}=>{", "DestinoReserva::Conservar=>{");
+    assert!(b.contains("confirmar_llenado(&arena_clone,Some(ejecutada))"));
+    assert!(b.contains("anotar_diario_de_posicion(&arena_clone,&reservation,&parsed_sym_str,final_is_long,ejecutada.min(final_qty.abs()),"));
+}

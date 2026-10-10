@@ -4494,6 +4494,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             );
                                             if let Err(reason) = reservation.confirmar_llenado(&arena_clone, Some(ejecutada)) {
                                                 telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
+                                            } else {
+                                                // CL-46b: el diario B2.7 también aquí; sin él,
+                                                // un reinicio re-protegía la posición con la τ
+                                                // de una entrada anterior del mismo lado.
+                                                anotar_diario_de_posicion(
+                                                    &arena_clone,
+                                                    &reservation,
+                                                    &parsed_sym_str,
+                                                    final_is_long,
+                                                    ejecutada.min(final_qty.abs()),
+                                                    _entry_price,
+                                                );
                                             }
                                             quantum_arena::protection_health::mark_dirty();
                                         }
