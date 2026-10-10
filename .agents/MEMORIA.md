@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — AGY: OLA Ω56 EN CURSO — RONDA 8 · GRAN AUDITORÍA SISTÉMICA Y BARRIDO INTEGRAL DESDE LA BASE (FASES R0 A R8)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola56-ronda8-auditoria-sistemica`.
+- **Ficha Forense Reservada**: **#691** (preserva #690 para Qoder R7-R6 en `.r7r6`).
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+- **Foco Técnico y Axiomático de la Ola**:
+  1. **R7-R4-A-2 [HIGH]**: Corrección de ámbito en `spoof_score` y `whale_burst_z`. El host publica `{SYM}_*` y el core busca `c{id}:*`. Se unifica la escritura publicando bidireccionalmente con `set_for_coin` y `set_scoped`, garantizando que `SeniorEnteMercado` en Metacortex reciba la lectura viva real.
+  2. **R7-R4-C-1 [HIGH]**: Corrección de ranuras en `close_was_real`. `god_engine.rs:3523-3533` leía exclusivamente la ranura fija 2 (`position`), descartando cierres reales en ranuras 0 (`scalp`) y 1 (`swing`) como si fueran papel. Se unifica la lectura con el evento directo de cierre o ranura autoritativa.
+  3. **C-02 [MED]**: Reactivación del feed spot-futuro para StatArb. Conexión de alimentación para `update_spot_data` y activación viva del SDE continuo de Ornstein-Uhlenbeck / Fokker-Planck con $\beta$ RLS adaptativa.
+- **Sincronización Concurrente**: Qoder en `.r7r6` con Ficha #690 (R7-R6); Sol en `booktick_replay.rs` / `metrics.rs`. Cero colisiones de ramas ni worktrees.
+
 ## 2026-10-09 — AGY: OLA Ω55 COMPLETADA — FASE R7-R5 DINERO Y EJECUCIÓN (APALANCAMIENTO CANÓNICO MICRO 5.0X, ELIMINACIÓN DE DERIVA DE MARGEN EN RECONCILIACIÓN Y BLINDAJE DE NOCIONAL MÍNIMO)
 
 - **Ejecutor**: Antigravity (AGY), rama atómica `antigravity/quant-sr-ola55-fase-r5-dinero-ejecucion`.

@@ -7699,3 +7699,30 @@ esta fase autoriza push de código.
   fusionadas.
 - ** Protocolo**: docs-only, T-1 cero en esta fase. Cierro con §R6 en BARRIDO +
   FORENSIC #690 + esta misma bitácora.
+
+## 2026-10-09 — Antigravity (Quant Sr.): ACUSE FORMAL Y RESERVA DE OLA Ω56 (RONDA 8 · GRAN AUDITORÍA SISTÉMICA Y BARRIDO INTEGRAL DESDE LA BASE)
+
+- **Agente**: Antigravity (Quant Sr. Lead). **Base**: `75f1a89c` (= `origin/main` actualizado y verificado).
+- **Rama activa**: `antigravity/ola56-ronda8-auditoria-sistemica`.
+- **Ficha Forense reservada**: **#691** (deja intacta la reserva #690 de Qoder en `.r7r6` y consolida #689 de AGY para R5 ya en main).
+- **Estado de Olas Previas**:
+  - Ola Ω55 (`75f1a89c`, Ficha #689) fue integrada exitosamente en `main` y pusheada a `origin/main`. Rama `antigravity/quant-sr-ola55-fase-r5-dinero-ejecucion` borrada en local tras fast-forward/rebase limpio.
+- **Acuse y Coordinación Concurrente**:
+  - Reconozco a **Qoder** ejecutando la Fase R7-R6 (Aprender y medir) en worktree `.r7r6`, rama `qoder/r7r6-aprender-medir`, con Ficha #690.
+  - Reconozco a **Sol** con reserva en `booktick_replay.rs` y `metrics.rs`. No toco esos módulos.
+  - No toco worktrees ajenos (`.r7r4`, `.r7r6`, `.sol-replay*`, `.ola73`).
+- **ÁMBITO Y FOCO DE OLA Ω56 (Ficha #691)**:
+  1. **Auditoría Sistémica de Grafo Vivo y Erradicación de Fallos de Ámbito**:
+     - `R7-R4-A-2 [HIGH]`: Resolver desacople de ámbito en `spoof_score` y `whale_burst_z` (escritor publica `{SYM}_*` y lector busca `c{coin_id}:*`, dejando al Consejo de Seniors en 0.0 permanente).
+     - `R7-R4-C-1 [HIGH]`: Resolver lectura de ranura fija en `close_was_real` (`god_engine.rs:3520-3536` lee sólo slot 2 `position`, ignorando slot 0 `scalp` y slot 1 `swing`, contaminando contabilidad real↔papel).
+  2. **Reactivación del Feed Vivo Spot-Futuro (C-02 [MED])**:
+     - Conectar productor vivo para `GlobalArena::update_spot_data` y alimentar `statarb_ou_engines` para que el SDE continuo de Ornstein-Uhlenbeck / Fokker-Planck con $\beta$ RLS viva opere en producción sobre la base real y no dependa de fallbacks inertes.
+  3. **Blindaje de Invariantes de Micro-Capital ($13.00 USD, 100% cada 3 días)**:
+     - Nocional mínimo $5.10 USD a $5.0\times \implies $1.02 USD por posición (7.85% cuenta).
+     - Concurrencia máxima: 2 posiciones ($2.04 USD, 15.69%), margen libre $\ge \$10.96$ USD, suelo de supervivencia $\$3.00$ USD.
+     - Stop Loss difusivo 55 bps ($0.02805 USD, 0.215% cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps).
+- **Protocolo de verificación**:
+  - Compilación limpia `cargo check --workspace --all-targets`.
+  - Tests unitarios y de integración verdes en los crates afectados (`execution-engine`, `god-engine-core`, `quantum-arena`, `strategy-core`).
+  - Cero allocations en hot path (< 25 ns).
+

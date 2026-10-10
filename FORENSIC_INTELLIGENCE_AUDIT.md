@@ -16001,3 +16001,22 @@ hubo que retractar 11 claves «sin escritor» que sí lo tenían.
 - `cargo test -p execution-engine`: 81 tests unitarios + 36 integration tests aprobados con 0 fallos, incluyendo el nuevo test `reconciliation_leverage_canonical_micro_leverage`.
 - `cargo test -p risk-engine`: Todas las suites aprobadas con 0 fallos.
 - `cargo check --workspace --all-targets`: 0 errores, 0 warnings en los 23 crates del workspace.
+
+---
+
+## #691 — Ola Ω56: RONDA 8 · GRAN AUDITORÍA SISTÉMICA Y BARRIDO INTEGRAL DESDE LA BASE (FASES R0 A R8) (2026-10-09)
+
+### 1. Resumen Ejecutivo y Metas Financieras
+- **Meta Financiera Sagrada**: Crecimiento exponencial e interés compuesto de $100\%$ cada 3 días ($T_d = 72\text{ h}$, $g = 25.992\%/\text{día}$, $32\times \to \$416\text{ USD}$ en 15 días, $1\,024\times \to \$13\,312\text{ USD}$ en 30 días) sobre micro-capital inicial de $\$13.00\text{ USD}$ en Binance Futures USD-M.
+- **Invariantes Sagrados de Micro-Capital Preservados**:
+  - Piso Nocional Binance Futures: $\$5.10\text{ USD}$ a $5.0\times$ apalancamiento $\implies$ Margen por posición = $\$1.02\text{ USD}$ ($7.85\%$).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $\$2.04\text{ USD}$ ($15.69\%$), margen libre $\ge \$10.96\text{ USD}$ ($84.31\%$), suelo de supervivencia absoluto $\$3.00\text{ USD}$ (Drawdown Max $76.92\%$).
+  - Stop Loss difusivo acotado a $55\text{ bps}$ ($\$0.02805\text{ USD}$, $0.215\%$ de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75\text{ bps}$, $\$0.06311\text{ USD}$, $+0.485\%$).
+- **Paradigmas y Diagnósticos del Grafo Vivo**:
+  1. **R7-R4-A-2 [HIGH] (Desacople de Ámbito en Spoofing y Ballenas)**:
+     - El host escribe con `registry.set_scoped(&SYM, "spoof_score" | "whale_burst_z", ...)` generando `{SYM}_spoof_score`, mientras el core lee con `get_for_coin_or(coin_id, ...)` que busca estrictamente `c{id}:*` y global desnudo, sin cascada a `{SYM}_`. Consecuencia: el Consejo de Seniors lee permanentemente `0.0` (ceguera total ante spoofing y agresores institucionales).
+  2. **R7-R4-C-1 [HIGH] (Ranura Fija en Confirmación de Cierre Real)**:
+     - `god_engine.rs:3523-3533` lee `c.positions.position.last_close_confirmed` (ranura fija 2), mientras el core cierra dinámicamente en ranuras 0 (`scalp`), 1 (`swing`) o 2 (`position`). Consecuencia: cierres reales en ranuras 0 y 1 son descartados como papel (`PAPER CLOSE`), invalidando el cálculo de PnL, Win Rate y dimensionamiento Kelly; y cierres de papel en ranuras 0 y 1 pueden heredar flags viejos de la ranura 2, contabilizándose falsamente como reales.
+  3. **C-02 [MED] (Desconexión de Feed Spot-Futuro para StatArb OU)**:
+     - En producción, `GlobalArena::update_spot_data` carece de invocador vivo. `coin.spot_bid` y `spot_ask` permanecen en 0.0, dejando el SDE continuo de Ornstein-Uhlenbeck / Fokker-Planck con $\beta$ RLS adaptativa completamente inerte en tiempo real.
+
