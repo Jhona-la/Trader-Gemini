@@ -88,6 +88,8 @@ impl HelmholtzHodgeFlowEngine {
 
         let mut div = [0.0_f64; MAX_HODGE_ASSETS];
         let mut total_energy = 0.0_f64;
+        let mut node_has_flow = [false; MAX_HODGE_ASSETS];
+        let mut non_isolated_nodes = 0usize;
 
         // Cómputo de la parte antisimétrica y divergencias en una sola pasada triangular
         for i in 0..n {
@@ -99,30 +101,46 @@ impl HelmholtzHodgeFlowEngine {
                 }
                 // Proyección antisimétrica pura F_{ij} = (a - b) / 2
                 let fij = 0.5 * (a - b);
-                let fij_sq = fij * fij;
-                total_energy += fij_sq;
+                if fij.abs() > 1e-15 {
+                    let fij_sq = fij * fij;
+                    total_energy += fij_sq;
 
-                div[i] += fij;
-                div[j] -= fij;
+                    div[i] += fij;
+                    div[j] -= fij;
+                    node_has_flow[i] = true;
+                    node_has_flow[j] = true;
+                }
             }
         }
 
-        if total_energy <= 1e-15 || !total_energy.is_finite() {
-            return None; // Flujo simétrico o nulo: no hay componente dirigida que descomponer
+        for i in 0..n {
+            if node_has_flow[i] {
+                non_isolated_nodes += 1;
+            }
         }
 
-        // En grafo completo K_n, el potencial es phi_i = div_i / n
-        let n_f64 = n as f64;
+        if total_energy <= 1e-15 || !total_energy.is_finite() || non_isolated_nodes < 3 {
+            return None; // Flujo simétrico o nulo, o menos de 3 nodos activos con flujo dirigido
+        }
+
+        // R7-R3-A-1: En el grafo completo inducido K_r por los r nodos no aislados con flujo real,
+        // el potencial es phi_i = div_i / r. Normalizar por n (con padding de nodos mudos)
+        // dividía div_i por 30 en lugar de r, fabricando un suelo artificial de curl_share >= 1 - r/30.
+        let r_f64 = non_isolated_nodes as f64;
         let mut potentials = [0.0_f64; MAX_HODGE_ASSETS];
         let mut sum_div_sq = 0.0_f64;
 
         for i in 0..n {
-            potentials[i] = div[i] / n_f64;
-            sum_div_sq += div[i] * div[i];
+            if node_has_flow[i] {
+                potentials[i] = div[i] / r_f64;
+                sum_div_sq += div[i] * div[i];
+            } else {
+                potentials[i] = 0.0;
+            }
         }
 
-        // Teorema analítico: la energía del gradiente ||∇phi||^2 sobre K_n es (1/n) * sum(div_i^2)
-        let gradient_energy = sum_div_sq / n_f64;
+        // Teorema analítico: la energía del gradiente ||∇phi||^2 sobre K_r es (1/r) * sum_{i in V_r}(div_i^2)
+        let gradient_energy = sum_div_sq / r_f64;
         let curl_energy = (total_energy - gradient_energy).max(0.0);
         let curl_share = (1.0 - gradient_energy / total_energy).clamp(0.0, 1.0);
 
@@ -131,7 +149,7 @@ impl HelmholtzHodgeFlowEngine {
             total_energy,
             gradient_energy,
             curl_energy,
-            num_nodes: n,
+            num_nodes: non_isolated_nodes,
         };
 
         Some((result, potentials))

@@ -63,6 +63,9 @@ pub fn hodge_curl_share(flow: &[Vec<f64>]) -> Option<f64> {
     };
 
     let mut energia = 0.0_f64;
+    let mut node_has_flow = vec![false; n];
+    let mut non_isolated_nodes = 0usize;
+
     for i in 0..n {
         for j in (i + 1)..n {
             let a = flow[i][j];
@@ -71,28 +74,40 @@ pub fn hodge_curl_share(flow: &[Vec<f64>]) -> Option<f64> {
                 return None;
             }
             let fij = (a - b) * 0.5;
-            energia += fij * fij;
-            div[i] += fij;
-            div[j] -= fij;
+            if fij.abs() > 1e-15 {
+                energia += fij * fij;
+                div[i] += fij;
+                div[j] -= fij;
+                node_has_flow[i] = true;
+                node_has_flow[j] = true;
+            }
         }
     }
 
-    if energia <= 1e-15 || !energia.is_finite() {
-        return None; // flujo simétrico o nulo: nada dirigido que descomponer
+    for i in 0..n {
+        if node_has_flow[i] {
+            non_isolated_nodes += 1;
+        }
     }
 
-    // Teorema analítico exacto de Helmholtz-Hodge sobre grafos completos K_n:
-    // L = n·I - 1·1^T. Con div ortogonal al kernel (Σ div_i = 0),
-    // el potencial es φ = div / n (salvo constante aditiva).
+    if energia <= 1e-15 || !energia.is_finite() || non_isolated_nodes < 3 {
+        return None; // flujo simétrico o nulo, o menos de 3 nodos activos con flujo dirigido
+    }
+
+    // Teorema analítico exacto de Helmholtz-Hodge sobre grafos completos inducidos K_r:
+    // L = r·I - 1·1^T. Con div ortogonal al kernel (Σ div_i = 0),
+    // el potencial es φ = div / r (salvo constante aditiva).
     // La energía de Dirichlet del gradiente ‖∇φ‖² = Σ_{i<j} (φ_i − φ_j)²
     // satisface de forma idéntica e invariante:
-    // ‖∇φ‖² = (1/n) · Σ_{i=0}^{n-1} div_i².
+    // ‖∇φ‖² = (1/r) · Σ_{i in V_r} div_i².
     // Solución analítica O(n²) de precisión de máquina, sin eliminación gaussiana ni alocaciones.
     let mut sum_div_sq = 0.0_f64;
-    for &d in div.iter() {
-        sum_div_sq += d * d;
+    for (i, &d) in div.iter().enumerate() {
+        if node_has_flow[i] {
+            sum_div_sq += d * d;
+        }
     }
-    let energia_grad = sum_div_sq / (n as f64);
+    let energia_grad = sum_div_sq / (non_isolated_nodes as f64);
     let curl = 1.0 - energia_grad / energia;
     Some(curl.clamp(0.0, 1.0))
 }

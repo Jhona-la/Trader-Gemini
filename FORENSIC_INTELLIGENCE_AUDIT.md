@@ -15787,3 +15787,26 @@ PARCIAL** (reciprocidad sí, cierre triádico residual → R7-R3-B-2); R6-C4
 - **Pendiente transversal**: el oráculo T-1 vigente es `534e7980` y **no cubre
   Ω47-Ω53** (siete olas tocaron `.rs`) ⇒ R8 debe re-certificar antes de
   cualquier push de código.
+
+---
+
+## #687 — Ola Ω54: ERRADICACIÓN DE DILUCIÓN DE HODGE (R7-R3-A-1), PUBLICACIÓN DE MID_PRICE (R7-R3-C-1), UNIFICACIÓN DE TTL MULTIACTIVO (R7-R3-D-2) Y RETORNOS PUROS EN YANG-MILLS LMS (R7-R3-B-1) (2026-10-09)
+
+### 1. Resumen Ejecutivo y Metas Financieras
+- **Meta Financiera Sagrada**: Crecimiento exponencial e interés compuesto de $100\%$ cada 3 días ($T_d = 72\text{ h}$, $g = 25.992\%/\text{día}$, $32\times \to \$416\text{ USD}$ en 15 días, $1\,024\times \to \$13\,312\text{ USD}$ en 30 días) sobre micro-capital inicial de $\$13.00\text{ USD}$ en Binance Futures USD-M.
+- **Invariantes de Micro-Capital Preservados**:
+  - Piso Nocional: $\$5.10\text{ USD}$ a $5.0\times$ apalancamiento $\implies$ Margen por posición = $\$1.02\text{ USD}$ ($7.85\%$).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $\$2.04\text{ USD}$ ($15.69\%$), margen libre $\ge \$10.96\text{ USD}$ ($84.31\%$), suelo de supervivencia absoluto $\$3.00\text{ USD}$ (Drawdown Max $76.92\%$).
+  - Stop Loss difusivo acotado a $55\text{ bps}$ ($\$0.02805\text{ USD}$, $0.215\%$ de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75\text{ bps}$, $\$0.06311\text{ USD}$, $+0.485\%$).
+- **Paradigmas y Axiomas Resueltos**:
+  1. **R7-R3-A-1 [HIGH]**: Erradicada la dilución de Helmholtz-Hodge por padding de nodos mudos. En un grafo completo inducido $K_r$ por los $r$ nodos activos no aislados con flujo real, el potencial analítico exacto es $\phi_i = \text{div}_i / r$ y la energía de Dirichlet del gradiente es $\|\nabla \phi\|^2 = \frac{1}{r} \sum_{i \in V_r} \text{div}_i^2$. Normalizar por $N=30$ en lugar de $r$ dividía por 30, forzando un suelo artificial espurio $\text{curl\_share} \ge 1 - r/30 \approx 0.90$ para $r=3$ activos aun en presencia de flujos puramente potenciales (sin rotacional). Implementado en `crates/feature-engine/src/hodge_flow.rs` y `crates/risk-engine/src/hodge.rs` con paridad formal bit a bit y verificado mediante `test_r7_r3_a1_curl_invariante_a_padding_de_nodos_mudos`.
+  2. **R7-R3-C-1 [HIGH]**: Publicación de `mid_price` en el OmniscientRegistry en `crates/god-engine-core/src/lib.rs:4343`. `soliton_wave.rs` leía `get_var("mid_price")` para normalizar la velocidad $\text{norm\_vel} = (\text{vel}/\text{mid\_price})\cdot 10$, pero como `mid_price` nunca se publicaba en producción, evaluaba a 0.0, desactivando la guarda universal de escala y midiendo velocidades en dólares/segundo nominales (saturando BTC a 1.0 y DOGE a 0.099). Con `set_reg("mid_price", mid_price)`, la invarianza de escala queda restaurada universalmente.
+  3. **R7-R3-D-2 [MED]**: Unificación de la constante de TTL multiactivo `const GEOMETRIA_MULTIACTIVO_TTL_MS: u64 = 10_000;` en `crates/god-engine-core/src/lib.rs:5108`, erradicando literales mágicos dispersos (`10_000` en L5113 y L5128) y desacoplándolo del TTL de arbitraje estadístico de spot (`STATARB_SPOT_TTL_MS = 30_000`).
+  4. **R7-R3-B-1 [MED]**: Erradicación de niveles absolutos en el cálculo de innovaciones de Yang-Mills (`crates/strategy-core/src/yang_mills_gauge.rs:133-138`). En arranque en frío (`count == 0`) o tras expiración de TTL (`prev_p_i == 0.0`), el retorno asignado ahora es estrictamente `0.0` en lugar de `p_i = \ln(P_i) \sim 11.51$, impidiendo que el paso de gradiente LMS empuje los coeficientes $\beta$ contra sus límites de saturación artificial.
+
+### 2. Certificación de Pruebas Unitarias y Contratos
+- `cargo test -p feature-engine --test hodge_flow_contract`: 6 tests aprobados, incluyendo `test_r7_r3_a1_curl_invariante_a_padding_de_nodos_mudos`.
+- `cargo test -p strategy-core --test yang_mills_gauge_contract`: 5 tests aprobados, incluyendo `yang_mills_contrato_corriente_restauradora_tras_dislocacion` y estabilidad LMS.
+- `cargo test -p god-engine-core --test hodge_yang_mills_consensus_contract`: 3 tests aprobados, incluyendo `test_mid_price_published_and_multiasset_ttl_contract`.
+- `cargo check --workspace --all-targets`: 0 errores, 0 warnings en los 23 crates del workspace.
+

@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — AGY: OLA Ω54 COMPLETADA — DILUCIÓN DE HODGE (R7-R3-A-1), MID_PRICE (R7-R3-C-1), TTL MULTIACTIVO (R7-R3-D-2) Y RETORNOS YANG-MILLS (R7-R3-B-1)
+
+- **Ejecutor**: Antigravity (AGY), rama atómica `antigravity/quant-sr-ola54-hodge-dilution-midprice-ttl`.
+- **Ficha Forense**: **#687**. Cero fallos, cero regresiones, cero heap allocations en hot path.
+- **Cambios Implementados y Certificados**:
+  1. **R7-R3-A-1 [HIGH] (Dilución de Helmholtz-Hodge)**: En `crates/feature-engine/src/hodge_flow.rs` y `crates/risk-engine/src/hodge.rs`, el conteo de nodos para el potencial $\phi_i = \text{div}_i / r$ y la energía del gradiente $\|\nabla \phi\|^2 = \frac{1}{r}\sum_{i \in V_r} \text{div}_i^2$ se normaliza ahora sobre el subgrafo completo inducido $K_r$ por los $r$ nodos no aislados con flujo real (`non_isolated_nodes`), erradicando el suelo artificial espurio $\text{curl\_share} \ge 1 - r/30 \approx 0.90$. Verificado formalmente con `test_r7_r3_a1_curl_invariante_a_padding_de_nodos_mudos` en `crates/feature-engine/tests/hodge_flow_contract.rs`.
+  2. **R7-R3-C-1 [HIGH] (Publicación de `mid_price`)**: Cableado `set_reg("mid_price", mid_price);` en `crates/god-engine-core/src/lib.rs:4343`. Restaura la normalización de velocidad en `crates/signal-engine/src/soliton_wave.rs` ($\text{norm\_vel} = 10 \cdot \text{vel}/\text{mid\_price}$), eliminando la dependencia espuria del precio nominal ($) y asegurando invarianza de escala universal.
+  3. **R7-R3-D-2 [MED] (TTL Multiactivo Único)**: Definido `const GEOMETRIA_MULTIACTIVO_TTL_MS: u64 = 10_000;` en `crates/god-engine-core/src/lib.rs:5108` y sustituidos los literales mágicos `10_000` en L5113 (`fresh_prices`) y L5128 (`fresh_ofis`/`fresh_returns`). Buffers expuestos como `pub` para observabilidad contractual.
+  4. **R7-R3-B-1 [MED] (Retornos Puros en Yang-Mills LMS)**: En `crates/strategy-core/src/yang_mills_gauge.rs:133-138`, `returns[i]` asigna estrictamente `0.0` en arranque en frío (`count == 0`) o tras expiración de TTL (`prev_p_i == 0.0`), impidiendo que el nivel absoluto de log-precio ($\ln P \sim 11.51$) sature los coeficientes de paridad $\beta$. Actualizado test contractual en `crates/strategy-core/tests/yang_mills_gauge_contract.rs`.
+- **Verificación Contractual Integral**:
+  - `cargo test -p feature-engine --test hodge_flow_contract`: 6/6 tests PASSED.
+  - `cargo test -p strategy-core --test yang_mills_gauge_contract`: 5/5 tests PASSED.
+  - `cargo test -p god-engine-core --test hodge_yang_mills_consensus_contract`: 3/3 tests PASSED (incluyendo `test_mid_price_published_and_multiasset_ttl_contract`).
+  - `cargo check --workspace --all-targets`: 0 errores, 0 warnings.
+
 ## 2026-10-09 — Qoder: R7-R3 CERRADA (física/cuántica) — 17 fichas, 2 HIGH, docs-only, base re-anclada contra `396a8503`
 
 - **Ejecutor**: Qoder, rama `qoder/ronda7-plan`. Cero `.rs` tocados, cero

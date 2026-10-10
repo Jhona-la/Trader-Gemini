@@ -125,6 +125,9 @@ impl YangMillsGaugeEngine {
         }
 
         // 1. Precomputar innovaciones/retornos para activos válidos antes de cualquier mutación de estado
+        // R7-R3-B-1: En frío (count == 0) o tras expiración de TTL (prev_p_i == 0.0), el activo
+        // carece de precio previo; su retorno de innovación es estrictamente 0.0.
+        // Asignar el nivel p_i inyectaba log(P) ~ 11.5 al LMS, corrompiendo beta y la curvatura.
         let mut returns = [0.0_f64; MAX_GAUGE_ASSETS];
         for vi in 0..n_valid {
             let i = valid_indices[vi];
@@ -133,7 +136,7 @@ impl YangMillsGaugeEngine {
             returns[i] = if self.count > 0 && prev_p_i != 0.0 {
                 p_i - prev_p_i
             } else {
-                p_i
+                0.0
             };
         }
 

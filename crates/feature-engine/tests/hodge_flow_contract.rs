@@ -136,3 +136,42 @@ fn hodge_contrato_flujo_cruzado_microestructura_produce_curl_dinamico() {
     assert!(res.curl_share >= 0.0 && res.curl_share <= 1.0);
     assert!(res.curl_share > 0.0, "El flujo cruzado asimétrico debe producir rotacional no nulo: got {}", res.curl_share);
 }
+
+#[test]
+fn test_r7_r3_a1_curl_invariante_a_padding_de_nodos_mudos() {
+    // R7-R3-A-1: 3 nodos activos con gradiente puro embebidos en una matriz de 30 activos (27 nodos mudos)
+    // Demuestra que el potencial y la energía se normalizan por el número real de nodos no aislados r=3,
+    // erradicando el suelo artificial espurio curl_share >= 1 - r/30 (que antes daba curl = 0.90).
+    let engine = HelmholtzHodgeFlowEngine::new(30);
+    let mut matrix = [[0.0_f64; MAX_HODGE_ASSETS]; MAX_HODGE_ASSETS];
+
+    // Potenciales escalares en nodos 0, 1, 2: [12.0, 8.0, 4.0]
+    // Flujo gradiente puro: F_{ij} = phi_i - phi_j
+    matrix[0][1] = 4.0;
+    matrix[1][0] = -4.0;
+    matrix[0][2] = 8.0;
+    matrix[2][0] = -8.0;
+    matrix[1][2] = 4.0;
+    matrix[2][1] = -4.0;
+
+    let (res, potentials) = engine.decompose(&matrix, 30)
+        .expect("debe descomponer con 3 nodos activos de 30");
+
+    assert_eq!(res.num_nodes, 3, "El conteo de nodos debe ser 3 nodos activos, no 30");
+    assert!(
+        res.curl_share < 1e-12,
+        "El curl de un gradiente puro con padding de nodos mudos debe ser exactamente 0.0, got {}",
+        res.curl_share
+    );
+    assert!(
+        (res.gradient_energy - res.total_energy).abs() < 1e-12,
+        "La energía del gradiente debe ser exactamente igual a la total: grad={}, total={}",
+        res.gradient_energy,
+        res.total_energy
+    );
+
+    // Los nodos mudos (3..30) deben tener potencial exactamente 0.0
+    for i in 3..30 {
+        assert_eq!(potentials[i], 0.0, "Nodo mudo {} debe tener potencial 0.0", i);
+    }
+}

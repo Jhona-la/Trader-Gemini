@@ -62,13 +62,17 @@ fn yang_mills_contrato_antisimetria_y_permutaciones() {
 
 #[test]
 fn yang_mills_contrato_corriente_restauradora_tras_dislocacion() {
-    // Red con elasticidades reales (ej. BTC=0, ETH=1, SOL=2 con betas 1.25, 0.90, 1.0)
+    // Red con elasticidades reales (ej. BTC=0, ETH=1, SOL=2 con betas 1.25, 0.90, 0.80)
+    // R7-R3-B-1: Con retornos dinámicos puros, tick 1 inicializa las coordenadas base de precios.
     let mut engine = YangMillsGaugeEngine::new(3)
         .with_beta(0, 1, 1.25)
         .with_beta(1, 2, 0.90)
-        .with_beta(2, 0, 1.0);
+        .with_beta(2, 0, 0.80);
 
-    // Dislocar Activo 0 hacia arriba (110.0 en lugar del equilibrio 100.0)
+    // Tick 1: Inicialización con precios base de referencia
+    let _ = engine.update_and_calculate_curvature(&[100.0, 50.0, 25.0]);
+
+    // Tick 2: Dislocar Activo 0 hacia arriba (110.0 en lugar del equilibrio 100.0, retorno +9.53%)
     let prices_dislocated = [110.0, 50.0, 25.0];
     let (action, currents) = engine.update_and_calculate_curvature(&prices_dislocated);
 

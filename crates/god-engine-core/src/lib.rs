@@ -829,10 +829,10 @@ pub struct GodEngineCore {
     pub yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine,
     /// OLA Ω53: Motor hidrodinámico de Navier-Stokes y número de Reynolds para flujos L2/L3
     pub navier_stokes_engines: Vec<feature_engine::NavierStokesReynoldsEngine>,
-    latest_prices: Vec<f64>,
-    latest_ofis: Vec<f64>,
-    latest_timestamps: Vec<u64>,
-    latest_returns: Vec<f64>,
+    pub latest_prices: Vec<f64>,
+    pub latest_ofis: Vec<f64>,
+    pub latest_timestamps: Vec<u64>,
+    pub latest_returns: Vec<f64>,
     pub ppo_engine: dark_alpha_engine::online_ppo::OnlinePpoPolicyEngine,
     pub online_learner: metacortex_engine::online_learning::OnlineLearningModule,
     /// #26: Sistema inmune vivo para registro y amortiguación de traumas de predicción
@@ -4340,6 +4340,7 @@ impl GodEngineCore {
             };
             let spread_val = (spread_pct * mid_price).max(0.0001);
             let speed_of_sound = spread_val.max(micro_v * mid_price);
+            set_reg("mid_price", mid_price);
             set_reg("spread_speed_of_sound", speed_of_sound);
             set_reg("price_velocity", dir_v);
             set_reg("order_flow_velocity", dir_v);
@@ -5105,12 +5106,14 @@ impl GodEngineCore {
                 set_reg("statarb_beta", statarb_beta);
             }
 
-            // OLA Ω36/Ω38/Ω41/R6-C6: Evaluación de geometría gauge Yang-Mills y Helmholtz-Hodge en tiempo real
+            // OLA Ω36/Ω38/Ω41/R6-C6/R7-R3-D-2: Evaluación de geometría gauge Yang-Mills y Helmholtz-Hodge en tiempo real
             // La adaptación LMS en YangMillsGaugeEngine ya es invariante a ticks inactivos (step ∝ r_j).
+            // R7-R3-D-2: Constante única nombrada para TTL de frescura de buffers multiactivo (10_000 ms)
+            const GEOMETRIA_MULTIACTIVO_TTL_MS: u64 = 10_000;
             let mut fresh_prices = self.latest_prices.clone();
             for c in 0..fresh_prices.len() {
                 let last_ts = self.latest_timestamps.get(c).copied().unwrap_or(0);
-                if event_time_ms.saturating_sub(last_ts) > 10_000 {
+                if event_time_ms.saturating_sub(last_ts) > GEOMETRIA_MULTIACTIVO_TTL_MS {
                     fresh_prices[c] = 0.0;
                 }
             }
@@ -5125,7 +5128,7 @@ impl GodEngineCore {
             let mut fresh_returns = self.latest_returns.clone();
             for c in 0..fresh_ofis.len() {
                 let last_ts = self.latest_timestamps.get(c).copied().unwrap_or(0);
-                if event_time_ms.saturating_sub(last_ts) > 10_000 {
+                if event_time_ms.saturating_sub(last_ts) > GEOMETRIA_MULTIACTIVO_TTL_MS {
                     fresh_ofis[c] = 0.0;
                     fresh_returns[c] = 0.0;
                 }

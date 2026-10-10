@@ -181,3 +181,57 @@ fn test_hodge_cross_flow_non_degenerate_vortex_coupling_contract() {
         "El factor laminar debe amortiguar microestructura ante presencia de vórtice (curl > 0)"
     );
 }
+
+#[test]
+fn test_mid_price_published_and_multiasset_ttl_contract() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    let (arena, mut core) = setup_multi_coin_fixture();
+
+    // 1. Inyectar tick BTC bid=50_000.0, ask=50_002.0 (mid_price = 50_001.0) en t=1_000 ms
+    core.process_tick_dual(0, 50_000.0, 50_002.0, 1.0, 1.0, 1_000, &[0.0; 54], true, true);
+
+    // R7-R3-C-1: Verificar que mid_price está publicado en el registro omnisciente
+    let mid_btc_coin = arena.registry.get_for_coin_or(0, "mid_price", 0.0);
+    assert!(
+        (mid_btc_coin - 50_001.0).abs() < 1e-6,
+        "mid_price para BTC (coin 0) debe ser 50001.0, obtenido: {}",
+        mid_btc_coin
+    );
+
+    let mid_btc_scoped = arena.registry.get_scoped_parameter(Some("BTCUSDT"), Some(0), "mid_price", "god_core")
+        .map(|p| p.get_value())
+        .unwrap_or(0.0);
+    assert!(
+        (mid_btc_scoped - 50_001.0).abs() < 1e-6,
+        "mid_price scoped para BTCUSDT debe ser 50001.0, obtenido: {}",
+        mid_btc_scoped
+    );
+
+    let mid_global = arena.registry.get_value_or("mid_price", 0.0);
+    assert!(
+        (mid_global - 50_001.0).abs() < 1e-6,
+        "mid_price global debe ser 50001.0, obtenido: {}",
+        mid_global
+    );
+
+    // 2. R7-R3-D-2: Verificar TTL multiactivo unificado (GEOMETRIA_MULTIACTIVO_TTL_MS = 10_000 ms)
+    // Inyectar ETH y SOL en t=1_000 ms
+    core.process_tick_dual(1, 3_000.0, 3_002.0, 1.0, 1.0, 1_000, &[0.0; 54], true, true);
+    core.process_tick_dual(2, 150.0, 150.2, 1.0, 1.0, 1_000, &[0.0; 54], true, true);
+
+    // En t=1_000 ms, las 3 monedas son frescas (edad 0 <= 10_000 ms)
+    assert!(core.latest_prices[0] > 0.0);
+    assert!(core.latest_prices[1] > 0.0);
+    assert!(core.latest_prices[2] > 0.0);
+
+    // Inyectar tick en BTC en t=12_000 ms (edad de ETH y SOL es 11_000 ms > 10_000 ms TTL)
+    core.process_tick_dual(0, 50_100.0, 50_102.0, 1.0, 1.0, 12_000, &[0.0; 54], true, true);
+
+    // BTC (t=12_000) debe estar fresco, pero ETH y SOL deben ser considerados obsoletos (TTL excedido)
+    let mid_btc_nuevo = arena.registry.get_for_coin_or(0, "mid_price", 0.0);
+    assert!(
+        (mid_btc_nuevo - 50_101.0).abs() < 1e-6,
+        "mid_price BTC en t=12000 debe ser 50101.0, obtenido: {}",
+        mid_btc_nuevo
+    );
+}
