@@ -1259,13 +1259,14 @@ impl GodEngineCore {
         }
     }
 
+    /// Reinicio por reconexión del feed: estado de MERCADO (estimadores y
+    /// último libro). CL-51: el riesgo es de la cuenta y no se toca; antes
+    /// el pico del drawdown volvía a `base_capital` en cada reconexión.
     pub fn reset_engines(&mut self) {
         for i in 0..quantum_arena::state::MAX_COINS {
             self.feature_engines[i] = StatefulEngine::new();
         }
         self.ultimo_libro.fill(None);
-        let init_cap = self.arena.config.base_capital.load(Ordering::Relaxed);
-        self.risk_engine.reset(init_cap);
     }
 
     /// #15: Evalúa si el drift de predicción o las anomalías acumuladas requieren reentrenamiento urgente
