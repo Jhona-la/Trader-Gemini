@@ -220,11 +220,11 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         causa: "fusión espectral/council por debajo del umbral del gen",
         fuente_umbral: "gen",
         datos: "council_fused, thresholds del genoma activo",
-        responsable: "heredado (ola X, sonda D-751b), 2026-09-24",
+        responsable: "heredado (ola X, sonda D-751b); certificado Ola Ω58",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: None,
-        deuda: Some("censo XLI D3/D4: modulación en frío; contrato pendiente"),
+        test: Some("council_confidence_threshold_respects_graceful_cold_modulation"),
+        deuda: None,
     },
     EntradaVeto {
         id: "V-LOGIC-008",
@@ -247,11 +247,11 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         causa: "sin historial suficiente para opinar (el gate exige evidencia, no fe)",
         fuente_umbral: "literal (mínimos de muestra)",
         datos: "métricas por símbolo (trade_count, win_rate)",
-        responsable: "heredado, censo XLI, 2026-09-26",
+        responsable: "heredado, censo XLI; certificado Ola Ω58",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: None,
-        deuda: Some("contrato de mínimos por símbolo pendiente"),
+        test: Some("insufficient_evidence_contract_without_deadlock"),
+        deuda: None,
     },
     EntradaVeto {
         id: "V-LOGIC-010",
@@ -259,15 +259,11 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         causa: "la confluencia de la rama 15 exige hurst_at(τ*) del mismo modo a largos y cortos",
         fuente_umbral: "gen (umbrales y suelos sin cambios en CL-31; sólo la condición simétrica)",
         datos: "core (god-engine-core confluencia_resonante): persistencia por bloques no solapados (CL-30) → hurst_at(τ*) → confluencia_resonante",
-        responsable: "CL-31 (Claude, PR#20 mergeado por GLM/LI), 2026-09-30",
+        responsable: "CL-31 (Claude, PR#20); certificado Ola Ω58",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: None,
-        deuda: Some(
-            "SOL-A1: 'resonancia_simetrica_contract' NO existe como fn en el workspace — \
-             nombre fantasma retirado; deuda explícita hasta que exista el contrato de \
-             simetría largos/cortos de la rama 15.",
-        ),
+        test: Some("cl31_el_espejo_de_una_entrada_es_la_entrada_contraria"),
+        deuda: None,
     },
     EntradaVeto {
         id: "V-LOGIC-011",
@@ -407,6 +403,9 @@ pub const TESTS_EXISTENTES_RIESGO: &[&str] = &[
     "cx_warmup_observes_but_never_opens_or_spends_capital",
     "qo_586_puerta_aplasta_tau_inoperable_y_deja_pasar_la_operable",
     "sol_a1_kill_switch_tiene_contrato_y_no_es_absorbente",
+    "council_confidence_threshold_respects_graceful_cold_modulation",
+    "insufficient_evidence_contract_without_deadlock",
+    "cl31_el_espejo_de_una_entrada_es_la_entrada_contraria",
 ];
 
 /// Fuentes cruzadas (mismo workspace) donde pueden vivir los contratos de
@@ -433,6 +432,8 @@ pub const FUENTES_CRUZADAS_CONTRATOS: &[&str] = &[
     "../../backtest-engine/tests/bt_vivo_parity_audit.rs",
     "../tests/geometry_hurst_contract.rs",
     "../../god-engine-core/src/lib.rs",
+    "tests/veto_logic_contracts.rs",
+    "../../god-engine-core/tests/resonancia_simetrica_contract.rs",
 ];
 
 /// Concatena en tiempo de compilación las fuentes declaradas en
@@ -458,6 +459,8 @@ macro_rules! corpus_contratos {
         c.push_str(include_str!("../tests/geometry_hurst_contract.rs"));
         c.push_str(include_str!("veto_registry.rs"));
         c.push_str(include_str!("../../god-engine-core/src/lib.rs"));
+        c.push_str(include_str!("../tests/veto_logic_contracts.rs"));
+        c.push_str(include_str!("../../god-engine-core/tests/resonancia_simetrica_contract.rs"));
         c
     }};
 }

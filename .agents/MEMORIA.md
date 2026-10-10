@@ -1,5 +1,18 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — AGY: OLA Ω58 EN VUELO — SÍMPLEX ESPECTRAL CONTINUO EN RIESGO (FASES R2/R3), ERRADICACIÓN DE DEUDA CONTRACTUAL EN REGISTRO DE VETOS E INVARIANTES SAGRADOS DE MICRO-CAPITAL ($13.00 USD)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola58-r2-r3-espectro-continuo-vetos`.
+- **Ficha Forense**: **#693**. Cero fallos, cero regresiones, cero heap allocations en hot path.
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+- **Objetivos de Ola Ω58**:
+  1. **Símplex Espectral Continuo en Riesgo (`SpectralMarketRegime`)**: En `crates/risk-engine/src/regime.rs`, formalizar la geometría del símplex $\Delta^3$ con $p = [p_{\text{range}}, p_{\text{bull}}, p_{\text{crash}}, p_{\text{chaos}}]$, entropía de Shannon $H(p)$, entropía cuántica/generalizada de Rényi $H_\alpha(p)$, polarización direccional $\Pi_{\text{dir}}$ e índice de turbulencia $\tau_{\text{turb}}$. Actualizaciones $C^\infty$ suaves Lorentz/sigmoide sin escalones rígidos.
+  2. **Erradicación de Deuda Contractual en Registro de Vetos**: Resolver formalmente en `crates/risk-engine/src/veto_registry.rs` y `crates/risk-engine/tests/veto_logic_contracts.rs` las deudas de `V-LOGIC-007` (confianza del consejo y modulación suave en frío), `V-LOGIC-009` (evidencia muestral mínima sin deadlock), y `V-LOGIC-010` (simetría direccional en confluencia resonante).
+  3. **Certificación Contractual**: Suites de tests dedicados probando invarianza, propiedades de conservación de probabilidad y respuesta a micro-capital.
+
 ## 2026-10-09 — AGY: OLA Ω57 COMPLETADA — DEFECTO C-02 (ALIMENTACIÓN VIVA SPOT-FUTURO PARA STATARB, SDE CONTINUO DE ORNSTEIN-UHLENBECK / FOKKER-PLANCK Y TENSOR MACRO)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola57-c02-feed-spot-statarb`.

@@ -1,5 +1,15 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr.) — OLA Ω58 EN VUELO (2026-10-09 ~22:15)
+- Rama activa: `antigravity/ola58-r2-r3-espectro-continuo-vetos` (base `9305cdce`).
+- Ficha Forense: **#693**.
+- Alcance: `crates/risk-engine/src/regime.rs`, `crates/risk-engine/src/veto_registry.rs`, `crates/risk-engine/tests/veto_logic_contracts.rs`, `crates/risk-engine/tests/spectral_regime_contract.rs`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **OBJETIVOS Y FORMALIZACIÓN MATEMÁTICA OLA Ω58**:
+  1. **Símplex Espectral Continuo en Riesgo (`SpectralMarketRegime`)**: Erradicación de fronteras discretas duras en `risk-engine`. Modelado continuo sobre el símplex tetraédrico $\Delta^3$: $(p_{\text{range}}, p_{\text{bull}}, p_{\text{crash}}, p_{\text{chaos}})$, con $\sum p_i = 1.0$.
+  2. **Entropía Cuántica de la Información**: Cómputo de entropía espectral de Shannon $H(p) = -\sum p_i \ln p_i$ y Rényi $H_\alpha(p) = \frac{1}{1-\alpha}\ln \sum p_i^\alpha$, junto con polarización direccional $\Pi_{\text{dir}} = p_{\text{bull}} - p_{\text{crash}} \in [-1, 1]$ e índice de turbulencia $\tau_{\text{turb}} = p_{\text{crash}} + p_{\text{chaos}} \in [0, 1]$.
+  3. **Erradicación de Deuda Contractual en Registro de Vetos**: Resolución de pruebas pendientes en `veto_registry.rs`: `V-LOGIC-007` (confianza del consejo y modulación suave en frío), `V-LOGIC-009` (evidencia muestral mínima sin deadlock), `V-LOGIC-010` (simetría direccional en confluencia resonante).
+  4. **Blindaje de Micro-Capital ($13.00 USD)**: Verificación analítica de que ninguna compuerta o veto ahoga órdenes con margen de $1.02 USD ($5.10 nocional a 5.0x apalancamiento, SL 55 bps, RR >= 2.25).
+
 ## Antigravity (Quant Sr.) — OLA Ω57 CERRADA (2026-10-09 ~21:50)
 - Rama activa: `antigravity/ola57-c02-feed-spot-statarb` (base `c3a2f331`).
 - Alcance: `crates/data-pipeline/src/spot_feed.rs`, `crates/data-pipeline/src/lib.rs`, `crates/data-pipeline/tests/spot_feed_contract.rs`, `crates/quantum-arena/src/state.rs`, `crates/god-engine-core/tests/statarb_live_physics_contract.rs`, `src/bin/god_engine.rs`.
