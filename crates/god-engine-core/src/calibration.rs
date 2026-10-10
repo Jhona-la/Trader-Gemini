@@ -326,8 +326,14 @@ pub fn ml_gate_thresholds(long_threshold: f64, short_threshold: f64) -> (f64, f6
 ///    que el umbral bajista escale proporcionalmente al espacio inferior [0, base].
 #[inline(always)]
 pub fn normalized_directional_divergence(p: f64, base: f64) -> f64 {
-    let p_clamped = if p.is_finite() { p.clamp(0.0, 1.0) } else { 0.5 };
-    let base_clamped = if base.is_finite() { base.clamp(0.01, 0.99) } else { 0.5 };
+    // QS-REV13: una probabilidad o una tasa base desconocida no tiene
+    // dirección. Antes p = NaN se tomaba como 0,5 y, con base 0,25, daba
+    // +1/3 de apoyo al LARGO: un dato perdido empujaba hacia un lado.
+    if !p.is_finite() || !base.is_finite() {
+        return 0.0;
+    }
+    let p_clamped = p.clamp(0.0, 1.0);
+    let base_clamped = base.clamp(0.01, 0.99);
     if p_clamped >= base_clamped {
         (p_clamped - base_clamped) / (1.0 - base_clamped)
     } else {
@@ -745,9 +751,17 @@ mod tests_xliv_olvido {
         }
 
         // 5. Robustez numérica ante NaN / infinitos
-        let nan_div = normalized_directional_divergence(f64::NAN, 0.25);
-        assert!((nan_div - 0.25 / 0.75).abs() < 1e-12); // p cae a 0.50 -> (0.50 - 0.25) / 0.75 = 1/3
-        assert_eq!(normalized_directional_divergence(0.5, f64::NAN), 0.0); // base cae a 0.50 -> neutral
+        // QS-REV13: sin dato no hay dirección (antes NaN daba +1/3 al largo).
+        for &(p, base) in &[
+            (f64::NAN, 0.25),
+            (f64::INFINITY, 0.25),
+            (f64::NEG_INFINITY, 0.75),
+            (0.5, f64::NAN),
+            (0.9, f64::NAN),
+            (0.1, f64::INFINITY),
+        ] {
+            assert_eq!(normalized_directional_divergence(p, base), 0.0, "p={p} base={base}");
+        }
     }
 
     #[test]
