@@ -80,7 +80,11 @@
 //! de etiqueta. Early stopping usa sólo selección. --promote exige --test-in
 //! posterior a TODA la evidencia de ajuste/selección; su gate evalúa el
 //! artefacto congelado. Sin test sólo se permite candidato de investigación.
-//! Esto no controla reutilización del holdout entre ejecuciones ni prueba PnL.
+//! QS-2: cada modelo se escribe con `{KEY}.manifest` (linaje: hashes de los
+//! tapes, cobertura, argumentos, commit y evidencia del gate) y cada test que
+//! juzga un artefacto queda en el libro `--holdout-ledger`; promover con un
+//! test que ya juzgó OTRO artefacto del mismo símbolo y objetivo exige
+//! `--test-reuse "<motivo>"` (sale con código 3 si no). No prueba PnL.
 //!
 //! ── UNIDADES DE LAS ETIQUETAS DE REGRESIÓN (revisión D-731/D-732) ───────
 //!
@@ -131,6 +135,7 @@ use quantum_arena::symbol_registry::SymbolSpec;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use std::fs::File;
+use quantum_engine::model_manifest;
 use std::sync::atomic::Ordering;
 
 /// Dimensión del vector ML: el contrato del binario de inferencia. Un modelo
@@ -1088,6 +1093,9 @@ fn main() {
     // comprueba antes de cualquier E/S. --val-in es evidencia de SELECCIÓN.
     let test_in = arg("--test-in", "");
     require_promotion_holdout(promote, &test_in).expect("promotion contract rejected before I/O");
+    // QS-2: libro de usos del holdout final y motivo declarado para reusarlo.
+    let holdout_ledger = arg("--holdout-ledger", model_manifest::DEFAULT_HOLDOUT_LEDGER);
+    let test_reuse = arg("--test-reuse", "");
     // CALENTAMIENTO — MEDIDO EN RELOJ DEL TAPE, NO EN TICKS.
     //
     // Ningún vector se muestrea hasta que el estado MÁS LENTO que entra en él
@@ -2012,6 +2020,11 @@ fn main() {
     // como control de paridad.
     let model = serialize_forest(&trees, init_score, lr)
         .expect("invalid forest export; no model has been written");
+    // QS-2: los bytes que se escribirán son ÉSTOS; su sha256 identifica al
+    // artefacto en el manifiesto y en el libro del holdout.
+    let model_bytes = serde_json::to_vec_pretty(&model)
+        .expect("invalid forest serialization; no model has been written");
+    let model_sha = model_manifest::sha256_hex(&model_bytes);
     let f_val = serving_predictions(&model, &va_feats)
         .expect("invalid validation evidence; no model has been written");
     let paridad = va_feats
@@ -2130,28 +2143,29 @@ fn main() {
     // llega al test; sus etiquetas no eligen árboles ni ajustan nada. Sin
     // --test-in la evidencia es de selección y NO es apta para promoción
     // (`require_promotion_holdout` ya lo impidió al arrancar).
-    let test_ok = if test_in.is_empty() {
+    let (test_ok, test_evidencia): (bool, Option<(f64, f64, model_manifest::InputRecord)>) = if test_in.is_empty() {
         println!("   sin --test-in: evidencia de selección solamente; NO apta para promoción");
-        true
+        (true, None)
     } else {
         let s_test = build(&test_in);
         let test = como_intervalos(&s_test.feats, &s_test.labels, &s_test.ts, horizon_ms);
         require_later_holdout(&test, evidence_end).expect("invalid final holdout");
         let pred = serving_predictions(&model, &test.features).expect("invalid test predictions");
         let constante = vec![init_score as f64; test.labels.len()];
-        let pass = if is_regression {
+        let (pass, perdida, base) = if is_regression {
             let mse_modelo = mse(&test.labels, &pred);
+            let mse_pers = mse(&test.labels, &s_test.persist);
             let (r2_media, skill, pass) = regression_gate(
                 mse_modelo,
                 mse(&test.labels, &constante),
-                mse(&test.labels, &s_test.persist),
+                mse_pers,
                 gate_margin,
             );
             println!(
                 "   test posterior (n={}): MSE {:.6} · skill vs PERSISTENCIA {:.4} · R² vs media {:.4} (informativo)",
                 test.labels.len(), mse_modelo, skill, r2_media
             );
-            pass
+            (pass, mse_modelo, mse_pers)
         } else {
             let ll = logloss(&test.features, &test.labels, &pred);
             let base = logloss(&test.features, &test.labels, &constante);
@@ -2159,16 +2173,55 @@ fn main() {
                 "   test posterior (n={}): logloss {:.6} · baseline {:.6} (mejora {:+.6})",
                 test.labels.len(), ll, base, base - ll
             );
-            passes_loss_gate(false, ll, base, gate_margin)
+            (passes_loss_gate(false, ll, base, gate_margin), ll, base)
         };
         if !pass {
             println!("🚫 GATE (test posterior): sin mejora ≥ {} fuera de la selección. El modelo vivo NO se toca.",
                      gate_margin);
         }
-        pass
+        let registro = model_manifest::input_record("test", &test_in, &s_test.ts)
+            .expect("cannot hash --test-in for the lineage manifest");
+        (pass, Some((perdida, base, registro)))
     };
     let gate_ok = gate_sel && test_ok;
-    let promote = promote && gate_ok;
+    // QS-2 — UN HOLDOUT FINAL JUZGA UNA SOLA DECISIÓN. Si este test ya juzgó
+    // OTRO artefacto del mismo símbolo y objetivo (otro τ, otros
+    // hiperparámetros, otro tape de train), lo visto en él ya informó la
+    // elección y deja de ser fuera de muestra para promover. Re-juzgar el
+    // MISMO artefacto (mismo sha256; el entrenador es determinista) no añade
+    // selección. Un libro ilegible no puede certificar frescura: bloquea.
+    let mut holdout_prior = 0usize;
+    let mut holdout_reason: Option<String> = None;
+    let mut holdout_block = false;
+    if let Some((_, _, registro)) = &test_evidencia {
+        match model_manifest::read_ledger(std::path::Path::new(&holdout_ledger)) {
+            Ok(libro) => {
+                holdout_prior = model_manifest::prior_other_artifacts(
+                    &libro, &symbol, &label_mode, &registro.sha256, &model_sha,
+                );
+                if holdout_prior > 0 {
+                    println!(
+                        "   ⚠️ holdout ya usado: este test juzgó {} artefacto(s) distinto(s) de {} [{}]",
+                        holdout_prior, symbol, label_mode
+                    );
+                }
+                if promote && gate_ok {
+                    match model_manifest::check_holdout_fresh(holdout_prior, &test_reuse) {
+                        Ok(motivo) => holdout_reason = motivo,
+                        Err(e) => {
+                            println!("🚫 HOLDOUT: {e}");
+                            holdout_block = true;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                println!("🚫 HOLDOUT: libro ilegible ({e}); no se puede certificar que el test esté fresco");
+                holdout_block = promote && gate_ok;
+            }
+        }
+    }
+    let promote = promote && gate_ok && !holdout_block;
 
     // ── 5. Serializar al formato NanoForestData ──────────────────────────
     // Already serialized and validated before the gate above.
@@ -2208,15 +2261,97 @@ fn main() {
     // TRUNCABA el modelo vivo a 0 bytes ANTES de serializar; un crash a mitad
     // dejaba el artefacto destruido y el host arrancaba sin modelo. El rename
     // atómico garantiza que en disco hay siempre el modelo completo viejo o
-    // el nuevo, nunca un truncado.
-    std::fs::create_dir_all("models").ok(); // L5: sin dir, el unwrap tiraba tras el gate
-    let tmp = format!("{out}.tmp");
-    {
-        let mut f = File::create(&tmp).unwrap();
-        serde_json::to_writer_pretty(&mut f, &model).unwrap();
-        f.sync_all().unwrap();
+    // el nuevo, nunca un truncado. `write_model_with_manifest` conserva esa
+    // escritura (tmp + sync_all + rename, crea `models/`) y la extiende al
+    // manifiesto.
+    //
+    // QS-2 — LINAJE: junto al modelo, `{KEY}.manifest` con el sha256 de
+    // estos bytes, los tapes (sha256 + cobertura), los argumentos, el commit
+    // y la evidencia del gate. Ver `quantum_engine::model_manifest`.
+    let mut entradas = Vec::new();
+    if val_in.is_empty() {
+        entradas.push(
+            model_manifest::input_record("train+selection", &in_path, &sample_ts)
+                .expect("cannot hash --in for the lineage manifest"),
+        );
+    } else {
+        entradas.push(
+            model_manifest::input_record("train", &in_path, &sample_ts)
+                .expect("cannot hash --in for the lineage manifest"),
+        );
+        entradas.push(
+            model_manifest::input_record("selection", &val_in, &va_ts)
+                .expect("cannot hash --val-in for the lineage manifest"),
+        );
     }
-    std::fs::rename(&tmp, &out).unwrap();
+    let (test_perdida, test_base) = match &test_evidencia {
+        Some((l, b, registro)) => {
+            entradas.push(registro.clone());
+            (Some(*l), Some(*b))
+        }
+        None => (None, None),
+    };
+    let version = model_manifest::code_version();
+    let manifiesto = model_manifest::ModelManifest {
+        schema: model_manifest::MANIFEST_SCHEMA,
+        model_file: String::new(),
+        model_sha256: String::new(),
+        symbol: symbol.clone(),
+        label_mode: label_mode.clone(),
+        horizon_ms,
+        feature_dim: n_feat,
+        n_trees: trees.len(),
+        trainer: "train_forest".into(),
+        trainer_args: args.clone(),
+        code_version: version.clone(),
+        created_utc: chrono::Utc::now().to_rfc3339(),
+        inputs: entradas,
+        train_rows: tr_y.len(),
+        selection_rows: va_y.len(),
+        evidence_end_ms: evidence_end,
+        gate: model_manifest::GateRecord {
+            metric: metric_name.into(),
+            margin: gate_margin,
+            selection_loss: best_val,
+            selection_baseline: if is_regression { mse_persist } else { baseline },
+            selection_pass: gate_sel,
+            test_loss: test_perdida,
+            test_baseline: test_base,
+            test_pass: test_evidencia.as_ref().map(|_| test_ok),
+        },
+        holdout_prior_other_artifacts: holdout_prior,
+        holdout_reuse_reason: holdout_reason,
+        promoted: promote,
+    };
+    let escrito = model_manifest::write_model_with_manifest(
+        std::path::Path::new(&out),
+        &model_bytes,
+        manifiesto,
+    )
+    .expect("cannot write the model and its lineage manifest");
+    println!(
+        "🧾 linaje: {} (sha256 {}…, código {})",
+        model_manifest::manifest_path_for(std::path::Path::new(&out)).display(),
+        &escrito.model_sha256[..12],
+        version.as_deref().unwrap_or("desconocido")
+    );
+    // QS-2: toda consulta del test queda anotada, pase o no el gate y se
+    // promueva o no: un intento fallido también es información usada.
+    if let Some((_, _, registro)) = &test_evidencia {
+        let uso = model_manifest::HoldoutUse {
+            utc: escrito.created_utc.clone(),
+            symbol: symbol.clone(),
+            label_mode: label_mode.clone(),
+            test_sha256: registro.sha256.clone(),
+            model_sha256: escrito.model_sha256.clone(),
+            test_pass: test_ok,
+            promoted: promote,
+            code_version: version.clone(),
+        };
+        model_manifest::append_ledger(std::path::Path::new(&holdout_ledger), &uso)
+            .expect("cannot append to the holdout ledger");
+        println!("   consulta del holdout anotada en {}", holdout_ledger);
+    }
     println!(
         "💾 {} ({} árboles, init {:.4}){}",
         out,
@@ -2235,6 +2370,11 @@ fn main() {
     // candidato, no el vivo.
     if !gate_ok {
         std::process::exit(2);
+    }
+    // QS-2: gate superado pero holdout ya usado sin motivo ⇒ candidato y
+    // código 3 (distinto de «sin evidencia») para la automatización.
+    if holdout_block {
+        std::process::exit(3);
     }
 }
 
@@ -3220,5 +3360,33 @@ mod tests {
 
         // Sin solape (tau < stride) no se purga nada.
         assert_eq!(purge_end(&ts, split, 10_000), split);
+    }
+
+    /// QS-2 — guardia del CABLEADO. El merge 6fdccd64 ya demostró que los
+    /// helpers pueden sobrevivir con sus tests mientras `main()` deja de
+    /// llamarlos. Se exige que `main()` escriba el modelo con su manifiesto,
+    /// consulte y aplique el libro del holdout y anote cada consulta, y que
+    /// la escritura directa del JSON del modelo (sin linaje) no vuelva.
+    #[test]
+    fn qs2_main_escribe_linaje_y_aplica_el_libro_del_holdout() {
+        let src = include_str!("train_forest.rs");
+        let inicio = src.find("\nfn main() {").expect("fn main");
+        let fin = inicio + 1 + src[inicio + 1..].find("\n}\n").expect("fin de main");
+        let cuerpo = &src[inicio..fin];
+        for llamada in [
+            "model_manifest::write_model_with_manifest(",
+            "model_manifest::read_ledger(",
+            "model_manifest::prior_other_artifacts(",
+            "model_manifest::check_holdout_fresh(",
+            "model_manifest::append_ledger(",
+            "model_manifest::input_record(\"test\"",
+        ] {
+            assert!(cuerpo.contains(llamada), "main() ya no llama a {llamada}");
+        }
+        assert!(
+            !cuerpo.contains("to_writer_pretty(&mut f, &model)"),
+            "el modelo vuelve a escribirse sin manifiesto"
+        );
+        assert!(cuerpo.contains("std::process::exit(3)"), "falta el código de salida del holdout reusado");
     }
 }
