@@ -1,5 +1,26 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω65 COMPLETADA — RIGOR DIMENSIONAL DE NAVIER-STOKES REYNOLDS, ADELGAZAMIENTO POR CORTE Y SUITE CONTRACTUAL (#701)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola65-r2-r3-navier-stokes-dimensional-rigor-spectral-resonance`.
+- **Ficha Forense**: **#701**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+- **Cambios Implementados y Certificados**:
+  1. **Rigor Dimensional Estricto en Navier-Stokes Reynolds**: En `crates/feature-engine/src/navier_stokes.rs`, la formulación previa calculaba $\text{inertial\_force} / (\nu \cdot \sigma_{\text{ref}})$ cuya dimensión física era $\text{s}^{-1}$ (frecuencia inversa en lugar de un escalar adimensional puro), distorsionándose ante variaciones de $\Delta t$ o entre activos con precios de diferente orden de magnitud (BTC $60,000 vs SOL $150 vs DOGE $0.15). Se reformuló analítica y dimensionalmente como $\text{Re} = \frac{|u| \cdot \tau_{\text{relax}} \cdot \mu_{\text{aggression}}}{L_{\text{eff}}} \equiv \frac{|u| \cdot L_{\text{eff}}}{\nu}$, con unidades $([\text{USD/s}] \cdot [\text{s}] \cdot [1]) / [\text{USD}] = 1$ (adimensional puro exacto).
+  2. **Reología de Adelgazamiento por Corte (Shear-Thinning)**: La viscosidad cinemática del libro se define canónicamente como $\nu = \frac{L_{\text{eff}}^2}{\tau_{\text{relax}} \cdot \mu_{\text{aggression}}}$ en $[\text{USD}^2/\text{s}]$, capturando el colapso de resistencia disipativa pasiva cuando el flujo agresor taker devora la liquidez BBO.
+  3. **Escala Temporal de Relajación $\tau_{\text{relax}}$**: Añadido `relaxation_time_s: f64` con método encadenable `with_relaxation_time_s(tau_s)` y default físico microestructural `DEFAULT_RELAXATION_TIME_S = 0.200` (200 ms, ventana típica de reposición de cola L2 en Binance).
+  4. **Tasa de Disipación de Kolmogorov**: $\varepsilon = \nu \cdot (u / L_{\text{eff}})^2 = \frac{u^2}{\tau_{\text{relax}} \cdot \mu_{\text{aggression}}}$ en $[\text{USD}^2/\text{s}^3]$, midiendo analíticamente la disipación turbulenta.
+  5. **Suite Contractual Formal**: Creado `crates/feature-engine/tests/navier_stokes_reynolds_contract.rs` con 6 tests contractuales cubriendo invarianza adimensional multi-activo, reducción de viscosidad por corte, monotonicidad $C^\infty$, disipación Kolmogorov, inmunidad total a NaN/Inf y escalamiento lineal con $\tau_{\text{relax}}$.
+- **Verificación Contractual Integral**:
+  - `cargo test -p feature-engine --test navier_stokes_reynolds_contract`: **6/6 tests PASSED (100%)**.
+  - `cargo test -p feature-engine`: Suite completa (**92/92 tests PASSED (100%)**).
+  - `cargo test -p metacortex-engine`: Suite completa (**72/72 tests PASSED (100%)**), incluyendo `test_navier_stokes_reynolds_modulation_in_consejo`.
+  - `cargo test -p god-engine-core --lib`: **170/170 tests PASSED (100%)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias** en todas las 23 crates.
+
 ## 2026-10-10 — AGY: OLA Ω64 COMPLETADA — CONSTANTES CANÓNICAS DE RECHAZO, UNIFICACIÓN LCB EN VIABILIDAD DE RUINA Y BLINDAJE DE MICRO-CAPITAL (#700)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola64-r2-r3-rejection-codes-ruin-lcb-navier-parity`.
