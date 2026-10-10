@@ -1,4 +1,4 @@
-//! CL-44 (FMT-232, ADR-0014): el kill-switch del host bloquea lo que AUMENTA
+//! CL-44 (FMT-232, ADR-0015): el kill-switch del host bloquea lo que AUMENTA
 //! el riesgo, nunca la defensa de una posición viva.
 //!
 //! El binario `god_engine` no es testeable por unidad, así que el contrato se

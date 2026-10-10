@@ -346,7 +346,7 @@ fn close_kelly_retains_the_trade_horizon_instead_of_using_cleared_slot() {
     );
 }
 
-/// CL-43 (FMT-232, ADR-0014): el kill-switch bloquea ENTRADAS, nunca la
+/// CL-43 (FMT-232, ADR-0015): el kill-switch bloquea ENTRADAS, nunca la
 /// gestión de salidas. Antes este mismo tick (SL 99, bid 97) no producía
 /// propuesta de cierre y la posición seguía abierta con el latch armado: el
 /// latch que debía contener el riesgo abandonaba la posición abierta.
@@ -362,7 +362,7 @@ fn kill_switch_preserves_local_stop_close_and_blocks_new_entry() {
     assert!(entry.is_none());
     assert!(maker.is_none());
     let (_, pnl, qty) =
-        proposal.expect("FMT-232/ADR-0014: el kill-switch no suprime el cierre local por SL");
+        proposal.expect("FMT-232/ADR-0015: el kill-switch no suprime el cierre local por SL");
     assert_eq!(qty, 1.0);
     assert!(pnl < 0.0);
     assert!(!arena.coins[0].positions.position.is_open());
@@ -383,7 +383,7 @@ fn kill_switch_process_event_preserves_stop_close() {
         &[0.0; 54], false,
     );
     assert!(entry.is_none(), "el latch sigue vetando entradas");
-    let (_, pnl, qty) = closed.expect("ADR-0014: el cierre por SL viaja bajo el kill-switch");
+    let (_, pnl, qty) = closed.expect("ADR-0015: el cierre por SL viaja bajo el kill-switch");
     assert_eq!(qty, 1.0);
     assert!(pnl < 0.0);
     assert!(!arena.coins[0].positions.position.is_open());

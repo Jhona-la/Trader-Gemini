@@ -1866,7 +1866,7 @@ impl GodEngineCore {
                 self.kline_close_memory[coin_id] = current_price;
             }
 
-            // CL-43 (FMT-232, ADR-0014): el kill-switch NO corta aquí. Antes
+            // CL-43 (FMT-232, ADR-0015): el kill-switch NO corta aquí. Antes
             // este `return (None, None)` saltaba la gestión de ranuras (SL,
             // trailing, BE, zombie, tóxico) de todas las monedas: con el latch
             // armado, una posición abierta se quedaba sin defensa local. El
@@ -2882,7 +2882,7 @@ impl GodEngineCore {
             }
 
             // 1. Quantum Kill-Switch Check
-            // CL-43 (FMT-232, ADR-0014): el latch bloquea lo que AUMENTA el
+            // CL-43 (FMT-232, ADR-0015): el latch bloquea lo que AUMENTA el
             // riesgo (entradas y cotización maker), nunca las salidas. Antes
             // devolvía `(None, None, None)` aquí, antes de la sección 1: con
             // el latch armado ninguna ranura se gestionaba. Ahora entra en

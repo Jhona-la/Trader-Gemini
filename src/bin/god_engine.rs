@@ -1689,7 +1689,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     "🚨 [SISTEMA INMUNE] Aplanado FALLÓ: {} — INTERVENCIÓN MANUAL URGENTE.",
                                     e
                                 );
-                                // CL-44 (ADR-0014): lo que quedó vivo se
+                                // CL-44 (ADR-0015): lo que quedó vivo se
                                 // re-protege ya (el vigilante corre bajo el
                                 // latch), no a los 60 s.
                                 quantum_arena::protection_health::mark_dirty();
@@ -2471,7 +2471,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
                     let executor = exec_wd.load_full();
-                    // CL-44 (FMT-232, ADR-0014): la auditoría corre también con
+                    // CL-44 (FMT-232, ADR-0015): la auditoría corre también con
                     // el kill-switch armado. Antes lo saltaba entera: tras X-009
                     // o un aplanado fallido la posición viva quedaba sin
                     // re-bracket ni cierre de escalada. Todo lo que hace aquí
@@ -4635,7 +4635,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     );
                                                     exec_clone.load().trigger_kill_switch();
                                                     arena_clone.kill_switch_active.store(true, Ordering::SeqCst);
-                                                    // CL-44 (ADR-0014): el latch no abandona
+                                                    // CL-44 (ADR-0015): el latch no abandona
                                                     // la posición. El vigilante la audita en
                                                     // 5 s: re-bracket o, con rechazos
                                                     // repetidos, cierre de escalada; y el
