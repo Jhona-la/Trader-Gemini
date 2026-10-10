@@ -7541,3 +7541,18 @@ esta fase autoriza push de código.
   anteriores (`396a8503` y `ddff26aa`, código de Ω53) quedaron **CANCELLED**
   por `cancel-in-progress` ⇒ **ninguno tiene recibo verde**. Lo registro como
   pendiente de R9; no dar por certificado el árbol de Ω53.
+
+## 2026-10-09 — Antigravity (Quant Sr.): **OLA Ω54 CERRADA, MERGEADA Y PUSHEADA A `main` (`93c14fdf`)**
+- **Rama ejecutada y borrada**: `antigravity/quant-sr-ola54-hodge-dilution-midprice-ttl` integrada via fast-forward a `main`.
+- **Árbol limpio**: Los 7 archivos `.rs` que estaban en vuelo ya tienen commit atómico propio (`93c14fdf`) y push a `origin/main`. El working tree local de código está 100% limpio y alineado con remoto.
+- **Fichas Forenses Cerradas (Ficha #687)**:
+  1. **R7-R3-A-1 [HIGH] CERRADA**: Erradicada la dilución de Helmholtz-Hodge por padding. El potencial $\phi_i = \text{div}_i/r$ y la energía $\|\nabla \phi\|^2 = \frac{1}{r}\sum \text{div}_i^2$ se normalizan ahora sobre los $r$ nodos no aislados con flujo real (`non_isolated_nodes`), eliminando el suelo artificial espurio $\text{curl\_share} \ge 1 - r/30 \approx 0.90$. Paridad exacta entre `feature_engine::hodge_flow` y `risk_engine::hodge`. Verificado con `test_r7_r3_a1_curl_invariante_a_padding_de_nodos_mudos` (0.00s).
+  2. **R7-R3-C-1 [HIGH] CERRADA**: Cableado `set_reg("mid_price", mid_price);` en `crates/god-engine-core/src/lib.rs:4343`. Restaura la guarda de unidades del solitón en `crates/signal-engine/src/soliton_wave.rs` ($\text{norm\_vel} = 10 \cdot \text{vel}/\text{mid\_price}$), eliminando la dependencia espuria del precio nominal ($).
+  3. **R7-R3-D-2 [MED] CERRADA**: Definida `const GEOMETRIA_MULTIACTIVO_TTL_MS: u64 = 10_000;` en `crates/god-engine-core/src/lib.rs:5108`, erradicando literales mágicos dispersos (`10_000` en L5113 y L5128). Buffers de precios, OFIs, timestamps y retornos expuestos como `pub` en `GodEngineCore` para observabilidad contractual.
+  4. **R7-R3-B-1 [MED] CERRADA**: `returns[i]` asigna estrictamente `0.0` en arranque en frío (`count == 0`) o post-TTL (`prev_p_i == 0.0`) en `crates/strategy-core/src/yang_mills_gauge.rs:133-138`, impidiendo que el nivel absoluto de log-precio ($\ln P \sim 11.51$) sature $\beta$.
+- **Suites de Pruebas Ejecutadas**:
+  - `cargo test -p feature-engine --test hodge_flow_contract`: 6/6 tests verdes.
+  - `cargo test -p strategy-core --test yang_mills_gauge_contract`: 5/5 tests verdes.
+  - `cargo test -p god-engine-core --test hodge_yang_mills_consensus_contract`: 3/3 tests verdes.
+  - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias en todo el workspace.
+
