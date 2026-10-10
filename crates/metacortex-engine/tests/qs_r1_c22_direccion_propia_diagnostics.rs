@@ -11,11 +11,11 @@
 //! moduladores tranquilos suman hasta +3,4 de capacidad a favor del lado
 //! pedido.
 //!
-//! Este diagnóstico busca en una rejilla casos aprobados cuya señal
+//! Este contrato busca en una rejilla casos aprobados cuya señal
 //! direccional neta (media ponderada de los cinco asientos con dirección
-//! propia) es de signo CONTRARIO al lado aprobado. Está marcado `#[ignore]`:
-//! documenta un hallazgo ABIERTO (contrato OPEN) sin poner la CI en rojo. Lo
-//! cierra quien cambie la regla de aprobación, quitando el `#[ignore]`.
+//! propia) es de signo CONTRARIO al lado aprobado. Antes de QS-C22 fallaba:
+//! 68 de 480 largos aprobados, el peor con señal direccional −0,53 y final
+//! +0,56. Desde QS-C22 la aprobación exige también el signo direccional.
 
 use metacortex_engine::consejo_seniors::{
     ConsejoDeliberacion, MarketSnapshotPayload, SeniorOpinion, SeniorRole, TradingHorizon,
@@ -85,7 +85,6 @@ fn carga(obi: f64, fused: f64, pers: f64, ml: f64) -> MarketSnapshotPayload {
 }
 
 #[test]
-#[ignore = "QS-R1 C-22 OPEN: la aprobación usa el signo de una media que incluye moduladores que votan el lado pedido"]
 fn qs_r1_c22_no_se_aprueba_un_largo_con_asientos_direccionales_netos_en_contra() {
     let consejo = ConsejoDeliberacion::new();
     let rejilla = [-0.9, -0.6, -0.3, -0.1, 0.1, 0.3, 0.6, 0.9];

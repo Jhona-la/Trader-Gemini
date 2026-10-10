@@ -44,19 +44,21 @@
   parcial; cerrojo del almacén de genomas y CAS del demonio; dimensionado
   en espacio de riesgo.
 
-## Claude — sesión «elegant» (actualizado: 2026-10-10 ~21:00, prefijo QS-n, rama claude/elegant-euler-mmtht4, PR #30)
+## Claude — sesión «elegant» (actualizado: 2026-10-10 ~22:30, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
-- **Haciendo ahora**: revisión desde la base del camino de decisión viva.
-  - QS-R1: ledger de 81 factores (13 verificados).
-  - QS-R2: contrato de simetría espejo del consejo.
-  - §30 del plan de sincronización.
-- **Siguiente**: arreglo mínimo de C-22 (la aprobación del consejo exige el
-  signo direccional), con T-1.
-- **En PR #30**: QS-1 (CI de suites, en matriz), QS-2 (linaje de modelos y
-  libro del holdout), QS-R1 y QS-R2.
+- **Haciendo ahora**: publicar QS-C22, QS-D2, QS-D3 (ADR-0016) y QS-R4a con
+  su T-1.
+- **Siguiente**:
+  - QS-R4b: cablear el libro contrafactual en el núcleo (la razón del
+    rechazo ya está, `risk_engine::ultimo_rechazo`), prerrequisito de D1;
+    espera acuse de la Línea C y Qoder;
+  - D1/D4, coordinados con la Línea C.
+- **En main**: PR #30 (QS-1, QS-2, QS-R1, QS-R2) fusionado en 46269a05
+  con unit-suites (4 jobs) y replay-contracts verdes.
 - **Commiteado en main**: XLIV-1…13b (PR #8 y, vía #20, el PR #10).
-- **Falta / pide decisión**: §30.5 (riesgo por operación frente a la meta,
-  tope micro del stop, suelo de supervivencia y presupuesto de sonda).
+- **Decidido (el dueño lo delegó)**: §30.5 → ADR-0016 (D1 riesgo en
+  espacio de stop, D2 geometría ligada a τ, D3 caída de falsación 0,632,
+  D4 presupuesto de sonda).
 
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
 

@@ -15,6 +15,7 @@
 | [0011](ADR-0011-identidad-canonica-del-simbolo.md) | Un solo nombre por símbolo y slots estables en caliente | Aceptado | 2026-10-03 |
 | [0012](ADR-0012-genoma-fijo-en-evaluacion.md) | Sólo el núcleo de ejecución sigue al almacén de genomas | Aceptado | 2026-10-03 |
 | [0013](ADR-0013-autoridad-del-riesgo-en-el-envio.md) | El host nunca envía más apalancamiento que el validado | Aceptado | 2026-10-03 |
+| [0016](ADR-0016-riesgo-geometria-y-falsacion-de-la-meta.md) | Riesgo en espacio de stop, geometría ligada a τ y caída de falsación | Aceptado | 2026-10-10 |
 
 ## Convención
 
