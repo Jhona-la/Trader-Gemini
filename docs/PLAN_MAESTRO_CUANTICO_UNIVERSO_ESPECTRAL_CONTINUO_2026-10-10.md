@@ -380,10 +380,10 @@ El recorrido sistemático cubre los 488 archivos Rust en las 23 crates miembro:
 ┌───────────────┬─────────────────────────────┬────────────────────────────────────────────────────────────────────────┐
 │ Agente        │ Rama / Worktree             │ Estado Operativo y Tareas Vigentes                                     │
 ├───────────────┼─────────────────────────────┼────────────────────────────────────────────────────────────────────────┤
-│ Antigravity   │ antigravity/ola70-r0-r1-    │ • Ola Ω68 (#704, 194089b8), Ola Ω69 (#706, 32289abf) y docs (#707)     │
-│ (Quant Lead)  │ vetos-god-engine-prospect-  │   mergeadas e integradas en origin/main (100% verde).                  │
-│               │ pressure                    │ • Ola Ω70 EN CURSO: Conexión viva de Prospect Theory en el pipeline     │
-│               │                             │   de god-engine-core y suite de auditoría R0-R1 de los 25 vetos.       │
+│ Antigravity   │ antigravity/ola71-r1-r2-    │ • Olas Ω68 (#704), Ω69 (#706), Ω70 (#708, 558c7dcc) mergeadas e        │
+│ (Quant Lead)  │ veto-contracts-and-         │   integradas en origin/main (100% verde).                              │
+│               │ continuous-transitions      │ • Ola Ω71: Resolución y certificación contractual de vetos en          │
+│               │                             │   veto_registry.rs (V-LOGIC-014, 015, V-TECH-001, 002, 004).           │
 ├───────────────┼─────────────────────────────┼────────────────────────────────────────────────────────────────────────┤
 │ Qoder         │ qoder/r7r6-aprender-medir   │ • En worktree aislado .r7r6. Cerrando Fase R7-R6 (Aprender y medir).   │
 │ (Línea A)     │ (Ficha #690)                │ • Barrido de consistencia de fitness y oráculo T-1.                   │

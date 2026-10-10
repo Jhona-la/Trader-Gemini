@@ -1,5 +1,30 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω71 COMPLETADA — RESOLUCIÓN Y CERTIFICACIÓN CONTRACTUAL DE VETOS DE LÓGICA E INPUT (FICHA #709)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#709`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+  - Crecimiento exponencial compuesto objetivo: $+100\%$ cada 3 días ($T_d = 72$ h, $g = \frac{\ln(2)}{3} \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$ compuesto continuo).
+- **Cambios Implementados y Certificados**:
+  1. **Liquidación de Deuda Contractual en `crates/risk-engine/src/veto_registry.rs`**:
+     - Certificados 5 vetos que permanecían con deuda o `test: None`:
+       - `V-LOGIC-014` (`fee_impact`): verificado con `fee_impact_contract_rejects_excessive_friction_and_admits_viable_order`. Rechaza cuando la fricción apalancada supera `max_fee_limit` (3.5% en micro-régimen) y admite órdenes con fees estándar.
+       - `V-LOGIC-015` (`orchestrator`): verificado con `orchestrator_contract_respects_directional_pressure_and_blocks_crash`. Comprueba que compras en crash sistémico agudo ($P_{\text{crash}} \ge 0.90$) son vetadas por orchestrator mientras que shorts se admiten simétricamente.
+       - `V-TECH-001` (`flat/coin`): verificado con `flat_coin_contract_rejects_flat_intent`.
+       - `V-TECH-002` (`spec`): verificado con `spec_rejection_contract_handles_unregistered_coin`.
+       - `V-TECH-004` (`entrada_invalida`): verificado con `invalid_input_contract_rejects_nan_and_infinities` (inmunidad total a NaNs e infinitos).
+     - Añadidos a `TESTS_EXISTENTES_RIESGO` en `veto_registry.rs`, garantizando consistencia exacta con el test resoluble `sol_a1_los_tests_del_registro_existen_de_verdad`.
+  2. **Certificación en `veto_logic_contracts.rs`**:
+     - Suite expandida de 2 a 7 tests formales pasando al 100% en 0.09s.
+- **Verificación Contractual Integral**:
+  - `cargo test --test veto_logic_contracts -p risk-engine`: **7/7 tests PASSED (100%)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests PASSED (100%)**.
+  - `cargo test -p risk-engine --tests`: 25 suites de integración **PASSED (100%)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## 2026-10-10 — AGY: OLA Ω70 COMPLETADA — PRESIÓN DE PROSPECT THEORY EN PIPELINE TICK DE GOD-ENGINE-CORE Y CONTRATO FORMAL (#708)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#708`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).

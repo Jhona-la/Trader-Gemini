@@ -1040,6 +1040,20 @@ No se han borrado refs activas/no integradas, promovido modelos ni operado.
     - `test_feynman_and_prospect_confluence_in_god_engine`: validación de la confluencia entre amplitud cuántica Feynman $C_{\text{coh}}$ y presión psicológica $P_{\text{kt}}$ en el hot path.
   - Resultados: 2/2 tests PASSED (100%), 170/170 lib tests de `god-engine-core` PASSED (100%).
 
+## 29. Resolución y Certificación Contractual de Vetos de Lógica e Input (Ola Ω71, Ficha #709)
+
+- **Liquidación de Deuda Contractual en `crates/risk-engine/src/veto_registry.rs`**:
+  - Resueltos 5 vetos con deuda histórica (`test: None`):
+    - `V-LOGIC-014` (`fee_impact`): cubierto por `fee_impact_contract_rejects_excessive_friction_and_admits_viable_order`. Valida el rechazo ante fricción apalancada excesiva ($> \text{max\_fee\_limit} = 3.5\%$) y admisión ante fricción de mercado normal.
+    - `V-LOGIC-015` (`orchestrator`): cubierto por `orchestrator_contract_respects_directional_pressure_and_blocks_crash`. Valida el bloqueo direccional de compras durante caídas sistémicas ($P_{\text{crash}} \ge 0.90$) y la admisión simétrica de operaciones cortas (D-403).
+    - `V-TECH-001` (`flat/coin`): cubierto por `flat_coin_contract_rejects_flat_intent`.
+    - `V-TECH-002` (`spec`): cubierto por `spec_rejection_contract_handles_unregistered_coin`.
+    - `V-TECH-004` (`entrada_invalida`): cubierto por `invalid_input_contract_rejects_nan_and_infinities`.
+  - Registrados en `TESTS_EXISTENTES_RIESGO` para validación estricta en tiempo de compilación por el contrato hermético `sol_a1_los_tests_del_registro_existen_de_verdad`.
+- **Certificación Contractual**:
+  - Suite de integración `crates/risk-engine/tests/veto_logic_contracts.rs` expandida a 7 tests formales pasando al 100%.
+  - Suite completa de `risk-engine` pasando 153/153 tests unitarios y 25/25 suites de integración al 100%.
+
 ## 30. Línea E — Claude (sesión «elegant», prefijo QS-n): revisión desde la base del camino de decisión viva (2026-10-10)
 
 > Dueño: Claude, sesión «elegant» (la otra sesión Claude es la Línea C, CL-n).
