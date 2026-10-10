@@ -12,6 +12,7 @@ pub mod fases_autonomous;
 pub mod hot_swap_controller;
 pub mod immune_system;
 pub mod online_learning;
+pub mod prospect_theory;
 pub mod reminiscence_and_adn;
 pub mod shadow_graph_auditor;
 
@@ -23,6 +24,7 @@ pub use compiler_sandbox::{CompilationConfig, CompilationResult, CompilerSandbox
 pub use consejo_seniors::{
     ConsejoDeliberacion, ConsensusResult, MarketSnapshotPayload, SeniorOpinion, SeniorRole,
 };
+pub use prospect_theory::ProspectTheoryEngine;
 pub use epigenoma_store::{read_epigenoma_gene, set_epigenoma_gene};
 pub use evolutionary_templates::{
     ContinuumStrategyParams, EvolutionaryTemplateEngine, VolumeFundingParams, WaveletFeatureParams,

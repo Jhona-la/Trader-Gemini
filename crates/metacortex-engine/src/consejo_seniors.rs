@@ -118,6 +118,10 @@ pub struct MarketSnapshotPayload {
     /// OLA Ω53: Fracción laminar suave C^∞: 1.0 / (1.0 + (Re / 1.0)^2) ∈ [0, 1].
     #[serde(default = "default_navier_laminar_share")]
     pub navier_laminar_share: f64,
+    /// OLA Ω69: Presión psicológica asimétrica de Kahneman-Tversky (Prospect Theory) P_kt ∈ [-50.0, 50.0].
+    /// P_kt < 0 pánico minorista asimétrico (-λ V(pérdida)); P_kt > 0 euforia FOMO minorista (+V(ganancia)).
+    #[serde(default)]
+    pub prospect_pressure: f64,
 }
 
 impl Default for MarketSnapshotPayload {
@@ -149,6 +153,7 @@ impl Default for MarketSnapshotPayload {
             macro_staleness_ms: 0,
             navier_reynolds_number: 0.0,
             navier_laminar_share: 1.0,
+            prospect_pressure: 0.0,
         }
     }
 }
@@ -194,6 +199,7 @@ impl MarketSnapshotPayload {
             ("yang_mills_current", self.yang_mills_current),
             ("navier_reynolds_number", self.navier_reynolds_number),
             ("navier_laminar_share", self.navier_laminar_share),
+            ("prospect_pressure", self.prospect_pressure),
         ];
 
         for (name, val) in metrics {
@@ -238,6 +244,7 @@ impl MarketSnapshotPayload {
             ("hodge_curl_share", self.hodge_curl_share, 0.0, 1.0),
             ("yang_mills_current", self.yang_mills_current, -1.0, 1.0),
             ("navier_laminar_share", self.navier_laminar_share, 0.0, 1.0),
+            ("prospect_pressure", self.prospect_pressure, -50.0, 50.0),
         ] {
             if !(low..=high).contains(&value) {
                 return Err(format!("Out-of-bounds {name}: {value}"));
@@ -597,7 +604,15 @@ impl SeniorAgent for SeniorEnteMercado {
             1.0
         };
 
-        let entity_factor = (p_whale * p_liq * p_oi * p_spoof * p_crowd * p_taker * p_macro).clamp(0.20, 1.0);
+        // OLA Ω69: Modulación por presión psicológica asimétrica de Prospect Theory (Kahneman-Tversky)
+        let p_prospect = if payload.prospect_pressure.is_finite() && payload.prospect_pressure != 0.0 {
+            crate::prospect_theory::ProspectTheoryEngine::new()
+                .modulation_factor(payload.intended_direction, payload.prospect_pressure)
+        } else {
+            1.0
+        };
+
+        let entity_factor = (p_whale * p_liq * p_oi * p_spoof * p_crowd * p_taker * p_macro * p_prospect).clamp(0.20, 1.0);
         let dir = safe_signum(payload.intended_direction);
         SeniorOpinion {
             role: self.role(),
@@ -606,12 +621,13 @@ impl SeniorAgent for SeniorEnteMercado {
             weight: 1.0,
             is_veto,
             justification: format!(
-                "EnteMercado: ballena_z={:.1} cascada={:.2} OI={:.2} spoof={:.2} macro_stale_ms={} → convicción {:.2}{}",
+                "EnteMercado: ballena_z={:.1} cascada={:.2} OI={:.2} spoof={:.2} macro_stale_ms={} kt_p={:.2} → convicción {:.2}{}",
                 whale_z,
                 liq,
                 oi,
                 spoof,
                 payload.macro_staleness_ms,
+                payload.prospect_pressure,
                 entity_factor,
                 if is_veto { " [VETO CASCADA]" } else { "" }
             ),
@@ -1506,6 +1522,7 @@ mod tests {
             macro_staleness_ms: 0,
             navier_reynolds_number: 0.0,
             navier_laminar_share: 1.0,
+            prospect_pressure: 0.0,
         }
     }
 
