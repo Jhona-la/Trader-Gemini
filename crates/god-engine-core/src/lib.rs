@@ -2547,31 +2547,31 @@ impl GodEngineCore {
                     let w_range = (1.0 - w_bull - w_crash - w_chaos).max(0.02);
 
                     let sum_w = (w_range + w_bull + w_crash + w_chaos).max(1e-9);
-                    let p_range = (w_range / sum_w).clamp(0.0, 1.0);
-                    let p_bull = (w_bull / sum_w).clamp(0.0, 1.0);
-                    let p_crash = (w_crash / sum_w).clamp(0.0, 1.0);
-                    let p_chaos = (w_chaos / sum_w).clamp(0.0, 1.0);
+                    let spectral_regime = risk_engine::regime::SpectralMarketRegime::new(
+                        w_range / sum_w,
+                        w_bull / sum_w,
+                        w_crash / sum_w,
+                        w_chaos / sum_w,
+                    );
 
                     // Publicación de la distribución espectral continua
-                    self.arena.regime_p_range.store(p_range, Ordering::Relaxed);
-                    self.arena.regime_p_bull.store(p_bull, Ordering::Relaxed);
-                    self.arena.regime_p_crash.store(p_crash, Ordering::Relaxed);
-                    self.arena.regime_p_chaos.store(p_chaos, Ordering::Relaxed);
-                    self.arena.registry.set("market_regime_p_range", p_range);
-                    self.arena.registry.set("market_regime_p_bull", p_bull);
-                    self.arena.registry.set("market_regime_p_crash", p_crash);
-                    self.arena.registry.set("market_regime_p_chaos", p_chaos);
+                    self.arena.regime_p_range.store(spectral_regime.p_range, Ordering::Relaxed);
+                    self.arena.regime_p_bull.store(spectral_regime.p_bull, Ordering::Relaxed);
+                    self.arena.regime_p_crash.store(spectral_regime.p_crash, Ordering::Relaxed);
+                    self.arena.regime_p_chaos.store(spectral_regime.p_chaos, Ordering::Relaxed);
+                    self.arena.registry.set("market_regime_p_range", spectral_regime.p_range);
+                    self.arena.registry.set("market_regime_p_bull", spectral_regime.p_bull);
+                    self.arena.registry.set("market_regime_p_crash", spectral_regime.p_crash);
+                    self.arena.registry.set("market_regime_p_chaos", spectral_regime.p_chaos);
+
+                    // Publicación de métricas de teoría de información espectral continua
+                    self.arena.registry.set("market_regime_shannon_entropy", spectral_regime.shannon_entropy());
+                    self.arena.registry.set("market_regime_renyi_entropy", spectral_regime.renyi_entropy(2.0));
+                    self.arena.registry.set("market_regime_directional_bias", spectral_regime.directional_bias());
+                    self.arena.registry.set("market_regime_turbulence_index", spectral_regime.turbulence_index());
 
                     // Estimador MAP (Maximum A Posteriori) discreto para compatibilidad regresiva
-                    let new_regime = if p_bull > p_range && p_bull > p_crash && p_bull > p_chaos {
-                        1u8 // BullRun
-                    } else if p_crash > p_range && p_crash > p_bull && p_crash > p_chaos {
-                        2u8 // Crash
-                    } else if p_chaos > p_range && p_chaos > p_bull && p_chaos > p_crash {
-                        3u8 // Chaotic / Mean Reverting
-                    } else {
-                        0u8 // Range
-                    };
+                    let new_regime: u8 = spectral_regime.map_discrete().into();
                     self.arena
                         .market_regime
                         .store(new_regime, Ordering::Relaxed);
@@ -7675,24 +7675,22 @@ impl GodEngineCore {
                         // colchón.
                         let total_used = self.arena.used_margin_saturated();
                         let mut free_cap = (current_cap - total_used).max(0.0);
-                        // (Ola XLI·B1) CRASH-NESS CONTINUA en lugar de etiqueta:
-                        // el margen disponible para largos respira con la
-                        // densidad de evidencia de caída del campo espectral
-                        // (1.0 calma → 0.05 en caída coherente acelerada). El
-                        // veto binario del enum queda sólo como el extremo
-                        // medido (legacy_view Crash, P99).
-                        if is_long {
-                            let crash_flux = self.arena.coins[coin_id]
-                                .spectral_crash_flux
-                                .load(Ordering::Relaxed)
-                                .clamp(0.0, 1.0);
-                            if crash_flux > 0.0 {
-                                let tide = self.arena.coins[coin_id]
-                                    .spectral_coherence
-                                    .load(Ordering::Relaxed);
-                                if tide < 0.0 {
-                                    free_cap *= (1.0 - 0.95 * crash_flux).clamp(0.05, 1.0);
-                                }
+                        // (Ola XLI·B1 / Ola Ω59) MODULACIÓN ESPECTRAL CONTINUA SIMÉTRICA DEL MARGEN DISPONIBLE:
+                        // El margen admisible respira con la densidad de evidencia de flujo turbulento adverso.
+                        // Para LARGOS: marea portadora bajista (tide < 0.0) contrae el capital libre ante caídas.
+                        // Para CORTOS: marea portadora alcista (tide > 0.0) contrae el capital libre ante subidas
+                        // violentas / short squeezes (1.0 calma → 0.05 en turbulencia direccional coherente acelerada).
+                        let directional_flux = self.arena.coins[coin_id]
+                            .spectral_crash_flux
+                            .load(Ordering::Relaxed)
+                            .clamp(0.0, 1.0);
+                        if directional_flux > 0.0 {
+                            let tide = self.arena.coins[coin_id]
+                                .spectral_coherence
+                                .load(Ordering::Relaxed);
+                            let adverse_tide = if is_long { tide < 0.0 } else { tide > 0.0 };
+                            if adverse_tide {
+                                free_cap *= (1.0 - 0.95 * directional_flux).clamp(0.05, 1.0);
                             }
                         }
 

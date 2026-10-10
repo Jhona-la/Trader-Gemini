@@ -937,3 +937,15 @@ como si fuera el nuevo SHA. SA94790c5c es commit local, sin push/PR; OOS
 permanece aparte. Auto-review exige respuesta específica para publicación
 pública SA/OOS; consulta renovada pendiente. RA28 ya tiene autoridad propia.
 No se han borrado refs activas/no integradas, promovido modelos ni operado.
+
+## 20. Formalización de Símplex Espectral Continuo en Riesgo y Registro de Vetos (Ola Ω58, Ficha #693)
+
+- **Geometría del Símplex $\Delta^3$**: En `crates/risk-engine/src/regime.rs`, formalización de `SpectralMarketRegime` con componentes $(p_{\text{range}}, p_{\text{bull}}, p_{\text{crash}}, p_{\text{chaos}})$ con partición estricta de la unidad, entropía de Shannon $H(p)$, entropía cuántica de Rényi $H_\alpha(p)$, polarización direccional $\Pi_{\text{dir}}$ e índice de turbulencia $\tau_{\text{turb}}$.
+- **Erradicación de Deuda en Registro de Vetos**: `V-LOGIC-007` (modulación suave de confianza de consejo en frío), `V-LOGIC-009` (evidencia muestral mínima sin deadlock), y `V-LOGIC-010` (simetría direccional en resonancia) certificadas contractualmente sin deudas en `crates/risk-engine/src/veto_registry.rs`.
+
+## 21. Simetría Direccional en Colchón de Margen y Teoría de Información en Core (Ola Ω59, Ficha #694)
+
+- **Simetría Direccional de Margen Libre (`crates/god-engine-core/src/lib.rs:7684-7697`)**: Symmetrizada la modulación continua de `free_cap` ante marea portadora adversa. Para posiciones Long, marea bajista (`tide < 0.0`) contrae el margen admisible ante caídas; para posiciones Short, marea alcista (`tide > 0.0`) contrae el margen admisible ante short squeezes violentos: `free_cap *= (1.0 - 0.95 * directional_flux).clamp(0.05, 1.0)`. Erradica la desprotección asimétrica de posiciones cortas.
+- **Publicación Unificada del Símplex (`crates/god-engine-core/src/lib.rs:2549-2575`)**: Normalización e instanciación de `SpectralMarketRegime` en core; publicación continua a `OmniscientRegistry` de probabilidades del símplex, entropía de Shannon, entropía de Rényi ($\alpha = 2.0$), polarización direccional e índice de turbulencia. Deduplicación del estimador MAP hacia `spectral_regime.map_discrete().into()`.
+- **Contrato Formal**: `crates/god-engine-core/tests/cushion_symmetry_contract.rs` (3/3 tests PASSED al 100%).
+

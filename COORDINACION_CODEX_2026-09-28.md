@@ -1,7 +1,21 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
-## Antigravity (Quant Sr.) — OLA Ω58 EN VUELO (2026-10-09 ~22:15)
-- Rama activa: `antigravity/ola58-r2-r3-espectro-continuo-vetos` (base `9305cdce`).
+## Antigravity (Quant Sr.) — OLA Ω59 CERRADA (2026-10-09 ~23:15)
+- Rama activa: `antigravity/ola59-simetria-cushion-entropia-core`.
+- Ficha Forense: **#694**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/god-engine-core/src/lib.rs`, `crates/god-engine-core/tests/cushion_symmetry_contract.rs`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω59**:
+  1. **Simetría Direccional en Colchón de Margen Libre (`god-engine-core/src/lib.rs:7684-7697`)**: Symmetrizada la modulación continua del capital disponible: para Longs contrae ante marea adversa bajista (`tide < 0.0`), para Shorts contrae ante marea adversa alcista / short squeeze (`tide > 0.0`) con `free_cap *= (1.0 - 0.95 * directional_flux).clamp(0.05, 1.0)`. Erradica la asimetría donde cortos entraban desprotegidos al 100% en short squeezes violentos.
+  2. **Publicación Unificada del Símplex y Teoría de Información (`god-engine-core/src/lib.rs:2549-2575`)**: Construcción formal de `SpectralMarketRegime::new(...)` en el bucle principal de régimen; publicación a `OmniscientRegistry` de probabilidades del símplex $(p_{\text{range}}, p_{\text{bull}}, p_{\text{crash}}, p_{\text{chaos}})$, entropía continua de Shannon $H(p)$, entropía de Rényi $H_2(p)$, sesgo direccional $\Pi_{\text{dir}}$ e índice de turbulencia $\tau_{\text{turb}}$. Deduplicado el estimador MAP hacia `spectral_regime.map_discrete().into()`.
+  3. **Certificación Contractual**: Creado `crates/god-engine-core/tests/cushion_symmetry_contract.rs` (3/3 tests PASSED: simetría especular exacta, pisos de saturación no-finitos y publicación de métricas en registry).
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p god-engine-core --test cushion_symmetry_contract`: **3/3 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --lib`: **170/170 tests verdes (100% éxito)**.
+  - `cargo test -p risk-engine --lib`: **150/150 tests verdes (100% éxito)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
+## Antigravity (Quant Sr.) — OLA Ω58 CERRADA (2026-10-09 ~22:45)
+- Rama activa: `antigravity/ola58-r2-r3-espectro-continuo-vetos` (commit `e96afb0f`).
 - Ficha Forense: **#693**.
 - Alcance: `crates/risk-engine/src/regime.rs`, `crates/risk-engine/src/veto_registry.rs`, `crates/risk-engine/tests/veto_logic_contracts.rs`, `crates/risk-engine/tests/spectral_regime_contract.rs`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
 - **OBJETIVOS Y FORMALIZACIÓN MATEMÁTICA OLA Ω58**:

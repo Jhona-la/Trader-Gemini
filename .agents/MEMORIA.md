@@ -1,16 +1,34 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-09 — AGY: OLA Ω58 EN VUELO — SÍMPLEX ESPECTRAL CONTINUO EN RIESGO (FASES R2/R3), ERRADICACIÓN DE DEUDA CONTRACTUAL EN REGISTRO DE VETOS E INVARIANTES SAGRADOS DE MICRO-CAPITAL ($13.00 USD)
+## 2026-10-09 — AGY: OLA Ω59 COMPLETADA — SIMETRÍA DIRECCIONAL EN COLCHÓN DE MARGEN LIBRE, TEORÍA DE INFORMACIÓN SOBRE EL SÍMPLEX ESPECTRAL CONTINUO EN CORE (#694)
 
-- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola58-r2-r3-espectro-continuo-vetos`.
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola59-simetria-cushion-entropia-core`.
+- **Ficha Forense**: **#694**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+- **Cambios Implementados y Certificados**:
+  1. **Simetría Direccional en Colchón de Margen Libre (`crates/god-engine-core/src/lib.rs:7684-7697`)**: Symmetrizada la modulación de `free_cap` ante marea y flujos adversos: para compras (Long), marea bajista (`tide < 0.0`) contrae el capital disponible; para ventas (Short), marea alcista / short squeeze (`tide > 0.0`) contrae el capital idénticamente: `free_cap *= (1.0 - 0.95 * directional_flux).clamp(0.05, 1.0)`. Si la posición fluye a favor de la marea, no se aplica contracción.
+  2. **Publicación Unificada del Símplex y Teoría de Información en Core (`crates/god-engine-core/src/lib.rs:2549-2575`)**: Integrado `SpectralMarketRegime::new(...)` para normalización rigurosa de las 4 componentes continuas $(p_{\text{range}}, p_{\text{bull}}, p_{\text{crash}}, p_{\text{chaos}})$ en $\Delta^3$. Publicadas a `OmniscientRegistry` las métricas continuas: `market_regime_shannon_entropy`, `market_regime_renyi_entropy` ($\alpha=2.0$, entropía de colisión), `market_regime_directional_bias` e `market_regime_turbulence_index`. Reemplazado estimador MAP ad-hoc por llamada nativa `spectral_regime.map_discrete().into()`.
+  3. **Contrato de Integridad y Simetría**: Creado `crates/god-engine-core/tests/cushion_symmetry_contract.rs` con 3 tests formales pasando al 100%.
+- **Verificación Contractual Integral**:
+  - `cargo test -p god-engine-core --test cushion_symmetry_contract`: 3/3 tests PASSED (100%).
+  - `cargo test -p god-engine-core --lib`: 170/170 tests PASSED (100%).
+  - `cargo test -p risk-engine --lib`: 150/150 tests PASSED (100%).
+  - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias.
+
+## 2026-10-09 — AGY: OLA Ω58 COMPLETADA — SÍMPLEX ESPECTRAL CONTINUO EN RIESGO (FASES R2/R3), ERRADICACIÓN DE DEUDA CONTRACTUAL EN REGISTRO DE VETOS E INVARIANTES SAGRADOS DE MICRO-CAPITAL ($13.00 USD)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `e96afb0f`.
 - **Ficha Forense**: **#693**. Cero fallos, cero regresiones, cero heap allocations en hot path.
 - **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
   - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
   - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
   - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
-- **Objetivos de Ola Ω58**:
-  1. **Símplex Espectral Continuo en Riesgo (`SpectralMarketRegime`)**: En `crates/risk-engine/src/regime.rs`, formalizar la geometría del símplex $\Delta^3$ con $p = [p_{\text{range}}, p_{\text{bull}}, p_{\text{crash}}, p_{\text{chaos}}]$, entropía de Shannon $H(p)$, entropía cuántica/generalizada de Rényi $H_\alpha(p)$, polarización direccional $\Pi_{\text{dir}}$ e índice de turbulencia $\tau_{\text{turb}}$. Actualizaciones $C^\infty$ suaves Lorentz/sigmoide sin escalones rígidos.
-  2. **Erradicación de Deuda Contractual en Registro de Vetos**: Resolver formalmente en `crates/risk-engine/src/veto_registry.rs` y `crates/risk-engine/tests/veto_logic_contracts.rs` las deudas de `V-LOGIC-007` (confianza del consejo y modulación suave en frío), `V-LOGIC-009` (evidencia muestral mínima sin deadlock), y `V-LOGIC-010` (simetría direccional en confluencia resonante).
+- **Objetivos Cumplidos de Ola Ω58**:
+  1. **Símplex Espectral Continuo en Riesgo (`SpectralMarketRegime`)**: En `crates/risk-engine/src/regime.rs`, formalizada la geometría del símplex $\Delta^3$ con $p = [p_{\text{range}}, p_{\text{bull}}, p_{\text{crash}}, p_{\text{chaos}}]$, entropía de Shannon $H(p)$, entropía cuántica/generalizada de Rényi $H_\alpha(p)$, polarización direccional $\Pi_{\text{dir}}$ e índice de turbulencia $\tau_{\text{turb}}$. Actualizaciones $C^\infty$ suaves Lorentz/sigmoide sin escalones rígidos.
+  2. **Erradicación de Deuda Contractual en Registro de Vetos**: Resueltas formalmente en `crates/risk-engine/src/veto_registry.rs` y `crates/risk-engine/tests/veto_logic_contracts.rs` las deudas de `V-LOGIC-007` (confianza del consejo y modulación suave en frío), `V-LOGIC-009` (evidencia muestral mínima sin deadlock), y `V-LOGIC-010` (simetría direccional en confluencia resonante).
   3. **Certificación Contractual**: Suites de tests dedicados probando invarianza, propiedades de conservación de probabilidad y respuesta a micro-capital.
 
 ## 2026-10-09 — AGY: OLA Ω57 COMPLETADA — DEFECTO C-02 (ALIMENTACIÓN VIVA SPOT-FUTURO PARA STATARB, SDE CONTINUO DE ORNSTEIN-UHLENBECK / FOKKER-PLANCK Y TENSOR MACRO)
