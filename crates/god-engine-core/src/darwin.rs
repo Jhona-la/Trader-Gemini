@@ -722,13 +722,63 @@ pub fn promover_candidato(
     full_genotype.explosive_leverage_multiplier = candidato.explosive_leverage_multiplier;
 
     let env = quantum_arena::genome_store::GenomeEnvelope::promote(full_genotype, "darwin_daemon", razon)?;
-    env.apply_to_arena(arena);
+    aplicar_promovido(&env, arena);
     Ok(env)
+}
+
+/// CL-53b — aplica al arena el genoma promovido tal como lo cargarán de
+/// `active.json` los vigilantes del núcleo y del host (`load_active`
+/// normaliza con `from_vector`). Antes el arena recibía el genoma crudo y
+/// operaba con él hasta que un vigilante releía el disco.
+fn aplicar_promovido(env: &quantum_arena::genome_store::GenomeEnvelope, arena: &GlobalArena) {
+    match env.como_se_carga() {
+        Ok(cargado) => cargado.apply_to_arena(arena),
+        Err(_) => {
+            let mut normalizado = env.clone();
+            normalizado.genome =
+                quantum_arena::genome::SuperGenotype::from_vector(&env.genome.to_vector());
+            normalizado.apply_to_arena(arena);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// CL-53b — la promoción aplica el genoma que carga el almacén. Con
+    /// un gen fuera de cota la diferencia se ve: el arena recibe el valor
+    /// recortado, el mismo que aplicaría después el vigilante del núcleo.
+    #[test]
+    fn cl53b_la_promocion_aplica_el_genoma_que_carga_el_almacen() {
+        use quantum_arena::genome::SuperGenotype;
+        use quantum_arena::genome_store::{GenomeEnvelope, SCHEMA_VERSION};
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        let mut genome = SuperGenotype::current_from_arena(&arena);
+        genome.global_leverage = 1.0e6;
+        let env = GenomeEnvelope {
+            schema_version: SCHEMA_VERSION,
+            generation: 7,
+            created_ms: 0,
+            source: "darwin_daemon".into(),
+            parent_generation: 6,
+            promotion_reason: "cl53b".into(),
+            genome,
+        };
+        aplicar_promovido(&env, &arena);
+        let esperado = env.como_se_carga().unwrap().genome;
+        assert!(esperado.global_leverage < 1.0e6);
+        assert_eq!(
+            SuperGenotype::current_from_arena(&arena).global_leverage,
+            esperado.global_leverage
+        );
+        // Y la promoción de Darwin pasa por aquí, no por el genoma crudo.
+        let fuente = include_str!("darwin.rs");
+        let i = fuente.find("pub fn promover_candidato(").unwrap();
+        let cuerpo = &fuente[i..i + fuente[i..].find("\n}\n").unwrap()];
+        assert!(cuerpo.contains("aplicar_promovido(&env, arena);"));
+        assert!(!cuerpo.contains(".apply_to_arena("));
+    }
 
     /// CL-53: un candidato que el gate rechaza no llega al arena. Antes el
     /// arena quedaba con su apalancamiento y sus curvas aunque `promote`
