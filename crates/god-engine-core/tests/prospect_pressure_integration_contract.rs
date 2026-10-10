@@ -118,3 +118,31 @@ fn test_feynman_and_prospect_confluence_in_god_engine() {
     assert!(trace.consensus.final_signal > 0.0);
     assert!(trace.consensus.vetoed_by.is_none());
 }
+
+#[test]
+fn test_prospect_pressure_mirror_symmetry_in_god_engine() {
+    let kt = ProspectTheoryEngine::new();
+
+    // Verificamos que para cualquier ratio Long/Short de la masa y severidad de liquidación,
+    // el fallback analítico de prospect_pressure en god_engine es 100% anti-simétrico (C-10)
+    for &ls in &[0.5, 0.8, 1.0, 1.25, 2.0, 4.0] {
+        let p_up = kt.compute_crowd_net_prospect_pressure(ls, 0.25, 1.5);
+        let p_down = kt.compute_crowd_net_prospect_pressure(1.0 / ls, 0.25, 1.5);
+        assert!(
+            (p_up + p_down).abs() < 1e-10,
+            "C-10: Fallback analítico debe ser exactamente anti-simétrico: p_up={}, p_down={}",
+            p_up,
+            p_down
+        );
+
+        // La modulación contrarian para Long con euforia (+P) debe ser idéntica
+        // a la modulación contrarian para Short con pánico (-P)
+        let mod_long = kt.modulation_factor(1.0, p_up);
+        let mod_short = kt.modulation_factor(-1.0, p_down);
+        assert!(
+            (mod_long - mod_short).abs() < 1e-10,
+            "C-10: Modulación contrarian debe ser simétrica para Long y Short bajo inversión de sentimiento",
+        );
+    }
+}
+

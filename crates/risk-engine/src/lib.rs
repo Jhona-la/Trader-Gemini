@@ -949,12 +949,15 @@ impl RiskEngine {
             return rej(REJ_TARGET_GEOMETRY);
         }
 
-        // R7-R2-A-1: Activación analítica de la probabilidad en forma cerrada de primer toque (Ω3 / CL-34)
-        // Si la marea espectral adversa y la geometría del bracket hacen que la probabilidad
-        // de tocar el stop antes del take profit exceda el 88%, se veta la orden por geometría inviable.
+        // R7-R2-A-1 / Ola Ω73: Activación analítica de la probabilidad en forma cerrada de primer toque (Ω3 / CL-34)
+        // Calibración R-15: La coherencia espectral es una correlación instantánea en [-1, 1],
+        // cuya persistencia decorrelaciona con el horizonte tau (Hurst / half-life).
+        // Se escala dimensionalmente con (30s / tau)^{1/2} para evitar que horizontes extendidos
+        // sobre-acumulen deriva constante un-física y veten señales válidas con desacuerdos mínimos.
         let spectral_tide = arena.coins[coin_id].spectral_coherence.load(Ordering::Relaxed);
+        let tau_ratio = (30_000.0 / tau_for_sizing.max(30_000.0)).sqrt().clamp(0.15, 1.0);
         let directional_drift = if spectral_tide.is_finite() {
-            dir * spectral_tide * atr_pct
+            dir * spectral_tide * atr_pct * tau_ratio
         } else {
             0.0
         };
@@ -964,6 +967,8 @@ impl RiskEngine {
             directional_drift,
             atr_pct,
         );
+        // Telemetría viva en el registro omnisciente (R-15):
+        arena.registry.set_for_coin(coin_id, "p_hit_sl_first", p_hit_sl_first);
         if p_hit_sl_first > 0.88 {
             return rej(REJ_TARGET_GEOMETRY);
         }

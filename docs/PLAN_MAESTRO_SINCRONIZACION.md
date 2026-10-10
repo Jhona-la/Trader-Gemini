@@ -1284,3 +1284,20 @@ contrato ejecutable).
   - `cargo test -p risk-engine --lib`: 153/153 tests PASSED (100%).
   - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias. Latencia de hot path reducida a $< 25$ ns.
 
+## 32. Resolución de Asimetría Prospect (C-10 / C-10b), Calibración Primer Toque (R-15) y Clarificación de Invariantes (Ola Ω73, Ficha #711)
+
+- **Resolución de Raíz C-10 y C-10b (Teoría de Prospectos de Kahneman-Tversky)**:
+  - **C-10 (Asimetría Direccional Artificial)**: Se identificó que `god-engine-core` alimentaba el modulador prospect con `ml_prob_pure` (probabilidad de que el largo alcance TP antes que SL, base $\approx 0.25$), evaluando $P_{\text{kt}}$ siempre profundamente negativo con $\lambda=2.25$, lo que creaba una penalización constante y severa contra posiciones cortas. Se implementó `compute_crowd_net_prospect_pressure(ls_ratio, liquidation_severity, delta_pts)` en `crates/metacortex-engine/src/prospect_theory.rs:188-289`, derivando la presión de masa prospect directamente del ratio real Long/Short de cuentas de Binance (`crowd_ls_ratio`), garantizando estricta antisimetría de espejo: $P_{\text{kt,net}}(1/LS) = -P_{\text{kt,net}}(LS)$ y neutralidad exacta ($0.0$) cuando $LS = 1.0$.
+  - **C-10b (Colapso de Presión Firmada en Lectura)**: En `crates/god-engine-core/src/lib.rs:7560-7574`, se erradicó la llamada destructiva `.max(0.0)` sobre la presión de pánico (`panic_pts`), la cual anulaba lecturas negativas legítimas de pánico contra defaults neutros. La lectura preserva el signo completo del tensor prospect.
+  - **Certificación de Espejo**: Suite unitaria `test_crowd_prospect_pressure_mirror_symmetry` y suite de integración `test_prospect_pressure_mirror_symmetry_in_god_engine` aprobadas al 100%.
+
+- **Calibración Analítica del Veto de Primer Toque (R-15)**:
+  - En `crates/risk-engine/src/lib.rs:940-955`, se resolvió el falso bloqueo de operaciones swing amplias en horizontes largos $\tau$. La coherencia espectral en $[-1, 1]$ es una correlación instantánea entre escalas, no una tasa de deriva por segundo; escalar $\theta \cdot \text{tp}$ directamente con $\sqrt{\tau/\tau_0}$ provocaba que oscilaciones mínimas ($-0.02$) vetaran posiciones de largo aliento con SL de 200 pb.
+  - Se calibró la deriva efectiva multiplicando por el factor de decorrelación temporal $\tau_{\text{ratio}} = (30\text{ s} / \tau)^{1/2}$, manteniendo invarianza de escala a la vez que se preserva el rechazo estricto ante mareas adversas severas ($\le -0.95$). Se publicó telemetría en tiempo real `p_hit_sl_first` en `OmniscientRegistry` y se actualizó `V-LOGIC-008` en `crates/risk-engine/src/veto_registry.rs:230-244`.
+  - Certificación: 153/153 tests de `risk-engine` y 4/4 tests de contrato `r7_r2_ruin_chaos_contract` aprobados al 100%.
+
+- **Clarificación y Sincronización de Invariantes Sagrados (INV-2 y R-03)**:
+  - **Suelo de Supervivencia (INV-2)**: El suelo operativo configurado en `crates/risk-engine/src/lib.rs:285-314` evalúa `lerp(dd_max_medido, 0.85, micro_w)`, estableciendo un techo de Drawdown del 85% ($1.95 USD) antes de la expulsión forzada, mientras que $3.00 USD representa el presupuesto estricto de riesgo activo asignado por el operador.
+  - **Límite de Concurrencia (R-03)**: La concurrencia efectiva en tiempo de ejecución está gobernada físicamente por el margen libre disponible ($2.60 USD máx por orden) y la estructura de ranuras ortogonales (3 slots por moneda en `position.rs` separados por $\Delta \ln \tau \ge 0.80$), evitando solapamientos destructivos en la cartera.
+
+

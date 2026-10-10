@@ -183,4 +183,107 @@ impl ProspectTheoryEngine {
             1.0 + 0.50 * (smart_contrarian_edge * 0.25).tanh()
         }
     }
+
+    /// Calcula la presión psicológica continua anti-simétrica del mercado a partir del sentimiento de masas (LS ratio).
+    /// Cumple simetría espejo estricta anti-simétrica: P(1/LS, liq) = -P(LS, liq).
+    /// Neutral exacto en LS = 1.0 -> 0.0.
+    #[inline(always)]
+    pub fn compute_crowd_net_prospect_pressure(
+        &self,
+        ls_ratio: f64,
+        liquidation_severity: f64,
+        delta_pts: f64,
+    ) -> f64 {
+        let safe_ls = if ls_ratio.is_finite() && ls_ratio > 1e-4 {
+            ls_ratio.clamp(0.01, 100.0)
+        } else {
+            1.0
+        };
+        let p_long = (safe_ls / (1.0 + safe_ls)).clamp(0.01, 0.99);
+        let p_short = 1.0 - p_long;
+
+        let safe_liq = if liquidation_severity.is_finite() && liquidation_severity >= 0.0 {
+            liquidation_severity.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+
+        let p_crash_long = (safe_liq * p_long + p_short * 0.5).clamp(0.01, 0.99);
+        let p_squeeze_short = (safe_liq * p_short + p_long * 0.5).clamp(0.01, 0.99);
+
+        let safe_delta = if delta_pts.is_finite() && delta_pts >= 0.0 {
+            delta_pts.clamp(0.1, 10.0)
+        } else {
+            1.0
+        };
+
+        let p_kt_long = self.compute_prospect_pressure(p_long, p_crash_long, safe_delta, safe_delta);
+        let p_kt_short = self.compute_prospect_pressure(p_short, p_squeeze_short, safe_delta, safe_delta);
+
+        let net_pressure = p_kt_long - p_kt_short;
+        if net_pressure.is_finite() {
+            net_pressure.clamp(-50.0, 50.0)
+        } else {
+            0.0
+        }
+    }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_crowd_prospect_pressure_mirror_symmetry() {
+        let engine = ProspectTheoryEngine::new();
+        // 1. En LS = 1.0 (neutral), la presión neta del mercado debe ser exactamente 0.0
+        let p_neutral = engine.compute_crowd_net_prospect_pressure(1.0, 0.20, 1.5);
+        assert!(
+            p_neutral.abs() < 1e-12,
+            "En neutralidad LS=1.0, la presión neta debe ser 0.0, obtenido: {}",
+            p_neutral
+        );
+
+        // 2. Simetría anti-simétrica exacta: P(1/LS) == -P(LS)
+        for &ls in &[1.5, 2.0, 3.5, 5.0, 10.0] {
+            let p_bull = engine.compute_crowd_net_prospect_pressure(ls, 0.30, 2.0);
+            let p_bear = engine.compute_crowd_net_prospect_pressure(1.0 / ls, 0.30, 2.0);
+            assert!(
+                (p_bull + p_bear).abs() < 1e-10,
+                "Para LS={} y 1/LS={}, p_bull={} y p_bear={} deben ser opuestos exactos",
+                ls,
+                1.0 / ls,
+                p_bull,
+                p_bear
+            );
+            assert!(
+                p_bull > 0.0,
+                "Para LS > 1.0, la presión de euforia compradora debe ser positiva: {}",
+                p_bull
+            );
+            assert!(
+                p_bear < 0.0,
+                "Para LS < 1.0, la presión de pánico vendedor debe ser negativa: {}",
+                p_bear
+            );
+        }
+    }
+
+    #[test]
+    fn test_modulation_factor_mirror_symmetry() {
+        let engine = ProspectTheoryEngine::new();
+        // Para cualquier par espejado (dir=+1, P) y (dir=-1, -P), modulation_factor debe ser idéntico
+        for &p in &[-15.0, -5.0, 0.0, 5.0, 15.0] {
+            let m_long = engine.modulation_factor(1.0, p);
+            let m_short = engine.modulation_factor(-1.0, -p);
+            assert!(
+                (m_long - m_short).abs() < 1e-12,
+                "Modulation factor debe ser idéntico bajo espejo para P={}: long={}, short={}",
+                p,
+                m_long,
+                m_short
+            );
+        }
+    }
+}
+

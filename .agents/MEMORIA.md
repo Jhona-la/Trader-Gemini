@@ -1,5 +1,34 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω73 COMPLETADA — SIMETRÍA ESPEJO PROSPECT THEORY (C-10/C-10b), CALIBRACIÓN PRIMER TOQUE (R-15) Y CLARIFICACIÓN DE INVARIANTES (FICHA #711)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#711`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Reales y Gobernanza de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Suelo de supervivencia de código: En `risk-engine/src/lib.rs:285-314`, el drawdown máximo admisible es `lerp(dd_max_medido, 0.85, micro_w)`, permitiendo un drawdown de hasta el 85% ($1.95 USD de capital restante) en régimen micro puro, mientras que $3.00 USD (DD 76.92%) se mantiene como el umbral de alerta / límite de riesgo del operador.
+  - Concurrencia de posiciones: Limitada físicamente por el margen libre disponible (tope de $2.60 USD por orden) y las ranuras ortogonales desacopladas en el continuo ($\Delta \ln \tau \ge 0.80$, 3 ranuras por activo en `position.rs`).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+  - Crecimiento exponencial compuesto objetivo: $+100\%$ cada 3 días ($T_d = 72$ h, $g = \frac{\ln(2)}{3} \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$ compuesto continuo).
+- **Cambios Implementados y Certificados**:
+  1. **Resolución de Asimetría Prospect Theory (Hallazgos C-10 y C-10b del Ledger QS-R1)**:
+     - En `crates/metacortex-engine/src/prospect_theory.rs`: Creada la función analítica `compute_crowd_net_prospect_pressure(ls_ratio, liquidation_severity, delta_pts)`, derivando la presión psicológica de la masa directamente del ratio Long/Short del mercado real ($LS$) y no de la probabilidad de largo interna del modelo (`ml_prob_pure`).
+     - Cumplimiento formal de simetría espejo anti-simétrica estricta: $P_{\text{kt,net}}(1/LS) = -P_{\text{kt,net}}(LS)$, con neutral exacto en $LS = 1.0 \implies 0.0$.
+     - Erradicación de la penalización estructural contra operaciones en corto. Modulación contrarian en `ProspectTheoryEngine::modulation_factor` idéntica bit a bit para pares espejados (`test_crowd_prospect_pressure_mirror_symmetry` y `test_modulation_factor_mirror_symmetry`).
+     - En `crates/god-engine-core/src/lib.rs:7560-7574`: Corregida la lectura firmada desde `OmniscientRegistry` con comprobación de finitud, eliminando la operación `.max(0.0)` que clobber-eaba lecturas legítimas de pánico extremo negativo (C-10b).
+  2. **Calibración Dimensional por Escala Temporal de Primer Toque Browniano (Hallazgo R-15)**:
+     - En `crates/risk-engine/src/lib.rs:940-955`: Calibrada la deriva direccional $\mu$ en la compuerta analítica browniana de primer toque `probabilidad_tocar_sl_antes_de_tp`.
+     - Introducido el factor de escala de decorrelación espectral temporal $\tau_{\text{ratio}} = (30\text{ s} / \tau)^{1/2}$, reconociendo que la coherencia espectral en $[-1, 1]$ es una correlación instantánea que decorrelaciona con el tiempo según el proceso de Hurst.
+     - Se previene el veto prematuro en brackets de escalas extendidas ante ruidos menores ($-0.02$), mientras se preserva el veto duro ante mareas genuinamente adversas ($-0.95$ en `test_r7_r2_a1_analytical_first_hitting_gate_contract`).
+     - Telemetría en vivo: Se publica `"p_hit_sl_first"` en `OmniscientRegistry` para trazabilidad forense continua y se actualizó la entrada `V-LOGIC-008` en `veto_registry.rs`.
+- **Verificación Contractual Integral**:
+  - `cargo test -p god-engine-core --test prospect_pressure_integration_contract`: **3/3 tests PASSED (100%)**.
+  - `cargo test -p metacortex-engine --test qs_r2_simetria_espejo_contract`: **2/2 tests PASSED (100%)**.
+  - `cargo test -p metacortex-engine --test prospect_theory_contract`: **6/6 tests PASSED (100%)**.
+  - `cargo test -p metacortex-engine --lib`: **28/28 tests PASSED (100%)**.
+  - `cargo test -p risk-engine --test r7_r2_ruin_chaos_contract`: **4/4 tests PASSED (100%)**.
+  - `cargo test -p risk-engine --lib`: **153/153 tests PASSED (100%)**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## 2026-10-10 — AGY: OLA Ω72 COMPLETADA — ZERO-ALLOC HOT PATH EN CONSENSO CONTINUO Y MOMENTOS DE SELECCIÓN (FICHA #710)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#710`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).

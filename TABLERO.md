@@ -82,24 +82,21 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω72 en curso / Fase R2-R3)
+## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω73 en curso / Fase R1-R3)
 
-- **Haciendo ahora**: Ola Ω72 — Erradicación de asignaciones dinámicas en el heap (Zero-Alloc Hot-Path)
-  en `crates/signal-engine/src/orchestrator.rs` (`evaluate_continuous_consensus_for_coin`, eliminando `Vec censo_muestras` por tick)
-  y `crates/risk-engine/src/selection_stats.rs` (`compute_moments`, eliminando `Vec clean` con cálculo de momentos in-place),
-  garantizando latencia de evaluación $< 25$ ns sobre la ruta crítica por tick en laptop de 16GB RAM sin GPU.
+- **Haciendo ahora**: Ola Ω73 — Resolución de Asimetría Espejo Prospect Theory (C-10 / C-10b) y Calibración Dimensional de Primer Toque Browniano (R-15).
+  - C-10 / C-10b: `ProspectTheoryEngine::compute_crowd_net_prospect_pressure` anti-simétrico estricto ($P(1/LS) = -P(LS)$) basado en sentimiento de masa real (`crowd_ls_ratio` y liquidaciones), erradicando el sesgo estructural contra cortos; lectura firmada en registro sin `.max(0.0)`.
+  - R-15: Calibración dimensional de deriva por escala temporal $\tau_{\text{ratio}} = (30\text{s}/\tau)^{1/2}$ acorde a física de decorrelación espectral en `risk-engine`, eliminando el castigo artificial a brackets amplios; telemetría viva de `p_hit_sl_first` en el registro omnisciente y actualización en `V-LOGIC-008`.
+  - Sincronización documental de invariantes: clarificación del suelo de DD (85% / 1.95 USD en micro-w vs 3.00 USD objetivo) y concurrencia gobernada por margen/slots.
 - **Commiteado reciente**:
   - Ola Ω68 (#704, `194089b8`): Absorción analítica de Fokker-Planck en SDE VECM y first-passage time.
   - Plan Maestro Cuántico Integral (#705, `549fc536`): Documento canónico, 10 roles Senior, barrido R0-R9.
   - Ola Ω69 (#706, `32289abf`): Integración del Feynman Path Integral Propagator (`signal-engine`)
-    con 32 escalas de Hilbert y coherencia cuántica $C_{\text{coh}}$, junto al Prospect Theory Engine
-    de Kahneman-Tversky ($\lambda=2.25$, Prelec $\gamma=0.65$, presión $P_{\text{kt}}$ y modulación contrarian
-    $[0.50, 1.30]$ en `SeniorEnteMercado` de `metacortex-engine`). Contratos formales pasando al 100% (7/7 y 6/6; 78/78 en metacortex).
-  - Ola Ω70 (#708, `558c7dcc`): Integración en vivo de `prospect_pressure` en `god-engine-core::council_snapshot`,
-    unificación analítica de colas de pánico con fallback continuo y contrato formal `prospect_pressure_integration_contract.rs` (2/2 tests OK).
-  - Ola Ω71 (#709, `7387b935`): Certificación y resolución de deuda en 5 vetos del `veto_registry.rs` de `risk-engine`,
-    adición de contratos formales `veto_logic_contracts.rs` y registro compile-time inmutable `TESTS_EXISTENTES_RIESGO`.
-  - Ola Ω72 (#710): Zero-alloc hot-path en `signal-engine::orchestrator` y `risk-engine::selection_stats`.
+    con 32 escalas de Hilbert y coherencia cuántica $C_{\text{coh}}$, junto al Prospect Theory Engine.
+  - Ola Ω70 (#708, `558c7dcc`): Integración en vivo de `prospect_pressure` en `god-engine-core::council_snapshot`.
+  - Ola Ω71 (#709, `7387b935`): Certificación y resolución de deuda en 5 vetos del `veto_registry.rs` de `risk-engine`.
+  - Ola Ω72 (#710, `759f44ec`): Zero-alloc hot-path en `signal-engine::orchestrator` y `risk-engine::selection_stats`.
+  - Ola Ω73: Simetría espejo anti-simétrica en Prospect Theory (C-10 / C-10b) y calibración browniana R-15.
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados
   de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`).
   Toda la suite de crates pasando al 100% (153/153 en risk-engine, 120/120 en
