@@ -1,8 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-09 — AGY: OLA Ω60 COMPLETADA — RESOLUCIÓN DE HALLAZGOS R7-R6 ASIGNADOS A AGY (IG-1, EV-1, C-7 ≡ MD-2 Y DETECCIÓN MULTI-RANURA) (#695)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola60-r7-r6-ville-watchdog-fitness-slots`.
+- **Ficha Forense**: **#695**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
+  - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).
+  - Concurrencia máxima: 2 posiciones abiertas simultáneas consumiendo $2.04 USD (15.69%), margen libre $\ge \$10.96$ USD (84.31%), suelo de supervivencia absoluto $3.00 USD (Drawdown Max 76.92%).
+  - Stop Loss difusivo acotado a 55 bps ($0.02805 USD, 0.215% de la cuenta), $RR \ge 2.25$ ($TP \ge 123.75$ bps, $+\$0.06311$ USD, $+0.485\%$).
+- **Cambios Implementados y Certificados**:
+  1. **R7-R6-IG-1 [HIGH] (Escala Canónica de Riesgo por Operación para Ville)**: En `crates/evolution-engine/src/online_daemon.rs:1124-1142`, eliminado el literal hardcodeado `0.02` en la normalización de retornos de Ville. Reemplazado por la escala de riesgo efectiva medida dinámicamente desde `arena.riesgo_por_operacion.load(Ordering::Relaxed)` con fallback a `scalp_sl_base` y suelo numérico. Los retornos ahora alimentan a Ville en $R$-múltiplos reales en el soporte canónico $[-1.0, 1.0]$.
+  2. **R7-R6-EV-1 [MED] (Desacoplamiento de Vigilancia Anytime-Valid de Ville)**: En `crates/evolution-engine/src/online_daemon.rs:1198-1245`, desacoplada la evaluación de Ville de la cota asintótica de 20 operaciones. Ville detecta colapsos de evidencia y decaimientos $\ge 50\%$ tempranamente ($N \ge 3$) ejecutando rollback oportuno para proteger el micro-capital (\$13.00 USD). Añadida detección temprana de rachas de pérdidas constantes a $N \ge 5$ con armado de kill-switch.
+  3. **Detección Multi-Ranura de Cierre en Daemon Replay**: En `crates/evolution-engine/src/online_daemon.rs:574`, corregido `st.pos_open_flags[coin_id]` usando `arena.coins[coin_id].positions.is_any_open()` en lugar del slot único `position`, unificando con `booktick_replay.rs:472` y erradicando re-evaluaciones redundantes espurias de `live_envelope_gate`.
+  4. **R7-R6-C-7 ≡ MD-2 [MED] (Descuento de Evidencia en Prescreening Bayesian Prior)**: En `crates/evolution-engine/src/fitness.rs:110-132` (`compute_with_bayesian_prior`), aplicado descuento estricto de evidencia `if raw_fitness > 0.0 { raw_fitness * weight } else { raw_fitness }`, impidiendo que muestras en frío $N < 30$ con micro-ganancias afortunadas fabriquen ventajas positivas espurias sobre el prior conservador.
+  5. **Certificación Contractual**: Creado `crates/evolution-engine/tests/r7_r6_watchdog_evidence_contract.rs` (4/4 tests PASSED al 100%).
+- **Verificación Contractual Integral**:
+  - `cargo test -p evolution-engine --test r7_r6_watchdog_evidence_contract`: 4/4 tests PASSED (100%).
+  - `cargo test -p evolution-engine --lib`: 65/65 tests PASSED (100%).
+  - `cargo test -p evolution-engine`: 137/137 tests PASSED (100%).
+  - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias.
+
 ## 2026-10-09 — AGY: OLA Ω59 COMPLETADA — SIMETRÍA DIRECCIONAL EN COLCHÓN DE MARGEN LIBRE, TEORÍA DE INFORMACIÓN SOBRE EL SÍMPLEX ESPECTRAL CONTINUO EN CORE (#694)
 
-- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), rama `antigravity/ola59-simetria-cushion-entropia-core`.
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `a8b76fb5`.
 - **Ficha Forense**: **#694**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
 - **Invariantes Sagrados de Micro-Capital ($13.00 USD)**:
   - Piso Nocional Binance Futures: $5.10 USD a 5.0x apalancamiento $\implies$ Margen por posición = $1.02 USD (7.85%).

@@ -571,7 +571,7 @@ fn wf_replay_segment(
             backtest_engine::booktick_replay::live_envelope_gate(
                 arena, envelope, coin_id, mid, atr_now, was_open, &mut st.vetoes,
             );
-            st.pos_open_flags[coin_id] = arena.coins[coin_id].positions.position.is_open();
+            st.pos_open_flags[coin_id] = arena.coins[coin_id].positions.is_any_open();
 
             if let Some((_, pnl_net, _)) = closed {
                 if pnl_net >= 0.0 {
@@ -1122,10 +1122,25 @@ impl LiveEvolutionDaemon {
                         if self.promoted_generation.is_some() {
                             self.post_promo_returns.push(ret);
                             if let Some(ville) = self.post_promo_ville.as_mut() {
-                                // R6-B6: Calibración de escala de retornos: `ret` en trade_return_on_equity
-                                // se normaliza por la escala unitaria de riesgo por posición (2% = 0.02)
-                                // para que Ville opere en el soporte de prueba [-1.0, 1.0] con potencia estadística real.
-                                let normalized_ret = (ret / 0.02).clamp(-1.0, 1.0);
+                                // R7-R6-IG-1: Escala unitaria canónica de riesgo por operación:
+                                // `ret` en trade_return_on_equity se normaliza por el riesgo efectivo medido
+                                // de la orden (`arena.riesgo_por_operacion`), convirtiendo los retornos en
+                                // R-múltiplos reales. Si aún no está medido, recurre a la configuración del
+                                // arena antes de caer al suelo numérico de 2% (0.02).
+                                let unit_risk = {
+                                    let measured_risk = self.arena.riesgo_por_operacion.load(std::sync::atomic::Ordering::Relaxed);
+                                    if measured_risk.is_finite() && measured_risk > 1e-5 {
+                                        measured_risk
+                                    } else {
+                                        let cfg_risk = self.arena.config.scalp_sl_base.load(std::sync::atomic::Ordering::Relaxed);
+                                        if cfg_risk.is_finite() && cfg_risk > 1e-5 {
+                                            cfg_risk
+                                        } else {
+                                            0.02
+                                        }
+                                    }
+                                };
+                                let normalized_ret = (ret / unit_risk).clamp(-1.0, 1.0);
                                 ville.observe(normalized_ret);
                             }
                         }
@@ -1184,30 +1199,47 @@ impl LiveEvolutionDaemon {
         let Some((generation_id, parent)) = self.promoted_generation else {
             return;
         };
-        if self.post_promo_returns.len() < 20 {
-            return;
-        }
-        let evidence = match summarize_returns(&self.post_promo_returns) {
-            Ok(evidence) => evidence,
-            Err(error) => {
-                eprintln!("[ROLLBACK EVIDENCE] Lote inválido: {error:?}; no se inventa un t-stat.");
-                return;
-            }
-        };
-        let Some(t_stat) = evidence.studentized() else {
-            // Constant losses are not a finite t-test. Latch safety, but do not
-            // fabricate significance or mutate a genome on this degenerate test.
-            if latch_degradation(&self.arena.kill_switch_active, evidence.is_constant_loss()) {
-                eprintln!("[ROLLBACK EVIDENCE] Pérdidas constantes: kill-switch armado; rollback requiere revisión de evidencia y linaje.");
-            }
-            return;
-        };
+        // R7-R6-EV-1: Desacoplamiento de la vigilancia anytime-valid de Ville:
+        // Ville posee validez matemática finita para cualquier tiempo de parada (N >= 3)
+        // y detecta colapso de evidencia en 5-15 operaciones sin esperar al tamaño asintótico N >= 20.
         let ville_degraded = self
             .post_promo_ville
             .as_ref()
             .map(|v| v.is_exhausted() || v.is_evidence_decayed(0.50))
             .unwrap_or(false);
-        if t_stat <= -2.0 || ville_degraded {
+
+        // Prueba Studentizada descriptiva asintótica (requiere N >= 20 para estabilidad de varianza)
+        let mut t_stat_opt: Option<f64> = None;
+        let mut t_stat_degraded = false;
+
+        if self.post_promo_returns.len() >= 20 {
+            match summarize_returns(&self.post_promo_returns) {
+                Ok(evidence) => {
+                    if let Some(t) = evidence.studentized() {
+                        t_stat_opt = Some(t);
+                        t_stat_degraded = t <= -2.0;
+                    } else if evidence.is_constant_loss() {
+                        let _ = latch_degradation(&self.arena.kill_switch_active, true);
+                        eprintln!("[ROLLBACK EVIDENCE] Pérdidas constantes detectadas tras 20 operaciones: activando degradación y kill-switch.");
+                        t_stat_degraded = true;
+                    }
+                }
+                Err(error) => {
+                    eprintln!("[ROLLBACK EVIDENCE] Lote inválido: {error:?}; no se inventa un t-stat.");
+                }
+            }
+        } else if self.post_promo_returns.len() >= 5 {
+            // Protección temprana contra pérdidas constantes severas (>= 5 pérdidas consecutivas)
+            if let Ok(evidence) = summarize_returns(&self.post_promo_returns) {
+                if evidence.is_constant_loss() {
+                    let _ = latch_degradation(&self.arena.kill_switch_active, true);
+                    eprintln!("[ROLLBACK EVIDENCE] Racha inicial de pérdidas constantes detectada: activando degradación temprana.");
+                    t_stat_degraded = true;
+                }
+            }
+        }
+
+        if t_stat_degraded || ville_degraded {
             use quantum_arena::genome_store::GenomeEnvelope;
             let destino = GenomeEnvelope::load_generation(generation_id)
                 .ok()
@@ -1216,10 +1248,13 @@ impl LiveEvolutionDaemon {
                         GenomeEnvelope::load_generation(g).ok()
                     })
                 });
+            let t_repr = t_stat_opt
+                .map(|t| format!("{:.2}", t))
+                .unwrap_or_else(|| "N/A".to_string());
             println!(
-                "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {:.2}, ville_degraded: {} sobre {} obs post-promoción. Destino del rollback: {:?} (padre registrado {}).",
+                "🚨 [ROLLBACK WATCHDOG] Generación {} degradada: t-stat {}, ville_degraded: {} sobre {} obs post-promoción. Destino del rollback: {:?} (padre registrado {}).",
                 generation_id,
-                t_stat,
+                t_repr,
                 ville_degraded,
                 self.post_promo_returns.len(),
                 destino,
