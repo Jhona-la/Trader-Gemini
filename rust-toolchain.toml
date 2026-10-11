@@ -1,3 +1,5 @@
 [toolchain]
-channel = "nightly"
+# G0 (LC-F1-03): el mismo compilador que las dos CI (replay-contracts.yml y
+# unit-suites.yml). Lo comprueba crates/quantum-arena/tests/toolchain_pin_contract.rs.
+channel = "nightly-2026-06-30"
 components = ["rustfmt", "clippy"]

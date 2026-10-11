@@ -228,6 +228,18 @@ El PR #29 ya integró ese main en aa716edf. Su mensaje registra, sobre el merge 
 - CL-n que fija `rust-toolchain.toml` a `nightly-2026-06-30` (pendiente del ciclo 8).
 - Propuesta sobre el registro, anunciada en el buzón porque es transversal.
 
+**Estado (ciclo 11, base ae6d51a2).** Hecha la revisión: siete revisores, uno por concepto, y dos escépticos por dimensión.
+- Contrato: `docs/CONTRATO_DE_CONCEPTOS_LINEA_C_2026-10-11.md`, con siete apartados: unidades, identidad, desconocido, horizonte continuo, espejo, versión y construcción, y vetos.
+- Hallazgos: `docs/audit/HALLAZGOS_C-F1_2026-10-11.md`, LC-F1-01…73. Hay 42 confirmados y 31 disputados (4 altos, 36 medios y 33 bajos), y otros 6 refutados. Cada uno trae el test que debe fallar hoy, que sale de leer el código: no se ejecutó ninguno.
+- Recibos: los 49 archivos de C-F1 tienen recibo con el OID de su blob en `docs/audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv`, y hay 21 lecturas de apoyo anotadas en la fase de cada archivo.
+- Los cuatro altos:
+  - LC-F1-01: el papel sin banderas guarda la envolvente Kelly en `data/prod`. Es un defecto de CL-48.
+  - LC-F1-02: specs inventados servidos como oficiales.
+  - LC-F1-03: el slot 0 recibe el gen del stop de BTC.
+  - LC-F1-04: el perceptrón vota con el peso hebbiano de otra moneda.
+- En `main` c4e8e285, #720 cierra LC-F1-34 y, en parte, LC-F1-35 (adenda de los hallazgos).
+- Arreglos: los hallazgos cuya fase dueña es C-F1 empiezan en el ciclo 12, después del medidor, cada uno con su test en rojo y en verde. Los demás esperan a su fase dueña.
+
 ---
 
 ### C-F2 — Teoría por dominio
@@ -684,7 +696,7 @@ R7 de Ronda 7 (datos, telemetría y guardianes; incluye C-02) sigue ABIERTA y si
 6. `deployment/` es del sistema Python retirado.
 
 **Puertas**
-- Benchmark reproducible del camino caliente: tiempo y asignaciones por tick. Hoy sin medir. Es sólo medición: no tiene umbral de aceptación.
+- Benchmark reproducible del camino caliente: tiempo y asignaciones por evento. Hoy sin medir. El medidor se adelanta al ciclo 12 (§8) porque la puerta de rendimiento del protocolo (§7, paso 5) lo necesita. Aquí se le añade el desglose por etapa (núcleo, consejo, riesgo) y por tamaño de cartera.
 - Test de ida y vuelta del estado aprendido: guardar, reiniciar y obtener el mismo estado y la misma decisión.
 - Test de que `darwin_approved` refleja la auditoría, o retirada.
 
@@ -768,12 +780,17 @@ R7 de Ronda 7 (datos, telemetría y guardianes; incluye C-02) sigue ABIERTA y si
    - Sobre aa716edf, los dos workflows seguían en curso al re-anclar este plan. Después, la API de GitHub da «Unit and contract suites» en success (run 38097226229). «Replay contracts» quedó cancelled (run 38097226217): el check --all-targets pasó, y la suite de contratos se cortó en el paso 7 cuando el push de 03b3f1ca canceló el run.
 6. **Pendientes del ciclo 8** (HOJA_DE_RUTA_CIMIENTOS §6, :406).
    - T-1 nocturno: ninguno de los dos workflows tiene un disparo programado.
-   - Toolchain con fecha: la CI ya fija `nightly-2026-06-30` (replay-contracts.yml:45-52; unit-suites.yml:68-74). Sólo falta `rust-toolchain.toml:2`, que va a C-F1.
+   - Toolchain con fecha: la CI ya fija `nightly-2026-06-30` (replay-contracts.yml:45-52; unit-suites.yml:68-74). Sólo falta `rust-toolchain.toml:2`, que va a C-F1. Hecho en el ciclo 11 (CL-56), con su test de fuente.
 
 **Puertas.** Un test-inventario que falle si una suite no la corre ningún workflow y no hay motivo escrito.
 
 **Entregable**
 - Inventario test→workflow. Se adelanta al ciclo 11 (§8), porque los tests nuevos de C-F4 a C-F9 caen en suites que hoy no ejecuta ninguna CI (evolution-engine/tests, storage-engine/tests y otras).
+  - Hecho en el ciclo 11 (CL-57): `python3 scripts/plan_linea_c.py ci --rev REV --salida TSV` aplica la selección de objetivos de cargo a cada orden `cargo test` y `rustc --test` de los workflows. Resultado en `docs/audit/INVENTARIO_TESTS_CI_2026-10-11.tsv`, sobre la rama del ciclo 11 (main ae6d51a2 más CL-56 y CL-57): 214 objetivos con tests (2 551 `#[test]`), de los que 26 objetivos con 220 tests no los ejecuta ninguna CI. Confirma la lista de la pregunta 1 y añade `continuous_evolution_backtest` y el T-2, que es posterior a aa716edf:
+    - evolution-engine: 7 suites, 55 tests; storage-engine: lib y 3 suites, 58 tests; telemetry-server 30, os-guardian 12, omniscient-registry 9 (archivo de C-F1), telemetry-engine 7, phase-runner 7, flight-recorder 5, graph-architecture 5 y graph-4d 4;
+    - paquete raíz: `feature_exporter` 10, `train_dark_alpha` 8, `god_engine` 2 (los tests del host) y `continuous_evolution_backtest` 2, que el paquete raíz y backtest-engine compilan desde el mismo archivo;
+    - backtest-engine: el T-1 y el T-2 (`t1_cobertura_genetica`, `t2_cobertura_puertas`), fuera a propósito porque son el oráculo largo, y `continuous_evolution_backtest`.
+  - Pedido a los dueños, sin tocar sus workflows: Línea E (`unit-suites.yml`) y Codex/GLM (`replay-contracts.yml`) deciden dónde entran esos 24 objetivos, o escriben el motivo de dejarlos fuera. Con eso, `ci --exigir` puede ser la puerta de esta fase.
 - Cambios de CI acordados con Línea E y Codex. Entre ellos, que un push a main no cancele el run en curso de `replay-contracts.yml`. #715 (07688cf9), posterior a aa716edf, ya lo hace como `unit-suites.yml:26-31` (replay-contracts.yml:18 en 07688cf9). Falta comprobar en main que un run de replay llega a cerrar. Sigue abierta la otra propuesta: que todo entre por PR con los checks requeridos.
 
 ---
@@ -1213,6 +1230,11 @@ Ninguno está verificado salvo los marcados «confirmado por lectura», y a éso
 5. **Verificación:** la puerta común completa (§2), con T-1 release ≥ 11,0 % y comparación gen a gen contra la lista de 16/144.
    - Si cambia la conducta viva, el T-1 es obligatorio (plan sinc. §2 :170). Si cambia el tamaño o la ejecución, también la paridad bt↔vivo (:169).
    - El T-1 corre con 1 000 USD y sin host (t1_cobertura_genetica.rs:50-52). Para C-F5 y los literales micro de C-F4, la verificación es un fixture de 13 USD y tests del host, o `bt_vivo_parity_audit`, y el recibo dice que el T-1 no cubre esos cambios.
+   - **Rendimiento del camino caliente** (pedido del dueño, 2026-10-11 05:49). El camino caliente es lo que corre por cada evento: `GodEngineCore::process_event` y todo lo que llama, incluida `RiskEngine::evaluate_quantum_order` por intención. Si el cambio toca código de ese camino, el PR informa, en release, en la misma máquina y con la misma cinta sintética fija:
+     - asignaciones de heap por evento, con un asignador que las cuenta;
+     - ns por evento, mediana y p99, de la base y de la rama.
+   - Se acepta si no añade asignaciones por evento y si la mediana de la rama no supera a la de la base en más de lo que difieren dos corridas de la base entre sí. Si empeora, el PR dice qué gana a cambio y el dueño decide.
+   - Hasta que exista el medidor (ciclo 12, §8), el PR dice «rendimiento sin medir». `nano_benchmark` no sirve de puerta: mide `process_tick_dual`, no `process_event`, supone 3,5 GHz para pasar ciclos a ns (crates/god-engine-core/src/bin/nano_benchmark.rs:68-72) y no cuenta asignaciones.
 6. **PR**, no draft, con:
    - tabla hallazgo → test → commit;
    - T-1, suites y lo que no se probó.
@@ -1238,9 +1260,17 @@ Las fases ordenan la revisión. No hay operación autorizada, así que ninguna u
   - C-F0, con el comprobador de citas de este documento (hecho: §9), y C-F1.
   - Inventario test→workflow de C-F10. Se adelanta porque parte de los tests nuevos, sobre todo de C-F7 a C-F9 (evolution-engine/tests, storage-engine/tests, telemetría y herramientas), caerían en suites que hoy no ejecuta ninguna CI (LC-F10-02).
   - Arreglos ya decididos:
-    - pico y umbral únicos del freno inmune, que completan #714 según ADR-0016 D3. #714 no dejó test del host y la semántica sigue siendo distinta de la del riesgo. Incluye la persistencia mínima del pico con su test de reinicio (LC-F4-10);
-    - `rust-toolchain.toml` = `nightly-2026-06-30`, el mismo que la CI, con un test de fuente que compara las tres cadenas (G0, LC-F1-03).
-- **Ciclo 12.** C-F2 (sólo lectura y pruebas sintéticas; el T-1 no debe moverse) y C-F3. Los hallazgos de zona ajena salen como pedidos con test que falla.
+    - `rust-toolchain.toml` = `nightly-2026-06-30`, el mismo que la CI, con un test de fuente que compara las tres cadenas (G0, LC-F1-03). Hecho: CL-56.
+    - El pico y el umbral únicos del freno inmune (LC-F4-10) pasan al ciclo 13. §9 mostró que ninguna de las dos semánticas actuales es una prueba de nivel α. Con riesgo medido, los dos frenos leen el gen de producción (0,5) como confianza de la prueba de rachas, es decir α = 0,5, y pueden saltar por azar; en régimen micro el veto la sustituye por d* con c = ½, medido desde el pico móvil (LC-F0-08, LC-F0-09, filas 11 y 35). Igualar una a la otra ahora fijaría una de las dos sin derivar. En C-F4 se deriva una sola prueba con el tamaño real y se lleva al dueño como decisión antes de tocar el freno vivo. La persistencia del pico (LC-F0-10) va con ella.
+  - Inventario test→workflow de C-F10: hecho (CL-57, `docs/audit/INVENTARIO_TESTS_CI_2026-10-11.tsv`).
+  - Hecho fuera de lo previsto:
+    - CL-58: `plan_linea_c.py claves`, claves del registro leídas sin escritor (`docs/audit/CLAVES_SIN_ESCRITOR_2026-10-11.tsv`, 25 candidatas sobre c4e8e285). Las verifica C-F1 y las de estrategias, C-F3.
+    - CL-59: #718 (AGY, directo a main) metió Feynman en el orquestador vivo y reinyectaba el dominante espectral con τ inoperable, contra #652/H2. Se adelanta porque restaura un contrato ya decidido. T-1 de 766fb1a4: 16/144, la misma lista inerte.
+    - Puerta de rendimiento en §7, paso 5, por el pedido del dueño del 2026-10-11 05:49.
+- **Ciclo 12.**
+  - Primero el medidor del camino caliente (§7, paso 5): un binario de benchmark que pasa una cinta sintética fija por `process_event`, cuenta asignaciones por evento con un asignador propio y da mediana y p99 de ns por evento. Se adelanta de C-F8 porque sin él la puerta de rendimiento no se puede aplicar. Es sólo medición y no cambia la conducta.
+  - Arreglos de C-F1 con su test en rojo y en verde, empezando por los altos de Línea C: LC-F1-01 (carpeta del estado según el modo, defecto de CL-48), LC-F1-03 (gen del stop por símbolo, no por slot) y LC-F1-02 (procedencia del spec). LC-F1-04 y la caída al global (LC-F1-06) se coordinan con AGY, que añadió las lecturas estrictas en #720.
+  - C-F2 (sólo lectura y pruebas sintéticas; el T-1 no debe moverse) y C-F3. Los hallazgos de zona ajena salen como pedidos con test que falla.
 - **Ciclo 13.** C-F4:
   - primero el ATR (LC-F6-01 y LC-F3-02), antes de medir el riesgo al stop o el tope IOC;
   - absorbentes, unidades de los vetos y RA-RUIN-F01;

@@ -127,6 +127,44 @@ que cada `ruta:línea` del plan exista en una revisión dada (alias
   piso de 4,79 USD no sobrevive a un reinicio (LC-F0-10), la exención de
   sonda del EV nunca rechaza (LC-F0-15), la física cobra el TP como maker
   (LC-F0-25) y seis fricciones distintas para la misma orden (fila 21).
+- CL-56: `rust-toolchain.toml` = `nightly-2026-06-30`, el de las dos CI,
+  con test de fuente (`quantum-arena/tests/toolchain_pin_contract.rs`).
+  En la nube rustup instala ese nightly solo; la caché de compilación del
+  nightly anterior no sirve (se borró /tmp/claude-0/tcheck).
+- CL-57: `plan_linea_c.py ci` lista qué objetivos de test ejecuta alguna
+  CI (`docs/audit/INVENTARIO_TESTS_CI_2026-10-11.tsv`). Ninguna corre 26
+  objetivos con 220 tests; fuera a propósito sólo el T-1 y el T-2. Los
+  otros 24 (evolution-engine/tests, storage-engine, telemetría,
+  omniscient-registry, los tests del host…) son pedido a Línea E y
+  Codex/GLM, dueños de los workflows.
+- El freno inmune único (LC-F4-10) pasa al ciclo 13: con riesgo medido los
+  dos frenos usan α = 0,5 (el gen de producción) y en micro el veto usa d*
+  desde el pico móvil; ninguno es una prueba de nivel α. Se deriva una en
+  C-F4 y se lleva al dueño antes de tocar el freno vivo.
+- Workflows en la nube: con 4 CPU el tope es de 2 agentes a la vez. Un
+  escéptico por hallazgo no cabe; mejor un escéptico por lente y dimensión.
+- Puerta de rendimiento (pedido del dueño, 2026-10-11 05:49): todo cambio
+  del camino caliente (`process_event` y lo que llama) informa
+  asignaciones y ns por evento frente a la base (plan §7, paso 5). El
+  medidor es lo primero del ciclo 12; `nano_benchmark` no sirve (mide
+  `process_tick_dual`, supone 3,5 GHz y no cuenta asignaciones).
+- CL-58: `plan_linea_c.py claves` lista las claves del registro que el
+  código de producción lee y nadie escribe (cada una, un literal escondido).
+  Sobre c4e8e285: 25 candidatas (`docs/audit/CLAVES_SIN_ESCRITOR_2026-10-11.tsv`).
+- AGY empujó #718, #719 y #720 directo a `main`. #718 metió Navier-Stokes y
+  Feynman en el orquestador vivo (19 estrategias), y Feynman reinyectaba el
+  dominante espectral con τ < 30 s, contra #652/H2. CL-59 lo arregla, con
+  un test de las estrategias vivas (verde antes de #718, rojo después). T-1
+  de 766fb1a4: 16/144, misma lista inerte. #720 (NaN crudo en el registro)
+  no rompe ninguna decisión viva encontrada, pero añade una lectura de reloj
+  en cada escritura (unas 135–280 por evento, sin medir).
+- C-F1 hecha sobre ae6d51a2: `docs/CONTRATO_DE_CONCEPTOS_LINEA_C_2026-10-11.md`
+  y `docs/audit/HALLAZGOS_C-F1_2026-10-11.md` (LC-F1-01…73, 42 confirmados
+  y 31 disputados; tests derivados leyendo, sin ejecutar). Altos: LC-F1-01
+  (el papel sin banderas guarda Kelly en `data/prod`, defecto de CL-48),
+  -02 (specs inventados como oficiales), -03 (slot 0 con el gen del stop de
+  BTC) y -04 (peso hebbiano de otra moneda). #720 cerró LC-F1-34 y en parte
+  LC-F1-35. Los arreglos empiezan en el ciclo 12, tras el medidor.
 
 Ciclo 9 (kill-switch, llenados y estado por entorno):
 - CL-43 (FMT-232): con el latch armado, `process_event` y

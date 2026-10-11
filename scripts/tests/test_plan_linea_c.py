@@ -149,5 +149,146 @@ class PlanLineaCAsignacionTests(unittest.TestCase):
         self.assertEqual(plan.expandir("a/b.rs"), ["a/b.rs"])
 
 
+class PlanLineaCInventarioCiTests(unittest.TestCase):
+    """`ci`: qué objetivos de test ejecuta alguna CI (C-F10, LC-F10-02)."""
+
+    ARCHIVOS = {
+        "Cargo.toml": (
+            '[workspace]\nmembers = ["crates/a", "crates/b"]\n\n'
+            '[package]\nname = "raiz"\nautobins = false\n\n'
+            '[lib]\nname = "raiz_lib"\npath = "src/lib.rs"\n\n'
+            '[[bin]]\nname = "host"\npath = "src/bin/host.rs"\n'
+        ),
+        "src/lib.rs": "#[test]\nfn r() {}\n",
+        "src/bin/host.rs": "fn main() {}\n#[test]\nfn h() {}\n",
+        "src/bin/suelto.rs": "fn main() {}\n#[test]\nfn s() {}\n",
+        "crates/a/Cargo.toml": '[package]\nname = "a-crate"\n',
+        "crates/a/src/lib.rs": "mod m;\n#[cfg(test)]\nmod t { #[test] fn x() {} }\n",
+        "crates/a/src/m.rs": "#[test]\nfn y() {}\n",
+        "crates/a/src/bin/tool.rs": "fn main() {}\n#[test]\nfn z() {}\n",
+        "crates/a/tests/t1.rs": "#[test]\nfn a() {}\n#[tokio::test]\nasync fn b() {}\n",
+        "crates/a/tests/t2.rs": "#[test]\n#[ignore = \"manual\"]\nfn c() {}\n",
+        "crates/b/Cargo.toml": '[package]\nname = "b"\n',
+        "crates/b/tests/solo.rs": "#[test]\nfn d() {}\n",
+        "crates/b/tests/otro.rs": "#[test]\nfn e() {}\n",
+        "crates/b/tests/nunca.rs": "#[test]\nfn f() {}\n",
+        ".github/workflows/ci.yml": (
+            "jobs:\n  x:\n    strategy:\n      matrix:\n        include:\n"
+            "          - grupo: uno\n            paquetes: -p a-crate --lib --tests\n"
+            "          - grupo: dos\n            paquetes: -p raiz --lib --bin host\n"
+            "    steps:\n"
+            "      - run: cargo +nightly-2026-06-30 test ${{ matrix.paquetes }} --locked -- --test-threads=1\n"
+            "      - run: cargo +nightly-2026-06-30 test -p b --locked --test solo -- filtro::x --test-threads=1\n"
+            "      # cargo test -p b --test nunca\n"
+            "      - run: cargo +nightly-2026-06-30 check --workspace --all-targets --locked\n"
+            "      - run: cargo test -p b --test nunca --no-run\n"
+            "      - run: |\n"
+            "          rustc +nightly-2026-06-30 --edition 2024 --test crates/b/tests/otro.rs -o x.exe\n"
+        ),
+    }
+
+    def inventario(self):
+        versionados = sorted(self.ARCHIVOS)
+        return {(f[0], f[1], f[2]): f for f in plan.inventario_ci(versionados, self.ARCHIVOS.__getitem__)}
+
+    def test_matriz_y_tests_seleccionan_lib_bins_y_tests_de_integracion(self):
+        inv = self.inventario()
+        for clave in [("a-crate", "a-crate", "lib"), ("a-crate", "tool", "bin"),
+                      ("a-crate", "t1", "test"), ("a-crate", "t2", "test")]:
+            self.assertEqual(inv[clave][6], "ci.yml:11", clave)
+        self.assertEqual(inv[("raiz", "raiz", "lib")][6], "ci.yml:11")
+        self.assertEqual(inv[("raiz", "host", "bin")][6], "ci.yml:11")
+
+    def test_cuenta_tests_de_todo_el_arbol_de_la_lib_e_ignorados(self):
+        inv = self.inventario()
+        self.assertEqual(inv[("a-crate", "a-crate", "lib")][4], 2)
+        self.assertEqual(inv[("a-crate", "t1", "test")][4], 2)
+        self.assertEqual(inv[("a-crate", "t2", "test")][4:6], (1, 1))
+
+    def test_autobins_false_deja_fuera_los_bins_no_declarados(self):
+        inv = self.inventario()
+        self.assertNotIn(("raiz", "suelto", "bin"), inv)
+
+    def test_filtro_rustc_comentario_y_no_run(self):
+        inv = self.inventario()
+        self.assertEqual(inv[("b", "solo", "test")][6], "ci.yml:12 (filtro filtro::x)")
+        self.assertEqual(inv[("b", "otro", "test")][6], "ci.yml:17")
+        self.assertEqual(inv[("b", "nunca", "test")][6], "ninguna")
+
+    def test_sin_seleccion_corre_lib_bins_y_tests(self):
+        paquetes = plan.paquetes_del_workspace(sorted(self.ARCHIVOS), self.ARCHIVOS.__getitem__)
+        objetivos, filtro, solo = plan.seleccion_de_orden("cargo test -p a-crate", paquetes)
+        self.assertEqual(objetivos, {("a-crate", "lib", None), ("a-crate", "bin", "tool"),
+                                     ("a-crate", "test", "t1"), ("a-crate", "test", "t2")})
+        self.assertEqual((filtro, solo), (None, False))
+        objetivos, filtro, _ = plan.seleccion_de_orden("cargo test --workspace -- --ignored", paquetes)
+        self.assertIn(("b", "test", "nunca"), objetivos)
+        self.assertEqual(filtro, "--ignored")
+
+
+class PlanLineaCClavesTests(unittest.TestCase):
+    """`claves` (C-F1): claves del registro que se leen y nadie escribe."""
+
+    ARCHIVOS = {
+        "crates/r/src/lib.rs": (
+            "fn f(reg: &R, json: &J) {\n"
+            '    let a = reg.get_for_coin_or(0, "huerfana", 1.0);\n'
+            "    let b = reg.get_scoped_parameter(\n"
+            "        sym, cid,\n"
+            '        "escrita", "Motor");\n'
+            '    let c = reg.get_value_or("en_tupla", 0.5);\n'
+            '    let j = json.get("data");\n'
+            '    let k = reg.get("leida_con_consumidor", "Motor");\n'
+            '    let m = reg.get_value_or("otra_huerfana", f(1, 2));\n'
+            '    let n = reg.get_for_coin_or(0, "via_cierre", {\n        x\n    });\n'
+            '    let p = reg.get(nombre, "ConsumidorConVariable");\n'
+            '    let q = reg.get_value_fast("por_parametro");\n'
+            '    let r = reg.get_for_coin_strict(0, "estricta_huerfana");\n'
+            '    let u = reg.get_scoped_strict_or(&sym, "estricta_con_respaldo", 0.25);\n'
+            "}\n"
+            "#[cfg(test)]\n"
+            'mod t { fn g(reg: &R) { reg.set("huerfana", 1.0); reg.get_value_or("solo_en_test", 0.0); } }\n'
+        ),
+        "crates/w/src/lib.rs": (
+            "fn w(reg: &R, x: f64) {\n"
+            '    reg.set_for_coin(0, "escrita", x);\n'
+            '    for (n, v) in [("en_tupla", x)] { reg.set(n, v); }\n'
+            "    let set_reg = |k: &str, v: f64| reg.set(k, v);\n"
+            '    set_reg("via_cierre", x);\n'
+            '    reg.register(Parameter::new("por_parametro", Kind::Gene, x, "w"));\n'
+            "}\n"
+        ),
+        "crates/w/tests/t.rs": 'fn t(reg: &R) { reg.set("leida_con_consumidor", 1.0); }\n',
+        "crates/w/README.md": 'reg.set("otra_huerfana", 1.0)\n',
+    }
+
+    def claves(self):
+        return plan.claves_sin_escritor(sorted(self.ARCHIVOS), self.ARCHIVOS.__getitem__)
+
+    def test_lista_lecturas_sin_escritor_fuera_de_tests(self):
+        claves = self.claves()
+        self.assertEqual(sorted(claves), ["estricta_con_respaldo", "estricta_huerfana", "huerfana",
+                                          "leida_con_consumidor", "otra_huerfana"])
+        self.assertEqual(claves["estricta_con_respaldo"]["por_defecto"], ["0.25"])
+        self.assertEqual(claves["huerfana"]["sitios"], ["crates/r/src/lib.rs:2"])
+        self.assertEqual(claves["leida_con_consumidor"]["sitios"], ["crates/r/src/lib.rs:8"])
+
+    def test_valor_por_defecto_de_las_lecturas_con_respaldo(self):
+        claves = self.claves()
+        self.assertEqual(claves["huerfana"]["por_defecto"], ["1.0"])
+        self.assertEqual(claves["otra_huerfana"]["por_defecto"], ["f(1, 2)"])
+        self.assertEqual(claves["leida_con_consumidor"]["por_defecto"], [])
+
+    def test_escritor_en_varias_lineas_o_en_tupla_cuenta(self):
+        claves = self.claves()
+        self.assertNotIn("escrita", claves)
+        self.assertNotIn("en_tupla", claves)
+        self.assertNotIn("data", claves)
+        self.assertNotIn("solo_en_test", claves)
+        self.assertNotIn("via_cierre", claves)
+        self.assertNotIn("por_parametro", claves)
+        self.assertNotIn("ConsumidorConVariable", claves)
+
+
 if __name__ == "__main__":
     unittest.main()

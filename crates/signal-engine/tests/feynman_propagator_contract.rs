@@ -118,12 +118,30 @@ fn test_quantum_strategy_contract_and_registry_evaluation() {
     assert!(val_cold.is_finite());
     assert!((-1.0..=1.0).contains(&val_cold));
 
-    // Con coherencia alta y dominante alcista en el registro:
+    // Con coherencia alta y dominante alcista a una escala operable (60 s):
     registry.register_or_update("feynman_coherence", ParameterKind::Adaptive, 0.90, "Test");
     registry.register_or_update("consenso_espectral_dominante", ParameterKind::Adaptive, 0.80, "Test");
+    registry.register_or_update("consenso_espectral_tau", ParameterKind::Adaptive, 60_000.0, "Test");
 
     let val_active = engine.evaluate();
     assert!(val_active > 0.50, "Active coherence must transmit high conviction, got {}", val_active);
+}
+
+/// CL-59 (#652/H2): con la escala dominante por debajo de la banda operable,
+/// o sin escala publicada, el veredicto espectral no se reinyecta.
+#[test]
+fn test_cl59_dominante_inoperable_no_se_reinyecta() {
+    let mut engine = FeynmanPropagatorEngine::new();
+    let registry = Arc::new(OmniscientRegistry::new());
+    engine.init(registry.clone()).expect("Initialization must succeed");
+    registry.register_or_update("feynman_coherence", ParameterKind::Adaptive, 0.90, "Test");
+    registry.register_or_update("consenso_espectral_dominante", ParameterKind::Adaptive, 0.80, "Test");
+
+    assert_eq!(engine.evaluate(), 0.0, "sin escala publicada no hay veredicto que transmitir");
+    for tau_ms in [1_000.0, f64::NAN] {
+        registry.register_or_update("consenso_espectral_tau", ParameterKind::Adaptive, tau_ms, "Test");
+        assert_eq!(engine.evaluate(), 0.0, "τ = {tau_ms} ms no es operable");
+    }
 }
 
 #[test]

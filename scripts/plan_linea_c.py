@@ -16,9 +16,27 @@ eso se anota en el recibo. Escribe un TSV (ruta, fase, tipo, regla,
 recibo). Código 1 si algún archivo queda sin fase o si una ruta exacta del
 plan no existe en la revisión (nombre equivocado en el plan).
 
+`ci` (C-F10, LC-F10-02): inventario de qué objetivos de test ejecuta alguna
+CI. Lee los paquetes del workspace (lib, bins y tests de integración, con su
+número de `#[test]`) y las órdenes `cargo test` y `rustc --test` de
+`.github/workflows/*.yml` (expande `${{ matrix.CLAVE }}` con cada valor de la
+matriz) y aplica la selección de objetivos de cargo (`-p`, `--workspace`,
+`--lib`, `--bins`, `--bin`, `--tests`, `--test`, `--all-targets`, filtros
+tras `--`). `cargo check` sólo compila y no cuenta. Escribe un TSV (paquete,
+objetivo, tipo, archivo, tests, ignorados, corre_en). Con `--exigir`, código
+1 si algún objetivo con tests no lo ejecuta ninguna CI.
+
+`claves` (C-F1, valores ocultos): claves del registro (`OmniscientRegistry`) que
+el código de producción lee y nunca escribe. Cada una es un literal escondido:
+la lectura devuelve siempre su respaldo. Escribe un TSV (clave, lecturas,
+por_defecto, sitios). Las claves armadas con `format!` no se ven, así que la
+lista es de candidatas a verificar.
+
 Uso:
     python3 scripts/plan_linea_c.py citas DOCUMENTO [--rev REV] [--alias CORTO=RUTA ...]
     python3 scripts/plan_linea_c.py asignacion [--rev REV] [--salida TSV]
+    python3 scripts/plan_linea_c.py ci [--rev REV] [--salida TSV] [--exigir]
+    python3 scripts/plan_linea_c.py claves [--rev REV] [--salida TSV]
 """
 import argparse
 import fnmatch
@@ -331,9 +349,23 @@ def main(argv=None):
     asig.add_argument("--rev", default="HEAD")
     asig.add_argument("--repo", default=".")
     asig.add_argument("--salida", help="ruta del TSV (si falta, sólo el resumen)")
+    ci = sub.add_parser("ci")
+    ci.add_argument("--rev", default="HEAD")
+    ci.add_argument("--repo", default=".")
+    ci.add_argument("--salida", help="ruta del TSV (si falta, sólo el resumen)")
+    ci.add_argument("--exigir", action="store_true",
+                    help="código 1 si un objetivo con tests no corre en ninguna CI")
+    claves = sub.add_parser("claves")
+    claves.add_argument("--rev", default="HEAD")
+    claves.add_argument("--repo", default=".")
+    claves.add_argument("--salida", help="ruta del TSV (si falta, sólo el resumen)")
     args = parser.parse_args(argv)
+    if args.orden == "claves":
+        return orden_claves(args)
     if args.orden == "asignacion":
         return orden_asignacion(args)
+    if args.orden == "ci":
+        return orden_ci(args)
     alias = dict(a.split("=", 1) for a in args.alias)
     with open(args.documento, encoding="utf-8") as f:
         texto = f.read()
@@ -365,6 +397,366 @@ def orden_asignacion(args):
     print("archivos: %d; por fase (explícita+directorio): %s" % (
         len(filas), ", ".join("%s=%d+%d" % (f, *por_fase[f]) for f in orden)))
     return 1 if sin_fase or inexistentes or empates else 0
+
+
+# ── ci: qué objetivos de test ejecuta alguna CI ─────────────────────────────
+
+TEST_ATTR = re.compile(r"#\[(?:tokio::)?test\b")
+IGNORE_ATTR = re.compile(r"#\[ignore\b")
+
+
+def contar_tests(textos):
+    textos = list(textos)
+    tests = sum(len(TEST_ATTR.findall(t)) for t in textos)
+    ignorados = sum(len(IGNORE_ATTR.findall(t)) for t in textos)
+    return tests, ignorados
+
+
+def secciones_toml(texto):
+    """Lista de (cabecera, líneas) de un TOML plano; basta para Cargo.toml."""
+    out, actual, lineas = [], "", []
+    for linea in texto.splitlines():
+        cab = re.match(r"\s*(\[\[?[^\]]+\]\]?)\s*(#.*)?$", linea)
+        if cab:
+            out.append((actual, lineas))
+            actual, lineas = cab.group(1).replace(" ", ""), []
+        else:
+            lineas.append(linea)
+    out.append((actual, lineas))
+    return out
+
+
+def valor_toml(lineas, clave):
+    for linea in lineas:
+        m = re.match(r"\s*%s\s*=\s*(.+?)\s*(#.*)?$" % re.escape(clave), linea)
+        if m:
+            v = m.group(1).strip()
+            return v[1:-1] if v.startswith('"') and v.endswith('"') else v
+    return None
+
+
+def paquetes_del_workspace(versionados, leer):
+    """{nombre: {"base", "lib", "bins": {nombre: [archivos]}, "tests": {nombre: [archivos]}}}."""
+    paquetes = {}
+    for manifiesto in sorted(r for r in versionados
+                             if r == "Cargo.toml" or re.fullmatch(r"crates/[^/]+/Cargo\.toml", r)):
+        secciones = secciones_toml(leer(manifiesto))
+        pkg = [l for c, l in secciones if c == "[package]"]
+        if not pkg:
+            continue
+        nombre = valor_toml(pkg[0], "name")
+        base = manifiesto[:-len("Cargo.toml")]
+        autobins = valor_toml(pkg[0], "autobins") != "false"
+        autotests = valor_toml(pkg[0], "autotests") != "false"
+        lib_sec = [l for c, l in secciones if c == "[lib]"]
+        lib = base + (valor_toml(lib_sec[0], "path") or "src/lib.rs") if lib_sec else base + "src/lib.rs"
+        bins, tests = {}, {}
+        for c, l in secciones:
+            if c == "[[bin]]":
+                n = valor_toml(l, "name")
+                bins[n] = [base + (valor_toml(l, "path") or "src/bin/%s.rs" % n)]
+            if c == "[[test]]":
+                n = valor_toml(l, "name")
+                tests[n] = [base + (valor_toml(l, "path") or "tests/%s.rs" % n)]
+        for ruta in versionados:
+            if not ruta.startswith(base) or (base == "" and ruta.startswith("crates/")):
+                continue
+            rel = ruta[len(base):]
+            if autobins:
+                if rel == "src/main.rs":
+                    bins.setdefault(nombre, []).append(ruta)
+                m = re.fullmatch(r"src/bin/([^/]+)\.rs", rel) or re.fullmatch(r"src/bin/([^/]+)/.+\.rs", rel)
+                if m:
+                    bins.setdefault(m.group(1), []).append(ruta)
+            if autotests:
+                m = re.fullmatch(r"tests/([^/]+)\.rs", rel) or re.fullmatch(r"tests/([^/]+)/main\.rs", rel)
+                if m:
+                    tests.setdefault(m.group(1), []).append(ruta)
+        archivos_bins = {a for v in bins.values() for a in v}
+        lib_archivos = [r for r in versionados if r.startswith(base + "src/") and r.endswith(".rs")
+                        and not r.startswith(base + "src/bin/") and r not in archivos_bins
+                        and not (base == "" and r.startswith("crates/"))]
+        paquetes[nombre] = {"base": base, "lib": lib if lib in versionados else None,
+                            "lib_archivos": lib_archivos, "bins": bins, "tests": tests}
+    return paquetes
+
+
+def objetivos_de_test(paquetes, leer):
+    """Filas (paquete, objetivo, tipo, archivo, tests, ignorados)."""
+    filas = []
+    for nombre in sorted(paquetes):
+        p = paquetes[nombre]
+        if p["lib"]:
+            t, i = contar_tests(leer(a) for a in p["lib_archivos"])
+            filas.append((nombre, nombre, "lib", p["lib"], t, i))
+        for b in sorted(p["bins"]):
+            t, i = contar_tests(leer(a) for a in p["bins"][b])
+            filas.append((nombre, b, "bin", p["bins"][b][0], t, i))
+        for x in sorted(p["tests"]):
+            t, i = contar_tests(leer(a) for a in p["tests"][x])
+            filas.append((nombre, x, "test", p["tests"][x][0], t, i))
+    return filas
+
+
+def ordenes_del_workflow(texto):
+    """Órdenes `cargo … test` y `rustc … --test` con la matriz expandida: [(línea, orden)]."""
+    valores = {}
+    for linea in texto.splitlines():
+        m = re.match(r"\s*-?\s*([A-Za-z_][\w-]*):\s*(.+?)\s*$", linea)
+        if m:
+            valores.setdefault(m.group(1), []).append(m.group(2))
+    out = []
+    for n, linea in enumerate(texto.splitlines(), 1):
+        limpia = linea.strip()
+        if limpia.startswith("#"):
+            continue
+        limpia = re.sub(r"^(?:-\s*)?run:\s*", "", limpia)
+        tokens = limpia.split()
+        es_cargo_test = "cargo" in tokens and "test" in tokens[tokens.index("cargo"):]
+        es_rustc_test = "rustc" in tokens and "--test" in tokens
+        if not (es_cargo_test or es_rustc_test):
+            continue
+        claves = re.findall(r"\$\{\{\s*matrix\.([\w-]+)\s*\}\}", limpia)
+        if not claves:
+            out.append((n, limpia))
+            continue
+        clave = claves[0]
+        for v in valores.get(clave, []):
+            out.append((n, re.sub(r"\$\{\{\s*matrix\.%s\s*\}\}" % re.escape(clave), v, limpia)))
+    return out
+
+
+def seleccion_de_orden(orden, paquetes, raiz="trader-gemini-v5"):
+    """Qué ejecuta una orden: (objetivos {(paquete, tipo, nombre|None)}, filtro, solo_compila)."""
+    t = orden.split()
+    if "rustc" in t and "--test" in t:
+        archivo = t[t.index("--test") + 1] if t.index("--test") + 1 < len(t) else None
+        for nombre, p in paquetes.items():
+            for x, archivos in p["tests"].items():
+                if archivo in archivos:
+                    return {(nombre, "test", x)}, None, False
+        return set(), None, False
+    i = t.index("cargo") + 1
+    while i < len(t) and t[i] != "test":
+        i += 1
+    args = t[i + 1:]
+    tras = []
+    if "--" in args:
+        k = args.index("--")
+        args, tras = args[:k], args[k + 1:]
+    paqs, todos, sel, solo_compila = [], False, [], False
+    j = 0
+    while j < len(args):
+        a = args[j]
+        if a in ("-p", "--package") and j + 1 < len(args):
+            paqs.append(args[j + 1]); j += 2; continue
+        if a in ("--workspace", "--all"):
+            todos = True
+        elif a in ("--lib", "--bins", "--tests", "--all-targets"):
+            sel.append((a, None))
+        elif a in ("--bin", "--test") and j + 1 < len(args):
+            sel.append((a, args[j + 1])); j += 2; continue
+        elif a == "--no-run":
+            solo_compila = True
+        j += 1
+    if todos:
+        paqs = list(paquetes)
+    elif not paqs:
+        paqs = [raiz]
+    if not sel:
+        sel = [("--lib", None), ("--bins", None), ("--test-todos", None)]
+    objetivos = set()
+    for nombre in paqs:
+        p = paquetes.get(nombre)
+        if p is None:
+            continue
+        for a, v in sel:
+            if a in ("--lib", "--tests", "--all-targets") and p["lib"]:
+                objetivos.add((nombre, "lib", None))
+            if a in ("--bins", "--tests", "--all-targets"):
+                objetivos.update((nombre, "bin", b) for b in p["bins"])
+            if a in ("--tests", "--all-targets", "--test-todos"):
+                objetivos.update((nombre, "test", x) for x in p["tests"])
+            if a == "--bin" and v in p["bins"]:
+                objetivos.add((nombre, "bin", v))
+            if a == "--test" and v in p["tests"]:
+                objetivos.add((nombre, "test", v))
+    filtros, k = [], 0
+    while k < len(tras):
+        if tras[k] == "--skip":
+            k += 2; continue
+        if not tras[k].startswith("-"):
+            filtros.append(tras[k])
+        k += 1
+    if "--ignored" in tras:
+        filtros.append("--ignored")
+    return objetivos, (" ".join(filtros) or None), solo_compila
+
+
+def inventario_ci(versionados, leer):
+    paquetes = paquetes_del_workspace(versionados, leer)
+    filas = objetivos_de_test(paquetes, leer)
+    corre = {}
+    for wf in sorted(r for r in versionados if re.fullmatch(r"\.github/workflows/[^/]+\.ya?ml", r)):
+        for n, orden in ordenes_del_workflow(leer(wf)):
+            objetivos, filtro, solo_compila = seleccion_de_orden(orden, paquetes)
+            if solo_compila:
+                continue
+            etiqueta = "%s:%d" % (wf.rsplit("/", 1)[1], n)
+            if filtro:
+                etiqueta += " (filtro %s)" % filtro
+            for nombre, tipo, x in objetivos:
+                clave = (nombre, tipo, x if tipo != "lib" else nombre)
+                corre.setdefault(clave, [])
+                if etiqueta not in corre[clave]:
+                    corre[clave].append(etiqueta)
+    salida = []
+    for paquete, objetivo, tipo, archivo, tests, ignorados in filas:
+        donde = corre.get((paquete, tipo, objetivo), [])
+        salida.append((paquete, objetivo, tipo, archivo, tests, ignorados, "; ".join(donde) or "ninguna"))
+    return salida
+
+
+def orden_ci(args):
+    versionados = archivos_versionados(args.repo, args.rev)
+    leer = lambda ruta: git(args.repo, "show", "%s:%s" % (args.rev, ruta))
+    filas = inventario_ci(versionados, leer)
+    if args.salida:
+        with open(args.salida, "w", encoding="utf-8") as f:
+            f.write("paquete\tobjetivo\ttipo\tarchivo\ttests\tignorados\tcorre_en\n")
+            for fila in filas:
+                f.write("%s\t%s\t%s\t%s\t%d\t%d\t%s\n" % fila)
+    con_tests = [f for f in filas if f[4] > 0]
+    sin_ci = [f for f in con_tests if f[6] == "ninguna"]
+    parcial = [f for f in con_tests if f[6] != "ninguna" and "(filtro" in f[6]
+               and all("(filtro" in e for e in f[6].split("; "))]
+    por_paquete = {}
+    for f in sin_ci:
+        d = por_paquete.setdefault(f[0], [0, 0])
+        d[0] += 1
+        d[1] += f[4]
+    for paquete in sorted(por_paquete):
+        print("sin CI: %s: %d objetivos, %d tests" % (paquete, *por_paquete[paquete]))
+    print("objetivos con tests: %d (%d tests); sin ninguna CI: %d (%d tests); sólo con filtro: %d" % (
+        len(con_tests), sum(f[4] for f in con_tests), len(sin_ci), sum(f[4] for f in sin_ci), len(parcial)))
+    return 1 if args.exigir and sin_ci else 0
+
+
+LECTORES_REGISTRO = ("get_value_fast", "get_value_or", "get_scoped_value_or", "get_scoped_val_or",
+                     "get_for_coin_or", "get_scoped_parameter", "get_scoped",
+                     "get_for_coin_strict", "get_for_coin_strict_or", "get_scoped_strict",
+                     "get_scoped_strict_or")
+# Lectores con la clave en el último argumento (sin respaldo ni consumidor detrás).
+CLAVE_AL_FINAL = ("get_value_fast", "get_for_coin_strict", "get_scoped_strict")
+ESCRITORES_REGISTRO = ("set_for_coin", "set_scoped", "register_or_update", "register", "set")
+LLAMADA_REGISTRO = re.compile(r"\.(%s)\s*\(" % "|".join(
+    sorted(LECTORES_REGISTRO + ESCRITORES_REGISTRO + ("get",), key=len, reverse=True)))
+LITERAL_CLAVE = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"')
+TUPLA_CLAVE = re.compile(r'\(\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*,')
+# Ayudantes de escritura (`let set_reg = |k, v| …; set_reg("clave", v)`, `publicar(…)`).
+# `register(Parameter::new("clave", …))` también escribe.
+AYUDANTE_ESCRITOR = re.compile(
+    r'(?<![\w.])(set_\w+|publica\w*|publish\w*|registra\w*|Parameter::new)\s*\(\s*"([A-Za-z_][A-Za-z0-9_]*)"')
+
+
+def argumentos(texto, inicio):
+    """Argumentos de nivel superior de la llamada cuyo paréntesis abre en `inicio`."""
+    args, actual, nivel, i = [], [], 1, inicio
+    while i < len(texto) and nivel:
+        c = texto[i]
+        if c == '"':
+            fin = i + 1
+            while fin < len(texto) and texto[fin] != '"':
+                fin += 2 if texto[fin] == "\\" else 1
+            actual.append(texto[i:fin + 1])
+            i = fin + 1
+            continue
+        if c in "([{":
+            nivel += 1
+        elif c in ")]}":
+            nivel -= 1
+            if not nivel:
+                break
+        if c == "," and nivel == 1:
+            args.append("".join(actual).strip())
+            actual = []
+        else:
+            actual.append(c)
+        i += 1
+    args.append("".join(actual).strip())
+    return [a for a in args if a]
+
+
+def codigo_de_produccion(ruta):
+    return (ruta.endswith(".rs") and not ruta.startswith(("tests/", "benches/"))
+            and "/tests/" not in ruta and "/benches/" not in ruta)
+
+
+def claves_sin_escritor(versionados, leer):
+    """Claves del registro con lectura y sin ninguna escritura en el código de producción.
+
+    Lecturas: los métodos de lectura de `OmniscientRegistry` y `.get(clave, consumidor)`
+    (dos literales; `json.get("x")` no cuenta). Escrituras: `set`, `set_for_coin`,
+    `set_scoped`, `register`, `register_or_update` y cualquier tupla `("clave", …)`, que
+    suele ser una tabla que se publica en bucle. Fuera quedan `tests/`, `benches/` y lo que
+    sigue a `#[cfg(test)]`. Una clave compuesta con `format!` no se ve: la lista es de
+    candidatas que hay que verificar a mano, no un veredicto.
+    """
+    lecturas, escritas = {}, set()
+    for ruta in versionados:
+        if not codigo_de_produccion(ruta):
+            continue
+        texto = leer(ruta)
+        corte = texto.find("#[cfg(test)]")
+        if corte >= 0:
+            texto = texto[:corte]
+        escritas.update(m.group(2) for m in AYUDANTE_ESCRITOR.finditer(texto))
+        for m in TUPLA_CLAVE.finditer(texto):
+            previo = texto[:m.start()].rstrip()[-1:]
+            if not (previo.isalnum() or previo in "_>!"):
+                escritas.add(m.group(1))
+        for m in LLAMADA_REGISTRO.finditer(texto):
+            metodo, args = m.group(1), argumentos(texto, m.end())
+            # Posición de la clave: la primera en register_or_update, la última en
+            # CLAVE_AL_FINAL y la penúltima en el resto (tras ella va el valor, el
+            # respaldo o el consumidor). `register` recibe un Parameter (arriba).
+            posicion = 0 if metodo == "register_or_update" else -1 if metodo in CLAVE_AL_FINAL else -2
+            if metodo == "register" or len(args) < (2 if posicion == -2 else 1):
+                continue
+            if metodo == "get" and len(args) != 2:
+                continue
+            if not LITERAL_CLAVE.fullmatch(args[posicion]):
+                continue
+            clave = args[posicion][1:-1]
+            if metodo in ESCRITORES_REGISTRO:
+                escritas.add(clave)
+                continue
+            linea = texto.count("\n", 0, m.start()) + 1
+            dato = lecturas.setdefault(clave, {"sitios": [], "por_defecto": []})
+            dato["sitios"].append("%s:%d" % (ruta, linea))
+            defecto = " ".join(args[-1].split())
+            if len(defecto) > 60:
+                defecto = defecto[:57] + "..."
+            if metodo.endswith("_or") and defecto not in dato["por_defecto"]:
+                dato["por_defecto"].append(defecto)
+    return {k: v for k, v in sorted(lecturas.items()) if k not in escritas}
+
+
+def orden_claves(args):
+    versionados = archivos_versionados(args.repo, args.rev)
+    leer = lambda ruta: git(args.repo, "show", "%s:%s" % (args.rev, ruta))
+    claves = claves_sin_escritor(versionados, leer)
+    if args.salida:
+        with open(args.salida, "w", encoding="utf-8") as f:
+            f.write("clave\tlecturas\tpor_defecto\tsitios\n")
+            for clave, dato in claves.items():
+                f.write("%s\t%d\t%s\t%s\n" % (clave, len(dato["sitios"]), " | ".join(dato["por_defecto"]) or "-",
+                                             " ".join(dato["sitios"])))
+    for clave, dato in claves.items():
+        print("%s: %d lecturas, por defecto %s (%s)" % (
+            clave, len(dato["sitios"]), " | ".join(dato["por_defecto"]) or "-", dato["sitios"][0]))
+    print("claves leídas sin escritor: %d" % len(claves))
+    return 0
 
 
 if __name__ == "__main__":
