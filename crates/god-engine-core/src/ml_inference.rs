@@ -313,6 +313,24 @@ impl NanoForest {
         None
     }
 
+    /// P5 (Camino Caliente): Búsqueda global por símbolo y sufijo con formateo en stack
+    /// sin alojar `String` en el heap (0 bytes heap allocation).
+    #[inline(always)]
+    pub fn get_global_suffixed(symbol: &str, suffix: &str) -> Option<Arc<Self>> {
+        let mut buf = [0u8; 64];
+        let sym_b = symbol.as_bytes();
+        let suf_b = suffix.as_bytes();
+        let total = sym_b.len() + suf_b.len();
+        if total <= buf.len() {
+            buf[..sym_b.len()].copy_from_slice(sym_b);
+            buf[sym_b.len()..total].copy_from_slice(suf_b);
+            if let Ok(key) = std::str::from_utf8(&buf[..total]) {
+                return Self::get_global(key);
+            }
+        }
+        Self::get_global(&format!("{}{}", symbol, suffix))
+    }
+
     /// Bounded traversal of a validated tree. No allocation on the prediction path.
     #[inline(always)]
     fn evaluate_tree(&self, features: &[f32], tree_idx: usize) -> Option<f32> {

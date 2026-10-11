@@ -143,6 +143,20 @@ pub fn try_symbol(coin_id: usize) -> Option<String> {
     registry.get(coin_id).map(|s| s.symbol.clone())
 }
 
+/// P5 (Camino Caliente): Acceso cero-copia al símbolo del slot `coin_id` sin alojar `String` en el heap.
+#[inline(always)]
+pub fn with_symbol<F, R>(coin_id: usize, f: F) -> Option<R>
+where
+    F: FnOnce(&str) -> R,
+{
+    let universe = crate::symbols::get_active_universe_ref();
+    if !universe.is_empty() {
+        return universe.get(coin_id).map(|s| f(s.as_str()));
+    }
+    let registry = DYNAMIC_REGISTRY.load();
+    registry.get(coin_id).map(|s| f(s.symbol.as_str()))
+}
+
 /// CL-62 (LC-F1-03): ¿el slot `coin_id` es `simbolo`? Mismo espacio de
 /// índices que `try_symbol` (el universo; el registro sólo con el universo
 /// vacío), sin copiar el nombre: lo consulta el camino caliente.

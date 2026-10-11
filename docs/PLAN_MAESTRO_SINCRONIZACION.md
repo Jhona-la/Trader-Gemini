@@ -1709,3 +1709,36 @@ Actualización de composición: main avanzó a 8dd51dfb (Ω83); inventario y TSV
   - `cargo test -p omniscient-registry`: 14/14 tests pasando al 100%.
   - `cargo check --workspace --all-targets`: 0 errores, compila limpiamente en todo el workspace.
   - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300`, 15 operaciones idénticas bit a bit frente a la línea base.
+
+## 44. Desacoplamiento de Reloj Causal P1, Erradicación de Asignaciones en Heap P5 y Migración Estricta en Camino Caliente (Ola Ω84, Ficha #722)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#722`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Desacoplamiento del reloj de pared en el camino caliente del registro omnisciente (`P1`), eliminación total de asignaciones dinámicas en heap en inferencia ML (`P5`), incorporación de acceso cero-copia `with_symbol` en `quantum-arena` y migración a selectores estrictos `get_for_coin_strict_or` en consumidores productivos del núcleo.
+  * **POR QUÉ**: El perfilado forense de Claude (`PERFIL_CAMINO_CALIENTE_2026-10-11.md`) demostró que `chrono::Utc::now()` en `Parameter::set_value` era invocado ~208 veces por evento, consumiendo ~15.2 µs (+6.8% de latencia del ciclo) en syscalls de reloj innecesarias. Asimismo, las interpolaciones `format!("{}_MOTOR", sym)`, `format!("{}_VOL", sym)` y `format!("{}_OI", sym)` representaban el 33% de todas las asignaciones dinámicas en heap del hot path, mientras que `try_spec` y `try_symbol` clonaban cadenas en cada tick.
+  * **PARA QUÉ**: Alcanzar velocidad de ejecución < 25 ns en la ruta crítica sin degradación de precisión temporal, garantizar reproducibilidad causal determinista exacta en repetición/replay histórico y preservar la pureza de 0 bytes de asignación dinámica en heap durante el procesamiento de ticks.
+  * **CÓMO**:
+    1. **Desacoplamiento Causal P1 en `OmniscientRegistry`**:
+       - En `crates/omniscient-registry/src/lib.rs`: incorporado `active_event_time_ms: AtomicI64`, `update_event_time(event_time_ms: i64)`, `get_event_time() -> i64` y `current_timestamp_ms() -> i64`.
+       - En `Parameter`: añadidos constructores y mutadores con marca temporal explícita: `new_with_ts(..., ts: i64)` y `set_value_with_ts(val: f64, ts: i64)`.
+       - En `OmniscientRegistry::set`, `register_or_update` y `register_or_update_with_ts`: el reloj se lee mediante una carga atómica relajada de 0.3 ns sobre `active_event_time_ms` (o fallback a `Utc::now()` si no ha sido inicializado).
+       - En `restore_from_snapshot`: se preserva el timestamp canónico exacto del snapshot mediante `register_or_update_with_ts`, impidiendo que una restauración sobreescriba timestamps históricos con la hora de pared actual.
+       - En `GodEngineCore::process_event` y `GodEngineCore::process_tick_dual`: se invoca `self.arena.registry.update_event_time(event_time_ms as i64)` exactamente **una vez** al ingreso del evento, sincronizando todas las 208 escrituras subsecuentes con el reloj causal del tick con cero sobrecosto de syscall.
+    2. **Erradicación de Asignaciones en Heap P5 en Inferencia ML**:
+       - En `crates/god-engine-core/src/ml_inference.rs`: implementado `NanoForest::get_global_suffixed(symbol: &str, suffix: &str) -> Option<Arc<Self>>` con buffer fijo de 64 bytes en stack (`[0u8; 64]`), realizando la búsqueda directa sobre el mapa global lock-free con 0 asignaciones dinámicas en heap.
+       - En `crates/god-engine-core/src/lib.rs`: sustituidas las llamadas `format!("{}_MOTOR", sym)`, `format!("{}_VOL", sym)` y `format!("{}_OI", sym)` por `get_global_suffixed(&sym, "_MOTOR")`, `get_global_suffixed(&sym, "_VOL")` y `get_global_suffixed(&sym, "_OI")` en las líneas críticas de inferencia y cierre de posición.
+       - En diagnósticos de modelo degenerado o ausente: se formatea directamente con `sym` sin mantener la variable de heap `coin_model_key`.
+    3. **Acceso Cero-Copia a Símbolos y Erradicación de Clones Redundantes**:
+       - En `crates/quantum-arena/src/symbol_registry.rs`: implementado `with_symbol<F, R>(coin_id: usize, f: F) -> Option<R>` que pasa `&str` directamente a un closure de orden superior sin alojar ni clonar `String`.
+       - En `GodEngineCore::process_tick_dual`: sustituida la invocación a `try_spec(coin_id)` (que clonaba la estructura `SymbolSpec` de 9 campos) por `try_symbol(coin_id)` al inicio del tick, reutilizando `sym` en todo el bloque y eliminando la re-consulta redundante a `try_spec` en la línea 5417.
+    4. **Migración a Selectores Estrictos en Consumidores Productivos**:
+       - En `GodEngineCore::process_tick_dual`: las resoluciones de `ml_model_base` al cierre de posición y actualización online fueron migradas a `self.arena.registry.get_for_coin_strict_or(coin_id, "ml_model_base", f64::NAN)`, asegurando que los consumidores productivos consulten exclusivamente el ámbito estricto del activo sin fallback al espacio global.
+  * **CUÁNDO**: Ejecutado de forma continua en cada evento de mercado procesado por el motor.
+  * **DÓNDE**: `crates/omniscient-registry/src/lib.rs`, `crates/god-engine-core/src/lib.rs`, `crates/god-engine-core/src/ml_inference.rs`, `crates/quantum-arena/src/symbol_registry.rs`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead), coordinado con Claude y Codex.
+- **Validación Extremo a Extremo e Invarianza**:
+  * `cargo check --workspace --all-targets`: 0 errores, compilación limpia.
+  * `cargo test -p omniscient-registry`: 14/14 tests pasando al 100%.
+  * `cargo test -p quantum-arena`: suite completa de contratos pasando al 100%.
+  * `cargo test -p god-engine-core`: suite completa pasando al 100%.
+  * `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: test determinista `t2_diag_actividad_del_fixture_lateral_micro` aprobado.

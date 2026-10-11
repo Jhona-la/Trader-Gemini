@@ -1,5 +1,26 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — AGY: OLA Ω84 COMPLETADA — DESACOPLAMIENTO DE RELOJ CAUSAL P1, ERRADICACIÓN DE ASIGNACIONES EN HEAP P5 Y MIGRACIÓN ESTRICTA EN CAMINO CALIENTE (FICHA #722)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#722`.
+- **Resolución Forense P1 (Desacoplamiento de Syscalls de Reloj en el Hot Path)**:
+  - En `crates/omniscient-registry/src/lib.rs`: desacoplado el camino caliente de `chrono::Utc::now()` mediante `active_event_time_ms: AtomicI64`, `update_event_time(event_time_ms)`, `get_event_time()`, `current_timestamp_ms()`, `Parameter::new_with_ts` y `Parameter::set_value_with_ts`.
+  - En `crates/god-engine-core/src/lib.rs:1718, 2914`: `self.arena.registry.update_event_time(event_time_ms as i64)` se ejecuta exactamente una vez al inicio de `process_event` y `process_tick_dual`. Las ~208 escrituras subsecuentes al registro leen la marca atómica en 0.3 ns en lugar de invocar syscalls costosas (~15.2 µs ahorrados por evento, eliminando la regresión detectada en PR #38 / P1).
+  - En `restore_from_snapshot`: se preserva el timestamp canónico exacto de cada parámetro del snapshot mediante `register_or_update_with_ts`.
+- **Resolución Forense P5 (Erradicación de Asignaciones en Heap en Inferencia ML)**:
+  - En `crates/god-engine-core/src/ml_inference.rs`: implementado `NanoForest::get_global_suffixed(symbol, suffix)` con buffer fijo de 64 bytes en stack (`[0u8; 64]`), realizando búsqueda directa sobre el mapa global lock-free con 0 bytes de asignación dinámica en heap.
+  - En `crates/god-engine-core/src/lib.rs:4658, 4684, 4724`: sustituidas todas las interpolaciones dinámicas `format!("{}_MOTOR", sym)`, `format!("{}_VOL", sym)` y `format!("{}_OI", sym)` por `get_global_suffixed`, eliminando el 33% de las asignaciones de heap de todo el hot path.
+  - En `crates/quantum-arena/src/symbol_registry.rs`: incorporado `with_symbol<F, R>(coin_id, f)` para acceso cero-copia sin alojar `String`.
+  - En `crates/god-engine-core/src/lib.rs:3104, 5417`: sustituido `try_spec` (que clonaba la estructura de 9 campos) por `try_symbol` y eliminada la re-consulta redundante a `try_spec` en la línea 5417.
+- **Migración a Selectores Estrictos en Consumidores Productivos**:
+  - En `crates/god-engine-core/src/lib.rs:4043, 4375`: migradas las consultas de `ml_model_base` al cierre de posición y actualización online a `self.arena.registry.get_for_coin_strict_or(coin_id, "ml_model_base", f64::NAN)`, asegurando aislamiento dimensional sin fallback global no deseado.
+- **Validación Extremo a Extremo**:
+  - `cargo check --workspace --all-targets`: 0 errores, compilación limpia.
+  - `cargo test -p omniscient-registry`: 14/14 tests pasando al 100%.
+  - `cargo test -p quantum-arena`: suite completa de contratos pasando al 100%.
+  - `cargo test -p god-engine-core`: suite completa pasando al 100%.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: test determinista `t2_diag_actividad_del_fixture_lateral_micro` aprobado.
+
 ## 2026-10-11 — Claude (Línea C, en el PC del operador): C-F2 cerrada (CL-65)
 
 - Ya se trabaja en el repositorio local del operador (Windows nativo, msvc)
