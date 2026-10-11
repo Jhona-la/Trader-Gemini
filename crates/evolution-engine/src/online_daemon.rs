@@ -799,7 +799,7 @@ pub struct LiveEvolutionDaemon {
     pub post_promo_returns: Vec<f64>,
     pub promoted_generation: Option<(u64, u64)>, // (generación, padre)
     /// Ω31 — Supermartingala de Ville para watchdog anytime-valid inmune a optional stopping.
-    pub post_promo_ville: Option<crate::return_evidence::SequentialVilleEvidence>,
+    pub post_promo_ville: Option<crate::return_evidence::VigilanciaDegradacion>,
     /// D-746 (DÉCIMA OLA) — PRUEBAS ACUMULADAS PARA LA CORRECCIÓN POR
     /// MULTIPLICIDAD. El gate DSR recibía el literal `2_000` en cada ronda,
     /// como si cada evaluación de tres minutos fuese el primer experimento de
@@ -1140,8 +1140,11 @@ impl LiveEvolutionDaemon {
                                         }
                                     }
                                 };
-                                let normalized_ret = (ret / unit_risk).clamp(-1.0, 1.0);
-                                ville.observe(normalized_ret);
+                                // LF-3: la vigilancia acota el soporte en [−1, RR máx]
+                                // (`nueva_vigilancia_ville`); recortar aquí a +1 R
+                                // vigilaba la tasa de acierto contra 0,5, no la esperanza.
+                                let normalized_ret = ret / unit_risk;
+                                ville.observe_r(normalized_ret);
                             }
                         }
 
@@ -1195,17 +1198,36 @@ impl LiveEvolutionDaemon {
     /// revierte al padre vía el embudo versionado y lo reaplica al arena.
     /// Es el complemento operativo del gate de `promote`: sanidad antes,
     /// rendición de cuentas después.
+    /// LF-3: vigilancia de degradación con el soporte de la geometría vigente.
+    /// Los retornos llegan en R-múltiplos (riesgo al stop = 1 R): por abajo el
+    /// soporte es −1 R y por arriba el TP/SL máximo de las curvas del genoma
+    /// en la banda operable [τ rápida, τ lenta].
+    fn nueva_vigilancia_ville(&self) -> Option<crate::return_evidence::VigilanciaDegradacion> {
+        use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+        let cfg = &self.arena.config;
+        let soporte = crate::return_evidence::soporte_superior_en_r(&[
+            (cfg.tp_at_tau(TAU_ANCHOR_FAST_MS), cfg.sl_at_tau(TAU_ANCHOR_FAST_MS)),
+            (cfg.tp_at_tau(TAU_ANCHOR_SLOW_MS), cfg.sl_at_tau(TAU_ANCHOR_SLOW_MS)),
+        ]);
+        crate::return_evidence::VigilanciaDegradacion::new(0.05, 0.05, 0.50, soporte).ok()
+    }
+
     fn check_post_promotion_degradation(&mut self) {
         let Some((generation_id, parent)) = self.promoted_generation else {
             return;
         };
-        // R7-R6-EV-1: Desacoplamiento de la vigilancia anytime-valid de Ville:
-        // Ville posee validez matemática finita para cualquier tiempo de parada (N >= 3)
-        // y detecta colapso de evidencia en 5-15 operaciones sin esperar al tamaño asintótico N >= 20.
+        // R7-R6-EV-1: la vigilancia anytime-valid de Ville no espera al tamaño
+        // asintótico N >= 20: es válida en cualquier tiempo de parada. Con LF-3
+        // su velocidad depende de la magnitud de la pérdida (−0,67 R por
+        // operación: ~27 operaciones; −0,19 R: cientos) y su error tipo I
+        // (revertir un genoma con esperanza ≥ 0) queda acotado por α.
         let ville_degraded = self
             .post_promo_ville
             .as_ref()
-            .map(|v| v.is_exhausted() || v.is_evidence_decayed(0.50))
+            // LF-3: degradación = evidencia anytime-valid contra E[X] ≥ 0
+            // (falsa reversión ≤ α). La caída del 50 % desde el pico de un
+            // e-proceso a favor revertía también genomas rentables.
+            .map(|v| v.degradada())
             .unwrap_or(false);
 
         // Prueba Studentizada descriptiva asintótica (requiere N >= 20 para estabilidad de varianza)
@@ -1351,18 +1373,12 @@ impl LiveEvolutionDaemon {
             // Recovery of a strategy score does not resolve those causes.
         }
 
-        // D-689: la deriva y el kill-switch de arriba son protección y siguen
-        // siempre activos; la búsqueda y promoción de mutaciones en vivo no.
-        if !live_evolution_armed_for_env() {
-            return;
-        }
-
-        println!(
-            "[ADAPTIVE SEARCH] Evaluando mutaciones (t descriptivo actual: {:.2})...",
-            current_shadow_sharpe
-        );
-
-        // FASE I: Random Forest / Thousands of Universes Evaluation (Estasis de Probabilidad)
+        // LF-4 (Línea F): la vigilancia de rollback se arma ANTES del gate de
+        // armado de la evolución en vivo. Con la evolución desarmada (lo normal
+        // en prod) el bloque quedaba detrás del `return` de abajo, nunca se
+        // armaba y `check_post_promotion_degradation` salía en su primera
+        // línea para siempre, aunque el doc de `live_evolution_armed_for_env`
+        // y el log del host dicen que el rollback no depende del armado.
         // E2/HERENCIA: la semilla de la mutación es el GENOMA ACTIVO del
         // almacén versionado (champion real), no un champion_path que
         // nadie escribe. Antes: cada ciclo clonaba SuperGenotype::default()
@@ -1385,7 +1401,7 @@ impl LiveEvolutionDaemon {
                     env.parent_generation,
                 );
                 if reiniciada || self.post_promo_ville.is_none() {
-                    self.post_promo_ville = crate::return_evidence::SequentialVilleEvidence::with_bounds(0.05, 0.05, 0.50).ok();
+                    self.post_promo_ville = self.nueva_vigilancia_ville();
                     println!(
                         "🐕 [WATCHDOG-EXTERN] Promoción/restauración externa detectada (gen {}, padre {}) — vigilancia de rollback ARMADA (Ville anytime-valid activo).",
                         env.generation, env.parent_generation
@@ -1393,6 +1409,18 @@ impl LiveEvolutionDaemon {
                 }
             }
         }
+        // D-689: la deriva y el kill-switch de arriba son protección y siguen
+        // siempre activos; la búsqueda y promoción de mutaciones en vivo no.
+        if !live_evolution_armed_for_env() {
+            return;
+        }
+
+        println!(
+            "[ADAPTIVE SEARCH] Evaluando mutaciones (t descriptivo actual: {:.2})...",
+            current_shadow_sharpe
+        );
+
+        // FASE I: Random Forest / Thousands of Universes Evaluation (Estasis de Probabilidad)
         let current_genome = current_envelope
             .map(|env| env.genome)
             .or_else(|| {
@@ -1945,7 +1973,7 @@ impl LiveEvolutionDaemon {
                     env.parent_generation,
                 );
                 if reiniciada || self.post_promo_ville.is_none() {
-                    self.post_promo_ville = crate::return_evidence::SequentialVilleEvidence::with_bounds(0.05, 0.05, 0.50).ok();
+                    self.post_promo_ville = self.nueva_vigilancia_ville();
                     println!(
                         "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado (Ville anytime-valid activo).",
                         env.generation, env.parent_generation

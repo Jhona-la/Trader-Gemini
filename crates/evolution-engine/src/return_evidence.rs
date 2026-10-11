@@ -204,3 +204,88 @@ impl SequentialVilleEvidence {
         self.process.anytime_p_value()
     }
 }
+
+/// LF-3: pago máximo posible en R-múltiplos para la geometría `(tp, sl)` de
+/// cada horizonte dado: `max(tp/sl)` sobre los pares finitos y positivos, nunca
+/// menor que 1 (un TP no puede pagar menos de lo que arriesga el soporte por
+/// abajo). Con las curvas TP/SL del genoma, potencias de τ, el cociente es
+/// monótono en ln τ y basta evaluarlo en los dos extremos de la banda.
+pub fn soporte_superior_en_r(pares_tp_sl: &[(f64, f64)]) -> f64 {
+    pares_tp_sl
+        .iter()
+        .filter(|(tp, sl)| tp.is_finite() && sl.is_finite() && *tp > 0.0 && *sl > 0.0)
+        .map(|(tp, sl)| tp / sl)
+        .filter(|rr| rr.is_finite())
+        .fold(1.0_f64, f64::max)
+}
+
+/// LF-3: vigilancia anytime-valid de la DEGRADACIÓN de un genoma promovido.
+///
+/// El vigilante anterior alimentaba un e-proceso que apuesta A FAVOR del
+/// genoma y revertía cuando su riqueza caía un 50 % desde el pico. Ese
+/// criterio no es una prueba: la riqueza de cualquier e-proceso con varianza
+/// sufre tarde o temprano una caída del 50 % desde su máximo, también con
+/// ventaja positiva (Monte Carlo, 400 trayectorias i.i.d. de RR 2,25: revierte
+/// el 100 % de los genomas con 35 % y con 40 % de acierto, esperanza +0,14 R
+/// y +0,30 R). Además recortaba cada TP a +1 R, con lo que vigilaba la tasa de
+/// acierto contra 0,5 y no la esperanza.
+///
+/// Aquí la hipótesis nula es la que protege al genoma, H0: E[X] ≥ 0, con X el
+/// retorno de la operación en R-múltiplos sobre el soporte [−1, `soporte_r`].
+/// Se apuesta EN CONTRA: Y = −X / soporte_r ∈ [−1/… , 1] cumple el contrato de
+/// `VilleEProcess` (H0: E[Y] ≤ 0, Y ≥ −1) y la degradación se declara cuando
+/// su riqueza supera 1/α. Por la desigualdad maximal de Ville, la probabilidad
+/// de revertir un genoma con esperanza no negativa es ≤ α en cualquier
+/// instante de inspección.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VigilanciaDegradacion {
+    proceso: VilleEProcess,
+    soporte_r: f64,
+}
+
+impl VigilanciaDegradacion {
+    /// `soporte_r` es el pago máximo posible en R-múltiplos (≥ 1): el TP/SL
+    /// máximo de la geometría vigente (`soporte_superior_en_r`).
+    pub fn new(
+        alpha: f64,
+        lambda_min: f64,
+        lambda_max: f64,
+        soporte_r: f64,
+    ) -> Result<Self, &'static str> {
+        if !soporte_r.is_finite() || soporte_r < 1.0 {
+            return Err("soporte_r debe ser finito y mayor o igual que 1.0");
+        }
+        let proceso = VilleEProcess::with_bounds(alpha, lambda_min, lambda_max)?;
+        Ok(Self { proceso, soporte_r })
+    }
+
+    /// Ingiere el retorno de una operación en R-múltiplos. Se acota al soporte
+    /// [−1, soporte_r]; un valor no finito se ignora.
+    pub fn observe_r(&mut self, x_r: f64) {
+        if !x_r.is_finite() {
+            return;
+        }
+        let x = x_r.clamp(-1.0, self.soporte_r);
+        self.proceso.update(-x / self.soporte_r);
+    }
+
+    /// Evidencia anytime-valid de que la esperanza del genoma es negativa:
+    /// la riqueza de la apuesta en contra alcanzó 1/α en algún instante.
+    pub fn degradada(&self) -> bool {
+        self.proceso.peak_e_value >= self.proceso.threshold
+    }
+
+    /// Riqueza actual de la apuesta en contra del genoma.
+    pub fn e_valor(&self) -> f64 {
+        self.proceso.e_value
+    }
+
+    /// Observaciones admitidas.
+    pub fn observaciones(&self) -> usize {
+        self.proceso.count
+    }
+
+    pub fn soporte_r(&self) -> f64 {
+        self.soporte_r
+    }
+}
