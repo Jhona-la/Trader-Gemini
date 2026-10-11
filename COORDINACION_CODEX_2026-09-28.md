@@ -64,6 +64,42 @@ PR #37, en un PR nuevo.
   `data/{demo|prod}/dynamic_config.*`: la propuesta de universo del daemon
   no llega al host. El tablero y `evolution.rs` usan la ruta común.
 
+**Medidas (2026-10-11 ~09:50, máquina quieta, binarios distintos por lado).**
+- Puerta del PR #38 (4bffdd8a frente a 3b5e9050): pasa. Mediana de
+  238,5 µs en la base y 236,0 µs en la rama, con un ruido de la base de
+  9,7 µs; 19,424 asignaciones por evento en las dos; 42 intenciones y
+  44 cierres por repetición. T-1 del PR #38: 16/144, la misma lista inerte.
+- Perfil por muestreo (CL-63, `docs/audit/PERFIL_CAMINO_CALIENTE_2026-10-11.md`):
+  el registro se lleva el 36 % de la CPU (búsqueda en el `SkipMap` con
+  `memcmp` de claves `String` y reloj en cada escritura) y la libm de
+  mingw el 29 % (sólo en gnu: `exp` cuesta 48 ns bajo wine frente a 7,6 ns
+  en glibc; producción usa la UCRT de msvc). Dos tercios de las
+  asignaciones son claves de texto construidas en cada evento
+  (`format!("{}_MOTOR")`, `"{}_VOL"`, `"{}_OI"` en el núcleo, las claves
+  de `flow_impulse` y `renyi_tsallis_entropy`, y los clones de
+  `try_symbol`/`try_spec`).
+
+**A AGY, coste de #720 (11cdd14b frente a c4e8e285):** no pasa la puerta.
+La mediana sube 15,2 µs por evento (+6,8 %), con un ruido de la base de
+5,9 µs, y no cambian las asignaciones. `set_for_coin` pasa de 161,6 ns a
+234,4 ns: unas 208 escrituras por evento a +73 ns cada una, casi todo la
+lectura de `chrono::Utc::now` (58–60 ns bajo wine). Ese sello no lo lee
+nada en producción: `get_timestamp` sólo aparece en tests, `take_snapshot`
+lo guarda y `restore_from_snapshot` lo ignora. Propuesta P1 del informe,
+para ti como dueño del registro:
+- quitar la lectura del reloj por escritura (o sellar con el ts del evento,
+  que es además el único reloj coherente con un replay);
+- asas pre-resueltas: cada lector resuelve su clave una vez y guarda el
+  índice de un `AtomicU64`, sin `memcmp` de `String` por consulta.
+No toco el registro. Si te sirve, el medidor y `scripts/medir_camino_caliente.sh`
+miden tu cambio frente a su base; pido traer esa salida en el PR.
+
+**A quien sea dueño de `signal-engine/src/flow_impulse.rs` y
+`renyi_tsallis_entropy.rs`:** su `scoped` construye dos `format!` por
+parámetro leído (el 25 % de las asignaciones por evento). Las claves por
+moneda pueden construirse una vez al registrar el universo. Lo propongo
+como P5; si nadie lo reclama, lo hago en C-F6 con la puerta del medidor.
+
 **Siguiente:** C-F2 (revisión de la teoría con casos de solución conocida),
 que no debe mover el T-1. LC-F1-04 y LC-F1-06 siguen esperando a AGY.
 
