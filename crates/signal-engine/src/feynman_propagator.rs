@@ -182,8 +182,12 @@ impl FeynmanPropagatorEngine {
                 continue;
             }
             let safe_z = z.clamp(-10.0, 10.0);
-            // Velocidad efectiva dz entre escalas diádicas contiguas
-            let prev_z = if k > 0 { desplazamientos[k - 1].clamp(-10.0, 10.0) } else { safe_z };
+            // REV-8: Velocidad efectiva dz entre escalas diádicas contiguas, filtrando NaN en vecino
+            let prev_z = if k > 0 && desplazamientos[k - 1].is_finite() {
+                desplazamientos[k - 1].clamp(-10.0, 10.0)
+            } else {
+                safe_z
+            };
             let vel = safe_z - prev_z;
 
             // En el espacio de fases de Hilbert (z, vel), la fase cuántica modal se define por el ángulo de fase canónico:
@@ -195,19 +199,20 @@ impl FeynmanPropagatorEngine {
             let q_coord = safe_z * safe_k.max(1e-4).sqrt();
             let phase_angle = p_momentum.atan2(q_coord);
 
-            // Modulación por acción cuántica lagrangiana S / ħ
+            // REV-6: Modulación por acción cuántica lagrangiana S / ħ acotada sobre la superficie de energía
             let lagrangian = Self::compute_lagrangian(safe_z, vel, safe_m, safe_k, Self::DEFAULT_LAMBDA_QUARTIC);
             let safe_hbar = if hbar_eff.is_finite() && hbar_eff > 0.0 { hbar_eff } else { Self::DEFAULT_HBAR_EFF };
-            let action_phase = lagrangian / (safe_hbar * (1.0 + safe_z.abs()));
+            let action_phase = (lagrangian / (safe_hbar * (1.0 + safe_z * safe_z + vel * vel))).tanh();
             let total_theta = phase_angle + 0.10 * action_phase;
 
             phases[k] = (total_theta.cos(), total_theta.sin());
             amplitudes[k] = (safe_z.abs() * 0.5).tanh().clamp(0.0, 1.0);
         }
 
-        // 2. Coherencia cuántica global entre las 32 escalas
+        // 2. REV-7: Coherencia cuántica global normalizada por el número de escalas activas (no static 32)
+        let active_count = amplitudes.iter().filter(|&&a| a > 0.0).count().max(1);
         let raw_coherence = Self::compute_coherence_factor(&phases, &amplitudes);
-        let normalized_coherence = (raw_coherence / (ESCALAS_VOTO as f64)).clamp(0.0, 1.0);
+        let normalized_coherence = (raw_coherence / (active_count as f64)).clamp(0.0, 1.0);
 
         // 3. Modulación de señal por escala ponderada por coherencia de fase
         let mut por_escala = [0.0f64; ESCALAS_VOTO];

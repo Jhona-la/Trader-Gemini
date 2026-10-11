@@ -324,11 +324,11 @@ pub fn ml_gate_thresholds(long_threshold: f64, short_threshold: f64) -> (f64, f6
 ///    impide vetos prematuros a Short, equiparando los techos de boost a 1.50x en ambos lados.
 /// 4. Resuelve K-23: Elimina la parálisis de cortos cuando base <= lift_short, garantizando
 ///    que el umbral bajista escale proporcionalmente al espacio inferior [0, base].
+/// REV-13 / K-06 / K-23: Si `p` o `base` no son finitos (NaN, Inf), la divergencia direccional
+/// es estrictamente 0.0 (neutralidad exacta). Previene el sesgo alcista espurio donde `p = NaN`
+/// caía a 0.50 produciendo `+1/3` de soporte long contra `base = 0.25`.
 #[inline(always)]
 pub fn normalized_directional_divergence(p: f64, base: f64) -> f64 {
-    // QS-REV13: una probabilidad o una tasa base desconocida no tiene
-    // dirección. Antes p = NaN se tomaba como 0,5 y, con base 0,25, daba
-    // +1/3 de apoyo al LARGO: un dato perdido empujaba hacia un lado.
     if !p.is_finite() || !base.is_finite() {
         return 0.0;
     }
@@ -341,26 +341,30 @@ pub fn normalized_directional_divergence(p: f64, base: f64) -> f64 {
     }
 }
 
-/// K-26 — PROBABILIDAD DIRECCIONAL DE ÉXITO CALIBRADA (Ola Ω76).
+/// K-26 / REV-13 — PROBABILIDAD DIRECCIONAL DE ÉXITO CALIBRADA (Ola Ω76 / REV-13).
 ///
 /// Transforma la probabilidad cruda `p = P(Long TP antes que SL)` y la base honesta `base`
 /// a la probabilidad calibrada de que la orden gane, según su dirección:
-///   - Para Long: es simplemente `p`.
+///   - Para Long: es `p` (o `base` si `p` es NaN/no finito).
 ///   - Para Short: proyecta simétricamente a través de la divergencia direccional:
 ///     * Si p == base (mercado neutro): devuelve `base` (ambos lados comparten la misma tasa base honesta).
 ///     * Si p == 0.0 (máximo impulso bajista): devuelve 1.0 (certeza de acierto bajista).
 ///     * Si p == 1.0 (máxima oposición bajista): devuelve 0.0.
 ///     * Si base == 0.5: reduce exactamente a `1.0 - p`.
+///     * Si p es no finito (NaN, Inf): devuelve `base` de forma simétrica a Long.
 ///
 /// Erradica el sesgo de K-26 donde evaluar `1.0 - p` con base 0.25 trataba el estado neutro
-/// como una probabilidad artificialmente inflada de 0.75 para cortos.
+/// como una probabilidad artificialmente inflada de 0.75 para cortos, y REV-13 donde NaN daba 0.50 a long y 0.17 a short.
 #[inline(always)]
 pub fn p_win_directional(is_long: bool, p: f64, base: f64) -> f64 {
+    let b = if base.is_finite() { base.clamp(0.01, 0.99) } else { 0.5 };
+    if !p.is_finite() {
+        return b;
+    }
     if is_long {
-        if p.is_finite() { p.clamp(0.0, 1.0) } else { 0.5 }
+        p.clamp(0.0, 1.0)
     } else {
-        let div = normalized_directional_divergence(p, base);
-        let b = if base.is_finite() { base.clamp(0.01, 0.99) } else { 0.5 };
+        let div = normalized_directional_divergence(p, b);
         let div_short = -div;
         if div_short >= 0.0 {
             (b + div_short * (1.0 - b)).clamp(0.0, 1.0)
@@ -750,18 +754,12 @@ mod tests_xliv_olvido {
             prev = div;
         }
 
-        // 5. Robustez numérica ante NaN / infinitos
-        // QS-REV13: sin dato no hay dirección (antes NaN daba +1/3 al largo).
-        for &(p, base) in &[
-            (f64::NAN, 0.25),
-            (f64::INFINITY, 0.25),
-            (f64::NEG_INFINITY, 0.75),
-            (0.5, f64::NAN),
-            (0.9, f64::NAN),
-            (0.1, f64::INFINITY),
-        ] {
-            assert_eq!(normalized_directional_divergence(p, base), 0.0, "p={p} base={base}");
-        }
+        // 5. Robustez numérica ante NaN / infinitos (REV-13 neutralidad estricta)
+        assert_eq!(normalized_directional_divergence(f64::NAN, 0.25), 0.0);
+        assert_eq!(normalized_directional_divergence(0.25, f64::NAN), 0.0);
+        assert_eq!(normalized_directional_divergence(f64::NAN, f64::NAN), 0.0);
+        assert_eq!(normalized_directional_divergence(f64::INFINITY, 0.25), 0.0);
+        assert_eq!(normalized_directional_divergence(0.25, f64::NEG_INFINITY), 0.0);
     }
 
     #[test]
@@ -803,5 +801,17 @@ mod tests_xliv_olvido {
             assert!(pw >= 0.0 && pw <= 1.0, "fuera de rango: {pw}");
             prev = pw;
         }
+
+        // 6. Robustez y neutralidad ante NaN / infinitos (REV-13)
+        for &b in &[0.10, 0.25, 0.33, 0.50, 0.75] {
+            assert_eq!(p_win_directional(true, f64::NAN, b), b);
+            assert_eq!(p_win_directional(false, f64::NAN, b), b);
+            assert_eq!(p_win_directional(true, f64::INFINITY, b), b);
+            assert_eq!(p_win_directional(false, f64::INFINITY, b), b);
+            assert_eq!(p_win_directional(true, f64::NEG_INFINITY, b), b);
+            assert_eq!(p_win_directional(false, f64::NEG_INFINITY, b), b);
+        }
+        assert_eq!(p_win_directional(true, f64::NAN, f64::NAN), 0.50);
+        assert_eq!(p_win_directional(false, f64::NAN, f64::NAN), 0.50);
     }
 }

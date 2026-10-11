@@ -130,6 +130,17 @@ pub fn fee_impact_contract_rejects_excessive_friction_and_admits_viable_order() 
     let out_absurda = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(out_absurda.signal, SignalType::Flat);
     assert_eq!(ultimo_rechazo(), Some(REJ_TP_SL_FLOOR));
+
+    // 4. Caso de AGY (#716, Ω78): con el τ por defecto del fixture, ATR 3,0
+    // (el stop difusivo pasa el suelo) y 0,6 % por pierna, el impacto en
+    // margen (≈ 0,036) supera el tope de 0,035. Fixture propio: el de arriba
+    // fija τ = 1 h.
+    let (arena_b, intent_b) = fixture();
+    arena_b.coins[0].current_atr.store(3.0, Relaxed);
+    arena_b.config.live_taker_fee.store(0.0060, Relaxed);
+    let out_b = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent_b, &arena_b);
+    assert_eq!(out_b.signal, SignalType::Flat, "Fricción excesiva debe ser vetada por fee_impact");
+    assert_eq!(ultimo_rechazo(), Some(REJ_FEE_IMPACT));
 }
 
 #[test]

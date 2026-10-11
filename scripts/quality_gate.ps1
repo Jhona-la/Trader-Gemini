@@ -22,6 +22,10 @@ function Step($name, $script) {
     if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: $name" -ForegroundColor Red; exit 1 }
 }
 
+Step "git diff --check (sin marcadores de conflicto)" {
+    git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD
+    if ($LASTEXITCODE -ne 0) { Write-Host "Marcadores de conflicto o whitespace corrupto detectados."; exit 1 }
+}
 Step "cargo fmt --check" { cargo fmt --check 2>&1 | Tee-Object -Variable fmtOut
     if ($fmtOut) { Write-Host "Hay archivos sin formatear. Ejecuta: cargo fmt"; exit 1 } }
 Step "cargo check --all-targets" { cargo check --workspace --all-targets 2>&1 | Select-String "^error" | Select-Object -First 5 }

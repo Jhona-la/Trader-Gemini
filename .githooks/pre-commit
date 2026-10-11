@@ -1,0 +1,9 @@
+#!/bin/sh
+# Trader Gemini — Pre-commit Hook
+# Bloquea commits con marcadores de conflicto residuales o whitespace corrupto.
+
+if ! git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --cached --check; then
+    echo "❌ ERROR: Se detectaron marcadores de conflicto residuales (<<<<<<<, =======, >>>>>>>) o errores de whitespace en el diff staged."
+    echo "Ejecuta 'git diff --cached --check' para ver los archivos afectados."
+    exit 1
+fi

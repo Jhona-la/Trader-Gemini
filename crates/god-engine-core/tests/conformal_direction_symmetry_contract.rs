@@ -62,6 +62,14 @@ fn k26_p_win_directional_mathematical_invariants() {
         assert_eq!(p_win_directional(false, 1.0, base), 0.0);
         assert_eq!(p_win_directional(true, 1.0, base), 1.0);
     }
+
+    // 5. REV-13: Robustez y neutralidad estricta ante NaN / Infinitos
+    for &base in &[0.10, 0.20, 0.25, 0.33, 0.50, 0.70] {
+        assert_eq!(p_win_directional(true, f64::NAN, base), base);
+        assert_eq!(p_win_directional(false, f64::NAN, base), base);
+        assert_eq!(p_win_directional(true, f64::INFINITY, base), base);
+        assert_eq!(p_win_directional(false, f64::INFINITY, base), base);
+    }
 }
 
 #[test]

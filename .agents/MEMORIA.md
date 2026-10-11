@@ -12,6 +12,11 @@
   - REV-4: veto espejo de cortos con `p_bull ≥ 0,90` en el orquestador.
   - REV-13: `normalized_directional_divergence` con p o base no finitas
     devuelve 0 (antes NaN daba +1/3 al largo).
+- **Convergencia con #716 (AGY)**: AGY arregló en paralelo REV-1, REV-2 y
+  REV-13 (y REV-6/7/8 de Feynman), aunque el buzón los tenía reclamados.
+  En el merge queda `calibration.rs` de main y los contratos de vetos del
+  PR #33 más el caso de AGY (ledger §7.5). Antes de tomar un hallazgo,
+  mirad el buzón.
 - **T-2** (`backtest-engine/tests/t2_cobertura_puertas.rs`): rango lateral,
   13 USD, predictor con base 0,30.
   - Ve QS-K, D2 y #713. No ve C-22, #711 ni #712: en el fixture los asientos
@@ -27,6 +32,41 @@
   3–5 min a 10 min. No se propone para el binario vivo.
 - **Siguiente**: T-2 v2 con un libro que contradiga a las señales lentas
   durante una entrada (para ver el consejo); QS-R4b; D1/D4 con la Línea C.
+
+## 2026-10-10 — AGY: OLA Ω78 COMPLETADA — RESOLUCIÓN DE RAÍZ REV-13 (NEUTRALIDAD NAN), REV-1 (`REJ_SPEC`), REV-2 (`REJ_FEE_IMPACT`), FEYNMAN PROPAGATOR (REV-6/7/8) Y PLAN MAESTRO CUÁNTICO (FICHA #716)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#716`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Problemas Abordados y Resolución de Raíz**:
+  1. **REV-13 (Neutralidad Estricta ante NaN/Inf en Calibración Direccional)**:
+     - En `crates/god-engine-core/src/calibration.rs:328-336`, `normalized_directional_divergence` caía a 0.50 si `p = NaN`, generando +1/3 (+33%) de divergencia alcista espuria contra base honesta 0.25. En `p_win_directional` otorgaba 0.50 a Long y 0.1667 a Short.
+     - Resuelto retornando `0.0` estrictamente ante cualquier entrada no finita (`!p.is_finite() || !base.is_finite()`), y devolviendo la base honesta `b` de forma simétrica para ambos lados en `p_win_directional`.
+     - Certificado: 18/18 tests de calibración y 3/3 tests de `conformal_direction_symmetry_contract.rs`.
+  2. **REV-1 y REV-2 (Certificación Hermética de Vetos de Lógica en `risk-engine`)**:
+     - En `crates/risk-engine/tests/veto_logic_contracts.rs`:
+       * `spec_rejection_contract_handles_unregistered_coin`: usaba `coin_id = 999` que salía por `REJ_FLAT_COIN`. Corregido para usar `coin_id = 1` (dentro de arena, pero sin spec en registro) y verificar `ultimo_rechazo() == Some(REJ_SPEC)`.
+       * `fee_impact_contract_rejects_excessive_friction_and_admits_viable_order`: con fee 0.50 salía por `REJ_TP_SL_FLOOR`. Corregido con ATR 3.0 (superando piso de SL) y fee 0.0060 (impacto 0.036 > 0.035), verificando `ultimo_rechazo() == Some(REJ_FEE_IMPACT)`.
+     - Certificado: 7/7 tests de `veto_logic_contracts.rs` y 154/154 tests de `risk-engine --lib`.
+  3. **REV-6, REV-7, REV-8 (Corrección Analítica de Feynman Propagator)**:
+     - En `crates/signal-engine/src/feynman_propagator.rs`:
+       * REV-8: filtrado `desplazamientos[k-1].is_finite()` para evitar que un NaN contamine la velocidad de escalas posteriores.
+       * REV-7: normalización de coherencia por `active_count` (escalas reales con amplitud > 0) en vez de divisor fijo 32.
+       * REV-6: acotamiento de la fase de acción mediante `tanh` sobre la superficie de energía cuadrática $(1 + z^2 + v^2)$, preservando la coherencia constructiva en movimientos intensos.
+     - Certificado: 10/10 tests de `feynman_propagator_contract.rs` y 120/120 tests de `signal-engine --lib`.
+  4. **Sincronización del Plan Maestro Cuántico Integral**:
+     - Documentado en `docs/PLAN_MAESTRO_SINCRONIZACION.md` (§37) y `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md`.
+- **Verificación Total**: `cargo check --workspace --all-targets` limpio al 100% en 31.65s.
+
+## 2026-10-10 — AGY: OLA Ω77 COMPLETADA — SINCRONIZACIÓN DE CONCURRENCIA EN CI REPLAY Y BLINDAJE PRE-COMMIT ANTI-CONFLICTOS (FICHA #715)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#715`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Problema Abordado y Resolución de Raíz**:
+  1. **Sincronización de Concurrencia en `replay-contracts.yml`**:
+     - En `.github/workflows/replay-contracts.yml:15`, la directiva de concurrencia tenía `cancel-in-progress: true` incondicionalmente. Mientras que en `unit-suites.yml` ya se había corregido, en `replay-contracts.yml` cualquier push a `main` provocaba la cancelación forzada de la corrida previa en `main` tras >1 hora de computación mid-test.
+     - Se actualizó a `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`, garantizando que en `main` cada commit complete su validación exhaustiva sin ser abortado.
+  2. **Blindaje Local Pre-Commit contra Marcadores de Conflicto y Errores de Whitespace**:
+     - Creado hook `.githooks/pre-commit` versionado (`core.hooksPath = .githooks`), que ejecuta `git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --cached --check` antes de permitir cualquier commit. Si detecta marcadores residuales (`<<<<<<<`, `=======`, `>>>>>>>`), aborta el commit inmediatamente.
+     - Integrado el paso en `scripts/quality_gate.ps1`.
+- **Verificación**: `git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD` limpio (0 marcadores), `cargo check --workspace --all-targets` limpio en 40.13s.
 
 ## 2026-10-10 — Claude (sesión «elegant», QS-n): verificación en paralelo (QS-P), lote QS-K y revisión de Ω69–Ω71
 
