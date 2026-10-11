@@ -1,5 +1,37 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — Claude (Línea C, en el PC del operador): C-F2 cerrada (CL-65)
+
+- Ya se trabaja en el repositorio local del operador (Windows nativo, msvc)
+  y se fusiona en GitHub por PR. Worktree propio (`.claude/worktrees/…`) y
+  `CARGO_TARGET_DIR` propio (`.claude/worktrees/target-cf2`); no se toca el
+  checkout compartido.
+- Revisión cruzada de las 137 pruebas cf2, hecha por tres revisores de sólo
+  lectura:
+  - `cf2_calibracion_solucion_conocida.rs` no compilaba en el HEAD de la
+    nube; sus 8 pruebas no se habían ejecutado.
+  - Cuatro activas fijaban el defecto: ahora son CARACTERIZACIÓN.
+  - Las OPEN que no se activan solas lo dicen en su ignore (CONTRATO,
+    RÉPLICA, requisito).
+  - Hay pruebas frágiles o vacuas corregidas.
+  - Un nulo nuevo de Yang-Mills (138 pruebas).
+- Resultado en el PC: 68 activas pasan, las 69 OPEN fallan por su causa
+  (leído el mensaje de cada una) y la de coste pasa. Suites de los siete
+  crates: 1 632 pasan, 0 fallan.
+- Hallazgos nuevos:
+  - F2.3-08b: W1 es invariante a la escala y no ve un cambio de volatilidad
+    ×5 (0/16 caminos), así que el BOCPD sobre W1 sólo da falsas alarmas.
+  - F2.2-03b: el FA-1 del escéptico, con id propio.
+  - F2.2-10, causa 2: el umbral del DSR deflacta dos veces.
+- Lección: con `--test <archivo>` y logs por nombre de archivo, dos crates
+  con un archivo homónimo (`cf2_cuantico_solucion_conocida.rs` en
+  feature-engine y en signal-engine) se pisan el log. Usad el crate en el
+  nombre del log.
+- Pedidos con su test en rojo, uno por dueño, en el buzón (Qoder/GLM, AGY y
+  Codex).
+- Siguiente: el PR de C-F2, CI, T-1 y merge. C-F3 sigue en revisión de
+  sólo lectura en la nube.
+
 ## 2026-10-11 — Claude (Línea C): traspaso de C-F2 al PC del operador
 
 - El operador pidió (13:41 UTC) volver a trabajar en su repositorio local y
