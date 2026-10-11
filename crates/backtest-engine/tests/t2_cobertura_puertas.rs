@@ -20,7 +20,8 @@
 //!   signo a menudo, y con ella el OBI sintético del runner (±0,6): el libro
 //!   contradice a las señales lentas y el consejo vota dividido.
 //! - Cuenta de 13 USD: régimen micro, nocional mínimo, D2/D3 y viabilidad.
-//! - Mismo predictor sintético direccional que el T-1 (base 0,5).
+//! - Predictor sintético direccional como el del T-1, pero con la tasa base
+//!   de un bosque real (0,30) en vez de 0,5.
 //!
 //! # Qué mide
 //!
@@ -44,6 +45,13 @@ use measurement::{changed_slots, diagnostic_stats_line, difiere, furthest_endpoi
 
 /// Capital de la cuenta del dueño: régimen micro.
 const CAPITAL_MICRO: f64 = 13.0;
+
+/// Tasa base del predictor sintético. El T-1 usa 0,5 (el gate por lift queda
+/// alcanzable en los dos sentidos); los bosques reales salen con base
+/// 0,18–0,30 (etiqueta de primer toque del LARGO). Con base 0,5 las fórmulas
+/// que normalizan contra la base (#713, K-06/K-23) coinciden con las
+/// antiguas y su cambio no se ve; con 0,30 sí.
+const BASE_PREDICTOR: f64 = 0.30;
 
 /// Serie lateral determinista con regímenes alternos (QS-T2).
 ///
@@ -104,7 +112,8 @@ fn cargar_predictor() {
         threshold: vec![0.0, 0.0, 0.0],
         value: vec![0.0, -3.0, 3.0],
         tree_offsets: vec![0, 3],
-        init_score: 0.0,
+        // logit de la base: base_prob() = sigmoide(init_score).
+        init_score: (BASE_PREDICTOR / (1.0 - BASE_PREDICTOR)).ln() as _,
     };
     let forest = god_engine_core::ml_inference::NanoForest::from_data(confident)
         .expect("forest sintético del T-2 fuera de contrato");
