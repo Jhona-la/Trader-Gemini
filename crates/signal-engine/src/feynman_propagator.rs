@@ -10,25 +10,27 @@ use crate::voto_espectral::{VotoEspectral, ESCALAS_VOTO};
 ///   K(x_b, t_b; x_a, t_a) = ∫ D[x(t)] exp( (i / ħ_fin) S[x(t)] )
 ///
 /// Principios Físicos Cuánticos:
-/// 1. **Acción Lagrangiana de Trayectoria S(τ_k)**:
-///    Para cada escala diádica k ∈ [0, 31] de Hilbert (τ_k = 4^k μs), la acción efectiva integra
-///    la energía cinética del flujo de órdenes (momentum z y velocidad dz) y el potencial de confinamiento V(z):
-///      L(z, v) = 1/2 m v² - (1/2 k_spring z² + 1/4 λ z⁴)
-///      S(k) = L(z, v) · Δt_k
+/// 1. **Acción Lagrangiana Discreta Inter-Escala S(k) (REV-9)**:
+///    Para cada escala diádica k ∈ [0, 31] de Hilbert (τ_k = 4^k μs), la dinámica discreta se evalúa
+///    sobre el espacio de fases canónico (z_k, vel_k) donde vel_k = z_k - z_{k-1} es el gradiente
+///    de momentum entre escalas diádicas contiguas:
+///      L(z, vel) = 1/2 m vel² - (1/2 k_spring z² + 1/4 λ z⁴)
+///    La fase cuántica se compone del ángulo canónico θ_k = atan2(vel · m, z · √k_spring)
+///    y una modulación lagrangiana normalizada sobre la superficie de energía total (1 + z² + vel²).
 /// 2. **Amplitud Compleja de Probabilidad y Fase Cuántica**:
 ///    Cada escala temporal contribuye una amplitud compleja de probabilidad:
 ///      ψ_k = A_k · exp(i θ_k) = A_k · (cos(θ_k) + i sin(θ_k))
-///    donde la fase de acción cuántica es θ_k = S(k) / ħ_eff y A_k = tanh(|z_k| · 0.5).
+///    donde A_k = tanh(|z_k| · 0.5).
 /// 3. **Interferencia Constructiva vs Destructiva (Coherencia Cuántica C_coh)**:
 ///    - Suma coherente multiescala: Ψ_total = ∑_{k=0}^{31} ψ_k
 ///    - Densidad coherente: |Ψ_total|² = (∑ Re(ψ_k))² + (∑ Im(ψ_k))²
 ///    - Densidad incoherente: I_incoh = ∑_{k=0}^{31} |ψ_k|²
-///    - Coeficiente de Coherencia Cuántica:
-///        C_coh = |Ψ_total|² / (I_incoh + ε) ∈ [0.0, 32.0]
-///      - Si C_coh >> 1.0: Interferencia fuertemente constructiva (todas las escalas vibran
-///        en fase hacia una misma dirección macro/micro ⇒ breakout/momentum cuántico de alta convicción).
-///      - Si C_coh ≈ 0.0: Interferencia destructiva / decoherencia térmica cuántica
-///        (fases desalineadas cancelan la señal ⇒ abstención estricta / ruido browniano disipativo).
+///    - Coeficiente de Coherencia Cuántica normalizado por escalas activas (REV-7):
+///        C_coh = (|Ψ_total|² / (I_incoh + ε)) / active_count ∈ [0.0, 1.0]
+///      - Si C_coh > 0.40: Interferencia fuertemente constructiva (escalas alineadas
+///        en fase hacia una misma dirección ⇒ momentum cuántico de alta convicción).
+///      - Si C_coh ≤ 0.20: Interferencia destructiva / decoherencia térmica cuántica
+///        (fases desalineadas cancelan la señal ⇒ abstención estricta).
 /// 4. **Garantías de Alto Rendimiento**:
 ///    - O(1) determinista en CPU (< 25 ns en hot path), #[inline(always)], zero heap allocations.
 ///    - Inmunidad total fail-closed ante NaN, ±Inf o parámetros no finitos.
@@ -161,17 +163,17 @@ impl FeynmanPropagatorEngine {
         }
     }
 
-    /// Genera el voto espectral de la integral de camino VotoEspectral en O(1) puro sobre la malla de 32 escalas.
+    /// Genera el voto espectral de la integral de camino y retorna simultáneamente (VotoEspectral, coherencia_normalizada).
     ///
     /// Modula la señal por la coherencia cuántica multiescala: si las escalas interfieren destructivamente,
     /// el voto colapsa a 0.0 protegiendo contra fases estocásticas desalineadas.
     #[inline(always)]
-    pub fn voto_espectral(
+    pub fn voto_espectral_con_coherencia(
         desplazamientos: &[f64; ESCALAS_VOTO],
         hbar_eff: f64,
         mass: f64,
         k_spring: f64,
-    ) -> VotoEspectral {
+    ) -> (VotoEspectral, f64) {
         let mut phases = [(1.0f64, 0.0f64); ESCALAS_VOTO];
         let mut amplitudes = [0.0f64; ESCALAS_VOTO];
 
@@ -229,7 +231,18 @@ impl FeynmanPropagatorEngine {
             por_escala[k] = signal.clamp(-1.0, 1.0);
         }
 
-        VotoEspectral::desde_arr(&por_escala)
+        (VotoEspectral::desde_arr(&por_escala), normalized_coherence)
+    }
+
+    /// Genera el voto espectral de la integral de camino VotoEspectral en O(1) puro sobre la malla de 32 escalas.
+    #[inline(always)]
+    pub fn voto_espectral(
+        desplazamientos: &[f64; ESCALAS_VOTO],
+        hbar_eff: f64,
+        mass: f64,
+        k_spring: f64,
+    ) -> VotoEspectral {
+        Self::voto_espectral_con_coherencia(desplazamientos, hbar_eff, mass, k_spring).0
     }
 }
 

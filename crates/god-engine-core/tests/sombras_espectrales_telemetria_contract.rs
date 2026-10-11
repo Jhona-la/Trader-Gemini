@@ -42,7 +42,7 @@ fn r5_a4_a6_telemetria_sombras_y_nash_enlace_cvpin() {
         );
     }
 
-    // R5-A6: Las 6 sombras previamente mudas en telemetría ahora publican su consenso
+    // R5-A6 y REV-5: Sombras espectrales completas en telemetría (incluyendo Feynman y Navier-Stokes)
     let sombras_esperadas = [
         "sombra_hawkes_consenso",
         "sombra_nash_consenso",
@@ -53,6 +53,8 @@ fn r5_a4_a6_telemetria_sombras_y_nash_enlace_cvpin() {
         "sombra_coax_consenso",
         "sombra_trend_consenso",
         "sombra_entropia_consenso",
+        "sombra_feynman_consenso",
+        "sombra_navier_consenso",
     ];
 
     for clave in sombras_esperadas {
@@ -62,6 +64,10 @@ fn r5_a4_a6_telemetria_sombras_y_nash_enlace_cvpin() {
             "La sombra {clave} debe publicarse en el registro para coin 0; valor: {val}"
         );
     }
+
+    // REV-5: feynman_coherence debe ser publicada en el registro para coin 0
+    let fey_coh = arena.registry.get_for_coin_or(0, "feynman_coherence", f64::NAN);
+    assert!(fey_coh.is_finite() && fey_coh >= 0.0 && fey_coh <= 1.0, "feynman_coherence debe estar en [0,1]: {fey_coh}");
 
     // R5-A4: La presión adversarial de Nash fue leída dinámicamente desde cvpin (0.35)
     // en ausencia de override explícito, confirmando que el valor no está congelado en 0.50

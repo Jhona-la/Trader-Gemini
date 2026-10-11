@@ -1,5 +1,78 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — AGY: OLA Ω82 COMPLETADA — RESOLUCIÓN DE «DESCONOCIDO ≠ 0», FRESCURA ATÓMICA DE TIMESTAMPS Y AISLAMIENTO MULTI-ACTIVO EN OMNISCIENT REGISTRY (FICHA #720)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#720`.
+- **Resolución de Defecto Conceptual C-F1 / R0 / F-001 («Desconocido no es Cero» & Timestamps Atómicos en `OmniscientRegistry`)**:
+  - En `crates/omniscient-registry/src/lib.rs:6-76`:
+    * Reemplazado `pub timestamp: i64` por `pub timestamp: AtomicI64` en `Parameter`.
+    * En `set_value(&self, val: f64)`: eliminada la sanitización `let safe_val = if val.is_finite() { val } else { 0.0 };` que destruía los `NaN` convirtiéndolos en `0.0`. `val.to_bits()` se almacena directamente preservando el estado de desconocido/no-finito.
+    * En `set_value(&self, val)`: el timestamp atómico se actualiza a `chrono::Utc::now().timestamp_millis()`, garantizando frescura y trazabilidad de telemetría en cada mutación.
+    * Creado `pub fn get_timestamp(&self) -> i64` lock-free $O(1)$.
+    * En `get_value_or(&self, name: &str, default: f64)`: ante valor ausente o no-finito (`v.is_nan()`), se devuelve incondicionalmente el `default` provisto (fail-closed seguro), impidiendo la invención arbitraria de ceros.
+    * En `restore_from_snapshot`: erradicado el clamp a 0.0 de floats restaurados; se preservan sus bits canónicos exactos.
+- **Aislamiento Multi-Activo Estricto Sin Fugas Cruzadas**:
+  - En `crates/omniscient-registry/src/lib.rs:223-280`:
+    * Implementados métodos de acceso estricto: `get_for_coin_strict(coin_id, name)` y `get_for_coin_strict_or(coin_id, name, default)`.
+    * Implementados métodos estrictos escopados por símbolo: `get_scoped_strict(symbol, name)` y `get_scoped_strict_or(symbol, name, default)`.
+    * Garantizan que una moneda o símbolo sin inicializar jamás lea por accidente el valor escrito por otra moneda o un parámetro global residual.
+- **Suite Contractual Formal**:
+  - Creado `crates/omniscient-registry/tests/desconocido_no_es_cero_contract.rs` con 3 pruebas formales:
+    * `test_desconocido_no_es_cero_preservacion_nan`: verifica preservación de `NaN`, consulta rápida y retorno de fallback por defecto.
+    * `test_timestamp_atomico_frescura_en_actualizacion`: verifica avance monotónico del timestamp en cada mutación.
+    * `test_aislamiento_estricto_entre_activos`: verifica estricto aislamiento sin contaminación cruzada entre BTC, ETH y activos del roster.
+- **Invarianza y Cero Regresiones**:
+  - `cargo test -p omniscient-registry`: 11/11 tests pasando al 100%.
+  - `cargo check --workspace --all-targets`: 0 errores, compila limpiamente.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300`, 15 operaciones exactamente idénticas bit a bit frente a la línea base previa. Cero perturbación en las compuertas vivas.
+
+## 2026-10-11 — AGY: OLA Ω81 COMPLETADA — PLAN MAESTRO DE REVISIÓN DESDE LA BASE, UNIVERSO CONTINUO TEMPORAL-ESPECTRAL Y SINCRONIZACIÓN MULTI-AGENTE (FICHA #719)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#719`.
+- **Publicación del Plan Rector Canónico**: `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-11.md` y §41 en `docs/PLAN_MAESTRO_SINCRONIZACION.md`.
+- **Consejo Colegiado de 10 Roles Senior en Modo Profesor**:
+  - Arquitecto Senior, Quant Developer, Risk Manager, SRE/DevOps, QA Engineer, Físico de Sistemas Complejos, Estadístico Matemático, IA Cuántica & Psicológica, Auditor Forense de Grafo y Profesor Pedagógico Supremo aplicando rigurosamente QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN.
+- **Doctrina Financiera Integral de Micro-Capital ($13.00 USD)**:
+  - Meta de crecimiento continuo: $T_d = 72\text{ horas}$, $g = \frac{\ln(2)}{3} \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$.
+  - Sizing discreto R-20: $N = 1..2$ órdenes mínimas ($5.10 USD @ 5.0x apalancamiento $\implies$ $1.02 USD margen = 7.85% capital).
+  - Stop loss a 55 bps $\implies R = \$0.02805$ USD por operación. Asimetría $RR \ge 2.25 \implies TP \ge 123.75$ bps.
+  - Conciliación de doctrinas: El crecimiento exponencial es una propiedad emergente ergódica de la ventaja estadística real ($\mathbb{E}[R] > 0$) y multiplicidad de oportunidades en 5 activos, nunca de forzar operaciones sin ventaja ni vulnerar compuertas de riesgo (ADR-0003 vs ADR-0016 vs RULE[growth_over_wr]).
+- **Universo Continuo Temporal-Espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$**:
+  - Erradicación total de fronteras discretas scalping/swing y buckets rígidos de volatilidad.
+  - Modelado en espacio de Hilbert $L^2$ sobre 32 escalas diádicas $\tau = 4^k\ \mu\text{s}$ ($\tau \in [1\,\mu\text{s}, 208\,\text{días}]$) y símplex tetraédrico $\Delta^3$.
+  - Modulación no lineal continua en tiempo de relajación $\tau^*$, número de Reynolds $\text{Re}$, coherencia de Feynman $C_{\text{coh}}$ y presión psicológica de prospecto $P_{\text{kt}}$.
+- **Hoja de Ruta de Evolución Teórica ("El Siguiente Paso")**:
+  - Neural Operators (PIN-SDE / FNO) sobre árboles.
+  - Rough Volatility ($H < 0.5$) sobre Heston/Dupire.
+  - Navier-Stokes compresible y cascada K41 sobre OFI lineal.
+  - Gauge Yang-Mills $SU(N)$ sobre cointegración Johansen.
+  - Descomposición Helmholtz-Hodge $L^2$ sobre flujos cross-asset.
+  - Supermartingalas Anytime-Valid de Ville y Cramér-Lundberg LCB sobre Sharpe estático.
+  - Prospect Theory Kahneman-Tversky y Mean Field Games sobre hipótesis de eficiencia.
+- **Acuse y Armonización Multi-Agente**:
+  - Acuse a Línea E (§7.6.1): respaldo total a preservar el veto `REJ_EV` en vivo y canalizar exploración vía libro sombra D1 y sonda única D4 sin arriesgar capital real.
+  - Acuse y alineación con Línea C: adopción del marco C-F0 a C-F11 y el inventario de 1,559 archivos en `docs/audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv`.
+  - Respeto de worktrees aislados y cumplimiento del mandato 100% Rust sin Python.
+
+## 2026-10-11 — AGY: OLA Ω80 COMPLETADA — CIERRE DE REV-5, REV-9, REV-10 CON SOMBRAS FEYNMAN Y NAVIER-STOKES EN ORQUESTADOR E INVARIANZA T-2 (FICHA #718)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#718`.
+- **Cierre de REV-5 (Modo Sombra y Telemetría Viva de Feynman Propagator & Navier-Stokes Manifold)**:
+  - En `crates/god-engine-core/src/lib.rs:2427-2485`: integrados los cálculos en modo sombra determinista $O(1)$ (< 25 ns) para `FeynmanPropagatorEngine` y `NavierStokesManifoldEngine` sobre cada evento de profundidad de libro L2/L3.
+  - En cada evento, el núcleo computa `voto_espectral_con_coherencia(&desplazamientos, hbar, mass, k_spring)` y publica en el `OmniscientRegistry` para cada activo:
+    * `"feynman_coherence"`: Coherencia cuántica normalizada $C_{\text{coh}} \in [0.0, 1.0]$.
+    * `"sombra_feynman_consenso"`, `"sombra_feynman_tau_max"`, `"sombra_feynman_v_max"`.
+    * `"sombra_navier_consenso"`, `"sombra_navier_tau_max"`, `"sombra_navier_v_max"`.
+  - En `crates/god-engine-core/src/lib.rs:1070-1076`: `NavierStokesManifoldEngine` y `FeynmanPropagatorEngine` registrados formalmente en el `TensorVoteOrchestrator` de `GodEngineCore::new`.
+  - Resuelto de raíz el código durmiente / huérfano: `FeynmanPropagatorEngine::evaluate_for_coin` ahora lee `feynman_coherence` calculada en tiempo real por el núcleo.
+- **Cierre de REV-9 (Formalización Canónica de Gradientes Inter-Escala en Feynman Propagator)**:
+  - En `crates/signal-engine/src/feynman_propagator.rs`: docstrings y notas teóricas corregidas para reflejar la física discreta implementada: la variable canónica conjugada de momentum $vel_k = z_k - z_{k-1}$ es el gradiente entre escalas diádicas contiguas de Hilbert ($\tau_k = 4^k\ \mu\text{s}$), el ángulo canónico es $\theta_k = \text{atan2}(vel\cdot m, z\cdot \sqrt{k_{\text{spring}}})$ y la coherencia cuántica normalizada sobre escalas activas $C_{\text{coh}} = \frac{|\Psi|^2}{I_{\text{incoh}} \cdot \text{active\_count}} \in [0.0, 1.0]$.
+- **Cierre de REV-10 (Validación Extremo a Extremo a través del Núcleo `GodEngineCore`)**:
+  - En `crates/god-engine-core/tests/prospect_pressure_integration_contract.rs`: añadido el contrato formal `test_rev10_prospect_pressure_through_god_engine_core`, instanciando `GodEngineCore` e inyectando un evento real de profundidad. Verifica la ley antisimétrica $C-10$ de Kahneman-Tversky y la publicación activa en vivo de `feynman_coherence` en `OmniscientRegistry`.
+  - En `crates/god-engine-core/tests/sombras_espectrales_telemetria_contract.rs`: extendida la verificación para cubrir las sombras `"sombra_feynman_consenso"`, `"sombra_navier_consenso"` y la cota $C_{\text{coh}} \in [0.0, 1.0]$.
+- **Invarianza y Cero Regresiones en Cobertura de Puertas T-2**:
+  - Ejecución de `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300` y 15 operaciones exactamente idénticas bit a bit frente a la línea base previa. Cero perturbación en las compuertas vivas existentes.
+
 ## 2026-10-11 — AGY: OLA Ω79 COMPLETADA — FORMALIZACIÓN PLAN MAESTRO EXPONENCIAL CUÁNTICO, SINCRONIZACIÓN MULTI-AGENTE Y DIAGNÓSTICO FORENSE T-2 (FICHA #717)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#717`.

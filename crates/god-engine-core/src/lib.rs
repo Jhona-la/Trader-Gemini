@@ -1069,6 +1069,13 @@ impl GodEngineCore {
         tensor_orchestrator.add_strategy(Box::new(
             strategy_core::yang_mills_gauge::YangMillsGaugeEngine::new(n_coins),
         ));
+        // REV-5: Registrar NavierStokesManifoldEngine y FeynmanPropagatorEngine en el orquestador central
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::navier_stokes_manifold::NavierStokesManifoldEngine::new(),
+        ));
+        tensor_orchestrator.add_strategy(Box::new(
+            signal_engine::feynman_propagator::FeynmanPropagatorEngine::new(),
+        ));
 
         let swing_nn = if let Ok(json_data) =
             std::fs::read_to_string("models/DarkAlpha_BTCUSDT.json")
@@ -2418,6 +2425,64 @@ impl GodEngineCore {
                         self.arena
                             .registry
                             .set_for_coin(coin_id, "sombra_entropia_v_max", v_ent);
+                    }
+
+                    // REV-5: SOMBRA ESPECTRAL de FEYNMAN PROPAGATOR (Integral de Camino de Hilbert)
+                    let (voto_feynman, fey_coherence) =
+                        signal_engine::feynman_propagator::FeynmanPropagatorEngine::voto_espectral_con_coherencia(
+                            &desplazamientos,
+                            1.0,
+                            1.0,
+                            1.0,
+                        );
+                    self.arena
+                        .registry
+                        .set_for_coin(coin_id, "feynman_coherence", fey_coherence);
+                    if let Some(media_fey) = voto_feynman.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_feynman_consenso", media_fey);
+                    }
+                    if let Some((k_fey, v_fey)) = voto_feynman.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_feynman_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_fey],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_feynman_v_max", v_fey);
+                    }
+
+                    // SOMBRA ESPECTRAL de NAVIER-STOKES MANIFOLD (Cascada de Kolmogorov L2/L3)
+                    let visc_ns = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(coin_id, "kinematic_viscosity", 1.0);
+                    let lam_ns = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(coin_id, "navier_laminar_share", 1.0);
+                    let voto_navier =
+                        signal_engine::navier_stokes_manifold::NavierStokesManifoldEngine::voto_espectral(
+                            &desplazamientos,
+                            visc_ns,
+                            lam_ns,
+                        );
+                    if let Some(media_nav) = voto_navier.media_banda(0, 31) {
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_navier_consenso", media_nav);
+                    }
+                    if let Some((k_nav, v_nav)) = voto_navier.dominante() {
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "sombra_navier_tau_max",
+                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_nav],
+                        );
+                        self.arena
+                            .registry
+                            .set_for_coin(coin_id, "sombra_navier_v_max", v_nav);
                     }
 
                     // #623 (Ola 44 & Antigravity): CONSENSO ESPECTRAL INTEGRAL (13 MOTORES):
