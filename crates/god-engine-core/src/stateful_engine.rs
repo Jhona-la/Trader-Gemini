@@ -45,6 +45,13 @@ pub enum MarketRegime {
     Neutral,
 }
 
+/// CL-71: cuantil del 99 % del rango de un browniano estándar en [0, 1], en
+/// unidades de σ. Derivado por Monte Carlo (200 000 caminos de 4 096 pasos,
+/// con la corrección de continuidad 2·0,5826/√n de Broadie-Glasserman-Kou;
+/// la media del rango sale 1,5975 frente a √(8/π) = 1,5958) y comprobado en
+/// `cf4_atr_sigma_minuto::cl71_cuantil_99_del_rango_browniano`.
+pub const CUANTIL_99_RANGO: f64 = 3.04;
+
 /// Internal recursive state using strictly f64 (Double Precision)
 #[repr(C, align(64))]
 pub struct StatefulEngine {
@@ -66,6 +73,11 @@ pub struct StatefulEngine {
     /// medible. 0 = sin spec (no hay piso declarado). Lo fija el núcleo en
     /// cada evento con `symbol_registry::tick_size_de`.
     pub piso_resolucion: f64,
+    /// CL-71 (LC-F6-01): σ del log-retorno de 60 s, invariante a la densidad
+    /// de eventos (`sigma_minuto`). El ATR de las decisiones es su rango
+    /// equivalente, `v_t = √(8/π)·σ̂60·precio`, la conversión que usan los
+    /// consumidores (`diffusion::sigma_from_atr`).
+    pub sigma60: crate::sigma_minuto::SigmaMinuto,
     pub a_t: f64,
     /// MOD2/7-031 — EMA del centroide espectral (adimensional, actualizada
     /// cada 64 ticks). ANTES vivía en `a_t` y era sobrescrita al tick
@@ -217,6 +229,7 @@ impl StatefulEngine {
             v_t: 0.0,
             vt_rasgo_ml: 0.0,
             piso_resolucion: 0.0,
+            sigma60: crate::sigma_minuto::SigmaMinuto::new(),
             a_t: 0.0,
             a_t_spectral: 0.0,
             last_inst_v: 0.0,
@@ -606,6 +619,7 @@ impl StatefulEngine {
         self.last_price = 0.0;
         self.v_t = 0.0;
         self.vt_rasgo_ml = 0.0;
+        self.sigma60.reset();
         self.a_t = 0.0;
         self.a_t_spectral = 0.0;
         self.last_inst_v = 0.0;
@@ -845,15 +859,15 @@ impl StatefulEngine {
             self.cvpin.update(notional_usd, is_sell);
         }
 
+        // CL-71: el estimador de σ de 60 s ve todos los eventos aceptados.
+        self.sigma60.observar(event_time_ms, price);
+
         if self.tick_count == 0 {
             self.kline_start_ms = event_time_ms;
             self.kline_open = price;
             self.kline_high = price;
             self.kline_low = price;
             self.kline_volume = _volume;
-            if self.v_t == 0.0 && price > 0.0 {
-                self.v_t = price * 0.005; // Fallback inicial 50 bps True Range
-            }
             if self.vt_rasgo_ml == 0.0 && price > 0.0 {
                 self.vt_rasgo_ml = price * 0.005;
             }
@@ -865,11 +879,10 @@ impl StatefulEngine {
             // FIX #1206: Actualizar features Omni en tiempo real en cada tick para eliminar desfase de 59s en la inferencia HFT
             self.omni.update(price, self.kline_high, self.kline_low);
 
-            // D-435 & D-437: Actualización continua intra-vela del True Range (captura expansiones de volatilidad sin colapso a spread de tick)
+            // CL-71: el trinquete intra-vela (D-435/D-437) ya no toca el ATR de
+            // las decisiones: inflaba σ_ATR/σ a ≈ 1,13 aun sin piso (F2.2-07).
+            // Sólo lo conserva el rasgo legado del modelo (CL-68).
             let intra_candle_tr = (self.kline_high - self.kline_low).max(price * 0.0010);
-            if intra_candle_tr > self.v_t || self.v_t == 0.0 || !self.v_t.is_finite() {
-                self.v_t = intra_candle_tr;
-            }
             if intra_candle_tr > self.vt_rasgo_ml
                 || self.vt_rasgo_ml == 0.0
                 || !self.vt_rasgo_ml.is_finite()
@@ -899,11 +912,9 @@ impl StatefulEngine {
                 self.hurst.update(price);
                 // FIX #608: True Range robusto y no nulo para evitar distorsiones en SL dinámico
                 let tr = (self.kline_high - self.kline_low).max(price * 0.0010);
-                self.v_t = if self.v_t == 0.0 || !self.v_t.is_finite() {
-                    tr
-                } else {
-                    (self.v_t * 0.85 + tr * 0.15).max(price * 0.0010)
-                };
+                // CL-71: la vela entra en las sumas exponenciales de σ̂60; el
+                // ATR se recalcula en cada evento (abajo).
+                self.sigma60.cerrar_vela();
                 self.vt_rasgo_ml = if self.vt_rasgo_ml == 0.0 || !self.vt_rasgo_ml.is_finite() {
                     tr
                 } else {
@@ -937,6 +948,29 @@ impl StatefulEngine {
                 self.kline_low = price;
                 self.kline_volume = _volume;
             }
+        }
+
+        // CL-71 (LC-F6-01): el ATR de las decisiones, en cada evento.
+        // - Base: el rango equivalente de σ̂60 con la vela abierta incluida,
+        //   √(8/π)·σ̂60·precio. Sin σ̂60 todavía (primeros dos minutos sin
+        //   calentamiento), el prior de arranque de 50 pb de rango.
+        // - Envolvente que sólo sube: √(8/π)·R_abierta/q99, con R_abierta el
+        //   rango de la vela en curso y q99 = 3,04 el cuantil del 99 % del
+        //   rango de un browniano estándar en [0, 1] (`CUANTIL_99_RANGO`). En
+        //   calma casi nunca muerde (el rango observado de una vela, aun
+        //   completa, supera q99·σ60 el 1 % de las veces); ante un choque sube
+        //   el ATR en el mismo evento, como el trinquete viejo, pero sin
+        //   inflarlo en régimen estacionario (el trinquete daba σ_ATR/σ ≈ 1,13
+        //   sin piso y ≥ 1,57 con él, F2.2-07).
+        // Sin trinquete ni suelo de 10 pb: el piso es el tick (CL-69).
+        {
+            let rango = crate::diffusion::PARKINSON_RANGE_FACTOR;
+            let base = match self.sigma60.sigma_60s_viva() {
+                Some(sigma) if sigma > 0.0 => rango * sigma * price,
+                _ => price * 0.005,
+            };
+            let envolvente = rango * (self.kline_high - self.kline_low).max(0.0) / CUANTIL_99_RANGO;
+            self.v_t = base.max(envolvente);
         }
 
         // #16: Auto-excitación estocástica de Hawkes (clustering de flujo)
@@ -1050,12 +1084,15 @@ impl StatefulEngine {
         // (ema_fast==0 ⇒ =precio) y converge solo, idéntico a train.
         self.last_price = close;
 
-        // FIX #624: True Range robusto y no nulo en kline processing
+        // FIX #624: True Range robusto y no nulo en kline processing (rasgo
+        // legado del modelo, CL-68).
         let tr = (high - low).max(close * 0.0005);
-        self.v_t = if self.v_t == 0.0 || !self.v_t.is_finite() {
-            tr
-        } else {
-            (self.v_t * 0.8 + tr * 0.2).max(close * 0.0005)
+        // CL-71: el calentamiento alimenta la misma σ̂60 (r60 entre cierres).
+        // Con un solo cierre todavía no hay σ̂60: el rango de esa vela.
+        self.sigma60.observar_cierre_kline(close);
+        self.v_t = match self.sigma60.sigma_60s() {
+            Some(sigma) if sigma > 0.0 => crate::diffusion::PARKINSON_RANGE_FACTOR * sigma * close,
+            _ => high - low,
         };
         self.vt_rasgo_ml = if self.vt_rasgo_ml == 0.0 || !self.vt_rasgo_ml.is_finite() {
             tr

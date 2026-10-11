@@ -337,10 +337,15 @@ fn razon_atr_media(sigma_min: f64, semilla: u64) -> f64 {
 /// Hoy el piso de 0,0010·precio (10 pb) domina: σ_ATR ≥ 10 pb/1,596 =
 /// 6,27 pb, razón ≥ 1,566. La banda exige retirar también el trinquete (ver
 /// el gemelo de 30 pb).
+///
+/// Activada por CL-71 (C-F4): el ATR es ahora el rango equivalente de la σ
+/// de 60 s medida por varianza realizada (`sigma_minuto`), sin piso ni
+/// trinquete, así que σ_ATR/σ ≈ 1 (la verdad del estimador nuevo; el 0,906
+/// era la del rango discreto). La banda [0,80; 1,10] lo contiene.
 #[test]
-#[ignore = "OPEN F2.2-07 (Línea C, C-F4): el piso de 10 pb y el trinquete del ATR vivo violan σ = ATR/√(8/π) (razón ≥ 1,566 con σ = 4 pb/min)"]
 fn cf2_atr_vivo_da_la_sigma_de_un_minuto() {
     let razon = razon_atr_media(0.0004, 55);
+    println!("σ_ATR/σ medio con σ = 4 pb/min: {razon:.4}");
     assert!(
         razon > 0.80 && razon < 1.10,
         "σ_ATR/σ medio = {razon:.4} con σ = 4 pb/min; teórico 0,906, piso 10 pb ⇒ ≥ 1,566"
@@ -354,10 +359,12 @@ fn cf2_atr_vivo_da_la_sigma_de_un_minuto() {
 /// que la prueba de 4 pb. Así un arreglo que sólo quite el piso sabe por qué
 /// sigue fallando. Punto fijo aproximado del trinquete con R gaussiano:
 /// v* ≈ E[R] + 0,745·SD(R) ⇒ razón ≈ 1,13.
+///
+/// Activada por CL-71 (C-F4), con la misma verdad nueva (≈ 1).
 #[test]
-#[ignore = "OPEN F2.2-07 (Línea C, C-F4): el trinquete intra-vela del ATR vivo infla σ_ATR/σ por encima de 1,10 aun sin piso (σ = 30 pb/min)"]
 fn cf2_atr_vivo_sin_piso_aisla_el_trinquete() {
     let razon = razon_atr_media(0.0030, 56);
+    println!("σ_ATR/σ medio con σ = 30 pb/min: {razon:.4}");
     assert!(
         razon > 0.80 && razon < 1.10,
         "σ_ATR/σ medio = {razon:.4} con σ = 30 pb/min (piso inactivo); teórico 0,906"

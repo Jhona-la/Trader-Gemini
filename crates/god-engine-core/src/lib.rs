@@ -3297,12 +3297,14 @@ impl GodEngineCore {
             let mut closed_order = None;
 
             let atr_pct = self.feature_engines[coin_id].get_atr_pct();
+            // CL-71: el suelo de la gestión es sólo el gen `dynamic_atr_min`
+            // (más el tick, CL-69); el literal de 10 pb repetía el suelo que
+            // ya no tiene el ATR.
             let min_atr_pct = self
                 .arena
                 .config
                 .dynamic_atr_min
-                .load(Ordering::Relaxed)
-                .max(0.001);
+                .load(Ordering::Relaxed);
             let atr_pct_live = atr_pct.max(min_atr_pct);
 
             // --- 1. GESTIÓN MULTI-HORIZONTE CONTINUA INTEGRAL POR RANURAS ARMÓNICAS ---
@@ -4510,7 +4512,6 @@ impl GodEngineCore {
             let tsallis_raw = (1.0 - (p_bid.powf(1.5) + p_ask.powf(1.5))) / 0.5;
             let tsallis_ent = (tsallis_raw / TSALLIS_Q15_BINARY_MAX).clamp(0.0, 1.0);
 
-            let micro_v = (v_t.abs() / mid_price.max(1e-8)).clamp(atr_pct * 0.1, atr_pct * 5.0);
             // CERT-M2-C02 — λ/μ verdadero del proceso excitado por TRADES
             // (la excitación ocurre en process_event::is_trade, que llama a
             // este dual en el MISMO evento — la lectura es fresca; los
@@ -4535,7 +4536,9 @@ impl GodEngineCore {
                 0.0002
             };
             let spread_val = (spread_pct * mid_price).max(0.0001);
-            let speed_of_sound = spread_val.max(micro_v * mid_price);
+            // CL-71: era `micro_v·mid` con micro_v = clamp(v_t/mid, …) = v_t/mid
+            // (el clamp no hacía nada): es el ATR en precio.
+            let speed_of_sound = spread_val.max(v_t.abs());
             set_reg("mid_price", mid_price);
             set_reg("spread_speed_of_sound", speed_of_sound);
             set_reg("price_velocity", dir_v);
@@ -5649,6 +5652,16 @@ impl GodEngineCore {
             } else {
                 0.0
             };
+            // CL-71: estiramiento con el ATR de las decisiones (σ de 60 s, piso
+            // de tick). Lo usan las puertas del continuo y las ramas 11 y 12.
+            // `price_stretch_continuo`, con el suelo viejo de 10 pb, queda sólo
+            // para las ramas 1-10 (zona de Línea E) hasta que su dueño lo migre.
+            let cur_atr_decision = self.feature_engines[coin_id].get_atr_pct() * mid_price;
+            let price_stretch_decision = if ema_slow_continuo > 0.0 && cur_atr_decision > 0.0 {
+                (mid_price - ema_slow_continuo) / cur_atr_decision
+            } else {
+                0.0
+            };
 
             if viable_para_entrar {
                 // (misma banda canónica: reversión a la media ≡ anti-persistencia)
@@ -5675,6 +5688,16 @@ impl GodEngineCore {
                     price_stretch <= max_stretch_long && stretch_z >= -crate::diffusion::Z95;
                 let not_overextended_short =
                     price_stretch >= min_stretch_short && stretch_z <= crate::diffusion::Z95;
+                // CL-71: los mismos límites con el estiramiento de decisión, para
+                // las ramas 11 y 12.
+                let stretch_z_decision = crate::diffusion::atr_stretch_z(
+                    price_stretch_decision,
+                    crate::diffusion::EMA_SLOW_BARS,
+                );
+                let not_overextended_long_decision = price_stretch_decision <= max_stretch_long
+                    && stretch_z_decision >= -crate::diffusion::Z95;
+                let not_overextended_short_decision = price_stretch_decision >= min_stretch_short
+                    && stretch_z_decision <= crate::diffusion::Z95;
 
                 // D-105: Mapeo de convicción Bayesiana calibrada (ver fn sig_conf a nivel de crate)
 
@@ -6327,22 +6350,22 @@ impl GodEngineCore {
                         !is_confirmed_downtrend,
                         !is_adverse_momentum_long,
                         !(z_higher_dir < 0.0 && z_secular < 0.0),
-                        !(price_stretch < -0.80 && z_secular < crate::diffusion::Z95),
+                        !(price_stretch_decision < -0.80 && z_secular < crate::diffusion::Z95),
                         z_higher_dir >= -crate::diffusion::Z95,
                         composite_score >= tensor_tech_thr,
                         effective_obi_long > range_obi,
-                        not_overextended_long,
+                        not_overextended_long_decision,
                     ];
                     let short_conditions = [
                         short_streak < 2,
                         !is_confirmed_uptrend,
                         !is_adverse_momentum_short,
                         !(z_higher_dir > 0.0 && z_secular > 0.0),
-                        !(price_stretch > 0.80 && z_secular > -crate::diffusion::Z95),
+                        !(price_stretch_decision > 0.80 && z_secular > -crate::diffusion::Z95),
                         z_higher_dir <= crate::diffusion::Z95,
                         composite_score <= -tensor_tech_thr,
                         effective_obi_short < -range_obi,
-                        not_overextended_short,
+                        not_overextended_short_decision,
                     ];
                     let tensor_allowed = match tensor_cont.signal {
                         SignalType::Long => {
@@ -6417,9 +6440,10 @@ impl GodEngineCore {
 
                         if impulso_streak < 2
                             && impulso_alineado_con_regimen
-                            && ((impulso_intent.signal == SignalType::Long && not_overextended_long)
+                            && ((impulso_intent.signal == SignalType::Long
+                                && not_overextended_long_decision)
                                 || (impulso_intent.signal == SignalType::Short
-                                    && not_overextended_short))
+                                    && not_overextended_short_decision))
                         {
                             impulso_intent.volume_flow_rate = 12.0;
                             fast_intent = impulso_intent;
@@ -6448,7 +6472,7 @@ impl GodEngineCore {
                 composite_score,
                 ml_prob,
                 ml_model_base,
-                price_stretch_continuo,
+                price_stretch_decision,
             );
 
             if let Some(fr) = &self.flight_recorder {
@@ -6541,7 +6565,7 @@ impl GodEngineCore {
 
             if is_trend_candidate {
                 if ema_slow > 0.0 {
-                    let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                    let cur_atr = self.feature_engines[coin_id].get_atr_pct() * mid_price;
                     let price_stretch = (mid_price - ema_slow) / cur_atr;
                     // D-621 (DÉCIMA OLA): antes 0,20 ATR a favor y 1,50 ATR en contra, una
                     // asimetría de 7,5× sin derivación. La regla declarada es no comprar
@@ -6667,7 +6691,7 @@ impl GodEngineCore {
                 let is_bull = is_confirmed_uptrend && ema_fast > ema_slow;
                 let is_bear = is_confirmed_downtrend && ema_fast < ema_slow;
 
-                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                let cur_atr = self.feature_engines[coin_id].get_atr_pct() * mid_price;
                 let price_stretch = if ema_slow > 0.0 {
                     (mid_price - ema_slow) / cur_atr
                 } else {
@@ -6740,7 +6764,7 @@ impl GodEngineCore {
                 composite_score,
                 ml_prob,
                 ml_model_base,
-                price_stretch_continuo,
+                price_stretch_decision,
             );
 
             if coin_id < self.last_fast_intent.len() {
@@ -6948,7 +6972,7 @@ impl GodEngineCore {
             // tendencia se estandariza con su propia desviación de difusión y se
             // exige significación al 95 %, el mismo criterio para los tres horizontes.
             let shield_atr_ratio =
-                self.feature_engines[coin_id].v_t.max(mid_price * 0.001) / mid_price.max(1e-12);
+                self.feature_engines[coin_id].get_atr_pct();
             let z_secular = crate::diffusion::ema_distance_z(
                 secular_trend,
                 shield_atr_ratio,
@@ -6971,7 +6995,7 @@ impl GodEngineCore {
             if (is_confirmed_downtrend || z_secular < -z95 || z_higher < -z95 || z_macro < -z95)
                 && unified_intent.signal == SignalType::Long
             {
-                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                let cur_atr = self.feature_engines[coin_id].get_atr_pct() * mid_price;
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
                 } else {
@@ -7000,7 +7024,7 @@ impl GodEngineCore {
             } else if (is_confirmed_uptrend || z_secular > z95 || z_higher > z95 || z_macro > z95)
                 && unified_intent.signal == SignalType::Short
             {
-                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                let cur_atr = self.feature_engines[coin_id].get_atr_pct() * mid_price;
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
                 } else {
@@ -7264,7 +7288,7 @@ impl GodEngineCore {
                     let is_same_dir = (unified_intent.signal == SignalType::Long && last_is_long)
                         || (unified_intent.signal == SignalType::Short && !last_is_long);
 
-                    let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                    let cur_atr = self.feature_engines[coin_id].get_atr_pct() * mid_price;
                     let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                         self.feature_engines[coin_id].kline_ema_slow
                     } else {
@@ -7427,7 +7451,7 @@ impl GodEngineCore {
                 .map(|sd| crate::diffusion::Z95 * sd)
                 .unwrap_or(f64::INFINITY);
             if unified_intent.signal == SignalType::Long && current_obi < -obi_pressure_threshold {
-                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                let cur_atr = self.feature_engines[coin_id].get_atr_pct() * mid_price;
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
                 } else {
@@ -7442,7 +7466,7 @@ impl GodEngineCore {
                     unified_intent = SignalIntent::flat();
                 }
             } else if unified_intent.signal == SignalType::Short && current_obi > obi_pressure_threshold {
-                let cur_atr = self.feature_engines[coin_id].v_t.max(mid_price * 0.001);
+                let cur_atr = self.feature_engines[coin_id].get_atr_pct() * mid_price;
                 let ema_ref = if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                     self.feature_engines[coin_id].kline_ema_slow
                 } else {
@@ -7678,11 +7702,8 @@ impl GodEngineCore {
                             )
                         })
                         .unwrap_or((0.0, 0.0));
-                    let council_atr_pct = if mid_price > 1e-8 {
-                        (self.feature_engines[coin_id].v_t / mid_price).clamp(0.0, 1.0)
-                    } else {
-                        0.0
-                    };
+                    let council_atr_pct =
+                        self.feature_engines[coin_id].get_atr_pct().clamp(0.0, 1.0);
                     let council_loss_streak = self
                         .feature_engines[coin_id]
                         .get_active_directional_streak_ms(order.signal == SignalType::Long, enfriamiento_base_ms);

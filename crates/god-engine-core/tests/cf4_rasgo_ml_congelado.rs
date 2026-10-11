@@ -8,9 +8,9 @@
 //! replicado aquí de forma independiente, bit a bit, sobre una cinta con
 //! calentamiento por klines, eventos de precio y un reinicio.
 //!
-//! En este commit además `v_t` coincide con el rasgo bit a bit (identidad de
-//! conducta). CL-71 cambia `v_t`: esa segunda comprobación se retira allí y
-//! la réplica del algoritmo legado sigue.
+//! Hasta CL-71 además `v_t` coincidía con el rasgo bit a bit; CL-71 cambia
+//! `v_t` (σ de 60 s) y esa comprobación se retiró. La réplica del algoritmo
+//! legado sigue.
 
 use god_engine_core::stateful_engine::StatefulEngine;
 
@@ -78,7 +78,7 @@ impl Legado {
 }
 
 #[test]
-fn cl68_rasgo_ml_sigue_el_algoritmo_legado_y_hoy_es_v_t() {
+fn cl68_rasgo_ml_sigue_el_algoritmo_legado() {
     let mut rng = Lcg(0xC168);
     let mut motor = StatefulEngine::new();
     let mut legado = Legado::default();
@@ -115,12 +115,6 @@ fn cl68_rasgo_ml_sigue_el_algoritmo_legado_y_hoy_es_v_t() {
             "evento {i}: rasgo {} frente al legado {}",
             motor.vt_rasgo_ml,
             legado.v
-        );
-        // Identidad de este commit (se retira en CL-71).
-        assert_eq!(
-            motor.vt_rasgo_ml.to_bits(),
-            motor.v_t.to_bits(),
-            "evento {i}"
         );
     }
     assert_eq!(

@@ -294,6 +294,7 @@ Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confi
 - Causa: El ATR tiene un piso de 0,0010·precio y un trinquete al alza dentro de la vela. Con σ de 1 minuto < 6,27 pb manda el piso. Además, el rango de K ticks es discreto (sesgo 2·0,5826/√K).
 - Consecuencia viva: En mercados tranquilos los z de tendencia y piso_tendencia (core lib.rs:5030-5036) se calculan con una σ inflada, así que los z quedan subestimados y el escudo macro y los vetos de tendencia responden al piso y no al mercado.
 - Prueba que falla hoy: cf2_atr_vivo_da_la_sigma_de_un_minuto: σ = 4 pb por minuto, 60 ticks por minuto y 600 minutos. Lo esperado es σ_ATR/σ ≈ 0,906 (entre 0,80 y 1,10); hoy da ≥ 1,566.
+  - Cerrado por CL-71 (C-F4, 2026-10-11): el ATR de las decisiones es el rango equivalente de la σ de 60 s (sigma_minuto, varianza realizada de r60 sobre una rejilla de 1 s), sin trinquete ni suelo de 10 pb; el piso es el tick (CL-69). Las dos pruebas se activaron: σ_ATR/σ = 1,039 (4 pb/min) y 0,968 (30 pb/min). El nulo FA-9 está en cf4_atr_sigma_minuto: |z| > 1,96 en el 4,4 % de los minutos de un paseo aleatorio (antes ≈ 0,2 %). El rasgo del modelo conserva el algoritmo viejo hasta reentrenar (CL-68).
 - Dueño: Línea C, C-F4 (ATR, plan §4); C-F2.2 aporta la prueba
 - Relación con hallazgos anteriores: plan §4 (stateful_engine.rs:850-853 y 876-881, C-F4); relacionado con LC-F1-55
 - Escépticos: confirmado por los dos escépticos.

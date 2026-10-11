@@ -28,8 +28,9 @@
 //! En el calentamiento REST (klines de 1 min), `observar_cierre_kline` usa
 //! el log-retorno entre cierres, que es un r60 de la misma cantidad.
 //!
-//! Sin cablear en este commit: nada lo lee (identidad de conducta). CL-71 lo
-//! conecta a `v_t` con la conversión explícita a rango, √(8/π)·σ̂60·precio.
+//! CL-71 lo conecta a `StatefulEngine::v_t` con la conversión explícita a
+//! rango, √(8/π)·σ̂60·precio, más una envolvente rápida con el rango de la
+//! vela abierta (ver `stateful_engine.rs`).
 
 /// Peso de la EWMA por vela de 60 s (el 0,15 del ATR vivo).
 pub const ALFA_POR_MINUTO: f64 = 0.15;
@@ -177,5 +178,19 @@ impl SigmaMinuto {
     /// σ del log-retorno de 60 s (fracción del precio).
     pub fn sigma_60s(&self) -> Option<f64> {
         self.varianza_60s().map(f64::sqrt)
+    }
+
+    /// Varianza de 60 s con la vela abierta incluida: (S + Σ r60² de la vela)
+    /// / (N + n de la vela). Con datos estacionarios es la misma cantidad que
+    /// `varianza_60s`, pero ve cada segundo cerrado sin esperar al cierre de
+    /// la vela (CL-71: el ATR no se queda congelado un minuto ante un choque).
+    pub fn varianza_60s_viva(&self) -> Option<f64> {
+        let n = self.n_ewma + self.n_r2 as f64;
+        (n > 0.0).then(|| (self.suma_ewma + self.suma_r2) / n)
+    }
+
+    /// σ de 60 s con la vela abierta incluida (fracción del precio).
+    pub fn sigma_60s_viva(&self) -> Option<f64> {
+        self.varianza_60s_viva().map(f64::sqrt)
     }
 }
