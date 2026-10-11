@@ -149,5 +149,82 @@ class PlanLineaCAsignacionTests(unittest.TestCase):
         self.assertEqual(plan.expandir("a/b.rs"), ["a/b.rs"])
 
 
+class PlanLineaCInventarioCiTests(unittest.TestCase):
+    """`ci`: qué objetivos de test ejecuta alguna CI (C-F10, LC-F10-02)."""
+
+    ARCHIVOS = {
+        "Cargo.toml": (
+            '[workspace]\nmembers = ["crates/a", "crates/b"]\n\n'
+            '[package]\nname = "raiz"\nautobins = false\n\n'
+            '[lib]\nname = "raiz_lib"\npath = "src/lib.rs"\n\n'
+            '[[bin]]\nname = "host"\npath = "src/bin/host.rs"\n'
+        ),
+        "src/lib.rs": "#[test]\nfn r() {}\n",
+        "src/bin/host.rs": "fn main() {}\n#[test]\nfn h() {}\n",
+        "src/bin/suelto.rs": "fn main() {}\n#[test]\nfn s() {}\n",
+        "crates/a/Cargo.toml": '[package]\nname = "a-crate"\n',
+        "crates/a/src/lib.rs": "mod m;\n#[cfg(test)]\nmod t { #[test] fn x() {} }\n",
+        "crates/a/src/m.rs": "#[test]\nfn y() {}\n",
+        "crates/a/src/bin/tool.rs": "fn main() {}\n#[test]\nfn z() {}\n",
+        "crates/a/tests/t1.rs": "#[test]\nfn a() {}\n#[tokio::test]\nasync fn b() {}\n",
+        "crates/a/tests/t2.rs": "#[test]\n#[ignore = \"manual\"]\nfn c() {}\n",
+        "crates/b/Cargo.toml": '[package]\nname = "b"\n',
+        "crates/b/tests/solo.rs": "#[test]\nfn d() {}\n",
+        "crates/b/tests/otro.rs": "#[test]\nfn e() {}\n",
+        "crates/b/tests/nunca.rs": "#[test]\nfn f() {}\n",
+        ".github/workflows/ci.yml": (
+            "jobs:\n  x:\n    strategy:\n      matrix:\n        include:\n"
+            "          - grupo: uno\n            paquetes: -p a-crate --lib --tests\n"
+            "          - grupo: dos\n            paquetes: -p raiz --lib --bin host\n"
+            "    steps:\n"
+            "      - run: cargo +nightly-2026-06-30 test ${{ matrix.paquetes }} --locked -- --test-threads=1\n"
+            "      - run: cargo +nightly-2026-06-30 test -p b --locked --test solo -- filtro::x --test-threads=1\n"
+            "      # cargo test -p b --test nunca\n"
+            "      - run: cargo +nightly-2026-06-30 check --workspace --all-targets --locked\n"
+            "      - run: cargo test -p b --test nunca --no-run\n"
+            "      - run: |\n"
+            "          rustc +nightly-2026-06-30 --edition 2024 --test crates/b/tests/otro.rs -o x.exe\n"
+        ),
+    }
+
+    def inventario(self):
+        versionados = sorted(self.ARCHIVOS)
+        return {(f[0], f[1], f[2]): f for f in plan.inventario_ci(versionados, self.ARCHIVOS.__getitem__)}
+
+    def test_matriz_y_tests_seleccionan_lib_bins_y_tests_de_integracion(self):
+        inv = self.inventario()
+        for clave in [("a-crate", "a-crate", "lib"), ("a-crate", "tool", "bin"),
+                      ("a-crate", "t1", "test"), ("a-crate", "t2", "test")]:
+            self.assertEqual(inv[clave][6], "ci.yml:11", clave)
+        self.assertEqual(inv[("raiz", "raiz", "lib")][6], "ci.yml:11")
+        self.assertEqual(inv[("raiz", "host", "bin")][6], "ci.yml:11")
+
+    def test_cuenta_tests_de_todo_el_arbol_de_la_lib_e_ignorados(self):
+        inv = self.inventario()
+        self.assertEqual(inv[("a-crate", "a-crate", "lib")][4], 2)
+        self.assertEqual(inv[("a-crate", "t1", "test")][4], 2)
+        self.assertEqual(inv[("a-crate", "t2", "test")][4:6], (1, 1))
+
+    def test_autobins_false_deja_fuera_los_bins_no_declarados(self):
+        inv = self.inventario()
+        self.assertNotIn(("raiz", "suelto", "bin"), inv)
+
+    def test_filtro_rustc_comentario_y_no_run(self):
+        inv = self.inventario()
+        self.assertEqual(inv[("b", "solo", "test")][6], "ci.yml:12 (filtro filtro::x)")
+        self.assertEqual(inv[("b", "otro", "test")][6], "ci.yml:17")
+        self.assertEqual(inv[("b", "nunca", "test")][6], "ninguna")
+
+    def test_sin_seleccion_corre_lib_bins_y_tests(self):
+        paquetes = plan.paquetes_del_workspace(sorted(self.ARCHIVOS), self.ARCHIVOS.__getitem__)
+        objetivos, filtro, solo = plan.seleccion_de_orden("cargo test -p a-crate", paquetes)
+        self.assertEqual(objetivos, {("a-crate", "lib", None), ("a-crate", "bin", "tool"),
+                                     ("a-crate", "test", "t1"), ("a-crate", "test", "t2")})
+        self.assertEqual((filtro, solo), (None, False))
+        objetivos, filtro, _ = plan.seleccion_de_orden("cargo test --workspace -- --ignored", paquetes)
+        self.assertIn(("b", "test", "nunca"), objetivos)
+        self.assertEqual(filtro, "--ignored")
+
+
 if __name__ == "__main__":
     unittest.main()
