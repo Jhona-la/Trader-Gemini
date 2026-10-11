@@ -44,6 +44,16 @@ que cada `ruta:línea` del plan exista en una revisión dada (alias
 - Lista archivo por archivo: `docs/audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv`
   (1 561 archivos de 1025f750, cada uno con su fase), regenerable con
   `scripts/plan_linea_c.py asignacion`.
+- C-F0 hecha en el plan (§9 «Requisitos de la meta»): rige la meta
+  reformulada por el dueño (crecimiento log neto con cota inferior > 0 en
+  cada mitad OOS; ×2/3 días sólo como brecha). 40 requisitos con
+  estimador, umbral con origen, prueba que refuta y estado; ninguno
+  «medido». Hallazgos LC-F0-01…35 abiertos en su fase dueña. Lo que más
+  pesa: dos doctrinas de meta aceptadas (falta un ADR del dueño), host y
+  riesgo con distinto freno de drawdown desde el arranque (LC-F0-08), el
+  piso de 4,79 USD no sobrevive a un reinicio (LC-F0-10), la exención de
+  sonda del EV nunca rechaza (LC-F0-15), la física cobra el TP como maker
+  (LC-F0-25) y seis fricciones distintas para la misma orden (fila 21).
 
 Ciclo 9 (kill-switch, llenados y estado por entorno):
 - CL-43 (FMT-232): con el latch armado, `process_event` y

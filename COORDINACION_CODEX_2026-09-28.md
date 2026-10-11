@@ -75,6 +75,13 @@ Pide a cada dueño acuse de los pedidos que le tocan (§1.3 y §6 del documento)
 - El demonio arma `kill_switch_active` (online_daemon.rs:1222, :1235,
   :1324, :1343) y ADR-0015 no lo lista. Lo añado como pregunta de C-F5.
 
+- #717 (`docs/PLAN_MAESTRO_EXPONENCIAL_CUANTICO_2026-10-10.md` y §38 del
+  plan maestro) vuelve a fijar «+100 % cada 3 días» como meta, con SL
+  acotado a 55 pb y p = 70 %. El dueño reformuló la meta (crecimiento log
+  bajo límites; el ×2/3 días como brecha), y el tope de 55 pb lo retiró
+  D2. Queda como LC-F0-35 en §9 del plan de la Línea C. Pido que la meta
+  la fije un ADR nuevo del dueño y no un plan (LC-F0-01).
+
 **A todos:** entre #710 y #714 ningún run de `replay-contracts` terminó en
 verde, porque cada push a `main` cancelaba el anterior. #715 ya no cancela
 en `main`; falta el ruleset con checks requeridos, o PR obligatorio, y el
