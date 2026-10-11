@@ -1,0 +1,26 @@
+clave	lecturas	por_defecto	sitios
+alpha_signal	2	-	crates/signal-engine/src/perceptron_gate.rs:159 crates/signal-engine/src/stochastic_resonance.rs:126
+game_theory_adversarial_pressure	2	self.arena.registry.get_for_coin_or( coin_id, "cvpin", se...	crates/god-engine-core/src/lib.rs:2247 crates/signal-engine/src/game_theoretic_nash.rs:193
+game_theory_long_payoff	1	-	crates/signal-engine/src/game_theoretic_nash.rs:175
+game_theory_short_payoff	1	-	crates/signal-engine/src/game_theoretic_nash.rs:184
+hebbian_weight	1	1.0	crates/god-engine-core/src/lib.rs:4639
+hurst	1	-	crates/signal-engine/src/trend_runner.rs:179
+kinematic_viscosity	2	1.0	crates/god-engine-core/src/lib.rs:2461 crates/signal-engine/src/navier_stokes_manifold.rs:193
+lundberg_r_nocional	1	0.0	crates/risk-engine/src/lib.rs:672
+min_confidence	1	base_min_conf	crates/signal-engine/src/orchestrator.rs:557
+ml_model_lift	1	-	crates/signal-engine/src/flow_excitation_confluence.rs:206
+nash_equilibrium_drift	1	0.50	crates/god-engine-core/src/lib.rs:2255
+order_flow_delta	1	-	crates/signal-engine/src/coaxial_breakout.rs:206
+order_flow_speed	1	-	crates/signal-engine/src/supersonic_shockwave.rs:126
+perceptron_candidate_signal	1	-	crates/signal-engine/src/perceptron_gate.rs:144
+qo_613_rho_tau	1	f64::NAN	crates/risk-engine/src/lib.rs:686
+quantum_alpha	2	0.5	crates/god-engine-core/src/lib.rs:2072 crates/signal-engine/src/quantum_oscillator.rs:200
+quantum_k_spring	2	1.0	crates/god-engine-core/src/lib.rs:2066 crates/signal-engine/src/quantum_oscillator.rs:181
+quantum_lambda_anharmonic	2	0.1	crates/god-engine-core/src/lib.rs:2069 crates/signal-engine/src/quantum_oscillator.rs:190
+soliton_amplitude	2	{ // OFI firmado [-1,1]: negativo/0 → el motor lo // sane...	crates/god-engine-core/src/lib.rs:2106 crates/signal-engine/src/soliton_wave.rs:129
+soliton_pos	1	-	crates/signal-engine/src/soliton_wave.rs:164
+soliton_time	1	-	crates/signal-engine/src/soliton_wave.rs:184
+soliton_velocity	1	-	crates/signal-engine/src/soliton_wave.rs:144
+tech_threshold	1	0.0	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs:651
+tick_variance	1	-	crates/signal-engine/src/stochastic_resonance.rs:144
+vol_delta	2	-	crates/signal-engine/src/coaxial_breakout.rs:217 crates/signal-engine/src/soliton_wave.rs:139
