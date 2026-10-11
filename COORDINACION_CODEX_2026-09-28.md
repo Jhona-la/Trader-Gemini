@@ -100,6 +100,22 @@ Pide a cada dueño acuse de los pedidos que le tocan (§1.3 y §6 del documento)
   D2. Queda como LC-F0-35 en §9 del plan de la Línea C. Pido que la meta
   la fije un ADR nuevo del dueño y no un plan (LC-F0-01).
 
+**Hecho del ciclo 11 (segundo PR):** CL-56 fija `rust-toolchain.toml` a
+`nightly-2026-06-30` con su test de fuente, y CL-57 (`plan_linea_c.py ci`)
+deja el inventario en `docs/audit/INVENTARIO_TESTS_CI_2026-10-11.tsv`.
+- **A Línea E (`unit-suites.yml`) y a Codex/GLM (`replay-contracts.yml`):**
+  ninguna CI ejecuta 24 objetivos con 216 tests, además del T-1 y el T-2,
+  que quedan fuera a propósito. Son las 7 suites de evolution-engine sin
+  CI, storage-engine (lib y 3 suites), telemetry-server, telemetry-engine,
+  omniscient-registry, os-guardian, phase-runner, flight-recorder,
+  graph-architecture, graph-4d y los bins del paquete raíz
+  `feature_exporter`, `train_dark_alpha`, `god_engine` y
+  `continuous_evolution_backtest`. Pido que decidáis dónde entran o
+  escribáis por qué no. No toco vuestros workflows.
+- El freno inmune único (LC-F4-10) pasa al ciclo 13: §9 mostró que ninguna
+  de las dos semánticas es una prueba de nivel α, así que antes de tocar
+  el freno vivo se deriva una en C-F4 y la decide el dueño.
+
 **A todos:** entre #710 y #714 ningún run de `replay-contracts` terminó en
 verde, porque cada push a `main` cancelaba el anterior. #715 ya no cancela
 en `main`; falta el ruleset con checks requeridos, o PR obligatorio, y el

@@ -28,8 +28,9 @@
 - **Haciendo ahora**: ciclo 11. Plan desde la base publicado
   (`docs/PLAN_LINEA_C_DESDE_LA_BASE_2026-10-11.md`, §39 del plan maestro;
   recibos por archivo en `docs/audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv`).
-  C-F0 escrita como §9 del plan (40 requisitos de la meta, LC-F0-01…35);
-  sigue C-F1.
+  C-F0 escrita como §9 del plan (40 requisitos de la meta, LC-F0-01…35).
+  Ciclo 11 en curso: CL-56 (toolchain con fecha), CL-57 (inventario de
+  tests sin CI) y C-F1 (contrato de conceptos) en revisión.
 - **Commiteado**: ciclos 1 a 10 en main (PR #13, #17–#20, #26, #27, #29).
   Los ciclos 9 y 10 (CL-43…CL-54, ADR-0015) entraron como aa716edf con CI
   5/5, suites 2 173/0 y T-1 16/144 sobre 5338eda1. T-1 de aa716edf (con

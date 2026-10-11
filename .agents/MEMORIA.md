@@ -54,6 +54,22 @@ que cada `ruta:línea` del plan exista en una revisión dada (alias
   piso de 4,79 USD no sobrevive a un reinicio (LC-F0-10), la exención de
   sonda del EV nunca rechaza (LC-F0-15), la física cobra el TP como maker
   (LC-F0-25) y seis fricciones distintas para la misma orden (fila 21).
+- CL-56: `rust-toolchain.toml` = `nightly-2026-06-30`, el de las dos CI,
+  con test de fuente (`quantum-arena/tests/toolchain_pin_contract.rs`).
+  En la nube rustup instala ese nightly solo; la caché de compilación del
+  nightly anterior no sirve (se borró /tmp/claude-0/tcheck).
+- CL-57: `plan_linea_c.py ci` lista qué objetivos de test ejecuta alguna
+  CI (`docs/audit/INVENTARIO_TESTS_CI_2026-10-11.tsv`). Ninguna corre 26
+  objetivos con 220 tests; fuera a propósito sólo el T-1 y el T-2. Los
+  otros 24 (evolution-engine/tests, storage-engine, telemetría,
+  omniscient-registry, los tests del host…) son pedido a Línea E y
+  Codex/GLM, dueños de los workflows.
+- El freno inmune único (LC-F4-10) pasa al ciclo 13: con riesgo medido los
+  dos frenos usan α = 0,5 (el gen de producción) y en micro el veto usa d*
+  desde el pico móvil; ninguno es una prueba de nivel α. Se deriva una en
+  C-F4 y se lleva al dueño antes de tocar el freno vivo.
+- Workflows en la nube: con 4 CPU el tope es de 2 agentes a la vez. Un
+  escéptico por hallazgo no cabe; mejor un escéptico por lente y dimensión.
 
 Ciclo 9 (kill-switch, llenados y estado por entorno):
 - CL-43 (FMT-232): con el latch armado, `process_event` y
