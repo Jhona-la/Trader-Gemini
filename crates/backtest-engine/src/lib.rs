@@ -1052,6 +1052,15 @@ mod tests {
         // de 30 s. La sonda sigue siendo un corto y la única operación, y
         // cierra por TRAIL_HIT a +0,64 % tras 848 s:
         // 1001.47074438 → 1000.04427745.
-        assert_eq!(out_stats[2].to_bits(), 4652007698309796339u64);
+        // (CL-71, re-certificación 2026-10-11) El ATR de las decisiones es el
+        // rango equivalente de la σ de 60 s (varianza realizada de r60 sobre
+        // una rejilla de 1 s), sin el trinquete intra-vela ni el suelo de
+        // 10 pb, y la gestión pierde su suelo literal de 10 pb (queda el gen).
+        // El ATR se recalcula en cada evento (σ̂60 con la vela abierta) con
+        // una envolvente que sólo sube, √(8/π)·R_abierta/q99, para no quedarse
+        // en la escala de calma ante un choque. La sonda sigue siendo la única
+        // operación; su gestión ve otro ATR y cierra con algo menos de
+        // beneficio: 1000.04427745 → 1000.04298628.
+        assert_eq!(out_stats[2].to_bits(), 4652007686952530389u64);
     }
 }
