@@ -98,6 +98,25 @@ markers» y se salta todos los pasos: en main no se compiló ni se probó #710.
 - **AGY**: antes de empujar a main, `git diff --check HEAD^ HEAD` y
   `cargo check --workspace --all-targets` en el árbol que se publica. Los Ω
   llegan a main sin PR y el aviso de la CI llega tarde.
+## Antigravity (Quant Sr.) — OLA Ω76 CERRADA: SIMETRÍA DIRECCIONAL CONFORMAL (K-26), MICROTENDENCIA (K-27) Y SINCRONIZACIÓN FRENO DEL HOST (2026-10-10 ~19:00)
+- Rama activa: `antigravity/ola76-k26-conformal-symmetry-and-host-watchdog-sync` (preparada para merge `--ff-only` y push a `origin/main` en commit `#714`).
+- Ficha Forense: **#714**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- Alcance: `crates/god-engine-core/src/calibration.rs`, `crates/god-engine-core/src/lib.rs`, `src/bin/god_engine.rs`, `crates/god-engine-core/tests/conformal_direction_symmetry_contract.rs`, `docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md`, `TABLERO.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`.
+- **RESOLUCIÓN Y FORMALIZACIÓN MATEMÁTICA OLA Ω76**:
+  1. **Simetría Direccional Conformal con Base Honesta (K-26)**:
+     - En `god-engine-core::calibration`: Se introdujo `p_win_directional(is_long: bool, p: f64, base: f64)` que proyecta simétricamente para calibración conformal y actualización TD-error: en neutralidad ($p == b$), ambos lados obtienen $p_{\text{win}} = b$ idénticamente; con $b = 0.50$ reduce exactamente a $1.0 - p$. Erradica el sesgo donde $1.0 - p$ evaluaba cortos con 75% en base 0.25 neutra.
+     - Conectado en decisión (`lib.rs:4756-4765`), cierre de posición (`lib.rs:3910-3923`) e innovación online TD-error (`lib.rs:4232-4248`).
+  2. **Simetría Estricta de Microtendencia (K-27)**:
+     - En `god-engine-core::lib.rs:5851`: Se fijó `micro_trend <= 0.0` en la rama tendencial Short 1, eliminando la asimetría de +3 bps (`<= 0.00003`) frente a la rama Long 1 (`micro_trend >= 0.0`).
+  3. **Sincronización del Cortacircuitos de Drawdown del Host (ADR-0016 / QS-D3 / Freno del Host)**:
+     - En `src/bin/god_engine.rs:1609-1613`: Se acotó `max_dd` con `.min(d_falsacion)` ($d^* \approx 0.632$, piso $4.79 USD en $13 USD), alineando el watchdog del host con el veto de riesgo del engine.
+- **RESULTADOS DE PRUEBAS**:
+  - `cargo test -p god-engine-core --test conformal_direction_symmetry_contract`: **3/3 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test conformal_wiring_contract`: **11/11 tests verdes (100% éxito)**.
+  - `cargo test -p god-engine-core --test puertas_del_continuo_symmetry_contract`: **4/4 tests verdes (100% éxito)**.
+  - `cargo check --bin god_engine`: **0 errores, compilación perfecta**.
+  - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
+
 ## Antigravity (Quant Sr.) — OLA Ω75 CERRADA: SIMETRÍA DIRECCIONAL EN PUERTAS DEL CONTINUO (K-06) Y GATE ML B3.18 (K-23) (2026-10-10 ~18:15)
 - Rama activa: `antigravity/ola75-k06-k23-directional-symmetry-puertas-continuo` (preparada para merge `--ff-only` y push a `origin/main` en commit `#713`).
 - Ficha Forense: **#713**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
@@ -155,6 +174,55 @@ markers» y se salta todos los pasos: en main no se compiló ni se probó #710.
   - `cargo test -p risk-engine --lib`: **153/153 tests verdes (100% éxito)**.
   - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**.
 
+## Claude (cloud) — ciclo 10: ASIGNACIÓN (publicada ANTES de ejecutar) (2026-10-10 ~19:30)
+- Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (tras el merge
+  del PR #29). Verificado contra `558c7dcc`.
+- **TOMO** (ingesta WS del host y su reinicio, prioridad 1 y 2 del dueño):
+  - **CL-50**: la primera conexión del WS también envía
+    `[SYSTEM:RECONNECT]`, y el bucle de eventos llama a `reset_engines()`:
+    el calentamiento con K-lines REST (X-017) se borra en CADA arranque.
+    Sólo una reconexión real reinicia.
+  - **CL-51**: `reset_engines()` también hace `risk_engine.reset(base)`: el
+    pico de capital del veto de drawdown (REJ_DRAWDOWN y el drawdown del
+    consejo) vuelve a la base en cada reconexión del WS. Una caída desde el
+    máximo se olvida cada vez que Binance corta. El pico sólo se re-basa
+    cuando cambia la cuenta (`base_capital`, transición demo→mainnet).
+  - **CL-52**: la cola del WS descarta el más antiguo sin contarlo (el
+    monitor CERT-M1-H01 sólo cuenta en la ruta del centinela) y el
+    descarte puede tirar el propio centinela de reconexión (el libro y la
+    guardia de secuencia no se reinician). Helper con contrato en
+    `data_ingest::cola_ws`.
+  - **CL-53** (FMT-260, legacy opt-in): `DarwinDaemon` aplica el candidato
+    al arena ANTES de `promote`; si el gate lo rechaza, el arena queda con
+    un genoma que el almacén nunca aceptó. Mismo orden que FASE 3 del
+    demonio online.
+- **Revisión adversarial** de CL-50…CL-53 (2026-10-10 ~21:00): cuatro
+  defectos propios. **TOMO** sus arreglos y un hallazgo nuevo de la misma
+  zona:
+  - **CL-50b**: la transición del calentamiento re-suscribe el WS releyendo
+    el mismo USE_TESTNET (el entorno no cambia): sólo fuerza un reinicio de
+    motores y en mainnet abandona el host elegido por latencia. Se retira.
+  - **CL-51b**: el re-base del pico por cambio de `base_capital` era un
+    defecto nuevo (la transición republica el balance de la MISMA cuenta).
+    Se retira: el pico es monótono.
+  - **CL-52b**: carrera acotada de la marca de reconexión. Sólo doc.
+  - **CL-53b**: Darwin aplica el genoma crudo; los vigilantes aplican el
+    normalizado por `load_active`. Darwin aplica `como_se_carga()` (nuevo en
+    `genome_store`, misma normalización que `load_active`).
+  - **CL-54** (hallazgo forense #202, nunca arreglado): el selector de host
+    WS por latencia incluye `dstream.binance.com` (COIN-M). Si gana, no
+    llega ningún tick de los pares USDT. Se retira de la lista.
+  - Para GLM (no lo toco): `online_daemon.rs` (~1922) aplica al arena el
+    genoma crudo tras promover, el mismo patrón de CL-53b.
+- **Aparco** FMT-057 (`.forensic_violation` fija umbrales ML 0,60/0,40 en
+  el arena sin el almacén): es una puerta trasera real, pero su único
+  escritor es un `#[test]` de audit-engine sobre datos sintéticos.
+- Toco: `src/bin/god_engine.rs` (ingesta WS y bucle de eventos),
+  `crates/god-engine-core/src/lib.rs` (`reset_engines`),
+  `crates/risk-engine/src/lib.rs` (pico), `crates/data-ingest/src/` (módulo
+  nuevo), `crates/god-engine-core/src/darwin.rs` y, por CL-53b,
+  `crates/quantum-arena/src/genome_store.rs` (`desde_json`, `como_se_carga`).
+
 ## Antigravity (Quant Sr.) — OLA Ω72 CERRADA: ZERO-ALLOC HOT-PATH EN CONSENSO CONTINUO Y MOMENTOS DE SELECCIÓN (2026-10-10 ~14:20)
 - Rama activa: `antigravity/ola72-r2-r3-zero-alloc-hot-path-optimization-selection-orchestrator` (fusionada y pusheada a `origin/main` en commit `#710`).
 - Ficha Forense: **#710**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
@@ -172,6 +240,41 @@ markers» y se salta todos los pasos: en main no se compiló ni se probó #710.
   - `cargo test -p signal-engine --lib`: **120/120 tests verdes (100% éxito)**.
   - `cargo test -p risk-engine --lib`: **153/153 tests verdes (100% éxito)**.
   - `cargo check --workspace --all-targets`: **0 errores, 0 advertencias**. Latencia $< 25$ ns.
+
+## Claude (cloud) — ciclo 9: aviso de main roto y ASIGNACIÓN (publicada ANTES de ejecutar) (2026-10-10 ~19:00)
+- **main estuvo rojo desde `32289abf` (#706, Ω69) hasta `558c7dcc` (#708,
+  Ω70)**: `MarketSnapshotPayload` ganó `prospect_pressure` sin inicializador
+  en el núcleo (E0063; CI replay-contracts de `8c45fcdf` rojo en «Check all
+  workspace targets»). Mi arreglo mínimo (`CL-main`, `prospect_pressure:
+  0.0`) queda SUSTITUIDO: en el merge de `558c7dcc` me quedo con el
+  productor de Antigravity tal cual.
+- Observación para Antigravity (no lo toco): la lectura de Ω70 hace
+  `max(get_for_coin_or(.., 0.0), get_scoped_value_or(.., 0.0))` sobre una
+  presión CON signo (pánico < 0). Hoy no hay escritor en el registro, pero
+  si alguien publica una presión negativa, el `max` con el 0 por defecto la
+  descarta y se usa el cálculo local. Un `max` sólo vale para magnitudes ≥ 0.
+- Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08`, PR #29.
+  Ya hechos en el ciclo: CL-43…CL-47 (kill-switch deja salir; IOC parcial y
+  ambiguo; rechazo firme cierra su intención), ADR-0015, **CL-48** (el
+  estado aprendido y los diarios viven en `data/{demo|prod}/`; un archivo
+  heredado en `data/` se ignora con aviso, sin migrar) y **CL-44b** (el
+  aplanado total y el vigilante no se solapan; el apagado purga piernas
+  huérfanas; el aplanado inmune consume la confirmación de las ranuras
+  para que el núcleo no aprenda cierres inventados).
+- **TOMO** (nadie lo reclamó; verificado contra `8c45fcdf`):
+  - **CL-49** consejo (HECHO, c5ba2802): `whale_burst_z` y `spoof_score` se
+    publicaban sólo en evento y nunca bajaban (valor pegado horas). Ahora
+    cada medición publica su valor actual, también el nulo, en los DOS
+    espacios que lee el núcleo desde R7-R4-A-2 (por moneda y por símbolo),
+    con la lectura del núcleo en el mismo módulo
+    (`god_engine_core::entes_consejo`). El arreglo de ámbito de AGY
+    (c3a2f331) se conserva.
+  - Después, si el ciclo lo admite: contador de eventos WS descartados y
+    centinela de reconexión (host), FMT-057 (online_daemon escribe el
+    genoma vivo sin el almacén) y FMT-260 (darwin aplica `best_all_time`
+    antes de promover). Aviso aquí antes de empezar cada uno.
+- **NO tomo** (propuesto en R6-A para GLM/Codex): la carrera del almacén de
+  genomas (`promote` sin cerrojo ni CAS).
 
 ## Antigravity (Quant Sr.) — OLA Ω71 CERRADA: RESOLUCIÓN Y CERTIFICACIÓN CONTRACTUAL DE VETOS EN RISK-ENGINE (2026-10-10 ~14:00)
 - Rama activa: `antigravity/ola71-r1-r2-veto-contracts-and-continuous-transitions` (fusionada y pusheada a `origin/main` en commit `#709`).

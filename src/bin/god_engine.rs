@@ -117,6 +117,74 @@ struct ProtectionAudit {
     sl_gap: f64,
 }
 
+/// B2.6 / D-698 — purga las piernas TP/SL sin posición debajo (en hedge,
+/// sin posición de su lado). Las usan el vigilante en cada auditoría y el
+/// apagado tras el aplanado final (CL-44b).
+async fn purge_orphan_legs(
+    executor: &execution_engine::executor::OrderExecutor,
+    positions: &[execution_engine::PositionRiskEntry],
+) {
+    // B2.6 — PURGA DE PIERNAS HUÉRFANAS: piernas TP/SL cuya
+    // posición ya cerró disparan al vacío (REJECTED benigno
+    // que quema slots algo y ensucia el stream). Cancelarlas.
+    if let Ok(all_legs) = executor.fetch_all_open_algo_orders().await {
+        for leg in &all_legs {
+            // D-698 (DÉCIMA OLA · auditoría integral): `positionSide`
+            // vacío es DESCONOCIDO, no «no coincide». Con el
+            // predicado anterior, una pierna sin ese campo —el mismo
+            // que ya llegó vacío con `algoStatus` (B1.3-fix)— daba
+            // `side_open = false` para toda posición LARGA viva, y el
+            // watchdog purgaba su TP y su SL dejándola desnuda.
+            let side_unknown = leg.position_side.is_empty();
+            let side_open = positions.iter().any(|p| {
+                p.symbol == leg.symbol
+                    && p.position_amt.abs() > 0.0
+                    && (leg.position_side == "BOTH"
+                        || side_unknown
+                        || (p.position_amt > 0.0) == (leg.position_side == "LONG"))
+            });
+            if !side_open {
+                // D-698: se cancela por `algoId` y el fallo se
+                // reporta: una pierna que sobrevive a la purga
+                // dispara sobre la posición siguiente.
+                match executor
+                    .cancel_algo_order_ids(
+                        &leg.symbol,
+                        leg.algo_id,
+                        &leg.client_algo_id,
+                    )
+                    .await
+                {
+                    Ok(()) => telemetry_server::telemetry_log!(
+                        "🧹 [PROTECTION-WATCHDOG] Pierna huérfana purgada: {} {} algoId {} (posición ya cerrada)",
+                        leg.symbol, leg.order_type, leg.algo_id
+                    ),
+                    Err(e) => telemetry_engine::telemetry_err!(
+                        "🚨 [PROTECTION-WATCHDOG] Pierna huérfana VIVA: {} {} algoId {} no se pudo cancelar: {}",
+                        leg.symbol, leg.order_type, leg.algo_id, e
+                    ),
+                }
+            }
+        }
+    }
+}
+
+/// CL-44b (ADR-0015): antes de un aplanado total espera a que acabe la
+/// auditoría del vigilante que estuviera en curso; las nuevas no empiezan
+/// mientras el aplanado está anunciado. Tope de 10 s: el vigilante sólo
+/// coloca piernas reductoras y el aplanado no espera indefinidamente.
+async fn esperar_auditoria_en_curso() {
+    for _ in 0..200 {
+        if quantum_arena::protection_health::audits_in_progress() == 0 {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    telemetry_server::telemetry_log!(
+        "⚠️ [APLANADO] La auditoría del vigilante sigue en curso tras 10 s: se aplana igual."
+    );
+}
+
 /// B1.3: audita la cobertura TP/SL de una posición viva contra las algo
 /// orders REALES del exchange y hace top-up QUIRÚRGICO por lado (solo el
 /// lado con shortfall — un OCO completo sobre-protegería el sano y el
@@ -363,7 +431,7 @@ fn is_symbol_suspended(symbol: &str) -> bool {
 }
 
 /// B3.6b (auditoría) — persiste las suspensiones VIVAS en
-/// data/fee_breaker.json con escritura ATÓMICA (tmp + rename): un crash a
+/// data/{demo|prod}/fee_breaker.json (CL-48) con escritura ATÓMICA (tmp + rename): un crash a
 /// media escritura dejaba JSON corrupto que la restauración del arranque
 /// descartaba EN SILENCIO — una mañana mala perdonada por corrupción.
 /// Las entradas expiradas se purgan: el archivo no crece sin cota.
@@ -378,9 +446,11 @@ fn persist_fee_breaker(now_ms: u64) {
         .collect::<Vec<_>>()
         .join(",");
     drop(guard);
-    let tmp = "data/fee_breaker.json.tmp";
-    if std::fs::write(tmp, format!("{{{file_body}}}")).is_ok() {
-        let _ = std::fs::rename(tmp, "data/fee_breaker.json");
+    // CL-48: por entorno (`data/{demo|prod}/`), como la envolvente Kelly.
+    let path = quantum_arena::paths::env_data_path("fee_breaker.json");
+    let tmp = format!("{path}.tmp");
+    if std::fs::write(&tmp, format!("{{{file_body}}}")).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
     }
 }
 
@@ -398,22 +468,28 @@ fn persist_kelly_envelope(env: &risk_engine::kelly_envelope::RiskEnvelope) {
         "avg_win": env.avg_win,
         "avg_loss": env.avg_loss,
     });
-    let tmp = "data/kelly_envelope.json.tmp";
-    if std::fs::write(tmp, body.to_string()).is_ok() {
-        let _ = std::fs::rename(tmp, "data/kelly_envelope.json");
+    // CL-48: por entorno. Antes `data/kelly_envelope.json` era común a demo
+    // y producción: los cierres de testnet sembraban el posterior real.
+    let path = quantum_arena::paths::env_data_path("kelly_envelope.json");
+    let tmp = format!("{path}.tmp");
+    if std::fs::write(&tmp, body.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
     }
 }
 
-/// HOST-005 — restaura la envolvente desde data/kelly_envelope.json.
+/// HOST-005 — restaura la envolvente desde el kelly_envelope.json del
+/// entorno (CL-48).
 /// Tolerante a archivo ausente/corrupto/incompleto (false ⇒ el llamador
 /// continúa con el posterior fresco de Jeffreys — degradación, no pánico).
 fn restore_kelly_envelope(env: &mut risk_engine::kelly_envelope::RiskEnvelope) -> bool {
-    let Ok(content) = std::fs::read_to_string("data/kelly_envelope.json") else {
+    let Ok(content) =
+        std::fs::read_to_string(quantum_arena::paths::env_data_path("kelly_envelope.json"))
+    else {
         return false; // primera ejecución — nada que restaurar
     };
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) else {
         telemetry_server::telemetry_log!(
-            "⚠️ [KELLY] data/kelly_envelope.json corrupto — envolvente fresca"
+            "⚠️ [KELLY] kelly_envelope.json corrupto — envolvente fresca"
         );
         return false;
     };
@@ -422,7 +498,7 @@ fn restore_kelly_envelope(env: &mut risk_engine::kelly_envelope::RiskEnvelope) -
         (g("alpha"), g("beta"), g("avg_win"), g("avg_loss"))
     else {
         telemetry_server::telemetry_log!(
-            "⚠️ [KELLY] data/kelly_envelope.json incompleto — envolvente fresca"
+            "⚠️ [KELLY] kelly_envelope.json incompleto — envolvente fresca"
         );
         return false;
     };
@@ -439,7 +515,7 @@ fn restore_kelly_envelope(env: &mut risk_engine::kelly_envelope::RiskEnvelope) -
         || avg_loss < 0.0
     {
         telemetry_server::telemetry_log!(
-            "⚠️ [KELLY] data/kelly_envelope.json con valores inválidos — envolvente fresca"
+            "⚠️ [KELLY] kelly_envelope.json con valores inválidos — envolvente fresca"
         );
         return false;
     }
@@ -502,12 +578,54 @@ struct RecoveredContext {
     age_hours: f64,
 }
 
-/// B2.7: lee data/position_journal.jsonl y devuelve el ÚLTIMO registro que
+/// B2.7 — DIARIO DE CONTEXTO de una entrada confirmada: la τ con la que se
+/// dimensionó la ranura y el ml que la motivó, para re-protegerla con rigor
+/// espectral tras un reinicio (`recover_position_context`). CL-45b: con la
+/// cantidad llenada y la τ de la ranura de ESTA reserva; antes, la cantidad
+/// pedida y la τ de la primera ranura abierta del lado.
+fn anotar_diario_de_posicion(
+    arena: &quantum_arena::GlobalArena,
+    reserva: &god_engine_core::entry_reservation::EntryReservation,
+    symbol: &str,
+    is_long: bool,
+    qty: f64,
+    px: f64,
+) {
+    let tau_ms = arena
+        .coins
+        .get(reserva.coin_id)
+        .map(|c| c.positions.get_slot(reserva.slot))
+        .filter(|p| p.is_open() && p.generation.load(Ordering::Acquire) == reserva.generation)
+        .map(|p| p.entry_tau_ms.load(Ordering::Relaxed))
+        .unwrap_or(0);
+    let ml = arena
+        .coins
+        .get(reserva.coin_id)
+        .map(|c| c.ml_prob.load(Ordering::Relaxed))
+        .unwrap_or(0.5);
+    let jr = format!(
+        "{{\"ts\":{},\"sym\":\"{}\",\"long\":{},\"qty\":{:.8},\"px\":{:.4},\"tau_ms\":{},\"ml\":{:.4}}}\n",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        symbol, is_long, qty, px, tau_ms, ml
+    );
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(quantum_arena::paths::env_data_path("position_journal.jsonl"))
+        .and_then(|mut f| std::io::Write::write_all(&mut f, jr.as_bytes()));
+}
+
+/// B2.7: lee el position_journal.jsonl del entorno (CL-48) y devuelve el ÚLTIMO registro que
 /// matchea símbolo+lado — la τ espectral y la predicción ML que motivaron la
 /// entrada. Tolerante a diario ausente/corrupto (None ⇒ el llamador usa el
 /// piso espectral conservador).
 fn recover_position_context(symbol: &str, is_long: bool) -> Option<RecoveredContext> {
-    let content = std::fs::read_to_string("data/position_journal.jsonl").ok()?;
+    let content =
+        std::fs::read_to_string(quantum_arena::paths::env_data_path("position_journal.jsonl"))
+            .ok()?;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -538,7 +656,7 @@ fn recover_position_context(symbol: &str, is_long: bool) -> Option<RecoveredCont
     })
 }
 
-/// B3.8 — compacta data/position_journal.jsonl al ÚLTIMO registro por
+/// B3.8 — compacta data/{demo|prod}/position_journal.jsonl al ÚLTIMO registro por
 /// (símbolo, lado) — lo único que `recover_position_context` consulta. Sin
 /// esto el diario crece sin cota y cada reconexión re-lee todo el historial.
 /// Umbral conservador: compactar sólo cuando supera 500 líneas. Escritura
@@ -610,8 +728,8 @@ fn record_emergency_close(
 
 fn compact_position_journal() {
     const COMPACT_THRESHOLD: usize = 500;
-    let path = "data/position_journal.jsonl";
-    let Ok(content) = std::fs::read_to_string(path) else {
+    let path = quantum_arena::paths::env_data_path("position_journal.jsonl");
+    let Ok(content) = std::fs::read_to_string(&path) else {
         return; // diario ausente: primera ejecución — nada que compactar
     };
     let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -635,8 +753,8 @@ fn compact_position_journal() {
             latest.insert(key, (ts, line));
         }
     }
-    let tmp = "data/position_journal.jsonl.tmp";
-    let Ok(mut f) = std::fs::File::create(tmp) else {
+    let tmp = format!("{path}.tmp");
+    let Ok(mut f) = std::fs::File::create(&tmp) else {
         return;
     };
     use std::io::Write;
@@ -650,7 +768,7 @@ fn compact_position_journal() {
         }
     }
     drop(f);
-    if std::fs::rename(tmp, path).is_ok() {
+    if std::fs::rename(&tmp, &path).is_ok() {
         telemetry_server::telemetry_log!(
             "🧹 [DIARIO] compactado: {} → {} registros ({} corruptos descartados) — rotación B3.8",
             lines.len(),
@@ -916,11 +1034,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if is_env_testnet {
             "stream.binancefuture.com".to_string()
         } else {
-            let endpoints = vec![
-                "fstream.binance.com",
-                "fstream-auth.binance.com",
-                "dstream.binance.com",
-            ];
+            // CL-54 (hallazgo forense #202): sólo hosts USDⓈ-M. La lista
+            // incluía `dstream.binance.com` (COIN-M): si ganaba por latencia,
+            // los streams `<par>usdt@...` no existen allí, no llegaba ningún
+            // tick y el calentamiento no terminaba nunca. Misma lista que
+            // `data_pipeline::ws_client`.
+            let endpoints = vec!["fstream.binance.com", "fstream-auth.binance.com"];
             let mut best_host = "fstream.binance.com".to_string();
             let mut best_latency = u128::MAX;
 
@@ -1013,13 +1132,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // CERT-M1-H01: contador de eventos descartados por backpressure —
     // antes los ticks se perdían silenciosamente sin evidencia forense.
-    let dropped_events = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    // CL-52: la cola cuenta TODO descarte (antes sólo los de la ruta del
+    // centinela) y recuerda si se llevó un centinela de reconexión.
+    let estado_cola = Arc::new(data_ingest::cola_ws::EstadoCola::new());
     {
-        let dropped_events = Arc::clone(&dropped_events);
+        let estado_cola = Arc::clone(&estado_cola);
         std::thread::Builder::new().name("ws-backpressure-monitor".into()).spawn(move || {
             loop {
                 std::thread::sleep(std::time::Duration::from_secs(60));
-                let d = dropped_events.load(std::sync::atomic::Ordering::Relaxed);
+                let d = estado_cola.descartados();
                 if d > 0 {
                     println!("⚠️ [BACKPRESSURE] {} eventos WS descartados (drop-oldest) — throughput del lector insuficiente", d);
                 }
@@ -1486,12 +1607,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let unified_handle = std::thread::Builder::new().stack_size(32 * 1024 * 1024).spawn({
-        let loop_ws_url = Arc::clone(&ws_url);
-        let loop_streams_str = streams_str.clone();
         let historical_klines = historical_klines.clone();
         let omni_state_hot = Arc::clone(&omni_state_live);
         let rt_handle_for_thread = rt_handle.clone();
         let shutdown_flag = Arc::clone(&shutdown_requested);
+        let estado_cola = Arc::clone(&estado_cola);
         move || {
         if let Some(core_ids) = core_affinity::get_core_ids() {
             if core_ids.len() > 1 {
@@ -1603,14 +1723,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 c.metrics.trade_count.load(Ordering::Relaxed) as f64,
                             )
                         }));
-                    // D-744b: sin riesgo medido (p. ej. tras reiniciar con
-                    // posiciones reconciliadas) rige el gen — antes ∞, es
-                    // decir, el sistema inmune desarmado.
+                    // D-744b / QS-D3 (Ola Ω76): sin riesgo medido rige el gen acotado por la cota
+                    // superior de falsación del modelo de ½ Kelly a α = 0,05 (d* ≈ 0,632, suelo $4,79 en cuenta de $13).
+                    // Sincroniza el cortacircuitos del host con el veto de entradas de risk-engine (lib.rs:341).
+                    let d_falsacion = risk_engine::drawdown::drawdown_de_falsacion(
+                        risk_engine::drawdown::FRACCION_KELLY_MAXIMA,
+                        risk_engine::drawdown::ALFA_FALSACION,
+                    );
                     let max_dd = risk_engine::drawdown::drawdown_maximo(
                         arena_imm.riesgo_por_operacion.load(Ordering::Relaxed),
                         q_perdida_global,
                         arena_imm.config.global_max_drawdown.load(Ordering::Relaxed),
-                    );
+                    ).min(d_falsacion);
                     // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
                     // inmune, no desarmarlo: el guard `cap > 0.0` anterior
                     // dejaba todos los frenos apagados exactamente en el único
@@ -1678,17 +1802,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         arena_imm.kill_switch_active.store(true, Ordering::Relaxed);
                         let executor = exec_imm.load_full();
                         executor.trigger_kill_switch();
-                        match executor.flatten_all_positions().await {
-                            Ok((syms, positions)) => telemetry_server::telemetry_log!(
-                                "🧹 [SISTEMA INMUNE] Aplanado: {} símbolos con órdenes canceladas, {} posiciones cerradas. Reinicio manual para rearmar.",
-                                syms,
-                                positions
-                            ),
-                            Err(e) => telemetry_server::telemetry_log!(
-                                "🚨 [SISTEMA INMUNE] Aplanado FALLÓ: {} — INTERVENCIÓN MANUAL URGENTE.",
-                                e
-                            ),
+                        // CL-44b (ADR-0015): el aplanado cierra en el exchange
+                        // sin tocar las ranuras locales, que el núcleo sigue
+                        // gestionando bajo el latch (CL-43). Sin consumir su
+                        // confirmación, un SL o TP local posterior se
+                        // aprendía como cierre real a un precio inventado.
+                        let consumidas = arena_imm.consume_exchange_confirmations();
+                        {
+                            // CL-44b: el vigilante no audita mientras se
+                            // aplana (re-armaba piernas que quedaban huérfanas).
+                            let _aplanado = quantum_arena::protection_health::begin_flatten();
+                            esperar_auditoria_en_curso().await;
+                            match executor.flatten_all_positions().await {
+                                Ok((syms, positions)) => telemetry_server::telemetry_log!(
+                                    "🧹 [SISTEMA INMUNE] Aplanado: {} símbolos con órdenes canceladas, {} posiciones cerradas, {} ranuras dejan de contar como reales. Reinicio manual para rearmar.",
+                                    syms,
+                                    positions,
+                                    consumidas
+                                ),
+                                Err(e) => telemetry_server::telemetry_log!(
+                                    "🚨 [SISTEMA INMUNE] Aplanado FALLÓ: {} — INTERVENCIÓN MANUAL URGENTE.",
+                                    e
+                                ),
+                            }
                         }
+                        // CL-44 / CL-44b (ADR-0015): el vigilante audita ya, no
+                        // a los 60 s, también si el aplanado devolvió Ok:
+                        // `flatten_all_positions` devuelve Ok aunque un cierre
+                        // falle después de purgar las piernas de su símbolo.
+                        quantum_arena::protection_health::mark_dirty();
                         latched = true;
                     }
                 }
@@ -2137,7 +2279,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // fees −$3.21 dominaron el −$4.44 neto del día.
         // B3.6b — VENTANA RODANTE 24h (antes: desde el arranque — un símbolo
         // que quemó fees ayer amanecía limpio tras cada reinicio) y
-        // SUSPENSIONES PERSISTIDAS en data/fee_breaker.json: sobreviven
+        // SUSPENSIONES PERSISTIDAS en data/{demo|prod}/fee_breaker.json: sobreviven
         // reinicios del motor. Una mañana mala ahora cuesta el día entero,
         // no un arranque.
         {
@@ -2149,7 +2291,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_default()
                     .as_millis() as u64;
                 // Restaurar suspensiones vivas del disco.
-                if let Ok(content) = std::fs::read_to_string("data/fee_breaker.json") {
+                if let Ok(content) = std::fs::read_to_string(
+                    quantum_arena::paths::env_data_path("fee_breaker.json"),
+                ) {
                     match serde_json::from_str::<serde_json::Value>(&content) {
                         Ok(v) if v.as_object().is_some() => {
                             let map = v.as_object().unwrap();
@@ -2172,7 +2316,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Ok(_) => {
                             telemetry_server::telemetry_log!(
-                                "⚠️ [FEE-BREAKER] data/fee_breaker.json con esquema inesperado — se ignora (fail-safe: sin suspensiones)"
+                                "⚠️ [FEE-BREAKER] fee_breaker.json con esquema inesperado — se ignora (fail-safe: sin suspensiones)"
                             );
                         }
                         Err(e) => {
@@ -2180,7 +2324,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // silenciosa — se reporta; la próxima suspensión
                             // reescribe el archivo saneado.
                             telemetry_server::telemetry_log!(
-                                "⚠️ [FEE-BREAKER] data/fee_breaker.json corrupto ({}) — se ignora y se reescribirá al próximo disparo",
+                                "⚠️ [FEE-BREAKER] fee_breaker.json corrupto ({}) — se ignora y se reescribirá al próximo disparo",
                                 e
                             );
                         }
@@ -2464,11 +2608,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if !dirty && ticks % 12 != 0 {
                         continue;
                     }
+                    // CL-44b (ADR-0015): no audita durante un aplanado total.
+                    // Sus cancelaciones despiertan al vigilante, que veía la
+                    // posición aún abierta y le colocaba piernas nuevas antes
+                    // del cierre. La bandera sigue sucia: se audita al acabar.
+                    let Some(_auditoria) = quantum_arena::protection_health::try_begin_audit() else {
+                        continue;
+                    };
                     let executor = exec_wd.load_full();
-                    if executor.is_kill_switch_active() {
-                        quantum_arena::protection_health::clear_dirty();
-                        continue; // kill-switch: no colocar protecciones nuevas
-                    }
+                    // CL-44 (FMT-232, ADR-0015): la auditoría corre también con
+                    // el kill-switch armado. Antes lo saltaba entera: tras X-009
+                    // o un aplanado fallido la posición viva quedaba sin
+                    // re-bracket ni cierre de escalada. Todo lo que hace aquí
+                    // reduce riesgo: piernas protectoras (CL-20), purga de
+                    // huérfanas y cierre reduce-only (CL-3).
                     let Ok(positions) = executor.fetch_position_risk().await else {
                         continue;
                     };
@@ -2481,49 +2634,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // posición sana cuyo bracket apenas estaba en vuelo.
                     let mut open_syms: std::collections::HashSet<String> =
                         std::collections::HashSet::new();
-                    // B2.6 — PURGA DE PIERNAS HUÉRFANAS: piernas TP/SL cuya
-                    // posición ya cerró disparan al vacío (REJECTED benigno
-                    // que quema slots algo y ensucia el stream). Cancelarlas.
-                    if let Ok(all_legs) = executor.fetch_all_open_algo_orders().await {
-                        for leg in &all_legs {
-                            // D-698 (DÉCIMA OLA · auditoría integral): `positionSide`
-                            // vacío es DESCONOCIDO, no «no coincide». Con el
-                            // predicado anterior, una pierna sin ese campo —el mismo
-                            // que ya llegó vacío con `algoStatus` (B1.3-fix)— daba
-                            // `side_open = false` para toda posición LARGA viva, y el
-                            // watchdog purgaba su TP y su SL dejándola desnuda.
-                            let side_unknown = leg.position_side.is_empty();
-                            let side_open = positions.iter().any(|p| {
-                                p.symbol == leg.symbol
-                                    && p.position_amt.abs() > 0.0
-                                    && (leg.position_side == "BOTH"
-                                        || side_unknown
-                                        || (p.position_amt > 0.0) == (leg.position_side == "LONG"))
-                            });
-                            if !side_open {
-                                // D-698: se cancela por `algoId` y el fallo se
-                                // reporta: una pierna que sobrevive a la purga
-                                // dispara sobre la posición siguiente.
-                                match executor
-                                    .cancel_algo_order_ids(
-                                        &leg.symbol,
-                                        leg.algo_id,
-                                        &leg.client_algo_id,
-                                    )
-                                    .await
-                                {
-                                    Ok(()) => telemetry_server::telemetry_log!(
-                                        "🧹 [PROTECTION-WATCHDOG] Pierna huérfana purgada: {} {} algoId {} (posición ya cerrada)",
-                                        leg.symbol, leg.order_type, leg.algo_id
-                                    ),
-                                    Err(e) => telemetry_engine::telemetry_err!(
-                                        "🚨 [PROTECTION-WATCHDOG] Pierna huérfana VIVA: {} {} algoId {} no se pudo cancelar: {}",
-                                        leg.symbol, leg.order_type, leg.algo_id, e
-                                    ),
-                                }
-                            }
-                        }
-                    }
+                    purge_orphan_legs(&executor, &positions).await;
                     let mut naked_total = 0usize;
                     for p in positions
                         .iter()
@@ -2752,6 +2863,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut risk_envelope = risk_engine::kelly_envelope::RiskEnvelope::new();
         let mut avg_win_abs: f64 = 0.0;
         let mut avg_loss_abs: f64 = 0.0;
+        // CL-48: el estado aprendido de antes vivía en `data/` común a demo y
+        // producción. No se migra (su procedencia no se puede atribuir): se
+        // avisa y cada entorno arranca con el suyo.
+        for heredado in [
+            "kelly_envelope.json",
+            "fee_breaker.json",
+            "position_journal.jsonl",
+            "trade_fills.jsonl",
+        ] {
+            if std::path::Path::new("data").join(heredado).exists() {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [ESTADO] data/{} (común a demo y producción) se ignora; este entorno usa {}",
+                    heredado,
+                    quantum_arena::paths::env_data_path(heredado)
+                );
+            }
+        }
         // HOST-005 — RESTAURAR la envolvente persistida: sin esto cada
         // reinicio borraba el posterior del edge (bootstrap perpetuo). Las
         // EMAs locales de payoff arrancan desde la memoria restaurada, no
@@ -2906,6 +3034,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
                 break;
             }
+            // CL-52: la reconexión llega en banda (centinela) o, si la cola
+            // llena se llevó el centinela, por la marca de la cola; en ese
+            // caso el mensaje en la mano ya es posterior y se procesa tras
+            // reiniciar. Va antes de cualquier consumo del mensaje. CL-52b:
+            // la marca se publica justo después del descarte, así que en una
+            // carrera el reinicio puede llegar unos mensajes tarde (ver
+            // `EstadoCola::tomar_reconexion_perdida`).
+            let es_centinela = msg_bytes == data_ingest::cola_ws::CENTINELA_RECONEXION;
+            let centinela_perdido = estado_cola.tomar_reconexion_perdida();
+            if es_centinela || centinela_perdido {
+                telemetry_server::telemetry_log!("🧹 [AUTO-HEALING] Reconnect signal received. Purging Quantum Engine state to prevent time-glitches...");
+                engine_real.reset_engines();
+                for ob in local_orderbooks.iter_mut() {
+                    ob.clear();
+                }
+                // CERT-M1-H02: resetear el guard de secuencia del libro —
+                // sin esto, cada símbolo descartaba hasta 50 mensajes depth
+                // consecutivos tras la reconexión (>1300 actualizaciones de
+                // libro perdidas por reconnect con 26+ símbolos).
+                book_seq_guard = parsers::BookSequenceGuard::new(local_orderbooks.len());
+                telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed + book sequence guard reset. Entering Warmup Phase (50 ticks).");
+
+                let rx_rest = Arc::clone(&exec);
+                rt_handle.spawn(async move {
+                    telemetry_server::telemetry_log!("🔄 [REST-SYNC] Fetching truth from Binance API...");
+                    if let Ok(positions) = rx_rest.load().fetch_open_positions().await {
+                        telemetry_server::telemetry_log!("✅ [REST-SYNC] Binance reports {} active open positions.", positions.len());
+                    }
+                });
+                if es_centinela {
+                    continue;
+                }
+            }
+
             let start = Instant::now();
 
             let is_trade = memchr::memmem::find(&msg_bytes, b"\"e\":\"trade\"").is_some();
@@ -2938,30 +3100,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 msg_count += 1;
-                continue;
-            }
-            let is_reconnect = msg_bytes == b"[SYSTEM:RECONNECT]";
-
-            if is_reconnect {
-                telemetry_server::telemetry_log!("🧹 [AUTO-HEALING] Reconnect signal received. Purging Quantum Engine state to prevent time-glitches...");
-                engine_real.reset_engines();
-                for ob in local_orderbooks.iter_mut() {
-                    ob.clear();
-                }
-                // CERT-M1-H02: resetear el guard de secuencia del libro —
-                // sin esto, cada símbolo descartaba hasta 50 mensajes depth
-                // consecutivos tras la reconexión (>1300 actualizaciones de
-                // libro perdidas por reconnect con 26+ símbolos).
-                book_seq_guard = parsers::BookSequenceGuard::new(local_orderbooks.len());
-                telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed + book sequence guard reset. Entering Warmup Phase (50 ticks).");
-
-                let rx_rest = Arc::clone(&exec);
-                rt_handle.spawn(async move {
-                    telemetry_server::telemetry_log!("🔄 [REST-SYNC] Fetching truth from Binance API...");
-                    if let Ok(positions) = rx_rest.load().fetch_open_positions().await {
-                        telemetry_server::telemetry_log!("✅ [REST-SYNC] Binance reports {} active open positions.", positions.len());
-                    }
-                });
                 continue;
             }
 
@@ -3080,20 +3218,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     max_ask_wall,
                                     e as u64,
                                 );
-                                if score.is_finite() && score > 0.05 {
-                                    let clamped_score = score.clamp(0.0, 1.0);
-                                    engine_real.arena.registry.set_scoped(
-                                        &sym.to_uppercase(),
-                                        "spoof_score",
-                                        clamped_score,
-                                    );
-                                    // R7-R4-A-2: Publicar también por coin_id para que get_for_coin_or en core lib.rs resuelva c{id}:spoof_score
-                                    engine_real.arena.registry.set_for_coin(
-                                        sym_id,
-                                        "spoof_score",
-                                        clamped_score,
-                                    );
-                                }
+                                // CL-49: se publica cada evaluación, también el
+                                // valor nulo. Antes sólo un score > 0,05: el
+                                // último pico quedaba pegado aunque el detector
+                                // ya lo hubiera dejado decaer.
+                                god_engine_core::entes_consejo::publicar(
+                                    &engine_real.arena.registry,
+                                    sym_id,
+                                    sym,
+                                    god_engine_core::entes_consejo::SPOOF,
+                                    god_engine_core::entes_consejo::valor_spoof(score),
+                                );
                             }
                         }
                     }
@@ -3198,27 +3333,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let notional = qty * current_price;
                         if notional.is_finite() && notional > 0.0 {
                             let (z, _accel, is_burst) = whale_trackers[coin_id].update(notional);
-                            if is_burst {
-                                let sym_scoped = symbol_to_id
-                                    .iter()
-                                    .find(|(_, &v)| v == coin_id)
-                                    .map(|(k, _)| k.to_uppercase())
-                                    .unwrap_or_default();
-                                let clamped_z = z.clamp(0.0, 10.0);
-                                if !sym_scoped.is_empty() {
-                                    engine_real.arena.registry.set_scoped(
-                                        &sym_scoped,
-                                        "whale_burst_z",
-                                        clamped_z,
-                                    );
-                                }
-                                // R7-R4-A-2: Publicar también por coin_id para que get_for_coin_or en core lib.rs resuelva c{id}:whale_burst_z
-                                engine_real.arena.registry.set_for_coin(
-                                    coin_id,
-                                    "whale_burst_z",
-                                    clamped_z,
-                                );
-                            }
+                            // CL-49: cada trade publica su valor (0 si no es
+                            // burst). Antes sólo el burst: su z quedaba pegado
+                            // hasta el siguiente burst, horas después.
+                            god_engine_core::entes_consejo::publicar(
+                                &engine_real.arena.registry,
+                                coin_id,
+                                parsed_sym,
+                                god_engine_core::entes_consejo::BALLENA,
+                                god_engine_core::entes_consejo::valor_ballena(z, is_burst),
+                            );
                         }
                     }
                 } else if is_depth {
@@ -3512,9 +3636,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Arc::clone(&arena_real),
                         );
 
-                        let base_ws_url = if is_env_testnet { "wss://stream.binancefuture.com/stream" } else { "wss://fstream.binance.com/stream" };
-                        loop_ws_url.store(Arc::new(format!("{}?streams={}", base_ws_url, loop_streams_str)));
-                        let _ = tx_ws_control.try_send(());
+                        // CL-50b: la transición ya no re-suscribe el WS. Relee
+                        // el mismo USE_TESTNET que eligió el host al arrancar,
+                        // así que el entorno nunca cambia: sólo forzaba una
+                        // reconexión (y con ella `reset_engines` y la pérdida
+                        // del calentamiento) y en mainnet abandonaba el host
+                        // elegido por latencia o por BEST_WS_ENDPOINT.
                         let exec_clone = Arc::clone(&exec);
                         let db_tx_clone = db_tx.clone();
                         let arena_real_clone = Arc::clone(&engine_real.arena);
@@ -4331,6 +4458,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     EntryRoute::Market
                                 }
                             };
+                            // CL-45: sólo la IOC responde con su estado terminal
+                            // (RESULT); MARKET responde ACK, sin la ejecución.
+                            let ruta_ioc = matches!(route, EntryRoute::Ioc { .. });
                             let entry_request = EntryRequest {
                                 symbol: &parsed_sym_str,
                                 is_long: final_is_long,
@@ -4358,13 +4488,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     quantum_arena::protection_health::mark_dirty();
                                     let observation = entry_executor
                                         .resolve_via_rest(&parsed_sym_str, &client_id).await;
-                                    // Even a terminal parent does not settle maker
-                                    // children; Accepted can mean NEW with no fill.
-                                    // Neither permits mutating an unversioned slot.
-                                    telemetry_engine::telemetry_err!(
-                                        "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={} consulta={:?}. Reserva conservada; NO se certifica fill ni se hace rollback. Resolver atribución de orden/fills/protección.",
-                                        parsed_sym_str, client_id, e, observation
-                                    );
+                                    // CL-46: la consulta decide la reserva. Antes sólo
+                                    // se registraba: un terminal sin ejecución dejaba
+                                    // una posición que sólo existía en el arena, y uno
+                                    // con ejecución quedaba sin confirmar (su cierre
+                                    // contaba como papel). La reserva es la de ESTA
+                                    // intención (generación); un terminal del padre no
+                                    // resuelve hijos maker, y Accepted con la orden
+                                    // aún NEW no es un llenado: ambos se conservan.
+                                    use execution_engine::ioc_evidence::{destino_tras_consulta, DestinoReserva};
+                                    let orden = entry_executor.registry().get(&client_id);
+                                    match destino_tras_consulta(&e, observation, orden.as_ref()) {
+                                        DestinoReserva::Revertir => {
+                                            telemetry_engine::telemetry!(
+                                                "❌ [ENTRY] {} id={} envío={} consulta={:?}: terminal sin ejecución — Rollback de la reserva.",
+                                                parsed_sym_str, client_id, e, observation
+                                            );
+                                            rollback_positions(&arena_clone);
+                                        }
+                                        DestinoReserva::Confirmar { ejecutada } => {
+                                            telemetry_engine::telemetry!(
+                                                "✅ [ENTRY] {} id={} envío={} consulta={:?}: ejecutada {:.8} — reserva confirmada; protección por el vigilante.",
+                                                parsed_sym_str, client_id, e, observation, ejecutada
+                                            );
+                                            if let Err(reason) = reservation.confirmar_llenado(&arena_clone, Some(ejecutada)) {
+                                                telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
+                                            } else {
+                                                // CL-46b: el diario B2.7 también aquí; sin él,
+                                                // un reinicio re-protegía la posición con la τ
+                                                // de una entrada anterior del mismo lado.
+                                                anotar_diario_de_posicion(
+                                                    &arena_clone,
+                                                    &reservation,
+                                                    &parsed_sym_str,
+                                                    final_is_long,
+                                                    ejecutada.min(final_qty.abs()),
+                                                    _entry_price,
+                                                );
+                                            }
+                                            quantum_arena::protection_health::mark_dirty();
+                                        }
+                                        DestinoReserva::Conservar => {
+                                            telemetry_engine::telemetry_err!(
+                                                "⏳ [ENTRY PENDING RECONCILIATION] {} id={} envío={} consulta={:?}. Reserva conservada; NO se certifica fill ni se hace rollback. Resolver atribución de orden/fills/protección.",
+                                                parsed_sym_str, client_id, e, observation
+                                            );
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     telemetry_engine::telemetry!(
@@ -4377,10 +4547,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // B3.14 — la entrada EXISTE en el exchange:
                                     // los cierres de esta posición contabilizan
                                     // (los vetados/rechazados son papel).
-                                    if let Err(reason) = reservation.confirm(&arena_clone) {
+                                    // CL-45: con lo EJECUTADO. Una IOC parcial
+                                    // confirmaba antes la cantidad, el margen y la
+                                    // comisión de la orden completa.
+                                    let ejecutada = if ruta_ioc {
+                                        execution_engine::ioc_evidence::cantidad_ejecutada_terminal(
+                                            entry_executor.registry().get(&client_id).as_ref(),
+                                        )
+                                    } else {
+                                        None
+                                    };
+                                    if let Err(reason) = reservation.confirmar_llenado(&arena_clone, ejecutada) {
                                         quantum_arena::protection_health::mark_dirty();
                                         telemetry_engine::telemetry_err!("[ENTRY CONFIRM] stale/mismatched reservation: {:?}; reconcile fill, do not confirm another slot", reason);
                                     }
+                                    // CL-45b: lo llenado (≤ lo pedido) dimensiona el
+                                    // bracket y el diario. Con la cantidad pedida, un
+                                    // parcial apilado sobre otra ranura del mismo lado
+                                    // ponía TP/SL de esta ranura sobre la ajena.
+                                    let cantidad_llenada =
+                                        ejecutada.map_or(final_qty.abs(), |q| q.min(final_qty.abs()));
                                     if order_tp_price > 0.0 && order_sl_price > 0.0 {
                                         let tag = if is_high_confidence { "🎯 [OCO TENSOR]" } else { "🛡️ [OCO GUARD]" };
                                         telemetry_engine::telemetry!(
@@ -4432,7 +4618,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     break;
                                                 }
                                             }
-                                            let qty_intent = final_qty.abs();
+                                            let qty_intent = cantidad_llenada;
                                             let qty_bracket = exec_clone
                                                 .load()
                                                 .fetch_position_risk()
@@ -4473,33 +4659,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     // persiste la τ que motivó la entrada y la
                                                     // recuperación B2.7 re-protege con rigor
                                                     // espectral en vez del ancla rápida.
-                                                    let tau_entry = arena_clone
-                                                        .coins
-                                                        .get(coin_id)
-                                                        .and_then(|c| {
-                                                            c.positions
-                                                                .slots()
-                                                                .into_iter()
-                                                                .find(|p| p.is_open() && p.is_long.load(Ordering::Relaxed) == final_is_long)
-                                                                .or_else(|| c.positions.slots().into_iter().find(|p| p.is_open()))
-                                                                .map(|p| p.entry_tau_ms.load(Ordering::Relaxed))
-                                                        })
-                                                        .unwrap_or(0);
-                                                    let ml_entry = arena_clone
-                                                        .coins
-                                                        .get(coin_id)
-                                                        .map(|c| c.ml_prob.load(Ordering::Relaxed))
-                                                        .unwrap_or(0.5);
-                                                    let jr = format!(
-                                                        "{{\"ts\":{},\"sym\":\"{}\",\"long\":{},\"qty\":{:.8},\"px\":{:.4},\"tau_ms\":{},\"ml\":{:.4}}}\n",
-                                                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(),
-                                                        parsed_sym_str, final_is_long, final_qty.abs(), _entry_price, tau_entry, ml_entry
+                                                    // CL-45b: con lo ejecutado y la τ de la ranura
+                                                    // de ESTA reserva (antes: la cantidad pedida y la
+                                                    // primera ranura abierta del lado).
+                                                    anotar_diario_de_posicion(
+                                                        &arena_clone,
+                                                        &reservation,
+                                                        &parsed_sym_str,
+                                                        final_is_long,
+                                                        cantidad_llenada,
+                                                        _entry_price,
                                                     );
-                                                    let _ = std::fs::OpenOptions::new()
-                                                        .create(true)
-                                                        .append(true)
-                                                        .open("data/position_journal.jsonl")
-                                                        .and_then(|mut f| std::io::Write::write_all(&mut f, jr.as_bytes()));
                                                     break;
                                                 }
                                                 Err(e) => {
@@ -4585,6 +4755,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     );
                                                     exec_clone.load().trigger_kill_switch();
                                                     arena_clone.kill_switch_active.store(true, Ordering::SeqCst);
+                                                    // CL-44 (ADR-0015): el latch no abandona
+                                                    // la posición. El vigilante la audita en
+                                                    // 5 s: re-bracket o, con rechazos
+                                                    // repetidos, cierre de escalada; y el
+                                                    // núcleo sigue gestionando su SL local.
+                                                    quantum_arena::protection_health::mark_dirty();
                                                     // SIN rollback: el estado local refleja la
                                                     // posición que el exchange aún sostiene.
                                                 }
@@ -4773,6 +4949,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .kill_switch_active
                 .store(true, Ordering::SeqCst);
             executor.trigger_kill_switch();
+            // CL-44b (ADR-0015): el vigilante no audita durante el aplanado
+            // final. La guarda no se suelta: el proceso sale con ella puesta.
+            let _aplanado = quantum_arena::protection_health::begin_flatten();
+            rt_handle_for_thread.block_on(esperar_auditoria_en_curso());
             match rt_handle_for_thread.block_on(executor.flatten_all_positions()) {
                 Ok((closed, skipped)) => telemetry_server::telemetry_log!(
                     "🛑 [SHUTDOWN] Flatten-all completado: {} cerradas, {} ya planas.",
@@ -4783,6 +4963,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "🛑 [SHUTDOWN] Flatten-all con error: {:?} — el arranque próximo reconciliará.",
                     e
                 ),
+            }
+            // CL-44b: tras salir no queda auditoría que purgue; una pierna sin
+            // posición debajo dispararía sobre la siguiente posición del lado.
+            if let Ok(positions) = rt_handle_for_thread.block_on(executor.fetch_position_risk()) {
+                rt_handle_for_thread.block_on(purge_orphan_legs(&executor, &positions));
             }
             persist_kelly_envelope(&risk_envelope);
             telemetry_server::telemetry_log!(
@@ -4815,6 +5000,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         rt.block_on(async move {
             let mut retry_count = 0;
+            // CL-50: sólo una reconexión se anuncia; la primera conexión no
+            // debe reiniciar los motores recién calentados.
+            let mut conexiones = data_ingest::cola_ws::ConexionesWs::new();
         loop {
             let current_url = ws_url.load().to_string();
             let url = url::Url::parse(&current_url).expect("Invalid WS URL");
@@ -4882,15 +5070,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok((ws_stream, _)) => {
                     telemetry_server::telemetry_log!("✅ [WS] WebSocket TLS Connected with TCP_NODELAY.");
                     retry_count = 0; // Reset retries on success
-                    let sys_data = b"[SYSTEM:RECONNECT]".to_vec();
-                    loop {
-                        match tx_events.try_send(sys_data.clone()) {
-                            Ok(_) => break,
-                            Err(crossbeam_channel::TrySendError::Full(_)) => {
-                                { let _ = rx_events_dropper.try_recv(); dropped_events.fetch_add(1, std::sync::atomic::Ordering::Relaxed); } // CERT-M1-H01: contar
-                            }
-                            Err(crossbeam_channel::TrySendError::Disconnected(_)) => break,
-                        }
+                    if conexiones.establecida() {
+                        data_ingest::cola_ws::encolar(
+                            &tx_events,
+                            &rx_events_dropper,
+                            data_ingest::cola_ws::CENTINELA_RECONEXION.to_vec(),
+                            &estado_cola,
+                        );
                     }
                     let (_, mut read) = ws_stream.split();
 
@@ -4905,16 +5091,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             msg_opt = tokio::time::timeout(std::time::Duration::from_secs(watchdog_secs), read.next()) => {
                                 match msg_opt {
                                     Ok(Some(Ok(msg))) => {
-                                        let data = msg.into_data();
-                                        loop {
-                                            match tx_events.try_send(data.clone()) {
-                                                Ok(_) => break,
-                                                Err(crossbeam_channel::TrySendError::Full(_)) => {
-                                                    let _ = rx_events_dropper.try_recv(); // Bounded Drop Oldest (Drop backpressure)
-                                                }
-                                                Err(crossbeam_channel::TrySendError::Disconnected(_)) => break,
-                                            }
-                                        }
+                                        // Bounded Drop Oldest, contado (CL-52).
+                                        data_ingest::cola_ws::encolar(
+                                            &tx_events,
+                                            &rx_events_dropper,
+                                            msg.into_data(),
+                                            &estado_cola,
+                                        );
                                     }
                                     Ok(Some(Err(e))) => {
                                         telemetry_server::telemetry_log!("⚠️ [WS] Connection Error: {:?}", e);

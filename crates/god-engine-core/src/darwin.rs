@@ -673,32 +673,9 @@ impl DarwinDaemon {
             .unwrap_or(false);
         if clears_margin && clears_dsr && allow_hotswap {
             println!("[Darwin] 🧬 Candidate cleared both OOS margin AND DSR multiplicity gate ({:.4} >= 0.95); authorized promotion.", dsr_verdict.dsr);
-            best_all_time.0.apply_to_arena(&self.live_arena);
-
-            let mut full_genotype =
-                quantum_arena::genome::SuperGenotype::current_from_arena(&self.live_arena);
-            full_genotype.global_leverage = best_all_time.0.global_leverage;
-            full_genotype.trend_threshold = best_all_time.0.trend_threshold;
-            full_genotype.maker_spread_pct = best_all_time.0.maker_spread_pct;
-            full_genotype.maker_obi_threshold = best_all_time.0.maker_obi_threshold;
-            full_genotype.scalp_obi_threshold = best_all_time.0.scalp_obi_threshold;
-            full_genotype.tp_horizon_curve = quantum_arena::temporal_spectrum::HorizonCurve {
-                a: best_all_time.0.tp_curve_a,
-                b: best_all_time.0.tp_curve_b,
-            };
-            full_genotype.sl_horizon_curve = quantum_arena::temporal_spectrum::HorizonCurve {
-                a: best_all_time.0.sl_curve_a,
-                b: best_all_time.0.sl_curve_b,
-            };
-            full_genotype.derive_anchors_from_curves();
-            full_genotype.capital_split_scalp = best_all_time.0.capital_split_scalp;
-            full_genotype.min_confidence_btc = best_all_time.0.min_confidence;
-            full_genotype.explosive_leverage_multiplier =
-                best_all_time.0.explosive_leverage_multiplier;
-
-            match quantum_arena::genome_store::GenomeEnvelope::promote(
-                full_genotype,
-                "darwin_daemon",
+            match promover_candidato(
+                &best_all_time.0,
+                &self.live_arena,
                 &format!(
                     "oos_fitness {:.4} (baseline_oos {:.4}, is_fitness {:.4}, N={})",
                     candidate_oos_fitness, baseline_oos_fitness, best_all_time.1, total_trials
@@ -716,9 +693,113 @@ impl DarwinDaemon {
     }
 }
 
+/// CL-53 (FMT-260): el candidato pasa por el embudo del almacén ANTES de
+/// tocar el arena y sólo un genoma aceptado se aplica. Antes se aplicaba
+/// primero y un rechazo del gate dejaba el arena operando con un genoma que
+/// el almacén nunca sancionó. Es el orden de la FASE 3 del demonio online.
+pub fn promover_candidato(
+    candidato: &Genotype,
+    arena: &GlobalArena,
+    razon: &str,
+) -> std::io::Result<quantum_arena::genome_store::GenomeEnvelope> {
+    let mut full_genotype = quantum_arena::genome::SuperGenotype::current_from_arena(arena);
+    full_genotype.global_leverage = candidato.global_leverage;
+    full_genotype.trend_threshold = candidato.trend_threshold;
+    full_genotype.maker_spread_pct = candidato.maker_spread_pct;
+    full_genotype.maker_obi_threshold = candidato.maker_obi_threshold;
+    full_genotype.scalp_obi_threshold = candidato.scalp_obi_threshold;
+    full_genotype.tp_horizon_curve = quantum_arena::temporal_spectrum::HorizonCurve {
+        a: candidato.tp_curve_a,
+        b: candidato.tp_curve_b,
+    };
+    full_genotype.sl_horizon_curve = quantum_arena::temporal_spectrum::HorizonCurve {
+        a: candidato.sl_curve_a,
+        b: candidato.sl_curve_b,
+    };
+    full_genotype.derive_anchors_from_curves();
+    full_genotype.capital_split_scalp = candidato.capital_split_scalp;
+    full_genotype.min_confidence_btc = candidato.min_confidence;
+    full_genotype.explosive_leverage_multiplier = candidato.explosive_leverage_multiplier;
+
+    let env = quantum_arena::genome_store::GenomeEnvelope::promote(full_genotype, "darwin_daemon", razon)?;
+    aplicar_promovido(&env, arena);
+    Ok(env)
+}
+
+/// CL-53b — aplica al arena el genoma promovido tal como lo cargarán de
+/// `active.json` los vigilantes del núcleo y del host (`load_active`
+/// normaliza con `from_vector`). Antes el arena recibía el genoma crudo y
+/// operaba con él hasta que un vigilante releía el disco.
+fn aplicar_promovido(env: &quantum_arena::genome_store::GenomeEnvelope, arena: &GlobalArena) {
+    match env.como_se_carga() {
+        Ok(cargado) => cargado.apply_to_arena(arena),
+        Err(_) => {
+            let mut normalizado = env.clone();
+            normalizado.genome =
+                quantum_arena::genome::SuperGenotype::from_vector(&env.genome.to_vector());
+            normalizado.apply_to_arena(arena);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// CL-53b — la promoción aplica el genoma que carga el almacén. Con
+    /// un gen fuera de cota la diferencia se ve: el arena recibe el valor
+    /// recortado, el mismo que aplicaría después el vigilante del núcleo.
+    #[test]
+    fn cl53b_la_promocion_aplica_el_genoma_que_carga_el_almacen() {
+        use quantum_arena::genome::SuperGenotype;
+        use quantum_arena::genome_store::{GenomeEnvelope, SCHEMA_VERSION};
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        let mut genome = SuperGenotype::current_from_arena(&arena);
+        genome.global_leverage = 1.0e6;
+        let env = GenomeEnvelope {
+            schema_version: SCHEMA_VERSION,
+            generation: 7,
+            created_ms: 0,
+            source: "darwin_daemon".into(),
+            parent_generation: 6,
+            promotion_reason: "cl53b".into(),
+            genome,
+        };
+        aplicar_promovido(&env, &arena);
+        let esperado = env.como_se_carga().unwrap().genome;
+        assert!(esperado.global_leverage < 1.0e6);
+        assert_eq!(
+            SuperGenotype::current_from_arena(&arena).global_leverage,
+            esperado.global_leverage
+        );
+        // Y la promoción de Darwin pasa por aquí, no por el genoma crudo.
+        let fuente = include_str!("darwin.rs");
+        let i = fuente.find("pub fn promover_candidato(").unwrap();
+        let cuerpo = &fuente[i..i + fuente[i..].find("\n}\n").unwrap()];
+        assert!(cuerpo.contains("aplicar_promovido(&env, arena);"));
+        assert!(!cuerpo.contains(".apply_to_arena("));
+    }
+
+    /// CL-53: un candidato que el gate rechaza no llega al arena. Antes el
+    /// arena quedaba con su apalancamiento y sus curvas aunque `promote`
+    /// devolviera Err. El rechazo ocurre antes de escribir en disco.
+    #[test]
+    fn cl53_un_candidato_rechazado_no_llega_al_arena() {
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        let antes = Genotype::current_from_arena(&arena);
+        let mut candidato = Genotype::current_from_arena(&arena);
+        candidato.global_leverage = 77.0;
+        // TP diminuto frente a un SL enorme: la invariante RR del gate falla.
+        candidato.tp_curve_a = -9.5;
+        candidato.tp_curve_b = -0.2;
+        candidato.sl_curve_a = -3.0;
+        candidato.sl_curve_b = 0.35;
+        assert!(promover_candidato(&candidato, &arena, "cl53").is_err());
+        let despues = Genotype::current_from_arena(&arena);
+        assert_eq!(despues.global_leverage, antes.global_leverage);
+        assert_eq!(despues.tp_curve_a, antes.tp_curve_a);
+        assert_eq!(despues.sl_curve_a, antes.sl_curve_a);
+    }
 
     #[test]
     fn test_genotype_random_and_apply_to_arena() {

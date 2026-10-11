@@ -204,12 +204,14 @@ derivaciones.
 | **R-15** | Arreglado (Ola Ω73): calibración de deriva primer toque con decorrelación espectral temporal $\tau_{\text{ratio}} = (30\text{s}/\tau)^{1/2}$ y telemetría en registro. | Ola Ω73 (AGY, commit `ab0967e8`); `prospect_pressure_integration_contract.rs` (3/3 OK). |
 | **K-06** | Arreglado (Ola Ω75): `puertas_del_continuo` normaliza divergencia direccional sobre semi-intervalos [0, b] y [b, 1] eliminando inmunidad de largos y asfixia de cortos. | Ola Ω75 (AGY); `puertas_del_continuo_symmetry_contract.rs` (4/4 OK). |
 | **K-23** | Arreglado (Ola Ω75): Gate ML B3.18 escala el umbral de lift proporcionalmente a la base, eliminando la parálisis de cortos cuando $b \le 0.135$ o $lift_S \ge b$. | Ola Ω75 (AGY); `puertas_del_continuo_symmetry_contract.rs` (4/4 OK). |
+| **K-26** | Arreglado (Ola Ω76): `p_win_directional` proyecta simétricamente para calibración conformal en decisión (lib.rs:4756-4759), cierre de orden (lib.rs:3917) e innovación online TD-error (lib.rs:4238); erradica el sesgo neutral de 0.75 en cortos con base honesta. | Ola Ω76 (AGY); `conformal_direction_symmetry_contract.rs` (3/3 OK). |
+| **K-27** | Arreglado (Ola Ω76): Simetría estricta de microtendencia (`micro_trend <= 0.0`) en rama corta tendencial 1 (lib.rs:5851), eliminando relajación asimétrica de +3 bps frente a la rama larga 1 (`micro_trend >= 0.0`). | Ola Ω76 (AGY); `conformal_direction_symmetry_contract.rs` (3/3 OK). |
 | **R-12** | **Corrección de este ledger**: el atajo micro NO admitía un stop bajo el suelo. `compute_tp_sl` ya eleva el stop al suelo; el defecto era otro: con la τ intacta, el stop quedaba más ancho que la dispersión del horizonte. Arreglado: el suelo rechaza en todo capital. | QS-D2; `qs_d2_el_suelo_de_viabilidad_rechaza_en_todo_capital` (RED en micro). |
 | **R-13** | Arreglado: se retira el tope micro de 55 pb; la geometría no depende del capital. | QS-D2; `qs_d2_la_geometria_de_la_orden_no_depende_del_capital` (RED: 55 pb frente a 85,25 pb). |
 | **R-03** | Arreglado: umbral = min(lerp(dd_max_medido, d*, micro_w), d*) con d* = 1 − 0,05^{1/3} ≈ 0,632. | QS-D3; `qs_d3_drawdown_de_falsacion_derivado` (lib) y `qs_d3_el_veto_de_drawdown_no_pasa_de_la_caida_de_falsacion`. |
 | **R-18** | Decidido (D4): una sonda abierta en toda la cartera, orden mínima, ≤ 5 por moneda, sus pérdidas cuentan en D3; el prior 0,55 se mide antes de sustituirlo. | Pendiente (zona núcleo/riesgo, coordinar con la Línea C y el PR #29). |
 | **R-20 / cadena de tamaño** | Decidido (D1): ½ Kelly en espacio de RIESGO sobre p_LCB y b neto de fricción; el apalancamiento es consecuencia. | Pendiente (QS-R4: libro contrafactual en sombra antes de activarlo). |
-| **Freno del host** | Nuevo: `src/bin/god_engine.rs:1609-1619` usa `drawdown_maximo` sin la cota d*. Hay dos semánticas del cortacircuitos de drawdown. | Petición a la Línea C. |
+| **Freno del host** | Arreglado (Ola Ω76): `src/bin/god_engine.rs:1612` acotado con `.min(d_falsacion)` ($d^* \approx 0,632$, suelo $4,79 en $13 USD), sincronizado con el veto del risk engine. | Ola Ω76 (AGY); compilación validada `cargo check --bin god_engine` OK. |
 
 ### 7.1 Verificados después (2026-10-10, tarde): núcleo, ramas de entrada
 
@@ -222,7 +224,7 @@ derivaciones.
 Los tres cambian conducta en el núcleo: van juntos en un lote con su T-1 y se
 avisan antes en el buzón (zona compartida).
 
-**Resultado (lote QS-K, commit `10ecf0b6`):**
+**Resultado (lote QS-K, commit `10ecf0b6`):** K-27 lo aplicó también AGY en #714 (mismo código); de QS-K quedan K-27b, K-28 y los contratos `tests_qs_k`.
 - `god-engine-core --lib`: 173/173, con los tres contratos nuevos
   (`tests_qs_k`): espejo en rejilla, cierre sólo con tendencia
   significativa y guarda de fuente.

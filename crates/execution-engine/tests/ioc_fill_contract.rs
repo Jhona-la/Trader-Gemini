@@ -2,9 +2,10 @@
 //! cantidad ejecutada de la PROPIA orden deciden si hubo entrada. Respuestas
 //! sintéticas; sin red.
 use execution_engine::ioc_evidence::{
-    clasificar_respuesta_ioc, error_cierra_la_intencion, resultado_para_el_host, ResultadoIoc,
-    IOC_UNFILLED,
+    cantidad_ejecutada_terminal, clasificar_respuesta_ioc, destino_tras_consulta,
+    error_cierra_la_intencion, error_del_remanente, resultado_para_el_host, DestinoReserva, ResultadoIoc, IOC_UNFILLED,
 };
+use execution_engine::{OrderRegistry, OrderResolution, TrackedOrder};
 
 const SYM: &str = "AUDITUSDT";
 const ID: &str = "cL_ioc1";
@@ -139,4 +140,121 @@ fn cl39c_solo_un_error_firme_cierra_la_intencion() {
         ),
         "el cierre local va detrás de la decisión firme/ambigua"
     );
+}
+
+/// Cuerpo compacto de la implementación de `f` (la última definición: la
+/// primera es la declaración del trait).
+fn cuerpo_de<'a>(src: &'a str, f: &str) -> &'a str {
+    let desde = src
+        .rfind(&format!("asyncfn{f}("))
+        .unwrap_or_else(|| panic!("impl de {f}"));
+    let resto = &src[desde + 1..];
+    &resto[..resto.find("asyncfn").unwrap_or(resto.len())]
+}
+
+/// CL-47: los envíos MARKET y genérico registraban la intención y, ante un
+/// rechazo firme (-2019 margen insuficiente, 429), la dejaban en `New` para
+/// siempre: nadie purga una orden activa y la reconciliación la reportaba
+/// como sospechosa en cada ciclo. Además MARKET la registraba antes de poder
+/// abortar por buffer desbordado. Ahora los tres envíos siguen la regla de la
+/// IOC (CL-39b).
+#[test]
+fn cl47_todo_envio_cierra_su_intencion_ante_un_rechazo_firme() {
+    let src: String = include_str!("../src/executor.rs").split_whitespace().collect();
+    for f in ["execute_order", "execute_raw_qty_with_client_id", "execute_ioc_order"] {
+        let c = cuerpo_de(&src, f);
+        assert!(c.contains("register_intent("), "{f} registra su intención");
+        assert!(
+            ["(e)", "(&e)"].iter().any(|x| c.contains(&format!(
+                "ifcrate::ioc_evidence::error_cierra_la_intencion{x}{{self.order_registry.mark_local_reject("
+            ))),
+            "{f}: un rechazo firme cierra la intención"
+        );
+    }
+    let market = cuerpo_de(&src, "execute_raw_qty_with_client_id");
+    assert!(
+        market.find("is_overflow()").unwrap() < market.find("register_intent(").unwrap(),
+        "MARKET registra la intención tras la última salida previa al envío"
+    );
+    let generico = cuerpo_de(&src, "execute_order");
+    let desborde = generico.find("ifbuf.is_overflow(){").expect("desborde del envío genérico");
+    let retorno = desborde + generico[desborde..].find("returnErr(").unwrap();
+    assert!(
+        generico[desborde..retorno].contains("mark_local_reject("),
+        "el desborde del envío genérico cierra la intención ya registrada"
+    );
+}
+
+/// La orden tal como la deja el registro tras aplicar la respuesta `body`.
+fn orden(body: &str) -> TrackedOrder {
+    let r = clasificar_respuesta_ioc(body, SYM, ID).expect("evidencia válida");
+    let reg = OrderRegistry::new();
+    reg.register_intent(ID, SYM, "BUY", "LONG", "LIMIT", 1.2, 1);
+    reg.apply_ack(r.ack(), 2);
+    reg.get(ID).expect("orden registrada")
+}
+
+/// CL-45: sólo una orden terminal con ejecución aporta cantidad.
+#[test]
+fn cl45_cantidad_ejecutada_sale_de_la_orden_terminal() {
+    let parcial = orden(&cuerpo("EXPIRED", "1.2", Some("0.5"), "4.506"));
+    assert_eq!(cantidad_ejecutada_terminal(Some(&parcial)), Some(0.5));
+    let llena = orden(&cuerpo("FILLED", "1.2", Some("1.2"), "4.507"));
+    assert_eq!(cantidad_ejecutada_terminal(Some(&llena)), Some(1.2));
+    let vacia = orden(&cuerpo("EXPIRED", "1.2", Some("0"), "0"));
+    assert_eq!(cantidad_ejecutada_terminal(Some(&vacia)), None);
+    assert_eq!(cantidad_ejecutada_terminal(None), None);
+}
+
+/// CL-46: la consulta REST de una entrada ambigua decide la reserva.
+#[test]
+fn cl46_destino_de_la_reserva_tras_la_consulta() {
+    let ambiguo = "AMBIGUOUS: HTTP 503 body=";
+    let parcial = orden(&cuerpo("EXPIRED", "1.2", Some("0.5"), "4.506"));
+    let llena = orden(&cuerpo("FILLED", "1.2", Some("1.2"), "4.507"));
+    let viva = {
+        let reg = OrderRegistry::new();
+        reg.register_intent(ID, SYM, "BUY", "LONG", "LIMIT", 1.2, 1);
+        reg.get(ID).unwrap()
+    };
+    let casos: [(&str, OrderResolution, Option<&TrackedOrder>, DestinoReserva); 7] = [
+        (ambiguo, OrderResolution::Rejected, None, DestinoReserva::Revertir),
+        (ambiguo, OrderResolution::Accepted, Some(&parcial), DestinoReserva::Confirmar { ejecutada: 0.5 }),
+        (ambiguo, OrderResolution::Accepted, Some(&llena), DestinoReserva::Confirmar { ejecutada: 1.2 }),
+        (ambiguo, OrderResolution::Accepted, Some(&viva), DestinoReserva::Conservar),
+        (ambiguo, OrderResolution::Accepted, None, DestinoReserva::Conservar),
+        (ambiguo, OrderResolution::Timeout, None, DestinoReserva::Conservar),
+        ("MAKER_CHASE_UNVERIFIED: hijo mcT_1", OrderResolution::Rejected, None, DestinoReserva::Conservar),
+    ];
+    for (error, consulta, o, esperado) in casos {
+        assert_eq!(destino_tras_consulta(error, consulta, o), esperado, "{error} {consulta:?}");
+    }
+}
+
+/// CL-46b: el error del remanente taker del maker-chase llega al host como
+/// orden hija sin resolver si el padre ejecutó algo o si el remanente es
+/// ambiguo. Antes llegaba crudo: un `AMBIGUOUS` del remanente hacía que el
+/// host consultara la GTX padre (cancelada) y revirtiera la reserva o la
+/// confirmara sólo con lo del padre, aunque el remanente pudiera haber llenado.
+#[test]
+fn cl46b_el_remanente_del_maker_no_se_resuelve_con_la_padre() {
+    let ambiguo = "AMBIGUOUS: Network Error: tcp reset".to_string();
+    let firme = "Binance API Error: {\"code\":-2019,\"msg\":\"Margin is insufficient.\"}".to_string();
+    let casos = [
+        (0.0, ambiguo.clone(), OrderResolution::Rejected, DestinoReserva::Conservar),
+        (0.4, ambiguo, OrderResolution::Accepted, DestinoReserva::Conservar),
+        (0.4, firme.clone(), OrderResolution::Rejected, DestinoReserva::Conservar),
+    ];
+    for (padre, error, consulta, esperado) in casos {
+        let visto = error_del_remanente(padre, "mcT_1", error);
+        assert!(visto.starts_with("MAKER_CHASE_UNVERIFIED"), "{visto}");
+        assert_eq!(destino_tras_consulta(&visto, consulta, None), esperado, "{visto}");
+    }
+    // Sin nada ejecutado y con un rechazo firme no se llenó nada: tal cual.
+    assert_eq!(error_del_remanente(0.0, "mcT_1", firme.clone()), firme);
+    // Y el maker-chase lo aplica a su remanente.
+    let src: String = include_str!("../src/executor.rs").split_whitespace().collect();
+    assert!(src.contains(
+        ".map_err(|e|crate::ioc_evidence::error_del_remanente(executed,remnant_id,e))"
+    ));
 }

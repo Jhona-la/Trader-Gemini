@@ -634,6 +634,25 @@ impl GlobalArena {
         self.tick_counter.fetch_add(1, Ordering::Relaxed)
     }
 
+    /// CL-44b (ADR-0015) — el aplanado total del sistema inmune cierra en el
+    /// exchange TODAS las posiciones sin tocar sus ranuras locales, que siguen
+    /// abiertas hasta la reconciliación. Con el kill-switch el núcleo sigue
+    /// gestionándolas (CL-43): sin esto, un SL o TP local posterior se
+    /// contabilizaba como cierre real, a un precio que no es el del aplanado,
+    /// y alimentaba capital, Kelly, calibradores y el sobre de Kelly en disco.
+    ///
+    /// Se consume la confirmación ANTES de aplanar: lo que el núcleo cierre
+    /// después es papel (no aprende) y el host sigue enviando su reduce-only
+    /// de respaldo, que cierra lo que el aplanado no pudo. Devuelve cuántas
+    /// ranuras abiertas tenían confirmación.
+    pub fn consume_exchange_confirmations(&self) -> usize {
+        self.coins
+            .iter()
+            .flat_map(|c| c.positions.slots())
+            .filter(|p| p.consume_exchange_confirmation())
+            .count()
+    }
+
     /// MOD6/8-010 (INFORME DECIMOCUARTO): lector saturado de `used_margin`.
     /// Con `fetch_sub` atómico, un drift contable (p. ej. doble liberación
     /// de margen tras reconciliación) puede dejar el átomo levemente

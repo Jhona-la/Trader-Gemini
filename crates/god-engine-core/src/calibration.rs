@@ -335,6 +335,35 @@ pub fn normalized_directional_divergence(p: f64, base: f64) -> f64 {
     }
 }
 
+/// K-26 — PROBABILIDAD DIRECCIONAL DE ÉXITO CALIBRADA (Ola Ω76).
+///
+/// Transforma la probabilidad cruda `p = P(Long TP antes que SL)` y la base honesta `base`
+/// a la probabilidad calibrada de que la orden gane, según su dirección:
+///   - Para Long: es simplemente `p`.
+///   - Para Short: proyecta simétricamente a través de la divergencia direccional:
+///     * Si p == base (mercado neutro): devuelve `base` (ambos lados comparten la misma tasa base honesta).
+///     * Si p == 0.0 (máximo impulso bajista): devuelve 1.0 (certeza de acierto bajista).
+///     * Si p == 1.0 (máxima oposición bajista): devuelve 0.0.
+///     * Si base == 0.5: reduce exactamente a `1.0 - p`.
+///
+/// Erradica el sesgo de K-26 donde evaluar `1.0 - p` con base 0.25 trataba el estado neutro
+/// como una probabilidad artificialmente inflada de 0.75 para cortos.
+#[inline(always)]
+pub fn p_win_directional(is_long: bool, p: f64, base: f64) -> f64 {
+    if is_long {
+        if p.is_finite() { p.clamp(0.0, 1.0) } else { 0.5 }
+    } else {
+        let div = normalized_directional_divergence(p, base);
+        let b = if base.is_finite() { base.clamp(0.01, 0.99) } else { 0.5 };
+        let div_short = -div;
+        if div_short >= 0.0 {
+            (b + div_short * (1.0 - b)).clamp(0.0, 1.0)
+        } else {
+            (b + div_short * b).clamp(0.0, 1.0)
+        }
+    }
+}
+
 
 /// D-749 — EL VETO DEL MURO COMPARABA UNA RAZÓN CONTRA UNA FRACCIÓN.
 ///
@@ -719,5 +748,46 @@ mod tests_xliv_olvido {
         let nan_div = normalized_directional_divergence(f64::NAN, 0.25);
         assert!((nan_div - 0.25 / 0.75).abs() < 1e-12); // p cae a 0.50 -> (0.50 - 0.25) / 0.75 = 1/3
         assert_eq!(normalized_directional_divergence(0.5, f64::NAN), 0.0); // base cae a 0.50 -> neutral
+    }
+
+    #[test]
+    fn ola76_k26_p_win_directional_symmetry() {
+        // 1. Long siempre coincide con p
+        for &p in &[0.0, 0.1, 0.25, 0.5, 0.75, 1.0] {
+            assert_eq!(p_win_directional(true, p, 0.25), p);
+            assert_eq!(p_win_directional(true, p, 0.50), p);
+        }
+
+        // 2. Short en base = 0.50 coincide EXACTAMENTE con legacy (1.0 - p)
+        for &p in &[0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0] {
+            let legacy = 1.0 - p;
+            let pw = p_win_directional(false, p, 0.50);
+            assert!((pw - legacy).abs() < 1e-12, "p={p}: legacy={legacy}, pw={pw}");
+        }
+
+        // 3. Neutralidad: si p == base, ambos lados tienen p_win == base
+        for &b in &[0.10, 0.25, 0.33, 0.50, 0.75] {
+            assert_eq!(p_win_directional(true, b, b), b);
+            assert_eq!(p_win_directional(false, b, b), b);
+        }
+
+        // 4. Extremos de señal:
+        // p = 0.0 (máximo bajista) -> Short tiene p_win = 1.0
+        // p = 1.0 (máximo alcista) -> Short tiene p_win = 0.0
+        for &b in &[0.10, 0.25, 0.33, 0.50, 0.75] {
+            assert_eq!(p_win_directional(false, 0.0, b), 1.0);
+            assert_eq!(p_win_directional(false, 1.0, b), 0.0);
+        }
+
+        // 5. Monotonía decreciente para Short respecto a p
+        let b = 0.25;
+        let mut prev = 1.0;
+        for i in 0..=100 {
+            let p = i as f64 / 100.0;
+            let pw = p_win_directional(false, p, b);
+            assert!(pw <= prev + 1e-15, "fallo de monotonía decreciente en p={p}");
+            assert!(pw >= 0.0 && pw <= 1.0, "fuera de rango: {pw}");
+            prev = pw;
+        }
     }
 }

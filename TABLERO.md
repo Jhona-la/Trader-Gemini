@@ -84,13 +84,13 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω75 cerrada / Ficha #713)
+## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω76 cerrada / Ficha #714)
 
-- **Haciendo ahora**: Ola Ω75 (#713) — Resolución de Simetría Direccional en Puertas del Continuo (K-06) y Gate ML B3.18 (K-23):
-  - K-06: `puertas_del_continuo` normaliza la divergencia direccional sobre los semi-intervalos continuos [0, base] y [base, 1] mediante `normalized_directional_divergence(p, base)`. Erradica la inmunidad artificial de largos (ahora vetan en d < −0.80 cuando p < 0.20·b) y la asfixia prematura de cortos (veto en p > b + 0.80(1−b)), unificando el techo de boost a 1.50× simétrico en ambos lados.
-  - K-23: El Gate ML B3.18 evalúa el lift requerido proporcionalmente al espacio disponible (`edge_direccional >= 2.0 * lift_eff`). Para órdenes cortas, el umbral es b·(1 − 2·lift_S) >= 0.40·b > 0 siempre, erradicando la parálisis matemática de posiciones cortas cuando b <= 0.135 o lift_S >= b, manteniendo coincidencia exacta con legacy en base = 0.50.
-  - Rama Swing: Escala proporcional continua integrada en `effective_ml_long/short` y `raw_conf` en `god-engine-core::lib.rs:6300-6304, 6375, 6398`.
-  - Certificación: 4/4 tests en `puertas_del_continuo_symmetry_contract.rs`, 100% tests de `god-engine-core` y `metacortex-engine` (81/81 OK).
+- **Haciendo ahora**: Ola Ω76 (#714) — Resolución de Simetría Direccional Conformal (K-26), Microtendencia (K-27) y Sincronización Freno del Host:
+  - K-26: `p_win_directional(is_long, p, base)` proyecta simétricamente para calibración conformal en decisión (lib.rs:4756-4759), cierre de orden (lib.rs:3917) e innovación online TD-error (lib.rs:4238). En neutralidad (p == base), ambos lados reciben p_win = base (erradica el sesgo donde 1.0 - p inflaba artificialmente cortos a 0.75 en base 0.25). En base = 0.50 reduce idénticamente a 1.0 - p.
+  - K-27: Simetría estricta de microtendencia (`micro_trend <= 0.0`) en rama tendencial corta 1 (lib.rs:5851), eliminando la relajación de +3 bps (<= 0.00003) para reflejar fielmente la rama larga 1 (micro_trend >= 0.0).
+  - Sincronización Freno del Host (QS-D3 / ADR-0016): Watchdog del host en `src/bin/god_engine.rs:1612` acotado con `.min(d_falsacion)` ($d^* \approx 0.632$, suelo $4.79 en $13 USD), sincronizado con el veto del risk engine.
+  - Certificación: 3/3 tests en `conformal_direction_symmetry_contract.rs`, 11/11 tests en `conformal_wiring_contract.rs`, `cargo check --bin god_engine` OK, `cargo check --workspace --all-targets` OK.
 - **Commiteado reciente**:
   - Ola Ω68 (#704, `194089b8`): Absorción analítica de Fokker-Planck en SDE VECM y first-passage time.
   - Plan Maestro Cuántico Integral (#705, `549fc536`): Documento canónico, 10 roles Senior, barrido R0-R9.
@@ -101,7 +101,8 @@
   - Ola Ω72 (#710, `759f44ec`): Zero-alloc hot-path en `signal-engine::orchestrator` y `risk-engine::selection_stats`.
   - Ola Ω73 (#711, `ab0967e8`): Simetría espejo anti-simétrica en Prospect Theory (C-10 / C-10b) y calibración browniana R-15.
   - Ola Ω74 (#712, `95412dd7`): Navier-Stokes EWMA (C-02), pesos del consejo (C-W) y concordancia de lado en deliberar.
-  - Ola Ω75 (#713): Simetría direccional en puertas del continuo (K-06) y gate ML B3.18 (K-23).
+  - Ola Ω75 (#713, `8f6bcc8a`): Simetría direccional en puertas del continuo (K-06) y gate ML B3.18 (K-23).
+  - Ola Ω76 (#714): Simetría conformal K-26, microtendencia K-27 y sincronización freno del host d*.
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados
   de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`).
   Toda la suite de crates pasando al 100% (153/153 en risk-engine, 120/120 en

@@ -146,13 +146,9 @@ impl GenomeEnvelope {
             }
         };
         match std::fs::read_to_string(active_path()) {
-            Ok(data) => match serde_json::from_str::<GenomeEnvelope>(&data) {
-                Ok(mut envelope) => {
-                    // F4-H3: Normalización y saneamiento estricto del genoma activo respecto a
-                    // cotas evolutivas e invariantes de curva (clamp, enforce_curve_rr, normalize_sl_curve_friction_floor).
-                    envelope.genome = SuperGenotype::from_vector(&envelope.genome.to_vector());
-                    Some(envelope)
-                }
+            // F4-H3: el genoma activo sale normalizado (ver `desde_json`).
+            Ok(data) => match Self::desde_json(&data) {
+                Ok(envelope) => Some(envelope),
                 Err(e) => {
                     // R-05: un genoma que existe pero no parsea es un evento
                     // crítico de linaje. NO se cae a ningún fallback: caer
@@ -173,6 +169,25 @@ impl GenomeEnvelope {
                 None
             }
         }
+    }
+
+    /// Sobre leído de JSON tal como lo entrega `load_active`. F4-H3:
+    /// normalización y saneamiento estricto del genoma respecto a cotas
+    /// evolutivas e invariantes de curva (clamp, enforce_curve_rr,
+    /// normalize_sl_curve_friction_floor).
+    pub fn desde_json(texto: &str) -> serde_json::Result<GenomeEnvelope> {
+        let mut envelope = serde_json::from_str::<GenomeEnvelope>(texto)?;
+        envelope.genome = SuperGenotype::from_vector(&envelope.genome.to_vector());
+        Ok(envelope)
+    }
+
+    /// CL-53b — el sobre tal como lo cargarán de `active.json` los
+    /// vigilantes del núcleo y del host, en el formato que escribe `promote`.
+    /// Quien aplica al arena un genoma recién promovido debe aplicar éste:
+    /// si no, el arena opera con un genoma que el almacén no sanciona hasta
+    /// que un vigilante vuelve a leer el disco.
+    pub fn como_se_carga(&self) -> serde_json::Result<GenomeEnvelope> {
+        Self::desde_json(&serde_json::to_string_pretty(self)?)
     }
 
     /// Única vía para cruzar la frontera entre entornos. Exige armado humano
@@ -613,6 +628,33 @@ mod tests {
         assert_eq!(back.schema_version, SCHEMA_VERSION);
         assert_eq!(back.parent_generation, 6);
         assert!(back.promotion_reason.contains("val_bce"));
+    }
+
+    /// CL-53b — `como_se_carga` coincide con lo que `load_active` lee del
+    /// archivo que escribe `promote`, también cuando la normalización cambia
+    /// el genoma.
+    #[test]
+    fn cl53b_como_se_carga_es_lo_que_lee_load_active() {
+        let mut genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        genome.global_leverage = 1.0e6;
+        let env = GenomeEnvelope {
+            schema_version: SCHEMA_VERSION,
+            generation: 7,
+            created_ms: 1_700_000_000_000,
+            source: "darwin_daemon".into(),
+            parent_generation: 6,
+            promotion_reason: "cl53b".into(),
+            genome,
+        };
+        let cargado = env.como_se_carga().expect("serializa y parsea");
+        let del_disco =
+            GenomeEnvelope::desde_json(&serde_json::to_string_pretty(&env).unwrap()).unwrap();
+        assert_eq!(cargado.genome.to_vector(), del_disco.genome.to_vector());
+        assert!(cargado.genome.global_leverage < 1.0e6, "la carga recorta a la cota");
+        // La lectura JSON no es bit a bit (serde_json sin `float_roundtrip`
+        // puede mover el último dígito): por eso `como_se_carga` pasa por el
+        // mismo texto que escribe `promote` y no sólo por `from_vector`.
+        assert_eq!(cargado.generation, 7);
     }
 
     #[test]

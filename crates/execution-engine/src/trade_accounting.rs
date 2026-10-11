@@ -25,9 +25,22 @@ use std::sync::LazyLock;
 use std::sync::Mutex;
 
 /// Ruta del diario persistente de fills/entradas.
-const FILLS_JOURNAL_PATH: &str = "data/trade_fills.jsonl";
-/// Ruta del diario de contexto de posiciones (B3.1).
-const POSITION_JOURNAL_PATH: &str = "data/position_journal.jsonl";
+/// CL-48: por entorno (`data/{demo|prod}/`), con la regla del host
+/// (`quantum_arena::paths`); se resuelve en el primer uso, tras cargar `.env`.
+static FILLS_JOURNAL_PATH: LazyLock<String> =
+    LazyLock::new(|| quantum_arena::paths::env_data_path("trade_fills.jsonl"));
+/// Ruta del diario de contexto de posiciones (B3.1). CL-48: el MISMO archivo
+/// que escribe el host; antes era común a demo y producción, y el respaldo
+/// del precio de entrada de un cierre de bracket real podía salir de testnet.
+static POSITION_JOURNAL_PATH: LazyLock<String> =
+    LazyLock::new(|| quantum_arena::paths::env_data_path("position_journal.jsonl"));
+
+/// Re-crea la carpeta del diario de fills (el disco pudo desaparecer).
+fn crear_carpeta_de_fills() {
+    if let Some(dir) = std::path::Path::new(FILLS_JOURNAL_PATH.as_str()).parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+}
 
 /// Un cierre por pierna de bracket, con todo el contexto disponible.
 #[derive(Debug, Clone)]
@@ -231,20 +244,20 @@ static FILLS_LINE_TX: LazyLock<std::sync::mpsc::Sender<String>> =
 
 fn drain_fills_journal(rx: std::sync::mpsc::Receiver<String>) {
     use std::io::Write;
-    let _ = std::fs::create_dir_all("data");
+    crear_carpeta_de_fills();
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(FILLS_JOURNAL_PATH)
+        .open(FILLS_JOURNAL_PATH.as_str())
         .ok();
     while let Ok(line) = rx.recv() {
         if file.is_none() {
             // Disco/directorio reapareció: reabrir antes de soltar la línea.
-            let _ = std::fs::create_dir_all("data");
+            crear_carpeta_de_fills();
             file = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open(FILLS_JOURNAL_PATH)
+                .open(FILLS_JOURNAL_PATH.as_str())
                 .ok();
         }
         match file.as_mut() {
@@ -256,7 +269,7 @@ fn drain_fills_journal(rx: std::sync::mpsc::Receiver<String>) {
                 if let Ok(mut f) = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(FILLS_JOURNAL_PATH)
+                    .open(FILLS_JOURNAL_PATH.as_str())
                 {
                     let _ = f.write_all(line.as_bytes());
                 }
@@ -272,7 +285,7 @@ fn journal_append(line: String) {
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(FILLS_JOURNAL_PATH)
+            .open(FILLS_JOURNAL_PATH.as_str())
         {
             let _ = f.write_all(line.as_bytes());
         }
@@ -362,14 +375,14 @@ static JOURNAL_CACHE: LazyLock<Mutex<JournalCache>> = LazyLock::new(|| {
 });
 
 pub fn last_journal_entry_px(symbol: &str, was_long: bool) -> Option<f64> {
-    let sig = std::fs::metadata(POSITION_JOURNAL_PATH)
+    let sig = std::fs::metadata(POSITION_JOURNAL_PATH.as_str())
         .ok()
         .and_then(|m| m.modified().ok().map(|t| (t, m.len())));
     let mut cache = JOURNAL_CACHE
         .lock()
         .unwrap_or_else(|p| p.into_inner());
     if !cache.loaded || cache.sig != sig {
-        let content = std::fs::read_to_string(POSITION_JOURNAL_PATH).unwrap_or_default();
+        let content = std::fs::read_to_string(POSITION_JOURNAL_PATH.as_str()).unwrap_or_default();
         let mut entries = Vec::new();
         for line in content.lines() {
             let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
