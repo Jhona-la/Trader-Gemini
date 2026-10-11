@@ -144,19 +144,73 @@ impl SpectralTape {
 
     /// Un trade real. `buyer_aggressor` = el comprador cruzó el spread.
     pub fn on_trade(&mut self, ts_ms: u64, price: f64, qty: f64, buyer_aggressor: bool) {
-        if !price.is_finite() || price <= 0.0 || !qty.is_finite() || qty <= 0.0 {
+        let Some((r, obs)) = self.prepare_trade(ts_ms, price, qty, buyer_aggressor) else {
             return;
+        };
+        self.apply_accepted_trade(ts_ms, price, r, obs);
+    }
+
+    /// Consulta inmutable de la misma admisión que usa on_trade.
+    ///
+    /// No reserva ni confirma una transición: sólo es válida mientras el tape
+    /// no cambie. Un coordinador puede madurar pronósticos con &SpectralTape
+    /// y luego llamar on_trade, que vuelve a validar. No garantiza una
+    /// transacción entre escritores ni autoriza omitir la validación al aplicar.
+    pub fn accepts_trade(&self, ts_ms: u64, price: f64, qty: f64, buyer: bool) -> bool {
+        self.prepare_trade(ts_ms, price, qty, buyer).is_some()
+    }
+
+    // Shared preflight: the forecast bank must reject before maturing any label.
+    // Totals bound the nonnegative kernel sums; signed notional is bounded by notional.
+    fn prepare_trade(
+        &self,
+        ts_ms: u64,
+        price: f64,
+        qty: f64,
+        buyer: bool,
+    ) -> Option<(f64, [f64; N_OBS])> {
+        if !price.is_finite()
+            || price <= 0.0
+            || !qty.is_finite()
+            || qty <= 0.0
+            || (self.started && ts_ms < self.last_ts)
+        {
+            return None;
         }
+        let r = if self.started {
+            let ratio = price / self.last_price;
+            if ratio.is_finite() && ratio > 0.0 {
+                ratio.ln()
+            } else {
+                price.ln() - self.last_price.ln()
+            }
+        } else {
+            0.0
+        };
+        let notional = price * qty;
+        let obs = [
+            r * r,
+            notional,
+            if buyer { notional } else { -notional },
+            1.0,
+            notional * notional,
+        ];
+        if notional <= 0.0
+            || obs[OBS_NOTIONAL_SQ] <= 0.0
+            || obs.iter().zip(self.totals.iter())
+                .any(|(v, total)| !v.is_finite() || !(total + v).is_finite())
+        {
+            return None;
+        }
+        Some((r, obs))
+    }
+
+    fn apply_accepted_trade(&mut self, ts_ms: u64, price: f64, r: f64, obs: [f64; N_OBS]) {
         if !self.started {
             self.started = true;
             self.first_ts = ts_ms;
             self.last_ts = ts_ms;
             self.last_price = price;
-        }
-        if ts_ms < self.last_ts {
-            // Reloj hacia atrás: el evento no puede reordenarse sin romper la
-            // causalidad de los núcleos; se descarta.
-            return;
         }
         let dt = (ts_ms - self.last_ts) as f64;
         if dt > 0.0 {
@@ -167,17 +221,13 @@ impl SpectralTape {
                 }
             }
         }
-        let r = (price / self.last_price).ln();
-        let r2 = r * r;
         if r != 0.0 && r.abs() < self.min_abs_ret {
             self.min_abs_ret = r.abs();
         }
-        let notional = price * qty;
+        let notional = obs[OBS_NOTIONAL];
         if notional < self.min_notional {
             self.min_notional = notional;
         }
-        let signed = if buyer_aggressor { notional } else { -notional };
-        let obs = [r2, notional, signed, 1.0, notional * notional];
         for a in self.acc.iter_mut() {
             for (v, o) in a.iter_mut().zip(obs.iter()) {
                 *v += o;
@@ -403,15 +453,14 @@ impl ForecastScore {
     /// entre climatología y persistencia (min(sse_clim, sse_persist)).
     /// Es > 0 si y solo si el modelo bate TANTO a la media como a la persistencia.
     pub fn skill_vs_best_null(&self) -> f64 {
-        let sse_null = if self.sse_clim > 0.0 && self.sse_persist > 0.0 {
-            self.sse_clim.min(self.sse_persist)
-        } else if self.sse_clim > 0.0 {
-            self.sse_clim
-        } else if self.sse_persist > 0.0 {
-            self.sse_persist
-        } else {
-            0.0
-        };
+        if [self.sse_model, self.sse_clim, self.sse_persist]
+            .iter()
+            .any(|s| !s.is_finite() || *s < 0.0)
+        {
+            return 0.0;
+        }
+        // A perfect null cannot be strictly beaten by a nonnegative squared loss.
+        let sse_null = self.sse_clim.min(self.sse_persist);
         if sse_null > 0.0 {
             1.0 - self.sse_model / sse_null
         } else {
@@ -425,6 +474,9 @@ struct Pending {
     t0: u64,
     x: Vec<f64>,
     persist: f64,
+    prediction: f64,
+    climatology: f64,
+    score_ready: bool,
     totals0: [f64; N_OBS],
 }
 
@@ -438,7 +490,7 @@ pub struct HorizonForecaster {
     rls: Rls,
     pending: VecDeque<Pending>,
     stride_ms: u64,
-    next_sample_ms: u64,
+    next_sample_ms: Option<u64>,
     matured: u64,
     warmup: u64,
     clim_sum: f64,
@@ -472,7 +524,7 @@ impl HorizonForecaster {
             rls: Rls::new(p, lambda, 1.0),
             pending: VecDeque::new(),
             stride_ms,
-            next_sample_ms: 0,
+            next_sample_ms: Some(0),
             matured: 0,
             warmup: memory_samples.ceil() as u64,
             clim_sum: 0.0,
@@ -530,11 +582,21 @@ impl HorizonForecaster {
     /// Vector de rasgos: sesgo + forma del espectro respecto de la escala
     /// base, y el pronóstico de persistencia.
     fn features(&self, tape: &SpectralTape, now: u64) -> Option<(Vec<f64>, f64)> {
+        if now < tape.last_ts() {
+            return None;
+        }
         let persist = self.implied(tape, self.base, now)?;
+        if !persist.is_finite() {
+            return None;
+        }
         let mut x = Vec::with_capacity(self.feat.len() + 1);
         x.push(1.0);
         for &k in &self.feat {
-            x.push(self.implied(tape, k, now)? - persist);
+            let shape = self.implied(tape, k, now)? - persist;
+            if !shape.is_finite() {
+                return None;
+            }
+            x.push(shape);
         }
         Some((x, persist))
     }
@@ -542,7 +604,7 @@ impl HorizonForecaster {
     /// Pronóstico actual para (now, now+h], en unidades del objetivo.
     pub fn predict(&self, tape: &SpectralTape, now: u64) -> Option<f64> {
         let (x, persist) = self.features(tape, now)?;
-        Some(persist + self.rls.predict(&x))
+        Some(persist + self.rls.predict(&x)).filter(|v| v.is_finite())
     }
 
     pub fn last_prediction(&self) -> Option<f64> {
@@ -556,10 +618,13 @@ impl HorizonForecaster {
     /// Llamar ANTES de `tape.on_trade(ts, …)`: madura las muestras cuya
     /// ventana (t0, t0+h] terminó antes de este evento.
     pub fn before_trade(&mut self, tape: &SpectralTape, ts_ms: u64) {
+        if !tape.is_started() || ts_ms < tape.last_ts() {
+            return;
+        }
         let h = self.horizon_ms as u64;
         let totals = tape.totals();
         while let Some(front) = self.pending.front() {
-            if front.t0 + h >= ts_ms {
+            if ts_ms.saturating_sub(front.t0) <= h {
                 break;
             }
             let s = self.pending.pop_front().expect("frente comprobado");
@@ -567,18 +632,14 @@ impl HorizonForecaster {
             for i in 0..N_OBS {
                 d[i] = totals[i] - s.totals0[i];
             }
-            if let Some(y) = self.realized(tape, &d) {
-                if self.matured >= self.warmup {
-                    let pred = s.persist + self.rls.predict(&s.x);
-                    let clim = if self.clim_n > 0.0 {
-                        self.clim_sum / self.clim_n
-                    } else {
-                        s.persist
-                    };
+            if let Some(y) = self.realized(tape, &d).filter(|v| v.is_finite()) {
+                // Evaluate what was available at issue, including its readiness.
+                // Earlier overlapping labels may have changed RLS/climatology since then.
+                if s.score_ready {
                     self.score.n += 1;
-                    self.score.sse_model = self.score.sse_model * self.clim_lambda + (y - pred).powi(2);
+                    self.score.sse_model = self.score.sse_model * self.clim_lambda + (y - s.prediction).powi(2);
                     self.score.sse_persist = self.score.sse_persist * self.clim_lambda + (y - s.persist).powi(2);
-                    self.score.sse_clim = self.score.sse_clim * self.clim_lambda + (y - clim).powi(2);
+                    self.score.sse_clim = self.score.sse_clim * self.clim_lambda + (y - s.climatology).powi(2);
                 }
                 self.rls.update(&s.x, y - s.persist);
                 self.clim_sum = self.clim_sum * self.clim_lambda + y;
@@ -590,16 +651,31 @@ impl HorizonForecaster {
 
     /// Llamar DESPUÉS de `tape.on_trade(ts, …)`: toma una muestra si toca.
     pub fn after_trade(&mut self, tape: &SpectralTape, ts_ms: u64) {
-        if ts_ms < self.next_sample_ms {
+        let Some(next_sample_ms) = self.next_sample_ms else {
+            return;
+        };
+        if ts_ms < next_sample_ms || !tape.is_started() || ts_ms != tape.last_ts() {
             return;
         }
-        self.next_sample_ms = ts_ms + self.stride_ms;
         if let Some((x, persist)) = self.features(tape, ts_ms) {
-            self.last_prediction = Some(persist + self.rls.predict(&x));
+            let prediction = persist + self.rls.predict(&x);
+            let climatology = if self.clim_n > 0.0 {
+                self.clim_sum / self.clim_n
+            } else {
+                persist
+            };
+            if !prediction.is_finite() || !climatology.is_finite() {
+                return;
+            }
+            self.next_sample_ms = ts_ms.checked_add(self.stride_ms);
+            self.last_prediction = Some(prediction);
             self.pending.push_back(Pending {
                 t0: ts_ms,
                 x,
                 persist,
+                prediction,
+                climatology,
+                score_ready: self.warmed_up(),
                 totals0: tape.totals(),
             });
         }
@@ -674,10 +750,13 @@ impl SpectralForecastBank {
     /// toma las muestras que toquen. El orden importa — un objetivo se
     /// cierra ANTES de que el evento que lo excede entre al tape.
     pub fn on_trade(&mut self, ts_ms: u64, price: f64, qty: f64, buyer_aggressor: bool) {
+        let Some((r, obs)) = self.tape.prepare_trade(ts_ms, price, qty, buyer_aggressor) else {
+            return;
+        };
         for f in self.varianza.iter_mut().chain(self.volumen.iter_mut()) {
             f.before_trade(&self.tape, ts_ms);
         }
-        self.tape.on_trade(ts_ms, price, qty, buyer_aggressor);
+        self.tape.apply_accepted_trade(ts_ms, price, r, obs);
         for f in self.varianza.iter_mut().chain(self.volumen.iter_mut()) {
             f.after_trade(&self.tape, ts_ms);
         }
@@ -790,6 +869,10 @@ impl SpectralForecastBank {
         out
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/spectral_evidence.rs"]
+mod evidence_contract;
 
 #[cfg(test)]
 mod tests {
