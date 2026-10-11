@@ -305,12 +305,16 @@ impl CoinArena {
             return None;
         }
         let anclas = crate::spectral_tape::ANCLAS_PRONOSTICO;
-        let v: Vec<f64> = self
-            .sigma_forecast
-            .iter()
-            .map(|a| a.load(std::sync::atomic::Ordering::Relaxed))
-            .collect();
-        if v.iter().all(|x| !(x.is_finite() && *x > 0.0)) {
+        let mut v = [0.0f64; 7];
+        let mut any_positive = false;
+        for (i, a) in self.sigma_forecast.iter().enumerate() {
+            let val = a.load(std::sync::atomic::Ordering::Relaxed);
+            v[i] = val;
+            if val.is_finite() && val > 0.0 {
+                any_positive = true;
+            }
+        }
+        if !any_positive {
             return None;
         }
         let lt = tau_ms.ln();

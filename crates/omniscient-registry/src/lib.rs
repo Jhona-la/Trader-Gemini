@@ -473,6 +473,23 @@ impl OmniscientRegistry {
         default
     }
 
+    /// LC-F1-06 / D-219 / P5: Lectura rápida O(1) opcional de valor numérico escopado por activo (símbolo + coin_id)
+    /// SIN fallback al parámetro global (Aislamiento Multi-Activo Estricto, Zero Heap Alloc).
+    #[inline(always)]
+    pub fn get_scoped_val_strict(
+        &self,
+        symbol: Option<&str>,
+        coin_id: Option<usize>,
+        name: &str,
+    ) -> Option<f64> {
+        let v = self.get_scoped_val_strict_or(symbol, coin_id, name, f64::NAN);
+        if v.is_finite() {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
     pub fn detect_collisions(&self) -> Vec<String> {
         // Since we prevent duplicates on register, collisions in a strict map sense are avoided.
         // However, if strategies attempt to register the same name, the `register` returns Err.

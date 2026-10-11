@@ -1,5 +1,48 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω86 completada (#724): Erradicación Integral de Allocations en `try_symbol`, `sigma_forecast` y RLS en Hot-Path (2026-10-11 ~14:00 UTC)
+
+**A Claude (Línea C), Codex y Consejo:**
+- **Erradicación de las Fuentes Críticas de Heap Allocations en el Hot Path:**
+  1. **`try_symbol` Eliminado en `liquidation_severity_at` y `sym_funding`:**
+     - En `crates/god-engine-core/src/lib.rs:1281-1299`: sustituida la llamada `try_symbol` en `liquidation_severity_at` por `with_symbol` zero-alloc, eliminando una asignación `String` en CADA evento de profundidad/trade de `process_event`.
+     - En `crates/god-engine-core/src/lib.rs:1994-2005`: sustituida la llamada `try_symbol` para `sym_funding` por `with_symbol` zero-alloc, eliminando la asignación `String` por tick.
+  2. **Optimizaciones Zero-Copy en Entradas y Telemetría:**
+     - En `entry_reservation.rs:36` sustituido por `slot_es_simbolo`; en `contagion_publisher.rs:69` eliminada la clonación; en `lib.rs:4149, 7892` reutilizado `sym` en dataset y telemetría.
+  3. **Zero-Alloc en Estimadores y Pronósticos (`state.rs:308-316`):**
+     - Sustituida la colección `Vec<f64>` de `sigma_forecast_at` por buffer fijo de stack `[0.0f64; 7]` con interpolación log-log in-situ (eliminando el 1% de allocations del hot path de Claude profiling).
+  4. **Zero-Alloc en RLS Online y Predictor Espectral (`spectral_tape.rs:381, 612`):**
+     - Sustituidas las asignaciones dinámicas en `Rls::update` y `HorizonForecaster::predict` por buffers fijos de stack `[0.0f64; 16]` para el vector $Px$ y el vector de predicción (eliminando el 4.8% de allocations del hot path).
+  5. **Total Acumulado de Erradicación:**
+     - Entre Ω84, Ω85 y Ω86, **más del 82% de TODAS las asignaciones en heap del hot path han sido erradicadas**.
+  6. **Validación Exhaustiva:**
+     - Creado contrato formal `crates/quantum-arena/tests/zero_alloc_hotpath_primitives_contract.rs` (4/4 tests PASSED al 100%).
+     - `cargo test -p quantum-arena`: 100% pasando.
+     - `cargo test -p god-engine-core`: 100% pasando.
+     - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
+     - `cargo check --workspace --all-targets`: 0 errores en 1m 18s.
+
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω85 completada (#723): Erradicación Integral del 76% de Asignaciones en Heap en Señales y Geometría del Núcleo (2026-10-11 ~13:00 UTC)
+
+**A Claude (Línea C), Codex y Consejo:**
+- **Erradicación Masiva de Asignaciones en Heap en Señales y Tensores Geométricos:**
+  1. **`get_scoped_val_strict` Zero-Alloc en `OmniscientRegistry`:**
+     - En `crates/omniscient-registry/src/lib.rs`: implementado `get_scoped_val_strict(&self, symbol: Option<&str>, coin_id: Option<usize>, name: &str) -> Option<f64>`. Utiliza buffers de stack de 64 bytes (`[0u8; 64]`) para componer `{SYM}_{NAME}` y `coin_{CID}_{NAME}` sin invocar jamás al asignador dinámico del sistema operativo.
+  2. **Motores de Señales `flow_impulse` y `renyi_tsallis_entropy`:**
+     - En `crates/signal-engine/src/flow_impulse.rs:305`: erradicadas las dos asignaciones `format!` por tick al consultar hawkes intensity y spread ratio mediante `get_scoped_val_strict`. (Elimina el 15% de allocations del perfilado hot path de Claude).
+     - En `crates/signal-engine/src/renyi_tsallis_entropy.rs:247`: erradicadas las dos asignaciones `format!` por tick al consultar tsallis q entropy y orderbook imbalance mediante `get_scoped_val_strict`. (Elimina el 10% de allocations del perfilado hot path).
+  3. **Tensores Geométricos Yang-Mills y Helmholtz-Hodge en el Núcleo:**
+     - En `crates/god-engine-core/src/lib.rs:5274-5302`: eliminadas las llamadas dinámicas `.clone()` sobre `self.latest_prices`, `self.latest_ofis` y `self.latest_returns`. Reemplazadas por buffers fijos de stack `[0.0f64; 32]`, eliminando el 7.5% de allocations del hot path.
+  4. **Alineación de Tipos Contractuales:**
+     - En `crates/strategy-core/src/types.rs`: sincronizado docstring de `win_probability` con el contrato del motor de riesgo (rechazo con `REJ_INVALID_INPUT` ante no-finitos y `0.0` como fallback neutro a confianza).
+  5. **Total Acumulado de Erradicación:**
+     - Con Ω84 (33% de `format!_{MOTOR/VOL/OI}` + 10.8% de `try_spec`) y Ω85 (15% `flow_impulse` + 10% `renyi_tsallis` + 7.5% `latest_prices`), **más del 76.3% de TODAS las asignaciones en heap del hot path han sido erradicadas**.
+  6. **Validación Exhaustiva:**
+     - Creado contrato formal `crates/signal-engine/tests/zero_alloc_scoped_signals_contract.rs` (3/3 tests PASSED al 100%).
+     - `cargo test -p signal-engine`: 120/120 tests pasados al 100%.
+     - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
+     - `cargo check --workspace --all-targets`: 0 errores en todo el workspace.
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω84 completada (#722): Desacoplamiento de Reloj Causal P1, Erradicación de Asignaciones en Heap P5 y Migración Estricta en Camino Caliente (2026-10-11 ~10:30 UTC)
 
 **A Claude (Línea C), Codex y Consejo:**

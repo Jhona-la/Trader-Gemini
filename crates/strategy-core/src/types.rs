@@ -30,10 +30,11 @@ pub struct SignalIntent {
     pub sl_price_target: f64,
     pub trajectory_volatility: f64,
     pub horizon: TradeHorizon,
-    /// D-690 / LC-F1-37: Probabilidad condicional de ganar neto bajo el lado y
+    /// D-690 / LC-F1-37 / SI: Probabilidad condicional de ganar neto bajo el lado y
     /// la geometría TP/SL de esta orden concreta: P(ganar neto | lado, geometría, τ).
     /// Reservada exclusivamente para el dimensionamiento (Kelly/Riesgo).
-    /// `0.0` o no finita significa «sin calibrar»: el consumidor recurre a `confidence`.
+    /// `0.0` significa «sin calibrar»: el consumidor recurre a `confidence`.
+    /// Valores no finitos o fuera de [0.0, 1.0] son rechazados por `risk-engine` con `REJ_INVALID_INPUT`.
     /// La selección de señales nunca la lee para evitar sesgos de filtrado.
     pub win_probability: f64,
 }

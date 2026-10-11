@@ -1281,10 +1281,23 @@ impl GodEngineCore {
     pub fn liquidation_severity_at(&self, coin_id: usize, as_of_ms: u64)
         -> Result<Option<f64>, &'static str> {
         let slot = self.liquidation_states.get(coin_id).ok_or("invalid liquidation slot")?;
-        let symbol = quantum_arena::symbol_registry::try_symbol(coin_id).ok_or("unregistered liquidation slot")?;
         match slot {
-            Some(state) if state.latest().symbol == symbol => state.severity_at(as_of_ms).map(Some),
-            _ => Ok(None),
+            Some(state) => {
+                let matches_symbol = quantum_arena::symbol_registry::with_symbol(coin_id, |s| {
+                    state.latest().symbol == s
+                }).ok_or("unregistered liquidation slot")?;
+                if matches_symbol {
+                    state.severity_at(as_of_ms).map(Some)
+                } else {
+                    Ok(None)
+                }
+            }
+            None => {
+                if !quantum_arena::symbol_registry::with_symbol(coin_id, |_| ()).is_some() {
+                    return Err("unregistered liquidation slot");
+                }
+                Ok(None)
+            }
         }
     }
 
@@ -1978,13 +1991,12 @@ impl GodEngineCore {
                 // existe) — se documenta el 0.0 en vez de falsificar señal.
                 // QO-U1c: funding PER-SÍMBOLO del registry (escrito por el
                 // poller cada 120s); fallback al global omni[11] (BTC).
-                let sym_funding = quantum_arena::symbol_registry::try_symbol(coin_id)
-                    .map(|s| {
-                        self.arena
-                            .registry
-                            .get_scoped_value_or(&s, "funding_rate", f64::NAN)
-                    })
-                    .unwrap_or(f64::NAN);
+                let sym_funding = quantum_arena::symbol_registry::with_symbol(coin_id, |s| {
+                    self.arena
+                        .registry
+                        .get_scoped_value_or(s, "funding_rate", f64::NAN)
+                })
+                .unwrap_or(f64::NAN);
                 let funding_rate_live = if sym_funding.is_finite() {
                     sym_funding
                 } else {
@@ -4142,11 +4154,9 @@ impl GodEngineCore {
                             let notional = (qty * entry).max(1.0);
                             let target_ret = net_trade_pnl / notional;
                             if target_ret.is_finite() {
-                                let sym_ds = quantum_arena::symbol_registry::try_symbol(coin_id)
-                                    .unwrap_or_default();
-                                if !sym_ds.is_empty() {
+                                if !sym.is_empty() {
                                     let path =
-                                        format!("data/dark_alpha_dataset_{}.csv", sym_ds);
+                                        format!("data/dark_alpha_dataset_{}.csv", sym);
                                     let need_header = !std::path::Path::new(&path).exists();
                                     use std::io::Write as _;
                                     if let (Ok(mut f), Ok(t)) = (
@@ -5279,14 +5289,16 @@ impl GodEngineCore {
             // La adaptación LMS en YangMillsGaugeEngine ya es invariante a ticks inactivos (step ∝ r_j).
             // R7-R3-D-2: Constante única nombrada para TTL de frescura de buffers multiactivo (10_000 ms)
             const GEOMETRIA_MULTIACTIVO_TTL_MS: u64 = 10_000;
-            let mut fresh_prices = self.latest_prices.clone();
-            for c in 0..fresh_prices.len() {
+            // P5 (Camino Caliente): Búfer en stack fijo de 32 activos sin asignar en heap (0 bytes)
+            let mut fresh_prices = [0.0f64; 32];
+            let n_prices = self.latest_prices.len().min(32);
+            for c in 0..n_prices {
                 let last_ts = self.latest_timestamps.get(c).copied().unwrap_or(0);
-                if event_time_ms.saturating_sub(last_ts) > GEOMETRIA_MULTIACTIVO_TTL_MS {
-                    fresh_prices[c] = 0.0;
+                if event_time_ms.saturating_sub(last_ts) <= GEOMETRIA_MULTIACTIVO_TTL_MS {
+                    fresh_prices[c] = self.latest_prices[c];
                 }
             }
-            let (ym_action, ym_currents) = self.yang_mills_engine.update_and_calculate_curvature(&fresh_prices);
+            let (ym_action, ym_currents) = self.yang_mills_engine.update_and_calculate_curvature(&fresh_prices[..n_prices]);
             // R6-A13: Semántica no ambigua para monedas fuera de la matriz gauge (clave explícita yang_mills_current_absent)
             let (ym_coin_current, ym_current_absent) = if coin_id < ym_currents.len() {
                 (ym_currents[coin_id], 0.0)
@@ -5299,17 +5311,19 @@ impl GodEngineCore {
 
             // OLA Ω37/Ω38/Ω41: Descomposición ortogonal de Helmholtz-Hodge sobre flujos cruzados L2/L3 reales
             // (R6-A1/C1 resuelto: usa matriz de flujo cruzado microestructura asimétrica OFI x Retorno)
-            let mut fresh_ofis = self.latest_ofis.clone();
-            let mut fresh_returns = self.latest_returns.clone();
-            for c in 0..fresh_ofis.len() {
+            // P5 (Camino Caliente): Búfers en stack fijos sin asignar en heap (0 bytes)
+            let mut fresh_ofis = [0.0f64; 32];
+            let mut fresh_returns = [0.0f64; 32];
+            let n_flows = self.latest_ofis.len().min(self.latest_returns.len()).min(32);
+            for c in 0..n_flows {
                 let last_ts = self.latest_timestamps.get(c).copied().unwrap_or(0);
-                if event_time_ms.saturating_sub(last_ts) > GEOMETRIA_MULTIACTIVO_TTL_MS {
-                    fresh_ofis[c] = 0.0;
-                    fresh_returns[c] = 0.0;
+                if event_time_ms.saturating_sub(last_ts) <= GEOMETRIA_MULTIACTIVO_TTL_MS {
+                    fresh_ofis[c] = self.latest_ofis[c];
+                    fresh_returns[c] = self.latest_returns[c];
                 }
             }
             let (hodge_curl_share, hodge_grad_energy, hodge_curl_energy) = if let Some((flow_mat, n_nodes)) =
-                feature_engine::HelmholtzHodgeFlowEngine::build_cross_microstructure_flow_matrix(&fresh_ofis, &fresh_returns)
+                feature_engine::HelmholtzHodgeFlowEngine::build_cross_microstructure_flow_matrix(&fresh_ofis[..n_flows], &fresh_returns[..n_flows])
             {
                 if let Some((decomp, _potentials)) = self.hodge_flow_engine.decompose(&flow_mat, n_nodes) {
                     (decomp.curl_share, decomp.gradient_energy, decomp.curl_energy)
@@ -7886,8 +7900,7 @@ impl GodEngineCore {
                             telemetry_server::telemetry_log!(
                                 "🧠 [ML-GATE] {} entradas vetadas por el ensamble (última: {} ml={:.3}) — la predicción decide",
                                 self.diag_ml_vetoes,
-                                quantum_arena::symbol_registry::try_symbol(coin_id)
-                                    .unwrap_or_default(),
+                                sym,
                                 ml_now
                             );
                         }

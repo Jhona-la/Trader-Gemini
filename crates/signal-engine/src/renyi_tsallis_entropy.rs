@@ -243,14 +243,11 @@ impl strategy_core::QuantumStrategy for RenyiTsallisEntropyEngine {
         let Some(r) = self.registry.as_ref() else {
             return 0.0;
         };
-        let scoped = |key: &str| -> Option<f64> {
-            r.get(&format!("{}_{}", symbol, key), "RenyiTsallisEntropyEngine")
-                .or_else(|| r.get(&format!("c{}:{}", coin_id, key), "RenyiTsallisEntropyEngine"))
-                .map(|p| p.get_value())
-                .filter(|v| v.is_finite())
-        };
+        // P5 (Camino Caliente): Lectura cero-alocaciones mediante get_scoped_val_strict (0 heap bytes)
+        let tsallis = r.get_scoped_val_strict(Some(symbol), Some(coin_id), "tsallis_q_entropy");
+        let obi = r.get_scoped_val_strict(Some(symbol), Some(coin_id), "order_book_imbalance");
 
-        match (scoped("tsallis_q_entropy"), scoped("order_book_imbalance")) {
+        match (tsallis, obi) {
             (Some(t), Some(o)) => Self::vote(t, o),
             _ if coin_id == 0 => self.evaluate(),
             _ => 0.0, // voto neutralizado para no contaminar cross-coin (MOD2/7-009)

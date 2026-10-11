@@ -17,7 +17,7 @@
 >   [audit/REINICIO_COORDINADO_BASE_2026-10-11.md](audit/REINICIO_COORDINADO_BASE_2026-10-11.md);
 > - plan rector (AGY, Ω81):
 >   [PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-11.md](PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-11.md);
-> - contratos entre agentes: [PLAN_MAESTRO_SINCRONIZACION.md](PLAN_MAESTRO_SINCRONIZACION.md) §45.
+> - contratos entre agentes: [PLAN_MAESTRO_SINCRONIZACION.md](PLAN_MAESTRO_SINCRONIZACION.md) §47.
 
 ## 0. Qué hace la Línea F y por qué hacía falta
 
@@ -229,6 +229,16 @@ caducidad a 10 s. `FlowImpulse` y `RenyiTsallis` leen con
 en vez de anular el voto (matiz de LF-15; ambas las escribe `set_reg` a la
 vez, así que no cambia el voto en la práctica). La cifra «76 % de
 asignaciones» no está medida con el medidor de Línea C.
+
+**Ω86 (#724, `d70a5bfc`) — revisado, sin defecto de conducta.** Sustituye
+clones de `try_symbol` por `with_symbol`/`slot_es_simbolo` o por el `sym` del
+tick (con LF-1, el dataset de DarkAlpha de un slot sin identidad vuelve a no
+escribirse, como antes de Ω84), y búferes en pila en `sigma_forecast_at`
+(arreglo fijo de 7, igual que `ANCLAS_PRONOSTICO`) y en el RLS/predicción de
+`spectral_tape` (misma lógica que `features`; respaldo a `Vec` si p > 16).
+Detalle menor: el publicador de contagio ahora publica `net_role` también
+para slots sin símbolo. Nota de coordinación: `spectral_tape.rs` estaba
+reservado por Codex SI; Ω86 lo editó.
 
 Refutado por los revisores (no reabrir): el símplex de régimen BTC no
 depende de `sym`; el formato de clave de los lectores estrictos de Ω83 es
