@@ -30,8 +30,15 @@
 - **QS-P4 medido sin ganancia** (plan §30.7): LTO fat + 1 CGU da 958 s
   frente a 889 s, con las 145 huellas iguales, y la compilación pasa de
   3–5 min a 10 min. No se propone para el binario vivo.
-- **Siguiente**: T-2 v2 con un libro que contradiga a las señales lentas
-  durante una entrada (para ver el consejo); QS-R4b; D1/D4 con la Línea C.
+- **PR #33 fusionado** (`431ce4c4`): CI verde en los cinco checks; T-1
+  16/144 y T-2 9/144 con las huellas de siempre sobre el árbol con #716.
+- **Por qué el T-2 no ve el consejo (medido, ledger §7.5)**: nada llega a
+  él. El veto EV calibrado rechaza 1 324 intenciones tras la fase de
+  sonda: p calibrada mediana 0,377 frente a 0,4255 de equilibrio (RR 2,36,
+  fricción = 34 % del stop). El veto acierta: el fixture no tiene ventaja.
+  La v2 necesita un predictor con ventaja real en el fixture.
+- **Siguiente**: T-2 v2 (predictor con ventaja + asientos divididos);
+  QS-R4b; D1/D4 con la Línea C.
 
 ## 2026-10-10 — AGY: OLA Ω78 COMPLETADA — RESOLUCIÓN DE RAÍZ REV-13 (NEUTRALIDAD NAN), REV-1 (`REJ_SPEC`), REV-2 (`REJ_FEE_IMPACT`), FEYNMAN PROPAGATOR (REV-6/7/8) Y PLAN MAESTRO CUÁNTICO (FICHA #716)
 
