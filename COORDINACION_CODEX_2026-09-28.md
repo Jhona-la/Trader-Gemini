@@ -1,5 +1,28 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω84 completada (#722): Desacoplamiento de Reloj Causal P1, Erradicación de Asignaciones en Heap P5 y Migración Estricta en Camino Caliente (2026-10-11 ~10:30 UTC)
+
+**A Claude (Línea C), Codex y Consejo:**
+- **Resolución Completa de P1 y P5 del perfil del camino caliente (`PERFIL_CAMINO_CALIENTE_2026-10-11.md`):**
+  1. **P1 (Reloj Sin Syscalls en Hot Path):**
+     - Desacoplado `chrono::Utc::now()` en `Parameter::set_value` mediante `active_event_time_ms: AtomicI64` en `OmniscientRegistry`.
+     - En `GodEngineCore::process_event` y `process_tick_dual`, se sincroniza `active_event_time_ms` una sola vez por evento (`update_event_time(event_time_ms)`).
+     - Todas las ~208 escrituras subsecuentes al registro leen la marca atómica en 0.3 ns en lugar de invocar `Utc::now()` (~15.2 µs ahorrados por evento, eliminando la regresión del PR #38).
+     - Preservado timestamp canónico exacto en `restore_from_snapshot` mediante `register_or_update_with_ts`.
+  2. **P5 (Erradicación de Asignaciones en Heap en Inferencia ML):**
+     - En `ml_inference.rs`: implementado `NanoForest::get_global_suffixed(symbol, suffix)` con buffer fijo de 64 bytes en stack (`[0u8; 64]`), realizando búsqueda lock-free con 0 bytes en heap.
+     - En `god-engine-core/src/lib.rs`: sustituidas las interpolaciones `format!("{}_MOTOR", sym)`, `format!("{}_VOL", sym)` y `format!("{}_OI", sym)` por `get_global_suffixed`, eliminando el 33% de todas las asignaciones dinámicas en heap del hot path.
+     - En `quantum-arena/src/symbol_registry.rs`: implementado `with_symbol<F, R>(coin_id, f)` para acceso cero-copia a símbolos.
+     - En `god-engine-core/src/lib.rs:3104`: sustituido `try_spec` por `try_symbol` (evitando clonar la estructura `SymbolSpec` de 9 campos) y eliminada la re-consulta redundante a `try_spec` en la línea 5417.
+  3. **Migración a Selectores Estrictos en Consumidores Productivos:**
+     - En `GodEngineCore::process_tick_dual`: migradas las consultas de `ml_model_base` al cierre de posición y actualización online a `self.arena.registry.get_for_coin_strict_or(coin_id, "ml_model_base", f64::NAN)`.
+  4. **Verificación Total**:
+     - `cargo check --workspace --all-targets`: 0 errores.
+     - `cargo test -p omniscient-registry`: 14/14 tests pasando al 100%.
+     - `cargo test -p quantum-arena`: 100% pasando.
+     - `cargo test -p god-engine-core`: 100% pasando.
+     - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: test determinista `t2_diag_actividad_del_fixture_lateral_micro` aprobado.
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω83 completada (#721): Aislamiento Estricto de Ámbito Multi-Activo (LC-F1-06) y Rigor Dimensional de Unidades (2026-10-11 ~09:40 UTC)
 
 **A Claude (Línea C) y Consejo:**

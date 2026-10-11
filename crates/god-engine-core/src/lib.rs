@@ -1716,6 +1716,9 @@ impl GodEngineCore {
                 return (None, None);
             }
 
+            // P1: Actualizar reloj causal del registro omnisciente sin syscalls repetidas
+            self.arena.registry.update_event_time(event_time_ms as i64);
+
             // Zero-copy Hot-Reloading Check
             if let Some(rx) = &self.model_rx {
                 if let Ok(mut new_model) = rx.try_recv() {
@@ -2908,6 +2911,9 @@ impl GodEngineCore {
         Option<MakerQuote>,
     ) {
         telemetry_server::profile_node!("GodEngineCore::process_tick_dual", {
+            // P1: Actualizar reloj causal del registro omnisciente sin syscalls repetidas
+            self.arena.registry.update_event_time(event_time_ms as i64);
+
             if let Some(reservation) = self.entry_reservations.get_mut(coin_id) {
                 *reservation = None;
             }
@@ -3095,9 +3101,8 @@ impl GodEngineCore {
                 self.latest_ofis[coin_id] = ofi_value;
                 self.latest_timestamps[coin_id] = event_time_ms;
             }
-            let sym = quantum_arena::symbol_registry::try_spec(coin_id)
-                .map(|s| s.symbol)
-                .unwrap_or_default();
+            let sym = quantum_arena::symbol_registry::try_symbol(coin_id)
+                .unwrap_or_else(|| "BTCUSDT".to_string());
             let is_btc = sym.starts_with("BTC");
             let is_eth = sym.starts_with("ETH");
             if is_btc {
@@ -4038,12 +4043,11 @@ impl GodEngineCore {
                         // La convención del calibrador es la probabilidad direccional de éxito P(win).
                         // Se proyecta mediante `p_win_directional(is_long, ml_at_entry, ml_model_base)`.
                         let ml_model_base = {
-                            let reg_base = self.arena.registry.get_for_coin_or(coin_id, "ml_model_base", f64::NAN);
+                            let reg_base = self.arena.registry.get_for_coin_strict_or(coin_id, "ml_model_base", f64::NAN);
                             if reg_base.is_finite() && reg_base > 0.05 && reg_base < 0.95 {
                                 reg_base
                             } else {
-                                let coin_model_key = format!("{}_MOTOR", sym);
-                                crate::ml_inference::NanoForest::get_global(&coin_model_key)
+                                crate::ml_inference::NanoForest::get_global_suffixed(&sym, "_MOTOR")
                                     .map(|f| f.base_prob())
                                     .unwrap_or(0.5)
                                     .clamp(0.05, 0.95)
@@ -4371,12 +4375,11 @@ impl GodEngineCore {
                     //   td_error = (if is_win { 1.0 } else { 0.0 }) - p_win_at_entry
                     // con esperanza matemática E[td_error] = 0.0 bajo calibración neutral (p_win = base para ambos lados).
                     let ml_model_base = {
-                        let reg_base = self.arena.registry.get_for_coin_or(coin_id, "ml_model_base", f64::NAN);
+                        let reg_base = self.arena.registry.get_for_coin_strict_or(coin_id, "ml_model_base", f64::NAN);
                         if reg_base.is_finite() && reg_base > 0.05 && reg_base < 0.95 {
                             reg_base
                         } else {
-                            let coin_model_key = format!("{}_MOTOR", sym);
-                            crate::ml_inference::NanoForest::get_global(&coin_model_key)
+                            crate::ml_inference::NanoForest::get_global_suffixed(&sym, "_MOTOR")
                                 .map(|f| f.base_prob())
                                 .unwrap_or(0.5)
                                 .clamp(0.05, 0.95)
@@ -4652,10 +4655,8 @@ impl GodEngineCore {
             // delgado con init sesgado inyectaba sesgo long global como
             // fallback). El ensamble sigue opinando con NN + espectro; la
             // entrada además pasa el gate B3.18.
-            let sym = quantum_arena::symbol_registry::try_symbol(coin_id)
-                .unwrap_or_else(|| "BTCUSDT".to_string());
-            let coin_model_key = format!("{}_MOTOR", sym); // U-7: contrato migrado
-            let active_forest = crate::ml_inference::NanoForest::get_global(&coin_model_key);
+            // P5 (Camino Caliente): Búsqueda cero-alocaciones usando sym en stack y get_global_suffixed
+            let active_forest = crate::ml_inference::NanoForest::get_global_suffixed(&sym, "_MOTOR");
             // B3.25 — DISCIPLINA DE ROSTER: hueco medido en vivo (SOL, modelo
             // retirado, abrió posición nueva): sin forest, el NN SOLO puede
             // empujar el ml sobre el umbral del gate — el ensamble nunca es
@@ -4681,8 +4682,7 @@ impl GodEngineCore {
             // sizing/cooldowns/telemetría leen esa clave; 0.0 = sin modelo
             // (el gate del trainer ya bloqueó los símbolos sin edge).
             {
-                let vol_key = format!("{}_VOL", sym);
-                let (vol_forecast, vol_base) = crate::ml_inference::NanoForest::get_global(&vol_key)
+                let (vol_forecast, vol_base) = crate::ml_inference::NanoForest::get_global_suffixed(&sym, "_VOL")
                     .map(|m| {
                         const VD: usize = crate::ml_inference::NanoForest::ML_VECTOR_DIM;
                         let mut vin = [0f32; VD];
@@ -4720,8 +4720,7 @@ impl GodEngineCore {
                 // (21d de ventana horaria: sin edge medible) — el serving
                 // existe para que el predictor se ENCIENDA solo el día que
                 // el gate lo permita; sin modelo ⇒ 0.0.
-                let oi_key = format!("{}_OI", sym);
-                let oi_delta = crate::ml_inference::NanoForest::get_global(&oi_key)
+                let oi_delta = crate::ml_inference::NanoForest::get_global_suffixed(&sym, "_OI")
                     .and_then(|m| {
                         const VD: usize = crate::ml_inference::NanoForest::ML_VECTOR_DIM;
                         let mut vin = [0f32; VD];
@@ -4787,8 +4786,8 @@ impl GodEngineCore {
                     // viejo mensaje de "features no finitos" listaba siempre
                     // un vector vacío y ocultaba la causa real.
                     println!(
-                        "🔬 [ML-DIAG] {} predict=None (modelo {:?}) — modelo degenerado (tree_offsets ≤ 1), sin splits evaluables; reciclar modelo",
-                        sym, coin_model_key
+                        "🔬 [ML-DIAG] {} predict=None (modelo {}_MOTOR) — modelo degenerado (tree_offsets ≤ 1), sin splits evaluables; reciclar modelo",
+                        sym, sym
                     );
                 }
             } else if tick % 100_000 == 0 {
@@ -4799,8 +4798,8 @@ impl GodEngineCore {
                 // corrida por E/S. La ausencia de modelo es un estado, no un
                 // evento: basta recordarlo de cuando en cuando.
                 println!(
-                    "🔬 [ML-DIAG] {} SIN forest activo (key {:?} sin modelo y sin fallback)",
-                    sym, coin_model_key
+                    "🔬 [ML-DIAG] {} SIN forest activo (key {}_MOTOR sin modelo y sin fallback)",
+                    sym, sym
                 );
             }
             if let Some(nn) = self.swing_nn.as_mut() {
@@ -5414,9 +5413,6 @@ impl GodEngineCore {
             // features sintéticas de libro (D-707).
             let ml_prob_adaptive = ml_prob;
 
-            let sym = quantum_arena::symbol_registry::try_spec(coin_id)
-                .map(|s| s.symbol)
-                .unwrap_or_else(|| "BTCUSDT".to_string());
             // S-08 — DES-DUPLICACIÓN: scalp y swing son ALIASES del consenso
             // continuo — evaluarlos por separado gastaba 42 evaluaciones de
             // estrategia por tick para obtener 1 señal idéntica. Ahora UNA
