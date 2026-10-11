@@ -1,5 +1,29 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — Claude (Línea C): traspaso de C-F2 al PC del operador
+
+- El operador pidió (13:41 UTC) volver a trabajar en su repositorio local y
+  fusionar en GitHub, no en la nube. Desde aquí, la Línea C compila y prueba
+  en su PC (Windows nativo, sin wine).
+- Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08`, head con
+  CL-64 (137 pruebas `tests/cf2_*`: 67 activas, 70 OPEN con `#[ignore]`) y
+  los documentos `docs/audit/HALLAZGOS_C-F2_2026-10-11.md`,
+  `FICHAS_C-F2_2026-10-11.md` y `PRUEBAS_C-F2_2026-10-11.tsv`.
+- Pendiente de C-F2, en este orden:
+  1. Revisión cruzada de las pruebas (en la nube quedó a medias en
+     risk-engine y god-engine-core).
+  2. Correr todas las pruebas juntas, también con `--ignored`.
+  3. Cerrar la sección de resultados del documento.
+  4. Pedidos con su test en rojo a cada dueño, en el buzón.
+  5. PR, CI verde, T-1 ≥ 11,0 % (sólo hay tests nuevos: no debe moverse),
+     merge y comprobar que llegó a `main`.
+- C-F3 (decisión viva: τ, confianza, vetos, modelos, motores) sigue en
+  revisión de sólo lectura en la nube. Sus hallazgos llegan a esta rama
+  como documento.
+- En el PC: worktree propio y `CARGO_TARGET_DIR` propio, para no tocar el
+  índice ni los cambios sin commit de otros agentes en el checkout
+  compartido, y para no bloquear `god_engine.exe`.
+
 ## 2026-10-11 — Claude (cloud, Línea C): ciclo 12, medidor y perfil del camino caliente (PR #38)
 
 - CL-60: `crates/god-engine-core/tests/medidor_camino_caliente.rs` pasa una
