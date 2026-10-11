@@ -142,8 +142,8 @@ fn main() {
                             let mut t54 = [0.0; 54];
                             for j in 0..34 { t54[j] = sf[j] as f64; }
                             let obi = if t.bid_qty + t.ask_qty > 0.0 { (t.bid_qty - t.ask_qty) / (t.bid_qty + t.ask_qty) } else { 0.0 };
-                            let atr = real_engine.get_atr_pct();
-                            let delta = real_engine.v_t;
+                            let atr = real_engine.rasgo_atr_pct_ml();
+                            let delta = real_engine.vt_rasgo_ml;
                             t54[34] = (delta / mid.max(1.0)).clamp(-0.1, 0.1);
                             t54[35] = atr;
                             t54[36] = (vol / 1000.0).tanh();
@@ -198,8 +198,8 @@ fn main() {
                             let mut t54 = [0.0; 54];
                             for j in 0..34 { t54[j] = sf[j] as f64; }
                             let obi = if t.bid_qty + t.ask_qty > 0.0 { (t.bid_qty - t.ask_qty) / (t.bid_qty + t.ask_qty) } else { 0.0 };
-                            let atr = real_engine.get_atr_pct();
-                            let delta = real_engine.v_t;
+                            let atr = real_engine.rasgo_atr_pct_ml();
+                            let delta = real_engine.vt_rasgo_ml;
                             t54[34] = (delta / mid.max(1.0)).clamp(-0.1, 0.1);
                             t54[35] = atr;
                             t54[36] = (vol / 1000.0).tanh();

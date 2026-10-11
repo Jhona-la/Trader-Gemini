@@ -132,8 +132,9 @@ fn feature_snapshot(engine: &StatefulEngine, t: Record) -> Vec<Option<f64>> {
     // cannot establish aggressor side; do not export a fabricated flow delta.
     f[6] = None;
     let depth_proxy = t.bid_qty + t.ask_qty;
-    let delta_over_mid = engine.v_t / t.mid();
-    let atr_ratio = engine.get_atr_pct();
+    // CL-68: el mismo rasgo legado que sirve build_54d_tensor.
+    let delta_over_mid = engine.vt_rasgo_ml / t.mid();
+    let atr_ratio = engine.rasgo_atr_pct_ml();
     f[34] = delta_over_mid
         .is_finite()
         .then(|| delta_over_mid.clamp(-0.1, 0.1));
@@ -407,7 +408,7 @@ mod contract_tests {
     #[test]
     fn derived_overflow_is_missing_before_clipping() {
         let mut engine = StatefulEngine::new();
-        engine.v_t = f64::MAX;
+        engine.vt_rasgo_ml = f64::MAX;
         let f = feature_snapshot(
             &engine,
             Record {

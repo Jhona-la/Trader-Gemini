@@ -1376,9 +1376,11 @@ impl GodEngineCore {
         } else {
             0.0
         };
-        let cur_atr = self.feature_engines[coin_id].get_atr_pct();
+        // CL-68: los rasgos del modelo leen el ATR legado congelado, no el de
+        // las decisiones, hasta reentrenar (regla S-8).
+        let cur_atr = self.feature_engines[coin_id].rasgo_atr_pct_ml();
         let cur_vol = bid_qty + ask_qty;
-        let delta = self.feature_engines[coin_id].v_t;
+        let delta = self.feature_engines[coin_id].vt_rasgo_ml;
 
         combined[34] = (delta / current_price.max(1.0)).clamp(-0.1, 0.1);
         combined[35] = cur_atr;
@@ -8201,7 +8203,11 @@ impl GodEngineCore {
             let latency_ms = self.arena.last_ws_latency_ms.load(Ordering::Relaxed);
 
             if latency_ms <= 25 {
-                let volatility = self.feature_engines[coin_id].get_features()[3] as f64;
+                // CL-68: el maker es un consumidor de decisión, no del modelo:
+                // lee el ATR de las decisiones. Con el f32 de antes (el de
+                // get_features()[3]) para que este commit sea identidad.
+                let volatility =
+                    (self.feature_engines[coin_id].get_atr_pct().clamp(0.0, 1.0) as f32) as f64;
 
                 let mut inventory_delta_usd = 0.0;
                 for p in coin.positions.slots() {
