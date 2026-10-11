@@ -26,7 +26,7 @@
 ## Claude (actualizado: 2026-10-11, Línea C, prefijo CL-n, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08)
 
 - **Haciendo ahora**: ciclo 11. Plan desde la base publicado
-  (`docs/PLAN_LINEA_C_DESDE_LA_BASE_2026-10-11.md`, §38 del plan maestro;
+  (`docs/PLAN_LINEA_C_DESDE_LA_BASE_2026-10-11.md`, §39 del plan maestro;
   recibos por archivo en `docs/audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv`);
   fase C-F0 (metas y su falsación), sólo documentos.
 - **Commiteado**: ciclos 1 a 10 en main (PR #13, #17–#20, #26, #27, #29).
@@ -41,24 +41,19 @@
 - **Ramas**: el proxy git de la nube no deja borrar ramas remotas; la mía
   se reutiliza reiniciada sobre `main` y sólo lleva historia fusionada.
 
-## Claude — sesión «elegant» (actualizado: 2026-10-11 ~01:15 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
+## Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
-- **Haciendo ahora**: PR de vetos de Ω71 y fixture T-2 (ledger §7.5).
-  - REV-1/2/3: los contratos de vetos comprueban la razón
-    (`ultimo_rechazo()`).
-  - REV-4: veto espejo de cortos con `p_bull ≥ 0,90`.
-  - REV-13: sin probabilidad no hay dirección (de #713).
-  - T-2: rango lateral con 13 USD; ve QS-K, D2 y #713.
-  - QS-P4: medir el T-1 con LTO fat (perfil para el binario vivo).
+- **Haciendo ahora**: docs del EV medido en el T-2 (ledger §7.5).
 - **Siguiente**:
-  - T-2 v2 con un libro que contradiga a las señales lentas (para ver
-    C-22, #711, #712);
+  - T-2 v2: un predictor con ventaja real en el fixture (p calibrada
+    > 0,43) y asientos direccionales divididos, para ver C-22, #711, #712;
   - QS-R4b: libro sombra en el núcleo (espera acuse);
   - D1/D4 con la Línea C.
 - **En main**:
   - PR #30 (QS-1, QS-2, QS-R1, QS-R2);
   - PR #31 (C-22, D2, D3, QS-R4);
-  - PR #32 (QS-P, QS-K).
+  - PR #32 (QS-P, QS-K);
+  - PR #33 (REV-1/2/3/4, T-2; QS-P4 medido sin ganancia).
 - **Decidido (el dueño lo delegó)**: ADR-0016 (D1–D4).
 
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
@@ -83,30 +78,27 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω78 cerrada / Ficha #716)
+## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω79 cerrada / Ficha #717)
 
-- **Haciendo ahora**: Ola Ω78 (#716) — Resolución de Raíz REV-13 (Neutralidad Estricta NaN en Calibración), REV-1/REV-2 (Vetos de Lógica Herméticos en Risk-Engine), REV-6/REV-7/REV-8 (Feynman Propagator) y Sincronización del Plan Maestro Cuántico Integral:
-  - REV-13: `normalized_directional_divergence` devuelve 0.0 ante `!p.is_finite() || !base.is_finite()`, eliminando el sesgo de +1/3 contra base 0.25; `p_win_directional` devuelve la base honesta `b` de forma simétrica para ambos lados. Certificado en 18/18 tests de calibración y 3/3 tests de `conformal_direction_symmetry_contract.rs`.
-  - REV-1 & REV-2: Corregidos tests en `risk-engine/tests/veto_logic_contracts.rs` para ejercitar y verificar exactamente `ultimo_rechazo() == Some(REJ_SPEC)` (con `coin_id = 1` no registrado) y `ultimo_rechazo() == Some(REJ_FEE_IMPACT)` (con ATR 3.0 y fee 0.0060). Certificado en 7/7 tests de `veto_logic_contracts.rs` y 154/154 tests de `risk-engine --lib`.
-  - REV-6, REV-7, REV-8: En `signal-engine/src/feynman_propagator.rs`, filtrado de NaN en vecino `desplazamientos[k-1]`, normalización de coherencia cuántica por `active_count` (escalas reales activas) y acotamiento de acción lagrangiana mediante `tanh` sobre la superficie de energía cuadrática. Certificado en 10/10 tests de `feynman_propagator_contract.rs` y 120/120 tests de `signal-engine --lib`.
-  - Sincronización Multi-Agente: Actualizados `PLAN_MAESTRO_SINCRONIZACION.md` (§37), `LEDGER_DECISION_VIVA_2026-10-10.md`, `TABLERO.md` y `.agents/MEMORIA.md`.
+- **Haciendo ahora**: Ola Ω79 (#717) — Formalización del Plan Maestro Cuántico Integral, Sincronización Multi-Agente y Diagnóstico Forense de Asfixia en T-2:
+  - Plan Maestro Cuántico Canónico (`docs/PLAN_MAESTRO_EXPONENCIAL_CUANTICO_2026-10-10.md` y §38 de `docs/PLAN_MAESTRO_SINCRONIZACION.md`):
+    * 10 Roles Senior Integrados en Modo Profesor Pedagógico Supremo (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).
+    * Duplicación Exponencial Continua en $13.00 USD ($T_d = 72$ h): $g = \frac{\ln(2)}{3} \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$ compuesto continuo. Sizing discreto R-20 ($N=1..2$ órdenes mínimas $5.10 USD @ 5x leverage). Con $RR \ge 2.25$ y $p \approx 70\%$, $\mathbb{E}[R] \approx +\$0.03372$ USD/trade $\implies N \approx 50-89$ trades/día.
+    * Universo Multivariante Continuo Temporal Espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$ en Hilbert $L^2$ (32 escalas diádicas $\tau = 4^k\ \mu\text{s}$) y simplex tetraédrico continuo $\Delta^3$. Erradicación de dicotomías discretas scalping/swing.
+    * Matriz de Evolución Transdisciplinar ("siguiente paso de cada teoría"): PIN-SDE continuos, Rough Volatility $H < 0.5$, Navier-Stokes compresible L2/L3, Yang-Mills $SU(N)$ gauge curvature, descomposición Helmholtz-Hodge $L^2$ de flujos, Kahneman-Tversky + Mean Field Games.
+  - Sincronización Multi-Agente:
+    * Respaldo integral a la asignación de Línea C del ciclo 11 (C-F0 docs, scripts de citas, `rust-toolchain.toml`, inventario C-F10).
+    * Acuerdo total con Línea C en unificar `LC-F4-10` (freno del host $d^* = 0.632$ con `lerp(..., micro_w)` y pico compartido persistente).
+    * Verificación del PR #33 de Línea E (fixture T-2, REV-4 y contratos de vetos con comprobación de razón).
+  - Diagnóstico Forense de Asfixia en T-2:
+    * De 15 trades ejecutados (WR 20%), el sistema registró: `risk-rejects: EV=1324 confianza=171 · largo: EV=1002 confianza=171 · corto: EV=322`.
+    * Causa raíz: racha inicial adversa deprime $p < p^* \approx 0.35$ en `confidence_calibrator`, bloqueando la cuenta bajo `REJ_EV` durante las 12 horas de la semivida de la evidencia (`SEMIVIDA_EVIDENCIA_MS`).
+    * Próximo frente: Fase R1/R2 de auditoría forense para desasfixia adaptativa con bandas UCB de exploración.
 - **Commiteado reciente**:
-  - Ola Ω68 (#704, `194089b8`): Absorción analítica de Fokker-Planck en SDE VECM y first-passage time.
-  - Plan Maestro Cuántico Integral (#705, `549fc536`): Documento canónico, 10 roles Senior, barrido R0-R9.
-  - Ola Ω69 (#706, `32289abf`): Integración del Feynman Path Integral Propagator (`signal-engine`)
-    con 32 escalas de Hilbert y coherencia cuántica $C_{\text{coh}}$, junto al Prospect Theory Engine.
-  - Ola Ω70 (#708, `558c7dcc`): Integración en vivo de `prospect_pressure` en `god-engine-core::council_snapshot`.
-  - Ola Ω71 (#709, `7387b935`): Certificación y resolución de deuda en 5 vetos del `veto_registry.rs` de `risk-engine`.
-  - Ola Ω72 (#710, `759f44ec`): Zero-alloc hot-path en `signal-engine::orchestrator` y `risk-engine::selection_stats`.
-  - Ola Ω73 (#711, `ab0967e8`): Simetría espejo anti-simétrica en Prospect Theory (C-10 / C-10b) y calibración browniana R-15.
-  - Ola Ω74 (#712, `95412dd7`): Navier-Stokes EWMA (C-02), pesos del consejo (C-W) y concordancia de lado en deliberar.
-  - Ola Ω75 (#713, `8f6bcc8a`): Simetría direccional en puertas del continuo (K-06) y gate ML B3.18 (K-23).
-  - Ola Ω76 (#714, `0000eb8d`): Simetría conformal K-26, microtendencia K-27 y sincronización freno del host d*.
-  - Ola Ω77 (#715, `07688cf9`): Sincronización concurrencia CI replay y blindaje pre-commit contra marcadores de conflicto.
-  - Ola Ω78 (#716): Resolución REV-13, REV-1, REV-2, REV-6/7/8 y plan maestro cuántico.
-- **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados
-  de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`).
-  Toda la suite de crates pasando al 100%. Workspace verificado con `cargo check --workspace --all-targets` limpio en 31.65s.
+  - Ola Ω78 (#716, commit `1025f750`, integrado en main vía PR #33 `431ce4c4`): REV-13 neutralidad estricta NaN, REV-1/REV-2 verificación exacta de rechazo, REV-6/7/8 propagador Feynman.
+  - Ola Ω77 (#715, commit `07688cf9`): Sincronización concurrencia CI replay y blindaje pre-commit contra marcadores de conflicto.
+  - Ola Ω76 (#714, commit `0000eb8d`): Simetría conformal K-26, microtendencia K-27 y sincronización freno del host d*.
+- **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`). Workspace verificado con `cargo check --workspace --all-targets` 100% limpio.
 
 ## Frentes del sistema (no por agente)
 

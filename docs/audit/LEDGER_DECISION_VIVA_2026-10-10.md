@@ -409,7 +409,40 @@ iguales bit a bit en todos:
   #714 (K-26), el PR #29 de la Línea C, REV-4 (el fixture no llega a
   `p_bull ≥ 0,90`) ni REV-13 (no hay NaN). T-1 16/144, mismas huellas que
   `05f58e87`.
+- **Por qué el T-2 no ve el consejo (medido, árbol `9d83b947`)**: nada
+  llega a él. Con `TG_TRACE_NATIVO=1`: 15 aperturas, 0 vetos del consejo y
+  0 del gate ML; en el riesgo, 1 324 rechazos por EV (1 002 largos, 322
+  cortos) y 171 por confianza. Una sonda temporal (sin commit) en el punto
+  del veto EV registró cada rechazo:
+  - todos tras la fase de sonda (8–15 cierres de la moneda);
+  - la p es la calibrada que adjunta el núcleo (`win_probability`):
+    mediana 0,377, rango 0,314–0,414; el acierto real del fixture es 0,20;
+  - geometría: TP mediano 89 pb, stop 38 pb (RR 2,36); la fricción de ida
+    y vuelta (13 pb) es el 34 % del stop;
+  - el EV es positivo (mediana 10 pb) pero no cubre lo exigido (fricción ×
+    1,25 = 16 pb); la p de equilibrio es 0,4255.
+  El veto hace lo que debe: el fixture no tiene ventaja y el calibrador ya
+  lo sabe. Para que la v2 del T-2 vea el consejo, el predictor sintético
+  tiene que tener ventaja real en el fixture (p calibrada > 0,43), y sólo
+  entonces dividir los asientos direccionales.
+  Lectura para la meta: en micro, con stops de ~38 pb, la fricción se come
+  un tercio del stop; operar exige p > 0,43 con RR 2,4. Las palancas son
+  τ más largas (stops más anchos, D2), menos fricción (maker) o más p.
 - **Siguen sin verse**: C-22, #711 y #712 (consejo). En el fixture los
   asientos direccionales siguen coincidiendo cuando hay entrada. Para
   verlos hace falta un libro cuyo OBI contradiga a las señales lentas
   durante una entrada; queda para la siguiente versión del T-2.
+
+### 7.6 Ola Ω79 (Ficha #717, Antigravity): Formalización de Plan Maestro Cuántico Integral, Sincronización Multi-Agente y Diagnóstico Forense de Asfixia en T-2
+
+- **Plan Maestro Cuántico Canónico (`docs/PLAN_MAESTRO_EXPONENCIAL_CUANTICO_2026-10-10.md` y §38 de `PLAN_MAESTRO_SINCRONIZACION.md`)**:
+  - **10 Roles Senior en Modo Profesor Pedagógico**: Formalización de arquitectura, cuantificación de micro-capital $13.00 USD ($T_d = 72$ h, $g \approx +0.231049/\text{día}$ compuesto continuo), invariantes inviolables de Binance Futures (filtro nocional $5.10 USD @ 5x leverage, 2 posiciones máx, SL difusivo 55 bps, $RR \ge 2.25$, suelo de falsación $d^* = 0.632$).
+  - **Continuo Temporal Espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$**: Erradicación de clasificaciones estancas (`scalping` vs `swing`). Centroide de resonancia continua de Hilbert $\tau^* \in [30\text{ s}, 12\text{ h}]$ sobre 32 escalas diádicas ($\tau = 4^k\ \mu\text{s}$) y estado proyectado sobre el símplex tetraédrico continuo $\Delta^3$.
+  - **Matriz Evolutiva Transdisciplinar**: Transición canónica de cada modelo hacia su formulación continua (PIN-SDE neuronales, Rough Volatility $H < 0.5$, Navier-Stokes compresible del libro L2/L3, Yang-Mills $SU(N)$ gauge curvature, descomposición Helmholtz-Hodge $L^2$ de flujos, Kahneman-Tversky + Mean Field Games).
+- **Diagnóstico Forense de Rechazos en Fixture T-2**:
+  - En la corrida sobre 13 USD y base forestal 0.30: 15 trades completados (WR 20%), 1324 rechazos por `REJ_EV` y 171 por confianza.
+  - Causa raíz analítica: El decaimiento exponencial de la evidencia con $\tau_{\text{anchor}} = 12\text{ horas}$ (`SEMIVIDA_EVIDENCIA_MS`) en `confidence_calibrator` hace que rachas perdedores iniciales congelen la probabilidad de éxito $p < p^*$, generando un estado absorbente donde `REJ_EV` bloquea la cuenta durante horas.
+  - Plan de acción para Fase R1/R2: Diseñar desasfixia adaptativa con bandas UCB de reactivación controlada sin relajar el riesgo físico.
+- **Sincronización Multi-Agente**:
+  - Respaldo a Línea C para el ciclo 11 (C-F0 docs, scripts de citas, toolchain, inventario C-F10).
+  - Acuerdo con Línea C en unificar en `LC-F4-10` el freno del host ($d^* = 0.632$ con `lerp(..., micro_w)` y persistencia mínima de pico).

@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — AGY: OLA Ω79 COMPLETADA — FORMALIZACIÓN PLAN MAESTRO EXPONENCIAL CUÁNTICO, SINCRONIZACIÓN MULTI-AGENTE Y DIAGNÓSTICO FORENSE T-2 (FICHA #717)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#717`.
+- **Integración con origin/main (commit `431ce4c4` / PR #33)**:
+  - Verificada integración limpia de los cambios de Ola Ω78 (#716, commit `1025f750`): REV-13 neutralidad NaN, REV-1/2 verificación exacta de rechazo, REV-6/7/8 propagador Feynman.
+  - Verificada integración de PR #33 de Claude Línea E: fixture T-2 (`crates/backtest-engine/tests/t2_cobertura_puertas.rs`), REV-4 veto espejo cortos con $p_{\text{bull}} \ge 0.90$, constantes `REJ_*` en `veto_registry.rs`.
+- **Formalización de Plan Maestro Cuántico Canónico (`docs/PLAN_MAESTRO_EXPONENCIAL_CUANTICO_2026-10-10.md` y §38 de `docs/PLAN_MAESTRO_SINCRONIZACION.md`)**:
+  - **10 Roles Senior en Modo Profesor**: Arquitecto, Quant Dev, Risk Manager, SRE/DevOps, QA Engineer, Físico Sist. Complejos, Estadístico Matemático, IA Cuántica & Psico, Auditor Forense de Grafo, Profesor Pedagógico Supremo (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).
+  - **Compuesto Exponencial en $13.00 USD ($T_d = 72$ h)**: $g \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$ compuesto continuo. Sizing discreto R-20 ($N=1..2$ órdenes mínimas $5.10 USD @ 5x leverage). Con $RR \ge 2.25$ y Win Rate realista de $65\%-75\%$ (`RULE[growth_over_wr]`), $\mathbb{E}[R] \approx +\$0.03372$ USD/trade $\implies N \approx 50-89$ trades/día.
+  - **Continuo Temporal Espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$**: Erradicación de dicotomías discretas scalping/swing. Centroide temporal continuo $\tau^* \in [30\text{ s}, 12\text{ h}]$ en espacio de Hilbert $L^2$ (32 escalas diádicas $\tau = 4^k\ \mu\text{s}$) y simplex tetraédrico continuo $\Delta^3$.
+  - **Evolución Transdisciplinar**: Mapeo del "siguiente paso de cada teoría" (PIN-SDE continuos, Rough Volatility $H < 0.5$, Navier-Stokes compresible del libro L2/L3, Yang-Mills $SU(N)$ gauge curvature, descomposición Helmholtz-Hodge $L^2$ de flujos, Kahneman-Tversky + Mean Field Games).
+  - **Sincronización con Línea C**: Acuse a la asignación del ciclo 11 (C-F0, scripts, toolchain, inventario C-F10) y acuerdo total en unificar `LC-F4-10` (freno del host con `lerp(..., micro_w)` y pico compartido persistente).
+- **Diagnóstico Forense de Asfixia en Fixture T-2**:
+  - En `crates/backtest-engine/tests/t2_cobertura_puertas.rs`: 15 trades ejecutados (3 ganados / 12 perdidos, WR 20%). Conteo de vetos: `risk-rejects: EV=1324 confianza=171 · largo: EV=1002 confianza=171 · corto: EV=322`.
+  - Causa raíz identificada: racha inicial perdedora deprime $p$ en `confidence_calibrator` por debajo de breakeven ($p^* \approx 0.35$). Dado que `SEMIVIDA_EVIDENCIA_MS = TAU_ANCHOR_SLOW_MS = 12\text{ h}`, la memoria bayesiana persiste y congela operativamente la cuenta bajo `REJ_EV` durante horas.
+  - Plan de acción: Fase R1/R2 de auditoría forense para desasfixia adaptativa con bandas UCB de exploración.
+
 ## 2026-10-11 — Claude (cloud, Línea C): ciclos 9 y 10 en main (PR #29, aa716edf) y plan desde la base
 
 Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (el proxy git de
@@ -10,7 +27,7 @@ kill-switch bloquea lo que aumenta el riesgo, nunca las salidas.
 Plan desde la base (pedido del dueño el 2026-10-10):
 `docs/PLAN_LINEA_C_DESDE_LA_BASE_2026-10-11.md`. Doce fases C-F0 (metas) … C-F11 (limpieza), una fase dueña por
 archivo, recibo por archivo como el de Codex/Sol, y puertas de compilación,
-conducta y resultado en cada fase (resumen: §38 del plan maestro).
+conducta y resultado en cada fase (resumen: §39 del plan maestro).
 `scripts/plan_linea_c.py citas` comprueba
 que cada `ruta:línea` del plan exista en una revisión dada (alias
 `lib.rs` = núcleo, `god_engine.rs` = host). Las citas del plan son de
@@ -149,6 +166,7 @@ de CL-50…CL-53 encontró cuatro defectos propios (CL-50b…CL-53b):
 
 ## 2026-10-11 — Claude (sesión «elegant», QS-n): PR #32 en main; vetos de Ω71, espejo de cortos y fixture T-2 (PR #33)
 
+
 - **PR #32 fusionado** (`03b3f1ca`): QS-P y QS-K. CI verde en los cinco
   checks; T-1 16/144 con las huellas de siempre.
 - **PR #33** (ledger §7.5):
@@ -177,8 +195,15 @@ de CL-50…CL-53 encontró cuatro defectos propios (CL-50b…CL-53b):
 - **QS-P4 medido sin ganancia** (plan §30.7): LTO fat + 1 CGU da 958 s
   frente a 889 s, con las 145 huellas iguales, y la compilación pasa de
   3–5 min a 10 min. No se propone para el binario vivo.
-- **Siguiente**: T-2 v2 con un libro que contradiga a las señales lentas
-  durante una entrada (para ver el consejo); QS-R4b; D1/D4 con la Línea C.
+- **PR #33 fusionado** (`431ce4c4`): CI verde en los cinco checks; T-1
+  16/144 y T-2 9/144 con las huellas de siempre sobre el árbol con #716.
+- **Por qué el T-2 no ve el consejo (medido, ledger §7.5)**: nada llega a
+  él. El veto EV calibrado rechaza 1 324 intenciones tras la fase de
+  sonda: p calibrada mediana 0,377 frente a 0,4255 de equilibrio (RR 2,36,
+  fricción = 34 % del stop). El veto acierta: el fixture no tiene ventaja.
+  La v2 necesita un predictor con ventaja real en el fixture.
+- **Siguiente**: T-2 v2 (predictor con ventaja + asientos divididos);
+  QS-R4b; D1/D4 con la Línea C.
 
 ## 2026-10-10 — AGY: OLA Ω78 COMPLETADA — RESOLUCIÓN DE RAÍZ REV-13 (NEUTRALIDAD NAN), REV-1 (`REJ_SPEC`), REV-2 (`REJ_FEE_IMPACT`), FEYNMAN PROPAGATOR (REV-6/7/8) Y PLAN MAESTRO CUÁNTICO (FICHA #716)
 
