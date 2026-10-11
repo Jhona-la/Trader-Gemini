@@ -53,6 +53,19 @@ pub struct StatefulEngine {
     pub rsi_rs: f64,
     pub last_price: f64,
     pub v_t: f64,
+    /// CL-68 (C-F4, regla S-8): el rasgo del modelo que hoy sale de `v_t`
+    /// (12D[3], 54D[34], [35], [38] y [39], y el exportador de rasgos). Sigue
+    /// el algoritmo con el que se entrenaron los modelos servidos (semilla de
+    /// 50 pb, trinquete dentro de la vela, EMA 0,85/0,15 con suelo de 10 pb
+    /// y kline 0,8/0,2 con suelo de 5 pb), para que el ATR de las decisiones
+    /// pueda cambiar (CL-71) sin cambiar lo que ve el modelo. Se retira al
+    /// reentrenar. Sólo lo leen los constructores de rasgos del modelo.
+    pub vt_rasgo_ml: f64,
+    /// CL-69: piso de resolución del ATR de las decisiones, en unidades de
+    /// precio: el tick del símbolo. Un ATR por debajo de un tick no es
+    /// medible. 0 = sin spec (no hay piso declarado). Lo fija el núcleo en
+    /// cada evento con `symbol_registry::tick_size_de`.
+    pub piso_resolucion: f64,
     pub a_t: f64,
     /// MOD2/7-031 — EMA del centroide espectral (adimensional, actualizada
     /// cada 64 ticks). ANTES vivía en `a_t` y era sobrescrita al tick
@@ -202,6 +215,8 @@ impl StatefulEngine {
             rsi_rs: 0.0,
             last_price: 0.0,
             v_t: 0.0,
+            vt_rasgo_ml: 0.0,
+            piso_resolucion: 0.0,
             a_t: 0.0,
             a_t_spectral: 0.0,
             last_inst_v: 0.0,
@@ -590,6 +605,7 @@ impl StatefulEngine {
         self.rsi_rs = 0.0;
         self.last_price = 0.0;
         self.v_t = 0.0;
+        self.vt_rasgo_ml = 0.0;
         self.a_t = 0.0;
         self.a_t_spectral = 0.0;
         self.last_inst_v = 0.0;
@@ -838,6 +854,9 @@ impl StatefulEngine {
             if self.v_t == 0.0 && price > 0.0 {
                 self.v_t = price * 0.005; // Fallback inicial 50 bps True Range
             }
+            if self.vt_rasgo_ml == 0.0 && price > 0.0 {
+                self.vt_rasgo_ml = price * 0.005;
+            }
         } else {
             self.kline_high = self.kline_high.max(price);
             self.kline_low = self.kline_low.min(price);
@@ -850,6 +869,12 @@ impl StatefulEngine {
             let intra_candle_tr = (self.kline_high - self.kline_low).max(price * 0.0010);
             if intra_candle_tr > self.v_t || self.v_t == 0.0 || !self.v_t.is_finite() {
                 self.v_t = intra_candle_tr;
+            }
+            if intra_candle_tr > self.vt_rasgo_ml
+                || self.vt_rasgo_ml == 0.0
+                || !self.vt_rasgo_ml.is_finite()
+            {
+                self.vt_rasgo_ml = intra_candle_tr;
             }
 
             // Generate 1-minute Kline internally (60,000 ms) and update True Range EMA & Trend EMAs
@@ -878,6 +903,11 @@ impl StatefulEngine {
                     tr
                 } else {
                     (self.v_t * 0.85 + tr * 0.15).max(price * 0.0010)
+                };
+                self.vt_rasgo_ml = if self.vt_rasgo_ml == 0.0 || !self.vt_rasgo_ml.is_finite() {
+                    tr
+                } else {
+                    (self.vt_rasgo_ml * 0.85 + tr * 0.15).max(price * 0.0010)
                 };
 
                 // Actualizar EMAs de tendencia macro de 1 minuto (EMA 9 y EMA 21), tendencia intermedia (EMA 120 ~ 2 horas) y tendencia secular (EMA 720 ~ 12 horas)
@@ -1027,6 +1057,11 @@ impl StatefulEngine {
         } else {
             (self.v_t * 0.8 + tr * 0.2).max(close * 0.0005)
         };
+        self.vt_rasgo_ml = if self.vt_rasgo_ml == 0.0 || !self.vt_rasgo_ml.is_finite() {
+            tr
+        } else {
+            (self.vt_rasgo_ml * 0.8 + tr * 0.2).max(close * 0.0005)
+        };
         Ok(())
     }
 
@@ -1080,7 +1115,7 @@ impl StatefulEngine {
         let ofi = self.ofi_model.ema_ofi;
         let vol_delta = self.order_flow.get_volume_delta_ratio();
         let norm_vt = if self.last_price > 0.0 {
-            (self.v_t / self.last_price).clamp(0.0, 1.0)
+            (self.vt_rasgo_ml / self.last_price).clamp(0.0, 1.0)
         } else {
             0.005
         };
@@ -1173,10 +1208,23 @@ impl StatefulEngine {
         raw
     }
 
+    /// CL-68: el rasgo del modelo `vt_rasgo_ml / last_price` (54D[35]). No es
+    /// el ATR de las decisiones: ése es `get_atr_pct`.
+    pub fn rasgo_atr_pct_ml(&self) -> f64 {
+        if self.last_price > 0.0 {
+            self.vt_rasgo_ml / self.last_price
+        } else {
+            0.0
+        }
+    }
+
     /// Returns ATR as a percentage of last price for Stop Loss scaling
+    ///
+    /// CL-69: nunca por debajo de un tick (`piso_resolucion`), el único piso
+    /// del ATR de las decisiones que no es un literal.
     pub fn get_atr_pct(&self) -> f64 {
         if self.last_price > 0.0 {
-            self.v_t / self.last_price
+            self.v_t.max(self.piso_resolucion) / self.last_price
         } else {
             0.0
         }
