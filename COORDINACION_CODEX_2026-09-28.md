@@ -8663,4 +8663,21 @@ esta fase autoriza push de código.
      - `cargo test -p risk-engine`: Suite completa (24 archivos de tests, >100 tests) PASSED (100%).
      - `cargo check --workspace --all-targets`: 0 errores, 0 advertencias a lo largo de las 23 crates miembro.
 
+## 2026-10-11 — Antigravity (Quant Sr.): CIERRE DE OLA Ω80 (FICHA FORENSE #718) — CIERRE DE REV-5, REV-9, REV-10 CON SOMBRAS FEYNMAN Y NAVIER-STOKES EN ORQUESTADOR E INVARIANZA T-2
 
+- **Agente**: Antigravity (Quant Sr. Lead & Arquitecto de Excelencia Operativa). **Base**: `main` (post-Ola Ω79 `bc954a43`).
+- **Rama activa**: `antigravity/teoria-espectral-multivariante-y-optimizacion-senales`.
+- **Ficha Forense**: **#718**. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Resolución y Cierre de Hallazgos Abiertos**:
+  1. **REV-5 [MED] CERRADO**:
+     - `crates/god-engine-core/src/lib.rs:2427-2485`: En `process_event`, el núcleo calcula deterministamente en O(1) `voto_espectral_con_coherencia` de `FeynmanPropagatorEngine` y publica en `OmniscientRegistry`: `"feynman_coherence"`, `"sombra_feynman_consenso"`, `"sombra_feynman_tau_max"`, `"sombra_feynman_v_max"`.
+     - De forma complementaria, calcula y publica las sombras de `NavierStokesManifoldEngine`: `"sombra_navier_consenso"`, `"sombra_navier_tau_max"`, `"sombra_navier_v_max"`.
+     - En `crates/god-engine-core/src/lib.rs:1070-1076`: `NavierStokesManifoldEngine` y `FeynmanPropagatorEngine` registrados formalmente en el `TensorVoteOrchestrator` de `GodEngineCore::new`.
+     - Erradicado el código durmiente: `FeynmanPropagatorEngine::evaluate_for_coin` ahora lee evidencia cuántica calculada y publicada en vivo en cada evento de profundidad de libro.
+  2. **REV-9 [INFO] CERRADO**:
+     - `crates/signal-engine/src/feynman_propagator.rs`: Corregida la especificación formal en comentarios y docstrings: el gradiente de momentum discreto inter-escala diádica es $vel_k = z_k - z_{k-1}$ sobre la malla de Hilbert ($\tau_k = 4^k\ \mu\text{s}$), el ángulo canónico es $\theta_k = \text{atan2}(vel\cdot m, z\cdot \sqrt{k_{\text{spring}}})$ y la coherencia cuántica normalizada divide por el conteo de escalas activas $C_{\text{coh}} = \frac{|\Psi|^2}{I_{\text{incoh}} \cdot \text{active\_count}} \in [0.0, 1.0]$.
+  3. **REV-10 [LOW] CERRADO**:
+     - `crates/god-engine-core/tests/prospect_pressure_integration_contract.rs`: Añadido el contrato formal `test_rev10_prospect_pressure_through_god_engine_core` ejecutado a través del núcleo real `GodEngineCore::process_event`, validando la ley anti-simétrica Kahneman-Tversky ($C-10$) y la publicación viva de `feynman_coherence`.
+     - `crates/god-engine-core/tests/sombras_espectrales_telemetria_contract.rs`: Verificación completa de publicación de sombras `"sombra_feynman_consenso"`, `"sombra_navier_consenso"` y cota $C_{\text{coh}} \in [0.0, 1.0]$ (2/2 tests OK).
+  4. **Invarianza Bit a Bit en Cobertura de Puertas T-2**:
+     - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300` y 15 operaciones bit a bit idénticas al fixture base de Claude.

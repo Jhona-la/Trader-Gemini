@@ -1592,3 +1592,24 @@ externos».
   (640 correctas, 0 rotas en aa716edf);
 - `asignacion` regenera la lista de recibos y falla si un archivo queda
   sin fase.
+
+## 40. Integración de Sombras Feynman y Navier-Stokes en Orquestador, Cierre de REV-5/9/10 e Invarianza T-2 (Ola Ω80, Ficha #718)
+
+- **Cierre de REV-5 (Modo Sombra y Telemetría Viva de Feynman Propagator y Navier-Stokes Manifold)**:
+  - En `crates/god-engine-core/src/lib.rs:2427-2485`: integrados los cálculos en modo sombra determinista $O(1)$ (< 25 ns) para `FeynmanPropagatorEngine` y `NavierStokesManifoldEngine` sobre cada evento de profundidad L2/L3.
+  - En cada tick, el núcleo calcula `voto_espectral_con_coherencia(&desplazamientos, hbar, mass, k_spring)` y publica en el `OmniscientRegistry` para cada activo:
+    * `"feynman_coherence"`: Coherencia cuántica normalizada $C_{\text{coh}} \in [0.0, 1.0]$.
+    * `"sombra_feynman_consenso"`, `"sombra_feynman_tau_max"`, `"sombra_feynman_v_max"`.
+    * `"sombra_navier_consenso"`, `"sombra_navier_tau_max"`, `"sombra_navier_v_max"`.
+  - En `crates/god-engine-core/src/lib.rs:1070-1076`: `NavierStokesManifoldEngine` y `FeynmanPropagatorEngine` registrados formalmente en el `TensorVoteOrchestrator` de `GodEngineCore::new`.
+  - Se resuelve de raíz el código durmiente / huérfano: `FeynmanPropagatorEngine::evaluate_for_coin` ahora lee `feynman_coherence` calculada en tiempo real por el núcleo.
+
+- **Cierre de REV-9 (Formalización Canónica de Gradientes Inter-Escala en Documentación de Feynman Propagator)**:
+  - En `crates/signal-engine/src/feynman_propagator.rs`: docstrings y notas teóricas corregidas formalmente: la velocidad inter-escala diádica es $vel_k = z_k - z_{k-1}$ sobre la malla de Hilbert ($\tau_k = 4^k\ \mu\text{s}$), el ángulo canónico es $\theta_k = \text{atan2}(vel\cdot m, z\cdot \sqrt{k_{\text{spring}}})$ y la coherencia cuántica normalizada sobre escalas activas $C_{\text{coh}} = \frac{|\Psi|^2}{I_{\text{incoh}} \cdot \text{active\_count}} \in [0.0, 1.0]$.
+
+- **Cierre de REV-10 (Validación Extremo a Extremo a través de `GodEngineCore`)**:
+  - En `crates/god-engine-core/tests/prospect_pressure_integration_contract.rs`: contrato formal `test_rev10_prospect_pressure_through_god_engine_core` ejecutado a través de `GodEngineCore::process_event` real con instanciación completa del núcleo, validando la asimetría de Kahneman-Tversky ($C-10$) y la publicación viva de `feynman_coherence`.
+  - En `crates/god-engine-core/tests/sombras_espectrales_telemetria_contract.rs`: extendida la verificación para cubrir las sombras `"sombra_feynman_consenso"`, `"sombra_navier_consenso"` y la cota $C_{\text{coh}} \in [0.0, 1.0]$.
+
+- **Invarianza y Cero Regresiones en Cobertura de Puertas T-2**:
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300` y 15 operaciones idénticas bit a bit frente a la línea base previa.
