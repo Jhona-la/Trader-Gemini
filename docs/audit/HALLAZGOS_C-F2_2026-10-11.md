@@ -10,7 +10,7 @@ Convenciones:
 - «Dueño» es quien arregla. Las zonas ajenas (Codex, Qoder/GLM, AGY, Línea E) reciben un pedido con su test en rojo; Línea C no toca su código.
 - Las fichas por archivo, las respuestas a las preguntas del plan, los literales, las retiradas y lo que señaló el escéptico de completitud están en `docs/audit/FICHAS_C-F2_2026-10-11.md`.
 
-Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confirman 66; uno (F2.5-01) queda reformulado.
+Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confirman 66; uno (F2.5-01) queda reformulado. La revisión cruzada del PC (CL-65) añade dos sub-hallazgos con prueba propia, F2.2-03b y F2.3-08b (baja), descritos dentro de F2.2-03 y F2.3-08, y una segunda causa en F2.2-10.
 
 | Id | Hallazgo | Severidad | Estado | Dueño |
 |---|---|---|---|---|
@@ -242,6 +242,7 @@ Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confi
 - Causa: Usa SE[ln PF] = √(2/n). Por el método delta, Var(ln PF) = [(cv_w²+1−p)/p + (cv_l²+p)/(1−p) + 2]/n. Falta el +2 de la covarianza negativa entre ln W y ln L (cada ganada es una perdida menos) y faltan los términos de p. Eso da 4/n con ±1 R y p = ½, 4,5/n con 2:1 y p = ⅓, y 8/n con magnitudes exponenciales.
 - Consecuencia viva: Con PF real 1, se declara edge (LCB > 1) en el 10-20 % de los casos en lugar del 5 %. Eso saca a la moneda de la exploración en kelly_cold (risk lib.rs:401-406) y alimenta un kelly_fraction optimista (core lib.rs:4203-4221).
 - Prueba que falla hoy: cf2_pf_lcb_cubre_al_95_con_pf_real_1, por enumeración exacta con n = 100: cobertura 0,9033 (1:1) y 0,8630 (2:1), cuando se espera ≥ 0,94. cf2_pf_lcb_cubre_con_magnitudes_exponenciales: ≈ 0,80, cuando se espera ≥ 0,93.
+  - Actualización (revisión cruzada, CL-65): se registra como F2.2-03b la sub-causa FA-1 del escéptico de completitud: la cota mirada en cada cierre no es anytime-valid (cobertura secuencial ≈ 0,54 y ≈ 0,57 por programación dinámica exacta). La prueba es cf2_pf_lcb_cobertura_secuencial_en_cada_cierre y no se cierra con el arreglo del SE, sólo con una cota válida bajo parada opcional.
 - Dueño: Línea C, C-F2.2
 - Escépticos: confirmado por los dos escépticos.
   - Corrección (refutar): La cadena de consumidor está mal citada. kelly_cold (risk lib.rs:401-406) sólo se alcanza con trades_n == 0, y entonces el PF ya es PF_DESCONOCIDO por definición (evidence.rs:78-80), o con raw_kelly ≤ 0 (risk lib.rs:411-415). El camino efectivo es core lib.rs:4203-4221 → kelly.rs:60-72: con PF ≤ 1 se aplica la rampa de exploración y con PF > 1 se aplica W(1−1/PF). De ahí sale metrics.kelly_fraction → raw_kelly (risk lib.rs:389-415).
@@ -306,6 +307,7 @@ Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confi
 - Causa: El umbral multiplica el cuantil por (1 + 0,5χ), y el P² es acumulativo de por vida.
 - Consecuencia viva: Los umbrales de OBI/OFI y el piso del score analítico disparan a tasas que nadie fija: 2,5 veces más «eventos» en un régimen volátil nuevo y un 37 % menos con χ > 0.
 - Prueba que falla hoy: cf2_umbral_obi_con_intermitencia_conserva_el_p80: con χ = 0,4 la tasa es 0,125, cuando se espera 0,20 ± 0,02. cf2_p2_tras_cambio_de_regimen_vuelve_al_nominal: con σ ×2 la tasa es ≈ 0,49. Con datos iid y sin multiplicador pasa (0,2007).
+  - Actualización (revisión cruzada, CL-65): la prueba se llama ahora cf2_umbral_obi_con_intermitencia_sigue_la_cola_analitica y es ACTIVA: fija la cola analítica del diseño vivo, 2(1 − Φ(1,2·1,2816)) = 0,1241 (no un p80), y es una regresión documental (replica el multiplicador; el piso vivo es privado). La OPEN de este hallazgo es cf2_p2_tras_cambio_de_regimen_vuelve_al_nominal; su ventana [10 000, 20 000] se recalcula con la memoria que fije el arreglo.
 - Dueño: Línea C, C-F2.2
 - Fila de §3 del plan: 42
 - Relación con hallazgos anteriores: R7-R2-C-9
@@ -320,6 +322,7 @@ Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confi
 - Causa: El listón E[max SR] crece como √(2 ln N), y N acumula sin límite las pruebas de todas las rondas (≈ 2 001 por ronda), mientras n, el número de barras del examen, no crece.
 - Consecuencia viva: Salvo edges enormes, ninguna promoción del demonio pasa el DSR, así que la evolución en vivo también queda cerrada por estadística, además de por F2.2-01.
 - Prueba que falla hoy: cf2_dsr_nivel_y_potencia_con_100_pruebas: con SR 0,2 por observación, n = 250 y N = 100, la potencia es ≈ 0,137, cuando se pide > 0,5. El nivel es 0 y pasa. Por cálculo, con N = 20 010 la potencia cae a ≈ 1 %.
+  - Actualización (revisión cruzada, CL-65): la prueba ya no usa SR 0,2 ni pide potencia > 0,5. Planta Sharpe 0,25 con n = 250 y compara con el Šidák exacto ((1−α)^{1/N}), con N = 100 y N = 20 010. Mide una SEGUNDA causa, que se añade a este hallazgo: el umbral del DSR, E[max] + 1,645·σ_SR, deflacta dos veces frente al cuantil (1−α)^{1/N} del máximo (nivel ≈ 0 y potencia ≈ 0,40 frente a ≈ 0,74 del Šidák con N = 100). La acumulación de N entre rondas (causa 1) es del cableado de C-F7 y no se prueba aquí.
 - Dueño: Línea C, C-F7 (plan §3 fila 34)
 - Fila de §3 del plan: 34
 - Relación con hallazgos anteriores: R7-R2-A-9; plan §3 fila 34
@@ -361,6 +364,7 @@ Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confi
 - Causa: TemporalSpectrum::spectral_coherence pondera con observable/vol, y arena.spectral_coherence (escrita desde field.global_coherence) pondera además con 2|p|·gain. X-016 combina en una sola decisión la versión V_obs (lib.rs:7006) con la marea macro y el campo, que son V_esp (lib.rs:7007-7009). El risk-engine lee la versión V_esp creyendo leer la coherencia del consejo. El comentario de :1080-1084 («una sola verdad») y la doc de :242-245 son falsos.
 - Consecuencia viva: crash_flux, free_cap (lib.rs:7905-7921) y risk-engine/src/lib.rs:957, :1061 y :1069 juzgan con una «coherencia» numéricamente distinta de la del consejo y X-016.
 - Prueba que falla hoy: cf2_un_solo_vector_de_pesos_para_fusion_y_campo: |spec.spectral_coherence(true) − spec.spectral_field(true).global_coherence| < 1e-9 en todos los eventos tras el calentamiento. Hoy difieren en todos los eventos con |p| ≠ ½.
+  - Actualización (revisión cruzada, CL-65): la prueba se llama cf2_contrato_peso_unico_fila1. Es un contrato de diseño: se pone verde si el arreglo unifica los pesos; si el arreglo es renombrar, se borra.
 - Dueño: Línea C (C-F3)
 - Fila de §3 del plan: 1
 - Escépticos: confirmado por los dos escépticos.
@@ -454,6 +458,7 @@ Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confi
 - Causa: F = ½(abᵀ − baᵀ), con a = OFI y b = tanh(100r), es de rango 2. Por eso curl_share = C/(C+G), con C = ¼(|a′|²|b′|² − (a′·b′)²) y G = (n/4)|b̄a′ − āb′|². Con medias pequeñas da unos (n−1)/(n+1). No hay retardo ni ciclo: sólo momentos de corte transversal de retornos de un evento, que además son asíncronos.
 - Consecuencia viva: laminar_factor ≈ 1 − 0,70·0,93 ≈ 0,35 con 30 monedas, o 0,53 con 5: SeniorMicroestructura pierde entre el 47 % y el 65 % de su confianza sin evidencia (consejo_seniors.rs:411).
 - Prueba que falla hoy: cf2_hodge_sin_circulacion_no_es_vortice: con OFI y retornos independientes y n = 30, el doc (hodge_flow.rs:29-30) promete curl bajo sin vórtice, y la aserción pide < 0,5. Predigo una media de unos 0,93. La identidad se demuestra en cf2_hodge_curl_share_es_funcion_de_momentos_transversales.
+  - Actualización (revisión cruzada, CL-65): esa prueba no existe. La ley nula está en la activa cf2_hodge_ruido_independiente_da_curl_cercano_a_uno (curl ~ Beta((n−2)/2, 1), media 14/15 con n = 30; observado 0,9314) y en la identidad cf2_hodge_curl_share_es_funcion_de_momentos_transversales. Este hallazgo no tiene prueba roja: la falsación pendiente está en el consumidor (SeniorMicroestructura, laminar_factor). Sobre el dueño, el encabezado del archivo dice «AGY por historia» y el escéptico de completitud dice Línea C (hodge_flow.rs no está en ninguna zona ajena). Rige Línea C.
 - Dueño: AGY por historia (Ω37). No verifiqué la reserva de zonas; va como pedido con test.
 - Fila de §3 del plan: 44
 - Relación con hallazgos anteriores: Está relacionado con R7-R3-A-2 (el test del vórtice no discrimina), pero no es el mismo hallazgo.
@@ -572,6 +577,7 @@ Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confi
 - Causa: Tras MOD2/7-006 y QS-C22, la aprobación exige consenso y directional_signal de los asientos direccionales, que excluyen al Ente. Los moduladores votan intended_direction con peso positivo, así que si D tiene el signo pedido, final_signal también lo tiene. El override de un veto único exige consenso ≥ 0,80, lo que fuerza |final_signal| ≥ 0,6 > 0,28. El llamador sólo lee approved y el signo, y vetoed_by no tiene lector. Ballena, OI, spoofing, LS, taker, staleness macro y Prospect quedan como telemetría sin publicar. Los documentos (entes_consejo.rs:7-8, consejo_seniors.rs:549-553) y los tests (prospect_theory_contract.rs:198-216, consejo_seniors.rs:1842-1845) afirman una modulación que no existe.
 - Consecuencia viva: Ninguna entrada se modera por ballenas, OI, spoofing, masa, staleness macro ni Prospect, aunque el diseño lo declare. El operador cree que tiene protecciones que no existen.
 - Prueba que falla hoy: cf2_ente_extremo_sin_cascada_modera_alguna_decision: sobre la rejilla de cf2_ente_inerte_en_la_decision_salvo_cascada (20 000 cargas útiles, semilla 0xC0F2_0025, liq ≤ 0,85), exigir al menos un caso en el que el Ente extremo (z = 10, OI = 1, spoof = 1, LS y taker adversos 20/0,05, staleness 1 h, P = ±50 adverso) cambie approved. Hoy cambia en 0 casos, y la prueba de inercia complementaria pasa.
+  - Actualización (revisión cruzada, CL-65): la prueba se dividió en cf2_ente_inerte_sin_vetos (activa; ahora sólo exige el signo de final_signal en las cargas aprobadas, porque en una no aprobada el Ente puede invertirlo) y en cf2_ente_decide_por_el_suelo_del_override y cf2_ente_decide_el_override_de_un_veto_unico (activas, formas cerradas a 1e-12).
 - Dueño: Línea C (C-F3, consejo). Decidir entre sombra declarada (G-TEO 5) o retirada.
 - Fila de §3 del plan: 19
 - Escépticos: reformulado (un escéptico lo refuta tal como estaba escrito y otro lo da por dudoso).
@@ -617,6 +623,7 @@ Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confi
 - Causa: Ningún camino vivo llama a la API (grep en la ficha). systematic_mode compara con el borde asintótico, cuya probabilidad de excedencia en ruido es ≈ 0,17 con N = 8 y T = 512 por Tracy-Widom. effective_bets no es un N efectivo. El test B-10 sólo comprueba algo si effective_bets da Some, y «identidad pura» usa la matriz de unos.
 - Consecuencia viva: Ninguna hoy. El riesgo es que alguien lo conecte como prueba de independencia o como descuento de diversificación.
 - Prueba que falla hoy: cf2_mp_tamano_del_veredicto_en_ruido. Predicción: tamaño ≈ 0,17, por encima de 0,05 + 3·SE = 0,065.
+  - Actualización (revisión cruzada, CL-65): la predicción quedó refutada al ejecutarla: tamaño 0,0185 (37 de 2 000), por debajo de 0,0695, y la prueba es activa. Lo que sigue en pie de F2.1-06 es la falta de consumidor y el nombre de effective_bets.
 - Dueño: Codex (pedido)
 - Fila de §3 del plan: 14
 - Relación con hallazgos anteriores: R7-R2-G-2 (miembro B-10) para el test vacuo; plan §3, fila 14, «MP sin consumidor».
@@ -656,6 +663,7 @@ Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confi
 - Causa: El hazard de 1/100 es por evento, así que la tasa de cambios a priori depende de la tasa de eventos. W1 con retardo de 60 s calculado en cada evento genera datos muy autocorrelados (iid violado). La predictiva N(μ_r, σ_e²) omite la varianza posterior de la media del segmento y sobreestima la sorpresa en segmentos cortos.
 - Consecuencia viva: Ninguna: p_transition se descarta (`let _`, lib.rs:7136-7141) y las claves spectral_w1_transport y spectral_p_transition no tienen lector.
 - Prueba que falla hoy: cf2_rw_bocpd_no_dispara_en_ruido (predicción incierta). Propuesta adicional: el mismo proceso muestreado a 1 Hz y a 10 Hz debe dar la misma tasa de alarmas por hora; hoy, por construcción, la de 10 Hz es mayor.
+  - Actualización (revisión cruzada, CL-65): se registra F2.3-08b. La prueba cf2_bocpd_detecta_un_cambio_de_volatilidad_plantado comprueba ahora antes que W1 vea el cambio (media de W1 en [cambio, cambio + 60 s) por encima del máximo nulo en ≥ 13/16 caminos). Lo ve en 0/16: la media de W1 tras el cambio ×5 (≈ 0,91 entre caminos) es la de la ventana nula (≈ 0,94), porque el transporte espectral está normalizado y es invariante a la escala. El BOCPD sobre W1 no puede detectar un cambio de volatilidad; las 5/16 «detecciones» del resultado de la nube eran falsas alarmas. Severidad baja (el consumidor es el mismo de F2.3-08); dueño Línea C.
 - Dueño: Línea C (C-F2.3, fila 10)
 - Fila de §3 del plan: 10
 - Escépticos: confirmado por los dos escépticos.
@@ -933,6 +941,7 @@ Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confi
 - Causa: sombra_navier_* no tiene lector (sólo sombras_espectrales_telemetria_contract.rs:57). kinematic_viscosity no tiene escritor y ν vale siempre 1. turbulent_cascade_flux = E(31) − E(0), la escala de 146 años contra la de 1 ns. E(k) = ½z² con z autonormalizada (temporal_spectrum.rs:555-562), así que es invariante ante σ: K41 (E ∝ ε^{2/3}) no puede cumplirse, y la pendiente −5/3 no se calcula. El contrato kolmogorov_energy_spectrum_and_cascade_flux_conservation certifica la identidad telescópica como si fuera «conservación».
 - Consecuencia viva: Ninguna: es telemetría sin lector. El voto escalar vivo es otro problema (F2.6-01).
 - Prueba que falla hoy: cf2_6_navier_energia_espectral_crece_con_la_energia_inyectada: con σ×10 la «energía» media debería crecer ×21,5 (K41) o ×100 (½u²); por lectura la razón es ≈ 1,000. La identidad cf2_6_navier_flujo_de_cascada_es_la_diferencia_de_extremos pasa.
+  - Actualización (revisión cruzada, CL-65): el ×21,5 (K41) no aplica a esta prueba: con dev crudo la razón sería 100 (½u²), y es lo que exigen la prueba y el TSV.
 - Dueño: AGY
 - Fila de §3 del plan: ninguna
 - Relación con hallazgos anteriores: CL-58 sólo para ν (docs/audit/CLAVES_SIN_ESCRITOR_2026-10-11.tsv:8, rama de Línea C)
@@ -966,9 +975,9 @@ Recuento: 67 hallazgos, 6 altos, 32 medios y 29 bajos. Los dos escépticos confi
   - Corrección (refutar): Duplica F2-C9 (BARRIDO:301) y R7-R0-7 (BARRIDO:1971; censo, líneas 129-130). No es un hallazgo nuevo.
 
 
-## Pruebas de solución conocida (resultados preliminares)
+## Pruebas de solución conocida
 
-Estado al traspaso a la máquina del operador (2026-10-11 ~13:50 UTC). Cada prueba se escribió, compiló y ejecutó una vez en la nube (x86_64-pc-windows-gnu bajo wine, nightly-2026-06-30). La revisión cruzada de las pruebas quedó a medias: empezó en risk-engine y god-engine-core y no terminó. Falta repetirla en todos los crates y correr todas las pruebas juntas antes del PR.
+Resultado preliminar, al traspaso a la máquina del operador (2026-10-11 ~13:50 UTC). Cada prueba se escribió, compiló y ejecutó una vez en la nube (x86_64-pc-windows-gnu bajo wine, nightly-2026-06-30). La revisión cruzada de las pruebas quedó a medias: empezó en risk-engine y god-engine-core y no terminó. Falta repetirla en todos los crates y correr todas las pruebas juntas antes del PR.
 
 Resultado por prueba (crate, hallazgo, predicción, observado, estado, valores y notas): `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv`.
 
@@ -983,3 +992,55 @@ Resultado por prueba (crate, hallazgo, predicción, observado, estado, valores y
 | **Total** | **67** | **70** | **5** |
 
 Una prueba OPEN lleva `#[ignore = "OPEN F2.x-nn (dueño): causa"]`, como los contratos OPEN de Codex. Corre con `cargo test -- --ignored` y falla mientras el defecto siga. Al arreglarlo, su dueño quita el `#[ignore]` en el mismo commit. Una prueba descartada es una predicción que el código refutó (el hallazgo no se sostiene tal como se escribió), o una prueba que no se pudo escribir sin tocar código de producción. En las 32 pruebas donde lo observado difiere de lo predicho, la columna de notas del TSV dice qué se hizo.
+
+### Cierre en el PC del operador (2026-10-11, CL-65)
+
+Revisión cruzada y ejecución completa en la máquina del operador (Windows nativo, x86_64-pc-windows-msvc, nightly-2026-06-30, `CARGO_TARGET_DIR` propio). La revisión la hicieron tres revisores de sólo lectura, que rehicieron a mano las soluciones conocidas de las 137 pruebas contra el código de producción y los hallazgos.
+
+**Lo que encontró la revisión cruzada.**
+
+- Un archivo entero no compilaba en el HEAD que llegó de la nube: `cf2_calibracion_solucion_conocida.rs` leía `cobertura_conformal` como una tupla, y devuelve un struct. Sus 8 pruebas no se habían ejecutado con esa versión; la aserción `err_fijo ≈ 20/201` no se había ejecutado nunca. Corregido; las 8 dan lo predicho.
+- Cuatro pruebas activas fijaban el defecto en vez de la solución y se habrían puesto rojas con el arreglo. Quedan rotuladas CARACTERIZACIÓN, con la instrucción de retirarlas o reescribirlas en el mismo commit que active su OPEN:
+  - `cf2_dfa_ruido_blanco_sesgo_de_forma_cerrada`;
+  - `cf2_re_forma_cerrada_10ms_y_100ms`;
+  - `cf2_ym_caracterizacion_retornos_asincronos` (antes `cf2_ym_retornos_asincronos_son_inertes`, que no era un nulo);
+  - `cf2_conformal_riesgo_entre_aceptadas_valor_analitico`.
+- Se añadió `cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo`, el nulo verdadero de Yang-Mills que sobrevive al arreglo.
+- Pruebas OPEN que no se activan solas con el arreglo del defecto. Ahora lo dice su `#[ignore]`:
+  - CONTRATO DE API (la firma actual no lleva el dato): espectro irregular, nulos estructurales del spoofing y VPIN vivo;
+  - CONTRATO DEL SUCESOR o DEL ASIENTO: Platt fuera del soporte, conformal con selección, cascada de Hodge y LS contado dos veces;
+  - RÉPLICA LOCAL, que se traslada a evolution-engine con el arreglo: el vigilante de Ville;
+  - requisito de precisión, no se cierra con el sesgo: el DFA por realización.
+- Pruebas frágiles o vacuas corregidas:
+  - el Lyapunov de un punto fijo era irresoluble con r = 2,5 y pasa a r = 2,9;
+  - la ballena plantada usa ahora la EE pareada: 7,4 EE, antes 4,7 frente a un límite de 4;
+  - el libro sin cancelaciones usa μ = 2,5 y exige que el precio se mueva;
+  - el Lundberg con exposición pasa a 80 000 caminatas con dos comprobaciones deterministas, y se retira una aserción vacua;
+  - la cobertura de σ̂ toma la referencia del desarrollo de 2Φ(1,645·e^u) − 1 con los momentos medidos;
+  - la τ dominante acepta los dos tamaños de familia;
+  - el lead-lag a cadencia viva usa la cota derivada 0,89;
+  - el paseo aleatorio del DFA tiene un suelo de 0,01 para el residuo de Jensen conocido;
+  - la cópula exige además la λ publicada λ(ρ̂, ν̂);
+  - el Ente inerte sólo exige el signo en las cargas aprobadas.
+- Hallazgo nuevo F2.3-08b (baja): con un control previo del observable, W1 no ve un cambio de volatilidad ×5 en ninguno de los 16 caminos. La media tras el cambio es ≈ 0,91, frente a ≈ 0,94 en la ventana nula: el transporte espectral es invariante a la escala. Las «detecciones» del BOCPD que se dieron en la nube eran falsas alarmas.
+- F2.2-03b: la sub-causa FA-1 (la cota del PF mirada en cada cierre no es anytime-valid) recibe id.
+- F2.2-10 recibe una segunda causa, la doble deflación del umbral del DSR, que es la que mide su prueba.
+- F2.1-06: su predicción (tamaño ≈ 0,17) queda refutada; da 0,0185.
+
+**Resultado final de las pruebas cf2** (`cargo test -p <crate> --test <archivo> -- --include-ignored`). Hay 138 pruebas: las 137 de la nube más el nulo nuevo de Yang-Mills.
+
+| Crate | Activas (pasan) | OPEN (fallan por su causa) | Coste (pasa) | Descartadas |
+|---|---|---|---|---|
+| risk-engine | 13 | 12 | 0 | 1 |
+| god-engine-core | 8 | 18 | 0 | 1 |
+| quantum-arena | 8 | 10 | 0 | 0 |
+| feature-engine | 24 | 19 | 1 | 3 |
+| signal-engine | 7 | 7 | 0 | 0 |
+| metacortex-engine y strategy-core | 8 | 3 | 0 | 0 |
+| **Total** | **68** | **69** | **1** | **5** |
+
+Las 69 OPEN fallan y las 68 activas pasan, sin ninguna discrepancia. Además leí el mensaje de cada fallo, y las 69 caen en la aserción del hallazgo que citan, no en una precondición ni en un control. La de coste (`cf2_copula_gaussiana_no_fabrica_cola`) pasa con `--include-ignored` y su estado en el TSV pasa a `ignorado_coste`.
+
+**Suites completas de los siete crates** (`cargo test -p feature-engine -p god-engine-core -p metacortex-engine -p quantum-arena -p risk-engine -p signal-engine -p strategy-core --tests --no-fail-fast`): 168 binarios, 1 632 pasan, 0 fallan y 74 ignoradas (las 69 OPEN, la de coste y 4 anteriores a C-F2).
+
+La columna `pc_cl65` del TSV da el resultado en el PC de cada prueba, y la columna de notas, lo que cambió la revisión cruzada.
