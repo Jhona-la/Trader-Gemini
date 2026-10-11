@@ -1667,3 +1667,17 @@ externos».
   - `cargo test -p omniscient-registry`: 11/11 tests pasando al 100%.
   - `cargo check --workspace --all-targets`: 0 errores, compila limpiamente.
   - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300`, 15 operaciones exactamente idénticas bit a bit frente a la línea base previa. Cero perturbación en las compuertas vivas.
+
+## SI — 2026-10-11: emisión causal, memoria de riesgo y evidencia
+
+Reserva Codex chat01a0f2fc: spectral_tape.rs y feedback epigenético en state.rs, contratos nuevos y documentación. Respeta estrategia multiactivo del chat01a116f0 y la reserva C-F2 de Claude. Base1d1f8bdd; commits8404bbdf/c9d877da.
+
+Siete reproducciones espectrales RED y cuatro epigenéticas RED; regresión completa quantum-arena238/0/0,15 contratos nuevos incluidos. Revisión adversarial favorable con límites explícitos; all-targets/replay todavía pendientes. Informe detallado docs/AUDITORIA_EVIDENCIA_ESPECTRAL_SI_2026-10-11.md y JSON.
+
+SI no equipara memoria adaptativa con ventaja demostrada. Pronóstico y referencias quedan congelados al emitir; los nulos perfectos no se ignoran y los datos rechazados no avanzan el banco. La epigenética evoluciona desde su valor decaído. Se preservan límites y coeficientes. Quedan abiertos benchmark directo, transformación del objetivo con suelo móvil, incertidumbre del score y writers externos. Sin cambios en T1, trading, entrenamiento ni promoción.
+
+### Actualización SI del corte documental previo a validación final
+
+Primer all-targets aprobado (exit 0, 13 min 42 s). Commit adicional 06ce88ef: preflight compartido en el consumidor forecast de spectral_bench, dos contratos y ejecución en CI; no certifica admisión global del benchmark. Commits funcionales 8404bbdf/c9d877da/06ce88ef publicados. **Recibo terminal de tests, CI, SHA e integración: [PR #39](https://github.com/Jhona-la/Trader-Gemini/pull/39)**. Este corte no presume el resultado futuro de las comprobaciones en curso.
+
+SI-O02 sigue abierto: suelo móvil, inversión sin retirar desplazamiento y climatología en coordenadas distintas; investigación coordinada con C-F2. No se rebajan umbrales ni se certifica rentabilidad. Informe y JSON delimitan la evidencia y las unidades.

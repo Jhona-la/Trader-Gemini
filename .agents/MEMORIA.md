@@ -1,5 +1,17 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — SI: pronóstico emitido y feedback epigenético causal
+
+- Rama propia codex/spectral-evidence-1011 desde1d1f8bdd; no toca estrategia multiactivo reservada por otro chat.
+- 8404bbdf congela predicción/climatología/readiness, valida trades antes de mutar banco, evita ln0 y overflow temporal y conserva el nulo perfecto.
+- c9d877da aplica feedback al umbral ya decaído; rechaza PnL/estado no finito y reloj regresivo, conserva cierres con igual timestamp y política900000ms.
+- RED espectral 0/7, epigenética 2/4; quantum-arena 238/0/0 (21 bloques), incluye nueve y seis contratos nuevos. Primer all-targets aprobado; consumidores/replay/T1 y repetición final en curso en este corte.
+- 06ce88ef extiende el preflight al consumidor forecast de spectral_bench, añade dos contratos y su ejecución en CI. Protege tape/forecasters, no todas las estadísticas anteriores del benchmark.
+- Revisiones adversariales favorables; no ejecución independiente duplicada. Hashes finales y límites en docs/artifacts/auditoria_evidencia_espectral_si_2026-10-11.json; informe docs/AUDITORIA_EVIDENCIA_ESPECTRAL_SI_2026-10-11.md.
+- SI-O02 sigue abierto: suelo móvil, inversión sin retirar desplazamiento y baseline en coordenadas distintas; se coordina con C-F2. Congelar Pending no basta. Incertidumbre, coste por evento y múltiples escritores siguen abiertos.
+- GO24/MP25 sí integradas, heads y merges ancestros; ninguna rama ajena activa se elimina. Checkout SI de septiembre desapareció antes de retomar: no se atribuye éxito a aquella compilación ni integración por desaparición.
+- Sin trading, entrenamiento, promoción, rebaja T1 ni rentabilidad demostrada. Tres commits funcionales publicados. Recibo terminal de validación, SHA e integración: [PR #39](https://github.com/Jhona-la/Trader-Gemini/pull/39). Este corte versionado no presume aprobaciones futuras.
+
 ## 2026-10-11 — Claude (cloud, Línea C): ciclo 12, medidor y perfil del camino caliente (PR #38)
 
 - CL-60: `crates/god-engine-core/tests/medidor_camino_caliente.rs` pasa una
