@@ -684,7 +684,7 @@ R7 de Ronda 7 (datos, telemetría y guardianes; incluye C-02) sigue ABIERTA y si
 6. `deployment/` es del sistema Python retirado.
 
 **Puertas**
-- Benchmark reproducible del camino caliente: tiempo y asignaciones por tick. Hoy sin medir. Es sólo medición: no tiene umbral de aceptación.
+- Benchmark reproducible del camino caliente: tiempo y asignaciones por evento. Hoy sin medir. El medidor se adelanta al ciclo 12 (§8) porque la puerta de rendimiento del protocolo (§7, paso 5) lo necesita. Aquí se le añade el desglose por etapa (núcleo, consejo, riesgo) y por tamaño de cartera.
 - Test de ida y vuelta del estado aprendido: guardar, reiniciar y obtener el mismo estado y la misma decisión.
 - Test de que `darwin_approved` refleja la auditoría, o retirada.
 
@@ -1218,6 +1218,11 @@ Ninguno está verificado salvo los marcados «confirmado por lectura», y a éso
 5. **Verificación:** la puerta común completa (§2), con T-1 release ≥ 11,0 % y comparación gen a gen contra la lista de 16/144.
    - Si cambia la conducta viva, el T-1 es obligatorio (plan sinc. §2 :170). Si cambia el tamaño o la ejecución, también la paridad bt↔vivo (:169).
    - El T-1 corre con 1 000 USD y sin host (t1_cobertura_genetica.rs:50-52). Para C-F5 y los literales micro de C-F4, la verificación es un fixture de 13 USD y tests del host, o `bt_vivo_parity_audit`, y el recibo dice que el T-1 no cubre esos cambios.
+   - **Rendimiento del camino caliente** (pedido del dueño, 2026-10-11 05:49). El camino caliente es lo que corre por cada evento: `GodEngineCore::process_event` y todo lo que llama, incluida `RiskEngine::evaluate_quantum_order` por intención. Si el cambio toca código de ese camino, el PR informa, en release, en la misma máquina y con la misma cinta sintética fija:
+     - asignaciones de heap por evento, con un asignador que las cuenta;
+     - ns por evento, mediana y p99, de la base y de la rama.
+   - Se acepta si no añade asignaciones por evento y si la mediana de la rama no supera a la de la base en más de lo que difieren dos corridas de la base entre sí. Si empeora, el PR dice qué gana a cambio y el dueño decide.
+   - Hasta que exista el medidor (ciclo 12, §8), el PR dice «rendimiento sin medir». `nano_benchmark` no sirve de puerta: mide `process_tick_dual`, no `process_event`, supone 3,5 GHz para pasar ciclos a ns (crates/god-engine-core/src/bin/nano_benchmark.rs:68-72) y no cuenta asignaciones.
 6. **PR**, no draft, con:
    - tabla hallazgo → test → commit;
    - T-1, suites y lo que no se probó.
@@ -1246,7 +1251,9 @@ Las fases ordenan la revisión. No hay operación autorizada, así que ninguna u
     - `rust-toolchain.toml` = `nightly-2026-06-30`, el mismo que la CI, con un test de fuente que compara las tres cadenas (G0, LC-F1-03). Hecho: CL-56.
     - El pico y el umbral únicos del freno inmune (LC-F4-10) pasan al ciclo 13. §9 mostró que ninguna de las dos semánticas actuales es una prueba de nivel α. Con riesgo medido, los dos frenos leen el gen de producción (0,5) como confianza de la prueba de rachas, es decir α = 0,5, y pueden saltar por azar; en régimen micro el veto la sustituye por d* con c = ½, medido desde el pico móvil (LC-F0-08, LC-F0-09, filas 11 y 35). Igualar una a la otra ahora fijaría una de las dos sin derivar. En C-F4 se deriva una sola prueba con el tamaño real y se lleva al dueño como decisión antes de tocar el freno vivo. La persistencia del pico (LC-F0-10) va con ella.
   - Inventario test→workflow de C-F10: hecho (CL-57, `docs/audit/INVENTARIO_TESTS_CI_2026-10-11.tsv`).
-- **Ciclo 12.** C-F2 (sólo lectura y pruebas sintéticas; el T-1 no debe moverse) y C-F3. Los hallazgos de zona ajena salen como pedidos con test que falla.
+- **Ciclo 12.**
+  - Primero el medidor del camino caliente (§7, paso 5): un binario de benchmark que pasa una cinta sintética fija por `process_event`, cuenta asignaciones por evento con un asignador propio y da mediana y p99 de ns por evento. Se adelanta de C-F8 porque sin él la puerta de rendimiento no se puede aplicar. Es sólo medición y no cambia la conducta.
+  - C-F2 (sólo lectura y pruebas sintéticas; el T-1 no debe moverse) y C-F3. Los hallazgos de zona ajena salen como pedidos con test que falla.
 - **Ciclo 13.** C-F4:
   - primero el ATR (LC-F6-01 y LC-F3-02), antes de medir el riesgo al stop o el tope IOC;
   - absorbentes, unidades de los vetos y RA-RUIN-F01;
