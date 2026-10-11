@@ -102,11 +102,21 @@ pub fn fee_impact_contract_rejects_excessive_friction_and_admits_viable_order() 
     let out_viable = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(out_viable.signal, SignalType::Long, "Fricción viable debe admitirse");
     assert!(out_viable.volume_usd > 0.0);
+    assert_eq!(risk_engine::ultimo_rechazo(), None);
 
-    // 2. Fricción colosal (50% de comisión por pierna): debe rechazarse limpiamente por fee_impact
-    arena.config.live_taker_fee.store(0.50, Relaxed);
+    // 2. REV-2: Fricción excesiva para apalancamiento micro (taker 0.0060 -> roundtrip 1.2%),
+    // con volatilidad suficiente (ATR 3.0) para superar el suelo de viabilidad de stop (sl_diffusive 0.03 > sl_floor 0.0185),
+    // pero con impacto en margen final (0.012 * 3.0 = 0.036 > max_fee_limit 0.035).
+    // Debe rechazarse ESPECÍFICAMENTE por REJ_FEE_IMPACT (no por REJ_TP_SL_FLOOR).
+    arena.coins[0].current_atr.store(3.0, Relaxed);
+    arena.config.live_taker_fee.store(0.0060, Relaxed);
     let out_friction = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
-    assert_eq!(out_friction.signal, SignalType::Flat, "Fricción exorbitante debe ser vetada por fee_impact");
+    assert_eq!(out_friction.signal, SignalType::Flat, "Fricción excesiva debe ser vetada por fee_impact");
+    assert_eq!(
+        risk_engine::ultimo_rechazo(),
+        Some(risk_engine::REJ_FEE_IMPACT),
+        "Debe emitir específicamente REJ_FEE_IMPACT"
+    );
 }
 
 #[test]
@@ -131,9 +141,15 @@ pub fn orchestrator_contract_respects_directional_pressure_and_blocks_crash() {
 pub fn spec_rejection_contract_handles_unregistered_coin() {
     let (arena, intent) = fixture();
 
-    // Símbolo fuera del registro (coin_id = 999): rechazado limpiamente sin pánico
-    let out_unreg = RiskEngine::new(13.0).evaluate_quantum_order(999, &intent, &arena);
+    // REV-1: Símbolo asignado en arena (coin_id = 1 < arena.coins.len()), pero sin spec
+    // registrado en symbol_registry: debe rechazarse con REJ_SPEC (no con REJ_FLAT_COIN).
+    let out_unreg = RiskEngine::new(13.0).evaluate_quantum_order(1, &intent, &arena);
     assert_eq!(out_unreg.signal, SignalType::Flat, "Moneda sin spec debe rechazarse como Flat");
+    assert_eq!(
+        risk_engine::ultimo_rechazo(),
+        Some(risk_engine::REJ_SPEC),
+        "Debe emitir específicamente REJ_SPEC"
+    );
 }
 
 #[test]

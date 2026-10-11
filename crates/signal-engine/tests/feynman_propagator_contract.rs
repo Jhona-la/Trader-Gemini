@@ -125,3 +125,45 @@ fn test_quantum_strategy_contract_and_registry_evaluation() {
     let val_active = engine.evaluate();
     assert!(val_active > 0.50, "Active coherence must transmit high conviction, got {}", val_active);
 }
+
+#[test]
+fn test_rev8_nan_in_neighbor_does_not_corrupt_subsequent_scales() {
+    let mut desplazamientos = [2.0f64; ESCALAS_VOTO];
+    desplazamientos[5] = f64::NAN; // Escala 5 corrupta
+
+    let voto = FeynmanPropagatorEngine::voto_espectral(&desplazamientos, 1.0, 1.0, 1.0);
+    // Escala 5 debe ser 0.0
+    assert_eq!(voto.en_escala(5), 0.0);
+    // Escalas posteriores deben ser finitas y no-cero (no corrompidas por el vecino NaN)
+    for k in 6..ESCALAS_VOTO {
+        assert!(voto.en_escala(k).is_finite(), "Escala {k} debe ser finita");
+        assert!(voto.en_escala(k) > 0.0, "Escala {k} no debe anularse por vecino NaN");
+    }
+}
+
+#[test]
+fn test_rev7_active_scales_normalization_avoids_dilution() {
+    // Solo 5 escalas activas alineadas
+    let mut desplazamientos = [0.0f64; ESCALAS_VOTO];
+    for k in 0..5 {
+        desplazamientos[k] = 2.5;
+    }
+
+    let voto = FeynmanPropagatorEngine::voto_espectral(&desplazamientos, 1.0, 1.0, 1.0);
+    let (dom_scale, dom_vote) = voto.dominante().expect("Debe existir escala dominante");
+    assert!(dom_scale < 5);
+    assert!(dom_vote > 0.50, "Coherencia en subconjunto de escalas no debe diluirse por 32: {}", dom_vote);
+}
+
+#[test]
+fn test_rev6_stronger_momentum_preserves_coherence() {
+    // Momentums de alta intensidad (+5.0 y +10.0) deben mantener coherencia constructiva
+    let mut desp_10 = [5.0f64; ESCALAS_VOTO];
+    for k in 16..ESCALAS_VOTO {
+        desp_10[k] = 10.0;
+    }
+
+    let voto = FeynmanPropagatorEngine::voto_espectral(&desp_10, 1.0, 1.0, 1.0);
+    let (_, dom_vote) = voto.dominante().expect("Debe producir voto dominante");
+    assert!(dom_vote > 0.50, "Momentum fuerte debe preservar coherencia constructiva, got {}", dom_vote);
+}

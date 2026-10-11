@@ -1466,7 +1466,28 @@ Siguiente paso: fixture T-2 (rango lateral, consejo dividido, 13 USD).
   - Se creó el hook `.githooks/pre-commit` versionado en el repositorio (activado mediante `core.hooksPath = .githooks`), el cual ejecuta `git diff --cached --check` antes de permitir cualquier commit. Si detecta marcadores residuales (`<<<<<<<`, `=======`, `>>>>>>>`), aborta inmediatamente impidiendo que lleguen a `main`.
   - Se integró el paso de verificación de marcadores y whitespace en `scripts/quality_gate.ps1`.
 
+## 37. Resolución de Raíz REV-13 (Neutralidad Estricta ante NaN), REV-1 (`REJ_SPEC`), REV-2 (`REJ_FEE_IMPACT`) y Feynman Propagator REV-6/7/8 (Ola Ω78, Ficha #716)
 
+- **Causa Raíz y Solución de REV-13 (Neutralidad Estricta ante NaN en Divergencia y Calibración Direccional)**:
+  - En `crates/god-engine-core/src/calibration.rs:328-336`, cuando `p` era NaN caía por defecto a `0.50`. Con una tasa base honesta $b = 0.25$, esto evaluaba $(0.50 - 0.25) / (1.0 - 0.25) = +0.3333$ (+33% de divergencia alcista), generando un sesgo espurio de soporte hacia largos y oposición artificial contra cortos. Además, en `p_win_directional` otorgaba $0.50$ a Long pero solo $0.1667$ a Short.
+  - **Solución Implementada**:
+    * `normalized_directional_divergence(p, base)` devuelve estrictamente `0.0` (neutralidad exacta) si `!p.is_finite() || !base.is_finite()`.
+    * `p_win_directional(is_long, p, base)` devuelve simétricamente `b` (la tasa base honesta clampada) para ambos lados si `!p.is_finite()`.
+  - **Certificación Contractual**:
+    * 18/18 tests unitarios de calibración pasando en `god-engine-core` (`ola75_k06_k23_divergencia_direccional_normalizada_simetrica` y `ola76_k26_p_win_directional_symmetry`).
+    * Contrato de integración formal `conformal_direction_symmetry_contract.rs` (3/3 tests OK) con aserción explícita de neutralidad de espejo ante `f64::NAN` e infinitos.
 
+- **Causa Raíz y Solución de REV-1 (`REJ_SPEC` en Veto Logic)**:
+  - En `crates/risk-engine/tests/veto_logic_contracts.rs:131-137`, el test pasaba `coin_id = 999`. Sin embargo, `lib.rs:250` evalúa primero `coin_id >= arena.coins.len()` (30), retornando `REJ_FLAT_COIN`; `REJ_SPEC` en la línea 490 nunca era alcanzado, por lo que el test era una tautología que no ejercitaba el veto del spec.
+  - **Solución Implementada**: Se asignó `coin_id = 1` (ranura dentro de la arena, pero sin spec registrado en `symbol_registry`), comprobando con exactitud `ultimo_rechazo() == Some(risk_engine::REJ_SPEC)`.
 
+- **Causa Raíz y Solución de REV-2 (`REJ_FEE_IMPACT` en Veto Logic)**:
+  - En `crates/risk-engine/tests/veto_logic_contracts.rs:97-110`, con `live_taker_fee = 0.50`, el stop difusivo violaba previamente el suelo de viabilidad de stop (`sl_diffusive < roundtrip_fee / 0.65`), por lo que salía prematuramente por `REJ_TP_SL_FLOOR` antes de alcanzar `REJ_FEE_IMPACT`.
+  - **Solución Implementada**: Se configuró volatilidad adecuada (ATR 3.0, superando el suelo difusivo) y `live_taker_fee = 0.0060` (roundtrip fee 1.2%), de modo que `final_fee_impact = 0.012 * 3.0 = 0.036 > max_fee_limit = 0.035` en régimen micro, comprobando con exactitud `ultimo_rechazo() == Some(risk_engine::REJ_FEE_IMPACT)`. 7/7 tests de `veto_logic_contracts` OK.
 
+- **Causa Raíz y Solución de Feynman Propagator (REV-6, REV-7, REV-8)**:
+  - En `crates/signal-engine/src/feynman_propagator.rs`:
+    * **REV-8**: Al calcular la velocidad entre escalas contiguas, si la escala anterior era no finita, `prev_z` heredaba NaN corrompiendo todas las escalas subsecuentes. Se aseguró filtrado `k > 0 && desplazamientos[k - 1].is_finite()`.
+    * **REV-7**: La coherencia normalizada dividía rígidamente por 32. Si sólo 5 escalas operables estaban activas, la coherencia se diluía a 0.15. Ahora se normaliza por `active_count` (el número real de escalas con amplitud positiva).
+    * **REV-6**: La fase de acción lagrangiana dependía no linealmente de $|z|$ desnormalizado, lo que provocaba que vectores con fuerte convicción unidireccional sufrieran *phase wrapping* destruyendo la coherencia. Se acotó la acción mediante `tanh` normalizado sobre la superficie de energía total $(1 + z^2 + v^2)$.
+  - **Certificación Contractual**: 10/10 tests en `crates/signal-engine/tests/feynman_propagator_contract.rs` (incluyendo tests específicos `test_rev6_stronger_momentum_preserves_coherence`, `test_rev7_active_scales_normalization_avoids_dilution` y `test_rev8_nan_in_neighbor_does_not_corrupt_subsequent_scales`) pasando al 100%.

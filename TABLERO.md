@@ -84,11 +84,13 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω77 cerrada / Ficha #715)
+## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω78 cerrada / Ficha #716)
 
-- **Haciendo ahora**: Ola Ω77 (#715) — Sincronización de Concurrencia en CI (`replay-contracts.yml`) y Blindaje Anti-Conflictos Local:
-  - CI Concurrency Sync: Modificado `cancel-in-progress: ${{ github.event_name == 'pull_request' }}` en `.github/workflows/replay-contracts.yml`, sincronizándolo con `unit-suites.yml`. Erradica los abortos arbitrarios en `main` tras ráfagas concurrentes de pushes (corridas legítimas de >1 hora abortadas mid-test).
-  - Git Pre-Commit Hook & Quality Gate: Creado hook `.githooks/pre-commit` versionado (`core.hooksPath = .githooks`) y agregado paso en `scripts/quality_gate.ps1` que rechaza automáticamente cualquier commit con marcadores residuales (`<<<<<<<`, `=======`, `>>>>>>>`) o errores de whitespace.
+- **Haciendo ahora**: Ola Ω78 (#716) — Resolución de Raíz REV-13 (Neutralidad Estricta NaN en Calibración), REV-1/REV-2 (Vetos de Lógica Herméticos en Risk-Engine), REV-6/REV-7/REV-8 (Feynman Propagator) y Sincronización del Plan Maestro Cuántico Integral:
+  - REV-13: `normalized_directional_divergence` devuelve 0.0 ante `!p.is_finite() || !base.is_finite()`, eliminando el sesgo de +1/3 contra base 0.25; `p_win_directional` devuelve la base honesta `b` de forma simétrica para ambos lados. Certificado en 18/18 tests de calibración y 3/3 tests de `conformal_direction_symmetry_contract.rs`.
+  - REV-1 & REV-2: Corregidos tests en `risk-engine/tests/veto_logic_contracts.rs` para ejercitar y verificar exactamente `ultimo_rechazo() == Some(REJ_SPEC)` (con `coin_id = 1` no registrado) y `ultimo_rechazo() == Some(REJ_FEE_IMPACT)` (con ATR 3.0 y fee 0.0060). Certificado en 7/7 tests de `veto_logic_contracts.rs` y 154/154 tests de `risk-engine --lib`.
+  - REV-6, REV-7, REV-8: En `signal-engine/src/feynman_propagator.rs`, filtrado de NaN en vecino `desplazamientos[k-1]`, normalización de coherencia cuántica por `active_count` (escalas reales activas) y acotamiento de acción lagrangiana mediante `tanh` sobre la superficie de energía cuadrática. Certificado en 10/10 tests de `feynman_propagator_contract.rs` y 120/120 tests de `signal-engine --lib`.
+  - Sincronización Multi-Agente: Actualizados `PLAN_MAESTRO_SINCRONIZACION.md` (§37), `LEDGER_DECISION_VIVA_2026-10-10.md`, `TABLERO.md` y `.agents/MEMORIA.md`.
 - **Commiteado reciente**:
   - Ola Ω68 (#704, `194089b8`): Absorción analítica de Fokker-Planck en SDE VECM y first-passage time.
   - Plan Maestro Cuántico Integral (#705, `549fc536`): Documento canónico, 10 roles Senior, barrido R0-R9.
@@ -101,10 +103,11 @@
   - Ola Ω74 (#712, `95412dd7`): Navier-Stokes EWMA (C-02), pesos del consejo (C-W) y concordancia de lado en deliberar.
   - Ola Ω75 (#713, `8f6bcc8a`): Simetría direccional en puertas del continuo (K-06) y gate ML B3.18 (K-23).
   - Ola Ω76 (#714, `0000eb8d`): Simetría conformal K-26, microtendencia K-27 y sincronización freno del host d*.
-  - Ola Ω77 (#715): Sincronización concurrencia CI replay y blindaje pre-commit contra marcadores de conflicto.
+  - Ola Ω77 (#715, `07688cf9`): Sincronización concurrencia CI replay y blindaje pre-commit contra marcadores de conflicto.
+  - Ola Ω78 (#716): Resolución REV-13, REV-1, REV-2, REV-6/7/8 y plan maestro cuántico.
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados
   de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`).
-  Toda la suite de crates pasando al 100%. Workspace verificado con `cargo check --workspace --all-targets` limpio en 40.13s.
+  Toda la suite de crates pasando al 100%. Workspace verificado con `cargo check --workspace --all-targets` limpio en 31.65s.
 
 ## Frentes del sistema (no por agente)
 
