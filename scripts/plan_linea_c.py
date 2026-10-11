@@ -32,15 +32,26 @@ la lectura devuelve siempre su respaldo. Escribe un TSV (clave, lecturas,
 por_defecto, sitios). Las claves armadas con `format!` no se ven, así que la
 lista es de candidatas a verificar.
 
+`rendimiento` (CL-60, plan §7 paso 5): puerta de rendimiento del camino
+caliente. Lee las líneas `MEDIDOR` que imprime
+`crates/god-engine-core/tests/medidor_camino_caliente.rs` para la base y la
+rama (misma cinta, release) y aplica la regla del plan: la rama no añade
+asignaciones por evento y su mediana de ns por evento no supera a la de la
+base en más de lo que difieren dos corridas de la base entre sí (el rango de
+las medianas de la base). El p99 se informa y no decide. Código 0 si pasa, 1
+si no pasa y 2 si las medidas no son comparables.
+
 Uso:
     python3 scripts/plan_linea_c.py citas DOCUMENTO [--rev REV] [--alias CORTO=RUTA ...]
     python3 scripts/plan_linea_c.py asignacion [--rev REV] [--salida TSV]
     python3 scripts/plan_linea_c.py ci [--rev REV] [--salida TSV] [--exigir]
     python3 scripts/plan_linea_c.py claves [--rev REV] [--salida TSV]
+    python3 scripts/plan_linea_c.py rendimiento --base LOG [LOG ...] --rama LOG [LOG ...]
 """
 import argparse
 import fnmatch
 import re
+import statistics
 import subprocess
 import sys
 
@@ -359,7 +370,12 @@ def main(argv=None):
     claves.add_argument("--rev", default="HEAD")
     claves.add_argument("--repo", default=".")
     claves.add_argument("--salida", help="ruta del TSV (si falta, sólo el resumen)")
+    rend = sub.add_parser("rendimiento")
+    rend.add_argument("--base", nargs="+", required=True, help="salidas del medidor en la base")
+    rend.add_argument("--rama", nargs="+", required=True, help="salidas del medidor en la rama")
     args = parser.parse_args(argv)
+    if args.orden == "rendimiento":
+        return orden_rendimiento(args)
     if args.orden == "claves":
         return orden_claves(args)
     if args.orden == "asignacion":
@@ -757,6 +773,102 @@ def orden_claves(args):
             clave, len(dato["sitios"]), " | ".join(dato["por_defecto"]) or "-", dato["sitios"][0]))
     print("claves leídas sin escritor: %d" % len(claves))
     return 0
+
+
+CAMPOS_MEDIDOR = ("rep", "eventos", "mediana_ns", "p99_ns", "p999_ns", "max_ns", "media_ns",
+                  "asign_por_evento", "fraccion_con_asign", "max_asign_evento", "intenciones",
+                  "cierres", "ghz", "fondo_asign_por_s", "monedas", "semilla", "debug")
+CAMPOS_ENTEROS = {"rep", "eventos", "max_asign_evento", "intenciones", "cierres", "monedas",
+                  "semilla", "debug"}
+
+
+def leer_medidas(texto):
+    """Líneas `MEDIDOR` del medidor del camino caliente; el resto se ignora."""
+    medidas = []
+    for linea in texto.splitlines():
+        partes = linea.rstrip("\r").split("\t")
+        if partes[0] != "MEDIDOR":
+            continue
+        if len(partes) != len(CAMPOS_MEDIDOR) + 1:
+            raise ValueError("línea MEDIDOR con %d campos (esperados %d): %r"
+                             % (len(partes) - 1, len(CAMPOS_MEDIDOR), linea))
+        medidas.append({c: int(v) if c in CAMPOS_ENTEROS else float(v)
+                        for c, v in zip(CAMPOS_MEDIDOR, partes[1:])})
+    return medidas
+
+
+def veredicto_rendimiento(base, rama):
+    """Regla de la puerta (plan §7 paso 5) sobre repeticiones de base y rama."""
+    v = {"estado": "no_comparable", "motivos": [], "conducta": None}
+    if len(base) < 2:
+        v["motivos"].append("hacen falta al menos dos corridas de la base para medir su ruido")
+        return v
+    if not rama:
+        v["motivos"].append("no hay medidas de la rama")
+        return v
+    cintas = {(m["eventos"], m["monedas"], m["semilla"]) for m in base + rama}
+    if len(cintas) != 1:
+        v["motivos"].append("base y rama no midieron la misma cinta (eventos, monedas, semilla): %s"
+                            % sorted(cintas))
+        return v
+    if any(m["debug"] for m in base + rama):
+        v["motivos"].append("hay medidas de una build debug: la puerta se mide en release")
+        return v
+
+    def mediana(medidas, campo):
+        return statistics.median(m[campo] for m in medidas)
+
+    def rango(medidas, campo):
+        valores = [m[campo] for m in medidas]
+        return max(valores) - min(valores)
+
+    v.update(
+        base_mediana_ns=mediana(base, "mediana_ns"),
+        rama_mediana_ns=mediana(rama, "mediana_ns"),
+        ruido_ns=rango(base, "mediana_ns"),
+        base_p99_ns=mediana(base, "p99_ns"),
+        rama_p99_ns=mediana(rama, "p99_ns"),
+        base_asign=mediana(base, "asign_por_evento"),
+        rama_asign=mediana(rama, "asign_por_evento"),
+        ruido_asign=rango(base, "asign_por_evento"),
+    )
+    v["exceso_ns"] = v["rama_mediana_ns"] - v["base_mediana_ns"]
+    if v["exceso_ns"] > v["ruido_ns"]:
+        v["motivos"].append("tiempo: la mediana sube %.1f ns por evento y dos corridas de la base "
+                            "difieren hasta %.1f ns" % (v["exceso_ns"], v["ruido_ns"]))
+    if v["rama_asign"] - v["base_asign"] > v["ruido_asign"]:
+        v["motivos"].append("asignaciones: %.3f por evento en la rama frente a %.3f en la base"
+                            % (v["rama_asign"], v["base_asign"]))
+    salidas = lambda medidas: sorted({(m["intenciones"], m["cierres"]) for m in medidas})
+    if salidas(base) != salidas(rama):
+        v["conducta"] = ("la rama cambia la conducta en la cinta: (intenciones, cierres) %s en la base "
+                         "y %s en la rama; los tiempos comparan caminos distintos"
+                         % (salidas(base), salidas(rama)))
+    v["estado"] = "no_pasa" if v["motivos"] else "pasa"
+    return v
+
+
+def orden_rendimiento(args):
+    def cargar(rutas):
+        medidas = []
+        for ruta in rutas:
+            with open(ruta, encoding="utf-8", errors="replace") as f:
+                medidas.extend(leer_medidas(f.read()))
+        return medidas
+
+    v = veredicto_rendimiento(cargar(args.base), cargar(args.rama))
+    if "base_mediana_ns" in v:
+        print("            mediana_ns   p99_ns   asign/evento")
+        print("base   %13.1f %8.1f %14.3f" % (v["base_mediana_ns"], v["base_p99_ns"], v["base_asign"]))
+        print("rama   %13.1f %8.1f %14.3f" % (v["rama_mediana_ns"], v["rama_p99_ns"], v["rama_asign"]))
+        print("ruido de la base: %.1f ns de mediana, %.3f asignaciones por evento"
+              % (v["ruido_ns"], v["ruido_asign"]))
+    for motivo in v["motivos"]:
+        print("- " + motivo)
+    if v["conducta"]:
+        print("aviso: " + v["conducta"])
+    print("rendimiento: %s" % v["estado"])
+    return {"pasa": 0, "no_pasa": 1}.get(v["estado"], 2)
 
 
 if __name__ == "__main__":
