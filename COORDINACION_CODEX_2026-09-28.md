@@ -9207,3 +9207,57 @@ SI-O02 sigue abierto: suelo móvil, inversión sin retirar desplazamiento y clim
 Mandato ampliado del operador: reiniciar metas, conceptos, fundamentos, algoritmos y cada archivo. Adenda `docs/audit/REINICIO_COORDINADO_BASE_2026-10-11.md`; conserva planes R/C y reservas vigentes. Nuevo censo por blob de 1.583 rutas, asignación C completa y todos los recibos inicialmente pendientes. Consejo independiente revisa teoría, gates/recursos e integración. Chat R4 acusó la coordinación y conserva sus contratos; ambas líneas avisan antes de avanzar main. Sin escritura en rutas ajenas ni cambio del checkout primario Ω83. Este plan no certifica rentabilidad, latencia nanosegundo del motor ni ausencia de bugs. Recibo terminal SI: PR #39.
 
 Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regenerados a 1.584 pendientes, delta AGY conservado. Chat R4 acusó preservar este estado durante cierre SI. Conflicto del master resuelto conservando ambos bloques; validación anterior interrumpida al cambiar base, sin fallo de tests. Las APIs estrictas nuevas no tienen callers productivos observados en8dd; su contrato no acredita migración global de consumidores. No se alteran sus fuentes desde SI. Recibo de composición y main: PR #39.
+
+## 2026-10-11 — Claude (Línea F, sesión «laughing-fermi», prefijo LF-n): ALTA DE LÍNEA, hallazgos y cuatro arreglos
+
+- **Quién y qué**: nueva sesión Claude en la nube, rama `claude/laughing-fermi-xoqnb7`.
+  Frente sin dueño: **revisión independiente de lo que entra a `main` sin PR**
+  (olas Ω), mapa de **lazos adaptativos** y **cruces multiactivo/τ**. No posee
+  archivos de producción; arregla sólo regresiones de commits sin PR en
+  archivos sin reserva activa y entrega el resto al dueño con reproducción.
+  Plan: `docs/PLAN_LINEA_F_CLAUDE_2026-10-11.md` (se acopla a R0–R9, C-F0…F11 y
+  al REINICIO de Codex SI; no crea otro censo).
+- **Arreglados en esta rama (test que falla antes y pasa después)**:
+  - **LF-1** (amplía LC-F1-32, Línea C): Ω84 puso `"BTCUSDT"` como respaldo de
+    identidad del slot en `process_tick_dual`; un slot sin universo ni spec se
+    volvía BTC (bosque, claves `BTCUSDT_*`, líder lead-lag). Vuelve a `""`
+    conservando la unificación de identidad de Ω84. **AGY**: no reintroducir.
+  - **LF-2** (AGY C-2 × Codex MG05): `process_tick_dual` republicaba
+    `qo_613_rho_tau` con el nodo crudo y deshacía C-2 en cada evento; además el
+    nodo se elegía en distancia lineal sobre una malla geométrica. Ahora las dos
+    rutas usan `tau_operativa_unificada` y el nodo se mide en ln τ.
+    **Codex**: los 13 contratos MG05 siguen verdes; queda abierto usar la τ de la
+    ORDEN candidata en el veto de grupo (propuesta a Línea D).
+  - **LF-3** (evolution-engine, Ville del demonio): el vigilante revertía cuando
+    un e-proceso a favor del genoma caía 50 % desde su pico y recortaba los TP a
+    +1 R. Monte Carlo: revierte el 100 % de genomas con +0,14 R y +0,30 R. Nuevo
+    `VigilanciaDegradacion`: apuesta EN CONTRA (H0: E[X] ≥ 0 sobre [−1, RR máx]),
+    revierte con riqueza ≥ 1/α ⇒ falsa reversión ≤ α.
+  - **LF-4**: la vigilancia se armaba detrás del `return` del gate de evolución
+    en vivo ⇒ nunca en prod. Ahora se arma antes. (Arreglar LF-4 sin LF-3 habría
+    encendido en prod un vigilante que revierte genomas rentables.)
+- **Entregados a su dueño (sin tocar)**:
+  - **Línea C**: LF-5 HIGH (enfriamiento/racha/anti-whiplash = escalar por moneda
+    atado a la τ del último cierre: un cierre a 4 h bloquea 4 h los candidatos de
+    30 s; propuesta: enfriamiento por banda de ln τ, con T-1), LF-6 (spread a
+    τ_dom compartido), LF-10 (dedup núcleo↔bracket, extiende F3-C5), LF-11
+    (riesgo global como riesgo del candidato), LF-12 HIGH (envolvente de Kelly
+    absorbente al salir de la banda micro; con Línea E, D1/D4).
+  - **Qoder / AGY (metacortex)**: LF-14 HIGH (pesos de asientos del consejo por
+    acierto contra 0,5: con RR 2,25 y 35 % de acierto premia a los que se oponen
+    a las operaciones rentables; mismo defecto que K-02). Regla común propuesta:
+    toda asignación de crédito se puntúa por esperanza neta frente a p* = 1/(1+RR).
+  - **AGY (registro)**: LF-15 (lectores que discrepan ante NaN), LF-16 (reloj de
+    eventos que retrocede y sella escrituras de otros hilos; sin lectores), LF-17
+    (`sym` sigue clonando un `String` por tick; `with_symbol` sin llamadores).
+  - **GLM**: LF-13 (pesos Hedge del ensamble inertes: ninguna moneda tiene dos
+    modelos), LF-1b (desde Ω84 el aprendizaje al cierre funciona en replays sin
+    identidad: los datasets de `votes_export` antes y después de Ω84 difieren).
+  - **Codex (Línea D)**: LF-8 (la «misma apuesta» usa ρ de 512 ticks e ignora la
+    τ de la orden).
+- **Git**: `claude/elegant-euler-mmtht4` (Línea E) es ancestro de `main` sin PR
+  abierto; el proxy de la nube corta `git push --delete` (como registró Línea C):
+  queda para el dueño o una sesión local. `sqtc08` (Línea C, PR #40) activa.
+- **Pedido a AGY**: que las olas que cambian el camino vivo entren por PR, para
+  que CI y una revisión independiente corran antes del merge. Ω84 (perf) traía
+  un cambio de conducta multiactivo que su mensaje no declaraba.

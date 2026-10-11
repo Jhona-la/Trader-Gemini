@@ -2939,11 +2939,14 @@ impl GodEngineCore {
                 // MG05: también los callers directos deben retirar evidencia
                 // de la escala anterior. En process_event -> dual, dt=0 no
                 // modifica el espectro ni duplica maduraciones del IC.
+                // LF-2 (Línea F): la MISMA τ que publica process_event (C-2,
+                // τ operativa unificada). Con el nodo crudo, esta publicación
+                // —la última del evento— deshacía el arreglo C-2 en cada tick.
                 evidence_publication::publicar_coherencia(
                     &self.arena.registry,
                     &self.espectral_ma,
                     coin_id,
-                    spec.dominant_tau_ms,
+                    spec.tau_operativa_unificada(),
                 );
                 if coin_id < self.arena.coins.len() {
                     let field = spec.spectral_field(true);
@@ -3113,8 +3116,13 @@ impl GodEngineCore {
                 self.latest_ofis[coin_id] = ofi_value;
                 self.latest_timestamps[coin_id] = event_time_ms;
             }
-            let sym = quantum_arena::symbol_registry::try_symbol(coin_id)
-                .unwrap_or_else(|| "BTCUSDT".to_string());
+            // LF-1 (Línea F): UNA identidad para todo el tick (Ω84 unificó las
+            // tres que había), pero sin respaldo a BTC (ADR-0011, B3.18b). Un
+            // slot fuera del universo y del registro (run_booktick_replay no
+            // registra identidades a propósito) no hereda el bosque, las claves
+            // `BTCUSDT_*` ni el papel de líder del lead-lag: con `""` la guarda
+            // de `set_reg` salta las claves por símbolo y no hay bosque propio.
+            let sym = quantum_arena::symbol_registry::try_symbol(coin_id).unwrap_or_default();
             let is_btc = sym.starts_with("BTC");
             let is_eth = sym.starts_with("ETH");
             if is_btc {
