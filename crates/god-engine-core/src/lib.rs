@@ -5566,16 +5566,25 @@ impl GodEngineCore {
             // de modo que el backtest medía una política distinta de la que
             // corre en producción.
             //
-            // QUÉ GARANTIZA: la base es el horizonte τ con el que se
-            // dimensionó la operación que acaba de cerrarse; reentrar antes de
-            // que pase τ es reentrar dentro del mismo movimiento del que se
-            // acaba de salir. Si todavía no hubo cierre con τ registrada, se
-            // usa la τ dominante viva del espectro, que es la misma magnitud
-            // medida sobre el mercado actual.
+            // D-754 / Ω87 (Ficha #725) — ENFRIAMIENTO MULTIESCALA Y DESASFIXIA TEMPORAL.
+            //
+            // QUÉ ESTABA MAL: Si una posición cerraba con τ lento (p.ej. 4 h ó 12 h),
+            // `tau_cierre` fijaba `enfriamiento_base_ms` en 4 ó 12 horas de forma
+            // incondicional. Incluso tras un trade ganador (racha = 0), `requerido`
+            // permanecía en 4–12 horas, congelando todas las bandas operables
+            // (incluyendo micro-escalas vivas de τ ≈ 30 s) y silenciando el activo
+            // por horas enteras (trampa de escala asimétrica).
+            //
+            // QUÉ GARANTIZA: El enfriamiento base desacopla las escalas dinámicas:
+            // la base es el menor entre el horizonte del cierre previo (`tau_cierre`)
+            // y la escala dominante viva del mercado (`tau_dom`). Si el trade previo
+            // fue lento (4 h) pero el mercado resuena rápido (30 s), la descorrelación
+            // activa se mide contra `tau_dom`, liberando inmediatamente las bandas
+            // de alta frecuencia sin asfixia temporal cruzada.
             let enfriamiento_base_ms = {
                 let tau_cierre = self.feature_engines[coin_id].tau_ultimo_cierre_ms;
                 if tau_cierre > 0 {
-                    tau_cierre as f64
+                    (tau_cierre as f64).min(tau_dom)
                 } else {
                     tau_dom
                 }
