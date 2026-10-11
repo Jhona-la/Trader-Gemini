@@ -280,6 +280,20 @@ impl QuantumStrategy for FeynmanPropagatorEngine {
             None => 0.0,
         };
 
+        // #652/H2: con la escala dominante por debajo de la banda operable el
+        // orquestador no consume el veredicto espectral y su consenso escalar
+        // debe quedar bit a bit. Reinyectarlo aquí lo saltaría (CL-59).
+        let tau_dom = match self.registry.as_ref() {
+            Some(r) => r
+                .get_scoped_parameter(sym_opt, cid_opt, "consenso_espectral_tau", "FeynmanPropagatorEngine")
+                .map(|p| p.get_value())
+                .unwrap_or(0.0),
+            None => 0.0,
+        };
+        if !(tau_dom >= quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS) {
+            return 0.0;
+        }
+
         if !coherence.is_finite() || !dominant_v.is_finite() {
             return 0.0;
         }
