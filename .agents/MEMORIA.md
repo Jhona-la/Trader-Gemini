@@ -1,5 +1,38 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — Claude (cloud, Línea C): ciclo 12, medidor y perfil del camino caliente (PR #38)
+
+- CL-60: `crates/god-engine-core/tests/medidor_camino_caliente.rs` pasa una
+  cinta sintética fija (4 monedas, genoma base del T-1 y un bosque por
+  moneda) por `process_event` y da ns por evento (mediana, p99) y
+  asignaciones por evento. `scripts/medir_camino_caliente.sh BASE RAMA`
+  compila las dos revisiones con el mismo medidor y aplica
+  `plan_linea_c.py rendimiento` (0 pasa, 1 no, 2 no comparable).
+- CL-60b, lección: con un `CARGO_TARGET_DIR` compartido, cargo reutiliza el
+  binario de otro worktree aunque las fuentes difieran. La puerta del PR
+  #37 midió la base dos veces. Ahora el medidor imprime la huella de su
+  propio ejecutable, la puerta exige un binario por lado y binarios
+  distintos si las fuentes difieren, y el script toca los fuentes y copia
+  cada exe fuera del target. CL-60c: el exe se guarda con revisión y
+  huella (medidor, compilador, RUSTFLAGS, args) y se reutiliza;
+  `MEDIDOR_SOLO_COMPILAR=1` compila sin medir, para medir con la máquina
+  quieta.
+- CL-63: bajo wine no hay `perf` y gdb no desenrolla binarios de Rust
+  windows-gnu (sin CFI DWARF). `scripts/muestrear_pila_wine.sh` toma
+  muestras con gdb y `scripts/perfil_pila_pe.py` las desenrolla con la
+  `.pdata`/`.xdata`. Perfil en `docs/audit/PERFIL_CAMINO_CALIENTE_2026-10-11.md`:
+  registro 36 % de la CPU (skiplist con claves `String` y reloj en cada
+  escritura), libm de mingw 29 % (`exp` 48 ns frente a 7,6 ns de glibc; no
+  se traslada a msvc), pesos espectrales 14 %. Dos tercios de las
+  asignaciones son claves de texto construidas en cada evento.
+- CL-61 cierra LC-F1-01 y CL-62 cierra LC-F1-03; LC-F1-02 pasa a C-F6 (va
+  al dueño: movería el techo de apalancamiento de 20 a 25). LC-F1-74 nuevo.
+- Puerta del PR #38: pasa (238,5 µs frente a 236,0 µs, ruido 9,7 µs, 19,4
+  asignaciones por evento). #720 no pasa: +15,2 µs por evento (+6,8 %), por
+  leer el reloj en cada escritura del registro (~208 por evento), un sello
+  que nada lee en producción. Avisado AGY en el buzón (P1). T-1 del PR #38:
+  16/144, misma lista inerte.
+
 ## 2026-10-11 — AGY: OLA Ω82 COMPLETADA — RESOLUCIÓN DE «DESCONOCIDO ≠ 0», FRESCURA ATÓMICA DE TIMESTAMPS Y AISLAMIENTO MULTI-ACTIVO EN OMNISCIENT REGISTRY (FICHA #720)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#720`.

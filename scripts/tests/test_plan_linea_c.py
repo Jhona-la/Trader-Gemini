@@ -290,5 +290,91 @@ class PlanLineaCClavesTests(unittest.TestCase):
         self.assertNotIn("ConsumidorConVariable", claves)
 
 
+def linea_medidor(rep, mediana, asign=12.0, eventos=1000, semilla=7, debug=0, intenciones=3, p99=None,
+                  binario="00000000000000aa"):
+    """Una línea `MEDIDOR` como la imprime tests/medidor_camino_caliente.rs."""
+    campos = [rep, eventos, mediana, p99 if p99 is not None else mediana * 4, mediana * 8, mediana * 20,
+              mediana * 1.2, asign, 0.9, 40, intenciones, 1, 3.1, 0.0, 4, semilla, debug, binario]
+    return "MEDIDOR\t" + "\t".join(str(c) for c in campos)
+
+
+class PlanLineaCRendimientoTests(unittest.TestCase):
+    """`rendimiento` (CL-60, plan §7 paso 5): la puerta de rendimiento."""
+
+    def medidas(self, *lineas):
+        return plan.leer_medidas("ruido del motor\nMEDIDOR_CAB\trep\n" + "\r\n".join(lineas)
+                                 + "\nMEDIDOR_TIPO\t0\tTrade\t1\t2\t3\t4\n")
+
+    def test_lee_solo_las_lineas_de_medida(self):
+        m = self.medidas(linea_medidor(0, 2000.0), linea_medidor(1, 2100.0))
+        self.assertEqual([x["rep"] for x in m], [0, 1])
+        self.assertEqual(m[1]["mediana_ns"], 2100.0)
+        self.assertEqual(m[0]["semilla"], 7)
+        with self.assertRaises(ValueError):
+            plan.leer_medidas("MEDIDOR\t0\t1000")
+
+    def test_pasa_dentro_del_ruido_de_la_base(self):
+        base = self.medidas(linea_medidor(0, 2000.0), linea_medidor(1, 2100.0), linea_medidor(2, 2050.0))
+        rama = self.medidas(linea_medidor(0, 2140.0), linea_medidor(1, 2150.0))
+        v = plan.veredicto_rendimiento(base, rama)
+        self.assertEqual(v["estado"], "pasa", v["motivos"])
+        self.assertEqual(v["ruido_ns"], 100.0)
+        self.assertEqual(v["exceso_ns"], 95.0)
+
+    def test_no_pasa_si_la_mediana_sube_mas_que_el_ruido(self):
+        base = self.medidas(linea_medidor(0, 2000.0), linea_medidor(1, 2010.0))
+        rama = self.medidas(linea_medidor(0, 2100.0), linea_medidor(1, 2120.0))
+        v = plan.veredicto_rendimiento(base, rama)
+        self.assertEqual(v["estado"], "no_pasa")
+        self.assertTrue(any(m.startswith("tiempo") for m in v["motivos"]), v["motivos"])
+
+    def test_no_pasa_si_anade_asignaciones(self):
+        base = self.medidas(linea_medidor(0, 2000.0, asign=12.0), linea_medidor(1, 2100.0, asign=12.0))
+        rama = self.medidas(linea_medidor(0, 1900.0, asign=12.5), linea_medidor(1, 1950.0, asign=12.5))
+        v = plan.veredicto_rendimiento(base, rama)
+        self.assertEqual(v["estado"], "no_pasa")
+        self.assertEqual([m.split(":")[0] for m in v["motivos"]], ["asignaciones"])
+        menos = self.medidas(linea_medidor(0, 2000.0, asign=3.0))
+        self.assertEqual(plan.veredicto_rendimiento(base, menos)["estado"], "pasa")
+
+    def test_no_comparable_sin_misma_cinta_release_o_ruido_medido(self):
+        base = self.medidas(linea_medidor(0, 2000.0), linea_medidor(1, 2100.0))
+        otra = self.medidas(linea_medidor(0, 2000.0, semilla=8))
+        debug = self.medidas(linea_medidor(0, 2000.0, debug=1))
+        una = self.medidas(linea_medidor(0, 2000.0))
+        for b, r in ((base, otra), (base, debug), (una, base), (base, [])):
+            self.assertEqual(plan.veredicto_rendimiento(b, r)["estado"], "no_comparable")
+
+    def test_no_comparable_si_la_rama_corrio_el_binario_de_la_base(self):
+        # CL-60b: con un CARGO_TARGET_DIR compartido, cargo dio a la «rama» del
+        # PR #37 el binario de la base (0,57 s, sin un «Compiling»).
+        base = self.medidas(linea_medidor(0, 2000.0), linea_medidor(1, 2100.0))
+        misma = self.medidas(linea_medidor(0, 2050.0))
+        otra = self.medidas(linea_medidor(0, 2050.0, binario="00000000000000bb"))
+        v = plan.veredicto_rendimiento(base, misma, fuentes_distintas=True)
+        self.assertEqual(v["estado"], "no_comparable")
+        self.assertIn("binario de la base", v["motivos"][0])
+        self.assertEqual(plan.veredicto_rendimiento(base, otra, fuentes_distintas=True)["estado"], "pasa")
+        # Sin fuentes distintas (base contra base) el mismo binario es lo esperado.
+        self.assertEqual(plan.veredicto_rendimiento(base, misma)["estado"], "pasa")
+
+    def test_no_comparable_si_la_base_o_la_rama_cambian_de_binario(self):
+        base = self.medidas(linea_medidor(0, 2000.0), linea_medidor(1, 2100.0, binario="00000000000000cc"))
+        rama = self.medidas(linea_medidor(0, 2050.0, binario="00000000000000bb"))
+        self.assertEqual(plan.veredicto_rendimiento(base, rama, fuentes_distintas=True)["estado"],
+                         "no_comparable")
+        base = self.medidas(linea_medidor(0, 2000.0), linea_medidor(1, 2100.0))
+        rama = self.medidas(linea_medidor(0, 2050.0, binario="00000000000000bb"),
+                            linea_medidor(1, 2050.0, binario="00000000000000dd"))
+        self.assertEqual(plan.veredicto_rendimiento(base, rama, fuentes_distintas=True)["estado"],
+                         "no_comparable")
+
+    def test_avisa_si_la_rama_cambia_la_conducta_en_la_cinta(self):
+        base = self.medidas(linea_medidor(0, 2000.0), linea_medidor(1, 2100.0))
+        self.assertIsNone(plan.veredicto_rendimiento(base, base)["conducta"])
+        rama = self.medidas(linea_medidor(0, 2000.0, intenciones=5))
+        self.assertIn("intenciones", plan.veredicto_rendimiento(base, rama)["conducta"])
+
+
 if __name__ == "__main__":
     unittest.main()

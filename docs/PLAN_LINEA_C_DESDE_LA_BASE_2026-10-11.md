@@ -1234,7 +1234,8 @@ Ninguno está verificado salvo los marcados «confirmado por lectura», y a éso
      - asignaciones de heap por evento, con un asignador que las cuenta;
      - ns por evento, mediana y p99, de la base y de la rama.
    - Se acepta si no añade asignaciones por evento y si la mediana de la rama no supera a la de la base en más de lo que difieren dos corridas de la base entre sí. Si empeora, el PR dice qué gana a cambio y el dueño decide.
-   - Hasta que exista el medidor (ciclo 12, §8), el PR dice «rendimiento sin medir». `nano_benchmark` no sirve de puerta: mide `process_tick_dual`, no `process_event`, supone 3,5 GHz para pasar ciclos a ns (crates/god-engine-core/src/bin/nano_benchmark.rs:68-72) y no cuenta asignaciones.
+   - El medidor es `crates/god-engine-core/tests/medidor_camino_caliente.rs` (CL-60). Se corre con `scripts/medir_camino_caliente.sh BASE RAMA`, que compila las dos revisiones con el mismo medidor y el mismo compilador, mide base, rama y base otra vez, y aplica `plan_linea_c.py rendimiento` (código 0 pasa, 1 no pasa, 2 no comparable). Las dos corridas de la base dan el ruido. Se compara con la misma cinta (eventos, monedas y semilla) y sólo en release.
+   - `nano_benchmark` no sirve de puerta: mide `process_tick_dual`, no `process_event`, supone 3,5 GHz para pasar ciclos a ns (crates/god-engine-core/src/bin/nano_benchmark.rs:68-72) y no cuenta asignaciones.
 6. **PR**, no draft, con:
    - tabla hallazgo → test → commit;
    - T-1, suites y lo que no se probó.
@@ -1271,6 +1272,15 @@ Las fases ordenan la revisión. No hay operación autorizada, así que ninguna u
   - Primero el medidor del camino caliente (§7, paso 5): un binario de benchmark que pasa una cinta sintética fija por `process_event`, cuenta asignaciones por evento con un asignador propio y da mediana y p99 de ns por evento. Se adelanta de C-F8 porque sin él la puerta de rendimiento no se puede aplicar. Es sólo medición y no cambia la conducta.
   - Arreglos de C-F1 con su test en rojo y en verde, empezando por los altos de Línea C: LC-F1-01 (carpeta del estado según el modo, defecto de CL-48), LC-F1-03 (gen del stop por símbolo, no por slot) y LC-F1-02 (procedencia del spec). LC-F1-04 y la caída al global (LC-F1-06) se coordinan con AGY, que añadió las lecturas estrictas en #720.
   - C-F2 (sólo lectura y pruebas sintéticas; el T-1 no debe moverse) y C-F3. Los hallazgos de zona ajena salen como pedidos con test que falla.
+  - Hecho:
+    - CL-60, el medidor (§7, paso 5). Primera lectura bajo wine sobre c4e8e285, con 4 monedas y 200 000 eventos, aún sin genoma ni bosques (la cinta no daba intenciones): mediana de 235 µs por evento, p99 de 465 µs, 21,8 asignaciones por evento y ningún evento sin asignar (trade 30,6, libro 11,0, vela 28,3). Wine infla el tiempo, no las asignaciones; la lectura en Windows nativo queda pendiente del PC del operador.
+    - CL-60b. La primera puerta del PR #37 no vale: con un `CARGO_TARGET_DIR` compartido, cargo dio a la rama el binario de la base, y las tres corridas midieron lo mismo. El script toca ahora los fuentes antes de compilar con un target compartido y copia cada ejecutable fuera del target, y la puerta exige un binario por lado y binarios distintos cuando las fuentes difieren.
+    - CL-61 cierra LC-F1-01 y CL-62 cierra LC-F1-03 (adenda del ciclo 12 en `docs/audit/HALLAZGOS_C-F1_2026-10-11.md`).
+    - LC-F1-02 pasa a C-F6: sacar el refresco de specs del `if changed` movería hoy el techo de apalancamiento de 20 a 25 sin un tramo medido. Va al dueño antes.
+    - LC-F1-74 nuevo (ruta de `dynamic_config` distinta en el daemon y en el host), para C-F6.
+    - CL-60c: el script guarda cada ejecutable con su revisión y una huella del medidor, el compilador y los argumentos, y lo reutiliza; `MEDIDOR_SOLO_COMPILAR=1` compila sin medir, para medir después con la máquina quieta.
+    - Puerta del PR #38 (4bffdd8a frente a 3b5e9050): pasa, 238,5 µs frente a 236,0 µs con 9,7 µs de ruido y 19,424 asignaciones por evento en las dos. El coste de #720 (11cdd14b frente a c4e8e285) no pasa: +15,2 µs por evento (+6,8 %) con 5,9 µs de ruido, por la lectura del reloj en cada escritura del registro, que nada lee en producción. Va a AGY como P1.
+    - CL-63 y el perfil del camino caliente (`docs/audit/PERFIL_CAMINO_CALIENTE_2026-10-11.md`): el registro se lleva el 36 % de la CPU y la libm de mingw el 29 % (sólo en gnu); dos tercios de las asignaciones son claves de texto construidas en cada evento. Propuestas P1–P5 con dueño; P2 (pesos espectrales una vez por evento) y P5 (claves por moneda precalculadas) entran en C-F6 con la puerta del medidor.
 - **Ciclo 13.** C-F4:
   - primero el ATR (LC-F6-01 y LC-F3-02), antes de medir el riesgo al stop o el tope IOC;
   - absorbentes, unidades de los vetos y RA-RUIN-F01;

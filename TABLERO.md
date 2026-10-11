@@ -23,28 +23,27 @@
 - **Familia honesta**: 7 símbolos (BTC/ADA/ATOM/BNB/SOL/XRP/XLM), mediana
   OOS +0.008, récord SOL +0.0203; 2 bloqueos honestos en 9 corridas.
 
-## Claude (actualizado: 2026-10-11, Línea C, prefijo CL-n, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08)
+## Claude (actualizado: 2026-10-11 ~09:00 UTC, Línea C, prefijo CL-n, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08)
 
-- **Haciendo ahora**: ciclo 11. Plan desde la base publicado
-  (`docs/PLAN_LINEA_C_DESDE_LA_BASE_2026-10-11.md`, §39 del plan maestro;
-  recibos por archivo en `docs/audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv`).
-  C-F0 escrita como §9 del plan (40 requisitos de la meta, LC-F0-01…35).
-  Ciclo 11, segunda parte, en el PR #37: CL-56 (toolchain con fecha),
-  CL-57 (inventario de tests sin CI), CL-58 (claves del registro sin
-  escritor), CL-59 (Feynman respeta #652/H2 tras #718), puerta de
-  rendimiento en el protocolo y C-F1 hecha: contrato de conceptos y
-  LC-F1-01…73 (`docs/audit/HALLAZGOS_C-F1_2026-10-11.md`).
-- **Commiteado**: ciclos 1 a 10 en main (PR #13, #17–#20, #26, #27, #29).
-  Los ciclos 9 y 10 (CL-43…CL-54, ADR-0015) entraron como aa716edf con CI
-  5/5, suites 2 173/0 y T-1 16/144 sobre 5338eda1. T-1 de aa716edf (con
-  #713 y #714): 16/144, la misma lista de genes inertes.
-- **Falta**: ADR de la meta (decisión del dueño, LC-F0-01); medidor del
-  camino caliente (ciclo 12); arreglos de C-F1 (LC-F1-01, -03 y -02
-  primero), D4 (una
-  sonda de arranque frío en toda la cartera) y D1 en sombra con Línea E;
-  GENOME-GATE al cargar; función única de umbral y pico de drawdown para
-  host y riesgo; `entry_price` re-anclado al llenado; `online_daemon`
-  aplicando el genoma crudo (aviso a su dueño).
+- **Haciendo ahora**: ciclo 12, PR #38. CL-60 (medidor del camino
+  caliente y puerta de rendimiento), CL-60b (la puerta exige un binario
+  por lado: la del PR #37 midió dos veces la base), CL-60c (el script
+  reutiliza cada ejecutable por revisión y huella), CL-61 (LC-F1-01, el
+  estado de producción exige modo prod y venue real), CL-62 (LC-F1-03, el
+  stop de BTC va con el símbolo) y CL-63 (perfil por muestreo de pilas
+  bajo wine). Perfil en `docs/audit/PERFIL_CAMINO_CALIENTE_2026-10-11.md`:
+  36 % de la CPU en el registro, 29 % en la libm de mingw (no se traslada
+  a msvc) y dos tercios de las asignaciones son claves de texto por evento
+  (P1–P5, con dueño). Después, C-F2 y C-F3.
+- **Commiteado**: ciclos 1 a 11 en main (PR #13, #17–#20, #26, #27, #29,
+  #34, #37). El PR #37 (CL-56…CL-59 y C-F1) entró como 8632ca3d con CI 5/5
+  y T-1 16/144 sobre 58b207b1.
+- **Falta**: ADR de la meta (decisión del dueño, LC-F0-01); LC-F1-02 en
+  C-F6 (cambia el techo de apalancamiento; va al dueño antes); LC-F1-04 y
+  -06 con AGY; P1 del perfil (registro con asas) con AGY; P3 (libm en Rust
+  puro) es decisión del dueño; medir en msvc en el PC del operador (P4);
+  D4 y D1 en sombra con Línea E; función única de umbral y pico de
+  drawdown para host y riesgo (ciclo 13).
 - **Ramas**: el proxy git de la nube no deja borrar ramas remotas; la mía
   se reutiliza reiniciada sobre `main` y sólo lleva historia fusionada.
 
