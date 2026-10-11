@@ -1,5 +1,26 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72)
+
+- #44 (CL-67 y CL-71) fusionado en main (8f572f7c).
+- Las 62 propuestas del borrador de C-F3 son 71 tests: 13 activos y 58 OPEN,
+  que fallan en su aserción principal por la causa de su hallazgo. Tabla en
+  `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv`.
+- Lo nuevo frente al borrador:
+  - F3.6-04 lo cerró CL-66.
+  - La prueba del borrador de F3.4-07 se descarta (su verdad era errónea) y
+    la sustituyen dos.
+  - F3.7-08 baja a 1 asignación por evento (el `String` de `try_symbol`).
+  - Se rehicieron la del VECM y la del régimen, porque tal como estaban no
+    podían fallar por la causa.
+- Zonas, acordadas con el coordinador:
+  - F3.1-01…06 son de Qoder: Línea C no toca el orquestador ni el espectro.
+  - Antes de tocar el consejo (F3.4-01/02/06) o `calibration.rs` (F3.5-04,
+    F3.8-01) hay que confirmar con AGY o Codex.
+- Siguiente: arreglar F3.6-01 (velocidad con signo, FMT-001), F3.3-01/02
+  (convicción por rama) y F3.2-01 (τ de la orden), con verificación local y
+  un PR por bloque.
+
 ## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
 
 - Fusionados #42 (CL-66 y CL-70) y #43 (CL-68 y CL-69). Regla del
