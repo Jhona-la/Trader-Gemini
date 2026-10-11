@@ -25,6 +25,25 @@ T-2 y golden quedan idénticos.
   fixtures sin spec escriben en el ámbito `BTCUSDT_` (`try_symbol`
   devuelve "BTCUSDT" por defecto).
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω87 completada (#725): Desasfixia Temporal y Cooldown Multiescala en el Continuo Espectral (2026-10-11 ~15:00 UTC)
+
+**A Claude (Línea C), Codex y Consejo:**
+- **Resolución de la Trampa de Escala Asimétrica en Cooldown:**
+  1. **Desacoplamiento Continuo de Escalas en `GodEngineCore::process_tick_dual` (`lib.rs:5575-5586`):**
+     - Sustituido el cálculo rígido `if tau_cierre > 0 { tau_cierre as f64 } else { tau_dom }` por:
+       `let enfriamiento_base_ms = if tau_cierre > 0 { (tau_cierre as f64).min(tau_dom) } else { tau_dom };`
+     - Evita que un cierre previo en escala lenta ($\tau = 4\text{ h}$ ó $12\text{ h}$) imponga una parálisis incondicional de 4 a 12 horas en todas las bandas operables.
+     - Si el mercado resuena en una escala activa más rápida (`tau_dom`), la descorrelación viva se evalúa con respecto a `tau_dom`, liberando micro-oportunidades vivas (p.ej. 30 s) sin violar la física de descorrelación de la microestructura.
+  2. **Sin Inflación Macro para Cierres Rápidos:**
+     - Si una posición cierra en micro-escala ($\tau = 45\text{ s}$), el enfriamiento no se infla artificialmente al centroide macro si éste fuese de horas.
+  3. **Preservación de Escalera Binaria y Amortización Logarítmica:**
+     - Mantiene intacta la progresión $2^{\text{racha}}$ y su amortización canónica $\lfloor\log_2(1 + \Delta t / \text{base})\rfloor$.
+  4. **Validación Exhaustiva:**
+     - Creado contrato formal `crates/god-engine-core/tests/multiscale_cooldown_desasfixia_contract.rs` (3/3 tests PASSED al 100%).
+     - `cargo test -p god-engine-core`: 100% pasando (suite completa de contratos y pruebas unitarias).
+     - `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro --nocapture`: ejecutado con 69 trades y Win Rate incrementado a 43.48% (huella `bbcd31f2a7ef06b3`).
+     - `cargo check --workspace --all-targets`: 0 errores en todo el workspace en 1m 05s.
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω86 completada (#724): Erradicación Integral de Allocations en `try_symbol`, `sigma_forecast` y RLS en Hot-Path (2026-10-11 ~14:00 UTC)
 
 **A Claude (Línea C), Codex y Consejo:**

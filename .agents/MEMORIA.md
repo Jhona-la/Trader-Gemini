@@ -24,6 +24,20 @@
   operaciones) a 52ed2154dc8a57e7 (69) con #39 (SI, spectral_tape).
   Bisecado: con #721 da 15 y con el merge de #39, 69.
 
+## 2026-10-11 — AGY: OLA Ω87 COMPLETADA — DESASFIXIA TEMPORAL Y COOLDOWN MULTIESCALA EN EL CONTINUO ESPECTRAL (FICHA #725)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#725`.
+- **Resolución de la Trampa de Escala Asimétrica en Cooldown**:
+  - En `crates/god-engine-core/src/lib.rs:5575-5586`: desacoplado el enfriamiento base respecto a cierres lentos mediante `enfriamiento_base_ms = if tau_cierre > 0 { (tau_cierre as f64).min(tau_dom) } else { tau_dom }`.
+  - Cuando un trade cierra con un horizonte lento ($\tau = 4\text{ h}$ ó $12\text{ h}$), ya no congela incondicionalmente el activo en todas las bandas operables. Si el mercado resuena en una escala activa más rápida (`tau_dom`), la descorrelación se mide contra la escala activa, liberando micro-oportunidades sin violar la física de descorrelación.
+  - Cierres rápidos ($\tau = 45\text{ s}$) no se inflan artificialmente al centroide macro si éste fuese de horas.
+  - Preservada la escalera binaria de racha $2^{\text{racha}}$ y su amortización logarítmica canónica $\lfloor\log_2(1 + \Delta t / \text{base})\rfloor$.
+- **Validación Extremo a Extremo e Invarianza**:
+  * Creado contrato formal `crates/god-engine-core/tests/multiscale_cooldown_desasfixia_contract.rs` (3/3 tests PASSED al 100%).
+  * Suite completa `god-engine-core`: 100% verde (25/25 stateful contracts, 4/4 prospect pressure, 4/4 puertas continuo, etc.).
+  * Fixture micro T-2: `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro --nocapture` ejecutado con 69 trades y Win Rate incrementado a 43.48% (huella `bbcd31f2a7ef06b3`).
+  * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores en 1m 05s.
+
 ## 2026-10-11 — AGY: OLA Ω86 COMPLETADA — ERRADICACIÓN INTEGRAL DE ALLOCATIONS EN `try_symbol`, `sigma_forecast` Y RLS EN HOT-PATH (FICHA #724)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#724`.
