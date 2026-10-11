@@ -22,9 +22,13 @@
 # Entorno: MEDIDOR_EVENTOS, MEDIDOR_REPETICIONES… (ver el medidor);
 #          MEDIDOR_CARGO_ARGS, p. ej. "--target x86_64-pc-windows-gnu" bajo wine
 #          (el ejecutable copiado corre con CARGO_TARGET_<TRIPLE>_RUNNER);
-#          MEDIDOR_TRABAJO, carpeta de los worktrees y los logs. Los worktrees
-#          se conservan para reusar la compilación; se quitan con
-#          `git worktree remove`.
+#          MEDIDOR_TRABAJO, carpeta de los worktrees, los ejecutables y los
+#          logs. Los worktrees se conservan; se quitan con `git worktree
+#          remove`. Cada ejecutable se guarda con la revisión y una huella
+#          del medidor, el compilador, RUSTFLAGS y MEDIDOR_CARGO_ARGS, y se
+#          reutiliza mientras esa huella no cambie;
+#          MEDIDOR_SOLO_COMPILAR=1 compila (o reutiliza) y sale sin medir,
+#          para medir después con la máquina quieta.
 # Código:  el de `plan_linea_c.py rendimiento` (0 pasa, 1 no pasa, 2 no
 #          comparable).
 set -euo pipefail
@@ -76,8 +80,18 @@ for ((i = 0; i < ${#cargo_args[@]}; i++)); do
   fi
 done
 
+huella=$( { cat "$repo/$medidor"; echo "${RUSTUP_TOOLCHAIN:-} ${RUSTFLAGS:-} ${cargo_args[*]}"; } \
+  | sha256sum | cut -c1-12)
+
 compilar() {
   local dir=$1 sha=$2 exe destino
+  for destino in "$trabajo/medidor-$sha-$huella" "$trabajo/medidor-$sha-$huella.exe"; do
+    if [ -f "$destino" ]; then
+      echo "reutilizo $destino" >&2
+      echo "$destino"
+      return
+    fi
+  done
   if [ -n "${CARGO_TARGET_DIR:-}" ]; then
     git -C "$dir" ls-files -z -- '*.rs' | (cd "$dir" && xargs -0 touch)
     touch "$dir/$medidor"
@@ -93,7 +107,7 @@ for linea in sys.stdin:
             and m["target"]["name"] == "medidor_camino_caliente":
         print(m["executable"])')
   [ -n "$exe" ] || { echo "no encontré el ejecutable del medidor en $dir" >&2; exit 2; }
-  destino="$trabajo/medidor-$sha"
+  destino="$trabajo/medidor-$sha-$huella"
   case "$exe" in *.exe) destino="$destino.exe" ;; esac
   cp "$exe" "$destino"
   echo "$destino"
@@ -108,6 +122,10 @@ exe_base=$(compilar "$base" "$base_sha")
 exe_rama=$exe_base
 if [ "$rama_sha" != "$base_sha" ]; then
   exe_rama=$(compilar "$rama" "$rama_sha")
+fi
+if [ "${MEDIDOR_SOLO_COMPILAR:-0}" = "1" ]; then
+  printf 'base %s\nrama %s\n' "$exe_base" "$exe_rama"
+  exit 0
 fi
 
 medir() {
