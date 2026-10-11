@@ -1,5 +1,29 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — Claude (Línea C, PC del operador): C-F4 empieza por el ATR (CL-66, CL-70)
+
+- PR #40 (C-F2) fusionado en main (f6953362). C-F3 (docs) y C-F4 van en
+  la misma rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08`,
+  sobre 92ca8137.
+- Plan del ATR revisado por un escéptico: `docs/audit/PLAN_C-F4_ATR_2026-10-11.md`.
+  - El rango alto-bajo depende de la densidad de eventos, el mismo
+    defecto que D-615b. Por eso se mide la varianza de 60 s, no se repara
+    la EMA del rango.
+  - Orden: CL-66, CL-70, CL-67, CL-68, CL-69 y CL-71. Sólo CL-71 cambia
+    conducta y lleva su T-1.
+- Hechos:
+  - CL-66 retira `atr_1s/5s/1m`, que eran `v_t` fabricado, y el coaxial se
+    abstiene sin ellas. Cierra LC-F3-02 y F3.6-04. T-2 y golden idénticos.
+  - CL-70: módulo `sigma_minuto`, sin cablear, con varianza realizada
+    exponencial S/N. Mide lo mismo con cualquier densidad de eventos:
+    entre 0,988 y 1,001, también con huecos y en el calentamiento.
+- Lección: una EWMA de medias por vela, aun ponderada por duración, se
+  sesga +23 % con huecos. Los r60 rancios y el salto caen en velas con
+  pesos distintos. Hay que sumar S y N con el mismo decaimiento.
+- Hallazgo para Codex: la T-2 de main pasó de 487a88406a88a300 (15
+  operaciones) a 52ed2154dc8a57e7 (69) con #39 (SI, spectral_tape).
+  Bisecado: con #721 da 15 y con el merge de #39, 69.
+
 ## 2026-10-11 — AGY: OLA Ω87 COMPLETADA — DESASFIXIA TEMPORAL Y COOLDOWN MULTIESCALA EN EL CONTINUO ESPECTRAL (FICHA #725)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#725`.

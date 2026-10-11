@@ -146,39 +146,19 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
             None => return 0.0,
         };
 
-        let atr_1s = r
-            .get_scoped_parameter(sym_opt, cid_opt, "atr_1s", "CoaxialBreakoutEngine")
-            .or_else(|| {
-                r.get_scoped_parameter(sym_opt, cid_opt, "atr_pct", "CoaxialBreakoutEngine")
-            })
-            .map(|p| p.get_value())
-            .unwrap_or(0.001);
-
-        let atr_5s = r
-            .get_scoped_parameter(sym_opt, cid_opt, "atr_5s", "CoaxialBreakoutEngine")
-            .map(|p| p.get_value())
-            .unwrap_or_else(|| atr_1s * 2.2360679775_f64);
-
-        let atr_1m = r
-            .get_scoped_parameter(sym_opt, cid_opt, "atr_1m", "CoaxialBreakoutEngine")
-            .map(|p| p.get_value())
-            .unwrap_or_else(|| atr_1s * 7.7459666924_f64);
-
-        // FIX #682: Sanitizar lecturas de ATR
-        let safe_1s = if atr_1s.is_finite() && atr_1s > 0.0 {
-            atr_1s
-        } else {
-            0.001
+        // CL-66 (LC-F3-02): sin respaldo. Antes, sin `atr_1s` se leía `atr_pct`
+        // (una fracción, no un ATR en precio), sin `atr_5s`/`atr_1m` se
+        // fabricaban ×√5/×√60 y los no finitos caían a literales en USD. Si
+        // falta cualquiera de las tres escalas, o no es un valor positivo y
+        // finito, el coaxial se abstiene.
+        let leer = |clave: &str| {
+            r.get_scoped_parameter(sym_opt, cid_opt, clave, "CoaxialBreakoutEngine")
+                .map(|p| p.get_value())
+                .filter(|v| v.is_finite() && *v > 0.0)
         };
-        let safe_5s = if atr_5s.is_finite() && atr_5s > 0.0 {
-            atr_5s
-        } else {
-            0.005
-        };
-        let safe_1m = if atr_1m.is_finite() && atr_1m > 0.0 {
-            atr_1m
-        } else {
-            0.020
+        let (safe_1s, safe_5s, safe_1m) = match (leer("atr_1s"), leer("atr_5s"), leer("atr_1m")) {
+            (Some(a), Some(b), Some(c)) => (a, b, c),
+            _ => return 0.0,
         };
 
         let norm_atr_1s = safe_1s;

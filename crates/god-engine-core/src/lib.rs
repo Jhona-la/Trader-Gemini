@@ -52,6 +52,7 @@ pub mod recarga_genoma;
 pub mod reexport_storage {
     pub use storage_engine::mmap_bus;
 }
+pub mod sigma_minuto;
 pub mod slippage_predictor;
 pub mod stateful_engine;
 pub mod trailing;
@@ -4524,12 +4525,13 @@ impl GodEngineCore {
             set_reg("price_velocity", dir_v);
             set_reg("order_flow_velocity", dir_v);
             set_reg("price_acceleration", a_t);
-            set_reg("atr_1s", (micro_v * mid_price).max(0.0001));
-            set_reg(
-                "atr_5s",
-                (self.feature_engines[coin_id].v_t * 0.5 + atr_pct * mid_price * 0.5).max(0.0005),
-            );
-            set_reg("atr_1m", (atr_pct * mid_price * 7.746).max(0.0020));
+            // CL-66 (LC-F3-02): ya no se publican `atr_1s`, `atr_5s` ni `atr_1m`.
+            // Eran el mismo `v_t` con multiplicadores fijos (×1, ×1, ×√60 sobre
+            // un ATR que ya es de 1 min) y suelos absolutos en USD: ninguna medía
+            // 1 s ni 5 s. Su único lector, el coaxial, daba 0 con cualquier
+            // precio normal y un voto fabricado por los suelos en monedas de
+            // menos de ~0,22 USD. El coaxial se abstiene sin ellas hasta que haya
+            // un ATR por escala medido (C-F7).
             set_reg("order_flow_direction", flow_dir);
             set_reg("order_book_imbalance", obi_val);
             set_reg("orderbook_imbalance", obi_val);
