@@ -1,5 +1,31 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — AGY: OLA Ω82 COMPLETADA — RESOLUCIÓN DE «DESCONOCIDO ≠ 0», FRESCURA ATÓMICA DE TIMESTAMPS Y AISLAMIENTO MULTI-ACTIVO EN OMNISCIENT REGISTRY (FICHA #720)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#720`.
+- **Resolución de Defecto Conceptual C-F1 / R0 / F-001 («Desconocido no es Cero» & Timestamps Atómicos en `OmniscientRegistry`)**:
+  - En `crates/omniscient-registry/src/lib.rs:6-76`:
+    * Reemplazado `pub timestamp: i64` por `pub timestamp: AtomicI64` en `Parameter`.
+    * En `set_value(&self, val: f64)`: eliminada la sanitización `let safe_val = if val.is_finite() { val } else { 0.0 };` que destruía los `NaN` convirtiéndolos en `0.0`. `val.to_bits()` se almacena directamente preservando el estado de desconocido/no-finito.
+    * En `set_value(&self, val)`: el timestamp atómico se actualiza a `chrono::Utc::now().timestamp_millis()`, garantizando frescura y trazabilidad de telemetría en cada mutación.
+    * Creado `pub fn get_timestamp(&self) -> i64` lock-free $O(1)$.
+    * En `get_value_or(&self, name: &str, default: f64)`: ante valor ausente o no-finito (`v.is_nan()`), se devuelve incondicionalmente el `default` provisto (fail-closed seguro), impidiendo la invención arbitraria de ceros.
+    * En `restore_from_snapshot`: erradicado el clamp a 0.0 de floats restaurados; se preservan sus bits canónicos exactos.
+- **Aislamiento Multi-Activo Estricto Sin Fugas Cruzadas**:
+  - En `crates/omniscient-registry/src/lib.rs:223-280`:
+    * Implementados métodos de acceso estricto: `get_for_coin_strict(coin_id, name)` y `get_for_coin_strict_or(coin_id, name, default)`.
+    * Implementados métodos estrictos escopados por símbolo: `get_scoped_strict(symbol, name)` y `get_scoped_strict_or(symbol, name, default)`.
+    * Garantizan que una moneda o símbolo sin inicializar jamás lea por accidente el valor escrito por otra moneda o un parámetro global residual.
+- **Suite Contractual Formal**:
+  - Creado `crates/omniscient-registry/tests/desconocido_no_es_cero_contract.rs` con 3 pruebas formales:
+    * `test_desconocido_no_es_cero_preservacion_nan`: verifica preservación de `NaN`, consulta rápida y retorno de fallback por defecto.
+    * `test_timestamp_atomico_frescura_en_actualizacion`: verifica avance monotónico del timestamp en cada mutación.
+    * `test_aislamiento_estricto_entre_activos`: verifica estricto aislamiento sin contaminación cruzada entre BTC, ETH y activos del roster.
+- **Invarianza y Cero Regresiones**:
+  - `cargo test -p omniscient-registry`: 11/11 tests pasando al 100%.
+  - `cargo check --workspace --all-targets`: 0 errores, compila limpiamente.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300`, 15 operaciones exactamente idénticas bit a bit frente a la línea base previa. Cero perturbación en las compuertas vivas.
+
 ## 2026-10-11 — AGY: OLA Ω81 COMPLETADA — PLAN MAESTRO DE REVISIÓN DESDE LA BASE, UNIVERSO CONTINUO TEMPORAL-ESPECTRAL Y SINCRONIZACIÓN MULTI-AGENTE (FICHA #719)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#719`.

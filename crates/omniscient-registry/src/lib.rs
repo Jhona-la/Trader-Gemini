@@ -3,7 +3,7 @@ use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -45,24 +45,18 @@ pub struct Parameter {
     pub value: AtomicU64,
     pub owner: String,
 
-    pub timestamp: i64,
+    pub timestamp: AtomicI64,
 }
 
 impl Parameter {
     pub fn new(name: &str, kind: ParameterKind, initial_value: f64, owner: &str) -> Self {
-        let safe_initial = if initial_value.is_finite() {
-            initial_value
-        } else {
-            0.0
-        };
         Self {
             id: Uuid::now_v7(),
             name: name.to_string(),
             kind,
-            value: AtomicU64::new(safe_initial.to_bits()),
+            value: AtomicU64::new(initial_value.to_bits()),
             owner: owner.to_string(),
-
-            timestamp: chrono::Utc::now().timestamp_millis(),
+            timestamp: AtomicI64::new(chrono::Utc::now().timestamp_millis()),
         }
     }
 
@@ -71,8 +65,13 @@ impl Parameter {
     }
 
     pub fn set_value(&self, val: f64) {
-        let safe_val = if val.is_finite() { val } else { 0.0 };
-        self.value.store(safe_val.to_bits(), Ordering::Relaxed);
+        self.value.store(val.to_bits(), Ordering::Relaxed);
+        self.timestamp
+            .store(chrono::Utc::now().timestamp_millis(), Ordering::Relaxed);
+    }
+
+    pub fn get_timestamp(&self) -> i64 {
+        self.timestamp.load(Ordering::Relaxed)
     }
 }
 
@@ -193,10 +192,13 @@ impl OmniscientRegistry {
         self.map.get(name).map(|entry| entry.value().get_value())
     }
 
-    /// Lectura directa con fallback por defecto (Hot-Path HFT)
+    /// Lectura directa con fallback por defecto ante ausencia o valor no finito / desconocido (Hot-Path HFT)
     #[inline(always)]
     pub fn get_value_or(&self, name: &str, default: f64) -> f64 {
-        self.get_value_fast(name).unwrap_or(default)
+        match self.get_value_fast(name) {
+            Some(v) if v.is_finite() => v,
+            _ => default,
+        }
     }
 
     /// D-07: Namespacing por activo: registra o actualiza un parámetro prefijado por símbolo con zero heap-allocation.
@@ -225,10 +227,34 @@ impl OmniscientRegistry {
     #[inline(always)]
     pub fn get_scoped_value_or(&self, symbol: &str, name: &str, default: f64) -> f64 {
         format_scoped_key(symbol, "_", name, |scoped_name| {
-            self.get_value_fast(scoped_name)
-                .or_else(|| self.get_value_fast(name))
-                .unwrap_or(default)
+            if let Some(v) = self.get_value_fast(scoped_name) {
+                if v.is_finite() {
+                    return v;
+                }
+            }
+            if let Some(v) = self.get_value_fast(name) {
+                if v.is_finite() {
+                    return v;
+                }
+            }
+            default
         })
+    }
+
+    /// D-07: Lectura estricta escopada por símbolo SIN fallback al parámetro global (Aislamiento Multi-Activo).
+    #[inline(always)]
+    pub fn get_scoped_strict(&self, symbol: &str, name: &str) -> Option<f64> {
+        format_scoped_key(symbol, "_", name, |scoped_name| {
+            self.get_value_fast(scoped_name)
+        })
+    }
+
+    /// D-07: Lectura estricta escopada por símbolo con default SIN fallback al parámetro global (Aislamiento Multi-Activo).
+    #[inline(always)]
+    pub fn get_scoped_strict_or(&self, symbol: &str, name: &str, default: f64) -> f64 {
+        self.get_scoped_strict(symbol, name)
+            .filter(|v| v.is_finite())
+            .unwrap_or(default)
     }
 
     /// D38: Namespacing por índice numérico de activo con stack buffer (Zero Heap Allocation Hot-Path).
@@ -243,10 +269,34 @@ impl OmniscientRegistry {
     #[inline(always)]
     pub fn get_for_coin_or(&self, coin_id: usize, name: &str, default: f64) -> f64 {
         format_coin_key(coin_id, name, |key| {
-            self.get_value_fast(key)
-                .or_else(|| self.get_value_fast(name))
-                .unwrap_or(default)
+            if let Some(v) = self.get_value_fast(key) {
+                if v.is_finite() {
+                    return v;
+                }
+            }
+            if let Some(v) = self.get_value_fast(name) {
+                if v.is_finite() {
+                    return v;
+                }
+            }
+            default
         })
+    }
+
+    /// D38: Lectura estricta por coin_id SIN fallback al parámetro global (Aislamiento Multi-Activo Estricto).
+    #[inline(always)]
+    pub fn get_for_coin_strict(&self, coin_id: usize, name: &str) -> Option<f64> {
+        format_coin_key(coin_id, name, |key| {
+            self.get_value_fast(key)
+        })
+    }
+
+    /// D38: Lectura estricta por coin_id con default SIN fallback al parámetro global (Aislamiento Multi-Activo Estricto).
+    #[inline(always)]
+    pub fn get_for_coin_strict_or(&self, coin_id: usize, name: &str, default: f64) -> f64 {
+        self.get_for_coin_strict(coin_id, name)
+            .filter(|v| v.is_finite())
+            .unwrap_or(default)
     }
 
     /// D-219: Lectura polimórfica escopada por activo (símbolo + coin_id) con fallback transparente al global (Zero Heap Alloc).
@@ -294,7 +344,9 @@ impl OmniscientRegistry {
                     self.get_value_fast(scoped_name)
                 });
                 if let Some(v) = val {
-                    return v;
+                    if v.is_finite() {
+                        return v;
+                    }
                 }
             }
         }
@@ -303,10 +355,17 @@ impl OmniscientRegistry {
                 self.get_value_fast(scoped_cid)
             });
             if let Some(v) = val {
+                if v.is_finite() {
+                    return v;
+                }
+            }
+        }
+        if let Some(v) = self.get_value_fast(name) {
+            if v.is_finite() {
                 return v;
             }
         }
-        self.get_value_fast(name).unwrap_or(default)
+        default
     }
 
     pub fn detect_collisions(&self) -> Vec<String> {
@@ -332,7 +391,7 @@ impl OmniscientRegistry {
                 kind: p.kind,
                 value_bits: p.value.load(Ordering::Relaxed),
                 owner: p.owner.clone(),
-                timestamp: p.timestamp,
+                timestamp: p.timestamp.load(Ordering::Relaxed),
             });
         }
         RegistrySnapshot { parameters }
@@ -342,13 +401,12 @@ impl OmniscientRegistry {
         let mut restored = 0;
         for p in &snapshot.parameters {
             let val = f64::from_bits(p.value_bits);
-            // FIX #1540: Sanitización de valores restaurados desde snapshot
-            let safe_val = if val.is_finite() { val } else { 0.0 };
-            self.register_or_update(&p.name, p.kind, safe_val, &p.owner);
+            self.register_or_update(&p.name, p.kind, val, &p.owner);
             restored += 1;
         }
         restored
     }
+
 
     /// Reconcilia valores de estado atómico con datos confirmados por REST API (Punto #275)
     pub fn reconcile_with_remote(&self, remote_values: &[(String, f64)], owner: &str) -> usize {
@@ -443,11 +501,19 @@ mod tests {
     fn test_omniscient_registry_nan_and_fast_value_access() {
         let registry = OmniscientRegistry::new();
         registry.set("nan_param", f64::NAN);
-        assert_eq!(registry.get_value_or("nan_param", 10.0), 0.0);
+
+        // Desconocido ≠ 0: NaN se preserva intacto en get_value_fast
+        let fast_val = registry.get_value_fast("nan_param");
+        assert!(fast_val.is_some());
+        assert!(fast_val.unwrap().is_nan());
+
+        // get_value_or devuelve el default ante desconocido (NaN), nunca inventa 0.0
+        assert_eq!(registry.get_value_or("nan_param", 10.0), 10.0);
 
         assert_eq!(registry.get_value_fast("non_existent"), None);
         assert_eq!(registry.get_value_or("non_existent", 99.0), 99.0);
     }
+
 
     #[test]
     fn test_omniscient_registry_file_dump_and_reload() {
@@ -526,6 +592,50 @@ mod tests {
         assert_eq!(
             registry.get_scoped_val_or(None, None, "global_param", 0.0),
             99.0
+        );
+    }
+
+    #[test]
+    fn test_omniscient_registry_timestamp_freshness() {
+        let registry = OmniscientRegistry::new();
+        let t0 = chrono::Utc::now().timestamp_millis();
+        registry.set("dynamic_metric", 1.0);
+        let p = registry.get("dynamic_metric", "test").unwrap();
+        assert!(p.get_timestamp() >= t0);
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let t_before_update = p.get_timestamp();
+        registry.set("dynamic_metric", 2.0);
+        assert!(p.get_timestamp() >= t_before_update);
+        assert_eq!(p.get_value(), 2.0);
+    }
+
+    #[test]
+    fn test_omniscient_registry_strict_coin_isolation() {
+        let registry = OmniscientRegistry::new();
+        // Moneda 0 escribe su spread específico
+        registry.set_for_coin(0, "local_spread", 0.00012);
+
+        // Moneda 0 debe leerlo
+        assert_eq!(
+            registry.get_for_coin_strict(0, "local_spread"),
+            Some(0.00012)
+        );
+        assert_eq!(
+            registry.get_for_coin_strict_or(0, "local_spread", 0.0),
+            0.00012
+        );
+
+        // Moneda 1 NUNCA debe ver el valor de Moneda 0 (Aislamiento absoluto)
+        assert_eq!(registry.get_for_coin_strict(1, "local_spread"), None);
+        assert_eq!(
+            registry.get_for_coin_strict_or(1, "local_spread", 0.0005),
+            0.0005
+        );
+        // Incluso en get_for_coin_or tradicional, si no hay parámetro global "local_spread", Moneda 1 recibe default
+        assert_eq!(
+            registry.get_for_coin_or(1, "local_spread", 0.0005),
+            0.0005
         );
     }
 }

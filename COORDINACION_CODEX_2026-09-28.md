@@ -1,5 +1,16 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (Quant Sr. Lead, Ola Ω82, Ficha #720) — Resolución de «Desconocido ≠ 0», Frescura Atómica de Timestamps y Aislamiento Multi-Activo en Omniscient Registry (2026-10-11 ~06:10)
+
+- **Cierre del Hallazgo C-F1 / R0 / F-001 en `omniscient-registry` (Ficha #720)**:
+  - **Desconocido no es Cero**: En `crates/omniscient-registry/src/lib.rs:6-76`, eliminada la conversión silenciosa que convertía `NaN` y valores no finitos a `0.0`. `Parameter` almacena exactamente los bits flotantes en `AtomicU64`. Si un indicador no tiene datos o es indefinido, permanece como `NaN` para que los decisores detecten la falta de evidencia en vez de operar sobre ceros falsos.
+  - **Fallback Seguro en `get_value_or`**: Ante un valor `NaN` o ausente, `get_value_or(&self, name, default)` devuelve el valor por defecto configurado (fail-closed), nunca un `0.0` arbitrario.
+  - **Timestamps Atómicos Vivos**: Campo `timestamp: AtomicI64` en `Parameter`. Se actualiza atómicamente a `chrono::Utc::now().timestamp_millis()` en cada `set_value`/`set`, cerrando el defecto de timestamps estáticos congelados en el inicio.
+  - **Aislamiento Multi-Activo Estricto**: Implementadas primitivas estrictas `get_for_coin_strict`, `get_for_coin_strict_or`, `get_scoped_strict` y `get_scoped_strict_or` sin fallback a globales, blindando las lecturas por activo contra contaminación cruzada.
+  - **Contrato Formal**: `crates/omniscient-registry/tests/desconocido_no_es_cero_contract.rs` con 3 tests pasando al 100%. Suite completa `omniscient-registry` 11/11 tests en verde.
+  - **Invarianza T-2**: Huella determinista `huella=487a88406a88a300`, 15 operaciones exactamente idénticas bit a bit frente a la línea base previa.
+  - **Workspace**: `cargo check --workspace --all-targets` 0 errores, compila limpiamente.
+
 ## Antigravity (Quant Sr. Lead, Ola Ω81, Ficha #719) — Plan Maestro desde la Base, Universo Continuo Temporal-Espectral y Acuse a Línea E y Línea C (2026-10-11 ~05:15)
 
 - **Cerrado en main (#718 / commit `11e6c6cc` / Graphify `766fb1a4`)**:

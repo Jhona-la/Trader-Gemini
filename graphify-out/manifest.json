@@ -990,9 +990,9 @@
     "semantic_hash": "d8eb36577fa2aae4316fc5fde29c1d6e"
   },
   "crates/omniscient-registry/src/lib.rs": {
-    "mtime": 1791490028.3146465,
-    "seen": 1791504033.1764297,
-    "ast_hash": "142affaa057a618d5c96db7a72b6699c",
+    "mtime": 1791698304.4098594,
+    "seen": 1791698422.8759885,
+    "ast_hash": "223164c215893d7c8b14375e16c6b529",
     "semantic_hash": ""
   },
   "crates/omniscient-registry/src/tests.rs": {
@@ -3708,9 +3708,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791696697.1563282,
-    "seen": 1791697106.5123932,
-    "ast_hash": "a1cc3a1314cf5448629ad478e48ca27f",
+    "mtime": 1791698006.9247468,
+    "seen": 1791698422.8769956,
+    "ast_hash": "91b2681f0141a897829227aee4bef2de",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3732,15 +3732,15 @@
     "semantic_hash": ""
   },
   "COORDINACION_CODEX_2026-09-28.md": {
-    "mtime": 1791696697.163319,
-    "seen": 1791697106.5143905,
-    "ast_hash": "216d3beee0dc7cb7450f0ec1496c8cf4",
+    "mtime": 1791698006.9328916,
+    "seen": 1791698422.8789952,
+    "ast_hash": "c75bdc354ae510e2d3f2fb97f77d19a2",
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1791696697.166839,
-    "seen": 1791697106.5143905,
-    "ast_hash": "cd2329da6b4e46758afdd328f52ffde8",
+    "mtime": 1791698006.9369035,
+    "seen": 1791698422.8789952,
+    "ast_hash": "48471d1b60f5b9ec668231bd09bc7acf",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -4404,9 +4404,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_SINCRONIZACION.md": {
-    "mtime": 1791696697.1879025,
-    "seen": 1791697106.5143905,
-    "ast_hash": "d1bba5d059ad1fa9677a42f9e18f1f21",
+    "mtime": 1791698006.943894,
+    "seen": 1791698422.8799977,
+    "ast_hash": "2189e102fd2fd30c982f049d2bb98128",
     "semantic_hash": ""
   },
   "docs/TRIAJE_ROJOS_PERPETUOS.md": {
@@ -29217,6 +29217,12 @@
     "mtime": 1791696697.1919007,
     "seen": 1791697106.5143905,
     "ast_hash": "1283af9c9881fa52d4e1f34c16491e5f",
+    "semantic_hash": ""
+  },
+  "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-11.md": {
+    "mtime": 1791698006.9389021,
+    "seen": 1791698422.8799977,
+    "ast_hash": "5a1fbe8e71d903015046b11a407e7dbf",
     "semantic_hash": ""
   }
 }

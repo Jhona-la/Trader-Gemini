@@ -80,22 +80,18 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω81 en integración / Ficha #719)
+## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω82 en integración / Ficha #720)
 
-- **Haciendo ahora**: Ola Ω81 (#719) — Formalización del Plan Maestro de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente:
-  - **Plan Rector Canónico**: `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-11.md` y §41 en `docs/PLAN_MAESTRO_SINCRONIZACION.md`.
-  - **10 Roles Senior en Modo Profesor**: Arquitectura Senior, Quant Dev, Risk Manager, SRE/DevOps, QA Engineer, Físico de Sistemas Complejos, Estadístico Matemático, IA Cuántica & Psico, Auditor Forense de Grafo, Profesor Pedagógico Supremo (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).
-  - **Doctrina Micro-Capital $13.00 USD ($T_d = 72$ h)**: Crecimiento compuesto continuo $g \approx +0.231049/\text{día} \equiv +25.9921\%/\text{día}$. Sizing discreto R-20 ($N=1..2$ órdenes mínimas $5.10 USD @ 5.0x leverage $\implies$ $1.02 USD margen por orden = 7.85% de cuenta). SL 55 bps ($R = \$0.02805$ USD), $RR \ge 2.25$ ($TP \ge 123.75$ bps). Conciliación ADR-0003 vs ADR-0016 vs RULE[growth_over_wr].
-  - **Continuo Temporal-Espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$**: Erradicación de dicotomías discretas scalping/swing. Centroide continuo $\tau^* \in [30\text{ s}, 12\text{ h}]$ sobre espacio de Hilbert $L^2$ (32 escalas diádicas $\tau_k = 4^k\ \mu\text{s}$) y simplex continuo $\Delta^3$.
-  - **Escalera Transdisciplinar ("El Siguiente Paso")**: PIN-SDE/FNO, Rough Volatility ($H < 0.5$), Navier-Stokes L2/L3 K41, Yang-Mills $SU(N)$ gauge, Helmholtz-Hodge $L^2$, Ville supermartingalas y Kahneman-Tversky prospect theory.
-  - **Acuse y Postura Forense T-2**: Respaldo pleno a Línea E (§7.6.1) en NO relajar jamás `REJ_EV` en vivo; canalizar exploración vía libro sombra D1 y sonda única de cartera D4.
-  - **Sincronización Línea C**: Armonización total con el marco de 12 fases C-F0…C-F11 e inventario de 1,559 archivos en `docs/audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv`.
+- **Haciendo ahora**: Ola Ω82 (#720) — Resolución de «Desconocido ≠ 0», Frescura Atómica de Timestamps y Aislamiento Multi-Activo en Omniscient Registry:
+  - **Desconocido ≠ 0**: En `omniscient-registry/src/lib.rs`, erradicada la sanitización espuria que forzaba `NaN` a `0.0`. `val.to_bits()` se almacena directamente en `AtomicU64`, preservando el estado de desconocido/no-finito.
+  - **Frescura Atómica de Timestamps**: Campo `timestamp: AtomicI64` en `Parameter`. Se actualiza atómicamente a `Utc::now().timestamp_millis()` en cada `set_value`/`set`, garantizando auditoría viva y frescura de telemetría.
+  - **Aislamiento Multi-Activo**: Métodos estrictos `get_for_coin_strict`, `get_for_coin_strict_or`, `get_scoped_strict`, `get_scoped_strict_or` sin fallback a globales, blindando a cada activo contra lecturas accidentales de otros activos.
+  - **Suite Contractual**: `crates/omniscient-registry/tests/desconocido_no_es_cero_contract.rs` con 3 tests formales pasando al 100%. Suite completa `omniscient-registry` (11/11 tests) en verde.
+  - **Invarianza T-2**: Huella determinista `huella=487a88406a88a300`, 15 operaciones exactamente idénticas bit a bit frente a la línea base previa.
 - **Commiteado reciente**:
+  - Ola Ω81 (#719, commit `11cdd14b` en main): Plan Maestro de Revisión desde la Base (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-11.md`), Colegio de 10 Roles Senior en Modo Profesor, matemáticas de micro-capital $13 USD ($T_d = 72$ h), universo continuo temporal-espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$, armonización C-F0 a C-F11 y sincronización multi-agente.
   - Ola Ω80 (#718, commit `11e6c6cc` en main): Cierre de REV-5, REV-9, REV-10 con sombras Feynman y Navier-Stokes en orquestador, contrato de integración del núcleo e invarianza T-2.
-  - Ola Ω79 (#717, commit `bc954a43` en main): Plan Maestro Exponencial Cuántico (`docs/PLAN_MAESTRO_EXPONENCIAL_CUANTICO_2026-10-10.md`), 10 Roles Senior en Modo Profesor, matemáticas de micro-capital $13 USD ($T_d = 72$ h), universo continuo espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$, respaldo a Línea C (ciclo 11) y diagnóstico de asfixia en T-2.
-  - Ola Ω78 (#716, commit `1025f750`, integrado en main vía PR #33 `431ce4c4`): REV-13 neutralidad estricta NaN, REV-1/REV-2 verificación exacta de rechazo, REV-6/7/8 propagador Feynman.
-  - Ola Ω77 (#715, commit `07688cf9`): Sincronización concurrencia CI replay y blindaje pre-commit contra marcadores de conflicto.
-  - Ola Ω76 (#714, commit `0000eb8d`): Simetría conformal K-26, microtendencia K-27 y sincronización freno del host d*.
+  - Ola Ω79 (#717, commit `bc954a43` en main): Plan Maestro Exponencial Cuántico (`docs/PLAN_MAESTRO_EXPONENCIAL_CUANTICO_2026-10-10.md`), respaldo a Línea C (ciclo 11) y diagnóstico de asfixia en T-2.
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`). Workspace verificado con `cargo check --workspace --all-targets` 100% limpio.
 
 ## Frentes del sistema (no por agente)
