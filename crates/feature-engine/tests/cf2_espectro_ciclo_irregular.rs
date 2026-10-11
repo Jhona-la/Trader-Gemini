@@ -57,7 +57,7 @@ fn cf2_ciclo_muestreo_uniforme_bin_4() {
 /// Verdad: bin 4 exacto, el mismo ciclo físico de 18 s en la misma ventana
 /// de 72 s. Es determinista: no hay tolerancia.
 #[test]
-#[ignore = "OPEN F2.3b-04 (Línea C): el FFT trabaja en tiempo de eventos y el bin del mismo ciclo físico depende de la densidad de eventos (sale el 8, no el 4)"]
+#[ignore = "OPEN F2.3b-04 (Línea C), CONTRATO DE API, no se activa sola: push(valor) no lleva tiempo; reescribir con la firma (t, valor). El FFT trabaja en tiempo de eventos y el bin del mismo ciclo físico depende de la densidad de eventos (sale el 8, no el 4)"]
 fn cf2_ciclo_muestreo_irregular_bin_4() {
     // Ráfagas de 16 eventos a 10 ms (cerca de sin = 0, en t = 0 y t = 36 s)
     // y tramos de 16 eventos a 2,24 s.

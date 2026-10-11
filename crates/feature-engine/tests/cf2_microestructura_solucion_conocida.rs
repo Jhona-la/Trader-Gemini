@@ -93,7 +93,7 @@ fn cf2_spoof_cancelacion_plantada_a_la_cadencia_de_depth5() {
 /// (a) recibe exactamente la entrada de cf2_spoof_cancelacion_plantada_a_100ms,
 /// así que ninguna implementación de la firma actual puede pasar los dos.
 #[test]
-#[ignore = "OPEN F2.5-07 (Línea C): contrato abierto de API; sólo recibe el máximo nocional de 5 niveles sin trades, y ejecución o traslación dan la misma señal que una cancelación"]
+#[ignore = "OPEN F2.5-07 (Línea C), CONTRATO DE API, no se activa sola: reescribir con la firma nueva; hoy sólo recibe el máximo nocional de 5 niveles sin trades, y ejecución o traslación dan la misma señal que una cancelación"]
 fn cf2_spoof_nulos_estructurales_sin_cancelacion() {
     let ejecutado = cancelacion_plantada(100);
     let tick = 0.01;
@@ -121,19 +121,25 @@ fn cf2_spoof_nulos_estructurales_sin_cancelacion() {
 
 /// Libro de Cont-Stoikov-Talreja (2010) en una rejilla de ticks: órdenes
 /// límite unitarias a distancia i ∈ 1..=10 del mejor precio opuesto con tasa
-/// λ(i) = 1,92/i^0,52, órdenes de mercado con tasa μ = 0,94 y cancelaciones a
-/// tasa θ(i)·q a distancia i (escaladas por `factor_cancelacion`; 0 = sin
-/// cancelaciones). Parámetros del orden de los estimados por CST (tabla 2).
-/// Fuera de la ventana de 10 niveles hay liquidez de reserva de 5 unidades por
-/// tick que nunca se cancela. Snapshot cada 100 ms: máximo de p·q sobre los 5
+/// λ(i) = 1,92/i^0,52, órdenes de mercado con tasa `mu` (0,94 en CST) y
+/// cancelaciones a tasa θ(i)·q a distancia i (escaladas por
+/// `factor_cancelacion`; 0 = sin cancelaciones). Parámetros del orden de los
+/// estimados por CST (tabla 2). El libro arranca con liquidez de reserva de 5
+/// unidades por tick a cada lado; la reserva que queda a ≤ 10 ticks del mejor
+/// precio opuesto entra en θ(i)·q como cualquier otra orden (con
+/// `factor_cancelacion` = 0 nada se cancela). Snapshot cada 100 ms: máximo de p·q sobre los 5
 /// mejores niveles no vacíos de cada lado, como el host (god_engine.rs:3205-3214).
 /// Devuelve (alarmas, snapshots, movimientos del mejor bid).
-fn alarmas_en_libro_cst(semilla: u64, factor_cancelacion: f64, snapshots: usize) -> (usize, usize, usize) {
+fn alarmas_en_libro_cst(
+    semilla: u64,
+    factor_cancelacion: f64,
+    mu: f64,
+    snapshots: usize,
+) -> (usize, usize, usize) {
     const L: usize = 4_000;
     const CENTRO: usize = 2_000;
     let lambda: Vec<f64> = (1..=10).map(|i| 1.92 / (i as f64).powf(0.52)).collect();
     let theta: [f64; 10] = [0.71, 0.81, 0.68, 0.56, 0.47, 0.37, 0.30, 0.26, 0.31, 0.21];
-    let mu = 0.94;
     let tick = 0.01;
     let precio = |idx: usize| 100.0 + (idx as f64 - CENTRO as f64) * tick;
     let mut rng = Lcg(semilla);
@@ -256,17 +262,22 @@ fn alarmas_en_libro_cst(semilla: u64, factor_cancelacion: f64, snapshots: usize)
 /// hay ninguna cancelación, así que toda alarma es falsa. Tolerancia: tasa
 /// por snapshot ≤ α + 4·√(α(1−α)/N) con α = 5 % y N = 20 000 (≤ 0,0562).
 /// El detector no declara su α; se usa el 5 % del borrador del auditor.
-/// Con las tasas de CST el mejor nivel recibe λ(1) = 1,92 > μ = 0,94, la cola
-/// sólo crece y el precio no se mueve: la tasa es 0 de forma casi trivial. El
-/// nulo iid del borrador (cantidades re-sorteadas en cada snapshot, ≈ 0,138)
-/// implicaba altas y cancelaciones continuas y no era un libro sin
+/// Con μ = 0,94 de CST el mejor nivel recibe λ(1) = 1,92 > μ, la cola sólo
+/// crece y el precio no se mueve: ningún detector basado en caídas podría
+/// fallar. Revisión cruzada (CL-65): se usa μ = 2,5 > λ(1), así las colas se
+/// agotan por ejecución y el precio se traslada sin ninguna cancelación (el
+/// mecanismo de traslación de F2.5-07), y se exige que el mejor bid se mueva.
+/// El nulo iid del borrador (cantidades re-sorteadas en cada snapshot,
+/// ≈ 0,138) implicaba altas y cancelaciones continuas y no era un libro sin
 /// cancelaciones.
 #[test]
 fn cf2_spoof_tasa_de_falsas_alarmas_en_libro_sin_cancelaciones() {
     let n = 20_000usize;
-    let (alarmas, medidos, movimientos) = alarmas_en_libro_cst(0x5E0F_0001, 0.0, n);
+    let (alarmas, medidos, movimientos) = alarmas_en_libro_cst(0x5E0F_0001, 0.0, 2.5, n);
+    assert!(movimientos > 0, "el precio no se movió: la prueba sería vacua");
     let tasa = alarmas as f64 / medidos as f64;
     let cota = 0.05 + 4.0 * (0.05f64 * 0.95 / n as f64).sqrt();
+    println!("sin cancelaciones (μ = 2,5): tasa {tasa} ({alarmas}/{medidos}), cota {cota}, mejor bid movido en {movimientos} snapshots");
     assert!(
         tasa <= cota,
         "falsas alarmas sin cancelaciones {tasa} > {cota} ({alarmas}/{medidos}; el mejor bid se movió en {movimientos} snapshots)"
@@ -282,7 +293,7 @@ fn cf2_spoof_tasa_de_falsas_alarmas_en_libro_sin_cancelaciones() {
 #[test]
 fn cf2_spoof_tasa_de_falsas_alarmas_en_libro_cst_ordinario() {
     let n = 20_000usize;
-    let (alarmas, medidos, movimientos) = alarmas_en_libro_cst(0x5E0F_0002, 1.0, n);
+    let (alarmas, medidos, movimientos) = alarmas_en_libro_cst(0x5E0F_0002, 1.0, 0.94, n);
     let tasa = alarmas as f64 / medidos as f64;
     let cota = 0.05 + 4.0 * (0.05f64 * 0.95 / n as f64).sqrt();
     assert!(
@@ -326,7 +337,12 @@ fn cf2_ballena_tasa_de_falsas_alarmas_sin_ballenas() {
 /// umbral fijo x* sobre el nocional (Neyman-Pearson). Se construye ese oráculo
 /// con la MISMA tasa empírica de falsas alarmas del detector medido (x* = el
 /// k-ésimo mayor nocional sin ballena, k = falsos positivos + 1) y se exige
-/// recall ≥ recall_oráculo − 4·EE, con EE = √(r(1−r)/n_ballenas) (n ≈ 1980),
+/// recall ≥ recall_oráculo − 4·EE, con la EE PAREADA sobre las mismas
+/// ballenas (revisión cruzada, CL-65): con n₁₀ = ballenas que ve el oráculo y
+/// no el detector y n₀₁ al revés, EE = √(n₁₀ + n₀₁ − (n₁₀ − n₀₁)²/n)/n. La EE
+/// binomial no pareada √(r(1−r)/n) (n ≈ 1980) dejaba el fallo a 4,7 EE de una
+/// cota de 4: otra semilla podía ponerla en verde con el defecto vivo. La
+/// prueba exige
 /// además de precisión ≥ 0,6 (criterio del plan; esperada ≈ 0,95–0,98). El
 /// recall ≥ 0,9 del borrador era un objetivo de diseño, no una tolerancia
 /// derivada. Hoy el detector queda ≈ 4,7 EE por debajo del oráculo: el σ̂
@@ -338,7 +354,7 @@ fn cf2_ballena_plantada_x50_al_uno_por_ciento() {
     let mut rng = Lcg(0xBA11_E7A1);
     let mut tr = InstitutionalVolumeTracker::default();
     let (mut tp, mut fp, mut fneg) = (0usize, 0usize, 0usize);
-    let (mut sin_ballena, mut con_ballena) = (Vec::new(), Vec::new());
+    let (mut sin_ballena, mut con_ballena) = (Vec::new(), Vec::<(f64, bool)>::new());
     for i in 0..200_000usize {
         let ballena = rng.unif() < 0.01;
         let x = rng.normal().exp() * if ballena { 50.0 } else { 1.0 };
@@ -347,7 +363,7 @@ fn cf2_ballena_plantada_x50_al_uno_por_ciento() {
             continue;
         }
         if ballena {
-            con_ballena.push(x);
+            con_ballena.push((x, burst));
         } else {
             sin_ballena.push(x);
         }
@@ -363,16 +379,18 @@ fn cf2_ballena_plantada_x50_al_uno_por_ciento() {
     // Oráculo de Neyman-Pearson a la misma tasa de falsas alarmas.
     sin_ballena.sort_by(|a, b| b.partial_cmp(a).unwrap());
     let umbral = sin_ballena[fp.min(sin_ballena.len() - 1)];
-    let recall_oraculo =
-        con_ballena.iter().filter(|&&x| x > umbral).count() as f64 / con_ballena.len() as f64;
-    let ee = (recall_oraculo * (1.0 - recall_oraculo) / con_ballena.len() as f64).sqrt();
+    let n = con_ballena.len() as f64;
+    let recall_oraculo = con_ballena.iter().filter(|&&(x, _)| x > umbral).count() as f64 / n;
+    let n10 = con_ballena.iter().filter(|&&(x, d)| x > umbral && !d).count() as f64;
+    let n01 = con_ballena.iter().filter(|&&(x, d)| x <= umbral && d).count() as f64;
+    let ee = (n10 + n01 - (n10 - n01).powi(2) / n).max(0.0).sqrt() / n;
     assert!(
         precision >= 0.6,
         "precisión {precision} (tp {tp}, fp {fp})"
     );
     assert!(
         recall >= recall_oraculo - 4.0 * ee,
-        "recall {recall} frente al oráculo de Neyman-Pearson {recall_oraculo} (EE {ee}, umbral {umbral}, fp {fp})"
+        "recall {recall} frente al oráculo de Neyman-Pearson {recall_oraculo} (EE pareada {ee}, n10 {n10}, n01 {n01}, umbral {umbral}, fp {fp})"
     );
 }
 
@@ -451,6 +469,13 @@ fn cf2_ofi_coincide_con_cont_kukanov_stoikov_evento_a_evento() {
 /// se exige que las dos lecturas difieran ≤ 5 %. Hoy la EMA es por evento
 /// (microstructure.rs:190) y cada trade le mete un 0: 1,0 sin trades frente a
 /// 0,1/(1 − 0,9^10) = 0,1535 con 9.
+///
+/// Dónde va el arreglo (revisión cruzada, CL-65): la prueba llama a
+/// OFIModel::update directamente, así que sólo se pone en verde si el arreglo
+/// va DENTRO de OFIModel (p. ej. no avanzar la EMA cuando el libro es
+/// idéntico, o una EMA en tiempo físico). Si se decide en el llamador (no
+/// alimentar el OFI en los trades, lib.rs:2806), esta prueba se traslada a
+/// god-engine-core sobre process_event con trades, en el mismo commit.
 #[test]
 #[ignore = "OPEN F2.5-09 (Línea C): la EMA del OFI es por evento y cada trade con el libro quieto le mete un 0; con 9 trades por snapshot la lectura cae al 15 %"]
 fn cf2_ofi_no_depende_del_numero_de_trades_entre_snapshots() {

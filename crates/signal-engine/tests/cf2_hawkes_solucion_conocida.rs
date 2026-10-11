@@ -346,8 +346,17 @@ fn diagnostico_open_f2_4_06_fase_uniforme_ciega_a_n() {
 /// 0,03 ≈ 4,8 EE. Hoy la dispersión nula α/√(2βr) es 0,42 a 0,5/s y 0,055 a
 /// 30/s: E[w] ≈ 0,19 frente a ≈ 0,002 en fase uniforme y ≈ 0,67 frente a
 /// ≈ 0,003 en los eventos.
+///
+/// Revisión cruzada (CL-65): `peso_vivo` es una copia de la rampa 1,7→2,21 de
+/// flow_excitation_confluence aplicada sobre λ/μ̂ crudo. Si el arreglo
+/// normaliza en el consumidor, esta prueba no se pone verde sola. Además,
+/// igualar medias no basta: la asimetría del ruido de disparo
+/// (2√2/3·√(β/r) ≈ 0,94 a 0,5/s frente a 0,12 a 30/s) hace que normalizar por
+/// α/√(2βr) no iguale las colas. El dueño expone la puerta viva y cambia el
+/// contrato a «tasa de falsa alarma P(w > 0) = q nominal ± 4 SE a cada
+/// ritmo», que sólo se alcanza calibrando contra el cuantil nulo.
 #[test]
-#[ignore = "OPEN F2.4-04 (Qoder/GLM): el exceso λ/μ̂ − 1,6 no se normaliza por su dispersión nula α/√(2βr) y la falsa cascada depende del ritmo (la lectura en eventos arrastra además F2.4-03)"]
+#[ignore = "OPEN F2.4-04 (Qoder/GLM), peso_vivo ES COPIA de la rampa: al arreglar, sustituirla por la puerta del consumidor y exigir P(w > 0) nominal a cada ritmo; el exceso λ/μ̂ − 1,6 no se normaliza por su dispersión nula α/√(2βr) y la falsa cascada depende del ritmo (la lectura en eventos arrastra además F2.4-03)"]
 fn cf2_hawkes_tasa_de_falsa_cascada_no_depende_del_ritmo() {
     let mut rng = Lcg(0xA7A7_0007);
     let lento = tiempos_poisson(&mut rng, 0.5, 40_000.0);

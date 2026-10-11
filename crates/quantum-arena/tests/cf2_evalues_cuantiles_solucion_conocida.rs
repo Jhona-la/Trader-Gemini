@@ -190,6 +190,11 @@ fn cf2_p2_tasa_de_disparo_iid_en_el_nominal() {
 // Tolerancia ±0,02 = 6 errores típicos binomiales (√(0,124·0,876/10 000)
 // = 0,0033). Mide el piso; el umbral vivo es max(gen, piso) y su tasa depende
 // además de la curva del genoma.
+//
+// REGRESIÓN DOCUMENTAL (revisión cruzada, CL-65): replica el multiplicador
+// 1 + 0,5·χ en el test; no ejercita `intermittency_mult_de` ni el piso vivo
+// (son privados del núcleo). Documenta que la tasa del piso no es un p80.
+// Cuando haya una ruta pública del umbral, se llama a ella.
 #[test]
 fn cf2_umbral_obi_con_intermitencia_sigue_la_cola_analitica() {
     let chi = 0.4f64;
@@ -211,6 +216,11 @@ fn cf2_umbral_obi_con_intermitencia_sigue_la_cola_analitica() {
 // observaciones son ≈ 17 min.
 // Hoy: P² acumulativo ⇒ el p80 de la mezcla sigue en ≈ 1,38 y
 // P(|N(0,2²)| > 1,38) ≈ 0,49.
+//
+// Revisión cruzada (CL-65): medir en [10 000, 20 000] impone una memoria del
+// estimador ≲ 2 000-3 000 observaciones que nadie ha derivado. Quien arregle
+// F2.2-08 fija la memoria M (constante pública) y cambia la ventana de
+// medida a ≥ 5·M observaciones tras el cambio, en el mismo commit.
 #[test]
 #[ignore = "OPEN F2.2-08 (Línea C, C-F2.2): P² acumulativo no olvida; tras σ×2 el «p80 medido» dispara ≈ 49 %"]
 fn cf2_p2_tras_cambio_de_regimen_vuelve_al_nominal() {

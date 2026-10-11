@@ -115,7 +115,7 @@ fn cf2_platt_recupera_un_mapa_logistico_conocido() {
 /// shadow_ledger) o que `calibrate_at` declare «sin soporte» fuera del rango
 /// ejecutado.
 #[test]
-#[ignore = "OPEN F2.2-06 (Línea C, C-F2.2): Platt sólo aprende de lo ejecutado y extrapola su tasa (≈0,59) a puntuaciones nunca ejecutadas (verdad 0,30)"]
+#[ignore = "OPEN F2.2-06 (Línea C, C-F2.2), CONTRATO DEL SUCESOR, no se activa con un arreglo de calibration.rs: necesita contrafactuales (fila 38) o que calibrate_at declare «sin soporte». Platt sólo aprende de lo ejecutado y extrapola su tasa (≈0,59) a puntuaciones nunca ejecutadas (verdad 0,30)"]
 fn cf2_platt_no_extrapola_fuera_de_lo_ejecutado() {
     let mut g = Lcg::new(37);
     let mut c = PlattCalibrator::new();
@@ -242,8 +242,14 @@ fn cf2_conformal_cobertura_marginal_al_nominal() {
 /// los candidatos con su resultado (contrafactuales de la fila 38) en el
 /// alimentador del núcleo (lib.rs, actualización al cierre). La regla
 /// p < 0,6 es ilustrativa, no la selección viva.
+///
+/// Revisión cruzada (CL-65): como el cierre `seleccion` de la propia prueba
+/// decide qué se actualiza, un arreglo en el alimentador del núcleo no la
+/// cambia. Quien lo arregle la reescribe con la API nueva (update ponderado
+/// por 1/propensión, Tibshirani et al. 2019) o la traslada a un arnés con
+/// GodEngineCore.
 #[test]
-#[ignore = "OPEN F2.2-05 (Línea C, C-F2.2): la cobertura conformal sólo se mide y adapta en las ejecutadas; en los candidatos se aparta del nominal"]
+#[ignore = "OPEN F2.2-05 (Línea C, C-F2.2), CONTRATO DEL SUCESOR, no se activa con un arreglo del alimentador: la selección la decide el propio test; reescribir con el update ponderado (1/propensión) o sobre GodEngineCore. La cobertura conformal sólo se mide y adapta en las ejecutadas; en los candidatos se aparta del nominal"]
 fn cf2_conformal_cobertura_en_candidatos_con_seleccion() {
     let r = cobertura_conformal(|p| p < 0.6, 7);
     let (err, err_ejecutadas) = (r.error, r.error_adaptativo);
@@ -280,11 +286,16 @@ fn cf2_conformal_riesgo_entre_aceptadas() {
 /// (≈ 0,0096 en la pérdida) por ventana; con ≈ 95 ventanas independientes en
 /// 19 000 pasos el SE de la media es ≈ 0,001, y el sesgo por ponderar por
 /// aceptación es ≈ +0,001; 0,02 son > 10 SE.
+///
+/// CARACTERIZACIÓN (revisión cruzada, CL-65): fija la pérdida de la regla
+/// singleton actual y es incompatible con `cf2_conformal_riesgo_entre_aceptadas`
+/// (≤ 0,12). Se retira en el mismo commit que active esa prueba.
 #[test]
 fn cf2_conformal_riesgo_entre_aceptadas_valor_analitico() {
     let t = 1.0 - 0.11f64.sqrt();
     let esperado = (1.1 - t) / 2.0;
-    let (_, _, riesgo, acept) = cobertura_conformal(|_| true, 42);
+    let r = cobertura_conformal(|_| true, 42);
+    let (riesgo, acept) = (r.riesgo, r.aceptadas);
     println!("observado: pérdida entre {acept} aceptadas {riesgo:.4}; analítico {esperado:.4}");
     assert!(
         (riesgo - esperado).abs() <= 0.02,

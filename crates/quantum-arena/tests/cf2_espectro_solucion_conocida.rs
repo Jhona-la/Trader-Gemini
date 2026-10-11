@@ -203,9 +203,10 @@ fn cf2_ou_ic_de_la_senal_de_momento_es_negativo() {
 }
 
 // Valor verdadero: IC = 0 en toda escala (E[s₀·r] = 0 exacto en caminata
-// aleatoria). Media temporal desde el evento 7 200 con ≈ 15 000, 3 600 y 939
-// bloques en las escalas 16, 17 y 18: SE ≈ 0,009, 0,017 y 0,033. Tolerancias
-// a ≥ 4 SE: 0,10, 0,10 y 0,14.
+// aleatoria). Media temporal desde el evento 7 200 con ≈ 12 960, 3 600 y 939
+// bloques en las escalas 16, 17 y 18 (revisión cruzada, CL-65: antes decía
+// ≈ 15 000 para la 16): SE ≈ 0,0088, 0,017 y 0,033. Tolerancias a ≥ 4 SE:
+// 0,10, 0,10 y 0,14.
 #[test]
 fn cf2_rw_ic_por_escala_es_nulo() {
     let xs = rw(0xC0F2_0003, 72_000, 1e-4);
@@ -362,6 +363,8 @@ struct ValidacionBilateral {
     wsr: f64,
     n: u64,
     validada: bool,
+    /// Validada con la familia por signo (5 escalas, umbral 100).
+    validada_por_signo: bool,
 }
 
 impl ValidacionBilateral {
@@ -375,6 +378,7 @@ impl ValidacionBilateral {
             wsr: 0.0,
             n: 0,
             validada: false,
+            validada_por_signo: false,
         }
     }
     fn ic_replica(&self) -> Option<f64> {
@@ -393,6 +397,7 @@ impl ValidacionBilateral {
 /// 5 escalas) del umbral de Ville M/α.
 const BANDA: std::ops::RangeInclusive<usize> = 18..=22;
 const FAMILIA_BILATERAL: usize = 2 * 5;
+const FAMILIA_POR_SIGNO: usize = 5;
 
 // Valor verdadero: en OU (vida media 30 s) todas las escalas maduras tienen
 // |IC| grande (≈ 0,47 a 69 s y ≈ 0,62 a 275 s) con signo negativo. Corrección
@@ -406,6 +411,12 @@ const FAMILIA_BILATERAL: usize = 2 * 5;
 // de la dominante al conjunto validado (contrato (a) de COMPLETITUD).
 // Hoy: la selección sólo admite IC > 0 y todas son negativas, así que manda el
 // respaldo argmax |w·s|, que mide amplitud y no habilidad.
+//
+// Revisión cruzada (CL-65): el tamaño de la familia es una elección del
+// arreglo. Con la familia por signo (5 escalas, umbral 100) la escala 19 se
+// valida ≈ 0,7 h antes y ≈ 4 de las 36 comprobaciones cambiaban de oráculo,
+// lo bastante para fallar el 90 % con un arreglo válido. Se calculan los dos
+// oráculos (umbral 100 y 200) y cuenta como acierto coincidir con cualquiera.
 #[test]
 #[ignore = "OPEN F2.3-03 (Línea C, C-F3): la τ dominante sólo admite IC > 0; en OU cae al respaldo de amplitud"]
 fn cf2_ou_tau_dominante_sigue_la_habilidad_absoluta() {
@@ -438,6 +449,12 @@ fn cf2_ou_tau_dominante_sigue_la_habilidad_absoluta() {
                         v.validada = true;
                         primera_validacion[k] = Some(i);
                     }
+                    if !v.validada_por_signo
+                        && (v.a_favor.significativo_familia(FAMILIA_POR_SIGNO)
+                            || v.en_contra.significativo_familia(FAMILIA_POR_SIGNO))
+                    {
+                        v.validada_por_signo = true;
+                    }
                     // El bloque que nace ahora se puntuará con la señal previa.
                     v.s0 = previas[j];
                     // La réplica debe ser el IC del propio espectro.
@@ -458,23 +475,29 @@ fn cf2_ou_tau_dominante_sigue_la_habilidad_absoluta() {
         }
         if i >= 21_600 && i % 600 == 0 {
             let mut mejor: Option<(usize, f64)> = None;
+            let mut mejor_por_signo: Option<(usize, f64)> = None;
             let mut validadas = Vec::new();
             for k in BANDA {
+                let Some(ic) = spec.scales[k].habilidad_medida() else { continue };
+                if val[k].validada_por_signo && mejor_por_signo.map_or(true, |(_, b)| ic.abs() > b) {
+                    mejor_por_signo = Some((k, ic.abs()));
+                }
                 if !val[k].validada {
                     continue;
                 }
-                if let Some(ic) = spec.scales[k].habilidad_medida() {
-                    validadas.push(k);
-                    if mejor.map_or(true, |(_, b)| ic.abs() > b) {
-                        mejor = Some((k, ic.abs()));
-                    }
+                validadas.push(k);
+                if mejor.map_or(true, |(_, b)| ic.abs() > b) {
+                    mejor = Some((k, ic.abs()));
                 }
             }
             if let Some((k, _)) = mejor {
                 casos += 1;
                 let dom = spec.dominant_tau_ms;
-                let tau_k = SPECTRUM_SCALES_MS[k];
-                if (dom - tau_k).abs() < 1e-6 * tau_k {
+                let coincide = |k: usize| {
+                    let tau_k = SPECTRUM_SCALES_MS[k];
+                    (dom - tau_k).abs() < 1e-6 * tau_k
+                };
+                if coincide(k) || mejor_por_signo.map_or(false, |(k2, _)| coincide(k2)) {
                     aciertos += 1;
                 }
                 if validadas

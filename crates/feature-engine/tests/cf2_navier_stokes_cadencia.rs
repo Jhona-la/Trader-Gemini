@@ -68,6 +68,11 @@ fn forma_cerrada(dt_s: f64) -> f64 {
 /// sd(Re) = 20σ·0,6028/√dt = 2,411 y 0,762, SE con N = 20 000 de 0,017 y
 /// 0,0054; tolerancias 0,08 y 0,025 (≈ 4,7 y 4,6 SE). El tope en 100 está
 /// a más de 25 sd.
+///
+/// CARACTERIZACIÓN (revisión cruzada, CL-65): fija la ley defectuosa
+/// Re ∝ dt^{−1/2}, la misma afirmación que `cf2_re_invariante_a_la_cadencia`
+/// niega. Quien arregle F2.3b-05 la retira o la reescribe con la forma
+/// cerrada nueva en el mismo commit en que activa la OPEN.
 #[test]
 fn cf2_re_forma_cerrada_10ms_y_100ms() {
     let a = re_medio(10, 20_000, 11);

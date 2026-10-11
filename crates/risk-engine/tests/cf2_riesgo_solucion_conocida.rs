@@ -359,17 +359,23 @@ fn cf2_lundberg_bloques_gaussianos_equicorrelacionados_inflan_r() {
 /// lo observado (validez, 4 SE) y que queda a más de 10 SE por encima
 /// (holgura). El sistema compone (nocional proporcional al capital); este
 /// test supone nocional fijo y no ejerce el consumidor vivo (lib.rs:670-674).
-/// Con esta semilla la caída s = 5 queda a +3,4 SE por azar (0,378 frente a
-/// 0,367); el mismo generador sobre 300 semillas da z medio 0,02 y sd 0,96, y
-/// el paseo sólo usa aritmética entera e IEEE sin libm, así que el resultado
-/// es idéntico en gnu y msvc.
+/// Revisión cruzada (CL-65): con D = f·a·s el factor f se cancela y la parte
+/// Monte Carlo es la prueba del paseo reticular con la barrera en −5: es una
+/// REGRESIÓN, no ejerce código nuevo. Con 20 000 caminatas la caída s = 5
+/// quedaba a +3,4 SE de un límite de 4 (0,378 frente a 0,367); se sube a
+/// 80 000 caminatas en lugar de buscar otra semilla (el mismo generador sobre
+/// 300 semillas daba z medio 0,02 y sd 0,96). Las dos comprobaciones que
+/// importan son deterministas: ψ_f = ((1 − p)/p)^s (la conversión correcta a
+/// capital) y ψ_L > ψ_f (la viva es más laxa). La antigua «ψ_L + 4 SE ≥ emp»
+/// era vacua (0,99 frente a 0,82) y se retira. El paseo sólo usa aritmética
+/// entera e IEEE sin libm, así que el resultado es idéntico en gnu y msvc.
 #[test]
 fn cf2_lundberg_exposicion_real_convierte_r() {
     let r_n = muestra_exacta().lundberg().expect("R por nocional");
     let (c0, f, l_max) = (13.0_f64, 0.35_f64, 20.0_f64);
     let nocional = f * c0;
     let caidas = [1usize, 3, 5];
-    let caminatas = 20_000usize;
+    let caminatas = 80_000usize;
     let mut rng = Lcg::new(0xC0F2_0005);
     let mut cruces = [0usize; 3];
     for _ in 0..caminatas {
@@ -397,9 +403,14 @@ fn cf2_lundberg_exposicion_real_convierte_r() {
             (emp - psi_nc).abs() <= 4.0 * se + 1e-5,
             "D={d}: frecuencia {emp} frente a ψ = e^(-(R/f)·D) = {psi_nc}"
         );
+        let exacta = ((1.0 - P) / P).powi(s as i32);
         assert!(
-            psi_lmax + 4.0 * se >= emp,
-            "D={d}: ÷L_max promete {psi_lmax} y la ruina observada es {emp}: cota inválida"
+            (psi_nc - exacta).abs() < 1e-6,
+            "D={d}: ψ_f = {psi_nc} frente a ((1 − p)/p)^s = {exacta}"
+        );
+        assert!(
+            psi_lmax > psi_nc,
+            "D={d}: ÷L_max ({psi_lmax}) debería ser más laxa que la conversión correcta ({psi_nc})"
         );
         assert!(
             psi_lmax - emp > 10.0 * se,

@@ -332,26 +332,50 @@ fn cf2_rw_bocpd_alarmas_por_hora_no_dependen_de_la_cadencia() {
 /// detector no separa el cambio de sus falsas alarmas (el escéptico del
 /// espectro añade que la señal está normalizada por `ewma_dev_vol`, así que
 /// un cambio de escala sólo mueve la masa mientras se adapta).
+///
+/// Revisión cruzada (CL-65): para separar el observable del detector, se
+/// comprueba primero que W1 vea el cambio: en cada camino, la media de W1 en
+/// [cambio, cambio + 60 s) (con el desfase físico de 60 s, el único tramo en
+/// que se compara un espectro posterior al cambio con uno anterior) debe
+/// superar el máximo de W1 en la ventana nula (≈ su cuantil del 99 % con ~120
+/// lecturas) en ≥ 13/16 caminos. Si esa aserción falla, el defecto es del
+/// observable y no del BOCPD.
+///
+/// Resultado en el PC (CL-65): W1 ve el cambio en 0/16 caminos. Su media tras
+/// el cambio (≈ 0,91 entre caminos) es la de la ventana nula (≈ 0,94): el
+/// transporte espectral está normalizado y es invariante a la escala, así que
+/// un cambio de volatilidad ×5 no entra en la serie que vigila el BOCPD. Las
+/// 5/16 «detecciones» son falsas alarmas. Se registra como F2.3-08b. La prueba
+/// se activa cuando el detector reciba un observable que contenga la escala y
+/// además separe el cambio de sus falsas alarmas.
 #[test]
-#[ignore = "OPEN F2.3-08 (Línea C, C-F2.3): con hazard por evento y W1 solapado el BOCPD no separa un cambio ×5 de sus falsas alarmas (5/16 detecciones frente a 4/16 en la ventana nula de 120 s)"]
+#[ignore = "OPEN F2.3-08b (Línea C, C-F2.3): W1 es invariante a la escala y no ve un cambio ×5 de volatilidad (0/16 caminos; media 0,91 tras el cambio frente a 0,94 nula); el BOCPD sólo da falsas alarmas (5/16 frente a 4/16 nulas)"]
 fn cf2_bocpd_detecta_un_cambio_de_volatilidad_plantado() {
     let cambio = 3_600u64;
     let ventana = 120u64;
     let k = 16u64;
-    let (mut detectadas, mut nulas) = (0u64, 0u64);
+    let (mut detectadas, mut nulas, mut observable_ve) = (0u64, 0u64, 0u64);
     let mut retardos = Vec::new();
+    // (media nula, máximo nulo, media tras el cambio) de W1 por camino.
+    let mut w1_resumen: Vec<(f64, f64, f64)> = Vec::new();
     for semilla in 0..k {
         let mut g = Lcg(0xC0F2_1002 + semilla);
         let mut spec = TemporalSpectrum::new();
         let mut obs = W1ChangepointObserver::new();
         let mut x = 0.0f64;
         let (mut primera, mut nula) = (None, false);
+        let (mut w1_nulo, mut w1_post) = (Vec::new(), Vec::new());
         for i in 0..(cambio + ventana) {
             let sd = if i < cambio { 1e-4 } else { 5e-4 };
             x += sd * g.n();
             let ts = T0 + i * DT;
             spec.update(P0 * x.exp(), ts);
             if let Some(w1) = spec.spectral_transport_w1_fisico(W1_LAG_FISICO_MS) {
+                if i >= cambio - ventana && i < cambio {
+                    w1_nulo.push(w1);
+                } else if i >= cambio && i < cambio + 60 {
+                    w1_post.push(w1);
+                }
                 if let Some(p) = obs.observe_at(ts, w1) {
                     if p > 0.5 {
                         if i >= cambio - ventana && i < cambio {
@@ -364,6 +388,17 @@ fn cf2_bocpd_detecta_un_cambio_de_volatilidad_plantado() {
                 }
             }
         }
+        let max_nulo = w1_nulo.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let media_post = w1_post.iter().sum::<f64>() / w1_post.len().max(1) as f64;
+        if !w1_post.is_empty() && media_post > max_nulo {
+            observable_ve += 1;
+        }
+        let media_nulo = w1_nulo.iter().sum::<f64>() / w1_nulo.len().max(1) as f64;
+        w1_resumen.push((
+            (media_nulo * 1e6).round() / 1e6,
+            (max_nulo * 1e6).round() / 1e6,
+            (media_post * 1e6).round() / 1e6,
+        ));
         if let Some(r) = primera {
             detectadas += 1;
             retardos.push(r);
@@ -373,7 +408,11 @@ fn cf2_bocpd_detecta_un_cambio_de_volatilidad_plantado() {
         }
     }
     println!(
-        "observado: detección {detectadas}/{k} en {ventana} s (retardos {retardos:?}); nulo {nulas}/{k}"
+        "observado: detección {detectadas}/{k} en {ventana} s (retardos {retardos:?}); nulo {nulas}/{k};          W1 ve el cambio en {observable_ve}/{k}"
+    );
+    assert!(
+        observable_ve >= 13,
+        "W1 sólo ve el cambio ×5 en {observable_ve}/{k} caminos: la prueba no mide el BOCPD sino el observable;          (media nula, máximo nulo, media tras el cambio) por camino: {w1_resumen:?}"
     );
     assert!(
         detectadas >= 13 && nulas <= 3,

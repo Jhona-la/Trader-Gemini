@@ -354,7 +354,9 @@ fn cf2_lead_lag_recupera_desfase_plantado_2000ms() {
 /// god-engine-core/src/lib.rs:3104-3108) con una ventana de 50 MUESTRAS
 /// (lib.rs:1182). Aquí el líder publica cada 25 ms (40 eventos/s) su OFI, que
 /// cambia cada 250 ms; el alt llega a 4 Hz. La recuperación debe seguir
-/// siendo ≥ 0,90. Hoy: la ventana cubre 1,25 s, todos los objetivos t + 2000
+/// siendo ≥ 0,89, la misma cota derivada que el test gemelo de cadencia lenta
+/// (revisión cruzada, CL-65: exigía 0,90 con media 0,951 y sd 0,015, a 3,4 sd,
+/// y podía fallar tras el arreglo). Hoy: la ventana cubre 1,25 s, todos los objetivos t + 2000
 /// caen en el futuro, el alt se extrapola congelado (lead_lag.rs:316) y ρ = 0
 /// en 2000 ms: recuperación 0.
 #[test]
@@ -389,7 +391,7 @@ fn cf2_lead_lag_desfase_plantado_a_cadencia_viva() {
     }
     let tasa = aciertos as f64 / lecturas as f64;
     assert!(
-        tasa >= 0.90,
+        tasa >= 0.89,
         "recuperación a cadencia viva {tasa} (lags leídos {lags:?})"
     );
 }
@@ -397,7 +399,8 @@ fn cf2_lead_lag_desfase_plantado_a_cadencia_viva() {
 /// Verdad: líder y alt AR(1) independientes (φ = 0,9) cada 250 ms; todo lag
 /// declarado es un falso líder y el tamaño nominal del umbral t ≥ 2 es el
 /// 5 %. Tolerancia: 5 % + 3σ binomial con n = 400 (≤ 0,083), la del auditor.
-/// Hoy ≈ 0,88 según el espejo con extrapolación congelada (lead_lag.rs:316):
+/// Hoy ≈ 0,83 medido (el espejo con extrapolación congelada, lead_lag.rs:316,
+/// predecía ≈ 0,88):
 /// Pearson sobre niveles autocorrelados (Granger–Newbold) contra un umbral
 /// que supone muestras independientes, y máximo sobre 5 lags sin corregir.
 /// El contrato falla también con ruido blanco (ver el test siguiente): el
@@ -422,7 +425,7 @@ fn cf2_lead_lag_nulo_tasa_de_falsos_lideres() {
         }
     }
     let tasa = falsos as f64 / 400.0;
-    assert!(tasa <= 0.083, "falsos líderes {tasa} (nominal 0,05; espejo ≈ 0,88)");
+    assert!(tasa <= 0.083, "falsos líderes {tasa} (nominal 0,05; medido hoy ≈ 0,83)");
 }
 
 /// Verdad: el mismo nulo con líder y alt de ruido blanco (sin
@@ -548,6 +551,11 @@ fn cf2_te_acople_plantado_valor_y_surrogados() {
 /// τ = 0,494: σ(τ̂) ≤ 0,032 y dρ/dτ = 1,12 ⇒ σ(ρ̂) ≤ 0,036, tolerancia 0,145
 /// (4σ). ν̂ ∈ [2, 5] equivale a λ(0,7; ν̂) ∈ [0,343; 0,519], dentro de
 /// 0,448 ± 0,11.
+///
+/// Revisión cruzada (CL-65): esa aserción usa la ρ verdadera y sólo
+/// re-expresa ν̂ ∈ [2, 5]. Se exige además la λ que se PUBLICA, λ(ρ̂, ν̂):
+/// tolerancia 0,11 + |dλ/dρ|·0,145 ≈ 0,11 + 0,83·0,145 ≈ 0,23 (propagación
+/// lineal del peor caso de ρ̂).
 #[test]
 fn cf2_copula_t_rho07_nu3_recupera_lambda_de_cola() {
     let mut rng = Lcg(0xB8B8_0008);
@@ -560,6 +568,11 @@ fn cf2_copula_t_rho07_nu3_recupera_lambda_de_cola() {
     assert!(
         (lam - 0.448).abs() <= 0.11,
         "lambda {lam} (exacto 2*T_4(-sqrt(4*0,3/1,7)) = 0,448)"
+    );
+    let publicada = lambda_cola_t(rho, nu);
+    assert!(
+        (publicada - 0.448).abs() <= 0.23,
+        "lambda publicada {publicada} con rho {rho} y nu {nu} (exacto 0,448)"
     );
 }
 

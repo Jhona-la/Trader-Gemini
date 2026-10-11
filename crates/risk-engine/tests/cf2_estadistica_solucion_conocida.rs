@@ -187,7 +187,8 @@ fn cf2_pf_lcb_cubre_con_magnitudes_exponenciales() {
     );
 }
 
-/// Versión secuencial (corrección del escéptico de F2.2, FA-1): el consumidor
+/// Versión secuencial (corrección del escéptico de F2.2, FA-1, registrado como
+/// F2.2-03b en el documento de hallazgos): el consumidor
 /// vivo mira la cota en CADA cierre, así que la propiedad que usa es
 /// P(∀ n ≤ 100: LCB_n ≤ 1) con PF real 1. Programación dinámica exacta sobre
 /// el número de ganadas (sin error Monte Carlo), para 1:1 con p = ½ y 2:1 con
@@ -196,7 +197,7 @@ fn cf2_pf_lcb_cubre_con_magnitudes_exponenciales() {
 /// con el SE corregido lo sería), así que esta prueba sólo se activa si el
 /// arreglo de F2.2-03 da una cota válida bajo parada opcional.
 #[test]
-#[ignore = "OPEN F2.2-03 y FA-1 (Línea C): la cota del profit factor mirada en cada cierre no es anytime-valid; con PF real 1 supera 1 en ~45 % de los caminos"]
+#[ignore = "OPEN F2.2-03b (Línea C), no se cierra con el arreglo del SE de F2.2-03: la cota del profit factor mirada en cada cierre no es anytime-valid; con PF real 1 supera 1 en ~45 % de los caminos"]
 fn cf2_pf_lcb_cobertura_secuencial_en_cada_cierre() {
     let n_max = 100usize;
     let mut coberturas = Vec::new();
@@ -325,7 +326,7 @@ fn cf2_cota_jerarquica_es_coherente_y_monotona() {
 /// Hoy: paso 4 con λ = 0,5 (varianza en el suelo EPS) da e = 0,579; paso 5
 /// da e = 0,289 y caída de evidencia 0,75 ≥ 0,5.
 #[test]
-#[ignore = "OPEN F2.2-01 (Línea C): el vigilante apuesta a favor del edge y dispara por caída de evidencia; revierte un genoma con +1 R"]
+#[ignore = "OPEN F2.2-01 (Línea C), RÉPLICA LOCAL: activarla exige trasladarla a evolution-engine con el predicado público o actualizar vigilante_degradado; el vigilante apuesta a favor del edge y dispara por caída de evidencia; revierte un genoma con +1 R"]
 fn cf2_vigilante_no_revierte_un_genoma_rentable_testigo() {
     let mut v = nuevo_vigilante();
     for r in [1.0, 1.0, 1.0, -1.0, -1.0] {
@@ -354,8 +355,15 @@ fn cf2_vigilante_no_revierte_un_genoma_rentable_testigo() {
 /// pérdidas, q⁵, aporta 0,018 y 0,050), pero ≈ 0,20 con media 0 (mirar un t de
 /// n fijo en cada cierre): el arreglo de F2.2-01 tiene que cubrir también esa
 /// regla para que el compuesto pase.
+///
+/// Revisión cruzada (CL-65): `ReglaT`, `vigilante_degradado` y
+/// `nuevo_vigilante` son réplicas de online_daemon.rs:1205-1241 y de
+/// `SequentialVilleEvidence`. Un arreglo en el demonio no las arrastra. Quien
+/// arregle F2.2-01 extrae el predicado de rollback a una función pública de
+/// evolution-engine y traslada esta prueba y el testigo de arriba a
+/// crates/evolution-engine/tests/, en el mismo commit.
 #[test]
-#[ignore = "OPEN F2.2-01 (Línea C): el vigilante de rollback dispara por caída de evidencia sobre retornos de media >= 0; con media 0 la regla t mirada en cada cierre también da ~0,20"]
+#[ignore = "OPEN F2.2-01 (Línea C), RÉPLICA LOCAL: activarla exige trasladarla a evolution-engine con el predicado público o actualizar ReglaT y vigilante_degradado; el vigilante de rollback dispara por caída de evidencia sobre retornos de media >= 0; con media 0 la regla t mirada en cada cierre también da ~0,20"]
 fn cf2_vigilante_nivel_sin_degradacion() {
     let mut g = Lcg::new(36);
     let reps = 500usize;
@@ -414,6 +422,13 @@ fn cf2_vigilante_nivel_sin_degradacion() {
 /// SE ≤ 0,018). Hoy pasa porque el predicado dispara con todo; sólo informa
 /// junto con la prueba de nivel. Con λ = λ_min la deriva log es −0,0113 por
 /// paso y la caída del 50 % llega en unas 60 operaciones.
+///
+/// Revisión cruzada (CL-65): tras el arreglo de F2.2-01 el 0,80 puede ser
+/// inalcanzable para un Ville de nivel α apostando a la baja: su crecimiento
+/// es como mucho KL ≈ 0,020 nats por paso (λ* = 0,2), unos 6 nats en 300
+/// operaciones con sd ≈ 3,4, y P(sup ≥ ln 20) ≈ 0,80-0,85 con λ oráculo
+/// (menos con λ adaptativo). Quien lo arregle mide el compuesto (con la
+/// regla t) o rebaja el umbral a lo que dé esa cota, justificándolo.
 #[test]
 fn cf2_vigilante_potencia_ante_menos_02_r() {
     let mut g = Lcg::new(3636);
@@ -443,6 +458,12 @@ fn cf2_vigilante_potencia_ante_menos_02_r() {
 /// 2 000 operaciones (SE ≤ 0,028). Hoy update recorta a ±1: la media vista es
 /// 0,45 − 0,55 = −0,10 y certifica ≈ 1 %. El demonio también recorta antes,
 /// en online_daemon.rs:1143; el arreglo tiene que cubrir los dos sitios.
+///
+/// Revisión cruzada (CL-65): esta prueba se pone verde quitando sólo el
+/// recorte de ville_e_process.rs:106. Para que vigile también el del demonio,
+/// el arreglo extrae su normalización a una función pública y la prueba pasa
+/// la observación por ella (mismo traslado a evolution-engine que el
+/// vigilante).
 #[test]
 #[ignore = "OPEN F2.2-02 (Línea C): Ville recorta a ±1 R y mide la tasa de acierto contra ½ en lugar de la esperanza en R"]
 fn cf2_ville_certifica_edge_con_rr_2() {
@@ -521,7 +542,7 @@ fn z_sidak(n_pruebas: usize, alfa: f64) -> f64 {
 /// (accumulated_trials del demonio) es del cableado de C-F7 y no se prueba
 /// aquí.
 #[test]
-#[ignore = "OPEN F2.2-10 (Línea C): el DSR deflacta dos veces (E[max] + 1,645 σ): nivel ≈ 0 y potencia muy por debajo del Šidák exacto"]
+#[ignore = "OPEN F2.2-10 (Línea C), causa 2 del hallazgo (umbral E[max] + 1,645 σ frente al cuantil (1−α)^{1/N} del máximo): nivel ≈ 0 y potencia muy por debajo del Šidák exacto"]
 fn cf2_dsr_nivel_y_potencia_con_100_pruebas() {
     let n_obs = 250usize;
     let mut g = Lcg::new(34);

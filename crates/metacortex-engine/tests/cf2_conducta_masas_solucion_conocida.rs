@@ -216,8 +216,14 @@ fn cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion() {
 /// presión de respaldo P(2, 0, 0,2) = +0,1066 debe ser idéntica (1e-12),
 /// porque no hay información nueva. Hoy el factor de Prospect
 /// 1 + 0,5·tanh(−0,0267) = 0,98667 la baja a 0,88087.
+///
+/// Revisión cruzada (CL-65): es un CONTRATO DEL ASIENTO. Sólo se pone verde si
+/// el arreglo va al asiento (ignorar P derivada del mismo LS). Si va al núcleo
+/// (no derivar P del mismo ls_account_ratio en lib.rs:7727-7753), esta prueba
+/// se sustituye por otra sobre el MarketSnapshotPayload que arma
+/// GodEngineCore, en el mismo commit.
 #[test]
-#[ignore = "OPEN F2.5-02 (Línea C y AGY Prospect): el LS entra dos veces, como p_crowd y como presión de respaldo"]
+#[ignore = "OPEN F2.5-02 (Línea C y AGY Prospect), CONTRATO DEL ASIENTO, se sustituye si el arreglo va al núcleo: el LS entra dos veces, como p_crowd y como presión de respaldo"]
 fn cf2_ente_un_dato_de_masa_una_entrada() {
     let kt = ProspectTheoryEngine::new();
     let ente = SeniorEnteMercado;
@@ -244,9 +250,13 @@ fn cf2_ente_un_dato_de_masa_una_entrada() {
 /// (que excluye al Ente) con el signo de intended_direction, y final_signal
 /// con ese mismo signo. Los tres moduladores (Volatilidad, Riesgo, Ente)
 /// votan intended_direction con confianza > 0, así que si D tiene el signo de
-/// dir, final_signal también, sea cual sea la convicción del Ente. Por tanto
-/// approved y el signo de final_signal coinciden EXACTAMENTE entre una carga y
-/// su gemela con el Ente extremo adverso, para cualquier tracker y pesos.
+/// dir, final_signal también, sea cual sea la convicción del Ente, en las
+/// cargas APROBADAS. Por tanto approved coincide EXACTAMENTE entre una carga
+/// y su gemela con el Ente extremo adverso, para cualquier tracker y pesos, y
+/// el signo de final_signal coincide en las aprobadas. Revisión cruzada
+/// (CL-65): en una carga NO aprobada con D·dir ∈ (−(M_otros + c_base·w),
+/// −(M_otros + 0,2·w)) el Ente puede invertir el signo de final_signal; no
+/// es identidad y ya no se exige.
 ///
 /// Corrección de los escépticos: la versión del auditor usaba sólo un consejo
 /// nuevo (n = 0 ⇒ safe_wr = 0,5 y pesos 1 sea cual sea el wr), y su
@@ -295,13 +305,15 @@ fn cf2_ente_inerte_sin_vetos() {
             "caso {caso}: el Ente cambia la aprobación sin veto ({} frente a {})",
             a.final_signal, b.final_signal
         );
-        assert_eq!(
-            (a.final_signal > 0.0, a.final_signal < 0.0),
-            (b.final_signal > 0.0, b.final_signal < 0.0),
-            "caso {caso}: signo de final_signal {} frente a {}",
-            a.final_signal,
-            b.final_signal
-        );
+        if a.approved {
+            assert_eq!(
+                (a.final_signal > 0.0, a.final_signal < 0.0),
+                (b.final_signal > 0.0, b.final_signal < 0.0),
+                "caso {caso}: signo de final_signal {} frente a {}",
+                a.final_signal,
+                b.final_signal
+            );
+        }
         aprobadas += a.approved as usize;
     }
     println!("cargas sin veto {sin_veto}, aprobadas {aprobadas}, pesos del tracker vivo {pesos_vivos:?}");

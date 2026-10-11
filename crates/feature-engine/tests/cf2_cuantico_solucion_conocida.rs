@@ -3,8 +3,8 @@
 //!
 //! Teoría que se prueba: el exponente de Lyapunov de un mapa x ↦ f(x) es
 //! λ = lim (1/n)·Σ ln|f'(x_k)|. En el mapa logístico f(x) = r·x(1 − x):
-//! - con r = 2,5 el punto fijo x* = 0,6 es atractor y λ = ln|f'(x*)| =
-//!   ln 0,5 < 0 (contracción);
+//! - con r = 2,9 el punto fijo x* = 1 − 1/2,9 es atractor y λ = ln|f'(x*)| =
+//!   ln 0,9 < 0 (contracción);
 //! - con r = 4, λ = ln 2 (caos), y λ es invariante ante cualquier cambio de
 //!   coordenadas suave, en particular ante el reescalado x ↦ a·x.
 //! `calculate_lyapunov_chaos` es RMS(tf0 − tf1) entre dos vectores de
@@ -51,30 +51,35 @@ fn caos(xs: &[f64], escala: f64) -> f64 {
     store.calculate_lyapunov_chaos(0)
 }
 
-/// Verdad: r = 2,5, x* = 0,6 y λ = ln|r(1 − 2x*)| = ln 0,5 = −0,6931 (exacto).
-/// Se usa el transitorio desde x_0 = 0,61 sin quemado, con desviaciones
-/// d_n ≈ 0,01·(−0,5)^n: así la contracción es identificable en la serie (con
-/// la órbita ya clavada en x* ningún estimador podría verla). Control del
-/// generador: la media de ln|d_(n+1)/d_n| en los 30 primeros pasos da ln 0,5
-/// con un sesgo ≈ 1e-3 (término 2,5·d_n). Tolerancia 0,05 en los dos.
-/// Hoy el código da RMS ≈ 2e-3 ≥ 0: no puede ser negativo.
+/// Verdad: r = 2,9, x* = 1 − 1/2,9 ≈ 0,6552 y λ = ln|r(1 − 2x*)| = ln 0,9 =
+/// −0,1054 (exacto). Se usa el transitorio desde x_0 = 0,665 sin quemado, con
+/// desviaciones d_n ≈ 0,01·(−0,9)^n: d_64 ≈ 1,2e-5, todavía resoluble frente al
+/// redondeo de x* (revisión cruzada, CL-65: con r = 2,5 y d_n = 0,01·2^{−n} la
+/// cola de la serie ya era x* exacto hacia n ≈ 47 y ningún estimador honesto
+/// podía dar ln 0,5 con ella). Control del generador: la media de
+/// ln|d_(n+1)/d_n| en los 64 pasos da −0,10518 (el término no lineal r·d_n
+/// alterna de signo y casi se cancela). Tolerancia 0,03 en los dos, que deja
+/// λ separado de 0 por más de 2,5 tolerancias.
+/// Hoy el código da una RMS ≥ 0: no puede ser negativo.
 #[test]
 #[ignore = "OPEN F2.6-05 (Línea C): calculate_lyapunov_chaos es RMS(tf0 − tf1) ≥ 0 y no puede dar el exponente negativo de un punto fijo estable"]
 fn cf2_6_lyapunov_de_un_punto_fijo_estable_es_negativo() {
-    let xs = orbita_logistica(2.5, 0.61, 0, NUM_FEATURES + 1);
-    let referencia = (0..30)
-        .map(|n| ((xs[n + 1] - 0.6) / (xs[n] - 0.6)).abs().ln())
+    let r = 2.9f64;
+    let x_fijo = 1.0 - 1.0 / r;
+    let verdad = 0.9f64.ln();
+    let xs = orbita_logistica(r, 0.665, 0, NUM_FEATURES + 1);
+    let referencia = (0..NUM_FEATURES)
+        .map(|n| ((xs[n + 1] - x_fijo) / (xs[n] - x_fijo)).abs().ln())
         .sum::<f64>()
-        / 30.0;
+        / NUM_FEATURES as f64;
     assert!(
-        (referencia - 0.5f64.ln()).abs() < 0.05,
+        (referencia - verdad).abs() < 0.03,
         "control del generador: media de ln|d(n+1)/d(n)| = {referencia}"
     );
     let l = caos(&xs, 1.0);
     assert!(
-        (l - 0.5f64.ln()).abs() < 0.05,
-        "λ̂ = {l}; λ verdadero = ln 0,5 = {} (referencia de la serie {referencia})",
-        0.5f64.ln()
+        (l - verdad).abs() < 0.03,
+        "λ̂ = {l}; λ verdadero = ln 0,9 = {verdad} (referencia de la serie {referencia})"
     );
 }
 

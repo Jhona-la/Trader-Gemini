@@ -134,9 +134,12 @@ fn cf2_dfa_fgn_07_media_dentro_de_005() {
 /// precisión del DFA1 con 1024 retornos, la misma dispersión que hace que una
 /// sola realización caiga a ambos lados de las bandas fijas (F2.3b-01). Sólo
 /// pasará con más muestras o un estimador más eficiente, no con descontar
-/// el sesgo.
+/// el sesgo. Revisión cruzada (CL-65): por eso el arreglo del sesgo de
+/// F2.3b-01 NO la pone en verde. Es un requisito de precisión del plan, que
+/// se cumple con N ≈ 4096 (sd ≈ 0,0185, fracción esperada > 0,99) o con un
+/// estimador más eficiente; su dueño decide cuál.
 #[test]
-#[ignore = "OPEN F2.3b-01 (Línea C): la dispersión por realización del DFA1 a N = 1024 (sd ≈ 0,037) deja ≈ 81/100 realizaciones con error < 0,05, no 95"]
+#[ignore = "OPEN F2.3b-01 (Línea C), requisito de precisión, no se cierra con el arreglo del sesgo: la sd por realización del DFA1 a N = 1024 (≈ 0,037) deja ≈ 81/100 realizaciones con error < 0,05, no 95"]
 fn cf2_dfa_fgn_07_error_por_realizacion() {
     let (phis, sd) = hosking(0.7, 1024);
     let mut rng = Lcg(0x5EED_F23C);
@@ -152,7 +155,10 @@ fn cf2_dfa_fgn_07_error_por_realizacion() {
 /// Verdad: H = 0,5 (paseo aleatorio). Tolerancia 4 SE con SE = sd/√200
 /// (≈ 0,0025), el intervalo de Monte Carlo que la API no ofrece. Por la forma
 /// cerrada (s² − 4)/(15 s) la media esperada es ≈ 0,52, unas 8 SE por encima
-/// (medido: 0,5214 con SE 0,0022, ≈ 9,7 SE).
+/// (medido: 0,5214 con SE 0,0022, ≈ 9,7 SE). Revisión cruzada (CL-65): el
+/// arreglo natural (corregir E[F²] analíticamente) deja el término de Jensen
+/// (−0,005 a −0,007, derivado en el test siguiente), ≈ 3 SE; la cota tiene un
+/// suelo de 0,01 para que ese residuo conocido no la deje roja por semilla.
 #[test]
 #[ignore = "OPEN F2.3b-01 (Línea C): el DFA1 a N = 1024 tiene un sesgo de muestra finita de ≈ +0,02 sobre el paseo aleatorio y el estimador no lo descuenta"]
 fn cf2_dfa_paseo_aleatorio_centrado_en_medio() {
@@ -160,7 +166,7 @@ fn cf2_dfa_paseo_aleatorio_centrado_en_medio() {
     let (m, s) = media_sd(&hs);
     let se = s / (hs.len() as f64).sqrt();
     assert!(
-        (m - 0.5).abs() < 4.0 * se,
+        (m - 0.5).abs() < (4.0 * se).max(0.01),
         "media {m:.4} con se {se:.4} (sd {s:.4}): el nulo no está centrado en 0,5"
     );
 }
@@ -171,6 +177,12 @@ fn cf2_dfa_paseo_aleatorio_centrado_en_medio() {
 /// libertad efectivos por ventana y 4…256 ventanas, baja la pendiente entre
 /// 0,005 y 0,007; más 4 SE (4 · 0,0025 = 0,01) da 0,017 < 0,02 (medido:
 /// media 0,5194, diferencia −0,0065, la que predice Jensen).
+///
+/// CARACTERIZACIÓN (revisión cruzada, CL-65): fija la pendiente SIN corregir
+/// del estimador actual, y contradice a `cf2_dfa_paseo_aleatorio_centrado_en_medio`
+/// una vez arreglado F2.3b-01. Quien arregle el sesgo debe, en el mismo
+/// commit, comparar esta prueba contra la pendiente sin corregir (si el
+/// estimador la expone) o retirarla.
 #[test]
 fn cf2_dfa_ruido_blanco_sesgo_de_forma_cerrada() {
     // E[F²(s)] = (s² − 4)/(15 s) para DFA1 sobre ruido blanco integrado.

@@ -33,8 +33,14 @@ const REJILLA_VIVA_MS: [u64; 6] = [200, 500, 1_000, 5_000, 15_000, 30_000];
 /// eco». La prueba de aceptación del sucesor debe medir ciclicidad (p. ej. el
 /// radio espectral de la parte cruzada de la matriz de ramificación, 0 en
 /// todo DAG por nilpotencia).
+///
+/// Revisión cruzada (CL-65): aun tratando las inversas censuradas como
+/// ausentes, el flujo neto (21; 21; 12) da curl ≈ 0,292; sólo un flujo
+/// aditivo (p. ej. el retardo mediano con signo) llega a < 0,05. Así que esta
+/// prueba no se activa sola con el arreglo: quien lo haga fija aquí el flujo
+/// que mide el sucesor o cambia la aserción a su criterio de ciclicidad.
 #[test]
-#[ignore = "OPEN F2.1-03 (Línea C, hodge.rs; Qoder/GLM, hawkes_cross.rs): el curl usa z-scores no aditivos y cuenta las direcciones censuradas como flujo cero medido"]
+#[ignore = "OPEN F2.1-03 (Línea C, hodge.rs; Qoder/GLM, hawkes_cross.rs), CONTRATO DEL SUCESOR, se reescribe con su flujo: el curl usa z-scores no aditivos y cuenta las direcciones censuradas como flujo cero medido"]
 fn cf2_hodge_cascada_jerarquica_del_kernel_vivo() {
     let lider: Vec<u64> = (0..200).map(|i| 1_000 + i as u64 * 2_000).collect();
     let s1: Vec<u64> = lider.iter().map(|&t| t + 150).collect();

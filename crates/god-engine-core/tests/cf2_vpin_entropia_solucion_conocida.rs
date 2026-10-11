@@ -130,8 +130,13 @@ fn cf2_vpin_nulo_sigue_forma_cerrada_con_piso() {
 /// SD ≈ 0,030, P(> 0,2) ≈ 6e-5). Verdad: el VPIN vivo debe quedar por debajo
 /// del veto causal de 0,75. Hoy todos los trades son ticks planos que
 /// heredan «compra» de la subida del depth: VPIN vivo = 1,0 exacto.
+///
+/// Revisión cruzada (CL-65): la causa es que `process_tick` no recibe el lado,
+/// así que el arreglo cambia su firma. Quien lo arregle pasa `is_buyer_maker`
+/// (ya calculado en el bucle) a la nueva llamada, o conduce la prueba por
+/// `GodEngineCore::process_event`, que ya lo transporta (lib.rs:1703).
 #[test]
-#[ignore = "OPEN F2.3b-02 (Línea C, núcleo/StatefulEngine): el VPIN vivo decide el lado por la regla del tick sobre el mid e ignora is_buyer_maker (1,0 con flujo real equilibrado)"]
+#[ignore = "OPEN F2.3b-02 (Línea C, núcleo/StatefulEngine), CONTRATO DE API: process_tick no recibe el agresor; el arreglo le pasa is_buyer_maker (ya está en el bucle) o la conduce por process_event. El VPIN vivo decide el lado por la regla del tick sobre el mid e ignora is_buyer_maker (1,0 con flujo real equilibrado)"]
 fn cf2_vpin_vivo_ignora_el_agresor() {
     let mut fe = StatefulEngine::new();
     fe.process_tick(100.00, 0.0, 1_000); // depth

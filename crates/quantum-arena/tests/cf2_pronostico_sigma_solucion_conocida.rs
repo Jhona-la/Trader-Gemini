@@ -101,6 +101,16 @@ fn cf2_sigma_pronosticada_es_insesgada_con_cuatro_trades_por_ventana() {
 // ≈ 0,005 a la cobertura (concavidad de 2Φ(1,645·e^u) − 1).
 // Hoy, con σ̂ = σ·e^{−0,135}, se espera 2Φ(1,645·0,8735) − 1 = 0,849
 // (≈ 12 SE por debajo). Se exige además |sesgo log| < 0,05 (≈ 0,01 de SE).
+//
+// Revisión cruzada (CL-65): el ruido del pronóstico observado aquí (sd ≈ 0,2
+// en ln σ, no 0,1) resta ≈ 0,29·Var(u) incluso con σ̂ insesgado, y dejaba la
+// cobertura esperada tras el arreglo en ≈ 0,888, a 2 SE del borde. La
+// referencia es ahora el desarrollo de f(u) = 2Φ(1,645·e^u) − 1 en u = 0 con
+// los momentos medidos de u = ln(σ̂/σ) en las mismas ventanas:
+// f ≈ 0,90 + 0,339·E[u] − 0,289·E[u²] (f′(0) = 2φ(1,645)·1,645,
+// f″(0)/2 = φ(1,645)·1,645·(1 − 1,645²)). Tolerancia 4·√(0,09/ventanas).
+// Con σ̂ = mediana, E[u] ≈ −0,135 y la cobertura cae igual que la
+// referencia, así que el defecto queda en la aserción del sesgo.
 #[test]
 #[ignore = "OPEN F2.3-06 (Línea C, C-F2.3 fila 3): la σ publicada es la mediana; el intervalo de 1,645σ̂ cubre ≈ 85 %, no 90 %"]
 fn cf2_sigma_pronosticada_cubre_el_90_con_volatilidad_por_regimenes() {
@@ -132,6 +142,7 @@ fn cf2_sigma_pronosticada_cubre_el_90_con_volatilidad_por_regimenes() {
     );
     let (mut suma_log, mut n_log) = (0.0f64, 0usize);
     let (mut cubre, mut ventanas) = (0usize, 0usize);
+    let (mut suma_u, mut suma_u2) = (0.0f64, 0.0f64);
     let desde = total / 3;
     for i in desde..total - 4 {
         let ts = T0 + i as u64 * PASO_MS;
@@ -148,6 +159,9 @@ fn cf2_sigma_pronosticada_cubre_el_90_con_volatilidad_por_regimenes() {
         if i % 4 == 0 {
             let r = xs[i + 4] - xs[i];
             ventanas += 1;
+            let u = (s / verdad).ln();
+            suma_u += u;
+            suma_u2 += u * u;
             if r.abs() <= 1.645 * s {
                 cubre += 1;
             }
@@ -155,9 +169,14 @@ fn cf2_sigma_pronosticada_cubre_el_90_con_volatilidad_por_regimenes() {
     }
     let sesgo = suma_log / n_log as f64;
     let cobertura = cubre as f64 / ventanas as f64;
-    println!("habilidad {habilidad:?}; sesgo log {sesgo:.4} (n = {n_log}); cobertura {cobertura:.4} ({cubre}/{ventanas})");
+    let (eu, eu2) = (suma_u / ventanas as f64, suma_u2 / ventanas as f64);
+    let referencia = 0.90 + 0.339 * eu - 0.289 * eu2;
+    let tol = 4.0 * (0.09 / ventanas as f64).sqrt();
+    println!(
+        "habilidad {habilidad:?}; sesgo log {sesgo:.4} (n = {n_log}); cobertura {cobertura:.4} ({cubre}/{ventanas});          E[u] {eu:.4}, E[u²] {eu2:.4}, referencia {referencia:.4} ± {tol:.4}"
+    );
     assert!(
-        (cobertura - 0.90).abs() <= 0.02 && sesgo.abs() < 0.05,
-        "cobertura de ±1,645σ̂ = {cobertura:.4} ({cubre}/{ventanas}), nominal 0,90; sesgo log = {sesgo:.4} (Jensen −0,1352); habilidad del banco {habilidad:?}"
+        (cobertura - referencia).abs() <= tol && sesgo.abs() < 0.05,
+        "cobertura de ±1,645σ̂ = {cobertura:.4} ({cubre}/{ventanas}) frente a la referencia {referencia:.4} ± {tol:.4}          (E[u] {eu:.4}, E[u²] {eu2:.4}); sesgo log = {sesgo:.4} (Jensen −0,1352); habilidad del banco {habilidad:?}"
     );
 }

@@ -48,7 +48,14 @@ fn desviacion_beta(ym: &YangMillsGaugeEngine) -> f64 {
         .fold(0.0, f64::max)
 }
 
-/// Nulo asíncrono. Fase 1, el caso límite: en cada llamada se mueve una sola
+/// CARACTERIZACIÓN (revisión cruzada, CL-65), no un nulo: tres monedas
+/// independientes no tienen residuo triangular estacionario (ln p0 − ln p1 −
+/// ln p2 es un paseo aleatorio), así que esta prueba fija la degeneración de
+/// F2.3b-07 (F ≈ 0 para cualquier retorno). Quien arregle F2.3b-07 la retira
+/// o la invierte en el mismo commit. El nulo que sobrevive al arreglo es
+/// `cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo`.
+///
+/// Fase 0, el caso límite: en cada llamada se mueve una sola
 /// moneda (turno rotatorio) con un log-retorno de ±1e-3. β_ij sólo decae,
 /// como β(1 − γr²), cuando se mueve la moneda de índice mayor del par: tras
 /// 10 000 movimientos 1 − β ≈ 10 000·0,005·1e-6 = 5e-5, |F| = |r(1 − β)| ≈ 5e-8,
@@ -57,12 +64,12 @@ fn desviacion_beta(ym: &YangMillsGaugeEngine) -> f64 {
 /// Corrección del escéptico: en vivo no cambia sólo la moneda del evento.
 /// latest_prices se actualiza en todo evento (depth incluido) y YM sólo se
 /// evalúa en trades y klines, así que entre dos llamadas pueden moverse
-/// varias monedas. Fase 2: cada moneda se mueve con probabilidad ½ en cada
+/// varias monedas. Fase 1: cada moneda se mueve con probabilidad ½ en cada
 /// llamada. La deriva de β es del mismo orden (1 − β ≲ 1e-4) y
 /// |F| ≤ Σ|r|·|1 − β| ≲ 3e-7. Cotas: S < 1e-12 (margen > 40×) y |J| < 1e-6
 /// (margen > 3×); la prueba es determinista, sin error estadístico.
 #[test]
-fn cf2_ym_retornos_asincronos_son_inertes() {
+fn cf2_ym_caracterizacion_retornos_asincronos() {
     let mut rng = Lcg(0x9A6E);
     for fase in 0..2 {
         let mut ym = YangMillsGaugeEngine::new(3);
@@ -106,11 +113,30 @@ fn cf2_ym_retornos_asincronos_son_inertes() {
 /// dos órdenes por debajo de Var(Δu). Hoy F = Σ r(1 − β) con el LMS a un ritmo
 /// γ·Var(r) ≈ 1e-8 por paso: tras 20 000 pasos 1 − β ≈ 1e-4 y la acción
 /// media queda en 1e-14 a 1e-13, de 4 a 5 órdenes por debajo del umbral.
+///
+/// Control (revisión cruzada, CL-65): la misma simulación con u ≡ 0. Un β que
+/// deje de ser gauge puro sin ver u (p. ej. un LMS más rápido) daría una
+/// acción parecida en los dos; se exige además que la dislocación multiplique
+/// la acción del control por más de 10.
 #[test]
 #[ignore = "OPEN F2.3b-07 (AGY): con beta = 1 la curvatura es gauge puro, F = suma de r(1-beta), y la dislocación plantada no entra"]
 fn cf2_ym_dislocacion_triangular_plantada_se_detecta() {
+    let (media, var_du, dev) = accion_media_triangulo(0xD15C, true);
+    let (control, _, _) = accion_media_triangulo(0xD15C, false);
+    assert!(
+        media > 1e-9 && media > 10.0 * control,
+        "acción media {media:e} (control sin dislocación {control:e}) con Var(du) {var_du:e} por paso; |1-beta| {dev:e}"
+    );
+}
+
+/// Simula el triángulo de la dislocación plantada: p0, p1 con retornos
+/// síncronos independientes (σ = 1e-3) y p2 = p0/p1·e^u, con u un AR(1) de
+/// φ = 0,9 y σ_u = 1e-3 si `dislocacion`, o u ≡ 0 si no. Misma secuencia del
+/// generador en los dos casos. Devuelve (acción media, Var(Δu) por paso,
+/// max |1 − β|).
+fn accion_media_triangulo(semilla: u64, dislocacion: bool) -> (f64, f64, f64) {
     let mut ym = YangMillsGaugeEngine::new(3);
-    let mut rng = Lcg(0xD15C);
+    let mut rng = Lcg(semilla);
     let (mut l0, mut l1, mut u) = (100f64.ln(), 50f64.ln(), 0.0f64);
     let precios = |l0: f64, l1: f64, u: f64| [l0.exp(), l1.exp(), (l0 - l1 + u).exp()];
     ym.update_and_calculate_curvature(&precios(l0, l1, u));
@@ -120,15 +146,25 @@ fn cf2_ym_dislocacion_triangular_plantada_se_detecta() {
         l0 += 1e-3 * rng.n();
         l1 += 1e-3 * rng.n();
         let u_prev = u;
-        u = 0.9 * u + (1.0f64 - 0.81).sqrt() * 1e-3 * rng.n();
+        let du = (1.0f64 - 0.81).sqrt() * 1e-3 * rng.n();
+        if dislocacion {
+            u = 0.9 * u + du;
+        }
         var_du += (u - u_prev) * (u - u_prev);
         s += ym.update_and_calculate_curvature(&precios(l0, l1, u)).0;
     }
-    let media = s / n as f64;
-    assert!(
-        media > 1e-9,
-        "acción media {media:e} con una dislocación de Var(du) {:e} por paso; |1-beta| {:e}",
-        var_du / n as f64,
-        desviacion_beta(&ym)
-    );
+    (s / n as f64, var_du / n as f64, desviacion_beta(&ym))
+}
+
+/// Nulo verdadero (revisión cruzada, CL-65), que sobrevive al arreglo de
+/// F2.3b-07: el triángulo exacto p2 = p0/p1 (u ≡ 0) no tiene ninguna
+/// dislocación, así que un instrumento correcto no debe ver tensión. Cota:
+/// acción media < 1e-11, dos órdenes por debajo del umbral de detección 1e-9
+/// de la prueba de la dislocación. Hoy F = Σ r(1 − β) con 1 − β ≈ 1e-4 da
+/// una acción del orden de 1e-14.
+#[test]
+fn cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo() {
+    let (media, _, dev) = accion_media_triangulo(0x7A1A, false);
+    println!("triángulo exacto: acción media {media:e}, |1-beta| {dev:e}");
+    assert!(media < 1e-11, "acción media {media:e} sin dislocación; |1-beta| {dev:e}");
 }
