@@ -23,26 +23,25 @@
 - **Familia honesta**: 7 símbolos (BTC/ADA/ATOM/BNB/SOL/XRP/XLM), mediana
   OOS +0.008, récord SOL +0.0203; 2 bloqueos honestos en 9 corridas.
 
-## Claude (actualizado: 2026-10-03, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08)
+## Claude (actualizado: 2026-10-11, Línea C, prefijo CL-n, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08)
 
-- **Haciendo ahora**: PR del ciclo 8 (cimientos): CL-36 testigo del
-  escáner, CL-37/38 identidad de símbolo y slots estables (ADR-0011),
-  CL-39 IOC por estado terminal, CL-40 genoma fijo en evaluación
-  (ADR-0012), CL-41 apalancamiento de envío subordinado al riesgo
-  (ADR-0013), CL-42 guardia de qo-602 al día. Hoja de ruta versionada en
-  docs/. Revisión adversarial de mis commits: CL-39b (rechazo firme de la
-  IOC cierra la intención), CL-40b (el bosque sigue al almacén), CL-41b
-  (la reserva retiene el margen del exchange); segunda revisión: CL-39c,
-  CL-40c y CL-41c.
-- **Commiteado**: ciclos 1 a 7 en main (PR #13, #17–#20, #26). Ciclo 8 en
-  la rama, con main 04463bfe integrado; verificación y T-1 en el PR.
-- **Falta**: GENOME-GATE al cargar; tolerancia IOC frente al gate;
-  re-anclaje al llenado parcial; lectores de la ranura fija 2
-  (`close_was_real`, demonio); reserva tras AMBIGUOUS resuelto como
-  EXPIRED y rechazo firme en MARKET/maker; apalancamiento por símbolo con
-  varias ranuras; envolvente en ranuras apiladas del replay; llenado
-  parcial; cerrojo del almacén de genomas y CAS del demonio; dimensionado
-  en espacio de riesgo.
+- **Haciendo ahora**: ciclo 11. Plan desde la base publicado
+  (`docs/PLAN_LINEA_C_DESDE_LA_BASE_2026-10-11.md`, §39 del plan maestro;
+  recibos por archivo en `docs/audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv`).
+  C-F0 escrita como §9 del plan (40 requisitos de la meta, LC-F0-01…35);
+  sigue C-F1.
+- **Commiteado**: ciclos 1 a 10 en main (PR #13, #17–#20, #26, #27, #29).
+  Los ciclos 9 y 10 (CL-43…CL-54, ADR-0015) entraron como aa716edf con CI
+  5/5, suites 2 173/0 y T-1 16/144 sobre 5338eda1. T-1 de aa716edf (con
+  #713 y #714): 16/144, la misma lista de genes inertes.
+- **Falta**: ADR de la meta (decisión del dueño, LC-F0-01); C-F1
+  (contrato de conceptos, toolchain con fecha), D4 (una
+  sonda de arranque frío en toda la cartera) y D1 en sombra con Línea E;
+  GENOME-GATE al cargar; función única de umbral y pico de drawdown para
+  host y riesgo; `entry_price` re-anclado al llenado; `online_daemon`
+  aplicando el genoma crudo (aviso a su dueño).
+- **Ramas**: el proxy git de la nube no deja borrar ramas remotas; la mía
+  se reutiliza reiniciada sobre `main` y sólo lleva historia fusionada.
 
 ## Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 

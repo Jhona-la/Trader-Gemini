@@ -17,6 +17,163 @@
   - Causa raíz identificada: racha inicial perdedora deprime $p$ en `confidence_calibrator` por debajo de breakeven ($p^* \approx 0.35$). Dado que `SEMIVIDA_EVIDENCIA_MS = TAU_ANCHOR_SLOW_MS = 12\text{ h}`, la memoria bayesiana persiste y congela operativamente la cuenta bajo `REJ_EV` durante horas.
   - Plan de acción: Fase R1/R2 de auditoría forense para desasfixia adaptativa con bandas UCB de exploración.
 
+## 2026-10-11 — Claude (cloud, Línea C): ciclos 9 y 10 en main (PR #29, aa716edf) y plan desde la base
+
+Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (el proxy git de
+la nube no deja borrarla del remoto: se reutiliza, reiniciada sobre `main`).
+Cada arreglo lleva un test que falla antes del cambio. ADR-0015 nuevo: el
+kill-switch bloquea lo que aumenta el riesgo, nunca las salidas.
+
+Plan desde la base (pedido del dueño el 2026-10-10):
+`docs/PLAN_LINEA_C_DESDE_LA_BASE_2026-10-11.md`. Doce fases C-F0 (metas) … C-F11 (limpieza), una fase dueña por
+archivo, recibo por archivo como el de Codex/Sol, y puertas de compilación,
+conducta y resultado en cada fase (resumen: §39 del plan maestro).
+`scripts/plan_linea_c.py citas` comprueba
+que cada `ruta:línea` del plan exista en una revisión dada (alias
+`lib.rs` = núcleo, `god_engine.rs` = host). Las citas del plan son de
+`aa716edf`: re-grep del símbolo antes de editar.
+- El veto de drawdown de entrada ya no llega a 0,85 en micro: QS-D3
+  (249d2e88, en `main`) lo acota a d* ≈ 0,632 en el riesgo, y #714 acota
+  el freno del host con `.min(d*)`. Siguen distintos por abajo: el host no
+  aplica el `lerp(…, micro_w)` del riesgo (LC-F4-10).
+- Entre #710 y #714 ningún run de `replay-contracts` terminó en verde:
+  cada push a `main` cancelaba el anterior (las suites de contratos tras
+  el check no llegaron a correr). #715 (07688cf9) ya no cancela en `main`.
+- T-1 de aa716edf (con #713 y #714): 16/144, la misma lista de genes
+  inertes. El fixture no ejercita K-06/K-23/K-26/K-27: no prueba su conducta.
+- Lista archivo por archivo: `docs/audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv`
+  (1 561 archivos de 1025f750, cada uno con su fase), regenerable con
+  `scripts/plan_linea_c.py asignacion`.
+- C-F0 hecha en el plan (§9 «Requisitos de la meta»): rige la meta
+  reformulada por el dueño (crecimiento log neto con cota inferior > 0 en
+  cada mitad OOS; ×2/3 días sólo como brecha). 40 requisitos con
+  estimador, umbral con origen, prueba que refuta y estado; ninguno
+  «medido». Hallazgos LC-F0-01…35 abiertos en su fase dueña. Lo que más
+  pesa: dos doctrinas de meta aceptadas (falta un ADR del dueño), host y
+  riesgo con distinto freno de drawdown desde el arranque (LC-F0-08), el
+  piso de 4,79 USD no sobrevive a un reinicio (LC-F0-10), la exención de
+  sonda del EV nunca rechaza (LC-F0-15), la física cobra el TP como maker
+  (LC-F0-25) y seis fricciones distintas para la misma orden (fila 21).
+
+Ciclo 9 (kill-switch, llenados y estado por entorno):
+- CL-43 (FMT-232): con el latch armado, `process_event` y
+  `process_tick_dual` salían antes de gestionar las ranuras. SL, trailing,
+  BE, zombie y tóxico dejaban de correr en todas las monedas justo cuando
+  el latch debía contener el riesgo. Ahora el latch sólo bloquea entradas.
+- CL-44: el vigilante de protección también audita bajo el latch (las
+  piernas protectoras y el reduce-only están exentos). X-009 y un aplanado
+  fallido marcan `protection_dirty` (auditoría en 5 s, no en 60 s).
+- CL-44b (revisión adversarial de CL-43/44):
+  - El aplanado total y la auditoría del vigilante se excluyen
+    (`begin_flatten` / `try_begin_audit`, handshake SeqCst). Antes una
+    pierna colocada entre la cancelación y el cierre quedaba huérfana.
+  - El apagado purga las piernas huérfanas antes de salir.
+  - El aplanado inmune consume primero las confirmaciones del exchange de
+    las ranuras. Sin eso, el núcleo (que con CL-43 sigue gestionando)
+    cerraba las ranuras ya aplanadas y aprendía de un PnL inventado.
+- CL-45: la reserva de una IOC se confirma con lo ejecutado. Cantidad,
+  margen y comisión se escalan bajo el cerrojo de la ranura, y la comisión
+  no pagada vuelve al capital.
+- CL-45b: un llenado parcial dimensiona el bracket OCO y el diario de
+  posiciones. El cierre del núcleo escala PnL bruto y comisión a lo que la
+  ranura cerró de verdad (`escalar_a_lo_cerrado`).
+- CL-46: una entrada AMBIGUOUS se resuelve con la consulta de la propia
+  orden (`destino_tras_consulta`: revertir, confirmar con lo ejecutado o
+  conservar).
+- CL-46b: la confirmación tras la consulta anota el diario. El remanente
+  MARKET del maker chase no se resuelve con la consulta de la orden padre
+  (`error_del_remanente` lo marca MAKER_CHASE_UNVERIFIED).
+- CL-47: los envíos MARKET y genérico cierran su intención ante un rechazo
+  firme (-2019, 429/418), como la IOC desde CL-39b.
+- CL-48: el sobre de Kelly, el freno de comisiones, el diario de
+  posiciones y el de llenados viven en `data/demo/` o `data/prod/`
+  (`quantum_arena::paths::env_data_path`). Un archivo heredado en `data/`
+  se ignora con aviso.
+- CL-49: los entes ballena y spoofing del consejo publican su valor actual
+  en cada medición (`god_engine_core::entes_consejo`). Antes sólo se
+  escribía en evento y el último valor alto quedaba pegado horas.
+- CL-main: main no compilaba entre 32289abf (Ω69) y 558c7dcc (Ω70), por
+  E0063 en `prospect_pressure`. El merge de 558c7dcc se queda con el
+  productor de AGY, así que CL-main queda sustituido.
+
+Ciclo 10 (ingesta del WS y promoción de Darwin). Una revisión adversarial
+de CL-50…CL-53 encontró cuatro defectos propios (CL-50b…CL-53b):
+- CL-50: la primera conexión del WS ya no se anuncia como reconexión. El
+  centinela reiniciaba los motores y borraba el calentamiento con velas
+  REST de cada arranque (`data_ingest::cola_ws::ConexionesWs`).
+- CL-50b: la transición del calentamiento ya no reconecta el WS. Releía el
+  mismo USE_TESTNET del arranque (el entorno nunca cambia): sólo forzaba un
+  reinicio de motores y en mainnet abandonaba el host elegido por latencia
+  o por BEST_WS_ENDPOINT.
+- CL-51: `reset_engines` (reconexión) ya no devuelve el pico del drawdown a
+  la base de la cuenta. CL-51b retira el re-base por cambio de
+  `base_capital` que añadí con él: la transición republica el balance de
+  la MISMA cuenta y un funding re-basaba el pico. El pico es monótono.
+- CL-52: la cola del WS cuenta cada descarte (antes sólo los de la ruta
+  del centinela) y, si el descarte se lleva el centinela, el bucle reinicia
+  igual (`EstadoCola::tomar_reconexion_perdida`). CL-52b documenta la
+  carrera acotada: el reinicio puede llegar unos mensajes tarde, nunca se
+  pierde.
+- CL-53 (FMT-260): Darwin promueve ANTES de aplicar al arena
+  (`darwin::promover_candidato`); un candidato que el gate rechaza ya no
+  queda en el arena. CL-53b: aplica el genoma tal como lo carga el almacén
+  (`GenomeEnvelope::como_se_carga` / `desde_json`, la misma normalización
+  que `load_active`), no el crudo.
+- CL-54 (hallazgo forense #202, nunca arreglado): el selector de host del
+  WS por latencia ofrecía `dstream.binance.com` (COIN-M). Si ganaba, no
+  llegaba ningún tick de los pares USDT y el calentamiento no terminaba.
+
+- Verificación del árbol final (5338eda1, main hasta 95412dd7): check del
+  workspace en verde; 8 crates y las suites de feature, metacortex,
+  strategy y entrenador 2 173/0 (10 ignoradas); T-1 16/144 (11,1 %), la
+  misma lista de genes inertes que los ciclos 8 y 9; CI replay-contracts y
+  unit-suites 4/4 en verde. Merge de prueba con main 0000eb8d antes de
+  fusionar: check y god-engine-core 465/0.
+- Main estuvo rojo dos veces en el ciclo: E0063 en `prospect_pressure`
+  (32289abf…558c7dcc) y un marcador `<<<<<<< HEAD` que #710 dejó en
+  docs/PLAN_MAESTRO_SINCRONIZACION.md (falla «Reject conflict markers»).
+  El segundo lo retira el merge de este PR.
+- Lección de build (sesiones cloud): `.cargo/config.toml` compila con
+  `target-cpu=native`, y el contenedor puede reanudarse en otra CPU. Los
+  binarios cacheados de la anterior (con AVX-512 FP16, `vmovw`) mueren con
+  «illegal instruction» bajo wine, y cargo no recompila porque la bandera
+  es la misma. Si un test muere así sin panic, borra
+  `$CARGO_TARGET_DIR/x86_64-pc-windows-gnu` y recompila.
+- Lección de build (sesiones cloud): dos worktrees con el mismo
+  `CARGO_TARGET_DIR` comparten artefactos. La huella de cargo usa rutas
+  relativas y mtimes, así que compilar en el otro worktree puede reutilizar
+  artefactos viejos en silencio (errores falsos o comportamiento viejo).
+  Antes de compilar en otro worktree: `git diff --name-only <otro> HEAD |
+  xargs touch`.
+- Abiertos (confirmados, sin arreglar):
+  - Si la reconciliación confirmó la ranura antes que el host, CL-45 no
+    devuelve la comisión no pagada de un llenado parcial (raro, impacto
+    bajo).
+  - `execute_raw_qty_with_client_id` ignora el client id, así que el
+    remanente del maker no se puede consultar por un id propio.
+  - `entry_price` no se re-ancla al precio medio del llenado.
+  - La lectura JSON de genomas no es bit a bit: serde_json sin
+    `float_roundtrip` mueve el último dígito de ~15 de 140 genes (visto en
+    el test de CL-53b). `same_genome` compara exacto, así que un genoma
+    re-registrado tras pasar por el arena puede no coincidir con su padre
+    leído del disco, y el rollback de CL-25 volvería a «restaurar» el
+    degradado. Candidato: `float_roundtrip` (cambia ULPs de todo JSON leído,
+    goldens incluidos) o comparar tras la misma lectura.
+  - `online_daemon.rs` aplica al arena el genoma crudo tras promover
+    (~1922) y tras un rollback (~1265), el mismo patrón de CL-53b. Zona de
+    otro agente (Ω): avisado en el buzón.
+  - Tras una reconexión real, los estimadores reiniciados no se recalientan
+    con REST.
+  - FMT-057 (umbrales ML del `online_daemon` fuera del almacén): su único
+    escritor es un `#[test]` de audit-engine; aparcado.
+  - STACKED_SLOTS (replay y demonio deben disparar el gate por la reserva)
+    y GENOME-GATE al cargar.
+  - Carrera del almacén de genomas: propuesta a GLM/Codex (R6-A), no la
+    tomo.
+  - AGY Ω70 lee `prospect_pressure` con `max(.., 0)` aunque la presión
+    tiene signo. Es latente (no hay escritor en el registro) y se avisó en
+    el buzón.
+
 ## 2026-10-11 — Claude (sesión «elegant», QS-n): PR #32 en main; vetos de Ω71, espejo de cortos y fixture T-2 (PR #33)
 
 - **PR #32 fusionado** (`03b3f1ca`): QS-P y QS-K. CI verde en los cinco
