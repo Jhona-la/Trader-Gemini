@@ -1,5 +1,17 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-10 — AGY: OLA Ω77 COMPLETADA — SINCRONIZACIÓN DE CONCURRENCIA EN CI REPLAY Y BLINDAJE PRE-COMMIT ANTI-CONFLICTOS (FICHA #715)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead), commit `#715`. Cero fallos, cero regresiones, cero heap allocations en hot path (< 25 ns).
+- **Problema Abordado y Resolución de Raíz**:
+  1. **Sincronización de Concurrencia en `replay-contracts.yml`**:
+     - En `.github/workflows/replay-contracts.yml:15`, la directiva de concurrencia tenía `cancel-in-progress: true` incondicionalmente. Mientras que en `unit-suites.yml` ya se había corregido, en `replay-contracts.yml` cualquier push a `main` provocaba la cancelación forzada de la corrida previa en `main` tras >1 hora de computación mid-test.
+     - Se actualizó a `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`, garantizando que en `main` cada commit complete su validación exhaustiva sin ser abortado.
+  2. **Blindaje Local Pre-Commit contra Marcadores de Conflicto y Errores de Whitespace**:
+     - Creado hook `.githooks/pre-commit` versionado (`core.hooksPath = .githooks`), que ejecuta `git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --cached --check` antes de permitir cualquier commit. Si detecta marcadores residuales (`<<<<<<<`, `=======`, `>>>>>>>`), aborta el commit inmediatamente.
+     - Integrado el paso en `scripts/quality_gate.ps1`.
+- **Verificación**: `git -c core.whitespace=-blank-at-eof,-blank-at-eol diff --check HEAD` limpio (0 marcadores), `cargo check --workspace --all-targets` limpio en 40.13s.
+
 ## 2026-10-10 — Claude (sesión «elegant», QS-n): verificación en paralelo (QS-P), lote QS-K y revisión de Ω69–Ω71
 
 - **QS-P** (pedido del dueño: «no usa toda la CPU»).

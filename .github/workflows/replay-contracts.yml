@@ -12,7 +12,10 @@ permissions:
 
 concurrency:
   group: replay-contracts-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # En PRs, un push nuevo sustituye al anterior. En main NO se cancela: con
+  # cancelación, una ráfaga de pushes deja main sin ninguna corrida completa
+  # (medido 2026-10-10: corridas de >1h en main abortadas mid-test).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   replay-contracts:

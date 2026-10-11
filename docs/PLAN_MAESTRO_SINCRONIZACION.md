@@ -1456,6 +1456,17 @@ Siguiente paso: fixture T-2 (rango lateral, consejo dividido, 13 USD).
   - Contrato de regresión `crates/god-engine-core/tests/conformal_wiring_contract.rs` (11/11 tests OK).
   - Compilación binaria y workspace exhaustiva: `cargo check --bin god_engine` OK, `cargo check --workspace --all-targets` OK.
 
+## 36. Sincronización de Concurrencia en Replay Contracts y Blindaje de Integridad Local (Ola Ω77, Ficha #715)
+
+- **Causa Raíz de Abortos Recurrentes en CI (`Replay contracts`)**:
+  - En `.github/workflows/replay-contracts.yml:15`, la política de concurrencia tenía `cancel-in-progress: true` incondicionalmente. Mientras que en `unit-suites.yml` ya se había corregido para que solo cancelara en PRs, en `replay-contracts.yml` cualquier push a `main` cancelaba arbitrariamente la corrida en curso de `main`, abortando jobs que llevaban más de 1 hora computando suites complejas.
+  - **Solución Implementada**: Se alineó con `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`, garantizando que en `main` cada commit complete su validación exhaustiva al 100% sin ser cancelado por ráfagas concurrentes.
+
+- **Blindaje Local contra Marcadores de Conflicto y Errores de Workspace**:
+  - Se creó el hook `.githooks/pre-commit` versionado en el repositorio (activado mediante `core.hooksPath = .githooks`), el cual ejecuta `git diff --cached --check` antes de permitir cualquier commit. Si detecta marcadores residuales (`<<<<<<<`, `=======`, `>>>>>>>`), aborta inmediatamente impidiendo que lleguen a `main`.
+  - Se integró el paso de verificación de marcadores y whitespace en `scripts/quality_gate.ps1`.
+
+
 
 
 

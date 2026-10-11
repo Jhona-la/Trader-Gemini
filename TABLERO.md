@@ -84,13 +84,11 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω76 cerrada / Ficha #714)
+## Antigravity (actualizado: 2026-10-10, Quant Sr. Lead, Ola Ω77 cerrada / Ficha #715)
 
-- **Haciendo ahora**: Ola Ω76 (#714) — Resolución de Simetría Direccional Conformal (K-26), Microtendencia (K-27) y Sincronización Freno del Host:
-  - K-26: `p_win_directional(is_long, p, base)` proyecta simétricamente para calibración conformal en decisión (lib.rs:4756-4759), cierre de orden (lib.rs:3917) e innovación online TD-error (lib.rs:4238). En neutralidad (p == base), ambos lados reciben p_win = base (erradica el sesgo donde 1.0 - p inflaba artificialmente cortos a 0.75 en base 0.25). En base = 0.50 reduce idénticamente a 1.0 - p.
-  - K-27: Simetría estricta de microtendencia (`micro_trend <= 0.0`) en rama tendencial corta 1 (lib.rs:5851), eliminando la relajación de +3 bps (<= 0.00003) para reflejar fielmente la rama larga 1 (micro_trend >= 0.0).
-  - Sincronización Freno del Host (QS-D3 / ADR-0016): Watchdog del host en `src/bin/god_engine.rs:1612` acotado con `.min(d_falsacion)` ($d^* \approx 0.632$, suelo $4.79 en $13 USD), sincronizado con el veto del risk engine.
-  - Certificación: 3/3 tests en `conformal_direction_symmetry_contract.rs`, 11/11 tests en `conformal_wiring_contract.rs`, `cargo check --bin god_engine` OK, `cargo check --workspace --all-targets` OK.
+- **Haciendo ahora**: Ola Ω77 (#715) — Sincronización de Concurrencia en CI (`replay-contracts.yml`) y Blindaje Anti-Conflictos Local:
+  - CI Concurrency Sync: Modificado `cancel-in-progress: ${{ github.event_name == 'pull_request' }}` en `.github/workflows/replay-contracts.yml`, sincronizándolo con `unit-suites.yml`. Erradica los abortos arbitrarios en `main` tras ráfagas concurrentes de pushes (corridas legítimas de >1 hora abortadas mid-test).
+  - Git Pre-Commit Hook & Quality Gate: Creado hook `.githooks/pre-commit` versionado (`core.hooksPath = .githooks`) y agregado paso en `scripts/quality_gate.ps1` que rechaza automáticamente cualquier commit con marcadores residuales (`<<<<<<<`, `=======`, `>>>>>>>`) o errores de whitespace.
 - **Commiteado reciente**:
   - Ola Ω68 (#704, `194089b8`): Absorción analítica de Fokker-Planck en SDE VECM y first-passage time.
   - Plan Maestro Cuántico Integral (#705, `549fc536`): Documento canónico, 10 roles Senior, barrido R0-R9.
@@ -102,12 +100,11 @@
   - Ola Ω73 (#711, `ab0967e8`): Simetría espejo anti-simétrica en Prospect Theory (C-10 / C-10b) y calibración browniana R-15.
   - Ola Ω74 (#712, `95412dd7`): Navier-Stokes EWMA (C-02), pesos del consejo (C-W) y concordancia de lado en deliberar.
   - Ola Ω75 (#713, `8f6bcc8a`): Simetría direccional en puertas del continuo (K-06) y gate ML B3.18 (K-23).
-  - Ola Ω76 (#714): Simetría conformal K-26, microtendencia K-27 y sincronización freno del host d*.
+  - Ola Ω76 (#714, `0000eb8d`): Simetría conformal K-26, microtendencia K-27 y sincronización freno del host d*.
+  - Ola Ω77 (#715): Sincronización concurrencia CI replay y blindaje pre-commit contra marcadores de conflicto.
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados
   de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`).
-  Toda la suite de crates pasando al 100% (153/153 en risk-engine, 120/120 en
-  signal-engine, 81/81 en metacortex-engine, 170/170 en god-engine-core, 54/54 en backtest-engine, 40/40 en
-  strategy-core). Workspace verificado con `cargo check --workspace --all-targets` limpio.
+  Toda la suite de crates pasando al 100%. Workspace verificado con `cargo check --workspace --all-targets` limpio en 40.13s.
 
 ## Frentes del sistema (no por agente)
 
