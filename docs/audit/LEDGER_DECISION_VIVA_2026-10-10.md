@@ -413,3 +413,17 @@ iguales bit a bit en todos:
   asientos direccionales siguen coincidiendo cuando hay entrada. Para
   verlos hace falta un libro cuyo OBI contradiga a las señales lentas
   durante una entrada; queda para la siguiente versión del T-2.
+
+### 7.6 Ola Ω79 (Ficha #717, Antigravity): Formalización de Plan Maestro Cuántico Integral, Sincronización Multi-Agente y Diagnóstico Forense de Asfixia en T-2
+
+- **Plan Maestro Cuántico Canónico (`docs/PLAN_MAESTRO_EXPONENCIAL_CUANTICO_2026-10-10.md` y §38 de `PLAN_MAESTRO_SINCRONIZACION.md`)**:
+  - **10 Roles Senior en Modo Profesor Pedagógico**: Formalización de arquitectura, cuantificación de micro-capital $13.00 USD ($T_d = 72$ h, $g \approx +0.231049/\text{día}$ compuesto continuo), invariantes inviolables de Binance Futures (filtro nocional $5.10 USD @ 5x leverage, 2 posiciones máx, SL difusivo 55 bps, $RR \ge 2.25$, suelo de falsación $d^* = 0.632$).
+  - **Continuo Temporal Espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$**: Erradicación de clasificaciones estancas (`scalping` vs `swing`). Centroide de resonancia continua de Hilbert $\tau^* \in [30\text{ s}, 12\text{ h}]$ sobre 32 escalas diádicas ($\tau = 4^k\ \mu\text{s}$) y estado proyectado sobre el símplex tetraédrico continuo $\Delta^3$.
+  - **Matriz Evolutiva Transdisciplinar**: Transición canónica de cada modelo hacia su formulación continua (PIN-SDE neuronales, Rough Volatility $H < 0.5$, Navier-Stokes compresible del libro L2/L3, Yang-Mills $SU(N)$ gauge curvature, descomposición Helmholtz-Hodge $L^2$ de flujos, Kahneman-Tversky + Mean Field Games).
+- **Diagnóstico Forense de Rechazos en Fixture T-2**:
+  - En la corrida sobre 13 USD y base forestal 0.30: 15 trades completados (WR 20%), 1324 rechazos por `REJ_EV` y 171 por confianza.
+  - Causa raíz analítica: El decaimiento exponencial de la evidencia con $\tau_{\text{anchor}} = 12\text{ horas}$ (`SEMIVIDA_EVIDENCIA_MS`) en `confidence_calibrator` hace que rachas perdedores iniciales congelen la probabilidad de éxito $p < p^*$, generando un estado absorbente donde `REJ_EV` bloquea la cuenta durante horas.
+  - Plan de acción para Fase R1/R2: Diseñar desasfixia adaptativa con bandas UCB de reactivación controlada sin relajar el riesgo físico.
+- **Sincronización Multi-Agente**:
+  - Respaldo a Línea C para el ciclo 11 (C-F0 docs, scripts de citas, toolchain, inventario C-F10).
+  - Acuerdo con Línea C en unificar en `LC-F4-10` el freno del host ($d^* = 0.632$ con `lerp(..., micro_w)` y persistencia mínima de pico).
