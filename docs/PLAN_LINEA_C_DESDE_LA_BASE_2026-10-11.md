@@ -768,12 +768,17 @@ R7 de Ronda 7 (datos, telemetría y guardianes; incluye C-02) sigue ABIERTA y si
    - Sobre aa716edf, los dos workflows seguían en curso al re-anclar este plan. Después, la API de GitHub da «Unit and contract suites» en success (run 38097226229). «Replay contracts» quedó cancelled (run 38097226217): el check --all-targets pasó, y la suite de contratos se cortó en el paso 7 cuando el push de 03b3f1ca canceló el run.
 6. **Pendientes del ciclo 8** (HOJA_DE_RUTA_CIMIENTOS §6, :406).
    - T-1 nocturno: ninguno de los dos workflows tiene un disparo programado.
-   - Toolchain con fecha: la CI ya fija `nightly-2026-06-30` (replay-contracts.yml:45-52; unit-suites.yml:68-74). Sólo falta `rust-toolchain.toml:2`, que va a C-F1.
+   - Toolchain con fecha: la CI ya fija `nightly-2026-06-30` (replay-contracts.yml:45-52; unit-suites.yml:68-74). Sólo falta `rust-toolchain.toml:2`, que va a C-F1. Hecho en el ciclo 11 (CL-56), con su test de fuente.
 
 **Puertas.** Un test-inventario que falle si una suite no la corre ningún workflow y no hay motivo escrito.
 
 **Entregable**
 - Inventario test→workflow. Se adelanta al ciclo 11 (§8), porque los tests nuevos de C-F4 a C-F9 caen en suites que hoy no ejecuta ninguna CI (evolution-engine/tests, storage-engine/tests y otras).
+  - Hecho en el ciclo 11 (CL-57): `python3 scripts/plan_linea_c.py ci --rev REV --salida TSV` aplica la selección de objetivos de cargo a cada orden `cargo test` y `rustc --test` de los workflows. Resultado en `docs/audit/INVENTARIO_TESTS_CI_2026-10-11.tsv`, sobre la rama del ciclo 11 (main ae6d51a2 más CL-56 y CL-57): 214 objetivos con tests (2 551 `#[test]`), de los que 26 objetivos con 220 tests no los ejecuta ninguna CI. Confirma la lista de la pregunta 1 y añade `continuous_evolution_backtest` y el T-2, que es posterior a aa716edf:
+    - evolution-engine: 7 suites, 55 tests; storage-engine: lib y 3 suites, 58 tests; telemetry-server 30, os-guardian 12, omniscient-registry 9 (archivo de C-F1), telemetry-engine 7, phase-runner 7, flight-recorder 5, graph-architecture 5 y graph-4d 4;
+    - paquete raíz: `feature_exporter` 10, `train_dark_alpha` 8, `god_engine` 2 (los tests del host) y `continuous_evolution_backtest` 2, que el paquete raíz y backtest-engine compilan desde el mismo archivo;
+    - backtest-engine: el T-1 y el T-2 (`t1_cobertura_genetica`, `t2_cobertura_puertas`), fuera a propósito porque son el oráculo largo, y `continuous_evolution_backtest`.
+  - Pedido a los dueños, sin tocar sus workflows: Línea E (`unit-suites.yml`) y Codex/GLM (`replay-contracts.yml`) deciden dónde entran esos 24 objetivos, o escriben el motivo de dejarlos fuera. Con eso, `ci --exigir` puede ser la puerta de esta fase.
 - Cambios de CI acordados con Línea E y Codex. Entre ellos, que un push a main no cancele el run en curso de `replay-contracts.yml`. #715 (07688cf9), posterior a aa716edf, ya lo hace como `unit-suites.yml:26-31` (replay-contracts.yml:18 en 07688cf9). Falta comprobar en main que un run de replay llega a cerrar. Sigue abierta la otra propuesta: que todo entre por PR con los checks requeridos.
 
 ---
@@ -1238,8 +1243,9 @@ Las fases ordenan la revisión. No hay operación autorizada, así que ninguna u
   - C-F0, con el comprobador de citas de este documento (hecho: §9), y C-F1.
   - Inventario test→workflow de C-F10. Se adelanta porque parte de los tests nuevos, sobre todo de C-F7 a C-F9 (evolution-engine/tests, storage-engine/tests, telemetría y herramientas), caerían en suites que hoy no ejecuta ninguna CI (LC-F10-02).
   - Arreglos ya decididos:
-    - pico y umbral únicos del freno inmune, que completan #714 según ADR-0016 D3. #714 no dejó test del host y la semántica sigue siendo distinta de la del riesgo. Incluye la persistencia mínima del pico con su test de reinicio (LC-F4-10);
-    - `rust-toolchain.toml` = `nightly-2026-06-30`, el mismo que la CI, con un test de fuente que compara las tres cadenas (G0, LC-F1-03).
+    - `rust-toolchain.toml` = `nightly-2026-06-30`, el mismo que la CI, con un test de fuente que compara las tres cadenas (G0, LC-F1-03). Hecho: CL-56.
+    - El pico y el umbral únicos del freno inmune (LC-F4-10) pasan al ciclo 13. §9 mostró que ninguna de las dos semánticas actuales es una prueba de nivel α. Con riesgo medido, los dos frenos leen el gen de producción (0,5) como confianza de la prueba de rachas, es decir α = 0,5, y pueden saltar por azar; en régimen micro el veto la sustituye por d* con c = ½, medido desde el pico móvil (LC-F0-08, LC-F0-09, filas 11 y 35). Igualar una a la otra ahora fijaría una de las dos sin derivar. En C-F4 se deriva una sola prueba con el tamaño real y se lleva al dueño como decisión antes de tocar el freno vivo. La persistencia del pico (LC-F0-10) va con ella.
+  - Inventario test→workflow de C-F10: hecho (CL-57, `docs/audit/INVENTARIO_TESTS_CI_2026-10-11.tsv`).
 - **Ciclo 12.** C-F2 (sólo lectura y pruebas sintéticas; el T-1 no debe moverse) y C-F3. Los hallazgos de zona ajena salen como pedidos con test que falla.
 - **Ciclo 13.** C-F4:
   - primero el ATR (LC-F6-01 y LC-F3-02), antes de medir el riesgo al stop o el tope IOC;
