@@ -52,6 +52,7 @@ pub mod recarga_genoma;
 pub mod reexport_storage {
     pub use storage_engine::mmap_bus;
 }
+pub mod sigma_minuto;
 pub mod slippage_predictor;
 pub mod stateful_engine;
 pub mod trailing;
