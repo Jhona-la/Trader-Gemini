@@ -1,5 +1,32 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
+
+- Fusionados #42 (CL-66 y CL-70) y #43 (CL-68 y CL-69). Regla del
+  operador: se verifica en local y se fusiona sin esperar a GitHub.
+- CL-71 (LC-F6-01, F2.2-07 cerrado):
+  - `v_t = max(√(8/π)·σ̂60·p, √(8/π)·R_abierta/q99)` en cada evento, sin
+    trinquete ni suelo de 10 pb. El piso es el tick (CL-69). El rasgo del
+    modelo conserva el ATR viejo (CL-68).
+  - La gestión pierde su suelo de 10 pb y conserva sólo el gen 27.
+  - 8 de las 9 copias del suelo, las puertas del continuo y las ramas 11 y
+    12 usan el ATR nuevo. Sólo las ramas 1-10 (Línea E) conservan
+    `cur_atr_continuo`, con el pedido en el buzón.
+- La revisión adversarial encontró un bloqueante, corregido en el mismo
+  commit: sin la envolvente, el ATR se quedaba en escala de calma un minuto
+  ante un choque, y eso abría la excepción de capitulación. q99 = 3,04,
+  derivado por Monte Carlo.
+- Medido:
+  - σ_ATR/σ = 1,039 y 0,968 (antes ≥ 1,57 y 1,19);
+  - FA-9 4,4 % (antes ≈ 0,2 %);
+  - choque de −100 pb en 30 s: ATR ×5 en el mismo minuto;
+  - golden 1000,04298628, re-certificado;
+  - T-2 5a0b7b940fb4809b (37 operaciones, antes 69);
+  - T-1 17/144: gana el gen 20 y no pierde ninguno.
+- Pendientes de la revisión: siembra de σ̂ tras reconectar, valle de σ̂
+  tras huecos de más de 61 s, unidades de `spread_speed_of_sound`, y
+  consumidores que tratan el ATR como σ. Detalle en el §6 del plan.
+
 ## 2026-10-11 — Claude (Línea C, PC del operador): C-F4 empieza por el ATR (CL-66, CL-70)
 
 - PR #40 (C-F2) fusionado en main (f6953362). C-F3 (docs) y C-F4 van en
