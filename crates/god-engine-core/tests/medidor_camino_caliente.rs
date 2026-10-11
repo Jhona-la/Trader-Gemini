@@ -525,6 +525,20 @@ fn la_cinta_pasa_por_el_nucleo_sin_romperlo() {
     assert!(s.intenciones <= 3_000 && s.cierres <= 3_000);
 }
 
+/// CL-60b: huella FNV-1a del ejecutable que corre. La puerta comprueba que
+/// cada lado corre un solo binario y que la rama no corre el de la base: con
+/// un `CARGO_TARGET_DIR` compartido, cargo reutilizó para la rama del PR #37
+/// el binario de la base. Se calcula una vez, fuera de la medida.
+fn huella_del_binario() -> String {
+    let bytes = std::env::current_exe().and_then(std::fs::read).unwrap_or_default();
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
 // ---------------------------------------------------------------------------
 // La medida (release, ignorada en la CI)
 // ---------------------------------------------------------------------------
@@ -553,11 +567,12 @@ fn medir_camino_caliente() {
     let a0 = asignaciones();
     std::thread::sleep(Duration::from_millis(300));
     let fondo_por_s = (asignaciones() - a0) as f64 / 0.3;
+    let binario = huella_del_binario();
 
     println!(
         "MEDIDOR_CAB\trep\teventos\tmediana_ns\tp99_ns\tp999_ns\tmax_ns\tmedia_ns\t\
          asign_por_evento\tfraccion_con_asign\tmax_asign_evento\tintenciones\tcierres\t\
-         ghz\tfondo_asign_por_s\tmonedas\tsemilla\tdebug"
+         ghz\tfondo_asign_por_s\tmonedas\tsemilla\tdebug\tbinario"
     );
     for rep in 0..repeticiones {
         let mut core = nucleo();
@@ -581,7 +596,7 @@ fn medir_camino_caliente() {
         let ns_por_ciclo = ns_total / c_total as f64;
         let r = resumir(&ciclos_evento, &asign_evento, ns_por_ciclo);
         println!(
-            "MEDIDOR\t{rep}\t{}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.3}\t{:.4}\t{}\t{}\t{}\t{:.3}\t{:.1}\t{monedas}\t{semilla}\t{}",
+            "MEDIDOR\t{rep}\t{}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.3}\t{:.4}\t{}\t{}\t{}\t{:.3}\t{:.1}\t{monedas}\t{semilla}\t{}\t{binario}",
             r.eventos,
             r.mediana_ns,
             r.p99_ns,

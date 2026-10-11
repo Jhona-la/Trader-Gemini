@@ -38,15 +38,17 @@ caliente. Lee las líneas `MEDIDOR` que imprime
 rama (misma cinta, release) y aplica la regla del plan: la rama no añade
 asignaciones por evento y su mediana de ns por evento no supera a la de la
 base en más de lo que difieren dos corridas de la base entre sí (el rango de
-las medianas de la base). El p99 se informa y no decide. Código 0 si pasa, 1
-si no pasa y 2 si las medidas no son comparables.
+las medianas de la base). El p99 se informa y no decide. Cada línea lleva la
+huella del binario que la midió: cada lado debe correr un solo binario y, con
+`--fuentes-distintas`, la rama no puede correr el de la base (CL-60b). Código
+0 si pasa, 1 si no pasa y 2 si las medidas no son comparables.
 
 Uso:
     python3 scripts/plan_linea_c.py citas DOCUMENTO [--rev REV] [--alias CORTO=RUTA ...]
     python3 scripts/plan_linea_c.py asignacion [--rev REV] [--salida TSV]
     python3 scripts/plan_linea_c.py ci [--rev REV] [--salida TSV] [--exigir]
     python3 scripts/plan_linea_c.py claves [--rev REV] [--salida TSV]
-    python3 scripts/plan_linea_c.py rendimiento --base LOG [LOG ...] --rama LOG [LOG ...]
+    python3 scripts/plan_linea_c.py rendimiento --base LOG [LOG ...] --rama LOG [LOG ...] [--fuentes-distintas]
 """
 import argparse
 import fnmatch
@@ -373,6 +375,8 @@ def main(argv=None):
     rend = sub.add_parser("rendimiento")
     rend.add_argument("--base", nargs="+", required=True, help="salidas del medidor en la base")
     rend.add_argument("--rama", nargs="+", required=True, help="salidas del medidor en la rama")
+    rend.add_argument("--fuentes-distintas", action="store_true",
+                      help="la rama cambia fuentes Rust o manifiestos: su binario no puede ser el de la base")
     args = parser.parse_args(argv)
     if args.orden == "rendimiento":
         return orden_rendimiento(args)
@@ -777,9 +781,10 @@ def orden_claves(args):
 
 CAMPOS_MEDIDOR = ("rep", "eventos", "mediana_ns", "p99_ns", "p999_ns", "max_ns", "media_ns",
                   "asign_por_evento", "fraccion_con_asign", "max_asign_evento", "intenciones",
-                  "cierres", "ghz", "fondo_asign_por_s", "monedas", "semilla", "debug")
+                  "cierres", "ghz", "fondo_asign_por_s", "monedas", "semilla", "debug", "binario")
 CAMPOS_ENTEROS = {"rep", "eventos", "max_asign_evento", "intenciones", "cierres", "monedas",
                   "semilla", "debug"}
+CAMPOS_TEXTO = {"binario"}
 
 
 def leer_medidas(texto):
@@ -792,13 +797,17 @@ def leer_medidas(texto):
         if len(partes) != len(CAMPOS_MEDIDOR) + 1:
             raise ValueError("línea MEDIDOR con %d campos (esperados %d): %r"
                              % (len(partes) - 1, len(CAMPOS_MEDIDOR), linea))
-        medidas.append({c: int(v) if c in CAMPOS_ENTEROS else float(v)
+        medidas.append({c: v if c in CAMPOS_TEXTO else int(v) if c in CAMPOS_ENTEROS else float(v)
                         for c, v in zip(CAMPOS_MEDIDOR, partes[1:])})
     return medidas
 
 
-def veredicto_rendimiento(base, rama):
-    """Regla de la puerta (plan §7 paso 5) sobre repeticiones de base y rama."""
+def veredicto_rendimiento(base, rama, fuentes_distintas=False):
+    """Regla de la puerta (plan §7 paso 5) sobre repeticiones de base y rama.
+
+    `fuentes_distintas`: la rama cambia fuentes Rust o manifiestos respecto
+    de la base. Entonces su binario no puede ser el de la base (CL-60b).
+    """
     v = {"estado": "no_comparable", "motivos": [], "conducta": None}
     if len(base) < 2:
         v["motivos"].append("hacen falta al menos dos corridas de la base para medir su ruido")
@@ -813,6 +822,19 @@ def veredicto_rendimiento(base, rama):
         return v
     if any(m["debug"] for m in base + rama):
         v["motivos"].append("hay medidas de una build debug: la puerta se mide en release")
+        return v
+    # CL-60b: cada lado corre un único binario, y la rama no corre el de la
+    # base. Con un CARGO_TARGET_DIR compartido, cargo reutilizó para la rama
+    # del PR #37 el binario de la base, y las tres corridas midieron lo mismo.
+    binarios_base = {m["binario"] for m in base}
+    binarios_rama = {m["binario"] for m in rama}
+    if len(binarios_base) != 1 or len(binarios_rama) != 1:
+        v["motivos"].append("un lado cambió de binario entre corridas: base %s, rama %s"
+                            % (sorted(binarios_base), sorted(binarios_rama)))
+        return v
+    if fuentes_distintas and binarios_base == binarios_rama:
+        v["motivos"].append("la rama corrió el binario de la base aunque sus fuentes difieren "
+                            "(¿CARGO_TARGET_DIR compartido sin recompilar?)")
         return v
 
     def mediana(medidas, campo):
@@ -856,7 +878,7 @@ def orden_rendimiento(args):
                 medidas.extend(leer_medidas(f.read()))
         return medidas
 
-    v = veredicto_rendimiento(cargar(args.base), cargar(args.rama))
+    v = veredicto_rendimiento(cargar(args.base), cargar(args.rama), args.fuentes_distintas)
     if "base_mediana_ns" in v:
         print("            mediana_ns   p99_ns   asign/evento")
         print("base   %13.1f %8.1f %14.3f" % (v["base_mediana_ns"], v["base_p99_ns"], v["base_asign"]))
