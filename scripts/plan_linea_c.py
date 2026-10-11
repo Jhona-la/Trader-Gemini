@@ -26,10 +26,17 @@ tras `--`). `cargo check` sólo compila y no cuenta. Escribe un TSV (paquete,
 objetivo, tipo, archivo, tests, ignorados, corre_en). Con `--exigir`, código
 1 si algún objetivo con tests no lo ejecuta ninguna CI.
 
+`claves` (C-F1, valores ocultos): claves del registro (`OmniscientRegistry`) que
+el código de producción lee y nunca escribe. Cada una es un literal escondido:
+la lectura devuelve siempre su respaldo. Escribe un TSV (clave, lecturas,
+por_defecto, sitios). Las claves armadas con `format!` no se ven, así que la
+lista es de candidatas a verificar.
+
 Uso:
     python3 scripts/plan_linea_c.py citas DOCUMENTO [--rev REV] [--alias CORTO=RUTA ...]
     python3 scripts/plan_linea_c.py asignacion [--rev REV] [--salida TSV]
     python3 scripts/plan_linea_c.py ci [--rev REV] [--salida TSV] [--exigir]
+    python3 scripts/plan_linea_c.py claves [--rev REV] [--salida TSV]
 """
 import argparse
 import fnmatch
@@ -348,7 +355,13 @@ def main(argv=None):
     ci.add_argument("--salida", help="ruta del TSV (si falta, sólo el resumen)")
     ci.add_argument("--exigir", action="store_true",
                     help="código 1 si un objetivo con tests no corre en ninguna CI")
+    claves = sub.add_parser("claves")
+    claves.add_argument("--rev", default="HEAD")
+    claves.add_argument("--repo", default=".")
+    claves.add_argument("--salida", help="ruta del TSV (si falta, sólo el resumen)")
     args = parser.parse_args(argv)
+    if args.orden == "claves":
+        return orden_claves(args)
     if args.orden == "asignacion":
         return orden_asignacion(args)
     if args.orden == "ci":
@@ -627,6 +640,119 @@ def orden_ci(args):
     print("objetivos con tests: %d (%d tests); sin ninguna CI: %d (%d tests); sólo con filtro: %d" % (
         len(con_tests), sum(f[4] for f in con_tests), len(sin_ci), sum(f[4] for f in sin_ci), len(parcial)))
     return 1 if args.exigir and sin_ci else 0
+
+
+LECTORES_REGISTRO = ("get_value_fast", "get_value_or", "get_scoped_value_or", "get_scoped_val_or",
+                     "get_for_coin_or", "get_scoped_parameter", "get_scoped")
+ESCRITORES_REGISTRO = ("set_for_coin", "set_scoped", "register_or_update", "register", "set")
+LLAMADA_REGISTRO = re.compile(r"\.(%s)\s*\(" % "|".join(
+    sorted(LECTORES_REGISTRO + ESCRITORES_REGISTRO + ("get",), key=len, reverse=True)))
+LITERAL_CLAVE = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"')
+TUPLA_CLAVE = re.compile(r'\(\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*,')
+# Ayudantes de escritura (`let set_reg = |k, v| …; set_reg("clave", v)`, `publicar(…)`).
+# `register(Parameter::new("clave", …))` también escribe.
+AYUDANTE_ESCRITOR = re.compile(
+    r'(?<![\w.])(set_\w+|publica\w*|publish\w*|registra\w*|Parameter::new)\s*\(\s*"([A-Za-z_][A-Za-z0-9_]*)"')
+
+
+def argumentos(texto, inicio):
+    """Argumentos de nivel superior de la llamada cuyo paréntesis abre en `inicio`."""
+    args, actual, nivel, i = [], [], 1, inicio
+    while i < len(texto) and nivel:
+        c = texto[i]
+        if c == '"':
+            fin = i + 1
+            while fin < len(texto) and texto[fin] != '"':
+                fin += 2 if texto[fin] == "\\" else 1
+            actual.append(texto[i:fin + 1])
+            i = fin + 1
+            continue
+        if c in "([{":
+            nivel += 1
+        elif c in ")]}":
+            nivel -= 1
+            if not nivel:
+                break
+        if c == "," and nivel == 1:
+            args.append("".join(actual).strip())
+            actual = []
+        else:
+            actual.append(c)
+        i += 1
+    args.append("".join(actual).strip())
+    return [a for a in args if a]
+
+
+def codigo_de_produccion(ruta):
+    return (ruta.endswith(".rs") and not ruta.startswith(("tests/", "benches/"))
+            and "/tests/" not in ruta and "/benches/" not in ruta)
+
+
+def claves_sin_escritor(versionados, leer):
+    """Claves del registro con lectura y sin ninguna escritura en el código de producción.
+
+    Lecturas: los métodos de lectura de `OmniscientRegistry` y `.get(clave, consumidor)`
+    (dos literales; `json.get("x")` no cuenta). Escrituras: `set`, `set_for_coin`,
+    `set_scoped`, `register`, `register_or_update` y cualquier tupla `("clave", …)`, que
+    suele ser una tabla que se publica en bucle. Fuera quedan `tests/`, `benches/` y lo que
+    sigue a `#[cfg(test)]`. Una clave compuesta con `format!` no se ve: la lista es de
+    candidatas que hay que verificar a mano, no un veredicto.
+    """
+    lecturas, escritas = {}, set()
+    for ruta in versionados:
+        if not codigo_de_produccion(ruta):
+            continue
+        texto = leer(ruta)
+        corte = texto.find("#[cfg(test)]")
+        if corte >= 0:
+            texto = texto[:corte]
+        escritas.update(m.group(2) for m in AYUDANTE_ESCRITOR.finditer(texto))
+        for m in TUPLA_CLAVE.finditer(texto):
+            previo = texto[:m.start()].rstrip()[-1:]
+            if not (previo.isalnum() or previo in "_>!"):
+                escritas.add(m.group(1))
+        for m in LLAMADA_REGISTRO.finditer(texto):
+            metodo, args = m.group(1), argumentos(texto, m.end())
+            # Posición de la clave: la primera en register_or_update, la última en
+            # get_value_fast y la penúltima en el resto (tras ella va el valor, el
+            # respaldo o el consumidor). `register` recibe un Parameter (arriba).
+            posicion = {"register_or_update": 0, "get_value_fast": -1}.get(metodo, -2)
+            if metodo == "register" or len(args) < (2 if posicion == -2 else 1):
+                continue
+            if metodo == "get" and len(args) != 2:
+                continue
+            if not LITERAL_CLAVE.fullmatch(args[posicion]):
+                continue
+            clave = args[posicion][1:-1]
+            if metodo in ESCRITORES_REGISTRO:
+                escritas.add(clave)
+                continue
+            linea = texto.count("\n", 0, m.start()) + 1
+            dato = lecturas.setdefault(clave, {"sitios": [], "por_defecto": []})
+            dato["sitios"].append("%s:%d" % (ruta, linea))
+            defecto = " ".join(args[-1].split())
+            if len(defecto) > 60:
+                defecto = defecto[:57] + "..."
+            if metodo.endswith("_or") and defecto not in dato["por_defecto"]:
+                dato["por_defecto"].append(defecto)
+    return {k: v for k, v in sorted(lecturas.items()) if k not in escritas}
+
+
+def orden_claves(args):
+    versionados = archivos_versionados(args.repo, args.rev)
+    leer = lambda ruta: git(args.repo, "show", "%s:%s" % (args.rev, ruta))
+    claves = claves_sin_escritor(versionados, leer)
+    if args.salida:
+        with open(args.salida, "w", encoding="utf-8") as f:
+            f.write("clave\tlecturas\tpor_defecto\tsitios\n")
+            for clave, dato in claves.items():
+                f.write("%s\t%d\t%s\t%s\n" % (clave, len(dato["sitios"]), " | ".join(dato["por_defecto"]) or "-",
+                                             " ".join(dato["sitios"])))
+    for clave, dato in claves.items():
+        print("%s: %d lecturas, por defecto %s (%s)" % (
+            clave, len(dato["sitios"]), " | ".join(dato["por_defecto"]) or "-", dato["sitios"][0]))
+    print("claves leídas sin escritor: %d" % len(claves))
+    return 0
 
 
 if __name__ == "__main__":

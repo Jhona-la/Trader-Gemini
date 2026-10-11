@@ -226,5 +226,65 @@ class PlanLineaCInventarioCiTests(unittest.TestCase):
         self.assertEqual(filtro, "--ignored")
 
 
+class PlanLineaCClavesTests(unittest.TestCase):
+    """`claves` (C-F1): claves del registro que se leen y nadie escribe."""
+
+    ARCHIVOS = {
+        "crates/r/src/lib.rs": (
+            "fn f(reg: &R, json: &J) {\n"
+            '    let a = reg.get_for_coin_or(0, "huerfana", 1.0);\n'
+            "    let b = reg.get_scoped_parameter(\n"
+            "        sym, cid,\n"
+            '        "escrita", "Motor");\n'
+            '    let c = reg.get_value_or("en_tupla", 0.5);\n'
+            '    let j = json.get("data");\n'
+            '    let k = reg.get("leida_con_consumidor", "Motor");\n'
+            '    let m = reg.get_value_or("otra_huerfana", f(1, 2));\n'
+            '    let n = reg.get_for_coin_or(0, "via_cierre", {\n        x\n    });\n'
+            '    let p = reg.get(nombre, "ConsumidorConVariable");\n'
+            '    let q = reg.get_value_fast("por_parametro");\n'
+            "}\n"
+            "#[cfg(test)]\n"
+            'mod t { fn g(reg: &R) { reg.set("huerfana", 1.0); reg.get_value_or("solo_en_test", 0.0); } }\n'
+        ),
+        "crates/w/src/lib.rs": (
+            "fn w(reg: &R, x: f64) {\n"
+            '    reg.set_for_coin(0, "escrita", x);\n'
+            '    for (n, v) in [("en_tupla", x)] { reg.set(n, v); }\n'
+            "    let set_reg = |k: &str, v: f64| reg.set(k, v);\n"
+            '    set_reg("via_cierre", x);\n'
+            '    reg.register(Parameter::new("por_parametro", Kind::Gene, x, "w"));\n'
+            "}\n"
+        ),
+        "crates/w/tests/t.rs": 'fn t(reg: &R) { reg.set("leida_con_consumidor", 1.0); }\n',
+        "crates/w/README.md": 'reg.set("otra_huerfana", 1.0)\n',
+    }
+
+    def claves(self):
+        return plan.claves_sin_escritor(sorted(self.ARCHIVOS), self.ARCHIVOS.__getitem__)
+
+    def test_lista_lecturas_sin_escritor_fuera_de_tests(self):
+        claves = self.claves()
+        self.assertEqual(sorted(claves), ["huerfana", "leida_con_consumidor", "otra_huerfana"])
+        self.assertEqual(claves["huerfana"]["sitios"], ["crates/r/src/lib.rs:2"])
+        self.assertEqual(claves["leida_con_consumidor"]["sitios"], ["crates/r/src/lib.rs:8"])
+
+    def test_valor_por_defecto_de_las_lecturas_con_respaldo(self):
+        claves = self.claves()
+        self.assertEqual(claves["huerfana"]["por_defecto"], ["1.0"])
+        self.assertEqual(claves["otra_huerfana"]["por_defecto"], ["f(1, 2)"])
+        self.assertEqual(claves["leida_con_consumidor"]["por_defecto"], [])
+
+    def test_escritor_en_varias_lineas_o_en_tupla_cuenta(self):
+        claves = self.claves()
+        self.assertNotIn("escrita", claves)
+        self.assertNotIn("en_tupla", claves)
+        self.assertNotIn("data", claves)
+        self.assertNotIn("solo_en_test", claves)
+        self.assertNotIn("via_cierre", claves)
+        self.assertNotIn("por_parametro", claves)
+        self.assertNotIn("ConsumidorConVariable", claves)
+
+
 if __name__ == "__main__":
     unittest.main()
