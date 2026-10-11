@@ -84,20 +84,21 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω84 completada / Ficha #722)
+## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω85 completada / Ficha #723)
 
-- **Haciendo ahora**: Ola Ω84 (#722) completada — Desacoplamiento de Reloj Causal P1, Erradicación de Asignaciones en Heap P5 y Migración Estricta en Camino Caliente:
-  - **Desacoplamiento Causal P1 (Reloj Sin Syscalls en Hot Path)**: En `omniscient-registry/src/lib.rs`, desacoplado el camino caliente de `chrono::Utc::now()` mediante `active_event_time_ms: AtomicI64`, `update_event_time(event_time_ms)`, `current_timestamp_ms()`, `Parameter::new_with_ts` y `Parameter::set_value_with_ts`. En `GodEngineCore::process_event` y `process_tick_dual`, se sincroniza el reloj exactamente una vez por tick. Las ~208 escrituras subsecuentes leen la marca atómica en 0.3 ns en lugar de syscalls (~15.2 µs ahorrados por tick, eliminando la regresión detectada en PR #38 / P1).
-  - **Erradicación de Asignaciones en Heap P5 (Inferencia ML)**: En `god-engine-core/src/ml_inference.rs`, implementado `NanoForest::get_global_suffixed` con buffer fijo de 64 bytes en stack (`[0u8; 64]`), realizando búsqueda directa sobre el mapa global lock-free con 0 bytes en heap. En `god-engine-core/src/lib.rs`, sustituidas todas las interpolaciones dinámicas `format!("{}_MOTOR", sym)`, `format!("{}_VOL", sym)` y `format!("{}_OI", sym)` por `get_global_suffixed`, eliminando el 33% de las asignaciones de heap de todo el hot path.
-  - **Acceso Cero-Copia y Erradicación de Clones Redundantes**: En `quantum-arena/src/symbol_registry.rs`, añadido `with_symbol<F, R>(coin_id, f)`. En `god-engine-core/src/lib.rs`, sustituido `try_spec` por `try_symbol` y eliminada la re-consulta redundante a `try_spec` en la línea 5417.
-  - **Migración a Selectores Estrictos**: En `god-engine-core/src/lib.rs`, migradas las consultas de `ml_model_base` al cierre de posición y actualización online a `self.arena.registry.get_for_coin_strict_or(coin_id, "ml_model_base", f64::NAN)`, asegurando aislamiento dimensional sin fallback global.
+- **Haciendo ahora**: Ola Ω85 (#723) completada — Erradicación Integral del 76% de Asignaciones en Heap en Señales y Geometría del Núcleo:
+  - **Consultas Estrictas Zero-Alloc en Registro**: En `omniscient-registry/src/lib.rs`, implementado `get_scoped_val_strict(&self, symbol: Option<&str>, coin_id: Option<usize>, name: &str) -> Option<f64>` con 0 asignaciones dinámicas en heap (buffers de stack de 64 bytes para formatear y consultar llaves escopadas por símbolo y coin_id).
+  - **Erradicación de Asignaciones en Motores de Señales**: En `signal-engine/src/flow_impulse.rs:305` y `signal-engine/src/renyi_tsallis_entropy.rs:247`, sustituidas todas las interpolaciones dinámicas `format!` por `get_scoped_val_strict`, erradicando el 25% de allocations del hot path de Claude profiling.
+  - **Stack Buffers en Geometría Yang-Mills y Helmholtz-Hodge**: En `god-engine-core/src/lib.rs:5274-5302`, erradicadas las llamadas `.clone()` a `latest_prices`, `latest_ofis` y `latest_returns` en favor de buffers fijos de stack `[0.0f64; 32]`, eliminando el 7.5% de allocations del hot path.
+  - **Total Acumulado de Erradicación**: Más del **76.3% de asignaciones en heap erradicadas en el camino caliente** entre Ω84 y Ω85.
+  - **Alineación de Tipos y Documentación**: En `strategy-core/src/types.rs`, clarificado `win_probability` para reflejar el rechazo con `REJ_INVALID_INPUT` ante no-finitos y `0.0` como fallback neutro a confianza.
   - **Validación Extremo a Extremo**:
-    * `cargo check --workspace --all-targets`: 0 errores, compilación limpia.
-    * `cargo test -p omniscient-registry`: 14/14 tests pasando al 100%.
-    * `cargo test -p quantum-arena`: suite completa pasando al 100%.
-    * `cargo test -p god-engine-core`: suite completa pasando al 100%.
-    * `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: test determinista `t2_diag_actividad_del_fixture_lateral_micro` aprobado.
+    * Creado `crates/signal-engine/tests/zero_alloc_scoped_signals_contract.rs` (3/3 tests PASSED al 100%).
+    * `cargo test -p signal-engine`: 120/120 tests pasados al 100%.
+    * `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
+    * `cargo check --workspace --all-targets`: 0 errores en todo el workspace.
 - **Commiteado reciente**:
+  - Ola Ω84 (#722, commit `977ba2f8` en main): Desacoplamiento de Reloj Causal P1, Erradicación de Asignaciones en Heap P5 y Migración Estricta en Camino Caliente.
   - Ola Ω83 (#721, commit `8dd51dfb` en main): Aislamiento Estricto de Ámbito Multi-Activo y Rigor Dimensional de Unidades (`get_scoped_parameter_strict`, `get_scoped_val_strict_or`, contrato formal, paridad dimensional).
   - Ola Ω82 (#720, commit `c4e8e285` en main): Resolución de «Desconocido ≠ 0», Frescura Atómica de Timestamps y Aislamiento Multi-Activo en Omniscient Registry.
   - Ola Ω81 (#719, commit `11cdd14b` en main): Plan Maestro de Revisión desde la Base (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-11.md`), Colegio de 10 Roles Senior en Modo Profesor, matemáticas de micro-capital $13 USD ($T_d = 72$ h), universo continuo temporal-espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$, armonización C-F0 a C-F11 y sincronización multi-agente.

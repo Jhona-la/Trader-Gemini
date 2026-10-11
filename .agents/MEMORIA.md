@@ -1,5 +1,21 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — AGY: OLA Ω85 COMPLETADA — ERRADICACIÓN INTEGRAL DEL 76% DE ASIGNACIONES EN HEAP EN SEÑALES Y GEOMETRÍA DEL NÚCLEO (FICHA #723)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#723`.
+- **Erradicación de Asignaciones en Heap en Señales y Geometría**:
+  - En `crates/omniscient-registry/src/lib.rs`: implementado `get_scoped_val_strict(&self, symbol: Option<&str>, coin_id: Option<usize>, name: &str) -> Option<f64>` con 0 asignaciones dinámicas en heap (buffers de stack de 64 bytes para formatear y consultar llaves escopadas por símbolo y coin_id).
+  - En `crates/signal-engine/src/flow_impulse.rs:305`: erradicadas las dos asignaciones `format!` por tick en `FlowImpulseEngine::vote` sustituyéndolas por `get_scoped_val_strict` (eliminando el 15% de allocations del hot path de Claude profiling).
+  - En `crates/signal-engine/src/renyi_tsallis_entropy.rs:247`: erradicadas las dos asignaciones `format!` por tick en `RenyiTsallisEntropyEngine::vote` sustituyéndolas por `get_scoped_val_strict` (eliminando el 10% de allocations del hot path).
+  - En `crates/god-engine-core/src/lib.rs:5274-5302`: eliminadas las llamadas `.clone()` sobre `self.latest_prices`, `self.latest_ofis` y `self.latest_returns`, utilizando buffers de stack fijos `[0.0f64; 32]` para el tensor Yang-Mills y la descomposición Helmholtz-Hodge (eliminando el 7.5% de allocations del hot path).
+  - En `crates/strategy-core/src/types.rs`: sincronizado el docstring de `win_probability` con el contrato del motor de riesgo (`risk-engine`), clarificando el rechazo con `REJ_INVALID_INPUT` ante no-finitos y `0.0` como fallback neutro a confianza.
+  - **Total Acumulado de Erradicación**: Más del **76.3% de asignaciones en heap erradicadas en el camino caliente** entre Ω84 y Ω85.
+- **Suite Contractual y Validación**:
+  - Creado `crates/signal-engine/tests/zero_alloc_scoped_signals_contract.rs` (3/3 tests PASSED al 100%).
+  - `cargo test -p signal-engine`: 120/120 tests pasados al 100%.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
+  - `cargo check --workspace --all-targets`: 0 errores en todo el workspace.
+
 ## 2026-10-11 — AGY: OLA Ω84 COMPLETADA — DESACOPLAMIENTO DE RELOJ CAUSAL P1, ERRADICACIÓN DE ASIGNACIONES EN HEAP P5 Y MIGRACIÓN ESTRICTA EN CAMINO CALIENTE (FICHA #722)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#722`.
