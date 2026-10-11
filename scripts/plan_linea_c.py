@@ -643,7 +643,11 @@ def orden_ci(args):
 
 
 LECTORES_REGISTRO = ("get_value_fast", "get_value_or", "get_scoped_value_or", "get_scoped_val_or",
-                     "get_for_coin_or", "get_scoped_parameter", "get_scoped")
+                     "get_for_coin_or", "get_scoped_parameter", "get_scoped",
+                     "get_for_coin_strict", "get_for_coin_strict_or", "get_scoped_strict",
+                     "get_scoped_strict_or")
+# Lectores con la clave en el último argumento (sin respaldo ni consumidor detrás).
+CLAVE_AL_FINAL = ("get_value_fast", "get_for_coin_strict", "get_scoped_strict")
 ESCRITORES_REGISTRO = ("set_for_coin", "set_scoped", "register_or_update", "register", "set")
 LLAMADA_REGISTRO = re.compile(r"\.(%s)\s*\(" % "|".join(
     sorted(LECTORES_REGISTRO + ESCRITORES_REGISTRO + ("get",), key=len, reverse=True)))
@@ -714,9 +718,9 @@ def claves_sin_escritor(versionados, leer):
         for m in LLAMADA_REGISTRO.finditer(texto):
             metodo, args = m.group(1), argumentos(texto, m.end())
             # Posición de la clave: la primera en register_or_update, la última en
-            # get_value_fast y la penúltima en el resto (tras ella va el valor, el
+            # CLAVE_AL_FINAL y la penúltima en el resto (tras ella va el valor, el
             # respaldo o el consumidor). `register` recibe un Parameter (arriba).
-            posicion = {"register_or_update": 0, "get_value_fast": -1}.get(metodo, -2)
+            posicion = 0 if metodo == "register_or_update" else -1 if metodo in CLAVE_AL_FINAL else -2
             if metodo == "register" or len(args) < (2 if posicion == -2 else 1):
                 continue
             if metodo == "get" and len(args) != 2:

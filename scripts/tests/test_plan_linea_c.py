@@ -243,6 +243,8 @@ class PlanLineaCClavesTests(unittest.TestCase):
             '    let n = reg.get_for_coin_or(0, "via_cierre", {\n        x\n    });\n'
             '    let p = reg.get(nombre, "ConsumidorConVariable");\n'
             '    let q = reg.get_value_fast("por_parametro");\n'
+            '    let r = reg.get_for_coin_strict(0, "estricta_huerfana");\n'
+            '    let u = reg.get_scoped_strict_or(&sym, "estricta_con_respaldo", 0.25);\n'
             "}\n"
             "#[cfg(test)]\n"
             'mod t { fn g(reg: &R) { reg.set("huerfana", 1.0); reg.get_value_or("solo_en_test", 0.0); } }\n'
@@ -265,7 +267,9 @@ class PlanLineaCClavesTests(unittest.TestCase):
 
     def test_lista_lecturas_sin_escritor_fuera_de_tests(self):
         claves = self.claves()
-        self.assertEqual(sorted(claves), ["huerfana", "leida_con_consumidor", "otra_huerfana"])
+        self.assertEqual(sorted(claves), ["estricta_con_respaldo", "estricta_huerfana", "huerfana",
+                                          "leida_con_consumidor", "otra_huerfana"])
+        self.assertEqual(claves["estricta_con_respaldo"]["por_defecto"], ["0.25"])
         self.assertEqual(claves["huerfana"]["sitios"], ["crates/r/src/lib.rs:2"])
         self.assertEqual(claves["leida_con_consumidor"]["sitios"], ["crates/r/src/lib.rs:8"])
 
