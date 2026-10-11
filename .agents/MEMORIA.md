@@ -6,6 +6,7 @@
 - Base remota 1d1f8bdd: 1.583 rutas, todas inicialmente inventariadas, ninguna revisión semántica heredada. Inventario por blob y asignación C completa sin fallback; checker correcto y siete tests del inventariador aprobados.
 - Reservas SI/R4/C-F2/AGY preservadas y aviso al chat R4 con ACK. Corrige unidades de los conteos y distingue hipótesis, aspiraciones de latencia y evidencia; no afirma cierre económico ni auditoría de los 1.583 archivos.
 - Artefactos fechados `REINICIO_BASE_*`; delta a44 no incluye su documentación posterior. Regenerar por SHA y reabrir dependencias semánticas incluso con blob igual. Recibo terminal del lote SI y de integración: PR #39.
+- Avance externo main8dd (Ω83): censo regenerado a 1.584 rutas pendientes; delta AGY 1 adición/8 cambios. Merge conserva ambos aportes documentales y todas las fuentes de ambos padres; cadena anterior interrumpida por cambio de base, validación de composición nueva requerida.
 
 ## 2026-10-11 — SI: pronóstico emitido y feedback epigenético causal
 
@@ -51,6 +52,29 @@
   leer el reloj en cada escritura del registro (~208 por evento), un sello
   que nada lee en producción. Avisado AGY en el buzón (P1). T-1 del PR #38:
   16/144, misma lista inerte.
+
+## 2026-10-11 — AGY: OLA Ω83 COMPLETADA — AISLAMIENTO ESTRICTO DE ÁMBITO MULTI-ACTIVO Y RIGOR DIMENSIONAL DE UNIDADES (FICHA #721)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#721`.
+- **Cierre del Hallazgo C-F1 / LC-F1-06 / F-002 («Aislamiento de Ámbito Multi-Activo y Rigor Dimensional»)**:
+  - En `crates/omniscient-registry/src/lib.rs`:
+    * Implementado `get_scoped_parameter_strict(symbol, coin_id, name, consumer) -> Option<Arc<Parameter>>` con resolución $O(1)$ zero heap allocation sin fallback al parámetro global `{NAME}` (si el activo no dispone del parámetro, retorna `None`).
+    * Implementado `get_scoped_val_strict_or(symbol, coin_id, name, default) -> f64` con resolución $O(1)$ zero heap allocation sin fallback al parámetro global, impidiendo que una moneda B herede métricas de una moneda A escritas en el global.
+  - En `crates/quantum-arena/src/config.rs`:
+    * Documentadas formalmente las unidades para `live_maker_fee` (fracción 0.0002 = 2 bps = 0.02%) y `live_taker_fee` (fracción 0.0005 = 5 bps = 0.05%), eliminando ambigüedad en el Apartado 1 del Contrato de Conceptos C-F1.
+  - En `crates/quantum-arena/src/position.rs`:
+    * Alineada la definición de [`Position::entry_tau_ms`] con D-745: la escala temporal continua $\tau$ con la que se dimensionó y validó la orden al entrar (inmutable durante la vida de la posición).
+  - En `crates/strategy-core/src/types.rs`:
+    * Actualizado el docstring de [`SignalIntent::win_probability`] para reflejar con precisión su significado matemático: $P(\text{ganar neto} \mid \text{lado, geometría, } \tau)$, reservada para Kelly/Riesgo sin sesgo en selección (LC-F1-37).
+- **Suite Contractual Formal**:
+  - Creado `crates/omniscient-registry/tests/aislamiento_ambito_multiactivo_contract.rs` con 3 pruebas formales:
+    * `test_aislamiento_estricto_sin_caida_al_global`: ETH nunca lee mid_price ni métricas de BTC.
+    * `test_aislamiento_por_coin_id_estricto`: consultas estrictas por `coin_id` devuelven `NaN` / default ante ausencia de métrica propia.
+    * `test_resolucion_precedencia_simbolo_sobre_coin_id`: la clave por símbolo precede a la de coin_id.
+- **Invarianza y Cero Regresiones**:
+  - `cargo test -p omniscient-registry`: 14/14 tests pasando al 100%.
+  - `cargo check --workspace --all-targets`: 0 errores, compila limpiamente en todo el workspace.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300`, 15 operaciones idénticas bit a bit frente a la línea base.
 
 ## 2026-10-11 — AGY: OLA Ω82 COMPLETADA — RESOLUCIÓN DE «DESCONOCIDO ≠ 0», FRESCURA ATÓMICA DE TIMESTAMPS Y AISLAMIENTO MULTI-ACTIVO EN OMNISCIENT REGISTRY (FICHA #720)
 

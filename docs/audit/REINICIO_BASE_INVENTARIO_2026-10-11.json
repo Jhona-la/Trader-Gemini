@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "snapshot_commit": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
-  "snapshot_commit_time": "2026-10-11T05:49:10-05:00",
+  "snapshot_commit": "8dd51dfb32481ba900038ee279bfd61f45e1b9b4",
+  "snapshot_commit_time": "2026-10-11T09:42:54-05:00",
   "scope": "Every tracked leaf entry in git ls-tree -r at snapshot_commit; no working-tree files.",
   "classification": "Heuristic proposed routing; owners are roles, not accepted assignments.",
   "verification": "Inventoried is not reviewed. check validates metadata, not the truth of review evidence.",
   "summary": {
-    "total": 1583,
+    "total": 1584,
     "category": {
       "configuration": 57,
       "data_or_model": 9,
@@ -15,7 +15,7 @@
       "operations": 34,
       "other": 77,
       "source": 357,
-      "test": 196
+      "test": 197
     },
     "phase": {
       "F0": 197,
@@ -26,10 +26,10 @@
       "F5": 41,
       "F6": 56,
       "F7": 927,
-      "F8": 196
+      "F8": 197
     },
     "status": {
-      "inventariado": 1583
+      "inventariado": 1584
     }
   },
   "files": [
@@ -85,7 +85,7 @@
       "path": ".agents/MEMORIA.md",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "10422ad8b57698841e992cd33989de31e9499079",
+      "blob": "aabdc734b2960852f5a58d5fd71986716216a45e",
       "zone": ".agents",
       "category": "documentation",
       "phase": "F0",
@@ -95,7 +95,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
+          "reason": "object_or_mode_changed",
+          "blob": "10422ad8b57698841e992cd33989de31e9499079",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": ".agents/rules/contexto-arquitectonico.md",
@@ -405,7 +416,7 @@
       "path": "COORDINACION_CODEX_2026-09-28.md",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "0dad759f151abc000d4520690554f1f36d786b46",
+      "blob": "194370d1b0354922a4523bbb42cdfc71634520cd",
       "zone": "COORDINACION_CODEX_2026-09-28.md",
       "category": "documentation",
       "phase": "F0",
@@ -415,7 +426,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
+          "reason": "object_or_mode_changed",
+          "blob": "0dad759f151abc000d4520690554f1f36d786b46",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "Cargo.lock",
@@ -933,7 +955,7 @@
       "path": "TABLERO.md",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "988873cddf87268f1ecb6fa172f45ce982001bca",
+      "blob": "f5de48d64c5e9722b567f74224c5ee04d29a9150",
       "zone": "TABLERO.md",
       "category": "documentation",
       "phase": "F0",
@@ -943,7 +965,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
+          "reason": "object_or_mode_changed",
+          "blob": "988873cddf87268f1ecb6fa172f45ce982001bca",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "WALKTHROUGH_FORENSE_SISTEMICO.md",
@@ -6213,7 +6246,7 @@
       "path": "crates/omniscient-registry/src/lib.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "a131adba5bc740ca88ec3e4ab744424b02334140",
+      "blob": "af54dd990fb76f796992fdb354c0aa0ee3224a8d",
       "zone": "crates/omniscient-registry",
       "category": "source",
       "phase": "F7",
@@ -6223,7 +6256,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
+          "reason": "object_or_mode_changed",
+          "blob": "a131adba5bc740ca88ec3e4ab744424b02334140",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/omniscient-registry/src/tests.rs",
@@ -6236,6 +6280,22 @@
       "subject_phase": "F7",
       "risk_priority_proposed": "standard",
       "owner_proposed": "consejo_plataforma",
+      "status": "inventariado",
+      "review_owner": null,
+      "evidence": [],
+      "history": []
+    },
+    {
+      "path": "crates/omniscient-registry/tests/aislamiento_ambito_multiactivo_contract.rs",
+      "git_mode": "100644",
+      "git_type": "blob",
+      "blob": "b0ed0e5a65c651b9aa8ab7f2c6444b150e380962",
+      "zone": "crates/omniscient-registry",
+      "category": "test",
+      "phase": "F8",
+      "subject_phase": "F7",
+      "risk_priority_proposed": "standard",
+      "owner_proposed": "consejo_pruebas_independientes",
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
@@ -6565,7 +6625,7 @@
       "path": "crates/quantum-arena/src/config.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "938c3c65ff62a21ff5be03b8eefc80b260b593de",
+      "blob": "067d9d9632c6e161b02068fee74617d6ae8223ec",
       "zone": "crates/quantum-arena",
       "category": "source",
       "phase": "F2",
@@ -6575,7 +6635,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
+          "reason": "object_or_mode_changed",
+          "blob": "938c3c65ff62a21ff5be03b8eefc80b260b593de",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/quantum-arena/src/espectral_multiactivo.rs",
@@ -6725,7 +6796,7 @@
       "path": "crates/quantum-arena/src/position.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "ffbfab91eff9a48f1e73f6cc64035e917c961a44",
+      "blob": "cbc0b7be8413bc4f80bceb8c3b9cd5d3371ce120",
       "zone": "crates/quantum-arena",
       "category": "source",
       "phase": "F2",
@@ -6735,7 +6806,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
+          "reason": "object_or_mode_changed",
+          "blob": "ffbfab91eff9a48f1e73f6cc64035e917c961a44",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/quantum-arena/src/protection_health.rs",
@@ -8917,7 +8999,7 @@
       "path": "crates/strategy-core/src/types.rs",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "5ca8505c383039f06f57090f86c21b3e2a1d10a5",
+      "blob": "bd752fac62b7d43de3d26948c7f33ef0cfb195cd",
       "zone": "crates/strategy-core",
       "category": "source",
       "phase": "F2",
@@ -8927,7 +9009,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
+          "reason": "object_or_mode_changed",
+          "blob": "5ca8505c383039f06f57090f86c21b3e2a1d10a5",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "crates/strategy-core/src/vecm_arbitrage.rs",
@@ -11237,7 +11330,7 @@
       "path": "docs/PLAN_MAESTRO_SINCRONIZACION.md",
       "git_mode": "100644",
       "git_type": "blob",
-      "blob": "1ceb53f4feaff362386f3aca006daa64a57ecb96",
+      "blob": "8868f3b2b2234f4f0c0e0b39025294357812ba2e",
       "zone": "docs",
       "category": "documentation",
       "phase": "F0",
@@ -11247,7 +11340,18 @@
       "status": "inventariado",
       "review_owner": null,
       "evidence": [],
-      "history": []
+      "history": [
+        {
+          "snapshot_commit": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
+          "reason": "object_or_mode_changed",
+          "blob": "1ceb53f4feaff362386f3aca006daa64a57ecb96",
+          "git_mode": "100644",
+          "git_type": "blob",
+          "status": "inventariado",
+          "review_owner": null,
+          "evidence": []
+        }
+      ]
     },
     {
       "path": "docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md",

@@ -368,6 +368,72 @@ impl OmniscientRegistry {
         default
     }
 
+    /// LC-F1-06 / D-219: Lectura polimórfica escopada por activo (símbolo + coin_id)
+    /// SIN fallback al parámetro global (Aislamiento Multi-Activo Estricto, Zero Heap Alloc).
+    #[inline(always)]
+    pub fn get_scoped_parameter_strict(
+        &self,
+        symbol: Option<&str>,
+        coin_id: Option<usize>,
+        name: &str,
+        consumer_name: &str,
+    ) -> Option<Arc<Parameter>> {
+        if let Some(sym) = symbol {
+            if !sym.is_empty() {
+                let p = format_scoped_key(sym, "_", name, |scoped_name| {
+                    self.get(scoped_name, consumer_name)
+                });
+                if p.is_some() {
+                    return p;
+                }
+            }
+        }
+        if let Some(cid) = coin_id {
+            let p = format_coin_key(cid, name, |scoped_cid| {
+                self.get(scoped_cid, consumer_name)
+            });
+            if p.is_some() {
+                return p;
+            }
+        }
+        None
+    }
+
+    /// LC-F1-06 / D-219: Lectura rápida O(1) de valor numérico escopado por activo (símbolo + coin_id)
+    /// SIN fallback al parámetro global (Aislamiento Multi-Activo Estricto, Zero Heap Alloc).
+    #[inline(always)]
+    pub fn get_scoped_val_strict_or(
+        &self,
+        symbol: Option<&str>,
+        coin_id: Option<usize>,
+        name: &str,
+        default: f64,
+    ) -> f64 {
+        if let Some(sym) = symbol {
+            if !sym.is_empty() {
+                let val = format_scoped_key(sym, "_", name, |scoped_name| {
+                    self.get_value_fast(scoped_name)
+                });
+                if let Some(v) = val {
+                    if v.is_finite() {
+                        return v;
+                    }
+                }
+            }
+        }
+        if let Some(cid) = coin_id {
+            let val = format_coin_key(cid, name, |scoped_cid| {
+                self.get_value_fast(scoped_cid)
+            });
+            if let Some(v) = val {
+                if v.is_finite() {
+                    return v;
+                }
+            }
+        }
+        default
+    }
+
     pub fn detect_collisions(&self) -> Vec<String> {
         // Since we prevent duplicates on register, collisions in a strict map sense are avoided.
         // However, if strategies attempt to register the same name, the `register` returns Err.

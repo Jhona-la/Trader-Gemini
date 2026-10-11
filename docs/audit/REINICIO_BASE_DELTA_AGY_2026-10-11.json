@@ -1,0 +1,75 @@
+{
+  "from_commit": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
+  "to_commit": "8dd51dfb32481ba900038ee279bfd61f45e1b9b4",
+  "added": [
+    "crates/omniscient-registry/tests/aislamiento_ambito_multiactivo_contract.rs"
+  ],
+  "removed": [],
+  "changed": [
+    {
+      "path": ".agents/MEMORIA.md",
+      "old_blob": "10422ad8b57698841e992cd33989de31e9499079",
+      "new_blob": "aabdc734b2960852f5a58d5fd71986716216a45e",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "COORDINACION_CODEX_2026-09-28.md",
+      "old_blob": "0dad759f151abc000d4520690554f1f36d786b46",
+      "new_blob": "194370d1b0354922a4523bbb42cdfc71634520cd",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "TABLERO.md",
+      "old_blob": "988873cddf87268f1ecb6fa172f45ce982001bca",
+      "new_blob": "f5de48d64c5e9722b567f74224c5ee04d29a9150",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/omniscient-registry/src/lib.rs",
+      "old_blob": "a131adba5bc740ca88ec3e4ab744424b02334140",
+      "new_blob": "af54dd990fb76f796992fdb354c0aa0ee3224a8d",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/quantum-arena/src/config.rs",
+      "old_blob": "938c3c65ff62a21ff5be03b8eefc80b260b593de",
+      "new_blob": "067d9d9632c6e161b02068fee74617d6ae8223ec",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/quantum-arena/src/position.rs",
+      "old_blob": "ffbfab91eff9a48f1e73f6cc64035e917c961a44",
+      "new_blob": "cbc0b7be8413bc4f80bceb8c3b9cd5d3371ce120",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/strategy-core/src/types.rs",
+      "old_blob": "5ca8505c383039f06f57090f86c21b3e2a1d10a5",
+      "new_blob": "bd752fac62b7d43de3d26948c7f33ef0cfb195cd",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_SINCRONIZACION.md",
+      "old_blob": "1ceb53f4feaff362386f3aca006daa64a57ecb96",
+      "new_blob": "8868f3b2b2234f4f0c0e0b39025294357812ba2e",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    }
+  ],
+  "unchanged_count": 1575
+}

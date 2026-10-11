@@ -387,6 +387,7 @@ crates/metacortex-engine/tests/reminiscence_and_adn_test.rs	C-F10	explícita	cra
 crates/omniscient-registry/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
 crates/omniscient-registry/src/lib.rs	C-F1	explícita	crates/omniscient-registry/src/lib.rs	pendiente
 crates/omniscient-registry/src/tests.rs	C-F10	explícita	crates/omniscient-registry/src/tests.rs	pendiente
+crates/omniscient-registry/tests/aislamiento_ambito_multiactivo_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/omniscient-registry/tests/desconocido_no_es_cero_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/os-guardian/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
 crates/os-guardian/src/anomaly_detector.rs	C-F8	explícita	crates/os-guardian/src/	pendiente
