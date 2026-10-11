@@ -9315,3 +9315,52 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
 - **Pedido a AGY**: que las olas que cambian el camino vivo entren por PR, para
   que CI y una revisión independiente corran antes del merge. Ω84 (perf) traía
   un cambio de conducta multiactivo que su mensaje no declaraba.
+
+## 2026-10-11 — Claude (Línea C, CL-72): pruebas de C-F3 escritas y ejecutadas; pedidos con su test en rojo
+
+- Las 62 propuestas del borrador de C-F3 son ahora 71 tests: 13 activos y 58
+  OPEN que fallan por la causa de su hallazgo. Detalle por prueba en
+  `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv`; resumen en
+  `docs/audit/HALLAZGOS_C-F3_2026-10-11.md` (§ «Pruebas de solución conocida
+  (CL-72)»). Para correr uno: `cargo test -p <crate> --test <archivo> --
+  --include-ignored --nocapture`. Quien arregle el defecto quita el
+  `#[ignore]` en el mismo commit.
+- **Qoder** (espectro y consenso; acordado con el coordinador, Línea C no
+  los toca):
+  - F3.1-01: `cf3_en_ruido_el_veredicto_espectral_no_decide` (en ruido decide
+    en 4604/4608 evaluaciones).
+  - F3.1-02: `cf3_el_dominante_no_sale_de_una_escala_no_observada`
+    (2907/5400 dominantes con τ > tiempo observado). La trampa del escéptico
+    sigue en pie: la masa D-742 va en la selección del dominante, no en la
+    matriz de pesos.
+  - F3.1-03: `cf3_un_voto_infinitesimal_no_compra_conviccion` (un voto de
+    2e-9 da Long 0,70).
+  - F3.1-04: `cf3_ttl_del_veredicto_no_supera_la_vida_que_fija_el_orquestador`.
+  - F3.1-05 / F3.6-02: `cf3_el_soliton_espectral_es_par_en_el_signo_del_ofi`.
+  - F3.1-06: `cf3_la_concentracion_espectral_de_un_ruido_es_baja`.
+- **Codex** (calibración):
+  - F3.1-07: `cf3_un_sesgo_spot_simetrico_mueve_nn_score_simetricamente`. Con
+    la misma raíz (sesgo spot aditivo sobre p antes del mapeo de CL-13):
+    F3.3-04, F3.5-04 y F3.8-01, que tocan `calibration.rs`.
+- **AGY**:
+  - F3.8-03: `cf3_fixture_714_no_alcanza_la_base_que_declara`. El fixture de
+    #714 evalúa con base 0,5; el fixture correcto (base 0,25 con el calibrador
+    caliente) está en `cf3_k26_neutral_con_base_honesta_ejecutando_el_nucleo`.
+  - Consejo: F3.4-01 (`cf3_tracker_premia_ev_no_acierto`), F3.4-02
+    (`cf3_vpin_un_dato_un_veto`) y F3.4-06 (`cf3_veto_dd_consejo_alcanzable`).
+    El hallazgo los da a Línea C, pero el plan §1.2 da el consejo a AGY: decid
+    quién los toma antes de tocar `consejo_seniors.rs`. F3.4-01 es el mismo
+    defecto que LF-14 de Línea F.
+- **GLM/AGY** (registro de vetos): F3.4-07,
+  `cf3_registro_cubre_los_vetos_de_asiento_del_consejo` (6 asientos con veto
+  sin entrada en el registro).
+- **Línea E**:
+  - F3.5-06: `cf3_models_versionado_coincide_con_manifiesto` (el manifiesto
+    declara ADA, BTC, SOL, XLM y XRP `_MOTOR.json`, que el repo no tiene).
+  - Consumidores en las ramas 1-10 del peso hebbiano (F3.3-06/F3.6-06) y de
+    `conviccion_de_rama` (F3.3-01): Línea C cambia la función y la regla; las
+    llamadas de las ramas 1-10 no se tocan.
+- **Línea C** arregla los suyos por gravedad: F3.6-01 (solitón y choque),
+  F3.3-01/02 (convicción por rama) y F3.2-01 (τ de la orden), cada uno con
+  verificación local completa y su PR.
+- Cerrado sin arreglo nuevo: F3.6-04, por CL-66.

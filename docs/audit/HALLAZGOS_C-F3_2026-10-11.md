@@ -853,3 +853,37 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
   - Corrección (refutar): Severidad baja. Decidir la semántica (con signo o |H − 0,5|) a partir de la habilidad medida del bosque frente a H, corregir el comentario y retirar el clamp exterior muerto.
   - Corrección (completitud): No cambia nada desde esta lente. Además, hurst_val es el DFA por ticks (reloj de eventos). El caso de tiempo físico frente a eventos tampoco está cubierto en esta modulación.
 
+
+## Pruebas de solución conocida (CL-72)
+
+Las 62 propuestas de `PRUEBAS_C-F3_borrador_2026-10-11.json` están escritas, compiladas y ejecutadas en el PC del operador (Windows, x86_64-pc-windows-msvc, nightly-2026-06-30) sobre main 8f572f7c, que ya incluye CL-66…CL-71 y #721-#725. Son 71 funciones de test: 13 activas que pasan y 58 OPEN (`#[ignore = "OPEN F3.x-nn (dueño): causa"]`). Con `--include-ignored`, las 58 fallan en su aserción principal por la causa de su hallazgo; ninguna falla en una premisa. Sin ese flag, todos los archivos dan `ok`. Ninguna tarda más de 15 s en debug.
+
+Resultado por prueba (archivo, hallazgo, dueño, estado, mensaje observado y notas): `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv`.
+
+| Crate | Activas (pasan) | OPEN (fallan por su causa) |
+|---|---|---|
+| god-engine-core (incluye `mod tests_cf3_puertas_espejo` en lib.rs) | 3 | 38 |
+| signal-engine | 9 | 12 |
+| risk-engine | 1 | 3 |
+| metacortex-engine | 0 | 2 |
+| strategy-core | 0 | 2 |
+| backtest-engine | 0 | 1 |
+| **Total** | **13** | **58** |
+
+Lo que cambió respecto al borrador:
+
+- **F3.6-04 cerrado por CL-66.** El núcleo ya no publica `atr_1s/5s/1m` y el coaxial se abstiene sin ellas. `cf3_6_coaxial_invariante_a_la_unidad_de_precio` queda activa con un control: con ATR por escala proporcionales al precio, el lector da el mismo voto no nulo (0,735754519) a 60 000 y a 0,06 USD.
+- **F3.4-07: la prueba del borrador se descarta** porque su verdad es errónea. V-LOGIC-007 describe `REJ_CONFIDENCE` del riesgo y su test lo pinea bien. La sustituyen dos pruebas: una activa que fija esa lectura y una OPEN que exige una entrada del registro para cada veto de asiento del consejo (6 de 6 sin entrada).
+- **F3.7-08, magnitud rebajada.** Un evento de libro asigna una vez, no 6-11: el `String` que crea `try_symbol(coin_id).unwrap_or_default()`. Los `format!`, los clones y `try_spec` ya no asignan tras las búsquedas sin asignación de AGY.
+- **Rehechas porque la versión del borrador no podía fallar por la causa:**
+  - VECM con base constante: el futuro alterno ±1e-5 anulaba los retornos de 60 s. Ahora el spot es un paseo aleatorio, el futuro lleva una prima fija y la verdad es de sesgo en media.
+  - Régimen y tasa de eventos: con Hurst neutro la tolerancia absoluta nunca fallaba. Ahora una deriva de 5e-6 pone z en la zona sensible de la sigmoide y se compara la razón de medias (±10 %).
+- **Adaptadas a la API viva:**
+  - F3.2-01: eventos trade + libro, y el bosque direccional del oráculo T-1.
+  - F3.2-05: el veredicto espectral se fija en el registro.
+  - F3.6-01: el registro espejo ya no publica las tres ATR.
+  - F3.4-05: réplica literal del predicado de la sonda, con comprobación del texto en lib.rs.
+  - F3.4-06: el veto se lee en el asiento Riesgo vía `deliberar_traced`.
+- **F3.2-04 (retirado por duplicar LC-F1-36)** queda como testigo de LC-F1-36. F3.3-11, F3.7-04, F3.7-09, F3.7-10 y F3.8-05 no tenían prueba en el borrador y siguen sin ella.
+
+**Zonas.** El dueño de cada prueba OPEN es el del hallazgo: 48 Línea C, 6 Qoder (F3.1-01…06), 1 Codex (F3.1-07), 1 AGY (F3.8-03), 1 Línea E (F3.5-06) y 1 que decide cada dueño de archivo (F3.7-08). Algunos hallazgos asignados aquí a Línea C caen en zonas que el plan (§1.2) da a otros: el consejo (F3.4-01, -02 y -06, AGY), la coherencia del orquestador (F3.3-05, Qoder) y `calibration.rs` (F3.5-04 y F3.8-01, Codex). Línea C confirma la zona con su dueño antes de arreglarlos.
