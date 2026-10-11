@@ -888,11 +888,8 @@ impl RiskEngine {
                 atr_ratio: atr_pct,
                 hurst: hurst_for_geometry,
                 roundtrip_fee,
-                sl_atr_multiplier: if coin_id == 0 {
-                    arena.config.sl_atr_mult_btc.load(Ordering::Relaxed)
-                } else {
-                    arena.config.sl_atr_multiplier.load(Ordering::Relaxed)
-                },
+                // CL-62: el gen de BTC va con su identidad, no con el slot 0.
+                sl_atr_multiplier: arena.sl_atr_multiplier_for(coin_id),
                 // D-754: la σ que el espectro predictivo pronostica PARA ESTE
                 // horizonte, si ha demostrado habilidad fuera de muestra. El
                 // arena publica ceros mientras no la tenga, y entonces la

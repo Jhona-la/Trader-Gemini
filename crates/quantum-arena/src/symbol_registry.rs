@@ -143,6 +143,22 @@ pub fn try_symbol(coin_id: usize) -> Option<String> {
     registry.get(coin_id).map(|s| s.symbol.clone())
 }
 
+/// CL-62 (LC-F1-03): ¿el slot `coin_id` es `simbolo`? Mismo espacio de
+/// índices que `try_symbol` (el universo; el registro sólo con el universo
+/// vacío), sin copiar el nombre: lo consulta el camino caliente.
+#[inline]
+pub fn slot_es_simbolo(coin_id: usize, simbolo: &str) -> bool {
+    let en_universo = crate::symbols::with_active_universe(|u| {
+        (!u.is_empty()).then(|| u.get(coin_id).is_some_and(|s| s.eq_ignore_ascii_case(simbolo)))
+    });
+    en_universo.unwrap_or_else(|| {
+        DYNAMIC_REGISTRY
+            .load()
+            .get(coin_id)
+            .is_some_and(|s| s.symbol.eq_ignore_ascii_case(simbolo))
+    })
+}
+
 #[inline(always)]
 pub fn try_index(symbol: &str) -> Option<usize> {
     let universe = crate::symbols::get_active_universe_ref();

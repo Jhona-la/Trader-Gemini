@@ -629,6 +629,23 @@ impl GlobalArena {
 }
 
 impl GlobalArena {
+    /// CL-62 (LC-F1-03): multiplicador ATR del stop de la moneda del slot.
+    /// `sl_atr_mult_btc` es el gen de BTCUSDT por su IDENTIDAD (ADR-0011: el
+    /// slot es una posición, el símbolo la identidad); las demás monedas
+    /// llevan `sl_atr_multiplier`. Antes el gate de riesgo y la sonda de
+    /// banda del núcleo elegían con `coin_id == 0`: el forense y el
+    /// entrenador, que ponen en el slot 0 el símbolo que miden, daban a una
+    /// alt el stop de BTC, y en vivo BTC lo recibía sólo porque el bootloader
+    /// lo lista primero.
+    #[inline]
+    pub fn sl_atr_multiplier_for(&self, coin_id: usize) -> f64 {
+        if crate::symbol_registry::slot_es_simbolo(coin_id, "BTCUSDT") {
+            self.config.sl_atr_mult_btc.load(Ordering::Relaxed)
+        } else {
+            self.config.sl_atr_multiplier.load(Ordering::Relaxed)
+        }
+    }
+
     #[inline(always)]
     pub fn increment_tick(&self) -> u64 {
         self.tick_counter.fetch_add(1, Ordering::Relaxed)

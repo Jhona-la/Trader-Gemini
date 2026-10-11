@@ -1551,11 +1551,8 @@ impl GodEngineCore {
         if !roundtrip_fee.is_finite() || roundtrip_fee < 0.0 {
             return false;
         }
-        let sl_mult = if coin_id == 0 {
-            self.arena.config.sl_atr_mult_btc.load(Ordering::Relaxed)
-        } else {
-            self.arena.config.sl_atr_multiplier.load(Ordering::Relaxed)
-        };
+        // CL-62: el mismo multiplicador que el gate de riesgo (por símbolo).
+        let sl_mult = self.arena.sl_atr_multiplier_for(coin_id);
         let probe = risk_engine::tp_sl::compute_tp_sl_with_target_rr(
             risk_engine::tp_sl::TpSlInputs {
                 tau_ms,
