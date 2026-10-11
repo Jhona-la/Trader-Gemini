@@ -220,6 +220,16 @@ test que falla antes del cambio y pasa después, en esta rama.
 | LF-16 | LOW | El reloj de eventos del registro (Ω84) es un `store` sin máximo (puede retroceder) y sella también escrituras de otros hilos (spot, OI, reconciliación) con la última hora del núcleo. Hoy ningún lector consulta los sellos: la «frescura» prometida en Ω82/Ω84 no se usa. | `omniscient-registry/src/lib.rs:162-165`; `spot_feed.rs:119-121` | Refina LC-F1-35. |
 | LF-17 | LOW | Documentación: `evidence_publication.rs` decía que el registro normaliza no finitos a cero (falso desde Ω82; corregido aquí). Ω84 anuncia «cero heap» pero `sym` sigue siendo un `String` clonado por tick; `with_symbol` no tiene llamadores. | `evidence_publication.rs:3-5`; `symbol_registry.rs:140, 146-158` | Doc corregido; resto → AGY. |
 
+**Ω85 (#723, `369eb34f`, empujado a `main` durante esta ola) — revisado,
+sin defecto de conducta.** Los búferes de Yang-Mills/Hodge pasan de clonar
+`Vec` a arreglos en pila de 32 (MAX_COINS = 30): mismas entradas, misma
+caducidad a 10 s. `FlowImpulse` y `RenyiTsallis` leen con
+`get_scoped_val_strict` las mismas claves (`{SYM}_k`, después `c{id}:k`); la
+única diferencia es que una clave de símbolo NaN ahora cae a la de la moneda
+en vez de anular el voto (matiz de LF-15; ambas las escribe `set_reg` a la
+vez, así que no cambia el voto en la práctica). La cifra «76 % de
+asignaciones» no está medida con el medidor de Línea C.
+
 Refutado por los revisores (no reabrir): el símplex de régimen BTC no
 depende de `sym`; el formato de clave de los lectores estrictos de Ω83 es
 `c{id}:` (igual que `set_for_coin`); `get_global_suffixed` construye la misma
@@ -277,6 +287,11 @@ hecho sin serlo.
 - `os-guardian` es sólo Windows: `cargo check` nativo en Linux falla en
   `main` también; no es regresión.
 - Una sola cadena Cargo pesada a la vez (4 CPU, 15 GB).
+- **Disco**: la cuota de la sesión es ~30 GB. Las suites de test en debug con
+  símbolos la agotan (cada ejecutable de test pesa cientos de MB; el enlazador
+  falló con «No space left on device»). Compilar los tests con
+  `CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0` y borrar
+  `<target>/x86_64-pc-windows-gnu/debug/incremental` si hace falta.
 
 ## 9. Protocolo con los demás agentes
 

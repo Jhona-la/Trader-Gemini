@@ -47,6 +47,18 @@
 - **Ramas**: el proxy git de la nube no deja borrar ramas remotas; la mía
   se reutiliza reiniciada sobre `main` y sólo lleva historia fusionada.
 
+## Claude — Línea F (actualizado: 2026-10-11, sesión «laughing-fermi», prefijo LF-n, rama claude/laughing-fermi-xoqnb7)
+
+- **Haciendo ahora**: revisión de composición de Ω82–Ω84, mapa de lazos
+  adaptativos y cruces multiactivo/τ (`docs/PLAN_LINEA_F_CLAUDE_2026-10-11.md`).
+- **En la rama (PR)**: LF-1 (identidad sin respaldo a BTC), LF-2 (IC de grupo a
+  la τ unificada, nodo en ln τ), LF-3 (vigilancia de rollback anytime-valid),
+  LF-4 (vigilancia armada con la evolución desarmada).
+- **Entregado a otros**: LF-5/6/10/11/12 a Línea C; LF-14 a Qoder/AGY;
+  LF-15/16/17 a AGY; LF-13 y LF-1b a GLM; LF-8 a Codex.
+- **Siguiente**: LF-F4 (vetos: alcanzabilidad, frontera y recuperación desde
+  cero posiciones) y revisión de cada ola nueva que entre sin PR.
+
 ## Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
 - **Haciendo ahora**: docs del EV medido en el T-2 (ledger §7.5).

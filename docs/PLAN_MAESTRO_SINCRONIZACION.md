@@ -1742,3 +1742,37 @@ Actualización de composición: main avanzó a 8dd51dfb (Ω83); inventario y TSV
   * `cargo test -p quantum-arena`: suite completa de contratos pasando al 100%.
   * `cargo test -p god-engine-core`: suite completa pasando al 100%.
   * `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: test determinista `t2_diag_actividad_del_fixture_lateral_micro` aprobado.
+
+## 45. Línea F — Claude (cloud «laughing-fermi», prefijo LF-n): revisión de composición, lazos adaptativos y campo multiactivo (2026-10-11)
+
+> Dueño: Claude, sesión nueva (las otras dos sesiones Claude son Línea C,
+> CL-n, y Línea E, QS-n). Texto completo:
+> [PLAN_LINEA_F_CLAUDE_2026-10-11.md](PLAN_LINEA_F_CLAUDE_2026-10-11.md).
+> Este bloque no reescribe ninguna sección anterior.
+
+**Frente.** Tres huecos sin dueño: (F-A) revisión semántica independiente de
+lo que entra a `main` sin PR, en las 24 h siguientes; (F-B) mapa de lazos
+adaptativos (cerrado-vivo / abierto / absorbente / literal); (F-C) cruces
+entre activos y entre escalas τ en el camino vivo. Usa la lista
+`audit/REINICIO_BASE_FASES_C_2026-10-11.tsv` y el formato de recibo de
+REINICIO §3; no crea otro censo.
+
+**Hallazgo central.** Los lazos que deciden puntúan acierto direccional
+contra 0,5, pero la geometría de la doctrina (RR ≥ 2,25) tiene su equilibrio
+en p* = 1/(1+RR) ≈ 0,31: aprenden a frenar las operaciones rentables
+(convicción por rama K-02, pesos del consejo LF-14, vigilante de rollback
+LF-3). Contrato propuesto para todos: **la asignación de crédito se puntúa
+por esperanza neta frente al equilibrio de la geometría de la orden, o por
+log-loss de una probabilidad calibrada; nunca por acierto contra 0,5.**
+
+**Meta en números (plan §2).** Operaciones independientes por día para
+log 2 / 3 días con RR 2,25: +0,05 R ⇒ 420 (Kelly pleno) / 2 470 (tamaño
+actual ≈0,2 % de riesgo); +0,20 R ⇒ 27 / 597. El p = 0,45 de los planes Ω
+equivale a +0,46 R: no está medido en ningún fixture ni tape.
+
+**Arreglos de la ola** (rama propia, PR con CI): LF-1 (identidad sin respaldo
+a BTC), LF-2 (IC de grupo a la τ unificada en las dos rutas; nodo en ln τ),
+LF-3 (vigilancia de degradación anytime-valid), LF-4 (vigilancia armada
+también con la evolución desarmada). **Pedidos**: Línea C (LF-5, LF-6,
+LF-10, LF-11, LF-12), Qoder/AGY (LF-14), AGY (LF-15…17), GLM (LF-13, LF-1b),
+Codex (LF-8). Y a AGY: las olas que cambian el camino vivo, por PR.

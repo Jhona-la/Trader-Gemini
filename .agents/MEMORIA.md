@@ -1,5 +1,42 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — Claude (Línea F, «laughing-fermi», prefijo LF-n): revisión de composición, lazos adaptativos y campo multiactivo
+
+- Nueva línea: **revisión independiente de lo que entra a `main` sin PR**,
+  mapa de lazos adaptativos y cruces multiactivo/τ. Rama
+  `claude/laughing-fermi-xoqnb7`. Plan:
+  `docs/PLAN_LINEA_F_CLAUDE_2026-10-11.md` (se acopla a R0–R9, C-F0…F11 y al
+  REINICIO de Codex SI; no crea otro censo). Hallazgos LF-1…LF-17 en su §6.
+- La meta en números (plan §2): con RR 2,25, ventaja +0,05 R exige ~420
+  operaciones independientes/día a Kelly pleno; con el tamaño actual (≈0,2 %
+  de riesgo, una orden mínima) ~2 470. El supuesto p = 0,45 de los planes Ω
+  equivale a +0,46 R por operación: ningún fixture ni tape lo ha mostrado.
+- **Patrón central**: los lazos que deciden (convicción por rama K-02, pesos
+  del consejo LF-14, vigilante de rollback LF-3) puntúan acierto contra 0,5;
+  con RR ≥ 2,25 el equilibrio es p* ≈ 0,31, así que aprenden a frenar las
+  operaciones rentables. Regla propuesta: crédito por esperanza neta frente a
+  p* = 1/(1+RR) (o log-loss calibrada), nunca acierto contra 0,5.
+- Arreglados (RED antes, GREEN después): LF-1 (Ω84: respaldo de identidad
+  `"BTCUSDT"` → `""`), LF-2 (C-2 de AGY deshecho por MG05 en dual; nodo en
+  ln τ), LF-3 (`VigilanciaDegradacion`: apuesta en contra, falsa reversión
+  ≤ α; el criterio viejo revertía el 100 % de genomas de +0,30 R en Monte
+  Carlo), LF-4 (vigilancia armada antes del gate de evolución: en prod
+  nunca se armaba). LF-3 y LF-4 van juntos a propósito.
+- Entregados: Línea C LF-5 (enfriamiento por moneda atado a la τ del último
+  cierre, HIGH), LF-6, LF-10, LF-11, LF-12 (Kelly absorbente fuera de micro,
+  HIGH, con E); Qoder/AGY LF-14 (consejo, HIGH); AGY LF-15/16/17 (registro);
+  GLM LF-13 (Hedge inerte) y LF-1b (dataset `votes_export` cambia con Ω84);
+  Codex LF-8.
+- Lección de build en la nube: `apt-get install gcc-mingw-w64-x86-64 wine64`
+  funciona por el proxy; target propio `/home/user/target-lf`,
+  `RUSTFLAGS="-C target-cpu=x86-64-v2 -C opt-level=3"`. El proxy no deja
+  borrar ramas remotas (`claude/elegant-euler-mmtht4`, ya en main, sigue ahí).
+  Disco: la cuota (~30 GB) se agota con tests en debug con símbolos; usar
+  `CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0`.
+- Lección de método: validar con Monte Carlo antes de arreglar. El primer
+  arreglo de LF-3 (sólo quitar el recorte a +1 R) seguía revirtiendo el 100 %
+  de genomas rentables: el defecto real era el criterio de caída desde el pico.
+
 ## 2026-10-11 — AGY: OLA Ω84 COMPLETADA — DESACOPLAMIENTO DE RELOJ CAUSAL P1, ERRADICACIÓN DE ASIGNACIONES EN HEAP P5 Y MIGRACIÓN ESTRICTA EN CAMINO CALIENTE (FICHA #722)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#722`.
