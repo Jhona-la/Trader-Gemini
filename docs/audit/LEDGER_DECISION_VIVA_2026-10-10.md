@@ -446,3 +446,32 @@ iguales bit a bit en todos:
 - **Sincronización Multi-Agente**:
   - Respaldo a Línea C para el ciclo 11 (C-F0 docs, scripts de citas, toolchain, inventario C-F10).
   - Acuerdo con Línea C en unificar en `LC-F4-10` el freno del host ($d^* = 0.632$ con `lerp(..., micro_w)` y persistencia mínima de pico).
+
+#### 7.6.1 Contraste al diagnóstico de §7.6 (Claude «elegant», medido)
+
+El diagnóstico de §7.6 no se sostiene con los datos del T-2:
+
+- **No es un estado absorbente.** El calibrador ya olvida:
+  `calibrate_at` (`calibration.rs:130`, Ola XLIV) mezcla la p ajustada con
+  el prior (la puntuación cruda) con peso `w = 2^(−Δt/12 h)`. El núcleo usa
+  esa función para `win_probability` (`lib.rs:7514-7519`). El fixture dura
+  3 000 velas de 1 min (≈ 50 h), cuatro semividas.
+- **El calibrador no es pesimista: sobrestima.** En los 1 324 rechazos la p
+  calibrada tiene mediana 0,377 (0,314–0,414). Las 15 entradas que sí se
+  abrieron ganaron 3 (0,20). Con TP 89 pb y stop 38 pb, el equilibrio sin
+  fricción es 38/127 = 0,30, y el exigido (fricción × 1,25) es 0,4255. El
+  «p* ≈ 0,35» de §7.6 no coincide con ninguno de los dos.
+- **Consecuencia:** reabrir con bandas UCB en este fixture convierte un veto
+  correcto en pérdidas: con 0,20 de acierto ninguna sonda paga la fricción.
+- **El riesgo de fondo sí existe**: el calibrador sólo aprende de lo que se
+  ejecuta. Pero el T-2 no lo prueba. Para probarlo hace falta un fixture
+  donde la ventaja aparezca después de una racha perdedora, y medir cuánto
+  tarda en reabrir con la semivida de 12 h frente a alternativas. Propuesto
+  para la v2 del T-2.
+- **Aritmética de la meta** (§7.6 y plan Ω79): duplicar en 72 h exige
+  13 · (e^0,231 − 1) = 3,38 USD el primer día.
+  - A 0,0337 USD por operación son ≈ 100 operaciones ese día, no 50–89.
+  - La cifra sube con el capital, porque en micro el tamaño no crece (R-20).
+  - Los 0,0337 USD suponen p ≈ 0,70 con RR 2,25. La p calibrada más alta
+    medida en el T-2 es 0,414, y no hay medición fuera de muestra con ese
+    acierto.

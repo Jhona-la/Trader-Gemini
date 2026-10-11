@@ -19,7 +19,6 @@
 
 ## 2026-10-11 — Claude (sesión «elegant», QS-n): PR #32 en main; vetos de Ω71, espejo de cortos y fixture T-2 (PR #33)
 
-
 - **PR #32 fusionado** (`03b3f1ca`): QS-P y QS-K. CI verde en los cinco
   checks; T-1 16/144 con las huellas de siempre.
 - **PR #33** (ledger §7.5):
@@ -55,8 +54,16 @@
   sonda: p calibrada mediana 0,377 frente a 0,4255 de equilibrio (RR 2,36,
   fricción = 34 % del stop). El veto acierta: el fixture no tiene ventaja.
   La v2 necesita un predictor con ventaja real en el fixture.
-- **Siguiente**: T-2 v2 (predictor con ventaja + asientos divididos);
-  QS-R4b; D1/D4 con la Línea C.
+- **PR #35 fusionado** (`ae6d51a2`, docs): el hallazgo del veto EV en el
+  ledger §7.5. #717 (AGY, docs) compone limpio con él.
+- **Contraste a §7.6 de Ω79 (ledger §7.6.1)**: el T-2 no muestra un estado
+  absorbente. El calibrador ya olvida (`calibrate_at`, semivida 12 h; el
+  fixture dura ≈ 50 h). La p calibrada (0,377) sobrestima el acierto real
+  (0,20). Reabrir con UCB ahí sólo añade pérdidas: no relajar el veto EV
+  por ese diagnóstico. El riesgo de selección del calibrador es real, pero
+  hay que medirlo con un fixture de cambio de régimen (v2 del T-2).
+- **Siguiente**: T-2 v2 (predictor con ventaja, asientos divididos y tramo
+  de cambio de régimen tras racha perdedora); QS-R4b; D1/D4 con la Línea C.
 
 ## 2026-10-10 — AGY: OLA Ω78 COMPLETADA — RESOLUCIÓN DE RAÍZ REV-13 (NEUTRALIDAD NAN), REV-1 (`REJ_SPEC`), REV-2 (`REJ_FEE_IMPACT`), FEYNMAN PROPAGATOR (REV-6/7/8) Y PLAN MAESTRO CUÁNTICO (FICHA #716)
 
