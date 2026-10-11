@@ -143,6 +143,21 @@ que cada `ruta:línea` del plan exista en una revisión dada (alias
   C-F4 y se lleva al dueño antes de tocar el freno vivo.
 - Workflows en la nube: con 4 CPU el tope es de 2 agentes a la vez. Un
   escéptico por hallazgo no cabe; mejor un escéptico por lente y dimensión.
+- Puerta de rendimiento (pedido del dueño, 2026-10-11 05:49): todo cambio
+  del camino caliente (`process_event` y lo que llama) informa
+  asignaciones y ns por evento frente a la base (plan §7, paso 5). El
+  medidor es lo primero del ciclo 12; `nano_benchmark` no sirve (mide
+  `process_tick_dual`, supone 3,5 GHz y no cuenta asignaciones).
+- CL-58: `plan_linea_c.py claves` lista las claves del registro que el
+  código de producción lee y nadie escribe (cada una, un literal escondido).
+  Sobre c4e8e285: 25 candidatas (`docs/audit/CLAVES_SIN_ESCRITOR_2026-10-11.tsv`).
+- AGY empujó #718, #719 y #720 directo a `main`. #718 metió Navier-Stokes y
+  Feynman en el orquestador vivo (19 estrategias), y Feynman reinyectaba el
+  dominante espectral con τ < 30 s, contra #652/H2. CL-59 lo arregla, con
+  un test de las estrategias vivas (verde antes de #718, rojo después). T-1
+  de 766fb1a4: 16/144, misma lista inerte. #720 (NaN crudo en el registro)
+  no rompe ninguna decisión viva encontrada, pero añade una lectura de reloj
+  en cada escritura (unas 135–280 por evento, sin medir).
 
 Ciclo 9 (kill-switch, llenados y estado por entorno):
 - CL-43 (FMT-232): con el latch armado, `process_event` y

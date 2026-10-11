@@ -1251,6 +1251,10 @@ Las fases ordenan la revisión. No hay operación autorizada, así que ninguna u
     - `rust-toolchain.toml` = `nightly-2026-06-30`, el mismo que la CI, con un test de fuente que compara las tres cadenas (G0, LC-F1-03). Hecho: CL-56.
     - El pico y el umbral únicos del freno inmune (LC-F4-10) pasan al ciclo 13. §9 mostró que ninguna de las dos semánticas actuales es una prueba de nivel α. Con riesgo medido, los dos frenos leen el gen de producción (0,5) como confianza de la prueba de rachas, es decir α = 0,5, y pueden saltar por azar; en régimen micro el veto la sustituye por d* con c = ½, medido desde el pico móvil (LC-F0-08, LC-F0-09, filas 11 y 35). Igualar una a la otra ahora fijaría una de las dos sin derivar. En C-F4 se deriva una sola prueba con el tamaño real y se lleva al dueño como decisión antes de tocar el freno vivo. La persistencia del pico (LC-F0-10) va con ella.
   - Inventario test→workflow de C-F10: hecho (CL-57, `docs/audit/INVENTARIO_TESTS_CI_2026-10-11.tsv`).
+  - Hecho fuera de lo previsto:
+    - CL-58: `plan_linea_c.py claves`, claves del registro leídas sin escritor (`docs/audit/CLAVES_SIN_ESCRITOR_2026-10-11.tsv`, 25 candidatas sobre c4e8e285). Las verifica C-F1 y las de estrategias, C-F3.
+    - CL-59: #718 (AGY, directo a main) metió Feynman en el orquestador vivo y reinyectaba el dominante espectral con τ inoperable, contra #652/H2. Se adelanta porque restaura un contrato ya decidido. T-1 de 766fb1a4: 16/144, la misma lista inerte.
+    - Puerta de rendimiento en §7, paso 5, por el pedido del dueño del 2026-10-11 05:49.
 - **Ciclo 12.**
   - Primero el medidor del camino caliente (§7, paso 5): un binario de benchmark que pasa una cinta sintética fija por `process_event`, cuenta asignaciones por evento con un asignador propio y da mediana y p99 de ns por evento. Se adelanta de C-F8 porque sin él la puerta de rendimiento no se puede aplicar. Es sólo medición y no cambia la conducta.
   - C-F2 (sólo lectura y pruebas sintéticas; el T-1 no debe moverse) y C-F3. Los hallazgos de zona ajena salen como pedidos con test que falla.
