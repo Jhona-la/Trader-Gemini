@@ -1,0 +1,70 @@
+{
+  "from_commit": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
+  "to_commit": "a44c22e6e55f051ccdace7e95f06a12651f4d665",
+  "added": [
+    "crates/quantum-arena/tests/epigenetic_decay_contract.rs",
+    "crates/quantum-arena/tests/support/spectral_evidence.rs",
+    "docs/AUDITORIA_EVIDENCIA_ESPECTRAL_SI_2026-10-11.md",
+    "docs/artifacts/auditoria_evidencia_espectral_si_2026-10-11.json"
+  ],
+  "removed": [],
+  "changed": [
+    {
+      "path": ".agents/MEMORIA.md",
+      "old_blob": "10422ad8b57698841e992cd33989de31e9499079",
+      "new_blob": "3fa0e541ceb2663c2d31f3bb197b3c7d02e822a1",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": ".github/workflows/unit-suites.yml",
+      "old_blob": "0eb03d8279c1ea469c5b6fa624a5b7959a6208a7",
+      "new_blob": "384c95da7ab4f549cacf075d9e9578802a1ac71e",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "COORDINACION_CODEX_2026-09-28.md",
+      "old_blob": "0dad759f151abc000d4520690554f1f36d786b46",
+      "new_blob": "df3119af41122b85b985cfbc3458d0680e7db2d5",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/quantum-arena/src/spectral_tape.rs",
+      "old_blob": "3d2415f6ea5767d897d2c55279a30a88a057c52b",
+      "new_blob": "b37dba7f78f2768d193a6a61f07cf815512918d8",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/quantum-arena/src/state.rs",
+      "old_blob": "c1bc6f8a1cbbd19430aa3bc15dac0524c06b6b77",
+      "new_blob": "ad981961a150a4bddc89512a747f84410fdfb569",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_SINCRONIZACION.md",
+      "old_blob": "1ceb53f4feaff362386f3aca006daa64a57ecb96",
+      "new_blob": "91a3d2ba52e47bfee0f2606dce27ab0bd91d5307",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "src/bin/spectral_bench.rs",
+      "old_blob": "f2cedfcaf8683aa501c5e75ed41826c13079acfc",
+      "new_blob": "9a3926686edd562eb1eeb0bd344c5054a8c9f570",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    }
+  ],
+  "unchanged_count": 1576
+}

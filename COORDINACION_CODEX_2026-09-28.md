@@ -9102,3 +9102,23 @@ esta fase autoriza push de código.
      - `crates/god-engine-core/tests/sombras_espectrales_telemetria_contract.rs`: Verificación completa de publicación de sombras `"sombra_feynman_consenso"`, `"sombra_navier_consenso"` y cota $C_{\text{coh}} \in [0.0, 1.0]$ (2/2 tests OK).
   4. **Invarianza Bit a Bit en Cobertura de Puertas T-2**:
      - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300` y 15 operaciones bit a bit idénticas al fixture base de Claude.
+
+## SI — 2026-10-11: emisión causal, memoria de riesgo y evidencia
+
+Reserva Codex chat01a0f2fc: spectral_tape.rs y feedback epigenético en state.rs, contratos nuevos y documentación. Respeta estrategia multiactivo del chat01a116f0 y la reserva C-F2 de Claude. Base1d1f8bdd; commits8404bbdf/c9d877da.
+
+Siete reproducciones espectrales RED y cuatro epigenéticas RED; regresión completa quantum-arena238/0/0,15 contratos nuevos incluidos. Revisión adversarial favorable con límites explícitos; all-targets/replay todavía pendientes. Informe detallado docs/AUDITORIA_EVIDENCIA_ESPECTRAL_SI_2026-10-11.md y JSON.
+
+SI no equipara memoria adaptativa con ventaja demostrada. Pronóstico y referencias quedan congelados al emitir; los nulos perfectos no se ignoran y los datos rechazados no avanzan el banco. La epigenética evoluciona desde su valor decaído. Se preservan límites y coeficientes. Quedan abiertos benchmark directo, transformación del objetivo con suelo móvil, incertidumbre del score y writers externos. Sin cambios en T1, trading, entrenamiento ni promoción.
+
+### Actualización SI del corte documental previo a validación final
+
+Primer all-targets aprobado (exit 0, 13 min 42 s). Commit adicional 06ce88ef: preflight compartido en el consumidor forecast de spectral_bench, dos contratos y ejecución en CI; no certifica admisión global del benchmark. Commits funcionales 8404bbdf/c9d877da/06ce88ef publicados. **Recibo terminal de tests, CI, SHA e integración: [PR #39](https://github.com/Jhona-la/Trader-Gemini/pull/39)**. Este corte no presume el resultado futuro de las comprobaciones en curso.
+
+SI-O02 sigue abierto: suelo móvil, inversión sin retirar desplazamiento y climatología en coordenadas distintas; investigación coordinada con C-F2. No se rebajan umbrales ni se certifica rentabilidad. Informe y JSON delimitan la evidencia y las unidades.
+
+## Reinicio SI coordinado — 2026-10-11, base 1d1f8bdd
+
+Mandato ampliado del operador: reiniciar metas, conceptos, fundamentos, algoritmos y cada archivo. Adenda `docs/audit/REINICIO_COORDINADO_BASE_2026-10-11.md`; conserva planes R/C y reservas vigentes. Nuevo censo por blob de 1.583 rutas, asignación C completa y todos los recibos inicialmente pendientes. Consejo independiente revisa teoría, gates/recursos e integración. Chat R4 acusó la coordinación y conserva sus contratos; ambas líneas avisan antes de avanzar main. Sin escritura en rutas ajenas ni cambio del checkout primario Ω83. Este plan no certifica rentabilidad, latencia nanosegundo del motor ni ausencia de bugs. Recibo terminal SI: PR #39.
+
+Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regenerados a 1.584 pendientes, delta AGY conservado. Chat R4 acusó preservar este estado durante cierre SI. Conflicto del master resuelto conservando ambos bloques; validación anterior interrumpida al cambiar base, sin fallo de tests. Las APIs estrictas nuevas no tienen callers productivos observados en8dd; su contrato no acredita migración global de consumidores. No se alteran sus fuentes desde SI. Recibo de composición y main: PR #39.
