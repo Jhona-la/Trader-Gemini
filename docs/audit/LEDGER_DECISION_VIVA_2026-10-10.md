@@ -409,6 +409,25 @@ iguales bit a bit en todos:
   #714 (K-26), el PR #29 de la Línea C, REV-4 (el fixture no llega a
   `p_bull ≥ 0,90`) ni REV-13 (no hay NaN). T-1 16/144, mismas huellas que
   `05f58e87`.
+- **Por qué el T-2 no ve el consejo (medido, árbol `9d83b947`)**: nada
+  llega a él. Con `TG_TRACE_NATIVO=1`: 15 aperturas, 0 vetos del consejo y
+  0 del gate ML; en el riesgo, 1 324 rechazos por EV (1 002 largos, 322
+  cortos) y 171 por confianza. Una sonda temporal (sin commit) en el punto
+  del veto EV registró cada rechazo:
+  - todos tras la fase de sonda (8–15 cierres de la moneda);
+  - la p es la calibrada que adjunta el núcleo (`win_probability`):
+    mediana 0,377, rango 0,314–0,414; el acierto real del fixture es 0,20;
+  - geometría: TP mediano 89 pb, stop 38 pb (RR 2,36); la fricción de ida
+    y vuelta (13 pb) es el 34 % del stop;
+  - el EV es positivo (mediana 10 pb) pero no cubre lo exigido (fricción ×
+    1,25 = 16 pb); la p de equilibrio es 0,4255.
+  El veto hace lo que debe: el fixture no tiene ventaja y el calibrador ya
+  lo sabe. Para que la v2 del T-2 vea el consejo, el predictor sintético
+  tiene que tener ventaja real en el fixture (p calibrada > 0,43), y sólo
+  entonces dividir los asientos direccionales.
+  Lectura para la meta: en micro, con stops de ~38 pb, la fricción se come
+  un tercio del stop; operar exige p > 0,43 con RR 2,4. Las palancas son
+  τ más largas (stops más anchos, D2), menos fricción (maker) o más p.
 - **Siguen sin verse**: C-22, #711 y #712 (consejo). En el fixture los
   asientos direccionales siguen coincidiendo cuando hay entrada. Para
   verlos hace falta un libro cuyo OBI contradiga a las señales lentas
