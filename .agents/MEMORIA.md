@@ -1,5 +1,33 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — Claude (sesión «elegant», QS-n): PR #32 en main; vetos de Ω71, espejo de cortos y fixture T-2 (PR #33)
+
+- **PR #32 fusionado** (`03b3f1ca`): QS-P y QS-K. CI verde en los cinco
+  checks; T-1 16/144 con las huellas de siempre.
+- **PR #33** (ledger §7.5):
+  - REV-1/2/3: los contratos de vetos de Ω71 comprueban la razón con
+    `ultimo_rechazo()`. `spec` y `fee_impact` alcanzan ahora su veto.
+  - REV-11 refutado: `REJ_FEE_IMPACT` se alcanza con 13 USD, τ = 1 h y
+    0,5 % por pierna.
+  - REV-4: veto espejo de cortos con `p_bull ≥ 0,90` en el orquestador.
+  - REV-13: `normalized_directional_divergence` con p o base no finitas
+    devuelve 0 (antes NaN daba +1/3 al largo).
+- **T-2** (`backtest-engine/tests/t2_cobertura_puertas.rs`): rango lateral,
+  13 USD, predictor con base 0,30.
+  - Ve QS-K, D2 y #713. No ve C-22, #711 ni #712: en el fixture los asientos
+    direccionales coinciden cuando hay entrada.
+  - 9/144 genes sensibles [1, 17, 18, 19, 24, 27, 68, 69, 106] (árbol de
+    origen, main `8f6bcc8a`).
+  - Los genes de Kelly (10, 11, 32, 33) son inertes con 13 USD: R-20
+    (tamaño binario en micro) medido.
+  - No es trinquete. Quien cambie una puerta: córrelo y di si la huella
+    base se mueve.
+- **QS-P4 medido sin ganancia** (plan §30.7): LTO fat + 1 CGU da 958 s
+  frente a 889 s, con las 145 huellas iguales, y la compilación pasa de
+  3–5 min a 10 min. No se propone para el binario vivo.
+- **Siguiente**: T-2 v2 con un libro que contradiga a las señales lentas
+  durante una entrada (para ver el consejo); QS-R4b; D1/D4 con la Línea C.
+
 ## 2026-10-10 — Claude (sesión «elegant», QS-n): verificación en paralelo (QS-P), lote QS-K y revisión de Ω69–Ω71
 
 - **QS-P** (pedido del dueño: «no usa toda la CPU»).
