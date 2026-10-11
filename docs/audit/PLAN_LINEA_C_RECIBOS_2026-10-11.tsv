@@ -9,7 +9,7 @@ ruta	fase	tipo	regla	recibo
 .agents/rules/parte3arqui.md	C-F0	explícita	.agents/	pendiente
 .agents/workflows/graphify.md	C-F0	explícita	.agents/	pendiente
 .agignore	C-F11	explícita	.agignore	pendiente
-.cargo/config.toml	C-F1	explícita	.cargo/config.toml	pendiente
+.cargo/config.toml	C-F1	explícita	.cargo/config.toml	C-F1 ae6d51a2 blob 4f796367c3fe: Leído entero (2 líneas): rustflags con target-cpu=native y opt-level=3 para todos los perfiles. LC-F1-29.
 .dockerignore	C-F8	explícita	.dockerignore	pendiente
 .freebuff/project-id	C-F11	explícita	.freebuff/project-id	pendiente
 .gitattributes	C-F11	explícita	.gitattributes	pendiente
@@ -23,8 +23,8 @@ ATLAS_ANALITICO.md	C-F11	explícita	ATLAS_ANALITICO.md	pendiente
 CERTIFICADO_SISTEMA_v1.md	C-F11	explícita	CERTIFICADO_SISTEMA_v1.md	pendiente
 CLAUDE.md	C-F0	explícita	CLAUDE.md	pendiente
 COORDINACION_CODEX_2026-09-28.md	C-F0	explícita	COORDINACION_CODEX_2026-09-28.md	pendiente
-Cargo.lock	C-F1	explícita	Cargo.lock	pendiente
-Cargo.toml	C-F1	explícita	Cargo.toml	pendiente
+Cargo.lock	C-F1	explícita	Cargo.lock	C-F1 ae6d51a2 blob bb6539b36877: Analizado entero con un script: formato 4, 577 paquetes, ninguna fuente git y 61 nombres con varias versiones; reqwest 0.11.27 arrastra native-tls. LC-F1-73.
+Cargo.toml	C-F1	explícita	Cargo.toml	C-F1 ae6d51a2 blob 6692b130ba40: Leído entero: workspace con resolver 2 y 23 miembros; release con panic abort y sin overflow-checks ni debug-assertions declarados; bin continuous_evolution_backtest dentro de backtest-engine. LC-F1-71, LC-F1-73.
 Dockerfile	C-F8	explícita	Dockerfile	pendiente
 FORENSIC_INTELLIGENCE_AUDIT.md	C-F11	explícita	FORENSIC_INTELLIGENCE_AUDIT.md	pendiente
 INFORME_ASEGURAMIENTO_CUARTO.md	C-F11	explícita	INFORME_*.md	pendiente
@@ -81,7 +81,7 @@ config_dir/genotypes/global_evolution_report.parquet	C-F7	explícita	config_dir/
 config_dir/genotypes/quantum_champion.json	C-F7	explícita	config_dir/genotypes/	pendiente
 config_dir/genotypes/quantum_champion.json.bak	C-F7	explícita	config_dir/genotypes/	pendiente
 config_dir/models_manifest.json	C-F7	explícita	config_dir/models_manifest.json	pendiente
-crates/audit-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/audit-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 2d8ef18c14ed: Leído entero: edición 2021, tokio, crossbeam, regex, walkdir, once_cell y dependencias de ruta internas. Sin hallazgos.
 crates/audit-engine/src/auditor_interno.rs	C-F8	explícita	crates/audit-engine/src/auditor_interno.rs	pendiente
 crates/audit-engine/src/behavioral_auditor.rs	C-F8	explícita	crates/audit-engine/src/behavioral_auditor.rs	pendiente
 crates/audit-engine/src/cybernetic_resilience.rs	C-F8	explícita	crates/audit-engine/src/cybernetic_resilience.rs	pendiente
@@ -100,7 +100,7 @@ crates/audit-engine/tests/drift_validation_contract.rs	C-F10	explícita	crates/*
 crates/audit-engine/tests/qs_r4_libro_sombra_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/audit-engine/tests/resilience_open_diagnostics.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/audit-engine/tests/trajectory_duration_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/backtest-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/backtest-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 258a9aa088c2: Leído entero: edición 2024 sin autobins = false, polars sin features por defecto y reqwest 0.11 con rustls. LC-F1-71, LC-F1-73.
 crates/backtest-engine/src/bin/continuous_evolution_backtest.rs	C-F9	explícita	crates/backtest-engine/src/bin/continuous_evolution_backtest.rs	pendiente
 crates/backtest-engine/src/booktick_causality_contract.rs	C-F10	explícita	crates/backtest-engine/src/booktick_causality_contract.rs	pendiente
 crates/backtest-engine/src/booktick_replay.rs	C-F7	explícita	crates/backtest-engine/src/booktick_replay.rs	pendiente
@@ -119,12 +119,12 @@ crates/backtest-engine/tests/spectral_risk_contract.rs	C-F10	explícita	crates/*
 crates/backtest-engine/tests/support/t1_measurement.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/backtest-engine/tests/t1_cobertura_genetica.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/backtest-engine/tests/t1_measurement_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/dark-alpha-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/dark-alpha-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 5a34ce6e9002: Leído entero: edición 2021, serde, serde_json, bincode y telemetry-server. Sin hallazgos.
 crates/dark-alpha-engine/src/lib.rs	C-F3	explícita	crates/dark-alpha-engine/src/lib.rs	pendiente
 crates/dark-alpha-engine/src/neuro_plasticity.rs	C-F7	explícita	crates/dark-alpha-engine/src/neuro_plasticity.rs	pendiente
 crates/dark-alpha-engine/src/online_ppo.rs	C-F7	explícita	crates/dark-alpha-engine/src/online_ppo.rs	pendiente
 crates/dark-alpha-engine/tests/neural_evidence_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/data-ingest/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/data-ingest/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 88141ef6ec35: Leído entero: edición 2021, reqwest 0.13.4 con features por defecto, tokio y polars 0.43.1. Sin hallazgos.
 crates/data-ingest/src/cola_ws.rs	C-F6	explícita	crates/data-ingest/src/	pendiente
 crates/data-ingest/src/dynamic_selector.rs	C-F6	explícita	crates/data-ingest/src/	pendiente
 crates/data-ingest/src/lib.rs	C-F6	explícita	crates/data-ingest/src/	pendiente
@@ -133,7 +133,7 @@ crates/data-ingest/src/tensor_parser.rs	C-F6	explícita	crates/data-ingest/src/	
 crates/data-ingest/src/world_bank.rs	C-F6	explícita	crates/data-ingest/src/	pendiente
 crates/data-ingest/tests/dynamic_selector_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/data-ingest/tests/liquidation_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/data-pipeline/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/data-pipeline/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob dc870782cfe4: Leído entero: edición 2021, tokio-tungstenite 0.21 con native-tls, reqwest 0.13.4, rand 0.8, rusqlite y hickory-resolver; sus lectores de USE_TESTNET entran en el hallazgo del venue. LC-F1-40.
 crates/data-pipeline/src/api_client.rs	C-F6	explícita	crates/data-pipeline/src/api_client.rs	pendiente
 crates/data-pipeline/src/asset_selector.rs	C-F6	explícita	crates/data-pipeline/src/asset_selector.rs	pendiente
 crates/data-pipeline/src/bypass.rs	C-F9	explícita	crates/data-pipeline/src/bypass.rs	pendiente
@@ -142,7 +142,7 @@ crates/data-pipeline/src/dynamic_ranker.rs	C-F6	explícita	crates/data-pipeline/
 crates/data-pipeline/src/feature_vm.rs	C-F6	explícita	crates/data-pipeline/src/feature_vm.rs	pendiente
 crates/data-pipeline/src/historical.rs	C-F6	explícita	crates/data-pipeline/src/historical.rs	pendiente
 crates/data-pipeline/src/lakehouse_mmap.rs	C-F8	explícita	crates/data-pipeline/src/lakehouse_mmap.rs	pendiente
-crates/data-pipeline/src/lib.rs	C-F1	explícita	crates/data-pipeline/src/lib.rs	pendiente
+crates/data-pipeline/src/lib.rs	C-F1	explícita	crates/data-pipeline/src/lib.rs	C-F1 ae6d51a2 blob a4bac79cc134: Leído entero (32 líneas): sólo módulos y reexports; quedan sin revisar una a una las 39 apariciones de unwrap_or(0.0) o unwrap_or_default de sus módulos. Sin hallazgos.
 crates/data-pipeline/src/macro_data.rs	C-F6	explícita	crates/data-pipeline/src/macro_data.rs	pendiente
 crates/data-pipeline/src/macro_feed.rs	C-F6	explícita	crates/data-pipeline/src/macro_feed.rs	pendiente
 crates/data-pipeline/src/market_context.rs	C-F6	explícita	crates/data-pipeline/src/market_context.rs	pendiente
@@ -157,13 +157,13 @@ crates/data-pipeline/src/state_db.rs	C-F6	explícita	crates/data-pipeline/src/st
 crates/data-pipeline/src/storage.rs	C-F8	explícita	crates/data-pipeline/src/storage.rs	pendiente
 crates/data-pipeline/src/telemetry_bus.rs	C-F8	explícita	crates/data-pipeline/src/telemetry_bus.rs	pendiente
 crates/data-pipeline/src/teleonomia.rs	C-F8	explícita	crates/data-pipeline/src/teleonomia.rs	pendiente
-crates/data-pipeline/src/validation.rs	C-F6	explícita	crates/data-pipeline/src/validation.rs	pendiente
+crates/data-pipeline/src/validation.rs	C-F6	explícita	crates/data-pipeline/src/validation.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob 5a20c25be839: Lectura de apoyo (fase dueña del archivo: C-F6). Líneas 1-110: seis REJ_* de la aduana de datos, fuera del alcance declarado del registro de vetos. Sin hallazgos.
 crates/data-pipeline/src/ws_client.rs	C-F6	explícita	crates/data-pipeline/src/ws_client.rs	pendiente
 crates/data-pipeline/tests/parser_input_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/data-pipeline/tests/spot_feed_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/data-pipeline/tests/spread_validation_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/data-pipeline/tests/xcv_dims_cross_exchange_muertas_por_contrato.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/evolution-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/evolution-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob c8070ba6a25a: Leído entero: edición 2024, windows 0.62.2 sin condición de target (ya conocido), rand 0.10.1, polars y smartcore. Sin hallazgos.
 crates/evolution-engine/src/anti_bias_governor.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente
 crates/evolution-engine/src/ast_mutator.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente
 crates/evolution-engine/src/cma_es.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente
@@ -174,8 +174,8 @@ crates/evolution-engine/src/lib.rs	C-F7	explícita	crates/evolution-engine/src/	
 crates/evolution-engine/src/meta.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente
 crates/evolution-engine/src/moe_neat_arena.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente
 crates/evolution-engine/src/neat.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente
-crates/evolution-engine/src/online_daemon.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente
-crates/evolution-engine/src/online_random_forest.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente
+crates/evolution-engine/src/online_daemon.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente; lectura de apoyo C-F1 ae6d51a2 blob d2d5dcee6c4b: Lectura de apoyo (fase dueña del archivo: C-F7; latch_degradation es de Codex). Por tramos: umbrales y predicción por moneda, features de cierre leídas del global, R-múltiplos y publicación de forest6_prob. LC-F1-03, LC-F1-08, LC-F1-12, LC-F1-18, LC-F1-21, LC-F1-40, LC-F1-41, LC-F1-50, LC-F1-67.
+crates/evolution-engine/src/online_random_forest.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente; lectura de apoyo C-F1 ae6d51a2 blob b57eebbc9216: Lectura de apoyo (fase dueña del archivo: C-F7). Líneas 1-290: etiqueta was_profitable, rejilla de umbrales con 1 − th y probabilidad publicada. LC-F1-18, LC-F1-67.
 crates/evolution-engine/src/polars_evolver.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente
 crates/evolution-engine/src/random_forest.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente
 crates/evolution-engine/src/return_evidence.rs	C-F7	explícita	crates/evolution-engine/src/	pendiente
@@ -190,8 +190,8 @@ crates/evolution-engine/tests/return_evidence_contract.rs	C-F10	explícita	crate
 crates/evolution-engine/tests/sa_selection_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/evolution-engine/tests/score_retention_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/evolution-engine/tests/shadow_forest_threshold_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/execution-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
-crates/execution-engine/src/binance_api.rs	C-F1	explícita	crates/execution-engine/src/binance_api.rs	pendiente
+crates/execution-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 2ba6c914b143: Leído entero: edición 2021, reqwest 0.11 sin features por defecto con rustls-tls, y tokio-tungstenite 0.29 con native-tls. LC-F1-73.
+crates/execution-engine/src/binance_api.rs	C-F1	explícita	crates/execution-engine/src/binance_api.rs	C-F1 ae6d51a2 blob e7ce821106b8: Leído entero (93 líneas): constantes de orden, validate_leverage_confirmation y firma; la comparación del símbolo por bytes falla cerrado. Sin hallazgos.
 crates/execution-engine/src/client.rs	C-F5	explícita	crates/execution-engine/src/client.rs	pendiente
 crates/execution-engine/src/dynamic_symbols.rs	C-F6	explícita	crates/execution-engine/src/dynamic_symbols.rs	pendiente
 crates/execution-engine/src/entry_dispatch.rs	C-F5	explícita	crates/execution-engine/src/entry_dispatch.rs	pendiente
@@ -200,10 +200,10 @@ crates/execution-engine/src/executor.rs	C-F5	explícita	crates/execution-engine/
 crates/execution-engine/src/hot_swap.rs	C-F5	explícita	crates/execution-engine/src/hot_swap.rs	pendiente
 crates/execution-engine/src/income_evidence.rs	C-F5	explícita	crates/execution-engine/src/income_evidence.rs	pendiente
 crates/execution-engine/src/ioc_evidence.rs	C-F5	explícita	crates/execution-engine/src/ioc_evidence.rs	pendiente
-crates/execution-engine/src/lib.rs	C-F1	explícita	crates/execution-engine/src/lib.rs	pendiente
+crates/execution-engine/src/lib.rs	C-F1	explícita	crates/execution-engine/src/lib.rs	C-F1 ae6d51a2 blob afa5511f6576: Leído entero (55 líneas): módulos, reexports y ExecutionPayload, con el símbolo como String sin tipo canónico. Sin hallazgos.
 crates/execution-engine/src/ntp.rs	C-F5	explícita	crates/execution-engine/src/ntp.rs	pendiente
 crates/execution-engine/src/order_registry.rs	C-F5	explícita	crates/execution-engine/src/order_registry.rs	pendiente
-crates/execution-engine/src/order_types.rs	C-F1	explícita	crates/execution-engine/src/order_types.rs	pendiente
+crates/execution-engine/src/order_types.rs	C-F1	explícita	crates/execution-engine/src/order_types.rs	C-F1 ae6d51a2 blob 2c643b0cfe3b: Leído entero (283 líneas): Fill, OrderAck con todos los campos por defecto, parse_order_body y total_commission. LC-F1-33, LC-F1-60.
 crates/execution-engine/src/quantum_multiplexer.rs	C-F5	explícita	crates/execution-engine/src/quantum_multiplexer.rs	pendiente
 crates/execution-engine/src/quantum_socket.rs	C-F5	explícita	crates/execution-engine/src/quantum_socket.rs	pendiente
 crates/execution-engine/src/reconciliation.rs	C-F5	explícita	crates/execution-engine/src/reconciliation.rs	pendiente
@@ -236,7 +236,7 @@ crates/execution-engine/tests/reconciliation_evidence_contract.rs	C-F10	explíci
 crates/execution-engine/tests/registry_open_diagnostics.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/execution-engine/tests/shadow_open_diagnostics.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/execution-engine/tests/testnet_integration.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/feature-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/feature-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 0b28d9a833ff: Leído entero: edición 2021, sin dependencias. Sin hallazgos.
 crates/feature-engine/src/copulas.rs	C-F2	explícita	crates/feature-engine/src/copulas.rs	pendiente
 crates/feature-engine/src/correlation.rs	C-F2	explícita	crates/feature-engine/src/correlation.rs	pendiente
 crates/feature-engine/src/ewma.rs	C-F2	explícita	crates/feature-engine/src/ewma.rs	pendiente
@@ -246,7 +246,7 @@ crates/feature-engine/src/hodge_flow.rs	C-F2	explícita	crates/feature-engine/sr
 crates/feature-engine/src/hurst_dfa.rs	C-F2	explícita	crates/feature-engine/src/hurst_dfa.rs	pendiente
 crates/feature-engine/src/kalman.rs	C-F2	explícita	crates/feature-engine/src/kalman.rs	pendiente
 crates/feature-engine/src/lead_lag.rs	C-F2	explícita	crates/feature-engine/src/lead_lag.rs	pendiente
-crates/feature-engine/src/lib.rs	C-F1	explícita	crates/feature-engine/src/lib.rs	pendiente
+crates/feature-engine/src/lib.rs	C-F1	explícita	crates/feature-engine/src/lib.rs	C-F1 ae6d51a2 blob 141ff02ad244: Leído entero (44 líneas): sólo módulos y reexports de primitivas. Sin hallazgos.
 crates/feature-engine/src/microstructure.rs	C-F2	explícita	crates/feature-engine/src/microstructure.rs	pendiente
 crates/feature-engine/src/multifractal.rs	C-F2	explícita	crates/feature-engine/src/multifractal.rs	pendiente
 crates/feature-engine/src/navier_stokes.rs	C-F2	explícita	crates/feature-engine/src/navier_stokes.rs	pendiente
@@ -275,25 +275,25 @@ crates/feature-engine/tests/path_signature_contract.rs	C-F10	explícita	crates/*
 crates/feature-engine/tests/transfer_entropy_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/feature-engine/tests/transfer_entropy_real.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/feature-engine/tests/welford_mode_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/flight-recorder/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/flight-recorder/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 0a408993b69a: Leído entero: edición 2024, sin dependencias. Sin hallazgos.
 crates/flight-recorder/src/lib.rs	C-F8	explícita	crates/flight-recorder/src/lib.rs	pendiente
-crates/god-engine-core/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/god-engine-core/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob c5d022ec546f: Leído entero: edición 2024; reqwest 0.11 con features por defecto activa default-tls para todo el grafo; rand 0.10.1. LC-F1-73.
 crates/god-engine-core/src/bin/nano_benchmark.rs	C-F9	explícita	crates/god-engine-core/src/bin/nano_benchmark.rs	pendiente
 crates/god-engine-core/src/bin/test_ml.rs	C-F9	explícita	crates/god-engine-core/src/bin/test_ml.rs	pendiente
 crates/god-engine-core/src/bootloader.rs	C-F6	explícita	crates/god-engine-core/src/bootloader.rs	pendiente
-crates/god-engine-core/src/calibration.rs	C-F2	explícita	crates/god-engine-core/src/calibration.rs	pendiente
+crates/god-engine-core/src/calibration.rs	C-F2	explícita	crates/god-engine-core/src/calibration.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob 826e4615947d: Lectura de apoyo (fase dueña del archivo: C-F2). Líneas 1-420: Platt, umbrales del bosque, divergencia normalizada y p_win_directional. LC-F1-19, LC-F1-20, LC-F1-22, LC-F1-37, LC-F1-39, LC-F1-43, LC-F1-66.
 crates/god-engine-core/src/conformal.rs	C-F2	explícita	crates/god-engine-core/src/conformal.rs	pendiente
-crates/god-engine-core/src/contagion_publisher.rs	C-F3	explícita	crates/god-engine-core/src/contagion_publisher.rs	pendiente
+crates/god-engine-core/src/contagion_publisher.rs	C-F3	explícita	crates/god-engine-core/src/contagion_publisher.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob a93e14c18c94: Lectura de apoyo (zona de Qoder/GLM). Leído entero (89 líneas): salidas tempranas que no publican y curl global sólo si es Some. LC-F1-35.
 crates/god-engine-core/src/darwin.rs	C-F7	explícita	crates/god-engine-core/src/darwin.rs	pendiente
 crates/god-engine-core/src/diffusion.rs	C-F2	explícita	crates/god-engine-core/src/diffusion.rs	pendiente
 crates/god-engine-core/src/direction_diag.rs	C-F8	explícita	crates/god-engine-core/src/direction_diag.rs	pendiente
 crates/god-engine-core/src/ensemble.rs	C-F7	explícita	crates/god-engine-core/src/ensemble.rs	pendiente
 crates/god-engine-core/src/entes_consejo.rs	C-F3	explícita	crates/god-engine-core/src/entes_consejo.rs	pendiente
 crates/god-engine-core/src/entry_reservation.rs	C-F4	explícita	crates/god-engine-core/src/entry_reservation.rs	pendiente
-crates/god-engine-core/src/evidence_publication.rs	C-F3	explícita	crates/god-engine-core/src/evidence_publication.rs	pendiente
+crates/god-engine-core/src/evidence_publication.rs	C-F3	explícita	crates/god-engine-core/src/evidence_publication.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob b0d34fe01fe4: Lectura de apoyo (fase dueña del archivo: C-F3). Leído entero (77 líneas): máscaras numéricas (0 para R y −1 para IC) porque el registro normaliza los no finitos a 0. LC-F1-34.
 crates/god-engine-core/src/fitness_contract.rs	C-F7	explícita	crates/god-engine-core/src/fitness_contract.rs	pendiente
 crates/god-engine-core/src/latency_accelerator.rs	C-F5	explícita	crates/god-engine-core/src/latency_accelerator.rs	pendiente
-crates/god-engine-core/src/lib.rs	C-F3	explícita	crates/god-engine-core/src/lib.rs	pendiente
+crates/god-engine-core/src/lib.rs	C-F3	explícita	crates/god-engine-core/src/lib.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob 139b125c6b4c: Lectura de apoyo (fase dueña del archivo: C-F3; las ramas 1 a 10 son de Línea E). Leído por regiones: set_reg, resoluciones de identidad, sombras y consenso espectral, cierre, puertas y ramas 11 a 15. LC-F1-03, LC-F1-04, LC-F1-05, LC-F1-06, LC-F1-07, LC-F1-08, LC-F1-11, LC-F1-12, LC-F1-14, LC-F1-15, LC-F1-16, LC-F1-18, LC-F1-19, LC-F1-20, LC-F1-21, LC-F1-22, LC-F1-24, LC-F1-31, LC-F1-32, LC-F1-34, LC-F1-35, LC-F1-36, LC-F1-37, LC-F1-38, LC-F1-43, LC-F1-44, LC-F1-45, LC-F1-46, LC-F1-50, LC-F1-53, LC-F1-56, LC-F1-57, LC-F1-58, LC-F1-62, LC-F1-65, LC-F1-68.
 crates/god-engine-core/src/liquidation_feed.rs	C-F6	explícita	crates/god-engine-core/src/liquidation_feed.rs	pendiente
 crates/god-engine-core/src/math_kernels.rs	C-F2	explícita	crates/god-engine-core/src/math_kernels.rs	pendiente
 crates/god-engine-core/src/ml_coverage.rs	C-F8	explícita	crates/god-engine-core/src/ml_coverage.rs	pendiente
@@ -358,10 +358,10 @@ crates/graph-architecture/Cargo.toml	C-F9	explícita	crates/graph-architecture/C
 crates/graph-architecture/index.html	C-F9	explícita	crates/graph-architecture/	pendiente
 crates/graph-architecture/src/lib.rs	C-F9	explícita	crates/graph-architecture/	pendiente
 crates/graph-architecture/src/main.rs	C-F9	explícita	crates/graph-architecture/	pendiente
-crates/metacortex-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/metacortex-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob a4f1cfbbbee5: Leído entero: edición 2021, syn 2, libloading, rkyv y tempfile; el compilador sandbox no está en la ruta viva. Sin hallazgos.
 crates/metacortex-engine/src/cazador_constantes.rs	C-F7	explícita	crates/metacortex-engine/src/cazador_constantes.rs	pendiente
 crates/metacortex-engine/src/compiler_sandbox.rs	C-F7	explícita	crates/metacortex-engine/src/compiler_sandbox.rs	pendiente
-crates/metacortex-engine/src/consejo_seniors.rs	C-F3	explícita	crates/metacortex-engine/src/consejo_seniors.rs	pendiente
+crates/metacortex-engine/src/consejo_seniors.rs	C-F3	explícita	crates/metacortex-engine/src/consejo_seniors.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob b880fc08547c: Lectura de apoyo (fase dueña del archivo: C-F3). Líneas 1-200, 360-1010 y 1210-1420: la asimetría está en ml_opinion y Teleonomía; la agregación es simétrica. LC-F1-48, LC-F1-66.
 crates/metacortex-engine/src/epigenoma_store.rs	C-F7	explícita	crates/metacortex-engine/src/epigenoma_store.rs	pendiente
 crates/metacortex-engine/src/evolutionary_templates.rs	C-F7	explícita	crates/metacortex-engine/src/evolutionary_templates.rs	pendiente
 crates/metacortex-engine/src/fases_autonomous.rs	C-F7	explícita	crates/metacortex-engine/src/fases_autonomous.rs	pendiente
@@ -381,10 +381,10 @@ crates/metacortex-engine/tests/qs_r1_c22_direccion_propia_diagnostics.rs	C-F10	e
 crates/metacortex-engine/tests/qs_r2_simetria_espejo_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/metacortex-engine/tests/quantum_organism_test.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/metacortex-engine/tests/reminiscence_and_adn_test.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/omniscient-registry/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
-crates/omniscient-registry/src/lib.rs	C-F1	explícita	crates/omniscient-registry/src/lib.rs	pendiente
+crates/omniscient-registry/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 5409ad663f2c: Leído entero: edición 2021, crossbeam, crossbeam-skiplist, rkyv y uuid v7. Sin hallazgos.
+crates/omniscient-registry/src/lib.rs	C-F1	explícita	crates/omniscient-registry/src/lib.rs	C-F1 ae6d51a2 blob 6cfd1a7b59d1: Leído entero (531 líneas): Parameter con sello fijo, no finitos convertidos en 0 y resolución símbolo, moneda y global. LC-F1-04, LC-F1-06, LC-F1-07, LC-F1-08, LC-F1-34, LC-F1-35, LC-F1-46.
 crates/omniscient-registry/src/tests.rs	C-F10	explícita	crates/omniscient-registry/src/tests.rs	pendiente
-crates/os-guardian/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/os-guardian/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob f2f312d5b6af: Leído entero: edición 2021, windows 0.58 y winapi sin condición de target (ya conocido), sysinfo y uuid. Sin hallazgos.
 crates/os-guardian/src/anomaly_detector.rs	C-F8	explícita	crates/os-guardian/src/	pendiente
 crates/os-guardian/src/crash_dump.rs	C-F8	explícita	crates/os-guardian/src/	pendiente
 crates/os-guardian/src/ebpf_core.rs	C-F8	explícita	crates/os-guardian/src/	pendiente
@@ -398,31 +398,31 @@ crates/os-guardian/src/zero_latency_telemetry.rs	C-F8	explícita	crates/os-guard
 crates/phase-runner/Cargo.toml	C-F9	explícita	crates/phase-runner/Cargo.toml	pendiente
 crates/phase-runner/src/lib.rs	C-F9	explícita	crates/phase-runner/	pendiente
 crates/phase-runner/src/tests.rs	C-F9	explícita	crates/phase-runner/	pendiente
-crates/quantum-arena/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/quantum-arena/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 68e0775e7fb4: Leído entero: edición 2021, rand 0.9 (el StdRng sembrado depende del lock) y reqwest 0.11 sin features por defecto con rustls. LC-F1-73.
 crates/quantum-arena/src/active_universe.rs	C-F6	explícita	crates/quantum-arena/src/active_universe.rs	pendiente
 crates/quantum-arena/src/adaptive_quantiles.rs	C-F2	explícita	crates/quantum-arena/src/adaptive_quantiles.rs	pendiente
 crates/quantum-arena/src/arena_alloc.rs	C-F9	explícita	crates/quantum-arena/src/arena_alloc.rs	pendiente
-crates/quantum-arena/src/atomic_float.rs	C-F1	explícita	crates/quantum-arena/src/atomic_float.rs	pendiente
-crates/quantum-arena/src/config.rs	C-F1	explícita	crates/quantum-arena/src/config.rs	pendiente
+crates/quantum-arena/src/atomic_float.rs	C-F1	explícita	crates/quantum-arena/src/atomic_float.rs	C-F1 ae6d51a2 blob f671b3b86edf: Leído entero (202 líneas): envoltorio IEEE-754 sin unidades; new() no canoniza −0,0 ni NaN, sin efecto en los usos vivos. Sin hallazgos.
+crates/quantum-arena/src/config.rs	C-F1	explícita	crates/quantum-arena/src/config.rs	C-F1 ae6d51a2 blob 938c3c65ff62: Leído entero (495 líneas): unos 140 campos AtomicF64 de QuantumConfig casi sin unidad declarada; live_maker_fee y live_taker_fee dicen «%» para una fracción. LC-F1-28.
 crates/quantum-arena/src/espectral_multiactivo.rs	C-F2	explícita	crates/quantum-arena/src/espectral_multiactivo.rs	pendiente
 crates/quantum-arena/src/evalues.rs	C-F2	explícita	crates/quantum-arena/src/evalues.rs	pendiente
-crates/quantum-arena/src/feed_health.rs	C-F1	explícita	crates/quantum-arena/src/feed_health.rs	pendiente
+crates/quantum-arena/src/feed_health.rs	C-F1	explícita	crates/quantum-arena/src/feed_health.rs	C-F1 ae6d51a2 blob 7d5fee61e021: Leído entero (30 líneas): un único AtomicBool global que nace en false, con stall, clear e is_stalled. LC-F1-62.
 crates/quantum-arena/src/genome.rs	C-F7	explícita	crates/quantum-arena/src/genome.rs	pendiente
 crates/quantum-arena/src/genome_store.rs	C-F7	explícita	crates/quantum-arena/src/genome_store.rs	pendiente
-crates/quantum-arena/src/horizon_policy.rs	C-F1	explícita	crates/quantum-arena/src/horizon_policy.rs	pendiente
-crates/quantum-arena/src/lib.rs	C-F1	explícita	crates/quantum-arena/src/lib.rs	pendiente
+crates/quantum-arena/src/horizon_policy.rs	C-F1	explícita	crates/quantum-arena/src/horizon_policy.rs	C-F1 ae6d51a2 blob 8686425b28ba: Leído entero (80 líneas): curvas de potencia continuas en τ; los nombres scalp y swing sólo dan los valores en las anclas de 30 s y 12 h, sin decisión por banda. Sin hallazgos.
+crates/quantum-arena/src/lib.rs	C-F1	explícita	crates/quantum-arena/src/lib.rs	C-F1 ae6d51a2 blob 3e41b83daf4d: Leído entero (34 líneas): sólo módulos y reexportaciones. Sin hallazgos.
 crates/quantum-arena/src/net_multiplexer.rs	C-F9	explícita	crates/quantum-arena/src/net_multiplexer.rs	pendiente
-crates/quantum-arena/src/paths.rs	C-F1	explícita	crates/quantum-arena/src/paths.rs	pendiente
+crates/quantum-arena/src/paths.rs	C-F1	explícita	crates/quantum-arena/src/paths.rs	C-F1 ae6d51a2 blob a69f8cab40ad: Leído entero (56 líneas): data_root honra TGM_DATA_DIR, pero env_data_path_for escribe data/{demo|prod} a mano e is_demo_env mira variables de venue. LC-F1-01, LC-F1-09, LC-F1-40, LC-F1-54.
 crates/quantum-arena/src/position.rs	C-F4	explícita	crates/quantum-arena/src/position.rs	pendiente
 crates/quantum-arena/src/protection_health.rs	C-F5	explícita	crates/quantum-arena/src/protection_health.rs	pendiente
 crates/quantum-arena/src/ring_buffer.rs	C-F9	explícita	crates/quantum-arena/src/ring_buffer.rs	pendiente
 crates/quantum-arena/src/spectral_regime.rs	C-F2	explícita	crates/quantum-arena/src/spectral_regime.rs	pendiente
 crates/quantum-arena/src/spectral_tape.rs	C-F2	explícita	crates/quantum-arena/src/spectral_tape.rs	pendiente
-crates/quantum-arena/src/state.rs	C-F1	explícita	crates/quantum-arena/src/state.rs	pendiente
+crates/quantum-arena/src/state.rs	C-F1	explícita	crates/quantum-arena/src/state.rs	C-F1 ae6d51a2 blob df87b0e5bfb6: Leído entero (886 líneas): unidades y centinelas de CoinArena y GlobalArena; dominant_tau_ms, sigma_forecast y riesgo_por_operacion cumplen y current_atr no declara su unidad. LC-F1-30, LC-F1-31, LC-F1-41, LC-F1-48, LC-F1-53, LC-F1-56, LC-F1-62.
 crates/quantum-arena/src/state_continuity.rs	C-F8	explícita	crates/quantum-arena/src/state_continuity.rs	pendiente
 crates/quantum-arena/src/symbol_ranker_engine.rs	C-F6	explícita	crates/quantum-arena/src/symbol_ranker_engine.rs	pendiente
-crates/quantum-arena/src/symbol_registry.rs	C-F1	explícita	crates/quantum-arena/src/symbol_registry.rs	pendiente
-crates/quantum-arena/src/symbols.rs	C-F1	explícita	crates/quantum-arena/src/symbols.rs	pendiente
+crates/quantum-arena/src/symbol_registry.rs	C-F1	explícita	crates/quantum-arena/src/symbol_registry.rs	C-F1 ae6d51a2 blob 864dfdecb501: Leído entero (203 líneas): SymbolSpec, update_registry sin canonizar ni deduplicar, try_spec, try_symbol, try_index y la tabla literal get_official_binance_spec. LC-F1-02, LC-F1-12, LC-F1-13, LC-F1-57.
+crates/quantum-arena/src/symbols.rs	C-F1	explícita	crates/quantum-arena/src/symbols.rs	C-F1 ae6d51a2 blob 69a751665c19: Leído entero (86 líneas): simbolo_canonico en mayúsculas ASCII y update_dynamic_universe, que canoniza pero no deduplica. LC-F1-57.
 crates/quantum-arena/src/temporal_spectrum.rs	C-F2	explícita	crates/quantum-arena/src/temporal_spectrum.rs	pendiente
 crates/quantum-arena/src/tick_source.rs	C-F6	explícita	crates/quantum-arena/src/tick_source.rs	pendiente
 crates/quantum-arena/src/zero_alloc_pool.rs	C-F9	explícita	crates/quantum-arena/src/zero_alloc_pool.rs	pendiente
@@ -444,14 +444,14 @@ crates/quantum-arena/tests/system_health_source_contract.rs	C-F10	explícita	cra
 crates/quantum-arena/tests/temporal_band_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/quantum-arena/tests/universe_identity_diagnostics.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/quantum-arena/tests/universe_selection_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/risk-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/risk-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 0b33eec2dae9: Leído entero: edición 2021, sólo dependencias de ruta. Sin hallazgos.
 crates/risk-engine/src/capital_compounder.rs	C-F4	explícita	crates/risk-engine/src/capital_compounder.rs	pendiente
 crates/risk-engine/src/capital_regime.rs	C-F4	explícita	crates/risk-engine/src/capital_regime.rs	pendiente
 crates/risk-engine/src/copulas_store.rs	C-F4	explícita	crates/risk-engine/src/copulas_store.rs	pendiente
 crates/risk-engine/src/correlation_guard.rs	C-F4	explícita	crates/risk-engine/src/correlation_guard.rs	pendiente
 crates/risk-engine/src/cramer_lundberg.rs	C-F2	explícita	crates/risk-engine/src/cramer_lundberg.rs	pendiente
-crates/risk-engine/src/drawdown.rs	C-F4	explícita	crates/risk-engine/src/drawdown.rs	pendiente
-crates/risk-engine/src/envio.rs	C-F5	explícita	crates/risk-engine/src/envio.rs	pendiente
+crates/risk-engine/src/drawdown.rs	C-F4	explícita	crates/risk-engine/src/drawdown.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob f52aff4d284f: Lectura de apoyo (fase dueña del archivo: C-F4). drawdown_maximo, q_perdida_cartera, drawdown_de_falsacion y el test que pinea V-RISK-005. LC-F1-25, LC-F1-27, LC-F1-30, LC-F1-41.
+crates/risk-engine/src/envio.rs	C-F5	explícita	crates/risk-engine/src/envio.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob 1d2b4bc04791: Lectura de apoyo (fase dueña del archivo: C-F5). Leído entero: VetoEnvio con Envolvente, SinValidacion y Margen, y la guarda del 95 % que ya describe V-RISK-003. LC-F1-17, LC-F1-23.
 crates/risk-engine/src/epigenetic_capital_alloc.rs	C-F4	explícita	crates/risk-engine/src/epigenetic_capital_alloc.rs	pendiente
 crates/risk-engine/src/epigenetic_fitness_landscape.rs	C-F4	explícita	crates/risk-engine/src/epigenetic_fitness_landscape.rs	pendiente
 crates/risk-engine/src/evidence.rs	C-F2	explícita	crates/risk-engine/src/evidence.rs	pendiente
@@ -459,15 +459,15 @@ crates/risk-engine/src/guard.rs	C-F4	explícita	crates/risk-engine/src/guard.rs	
 crates/risk-engine/src/hodge.rs	C-F2	explícita	crates/risk-engine/src/hodge.rs	pendiente
 crates/risk-engine/src/kelly.rs	C-F4	explícita	crates/risk-engine/src/kelly.rs	pendiente
 crates/risk-engine/src/kelly_envelope.rs	C-F4	explícita	crates/risk-engine/src/kelly_envelope.rs	pendiente
-crates/risk-engine/src/leverage_matrix.rs	C-F4	explícita	crates/risk-engine/src/leverage_matrix.rs	pendiente
-crates/risk-engine/src/lib.rs	C-F4	explícita	crates/risk-engine/src/lib.rs	pendiente
-crates/risk-engine/src/orchestrator.rs	C-F4	explícita	crates/risk-engine/src/orchestrator.rs	pendiente
+crates/risk-engine/src/leverage_matrix.rs	C-F4	explícita	crates/risk-engine/src/leverage_matrix.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob 0225360c2db4: Lectura de apoyo (fase dueña del archivo: C-F4). Líneas 1-200: centinela de win_probability, win_rate agregado y respaldo de la τ. LC-F1-37, LC-F1-61, LC-F1-65.
+crates/risk-engine/src/lib.rs	C-F4	explícita	crates/risk-engine/src/lib.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob 2d0696c55756: Lectura de apoyo (fase dueña del archivo: C-F4). Líneas 60-1460: constantes REJ_*, rej(), Kelly, geometría, puerta EV, viabilidad y nocional. LC-F1-02, LC-F1-03, LC-F1-05, LC-F1-11, LC-F1-14, LC-F1-15, LC-F1-16, LC-F1-23, LC-F1-24, LC-F1-26, LC-F1-27, LC-F1-28, LC-F1-30, LC-F1-36, LC-F1-37, LC-F1-41, LC-F1-49, LC-F1-61, LC-F1-65.
+crates/risk-engine/src/orchestrator.rs	C-F4	explícita	crates/risk-engine/src/orchestrator.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob c45a37e01ec3: Lectura de apoyo (fase dueña del archivo: C-F4). allow_trade y presión direccional: casos NaN, veto de régimen 0,90 con su espejo y presupuesto de margen. LC-F1-11, LC-F1-23.
 crates/risk-engine/src/random_matrix.rs	C-F2	explícita	crates/risk-engine/src/random_matrix.rs	pendiente
 crates/risk-engine/src/regime.rs	C-F3	explícita	crates/risk-engine/src/regime.rs	pendiente
 crates/risk-engine/src/ruin.rs	C-F4	explícita	crates/risk-engine/src/ruin.rs	pendiente
 crates/risk-engine/src/selection_stats.rs	C-F2	explícita	crates/risk-engine/src/selection_stats.rs	pendiente
-crates/risk-engine/src/tp_sl.rs	C-F4	explícita	crates/risk-engine/src/tp_sl.rs	pendiente
-crates/risk-engine/src/veto_registry.rs	C-F1	explícita	crates/risk-engine/src/veto_registry.rs	pendiente
+crates/risk-engine/src/tp_sl.rs	C-F4	explícita	crates/risk-engine/src/tp_sl.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob 42caf509cf1a: Lectura de apoyo (fase dueña del archivo: C-F4). Oráculo de primer toque, deslizamiento por latencia y conversión de σ a rango. LC-F1-25, LC-F1-38, LC-F1-43, LC-F1-55.
+crates/risk-engine/src/veto_registry.rs	C-F1	explícita	crates/risk-engine/src/veto_registry.rs	C-F1 ae6d51a2 blob 8ba7cef3fb6a: Leído entero (707 líneas): 25 entradas, buscar(), FUENTES_CRUZADAS_CONTRATOS, corpus_contratos! y 8 tests, contrastados con su REJ_*, umbral, datos, test y fecha. LC-F1-23, LC-F1-24, LC-F1-25, LC-F1-26, LC-F1-27, LC-F1-28, LC-F1-50, LC-F1-51, LC-F1-69, LC-F1-70.
 crates/risk-engine/src/ville_e_process.rs	C-F2	explícita	crates/risk-engine/src/ville_e_process.rs	pendiente
 crates/risk-engine/tests/c07_ruin_composition_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/risk-engine/tests/compounder_admission_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
@@ -496,10 +496,10 @@ crates/risk-engine/tests/spectral_matrix_contract.rs	C-F10	explícita	crates/*/t
 crates/risk-engine/tests/spectral_regime_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/risk-engine/tests/spectral_risk_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/risk-engine/tests/veto_evidence_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/risk-engine/tests/veto_logic_contracts.rs	C-F10	explícita	crates/*/tests/*	pendiente
+crates/risk-engine/tests/veto_logic_contracts.rs	C-F10	explícita	crates/*/tests/*	pendiente; lectura de apoyo C-F1 ae6d51a2 blob f7fa5fd6d90b: Lectura de apoyo (fase dueña del archivo: C-F1). Fixture y contratos de confianza y de evidencia; el de evidencia insuficiente sólo prueba admisiones. LC-F1-26.
 crates/risk-engine/tests/veto_open_diagnostics.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/risk-engine/tests/ville_evidence_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/signal-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/signal-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 51bba1ef3a86: Leído entero: edición 2021, sólo dependencias de ruta. Sin hallazgos.
 crates/signal-engine/src/coaxial_breakout.rs	C-F3	explícita	crates/signal-engine/src/coaxial_breakout.rs	pendiente
 crates/signal-engine/src/conformal_reversion_filter.rs	C-F3	explícita	crates/signal-engine/src/conformal_reversion_filter.rs	pendiente
 crates/signal-engine/src/contagion_modulator.rs	C-F3	explícita	crates/signal-engine/src/contagion_modulator.rs	pendiente
@@ -508,7 +508,7 @@ crates/signal-engine/src/flow_excitation_confluence.rs	C-F3	explícita	crates/si
 crates/signal-engine/src/flow_impulse.rs	C-F3	explícita	crates/signal-engine/src/flow_impulse.rs	pendiente
 crates/signal-engine/src/game_theoretic_nash.rs	C-F3	explícita	crates/signal-engine/src/game_theoretic_nash.rs	pendiente
 crates/signal-engine/src/hawkes_bessel.rs	C-F2	explícita	crates/signal-engine/src/hawkes_bessel.rs	pendiente
-crates/signal-engine/src/lib.rs	C-F1	explícita	crates/signal-engine/src/lib.rs	pendiente
+crates/signal-engine/src/lib.rs	C-F1	explícita	crates/signal-engine/src/lib.rs	C-F1 ae6d51a2 blob ebd9cb064ce4: Leído entero (35 líneas): módulos, reexports y la nota U-ERR-1; se siguieron sus lectores del registro hasta perceptron_gate, proyeccion_espectral, orchestrator, renyi_tsallis_entropy, flow_impulse, trend_runner y stochastic_resonance. Sin hallazgos en el archivo.
 crates/signal-engine/src/navier_stokes_manifold.rs	C-F2	explícita	crates/signal-engine/src/navier_stokes_manifold.rs	pendiente
 crates/signal-engine/src/orchestrator.rs	C-F3	explícita	crates/signal-engine/src/orchestrator.rs	pendiente
 crates/signal-engine/src/perceptron_gate.rs	C-F3	explícita	crates/signal-engine/src/perceptron_gate.rs	pendiente
@@ -528,27 +528,27 @@ crates/signal-engine/tests/multi_asset_identity_contract.rs	C-F10	explícita	cra
 crates/signal-engine/tests/navier_stokes_manifold_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/signal-engine/tests/physics_numeric_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/signal-engine/tests/single_consensus_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/storage-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/storage-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 6fb0f924fada: Leído entero: edición 2021, memmap2, bincode, rusqlite, bytemuck y crossbeam-channel. Sin hallazgos.
 crates/storage-engine/src/evolution_ledger.rs	C-F7	explícita	crates/storage-engine/src/evolution_ledger.rs	pendiente
 crates/storage-engine/src/history_store.rs	C-F6	explícita	crates/storage-engine/src/history_store.rs	pendiente
 crates/storage-engine/src/lakehouse.rs	C-F8	explícita	crates/storage-engine/src/lakehouse.rs	pendiente
 crates/storage-engine/src/ledger.rs	C-F8	explícita	crates/storage-engine/src/ledger.rs	pendiente
-crates/storage-engine/src/lib.rs	C-F1	explícita	crates/storage-engine/src/lib.rs	pendiente
+crates/storage-engine/src/lib.rs	C-F1	explícita	crates/storage-engine/src/lib.rs	C-F1 ae6d51a2 blob f3b70056d909: Leído entero (14 líneas): sólo módulos y reexports; sus módulos no se revisaron uno a uno. Sin hallazgos.
 crates/storage-engine/src/mmap_bus.rs	C-F8	explícita	crates/storage-engine/src/mmap_bus.rs	pendiente
 crates/storage-engine/src/raw_zone.rs	C-F6	explícita	crates/storage-engine/src/raw_zone.rs	pendiente
 crates/storage-engine/src/temporal_store.rs	C-F8	explícita	crates/storage-engine/src/temporal_store.rs	pendiente
 crates/storage-engine/tests/mmap_admission_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/storage-engine/tests/mmap_open_diagnostics.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/storage-engine/tests/ownership_read_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/strategy-core/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
-crates/strategy-core/src/lib.rs	C-F1	explícita	crates/strategy-core/src/lib.rs	pendiente
+crates/strategy-core/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 5f64aa6e24e2: Leído entero: edición 2021, polars, smartcore 0.3.2 y rand 0.10.1. Sin hallazgos.
+crates/strategy-core/src/lib.rs	C-F1	explícita	crates/strategy-core/src/lib.rs	C-F1 ae6d51a2 blob 3410a5e4b4f4: Leído entero (64 líneas): QuantumStrategy::horizon() devuelve Continuous y su único lector es un camino inalcanzable; StrategyOrchestrator no tiene usuarios. Sin hallazgos.
 crates/strategy-core/src/maker.rs	C-F3	explícita	crates/strategy-core/src/maker.rs	pendiente
 crates/strategy-core/src/momentum_booster.rs	C-F3	explícita	crates/strategy-core/src/momentum_booster.rs	pendiente
 crates/strategy-core/src/multivariate_coint.rs	C-F3	explícita	crates/strategy-core/src/multivariate_coint.rs	pendiente
-crates/strategy-core/src/stat_arb.rs	C-F3	explícita	crates/strategy-core/src/stat_arb.rs	pendiente
+crates/strategy-core/src/stat_arb.rs	C-F3	explícita	crates/strategy-core/src/stat_arb.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob 0ff92b1e7b0f: Lectura de apoyo (fase dueña del archivo: C-F3). Por tramos: SDE y z de OU, evaluate_for_coin con la guarda de vida media y su rama venenosa inalcanzable, y tests que asumen NaN→0. LC-F1-06, LC-F1-07, LC-F1-14, LC-F1-34.
 crates/strategy-core/src/strategy_telemetry.rs	C-F3	explícita	crates/strategy-core/src/strategy_telemetry.rs	pendiente
-crates/strategy-core/src/types.rs	C-F1	explícita	crates/strategy-core/src/types.rs	pendiente
-crates/strategy-core/src/vecm_arbitrage.rs	C-F3	explícita	crates/strategy-core/src/vecm_arbitrage.rs	pendiente
+crates/strategy-core/src/types.rs	C-F1	explícita	crates/strategy-core/src/types.rs	C-F1 ae6d51a2 blob 5ca8505c3830: Leído entero (43 líneas): SignalType, TradeHorizon con sólo Continuous y SignalIntent; los docs de win_probability y del eje temporal contradicen a sus lectores. LC-F1-37, LC-F1-64, LC-F1-65.
+crates/strategy-core/src/vecm_arbitrage.rs	C-F3	explícita	crates/strategy-core/src/vecm_arbitrage.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob fa25b9c3a659: Lectura de apoyo (fase dueña del archivo: C-F3). Por tramos: θ degenerada, vida media infinita y varianza de reserva 1,0; R6-B15 diseña θ → 0 como fallo cerrado. LC-F1-07, LC-F1-34.
 crates/strategy-core/src/yang_mills_gauge.rs	C-F2	explícita	crates/strategy-core/src/yang_mills_gauge.rs	pendiente
 crates/strategy-core/tests/basket_state_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/strategy-core/tests/fokker_planck_first_passage_time_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
@@ -556,11 +556,11 @@ crates/strategy-core/tests/maker_quote_contract.rs	C-F10	explícita	crates/*/tes
 crates/strategy-core/tests/omega28_consumer_clock_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/strategy-core/tests/pair_model_characterization.rs	C-F10	explícita	crates/*/tests/*	pendiente
 crates/strategy-core/tests/yang_mills_gauge_contract.rs	C-F10	explícita	crates/*/tests/*	pendiente
-crates/telemetry-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/telemetry-engine/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob 5fea2697819d: Leído entero: edición 2024 y tokio 1.53.1, unificado por el lock. Sin hallazgos.
 crates/telemetry-engine/src/atomic_telemetry.rs	C-F8	explícita	crates/telemetry-engine/src/	pendiente
 crates/telemetry-engine/src/dns_optimizer.rs	C-F8	explícita	crates/telemetry-engine/src/	pendiente
 crates/telemetry-engine/src/lib.rs	C-F8	explícita	crates/telemetry-engine/src/	pendiente
-crates/telemetry-server/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	pendiente
+crates/telemetry-server/Cargo.toml	C-F1	explícita	crates/*/Cargo.toml	C-F1 ae6d51a2 blob f82fce64377b: Leído entero: edición 2024, axum con ws, reqwest 0.11 con rustls y rusqlite; su telegram_bot acepta tokens de relleno. LC-F1-52, LC-F1-73.
 crates/telemetry-server/src/flight_recorder.rs	C-F8	explícita	crates/telemetry-server/src/	pendiente
 crates/telemetry-server/src/forensic_auditor.rs	C-F8	explícita	crates/telemetry-server/src/	pendiente
 crates/telemetry-server/src/lib.rs	C-F8	explícita	crates/telemetry-server/src/	pendiente
@@ -707,14 +707,14 @@ docs/VALIDATION_REPORT.md	C-F11	explícita	docs/	pendiente
 docs/adr/ADR-0001-latencia-lognormal-fills.md	C-F0	explícita	docs/adr/	pendiente
 docs/adr/ADR-0002-veto-tres-entradas-medidas.md	C-F0	explícita	docs/adr/	pendiente
 docs/adr/ADR-0003-doctrina-meta-geometrica.md	C-F0	explícita	docs/adr/	pendiente
-docs/adr/ADR-0004-veto-registry-como-codigo.md	C-F0	explícita	docs/adr/	pendiente
+docs/adr/ADR-0004-veto-registry-como-codigo.md	C-F0	explícita	docs/adr/	pendiente; lectura de apoyo C-F1 ae6d51a2 blob 30285dad4f81: Lectura de apoyo (fase dueña del archivo: C-F1). Leído entero: exige id, causa, umbral, datos, responsable, fecha, test y la regla de mismo commit. LC-F1-23, LC-F1-25, LC-F1-27, LC-F1-69.
 docs/adr/ADR-0005-triage-teorico-y-medicion.md	C-F0	explícita	docs/adr/	pendiente
 docs/adr/ADR-0006-bt-vivo-envoltorio.md	C-F0	explícita	docs/adr/	pendiente
 docs/adr/ADR-0007-worktree-aislado-verificaciones.md	C-F0	explícita	docs/adr/	pendiente
 docs/adr/ADR-0008-reloj-revalidacion-modelos.md	C-F0	explícita	docs/adr/	pendiente
 docs/adr/ADR-0009-regeneracion-mensual-copulas.md	C-F0	explícita	docs/adr/	pendiente
 docs/adr/ADR-0010-arquitectura-dl-modular.md	C-F0	explícita	docs/adr/	pendiente
-docs/adr/ADR-0011-identidad-canonica-del-simbolo.md	C-F0	explícita	docs/adr/	pendiente
+docs/adr/ADR-0011-identidad-canonica-del-simbolo.md	C-F0	explícita	docs/adr/	pendiente; lectura de apoyo C-F1 ae6d51a2 blob f16e61e37812: Lectura de apoyo (fase dueña del archivo: C-F1). Leído entero: grafía canónica, mapa slot↔símbolo inmutable y propuesta aplicada al reiniciar, que hoy no se aplica. LC-F1-03, LC-F1-09, LC-F1-32, LC-F1-57.
 docs/adr/ADR-0012-genoma-fijo-en-evaluacion.md	C-F0	explícita	docs/adr/	pendiente
 docs/adr/ADR-0013-autoridad-del-riesgo-en-el-envio.md	C-F0	explícita	docs/adr/	pendiente
 docs/adr/ADR-0014-doctrina-continuo-espectral.md	C-F0	explícita	docs/adr/	pendiente
@@ -778,7 +778,7 @@ docs/audit/DELTA_INTEGRACION_2026-10-08.json	C-F11	explícita	docs/	pendiente
 docs/audit/DEPTH_INDEPENDENT_REVIEW_2026-10-08.md	C-F11	explícita	docs/	pendiente
 docs/audit/FUNDAMENTOS_R4_2026-10-07.json	C-F11	explícita	docs/	pendiente
 docs/audit/FUNDAMENTOS_R4_2026-10-07.md	C-F11	explícita	docs/	pendiente
-docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md	C-F11	explícita	docs/	pendiente
+docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md	C-F11	explícita	docs/	pendiente; lectura de apoyo C-F1 ae6d51a2 blob 753f5c91c22d: Lectura de apoyo (documento de auditoría, sin fase de código). Leída la sección 7.2: REV-3 sigue abierto en ae6d51a2. LC-F1-23, LC-F1-24, LC-F1-25, LC-F1-26.
 docs/audit/LEDGER_RONDA7_2026-10-09.json	C-F11	explícita	docs/	pendiente
 docs/audit/PROTOCOLO_OOS_R4_2026-10-07.md	C-F11	explícita	docs/	pendiente
 docs/audit/R2_SELECTION_STATS_AUDIT_2026-10-08.md	C-F11	explícita	docs/	pendiente
@@ -1483,7 +1483,7 @@ models/NEARUSDT_MOTOR.json	C-F7	explícita	models/	pendiente
 models/NEARUSDT_VOL.json	C-F7	explícita	models/	pendiente
 run_god_engine.ps1	C-F9	explícita	run_god_engine.ps1	pendiente
 run_sim_5.ps1	C-F9	explícita	run_sim_5.ps1	pendiente
-rust-toolchain.toml	C-F1	explícita	rust-toolchain.toml	pendiente
+rust-toolchain.toml	C-F1	explícita	rust-toolchain.toml	C-F1 ae6d51a2 blob 8e275b740f26: Leído entero: canal nightly sin fecha, con rustfmt y clippy y sin targets; lo fija la propia Línea C. Sin hallazgos.
 rustc-ice-2026-09-07T14_42_23-32692.txt	C-F11	explícita	rustc-ice-2026-09-07T14_42_23-32692.txt	pendiente
 scripts/audit_daily_equity_contract.py	C-F9	explícita	scripts/	pendiente
 scripts/audit_inventory.py	C-F9	explícita	scripts/	pendiente
@@ -1530,27 +1530,27 @@ src/bin/tape_spread_fix.rs	C-F9	explícita	src/bin/tape_spread_fix.rs	pendiente
 src/bin/test_forest.rs	C-F9	explícita	src/bin/test_forest.rs	pendiente
 src/bin/test_forest2.rs	C-F9	explícita	src/bin/test_forest2.rs	pendiente
 src/bin/train_dark_alpha.rs	C-F7	explícita	src/bin/train_dark_alpha.rs	pendiente
-src/bin/train_forest.rs	C-F7	explícita	src/bin/train_forest.rs	pendiente
+src/bin/train_forest.rs	C-F7	explícita	src/bin/train_forest.rs	pendiente; lectura de apoyo C-F1 ae6d51a2 blob e4b011588e9b: Lectura de apoyo (fase dueña del archivo: C-F7; la escritura de modelos es de Línea E). Por tramos: triple barrera, split y purga, y gate de promoción. LC-F1-02, LC-F1-03, LC-F1-28, LC-F1-38, LC-F1-39, LC-F1-47, LC-F1-56, LC-F1-62.
 src/bin/votes_export.rs	C-F9	explícita	src/bin/votes_export.rs	pendiente
 src/bin/walkforward_evolver.rs	C-F7	explícita	src/bin/walkforward_evolver.rs	pendiente
-src/config.rs	C-F1	explícita	src/config.rs	pendiente
+src/config.rs	C-F1	explícita	src/config.rs	C-F1 ae6d51a2 blob e3cc35e48664: Leído entero (16 líneas): TensorConfig y NanoForest, sin magnitudes cuya unidad haya que declarar. Sin hallazgos.
 src/dark_alpha_router.rs	C-F8	explícita	src/dark_alpha_router.rs	pendiente
 src/dark_alpha_sniffer.rs	C-F8	explícita	src/dark_alpha_sniffer.rs	pendiente
 src/dashboard.rs	C-F8	explícita	src/dashboard.rs	pendiente
-src/env_manager.rs	C-F1	explícita	src/env_manager.rs	pendiente
+src/env_manager.rs	C-F1	explícita	src/env_manager.rs	C-F1 ae6d51a2 blob b5d61caa2875: Leído entero (94 líneas): data_root honra TGM_DATA_DIR pero data_path delega en env_data_path; get_var sólo lo usa su test. LC-F1-10, LC-F1-54, LC-F1-72.
 src/features/correlation.rs	C-F3	explícita	src/features/	pendiente
 src/features/ewma.rs	C-F3	explícita	src/features/	pendiente
 src/features/microstructure.rs	C-F3	explícita	src/features/	pendiente
 src/features/mod.rs	C-F3	explícita	src/features/	pendiente
 src/features/omni_strategies.rs	C-F3	explícita	src/features/	pendiente
 src/features/welford.rs	C-F3	explícita	src/features/	pendiente
-src/lib.rs	C-F1	explícita	src/lib.rs	pendiente
+src/lib.rs	C-F1	explícita	src/lib.rs	C-F1 ae6d51a2 blob ae6c1d7d86a2: Leído entero (20 líneas): declara 13 módulos; pub mod quantum_arena sombrea el nombre del crate externo sin consumidores afectados. Sin hallazgos.
 src/model_manifest.rs	C-F7	explícita	src/model_manifest.rs	pendiente
 src/multi_asset_orchestrator.rs	C-F3	explícita	src/multi_asset_orchestrator.rs	pendiente
 src/orderbook.rs	C-F6	explícita	src/orderbook.rs	pendiente
 src/parsers.rs	C-F6	explícita	src/parsers.rs	pendiente
 src/quantum_arena.rs	C-F8	explícita	src/quantum_arena.rs	pendiente
-src/risk/mod.rs	C-F1	explícita	src/risk/mod.rs	pendiente
+src/risk/mod.rs	C-F1	explícita	src/risk/mod.rs	C-F1 ae6d51a2 blob 0075d45577ee: Leído entero (4 líneas): archivo huérfano que src/lib.rs no declara; candidato a borrado. Sin hallazgos.
 src/symbol_manager.rs	C-F6	explícita	src/symbol_manager.rs	pendiente
 src/trailing.rs	C-F3	explícita	src/trailing.rs	pendiente
 static/app.js	C-F8	explícita	static/	pendiente
@@ -1558,5 +1558,5 @@ static/index.html	C-F8	explícita	static/	pendiente
 static/style.css	C-F8	explícita	static/	pendiente
 summary_table.md	C-F11	explícita	summary_table.md	pendiente
 task.md	C-F11	explícita	task.md	pendiente
-template.env	C-F1	explícita	template.env	pendiente
+template.env	C-F1	explícita	template.env	C-F1 ae6d51a2 blob 0c2ccafadd93: Leído entero (8 líneas): rellenos no vacíos, TRADING_SYMBOL sin lector e INITIAL_CAPITAL="0.0" como centinela que nadie implementa. LC-F1-40, LC-F1-47, LC-F1-52, LC-F1-72.
 walkthrough.md	C-F11	explícita	walkthrough.md	pendiente

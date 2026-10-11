@@ -32,13 +32,15 @@
   Ciclo 11, segunda parte, en el PR #37: CL-56 (toolchain con fecha),
   CL-57 (inventario de tests sin CI), CL-58 (claves del registro sin
   escritor), CL-59 (Feynman respeta #652/H2 tras #718), puerta de
-  rendimiento en el protocolo y C-F1 (contrato de conceptos) en revisión.
+  rendimiento en el protocolo y C-F1 hecha: contrato de conceptos y
+  LC-F1-01…73 (`docs/audit/HALLAZGOS_C-F1_2026-10-11.md`).
 - **Commiteado**: ciclos 1 a 10 en main (PR #13, #17–#20, #26, #27, #29).
   Los ciclos 9 y 10 (CL-43…CL-54, ADR-0015) entraron como aa716edf con CI
   5/5, suites 2 173/0 y T-1 16/144 sobre 5338eda1. T-1 de aa716edf (con
   #713 y #714): 16/144, la misma lista de genes inertes.
 - **Falta**: ADR de la meta (decisión del dueño, LC-F0-01); medidor del
-  camino caliente (ciclo 12); C-F1 (contrato de conceptos), D4 (una
+  camino caliente (ciclo 12); arreglos de C-F1 (LC-F1-01, -03 y -02
+  primero), D4 (una
   sonda de arranque frío en toda la cartera) y D1 en sombra con Línea E;
   GENOME-GATE al cargar; función única de umbral y pico de drawdown para
   host y riesgo; `entry_price` re-anclado al llenado; `online_daemon`

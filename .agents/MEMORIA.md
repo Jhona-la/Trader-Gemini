@@ -158,6 +158,13 @@ que cada `ruta:línea` del plan exista en una revisión dada (alias
   de 766fb1a4: 16/144, misma lista inerte. #720 (NaN crudo en el registro)
   no rompe ninguna decisión viva encontrada, pero añade una lectura de reloj
   en cada escritura (unas 135–280 por evento, sin medir).
+- C-F1 hecha sobre ae6d51a2: `docs/CONTRATO_DE_CONCEPTOS_LINEA_C_2026-10-11.md`
+  y `docs/audit/HALLAZGOS_C-F1_2026-10-11.md` (LC-F1-01…73, 42 confirmados
+  y 31 disputados; tests derivados leyendo, sin ejecutar). Altos: LC-F1-01
+  (el papel sin banderas guarda Kelly en `data/prod`, defecto de CL-48),
+  -02 (specs inventados como oficiales), -03 (slot 0 con el gen del stop de
+  BTC) y -04 (peso hebbiano de otra moneda). #720 cerró LC-F1-34 y en parte
+  LC-F1-35. Los arreglos empiezan en el ciclo 12, tras el medidor.
 
 Ciclo 9 (kill-switch, llenados y estado por entorno):
 - CL-43 (FMT-232): con el latch armado, `process_event` y

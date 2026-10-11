@@ -228,6 +228,18 @@ El PR #29 ya integró ese main en aa716edf. Su mensaje registra, sobre el merge 
 - CL-n que fija `rust-toolchain.toml` a `nightly-2026-06-30` (pendiente del ciclo 8).
 - Propuesta sobre el registro, anunciada en el buzón porque es transversal.
 
+**Estado (ciclo 11, base ae6d51a2).** Hecha la revisión: siete revisores, uno por concepto, y dos escépticos por dimensión.
+- Contrato: `docs/CONTRATO_DE_CONCEPTOS_LINEA_C_2026-10-11.md`, con siete apartados: unidades, identidad, desconocido, horizonte continuo, espejo, versión y construcción, y vetos.
+- Hallazgos: `docs/audit/HALLAZGOS_C-F1_2026-10-11.md`, LC-F1-01…73. Hay 42 confirmados y 31 disputados (4 altos, 36 medios y 33 bajos), y otros 6 refutados. Cada uno trae el test que debe fallar hoy, que sale de leer el código: no se ejecutó ninguno.
+- Recibos: los 49 archivos de C-F1 tienen recibo con el OID de su blob en `docs/audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv`, y hay 21 lecturas de apoyo anotadas en la fase de cada archivo.
+- Los cuatro altos:
+  - LC-F1-01: el papel sin banderas guarda la envolvente Kelly en `data/prod`. Es un defecto de CL-48.
+  - LC-F1-02: specs inventados servidos como oficiales.
+  - LC-F1-03: el slot 0 recibe el gen del stop de BTC.
+  - LC-F1-04: el perceptrón vota con el peso hebbiano de otra moneda.
+- En `main` c4e8e285, #720 cierra LC-F1-34 y, en parte, LC-F1-35 (adenda de los hallazgos).
+- Arreglos: los hallazgos cuya fase dueña es C-F1 empiezan en el ciclo 12, después del medidor, cada uno con su test en rojo y en verde. Los demás esperan a su fase dueña.
+
 ---
 
 ### C-F2 — Teoría por dominio
@@ -1257,6 +1269,7 @@ Las fases ordenan la revisión. No hay operación autorizada, así que ninguna u
     - Puerta de rendimiento en §7, paso 5, por el pedido del dueño del 2026-10-11 05:49.
 - **Ciclo 12.**
   - Primero el medidor del camino caliente (§7, paso 5): un binario de benchmark que pasa una cinta sintética fija por `process_event`, cuenta asignaciones por evento con un asignador propio y da mediana y p99 de ns por evento. Se adelanta de C-F8 porque sin él la puerta de rendimiento no se puede aplicar. Es sólo medición y no cambia la conducta.
+  - Arreglos de C-F1 con su test en rojo y en verde, empezando por los altos de Línea C: LC-F1-01 (carpeta del estado según el modo, defecto de CL-48), LC-F1-03 (gen del stop por símbolo, no por slot) y LC-F1-02 (procedencia del spec). LC-F1-04 y la caída al global (LC-F1-06) se coordinan con AGY, que añadió las lecturas estrictas en #720.
   - C-F2 (sólo lectura y pruebas sintéticas; el T-1 no debe moverse) y C-F3. Los hallazgos de zona ajena salen como pedidos con test que falla.
 - **Ciclo 13.** C-F4:
   - primero el ATR (LC-F6-01 y LC-F3-02), antes de medir el riesgo al stop o el tope IOC;
