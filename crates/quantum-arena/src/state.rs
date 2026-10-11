@@ -350,6 +350,11 @@ impl CoinArena {
     pub fn get_active_epigenetic_threshold(&self, now_ms: u64) -> f64 {
         let stored = self.epigenetic_threshold_modifier.load(Ordering::Relaxed);
         let last_close = self.last_close_ts.load(Ordering::Relaxed);
+        Self::epigenetic_threshold_at(stored, last_close, now_ms)
+    }
+
+    #[inline]
+    fn epigenetic_threshold_at(stored: f64, last_close: u64, now_ms: u64) -> f64 {
         if last_close == 0 || now_ms <= last_close {
             return stored;
         }
@@ -385,6 +390,29 @@ impl CoinArena {
         tau_trade_ms: f64,
         event_time_ms: u64,
     ) {
+        // Reject invalid evidence before changing either adaptation or its clock.
+        if !pnl_pct.is_finite() {
+            return;
+        }
+        // Preserve the legacy zero sentinel used by the wall-clock wrappers.
+        let close_ts = if event_time_ms > 0 {
+            event_time_ms
+        } else {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64
+        };
+        let last_close = self.last_close_ts.load(Ordering::Relaxed);
+        // Distinct slots may close in the same event; equality is valid.
+        if close_ts < last_close {
+            return;
+        }
+        let old_bias = self.epigenetic_bias.load(Ordering::Relaxed);
+        let stored_threshold = self.epigenetic_threshold_modifier.load(Ordering::Relaxed);
+        if !old_bias.is_finite() || !stored_threshold.is_finite() {
+            return;
+        }
         let safe_tau = if tau_trade_ms.is_finite() && tau_trade_ms > 10.0 {
             tau_trade_ms
         } else {
@@ -393,10 +421,7 @@ impl CoinArena {
         // Las ondas rápidas (tau bajo) operan con mayor agilidad; las ondas lentas poseen inercia secular
         let tau_inertia = (safe_tau / 3_600_000.0).clamp(0.10, 2.0);
         let pnl_shift = (pnl_pct * (4.0 / tau_inertia)).clamp(-0.15, 0.15);
-
-        let old_bias = self.epigenetic_bias.load(Ordering::Relaxed);
         let new_bias = (old_bias + pnl_shift).clamp(0.5, 2.0);
-        self.epigenetic_bias.store(new_bias, Ordering::Relaxed);
 
         // Modificador de umbral adaptativo continuo con proporcionalidad de pérdida y saturación controlada
         let duration_factor = 1.0 - (trade_duration_ms as f64 / (safe_tau * 3.0)).clamp(0.0, 1.0);
@@ -407,20 +432,17 @@ impl CoinArena {
             (0.010 * (1.0 / tau_inertia.sqrt()).clamp(0.5, 1.5)) * pnl_mag
         };
 
-        let old_threshold = self.epigenetic_threshold_modifier.load(Ordering::Relaxed);
+        // Advance the old state to this event before applying its feedback.
+        // Restarting decay from the stored value would resurrect expired memory.
+        let old_threshold = Self::epigenetic_threshold_at(stored_threshold, last_close, close_ts);
         let new_threshold = (old_threshold + threshold_shift).clamp(0.80, 1.25);
+        self.epigenetic_bias.store(new_bias, Ordering::Relaxed);
         self.epigenetic_threshold_modifier
             .store(new_threshold, Ordering::Relaxed);
 
-        // Actualizar métricas universales de cierre con timestamp del evento causal
-        let close_ts = if event_time_ms > 0 {
-            event_time_ms
-        } else {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64
-        };
+        // Actualizar métricas universales de cierre con timestamp del evento causal.
+        // As before, these separate atomics require a serialized feedback writer;
+        // this preflight is not a transaction between concurrent writers.
         self.last_close_ts.store(close_ts, Ordering::Relaxed);
         self.last_scalp_close_ts.store(close_ts, Ordering::Relaxed);
         self.last_swing_close_ts.store(close_ts, Ordering::Relaxed);
