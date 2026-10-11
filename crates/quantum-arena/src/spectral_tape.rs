@@ -150,6 +150,16 @@ impl SpectralTape {
         self.apply_accepted_trade(ts_ms, price, r, obs);
     }
 
+    /// Consulta inmutable de la misma admisión que usa on_trade.
+    ///
+    /// No reserva ni confirma una transición: sólo es válida mientras el tape
+    /// no cambie. Un coordinador puede madurar pronósticos con &SpectralTape
+    /// y luego llamar on_trade, que vuelve a validar. No garantiza una
+    /// transacción entre escritores ni autoriza omitir la validación al aplicar.
+    pub fn accepts_trade(&self, ts_ms: u64, price: f64, qty: f64, buyer: bool) -> bool {
+        self.prepare_trade(ts_ms, price, qty, buyer).is_some()
+    }
+
     // Shared preflight: the forecast bank must reject before maturing any label.
     // Totals bound the nonnegative kernel sums; signed notional is bounded by notional.
     fn prepare_trade(
