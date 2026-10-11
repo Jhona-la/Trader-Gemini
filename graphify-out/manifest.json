@@ -126,10 +126,10 @@
     "semantic_hash": "34b309ef1d66e730fa9f0391b01380d6"
   },
   "crates/audit-engine/src/lib.rs": {
-    "mtime": 1788963452.301041,
-    "seen": 1789146881.5587802,
-    "ast_hash": "463dce3b38447274c7aab5ee4b22fa4b",
-    "semantic_hash": "463dce3b38447274c7aab5ee4b22fa4b"
+    "mtime": 1791669768.4302819,
+    "seen": 1791697106.5113974,
+    "ast_hash": "d1eabd157706b5241ecae39106a8ba33",
+    "semantic_hash": ""
   },
   "crates/audit-engine/src/main.rs": {
     "mtime": 1788789235.216364,
@@ -204,9 +204,9 @@
     "semantic_hash": ""
   },
   "crates/backtest-engine/tests/t1_cobertura_genetica.rs": {
-    "mtime": 1790831381.3473444,
-    "seen": 1791349202.7955961,
-    "ast_hash": "b26083db8be36663cdd08ba8a38cbfbb",
+    "mtime": 1791681316.6383226,
+    "seen": 1791697106.5113974,
+    "ast_hash": "dafec28b76583a69e4082590173cd295",
     "semantic_hash": ""
   },
   "crates/dark-alpha-engine/Cargo.toml": {
@@ -246,9 +246,9 @@
     "semantic_hash": ""
   },
   "crates/data-ingest/src/lib.rs": {
-    "mtime": 1790817643.3549697,
-    "seen": 1790817836.231226,
-    "ast_hash": "92389a98cb88d7fe140e9484470ceaab",
+    "mtime": 1791679287.3198867,
+    "seen": 1791697106.5113974,
+    "ast_hash": "6e2b19113a47f4cbebcf37e1624b2b73",
     "semantic_hash": ""
   },
   "crates/data-ingest/src/tensor_parser.rs": {
@@ -528,9 +528,9 @@
     "semantic_hash": ""
   },
   "crates/execution-engine/src/executor.rs": {
-    "mtime": 1791241354.2012837,
-    "seen": 1791349202.7961478,
-    "ast_hash": "d43b3497d63665422c860c5eb6755d33",
+    "mtime": 1791679287.327209,
+    "seen": 1791697106.5113974,
+    "ast_hash": "b37d3481b9ecf624e5c4b0a8ea9d055a",
     "semantic_hash": ""
   },
   "crates/execution-engine/src/hot_swap.rs": {
@@ -762,9 +762,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/calibration.rs": {
-    "mtime": 1790649674.946838,
-    "seen": 1790817836.231226,
-    "ast_hash": "3c243a336a4cf2796aedd874af7b9ac4",
+    "mtime": 1791683951.5660832,
+    "seen": 1791697106.5113974,
+    "ast_hash": "801d59e08757e2fd5536aa3d3277cbe0",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/conformal.rs": {
@@ -774,9 +774,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/darwin.rs": {
-    "mtime": 1791464521.806689,
-    "seen": 1791504033.1764297,
-    "ast_hash": "eee811edfe31e3e32c9e33fc08dcbd3d",
+    "mtime": 1791679287.344291,
+    "seen": 1791697106.5113974,
+    "ast_hash": "080f49a27e3e3800a8fa79b8691b0271",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/diffusion.rs": {
@@ -798,9 +798,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/lib.rs": {
-    "mtime": 1791636578.9269145,
-    "seen": 1791637053.5453777,
-    "ast_hash": "e7771ccfeecd38b824010d14b99bbc69",
+    "mtime": 1791696697.1733708,
+    "seen": 1791697106.5113974,
+    "ast_hash": "8dce51392acc22b533a9f2d8990f8ab6",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/math_kernels.rs": {
@@ -906,9 +906,9 @@
     "semantic_hash": "4dff921ffc58a0a01cf8cbdb026dc305"
   },
   "crates/metacortex-engine/src/consejo_seniors.rs": {
-    "mtime": 1791588958.2172828,
-    "seen": 1791601136.998483,
-    "ast_hash": "0803bc485601b5c2f35714b50d31c872",
+    "mtime": 1791673649.2214034,
+    "seen": 1791697106.5113974,
+    "ast_hash": "bf2aab2a42592efff945081524c18b61",
     "semantic_hash": ""
   },
   "crates/metacortex-engine/src/epigenoma_store.rs": {
@@ -942,9 +942,9 @@
     "semantic_hash": ""
   },
   "crates/metacortex-engine/src/lib.rs": {
-    "mtime": 1790371772.6697772,
-    "seen": 1790817836.231226,
-    "ast_hash": "0bd0839d304211233a545aab3611711d",
+    "mtime": 1791655795.0417058,
+    "seen": 1791697106.5113974,
+    "ast_hash": "d62015a74a898c416eb8a1d45e982be1",
     "semantic_hash": ""
   },
   "crates/metacortex-engine/src/online_learning.rs": {
@@ -1134,9 +1134,9 @@
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/genome_store.rs": {
-    "mtime": 1791241354.2598753,
-    "seen": 1791349202.796764,
-    "ast_hash": "707d697d80a6bdb157387bdc7cb5c530",
+    "mtime": 1791679287.3706138,
+    "seen": 1791697106.5113974,
+    "ast_hash": "9e91e7aea195278375bd39ed71fa4492",
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/lib.rs": {
@@ -1152,15 +1152,15 @@
     "semantic_hash": "b99489766df1eb1223e2d33d2a5549ad"
   },
   "crates/quantum-arena/src/paths.rs": {
-    "mtime": 1788918788.606838,
-    "seen": 1789146881.559777,
-    "ast_hash": "0814b04ee32d8d86bcdb6a6ff6aae8c6",
-    "semantic_hash": "0814b04ee32d8d86bcdb6a6ff6aae8c6"
+    "mtime": 1791679287.3743987,
+    "seen": 1791697106.5113974,
+    "ast_hash": "b31a4fa250bd5e689683f960eac73bf1",
+    "semantic_hash": ""
   },
   "crates/quantum-arena/src/position.rs": {
-    "mtime": 1791599010.5913818,
-    "seen": 1791601136.998483,
-    "ast_hash": "17313dfd076595a2a8b8b5f4934156cd",
+    "mtime": 1791679287.3775568,
+    "seen": 1791697106.5113974,
+    "ast_hash": "95fa41a9f2de7d2ab69c60822157f0d4",
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/ring_buffer.rs": {
@@ -1170,9 +1170,9 @@
     "semantic_hash": "9b3a60b75f7457bf87079f9951054d7d"
   },
   "crates/quantum-arena/src/state.rs": {
-    "mtime": 1791600582.647526,
-    "seen": 1791601136.998483,
-    "ast_hash": "f81fa09b351f806a4ca3e828bf6a150d",
+    "mtime": 1791679287.3865695,
+    "seen": 1791697106.5113974,
+    "ast_hash": "e25b7deeb12873cd0c1b67a623cc9777",
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/state_continuity.rs": {
@@ -1284,15 +1284,15 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/lib.rs": {
-    "mtime": 1791641954.488753,
-    "seen": 1791642511.4192214,
-    "ast_hash": "d61b64e4fde2dacdb5a85fee48a515c2",
+    "mtime": 1791669772.4854238,
+    "seen": 1791697106.5113974,
+    "ast_hash": "b7462b802ee650edb45f4d546eecdc67",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/orchestrator.rs": {
-    "mtime": 1791610213.81019,
-    "seen": 1791610969.0810695,
-    "ast_hash": "8147b3c8ab2ebaf1da214dde70360401",
+    "mtime": 1791688122.1509848,
+    "seen": 1791697106.5113974,
+    "ast_hash": "8dcad16f37eb15d741a450b6bb1bea0b",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/regime.rs": {
@@ -1332,15 +1332,15 @@
     "semantic_hash": ""
   },
   "crates/signal-engine/src/lib.rs": {
-    "mtime": 1791644389.0658147,
-    "seen": 1791644993.4600468,
-    "ast_hash": "e8eba3def91aada787be3acd697879a1",
+    "mtime": 1791655795.0521593,
+    "seen": 1791697106.5113974,
+    "ast_hash": "6be4dd3e8805cbc4132a68d7b4f07fa6",
     "semantic_hash": ""
   },
   "crates/signal-engine/src/orchestrator.rs": {
-    "mtime": 1791241609.4699435,
-    "seen": 1791349202.7973285,
-    "ast_hash": "76bbe134600f7c92eb7ba02dde60bd85",
+    "mtime": 1791667364.1584287,
+    "seen": 1791697106.5113974,
+    "ast_hash": "4f1cbcf9881217605e0e9eca3d4702b2",
     "semantic_hash": ""
   },
   "crates/signal-engine/src/perceptron_gate.rs": {
@@ -1446,9 +1446,9 @@
     "semantic_hash": "4504330a71902a509b5d03ecd338468e"
   },
   "crates/strategy-core/src/lib.rs": {
-    "mtime": 1791508214.183151,
-    "seen": 1791508538.636137,
-    "ast_hash": "40e9cb9ac9bfe3f0faa62cd0ef3e2f13",
+    "mtime": 1791652199.9698932,
+    "seen": 1791697106.5113974,
+    "ast_hash": "94d94dc8d4dd0f9f1db9ee45d20c148e",
     "semantic_hash": ""
   },
   "crates/strategy-core/src/maker.rs": {
@@ -1488,9 +1488,9 @@
     "semantic_hash": ""
   },
   "crates/strategy-core/src/vecm_arbitrage.rs": {
-    "mtime": 1791569955.5522537,
-    "seen": 1791601137.0000458,
-    "ast_hash": "26276786b48b24d04f5fb166bc4936a2",
+    "mtime": 1791652199.974516,
+    "seen": 1791697106.5113974,
+    "ast_hash": "0df3b04d84b9374e6f4f1a8a8e589553",
     "semantic_hash": ""
   },
   "crates/telemetry-engine/Cargo.toml": {
@@ -1632,10 +1632,10 @@
     "semantic_hash": "94f07ebe7c44f098b5b9ed80c5bfda03"
   },
   "scripts/quality_gate.ps1": {
-    "mtime": 1786902995.4334729,
-    "seen": 1789146881.559777,
-    "ast_hash": "3eadd0f3f1409fa372c48974ff9ae988",
-    "semantic_hash": "3eadd0f3f1409fa372c48974ff9ae988"
+    "mtime": 1791681567.1580253,
+    "seen": 1791697106.5123932,
+    "ast_hash": "8c4eb4d88cc9a9da80d13946d0f755af",
+    "semantic_hash": ""
   },
   "src/bin/audit_forensic_backtest.rs": {
     "mtime": 1791503777.5525956,
@@ -1710,9 +1710,9 @@
     "semantic_hash": "96ec29a84ce7bc90b1747ce6fecd62ea"
   },
   "src/bin/god_engine.rs": {
-    "mtime": 1791636578.941188,
-    "seen": 1791637053.5453777,
-    "ast_hash": "9899e9d9e5ec2036020c69d7c9b06ca2",
+    "mtime": 1791679287.4074478,
+    "seen": 1791697106.5123932,
+    "ast_hash": "228d21f746adba42277aa0e7487fd0d0",
     "semantic_hash": ""
   },
   "src/bin/graph_server.rs": {
@@ -1806,10 +1806,10 @@
     "semantic_hash": "33dfb0a7b08e5319183ba781f8bf540a"
   },
   "src/env_manager.rs": {
-    "mtime": 1788963454.2149243,
-    "seen": 1789146881.559777,
-    "ast_hash": "354071fa2ab7cbaa20984281a61200b8",
-    "semantic_hash": "354071fa2ab7cbaa20984281a61200b8"
+    "mtime": 1791679287.4165416,
+    "seen": 1791697106.5123932,
+    "ast_hash": "76436d54c558cafdb9ca6ce30fa39fb0",
+    "semantic_hash": ""
   },
   "src/features/correlation.rs": {
     "mtime": 1788963454.218351,
@@ -1848,10 +1848,10 @@
     "semantic_hash": "7d1d43897ce520d983e25824ab14ffea"
   },
   "src/lib.rs": {
-    "mtime": 1791565543.8183424,
-    "seen": 1791601137.0000458,
-    "ast_hash": "359c8a2bf3cf7c617d3ac48f2e520931",
-    "semantic_hash": "359c8a2bf3cf7c617d3ac48f2e520931"
+    "mtime": 1791667250.5208924,
+    "seen": 1791697106.5123932,
+    "ast_hash": "334ef41edc1d92f1fd50441e7a036c39",
+    "semantic_hash": ""
   },
   "src/multi_asset_orchestrator.rs": {
     "mtime": 1791565877.9330952,
@@ -2424,9 +2424,9 @@
     "semantic_hash": ""
   },
   "crates/execution-engine/src/trade_accounting.rs": {
-    "mtime": 1790361057.482942,
-    "seen": 1790817836.231226,
-    "ast_hash": "e1820e2b12178c10255a592811d3bdc8",
+    "mtime": 1791679287.334694,
+    "seen": 1791697106.5113974,
+    "ast_hash": "078496313a3981237a8826e44ffa84e1",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/liquidation_feed.rs": {
@@ -2436,9 +2436,9 @@
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/protection_health.rs": {
-    "mtime": 1790315314.336768,
-    "seen": 1790817836.231226,
-    "ast_hash": "d091f4bdb79b18621fa595390211b96b",
+    "mtime": 1791679287.3829296,
+    "seen": 1791697106.5113974,
+    "ast_hash": "33661ac0495e1e4eeaa9b4337bfa30c6",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/ruin.rs": {
@@ -2508,9 +2508,9 @@
     "semantic_hash": ""
   },
   "src/bin/train_forest.rs": {
-    "mtime": 1791503777.561877,
-    "seen": 1791504033.1784494,
-    "ast_hash": "361a1bb50531381433331ce4d0aa2e0d",
+    "mtime": 1791679287.4133842,
+    "seen": 1791697106.5123932,
+    "ast_hash": "5aa1611a12c57c77b325faf998441238",
     "semantic_hash": ""
   },
   "ATLAS_ANALITICO.md": {
@@ -2928,9 +2928,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/entry_reservation.rs": {
-    "mtime": 1791122601.7847457,
-    "seen": 1791349202.7961478,
-    "ast_hash": "00bf603ab1240029b771809dfe266fa3",
+    "mtime": 1791679287.3490784,
+    "seen": 1791697106.5113974,
+    "ast_hash": "da92509a8235003413c0e0f0757ba443",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/fitness_contract.rs": {
@@ -2964,9 +2964,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/close_outcome_contract.rs": {
-    "mtime": 1791599010.5834966,
-    "seen": 1791601136.998483,
-    "ast_hash": "5cfa47a5e0e39252d2369ac966cc8354",
+    "mtime": 1791679287.362788,
+    "seen": 1791697106.5113974,
+    "ast_hash": "5e1ca6f76b18b67b3b48bd2f8ae89bd1",
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/conformal_wiring_contract.rs": {
@@ -3216,9 +3216,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/drawdown.rs": {
-    "mtime": 1790701700.431924,
-    "seen": 1790817836.2328205,
-    "ast_hash": "b6dc9185af88cdbf9002196e75567373",
+    "mtime": 1791669768.4623816,
+    "seen": 1791697106.5113974,
+    "ast_hash": "1e320355ec12f4c103fb8d6d814cccbc",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/evidence.rs": {
@@ -3228,9 +3228,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/hodge.rs": {
-    "mtime": 1791591386.2662706,
-    "seen": 1791601137.0000458,
-    "ast_hash": "e53e48906fa4ffcee53733371270c722",
+    "mtime": 1791645474.983037,
+    "seen": 1791697106.5113974,
+    "ast_hash": "3032ec0de7cf52e58a603e49e7fc275e",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/random_matrix.rs": {
@@ -3240,9 +3240,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/veto_registry.rs": {
-    "mtime": 1791602703.2528615,
-    "seen": 1791603189.1152532,
-    "ast_hash": "86f86531ed54e577178a5155cce8282e",
+    "mtime": 1791688122.1546528,
+    "seen": 1791697106.5113974,
+    "ast_hash": "9e37173368e6f19ec67289987708a557",
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/compounder_admission_contract.rs": {
@@ -3300,9 +3300,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/leverage_admission_contract.rs": {
-    "mtime": 1790681510.1789408,
-    "seen": 1790817836.2328205,
-    "ast_hash": "0751b27158dbc03dccccecfa2679a98b",
+    "mtime": 1791669768.4745226,
+    "seen": 1791697106.5113974,
+    "ast_hash": "70e4247dcd3669c5e192b5217c9dad55",
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/min_notional_symbol_contract.rs": {
@@ -3708,15 +3708,15 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791644389.0536847,
-    "seen": 1791644993.4600468,
-    "ast_hash": "990b673cdb3e9c17884f15095ff307d4",
+    "mtime": 1791696697.1563282,
+    "seen": 1791697106.5123932,
+    "ast_hash": "a1cc3a1314cf5448629ad478e48ca27f",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
-    "mtime": 1791490028.204788,
-    "seen": 1791504033.1794498,
-    "ast_hash": "202e7ffc6b10b69a9e158f3c54c91076",
+    "mtime": 1791681567.1366174,
+    "seen": 1791697106.5123932,
+    "ast_hash": "e55662054d9230d1f6720492132ede7f",
     "semantic_hash": ""
   },
   "AGENTS.md": {
@@ -3732,15 +3732,15 @@
     "semantic_hash": ""
   },
   "COORDINACION_CODEX_2026-09-28.md": {
-    "mtime": 1791644389.062628,
-    "seen": 1791644993.4631882,
-    "ast_hash": "c6f649deec3deb8c5469515e5eb3996d",
+    "mtime": 1791696697.163319,
+    "seen": 1791697106.5143905,
+    "ast_hash": "216d3beee0dc7cb7450f0ec1496c8cf4",
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1791122601.4874196,
-    "seen": 1791349202.7985046,
-    "ast_hash": "a939d7ded3e1b655a6aa688b931b1d1e",
+    "mtime": 1791696697.166839,
+    "seen": 1791697106.5143905,
+    "ast_hash": "cd2329da6b4e46758afdd328f52ffde8",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -4146,9 +4146,9 @@
     "semantic_hash": ""
   },
   "docs/adr/README.md": {
-    "mtime": 1791122601.8742244,
-    "seen": 1791349202.799106,
-    "ast_hash": "e9ddd3c3bddac8fea58e8a3a6e3ce6c8",
+    "mtime": 1791679287.401516,
+    "seen": 1791697106.5143905,
+    "ast_hash": "31e6080d64d239cf23dc832fe95e509b",
     "semantic_hash": ""
   },
   "crates/signal-engine/src/proyeccion_espectral.rs": {
@@ -4170,15 +4170,15 @@
     "semantic_hash": ""
   },
   "crates/execution-engine/src/ioc_evidence.rs": {
-    "mtime": 1791122601.7550554,
-    "seen": 1791349202.7961478,
-    "ast_hash": "249b4558cf6b19f05d9dc34ef2f673a7",
+    "mtime": 1791679287.331257,
+    "seen": 1791697106.5113974,
+    "ast_hash": "057e3dfaebc1b782861f2689631ccf26",
     "semantic_hash": ""
   },
   "crates/execution-engine/tests/ioc_fill_contract.rs": {
-    "mtime": 1791257920.5045273,
-    "seen": 1791349202.7961478,
-    "ast_hash": "6941dd36615eab0b1707cbe6bca2fbbc",
+    "mtime": 1791679287.3404243,
+    "seen": 1791697106.5113974,
+    "ast_hash": "caad0b5a4fcbd35e0c68a757c9df21ea",
     "semantic_hash": ""
   },
   "crates/feature-engine/src/copulas.rs": {
@@ -4266,9 +4266,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/selection_stats.rs": {
-    "mtime": 1791462889.6637402,
-    "seen": 1791504033.1774566,
-    "ast_hash": "235544301f6325b3f0e3a01ad925da18",
+    "mtime": 1791667364.1562696,
+    "seen": 1791697106.5113974,
+    "ast_hash": "0595fcad57d9702791b9d4d300d514a6",
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/envio_contract.rs": {
@@ -4404,9 +4404,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_SINCRONIZACION.md": {
-    "mtime": 1791644389.07619,
-    "seen": 1791644993.4647787,
-    "ast_hash": "785eb1104065eb6ca06ecb25c74411d0",
+    "mtime": 1791696697.1879025,
+    "seen": 1791697106.5143905,
+    "ast_hash": "d1bba5d059ad1fa9677a42f9e18f1f21",
     "semantic_hash": ""
   },
   "docs/TRIAJE_ROJOS_PERPETUOS.md": {
@@ -7872,9 +7872,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/sombras_espectrales_telemetria_contract.rs": {
-    "mtime": 1791482362.9560063,
-    "seen": 1791504033.1764297,
-    "ast_hash": "63b87ba98edcc0ff0f7b0d005b222836",
+    "mtime": 1791696697.179374,
+    "seen": 1791697106.5113974,
+    "ast_hash": "9b7866223718097b2ea7d29c4f6f7ecb",
     "semantic_hash": ""
   },
   "crates/quantum-arena/tests/spectral_slot_resolution_contract.rs": {
@@ -7896,9 +7896,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/nonfinite_admission_contract.rs": {
-    "mtime": 1791610213.8197238,
-    "seen": 1791610969.0810695,
-    "ast_hash": "4c6621805aa2096e2c69b0e14d09eb92",
+    "mtime": 1791688122.1597633,
+    "seen": 1791697106.5113974,
+    "ast_hash": "238cd9777376e25373eb822089e5a691",
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/ville_evidence_contract.rs": {
@@ -25104,9 +25104,9 @@
     "semantic_hash": ""
   },
   "crates/feature-engine/src/navier_stokes.rs": {
-    "mtime": 1791642598.027642,
-    "seen": 1791644993.4584901,
-    "ast_hash": "8ae27227de137300d2d78733d580cd73",
+    "mtime": 1791672404.3981633,
+    "seen": 1791697106.5113974,
+    "ast_hash": "1d8ffa770d59ad9bc0d3912941944ce0",
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/statarb_live_physics_contract.rs": {
@@ -28902,9 +28902,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/veto_logic_contracts.rs": {
-    "mtime": 1791602703.2576158,
-    "seen": 1791603189.1152532,
-    "ast_hash": "f2588af1f654bc3518d64a5caedf02b8",
+    "mtime": 1791688122.1628747,
+    "seen": 1791697106.5113974,
+    "ast_hash": "a1242ba51aa99e5a6a8745cc8e486463",
     "semantic_hash": ""
   },
   ".r7r6/crates/risk-engine/tests/spectral_regime_contract.rs": {
@@ -29001,6 +29001,222 @@
     "mtime": 1791644389.071445,
     "seen": 1791644993.4600468,
     "ast_hash": "65c502b678f2d89a8b0d3a2d49b62e54",
+    "semantic_hash": ""
+  },
+  ".githooks/pre-commit": {
+    "mtime": 1791681567.1318781,
+    "seen": 1791697106.5043957,
+    "ast_hash": "6835cd9f9a76f6a03cb5620b97b5d679",
+    "semantic_hash": ""
+  },
+  "crates/audit-engine/src/shadow_ledger.rs": {
+    "mtime": 1791669768.4318428,
+    "seen": 1791697106.5113974,
+    "ast_hash": "0e499b586bc733da4f5692cdd19e1026",
+    "semantic_hash": ""
+  },
+  "crates/audit-engine/tests/qs_r4_libro_sombra_contract.rs": {
+    "mtime": 1791669768.4329424,
+    "seen": 1791697106.5113974,
+    "ast_hash": "9176affe6763d0e80c0c03fdf7bd7822",
+    "semantic_hash": ""
+  },
+  "crates/backtest-engine/tests/t2_cobertura_puertas.rs": {
+    "mtime": 1791688122.1451962,
+    "seen": 1791697106.5113974,
+    "ast_hash": "33970ee7ac751e9cbd08c39e3fc0d6e7",
+    "semantic_hash": ""
+  },
+  "crates/data-ingest/src/cola_ws.rs": {
+    "mtime": 1791679287.3159907,
+    "seen": 1791697106.5113974,
+    "ast_hash": "fb0edab608756bd9322d69c1407cc8bf",
+    "semantic_hash": ""
+  },
+  "crates/execution-engine/tests/entrada_host_contract.rs": {
+    "mtime": 1791679287.3358388,
+    "seen": 1791697106.5113974,
+    "ast_hash": "e63c37ef559b0240812650200618129a",
+    "semantic_hash": ""
+  },
+  "crates/execution-engine/tests/estado_por_entorno_contract.rs": {
+    "mtime": 1791679287.3369806,
+    "seen": 1791697106.5113974,
+    "ast_hash": "6e892be0abfd71e0b264806c73c5f650",
+    "semantic_hash": ""
+  },
+  "crates/god-engine-core/src/entes_consejo.rs": {
+    "mtime": 1791679287.3458645,
+    "seen": 1791697106.5113974,
+    "ast_hash": "ca63f4b1acb7fbfda2db214fc37accc3",
+    "semantic_hash": ""
+  },
+  "crates/god-engine-core/tests/conformal_direction_symmetry_contract.rs": {
+    "mtime": 1791683951.56822,
+    "seen": 1791697106.5113974,
+    "ast_hash": "703b0ab1cd0cd779915949087d08f823",
+    "semantic_hash": ""
+  },
+  "crates/god-engine-core/tests/entes_consejo_host_contract.rs": {
+    "mtime": 1791679287.3643332,
+    "seen": 1791697106.5113974,
+    "ast_hash": "7df1cd08815969180500ffe2df68ac0a",
+    "semantic_hash": ""
+  },
+  "crates/god-engine-core/tests/entry_reservation_fill_contract.rs": {
+    "mtime": 1791679287.3658924,
+    "seen": 1791697106.5113974,
+    "ast_hash": "f913b3acdeab1fe6ccc1399277bfc93c",
+    "semantic_hash": ""
+  },
+  "crates/god-engine-core/tests/ingesta_ws_host_contract.rs": {
+    "mtime": 1791679287.3658924,
+    "seen": 1791697106.5113974,
+    "ast_hash": "63ffcaba731576f7461965384896d2dc",
+    "semantic_hash": ""
+  },
+  "crates/god-engine-core/tests/kill_switch_host_contract.rs": {
+    "mtime": 1791679287.367463,
+    "seen": 1791697106.5113974,
+    "ast_hash": "82f566fbae7508067f3ab44ff34e9aac",
+    "semantic_hash": ""
+  },
+  "crates/god-engine-core/tests/prospect_pressure_integration_contract.rs": {
+    "mtime": 1791696697.17738,
+    "seen": 1791697106.5113974,
+    "ast_hash": "7bd97116b2650a2be60ce85457ee2750",
+    "semantic_hash": ""
+  },
+  "crates/god-engine-core/tests/puertas_del_continuo_symmetry_contract.rs": {
+    "mtime": 1791674191.0426488,
+    "seen": 1791697106.5113974,
+    "ast_hash": "9f375a2371a077aad7e0567c54c5800b",
+    "semantic_hash": ""
+  },
+  "crates/metacortex-engine/src/prospect_theory.rs": {
+    "mtime": 1791669772.4791167,
+    "seen": 1791697106.5113974,
+    "ast_hash": "a46f9f3513632b9cf05ad063c28758aa",
+    "semantic_hash": ""
+  },
+  "crates/metacortex-engine/tests/prospect_theory_contract.rs": {
+    "mtime": 1791655795.0464242,
+    "seen": 1791697106.5113974,
+    "ast_hash": "37859f7b57773077da10a17e17e6ddde",
+    "semantic_hash": ""
+  },
+  "crates/metacortex-engine/tests/qs_r1_c22_direccion_propia_diagnostics.rs": {
+    "mtime": 1791669768.4592505,
+    "seen": 1791697106.5113974,
+    "ast_hash": "bfd915e2db5d5a4a64f22be93557213f",
+    "semantic_hash": ""
+  },
+  "crates/metacortex-engine/tests/qs_r2_simetria_espejo_contract.rs": {
+    "mtime": 1791667250.500873,
+    "seen": 1791697106.5113974,
+    "ast_hash": "543e02658e1185d70098b17d60991bc9",
+    "semantic_hash": ""
+  },
+  "crates/risk-engine/tests/hodge_zero_alloc_contract.rs": {
+    "mtime": 1791645474.9850357,
+    "seen": 1791697106.5113974,
+    "ast_hash": "a8a18c5f4a3c86059575a74cb8f03b26",
+    "semantic_hash": ""
+  },
+  "crates/risk-engine/tests/pico_monotono_contract.rs": {
+    "mtime": 1791679287.3912413,
+    "seen": 1791697106.5113974,
+    "ast_hash": "26e3dbfda2daac9b2fd64cfb4418e6ff",
+    "semantic_hash": ""
+  },
+  "crates/risk-engine/tests/qs_d2_d3_geometria_y_drawdown_contract.rs": {
+    "mtime": 1791669768.477688,
+    "seen": 1791697106.5113974,
+    "ast_hash": "d2347cd33dc0f009b277097db455bf0a",
+    "semantic_hash": ""
+  },
+  "crates/signal-engine/src/feynman_propagator.rs": {
+    "mtime": 1791696697.1839013,
+    "seen": 1791697106.5113974,
+    "ast_hash": "61be09469e608a743621f421c021e7b1",
+    "semantic_hash": ""
+  },
+  "crates/signal-engine/tests/feynman_propagator_contract.rs": {
+    "mtime": 1791683951.5772264,
+    "seen": 1791697106.5113974,
+    "ast_hash": "8c765986ef5de556c7089ccbe26e4c21",
+    "semantic_hash": ""
+  },
+  "crates/strategy-core/tests/fokker_planck_first_passage_time_contract.rs": {
+    "mtime": 1791652199.9762323,
+    "seen": 1791697106.5113974,
+    "ast_hash": "9bbe43c65553de6e9e98c755021ce40b",
+    "semantic_hash": ""
+  },
+  "scripts/plan_linea_c.py": {
+    "mtime": 1791696442.1699283,
+    "seen": 1791697106.5123932,
+    "ast_hash": "20454c8b182b514bb858d50acae8859c",
+    "semantic_hash": ""
+  },
+  "scripts/t1_oraculo.sh": {
+    "mtime": 1791681316.6550758,
+    "seen": 1791697106.5123932,
+    "ast_hash": "0e73dc587d67d5577b8f97eb1f76e294",
+    "semantic_hash": ""
+  },
+  "scripts/tests/test_plan_linea_c.py": {
+    "mtime": 1791696442.1719258,
+    "seen": 1791697106.5123932,
+    "ast_hash": "94cbc5cf12544bd108aca12c93f1c1fa",
+    "semantic_hash": ""
+  },
+  "src/model_manifest.rs": {
+    "mtime": 1791667250.5224385,
+    "seen": 1791697106.5123932,
+    "ast_hash": "9095cf1d12769c4e708c2a3a777f63c5",
+    "semantic_hash": ""
+  },
+  ".github/workflows/unit-suites.yml": {
+    "mtime": 1791681316.6216877,
+    "seen": 1791697106.5123932,
+    "ast_hash": "7c5c64c61e3a85c8ccef967ef0591bac",
+    "semantic_hash": ""
+  },
+  "docs/PLAN_LINEA_C_DESDE_LA_BASE_2026-10-11.md": {
+    "mtime": 1791696442.150838,
+    "seen": 1791697106.5143905,
+    "ast_hash": "87a86165906a1b52fa5125045b5d7fd6",
+    "semantic_hash": ""
+  },
+  "docs/PLAN_MAESTRO_CUANTICO_UNIVERSO_ESPECTRAL_CONTINUO_2026-10-10.md": {
+    "mtime": 1791672404.4071538,
+    "seen": 1791697106.5143905,
+    "ast_hash": "e08dcbb7772ec3816124938509830723",
+    "semantic_hash": ""
+  },
+  "docs/PLAN_MAESTRO_EXPONENCIAL_CUANTICO_2026-10-10.md": {
+    "mtime": 1791688925.120794,
+    "seen": 1791697106.5143905,
+    "ast_hash": "f4cc4c62dd7f21ff88f5ed66319949b3",
+    "semantic_hash": ""
+  },
+  "docs/adr/ADR-0015-semantica-del-kill-switch.md": {
+    "mtime": 1791679287.398357,
+    "seen": 1791697106.5143905,
+    "ast_hash": "472f499ef2a3adfded56c4fb8b7b8308",
+    "semantic_hash": ""
+  },
+  "docs/adr/ADR-0016-riesgo-geometria-y-falsacion-de-la-meta.md": {
+    "mtime": 1791669768.4886498,
+    "seen": 1791697106.5143905,
+    "ast_hash": "0d87b605fb70f1cd86281f555a503168",
+    "semantic_hash": ""
+  },
+  "docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md": {
+    "mtime": 1791696697.1919007,
+    "seen": 1791697106.5143905,
+    "ast_hash": "1283af9c9881fa52d4e1f34c16491e5f",
     "semantic_hash": ""
   }
 }
