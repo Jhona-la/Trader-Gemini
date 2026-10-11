@@ -334,3 +334,82 @@ iguales bit a bit en todos:
   `navier_reynolds_number` publica ahora la EWMA (cambio de semántica de
   telemetría).
 - Llegó a main sin PR ni T-1, como #710 y #711.
+
+### 7.5 Vetos que alcanzan su veto y fixture T-2 (2026-10-11)
+
+**Vetos de Ω71** (`risk-engine`, commits QS-REV):
+- **Convergencia con #716 (AGY, Ω78)**: AGY arregló en paralelo REV-1,
+  REV-2 y REV-13, y además REV-6/7/8 del propagador Feynman. Al traer main
+  al PR #33: `calibration.rs` queda con la versión de main (mismo arreglo,
+  y además `p_win_directional` devuelve la base ante NaN);
+  `veto_logic_contracts.rs` queda con la de este PR (comprueba la razón en
+  los seis contratos y cubre REV-4) más el caso de AGY (ATR 3,0 y 0,6 %
+  por pierna, con su propio fixture).
+- **REV-1/REV-2 cerrados**: cada contrato de `veto_logic_contracts.rs`
+  comprueba ahora la razón (`ultimo_rechazo()` contra `REJ_*`), no sólo el
+  `Flat`.
+  - `spec`: moneda 1 dentro del arena, con precios válidos y sin spec ⇒
+    `REJ_SPEC`. La moneda 999 da `REJ_FLAT_COIN`, y se prueba aparte.
+  - `fee_impact`: 13 USD, τ = 1 h y 0,5 % por pierna ⇒ `REJ_FEE_IMPACT`.
+    Con 50 % por pierna sale antes `REJ_TP_SL_FLOOR`, que era lo que
+    probaba el test anterior.
+  - Orquestador, confianza, entrada inválida y moneda plana: cada uno con
+    su `REJ_*`.
+- **REV-11 refutado**: `REJ_FEE_IMPACT` sí es alcanzable en micro (lo
+  alcanza el caso anterior). Tras D2 el suelo de TP/SL no acota la fricción
+  y, con un stop ancho, f·L supera el tope de 0,035.
+- **REV-3, parcial**: la comprobación del registro casa `fn <nombre>(`
+  exacto (antes `fn foo` casaba con `fn foo_bar`). Las fichas V-LOGIC-014 y
+  V-LOGIC-015 describen ahora el código real. Falta que cada ficha declare
+  su `REJ_*` y que el test lo compruebe.
+- **REV-4 cerrado**: veto espejo de cortos en euforia sistémica
+  (`p_bull ≥ 0,90`) en `PortfolioOrchestrator::allow_trade`. El respaldo
+  discreto (régimen `Crash`) sigue siendo sólo para largos: lo fija el
+  contrato de Codex `finite_crash_threshold_and_legacy_regime_veto_are_preserved`.
+  Una fila de `nonfinite_admission_contract.rs` admitía un corto con
+  p_bull = 2,0 (recortado a 1,0), sólo con contracción. Ahora es un veto, y
+  la fila pasa a p_bull = 0,8 (límite 70, la misma ley 90 − 25·p que las
+  demás).
+- **REV-13 (nuevo, en #713)**: `normalized_directional_divergence` tomaba
+  p = NaN como 0,5; con base 0,25 eso daba +1/3 de apoyo al LARGO, y el
+  test de #713 lo fijaba. Ahora una p o una base no finitas dan 0 en los
+  dos sentidos.
+
+**Fixture T-2** (`backtest-engine/tests/t2_cobertura_puertas.rs`):
+- Serie lateral con cuatro tramos (rango OU, alcista suave, rango, bajista
+  suave), cuenta de 13 USD y predictor sintético con la base de un bosque
+  real (0,30). Mismo método que el T-1: cada gen a su extremo más lejano,
+  en paralelo, con una huella por gen.
+- No es un trinquete: el fixture opera poco (15 cierres, acierto 20 %,
+  pierde). Mide qué puertas ve, no rentabilidad.
+- **Qué ve** (una evaluación del genoma base, revirtiendo un cambio cada
+  vez sobre el árbol `qs-t2`):
+
+  | Cambio | Base 0,5 | Base 0,30 |
+  |---|---|---|
+  | QS-K | se mueve (19 → 12 cierres) | se mueve (15 → 12) |
+  | D2 | se mueve (19 → 18) | se mueve |
+  | #713 (K-06/K-23) | igual | se mueve (15 → 16) |
+  | C-22 | igual | igual |
+  | #711, #712 | igual | igual |
+  | D3 | igual | — |
+  | REV-4 | igual | — |
+
+  Con base 0,5 las fórmulas que normalizan contra la base (#713) coinciden
+  con las antiguas: por eso la base del predictor es 0,30.
+- **Barrido completo** (base 0,30, 4 hilos, 970 s): **9/144 genes
+  sensibles** [1, 17, 18, 19, 24, 27, 68, 69, 106].
+  - Nuevos frente al T-1: 19 (`min_confidence_btc`) y 106
+    (`ev_fee_multiplier`), que el T-1 no ve.
+  - **Los genes de Kelly (10, 11, 32, 33) son inertes con 13 USD**: con el
+    nocional mínimo el tamaño no depende de la fracción de Kelly. Es R-20
+    (tamaño binario en micro) medido.
+- **Árbol del PR #33** (main `03b3f1ca` + REV + T-2): T-2 9/144 con las
+  145 huellas iguales bit a bit a las del árbol `qs-t2`. Tampoco lo mueven
+  #714 (K-26), el PR #29 de la Línea C, REV-4 (el fixture no llega a
+  `p_bull ≥ 0,90`) ni REV-13 (no hay NaN). T-1 16/144, mismas huellas que
+  `05f58e87`.
+- **Siguen sin verse**: C-22, #711 y #712 (consejo). En el fixture los
+  asientos direccionales siguen coincidiendo cuando hay entrada. Para
+  verlos hace falta un libro cuyo OBI contradiga a las señales lentas
+  durante una entrada; queda para la siguiente versión del T-2.

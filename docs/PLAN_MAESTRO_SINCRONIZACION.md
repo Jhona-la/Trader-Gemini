@@ -1336,6 +1336,22 @@ consejo aprueba siempre, no es micro y las ramas de rango no llegan a sus
 bordes. Cinco cambios de puertas seguidos dieron huellas idénticas. El T-1
 certifica la no-regresión de parámetros y dimensionado, no las puertas.
 Siguiente paso: fixture T-2 (rango lateral, consejo dividido, 13 USD).
+Hecho en el PR #33 (ledger §7.5): ve QS-K, D2 y #713; aún no ve el consejo.
+
+**QS-P4 — LTO medido sin ganancia (2026-10-11).** Mismo árbol (`05f58e87`),
+mismo oráculo con 4 hilos, perfil release con `lto = "fat"` y
+`codegen-units = 1`:
+
+| Perfil | Compilación del workspace | Evaluación del T-1 | Huellas |
+|---|---|---|---|
+| release normal | 3–5 min (incremental: ~1 min) | 889 s | referencia |
+| LTO fat, 1 CGU | 9 min 56 s | 958 s | las 145 iguales bit a bit |
+
+No acelera el oráculo (+8 %, dentro del ruido de la máquina) y duplica la
+compilación. El backtest recorre el mismo camino caliente del núcleo
+(`process_event`), así que tampoco hay indicio de ganancia en vivo. No se
+propone un perfil de producción con LTO. Si alguien quiere el eje de
+latencia en vivo, se mide con los benchmarks del núcleo, no con el T-1.
 
 **Propuestas para las otras líneas (sin acuse no son reparto):**
 

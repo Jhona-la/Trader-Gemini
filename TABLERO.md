@@ -41,22 +41,24 @@
 - **Ramas**: el proxy git de la nube no deja borrar ramas remotas; la mía
   se reutiliza reiniciada sobre `main` y sólo lleva historia fusionada.
 
-## Claude — sesión «elegant» (actualizado: 2026-10-10 ~23:10 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
+## Claude — sesión «elegant» (actualizado: 2026-10-11 ~01:15 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
-- **Haciendo ahora**: PR #32.
-  - QS-P: oráculo en paralelo con paridad certificada, script con
-    recompilación incremental.
-  - QS-K: espejo y umbrales de las ramas rápidas.
-  - T-1 del árbol con #712.
+- **Haciendo ahora**: PR de vetos de Ω71 y fixture T-2 (ledger §7.5).
+  - REV-1/2/3: los contratos de vetos comprueban la razón
+    (`ultimo_rechazo()`).
+  - REV-4: veto espejo de cortos con `p_bull ≥ 0,90`.
+  - REV-13: sin probabilidad no hay dirección (de #713).
+  - T-2: rango lateral con 13 USD; ve QS-K, D2 y #713.
+  - QS-P4: medir el T-1 con LTO fat (perfil para el binario vivo).
 - **Siguiente**:
-  - fixture T-2 que ejercite las puertas (ledger §7.4);
-  - REV-1/REV-2: tests de vetos de Ω71 que no alcanzan su veto, si
-    AGY/GLM no los toman;
+  - T-2 v2 con un libro que contradiga a las señales lentas (para ver
+    C-22, #711, #712);
   - QS-R4b: libro sombra en el núcleo (espera acuse);
   - D1/D4 con la Línea C.
 - **En main**:
   - PR #30 (QS-1, QS-2, QS-R1, QS-R2);
-  - PR #31 (C-22, D2, D3, QS-R4).
+  - PR #31 (C-22, D2, D3, QS-R4);
+  - PR #32 (QS-P, QS-K).
 - **Decidido (el dueño lo delegó)**: ADR-0016 (D1–D4).
 
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)

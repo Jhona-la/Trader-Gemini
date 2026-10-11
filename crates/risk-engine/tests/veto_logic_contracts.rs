@@ -5,7 +5,10 @@
 //!  - V-LOGIC-009: `insufficient_evidence_contract_without_deadlock`
 
 use quantum_arena::GlobalArena;
-use risk_engine::{evidence::win_rate_hierarchical_lcb, RiskEngine};
+use risk_engine::{
+    evidence::win_rate_hierarchical_lcb, ultimo_rechazo, RiskEngine, REJ_CONFIDENCE, REJ_FEE_IMPACT,
+    REJ_FLAT_COIN, REJ_INVALID_INPUT, REJ_ORCHESTRATOR, REJ_SPEC, REJ_TP_SL_FLOOR,
+};
 use signal_engine::{SignalIntent, SignalType};
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -58,6 +61,8 @@ pub fn council_confidence_threshold_respects_graceful_cold_modulation() {
     intent.confidence = 0.01;
     let out_baja = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(out_baja.signal, SignalType::Flat, "Confianza ínfima debe ser vetada");
+    // QS-REV: la RAZÓN, no sólo el Flat.
+    assert_eq!(ultimo_rechazo(), Some(REJ_CONFIDENCE));
 
     // 2. Confianza robusta (0.85): debe ser admitida sin veto
     intent.confidence = 0.85;
@@ -96,60 +101,105 @@ pub fn insufficient_evidence_contract_without_deadlock() {
 
 #[test]
 pub fn fee_impact_contract_rejects_excessive_friction_and_admits_viable_order() {
-    let (arena, intent) = fixture();
+    // QS-REV2: la versión anterior usaba un fee de 0,50 por pierna; con esa
+    // fricción el stop viable es ≈ 154 %, y la orden salía antes por el
+    // suelo de TP/SL (REJ_TP_SL_FLOOR): el contrato seguía verde con el
+    // veto de fee_impact borrado. Ahora se usa una geometría que pasa el
+    // suelo y el EV (τ = 1 h, stop ancho) y una fricción que, multiplicada
+    // por el apalancamiento final, supera el tope (0,035 en micro). Valores
+    // medidos con una sonda sobre el risk-engine actual, no supuestos.
+    let (arena, mut intent) = fixture();
+    intent.expected_duration_ms = 3_600_000;
 
-    // 1. Fricción normal: comisiones estándar viables, orden Long admitida
+    // 1. Fricción estándar: admitida.
     let out_viable = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
-    assert_eq!(out_viable.signal, SignalType::Long, "Fricción viable debe admitirse");
+    assert_eq!(out_viable.signal, SignalType::Long, "Fricción viable debe admitirse: {}", risk_engine::reject_report());
     assert!(out_viable.volume_usd > 0.0);
-    assert_eq!(risk_engine::ultimo_rechazo(), None);
+    assert_eq!(ultimo_rechazo(), None);
 
-    // 2. REV-2: Fricción excesiva para apalancamiento micro (taker 0.0060 -> roundtrip 1.2%),
-    // con volatilidad suficiente (ATR 3.0) para superar el suelo de viabilidad de stop (sl_diffusive 0.03 > sl_floor 0.0185),
-    // pero con impacto en margen final (0.012 * 3.0 = 0.036 > max_fee_limit 0.035).
-    // Debe rechazarse ESPECÍFICAMENTE por REJ_FEE_IMPACT (no por REJ_TP_SL_FLOOR).
-    arena.coins[0].current_atr.store(3.0, Relaxed);
-    arena.config.live_taker_fee.store(0.0060, Relaxed);
+    // 2. Fee de 0,5 % por pierna: pasa el suelo y el EV, el coste por unidad
+    // de margen no.
+    arena.config.live_taker_fee.store(0.005, Relaxed);
     let out_friction = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
-    assert_eq!(out_friction.signal, SignalType::Flat, "Fricción excesiva debe ser vetada por fee_impact");
-    assert_eq!(
-        risk_engine::ultimo_rechazo(),
-        Some(risk_engine::REJ_FEE_IMPACT),
-        "Debe emitir específicamente REJ_FEE_IMPACT"
-    );
+    assert_eq!(out_friction.signal, SignalType::Flat);
+    assert_eq!(ultimo_rechazo(), Some(REJ_FEE_IMPACT));
+
+    // 3. Fricción absurda (50 % por pierna): la detiene ANTES el suelo de
+    // TP/SL. Es el caso que el contrato anterior confundía con fee_impact.
+    arena.config.live_taker_fee.store(0.50, Relaxed);
+    let out_absurda = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_absurda.signal, SignalType::Flat);
+    assert_eq!(ultimo_rechazo(), Some(REJ_TP_SL_FLOOR));
+
+    // 4. Caso de AGY (#716, Ω78): con el τ por defecto del fixture, ATR 3,0
+    // (el stop difusivo pasa el suelo) y 0,6 % por pierna, el impacto en
+    // margen (≈ 0,036) supera el tope de 0,035. Fixture propio: el de arriba
+    // fija τ = 1 h.
+    let (arena_b, intent_b) = fixture();
+    arena_b.coins[0].current_atr.store(3.0, Relaxed);
+    arena_b.config.live_taker_fee.store(0.0060, Relaxed);
+    let out_b = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent_b, &arena_b);
+    assert_eq!(out_b.signal, SignalType::Flat, "Fricción excesiva debe ser vetada por fee_impact");
+    assert_eq!(ultimo_rechazo(), Some(REJ_FEE_IMPACT));
 }
 
 #[test]
 pub fn orchestrator_contract_respects_directional_pressure_and_blocks_crash() {
     let (arena, mut intent) = fixture();
 
-    // 1. Crash sistémico agudo (p_crash = 0.95): compras (Long) vetadas por orchestrator
+    // 1. Crash sistémico agudo (p_crash = 0,95): largos vetados POR EL
+    // ORQUESTADOR (la razón, no sólo el Flat).
     arena.regime_p_crash.store(0.95, Relaxed);
     arena.regime_p_bull.store(0.01, Relaxed);
     arena.regime_p_chaos.store(0.04, Relaxed);
     let out_long = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(out_long.signal, SignalType::Flat, "Compras en crash sistémico deben vetarse por orchestrator");
+    assert_eq!(ultimo_rechazo(), Some(REJ_ORCHESTRATOR));
 
-    // 2. Operación Short en crash sistémico: admitida simétricamente
+    // 2. Cortos en crash: admitidos.
     intent.signal = SignalType::Short;
     let out_short = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(out_short.signal, SignalType::Short, "Shorts en crash deben admitirse");
     assert!(out_short.volume_usd > 0.0);
+    assert_eq!(ultimo_rechazo(), None);
+
+    // 3. QS-REV4 — el ESPEJO: euforia sistémica (p_bull = 0,95). Antes los
+    // cortos pasaban aquí (D-403) mientras los largos se vetaban en el
+    // crash; ahora cada lado se veta en el régimen que le es adverso.
+    arena.regime_p_crash.store(0.01, Relaxed);
+    arena.regime_p_bull.store(0.95, Relaxed);
+    let out_short_bull = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_short_bull.signal, SignalType::Flat, "Ventas en euforia sistémica deben vetarse");
+    assert_eq!(ultimo_rechazo(), Some(REJ_ORCHESTRATOR));
+    intent.signal = SignalType::Long;
+    let out_long_bull = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_long_bull.signal, SignalType::Long, "Compras en euforia deben admitirse");
+    assert_eq!(ultimo_rechazo(), None);
 }
 
 #[test]
 pub fn spec_rejection_contract_handles_unregistered_coin() {
+    // QS-REV1: la versión anterior usaba coin_id = 999, fuera del arena (30
+    // ranuras): salía por REJ_FLAT_COIN y el veto de spec no se ejecutaba.
+    // Ahora: una moneda DENTRO del arena, con precios válidos y sin spec
+    // registrado (el fixture sólo registra la moneda 0).
     let (arena, intent) = fixture();
-
-    // REV-1: Símbolo asignado en arena (coin_id = 1 < arena.coins.len()), pero sin spec
-    // registrado en symbol_registry: debe rechazarse con REJ_SPEC (no con REJ_FLAT_COIN).
+    arena.coins[1].current_price.store(100.0, Relaxed);
+    arena.coins[1].current_atr.store(1.0, Relaxed);
+    arena.coins[1].hurst_exponent.store(0.5, Relaxed);
+    arena.coins[1].metrics.trade_count.store(100, Relaxed);
+    arena.coins[1].metrics.profit_factor.store(2.0, Relaxed);
+    arena.coins[1].metrics.win_rate.store(0.75, Relaxed);
+    arena.coins[1].metrics.kelly_fraction.store(0.15, Relaxed);
+    assert!(quantum_arena::symbol_registry::try_spec(1).is_none());
     let out_unreg = RiskEngine::new(13.0).evaluate_quantum_order(1, &intent, &arena);
     assert_eq!(out_unreg.signal, SignalType::Flat, "Moneda sin spec debe rechazarse como Flat");
-    assert_eq!(
-        risk_engine::ultimo_rechazo(),
-        Some(risk_engine::REJ_SPEC),
-        "Debe emitir específicamente REJ_SPEC"
-    );
+    assert_eq!(ultimo_rechazo(), Some(REJ_SPEC));
+
+    // Y fuera del arena la razón es otra: la de V-TECH-001.
+    let out_fuera = RiskEngine::new(13.0).evaluate_quantum_order(999, &intent, &arena);
+    assert_eq!(out_fuera.signal, SignalType::Flat);
+    assert_eq!(ultimo_rechazo(), Some(REJ_FLAT_COIN));
 }
 
 #[test]
@@ -160,12 +210,14 @@ pub fn invalid_input_contract_rejects_nan_and_infinities() {
     intent.confidence = f64::NAN;
     let out_nan_conf = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(out_nan_conf.signal, SignalType::Flat, "Confianza NaN debe rechazarse fail-closed");
+    assert_eq!(ultimo_rechazo(), Some(REJ_INVALID_INPUT));
 
     // 2. Precio no finito
     intent.confidence = 0.85;
     arena.coins[0].current_price.store(f64::NAN, Relaxed);
     let out_nan_price = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(out_nan_price.signal, SignalType::Flat, "Precio NaN debe rechazarse fail-closed");
+    assert_eq!(ultimo_rechazo(), Some(REJ_INVALID_INPUT));
 }
 
 #[test]
@@ -176,4 +228,5 @@ pub fn flat_coin_contract_rejects_flat_intent() {
     intent.signal = SignalType::Flat;
     let out_flat = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(out_flat.signal, SignalType::Flat, "Señal Flat debe evaluarse como Flat");
+    assert_eq!(ultimo_rechazo(), Some(REJ_FLAT_COIN));
 }
