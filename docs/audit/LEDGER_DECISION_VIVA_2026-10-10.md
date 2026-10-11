@@ -213,3 +213,123 @@ derivaciones.
 | **R-20 / cadena de tamaño** | Decidido (D1): ½ Kelly en espacio de RIESGO sobre p_LCB y b neto de fricción; el apalancamiento es consecuencia. | Pendiente (QS-R4: libro contrafactual en sombra antes de activarlo). |
 | **Freno del host** | Arreglado (Ola Ω76): `src/bin/god_engine.rs:1612` acotado con `.min(d_falsacion)` ($d^* \approx 0,632$, suelo $4,79 en $13 USD), sincronizado con el veto del risk engine. | Ola Ω76 (AGY); compilación validada `cargo check --bin god_engine` OK. |
 
+### 7.1 Verificados después (2026-10-10, tarde): núcleo, ramas de entrada
+
+| id | Dónde | Qué pasa | Arreglo propuesto (lote QS-K, con T-1) |
+|---|---|---|---|
+| **K-27** | `god-engine-core/src/lib.rs:5821` frente a `:5903` | La rama 1 corta admite `micro_trend <= 0.00003`; su espejo largo (rama 4) exige `>= 0.0`. Deja entrar cortos con microtendencia levemente alcista, contra el propio comentario F8-P9 de la línea anterior. | `micro_trend <= 0.0`, espejo exacto. |
+| **K-27b** | `lib.rs:6014`, `:6039` | Las ramas 9 y 10 (rango, estiramiento > 1) exigen `|composite_score| ≥ 0.24` literal; las ramas 7 y 8 del mismo régimen usan `range_thr` (umbral medido × 1,15). 0,24 es el borde inferior de la banda del gen 21 (`tech_threshold`, [0,24; 0,30]): cuando el gen mutaba o el régimen era antipersistente (×1,20), estas dos ramas no lo veían. | `dynamic_tech_thr` (el gen). Se mantiene la relación con 7/8 (`range_thr` = `dynamic_tech_thr` × 1,15): las ramas de estiramiento extremo piden menos score porque ya piden más OBI y más estiramiento. |
+| **K-28** | `lib.rs:5967-5974` | Las compuertas de tendencia del régimen de rango usan literales en unidades de precio: `macro_trend ≥ −0,00010` y `secular_trend < 0,0025` (y sus espejos). Es la clase que D-756 eliminó en la rama 2: el mismo literal es un desplome en un símbolo tranquilo y ruido en uno volátil. `z_macro` y `z_secular` ya están calculados en el mismo ámbito (`:4962-4968`). | `z_macro ≥ −Z95` y `z_secular < Z95`, en una función pura `rango_admite_reversion` (espejo exacto por construcción). Se retira `!(h < 0 && s < 0)`, redundante tras `h ≥ 0`. |
+
+Los tres cambian conducta en el núcleo: van juntos en un lote con su T-1 y se
+avisan antes en el buzón (zona compartida).
+
+**Resultado (lote QS-K, commit `10ecf0b6`):** K-27 lo aplicó también AGY en #714 (mismo código); de QS-K quedan K-27b, K-28 y los contratos `tests_qs_k`.
+- `god-engine-core --lib`: 173/173, con los tres contratos nuevos
+  (`tests_qs_k`): espejo en rejilla, cierre sólo con tendencia
+  significativa y guarda de fuente.
+- T-1: **PASA 16/144**, con la misma lista y las 145 huellas iguales bit a
+  bit a las del árbol del PR #31.
+- El fixture no llega a los bordes que QS-K cambia: el T-1 certifica que no
+  hay regresión, no ejercita el arreglo. Ejercitarlo pide un fixture con
+  rango lateral y microtendencia cerca de cero (pendiente).
+
+### 7.2 Revisión cruzada de Ω69–Ω71 (AGY), 2026-10-10 noche
+
+Sobre `origin/main` 46269a05, leyendo código (sin compilar). REV-1, REV-2 y
+REV-5 los verifiqué yo contra el código. El resto es lectura de un
+subagente: el propagador está portado línea a línea a un script, sin
+ejecutar el Rust. C-10/C-10b (Prospect) ya estaban arriba y no se repiten.
+
+| id | Dónde | Qué pasa | Arreglo propuesto | Dueño |
+|---|---|---|---|---|
+| **REV-1** HIGH | `risk-engine/tests/veto_logic_contracts.rs:131-137` (V-TECH-002 `spec`) | Usa `coin_id = 999`. `lib.rs:230` sale por `coin_id >= arena.coins.len()` (30 ranuras) con `REJ_FLAT_COIN`; `REJ_SPEC` (`:459`) nunca se alcanza. El test sigue verde si se borra el veto que dice certificar. | `coin_id` dentro del arena sin spec registrado y comprobar la razón (`risk_engine::ultimo_rechazo() == Some(REJ_SPEC)`, QS-R4b, o el delta de `REJECT_COUNTERS_DIR`). | AGY/GLM (registro) |
+| **REV-2** HIGH | `veto_logic_contracts.rs:97-110` (V-LOGIC-014 `fee_impact`) | Con `live_taker_fee = 0,50` la fricción de ida y vuelta es ≈ 1,0, el stop viable `f/0,65` ≈ 1,54 y sale antes `REJ_TP_SL_FLOOR` (`lib.rs:887`, también tras D2). `REJ_FEE_IMPACT` (`:1354`) no se alcanza. | Fee que pase el suelo y supere el tope de impacto, y comprobar la razón. Ver REV-11: en 13 USD quizá no exista tal fee. | AGY/GLM |
+| **REV-3** MED | `veto_registry.rs:484-525` | `sol_a1_…` sólo busca el texto `fn <nombre>` en el corpus: vale un comentario, un prefijo (`fn foo` casa con `fn foo_bar`) o un test `#[ignore]`, y no mira qué veto alcanza. No puede detectar REV-1 ni REV-2. | Cada entrada del registro declara su `REJ_*`; el test comprueba `ultimo_rechazo()`. | AGY/GLM |
+| **REV-4** LOW | `veto_registry.rs:341-349`, test `:112-128` (V-LOGIC-015) | El registro lo describe como orquestador de signal-engine con umbral de gen; el veto real es `PortfolioOrchestrator::allow_trade` en risk-engine con el literal `p_crash ≥ 0,90`. MEMORIA dice «shorts simétricos», pero no hay veto corto espejo (`p_bull ≥ 0,90`) y el caso corto se prueba con `p_bull = 0,01`, que no es el espejo. La contracción continua no se ejercita. | Corregir la ficha; decidir si el espejo existe. | AGY |
+| **REV-5** MED | `signal-engine/src/feynman_propagator.rs` (Ω69) | Código muerto: ningún consumidor fuera de tests (`git grep`). `evaluate_for_coin` lee `feynman_coherence`, que sólo escribe un test a mano. El contrato 7 certifica un valor inyectado. | Modo sombra con su contraste OOS antes de cablear, o retirarlo. | AGY |
+| **REV-6** MED | `feynman_propagator.rs:199-202` | La fase de la acción es `0,1·L/(1+|z|)`: −0,08 rad con z = 2 y −2,73 rad con z = 10. Un movimiento MÁS fuerte en la misma dirección destruye la coherencia. 16 escalas a +2 y 16 a +10 dan C = 2,65 frente a 32 todas a +2; voto máx. 0,08 frente a 0,76. | La fase no debe depender de |z| así. | AGY |
+| **REV-7** MED | `feynman_propagator.rs:210` | Normaliza la coherencia por 32 (C ≤ N_activas por Cauchy-Schwarz). Con las 5 escalas operables alineadas a +2,5: normalizada 0,14, voto máx. 0,117. Misma familia que R7-R4-B-2. | Dividir por el número de escalas activas. | AGY |
+| **REV-8** LOW | `feynman_propagator.rs:186` | Una escala no finita se salta, pero la siguiente lee `desplazamientos[k-1]` sin filtrar: NaN se propaga a la suma y la coherencia vale 0 en las 32. El test sólo cubre «todo NaN». | Filtrar también el vecino. | AGY |
+| **REV-9** INFO | doc de `feynman_propagator.rs` y MEMORIA Ω69 | La doc dice S = L·Δt_k, pero no hay Δt; la «velocidad» es z_k − z_{k−1} entre escalas, no en el tiempo. MEMORIA llama C = |A|, el código usa |A|²/Σ|ψ|². En ruido N(0,1), C ≈ 0,88, no 0. Los dos tests «físicos» usan vectores constantes. | Corregir la doc. | AGY |
+| **REV-10** LOW | `god-engine-core/tests/prospect_pressure_integration_contract.rs` | No construye `GodEngineCore`: no ejercita el cableado de `lib.rs:7558-7573`. Fija `p_crash = 0,05`, cuando la fórmula del núcleo con p_bull 0,62 y liquidación 0,05 da 0,215. «Certificado en el hot path» (MEMORIA Ω70) no lo respalda este test. | Test que pase por el núcleo. | AGY |
+| **REV-11** (sospecha) | `risk-engine/src/lib.rs:1185`, `:1354` | En 13 USD: `max_fee_limit` = 0,035; pasar el suelo exige f ≤ 0,65·0,0055 (antes de D2); superar el tope exige lev > 9,8×, y el micro va a 5–6,5×. `REJ_FEE_IMPACT` parece inalcanzable en micro. Falta trazar las ramas de rescate de apalancamiento. **Con D2 (PR #31) el suelo ya no acota f en micro**: un τ largo (stop ancho) paga fricciones mayores, y f·L > 0,035 vuelve a ser alcanzable si el EV lo deja pasar. | Medirlo con `ultimo_rechazo()` en una rejilla (f, τ, capital). | AGY/GLM |
+
+Verificado correcto: función de valor KT (x^0,88; −2,25(−x)^0,88); la
+ponderación es Tversky-Kahneman 1992 (MEMORIA dice «Prelec», que es otra);
+`modulation_factor` es invariante al espejo; el Lagrangiano y el módulo de
+fase son correctos; los tests `flat_coin` e `invalid_input` sí alcanzan su
+veto.
+
+### 7.3 Revisión de #710 y #711 (AGY, Ω72/Ω73), 2026-10-10 noche
+
+- **#710** (zero-alloc en `compute_moments` y en el censo del orquestador):
+  correcto. Mismos momentos sin el `Vec`. El censo pasa de load+store a
+  `fetch_add`, que además cierra una carrera entre hilos. Dejó una línea
+  suelta `<<<<<<< HEAD` en el plan: la CI de main se paró en el chequeo de
+  marcadores y no compiló nada. La retira el PR de QS-P.
+- **#711, C-10/C-10b**: verificado.
+  - `compute_crowd_net_prospect_pressure` es antisimétrica en el cociente
+    L/S (P(1/LS) = −P(LS)).
+  - La lectura del registro conserva el signo.
+  - `ls_account_ratio` tiene escritor en el host (`god_engine.rs:2358`).
+  - En backtest no hay L/S, la presión vale 0 y el consejo no se modula: el
+    T-1 deja de ver el sesgo antiguo contra los cortos.
+  - Sigue sin medir si la presión de la masa predice algo (signo,
+    contrarian): modo sombra y contraste OOS antes de que module.
+- **#711, R-15**: mejora, pero no cierra la causa.
+  - Escalar la deriva con `√(30 s/τ)`, acotado a [0,15; 1], quita el
+    castigo más fuerte a las escalas largas.
+  - La coherencia sigue sin ser una deriva calibrada.
+  - Sigue habiendo tres literales sin derivar (30 s, 0,15 y 0,88).
+  - Arreglo de fondo: estimar la deriva por escala con el pronóstico
+    prequential del banco espectral, o medir el veto con el libro sombra
+    (QS-R4a) por su `REJ_*`.
+- **Certificación**: ni #710 ni #711 corrieron T-1, y #711 cambia la
+  conducta viva (consejo y veto de primer toque). Los certifica el T-1 del
+  PR de QS-P/QS-K sobre el árbol candidato, que incluye los dos.
+
+### 7.4 El T-1 no ve las puertas: punto ciego medido (2026-10-10 noche)
+
+Con el oráculo en paralelo (paridad certificada, §30.7 del plan) se
+compararon las huellas por gen de seis árboles. Las 145 huellas son
+iguales bit a bit en todos:
+
+| Árbol | Qué añade | Lista |
+|---|---|---|
+| main 46269a05 (base) | — | 16/144 |
+| + PR #31 | C-22, D2, D3 | igual, huellas iguales |
+| + QS-K | K-27, K-27b, K-28 | igual, huellas iguales |
+| + #710, #711 | zero-alloc, Prospect de la masa, R-15 | igual, huellas iguales |
+| + #712 | pesos del consejo, Reynolds suavizado | igual, huellas iguales (T-1 con 4 hilos, 1 150 s) |
+
+- **Por qué**: el fixture es una tendencia determinista fuerte.
+  - El consejo aprueba siempre: todos los asientos direccionales coinciden.
+  - La cuenta corre con 1 000 USD (la rama micro no se ejecuta).
+  - Las ramas de rango no llegan a sus bordes.
+- **Qué certifica el T-1**: la no-regresión de parámetros, dimensionado y
+  riesgo. No certifica cambios en las puertas de decisión; esos los cubren
+  sus contratos.
+- **Corrección**: en el PR #31 atribuí a C-22 la ganancia del gen 39
+  (`weight_obi`). Era falso.
+  - El +39/−20 frente a la lista canónica ya está en la base.
+  - Viene de olas de main entre 534e7980 (certificación canónica) y
+    46269a05.
+  - Se puede bisecar con el oráculo en paralelo (≈16 min por punto con 4
+    núcleos).
+- **Propuesta (T-2)**: un segundo fixture con:
+  - rango lateral con reversiones (las ramas 7–10 llegan a sus bordes);
+  - microtendencia cerca de cero;
+  - libro con OBI opuesto al momento (el consejo vota dividido);
+  - cuenta de 13 USD (rama micro, D2/D3, suelo de viabilidad).
+  - El criterio no es un trinquete de cobertura: cada cambio de puerta
+    debe mover sus huellas en la dirección que predice su contrato.
+
+**Revisión de #712 (AGY)**: correcta.
+- C-W: Riesgo pasa de 1,5 a 1,0 y Microestructura de 1,0 a 1,2; Causal
+  vota 0, así que su peso no cambiaba nada.
+- La aprobación exige además que coincida `intended_direction`, con espejo.
+- C-02: el régimen hidrodinámico usa el Reynolds suavizado y la clave
+  `navier_reynolds_number` publica ahora la EWMA (cambio de semántica de
+  telemetría).
+- Llegó a main sin PR ni T-1, como #710 y #711.

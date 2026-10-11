@@ -1268,6 +1268,96 @@ contrato ejecutable).
   - contraste OOS de cada modulador marcado «sin evidencia», cuando haya
     tapes.
 
+### 30.7 QS-P — el ciclo de verificación (2026-10-10)
+
+El dueño observó que las verificaciones no usan toda la CPU. Medido en el
+entorno cloud (4 núcleos, 15 GB):
+
+| Paso | Medido | Causa | Acción |
+|---|---|---|---|
+| Oráculo T-1 | 3 006 s con 1 núcleo de 4 (carga 2,4 con dos oráculos a la vez) | Los 144 genes se evaluaban uno tras otro | **QS-P1**: evaluación en paralelo (`T1_THREADS`, por defecto todos los núcleos), con una huella por gen para comparar corridas. 937 s con 4 hilos, misma lista (ver abajo) |
+| T-1 «base» | Corrió el binario de OTRA rama sin un solo «Compiling» | Cargo no distingue dos worktrees del mismo paquete con un `CARGO_TARGET_DIR` compartido | **QS-P2**: `scripts/t1_oraculo.sh` guarda un sello del árbol en el target; **QS-P2b**: si cambió, toca sólo los ficheros que difieren |
+| CI `unit-suites` | 23–31 min por job, casi todo compilación | `CARGO_BUILD_JOBS=2` en runners de 4 vCPU | **QS-P3**: 4 jobs. **Medido sin ganancia**: 17–24 min con 2 jobs (PR #31) frente a 19–23 min con 4 (PR #32), ruido. El cuello no es el número de jobs (probablemente el enlazado de Windows y el crate grande del núcleo, que no se reparte). Se mantiene (no empeora) |
+| CI `replay-contracts` | 73 min: `check` 11 min y ~56 min de pasos de test que compilan el grafo en debug | Un solo job secuencial; `check` no deja artefactos que reutilicen los tests | Propuestas abajo (zona Codex/GLM) |
+
+**Paridad de QS-P1.** El veredicto no puede depender del número de hilos:
+cada gen se evalúa con su propio arena, el spec del símbolo se registra antes
+del bucle, el bosque global sólo se lee, `feed_health::stall` sólo lo tocan
+tests y los contadores de rechazo son telemetría. Antes de usarlo para
+certificar se mide: la lista de genes debe coincidir con la corrida
+secuencial del mismo árbol, y las huellas por gen deben ser iguales entre
+corridas con distinto número de hilos.
+
+Medido el 2026-10-10 (código del backtest idéntico al árbol `9ddac8ca` del
+PR #31; sólo cambia el arnés del test):
+
+| Corrida | Hilos | Evaluación | Lista de genes |
+|---|---|---|---|
+| Secuencial (C-22 + D2 + D3) | 1 | 2 878 s (con otro oráculo y una compilación en paralelo) | 16/144: [1, 10, 11, 17, 18, 24, 27, 32, 33, 39, 68, 69, 129, 130, 131, 141] |
+| QS-P1 | 4 (sola en la máquina) | **937 s** (1 138 s con la recompilación del workspace) | idéntica |
+| QS-P1 | 2 (con otro oráculo de 2 hilos a la vez) | 1 565 s | idéntica; **las 145 huellas (base + 144 genes) iguales bit a bit** a las de 4 hilos |
+
+Aceleración ≈ 3,1× con 4 núcleos (techo 4×: el gen más lento y el arranque
+del proceso no se reparten).
+
+**Veredicto: QS-P1 certifica igual que la corrida secuencial.** Desde
+ahora los T-1 de esta línea corren en paralelo.
+
+**QS-P2b — recompilar sólo lo que cambió.** El sello guarda el árbol git
+del estado compilado: ficheros seguidos con sus cambios sin commitear más
+los nuevos no ignorados, construido con una copia del índice. La corrida
+siguiente toca sólo los ficheros que difieren entre ese árbol y el estado
+actual. Sin sello válido toca todos los `.rs`, como antes. Medido en seco:
+entre main `0043f889` y el árbol base cambian 21 ficheros; antes se
+recompilaba el workspace entero (3–5 min con 4 núcleos).
+
+**Dónde correrlo.** El entorno cloud tiene 4 núcleos; dos oráculos a la
+vez se reparten la máquina (≈ 30 min cada uno). En un PC con más hilos, el
+mismo comando escala casi lineal hasta 144 genes. En Windows, desde Git
+Bash y sin wine:
+
+```bash
+scripts/t1_oraculo.sh            # todos los hilos (NUMBER_OF_PROCESSORS)
+scripts/t1_oraculo.sh 12         # o un número fijo
+```
+
+Coste: unos 46 min-núcleo por corrida (145 backtests de ~19 s), más la
+compilación.
+
+**Correr en el PC del dueño (8 núcleos).** Una sesión de agente en la nube
+no puede usar ese PC. Para que compilación y oráculos corran allí, el
+trabajo se abre en una sesión que se ejecute en ese ordenador: la app de
+escritorio de Claude o `claude remote-control` en una terminal dentro del
+repo, que aparece luego en la app de Claude Code. Si en ese PC corre
+`god_engine.exe`, el oráculo debe dejarle núcleos: `scripts/t1_oraculo.sh 6`.
+
+**Límite del T-1 (ledger §7.4).** El fixture es una tendencia fuerte: el
+consejo aprueba siempre, no es micro y las ramas de rango no llegan a sus
+bordes. Cinco cambios de puertas seguidos dieron huellas idénticas. El T-1
+certifica la no-regresión de parámetros y dimensionado, no las puertas.
+Siguiente paso: fixture T-2 (rango lateral, consejo dividido, 13 USD).
+
+**Propuestas para las otras líneas (sin acuse no son reparto):**
+
+- **Codex/GLM (`replay-contracts`)**:
+  - `CARGO_BUILD_JOBS: '4'`;
+  - un paso inicial `cargo test --no-run` con los mismos paquetes que los
+    pasos siguientes, para compilar una vez y sustituir al `check`
+    (medirlo antes de adoptarlo);
+  - caché de dependencias con `actions/cache` fijado por SHA: v4.2.3 es
+    `5a3ec84eff668545956fd18022155c47e93e2684` (leído con `git ls-remote`).
+    Medir antes: la cuota es de 10 GB por repositorio y el `target/` de
+    cuatro jobs de Windows puede desalojarse en cada corrida.
+- **Todas las líneas**:
+  - para certificar, `scripts/t1_oraculo.sh` (o un `CARGO_TARGET_DIR` por
+    worktree);
+  - no medir dos árboles en el mismo target sin recompilar;
+  - `--test-threads=1` existe por el estado global de algunos tests. Si un
+    crate no lo tiene, sus tests pueden correr en paralelo. Inventariarlo es
+    una tarea pendiente de QS-P.
+- **Rendimiento en vivo** (nanosegundos del camino caliente): es otro eje,
+  no QS-P. Se mide con los benchmarks de cada crate antes de tocar nada.
+
 ## 31. Erradicación de Asignaciones en Heap (Zero-Alloc Hot-Path) en Consenso Continuo y Momentos Estadísticos (Ola Ω72, Ficha #710)
 
 - **Zero-Alloc en Hot-Path del Consenso Continuo (`crates/signal-engine/src/orchestrator.rs:392-445`)**:

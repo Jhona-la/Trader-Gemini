@@ -53,7 +53,10 @@ jobs:
             # Sintético: ni entrenamiento, ni promoción, ni modelos reales.
             paquetes: -p trader-gemini-v5 --lib --bin train_forest
     env:
-      CARGO_BUILD_JOBS: '2'
+      # QS-P3: los runners windows-2022 tienen 4 vCPU y 16 GB. Con 2 jobs la
+      # compilación (casi todo el tiempo del job: 23–31 min en el PR #30)
+      # dejaba la mitad de la máquina parada.
+      CARGO_BUILD_JOBS: '4'
       CARGO_INCREMENTAL: '0'
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
