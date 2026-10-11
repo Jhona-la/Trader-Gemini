@@ -96,21 +96,20 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω86 completada / Ficha #724)
+## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω87 completada / Ficha #725)
 
-- **Haciendo ahora**: Ola Ω86 (#724) completada — Erradicación Integral de Allocations en `try_symbol`, `sigma_forecast` y RLS en Hot-Path:
-  - **Erradicación de Asignaciones en `try_symbol`**: En `god-engine-core/src/lib.rs:1281` (`liquidation_severity_at`) y `:1994` (`sym_funding`), sustituido `try_symbol` por `with_symbol` zero-alloc, erradicando la clonación de `String` en CADA evento de mercado de `process_event`.
-  - **Eliminación de Clones Redundantes y Verificaciones O(1)**: En `entry_reservation.rs:36` sustituido por `slot_es_simbolo`; en `contagion_publisher.rs:69` eliminada la clonación; en `lib.rs:4149, 7892` reutilizado `sym` en dataset y telemetría.
-  - **Zero-Alloc en Estimadores y Pronósticos**: En `quantum-arena/src/state.rs:308-316`, sustituida la colección `Vec<f64>` de `sigma_forecast_at` por buffer fijo de stack `[0.0f64; 7]` (eliminando el 1% de allocations del hot path de Claude profiling).
-  - **Zero-Alloc en RLS Online y Predictor Espectral**: En `quantum-arena/src/spectral_tape.rs:381, 612`, sustituidas las asignaciones dinámicas en `Rls::update` y `HorizonForecaster::predict` por buffers fijos de stack `[0.0f64; 16]` (eliminando el 4.8% de allocations del hot path).
-  - **Total Acumulado de Erradicación**: Más del **82% de asignaciones en heap erradicadas en el camino caliente** entre Ω84, Ω85 y Ω86.
+- **Haciendo ahora**: Ola Ω87 (#725) completada — Desasfixia Temporal y Cooldown Multiescala en el Continuo Espectral:
+  - **Resolución de la Trampa de Escala Asimétrica**: En `god-engine-core/src/lib.rs:5575`, desacoplado el enfriamiento base respecto a cierres lentos mediante `enfriamiento_base_ms = if tau_cierre > 0 { (tau_cierre as f64).min(tau_dom) } else { tau_dom }`.
+  - **Desasfixia de Micro-Escalas**: Cuando un trade cierra con un horizonte lento ($\tau = 4\text{ h}$ ó $12\text{ h}$), ya no congela incondicionalmente el activo en todas las bandas operables. Si el mercado resuena en una escala activa más rápida (`tau_dom`), la descorrelación se mide contra la escala activa viva (p.ej. 30 s), liberando micro-oportunidades sin violar la física de descorrelación.
+  - **Sin Inflación Macro**: Cierres rápidos ($\tau = 45\text{ s}$) no se inflan artificialmente al centroide macro si éste fuese de horas.
+  - **Preservación de Escalera Binaria**: Mantiene la progresión $2^{\text{racha}}$ y su amortización logarítmica canónica $\lfloor\log_2(1 + \Delta t / \text{base})\rfloor$.
   - **Validación Extremo a Extremo**:
-    * Creado `crates/quantum-arena/tests/zero_alloc_hotpath_primitives_contract.rs` (4/4 tests PASSED al 100%).
-    * `cargo test -p quantum-arena`: 100% pasando.
-    * `cargo test -p god-engine-core`: 100% pasando.
-    * `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
+    * Creado contrato formal `crates/god-engine-core/tests/multiscale_cooldown_desasfixia_contract.rs` (3/3 tests PASSED al 100%).
+    * `cargo test -p god-engine-core`: 100% pasando (suite completa de contratos y pruebas unitarias).
+    * `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro --nocapture`: ejecutado con 69 trades y Win Rate incrementado a 43.48% (huella `bbcd31f2a7ef06b3`).
     * `cargo check --workspace --all-targets`: 0 errores en todo el workspace.
 - **Commiteado reciente**:
+  - Ola Ω86 (#724, commit `d70a5bfc` en main): Erradicación Integral de Allocations en `try_symbol`, `sigma_forecast` y RLS en Hot-Path (82.1% total acumulado erradicado).
   - Ola Ω85 (#723, commit `369eb34f` en main): Erradicación Integral del 76% de Asignaciones en Heap en Señales y Geometría del Núcleo (`get_scoped_val_strict`, stack buffers Yang-Mills/Hodge).
   - Ola Ω84 (#722, commit `977ba2f8` en main): Desacoplamiento de Reloj Causal P1, Erradicación de Asignaciones en Heap P5 y Migración Estricta en Camino Caliente.
   - Ola Ω83 (#721, commit `8dd51dfb` en main): Aislamiento Estricto de Ámbito Multi-Activo y Rigor Dimensional de Unidades (`get_scoped_parameter_strict`, `get_scoped_val_strict_or`, contrato formal, paridad dimensional).

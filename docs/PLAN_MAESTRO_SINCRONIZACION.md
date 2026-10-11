@@ -1795,6 +1795,30 @@ Actualización de composición: main avanzó a 8dd51dfb (Ω83); inventario y TSV
   * Invarianza de compuertas de oro: `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture` con huella `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
   * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores en 1m 18s.
 
+## 47. Desasfixia Temporal y Cooldown Multiescala en el Continuo Espectral (Ola Ω87, Ficha #725)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#725`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Resolución matemática, física y sistémica de la Trampa de Escala Asimétrica en el enfriamiento del motor (`god-engine-core/src/lib.rs:5575-5586`). Específicamente:
+    1. Desacoplamiento continuo entre escalas temporales ortogonales: cuando un cierre previo provino de una escala lenta ($\tau_{\text{pos}} = 4\text{ h}$ ó $12\text{ h}$), el enfriamiento base ya no congela incondicionalmente al activo completo durante 4–12 horas.
+    2. Modulación adaptativa continua: `enfriamiento_base_ms = if tau_cierre > 0 { (tau_cierre as f64).min(tau_dom) } else { tau_dom }`.
+    3. Si el mercado actual resuena en una escala activa más rápida (`tau_dom`), la descorrelación viva se evalúa con respecto a la escala activa `tau_dom`, liberando inmediatamente las bandas de alta frecuencia/microestructura tras el tiempo físico correspondiente a dicha escala (p.ej. 30 s).
+    4. Si un cierre micro ocurre ($\tau = 45\text{ s}$), no se infla artificialmente al centroide macro si éste fuese de horas.
+    5. Preservación estricta de la escalera binaria de racha $2^{\text{racha}}$ y su amortización logarítmica canónica $\lfloor\log_2(1 + \Delta t / \text{base})\rfloor$ sin parálisis temporal.
+  * **POR QUÉ**: El diagnóstico forense reveló que tras el cierre de cualquier trade con horizonte prolongado (swing/macro de 4 h ó 12 h), `tau_ultimo_cierre_ms` fijaba `enfriamiento_base_ms` en 4 ó 12 horas. Debido a que `can_open_position_ms` gobernaba `viable_para_entrar`, tanto la banda rápida (`fast_intent`) como la lenta (`slow_intent`) quedaban vetadas durante horas enteras, incluso tras operaciones ganadoras (`streak = 0`), sofocando las oportunidades de crecimiento exponencial compuesto de la cuenta micro (\$13 USD).
+  * **PARA QUÉ**: Erradicar la asfixia artificial cruzada entre horizontes temporales en el espacio de Hilbert $L^2$, permitiendo al motor cosechar micro-oportunidades continuas a escala de segundos sin violar el tiempo de descorrelación física del mercado actual, maximizando la tasa de interés compuesto cada 3 días ($T_d = 72\text{ h}$, $g \approx +25.99\%/\text{día}$).
+  * **CÓMO**:
+    - En `GodEngineCore::process_tick_dual`: la base del enfriamiento se computa como el mínimo entre el horizonte del último cierre y la escala dominante viva del espectro `tau_dom`.
+    - Cuando la microestructura y el mercado aceleran, el tiempo de espera requerido decae armónicamente hacia la escala dominante del mercado actual sin quedar atrapado en la escala secular del trade previo.
+  * **CUÁNDO**: Continuamente en cada tick de evaluación de viabilidad de entrada (`viable_para_entrar = atr_ok && spread_ok && cooldown_ok`).
+  * **DÓNDE**: `crates/god-engine-core/src/lib.rs`, `crates/god-engine-core/tests/multiscale_cooldown_desasfixia_contract.rs`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead), coordinado con Claude, Codex, Sol y Qoder.
+- **Validación Extremo a Extremo e Invarianza**:
+  * Suite contractual dedicada: `crates/god-engine-core/tests/multiscale_cooldown_desasfixia_contract.rs` (3/3 tests PASSED al 100%).
+  * Suite completa `god-engine-core`: 100% verde (25/25 stateful contracts, 4/4 prospect pressure, 4/4 puertas continuo, etc.).
+  * Fixture micro T-2: `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro --nocapture` ejecutado con 69 trades y Win Rate incrementado a 43.48% (huella `bbcd31f2a7ef06b3`).
+  * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores.
+
 
 ## 47. Línea F — Claude (cloud «laughing-fermi», prefijo LF-n): revisión de composición, lazos adaptativos y campo multiactivo (2026-10-11)
 

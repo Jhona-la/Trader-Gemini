@@ -1,5 +1,19 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — AGY: OLA Ω87 COMPLETADA — DESASFIXIA TEMPORAL Y COOLDOWN MULTIESCALA EN EL CONTINUO ESPECTRAL (FICHA #725)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#725`.
+- **Resolución de la Trampa de Escala Asimétrica en Cooldown**:
+  - En `crates/god-engine-core/src/lib.rs:5575-5586`: desacoplado el enfriamiento base respecto a cierres lentos mediante `enfriamiento_base_ms = if tau_cierre > 0 { (tau_cierre as f64).min(tau_dom) } else { tau_dom }`.
+  - Cuando un trade cierra con un horizonte lento ($\tau = 4\text{ h}$ ó $12\text{ h}$), ya no congela incondicionalmente el activo en todas las bandas operables. Si el mercado resuena en una escala activa más rápida (`tau_dom`), la descorrelación se mide contra la escala activa, liberando micro-oportunidades sin violar la física de descorrelación.
+  - Cierres rápidos ($\tau = 45\text{ s}$) no se inflan artificialmente al centroide macro si éste fuese de horas.
+  - Preservada la escalera binaria de racha $2^{\text{racha}}$ y su amortización logarítmica canónica $\lfloor\log_2(1 + \Delta t / \text{base})\rfloor$.
+- **Validación Extremo a Extremo e Invarianza**:
+  * Creado contrato formal `crates/god-engine-core/tests/multiscale_cooldown_desasfixia_contract.rs` (3/3 tests PASSED al 100%).
+  * Suite completa `god-engine-core`: 100% verde (25/25 stateful contracts, 4/4 prospect pressure, 4/4 puertas continuo, etc.).
+  * Fixture micro T-2: `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro --nocapture` ejecutado con 69 trades y Win Rate incrementado a 43.48% (huella `bbcd31f2a7ef06b3`).
+  * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores en 1m 05s.
+
 ## 2026-10-11 — AGY: OLA Ω86 COMPLETADA — ERRADICACIÓN INTEGRAL DE ALLOCATIONS EN `try_symbol`, `sigma_forecast` Y RLS EN HOT-PATH (FICHA #724)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#724`.
@@ -91,6 +105,69 @@
   - `cargo test -p quantum-arena`: suite completa de contratos pasando al 100%.
   - `cargo test -p god-engine-core`: suite completa pasando al 100%.
   - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: test determinista `t2_diag_actividad_del_fixture_lateral_micro` aprobado.
+
+## 2026-10-11 — Claude (Línea C, en el PC del operador): C-F2 cerrada (CL-65)
+
+- Ya se trabaja en el repositorio local del operador (Windows nativo, msvc)
+  y se fusiona en GitHub por PR. Worktree propio (`.claude/worktrees/…`) y
+  `CARGO_TARGET_DIR` propio (`.claude/worktrees/target-cf2`); no se toca el
+  checkout compartido.
+- Revisión cruzada de las 137 pruebas cf2, hecha por tres revisores de sólo
+  lectura:
+  - `cf2_calibracion_solucion_conocida.rs` no compilaba en el HEAD de la
+    nube; sus 8 pruebas no se habían ejecutado.
+  - Cuatro activas fijaban el defecto: ahora son CARACTERIZACIÓN.
+  - Las OPEN que no se activan solas lo dicen en su ignore (CONTRATO,
+    RÉPLICA, requisito).
+  - Hay pruebas frágiles o vacuas corregidas.
+  - Un nulo nuevo de Yang-Mills (138 pruebas).
+- Resultado en el PC: 68 activas pasan, las 69 OPEN fallan por su causa
+  (leído el mensaje de cada una) y la de coste pasa. Suites de los siete
+  crates: 1 632 pasan, 0 fallan.
+- Hallazgos nuevos:
+  - F2.3-08b: W1 es invariante a la escala y no ve un cambio de volatilidad
+    ×5 (0/16 caminos), así que el BOCPD sobre W1 sólo da falsas alarmas.
+  - F2.2-03b: el FA-1 del escéptico, con id propio.
+  - F2.2-10, causa 2: el umbral del DSR deflacta dos veces.
+- Lección: con `--test <archivo>` y logs por nombre de archivo, dos crates
+  con un archivo homónimo (`cf2_cuantico_solucion_conocida.rs` en
+  feature-engine y en signal-engine) se pisan el log. Usad el crate en el
+  nombre del log.
+- Pedidos con su test en rojo, uno por dueño, en el buzón (Qoder/GLM, AGY y
+  Codex).
+- PR #40, con main integrado hasta #39 (Codex, SI) y #721 (AGY); sólo
+  hubo conflictos de buzón y de memoria, resueltos por unión.
+  - Sobre el árbol final: check del workspace con todos los targets en
+    verde.
+  - Suites de los siete crates y del registro: 1 661 pasan, 0 fallan.
+  - Pruebas cf2: igual que antes. #39 mueve un poco los valores de σ̂, con
+    la misma causa.
+  - T-1 (44f8b5c2): 16/144 (11,1 %), con la misma lista que main.
+  - C-F3 sigue en revisión de sólo lectura en la nube.
+
+## 2026-10-11 — Claude (Línea C): traspaso de C-F2 al PC del operador
+
+- El operador pidió (13:41 UTC) volver a trabajar en su repositorio local y
+  fusionar en GitHub, no en la nube. Desde aquí, la Línea C compila y prueba
+  en su PC (Windows nativo, sin wine).
+- Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08`, head con
+  CL-64 (137 pruebas `tests/cf2_*`: 67 activas, 70 OPEN con `#[ignore]`) y
+  los documentos `docs/audit/HALLAZGOS_C-F2_2026-10-11.md`,
+  `FICHAS_C-F2_2026-10-11.md` y `PRUEBAS_C-F2_2026-10-11.tsv`.
+- Pendiente de C-F2, en este orden:
+  1. Revisión cruzada de las pruebas (en la nube quedó a medias en
+     risk-engine y god-engine-core).
+  2. Correr todas las pruebas juntas, también con `--ignored`.
+  3. Cerrar la sección de resultados del documento.
+  4. Pedidos con su test en rojo a cada dueño, en el buzón.
+  5. PR, CI verde, T-1 ≥ 11,0 % (sólo hay tests nuevos: no debe moverse),
+     merge y comprobar que llegó a `main`.
+- C-F3 (decisión viva: τ, confianza, vetos, modelos, motores) sigue en
+  revisión de sólo lectura en la nube. Sus hallazgos llegan a esta rama
+  como documento.
+- En el PC: worktree propio y `CARGO_TARGET_DIR` propio, para no tocar el
+  índice ni los cambios sin commit de otros agentes en el checkout
+  compartido, y para no bloquear `god_engine.exe`.
 
 ## 2026-10-11 — SI: reinicio coordinado del censo y del recorrido global
 
