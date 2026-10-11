@@ -188,8 +188,18 @@ impl<'a> PortfolioOrchestrator<'a> {
         if (systemic_crash_veto || fallback_discrete_veto) && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.
         }
-        // D-403: Permitir operaciones Short durante BullRun (scalping contratendencia con stops ceñidos)
-        // en cumplimiento del mandato supremo: operar Long y Short simétricamente.
+        // QS-REV4: espejo del veto anterior. D-403 dejaba vender en euforia
+        // sistémica («contratendencia con stops ceñidos») mientras vetaba
+        // comprar en caída: dos lados, dos reglas. Con D2 el stop es el de la
+        // τ y ya no es ceñido. La presión continua de arriba ya era simétrica
+        // (p_crash para largos, p_bull para cortos); el veto duro también lo
+        // es ahora. El respaldo discreto (`fallback_discrete_veto`, simplex
+        // sin poblar) sigue sólo para largos: lo pinea un contrato de Codex
+        // (`finite_crash_threshold_and_legacy_regime_veto_are_preserved`).
+        let systemic_squeeze_veto = p_bull >= 0.90;
+        if systemic_squeeze_veto && !intent_is_long {
+            return false; // Bloqueo absoluto de ventas en euforia sistémica.
+        }
 
         let mut total_long_margin = 0.0;
         let mut total_short_margin = 0.0;

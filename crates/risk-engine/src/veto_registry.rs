@@ -332,9 +332,9 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         id: "V-LOGIC-014",
         nombre: "fee_impact",
         causa: "coste de fees/slip supera el beneficio esperado de la operación — fricción come el edge",
-        fuente_umbral: "medido (fees vivos + slippage de la física)",
-        datos: "fee breaker: fees estimados vs PnL esperado",
-        responsable: "heredado (fee-breaker XXXIX §13.5), puesto al día GLM/LXVII, 2026-10-01; certificado Ola Ω71",
+        fuente_umbral: "gen (max_acceptable_fee_pct) interpolado hacia el literal micro 0,035 por micro_w",
+        datos: "fricción de ida y vuelta (fees vivos + slippage) × apalancamiento final, frente al tope; es coste por unidad de margen",
+        responsable: "heredado (fee-breaker XXXIX §13.5); GLM/LXVII 2026-10-01; Ola Ω71; ficha corregida QS-REV (Claude), 2026-10-10",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
         test: Some("fee_impact_contract_rejects_excessive_friction_and_admits_viable_order"),
@@ -343,10 +343,10 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     EntradaVeto {
         id: "V-LOGIC-015",
         nombre: "orchestrator",
-        causa: "rechazo del orquestador multi-motor (consenso/coordinación entre ramas del continuo)",
-        fuente_umbral: "gen",
-        datos: "estado del orquestador (signal-engine/orchestrator)",
-        responsable: "heredado, puesto al día GLM/LXVII, 2026-10-01; certificado Ola Ω71",
+        causa: "PortfolioOrchestrator::allow_trade (risk-engine): veto duro de largos con p_crash ≥ 0,90 y de cortos con p_bull ≥ 0,90 (espejo, QS-REV4), contracción continua del margen por presión direccional y respaldo discreto Crash sólo para largos",
+        fuente_umbral: "literal (0,90 y 0,25·presión) + presupuesto de margen",
+        datos: "regime_p_crash/p_bull/p_chaos del arena, spectral_coherence y spectral_crash_flux por moneda, margen por lado",
+        responsable: "heredado; GLM/LXVII 2026-10-01; Ola Ω71; ficha corregida y espejo QS-REV (Claude), 2026-10-10",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
         test: Some("orchestrator_contract_respects_directional_pressure_and_blocks_crash"),
@@ -491,9 +491,11 @@ mod tests {
         for e in REGISTRO_VETOS {
             if let Some(t) = e.test {
                 let declarado = TESTS_EXISTENTES_RIESGO.contains(&t);
+                // QS-REV3: nombre EXACTO (`fn nombre(`). Con `fn nombre` a
+                // secas, `fn foo` casaba con `fn foo_bar`.
                 let encontrado = fuentes
                     .iter()
-                    .any(|f| f.contains(&format!("fn {}", t)));
+                    .any(|f| f.contains(&format!("fn {}(", t)));
                 assert!(
                     declarado || encontrado,
                     "{}: el test declarado \"{}\" NO existe como fn en risk-engine \
@@ -514,7 +516,7 @@ mod tests {
 
         // Y la inversa: la lista declarada no acumula nombres fantasma.
         for t in TESTS_EXISTENTES_RIESGO {
-            let encontrado = fuentes.iter().any(|f| f.contains(&format!("fn {}", t)));
+            let encontrado = fuentes.iter().any(|f| f.contains(&format!("fn {}(", t)));
             assert!(
                 encontrado,
                 "TESTS_EXISTENTES_RIESGO incluye \"{}\" pero no existe como fn en \
