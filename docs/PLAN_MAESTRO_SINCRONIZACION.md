@@ -1681,3 +1681,7 @@ SI no equipara memoria adaptativa con ventaja demostrada. Pronóstico y referenc
 Primer all-targets aprobado (exit 0, 13 min 42 s). Commit adicional 06ce88ef: preflight compartido en el consumidor forecast de spectral_bench, dos contratos y ejecución en CI; no certifica admisión global del benchmark. Commits funcionales 8404bbdf/c9d877da/06ce88ef publicados. **Recibo terminal de tests, CI, SHA e integración: [PR #39](https://github.com/Jhona-la/Trader-Gemini/pull/39)**. Este corte no presume el resultado futuro de las comprobaciones en curso.
 
 SI-O02 sigue abierto: suelo móvil, inversión sin retirar desplazamiento y climatología en coordenadas distintas; investigación coordinada con C-F2. No se rebajan umbrales ni se certifica rentabilidad. Informe y JSON delimitan la evidencia y las unidades.
+
+## Reinicio SI coordinado — 2026-10-11, base 1d1f8bdd
+
+Nuevo mandato del operador y entrada operativa: [adenda de reinicio desde la base](audit/REINICIO_COORDINADO_BASE_2026-10-11.md). Conserva el plan rector y las fases R0–R9/C-F0–C-F11, con censo completo de 1.583 rutas por blob y asignación C sin omisiones. Todas las filas empiezan pendientes; el censo no acredita revisión completa. Resuelve unidades de conteos, registra hipótesis sin evidencia, criterios de veto/adaptación/rendimiento y recibos por archivo. Reservas activas preservadas; chat R4 acusó coordinación y aviso antes de avanzar main. Recibo terminal SI: PR #39.

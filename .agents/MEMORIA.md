@@ -1,5 +1,12 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — SI: reinicio coordinado del censo y del recorrido global
+
+- Mandato ampliado del operador: metas → conceptos → fundamentos → algoritmos → cada archivo. Adenda operativa `docs/audit/REINICIO_COORDINADO_BASE_2026-10-11.md`, vinculada al plan rector, R0–R9 y C-F0–C-F11 existentes.
+- Base remota 1d1f8bdd: 1.583 rutas, todas inicialmente inventariadas, ninguna revisión semántica heredada. Inventario por blob y asignación C completa sin fallback; checker correcto y siete tests del inventariador aprobados.
+- Reservas SI/R4/C-F2/AGY preservadas y aviso al chat R4 con ACK. Corrige unidades de los conteos y distingue hipótesis, aspiraciones de latencia y evidencia; no afirma cierre económico ni auditoría de los 1.583 archivos.
+- Artefactos fechados `REINICIO_BASE_*`; delta a44 no incluye su documentación posterior. Regenerar por SHA y reabrir dependencias semánticas incluso con blob igual. Recibo terminal del lote SI y de integración: PR #39.
+
 ## 2026-10-11 — SI: pronóstico emitido y feedback epigenético causal
 
 - Rama propia codex/spectral-evidence-1011 desde1d1f8bdd; no toca estrategia multiactivo reservada por otro chat.
