@@ -2126,6 +2126,10 @@ impl ExecutionProvider for OrderExecutor {
             buf.push_str(&payload.signature);
 
             if buf.is_overflow() {
+                // CL-47: la intención ya estaba registrada (la ruta WS la
+                // necesita) y esta orden nunca sale: se cierra.
+                self.order_registry
+                    .mark_local_reject(&payload.client_order_id, payload.timestamp);
                 return Err(
                     "SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string(),
                 );
@@ -2230,17 +2234,6 @@ impl ExecutionProvider for OrderExecutor {
         } else {
             client_order_id_param.to_string()
         };
-        // F1.5: registrar la intención antes del envío.
-        self.order_registry.register_intent(
-            &client_order_id,
-            symbol,
-            side,
-            if is_long { "LONG" } else { "SHORT" },
-            ORDER_TYPE_MARKET,
-            final_quantity,
-            timestamp,
-        );
-
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
             "https://testnet.binancefuture.com/fapi/v1/order?"
@@ -2269,6 +2262,19 @@ impl ExecutionProvider for OrderExecutor {
         if buf.is_overflow() {
             return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
         }
+
+        // F1.5: registrar la intención antes del envío. CL-47: después de la
+        // última salida previa al envío, como la IOC (CL-39b): un buffer
+        // desbordado no deja una intención huérfana.
+        self.order_registry.register_intent(
+            &client_order_id,
+            symbol,
+            side,
+            if is_long { "LONG" } else { "SHORT" },
+            ORDER_TYPE_MARKET,
+            final_quantity,
+            timestamp,
+        );
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
@@ -2597,8 +2603,10 @@ impl ExecutionProvider for OrderExecutor {
         let micros_str = itoa_buf.format(micros);
         id_buf[4..4 + micros_str.len()].copy_from_slice(micros_str.as_bytes());
         let remnant_id = std::str::from_utf8(&id_buf[..4 + micros_str.len()]).unwrap_or("mcT_0");
+        // CL-46b: el host no resuelve esta orden hija consultando la padre.
         self.execute_raw_qty_with_client_id(symbol, is_long, remaining, step_size, remnant_id)
             .await
+            .map_err(|e| crate::ioc_evidence::error_del_remanente(executed, remnant_id, e))
     }
 
     /// FASE 8: Immediate-Or-Cancel. Intenta llenar limit; si no puede, se cancela automáticamente por Binance.

@@ -26,6 +26,7 @@ pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64, total_trades: 
 
 pub mod fitness_contract;
 pub mod entry_reservation;
+pub mod entes_consejo;
 pub mod evidence_publication;
 pub mod contagion_publisher;
 pub mod bootloader;
@@ -217,6 +218,35 @@ pub fn retorno_neto_pct(neto_usd: f64, nocional_usd: f64) -> Option<f64> {
 /// ruido del feed, no migración de escala (señalización de Claude:
 /// `prev = None` congelaba el 35 % del crash_flux).
 pub const CADENCIA_REGIMEN_MS: f64 = 60_000.0;
+
+/// CL-45b — la cantidad que se cierra es la que la ranura tenía bajo su
+/// cerrojo al cerrar, no la que el núcleo leyó al empezar a evaluarla. La
+/// confirmación de un llenado parcial (CL-45/CL-46, desde la tarea del envío)
+/// puede reescalar la ranura entre esa lectura y `close_with_fee`: el PnL
+/// bruto y la comisión de salida se habían calculado sobre la cantidad
+/// reservada y la propuesta al host pedía cerrar más de lo que el exchange
+/// tiene. Ambos son lineales en la cantidad al mismo precio de salida (la
+/// comisión es nocional × tasa), así que se escalan por cerrada/leída.
+/// Devuelve (pnl bruto, comisión de salida, cantidad); si no hubo cambio, o la
+/// cantidad cerrada no es una cantidad válida, devuelve lo leído intacto.
+pub fn escalar_a_lo_cerrado(
+    pnl_bruto: f64,
+    comision_salida: f64,
+    cantidad_leida: f64,
+    cantidad_cerrada: f64,
+) -> (f64, f64, f64) {
+    if cantidad_cerrada.is_finite()
+        && cantidad_cerrada > 0.0
+        && cantidad_leida.is_finite()
+        && cantidad_leida > 0.0
+        && cantidad_cerrada != cantidad_leida
+    {
+        let r = cantidad_cerrada / cantidad_leida;
+        (pnl_bruto * r, comision_salida * r, cantidad_cerrada)
+    } else {
+        (pnl_bruto, comision_salida, cantidad_leida)
+    }
+}
 
 /// #593 — UMBRAL DEL CONSEJO (decisión 2026-09-30): distancia armónica
 /// mínima |Δlnτ| para CO-DESPACHAR dos candidatos como bandas
@@ -1229,13 +1259,14 @@ impl GodEngineCore {
         }
     }
 
+    /// Reinicio por reconexión del feed: estado de MERCADO (estimadores y
+    /// último libro). CL-51: el riesgo es de la cuenta y no se toca; antes
+    /// el pico del drawdown volvía a `base_capital` en cada reconexión.
     pub fn reset_engines(&mut self) {
         for i in 0..quantum_arena::state::MAX_COINS {
             self.feature_engines[i] = StatefulEngine::new();
         }
         self.ultimo_libro.fill(None);
-        let init_cap = self.arena.config.base_capital.load(Ordering::Relaxed);
-        self.risk_engine.reset(init_cap);
     }
 
     /// #15: Evalúa si el drift de predicción o las anomalías acumuladas requieren reentrenamiento urgente
@@ -1871,9 +1902,12 @@ impl GodEngineCore {
                 self.kline_close_memory[coin_id] = current_price;
             }
 
-            if self.arena.kill_switch_active.load(Ordering::Relaxed) {
-                return (None, None);
-            }
+            // CL-43 (FMT-232, ADR-0015): el kill-switch NO corta aquí. Antes
+            // este `return (None, None)` saltaba la gestión de ranuras (SL,
+            // trailing, BE, zombie, tóxico) de todas las monedas: con el latch
+            // armado, una posición abierta se quedaba sin defensa local. El
+            // latch se aplica como bloqueo de ENTRADAS dentro de
+            // `process_tick_dual` (`entries_blocked`), donde el cierre viaja.
 
             if self
                 .arena
@@ -2884,9 +2918,12 @@ impl GodEngineCore {
             }
 
             // 1. Quantum Kill-Switch Check
-            if self.arena.kill_switch_active.load(Ordering::Relaxed) {
-                return (None, None, None);
-            }
+            // CL-43 (FMT-232, ADR-0015): el latch bloquea lo que AUMENTA el
+            // riesgo (entradas y cotización maker), nunca las salidas. Antes
+            // devolvía `(None, None, None)` aquí, antes de la sección 1: con
+            // el latch armado ninguna ranura se gestionaba. Ahora entra en
+            // `entries_blocked` y la frontera X-012 devuelve el cierre.
+            let kill_latched = self.arena.kill_switch_active.load(Ordering::Acquire);
 
             // 2. Latency Interlock & Entry Permissions
             let latency_threshold_ms = self
@@ -2912,6 +2949,7 @@ impl GodEngineCore {
             }
             let liquidation_severity = liquidation_view.ok().flatten().unwrap_or(0.0);
             let entries_blocked = !allow_entries
+                || kill_latched
                 || self.drift_entry_veto
                 || quantum_arena::feed_health::is_stalled()
                 || is_latency_panic
@@ -3683,6 +3721,10 @@ impl GodEngineCore {
                     // cerrar, mientras el estado de la posicion sigue viva.
                     let tau_de_la_posicion = pos.entry_tau_ms.load(Ordering::Relaxed);
                     let (closed_side, closed_entry, closed_qty, margin_used, entry_fee_paid) = pos.close_with_fee();
+                    // CL-45b: lo cerrado manda (un llenado parcial confirmado
+                    // en paralelo pudo reescalar la ranura tras la lectura).
+                    let (gross_pnl, close_fee, qty) =
+                        escalar_a_lo_cerrado(gross_pnl, close_fee, qty, closed_qty);
                     // Consume even when economic eligibility later rejects this
                     // close. A subsequent adopted/reopened position must not
                     // inherit the previous occupant's learning evidence.
@@ -7543,21 +7585,24 @@ impl GodEngineCore {
                                 .map(|s| s.dominant_tau_ms)
                                 .unwrap_or(1_138_000.0),
                             // P-5b / R7-R4-A-2: datos EXCLUSIVOS del asiento Ente del
-                            // Mercado — lectura robusta bidireccional (coin_id y símbolo scoped)
-                            whale_burst_z: self
-                                .arena
-                                .registry
-                                .get_for_coin_or(coin_id, "whale_burst_z", 0.0)
-                                .max(self.arena.registry.get_scoped_value_or(&sym, "whale_burst_z", 0.0)),
+                            // Mercado — lectura robusta bidireccional (coin_id y símbolo scoped).
+                            // CL-49: escritura y lectura viven en `entes_consejo`.
+                            whale_burst_z: entes_consejo::leer(
+                                &self.arena.registry,
+                                coin_id,
+                                &sym,
+                                entes_consejo::BALLENA,
+                            ),
                             liquidation_severity,
                             open_interest_norm: coin
                                 .open_interest_norm
                                 .load(Ordering::Relaxed),
-                            spoof_score: self
-                                .arena
-                                .registry
-                                .get_for_coin_or(coin_id, "spoof_score", 0.0)
-                                .max(self.arena.registry.get_scoped_value_or(&sym, "spoof_score", 0.0)),
+                            spoof_score: entes_consejo::leer(
+                                &self.arena.registry,
+                                coin_id,
+                                &sym,
+                                entes_consejo::SPOOF,
+                            ),
                             // QO-U2: sentimiento de masas contrarian
                             crowd_ls_ratio: self
                                 .arena
@@ -8207,6 +8252,48 @@ mod tests_d609 {
     fn respeta_los_limites_solo_en_la_direccion_del_cambio() {
         assert_eq!(hurst_duration_modulation(7_200_000, 0.60), 7_200_000);
         assert_eq!(hurst_duration_modulation(10_000, 0.40), 10_000);
+    }
+}
+
+#[cfg(test)]
+mod tests_cl45b {
+    use super::escalar_a_lo_cerrado;
+
+    /// Reserva de 0,010 a 100 con salida a 101 y comisión 0,0005·nocional;
+    /// la confirmación del parcial deja 0,004 antes del cierre.
+    #[test]
+    fn cl45b_el_cierre_se_contabiliza_con_lo_cerrado() {
+        let (bruto, comision, cantidad) =
+            escalar_a_lo_cerrado(1.0 * 0.010, 101.0 * 0.010 * 0.0005, 0.010, 0.004);
+        assert!((bruto - 1.0 * 0.004).abs() < 1e-15);
+        assert!((comision - 101.0 * 0.004 * 0.0005).abs() < 1e-15);
+        assert_eq!(cantidad, 0.004);
+    }
+
+    #[test]
+    fn cl45b_sin_cambio_o_sin_cantidad_valida_no_toca_nada() {
+        assert_eq!(escalar_a_lo_cerrado(2.0, 0.1, 0.5, 0.5), (2.0, 0.1, 0.5));
+        assert_eq!(escalar_a_lo_cerrado(2.0, 0.1, 0.5, 0.0), (2.0, 0.1, 0.5));
+        assert_eq!(escalar_a_lo_cerrado(2.0, 0.1, 0.5, f64::NAN), (2.0, 0.1, 0.5));
+        assert_eq!(escalar_a_lo_cerrado(2.0, 0.1, 0.0, 0.3), (2.0, 0.1, 0.0));
+    }
+
+    /// El núcleo escala lo calculado ANTES de usar la cantidad: evidencia,
+    /// PnL neto y la propuesta de cierre al host salen de lo cerrado.
+    #[test]
+    fn cl45b_el_nucleo_usa_lo_cerrado() {
+        let codigo: String = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<String>()
+            .split_whitespace()
+            .collect();
+        assert!(codigo.contains(
+            "pos.close_with_fee();let(gross_pnl,close_fee,qty)=escalar_a_lo_cerrado(gross_pnl,close_fee,qty,closed_qty);"
+        ));
     }
 }
 

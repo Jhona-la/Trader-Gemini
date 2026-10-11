@@ -1482,15 +1482,15 @@ fn main() {
                 0, true, false, false, mid, vol, sim_bid, sim_ask, t.bq, t.aq, real_obi,
                 0.0, t.ts, false, &omni, is_buyer_maker,
             );
-            // Un kill-switch activo hace que `process_event` retorne ANTES de
-            // tocar los rasgos: a partir de ahí el vector quedaría congelado y
-            // las muestras serían copias del mismo instante. No puede pasar
-            // con las entradas bloqueadas, y si pasara hay que enterarse.
+            // El latch del núcleo sólo se arma aquí con capital ≤ 0 (no hay
+            // sistema inmune ni demonio en el entrenador): el replay ya no
+            // es el del motor que se quiere reproducir, así que se aborta.
+            // Desde CL-43 `process_event` sigue actualizando los rasgos bajo
+            // el latch (sólo bloquea entradas), pero el aborto se mantiene.
             if core.arena.kill_switch_active.load(Ordering::Relaxed) {
                 eprintln!(
-                    "❌ [{}] kill-switch del motor activo en el tick {} — desde aquí \
-                     `process_event` no actualiza los rasgos y toda muestra posterior sería \
-                     el MISMO vector congelado. Entrenamiento abortado.",
+                    "❌ [{}] kill-switch del motor activo en el tick {} (capital ≤ 0): \
+                     el replay ya no reproduce el motor. Entrenamiento abortado.",
                     path, i
                 );
                 std::process::exit(1);

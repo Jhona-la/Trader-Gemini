@@ -68,6 +68,28 @@ impl EntryReservation {
         Ok(())
     }
 
+    /// CL-45: confirma la reserva con la cantidad que el exchange ejecutó.
+    /// Con `Some(q)` y q menor que la reservada, la ranura se escala a q y la
+    /// comisión de entrada no pagada vuelve al capital. Con `None` (paper, o
+    /// una ruta cuya respuesta no trae la ejecución) es `confirm`.
+    pub fn confirmar_llenado(
+        &self,
+        arena: &GlobalArena,
+        ejecutada: Option<f64>,
+    ) -> Result<(), ReservationError> {
+        let Some(q) = ejecutada else {
+            return self.confirm(arena);
+        };
+        let devuelta = self
+            .position(arena)?
+            .confirmar_llenado_generation(self.generation, q, &arena.used_margin)
+            .map_err(ReservationError::Position)?;
+        if devuelta > 0.0 {
+            arena.unified_capital.fetch_add(devuelta, Ordering::AcqRel);
+        }
+        Ok(())
+    }
+
     /// Bind caller-supplied confirmation to the exact slot, not a fixed legacy slot.
     pub fn confirm(&self, arena: &GlobalArena) -> Result<(), ReservationError> {
         self.position(arena)?

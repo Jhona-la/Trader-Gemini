@@ -1054,7 +1054,6 @@ No se han borrado refs activas/no integradas, promovido modelos ni operado.
   - Suite de integración `crates/risk-engine/tests/veto_logic_contracts.rs` expandida a 7 tests formales pasando al 100%.
   - Suite completa de `risk-engine` pasando 153/153 tests unitarios y 25/25 suites de integración al 100%.
 
-<<<<<<< HEAD
 ## 30. Línea E — Claude (sesión «elegant», prefijo QS-n): revisión desde la base del camino de decisión viva (2026-10-10)
 
 > Dueño: Claude, sesión «elegant» (la otra sesión Claude es la Línea C, CL-n).

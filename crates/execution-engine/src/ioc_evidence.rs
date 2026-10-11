@@ -19,7 +19,7 @@
 //! Reutiliza sin cambios los validadores estrictos de `execution_evidence`
 //! (un campo ausente no se toma por cero).
 use crate::execution_evidence::{parse_query_order_response, terminal_maker_executed_quantity};
-use crate::OrderAck;
+use crate::{OrderAck, OrderResolution, OrderStatus, TrackedOrder};
 
 /// Prefijo del error no ambiguo de una IOC terminada sin ejecución.
 pub const IOC_UNFILLED: &str = "IOC_UNFILLED";
@@ -77,5 +77,74 @@ pub fn resultado_para_el_host(r: &ResultadoIoc, client_order_id: &str) -> Result
             "{IOC_UNFILLED}: id={client_order_id} status={} sin ejecución",
             ack.status
         )),
+    }
+}
+
+/// CL-45: cantidad ejecutada de una orden YA TERMINAL según el registro
+/// (respuesta `RESULT` fusionada con los fills del WS). `None` si la orden no
+/// está, sigue activa, su estado es desconocido o no ejecutó nada: entonces
+/// no hay evidencia de cantidad y el host confirma como antes.
+pub fn cantidad_ejecutada_terminal(orden: Option<&TrackedOrder>) -> Option<f64> {
+    let o = orden?;
+    if o.status.is_active() || o.status == OrderStatus::Unknown {
+        return None;
+    }
+    (o.executed_qty.is_finite() && o.executed_qty > 0.0).then_some(o.executed_qty)
+}
+
+/// Qué hace el host con la reserva de una entrada cuyo envío fue ambiguo.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DestinoReserva {
+    /// La orden terminó sin ejecutar nada: la reserva se revierte.
+    Revertir,
+    /// La orden terminó con ejecución: se confirma con lo ejecutado.
+    Confirmar { ejecutada: f64 },
+    /// Sin evidencia concluyente: la reserva se conserva y se reconcilia.
+    Conservar,
+}
+
+/// CL-46b: error del remanente taker del maker-chase tal como lo ve el host.
+/// El remanente es una orden HIJA (`mcT_…`) y el host sólo sabe consultar la
+/// orden padre: con el error crudo, un `AMBIGUOUS` del remanente llevaba al
+/// host a consultar la GTX padre ya cancelada y a revertir (padre sin
+/// ejecución) o a confirmar sólo lo del padre, aunque el remanente pudiera
+/// haber llenado. Se marca `MAKER_CHASE_UNVERIFIED` (la reserva se conserva
+/// y la reconciliación la ajusta) si el padre ya ejecutó algo o si el error
+/// del remanente es ambiguo. Sólo un rechazo firme con el padre sin ejecutar
+/// deja el error tal cual: no se llenó nada y la reserva se revierte.
+pub fn error_del_remanente(ejecutado_padre: f64, remanente_id: &str, error: String) -> String {
+    if ejecutado_padre > 0.0 || error.starts_with("AMBIGUOUS") {
+        format!("MAKER_CHASE_UNVERIFIED (REMNANT {remanente_id}, padre ejecutó {ejecutado_padre}): {error}")
+    } else {
+        error
+    }
+}
+
+/// CL-46: destino de la reserva tras consultar por REST una entrada cuyo
+/// envío salió `AMBIGUOUS`. Antes el host sólo registraba la consulta: un
+/// `Rejected` concluyente (terminal sin ejecución, identidad verificada)
+/// dejaba una posición que sólo existía en el arena, y una orden terminal
+/// con ejecución quedaba sin confirmar (su cierre contaba como papel).
+/// - `MAKER_CHASE_UNVERIFIED` ⇒ conservar: las órdenes hijas del maker no se
+///   resuelven con la consulta de la orden padre.
+/// - `Rejected` ⇒ revertir.
+/// - `Accepted` con la orden terminal y ejecución > 0 en el registro ⇒
+///   confirmar con lo ejecutado.
+/// - Cualquier otro caso (`Timeout`, orden aún activa) ⇒ conservar.
+pub fn destino_tras_consulta(
+    error_envio: &str,
+    consulta: OrderResolution,
+    orden: Option<&TrackedOrder>,
+) -> DestinoReserva {
+    if error_envio.starts_with("MAKER_CHASE_UNVERIFIED") {
+        return DestinoReserva::Conservar;
+    }
+    match consulta {
+        OrderResolution::Rejected => DestinoReserva::Revertir,
+        OrderResolution::Accepted => match cantidad_ejecutada_terminal(orden) {
+            Some(ejecutada) => DestinoReserva::Confirmar { ejecutada },
+            None => DestinoReserva::Conservar,
+        },
+        OrderResolution::Timeout => DestinoReserva::Conservar,
     }
 }

@@ -23,25 +23,12 @@ impl EnvManager {
         format!("{}/{}", root, sub)
     }
 
-    /// Determines if the system is currently running in a Demo/Shadow environment
+    /// Determines if the system is currently running in a Demo/Shadow environment.
+    /// CL-48: la regla vive en `quantum_arena::paths::is_demo_env`, compartida
+    /// con los crates que no dependen del binario.
     #[inline(always)]
     pub fn is_demo_env() -> bool {
-        let shadow = env::var("SHADOW_MODE")
-            .unwrap_or_default()
-            .trim()
-            .to_lowercase()
-            == "true";
-        let testnet = env::var("USE_TESTNET")
-            .unwrap_or_default()
-            .trim()
-            .to_lowercase()
-            == "true";
-        let demo = env::var("BINANCE_USE_DEMO")
-            .unwrap_or_default()
-            .trim()
-            .to_lowercase()
-            == "true";
-        shadow || testnet || demo
+        quantum_arena::paths::is_demo_env()
     }
 
     /// Helper to resolve a path based on the environment and create directories if they don't exist
@@ -59,8 +46,10 @@ impl EnvManager {
         }
     }
 
+    /// CL-48: misma función que usan los crates sin acceso al binario
+    /// (`quantum_arena::paths::env_data_path`): una sola regla de ruta.
     pub fn data_path(file_name: &str) -> String {
-        Self::resolve_path("data", Some(file_name))
+        quantum_arena::paths::env_data_path(file_name)
     }
 
     pub fn model_path(file_name: &str) -> String {

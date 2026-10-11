@@ -346,25 +346,82 @@ fn close_kelly_retains_the_trade_horizon_instead_of_using_cleared_slot() {
     );
 }
 
-/// OPEN FMT-232: passing means the defensive-policy gap is still reproduced.
+/// CL-43 (FMT-232, ADR-0015): el kill-switch bloquea ENTRADAS, nunca la
+/// gestión de salidas. Antes este mismo tick (SL 99, bid 97) no producía
+/// propuesta de cierre y la posición seguía abierta con el latch armado: el
+/// latch que debía contener el riesgo abandonaba la posición abierta.
 #[test]
-fn open_kill_switch_blocks_even_a_local_stop_close_proposal() {
+fn kill_switch_preserves_local_stop_close_and_blocks_new_entry() {
     let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
     let _dir = FixtureDirectory::new();
     let (arena, mut engine) = core(OutcomeContext::IsolatedSimulation, false);
-    arena.kill_switch_active.store(true, Ordering::Relaxed);
-    let (entry, proposal, _) =
-        engine.process_tick_dual(0, 97.0, 97.01, 5.0, 5.0, 2000, &[0.0; 54], true, false);
+    arena.kill_switch_active.store(true, Ordering::SeqCst);
+    // allow_entries = true: el latch, por sí solo, veta la entrada.
+    let (entry, proposal, maker) =
+        engine.process_tick_dual(0, 97.0, 97.01, 5.0, 5.0, 2000, &[0.0; 54], true, true);
     assert!(entry.is_none());
-    assert!(
-        proposal.is_none(),
-        "known limitation: kill switch suppresses local defense too"
-    );
-    assert!(arena.coins[0].positions.position.is_open());
-    // Only this fixture's latch is changed; no operational flag is touched.
-    arena.kill_switch_active.store(false, Ordering::Relaxed);
-    assert!(close(&mut engine, 97.0) < 0.0);
+    assert!(maker.is_none());
+    let (_, pnl, qty) =
+        proposal.expect("FMT-232/ADR-0015: el kill-switch no suprime el cierre local por SL");
+    assert_eq!(qty, 1.0);
+    assert!(pnl < 0.0);
     assert!(!arena.coins[0].positions.position.is_open());
+    assert!(arena.kill_switch_active.load(Ordering::SeqCst));
+}
+
+/// CL-43: la misma regla por la puerta del evento unificado. Antes
+/// `process_event` devolvía `(None, None)` con el latch armado, antes de
+/// llegar a la gestión de ranuras.
+#[test]
+fn kill_switch_process_event_preserves_stop_close() {
+    let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
+    let _dir = FixtureDirectory::new();
+    let (arena, mut engine) = core(OutcomeContext::IsolatedSimulation, false);
+    arena.kill_switch_active.store(true, Ordering::SeqCst);
+    let (entry, closed) = engine.process_event(
+        0, true, false, false, 97.0, 1.0, 97.0, 97.01, 5.0, 5.0, 0.0, 0.0, 2000, false,
+        &[0.0; 54], false,
+    );
+    assert!(entry.is_none(), "el latch sigue vetando entradas");
+    let (_, pnl, qty) = closed.expect("ADR-0015: el cierre por SL viaja bajo el kill-switch");
+    assert_eq!(qty, 1.0);
+    assert!(pnl < 0.0);
+    assert!(!arena.coins[0].positions.position.is_open());
+    assert!(arena.kill_switch_active.load(Ordering::SeqCst));
+}
+
+/// CL-44b (ADR-0015): el aplanado del sistema inmune cierra la posición en
+/// el exchange sin tocar la ranura, que sigue abierta y confirmada hasta la
+/// reconciliación. Bajo el latch el núcleo la gestiona (CL-43): antes este SL
+/// local se contabilizaba como cierre real (capital, Kelly, calibradores) a un
+/// precio que no era el del aplanado. Consumida la confirmación, el cierre
+/// sigue viajando como propuesta defensiva, pero es papel.
+#[test]
+fn cl44b_tras_el_aplanado_inmune_el_cierre_local_no_aprende() {
+    let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
+    let _dir = FixtureDirectory::new();
+    let (arena, mut engine) = core(OutcomeContext::ExchangeLocalEstimate, true);
+    arena.kill_switch_active.store(true, Ordering::SeqCst);
+    assert_eq!(arena.consume_exchange_confirmations(), 1);
+    assert_eq!(arena.consume_exchange_confirmations(), 0, "se consume una sola vez");
+    let capital = arena.unified_capital.load(Ordering::Relaxed);
+    let (entry, proposal, _) =
+        engine.process_tick_dual(0, 97.0, 97.01, 5.0, 5.0, 2000, &[0.0; 54], true, true);
+    assert!(entry.is_none());
+    let (_, _, qty) = proposal.expect("el cierre defensivo sigue llegando al host");
+    assert_eq!(qty, 1.0);
+    assert_eq!(arena.unified_capital.load(Ordering::Relaxed), capital);
+    assert_eq!(arena.coins[0].metrics.trade_count.load(Ordering::Relaxed), 0);
+    assert_eq!(engine.diag_close_total, 0);
+    assert_eq!(engine.diag_unverified_close_total, 1);
+    assert!(
+        !arena.coins[0]
+            .positions
+            .position
+            .last_close_confirmed
+            .load(Ordering::Relaxed),
+        "el host no lo contabiliza ni persiste el sobre de Kelly"
+    );
 }
 
 #[test]
