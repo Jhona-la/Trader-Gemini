@@ -134,9 +134,42 @@ estados absorbentes sin intervención humana. Cada lazo se clasifica:
 
 El mapa medido está en §4.1 (se completa con la revisión de esta ola).
 
-### 4.1 Mapa
+### 4.1 Mapa (977ba2f8, por lectura de código; «verif.» = la Línea F releyó las líneas)
 
-(ver §6, hallazgos LF-F2)
+| Lazo | Lector vivo | Reloj | Clase | Nota |
+|---|---|---|---|---|
+| Calibrador Platt por moneda + global | `win_probability` → veto EV (REJ_EV) | cierre; olvido 12 h por tiempo de evento | CERRADO-VIVO, lento | Sólo aprende de lo ejecutado (LC-F7-15, XLIV-5). |
+| `conformal_by_coin` | `conformal_accept_*` → voto del filtro de reversión | cierres; ventana 200, sin olvido | CERRADO-VIVO débil | 30 cierres por moneda antes de actuar. |
+| Epigenética: umbral | gate de confianza ×[0,75; 1,35] | cierre; τ de decaimiento 900 000 ms literal; reloj sólo con eventos de depth | CERRADO-VIVO / LITERAL | En cintas sin depth el decaimiento no corre. |
+| Epigenética: sesgo de tamaño | `effective_confidence` → tamaño | cierre; sin olvido | ABSORBENTE parcial | Escalar por moneda dominado por cierres rápidos (LF-7). |
+| `online_learner` (Kalman TD) | ninguno (diagnóstico) | cierre | ABIERTO | D-693. |
+| Pesos Hedge del ensamble | `combined()` | vela / cierre | ABIERTO en la práctica (LF-13) | Ninguna moneda tiene dos modelos: los pesos no cambian `ml_prob`. |
+| Convicción por rama (`TasaAcierto`) | confianza → gate y tamaño | cierre; sin reloj ni persistencia | CERRADO-VIVO, referencia equivocada (LF-14, K-02) | Cota de Wilson contra 0,70 de confianza: una rama con 40/100 (+0,30 R) queda vetada. |
+| Freno del bosque | rama/bosque | cierre | CERRADO-VIVO | LC-F1-18. |
+| Pesos por habilidad `SkillMotores` (#626/#661) | consenso espectral → orquestador (#624) | maduración de bloques; e-proceso sin olvido | LITERAL en la práctica | Umbral de familia 8 320 ≈ 820 maduraciones: días de uptime; todos en el piso 0,15 (LC-F2-05). |
+| τ por habilidad (#594) | `dominant_tau_ms` | maduración de bloques | casi siempre respaldo (argmax de energía) | R7-R2-C-1. |
+| Bosques `_MOTOR` | inferencia | archivos en disco | CONGELADO | Sólo entrenamiento offline (ADR-0008). |
+| Darwin `evolve_online` | — | 60 s pared | ABIERTO (apagado por dos variables) | — |
+| Promoción del demonio + DSR | `apply_to_arena` | 60/180 s; sólo armado | ABSORBENTE (`cumulative_trials` sólo crece) | LC-F7-07. |
+| Rollback / Ville del demonio | rollback del genoma | muestreo 500 ms de PnL realizado | **ABIERTO en prod y sesgado al armarse → corregido (LF-3, LF-4)** | verif. |
+| Umbrales del bosque online | umbrales ML; freno del núcleo | 500 ms | CERRADO en demo | LC-F7-05/06. |
+| Envolvente de Kelly | apalancamiento del envío; veto del host | cierre; Beta sin olvido, persistida | **ABSORBENTE fuera de la banda micro (LF-12)** | verif. |
+| `riesgo_por_operacion` | veto de drawdown, grupo, demonio | cada orden validada (no enviada) | CERRADO-VIVO, etiqueta mal especificada | LC-F4-03; además es global (LF-11). |
+| Drawdown / latch | toda entrada | — | ABSORBENTE (sin rearme automático) | ADR-0015, LC-F4-10. |
+| PPO | `micro_score` | cierre; una política global | CERRADO-VIVO, recompensa escalada por τ | LC-F7-13, LF-9. |
+| Pesos de asientos del consejo | `compute_weights` | cierre; un tracker global | **CERRADO-VIVO por tasa de acierto (LF-14)** | verif. |
+| Prospect Theory | asiento del consejo | — | LITERAL por diseño | λ = 2,25, α = β = 0,88. |
+
+**Patrón común (el hallazgo central de esta ola).** Los lazos que sí
+deciden puntúan **acierto direccional contra 0,5**, mientras la doctrina
+opera con RR ≥ 2,25, cuyo punto de equilibrio es p* = 1/(1+RR) ≈ 0,31.
+Con 35 % de acierto y esperanza +0,14 R por operación, esos lazos
+aprenden que el sistema «se equivoca» y frenan precisamente las
+operaciones que ganan dinero: convicción por rama (K-02), pesos del
+consejo (LF-14) y el vigilante de rollback (LF-3, ya corregido). Arreglo
+único propuesto: **toda asignación de crédito se puntúa por esperanza neta
+frente al punto de equilibrio de la geometría de la orden** (o por log-loss
+de una probabilidad calibrada), nunca por acierto contra 0,5.
 
 ## 5. Campo multiactivo continuo en τ (F-C)
 
@@ -159,9 +192,41 @@ cambio del camino vivo:
 
 Hallazgos de esta ola: §6, LF-F3.
 
-## 6. Hallazgos de esta ola
+## 6. Hallazgos de esta ola (base 977ba2f8)
 
-(se completa al cerrar la ola)
+Método: tres revisores en paralelo (composición de Ω82–Ω84, lazos
+adaptativos, multiactivo/τ), sólo lectura; la Línea F re-verificó contra el
+código cada hallazgo de severidad alta antes de registrarlo. «Arreglado» =
+test que falla antes del cambio y pasa después, en esta rama.
+
+| ID | Sev. | Hallazgo | Evidencia | Estado / dueño |
+|---|---|---|---|---|
+| LF-1 | MED | Ω84 cambió el respaldo de identidad del slot de `""` a `"BTCUSDT"`: un slot sin universo ni spec se convierte en BTC (hereda `BTCUSDT_MOTOR`, escribe claves `BTCUSDT_*`, alimenta el líder del lead-lag con su propio flujo). Contradice ADR-0011 y B3.18b. Latente en vivo; alcanzable en `run_booktick_replay` (no registra identidades a propósito) y `votes_export`. | `god-engine-core/src/lib.rs:3104-3105`; `symbol_registry.rs:231` (specs por defecto vacíos) | **Arreglado** (respaldo `""`; conserva la unificación de identidad de Ω84). Amplía LC-F1-32 (Línea C). |
+| LF-1b | INFO | Efecto no declarado de Ω84: al unificar la identidad, el aprendizaje al cierre (Hedge, rama, bosque, `record_trade_outcome`) empezó a funcionar en replays sin identidad (antes el sello de entrada y el filtro del cierre comparaban cadenas distintas). Los datasets de `votes_export` antes y después de Ω84 difieren. T-1/T-2 no lo ven (registran BTCUSDT en el slot 0). | `lib.rs:3823,3830` vs `:8067,8092,8130` | Registrado; avisar a GLM (dataset L2). |
+| LF-2 | MED (latente bajo Ville) | El arreglo C-2 de AGY (IC de grupo `qo_613_rho_tau` a la τ operativa unificada) lo sobrescribe en cada evento la publicación MG05 de Codex dentro de `process_tick_dual`, con el nodo crudo. Y el nodo más cercano se elegía en distancia lineal sobre una malla geométrica (40 s → nodo de 17,2 s, fuera de la banda). | `lib.rs:1777-1782` vs `:2924-2930`; `evidence_publication.rs` | **Arreglado** (las dos rutas usan `tau_operativa_unificada`; nodo en ln τ). Sigue abierto: el veto debería usar la τ de la **orden** candidata (Codex D / Línea C). |
+| LF-3 | HIGH | El vigilante de rollback del demonio no era una prueba: revertía cuando un e-proceso a favor del genoma caía 50 % desde su pico, y recortaba cada TP a +1 R. Monte Carlo (400 trayectorias i.i.d., RR 2,25): revierte el 100 % de los genomas con +0,14 R y +0,30 R por operación. | `online_daemon.rs:1143-1144, 1208`; `ville_e_process.rs:106` | **Arreglado**: `VigilanciaDegradacion` apuesta en contra (H0: E[X] ≥ 0 sobre [−1, RR máx]) y revierte sólo si la riqueza supera 1/α. Falsa reversión medida ≤ 0,0425 con esperanza 0; detecta −0,67 R en ~27 operaciones. |
+| LF-4 | HIGH | La vigilancia de rollback se armaba detrás del `return` del gate de evolución en vivo: en prod (desarmado por defecto) nunca se armaba, contra el doc de `live_evolution_armed` y el log del host. **Arreglar LF-4 sin LF-3 habría encendido en prod un vigilante que revierte genomas rentables.** | `online_daemon.rs:1356` vs `:1375-1392` | **Arreglado** junto con LF-3 (el armado precede al gate). |
+| LF-5 | HIGH | Enfriamiento, racha de pérdidas y anti-whiplash son un escalar por moneda atado a la τ de la última ranura que cerró: un cierre a 4 h bloquea durante 4 h (480× su τ) a todo candidato de 30 s de esa moneda, aun tras ganar; tres pérdidas a 30 s dejan entrar un candidato de 4 h a los 4 min; una ganancia a 4 h borra la racha de tres pérdidas rápidas. Contradice el propio comentario D-622 (`lib.rs:6677-6679`). | `lib.rs:5561-5572, 3909-3912, 7210, 7256`; `stateful_engine.rs:282-311, 521-534` | Abierto → **Línea C** (C-F3). Propuesta: enfriamiento por banda de ln τ (las ranuras ya están separadas Δln τ ≥ 0,8); cambia conducta viva: T-1. |
+| LF-6 | MED | El filtro de spread se juzga a la τ dominante cruda y lo comparten candidatos de toda τ: con τ_dom = 30 s veta una intención de 4 h con 2 pb de spread; con τ_dom = 4,9 h deja pasar un candidato de 30 s con spread varias veces su recorrido. | `lib.rs:5522-5531` | Abierto → Línea C (relacionado LC-F1-14). |
+| LF-7 | MED | Sesgo y umbral epigenéticos: un escalar por moneda, dominado por cierres rápidos (una pérdida a 30 s mueve el sesgo ~19× más que una a 4 h), que dimensiona órdenes de toda τ; ya existe la versión por τ (`apply_epigenetic_outcome`) pero el riesgo lee el escalar. | `state.rs:422-432`; `risk-engine/src/lib.rs:579-584, 1087-1094` | Abierto → Línea C / AGY. |
+| LF-8 | MED | La pertenencia a «la misma apuesta» usa correlación de los últimos 512 ticks (segundos) e ignora la τ de la orden: un ETH a 4 h con ρ₄ₕ ≈ 0,85 frente a un BTC abierto queda fuera del grupo si ρ_tick ≈ 0,4. | `correlation_guard.rs:593, 631-634, 657` | Abierto → Codex (Línea D). |
+| LF-9 | LOW-MED | Una sola política PPO para todas las monedas y τ, con recompensa no normalizada por σ(τ). | `lib.rs:4239, 4356, 5371`; `online_ppo.rs:101-115` | Conocido (plan C fila 28); detalle nuevo. |
+| LF-10 | LOW | Dedup núcleo↔bracket por símbolo y 5 s: dos ranuras del mismo lado que cierran en 5 s pierden el segundo cierre de la envolvente. El arreglo propuesto en F3-C5 (símbolo+lado) no lo cubre. | `god_engine.rs:2918, 3508-3513, 3858-3863` | Extiende F3-C5 → Línea C. |
+| LF-11 | LOW | El veto de grupo usa la EWMA global `riesgo_por_operacion` como riesgo del candidato: tras órdenes a 4 h (SL ~1,5 %) un candidato a 30 s (SL ~0,3 %) se cobra ~5×. | `risk-engine/src/lib.rs:646-650, 1433-1442` | Abierto → Línea C. |
+| LF-12 | HIGH | La envolvente de Kelly bloquea la cuenta para siempre al salir de la banda micro (capital ≥ 10× nocional mínimo ≈ 50 USD): con ≥ 30 operaciones y Kelly conservador ≤ 0 el envío queda en 0, no se registran operaciones, el posterior no cambia (sin olvido, persistido). Un historial rentable (35 %, RR 2,25) da Kelly conservador −0,12 con n = 60 y −0,036 con n = 200. | `kelly_envelope.rs:387-393`; `god_engine.rs:4149-4151, 4324-4330` | Abierto → Línea C + E (D1/D4 de ADR-0016). |
+| LF-13 | MED | Los pesos Hedge del ensamble no afectan ninguna decisión: ninguna moneda tiene dos modelos (DarkAlpha sólo en BTCUSDT; sólo hay `_MOTOR` de ATOM, BNB y NEAR), y `combine()` normaliza sobre los que opinan. | `ensemble.rs:198-235`; `lib.rs:4818-4846` | Abierto → GLM (B). |
+| LF-14 | HIGH (diseño) | Los pesos de los asientos del consejo se calculan por acierto direccional contra el signo del retorno: con RR 2,25 y 35 % de acierto, los asientos que apoyaron las operaciones rentables puntúan 0,35 y bajan; los que disentían puntúan 0,65 y suben. Mismo defecto que K-02 (convicción por rama). | `consejo_seniors.rs:1390-1399, 1465-1504` | Abierto → Qoder / AGY (metacortex) con la regla de §4.1. |
+| LF-15 | LOW-MED | Dos familias de lectores del registro discrepan ante NaN desde Ω82: `get_scoped_parameter`/`get_scoped` devuelven la primera clave existente aunque sea NaN; `get_scoped_val_or` la salta y cae a la moneda o al global. | `omniscient-registry/src/lib.rs:350-379, 382-407` | Abierto → AGY (dueño del registro). |
+| LF-16 | LOW | El reloj de eventos del registro (Ω84) es un `store` sin máximo (puede retroceder) y sella también escrituras de otros hilos (spot, OI, reconciliación) con la última hora del núcleo. Hoy ningún lector consulta los sellos: la «frescura» prometida en Ω82/Ω84 no se usa. | `omniscient-registry/src/lib.rs:162-165`; `spot_feed.rs:119-121` | Refina LC-F1-35. |
+| LF-17 | LOW | Documentación: `evidence_publication.rs` decía que el registro normaliza no finitos a cero (falso desde Ω82; corregido aquí). Ω84 anuncia «cero heap» pero `sym` sigue siendo un `String` clonado por tick; `with_symbol` no tiene llamadores. | `evidence_publication.rs:3-5`; `symbol_registry.rs:140, 146-158` | Doc corregido; resto → AGY. |
+
+Refutado por los revisores (no reabrir): el símplex de régimen BTC no
+depende de `sym`; el formato de clave de los lectores estrictos de Ω83 es
+`c{id}:` (igual que `set_for_coin`); `get_global_suffixed` construye la misma
+clave que el `format!` anterior; ningún par de núcleos comparte registro;
+`online_learner` no entra en `ml_prob`; la reserva de margen entre monedas
+está serializada en un hilo; la simetría largo/corto de las puertas del
+continuo se mantiene salvo los casos ya archivados.
 
 ## 7. Teoría: estado, siguiente paso y prueba que la falsa
 
