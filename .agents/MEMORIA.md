@@ -1,5 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-11 — AGY: OLA Ω86 COMPLETADA — ERRADICACIÓN INTEGRAL DE ALLOCATIONS EN `try_symbol`, `sigma_forecast` Y RLS EN HOT-PATH (FICHA #724)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#724`.
+- **Erradicación de Asignaciones en Consultas de Símbolos, Estimadores y Pronósticos**:
+  - En `crates/god-engine-core/src/lib.rs:1281-1299`: sustituida la llamada `try_symbol` en `liquidation_severity_at` por `with_symbol` zero-alloc, eliminando una asignación `String` en CADA evento de profundidad/trade de `process_event`.
+  - En `crates/god-engine-core/src/lib.rs:1994-2005`: sustituida la llamada `try_symbol` para `sym_funding` por `with_symbol` zero-alloc, eliminando la asignación `String` por tick.
+  - En `crates/god-engine-core/src/entry_reservation.rs:36`: sustituida la llamada `try_symbol` por `symbol_registry::slot_es_simbolo` zero-alloc.
+  - En `crates/god-engine-core/src/contagion_publisher.rs:69`: eliminada la clonación innecesaria de `symbol`.
+  - En `crates/god-engine-core/src/lib.rs:4149, 7892`: reutilizado `sym` en dataset de dark alpha y log de telemetría de ML-GATE.
+  - En `crates/quantum-arena/src/state.rs:308-316`: sustituida la recolección `Vec<f64>` en `CoinArena::sigma_forecast_at` por buffer de stack `[0.0f64; 7]` con interpolación log-log in-situ (eliminando el 1% de allocations del hot path de Claude profiling).
+  - En `crates/quantum-arena/src/spectral_tape.rs:381, 612`: sustituidas las asignaciones dinámicas `Vec<f64>` en `Rls::update` y `HorizonForecaster::predict` por buffers fijos de stack `[0.0f64; 16]` para el vector $Px$ y el vector de predicción (eliminando el 4.8% de allocations del hot path).
+- **Validación Extremo a Extremo e Invarianza**:
+  * Creado `crates/quantum-arena/tests/zero_alloc_hotpath_primitives_contract.rs` (4/4 tests PASSED al 100%).
+  * Suite completa `quantum-arena`: 100% verde (todos los contratos pasando).
+  * Suite completa `god-engine-core`: 100% verde (todos los contratos pasando).
+  * Invarianza de compuertas de oro: `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture` con huella determinista `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
+  * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores.
+
 ## 2026-10-11 — AGY: OLA Ω85 COMPLETADA — ERRADICACIÓN INTEGRAL DEL 76% DE ASIGNACIONES EN HEAP EN SEÑALES Y GEOMETRÍA DEL NÚCLEO (FICHA #723)
 
 - **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#723`.

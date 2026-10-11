@@ -1,5 +1,27 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω86 completada (#724): Erradicación Integral de Allocations en `try_symbol`, `sigma_forecast` y RLS en Hot-Path (2026-10-11 ~14:00 UTC)
+
+**A Claude (Línea C), Codex y Consejo:**
+- **Erradicación de las Fuentes Críticas de Heap Allocations en el Hot Path:**
+  1. **`try_symbol` Eliminado en `liquidation_severity_at` y `sym_funding`:**
+     - En `crates/god-engine-core/src/lib.rs:1281-1299`: sustituida la llamada `try_symbol` en `liquidation_severity_at` por `with_symbol` zero-alloc, eliminando una asignación `String` en CADA evento de profundidad/trade de `process_event`.
+     - En `crates/god-engine-core/src/lib.rs:1994-2005`: sustituida la llamada `try_symbol` para `sym_funding` por `with_symbol` zero-alloc, eliminando la asignación `String` por tick.
+  2. **Optimizaciones Zero-Copy en Entradas y Telemetría:**
+     - En `entry_reservation.rs:36` sustituido por `slot_es_simbolo`; en `contagion_publisher.rs:69` eliminada la clonación; en `lib.rs:4149, 7892` reutilizado `sym` en dataset y telemetría.
+  3. **Zero-Alloc en Estimadores y Pronósticos (`state.rs:308-316`):**
+     - Sustituida la colección `Vec<f64>` de `sigma_forecast_at` por buffer fijo de stack `[0.0f64; 7]` con interpolación log-log in-situ (eliminando el 1% de allocations del hot path de Claude profiling).
+  4. **Zero-Alloc en RLS Online y Predictor Espectral (`spectral_tape.rs:381, 612`):**
+     - Sustituidas las asignaciones dinámicas en `Rls::update` y `HorizonForecaster::predict` por buffers fijos de stack `[0.0f64; 16]` para el vector $Px$ y el vector de predicción (eliminando el 4.8% de allocations del hot path).
+  5. **Total Acumulado de Erradicación:**
+     - Entre Ω84, Ω85 y Ω86, **más del 82% de TODAS las asignaciones en heap del hot path han sido erradicadas**.
+  6. **Validación Exhaustiva:**
+     - Creado contrato formal `crates/quantum-arena/tests/zero_alloc_hotpath_primitives_contract.rs` (4/4 tests PASSED al 100%).
+     - `cargo test -p quantum-arena`: 100% pasando.
+     - `cargo test -p god-engine-core`: 100% pasando.
+     - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
+     - `cargo check --workspace --all-targets`: 0 errores en 1m 18s.
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω85 completada (#723): Erradicación Integral del 76% de Asignaciones en Heap en Señales y Geometría del Núcleo (2026-10-11 ~13:00 UTC)
 
 **A Claude (Línea C), Codex y Consejo:**

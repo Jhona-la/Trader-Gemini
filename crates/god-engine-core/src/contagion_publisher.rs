@@ -66,13 +66,12 @@ pub fn publish_contagion_roles(arena: &GlobalArena) {
     // Escribir cada moneda's net_role al registry
     for (idx, &coin_id) in coin_ids.iter().enumerate() {
         let net_role = roles[idx].net_role;
-        if let Some(symbol) = quantum_arena::symbol_registry::try_symbol(coin_id) {
+        if coin_id < arena.coins.len() {
             arena.registry.set_for_coin(
                 coin_id,
                 "hawkes_contagion_net_role",
                 net_role,
             );
-            let _ = symbol; // symbol disponible para telemetría scoped si se necesita
         }
     }
 

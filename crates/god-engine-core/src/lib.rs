@@ -1281,10 +1281,23 @@ impl GodEngineCore {
     pub fn liquidation_severity_at(&self, coin_id: usize, as_of_ms: u64)
         -> Result<Option<f64>, &'static str> {
         let slot = self.liquidation_states.get(coin_id).ok_or("invalid liquidation slot")?;
-        let symbol = quantum_arena::symbol_registry::try_symbol(coin_id).ok_or("unregistered liquidation slot")?;
         match slot {
-            Some(state) if state.latest().symbol == symbol => state.severity_at(as_of_ms).map(Some),
-            _ => Ok(None),
+            Some(state) => {
+                let matches_symbol = quantum_arena::symbol_registry::with_symbol(coin_id, |s| {
+                    state.latest().symbol == s
+                }).ok_or("unregistered liquidation slot")?;
+                if matches_symbol {
+                    state.severity_at(as_of_ms).map(Some)
+                } else {
+                    Ok(None)
+                }
+            }
+            None => {
+                if !quantum_arena::symbol_registry::with_symbol(coin_id, |_| ()).is_some() {
+                    return Err("unregistered liquidation slot");
+                }
+                Ok(None)
+            }
         }
     }
 
@@ -1978,13 +1991,12 @@ impl GodEngineCore {
                 // existe) — se documenta el 0.0 en vez de falsificar señal.
                 // QO-U1c: funding PER-SÍMBOLO del registry (escrito por el
                 // poller cada 120s); fallback al global omni[11] (BTC).
-                let sym_funding = quantum_arena::symbol_registry::try_symbol(coin_id)
-                    .map(|s| {
-                        self.arena
-                            .registry
-                            .get_scoped_value_or(&s, "funding_rate", f64::NAN)
-                    })
-                    .unwrap_or(f64::NAN);
+                let sym_funding = quantum_arena::symbol_registry::with_symbol(coin_id, |s| {
+                    self.arena
+                        .registry
+                        .get_scoped_value_or(s, "funding_rate", f64::NAN)
+                })
+                .unwrap_or(f64::NAN);
                 let funding_rate_live = if sym_funding.is_finite() {
                     sym_funding
                 } else {
@@ -4134,11 +4146,9 @@ impl GodEngineCore {
                             let notional = (qty * entry).max(1.0);
                             let target_ret = net_trade_pnl / notional;
                             if target_ret.is_finite() {
-                                let sym_ds = quantum_arena::symbol_registry::try_symbol(coin_id)
-                                    .unwrap_or_default();
-                                if !sym_ds.is_empty() {
+                                if !sym.is_empty() {
                                     let path =
-                                        format!("data/dark_alpha_dataset_{}.csv", sym_ds);
+                                        format!("data/dark_alpha_dataset_{}.csv", sym);
                                     let need_header = !std::path::Path::new(&path).exists();
                                     use std::io::Write as _;
                                     if let (Ok(mut f), Ok(t)) = (
@@ -7882,8 +7892,7 @@ impl GodEngineCore {
                             telemetry_server::telemetry_log!(
                                 "🧠 [ML-GATE] {} entradas vetadas por el ensamble (última: {} ml={:.3}) — la predicción decide",
                                 self.diag_ml_vetoes,
-                                quantum_arena::symbol_registry::try_symbol(coin_id)
-                                    .unwrap_or_default(),
+                                sym,
                                 ml_now
                             );
                         }

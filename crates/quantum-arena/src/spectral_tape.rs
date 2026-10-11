@@ -377,8 +377,15 @@ impl Rls {
             return;
         }
         let p = self.p;
-        // Px
-        let mut px = vec![0.0; p];
+        // Px: buffer en stack para p <= 16 sin asignar en heap
+        let mut px_buf = [0.0f64; 16];
+        let mut px_vec;
+        let px: &mut [f64] = if p <= 16 {
+            &mut px_buf[..p]
+        } else {
+            px_vec = vec![0.0; p];
+            &mut px_vec
+        };
         for i in 0..p {
             let mut s = 0.0;
             for j in 0..p {
@@ -601,10 +608,32 @@ impl HorizonForecaster {
         Some((x, persist))
     }
 
-    /// Pronóstico actual para (now, now+h], en unidades del objetivo.
+    /// Pronóstico actual para (now, now+h], en unidades del objetivo (zero heap alloc).
     pub fn predict(&self, tape: &SpectralTape, now: u64) -> Option<f64> {
-        let (x, persist) = self.features(tape, now)?;
-        Some(persist + self.rls.predict(&x)).filter(|v| v.is_finite())
+        if now < tape.last_ts() {
+            return None;
+        }
+        let persist = self.implied(tape, self.base, now)?;
+        if !persist.is_finite() {
+            return None;
+        }
+        let p = self.feat.len() + 1;
+        let mut x_buf = [0.0f64; 16];
+        if p <= 16 {
+            x_buf[0] = 1.0;
+            for (i, &k) in self.feat.iter().enumerate() {
+                let shape = self.implied(tape, k, now)? - persist;
+                if !shape.is_finite() {
+                    return None;
+                }
+                x_buf[i + 1] = shape;
+            }
+            let pred = self.rls.predict(&x_buf[..p]);
+            Some(persist + pred).filter(|v| v.is_finite())
+        } else {
+            let (x, persist_val) = self.features(tape, now)?;
+            Some(persist_val + self.rls.predict(&x)).filter(|v| v.is_finite())
+        }
     }
 
     pub fn last_prediction(&self) -> Option<f64> {

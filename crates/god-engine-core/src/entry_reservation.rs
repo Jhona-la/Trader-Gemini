@@ -33,9 +33,7 @@ impl EntryReservation {
             .get(self.slot)
             .copied()
             .ok_or(ReservationError::InvalidSlot)?;
-        if !symbol_registry::try_symbol(self.coin_id)
-            .is_some_and(|s| s.eq_ignore_ascii_case(&self.symbol))
-        {
+        if !symbol_registry::slot_es_simbolo(self.coin_id, &self.symbol) {
             return Err(ReservationError::SymbolMismatch);
         }
         Ok(slot)

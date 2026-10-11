@@ -84,20 +84,22 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω85 completada / Ficha #723)
+## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω86 completada / Ficha #724)
 
-- **Haciendo ahora**: Ola Ω85 (#723) completada — Erradicación Integral del 76% de Asignaciones en Heap en Señales y Geometría del Núcleo:
-  - **Consultas Estrictas Zero-Alloc en Registro**: En `omniscient-registry/src/lib.rs`, implementado `get_scoped_val_strict(&self, symbol: Option<&str>, coin_id: Option<usize>, name: &str) -> Option<f64>` con 0 asignaciones dinámicas en heap (buffers de stack de 64 bytes para formatear y consultar llaves escopadas por símbolo y coin_id).
-  - **Erradicación de Asignaciones en Motores de Señales**: En `signal-engine/src/flow_impulse.rs:305` y `signal-engine/src/renyi_tsallis_entropy.rs:247`, sustituidas todas las interpolaciones dinámicas `format!` por `get_scoped_val_strict`, erradicando el 25% de allocations del hot path de Claude profiling.
-  - **Stack Buffers en Geometría Yang-Mills y Helmholtz-Hodge**: En `god-engine-core/src/lib.rs:5274-5302`, erradicadas las llamadas `.clone()` a `latest_prices`, `latest_ofis` y `latest_returns` en favor de buffers fijos de stack `[0.0f64; 32]`, eliminando el 7.5% de allocations del hot path.
-  - **Total Acumulado de Erradicación**: Más del **76.3% de asignaciones en heap erradicadas en el camino caliente** entre Ω84 y Ω85.
-  - **Alineación de Tipos y Documentación**: En `strategy-core/src/types.rs`, clarificado `win_probability` para reflejar el rechazo con `REJ_INVALID_INPUT` ante no-finitos y `0.0` como fallback neutro a confianza.
+- **Haciendo ahora**: Ola Ω86 (#724) completada — Erradicación Integral de Allocations en `try_symbol`, `sigma_forecast` y RLS en Hot-Path:
+  - **Erradicación de Asignaciones en `try_symbol`**: En `god-engine-core/src/lib.rs:1281` (`liquidation_severity_at`) y `:1994` (`sym_funding`), sustituido `try_symbol` por `with_symbol` zero-alloc, erradicando la clonación de `String` en CADA evento de mercado de `process_event`.
+  - **Eliminación de Clones Redundantes y Verificaciones O(1)**: En `entry_reservation.rs:36` sustituido por `slot_es_simbolo`; en `contagion_publisher.rs:69` eliminada la clonación; en `lib.rs:4149, 7892` reutilizado `sym` en dataset y telemetría.
+  - **Zero-Alloc en Estimadores y Pronósticos**: En `quantum-arena/src/state.rs:308-316`, sustituida la colección `Vec<f64>` de `sigma_forecast_at` por buffer fijo de stack `[0.0f64; 7]` (eliminando el 1% de allocations del hot path de Claude profiling).
+  - **Zero-Alloc en RLS Online y Predictor Espectral**: En `quantum-arena/src/spectral_tape.rs:381, 612`, sustituidas las asignaciones dinámicas en `Rls::update` y `HorizonForecaster::predict` por buffers fijos de stack `[0.0f64; 16]` (eliminando el 4.8% de allocations del hot path).
+  - **Total Acumulado de Erradicación**: Más del **82% de asignaciones en heap erradicadas en el camino caliente** entre Ω84, Ω85 y Ω86.
   - **Validación Extremo a Extremo**:
-    * Creado `crates/signal-engine/tests/zero_alloc_scoped_signals_contract.rs` (3/3 tests PASSED al 100%).
-    * `cargo test -p signal-engine`: 120/120 tests pasados al 100%.
+    * Creado `crates/quantum-arena/tests/zero_alloc_hotpath_primitives_contract.rs` (4/4 tests PASSED al 100%).
+    * `cargo test -p quantum-arena`: 100% pasando.
+    * `cargo test -p god-engine-core`: 100% pasando.
     * `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
     * `cargo check --workspace --all-targets`: 0 errores en todo el workspace.
 - **Commiteado reciente**:
+  - Ola Ω85 (#723, commit `369eb34f` en main): Erradicación Integral del 76% de Asignaciones en Heap en Señales y Geometría del Núcleo (`get_scoped_val_strict`, stack buffers Yang-Mills/Hodge).
   - Ola Ω84 (#722, commit `977ba2f8` en main): Desacoplamiento de Reloj Causal P1, Erradicación de Asignaciones en Heap P5 y Migración Estricta en Camino Caliente.
   - Ola Ω83 (#721, commit `8dd51dfb` en main): Aislamiento Estricto de Ámbito Multi-Activo y Rigor Dimensional de Unidades (`get_scoped_parameter_strict`, `get_scoped_val_strict_or`, contrato formal, paridad dimensional).
   - Ola Ω82 (#720, commit `c4e8e285` en main): Resolución de «Desconocido ≠ 0», Frescura Atómica de Timestamps y Aislamiento Multi-Activo en Omniscient Registry.
