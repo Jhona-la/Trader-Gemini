@@ -9843,3 +9843,149 @@ mod tests_qs_k {
         assert!(codigo.contains("&&composite_score>=dynamic_tech_thr"));
     }
 }
+
+/// C-F3.8 (Línea C): las puertas del continuo (`puertas_del_continuo`, privada)
+/// contra soluciones conocidas.
+///
+/// Teoría que se prueba:
+/// - La p del bosque es P(TP del largo antes que SL) con la etiqueta del
+///   entrenador (TP = 2·SL). Bajo un browniano con deriva μ y volatilidad σ,
+///   la probabilidad de primer toque es la de `risk_engine::tp_sl::
+///   probabilidad_tocar_sl_antes_de_tp` (la física del propio repo). Un corto
+///   con deriva −μ tiene exactamente las probabilidades del largo con +μ, así
+///   que el espejo de p_largo(μ) para el corto es p_largo(−μ), y la base
+///   honesta es p_largo(0) = SL/(TP + SL) = 1/3. Las puertas deben dar el
+///   mismo veto y la misma confianza a un largo con p_largo(μ) y a un corto
+///   con p_largo(−μ) (F3.8-02). Hoy reflejan la probabilidad linealmente
+///   alrededor de la base (divergencia normalizada), que no es ese espejo
+///   cuando la base no es ½.
+/// - Fuente única de la base (F3.8-04): el núcleo publica la base ya
+///   recortada a [0,05; 0,95]; el gate ML la usa tal cual, pero las puertas
+///   exigen el intervalo ABIERTO (0,05; 0,95) y caen a 0,5 en el borde. La
+///   misma decisión se lee con dos bases distintas según el camino.
+///
+/// Convención: un test que hoy falla por la causa de un hallazgo lleva
+/// `#[ignore = "OPEN F3.x-nn (dueño): causa"]` con el assert intacto. Para
+/// correrlos: `cargo test -p god-engine-core --lib tests_cf3_puertas_espejo
+/// -- --include-ignored`.
+#[cfg(test)]
+mod tests_cf3_puertas_espejo {
+    use super::*;
+    use signal_engine::{SignalIntent, SignalType};
+    use std::sync::Arc;
+
+    /// Geometría de la etiqueta del bosque (train_forest: TP = 2·SL) y σ del
+    /// mismo orden que el SL, como en el hallazgo.
+    const TP: f64 = 0.0036;
+    const SL: f64 = 0.0018;
+    const SIGMA: f64 = 0.0018;
+
+    fn intencion(s: SignalType) -> SignalIntent {
+        SignalIntent {
+            signal: s,
+            confidence: 0.80,
+            horizon: strategy_core::TradeHorizon::Continuous,
+            ..Default::default()
+        }
+    }
+
+    /// P(TP del largo antes que SL) bajo browniano con deriva: la física del
+    /// propio repo.
+    fn p_largo(mu: f64) -> f64 {
+        1.0 - risk_engine::tp_sl::probabilidad_tocar_sl_antes_de_tp(TP, SL, mu, SIGMA)
+    }
+
+    /// Núcleo con CVD 50/50 y sin muros: los vetos de flujo y de muro no
+    /// disparan, y `expected_duration_ms = 0` deja fuera la puerta QO-586.
+    fn nucleo() -> (Arc<quantum_arena::GlobalArena>, GodEngineCore) {
+        let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+        let core = GodEngineCore::new(Arc::clone(&arena));
+        arena.coins[0].agg_buy_vol.store(50.0, Ordering::Relaxed);
+        arena.coins[0].agg_sell_vol.store(50.0, Ordering::Relaxed);
+        (arena, core)
+    }
+
+    /// F3.8-02. Base p_largo(0) = 1/3 y μ ∈ {1e-4; 4e-4; −1,1e-3}; composite
+    /// ±0,5 a favor de cada lado y price_stretch 0. Largo con p_largo(μ) y
+    /// corto con p_largo(−μ): mismo veto y misma confianza (tolerancia 1e-9,
+    /// error de redondeo de una cadena de pocas operaciones en f64).
+    ///
+    /// Predicción del hallazgo: μ = 1e-4 da 0,8226 frente a 0,8435; μ = 4e-4,
+    /// 0,8924 frente a 0,9596; μ = −1,1e-3 veta el largo (d = −0,81) y deja
+    /// vivo el corto con ×0,707 (d = −0,586).
+    #[test]
+    #[ignore = "OPEN F3.8-02 (Línea C): las puertas reflejan p linealmente alrededor de la base (divergencia normalizada) y no con el espejo de primer toque p_largo(−μ): con base 1/3 favorecen al corto en confianza y en el veto"]
+    fn cf3_puertas_espejo_bajo_primer_toque() {
+        let (_arena, core) = nucleo();
+        let base = p_largo(0.0); // 1/3: base de la etiqueta TP = 2·SL
+        assert!((base - 1.0 / 3.0).abs() < 1e-12, "premisa: base = {base}");
+        let mut filas = Vec::new();
+        for &mu in &[1e-4, 4e-4, -1.1e-3] {
+            let (pl, pc) = (p_largo(mu), p_largo(-mu));
+            let l =
+                core.puertas_del_continuo(0, intencion(SignalType::Long), true, 0.5, pl, base, 0.0);
+            let c = core.puertas_del_continuo(
+                0,
+                intencion(SignalType::Short),
+                true,
+                -0.5,
+                pc,
+                base,
+                0.0,
+            );
+            println!(
+                "observado: μ = {mu}: p_largo(μ) = {pl:.4} ⇒ largo {:?} {:.4}; p_largo(−μ) = {pc:.4} ⇒ corto {:?} {:.4}",
+                l.signal, l.confidence, c.signal, c.confidence
+            );
+            filas.push((mu, l, c));
+        }
+        for (mu, l, c) in filas {
+            assert_eq!(
+                l.signal == SignalType::Flat,
+                c.signal == SignalType::Flat,
+                "mu={mu}: veto en un solo lado (largo {:?}, corto {:?})",
+                l.signal,
+                c.signal
+            );
+            assert!(
+                (l.confidence - c.confidence).abs() < 1e-9,
+                "mu={mu}: largo {} frente a corto {}",
+                l.confidence,
+                c.confidence
+            );
+        }
+    }
+
+    /// F3.8-04. Base 0,05 — la que publica el núcleo para cualquier bosque con
+    /// base ≤ 0,05 (`.clamp(0.05, 0.95)`) — y p = 0,04, largo con confianza
+    /// 0,80. El gate ML mide d = (0,04 − 0,05)/0,05 = −0,2 con esa base, una
+    /// penalización. Las puertas deben leer la misma base: Long con confianza
+    /// 0,80·(1 + 0,5·(−0,2)) = 0,72 (tolerancia 1e-12, misma aritmética).
+    /// Hoy exigen base > 0,05 en sentido estricto, caen a 0,5, miden
+    /// d = −0,92 < −0,80 y vetan.
+    #[test]
+    #[ignore = "OPEN F3.8-04 (Línea C): puertas_del_continuo exige la base en el intervalo abierto (0,05; 0,95) y cae a 0,5 en el borde que publica el núcleo, mientras el gate ML usa 0,05: con p = 0,04 las puertas vetan (d = −0,92) y el gate sólo penaliza (d = −0,2)"]
+    fn cf3_puertas_y_gate_ml_leen_la_misma_base() {
+        let (_arena, core) = nucleo();
+        // El núcleo publica la base ya recortada a [0,05; 0,95].
+        let (base, p) = (0.05, 0.04);
+        // Lo que mide el gate ML con esa misma base.
+        let d_gate = crate::calibration::normalized_directional_divergence(p, base);
+        assert!(
+            (d_gate + 0.2).abs() < 1e-12,
+            "premisa: d del gate = {d_gate}"
+        );
+        let out =
+            core.puertas_del_continuo(0, intencion(SignalType::Long), true, 0.5, p, base, 0.0);
+        println!(
+            "observado: d del gate = {d_gate:.4}; puertas ⇒ {:?} con confianza {:.4}",
+            out.signal, out.confidence
+        );
+        assert_eq!(
+            out.signal,
+            SignalType::Long,
+            "las puertas caen a base 0,5 (d = -0,92) y vetan"
+        );
+        assert!((out.confidence - 0.80 * (1.0 + 0.5 * d_gate)).abs() < 1e-12);
+    }
+}
