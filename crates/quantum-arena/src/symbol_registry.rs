@@ -133,6 +133,22 @@ pub fn try_spec(coin_id: usize) -> Option<SymbolSpec> {
         .cloned()
 }
 
+/// CL-69: el tick del slot `coin_id`, con la misma resolución que `try_spec`
+/// pero sin clonar el spec (sin asignaciones: se lee en cada evento).
+#[inline(always)]
+pub fn tick_size_de(coin_id: usize) -> Option<f64> {
+    let registry = DYNAMIC_REGISTRY.load();
+    let universe = crate::symbols::get_active_universe_ref();
+    if universe.is_empty() {
+        return registry.get(coin_id).map(|s| s.tick_size);
+    }
+    let symbol = universe.get(coin_id)?;
+    registry
+        .iter()
+        .find(|s| s.symbol.eq_ignore_ascii_case(symbol))
+        .map(|s| s.tick_size)
+}
+
 #[inline(always)]
 pub fn try_symbol(coin_id: usize) -> Option<String> {
     let universe = crate::symbols::get_active_universe_ref();

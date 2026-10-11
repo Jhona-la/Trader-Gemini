@@ -1734,6 +1734,7 @@ impl GodEngineCore {
 
             // P1: Actualizar reloj causal del registro omnisciente sin syscalls repetidas
             self.arena.registry.update_event_time(event_time_ms as i64);
+            self.fijar_piso_resolucion(coin_id);
 
             // Zero-copy Hot-Reloading Check
             if let Some(rx) = &self.model_rx {
@@ -2909,6 +2910,18 @@ impl GodEngineCore {
     /// Procesa un tick en el motor universal continuo unificado.
     /// Retorna: (new_order, closed_order, maker_quote)
     #[inline(always)]
+    /// CL-69: el piso de resolución del ATR de la moneda es su tick (0 sin
+    /// spec). Se fija en cada evento porque el registro de specs puede
+    /// cambiar; `tick_size_de` no asigna.
+    #[inline]
+    fn fijar_piso_resolucion(&mut self, coin_id: usize) {
+        if let Some(fe) = self.feature_engines.get_mut(coin_id) {
+            fe.piso_resolucion = quantum_arena::symbol_registry::tick_size_de(coin_id)
+                .filter(|t| t.is_finite() && *t > 0.0)
+                .unwrap_or(0.0);
+        }
+    }
+
     pub fn process_tick_dual(
         &mut self,
         coin_id: usize,
@@ -2928,6 +2941,7 @@ impl GodEngineCore {
         telemetry_server::profile_node!("GodEngineCore::process_tick_dual", {
             // P1: Actualizar reloj causal del registro omnisciente sin syscalls repetidas
             self.arena.registry.update_event_time(event_time_ms as i64);
+            self.fijar_piso_resolucion(coin_id);
 
             if let Some(reservation) = self.entry_reservations.get_mut(coin_id) {
                 *reservation = None;

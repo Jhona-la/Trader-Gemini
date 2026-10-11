@@ -61,6 +61,11 @@ pub struct StatefulEngine {
     /// pueda cambiar (CL-71) sin cambiar lo que ve el modelo. Se retira al
     /// reentrenar. Sólo lo leen los constructores de rasgos del modelo.
     pub vt_rasgo_ml: f64,
+    /// CL-69: piso de resolución del ATR de las decisiones, en unidades de
+    /// precio: el tick del símbolo. Un ATR por debajo de un tick no es
+    /// medible. 0 = sin spec (no hay piso declarado). Lo fija el núcleo en
+    /// cada evento con `symbol_registry::tick_size_de`.
+    pub piso_resolucion: f64,
     pub a_t: f64,
     /// MOD2/7-031 — EMA del centroide espectral (adimensional, actualizada
     /// cada 64 ticks). ANTES vivía en `a_t` y era sobrescrita al tick
@@ -211,6 +216,7 @@ impl StatefulEngine {
             last_price: 0.0,
             v_t: 0.0,
             vt_rasgo_ml: 0.0,
+            piso_resolucion: 0.0,
             a_t: 0.0,
             a_t_spectral: 0.0,
             last_inst_v: 0.0,
@@ -1213,9 +1219,12 @@ impl StatefulEngine {
     }
 
     /// Returns ATR as a percentage of last price for Stop Loss scaling
+    ///
+    /// CL-69: nunca por debajo de un tick (`piso_resolucion`), el único piso
+    /// del ATR de las decisiones que no es un literal.
     pub fn get_atr_pct(&self) -> f64 {
         if self.last_price > 0.0 {
-            self.v_t / self.last_price
+            self.v_t.max(self.piso_resolucion) / self.last_price
         } else {
             0.0
         }
