@@ -44,21 +44,23 @@
   parcial; cerrojo del almacén de genomas y CAS del demonio; dimensionado
   en espacio de riesgo.
 
-## Claude — sesión «elegant» (actualizado: 2026-10-10 ~22:30, prefijo QS-n, rama claude/elegant-euler-mmtht4)
+## Claude — sesión «elegant» (actualizado: 2026-10-10 ~23:10 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
-- **Haciendo ahora**: publicar QS-C22, QS-D2, QS-D3 (ADR-0016) y QS-R4a con
-  su T-1.
+- **Haciendo ahora**: PR #32.
+  - QS-P: oráculo en paralelo con paridad certificada, script con
+    recompilación incremental.
+  - QS-K: espejo y umbrales de las ramas rápidas.
+  - T-1 del árbol con #712.
 - **Siguiente**:
-  - QS-R4b: cablear el libro contrafactual en el núcleo (la razón del
-    rechazo ya está, `risk_engine::ultimo_rechazo`), prerrequisito de D1;
-    espera acuse de la Línea C y Qoder;
-  - D1/D4, coordinados con la Línea C.
-- **En main**: PR #30 (QS-1, QS-2, QS-R1, QS-R2) fusionado en 46269a05
-  con unit-suites (4 jobs) y replay-contracts verdes.
-- **Commiteado en main**: XLIV-1…13b (PR #8 y, vía #20, el PR #10).
-- **Decidido (el dueño lo delegó)**: §30.5 → ADR-0016 (D1 riesgo en
-  espacio de stop, D2 geometría ligada a τ, D3 caída de falsación 0,632,
-  D4 presupuesto de sonda).
+  - fixture T-2 que ejercite las puertas (ledger §7.4);
+  - REV-1/REV-2: tests de vetos de Ω71 que no alcanzan su veto, si
+    AGY/GLM no los toman;
+  - QS-R4b: libro sombra en el núcleo (espera acuse);
+  - D1/D4 con la Línea C.
+- **En main**:
+  - PR #30 (QS-1, QS-2, QS-R1, QS-R2);
+  - PR #31 (C-22, D2, D3, QS-R4).
+- **Decidido (el dueño lo delegó)**: ADR-0016 (D1–D4).
 
 ## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
 

@@ -35,6 +35,8 @@
 
 use backtest_engine::{STATS_LEN, run_backtest_native};
 use quantum_arena::genome::SuperGenotype;
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[path = "support/t1_measurement.rs"]
 mod measurement;
@@ -51,6 +53,33 @@ fn evaluar(
         &serie.0, &serie.1, &serie.2, &serie.3, cfg, &mut pnl, &mut stats, "BTCUSDT", 1_000.0,
     );
     stats
+}
+
+/// QS-P1 — hilos del oráculo: `T1_THREADS` si es un entero ≥ 1; si no, todos
+/// los núcleos disponibles. Cada gen se evalúa con su propio arena, y nada del
+/// camino de `run_backtest_native` escribe estado global que lea otra
+/// evaluación: el spec del símbolo se registra antes del bucle (idempotente) y
+/// el bosque global sólo se lee; `feed_health::stall` sólo lo tocan tests; los
+/// contadores de rechazo son telemetría. El veredicto no depende del número de
+/// hilos (paridad medida y registrada en el plan, §30, QS-P1).
+fn hilos_oraculo() -> usize {
+    std::env::var("T1_THREADS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&h| h >= 1)
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
+}
+
+/// Huella FNV-1a de los bits de las estadísticas: permite comparar gen a gen
+/// dos corridas del oráculo (p. ej. con distinto número de hilos) sin volcar
+/// los ocho números.
+fn huella(stats: &[f64; STATS_LEN]) -> u64 {
+    stats.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, x| {
+        x.to_bits()
+            .to_le_bytes()
+            .iter()
+            .fold(h, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01b3))
+    })
 }
 
 /// DIAGNÓSTICO (B3.18, 2026-09-16): una SOLA evaluación con el predictor
@@ -160,18 +189,18 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
     );
 
     let stats_base = evaluar(&base, &datos);
+    println!("[T1-STATS] gene=base huella={:016x}", huella(&stats_base));
 
-    let mut inertes: Vec<usize> = Vec::new();
-    let mut sensibles = 0usize;
-
+    // QS-P1: los candidatos se construyen en orden de gen (mismas trazas de
+    // petición que antes) y se evalúan en paralelo. Un gen con banda
+    // degenerada no puede variar y se cuenta como inerte.
+    let mut candidatos: Vec<(usize, SuperGenotype)> = Vec::with_capacity(n);
     for g in 0..n {
         let mut v = base_vec.clone();
         // Mismo extremo MÁS LEJANO histórico. No observar diferencia ahí
         // NO prueba inercia para valores interiores o perturbaciones conjuntas.
         v[g] = furthest_endpoint(base_vec[g], lo[g], hi[g]);
         if (v[g] - base_vec[g]).abs() < 1e-12 {
-            // Banda degenerada: el gen no puede variar, se cuenta como inerte.
-            inertes.push(g);
             continue;
         }
         let mutado = SuperGenotype::from_vector(&v);
@@ -182,8 +211,41 @@ fn t1_cobertura_genetica_del_oraculo_de_aptitud() {
             realized[g],
             changed_slots(&base_vec, &realized)
         );
-        let stats = evaluar(&mutado, &datos);
-        if difiere(&stats_base, &stats) {
+        candidatos.push((g, mutado));
+    }
+
+    let hilos = hilos_oraculo().min(candidatos.len().max(1));
+    println!("[T-1] {} evaluaciones en {hilos} hilos", candidatos.len());
+    let siguiente = AtomicUsize::new(0);
+    let resultados: Vec<OnceLock<[f64; STATS_LEN]>> =
+        (0..candidatos.len()).map(|_| OnceLock::new()).collect();
+    std::thread::scope(|s| {
+        for _ in 0..hilos {
+            std::thread::Builder::new()
+                // El arena y el núcleo son grandes (D-714): pila holgada.
+                .stack_size(64 << 20)
+                .spawn_scoped(s, || {
+                    loop {
+                        let i = siguiente.fetch_add(1, Ordering::Relaxed);
+                        let Some((_, cfg)) = candidatos.get(i) else { break };
+                        let _ = resultados[i].set(evaluar(cfg, &datos));
+                    }
+                })
+                .expect("no se pudo lanzar un hilo del oráculo");
+        }
+    });
+
+    // `None` = banda degenerada (inerte por construcción).
+    let mut por_gen: Vec<Option<bool>> = vec![None; n];
+    for (i, (g, _)) in candidatos.iter().enumerate() {
+        let stats = resultados[i].get().expect("evaluación del oráculo ausente");
+        println!("[T1-STATS] gene={g} huella={:016x}", huella(stats));
+        por_gen[*g] = Some(difiere(&stats_base, stats));
+    }
+    let mut inertes: Vec<usize> = Vec::new();
+    let mut sensibles = 0usize;
+    for (g, veredicto) in por_gen.iter().enumerate() {
+        if *veredicto == Some(true) {
             sensibles += 1;
         } else {
             inertes.push(g);

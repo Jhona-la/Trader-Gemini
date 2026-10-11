@@ -374,6 +374,28 @@ pub fn exigencia_tras_racha(umbral: f64, racha: u32) -> f64 {
     (umbral * 2f64.powi(niveles)).min(1.0)
 }
 
+/// QS-K28 — EL RANGO ADMITE UNA REVERSIÓN DE ESE LADO (ramas 7–10).
+///
+/// QUÉ ESTABA MAL: la puerta de las cuatro ramas de reversión a la media
+/// comparaba `macro_trend` con ±0,00010 y `secular_trend` con ±0,0025,
+/// literales en unidades de precio. Las mismas magnitudes ya existen
+/// tipificadas (`z_macro`, `z_secular`, D-758) y el resto del motor decide
+/// «hay tendencia» con ellas: un pb de deriva es ruido en BTC tranquilo y
+/// un movimiento grande en una alt dormida. Además
+/// `!(h < 0 && s < 0)` era redundante tras `h >= 0`.
+///
+/// QUÉ GARANTIZA: el comentario D-745 de la puerta pide que «una dirección
+/// macro clara» la cierre. Clara = significativa al 95 % en su propia escala:
+/// la marea de 2 h no va en contra (signo), la deriva macro no va en contra
+/// con |z| > Z95 y el precio no está ya estirado a favor en la escala secular
+/// con z > Z95. Espejo exacto por construcción: corto(x) = largo(−x).
+#[inline]
+pub fn rango_admite_reversion(es_largo: bool, higher_trend: f64, z_macro: f64, z_secular: f64) -> bool {
+    let s = if es_largo { 1.0 } else { -1.0 };
+    let z95 = crate::diffusion::Z95;
+    s * higher_trend >= 0.0 && s * z_macro >= -z95 && s * z_secular < z95
+}
+
 /// CL-4 — τ CON LA QUE NACE UNA POSICIÓN. Es la τ con la que el risk-engine
 /// la dimensionó (`ValidatedOrder::tau_ms`, D-745); sólo si esa τ no es un
 /// horizonte utilizable (no finita, ≤ 0 o menor que 1 ms tras truncar) se usa
@@ -6038,14 +6060,12 @@ impl GodEngineCore {
                     // cuando el mercado esta GENUINAMENTE en rango o retroceso no impulsivo.
                     // Si higher_trend (2h) o secular_trend imponen una direccion macro clara,
                     // operar contra la marea produce perdidas directas por parada (SL).
-                    let range_long_trend_ok = higher_trend >= 0.0
-                        && !(higher_trend < 0.0 && secular_trend < 0.0)
-                        && macro_trend >= -0.00010
-                        && secular_trend < 0.0025;
-                    let range_short_trend_ok = higher_trend <= 0.0
-                        && !(higher_trend > 0.0 && secular_trend > 0.0)
-                        && macro_trend <= 0.00010
-                        && secular_trend > -0.0025;
+                    // QS-K28: «clara» = significativa en su escala (z), no un
+                    // literal en unidades de precio. Ver `rango_admite_reversion`.
+                    let range_long_trend_ok =
+                        rango_admite_reversion(true, higher_trend, z_macro, z_secular);
+                    let range_short_trend_ok =
+                        rango_admite_reversion(false, higher_trend, z_macro, z_secular);
 
                     if composite_score > range_thr
                         && effective_obi_long > range_obi
@@ -6085,7 +6105,10 @@ impl GodEngineCore {
                     } else if short_streak < 2
                         && price_stretch > 1.0
                         && effective_obi_short < -range_obi * 1.15
-                        && composite_score <= -0.24
+                        // QS-K27b: el umbral del gen (`tech_threshold`, ×1,20 en
+                        // antipersistencia), no su valor por defecto 0,24
+                        // congelado: el gen mutaba y estas dos ramas no lo veían.
+                        && composite_score <= -dynamic_tech_thr
                         && micro_trend <= 0.0
                         && range_short_trend_ok
                     {
@@ -6110,7 +6133,7 @@ impl GodEngineCore {
                     } else if long_streak < 2
                         && price_stretch < -1.0
                         && effective_obi_long > range_obi * 1.15
-                        && composite_score >= 0.24
+                        && composite_score >= dynamic_tech_thr
                         && micro_trend >= 0.0
                         && range_long_trend_ok
                     {
@@ -9612,5 +9635,80 @@ mod tests_qo_658 {
         let h = hurst_escala_continua(600_000.0, m, me, ma);
         assert!(h >= m.min(me.min(ma)) - 1e-6 && h <= m.max(me.max(ma)) + 1e-6);
         assert!(hurst_escala_continua(f64::NAN, m, me, ma) == m);
+    }
+}
+
+/// QS-K27/K27b/K28: simetría y umbrales de las ramas rápidas.
+#[cfg(test)]
+mod tests_qs_k {
+    use super::rango_admite_reversion;
+    use crate::diffusion::Z95;
+
+    /// Espejo: el corto de x es el largo de −x en toda la rejilla.
+    #[test]
+    fn qs_k28_la_puerta_de_rango_es_espejo_exacto() {
+        let ejes = [-3.0, -Z95, -1.0, -1e-9, 0.0, 1e-9, 1.0, Z95, 3.0];
+        let mareas = [-1e-3, -1e-9, 0.0, 1e-9, 1e-3];
+        for &h in &mareas {
+            for &zm in &ejes {
+                for &zs in &ejes {
+                    assert_eq!(
+                        rango_admite_reversion(true, h, zm, zs),
+                        rango_admite_reversion(false, -h, -zm, -zs),
+                        "h={h} z_macro={zm} z_secular={zs}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// «Dirección macro clara» = significativa al 95 % en su escala.
+    #[test]
+    fn qs_k28_la_puerta_cierra_solo_con_tendencia_significativa() {
+        // Rango genuino: los dos lados.
+        assert!(rango_admite_reversion(true, 0.0, 0.0, 0.0));
+        assert!(rango_admite_reversion(false, 0.0, 0.0, 0.0));
+        // Deriva macro en contra pero no significativa: admite.
+        assert!(rango_admite_reversion(true, 0.0, -1.0, 0.0));
+        // Deriva macro en contra significativa: cierra el largo, no el corto.
+        assert!(!rango_admite_reversion(true, 0.0, -2.5, 0.0));
+        assert!(rango_admite_reversion(false, 0.0, -2.5, 0.0));
+        // Precio ya estirado al alza en la escala secular: no hay largo de
+        // reversión que comprar.
+        assert!(!rango_admite_reversion(true, 0.0, 0.0, 2.5));
+        // Marea de 2 h en contra: cierra.
+        assert!(!rango_admite_reversion(true, -1e-4, 0.0, 0.0));
+        // Entradas no finitas: nunca admite.
+        assert!(!rango_admite_reversion(true, f64::NAN, 0.0, 0.0));
+        assert!(!rango_admite_reversion(true, 0.0, f64::NAN, 0.0));
+        assert!(!rango_admite_reversion(false, 0.0, 0.0, f64::NAN));
+    }
+
+    /// Contrato de fuente: sin los literales asimétricos o congelados.
+    #[test]
+    fn qs_k27_ramas_rapidas_sin_literales_asimetricos() {
+        let codigo: String = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        for prohibido in [
+            "micro_trend<=0.00003",
+            "composite_score<=-0.24",
+            "composite_score>=0.24",
+            "macro_trend>=-0.00010",
+            "macro_trend<=0.00010",
+            "secular_trend<0.0025",
+            "secular_trend>-0.0025",
+        ] {
+            assert!(!codigo.contains(prohibido), "literal de rama: {prohibido}");
+        }
+        // Rama 1 (corto) y rama 4 (largo): microtendencia y OFI en espejo.
+        assert!(codigo.contains("&&micro_trend<=0.0&&ofi<=0.05"));
+        assert!(codigo.contains("&&micro_trend>=0.0&&ofi>=-0.05"));
+        // Ramas 9 y 10: el umbral del gen.
+        assert!(codigo.contains("&&composite_score<=-dynamic_tech_thr"));
+        assert!(codigo.contains("&&composite_score>=dynamic_tech_thr"));
     }
 }
