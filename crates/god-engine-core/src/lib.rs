@@ -2927,11 +2927,14 @@ impl GodEngineCore {
                 // MG05: también los callers directos deben retirar evidencia
                 // de la escala anterior. En process_event -> dual, dt=0 no
                 // modifica el espectro ni duplica maduraciones del IC.
+                // LF-2 (Línea F): la MISMA τ que publica process_event (C-2,
+                // τ operativa unificada). Con el nodo crudo, esta publicación
+                // —la última del evento— deshacía el arreglo C-2 en cada tick.
                 evidence_publication::publicar_coherencia(
                     &self.arena.registry,
                     &self.espectral_ma,
                     coin_id,
-                    spec.dominant_tau_ms,
+                    spec.tau_operativa_unificada(),
                 );
                 if coin_id < self.arena.coins.len() {
                     let field = spec.spectral_field(true);
