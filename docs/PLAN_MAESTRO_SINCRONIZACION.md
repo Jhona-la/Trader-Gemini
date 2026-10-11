@@ -1667,3 +1667,27 @@ externos».
   - `cargo test -p omniscient-registry`: 11/11 tests pasando al 100%.
   - `cargo check --workspace --all-targets`: 0 errores, compila limpiamente.
   - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300`, 15 operaciones exactamente idénticas bit a bit frente a la línea base previa. Cero perturbación en las compuertas vivas.
+
+## 43. Aislamiento Estricto de Ámbito Multi-Activo y Rigor Dimensional de Unidades (Ola Ω83, Ficha #721)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#721`.
+- **Cierre del Hallazgo C-F1 / LC-F1-06 / F-002 («Aislamiento de Ámbito Multi-Activo y Rigor Dimensional»)**:
+  - En `crates/omniscient-registry/src/lib.rs`:
+    * Implementado `get_scoped_parameter_strict(symbol, coin_id, name, consumer) -> Option<Arc<Parameter>>` con resolución $O(1)$ zero heap allocation que consulta ámbito por símbolo (`{SYM}_{NAME}`) y por coin_id (`coin_{CID}_{NAME}`), pero **NUNCA** cae al parámetro global `{NAME}`. Si el activo no dispone del parámetro, retorna `None`.
+    * Implementado `get_scoped_val_strict_or(symbol, coin_id, name, default) -> f64` con resolución $O(1)$ zero heap allocation sin fallback al parámetro global, previniendo que una moneda B herede métricas de una moneda A escritas en el global.
+  - En `crates/quantum-arena/src/config.rs`:
+    * Documentación rigurosa de unidades para `live_maker_fee` (fracción 0.0002 = 2 bps = 0.02%) y `live_taker_fee` (fracción 0.0005 = 5 bps = 0.05%), erradicando la ambigüedad de porcentaje vs fracción señalada en el Apartado 1 del Contrato de Conceptos C-F1.
+  - En `crates/quantum-arena/src/position.rs`:
+    * Alineada la definición de [`Position::entry_tau_ms`] con D-745: la escala temporal continua $\tau$ con la que se dimensionó y validó la orden al entrar (inmutable durante la vida de la posición), en lugar de una instantánea estocástica cruda.
+  - En `crates/strategy-core/src/types.rs`:
+    * Actualizado el docstring de [`SignalIntent::win_probability`] para reflejar con precisión su significado matemático y dimensional: $P(\text{ganar neto} \mid \text{lado, geometría, } \tau)$, reservada para Kelly y el motor de riesgo, sin interferir en la selección para prevenir sesgos direccionales (LC-F1-37).
+- **Suite Contractual Formal**:
+  - Creado `crates/omniscient-registry/tests/aislamiento_ambito_multiactivo_contract.rs` con 3 pruebas formales:
+    * `test_aislamiento_estricto_sin_caida_al_global`: verifica que ETH jamás reciba el precio mid ni métricas de BTC aun cuando existan parámetros globales o de otros activos.
+    * `test_aislamiento_por_coin_id_estricto`: verifica que consultas estrictas por `coin_id` devuelvan `NaN` / default ante ausencia de métrica propia.
+    * `test_resolucion_precedencia_simbolo_sobre_coin_id`: verifica que la clave por símbolo preceda a la de coin_id sin asignación dinámica.
+- **Invarianza y Cero Regresiones**:
+  - `cargo test -p omniscient-registry`: 14/14 tests pasando al 100%.
+  - `cargo check --workspace --all-targets`: 0 errores, compila limpiamente en todo el workspace.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300`, 15 operaciones idénticas bit a bit frente a la línea base.
+

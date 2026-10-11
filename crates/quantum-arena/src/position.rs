@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// `match` en `PositionManager::get_position`, que tampoco tenía llamadores.
 ///
 /// El motor tiene UN modo de horizonte. El horizonte REAL de una posición no
-/// es esta etiqueta sino [`Position::entry_tau_ms`]: la τ dominante del
-/// espectro temporal en el instante de la entrada, un valor continuo en ms.
+/// es esta etiqueta sino [`Position::entry_tau_ms`]: la τ con la que se dimensionó
+/// y validó la orden al entrar (D-745), un valor continuo e inmutable en ms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PositionHorizon {
     Continuous,
