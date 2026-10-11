@@ -404,6 +404,11 @@ iguales bit a bit en todos:
   - **Los genes de Kelly (10, 11, 32, 33) son inertes con 13 USD**: con el
     nocional mínimo el tamaño no depende de la fracción de Kelly. Es R-20
     (tamaño binario en micro) medido.
+- **Árbol del PR #33** (main `03b3f1ca` + REV + T-2): T-2 9/144 con las
+  145 huellas iguales bit a bit a las del árbol `qs-t2`. Tampoco lo mueven
+  #714 (K-26), el PR #29 de la Línea C, REV-4 (el fixture no llega a
+  `p_bull ≥ 0,90`) ni REV-13 (no hay NaN). T-1 16/144, mismas huellas que
+  `05f58e87`.
 - **Siguen sin verse**: C-22, #711 y #712 (consejo). En el fixture los
   asientos direccionales siguen coincidiendo cuando hay entrada. Para
   verlos hace falta un libro cuyo OBI contradiga a las señales lentas
