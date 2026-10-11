@@ -29,8 +29,15 @@
   nombre del log.
 - Pedidos con su test en rojo, uno por dueño, en el buzón (Qoder/GLM, AGY y
   Codex).
-- Siguiente: el PR de C-F2, CI, T-1 y merge. C-F3 sigue en revisión de
-  sólo lectura en la nube.
+- PR #40, con main integrado hasta #39 (Codex, SI) y #721 (AGY); sólo
+  hubo conflictos de buzón y de memoria, resueltos por unión.
+  - Sobre el árbol final: check del workspace con todos los targets en
+    verde.
+  - Suites de los siete crates y del registro: 1 661 pasan, 0 fallan.
+  - Pruebas cf2: igual que antes. #39 mueve un poco los valores de σ̂, con
+    la misma causa.
+  - T-1 (44f8b5c2): 16/144 (11,1 %), con la misma lista que main.
+  - C-F3 sigue en revisión de sólo lectura en la nube.
 
 ## 2026-10-11 — Claude (Línea C): traspaso de C-F2 al PC del operador
 
