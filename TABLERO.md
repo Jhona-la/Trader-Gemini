@@ -84,18 +84,19 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω82 en integración / Ficha #720)
+## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω83 completada / Ficha #721)
 
-- **Haciendo ahora**: Ola Ω82 (#720) — Resolución de «Desconocido ≠ 0», Frescura Atómica de Timestamps y Aislamiento Multi-Activo en Omniscient Registry:
-  - **Desconocido ≠ 0**: En `omniscient-registry/src/lib.rs`, erradicada la sanitización espuria que forzaba `NaN` a `0.0`. `val.to_bits()` se almacena directamente en `AtomicU64`, preservando el estado de desconocido/no-finito.
-  - **Frescura Atómica de Timestamps**: Campo `timestamp: AtomicI64` en `Parameter`. Se actualiza atómicamente a `Utc::now().timestamp_millis()` en cada `set_value`/`set`, garantizando auditoría viva y frescura de telemetría.
-  - **Aislamiento Multi-Activo**: Métodos estrictos `get_for_coin_strict`, `get_for_coin_strict_or`, `get_scoped_strict`, `get_scoped_strict_or` sin fallback a globales, blindando a cada activo contra lecturas accidentales de otros activos.
-  - **Suite Contractual**: `crates/omniscient-registry/tests/desconocido_no_es_cero_contract.rs` con 3 tests formales pasando al 100%. Suite completa `omniscient-registry` (11/11 tests) en verde.
-  - **Invarianza T-2**: Huella determinista `huella=487a88406a88a300`, 15 operaciones exactamente idénticas bit a bit frente a la línea base previa.
+- **Haciendo ahora**: Ola Ω83 (#721) completada — Aislamiento Estricto de Ámbito Multi-Activo y Rigor Dimensional de Unidades (C-F1 / LC-F1-06 / F-002):
+  - **Aislamiento Multi-Activo Estricto**: En `omniscient-registry/src/lib.rs`, implementados `get_scoped_parameter_strict` y `get_scoped_val_strict_or` con resolución $O(1)$ zero heap allocation sin caída al parámetro global `{NAME}`, erradicando la causa raíz donde un activo heredaba métricas escritas por otro.
+  - **Rigor Dimensional de Comisiones**: En `quantum-arena/src/config.rs`, documentadas formalmente las unidades para `live_maker_fee` (fracción 0.0002 = 2 bps = 0.02%) y `live_taker_fee` (fracción 0.0005 = 5 bps = 0.05%), eliminando ambigüedad en el Apartado 1 del Contrato de Conceptos C-F1.
+  - **Horizonte Continuo Inmutable**: En `quantum-arena/src/position.rs`, alineada la definición de [`Position::entry_tau_ms`] con D-745: la escala temporal continua $\tau$ con la que se dimensionó y validó la orden al entrar (inmutable durante la vida de la posición).
+  - **Significado Matemático de `win_probability`**: En `strategy-core/src/types.rs`, documentada con precisión como $P(\text{ganar neto} \mid \text{lado, geometría, } \tau)$, reservada para Kelly/Riesgo sin sesgo en selección (LC-F1-37).
+  - **Suite Contractual Formal**: `crates/omniscient-registry/tests/aislamiento_ambito_multiactivo_contract.rs` con 3 tests formales pasando al 100%. Suite completa `omniscient-registry` (14/14 tests) en verde.
+  - **Invarianza T-2**: Huella determinista `huella=487a88406a88a300`, 15 operaciones exactamente idénticas bit a bit frente a la línea base.
 - **Commiteado reciente**:
+  - Ola Ω82 (#720, commit `c4e8e285` en main): Resolución de «Desconocido ≠ 0», Frescura Atómica de Timestamps y Aislamiento Multi-Activo en Omniscient Registry.
   - Ola Ω81 (#719, commit `11cdd14b` en main): Plan Maestro de Revisión desde la Base (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-11.md`), Colegio de 10 Roles Senior en Modo Profesor, matemáticas de micro-capital $13 USD ($T_d = 72$ h), universo continuo temporal-espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$, armonización C-F0 a C-F11 y sincronización multi-agente.
   - Ola Ω80 (#718, commit `11e6c6cc` en main): Cierre de REV-5, REV-9, REV-10 con sombras Feynman y Navier-Stokes en orquestador, contrato de integración del núcleo e invarianza T-2.
-  - Ola Ω79 (#717, commit `bc954a43` en main): Plan Maestro Exponencial Cuántico (`docs/PLAN_MAESTRO_EXPONENCIAL_CUANTICO_2026-10-10.md`), respaldo a Línea C (ciclo 11) y diagnóstico de asfixia en T-2.
 - **Coordinación multi-agente**: Respeto sagrado de los worktrees aislados de Qoder (`.r7r6`), Sol (`.sol-replay-2026-10-09`) y Codex (`integration-recovery`). Workspace verificado con `cargo check --workspace --all-targets` 100% limpio.
 
 ## Frentes del sistema (no por agente)

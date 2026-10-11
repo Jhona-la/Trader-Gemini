@@ -48,7 +48,9 @@ pub struct QuantumConfig {
     pub temporal_memory_decay: AtomicF64,
     pub leverage_cap: AtomicF64,
     pub explosive_confidence_threshold: AtomicF64,
+    /// Fracción de precio de la comisión maker (ej. 0.0002 = 2 bps = 0.02%).
     pub live_maker_fee: AtomicF64,
+    /// Fracción de precio de la comisión taker (ej. 0.0005 = 5 bps = 0.05%).
     pub live_taker_fee: AtomicF64,
     pub weight_obi: AtomicF64,
     pub weight_ofi: AtomicF64,
@@ -204,8 +206,8 @@ impl QuantumConfig {
         Self {
             base_capital: AtomicF64::new(initial_capital),
             min_notional: AtomicF64::new(5.0),
-            live_maker_fee: AtomicF64::new(0.0002), // Binance VIP0 Maker: 0.02%
-            live_taker_fee: AtomicF64::new(0.0005), // Binance VIP0 Taker: 0.05%
+            live_maker_fee: AtomicF64::new(0.0002), // Fracción (VIP0 Maker: 2 bps = 0.02%)
+            live_taker_fee: AtomicF64::new(0.0005), // Fracción (VIP0 Taker: 5 bps = 0.05%)
             global_max_drawdown: AtomicF64::new(genome.global_max_drawdown),
             global_leverage: AtomicF64::new(genome.global_leverage),
             btc_volatility_multiplier: AtomicF64::new(genome.btc_volatility_multiplier),
