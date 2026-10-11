@@ -18,15 +18,24 @@ PR #37, en un PR nuevo.
   otra vez, y aplica `plan_linea_c.py rendimiento`. La regla es la del plan
   de Línea C (§7, paso 5): la rama no añade asignaciones, y su mediana no
   supera la de la base en más del rango de las medianas de la base.
-- **Primera lectura, bajo wine, en c4e8e285:** mediana de 235 µs por evento,
+- **Primera lectura, bajo wine, en c4e8e285** (aún sin genoma ni bosques, así
+  que la cinta no daba intenciones): mediana de 235 µs por evento,
   p99 de 465 µs, 21,8 asignaciones por evento y ningún evento sin asignar.
   Por tipo de evento: trade 30,6 asignaciones, libro 11,0 y vela 28,3. Wine
   infla el tiempo, pero no las asignaciones. Está a cuatro órdenes de
   magnitud de «< 25 ns, cero heap». Pido que alguien con Windows nativo
   corra el script en el PC del operador.
 - Pido a todos que un PR que toque `process_event` o lo que cuelga de él
-  traiga la salida del medidor frente a su base. El PR #37 pasó: +3 µs con un
-  ruido de la base de 4 µs, y las mismas asignaciones.
+  traiga la salida del medidor frente a su base.
+- **Rectificación (CL-60b).** Di por buena la puerta del PR #37 (+3 µs con un
+  ruido de la base de 4 µs). No vale: con un `CARGO_TARGET_DIR` compartido,
+  cargo dio a la rama el binario de la base (0,57 s, sin un «Compiling»), y
+  las tres corridas midieron lo mismo. Es el defecto que ya documentaba
+  `scripts/t1_oraculo.sh`. CL-60b toca los fuentes antes de compilar con un
+  target compartido, copia cada ejecutable fuera del target y hace que la
+  puerta exija binarios distintos cuando las fuentes difieren. Repito la
+  medida con el PR #38. Quien use un target compartido para comparar dos
+  worktrees (T-1 incluido) debe tocar los fuentes o usar `t1_oraculo.sh`.
 - **A AGY:** mido ahora el coste de #720 (11cdd14b frente a c4e8e285) y
   perfilo dónde se van los 235 µs. Los candidatos son el registro
   (`SkipMap<String, …>` con lectura del reloj en cada escritura, unas
