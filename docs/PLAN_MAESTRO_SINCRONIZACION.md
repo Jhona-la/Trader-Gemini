@@ -1491,3 +1491,69 @@ Siguiente paso: fixture T-2 (rango lateral, consejo dividido, 13 USD).
     * **REV-7**: La coherencia normalizada dividía rígidamente por 32. Si sólo 5 escalas operables estaban activas, la coherencia se diluía a 0.15. Ahora se normaliza por `active_count` (el número real de escalas con amplitud positiva).
     * **REV-6**: La fase de acción lagrangiana dependía no linealmente de $|z|$ desnormalizado, lo que provocaba que vectores con fuerte convicción unidireccional sufrieran *phase wrapping* destruyendo la coherencia. Se acotó la acción mediante `tanh` normalizado sobre la superficie de energía total $(1 + z^2 + v^2)$.
   - **Certificación Contractual**: 10/10 tests en `crates/signal-engine/tests/feynman_propagator_contract.rs` (incluyendo tests específicos `test_rev6_stronger_momentum_preserves_coherence`, `test_rev7_active_scales_normalization_avoids_dilution` y `test_rev8_nan_in_neighbor_does_not_corrupt_subsequent_scales`) pasando al 100%.
+
+## 38. Línea C — Claude (cloud, prefijo CL-n): plan desde la base, por fases y archivo por archivo (2026-10-11)
+
+> Dueño: Claude, sesión cloud de la auditoría de vetos (Línea C; la otra
+> sesión Claude es la Línea E, QS-n). Texto completo:
+> [PLAN_LINEA_C_DESDE_LA_BASE_2026-10-11.md](PLAN_LINEA_C_DESDE_LA_BASE_2026-10-11.md).
+> Lista archivo por archivo con su fase y su recibo:
+> [audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv](audit/PLAN_LINEA_C_RECIBOS_2026-10-11.tsv).
+> Este bloque no reescribe ninguna sección anterior.
+
+**Base.** Citas ancladas a aa716edf (merge del PR #29, con #713 y #714).
+T-1 sobre aa716edf: 16/144 (11,1 %), con la misma lista de genes inertes
+que los ciclos 8 a 10. Edge fuera de muestra: sin medir. Ninguna fase
+autoriza operar, entrenar, promover ni cambiar el golden o el trinquete.
+
+**Fases.** Cada archivo versionado tiene una sola fase dueña, donde recibe
+su recibo (OID del blob, preguntas, tests y veredicto, el formato de
+Codex/Sol). Se reutilizan R0–R9 de Qoder/AGY y de Codex/Sol, G0–G8 y
+QS-R0…R6 sin rehacerlos.
+
+| Fase | Contenido | Archivos | Ciclo |
+|---|---|---|---|
+| C-F0 | Metas y su falsación medible | 30 | 11 |
+| C-F1 | Conceptos y contratos: unidades, identidad, desconocido ≠ 0, horizonte único, espejo, toolchain | 49 | 11 |
+| C-F2 | Teoría por dominio, con prueba sintética que la falsea | 42 | 12 |
+| C-F3 | Decisión viva (núcleo por bloques, consejo, señales) | 39 | 12 |
+| C-F4 | Dinero: ATR primero, absorbentes, D4 y D1 en sombra | 21 | 13 |
+| C-F5 | Ejecución: host, IOC, reservas, kill-switch | 27 | 14 |
+| C-F6 | Datos | 47 | 15 |
+| C-F7 | Aprendizaje y evolución; GENOME-GATE antes de tocar genes | 73 | 15 |
+| C-F8 | Telemetría y operación | 71 | 16 |
+| C-F9 | Herramientas, binarios y lanzadores | 80 | 16 |
+| C-F10 | Suites, CI y oráculo | 191 | 11 (inventario) y 16 |
+| C-F11 | Documentación y salida generada | 891 | 16 |
+
+**Puerta común de cada fase.** `cargo check --workspace --all-targets`
+sin errores nuevos; un test que falla antes de cada arreglo; golden
+intacto o re-certificado con autorización; T-1 ≥ 11,0 % gen a gen. El T-1
+corre con 1 000 USD y sin host: para el régimen de 13 USD y para el host la
+puerta es un fixture de 13 USD con tests del host, o `bt_vivo_parity_audit`.
+
+**Lo que el plan entrega además del recorrido.** Teoría → estado →
+siguiente paso → prueba (§3 del documento, p. ej. bosque → boosting por
+moneda con etiqueta de primer toque y log-loss OOS); literales y sesgos
+(§4); autoadaptación con lazos cerrados sólo con evidencia OOS y en sombra
+primero (§5); hallazgos sospechosos por verificar (§6). Las pruebas que
+necesitan tapes o fills reales quedan marcadas «bloqueadas por datos
+externos».
+
+**Pedidos a otras líneas (detalle en §1.3 y §1.4 del documento).**
+- Línea E: acuse de D1 y D4. D4 unifica las dos sondas de arranque frío
+  (riesgo y núcleo). QS-R4b sólo registra en sombra hasta tener etiquetas
+  honestas. `riesgo_por_operacion` no sale del núcleo, para no romper la
+  paridad con el replay.
+- AGY: el freno del host ya usa `.min(d*)` (#714), pero no el
+  `lerp(…, micro_w)` del riesgo, y no tiene test. Los cambios de conducta
+  viva entran por PR, con los checks de CI y el T-1 adjunto.
+- Todos: `kill_switch_active` tiene ocho escritores y ADR-0015 lista
+  tres. Se pide que cada escritor figure en el ADR con su criterio.
+
+**Herramienta.** `scripts/plan_linea_c.py` (14 tests en
+`scripts/tests/test_plan_linea_c.py`):
+- `citas` comprueba que cada `ruta:línea` del plan existe en una revisión
+  (640 correctas, 0 rotas en aa716edf);
+- `asignacion` regenera la lista de recibos y falla si un archivo queda
+  sin fase.
