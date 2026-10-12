@@ -123,31 +123,75 @@ impl TasaAcierto {
     }
 }
 
-/// D-752 — CONVICCIÓN DE UNA RAMA A PARTIR DE SU PROPIO HISTORIAL.
+/// CL-75 (F3.3-01) — PROBABILIDAD DE EQUILIBRIO DE UNA ORDEN.
 ///
-/// Tres estados y ningún parámetro libre; el criterio es siempre el mismo:
-/// «¿excluye el intervalo de Wilson la moneda al aire?».
-///   · cota inferior > ½ ⇒ la rama DEMOSTRÓ ventaja. La convicción es esa
-///     cota: lo que la muestra garantiza, no lo que su media sugiere.
-///   · cota superior < ½ ⇒ la rama DEMOSTRÓ desventaja. Emite esa cota
-///     superior, que por definición queda bajo ½, y el gate de confianza del
-///     risk-engine la rechaza sin necesidad de una regla aparte.
-///   · el intervalo contiene ½ ⇒ todavía no hay evidencia; decide la magnitud
-///     MEDIDA del disparo, que es lo único observable en ese momento.
-///
-/// El tercer caso no es una concesión: sin él el motor nunca abriría la
-/// primera operación de una rama y jamás reuniría la muestra con la que
-/// juzgarla.
+/// Con brackets TP y SL y una fricción de ida y vuelta f (todo en fracción
+/// del precio), la esperanza neta de una operación que gana con probabilidad
+/// p es `E = p·TP − (1 − p)·SL − f`, que se anula en
+/// `p* = (SL + f)/(TP + SL)`. Es el umbral del veto EV del risk-engine
+/// (`p·tp − (1 − p)·sl` frente a la fricción) con multiplicador 1.
+/// Supuesto declarado: la operación acaba en una de las dos barreras; las
+/// salidas intermedias (trailing, zombi, decaimiento) no están en el modelo.
+/// Devuelve `None` si la geometría no es válida.
 #[inline]
-pub fn conviccion_de_rama(registro: &TasaAcierto, piso_por_magnitud: f64) -> f64 {
+pub fn p_equilibrio(tp: f64, sl: f64, friccion: f64) -> Option<f64> {
+    if !(tp.is_finite() && sl.is_finite() && friccion.is_finite())
+        || tp <= 0.0
+        || sl <= 0.0
+        || friccion < 0.0
+    {
+        return None;
+    }
+    let p = (sl + friccion) / (tp + sl);
+    (p.is_finite() && p > 0.0 && p < 1.0).then_some(p)
+}
+
+/// D-752 / CL-75 — CONVICCIÓN DE UNA RAMA A PARTIR DE SU PROPIO HISTORIAL.
+///
+/// El criterio es «¿excluye el intervalo de Wilson (z = Z95) el equilibrio
+/// p* de la geometría?» (`p_equilibrio`), no la moneda al aire:
+///   · cota superior < p* ⇒ la rama DEMOSTRÓ esperanza negativa. Devuelve 0:
+///     ningún multiplicador posterior (puerta ML ×1,5, modulación espectral
+///     ×1,35) puede reinflarla por encima del gate (F3.3-02). Antes emitía
+///     la cota superior y confiaba en que el gate la rechazara.
+///   · cota inferior > p* ⇒ la rama DEMOSTRÓ esperanza positiva. Devuelve
+///     máx(cota inferior, piso por magnitud): la evidencia a favor nunca deja
+///     a la rama por debajo de una rama sin historial (F3.3-01). Antes
+///     devolvía la cota inferior, y 21/30 (0,521) quedaba bajo el piso que
+///     recibía 16/30 (0,75).
+///   · el intervalo contiene p* ⇒ todavía no hay evidencia; decide la
+///     magnitud MEDIDA del disparo.
+/// La salida es monótona no decreciente en los aciertos con n, piso y p*
+/// fijos. El tercer caso no es una concesión: sin él el motor nunca abriría
+/// la primera operación de una rama ni reuniría la muestra con la que
+/// juzgarla. Un p* no válido se trata como ½.
+#[inline]
+pub fn conviccion_de_rama_en(
+    registro: &TasaAcierto,
+    piso_por_magnitud: f64,
+    p_equilibrio: f64,
+) -> f64 {
+    let p_star = if p_equilibrio.is_finite() && p_equilibrio > 0.0 && p_equilibrio < 1.0 {
+        p_equilibrio
+    } else {
+        0.5
+    };
     let (lo, hi) = registro.intervalo(crate::diffusion::Z95);
-    if lo > 0.5 {
-        lo
-    } else if hi < 0.5 {
-        hi
+    if hi < p_star {
+        0.0
+    } else if lo > p_star {
+        lo.max(piso_por_magnitud)
     } else {
         piso_por_magnitud
     }
+}
+
+/// [`conviccion_de_rama_en`] con p* = ½, para los llamadores que todavía no
+/// conocen la geometría de su orden (las ramas 1-10, Línea E: pedido en el
+/// buzón para que pasen `p_equilibrio_de_banda`).
+#[inline]
+pub fn conviccion_de_rama(registro: &TasaAcierto, piso_por_magnitud: f64) -> f64 {
+    conviccion_de_rama_en(registro, piso_por_magnitud, 0.5)
 }
 
 /// D-105: Mapeo de convicción Bayesiana calibrada para Kelly sizing realista
@@ -1557,14 +1601,40 @@ impl GodEngineCore {
     }
 
     fn banda_paga_friccion(&self, coin_id: usize, tau_ms: f64) -> bool {
+        self.sonda_de_banda(coin_id, tau_ms)
+            .is_some_and(|(probe, _)| !probe.below_tradeable_floor)
+    }
+
+    /// CL-75 (F3.3-01): equilibrio p* de la orden que saldría a esa τ, con la
+    /// misma sonda que QO-586 (la geometría y la fricción del gate). Sin
+    /// sonda válida devuelve ½; esa orden la veta QO-586 de todos modos.
+    pub fn p_equilibrio_de_banda(&self, coin_id: usize, tau_ms: f64) -> f64 {
+        self.sonda_de_banda(coin_id, tau_ms)
+            .and_then(|(probe, friccion)| p_equilibrio(probe.tp_pct, probe.sl_pct, friccion))
+            .unwrap_or(0.5)
+    }
+
+    /// CL-75: p* de la orden que saldría de una intención a `tau_banda_ms`,
+    /// a la τ con la que vivirá (`tau_de_la_orden`, CL-74).
+    pub fn p_equilibrio_de_la_orden(&self, coin_id: usize, tau_banda_ms: u64, hurst: f64) -> f64 {
+        self.p_equilibrio_de_banda(coin_id, self.tau_de_la_orden(coin_id, tau_banda_ms, hurst) as f64)
+    }
+
+    /// QO-586 / CL-75: geometría TP/SL y fricción de ida y vuelta con las que
+    /// el gate juzgará una orden a esa τ. `None` si no hay precio o ATR.
+    fn sonda_de_banda(
+        &self,
+        coin_id: usize,
+        tau_ms: f64,
+    ) -> Option<(risk_engine::tp_sl::TpSl, f64)> {
         if coin_id >= self.arena.coins.len() || !tau_ms.is_finite() || tau_ms <= 0.0 {
-            return false;
+            return None;
         }
         let coin = &self.arena.coins[coin_id];
         let price = coin.current_price.load(Ordering::Relaxed);
         let atr = coin.current_atr.load(Ordering::Relaxed);
         if !price.is_finite() || price <= 0.0 || !atr.is_finite() || atr <= 0.0 {
-            return false;
+            return None;
         }
         let atr_pct = atr / price;
         let taker_fee = self.arena.config.live_taker_fee.load(Ordering::Relaxed);
@@ -1583,7 +1653,7 @@ impl GodEngineCore {
         let roundtrip_fee =
             risk_engine::tp_sl::roundtrip_friction(taker_fee, slip_floor, atr_pct, lat_ms);
         if !roundtrip_fee.is_finite() || roundtrip_fee < 0.0 {
-            return false;
+            return None;
         }
         // CL-62: el mismo multiplicador que el gate de riesgo (por símbolo).
         let sl_mult = self.arena.sl_atr_multiplier_for(coin_id);
@@ -1598,7 +1668,7 @@ impl GodEngineCore {
             },
             self.arena.config.tp_rr_ratio_btc.load(Ordering::Relaxed),
         );
-        !probe.below_tradeable_floor
+        Some((probe, roundtrip_fee))
     }
 
     fn puertas_del_continuo(
@@ -4702,6 +4772,9 @@ impl GodEngineCore {
 
             // 34D Macro+Micro Features for NanoForest (Indices 0..24 used by trained trees)
             let features = self.feature_engines[coin_id].get_features();
+            // CL-74/CL-75: el Hurst de la τ de la orden (`tau_de_la_orden`) y de
+            // su equilibrio p*; `features` no cambia hasta el final del evento.
+            let hurst_exponent = features[1] as f64;
             let swing_feats = self.feature_engines[coin_id].get_universal_features();
 
             // F4.7 — ENSAMBLE REAL: ambos modelos opinan; la probabilidad es
@@ -6407,7 +6480,11 @@ impl GodEngineCore {
                             .clamp(0.50, 0.95);
                         fast_intent = SignalIntent {
                             signal: tensor_cont.signal,
-                            confidence: conviccion_de_rama(&registro_ramas[11], conf_base),
+                            confidence: conviccion_de_rama_en(
+                                &registro_ramas[11],
+                                conf_base,
+                                self.p_equilibrio_de_la_orden(coin_id, fast_duration_ms, hurst_exponent),
+                            ),
                             horizon: strategy_core::TradeHorizon::Continuous,
                             expected_duration_ms: fast_duration_ms,
                             volume_flow_rate: 11.0,
@@ -6488,9 +6565,6 @@ impl GodEngineCore {
             // ninguno. Ahora son una función única que se aplica a las DOS
             // lecturas antes de arbitrar.
             // CL-74 (F3.2-01): las puertas juzgan la τ con la que vivirá la orden.
-            // El Hurst de la modulación es el mismo que usaba la reescritura
-            // posterior (`features[1]`); se lee aquí, antes de la primera banda.
-            let hurst_exponent = features[1] as f64;
             if fast_intent.signal != SignalType::Flat {
                 fast_intent.expected_duration_ms = self.tau_de_la_orden(
                     coin_id,
@@ -6634,7 +6708,11 @@ impl GodEngineCore {
                         } else {
                             0.51
                         };
-                        let confidence = conviccion_de_rama(&registro_ramas[13], piso_magnitud);
+                        let confidence = conviccion_de_rama_en(
+                            &registro_ramas[13],
+                            piso_magnitud,
+                            self.p_equilibrio_de_la_orden(coin_id, swing_duration_ms, hurst_exponent),
+                        );
                         slow_intent = SignalIntent {
                             signal: SignalType::Long,
                             confidence,
@@ -6656,7 +6734,11 @@ impl GodEngineCore {
                         } else {
                             0.51
                         };
-                        let confidence = conviccion_de_rama(&registro_ramas[13], piso_magnitud);
+                        let confidence = conviccion_de_rama_en(
+                            &registro_ramas[13],
+                            piso_magnitud,
+                            self.p_equilibrio_de_la_orden(coin_id, swing_duration_ms, hurst_exponent),
+                        );
                         slow_intent = SignalIntent {
                             signal: SignalType::Short,
                             confidence,
@@ -6690,7 +6772,11 @@ impl GodEngineCore {
                         field_short.global_coherence,
                         macro_trend,
                     ) {
-                        let confidence = conviccion_de_rama(&registro_ramas[15], conf_base);
+                        let confidence = conviccion_de_rama_en(
+                            &registro_ramas[15],
+                            conf_base,
+                            self.p_equilibrio_de_la_orden(coin_id, tau_star_duration, hurst_exponent),
+                        );
                         slow_intent = SignalIntent {
                             signal: if is_long {
                                 SignalType::Long
@@ -6751,7 +6837,11 @@ impl GodEngineCore {
                         .clamp(tensor_min_conf * 0.95, 1.0);
                     slow_intent = SignalIntent {
                         signal: tensor_cont.signal,
-                        confidence: conviccion_de_rama(&registro_ramas[14], conf_base),
+                        confidence: conviccion_de_rama_en(
+                            &registro_ramas[14],
+                            conf_base,
+                            self.p_equilibrio_de_la_orden(coin_id, swing_duration_ms, hurst_exponent),
+                        ),
                         horizon: strategy_core::TradeHorizon::Continuous,
                         expected_duration_ms: swing_duration_ms,
                         // D-678: rama 14 · consenso tensorial.
@@ -6769,7 +6859,11 @@ impl GodEngineCore {
                         .clamp(tensor_min_conf * 0.95, 1.0);
                     slow_intent = SignalIntent {
                         signal: tensor_cont.signal,
-                        confidence: conviccion_de_rama(&registro_ramas[14], conf_base),
+                        confidence: conviccion_de_rama_en(
+                            &registro_ramas[14],
+                            conf_base,
+                            self.p_equilibrio_de_la_orden(coin_id, swing_duration_ms, hurst_exponent),
+                        ),
                         horizon: strategy_core::TradeHorizon::Continuous,
                         expected_duration_ms: swing_duration_ms,
                         // D-678: rama 14 · consenso tensorial.
@@ -9134,9 +9228,9 @@ mod tests_d752_d756 {
         assert_eq!(c_gana, lo);
         assert!(c_gana > 0.5 && c_gana < 0.70, "cota {c_gana} vs media 0,70");
 
-        // 3) Desventaja DEMOSTRADA: la convicción cae por debajo de ½ y el
-        //    gate de confianza la rechaza sin necesidad de una regla aparte.
-        //    ESTE es el caso que el literal 0,72 hacía imposible.
+        // 3) Desventaja DEMOSTRADA: la convicción es 0 (CL-75), y ningún
+        //    multiplicador posterior la devuelve sobre el gate. ESTE es el
+        //    caso que el literal 0,72 hacía imposible.
         let perdedora = registro(400, 120); // 30 % con n grande
         let c_pierde = conviccion_de_rama(&perdedora, piso);
         assert!(
@@ -9192,11 +9286,12 @@ mod tests_d752_d756 {
         assert_eq!(conviccion_de_rama(&reg_ganador, conf_base), lo_gana);
         assert!(lo_gana > conf_base);
 
-        // Ante rama probadamente perdedora, la convicción cae a la cota superior de Wilson
-        // erradicando el piso ficticio de 0.55/0.58 que causaba pérdidas persistentes
+        // Ante rama probadamente perdedora (cota superior bajo ½), la
+        // convicción es 0 desde CL-75 (F3.3-02): antes era esa cota superior,
+        // y la modulación posterior podía reinflarla sobre el gate.
         let (_, hi_pierde) = reg_perdedor.intervalo(Z95);
-        assert_eq!(conviccion_de_rama(&reg_perdedor, conf_base), hi_pierde);
         assert!(hi_pierde < 0.50, "Rama perdedora debe descender por debajo de 0.50 (dio {hi_pierde})");
+        assert_eq!(conviccion_de_rama(&reg_perdedor, conf_base), 0.0);
 
         // 4. sig_conf
         assert_eq!(sig_conf(0.0), 0.51);

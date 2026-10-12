@@ -3,8 +3,10 @@
 //!
 //! Teoría que se prueba:
 //! - `conviccion_de_rama` toma el intervalo de Wilson (z = Z95) del historial
-//!   de la rama y devuelve: la cota inferior si lo > ½, la superior si
-//!   hi < ½, y el piso por magnitud si el intervalo contiene ½.
+//!   de la rama. Hasta CL-75 devolvía la cota inferior si lo > ½, la
+//!   superior si hi < ½ y el piso por magnitud si el intervalo contenía ½.
+//!   Desde CL-75 (`conviccion_de_rama_en`, con el equilibrio p* de la orden)
+//!   devuelve 0 si hi < p*, máx(lo, piso) si lo > p* y el piso en otro caso.
 //! - Una convicción construida sobre evidencia debe ser MONÓTONA en la
 //!   evidencia: con la misma n y el mismo piso, más aciertos no pueden bajar
 //!   la convicción.
@@ -29,7 +31,12 @@
 //! correrlos: `cargo test ... -- --include-ignored`.
 
 use god_engine_core::diffusion::Z95;
-use god_engine_core::{confianza_modulada, conviccion_de_rama, TasaAcierto};
+use god_engine_core::{
+    confianza_modulada, conviccion_de_rama, conviccion_de_rama_en,
+    p_equilibrio as p_equilibrio_orden, GodEngineCore, TasaAcierto,
+};
+use quantum_arena::GlobalArena;
+use std::sync::atomic::Ordering;
 
 /// Equilibrio de la geometría: `p* = (1 + φ)/(RR + 1)` (ver doc del módulo).
 fn p_equilibrio(rr: f64, phi: f64) -> f64 {
@@ -45,7 +52,6 @@ const RR_GENOMA: f64 = 2.25;
 ///
 /// Sin tolerancia: es una desigualdad entre dos salidas de la misma función.
 #[test]
-#[ignore = "OPEN F3.3-01 (Línea C): conviccion_de_rama no es monótona: con lo > ½ devuelve lo (0,521) y con el intervalo sobre ½ devuelve el piso (0,75), así que más aciertos bajan la convicción"]
 fn cf3_conviccion_monotona_en_la_evidencia() {
     // Misma n y mismo piso por magnitud; sólo cambia el número de aciertos.
     let piso = 0.75;
@@ -89,7 +95,6 @@ fn cf3_conviccion_monotona_en_la_evidencia() {
 /// añadirá p* como parámetro de `conviccion_de_rama`: entonces se actualiza
 /// la llamada, no la aserción.
 #[test]
-#[ignore = "OPEN F3.3-01 (Línea C): conviccion_de_rama compara con ½ y no con el equilibrio p* de la geometría: una rama con lo = 0,402 > p* = 0,369 recibe hi = 0,499 < ½"]
 fn cf3_conviccion_no_condena_una_rama_sobre_su_equilibrio() {
     // Genoma activo: TP = 2,25·SL; fricción ≈ 0,2·SL.
     let phi = 0.2;
@@ -100,7 +105,8 @@ fn cf3_conviccion_no_condena_una_rama_sobre_su_equilibrio() {
     }; // 45 % de cierres netos ganadores
     let (lo, hi) = rama.intervalo(Z95);
     let phi_max = lo * (RR_GENOMA + 1.0) - 1.0;
-    let c = conviccion_de_rama(&rama, 0.75);
+    // CL-75: la función recibe p* (`conviccion_de_rama_en`); la aserción no cambia.
+    let c = conviccion_de_rama_en(&rama, 0.75, p_star);
     println!(
         "observado: 180/400 ⇒ Wilson [{lo:.4}; {hi:.4}], p*(φ = {phi}) = {p_star:.4}, \
          la premisa vale para φ < {phi_max:.3}; convicción = {c:.4}"
@@ -117,7 +123,6 @@ fn cf3_conviccion_no_condena_una_rama_sobre_su_equilibrio() {
 /// La parte del impulso ML de las puertas (hasta ×1,5) vive en
 /// `puertas_del_continuo`, que es privada; queda fuera de esta prueba.
 #[test]
-#[ignore = "OPEN F3.3-02 (Línea C): los multiplicadores sin estado posteriores a D-752 (confianza_modulada ×1,10…×1,35) reinflan una desventaja demostrada (hi = 0,469) por encima de ½"]
 fn cf3_desventaja_demostrada_no_se_reinfla() {
     let perdedora = TasaAcierto {
         n: 200,
@@ -133,4 +138,61 @@ fn cf3_desventaja_demostrada_no_se_reinfla() {
     for (m, x) in modulados {
         assert!(x < 0.5, "la modulación espectral ×{m} reinfla {c} a {x}");
     }
+}
+
+/// CL-75. Verdad: con n, piso y p* fijos, la convicción es no decreciente en
+/// los aciertos, para toda n ≤ 200, piso ∈ {0,55; 0,75; 0,95} y p* ∈ {0,30;
+/// 0,369; 0,5; 0,6}. Es la propiedad que T1 comprueba en un solo punto.
+#[test]
+fn cf3_conviccion_monotona_en_toda_la_rejilla() {
+    for &p_star in &[0.30, 0.369, 0.5, 0.6] {
+        for &piso in &[0.55, 0.75, 0.95] {
+            for n in 1..=200u32 {
+                let mut previa = f64::NEG_INFINITY;
+                for aciertos in 0..=n {
+                    let c = conviccion_de_rama_en(&TasaAcierto { n, aciertos }, piso, p_star);
+                    assert!(
+                        c >= previa,
+                        "no monótona: n = {n}, {aciertos} aciertos, piso {piso}, p* {p_star}: {c} < {previa}"
+                    );
+                    previa = c;
+                }
+            }
+        }
+    }
+}
+
+/// CL-75. Verdad: `p_equilibrio(tp, sl, f)` anula la esperanza neta del veto
+/// EV del risk-engine, `p·tp − (1 − p)·sl − f = 0`, y con RR = 2,25 y
+/// f = 0,2·SL da (1 + 0,2)/(2,25 + 1) = 0,3692.
+#[test]
+fn cf3_p_equilibrio_anula_la_esperanza() {
+    for &(tp, sl, f) in &[
+        (0.0225, 0.01, 0.002),
+        (0.004, 0.002, 0.0014),
+        (0.05, 0.01, 0.0),
+    ] {
+        let p = p_equilibrio_orden(tp, sl, f).expect("geometría válida");
+        let e = p * tp - (1.0 - p) * sl - f;
+        assert!(e.abs() < 1e-15, "E(p*) = {e} con tp {tp}, sl {sl}, f {f}");
+    }
+    let p = p_equilibrio_orden(0.0225, 0.01, 0.002).unwrap();
+    assert!((p - 1.2 / 3.25).abs() < 1e-12, "p* = {p}");
+    assert!(p_equilibrio_orden(0.0, 0.01, 0.001).is_none());
+    assert!(p_equilibrio_orden(0.01, 0.01, f64::NAN).is_none());
+}
+
+/// CL-75. Verdad: sin precio ni ATR no hay sonda y el núcleo devuelve ½ (la
+/// orden la vetaría QO-586 de todos modos); con precio y ATR, p* está en
+/// (0; ½), porque el RR del gen (≥ 2,25) supera de sobra la fricción.
+#[test]
+fn cf3_p_equilibrio_de_banda_del_nucleo() {
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    let core = GodEngineCore::new(arena.clone());
+    assert_eq!(core.p_equilibrio_de_banda(0, 600_000.0), 0.5);
+    arena.coins[0].current_price.store(100.0, Ordering::Relaxed);
+    arena.coins[0].current_atr.store(0.5, Ordering::Relaxed);
+    let p = core.p_equilibrio_de_banda(0, 600_000.0);
+    println!("observado: p* a 10 min con ATR 0,5 % = {p:.4}");
+    assert!(p > 0.0 && p < 0.5, "p* = {p}");
 }
