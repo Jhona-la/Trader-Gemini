@@ -78,9 +78,12 @@
   fuera de muestra; no promueve mientras su evaluador no sea canónico),
   LG-18/18b (9 genes sin lector congelados), LG-19/19b (trazos del núcleo a la
   cola, corte UTF-8). Revisión adversarial de 3 lentes incorporada.
-- **Siguiente**: replay canónico multiactivo (pedido a Sol) para el evolver;
-  G049b con el dueño del demonio; cablear LG-9 con sus dueños; G042 si la
-  Línea C no lo toma.
+- **Ola 4 cerrada**: revisión desde la base de los 22 commits ajenos desde
+  86218456 (25 hallazgos, 2 refutados, `docs/audit/linea_g/ola4_delta.tsv`);
+  LG-20 (base forense por entorno, NULL, sin genomas repetidos).
+- **Siguiente**: el examen del demonio (C-F7: G049, G049b, D2-01, D2-02,
+  D1-08) si la Línea C lo cede; revisar CL-103…CL-107 cuando entren; replay
+  canónico multiactivo (Sol); cablear LG-9 con sus dueños.
 - **No toca**: ATR/σ̂60 (Línea C), orquestador/espectro (Qoder), registro
   (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol).
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró

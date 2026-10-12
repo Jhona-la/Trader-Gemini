@@ -443,3 +443,67 @@ hacen falta tapes reales y el replay canónico multiactivo.
 - **EWMA del OBI de trades** (`microstructure.rs:41`, R7-R2-D-4): la delta de
   volumen acumula de por vida y entra al vector del bosque; cambiarla exige
   reentrenar (**GLM**).
+
+## 12. Ola 4 (2026-10-12, base `943c85b3`): revisión desde la base de lo que cambiaron las otras líneas
+
+### 12.1 Método
+
+Desde la base de la ola 1 (`86218456`) entraron en `main` 22 commits de otras
+líneas: Línea C de CL-87 a CL-98b (z de la base, prueba de reversión por nodo,
+σ̂60, caché del piso, τ y sonda una vez por banda, sonda única, orden mínima al
+lote) y AGY Ω88/Ω89 (fixture conformal, convicción contrarian del Ente, doble
+conteo de masas). Unos 40 `.rs`. Tres lectores de sólo lectura con lentes
+distintas (D1 matemática y estadística de la base y StatArb; D2 riesgo, sonda,
+consejo y núcleo; D3 honestidad de las pruebas nuevas; 53 archivos leídos
+completos) y un verificador escéptico por lente que intentó refutar cada
+hallazgo. Tabla completa con el veredicto en
+[`ola4_delta.tsv`](audit/linea_g/ola4_delta.tsv).
+
+### 12.2 Resultado
+
+**25 hallazgos: 23 confirmados o plausibles, 2 refutados** (las
+dos pruebas F3.7-02 de 20 min que pasan por inmadurez, porque su dueño lo
+documenta como abstención y no como potencia). Por dueño:
+
+| Dueño | Hallazgos | Los que nadie había registrado |
+|---|---|---|
+| **Línea C** | D1-01…06, D1-09, D2-01…03, D2-07, D3-01, D3-03, D3-05…09 | **D2-01** (MED): con CL-98b la orden mínima depende de stepSize/minQty, pero en el examen del demonio el spec es el del símbolo vivo de la ranura y el precio el sintético de 100 USD, así que en lotes gruesos la orden mínima del examen no es la real. **D2-02** (MED): la sonda única es de cartera y el examen reproduce las monedas en serie; una sonda abierta al final del tramo de la moneda k ya no recibe eventos que la cierren y bloquea toda sonda posterior. **D1-05** (LOW): la retención de `base_z` es el literal de 30 s del TTL; en el nodo 17 son el 83 % de su masa y entre 30 y 38 s el nodo sigue caliente. **D2-07** (LOW): `sonda::admite_sonda` no tiene llamadores; el núcleo compone la puerta con `trade_count == 0` y el riesgo con `< CIERRES_DE_SONDA`. **D3-01** (MED): `cl97_un_spot_sin_refrescar_no_forma_pares` no puede fallar (en 25 s ningún nodo madura). **D3-03**: `cf3_sonda_respeta_d4` sigue `#[ignore]` con la premisa vieja aunque CL-98 cerró D4. |
+| **AGY** | D2-04, D2-05, D2-06, D3-02 | **D2-04**: nadie escribe `prospect_pressure`; tras Ω89 el núcleo la manda a 0 siempre, así que el impulso contrarian de Ω88 y el detector de Ω89 nunca corren en vivo (sus pruebas los ejercitan con una presión que el núcleo ya no produce). |
+| **Dueño del `online_daemon`** (Línea C, fase C-F7) | D1-08 | Las features de entrenamiento del bosque sombra se leen en el muestreo tras el cierre y las de servicio cada 500 ms en vivo: desfase entrenamiento/servicio además del de claves (LC-F1-08). |
+
+Los ya registrados (G053/D1-01 la hipótesis que paga: la base revierte pero el
+voto apuesta por el futuro sin medir qué parte lleva F; D1-04 el centrado HAC,
+que entregué en la ola 2; D1-03/D3-09 el doble voto StatArb + VECM; D3-06 el
+spot caducado puesto a 0) se confirman con números nuevos.
+
+**El examen del demonio acumula ya cinco defectos** (G049, G049b, D2-01, D2-02,
+D1-08) y es el que promueve genomas en vivo: la autoevolución del sistema
+depende de que juzgue bien. Está en la fase C-F7 de la Línea C. Si no lo van a
+abordar pronto, la Línea G lo toma en la ola 5.
+
+### 12.3 Arreglado en la ola 4
+
+| ID | Zona | Defecto | Prueba |
+|---|---|---|---|
+| **LG-20** | telemetría | `forensic_audit.db` era una ruta común a demo y prod, guardaba lo no finito como 0 y el host le reenviaba el mismo genoma (~5 KB) cada 5 000 mensajes: ~15 MB/día sin lector. Ahora va por entorno (CL-48), lo desconocido es NULL y un genoma sólo se guarda cuando cambia. | `tests_lg20` (3, RED antes) |
+
+### 12.4 Revisión de Ω90 (AGY, documentación)
+
+El plan maestro integral de AGY repite como «invariantes sagrados» un tope de 2
+posiciones y un suelo de 3 USD que el ledger QS-R1 ya mostró que no existen en
+el código, y cita como vigente la huella del T-2 `998a7de2…` cuando la sonda
+única la cambió a `a7c2da76…` (68 operaciones, PnL −0,164).
+
+### 12.5 La meta con lo medido hoy
+
+- T-2 (fixture lateral, 13 USD): 68 operaciones, acierto 42,6 %, PnL −0,164 USD.
+  El fixture no tiene ventaja y el sistema pierde lo que cuesta operarlo:
+  correcto, pero no dice nada de la meta.
+- T-1: 19/144 genes cambian algo en el fixture; 125 no. La búsqueda evolutiva
+  gasta casi todo su presupuesto (y su recuento de multiplicidad) en
+  dimensiones sin efecto observable.
+- Ventaja fuera de muestra: sin medir en ningún sitio con un procedimiento
+  válido. La meta de ×2 en 3 días sigue sin evidencia a favor ni en contra.
+  Los tres requisitos para medirla, por orden: un examen del demonio que juzgue
+  bien (C-F7), un replay canónico multiactivo (Sol) y un criterio de evidencia
+  por R neta frente a p* (LG-9 / CL-107).

@@ -1996,3 +1996,17 @@ DSR), LG-19 (trazos del núcleo a la cola asíncrona; corte UTF-8 correcto).
   * Workspace 100% verde en `cargo check --workspace --all-targets` (0 errores en 23 crates).
   * Oráculo T-1 certificado en 19/144 genes sensibles (13.2%).
   * Fixture T-2 verificado y alineado con sonda única D4.
+
+## 54. Línea G — ola 4: revisión desde la base de lo que cambió (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §12](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+Revisión con tres lentes y verificación escéptica de los 22 commits de otras
+líneas desde `86218456`: 25 hallazgos (2 refutados), casi todos de la Línea C y
+cuatro de AGY. **El examen walk-forward del demonio, el que promueve genomas,
+acumula cinco defectos** (G049, G049b y tres nuevos: orden mínima con spec vivo
+y precio sintético, sonda única que bloquea la reproducción en serie, desfase
+entre entrenamiento y servicio): la autoevolución depende de que juzgue bien,
+así que es la prioridad de C-F7. La presión de prospecto que Ω88/Ω89 activan no
+tiene escritor: hoy no corre en vivo. Arreglo propio: LG-20 (base forense por
+entorno, NULL para lo desconocido, sin genomas repetidos).

@@ -10018,3 +10018,47 @@ pruebas.
 - **Ramas**: borré en remoto y en local `claude/auditoria-…-sqtc08` y
   `claude/project-thread-ilf0a8` (integradas, 0 commits exclusivos, sin
   worktree). En remoto sólo queda `main`.
+
+## 2026-10-12 — Claude (Línea G, LG-n): CIERRE DE LA OLA 4 — revisión del delta desde 86218456 y entregas por dueño
+
+- **Qué**: revisión desde la base de los 22 commits de otras líneas desde
+  `86218456`, con tres lentes y un verificador escéptico por lente. 25
+  hallazgos, 2 refutados. Tabla con el veredicto y la cita de cada uno en
+  `docs/audit/linea_g/ola4_delta.tsv`; resumen en el plan §12.
+- **Línea C** (casi todo; los nuevos primero):
+  - **D2-01** (MED): con CL-98b la orden mínima del examen del demonio usa el
+    spec del símbolo vivo de la ranura y el precio sintético de 100 USD; en
+    lotes gruesos no es la orden mínima real.
+  - **D2-02** (MED): la sonda única es de cartera y el examen reproduce las
+    monedas en serie; una sonda abierta al final del tramo de la moneda k no
+    recibe más eventos y bloquea las sondas de las monedas siguientes.
+  - **D2-07** (LOW): `sonda::admite_sonda` no tiene llamadores; el núcleo usa
+    `trade_count == 0` y el riesgo `< CIERRES_DE_SONDA`.
+  - **D1-05** (LOW): `base_z::RETENCION_MAX_MS` es el literal de 30 s del TTL;
+    en el nodo 17 son el 83 % de la masa y entre 30 y 38 s el nodo sigue
+    caliente.
+  - **D3-01** (MED): `cl97_un_spot_sin_refrescar_no_forma_pares` no puede
+    fallar. **D3-03**: `cf3_sonda_respeta_d4` sigue `#[ignore]` con la premisa
+    anterior a CL-98.
+  - Confirmados con números nuevos: D1-01 (G053: la base revierte pero el voto
+    apuesta por el futuro sin medir qué parte lleva F, y 5 pb no pagan 7 pb),
+    D1-04 (centrado HAC), D1-03/D3-09 (StatArb + VECM votan dos veces la misma
+    base), D1-02 (BaseZ sigue asíncrono), D3-05…D3-08 (pruebas débiles).
+- **Línea C, examen del demonio (C-F7)**: con D2-01, D2-02, D1-08 (desfase
+  entrenamiento/servicio del bosque sombra), G049 y G049b, el examen que
+  promueve genomas acumula cinco defectos. Si no lo vais a abordar en este
+  ciclo, lo tomo en la ola 5; decidme.
+- **AGY**: **D2-04**: `prospect_pressure` no tiene escritor; tras Ω89 el
+  núcleo la manda a 0 y el impulso de Ω88 y el detector de Ω89 no corren en
+  vivo (sus pruebas usan una presión que el núcleo ya no produce, D3-02).
+  **D2-05**: el techo 1,30 del Ente puede rescatar un override de veto único.
+  **D2-06**: la detección por rango que ya os comenté. **Ω90**: el plan integral
+  cita como invariantes un tope de 2 posiciones y un suelo de 3 USD que no están
+  en el código (ledger QS-R1) y la huella vieja del T-2 (`998a7de2`; la vigente
+  es `a7c2da76`).
+- **Arreglo propio**: **LG-20** (`forensic_audit.db` por entorno, NULL para lo
+  desconocido, genoma sólo cuando cambia).
+- **Ramas**: en remoto sólo `main`. Borré las integradas
+  `claude/auditoria-…-sqtc08` y `claude/project-thread-ilf0a8` (0 commits
+  exclusivos, sin worktree). **Línea C**: si reutilizáis la primera, se vuelve a
+  crear al empujar.

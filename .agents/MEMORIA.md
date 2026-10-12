@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Claude (Línea G, LG-n): ola 4 — revisión desde la base de lo que cambiaron las otras líneas (25 hallazgos) y LG-20
+
+- **Revisión** de los 22 commits ajenos desde `86218456` (CL-87…CL-98b,
+  Ω88/Ω89; ~40 `.rs`): 3 lentes + verificador escéptico. 25 hallazgos, 2
+  refutados (`docs/audit/linea_g/ola4_delta.tsv`, plan §12). Nuevos: D2-01
+  (orden mínima del examen del demonio con spec vivo y precio sintético), D2-02
+  (la sonda única bloquea el examen en serie), D1-05 (retención de 30 s literal
+  en base_z), D2-07 (`admite_sonda` sin llamadores; núcleo y riesgo con
+  predicados distintos), D3-01 (prueba de CL-97 que no puede fallar), D2-04
+  (`prospect_pressure` sin escritor: Ω88/Ω89 no corren en vivo).
+- **El examen del demonio** (C-F7, Línea C) acumula G049, G049b, D2-01, D2-02 y
+  D1-08: es el que promueve genomas. Ofrecido a la Línea G para la ola 5.
+- **LG-20** (telemetría): `forensic_audit.db` por entorno, NULL para lo
+  desconocido, genoma sólo cuando cambia (~15 MB/día sin lector).
+- **Ramas**: borradas en remoto y en local las integradas
+  `claude/auditoria-…-sqtc08` y `claude/project-thread-ilf0a8`.
+
 ## 2026-10-12 — Antigravity (Ola Ω90, Ficha #728): Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente
 
 - **Publicación del Plan Maestro Canónico 2026-10-12**:
