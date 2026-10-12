@@ -350,7 +350,23 @@
     H0 = +0,30 R; corta sólo entradas nuevas.
   - CL-108: estado aprendido guardado (recuento, evidencia, calibradores,
     freno y lo medido).
-  - Pendiente: la revisión del PR #60 (EST-3 y menores), desde CL-109.
+  - Revisión previa de la Línea G (26 hallazgos, `docs/audit/linea_g/
+    ola5_tanda_cf4.tsv`). Los 4 MED, arreglados en la misma tanda (criterio
+    del #61):
+    - CL-106b (T1-02): el freno duro mide la caída desde el pico en stops en
+      USD (`riesgo_por_operacion_usd`). Antes, con nocional fijo, disparaba
+      tras K·pico/capital stops; con stop del 2 % nunca antes de d*.
+    - CL-108d (T2-3): el PnL de sesiones anteriores no entra en los
+      acumuladores de la sesión.
+    - CL-108e (T2-2): se restauran el sesgo y el umbral epigenéticos y el
+      anillo de Lundberg.
+    - CL-108f (T2-1): un estado ilegible o de otra versión echa el freno de
+      la estrategia y la sesión no lo sobrescribe; `guardar` valida y hace
+      `sync_all`.
+    - Los 21 LOW van a la tanda siguiente (T1-03, refutado: el freno es
+      absorbente por decisión del dueño).
+  - Pendiente: la revisión del PR #60 (EST-3 y menores) y los LOW de la
+    Línea G, desde CL-109.
 - Veto de grupo (LC-F4-17, LC-F4-01): propuesta a Codex en el buzón, sin
   tocar su zona hasta su acuse.
 - Hallazgos abiertos: una moneda sin `_MOTOR` no sale del ML-GATE con su

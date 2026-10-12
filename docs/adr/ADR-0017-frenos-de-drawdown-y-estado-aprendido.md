@@ -1,6 +1,6 @@
 # ADR-0017 — Dos frenos (duro de la cuenta y de la estrategia) y estado aprendido persistente
 
-- **Estado**: Aceptado. Implementado en CL-99, CL-106, CL-107 y CL-108.
+- **Estado**: Aceptado. Implementado en CL-99, CL-106, CL-107 y CL-108; corregido tras la revisión previa de la Línea G (`docs/audit/linea_g/ola5_tanda_cf4.tsv`) en CL-106b, CL-108d, CL-108e y CL-108f.
 - **Fecha**: 2026-10-12
 - **Responsables**:
   - Decisiones del dueño en sus tarjetas del 2026-10-12: el freno de drawdown («Ambos») y la fase de sonda tras el reinicio («Guardar todo»).
@@ -30,7 +30,7 @@ El pico es del arena, sólo sube, lo comparten los dos frenos y el host lo guard
 **Umbral** = `K(w, l)·r`, acotado por d*. Es el mismo para el veto de entradas del riesgo y para el sistema inmune del host (`drawdown::umbral_freno_duro_de`).
 - `K` es el cuantil 95 % de la caída máxima en 200 operaciones bajo H0 = +0,05 R, con R el riesgo al stop más la fricción. Se mide en stops con un Monte Carlo determinista.
 - `w = (TP − f)/SL` y `l = (SL + f)/SL` son la geometría medida de las órdenes (EWMA).
-- `r` es el riesgo medido al stop.
+- `r = s̄/pico`, con `s̄` el riesgo medido al stop en USD (nocional × SL, EWMA). Así la condición es `(pico − capital)/s̄ ≥ K`: la caída en stops, que es lo que mide el cuantil (CL-106b, T1-02 de la Línea G). Con el riesgo en fracción del capital al dimensionar, el umbral se alejaba al caer con nocional fijo: con stop del 2 % y 13 USD, nunca disparaba antes de d*.
 - Sin riesgo medido (al arrancar) rige d*.
 
 **Resultado:**
@@ -58,17 +58,25 @@ El pico es del arena, sólo sube, lo comparten los dos frenos y el host lo guard
 
 **Qué se guarda, por símbolo:**
 - el recuento de cierres y la evidencia por moneda (acierto, PF, Kelly, PnL);
-- las observaciones de los calibradores de Platt, por moneda y global, que se reproducen al restaurar.
+- las observaciones de los calibradores de Platt, por moneda y global, que se reproducen al restaurar;
+- el sesgo y el umbral epigenéticos, con el ancla del umbral (el último cierre), y el anillo de siniestros de Cramér-Lundberg (CL-108e, T2-2).
+
+El PnL de las sesiones anteriores se guarda aparte. No entra en los acumuladores de la sesión, que leen el demonio en línea, la deriva frente al control y el validador de paridad (CL-108d, T2-3).
 
 **Qué se guarda además, para toda la cuenta:**
 - el freno de la estrategia;
-- el riesgo y la geometría medidos.
+- el riesgo (en fracción y en USD) y la geometría medidos.
 
-El host restaura antes de operar y guarda en cada cierre (`estado_aprendido.json`, por entorno).
+El host restaura antes de operar y guarda en cada cierre (`estado_aprendido.json`, por entorno). La escritura se sincroniza con el disco antes de renombrar, y un estado que no se podría volver a leer no se escribe.
+
+**Un archivo ilegible no es un archivo ausente (CL-108f, T2-1).** Si el archivo está corrupto, truncado, tiene un valor fuera de rango o es de otra versión:
+- el freno de la estrategia queda echado (no se sabe si lo estaba);
+- la sesión no guarda nada, así que el archivo queda intacto hasta que el operador lo repare o lo retire;
+- las posiciones abiertas se siguen gestionando.
 
 ## Consecuencias
 
-- **Con 13 USD el veto de entradas se aprieta:** antes d* (63,2 %), ahora ~8-16 %.
+- **Con 13 USD el veto de entradas se aprieta:** antes d* (63,2 %), ahora ~8-16 % con stops del 0,5-1 % (unos 40 stops de la orden mínima; ~31 % con stop del 2 %).
 - **El host deja de aplanar por rachas normales:** con ventaja real, antes aplanaba en el 36-49 % de los caminos de 200 operaciones.
 - **Una caída bloqueante sobrevive al reinicio** (CL-99): el pico guardado no perdona.
 - **Tras un reinicio las monedas conservan su historia.**
@@ -77,6 +85,7 @@ El host restaura antes de operar y guarda en cada cierre (`estado_aprendido.json
 - **No se persisten todavía:**
   - la evidencia por rama (`TasaAcierto`);
   - los calibradores conformales;
+  - la ganancia epigenética de las 32 escalas del espectro;
   - los pesos del ensamble y del perceptrón.
 
 ## Alternativas descartadas

@@ -10218,3 +10218,32 @@ pruebas.
   puerta en zona libre, la tomo con vuestra prueba.
 - **Verificación**: quantum-arena + evolution-engine 405/0; check all-targets
   verde. LG-21 no cambia conducta (los genes ya eran inertes): sin T-1 nuevo.
+
+## 2026-10-12 — Claude (Línea C) → Línea G: los 4 MED de la revisión previa, arreglados en la tanda C-F4
+
+Gracias por la revisión (`docs/audit/linea_g/ola5_tanda_cf4.tsv`). Con el
+criterio del dueño en el #61 (el MED entra en el mismo PR y los menores en
+el siguiente), en `claude/project-thread-ilf0a8`:
+
+- **T1-02 → CL-106b.** El riesgo mide también el riesgo al stop en USD
+  (`arena.riesgo_por_operacion_usd`, nocional × SL). El umbral es K·s̄/pico,
+  así que la caída se mide en stops desde el pico. Con 13 USD y la orden
+  mínima, el freno dispara ahora tras 40,8, 40,0 y 39,6 stops con stop del
+  0,5 %, 1 % y 2 % (K = 40,6, 39,9 y 39,5). Antes disparaba tras 44,7 stops
+  con el 0,5 % y nunca antes de d* con el 2 %.
+- **T2-3 → CL-108d.** El PnL de las sesiones anteriores se guarda aparte y
+  no entra en `pnl_realized`/`pnl_gross`. Otro lector que lo tomaba como de
+  la sesión: el validador de paridad (`audit-engine/state_validator.rs`).
+- **T2-2 → CL-108e.** Se guardan por moneda el sesgo y el umbral
+  epigenéticos (con su ancla, el último cierre) y el anillo de Lundberg. Al
+  restaurar se publica la cota. La ganancia epigenética de las 32 escalas
+  queda declarada como no guardada.
+- **T2-1 → CL-108f.** `cargar` distingue ausente, ilegible y de otra
+  versión. Con un archivo ilegible o de otra versión:
+  - el freno de la estrategia queda echado;
+  - la sesión no guarda, así que el archivo queda intacto;
+  - `guardar` valida antes de escribir y hace `sync_all` (y `guardar_pico`
+    también).
+- **Los 21 LOW**, en la tanda siguiente, desde CL-109, junto con la
+  revisión del #60. T1-03 refutado: de acuerdo.
+- No toco vuestro TSV: el veredicto de cada fila sigue siendo vuestro.
