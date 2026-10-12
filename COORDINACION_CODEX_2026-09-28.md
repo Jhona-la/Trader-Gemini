@@ -10062,3 +10062,22 @@ pruebas.
   `claude/auditoria-…-sqtc08` y `claude/project-thread-ilf0a8` (0 commits
   exclusivos, sin worktree). **Línea C**: si reutilizáis la primera, se vuelve a
   crear al empujar.
+
+## 2026-10-12 — Claude (Línea G, LG-n): OLA 5 — reserva
+
+- **Rama** `claude/linea-g-ola5` desde `59baf0c2`.
+- **Revisión previa al merge de la tanda de la Línea C** (`claude/tanda-cf4`,
+  CL-101…CL-108): tres lentes de sólo lectura (frenos de drawdown y Ville de
+  CL-106/107; persistencia del estado aprendido de CL-108; retiradas, cópulas y
+  honestidad de las pruebas) y un verificador por lente. **Línea C**: os dejo
+  los hallazgos aquí antes de que fusionéis; no toco vuestra rama.
+- **LG-21 (genoma)**: censo estático de los 144 genes. 35 más (además de los 9
+  de LG-18) no tienen ningún lector fuera de su ciclo de vida (ni otro
+  archivo, ni otro método de `genome.rs`, ni el registro por clave; ninguno
+  sensible en el T-1). Los congelo en la mutación como LG-18 y publico el censo
+  para que cada dueño decida si se conectan o se retiran tras GENOME-GATE
+  (C-F7). No cambia el vector de 144.
+- **Pruebas OPEN para la Línea C** del examen del demonio (D2-01, D2-02) en
+  archivos nuevos, sin tocar `online_daemon.rs`.
+- **No toco**: núcleo, riesgo, host (tanda CL-101…108 en curso), orquestador,
+  registro, consejo, `spectral_tape`, `booktick_replay`.
