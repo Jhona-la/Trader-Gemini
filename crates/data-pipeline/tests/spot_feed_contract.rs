@@ -6,8 +6,9 @@
 //! 2. `apply_spot_tick` actualiza de forma atómica y lock-free `arena.coins[coin_id].spot_bid`,
 //!    `spot_ask`, el registro omnisciente per-símbolo y el tensor macro `omni_state.binance_spot`.
 //! 3. El spread de arbitraje spot-futuros en `omni_state.spot_futures_arb_spread` se calcula en tiempo real.
-//! 4. La alimentación continua permite que `statarb_ou_engines` en el núcleo madure ($\ge 10$ pares)
-//!    y publique `statarb_ou_zscore` en `OmniscientRegistry`.
+//! 4. La alimentación continua da a `statarb_ou_engines` en el núcleo los pares de su prueba
+//!    de reversión de la base (CL-97; el contrato está en
+//!    `god-engine-core/tests/statarb_live_physics_contract.rs`).
 
 use data_pipeline::omni_multiplexer::OmniState;
 use data_pipeline::spot_feed::{apply_spot_tick, parse_rest_book_tickers, parse_ws_book_ticker};

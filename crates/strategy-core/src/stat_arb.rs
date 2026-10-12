@@ -1,4 +1,4 @@
-use crate::vecm_arbitrage::ContinuousOrnsteinUhlenbeckSde;
+use crate::prueba_reversion::{PruebaReversion, Veredicto};
 use crate::{QuantumStrategy, SignalIntent, SignalType, TradeHorizon};
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
@@ -6,7 +6,8 @@ use std::sync::Arc;
 /// Fallback canónico de τ* dominante en milisegundos: centro geométrico de la
 /// banda operativa [30 s, 12 h] (√(30 000 · 43 200 000) ≈ 1 138 419,6 ms).
 /// Único valor para TODOS los caminos del motor (R6-B13: antes 30.0 s en
-/// `update_with_clock` vs 1138.0 s en `evaluate_for_coin`).
+/// el camino de la SDE OU, retirado por CL-97, vs 1138.0 s en
+/// `evaluate_for_coin`).
 const DEFAULT_DOMINANT_TAU_MS: f64 = 1_138_419.6;
 
 pub struct StatArbEngine {
@@ -25,10 +26,33 @@ pub struct StatArbEngine {
     pub rls_p: f64,
     /// Factor de olvido exponencial lambda in [0.95, 0.9999] (R6-B12)
     pub rls_lambda: f64,
-    /// Estimador analítico SDE continuo de Ornstein-Uhlenbeck / Fokker-Planck con reloj físico
-    pub physical_sde: Option<ContinuousOrnsteinUhlenbeckSde>,
+    /// CL-97 (F3.7-02, v2): prueba de reversión de la base a la escala de
+    /// decisión, sobre pares síncronos (`observar_evento`). Sustituye a la
+    /// SDE OU por evento, que confundía el ruido de tick y la asincronía con
+    /// reversión.
+    pub prueba: Option<PruebaReversion>,
+    /// Mid de A tras su último evento: el vigente cuando llega un dato de B.
+    mid_a_previo: Option<f64>,
+    /// Marca de llegada del dato de B visto en el último evento.
+    marca_b_previa: Option<u64>,
     /// Registro omnisciente para deliberación y lectura de parámetros continuos
     pub registry: Option<Arc<OmniscientRegistry>>,
+}
+
+/// CL-97: veredicto de StatArb a una τ de decisión.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VeredictoStatArb {
+    /// z del último par contra la media y la dispersión de la base en la
+    /// memoria del nodo; 0 sin reversión demostrada.
+    pub z: f64,
+    /// Cota superior de la vida media demostrada (2·τ_k del nodo), en ms;
+    /// ∞ sin demostración. Es lo que el núcleo publica como
+    /// `statarb_half_life_ms`: la guarda t½ ≤ 2τ* del lector pasa sólo con
+    /// reversión demostrada en un nodo τ_k ≤ τ*.
+    pub t_media_cota_ms: f64,
+    pub demostrada: bool,
+    /// Detalle de la prueba.
+    pub prueba: Veredicto,
 }
 
 impl StatArbEngine {
@@ -51,7 +75,9 @@ impl StatArbEngine {
             adaptive_beta: false,
             rls_p: 1.0,
             rls_lambda: 0.998,
-            physical_sde: None,
+            prueba: None,
+            mid_a_previo: None,
+            marca_b_previa: None,
             registry: None,
         }
     }
@@ -86,52 +112,69 @@ impl StatArbEngine {
         self
     }
 
-    /// Activa el estimador continuo SDE de Ornstein-Uhlenbeck con reloj físico.
-    pub fn with_continuous_ou_sde(mut self) -> Self {
-        self.physical_sde = Some(ContinuousOrnsteinUhlenbeckSde::new(0.1, 0.0, 0.01));
+    /// CL-97 (F3.7-02, v2): activa la prueba de reversión de la base sobre
+    /// pares síncronos. La base es ln a − β·ln b con β FIJA
+    /// (`beta_hedge_ratio`, 1 por defecto): con β estimada sobre los mismos
+    /// datos el residuo es paso-alto y revierte por construcción (CL-84), así
+    /// que la RLS (`adaptive_beta`) sólo actúa en `update`, nunca aquí. Para
+    /// futuro y spot del mismo activo el vector de cointegración es (1, −1).
+    pub fn with_prueba_reversion(mut self) -> Self {
+        self.prueba = Some(PruebaReversion::new());
         self
     }
 
-    /// Vida media analítica de reversión a la media en segundos (ln(2) / θ).
-    pub fn half_life_seconds(&self) -> f64 {
-        if let Some(sde) = &self.physical_sde {
-            sde.half_life_seconds()
-        } else {
-            f64::INFINITY
+    /// CL-97: observa un par síncrono (a y b vistos a la vez) de marca `ts_ms`.
+    pub fn observar_par(&mut self, precio_a: f64, precio_b: f64, ts_ms: u64) {
+        let valido = |p: f64| p.is_finite() && p > 0.0;
+        if !valido(precio_a) || !valido(precio_b) {
+            return;
+        }
+        let base = precio_a.ln() - self.beta_hedge_ratio * precio_b.ln();
+        if let Some(prueba) = self.prueba.as_mut() {
+            prueba.observar(ts_ms, base);
         }
     }
 
-    /// Varianza estacionaria de Fokker-Planck del spread.
-    pub fn stationary_variance(&self) -> f64 {
-        if let Some(sde) = &self.physical_sde {
-            sde.stationary_variance()
-        } else {
-            1.0
+    /// CL-97: evento de A (el futuro) con el último dato de B (el spot) y su
+    /// marca de llegada `marca_b_ms`.
+    ///
+    /// Pares síncronos: el dato de B que llegó entre el evento anterior de A
+    /// y éste se empareja con el mid de A VIGENTE cuando llegó, el del evento
+    /// anterior, y con su marca de llegada. Un dato de B que no cambia de
+    /// marca no es un par nuevo: repetir el futuro contra un spot sin
+    /// refrescar es la asincronía que fabricaba reversión. Hay que llamarlo
+    /// en todos los eventos de A, también sin dato de B (`precio_b` ≤ 0) y
+    /// con las entradas bloqueadas: si no, el mid previo sería de un evento
+    /// viejo.
+    pub fn observar_evento(&mut self, precio_a: f64, precio_b: f64, marca_b_ms: u64, ts_ms: u64) {
+        let nueva_llegada = matches!(self.marca_b_previa, Some(m) if m != marca_b_ms);
+        if nueva_llegada {
+            if let Some(a0) = self.mid_a_previo {
+                // La marca es el reloj de eventos cuando llegó B; si va por
+                // delante del evento de A (reloj global de otra moneda), el
+                // par vale como mucho hasta este evento.
+                self.observar_par(a0, precio_b, marca_b_ms.min(ts_ms));
+            }
         }
+        self.marca_b_previa = Some(marca_b_ms);
+        self.mid_a_previo = (precio_a.is_finite() && precio_a > 0.0).then_some(precio_a);
     }
 
-    /// Z-score estacionario del spread bajo la SDE viva, si está madura
-    /// (≥ 10 observaciones causales). `None` durante el calentamiento o sin SDE.
-    /// Este es el estadístico que el core publica como `statarb_ou_zscore` y
-    /// que `evaluate_for_coin` prefiere como física propia (R6-A3/B1).
-    pub fn last_ou_zscore(&self) -> Option<f64> {
-        let sde = self.physical_sde.as_ref()?;
-        if sde.count < 10 {
-            return None;
-        }
-        let z = sde.stationary_zscore(sde.last_value);
-        if z.is_finite() {
-            Some(z)
-        } else {
-            None
-        }
-    }
-
-    /// Timestamp físico (ms) del último update causal aceptado por la SDE.
-    /// 0 si la SDE nunca ha observado. Permite al publicador detectar
-    /// staleness del feed de pares (R6-A3).
-    pub fn last_ou_ts_ms(&self) -> u64 {
-        self.physical_sde.as_ref().map(|s| s.last_ts_ms).unwrap_or(0)
+    /// CL-97: veredicto a la τ de decisión `tau_decision_ms`, con `piso` como
+    /// resolución de la base (≥ 0, la σ mínima del z). `None` sin prueba o
+    /// sin ningún par.
+    pub fn veredicto(&self, tau_decision_ms: f64, piso: f64) -> Option<VeredictoStatArb> {
+        let v = self.prueba.as_ref()?.veredicto(tau_decision_ms)?;
+        let piso = if piso.is_finite() { piso.max(0.0) } else { 0.0 };
+        let sigma = v.sigma.max(piso);
+        let z = (v.base - v.media) / sigma;
+        let demostrada = v.demostrada && sigma > 0.0 && z.is_finite();
+        Some(VeredictoStatArb {
+            z: if demostrada { z } else { 0.0 },
+            t_media_cota_ms: if demostrada { 2.0 * v.tau_nodo_ms } else { f64::INFINITY },
+            demostrada,
+            prueba: v,
+        })
     }
 
     /// Configura el umbral de spread mínimo para cubrir comisiones y fricción dinámicamente.
@@ -257,95 +300,6 @@ impl StatArbEngine {
 
         SignalIntent::flat()
     }
-
-    /// Actualiza el estimador considerando el reloj físico continuo (timestamp_ms) y el horizonte espectral dominante (tau_ms).
-    ///
-    /// ## Física Continua y Acoplamiento Espectral:
-    /// 1. Si `adaptive_beta == true`, actualiza recursivamente el ratio de cobertura RLS $\beta_t$.
-    /// 2. Si `physical_sde` está activo, calibra la SDE de Ornstein-Uhlenbeck $dS_t = \theta (\mu - S_t) dt + \sigma dW_t$.
-    /// 3. **Acoplamiento Espectral**: Compara la vida media analítica $t_{1/2} = \ln(2)/\theta$ con la escala espectral dominante $\tau^*$.
-    ///    Si la reversión requiere más del doble de tiempo que el ciclo dominante ($t_{1/2} > 2 \tau^*_{\text{sec}}$),
-    ///    la operación se veta (Flat) para evitar trampas de deriva estructural.
-    pub fn update_with_clock(
-        &mut self,
-        price_a: f64,
-        price_b: f64,
-        timestamp_ms: u64,
-        dominant_tau_ms: f64,
-    ) -> SignalIntent {
-        if price_a <= 0.0 || price_b <= 0.0 || !price_a.is_finite() || !price_b.is_finite() {
-            return SignalIntent::flat();
-        }
-
-        let ln_a = price_a.ln();
-        let ln_b = price_b.ln();
-
-        self.update_rls_beta(ln_a, ln_b);
-
-        let spread = ln_a - self.beta_hedge_ratio * ln_b;
-
-        // Si tenemos estimador físico SDE activo:
-        if let Some(sde) = &mut self.physical_sde {
-            let z_score = sde.update(spread, timestamp_ms);
-            let t_half = sde.half_life_seconds();
-            let tau_sec = if dominant_tau_ms.is_finite() && dominant_tau_ms > 0.0 {
-                dominant_tau_ms / 1000.0
-            } else {
-                // R6-B13: fallback unificado al centro geométrico de la banda
-                // operativa (antes 30.0 s aquí vs 1138.0 s en evaluate_for_coin).
-                DEFAULT_DOMINANT_TAU_MS / 1000.0
-            };
-
-            // Guarda de acoplamiento espectral:
-            // Si la reversión física es demasiado lenta comparada con la escala de operación,
-            // abstenerse o modular la confianza.
-            if t_half > 2.0 * tau_sec {
-                return SignalIntent::flat();
-            }
-
-            let expected_edge = (spread - sde.mu).abs();
-            if expected_edge < self.min_spread_profit_bps {
-                return SignalIntent::flat();
-            }
-
-            // Factor de atenuación si t_half se acerca a tau_sec
-            let spectral_damping = if t_half > tau_sec {
-                (2.0 - t_half / tau_sec).clamp(0.1, 1.0)
-            } else {
-                1.0
-            };
-
-            if z_score > self.z_score_threshold {
-                let norm_conf = ((z_score.abs() / self.z_score_threshold.max(0.1)).tanh() * spectral_damping).clamp(0.0, 1.0);
-                return SignalIntent {
-                    signal: SignalType::Short,
-                    confidence: norm_conf,
-                    horizon: crate::TradeHorizon::Continuous,
-                    ..Default::default()
-                };
-            } else if z_score < -self.z_score_threshold {
-                let norm_conf = ((z_score.abs() / self.z_score_threshold.max(0.1)).tanh() * spectral_damping).clamp(0.0, 1.0);
-                return SignalIntent {
-                    signal: SignalType::Long,
-                    confidence: norm_conf,
-                    horizon: crate::TradeHorizon::Continuous,
-                    ..Default::default()
-                };
-            } else if z_score.abs() < 0.1 {
-                return SignalIntent {
-                    signal: SignalType::Flat,
-                    confidence: 1.0,
-                    horizon: crate::TradeHorizon::Continuous,
-                    ..Default::default()
-                };
-            }
-
-            return SignalIntent::flat();
-        }
-
-        // Si no hay SDE físico, delegar a la ventana discreta estándar
-        self.update(price_a, price_b)
-    }
 }
 
 impl QuantumStrategy for StatArbEngine {
@@ -370,24 +324,17 @@ impl QuantumStrategy for StatArbEngine {
             None => return 0.0,
         };
 
-        // OLA 73 (R6-A3/B1/A5): preferir la física PROPIA — z estacionario de
-        // la SDE OU que el CORE calibra sobre la basis futuro-spot con reloj
-        // físico real y β RLS (clave `statarb_ou_zscore`). El core sólo publica
-        // cuando esa física EXISTE (SDE madura ≥ 10 pares); un 0.0 publicado es
-        // por tanto abstención honesta (spot stale > TTL), no arranque frío.
-        // Clave AUSENTE = el core aún no observa pares spot-futuro para esta
-        // moneda ⇒ fallback bit a bit con el árbol previo.
-        //
-        // FALLBACK LEGACY (R6-A5, etiqueta honesta): `vecm_zscore` NO es
-        // cointegración Johansen ni un spread entre dos activos. El core lo
-        // publica como z de la basis futuro-spot / ATR cuando hay feed de spot
-        // y, en su ausencia, como desviación del mid al EMA lento de klines en
-        // unidades de ATR (god-engine-core/src/lib.rs, `vecm_basis_z`). Es un
-        // estadístico de reversión a la media propia, no de paridad multiactivo.
+        // CL-97 (F3.7-02, v2): el voto sale SÓLO de la prueba de reversión
+        // que el núcleo hace sobre la base futuro-spot (`statarb_ou_zscore`,
+        // `statarb_half_life_ms`). Sin esas claves la moneda no tiene pares
+        // spot-futuro y StatArb se abstiene: ya no cae a `vecm_zscore`, que
+        // votaba reversión sin haberla demostrado y es el escalar que vota
+        // VECM (F3.7-05). Un 0,0 publicado es abstención: sin reversión
+        // demostrada o con el spot caducado.
         // CL-80 (F3.7-04, LC-F1-07): con símbolo, lectura ESTRICTA (clave de
         // la moneda o del símbolo, nunca la global). `set_reg` del núcleo
         // también escribe la global, que es la de la ÚLTIMA moneda que
-        // escribió: una moneda sin SDE madura votaba con la z y la t½ de
+        // escribió: una moneda sin prueba propia votaba con la z y la t½ de
         // otra. Sin símbolo (`evaluate()`), la lectura global se conserva.
         let leer = |k: &str| {
             if sym_opt.is_some() {
@@ -400,10 +347,10 @@ impl QuantumStrategy for StatArbEngine {
 
         let z = match own_z {
             Some(z) if z.is_finite() => {
-                // Guarda espectral con la MISMA física viva (R6-B2): t½ del
-                // registro (θ calibrada en producción) contra τ* dominante del
-                // espectro de la moneda. Si la reversión tarda más del doble
-                // del ciclo dominante, el spread absorbe deriva secular: veto.
+                // Guarda espectral: t½ publicada (CL-97: la cota 2·τ_k de la
+                // prueba, ∞ sin demostración) contra τ* dominante de la
+                // moneda. Si la reversión no está demostrada por debajo del
+                // doble del ciclo dominante, la base puede ser deriva: veto.
                 let t_half_ms = leer("statarb_half_life_ms")
                     .map(|p| p.get_value())
                     .unwrap_or(f64::INFINITY);
@@ -416,12 +363,8 @@ impl QuantumStrategy for StatArbEngine {
                 }
                 z
             }
-            // Clave presente pero venenosa (NaN/Inf): abstención honesta.
-            Some(_) => return 0.0,
-            None => leer("vecm_zscore")
-                .or_else(|| leer("cointegration_zscore"))
-                .map(|p| p.get_value())
-                .unwrap_or(0.0),
+            // Clave presente pero venenosa (NaN/Inf), o ausente: abstención.
+            _ => return 0.0,
         };
 
         if !z.is_finite() {
@@ -532,51 +475,91 @@ mod tests {
         assert_eq!(engine_custom.min_spread_profit_bps, 0.0008);
     }
 
-    #[test]
-    fn test_stat_arb_continuous_ou_sde_and_clock() {
-        let mut engine = StatArbEngine::new(20, 1.8)
-            .with_continuous_ou_sde()
-            .with_min_spread_profit_bps(0.0005);
-
-        assert!(engine.physical_sde.is_some());
-        // Calibrar SDE con serie de precios en tiempo físico real (paso de 500 ms)
-        let mut t = 1_000_000_u64;
-        for i in 0..30 {
-            t += 500;
-            let intent = engine.update_with_clock(100.0 + (i as f64 * 0.01), 100.0, t, 60_000.0);
-            assert_eq!(intent.signal, SignalType::Flat);
+    /// LCG de 64 bits (Knuth/MMIX) con normal por Box-Muller.
+    struct Lcg(u64);
+    impl Lcg {
+        fn u(&mut self) -> f64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((self.0 >> 11) as f64 + 0.5) / (1u64 << 53) as f64
         }
-
-        // Shock de precio positivo que dispara señal Short en tiempo continuo
-        t += 500;
-        let shock_intent = engine.update_with_clock(105.0, 100.0, t, 60_000.0);
-        assert_eq!(shock_intent.signal, SignalType::Short);
-        assert!(shock_intent.confidence > 0.0);
-        assert_eq!(shock_intent.horizon, crate::TradeHorizon::Continuous);
-
-        // Vida media física finita calculada
-        let half_life = engine.half_life_seconds();
-        assert!(half_life.is_finite() && half_life > 0.0);
+        fn n(&mut self) -> f64 {
+            let (u1, u2) = (self.u(), self.u());
+            (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+        }
     }
 
+    /// CL-97. Verdad: un par nace sólo cuando cambia la marca de llegada de
+    /// B, con el mid de A del evento anterior (el vigente cuando llegó B) y
+    /// la marca de llegada. Un B que no se refresca no forma pares.
     #[test]
-    fn test_stat_arb_spectral_coupling_damps_or_abstains() {
-        let mut engine = StatArbEngine::new(20, 1.5)
-            .with_continuous_ou_sde()
-            .with_min_spread_profit_bps(0.0005);
-
-        let mut t = 1_000_000_u64;
-        for _ in 0..20 {
-            t += 1000;
-            let _ = engine.update_with_clock(100.0, 100.0, t, 10_000.0);
+    fn cl97_los_pares_son_sincronos() {
+        let mut e = StatArbEngine::new(30, 1.5).with_prueba_reversion();
+        // B llega una vez (marca 0) y no se refresca: ningún par.
+        for i in 0..50u64 {
+            e.observar_evento(100.0 + i as f64, 100.0, 0, 1_000 + i * 1_000);
         }
+        assert_eq!(e.prueba.as_ref().unwrap().pares(), 0);
+        // B llega en 51 000 (marca del evento anterior, 50 000): el par usa
+        // el mid de A del evento 50 000 (149), no el del 51 000 (500).
+        e.observar_evento(500.0, 120.0, 50_000, 51_000);
+        let p = e.prueba.as_ref().unwrap();
+        assert_eq!(p.pares(), 1);
+        let v = e.veredicto(60_000.0, 0.0).expect("hay un par");
+        assert!((v.prueba.base - (149.0f64.ln() - 120.0f64.ln())).abs() < 1e-15, "{v:?}");
+        // Sin dato de B válido no hay par, pero el mid de A se actualiza.
+        e.observar_evento(200.0, 0.0, 52_000, 53_000);
+        assert_eq!(e.prueba.as_ref().unwrap().pares(), 1);
+    }
 
-        // Forzar un shock con horizonte espectral dominante extremadamente corto (ej. tau = 50 ms)
-        // La reversión física de Ornstein-Uhlenbeck es de varios segundos, superando con creces 2 * tau
-        t += 1000;
-        let intent_blocked_by_spectral = engine.update_with_clock(110.0, 100.0, t, 50.0);
-        // Debe abstenerse (Flat) porque t_half >> 2 * tau
-        assert_eq!(intent_blocked_by_spectral.signal, SignalType::Flat);
+    /// CL-97. Verdad: la RLS de β no actúa sobre la prueba. Con
+    /// `adaptive_beta`, `observar_evento` deja β en 1.
+    #[test]
+    fn cl97_la_prueba_usa_beta_fija() {
+        let mut e = StatArbEngine::new(30, 1.5)
+            .with_adaptive_beta(true)
+            .with_prueba_reversion();
+        for i in 0..200u64 {
+            let b = 50.0 + i as f64 * 0.5;
+            e.observar_evento(b.powf(1.8), b, i * 1_000, i * 1_000 + 500);
+        }
+        assert_eq!(e.beta_hedge_ratio.to_bits(), 1f64.to_bits());
+    }
+
+    /// CL-97. Verdad: una base OU con vida media de τ_17/5 (3,4 s), con
+    /// pares cada 500 ms durante cuatro memorias del nodo 17, demuestra la
+    /// reversión a τ* = 30 s (nodo 17): cota publicada 2·τ_17 y z del último
+    /// par. Sin pares suficientes no hay demostración y la cota es ∞.
+    #[test]
+    fn cl97_una_reversion_rapida_se_demuestra() {
+        use quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS;
+        let tau17 = SPECTRUM_SCALES_MS[17];
+        let theta = std::f64::consts::LN_2 / (tau17 / 5.0);
+        let mut g = Lcg(11);
+        let mut e = StatArbEngine::new(30, 1.5).with_prueba_reversion();
+        let (dt, sd) = (500.0, 1e-4);
+        let rho = (-theta * dt).exp();
+        let mut x = 0.0f64;
+        let mut lf = 50_000f64.ln();
+        let pasos = (4.0 * 16.0 * tau17 / dt) as u64;
+        for i in 0..pasos {
+            x = rho * x + sd * (1.0 - rho * rho).sqrt() * g.n();
+            lf += 1e-4 * g.n();
+            let ts = 1_000 + i * dt as u64;
+            e.observar_par(lf.exp(), (lf - x - 3e-4).exp(), ts);
+            if i == 100 {
+                let v = e.veredicto(30_000.0, 0.0).expect("hay pares");
+                assert!(!v.demostrada && v.t_media_cota_ms.is_infinite() && v.z == 0.0, "{v:?}");
+            }
+        }
+        let v = e.veredicto(30_000.0, 0.0).expect("hay pares");
+        assert!(v.demostrada, "{v:?}");
+        assert_eq!(v.t_media_cota_ms, 2.0 * tau17);
+        assert!(v.z.is_finite() && v.z != 0.0, "{v:?}");
+        // La misma prueba a una τ bajo la malla no demuestra nada.
+        assert!(!e.veredicto(10_000.0, 0.0).unwrap().demostrada);
     }
 
     #[test]
@@ -585,13 +568,12 @@ mod tests {
             .with_adaptive_beta(true)
             .with_beta_hedge_ratio(1.0);
 
-        // Actualizar donde el precio A sistemáticamente se mueve al doble que B (beta ~ 2.0)
-        let mut t = 1_000_000_u64;
+        // Actualizar donde el precio A sistemáticamente se mueve al doble que B (beta ~ 2.0).
+        // CL-97: la RLS sólo actúa en `update` (la prueba de reversión usa β fija).
         for i in 1..40 {
-            t += 500;
             let p_b = 50.0 + (i as f64 * 0.5);
             let p_a = p_b.powf(1.8);
-            let _ = engine.update_with_clock(p_a, p_b, t, 60_000.0);
+            let _ = engine.update(p_a, p_b);
         }
 
         // El beta adaptativo debe haber evolucionado lejos de 1.0 hacia la verdadera elasticidad
@@ -607,12 +589,10 @@ mod tests {
             .with_rls_p(10.0);
 
         // Modelo exacto: ln(P_a) = 2.5 * ln(P_b)
-        let mut t = 2_000_000_u64;
         for i in 1..=50 {
-            t += 250;
             let p_b = 10.0 + (i as f64) * 0.2;
             let p_a = p_b.powf(2.5);
-            engine.update_with_clock(p_a, p_b, t, 60_000.0);
+            engine.update(p_a, p_b);
         }
 
         // Con RLS estricto y covarianza P_t, beta converge directamente hacia 2.5
@@ -622,29 +602,6 @@ mod tests {
     }
 
     // ===== OLA 73 (R6-A3/A4/A5/B1/B2/B13): StatArb honesto =====
-
-    #[test]
-    fn test_stat_arb_ola73_last_ou_zscore_maturity_gates() {
-        let mut engine = StatArbEngine::new(20, 1.5).with_continuous_ou_sde();
-        // SDE fría: sin estadístico propio
-        assert_eq!(engine.last_ou_ts_ms(), 0);
-        assert!(engine.last_ou_zscore().is_none());
-
-        let mut t = 1_000_000_u64;
-        for i in 0..9 {
-            t += 1000;
-            let _ = engine.update_with_clock(100.0 + (i as f64 * 0.01), 100.0, t, 60_000.0);
-        }
-        // 9 observaciones causales: aún bajo el umbral de madurez (count < 10)
-        assert!(engine.last_ou_ts_ms() > 0);
-        assert!(engine.last_ou_zscore().is_none());
-
-        t += 1000;
-        let _ = engine.update_with_clock(101.0, 100.0, t, 60_000.0);
-        // Madura: z estacionario finito
-        let z = engine.last_ou_zscore().expect("z propio tras madurez");
-        assert!(z.is_finite());
-    }
 
     #[test]
     fn test_stat_arb_ola73_fallback_tau_unificado_centro_geometrico() {
@@ -660,12 +617,12 @@ mod tests {
         let mut engine = StatArbEngine::new(30, 1.5);
         assert!(engine.init(reg.clone()).is_ok());
 
-        // Física propia publicada: z = 2.5 (dislocación corta), t½ = 60 s,
-        // τ* dominante = 60 s ⇒ t½ ≤ 2τ* ⇒ el voto vive y apunta a Short.
+        // Física propia publicada: z = 2.5 (dislocación corta), cota de t½ =
+        // 60 s, τ* dominante = 60 s ⇒ t½ ≤ 2τ* ⇒ el voto vive y apunta a Short.
         reg.set("statarb_ou_zscore", 2.5);
         reg.set("statarb_half_life_ms", 60_000.0);
         reg.set("dominant_tau_ms", 60_000.0);
-        // vecm_zscore legacy con signo OPUESTO: la física propia debe ganar.
+        // vecm_zscore con signo OPUESTO: no lo lee (CL-97).
         reg.set("vecm_zscore", -2.5);
         let voto = engine.evaluate();
         assert!(voto < -0.5, "voto Short por z propio positivo, got {voto}");
@@ -680,8 +637,8 @@ mod tests {
         reg.set("dominant_tau_ms", f64::NAN);
         assert_eq!(engine.evaluate(), 0.0);
 
-        // Half-life AUSENTE (SDE nunca observó) ⇒ cota INFINITA ⇒ veto honesto
-        // aunque la z propia llegue publicada.
+        // Half-life AUSENTE ⇒ cota INFINITA ⇒ veto honesto aunque la z propia
+        // llegue publicada.
         let reg2 = Arc::new(OmniscientRegistry::new());
         let mut engine2 = StatArbEngine::new(30, 1.5);
         assert!(engine2.init(reg2.clone()).is_ok());
@@ -690,22 +647,19 @@ mod tests {
         assert_eq!(engine2.evaluate(), 0.0);
     }
 
+    /// CL-97 (F3.7-02 v2, F3.7-05): sin claves propias StatArb se abstiene;
+    /// ya no cae a `vecm_zscore` (votaba reversión sin demostrarla, con el
+    /// escalar que vota VECM).
     #[test]
-    fn test_stat_arb_ola73_evaluate_fallback_legacy_bit_a_bit() {
+    fn cl97_sin_prueba_propia_statarb_se_abstiene() {
         let reg = Arc::new(OmniscientRegistry::new());
         let mut engine = StatArbEngine::new(30, 1.5);
         assert!(engine.init(reg.clone()).is_ok());
-
-        // Sin clave propia: fallback legacy a vecm_zscore (basis/ATR),
-        // conducta idéntica al árbol previo.
-        reg.set("vecm_zscore", 2.0);
-        let voto = engine.evaluate();
-        let esperado = -(0.5_f64 / 1.5).tanh();
-        assert!((voto - esperado).abs() < 1e-12);
-
-        // z dentro del umbral: silencio.
-        reg.set("vecm_zscore", 0.5);
-        assert_eq!(engine.evaluate(), 0.0);
+        for z in [-3.0, -2.0, 0.5, 2.0, 3.0] {
+            reg.set("vecm_zscore", z);
+            reg.set("cointegration_zscore", z);
+            assert_eq!(engine.evaluate(), 0.0, "vecm_zscore = {z}");
+        }
     }
 
     #[test]
@@ -714,9 +668,9 @@ mod tests {
         let mut engine = StatArbEngine::new(30, 1.5);
         assert!(engine.init(reg.clone()).is_ok());
 
-        // El core publica 0.0 explícito cuando su SDE ya maduró y el feed de
-        // spot quedó stale: abstención de la física propia, sin caer al
-        // fallback legacy (la clave publicada es la autoridad del lector).
+        // El núcleo publica 0.0 sin reversión demostrada o con el spot
+        // caducado: abstención (la clave publicada es la autoridad del
+        // lector; desde CL-97 no hay respaldo en vecm_zscore).
         reg.set("statarb_ou_zscore", 0.0);
         reg.set("vecm_zscore", 2.5);
         assert_eq!(engine.evaluate(), 0.0);

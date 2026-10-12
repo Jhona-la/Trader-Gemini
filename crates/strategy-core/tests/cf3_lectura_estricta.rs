@@ -62,10 +62,16 @@ fn cl80_vecm_moneda_sin_z_propia_no_hereda_la_global() {
 
 /// Sin símbolo (`evaluate()`), la lectura global se conserva: es la
 /// interfaz de una sola moneda (pruebas y llamadores sin universo).
+///
+/// CL-97 (F3.7-02 v2): StatArb ya no cae a `vecm_zscore`; lee sus claves
+/// propias globales.
 #[test]
 fn cl80_sin_simbolo_se_conserva_la_lectura_global() {
     let r = Arc::new(OmniscientRegistry::new());
     r.set("vecm_zscore", 2.5);
+    r.set("statarb_ou_zscore", 2.5);
+    r.set("statarb_half_life_ms", 60_000.0);
+    r.set("dominant_tau_ms", 60_000.0);
     let mut ve = JohansenVecmEngine::default();
     let mut sa = StatArbEngine::new(30, 1.5);
     assert!(ve.init(r.clone()).is_ok());
