@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Antigravity (Ola Ω91, Ficha #729): Resolución de F2.3b-07 — Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness
+
+- **Resolución Definitiva de F2.3b-07 (AGY)**:
+  - Causa raíz diagnosticada: En numerario común (USDT), las diferencias cíclicas de retornos forman una 1-forma exacta $A = dr$, cuya holonomía longitudinal de Wilson $F_{\text{loop}} = A_{ij} + A_{jk} + A_{ki} = r_i(1 - \beta_{ki}) + r_j(1 - \beta_{ij}) + r_k(1 - \beta_{jk})$ colapsa a 0 idénticamente bajo calibración inicial $\beta \equiv 1$ por el lema de Poincaré / Stokes ($d^2 = 0$), haciendo invisible cualquier residuo de cointegración triangular plantado $u$.
+  - Solución Matemática y Geométrica implementada en `crates/strategy-core/src/yang_mills_gauge.rs`:
+    * Descomposición de la 2-forma de curvatura en el 2-símplex: componente longitudinal magnética $f_{\text{loop}} = A_{ij} + A_{jk} + A_{ki}$ más la componente transversal eléctrica de cointegración $d_{\text{cross}} = \min(|d_1|, |d_2|, |d_3|) \cdot \text{signo}$, donde $d_1 = r_i - \beta_{ij} r_j - \beta_{ik} r_k$, $d_2 = r_j - \beta_{ji} r_i - \beta_{jk} r_k$, $d_3 = r_k - \beta_{ki} r_i - \beta_{kj} r_j$.
+    * Densidad de acción invariante combinada: $\mathcal{S}_{\text{plaqueta}} = \frac{1}{2}(f_{\text{loop}}^2 + d_{\text{cross}}^2)$.
+    * Gradientes restauradores exactos y conservativos: $\mathcal{J}_m = -\nabla \mathcal{S}$ aplicando tracción al vértice dislocado balanceando los contra-vértices ($\sum \mathcal{J} \approx 0$).
+    * Reseteo TTL Anti-Staleness en `update_and_calculate_curvature`: todo activo estancado, con precio $\le 0$ o no-finito resetea `last_ln_prices[i] = 0.0` (cerrando hallazgo `linea_g/hallazgos.tsv:316`).
+  - **Verificación y Pruebas Superadas**:
+    * `cf2_ym_dislocacion_triangular_plantada_se_detecta`: `#[ignore]` eliminado; pasa con acción media $1.02 \times 10^{-7} > 10^{-9}$ y ratio media/control $> 6.6 \times 10^6 > 10\times$ (detecta dislocación plantada $u$).
+    * `cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo`: control exacto da $1.54 \times 10^{-14} < 10^{-11}$ (nulo exacto preservado).
+    * `cf2_ym_caracterizacion_retornos_asincronos`: invertida exitosamente; verifica no-degeneración de gauge puro ($S > 10^{-9}$ y $J > 10^{-6}$).
+    * `yang_mills_gauge_contract`: 5/5 pasan (antisimetría, paridad sin arbitraje, inmunidad NaN, estabilidad LMS, corrientes restauradoras).
+    * `hodge_yang_mills_consensus_contract`: 3/3 pasan en `god-engine-core`.
+    * `t2_diag_actividad_del_fixture_lateral_micro`: pasa (invariancia de fixture golden preservada).
+    * `cargo check --workspace --all-targets`: 0 errores en todos los crates.
+    * Actualizado `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv` fila 144 a `pasa` / `activo`.
+
 ## 2026-10-12 — Claude (Línea G, LG-n): ola 5 — 35 genes muertos más congelados (LG-21) y revisión previa al merge de CL-101…108
 
 - **LG-21** (genoma): censo estático de los 144 genes

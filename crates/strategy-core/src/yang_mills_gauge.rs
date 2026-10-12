@@ -117,6 +117,10 @@ impl YangMillsGaugeEngine {
                 valid_indices[n_valid] = i;
                 ln_p[i] = p.ln();
                 n_valid += 1;
+            } else {
+                // R7-R3-D-2 / linea_g:316: Resetear last_ln_prices para activos caducados/inválidos
+                // para evitar que al regresar arrastren un salto espurio de retorno acumulado.
+                self.last_ln_prices[i] = 0.0;
             }
         }
 
@@ -186,16 +190,58 @@ impl YangMillsGaugeEngine {
                     let a_jk = r_j - self.beta_matrix[j][k] * r_k;
                     let a_ki = r_k - self.beta_matrix[k][i] * r_i;
 
-                    // Holonomía de bucle de Wilson F_{ijk} = A_ij + A_jk + A_ki
-                    let f_ijk = a_ij + a_jk + a_ki;
-                    if f_ijk.is_finite() {
-                        let f_sq = f_ijk * f_ijk;
+                    // Holonomía longitudinal de bucle de Wilson F_loop = A_ij + A_jk + A_ki
+                    let f_loop = a_ij + a_jk + a_ki;
+
+                    // Dislocación transversal de cointegración triangular en el 2-símplex (F2.3b-07):
+                    // Para 3 activos en numerario común, la estructura triangular se manifiesta cuando uno
+                    // de los activos es la paridad cruzada o cointegrada de los otros dos:
+                    // d_1 = r_i - β_ij·r_j - β_ik·r_k (k y j componen a i)
+                    // d_2 = r_j - β_ji·r_i - β_jk·r_k (i y k componen a j)
+                    // d_3 = r_k - β_ki·r_i - β_kj·r_j (i y j componen a k)
+                    // El residual mínimo de cointegración selecciona la orientación geométrica del cruce.
+                    let b_ij = self.beta_matrix[i][j];
+                    let b_ik = self.beta_matrix[i][k];
+                    let b_jk = self.beta_matrix[j][k];
+                    let b_ji = self.beta_matrix[j][i];
+                    let b_ki = self.beta_matrix[k][i];
+                    let b_kj = self.beta_matrix[k][j];
+
+                    let d1 = r_i - b_ij * r_j - b_ik * r_k;
+                    let d2 = r_j - b_ji * r_i - b_jk * r_k;
+                    let d3 = r_k - b_ki * r_i - b_kj * r_j;
+
+                    let (d_cross, d_grad_i, d_grad_j, d_grad_k) = if d1.abs() <= d2.abs() && d1.abs() <= d3.abs() {
+                        (d1, 1.0, -b_ij, -b_ik)
+                    } else if d2.abs() <= d3.abs() {
+                        (d2, -b_ji, 1.0, -b_jk)
+                    } else {
+                        (d3, -b_ki, -b_kj, 1.0)
+                    };
+
+                    // Densidad de acción Yang-Mills combinada (longitudinal + transversal):
+                    // S_plaqueta = 1/2 (F_loop^2 + d_cross^2)
+                    let f_sq = if f_loop.is_finite() && d_cross.is_finite() {
+                        f_loop * f_loop + d_cross * d_cross
+                    } else if f_loop.is_finite() {
+                        f_loop * f_loop
+                    } else {
+                        0.0
+                    };
+
+                    if f_sq.is_finite() {
                         total_action += f_sq;
                         total_cycles += 1;
 
-                        currents[i] += f_ijk;
-                        currents[j] += f_ijk;
-                        currents[k] += f_ijk;
+                        // Corrientes restauradoras invariantes como gradiente negativo de la acción:
+                        // J = - ∇ S
+                        let j_i = -f_loop * (1.0 - b_ki) - d_cross * d_grad_i;
+                        let j_j = -f_loop * (1.0 - b_ij) - d_cross * d_grad_j;
+                        let j_k = -f_loop * (1.0 - b_jk) - d_cross * d_grad_k;
+
+                        currents[i] += j_i;
+                        currents[j] += j_j;
+                        currents[k] += j_k;
 
                         cycle_counts[i] += 1.0;
                         cycle_counts[j] += 1.0;

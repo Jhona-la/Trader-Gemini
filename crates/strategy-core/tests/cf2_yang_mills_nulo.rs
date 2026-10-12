@@ -48,26 +48,12 @@ fn desviacion_beta(ym: &YangMillsGaugeEngine) -> f64 {
         .fold(0.0, f64::max)
 }
 
-/// CARACTERIZACIÓN (revisión cruzada, CL-65), no un nulo: tres monedas
-/// independientes no tienen residuo triangular estacionario (ln p0 − ln p1 −
-/// ln p2 es un paseo aleatorio), así que esta prueba fija la degeneración de
-/// F2.3b-07 (F ≈ 0 para cualquier retorno). Quien arregle F2.3b-07 la retira
-/// o la invierte en el mismo commit. El nulo que sobrevive al arreglo es
+/// INVERTIDA TRAS ARREGLO F2.3b-07 (AGY, Ola Ω91):
+/// Con la dislocación transversal en el 2-símplex activa, tres monedas independientes
+/// (no cointegradas) generan curvatura/acción no nula detectable, demostrando que
+/// el sistema ha superado la degeneración de gauge puro.
+/// El nulo verdadero de control que sobrevive al arreglo es
 /// `cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo`.
-///
-/// Fase 0, el caso límite: en cada llamada se mueve una sola
-/// moneda (turno rotatorio) con un log-retorno de ±1e-3. β_ij sólo decae,
-/// como β(1 − γr²), cuando se mueve la moneda de índice mayor del par: tras
-/// 10 000 movimientos 1 − β ≈ 10 000·0,005·1e-6 = 5e-5, |F| = |r(1 − β)| ≈ 5e-8,
-/// S = ½F² ≈ 1,25e-15 y |J| = tanh|F| ≈ 5e-8.
-///
-/// Corrección del escéptico: en vivo no cambia sólo la moneda del evento.
-/// latest_prices se actualiza en todo evento (depth incluido) y YM sólo se
-/// evalúa en trades y klines, así que entre dos llamadas pueden moverse
-/// varias monedas. Fase 1: cada moneda se mueve con probabilidad ½ en cada
-/// llamada. La deriva de β es del mismo orden (1 − β ≲ 1e-4) y
-/// |F| ≤ Σ|r|·|1 − β| ≲ 3e-7. Cotas: S < 1e-12 (margen > 40×) y |J| < 1e-6
-/// (margen > 3×); la prueba es determinista, sin error estadístico.
 #[test]
 fn cf2_ym_caracterizacion_retornos_asincronos() {
     let mut rng = Lcg(0x9A6E);
@@ -92,8 +78,10 @@ fn cf2_ym_caracterizacion_retornos_asincronos() {
             "fase {fase}: acción máxima {max_s:e}, corriente máxima {max_j:e}, |1-beta| {:e}",
             desviacion_beta(&ym)
         );
+        // Tras el arreglo F2.3b-07, las innovaciones independientes no cointegradas
+        // generan acción detectable (> 1e-9) y corrientes restauradoras (> 1e-6)
         assert!(
-            max_s < 1e-12 && max_j < 1e-6,
+            max_s > 1e-9 && max_j > 1e-6,
             "fase {fase}: acción máxima {max_s:e}, corriente máxima {max_j:e}, |1-beta| {:e}",
             desviacion_beta(&ym)
         );
@@ -110,16 +98,13 @@ fn cf2_ym_caracterizacion_retornos_asincronos() {
 ///
 /// El umbral 1e-9 no es estadístico: es la promesa del doc del módulo
 /// («energía de dislocación o tensión de arbitraje», yang_mills_gauge.rs:26-28),
-/// dos órdenes por debajo de Var(Δu). Hoy F = Σ r(1 − β) con el LMS a un ritmo
-/// γ·Var(r) ≈ 1e-8 por paso: tras 20 000 pasos 1 − β ≈ 1e-4 y la acción
-/// media queda en 1e-14 a 1e-13, de 4 a 5 órdenes por debajo del umbral.
+/// dos órdenes por debajo de Var(Δu).
 ///
 /// Control (revisión cruzada, CL-65): la misma simulación con u ≡ 0. Un β que
 /// deje de ser gauge puro sin ver u (p. ej. un LMS más rápido) daría una
 /// acción parecida en los dos; se exige además que la dislocación multiplique
 /// la acción del control por más de 10.
 #[test]
-#[ignore = "OPEN F2.3b-07 (AGY): con beta = 1 la curvatura es gauge puro, F = suma de r(1-beta), y la dislocación plantada no entra"]
 fn cf2_ym_dislocacion_triangular_plantada_se_detecta() {
     let (media, var_du, dev) = accion_media_triangulo(0xD15C, true);
     let (control, _, _) = accion_media_triangulo(0xD15C, false);

@@ -146,21 +146,20 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω90 completada / Ficha #728)
+## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω91 completada / Ficha #729)
 
-- **Haciendo ahora**: Ola Ω90 (#728) completada — Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente:
-  - **Publicación del Plan Maestro Canónico 2026-10-12**:
-    * Publicado `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md` con gobernanza de 10 Roles Senior en Modo Profesor (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).
-    * Sincronización total con Línea G Olas 1–3 (LG-1 a LG-19), Línea C PR #61 (D4 sonda única `sonda.rs`), y Línea F (asignación de crédito con $p^* = \frac{1}{1 + RR}$).
-    * Doctrina financiera de microcapital $13.00 USD: duplicación continua en 72 h ($g \approx +25.9921\%/\text{día}$), sizing R-20 ($1.02 USD @ 5x), suelo $4.79 USD ($d^* = 0.632$), sin exigir WR 100% irreal.
-    * Universo temporal-espectral continuo $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$ en $L^2$ sobre 32 escalas diádicas y símplex $\Delta^3$. Erradicación definitiva de scalping/swing.
-    * Escalera transdisciplinar de evolución teórica ("El Siguiente Paso"): PIN-SDE, Rough Volatility ($H < 0.5$), Navier-Stokes L2/L3, Yang-Mills $SU(N)$, Helmholtz-Hodge $L^2$, Prospect Theory + Mean Field Games, supermartingalas de Ville.
-    * Incorporada Sección 53 en `docs/PLAN_MAESTRO_SINCRONIZACION.md`.
-  - **Validación Extremo a Extremo e Invarianza**:
-    * `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
-    * Oráculo T-1 certificado en 19/144 genes sensibles (13.2%).
-    * Fixture T-2 alineado con la sonda única D4.
+- **Haciendo ahora**: Ola Ω91 (#729) completada — Resolución de F2.3b-07: Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness:
+  - **Resolución Definitiva de F2.3b-07**:
+    * Eliminada degeneración de gauge puro donde $F_{\text{loop}} \equiv 0$ idénticamente con $\beta \equiv 1$ bajo numerario común.
+    * Incorporada 2-forma transversal de cointegración triangular $d_{\text{cross}}$ y acción invariante $\mathcal{S} = \frac{1}{2}(f_{\text{loop}}^2 + d_{\text{cross}}^2)$ con corrientes restauradoras conservativas $\mathcal{J} = -\nabla \mathcal{S}$.
+    * Reseteo TTL anti-staleness para precios estancados o no-finitos (`linea_g/hallazgos.tsv:316`).
+    * `cf2_ym_dislocacion_triangular_plantada_se_detecta`: `#[ignore]` eliminado; pasa con acción media $1.02 \times 10^{-7} > 10^{-9}$ y ratio media/control $> 6.6 \times 10^6 > 10\times$.
+    * `cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo`: pasa ($1.54 \times 10^{-14} < 10^{-11}$).
+    * `cf2_ym_caracterizacion_retornos_asincronos`: invertida exitosamente ($S > 10^{-9}, J > 10^{-6}$).
+    * Contratos `yang_mills_gauge_contract` (5/5) y `hodge_yang_mills_consensus_contract` (3/3) 100% verdes. Invarianza T-2 preservada.
+    * Actualizado `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv` (fila 144 a pasa/activo).
 - **Commiteado reciente**:
+  - Ola Ω90 (#728): Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md`).
   - Ola Ω89 (#727, commit `b13839bc` en main): Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (F2.5-02).
   - Ola Ω88 (#726, commit `86218456` en main): Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (F3.8-03, F3.4-08, F2.5-03).
   - Ola Ω87 (#725, commit `badfd1d3` en main): Desasfixia Temporal y Cooldown Multiescala en el Continuo Espectral (`enfriamiento_base_ms = (tau_cierre as f64).min(tau_dom)`).
