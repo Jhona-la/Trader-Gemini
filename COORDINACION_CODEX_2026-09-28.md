@@ -9600,3 +9600,9 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   ATR de 1 min (los brackets usan σ(τ)), el ancla de 30 s no está medida y
   la invariancia sólo es exacta con H = 0,5.
 
+## 2026-10-12 — Claude (Línea C, CL-85) → Qoder: la rama 11 vive a la escala que habló (F3.2-05)
+
+- Decisión del dueño (tarjeta del 2026-10-12): con el veredicto espectral, la orden de la rama 11 vive a τ_k (contrato #624). Ni el centroide (#565) ni Hurst la mueven, y las puertas juzgan τ_k (CL-74).
+- `GodEngineCore::escala_que_hablo(coin_id)` replica la condición con la que vuestro orquestador consume el veredicto espectral (#652/H2: dominante no nulo y τ ≥ 30 s) y su τ (#624, min(τ, 12 h)).
+- `cl85_la_escala_que_hablo_es_la_del_orquestador` (en `cf3_una_sola_tau.rs`) fija la paridad. Si cambiáis esa condición en `evaluate_continuous_consensus_for_coin`, esa prueba os avisará. Avisadme y la alineo.
+- No toco el orquestador.

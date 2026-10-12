@@ -1605,6 +1605,25 @@ impl GodEngineCore {
         }
     }
 
+    /// CL-85 (F3.2-05) — LA ESCALA QUE HABLÓ. Si el consenso espectral dirige
+    /// la decisión tensorial de la moneda, devuelve su τ_k, min(τ_k, 12 h) en
+    /// ms. Es la misma condición con la que el orquestador consume el
+    /// veredicto espectral (#652/H2: dominante no nulo y τ operable, ≥ 30 s)
+    /// y con la que escribe `expected_lifetime_ms` (#624); la paridad la fija
+    /// `cl85_la_escala_que_hablo_es_la_del_orquestador`. Sin veredicto
+    /// espectral (arranque frío, espectro plano o τ < 30 s), `None`: el
+    /// consenso escalar no tiene una escala propia.
+    pub fn escala_que_hablo(&self, coin_id: usize) -> Option<u64> {
+        let reg = &self.arena.registry;
+        let v_dom = reg.get_for_coin_or(coin_id, "consenso_espectral_dominante", 0.0);
+        let tau = reg.get_for_coin_or(coin_id, "consenso_espectral_tau", 0.0);
+        (v_dom.is_finite()
+            && v_dom.abs() > 1e-9
+            && tau.is_finite()
+            && tau >= quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
+            .then(|| tau.min(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS).round() as u64)
+    }
+
     fn banda_paga_friccion(&self, coin_id: usize, tau_ms: f64) -> bool {
         self.sonda_de_banda(coin_id, tau_ms)
             .is_some_and(|(probe, _)| !probe.below_tradeable_floor)
@@ -5637,6 +5656,9 @@ impl GodEngineCore {
             self.cuantiles[coin_id].update(ofi, current_obi, composite_score, atr_pct);
 
             let mut fast_intent = SignalIntent::flat();
+            // CL-85 (F3.2-05): τ_k de la rama 11 cuando decide con el
+            // veredicto espectral; `tau_de_la_orden` no la mueve.
+            let mut tau_rama_11_fija: Option<u64> = None;
             let micro_tau = self
                 .temporal_spectrum
                 .get(coin_id)
@@ -6512,18 +6534,35 @@ impl GodEngineCore {
                             .net_confidence
                             .abs()
                             .clamp(0.50, 0.95);
+                        // CL-85 (F3.2-05). Decisión del dueño (tarjeta del
+                        // 2026-10-12, «escala que habló»): con el veredicto
+                        // espectral, la orden de la rama 11 vive a τ_k, la
+                        // escala que decidió su dirección (contrato #624).
+                        // Ni Hurst ni la convergencia al centroide (#565) la
+                        // mueven, y las puertas juzgan τ_k (CL-74). Sin
+                        // veredicto espectral sigue la micro τ.
+                        let escala = self.escala_que_hablo(coin_id);
+                        let p_estrella = match escala {
+                            Some(tau_k) => self.p_equilibrio_de_banda(coin_id, tau_k as f64),
+                            None => self.p_equilibrio_de_la_orden(
+                                coin_id,
+                                fast_duration_ms,
+                                hurst_exponent,
+                            ),
+                        };
                         fast_intent = SignalIntent {
                             signal: tensor_cont.signal,
                             confidence: conviccion_de_rama_en(
                                 &registro_ramas[11],
                                 conf_base,
-                                self.p_equilibrio_de_la_orden(coin_id, fast_duration_ms, hurst_exponent),
+                                p_estrella,
                             ),
                             horizon: strategy_core::TradeHorizon::Continuous,
-                            expected_duration_ms: fast_duration_ms,
+                            expected_duration_ms: escala.unwrap_or(fast_duration_ms),
                             volume_flow_rate: 11.0,
                             ..Default::default()
                         };
+                        tau_rama_11_fija = escala;
                     }
                 }
 
@@ -6613,7 +6652,9 @@ impl GodEngineCore {
             // ninguno. Ahora son una función única que se aplica a las DOS
             // lecturas antes de arbitrar.
             // CL-74 (F3.2-01): las puertas juzgan la τ con la que vivirá la orden.
-            if fast_intent.signal != SignalType::Flat {
+            // CL-85: la de la rama 11 con veredicto espectral ya es la final (τ_k).
+            let tau_fija = tau_rama_11_fija.is_some() && fast_intent.volume_flow_rate == 11.0;
+            if fast_intent.signal != SignalType::Flat && !tau_fija {
                 fast_intent.expected_duration_ms = self.tau_de_la_orden(
                     coin_id,
                     fast_intent.expected_duration_ms,

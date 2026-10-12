@@ -99,6 +99,11 @@ El PR #29 ya integró ese main en aa716edf. Su mensaje registra, sobre el merge 
   - **Propuesta:** una pregunta y un test de fuente: todo escritor de `kill_switch_active` figura en ADR-0015 con su criterio.
   - Mientras un estadístico descriptivo pueda armar el latch, Línea C no recomienda el latch permanente con rearme manual. La histéresis automática sólo llega cuando el disparo sea un e-proceso con ARL0 medido.
 - **Meta.** Rige la reformulación del dueño: maximizar el crecimiento geométrico neto bajo límites de riesgo, drawdown, costes y capacidad, subordinado a la supervivencia del capital. §9 la escribe como requisito medible con su falsación; «duplicar cada 3 días» queda como cota de referencia que se reporta como brecha, no como puerta. Hoy hay dos doctrinas aceptadas a la vez (LC-F0-01): fijarla en un ADR nuevo que reemplace la meta de ADR-0016 es decisión del dueño.
+- **La rama 11 vive a la escala que habló (CL-85, F3.2-05).** Decisión del dueño, tomada en una tarjeta el 2026-10-12 a las 05:12 UTC: «escala que habló».
+  - Con el veredicto espectral, la orden de la rama 11 vive a τ_k, la escala que decidió su dirección (contrato #624).
+  - La convergencia al centroide (#565) y la modulación de Hurst no mueven esa τ.
+  - La τ final se fija antes de las puertas (CL-74).
+  - Sin veredicto espectral sigue la micro τ.
 - **Sesión viva con la familia honesta.** **Propuesta:** no autorizar, porque el edge OOS está sin medir.
 - **FDUSD y los ~51 GB de .antigravity/target** (52 576 MB según BARRIDO :1821). No son zona C. Si se pide opinión: archivar (opción B) antes que borrar, que es también la recomendación registrada para FDUSD (plan sinc. :211).
 - **graphify-out.** La propuesta está en C-F11.

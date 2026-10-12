@@ -11,8 +11,10 @@
 //!   puertas; desde CL-74 se aplican antes (`tau_de_la_orden`).
 //! - La rama 11 decide su dirección con el veredicto espectral a τ_k; el
 //!   contrato #624 dice que «la posición vive a la escala que habló», así
-//!   que su intención debe viajar a min(τ_k, 12 h) (F3.2-05). Hoy viaja a la
-//!   micro τ (`fast_duration_ms`).
+//!   que su intención debe viajar a min(τ_k, 12 h) (F3.2-05). Hasta CL-85
+//!   viajaba a la micro τ (`fast_duration_ms`), movida además por Hurst y
+//!   el centroide. CL-85 aplica la decisión del dueño (tarjeta del
+//!   2026-10-12, «escala que habló»).
 //!
 //! Los eventos de libro puro no abren (`allow_entries = !is_depth ||
 //! is_trade`), así que los eventos que deben poder abrir son de trade.
@@ -264,8 +266,8 @@ fn cf3_la_tau_que_juzga_qo586_es_la_tau_de_la_orden() {
 /// en τ = 17,2 s (< 30 s) y la rama 11 decide con el respaldo escalar. El
 /// libro trae impulsos compradores (OBI 0,85) para que pase su puerta.
 /// Precondición: al menos una intención de la rama 11.
+/// Antes de CL-85: 30/30 intenciones de la rama 11 viajaban a 173 586 ms.
 #[test]
-#[ignore = "OPEN F3.2-05 (Línea C, ramas 11-13 del núcleo): la rama 11 decide con el consenso espectral a τ_k pero emite expected_duration_ms = fast_duration_ms (micro τ); el contrato #624 sólo se escribe en expected_lifetime_ms, sin lector vivo"]
 fn cf3_la_rama_11_vive_a_la_escala_que_hablo() {
     let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
     let (arena, mut core) = nucleo(false);
@@ -315,4 +317,42 @@ fn cf3_la_rama_11_vive_a_la_escala_que_hablo() {
         fallos[0],
         fallos.len()
     );
+}
+
+/// CL-85: `GodEngineCore::escala_que_hablo` usa la condición del orquestador
+/// para consumir el veredicto espectral (#652/H2) y su misma τ (#624). Con
+/// veredicto, `expected_lifetime_ms` del orquestador (que trunca a ms) y la
+/// τ de la rama 11 (que redondea) difieren a lo sumo en 1 ms. Sin veredicto
+/// (dominante nulo o no finito, τ < 30 s o no finita) no hay escala.
+#[test]
+fn cl85_la_escala_que_hablo_es_la_del_orquestador() {
+    let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
+    let (arena, core) = nucleo(false);
+    let casos: [(f64, f64, Option<u64>); 8] = [
+        (0.9, SPECTRUM_SCALES_MS[19], Some(274_878)),
+        (-0.4, 3_600_000.0, Some(3_600_000)),
+        (0.9, 86_400_000.0, Some(43_200_000)),
+        (0.9, 30_000.0, Some(30_000)),
+        (0.9, 29_999.0, None),
+        (0.0, 3_600_000.0, None),
+        (f64::NAN, 3_600_000.0, None),
+        (0.9, f64::NAN, None),
+    ];
+    for (v_dom, tau, esperado) in casos {
+        arena.registry.set_for_coin(0, "consenso_espectral_dominante", v_dom);
+        arena.registry.set_for_coin(0, "consenso_espectral_tau", tau);
+        arena.registry.set_for_coin(0, "consenso_espectral_media", v_dom);
+        let escala = core.escala_que_hablo(0);
+        assert_eq!(escala, esperado, "v_dom = {v_dom}, τ = {tau}");
+        if let Some(tau_k) = escala {
+            let vida = core
+                .tensor_orchestrator
+                .evaluate_continuous_consensus_for_coin(0, SIM)
+                .expected_lifetime_ms;
+            assert!(
+                vida.abs_diff(tau_k) <= 1,
+                "orquestador {vida} ms frente a la escala que habló {tau_k} ms"
+            );
+        }
+    }
 }
