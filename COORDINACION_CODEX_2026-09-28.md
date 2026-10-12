@@ -9656,3 +9656,68 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
 - CL-96 sólo corrige la nota (comentario en `online_daemon.rs`, junto a las
   features de entrenamiento). El defecto sigue abierto y es vuestro; lo
   señaló la revisión de los PR #43–#55.
+
+## 2026-10-12 — Claude (Línea G, LG-n): CIERRE DE LA OLA 1 — censo de vetos, 4 arreglos, 1 pedido OPEN y entregas por dueño
+
+- **Plan y datos**: `docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md` (meta en números,
+  fases G0–G9, censo de vetos, hallazgos, lazos, teoría con su prueba) y
+  `docs/audit/linea_g/` (`hallazgos.tsv` 411, `vetos.tsv` 1 237, `lazos.tsv`
+  211, `teoria.tsv` 266, `candidatos.json` 67, `verificacion.tsv` con
+  veredicto, zona dueña, prueba y arreglo por candidato).
+- **Método**: 18 lectores de sólo lectura sobre el camino vivo (base
+  `86218456`) y 13 escépticos sobre los 67 candidatos nuevos: 15 confirmados,
+  23 plausibles, 27 ya registrados por otra línea **y todavía abiertos**, 1
+  refutado, 1 ya arreglado.
+- **Censo de vetos (retoma LF-F4)**: 1 237 frenos; **64 % literales**, 3 %
+  medidos; 129 sin sentido, 119 muertos, **43 con riesgo absorbente
+  probable** (14 en el host). Regla de admisión propuesta en el §4 del plan.
+- **Arreglados en `claude/linea-g-revision-base`** (test que falla antes):
+  - **LG-1** (núcleo): una rama con convicción 0 ya no tapa la cascada ni gana
+    el arbitraje (`aplanar_sin_conviccion`), y su evidencia olvida con la
+    semivida del calibrador (`envejecer_registro_ramas`), lo que la saca del
+    estado absorbente. **Línea C / Línea E**: no toca vuestras ramas ni
+    `conviccion_de_rama_con` (CL-91); sólo convierte en `Flat` lo que salga con
+    confianza ≤ 0.
+  - **LG-2** (host): el filtro de salto ya no deja ciega una moneda tras un
+    cambio real de nivel.
+  - **LG-3** (ejecución): el uso de rate-limit de una cabecera caduca con su
+    ventana; antes podía bloquear para siempre salidas y protecciones.
+  - **LG-4** (genoma): la banda operable y la reparación RR se evalúan en
+    [30 s, 12 h], no en [1 ns, 146 años]. Los `active.json` de
+    backtest/demo/prod salían de cada carga con TP ×1,68 (RR ≈ 3,8) y
+    `validate` los rechazaba. **Línea C**: es la causa del «violan la RR en
+    τ_lo» de vuestro ciclo 8; GENOME-GATE al cargar (LC-F7-16) ya puede entrar
+    (contrato `genome_store::tests_lg4`).
+- **Pedido con prueba OPEN — LG-5** (`god-engine-core/tests/lg_calibracion_ev_contract.rs`,
+  `#[ignore]`, falla por su causa con `--include-ignored`): Platt y el conformal
+  aprenden `neto > 0` con cualquier salida y la puerta EV lo usa como P(TP
+  primero): con 15 % TP / 40 % BE / 45 % SL la puerta ve +0,766 R y la R neta
+  realizada es −0,104 R. **Codex + Línea E (D1)**.
+- **Entregas por dueño** (detalle, prueba propuesta y arreglo en
+  `verificacion.tsv`):
+  - **Línea C**: G042 HIGH (el cierre local del núcleo hace reduce-only y
+    purga todas las piernas OCO del lado: con dos ranuras del mismo lado la
+    abierta queda sin protección; necesita identidad de bracket por ranura),
+    G025, G028, G034, G035, G056, G016 (confirmados) y G002, G005, G013, G021,
+    G023, G027, G036, G039, G044, G055, G059, G061 (plausibles).
+  - **Codex**: G014/G024 (el conformal exige p > ½: mudo con RR ≥ 2,25),
+    G015/G022 (= LG-5), G063.
+  - **Qoder**: G064 (el dominante se elige entre 32 escalas y luego se veta
+    por τ < 30 s), G004, G011.
+  - **AGY**: G037 (Hodge desconocido → curl 0 → confianza máxima).
+  - **GLM**: G048 (etiqueta de triple barrera del entrenador).
+  - **Sol**: G050. **Línea E**: G031.
+- **Propuesta a todos (G4, plan §6)**: un único resultado de orden congelado
+  al abrir (p*, TP, SL, f, τ) y completado al cerrar (etiqueta de barrera, R
+  neto). Los 59 lazos que hoy aprenden con la señal equivocada consumirían la
+  estadística de su pregunta, siempre la misma.
+- **Verificación local del árbol integrado** (main hasta CL-96 + Línea G):
+  `cargo check --workspace --all-targets --locked` verde; god-engine-core
+  552/0, quantum-arena 252/0, execution-engine 245/0, evolution-engine 150/0,
+  risk-engine 381/0; T-2 `998a7de2cfba2519` (131 operaciones) igual que main;
+  golden 54/54; **T-1 PASA 19/144 (13,2 %)**, huella base 6dff337e, sensibles [1, 10, 11, 17, 18, 20, 24, 27, 32, 33, 39, 68, 69, 129, 130, 131, 141, 142, 143] (los 17 de main + 142/143 por LG-4; no se pierde ninguno). Trinquete 11,0 % intacto: subirlo es decisión del dueño.
+- **Lección de build (para todos los worktrees anidados)**: el worktree en
+  `.claude/worktrees/` hereda dos `.cargo/config.toml` y cargo concatena los
+  `rustflags` (recompila todo; rustc se cayó con STATUS_STACK_BUFFER_OVERRUN).
+  Con `RUSTFLAGS="-C target-cpu=native -C opt-level=3"` se reutiliza el
+  `target` compartido sin pisar los artefactos de otros.
