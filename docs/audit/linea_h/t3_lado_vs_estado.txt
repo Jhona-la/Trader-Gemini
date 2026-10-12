@@ -1,0 +1,17 @@
+== t3_escalera_13usd.log
+a=0.50 d=0.00% C0=  13 | aperturas trazadas= 36 lado_del_estado=0.417 tau_mediana=71s ramas={7: 2, 8: 1, 15: 33}
+a=0.60 d=0.10% C0=  13 | aperturas trazadas= 63 lado_del_estado=0.698 tau_mediana=84s ramas={7: 1, 8: 6, 15: 56}
+a=0.70 d=0.10% C0=  13 | aperturas trazadas=100 lado_del_estado=0.580 tau_mediana=64s ramas={7: 3, 11: 2, 15: 95}
+a=0.80 d=0.10% C0=  13 | aperturas trazadas= 90 lado_del_estado=0.578 tau_mediana=64s ramas={7: 5, 8: 1, 15: 84}
+a=0.90 d=0.10% C0=  13 | aperturas trazadas= 44 lado_del_estado=0.659 tau_mediana=64s ramas={8: 1, 15: 43}
+a=0.95 d=0.10% C0=  13 | aperturas trazadas=100 lado_del_estado=0.750 tau_mediana=128s ramas={8: 2, 11: 3, 15: 95}
+a=0.90 d=0.05% C0=  13 | aperturas trazadas= 82 lado_del_estado=0.744 tau_mediana=64s ramas={7: 1, 8: 2, 11: 2, 15: 77}
+a=0.90 d=0.20% C0=  13 | aperturas trazadas= 89 lado_del_estado=0.820 tau_mediana=124s ramas={7: 2, 8: 1, 15: 86}
+== t3_escalera_capital.log
+a=0.95 d=0.10% C0= 100 | aperturas trazadas=  7 lado_del_estado=0.857 tau_mediana=30s ramas={15: 7}
+a=0.90 d=0.20% C0= 100 | aperturas trazadas=  1 lado_del_estado=0.000 tau_mediana=30s ramas={15: 1}
+a=0.95 d=0.10% C0=1000 | aperturas trazadas=100 lado_del_estado=0.520 tau_mediana=75s ramas={8: 1, 15: 99}
+a=0.90 d=0.20% C0=1000 | aperturas trazadas= 89 lado_del_estado=0.820 tau_mediana=124s ramas={7: 2, 8: 1, 15: 86}
+== t3_capital100_fee035.log
+a=0.95 d=0.10% C0= 100 | aperturas trazadas=100 lado_del_estado=0.750 tau_mediana=128s ramas={8: 2, 11: 3, 15: 95}
+a=0.90 d=0.20% C0= 100 | aperturas trazadas= 89 lado_del_estado=0.820 tau_mediana=124s ramas={7: 2, 8: 1, 15: 86}

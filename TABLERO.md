@@ -92,22 +92,33 @@
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
   `target/debug/incremental` y quedaron ~159 GB libres.
 
-## Claude — Línea H (actualizado: 2026-10-12 16:10 local, prefijo LH-n, rama claude/linea-h-ventaja-conocida, worktree .claude/worktrees/linea-h)
+## Claude — Línea H (actualizado: 2026-10-12 ~18:00 local, prefijo LH-n; ola 1 cerrada y fusionada en main; rama borrada)
 
-- **Por qué**: al abrir la sesión había otra sesión Claude viva en la Línea G
-  (ola 5, LG-21 a las 15:48). La Línea H no toca esa rama y toma lo que la ola
-  4 de la G dejó en su §12.5: nada mide si la cadena de decisión deja pasar y
-  compone una ventaja; el T-2 sólo mide una serie sin ventaja.
-- **Haciendo ahora**: LH-1, el T-3 (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`):
-  escalera de fixtures con ventaja conocida (Markov en el signo, a ∈ [0,5; 0,95],
-  deriva d), techo medido sin el motor (oráculo y proxy del signo previo,
-  P(TP antes que SL) del bracket RR 2,25) frente a lo que el motor realiza y
-  los rechazos del riesgo que lo frenan. LH-2: tres lectores (tamaño;
-  evidencia/EV; dirección/τ) que predicen la escalera y escépticos con la
-  medición en la mano. Plan: `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md`.
-- **Commiteado**: nada todavía (apertura en el buzón).
-- **No toca**: núcleo, riesgo, host, orquestador, registro, consejo,
-  `spectral_tape`, `booktick_replay`, `online_daemon`, `genome.rs`.
+- **Qué es**: la cadena de la meta bajo una ventaja CONOCIDA. El T-3
+  (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`) es una escalera de
+  fixtures sintéticos con persistencia y deriva controladas; mide el techo sin
+  el motor (oráculo, proxy, P(TP antes que SL)) frente a lo realizado, el pago
+  por cierre y los rechazos por puerta. Plan y lectura:
+  `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md` §6; datos: `docs/audit/linea_h/`.
+- **Commiteado (ola 1)**: LH-1 y LH-1b (el T-3 con variantes por capital,
+  valle de capital e intervenciones sobre un gen); 30 hallazgos de 3 lectores
+  y 3 escépticos con la medición (11 confirmados, 17 nuevos).
+- **Lo medido**: con ventaja el riesgo no rechaza nada y el motor gana
+  +10,8 % en 50 h, pero todo al nocional mínimo (0,049/día frente a 0,231/día
+  de la meta; Kelly pleno medido 40 %, arriesgado 0,2 %). La cuenta opera con
+  13–26 USD, NO opera con 35–65 USD (`fee_impact`, LH-02 HIGH), 1 operación
+  con 100, vuelve con 215. Con 1 000 USD la envolvente es absorbente al cierre
+  30 (5 574 reversiones silenciosas, LH-03 HIGH). τ 64–128 s en todos los
+  peldaños y ramas tendenciales nunca (LH-05/06).
+- **Entregado**: LH-02/03/04 a Línea C (riesgo), LH-05/06/07 a Qoder/Línea C
+  (núcleo), LH-08/09 y LG-5 confirmado a Línea E/Codex, pedido de exportar
+  `envelope_vetoes`/`diag_*` a Sol. Todo en el buzón con el comando del T-3
+  que lo reproduce.
+- **Siguiente (si se reabre)**: peldaño con dos símbolos (D4 y co-despacho);
+  columna P(cierre por TP) cuando el runner exporte motivos; techo con la
+  geometría real del motor (τ ≈ 1 min).
+- **No tocó**: ningún archivo fuera de `crates/backtest-engine/tests/` y
+  documentación.
 
 ## Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
@@ -146,21 +157,20 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω90 completada / Ficha #728)
+## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω91 completada / Ficha #729)
 
-- **Haciendo ahora**: Ola Ω90 (#728) completada — Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente:
-  - **Publicación del Plan Maestro Canónico 2026-10-12**:
-    * Publicado `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md` con gobernanza de 10 Roles Senior en Modo Profesor (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).
-    * Sincronización total con Línea G Olas 1–3 (LG-1 a LG-19), Línea C PR #61 (D4 sonda única `sonda.rs`), y Línea F (asignación de crédito con $p^* = \frac{1}{1 + RR}$).
-    * Doctrina financiera de microcapital $13.00 USD: duplicación continua en 72 h ($g \approx +25.9921\%/\text{día}$), sizing R-20 ($1.02 USD @ 5x), suelo $4.79 USD ($d^* = 0.632$), sin exigir WR 100% irreal.
-    * Universo temporal-espectral continuo $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$ en $L^2$ sobre 32 escalas diádicas y símplex $\Delta^3$. Erradicación definitiva de scalping/swing.
-    * Escalera transdisciplinar de evolución teórica ("El Siguiente Paso"): PIN-SDE, Rough Volatility ($H < 0.5$), Navier-Stokes L2/L3, Yang-Mills $SU(N)$, Helmholtz-Hodge $L^2$, Prospect Theory + Mean Field Games, supermartingalas de Ville.
-    * Incorporada Sección 53 en `docs/PLAN_MAESTRO_SINCRONIZACION.md`.
-  - **Validación Extremo a Extremo e Invarianza**:
-    * `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
-    * Oráculo T-1 certificado en 19/144 genes sensibles (13.2%).
-    * Fixture T-2 alineado con la sonda única D4.
+- **Haciendo ahora**: Ola Ω91 (#729) completada — Resolución de F2.3b-07: Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness:
+  - **Resolución Definitiva de F2.3b-07**:
+    * Eliminada degeneración de gauge puro donde $F_{\text{loop}} \equiv 0$ idénticamente con $\beta \equiv 1$ bajo numerario común.
+    * Incorporada 2-forma transversal de cointegración triangular $d_{\text{cross}}$ y acción invariante $\mathcal{S} = \frac{1}{2}(f_{\text{loop}}^2 + d_{\text{cross}}^2)$ con corrientes restauradoras conservativas $\mathcal{J} = -\nabla \mathcal{S}$.
+    * Reseteo TTL anti-staleness para precios estancados o no-finitos (`linea_g/hallazgos.tsv:316`).
+    * `cf2_ym_dislocacion_triangular_plantada_se_detecta`: `#[ignore]` eliminado; pasa con acción media $1.02 \times 10^{-7} > 10^{-9}$ y ratio media/control $> 6.6 \times 10^6 > 10\times$.
+    * `cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo`: pasa ($1.54 \times 10^{-14} < 10^{-11}$).
+    * `cf2_ym_caracterizacion_retornos_asincronos`: invertida exitosamente ($S > 10^{-9}, J > 10^{-6}$).
+    * Contratos `yang_mills_gauge_contract` (5/5) y `hodge_yang_mills_consensus_contract` (3/3) 100% verdes. Invarianza T-2 preservada.
+    * Actualizado `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv` (fila 144 a pasa/activo).
 - **Commiteado reciente**:
+  - Ola Ω90 (#728): Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md`).
   - Ola Ω89 (#727, commit `b13839bc` en main): Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (F2.5-02).
   - Ola Ω88 (#726, commit `86218456` en main): Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (F3.8-03, F3.4-08, F2.5-03).
   - Ola Ω87 (#725, commit `badfd1d3` en main): Desasfixia Temporal y Cooldown Multiescala en el Continuo Espectral (`enfriamiento_base_ms = (tau_cierre as f64).min(tau_dom)`).

@@ -2026,3 +2026,55 @@ antes de fusionarse: 26 hallazgos, 4 MED (unidades del umbral del freno duro;
 estado corrupto tratado como ausente; restauración parcial del estado; PnL de
 sesiones anteriores tomado como de esta). Regla que sale de aquí: **revisar la
 tanda de otra línea antes de que entre, no después**.
+
+## 56. Resolución de F2.3b-07: Acción Gauge Yang-Mills con Dislocación Transversal en el 2-Símplex y Reseteo TTL Anti-Staleness (Ola Ω91, Ficha #729)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#729`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Resolución formal del hallazgo `F2.3b-07` en `crates/strategy-core/src/yang_mills_gauge.rs` y activación de su prueba en `tests/cf2_yang_mills_nulo.rs`. Se descompone la curvatura en el 2-símplex integrando la 2-forma transversal de cointegración triangular y se resetea la memoria de precios obsoletos por TTL.
+  * **POR QUÉ**: En un mercado con numerario común (USDT), las diferencias cíclicas de retornos $A_{ij} = r_i - \beta_{ij} r_j$ forman una 1-forma exacta cuando $\beta \equiv 1$, produciendo $F_{\text{loop}} = A_{ij} + A_{jk} + A_{ki} \equiv 0$ idénticamente por el teorema de Stokes / lema de Poincaré ($d^2 = 0$). Esto causaba una degeneración patológica donde cualquier residuo de cointegración plantado $u$ resultaba invisible ($\mathcal{S} \sim 10^{-14} \ll 10^{-9}$).
+  * **PARA QUÉ**: Permitir que el motor detecte tensiones de arbitraje y dislocaciones triangulares genuinas sin violar la condición de nulo exacto ($\mathcal{S} < 10^{-11}$) cuando la relación de precios es matemáticamente paritaria ($p_2 = p_0/p_1$).
+  * **CÓMO**:
+    1. **Dislocación Transversal en 2-Símplex**: $d_{\text{cross}} = \min(|d_1|, |d_2|, |d_3|) \cdot \text{signo}$, donde $d_1 = r_i - \beta_{ij} r_j - \beta_{ik} r_k$, $d_2 = r_j - \beta_{ji} r_i - \beta_{jk} r_k$, $d_3 = r_k - \beta_{ki} r_i - \beta_{kj} r_j$.
+    2. **Densidad de Acción Combinada**: $\mathcal{S}_{\text{plaqueta}} = \frac{1}{2}(f_{\text{loop}}^2 + d_{\text{cross}}^2)$.
+    3. **Corrientes Restauradoras Conservativas**: $\mathcal{J}_m = -\nabla \mathcal{S}$, ejerciendo fuerza conservativa sobre el vértice dislocado balanceando los contra-vértices ($\sum \mathcal{J} \approx 0$).
+    4. **Reseteo TTL Anti-Staleness**: Precios estancados o inválidos resetean `last_ln_prices[i] = 0.0` (hallazgo `linea_g/hallazgos.tsv:316`).
+  * **CUÁNDO**: Operativo en cada ciclo del motor para todos los 3-ciclos válidos de activos.
+  * **DÓNDE**: `crates/strategy-core/src/yang_mills_gauge.rs`, `crates/strategy-core/tests/cf2_yang_mills_nulo.rs`, `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead).
+- **Validación Extremo a Extremo**:
+  * `cf2_ym_dislocacion_triangular_plantada_se_detecta`: `pasa` (acción $1.02 \times 10^{-7} > 10^{-9}$, ratio media/control $> 6.6 \times 10^6 > 10\times$).
+  * `cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo`: `pasa` (acción $1.54 \times 10^{-14} < 10^{-11}$).
+  * `cf2_ym_caracterizacion_retornos_asincronos`: `pasa` ($S > 10^{-9}, J > 10^{-6}$).
+  * `yang_mills_gauge_contract`: 5/5 pasan.
+  * `hodge_yang_mills_consensus_contract`: 3/3 pasan en `god-engine-core`.
+  * Invarianza T-2 preservada. Workspace 100% verde con `cargo check --workspace --all-targets`.
+## 57. Línea H — ola 1: la cadena de la meta bajo una ventaja conocida (2026-10-12)
+
+> Detalle en [PLAN_LINEA_H_CLAUDE_2026-10-12.md §6](PLAN_LINEA_H_CLAUDE_2026-10-12.md).
+
+**El instrumento.** Ningún fixture medía la pregunta de la meta en su forma
+falsable: si la serie tiene una ventaja conocida, ¿la cadena de decisión la
+deja pasar y la compone? El T-3 (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`)
+es una escalera de series sintéticas con persistencia y deriva controladas,
+con el techo medido sin el motor (oráculo del estado oculto, proxy del signo
+previo, P(TP antes que SL) del bracket RR 2,25) frente a lo que el motor
+realiza y las puertas que lo frenan.
+
+**Lo medido.** Donde hay ventaja el riesgo no rechaza nada y el motor gana
+(+9,6 % y +10,8 % en 50 h), pero con todas las órdenes en el nocional mínimo:
+la quinta parte del ritmo de la meta con un oráculo de +0,94 R por operación
+(con el acierto y el pago medidos, 0,65 y b = 1,40, el Kelly pleno sería el
+40 % del capital; el motor arriesga el 0,2 %). **La misma serie opera con 13,
+20 y 26 USD, no opera nada con 35, 50 y 65 USD (veto `fee_impact`: el techo
+de fricción apalancada vuelve al gen al salir de micro), hace una operación
+con 100 y vuelve a operar con 215**: la primera, la segunda y la tercera
+duplicación de la cuenta caen en un apagón. Con 1 000 USD la envolvente del
+replay se vuelve absorbente al cierre 30 (5 574 aperturas revertidas en
+silencio, por el pago realizado y no por la probabilidad). Con regímenes de
+10 velas el motor pierde aunque el oráculo gane: la τ de las órdenes (1–2 min)
+no sigue a la deriva y las ramas tendenciales nunca abren. **Regla que sale de aquí: lo que vale con 13 USD
+tiene que seguir valiendo al doblar; cada puerta con un literal por régimen
+de capital es un apagón programado.** Entregas por dueño en el buzón
+(LH-02 fricción apalancada, LH-03 envolvente absorbente, LH-04 tamaño,
+LH-05…LH-07 núcleo; LG-5 confirmado).

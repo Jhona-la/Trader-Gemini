@@ -1,0 +1,614 @@
+{
+ "H1-tamano": {
+  "lente": "H1 tamaño y capital (ids H1-*): ¿el capital_final y el pnl por operación son compatibles con «todo cierre es la orden mínima», y crece o no la fracción arriesgada con el capital?",
+  "veredictos": [
+   {
+    "id": "H1-01",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "HIGH",
+    "razon": "El código hace lo que dice: lib.rs:599 `raw_exposure = dir·effective_confidence·kelly_for_scale·allocated_capital` es un margen; :1279-1285 `orden_viable` compara 5,4·SL/13 con `clamp_ruin(1,q) ≤ 0,25` (SL ≤ 60 %, nunca decide); :1322-1327 sube L hasta `max_lev_cap` (6,5 a conf ≥ 0,75, :1307-1308) y :1344 infla el margen a 5,4/L; :1349-1351 recorta la sonda al mínimo. La aritmética 0,25 USD → L 6 → 0,90 USD coincide con la traza (margin 0,87-1,18, lev 5-6, notional 5,2-5,9). Pero es el MISMO mecanismo que LC-F0-05 (hallazgos.tsv:330, «el margen se infla hasta el nocional mínimo sin mirar el Kelly: en micro todo tamaño es la orden mínima») y R-20 (LEDGER §5.1:136); lo nuevo es sólo la descomposición por τ.",
+    "lo_que_dice_la_escalera": "Las 8 filas a 13 USD: pnl_neto/trades entre −0,0035 (nulo) y +0,0158 USD (a=0,9 d=0,2); min_notional=viabilidad=0 en todas; OPEN TRACE: 100 % de las aperturas con notional 5,2-5,9 USD. Apoya el hallazgo.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H1-02",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "HIGH",
+    "razon": "La dirección se confirma: los mismos 89 cierres (wr 0,6517 idéntico) dan +1,4076 USD con 13 USD y +20,4694 con 1 000 USD: ×14,5 de dólares para ×77 de capital ⇒ nocional implícito ≈ 80 USD (≈ 8 % del capital) frente al 42 % de 13 USD: la fracción cae ÷5. Pero la cadena numérica falla en dos puntos: a 100 USD el reader puso `L_matriz = 1` ignorando el tensor de crecimiento de su propia cita (leverage_matrix.rs:220-224: `min(7/log10 C, 3)` = 3 ⇒ growth 3,45 a 100 USD) y usó clamp_min 0,034 donde el arranque frío con PF_lcb ≤ 1 da ¼·clamp_min = 0,0085 (lib.rs:410-412); el resultado no es «nocional 6,4 USD» sino que la orden ni sale (fee_impact=3429, ver H1-N1). A 1 000 USD predijo 16 USD (1,6 %) con Kelly en el piso; con wr 0,65 el Kelly no está en el piso y el nocional es ≈ 80 USD (cerca de su propio caso «evidencia fuerte», 99 USD).",
+    "lo_que_dice_la_escalera": "Filas de capital: a=0,9 d=0,2: pnl +1,4076 (13) → −0,0268 (100, 1 trade) → +20,4694 (1 000, 89 trades); pnl_pct 10,83 % → −0,03 % → 2,05 %. Apoya «no compone» (sublineal), contradice los números por capital.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H1-03",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "MED",
+    "razon": "Código correcto: kelly.rs:82-84 (banda de supervivencia, capital_ratio = 1 por config.rs:207) y :89 `(kelly·capital_scale).clamp(mn,mx)`; lib.rs:540 normalizador; :588 `clamp_ruin ≤ 0,25`; :1308 techo micro. Y la escalera confirma el resultado: ninguna apertura trazada supera 5,9 USD ni siquiera con wr 0,65. Pero la cota «W ≥ 0,95, nunca con acierto ≤ 0,9» usa conf 0,75 (convicción 1,19, L 5) y la traza muestra conf = 0,98 en TODAS las aperturas: convicción 1 + (0,98 − 0,56) = 1,42 y max_lev_cap 6,5 ⇒ la segunda orden mínima exige margen ≥ 10,8/6,5 = 1,66 USD ⇒ micro_kelly ≥ 0,130 ⇒ kelly_frac ≥ 0,105 a τ 60 s (normalizador 0,87, la τ medida) ⇒ 0,338·W²(1−1/PF) ≥ 0,105: W 0,80 con PF 2 basta. Inalcanzable con el wr medido (≤ 0,65 exige PF ≥ 3,7), no «nunca».",
+    "lo_que_dice_la_escalera": "OPEN TRACE (100 primeras aperturas por corrida): notional 5,2-5,9 USD, conf 0,98, lev 5-6 en los 8 peldaños; pnl/trade máximo 0,0158 USD. Apoya el resultado, no la cota.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H1-04",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "MED",
+    "razon": "Código correcto: drawdown.rs:92 `dd.clamp(0.02, 0.95)`; lib.rs:345-346 `lerp(dd_max_medido, d_falsacion, micro_w).min(d_falsacion)`; `riesgo_por_operacion` sí se escribe (lib.rs:1483, EWMA de vol·L·SL/capital) así que la rama «compatible» está viva; k = ln(200/0,05)/ln 2 = 11,97 ✓; a 100 USD r ≈ 5,5·0,004/100 = 2,2e-4 ⇒ dd 0,26 % ⇒ clamp 2 %; a 13 USD lerp(0,02; 0,632; 1) = 63 % ✓. No medible en la escalera: dd_max a 100/1 000 USD = 0,0007/0,0003/0,0015/0,0044 y REJ_DRAWDOWN = 0 en todas las filas; a 100 USD ni se llega porque fee_impact mata antes las órdenes (H1-N1). El carácter absorbente (pico monótono, lib.rs:290) es plausible, no demostrado.",
+    "lo_que_dice_la_escalera": "Columna dd_max ≤ 0,0244 en todas las filas y rechazos sin «drawdown»: no medible.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H1-05",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "booktick_replay.rs:735 (`envelope_n < 30` ⇒ bootstrap), :744 `cap = env_lev.floor().clamp(1,20)` y :753 `risk_budget = 0.05·kelly_frac` hacen lo que dice: con f = f_min, env_lev = 5,4/cap_now = 0,42 ⇒ cap 1 ⇒ envío 1× y 5,4 USD retenidos por posición; envio.rs:86-100 sube la 3.ª a ceil(5,4/(0,8·2,2)) = 4. La escalera demuestra que la envolvente NO es inerte: opened−closes = 124 en a=0,7 (13 USD) y 5 574 en a=0,95 (1 000 USD); la retención a 1× reduce cap_now a 13 − 5,4·k y sube f_min = 5,4·stop/cap_now (kelly_envelope.rs:372), ensanchando la ventana 0 < f < f_min que :408 veta. Sube de LOW a MED por consecuencia medida.",
+    "lo_que_dice_la_escalera": "Trazas del runner: 231/107 (a=0,7, 13 USD) y 5604/30 (a=0,95, 1 000 USD) con «sin rechazos» en REJECT_COUNTERS. Refuerza y agrava.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H1-06",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "LOW",
+    "razon": "lib.rs:540 `risk_normalizer = (fast_anchor_sl/continuous_sl).clamp(0.15, 1.0)` escala el margen con la curva del gen mientras el stop real sale de la difusión medida: mecanismo real. El exponente τ^(H−0,2) y los números (0,63 a 5 min) no son medibles en la tabla; la traza muestra τ 40-100 s, donde el normalizador vale 0,79-0,87, y en micro es irrelevante porque manda la orden mínima.",
+    "lo_que_dice_la_escalera": "No medible (sin τ ni SL por orden en la tabla).",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H1-07",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "backtest lib.rs:125 `let mut envelope_vetoes: u64 = 0` sólo se pasa a live_envelope_gate (:373-380); out_stats[0..7] (:508-535) no lo exporta y el [T1-DIAG] (:541-549) imprime opened/council/ml/closes pero no envelope_vetoes ni diag_notional. La escalera lo sufre: la fila a=0,95 a 1 000 USD dice «sin rechazos» y perdió 5 574 entradas; el único síntoma es opened−closes en stdout. Sube a MED: es el instrumento que oculta la puerta que mata el peldaño más fuerte fuera de micro.",
+    "lo_que_dice_la_escalera": "Columna rechazos = «sin rechazos» en a=0,7 (13 USD) y a=0,95 (1 000 USD) con 124 y 5 574 anulaciones visibles sólo en [T1-DIAG].",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H1-08",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "INFO",
+    "razon": "t3_ventaja_conocida.rs:62-64 fija SL_REF 0,5 % y RR 2,25 y ev_en_r usa f/SL = 0,2 R: cierto. Pero el escenario «a τ = 5 min el motor usa SL 0,9 %» no casa con la traza: τ 40-100 s ⇒ SL ≈ ATR·(τ/60 s)^0,5 ≈ 0,3-0,5 % con el ATR del fixture (máximos/mínimos ±0,15-0,35 %), es decir cerca de SL_REF. La brecha de geometría es menor que la declarada; la de fricción (0,10 % frente a ≈ 0,13 %) se mantiene.",
+    "lo_que_dice_la_escalera": "No medible directamente; la τ de la traza (40-100 s) reduce la discrepancia.",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H1-09",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "INFO",
+    "razon": "lib.rs:1349-1351 y sonda.rs:41-57 hacen lo que dice. Es el mismo mecanismo y la misma consecuencia que R-18 (LEDGER §5.1:137: «hasta 150 operaciones en 30 monedas sin cota explícita de exposición total en sonda») y ADR-0016 D4. Además el escenario «decenas de REJ_SONDA_OCUPADA constantes con a» falla: 0 en 6 de 8 peldaños, 20 (a=0,7) y 9 (a=0,8); las sondas viven 1-3 min (τ 40-100 s), no 10.",
+    "lo_que_dice_la_escalera": "Columna rechazos: sonda_ocupada sólo en a=0,7 (20) y a=0,8 (9).",
+    "dueno": "Línea C"
+   }
+  ],
+  "predicciones": [
+   {
+    "medida": "Nocional por cierre (inferido) y (capital_final − 13)/trades por peldaño",
+    "prediccion": "Todo cierre 5,40 USD; |pnl| por cierre ≤ 0,20; pnl_neto/trades < 0,08 USD en todas las filas",
+    "resultado": "CUMPLIDA",
+    "numero": "pnl_neto/trades: −0,0035 / +0,0009 / +0,0010 / +0,0005 / −0,0027 / +0,0113 / −0,0018 / +0,0158 USD (máximo 0,0158 ≪ 0,08); OPEN TRACE: notional 5,2-5,9 USD (qty 0,00008-0,00009 BTC × precio), margin 0,87-1,18, lev 5-6 en las 100 primeras aperturas de cada corrida",
+    "que_aprende": "Refuerza H1-01/H1-03: el tamaño es binario en micro. Matiz: no es «5,40» sino el menor múltiplo del lote al precio del momento; y sólo se ven las 100 primeras aperturas (a=0,7 tuvo 231)."
+   },
+   {
+    "medida": "capital_final y pnl_pct_capital frente a a (d = 0,1 %) y frente a d (a = 0,9)",
+    "prediccion": "Monótono creciente, acotado ≤ 15 USD, pendiente ≈ +4 USD/unidad de a, ningún peldaño ≥ 26; peldaños de deriva ordenados por d",
+    "resultado": "PARCIAL",
+    "numero": "capital_final: 12,8736 / 13,0569 / 13,0995 / 13,0481 / 12,8821 / 14,2512 (no monótono: a=0,9 queda al nivel del nulo); máximo 14,4076 ≤ 15; pnl_pct máximo 10,83 % ≤ 15 %; d: 12,8420 < 12,8821 < 14,4076 (ordenado)",
+    "que_aprende": "La cota de tamaño (≤ 15 USD, nunca 26) se cumple y refuerza H1-02. Falla la forma: el PnL no sigue a a entre 0,6 y 0,9 (plano o negativo con EV_R del oráculo hasta +0,35), así que ahí el cuello no es el tamaño sino el núcleo."
+   },
+   {
+    "medida": "Contadores de tamaño (min_notional, viabilidad, fee_impact, margen_insuf, exposure0, drawdown) y sonda_ocupada por peldaño",
+    "prediccion": "Los seis a 0 en los 8 peldaños; sonda_ocupada > 0 en todos (decenas) sin tendencia; dominan señal/EV/confianza",
+    "resultado": "PARCIAL",
+    "numero": "A 13 USD los seis = 0 en 8/8; sonda_ocupada = 0 en 6/8, 20 (a=0,7) y 9 (a=0,8); EV = 929 / 0 / 0 / 1 / 0 / 0 / 502 / 0. A 100 USD fee_impact = 3429 y 3523",
+    "que_aprende": "Refuerza que en micro no muerde ninguna puerta de tamaño. Refuta la razón «fee_impact exige L > 27»: ese 0,035 es sólo el límite micro (lib.rs:1229); fuera de micro el límite es max_fee_pct = 0,010 y mata todo a 100 USD (H1-N1)."
+   },
+   {
+    "medida": "Peldaños a = 0,95 (d 0,1 %) y a = 0,9 (d 0,2 %) con 100 y 1 000 USD",
+    "prediccion": "trades iguales ±15 %; pnl_pct ≈ 1/6 (100 USD) y ≈ 1/25 (1 000 USD) del de 13 USD; nocional ≈ 6,4 USD (100) y ≈ 16 USD (1 000)",
+    "resultado": "FALLADA",
+    "numero": "a=0,95: trades 111 → 7 → 30; pnl_pct 9,62 % → −0,00 % → −0,05 %. a=0,9 d=0,2: trades 89 → 1 → 89; pnl_pct 10,83 % → −0,03 % → 2,05 % (= 1/5,3, no 1/25); mismos 89 cierres con wr 0,6517 ⇒ nocional implícito ≈ 14,5 × 5,5 ≈ 80 USD (≈ 8 %), no 16",
+    "que_aprende": "El condicional del reader («si pnl_pct se mantiene o sube, H1-02 refutado») no se dispara: la fracción cae (42 % → 8 % de nocional). Pero la causa a 100 USD es la puerta fee_impact (3429) y a 1 000 USD con a=0,95 la envolvente (5 574 anulaciones), no la curva f(C); y a 1 000 USD con edge el Kelly no está en el piso."
+   },
+   {
+    "medida": "REJ_DRAWDOWN y dd_max con 100 USD sobre serie perdedora larga",
+    "prediccion": "Dispara al 2,0 % de caída con 100 USD; nunca con 13 USD",
+    "resultado": "NO_MEDIBLE",
+    "numero": "No se corrió la serie perdedora; en las filas de 100 USD dd_max = 0,0007 y 0,0003 con 7 y 1 trades, REJ_DRAWDOWN = 0 en todas",
+    "que_aprende": "No decide H1-04. Añade que a 100 USD la prueba ni podría hacerse tal cual: fee_impact impide acumular los ≈ 700 cierres que el reader necesitaba."
+   },
+   {
+    "medida": "REJ_EV por peldaño frente a wr_neto",
+    "prediccion": "Decrece con a (REJ_EV(0,95) ≤ ½·REJ_EV(0,5)) pero no llega a 0 por las intenciones a τ ≈ 30 s",
+    "resultado": "PARCIAL",
+    "numero": "EV = 929 (a=0,5) / 0 (0,6) / 0 (0,7) / 1 (0,8) / 0 (0,9) / 0 (0,95); d=0,05: 502; d=0,2: 0. wr_neto: 0,361 / 0,460 / 0,477 / 0,433 / 0,409 / 0,640 / 0,432 / 0,652",
+    "que_aprende": "Decrece y mucho más de lo predicho: llega a 0 ya en a=0,6 con wr 0,46. La puerta EV sólo cierra el nulo y d=0,05 %; no explica el PnL plano de a=0,6-0,9. La razón «τ ≈ 30 s exige p > 0,55» falla: τ de la traza 40-100 s."
+   },
+   {
+    "medida": "opened − cierres − abiertas al final (TG_TRACE_NATIVO=1)",
+    "prediccion": "= 0 en los 8 peldaños a 13 USD (la adaptación de envío sube la 3.ª a 4× y nada se anula)",
+    "resultado": "FALLADA",
+    "numero": "a=0,7: 231 − 107 = 124; a=0,9 d=0,05: 82 − 81 = 1 (abierta al final); resto 0. A 1 000 USD a=0,95: 5604 − 30 = 5574",
+    "que_aprende": "La envolvente sí anula en micro: a=0,7 (wr 0,477) es el único peldaño cuyo Kelly LCB cae en la ventana 0 < f < f_min (kelly_envelope.rs:408, hallazgos:372), ensanchada porque cap_now = 13 − 5,4·k tras el cierre 30 a 1× (H1-05). Agrava H1-05 y H1-07."
+   },
+   {
+    "medida": "Los 5 primeros cierres de cada peldaño (orden y tamaño)",
+    "prediccion": "Nunca se solapan; todos 5,40 USD con margen ≈ 0,90 a 6× o 1,08 a 5×; el 6.º igual",
+    "resultado": "CUMPLIDA",
+    "numero": "OPEN TRACE: margin 0,87-1,18 USD a 5-6× (0,90 a 6×, 1,08 a 5×, 1,18 = 5,9/5), notional 5,2-5,9 en todas las aperturas trazadas; sonda_ocupada 20/9 en a=0,7/0,8 son los intentos de solape rechazados",
+    "que_aprende": "Refuerza H1-01/H1-09: sonda y post-sonda tienen el mismo tamaño. El no-solape no se observa directamente, sólo por los rechazos de sonda_ocupada."
+   }
+  ],
+  "nuevos": [
+   {
+    "id": "H1-N1",
+    "severidad": "HIGH",
+    "archivo": "crates/risk-engine/src/lib.rs",
+    "linea": 1229,
+    "defecto": "Valle entre micro y estándar: a 100 USD REJ_FEE_IMPACT mata prácticamente todas las aperturas (3429 y 3523 rechazos ≈ 30 evaluaciones/vela × 114-117 velas ≈ las 111/89 aperturas que el mismo peldaño tuvo a 13 USD) y quedan 7 y 1 trades. Mecanismo: `max_fee_limit = lerp(max_fee_pct, 0.035, micro_w)` baja de 3,5 % a max_fee_pct = 1,0 % (genome.rs:759, taker·20) en cuanto micro_w = 0 (≥ 10 órdenes mínimas = 50 USD, capital_regime.rs:68); el Kelly de arranque con PF_lcb ≤ 1 es ¼·clamp_min = 0,0085 (lib.rs:410-412) ⇒ margen ≈ 0,98·0,0085·0,87·100 ≈ 0,72 USD ⇒ el rescate :1322 pide L = ceil(5,5/0,72·1,02) = 8 (techo 50 a w = 0, :1308) ⇒ fee_impact = 8 × 0,13 % ≈ 1,04 % > 1,0 % (:1417-1419) ⇒ rechazo. Las rechazadas no cierran ⇒ trade_count = 0 ⇒ PF_lcb ≤ 1 ⇒ el Kelly frío no sale del piso: absorbente. A 13 USD L ≤ 6 y límite 3,5 %; a 1 000 USD el margen (7,2 USD) ya cubre el mínimo a L 1-2 y pasa. L exacto no legible de la tabla: es la única derivación compatible con que 13 y 1 000 USD pasen y 100 no.",
+    "evidencia": "let max_fee_limit = crate::capital_regime::lerp(max_acceptable_fee_pct, 0.035, micro_w_alloc); … let final_fee_impact = roundtrip_fee * dynamic_leverage; if … final_fee_impact > max_fee_limit { return rej(REJ_FEE_IMPACT); }  |  t3_escalera_capital.tsv: C0=100: trades=7 fee_impact=3429; trades=1 fee_impact=3523. Parcialmente registrado como literal (vetos.tsv:1016) y G061 (tensor ×3,45 < 215 USD), nunca como consecuencia.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H1-N2",
+    "severidad": "HIGH",
+    "archivo": "crates/backtest-engine/src/booktick_replay.rs",
+    "linea": 735,
+    "defecto": "A 1 000 USD el peldaño más fuerte en persistencia (a=0,95, EV_R oráculo +0,66, 111 trades y +9,6 % a 13 USD) queda cerrado por la envolvente exactamente en el cierre 30: closes = 30 = fin del bootstrap `envelope_n < 30`; después p_LCB(z = 1,64, n = 30, wr 0,60) = 0,597 − 1,64·0,087 ≈ 0,455 y b_LCB ≈ 1 (salidas por TRAIL/ALPHA_DECAY truncan las ganancias) ⇒ kelly = p − q/b ≤ 0 ⇒ risk_fraction = 0 (kelly_envelope.rs:282) ⇒ sin respaldo porque micro_w = 0 (:387) ⇒ (0,false) ⇒ VetoEnvio::Envolvente (envio.rs:86) ⇒ rollback. El núcleo reabre cada tick: 5 574 anulaciones en las ≈ 45 h restantes, n congelado en 30 (lo anulado nunca cierra): absorbente, y la tabla dice «sin rechazos». El peldaño a=0,9 d=0,2 (wr 0,65 ⇒ p_LCB ≈ 0,51 > 0,5) pasa con b ≈ 1: 89 trades, +2,05 %. Mismo mecanismo que LF-12 (hallazgos.tsv:255/356); nuevo: medido sobre la ventaja conocida y el umbral queda entre wr 0,60 (cerrado) y 0,65 (abierto) a n = 30.",
+    "evidencia": "let exec_leverage: u32 = if envelope_n < 30.0 { … } else if operable { … } else { 0 };  |  [T1-DIAG] opened=5604 … closes=30 ; [T3] a=0.95 C0=1000: trades=30 wr=0.600 pnl=-0.4981 rechazos: sin rechazos",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H1-N3",
+    "severidad": "MED",
+    "archivo": "crates/risk-engine/src/kelly_envelope.rs",
+    "linea": 408,
+    "defecto": "En micro (13 USD) la envolvente anuló 124 aperturas en el peldaño a=0,7 (opened 231, closes 107) y 0 en los demás. Es el único peldaño cuyo Kelly LCB cae en la ventana no monótona 0 < f < f_min_ejecutable (hallazgos.tsv:372, registrada como LOW sin medida): con wr 0,477 y n ≥ 30, p_LCB(z = 0,85) ≈ 0,40 y b_LCB ≈ 1,5-1,6 ⇒ f ≈ 0,00-0,01 (contraído por n/(n+10)); f_min = 5,4·stop/cap_now sube de 0,0017 (cap_now 13) a 0,0098 cuando dos posiciones retienen 5,4 USD a 1× tras el cierre 30 (H1-05) ⇒ f < f_min ⇒ veto. Los peldaños con f ≤ 0 (a=0,6/0,8/0,9, wr ≤ 0,46) reciben el respaldo de exploración de :387 y no se anulan; los de wr 0,65 superan f_min. Un edge ligeramente positivo se veta donde uno negativo opera. No confirmable sin la traza por tick: plausible.",
+    "evidencia": "if f <= 0.0 && micro_w > 0.0 { f = clamp_ruin(f_min_ejecutable, q_lcb); } … if f < f_min_ejecutable { return (0.0, false); }  |  [T1-DIAG] opened=231 council_vetoes=0 ml_vetoes=0 closes=107 (a=0,7, 13 USD)",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H1-N4",
+    "severidad": "MED",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 367,
+    "defecto": "La escalera no puede distinguir «el riesgo la dejó pasar» de «la envolvente se la comió» ni certificar «todo cierre es la orden mínima»: la columna rechazos sólo lee REJECT_COUNTERS (la fila con 5 574 anulaciones imprime «sin rechazos»), opened−closes vive sólo en stdout con TG_TRACE_NATIVO, y no hay tamaño por cierre (sólo pnl_neto/trades y las 100 primeras aperturas del OPEN TRACE). El runner sí devuelve `out_pnl` con el PnL neto de cada cierre en orden (backtest lib.rs:412-414), que el test ignora.",
+    "evidencia": "fn linea_tsv(m: &Medida) … rechazos_texto(&cero, &m.rechazos)  |  run_backtest_native(…, &mut pnl, &mut stats, …) con `pnl` descartado",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H1-N5",
+    "severidad": "INFO",
+    "archivo": "docs/audit/linea_h/t3_escalera_13usd.tsv",
+    "linea": 6,
+    "defecto": "El tamaño no es el cuello entre a = 0,6 y a = 0,9: con 0 rechazos de riesgo y 0 anulaciones (salvo a=0,7), el motor queda plano o pierde (a=0,9 d=0,1: EV_R oráculo +0,35, p_tp 0,477, pero wr 0,409 y −0,1179 USD, al nivel del nulo) porque lee 0,60 donde el oráculo lee 0,89 (columna lectura). Sólo en a=0,95 y d=0,2 (wr 0,64-0,65) hay ventaja ejecutada que el tamaño pueda componer, y ahí la orden mínima la deja en +0,011-0,016 USD por cierre. Para la lente H1: la unidad de riesgo sólo importa en dos de ocho peldaños; en los demás ni un tamaño perfecto compondría nada.",
+    "evidencia": "0.90 0.1000 … lectura 0.604 … p_tp_oraculo 0.477 … ev_R_oraculo +0.35 … trades 44 wr_neto 0.4091 pnl_neto -0.11794 rechazos «sin rechazos»",
+    "dueno": "Línea C"
+   }
+  ],
+  "sintesis": "Según la medición, la ventaja conocida muere en tres sitios distintos según el capital. A 13 USD no muere en ninguna puerta de riesgo: todas las aperturas son la orden mínima (5,2-5,9 USD, margen 0,87-1,18, L 5-6, conf 0,98), el pnl por cierre nunca pasa de +0,016 USD y el mejor peldaño (d = 0,2 %) compone +10,8 % en 50 h; entre a = 0,6 y 0,9 el motor es plano con 0 rechazos porque el núcleo lee 0,60 donde el oráculo lee 0,9 (H3), y sólo el nulo y d = 0,05 % reciben REJ_EV (929, 502). A 100 USD muere en REJ_FEE_IMPACT (lib.rs:1229/1417): al salir de micro el límite baja de 3,5 % a max_fee_pct = 1 % mientras el Kelly frío (¼·clamp_min = 0,0085) obliga a un rescate L ≈ 8 para alcanzar el mínimo: 3429/3523 rechazos, 7 y 1 trades, y es absorbente porque sin cierres el PF_lcb no sale de ≤ 1. A 1 000 USD muere en la envolvente del replay (LF-12 medido): a=0,95 cierra exactamente en n = 30 con p_LCB(1,64) ≈ 0,455 y b ≈ 1, 5 574 anulaciones invisibles («sin rechazos»), mientras d = 0,2 (wr 0,65, p_LCB ≈ 0,51) pasa y da +2,05 % con un nocional implícito de ≈ 80 USD (8 % frente al 42 % de 13 USD: la fracción cae ÷5, H1-02 en su dirección pero no en sus números). Las predicciones de H1 aciertan la cota (capital ≤ 15 USD, tamaño binario, contadores de tamaño a cero en micro) y fallan en lo que la medición revela: la envolvente sí anula en micro (124 en a=0,7, ventana 0 < f < f_min de kelly_envelope.rs:408), REJ_EV llega a 0 desde a = 0,6, y el capital no se pierde por la curva f(C) sino por dos puertas (fee_impact y envolvente) que la tabla no muestra. Arreglo en la zona propia de la Línea H: (1) nuevo `crates/backtest-engine/tests/t3_tamano_por_cierre.rs` que conserve `out_pnl` y publique por peldaño max|pnl|, media|pnl|, pnl por cierre y el nocional implícito, con una aserción de tamaño binario en micro (max|pnl| ≤ 5,9·TP) que detecte cuándo D1 cambie el tamaño; (2) nuevo `t3_envolvente_offline.rs` que reconstruya la secuencia de cierres desde `out_pnl` y reproduzca `RiskEnvelope::record_trade` + `max_leverage(cap, stop, min_notional, z(w), k(w))` para C0 ∈ {13, 26, 50, 100, 215, 500, 1 000} e imprima el primer n en que la envolvente cerraría y si reabre, convirtiendo en columna la puerta hoy invisible; (3) nuevo `t3_escalera_capital_fino.rs` sobre a=0,9 d=0,2 con capitales 13, 26, 40, 50, 65, 100, 215, 500, 1 000 y columnas trades, fee_impact y pnl_pct para delimitar el valle y el punto en que el Kelly cubre el mínimo a L ≤ 7; (4) documentar en docs/audit/linea_h/ la tabla de tamaño medida (nocional por cierre, fracción al stop por capital, n de cierre de la envolvente) y pedir a la Línea C/E, fuera de la zona H, exportar envelope_vetoes y diag_notional en out_stats."
+ },
+ "H2-evidencia": {
+  "lente": "H2 evidencia, calibración y puerta EV (ids H2-*)",
+  "veredictos": [
+   {
+    "id": "H2-1",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "calibration.rs:138-141 hace exactamente `w·ajustada + (1−w)·score`, y toda puntuación EJECUTADA en el T-3 vale 0,98 (OPEN TRACE conf=0,98 en todas; score_at_entry = pos.confidence = raw_confidence_score, core lib.rs:4207/8151/8649; techo de confianza_modulada :491), por encima de p_gate ≈ 0,427: el olvido sólo reabre. La aritmética del lector es correcta (Δt* = 5,0 h con s=0,95, p_adj=0,25); con el s real de 0,98 es 4,8 h (w < 0,553/0,73 = 0,7575). La cota general «toda puntuación cruda ≥ 0,51» tiene una excepción no vista (conviccion_de_rama y el multiplicador espectral pueden bajar la puntuación de una intención no ejecutada), pero no afecta a lo que Platt aprende.",
+    "lo_que_dice_la_escalera": "Fila a=0,50: REJ_EV=929 evaluaciones (≈31 velas×30 ticks de puerta cerrada sobre 3 000 velas) y 36 cierres: la puerta se cierra y vuelve a abrirse, no es absorbente; la tabla no separa reaperturas por olvido de las que vienen del prior/sonda.",
+    "dueno": "Línea E"
+   },
+   {
+    "id": "H2-2",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "risk lib.rs:1154-1158 toma `intent.win_probability` puntual si está en (0,1) y `calibrate_at` siempre devuelve sigmoid ∈ (0,1) (calibration.rs:111/141): la rama jerárquica :1166-1174 es inalcanzable. p_gate = (SL+1,25·f)/(TP+SL) sale de :1187 (min_ev_mult = 1,25 con scarcity=1) y :1216-1218; con 38/89/13 pb da 0,427. Con s=0,98 (no 0,95) el post-sonda k=0 da 3,763/8,84 = 0,4257 < 0,4272 (cierra por 0,0015) y n₁(p=0,25) = 12.",
+    "lo_que_dice_la_escalera": "Fila a=0,90/d=0,10: wr_neto=0,409 < 0,427 y REJ_EV=0 — exactamente el sesgo optimista: (3,763+18)/47,84 = 0,455 > 0,427. Fila a=0,90/d=0,05: wr_neto=0,432 y REJ_EV=502: la puerta la decide la trayectoria (transitorios post-sonda, p_gate mayor a τ corta) y no la tasa final; la tabla no puede separar ambas causas (H2-6).",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H2-3",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "HIGH",
+    "razon": "Mismo mecanismo que hallazgos.tsv core-tick-a:118 (HIGH) y core-mods-a:79, y pedido LG-5: etiqueta `net_trade_pnl > 0` (core lib.rs:4332) para Platt (4469-4479), conformal (4458), win_rate (4491) y rama_registro (4394), y la puerta multiplica p por el TP entero (risk :1177). La escalera lo CONFIRMA numéricamente: en a=0,6/0,7 el acierto neto supera a P(TP primero) del oráculo en +0,15 con +1,6/+1,8 pb netos por cierre (muchas victorias truncadas), y a 1 000 USD/a=0,95 un wr de 0,60 pierde 0,498 USD en 30 cierres.",
+    "lo_que_dice_la_escalera": "wr_neto − p_tp_oraculo: +0,086 (nulo), +0,154 (a=0,6), +0,164 (a=0,7), +0,070 (a=0,8), −0,068 (a=0,9), +0,067 (a=0,95), +0,080 (d=0,05), −0,005 (d=0,2); pnl_neto/trades = −6,4/+1,6/+1,8/+1,0/−4,9/+20,5/−3,2/+28,8 pb del nocional.",
+    "dueno": "Línea E"
+   },
+   {
+    "id": "H2-4",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "LOW",
+    "razon": "calibration.rs:233 (`.max(0.0)`) y :224-228 fijan pendiente ≥ 0 sobre una sola dimensión: el mecanismo es real. Pero los racimos 0,95/0,779 que calcula el lector son los de la rama ML ANTES de conviccion_de_rama (:6217) y de la modulación espectral (:491): la puntuación ejecutada en el T-3 es 0,98 en todas las aperturas, un solo racimo, así que Platt degenera a una Beta de un punto y el escenario por lado no puede darse aquí. La consecuencia numérica (p ≈ 0,45 para ambos lados) no está demostrada.",
+    "lo_que_dice_la_escalera": "No medible: serie y tocón simétricos, sin wr por lado en la tabla, y conf=0,98 en todas las aperturas.",
+    "dueno": "Línea E"
+   },
+   {
+    "id": "H2-5",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "HIGH",
+    "razon": "kelly_envelope.rs:386-390 sólo rescata con micro_w > 0; micro_weight = 1 si capital/min_notional ≤ 3 y 0 si ≥ 10 (capital_regime.rs:64/68/94-106): 13 USD → 1, 100 y 1 000 USD → 0. En el replay exec=0 si no operable (booktick_replay.rs:771-772) ⇒ Err(Envolvente) ⇒ rollback y contador local (:804-807). La escalera lo muestra con un número que el lector no tenía: a 1 000 USD/a=0,95 opened=5 604 y closes=30, es decir 5 574 entradas revertidas desde el cierre 30. Matiz: no mata la p (p̂=0,60, lcb(1,64; n=30)=0,455) sino el pago: 30 cierres con wr 0,60 y −0,498 USD ⇒ avg_win/avg_loss < 12/18 = 0,67 ⇒ kelly = 0,455 − 0,545/0,67 < 0 (:281); el n ≈ 270 del lector supone b=1,49 que no se realiza. Registrado como host:255/LF-12 pero sin este dato ni esta causa.",
+    "lo_que_dice_la_escalera": "1 000 USD/a=0,95: 5 574 reversiones y «sin rechazos»; 1 000 USD/d=0,2: 89/89 y +2,05 %; 13 USD: 0 reversiones en 6 de 8 peldaños (micro_w=1); 100 USD: el veto es fee_impact, no la envolvente.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H2-6",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "t3:342-371 atribuye sólo con la diferencia de REJECT_COUNTERS; envelope_vetoes es local al runner (backtest lib.rs:125) y no sale ni con TG_TRACE_NATIVO (:545-548 imprime opened/council/ml/closes); `rej()` cuenta por evaluación (risk :165-166). La medición lo convierte en defecto demostrado: la fila 1 000 USD/a=0,95 publica «sin rechazos» con 5 574 reversiones y la fila a=0,7 publica «sonda_ocupada=20» con 124 (231 abiertas, 107 cierres). Subo a MED porque fuera de micro la columna «rechazos» atribuye mal al asesino dominante.",
+    "lo_que_dice_la_escalera": "opened−closes: 0/0/124/0/0/0/1/0 a 13 USD; 0/0 a 100 USD; 5 574/0 a 1 000 USD; ninguna cifra aparece en la columna rechazos.",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H2-7",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "LOW",
+    "razon": "t3:60-64/250-252 usan SL_REF 0,5 %, RR 2,25 y f = 10 pb (0,20 R) y el motor abre a τ 40-100 s con su propia geometría (tpsl_gate, risk :934): dos geometrías distintas, cierto. Pero el «≈ 0,14 R» de sobreestimación es la diferencia de fricción (0,34−0,20) y el propio ejemplo del lector da 0,75−0,66 = 0,09 R; además el TP/SL real del motor en el T-3 no está en la tabla, así que ni el signo ni el tamaño del sesgo quedan demostrados.",
+    "lo_que_dice_la_escalera": "Techo = EV_R×0,027 USD×trades: 1,98 USD (a=0,95) y 2,26 USD (d=0,2) frente a 1,25/1,41 del motor (63 %/62 %); la fracción cambia con la geometría de referencia, que no es la del motor.",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H2-8",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "INFO",
+    "razon": "core lib.rs:195-196 delega en conviccion_de_rama_en(…, 0,5): mismo mecanismo que hallazgos.tsv core-helpers:71 (MED) y core-tick-c:173 (HIGH). El lector ya dice que el T-3 a n=3 000 no lo prueba.",
+    "lo_que_dice_la_escalera": "No medible: diag_sin_conviccion no se exporta; a ≤ 2 cierres/h ninguna rama llega a n ≈ 39 en 12 h.",
+    "dueno": "Línea E"
+   },
+   {
+    "id": "H2-9",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "INFO",
+    "razon": "conformal.rs:105-108 y :175 son como se citan; mismo mecanismo que hallazgos.tsv core-mods-a:78 y G014/G024. La escalera añade que su efecto es nulo: el conformal sólo vota en el consejo y el consejo vetó 6/0/0/0/1/0/1/0 por peldaño.",
+    "lo_que_dice_la_escalera": "council_vetoes = 6 (nulo), 1 (a=0,9), 1 (d=0,05), 0 en el resto: la abstención conformal no se traduce en vetos.",
+    "dueno": "Codex"
+   },
+   {
+    "id": "H2-10",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "INFO",
+    "razon": "core lib.rs:2261-2287 etiqueta por vela contra sl_at_tau(30 s) con piso 10 pb, como se cita; mismo mecanismo que hallazgos.tsv core-event:53, core-mods-b:104/105 y core-tick-a:136. Con un solo modelo por moneda no mueve decisiones; ml_vetoes = 0 en los 8 peldaños es consistente.",
+    "lo_que_dice_la_escalera": "No medible (has_significant_skill no se exporta); diag_ml_vetoes = 0 en todas las filas.",
+    "dueno": "Línea E"
+   }
+  ],
+  "predicciones": [
+   {
+    "medida": "Peldaño nulo (a=0,5, d=0): REJ_EV, operaciones, wr_neto, PnL",
+    "prediccion": "REJ_EV ≥ 800 y ≥ 80 % de los rechazos; 15-40 operaciones; wr_neto ∈ [0,20, 0,32]; PnL ∈ [−0,40, −0,05] USD; REJ_VIABILIDAD = 0",
+    "resultado": "PARCIAL",
+    "numero": "REJ_EV=929 (100 % de los rechazos); trades=36; wr_neto=0,361; pnl=−0,126 USD; viabilidad=0; diag_sin_conviccion no exportado",
+    "que_aprende": "Refuerza H2-1/H2-2 (la puerta cierra en el nulo y la cuenta de cierres cae en el rango n₁+olvido+sonda), pero refuta el tramo de wr: 0,361 frente a ≤ 0,32 y frente a p_tp_oraculo 0,275 — la etiqueta neto>0 infla el acierto incluso sin ventaja (H2-3)."
+   },
+   {
+    "medida": "REJ_EV frente a a en {0,6; 0,7; 0,8} con d=0,1 %",
+    "prediccion": "REJ_EV ≥ 60 % del nulo y wr_neto ∈ [0,25, 0,40]; el primer peldaño con REJ_EV < 50 % del nulo es el primero con wr_neto > 0,41-0,44",
+    "resultado": "FALLADA",
+    "numero": "REJ_EV = 0 / 0 / 1 (0 %, 0 %, 0,1 % del nulo); wr_neto = 0,460 / 0,477 / 0,433",
+    "que_aprende": "Refuta la premisa del lector (regímenes cortos ⇒ wr ≤ 0,40): el acierto neto es 0,43-0,48 porque las victorias se truncan (+1,0 a +1,8 pb netos por cierre), no porque el motor lea el régimen; la cláusula de acoplamiento (REJ_EV cae cuando wr cruza 0,41) se cumple trivialmente en los tres y queda en el filo en a=0,9/d=0,1 (wr 0,409, REJ_EV 0), que es lo que el sesgo +0,046 de H2-2 con s=0,98 predice."
+   },
+   {
+    "medida": "a=0,9 y a=0,95 (d=0,1 %): REJ_EV, operaciones, wr_neto, PnL",
+    "prediccion": "Si wr ≥ 0,45: REJ_EV ≤ 50 % (a=0,9) / ≤ 30 % (a=0,95) del nulo, 30-120 operaciones, PnL > 0 pero ≤ +1 USD; si wr ∈ [0,40, 0,45]: puerta parpadeante con REJ_EV 50-100 % del nulo",
+    "resultado": "PARCIAL",
+    "numero": "a=0,95: REJ_EV=0, trades=111, wr=0,640, pnl=+1,251 USD; a=0,90: REJ_EV=0, trades=44, wr=0,409, pnl=−0,118 USD",
+    "que_aprende": "a=0,95 cumple salvo el tope (+1,25 > +1,0 USD). a=0,90 falla en lo central: con wr en [0,40, 0,45] la puerta NO parpadea (0 rechazos) y el PnL es negativo; la ventaja (oráculo +0,35 R, p_tp 0,477) muere en el núcleo (44 aperturas, 0 vetos ML, 1 veto consejo), no en la puerta EV, que el prior a s=0,98 mantiene abierta."
+   },
+   {
+    "medida": "a=0,9 con d=0,05 % y con d=0,2 %",
+    "prediccion": "d=0,05 %: wr_neto < 0,35 y REJ_EV ≥ 70 % del nulo; d=0,2 %: wr ≥ 0,50, REJ_EV ≤ 20 % del nulo, ≥ 80 operaciones, PnL +0,3 a +1,0 USD",
+    "resultado": "PARCIAL",
+    "numero": "d=0,05: wr=0,432, REJ_EV=502 (54 % del nulo), pnl=−0,143 USD (el peor de la escalera); d=0,2: wr=0,652, REJ_EV=0, trades=89, pnl=+1,408 USD (+10,8 %)",
+    "que_aprende": "La dirección es correcta (d=0,05 es el único peldaño persistente con rechazos EV y el peor PnL; d=0,2 es el mejor), pero las magnitudes fallan en los dos lados: el acierto neto no baja de 0,43 ni siquiera cuando la deriva no paga la fricción, y el mejor peldaño gana ×1,4 más de lo previsto."
+   },
+   {
+    "medida": "Pendiente de la p calibrada frente a a (mediana de win_probability en rechazos y aperturas)",
+    "prediccion": "p_cal − wr_neto = +0,08 a +0,12 en el nulo y +0,02 a +0,04 en los altos; p_cal nunca por debajo de wr más allá de 2σ",
+    "resultado": "NO_MEDIBLE",
+    "numero": "p_cal no se registra (H2-6). Indicio indirecto: a=0,9/d=0,1 wr=0,409 < p_gate 0,427 con REJ_EV=0 ⇒ p_cal ≥ 0,427 (Beta con s=0,98, n=44: 0,455); a=0,9/d=0,05 wr=0,432 con REJ_EV=502",
+    "que_aprende": "El indicio de a=0,9/d=0,1 refuerza el sesgo optimista; el de d=0,05 obliga a admitir transitorios o p_gate por τ que la tabla no puede separar: la predicción sigue sin contrastar."
+   },
+   {
+    "medida": "Estado de la puerta inmediatamente después de la sonda (cierres 5→6)",
+    "prediccion": "La sexta orden sólo se rechaza por EV si los 5 cierres de la sonda perdieron (p = 0,413 con s=0,95)",
+    "resultado": "NO_MEDIBLE",
+    "numero": "Sin registro por cierre. Con el s real de 0,98: k=0 ⇒ 3,763/8,84 = 0,4257 frente a p_gate 0,4272 (cierra por 0,0015); k=1 ⇒ 0,539",
+    "que_aprende": "La aritmética sobrevive con s=0,98 pero al filo: el estado post-sonda lo decide el prior, como dice H2-2; la escalera no lo observa."
+   },
+   {
+    "medida": "REJ_CONFIDENCE / REJ_EV por peldaño",
+    "prediccion": "Entre 0,10 y 0,25 en el nulo y en d=0,05 %; tiende a 0 con wr ≥ 0,45",
+    "resultado": "FALLADA",
+    "numero": "REJ_CONFIDENCE = 0 en los 8 peldaños (0/929 en el nulo, 0/502 en d=0,05)",
+    "que_aprende": "El modificador epigenético no mordió en 50 h; peor, con conf=0,98 en el techo (core :491) y min_required_confidence acotado a 0,98 (risk :1118) la comparación estricta `<` nunca puede rechazar: la puerta de confianza es estructuralmente inerte para estas intenciones (nuevo H2-N4)."
+   },
+   {
+    "medida": "envelope_vetoes, diag_council_vetoes, diag_ml_vetoes por peldaño y con más capital",
+    "prediccion": "envelope_vetoes = 0 en todos los peldaños a 13 USD; ml_vetoes > council_vetoes y creciente con a; a ≥ 65 USD envelope_vetoes > 0 desde el cierre 30 en todo peldaño con wr < 0,45",
+    "resultado": "PARCIAL",
+    "numero": "13 USD opened−closes = 0/0/124/0/0/0/1/0; ml_vetoes = 0 en todos; council = 6/0/0/0/1/0/1/0; 1 000 USD/a=0,95: 5 574 reversiones desde el cierre 30 con wr 0,60; 100 USD: fee_impact=3 429/3 523 y 7/1 cierres",
+    "que_aprende": "Falla a 13 USD (124 reversiones en a=0,7, de otro Err: margen, no envolvente) y en el ML (0). Acierta en dirección a 1 000 USD, pero por la causa contraria: la envolvente revierte con wr 0,60 porque el pago realizado es b < 0,67 (H2-N3), no porque p < 0,45; y a 100 USD el asesino es fee_impact (H2-N1), que nadie predijo."
+   },
+   {
+    "medida": "Mezcla de motivos de salida y P(TP primero) del motor frente a wr_neto",
+    "prediccion": "En a ≥ 0,9 los cierres por TP/SL < 60 %; wr_neto − P(TP primero) ≥ +0,08; R neta media +0,05 a +0,25 R con wr ≥ 0,50",
+    "resultado": "NO_MEDIBLE",
+    "numero": "reason_code no se registra. pnl_neto/trades = +20,5 pb del nocional (a=0,95) y +28,8 pb (d=0,2); con cualquier SL ≤ 80 pb eso es ≥ +0,26 R, por encima del rango previsto",
+    "que_aprende": "La cláusula de R por operación queda en entredicho (el motor gana por cierre más de lo que el lector asumía), pero sin TP/SL por orden no se puede convertir pb en R; la mezcla de salidas sigue sin medir."
+   },
+   {
+    "medida": "capital_final − 13 USD y fracción del techo por peldaño",
+    "prediccion": "≤ +1,0 USD (≤ +8 %) en el mejor peldaño; entre −0,4 y +0,1 USD en los demás; fracción motor/techo < 0,30 en todos; ningún peldaño cerca de +100 % en 3 días",
+    "resultado": "PARCIAL",
+    "numero": "Mejor: +1,408 USD (+10,8 %, d=0,2) y +1,251 (+9,6 %, a=0,95); resto: −0,126/+0,057/+0,104/+0,048/−0,118/−0,143; fracción motor/techo = 0,63 (a=0,95: 1,25/1,98) y 0,62 (d=0,2: 1,41/2,26); +10,8 % en 50 h",
+    "que_aprende": "La forma es correcta (el tamaño acota, no la puerta) pero la magnitud se subestima ×1,5-2: el motor neta +0,011/+0,016 USD por cierre, no +0,007, y captura el 60-70 % del retorno del oráculo a 5 velas (20,5 de 28,8 pb; 28,8 de 47,6). El techo del T-3 (geometría SL 0,5 %) no es comparable (H2-7)."
+   }
+  ],
+  "nuevos": [
+   {
+    "id": "H2-N1",
+    "severidad": "HIGH",
+    "archivo": "crates/risk-engine/src/lib.rs",
+    "linea": 1229,
+    "defecto": "A 100 USD la cuenta no puede operar: el asesino es REJ_FEE_IMPACT, no la envolvente ni la puerta EV. Con micro_w_alloc = 0 (100/5 = 20 ≥ STANDARD_FULL_ROOM 10, capital_regime.rs:68/99) `max_fee_limit = lerp(max_fee_pct, 0,035, 0) = max_fee_pct = 20·taker = 1 %` (genome.rs:759), de modo que cualquier rescate del nocional mínimo (:1322-1327, :1400-1405) que necesite L·f_rt > 1 % (L ≥ 8 con f_rt ≈ 13 pb, es decir un margen Kelly < 0,69 USD sobre 100 USD) se rechaza en :1417-1419. H1 predijo fee_impact = 0 con el tope micro (0,035 ⇒ L > 27) y H2 predijo la envolvente a 65 USD; ninguno vio el agujero entre micro (13 USD: inflado al mínimo) y estándar (1 000 USD: envolvente).",
+    "evidencia": "100 USD: a=0,95 trades=7, fee_impact=3 429; d=0,2 trades=1, fee_impact=3 523; 1 000 USD: sin fee_impact (margen Kelly ≥ 5,4 USD a 1×)",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H2-N2",
+    "severidad": "MED",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 412,
+    "defecto": "La columna «rechazos» de la tabla atribuye mal fuera de micro y en el peldaño más activo: publica «sin rechazos» en 1 000 USD/a=0,95 con 5 574 entradas revertidas por la envolvente (opened 5 604, closes 30) y «sonda_ocupada=20» en a=0,7 con 124 reversiones (231 frente a 107, Err::Margen de envio.rs:96-98 cuando dos posiciones a 1× retienen 10,8 de 13 USD). El test ya fija TG_TRACE_NATIVO (:283) pero no captura opened/closes ni envelope_vetoes (backtest lib.rs:125) en la fila TSV; sin esa columna, «dónde muere la ventaja» se lee al revés en los dos peldaños de más capital.",
+    "evidencia": "opened−closes = 0/0/124/0/0/0/1/0 (13 USD), 0/0 (100 USD), 5 574/0 (1 000 USD); rechazos_texto sólo ve REJECT_COUNTERS",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H2-N3",
+    "severidad": "MED",
+    "archivo": "crates/risk-engine/src/kelly_envelope.rs",
+    "linea": 281,
+    "defecto": "Fuera de micro la envolvente mata por el PAGO realizado, no por la p: a 1 000 USD/a=0,95 los 30 cierres del arranque dan wr 0,60 (lcb(1,64) = 0,455, que con el b = 1,49 del lector bastaría) pero pierden 0,498 USD ⇒ avg_win/avg_loss < 12/18 = 0,67 ⇒ b_lcb ≤ 0,67 (sin descuento si b ≤ 1, :244-250) ⇒ kelly = 0,455 − 0,545/0,67 < 0 ⇒ f = 0 y, con micro_w = 0, no operable. Es la disociación que pedía la lente: la puerta EV aprueba la misma serie con p de la etiqueta neto>0 (60 % de «aciertos»), y el único consumidor del R realizado (record_trade con avg_win/avg_loss, backtest lib.rs:391-408) dice que no hay ventaja. H2-3 (victorias truncadas) y H2-5 (LCB absorbente) se componen; el n ≈ 270 de H2-5 supone un b que no se realiza.",
+    "evidencia": "1 000 USD/a=0,95: trades=30, wr=0,600, pnl=−0,498 USD, luego 5 574 reversiones; 1 000 USD/d=0,2: wr=0,652, +20,47 USD, 0 reversiones",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H2-N4",
+    "severidad": "LOW",
+    "archivo": "crates/risk-engine/src/lib.rs",
+    "linea": 1119,
+    "defecto": "La puerta de confianza es estructuralmente inerte para toda intención en el techo: confianza_modulada acota la puntuación a 0,98 (core lib.rs:491) y min_required_confidence se acota a 0,98 (:1118); la comparación `confidence < min_required_confidence` es estricta, así que 0,98 nunca se rechaza por mucho que suba el modificador epigenético. Consecuencia para el calibrador: todas las órdenes ejecutadas en el T-3 llegan con s = 0,98 (OPEN TRACE), Platt degenera a una Beta de un solo punto (p_n ≈ (3,76 + k)/(3,84 + n)), la pendiente `a` es inidentificable y el sesgo optimista de H2-2 es el máximo posible (s − p = 0,98 − p).",
+    "evidencia": "REJ_CONFIDENCE = 0 en los 8 peldaños; conf=0,98 en las 100 primeras aperturas de cada corrida",
+    "dueno": "Línea E"
+   },
+   {
+    "id": "H2-N5",
+    "severidad": "MED",
+    "archivo": "crates/risk-engine/src/lib.rs",
+    "linea": 1217,
+    "defecto": "REJ_EV no es monótono en a ni función de wr_neto: 929 (wr 0,361), 0 (0,460), 0 (0,477), 1 (0,433), 0 (0,409), 0 (0,640), 502 (0,432), 0 (0,652). La puerta queda abierta con wr 0,409 y cierra 502 veces con wr 0,432: su estado lo fijan el prior a s=0,98, los transitorios y el p_gate propio de cada τ, no la tasa realizada. En los seis peldaños con a ≥ 0,6 y d ≥ 0,1 % el riesgo no rechaza nada: la puerta EV es permisiva, no restrictiva, y la ventaja que muere a 13 USD (a=0,9/d=0,1: oráculo +0,35 R y p_tp 0,477; motor 44 aperturas, wr 0,409, −4,9 pb/cierre, 0 vetos ML, 1 veto consejo, 0 rechazos) muere en la generación de intenciones del núcleo, no en el riesgo.",
+    "evidencia": "Columnas rechazos, trades, wr_neto y opened/council/ml por fila; a=0,9/d=0,1 es el único peldaño persistente con PnL < 0 y 0 rechazos",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H2-N6",
+    "severidad": "INFO",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 406,
+    "defecto": "El acierto neto se separa de P(TP primero) hacia ARRIBA en 6 de 8 peldaños: wr_neto − p_tp_oraculo = +0,086 (nulo), +0,154 (a=0,6), +0,164 (a=0,7), +0,070 (a=0,8), −0,068 (a=0,9), +0,067 (a=0,95), +0,080 (d=0,05), −0,005 (d=0,2), con pnl_neto/trades de −6,4/+1,6/+1,8/+1,0/−4,9/+20,5/−3,2/+28,8 pb del nocional. Un wr de 0,46-0,48 que neta +1,6-1,8 pb por cierre es la firma de las victorias truncadas (LG-5); el motor captura el 60-70 % del retorno del oráculo a 5 velas sólo en a=0,95 y d=0,2 (20,5 de 28,8 pb; 28,8 de 47,6 pb).",
+    "evidencia": "Columnas wr_neto, p_tp_oraculo, oraculo_5v_bps, pnl_neto y trades de las 8 filas",
+    "dueno": "Línea H"
+   }
+  ],
+  "sintesis": "Según los números, a 13 USD la puerta EV no mata la ventaja: sólo cierra en el nulo (929) y en d=0,05 % (502), los dos peldaños con EV_R del oráculo ≤ 0, y en los seis con a ≥ 0,6 y d ≥ 0,1 % el riesgo no rechaza nada porque el prior de Platt a s=0,98 (una sola puntuación en todas las aperturas) la mantiene abierta incluso con wr 0,409 < p_gate 0,427. La ventaja muere en a=0,9/d=0,1 % (oráculo +0,35 R, p_tp 0,477) dentro del núcleo: 44 aperturas, −4,9 pb por cierre, cero vetos de riesgo, ML y envolvente — dirección y τ (H3), no evidencia. En a=0,95 y d=0,2 % el motor neta +20,5/+28,8 pb por cierre (60-70 % del oráculo a 5 velas) y el techo lo pone la unidad de riesgo de 5,4 USD (+1,25/+1,41 USD), no una puerta. Con más capital la cadena se rompe en dos sitios que nadie predijo bien: a 100 USD REJ_FEE_IMPACT (3 429/3 523) porque el tope pasa de 3,5 % a max_fee_pct = 1 % con micro_w = 0 y el rescate al mínimo exige L ≥ 8 (7 y 1 cierres); a 1 000 USD la envolvente revierte 5 574 entradas desde el cierre 30 en a=0,95 con wr 0,60, no por la p sino porque el pago realizado es b < 0,67 — las victorias truncadas que la etiqueta neto>0 cuenta como aciertos — mientras la fila publica «sin rechazos». Ahí está la disociación que pedía la lente: la p de la cadena (etiqueta neto>0) dice 60 % y el dinero (b realizado) dice sin ventaja; el único consumidor del R realizado es la envolvente y sólo actúa fuera de micro. Arreglo en zona propia de la Línea H: (1) nuevo test crates/backtest-engine/tests/t3_evidencia_realizada.rs que, a partir de out_pnl (ya disponible por cierre), calcule por peldaño b_real = media_win/media_loss, p*_real = 1/(1+b_real), EV_real en R, y reproduzca fuera de línea la envolvente (record_trade con los mismos EWMAs de backtest lib.rs:391-408 y max_leverage a z 1,64/0,85) para publicar el cierre n* en que deja de ser operable, p_lcb y b_lcb, y la Beta-Platt con s=0,98 frente a p_gate para modelar REJ_EV; (2) nuevo test t3_escalera_capital_fina.rs con capitales {13, 26, 52, 100, 200, 500, 1000} sobre los dos peldaños fuertes para localizar el agujero de fee_impact y el muro de la envolvente, y con columnas opened/closes derivadas de core.diag_* si se expone un hook de lectura, o al menos trades frente a REJ_FEE_IMPACT; (3) columna del techo a varias geometrías (SL 20/30/38/50 pb, RR 2,25) para que la fracción motor/techo sea comparable (H2-7); (4) docs/audit/linea_h/t3_lectura_h2.md con estos veredictos, los números y la lectura «la puerta EV es permisiva; lo que mata fuera de micro es el pago realizado y la comisión por apalancamiento»."
+ },
+ "H3-direccion": {
+  "lente": "H3-direccion",
+  "veredictos": [
+   {
+    "id": "H3-01",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "stateful_engine.rs:567-569 exige base·2^racha con racha = racha_amortizada (:532-533) y niveles = floor(log2(1+t/base)) (:515): con base 120 s y racha 3, a t=240 s quedan 2 niveles (480 > 240, no), a t=360 s queda 1 (240 ≤ 360, abre) ⇒ 3·base; racha 2 ⇒ 2·base, racha 4 ⇒ 4·base, racha 5 ⇒ 7·base. El anti-whiplash (lib.rs:7880-7884) usa el mismo streak amortizado. Guarda que el lector no vio: el contrato d754 (stateful_engine.rs:1922-1926) afirma explícitamente que racha 3 abre a 3 s con base 1 s («se amortizan 2 niveles: queda 1 y se exigen 2 s»), así que el test consagra k·base; el defecto es el comentario (:503-510, :555-556) que promete base·2^k. Severidad MED: con base = min(τ_cierre, τ_dom) ≈ 40-100 s (OPEN TRACE), 3·base frente a 8·base son 3 frente a 8 min, y la cadencia medida (27-83 min entre cierres) está muy por encima: el enfriamiento no es la puerta de ritmo que ata.",
+    "lo_que_dice_la_escalera": "Columna trades: 36/63/107/90/44/111/81/89 en 50 h ⇒ 0,7-2,2 cierres/h; ningún peldaño muestra una cadencia compatible con un enfriamiento de minutos como cuello; el hueco tras k pérdidas no se publica (no medible).",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H3-02",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "HIGH",
+    "razon": "lib.rs:1967-1971 aplana toda intención cuyo signo contradiga composite_score, y puertas_del_continuo_con se aplica a la banda rápida (:6942) y a la lenta (:7299); backtest lib.rs:153-157 fija bid_ratio 0,8/0,2 por el signo de la vela previa y :316-317 da |OBI| = (0,1+v)/(0,7+0,6v) > 0 siempre, así que el signo del compuesto es el de la vela previa. La aritmética es exacta: la columna lectura reproduce ℓ = (0,433+d)/0,866 (0,615 → 0,603-0,627 medido a d=0,1; 0,558 → 0,559 a d=0,05; 0,731 → 0,728 a d=0,2). Matiz: ℓ es el suelo incondicional, no un techo: el tocón ML (stateful_engine.rs:1153-1157, EMA rápida/lenta) y las demás puertas condicionan hacia arriba, y el wr 0,640 a a=0,95 supera 0,603.",
+    "lo_que_dice_la_escalera": "proxy_1v/5v negativo en TODOS los peldaños d=0,1 % (−7,8/−4,7 pb a a=0,95 frente a oráculo −0,5/+28,8) y positivo sólo a 20 velas (+4,8) o con d=0,2 (+16,3/+31,7): la lectura de una vela que D-472 impone es neta negativa a 1-5 velas; p_tp_proxy 0,389 frente a 0,573 del oráculo.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H3-03",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "lib.rs:5473-5478 fija piso_tendencia = Z95·sigma_from_atr(atr)·ema_spread_sd(9,21) y diffusion.rs:74-83 da ema_spread_sd(9,21) = √(1,778+4,762−2·2,667) = 1,098; bull_signal exige macro_trend > ese piso (:5495-5496). Tres correcciones, todas en la dirección del lector: (i) sigma_from_atr divide el ATR por 1,596 (diffusion.rs:57-60) y con las mechas del fixture (±0,15-0,35 %) el ATR ≈ 0,45 % ⇒ σ ≈ 0,29 % ⇒ piso ≈ 0,62 %, no 0,54 %; (ii) tras un giro el diferencial parte de −6d, no de 0: spread(t) = 6d − 20d·0,909^t + 8d·0,8^t, aún negativo a t=10 y sólo +0,31 % a t=20 con d=0,1 %, y con d=0,2 % cruza 0,6 % hacia t≈20, no t≈12; (iii) is_macro_bull (stateful_engine.rs:1381-1387) exige además precio y EMA21 sobre la EMA de 2 h. Severidad MED porque la escalera gana a a=0,95 por las ramas 15/11: el coste de las ramas muertas no está demostrado.",
+    "lo_que_dice_la_escalera": "OPEN TRACE: rama dominante 15 (y 11) en a ≥ 0,9; ninguna traza de 1/2/4/5/13 citada. Consistente con que is_confirmed_* no se alcanza en regímenes de 10-20 velas.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H3-04",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "MED",
+    "razon": "lib.rs:6087-6103 fija (0,00, 0,00) fuera de reversión y not_overextended_long = price_stretch ≤ 0; se usa en la rama 1 (:6542), en 11/12 (:6776, :6887) y la 13 tiene su propio swing_stretch_z ≤ 0 (:7054-7055). Guarda que el lector no vio: la rama 15 (:7147-7190) decide por confluencia_resonante (:674-698: fused, coherencia y marea_macro ≥ −tolerancia) y sus únicas puertas posteriores son puertas_del_continuo_con (:1922-2040: D-472, ML, CVD/muro), sin ley anti-persecución; como el OPEN TRACE dice que la 15 domina en a ≥ 0,9, «la única ventana de entrada es el cruce de la EMA21» es falsa para la rama que opera y sólo vale para la 11 (segunda). La consecuencia TP 1,1 % frente a regímenes de 10 velas sí la apoya la medición.",
+    "lo_que_dice_la_escalera": "a=0,9/d=0,1: pnl −0,118 USD, wr 0,409 (el peor de a ≥ 0,6) con oráculo +16/+26 pb y EV_R +0,35; a=0,95: +1,251 USD, wr 0,640, EV_R +0,66. El salto 0,9→0,95 (régimen 10→20 velas) es el que predijo el lector, aunque por otra puerta.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H3-05",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "consejo_seniors.rs:374-376 spectral_opinion = fused·tanh(2·persistencia); :427 Microestructura vota signum(imbalance); :801 ML vota ml_opinion(p, base); :1345-1356 aprueba con approval_threshold 0,35 (:1007); lib.rs:8211-8218 pasa persistence_at(dominant_tau_ms). La persistencia es la autocorrelación de signo de retornos de bloque con EWMA de 16 (temporal_spectrum.rs:13, :508-509), así que 2P−1 ≈ +0,05 (a=0,95, ℓ=0,615, bloques ≈ 1 vela) es la cantidad correcta; si la τ dominante fuera el nodo 19 (275 s ≈ 4,6 velas) saldría ≈ +0,2 ⇒ tanh(0,4) ≈ 0,4·|fused|, modesta igualmente. El consejo no es inerte: en el nulo veta 6 de 42.",
+    "lo_que_dice_la_escalera": "council_vetoes en persistentes: 0/63, 0/231, 0/90, 1/45 (2,2 %), 0/111, 1/82 (1,2 %), 0/89; 6/42 (14 %) sólo en el nulo; ml_vetoes = 0 en todos. Redundante con la deriva, no con el ruido.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H3-06",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "MED",
+    "razon": "backtest lib.rs:290-297 coreografía por tercios ✓; temporal_spectrum.rs:256 peso |persistencia|·2·gain ✓; :1218 pivote del centroide micro ✓; lib.rs:5924-5930 recorte [30 s, 30 min] ✓. Dos fallos: a la escala de 4,3 s (2 ticks) los bloques consecutivos dentro de un tercio van en el mismo sentido (bridge_drift ≈ 2 pb/tick frente a ruido ≈ 1 pb), así que su persistencia es POSITIVA, no negativa (sólo los bloques de ≈17 s alternan); y la τ medida de 40-100 s pertenece sobre todo a la rama 15, cuya τ sale de tau_operativa_unificada (temporal_spectrum.rs:1201-1208: τ dominante si hay habilidad, si no el centroide continuo), no del centroide micro. Un centroide a 40-100 s está en el nodo del minuto, no en el suelo de 30 s que produciría el dominio sub-minuto. La conclusión (τ ≈ 1 min ajena al régimen, por debajo de los 1-6 min del lector) la confirma el trace por otro camino.",
+    "lo_que_dice_la_escalera": "OPEN TRACE: τ 40-100 s en todas las aperturas a 13 USD, sin variación visible entre peldaños; la persistencia por escala y micro_resonant_tau_ms no se publican.",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H3-07",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "adaptive_quantiles.rs:226-232 devuelve obi_p80.max(0,02); :209-211 alimenta el P² con obi.abs() en cada tick (lib.rs:5917), así que es un cuantil marginal y por construcción ≈ 20 % de los ticks lo superan. backtest lib.rs:264 vol_noise = (z % 100)/100 y :316-317 dan |OBI| = (0,1+v)/(0,7+0,6v) ∈ [0,143; 0,846], p80 = f(0,8) = 0,763 (simétrico con vela previa bajista: (−1,1+v)/(1,3−0,6v)). lib.rs:6136-6145 y :6603/:6749 elevan min_obi_trend/pullback y range_obi al piso. La cota del 20 % de ticks y su dependencia de vol_noise son nuevas; el P² acumulativo ya está en G010 (verificacion.tsv:11).",
+    "lo_que_dice_la_escalera": "No medible directamente (|OBI| en la apertura no se imprime). La rama 11 aparece como segunda en a ≥ 0,9, compatible con una tasa de ticks admisibles del 20 %.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H3-08",
+    "veredicto": "REFUTADO",
+    "severidad_final": "LOW",
+    "razon": "sonda.rs:49-57: hay_sonda_abierta = any(trade_count < 5 && is_any_open), y con una moneda sólo puede dispararse contra la propia sonda — eso es correcto. Pero «sonda_ocupada ≈ 0 por construcción» lo desmiente la tabla: sonda_ocupada = 20 a a=0,7 y 9 a a=0,8. Se dispara cada vez que el núcleo emite una segunda intención (co-despacho o pirámide) mientras la sonda vive, cosa que el lector dio por imposible. Sigue valiendo el hueco de medición: el T-3 no puede medir lo que D4 cuesta en cadencia multiactivo.",
+    "lo_que_dice_la_escalera": "Columna rechazos: sonda_ocupada=20 (a=0,7), 9 (a=0,8), 0 en los demás seis peldaños.",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H3-09",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "LOW",
+    "razon": "lib.rs:1769 devuelve consenso_espectral_tau recortada a [30 s, 12 h] y :6933-6941 salta tau_de_la_orden_con cuando tau_fija; la malla es 1e-6·4^i (temporal_spectrum.rs:704-715 paso ln 4; SPECTRUM_SCALES_MS:89 → 68 719 = 1e-6·4^18) y el primer nodo ≥ TAU_ANCHOR_FAST_MS (30 000) es 68 719 ✓; co-despacho :7342-7352 con umbral 0,80 same-dir ✓. Pero «|Δ ln τ| cuantizada en múltiplos de ln 4» sólo vale entre dos τ de nodo: la τ de la rama 15 es continua (tau_operativa_unificada), así que en el propio ejemplo del lector (21 min) no hay cuantización. Solapa con core-tick-b lib.rs:5668.",
+    "lo_que_dice_la_escalera": "τ 40-100 s en el trace es compatible con la rama 11 en 68 719 ms, pero el histograma de τ por rama no se publica.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H3-10",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "INFO",
+    "razon": "lib.rs:4332 is_win = net_trade_pnl > 0 y risk lib.rs:1177 EV = p·TP − (1−p)·SL ✓. Mismo mecanismo que LG-5 (PLAN_LINEA_G:201, etiqueta neto > 0 frente a barrera) y G013 (verificacion.tsv:14: TasaAcierto cuenta cierres con neto > 0 y se compara con el p* del bracket). La consecuencia nueva (el contador EV no es constante en a) se cumple en dirección, pero es dependiente del camino, no del wr: a=0,8 (wr 0,433) EV=1 frente a a=0,9/d=0,05 (wr 0,432) EV=502.",
+    "lo_que_dice_la_escalera": "EV = 929 (100 % de los rechazos del nulo), 0/0/1/0/0 en a = 0,6…0,95 con d=0,1; 502 en a=0,9/d=0,05; 0 en d=0,2.",
+    "dueno": "Línea G"
+   },
+   {
+    "id": "H3-11",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "INFO",
+    "razon": "lib.rs:7871-7873: post-loss a contratendencia veta si transcurrido < base O (Long && p_stretch > 0), sin cota temporal en el segundo disyunto ✓. G036 (verificacion.tsv:37) ya lo registra con el mismo mecanismo: «tras una pérdida, veta las contrarias sin límite de tiempo». El escenario del lector (corto perdedor en régimen alcista deja vetado el largo mientras precio > EMA21) es correcto y no añade mecanismo.",
+    "lo_que_dice_la_escalera": "No medible: ni el motivo de veto ni la deriva perdida tras pérdida se publican; la cadencia media (27-83 min entre cierres) es compatible con huecos largos pero no los atribuye.",
+    "dueno": "Línea C"
+   }
+  ],
+  "predicciones": [
+   {
+    "medida": "Fracción de aperturas del lado del estado oculto por peldaño",
+    "prediccion": "0,50 (a=0,5) … 0,70-0,85 (a=0,95); nunca > 0,90",
+    "resultado": "NO_MEDIBLE",
+    "numero": "El trace no imprime el estado oculto por orden. Indirecto: lectura = 0,603-0,627 (d=0,1), 0,559 (d=0,05), 0,728 (d=0,2) reproduce ℓ = (0,433+d)/0,866; wr_neto 0,640 a a=0,95 > ℓ·a + (1−ℓ)(1−a) = 0,603",
+    "que_aprende": "Refuerza la aritmética de H3-02 (ℓ exacta) pero no puede probar la cota; el wr 0,640 sugiere que la conjunción con el tocón EMA condiciona por encima de ℓ, es decir, ℓ es suelo y no techo."
+   },
+   {
+    "medida": "τ de las órdenes: mediana y rango por peldaño y rama",
+    "prediccion": "Mediana 60 s-6 min, variación < ×2 entre peldaños; rama 11 en nodos; rama 15 con τ 3-10× mayor (10-40 min)",
+    "resultado": "PARCIAL",
+    "numero": "OPEN TRACE: τ 40-100 s en TODAS las aperturas a 13 USD, incluidas las de la rama 15 (dominante en a ≥ 0,9); 40 s queda bajo el mínimo predicho de 60 s; variación < ×2 ✓",
+    "que_aprende": "Refuerza la conclusión de H3-06 (τ ajena al régimen) pero refuta la parte de dos leyes de τ (H3-09) y la τ lenta de la rama 15: tau_operativa_unificada colapsa al nodo del minuto, la banda lenta no es lenta en el fixture."
+   },
+   {
+    "medida": "Ramas que abren por peldaño",
+    "prediccion": "1/2/4/5/13 = 0 con d ≤ 0,1; 15 y 11 ≥ 50 % en a ≥ 0,9; 7-10 dominan en a=0,5; 20-24 nunca",
+    "resultado": "PARCIAL",
+    "numero": "Trace: rama dominante 15 (y 11) en a ≥ 0,9 ✓; histograma completo, peldaño nulo y d=0,2 no publicados",
+    "que_aprende": "Refuerza H3-03 en la parte medible (las tendenciales no aparecen donde la 15/11 dominan); la revitalización de 1/4 con d=0,2 y el dominio de 7-10 en el nulo quedan sin medir."
+   },
+   {
+    "medida": "Operaciones por peldaño y cierres por hora",
+    "prediccion": "60-250 cierres por peldaño, crecientes con a, nulo el menor; 1,5-6/h; tras 3 pérdidas reapertura ≤ 15 min",
+    "resultado": "PARCIAL",
+    "numero": "36/63/107/90/44/111/81/89 cierres en 50 h = 0,72/1,26/2,14/1,80/0,88/2,22/1,62/1,78 por hora; nulo mínimo ✓; NO crecen con a (44 a a=0,9 < 63 a a=0,6; 107 a a=0,7 > 90 a a=0,8); 36 y 44 bajo el mínimo 60; 0,7-2,2/h bajo 1,5-6; hueco tras pérdidas no medible",
+    "que_aprende": "Refuta que el ritmo lo fije la vida de la posición o la persistencia: con τ ≈ 1 min el motor está ocioso > 90 % del tiempo y la cadencia (27-83 min entre cierres) la fijan las puertas de entrada, no el enfriamiento de H3-01 (3-8 min)."
+   },
+   {
+    "medida": "PnL neto y capital final frente a oráculo y p_tp_oráculo",
+    "prediccion": "PnL ≤ 0 en a ∈ {0,5…0,8} y probablemente 0,9; > 0 sólo en 0,95 y/o d=0,2; |PnL| ≤ 3 USD; wr ≤ p_tp_oráculo en persistentes",
+    "resultado": "PARCIAL",
+    "numero": "pnl = −0,126/+0,057/+0,104/+0,048/−0,118/+1,251/−0,143/+1,408 USD; |PnL| ≤ 1,41 ✓; signo ✓ en 0,5/0,9/0,95/d0,05/d0,2, ✗ en 0,6-0,8 (positivos < 0,5σ con σ_PnL ≈ 0,027·√n ≈ 0,2-0,3 USD); wr ≤ p_tp_oráculo ✗ en 5/7: 0,460>0,306, 0,477>0,313, 0,433>0,363, 0,640>0,573, 0,432>0,352 (✓ sólo 0,409<0,477 y 0,652<0,657)",
+    "que_aprende": "Refuerza «PnL > 0 sólo en 0,95/d0,2» (lo demás es ruido) y refuta wr ≤ p_tp: las ganancias no son toques de TP sino salidas por trailing/decay más pequeñas (+0,0113 USD/operación ≈ 0,42 R a a=0,95 frente a EV_R +0,66 del oráculo), lo que apoya la consecuencia de H3-04 por otra vía."
+   },
+   {
+    "medida": "Contadores de rechazo del riesgo por peldaño",
+    "prediccion": "EV dominante en el nulo y decreciente con a; suelo_tp_sl en todos (± 30 %); sonda_ocupada = 0; confianza > 0 en peldaños bajos",
+    "resultado": "PARCIAL",
+    "numero": "EV = 929 (100 % del nulo) → 0/0/1/0/0 ✓, 502 en a=0,9/d=0,05; suelo_tp_sl = 0 en los 8 ✗; sonda_ocupada = 20 (a=0,7) y 9 (a=0,8) ✗; confianza = 0 en los 8 ✗; «sin rechazos» en 5 de 8",
+    "que_aprende": "Refuerza la dirección de H3-10 y refuta H3-08; lo central: a 13 USD el riesgo calla en todos los peldaños persistentes con d=0,1, así que allí la ventaja se decide en el núcleo — pero el EV es dependiente del camino (502 con wr 0,432 frente a 1 con wr 0,433)."
+   },
+   {
+    "medida": "Vetos direccionales del consejo y signo del consenso espectral",
+    "prediccion": "Vetos ≈ 0 (< 1 %) en todos; consenso espectral coincide con el estado como la vela previa; consenso_espectral_tau en 68 719 o 274 878 ms",
+    "resultado": "PARCIAL",
+    "numero": "council_vetoes: 6/42 (14 %) en el nulo; 0, 0, 0, 1/45 (2,2 %), 0, 1/82 (1,2 %), 0 en persistentes; ml_vetoes = 0 en los 8; signo y τ del consenso no publicados",
+    "que_aprende": "Refuerza H3-05 (el consejo no contradice la deriva) pero lo matiza: en el nulo veta uno de cada siete, luego no es inerte sino redundante con OBI/ML cuando hay deriva; la τ del consenso es compatible con el nodo 68 719 (trace 40-100 s) pero no medida."
+   },
+   {
+    "medida": "Co-despacho: pares fast/slow por evento y signo relativo",
+    "prediccion": "0 co-despachos opuestos; mismo lado < 5 % de las aperturas",
+    "resultado": "NO_MEDIBLE",
+    "numero": "Signos relativos no publicados. Indirecto: sonda_ocupada = 20/9 (a=0,7/0,8) prueba que el núcleo emitió segundas intenciones con posición viva; opened − closes = 124 a a=0,7 es la envolvente, no co-despacho",
+    "que_aprende": "Deja la predicción igual pero revela que las segundas intenciones existen (el lector las daba por imposibles en H3-08); con τ 40-100 s en ambas bandas, |Δ ln τ| ≥ 0,80 rara vez se cumple, lo que apunta a pirámides del mismo slot, no a bandas ortogonales."
+   },
+   {
+    "medida": "Hueco tras una pérdida del lado contrario a la deriva",
+    "prediccion": "Mediana ≥ 8 velas; deriva perdida > 0,8 % de media",
+    "resultado": "NO_MEDIBLE",
+    "numero": "Ninguna columna lo registra; cadencia media 27-83 min entre cierres",
+    "que_aprende": "Deja H3-11 igual (ya registrado en G036); sólo un trace por orden con motivo de veto podría contrastarlo."
+   }
+  ],
+  "nuevos": [
+   {
+    "id": "H3-N1",
+    "severidad": "HIGH",
+    "archivo": "crates/backtest-engine/src/booktick_replay.rs",
+    "linea": 806,
+    "defecto": "La envolvente del replay revierte aperturas que el núcleo ya hizo (Err → veto_counter local + rollback_local_position, :806-808) y el rollback (:828-849) cierra la posición sin pasar por el cierre del núcleo (lib.rs:4436): ni cuenta en REJECT_COUNTERS ni actualiza tau_ultimo_cierre/last_exit_fastband, así que el enfriamiento y el anti-whiplash nunca se disparan y el núcleo reemite la misma intención en el tick siguiente. A 1 000 USD la puerta es la LCB de la envolvente tras exactamente 30 cierres (booktick_replay.rs:731 envelope_n < 30 → bootstrap; después kelly_envelope.rs:336-412 devuelve operable=false si risk_fraction ≤ 0, y con micro_w = 0 (capital_regime.rs:94-107) no hay suelo exploratorio).",
+    "evidencia": "13 USD a=0,7: opened=231, closes=107 ⇒ 124 reversiones (54 % de las aperturas) con «sonda_ocupada=20» como único rechazo del riesgo. 1 000 USD a=0,95: opened=5 604, closes=30 ⇒ 5 574 reversiones (1,9 aperturas por vela), closes = 30 = umbral de bootstrap; mismo peldaño con d=0,2 (wr 0,652): 89/89 y +20,47 USD. El contador envelope_vetoes vive en una variable local de run_backtest_native (backtest lib.rs:380) que el T-3 no exporta.",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H3-N2",
+    "severidad": "HIGH",
+    "archivo": "crates/risk-engine/src/lib.rs",
+    "linea": 1417,
+    "defecto": "La tesis «el dinero muere en el núcleo, no en el riesgo» sólo vale a 13 USD: a 100 USD muere en fee_impact (final_fee_impact = roundtrip_fee·dynamic_leverage > max_fee_limit, :1417-1419) porque max_fee_limit = lerp(max_acceptable_fee_pct, 0,035, micro_w_alloc) (:1229-1230) cae del 3,5 % permisivo de micro hacia el límite del genoma al salir de micro, mientras el apalancamiento de rescate de la orden mínima (:1400-1405) sigue multiplicando la comisión.",
+    "evidencia": "100 USD: fee_impact=3 429 (a=0,95, 7 operaciones, −0,002 USD) y fee_impact=3 523 (a=0,9/d=0,2, 1 operación); a 13 USD ninguna fila tiene fee_impact; a 1 000 USD tampoco (allí mata la envolvente, H3-N1). La misma serie con EV_R +0,66/+0,94 pasa de +9,6 %/+10,8 % a 0,00 % al multiplicar el capital por 7,7.",
+    "dueno": "Línea C"
+   },
+   {
+    "id": "H3-N3",
+    "severidad": "MED",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 405,
+    "defecto": "wr_neto (stats[0], cierres con neto > 0) supera p_tp_oráculo en 5 de 7 peldaños persistentes: las ganancias del motor no son toques de TP al RR 2,25 sino salidas por TRAIL_HIT/ALPHA_DECAY más pequeñas que el TP, con una τ de 40-100 s. El techo del test (bracket RR 2,25, SL 0,5 %, horizonte 60 velas) y la medida del motor no son comparables sin una columna P(cierre por TP) y el R neto por operación.",
+    "evidencia": "a=0,95: wr 0,640 > p_tp 0,573; pnl +1,251 USD / 111 operaciones = +0,0113 USD ≈ 0,42 R (R = 5,4 USD·0,5 % ≈ 0,027 USD) frente a EV_R +0,66 del oráculo ⇒ el motor captura ≈ 60 % del R esperado del oráculo por operación, pero a 2,2 operaciones/h. a=0,6: 0,460 > 0,306; a=0,7: 0,477 > 0,313; a=0,8: 0,433 > 0,363; d=0,05: 0,432 > 0,352.",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H3-N4",
+    "severidad": "MED",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 7152,
+    "defecto": "La τ de la rama 15 (tau_star = spec.tau_operativa_unificada(), :7152; temporal_spectrum.rs:1201-1208: τ dominante si hay habilidad, si no el centroide continuo) colapsa en el fixture al nodo del minuto: la «banda lenta» opera a 40-100 s igual que la rápida. Con las dos bandas en la misma τ, el co-despacho armónico (|Δ ln τ| ≥ 0,80, :7342-7352) casi nunca se cumple y la geometría SL/TP de todas las órdenes es la de una vela, ajena a regímenes de 10-20 velas.",
+    "evidencia": "OPEN TRACE: τ 40-100 s en todas las aperturas a 13 USD con la rama 15 dominante en a ≥ 0,9; la predicción del lector para la rama 15 era 10-40 min. Motivos de cierre vistos: TP, SL, TRAIL_HIT, ALPHA_DECAY.",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H3-N5",
+    "severidad": "MED",
+    "archivo": "docs/audit/linea_h/t3_escalera_13usd.tsv",
+    "linea": 6,
+    "defecto": "El peldaño a=0,9/d=0,1 es el peor del motor respecto al oráculo y rompe toda monotonía en a: menos operaciones (44) que a=0,6 (63) y que a=0,95 (111), el wr más bajo de los persistentes (0,409) y pérdida (−0,118 USD) con un oráculo de +16/+26 pb a 5/20 velas y EV_R +0,35. Un régimen medio de 10 velas con τ de orden ≈ 1 min y SL ≈ ATR da giros de régimen dentro de la vida de la posición; nada en la escalera lo explica sin el motivo de cierre por orden.",
+    "evidencia": "Fila a=0,90 d=0,10: trades=44 wr=0,4091 pnl=−0,11794 dd=0,016 «sin rechazos», council_vetoes=1, ml_vetoes=0; fila a=0,95: trades=111 wr=0,6396 pnl=+1,25116.",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "H3-N6",
+    "severidad": "LOW",
+    "archivo": "docs/audit/linea_h/t3_escalera_13usd.tsv",
+    "linea": 5,
+    "defecto": "El contador EV del riesgo no es función del wr realizado sino del camino (qué rama, con qué puntuación cruda y cuándo se agrupan las pérdidas respecto al olvido de 12 h): dos peldaños con el mismo wr difieren 500× en rechazos EV.",
+    "evidencia": "a=0,8/d=0,1: wr 0,433, EV=1, 90 operaciones; a=0,9/d=0,05: wr 0,432, EV=502, 81 operaciones.",
+    "dueno": "Línea G"
+   }
+  ],
+  "sintesis": "A 13 USD la medición apoya la tesis del lector en lo esencial: en 5 de 8 peldaños el riesgo no rechaza nada (el EV sólo cierra el nulo, 929, y el d=0,05, 502), ml_vetoes = 0 y council_vetoes ≤ 2,2 % en los persistentes, así que la ventaja se decide en el núcleo. Pero no muere en la puerta que el lector señaló: la rama 15, que es la que abre en a ≥ 0,9, no pasa por la ley anti-persecución (lib.rs:7147-7190 sólo con puertas_del_continuo_con :1922-2040), y las ramas tendenciales 1/2/4/5/13 están muertas por el piso de tendencia (:5473-5478) de forma aún más severa de lo calculado (ATR/1,596 y diferencial que parte de −6d). Lo que la escalera muestra es una τ de 40-100 s en TODAS las órdenes, también las de la rama 15 (tau_operativa_unificada colapsa al nodo del minuto), sobre regímenes de 10-20 velas: la geometría de una vela y las salidas por trailing/decay dan wr > p_tp_oráculo en 5 de 7 peldaños (ganancias menores que el TP), y sólo con regímenes de 20 velas (a=0,95, +1,25 USD ≈ 0,42 R por operación, 60 % del EV_R del oráculo) o deriva doble (d=0,2, +1,41 USD) el PnL supera el ruido, mientras a=0,9/d=0,1 pierde (−0,118) pese a un oráculo de +0,35 R. La dirección forzada por D-472 (signo de la vela previa, ℓ = 0,60 confirmado por la columna lectura) es neta negativa a 1-5 velas en todo d=0,1 % (proxy −7,8/−4,7 pb a a=0,95); el motor la supera por la conjunción con el tocón EMA, de modo que ℓ es suelo de información, no techo. El ritmo (0,7-2,2 cierres/h, 27-83 min entre cierres) no lo fija ni la persistencia (44 operaciones a a=0,9 frente a 111 a a=0,95 y 107 a a=0,7) ni el enfriamiento k·base de H3-01 (3-8 min), sino las puertas de entrada, que la escalera no desglosa. Al subir el capital la tesis se invierte: a 100 USD muere en fee_impact del riesgo (3 429/3 523 rechazos, 7/1 operaciones; risk lib.rs:1417-1419 con max_fee_limit = lerp(max_acceptable_fee_pct, 0,035, micro_w)), y a 1 000 USD en la envolvente del replay tras exactamente 30 cierres (5 574 de 5 604 aperturas revertidas; kelly_envelope.rs:336-412 sin suelo exploratorio con micro_w = 0), una puerta que no cuenta en REJECT_COUNTERS ni dispara el enfriamiento del núcleo porque el rollback no es un cierre. Arreglo en zona propia de la Línea H: (a) un test nuevo crates/backtest-engine/tests/t3_telemetria_por_orden.rs (o extensión del T-3) que exporte por orden rama, τ, lado frente al estado oculto, estiramiento z, motivo de cierre y R neto, y que publique como columnas del TSV los diag_* del runner y el contador envelope_vetoes (hoy local en backtest lib.rs:380); (b) una columna P(cierre por TP) para hacer comparable wr_neto con p_tp_oráculo, y el techo recalculado con la geometría real del motor (τ ≈ 1 min); (c) un peldaño con dos símbolos (misma serie desfasada un régimen) para medir D4 y el co-despacho; (d) la escalera por capital como fila obligatoria (13/100/1 000) con la puerta que mata en cada tramo documentada en docs/audit/linea_h, más la nota de que el contrato d754 consagra k·base y el comentario promete 2^k·base, como propuesta a la Línea C sin tocar el núcleo."
+ }
+}
