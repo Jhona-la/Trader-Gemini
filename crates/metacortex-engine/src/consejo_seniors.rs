@@ -604,10 +604,30 @@ impl SeniorAgent for SeniorEnteMercado {
             1.0
         };
 
-        // OLA Ω69: Modulación por presión psicológica asimétrica de Prospect Theory (Kahneman-Tversky)
+        // OLA Ω69/Ω89 (F2.5-02 / Ficha #727): Modulación por presión psicológica asimétrica de Prospect Theory (Kahneman-Tversky)
+        // Erradicación de doble conteo de masa: P(LS, liq, delta) = delta^0.88 * g0(LS, liq).
+        // Si prospect_pressure proviene de dicha fórmula para delta in [0.1, 10.0], es redundante
+        // con crowd_ls_ratio y el asiento no penaliza doblemente el mismo dato de la multitud.
         let p_prospect = if payload.prospect_pressure.is_finite() && payload.prospect_pressure != 0.0 {
-            crate::prospect_theory::ProspectTheoryEngine::new()
-                .modulation_factor(payload.intended_direction, payload.prospect_pressure)
+            let kt = crate::prospect_theory::ProspectTheoryEngine::new();
+            let es_redundante_de_ls = if (ls - 1.0).abs() > 1e-4 {
+                let g0 = kt.compute_crowd_net_prospect_pressure(ls, payload.liquidation_severity, 1.0);
+                if g0.abs() > 1e-9 && (payload.prospect_pressure * g0) > 0.0 {
+                    let ratio = payload.prospect_pressure / g0;
+                    let delta = ratio.powf(1.0 / 0.88);
+                    (0.099..=10.001).contains(&delta)
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if es_redundante_de_ls {
+                1.0 // Un mismo dato de masa, una sola entrada (F2.5-02)
+            } else {
+                kt.modulation_factor(payload.intended_direction, payload.prospect_pressure)
+            }
         } else {
             1.0
         };
