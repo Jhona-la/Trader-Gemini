@@ -38,6 +38,16 @@
 //! (`StatArbEngine::update_with_clock`): la dislocación se mide contra la
 //! base a la escala a la que opera la moneda.
 //!
+//! CL-87 (spot_z-1): la retención acredita como mucho `RETENCION_MAX_MS`
+//! (30 s, la edad máxima del spot, CL-79). Más allá no hay datos: spot
+//! caducado, entradas bloqueadas (kill-switch, pánico de latencia, deriva),
+//! o una segunda observación muy lejos de la primera al arrancar. Las sumas
+//! decaen por todo el tiempo transcurrido, pero sólo los primeros 30 s
+//! suman la base retenida. Antes la base se acreditaba durante todo el
+//! hueco: σ del nodo caía al piso y el z saturaba en ±3 al volver
+//! (P(|z| > 1,5) ≈ 0,71 frente a 0,12). Tras un hueco largo frente a τ_k, el
+//! nodo vuelve a calentar y mientras tanto se abstiene.
+//!
 //! El z del evento usa la observación nueva contra la media y la dispersión
 //! del pasado, sin incluirla: es la innovación, causal. El piso de σ es la
 //! resolución de la base, un tick del futuro relativo a su precio (CL-69):
@@ -50,6 +60,11 @@ use quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS;
 pub const NODO_MIN: usize = 17;
 pub const NODO_MAX: usize = 23;
 const NODOS: usize = NODO_MAX - NODO_MIN + 1;
+
+/// CL-87: tiempo máximo que la base retenida cuenta como observada (ms). Es
+/// la edad máxima del spot con la que el núcleo todavía usa la base
+/// (SPOT_TTL_MS, CL-79).
+pub const RETENCION_MAX_MS: f64 = 30_000.0;
 
 /// Estado del z de la base de una moneda.
 #[derive(Debug, Clone, Default)]
@@ -77,21 +92,12 @@ impl BaseZ {
             Some((t0, _)) if ts_ms < t0 => return None,
             Some((t0, b0)) if ts_ms > t0 => {
                 let dt = (ts_ms - t0) as f64;
-                // Malla 4^k: e^{−Δt/τ_{k−1}} = (e^{−Δt/τ_k})⁴. Una sola
-                // `exp_m1`, en el nodo más lento; los demás por cuadrados,
-                // con 1 − d⁴ = (1 − d)(1 + d)(1 + d²) para no perder
-                // precisión cuando d ≈ 1.
-                let em1 = (-dt / SPECTRUM_SCALES_MS[NODO_MAX]).exp_m1();
-                let (mut d, mut m) = (1.0 + em1, -em1);
-                for j in (0..NODOS).rev() {
-                    let peso = SPECTRUM_SCALES_MS[NODO_MIN + j] * m;
-                    let s = &mut self.sumas[j];
-                    s[0] = s[0] * d + peso;
-                    s[1] = s[1] * d + b0 * peso;
-                    s[2] = s[2] * d + b0 * b0 * peso;
-                    let d2 = d * d;
-                    m *= (1.0 + d) * (1.0 + d2);
-                    d = d2 * d2;
+                // CL-87: la retención cuenta como mucho RETENCION_MAX_MS; el
+                // resto del intervalo sólo hace decaer las sumas.
+                let retenido = dt.min(RETENCION_MAX_MS);
+                self.integrar(b0, retenido);
+                if dt > retenido {
+                    self.decaer(dt - retenido);
                 }
             }
             _ => {}
@@ -99,6 +105,39 @@ impl BaseZ {
         let z = self.z_a(b, tau_ms, piso);
         self.ultima = Some((ts_ms, b));
         z
+    }
+
+    /// Integra la base `b0` sostenida durante `dt` ms: cada suma decae por
+    /// e^{−Δt/τ_k} y suma b0^p·τ_k·(1 − e^{−Δt/τ_k}).
+    fn integrar(&mut self, b0: f64, dt: f64) {
+        // Malla 4^k: e^{−Δt/τ_{k−1}} = (e^{−Δt/τ_k})⁴. Una sola `exp_m1`, en
+        // el nodo más lento; los demás por cuadrados, con
+        // 1 − d⁴ = (1 − d)(1 + d)(1 + d²) para no perder precisión cuando
+        // d ≈ 1.
+        let em1 = (-dt / SPECTRUM_SCALES_MS[NODO_MAX]).exp_m1();
+        let (mut d, mut m) = (1.0 + em1, -em1);
+        for j in (0..NODOS).rev() {
+            let peso = SPECTRUM_SCALES_MS[NODO_MIN + j] * m;
+            let s = &mut self.sumas[j];
+            s[0] = s[0] * d + peso;
+            s[1] = s[1] * d + b0 * peso;
+            s[2] = s[2] * d + b0 * b0 * peso;
+            let d2 = d * d;
+            m *= (1.0 + d) * (1.0 + d2);
+            d = d2 * d2;
+        }
+    }
+
+    /// CL-87: decaimiento sin datos durante `dt` ms.
+    fn decaer(&mut self, dt: f64) {
+        let mut d = (-dt / SPECTRUM_SCALES_MS[NODO_MAX]).exp();
+        for j in (0..NODOS).rev() {
+            for v in self.sumas[j].iter_mut() {
+                *v *= d;
+            }
+            let d2 = d * d;
+            d = d2 * d2;
+        }
     }
 
     /// z de `b` a la escala `tau_ms`, interpolado en ln τ entre nodos.
@@ -249,7 +288,10 @@ mod tests {
     }
 
     /// Verdad: las sumas por cuadrados son las de la exponencial directa de
-    /// cada nodo (error relativo < 1e-12), con pasos de 1 ms a 1 día.
+    /// cada nodo (error relativo < 1e-12), con pasos de 1 ms a 1 día. Con la
+    /// retención acotada (CL-87): el valor sostenido suma durante
+    /// c = mín(Δt, RETENCION_MAX_MS), y el resto del paso sólo decae, así que
+    /// el peso es τ·e^{−(Δt−c)/τ}·(1 − e^{−c/τ}).
     #[test]
     fn cuadrados_igual_que_exp_directa() {
         let mut e = BaseZ::new();
@@ -266,7 +308,8 @@ mod tests {
                 for (j, s) in referencia.iter_mut().enumerate() {
                     let tk = tau(NODO_MIN + j);
                     let dec = (-(dt as f64) / tk).exp();
-                    let p = -tk * (-(dt as f64) / tk).exp_m1();
+                    let c = (dt as f64).min(RETENCION_MAX_MS);
+                    let p = -tk * (-((dt as f64) - c) / tk).exp() * (-c / tk).exp_m1();
                     s[0] = s[0] * dec + p;
                     s[1] = s[1] * dec + b0 * p;
                     s[2] = s[2] * dec + b0 * b0 * p;

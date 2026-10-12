@@ -1359,6 +1359,10 @@ impl GodEngineCore {
             self.feature_engines[i] = StatefulEngine::new();
         }
         self.ultimo_libro.fill(None);
+        // CL-87 (spot_z-1): la serie de la base se corta en la reconexión.
+        for z in self.base_z.iter_mut() {
+            *z = base_z::BaseZ::new();
+        }
     }
 
     /// #15: Evalúa si el drift de predicción o las anomalías acumuladas requieren reentrenamiento urgente
