@@ -551,6 +551,11 @@ pub struct GlobalArena {
     /// una caída observada en evidencia: sin ella, un tope de drawdown es una
     /// opinión. 0 = todavía no se ha dimensionado ninguna orden.
     pub riesgo_por_operacion: AtomicF64,
+    /// CL-99 (LC-F4-10) — PICO DEL CAPITAL desde el que miden la caída los
+    /// dos cortacircuitos de drawdown (veto de entradas del riesgo y sistema
+    /// inmune del host). Sólo sube (`risk_engine::drawdown::registrar_pico`)
+    /// y el host lo guarda por entorno para que sobreviva al reinicio.
+    pub pico_capital: AtomicF64,
     pub tick_counter: AtomicU64,
     pub kill_switch_active: AtomicBool,
     pub last_ws_latency_ms: AtomicU64,
@@ -642,6 +647,7 @@ impl GlobalArena {
             unified_capital: AtomicF64::new(initial_capital),
             used_margin: AtomicF64::new(0.0),
             riesgo_por_operacion: AtomicF64::new(0.0),
+            pico_capital: AtomicF64::new(initial_capital),
             tick_counter: AtomicU64::new(0),
             kill_switch_active: AtomicBool::new(false),
             last_ws_latency_ms: AtomicU64::new(0),

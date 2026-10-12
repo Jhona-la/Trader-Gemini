@@ -196,6 +196,66 @@ pub fn drawdown_de_falsacion(c: f64, alfa: f64) -> f64 {
     1.0 - alfa.powf(c / (2.0 - c))
 }
 
+/// CL-99 (LC-F4-10, LC-F0-10) — EL PICO ES UNO Y SOBREVIVE AL REINICIO.
+///
+/// Los dos cortacircuitos de drawdown medían desde picos distintos: el
+/// riesgo, desde `RiskEngine::peak_capital`; el sistema inmune del host,
+/// desde una variable local de su tarea que nacía con el capital del
+/// arranque. Ninguno se guardaba, así que un reinicio fijaba el pico en el
+/// capital ya caído y borraba la caída acumulada: el piso de ADR-0016 (D3)
+/// no sobrevivía a reiniciar el proceso.
+///
+/// Ahora el pico vive en `GlobalArena::pico_capital`, lo actualizan los dos
+/// con esta función (monótona: sólo sube) y el host lo guarda por entorno.
+/// Los umbrales no cambian. Lo que cambia para el host es desde dónde mide:
+/// antes, desde el máximo de su propio plano conservador (mínimo entre
+/// arena y exchange); ahora, desde el pico compartido, que también
+/// actualiza el riesgo con el capital del arena. Es el más alto de los dos.
+///
+/// Devuelve el pico tras registrar `capital`. Un capital no finito o ≤ 0
+/// no mueve el pico.
+#[inline]
+pub fn registrar_pico(pico: &quantum_arena::AtomicF64, capital: f64) -> f64 {
+    use std::sync::atomic::Ordering;
+    if !(capital.is_finite() && capital > 0.0) {
+        return pico.load(Ordering::Relaxed);
+    }
+    match pico.fetch_update(Ordering::AcqRel, Ordering::Acquire, |actual| {
+        if !(actual.is_finite() && actual >= capital) {
+            Some(capital)
+        } else {
+            None
+        }
+    }) {
+        Ok(_) => capital,
+        Err(actual) => actual,
+    }
+}
+
+/// CL-99 — guarda el pico en `ruta` (escritura a un temporal y renombrado).
+/// El formato es el número en texto: la representación decimal de `f64` en
+/// Rust vuelve al mismo valor al leerla.
+pub fn guardar_pico(ruta: &std::path::Path, pico: f64) -> std::io::Result<()> {
+    if !(pico.is_finite() && pico > 0.0) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "pico no finito o no positivo",
+        ));
+    }
+    let tmp = ruta.with_extension("tmp");
+    std::fs::write(&tmp, format!("{pico}\n"))?;
+    std::fs::rename(&tmp, ruta)
+}
+
+/// CL-99 — lee el pico guardado. `None` si no hay archivo o no contiene un
+/// capital finito y positivo: el llamador sigue con el capital del arranque,
+/// como antes.
+pub fn cargar_pico(ruta: &std::path::Path) -> Option<f64> {
+    let texto = std::fs::read_to_string(ruta).ok()?;
+    let pico: f64 = texto.trim().parse().ok()?;
+    (pico.is_finite() && pico > 0.0).then_some(pico)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
