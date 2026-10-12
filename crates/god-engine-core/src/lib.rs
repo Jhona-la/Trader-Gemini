@@ -46,7 +46,6 @@ pub mod model_reload;
 pub mod orchestrator;
 pub mod order_flow_aggregator;
 pub mod outcome_context;
-pub mod quantum_kelly_risk;
 pub mod base_z;
 pub mod reality_physics;
 pub mod recarga_genoma;
