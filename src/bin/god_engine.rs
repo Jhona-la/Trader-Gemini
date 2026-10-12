@@ -4557,7 +4557,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let client_id = new_entry_client_id(final_is_long);
                             let route = if force_maker {
                                 EntryRoute::Maker { price: maker_price }
-                            } else if notional_volume > iceberg_threshold {
+                            } else if execution_engine::entry_dispatch::admite_iceberg(
+                                execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG,
+                                notional_volume,
+                                iceberg_threshold,
+                            ) {
                                 let iceberg_qty = final_qty / iceberg_slices;
                                 EntryRoute::Iceberg {
                                     price: maker_price,
@@ -5317,6 +5321,20 @@ mod tests {
     use super::*;
     use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
     use std::sync::atomic::Ordering;
+
+    /// LG-10: con el adaptador de Binance (sin iceberg nativo) ningún nocional
+    /// enruta a Iceberg; antes todo nocional sobre el gen se rechazaba.
+    #[test]
+    fn lg10_sin_iceberg_nativo_ningun_nocional_enruta_a_iceberg() {
+        use execution_engine::entry_dispatch::admite_iceberg;
+        assert!(!execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG);
+        for nocional in [5.1, 600.0, 10_001.0, 1e9] {
+            assert!(!admite_iceberg(execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG, nocional, 500.0));
+        }
+        assert!(admite_iceberg(true, 600.0, 500.0));
+        assert!(!admite_iceberg(true, 400.0, 500.0));
+        assert!(!admite_iceberg(true, f64::NAN, 500.0));
+    }
 
     /// LG-8: los llenados de una orden cuentan como un cierre; tres cierres
     /// sin ganadora ya no suspenden (la cola binomial con p* ≈ 0,35 vale
