@@ -6578,6 +6578,20 @@ impl GodEngineCore {
                                 || (impulso_intent.signal == SignalType::Short
                                     && not_overextended_short_decision))
                         {
+                            // CL-81 (F3.3-09): la convicción de la rama 12
+                            // pasa por su propio historial (D-752), contra
+                            // el equilibrio p* de la orden (CL-75), como
+                            // las ramas 11, 13, 14 y 15. Antes su registro
+                            // se escribía al cerrar y nunca se leía.
+                            impulso_intent.confidence = conviccion_de_rama_en(
+                                &registro_ramas[12],
+                                impulso_intent.confidence,
+                                self.p_equilibrio_de_la_orden(
+                                    coin_id,
+                                    impulso_intent.expected_duration_ms,
+                                    hurst_exponent,
+                                ),
+                            );
                             impulso_intent.volume_flow_rate = 12.0;
                             fast_intent = impulso_intent;
                         }
@@ -6735,8 +6749,13 @@ impl GodEngineCore {
                         && is_bull_trend
                         && not_chasing_swing_long
                     {
-                        let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
-                            .max(crate::calibration::normalized_directional_divergence(swing_nn_pred, ml_model_base).max(0.0));
+                        // CL-82 (F3.3-07): el piso es sólo la magnitud de
+                        // la tendencia. El ML ya decide la rama (umbral
+                        // effective_ml_*) y la puerta ML de
+                        // `puertas_del_continuo` lo vuelve a aplicar; sumarlo
+                        // también aquí lo contaba dos veces y saturaba la
+                        // convicción en 0,99 con una sola lectura.
+                        let raw_conf = macd_diff.abs() * hurst_exponent * 50.0;
                         let piso_magnitud = if raw_conf.is_finite() {
                             sig_conf(raw_conf.tanh())
                         } else {
@@ -6761,8 +6780,13 @@ impl GodEngineCore {
                         && is_bear_trend
                         && not_chasing_swing_short
                     {
-                        let raw_conf = (macd_diff.abs() * hurst_exponent * 50.0)
-                            .max((-crate::calibration::normalized_directional_divergence(swing_nn_pred, ml_model_base)).max(0.0));
+                        // CL-82 (F3.3-07): el piso es sólo la magnitud de
+                        // la tendencia. El ML ya decide la rama (umbral
+                        // effective_ml_*) y la puerta ML de
+                        // `puertas_del_continuo` lo vuelve a aplicar; sumarlo
+                        // también aquí lo contaba dos veces y saturaba la
+                        // convicción en 0,99 con una sola lectura.
+                        let raw_conf = macd_diff.abs() * hurst_exponent * 50.0;
                         let piso_magnitud = if raw_conf.is_finite() {
                             sig_conf(raw_conf.tanh())
                         } else {

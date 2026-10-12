@@ -34,9 +34,9 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 | F3.3-04 | El sesgo spot rompe el espejo de la puerta ML: el corto recibe hasta 4,5 veces más impulso que el largo | media | confirmado | Línea C. |
 | F3.3-05 | La coherencia inter-espectral se recorta en 0: un espectro en contra da la misma confianza tensorial que uno neutro | media | confirmado | Línea C (orchestrator.rs). |
 | F3.3-06 | El peso hebbiano aprende la tasa de acierto (signo del PnL), no el EV, y multiplica el compuesto ×[0,5; 2] | media | cerrado (CL-76) | Línea C (regla y lector). Los consumidores de las ramas 1-10 son de Línea E. |
-| F3.3-07 | La rama 13 cuenta dos veces la misma lectura del ML (piso y puerta) | media | confirmado | Línea C. |
+| F3.3-07 | La rama 13 cuenta dos veces la misma lectura del ML (piso y puerta) | media | cerrado (CL-82) | Línea C. |
 | F3.3-08 | La puntuación cruda dimensiona tres veces y la calibrada una | media | confirmado | Línea C, bloque C-F4 (riesgo). |
-| F3.3-09 | La rama 12 no pasa por conviccion_de_rama: su historial se escribe y nunca se lee | media | confirmado | Línea C. |
+| F3.3-09 | La rama 12 no pasa por conviccion_de_rama: su historial se escribe y nunca se lee | media | cerrado (CL-81) | Línea C. |
 | F3.4-01 | Los pesos de los asientos del consejo premian la tasa de acierto de las operaciones ejecutadas, no la esperanza | media | confirmado | Línea C (consejo, C-F3) |
 | F3.4-02 | Un mismo dato (VPIN) produce dos vetos y vuelve imposible el override por encima de 0,92 | media | confirmado | Línea C (consejo) |
 | F3.4-03 | El escudo de momento adverso no está al 95 %: une cuatro pruebas y un Stouffer sobre ejes correlacionados | media | confirmado | Línea C: la definición del escudo está fuera de las ramas 1-10. Se pide a la Línea E la mi |
@@ -348,6 +348,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 - Causa: El piso de la rama 13 usa max(|macd|·H·50, ndd⁺(swing_nn_pred, base)). Luego slow_intent pasa por puertas_del_continuo, que vuelve a multiplicar por (1+0,5·ndd(ml_prob, base)). swing_nn_pred y ml_prob vienen del mismo ensamble (lib.rs:4855 y :6429-6434), y el gate propio de la rama (lib.rs:6525) y el ML-GATE lo usan otra vez.
 - Consecuencia viva: Con ndd 0,8: piso sig_conf(tanh 0,8) = 0,766, después ×1,4 = 1,07, que queda en el techo de 0,99. Una sola lectura del ML basta para saturar la confianza de la rama.
 - Prueba que falla hoy: T11 cf3_rama_13_cuenta_el_ml_una_sola_vez (test de fuente: hoy 'normalized_directional_divergence(swing_nn_pred' aparece 2 veces). La prueba de propiedad exige extraer el impulso de la puerta a una función pública.
+  - Cerrado por CL-82 (2026-10-11). El piso de la rama 13 es sólo la magnitud de la tendencia, |macd|·H·50; deja de tomar el máximo con ndd⁺(swing_nn_pred, base). El ML sigue decidiendo la rama (umbral effective_ml_*) y la puerta ML de `puertas_del_continuo` lo aplica una vez. La tercera entrada (refuerzo de `confianza_superpuesta` cuando coinciden las dos bandas) y la rama 20 siguen como las describe el escéptico de completitud.
 - Dueño: Línea C.
 - Relación con hallazgos anteriores: Ledger §4 «Doble conteo» (ML ≥ 7). Añade el caso concreto dentro de una sola rama y la saturación a 0,99.
 - Escépticos: confirmado.
@@ -374,6 +375,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 - Causa: fast_intent = impulso_intent con su confianza tanh(coh·decay·2) intacta. Un grep de 'registro_ramas\[' sólo da 1, 2, 4, 5, 7-11, 13, 14 y 15.
 - Consecuencia viva: Una rama 12 con desventaja demostrada sigue emitiendo su magnitud, que puede pasar el gate. D-752 no la cubre.
 - Prueba que falla hoy: T9 cf3_rama_12_lee_su_historial (test de fuente: 'registro_ramas[12]' no aparece).
+  - Cerrado por CL-81 (2026-10-11). La confianza del impulso de la rama 12 pasa por `conviccion_de_rama_en(&registro_ramas[12], conf, p*)`, con p* a la τ de la intención (CL-75), como las ramas 11, 13, 14 y 15. Su vida sigue saliendo del gen base_duration_ms (F3.6-07, abierto).
 - Dueño: Línea C.
 - Relación con hallazgos anteriores: MEMORIA (PR #5, hallazgo 2) decía que las ramas 11-14 no pasaban por D-752. Hoy 11, 13, 14 y 15 sí pasan; la 12 sigue fuera.
 - Escépticos: confirmado.

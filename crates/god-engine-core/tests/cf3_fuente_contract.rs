@@ -51,7 +51,6 @@ fn tramo<'a>(codigo: &'a str, desde: &str, hasta: &str) -> Option<&'a str> {
 /// impulso (desde la llamada a `evaluate_flow_impulse` hasta
 /// `fast_intent = impulso_intent;`) llama a `conviccion_de_rama`.
 #[test]
-#[ignore = "OPEN F3.3-09 (Línea C): la rama 12 registra cierres (rama_registro[..][12]) pero su confianza tanh(coh·decay·2) no pasa por conviccion_de_rama"]
 fn cf3_rama_12_lee_su_historial() {
     let src = codigo_produccion();
     let bloque = tramo(
@@ -113,7 +112,6 @@ fn cf3_rama_11_vive_a_la_escala_que_hablo() {
 /// rama 13, esta prueba se sustituye por una de propiedad sobre la función
 /// extraída.
 #[test]
-#[ignore = "OPEN F3.3-07 (Línea C): el piso de la rama 13 usa normalized_directional_divergence(swing_nn_pred) y la puerta ML vuelve a multiplicar por el mismo ML: doble conteo"]
 fn cf3_rama_13_cuenta_el_ml_una_sola_vez() {
     let src = codigo_produccion();
     let n = src
