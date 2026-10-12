@@ -9974,3 +9974,8 @@ pruebas.
 - **Lección**: `format_args!` incrusta los argumentos literales en la
   plantilla; una prueba que dependa de piezas separadas de `write!` debe
   pasar variables.
+- **Adenda tras fusionar el PR #61** (Línea C, sonda única): el T-2 de
+  `main` con CL-98 y CL-98b es `a7c2da7647f26f8e`, 68 operaciones y PnL
+  −0,164 (el buzón de CL-98 dice −0,140, cifra anterior a CL-98b). Medido en
+  un worktree de `origin/main` intacto y en el árbol de la ola 3: idénticos.
+  La ola 3 no mueve el T-2.
