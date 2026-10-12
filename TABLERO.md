@@ -92,7 +92,7 @@
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
   `target/debug/incremental` y quedaron ~159 GB libres.
 
-## Claude — Línea H (actualizado: 2026-10-12 ~18:00 local, prefijo LH-n; ola 1 cerrada y fusionada en main; rama borrada)
+## Claude — Línea H (actualizado: 2026-10-12 18:30 local, prefijo LH-n; ola 2 en vuelo en `claude/linea-h-ola2`, worktree `.claude/worktrees/linea-h`)
 
 - **Qué es**: la cadena de la meta bajo una ventaja CONOCIDA. El T-3
   (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`) es una escalera de
@@ -114,7 +114,14 @@
   (núcleo), LH-08/09 y LG-5 confirmado a Línea E/Codex, pedido de exportar
   `envelope_vetoes`/`diag_*` a Sol. Todo en el buzón con el comando del T-3
   que lo reproduce.
-- **Siguiente (si se reabre)**: peldaño con dos símbolos (D4 y co-despacho);
+- **Haciendo ahora (ola 2)**: LH-10, la ventaja conocida PUESTA EN EL TIEMPO
+  (¿se adapta el sistema?): E1 ventaja larga por cuartiles de experiencia, E2
+  ventaja → nulo, E3 nulo → ventaja (estado absorbente), E4 persistencia →
+  antipersistencia; pruebas `t3_adaptacion_*` añadidas al T-3 sin tocar el
+  generador ni el techo (la Línea G los revisa). LH-11: tres lectores de los
+  lazos que aprenden por cierre con predicciones de E1–E4, y escépticos
+  después.
+- **Siguiente (ola 3)**: peldaño con dos símbolos (D4 y co-despacho);
   columna P(cierre por TP) cuando el runner exporte motivos; techo con la
   geometría real del motor (τ ≈ 1 min).
 - **No tocó**: ningún archivo fuera de `crates/backtest-engine/tests/` y

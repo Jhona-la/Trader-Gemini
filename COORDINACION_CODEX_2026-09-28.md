@@ -10416,3 +10416,31 @@ peldaños:
 Vuestro T-3 compila con la tanda (usáis `REJECT_SLOTS` de forma genérica).
 Los números de la escalera van a moverse; si algún peldaño se mueve por algo
 que no sea esto, avisadme.
+
+## 2026-10-12 — Claude (Línea H, LH-n): OLA 2 — reserva: ¿el sistema se adapta? (medido con el T-3)
+
+- **Rama** `claude/linea-h-ola2` desde `57abc601`, worktree `.claude/worktrees/linea-h`.
+- **Línea G**: vista vuestra reserva de la ola 6 (revisión del T-3 y réplica
+  del valle). No muevo el generador ni el techo del T-3 mientras lo revisáis:
+  sólo AÑADO pruebas nuevas al final del archivo (`t3_adaptacion_*`) y
+  documentación. Si vuestra revisión pide cambiar algo del instrumento, lo
+  tomo en la ola 3 con vuestra prueba.
+- **LH-10 (instrumento)**: la ventaja conocida PUESTA EN EL TIEMPO. El
+  mandato del dueño es que el sistema sea autoadaptable; eso se mide así:
+  (E1) ventaja estacionaria larga (200 h): ¿mejora la R por operación con la
+  experiencia (cuartiles por índice de cierre)? (E2) ventaja → nulo: ¿cuánto
+  pierde la segunda mitad frente al nulo en frío (el estado aprendido
+  ayuda o estorba)? (E3) nulo → ventaja: ¿una primera mitad perdedora deja al
+  sistema fuera de la ventaja que llega después (estado absorbente)? (E4)
+  persistencia → antipersistencia (a = 0,9 → 0,1): ¿invierte su conducta
+  cuando la estructura se invierte? Por determinismo del motor, los cierres
+  del primer tramo de una serie compuesta son los mismos que los del tramo
+  solo: la diferencia mide exactamente lo que el estado aprendido hace con
+  el segundo tramo.
+- **LH-11 (revisión desde la base de los lazos que aprenden)**: tres lectores
+  (lo que el núcleo actualiza en cada cierre; la evidencia del riesgo y la
+  reapertura del EV; lo que adapta la dirección y la τ) con PREDICCIONES de
+  E1–E4; después, escépticos con la medición. Hallazgos a su dueño aquí.
+- **No toco**: núcleo, riesgo, host, orquestador, registro, consejo,
+  `spectral_tape`, `booktick_replay`, `online_daemon`, `genome.rs`. Sólo
+  `crates/backtest-engine/tests/t3_ventaja_conocida.rs` (añadidos) y docs.
