@@ -1796,9 +1796,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // exchange real) — antes solo leía el arena: en live el funding/
             // slippage real invisibilizaban el drawdown contable verdadero.
             let exchange_capital_imm = Arc::clone(&unified_capital);
+            // CL-99 (LC-F4-10, LC-F0-10): el pico del capital es uno, el del
+            // arena, compartido con el veto de entradas del riesgo, y se
+            // guarda por entorno para que un reinicio no borre la caída
+            // acumulada (antes el pico nacía en el capital ya caído). Para
+            // empezar de cero tras un retiro de fondos, se borra el archivo.
+            let ruta_pico = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+                "pico_capital.txt",
+            ));
+            if let Some(guardado) = risk_engine::drawdown::cargar_pico(&ruta_pico) {
+                let pico = risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, guardado);
+                telemetry_server::telemetry_log!(
+                    "🛡️ [IMMUNE] pico del capital restaurado: ${:.4} (guardado ${:.4})",
+                    pico,
+                    guardado
+                );
+            }
             rt_handle.spawn(async move {
                 let mut latched = false;
-                let mut peak_capital = arena_imm.unified_capital.load(Ordering::Relaxed);
+                // 0 ⇒ el primer ciclo guarda el pico aunque no haya subido.
+                let mut pico_guardado = 0.0_f64;
                 let mut latency_strikes: u32 = 0;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -1820,40 +1837,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         cap_arena
                     };
-                    if cap > peak_capital {
-                        peak_capital = cap;
+                    let peak_capital =
+                        risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);
+                    if peak_capital > pico_guardado
+                        && risk_engine::drawdown::guardar_pico(&ruta_pico, peak_capital).is_ok()
+                    {
+                        pico_guardado = peak_capital;
                     }
                     let dd = if peak_capital > 0.0 {
                         (peak_capital - cap) / peak_capital
                     } else {
                         0.0
                     };
-                    // D-744: el sistema inmune deja de leer el gen CRUDO (0,95
-                    // en el genoma base: con $13 esperaba a $0,65 para actuar)
-                    // y usa la MISMA prueba que el veto de entradas del
-                    // risk-engine — la caída máxima compatible con el riesgo
-                    // que el motor toma de verdad y con su tasa de pérdida
-                    // observada, con el gen como confianza de la prueba.
-                    // CL-9: la MISMA función que el veto de entradas.
-                    let q_perdida_global =
-                        risk_engine::drawdown::q_perdida_cartera(arena_imm.coins.iter().map(|c| {
-                            (
-                                c.metrics.win_rate.load(Ordering::Relaxed),
-                                c.metrics.trade_count.load(Ordering::Relaxed) as f64,
-                            )
-                        }));
-                    // D-744b / QS-D3 (Ola Ω76): sin riesgo medido rige el gen acotado por la cota
-                    // superior de falsación del modelo de ½ Kelly a α = 0,05 (d* ≈ 0,632, suelo $4,79 en cuenta de $13).
-                    // Sincroniza el cortacircuitos del host con el veto de entradas de risk-engine (lib.rs:341).
-                    let d_falsacion = risk_engine::drawdown::drawdown_de_falsacion(
-                        risk_engine::drawdown::FRACCION_KELLY_MAXIMA,
-                        risk_engine::drawdown::ALFA_FALSACION,
-                    );
-                    let max_dd = risk_engine::drawdown::drawdown_maximo(
-                        arena_imm.riesgo_por_operacion.load(Ordering::Relaxed),
-                        q_perdida_global,
-                        arena_imm.config.global_max_drawdown.load(Ordering::Relaxed),
-                    ).min(d_falsacion);
+                    // CL-106 (LC-F4-10, decisión del dueño «Ambos»): el MISMO
+                    // umbral que el veto de entradas del riesgo, una prueba de
+                    // nivel α con el tamaño real de las órdenes (cuantil 95 % de
+                    // la caída máxima en 200 operaciones con H0 = +0,05 R, en
+                    // unidades del riesgo medido al stop), acotado por d*. Antes
+                    // era la prueba de racha (D-744/CL-9): con riesgo medido,
+                    // 2,2-3,8 % con 13 USD, que aplanaba y bloqueaba la cuenta en
+                    // el 36-49 % de las rachas de 200 operaciones aun con +0,30 R
+                    // de ventaja. Sin riesgo medido (arranque) rige d*.
+                    let max_dd = risk_engine::drawdown::umbral_freno_duro_de(&arena_imm, peak_capital);
                     // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
                     // inmune, no desarmarlo: el guard `cap > 0.0` anterior
                     // dejaba todos los frenos apagados exactamente en el único
@@ -3032,6 +3037,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "🧬 [KELLY] Sin envolvente previa — posterior fresco de Jeffreys (HOST-005)"
             );
         }
+        // CL-108 (C-F8, decisión del dueño «Guardar todo»): el estado
+        // aprendido (cierres y evidencia por moneda, calibradores, freno de la
+        // estrategia, riesgo y geometría medidos) se restaura antes de operar
+        // y se guarda en cada cierre. Para empezar de cero, se borra el archivo.
+        let ruta_estado = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+            "estado_aprendido.json",
+        ));
+        // CL-108f (T2-1 de la Línea G): un archivo ilegible o de otra
+        // versión no es un archivo ausente. El núcleo echa el freno de la
+        // estrategia y esta sesión no guarda nada: el archivo queda intacto
+        // hasta que el operador lo repare o lo retire.
+        use god_engine_core::estado_aprendido::Arranque;
+        let arranque = engine_real
+            .arrancar_con_estado(god_engine_core::estado_aprendido::cargar(&ruta_estado));
+        let guardar_estado = arranque.permite_guardar();
+        match &arranque {
+            Arranque::Restaurado { monedas, freno_echado } => telemetry_server::telemetry_log!(
+                "🧠 [ESTADO] restaurado de {}: {} monedas, freno de la estrategia {}",
+                ruta_estado.display(),
+                monedas,
+                if *freno_echado { "ECHADO" } else { "suelto" }
+            ),
+            Arranque::SinEstado => telemetry_server::telemetry_log!(
+                "🧠 [ESTADO] sin estado aprendido previo en {}",
+                ruta_estado.display()
+            ),
+            Arranque::Bloqueado(motivo) => telemetry_server::telemetry_log!(
+                "⛔ [ESTADO] {} ilegible ({}): se conserva intacto y esta sesión no guarda nada; el freno de la estrategia queda ECHADO (no entran posiciones nuevas) hasta que el operador lo repare o lo retire",
+                ruta_estado.display(),
+                motivo
+            ),
+        }
         // B3.7 (auditoría) — DEDUP cierre-bracket vs cierre-core: el MISMO
         // trade económico puede llegar por dos caminos (fill de la pierna en
         // el user-stream + condición de salida del core en el evento
@@ -3807,6 +3844,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let unified_cap = f64::from_bits(unified_capital.load(Ordering::Relaxed));
 
                     if let Some((is_long, pnl, qty)) = closed_order {
+                        // CL-108: cada cierre cambia el estado aprendido
+                        // (salvo con el estado ilegible, CL-108f).
+                        if let Some(Err(e)) = guardar_estado.then(|| {
+                            god_engine_core::estado_aprendido::guardar(
+                                &ruta_estado,
+                                &engine_real.estado_aprendido(),
+                            )
+                        }) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [ESTADO] no se pudo guardar {}: {}",
+                                ruta_estado.display(),
+                                e
+                            );
+                        }
                         // B3.14 — sólo contabiliza lo que EXISTIÓ en el
                         // exchange. Cierres de entradas vetadas/rechazadas
                         // (round-trips locales de papel, caso KOMA) no

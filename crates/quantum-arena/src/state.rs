@@ -551,6 +551,26 @@ pub struct GlobalArena {
     /// una caída observada en evidencia: sin ella, un tope de drawdown es una
     /// opinión. 0 = todavía no se ha dimensionado ninguna orden.
     pub riesgo_por_operacion: AtomicF64,
+    /// CL-106b (T1-02 de la revisión de la Línea G) — RIESGO POR OPERACIÓN
+    /// EN USD: lo que se pierde si el stop de la orden se toca (nocional ×
+    /// SL), media móvil con la misma memoria que `riesgo_por_operacion`. El
+    /// freno duro mide la caída desde el pico en estos stops: en fracción del
+    /// capital actual, con nocional fijo, el umbral se alejaba al caer.
+    /// 0 = todavía no se ha dimensionado ninguna orden.
+    pub riesgo_por_operacion_usd: AtomicF64,
+    /// CL-99 (LC-F4-10) — PICO DEL CAPITAL desde el que miden la caída los
+    /// dos cortacircuitos de drawdown (veto de entradas del riesgo y sistema
+    /// inmune del host). Sólo sube (`risk_engine::drawdown::registrar_pico`)
+    /// y el host lo guarda por entorno para que sobreviva al reinicio.
+    pub pico_capital: AtomicF64,
+    /// CL-106 (LC-F4-10) — GEOMETRÍA DE LAS ÓRDENES EN UNIDADES DEL STOP,
+    /// media móvil con la misma memoria que `riesgo_por_operacion`: lo que
+    /// gana una orden que toca el TP, `(TP − f)/SL`, y lo que pierde la que
+    /// toca el SL, `(SL + f)/SL`, con `f` la fricción de ida y vuelta. Con
+    /// ellas y el riesgo medido, el freno duro de drawdown deriva su umbral
+    /// (`risk_engine::drawdown::umbral_freno_duro`). 0 = sin órdenes aún.
+    pub ganancia_en_stops: AtomicF64,
+    pub perdida_en_stops: AtomicF64,
     pub tick_counter: AtomicU64,
     pub kill_switch_active: AtomicBool,
     pub last_ws_latency_ms: AtomicU64,
@@ -642,6 +662,10 @@ impl GlobalArena {
             unified_capital: AtomicF64::new(initial_capital),
             used_margin: AtomicF64::new(0.0),
             riesgo_por_operacion: AtomicF64::new(0.0),
+            riesgo_por_operacion_usd: AtomicF64::new(0.0),
+            pico_capital: AtomicF64::new(initial_capital),
+            ganancia_en_stops: AtomicF64::new(0.0),
+            perdida_en_stops: AtomicF64::new(0.0),
             tick_counter: AtomicU64::new(0),
             kill_switch_active: AtomicBool::new(false),
             last_ws_latency_ms: AtomicU64::new(0),

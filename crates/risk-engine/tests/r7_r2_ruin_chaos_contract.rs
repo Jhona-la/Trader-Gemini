@@ -10,7 +10,7 @@ use risk_engine::{
     regime::MarketRegime,
     ruin::{conservative_loss_q, streak_ruin_cap, CONSERVATIVE_Q},
     tp_sl::probabilidad_tocar_sl_antes_de_tp,
-    RiskEngine, REJECT_COUNTERS, REJ_TARGET_GEOMETRY,
+    RiskEngine, REJ_TARGET_GEOMETRY,
 };
 use signal_engine::{SignalIntent, SignalType};
 use std::sync::{atomic::Ordering, Arc};
@@ -141,7 +141,9 @@ fn test_r7_r2_a1_analytical_first_hitting_gate_contract() {
         p_adverso
     );
 
-    // 3. Verificamos que RiskEngine::evaluate_quantum_order rechaza una orden con marea adversa violenta
+    // 3. CL-100 (R-15 en sombra): RiskEngine::evaluate_quantum_order ya no
+    // rechaza la orden con marea adversa violenta por el primer toque; publica
+    // la probabilidad y que habría vetado.
     static REGISTRY: std::sync::Once = std::sync::Once::new();
     REGISTRY.call_once(|| {
         quantum_arena::symbol_registry::update_registry(vec![
@@ -172,7 +174,6 @@ fn test_r7_r2_a1_analytical_first_hitting_gate_contract() {
     // Marea portadora bajista extrema (-0.95): intentar Long aquí tiene fuerte deriva adversa
     arena.coins[0].spectral_coherence.store(-0.95, Ordering::Relaxed);
 
-    let rej_before = REJECT_COUNTERS[REJ_TARGET_GEOMETRY].load(Ordering::Relaxed);
 
     let buy_intent = SignalIntent {
         signal: SignalType::Long,
@@ -186,15 +187,22 @@ fn test_r7_r2_a1_analytical_first_hitting_gate_contract() {
 
     let evaluated = engine.evaluate_quantum_order(0, &buy_intent, &arena);
 
+    if evaluated.signal == SignalType::Flat {
+        assert_ne!(
+            risk_engine::ultimo_rechazo(),
+            Some(REJ_TARGET_GEOMETRY),
+            "R-15 en sombra: el primer toque ya no rechaza ({})",
+            risk_engine::reject_report()
+        );
+    }
+    let p_servida = arena
+        .registry
+        .get_for_coin_strict(0, "p_hit_sl_first")
+        .expect("la orden llega a R-15 y publica la probabilidad");
+    assert!(p_servida > 0.88, "con marea extrema la probabilidad supera 0,88: {p_servida}");
     assert_eq!(
-        evaluated.signal,
-        SignalType::Flat,
-        "Orden contra marea extrema debe ser rechazada"
-    );
-    let rej_after = REJECT_COUNTERS[REJ_TARGET_GEOMETRY].load(Ordering::Relaxed);
-    assert!(
-        rej_after > rej_before,
-        "El contador REJ_TARGET_GEOMETRY debe incrementarse al disparar la compuerta analítica de primer toque: before={}, after={}",
-        rej_before, rej_after
+        arena.registry.get_for_coin_strict(0, "r15_vetaria"),
+        Some(1.0),
+        "la telemetría dice que el veto de antes habría disparado"
     );
 }

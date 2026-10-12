@@ -17,7 +17,14 @@
 //! posición en la moneda, exención del ML-GATE). Ninguna miraba la cartera,
 //! así que cada moneda podía abrir su sonda a la vez. Y como `trade_count`
 //! no se persiste, tras cada reinicio todas volvían a la fase de sonda.
-//! Éste es el único predicado de las dos puertas.
+//! Las dos llaman ahora a la misma función, [`admite_sonda`]:
+//! - el veto del riesgo decide: rechaza con `sonda_ocupada` antes de
+//!   dimensionar;
+//! - la exención del ML-GATE en el núcleo ([`sonda_sin_modelo`]) la consulta
+//!   también, aunque es redundante por construcción: con una sonda abierta el
+//!   riesgo ya rechazó y el núcleo nunca llega al ML-GATE con una orden viva.
+//!   Se conserva para que la exención no pueda contradecir a D4 si el orden
+//!   de las puertas cambia.
 //!
 //! Reinicio. Una moneda en fase de sonda es la que tiene menos de
 //! [`CIERRES_DE_SONDA`] cierres en este proceso. Tras un reinicio todas
@@ -62,4 +69,19 @@ pub fn hay_sonda_abierta(arena: &GlobalArena) -> bool {
 #[inline]
 pub fn admite_sonda(arena: &GlobalArena, coin_id: usize) -> bool {
     !en_fase_de_sonda(arena, coin_id) || !hay_sonda_abierta(arena)
+}
+
+/// Exención del ML-GATE para la primera orden de una moneda SIN modelo del
+/// roster (Ola XLI·D1): con 0 cierres, esa orden es la sonda que genera la
+/// evidencia que el gate exige; sin ella el motor no arrancaría. Con modelo
+/// decide el lift del bosque, no la sonda. Y sólo si la cartera admite una
+/// sonda ([`admite_sonda`], la misma función del veto del riesgo).
+#[inline]
+pub fn sonda_sin_modelo(arena: &GlobalArena, coin_id: usize, tiene_modelo_roster: bool) -> bool {
+    !tiene_modelo_roster
+        && arena
+            .coins
+            .get(coin_id)
+            .is_some_and(|c| c.metrics.trade_count.load(Ordering::Relaxed) == 0)
+        && admite_sonda(arena, coin_id)
 }
