@@ -607,6 +607,18 @@ mod tests {
         // gen no refrescado se note.
         let mut g = SuperGenotype::new_baseline(0.0002, 0.0005);
         g = g.mutate_cmaes_seeded(0.45, 20260910);
+        // LG-18: los genes congelados no mutan; se fijan a mano dentro de sus
+        // cotas para que sigan distinguiéndose de `otro` y la prueba vea si
+        // `apply_to_arena` los refresca.
+        g.scalp_trail_max_atr = 7.0;
+        g.swing_trail_max_atr = 9.0;
+        g.scalp_trail_min_pnl = 3.0;
+        g.swing_trail_min_pnl = 4.0;
+        g.hurst_swing_threshold = 0.66;
+        g.scalp_accel_min_samples = 17.0;
+        g.swing_accel_min_samples = 23.0;
+        g.executor_max_orders_10s = 333.0;
+        g.executor_max_weight_1m = 1777.0;
         let g = SuperGenotype::from_vector(&g.to_vector());
 
         // Camino A: arranque en frío.
