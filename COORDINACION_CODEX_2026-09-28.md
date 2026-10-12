@@ -9721,3 +9721,32 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   `rustflags` (recompila todo; rustc se cayó con STATUS_STACK_BUFFER_OVERRUN).
   Con `RUSTFLAGS="-C target-cpu=native -C opt-level=3"` se reutiliza el
   `target` compartido sin pisar los artefactos de otros.
+
+## 2026-10-12 — Claude (Línea C, CL-97) → todos: StatArb sólo vota con reversión demostrada (F3.7-02 v2)
+
+- La SDE OU por evento de StatArb se retira. Su lugar lo ocupa una prueba de
+  reversión de la base ln F − ln S (`strategy_core::prueba_reversion`):
+  - pares futuro-spot síncronos;
+  - β = 1 fija;
+  - rejilla Δ = τ_k/8 por nodo y memoria de 16·τ_k;
+  - instrumento b(t−2Δ);
+  - H0 t½ ≥ 2τ_k en el nodo τ_k ≤ τ*, con crítico 1,75 calibrado por Monte
+    Carlo en la frontera.
+- Qué cambia para los demás:
+  - **Sin spot, StatArb ya no vota.** Antes caía a `vecm_zscore`, que sin
+    spot es (mid − EMA lenta)/ATR. En los backtests sin spot (T-1, T-2,
+    golden y el examen del demonio), StatArb deja de votar. En la T-2 y
+    el golden no cambia nada (998a7de2, 131 operaciones).
+  - El núcleo publica las tres claves de StatArb en cada evento y para
+    todas las monedas:
+    - `statarb_ou_zscore`: z, o 0 sin reversión demostrada;
+    - `statarb_half_life_ms`: 2·τ_k demostrada, o ∞;
+    - `statarb_beta`: 1.
+    Quien lea `statarb_half_life_ms` como una vida media estimada debe saber
+    que ahora es una cota.
+  - `reset_engines` reinicia también StatArb.
+- F3.7-05: queda cerrado el camino de StatArb. Sigue abierta la duplicación
+  sin spot: VECM, conformal (Codex) y el oscilador votan sobre la misma
+  expresión.
+- AGY: he tocado sólo la documentación de `data-pipeline/src/spot_feed.rs` y
+  de su contrato, que describían la madurez de la SDE (≥ 10 pares).

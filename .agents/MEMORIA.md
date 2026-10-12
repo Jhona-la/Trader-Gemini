@@ -46,7 +46,7 @@
   - `t2_cobertura_puertas`: huella determinista `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico.
   - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
 
-## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-83 y CL-85 a CL-96 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-03, F3.7-04, F3.3-09, F3.3-07, F3.2-03, F3.2-05 rama 11, F3.3-03, revisión de los PR #43–#56)
+## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-83 y CL-85 a CL-97 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-02 v2, F3.7-03, F3.7-04, F3.3-09, F3.3-07, F3.2-03, F3.2-05 rama 11, F3.3-03, revisión de los PR #43–#56)
 
 - #44 (CL-67 y CL-71) fusionado en main (8f572f7c).
 - Las 62 propuestas del borrador de C-F3 son 71 tests: 13 activos y 58 OPEN,
@@ -156,6 +156,33 @@
   - CL-92, CL-94, CL-95: pruebas que pasaban por la razón equivocada o
     dependían del orden; F3.3-03 cerrado.
   - CL-96: corregida la nota falsa de CL-73 sobre la paridad de forest6.
+- #59 (CL-88 a CL-96) fusionado en main (742479b9).
+- CL-97 y CL-97b (F3.7-02 v2, cierra F3.7-02 y el camino de StatArb de
+  F3.7-05): StatArb sólo vota con la reversión de la base demostrada.
+  - `strategy_core::prueba_reversion`, por nodo τ_17 a τ_22:
+    - rejilla de τ_k/8 con memoria 16·τ_k;
+    - variables instrumentales con instrumento b(t−2Δ), HAC de retardo 1
+      y corrección de Kendall;
+    - H0 t½ ≥ 2τ_k en el nodo τ_k ≤ τ*;
+    - crítico 1,75, calibrado por Monte Carlo en la frontera (q95 máximo
+      1,76 y tamaño ≤ 5,1 % con ruido de 1 σ).
+  - Pares síncronos: cada llegada del spot con el mid del futuro vigente
+    al llegar. β = 1 fija.
+  - El núcleo publica las claves de StatArb en cada evento: z, la cota
+    2·τ_k (o ∞) y β = 1. `reset_engines` reinicia la prueba.
+  - El lector ya no cae a `vecm_zscore`: sin prueba propia, abstención.
+  - Medido:
+    - en el núcleo, caminatas independientes 0/40 (main 39/40) y
+      reversión lenta 0/20 (main 20/20);
+    - golden y T-2 idénticos (998a7de2, 131 operaciones);
+    - T-1 17/144 con las 144 huellas iguales (base f1fb5d04): en estos
+      fixtures StatArb no movía ninguna decisión;
+    - camino caliente: 126,9 µs frente a 125,2 µs (ruido 4,1 µs) y las
+      mismas 2,218 asignaciones por evento: la puerta pasa.
+  - Integrado con main 544a5237 (Línea G) por merge; sólo el buzón tuvo
+    conflicto (unión). Sobre el árbol integrado: suites 252/0, cf como
+    en main, golden 54/0, T-2 998a7de2 (131 operaciones) y T-1 19/144
+    con la base 6dff337e y la lista de la Línea G.
 - Lecciones:
   - Antes de crear un test, comprobar que el archivo no existe (pisé
     `cf4_piso_resolucion.rs`; se restauró antes de cualquier commit).
@@ -164,6 +191,13 @@
   - Con el disco casi lleno, el compilador se queda sin memoria virtual
     (error 1455) y deja artefactos a medias: repetir con `-j2` y limpiar
     el paquete roto (`cargo clean -p`).
+  - Un fixture con spot y futuro tiene que reproducir la llegada real:
+    el spot llega entre dos eventos y refleja el futuro vigente. Si refleja
+    el futuro del evento siguiente, el par asíncrono mete el paso del
+    futuro como ruido en la base.
+  - Un `Mutex` estático en pruebas debe tolerar el envenenamiento
+    (`unwrap_or_else(PoisonError::into_inner)`): si no, el primer fallo
+    arrastra a las demás pruebas y la corrida RED no dice nada.
 
 ## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
 

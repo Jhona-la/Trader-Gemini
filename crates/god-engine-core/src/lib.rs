@@ -986,12 +986,12 @@ pub struct GodEngineCore {
     /// resolución se fija dos veces por evento; el tick sólo cambia cuando
     /// se republica el registro o el universo.
     piso_cache: Vec<(u64, f64)>,
-    /// OLA 73 (R6-A3/B1/A4): ESCRITOR real de la física StatArb por moneda —
-    /// SDE OU continua sobre la basis futuro-spot con reloj físico y β RLS
-    /// adaptativa. Publica `statarb_ou_zscore`/`statarb_half_life_ms`/
-    /// `statarb_beta` al registro; la instancia del orquestador es lectora
-    /// pura de esas claves (antes su SDE nunca corría y el voto leía
-    /// `vecm_zscore` = basis/ATR sin cointegración).
+    /// ESCRITOR de la física StatArb por moneda (OLA 73, R6-A3/B1). CL-97
+    /// (F3.7-02 v2): prueba de reversión de la base ln F − ln S (β = 1) sobre
+    /// pares síncronos futuro-spot, en el nodo de la malla τ_k ≤ τ*
+    /// (`strategy_core::prueba_reversion`). Publica `statarb_ou_zscore`,
+    /// `statarb_half_life_ms` (cota demostrada) y `statarb_beta`; la
+    /// instancia del orquestador es lectora pura de esas claves.
     pub statarb_ou_engines: Vec<strategy_core::stat_arb::StatArbEngine>,
     /// CL-78 (F3.7-01): z de la base futuro-spot contra su propia media y
     /// dispersión, por moneda (`vecm_zscore` con spot).
@@ -1240,12 +1240,10 @@ impl GodEngineCore {
         tensor_orchestrator.add_strategy(Box::new(
             strategy_core::vecm_arbitrage::JohansenVecmEngine::default(),
         ));
-        // OLA 73 (R6-A5): LECTOR PURO del registro. La fisica viva OU no vive
-        // aqui: `statarb_ou_engines` (por moneda) es la unica instancia con
-        // SDE + beta RLS que avanza en el hot-path y publica
-        // `statarb_ou_zscore`/`statarb_half_life_ms`/`statarb_beta`. Antes se
-        // construia con `.with_continuous_ou_sde()`, una SDE propia que nunca
-        // observaba nada: la etiqueta promitia fisica que no existia.
+        // OLA 73 (R6-A5): LECTOR PURO del registro. La fisica viva no vive
+        // aqui: `statarb_ou_engines` (por moneda) es la unica instancia que
+        // avanza en el hot-path (CL-97: prueba de reversion de la base) y
+        // publica `statarb_ou_zscore`/`statarb_half_life_ms`/`statarb_beta`.
         tensor_orchestrator.add_strategy(Box::new(
             strategy_core::stat_arb::StatArbEngine::new(30, 1.5),
         ));
@@ -1329,9 +1327,9 @@ impl GodEngineCore {
             base_z: (0..n_coins).map(|_| base_z::BaseZ::new()).collect(),
             statarb_ou_engines: (0..n_coins)
                 .map(|_| {
-                    strategy_core::stat_arb::StatArbEngine::new(30, 1.5)
-                        .with_continuous_ou_sde()
-                        .with_adaptive_beta(true)
+                    // CL-97: β fija en 1 (sin RLS): con β estimada sobre los
+                    // mismos datos el residuo revierte por construcción.
+                    strategy_core::stat_arb::StatArbEngine::new(30, 1.5).with_prueba_reversion()
                 })
                 .collect(),
             tensor_orchestrator,
@@ -1500,6 +1498,10 @@ impl GodEngineCore {
         // CL-87 (spot_z-1): la serie de la base se corta en la reconexión.
         for z in self.base_z.iter_mut() {
             *z = base_z::BaseZ::new();
+        }
+        // CL-97: y la prueba de reversión de StatArb vuelve a madurar.
+        for e in self.statarb_ou_engines.iter_mut() {
+            *e = strategy_core::stat_arb::StatArbEngine::new(30, 1.5).with_prueba_reversion();
         }
     }
 
@@ -4840,13 +4842,27 @@ impl GodEngineCore {
             // la EDAD DEL SPOT, no con la del último tick del futuro. Cuando
             // cae el stream, el escritor descarta bid/ask ≤ 0 y la arena
             // conserva el último spot: sin su marca de llegada, el TTL no
-            // saltaba nunca y la SDE, el z de la base y el sesgo seguían
+            // saltaba nunca y StatArb, el z de la base y el sesgo seguían
             // votando contra un spot fijo.
             const SPOT_TTL_MS: u64 = 30_000;
             let spot_presente = spot_bid > 0.0 && spot_ask > 0.0;
-            let spot_fresco = spot_presente
-                && event_time_ms.saturating_sub(coin.spot_ts_ms.load(Ordering::Relaxed))
-                    <= SPOT_TTL_MS;
+            let spot_ts = coin.spot_ts_ms.load(Ordering::Relaxed);
+            let spot_fresco =
+                spot_presente && event_time_ms.saturating_sub(spot_ts) <= SPOT_TTL_MS;
+            // CL-97 (F3.7-02 v2): pares síncronos de la base para la prueba
+            // de reversión de StatArb. Cada llegada del spot (cambio de su
+            // marca) se empareja con el mid del futuro vigente cuando llegó.
+            // Corre en todos los eventos, también con las entradas
+            // bloqueadas: el mid previo debe ser el del evento anterior.
+            if mid_price.is_finite() && mid_price > 0.0 {
+                let spot_mid_par = if spot_presente { (spot_bid + spot_ask) / 2.0 } else { 0.0 };
+                self.statarb_ou_engines[coin_id].observar_evento(
+                    mid_price,
+                    spot_mid_par,
+                    spot_ts,
+                    event_time_ms,
+                );
+            }
             // MOD2/7-028 (INFORME DECIMOCUARTO): el salto ±0.15 ABSOLUTO al
             // cruzar 1.5 bps no tenía base — 15 puntos de probabilidad por
             // 1.5 bps de spread podían mover el gate sin opinión de modelo.
@@ -5643,8 +5659,9 @@ impl GodEngineCore {
             let ofi_norm = (ofi / dynamic_ofi_thr).clamp(-1.5, 1.5);
             // CL-78 (F3.7-01): con spot, `vecm_zscore` es el z de la base
             // b = (F − S)/F contra SU media y SU dispersión (promedios
-            // temporales por nodo de la malla, leídos a la τ dominante, la de
-            // la SDE OU de la base; piso de σ = un tick relativo; ver
+            // temporales por nodo de la malla, leídos a la τ dominante, la
+            // misma con que StatArb elige el nodo de su prueba de reversión;
+            // piso de σ = un tick relativo; ver
             // `base_z`). Antes era el NIVEL de la
             // base entre el ATR del futuro: una prima constante votaba
             // reversión en cada evento. Sin una τ de historia, 0 (abstención).
@@ -5676,40 +5693,24 @@ impl GodEngineCore {
                 ((mid_price - ema_macro) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0);
             set_reg("quantum_position_deviation", pos_dev);
 
-            // OLA 73 (R6-A3/B1/A4/B2): ESCRITOR vivo de la física StatArb —
-            // SDE OU continua sobre la basis futuro-spot (ln P_fut − β·ln P_spot)
-            // con reloj físico del exchange y β RLS adaptativa, por moneda.
-            // `statarb_half_life_ms` = ln(2)/θ CALIBRADA EN PRODUCCIÓN (θ ya
-            // no está congelada en 0.1: la guarda t½ ≤ 2τ* del lector deja de
-            // ser decorativa — R6-B2).
-            //
-            // PARIDAD LECTOR/ESCRITOR (R6-A3): la clave SÓLO se publica cuando
-            // la física OU EXISTE para esta moneda (SDE madura: ≥10 pares
-            // spot-futuro causalmente crecientes). Publicar 0.0 desde el
-            // arranque sombrea para siempre el fallback documentado del lector
-            // (`vecm_zscore`), silenciando una señal viva sin evidencia. Con la
-            // física madura, el 0.0 SÍ es honesto: abstención por feed de spot
-            // stale > TTL (R6-C4 anti-staleness).
-            // CL-79 (F3.7-03): la SDE sólo se alimenta con spot fresco, y la
-            // abstención se decide por la edad del spot (SPOT_TTL_MS).
-            let eng_st = &mut self.statarb_ou_engines[coin_id];
-            if spot_fresco && mid_price > 0.0 {
-                let spot_mid_st = (spot_bid + spot_ask) / 2.0;
-                let _ = eng_st.update_with_clock(mid_price, spot_mid_st, event_time_ms, tau_dom);
-            }
-            if let Some(z_madura) = eng_st.last_ou_zscore() {
-                let statarb_z = if spot_fresco
-                    && event_time_ms.saturating_sub(eng_st.last_ou_ts_ms()) <= SPOT_TTL_MS
-                {
-                    z_madura
-                } else {
-                    0.0
+            // CL-97 (F3.7-02 v2): ESCRITOR de StatArb. Veredicto de la prueba
+            // de reversión de la base a la τ de decisión: z del último par y
+            // cota de vida media demostrada (2·τ_k del nodo τ_k ≤ τ*), o z = 0
+            // y t½ = ∞ sin demostración. Con el spot caducado (> TTL, CL-79)
+            // la z es 0. Se publica en cada evento y para toda moneda: así una
+            // clave nunca queda con un veredicto viejo (reconexión, nodo que
+            // deja de estar maduro, spot que desaparece). β = 1 fija.
+            {
+                let piso_base = self.feature_engines[coin_id].piso_resolucion / mid_price;
+                let eng_st = &self.statarb_ou_engines[coin_id];
+                let (z_st, t_media_st) = match eng_st.veredicto(tau_dom, piso_base) {
+                    Some(v) => (if spot_fresco { v.z } else { 0.0 }, v.t_media_cota_ms),
+                    None => (0.0, f64::INFINITY),
                 };
-                let statarb_half_ms = eng_st.half_life_seconds() * 1000.0;
-                let statarb_beta = eng_st.beta_hedge_ratio;
-                set_reg("statarb_ou_zscore", statarb_z);
-                set_reg("statarb_half_life_ms", statarb_half_ms);
-                set_reg("statarb_beta", statarb_beta);
+                let beta_st = eng_st.beta_hedge_ratio;
+                set_reg("statarb_ou_zscore", z_st);
+                set_reg("statarb_half_life_ms", t_media_st);
+                set_reg("statarb_beta", beta_st);
             }
 
             // OLA Ω36/Ω38/Ω41/R6-C6/R7-R3-D-2: Evaluación de geometría gauge Yang-Mills y Helmholtz-Hodge en tiempo real
