@@ -156,16 +156,40 @@ fn indice_de_corte(n: usize) -> usize {
     ((n as f64) * FRACCION_SELECCION).floor() as usize
 }
 
+/// LG-17b — ¿evalúa el evolver con el mismo motor que opera?
+///
+/// No todavía. `evaluar` alimenta el núcleo por el envoltorio legacy
+/// `process_tick`, que se salta lo que `process_event` hace en el vivo y en
+/// el replay canónico (excitación de Hawkes, CVD agregado, banco espectral,
+/// calibración del ensamble por vela, publicador de contagio), y no aplica la
+/// envolvente del host (`live_envelope_gate`). Un genoma seleccionado ahí se
+/// selecciona sobre ramas de decisión que el vivo no ejecuta, así que el
+/// evolver explora e informa pero no promueve. Pasa a `true` cuando `evaluar`
+/// use un replay canónico multiactivo (pedido a Sol: generalizar
+/// `booktick_replay` a N monedas; copiarlo aquí sería una segunda cara que
+/// divergiría).
+const EVALUADOR_CANONICO: bool = false;
+
 /// LG-17 — ¿se promueve el campeón de la selección?
 ///
-/// Sólo se juzga sobre aggTrades reales (D-691: con microestructura
-/// fabricada el veredicto no vale). Con un incumbente medido en la misma
-/// partición de juicio se exige el margen común de los promotores
-/// (`darwin::meets_promotion_margin`). Si el incumbente no tiene evidencia
-/// (aptitud no finita: menos de `MIN_OPERACIONES_JUICIO` operaciones), el
-/// candidato debe al menos crecer en log neto de la penalización de drawdown.
+/// Sólo con el evaluador canónico (`EVALUADOR_CANONICO`) y sobre aggTrades
+/// reales (D-691: con microestructura fabricada el veredicto no vale). Con un
+/// incumbente medido en la misma partición de juicio se exige el margen común
+/// de los promotores (`darwin::meets_promotion_margin`). Si el incumbente no
+/// tiene evidencia (aptitud no finita: menos de `MIN_OPERACIONES_JUICIO`
+/// operaciones), el candidato debe al menos crecer en log neto de la
+/// penalización de drawdown.
 fn decidir_promocion(candidato_oos: f64, incumbente_oos: f64, tapes_reales: bool) -> bool {
-    if !tapes_reales || !candidato_oos.is_finite() {
+    decidir_promocion_con(candidato_oos, incumbente_oos, tapes_reales, EVALUADOR_CANONICO)
+}
+
+fn decidir_promocion_con(
+    candidato_oos: f64,
+    incumbente_oos: f64,
+    tapes_reales: bool,
+    evaluador_canonico: bool,
+) -> bool {
+    if !evaluador_canonico || !tapes_reales || !candidato_oos.is_finite() {
         return false;
     }
     if incumbente_oos.is_finite() {
@@ -192,11 +216,13 @@ async fn main() -> Result<(), String> {
         initial_capital = 13.0;
     }
 
-    // LG-17: sin entorno explícito el almacén escribe en el silo
+    // LG-17: sin entorno reconocido el almacén escribe en el silo
     // `__UNSET__`, que nadie lee: la evolución quemaba CPU y anunciaba éxito.
-    if env::var("TG_GENOME_ENV").map(|v| v.trim().is_empty()).unwrap_or(true) {
-        eprintln!("❌ [EVOLVER] TG_GENOME_ENV no está definida (backtest | demo | prod). Sin entorno no hay a dónde promover: no se evoluciona.");
-        return Err("TG_GENOME_ENV no definida".into());
+    // La validación es la del propio almacén (lista cerrada backtest | demo |
+    // prod): un valor desconocido («production», una errata) caía al mismo silo.
+    if let Err(e) = quantum_arena::genome_store::current_env() {
+        eprintln!("❌ [EVOLVER] {e} Sin entorno no hay a dónde promover: no se evoluciona.");
+        return Err(e);
     }
     // LG-17: EVOLVER_LOW_RESOURCES (lo fija LAUNCHER.bat) acota los hilos de
     // rayon a la mitad de los núcleos para no competir con el motor vivo.
@@ -276,6 +302,10 @@ async fn main() -> Result<(), String> {
     ]);
 
     let symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"];
+    // LG-17b: el universo se publica como en el host (god_engine). Sin él
+    // `update_market_data` es un no-op (guarda `coin_id < universo`) y el
+    // guardián de correlación trata toda pareja como la misma apuesta.
+    quantum_arena::symbols::update_dynamic_universe(symbols.iter().map(|s| s.to_string()).collect());
     let mut master_stream = Vec::new();
     // LG-17: el veredicto sólo vale sobre aggTrades reales (D-691).
     let mut tapes_reales = true;
@@ -762,6 +792,10 @@ async fn main() -> Result<(), String> {
                 ),
                 Err(e) => println!("❌ Error promoviendo genoma al almacén: {}", e),
             }
+        } else if !EVALUADOR_CANONICO {
+            println!(
+                "⚠️ El evaluador del evolver no es el canónico (process_tick legacy, sin envolvente del host): explora e informa, no promueve."
+            );
         } else if !tapes_reales {
             println!(
                 "⚠️ Tapes sin origen real (sintéticos o sin cabecera, D-691): no se promueve."
@@ -784,23 +818,43 @@ mod tests_lg17 {
 
     #[test]
     fn lg17_sin_tapes_reales_no_se_promueve() {
-        assert!(!decidir_promocion(0.50, 0.10, false));
-        assert!(!decidir_promocion(0.50, f64::NEG_INFINITY, false));
+        assert!(!decidir_promocion_con(0.50, 0.10, false, true));
+        assert!(!decidir_promocion_con(0.50, f64::NEG_INFINITY, false, true));
     }
 
     #[test]
     fn lg17_contra_un_incumbente_medido_exige_el_margen_comun() {
         // meets_promotion_margin: con base ≥ 0, > max(1,05·base, base + 1e-4).
-        assert!(!decidir_promocion(0.104, 0.10, true));
-        assert!(decidir_promocion(0.20, 0.10, true));
-        assert!(!decidir_promocion(f64::NEG_INFINITY, 0.10, true));
+        assert!(!decidir_promocion_con(0.104, 0.10, true, true));
+        assert!(decidir_promocion_con(0.20, 0.10, true, true));
+        assert!(!decidir_promocion_con(f64::NEG_INFINITY, 0.10, true, true));
     }
 
     #[test]
     fn lg17_contra_un_incumbente_sin_evidencia_exige_aptitud_positiva() {
-        assert!(!decidir_promocion(-0.05, f64::NEG_INFINITY, true));
-        assert!(!decidir_promocion(0.0, f64::NEG_INFINITY, true));
-        assert!(decidir_promocion(0.05, f64::NEG_INFINITY, true));
+        assert!(!decidir_promocion_con(-0.05, f64::NEG_INFINITY, true, true));
+        assert!(!decidir_promocion_con(0.0, f64::NEG_INFINITY, true, true));
+        assert!(decidir_promocion_con(0.05, f64::NEG_INFINITY, true, true));
+    }
+
+    /// LG-17b: mientras el evaluador no sea el canónico, nada se promueve.
+    #[test]
+    fn lg17b_sin_evaluador_canonico_no_se_promueve() {
+        assert!(!decidir_promocion_con(0.50, 0.10, true, false));
+        assert!(!decidir_promocion(0.50, 0.10, true));
+        assert!(!decidir_promocion(0.50, f64::NEG_INFINITY, true));
+    }
+
+    /// LG-17b: un entorno no reconocido no pasa la guarda (el almacén lo
+    /// mandaría al silo `__UNSET__`).
+    #[test]
+    fn lg17b_la_guarda_de_entorno_es_la_del_almacen() {
+        let src = include_str!("evolver.rs");
+        let fin = src.find("#[cfg(test)]").unwrap_or(src.len());
+        let codigo = &src[..fin];
+        assert!(codigo.contains("genome_store::current_env()"));
+        assert!(!codigo.contains(&["map(|v| v.trim()", ".is_empty())"].concat()));
+        assert!(codigo.contains("update_dynamic_universe("));
     }
 
     #[test]
@@ -829,6 +883,6 @@ mod tests_lg17 {
             assert!(!codigo.contains(p.as_str()), "el evolver aún contiene «{p}»");
         }
         assert!(codigo.contains("decidir_promocion("));
-        assert!(codigo.contains("TG_GENOME_ENV"));
+        assert!(codigo.contains("genome_store::current_env()"));
     }
 }
