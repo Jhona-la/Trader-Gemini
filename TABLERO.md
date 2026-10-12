@@ -81,9 +81,12 @@
 - **Ola 4 cerrada**: revisión desde la base de los 22 commits ajenos desde
   86218456 (25 hallazgos, 2 refutados, `docs/audit/linea_g/ola4_delta.tsv`);
   LG-20 (base forense por entorno, NULL, sin genomas repetidos).
-- **Siguiente**: el examen del demonio (C-F7: G049, G049b, D2-01, D2-02,
-  D1-08) si la Línea C lo cede; revisar CL-103…CL-107 cuando entren; replay
-  canónico multiactivo (Sol); cablear LG-9 con sus dueños.
+- **Ola 5 cerrada**: LG-21 (35 genes sin lector congelados; censo de los
+  144 en `docs/audit/linea_g/genes_censo.tsv`) y revisión previa al merge de
+  CL-101…CL-108 (26 hallazgos, 4 MED, `ola5_tanda_cf4.tsv`).
+- **Siguiente**: el examen del demonio (C-F7) si la Línea C lo cede; comprobar
+  la tanda CL-101…108 cuando entre; replay canónico multiactivo (Sol); cablear
+  LG-9 con sus dueños; leer lo que mida el T-3 de la Línea H.
 - **No toca**: ATR/σ̂60 (Línea C), orquestador/espectro (Qoder), registro
   (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol).
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
