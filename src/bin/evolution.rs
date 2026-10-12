@@ -118,7 +118,9 @@ fn evolve_main() {
         pub ask_qty: f64,
     }
 
-    let bytes_len = mmap.len();
+    // LG-15: los registros empiezan tras la cabecera de 8 B del tape.
+    let (_origen, cuerpo) = backtest_engine::tick_replayer::cuerpo_de_ticks(&mmap);
+    let bytes_len = cuerpo.len();
     let tick_size = std::mem::size_of::<BinTick>();
     let original_len = bytes_len / tick_size;
 
@@ -163,7 +165,10 @@ fn evolve_main() {
         println!("✅ NanoForest Loaded for Evolution: {}", path);
     }
 
-    let ptr = mmap.as_ptr() as *const BinTick;
+    // LG-15: el mmap está alineado a página y la cabecera mide 8 B, así que
+    // el cuerpo queda alineado a 8 (la alineación de BinTick).
+    let ptr = cuerpo.as_ptr() as *const BinTick;
+    debug_assert_eq!(ptr as usize % std::mem::align_of::<BinTick>(), 0);
     let ticks = unsafe { std::slice::from_raw_parts(ptr.add(offset), len) };
 
     let mut timestamps = Vec::with_capacity(len);
