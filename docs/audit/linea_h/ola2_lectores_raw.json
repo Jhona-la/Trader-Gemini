@@ -1,0 +1,1033 @@
+{
+ "A1-nucleo-cierre": {
+  "lente": "A1 — lo que el núcleo aprende en cada cierre (bloque de cierre de god-engine-core/src/lib.rs:4198-4802 y los módulos que toca), leído contra la ola 2 del T-3 (E1–E4, 13 USD, 1,8 cierres/h, τ 64–128 s, todas las órdenes al nocional mínimo)",
+  "resumen": "El bloque de cierre actualiza 19 lazos y todos menos cinco son inertes a 13 USD porque desembocan en el tamaño, que está clavado en la orden mínima (LH-04), o no tienen lector. Los cinco que sí deciden son: (1) Platt → win_probability → REJ_EV; (2) rama_registro → convicción 0 → aplanar (LG-1); (3) rachas direccionales → enfriamiento, cortafuegos D-500 y anti-whiplash; (4) peso hebbiano × compuesto contra los pisos P²; (5) ganancia epigenética espectral → τ*/fused, que olvida en 30 min. Tras 89 cierres con acierto 0,65 la operación 90 es igual a la 1: la p de Platt a s = 0,98 BAJA de 0,98 a (3,84·0,98 + 58)/(3,84 + 89) = 0,665 sin cruzar la puerta (p_gate ≈ 0,43), el registro de la rama 15 queda topado en n ≈ 43 por el halving de 12 h y su cota inferior de Wilson (0,50) no alcanza el piso conf_base ≥ 0,542, el sesgo epigenético (±0,15 por cierre, techo 2,0 en 7 ganancias netas) y el hebbiano (×1,079/×0,954, techo 2,0 en ≈ 21 cierres) saturan dentro del primer cuartil y el suelo de nocional los absorbe; el PPO se mueve < 15 % y el win_rate posterior pasa de 0,40 a 0,64 sin consumidor que muerda en micro. Tras 36 cierres con acierto 0,36 nada queda bloqueado más de ~1,3 h: la p de Platt termina en (3,76 + 13)/39,84 = 0,421, uno o cuatro centésimos bajo la puerta (0,43 en la geometría de la ventaja, ≈ 0,46 en la del nulo), y el olvido sólo actúa en el hueco desde el último dato (w = 2^(−Δt/12 h) hacia s = 0,98), así que reabre en Δt = 12 h·log2((0,98 − p)/(0,98 − p_gate)) = 0,2–1,3 h (trinquete H2-1); la rama 15 no se condena (hi = 0,52 > 0,42: haría falta p ≤ 0,27 con n = 43); las rachas se amortizan en ≈ k·base = 5–25 min (LH-07); el sesgo cae a 0,5 (consumidor lo recorta a 0,6) y el PF_LCB < 1 lleva el Kelly a ¼·clamp_min, ambos rescatados al nocional mínimo. El defecto nuevo que gobierna E2/E4 es que la evidencia de Platt no envejece mientras se opera: la ventana de 512 pares equivale a 285 h a esta cadencia, 24× la semivida declarada, y a una sola puntuación la p es una media Beta cuya memoria crece con la historia (tras 89 cierres de ventaja hacen falta 146 cierres de antipersistencia o 190 del nulo para cerrar la puerta, frente a 12–15 en frío). Por eso predigo que E2 y E4 operan el segundo tramo casi sin REJ_EV y pierden más que el tramo en frío, que E3 recupera la ventaja casi entera porque el nulo deja la p rozando la puerta, y que E1 no mejora por cuartiles. Ningún lazo puede invertir el signo (pesos hebbiano y PPO positivos, pendiente de Platt ≥ 0, regla de lado = vela previa ∧ EMA21): en E4 el motor sigue operando con la estructura vieja hasta que se acaba el tramo.",
+  "lazos": [
+   {
+    "nombre": "Platt por moneda (calibrator_by_coin)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4471,
+    "etiqueta": "is_win = net_trade_pnl > 0 (cualquier motivo de salida) apareado con score_at_entry = pos.confidence (≈ 0,98 en todas las aperturas del T-3, H2-N4)",
+    "memoria": "Ventana FIFO de 512 pares sin pesos por edad (calibration.rs:160-165); el olvido sólo actúa al consultar: p = w·p_ajustada + (1−w)·s con w = 2^(−Δt/12 h) desde el ÚLTIMO dato (calibrate_at :130-142). A una sola puntuación el ajuste es la media Beta (3,84·s + aciertos)/(3,84 + n): tras 89 cierres de ventaja p(0,98) = 0,665; tras 36 del nulo 0,421; 512 pares = 285 h a 1,8 cierres/h",
+    "consumidor": "win_probability de la intención (lib.rs:8158-8166) → puerta EV del riesgo (risk-engine lib.rs:1154-1177, p·TP − (1−p)·SL > f·mult) y Kelly; es el único lazo del cierre que decide PERMISO a 13 USD",
+    "escala_contra": "p_gate = (SL + f·mult)/(TP + SL) ≈ 0,43 en la geometría de la ventaja (pstar_real 0,418, mult 1,05–1,25) y ≈ 0,46 en la del nulo (SL ∝ ATR, menor sin deriva)"
+   },
+   {
+    "nombre": "Platt global (confidence_calibrator)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4477,
+    "etiqueta": "El mismo par (s, is_win) de todas las monedas",
+    "memoria": "Idéntica a la anterior (512 pares, olvido sólo en el hueco)",
+    "consumidor": "win_probability sólo mientras el calibrador de la moneda tenga < 5 observaciones (lib.rs:8158-8165); en el T-3 (una moneda) coincide con el de la moneda desde el cierre 5",
+    "escala_contra": "La misma p_gate"
+   },
+   {
+    "nombre": "Conformal por moneda (ACI recortado)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4458,
+    "etiqueta": "No conformidad 1−p̂ si ganó / p̂ si perdió, con p̂ = p_win_directional(is_long, ml_at_entry, base leída AL CIERRE) e is_win neto; sólo si ml_at_entry > 0",
+    "memoria": "Ventana 200, warm-up 30, α_eff ← clip(α_eff + (α_obj − err)/200, 1e-4, 0,5) (conformal.rs:182-203)",
+    "consumidor": "accepts()/p_value en lib.rs:5345-5348 → conformal_reversion_filter (signal-engine), fail-open y no consumido por el voto espectral: inerte",
+    "escala_contra": "Regla singleton {gana}: exige p̂ > ½ (p_pierde ≤ α); con el tocón del T-3 (0,95 largos / 0,78 cortos) y acierto 0,65 se abstiene a menudo pero nadie lo lee"
+   },
+   {
+    "nombre": "win_rate posterior D-680 (coin.metrics.win_rate)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4491,
+    "etiqueta": "is_win = neto > 0, mezcla de τ y ranuras",
+    "memoria": "Sin olvido: (wr·(n + 3,84) + x)/(n + 1 + 3,84) con prior 0,40 (WORST_TOLERATED_WR, state.rs:629); 0,40 → 0,641 tras 89 cierres a 0,65; → 0,365 tras 36 a 0,36",
+    "consumidor": "consejo (deliberar_traced: safe_wr contraído hacia 0,5 con k_prior; ≤ 6 vetos en el T-3), leverage_matrix (real_win_rate, risk lib.rs:795→1010, inerte en micro por el rescate al mínimo), q_perdida_cartera del tope de caída (en micro lo sustituye d*), respaldo EV que nunca corre (H2-2)",
+    "escala_contra": "Nada directo; el consejo la compara con 0,5"
+   },
+   {
+    "nombre": "gross_wins/gross_losses → PF y kelly_fraction de la moneda",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4607,
+    "etiqueta": "Sumas netas en USD; PF_LCB = (W/(L + ½·media))·e^(−1,64·√(2/n)) (evidence.rs:71-95); kelly = wr·(1 − 1/PF_LCB) con kelly_at_tau(τ de la operación CERRADA) y spectral_conf",
+    "memoria": "Sin olvido (acumuladores atómicos); tras la ventaja PF_LCB ≈ 2,0 → kelly ≈ 0,32; en el nulo PF_LCB < 1 → rampa de exploración ¼·clamp_min",
+    "consumidor": "risk-engine lib.rs:394 raw_kelly → clamp [clamp_min, clamp_max] (o kelly_cold = ¼·clamp_min si ≤ 0) → clamp_ruin(q) → kelly_adjusted → raw_exposure → rescate al nocional mínimo: a 13 USD el suelo absorbe cualquier valor",
+    "escala_contra": "PF ≤ 1 ⇒ exploración; p − q/b"
+   },
+   {
+    "nombre": "epigenetic_bias por moneda",
+    "archivo": "crates/quantum-arena/src/state.rs",
+    "linea": 433,
+    "etiqueta": "pnl_epigenetico = neto/nocional (XLIV-11) × 4/tau_inertia, con tau_inertia = clamp(τ/1 h, 0,1, 2) = 0,1 a τ ≤ 6 min ⇒ ×40, recortado a ±0,15: cualquier |neto| ≥ 0,375 % es un paso completo (ganancia media +0,72 %, pérdida −0,52 % en la ventaja)",
+    "memoria": "Sin olvido ni homeostasis; [0,5; 2,0]; 1 → 2 en 7 ganancias netas, → 0,5 en 4 pérdidas netas",
+    "consumidor": "risk-engine lib.rs:593-597: effective_confidence = conf × clamp(bias, 0,6, 1,4) → raw_exposure → tamaño (suelo del nocional mínimo a 13 USD: inerte)",
+    "escala_contra": "Signo del neto"
+   },
+   {
+    "nombre": "epigenetic_threshold_modifier por moneda",
+    "archivo": "crates/quantum-arena/src/state.rs",
+    "linea": 448,
+    "etiqueta": "Signo del neto con magnitud |pnl|/0,002 recortada a [0,15; 2,5]: pérdida +0,010·clamp(1/√tau_inertia, 0,5, 1,5)·mag (≈ +0,0375 a τ ≤ 6 min), ganancia −(0,006 + 0,015·factor_duración)·mag",
+    "memoria": "Relajación e^(−Δt/15 min) hacia 1 (epigenetic_threshold_at :367-375); [0,80; 1,25]",
+    "consumidor": "NINGUNO fuera de telemetría y tests (grep: risk-engine lee sólo epigenetic_bias; get_active_epigenetic_threshold sólo en quantum-arena/tests)",
+    "escala_contra": "Nada"
+   },
+   {
+    "nombre": "epigenetic_gain de las 32 escalas espectrales",
+    "archivo": "crates/quantum-arena/src/temporal_spectrum.rs",
+    "linea": 772,
+    "etiqueta": "is_win neto con magnitud BRUTA: +0,06·k·(1 + min(20·pnl, 2)) si gana, −0,10·k·(1 + min(15·|pnl|, 2)) si pierde, núcleo gaussiano k = e^(−½(Δln τ/0,8)²) centrado en τ_trade",
+    "memoria": "Homeostasis e^(−dt/30 min) hacia 1 en cada evento (:470-471): tras 2 h queda el 2 %; no cruza tramos",
+    "consumidor": "fusion_weight = clamp(2·|persistencia|·gain, 0,02, 3) (:251-256) → fused_score y τ dominante de respaldo (refresh_fusion :597-657) → rama 15 (confluencia_resonante), centroide τ* de todas las órdenes",
+    "escala_contra": "Equilibrio ≈ 62 % de acierto frente a p* ≈ 0,42"
+   },
+   {
+    "nombre": "Estimador Cramér–Lundberg por moneda",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4352,
+    "etiqueta": "neto/nocional por cierre",
+    "memoria": "Anillo de 256 cierres; R sólo con ≥ 30 y media > 0; se publica LCB z = 1,645",
+    "consumidor": "registry lundberg_r_nocional → veto de grupo correlation_guard (risk lib.rs:685-734), convertido con ÷L_max e invertido: inerte",
+    "escala_contra": "E[y] > 0 para que exista R"
+   },
+   {
+    "nombre": "Pesos Hedge del ensamble (update_with_trade_snapshot)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4386,
+    "etiqueta": "direccion_realizada = signo del mid bruto con el lado; Brier de la opinión congelada al abrir; η = clamp(0,25·clamp(|pnl|/10 pb, 0,5, 3), 0,08, 0,75)",
+    "memoria": "log-pesos sin shrink ni olvido",
+    "consumidor": "combined() → ml_prob (lib.rs:5293); con un solo modelo (tocón del T-3) es la identidad: inerte",
+    "escala_contra": "Brier frente a y ∈ {0,1}"
+   },
+   {
+    "nombre": "rama_registro[coin][rama] (TasaAcierto por rama)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4394,
+    "etiqueta": "is_win = neto > 0 atribuido a la rama que abrió (learning_evidence.branch; en el T-3 ≥ 90 % rama 15)",
+    "memoria": "Halving cada 12 h conservando la proporción (envejecer_registro_ramas lib.rs:244-279, llamado en :5457 antes de leer): a 1,8 cierres/h el n vivo oscila entre 21 y 43; intervalo de Wilson Z95 (:104-118)",
+    "consumidor": "conviccion_de_rama_con (rama 15 :7166, 13 :7087, 11 :6814, 14 :7236; ramas 1-10/20-24 con ½) → confidence → aplanar_sin_conviccion si 0 (LG-1) y, si pasa, conviccion = 1 + (conf − min_conf)⁺ del riesgo → tamaño (suelo)",
+    "escala_contra": "p* = p_equilibrio(TP, SL, f) de la sonda a la τ de la orden (≈ 0,42; ½ en ramas 1-10/20-24): hi < p* ⇒ 0; lo > p* ⇒ max(lo, conf_base); si no, conf_base ∈ [0,542; 0,95] (coherencia > 0,12)"
+   },
+   {
+    "nombre": "bosque_registro (autoridad del voto del bosque)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4407,
+    "etiqueta": "voto_bosque (forest6_prob > ½) == etiqueta_barrera(is_long, reason_code): sólo TP/SL del largo y TP del corto; el resto None",
+    "memoria": "Sin olvido (TasaAcierto sin envejecer)",
+    "consumidor": "lib.rs:7488-7500: si lo_Wilson > ½ y el bosque discrepa de la intención, confidence × 2(1 − lo); con el tocón sobre la EMA y la regla de lado vela previa ∧ EMA casi nunca discrepa: inerte en el T-3",
+    "escala_contra": "½"
+   },
+   {
+    "nombre": "Rachas de pérdida y relojes del enfriamiento (record_trade_outcome)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4320,
+    "etiqueta": "is_directional_loss = neto < 0 ∧ pnl_pct ≤ −0,05 % (lib.rs:4318); cualquier otro cierre (incluido perdedor neto pequeño) REINICIA todas las rachas (stateful_engine.rs:332-350); last_exit_fastband_ms y tau_ultimo_cierre_ms (:4304-4312)",
+    "memoria": "Amortización por niveles floor(log2(1 + Δt/base)) con base = min(τ_cierre, τ_dom) ≈ 64–128 s (stateful_engine.rs:511-533; lib.rs:6026-6032): espera efectiva ≈ k·base (k = 3 ⇒ 7·base ≈ 12 min; k = 8 ⇒ 16·base ≈ 27 min), techo 12 h",
+    "consumidor": "can_open_position_ms (lib.rs:6035, viabilidad), cortafuegos D-500 (lib.rs:7935-7950: pisos P² × 2^(k−1) desde k = 2), anti-whiplash post-loss misma dirección (lib.rs:7879-7883), loss_streak del consejo (:8225), umbrales OBI de las ramas 1-12 (:6148-6149)",
+    "escala_contra": "Literal 5 pb brutos; escalera binaria por k"
+   },
+   {
+    "nombre": "last_close_{ts,is_long,was_win,reason,exit_price}",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4622,
+    "etiqueta": "is_win neto, lado y motivo del último cierre de la moneda",
+    "memoria": "Hasta el siguiente cierre (sin decaimiento propio)",
+    "consumidor": "D-757 anti-whiplash (lib.rs:7799-7900): post-win misma dirección vetado < 1·base si estirado; post-win contraria < 1·base; post-loss contraria < 1·base O mientras el precio siga estirado en esa dirección (sin límite de tiempo); post-loss misma dirección base·2^racha_amortizada",
+    "escala_contra": "Signo de (mid − EMA21 de 1 min) en ATR"
+   },
+   {
+    "nombre": "Peso hebbiano por símbolo (y copia global)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4711,
+    "etiqueta": "R = (neto/nocional)/SL de la orden (:4706-4710; sl de :3712): TP ≈ +2,0 R, SL ≈ −1,24 R; w ← clamp(w·e^(lr·R), 0,25, 2) con lr = clamp(0,05/(1 + 100·ATR), 0,001, 0,05) ≈ 0,038 ⇒ ×1,079 por ganancia, ×0,954 por pérdida",
+    "memoria": "Multiplicativa sin olvido; equilibrio p ≈ 0,38 (≈ p*); ventaja: +0,033 ln por cierre ⇒ techo 2,0 en ≈ 21 cierres; nulo: −0,003 (neutro); antipersistencia (0,28): −0,0126 ⇒ de 2,0 a 1,0 en ≈ 55 cierres",
+    "consumidor": "hebbian_mult = clamp(w, 0,5, 2) (lib.rs:5072-5076) × raw_composite → composite_score clamp [−1, 1] (:5893): el veto de signo D-472 es inmune; los pisos P² p85 de |composite| (cuantiles.update :5916, acumulativo sin ventana) se alimentan del compuesto YA multiplicado",
+    "escala_contra": "R neto (CL-76)"
+   },
+   {
+    "nombre": "Política PPO global (5 pesos)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4761,
+    "etiqueta": "reward = neto/nocional (≈ ±0,002–0,007); ventaja tanh(10·(r − EMA_0,05 r)) ≤ 0,1; gradiente = rasgo DEL CIERRE × signo de la acción; lr 0,01, clip 0,2, pesos ∈ [0,01; 1000]",
+    "memoria": "Multiplicativa sin olvido; ratio por cierre ≤ 1 ± 0,0015 ⇒ < 15 % de deriva en 89 cierres",
+    "consumidor": "evaluate_policy (:5822) → micro_score (70 %) → compuesto",
+    "escala_contra": "EMA de la recompensa"
+   },
+   {
+    "nombre": "online_learner (residuo Kalman)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4797,
+    "etiqueta": "td_error = 1{is_win} − p_win_at_entry con los 64 rasgos del cierre",
+    "memoria": "Pesos con momentum 0,9",
+    "consumidor": "Ninguno en ml_prob (D-693, sombra); sólo diag_dir",
+    "escala_contra": "p_win"
+   },
+   {
+    "nombre": "Tracker de asientos del consejo (record_trade_outcome)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4646,
+    "etiqueta": "signo(señal_asiento·lado) == signo(retorno neto) por asiento no modulador",
+    "memoria": "Ventana deslizante ≤ 1000 decisiones (consejo_seniors.rs:1469-1509)",
+    "consumidor": "compute_weights (:1511-1537): peso = acierto_i/acierto_medio ∈ [0,5; 2] con ≥ 5 por asiento y ≥ 2 activos → deliberar; ≤ 6 vetos en toda la escalera: inerte",
+    "escala_contra": "Media de aciertos de los asientos activos (relativa, no p*)"
+   },
+   {
+    "nombre": "trade_count de la moneda",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4489,
+    "etiqueta": "+1 por cierre",
+    "memoria": "Sin olvido",
+    "consumidor": "es_sonda (< CIERRES_DE_SONDA ⇒ EV exento, risk lib.rs:1196-1212), arranque_frio_total, conservative_loss_q(wr, n) del tope de ruina; en los tramos compuestos el segundo tramo nunca vuelve a la fase de sonda",
+    "escala_contra": "n"
+   },
+   {
+    "nombre": "Trauma inmune y auditor sombra",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4656,
+    "etiqueta": "realized_ret < −1,5 % (nunca con SL ≈ 0,5 % a τ ≈ 100 s); pnl_drift = ret − (ml − ½)·0,02",
+    "memoria": "Disco / anillo",
+    "consumidor": "Ninguno en la decisión (publish_estimate falso en simulación aislada)",
+    "escala_contra": "Literal −1,5 %"
+   }
+  ],
+  "hallazgos": [
+   {
+    "id": "A1-01",
+    "severidad": "MED",
+    "archivo": "crates/god-engine-core/src/calibration.rs",
+    "linea": 145,
+    "categoria": "olvido / memoria del calibrador",
+    "defecto": "La semivida de 12 h no pesa la evidencia: update_at sólo sella ultimo_dato_ms y fit() ajusta los 512 pares con peso uniforme; calibrate_at mezcla con el prior sólo por el hueco desde el ÚLTIMO dato. Mientras el motor opera cada ~30 min (w = 2^(−0,5/12) = 0,97) la memoria efectiva es la ventana (512 pares ≈ 285 h a 1,8 cierres/h, 24× la semivida declarada) y, con todas las aperturas a s = 0,98, la p es la media Beta (3,84·0,98 + aciertos)/(3,84 + n), cuya velocidad de respuesta 1/(n + 3,84) decrece con la historia: el calibrador aprende un cambio de régimen tanto más despacio cuanto más ha operado.",
+    "escenario": "Tras 89 cierres a 0,65 (p = 0,665) entran cierres antipersistentes al 0,28: p(m) = (61,76 + 0,28·m)/(92,84 + m) cruza p_gate = 0,43 en m = 146 cierres (nulo al 0,36 contra 0,46: m = 190), más de lo que cabe en 50 h; el mismo régimen en frío cierra la puerta tras 12–15 cierres (p(15) = (3,76 + 4,2)/18,84 = 0,42). E2/E4 operan todo el segundo tramo con REJ_EV ≈ 0 y pierden más que el tramo en frío.",
+    "evidencia": "pub fn update_at(&mut self, score: f64, won: bool, now_ms: u64) { ... self.ultimo_dato_ms = Some(self.ultimo_dato_ms.map_or(now_ms, |u| u.max(now_ms))); self.update(score, won); }",
+    "arreglo": "Que la misma semivida pese la evidencia: en fit(), peso 2^(−(t_ahora − t_i)/SEMIVIDA_EVIDENCIA_MS) por par (los instantes ya se conocen en update_at) o, equivalentemente, un n efectivo acotado por la cadencia (n_eff ≤ Σ 2^(−k) · cierres por semivida), de modo que la memoria sea la semivida declarada y no la ventana; verificar con E2/E4: la puerta debe cerrarse tras ≈ 2·cierres-por-semivida adversos.",
+    "ya_registrado": "Parcial: H2-1 (lectores.tsv:11, trinquete del olvido hacia s), hallazgos.tsv:86 (aprende sólo de lo ejecutado; el olvido vuelve a la puntuación cruda) y lazos.tsv:36/73 («olvido de 12 h») describen el olvido en el hueco; ninguno registra que la evidencia no envejece mientras se opera ni que la memoria crece con n (E2/E4 lo miden)"
+   },
+   {
+    "id": "A1-02",
+    "severidad": "LOW",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 265,
+    "categoria": "olvido / potencia estadística",
+    "defecto": "El halving de 12 h (LG-1b) acota el n vivo del registro por rama a ≈ 2·cierres-por-semivida (43 a 1,8 cierres/h), y con ese tope el intervalo de Wilson no puede certificar ventaja ni condenar salvo desventajas extremas: lo(0,65, n = 43) = 0,50 < conf_base ≥ 0,542 (coherencia > 0,12), de modo que la rama «lo > p* ⇒ max(lo, piso)» nunca sube la convicción (haría falta n ≥ 85, 3,5 cierres/h); y hi < p* = 0,42 exige p ≤ 0,27 (hi(0,25; 43) = 0,396; hi(0,28; 43) = 0,428). El registro es inerte en las dos direcciones a la cadencia del T-3 y, con historia heredada, protege a la rama en un régimen adverso.",
+    "escenario": "E4: la rama 15 llega al tramo antipersistente con n ≈ 30, aciertos ≈ 20; tras 60 cierres al 0,28 queda n = 90, p = 0,41, hi = 0,51 > 0,42: no se condena en todo el tramo. En frío, 50 cierres al 0,28 dan hi = 0,416 < 0,42 ⇒ convicción 0 y aplanado (LG-1) hasta que el halving baje n a ≈ 25 (hi = 0,48), es decir 12 h sin operar.",
+    "evidencia": "for _ in 0..k.min(32) { if reg.n == 0 { break; } let n = reg.n as u64; let n_nuevo = n / 2; ... reg.n = n_nuevo as u32;",
+    "arreglo": "Derivar la memoria de la rama de su propia resolución estadística (el n que separa p* al nivel Z95 a la cadencia medida de la rama) o sustituir Wilson sobre 1{neto > 0} por la evidencia anytime-valid de LG-9 (e-proceso sobre R neto), que no necesita tope de n ni semivida fija; medir en E4 el cierre en que la rama 15 se condena (predicción: nunca con historia heredada).",
+    "ya_registrado": "Parcial: LG-1b (olvido del registro, PLAN_LINEA_G §LG-1), lazos.tsv:96 (absorbente hi < p* sin aplanar ni olvidar, anterior a LG-1b), hallazgos.tsv:62/128; la interacción tope-de-n ↔ certificación/condena no está registrada"
+   },
+   {
+    "id": "A1-03",
+    "severidad": "LOW",
+    "archivo": "crates/quantum-arena/src/state.rs",
+    "linea": 450,
+    "categoria": "código muerto / doc rancio",
+    "defecto": "epigenetic_threshold_modifier se escribe en cada cierre y decae con 15 min, pero no tiene lector de decisión: risk-engine sólo lee epigenetic_bias (lib.rs:593) y get_active_epigenetic_threshold sólo aparece en quantum-arena/tests. El doc de state.rs:387 («multiplicador del min_confidence_cutoff»), lazos.tsv:19 («escala REJ_CONFIDENCE») y hallazgos.tsv:336 («el umbral mueve REJ_CONFIDENCE») describen un consumidor que no existe.",
+    "escenario": "36 cierres del nulo (23 pérdidas a −0,52 % ⇒ +0,0375 por pérdida) llevan el umbral al techo 1,25 en 7 pérdidas; REJ_CONFIDENCE sigue en 0 (H2-N4) y nada cambia; el gasto es un átomo por cierre y una fila de telemetría.",
+    "evidencia": "self.epigenetic_threshold_modifier.store(new_threshold, Ordering::Relaxed);  // sin lector fuera de telemetry-server y tests",
+    "arreglo": "Retirar el lazo (y su fila de lazos.tsv) o cablearlo al consumidor que el doc declara con una prueba T-1 que lo exija; mientras tanto marcar «muerto» en el censo de la Línea G.",
+    "ya_registrado": "No (lazos.tsv:19 y hallazgos.tsv:336 lo dan por vivo)"
+   },
+   {
+    "id": "A1-04",
+    "severidad": "LOW",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 5916,
+    "categoria": "acoplamiento hebbiano ↔ pisos P²",
+    "defecto": "El compuesto que alimenta los cuantiles P² (pisos p85 de |composite| del cortafuegos D-500 y del piso de score) es el YA multiplicado por hebbian_mult (:5893 → :5916), y los P² son acumulativos sin ventana: un multiplicador saturado en 2,0 por un tramo ganador entra en el tramo siguiente con pisos aprendidos a ×1 durante horas, y a la inversa. El cortafuegos tras 2 pérdidas se vuelve ×2 más fácil de pasar justo cuando el régimen cambia.",
+    "escenario": "E2/E4: el hebbiano llega a 2,0 en ≈ 21 cierres de ventaja (×1,079/×0,954, lr 0,038) y en el nulo es neutro (−0,003 ln/cierre): el segundo tramo opera con |composite| ×2 frente a pisos p85 estimados sobre ≥ 3 000 velas ×1–2: más intenciones cruzan el D-500 en las primeras horas que en frío.",
+    "evidencia": "let composite_score: f64 = (raw_composite * hebbian_mult).clamp(-1.0, 1.0); ... self.cuantiles[coin_id].update(ofi, current_obi, composite_score, atr_pct);",
+    "arreglo": "Alimentar los P² con raw_composite (la distribución del instrumento) y aplicar el hebbiano después de los pisos, o darle a los P² la misma semivida que al calibrador; verificar con el conteo de vetos D-500 en el segundo tramo de E2/E4 frente al tramo en frío.",
+    "ya_registrado": "Parcial: lazos.tsv:82 y hallazgos.tsv:148 (ámbito y semilla global del hebbiano), lazos.tsv:29 (P² sin olvido ni ventana); el acoplamiento no está registrado"
+   },
+   {
+    "id": "A1-05",
+    "severidad": "INFO",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 98,
+    "categoria": "diseño del experimento (zona H)",
+    "defecto": "La sal del LCG incluye n (`(n as u64) << 44`): la serie «larga» de E1 (n = 6 000) es un sorteo de ruido distinto del peldaño de 3 000, así que sus 3 000 primeras velas NO son el tramo de ventaja de la ola 1 y sus cuartiles no son comparables con los 89 cierres medidos; sólo son comparables entre sí. En cambio serie_concatenada usa n = 3 000 en cada tramo, por lo que el prefijo de E2/E3/E4 sí coincide (la columna primer_tramo_cierres_iguales lo comprueba; sólo la posición abierta en la frontera puede diferir).",
+    "escenario": "Si E1 muestra Q1 con acierto 0,58 y 40 cierres, no es «peor arranque que la ola 1» (0,652, 89): es otra realización; cualquier lectura Q1-frente-a-ola-1 confunde ruido con aprendizaje.",
+    "evidencia": "let sal = ((p.a * 1e6) as u64) ^ (((p.d * 1e8) as u64) << 20) ^ ((n as u64) << 44);",
+    "arreglo": "Rotular en la salida de E1 que la serie es independiente de la del peldaño, o construir E1 como concatenación de dos tramos de 3 000 con sales distintas por índice de tramo (hoy dos tramos iguales compartirían el ruido y repetirían el patrón).",
+    "ya_registrado": "No"
+   },
+   {
+    "id": "A1-06",
+    "severidad": "INFO",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4761,
+    "categoria": "magnitud del aprendizaje (PPO)",
+    "defecto": "El paso del PPO es inobservable a la escala de un régimen: reward = neto/nocional (≈ ±0,002–0,007), ventaja tanh(10·(r − EMA)) ≤ 0,1, ratio = 1 + 0,01·rasgo·signo·ventaja ≤ 1,0015 por cierre ⇒ en 89 cierres los cinco pesos se mueven < 15 % (típicamente < 5 %) sobre un micro_score que luego pesa 70 % del compuesto cuyo signo decide D-472. No puede aprender dentro de un tramo de 50 h ni invertir un rasgo (pesos ≥ 0,01).",
+    "escenario": "E4: tras 100 cierres antipersistentes los pesos difieren de los del tramo de ventaja en < 15 %: la política que votaba «sigue la vela previa» sigue votándolo.",
+    "evidencia": "self.ppo_engine.update_policy(realized_ret, &ppo_close_features, if is_long { 1.0 } else { -1.0 }, 1.0, 0.05, 0.01, 0.20, 0.01);",
+    "arreglo": "Si se conserva, normalizar la recompensa por σ(τ) (R neto) y derivar lr de la varianza medida de la ventaja para que un régimen de k cierres mueva los pesos una fracción pre-registrada; si no, declararlo telemetría (hallazgos.tsv:286 ya pide una política por τ).",
+    "ya_registrado": "Parcial: lazos.tsv:83/164, hallazgos.tsv:151/159/286 (política global, estado del cierre, sin σ(τ)); la cota numérica del paso no está"
+   }
+  ],
+  "predicciones": [
+   {
+    "experimento": "E1",
+    "medida": "Cierres totales, acierto y PnL medio por cierre (USD) por cuartil del índice de cierre; REJ_EV; PnL total",
+    "prediccion": "160–200 cierres; acierto de cada cuartil en [0,51; 0,79] y |acierto(Q4) − acierto(Q1)| < 0,14; PnL medio por cierre de cada cuartil en [+0,004; +0,028] USD y |Q4 − Q1| < 0,012 USD; ningún orden monótono Q1 < Q2 < Q3 < Q4 (ni el inverso) en las dos medidas a la vez; REJ_EV = 0 en todo el tramo; PnL total +2,3 a +3,3 USD (lineal en el tiempo, no compuesto, porque el nocional es el mínimo)",
+    "razon": "No hay variable que cambie la operación con la experiencia: la p de Platt baja de 0,98 a ≈ 0,66 sin acercarse a p_gate 0,43; la convicción de la rama 15 no cambia (lo ≤ 0,54 < conf_base ≥ 0,542 con n ≤ 43); hebbiano (2,0 en ≈ 21 cierres), sesgo (2,0 en 7 ganancias netas) y Platt saturan dentro de Q1 y el suelo del nocional los absorbe; las rachas se amortizan en minutos. Las diferencias entre cuartiles son ruido binomial (sd ≈ 0,07 con n ≈ 45). Nota: la serie de 6 000 es otro sorteo (A1-05); Q1 no es la ola 1."
+   },
+   {
+    "experimento": "E2",
+    "medida": "primer_tramo_cierres_iguales; cierres, acierto, PnL y REJ_EV del segundo tramo frente al nulo en frío (36, 0,361, −0,126 USD, EV = 929)",
+    "prediccion": "iguales = n1 o n1 − 1 (sólo la posición abierta en la frontera cambia); segundo tramo: 50–90 cierres (≥ 1,4 × 36), acierto 0,32–0,42, PnL −0,40 a −0,15 USD (más negativo que −0,126 en ≥ 0,03 USD), b_real 1,2–1,45; REJ_EV del compuesto ≤ 30 (frente a 929 en frío); PnL(E2) − PnL(ventaja sola) ∈ [−0,40; −0,15] USD",
+    "razon": "A1-01: la p de Platt entra en el nulo en 0,665 y necesitaría ≈ 190 cierres al 0,36 para bajar de la puerta del nulo (≈ 0,46): el EV no cierra nunca y el motor opera el nulo a la cadencia sin puerta; en frío la puerta se cerró en la segunda mitad (p final 0,421) y el trinquete reabría cada ≈ 1,3 h. La rama 15 heredada (n ≈ 30, 0,65) no se condena (hi ≥ 0,51). El hebbiano saturado (2,0) y los pisos P² heredados (A1-04) añaden intenciones en las primeras horas. Nada protege: el estado ganador agrava la pérdida del nulo."
+   },
+   {
+    "experimento": "E3",
+    "medida": "Cierres, acierto, PnL y REJ_EV del segundo tramo frente a la ventaja en frío (89, 0,652, +1,41 USD, EV = 0); instante del primer cierre tras la frontera",
+    "prediccion": "Segundo tramo: 78–92 cierres (≥ 0,85 × 89), acierto 0,60–0,69, PnL +1,05 a +1,50 USD (dentro del 25 % de +1,41); REJ_EV(E3) − 929 ≤ 60; primera apertura del segundo tramo ≤ 1,5 h después de la frontera; PnL(E3) − PnL(nulo) ∈ [+1,0; +1,5] USD. No hay estado absorbente.",
+    "razon": "El nulo deja la p de Platt en (3,76 + 13)/39,84 = 0,421, a 0,01–0,04 de la puerta de la ventaja (0,43): el trinquete del olvido reabre en Δt = 12 h·log2((0,98 − 0,421)/(0,98 − 0,43)) = 0,2 h, y dos ganancias ((16,8 + 2)/41,8 = 0,45) la dejan abierta; con trade_count ≥ 5 no hay fase de sonda (efecto < 5 cierres). Ningún otro lazo cruza la frontera con fuerza: sesgo 0,5 y PF < 1 van al suelo del nocional, hebbiano ≈ 1,0 (neutro al 0,36), ganancia espectral olvida en 30 min, rachas en minutos, rama 15 no condenada (hi(0,36; 20) ≈ 0,58). Es el fixture que pedía el LEDGER §7.6.1: la respuesta es «reabre en menos de 1,5 h». Si el segundo tramo da < 60 cierres o < +0,8 USD, hay un portador no modelado (P² acumulativos o τ por Hurst)."
+   },
+   {
+    "experimento": "E4",
+    "medida": "Cierres, acierto, PnL y REJ_EV del segundo tramo frente a la antipersistencia en frío; lado de las aperturas frente al estado oculto (t3_lado_vs_estado) y frente al signo de la vela previa; cierre en que la rama 15 se condena",
+    "prediccion": "Antipersistencia en frío: 25–50 cierres, acierto 0,22–0,35, PnL −0,45 a −0,15 USD, REJ_EV ≥ 800. Segundo tramo del compuesto: 55–110 cierres (≥ 1,5 × el frío), acierto 0,22–0,35, PnL −0,95 a −0,40 USD, REJ_EV ≤ 30; PnL(E4 segundo) − PnL(anti frío) ≤ −0,20 USD. Sin inversión: ≥ 75 % de las aperturas del segundo tramo siguen el signo de la vela previa y el lado coincide con el estado oculto ≤ 0,30 (0,82 en la ventaja). La rama 15 no se condena en ningún cierre del compuesto; en frío puede condenarse hacia el cierre 45–55 y reabrir ≈ 12 h después.",
+    "razon": "Ningún lazo puede cambiar el signo (hebbiano y PPO positivos, pendiente de Platt ≥ 0, regla de lado vela previa ∧ EMA21): sólo el Hurst medido < 0,45 (is_anti_persistent, lib.rs:5994) sube el piso OBI un 10 % y quita el camino «moderado» de la rama 15 (continuación falsa), que reduce aperturas pero no las invierte. A1-01: con p = 0,665 heredada hacen falta ≈ 146 cierres al 0,28 para cerrar la puerta (no caben en 50 h); en frío p(15) ≈ 0,42 la cierra tras 12–15 cierres y el trinquete reabre cada 1–3 h (p 0,37 → 1,7 h; 0,32 → 2,7 h). A1-02: la historia heredada mantiene hi ≥ 0,51. Rachas largas (0,72^5 = 19 %) cuestan sólo 5–27 min (LH-07) y el cortafuegos D-500 satura hasta amortizar (12–25 min): limitan la cadencia a ~1–2 cierres/h, no la detienen."
+   },
+   {
+    "experimento": "otro",
+    "medida": "Huecos sin apertura en los segundos tramos de E2–E4 atribuibles al enfriamiento (racha) frente a la puerta EV",
+    "prediccion": "Ningún hueco por enfriamiento supera 30 min (k ≤ 8 ⇒ ≤ 16·base ≈ 27 min con base 100 s); todo hueco > 1 h del segundo tramo coincide con REJ_EV acumulándose (E4 frío, nulo frío) o con ausencia de confluencia (|fused| ≤ 0,38 y coherencia ≤ 0,12), nunca con cooldown_ok = false",
+    "razon": "stateful_engine.rs:555-570 con niveles = floor(log2(1 + Δt/base)): la espera efectiva es ≈ k·base (LH-07), techo 12 h inalcanzable con base ≈ 100 s salvo k ≥ 32; la puerta EV y la confluencia son los únicos mecanismos con escala de horas."
+   },
+   {
+    "experimento": "otro",
+    "medida": "win_probability registrada en cada apertura del segundo tramo (si el runner la traza) en E2 y E4",
+    "prediccion": "Serie casi monótona decreciente desde ≈ 0,66 con pendiente ≈ −(0,66 − acierto)/(93 + m) por cierre (≈ −0,003 en el nulo, −0,004 en la antipersistencia); nunca baja de 0,50 en el nulo ni de 0,45 en la antipersistencia dentro de 50 h; saltos al alza hacia 0,98 sólo tras huecos ≥ 2 h sin cierre (olvido hacia s)",
+    "razon": "Media Beta a una sola puntuación con 92,84 pseudo-cierres heredados (A1-01) y olvido sólo en el hueco (calibrate_at)."
+   }
+  ],
+  "archivos_leidos": [
+   "crates/god-engine-core/src/lib.rs (60-320, 320-400, 4180-4860, 5050-5095, 5440-5480, 5810-5830, 5885-5905, 5994, 6020-6050, 6140-6175, 7155-7180, 7470-7520, 7780-7960, 8030-8060, 8130-8370, 8650-8700, 9200)",
+   "crates/god-engine-core/src/calibration.rs",
+   "crates/god-engine-core/src/conformal.rs",
+   "crates/god-engine-core/src/ensemble.rs",
+   "crates/god-engine-core/src/resultado_orden.rs",
+   "crates/god-engine-core/src/stateful_engine.rs (300-600)",
+   "crates/quantum-arena/src/state.rs (35-45, 360-520, 629-632)",
+   "crates/quantum-arena/src/temporal_spectrum.rs (108-123, 240-262, 440-480, 597-657, 704-716, 740-793)",
+   "crates/quantum-arena/src/genome.rs (2404-2445)",
+   "crates/risk-engine/src/lib.rs (300-340, 383-470, 530-640, 780-830, 1000-1016, 1125-1260)",
+   "crates/risk-engine/src/kelly.rs (16-90)",
+   "crates/risk-engine/src/evidence.rs (59-95)",
+   "crates/risk-engine/src/cramer_lundberg.rs (1-120, 192-212)",
+   "crates/signal-engine/src/perceptron_gate.rs (97-118)",
+   "crates/dark-alpha-engine/src/online_ppo.rs (1-210)",
+   "crates/metacortex-engine/src/consejo_seniors.rs (1104-1145, 1414-1537)",
+   "crates/backtest-engine/tests/t3_ventaja_conocida.rs (1-120, 340-360, 700-900)",
+   "crates/backtest-engine/src/lib.rs (364)",
+   "docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md (§6)",
+   "docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md (grep)",
+   "docs/audit/linea_g/lazos.tsv",
+   "docs/audit/linea_g/hallazgos.tsv (grep)",
+   "docs/audit/linea_h/lectores.tsv",
+   "docs/audit/linea_h/nuevos_escepticos.tsv",
+   "docs/audit/linea_h/predicciones.tsv (cabecera)",
+   "docs/audit/linea_h/escepticos_sintesis.md (grep)",
+   "docs/audit/linea_h/t3_escalera_13usd.tsv",
+   "docs/audit/linea_h/t3_trazas_13usd.txt (cabecera)",
+   "docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md (436-472 y grep)",
+   ".agents/MEMORIA.md (grep)"
+  ]
+ },
+ "A2-riesgo-evidencia": {
+  "lente": "A2 — la evidencia del riesgo y la reapertura (envolvente de Kelly, puerta EV con la p de Platt, q/tope de ruina, drawdown, sonda) sobre el runner canónico run_backtest_native a 13 USD",
+  "resumen": "En cada cierre la cadena del riesgo aprende cinco cosas con la MISMA etiqueta binaria «PnL neto > 0» y sin olvido por evidencia: el posterior de Jeffreys y las EWMA de pago de la envolvente del runner (kelly_envelope.rs:202-227, alimentada en backtest lib.rs:389-409), el win_rate posterior de la moneda (core lib.rs:4489-4494, prior 0,40 con k = 3,84), las sumas gross_wins/gross_losses y su PF_lcb (core:4499-4517 → evidence.rs:71), la kelly_fraction (core:4602-4622) y el calibrador Platt que fabrica win_probability (core:4469-4479 → :8158-8166), único con olvido, y éste hacia la PUNTUACIÓN CRUDA 0,98 con semivida 12 h, no hacia la evidencia. Además aprenden dos contadores sin etiqueta (trade_count → sonda a 5, bootstrap de la envolvente a 30) y una EWMA del riesgo validado (risk lib.rs:1479-1491, memoria 20) que alimenta un umbral de drawdown que a 13 USD vale 63,2 % (lib.rs:345-346). Quién consume: la puerta EV lee la p puntual de Platt contra p_gate = (SL + 1,25·f)/(TP + SL) ≈ 0,41-0,44 (lib.rs:1154-1219; la rama jerárquica 0,55/10 es inalcanzable); la envolvente decide sólo el apalancamiento de envío y, en micro, está exenta cuando f ≤ 0 pero veta cuando 0 < f < f_min (kelly_envelope.rs:386-411); win_rate y PF sólo mueven q → tope de ruina (0,14-0,37 frente a un riesgo mínimo de 0,0017) y un Kelly que el rescate al nocional mínimo vuelve inerte (lib.rs:1311-1345). Respuesta a la pregunta central: entre el cierre 1 y el 89 lo único que cambia una DECISIÓN a 13 USD es trade_count (5: fin de la sonda y de «una a la vez») y la p de Platt (0,98 → 0,665, siempre por encima de p_gate); la envolvente pasa de bootstrap a operable sin cambiar la cantidad (sólo el margen retenido, ×0,8-1,5) y el Kelly con evidencia sube el nocional de 5,40 a ≈ 5,6-5,9 USD (+4-9 %); nada cambia dirección ni τ, así que la R por operación no puede mejorar con la experiencia (E1 plana). Entre el cierre 36 perdedor y la ventaja siguiente el estado que importa es p_Platt = (13 + 3,84·0,98)/39,84 = 0,42, justo bajo la puerta: el olvido la reabre en Δt* = 12 h·log2((0,98 − 0,42)/(0,98 − 0,43)) ≈ 0,2-0,5 h y dos aciertos la fijan abierta, de modo que no hay estado absorbente (E3 recupera ≥ 85 % de la ventaja fresca); el posterior de la envolvente (0,365, n = 36) cruza el punto de equilibrio hacia arriba a los 25-40 cierres de ventaja y, con dos posiciones retenidas a 1×, atraviesa la ventana 0 < f < f_min = 5,4·SL/2,2 ≈ 0,01 durante 2-3 cierres: una ráfaga de reversiones invisible a REJECT_COUNTERS. En E2 la p aprendida (0,665) necesita ≈ 310 cierres del nulo para caer bajo la puerta: la puerta no se cierra en todo el tramo, el nulo opera a la cadencia del núcleo (40-70 cierres frente a 36) y el estado ganador AGRAVA ligeramente las pérdidas (−0,08 a −0,35 USD frente a −0,126), nunca las reduce. En E4 ningún lazo del riesgo aprende dirección: el lado sigue siendo la vela previa, la puerta EV tarda 70-120 cierres perdedores en cerrarse y el drawdown no muerde hasta −63 %: el estado ganador retrasa el único freno y multiplica las pérdidas del antipersistente frente al fresco.",
+  "lazos": [
+   {
+    "nombre": "Posterior Beta (Jeffreys) del acierto de la envolvente del runner",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/kelly_envelope.rs",
+    "linea": 202,
+    "etiqueta": "won = pnl_net > 0 de cada cierre del núcleo (backtest-engine/src/lib.rs:404-408), cualquier motivo de salida (TP, SL, trailing, decaimiento)",
+    "memoria": "Ninguna: α/β acumulan desde Beta(½,½) por corrida (fresca en cada run_backtest_native, no persiste ni olvida); n = α+β−1",
+    "consumidor": "booktick_replay.rs:730-773 live_envelope_gate → max_leverage/risk_fraction → exec_leverage (n < 30: bootstrap = validado; f ≥ f_min: min(0,05·f·brake/sl_gen(τ), floor(f/stop)); 0 < f < f_min: exec 0 → rollback; f ≤ 0 en micro: exec 1). Sólo mueve el margen de envío, nunca la cantidad",
+    "escala_contra": "p_lcb(z) − (1 − p_lcb)/b_lcb > 0, es decir p* = 1/(1 + b_lcb) ≈ 0,43-0,47; z = lerp(1,64; 0,85; micro_w) = 0,85 y k = 10 a 13 USD (booktick_replay.rs:728-729); tope streak_ruin_cap(q_lcb) y axioma 0,25"
+   },
+   {
+    "nombre": "Pago medio b de la envolvente (avg_win/avg_loss)",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/kelly_envelope.rs",
+    "linea": 209,
+    "etiqueta": "|pnl_net| en USD del cierre, ya suavizado por el runner (lib.rs:391-403, pnl_net ≥ 0 cuenta como ganancia ahí y > 0 en record_trade)",
+    "memoria": "EWMA α = 0,05 aplicada DOS veces (runner y record_trade): memoria efectiva ≈ 40 cierres; la primera observación siembra el valor",
+    "consumidor": "conservative_payoff_ratio(z) = 1 + (b − 1)·exp(−z/√n) → kelly = p − q/b_lcb en risk_fraction (:235-293)",
+    "escala_contra": "Paridad b = 1 (el descuento sólo actúa si b > 1); n del descuento es el recuento del posterior, no la memoria de la EWMA"
+   },
+   {
+    "nombre": "Bootstrap de la envolvente por recuento (n < 30)",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/backtest-engine/src/booktick_replay.rs",
+    "linea": 733,
+    "etiqueta": "Sólo el número de cierres (ningún resultado)",
+    "memoria": "Umbral fijo 30 por corrida",
+    "consumidor": "exec_leverage = round(nocional/margen) = el validado (:735-742): hasta el cierre 30 la envolvente no decide nada",
+    "escala_contra": "Nada: literal 30"
+   },
+   {
+    "nombre": "Exención micro de la envolvente (f ≤ 0 ⇒ apuesta mínima ejecutable)",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/kelly_envelope.rs",
+    "linea": 386,
+    "etiqueta": "Signo de risk_fraction (derivado del posterior) y micro_weight(cap_now, 5) = 1 a ≤ 15 USD",
+    "memoria": "La del posterior (sin olvido)",
+    "consumidor": "f = clamp_ruin(f_min_ejecutable, q_lcb) ⇒ operable con env_lev = 5,4/cap_now = 0,42 → floor → cap 1 ⇒ exec 1 ⇒ margen retenido = nocional entero (5,4 USD, 42 % de la cuenta por posición); pero si 0 < f < f_min (:408) ⇒ (0,false) ⇒ VetoEnvio::Envolvente ⇒ rollback tick a tick",
+    "escala_contra": "f_min_ejecutable = min_notional·stop/cap_now (0,0017 con 13 USD libres; 0,0098 con 2,2 USD libres tras retener dos posiciones a 1×)"
+   },
+   {
+    "nombre": "trade_count de la moneda",
+    "archivo": "C:/Users/jhona/Documents/Proyecto Gemini/.claude/worktrees/linea-h/crates/god-engine-core/src/lib.rs",
+    "linea": 4489,
+    "etiqueta": "Un cierre, sin resultado",
+    "memoria": "Contador por proceso (nace en 0 en cada corrida y peldaño; no persiste)",
+    "consumidor": "sonda.rs:41-65 (< 5 ⇒ fase de sonda: una abierta en la cartera, tamaño mínimo, EV exento salvo TP ≤ f, risk lib.rs:482-485/:1211-1214/:1349-1351); arranque_frio_total = 0 (:1153); n de win_rate_lcb, profit_factor_lcb, q_perdida_cartera",
+    "escala_contra": "CIERRES_DE_SONDA = 5 (ADR-0016 D4); 0 para el arranque frío"
+   },
+   {
+    "nombre": "win_rate posterior de la moneda",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/god-engine-core/src/lib.rs",
+    "linea": 4491,
+    "etiqueta": "is_win = net_trade_pnl > 0 (cualquier salida, cualquier τ y ranura)",
+    "memoria": "Media posterior (aciertos + 3,84·0,40)/(n + 3,84): sin olvido; prior 0,40 (state.rs:43/629), k = z² = 3,84 (genome.rs:2428-2444)",
+    "consumidor": "risk lib.rs:424-433 q = conservative_loss_q(wr, n) → clamp_ruin(kelly_frac); :649-666 tope del grupo y riesgo_candidata; :1269-1286 tope_riesgo_evento de orden_viable; :795→:1010 leverage_matrix prob_win = 0,7·wr + 0,3·p; :321-326 q_perdida_cartera del drawdown; evidence.rs:134 (rama muerta)",
+    "escala_contra": "streak = ln 200/ln(1/q_lcb) ⇒ f_cap = 1 − 0,05^(1/streak): q_lcb 0,60 → 0,25; 0,44 → 0,37; 0,76 → 0,144 — siempre ≫ riesgo mínimo 5,4·SL/13 = 0,0017: no decide nada a 13 USD"
+   },
+   {
+    "nombre": "gross_wins / gross_losses → cota inferior del profit factor",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/evidence.rs",
+    "linea": 71,
+    "etiqueta": "Sumas de |PnL neto| por signo (core lib.rs:4499-4507)",
+    "memoria": "Acumulativas sin olvido; descuento exp(−1,64·√(2/n)) y corrección de continuidad ½·m",
+    "consumidor": "risk lib.rs:368-381 → kelly_cold (pf ≤ 1 ⇒ ¼·clamp_min = 0,0085; :410-420) y leverage_matrix.rs:126-132 kelly_from_pf(prob_win, pf); core lib.rs:4602-4610 PF para kelly_fraction",
+    "escala_contra": "PF = 1 (sin edge). Con 89 cierres a 0,65 y b 1,4: pf_pto 2,56 → pf_lcb 2,0; con 36 del nulo: 0,76 → 0,52"
+   },
+   {
+    "nombre": "metrics.kelly_fraction de la moneda (al cierre)",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/kelly.rs",
+    "linea": 16,
+    "etiqueta": "W posterior y PF_lcb del cierre, con kelly_at_tau(τ del cierre) como coeficiente de supervivencia",
+    "memoria": "Se sobrescribe en cada cierre (sin olvido propio; hereda la del win_rate y PF)",
+    "consumidor": "risk lib.rs:392-420 raw_kelly → clamp(clamp_min 0,034, max) → clamp_ruin → :540-541 ×risk_normalizer (0,75 a 124 s) → :578-590 ×convicción (1,42 a conf 0,98) → :599 raw_exposure = conf·kelly·13",
+    "escala_contra": "Rescate al nocional mínimo (:1311-1345): con W 0,64 y PF_lcb 2,0 el margen sube de 0,90 a ≈ 0,94-1,0 USD ⇒ nocional 5,4 → 5,6-5,9 USD; nunca una segunda orden mínima"
+   },
+   {
+    "nombre": "Calibrador Platt → win_probability (p de la puerta EV)",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/god-engine-core/src/calibration.rs",
+    "linea": 130,
+    "etiqueta": "(puntuación cruda al abrir, 1{neto > 0}) en core lib.rs:4469-4479; la rama 15 (≥ 90 % de las aperturas) puntúa 0,98 (confianza_modulada, techo)",
+    "memoria": "Ventana de 512 pares sin envejecer; prior blando 3,84 pseudo-observaciones con etiqueta = puntuación ⇒ p_n ≈ (k + 3,84·0,98)/(n + 3,84); olvido SÓLO de la estimación: p = w·p_adj + (1 − w)·0,98 con w = 2^(−Δt/12 h) desde el último cierre (:139-141); per-coin desde 5 observaciones (core:8158-8165)",
+    "consumidor": "risk lib.rs:1154-1182 EV = p·TP − (1 − p)·SL frente a 1,25·f (:1187-1192, :1215-1219 → REJ_EV); leverage_matrix.rs:116-125 (30 % del prob_win)",
+    "escala_contra": "p_gate = (SL + 1,25·f)/(TP + SL) ≈ 0,41-0,44 según la τ (SL 38-50 pb, f 13 pb, RR 2,1-2,25). Tiempo de reapertura Δt* = 12 h·log2((0,98 − p_adj)/(0,98 − p_gate)): 0,2 h con p_adj 0,42, 0,8 h con 0,40, 2,4 h con 0,35"
+   },
+   {
+    "nombre": "Rama jerárquica win_rate_hierarchical_lcb (prior 0,55, k0 = 10)",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/evidence.rs",
+    "linea": 134,
+    "etiqueta": "win_rate posterior reinterpretado como frecuencia × n",
+    "memoria": "Posterior Beta(10·0,55 + n·w, 10·0,45 + n·(1 − w)), LCB a z = 1,64",
+    "consumidor": "risk lib.rs:1162-1174, sólo si win_probability ∉ (0, 1): el núcleo siempre adjunta una p finita en (0, 1) ⇒ rama muerta",
+    "escala_contra": "p_gate; literales 0,55/10 sin origen (nunca se ejecuta)"
+   },
+   {
+    "nombre": "q conservadora y tope de ruina (conservative_loss_q → clamp_ruin)",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/ruin.rs",
+    "linea": 90,
+    "etiqueta": "win_rate posterior (ya con prior 0,40) + n cierres → Jeffreys de nuevo (evidence.rs:109-125): doble prior",
+    "memoria": "La del win_rate; sin cierres (n < 1) q = 0,60 por proceso",
+    "consumidor": "risk lib.rs:432-433 (kelly_frac), :657-658 (tope del grupo), :1277-1286 (orden_viable), kelly_envelope.rs:291-292 (streak cap de la envolvente con q_lcb)",
+    "escala_contra": "TRADE_HORIZON 200 y SURVIVAL_FLOOR 0,05: f_cap ∈ [0,10; 0,25]; frente a un riesgo mínimo de 0,0017 nunca vincula a 13 USD"
+   },
+   {
+    "nombre": "EWMA del riesgo por operación validada (riesgo_por_operacion)",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/lib.rs",
+    "linea": 1479,
+    "etiqueta": "margen·L·SL/capital de cada orden VALIDADA (0,9·6·0,004/13 = 0,0017), no de las ejecutadas ni de las revertidas por la envolvente",
+    "memoria": "actualizar_riesgo_ewma con memoria TRADE_HORIZON/10 = 20 (peso 1/20 desde la 2.ª); nace en 0 por proceso",
+    "consumidor": "drawdown_maximo (lib.rs:328-332) y riesgo_candidata del veto Cramér-Lundberg (:659-666)",
+    "escala_contra": "dd_medido = 1 − (1 − r)^k con k = ln(200/0,05)/ln(1/q) = 12 ⇒ 2 % (clamp); pero umbral = min(lerp(dd_medido, 0,632, micro_w = 1), 0,632) = 63,2 % a 13 USD (lib.rs:341-348): inerte"
+   },
+   {
+    "nombre": "Pico de capital del RiskEngine (REJ_DRAWDOWN)",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/lib.rs",
+    "linea": 289,
+    "etiqueta": "Máximo de unified_capital realizado, muestreado al evaluar intenciones",
+    "memoria": "Monótono, sin olvido ni flotante, por proceso",
+    "consumidor": "lib.rs:316-349: dd ≥ umbral ⇒ REJ_DRAWDOWN",
+    "escala_contra": "Umbral 63,2 % en micro (QS-D3 d* = 1 − 0,05^(1/3)); la caída máxima de cualquier tramo del T-3 es < 3 %"
+   },
+   {
+    "nombre": "Sesgo y umbral epigenéticos de la moneda",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/quantum-arena/src/state.rs",
+    "linea": 433,
+    "etiqueta": "Retorno neto en % del cierre, escalado por 4/τ_inercia (clamp ±0,15); umbral +0,010·mag en pérdida, −0,006… en ganancia",
+    "memoria": "Sesgo acumulativo en [0,5; 2,0] sin olvido; umbral en [0,80; 1,25] con decaimiento temporal",
+    "consumidor": "risk lib.rs:592-598 effective_confidence = (conf·bias).clamp(0,05; 0,98) → raw_exposure; :1108-1118 min_required_confidence = base·ratio·epi → REJ_CONFIDENCE",
+    "escala_contra": "Techo 0,98 compartido con la puntuación 0,98 de la rama 15 y comparación estricta ⇒ inerte en ambos consumidores (H2-N4)"
+   },
+   {
+    "nombre": "Exención EV de la sonda y suelo de la barrera de comisiones",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/lib.rs",
+    "linea": 1211,
+    "etiqueta": "trade_count < 5 (sin resultado) y scarcity = micro_w = 1",
+    "memoria": "Ninguna",
+    "consumidor": "es_sonda ⇒ sólo TP > f (siempre cierto con RR ≥ 2,1); si no, EV > f·max(gen 1,0, 1,05 + 0,20·scarcity) = 1,25·f ⇒ p_gate 0,43 en vez de 0,40",
+    "escala_contra": "roundtrip_friction (13 pb) × 1,25"
+   },
+   {
+    "nombre": "Apalancamiento de envío y reserva de margen (envio.rs) — reajuste del margen retenido por el exec de la envolvente",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/envio.rs",
+    "linea": 69,
+    "etiqueta": "exec de la envolvente (0 = veto), validado = round(nocional/margen), margen libre sin la propia reserva",
+    "memoria": "Ninguna (estado = posiciones abiertas y used_margin)",
+    "consumidor": "booktick_replay.rs:786-808: Ok ⇒ reajustar_margen (nocional/L_envío) ⇒ used_margin; Err ⇒ rollback_local_position (:830-850) sin cierre ni contador",
+    "escala_contra": "nocional/L > 0,85·libre ⇒ sube L hasta el validado; > 0,95·libre ⇒ veto por margen. Con exec 1: 5,4 USD retenidos por posición, la 3.ª sube a 4×"
+   }
+  ],
+  "hallazgos": [
+   {
+    "id": "A2-01",
+    "severidad": "MED",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/god-engine-core/src/calibration.rs",
+    "linea": 139,
+    "categoria": "olvido/reapertura",
+    "defecto": "El olvido de la p calibrada va hacia la puntuación cruda s = 0,98 y la puerta está en ≈ 0,43, así que el tiempo de reapertura depende de cuánto por debajo de la puerta quedó p_adj, no de la semivida: Δt* = 12 h·log2((s − p_adj)/(s − p_gate)). En el punto de operación medido del nulo (p_adj = (13 + 3,76)/39,84 = 0,42) la puerta reabre en 0,2-0,5 h, no en horas; y desde p = 0,665 (tras 89 cierres ganadores) hacen falta n > (61,76 − 0,43·92,84)/(0,43 − 0,36) ≈ 310 cierres perdedores para que se cierre.",
+    "escenario": "E2: tramo nulo de 3 000 velas tras la ventaja: 0 ≤ REJ_EV ≤ 60 (frente a 929 en frío) y 40-70 cierres (frente a 36). E4: con 15-25 % de aciertos la puerta sólo se cierra tras 70-120 cierres del tramo antipersistente; el único freno evidencial del riesgo llega después de perder ≈ 1 USD.",
+    "evidencia": "let w = 0.5f64.powf(dt / SEMIVIDA_EVIDENCIA_MS); let prior = score.clamp(EPS, 1.0 - EPS); w * ajustada + (1.0 - w) * prior",
+    "arreglo": "Envejecer la EVIDENCIA (pesos 2^(−Δt/semivida) sobre los pares en fit) para que p decaiga hacia el prior de 3,84 pseudo-observaciones y no hacia s; derivar la semivida de la autocorrelación medida del acierto por τ en el replay, y que la única reapertura sin evidencia sea la sonda presupuestada D4. Medir en E2/E4 el recuento de cierres hasta el primer REJ_EV y contrastarlo con n₁ = 3,84·(s − p_gate)/(p_gate − p).",
+    "ya_registrado": "H2-1 (lectores.tsv, Δt* para p_adj 0,25-0,35), LH-08/H2-N5 (REJ_EV depende del camino), LEDGER:443-444 y MEMORIA:790 (dicen «horas»: sólo cierto con p_adj ≤ 0,30). Nuevo: el punto de operación 0,42 del nulo medido, los 13-30 min de reapertura y la inercia de ≈ 310 cierres en E2"
+   },
+   {
+    "id": "A2-02",
+    "severidad": "MED",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/kelly_envelope.rs",
+    "linea": 408,
+    "categoria": "no-monotonía/veto invisible",
+    "defecto": "La envolvente en micro tiene tres estados según el signo y la magnitud de f: f ≤ 0 ⇒ exenta (operable a 1×); 0 < f < f_min_ejecutable ⇒ (0,false) ⇒ exec 0 ⇒ rollback; f ≥ f_min ⇒ operable. Cada cruce del equilibrio del posterior (p_lcb = 1/(1 + b_lcb)) atraviesa la ventana vetada, y su anchura crece con el margen retenido: f_min = 5,4·SL/cap_now = 0,0017 con 13 USD libres pero 0,0098 cuando dos posiciones retienen 5,4 USD cada una a 1× (exactamente el estado en que está la cuenta mientras f ≤ 0).",
+    "escenario": "E3: posterior 0,365 (n = 36) sube con 65 % de aciertos; dp ≈ 0,0026 por cierre y la ventana en p ≈ 0,0065 ⇒ 2-3 cierres dentro de ella entre los cierres 55 y 85 del compuesto ⇒ 30-400 aperturas revertidas tick a tick (opened − closes > 0 en la traza), con 0 en la ventaja fresca. E4: cruce hacia abajo con ventana 0,002 (margen retenido 1,1) ⇒ ráfaga con probabilidad ≈ 0,4 entre los cierres 50 y 70 del tramo. Ninguna aparece en REJECT_COUNTERS.",
+    "evidencia": "if f <= 0.0 && micro_w > 0.0 { … f = crate::ruin::clamp_ruin(f_min_ejecutable, q_lcb); } … if f < f_min_ejecutable { return (0.0, false); }",
+    "arreglo": "Una sola regla continua: si la exploración mínima es admisible con f ≤ 0, lo es a fortiori con 0 < f < f_min (max(f, f_min) bajo el mismo clamp_ruin); y que la reversión cuente como rechazo (REJ_* propio) y enfríe al núcleo como un cierre. Medir en E3/E4 opened − closes por cierre para localizar el cruce.",
+    "ya_registrado": "H1-N3 (nuevos_escepticos: ventana no monótona, 124 anulaciones en a = 0,7), LH-03/H3-N1 (reversión que no enfría ni cuenta), H1-07 (envelope_vetoes no exportado). Nuevo: la anchura de la ventana depende del margen retenido (×6 tras dos posiciones a 1×) y la predicción del cruce en E3/E4"
+   },
+   {
+    "id": "A2-03",
+    "severidad": "HIGH",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/lib.rs",
+    "linea": 345,
+    "categoria": "freno ausente en micro",
+    "defecto": "A 13 USD ninguno de los cuatro frenos evidenciales del riesgo puede detener una racha perdedora: el drawdown se compara con min(lerp(dd_medido, 0,632, 1), 0,632) = 63,2 %; la envolvente está exenta (f ≤ 0 ⇒ operable); q → tope de ruina ≥ 0,10 frente a un riesgo mínimo de 0,0017; y la puerta EV (único que muerde) reabre en 0,2-2 h por olvido hacia 0,98. El tamaño no puede bajar (ya es la orden mínima), así que la única variable de defensa sería la cadencia, y la fija el núcleo (enfriamiento k·base), no el riesgo.",
+    "escenario": "E4 tramo antipersistente: pérdida por cierre 0,028 USD (SL 40 pb + 0,7 USD·0,13 %) con acierto 0,10-0,25 ⇒ −0,015 a −0,02 USD por cierre; si el núcleo abre ≥ 1,5/h: 80-150 cierres ⇒ −0,9 a −2,5 USD (−6 a −17 % de la cuenta) antes de que nada del riesgo intervenga; el nulo fresco perdió −0,126 en 36.",
+    "evidencia": "let umbral = crate::capital_regime::lerp(dd_max_medido, d_falsacion, micro_w).min(d_falsacion); if dd >= umbral { return rej(REJ_DRAWDOWN); }",
+    "arreglo": "Derivar un freno por evidencia neta que sea independiente del capital: e-proceso de Ville sobre R neto por cierre contra p* de la orden (LG-9, resultado_orden.rs sin cablear) que cierre la moneda hasta que la sonda D4 (una, mínima) reabra; el umbral de drawdown debe venir de la caída de N operaciones con σ medida (G057), no de d* relajado por micro_w. Contrastar con E4: cierres y PnL del tramo 2 frente al fresco.",
+    "ya_registrado": "H1-04 (drawdown 63 % en micro), H2-5 (envolvente exenta en micro), QS-D3/ADR-0016, LG-9 (pedido). Nuevo: la composición (ningún freno vincula a 13 USD) y la cota de pérdida de E4"
+   },
+   {
+    "id": "A2-04",
+    "severidad": "MED",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/backtest-engine/src/lib.rs",
+    "linea": 391,
+    "categoria": "doble suavizado/etiqueta",
+    "defecto": "El runner calcula una EWMA (α 0,05) de |pnl_net| y la pasa a record_trade, que la vuelve a suavizar con α 0,05: b arrastra ≈ 40 cierres; además el runner clasifica pnl_net ≥ 0 como ganancia y record_trade usa > 0, de modo que un cierre a cero alimenta avg_win pero cuenta como pérdida con la avg_loss anterior.",
+    "escenario": "E4: la pérdida media sube de 0,028 (ventaja, muchas salidas por trailing) a ≈ 0,030 (stops plenos) y la ganancia baja: b real cae de 1,40 a ≈ 1,1 en 20 cierres, pero b de la envolvente tarda ≈ 40-60 cierres en seguirlo ⇒ el cruce del equilibrio (A2-02) se retrasa 10-20 cierres respecto a la evidencia real.",
+    "evidencia": "avg_win_abs = if avg_win_abs == 0.0 { pnl_net.abs() } else { avg_win_abs * 0.95 + pnl_net.abs() * 0.05 }; … risk_envelope.record_trade(pnl_net > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));",
+    "arreglo": "Pasar el |pnl| crudo a record_trade (una sola EWMA) y usar la misma etiqueta (> 0) en ambos; derivar α de la memoria que corresponde al n del descuento de conservative_payoff_ratio.",
+    "ya_registrado": "lazos.tsv:140 (host suaviza b dos veces) y :168 (envolvente del replay). Parcial: aquí se cita la ruta del runner nativo y la discrepancia ≥ 0 / > 0"
+   },
+   {
+    "id": "A2-05",
+    "severidad": "MED",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/lib.rs",
+    "linea": 1154,
+    "categoria": "cota inferior ausente",
+    "defecto": "La puerta EV consume la p PUNTUAL de Platt; la cota jerárquica (:1162-1174) sólo corre si win_probability ∉ (0,1), que el núcleo nunca envía. La p lleva el sesgo 3,84·(0,98 − p)/(n + 3,84) hacia arriba y ninguna z: con 36 cierres al 0,36 la puerta está en el filo (0,42 frente a 0,43) y parpadea; con cota al z del sistema (1,64) estaría cerrada (0,42 − 1,64·0,078 = 0,29).",
+    "escenario": "Nulo fresco: la puerta sólo se cierra a partir del cierre n₁ ≈ 3,84·0,55/(0,43 − 0,36) ≈ 30 de 36, y los 929 REJ_EV se concentran en las últimas 10-15 h; E2 no se cierra nunca.",
+    "evidencia": "let p_ganar = if intent.win_probability.is_finite() && intent.win_probability > 0.0 && intent.win_probability < 1.0 { Some(intent.win_probability) } else if arranque_frio_total { None } else { Some(crate::evidence::win_rate_hierarchical_lcb(…, 0.55, 10.0)) };",
+    "arreglo": "Que la puerta compare la cota inferior al z único del sistema del posterior efectivo del calibrador (α = 3,84·s + k, β = 3,84·(1 − s) + n − k) contra p* de la orden; retirar la rama muerta y sus literales 0,55/10. Falsación en E2/E3: REJ_EV del tramo 2.",
+    "ya_registrado": "H2-2 (lectores.tsv), hallazgos.tsv risk-a:354/355 (rama inalcanzable, contrato de win_probability), lazos.tsv:193. Nuevo: sólo el número n₁ ≈ 30 del nulo medido"
+   },
+   {
+    "id": "A2-06",
+    "severidad": "LOW",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 826,
+    "categoria": "instrumento/determinismo",
+    "defecto": "La sal del generador incluye n (`((n as u64) << 44)`, :98), así que la serie «larga» de 6 000 velas de E1 no es el prefijo de la de 3 000: su primera mitad es OTRA muestra (acierto ±0,07 de ruido muestral), y E1 no es comparable cierre a cierre con la ventaja fresca. Además los contadores de rechazo del compuesto se miden sobre la corrida entera: REJ_EV del tramo 2 sólo se obtiene como compuesto − primer tramo fresco (válido porque el prefijo es idéntico).",
+    "escenario": "E1 con 180 cierres y acierto global 0,60 se leería como «peor que los 89 de la ventaja (0,652)» sin que nada haya cambiado; E3 mostrará REJ_EV ≈ 929 + x y hay que restar los 929 del nulo fresco para leer x.",
+    "evidencia": "let sal = ((p.a * 1e6) as u64) ^ (((p.d * 1e8) as u64) << 20) ^ ((n as u64) << 44); … let larga = Peldano { a: 0.90, d: 0.0020, sigma, n: 2 * n };",
+    "arreglo": "Construir E1 como serie_concatenada(ventaja, ventaja) (mismo prefijo; el segundo tramo con su propia sal es otra muestra de la misma ley) o quitar n de la sal; publicar en la fila los rechazos del tramo 2 como diferencia contra el fresco.",
+    "ya_registrado": "No (LH-10 es de esta ola; H2-6/H1-07 sólo piden exportar envelope_vetoes)"
+   },
+   {
+    "id": "A2-07",
+    "severidad": "MED",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/backtest-engine/src/booktick_replay.rs",
+    "linea": 692,
+    "categoria": "cobertura de la envolvente",
+    "defecto": "live_envelope_gate sólo dictamina cuando prev_open era false: la 2.ª y 3.ª ranura abiertas mientras otra posición vive nunca pasan por la envolvente ni por la adaptación de envío; y el exec de la envolvente sólo reajusta el margen (nunca la cantidad). En micro con f ≤ 0 la primera posición retiene el nocional entero (5,4 USD = 42 %), las siguientes lo que validó el riesgo (0,9) sin que nadie lo revise.",
+    "escenario": "E3 tramo 2 antes del cruce (f ≤ 0): posición 1 retiene 5,4; posiciones 2-3 abiertas mientras la 1 vive retienen 0,9 cada una sin pasar por la envolvente ⇒ el «veto» de la envolvente sólo puede caer sobre ≈ 1/3 de las aperturas; la ráfaga de A2-02 se concentra en las aperturas con la cartera vacía.",
+    "evidencia": "if prev_open { return true; // nada nuevo que dictaminar }",
+    "arreglo": "Dictaminar por ranura (generación de la posición) y no por «hubo algo abierto antes»; registrar por apertura si la envolvente la evaluó. Contrastar con la traza: aperturas revertidas sólo con 0 posiciones previas.",
+    "ya_registrado": "MEMORIA:4140 (el replay no evalúa la envolvente en la 2.ª/3.ª ranura), MEMORIA:4128 (sólo decide el apalancamiento). Nuevo: su interacción con la retención a 1× y la ráfaga de E3"
+   },
+   {
+    "id": "A2-08",
+    "severidad": "LOW",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/ruin.rs",
+    "linea": 90,
+    "categoria": "doble prior",
+    "defecto": "conservative_loss_q recibe un win_rate que ya es media posterior con prior 0,40 (k 3,84) y le aplica otra vez Jeffreys como si fuera una frecuencia; sin cierres devuelve 0,60 (reinicio por proceso). Todo ello produce topes [0,10; 0,37] que, frente a un riesgo mínimo de 0,0017, no deciden nada a 13 USD: tres lecturas de win_rate (:432, :657, :1277) para un número inerte.",
+    "escenario": "E3 al cierre 36: wr 0,365 ⇒ lcb 0,24 ⇒ q 0,76 ⇒ tope 0,144; orden_viable exige 0,0017 ≤ 0,144: siempre. En E1 el tope sube de 0,25 a 0,37 sin que ninguna orden cambie.",
+    "evidencia": "if let Some(wr_lcb) = crate::evidence::win_rate_lcb(win_rate, trades) { return (1.0 - wr_lcb).clamp(0.01, 0.99); }",
+    "arreglo": "Una sola posterior (α, β) de la moneda de la que salgan media y cota; y que el tope de ruina se exprese en la misma unidad que el tamaño real (riesgo al stop en fracción), de modo que vincule cuando el tamaño exista (ADR-0016 D1).",
+    "ya_registrado": "lazos.tsv:187 (el sesgo no es de media operación; 0,60 sin trades), MEMORIA R7-R2-A-2"
+   },
+   {
+    "id": "A2-09",
+    "severidad": "LOW",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/backtest-engine/src/booktick_replay.rs",
+    "linea": 754,
+    "categoria": "unidad/τ",
+    "defecto": "lev_from_risk divide 0,05·f por sl_at_tau(τ_entry) de la CURVA DEL GEN (0,18-0,25 %) mientras stop_pct (:713-714) es el stop real de la orden (0,38-0,50 %): el apalancamiento de envío se dimensiona con un stop 2× más estrecho que el que lleva la orden ⇒ exec ≈ 2× lo que daría el stop real; lo acota el validado (envio.rs:85-86), así que en micro sólo cambia el margen retenido.",
+    "escenario": "E1 tras el cierre 30: f 0,25 ⇒ 0,0125/0,00235 = 5 (gen) frente a 0,0125/0,0045 = 2,8 (real) ⇒ se envía 5× (validado 6) y se retiene 1,1 USD en vez de 1,9.",
+    "evidencia": "let sl_frac = arena.config.sl_at_tau(if tau_entry > 0.0 { tau_entry } else { 30_000.0 }); … let lev_from_risk = (risk_budget * vol_brake / sl_frac.max(1e-4)).clamp(1.0, 20.0);",
+    "arreglo": "Usar el mismo stop_pct real en las dos líneas (paridad con el host, G050).",
+    "ya_registrado": "G050 (PLAN_LINEA_G:220), vetos.tsv:792 (0,05·kelly_frac)"
+   },
+   {
+    "id": "A2-10",
+    "severidad": "INFO",
+    "archivo": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/lib.rs",
+    "linea": 1187,
+    "categoria": "gen inerte",
+    "defecto": "ev_fee_multiplier se clampa a ≥ 1,05 + 0,20·scarcity = 1,25 en micro; el gen vale 1,0 ⇒ p_gate pasa de (SL + f)/(TP + SL) ≈ 0,40 a ≈ 0,43: el filo en que el nulo (0,42) parpadea lo pone este suelo, no el gen ni la evidencia.",
+    "escenario": "Con el gen activo (1,0) la puerta del nulo (0,42 > 0,40) no se habría cerrado en todo el tramo: 0 REJ_EV y ≈ 50-65 cierres en lugar de 929 y 36.",
+    "evidencia": "let min_ev_mult = 1.05 + 0.20 * scarcity; let ev_fee_multiplier = arena.config.ev_fee_multiplier.load(Ordering::Relaxed).clamp(min_ev_mult, 1.80);",
+    "arreglo": "Derivar el margen sobre la fricción de la incertidumbre de la propia fricción medida (σ del deslizamiento), no de la escasez de capital.",
+    "ya_registrado": "R-18 (LEDGER:137: el gen vale 1,0 bajo el suelo 1,05)"
+   }
+  ],
+  "predicciones": [
+   {
+    "experimento": "E1",
+    "medida": "Acierto neto por cuartil del índice de cierre (cuartiles() sobre m_l.pnl, 6 000 velas, ≈ 160-200 cierres)",
+    "prediccion": "Los cuatro cuartiles en [0,55; 0,75] y |acierto(Q4) − acierto(Q1)| ≤ 0,10, sin tendencia monótona; acierto global 0,58-0,70 (otra muestra: la sal depende de n).",
+    "razon": "Ningún lazo del riesgo cambia dirección ni τ; lo que aprende (p de Platt 0,98 → 0,665, posterior de la envolvente, PF_lcb 1 → 2) sólo abre más o retiene margen; el ruido muestral de 45 cierres es ±0,07 (2σ ≈ 0,14)."
+   },
+   {
+    "experimento": "E1",
+    "medida": "PnL medio por cierre (USD) por cuartil y max|pnl| por cierre",
+    "prediccion": "PnL medio por cuartil en [+0,004; +0,022] USD con |Q4 − Q1| ≤ 0,008; max|pnl| por cierre ≤ 0,12 USD en todos los cuartiles; nocional implícito 5,4-5,9 USD (Q4 ≤ 1,10 × Q1).",
+    "razon": "Tamaño = rescate al nocional mínimo (lib.rs:1311-1345); con evidencia (W 0,64, PF_lcb 2,0) raw_exposure sube de 0,066 a 0,94 USD ⇒ margen 0,90 → 0,94-1,0 a 6× ⇒ nocional +4-9 %; R por operación invariante."
+   },
+   {
+    "experimento": "E1",
+    "medida": "Rechazos del riesgo y vetos de la envolvente en toda la corrida",
+    "prediccion": "REJ_EV ≤ 10, REJ_DRAWDOWN = 0, REJ_CONFIDENCE = 0, viabilidad/min_notional/fee_impact = 0; opened − closes = 0 en la traza (ninguna reversión de la envolvente).",
+    "razon": "p_Platt > 0,43 para todo n con 65 % de aciertos (P(k/n < 0,43 | n ≥ 5) < 0,03); umbral de drawdown 63,2 %; la envolvente al cierre 30 ya tiene kelly ≈ 0,18 ≫ f_min 0,0017 (sin ventana 0 < f < f_min); REJ_CONFIDENCE inerte a 0,98."
+   },
+   {
+    "experimento": "E2",
+    "medida": "primer_tramo_cierres_iguales y REJ_EV del compuesto (= REJ_EV del tramo nulo, porque la ventaja fresca tuvo 0)",
+    "prediccion": "89/89 cierres idénticos; REJ_EV(compuesto) ≤ 60 frente a 929 del nulo fresco; ningún otro rechazo > 5.",
+    "razon": "Prefijo idéntico y motor determinista; la p de Platt entra al nulo en 0,665 y necesita ≈ 310 cierres perdedores (al 36 %) para bajar de 0,43: la puerta no se cierra en 50 h."
+   },
+   {
+    "experimento": "E2",
+    "medida": "segundo_tramo_trades, segundo_tramo_wr y segundo_tramo_pnl_usd frente al nulo fresco (36, 0,361, −0,126)",
+    "prediccion": "Cierres del tramo 2 entre 40 y 70 (más que 36); acierto 0,28-0,44; PnL del tramo 2 entre −0,35 y −0,08 USD: el estado ganador AGRAVA ligeramente (más cierres al mismo acierto), nunca reduce; PnL(E2) − PnL(A) ∈ [−0,35; −0,08].",
+    "razon": "Con la puerta abierta el nulo opera a la cadencia del núcleo (el peldaño a = 0,6 con 0 REJ_EV dio 63 cierres); cada cierre del nulo vale −0,0036 USD de esperanza (0,36·0,034 − 0,64·0,0247); el tamaño no puede bajar (orden mínima) y ningún otro freno del riesgo muerde (A2-03)."
+   },
+   {
+    "experimento": "E2",
+    "medida": "Vetos de la envolvente en el tramo nulo (opened − closes en la traza) y margen retenido",
+    "prediccion": "0 reversiones: el posterior sigue por encima del equilibrio todo el tramo (p_lcb ≈ 0,53 frente a p* ≈ 0,43 al final) y exec se mantiene en 4-5× (margen retenido ≈ 1,1-1,4 USD por posición, no 5,4).",
+    "razon": "Tras 89 + 36 cierres: media (71,5/126) = 0,567, sd 0,044, p_lcb(0,85) = 0,53; b_lcb ≈ 1,3 ⇒ kelly 0,17 ⇒ f = 0,157 ≫ f_min; harían falta ≈ 110 cierres más del nulo para cruzar a la ventana vetada."
+   },
+   {
+    "experimento": "E3",
+    "medida": "Velas hasta volver a operar tras el nulo y REJ_EV del tramo 2 (= REJ_EV(compuesto) − 929)",
+    "prediccion": "Primera apertura del tramo 2 entre las velas 3 005 y 3 090 (≤ 1,5 h tras la frontera) y primer cierre antes de la vela 3 120; REJ_EV del tramo 2 ≤ 150 (frente a 929 del nulo); primer_tramo_cierres_iguales = 36/36.",
+    "razon": "p_adj al cierre 36 = 0,42 (justo bajo p_gate 0,41-0,44): el olvido la lleva a la puerta en Δt* = 12 h·log2(0,56/0,55) ≈ 0,2-0,5 h; después de 1-2 aciertos (p = (14 + 3,76)/40,84 = 0,435) queda abierta de forma estable; trade_count = 36 ⇒ sin sonda ni «una a la vez»."
+   },
+   {
+    "experimento": "E3",
+    "medida": "segundo_tramo_trades, wr y pnl frente a la ventaja fresca (89, 0,652, +1,408)",
+    "prediccion": "Cierres del tramo 2 entre 76 y 90; acierto 0,58-0,70; PnL del tramo 2 entre +1,10 y +1,45 USD; PnL(E3) − PnL(nulo) ∈ [+1,0; +1,45]: la mitad perdedora NO deja fuera al sistema (no hay estado absorbente a 13 USD).",
+    "razon": "El único freno que se cerró (Platt) reabre en minutos y se fija con dos aciertos; la envolvente está exenta con f ≤ 0 (opera a 1×); q = 0,76 ⇒ tope 0,144 ≫ 0,0017; drawdown 63 %; umbral epigenético ≤ 1,25 ⇒ 0,745 < 0,98. Lo que se pierde: ≤ 1,5 h de arranque y la ráfaga de reversiones del cruce (siguiente predicción)."
+   },
+   {
+    "experimento": "E3",
+    "medida": "opened − closes en la traza del compuesto (reversiones de la envolvente) y su posición en el índice de cierre",
+    "prediccion": "Entre 30 y 400 aperturas revertidas, concentradas entre los cierres 55 y 85 del compuesto (19-49 del tramo 2), con 0 en la ventaja fresca y 0 en el tramo nulo; ninguna aparece en REJECT_COUNTERS.",
+    "razon": "El posterior de la envolvente (0,365, n 36) cruza p* ≈ 0,43-0,47 hacia arriba tras 25-40 cierres al 65 %; con dos posiciones retenidas a 1× (cap_now 2,2) la ventana vetada 0 < f < f_min = 0,0098 cubre ≈ 0,0065 en p y el posterior avanza 0,0026 por cierre ⇒ 2-3 cierres dentro; cada uno deja al núcleo reproponiendo tick a tick hasta el siguiente cierre (A2-02, A2-07)."
+   },
+   {
+    "experimento": "E4",
+    "medida": "Fracción de aperturas del lado del estado oculto en el tramo antipersistente (lado_del_estado en t3_lado_vs_estado) y acierto del tramo 2",
+    "prediccion": "lado_del_estado ≤ 0,30 (era 0,82 en la ventaja) y acierto del tramo 2 ≤ 0,28: el motor NO invierte su conducta; sigue abriendo con el signo de la vela previa, que en a = 0,1 es el contrario del siguiente el 90 % de las veces.",
+    "razon": "Ningún lazo del riesgo (Platt, posterior, win_rate, PF, epigenética) condiciona la dirección: todos puntúan 1{neto > 0} de la orden ya orientada por D-472; lo único que pueden hacer es cerrar la puerta o bajar la convicción, es decir operar menos, nunca al revés."
+   },
+   {
+    "experimento": "E4",
+    "medida": "REJ_EV del compuesto (= del tramo 2) y número de cierres del tramo 2 hasta el primer REJ_EV",
+    "prediccion": "El primer REJ_EV del tramo 2 llega después de ≥ 65 cierres perdedores del tramo (con 10-25 % de acierto: 70-120); REJ_EV total del tramo 2 entre 300 y 3 000 si el núcleo sigue abriendo (≥ 1,5/h), ≤ 100 si el núcleo deja de abrir por su ventana de reversión a la media (hurst < 0,45).",
+    "razon": "p = 0,665 tras 89 cierres ganadores; con acierto a: n > (61,76 − 39,92)/(0,43 − a) ⇒ 67 (a = 0,10), 78 (0,15), 121 (0,25); después parpadeo con Δt* que crece de 0,2 h a ≈ 2-3 h mientras p_adj baja hacia 0,3."
+   },
+   {
+    "experimento": "E4",
+    "medida": "segundo_tramo_pnl_usd y segundo_tramo_trades frente al antipersistente fresco (m_k)",
+    "prediccion": "Si el núcleo abre ≥ 1,5/h: tramo 2 con 80-150 cierres y PnL entre −2,5 y −0,9 USD, PEOR que el fresco (25-60 cierres, −1,0 a −0,3): PnL(E4 tramo 2) − PnL(anti fresco) ∈ [−1,8; −0,4]. Si el núcleo deja de abrir: ≤ 25 cierres y −0,5 a −0,1 en ambos. En ningún caso el tramo 2 gana ni su acierto supera 0,30.",
+    "razon": "La pérdida por cierre es −0,015 a −0,02 USD (stop pleno 0,028 con 10-25 % de aciertos de 0,035); el único freno (Platt) tarda 70-120 cierres en cerrarse con la p aprendida, frente a n₁ ≈ 8-12 desde la identidad en el fresco; el drawdown muerde a −63 % y la envolvente sólo reduce el margen retenido."
+   },
+   {
+    "experimento": "E4",
+    "medida": "opened − closes en la traza del compuesto y b_real del compuesto",
+    "prediccion": "Con probabilidad ≈ 0,4 una ráfaga de 20-300 reversiones entre los cierres 50 y 75 del tramo 2 (cruce del equilibrio hacia abajo, ventana 0,002 con margen retenido 1,1); b_real del compuesto baja de 1,40 a 1,15-1,30.",
+    "razon": "Posterior (58,5 + 0,2m)/(90 + m) − 0,85·sd < 0,45 ⇒ m ≈ 55-70; la doble EWMA del pago (A2-04) retrasa 10-20 cierres la caída de b vista por la envolvente respecto a la real (pérdidas a stop pleno 0,03 frente a ganancias truncadas)."
+   },
+   {
+    "experimento": "otro",
+    "medida": "Antipersistente fresco (m_k: a = 0,1, d = 0,2 %, 3 000 velas, 13 USD)",
+    "prediccion": "Cierres 25-60, acierto 0,08-0,25, PnL −1,0 a −0,3 USD, REJ_EV 800-3 500 (el mayor de toda la escalera), lado_del_estado ≤ 0,30, b_real < 1,25.",
+    "razon": "Sonda de 5 cierres + Platt desde la identidad 0,98: n₁ = 3,84·0,55/(0,43 − 0,15) ≈ 8 ⇒ la puerta se cierra hacia el cierre 8-12 y parpadea 45 h (Δt* 0,2-3 h); cada reapertura da una pérdida a stop pleno en 1-2 velas (el mínimo de la vela siguiente es ≤ −0,35 % − |u|·0,2 % frente a un SL de 40 pb)."
+   },
+   {
+    "experimento": "otro",
+    "medida": "Verificación de determinismo de los compuestos (primer_tramo_cierres_iguales)",
+    "prediccion": "89/89 en E2 y E4 y 36/36 en E3; cualquier desviación indicaría que el reescalado por ratio o la longitud de los búferes contamina el prefijo.",
+    "razon": "serie_concatenada deja intacto el prefijo y el runner no usa la longitud total salvo para dimensionar out_pnl; las marcas de tiempo son i·60 000 en ambos casos."
+   }
+  ],
+  "archivos_leidos": [
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/evidence.rs",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/kelly_envelope.rs",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/ruin.rs",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/drawdown.rs",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/sonda.rs",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/capital_regime.rs",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/envio.rs",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/lib.rs (80-800, 799-1100, 1100-1520)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/kelly.rs (1-120)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/risk-engine/src/leverage_matrix.rs (36-265)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/backtest-engine/src/booktick_replay.rs (300-850)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/backtest-engine/src/lib.rs (40-520)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/backtest-engine/tests/t3_ventaja_conocida.rs (completo, incl. LH-10 t3_adaptacion_en_el_tiempo)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/god-engine-core/src/calibration.rs",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/god-engine-core/src/lib.rs (4300-4630, 6070-6150, 6862-6885, 8060-8220)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/quantum-arena/src/genome.rs (1075-1110, 2400-2460)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/quantum-arena/src/state.rs (400-460, 43/629)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/quantum-arena/src/horizon_policy.rs (40-52)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/crates/quantum-arena/src/temporal_spectrum.rs (anclas 108/123)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md (§6-§7)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/audit/linea_h/t3_escalera_13usd.tsv",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/audit/linea_h/t3_trazas_13usd.txt",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/audit/linea_h/t3_lado_vs_estado.txt",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/audit/linea_h/lectores.tsv",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/audit/linea_h/predicciones.tsv",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/audit/linea_h/nuevos_escepticos.tsv",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/audit/linea_g/lazos.tsv (grep)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/audit/linea_g/hallazgos.tsv (grep)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/audit/linea_g/vetos.tsv (grep)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md (grep)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/.agents/MEMORIA.md (grep)",
+   "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h/docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md (grep)"
+  ]
+ },
+ "A3-direccion-tau": {
+  "lente": "A3 — lo que adapta la dirección y la τ: peso hebbiano, convicción por rama (TasaAcierto/Wilson con olvido), ramas 15 y 11, racha y enfriamiento D-754, anti-whiplash D-757, cortafuegos D-499, habilidad por escala (#594) → τ dominante, pesos por habilidad motor×escala (#626), ganancia epigenética espectral y régimen discreto de Hurst.",
+  "resumen": "En cada cierre la cadena de la lente A3 aprende cinco cosas: (1) el peso hebbiano del símbolo recibe R = (PnL neto/nocional)/SL con w ← clamp(w·e^{lr·R}, 0,25, 2), lr ≈ 0,04, sin olvido; (2) la rama que abrió recibe 1{neto > 0} en su TasaAcierto, cuya n se parte por la mitad cada 12 h y se juzga con Wilson frente a p* ≈ 0,40 de la sonda; (3) las rachas (global y por lado) suben con «neto < 0 ∧ bruto ≤ −5 pb» y se ponen a 0 con cualquier otro cierre, y se amortizan en ≈ k·base con base = min(τ_cierre, τ_dom) ≈ 30–130 s; (4) el espectro recibe is_win en la ganancia epigenética de las escalas vecinas a τ_trade (relajación de 30 min) y, aparte de los cierres, cada bloque de τ_k madurado puntúa el IC prequential (EWMA 1/64) y un e-proceso de Ville sin olvido que deciden la τ dominante; (5) #626 hace lo mismo motor×escala para el consenso que sólo consume la rama 11. Lo consumido: w multiplica el compuesto (umbrales, nunca el signo); la convicción por rama es 0 / piso / cota inferior y aguas abajo se satura en 0,98, así que en el T-3 sólo es binaria; la racha y el whiplash sólo retrasan minutos; la τ de toda orden es gm(2^((H_DFA−0,5)/0,02)·τ_dom, centroide ≈ 30 s), que con τ_dom ∈ {68,7 s, 275 s} da exactamente los 64 s y 128 s medidos en la ola 1. La dirección de cada orden es sign(fused) ∧ sign(composite) (D-472), ambas el signo de la vela previa en el runner, y NINGÚN lazo puede invertir ese signo: el hebbiano es positivo, la convicción sólo apaga, los pesos #626 castigan el IC negativo al piso y la única rama que consumiría un consenso de reversión (la 11) se apaga cuando el DFA declara antipersistencia. Respuesta a la pregunta central: tras 89 cierres ganadores nada cambia la rama ni el lado de la operación 90; la τ sólo salta de 64 s a 128 s cuando el nodo de 275 s cruza el umbral de Ville (≈ 12 h), no por la deriva. En E4 no existe un número finito de pérdidas que haga al motor dejar de seguir la vela anterior: a 1,8 cierres/h y semivida 12 h la cota superior de Wilson de la rama 15 con p̂ = 0,30 es 0,45 > 0,40 (n_eff ≤ 40), el enfriamiento tras 5 pérdidas es ≤ 11 min y w baja de 2,0 a ≈ 1,1 en 36 cierres; sólo la puerta EV (lente A2) cierra el grifo, por tandas. Predigo para E4: acierto del tramo 2 0,25–0,36 (frente a 0,652), PnL −0,15 a −0,40 USD (frente a +1,41), τ mediana 30–45 s (frente a 124 s) por el factor ½ del Hurst, lado = estado siguiente ≈ 0,30–0,38 (frente a 0,82), rama 15 ≥ 85 % y rama 11/23 = 0.",
+  "lazos": [
+   {
+    "nombre": "Peso hebbiano por símbolo (perceptrón, CL-76)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4691,
+    "etiqueta": "R = (PnL neto / nocional) / SL de la posición cerrada (realized_ret/sl), con cualquier motivo de salida; NaN si sl ≤ 0",
+    "memoria": "w ← clamp(clamp(w,0,25,2)·exp(lr·R), 0,25, 2) con lr = clamp(0,05/(1+100·ATR), 0,001, 0,05) ≈ 0,04 (ATR 0,25 %); sin olvido; se lee con clamp [0,5, 2] (lib.rs:5072-5076). Satura en 2 tras ≈ 23 cierres a R medio +0,76; vuelve de 2 a 1 en ≈ 90 cierres a R medio −0,39 (−0,016/cierre)",
+    "consumidor": "composite_score = clamp(raw·w, −1, 1) (lib.rs:5893): umbrales de las ramas 1-11 (d_tech_thr, tensor_tech_thr), cortafuegos D-499 y P² de |composite| (5917); NUNCA el signo (D-472, lib.rs:1966-1970, usa sign(composite))",
+    "escala_contra": "R = 0 (sin p*, sin fricción explícita, sin τ)"
+   },
+   {
+    "nombre": "Convicción por rama (TasaAcierto → conviccion_de_rama_con / conviccion_de_rama)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4394,
+    "etiqueta": "1{net_trade_pnl > 0} del cierre, atribuido a la rama congelada en apertura (learning_evidence.branch = volume_flow_rate); cualquier motivo de salida (TP, SL, TRAIL, ZOMBIE, ALPHA_DECAY, PEAK_HARVEST)",
+    "memoria": "envejecer_registro_ramas (lib.rs:244-279): por cada semivida SEMIVIDA_EVIDENCIA_MS = TAU_ANCHOR_SLOW_MS = 12 h transcurrida desde el ancla por moneda, n → n/2 conservando la proporción; a 1,78 cierres/h el n efectivo en régimen es ≈ 23–40",
+    "consumidor": "confidence de la intención: 0 si hi < p* (aplanada por LG-1), piso = conf_base si el intervalo contiene p*, max(lo, piso) si lo > p* (lib.rs:171-189). Rama 15 en :7166, rama 11 en :6814; aguas abajo confianza_modulada satura en 0,98 (H2-1): en el T-3 el efecto es binario (abre / no abre)",
+    "escala_contra": "p* = (SL + f)/(TP + SL) de la sonda a la τ de la orden ≈ 0,40 (SL 38 pb, TP 89 pb, f 13 pb) en las ramas 11-15; ½ en las 1-10 y 20-24; Wilson con z = Z95 = 1,96"
+   },
+   {
+    "nombre": "Racha de pérdidas global y direccional + enfriamiento D-754",
+    "archivo": "crates/god-engine-core/src/stateful_engine.rs",
+    "linea": 316,
+    "etiqueta": "is_directional_loss = net_trade_pnl < 0 ∧ pnl_pct ≤ −0,0005 (lib.rs:4318); cualquier otro cierre (ganador, o perdedor neto con bruto > −5 pb) pone a 0 TODAS las rachas (global, por lado y por banda)",
+    "memoria": "racha_amortizada = cruda − floor(log2(1 + Δt/base)) con base = enfriamiento_base_ms = min(τ_cierre, τ_dom) (lib.rs:6026-6033) ≈ 30–130 s en el T-3; espera requerida base·2^racha_amortizada ⇒ ≈ k·base (LH-07): 5 pérdidas ⇒ ≤ 11 min con base 128 s",
+    "consumidor": "can_open_position_ms → viable_para_entrar (lib.rs:6035); get_active_directional_streak_ms → exigencia_tras_racha en ramas 1/2/4/5 (6447-6578), cortafuegos D-499 (7930-7955), anti-whiplash post-loss mismo lado (7877-7892), condiciones long_streak < 2 / short_streak < 2 de la rama 11",
+    "escala_contra": "nada: conteo crudo de pérdidas, no normalizado por p* (con p* = 0,40 una racha de 3 tiene P = 0,22 bajo la hipótesis de ventaja)"
+   },
+   {
+    "nombre": "Anti-whiplash D-463/D-757 (último cierre por moneda)",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 7797,
+    "etiqueta": "last_close_ts / last_close_is_long / last_close_was_win (atómicos por moneda, escritos en :4625-4628) y p_stretch = signo(mid − EMA21 de 1 min)",
+    "memoria": "ventana base = enfriamiento_base_ms (min(τ_cierre, τ_dom)) × 2^racha direccional amortizada, techo 12 h; el disyunto de estiramiento post-loss contrario NO tiene límite temporal (:7872-7873)",
+    "consumidor": "aplana unified_intent antes del cortafuegos (:7894-7896)",
+    "escala_contra": "nada (prueba de signo del estiramiento y un horizonte)"
+   },
+   {
+    "nombre": "Cortafuegos de racha D-499/D-756 con pisos P²",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 7930,
+    "etiqueta": "racha direccional amortizada ≥ 2; umbrales = exigencia_tras_racha(p85 de |composite|, p80 de |OBI|, racha − 1) (lib.rs:5430-5438)",
+    "memoria": "P² acumulativo por símbolo sin olvido, alimentado en cada tick con el composite YA multiplicado por w (5917) y con |OBI|; escalera ×2 por nivel saturada en 1",
+    "consumidor": "aplana unified_intent (Long si composite < min_score ∨ OBI < min_obi)",
+    "escala_contra": "cuantiles propios (autorreferentes, H3-07): por construcción ≈ 15-20 % de los ticks los superan"
+   },
+   {
+    "nombre": "Habilidad por escala #594 → dominant_tau_ms → tau_operativa_unificada → τ de la rama 15",
+    "archivo": "crates/quantum-arena/src/temporal_spectrum.rs",
+    "linea": 489,
+    "etiqueta": "Por cada bloque no solapado de τ_k madurado: IC prequential s0·r con r = ln p1 − ln p0 BRUTO (sin fricción, sin p*) y e-proceso de Ville sobre sign(s0·r) con λ = 0,10 (evalues.rs:43, 90-100)",
+    "memoria": "IC: EWMA 1/64 (vida media 44 bloques = 50 min a 68,7 s, 3,4 h a 275 s), madurez 30 bloques; e-proceso: capital multiplicativo SIN olvido (90 nats tras 50 h de ventaja a 68,7 s; −13 nats tras 50 h de nulo)",
+    "consumidor": "dominant_tau_ms = max IC > 0 entre las escalas significativas (capital ≥ 5/α = 100, :646-677); tau_operativa_unificada (:1201-1208) = τ_dom si habilidad_en(τ_dom) > 0, si no el centroide; rama 15 (lib.rs:7152) → tau_de_la_orden (lib.rs:1745-1751) = gm(hurst_duration_modulation(τ_dom), centroide ≈ 30 s) ⇒ 64 s (τ_dom 68,7 s) ó 128 s (275 s); base del enfriamiento (τ_dom); spectral_conf de Kelly (persistence_at(τ_dom))",
+    "escala_contra": "IC > 0 y capital ≥ 100 (4,6 nats); ni fricción ni p*"
+   },
+   {
+    "nombre": "Pesos por habilidad motor×escala #626 (consenso espectral → rama 11)",
+    "archivo": "crates/signal-engine/src/skill_motores.rs",
+    "linea": 83,
+    "etiqueta": "sign(voto de ARMADO del motor · retorno bruto del bloque de τ_k) en e-proceso + IC bruto E[v·r]/√(E[v²]E[r²])",
+    "memoria": "IC con olvido 1/64; e-proceso sin olvido; umbral de familia 416/α = 8 320 (9,03 nats ≈ 260 bloques a p(acuerdo) 0,7); piso 0,15 para IC inmaduro, no significativo o negativo (nunca voto invertido)",
+    "consumidor": "consenso_por_escala → dominante (k, signo) escrito en consenso_espectral_tau/_dominante (lib.rs:2908-2916) → escala_que_hablo (:1763-1770) → rama 11 (:6814-6827, τ_k fija) y orquestador; la rama 11 se apaga con is_anti_persistent (:6706)",
+    "escala_contra": "IC > 0 y 9 nats de Ville; sin p*"
+   },
+   {
+    "nombre": "Ganancia epigenética espectral por escala (apply_epigenetic_outcome)",
+    "archivo": "crates/quantum-arena/src/temporal_spectrum.rs",
+    "linea": 772,
+    "etiqueta": "is_win = neto > 0 y pnl_pct del cierre, repartidos con núcleo gaussiano σ = 0,8 en ln τ alrededor de τ_trade (lib.rs:4383)",
+    "memoria": "+0,06·k·(1 + min(20·pnl, 2)) por ganancia, −0,10·k·(1 + min(15·|pnl|, 2)) por pérdida, clamp [0,2, 3]; relajación homeostática hacia 1 con τ = 30 min en cada update (:458). A un cierre cada 34 min la ganancia vive en [0,9, 1,1]: inerte",
+    "consumidor": "fusion_weight = |persistencia|·2·gain (:252-257) → pesos del centroide τ* (continuous_resonant_tau_ms :1166-1190), coherencia y campo de la rama 15; NO el fused_score, que pesa observable/vol (:1415-1422)",
+    "escala_contra": "nada"
+   },
+   {
+    "nombre": "Persistencia por escala CL-30 → hurst_at(τ*) y peso |p| de la fusión",
+    "archivo": "crates/quantum-arena/src/temporal_spectrum.rs",
+    "linea": 500,
+    "etiqueta": "agree = signo(r_bloque)·signo(r_bloque_prev) de bloques no solapados de τ_k",
+    "memoria": "EWMA 1/16 bloques (:503-504): ≈ 18 min a 68,7 s; las escalas sub-minuto llevan persistencia negativa determinista por el puente intravela del runner (H3-06), en ambos regímenes",
+    "consumidor": "confluencia_resonante (lib.rs:674-698): continuación si hurst_at(τ*) = (p+1)/2 ≥ 0,52 (bono (h−0,5)·0,5, umbral 0,22 en vez de 0,38); peso |p| del centroide y de la coherencia (sin signo: una escala que revierte vota momento con peso |p|)",
+    "escala_contra": "literales HURST_CONTINUACION 0,52 y FUSED 0,38/0,22, COHERENCIA 0,12"
+   },
+   {
+    "nombre": "Régimen discreto de Hurst DFA sobre ticks (hurst_val / features[1])",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 5994,
+    "etiqueta": "HurstDfa sobre 1 024 ticks (≈ 34 velas), escalas 4-256 ticks, recálculo cada 32 ticks (feature-engine hurst_dfa.rs:61-72)",
+    "memoria": "ventana deslizante de 1 024 ticks (≈ 34 min)",
+    "consumidor": "is_anti_persistent (< 0,45) / is_persistent (> 0,52): umbrales ×1,2 y OBI ×1,1 (:6125-6145), rama 11 apagada (:6706), ramas 22/23 sólo con libro ausente (:6316-6390); hurst_duration_modulation (:8878-8892) = 2^((H−0,5)/0,02) ∈ [½, 2] sobre la τ de TODA orden, incluida la 15 (hurst_exponent = features[1], :5078)",
+    "escala_contra": "literales 0,45 / 0,48 / 0,52"
+   }
+  ],
+  "hallazgos": [
+   {
+    "id": "LH-A3-1",
+    "severidad": "HIGH",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 1966,
+    "categoria": "dirección / lazo sin signo",
+    "defecto": "Ningún lazo de la cadena puede INVERTIR el lado. La dirección es sign(fused) ∧ sign(composite) (D-472) y ambas son el signo de la vela previa en el runner (OBI 0,8/0,2, backtest lib.rs:153-157). Los tres aprendices del lado sólo atenúan o apagan: el hebbiano vive en [0,5, 2] (positivo), la convicción por rama es {0, piso, lo} y los pesos #626 mandan el IC negativo al piso 0,15 («se castiga, no se vota al revés»). La rama 23 (reversión antipersistente) sólo existe con libro ausente (:6150-6190, book_absent), que en el runner nunca ocurre.",
+    "escenario": "E4 tramo 2 (a = 0,1, d = 0,2 %, σ = 0,25 %): P(lado = estado siguiente) = ℓ·0,1 + (1−ℓ)·0,9 con ℓ = (0,433+0,2)/0,866 = 0,73 ⇒ 0,32; tras 20 pérdidas en ≈ 2 h la operación 21 sigue siendo Long tras una vela alcista; acierto esperado 0,25–0,36 frente a 0,652.",
+    "evidencia": "if (out.signal == SignalType::Long && composite_score < 0.0) || (out.signal == SignalType::Short && composite_score > 0.0) { return SignalIntent::flat(); }",
+    "arreglo": "Que la rama 15 consuma sign(IC_τ*)·sign(fused) donde IC_τ* es el IC prequential CON signo que ya existe (temporal_spectrum.rs:272, hoy clamp y descartado si < 0), con la inversión autorizada por el mismo e-proceso que ya decide significancia (capital ≥ 1/α sobre sign(−s0·r)); y que D-472 compare contra el consenso orientado por ese signo, no contra el signo crudo del compuesto. Ningún umbral nuevo: el de Ville ya está derivado.",
+    "ya_registrado": "Parcial: hallazgos.tsv arena-spectral:34 (la fusión ignora el signo de la habilidad), skill_motores qo_626_antialineado (piso, no inversión), lazos.tsv #12/#206 (acierto direccional bruto). La imposibilidad de inversión por construcción y su cifra en E4 (0,32) no están."
+   },
+   {
+    "id": "LH-A3-2",
+    "severidad": "HIGH",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 1745,
+    "categoria": "τ / ley cerrada",
+    "defecto": "La única adaptación real de la τ es τ_orden = gm(2^((H_DFA−0,5)/0,02)·τ_dom, centroide) con el centroide clavado en el suelo de 30 s por la persistencia negativa determinista de las escalas sub-minuto del puente intravela (peso |p|·2). Con H_DFA ≥ 0,52 (×2) y τ_dom ∈ {68 719, 274 878 ms} da exactamente gm(137 s, 30 s) = 64 s y gm(550 s, 30 s) = 128 s: las dos medianas de la ola 1 (64 s en cinco peldaños; 124–128 s en a = 0,95 y d = 0,2 %). La τ no sigue a la deriva ni al EV: sigue a qué nodo cruzó antes los 4,6 nats de Ville (el de 68,7 s a ≈ 2,5 h, el de 275 s a ≈ 12 h). Con H_DFA ≤ 0,48 el factor es ½ y la τ colapsa a gm(30, 30) = 30 s.",
+    "escenario": "E4 tramo 2: H_DFA < 0,48 ⇒ τ mediana 30–45 s (frente a 124 s), SL ≈ ATR·(0,5)^H ≈ 20–30 pb dentro de la oscilación ±20 pb + ruido 25 pb por vela ⇒ SL tocado en 1–2 velas; E1: τ mediana Q1 64–100 s y Q2–Q4 = 128 ± 10 s (el nodo de 275 s cruza Ville a ≈ 12 h).",
+    "evidencia": "let modulada = hurst_duration_modulation(tau_banda_ms, hurst); … tau_hacia_el_centroide(modulada, spec.continuous_resonant_tau_ms())",
+    "arreglo": "Derivar la τ de la orden del horizonte con R neto medido máximo (R por τ, que hoy ningún registro guarda: pedir al runner la R neta por cierre con su τ) y retirar del centroide las escalas por debajo de la resolución del fixture (el runner debería neutralizar la persistencia del puente, zona Sol/H); mientras tanto exportar τ_dom, H_DFA y centroide por apertura en el trace para verificar la fórmula 64/128.",
+    "ya_registrado": "Parcial: LH-06 / H3-N4 (τ colapsa al minuto), H3-06 (puente), hallazgos arena-spectral:29 (habilidad_en sin e-proceso) y :31 / lazos #12 (gana la escala que madura antes). La fórmula cerrada 64/128 s y el colapso a 30 s en antipersistencia son nuevos."
+   },
+   {
+    "id": "LH-A3-3",
+    "severidad": "MED",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 171,
+    "categoria": "convicción / inerte en ambos sentidos",
+    "defecto": "A la cadencia del fixture la convicción por rama no decide nada: (i) nunca condena: con 1,78 cierres/h y semivida 12 h, n_eff ≤ 40 y con p̂ = 0,30 la cota superior de Wilson a n = 40 es 0,454 > p* = 0,40 (hacen falta ≥ 33 pérdidas CONSECUTIVAS sin una sola ganancia, o n ≈ 80 sin olvido); (ii) nunca sube la confianza: lo ≤ 0,53 con n = 60 y p̂ = 0,65, por debajo de conf_base ≥ 0,50, y la confianza ejecutada se satura en 0,98 (H2-1). El olvido de 12 h, pensado para desabsorber, hace que una rama con 50 h de evidencia no pueda ser juzgada.",
+    "escenario": "E4: tras 89 cierres (n_eff ≈ 23 con 15 aciertos) y 36 pérdidas al 0,30 en el tramo 2, hi = 0,45 ⇒ piso ⇒ la rama 15 sigue abriendo; E2/E3: n_eff 23/15 ⇒ piso siempre.",
+    "evidencia": "let (lo, hi) = registro.intervalo(crate::diffusion::Z95); if hi < p_star { 0.0 } else if lo > p_star { lo.max(piso_por_magnitud) } else { piso_por_magnitud }",
+    "arreglo": "Derivar la semivida del olvido de la cadencia medida de cierres de la rama (n_eff objetivo = el n al que Wilson separa p* ± δ con δ = |p̂ − p*| medido), no de TAU_ANCHOR_SLOW_MS; y puntuar R neto frente a 0 (LG-5) para que la etiqueta coincida con el signo del EV.",
+    "ya_registrado": "Parcial: H2-8 (ramas 1-10 contra ½, n ≈ 39), LG-1b (olvido), hallazgos core-helpers:63 y core-tick-a:128 (etiqueta neto > 0). La cuantificación para la 15 con p* = 0,40 y olvido de 12 h es nueva."
+   },
+   {
+    "id": "LH-A3-4",
+    "severidad": "MED",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 4712,
+    "categoria": "hebbiano / saturación y cortafuegos",
+    "defecto": "El peso hebbiano satura en 2,0 en ≈ 23 cierres de la ventaja (lr ≈ 0,04, R medio ≈ +0,76 ⇒ ln 2 = 0,69) y vuelve despacio: −0,008/cierre en el nulo (R medio −0,19), −0,016/cierre en antipersistencia (R medio −0,39) ⇒ tras 36 cierres w = 1,5 / 1,14. Con w = 2 el compuesto satura en ±1 cuando |raw| ≥ 0,5; esa distribución saturada alimenta el P² de |composite| (:5917) ⇒ p85 → 1 ⇒ el cortafuegos D-499 pide |composite| = 1 y el compuesto saturado lo cumple: la ventaja aprendida DESARMA el cortafuegos de racha justo en el régimen adverso. El signo no cambia (D-472).",
+    "escenario": "E2 tramo 2: w ∈ [1,5, 2] todo el tramo; cortafuegos con streak ≥ 3: min_score = min(2·p85, 1) = 1 y composite = ±1 ⇒ pasa; sólo |OBI| ≥ min(2·0,76, 1) = 1 veta (y amortiza en 1 base ≈ 1–2 min).",
+    "evidencia": "signal_engine::perceptron_gate::PerceptronGateEngine::update_weight(&mut cur_hebbian, resultado_r, atr_pct); … let composite_score: f64 = (raw_composite * hebbian_mult).clamp(-1.0, 1.0);",
+    "arreglo": "lr derivado de la varianza medida de R (gradiente Kelly-fraccional: lr = media(R)/var(R) acotado por el olvido) y olvido con la misma semivida que la evidencia; alimentar el P² con raw_composite (antes de w) para que el piso no sea función del propio peso.",
+    "ya_registrado": "Parcial: lazos.tsv #82 (señal correcta, ámbito mal), hallazgos core-tick-b:148 (multiactivo), H3-07 (p80 autorreferente). La saturación en 2 y su interacción con el cortafuegos son nuevas."
+   },
+   {
+    "id": "LH-A3-5",
+    "severidad": "MED",
+    "archivo": "crates/quantum-arena/src/temporal_spectrum.rs",
+    "linea": 664,
+    "categoria": "τ / e-proceso rancio y deuda",
+    "defecto": "El e-proceso de la escala de 68,7 s acumula ln capital ≈ 0,035·2 600 ≈ 90 nats en 50 h de ventaja (p(acuerdo) ≈ 0,7, λ = 0,10) y necesita ≈ 25 h de antipersistencia (−0,065 nats/bloque) para bajar de los 4,6 nats del umbral: en E4 la escala sigue «significativa» todo el tramo 2 y la τ dominante la decide el SIGNO de un IC con vida media de 50 min (ruido). En E3 la deuda es la contraria: tras 50 h de nulo ln capital ≈ −13 (2 600 bloques a −0,005) y la escala tarda ≈ 9,5 h en volver a ser dominante (frente a 2,5 h en frío); la de 275 s, ≈ 12 h (igual que en frío, su deuda es −3,3 nats).",
+    "escenario": "E4 tramo 2: τ_dom oscila entre 68,7 s / 275 s / centroide según el signo del IC; E3 tramo 2: τ mediana de las primeras 10 h ≈ 45–64 s, no 64–128 s.",
+    "evidencia": "let significativo = s.skill_e.significativo_familia(ESCALAS_OPERATIVAS_BANDA); if significativo && ic > best_skill { best_skill = ic; dominant_skill = s.tau_ms; }",
+    "arreglo": "e-proceso con el MISMO olvido que el IC que lo acompaña (descuento 63/64 del log-capital por bloque, equivalente a la EWMA) o reinicio del capital al cruzar hacia abajo; publicar la antigüedad (bloques desde el último cruce) junto a qo_613.",
+    "ya_registrado": "Parcial: hallazgos arena-spectral:30 (sin olvido, absorbente) y :17 (λ fijo). Las dos cifras (25 h de rancio en E4, +7 h de retraso en E3) son nuevas."
+   },
+   {
+    "id": "LH-A3-6",
+    "severidad": "MED",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 6706,
+    "categoria": "dirección / rama 11 apagada en antipersistencia",
+    "defecto": "El único consumidor de pesos que podrían favorecer motores de reversión (el consenso #626) es la rama 11, y se apaga con is_anti_persistent (hurst_val < 0,45), exactamente en el régimen donde un motor de reversión ganaría peso. Además los pesos #626 nunca invierten (piso 0,15) y necesitan 9 nats (≈ 260 bloques ≈ 5 h a 68,7 s) para salir del piso.",
+    "escenario": "E4 tramo 2: rama 11 = 0 aperturas aunque qo_626_maduros > 0 tras ≈ 5 h; en la ola 1 la rama 11 ya era ≤ 3 % en todos los peldaños.",
+    "evidencia": "if fast_intent.signal == SignalType::Flat && tensor_cont.signal != SignalType::Flat && !is_anti_persistent && tensor_cont.net_confidence.abs() >= tensor_cutoff",
+    "arreglo": "Sustituir el interruptor por el signo medido de la habilidad a la τ de la orden (IC_τ con signo) y dejar que el consenso oriente la rama en ambos regímenes.",
+    "ya_registrado": "Parcial: hallazgos core-tick-c:170 (interruptor discreto de Hurst apaga la rama 11). La consecuencia para la inversión en E4 es nueva."
+   },
+   {
+    "id": "LH-A3-7",
+    "severidad": "LOW",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 102,
+    "categoria": "instrumento / E1 y potencia",
+    "defecto": "La sal del LCG incluye n ((n as u64) << 44), así que la serie «larga» de E1 (n = 6 000) NO comparte su primer tramo con el peldaño de 3 000 velas: E1 es otra realización. Con ≈ 45 cierres por cuartil, σ(acierto) ≈ 0,07 y σ(PnL medio) ≈ 0,006 USD: una «mejora con la experiencia» menor que 0,15 de acierto entre Q1 y Q4 es ruido muestral.",
+    "escenario": "E1 con 180 cierres: Q1 acierto 0,58 y Q4 0,70 (Δ = 0,12 < 2σ) se leería como aprendizaje sin serlo.",
+    "evidencia": "let sal = ((p.a * 1e6) as u64) ^ (((p.d * 1e8) as u64) << 20) ^ ((n as u64) << 44);",
+    "arreglo": "Construir E1 como serie_concatenada(ventaja, ventaja) (primer tramo idéntico al peldaño por construcción, como E2–E4) y publicar el intervalo de Wilson del acierto por cuartil.",
+    "ya_registrado": "No."
+   },
+   {
+    "id": "LH-A3-8",
+    "severidad": "INFO",
+    "archivo": "crates/god-engine-core/src/stateful_engine.rs",
+    "linea": 555,
+    "categoria": "ritmo / enfriamiento no saca del régimen",
+    "defecto": "Con base = min(τ_cierre, τ_dom) ≈ 30–128 s, la espera tras k pérdidas es ≈ k·base: tras 5 pérdidas seguidas ≤ 11 min; el cortafuegos de lado amortiza un nivel por base. En E4 el enfriamiento no puede sacar al motor de la antipersistencia: sólo la puerta EV lo hace, por tandas.",
+    "escenario": "E4 tramo 2: entre dos cierres consecutivos nunca más de 15 min por enfriamiento/whiplash; los huecos largos (> 1 h) serán de REJ_EV.",
+    "evidencia": "let requerido = (enfriamiento_base_ms * (racha as f64).exp2()).min(…TAU_ANCHOR_SLOW_MS); transcurrido >= requerido",
+    "arreglo": "Ninguno aparte de LH-07 (ya entregado): la cifra sirve para distinguir en la traza qué puerta produce cada hueco.",
+    "ya_registrado": "Sí: LH-07 / H3-01 (k·base), hallazgos core-mods-a:77 y core-tick-b:149 (escalar por moneda). Sólo añado la cifra para E4."
+   },
+   {
+    "id": "LH-A3-9",
+    "severidad": "INFO",
+    "archivo": "crates/quantum-arena/src/temporal_spectrum.rs",
+    "linea": 772,
+    "categoria": "τ / lazo inerte por relación memoria-cadencia",
+    "defecto": "La ganancia epigenética por escala mueve ±0,07/−0,11 por cierre y se relaja a 1 con τ = 30 min; con un cierre cada 34 min (1,78/h) la ganancia nunca sale de [0,9, 1,1] y no cambia centroide ni coherencia. Un lazo cuyo olvido es más corto que el intervalo entre etiquetas no aprende.",
+    "escenario": "E1: 180 cierres en 100 h ⇒ gain ∈ [0,89, 1,08] en todas las escalas; E4: tras cada pérdida 0,89 → 0,97 antes del siguiente cierre.",
+    "evidencia": "let homeo_decay = (-dt / 1_800_000.0).exp(); … s.epigenetic_gain = (s.epigenetic_gain - penalty).clamp(0.20, 3.00);",
+    "arreglo": "Derivar la constante de relajación de la cadencia medida de cierres (≥ varios intervalos entre cierres) o retirar el lazo; hoy es telemetría con nombre de aprendizaje.",
+    "ya_registrado": "No (hallazgos core-tick-a:134 es el sesgo epigenético por moneda, otro lazo)."
+   }
+  ],
+  "predicciones": [
+   {
+    "experimento": "E1",
+    "medida": "Totales de la serie larga (6 000 velas): cierres, acierto, PnL, b_real",
+    "prediccion": "165–190 cierres (1,6–1,9/h), acierto 0,60–0,68, PnL +2,4 a +3,2 USD, b_real 1,25–1,45; REJ_EV ≤ 5; ningún contador de tamaño; rama 15 ≥ 85 % de las aperturas, ramas 1/2/4/5/13 = 0, rama 11 ≤ 5 %",
+    "razon": "Ningún lazo de A3 cambia la rama ni el lado con la experiencia; la cadencia la fija la vida de la posición y el whiplash (k·base de minutos)"
+   },
+   {
+    "experimento": "E1",
+    "medida": "Cuartiles por índice de cierre (acierto, PnL medio)",
+    "prediccion": "Los cuatro aciertos dentro de [0,52, 0,78] y |Q4 − Q1| < 0,15; |máx − mín| del PnL medio por cierre < 0,012 USD; NO monótono creciente. Si la medición muestra Q1 < Q2 < Q3 < Q4 con Q4 − Q1 > 0,15, la tesis «no aprende la dirección» queda refutada",
+    "razon": "Convicción por rama en el piso (n_eff ≤ 40, LH-A3-3), hebbiano saturado en 2 desde el cierre ≈ 25 sin efecto en el signo, confianza ejecutada 0,98; σ muestral por cuartil ≈ 0,07"
+   },
+   {
+    "experimento": "E1",
+    "medida": "τ por apertura en el trace (OPEN TRACE tau=) por cuartil",
+    "prediccion": "Q1: mediana 64–100 s (mezcla 64/128 s); Q2–Q4: mediana 128 ± 10 s; ninguna apertura > 300 s; las τ caen casi todas en {≈ 64 s, ≈ 128 s}",
+    "razon": "τ_orden = gm(2·τ_dom, 30 s): el nodo de 68,7 s cruza Ville a ≈ 2,5 h y el de 275 s (IC mayor en regímenes de 10 velas) a ≈ 12 h; el de 1 099 s necesita ≈ 40 h y su IC es menor"
+   },
+   {
+    "experimento": "E2",
+    "medida": "primer_tramo_cierres_iguales y segundo tramo (cierres, acierto, PnL) frente al nulo en frío (36, 0,361, −0,126)",
+    "prediccion": "89/89 iguales; segundo tramo 40–60 cierres, acierto 0,30–0,40, PnL −0,12 a −0,28 USD; REJ_EV del compuesto 450–850 (menos que los 929 del frío); PnL(E2) − PnL(A) ≤ PnL(nulo frío): el estado aprendido no ayuda y, si algo, empeora",
+    "razon": "En A3 lo que se hereda es w = 2 (satura el compuesto y desarma el cortafuegos) y una τ_dom rancia (275 s hasta que el IC pierda el signo, ≈ 5–8 h); la puerta EV (lente A2) llega abierta y tarda ≈ 10–15 cierres en cerrarse; nada hereda dirección útil"
+   },
+   {
+    "experimento": "E2",
+    "medida": "τ mediana del segundo tramo y ramas",
+    "prediccion": "τ mediana 64–128 s (frente a 71 s del nulo frío), con saltos entre 64 y 128 s; rama 15 ≥ 85 %; rama 11 ≤ 3 %",
+    "razon": "El e-proceso sigue significativo (90 nats) y la dominante la decide el signo del IC EWMA, que en el nulo es ruido con vida media 50 min / 3,4 h"
+   },
+   {
+    "experimento": "E3",
+    "medida": "primer_tramo_cierres_iguales y segundo tramo frente a la ventaja en frío (89, 0,652, +1,41)",
+    "prediccion": "36/36 iguales; segundo tramo 70–88 cierres, acierto 0,58–0,68, PnL +0,9 a +1,4 USD; REJ_EV(compuesto) − REJ_EV(nulo frío) ≤ 150; NO hay estado absorbente: el déficit frente al fresco es ≤ 6 h de retraso",
+    "razon": "En A3 nada queda absorbido: w arranca en ≈ 0,76 y vuelve a 2 en ≈ 25 cierres sin tocar el signo; el registro de la 15 (n ≈ 15, hi 0,61) no condena; la escala de 68,7 s tarda ≈ 9,5 h en volver a dominar (deuda de −13 nats) pero a 64 s el motor también gana; la puerta EV cerrada al inicio reabre por olvido en ≈ 2 h (Δt* = 12 h·log2((0,98−0,36)/(0,98−0,427)))"
+   },
+   {
+    "experimento": "E3",
+    "medida": "τ mediana del segundo tramo por mitades",
+    "prediccion": "Primeras ≈ 10 h: mediana 45–64 s; resto: 64–128 s subiendo a 128 s hacia el final; mediana global del tramo 2 < 124 s del fresco",
+    "razon": "LH-A3-5: la escala de 68,7 s recupera 17,6 nats a 0,035/bloque (≈ 9,5 h); la de 275 s ≈ 12 h; mientras tanto τ* es el centroide (≈ 30 s) ⇒ τ_orden = gm(2·30, 30) ≈ 42 s"
+   },
+   {
+    "experimento": "E4",
+    "medida": "Antipersistencia en frío (m_k): cierres, acierto, PnL, REJ_EV, τ mediana, ramas",
+    "prediccion": "30–60 cierres, acierto 0,25–0,36, PnL −0,10 a −0,30 USD, REJ_EV 600–1 500, τ mediana 30–45 s, ramas {15 ≥ 85 %, 11 = 0, 23 = 0}",
+    "razon": "Lado = vela previa ⇒ P(lado = estado) ≈ 0,32; H_DFA ≤ 0,48 ⇒ τ ×½ y suelo 30 s; SL ≈ 25 pb dentro de la oscilación; la rama 11 se apaga con H < 0,45 y la 23 exige libro ausente"
+   },
+   {
+    "experimento": "E4",
+    "medida": "Segundo tramo del compuesto frente al primero (89, 0,652, +1,41) y frente al frío",
+    "prediccion": "89/89 iguales; segundo tramo 45–80 cierres (más que el frío), acierto 0,25–0,36, PnL −0,15 a −0,40 USD, b_real 0,8–1,2; lado = estado siguiente 0,30–0,38 (frente a 0,82); τ mediana 30–45 s (frente a 124 s); rama 15 ≥ 85 %, rama 11 = 0; el motor NO invierte en ningún momento del tramo; no existe un número de pérdidas seguidas que lo haga: con 33 pérdidas consecutivas sin ganancia la rama 15 se apagaría (hi < 0,40), cosa que con acierto ≥ 0,25 tiene P < 1e-4 en 50 h",
+    "razon": "LH-A3-1 (ningún lazo con signo), LH-A3-3 (Wilson con n_eff ≤ 40 no condena), LH-A3-4 (w ≥ 1,1 todo el tramo), LH-A3-8 (enfriamiento ≤ 11 min tras 5 pérdidas); el único freno es REJ_EV por tandas"
+   },
+   {
+    "experimento": "E4",
+    "medida": "Huecos entre cierres del segundo tramo (trace ts=) y su causa",
+    "prediccion": "Ningún hueco atribuible a enfriamiento/whiplash/cortafuegos > 15 min; todo hueco > 1 h coincide con tandas de REJ_EV; la primera tanda de REJ_EV empieza tras 8–15 cierres del tramo 2",
+    "razon": "k·base con base ≤ 128 s; el calibrador llega con p ≈ 0,65 y necesita ≈ 8–12 pérdidas netas para caer bajo p_gate ≈ 0,43–0,51 (p_gate sube a τ corta)"
+   },
+   {
+    "experimento": "otro",
+    "medida": "Contadores no exportados que decidirían la lente (pedido al runner): qo_626_maduros, consenso_espectral_dominante, H_DFA, τ_dom y centroide por apertura, {sym}_hebbian_weight por cierre",
+    "prediccion": "Si se exportan: w = 2,0 desde el cierre ≈ 25 de toda ventaja y ≥ 1,1 al final de E4; qo_626_maduros > 0 a partir de ≈ 5–10 h de ventaja (y sin efecto en las aperturas); H_DFA < 0,48 en > 70 % de las aperturas del tramo antipersistente",
+    "razon": "Cifras derivadas de lr ≈ 0,04 y R medio, del umbral de familia 9,03 nats a ≈ 0,035 nats/bloque, y de la DFA sobre 34 velas con alternancia de signo"
+   }
+  ],
+  "archivos_leidos": [
+   "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+   "crates/backtest-engine/src/lib.rs",
+   "crates/god-engine-core/src/lib.rs",
+   "crates/god-engine-core/src/stateful_engine.rs",
+   "crates/god-engine-core/src/calibration.rs",
+   "crates/god-engine-core/src/diffusion.rs",
+   "crates/god-engine-core/src/math_kernels.rs",
+   "crates/quantum-arena/src/temporal_spectrum.rs",
+   "crates/quantum-arena/src/evalues.rs",
+   "crates/signal-engine/src/skill_motores.rs",
+   "crates/signal-engine/src/perceptron_gate.rs",
+   "crates/feature-engine/src/hurst_dfa.rs",
+   "docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md",
+   "docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md",
+   "docs/audit/LEDGER_DECISION_VIVA_2026-10-10.md",
+   "docs/audit/linea_g/lazos.tsv",
+   "docs/audit/linea_g/hallazgos.tsv",
+   "docs/audit/linea_g/g7_hallazgos.tsv",
+   "docs/audit/linea_h/lectores.tsv",
+   "docs/audit/linea_h/predicciones.tsv",
+   "docs/audit/linea_h/predicciones_veredicto.tsv",
+   "docs/audit/linea_h/verificacion.tsv",
+   "docs/audit/linea_h/nuevos_escepticos.tsv",
+   "docs/audit/linea_h/t3_lado_vs_estado.txt",
+   "docs/audit/linea_h/t3_trazas_13usd.txt",
+   "docs/audit/linea_h/README.md",
+   ".agents/MEMORIA.md"
+  ]
+ }
+}
