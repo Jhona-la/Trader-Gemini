@@ -1708,9 +1708,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // exchange real) — antes solo leía el arena: en live el funding/
             // slippage real invisibilizaban el drawdown contable verdadero.
             let exchange_capital_imm = Arc::clone(&unified_capital);
+            // CL-99 (LC-F4-10, LC-F0-10): el pico del capital es uno, el del
+            // arena, compartido con el veto de entradas del riesgo, y se
+            // guarda por entorno para que un reinicio no borre la caída
+            // acumulada (antes el pico nacía en el capital ya caído). Para
+            // empezar de cero tras un retiro de fondos, se borra el archivo.
+            let ruta_pico = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+                "pico_capital.txt",
+            ));
+            if let Some(guardado) = risk_engine::drawdown::cargar_pico(&ruta_pico) {
+                let pico = risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, guardado);
+                telemetry_server::telemetry_log!(
+                    "🛡️ [IMMUNE] pico del capital restaurado: ${:.4} (guardado ${:.4})",
+                    pico,
+                    guardado
+                );
+            }
             rt_handle.spawn(async move {
                 let mut latched = false;
-                let mut peak_capital = arena_imm.unified_capital.load(Ordering::Relaxed);
+                // 0 ⇒ el primer ciclo guarda el pico aunque no haya subido.
+                let mut pico_guardado = 0.0_f64;
                 let mut latency_strikes: u32 = 0;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -1732,8 +1749,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         cap_arena
                     };
-                    if cap > peak_capital {
-                        peak_capital = cap;
+                    let peak_capital =
+                        risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);
+                    if peak_capital > pico_guardado
+                        && risk_engine::drawdown::guardar_pico(&ruta_pico, peak_capital).is_ok()
+                    {
+                        pico_guardado = peak_capital;
                     }
                     let dd = if peak_capital > 0.0 {
                         (peak_capital - cap) / peak_capital

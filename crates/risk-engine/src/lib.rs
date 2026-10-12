@@ -286,9 +286,13 @@ impl RiskEngine {
             return rej(REJ_TARGET_GEOMETRY);
         }
 
-        if current_capital > self.peak_capital {
-            self.peak_capital = current_capital;
-        }
+        // CL-99 (LC-F4-10): el pico es el del arena, compartido con el
+        // sistema inmune del host y guardado por él entre reinicios.
+        // `peak_capital` queda como su copia para los lectores de este motor.
+        self.peak_capital = crate::drawdown::registrar_pico(
+            &arena.pico_capital,
+            current_capital.max(self.peak_capital),
+        );
         // U-3: los picos espejo scalp/swing (sin lectores) extirpados.
 
         // O-04 — CIRCUIT BREAKER DE DRAWDOWN en el path cuántico: el gen
