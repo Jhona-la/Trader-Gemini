@@ -952,7 +952,15 @@ impl RiskEngine {
         // Se escala dimensionalmente con (30s / tau)^{1/2} para evitar que horizontes extendidos
         // sobre-acumulen deriva constante un-física y veten señales válidas con desacuerdos mínimos.
         let spectral_tide = arena.coins[coin_id].spectral_coherence.load(Ordering::Relaxed);
-        let tau_ratio = (30_000.0 / tau_for_sizing.max(30_000.0)).sqrt().clamp(0.15, 1.0);
+        // CL-83 (F3.2-03): sin suelo. El recorte a 0,15 se activaba con
+        // τ > 30 s/0,15² = 1 333 s y por encima la deriva volvía a acumularse
+        // ∝ √τ: con brackets brownianos (∝ √τ) R-15 vetaba las τ largas que
+        // decía dejar de castigar (P = 0,883 a 4 h y 0,953 a 12 h con una
+        // coherencia de −0,3, frente a 0,762 hasta 1 333 s). Sin el suelo,
+        // θ·tp no depende de τ. El modelo de fondo (la coherencia como
+        // deriva, el ATR de 1 min como σ y el ancla de 30 s) sigue abierto
+        // en C-F4 (LC-F4-04).
+        let tau_ratio = (30_000.0 / tau_for_sizing.max(30_000.0)).sqrt();
         let directional_drift = if spectral_tide.is_finite() {
             dir * spectral_tide * atr_pct * tau_ratio
         } else {
