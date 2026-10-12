@@ -53,7 +53,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 | F3.6-05 | Las teorías nombradas no están implementadas: los motores son envolturas de OBI, OFI y la desviación de posición | media | confirmado | Línea C |
 | F3.6-06 | El peso «hebbiano» premia la tasa de acierto en vez de la esperanza, y entra dos veces en la decisión | media | cerrado en la regla (CL-76) | Línea C para update_weight. El consumo de hebbian_mult en el compuesto de las ramas 1–10 e |
 | F3.6-07 | La vida de la rama 12 sale del gen base_duration_ms, no de una τ medida, y pesa la mitad en log tras la mezcla | media | confirmado | Línea C |
-| F3.6-08 | En TrendRunner la volatilidad sube la convicción (vol_boost), en contra de D-746 | media | confirmado | Línea C |
+| F3.6-08 | En TrendRunner la volatilidad sube la convicción (vol_boost), en contra de D-746 | media | cerrado (CL-77) | Línea C |
 | F3.7-01 | `vecm_zscore` es el nivel de la base entre el ATR, no un z: una prima constante vota reversión de forma permanente | media | confirmado | Línea C (escritor en lib.rs y lectores de strategy-core). El lector conformal se ve afecta |
 | F3.7-02 | La cointegración se supone: la guarda t½ ≤ 2τ* deja pasar caminatas aleatorias independientes | media | confirmado | Línea C |
 | F3.7-03 | El TTL anti-staleness del spot está muerto en producción: un spot congelado sigue votando | media | confirmado | Línea C (núcleo). data-pipeline debe publicar la edad del spot. |
@@ -582,6 +582,8 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 - Causa: calculate_expanded_tp calcula un tamaño de TP y el motor lo usa como convicción. Con el mismo Hurst y el mismo VPIN, pasar de una ATR del 0,1 % a una del 1 % multiplica el voto por 1,23.
 - Consecuencia viva: En el respaldo escalar, las monedas más volátiles reciben más convicción de tendencia sin que su probabilidad de continuación sea mayor. Su peso en net es pequeño (|v| ≤ 0,76).
 - Prueba que falla hoy: cf3_6_trend_runner_la_volatilidad_no_es_conviccion: el voto pasa de 0,2675 a 0,3288. Falla hoy.
+  - Cerrado por CL-77 (2026-10-11). La convicción del motor es `conviccion_de_expansion(hurst, vpin)` = tanh(10·tp) con el TP de expansión sin `vol_boost`: no lee el ATR, es no decreciente en Hurst y no creciente en VPIN (`cl77_la_conviccion_no_lee_el_atr_y_es_monotona`, rejilla de ATR 0,01 %–5 %). Vale para el voto escalar y para el espectral, que deja de recibir el ATR. `calculate_expanded_tp` no cambia: que el objetivo crezca con la volatilidad es legítimo.
+  - T-2 y golden idénticos a CL-76: el fixture no recorre este voto.
 - Dueño: Línea C
 - Escépticos: confirmado.
   - Corrección (refutar): La consecuencia es pequeña: sólo actúa en el respaldo escalar, el factor es ×1,23 y el signo no cambia. La dejaría en baja-media. D-746 se refería al freno de apalancamiento; aquí se aplica por analogía, no por contrato.
