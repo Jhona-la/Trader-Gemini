@@ -112,10 +112,9 @@ fn p_estrella() -> f64 {
 /// Esperado: P idéntica a la de 300 s en 1 200 s, 4 h y 12 h. Tolerancia
 /// 1e-9: es aritmética en coma flotante sobre la misma fórmula cerrada (los
 /// errores de redondeo son O(1e-15)); la base se contrasta con P* a 1e-9.
-/// Hoy 1 200 s pasa (por debajo del recorte) y 4 h da 0,883: falla por el
-/// recorte a 0,15 de √(30 s/τ).
+/// Antes de CL-83, 1 200 s pasaba (por debajo del recorte) y 4 h daba
+/// 0,883, por el recorte a 0,15 de √(30 s/τ).
 #[test]
-#[ignore = "OPEN F3.2-03 (Línea C, compuerta R-15 del risk-engine; C-F4 LC-F4-04; avisar a AGY, Ω73): tau_ratio = √(30 s/τ) se recorta a 0,15, así que con τ > 1 333 s la deriva vuelve a acumularse ∝ √τ y R-15 veta las τ largas (P = 0,883 a 4 h, 0,953 a 12 h)"]
 fn cf3_r15_primer_toque_invariante_en_tau_con_brackets_brownianos() {
     let estrella = p_estrella();
     let base = p_primer_toque(300_000);

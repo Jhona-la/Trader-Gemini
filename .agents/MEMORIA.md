@@ -1,6 +1,6 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-82 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-03, F3.7-04, F3.3-09, F3.3-07)
+## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-83 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-03, F3.7-04, F3.3-09, F3.3-07, F3.2-03)
 
 - #44 (CL-67 y CL-71) fusionado en main (8f572f7c).
 - Las 62 propuestas del borrador de C-F3 son 71 tests: 13 activos y 58 OPEN,
@@ -65,6 +65,8 @@
 - CL-81 (F3.3-09): la rama 12 pasa por `conviccion_de_rama_en`. CL-82
   (F3.3-07): el piso de la rama 13 deja de contar el ML (ya entra por la
   puerta).
+- CL-83 (F3.2-03): R-15 sin suelo en √(30 s/τ); con brackets brownianos
+  P(primer toque) no depende de τ. El modelo de R-15 sigue en LC-F4-04.
 
 ## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
 
