@@ -860,6 +860,10 @@ pub struct GodEngineCore {
     /// los símbolos del universo vivo (el examen del demonio). Si está, manda
     /// sobre `tick_size_de` como piso de resolución del ATR.
     pub tick_propio: Vec<Option<f64>>,
+    /// CL-89 (atr-3): (generación del registro, tick) por moneda. El piso de
+    /// resolución se fija dos veces por evento; el tick sólo cambia cuando
+    /// se republica el registro o el universo.
+    piso_cache: Vec<(u64, f64)>,
     /// OLA 73 (R6-A3/B1/A4): ESCRITOR real de la física StatArb por moneda —
     /// SDE OU continua sobre la basis futuro-spot con reloj físico y β RLS
     /// adaptativa. Publica `statarb_ou_zscore`/`statarb_half_life_ms`/
@@ -1195,6 +1199,7 @@ impl GodEngineCore {
             maker_engines,
             feature_engines,
             tick_propio: vec![None; n_coins],
+            piso_cache: vec![(0, 0.0); n_coins],
             base_z: (0..n_coins).map(|_| base_z::BaseZ::new()).collect(),
             statarb_ou_engines: (0..n_coins)
                 .map(|_| {
@@ -3034,18 +3039,30 @@ impl GodEngineCore {
     }
 
     /// CL-69: el piso de resolución del ATR de la moneda es su tick (0 sin
-    /// spec). Se fija en cada evento porque el registro de specs puede
-    /// cambiar; `tick_size_de` no asigna. CL-88: el tick propio, si lo hay,
-    /// manda.
+    /// spec). CL-88: el tick propio, si lo hay, manda. CL-89 (atr-3): el tick
+    /// del registro se cachea por moneda y se vuelve a leer sólo cuando cambia
+    /// la generación del registro o del universo; antes cada evento hacía dos
+    /// veces una copia del universo y un barrido lineal del registro.
     #[inline]
     fn fijar_piso_resolucion(&mut self, coin_id: usize) {
-        let propio = self.tick_propio.get(coin_id).copied().flatten();
-        if let Some(fe) = self.feature_engines.get_mut(coin_id) {
-            fe.piso_resolucion = propio
-                .or_else(|| quantum_arena::symbol_registry::tick_size_de(coin_id))
+        let Some(fe) = self.feature_engines.get_mut(coin_id) else {
+            return;
+        };
+        if let Some(t) = self.tick_propio.get(coin_id).copied().flatten() {
+            fe.piso_resolucion = t;
+            return;
+        }
+        let Some(cache) = self.piso_cache.get_mut(coin_id) else {
+            return;
+        };
+        let g = quantum_arena::symbol_registry::generacion();
+        if cache.0 != g {
+            let tick = quantum_arena::symbol_registry::tick_size_de(coin_id)
                 .filter(|t| t.is_finite() && *t > 0.0)
                 .unwrap_or(0.0);
+            *cache = (g, tick);
         }
+        fe.piso_resolucion = cache.1;
     }
 
     /// Procesa un tick en el motor universal continuo unificado.

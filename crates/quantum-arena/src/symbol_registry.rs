@@ -81,10 +81,29 @@ lazy_static! {
         ArcSwap::from_pointee(get_default_specs());
 }
 
+/// CL-89 (atr-3): generación del registro de specs y del universo. Sube cada
+/// vez que se publica uno de los dos, después de publicarlo. Quien guarda un
+/// valor derivado de ellos (el tick de un slot) lo recalcula sólo cuando
+/// cambia: si lee la generación vieja y el registro nuevo, recalcula en la
+/// siguiente consulta.
+static GENERACION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// CL-89: generación vigente del registro y del universo (nunca 0).
+#[inline(always)]
+pub fn generacion() -> u64 {
+    GENERACION.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// CL-89: marca una publicación del registro o del universo.
+pub(crate) fn nueva_generacion() {
+    GENERACION.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+}
+
 pub fn update_registry(new_specs: Vec<SymbolSpec>) {
     let current = DYNAMIC_REGISTRY.load();
     if current.is_empty() {
         DYNAMIC_REGISTRY.store(Arc::new(new_specs));
+        nueva_generacion();
         return;
     }
 
@@ -101,6 +120,7 @@ pub fn update_registry(new_specs: Vec<SymbolSpec>) {
         }
     }
     DYNAMIC_REGISTRY.store(Arc::new(updated));
+    nueva_generacion();
 }
 
 // D-725 (DÉCIMA OLA · auditoría integral): UN SOLO ESPACIO DE ÍNDICE.

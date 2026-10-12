@@ -19,6 +19,8 @@ pub fn simbolo_canonico(s: &str) -> String {
 pub fn update_dynamic_universe(new_universe: Vec<String>) {
     let canonico: Vec<String> = new_universe.iter().map(|s| simbolo_canonico(s)).collect();
     DYNAMIC_UNIVERSE.store(Arc::new(canonico));
+    // CL-89: el slot → símbolo cambió; los ticks cacheados por slot caducan.
+    crate::symbol_registry::nueva_generacion();
 }
 
 pub fn get_active_universe_ref() -> Arc<Vec<String>> {
