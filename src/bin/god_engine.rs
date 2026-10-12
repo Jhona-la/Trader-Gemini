@@ -1849,32 +1849,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         0.0
                     };
-                    // D-744: el sistema inmune deja de leer el gen CRUDO (0,95
-                    // en el genoma base: con $13 esperaba a $0,65 para actuar)
-                    // y usa la MISMA prueba que el veto de entradas del
-                    // risk-engine — la caída máxima compatible con el riesgo
-                    // que el motor toma de verdad y con su tasa de pérdida
-                    // observada, con el gen como confianza de la prueba.
-                    // CL-9: la MISMA función que el veto de entradas.
-                    let q_perdida_global =
-                        risk_engine::drawdown::q_perdida_cartera(arena_imm.coins.iter().map(|c| {
-                            (
-                                c.metrics.win_rate.load(Ordering::Relaxed),
-                                c.metrics.trade_count.load(Ordering::Relaxed) as f64,
-                            )
-                        }));
-                    // D-744b / QS-D3 (Ola Ω76): sin riesgo medido rige el gen acotado por la cota
-                    // superior de falsación del modelo de ½ Kelly a α = 0,05 (d* ≈ 0,632, suelo $4,79 en cuenta de $13).
-                    // Sincroniza el cortacircuitos del host con el veto de entradas de risk-engine (lib.rs:341).
-                    let d_falsacion = risk_engine::drawdown::drawdown_de_falsacion(
-                        risk_engine::drawdown::FRACCION_KELLY_MAXIMA,
-                        risk_engine::drawdown::ALFA_FALSACION,
-                    );
-                    let max_dd = risk_engine::drawdown::drawdown_maximo(
-                        arena_imm.riesgo_por_operacion.load(Ordering::Relaxed),
-                        q_perdida_global,
-                        arena_imm.config.global_max_drawdown.load(Ordering::Relaxed),
-                    ).min(d_falsacion);
+                    // CL-106 (LC-F4-10, decisión del dueño «Ambos»): el MISMO
+                    // umbral que el veto de entradas del riesgo, una prueba de
+                    // nivel α con el tamaño real de las órdenes (cuantil 95 % de
+                    // la caída máxima en 200 operaciones con H0 = +0,05 R, en
+                    // unidades del riesgo medido al stop), acotado por d*. Antes
+                    // era la prueba de racha (D-744/CL-9): con riesgo medido,
+                    // 2,2-3,8 % con 13 USD, que aplanaba y bloqueaba la cuenta en
+                    // el 36-49 % de las rachas de 200 operaciones aun con +0,30 R
+                    // de ventaja. Sin riesgo medido (arranque) rige d*.
+                    let max_dd = risk_engine::drawdown::umbral_freno_duro_de(&arena_imm);
                     // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
                     // inmune, no desarmarlo: el guard `cap > 0.0` anterior
                     // dejaba todos los frenos apagados exactamente en el único

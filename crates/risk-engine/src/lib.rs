@@ -297,60 +297,20 @@ impl RiskEngine {
         );
         // U-3: los picos espejo scalp/swing (sin lectores) extirpados.
 
-        // O-04 — CIRCUIT BREAKER DE DRAWDOWN en el path cuántico: el gen
-        // global_max_drawdown era funcionalmente MUERTO (se convertía en cap
-        // de margen constante). Ahora es un VETO REAL: si el drawdown desde
-        // el pico supera el gen, no se abre nueva posición hasta recuperación.
-        // D-641 (completo): el cortacircuitos de drawdown deja de saltar en $15.
-        // En régimen micro pleno (≤3 operaciones mínimas, p. ej. $13) conserva
-        // la tolerancia de 0,85 diseñada para permitir la recuperación del
-        // crecimiento compuesto; en régimen estándar rige el gen; entre ambos,
-        // transición continua. Antes el gen quedaba anulado en producción.
-        // #653 (Ola 53): DOS defectos del hallazgo B cerrados —
-        // (1) micro_w usaba `config.min_notional` congelado (5.0, nadie lo
-        // escribe): ahora el mínimo DINÁMICO del spec del símbolo (paridad
-        // con evaluate_single_intent D-641 completo).
-        // (2) el lerp micro era CÓDIGO MUERTO: el `max_dd` lerpado sólo
-        // vivía en el if-guard; el veto real comparaba contra el
-        // sombreado de D-744b (gen crudo). Ahora la tolerancia micro se
-        // compone con la cota medida: umbral = lerp(dd_max_medido, 0.85,
-        // micro_w) — el régimen micro relaja la cota MEDIDA, no la salta.
-        let min_notional_dyn = quantum_arena::symbol_registry::try_spec(coin_id)
-            .map(|s| crate::capital_regime::effective_min_notional(s.min_notional))
-            .unwrap_or_else(|| arena.config.min_notional.load(Ordering::Relaxed));
-        let micro_w = crate::capital_regime::micro_weight(current_capital, min_notional_dyn);
+        // O-04 → CL-106 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12):
+        // FRENO DURO DE LA CUENTA. No se abre posición nueva mientras la caída
+        // desde el pico (el del arena, compartido con el host y guardado entre
+        // reinicios, CL-99) supere un umbral de nivel α con el tamaño real de
+        // las órdenes: el cuantil 95 % de la caída máxima en 200 operaciones
+        // con H0 = +0,05 R, en unidades del riesgo medido al stop
+        // (`drawdown::umbral_freno_duro`), acotado por d* (ADR-0016 D3). Es la
+        // MISMA función del sistema inmune del host. Sustituye a la prueba de
+        // racha (`drawdown_compatible`), que con 8-12 R daba un 36-49 % de
+        // falsa alarma en 200 operaciones aun con +0,30 R de ventaja, y a la
+        // tolerancia micro (D-641), que en 13 USD dejaba el umbral en d*.
         if self.peak_capital > 0.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
-            // CL-9: la caída es de la cuenta; la tasa de pérdida también
-            // (antes la de la moneda candidata: una moneda perdedora o sin
-            // historial aflojaba el freno de toda la cartera).
-            let q_perdida = crate::drawdown::q_perdida_cartera(arena.coins.iter().map(|c| {
-                (
-                    c.metrics.win_rate.load(Ordering::Relaxed),
-                    c.metrics.trade_count.load(Ordering::Relaxed) as f64,
-                )
-            }));
-            // D-744b: sin riesgo medido rige el gen; el veto nunca se salta.
-            let dd_max_medido = crate::drawdown::drawdown_maximo(
-                arena.riesgo_por_operacion.load(Ordering::Relaxed),
-                q_perdida,
-                arena.config.global_max_drawdown.load(Ordering::Relaxed),
-            );
-            // D-641 × D-744b compuestos: la tolerancia micro relaja la COTA
-            // MEDIDA continuamente; el estándar la respeta. QS-D3 (ADR-0016):
-            // la tolerancia micro es la caída que FALSIFICA el modelo de ½
-            // Kelly a α = 0,05 (d* = 0,632), no el literal 0,85 (que con 13
-            // USD permitía caer a 1,95 USD). d* es además la COTA SUPERIOR de
-            // todo el veto: ninguna política ≤ ½ Kelly sobrevive con
-            // probabilidad ≥ α a una caída mayor, así que tampoco el respaldo
-            // del gen (hasta 0,95 sin riesgo medido) puede superarla.
-            let d_falsacion = crate::drawdown::drawdown_de_falsacion(
-                crate::drawdown::FRACCION_KELLY_MAXIMA,
-                crate::drawdown::ALFA_FALSACION,
-            );
-            let umbral = crate::capital_regime::lerp(dd_max_medido, d_falsacion, micro_w)
-                .min(d_falsacion);
-            if dd >= umbral {
+            if dd >= crate::drawdown::umbral_freno_duro_de(arena) {
                 return rej(REJ_DRAWDOWN);
             }
         }
@@ -1502,6 +1462,26 @@ impl RiskEngine {
                 ),
                 Ordering::Relaxed,
             );
+            // CL-106: la geometría de la orden en unidades de su stop, con
+            // la fricción, para el umbral del freno duro de drawdown.
+            let ganancia = (expected_win - roundtrip_fee) / sl_pct;
+            let perdida = (sl_pct + roundtrip_fee) / sl_pct;
+            if ganancia.is_finite() && perdida.is_finite() && perdida > 0.0 {
+                for (celda, nuevo) in [
+                    (&arena.ganancia_en_stops, ganancia),
+                    (&arena.perdida_en_stops, perdida),
+                ] {
+                    let previo = celda.load(Ordering::Relaxed);
+                    celda.store(
+                        crate::drawdown::actualizar_riesgo_ewma(
+                            previo,
+                            nuevo,
+                            crate::drawdown::TRADE_HORIZON / 10.0,
+                        ),
+                        Ordering::Relaxed,
+                    );
+                }
+            }
         }
 
         ValidatedOrder {

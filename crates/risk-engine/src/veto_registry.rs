@@ -113,14 +113,14 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     EntradaVeto {
         id: "V-RISK-005",
         nombre: "drawdown",
-        causa: "caída de cuenta ≥ máximo admisible derivado de la tasa de pérdida de Cartera; #653 (Qoder Ola 53): el umbral es lerp(dd_max_medido, 0.85, micro_w) — la tolerancia micro relaja la cota MEDIDA de D-744b (antes código muerto: el gen crudo regía en todos los regímenes) — decisión del dueño documentada en revisión cruzada",
-        fuente_umbral: "medido",
-        datos: "pico/capital unificados + q_perdida_cartera ponderada (CL-9) + dd_max medido + peso micro_w del régimen (#653)",
-        responsable: "CL-9 (Claude), 2026-09-29; dd-lerp #653 (Qoder Ola 53); entrada puesta al día por auditoría LXXXVI (GLM)",
+        causa: "CL-106 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12): freno duro de la cuenta. La caída desde el pico (el del arena, compartido con el host y guardado entre reinicios, CL-99) supera el cuantil 95 % de la caída máxima en 200 operaciones con H0 = +0,05 R, en unidades del riesgo medido al stop: K(w, l)·r, acotado por d* (ADR-0016 D3). Es el MISMO umbral del sistema inmune del host (drawdown::umbral_freno_duro_de). Sustituye a la prueba de racha (CL-9/D-744) y a la tolerancia micro (#653)",
+        fuente_umbral: "medido: riesgo r y geometría (w, l) de las órdenes dimensionadas; el umbral se deriva con un Monte Carlo determinista de la caída máxima con esa geometría medida de las órdenes (w = (TP−f)/SL, l = (SL+f)/SL) y el riesgo medido r; H0 = +0,05 R, α = 0,05 y 200 operaciones son política del dueño (tarjeta del freno, «Ambos»)",
+        datos: "pico del arena + capital + riesgo_por_operacion + ganancia_en_stops + perdida_en_stops (EWMA de las órdenes dimensionadas)",
+        responsable: "CL-106 (Claude, Línea C), 2026-10-12; antes CL-9 (Claude) y dd-lerp #653 (Qoder Ola 53)",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
-        test: Some("cl9_la_tasa_de_perdida_es_la_de_la_cartera_ponderada"),
-        deuda: None,
+        test: Some("cl106_falsa_alarma_y_retraso_de_deteccion"),
+        deuda: Some("el nivel vale para 200 operaciones: medida desde el pico móvil, la caída cruza cualquier umbral fijo con probabilidad que tiende a 1 (52-57 % de falsa alarma en 2 000 operaciones). La prueba con nivel para todo tiempo es el freno de la estrategia (proceso e de Ville sobre R)"),
     },
     EntradaVeto {
         id: "V-RISK-006",
@@ -481,6 +481,7 @@ macro_rules! corpus_contratos {
         c.push_str(include_str!("../../god-engine-core/src/lib.rs"));
         c.push_str(include_str!("../tests/veto_logic_contracts.rs"));
         c.push_str(include_str!("../tests/cf4_sonda_unica.rs"));
+        c.push_str(include_str!("../tests/cf4_freno_duro.rs"));
         c.push_str(include_str!("../../god-engine-core/tests/resonancia_simetrica_contract.rs"));
         c
     }};

@@ -256,6 +256,131 @@ pub fn cargar_pico(ruta: &std::path::Path) -> Option<f64> {
     (pico.is_finite() && pico > 0.0).then_some(pico)
 }
 
+
+/// CL-106 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12) — FRENO DURO DE
+/// LA CUENTA: UNA PRUEBA DE NIVEL α CON EL TAMAÑO REAL DE LAS ÓRDENES.
+///
+/// H0 es «el sistema tiene al menos la ventaja mínima que justifica operar»,
+/// [`VENTAJA_H0_FRENO_DURO_R`] = +0,05 R por operación, con R el riesgo de la
+/// orden al stop con su fricción (`SL + f`). Una operación gana `w = (TP − f)/SL`
+/// o pierde `l = (SL + f)/SL`, en unidades del stop; con ventaja μ0 (en R),
+/// `p·w − (1 − p)·l = μ0·l`. La caída máxima de la cuenta en
+/// [`HORIZONTE_FRENO_DURO`] operaciones es una variable aleatoria bajo H0; su
+/// cuantil `1 − α` ([`ALFA_FALSACION`]) en stops, `K(w, l)`, es el umbral: si
+/// la caída lo supera, H0 se rechaza con error ≤ α en ese horizonte.
+///
+/// Con 13 USD, la orden mínima de 5,10 USD, RR 2,25 y 14,5 pb de fricción,
+/// `K` son unos 31-33 R (7,8 % de la cuenta con stop del 0,5 %; 15 % con
+/// stop del 1 %). El freno de racha de antes (`drawdown_compatible`, 8-12 R)
+/// daba un 36-49 % de falsa alarma en 200 operaciones con una ventaja de
+/// +0,30 R; éste, ≈ 5 % con +0,05 R y ≈ 0 con +0,30 R.
+///
+/// Una caída medida desde el pico móvil sólo tiene nivel con horizonte: con
+/// 2 000 operaciones la falsa alarma de este umbral sube al 52-57 %. El
+/// freno de la estrategia (proceso e de Ville sobre R) es la prueba con nivel
+/// para todo tiempo; éste protege la cuenta. d* (ADR-0016 D3) queda como
+/// tope de ruina por encima.
+pub const VENTAJA_H0_FRENO_DURO_R: f64 = 0.05;
+/// Horizonte del freno duro: el del tope de ruina del dimensionado.
+pub const HORIZONTE_FRENO_DURO: usize = TRADE_HORIZON as usize;
+/// Caminos del Monte Carlo del cuantil: el error de muestreo del cuantil 95 %
+/// es ≈ √(α(1−α)/n)/densidad, menos de un 2 % relativo.
+const CAMINOS_FRENO_DURO: usize = 20_000;
+
+/// Generador xorshift64* con semilla fija: el umbral es una función
+/// determinista de la geometría, no de una semilla del proceso.
+struct Xorshift(u64);
+impl Xorshift {
+    fn uniforme(&mut self) -> f64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        (self.0.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+/// Cuantil `1 − α` de la caída máxima (en stops) de `HORIZONTE_FRENO_DURO`
+/// operaciones que ganan `w` o pierden `l` stops, con ventaja μ0 (en R).
+/// `None` si la geometría no es utilizable o la ventaja hace imposible
+/// perder (no hay caída que medir).
+pub fn caida_alfa_en_stops(w: f64, l: f64, ventaja_r: f64, alfa: f64) -> Option<f64> {
+    if !(w.is_finite() && w > 0.0 && l.is_finite() && l > 0.0 && ventaja_r.is_finite())
+        || !(alfa.is_finite() && alfa > 0.0 && alfa < 1.0)
+    {
+        return None;
+    }
+    let p = (ventaja_r * l + l) / (w + l);
+    if !(p.is_finite() && p > 0.0 && p < 1.0) {
+        return None;
+    }
+    let mut azar = Xorshift(0x9E37_79B9_7F4A_7C15);
+    let mut caidas: Vec<f64> = Vec::with_capacity(CAMINOS_FRENO_DURO);
+    for _ in 0..CAMINOS_FRENO_DURO {
+        let (mut acum, mut pico, mut caida) = (0.0f64, 0.0f64, 0.0f64);
+        for _ in 0..HORIZONTE_FRENO_DURO {
+            acum += if azar.uniforme() < p { w } else { -l };
+            pico = pico.max(acum);
+            caida = caida.max(pico - acum);
+        }
+        caidas.push(caida);
+    }
+    let k = (((1.0 - alfa) * CAMINOS_FRENO_DURO as f64).ceil() as usize)
+        .clamp(1, CAMINOS_FRENO_DURO)
+        - 1;
+    let (_, q, _) = caidas.select_nth_unstable_by(k, |a, b| a.total_cmp(b));
+    Some(*q)
+}
+
+/// [`caida_alfa_en_stops`] con H0 y α del freno duro, en caché por geometría
+/// redondeada a 0,02 stops (el umbral cambia menos de un 1 % en ese paso; el
+/// Monte Carlo sólo corre la primera vez que aparece cada geometría).
+pub fn caida_alfa_freno_duro(w: f64, l: f64) -> Option<f64> {
+    use std::sync::Mutex;
+    static CACHE: Mutex<Vec<((i64, i64), Option<f64>)>> = Mutex::new(Vec::new());
+    if !(w.is_finite() && l.is_finite()) {
+        return None;
+    }
+    let clave = ((w * 50.0).round() as i64, (l * 50.0).round() as i64);
+    let mut cache = CACHE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((_, k)) = cache.iter().find(|(c, _)| *c == clave) {
+        return *k;
+    }
+    let k = caida_alfa_en_stops(
+        clave.0 as f64 / 50.0,
+        clave.1 as f64 / 50.0,
+        VENTAJA_H0_FRENO_DURO_R,
+        ALFA_FALSACION,
+    );
+    cache.push((clave, k));
+    k
+}
+
+/// Umbral del freno duro (CL-106), el MISMO para el veto de entradas del
+/// riesgo y el sistema inmune del host: `K(w, l)·r`, acotado por d* (½ Kelly,
+/// α = 0,05), con `r` el riesgo medido por operación (fracción del capital
+/// al stop) y `w`, `l` la geometría medida de las órdenes. Sin riesgo o
+/// geometría medidos (arranque), rige d*: no se inventa un umbral fino.
+pub fn umbral_freno_duro(riesgo: f64, ganancia_en_stops: f64, perdida_en_stops: f64) -> f64 {
+    let d_estrella = drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION);
+    if !(riesgo.is_finite() && riesgo > 0.0) {
+        return d_estrella;
+    }
+    match caida_alfa_freno_duro(ganancia_en_stops, perdida_en_stops) {
+        Some(k) if k.is_finite() && k > 0.0 => (k * riesgo).min(d_estrella),
+        _ => d_estrella,
+    }
+}
+
+/// [`umbral_freno_duro`] con lo medido en el arena.
+pub fn umbral_freno_duro_de(arena: &quantum_arena::GlobalArena) -> f64 {
+    use std::sync::atomic::Ordering::Relaxed;
+    umbral_freno_duro(
+        arena.riesgo_por_operacion.load(Relaxed),
+        arena.ganancia_en_stops.load(Relaxed),
+        arena.perdida_en_stops.load(Relaxed),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
