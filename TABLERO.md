@@ -89,6 +89,23 @@
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
   `target/debug/incremental` y quedaron ~159 GB libres.
 
+## Claude — Línea H (actualizado: 2026-10-12 16:10 local, prefijo LH-n, rama claude/linea-h-ventaja-conocida, worktree .claude/worktrees/linea-h)
+
+- **Por qué**: al abrir la sesión había otra sesión Claude viva en la Línea G
+  (ola 5, LG-21 a las 15:48). La Línea H no toca esa rama y toma lo que la ola
+  4 de la G dejó en su §12.5: nada mide si la cadena de decisión deja pasar y
+  compone una ventaja; el T-2 sólo mide una serie sin ventaja.
+- **Haciendo ahora**: LH-1, el T-3 (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`):
+  escalera de fixtures con ventaja conocida (Markov en el signo, a ∈ [0,5; 0,95],
+  deriva d), techo medido sin el motor (oráculo y proxy del signo previo,
+  P(TP antes que SL) del bracket RR 2,25) frente a lo que el motor realiza y
+  los rechazos del riesgo que lo frenan. LH-2: tres lectores (tamaño;
+  evidencia/EV; dirección/τ) que predicen la escalera y escépticos con la
+  medición en la mano. Plan: `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md`.
+- **Commiteado**: nada todavía (apertura en el buzón).
+- **No toca**: núcleo, riesgo, host, orquestador, registro, consejo,
+  `spectral_tape`, `booktick_replay`, `online_daemon`, `genome.rs`.
+
 ## Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
 - **Haciendo ahora**: docs del EV medido en el T-2 (ledger §7.5).
