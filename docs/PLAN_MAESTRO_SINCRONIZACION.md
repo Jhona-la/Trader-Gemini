@@ -1976,3 +1976,23 @@ puede evaluar con un motor distinto del que opera.**
 **Otros arreglos.** LG-16 (histórico de OI completo: se perdían ≈9 días por
 ejecución), LG-18 (9 genes sin lector dejan de mutar y de sumar ensayos al
 DSR), LG-19 (trazos del núcleo a la cola asíncrona; corte UTF-8 correcto).
+
+## 53. Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente (Ola Ω90, Ficha #728)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#728`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Formalización y publicación del Documento Rector Canónico `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md`. Sincronización holística con las Olas 1–3 de Línea G (LG-1 a LG-19), el PR #61 de Línea C (D4 sonda única y orden mínima de lote), el contrato de asignación de crédito de Línea F ($p^*$ en lugar de 0.50), y la doctrina de microcapital \$13 USD ($T_d = 72$ h, $g \approx +25.9921\%/\text{día}$).
+  * **POR QUÉ**: El sistema operaba con dispersión de entendimiento entre agentes respecto a la dualidad errónea "scalping vs swing", la asfixia bayesiana en el calibrador de confianza tras rachas adversas, y el riesgo de que la evolución (`evolver.exe`) optimizara con una física desacoplada del bucle vivo. Era indispensable armonizar en un solo documento rector todas las disciplinas (Física de fluidos Navier-Stokes, Teoría Gauge Yang-Mills, Rough Volatility, Prospect Theory, e-martingalas de Ville) con las restricciones mecánicas duras de Binance Futures.
+  * **PARA QUÉ**: Garantizar una hoja de ruta unificada para las sesiones concurrentes, salvaguardar los invariantes sagrados (\$1.02 USD de margen por posición a 5x, $d^* = 0.632$, suelo \$4.79 USD, $RR \ge 2.25$), habilitar la exploración segura mediante la sonda única D4, y orientar toda evolución hacia la meta de duplicación continua cada 3 días como propiedad emergente ergódica de la ventaja matemática real.
+  * **CÓMO**:
+    1. Integración de los 19 hallazgos de Línea G (`docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md`), congelando genes muertos (LG-18), asegurando el buffer asíncrono de logs (LG-11/LG-19) y corrigiendo la ingesta de OI (LG-16).
+    2. Incorporación de la Sonda Única D4 (Línea C, PR #61) permitiendo a la cartera refrescar la evidencia probabilística con riesgo acotado al 0.215% por trade sin incurrir en parálisis operativa.
+    3. Formalización del Contrato de Asignación de Crédito (Línea F): todo ajuste hebbiano o bayesiano evalúa $\mathbb{E}[R]$ contra el umbral de equilibrio de la geometría $p^* = \frac{1}{1 + RR} \approx 0.31 - 0.37$, premiando modelos con $p > p^*$ aunque su acierto absoluto sea inferior al 50%.
+    4. Proyección continua en espacio de Hilbert $L^2$ sobre 32 escalas diádicas $\tau_k = 4^k\ \mu\text{s}$ y el símplex continuo tetraédrico $\Delta^3$.
+  * **CUÁNDO**: Vigente de inmediato para todas las sesiones concurrentes (Antigravity, Línea C, Línea G, Línea E, Línea F, Codex, Sol, Qoder).
+  * **DÓNDE**: `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`, `TABLERO.md`, `COORDINACION_CODEX_2026-09-28.md`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead) en consenso colegiado pleno.
+- **Validación Extremo a Extremo**:
+  * Workspace 100% verde en `cargo check --workspace --all-targets` (0 errores en 23 crates).
+  * Oráculo T-1 certificado en 19/144 genes sensibles (13.2%).
+  * Fixture T-2 verificado y alineado con sonda única D4.
