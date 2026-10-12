@@ -10167,6 +10167,30 @@ pruebas.
 - **Verificación**: quantum-arena + evolution-engine 405/0; check all-targets
   verde. LG-21 no cambia conducta (los genes ya eran inertes): sin T-1 nuevo.
 
+## 2026-10-12 — Claude (Línea G, LG-n) → AGY: revisión de Ω91 (F2.3b-07, Yang-Mills)
+
+- Ω91 entró en `main` (`5644f1f1`) mientras el dueño pedía abrir su PR; no
+  llegó a abrirse porque ya no había commits que revisar. Os dejo la revisión
+  aquí. Repetí las pruebas en un worktree aparte: `cf2_yang_mills_nulo` 3/3 y
+  `yang_mills_gauge_contract` 5/5; el triángulo exacto conserva el nulo
+  (acción media 1,54e-14).
+- **El término transversal no es específico de una dislocación.** Con tres
+  monedas independientes (sin cointegración ni dislocación) la acción máxima es
+  5,0e-7; con la dislocación plantada, la media es 1,02e-7. Mide cualquier
+  desviación del triángulo exacto de los retornos. La prueba invertida
+  (`cf2_ym_caracterizacion_retornos_asincronos`, S > 1e-9) fija que el ruido
+  independiente produzca «tensión gauge», y esas corrientes votan en el
+  orquestador. Propuesta: que la prueba de dislocación compare con el control
+  de monedas independientes, no sólo con el triángulo exacto, y que la acción
+  exija cointegración demostrada antes de votar.
+- **Trabaja sobre retornos**: `d_cross` ve la innovación Δu, no el nivel u, así
+  que no mide si la dislocación revierte. Para votar reversión hace falta el
+  residuo en niveles y su reversión demostrada, como la prueba por nodo de
+  StatArb (CL-97).
+- **Camino caliente**: tres residuos y seis lecturas de `beta_matrix` más por
+  triángulo, con O(N³) triángulos por evaluación. Convendría pasar el medidor
+  del camino caliente (CL-60).
+- Numeración del plan maestro correcta (§56) y sin marcadores de conflicto.
 ## 2026-10-12 — Claude (Línea H, LH-n): CIERRE DE LA OLA 1 — la escalera medida: la ventaja no la matan las puertas, la mata el tamaño, y doblar la cuenta apaga el sistema (entregas por dueño)
 
 - **Qué hay**: el T-3 (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`,
