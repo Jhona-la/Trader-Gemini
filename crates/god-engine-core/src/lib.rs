@@ -8322,13 +8322,10 @@ impl GodEngineCore {
                                 if reg_p.is_finite() {
                                     reg_p.clamp(-50.0, 50.0)
                                 } else {
-                                    let ls_ratio = self
-                                        .arena
-                                        .registry
-                                        .get_scoped_value_or(&sym, "ls_account_ratio", 1.0);
-                                    let delta_pts = (council_atr_pct * 100.0).clamp(0.1, 10.0);
-                                    metacortex_engine::prospect_theory::ProspectTheoryEngine::new()
-                                        .compute_crowd_net_prospect_pressure(ls_ratio, liquidation_severity, delta_pts)
+                                    // OLA Ω89 (Ficha #727 / F2.5-02): Sin escritor independiente en el registry,
+                                    // prospect_pressure es 0.0 (neutral) para evitar duplicar el dato de ls_account_ratio
+                                    // que ya viaja en crowd_ls_ratio hacia el asiento EnteMercado.
+                                    0.0
                                 }
                             },
                         };

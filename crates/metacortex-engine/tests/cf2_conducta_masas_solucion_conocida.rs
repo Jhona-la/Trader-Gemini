@@ -222,7 +222,6 @@ fn cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion() {
 /// se sustituye por otra sobre el MarketSnapshotPayload que arma
 /// GodEngineCore, en el mismo commit.
 #[test]
-#[ignore = "OPEN F2.5-02 (Línea C y AGY Prospect), CONTRATO DEL ASIENTO, se sustituye si el arreglo va al núcleo: el LS entra dos veces, como p_crowd y como presión de respaldo"]
 fn cf2_ente_un_dato_de_masa_una_entrada() {
     let kt = ProspectTheoryEngine::new();
     let ente = SeniorEnteMercado;

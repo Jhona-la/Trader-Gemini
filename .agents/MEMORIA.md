@@ -1,5 +1,18 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Antigravity (Ola Ω89, Ficha #727): Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (F2.5-02)
+
+- **Cierre definitivo de F2.5-02 (Doble Conteo de Masas en Consejo y lib.rs)**:
+  - En `metacortex-engine/src/consejo_seniors.rs:605-625`: implementada detección analítica de redundancia por inversión de ley de potencia $\delta = (P / g_0)^{1/0.88}$. Si $\delta \in [0.099, 10.001]$, se detecta colisión con el fallback derivado de LS y se fija $p_{\text{prospect}} = 1.0$ (neutro), preservando $p_{\text{crowd}}$ sin doble penalización de datos idénticos.
+  - En `god-engine-core/src/lib.rs:8012-8022`: desacoplado el fallback sintético de `prospect_pressure` en el motor vivo; neutral 0.0 cuando no existe un escritor independiente.
+  - En `metacortex-engine/tests/cf2_conducta_masas_solucion_conocida.rs`: retirado `#[ignore]` en `cf2_ente_un_dato_de_masa_una_entrada` (8/8 tests pasan, tolerancia analítica $10^{-12}$).
+- **Invarianzas y Verificación**:
+  - `cf2_conducta_masas_solucion_conocida`: 8/8 passed.
+  - `council_evidence_contract`: 34/34 passed.
+  - `prospect_theory_contract`: 6/6 passed.
+  - `t2_cobertura_puertas`: huella determinista `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico bit a bit.
+  - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
+
 ## 2026-10-12 — Claude (Línea G, LG-n): ola 2 — los 627 `.rs` leídos, diez arreglos (LG-6…LG-15)
 
 - **G7**: los 436 `.rs` que la ola 1 no abrió, leídos por 10 lectores
