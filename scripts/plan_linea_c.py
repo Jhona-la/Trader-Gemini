@@ -190,7 +190,7 @@ REGLAS = {
         "src/trailing.rs", "src/features/", "src/multi_asset_orchestrator.rs",
     ],
     "C-F4": [
-        "crates/risk-engine/src/{lib.rs, tp_sl.rs, correlation_guard.rs, kelly_envelope.rs, leverage_matrix.rs, drawdown.rs, ruin.rs, capital_regime.rs, kelly.rs, orchestrator.rs, copulas_store.rs, guard.rs, capital_compounder.rs, epigenetic_capital_alloc.rs, epigenetic_fitness_landscape.rs}",
+        "crates/risk-engine/src/{lib.rs, tp_sl.rs, correlation_guard.rs, kelly_envelope.rs, leverage_matrix.rs, drawdown.rs, ruin.rs, capital_regime.rs, kelly.rs, orchestrator.rs, copulas_store.rs, guard.rs, epigenetic_capital_alloc.rs, epigenetic_fitness_landscape.rs}",
         "crates/god-engine-core/src/{entry_reservation.rs, quantum_kelly_risk.rs}",
         "crates/quantum-arena/src/position.rs",
         "crates/audit-engine/src/{drift_auditor.rs, shadow_ledger.rs}",
