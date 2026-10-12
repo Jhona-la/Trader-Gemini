@@ -1,5 +1,57 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Claude (Línea H, LH-n): ola 1 — el T-3 mide la cadena con ventaja conocida: la ventaja no la matan las puertas, la mata el tamaño, y doblar la cuenta apaga el sistema
+
+- **Por qué otra línea**: al abrir la sesión (15:49) había otra sesión Claude
+  viva en la Línea G (ola 5). La H toma el hueco de su §12.5: «el T-2 no dice
+  nada de la meta». Rama `claude/linea-h-ventaja-conocida`, worktree
+  `.claude/worktrees/linea-h`, plan `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md`,
+  datos e índice en `docs/audit/linea_h/`.
+- **LH-1 / LH-1b, el T-3** (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`,
+  archivo nuevo): escalera de fixtures con ventaja conocida (Markov en el
+  signo del retorno por vela: persistencia a ∈ [0,5; 0,95], deriva d; 13 USD,
+  lote fino, predictor del T-2). Por peldaño, el techo medido sin el motor
+  (oráculo del estado oculto y proxy del signo previo a 1/5/20 velas;
+  P(TP antes que SL) del bracket RR 2,25) frente a lo realizado, el pago por
+  cierre leído de `out_pnl` (b real, p* real, max |PnL|) y las diferencias
+  de `REJECT_COUNTERS`. Variantes por capital (`T3_CAPITALES`), valle de
+  capital e intervenciones sobre un gen (`T3_MAX_FEE_PCT`, `T3_LATENCY_MS`,
+  `T3_SLIP_FLOOR`).
+- **Medido (release, 3 000 velas ≈ 50 h por peldaño)**: donde hay ventaja el
+  riesgo no rechaza nada (el EV sólo cierra el peldaño nulo, 929, y el de
+  deriva 0,05 %, 502); el motor gana +9,6 % (a = 0,95) y +10,8 % (a = 0,9,
+  d = 0,2 %) con TODAS las órdenes en el nocional mínimo (5,2–5,9 USD):
+  0,049/día frente a los 0,231/día de la meta con un oráculo de +0,94 R; con
+  el acierto (0,65) y el pago (b = 1,40) medidos el Kelly pleno es el 40 % y
+  el motor arriesga el 0,2 %. Con regímenes de 10 velas (EV_R +0,35) pierde
+  (−0,91 %): τ mediana 64–128 s en todos los peldaños, rama 15 en el 90–95 %
+  de las aperturas, ramas tendenciales 1/2/4/5/13 nunca.
+- **El valle de capital (LH-02, HIGH, riesgo)**: la misma serie opera con 13,
+  20 y 26 USD, NADA con 35, 50 y 65 USD (0 cierres, 6 914 rechazos
+  `fee_impact`), 1 operación con 100 y vuelve con 215: `max_fee_limit =
+  lerp(max_fee_pct = 1 %, 3,5 %, micro_w)` vuelve al gen al salir de micro y
+  el rescate de apalancamiento hasta la orden mínima lo supera. Aislado por
+  intervención: con el gen en 3,5 % o con latencia 0 y suelo 0 la cuenta de
+  100 USD opera.
+- **Con 1 000 USD la envolvente es absorbente (LH-03, HIGH)**: al cierre 30
+  `live_envelope_gate` declara no operable (z = 1,64; el pago realizado
+  b < 0,67, no la p) y revierte 5 574 aperturas que el núcleo repite tick a
+  tick (la reversión no enfría ni cuenta en `REJECT_COUNTERS`). LF-12 medido.
+- **Tamaño (LH-04, R-20 medido)**: de 215 a 1 000 USD el nocional crece ×3,4
+  con capital ×4,65; b realizado baja de 1,40 a 1,04. Aritmético, no compuesto.
+- **Lectores y escépticos**: 30 hallazgos y 27 predicciones falsables de 3
+  lectores; 3 escépticos con la medición: 11 confirmados, 10 plausibles, 8 ya
+  registrados, 1 refutado, 17 nuevos (`verificacion.tsv`,
+  `nuevos_escepticos.tsv`). Entregas LH-02…LH-09 y LG-5 confirmado en el
+  buzón, cada una con el comando del T-3 que la reproduce.
+- **Lección**: el worktree anidado NO reutiliza `target/` del checkout
+  principal aunque se exporte `RUSTFLAGS` (compiló ~450 crates en release,
+  12 min); el exe queda en `<worktree>/target/release/deps` y la escalera se
+  corre con el exe directamente. `cargo check --workspace --all-targets` en
+  debug desde cero: 15 min.
+- **Lección**: dos sesiones Claude pueden estar vivas a la vez: antes de
+  elegir línea, mira la hora del último commit de cada rama `claude/*`.
+
 ## 2026-10-12 — Claude (Línea G, LG-n): ola 5 — 35 genes muertos más congelados (LG-21) y revisión previa al merge de CL-101…108
 
 - **LG-21** (genoma): censo estático de los 144 genes

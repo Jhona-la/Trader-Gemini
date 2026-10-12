@@ -2026,3 +2026,33 @@ antes de fusionarse: 26 hallazgos, 4 MED (unidades del umbral del freno duro;
 estado corrupto tratado como ausente; restauración parcial del estado; PnL de
 sesiones anteriores tomado como de esta). Regla que sale de aquí: **revisar la
 tanda de otra línea antes de que entre, no después**.
+
+## 55. Línea H — ola 1: la cadena de la meta bajo una ventaja conocida (2026-10-12)
+
+> Detalle en [PLAN_LINEA_H_CLAUDE_2026-10-12.md §6](PLAN_LINEA_H_CLAUDE_2026-10-12.md).
+
+**El instrumento.** Ningún fixture medía la pregunta de la meta en su forma
+falsable: si la serie tiene una ventaja conocida, ¿la cadena de decisión la
+deja pasar y la compone? El T-3 (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`)
+es una escalera de series sintéticas con persistencia y deriva controladas,
+con el techo medido sin el motor (oráculo del estado oculto, proxy del signo
+previo, P(TP antes que SL) del bracket RR 2,25) frente a lo que el motor
+realiza y las puertas que lo frenan.
+
+**Lo medido.** Donde hay ventaja el riesgo no rechaza nada y el motor gana
+(+9,6 % y +10,8 % en 50 h), pero con todas las órdenes en el nocional mínimo:
+la quinta parte del ritmo de la meta con un oráculo de +0,94 R por operación
+(con el acierto y el pago medidos, 0,65 y b = 1,40, el Kelly pleno sería el
+40 % del capital; el motor arriesga el 0,2 %). **La misma serie opera con 13,
+20 y 26 USD, no opera nada con 35, 50 y 65 USD (veto `fee_impact`: el techo
+de fricción apalancada vuelve al gen al salir de micro), hace una operación
+con 100 y vuelve a operar con 215**: la primera, la segunda y la tercera
+duplicación de la cuenta caen en un apagón. Con 1 000 USD la envolvente del
+replay se vuelve absorbente al cierre 30 (5 574 aperturas revertidas en
+silencio, por el pago realizado y no por la probabilidad). Con regímenes de
+10 velas el motor pierde aunque el oráculo gane: la τ de las órdenes (1–2 min)
+no sigue a la deriva y las ramas tendenciales nunca abren. **Regla que sale de aquí: lo que vale con 13 USD
+tiene que seguir valiendo al doblar; cada puerta con un literal por régimen
+de capital es un apagón programado.** Entregas por dueño en el buzón
+(LH-02 fricción apalancada, LH-03 envolvente absorbente, LH-04 tamaño,
+LH-05…LH-07 núcleo; LG-5 confirmado).

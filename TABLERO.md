@@ -92,22 +92,33 @@
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
   `target/debug/incremental` y quedaron ~159 GB libres.
 
-## Claude — Línea H (actualizado: 2026-10-12 16:10 local, prefijo LH-n, rama claude/linea-h-ventaja-conocida, worktree .claude/worktrees/linea-h)
+## Claude — Línea H (actualizado: 2026-10-12 ~18:00 local, prefijo LH-n; ola 1 cerrada y fusionada en main; rama borrada)
 
-- **Por qué**: al abrir la sesión había otra sesión Claude viva en la Línea G
-  (ola 5, LG-21 a las 15:48). La Línea H no toca esa rama y toma lo que la ola
-  4 de la G dejó en su §12.5: nada mide si la cadena de decisión deja pasar y
-  compone una ventaja; el T-2 sólo mide una serie sin ventaja.
-- **Haciendo ahora**: LH-1, el T-3 (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`):
-  escalera de fixtures con ventaja conocida (Markov en el signo, a ∈ [0,5; 0,95],
-  deriva d), techo medido sin el motor (oráculo y proxy del signo previo,
-  P(TP antes que SL) del bracket RR 2,25) frente a lo que el motor realiza y
-  los rechazos del riesgo que lo frenan. LH-2: tres lectores (tamaño;
-  evidencia/EV; dirección/τ) que predicen la escalera y escépticos con la
-  medición en la mano. Plan: `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md`.
-- **Commiteado**: nada todavía (apertura en el buzón).
-- **No toca**: núcleo, riesgo, host, orquestador, registro, consejo,
-  `spectral_tape`, `booktick_replay`, `online_daemon`, `genome.rs`.
+- **Qué es**: la cadena de la meta bajo una ventaja CONOCIDA. El T-3
+  (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`) es una escalera de
+  fixtures sintéticos con persistencia y deriva controladas; mide el techo sin
+  el motor (oráculo, proxy, P(TP antes que SL)) frente a lo realizado, el pago
+  por cierre y los rechazos por puerta. Plan y lectura:
+  `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md` §6; datos: `docs/audit/linea_h/`.
+- **Commiteado (ola 1)**: LH-1 y LH-1b (el T-3 con variantes por capital,
+  valle de capital e intervenciones sobre un gen); 30 hallazgos de 3 lectores
+  y 3 escépticos con la medición (11 confirmados, 17 nuevos).
+- **Lo medido**: con ventaja el riesgo no rechaza nada y el motor gana
+  +10,8 % en 50 h, pero todo al nocional mínimo (0,049/día frente a 0,231/día
+  de la meta; Kelly pleno medido 40 %, arriesgado 0,2 %). La cuenta opera con
+  13–26 USD, NO opera con 35–65 USD (`fee_impact`, LH-02 HIGH), 1 operación
+  con 100, vuelve con 215. Con 1 000 USD la envolvente es absorbente al cierre
+  30 (5 574 reversiones silenciosas, LH-03 HIGH). τ 64–128 s en todos los
+  peldaños y ramas tendenciales nunca (LH-05/06).
+- **Entregado**: LH-02/03/04 a Línea C (riesgo), LH-05/06/07 a Qoder/Línea C
+  (núcleo), LH-08/09 y LG-5 confirmado a Línea E/Codex, pedido de exportar
+  `envelope_vetoes`/`diag_*` a Sol. Todo en el buzón con el comando del T-3
+  que lo reproduce.
+- **Siguiente (si se reabre)**: peldaño con dos símbolos (D4 y co-despacho);
+  columna P(cierre por TP) cuando el runner exporte motivos; techo con la
+  geometría real del motor (τ ≈ 1 min).
+- **No tocó**: ningún archivo fuera de `crates/backtest-engine/tests/` y
+  documentación.
 
 ## Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
