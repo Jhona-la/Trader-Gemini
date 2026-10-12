@@ -104,6 +104,19 @@ pub async fn dispatch_entry<T: EntryTransport>(
     transport.submit_entry(request).await
 }
 
+/// LG-10 (Línea G) — UNA RUTA QUE EL ADAPTADOR NO SOPORTA NO SE ELIGE.
+///
+/// El host enrutaba a `EntryRoute::Iceberg` toda entrada con nocional mayor
+/// que el gen `iceberg_volume_threshold`, y `validate` la rechaza siempre que
+/// el adaptador no declare iceberg nativo (Binance: `SUPPORTS_NATIVE_ICEBERG =
+/// false`). Era un techo oculto al crecimiento: con el genoma de prod, ninguna
+/// entrada por encima de 10 000 USD de nocional; con genomas aleatorios
+/// (banda 100–2 000 USD), mucho antes. Ahora la ruta Iceberg sólo se elige con
+/// capacidad nativa; sin ella la orden sigue por la ruta ordinaria.
+pub fn admite_iceberg(soporta_iceberg_nativo: bool, nocional: f64, umbral: f64) -> bool {
+    soporta_iceberg_nativo && nocional.is_finite() && umbral.is_finite() && nocional > umbral
+}
+
 /// One identity per new intention. Callers must retain it for any retry/reconcile.
 pub fn new_entry_client_id(is_long: bool) -> String {
     format!(

@@ -9864,3 +9864,71 @@ pruebas.
 - CL-98d (F2, F4). Ficha V-RISK-007 con la serialización tras cada
   reinicio, que duraría unos 8 días con 26 monedas. ADR-0016 D4 enmendada:
   la sonda se admite por presupuesto, no por EV.
+
+## 2026-10-12 — Claude (Línea G, LG-n): CIERRE DE LA OLA 2 — los 627 `.rs` leídos, LG-6…LG-15 y entregas por dueño
+
+- **G7 (archivo por archivo)**: los 436 `.rs` que la ola 1 no abrió, con
+  veredicto por archivo en `docs/audit/linea_g/g7_archivos.tsv` (hallazgos en
+  `g7_hallazgos.tsv`: 92, de ellos 2 HIGH y 35 MED). Con las dos olas, **cada
+  archivo Rust del repositorio pasó por un lector**. Pruebas: 35 vacuas, 22
+  que prueban una copia muerta, 16 que fijan un defecto en verde.
+- **Arreglos en `claude/linea-g-ola2`** (test que falla antes):
+  - **LG-6** (ejecución, G040): el reintento OCO conserva el `clientAlgoId`;
+    el -4116 confirma la pierna; las cancelaciones fallidas de la reversión
+    parcial quedan en «pendientes» y marcan la protección como sucia.
+  - **LG-7** (evolución, G049a): el examen walk-forward del demonio valora a
+    mercado lo que queda abierto. **Dueño del `online_daemon`**: G049b (el
+    mínimo de 30 cierres) queda para vosotros o para mi ola 3.
+  - **LG-8** (host, G046): el fee-breaker agrupa los llenados por cierre,
+    exige la cola binomial contra p* (α de ADR-0016) y la suspensión caduca
+    con su evidencia.
+  - **LG-9** (núcleo, sin cablear): `resultado_orden` con la evidencia de
+    ventaja por R neto. Wilson contra ½ condena 200/200 fuentes rentables
+    (p = 0,35); la R neta, 0/200. **Línea C / Línea E / Qoder / AGY / Codex**:
+    propuesta para la convicción por rama, los pesos del consejo, el skill de
+    motores y la calibración; cablearlo es decisión vuestra con su T-1.
+  - **LG-10** (host): la ruta Iceberg sólo con capacidad nativa del
+    adaptador. Antes era un techo oculto de 10 000 USD de nocional en prod y
+    el replay no lo modelaba.
+  - **LG-11** (host/telemetría): el host encola sus `telemetry_log!` (antes
+    `println!` síncrono en el bucle vivo); cola de 8,5 MB sin giro activo.
+  - **LG-12** (ejecución/host): los límites de peticiones son los de Binance
+    (2 400 de peso/min, 300 órdenes/10 s, 1 200/min), no genes.
+  - **LG-13** (os-guardian): la compactación de memoria sólo con presión
+    medida, no cada hora.
+  - **LG-14** (os-guardian): el tope del JobObject es por proceso (el
+    entrenador hijo ya no cuenta) y el veto de memoria mide el commit.
+  - **LG-15** (herramientas): `evolver`/`evolution` saltan la cabecera de 8 B
+    de los tapes; antes optimizaban sobre registros desplazados.
+- **Entregas** (detalle en el plan §10.3):
+  - **Línea C**: `prueba_reversion.rs` (CL-97): varianza HAC centrada con la
+    masa equivocada (t ×1,7 con base derivada y huecos) y nodos 21-22 que
+    nunca maduran por el reinicio en cada reconexión. **G042**: guardar el
+    `base_id` del bracket por ranura y cancelar sólo `{base}_SL`/`{base}_TP`
+    (con LG-6 ya no hay variantes `_SLR/_TPR`), y omitir el reduce-only si el
+    bracket de esa ranura ya llenó.
+  - **AGY**: contratos Ω vacuos o sobre copia muerta (Ville H0, chaos simplex,
+    multislot/niche3/gauge, R7-R6 watchdog, Yang-Mills, TTL multiactivo).
+  - **Codex**: el veto de deriva actúa como latch sin posiciones abiertas; la
+    frescura del holdout de `model_manifest` se decide por el sha256 del
+    archivo.
+  - **Sol**: el contrato de causalidad del replay no ve un lookahead de una
+    fila; `continuous_evolution_backtest` adopta el mejor de 1 000 mutantes sin
+    multiplicidad.
+  - **GLM**: `auto_trainer_daemon` (gate BCE sobre etiqueta sin lado),
+    `config_compiler` (promueve sin evaluar), `walkforward_evolver` (tape
+    sintético sin cabecera).
+- **Verificación local del árbol de la ola 2**: `cargo check --workspace
+  --all-targets --locked` verde; god-engine-core 563/0, quantum-arena 252/0,
+  risk-engine 381/0, signal-engine 185/0, evolution-engine 151/0,
+  execution-engine 249/0, telemetry-server 32/0, os-guardian 15/0; golden
+  54/54; T-2 `998a7de2cfba2519` (131 operaciones) igual que main; host 5/5.
+- **T-1 del árbol de la ola 2** (release, 6 hilos, 608 s de prueba): **PASA
+  19/144 (13,2 %)** ≥ trinquete 11,0 %, huella base `6dff337e43a8b31a` y lista
+  sensible `[1, 10, 11, 17, 18, 20, 24, 27, 32, 33, 39, 68, 69, 129, 130, 131,
+  141, 142, 143]`, idéntica a la de la ola 1. Los genes 46, 47, 51, 52, 63, 132
+  y 138 (R7-R1-2) siguen inertes: los congela LG-18 en la ola 3.
+- **Lecciones**: `cargo test -p backtest-engine` corre el oráculo T-1 en
+  debug (no está `#[ignore]`): el golden es `--lib` y el T-1 va en release.
+  Los heredoc de bash con ciertos contenidos rompen el parser del tool:
+  escribid los scripts de edición a un archivo.

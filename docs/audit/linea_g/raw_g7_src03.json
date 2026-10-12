@@ -1,0 +1,428 @@
+{
+ "findings": [
+  {
+   "title": "forensic_audit.db only ever gets written to: it grows without limit, mixes environments, and nothing reads it",
+   "severity": "MED",
+   "category": "resource-disk / write-only-data",
+   "file": "crates/telemetry-server/src/forensic_auditor.rs",
+   "line": 161,
+   "evidence": "forensic_auditor.rs:161-166 «TelemetryEvent::GenomeUpdate(genome) => { ... \"INSERT INTO genome_snapshots (genome_json) VALUES (?1)\"»; :144 INSERT into global_metrics on every OmniUpdate; lib.rs:132 «ForensicAuditor::new(\"data/forensic_audit.db\")». Producer god_engine.rs:4817 «if msg_count.is_multiple_of(100)» → :4889 OmniUpdate; :4904/4971-4975 sends GenomeUpdate every 5000 msgs even with no harvest («Si no hubo cosecha, enviamos el genoma actual»). Grep across the repo (rs/py/ps1/sh/sql): no reader of forensic_audit.db, global_metrics, genome_snapshots or trade_events. No DELETE, no rotation, no env/venue column. :177-179 turns NaN into 0.0 for ml_prob and roi.",
+   "mechanism": "Every 100 WS messages adds one global_metrics row. Every 5000 adds a full SuperGenotype JSON (147 fields, about 6 KB), whether or not the genome changed. Nothing deletes or deduplicates. The path is relative to the CWD and outside env_data_path, so paper, testnet and mainnet runs write the same trade_events table with no column telling them apart. NaN (unknown) is stored as 0.0.",
+   "failure_scenario": "30 symbols with @trade+@depth5 give ≥200 msg/s. That is ≥2 global_metrics rows/s and one genome snapshot every ≤25 s: ≥30 MB/day, ≥1 GB/month, more in volatile sessions, on a machine with limited disk and no consumer for the data. When the disk fills, writes that do matter start failing (genome store atomic_write, mmap_bus, SQLite WAL), and they fail mid-session. Anyone who later analyses trade_events mixes demo and mainnet trades and reads ml_prob=0 where the value was unknown.",
+   "fix_sketch": "Remove the auditor or put it behind an opt-in env var. Write a genome snapshot only when the generation or hash changes. Keep only TradeClosed, with env/venue columns and NULL for NaN. Use env_data_path. Add retention (DELETE older than N days or rotate by date).",
+   "live_path": true,
+   "known_ref": "Partial: BARRIDO_EXHAUSTIVO_FASES.md:561 (F7 MED: «forensic_auditor descarta INSERT en silencio + ruta relativa al CWD»). Unbounded growth with no reader, environment mixing and NaN→0 are NEW.",
+   "confidence": 0.75
+  },
+  {
+   "title": "telemetry_log! falls back to a blocking println! in god_engine: a click on the console (QuickEdit) can freeze the unified core",
+   "severity": "MED",
+   "category": "hot-path-blocking",
+   "file": "crates/telemetry-server/src/macros.rs",
+   "line": 73,
+   "evidence": "macros.rs:73-80 «if let Some(queue) = $crate::macros::LOG_QUEUE.get() { ... queue.force_push(buf); } else { println!($($arg)*); }». init_telemetry_logger is called only from src/bin/evolver.rs:156. god_engine never calls it. Called from the core thread: god-engine-core/src/lib.rs:2086, 3196, 3446, 5362, 6044, 6160, 8463, and god_engine.rs:3313/3319 (once per slow event). The repo has no SetConsoleMode/QUICK_EDIT.",
+   "mechanism": "In the live binary LOG_QUEUE stays None, so every telemetry_server::telemetry_log! is a println! that takes the stdout lock and does WriteConsoleW on the calling thread (the unified core, pinned to a CPU). In a Windows console with QuickEdit on (the default), a mouse selection suspends console output, and every thread writing to it blocks until the selection ends.",
+   "failure_scenario": "The operator selects text in the god_engine console while the core emits [LATENCY PANIC], [GHOST REVERT] or [ML-GATE]. process_event stops inside println!: no local SL/exit management, no position handling, and WS events pile up in rx_events until someone presses a key.",
+   "fix_sketch": "Point telemetry_log! at telemetry_engine's queue, which already has a drain thread at god_engine.rs:837-846, or initialise LOG_QUEUE with a bounded capacity at startup. Never fall back to println on the hot path. Turn off QuickEdit at startup.",
+   "live_path": true,
+   "known_ref": "BARRIDO_EXHAUSTIVO_FASES.md:561 (F7 MED «telemetry_log! degradado a println! bloqueante en el bin principal»); linea_g/hallazgos.tsv:273 (one log line per slow event, unbounded). The QuickEdit freeze mechanism is a new detail.",
+   "confidence": 0.75
+  },
+  {
+   "title": "init_telemetry_logger commits ~500 MiB and spins a core at 100% (GhostLogger with yield_now); UTF-8 truncation throws away the whole message",
+   "severity": "LOW",
+   "category": "resource-ram-cpu",
+   "file": "crates/telemetry-server/src/macros.rs",
+   "line": 50,
+   "evidence": "macros.rs:50 «crossbeam::queue::ArrayQueue::new(1_000_000)» of FixedLogBuffer {data:[u8;512], len} (≈528 B per slot, every stamp initialised ⇒ ~503 MiB committed); :58-64 «if let Some(msg) = queue.pop() { println!(...) } else { std::thread::yield_now(); }»; :34-38 truncates at a byte boundary; :27 «from_utf8(...).unwrap_or(\"UTF8_ERR\")».",
+   "mechanism": "ArrayQueue preallocates and initialises all 1e6 slots. The flusher thread never sleeps: yield_now returns at once when nothing else is runnable, so it holds a core. A message over 512 bytes cut inside an emoji (4 bytes) fails from_utf8 and prints as «UTF8_ERR».",
+   "failure_scenario": "Running the evolver (offline GA with rayon on every core), half a GB of RAM goes to an empty queue and one core is lost to spinning, on a 16-23 GB machine. If finding 2 is 'fixed' by calling init_telemetry_logger in god_engine, the spin and the 0.5 GB move into the live process.",
+   "fix_sketch": "Capacity of a few thousand. Use a blocking channel or park/sleep when empty. Truncate at a char boundary (str::floor_char_boundary).",
+   "live_path": false,
+   "known_ref": "NEW (BARRIDO F7-B-H2 covers os-guardian's GLOBAL_TELEMETRY, a different 1M-slot queue).",
+   "confidence": 0.8
+  },
+  {
+   "title": "/ws accepts any Origin: a web page open in the browser can read the genome, trades and capital; the dashboard loads unpinned CDN scripts without SRI",
+   "severity": "LOW",
+   "category": "security-privacy",
+   "file": "crates/telemetry-server/src/lib.rs",
+   "line": 263,
+   "evidence": "lib.rs:169 «.route(\"/ws\", get(ws_handler))»; :263-268 ws_handler upgrades without checking the Origin header; handle_socket :270-287 relays every TelemetryEvent (GenomeUpdate with the full SuperGenotype, TradeClosed, CapitalUpdate). :459 «<script src=\"https://unpkg.com/vis-network/standalone/umd/vis-network.min.js\">» with no version pin and no integrity.",
+   "mechanism": "CORS does not apply to WebSockets, and axum's WebSocketUpgrade does not validate Origin. Binding to 127.0.0.1 does not stop the operator's own browser from connecting.",
+   "failure_scenario": "The operator visits a hostile site while god_engine is running. Its JS opens ws://127.0.0.1:3000/ws and receives the active genome every 5000 msgs plus every closed trade. Chrome's local-network protections may block this in some cases. A compromised unpkg script runs in the localhost origin and can read /api/genome.",
+   "fix_sketch": "Reject upgrades whose Origin is not http://127.0.0.1:<port>. Serve the JS locally, or pin versions and add SRI.",
+   "live_path": true,
+   "known_ref": "NEW",
+   "confidence": 0.5
+  },
+  {
+   "title": "profile_node! converts TSC to ns assuming 3 GHz, and an unsigned end−start can wrap and wreck the averages",
+   "severity": "LOW",
+   "category": "telemetry-math",
+   "file": "crates/telemetry-server/src/profiler.rs",
+   "line": 124,
+   "evidence": "profiler.rs:120-124 «let start = unsafe { core::arch::x86_64::_rdtsc() }; ... let latency_ns = (end - start) / 3;»; :49 «*total += latency;». The release profile (Cargo.toml:181-186) has no overflow-checks.",
+   "mechanism": "TSC ticks at the base frequency of the actual CPU, not 3 GHz, so every 'ns' is off by a factor f/3. If TSC goes backwards (migration between unsynchronised cores, VMs), end−start wraps to ~1.8e19/3, poisons the cumulative sum, and in debug builds panics the auditor thread.",
+   "failure_scenario": "The 10 s report flags false «ANOMALÍA LENTITUD RELATIVA» or permanent nonsense averages, and hot-path latency decisions made from that report are wrong. No impact on trading.",
+   "fix_sketch": "Calibrate TSC→ns at startup against Instant, use end.saturating_sub(start), and accumulate in u128 or with saturation.",
+   "live_path": true,
+   "known_ref": "Partial: BARRIDO_EXHAUSTIVO_FASES.md:561 («profiler asume 3GHz»). The wrap is new.",
+   "confidence": 0.6
+  },
+  {
+   "title": "/api/state reports fake fees when a realized PnL is excluded as an anomaly, and the dashboard colours win rate against 0.5/0.4 instead of p*",
+   "severity": "LOW",
+   "category": "display-math / doctrine-residue",
+   "file": "crates/telemetry-server/src/lib.rs",
+   "line": 341,
+   "evidence": "lib.rs:336-341 «if m_realized.abs() > mark_bound * 10.0 { marking_anomalies += 1; } else { pnl_realized += m_realized; } pnl_gross += m_gross;»; :384 «let fees_paid = total_gross_pnl - total_net_pnl;»; :838 «data.win_rate > 0.5 ? 'positive' : (data.win_rate < 0.4 ? 'negative' : 'neutral')».",
+   "mechanism": "The sanitiser removes a broken realized from net but keeps the matching gross, so the difference turns up as 'fees'. The WR colouring applies a 0.5 standard that contradicts RR≥2.25 ⇒ p*≈0.31-0.43.",
+   "failure_scenario": "A coin with broken accounting (+$50k realized and gross) shows ≈$50k of fees and a huge gross ROI. A profitable WR of 0.38 shows in red. Display only. It can mislead the operator but changes no decision.",
+   "fix_sketch": "Exclude gross under the same condition as realized. Colour WR against the p* of the active geometry, or drop the colour.",
+   "live_path": true,
+   "known_ref": "NEW",
+   "confidence": 0.8
+  },
+  {
+   "title": "The «data customs» (validation.rs) is disconnected from production: its rejection counters always read 0",
+   "severity": "LOW",
+   "category": "dead-code-believed-live",
+   "file": "crates/data-pipeline/src/validation.rs",
+   "line": 98,
+   "evidence": "validation.rs:3-4 «todo dato que cruza una frontera (WS→motor...) pasa por aquí ANTES de tocar estado». Its only caller is ws_client.rs:290. BinanceStreamer is never constructed outside its own tests (ws_client.rs:517,527; it is only re-exported in lib.rs:31). reject_snapshot has no external reader. The live ingest is god_engine.rs → lib.rs:2946 update_market_data.",
+   "mechanism": "The validated path (ws_client) is dead. The live WS uses another parser and a different validation policy.",
+   "failure_scenario": "Telemetry or an audit that trusts «0 rejections» reads phantom telemetry. Fixes to the spread policy (XXXIII, the overflow-proof r-ratio, spread_validation_contract.rs) protect nothing live.",
+   "fix_sketch": "Wire validate_book_ticker and count_reject into the live ingest in god_engine/god-engine-core, or delete the module and its contract.",
+   "live_path": false,
+   "known_ref": "BARRIDO_EXHAUSTIVO_FASES.md:512 (F6-A-H1) and :513 (F6-A-H2)",
+   "confidence": 0.9
+  },
+  {
+   "title": "ws_client.rs (dead) hides traps that go off if reactivated: a per-coin stream writes the global latency, and reconnection after a timeout has no backoff",
+   "severity": "LOW",
+   "category": "cross-coin-contamination / reactivation-trap",
+   "file": "crates/data-pipeline/src/ws_client.rs",
+   "line": 262,
+   "evidence": "ws_client.rs:262-268 «self.arena.last_ws_latency_ms.store(dynamic_timeout_ms, ...); // The GodEngine will pick this up and activate kill switch ... target_cache = None; break;»; :259 «Ok(None) => break, // Stream closed». The outer loop :169-208 reconnects with no sleep after these breaks. :58-59 includes «fstream-auth.binance.com» in the public pool. Literals at :338 «(std_dev * 6.0).max(last_valid * 0.008)», :346 «last_valid * 0.20», :17 «EXTREME_GLITCH_CONFIRM_TICKS: usize = 10».",
+   "mechanism": "There is one BinanceStreamer per coin, and all of them write the arena's single global last_ws_latency_ms. A timeout on one quiet coin triggers the global kill switch for all 30. A timeout or stream close skips the backoff, so DNS+TCP+TLS repeat in a tight loop.",
+   "failure_scenario": "If someone revives BinanceStreamer: an illiquid coin with no ticks within latency_ms_panic_threshold disables entries for the whole universe. With threshold=0 or a server that closes the stream, the client reconnects without pause and risks an IP ban from Binance.",
+   "fix_sketch": "Delete the module (it is dead), or per-coin latency plus backoff on every break, before any reactivation.",
+   "live_path": false,
+   "known_ref": "Dead module: BARRIDO_EXHAUSTIVO_FASES.md:513 (F6-A-H2). The traps are NEW.",
+   "confidence": 0.7
+  },
+  {
+   "title": "LockFreeBus has a data race (slot written after head is published) and the audit record approves it as a 'Crossbeam SegQueue'",
+   "severity": "LOW",
+   "category": "concurrency / audit-record-wrong",
+   "file": "crates/telemetry-server/src/lockfree_bus.rs",
+   "line": 33,
+   "evidence": "lockfree_bus.rs:33-38 «let current_head = self.head.fetch_add(1, Ordering::Relaxed); ... *self.buffer[idx].get() = event;»; :64-76 try_pop CASes the tail and reads «*self.buffer[idx].get()» as soon as tail<head. BARRIDO_EXHAUSTIVO_FASES.md:1230-1231 «F7-TEL-001 [AUDITADO - APROBADO] ... lockfree_bus.rs: Cola MPMC lock-free (Crossbeam SegQueue) con descarte controlado».",
+   "mechanism": "head moves forward before the slot is written, so the consumer can read a half-written StreamEvent (a non-atomic read/write on an UnsafeCell, which is UB). On overwrite (head-tail ≥1024), the producer rewrites the very slot the consumer is reading. The structure is neither SegQueue nor discard-on-full: it overwrites.",
+   "failure_scenario": "Today it is dead (TICK_STREAM_BUS has no producer outside the test, and ws_stream_handler has no route). Someone who wires it up trusting the 'APPROVED' record gets mixed coin_id/pnl in the stream with no error. The single-threaded tests stay green.",
+   "fix_sketch": "Replace it with crossbeam ArrayQueue/SegQueue, or delete lockfree_bus+stream. Correct F7-TEL-001.",
+   "live_path": false,
+   "known_ref": "NEW (contradicts BARRIDO F7-TEL-001)",
+   "confidence": 0.85
+  },
+  {
+   "title": "Seven telemetry/persistence modules have no production caller and are kept green by tests of dead code; lakehouse silently redirects to a temp DB",
+   "severity": "LOW",
+   "category": "dead-code",
+   "file": "crates/storage-engine/src/lakehouse.rs",
+   "line": 54,
+   "evidence": "No constructor outside their own tests: HistoryStore (history_store.rs), LakehouseWarehouse/CompressedTickBatch (god-engine-core lib.rs:1364 «lakehouse: None», set_lakehouse with no caller), LockFreeLogger, MmapTelemetry, GLOBAL_TENSOR_TELEMETRY, ZeroCopyRing, TICK_STREAM_BUS. Also known dead: FlightRecorder (lib.rs:1357 «flight_recorder: None»), zero_copy_bus GLOBAL_TELEMETRY, PositionLedger. lakehouse.rs:54-57 «Connection::open(&path).unwrap_or_else(|_| { let temp_path = std::env::temp_dir().join(\"lakehouse_fallback.db\"); ...»",
+   "mechanism": "About 2,900 lines with green tests ('copia-muerta') create the impression of working persistence and telemetry. lakehouse repeats the anti-pattern that history_store.rs:118-122 forbids (failed_open_does_not_redirect_to_another_database).",
+   "failure_scenario": "A future wiring of LakehouseWarehouse with an unwritable path writes market_depth/tensor_state to %TEMP% with no warning. Persistence audits count modules that nobody runs.",
+   "fix_sketch": "Prune them (council decision), or mark them #[cfg(feature=...)] and remove the temp-dir fallback.",
+   "live_path": false,
+   "known_ref": "Partial: BARRIDO_EXHAUSTIVO_FASES.md:557-559 (F7-A-H1 zero_copy_bus, F7-A-H3 FlightRecorder), :561 («telemetry 4 sistemas paralelos con 1 vivo»), CENSUS_CODE_MUERTO_RONDA7_2026-10-09.tsv:115,166 (set_lakehouse, record_tensor), ledger.rs:1-7 (F6-B H1/H2). HistoryStore, tensor_telemetry, telemetry_mmap, lock_free_logger, zero_copy_ring and the temp fallback are NEW.",
+   "confidence": 0.85
+  }
+ ],
+ "file_verdicts": [
+  {
+   "file": "crates/data-pipeline/src/validation.rs",
+   "status": "código: muerto; prueba: copia-muerta",
+   "note": "Only ws_client (dead) calls it. The spread math 2(1-r)/(1+r) is correct and overflow-proof. Unit tests and spread_validation_contract.rs are honest, but they certify a function the live path does not run. Counters always read 0 (F6-A-H1)."
+  },
+  {
+   "file": "crates/data-pipeline/src/ws_client.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "BinanceStreamer has no caller. The tests only check the constructor and lowercasing; the glitch filter, reconnection and latency have no contract. Traps if reactivated: global last_ws_latency_ms per coin, no backoff on timeout, literals 6σ/0.8%/20%/3/10."
+  },
+  {
+   "file": "crates/telemetry-server/src/flight_recorder.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "GodEngineCore.flight_recorder is always None (F7-A-H3). On restart, head=0 overwrites the old record without marking where it ends (truncate(false) preserves nothing useful). Tests only check the head counter."
+  },
+  {
+   "file": "crates/telemetry-server/src/forensic_auditor.rs",
+   "status": "código: vivo; prueba: fragil",
+   "note": "Spawned by start_telemetry_server (god_engine.rs:2054). Writes data/forensic_audit.db with no reader and no retention, and mixes environments (finding 1). Synchronous SQLite on a tokio worker. Tests depend on sleeps of 100-150 ms; the schema migration test is honest."
+  },
+  {
+   "file": "crates/telemetry-server/src/lib.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "HTTP/WS server on 127.0.0.1 is live, with Telegram reports every hour. The B3.13 sanitizer test is honest. Serialisation tests are near-tautological. Defects: fees_paid inflated when realized is excluded, WR coloured against 0.5, /ws without Origin check, unpinned CDN scripts."
+  },
+  {
+   "file": "crates/telemetry-server/src/lock_free_logger.rs",
+   "status": "código: muerto; prueba: copia-muerta",
+   "note": "No production caller. Tests poll the file with sleeps."
+  },
+  {
+   "file": "crates/telemetry-server/src/lockfree_bus.rs",
+   "status": "código: muerto; prueba: copia-muerta",
+   "note": "Ring with a data race (head published before the write). Single-threaded tests do not see the race. BARRIDO F7-TEL-001 mislabels it as SegQueue."
+  },
+  {
+   "file": "crates/telemetry-server/src/macros.rs",
+   "status": "código: vivo; prueba: sin contrato",
+   "note": "telemetry_log! is used everywhere. LOG_QUEUE is initialised only in evolver, so god_engine gets a blocking println (known MED). The initialiser commits ~0.5 GB and spins a core. No tests."
+  },
+  {
+   "file": "crates/telemetry-server/src/profiler.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "profile_node! runs on the hot path (process_event, process_tick_dual, DarkAlpha predict): allocation-free and wait-free, drained every 10 s. Assumes 3 GHz; unsigned wrap possible. Tests cover averages, NaN sanitisation and ROI clamp, but not the TSC conversion."
+  },
+  {
+   "file": "crates/telemetry-server/src/stream.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "ws_stream_handler has no route. TICK_STREAM_BUS has no producer. The bus test pushes but only asserts JSON."
+  },
+  {
+   "file": "crates/telemetry-server/src/telegram_bot.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "Live when TELEGRAM_* is set (hourly report). The report text has '.', '(' and '-' unescaped, so the MarkdownV2 request always fails and every message costs two HTTP calls. send_alert has no caller. The escape test is honest; test_telegram_bot_disabled_when_empty_env asserts nothing."
+  },
+  {
+   "file": "crates/telemetry-server/src/telemetry_mmap.rs",
+   "status": "código: muerto; prueba: copia-muerta",
+   "note": "MmapTelemetry has no caller. The tests (weighted WR readback) are honest but certify a dead path. NaN→13.0/0.5 placeholders."
+  },
+  {
+   "file": "crates/telemetry-server/src/tensor_telemetry.rs",
+   "status": "código: muerto; prueba: copia-muerta",
+   "note": "Correct Vyukov MPMC, but GLOBAL_TENSOR_TELEMETRY has neither producer nor consumer (~57 KB static). Honest tests of dead code."
+  },
+  {
+   "file": "crates/telemetry-server/src/zero_copy_bus.rs",
+   "status": "código: muerto; prueba: copia-muerta",
+   "note": "Write-only with a simulated flusher; emits removed in XCIII (F7-A-H1, header already marks it). Each test allocates and locks 64 MB."
+  },
+  {
+   "file": "crates/telemetry-server/src/zero_copy_ring.rs",
+   "status": "código: muerto; prueba: copia-muerta",
+   "note": "Correct SPSC, but unsafe impl Sync allows MPMC misuse. No caller."
+  },
+  {
+   "file": "crates/storage-engine/src/evolution_ledger.rs",
+   "status": "código: vivo; prueba: fragil",
+   "note": "Written by online_daemon (promote/rollback); load_* is used only by tests (the FIX #1415 'bootstrap' path is not wired), so it is write-only. Upsert by (symbol,kind) overwrites a repeated rollback to the same generation. coin_id is always 0. Tests poll with sleeps; the RENAME COLUMN migration is honest."
+  },
+  {
+   "file": "crates/storage-engine/src/history_store.rs",
+   "status": "código: muerto; prueba: copia-muerta",
+   "note": "HistoryStore has no caller outside its tests. Good fallible design (try_*). Key is coin_id (a slot), not symbol, so it would mix coins under universe rotation if ever wired. Thorough, honest tests of dead code."
+  },
+  {
+   "file": "crates/storage-engine/src/lakehouse.rs",
+   "status": "código: muerto; prueba: mixta",
+   "note": "LakehouseWarehouse is never instantiated (lakehouse: None). Silent fallback to a %TEMP% DB on open failure. test_lakehouse_in_memory_or_temp asserts nothing; the CompressedTickBatch tests are honest."
+  },
+  {
+   "file": "crates/storage-engine/src/ledger.rs",
+   "status": "código: muerto; prueba: fija-defecto",
+   "note": "PositionLedger is dead (header F6-B H1/H2: read_ownership queries the 'strategy' column, which the new schema no longer has; try_send is ignored). The xxx_open_* tests certify three defects green by name; ownership_read_contract builds the legacy schema by hand."
+  },
+  {
+   "file": "crates/storage-engine/src/lib.rs",
+   "status": "código: vivo; prueba: n/a",
+   "note": "Re-exports only. Live through mmap_bus (online_daemon, online_learning) and evolution_ledger. It re-exports dead modules (lakehouse, ledger, history_store)."
+  }
+ ],
+ "vetos": [
+  {
+   "file": "crates/data-pipeline/src/validation.rs",
+   "line": 23,
+   "name": "MAX_RELATIVE_SPREAD",
+   "kind": "tick admission veto (rejects BookTicker)",
+   "constant": "0.50",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "The comment itself calls it «Política heredada, no ley de mercado... calibración por activo pendiente». There is no ADR. Stateless (per tick), so it cannot absorb. The live path does not run it (F6-A-H1)."
+  },
+  {
+   "file": "crates/data-pipeline/src/ws_client.rs",
+   "line": 338,
+   "name": "dynamic_threshold (6σ, 0.8% floor)",
+   "kind": "outlier veto on a tick against last_valid",
+   "constant": "std_dev*6.0 max last_valid*0.008",
+   "origin": "literal",
+   "absorbing_risk": "possible",
+   "assessment": "dead",
+   "note": "Rejected ticks never enter the ring, so last_valid freezes. The way out is 3 consecutive outliers (:374). A non-outlier tick resets the counter. Dead code."
+  },
+  {
+   "file": "crates/data-pipeline/src/ws_client.rs",
+   "line": 346,
+   "name": "is_extreme_glitch",
+   "kind": "veto on a jump >20% in one tick",
+   "constant": "last_valid*0.20",
+   "origin": "literal",
+   "absorbing_risk": "possible",
+   "assessment": "dead",
+   "note": "The C-01 escape needs EXTREME_GLITCH_CONFIRM_TICKS=10 consecutive ticks (:17). On an illiquid coin that can take far more than '~1 s'. Literal with no measurement behind it."
+  },
+  {
+   "file": "crates/data-pipeline/src/ws_client.rs",
+   "line": 17,
+   "name": "EXTREME_GLITCH_CONFIRM_TICKS",
+   "kind": "escape from an absorbing veto",
+   "constant": "10",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Its justification («~10 ticks/s») assumes a uniform tick rate across a multi-asset universe. In real time it should be a duration, not a tick count."
+  },
+  {
+   "file": "crates/data-pipeline/src/ws_client.rs",
+   "line": 374,
+   "name": "consecutive_anomalies < 3",
+   "kind": "confirmation of a price-regime change",
+   "constant": "3",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "FIX #385. The first 2 ticks of a real move are dropped. Dead."
+  },
+  {
+   "file": "crates/data-pipeline/src/ws_client.rs",
+   "line": 241,
+   "name": "reconnect_fast_recovery_ticks",
+   "kind": "suspends the outlier filter after reconnection",
+   "constant": "3",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Accepts the first 3 ticks with no filter at all."
+  },
+  {
+   "file": "crates/telemetry-server/src/lib.rs",
+   "line": 307,
+   "name": "mark_bound",
+   "kind": "display exclusion of unrealized from the aggregate",
+   "constant": "cap_anchor*2.0",
+   "origin": "measured",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Comes from an incident (+$2.27M on a $2.2K account, 2026-09-15) and has to match the writer's clamp in god-engine-core (B3.13). Display only. cap_anchor uses .max(1.0), so NaN capital ⇒ bound 2 and nearly everything becomes an anomaly."
+  },
+  {
+   "file": "crates/telemetry-server/src/lib.rs",
+   "line": 314,
+   "name": "mark_bound_exclude",
+   "kind": "tolerance for catching the clamped value",
+   "constant": "mark_bound*0.99",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Closes the gap where the writer's clamped value passed exactly. Display only."
+  },
+  {
+   "file": "crates/telemetry-server/src/lib.rs",
+   "line": 336,
+   "name": "realized anomaly bound",
+   "kind": "display exclusion of pnl_realized",
+   "constant": "mark_bound*10.0",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Not mirrored on gross, so fees_paid comes out false (finding 6)."
+  },
+  {
+   "file": "crates/telemetry-server/src/lib.rs",
+   "line": 838,
+   "name": "wrClass",
+   "kind": "semantic colour for win rate on the dashboard",
+   "constant": "0.5 / 0.4",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "nonsense",
+   "note": "Contradicts the doctrine (p*≈0.31-0.43 with RR≥2.25). A profitable WR shows as red. Display only."
+  },
+  {
+   "file": "crates/telemetry-server/src/profiler.rs",
+   "line": 124,
+   "name": "TSC→ns",
+   "kind": "latency unit conversion",
+   "constant": "/3 (3 GHz)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Should be calibrated against Instant at startup. Known (BARRIDO F7)."
+  },
+  {
+   "file": "crates/telemetry-server/src/profiler.rs",
+   "line": 170,
+   "name": "slowness anomaly threshold",
+   "kind": "log classification",
+   "constant": "5×median and >1000 ns",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Log only. Mixes nodes of very different cost (nested process_event ⊃ process_tick_dual)."
+  },
+  {
+   "file": "crates/storage-engine/src/ledger.rs",
+   "line": 246,
+   "name": "push_event dust/NaN filter",
+   "kind": "drops ledger events",
+   "constant": "|qty|<1e-12, abs override ≤1e-8",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Known (header F6-B H2; xxx_open_* tests). An absolute qty=0 override never reaches the DELETE, which leaves phantom holdings."
+  },
+  {
+   "file": "crates/storage-engine/src/history_store.rs",
+   "line": 375,
+   "name": "recent-candle budget",
+   "kind": "read limit",
+   "constant": "100_000",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Explicit and returns an error rather than truncating silently. Correct design, but dead."
+  }
+ ],
+ "coverage": {
+  "files_read": [
+   "crates/data-pipeline/src/validation.rs",
+   "crates/data-pipeline/src/ws_client.rs",
+   "crates/telemetry-server/src/flight_recorder.rs",
+   "crates/telemetry-server/src/forensic_auditor.rs",
+   "crates/telemetry-server/src/lib.rs",
+   "crates/telemetry-server/src/lock_free_logger.rs",
+   "crates/telemetry-server/src/lockfree_bus.rs",
+   "crates/telemetry-server/src/macros.rs",
+   "crates/telemetry-server/src/profiler.rs",
+   "crates/telemetry-server/src/stream.rs",
+   "crates/telemetry-server/src/telegram_bot.rs",
+   "crates/telemetry-server/src/telemetry_mmap.rs",
+   "crates/telemetry-server/src/tensor_telemetry.rs",
+   "crates/telemetry-server/src/zero_copy_bus.rs",
+   "crates/telemetry-server/src/zero_copy_ring.rs",
+   "crates/storage-engine/src/evolution_ledger.rs",
+   "crates/storage-engine/src/history_store.rs",
+   "crates/storage-engine/src/lakehouse.rs",
+   "crates/storage-engine/src/ledger.rs",
+   "crates/storage-engine/src/lib.rs"
+  ],
+  "unread": [],
+  "notes": "All 20 files (6,247 lines) read in full, the 1,162-line telemetry-server lib.rs included. Context read for liveness: god_engine.rs:812-850, 987, 1018-1040, 2040-2060, 4800-4980; god-engine-core lib.rs at its telemetry_log! call sites and lakehouse/flight_recorder fields (1046-1054, 1357-1364); online_daemon.rs at the EvolutionLedger writers; os_guardian get_system_telemetry; spread_validation_contract.rs; the head of ownership_read_contract.rs. Liveness was decided by repo-wide grep of constructors and calls. I did not run cargo. Message rates (≥200 msg/s) and genome JSON size (~6 KB, 147 fields) are estimates, not measurements. The Chrome local-network mitigation for the /ws finding was not verified, hence confidence 0.5. Registries checked: BARRIDO_EXHAUSTIVO_FASES (F6/F7/F8), linea_g/hallazgos.tsv and verificacion.tsv, HALLAZGOS_C-F1/F2/F3, CENSUS_CODE_MUERTO_RONDA7, PERFIL_CAMINO_CALIENTE."
+ }
+}

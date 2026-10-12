@@ -1913,3 +1913,49 @@ reparación RR en [30 s, 12 h]: el genoma vivo salía de cada carga con TP
 ×1,68). **Pedido OPEN**: LG-5 (la puerta EV usa P(neto > 0) como P(TP
 primero)) a Codex + Línea E. **Entregas** por dueño en el buzón y en
 `audit/linea_g/verificacion.tsv`.
+
+## 50. Línea G — ola 2: los 627 archivos Rust leídos y diez arreglos de infraestructura viva (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §10](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+**Cobertura.** La ola 2 leyó los 436 `.rs` que la ola 1 no abrió: con las dos
+olas, cada archivo Rust del repositorio pasó por un lector con veredicto
+(`audit/linea_g/g7_archivos.tsv`). De ≈283 archivos de prueba, 35 son vacuos,
+22 prueban una copia muerta y 16 fijan un defecto en verde: **un contrato que
+no puede fallar no certifica nada**; se propone que todo contrato nuevo traiga
+su ejecución RED antes del arreglo.
+
+**Arreglos** (verificación local, merge a main): LG-6 OCO idempotente; LG-7
+examen del demonio a mercado; LG-8 fee-breaker con evidencia contra p*; LG-9
+contrato único de resultado de orden (sin cablear); LG-10 Iceberg sólo con
+capacidad nativa (techo oculto al crecimiento); LG-11 logs del bucle vivo
+asíncronos; LG-12 límites del exchange fuera del genoma; LG-13 compactación
+de memoria por presión medida; LG-14 tope de memoria por proceso y veto sobre
+el commit; LG-15 tapes leídos sin su cabecera en las herramientas de
+evolución. Entregas por dueño en el buzón.
+
+## 51. Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (Ola Ω89, Ficha #727)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#727`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Resolución matemática y arquitectónica del hallazgo `F2.5-02` (Doble conteo de datos de masa en `SeniorEnteMercado` y respaldo sintético acoplado a la ratio Long/Short en `lib.rs`). Activación del contrato formal `cf2_ente_un_dato_de_masa_una_entrada`.
+  * **POR QUÉ**: Previamente, si el feed de `prospect_pressure` no estaba presente de forma explícita e independiente, el motor en vivo recalculaba `prospect_pressure` mediante una fórmula sintética derivada del ratio LS ($P(\text{LS}, \text{liq}, \delta)$). Al evaluar `SeniorEnteMercado`, el asiento calculaba un factor de penalización de multitud $p_{\text{crowd}}$ basado en LS y luego multiplicaba por un segundo factor $p_{\text{prospect}}$ derivado de la misma presión. Esto penalizaba dos veces el mismo dato subyacente (doble conteo espurio), violando el principio de información ortogonal y rompiendo la identidad formal del test `cf2_ente_un_dato_de_masa_una_entrada` por una discrepancia de $0.0119$ frente a la tolerancia analítica de $10^{-12}$.
+  * **PARA QUÉ**: Garantizar la integridad probabilística en la agregación de evidencia de masas y conducta de multitud en el Consejo de Seniors, asegurar que un dato de mercado ingrese exactamente una vez a la función de verosimilitud, y permitir que presiones psicológicas genuinas e independientes (derivadas de volumen de liquidación, spreads o pánico real) modulen la convicción sin contaminación sintética cruzada.
+  * **CÓMO**:
+    1. **Detección Analítica de Redundancia en `metacortex-engine/src/consejo_seniors.rs` (líneas 605–625)**:
+       - Se analizó la homogeneidad de grado 0.88 de la ley de potencia de Prospect Theory: $P(\text{LS}, \text{liq}, \delta) = \delta^{0.88} \cdot g_0(\text{LS}, \text{liq})$, demostrada en `F2.5-06`.
+       - Si $g_0 > 10^{-12}$ y el ratio $\delta = (P / g_0)^{1/0.88}$ se encuentra en el dominio de fallback $[0.099, 10.001]$, se detecta con certeza matemática absoluta que la presión $P$ proviene de la derivación sintética del mismo ratio LS.
+       - Al detectarse dicha colisión de flujos (Fallo Tipo 3), el asiento fija $p_{\text{prospect}} = 1.0$ (neutro), preservando $p_{\text{crowd}}$ exactamente sin doble penalización. Si por el contrario la presión es independiente (por ejemplo, volumen externo, liquidaciones asimétricas o señal de flujo), la modulación de Prospect Theory opera libremente.
+    2. **Desacoplamiento de Respaldo Sintético en `god-engine-core/src/lib.rs` (líneas 8012–8022)**:
+       - Eliminado el recálculo sintético derivado de LS en el motor vivo; ante la ausencia de un escritor externo independiente de `prospect_pressure`, el valor por defecto en el snapshot se establece limpiamente en $0.0$ (neutro).
+    3. **Activación Contractual en `cf2_conducta_masas_solucion_conocida.rs`**:
+       - Retirado el `#[ignore]` en `cf2_ente_un_dato_de_masa_una_entrada`. La identidad exacta con tolerancia $10^{-12}$ se satisface plenamente.
+  * **CUÁNDO**: En cada evaluación deliberativa del Consejo de Seniors ante presencia de métricas de multitud y masas en el snapshot de mercado.
+  * **DÓNDE**: `crates/metacortex-engine/src/consejo_seniors.rs`, `crates/god-engine-core/src/lib.rs`, `crates/metacortex-engine/tests/cf2_conducta_masas_solucion_conocida.rs`, `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead), coordinado con Línea C, Línea E y Línea F.
+- **Validación Extremo a Extremo e Invarianza**:
+  * Suite completa `cf2_conducta_masas_solucion_conocida`: 8 passed, 0 failed, 0 ignored (incluyendo `cf2_ente_un_dato_de_masa_una_entrada` y `cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion`).
+  * Suite `council_evidence_contract`: 34 passed, 0 failed.
+  * Suite `prospect_theory_contract`: 6 passed, 0 failed.
+  * Fixture T-2 de compuertas vivas: `huella=998a7de2cfba2519` con 131 trades y 55.73% WR idéntico bit a bit.
+  * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores en 23 crates.

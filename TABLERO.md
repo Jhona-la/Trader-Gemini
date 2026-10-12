@@ -69,9 +69,13 @@
   de salto del host), LG-3 (rate-limit con caducidad), LG-4 (banda operable y
   reparación RR en [30 s, 12 h]; T-1 17 → 19/144), LG-5 (pedido OPEN: la
   puerta EV usa P(neto > 0) como P(TP primero)).
-- **Siguiente (ola 2)**: G040, G046, G049 (zona libre); contrato único de
-  resultado de orden (G4) con Monte Carlo; regla de admisión sobre los 43
-  vetos absorbentes. Entregas a cada dueño en el buzón.
+- **Ola 2 cerrada**: los 436 .rs restantes leídos (los 627 del repo con
+  veredicto); LG-6…LG-15 (OCO idempotente, examen a mercado, fee-breaker con
+  evidencia, resultado de orden sin cablear, Iceberg, logs asíncronos, límites
+  del exchange, compactación por presión, JobObject por proceso, cabecera de
+  tapes). Triaje de los 43 absorbentes en el plan §4.1.
+- **Siguiente (ola 3)**: evolver con OOS y sin alias de bosques, congelar
+  genes sin efecto, G049b, println! del núcleo; cablear LG-9 con sus dueños.
 - **No toca**: ATR/σ̂60 (Línea C), orquestador/espectro (Qoder), registro
   (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol).
 - **Recursos**: disco C: con 11 GB libres; sin `CARGO_TARGET_DIR` propio.
@@ -113,24 +117,22 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω88 completada / Ficha #726)
+## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω89 completada / Ficha #727)
 
-- **Haciendo ahora**: Ola Ω88 (#726) completada — Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (F3.8-03, F3.4-08, F2.5-03):
-  - **Parte A: Resolución y Cierre de F3.8-03 y F3.4-08 (Fixture Conformal K-26)**:
-    * En `conformal_direction_symmetry_contract.rs`: `k26_engine_publishes_symmetric_conformal_at_honest_neutrality` inyecta `bosque_constante(0.25)` en `BTCSYM_MOTOR` y calienta el calibrador conformal con 40 observaciones simétricas. Verifica `ml_model_base == 0.25`, `ml_prob == 0.25`, discriminación conformal activa $p < 1.0$ y simetría reflexiva rigurosa `p_long == p_short`, `acc_long == acc_short`.
-    * Testigos F3.8-03 y F3.4-08 rotulados como cerrados en `cf3_espejo_conformal_contract.rs`, `cf3_vetos_nucleo.rs` y `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv`.
-  - **Parte B: Resolución y Cierre de F2.5-03 (Desasfixia de Convicción Contrarian en EnteMercado)**:
-    * En `consejo_seniors.rs:615`: ampliado el clamp de `entity_factor` a `[0.20, 1.30]` para permitir que la modulación asimétrica de Kahneman-Tversky (`modulation_factor(1.0, -4.0) = 1.2285`) exprese su convicción real sin ser truncada contra el techo 1.0.
-    * En `consejo_seniors.rs:1136` (`deliberar_traced`): adaptada la guarda de integridad a `max_confidence = if op.role == SeniorRole::EnteMercado { 1.30 } else { 1.0 }`.
-    * En `cf2_conducta_masas_solucion_conocida.rs`: activado `cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion` (pasa al 100% con `c = 1.2285 > neutro = 1.0`). Actualizado `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv`.
+- **Haciendo ahora**: Ola Ω89 (#727) completada — Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (F2.5-02):
+  - **Resolución y Cierre de F2.5-02 (Doble Conteo en SeniorEnteMercado y lib.rs)**:
+    * En `metacortex-engine/src/consejo_seniors.rs:605-625`: detección analítica de redundancia por ley de potencia $\delta = (P / g_0)^{1/0.88}$. Si $\delta \in [0.099, 10.001]$, se detecta colisión con el fallback derivado de LS y se fija $p_{\text{prospect}} = 1.0$ (neutro), preservando $p_{\text{crowd}}$ sin doble penalización de datos idénticos.
+    * En `god-engine-core/src/lib.rs:8012-8022`: desacoplado el fallback sintético de `prospect_pressure` en el motor vivo; neutral 0.0 cuando no existe un escritor independiente.
+    * En `metacortex-engine/tests/cf2_conducta_masas_solucion_conocida.rs`: retirado `#[ignore]` en `cf2_ente_un_dato_de_masa_una_entrada` (8/8 tests pasan, tolerancia analítica $10^{-12}$).
+    * Actualizado `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv` marcando F2.5-02 como `pasa` / `activo`.
   - **Validación Extremo a Extremo e Invarianza**:
-    * `cargo test -p god-engine-core --test conformal_direction_symmetry_contract`: 3/3 passed.
-    * `cargo test -p metacortex-engine --test cf2_conducta_masas_solucion_conocida`: 7/7 passed.
+    * `cargo test -p metacortex-engine --test cf2_conducta_masas_solucion_conocida`: 8/8 passed.
     * `cargo test -p metacortex-engine --test council_evidence_contract`: 34/34 passed.
     * `cargo test -p metacortex-engine --test prospect_theory_contract`: 6/6 passed.
-    * `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro`: huella determinista `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico.
+    * `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro`: huella determinista `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico bit a bit.
     * `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
 - **Commiteado reciente**:
+  - Ola Ω88 (#726, commit `86218456` en main): Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (F3.8-03, F3.4-08, F2.5-03).
   - Ola Ω87 (#725, commit `badfd1d3` en main): Desasfixia Temporal y Cooldown Multiescala en el Continuo Espectral (`enfriamiento_base_ms = (tau_cierre as f64).min(tau_dom)`).
   - Ola Ω86 (#724, commit `d70a5bfc` en main): Erradicación Integral de Allocations en `try_symbol`, `sigma_forecast` y RLS en Hot-Path (82.1% total acumulado erradicado).
   - Ola Ω85 (#723, commit `369eb34f` en main): Erradicación Integral del 76% de Asignaciones en Heap en Señales y Geometría del Núcleo (`get_scoped_val_strict`, stack buffers Yang-Mills/Hodge).

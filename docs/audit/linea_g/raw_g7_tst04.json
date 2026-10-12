@@ -1,0 +1,585 @@
+{
+ "findings": [
+  {
+   "title": "El contrato R7-R6 certifica en una copia local el recorte ±1 R que LF-3 retiró, y el criterio de caída del 50 % que ya no se usa",
+   "severity": "MED",
+   "category": "copia-muerta",
+   "file": "crates/evolution-engine/tests/r7_r6_watchdog_evidence_contract.rs",
+   "line": 52,
+   "evidence": "r7_r6:52-59 closure local `normalize` con `(ret / unit_risk).clamp(-1.0, 1.0)` y respaldo 0.02; :72 `assert_eq!(norm_win, 1.0)`. Producción online_daemon.rs:1263-1267: «LF-3: ... recortar aquí a +1 R vigilaba la tasa de acierto contra 0,5» y `let normalized_ret = ret / unit_risk;` sin recorte (con respaldo scalp_sl_base en :1255). r7_r6:29 y return_evidence_contract.rs:224 certifican `is_evidence_decayed(0.50)`; SequentialVilleEvidence no tiene consumidor en src; lf3_ville_soporte_contract.rs:50-66 atestigua que ese criterio revierte >90 % de genomas de +0,30 R.",
+   "mechanism": "La prueba R7-R6-IG-1 no llama a código de producción: reproduce la normalización pre-LF-3. Las pruebas de Ville certifican como contrato del vigilante un criterio de rollback retirado por defectuoso. Nombre y comentarios sugieren que validan el vigilante vivo.",
+   "failure_scenario": "Si alguien reintroduce `.clamp(-1.0, 1.0)` antes de `ville.observe_r` (online_daemon.rs:1266), el vigilante vuelve a medir acierto contra ½ y revierte genomas con RR 2,25 y p=0,40; ninguna prueba falla (lf3 prueba VigilanciaDegradacion aislada, LF-4 sólo el orden de armado) y este contrato afirma que el recorte es correcto. Además no corre en CI (INVENTARIO_TESTS_CI:35 «ninguna»).",
+   "fix_sketch": "Extraer la normalización/unidad de riesgo de online_daemon a una fn y probarla (sin recorte, soporte [−1, RR]); borrar la closure; retirar o invertir las pruebas de is_evidence_decayed o declarar SequentialVilleEvidence legado; añadir el archivo a CI.",
+   "live_path": false,
+   "known_ref": "FICHAS_C-F2_2026-10-11.md:125 (estas pruebas miden detección, no nivel); LF-3; unidad de riesgo LC-F1-41 (HALLAZGOS_C-F1:543-547). La copia y la contradicción con LF-3 son nuevas.",
+   "confidence": 0.85
+  },
+  {
+   "title": "Contrato Yang-Mills vacuo: el equilibrio libre de arbitraje se mide en el tick de inicialización y la antisimetría sobre un accesor muerto que usa niveles",
+   "severity": "MED",
+   "category": "vacua",
+   "file": "crates/strategy-core/tests/yang_mills_gauge_contract.rs",
+   "line": 18,
+   "evidence": "Test :13-18 llama una sola vez a `update_and_calculate_curvature` en un motor nuevo; prod yang_mills_gauge.rs:136 `returns[i] = if self.count > 0 && prev_p_i != 0.0 {` ⇒ primer tick con retornos 0 y acción 0 para cualquier precio. Test :42-56 usa `loop_holonomy`, que prod :239-243 calcula sobre ln-niveles (`ln_p[i] - self.beta_matrix[i][j] * ln_p[j]`) y no tiene llamador en producción; la curvatura viva usa retornos (:185-190).",
+   "mechanism": "La prueba 1 pasa por la rama de arranque, no por el triángulo; la 2 verifica identidades algebraicas de una función muerta con semántica distinta de la viva. Con β ≡ 1 en vivo, F ≡ 0 para todo retorno; las otras dos pruebas sólo dan acción no nula con with_beta ≠ 1, que no existe en vivo.",
+   "failure_scenario": "Precios [100, 50, 10] (triángulo no cerrado) también dan acción 0 en el test 1; un error de signo en A_ki de la curvatura viva no lo detecta el test 2. El contrato queda verde mientras el motor vivo (registrado en god-engine-core lib.rs:1252) es ciego a dislocaciones.",
+   "fix_sketch": "Test 1 con dos ticks y retornos coherentes vs incoherentes; test 2 sobre la F de retornos o borrar loop_holonomy; usar el β del estado vivo.",
+   "live_path": true,
+   "known_ref": "HALLAZGOS_C-F2_2026-10-11.md:482 (tests :63-88 y :105-144 sólo con with_beta≠1); F2.3b-07 / linea_g hallazgos.tsv:316. La vacuidad de :9-33 y :36-61 es nueva.",
+   "confidence": 0.9
+  },
+  {
+   "title": "bt_vivo_parity: DIV-1 y la paridad de configuración se prueban en una closure y una tautología; las A/B corren sobre una serie que colapsa",
+   "severity": "LOW",
+   "category": "copia-muerta",
+   "file": "crates/backtest-engine/tests/bt_vivo_parity_audit.rs",
+   "line": 72,
+   "evidence": ":72-75 `let sim = |running_atr| { let slip = running_atr * 0.10; (bid - slip, ask + slip) }` en vez de booktick_replay.rs:364-366; :39-59 aplica el mismo `apply_to_arena` a dos arenas nuevas; generador :196-202 `((seed >> 33) as f64 / u32::MAX as f64) - 0.5` ∈ [−0,5, 0) (t1_measurement_contract.rs:35-36 lo atestigua) ⇒ deriva ≈ −0,00096/tick: 20 000 ticks llevan 60 000 USD a ≈3e-4 y 30 000 a ≈2e-8; ninguna prueba exige trades > 0.",
+   "mechanism": "El invariante de signo del desplazamiento se verifica sobre la copia del test; la igualdad bt/vivo es determinismo de una misma función; las mediciones A/B y el bypass trade-only pueden pasar con 0 operaciones.",
+   "failure_scenario": "Invertir el signo en booktick_replay.rs:365 (`t.bid + slip`) mejora los fills del modo libro (backtest_windows) y ninguna prueba del archivo falla; xlvih «cuantifica el doble conteo» sobre una serie degenerada.",
+   "fix_sketch": "Observar sim_bid/sim_ask reales con run_booktick_replay_with_observer; exigir trades > 0; generador centrado ((seed>>11)/2^53 − 0,5).",
+   "live_path": false,
+   "known_ref": "Sesgo del generador documentado como testigo GO (t1_measurement_contract.rs:24-44); su reutilización aquí y la copia del shift son nuevas.",
+   "confidence": 0.85
+  },
+  {
+   "title": "Contratos de OmniState cross-exchange certifican sobre una estructura recién creada o sembrada a mano",
+   "severity": "LOW",
+   "category": "vacua",
+   "file": "crates/data-pipeline/tests/xcv_dims_cross_exchange_muertas_por_contrato.rs",
+   "line": 18,
+   "evidence": "xcv:18-19 `let st = OmniState::new(); let feats = st.get_features();` aunque :9-11 promete «si alguien arregla los pollers ... ESTE TEST SUENA»; :38-46 `assert!(msg.contains(\"RE-ENTRENAR\"))` sobre un literal del propio test. spot_feed_contract.rs:75-76 `omni.binance_futures.store(...)`: el único escritor de binance_futures del repo es esa prueba (spot_feed.rs:129 sólo lee), así que spot_futures_arb_spread nunca se calcula en vivo. run_backtest_native siembra omni_sim[1..3] ≠ 0 (backtest-engine/src/lib.rs:183-185) contra la «paridad por construcción».",
+   "mechanism": "Un OmniState fresco no ejecuta pollers: el test sólo detecta cambios del estado inicial. El segundo test es tautológico. c02 inyecta una entrada sin productor.",
+   "failure_scenario": "Activar run_bybit_ws en el host deja verde el contrato; c02 pasa aunque el basis vivo sea siempre 0. Impacto económico hoy nulo: build_54d_tensor (god-engine-core lib.rs:1563-1655) no lee omni[1..10] ni omni[38].",
+   "fix_sketch": "Contrato sobre el escritor real (guardia de fuente de god_engine o arranque del host en modo prueba); borrar el test tautológico; retirar el cálculo del basis hasta que exista productor de binance_futures.",
+   "live_path": false,
+   "known_ref": "F6-A-H4/XCV (BARRIDO_EXHAUSTIVO_FASES.md:530, :1722-1731); la vacuidad y el basis sin productor son nuevos.",
+   "confidence": 0.8
+  },
+  {
+   "title": "score_retention: el calendario de retención por drawdown se prueba sobre una copia local, no sobre evolution.rs",
+   "severity": "LOW",
+   "category": "copia-muerta",
+   "file": "crates/evolution-engine/tests/score_retention_contract.rs",
+   "line": 6,
+   "evidence": ":6-13 `fn retention(dd, dd_max) { let threshold = dd_max / 3.0; ... (-(dd - threshold) * 20.0).exp().clamp(0.01, 1.0)`; :172-184 `existing_drawdown_schedule_is_retained_and_bounded`; producción en línea en src/bin/evolution.rs:395-397.",
+   "mechanism": "El test que se llama «el calendario existente se conserva» verifica su propia copia.",
+   "failure_scenario": "Cambiar en evolution.rs el 20,0, el umbral dd_max/3 o el piso 0,01 no rompe ninguna prueba.",
+   "fix_sketch": "Mover `retention` a evolution_engine::score_retention y usarla en evolution.rs y en el test.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.9
+  },
+  {
+   "title": "open_full_penalized_fitness_is_not_additive no prueba la no-aditividad: el «drenaje» XCVIII sólo exige fitness < 0",
+   "severity": "LOW",
+   "category": "vacua",
+   "file": "crates/evolution-engine/tests/fitness_evidence_contract.rs",
+   "line": 89,
+   "evidence": "Comentario :93-97 «La aserción REAL: un período con el MISMO drawdown que la concatenación de dos períodos NO produce el mismo fitness que la suma»; código :98-101 `assert!(full.is_finite() && full < 0.0, ...)`; docs/TRIAJE_ROJOS_PERPETUOS.md:14 lo da por «DRENADO».",
+   "mechanism": "No se calcula ningún segundo período ni suma; nombre y comentario prometen otra propiedad.",
+   "failure_scenario": "Si la fitness se volviera aditiva por períodos (o el término DD² pasara a lineal), el test sigue verde y la promesa FMT-047 sigue sin prueba.",
+   "fix_sketch": "Calcular dos períodos y su concatenación y comparar fitness(concat) con la suma.",
+   "live_path": false,
+   "known_ref": "FMT-047 (AUDITORIA_FUNDAMENTOS_CIENTIFICOS_III:25,57); no figura en los registros de la lista.",
+   "confidence": 0.9
+  },
+  {
+   "title": "La prueba «retain each asset» de liquidaciones no exige conservar los dos activos",
+   "severity": "LOW",
+   "category": "vacua",
+   "file": "crates/data-ingest/tests/liquidation_contract.rs",
+   "line": 53,
+   "evidence": ":53 `if batch.snapshots.len() == 2 { assert_eq!(batch.snapshots[1].symbol, \"ETHUSDT\"); }`",
+   "mechanism": "La aserción del segundo activo es condicional: si se pierde, no se comprueba nada.",
+   "failure_scenario": "Una regresión en decode_liquidation_snapshots (vivo, god_engine.rs:3214) que devolviera sólo el primer elemento de `!forceOrder@arr` descartaría el resto de monedas y la prueba seguiría verde.",
+   "fix_sketch": "Exigir len 2 en los arrays y 1 en el stream de una moneda.",
+   "live_path": true,
+   "known_ref": "",
+   "confidence": 0.95
+  },
+  {
+   "title": "Fokker-Planck: la prueba llama fail-closed a P = 0,5 ante NaN, que frente a p* es fail-open",
+   "severity": "LOW",
+   "category": "fija-defecto",
+   "file": "crates/strategy-core/tests/fokker_planck_first_passage_time_contract.rs",
+   "line": 163,
+   "evidence": "Test :163-174 `assert_eq!(sde.fokker_planck_absorption_probability(f64::NAN, 8.0, 12.0), 0.5)`; prod vecm_arbitrage.rs:431-432 y :470-471 `return 0.5;`.",
+   "mechanism": "Lo desconocido se convierte en una moneda al aire. Con RR ≥ 2,25, p* ≈ 0,31-0,43, así que un filtro P(win) ≥ p* aprobaría con datos corruptos. Hoy no tiene consumidores en producción.",
+   "failure_scenario": "El día que VECM use win_probability como filtro, un target NaN da 0,5 > p* y la orden pasa; la prueba fija ese valor.",
+   "fix_sketch": "Devolver NaN/None y que la prueba exija la abstención.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.85
+  },
+  {
+   "title": "T-1: el doc dice «se ignora» pero el trinquete está activo, tarda ~45 min, no corre en CI y el diagnóstico hace set_var con una justificación falsa",
+   "severity": "LOW",
+   "category": "fragil",
+   "file": "crates/backtest-engine/tests/t1_cobertura_genetica.rs",
+   "line": 141,
+   "evidence": ":141-143 «Se ignora con diagnóstico; sólo puede re-activarse subiendo desde una re-medición documentada» sobre un `#[test]` sin #[ignore] (:144); :296-297 «45,7 min»; INVENTARIO_TESTS_CI:17 «ninguna»; :106-107 «Safety: test single-threaded» con `unsafe { std::env::set_var(\"TG_TRACE_NATIVO\", \"1\") }`, aunque t1_diag y t1_cobertura corren en hilos del mismo proceso.",
+   "mechanism": "El trinquete que «sólo puede SUBIR» no se hace cumplir. El estado de ignorado que describe el doc es falso. La variable de entorno es estado global compartido.",
+   "failure_scenario": "Una regresión que baje el oráculo por debajo del 11 % de genes sensibles pasa CI; `cargo test -p backtest-engine` tarda 45 min; TG_TRACE_NATIVO se activa a mitad del T-1.",
+   "fix_sketch": "Poner #[ignore] explícito y un job programado; actualizar el doc; pasar la traza como parámetro o aislar el diagnóstico en su propio binario.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.8
+  },
+  {
+   "title": "ensemble (c) acepta cualquier voto positivo: `v >= 0.0 || v.abs() < 0.05`",
+   "severity": "LOW",
+   "category": "vacua",
+   "file": "crates/signal-engine/tests/ensemble_characterization.rs",
+   "line": 74,
+   "evidence": ":74 `assert!(v >= 0.0 || v.abs() < 0.05, ...)`. Con OBI −0,5 lo correcto es exactamente 0 (flow_excitation_confluence.rs:286 w_ml_short = 0 y clamp de :300). El comentario :70-71 «0.36 está dentro del lift ±0.05» es falso (0,36 − 0,30 = 0,06).",
+   "mechanism": "La disyunción admite un voto LARGO de cualquier magnitud con flujo vendedor.",
+   "failure_scenario": "Un signo invertido en flow_excitation_confluence.rs:298 que hiciera votar largo con OBI negativo pasaría la prueba.",
+   "fix_sketch": "assert_eq!(v, 0.0) y corregir el comentario.",
+   "live_path": true,
+   "known_ref": "",
+   "confidence": 0.9
+  }
+ ],
+ "file_verdicts": [
+  {
+   "file": "crates/signal-engine/tests/ensemble_characterization.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "(a)(b) fijan defectos declarados (piso 0,70 F3.1-03 / C-F3:173; clones). La aserción de (c) es débil (hallazgo). (d)(e) honestas."
+  },
+  {
+   "file": "crates/signal-engine/tests/feynman_propagator_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Física, NaN y CL-59 correctos. El arranque en frío sólo acota el valor y sólo se ejercita la ruta global; el default 0,50 de coherencia es conocido (FICHAS_C-F2:952)."
+  },
+  {
+   "file": "crates/signal-engine/tests/multi_asset_identity_contract.rs",
+   "status": "código: muerto; prueba: copia-muerta",
+   "note": "Prueba src/multi_asset_orchestrator.rs vía #[path]; conocido g7_archivos.tsv:88."
+  },
+  {
+   "file": "crates/signal-engine/tests/navier_stokes_manifold_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Monotonía, flujo y antisimetría reales. El contrato QuantumStrategy sin registro es trivial."
+  },
+  {
+   "file": "crates/signal-engine/tests/physics_numeric_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Compresión coaxial sin 0/0 y salto de Mach acotado, contra la expresión original."
+  },
+  {
+   "file": "crates/signal-engine/tests/single_consensus_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Una evaluación por consulta y el init fallido no registra la estrategia."
+  },
+  {
+   "file": "crates/signal-engine/tests/zero_alloc_scoped_signals_contract.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "El aislamiento estricto es honesto. test_cero_heap no mide asignaciones (el código usa un buffer de pila ≤96 B). El «sin fuga del global» no se ejercita porque no se publica ningún global."
+  },
+  {
+   "file": "crates/backtest-engine/tests/bt_vivo_parity_audit.rs",
+   "status": "código: offline; prueba: copia-muerta",
+   "note": "La closure del shift, la tautología de latencia y las A/B sobre una serie que colapsa (hallazgo). Los ignores de tape real son de medición y siguen válidos."
+  },
+  {
+   "file": "crates/backtest-engine/tests/cf3_muros_replay.rs",
+   "status": "código: offline; prueba: honesta",
+   "note": "El ignore sigue vigente: booktick_replay no llama a update_l2_depth (F3.4-04 abierto)."
+  },
+  {
+   "file": "crates/backtest-engine/tests/ex_post_metrics_contract.rs",
+   "status": "código: offline; prueba: honesta",
+   "note": "Oráculos cerrados. Las métricas sólo se reportan (booktick_replay.rs:619)."
+  },
+  {
+   "file": "crates/backtest-engine/tests/label_evidence_contract.rs",
+   "status": "código: offline; prueba: honesta",
+   "note": "Coincide con g7_archivos:77."
+  },
+  {
+   "file": "crates/backtest-engine/tests/oos_context_contract.rs",
+   "status": "código: offline; prueba: honesta",
+   "note": "Lo usa src/bin/evolution.rs:142/:550."
+  },
+  {
+   "file": "crates/backtest-engine/tests/spectral_risk_contract.rs",
+   "status": "código: offline; prueba: honesta",
+   "note": "Prueba live_envelope_gate. El nombre es homónimo y engañoso (CENSUS:178). La sonda con PF=1 es la política D-750."
+  },
+  {
+   "file": "crates/backtest-engine/tests/support/t1_measurement.rs",
+   "status": "código: offline; prueba: honesta",
+   "note": "Soporte. Conserva un generador con u ∈ [−0,5, 0), documentado como sesgo abierto."
+  },
+  {
+   "file": "crates/backtest-engine/tests/t1_cobertura_genetica.rs",
+   "status": "código: offline; prueba: fragil",
+   "note": "Doc de ignore rancio, fuera de CI, 45 min y set_var concurrente (hallazgo). El trinquete mide de verdad."
+  },
+  {
+   "file": "crates/backtest-engine/tests/t1_measurement_contract.rs",
+   "status": "código: offline; prueba: honesta",
+   "note": "Testigos GO; el diseño del layout de stats coincide con lib.rs:508-535."
+  },
+  {
+   "file": "crates/backtest-engine/tests/t2_cobertura_puertas.rs",
+   "status": "código: offline; prueba: honesta",
+   "note": "El diagnóstico exige ≥10 cierres. El ignore de la medición larga es válido."
+  },
+  {
+   "file": "crates/metacortex-engine/tests/cf3_consejo_vetos.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Ignores vigentes: was_correct (consejo_seniors.rs:1464-1482) y Auditor `> 0.92` (:917) siguen."
+  },
+  {
+   "file": "crates/metacortex-engine/tests/constant_hunter_open_diagnostics.rs",
+   "status": "código: offline; prueba: fija-defecto",
+   "note": "Diagnósticos OPEN declarados del cazador de constantes."
+  },
+  {
+   "file": "crates/metacortex-engine/tests/council_evidence_contract.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "La mayoría es honesta. Las pruebas open_* fijan defectos conocidos (hallazgos.tsv:300, LF-14). net_trade_agreement fija la puntuación por signo (F3.4-01)."
+  },
+  {
+   "file": "crates/metacortex-engine/tests/ente_mercado_continuous_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Los nombres dicen «C1» pero sólo se verifican la monotonía y el tamaño de paso."
+  },
+  {
+   "file": "crates/metacortex-engine/tests/mutation_cycle_test.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Superficial (contiene strings). MetacortexEngine arranca en god_engine.rs:2254."
+  },
+  {
+   "file": "crates/metacortex-engine/tests/prospect_theory_contract.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "Las funciones KT son honestas. La integración la cubre HALLAZGOS_C-F2:905 (prospect_pressure sin escritor; el mutante sobrevive)."
+  },
+  {
+   "file": "crates/metacortex-engine/tests/qs_r1_c22_direccion_propia_diagnostics.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "El oráculo independiente coincide con la definición de asiento direccional."
+  },
+  {
+   "file": "crates/metacortex-engine/tests/qs_r2_simetria_espejo_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Incluye guardas de no trivialidad; ML en la base, limitación declarada."
+  },
+  {
+   "file": "crates/metacortex-engine/tests/quantum_organism_test.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Superficial. El comentario dice «85 %» y el valor es 0,99. Escribe estado global del epigenoma."
+  },
+  {
+   "file": "crates/metacortex-engine/tests/reminiscence_and_adn_test.rs",
+   "status": "código: offline; prueba: fragil",
+   "note": "Directorio temporal fijo compartido; sólo se limpia si la prueba pasa."
+  },
+  {
+   "file": "crates/evolution-engine/tests/cf4_tick_del_examen.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Prueba el ATR del examen frente a σ conocida, en su propio proceso."
+  },
+  {
+   "file": "crates/evolution-engine/tests/cma_generation_contract.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "cma_es sin llamadores (g7_archivos:105)."
+  },
+  {
+   "file": "crates/evolution-engine/tests/cma_penalty_contract.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Forma, no economía. Fuera de CI."
+  },
+  {
+   "file": "crates/evolution-engine/tests/cma_supervision_contract.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Transaccionalidad bien probada sobre código muerto."
+  },
+  {
+   "file": "crates/evolution-engine/tests/fitness_evidence_contract.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "La de no aditividad es vacua (hallazgo). El resto es honesto. Fuera de CI."
+  },
+  {
+   "file": "crates/evolution-engine/tests/lf3_ville_soporte_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Nivel ≤ α por Monte Carlo, testigo del criterio viejo y guardia de fuente LF-4 (LF forzado por .gitattributes)."
+  },
+  {
+   "file": "crates/evolution-engine/tests/r7_r6_watchdog_evidence_contract.rs",
+   "status": "código: muerto; prueba: copia-muerta",
+   "note": "Normalización copiada antes de LF-3 y criterio de decaimiento retirado (hallazgo). La de PositionManager es honesta."
+  },
+  {
+   "file": "crates/evolution-engine/tests/return_evidence_contract.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "summarize, EWMA y latch honestos. La última prueba certifica is_evidence_decayed de SequentialVilleEvidence, sin uso y retirado por LF-3."
+  },
+  {
+   "file": "crates/evolution-engine/tests/sa_selection_contract.rs",
+   "status": "código: offline; prueba: honesta",
+   "note": "SA del CLI evolution con guardia estructural de fuente."
+  },
+  {
+   "file": "crates/evolution-engine/tests/score_retention_contract.rs",
+   "status": "código: offline; prueba: mixta",
+   "note": "penalize_signed_score es honesta; el calendario está copiado (hallazgo)."
+  },
+  {
+   "file": "crates/evolution-engine/tests/shadow_forest_threshold_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "CL-18: no publica umbrales no identificables."
+  },
+  {
+   "file": "crates/strategy-core/tests/basket_state_contract.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "MultivariateCointegrationEngine sin consumidor; las open_debt son declaradas."
+  },
+  {
+   "file": "crates/strategy-core/tests/cf2_yang_mills_nulo.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Caracterización e ignore vigente (F2.3b-07 abierto)."
+  },
+  {
+   "file": "crates/strategy-core/tests/cf3_guarda_t_media.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "La variante de 20 min pasa por abstención (declarado). Las maduras sí prueban; potencia en god-engine-core cf3_reversion_base.rs:175."
+  },
+  {
+   "file": "crates/strategy-core/tests/cf3_lectura_estricta.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Con controles positivos."
+  },
+  {
+   "file": "crates/strategy-core/tests/cf3_prueba_reversion.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Nivel y potencia, con hueco de inmadurez."
+  },
+  {
+   "file": "crates/strategy-core/tests/cf3_votos_misma_variable.rs",
+   "status": "código: vivo; prueba: fragil",
+   "note": "signum(0.0) = 1 cuenta la abstención como coincidencia con los votos positivos; sólo la ruta global. La segunda prueba es sólida."
+  },
+  {
+   "file": "crates/strategy-core/tests/comun_reversion/mod.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Barrido Monte Carlo compartido."
+  },
+  {
+   "file": "crates/strategy-core/tests/fokker_planck_first_passage_time_contract.rs",
+   "status": "código: muerto; prueba: mixta",
+   "note": "Sin consumidores en producción. Fija NaN → 0,5 (hallazgo)."
+  },
+  {
+   "file": "crates/strategy-core/tests/maker_quote_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "La prueba C1 discrimina: una rampa lineal daría 2,5e-3 > 1e-3. Las open_debt son declaradas."
+  },
+  {
+   "file": "crates/strategy-core/tests/medicion_critico_reversion.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "El ignore de la medición manual es válido."
+  },
+  {
+   "file": "crates/strategy-core/tests/omega28_consumer_clock_contract.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Reloj causal con guarda de no vacuidad."
+  },
+  {
+   "file": "crates/strategy-core/tests/pair_model_characterization.rs",
+   "status": "código: muerto; prueba: fija-defecto",
+   "note": "open_debt declarada sobre StatArbEngine::update, legado."
+  },
+  {
+   "file": "crates/strategy-core/tests/yang_mills_gauge_contract.rs",
+   "status": "código: vivo; prueba: vacua",
+   "note": "Tick de inicialización y accesor muerto (hallazgo); with_beta conocido (C-F2:482)."
+  },
+  {
+   "file": "crates/audit-engine/tests/auditor_open_diagnostics.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "Las repaired son honestas; las open fijan defectos declarados (Trajectory NaN → Aligned, sólo telemetría)."
+  },
+  {
+   "file": "crates/audit-engine/tests/drift_recovery_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Prueba la máquina de estados aislada. No modela que el veto corte su propia fuente (absorbente, linea_g hallazgos.tsv:256)."
+  },
+  {
+   "file": "crates/audit-engine/tests/drift_validation_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Errores tipados y sin mutación."
+  },
+  {
+   "file": "crates/audit-engine/tests/qs_r4_libro_sombra_contract.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Sin consumidor (g7_archivos:100). El veredicto en R neto es correcto."
+  },
+  {
+   "file": "crates/audit-engine/tests/resilience_open_diagnostics.rs",
+   "status": "código: muerto; prueba: fija-defecto",
+   "note": "OPEN declarados. Shield y ChaosMonkey sin consumidor vivo."
+  },
+  {
+   "file": "crates/audit-engine/tests/trajectory_duration_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Frontera de 4 duraciones; sólo telemetría."
+  },
+  {
+   "file": "crates/storage-engine/tests/mmap_admission_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Bus mmap consumido por online_daemon/online_learning. Fuera de CI."
+  },
+  {
+   "file": "crates/storage-engine/tests/mmap_open_diagnostics.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Verifica el arreglo, pero el nombre «permanently_skips» y el doc «describe OPEN contracts» están rancios."
+  },
+  {
+   "file": "crates/storage-engine/tests/ownership_read_contract.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "ledger.rs re-exportado sin consumidor (g7_archivos:71)."
+  },
+  {
+   "file": "crates/data-pipeline/tests/parser_input_contract.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "parser.rs sin uso productivo (g7_archivos:45). Fija event_time ausente → 0 (conocido I1)."
+  },
+  {
+   "file": "crates/data-pipeline/tests/spot_feed_contract.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "Parsers y apply_spot_tick honestos; c02 siembra binance_futures sin productor vivo (hallazgo de xcv)."
+  },
+  {
+   "file": "crates/data-pipeline/tests/spread_validation_contract.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "validate_book_ticker sólo vía ws_client, sin instanciación productiva."
+  },
+  {
+   "file": "crates/data-pipeline/tests/xcv_dims_cross_exchange_muertas_por_contrato.rs",
+   "status": "código: vivo; prueba: vacua",
+   "note": "OmniState fresco y un test tautológico (hallazgo)."
+  },
+  {
+   "file": "crates/data-ingest/tests/dynamic_selector_contract.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "DynamicSelector sin llamador en src. Queda la línea muerta `_variation`."
+  },
+  {
+   "file": "crates/data-ingest/tests/liquidation_contract.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "Decodificador vivo (god_engine.rs:3214); la aserción multiactivo es condicional (hallazgo)."
+  },
+  {
+   "file": "crates/dark-alpha-engine/tests/neural_evidence_contract.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Validación, rollback y congelado sin mutación de estado."
+  },
+  {
+   "file": "crates/omniscient-registry/tests/aislamiento_ambito_multiactivo_contract.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "Las lecturas estrictas son honestas; fija el fallback global de get_scoped_val_or (LC-F1-06, hallazgos.tsv:207)."
+  },
+  {
+   "file": "crates/omniscient-registry/tests/desconocido_no_es_cero_contract.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "NaN y aislamiento honestos. La frescura usa `>=` y pasaría aunque set no actualizara el sello (el código sí lo hace, lib.rs:75-77). Fuera de CI."
+  },
+  {
+   "file": "scripts/fixtures/r4_depth_witness.rs",
+   "status": "código: offline; prueba: fija-defecto",
+   "note": "Testigo histórico del defecto de depth. parser_input_contract afirma hoy lo contrario."
+  },
+  {
+   "file": "scripts/fixtures/r4_ou_witness.rs",
+   "status": "código: offline; prueba: fija-defecto",
+   "note": "Testigo histórico fijado a blob inmutable (audit_r4_rust_witnesses.py:23-26). omega28 certifica el arreglo."
+  },
+  {
+   "file": "scripts/fixtures/r4_selection_stats_witness.rs",
+   "status": "código: offline; prueba: fija-defecto",
+   "note": "Testigo histórico fijado a blob (selection_stats 1e2ba9b1); declara «not a production pipeline test»."
+  }
+ ],
+ "vetos": [],
+ "coverage": {
+  "files_read": [
+   "crates/signal-engine/tests/ensemble_characterization.rs",
+   "crates/signal-engine/tests/feynman_propagator_contract.rs",
+   "crates/signal-engine/tests/multi_asset_identity_contract.rs",
+   "crates/signal-engine/tests/navier_stokes_manifold_contract.rs",
+   "crates/signal-engine/tests/physics_numeric_contract.rs",
+   "crates/signal-engine/tests/single_consensus_contract.rs",
+   "crates/signal-engine/tests/zero_alloc_scoped_signals_contract.rs",
+   "crates/backtest-engine/tests/bt_vivo_parity_audit.rs",
+   "crates/backtest-engine/tests/cf3_muros_replay.rs",
+   "crates/backtest-engine/tests/ex_post_metrics_contract.rs",
+   "crates/backtest-engine/tests/label_evidence_contract.rs",
+   "crates/backtest-engine/tests/oos_context_contract.rs",
+   "crates/backtest-engine/tests/spectral_risk_contract.rs",
+   "crates/backtest-engine/tests/support/t1_measurement.rs",
+   "crates/backtest-engine/tests/t1_cobertura_genetica.rs",
+   "crates/backtest-engine/tests/t1_measurement_contract.rs",
+   "crates/backtest-engine/tests/t2_cobertura_puertas.rs",
+   "crates/metacortex-engine/tests/cf3_consejo_vetos.rs",
+   "crates/metacortex-engine/tests/constant_hunter_open_diagnostics.rs",
+   "crates/metacortex-engine/tests/council_evidence_contract.rs",
+   "crates/metacortex-engine/tests/ente_mercado_continuous_contract.rs",
+   "crates/metacortex-engine/tests/mutation_cycle_test.rs",
+   "crates/metacortex-engine/tests/prospect_theory_contract.rs",
+   "crates/metacortex-engine/tests/qs_r1_c22_direccion_propia_diagnostics.rs",
+   "crates/metacortex-engine/tests/qs_r2_simetria_espejo_contract.rs",
+   "crates/metacortex-engine/tests/quantum_organism_test.rs",
+   "crates/metacortex-engine/tests/reminiscence_and_adn_test.rs",
+   "crates/evolution-engine/tests/cf4_tick_del_examen.rs",
+   "crates/evolution-engine/tests/cma_generation_contract.rs",
+   "crates/evolution-engine/tests/cma_penalty_contract.rs",
+   "crates/evolution-engine/tests/cma_supervision_contract.rs",
+   "crates/evolution-engine/tests/fitness_evidence_contract.rs",
+   "crates/evolution-engine/tests/lf3_ville_soporte_contract.rs",
+   "crates/evolution-engine/tests/r7_r6_watchdog_evidence_contract.rs",
+   "crates/evolution-engine/tests/return_evidence_contract.rs",
+   "crates/evolution-engine/tests/sa_selection_contract.rs",
+   "crates/evolution-engine/tests/score_retention_contract.rs",
+   "crates/evolution-engine/tests/shadow_forest_threshold_contract.rs",
+   "crates/strategy-core/tests/basket_state_contract.rs",
+   "crates/strategy-core/tests/cf2_yang_mills_nulo.rs",
+   "crates/strategy-core/tests/cf3_guarda_t_media.rs",
+   "crates/strategy-core/tests/cf3_lectura_estricta.rs",
+   "crates/strategy-core/tests/cf3_prueba_reversion.rs",
+   "crates/strategy-core/tests/cf3_votos_misma_variable.rs",
+   "crates/strategy-core/tests/comun_reversion/mod.rs",
+   "crates/strategy-core/tests/fokker_planck_first_passage_time_contract.rs",
+   "crates/strategy-core/tests/maker_quote_contract.rs",
+   "crates/strategy-core/tests/medicion_critico_reversion.rs",
+   "crates/strategy-core/tests/omega28_consumer_clock_contract.rs",
+   "crates/strategy-core/tests/pair_model_characterization.rs",
+   "crates/strategy-core/tests/yang_mills_gauge_contract.rs",
+   "crates/audit-engine/tests/auditor_open_diagnostics.rs",
+   "crates/audit-engine/tests/drift_recovery_contract.rs",
+   "crates/audit-engine/tests/drift_validation_contract.rs",
+   "crates/audit-engine/tests/qs_r4_libro_sombra_contract.rs",
+   "crates/audit-engine/tests/resilience_open_diagnostics.rs",
+   "crates/audit-engine/tests/trajectory_duration_contract.rs",
+   "crates/storage-engine/tests/mmap_admission_contract.rs",
+   "crates/storage-engine/tests/mmap_open_diagnostics.rs",
+   "crates/storage-engine/tests/ownership_read_contract.rs",
+   "crates/data-pipeline/tests/parser_input_contract.rs",
+   "crates/data-pipeline/tests/spot_feed_contract.rs",
+   "crates/data-pipeline/tests/spread_validation_contract.rs",
+   "crates/data-pipeline/tests/xcv_dims_cross_exchange_muertas_por_contrato.rs",
+   "crates/data-ingest/tests/dynamic_selector_contract.rs",
+   "crates/data-ingest/tests/liquidation_contract.rs",
+   "crates/dark-alpha-engine/tests/neural_evidence_contract.rs",
+   "crates/omniscient-registry/tests/aislamiento_ambito_multiactivo_contract.rs",
+   "crates/omniscient-registry/tests/desconocido_no_es_cero_contract.rs",
+   "scripts/fixtures/r4_depth_witness.rs",
+   "scripts/fixtures/r4_ou_witness.rs",
+   "scripts/fixtures/r4_selection_stats_witness.rs"
+  ],
+  "unread": [],
+  "notes": "Leí completos los 72 archivos de la dimensión tst04. El worktree está en HEAD 5129eb81 (2026-10-12 11:22), descendiente de be8fa6ad. Entre ambos cambian 11 archivos de producción (online_daemon.rs, god-engine-core lib.rs, god_engine.rs, os-guardian, telemetry-server, execution-engine) y ninguno de mis 72 archivos. Las líneas de producción citadas son las de HEAD (online_daemon.rs se desplazó unas 55 líneas desde be8fa6ad). Para verificar consulté por tramos: online_daemon.rs (1110-1349), booktick_replay.rs (330-530, 1205-1295), yang_mills_gauge.rs (100-259), vecm_arbitrage.rs (425-494), maker.rs (25-195), flow_excitation_confluence.rs (105-309), feynman_propagator.rs (255-312), omni_multiplexer.rs (160-236), backtest-engine lib.rs (150-219, 495-535), darwin.rs (240-289), god-engine-core lib.rs (1541-1658), score_retention.rs, evolution.rs (380-429), spot_feed.rs (95-154), liquidation.rs (125-158), omniscient-registry lib.rs (95-202, 470-491), god_engine.rs (2240-2290, 3110-3130, 3580-3612, 3900-3990) y consejo_seniors.rs (804-854 y greps). Contrasté contra los registros conocidos con Grep; INVENTARIO_TESTS_CI_2026-10-11.tsv da la cobertura de CI. No ejecuté cargo. No hay vetos: mi lista sólo contiene pruebas, soporte y testigos históricos, ningún código de producción."
+ }
+}

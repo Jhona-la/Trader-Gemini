@@ -126,13 +126,15 @@ async fn main() -> Result<(), String> {
 
         if let Ok(file) = File::open(&bin_path) {
             if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
+                // LG-15: saltar la cabecera de 8 B del tape (TGMSYNT1 / TGMTRAW…).
+                let (_origen, cuerpo) = backtest_engine::tick_replayer::cuerpo_de_ticks(&mmap);
                 let tick_size = size_of::<BinTick>();
-                let num_ticks = mmap.len() / tick_size;
+                let num_ticks = cuerpo.len() / tick_size;
                 for i in 0..num_ticks {
                     let start = i * tick_size;
                     let end = start + tick_size;
-                    let bytes = &mmap[start..end];
-                    let tick: BinTick = unsafe { std::ptr::read(bytes.as_ptr() as *const _) };
+                    let bytes = &cuerpo[start..end];
+                    let tick: BinTick = unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const _) };
                     if tick.bid_price > 0.0 && tick.ask_price > tick.bid_price {
                         master_stream.push(TickEvent {
                             coin_id,
