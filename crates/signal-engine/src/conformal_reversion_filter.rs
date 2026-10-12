@@ -180,8 +180,24 @@ impl QuantumStrategy for ConformalReversionFilterEngine {
             r.get_scoped_parameter(sym_opt, cid_opt, key, "ConformalReversionFilterEngine")
                 .map(|p| p.get_value())
         };
-        let z = get("vecm_zscore")
-            .or_else(|| get("cointegration_zscore"))
+        // CL-80 (F3.7-04, LC-F1-07): la z con símbolo se lee ESTRICTA (moneda o
+        // símbolo, nunca la global, que es la de la última moneda que
+        // escribió). Sin símbolo, la global.
+        let get_z = |key: &str| {
+            if sym_opt.is_some() {
+                r.get_scoped_parameter_strict(
+                    sym_opt,
+                    cid_opt,
+                    key,
+                    "ConformalReversionFilterEngine",
+                )
+                .map(|p| p.get_value())
+            } else {
+                get(key)
+            }
+        };
+        let z = get_z("vecm_zscore")
+            .or_else(|| get_z("cointegration_zscore"))
             .unwrap_or(0.0);
         // `ema_trend_swing_z` es la z canónica del macro-trend (R5-A1: el
         // core la publica tipificada con la volatilidad medida). El trend

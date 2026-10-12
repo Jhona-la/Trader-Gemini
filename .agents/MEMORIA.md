@@ -1,6 +1,6 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-79 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-03)
+## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-80 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-03, F3.7-04)
 
 - #44 (CL-67 y CL-71) fusionado en main (8f572f7c).
 - Las 62 propuestas del borrador de C-F3 son 71 tests: 13 activos y 58 OPEN,
@@ -57,6 +57,10 @@
 - CL-79 (F3.7-03): la arena guarda la marca de llegada del spot
   (`spot_ts_ms`, en el reloj de eventos del núcleo) y el núcleo sólo usa
   spot con ≤ 30 s, en la SDE OU, el z de la base y el sesgo de spot.
+- #52 (CL-79) fusionado en main (407ed3ae).
+- CL-80 (F3.7-04, LC-F1-07): StatArb, VECM y conformal leen sus z con la
+  API estricta cuando reciben un símbolo (la global es la de la última
+  moneda que escribió).
 
 ## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
 

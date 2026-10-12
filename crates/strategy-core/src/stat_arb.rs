@@ -384,9 +384,19 @@ impl QuantumStrategy for StatArbEngine {
         // y, en su ausencia, como desviación del mid al EMA lento de klines en
         // unidades de ATR (god-engine-core/src/lib.rs, `vecm_basis_z`). Es un
         // estadístico de reversión a la media propia, no de paridad multiactivo.
-        let own_z = r
-            .get_scoped_parameter(sym_opt, cid_opt, "statarb_ou_zscore", "StatArbEngine")
-            .map(|p| p.get_value());
+        // CL-80 (F3.7-04, LC-F1-07): con símbolo, lectura ESTRICTA (clave de
+        // la moneda o del símbolo, nunca la global). `set_reg` del núcleo
+        // también escribe la global, que es la de la ÚLTIMA moneda que
+        // escribió: una moneda sin SDE madura votaba con la z y la t½ de
+        // otra. Sin símbolo (`evaluate()`), la lectura global se conserva.
+        let leer = |k: &str| {
+            if sym_opt.is_some() {
+                r.get_scoped_parameter_strict(sym_opt, cid_opt, k, "StatArbEngine")
+            } else {
+                r.get_scoped_parameter(sym_opt, cid_opt, k, "StatArbEngine")
+            }
+        };
+        let own_z = leer("statarb_ou_zscore").map(|p| p.get_value());
 
         let z = match own_z {
             Some(z) if z.is_finite() => {
@@ -394,12 +404,10 @@ impl QuantumStrategy for StatArbEngine {
                 // registro (θ calibrada en producción) contra τ* dominante del
                 // espectro de la moneda. Si la reversión tarda más del doble
                 // del ciclo dominante, el spread absorbe deriva secular: veto.
-                let t_half_ms = r
-                    .get_scoped_parameter(sym_opt, cid_opt, "statarb_half_life_ms", "StatArbEngine")
+                let t_half_ms = leer("statarb_half_life_ms")
                     .map(|p| p.get_value())
                     .unwrap_or(f64::INFINITY);
-                let tau_dom_ms = r
-                    .get_scoped_parameter(sym_opt, cid_opt, "dominant_tau_ms", "StatArbEngine")
+                let tau_dom_ms = leer("dominant_tau_ms")
                     .map(|p| p.get_value())
                     .unwrap_or(DEFAULT_DOMINANT_TAU_MS);
                 // Fail-closed: NaN en cualquiera de las dos cotas ⇒ veto.
@@ -410,11 +418,8 @@ impl QuantumStrategy for StatArbEngine {
             }
             // Clave presente pero venenosa (NaN/Inf): abstención honesta.
             Some(_) => return 0.0,
-            None => r
-                .get_scoped_parameter(sym_opt, cid_opt, "vecm_zscore", "StatArbEngine")
-                .or_else(|| {
-                    r.get_scoped_parameter(sym_opt, cid_opt, "cointegration_zscore", "StatArbEngine")
-                })
+            None => leer("vecm_zscore")
+                .or_else(|| leer("cointegration_zscore"))
                 .map(|p| p.get_value())
                 .unwrap_or(0.0),
         };

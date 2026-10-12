@@ -170,19 +170,23 @@ impl QuantumStrategy for JohansenVecmEngine {
         } else {
             Some(coin_id)
         };
+        // CL-80 (F3.7-04, LC-F1-07): con símbolo, lectura ESTRICTA (moneda o
+        // símbolo, nunca la global, que es la de la última moneda que
+        // escribió). Sin símbolo (`evaluate()`), la global.
         let z = match self.registry.as_ref() {
-            Some(r) => r
-                .get_scoped_parameter(sym_opt, cid_opt, "vecm_zscore", "JohansenVecmEngine")
-                .or_else(|| {
-                    r.get_scoped_parameter(
-                        sym_opt,
-                        cid_opt,
-                        "cointegration_zscore",
-                        "JohansenVecmEngine",
-                    )
-                })
-                .map(|p| p.get_value())
-                .unwrap_or(0.0),
+            Some(r) => {
+                let leer = |k: &str| {
+                    if sym_opt.is_some() {
+                        r.get_scoped_parameter_strict(sym_opt, cid_opt, k, "JohansenVecmEngine")
+                    } else {
+                        r.get_scoped_parameter(sym_opt, cid_opt, k, "JohansenVecmEngine")
+                    }
+                };
+                leer("vecm_zscore")
+                    .or_else(|| leer("cointegration_zscore"))
+                    .map(|p| p.get_value())
+                    .unwrap_or(0.0)
+            }
             None => 0.0,
         };
 
