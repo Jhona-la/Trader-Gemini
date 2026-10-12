@@ -13,6 +13,8 @@ pub const MAX_LOG_LEN: usize = 512;
 pub struct FixedLogBuffer {
     pub data: [u8; MAX_LOG_LEN],
     pub len: usize,
+    /// LG-19b: el mensaje se truncó; no se escribe nada más.
+    pub cerrado: bool,
 }
 
 impl FixedLogBuffer {
@@ -20,6 +22,7 @@ impl FixedLogBuffer {
         Self {
             data: [0; MAX_LOG_LEN],
             len: 0,
+            cerrado: false,
         }
     }
 
@@ -30,6 +33,9 @@ impl FixedLogBuffer {
 
 impl Write for FixedLogBuffer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
+        if self.cerrado {
+            return Ok(());
+        }
         let bytes = s.as_bytes();
         let remaining = MAX_LOG_LEN - self.len;
         // LG-19: cortar en frontera de carácter. Un corte dentro de un
@@ -42,6 +48,13 @@ impl Write for FixedLogBuffer {
         if to_copy > 0 {
             self.data[self.len..self.len + to_copy].copy_from_slice(&bytes[..to_copy]);
             self.len += to_copy;
+        }
+        // LG-19b: tras un corte el mensaje queda cerrado. Si no, las piezas
+        // siguientes del mismo `write!` rellenaban los 1–3 bytes libres y la
+        // línea dejaba de ser un prefijo del original (p. ej. un ts truncado
+        // que parece válido).
+        if to_copy < bytes.len() {
+            self.cerrado = true;
         }
         Ok(())
     }
@@ -179,6 +192,20 @@ mod tests_lg19 {
         let _ = write!(&mut buf, "{}🚀 resto", relleno);
         assert_eq!(buf.as_str(), relleno);
         assert_eq!(buf.len, MAX_LOG_LEN - 2);
+    }
+
+    /// LG-19b: con piezas separadas (cada argumento es un `write_str`), lo
+    /// que sigue al corte no se pega en los bytes libres.
+    #[test]
+    fn lg19b_tras_el_corte_no_se_pega_texto_posterior() {
+        let mut buf = FixedLogBuffer::new();
+        let relleno = "a".repeat(MAX_LOG_LEN - 2);
+        // Variables, no literales: `format_args!` incrusta los literales en la
+        // plantilla y llegarían como una sola pieza.
+        let cohete = String::from("🚀");
+        let resto = String::from("xy");
+        let _ = write!(&mut buf, "{}{}{}", relleno, cohete, resto);
+        assert_eq!(buf.as_str(), relleno);
     }
 
     #[test]
