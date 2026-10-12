@@ -71,6 +71,11 @@ const WF_BAR_MS: u64 = WF_REAL_MICRO_TICKS as u64 * 2_000;
 /// publicado su propia rejilla (ver `WfMarketEnv::half_spread`).
 const WF_SYNTH_PRICE_BASE: f64 = 100.0;
 
+/// Tick del instrumento sintético WFD{i} del examen (en el numerario
+/// `WF_SYNTH_PRICE_BASE`). Es la rejilla del examen mientras el universo vivo
+/// no haya publicado la suya (`WfMarketEnv::tick_del_examen`).
+const WF_SYNTH_TICK: f64 = 0.01;
+
 struct RealWfOutcome {
     fitness: f64,
     net_returns: Vec<f64>,
@@ -123,6 +128,22 @@ impl WfMarketEnv {
     /// del instrumento, luego un spread menor que un tick es imposible.
     /// `exam_tick_pct` es la rejilla del propio instrumento del examen, usada
     /// sólo cuando el universo vivo aún no ha publicado ninguna.
+    /// CL-88 (atr-2): tick del instrumento del examen, en el numerario
+    /// `WF_SYNTH_PRICE_BASE`: la rejilla relativa del universo vivo
+    /// (`tick_pct`) llevada a ese precio y, si aún no hay ninguna publicada,
+    /// la del spec WFD. Antes el examen tomaba el tick del símbolo vivo que
+    /// ocupa su slot (`tick_size_de(i)` lee `universe[i]`): con BTCUSDT
+    /// (tick 0,1) en el slot, una serie de 100 USD tenía un piso de 10 pb en
+    /// el ATR.
+    #[inline]
+    pub fn tick_del_examen(&self) -> f64 {
+        if self.tick_pct.is_finite() && self.tick_pct > 0.0 {
+            self.tick_pct * WF_SYNTH_PRICE_BASE
+        } else {
+            WF_SYNTH_TICK
+        }
+    }
+
     #[inline]
     pub fn half_spread(&self, exam_tick_pct: f64) -> f64 {
         let grid = if self.tick_pct > 0.0 { self.tick_pct } else { exam_tick_pct };
@@ -435,7 +456,7 @@ fn wf_real_coin_ids(n: usize) -> Vec<usize> {
             let spec = quantum_arena::symbol_registry::SymbolSpec {
                 symbol: sym.clone(),
                 step_size: 0.001,
-                tick_size: 0.01,
+                tick_size: WF_SYNTH_TICK,
                 min_qty: 0.001,
                 min_notional: 5.0,
                 max_leverage: 50,
@@ -468,6 +489,63 @@ struct WfReplayState {
     ruina: bool,
 }
 
+impl WfReplayState {
+    fn new(capital: f64) -> Self {
+        Self {
+            ts: 60_000,
+            vetoes: 0,
+            avg_win: 0.0,
+            avg_loss: 0.0,
+            peak: capital,
+            max_dd: 0.0,
+            net_returns: Vec::new(),
+            pos_open_flags: [false; quantum_arena::state::MAX_COINS],
+            ruina: false,
+        }
+    }
+}
+
+/// Núcleo y arena del examen, con el genoma del candidato aplicado.
+///
+/// CL-88 (atr-2): los slots del examen son los del universo vivo, pero su
+/// instrumento es el del examen. Cada moneda fija el tick del examen como
+/// piso de resolución del ATR (`fijar_tick_propio`).
+fn nucleo_del_examen(
+    candidate: &SuperGenotype,
+    initial_capital: f64,
+    market: &WfMarketEnv,
+    coin_ids: &[usize],
+) -> (Arc<GlobalArena>, GodEngineCore) {
+    let arena = Arc::new(GlobalArena::new(initial_capital));
+    candidate.apply_to_arena(&arena);
+    let mut core = GodEngineCore::new(arena.clone());
+    let tick = market.tick_del_examen();
+    for &c in coin_ids {
+        core.fijar_tick_propio(c.min(quantum_arena::state::MAX_COINS - 1), tick);
+    }
+    (arena, core)
+}
+
+/// CL-88 (atr-2): ATR relativo de la primera moneda del examen tras
+/// reproducir `serie` entera sin puntuar, con el genoma por defecto. Sólo lo
+/// usa la prueba `cf4_tick_del_examen`, que fija el universo vivo en su
+/// propio proceso.
+#[doc(hidden)]
+pub fn atr_pct_del_examen(serie: &[f64], market: &WfMarketEnv) -> f64 {
+    let coin_ids = wf_real_coin_ids(1);
+    let coin_id = coin_ids[0].min(quantum_arena::state::MAX_COINS - 1);
+    let (arena, mut core) =
+        nucleo_del_examen(&SuperGenotype::default(), WF_INITIAL_CAPITAL, market, &coin_ids);
+    let mut envelope = RiskEnvelope::new();
+    let mut st = WfReplayState::new(WF_INITIAL_CAPITAL);
+    let mut precio = WF_SYNTH_PRICE_BASE;
+    wf_replay_segment(
+        &mut core, &arena, &mut envelope, &mut st, &mut precio, coin_id,
+        serie, 0, serie.len(), market, WF_INITIAL_CAPITAL, false,
+    );
+    core.feature_engines[coin_id].get_atr_pct()
+}
+
 /// Reproduce el tramo `[from, to)` de una serie contra el MOTOR REAL.
 ///
 /// `puntua` separa las dos pasadas del walk-forward (D-743): en la de
@@ -491,9 +569,8 @@ fn wf_replay_segment(
 ) {
     // Rejilla de precios del instrumento del examen — sólo se usa como piso
     // del spread cuando el universo vivo aún no ha publicado la suya.
-    let tick_size = quantum_arena::symbol_registry::try_spec(coin_id)
-        .map(|s| s.tick_size)
-        .unwrap_or(0.0);
+    // CL-88 (atr-2): es la del examen, no la del símbolo vivo del slot.
+    let tick_size = market.tick_del_examen();
     let to = to.min(rets.len());
     for ri in from..to {
         let r = rets[ri];
@@ -650,21 +727,9 @@ fn wf_evaluate_real(
     }
     let coin_ids = wf_real_coin_ids(ranked_series.len());
 
-    let arena = Arc::new(GlobalArena::new(initial_capital));
-    candidate.apply_to_arena(&arena);
-    let mut core = GodEngineCore::new(arena.clone());
+    let (arena, mut core) = nucleo_del_examen(candidate, initial_capital, market, &coin_ids);
     let mut envelope = RiskEnvelope::new();
-    let mut st = WfReplayState {
-        ts: 60_000,
-        vetoes: 0,
-        avg_win: 0.0,
-        avg_loss: 0.0,
-        peak: initial_capital,
-        max_dd: 0.0,
-        net_returns: Vec::new(),
-        pos_open_flags: [false; quantum_arena::state::MAX_COINS],
-        ruina: false,
-    };
+    let mut st = WfReplayState::new(initial_capital);
     let mut prices = vec![WF_SYNTH_PRICE_BASE; ranked_series.len()];
 
     // ── PASADA 1 — ENTRENAMIENTO (no puntúa) ─────────────────────────────
