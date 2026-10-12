@@ -3164,9 +3164,14 @@ impl ExecutionProvider for OrderExecutor {
             );
             // D-02 — RETRY CON REGENERACIÓN COMPLETA (5º informe): el retry
             // anterior reenviaba el MISMO buffer firmado — timestamp vencido
-            // (-1021) o coid duplicado (-4116) garantizados. Ahora: nuevo
-            // timestamp NTP, nuevo clientOrderId (sufijo _R), nueva firma
-            // HMAC. Mismo patrón que el flatten retry (línea ~519).
+            // (-1021). Ahora: nuevo timestamp NTP y nueva firma HMAC.
+            //
+            // LG-6 (Línea G, G040): el reintento conserva el MISMO clientAlgoId.
+            // Un error AMBIGUOUS (timeout de red) no prueba que la pierna no
+            // exista: con un id nuevo (_SLR/_TPR) el reintento podía dejar dos
+            // SL o dos TP de cantidad completa. Con el mismo id, si la primera
+            // llegó al exchange el reintento devuelve «id duplicado» (-4116) y
+            // eso CONFIRMA la pierna (`pierna_ya_existe`).
             let ts_retry = self.get_synced_timestamp();
             let retry_secret = self.api_secret.load();
 
@@ -3187,7 +3192,7 @@ impl ExecutionProvider for OrderExecutor {
                 rb.push_str("&triggerPrice=");
                 rb.push_f64(final_sl);
                 rb.push_str("&clientAlgoId=");
-                rb.push_str(&format!("{}_SLR", base_client_id));
+                rb.push_str(&format!("{}_SL", base_client_id));
                 rb.push_str("&timestamp=");
                 rb.push_u64(ts_retry);
                 let mut rsb = [0u8; 64];
@@ -3195,9 +3200,14 @@ impl ExecutionProvider for OrderExecutor {
                 rb.push_str("&signature=");
                 rb.push_str(unsafe { std::str::from_utf8_unchecked(&rsb) });
                 sl_res = self.client.execute_order_payload(rb.as_str()).await;
+                if let Err(e) = &sl_res {
+                    if pierna_ya_existe(e) {
+                        sl_res = Ok(crate::client::BinanceRateLimits::default());
+                    }
+                }
                 if let Ok(limits) = &sl_res {
                     self.update_limits(limits);
-                    confirmed_sl_id = Some(format!("{}_SLR", base_client_id));
+                    confirmed_sl_id = Some(format!("{}_SL", base_client_id));
                 }
             }
             if tp_down {
@@ -3217,7 +3227,7 @@ impl ExecutionProvider for OrderExecutor {
                 rb.push_str("&triggerPrice=");
                 rb.push_f64(final_tp);
                 rb.push_str("&clientAlgoId=");
-                rb.push_str(&format!("{}_TPR", base_client_id));
+                rb.push_str(&format!("{}_TP", base_client_id));
                 rb.push_str("&timestamp=");
                 rb.push_u64(ts_retry);
                 let mut rsb = [0u8; 64];
@@ -3225,9 +3235,14 @@ impl ExecutionProvider for OrderExecutor {
                 rb.push_str("&signature=");
                 rb.push_str(unsafe { std::str::from_utf8_unchecked(&rsb) });
                 tp_res = self.client.execute_order_payload(rb.as_str()).await;
+                if let Err(e) = &tp_res {
+                    if pierna_ya_existe(e) {
+                        tp_res = Ok(crate::client::BinanceRateLimits::default());
+                    }
+                }
                 if let Ok(limits) = &tp_res {
                     self.update_limits(limits);
-                    confirmed_tp_id = Some(format!("{}_TPR", base_client_id));
+                    confirmed_tp_id = Some(format!("{}_TP", base_client_id));
                 }
             }
         }
@@ -3244,19 +3259,26 @@ impl ExecutionProvider for OrderExecutor {
             ));
         }
         if sl_res.is_err() || tp_res.is_err() {
-            // D-416: Cancelar el client_order_id exacto que fue confirmado en Binance (sea _SL, _SLR, _TP o _TPR)
+            // D-416: Cancelar el client_order_id exacto que fue confirmado en Binance.
+            // LG-6 (G040): un fallo de cancelación ya no se informa como
+            // cancelado: queda en `pendientes` y marca la protección como sucia
+            // para que el vigilante la audite enseguida.
             let mut cancelled_ids = Vec::new();
-            if sl_res.is_ok() {
-                if let Some(ref sl_id) = confirmed_sl_id {
-                    let _ = self.cancel_algo_order(symbol, sl_id).await;
-                    cancelled_ids.push(sl_id.clone());
+            let mut pendientes = Vec::new();
+            let confirmadas = [
+                (sl_res.is_ok(), confirmed_sl_id.as_ref()),
+                (tp_res.is_ok(), confirmed_tp_id.as_ref()),
+            ];
+            for (ok, id) in confirmadas {
+                if let (true, Some(id)) = (ok, id) {
+                    match self.cancel_algo_order(symbol, id).await {
+                        Ok(()) => cancelled_ids.push(id.clone()),
+                        Err(e) => pendientes.push(format!("{id}: {e}")),
+                    }
                 }
             }
-            if tp_res.is_ok() {
-                if let Some(ref tp_id) = confirmed_tp_id {
-                    let _ = self.cancel_algo_order(symbol, tp_id).await;
-                    cancelled_ids.push(tp_id.clone());
-                }
+            if !pendientes.is_empty() {
+                quantum_arena::protection_health::mark_dirty();
             }
             let failed_e = if sl_res.is_err() {
                 sl_res.as_ref().err().cloned().unwrap_or_default()
@@ -3264,9 +3286,10 @@ impl ExecutionProvider for OrderExecutor {
                 tp_res.as_ref().err().cloned().unwrap_or_default()
             };
             return Err(format!(
-                "OCO PARCIAL: pierna fallida tras retry ({}); pierna(s) confirmada(s) [{}] cancelada(s). Posición SIN protección — aplanar o alertar.",
+                "OCO PARCIAL: pierna fallida tras retry ({}); pierna(s) confirmada(s) [{}] cancelada(s); cancelaciones pendientes [{}]. Posición SIN protección — aplanar o alertar.",
                 failed_e,
-                cancelled_ids.join(", ")
+                cancelled_ids.join(", "),
+                pendientes.join(" | ")
             ));
         }
         Ok(())
@@ -3668,6 +3691,27 @@ impl ExecutionProvider for OrderExecutor {
     }
 }
 
+/// LG-6 (Línea G, G040) — ¿EL ERROR DEL REINTENTO PRUEBA QUE LA PIERNA EXISTE?
+///
+/// El reintento de una pierna OCO reenvía el MISMO `clientAlgoId`. Si el
+/// primer envío llegó al exchange (aunque la respuesta se perdiera), el
+/// exchange rechaza el duplicado con -4116 («ClientOrderId is duplicated»):
+/// eso confirma la pierna. Cualquier otro error, incluido un AMBIGUOUS, no la
+/// confirma.
+#[inline]
+fn pierna_ya_existe(err: &str) -> bool {
+    let codigo = crate::order_types::error_codes::DUPLICATED_ORDER;
+    let compacto = format!("\"code\":{codigo}");
+    let espaciado = format!("\"code\": {codigo}");
+    let rechazo = format!("code={codigo}");
+    let termina_codigo = |marca: &str| {
+        err.match_indices(marca).any(|(i, _)| {
+            !err[i + marca.len()..].starts_with(|c: char| c.is_ascii_digit())
+        })
+    };
+    termina_codigo(&compacto) || termina_codigo(&espaciado) || termina_codigo(&rechazo)
+}
+
 /// LG-3 (Línea G) — USO DE RATE-LIMIT VIGENTE.
 ///
 /// Las cabeceras `X-MBX-USED-WEIGHT-1M` y `X-MBX-ORDER-COUNT-10S/1M` miden el
@@ -3721,6 +3765,41 @@ fn merge_income_page(
         }
     }
     added
+}
+
+#[cfg(test)]
+mod tests_lg6 {
+    use super::*;
+
+    #[test]
+    fn lg6_el_duplicado_confirma_la_pierna_y_lo_ambiguo_no() {
+        assert!(pierna_ya_existe(r#"Binance API Error: {"code":-4116,"msg":"ClientOrderId is duplicated."}"#));
+        assert!(pierna_ya_existe(r#"Binance API Error: {"code": -4116, "msg": "x"}"#));
+        assert!(pierna_ya_existe("REJECTED code=-4116 msg=Duplicate client order id"));
+        assert!(!pierna_ya_existe("AMBIGUOUS: Network Error: operation timed out"));
+        assert!(!pierna_ya_existe(r#"Binance API Error: {"code":-2021,"msg":"Order would immediately trigger."}"#));
+        assert!(!pierna_ya_existe(r#"Binance API Error: {"code":-41160,"msg":"otro código"}"#));
+    }
+
+    /// El reintento de una pierna OCO conserva el clientAlgoId (no crea
+    /// variantes _SLR/_TPR que dupliquen piernas) y la reversión parcial no
+    /// descarta el resultado de la cancelación.
+    #[test]
+    fn lg6_el_reintento_oco_no_crea_ids_nuevos_ni_se_traga_cancelaciones() {
+        let src = include_str!("executor.rs");
+        let inicio = src
+            .find("is_long_close: bool, // true if closing a long (Side = SELL)")
+            .expect("execute_oco_order de la implementación");
+        let cuerpo = &src[inicio..];
+        let fin = cuerpo.find("/// Cancela una orden activa usando el client_order_id").expect("fin");
+        let cuerpo = &cuerpo[..fin];
+        let slr = ["{}_", "SLR"].concat();
+        let tpr = ["{}_", "TPR"].concat();
+        let descarte = ["let _ = self.", "cancel_algo_order("].concat();
+        assert!(!cuerpo.contains(&slr), "el reintento no debe usar un id _SLR nuevo");
+        assert!(!cuerpo.contains(&tpr), "el reintento no debe usar un id _TPR nuevo");
+        assert!(!cuerpo.contains(&descarte), "la reversión parcial no debe descartar el resultado");
+    }
 }
 
 #[cfg(test)]
