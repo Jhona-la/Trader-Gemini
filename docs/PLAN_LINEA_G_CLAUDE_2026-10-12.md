@@ -507,3 +507,74 @@ el código, y cita como vigente la huella del T-2 `998a7de2…` cuando la sonda
   Los tres requisitos para medirla, por orden: un examen del demonio que juzgue
   bien (C-F7), un replay canónico multiactivo (Sol) y un criterio de evidencia
   por R neta frente a p* (LG-9 / CL-107).
+
+## 13. Ola 5 (2026-10-12, base `59baf0c2`): genes muertos y revisión previa al merge de la Línea C
+
+### 13.1 LG-21 — censo de los 144 genes
+
+Censo estático ([`genes_censo.tsv`](audit/linea_g/genes_censo.tsv)): para cada
+gen, quién lo lee fuera de su ciclo de vida (to/from_vector, default, random,
+mutate, bounds, apply/current_from_arena), y si es sensible en el T-1.
+
+| Estado | Dimensiones |
+|---|---|
+| Vivas (incluidas las 4 de las curvas TP/SL) | 95 |
+| Sin lector, congeladas por **LG-21** | 35 |
+| Sin lector, congeladas por LG-18 | 9 |
+| Congelada por G0-4 (`capital_split_scalp`) | 1 |
+| Vistas re-derivadas de las curvas (X-005) | 4 |
+
+Los 35 de LG-21: los 5 pesos y los 2 recortes del PPO, los 7 de cooldown y
+confianza macro, los 2 de parada dura, los 2 de arranque de Kelly, sinergia
+(2), spot (2), recortes del ML (2), operadores tensoriales (2), fraccional (2),
+régimen (2), BFT, memoria temporal, OBI de respaldo, velocidad VECM y la
+normalización de volumen de Hawkes. Ninguno sensible en el T-1. Seguían
+mutando, así que genomas que sólo diferían en ellos se juzgaban y promovían
+como candidatos nuevos sin cambio de conducta. **Congelar no retira**: el
+vector sigue teniendo 144, y conectar o retirar cada uno es decisión de su
+dueño tras GENOME-GATE (C-F7 de la Línea C). La prueba D-650 de simetría del
+hot-swap los fija ahora dentro de sus cotas (verificado por mutación).
+
+### 13.2 Revisión previa al merge de la tanda de la Línea C (CL-101…CL-108)
+
+Tres lentes y un verificador por lente sobre `origin/main..claude/tanda-cf4`
+(51 archivos leídos), antes de que la Línea C fusione. Tabla:
+[`ola5_tanda_cf4.tsv`](audit/linea_g/ola5_tanda_cf4.tsv). **26 hallazgos: 4
+MED, 21 LOW, 1 refutado** (el freno de la estrategia es absorbente por decisión
+del dueño, ADR-0017).
+
+- **T1-02** (MED, CL-106): el umbral del freno duro es `K·r` con `r` = riesgo
+  al stop sobre el capital ACTUAL, pero la caída se mide desde el PICO. Con
+  nocional fijo (la orden mínima, el régimen de 13 USD) el umbral se aleja al
+  caer: con stop 1 % dispara tras ≈49,5 stops en vez de 40, y con stop 2 % el
+  umbral fino no se alcanza nunca y rige d* = 63,2 %. Arreglo propuesto: medir
+  la caída en stops con el riesgo en USD (pico − capital)/s̄ ≥ K.
+- **T2-1** (MED, CL-108): un archivo de estado corrupto, truncado o de otra
+  versión se trata como ausente: el host arranca en cero sin decirlo, con el
+  freno de la estrategia suelto.
+- **T2-2** (MED): se restaura sólo parte de lo que aprende cada cierre (el
+  sesgo epigenético y el estimador de Cramér-Lundberg no vuelven).
+- **T2-3** (MED): el PnL realizado de sesiones anteriores entra en un
+  acumulador que se lee como PnL de la sesión; la deriva contra el control del
+  bosque sombra sale falsa.
+- Entre los LOW, **T1-01**: la escala del proceso e sale de la geometría media
+  (EWMA) y no de la de la posición que cierra; con órdenes de RR distinto
+  conviviendo, el recorte a −1 de las ganancias grandes rompe la
+  supermartingala bajo H0. **T1-08**: el Monte Carlo del cuantil del freno duro
+  (4·10⁶ sorteos) corre con un mutex global en el camino de cada intención
+  nueva. **T3-03**: el ADR-0009 renovado dice lo contrario de lo que hace el
+  código con los pares de SHIB.
+
+### 13.3 Lo que no se hizo
+
+Las pruebas OPEN del examen del demonio (D2-01, D2-02) no caben sin tocar
+`online_daemon.rs` (las funciones del examen son privadas). Los escenarios con
+números están en la tabla de la ola 4; la decisión de C-F7 sigue con la Línea
+C.
+
+### 13.4 Línea H
+
+Una tercera sesión Claude abrió la Línea H (`docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md`)
+con lo que §12.5 dejó escrito: un T-3 con una escalera de fixtures de ventaja
+CONOCIDA, para medir si la cadena compone o mata una ventaja real y qué puerta
+la mata. Es el instrumento que faltaba para hablar de la meta con evidencia.

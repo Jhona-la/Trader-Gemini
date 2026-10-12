@@ -1,5 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Claude (Línea G, LG-n): ola 5 — 35 genes muertos más congelados (LG-21) y revisión previa al merge de CL-101…108
+
+- **LG-21** (genoma): censo estático de los 144 genes
+  (`docs/audit/linea_g/genes_censo.tsv`): 95 vivas, 45 congeladas (35 LG-21,
+  9 LG-18, 1 G0-4) y 4 vistas. Los 35 nuevos no tienen lector (ni otro archivo,
+  ni otro método de `genome.rs`, ni el registro); ninguno sensible en el T-1.
+  Congelar no retira: el vector sigue en 144. D-650 ampliada (por mutación).
+- **Revisión previa al merge** de la tanda de la Línea C (CL-101…108,
+  `docs/audit/linea_g/ola5_tanda_cf4.tsv`): 26 hallazgos (4 MED). T1-02: el
+  freno duro compara una caída desde el pico con un riesgo sobre el capital
+  actual (con stop 2 % nunca dispara antes de d*). T2-1: estado corrupto =
+  arranque en cero silencioso. T2-2: restauración parcial. T2-3: PnL de
+  sesiones anteriores tomado como de esta.
+- **Lección**: congelar genes debilita las pruebas que usaban la mutación para
+  distinguir genes (D-650); al congelar, fijar a mano los congelados en esas
+  pruebas y verificar por mutación.
+- **Línea H** abierta por otra sesión: T-3 con ventaja conocida.
+
 ## 2026-10-12 — Claude (Línea G, LG-n): ola 4 — revisión desde la base de lo que cambiaron las otras líneas (25 hallazgos) y LG-20
 
 - **Revisión** de los 22 commits ajenos desde `86218456` (CL-87…CL-98b,
