@@ -1861,13 +1861,14 @@ impl SuperGenotype {
             regime_atr_multiplier: mutate_val(self.regime_atr_multiplier, 0.5, 5.0),
             scalp_trail_act_atr: mutate_val(self.scalp_trail_act_atr, 0.001, 20.0),
             scalp_trail_step_atr: mutate_val(self.scalp_trail_step_atr, 0.001, 20.0),
-            scalp_trail_max_atr: mutate_val(self.scalp_trail_max_atr, 0.001, 20.0),
-            scalp_trail_min_pnl: mutate_val(self.scalp_trail_min_pnl, 0.001, 20.0),
+            // LG-18: genes sin lector (R7-R1-2, inertes en el T-1): congelados.
+            scalp_trail_max_atr: self.scalp_trail_max_atr,
+            scalp_trail_min_pnl: self.scalp_trail_min_pnl, // LG-18
             scalp_trail_atr_mult_base: mutate_val(self.scalp_trail_atr_mult_base, 0.001, 20.0),
             swing_trail_act_atr: mutate_val(self.swing_trail_act_atr, 0.001, 20.0),
             swing_trail_step_atr: mutate_val(self.swing_trail_step_atr, 0.001, 20.0),
-            swing_trail_max_atr: mutate_val(self.swing_trail_max_atr, 0.001, 20.0),
-            swing_trail_min_pnl: mutate_val(self.swing_trail_min_pnl, 0.001, 20.0),
+            swing_trail_max_atr: self.swing_trail_max_atr, // LG-18
+            swing_trail_min_pnl: self.swing_trail_min_pnl, // LG-18
             swing_trail_atr_mult_base: mutate_val(self.swing_trail_atr_mult_base, 0.001, 20.0),
             zombie_timeout_ms: mutate_val(self.zombie_timeout_ms, 14_400_000.0, 28_800_000.0),
             hurst_trend_threshold: mutate_val(self.hurst_trend_threshold, 0.4, 0.8),
@@ -1878,7 +1879,7 @@ impl SuperGenotype {
             ema_fast_period: mutate_val(self.ema_fast_period, 5.0, 30.0),
             ema_slow_period: mutate_val(self.ema_slow_period, 15.0, 60.0),
             hurst_scalp_threshold: mutate_val(self.hurst_scalp_threshold, 0.30, 0.50),
-            hurst_swing_threshold: mutate_val(self.hurst_swing_threshold, 0.50, 0.70),
+            hurst_swing_threshold: self.hurst_swing_threshold, // LG-18
             synergy_exposure_boost: mutate_val(self.synergy_exposure_boost, 1.0, 3.0),
             synergy_leverage_boost: mutate_val(self.synergy_leverage_boost, 1.0, 2.0),
             max_fee_pct: mutate_val(self.max_fee_pct, 0.005, 0.05),
@@ -1967,9 +1968,10 @@ impl SuperGenotype {
             lev_matrix_vol_clamp_min: mutate_val(self.lev_matrix_vol_clamp_min, 0.1, 0.8),
             lev_matrix_growth_scalar: mutate_val(self.lev_matrix_growth_scalar, 0.1, 1.0),
             lev_matrix_log_cap_divisor: mutate_val(self.lev_matrix_log_cap_divisor, 3.0, 10.0),
-            scalp_accel_min_samples: mutate_val(self.scalp_accel_min_samples, 10.0, 50.0),
-            executor_max_orders_10s: mutate_val(self.executor_max_orders_10s, 100.0, 500.0),
-            executor_max_weight_1m: mutate_val(self.executor_max_weight_1m, 1000.0, 5000.0),
+            scalp_accel_min_samples: self.scalp_accel_min_samples, // LG-18
+            // LG-18: desde LG-12 los límites de peticiones son los del exchange.
+            executor_max_orders_10s: self.executor_max_orders_10s,
+            executor_max_weight_1m: self.executor_max_weight_1m, // LG-18
             iceberg_volume_threshold: mutate_val(
                 self.iceberg_volume_threshold,
                 10_000.0,
@@ -1977,7 +1979,7 @@ impl SuperGenotype {
             ),
             iceberg_slice_count: mutate_val(self.iceberg_slice_count, 2.0, 10.0),
             swing_obi_threshold: mutate_val(self.swing_obi_threshold, 0.05, 1.0),
-            swing_accel_min_samples: mutate_val(self.swing_accel_min_samples, 10.0, 50.0),
+            swing_accel_min_samples: self.swing_accel_min_samples, // LG-18
             temporal_scale: mutate_val(self.temporal_scale, 0.05, 0.95),
         };
 
@@ -3553,5 +3555,42 @@ mod tests {
         assert!(m.sl_horizon_curve.eval(crate::temporal_spectrum::TAU_ANCHOR_FAST_MS) >= g.sl_horizon_curve.eval(crate::temporal_spectrum::TAU_ANCHOR_FAST_MS) - 1e-12);
         // Y las vistas re-derivadas cuadran con la curva resultante.
         assert!((m.scalp_tp_base - m.tp_horizon_curve.eval(crate::temporal_spectrum::TAU_ANCHOR_FAST_MS)).abs() < 1e-12);
+    }
+}
+
+#[cfg(test)]
+mod tests_lg18 {
+    use super::*;
+
+    /// LG-18: los genes que ya no tienen lector no mutan. Una dimensión sin
+    /// efecto sólo añade ensayos al recuento de selección (DSR) y deriva sin
+    /// presión; el precedente es G0-4 (`capital_split_scalp`).
+    #[test]
+    fn lg18_los_genes_sin_lector_no_mutan() {
+        let base = SuperGenotype::default();
+        let congelados = |g: &SuperGenotype| {
+            [
+                g.scalp_trail_max_atr,
+                g.swing_trail_max_atr,
+                g.scalp_trail_min_pnl,
+                g.swing_trail_min_pnl,
+                g.hurst_swing_threshold,
+                g.scalp_accel_min_samples,
+                g.swing_accel_min_samples,
+                g.executor_max_orders_10s,
+                g.executor_max_weight_1m,
+            ]
+        };
+        let antes = congelados(&base);
+        let mut algun_vivo_muta = false;
+        for semilla in 0..64u64 {
+            let m = base.mutate_cmaes_seeded(1.0, semilla);
+            let despues = congelados(&m);
+            for (i, (a, d)) in antes.iter().zip(despues.iter()).enumerate() {
+                assert_eq!(a.to_bits(), d.to_bits(), "gen congelado #{i} mutó (semilla {semilla})");
+            }
+            algun_vivo_muta |= m.global_leverage.to_bits() != base.global_leverage.to_bits();
+        }
+        assert!(algun_vivo_muta, "control: los genes vivos sí mutan");
     }
 }

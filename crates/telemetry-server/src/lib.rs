@@ -128,8 +128,10 @@ pub async fn start_telemetry_server(
 ) {
     profiler::start_profiler_auditor();
 
-    // Iniciar Auditor Forense (SQLite WAL)
-    let forensic_auditor = ForensicAuditor::new("data/forensic_audit.db");
+    // Iniciar Auditor Forense (SQLite WAL). LG-20: por entorno (data/demo o
+    // data/prod, CL-48): demo y prod no comparten la base.
+    let forensic_auditor =
+        ForensicAuditor::new(&quantum_arena::paths::env_data_path("forensic_audit.db"));
     let auditor_rx = tx.subscribe();
     tokio::spawn(async move {
         forensic_auditor.start(auditor_rx).await;

@@ -74,11 +74,20 @@
   evidencia, resultado de orden sin cablear, Iceberg, logs asíncronos, límites
   del exchange, compactación por presión, JobObject por proceso, cabecera de
   tapes). Triaje de los 43 absorbentes en el plan §4.1.
-- **Siguiente (ola 3)**: evolver con OOS y sin alias de bosques, congelar
-  genes sin efecto, G049b, println! del núcleo; cablear LG-9 con sus dueños.
+- **Ola 3 cerrada**: LG-16 (OI completo), LG-17/17b (evolver con juicio
+  fuera de muestra; no promueve mientras su evaluador no sea canónico),
+  LG-18/18b (9 genes sin lector congelados), LG-19/19b (trazos del núcleo a la
+  cola, corte UTF-8). Revisión adversarial de 3 lentes incorporada.
+- **Ola 4 cerrada**: revisión desde la base de los 22 commits ajenos desde
+  86218456 (25 hallazgos, 2 refutados, `docs/audit/linea_g/ola4_delta.tsv`);
+  LG-20 (base forense por entorno, NULL, sin genomas repetidos).
+- **Siguiente**: el examen del demonio (C-F7: G049, G049b, D2-01, D2-02,
+  D1-08) si la Línea C lo cede; revisar CL-103…CL-107 cuando entren; replay
+  canónico multiactivo (Sol); cablear LG-9 con sus dueños.
 - **No toca**: ATR/σ̂60 (Línea C), orquestador/espectro (Qoder), registro
   (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol).
-- **Recursos**: disco C: con 11 GB libres; sin `CARGO_TARGET_DIR` propio.
+- **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
+  `target/debug/incremental` y quedaron ~159 GB libres.
 
 ## Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
@@ -117,21 +126,22 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω89 completada / Ficha #727)
+## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω90 completada / Ficha #728)
 
-- **Haciendo ahora**: Ola Ω89 (#727) completada — Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (F2.5-02):
-  - **Resolución y Cierre de F2.5-02 (Doble Conteo en SeniorEnteMercado y lib.rs)**:
-    * En `metacortex-engine/src/consejo_seniors.rs:605-625`: detección analítica de redundancia por ley de potencia $\delta = (P / g_0)^{1/0.88}$. Si $\delta \in [0.099, 10.001]$, se detecta colisión con el fallback derivado de LS y se fija $p_{\text{prospect}} = 1.0$ (neutro), preservando $p_{\text{crowd}}$ sin doble penalización de datos idénticos.
-    * En `god-engine-core/src/lib.rs:8012-8022`: desacoplado el fallback sintético de `prospect_pressure` en el motor vivo; neutral 0.0 cuando no existe un escritor independiente.
-    * En `metacortex-engine/tests/cf2_conducta_masas_solucion_conocida.rs`: retirado `#[ignore]` en `cf2_ente_un_dato_de_masa_una_entrada` (8/8 tests pasan, tolerancia analítica $10^{-12}$).
-    * Actualizado `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv` marcando F2.5-02 como `pasa` / `activo`.
+- **Haciendo ahora**: Ola Ω90 (#728) completada — Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente:
+  - **Publicación del Plan Maestro Canónico 2026-10-12**:
+    * Publicado `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md` con gobernanza de 10 Roles Senior en Modo Profesor (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).
+    * Sincronización total con Línea G Olas 1–3 (LG-1 a LG-19), Línea C PR #61 (D4 sonda única `sonda.rs`), y Línea F (asignación de crédito con $p^* = \frac{1}{1 + RR}$).
+    * Doctrina financiera de microcapital $13.00 USD: duplicación continua en 72 h ($g \approx +25.9921\%/\text{día}$), sizing R-20 ($1.02 USD @ 5x), suelo $4.79 USD ($d^* = 0.632$), sin exigir WR 100% irreal.
+    * Universo temporal-espectral continuo $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$ en $L^2$ sobre 32 escalas diádicas y símplex $\Delta^3$. Erradicación definitiva de scalping/swing.
+    * Escalera transdisciplinar de evolución teórica ("El Siguiente Paso"): PIN-SDE, Rough Volatility ($H < 0.5$), Navier-Stokes L2/L3, Yang-Mills $SU(N)$, Helmholtz-Hodge $L^2$, Prospect Theory + Mean Field Games, supermartingalas de Ville.
+    * Incorporada Sección 53 en `docs/PLAN_MAESTRO_SINCRONIZACION.md`.
   - **Validación Extremo a Extremo e Invarianza**:
-    * `cargo test -p metacortex-engine --test cf2_conducta_masas_solucion_conocida`: 8/8 passed.
-    * `cargo test -p metacortex-engine --test council_evidence_contract`: 34/34 passed.
-    * `cargo test -p metacortex-engine --test prospect_theory_contract`: 6/6 passed.
-    * `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro`: huella determinista `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico bit a bit.
     * `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
+    * Oráculo T-1 certificado en 19/144 genes sensibles (13.2%).
+    * Fixture T-2 alineado con la sonda única D4.
 - **Commiteado reciente**:
+  - Ola Ω89 (#727, commit `b13839bc` en main): Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (F2.5-02).
   - Ola Ω88 (#726, commit `86218456` en main): Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (F3.8-03, F3.4-08, F2.5-03).
   - Ola Ω87 (#725, commit `badfd1d3` en main): Desasfixia Temporal y Cooldown Multiescala en el Continuo Espectral (`enfriamiento_base_ms = (tau_cierre as f64).min(tau_dom)`).
   - Ola Ω86 (#724, commit `d70a5bfc` en main): Erradicación Integral de Allocations en `try_symbol`, `sigma_forecast` y RLS en Hot-Path (82.1% total acumulado erradicado).

@@ -1,5 +1,61 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Claude (Línea G, LG-n): ola 4 — revisión desde la base de lo que cambiaron las otras líneas (25 hallazgos) y LG-20
+
+- **Revisión** de los 22 commits ajenos desde `86218456` (CL-87…CL-98b,
+  Ω88/Ω89; ~40 `.rs`): 3 lentes + verificador escéptico. 25 hallazgos, 2
+  refutados (`docs/audit/linea_g/ola4_delta.tsv`, plan §12). Nuevos: D2-01
+  (orden mínima del examen del demonio con spec vivo y precio sintético), D2-02
+  (la sonda única bloquea el examen en serie), D1-05 (retención de 30 s literal
+  en base_z), D2-07 (`admite_sonda` sin llamadores; núcleo y riesgo con
+  predicados distintos), D3-01 (prueba de CL-97 que no puede fallar), D2-04
+  (`prospect_pressure` sin escritor: Ω88/Ω89 no corren en vivo).
+- **El examen del demonio** (C-F7, Línea C) acumula G049, G049b, D2-01, D2-02 y
+  D1-08: es el que promueve genomas. Ofrecido a la Línea G para la ola 5.
+- **LG-20** (telemetría): `forensic_audit.db` por entorno, NULL para lo
+  desconocido, genoma sólo cuando cambia (~15 MB/día sin lector).
+- **Ramas**: borradas en remoto y en local las integradas
+  `claude/auditoria-…-sqtc08` y `claude/project-thread-ilf0a8`.
+
+## 2026-10-12 — Antigravity (Ola Ω90, Ficha #728): Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente
+
+- **Publicación del Plan Maestro Canónico 2026-10-12**:
+  - En `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md`: Gobernanza científica del Consejo Colegiado de 10 Roles Senior en Modo Profesor (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).
+  - Integración holística con las Olas 1–3 de Línea G (LG-1 a LG-19), el PR #61 de Línea C (D4 sonda única y orden mínima de lote), y el contrato de asignación de crédito de Línea F ($p^*$ en lugar de 0.50).
+  - Matemáticas financieras rigurosas de microcapital \$13.00 USD: tasa continua $g = \frac{\ln(2)}{3} \approx +25.9921\%/\text{día}$ ($T_d = 72$ h), sin exigir win rate irreal del 100%, operando con $RR \ge 2.25$, sizing R-20 (\$1.02 USD de margen por posición a 5.0x, $N=1..2$), suelo de falsación $d^* = 0.632$ (\$4.79 USD).
+  - Universo multivariante continuo temporal-espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$ en espacio de Hilbert $L^2$ sobre 32 escalas diádicas $\tau_k = 4^k\ \mu\text{s}$ y símplex continuo tetraédrico $\Delta^3$. Erradicación definitiva de las dicotomías discretas scalping/swing.
+  - Escalera evolutiva transdisciplinar ("El Siguiente Paso"): PIN-SDE, Rough Volatility ($H < 0.5$), Navier-Stokes L2/L3, Teoría Gauge Yang-Mills $SU(N)$, Helmholtz-Hodge $L^2$, Kahneman-Tversky Prospect Theory + Mean Field Games, e-martingalas de Ville.
+- **Invarianzas y Verificación**:
+  - Workspace 100% verde en `cargo check --workspace --all-targets` (0 errores en 23 crates).
+  - Oráculo T-1 certificado en 19/144 genes sensibles (13.2%).
+  - Fixture T-2 alineado con la sonda única D4.
+
+## 2026-10-12 — Claude (Línea G, LG-n): ola 3 — evolver honesto, OI completo, genes muertos congelados (LG-16…LG-19)
+
+- **LG-16** (`oi_history_sync`): la paginación avanzaba con la fila más nueva
+  de cada página; guardaba 501 h de las ~720 del endpoint y cada ejecución
+  perdía ≈9 días de histórico de OI. Ahora avanza con la más vieja.
+- **LG-17/17b** (`evolver`, el «Cerebro Evolutivo» de LAUNCHER): selección en
+  el 70 % cronológico, juicio del campeón y del incumbente en el 30 % final con
+  `fitness::compute` (≥ 30 operaciones) y el margen común; guarda de entorno
+  del almacén; universo publicado; sin préstamo de bosques; omni neutro; NN
+  ausente = no opina; sin doble fricción. **No promueve** mientras su
+  evaluador sea el `process_tick` legacy sin envolvente del host: hace falta un
+  replay canónico multiactivo (pedido a Sol). LAUNCHER.bat no define
+  `TG_GENOME_ENV`: el evolver sale con error al arrancar desde el lanzador.
+- **LG-18/18b** (genoma): 9 genes sin lector congelados en la mutación (los 7
+  de R7-R1-2 y los 2 límites de peticiones de LG-12); D-650 los fija a mano.
+- **LG-19/19b** (núcleo/telemetría): los 4 `println!` del núcleo van a la
+  cola; la cola corta en frontera de carácter y cierra el mensaje.
+- **Lección**: `format_args!` incrusta los argumentos LITERALES en la
+  plantilla: una prueba que quiera piezas separadas de `write!` debe pasar
+  variables (la primera versión de LG-19b pasaba con el defecto).
+- **Lección**: el núcleo (`GodEngineCore::new`) no cabe en la pila del hilo
+  principal en Windows (1 MB): construirlo en un worker de rayon.
+- **Lección**: el disco se llenó a 0 GB (target/debug 191 GB); los fallos
+  «rlib not found» y «paging file too small» eran eso. Se borró
+  `target/debug/incremental` sin compilaciones en curso (política del repo).
+
 ## 2026-10-12 — Antigravity (Ola Ω89, Ficha #727): Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (F2.5-02)
 
 - **Cierre definitivo de F2.5-02 (Doble Conteo de Masas en Consejo y lib.rs)**:

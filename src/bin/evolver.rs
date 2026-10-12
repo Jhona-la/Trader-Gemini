@@ -21,6 +21,115 @@ struct BinTick {
     pub ask_qty: f64,
 }
 
+/// Resultado de recorrer un flujo de ticks con un genoma.
+struct Evaluacion {
+    final_capital: f64,
+    total_trades: usize,
+    wins: usize,
+    max_drawdown: f64,
+}
+
+/// LG-17 — recorre `stream` con `genome` en un núcleo nuevo.
+///
+/// - El arena se construye en su propia pila (`build_in_own_stack`): dentro de
+///   un worker de rayon `GlobalArena::new` desbordaba la pila (panic = abort).
+/// - El omni es el neutro del replay sin historia macro, con su frescura
+///   (`macro_staleness_ms` = desconocido). Antes se copiaban 34 features de
+///   microestructura sobre los slots 0..33 del omni (macro, funding, OI) y se
+///   inyectaban constantes de DXY/SP500 en otra escala.
+/// - Sin DarkAlpha validado el NN no opina (`None`), como en vivo (F5-B-H1).
+/// - El capital final es el del motor, que ya cobra comisiones y
+///   deslizamiento: no se vuelve a cobrar la fricción.
+fn evaluar(
+    genome: &SuperGenotype,
+    stream: &[TickEvent],
+    initial_capital: f64,
+    nn: Option<&dark_alpha_engine::DarkAlphaEngine>,
+    omni: &[f64; 54],
+) -> Evaluacion {
+    let arena = GlobalArena::build_in_own_stack(initial_capital);
+    genome.apply_to_arena(&arena);
+    arena
+        .config
+        .global_max_drawdown
+        .store(0.90, Ordering::Relaxed);
+    arena.registry.set("macro_staleness_ms", u64::MAX as f64);
+
+    let mut engine = GodEngineCore::new(arena.clone());
+    engine.swing_nn = nn.map(|m| {
+        let mut local = m.clone();
+        local.init_buffers();
+        local
+    });
+
+    let mut total_trades: usize = 0;
+    let mut wins: usize = 0;
+    let mut max_drawdown: f64 = 0.0;
+    let mut peak_capital = initial_capital;
+    for tick in stream {
+        arena.update_market_data(
+            tick.coin_id,
+            tick.bid_price,
+            tick.ask_price,
+            tick.bid_qty,
+            tick.ask_qty,
+            tick.timestamp,
+        );
+        let (_new_pos, closed_pos, _) = engine.process_tick(
+            tick.coin_id,
+            tick.bid_price,
+            tick.ask_price,
+            tick.bid_qty,
+            tick.ask_qty,
+            tick.timestamp,
+            omni,
+        );
+        if let Some((_, pnl, _qty)) = closed_pos {
+            total_trades += 1;
+            if pnl > 0.0 {
+                wins += 1;
+            }
+            let current_cap = arena.unified_capital.load(Ordering::Relaxed);
+            if current_cap > peak_capital {
+                peak_capital = current_cap;
+            } else {
+                let dd = (peak_capital - current_cap) / peak_capital.max(0.001);
+                if dd > max_drawdown {
+                    max_drawdown = dd;
+                }
+            }
+        }
+    }
+    Evaluacion {
+        final_capital: arena.unified_capital.load(Ordering::Relaxed),
+        total_trades,
+        wins,
+        max_drawdown,
+    }
+}
+
+/// Aptitud de una evaluación con la función única (`fitness::compute`).
+/// `juicio` indica que el flujo es la partición fuera de muestra: entonces
+/// sus extremos de capital son los de la partición OOS y se exige
+/// `MIN_OPERACIONES_JUICIO`.
+fn aptitud(e: &Evaluacion, initial_capital: f64, juicio: bool) -> f64 {
+    let (min_trades, oos_ini) = if juicio {
+        (MIN_OPERACIONES_JUICIO, initial_capital)
+    } else {
+        // Selección: convención legacy sin split (no acredita un OOS).
+        (5, e.final_capital)
+    };
+    evolution_engine::fitness::compute(&evolution_engine::fitness::FitnessInputs {
+        initial_capital,
+        final_capital: e.final_capital,
+        max_drawdown_pct: e.max_drawdown,
+        total_trades: e.total_trades as u32,
+        min_trades_required: min_trades,
+        oos_start_capital: oos_ini,
+        oos_end_capital: e.final_capital,
+    })
+}
+
 #[derive(Clone)]
 struct IslandResult {
     pub island_idx: usize,
@@ -30,6 +139,64 @@ struct IslandResult {
     pub fitness: f64,
     pub win_rate: f64,
     pub max_drawdown: f64,
+}
+
+/// LG-17: fracción del flujo (por orden cronológico) con la que se selecciona;
+/// la cola restante sólo juzga. Es el mismo corte 70/30 de los demás
+/// promotores (`oos_split_index` del demonio, `train_forest`).
+const FRACCION_SELECCION: f64 = 0.70;
+
+/// LG-17: operaciones mínimas en la partición de juicio. Es el mínimo
+/// muestral del examen del demonio (`WF_MIN_TRADES`, regla X-014): por debajo
+/// la aptitud es INVIABLE (D-654), no mediocre.
+const MIN_OPERACIONES_JUICIO: u32 = 30;
+
+/// Índice del primer tick de la partición de juicio.
+fn indice_de_corte(n: usize) -> usize {
+    ((n as f64) * FRACCION_SELECCION).floor() as usize
+}
+
+/// LG-17b — ¿evalúa el evolver con el mismo motor que opera?
+///
+/// No todavía. `evaluar` alimenta el núcleo por el envoltorio legacy
+/// `process_tick`, que se salta lo que `process_event` hace en el vivo y en
+/// el replay canónico (excitación de Hawkes, CVD agregado, banco espectral,
+/// calibración del ensamble por vela, publicador de contagio), y no aplica la
+/// envolvente del host (`live_envelope_gate`). Un genoma seleccionado ahí se
+/// selecciona sobre ramas de decisión que el vivo no ejecuta, así que el
+/// evolver explora e informa pero no promueve. Pasa a `true` cuando `evaluar`
+/// use un replay canónico multiactivo (pedido a Sol: generalizar
+/// `booktick_replay` a N monedas; copiarlo aquí sería una segunda cara que
+/// divergiría).
+const EVALUADOR_CANONICO: bool = false;
+
+/// LG-17 — ¿se promueve el campeón de la selección?
+///
+/// Sólo con el evaluador canónico (`EVALUADOR_CANONICO`) y sobre aggTrades
+/// reales (D-691: con microestructura fabricada el veredicto no vale). Con un
+/// incumbente medido en la misma partición de juicio se exige el margen común
+/// de los promotores (`darwin::meets_promotion_margin`). Si el incumbente no
+/// tiene evidencia (aptitud no finita: menos de `MIN_OPERACIONES_JUICIO`
+/// operaciones), el candidato debe al menos crecer en log neto de la
+/// penalización de drawdown.
+fn decidir_promocion(candidato_oos: f64, incumbente_oos: f64, tapes_reales: bool) -> bool {
+    decidir_promocion_con(candidato_oos, incumbente_oos, tapes_reales, EVALUADOR_CANONICO)
+}
+
+fn decidir_promocion_con(
+    candidato_oos: f64,
+    incumbente_oos: f64,
+    tapes_reales: bool,
+    evaluador_canonico: bool,
+) -> bool {
+    if !evaluador_canonico || !tapes_reales || !candidato_oos.is_finite() {
+        return false;
+    }
+    if incumbente_oos.is_finite() {
+        god_engine_core::darwin::meets_promotion_margin(candidato_oos, incumbente_oos)
+    } else {
+        candidato_oos > 0.0
+    }
 }
 
 #[tokio::main]
@@ -47,6 +214,23 @@ async fn main() -> Result<(), String> {
             "⚠️ INITIAL_CAPITAL inválido o <= 0.0 detectado. Usando $13.00 como capital base."
         );
         initial_capital = 13.0;
+    }
+
+    // LG-17: sin entorno reconocido el almacén escribe en el silo
+    // `__UNSET__`, que nadie lee: la evolución quemaba CPU y anunciaba éxito.
+    // La validación es la del propio almacén (lista cerrada backtest | demo |
+    // prod): un valor desconocido («production», una errata) caía al mismo silo.
+    if let Err(e) = quantum_arena::genome_store::current_env() {
+        eprintln!("❌ [EVOLVER] {e} Sin entorno no hay a dónde promover: no se evoluciona.");
+        return Err(e);
+    }
+    // LG-17: EVOLVER_LOW_RESOURCES (lo fija LAUNCHER.bat) acota los hilos de
+    // rayon a la mitad de los núcleos para no competir con el motor vivo.
+    if env::var_os("EVOLVER_LOW_RESOURCES").is_some() {
+        let nucleos = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
+        let _ = rayon::ThreadPoolBuilder::new()
+            .num_threads((nucleos / 2).max(1))
+            .build_global();
     }
 
     let _arena_for_cap = std::thread::Builder::new()
@@ -118,7 +302,14 @@ async fn main() -> Result<(), String> {
     ]);
 
     let symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"];
+    // LG-17b: el universo se publica como en el host (god_engine). Sin él
+    // `update_market_data` es un no-op (guarda `coin_id < universo`) y el
+    // guardián de correlación trata toda pareja como la misma apuesta.
+    quantum_arena::symbols::update_dynamic_universe(symbols.iter().map(|s| s.to_string()).collect());
     let mut master_stream = Vec::new();
+    // LG-17: el veredicto sólo vale sobre aggTrades reales (D-691).
+    let mut tapes_reales = true;
+    let mut tapes_cargados = 0usize;
 
     for (coin_id, symbol) in symbols.iter().enumerate() {
         let bin_path = format!("data/{}_ticks.bin", symbol);
@@ -127,7 +318,10 @@ async fn main() -> Result<(), String> {
         if let Ok(file) = File::open(&bin_path) {
             if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
                 // LG-15: saltar la cabecera de 8 B del tape (TGMSYNT1 / TGMTRAW…).
-                let (_origen, cuerpo) = backtest_engine::tick_replayer::cuerpo_de_ticks(&mmap);
+                let (origen, cuerpo) = backtest_engine::tick_replayer::cuerpo_de_ticks(&mmap);
+                println!("   origen: {}", origen.descripcion());
+                tapes_reales &= origen.es_real();
+                tapes_cargados += 1;
                 let tick_size = size_of::<BinTick>();
                 let num_ticks = cuerpo.len() / tick_size;
                 for i in 0..num_ticks {
@@ -152,7 +346,19 @@ async fn main() -> Result<(), String> {
 
     // Ordenar cronológicamente el stream multiactivo para simulación temporal estricta
     master_stream.sort_by_key(|t| t.timestamp);
-    println!("✅ Stream multiactivo ordenado en memoria: {} ticks totales (100% Ticks Reales - Sin Submuestreo)", master_stream.len());
+    tapes_reales &= tapes_cargados > 0;
+    // LG-17: selección sobre el 70 % inicial; el 30 % final sólo juzga.
+    let corte = indice_de_corte(master_stream.len());
+    let (seleccion, juicio) = master_stream.split_at(corte);
+    println!(
+        "✅ Flujo multiactivo ordenado: {} ticks ({} de selección, {} de juicio). Tapes reales: {}",
+        master_stream.len(),
+        seleccion.len(),
+        juicio.len(),
+        tapes_reales
+    );
+    // Omni neutro del replay sin historia macro.
+    let omni_neutro = data_pipeline::omni_multiplexer::OmniState::new().get_features();
 
     // Inicializar Ghost Flusher Lock-Free para evitar bloqueos de consola
     telemetry_server::macros::init_telemetry_logger();
@@ -292,7 +498,9 @@ async fn main() -> Result<(), String> {
     let mut best_all_time: Option<(SuperGenotype, f64, usize, f64)> = None; // (genome, capital, trades, fitness)
 
     // Cargar modelo DarkAlphaEngine 54D para co-evolución simbiótica
-    let trained_nn = match dark_alpha_engine::DarkAlphaEngine::load_json(
+    // LG-17: sin modelo validado el NN no opina, como en vivo (F5-B-H1). Antes
+    // se fabricaba una red aleatoria que votaba ruido en el ensamble.
+    let trained_nn: Option<dark_alpha_engine::DarkAlphaEngine> = match dark_alpha_engine::DarkAlphaEngine::load_json(
         "models/DarkAlpha_BTCUSDT.json",
     ) {
         Ok(mut m) => {
@@ -302,23 +510,19 @@ async fn main() -> Result<(), String> {
                 .iter()
                 .any(|&w| w.is_nan() || w.is_infinite());
             if is_corrupt {
-                println!("⚠️ [EVOLVER] Modelo en disco corrupto. Usando default_model 54D.");
-                let mut def = dark_alpha_engine::DarkAlphaEngine::default_model();
-                def.init_buffers();
-                def
+                println!("⚠️ [EVOLVER] Modelo DarkAlpha en disco corrupto: el NN no opina.");
+                None
             } else {
                 m.init_buffers();
                 println!(
                     "🧠 [EVOLVER] DarkAlphaEngine 54D cargado exitosamente para co-evolución."
                 );
-                m
+                Some(m)
             }
         }
         Err(_) => {
-            println!("ℹ️ [EVOLVER] models/DarkAlpha_BTCUSDT.json no encontrado. Usando default_model 54D.");
-            let mut def = dark_alpha_engine::DarkAlphaEngine::default_model();
-            def.init_buffers();
-            def
+            println!("ℹ️ [EVOLVER] models/DarkAlpha_BTCUSDT.json no encontrado: el NN no opina.");
+            None
         }
     };
 
@@ -342,20 +546,13 @@ async fn main() -> Result<(), String> {
             }
         }
     }
-    // Asegurar que cada símbolo del universo cuente con un modelo de roster activo
+    // LG-17: sin `{SYM}_MOTOR` propio la moneda no opera (B3.25), igual que en
+    // vivo. Antes se le prestaba el bosque FDUSD o el de BTC y la evolución
+    // seleccionaba genomas en un mundo donde todas operaban con el de BTC.
     for sym in &symbols {
         let key = format!("{}_MOTOR", sym);
         if god_engine_core::ml_inference::NanoForest::get_global(&key).is_none() {
-            // Fallback a versión FDUSD si existe
-            let base = sym.trim_end_matches("USDT");
-            let fdusd_key = format!("{}FDUSD_MOTOR", base);
-            if let Some(forest) = god_engine_core::ml_inference::NanoForest::get_global(&fdusd_key) {
-                god_engine_core::ml_inference::NanoForest::store_global(&key, (*forest).clone());
-                println!("🌲 [EVOLVER] NanoForest aliased {} -> {}", fdusd_key, key);
-            } else if let Some(btc_forest) = god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR") {
-                god_engine_core::ml_inference::NanoForest::store_global(&key, (*btc_forest).clone());
-                println!("🌲 [EVOLVER] NanoForest base asignado para {}: BTCUSDT_MOTOR", key);
-            }
+            println!("🌲 [EVOLVER] {} sin modelo propio: no opera en la evolución.", key);
         }
     }
 
@@ -378,119 +575,18 @@ async fn main() -> Result<(), String> {
         let raw_results: Vec<IslandResult> = eval_tasks
             .par_iter()
             .map(|(isl_idx, genome)| {
-                let arena = Arc::new(GlobalArena::new(initial_capital));
-                genome.apply_to_arena(&arena);
-                arena
-                    .config
-                    .global_max_drawdown
-                    .store(0.90, Ordering::Relaxed);
-
-                let mut engine = GodEngineCore::new(arena.clone());
-                let mut local_nn = trained_nn.clone();
-                local_nn.init_buffers();
-                engine.swing_nn = Some(local_nn);
-                engine.scalp_forest = god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR")
-                    .or_else(|| god_engine_core::ml_inference::NanoForest::get_global("UNIVERSAL"));
-
-                let mut total_trades: usize = 0;
-                let mut wins: usize = 0;
-                let mut max_drawdown: f64 = 0.0;
-                let mut peak_capital = initial_capital;
-
-                // Microestructura 100% exacta: Procesamiento de todos los ticks sin step_by
-                for tick in master_stream.iter() {
-                    arena.update_market_data(
-                        tick.coin_id,
-                        tick.bid_price,
-                        tick.ask_price,
-                        tick.bid_qty,
-                        tick.ask_qty,
-                        tick.timestamp,
-                    );
-                    let mut omni = [0.0f64; 54];
-                    // Inyectar features macroeconómicos de referencia (DXY, SP500, NASDAQ, VIX, Gold)
-                    omni[21] = 104.0; // DXY
-                    omni[22] = 5100.0; // SP500
-                    omni[23] = 18000.0; // NASDAQ
-                    omni[24] = 15.0; // VIX
-                    omni[26] = 2300.0; // Gold
-                    let swing_feats = engine.feature_engines[tick.coin_id].get_universal_features();
-                    for (idx, &f) in swing_feats.iter().enumerate() {
-                        if idx < 34 {
-                            omni[idx] = f as f64;
-                        }
-                    }
-                    let total_qty = tick.bid_qty + tick.ask_qty;
-                    let mid = (tick.bid_price + tick.ask_price) / 2.0;
-                    if total_qty > 0.0 && mid > 0.0 {
-                        omni[0] = tick.bid_price;
-                        omni[1] = tick.ask_price;
-                        omni[30] = tick.bid_qty - tick.ask_qty;
-                        omni[31] = (tick.bid_qty - tick.ask_qty) * 1.2;
-                        omni[39] = (tick.bid_qty - tick.ask_qty) / total_qty;
-                    }
-                    let (_new_pos, closed_pos, _) = engine.process_tick(
-                        tick.coin_id,
-                        tick.bid_price,
-                        tick.ask_price,
-                        tick.bid_qty,
-                        tick.ask_qty,
-                        tick.timestamp,
-                        &omni,
-                    );
-
-                    if let Some((_, pnl, _qty)) = closed_pos {
-                        total_trades += 1;
-                        if pnl > 0.0 {
-                            wins += 1;
-                        }
-
-                        let current_cap = arena.unified_capital.load(Ordering::Relaxed);
-                        if current_cap > peak_capital {
-                            peak_capital = current_cap;
-                        } else {
-                            let dd = (peak_capital - current_cap) / peak_capital.max(0.001);
-                            if dd > max_drawdown {
-                                max_drawdown = dd;
-                            }
-                        }
-                    }
-                }
-
-                let mut final_capital = arena.unified_capital.load(Ordering::Relaxed);
-                
-                // Aplicar Slippage Estricto de Realidad al Capital Final
-                let raw_pnl = final_capital - initial_capital;
-                // Asumiendo fee de 0.0004 y notional promedio de 35.0
-                let penalized_pnl = evolution_engine::entropy_fitness::EntropyFitness::reality_slippage_penalty_with_notional(raw_pnl, total_trades, 0.0004, 35.0);
-                final_capital = initial_capital + penalized_pnl;
-
+                // LG-17: selección sobre el 70 % inicial del flujo.
+                let e = evaluar(genome, seleccion, initial_capital, trained_nn.as_ref(), &omni_neutro);
+                let final_capital = e.final_capital;
+                let total_trades = e.total_trades;
+                let max_drawdown = e.max_drawdown;
                 let win_rate = if total_trades > 0 {
-                    wins as f64 / total_trades as f64
+                    e.wins as f64 / total_trades as f64
                 } else {
                     0.0
                 };
-
-                // CERT-M5-H01 — FITNESS UNIFICADO (D-652/D-653/D-654):
-                // La fórmula anterior `10 + growth^1.5 × (1−dd)² × trade_factor ×
-                // (1+wr)³ × 100` era exactamente la patología que D-653
-                // documentó: crecimiento CONVEXO en leverage y win-rate al cubo
-                // premiaban tamaño de apuesta sobre calidad. Además daba +10
-                // gratis a cualquier genoma rentable y scoreaba 0.001 la
-                // inacción (D-654: inacción es INVIABLE, no intermedia).
-                // Ahora TODO promotor usa la MISMA función: fitness::compute
-                // (utilidad Kelly log − λ·dd², inacción = INVIABLE).
-                let fitness = evolution_engine::fitness::compute(
-                    &evolution_engine::fitness::FitnessInputs {
-                        initial_capital,
-                        final_capital,
-                        max_drawdown_pct: max_drawdown,
-                        total_trades: total_trades as u32,
-                        min_trades_required: 5,
-                        oos_start_capital: final_capital, // mismo período (sin split IS/OOS aquí)
-                        oos_end_capital: final_capital,
-                    },
-                );
+                // CERT-M5-H01: función única de aptitud (utilidad log − λ·dd²).
+                let fitness = aptitud(&e, initial_capital, false);
 
                 IslandResult {
                     island_idx: *isl_idx,
@@ -663,22 +759,31 @@ async fn main() -> Result<(), String> {
             best_cap, pnl_pct
         );
 
-        // Save as SuperGenotype JSON
-        // CERT-M5-H01: umbral en la NUEVA escala de fitness::compute (log
-        // utility). La escala antigua daba +10 gratis; la nueva: 0 = sin
-        // crecimiento, >0 = crecimiento log positivo. Umbral 0.01 = cualquier
-        // crecimiento neto positivo tras la penalización de drawdown.
-        if best_cap > initial_capital || best_fitness > 0.01 {
-            // F4.3: embudo único — envelope versionado con linaje (generación,
-            // fuente, métricas) + historia inmutable + espejo legacy atómico.
-            // El write directo a active_genome.json queda abolido: sin versión
-            // ni auditoría era imposible saber quién promovió qué ni revertir.
+        // LG-17: el campeón de la selección y el incumbente se juzgan en la
+        // MISMA partición final, que la selección no vio. Antes se promovía
+        // con la aptitud de selección y con un OR que aceptaba cualquier
+        // capital final > inicial aunque la aptitud fuera INVIABLE.
+        // En el pool de rayon: el núcleo no cabe en la pila del hilo principal.
+        let (e_cand, e_inc) = rayon::join(
+            || evaluar(genome, juicio, initial_capital, trained_nn.as_ref(), &omni_neutro),
+            || evaluar(&current_champion, juicio, initial_capital, trained_nn.as_ref(), &omni_neutro),
+        );
+        let fit_cand = aptitud(&e_cand, initial_capital, true);
+        let fit_inc = aptitud(&e_inc, initial_capital, true);
+        println!(
+            "⚖️  Juicio fuera de muestra: candidato ${:.2} ({} ops, DD {:.1}%, apt {:.4}) vs incumbente ${:.2} ({} ops, DD {:.1}%, apt {:.4})",
+            e_cand.final_capital, e_cand.total_trades, e_cand.max_drawdown * 100.0, fit_cand,
+            e_inc.final_capital, e_inc.total_trades, e_inc.max_drawdown * 100.0, fit_inc
+        );
+        if decidir_promocion(fit_cand, fit_inc, tapes_reales) {
+            // F4.3: embudo único — envelope versionado con linaje.
             match quantum_arena::genome_store::GenomeEnvelope::promote(
                 genome.clone(),
                 "ring_island_evolver",
                 &format!(
-                    "capital {:.2} → {:.2} ({:+.2}%) | fit: {:.2}",
-                    initial_capital, best_cap, pnl_pct, best_fitness
+                    "selección: capital {:.2} → {:.2} ({:+.2}%) apt {:.4} | juicio OOS: {:.2} → {:.2} apt {:.4} vs incumbente {:.4}",
+                    initial_capital, best_cap, pnl_pct, best_fitness,
+                    initial_capital, e_cand.final_capital, fit_cand, fit_inc
                 ),
             ) {
                 Ok(env) => println!(
@@ -687,9 +792,17 @@ async fn main() -> Result<(), String> {
                 ),
                 Err(e) => println!("❌ Error promoviendo genoma al almacén: {}", e),
             }
+        } else if !EVALUADOR_CANONICO {
+            println!(
+                "⚠️ El evaluador del evolver no es el canónico (process_tick legacy, sin envolvente del host): explora e informa, no promueve."
+            );
+        } else if !tapes_reales {
+            println!(
+                "⚠️ Tapes sin origen real (sintéticos o sin cabecera, D-691): no se promueve."
+            );
         } else {
             println!(
-                "⚠️ Ninguna configuración superó el umbral de viabilidad. No se promueve genoma."
+                "⚠️ El campeón no supera al incumbente fuera de muestra. No se promueve genoma."
             );
         }
     } else {
@@ -697,4 +810,79 @@ async fn main() -> Result<(), String> {
     }
     println!("============================================================");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests_lg17 {
+    use super::*;
+
+    #[test]
+    fn lg17_sin_tapes_reales_no_se_promueve() {
+        assert!(!decidir_promocion_con(0.50, 0.10, false, true));
+        assert!(!decidir_promocion_con(0.50, f64::NEG_INFINITY, false, true));
+    }
+
+    #[test]
+    fn lg17_contra_un_incumbente_medido_exige_el_margen_comun() {
+        // meets_promotion_margin: con base ≥ 0, > max(1,05·base, base + 1e-4).
+        assert!(!decidir_promocion_con(0.104, 0.10, true, true));
+        assert!(decidir_promocion_con(0.20, 0.10, true, true));
+        assert!(!decidir_promocion_con(f64::NEG_INFINITY, 0.10, true, true));
+    }
+
+    #[test]
+    fn lg17_contra_un_incumbente_sin_evidencia_exige_aptitud_positiva() {
+        assert!(!decidir_promocion_con(-0.05, f64::NEG_INFINITY, true, true));
+        assert!(!decidir_promocion_con(0.0, f64::NEG_INFINITY, true, true));
+        assert!(decidir_promocion_con(0.05, f64::NEG_INFINITY, true, true));
+    }
+
+    /// LG-17b: mientras el evaluador no sea el canónico, nada se promueve.
+    #[test]
+    fn lg17b_sin_evaluador_canonico_no_se_promueve() {
+        assert!(!decidir_promocion_con(0.50, 0.10, true, false));
+        assert!(!decidir_promocion(0.50, 0.10, true));
+        assert!(!decidir_promocion(0.50, f64::NEG_INFINITY, true));
+    }
+
+    /// LG-17b: un entorno no reconocido no pasa la guarda (el almacén lo
+    /// mandaría al silo `__UNSET__`).
+    #[test]
+    fn lg17b_la_guarda_de_entorno_es_la_del_almacen() {
+        let src = include_str!("evolver.rs");
+        let fin = src.find("#[cfg(test)]").unwrap_or(src.len());
+        let codigo = &src[..fin];
+        assert!(codigo.contains("genome_store::current_env()"));
+        assert!(!codigo.contains(&["map(|v| v.trim()", ".is_empty())"].concat()));
+        assert!(codigo.contains("update_dynamic_universe("));
+    }
+
+    #[test]
+    fn lg17_el_corte_deja_la_cola_cronologica_para_juzgar() {
+        assert_eq!(indice_de_corte(0), 0);
+        assert_eq!(indice_de_corte(10), 7);
+        assert_eq!(indice_de_corte(1_000_000), 700_000);
+    }
+
+    /// Cableado: el evolver ya no presta bosques, no cobra dos veces la
+    /// fricción, no pisa el omni con features de microestructura ni
+    /// promueve con aptitud de selección.
+    #[test]
+    fn lg17_cableado_del_evolver() {
+        let src = include_str!("evolver.rs");
+        let fin = src.find("#[cfg(test)]").unwrap_or(src.len());
+        let codigo = &src[..fin];
+        let prohibido = [
+            ["NanoForest::store_global(&key", ""].concat(),
+            ["reality_slippage_penalty", "_with_notional"].concat(),
+            ["omni[21] = ", "104.0"].concat(),
+            ["best_cap > initial_capital ", "|| best_fitness"].concat(),
+            ["DarkAlphaEngine::", "default_model()"].concat(),
+        ];
+        for p in &prohibido {
+            assert!(!codigo.contains(p.as_str()), "el evolver aún contiene «{p}»");
+        }
+        assert!(codigo.contains("decidir_promocion("));
+        assert!(codigo.contains("genome_store::current_env()"));
+    }
 }

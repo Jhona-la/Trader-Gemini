@@ -10,7 +10,8 @@
 //! `/futures/data/openInterestHist?symbol=X&period=1h&limit=500` (MAINNET:
 //! el histórico de testnet es vacío/incierto; el OI es la misma realidad
 //! del contrato, el transporte es lo de menos). Paginación hacia atrás por
-//! `startTime` hasta ~30 días o techo de 1000 filas.
+//! `endTime` (LG-16: con la fila más vieja de cada página) hasta ~31 días o
+//! techo de 1000 filas.
 //!
 //! # Salida
 //! `data/oihist/{SYM}.csv` con cabecera `ts,oi` (ts en ms) — el contrato
@@ -37,46 +38,71 @@ fn http_get(url: &str) -> Option<String> {
     String::from_utf8(out.stdout).ok()
 }
 
-/// Descarga el histórico de un símbolo (hacia atrás desde `end_ms`).
-fn fetch_oi_history(symbol: &str, end_ms: u64) -> Option<Vec<(u64, f64)>> {
+/// Filas válidas `(ts, oi)` de una página del endpoint, en el orden recibido.
+/// `None` si el cuerpo no es un arreglo JSON.
+fn parse_pagina(body: &str) -> Option<Vec<(u64, f64)>> {
+    let json: serde_json::Value = serde_json::from_str(body).ok()?;
+    let arr = json.as_array()?;
+    let mut filas = Vec::with_capacity(arr.len());
+    for item in arr {
+        let ts = item.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0) as u64;
+        let oi = item
+            .get("sumOpenInterest")
+            .and_then(|v| v.as_str())
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        if ts > 0 && oi.is_finite() && oi > 0.0 {
+            filas.push((ts, oi));
+        }
+    }
+    Some(filas)
+}
+
+/// Pagina hacia atrás desde `end_ms` hasta `floor` pidiendo cada página con
+/// `pagina(end_time)`. Devuelve las filas ordenadas y sin duplicados. Un fallo
+/// de red a media paginación conserva lo ya descargado (antes la serie entera
+/// se descartaba y el archivo no se adelantaba).
+fn paginar_hacia_atras<F>(end_ms: u64, floor: u64, mut pagina: F) -> Vec<(u64, f64)>
+where
+    F: FnMut(u64) -> Option<Vec<(u64, f64)>>,
+{
     let mut all: Vec<(u64, f64)> = Vec::new();
     let mut cursor_end = end_ms;
-    let floor = end_ms.saturating_sub(31 * 24 * PERIOD_MS);
     loop {
-        let url = format!(
-            "{}/futures/data/openInterestHist?symbol={}&period=1h&limit=500&endTime={}",
-            MAINNET, symbol, cursor_end
-        );
-        let body = http_get(&url)?;
-        let json: serde_json::Value = serde_json::from_str(&body).ok()?;
-        let arr = json.as_array()?;
-        if arr.is_empty() {
+        let Some(filas) = pagina(cursor_end) else {
+            break;
+        };
+        if filas.is_empty() {
             break;
         }
-        let mut got = 0usize;
-        for item in arr {
-            let ts = item.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0) as u64;
-            let oi = item
-                .get("sumOpenInterest")
-                .and_then(|v| v.as_str())
-                .and_then(|v| v.parse::<f64>().ok())
-                .unwrap_or(0.0);
-            if ts > 0 && oi.is_finite() && oi > 0.0 {
-                all.push((ts, oi));
-                got += 1;
-            }
-        }
-        if got == 0 {
-            break;
-        }
-        let oldest = all.last().map(|(ts, _)| *ts).unwrap_or(0);
-        if oldest <= floor || all.len() >= MAX_ROWS {
+        // LG-16: el cursor avanza con la fila MÁS VIEJA de la página. El
+        // endpoint devuelve las filas en orden ascendente; con `last()` (la
+        // más nueva) cada página repetía 499 filas y sólo añadía una: se
+        // guardaban 501 h de las ~720 que conserva el endpoint, y cada
+        // ejecución perdía para siempre ≈9 días del histórico de OI.
+        let oldest = filas.iter().map(|(ts, _)| *ts).min().unwrap_or(0);
+        all.extend_from_slice(&filas);
+        // Sin progreso (el endpoint ignoró endTime) también se corta.
+        if oldest <= floor || oldest >= cursor_end || all.len() >= MAX_ROWS {
             break;
         }
         cursor_end = oldest.saturating_sub(1);
     }
     all.sort_unstable_by_key(|(ts, _)| *ts);
     all.dedup_by(|a, b| a.0 == b.0);
+    all
+}
+
+/// Descarga el histórico de un símbolo (hacia atrás desde `end_ms`).
+fn fetch_oi_history(symbol: &str, end_ms: u64) -> Option<Vec<(u64, f64)>> {
+    let floor = end_ms.saturating_sub(31 * 24 * PERIOD_MS);
+    let all = paginar_hacia_atras(end_ms, floor, |cursor_end| {
+        let url = format!(
+            "{}/futures/data/openInterestHist?symbol={}&period=1h&limit=500&endTime={}",
+            MAINNET, symbol, cursor_end
+        );
+        parse_pagina(&http_get(&url)?)
+    });
     if all.len() >= 24 {
         Some(all)
     } else {
@@ -187,5 +213,67 @@ fn main() {
     }
     if failures > 0 {
         println!("⚠️ {} símbolos sin serie", failures);
+    }
+}
+
+
+#[cfg(test)]
+mod tests_lg16 {
+    use super::*;
+
+    /// Endpoint simulado: conserva `retencion_h` horas hasta `ahora` y devuelve
+    /// hasta 500 filas con ts ≤ end_time, en orden ascendente (como Binance).
+    fn endpoint(ahora: u64, retencion_h: u64) -> impl FnMut(u64) -> Option<Vec<(u64, f64)>> {
+        move |end_time| {
+            let suelo = ahora - retencion_h * PERIOD_MS;
+            let mut filas: Vec<(u64, f64)> = (0..=retencion_h)
+                .map(|k| suelo + k * PERIOD_MS)
+                .filter(|&ts| ts <= end_time)
+                .map(|ts| (ts, 1.0 + ts as f64 * 1e-12))
+                .collect();
+            if filas.len() > 500 {
+                filas.drain(..filas.len() - 500);
+            }
+            Some(filas)
+        }
+    }
+
+    #[test]
+    fn lg16_pagina_por_la_fila_mas_vieja_y_cubre_toda_la_retencion() {
+        let ahora = 1_800_000_000_000u64 - (1_800_000_000_000u64 % PERIOD_MS);
+        let floor = ahora - 31 * 24 * PERIOD_MS;
+        let filas = paginar_hacia_atras(ahora, floor, endpoint(ahora, 720));
+        // El endpoint conserva 721 marcas horarias: todas deben llegar.
+        assert_eq!(filas.len(), 721, "filas guardadas = {}", filas.len());
+        assert_eq!(filas.first().unwrap().0, ahora - 720 * PERIOD_MS);
+        assert_eq!(filas.last().unwrap().0, ahora);
+        assert!(filas.windows(2).all(|w| w[0].0 < w[1].0));
+    }
+
+    #[test]
+    fn lg16_un_fallo_de_red_a_media_paginacion_conserva_lo_descargado() {
+        let ahora = 1_800_000_000_000u64 - (1_800_000_000_000u64 % PERIOD_MS);
+        let floor = ahora - 31 * 24 * PERIOD_MS;
+        let mut ep = endpoint(ahora, 720);
+        let mut llamadas = 0;
+        let filas = paginar_hacia_atras(ahora, floor, |t| {
+            llamadas += 1;
+            if llamadas == 1 {
+                ep(t)
+            } else {
+                None
+            }
+        });
+        assert_eq!(filas.len(), 500);
+    }
+
+    #[test]
+    fn lg16_parse_descarta_filas_invalidas() {
+        let body = r#"[{"timestamp":3600000,"sumOpenInterest":"10.5"},
+                       {"timestamp":0,"sumOpenInterest":"1"},
+                       {"timestamp":7200000,"sumOpenInterest":"NaN"},
+                       {"timestamp":10800000,"sumOpenInterest":"-2"}]"#;
+        assert_eq!(parse_pagina(body), Some(vec![(3_600_000, 10.5)]));
+        assert_eq!(parse_pagina("{}"), None);
     }
 }
