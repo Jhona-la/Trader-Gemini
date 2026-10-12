@@ -1,0 +1,597 @@
+{
+ "findings": [
+  {
+   "title": "ioc_fill_contract (CL-39c/CL-47) dice blindar «toda llamada al cierre local va detrás de la decisión firme/ambigua», pero sólo exige ≥1 llamada y que UNA de ellas esté guardada",
+   "severity": "MED",
+   "category": "test-vacuous",
+   "file": "crates/execution-engine/tests/ioc_fill_contract.rs",
+   "line": 136,
+   "evidence": "ioc_fill_contract.rs:134-135 «El conteo se actualiza al presente (4) para volver a romper SI alguien añade un cierre SIN decisión previa.» pero :136 `assert!(src.matches(\"mark_local_reject(\").count() >= 1, ...)` y :137-141 `src.contains(\"ifcrate::ioc_evidence::error_cierra_la_intencion(&e){self.order_registry.mark_local_reject(\")`. cl47 (:164-172) usa también `contains` por cuerpo. executor.rs tiene hoy 5 llamadas (2148 desborde, 2170, 2352, 2479, 2747 guardadas). BARRIDO_EXHAUSTIVO_FASES.md:580 (F8-A-H1) afirma «el invariante real ... se blinda; el conteo exacto se relaja a >=1».",
+   "mechanism": "`count() >= 1` y `contains` son existenciales: basta con que exista una llamada guardada en todo executor.rs (o en cada una de las tres funciones) para pasar. Una sexta llamada `mark_local_reject(` sin pasar por `error_cierra_la_intencion` (p. ej. en un brazo Err de una ruta nueva, o una segunda dentro de execute_order) no rompe ningún assert. El comentario y el registro del barrido certifican una propiedad universal que la prueba no comprueba.",
+   "failure_scenario": "Una ola futura añade en el remanente del maker-chase `Err(e) => { self.order_registry.mark_local_reject(id, ts); return Err(e) }` sin la decisión firme/ambigua. Un `AMBIGUOUS: Network Error` cierra localmente una intención que el exchange pudo ejecutar: la posición real deja de seguirse (CL-39c). cl39c y cl47 siguen en verde porque las llamadas guardadas existentes satisfacen los `contains`.",
+   "fix_sketch": "Recorrer TODAS las apariciones de `mark_local_reject(` en el fuente compacto y exigir para cada una que la preceda inmediatamente `ifcrate::ioc_evidence::error_cierra_la_intencion(` o que esté dentro de un bloque `ifbuf.is_overflow(){` (lista blanca explícita del desborde); o fijar el conteo exacto (5) con el desglose. Corregir el comentario y la entrada F8-A-H1.",
+   "live_path": true,
+   "known_ref": "NUEVO (contradice BARRIDO_EXHAUSTIVO_FASES.md:580, F8-A-H1, que lo da por blindado)",
+   "confidence": 0.9
+  },
+  {
+   "title": "hawkes_chain_integration certifica en verde como «roles correctos» el artefacto de relojes periódicos con fase estable que el contagio vivo confunde con contagio (F2.4-02)",
+   "severity": "HIGH",
+   "category": "test-fixes-defect",
+   "file": "crates/feature-engine/tests/hawkes_chain_integration.rs",
+   "line": 19,
+   "evidence": "hawkes_chain_integration.rs:19-21 `let leader: Vec<u64> = (0..200).map(|i| 1_000 + (i as u64) * 2_000).collect(); let s1 ... .map(|&t| t + 150)`, :29 `assert!(exc.z_score > 3.0 ...)`, :83-95 igual con rejilla de 3 000 ms y +200. HALLAZGOS_C-F2_2026-10-11.md:489-490: «dos relojes periódicos independientes con un desfase estable entre 1 y 199 ms dan rate = 1 frente a una base de 0,80: z = 7,92 ... Los tests existentes (... tests/hawkes_chain_integration.rs:17-96) usan rejillas regulares desplazadas como contagio y certifican el artefacto». cf2_dependencia_solucion_conocida.rs:172 sigue `#[ignore = \"OPEN F2.4-02 ...\"]`; hawkes_cross.rs sin cambios de conducta desde 2026-09-29.",
+   "mechanism": "El fixture es exactamente el nulo de F2.4-02: series periódicas con desfase fijo < 200 ms. cross_excitation, con nulo binomial de llegadas sin estructura, puntúa z alto para cualquier par así, haya o no acoplamiento causal. La prueba no tiene un control negativo con relojes periódicos independientes, así que no puede distinguir detección de artefacto, y su nombre/comentario lo presentan como verificación end-to-end de datos aptos para el modulador.",
+   "failure_scenario": "En vivo tick_ring se alimenta con eventos de libro (update_market_data, god-engine-core/src/lib.rs:2947, dentro de la rama de depth) → contagion_publisher.rs:33 → contagion_matrix. Dos monedas con @depth5 casi periódico y fase estable dan net_role ≈ ±7,9; lib.rs:7760-7767 aplica modulate_by_net_role y recorta la confianza del «seguidor» (≈18 %) y el guard de correlación eleva ρ hasta +0,49 (HALLAZGOS_C-F2:490), mientras esta prueba en CI declara la cadena correcta.",
+   "fix_sketch": "Sustituir el fixture por un Hawkes bivariante simulado (Ogata) con acoplamiento conocido frente a un control de relojes periódicos independientes con jitter; exigir |net| < 1 en el control. Mientras F2.4-02 siga abierto, marcar el caso positivo como CARACTERIZACIÓN o #[ignore = \"OPEN F2.4-02\"].",
+   "live_path": true,
+   "known_ref": "F2.4-02 (HALLAZGOS_C-F2_2026-10-11.md:485-497, en concreto :490)",
+   "confidence": 0.75
+  },
+  {
+   "title": "CL-48 «ningún estado aprendido usa una ruta común a los entornos» sólo mira 4 archivos en 2 fuentes: el dataset y el modelo DarkAlpha que escribe el núcleo son comunes a papel, demo y prod",
+   "severity": "MED",
+   "category": "test-scope-gap",
+   "file": "crates/execution-engine/tests/estado_por_entorno_contract.rs",
+   "line": 24,
+   "evidence": "estado_por_entorno_contract.rs:16-21 `const ARCHIVOS: [&str; 4] = [\"kelly_envelope.json\", \"fee_breaker.json\", \"position_journal.jsonl\", \"trade_fills.jsonl\"]` y :25-28 sólo god_engine.rs y trade_accounting.rs. Producción: god-engine-core/src/lib.rs:4538-4539 `format!(\"data/dark_alpha_dataset_{}.csv\", sym)` en cada cierre con publish_estimate (lib.rs:4273-4274 = ExchangeLocalEstimate && confirmado); el host fija ExchangeLocalEstimate en todo modo (god_engine.rs:2986-2989); un llenado de papel se confirma (confirmar_llenado → confirm_generation, position.rs:537). auto_trainer_daemon.rs:83 lee ese CSV y :396 escribe `models/DarkAlpha_{symbol}.json`, que el host carga sin entorno (god_engine.rs:3056, vigilante :2160-2164).",
+   "mechanism": "El test nació para CL-48/CL-61 (el estado aprendido sigue al modo: papel sin banderas → data/demo). Su lista cerrada y sus dos fuentes no cubren el escritor del núcleo (otro crate) ni models/. El dataset de entrenamiento de la red y la red misma son estado aprendido con ruta fija común a todos los modos, y el nombre del test certifica lo contrario.",
+   "failure_scenario": "Sesión en papel (sin --force-live; TG_GENOME_ENV=demo) cierra operaciones simuladas de BTC → filas en data/dark_alpha_dataset_BTCUSDT.csv mezcladas con las de prod. Con el demonio corriendo, models/DarkAlpha_BTCUSDT.json se reescribe con esas filas y la siguiente sesión armada en mainnet lo recarga en ≤10 s y vota en el ensamble de BTC con una red entrenada sobre llenados simulados. CL-48 sigue en verde.",
+   "fix_sketch": "Escribir y leer dataset y modelo con quantum_arena::paths::env_data_path (o un env_models_path); ampliar el test a todo el árbol (crates/**/src y src/bin) buscando literales \"data/\" y \"models/\" de estado aprendido, con lista blanca explícita de lo que es común por diseño (tapes).",
+   "live_path": true,
+   "known_ref": "Parcial: LC-F1-54 (HALLAZGOS_C-F1:669-679, rutas literales data/ y live_fees.json). El dataset/modelo DarkAlpha fuera de la separación por entorno no está registrado.",
+   "confidence": 0.75
+  },
+  {
+   "title": "spectral_slot_resolution_contract llama «fail-closed» a admitir una τ NaN/0/5 ms sustituida por 30 s; slot_admission_open_diagnostics fija lo mismo como deuda OPEN",
+   "severity": "LOW",
+   "category": "test-fixes-defect",
+   "file": "crates/quantum-arena/tests/spectral_slot_resolution_contract.rs",
+   "line": 94,
+   "evidence": "spectral_slot_resolution_contract.rs:12 «Validar que entradas no finitas o anómalas fallan de forma segura (fail-closed)»; :94-99 `for nan_val in [f64::NAN, ..., 0.0, 5.0] { ... assert_eq!(mgr.find_resonant_slot(nan_val, false), Some(1)); }`. Producción position.rs:859-863 `let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 { tau_ms } else { 30_000.0 };`. Contradice slot_admission_open_diagnostics.rs:1 «OPEN diagnostics» y :22 `open_invalid_or_sub_ten_ms_tau_is_replaced_with_thirty_seconds`.",
+   "mechanism": "La prueba certifica como contrato de seguridad que una τ desconocida obtiene ranura con una τ inventada (Desconocido ≠ 0/valor por defecto): en dirección opuesta, o con el gestor vacío, NaN se admite. Dos ficheros del mismo crate dicen a la vez que es deuda abierta y que es comportamiento seguro; arreglarlo (abstenerse) pondría rojo el contrato «fail-closed».",
+   "failure_scenario": "Quien arregle el hallazgo registrado (abstenerse ante τ no medible) rompe spectral_slot_resolution_contract y puede revertir el arreglo creyendo que viola un contrato fail-closed. Hoy la τ del llamador (lib.rs:8094-8101) es entera > 0 o la dominante, así que el camino NaN es latente.",
+   "fix_sketch": "Reescribir el caso 5 como OPEN (o borrarlo y dejar el diagnóstico de slot_admission_open_diagnostics) y, al arreglar, exigir None para τ no finita o ≤ 10 ms en ambas direcciones.",
+   "live_path": false,
+   "known_ref": "docs/audit/linea_g/hallazgos.tsv:5 (LOW nan-unknown, position.rs:876 y safe_tau :859-863); vetos.tsv:36",
+   "confidence": 0.85
+  },
+  {
+   "title": "zero_alloc_hotpath_primitives_contract no mide ninguna asignación y uno de sus casos no afirma nada si predict devuelve None",
+   "severity": "LOW",
+   "category": "test-vacuous",
+   "file": "crates/quantum-arena/tests/zero_alloc_hotpath_primitives_contract.rs",
+   "line": 64,
+   "evidence": ":57-69 `let pred = forecaster.predict(&tape, 2_000); if let Some(val) = pred { assert!(val.is_finite()); }` con sólo dos trades; ningún test instala un contador GlobalAlloc (a diferencia de god-engine-core/tests/cf3_libro_sin_asignar.rs:56-74). :18 «Anclas son: 250ms, 1s, 5s, 30s, 2m, 15m, 1h» frente a spectral_tape.rs:744-750 (ANCLAS_PRONOSTICO = SPECTRUM_SCALES_MS[17..], 17 s en adelante).",
+   "mechanism": "El fichero nació con d70a5bfc («erradicar allocations en ... sigma_forecast y rls») como su contrato, pero sólo prueba valores; un Vec reintroducido en Rls::update o HorizonForecaster::predict (hoy búferes de pila para p ≤ 16, spectral_tape.rs:381-388 y :621-632) no lo pondría rojo. El caso del pronosticador es vacuo con el fixture de dos trades.",
+   "failure_scenario": "Una refactorización devuelve `vec![0.0; p]` al camino p ≤ 16 de Rls::update (llamado por evento de trade): el camino caliente vuelve a asignar por evento y la suite «zero_alloc» sigue en verde.",
+   "fix_sketch": "Contador de asignaciones como en cf3_libro_sin_asignar.rs alrededor de sigma_forecast_at, Rls::update/predict y HorizonForecaster::predict ya calentado (assert_eq!(asignaciones, 0)); exigir Some en el caso del pronosticador; corregir el comentario de anclas.",
+   "live_path": false,
+   "known_ref": "NUEVO",
+   "confidence": 0.85
+  },
+  {
+   "title": "Diagnósticos drenados conservan nombre y cabecera OPEN que afirman lo contrario de lo que hoy verifican",
+   "severity": "LOW",
+   "category": "test-stale-name",
+   "file": "crates/execution-engine/tests/shadow_open_diagnostics.rs",
+   "line": 41,
+   "evidence": "shadow_open_diagnostics.rs:41 `async fn open_shadow_kill_switch_does_not_block_new_entry()` con :49 `assert!(s.execute_raw_qty(...).await.is_err(), \"el kill debe bloquear la nueva entrada\")`; cabecera :1 «OPEN: these passes expose stub behaviour». registry_open_diagnostics.rs:8 `fn open_debt_local_timeout_fabricates_exchange_expiry()` con :16-19 `Some(OrderStatus::Unknown) ... \"timeout local = desconocido, no expiración del exchange\"`; cabecera :1 «OPEN limitations, not positive safety assertions».",
+   "mechanism": "TRIAJE_ROJOS_PERPETUOS.md:27-28 drenó ambos defectos (GLM 105/107) y reescribió los asserts, pero no los nombres ni las cabeceras. Un listado de tests o un informe de CI dice que el kill-switch del shadow no bloquea y que el timeout local fabrica expiración, justo lo contrario.",
+   "failure_scenario": "Un auditor o una herramienta que clasifica por nombre (`open_debt_*`) cuenta estos dos como deuda abierta, o peor, al ver «does_not_block» en verde concluye que el kill-switch está roto y lo «repara».",
+   "fix_sketch": "Renombrar a regression_shadow_kill_switch_blocks_new_entry y regression_local_timeout_is_unknown_not_expiry, y separar las cabeceras OPEN de las regresiones.",
+   "live_path": false,
+   "known_ref": "TRIAJE_ROJOS_PERPETUOS.md:27-28 (drenados; nombres no actualizados)",
+   "confidence": 0.9
+  },
+  {
+   "title": "position_evidence_diagnostics fija que el tensor NN de entrada sobrevive a una generación nueva: una adopción de reconciliación hereda las features de la operación anterior de la ranura y contamina el dataset",
+   "severity": "LOW",
+   "category": "stale-state",
+   "file": "crates/quantum-arena/tests/position_evidence_diagnostics.rs",
+   "line": 27,
+   "evidence": "position_evidence_diagnostics.rs:27-36 `open_debt_entry_tensor_survives_a_new_generation_without_features`: tras close()/open() `assert_eq!(*p.nn_entry_tensor.lock().unwrap(), vec![7.0; 54])`. Producción: el tensor sólo se escribe en la apertura del núcleo (god-engine-core/src/lib.rs:8700-8704); ningún open/close/cancel lo limpia (position.rs:220-420); reconciliation.rs:596 adopta en `coin.positions.position` con exchange_confirmed=true (:619-622) en el ciclo de 60 s; el cierre escribe la fila si el tensor tiene 54 valores (lib.rs:4527-4557).",
+   "mechanism": "La prueba es honesta (OPEN), pero el defecto que documenta está vivo: el par (features, retorno) del dataset del auto-entrenador se forma con el tensor de la última apertura del núcleo en esa ranura, no con el de la posición que se cierra.",
+   "failure_scenario": "El núcleo abre y cierra (o revierte) un largo de BTC en la ranura 2 con tensor T1; minutos después la reconciliación adopta en esa ranura un remanente o una posición abierta fuera del motor; al cerrarla se añade a data/dark_alpha_dataset_BTCUSDT.csv su retorno con las features T1 de otra operación.",
+   "fix_sketch": "Vaciar nn_entry_tensor en open_* (o versionarlo con la generación y exigir igualdad al cerrar); las adopciones no emiten fila.",
+   "live_path": true,
+   "known_ref": "AUDITORIA_FUNDAMENTOS_CIENTIFICOS_XIX_2026-09-24.md (no figura en los registros C-F1/F2/F3 ni Línea G)",
+   "confidence": 0.5
+  }
+ ],
+ "file_verdicts": [
+  {
+   "file": "crates/feature-engine/tests/cf2_microestructura_solucion_conocida.rs",
+   "status": "honesta",
+   "note": "Regresiones activas (spoof a 100 ms, nulos CST con control de movimiento, OFI = CKS) bien construidas. Ignores F2.5-07/08/09 vigentes: microstructure.rs sin cambios desde 2026-09-22. Un ignore es contrato de API, rotulado «no se activa sola»."
+  },
+  {
+   "file": "crates/feature-engine/tests/cf2_momentos_solucion_conocida.rs",
+   "status": "honesta",
+   "note": "Welford y EWMA en tiempo físico frente a forma cerrada con tolerancias derivadas."
+  },
+  {
+   "file": "crates/feature-engine/tests/cf2_multifractal_solucion_conocida.rs",
+   "status": "honesta",
+   "note": "Ignores F2.3b-09/10 vigentes (multifractal.rs sin cambios desde 2026-10-06); asserts intactos."
+  },
+  {
+   "file": "crates/feature-engine/tests/cf2_navier_stokes_cadencia.rs",
+   "status": "mixta",
+   "note": "cf2_re_forma_cerrada fija la ley defectuosa Re ∝ dt^{-1/2} (F2.3b-05), rotulada CARACTERIZACIÓN; el ignore de invariancia sigue vigente."
+  },
+  {
+   "file": "crates/feature-engine/tests/copula_real.rs",
+   "status": "honesta",
+   "note": "Medición manual #[ignore] con motivo vigente; falla si hay menos de 4 tapes en vez de pasar en vacío."
+  },
+  {
+   "file": "crates/feature-engine/tests/correlation_input_contract.rs",
+   "status": "honesta",
+   "note": "Código offline: MarketCorrelationHeatmap no tiene consumidor fuera de tests."
+  },
+  {
+   "file": "crates/feature-engine/tests/event_spectrum_v2_contract.rs",
+   "status": "mixta",
+   "note": "La API v2 no tiene consumidor vivo (offline). El último test fija el defecto FMT-004 de analyze_spectrum, que sí se consume en stateful_engine.rs:796; está rotulado como diagnóstico."
+  },
+  {
+   "file": "crates/feature-engine/tests/ewma_configuration_contract.rs",
+   "status": "honesta",
+   "note": "Constructores y política legacy."
+  },
+  {
+   "file": "crates/feature-engine/tests/ewma_physical_time_contract.rs",
+   "status": "honesta",
+   "note": "Solución exacta, partición, reescalado y atomicidad."
+  },
+  {
+   "file": "crates/feature-engine/tests/hawkes_chain_integration.rs",
+   "status": "fija-defecto",
+   "note": "Las rejillas periódicas desplazadas certifican el artefacto F2.4-02 (ver hallazgo). Además `neutral.net_role == 0.0` es tautológico (:77-78)."
+  },
+  {
+   "file": "crates/feature-engine/tests/hodge_flow_contract.rs",
+   "status": "mixta",
+   "note": "Los contratos algebraicos (gradiente puro, vórtice, ortogonalidad, relleno) son honestos. `..._produce_curl_dinamico` sólo exige curl > 0 sobre datos arbitrarios: es vacuo, porque según F2.3b-06 curl ≈ 0,93 sin ninguna circulación."
+  },
+  {
+   "file": "crates/feature-engine/tests/kalman_numeric_contract.rs",
+   "status": "honesta",
+   "note": "Posterior escalar exacto y dominios."
+  },
+  {
+   "file": "crates/feature-engine/tests/legacy_correlation_diagnostics.rs",
+   "status": "copia-muerta",
+   "note": "Prueba la copia raíz src/features/correlation.rs (FMT-140, reconocido); no tiene consumidor."
+  },
+  {
+   "file": "crates/feature-engine/tests/legacy_statistics_diagnostics.rs",
+   "status": "copia-muerta",
+   "note": "Copias raíz de welford/ewma (FMT-140), sólo usadas por omni_strategies de la raíz."
+  },
+  {
+   "file": "crates/feature-engine/tests/navier_stokes_reynolds_contract.rs",
+   "status": "honesta",
+   "note": "El test fail-closed sólo distingue en un motor fresco: con entrada inválida update devuelve el Re anterior, no 0, y deja el régimen en Laminar. Fija el literal Re_crit = 1."
+  },
+  {
+   "file": "crates/feature-engine/tests/path_signature_contract.rs",
+   "status": "honesta",
+   "note": "Contratos y limitaciones rotuladas."
+  },
+  {
+   "file": "crates/feature-engine/tests/transfer_entropy_contract.rs",
+   "status": "honesta",
+   "note": "Oráculo independiente. Fija explícitamente bits > 0 en silencio como prior. TE offline."
+  },
+  {
+   "file": "crates/feature-engine/tests/transfer_entropy_real.rs",
+   "status": "honesta",
+   "note": "Medición manual #[ignore] vigente; el lector tiene contrato propio."
+  },
+  {
+   "file": "crates/feature-engine/tests/welford_mode_contract.rs",
+   "status": "honesta",
+   "note": "Pesos empíricos explícitos; fija la política de 2000 muestras."
+  },
+  {
+   "file": "crates/execution-engine/tests/accounting_numeric_contract.rs",
+   "status": "honesta",
+   "note": "Comprobado: el host filtra con checked_numeric_net_pnl antes de aprender (god_engine.rs:3633-3640)."
+  },
+  {
+   "file": "crates/execution-engine/tests/accounting_open_diagnostics.rs",
+   "status": "honesta",
+   "note": "Diagnóstico. El único productor calcula pnl_gross a partir de los precios (user_data_stream.rs:549), así que la incoherencia no es alcanzable en vivo."
+  },
+  {
+   "file": "crates/execution-engine/tests/adoption_slot_contract.rs",
+   "status": "honesta",
+   "note": "Anclas de fuente verificadas en HEAD (FASE5, la reserva condicionada y updateTime)."
+  },
+  {
+   "file": "crates/execution-engine/tests/emergency_accounting_wiring_contract.rs",
+   "status": "honesta",
+   "note": "Delegación a checked_gross_pnl presente."
+  },
+  {
+   "file": "crates/execution-engine/tests/entrada_host_contract.rs",
+   "status": "honesta",
+   "note": "Guardias de fuente, frágiles por diseño pero verificadas: los cuatro brazos contienen lo exigido."
+  },
+  {
+   "file": "crates/execution-engine/tests/entry_route_contract.rs",
+   "status": "honesta",
+   "note": "Mock del transporte con eventos ordenados, coherente con LG-10."
+  },
+  {
+   "file": "crates/execution-engine/tests/estado_por_entorno_contract.rs",
+   "status": "vacua",
+   "note": "Honesta para sus 4 archivos, pero el nombre sobre-afirma: el dataset y el modelo DarkAlpha son comunes a todos los entornos (ver hallazgo)."
+  },
+  {
+   "file": "crates/execution-engine/tests/exchange_response_contract.rs",
+   "status": "honesta",
+   "note": "Servidor loopback real. El primer test compara constantes consigo mismas (documental)."
+  },
+  {
+   "file": "crates/execution-engine/tests/execution_evidence_contract.rs",
+   "status": "honesta",
+   "note": "Clasificación de estados y wire estricto."
+  },
+  {
+   "file": "crates/execution-engine/tests/execution_open_diagnostics.rs",
+   "status": "honesta",
+   "note": "Diagnósticos OPEN. total_commission no tiene uso vivo; DynamicSymbolSelector no lo usa el host."
+  },
+  {
+   "file": "crates/execution-engine/tests/hedge_side_contract.rs",
+   "status": "honesta",
+   "note": "Conteo exacto 3 verificado."
+  },
+  {
+   "file": "crates/execution-engine/tests/income_consumer_wiring_contract.rs",
+   "status": "honesta",
+   "note": "Anclas del fee-breaker en orden tras LG-8 (god_engine.rs:2491-2516)."
+  },
+  {
+   "file": "crates/execution-engine/tests/income_evidence_contract.rs",
+   "status": "honesta",
+   "note": "Paginación, cuarentena, FX as-of y paridad entre las dos puertas."
+  },
+  {
+   "file": "crates/execution-engine/tests/income_open_diagnostics.rs",
+   "status": "honesta",
+   "note": "Limitaciones rotuladas."
+  },
+  {
+   "file": "crates/execution-engine/tests/ioc_fill_contract.rs",
+   "status": "mixta",
+   "note": "Clasificación IOC y destino de la reserva honestos; el invariante CL-39c/CL-47 es existencial (ver hallazgo)."
+  },
+  {
+   "file": "crates/execution-engine/tests/order_evidence_contract.rs",
+   "status": "honesta",
+   "note": "Monotonía del registro."
+  },
+  {
+   "file": "crates/execution-engine/tests/payload_admission_contract.rs",
+   "status": "honesta",
+   "note": "build_payload/execute_order no se usan en el host (offline)."
+  },
+  {
+   "file": "crates/execution-engine/tests/payload_open_diagnostics.rs",
+   "status": "honesta",
+   "note": "Diagnósticos FMT-175/219 de una ruta offline."
+  },
+  {
+   "file": "crates/execution-engine/tests/protection_gap_contract.rs",
+   "status": "honesta",
+   "note": "Anclas verificadas (sin <min_notional, ≥2 note_rejection, rama del SL)."
+  },
+  {
+   "file": "crates/execution-engine/tests/reconciliation_evidence_contract.rs",
+   "status": "honesta",
+   "note": "Universo global serializado con Mutex."
+  },
+  {
+   "file": "crates/execution-engine/tests/registry_open_diagnostics.rs",
+   "status": "mixta",
+   "note": "El primer test se drenó y conserva un nombre que dice lo contrario (ver hallazgo); los otros dos fijan deuda OPEN."
+  },
+  {
+   "file": "crates/execution-engine/tests/shadow_open_diagnostics.rs",
+   "status": "mixta",
+   "note": "El nombre del test del kill-switch está rancio (ver hallazgo). ShadowExecutor no se usa en el host."
+  },
+  {
+   "file": "crates/execution-engine/tests/testnet_integration.rs",
+   "status": "honesta",
+   "note": "#[ignore] con motivo vigente (llaves). t04 apenas comprueba algo. t02 aplana la cuenta testnet."
+  },
+  {
+   "file": "crates/quantum-arena/tests/cf2_espectro_solucion_conocida.rs",
+   "status": "honesta",
+   "note": "Ignores F2.3-01/03/04 vigentes (temporal_spectrum.rs sin cambios desde 2026-10-09)."
+  },
+  {
+   "file": "crates/quantum-arena/tests/cf2_evalues_cuantiles_solucion_conocida.rs",
+   "status": "mixta",
+   "note": "cf2_umbral_obi replica en el test el multiplicador 1 + 0,5χ (copia reconocida; coincide con lib.rs:3220). Ignores F2.2-04/08 vigentes."
+  },
+  {
+   "file": "crates/quantum-arena/tests/cf2_multiactivo_solucion_conocida.rs",
+   "status": "honesta",
+   "note": "Control alineado activo; ignores F2.3-07 vigentes."
+  },
+  {
+   "file": "crates/quantum-arena/tests/cf2_pronostico_sigma_solucion_conocida.rs",
+   "status": "honesta",
+   "note": "Ignores F2.3-06 vigentes: sigma_at sigue devolviendo √exp(E ln RV) (spectral_tape.rs:821-829)."
+  },
+  {
+   "file": "crates/quantum-arena/tests/checkpoint_characterization.rs",
+   "status": "honesta",
+   "note": "Diagnóstico FMT-150. El checksum sólo se imprime (bootloader.rs:277); el loader es offline."
+  },
+  {
+   "file": "crates/quantum-arena/tests/epigenetic_decay_contract.rs",
+   "status": "mixta",
+   "note": "El decaimiento y la causalidad son honestos, pero los valores esperados (1,08; 0,98067; −0,006−0,015·(1−10/90); +0,015) salen de la regla por signo, defectuosa y ya registrada (G008, lazos.tsv:18-19). Ningún test cubre que el sesgo es absorbente."
+  },
+  {
+   "file": "crates/quantum-arena/tests/estado_por_modo_contract.rs",
+   "status": "honesta",
+   "note": "Variables de entorno serializadas."
+  },
+  {
+   "file": "crates/quantum-arena/tests/genome_gate_open_diagnostics.rs",
+   "status": "honesta",
+   "note": "Regresión de FMT-216 cerrado con un solo testigo (seed 199)."
+  },
+  {
+   "file": "crates/quantum-arena/tests/genome_reader_diagnostics.rs",
+   "status": "honesta",
+   "note": "Paridad de lectores; los valores 0,10/1,5/0,5 fijan los recortes (G002)."
+  },
+  {
+   "file": "crates/quantum-arena/tests/horizon_reader_parity.rs",
+   "status": "fija-defecto",
+   "note": "config_retains_its_existing_formulas fija los recortes literales de los lectores. Ya registrado: G002 lo cita (hallazgos/verificación)."
+  },
+  {
+   "file": "crates/quantum-arena/tests/identidad_simbolo_contract.rs",
+   "status": "honesta",
+   "note": "Grafía canónica."
+  },
+  {
+   "file": "crates/quantum-arena/tests/order_quantity_contract.rs",
+   "status": "honesta",
+   "note": "Retícula de lotes; la limitación binaria está rotulada."
+  },
+  {
+   "file": "crates/quantum-arena/tests/position_evidence_diagnostics.rs",
+   "status": "mixta",
+   "note": "El contraejemplo es álgebra pura, vacuo respecto del código. El test del tensor fija un defecto vivo (ver hallazgo). Escala inválida → ranura 0: conocido."
+  },
+  {
+   "file": "crates/quantum-arena/tests/position_generation_contract.rs",
+   "status": "honesta",
+   "note": "Transición única bajo carrera."
+  },
+  {
+   "file": "crates/quantum-arena/tests/protection_rejection_contract.rs",
+   "status": "honesta",
+   "note": "Clasificador estricto de rechazos."
+  },
+  {
+   "file": "crates/quantum-arena/tests/quantile_numeric_contract.rs",
+   "status": "honesta",
+   "note": "El último test fija el estimando acumulativo; choca con F2.2-08 y está reconocido."
+  },
+  {
+   "file": "crates/quantum-arena/tests/slot_admission_open_diagnostics.rs",
+   "status": "honesta",
+   "note": "Diagnósticos OPEN de deuda conocida (safe_tau, corte 0,80, 3 ranuras)."
+  },
+  {
+   "file": "crates/quantum-arena/tests/spectral_interpolation_contract.rs",
+   "status": "honesta",
+   "note": "Álgebra de la interpolación; una consulta inválida da 0 como «neutral»."
+  },
+  {
+   "file": "crates/quantum-arena/tests/spectral_slot_resolution_contract.rs",
+   "status": "fija-defecto",
+   "note": "Llama fail-closed a la admisión de una τ inventada (ver hallazgo)."
+  },
+  {
+   "file": "crates/quantum-arena/tests/support/spectral_evidence.rs",
+   "status": "honesta",
+   "note": "Vivo: lo incluye spectral_tape.rs:903 vía #[path]. Usa un libro externo de pronósticos congelados como oráculo."
+  },
+  {
+   "file": "crates/quantum-arena/tests/system_health_source_contract.rs",
+   "status": "honesta",
+   "note": "Guardias de fuente acotadas."
+  },
+  {
+   "file": "crates/quantum-arena/tests/temporal_band_contract.rs",
+   "status": "honesta",
+   "note": "LG-4: banda operable [30 s, 12 h]."
+  },
+  {
+   "file": "crates/quantum-arena/tests/toolchain_pin_contract.rs",
+   "status": "honesta",
+   "note": "Verificado: nightly-2026-06-30 en el toolchain y en los dos workflows."
+  },
+  {
+   "file": "crates/quantum-arena/tests/universe_identity_diagnostics.rs",
+   "status": "mixta",
+   "note": "El test de rotación diagnostica un camino inalcanzable (el universo no rota en vivo, hallazgos.tsv:274) y su assert sobre startup_ids es tautológico. El del ranker prueba una closure copiada (SymbolRankerEngine no tiene uso)."
+  },
+  {
+   "file": "crates/quantum-arena/tests/universe_selection_contract.rs",
+   "status": "honesta",
+   "note": "Estado global con Mutex."
+  },
+  {
+   "file": "crates/quantum-arena/tests/zero_alloc_hotpath_primitives_contract.rs",
+   "status": "vacua",
+   "note": "No mide asignaciones; un caso es vacuo con None; comentario de anclas falso (ver hallazgo)."
+  },
+  {
+   "file": "crates/signal-engine/tests/censo_votantes_contract.rs",
+   "status": "honesta",
+   "note": "Censo de votos mudos y vivos."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf2_cuantico_solucion_conocida.rs",
+   "status": "honesta",
+   "note": "Ignores F2.6-02/04 vigentes; la trivialidad telescópica está rotulada."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf2_hawkes_solucion_conocida.rs",
+   "status": "honesta",
+   "note": "Ignores vigentes (hawkes_bessel.rs sin cambios desde 2026-10-07). peso_vivo es copia reconocida y coincide con la rampa viva."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf3_6_espejo_motores.rs",
+   "status": "mixta",
+   "note": "Los espejos son honestos. El del coaxial pasa trivialmente (0 = 0), reconocido. El registro es una copia del escritor (reconocido). Ignores F3.6-02/09 vigentes."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf3_6_hebb.rs",
+   "status": "honesta",
+   "note": "Débil: w ≤ 1 partiendo de w = 1 también pasaría con una actualización nula. Lo compensa el unitario perceptron_gate.rs:211-215."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf3_6_rama12_tau.rs",
+   "status": "honesta",
+   "note": "Ignore F3.6-07 vigente (flow_impulse.rs no ha cambiado desde que se escribió el test)."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf3_6_resonancia_estocastica.rs",
+   "status": "honesta",
+   "note": "Ignore F3.6-05 vigente."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf3_coherencia_tensor_contract.rs",
+   "status": "honesta",
+   "note": "Ignore F3.3-05 vigente (orchestrator.rs sin cambios desde 2026-10-10)."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf3_consenso_escalar.rs",
+   "status": "honesta",
+   "note": "Ignore F3.1-03 vigente."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf3_hebbiano_contract.rs",
+   "status": "honesta",
+   "note": "Débil: ≥ 1 y ≤ 1 no estrictos pasan con un peso congelado; lo cubre el unitario. El host pasa R neto (lib.rs:4706-4715)."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf3_lectura_estricta_conformal.rs",
+   "status": "honesta",
+   "note": "Lectura estricta por moneda, con control."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf3_ttl_consenso.rs",
+   "status": "honesta",
+   "note": "Ignore F3.1-04 vigente (skill_motores.rs sin cambios desde 2026-10-07)."
+  },
+  {
+   "file": "crates/signal-engine/tests/cf4_coaxial_abstencion.rs",
+   "status": "honesta",
+   "note": "Abstención correcta. Nota: nadie escribe atr_1s/5s/1m en vivo, así que el coaxial escalar está siempre mudo (conocido, vetos.tsv:1206)."
+  }
+ ],
+ "vetos": [],
+ "coverage": {
+  "files_read": [
+   "crates/feature-engine/tests/cf2_microestructura_solucion_conocida.rs",
+   "crates/feature-engine/tests/cf2_momentos_solucion_conocida.rs",
+   "crates/feature-engine/tests/cf2_multifractal_solucion_conocida.rs",
+   "crates/feature-engine/tests/cf2_navier_stokes_cadencia.rs",
+   "crates/feature-engine/tests/copula_real.rs",
+   "crates/feature-engine/tests/correlation_input_contract.rs",
+   "crates/feature-engine/tests/event_spectrum_v2_contract.rs",
+   "crates/feature-engine/tests/ewma_configuration_contract.rs",
+   "crates/feature-engine/tests/ewma_physical_time_contract.rs",
+   "crates/feature-engine/tests/hawkes_chain_integration.rs",
+   "crates/feature-engine/tests/hodge_flow_contract.rs",
+   "crates/feature-engine/tests/kalman_numeric_contract.rs",
+   "crates/feature-engine/tests/legacy_correlation_diagnostics.rs",
+   "crates/feature-engine/tests/legacy_statistics_diagnostics.rs",
+   "crates/feature-engine/tests/navier_stokes_reynolds_contract.rs",
+   "crates/feature-engine/tests/path_signature_contract.rs",
+   "crates/feature-engine/tests/transfer_entropy_contract.rs",
+   "crates/feature-engine/tests/transfer_entropy_real.rs",
+   "crates/feature-engine/tests/welford_mode_contract.rs",
+   "crates/execution-engine/tests/accounting_numeric_contract.rs",
+   "crates/execution-engine/tests/accounting_open_diagnostics.rs",
+   "crates/execution-engine/tests/adoption_slot_contract.rs",
+   "crates/execution-engine/tests/emergency_accounting_wiring_contract.rs",
+   "crates/execution-engine/tests/entrada_host_contract.rs",
+   "crates/execution-engine/tests/entry_route_contract.rs",
+   "crates/execution-engine/tests/estado_por_entorno_contract.rs",
+   "crates/execution-engine/tests/exchange_response_contract.rs",
+   "crates/execution-engine/tests/execution_evidence_contract.rs",
+   "crates/execution-engine/tests/execution_open_diagnostics.rs",
+   "crates/execution-engine/tests/hedge_side_contract.rs",
+   "crates/execution-engine/tests/income_consumer_wiring_contract.rs",
+   "crates/execution-engine/tests/income_evidence_contract.rs",
+   "crates/execution-engine/tests/income_open_diagnostics.rs",
+   "crates/execution-engine/tests/ioc_fill_contract.rs",
+   "crates/execution-engine/tests/order_evidence_contract.rs",
+   "crates/execution-engine/tests/payload_admission_contract.rs",
+   "crates/execution-engine/tests/payload_open_diagnostics.rs",
+   "crates/execution-engine/tests/protection_gap_contract.rs",
+   "crates/execution-engine/tests/reconciliation_evidence_contract.rs",
+   "crates/execution-engine/tests/registry_open_diagnostics.rs",
+   "crates/execution-engine/tests/shadow_open_diagnostics.rs",
+   "crates/execution-engine/tests/testnet_integration.rs",
+   "crates/quantum-arena/tests/cf2_espectro_solucion_conocida.rs",
+   "crates/quantum-arena/tests/cf2_evalues_cuantiles_solucion_conocida.rs",
+   "crates/quantum-arena/tests/cf2_multiactivo_solucion_conocida.rs",
+   "crates/quantum-arena/tests/cf2_pronostico_sigma_solucion_conocida.rs",
+   "crates/quantum-arena/tests/checkpoint_characterization.rs",
+   "crates/quantum-arena/tests/epigenetic_decay_contract.rs",
+   "crates/quantum-arena/tests/estado_por_modo_contract.rs",
+   "crates/quantum-arena/tests/genome_gate_open_diagnostics.rs",
+   "crates/quantum-arena/tests/genome_reader_diagnostics.rs",
+   "crates/quantum-arena/tests/horizon_reader_parity.rs",
+   "crates/quantum-arena/tests/identidad_simbolo_contract.rs",
+   "crates/quantum-arena/tests/order_quantity_contract.rs",
+   "crates/quantum-arena/tests/position_evidence_diagnostics.rs",
+   "crates/quantum-arena/tests/position_generation_contract.rs",
+   "crates/quantum-arena/tests/protection_rejection_contract.rs",
+   "crates/quantum-arena/tests/quantile_numeric_contract.rs",
+   "crates/quantum-arena/tests/slot_admission_open_diagnostics.rs",
+   "crates/quantum-arena/tests/spectral_interpolation_contract.rs",
+   "crates/quantum-arena/tests/spectral_slot_resolution_contract.rs",
+   "crates/quantum-arena/tests/support/spectral_evidence.rs",
+   "crates/quantum-arena/tests/system_health_source_contract.rs",
+   "crates/quantum-arena/tests/temporal_band_contract.rs",
+   "crates/quantum-arena/tests/toolchain_pin_contract.rs",
+   "crates/quantum-arena/tests/universe_identity_diagnostics.rs",
+   "crates/quantum-arena/tests/universe_selection_contract.rs",
+   "crates/quantum-arena/tests/zero_alloc_hotpath_primitives_contract.rs",
+   "crates/signal-engine/tests/censo_votantes_contract.rs",
+   "crates/signal-engine/tests/cf2_cuantico_solucion_conocida.rs",
+   "crates/signal-engine/tests/cf2_hawkes_solucion_conocida.rs",
+   "crates/signal-engine/tests/cf3_6_espejo_motores.rs",
+   "crates/signal-engine/tests/cf3_6_hebb.rs",
+   "crates/signal-engine/tests/cf3_6_rama12_tau.rs",
+   "crates/signal-engine/tests/cf3_6_resonancia_estocastica.rs",
+   "crates/signal-engine/tests/cf3_coherencia_tensor_contract.rs",
+   "crates/signal-engine/tests/cf3_consenso_escalar.rs",
+   "crates/signal-engine/tests/cf3_hebbiano_contract.rs",
+   "crates/signal-engine/tests/cf3_lectura_estricta_conformal.rs",
+   "crates/signal-engine/tests/cf3_ttl_consenso.rs",
+   "crates/signal-engine/tests/cf4_coaxial_abstencion.rs"
+  ],
+  "unread": [],
+  "notes": "Leí completos los 81 archivos de tst03 (10 936 líneas). No ejecuté cargo; los rojos y verdes son inferidos. Vigencia de los #[ignore]: comparé la fecha del último commit de cada módulo con la del test (todos los módulos son anteriores o no cambiaron de conducta tras CL-64/65/72) y comprobé el código cuando hacía falta (sigma_at, find_resonant_slot, update_weight, el contagio). Las guardias de fuente sobre god_engine.rs/executor.rs (adoption_slot, entrada_host, protection_gap, ioc_fill, hedge_side, income_consumer, estado_por_entorno, accounting) las reproduje con python de sólo lectura, sin escribir archivos: todas las anclas existen en HEAD. vetos vacío: mi lista contiene sólo pruebas; support/spectral_evidence.rs es un módulo de test. Lo ya registrado lleva known_ref; los ignores vigentes de C-F2/C-F3 no se repiten como hallazgos."
+ }
+}

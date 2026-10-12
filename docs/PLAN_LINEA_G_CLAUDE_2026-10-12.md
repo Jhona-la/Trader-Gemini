@@ -161,6 +161,18 @@ vota); (iv) tiene salida: olvido o sonda, o es un latch declarado en un ADR;
 (v) tiene dos pruebas, una que rechaza y otra que admite en ambos lados de la
 frontera, ejercidas a través del gate real (no de la función suelta).
 
+### 4.1 Triaje de los 43 vetos absorbentes (ola 2)
+
+Cada absorbente cae en una de cuatro familias; la regla de admisión de arriba
+dice qué le falta a cada una.
+
+| Familia | Vetos (archivo:línea) | Qué le falta | Estado / dueño |
+|---|---|---|---|
+| **A. Latch por diseño** (ADR-0015/0016) | kill-switch de entradas (`lib.rs:3156`, `executor.rs:1271`), latch inmune (`god_engine.rs:1834`), insolvencia (`:1742`), X-009 (`:4756`), límite de drawdown del inmune (`:1737`), latencia del inmune (`:1751`, `:1779`), `REJ_DRAWDOWN` (`risk lib.rs:342`), d* y `ALFA_FALSACION` (`drawdown.rs:170/196`), kills del demonio (`online_daemon.rs:1253/1346/1365`) | Nada como política; sí defectos laterales: pico del drawdown no persistido y sólo caja realizada (LC-F4-10), doble lectura del gen (LC-F1-30), kills del demonio por literales sin ARL₀ | Línea C (CL-99 «pico» en curso); demonio: dueño a confirmar |
+| **B. Freno estadístico sin olvido o sin sonda** | convicción por rama (`lib.rs:181`, `:6555`), p* = ½ en ramas 1-10 (`:195`), conformal singleton (`conformal.rs:175`), habilidad del ensamble (`ensemble.rs:106`), skill de motores (`skill_motores.rs:100`), DSR de promoción (`darwin.rs:669`, `online_daemon.rs:1917`), veto de grupo (`espectral_multiactivo.rs:69`), envolvente de Kelly (`kelly_envelope.rs:261/282/387`, `envio.rs:76`, `god_engine.rs:4153`), ML-GATE sin `_MOTOR` (`lib.rs:8149`), epigenética (`state.rs:433/434`), sonda por moneda (`lib.rs:8121`) | Olvido con la semivida del calibrador **y** sonda acotada al nocional mínimo; puntuar por R neto frente a p* (LG-9) | **LG-1** cerró la convicción por rama; **CL-98** (Línea C) cerró la sonda única; el resto con su dueño (LF-12 Línea C+E, conformal Codex, skill Qoder, ensamble GLM, epigenética Línea C/AGY) |
+| **C. Filtro de datos que se autobloquea** | filtro de salto (`god_engine.rs:3369`), headroom de rate-limit (`executor.rs:1320`), umbrales de rate-limit como genes (`god_engine.rs:4781`), veto de deriva (`god_engine.rs:2986/2989/3976`, `:3752`), EWMA del OBI de trades (`microstructure.rs:52`) | Distinguir dato corrupto aislado de cambio persistente; caducidad; los límites del exchange no son genes | **LG-2** y **LG-3** cerrados; veto de deriva = centinela de contabilidad que actúa como latch cuando no hay posiciones (Codex, XXXVI); genes de rate-limit y OBI de trades → zona libre, ola 3 |
+| **D. Enrutado a una capacidad inexistente** | ruta Iceberg (`entry_dispatch.rs:59`, `god_engine.rs:4427`) | La ruta sólo debe elegirse si el adaptador la soporta | **LG-10** cerrado (techo oculto de 10 000 USD de nocional en prod); pendiente congelar el gen |
+
 ## 5. Hallazgos de la ola 1 (base `86218456`) y su estado
 
 Método: 18 lectores de sólo lectura (uno por dimensión); cada hallazgo alto o
@@ -313,3 +325,74 @@ campo y son prioridad en G5.
 - Recibo de esta ola: rama `claude/linea-g-revision-base`, commits LG-1…LG-5,
   contrato de `genome_store` y merge con `main` (CL-87…CL-96); números en
   §5.1 y en el buzón.
+
+## 10. Ola 2 (2026-10-12, base `be8fa6ad`): lectura de todos los archivos restantes y diez arreglos
+
+### 10.1 G7 — cada archivo Rust del repositorio leído al menos una vez
+
+La ola 1 leyó 191 de los 627 `.rs` versionados. La ola 2 asignó los 436
+restantes a 10 lectores de sólo lectura (6 dimensiones de código, ≈35 000
+líneas; 4 de pruebas, ≈42 000 líneas; listas en
+[`ola2_dims.json`](audit/linea_g/ola2_dims.json)). **Los 436 tienen veredicto**
+en [`g7_archivos.tsv`](audit/linea_g/g7_archivos.tsv); hallazgos en
+[`g7_hallazgos.tsv`](audit/linea_g/g7_hallazgos.tsv) (92: 2 HIGH, 35 MED, 55
+LOW) y vetos nuevos en [`g7_vetos.tsv`](audit/linea_g/g7_vetos.tsv). Entre las
+dos olas, **los 627 archivos Rust han pasado por un lector**; los que no son
+Rust (documentos, datos, generados) siguen la lista compartida de REINICIO.
+
+**Honestidad de las pruebas** (≈283 archivos de prueba leídos): 252 honestas,
+51 mixtas, **35 vacuas**, **22 que prueban una copia muerta**, **16 que fijan
+un defecto en verde**, 13 frágiles, 1 `#[ignore]` rancio. Ejemplos: las
+pruebas de nivel H0 de Ville no pueden fallar (con ±0,04 y 150 pasos la
+riqueza máxima posible es 19,5 < 1/α); `r7_r2_chaos_simplex_contracts_margin_smoothly`
+pasa sin el término que dice probar; el contrato R7-R6 certifica en una copia
+local el recorte ±1 R que LF-3 retiró; `hawkes_chain_integration` certifica
+como «roles correctos» un artefacto de relojes periódicos; la prueba de
+F3.3-01 se dio por activada mientras 18 ramas vivas siguen con p* = ½. Es la
+duodécima confirmación del patrón «contrato verde con física muerta»: un
+verde no prueba nada si la prueba no puede fallar.
+
+### 10.2 Arreglados en la ola 2 (test que falla antes y pasa después)
+
+| ID | Zona | Defecto | Prueba |
+|---|---|---|---|
+| **LG-6** (G040) | ejecución | El reintento OCO con id nuevo (`_SLR/_TPR`) tras un AMBIGUOUS podía dejar dos SL o dos TP; la reversión parcial se tragaba las cancelaciones fallidas. Ahora mismo `clientAlgoId` (el -4116 confirma la pierna) y las cancelaciones fallidas quedan en «pendientes» y ensucian la protección. | `tests_lg6` (2) |
+| **LG-7** (G049a) | evolución | El examen walk-forward del demonio censuraba lo abierto al final de cada tramo (no restaba aptitud ni drawdown). Ahora se valora a mercado con la fricción de salida taker. | `tests_lg7` |
+| **LG-8** (G046) | host | El fee-breaker suspendía hasta 12 h con 3 registros REALIZED_PNL (llenados) — ≈22 % de falsas suspensiones con esperanza positiva. Ahora agrupa por cierre, exige la cola binomial P(X ≤ ganadoras \| n, p*) ≤ α y la suspensión caduca con su evidencia. | Monte Carlo ≤ α |
+| **LG-9** (G4) | núcleo, **sin cablear** | Contrato único de resultado de orden y evidencia de ventaja por R neto (e-procesos de Ville). Wilson contra ½ condena 200/200 fuentes rentables (p = 0,35); la R neta 0/200. | `resultado_orden::tests` (4) |
+| **LG-10** | host/ejecución | Todo nocional sobre el gen `iceberg_volume_threshold` se enrutaba a Iceberg y el despachador lo rechazaba siempre (Binance sin iceberg nativo): techo oculto de 10 000 USD de nocional en prod, 100–2 000 USD con genomas aleatorios. El replay nunca lo modelaba (divergencia backtest↔vivo). | `lg10_…` |
+| **LG-11** | host/telemetría | El host nunca inicializaba la cola de logs: 161 `telemetry_log!` hacían `println!` síncrono en el bucle vivo (QuickEdit de Windows lo congela); la cola reservaba ~520 MB y su hilo giraba. Ahora cola de 8,5 MB, consumo por lotes, sueño si está vacía, vaciado antes de salir. | `tests_lg11` (2) |
+| **LG-12** | ejecución/host | Los límites de peticiones del exchange salían de genes (mutaban hasta 5 000 de peso con un real de 2 400: el freno local no actuaba antes de un 418). Ahora son las constantes documentadas de Binance. | `tests_lg12` (2) |
+| **LG-13** | host/os-guardian | `EmptyWorkingSet` sobre el proceso vivo cada hora, siempre (fallos de página en el camino caliente). Ahora sólo con presión medida (memoria disponible < working set). | `tests_lg13` |
+| **LG-14** | os-guardian | El tope duro del JobObject sumaba el commit del entrenador hijo y el veto medía otra magnitud (working set): el motor podía abortar con posiciones abiertas sin veto. Ahora tope por proceso y el veto mide el commit. | `tests_lg14` (2) |
+| **LG-15** | herramientas | `evolver`/`evolution` leían los tapes desde el byte 0 ignorando la cabecera de 8 B: optimizaban sobre registros desplazados y el evolver (lanzado por `LAUNCHER.bat`) promovía ese genoma. | `tests_lg15` |
+
+### 10.3 Entregas de la ola 2 por dueño
+
+- **Línea C**: `prueba_reversion.rs` (CL-97): la varianza HAC centra el
+  retardo 1 con la masa de todas las filas, no la de los pares (t se infla
+  ×1,7 con la base derivada y huecos de spot), y los nodos 21-22 nunca maduran
+  porque `reset_engines` los reinicia en cada reconexión (≤ 24 h): StatArb
+  queda mudo para τ* ≥ 73 min. **G042**: diseño propuesto — guardar el
+  `base_id` del bracket por ranura y cancelar sólo `{base}_SL`/`{base}_TP` (con
+  LG-6 ya no hay variantes), y omitir el reduce-only si el bracket de esa
+  ranura ya llenó.
+- **AGY** (contratos Ω): las pruebas vacuas o de copia muerta de §10.1
+  (Ville H0, chaos simplex, multislot/niche3/gauge, R7-R6 watchdog,
+  Yang-Mills, TTL multiactivo).
+- **Codex**: el veto de deriva es un centinela de contabilidad que actúa como
+  latch cuando no hay posiciones (necesita 10 cierres y veta las entradas que
+  los producirían); `model_manifest`: la frescura del holdout se decide por el
+  sha256 del archivo (un tape re-exportado cuenta como holdout nuevo).
+- **Sol**: el contrato de causalidad del replay no puede ver un lookahead de
+  una fila; `continuous_evolution_backtest` adopta cada día el mejor de hasta
+  1 000 mutantes sin corrección por multiplicidad.
+- **GLM**: `auto_trainer_daemon` reescribe la red viva de BTC con un gate de
+  BCE sobre una etiqueta sin lado; `config_compiler` promueve a demo y backtest
+  sin evaluar; `walkforward_evolver` evoluciona sobre un tape sintético sin
+  cabecera.
+- **Zona libre (ola 3 de la Línea G)**: el evolver promueve con aptitud
+  in-sample y presta el bosque de BTC a todas las monedas; `oi_history_sync`
+  guarda 500 h de las 720 que pide; congelar los genes que ya no tienen efecto
+  (iceberg, rate-limit, los 7 de R7-R1-2); el mínimo de 30 cierres del examen
+  del demonio (G049b); los 6 `println!` síncronos del núcleo.

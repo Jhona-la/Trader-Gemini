@@ -1913,3 +1913,23 @@ reparación RR en [30 s, 12 h]: el genoma vivo salía de cada carga con TP
 ×1,68). **Pedido OPEN**: LG-5 (la puerta EV usa P(neto > 0) como P(TP
 primero)) a Codex + Línea E. **Entregas** por dueño en el buzón y en
 `audit/linea_g/verificacion.tsv`.
+
+## 50. Línea G — ola 2: los 627 archivos Rust leídos y diez arreglos de infraestructura viva (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §10](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+**Cobertura.** La ola 2 leyó los 436 `.rs` que la ola 1 no abrió: con las dos
+olas, cada archivo Rust del repositorio pasó por un lector con veredicto
+(`audit/linea_g/g7_archivos.tsv`). De ≈283 archivos de prueba, 35 son vacuos,
+22 prueban una copia muerta y 16 fijan un defecto en verde: **un contrato que
+no puede fallar no certifica nada**; se propone que todo contrato nuevo traiga
+su ejecución RED antes del arreglo.
+
+**Arreglos** (verificación local, merge a main): LG-6 OCO idempotente; LG-7
+examen del demonio a mercado; LG-8 fee-breaker con evidencia contra p*; LG-9
+contrato único de resultado de orden (sin cablear); LG-10 Iceberg sólo con
+capacidad nativa (techo oculto al crecimiento); LG-11 logs del bucle vivo
+asíncronos; LG-12 límites del exchange fuera del genoma; LG-13 compactación
+de memoria por presión medida; LG-14 tope de memoria por proceso y veto sobre
+el commit; LG-15 tapes leídos sin su cabecera en las herramientas de
+evolución. Entregas por dueño en el buzón.

@@ -1,0 +1,586 @@
+{
+ "findings": [
+  {
+   "title": "Compactación horaria EmptyWorkingSet sobre el proceso vivo: tormenta de fallos de página en el camino caliente cada hora",
+   "severity": "MED",
+   "category": "hot-path-latency",
+   "file": "crates/os-guardian/src/memory_compaction.rs",
+   "line": 79,
+   "evidence": "memory_compaction.rs:79 `let _ = EmptyWorkingSet(process_handle);` lo llama god_engine.rs:2172-2177 dentro de un bucle sin condición (`sleep(3600)` y luego `force_working_set_compaction()`). El propio memory_audit.rs:44 avisa: «EmptyWorkingSet(process); (Peligroso para HFT, causa page faults…)».",
+   "mechanism": "EmptyWorkingSet expulsa del working set todas las páginas no bloqueadas del proceso. Sólo están bloqueados con VirtualLock el struct GlobalArena y el slice coins (god_engine.rs:1769-1772; size_of_val del struct, no los buffers del heap). Quedan fuera GodEngineCore, los StatefulEngine de cada moneda, los libros, los modelos, el runtime tokio y las páginas de código. Después de cada compactación, el siguiente tick de cada una de las 26 monedas vuelve a cargar esas páginas con fallos de página blandos (del orden de µs cada uno, miles en total).",
+   "failure_scenario": "A cada hora en punto el hilo de decisión (prioridad HIGHEST, núcleo fijado) procesa los primeros eventos con paradas acumuladas de milisegundos: entradas o cierres con datos viejos justo en ese tramo. Además el guardián de memoria mide el working set, así que cada compactación lo deja artificialmente bajo y suelta el veto aunque el commit no haya bajado.",
+   "fix_sketch": "Quitar la compactación periódica del proceso de trading, o hacerla sólo fuera de mercado con el núcleo en pausa. Bloquear con VirtualLock los buffers calientes reales (los del heap de GodEngineCore y StatefulEngine). Si preocupa la memoria, medir PrivateUsage o commit, no recortar el working set.",
+   "live_path": true,
+   "known_ref": "ninguno (BARRIDO_EXHAUSTIVO_FASES.md:1236 lo describe como función, no como defecto)",
+   "confidence": 0.65
+  },
+  {
+   "title": "El presupuesto literal de RAM (128 MB por símbolo + 2 GB) sirve a la vez de tope duro de commit del JobObject, que aborta el proceso, y de veto global de entradas por working set: miden magnitudes distintas",
+   "severity": "MED",
+   "category": "resource-guard/absorbing",
+   "file": "crates/os-guardian/src/lib.rs",
+   "line": 70,
+   "evidence": "lib.rs:69-70 `LimitFlags = JOB_OBJECT_LIMIT_JOB_MEMORY; JobMemoryLimit = max_memory_mb * 1024 * 1024`; god_engine.rs:1764-1765 `memory_per_symbol_mb = 128; dynamic_memory_limit = (num_symbols * memory_per_symbol_mb) + 2048`; memory_audit.rs:36-40 `working_set_bytes > (max_bytes as f64 * 0.85)` → `panic_memory_dump = true` → god_engine.rs:4108-4120 anula toda entrada nueva.",
+   "mechanism": "JOB_OBJECT_LIMIT_JOB_MEMORY limita el COMMIT sumado de todo el job. Eso incluye el proceso hijo auto_trainer_daemon, que se lanza en god_engine.rs:2289 después de init_guardian y hereda el job. El aviso temprano, en cambio, mira sólo el WorkingSetSize del propio proceso (memory_audit.rs:36), y la compactación horaria lo recorta. Una subida del commit (heap paginado o picos de replay, ShadowForest o el entrenador) puede llegar al tope sin que salte nunca el veto. Entonces la asignación falla y handle_alloc_error aborta el proceso vivo. Al revés: un pico de working set (páginas bloqueadas y mapeadas) veta las entradas de las 26 monedas aunque no haya fuga. Entre el 70 % y el 85 % el veto queda enganchado hasta que una compactación lo suelta.",
+   "failure_scenario": "Con N = 26 (lista fija en bootloader.rs:320-347) el tope es 5376 MB y el veto salta por encima de 4570 MB de working set. El commit del motor más el del entrenador pasa de 5376 MB mientras el working set, recortado cada hora, sigue por debajo de 4570: el proceso aborta con posiciones abiertas, sin aviso y sin aplanar. O bien un pico de working set deja la cartera entera sin entradas durante horas.",
+   "fix_sketch": "Basar el guardián en el commit del job (QueryInformationJobObject o PrivateUsage). Derivar el presupuesto de la línea base medida y de la RAM del host (16-23 GB) con un ADR. Cambiar el tope duro por una notificación del job (JOBOBJECT_NOTIFICATION_LIMIT) que active el veto y la degradación, o sacar al entrenador del job (breakaway).",
+   "live_path": true,
+   "known_ref": "parcial: docs/audit/linea_g/vetos.tsv:777 registra como questionable el veto tardío del host (memoria y deriva); ni el presupuesto literal ni el JobObject están registrados",
+   "confidence": 0.45
+  },
+  {
+   "title": "reality_slippage_penalty_with_notional vuelve a cobrar la fricción sobre un PnL que ya es neto, con nocional literal de 35 USD, en el evolver que promueve genomas",
+   "severity": "MED",
+   "category": "fitness-bias",
+   "file": "crates/evolution-engine/src/entropy_fitness.rs",
+   "line": 138,
+   "evidence": "entropy_fitness.rs:130-145 `total_volume_usd = total_trades * notional; deterministic_friction = total_volume_usd * fee_rate; … stochastic_friction = (lambda + std_dev*1.96)*(notional*0.0005)`; caller src/bin/evolver.rs:463 `reality_slippage_penalty_with_notional(raw_pnl, total_trades, 0.0004, 35.0)` con raw_pnl = capital final del arena, que ya descuenta la comisión física y el deslizamiento de salida (god-engine-core lib.rs:4122-4202) y de entrada (:8557-8573).",
+   "mechanism": "La función se pensó para PnL bruto, pero el evolver le pasa el delta neto del motor. Comisión y deslizamiento se cobran dos veces, en proporción al número de trades y con un nocional fijo de 35 USD que no tiene que ver con el capital (13 USD) ni con el tamaño real.",
+   "failure_scenario": "Con 100 trades sobre 13 USD de capital, la penalización extra es ≈ 1,4 + 0,16 = 1,56 USD (≈ 12 % del capital). La selección del evolver castiga la frecuencia y favorece genomas que operan poco, y el binario los promueve con fitness in-sample (evolver.rs:669-674).",
+   "fix_sketch": "Quitar la penalización en evolver (el motor ya modela la física), o exigir PnL bruto y nocional medido por trade. Sin literales por defecto (35 / 0.0006): que falle si faltan.",
+   "live_path": true,
+   "known_ref": "docs/audit/linea_g/g7_vetos.tsv:10 (src01, ola 2): «comisión cobrada dos veces sobre el PnL del motor»",
+   "confidence": 0.8
+  },
+  {
+   "title": "TrajectoryAuditor: tope literal de −0,60 % independiente de τ (residuo scalp); el host le pasa una τ global y su propio nocional como volumen esperado, y rotula el error como «fidelidad»",
+   "severity": "LOW",
+   "category": "scalp-residue/units",
+   "file": "crates/audit-engine/src/trajectory_auditor.rs",
+   "line": 222,
+   "evidence": "trajectory_auditor.rs:222 `let adverse_threshold = (-0.0060f64).max(-track.expected_magnitude * 1.50);`; god_engine.rs:4350-4355 `dur_ms = …config.base_duration_ms…` (no usa pos.entry_tau_ms); :4362 `_qty.abs() * entry_price` como expected_volume_usd; :3980 «score fidelidad … (1.0 = la realidad siguió la tesis)», cuando record_exit devuelve un TCE en el que 0 es perfecto.",
+   "mechanism": "max() de dos negativos se queda con el menos negativo, así que con TP > 0,4 % el umbral es siempre −0,6 %, para τ = 30 s o para 12 h. Las fracciones de tiempo se miden contra un gen global, no contra la τ continua de la posición. VolumeStarvation compara el volumen de mercado con el nocional propio, que es diminuto, y nunca dispara. El host registra Divergent en cada tick, sin latch.",
+   "failure_scenario": "Una posición a 12 h con SL del 3 % baja un 0,7 %: cada tick emite «la tesis se está rompiendo EN VIVO», lo que inunda el anillo de telemetría y entierra alertas reales. Además el operador lee un TCE de 0,9 como «90 % de fidelidad». No toca órdenes.",
+   "fix_sketch": "Umbral adverso en unidades de SL de la propia posición (fracción del sl_frac). Pasar entry_tau_ms y un volumen de mercado esperado medido. Emitir la divergencia sólo al cambiar de estado. Corregir la etiqueta: TCE = error.",
+   "live_path": true,
+   "known_ref": "parcial: crates/audit-engine/tests/auditor_open_diagnostics.rs (open_perfect_trajectory_returns_zero_error_not_one_fidelity) fija la semántica TCE; MAPA_C-F3_2026-10-11.md:488 sólo anota que audita entradas ejecutadas",
+   "confidence": 0.8
+  },
+  {
+   "title": "LibroSombra resuelve como TP o SL un toque observado después de τ, y su clave de solape y sus estadísticas ignoran τ y moneda",
+   "severity": "LOW",
+   "category": "counterfactual-bias",
+   "file": "crates/audit-engine/src/shadow_ledger.rs",
+   "line": 231,
+   "evidence": "shadow_ledger.rs:231-237 `let res = if x >= i.tp_pct { Some(Resolucion::Tp) } else if x <= -i.sl_pct { Some(Resolucion::Sl) } else if t_ms.saturating_sub(i.t0_ms) >= i.tau_ms {…Vencida(x)`; :193-196 solape por `a.fuente == i.fuente && a.moneda == i.moneda && a.es_largo == i.es_largo`; :247 `self.stats[i.fuente as usize]`.",
+   "mechanism": "Las barreras se miran antes que el vencimiento, así que el primer precio que llega después de t0+τ (un hueco del feed, o una moneda con pocos eventos) puede apuntar un TP o un SL completo fuera del horizonte. Vencida usa el precio de ese momento tardío, no el de τ. La clave de solape no incluye τ: una intención vetada a 30 s impide registrar otra a 12 h de la misma fuente, moneda y lado. Y el veredicto mezcla todas las monedas y τ por fuente.",
+   "failure_scenario": "Intención a τ = 60 s, TP a +1 %. El feed calla y el siguiente precio, a t0+120 s, está en +1,1 %: el libro apunta +1,8 R, cuando a τ estaba en +0,2 % (+0,2 R). Un veto que bloquea ganadoras en la moneda A y perdedoras en B sale como «SinEvidencia». Latente: hoy no tiene consumidor.",
+   "fix_sketch": "Comprobar primero el vencimiento: si t−t0 ≥ τ y no hubo toque antes, Vencida con el último precio dentro del horizonte (o descartar por falta de evidencia). Meter τ (o una banda de ln τ) en la clave de solape, y llevar estadística por fuente y moneda, con agregación jerárquica.",
+   "live_path": false,
+   "known_ref": "parcial: PLAN_LINEA_C_DESDE_LA_BASE_2026-10-11.md:874 (#38, libro sin consumidor); el toque tardío y la clave sin τ no están registrados",
+   "confidence": 0.85
+  },
+  {
+   "title": "TelemetryManager de audit-engine reserva un canal de 1 M ranuras (≈ 70 MB residentes) para un productor vivo que sólo manda actualizaciones de capital",
+   "severity": "LOW",
+   "category": "resource-ram",
+   "file": "crates/audit-engine/src/telemetry.rs",
+   "line": 65,
+   "evidence": "telemetry.rs:65 `bounded(1_000_000)`. crossbeam-channel 0.5.16 flavors/array.rs:109-117 construye `Box<[Slot<T>]>` y escribe el stamp de cada ranura (toca todas las páginas). El único productor vivo es update_dynamic_capital (god_engine.rs:1345, :1621); send_trade_execution, send_ml_prediction, send_parity_alert y send_latency_warning no tienen llamadores de producción.",
+   "mechanism": "Cada ranura lleva un stamp de 8 B más un TelemetryEvent de unos 64 B: ≈ 72 MB comprometidos y residentes al primer uso de la Lazy. Además cuentan para el presupuesto literal del guardián de memoria.",
+   "failure_scenario": "Unos 70 MB de RAM y de presupuesto del JobObject se gastan en imprimir dos o tres líneas de capital por sesión, y acercan el veto y el tope del hallazgo anterior.",
+   "fix_sketch": "Capacidad acorde al uso real (cientos de eventos), o quitar el TelemetryManager y escribir el capital por el bus mmap vivo.",
+   "live_path": true,
+   "known_ref": "ninguno (F7-B-H2 cubre el GLOBAL_TELEMETRY de os-guardian; g7 src03 el de telemetry-server)",
+   "confidence": 0.75
+  },
+  {
+   "title": "Isla evolutiva muerta que puntúa por tasa de acierto frente a 0,5 (trampa si se vuelve a cablear)",
+   "severity": "LOW",
+   "category": "doctrine-p-star",
+   "file": "crates/evolution-engine/src/anti_bias_governor.rs",
+   "line": 121,
+   "evidence": "anti_bias_governor.rs:115-123 `if !wr_degradation.is_finite() || wr_degradation > 0.15 { return false; } … if live_demo_winrate < 0.50 { return false; // Perdedor en la vida real.`; también entropy_fitness.rs:58-62 colapsa la confianza por divergencia de WR.",
+   "mechanism": "Con RR ≥ 2,25 el umbral de equilibrio es p* ≈ 0,31-0,43. Exigir WR ≥ 0,50 descarta estrategias con esperanza neta positiva (p.ej. WR 0,40 y RR 2,25 da +0,30 R antes de fricción) y premia el acierto, no la esperanza.",
+   "failure_scenario": "Si alguien recablea validate_with_live_reality en el embudo de promoción, purga a todo campeón sano de RR alto y deja pasar sólo geometrías de TP corto: el sesgo que la doctrina prohíbe.",
+   "fix_sketch": "Borrar la isla o rehacer el criterio en esperanza neta por trade (en R, frente a p* con LCB), sin literales de WR.",
+   "live_path": false,
+   "known_ref": "parcial: BARRIDO_EXHAUSTIVO_FASES.md:494 A-M5 (DSR divergente en isla muerta, trampa de re-cableado); el criterio WR ≥ 0,5 no estaba citado",
+   "confidence": 0.9
+  },
+  {
+   "title": "forensics: la prueba de «cero fugas de lookahead» no ejercita ningún FeatureEngine y siempre imprime PASSED",
+   "severity": "LOW",
+   "category": "vacuous-test",
+   "file": "crates/audit-engine/src/forensics.rs",
+   "line": 118,
+   "evidence": "forensics.rs:53-119: correlación entre una media corrida sintética y el precio siguiente de un vector fijo de 5 precios, sin assert, que termina en `println!(\"✅ FASE 25 ML GOVERNANCE PASSED: Cero fugas de datos (Lookahead Bias = 0.00%)\")`. El comentario H-7 de :1-2 dice que está disponible en producción, pero las funciones son #[test] y desaparecen fuera de cfg(test).",
+   "mechanism": "Ese test no puede fallar, no toca el código de features real y anuncia una certificación que no comprueba. El escritor de .forensic_violation (:115) sólo se ejecuta bajo cargo test, con el cwd del crate.",
+   "failure_scenario": "Una fuga real de lookahead en feature-engine o en el núcleo pasa con el mensaje «0,00 %» en la salida de cargo test, y da una falsa garantía en las revisiones.",
+   "fix_sketch": "Borrar el módulo o cambiarlo por un test de no-anticipación real: perturbar el futuro y comprobar que las features hasta t no cambian, sobre el FeatureEngine vivo.",
+   "live_path": false,
+   "known_ref": "BARRIDO_EXHAUSTIVO_FASES.md:561 (F7 MED «forensics miente sobre disponibilidad»); LC-F7-08 / linea_g/hallazgos.tsv:297 (escritor .forensic_violation)",
+   "confidence": 0.9
+  }
+ ],
+ "file_verdicts": [
+  {
+   "file": "crates/audit-engine/src/behavioral_auditor.rs",
+   "status": "código: muerto; prueba: mixta",
+   "note": "Sin consumidor de producción. El rótulo SPRT es una heurística (conocido). Los tests del archivo son honestos; auditor_open_diagnostics los fija como open_ (fija-defecto)."
+  },
+  {
+   "file": "crates/audit-engine/src/cybernetic_resilience.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Umbrales literales (1000/2000 ms, 100, 15 %, 5) sin consumidor. Los tests sólo fijan esos literales."
+  },
+  {
+   "file": "crates/audit-engine/src/forensics.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "Sólo existe bajo cfg(test). Imprime PASSED sin asserts. El comentario H-7 es falso (conocido)."
+  },
+  {
+   "file": "crates/audit-engine/src/lib.rs",
+   "status": "código: vivo; prueba: n/a",
+   "note": "Declara los módulos. Sólo trajectory_auditor, telemetry y drift_auditor tienen consumidor vivo."
+  },
+  {
+   "file": "crates/audit-engine/src/main.rs",
+   "status": "código: herramienta offline; prueba: sin contrato",
+   "note": "Binario audit-engine, no lo lanza ningún script. Bucle perpetuo de impresión. No escribe datos de producción."
+  },
+  {
+   "file": "crates/audit-engine/src/resilience.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "ChaosMonkey sin uso. drop_rate sin validar y sleep bloqueante (OPEN, conocido)."
+  },
+  {
+   "file": "crates/audit-engine/src/shadow_ledger.rs",
+   "status": "código: muerto (sin consumidor, pendiente C-F4); prueba: honesta",
+   "note": "El contrato qs_r4 es honesto pero no cubre el toque tardío tras τ ni la clave sin τ (hallazgo LOW)."
+  },
+  {
+   "file": "crates/audit-engine/src/state_validator.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "Sin llamadores de producción. Respaldo literal de 13 USD y tolerancia de 0,01. Los tests no tienen asserts."
+  },
+  {
+   "file": "crates/audit-engine/src/telemetry.rs",
+   "status": "código: vivo; prueba: sin contrato",
+   "note": "Sólo vive update_dynamic_capital. Canal de 1 M ranuras ≈ 70 MB (hallazgo LOW). El resto de emisores no tiene productor."
+  },
+  {
+   "file": "crates/audit-engine/src/trajectory_auditor.rs",
+   "status": "código: vivo (sólo telemetría); prueba: mixta",
+   "note": "Conectado en god_engine:3579/3977/4356. Tope −0,6 % literal, τ global y volumen = nocional propio (hallazgo LOW). Los tests fijan el literal; U-ERR-3/4 honestos."
+  },
+  {
+   "file": "crates/evolution-engine/src/anti_bias_governor.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Isla sin consumidor. Criterio WR ≥ 0,50 contrario a p* (hallazgo LOW). DSR mal formado (A-M5, conocido)."
+  },
+  {
+   "file": "crates/evolution-engine/src/cma_es.rs",
+   "status": "código: muerto; prueba: honesta (sobre código muerto)",
+   "note": "Sólo lo usa start_evolution_loop, sin llamadores. Penalización de −10 sin trades (A-M6, conocido). Los contratos cma_* certifican forma, no economía."
+  },
+  {
+   "file": "crates/evolution-engine/src/crossover_cauchy.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Sin consumidor. El clamp a [−10, 10] no casa con el hipercubo [0, 1] del CMA."
+  },
+  {
+   "file": "crates/evolution-engine/src/entropy_fitness.rs",
+   "status": "código: vivo vía herramienta offline (evolver.rs:463); prueba: vacua",
+   "note": "La penalización de deslizamiento cobra dos veces la fricción con nocional de 35 (hallazgo MED, conocido src01). Un NaN da 0,0 de PnL (desconocido = 0). Los tests sólo miran finitud."
+  },
+  {
+   "file": "crates/evolution-engine/src/meta.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "Sólo imprime sugerencias. `stagnant_coins > 15` da por hechas 30 monedas. Los tests no tienen asserts."
+  },
+  {
+   "file": "crates/evolution-engine/src/moe_neat_arena.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "fast_non_dominated_sort es correcto pero no tiene llamadores. Comentarios con el binario scalp/swing residual."
+  },
+  {
+   "file": "crates/evolution-engine/src/neat.rs",
+   "status": "código: muerto; prueba: sin contrato",
+   "note": "Reexporta Phenotype sin consumidor."
+  },
+  {
+   "file": "crates/evolution-engine/src/polars_evolver.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "Daemon sin llamadores que promovería con pseudo-sharpe > 0 (conocido F5-A M7). El test serializa un struct legacy."
+  },
+  {
+   "file": "crates/os-guardian/src/anomaly_detector.rs",
+   "status": "código: vivo pero inerte; prueba: sin contrato",
+   "note": "Lo alimentan sensores mock: no puede disparar en Windows (F7-B-H3, conocido)."
+  },
+  {
+   "file": "crates/os-guardian/src/crash_dump.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Nunca se invoca (conocido F7). Campo horizon como residuo scalp/swing. remove-then-rename no es atómico."
+  },
+  {
+   "file": "crates/os-guardian/src/ebpf_core.rs",
+   "status": "código: vivo (mock); prueba: sin contrato",
+   "note": "Constantes (scheduler_delay 120 ns). eBPF inexistente (conocido)."
+  },
+  {
+   "file": "crates/os-guardian/src/lib.rs",
+   "status": "código: vivo; prueba: mixta/frágil",
+   "note": "JobObject con tope duro de commit derivado de un literal (hallazgo MED). Los tests cambian la prioridad y la afinidad del hilo del test y no comprueban el efecto."
+  },
+  {
+   "file": "crates/os-guardian/src/memory_audit.rs",
+   "status": "código: vivo (veto global de entradas); prueba: vacua",
+   "note": "Veto al 85/70 % del working set. Mira una magnitud distinta del tope de commit (hallazgo MED). El test sólo comprueba ≥ 0."
+  },
+  {
+   "file": "crates/os-guardian/src/memory_compaction.rs",
+   "status": "código: vivo; prueba: vacua",
+   "note": "EmptyWorkingSet cada hora en el proceso vivo (hallazgo MED). Hardcap de 4 GB sobre el WS. Tests sin asserts de efecto."
+  },
+  {
+   "file": "crates/os-guardian/src/observability_plane.rs",
+   "status": "código: vivo (hilo de 10 Hz sobre mocks); prueba: vacua",
+   "note": "Sin efecto. El bloque cfg(linux) usa `core_id` cuando el parámetro se llama `_core_id`."
+  },
+  {
+   "file": "crates/os-guardian/src/pmu_sensor.rs",
+   "status": "código: vivo (mock); prueba: vacua",
+   "note": "Ruido de _rdtsc que se presenta como medida (conocido). Los tests comprueban rangos del mock."
+  },
+  {
+   "file": "crates/os-guardian/src/telemetry.rs",
+   "status": "código: vivo (herramientas auxiliares / telemetry-server / phase-runner); prueba: sin contrato",
+   "note": "Mutex sobre System::new_all con unwrap. Sin decisiones de trading."
+  },
+  {
+   "file": "crates/os-guardian/src/zero_latency_telemetry.rs",
+   "status": "código: muerto; prueba: sin contrato",
+   "note": "GLOBAL_TELEMETRY sin uso; drenaría y descartaría 1 M de ranuras (F7-B-H2, conocido)."
+  },
+  {
+   "file": "crates/feature-engine/src/correlation.rs",
+   "status": "código: muerto en producción; prueba: honesta",
+   "note": "Sólo lo usan tests (correlation_input_contract). La API transaccional es correcta. La cesta incluye al propio activo (documentado)."
+  },
+  {
+   "file": "crates/feature-engine/src/normalizer.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Sólo tiene pub use. La semilla de varianza 1e-4 es literal."
+  },
+  {
+   "file": "crates/feature-engine/src/quantum_tensor_store.rs",
+   "status": "código: muerto; prueba: mixta (ignore OPEN F2.6-05)",
+   "note": "El «Lyapunov» es un RMS(tf0 − tf1) (conocido). get_index sólo hace debug_assert."
+  },
+  {
+   "file": "crates/feature-engine/src/simd_neural_network.rs",
+   "status": "código: vivo-inerte; prueba: honesta",
+   "note": "Se instancia por StatefulEngine pero nunca infiere ni entrena (F2.6-06, conocido)."
+  },
+  {
+   "file": "crates/feature-engine/src/tensor_ring.rs",
+   "status": "código: vivo (cómputo sin lector); prueba: honesta",
+   "note": "El jerk se calcula por evento sobre precio nominal y jerk_t nunca se lee (F2.3b-11, conocido)."
+  },
+  {
+   "file": "src/features/correlation.rs",
+   "status": "código: muerto (copia legacy); prueba: fija-defecto",
+   "note": "Asigna un vec por update y trata el dato inválido como retorno 0 (desconocido = 0). legacy_correlation_diagnostics fija ese defecto (FMT-140)."
+  },
+  {
+   "file": "src/features/ewma.rs",
+   "status": "código: muerto (copia); prueba: honesta",
+   "note": "Duplica feature-engine/ewma. Sin importadores (MAPA_C-F3:788)."
+  },
+  {
+   "file": "src/features/microstructure.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Copia legacy con alfas literales 0,1/0,01."
+  },
+  {
+   "file": "src/features/mod.rs",
+   "status": "código: muerto; prueba: n/a",
+   "note": "`pub mod features` sin importadores (MAPA_C-F3:788)."
+  },
+  {
+   "file": "src/features/omni_strategies.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "Copia legacy. p = last_price.max(1.0) escala mal en monedas de menos de 1 USD (la copia viva de feature-engine:150 tiene el mismo patrón, fuera de mi lista)."
+  },
+  {
+   "file": "src/features/welford.rs",
+   "status": "código: muerto; prueba: fija-defecto",
+   "note": "Acepta NaN y envenena la media. legacy_statistics_diagnostics lo fija (FMT-140)."
+  },
+  {
+   "file": "crates/data-ingest/src/dynamic_selector.rs",
+   "status": "código: muerto; prueba: mixta/frágil",
+   "note": "select_top_10 no tiene llamadores. Si se cablea, reescribiría el universo global a 10 símbolos con una heurística de retorno a 24 h (1 M, 15 %). Un test es tautológico y otro muta el universo global."
+  }
+ ],
+ "vetos": [
+  {
+   "file": "crates/os-guardian/src/memory_audit.rs",
+   "line": 38,
+   "name": "Pánico de memoria: veto global de entradas",
+   "kind": "reject",
+   "constant": "working_set > 0.85 · (N·128 + 2048) MB; liberación < 0.70",
+   "origin": "literal",
+   "absorbing_risk": "possible",
+   "assessment": "questionable",
+   "note": "Veta las 26 monedas con el WS del propio proceso. Entre el 70 y el 85 % queda enganchado hasta que EmptyWorkingSet lo suelta. No ve el commit ni al proceso hijo."
+  },
+  {
+   "file": "crates/os-guardian/src/lib.rs",
+   "line": 70,
+   "name": "Tope duro de commit del JobObject",
+   "kind": "hard-limit",
+   "constant": "JobMemoryLimit = N·128 + 2048 MB (god_engine.rs:1764-1765)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Si se supera, la asignación falla y el proceso vivo aborta. Lo comparte el auto_trainer hijo. Sin ADR ni medida de línea base."
+  },
+  {
+   "file": "crates/os-guardian/src/memory_compaction.rs",
+   "line": 101,
+   "name": "Hardcap del working set en ensure_working_set_size",
+   "kind": "clamp",
+   "constant": "4 GB; padding 32 MB",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Rebaja en silencio el máximo de WS fijado por init_guardian (5,4 GB) a 4 GB."
+  },
+  {
+   "file": "crates/audit-engine/src/trajectory_auditor.rs",
+   "line": 222,
+   "name": "MomentumReversal",
+   "kind": "alert",
+   "constant": "max(−0.0060, −1.5·mag)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Tope de −0,6 % independiente de τ (residuo scalp). Sólo telemetría."
+  },
+  {
+   "file": "crates/audit-engine/src/trajectory_auditor.rs",
+   "line": 232,
+   "name": "VolumeStarvation",
+   "kind": "alert",
+   "constant": "duration_ratio > 0.70 && expected_volume > 1000 && volume_ratio < 0.01 && pnl < 0",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "El host pasa su propio nocional como volumen esperado: inalcanzable en la práctica."
+  },
+  {
+   "file": "crates/audit-engine/src/trajectory_auditor.rs",
+   "line": 244,
+   "name": "TimeExhaustionWithoutProgress",
+   "kind": "alert",
+   "constant": "duration_ratio > 4.0 && pnl < −0.0030",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Se mide contra base_duration_ms global, no contra la τ de la posición."
+  },
+  {
+   "file": "crates/audit-engine/src/shadow_ledger.rs",
+   "line": 148,
+   "name": "Veredicto contrafactual por fuente",
+   "kind": "verdict",
+   "constant": "m ± z·SE con n ≥ max(n_min, 2) (z y n_min del llamador)",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Estadísticamente correcto y en R neto. Mezcla monedas y τ. Sin consumidor."
+  },
+  {
+   "file": "crates/audit-engine/src/behavioral_auditor.rs",
+   "line": 25,
+   "name": "Límites SPRT",
+   "kind": "alert",
+   "constant": "alpha = beta = 0.01; delta 0.10 (:64)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "No es una LLR calibrada; sin consumidor."
+  },
+  {
+   "file": "crates/audit-engine/src/cybernetic_resilience.rs",
+   "line": 34,
+   "name": "Salud sistémica",
+   "kind": "gate",
+   "constant": "latencia WS > 2000 ms (o < 1000 en :26), drops > 100, error > 15 %, fallos ≥ 5",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sin consumidor; ventanas y denominadores sin definir."
+  },
+  {
+   "file": "crates/audit-engine/src/state_validator.rs",
+   "line": 58,
+   "name": "Alerta de paridad de capital",
+   "kind": "alert",
+   "constant": "diff > 0.01 USD; crítico > 1.0 USD; respaldo de capital 13.0",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sin llamadores de producción."
+  },
+  {
+   "file": "crates/evolution-engine/src/anti_bias_governor.rs",
+   "line": 121,
+   "name": "Validación con realidad live",
+   "kind": "gate",
+   "constant": "WR live ≥ 0.50; degradación de WR ≤ 0.15; n ≥ 10",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "nonsense",
+   "note": "Puntúa por acierto frente a 0,5, contra p* ≈ 0,31-0,43. Isla muerta."
+  },
+  {
+   "file": "crates/evolution-engine/src/anti_bias_governor.rs",
+   "line": 58,
+   "name": "Purga por DSR",
+   "kind": "gate",
+   "constant": "dsr_prob < 0.90; num_trades < 30; OOS ≥ 0.5·IS (:88)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "E[max SR] no es la de Bailey-LdP (A-M5)."
+  },
+  {
+   "file": "crates/evolution-engine/src/cma_es.rs",
+   "line": 454,
+   "name": "Puntuación de candidatos sin trades",
+   "kind": "score",
+   "constant": "−10 − 0.001·‖x‖₁",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Incomparable con el fitness (A-M6). Sólo en un loop sin llamadores."
+  },
+  {
+   "file": "crates/evolution-engine/src/entropy_fitness.rs",
+   "line": 136,
+   "name": "Fricción de realidad del fitness",
+   "kind": "cost",
+   "constant": "nocional 35 USD, comisión 0.0006 por defecto, 5 % de trades con deslizamiento, 1.96σ, 5 bps",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Viva vía evolver con 0.0004/35. Cobra dos veces la fricción ya modelada por el motor."
+  },
+  {
+   "file": "crates/evolution-engine/src/entropy_fitness.rs",
+   "line": 166,
+   "name": "Penalización de drawdown",
+   "kind": "score",
+   "constant": "exp(−20·exceso), suelo 0.01",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sólo la usa polars_evolver (muerto)."
+  },
+  {
+   "file": "crates/evolution-engine/src/polars_evolver.rs",
+   "line": 137,
+   "name": "Promoción del polars_evolver",
+   "kind": "promotion",
+   "constant": "pseudo-sharpe > 0; penalización si trades < 15",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Daemon sin llamadores (conocido)."
+  },
+  {
+   "file": "crates/evolution-engine/src/meta.rs",
+   "line": 51,
+   "name": "Diagnóstico meta-arquitectónico",
+   "kind": "alert",
+   "constant": "sharpe < 0.5; WR < 0.35 && pnl < 0; > 15 monedas estancadas",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sólo imprime. 15 da por hechas 30 monedas."
+  },
+  {
+   "file": "crates/os-guardian/src/anomaly_detector.rs",
+   "line": 55,
+   "name": "Anomalía IPC / scheduler / cambios de contexto",
+   "kind": "alert",
+   "constant": "IPC < 0.5·EMA; delay > 5·EMA y > 1500 ns; ctx_switches > 10",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sensores mock: no puede disparar (F7-B-H3)."
+  },
+  {
+   "file": "crates/data-ingest/src/dynamic_selector.rs",
+   "line": 165,
+   "name": "Selección de universo top-10",
+   "kind": "selection",
+   "constant": "take(10); volumen mínimo 1 M (testnet 10 k); banda exp(−|r|/15)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sin llamadores. 10 frente a un universo de hasta 30, y sobrescribiría el universo global."
+  },
+  {
+   "file": "crates/feature-engine/src/normalizer.rs",
+   "line": 57,
+   "name": "Semilla de varianza de Garman-Klass",
+   "kind": "prior",
+   "constant": "rolling_variance_ema = 0.0001; alpha 0.05 por defecto",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sin consumidor de producción."
+  }
+ ],
+ "coverage": {
+  "files_read": [
+   "crates/audit-engine/src/behavioral_auditor.rs",
+   "crates/audit-engine/src/cybernetic_resilience.rs",
+   "crates/audit-engine/src/forensics.rs",
+   "crates/audit-engine/src/lib.rs",
+   "crates/audit-engine/src/main.rs",
+   "crates/audit-engine/src/resilience.rs",
+   "crates/audit-engine/src/shadow_ledger.rs",
+   "crates/audit-engine/src/state_validator.rs",
+   "crates/audit-engine/src/telemetry.rs",
+   "crates/audit-engine/src/trajectory_auditor.rs",
+   "crates/evolution-engine/src/anti_bias_governor.rs",
+   "crates/evolution-engine/src/cma_es.rs",
+   "crates/evolution-engine/src/crossover_cauchy.rs",
+   "crates/evolution-engine/src/entropy_fitness.rs",
+   "crates/evolution-engine/src/meta.rs",
+   "crates/evolution-engine/src/moe_neat_arena.rs",
+   "crates/evolution-engine/src/neat.rs",
+   "crates/evolution-engine/src/polars_evolver.rs",
+   "crates/os-guardian/src/anomaly_detector.rs",
+   "crates/os-guardian/src/crash_dump.rs",
+   "crates/os-guardian/src/ebpf_core.rs",
+   "crates/os-guardian/src/lib.rs",
+   "crates/os-guardian/src/memory_audit.rs",
+   "crates/os-guardian/src/memory_compaction.rs",
+   "crates/os-guardian/src/observability_plane.rs",
+   "crates/os-guardian/src/pmu_sensor.rs",
+   "crates/os-guardian/src/telemetry.rs",
+   "crates/os-guardian/src/zero_latency_telemetry.rs",
+   "crates/feature-engine/src/correlation.rs",
+   "crates/feature-engine/src/normalizer.rs",
+   "crates/feature-engine/src/quantum_tensor_store.rs",
+   "crates/feature-engine/src/simd_neural_network.rs",
+   "crates/feature-engine/src/tensor_ring.rs",
+   "src/features/correlation.rs",
+   "src/features/ewma.rs",
+   "src/features/microstructure.rs",
+   "src/features/mod.rs",
+   "src/features/omni_strategies.rs",
+   "src/features/welford.rs",
+   "crates/data-ingest/src/dynamic_selector.rs"
+  ],
+  "unread": [],
+  "notes": "Leí completos los 40 archivos de la dimensión src05 (6287 líneas). Contexto consultado de forma parcial para decidir qué está vivo: src/bin/god_engine.rs (1725-1784, 2160-2184, 2262-2311, 3105-3134, 3560-3609, 3960-3999, 4095-4134, 4335-4374), crates/evolution-engine/src/lib.rs entero, src/bin/evolver.rs (360-509, 630-698), god-engine-core lib.rs:4118-4217 y bootloader.rs:317-351, random_forest.rs (fragmentos), auto_trainer_daemon.rs:60-140 y la fuente local de crossbeam-channel 0.5.16 (array.rs:95-120). Tests de integración revisados para los veredictos: qs_r4_libro_sombra_contract, trajectory_duration_contract, auditor_open_diagnostics y los legacy_*_diagnostics de feature-engine. Los registros previos se consultaron con grep: HALLAZGOS C-F1/F2/F3, MAPA_C-F3, BARRIDO, PLAN_LINEA_C/F, linea_g hallazgos/verificacion/vetos y g7_* de la ola 2. No se ejecutó cargo. No se leyó .agents/MEMORIA.md. Nada se midió en ejecución: la gravedad del hallazgo EmptyWorkingSet (magnitud de la parada) y la del JobObject (probabilidad de llegar al tope de commit) se infieren del código. Fuera de mi lista: la copia viva crates/feature-engine/src/omni_strategies.rs:150 repite el suelo last_price.max(1.0), que distorsiona las monedas de menos de 1 USD (relacionado con vetos.tsv:221)."
+ }
+}

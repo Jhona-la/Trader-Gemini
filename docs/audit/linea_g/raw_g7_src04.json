@@ -1,0 +1,390 @@
+{
+ "findings": [
+  {
+   "title": "El walk-forward adopta cada día el mejor de hasta 1000 mutantes con cualquier ventaja sobre el control y al final promueve el resultado sin evidencia ni procedencia",
+   "severity": "MED",
+   "category": "stats-promotion",
+   "file": "crates/backtest-engine/src/bin/continuous_evolution_backtest.rs",
+   "line": 944,
+   "evidence": "} else if best_pnl > control_pnl && best_trades >= 1 { ... current_genome = shadow_genomes[best_idx].clone();  /  :992 GenomeEnvelope::promote(current_genome.clone(), \"continuous_evolution_backtest\", \"End of 30-day pre-training\")",
+   "mechanism": "El ramal de :944 acepta cualquier mejora mayor que 0 y contiene al de :935-936 (mejora > 0,30 USD, o alfa > 0 con control ≤ 0). Así las dos guardas documentadas son código muerto. La aptitud es la PnL absoluta de un solo día, tomando el máximo entre N = requested_mutants (clamp 10..1000, 250 por defecto). No hay corrección por multiplicidad ni comparación de la esperanza neta por operación con p*. Además, mutant_start_cap = current_capital (:814) se lee después de :728 (current_capital = total_equity, la equity FINAL del motor principal), mientras que los mutantes se construyeron con el capital del INICIO del día (:405). Cada PnL de mutante lleva entonces un desplazamiento de −(PnL diaria del principal), lo que falsea las comparaciones con 0 y los logs. :300 imprime «AGGTRADES REALES» sin condición, aunque cargue el legado data/BTCUSDT_ticks.bin (en multimoneda, ETH/SOL/BNB/XRP son siempre los no-REAL), y load_binary_ticks no devuelve TickOrigin, así que nadie lo comprueba antes de promover. Con TG_GENOME_ENV=backtest, load_active() hace que cada corrida parta del genoma derivado por la anterior.",
+   "failure_scenario": "Con 250 mutantes que operan, el máximo de 249 PnL ruidosas supera al control casi todos los días. El genoma se sustituye casi a diario por el más afortunado (un paseo aleatorio seleccionado por suerte), y la deriva se acumula de una corrida a otra. Al terminar se escribe config_dir/genomes/backtest/active.json con generación+1 y el motivo «End of 30-day pre-training» aunque se simularan 3 días sobre velas sintéticas. promote_across_env (con TG_GENOME_PROMOTE_ARMED y un operador) lo lleva a demo o prod sin más evidencia.",
+   "fix_sketch": "Seleccionar en el día d y adoptar sólo si la ventaja se repite fuera de muestra en d+1, con una corrección por multiplicidad (DSR o e-valor sobre N). Puntuar por la esperanza neta por operación frente a p*. Medir la PnL del mutante contra su propio capital inicial. Devolver TickOrigin desde el cargador y bloquear promote si !es_real(). Registrar en el motivo los días y el tape reales.",
+   "live_path": false,
+   "known_ref": "La clase best-of-N sin multiplicidad ya está registrada en el host (docs/audit/linea_g/hallazgos.tsv:263; BARRIDO_EXHAUSTIVO_FASES.md:748). En este binario no está registrada (BARRIDO sólo trae H0-1 y R7-R4-D-2 sobre los nichos).",
+   "confidence": 0.85
+  },
+  {
+   "title": "La frescura del holdout se decide por el sha256 del archivo de test: un tape re-exportado o solapado cuenta como holdout nuevo y deja promover un modelo vivo",
+   "severity": "MED",
+   "category": "holdout-reuse",
+   "file": "src/model_manifest.rs",
+   "line": 338,
+   "evidence": "u.symbol == symbol && u.label_mode == label_mode && u.test_sha256 == test_sha256 && u.model_sha256 != model_sha256  (HoldoutUse :138-148 no guarda first_ts_ms/last_ts_ms)",
+   "mechanism": "El libro de usos identifica el holdout por los bytes exactos del fichero. InputRecord tiene la cobertura temporal (first_ts/last_ts) pero HoldoutUse no la guarda, y prior_other_artifacts no la usa. Basta cambiar cualquier byte para que el sha cambie y el contador vuelva a prior = 0, y check_holdout_fresh lo aprueba sin motivo: un día más al final, una re-exportación con otra versión de feature_exporter o un recorte distinto. Además verify_model_lineage no tiene ningún llamador en el host: models/{KEY}.json se carga con o sin manifiesto.",
+   "failure_scenario": "El artefacto A (ATOMUSDT, dir) se juzga contra el test T = [10..20 oct] y falla el gate. Se ajustan hiperparámetros y se re-exporta T' = [10..21 oct]. train_forest --promote escribe B en models/ATOMUSDT_MOTOR.json con holdout_prior_other_artifacts = 0, aunque el ~90 % de las filas de T' ya informaron la elección. El watcher del host lo sirve en vivo.",
+   "fix_sketch": "Guardar (first_ts_ms, last_ts_ms) del test en HoldoutUse y contar como uso previo cualquier entrada del mismo símbolo y objetivo cuyo intervalo se solape con el nuevo, no sólo el mismo sha. Opcionalmente, exigir Lineage::Verified en la carga o la promoción del host.",
+   "live_path": true,
+   "known_ref": "No registrado. PLAN_LINEA_F_CLAUDE_2026-10-11.md:267 sólo pide el «registro de consultas al holdout», que es lo que QS-2 implementó.",
+   "confidence": 0.7
+  },
+  {
+   "title": "El contrato de causalidad del replay no puede ver un lookahead de una fila, y su prueba de sufijo nunca entra en la ventana de operación",
+   "severity": "MED",
+   "category": "test-blind-spot",
+   "file": "crates/backtest-engine/src/booktick_causality_contract.rs",
+   "line": 104,
+   "evidence": "for t in &mut changed[40..] { ... }  let a = trace(&original, &cfg(mode, 100), 40);   (booktick_replay.rs:338: before_event(i, &core) se llama ANTES de procesar la fila i)",
+   "mechanism": "trace registra estados para i < 40, que son los estados tras procesar las filas 0..38. La fila 39 nunca se compara ya procesada, y es justo la única cuyo peek de una fila tocaría la fila 40 alterada. Además warmup = 100 > 40: todo el prefijo comparado es calentamiento, sin entradas y con capital y margen constantes por construcción, así que un lookahead en llenados o salidas queda fuera. cx_appending_data (all[..180] frente a all, prefijo 120) sólo detecta lookahead de 61 filas o más, porque ambas cintas comparten las filas ≤ 179. BARRIDO (F5-BACKTEST-001) cita estas pruebas como «garantía matemática formal de cero lookahead».",
+   "failure_scenario": "Si is_minute_kline (booktick_replay.rs:426) pasara a mirar ticks[i+1] (la forma típica «última fila del minuto»), o si un llenado usara el precio de la fila siguiente, las cuatro variantes (dos pruebas × dos modos) seguirían en verde.",
+   "fix_sketch": "Comparar hasta prefix = índice_de_cambio + 1, o alterar desde prefix − 1. Repetir con un warmup menor que el índice de cambio para que la ventana comparada incluya entradas y cierres. Añadir un control positivo con un peek inyectado de una fila que deba salir en rojo.",
+   "live_path": false,
+   "known_ref": "No registrado como defecto. BARRIDO_EXHAUSTIVO_FASES.md:1047-1051 lo da por certificado.",
+   "confidence": 0.8
+  },
+  {
+   "title": "El frame predicción-vs-realidad no lleva moneda, τ ni entorno: el bosque sombra mezcla todas las monedas (y los procesos que comparten telemetry.mmap) y fija umbrales ML globales",
+   "severity": "MED",
+   "category": "multiasset-leak",
+   "file": "crates/storage-engine/src/mmap_bus.rs",
+   "line": 62,
+   "evidence": "payload [ml_prob, is_long, obi, net_pnl_pct, atr_pct, hurst]; TelemetryFrame { timestamp_ns, subsystem_id, frame_type, padding: [u8; 2], seq, payload }  — :152-157 `if !p.is_finite() { *p = 0.0; }`",
+   "mechanism": "Con este esquema el consumidor no puede separar las observaciones por moneda ni por τ. online_daemon.rs:1042-1060 entrena un único bosque con los cierres de todas las monedas, y :1103-1111 escribe arena.config.ml_threshold_long/short (globales). El núcleo usa esos umbrales en la puerta ML de cada moneda (lib.rs:6995-7003). Esto ocurre cuando live_evolution_armed_for_env(), que en demo es el valor por defecto. La ruta data_join(\"telemetry.mmap\") (god_engine.rs:1747-1749; online_daemon.rs:1009) no separa demo de prod, aunque CL-48 sí separó el resto del estado aprendido. Dos sesiones concurrentes con la misma raíz comparten el head atómico del anillo, y cada demonio ingiere los cierres del otro (skip_to_head sólo protege entre sesiones sucesivas). write_trace convierte NaN en 0,0, así que un obi o un pnl desconocidos entran como 0 reales.",
+   "failure_scenario": "En demo con 26 monedas, los cierres de las monedas más volátiles mueven el umbral ML con el que entra BTC. Una sesión prod lanzada a la vez sobre el mismo data/ entrena su forest6 con los cierres simulados de la demo.",
+   "fix_sketch": "Añadir coin_id (en padding[2]) y τ (en el payload o en un frame contiguo) al frame, y escribir en env_data_path(\"telemetry.mmap\") o con un id de entorno. Propagar NaN con una bandera de ausencia en lugar de 0. Umbrales por moneda o por τ continua.",
+   "live_path": true,
+   "known_ref": "Parcial: docs/audit/linea_g/hallazgos.tsv:280 (LC-F1-08; LC-F7-05). Su arreglo propone quedarse con «la del bus, que lleva la τ y el lado», pero el frame sólo lleva el lado: ni τ, ni moneda, ni entorno.",
+   "confidence": 0.7
+  },
+  {
+   "title": "El libro local del host sólo se escribe: inserta cada mejor precio sin borrar los viejos, crece en el camino caliente y nadie lo lee",
+   "severity": "LOW",
+   "category": "hot-path-dead-state",
+   "file": "src/orderbook.rs",
+   "line": 55,
+   "evidence": "self.bids.insert(OrderedFloat(price), quantity);   god_engine.rs:3316-3318: `ob.update_bid(bp, bq); ob.update_ask(ap, aq);` (sin ningún best_bid/micro_price/order_book_imbalance en el árbol)",
+   "mechanism": "@depth5 es una instantánea parcial, no un diff, y nunca envía q = 0 para el nivel que dejó de ser el mejor. El host inserta sólo el nivel 0 de cada mensaje, así que el BTreeMap acumula cada precio distinto visitado y sólo se vacía al reconectar. Hay asignaciones de nodos por cada precio nuevo en el bucle de eventos y la RAM crece con el rango de precios y el número de monedas. Si algún consumidor lo leyera, best_bid sería el máximo histórico, con el libro cruzado.",
+   "failure_scenario": "En una sesión larga sin reconexiones, con 30 monedas, el mapa retiene decenas de miles de niveles por moneda sin utilidad. Un futuro lector de micro_price obtendría precios rancios y cruzados.",
+   "fix_sketch": "Retirar local_orderbooks, o tratar cada @depth5 como snapshot (clear + insertar los 5 niveles).",
+   "live_path": true,
+   "known_ref": "No registrado.",
+   "confidence": 0.85
+  },
+  {
+   "title": "El sniffer de Hyperliquid corre en producción y publica como «riesgo de cascada de liquidaciones» el desbalance L2 de BTC; nada decide con él",
+   "severity": "LOW",
+   "category": "dead-code-believed-live",
+   "file": "src/dark_alpha_sniffer.rs",
+   "line": 20,
+   "evidence": "{\"method\": \"subscribe\", \"subscription\": {\"type\": \"l2Book\", \"coin\": \"BTC\"}}   router :103 `(curr_val * decay_factor) + (safe_impact * 10.0)`   god_engine.rs:4986 `dark_alpha: dark_router_unified.get_liquidation_cascade_risk()`",
+   "mechanism": "El sniffer se suscribe al libro L2 (no a liquidaciones) de una sola moneda. El impacto es (bid − ask)/total del top-5, por 10, con λ = 0,001/ms literal. El valor sólo llega al OmniUpdate de telemetría y a la columna dark_alpha de forensic_auditor. El doc del router dice que alimenta QuantumStateArena (código muerto) y el del sniffer dice que es zero-alloc, pero asigna un String por mensaje.",
+   "failure_scenario": "El operador lee en el tablero o en el forense un dark_alpha alto como riesgo de liquidaciones, cuando sólo es presión compradora de BTC en Hyperliquid. El proceso vivo mantiene una conexión WS externa permanente sin efecto en ninguna decisión.",
+   "fix_sketch": "Retirarlo, o renombrarlo a l2_imbalance_hl_btc y documentarlo como telemetría no decisoria.",
+   "live_path": true,
+   "known_ref": "No registrado como defecto (BARRIDO_EXHAUSTIVO_FASES.md:1893 sólo lo censa como módulo consumido).",
+   "confidence": 0.85
+  },
+  {
+   "title": "El cargador de ticks convierte precios inválidos en 0,0 en vez de rechazarlos, y el núcleo actualiza el espectro con mid = ask/2",
+   "severity": "LOW",
+   "category": "nan-imputation",
+   "file": "crates/backtest-engine/src/tick_replayer.rs",
+   "line": 131,
+   "evidence": "bid_price: if t.bid_price.is_finite() && t.bid_price > 0.0 { t.bid_price } else { 0.0 },   lib.rs:3314-3316 `let mid = (bid + ask) * 0.5; spec.update(mid, event_time_ms);` antes de cualquier admisión",
+   "mechanism": "Contrasta con label_evidence::Tape::parse (rechaza) y con la aduana de booktick_replay.rs:344 (salta la fila). continuous_evolution_backtest pasa el tick tal cual a update_market_data y a process_tick_dual de 1+N motores. En los ficheros legado tampoco se valida el orden temporal, y el TickOrigin se pierde en el Vec<TickEvent>.",
+   "failure_scenario": "Un registro NaN en un tape legado introduce una caída sintética del 50 % en el espectro de todos los motores del enjambre y sesga la selección de ese día.",
+   "fix_sketch": "Saltar la fila o devolver Err, como Tape::parse, validar el orden temporal y devolver el TickOrigin al llamador.",
+   "live_path": false,
+   "known_ref": "No registrado.",
+   "confidence": 0.55
+  },
+  {
+   "title": "Zona raw: el formato documentado no es el que se escribe, la reapertura borra el segmento activo y dos rotaciones en el mismo segundo se pisan",
+   "severity": "LOW",
+   "category": "dead-code-believed-live",
+   "file": "crates/storage-engine/src/raw_zone.rs",
+   "line": 91,
+   "evidence": "let _ = std::fs::remove_file(&active_path);   MAGIC/VERSION con #[allow(dead_code)] nunca escritos aunque :10 documenta `[magic u32 \"TGRW\"][versión u16]`;  final_name = {symbol}_{secs}_{count} + std::fs::rename (reemplaza en Windows), sin sync_all",
+   "mechanism": "Tras una caída, open() descarta el .tmp con hasta 200 000 ticks por símbolo del archivo que se presenta como «fuente de verdad», aunque su cuerpo es recuperable (registros de 40 B). Un lector que siga el doc se desalinea 6 bytes. Dos rotaciones del mismo símbolo en el mismo segundo y con el mismo count se sobrescriben en silencio. Sólo lo abre BinanceStreamer (data-pipeline/src/ws_client.rs:95) con TG_RAW_ARCHIVE=1, y BinanceStreamer no tiene llamadores: hoy es latente.",
+   "failure_scenario": "Si se reactiva el archivo raw, un reinicio tras una caída borra la última ventana de ticks (horas en monedas poco activas) y el lakehouse queda con huecos sin rastro.",
+   "fix_sketch": "Recuperar el .tmp (truncar al múltiplo de 40 y cerrarlo con su footer), escribir la cabecera o corregir el doc, añadir nanos o un contador al nombre y hacer sync_all antes del rename. O retirarlo.",
+   "live_path": false,
+   "known_ref": "No registrado (CENSUS_CODE_MUERTO_RONDA7 sólo anota las constantes MAGIC/VERSION).",
+   "confidence": 0.8
+  }
+ ],
+ "file_verdicts": [
+  {
+   "file": "crates/storage-engine/src/mmap_bus.rs",
+   "status": "código: vivo; prueba: mixta",
+   "note": "Escritor vivo en cada cierre (god-engine-core lib.rs:4426) y lector vivo en online_daemon cada 500 ms. Las pruebas inline y mmap_admission_contract son honestas sobre admisión y seqlock, pero mmap_open_diagnostics se llama «permanently_skips» y afirma lo contrario (nombre rancio). Ninguna prueba fija la identidad (moneda/τ) del frame. El commit del seqlock (:228) no lleva sfence tras el payload; con stores NT a la misma línea es teórico. write_prediction_vs_reality (sin _ext) está muerta y lleva literales hurst 0,50 / obi 0. init_global_telemetry descarta el error sin log."
+  },
+  {
+   "file": "crates/storage-engine/src/raw_zone.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Sólo lo abre BinanceStreamer (sin llamadores) con TG_RAW_ARCHIVE=1. Las pruebas cubren el roundtrip y la corrupción, pero no la recuperación tras caída ni la cabecera documentada (ver hallazgo)."
+  },
+  {
+   "file": "crates/storage-engine/src/temporal_store.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "Sin llamadores. Las pruebas sólo afirman is_ok() y nunca releen los datos. set_len(prealloc) trunca un fichero existente, el cursor vuelve a 0 en cada arranque (sobrescribe) y escribe a través de as_ptr() de &self. Imputa NaN→0."
+  },
+  {
+   "file": "crates/backtest-engine/src/bin/continuous_evolution_backtest.rs",
+   "status": "código: offline; prueba: mixta",
+   "note": "Herramienta offline que PROMUEVE al almacén backtest. reporting_contract (SOL-R5-01) es honesto para daily_report. La regla de selección, la PnL de los mutantes y la promoción no tienen contrato (ver hallazgo). Las ramas simple_kline_to_ticks y nicho_curva_sl tienen allow(dead_code) (la segunda sí se usa). Los macros del omni son literales (dxy 104,2, vix 18,5…). Binario duplicado ya conocido (C-F1:877)."
+  },
+  {
+   "file": "crates/backtest-engine/src/booktick_causality_contract.rs",
+   "status": "código: offline; prueba: fragil",
+   "note": "Módulo de pruebas de booktick_replay (#[path]). Las comprobaciones metamórficas son reales y honestas en lo que miran (filas rechazadas inertes, warmup sin entradas, warmup extremo), pero el contrato central es ciego a un lookahead de una fila y a la ventana de operación (ver hallazgo). La prueba de macro fija el centinela 0,0 de dato ausente; el llamador usa prev_day, que es causal."
+  },
+  {
+   "file": "crates/backtest-engine/src/label_evidence.rs",
+   "status": "código: offline; prueba: honesta",
+   "note": "Lo usa feature_exporter. Rechaza en lugar de imputar, valida el orden temporal, distingue la censura por la derecha y presupuesta el trabajo. tests/label_evidence_contract.rs (~20 contratos) es honesto. Sin defectos encontrados."
+  },
+  {
+   "file": "crates/backtest-engine/src/network_jitter.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Sin uso en producción. Es la referencia de la réplica viva risk-engine/tp_sl.rs:219 (paridad en bt_vivo_parity_audit). u1 se reutiliza para la pérdida de paquete y para Box-Muller (un paquete perdido cae en la cola de latencia). tp_sl documenta «xorshift», pero es SplitMix64."
+  },
+  {
+   "file": "crates/backtest-engine/src/tick_replayer.rs",
+   "status": "código: offline; prueba: honesta",
+   "note": "Sólo lo usan continuous_evolution_backtest y tests. La prueba cubre cabecera, legado y tamaño corrupto, pero no la imputación 0,0 de precios inválidos ni el orden temporal (ver hallazgo)."
+  },
+  {
+   "file": "crates/backtest-engine/src/vectorized.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Sin llamadores: la FFI ya usa run_backtest_native (lib.rs:752), aunque el doc de t1_cobertura_genetica.rs:13-15 sigue diciendo que es alcanzable. Unidades mezcladas: delta (precio absoluto) > trend_threshold·0,5 (fracción). La liquidación tiene prioridad sobre el SL aunque el SL esté más cerca, y el apalancamiento se acota a 100 para la liquidación y a 125 para la apertura. compute_multi_coin_event_priority no tiene uso."
+  },
+  {
+   "file": "src/config.rs",
+   "status": "código: vivo; prueba: sin contrato",
+   "note": "TensorConfig vivo (god_engine, symbol_manager, config_compiler). NanoForest es un duplicado muerto del de god_engine_core::ml_inference."
+  },
+  {
+   "file": "src/dark_alpha_router.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Vivo sólo como telemetría (OmniUpdate y forense). Las pruebas de atómicos y NaN son honestas. El doc dice que alimenta QuantumStateArena, que está muerto. ingest_l2_snapshot no tiene uso."
+  },
+  {
+   "file": "src/dark_alpha_sniffer.rs",
+   "status": "código: vivo; prueba: sin contrato",
+   "note": "Se lanza al arrancar (god_engine.rs:1403) con un WS externo a Hyperliquid, sólo BTC y l2Book. Ninguna decisión lo consume (ver hallazgo)."
+  },
+  {
+   "file": "src/dashboard.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "El spawn está comentado (god_engine.rs:1072-1080). Arrastra residuos scalp/swing (scalp_pnl, swing_pnl, SwingTensorUpdate «34D Swing»), escucha en 0.0.0.0:8080 con CORS * y lee data/dynamic_config.json sin entorno. La única prueba es de serialización."
+  },
+  {
+   "file": "src/env_manager.rs",
+   "status": "código: vivo; prueba: fragil",
+   "note": "Sólo data_path está vivo, y delega en quantum_arena::paths. model_path y log_path no tienen uso y crean carpetas como efecto lateral. La prueba sólo comprueba substrings. La deriva data_root/env_data_path ya es conocida (C-F1:673)."
+  },
+  {
+   "file": "src/lib.rs",
+   "status": "código: vivo; prueba: sin contrato",
+   "note": "Declara los módulos y reexporta QuantumRingBuffer, QuantumStateArena, FEATURE_SIZE y evaluate_quantum_trailing, que no tienen ningún lector (censo conocido, BARRIDO:1893-1905)."
+  },
+  {
+   "file": "src/model_manifest.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Lo usa train_forest, que publica models/{SYM}_MOTOR.json, el modelo que sirve el host. Las pruebas son honestas respecto a su contrato, pero ese contrato fija la frescura por sha (qs2_reuso_del_holdout_por_decision: otro test = fresco sin mirar solape). verify_model_lineage no tiene llamador en producción. El modelo se escribe antes que el manifiesto y el libro se anota después del modelo (una caída intermedia deja un uso sin anotar)."
+  },
+  {
+   "file": "src/multi_asset_orchestrator.rs",
+   "status": "código: muerto; prueba: copia-muerta",
+   "note": "Sólo lo usan sus pruebas inline y signal-engine/tests/multi_asset_identity_contract.rs (#[path]). Par BTC/ETH legado y MakerEngine con 2 pb literales."
+  },
+  {
+   "file": "src/orderbook.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "El struct es correcto y sus pruebas son honestas, pero en el host sólo se escribe (ver hallazgo): ningún best_bid, micro_price ni OBI se lee."
+  },
+  {
+   "file": "src/parsers.rs",
+   "status": "código: vivo; prueba: honesta",
+   "note": "Vivo: trade, kline, depth5 multinivel y BookSequenceGuard. parse_binance_depth (L1) sólo se usa en pruebas. RESYNC_AFTER = 50 se justifica como «5 s de depth@100ms», pero el stream vivo es @depth5 (250 ms ⇒ 12,5 s). La compactación de niveles inválidos promueve el nivel 1 a mejor precio. El transmute de vida de &str depende de que simd_json desescape en el buffer de entrada."
+  },
+  {
+   "file": "src/quantum_arena.rs",
+   "status": "código: muerto; prueba: honesta",
+   "note": "Sin lectores. El seqlock de QuantumRingBuffer no tiene sentido con write_tick(&mut self); read_tick reintenta sin cota si seq cambia siendo par."
+  },
+  {
+   "file": "src/trailing.rs",
+   "status": "código: muerto; prueba: fragil",
+   "note": "Copia legado sin uso; el vivo está en god-engine-core/src/trailing.rs. El doc afirma «roundtrip_fee inyectado», pero la función no tiene parámetro de fee. Umbrales de fase 0,5/1,5/3,0/4,0 literales (la clase está registrada en G017 para el vivo)."
+  },
+  {
+   "file": "crates/audit-engine/src/auditor_interno.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "Sin llamadores fuera de sus pruebas (CENSUS fn_sin_uso). La prueba sólo afirma que la justificación no está vacía. Literales: capital 13,0, latency_us 150 inventada, veredicto por discrepancia 0,05/0,10/0,20 y benchmark_alpha = gross − 0,5·fee_drag."
+  }
+ ],
+ "vetos": [
+  {
+   "file": "src/parsers.rs",
+   "line": 109,
+   "name": "depth5: libro cruzado ⇒ mensaje descartado",
+   "kind": "admission",
+   "constant": "bids[0].p >= asks[0].p",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Estructural. Un libro cruzado en el mejor nivel no alimenta OBI, microprecio ni book_seq_guard."
+  },
+  {
+   "file": "src/parsers.rs",
+   "line": 92,
+   "name": "depth5: filtro de nivel válido con compactación",
+   "kind": "admission",
+   "constant": "p > 0 && q >= 0 && finitos",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Si el nivel 0 es inválido, el nivel 1 pasa a ocupar [0] y se toma como mejor precio. No se comprueba el orden de los niveles. Riesgo práctico bajo con datos de Binance."
+  },
+  {
+   "file": "src/parsers.rs",
+   "line": 137,
+   "name": "trade: admisión de precio y cantidad",
+   "kind": "admission",
+   "constant": "p <= 0 || q < 0 || !finito ⇒ None",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Correcto."
+  },
+  {
+   "file": "src/parsers.rs",
+   "line": 175,
+   "name": "kline: admisión OHLCV",
+   "kind": "admission",
+   "constant": "open<=0 || high<low || low<=0 || close<=0 || vol<0 || !finito",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "No comprueba que open y close estén dentro de [low, high]; parcial pero inocuo."
+  },
+  {
+   "file": "src/parsers.rs",
+   "line": 230,
+   "name": "BookSequenceGuard: descarte de update_id no posterior, con resync tras racha",
+   "kind": "stale-veto",
+   "constant": "RESYNC_AFTER = 50",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "El resync evita el estado absorbente. La justificación («50 mensajes de depth@100ms = 5 s») no corresponde al stream vivo @depth5 (250 ms), donde la ceguera es de hasta 12,5 s por símbolo. dropped y resyncs son contadores globales, no por moneda."
+  },
+  {
+   "file": "crates/storage-engine/src/mmap_bus.rs",
+   "line": 118,
+   "name": "Escritor rechaza telemetry.mmap incompleto",
+   "kind": "fail-closed",
+   "constant": "0 < len < HEADER + RING·64 ⇒ Err",
+   "origin": "derived",
+   "absorbing_risk": "possible",
+   "assessment": "sound",
+   "note": "Preserva la evidencia (FMT-233). Pero init_global_telemetry (:49-51) descarta el error sin log: el lazo predicción→bosque queda seco hasta una recuperación manual. Sólo el lector lo reporta, una vez."
+  },
+  {
+   "file": "crates/storage-engine/src/mmap_bus.rs",
+   "line": 347,
+   "name": "Lector: recorte del backlog a los últimos 10 000 frames",
+   "kind": "liveness-clamp",
+   "constant": "MAX_BATCH_READ = 10_000",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Acota la RAM y rescata al lector de un slot congelado. Con un frame por cierre, el backlog real nunca se acerca al límite."
+  },
+  {
+   "file": "crates/storage-engine/src/mmap_bus.rs",
+   "line": 375,
+   "name": "Lector: admisión seqlock del frame",
+   "kind": "admission",
+   "constant": "seq par && seq_antes == seq_después && timestamp != 0",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Se detiene en el primer frame inválido. El commit del escritor no lleva sfence tras el payload (teórico con stores NT a la misma línea). En un slot reutilizado tras dar la vuelta al anillo (1M frames), una escritura aún no empezada se lee como el frame viejo."
+  },
+  {
+   "file": "crates/storage-engine/src/mmap_bus.rs",
+   "line": 152,
+   "name": "Sanitización del payload: no finito ⇒ 0,0",
+   "kind": "imputation",
+   "constant": "0.0",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Desconocido = 0: un obi o un net_pnl NaN entran al bosque sombra como observaciones reales de valor 0. El consumidor sólo repara hurst (≤ 0 ⇒ 0,5)."
+  },
+  {
+   "file": "src/orderbook.rs",
+   "line": 49,
+   "name": "Admisión de nivel L2",
+   "kind": "admission",
+   "constant": "precio > 0, q >= 0, finitos; q == 0 ⇒ borrar",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Correcta, pero el libro del host sólo se escribe (ver hallazgo)."
+  },
+  {
+   "file": "src/model_manifest.rs",
+   "line": 348,
+   "name": "Promoción: holdout fresco o motivo declarado",
+   "kind": "promotion-veto",
+   "constant": "prior_other_artifacts == 0 || motivo no vacío",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "La clave es el sha del fichero de test: un tape solapado o re-exportado pasa como fresco. Cualquier texto no vacío anula el veto (queda anotado en el manifiesto)."
+  },
+  {
+   "file": "src/model_manifest.rs",
+   "line": 296,
+   "name": "Libro de usos ilegible ⇒ promoción bloqueada (train_forest.rs:2218-2221)",
+   "kind": "fail-closed",
+   "constant": "línea JSON inválida ⇒ Err",
+   "origin": "derived",
+   "absorbing_risk": "possible",
+   "assessment": "sound",
+   "note": "Falla cerrado por diseño. Una línea corrupta bloquea todas las promociones hasta que se repare a mano."
+  }
+ ],
+ "coverage": {
+  "files_read": [
+   "crates/storage-engine/src/mmap_bus.rs",
+   "crates/storage-engine/src/raw_zone.rs",
+   "crates/storage-engine/src/temporal_store.rs",
+   "crates/backtest-engine/src/bin/continuous_evolution_backtest.rs",
+   "crates/backtest-engine/src/booktick_causality_contract.rs",
+   "crates/backtest-engine/src/label_evidence.rs",
+   "crates/backtest-engine/src/network_jitter.rs",
+   "crates/backtest-engine/src/tick_replayer.rs",
+   "crates/backtest-engine/src/vectorized.rs",
+   "src/config.rs",
+   "src/dark_alpha_router.rs",
+   "src/dark_alpha_sniffer.rs",
+   "src/dashboard.rs",
+   "src/env_manager.rs",
+   "src/lib.rs",
+   "src/model_manifest.rs",
+   "src/multi_asset_orchestrator.rs",
+   "src/orderbook.rs",
+   "src/parsers.rs",
+   "src/quantum_arena.rs",
+   "src/trailing.rs",
+   "crates/audit-engine/src/auditor_interno.rs"
+  ],
+  "unread": [],
+  "notes": "Leí completos los 22 ficheros de src04 (6435 líneas); continuous_evolution_backtest.rs en tres tramos contiguos. El worktree está en 30232f17, tres commits después de be8fa6ad; git diff --stat be8fa6ad HEAD confirma que ninguno de los 22 ficheros cambió (sólo online_daemon.rs, executor.rs y god_engine.rs). Para trazar el uso leí fragmentos de contexto: god_engine.rs (1040-1085, 1390-1410, 1740-1755, 3125-3385, 4960-5010), online_daemon.rs (880-905, 995-1145), booktick_replay.rs (40-180, 270-470), god-engine-core lib.rs (3286-3345, 4380-4460, 6985-7015), tp_sl.rs (180-270), position.rs, paths.rs, genome_store.rs (promote), train_forest.rs (2140-2365), ws_client.rs (60-180) y los tests mmap_open_diagnostics y la lista de label_evidence_contract. Antes de clasificar consulté con Grep los registros conocidos (C-F1/F2/F3, MAPA, PRUEBAS, REVISION_PRS, PLAN_LINEA_F, BARRIDO, linea_g hallazgos y verificacion, CENSUS). No leí .agents/MEMORIA.md, no ejecuté cargo y no usé ningún git que escriba."
+ }
+}

@@ -1,5 +1,31 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Claude (Línea G, LG-n): ola 2 — los 627 `.rs` leídos, diez arreglos (LG-6…LG-15)
+
+- **G7**: los 436 `.rs` que la ola 1 no abrió, leídos por 10 lectores
+  (`docs/audit/linea_g/g7_*.tsv`). Entre las dos olas, cada archivo Rust del
+  repo pasó por un lector. Pruebas: 35 vacuas, 22 de copia muerta, 16 que
+  fijan un defecto en verde (Ville H0 no puede fallar, chaos simplex sin su
+  término, R7-R6 sobre una copia retirada por LF-3…).
+- **Arreglos**: LG-6 (OCO: mismo clientAlgoId en el reintento; -4116 confirma),
+  LG-7 (examen del demonio valora a mercado lo abierto), LG-8 (fee-breaker con
+  cola binomial contra p* y caducidad), LG-9 (resultado de orden + evidencia
+  por R neto, sin cablear: Wilson contra ½ condena 200/200 fuentes rentables,
+  R neta 0/200), LG-10 (Iceberg sólo con capacidad nativa: techo oculto de
+  10 000 USD de nocional), LG-11 (host encola sus logs; cola 8,5 MB sin giro),
+  LG-12 (límites de peticiones = constantes de Binance, no genes), LG-13
+  (compactación de memoria sólo con presión medida), LG-14 (JobObject por
+  proceso; veto sobre el commit), LG-15 (evolver/evolution saltan la cabecera
+  de 8 B de los tapes).
+- **Entregas**: Línea C (`prueba_reversion` CL-97 ×2, diseño de G042), AGY
+  (contratos vacuos), Codex (veto de deriva como latch, frescura del holdout
+  por sha256), Sol (causalidad del replay, best-of sin multiplicidad), GLM
+  (auto_trainer, config_compiler, walkforward_evolver).
+- **Lección**: `cargo test -p backtest-engine` corre el oráculo T-1 en debug
+  (no está `#[ignore]`): para el golden usar `--lib` y el T-1 en release.
+- **Lección**: los heredoc de bash con ciertos contenidos rompen el parser
+  del tool; escribir los scripts de edición a un archivo y ejecutarlo.
+
 ## 2026-10-12 — Claude (Línea G, sesión local, prefijo LG-n): revisión desde la base del HEAD 86218456 — censo de vetos, LG-1…LG-4 y pedido LG-5
 
 - **Línea nueva**: rama `claude/linea-g-revision-base`, worktree

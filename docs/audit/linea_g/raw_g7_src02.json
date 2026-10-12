@@ -1,0 +1,548 @@
+{
+ "findings": [
+  {
+   "title": "walkforward_evolver evoluciona, y puede promover, sobre data/BTCUSDT_ticks.bin: un archivo sintético antiguo sin cabecera, de antes de que se quitara el lookahead, y no puede ver ese origen",
+   "severity": "MED",
+   "category": "publish-without-evidence",
+   "file": "src/bin/walkforward_evolver.rs",
+   "line": 214,
+   "evidence": "walkforward_evolver.rs:214 `std::env::var(\"WF_DATA\").unwrap_or_else(|_| \"data/BTCUSDT_ticks.bin\".to_string())`. El forense sólo imprime un aviso si `!origen.es_real()` (audit_forensic_backtest.rs:390-394). Su FORENSIC_JSON (:1041) no lleva campo de origen. walkforward lo parsea en :135-163 sin mirar el origen. En disco, el data/BTCUSDT_ticks.bin del checkout principal tiene 41.932.800 B y mtime 2026-08-24. Sus primeros 8 bytes son un timestamp, ni TGMTICK1 ni TGMSYNT1, así que TickOrigin::LegadoSinCabecera, header_len 0. Son 1.048.320 registros: 4 subticks por vela de 1 min durante ≈182 días. Es anterior a 55e216372 (2026-09-07, «lookahead eliminado de los generadores de ticks») y a 945643170 (2026-09-16, D-722, «el spread deja de ver el futuro»).",
+   "mechanism": "La ruta por defecto apunta a velas expandidas antiguas. Su spread es el rango de la vela que aún no ha ocurrido (descrito en parquet_to_bin.rs:84-93), y el orden de los extremos sale del cierre propio. La única señal de procedencia es un println que el evolucionador no lee: Eval no tiene campo de origen. Además se evoluciona un genoma global, de todo el universo, sobre una sola moneda (BTC), contra la doctrina multiactivo.",
+   "failure_scenario": "El operador ejecuta `target/release/walkforward_evolver` con WF_PROMOTE=1 y sin WF_DATA. Todos los candidatos y la validación corren sobre ese archivo. El campeón queda ajustado a costes y microestructura fabricados con información futura y se escribe en el almacén backtest (:385). Con WF_PROMOTE_ENVS=demo,prod y el armado puesto, cruza a demo y prod (:393-399). Ninguna salida dice que la evidencia no era de exchange.",
+   "fix_sketch": "Emitir \"origen\" (y es_real) en FORENSIC_JSON. Que Eval.ok exija origen Real, o como mínimo que la promoción se niegue sin él. Quitar la ruta por defecto y exigir WF_DATA explícito. Evaluar ventanas de varias monedas antes de promover un genoma global.",
+   "live_path": false,
+   "known_ref": "Relacionado: LC-F7-14 y LC-F0-21 (PLAN_LINEA_C_DESDE_LA_BASE §C-F7/C-F0: walkforward puede promover; promueve sin DSR) y FMT-203 (AUDITORIA_FUNDAMENTOS_XXIII: el generador no es causal). Que por defecto use un archivo antiguo sin origen, y que el origen no llegue al evolucionador, no está registrado.",
+   "confidence": 0.85
+  },
+  {
+   "title": "La puerta «el campeón supera a la semilla» compara aptitud de entrenamiento: el término fuera de muestra sólo castiga pérdidas, así que el campeón la pasa por construcción",
+   "severity": "MED",
+   "category": "learning-signal",
+   "file": "src/bin/walkforward_evolver.rs",
+   "line": 351,
+   "evidence": ":351 `} else if seed_combined.is_finite() && combined <= seed_combined {`. `fitness(train, min_trades, Some(val))` toma la base de los datos de entrenamiento (:177-185). oos_factor = 1 + max(0, −growth_val) (evolution-engine/src/fitness.rs:86-91), y compute divide o multiplica la base por ese factor (:103). Los finalistas son el top por aptitud de entrenamiento acumulado sobre todas las generaciones. La semilla es el candidato 0 de G1 (:262-293, :312).",
+   "mechanism": "Con la validación del campeón en PnL > 0 (exigido en :347), oos = 1 y combined = aptitud de entrenamiento del campeón. Esa aptitud es ≥ la de entrenamiento de la semilla, porque el top-k se queda con lo mejor y la semilla compite. Además seed_combined ≤ aptitud de entrenamiento de la semilla. La comparación sólo falla si hay empate. La validación nunca premia: sólo exige PnL > 0 y ≥ 15 operaciones. El campeón entre finalistas también se elige por entrenamiento (:332-341).",
+   "failure_scenario": "La semilla valida +4 % en 40 operaciones. El finalista A tiene aptitud de entrenamiento 0,30 frente a 0,20 de la semilla y valida +0,05 % en 15 operaciones. Su combined = 0,30 > 0,20, así que pasa la puerta y se promueve un genoma 80× peor fuera de muestra que el actual. Con ventaja nula y 15 operaciones, P(PnL > 0) ≈ 0,5: la puerta fuera de muestra es una moneda al aire.",
+   "fix_sketch": "Comparar aptitud de VALIDACIÓN contra aptitud de VALIDACIÓN, campeón frente a semilla, con un margen derivado del error muestral (DSR o bootstrap por operación). Puntuar la esperanza neta frente a p*, no el PnL > 0. Elegir el campeón por validación y confirmarlo en un tercer tramo reservado.",
+   "live_path": false,
+   "known_ref": "Relacionado: LC-F0-21 (promoción sin DSR, PLAN_LINEA_C:1419). Que la puerta contra la semilla sea intra-muestra por construcción no está registrado.",
+   "confidence": 0.85
+  },
+  {
+   "title": "votes_export fabrica el flujo: cada tick entra al núcleo como compra agresiva de volumen constante 2, y el consenso exportado incluye los motores de flujo",
+   "severity": "MED",
+   "category": "fabricated-data",
+   "file": "src/bin/votes_export.rs",
+   "line": 117,
+   "evidence": "votes_export.rs:111-120 `ReplayTick { ..., bid_qty: 1.0, ask_qty: 1.0 }`. cargar_tape (:37-63) sólo lee ts, bid y ask, aunque el TGMTICK1 trae en bq/aq el lado agresor y la cantidad. Con ReplayConfig::default() (trade_only=false), booktick_replay.rs:367-372 da vol=2 y obi=0, y :512 `let maker_flag = t.bid_qty < t.ask_qty;` da false siempre. consenso_por_escala compone las 13 físicas, incluidas sombra_hawkes y sombra_flow (god-engine-core/src/lib.rs:2583, :2644, :2893-2915), que salen como consenso_dom, consenso_media y consenso_tau.",
+   "mechanism": "Todos los trades llegan con el agresor comprador y el mismo tamaño. CVD, intensidad Hawkes y OFI ven una presión compradora permanente y un reloj de volumen plano. El manifiesto dice que el dataset sale del «GodEngineCore REAL (mismo replay de backtest)» con features point-in-time.",
+   "failure_scenario": "En un tape donde dominan las ventas reales, las filas registran el flujo votando largo y un consenso inclinado al alza. La fase 2 de ADR-0010 (agregación aprendida frente a fija) se entrena y juzga con votos que el motor vivo, que ve el lado real, nunca emitiría. La conclusión sobre qué agregación gana no vale para vivo. Además --tau-matched recorta τ a [1 s, 12 h] (:180), por debajo de la banda de 30 s.",
+   "fix_sketch": "Leer bq/aq del tape y pasarlos a ReplayTick, que es el convenio de binance_vision_sync que booktick_replay ya decodifica. Abortar si el tape no trae cantidades. Recortar la τ de etiqueta a [30 s, 12 h].",
+   "live_path": false,
+   "known_ref": "Nuevo. LF-1/LF-1b (PLAN_LINEA_F_CLAUDE §6) tratan la identidad del slot en votes_export, no las cantidades.",
+   "confidence": 0.75
+  },
+  {
+   "title": "oi_history_sync pagina hacia atrás tomando como «oldest» la fila MÁS RECIENTE: guarda 500 h (20,8 días) de las ~720 h que conserva el endpoint",
+   "severity": "MED",
+   "category": "data-loss",
+   "file": "src/bin/oi_history_sync.rs",
+   "line": 72,
+   "evidence": ":72 `let oldest = all.last().map(|(ts, _)| *ts).unwrap_or(0);` tras volcar una página que openInterestHist devuelve en orden ascendente. :76 `cursor_end = oldest.saturating_sub(1)`. :73 `all.len() >= MAX_ROWS` cuenta duplicados. Prueba en disco, en el checkout principal: data/oihist/ATOMUSDT.csv, BNBUSDT.csv y NEARUSDT.csv tienen cada uno 501 filas, de ts 1787979600000 a 1789779600000, es decir exactamente 500 h. El núcleo vivo lo refleja (god-engine-core/src/lib.rs:5156-5160): «21d de ventana horaria: sin edge medible».",
+   "mechanism": "La 1ª página (endTime=ahora, limit 500) trae [ahora−499 h, ahora]. last() es la más nueva. La 2ª petición (endTime = más nueva − 1 ms) repite 499 filas y añade sólo una más vieja. Con 1000 filas contadas se corta el bucle. Tras deduplicar quedan 501 filas y nunca se llega al suelo de 31 días.",
+   "failure_scenario": "Cada ejecución pierde para siempre ≈9 días del histórico de OI, porque el endpoint olvida pasados 30 días. Si dos ejecuciones distan más de 20,8 días quedan huecos, y el join as-of de train_forest (:1148-1175) los rellena con un OI rancio: etiquetas de delta 0. El veredicto «sin edge medible» del predictor {SYM}_OI se tomó sobre la ventana recortada.",
+   "fix_sketch": "Tomar el mínimo ts de la página (o el primer elemento) como cursor. Contar sólo filas nuevas. Comprobar que el span sea ≥ 29 días antes de dar la serie por buena. Escribir de forma atómica (tmp + rename).",
+   "live_path": false,
+   "known_ref": "Nuevo (oi_history_sync sólo figura en el inventario de PLAN_LINEA_C:571).",
+   "confidence": 0.8
+  },
+  {
+   "title": "parquet_to_bin modela el spread como el rango completo de la vela previa y se inventa un desequilibrio 1,15/0,85: los costes sintéticos salen cientos de veces mayores que los reales",
+   "severity": "LOW",
+   "category": "fabricated-data",
+   "file": "src/bin/parquet_to_bin.rs",
+   "line": 105,
+   "evidence": ":104-110 `let prev_range = (prev_high - prev_low).max(0.0); let spread = if ... { prev_range } else { close * 0.0001 }.max(close * 0.0001);` y :129-133 `(quarter_vol * 1.15, quarter_vol * 0.85)`. Lista literal de 5 símbolos en :21.",
+   "mechanism": "El rango de 1 min de BTC (≈3-10 pb) se usa como spread completo. Con tick 0,1 a ~60 k$, el spread real ≈ 0,02 pb. Cada cruce de libro paga la mitad del rango. Las cantidades bid/ask son una regla fija, no un dato.",
+   "failure_scenario": "Un forense o evolución sobre un {SYM}_ticks.bin regenerado (TGMSYNT1) selecciona genomas para un mercado con costes 100-500× los reales. La cabecera lo declara sintético, pero ningún consumidor del evolucionador lo rechaza (hallazgo anterior).",
+   "fix_sketch": "No usar velas expandidas para medir costes. Si se conserva, el spread debe salir del tick del instrumento o de una medición real, y las cantidades deben quedar marcadas como ausentes (NaN), no fabricadas.",
+   "live_path": false,
+   "known_ref": "Parcial: FMT-203 (AUDITORIA_FUNDAMENTOS_XXIII §6) cubre la no causalidad (high/low y volumen de la vela actual), no la magnitud del spread ni el desequilibrio fijo.",
+   "confidence": 0.7
+  },
+  {
+   "title": "spectral_bench informa un error típico del IC ±1/√n que ignora el solapamiento de horizontes y la autocorrelación del score",
+   "severity": "LOW",
+   "category": "statistics",
+   "file": "src/bin/spectral_bench.rs",
+   "line": 381,
+   "evidence": ":381-384 `error típico del IC ≈ ±{:.4}` con `1.0 / ic[0][1].n.max(1.0).sqrt()`. Las muestras salen cada 60 s (:267) y los horizontes son 1, 5 y 30 min (:272). Los fused EWMA de escalas largas están muy autocorrelados.",
+   "mechanism": "Con un paso de 60 s y un horizonte de 30 min, los retornos se solapan unas 30 veces, así que el n efectivo ≈ n/30 y el error real ≈ 5,5× el impreso (≈2,2× a 5 min). Además se usa el n del horizonte de 5 min para todas las columnas.",
+   "failure_scenario": "Un IC de 0,02 a 30 min con n = 40.000 parece de unas 4 σ y en realidad es de menos de 1 σ. El banco existe para «decidir por evidencia» entre fusiones (D-742) y puede declarar ganadora una fusión por ruido.",
+   "fix_sketch": "Error de Newey-West o por bloques del tamaño del horizonte, uno por columna. Publicar el n efectivo.",
+   "live_path": false,
+   "known_ref": "Nuevo (spectral_bench sólo figura en el inventario de PLAN_LINEA_C:716).",
+   "confidence": 0.75
+  },
+  {
+   "title": "macro_feed.rs es código muerto que un contrato vivo da por vivo, y su estado nace con niveles macro inventados",
+   "severity": "LOW",
+   "category": "dead-code-believed-live",
+   "file": "crates/data-pipeline/src/macro_feed.rs",
+   "line": 61,
+   "evidence": "run_macro_feed_poller y MacroState no tienen ningún llamador fuera del archivo (grep en todo *.rs). god-engine-core/src/ml_inference.rs:400-401 dice «los niveles FRED que el feed vivo (`macro_feed.rs`) ya publica en `omni_features`». macro_feed escribe en MacroState, no en omni_features. El publicador real es omni_multiplexer::run_macro_rest_poller (god_engine.rs:1629). MacroState::new siembra DXY 104,5, NASDAQ 18000, SP500 5100 y dominancia 52 (:23-26).",
+   "mechanism": "La documentación del contrato del vector ML (bloque macro 44..47) apunta a un productor que no corre. Si alguien lo arrancase, serviría las semillas como dato hasta el primer poll, porque update ignora los valores ≤ 0 y los NaN.",
+   "failure_scenario": "Un auditor o desarrollador que valide la paridad entre trainer y vivo del bloque macro lee macro_feed.rs (DTWEXBGS desde FRED) y concluye algo sobre la serie viva, que en realidad es ICE DXY de Yahoo vía omni_multiplexer. Una reactivación ingenua sirve niveles inventados.",
+   "fix_sketch": "Borrar macro_feed.rs, o marcarlo #[cfg(feature=…)], y corregir ml_inference.rs:401 para que apunte a omni_multiplexer::run_macro_rest_poller. Semillas en NaN.",
+   "live_path": false,
+   "known_ref": "F6-A-H2 (BARRIDO_EXHAUSTIVO_FASES:513, 17/29 archivos de datos muertos). La frase falsa en ml_inference.rs:401 no está registrada.",
+   "confidence": 0.85
+  },
+  {
+   "title": "oco_probe «limpia» aplanando TODA la cuenta demo, imprime como posiciones cerradas el número de órdenes canceladas y puede entrar en pánico tras abrir la entrada",
+   "severity": "LOW",
+   "category": "cross-coin-side-effect",
+   "file": "src/bin/oco_probe.rs",
+   "line": 79,
+   "evidence": ":79 y :154-155 `exec.flatten_all_positions()`, que según executor.rs:685-690 cancela todas las órdenes y cierra TODAS las posiciones. :155 `let (closed, _) = ...unwrap_or((0, 0));`, y el primer elemento son las órdenes canceladas. :16-21 `format!(\"{}…\", &s[..max])` corta por bytes. :12 promete «asserts explícitos para no tocar mainnet» que no existen; sólo está `OrderExecutor::new(key, secret, true)`.",
+   "mechanism": "La sonda no se limita a su símbolo. truncate_str entra en pánico si el byte max cae dentro de un carácter UTF-8 multibyte. Los errores del executor llevan acentos y emojis.",
+   "failure_scenario": "Con god_engine corriendo en demo con las mismas claves, la sonda cierra a mercado todas las posiciones del motor y cancela sus brackets: el estado local del motor queda incoherente. Si el error de positionRisk (paso 4) se trunca en un límite multibyte, el proceso aborta con la entrada MARKET ya llena y sin limpiar.",
+   "fix_sketch": "Limpiar sólo el símbolo de la sonda (reduceOnly por símbolo). Truncar por chars. Leer bien la tupla (órdenes, posiciones). Abortar si hay una sesión del motor activa en la cuenta.",
+   "live_path": false,
+   "known_ref": "Nuevo (oco_probe sólo figura en el inventario de PLAN_LINEA_C:716).",
+   "confidence": 0.7
+  },
+  {
+   "title": "test_forest sondea el modelo con un vector de 34 dimensiones cuando el contrato es de 48: imprime NaN sin avisar",
+   "severity": "LOW",
+   "category": "stale-diagnostic",
+   "file": "src/bin/test_forest.rs",
+   "line": 26,
+   "evidence": ":26 `let zero_34 = [0.0f32; 34];`. ml_inference.rs:50 `ML_VECTOR_DIM: usize = 48`. predict_raw_checked devuelve None si `features.len() < self.required_features` (:369-375), y predict_raw lo convierte en (NaN, NaN) (:392-395).",
+   "mechanism": "Cualquier modelo _MOTOR con splits en las features espectrales (34..43) o macro (44..47) tiene required_features > 34.",
+   "failure_scenario": "El operador corre test_forest para comparar la carga JSON con la binaria. Ve «sum = NaN, prob = NaN» en las dos rutas y concluye que coinciden, o que el modelo está roto, cuando la sonda es la que está mal.",
+   "fix_sketch": "Usar [0.0; ML_VECTOR_DIM] y reportar required_features, o borrar el binario junto con test_forest2 (struct duplicado sin uso).",
+   "live_path": false,
+   "known_ref": "Nuevo.",
+   "confidence": 0.8
+  },
+  {
+   "title": "ResilientStreamManager promete un «búfer circular de replay de cero pérdida» que no existe, y un test con ese nombre no prueba ningún búfer",
+   "severity": "LOW",
+   "category": "misleading-test",
+   "file": "crates/data-pipeline/src/resilient_stream.rs",
+   "line": 4,
+   "evidence": ":4-6 «TRANSMISOR RESILIENTE … Búfer circular estático de replay … Garantiza que ninguna caída de red corrompa». El struct sólo tiene contadores y `replay_buffer_capacity` (:8-14). :134 `test_resilient_stream_circular_replay_buffer_roundtrip` sólo comprueba last_sequence_id y dropped. data-ingest lo reexporta (crates/data-ingest/src/lib.rs:7) y no tiene usuarios.",
+   "mechanism": "El nombre del test y la documentación certifican una capacidad ausente. El jitter es determinista por intento (:84-85), no aleatorio: la manada que reconecta lo hace sincronizada.",
+   "failure_scenario": "Quien busque recuperación de huecos de WebSocket adopta este tipo por la doc y el test verde, y pierde ticks en cada reconexión sin replay.",
+   "fix_sketch": "Borrarlo (y el reexport), o renombrarlo a SequenceGapCounter con la doc y el test reales.",
+   "live_path": false,
+   "known_ref": "Inventariado (PLAN_LINEA_C:573). La promesa falsa y el test engañoso no están registrados.",
+   "confidence": 0.7
+  }
+ ],
+ "file_verdicts": [
+  {
+   "file": "src/bin/oco_probe.rs",
+   "status": "código: offline (sonda en testnet que coloca órdenes reales en demo); prueba: sin contrato",
+   "note": "Aplana toda la cuenta demo, no sólo su símbolo. Imprime las órdenes canceladas como posiciones cerradas. truncate_str corta por bytes (pánico con UTF-8). Los «asserts» de mainnet no existen: testnet está fijo en el constructor. Hace ensure_hedge_mode, que cambia el modo de la cuenta."
+  },
+  {
+   "file": "src/bin/oi_history_sync.rs",
+   "status": "código: offline (escribe data/oihist, que consume train_forest --label oi → {SYM}_OI servido en vivo si pasa el gate); prueba: sin contrato",
+   "note": "Paginación rota: toma la fila más nueva como oldest, guarda 500 h de 720 h; los CSV en disco lo confirman. Escritura no atómica. El roster por defecto exige nombres de archivo de agosto fijos (_2026-08_REAL.bin / _AUG_REAL.bin)."
+  },
+  {
+   "file": "src/bin/parquet_to_bin.rs",
+   "status": "código: offline (genera data/{SYM}_ticks.bin, entrada por defecto del forense y del walk-forward); prueba: sin contrato",
+   "note": "Escribe la cabecera TGMSYNT1. Spread = rango completo de la vela previa, desequilibrio literal 1,15/0,85, volumen final repartido desde t+0 (FMT-203 conocido). 5 símbolos fijos. Los .bin en disco son anteriores a este código (sin cabecera)."
+  },
+  {
+   "file": "src/bin/spectral_bench.rs",
+   "status": "código: offline (banco de medición); prueba: honesta (2 tests del orden rechazo/maduración del ingest y del ledger del forecaster) pero no cubre fusiones ni IC",
+   "note": "El error típico ±1/√n ignora el solapamiento: infla la significancia de 5 y 30 min. Sólo lectura de un tape TGMTICK1."
+  },
+  {
+   "file": "src/bin/system_health.rs",
+   "status": "código: offline (diagnóstico de sólo lectura contra el exchange); prueba: frágil (contrato de fuentes por substrings en quantum-arena/tests/system_health_source_contract.rs)",
+   "note": "Ya no muta el modo de la cuenta. Income en una página, con aviso. set_var del .env dentro del runtime multihilo (menor)."
+  },
+  {
+   "file": "src/bin/tape_spread_fix.rs",
+   "status": "código: offline (reescribe tapes reales); prueba: sin contrato",
+   "note": "Conserva ts, mid, qty y lado. Medio spread = max(0,5 pb·precio, tick/2), con el tick inferido del tape. from_raw_parts sobre Vec<u8> no garantiza alineación de 8 (UB formal). Escritura no atómica si salida == entrada."
+  },
+  {
+   "file": "src/bin/test_forest.rs",
+   "status": "código: muerto/roto (diagnóstico rancio); prueba: sin contrato",
+   "note": "Sonda con 34 dimensiones frente al contrato de 48 → NaN. Struct NanoForestData local sin uso."
+  },
+  {
+   "file": "src/bin/test_forest2.rs",
+   "status": "código: offline (diagnóstico heredado del JSON del modelo); prueba: sin contrato",
+   "note": "Duplica NanoForestData. Sólo cuenta hojas y su media. Inocuo."
+  },
+  {
+   "file": "src/bin/train_dark_alpha.rs",
+   "status": "código: offline (investigación; candidato fuera de models/); prueba: honesta (8 tests de contrato CSV, scaler y ruta versionada)",
+   "note": "Etiqueta binaria «target_5m» de horizonte fijo, BCE contra 0,5 sin p* ni validación; lo declara y no publica. No corre en CI (unit-suites sólo train_forest, conocido)."
+  },
+  {
+   "file": "src/bin/votes_export.rs",
+   "status": "código: offline (dataset de investigación ADR-0010); prueba: sin contrato propio (lf1_slot_sin_identidad_contract sólo lo menciona)",
+   "note": "Cantidades fijas en 1/1 ⇒ todo trade es compra agresiva de volumen 2: los votos de flujo y el consenso salen fabricados. Horizonte por defecto de 5 min fijo. tau_matched recorta a 1 s, por debajo de 30 s."
+  },
+  {
+   "file": "src/bin/walkforward_evolver.rs",
+   "status": "código: offline que PUEDE PROMOVER (backtest; demo/prod con armado); prueba: sin contrato (INVENTARIO_TESTS_CI: 0)",
+   "note": "Por defecto usa un legado sintético sin cabecera, sin ver el origen. La puerta contra la semilla es intra-muestra por construcción. Una sola moneda para un genoma global. min_trades 15 es un literal."
+  },
+  {
+   "file": "crates/data-pipeline/src/api_client.rs",
+   "status": "código: muerto (sin llamadores); prueba: honesta (resolución de credenciales)",
+   "note": "get_real_wallet_balance devuelve Ok(0.0) si no hay USDT o el valor es inválido (desconocido = 0). Comisiones de respaldo literales 2/4 pb."
+  },
+  {
+   "file": "crates/data-pipeline/src/asset_selector.rs",
+   "status": "código: muerto; prueba: copia-muerta (los tests prueban una copia del closure score, no la función)",
+   "note": "Umbrales literales 1e6 USD / 0,1 % / pico en 15 %. Duplica la lógica de dynamic_ranker (conocido en la ola 1)."
+  },
+  {
+   "file": "crates/data-pipeline/src/bypass.rs",
+   "status": "código: muerto (stub que sólo hace println y promete DPDK/io_uring/RIO); prueba: vacua",
+   "note": "Dice tener una capacidad que no existe."
+  },
+  {
+   "file": "crates/data-pipeline/src/chaos_monkey.rs",
+   "status": "código: muerto (duplica audit-engine::resilience::ChaosMonkey); prueba: honesta pero trivial",
+   "note": "Probabilidad literal de 1e-4 por tick. Variable de entorno BINANCE_CHAOS_MODE sin lector productivo."
+  },
+  {
+   "file": "crates/data-pipeline/src/feature_vm.rs",
+   "status": "código: muerto; prueba: honesta (semántica de la VM de pila)",
+   "note": "NaN, división y log se sanean a 0 (desconocido = 0). Prometía GP online; ningún llamador."
+  },
+  {
+   "file": "crates/data-pipeline/src/lakehouse_mmap.rs",
+   "status": "código: muerto; prueba: vacua (sólo is_ok)",
+   "note": "Escribe por un *mut sacado de Arc<MmapMut> compartido (UB). Rotación sin delimitar registros: corrupción tras un crash indetectable (A-M3 conocido)."
+  },
+  {
+   "file": "crates/data-pipeline/src/macro_data.rs",
+   "status": "código: offline (download_history: Yahoo 6 meses diario a parquet); prueba: copia-muerta (prueba una réplica del filtro)",
+   "note": "Escritura de parquet no atómica (A-M5 conocido)."
+  },
+  {
+   "file": "crates/data-pipeline/src/macro_feed.rs",
+   "status": "código: muerto, pero el doc de ml_inference.rs:401 lo da por el feed vivo; prueba: honesta (MacroState)",
+   "note": "Semillas inventadas (DXY 104,5, etc.). FRED DTWEXBGS frente al ICE DXY real del contrato."
+  },
+  {
+   "file": "crates/data-pipeline/src/market_context.rs",
+   "status": "código: offline (download_history: funding a parquet, escritura atómica); prueba: vacua/deserialización",
+   "note": "Un error HTTP devuelve Ok(()) en silencio. Un fallo de parseo da tasa 0. Una sola página de 1000 sin paginar."
+  },
+  {
+   "file": "crates/data-pipeline/src/multiplexer.rs",
+   "status": "código: offline (multi_coin_simulator); prueba: sin contrato",
+   "note": "sort_unstable_by_key no conserva el orden dentro de una moneda con ts iguales. Latente: el simulador usa offsets distintos."
+  },
+  {
+   "file": "crates/data-pipeline/src/onchain_feed.rs",
+   "status": "código: muerto; prueba: honesta (estado)",
+   "note": "get_symbol_funding(coin ≥ 32) devuelve el funding de BTC, y el OI de BTC se escribe en el slot 0 sin mirar a quién pertenece (fuga entre monedas latente). NaN → 0."
+  },
+  {
+   "file": "crates/data-pipeline/src/parser.rs",
+   "status": "código: muerto en producción (sólo lo usa BinanceStreamer, sin instanciación productiva; god_engine usa src/parsers.rs); prueba: honesta en el parseo, pero los fixtures de depth usan bids/asks y el WebSocket USD-M emite b/a (conocido)",
+   "note": "DepthEvent exige bids/asks y mezcla los lados con un array vacío (R4-I6). Timestamp de AggTrade ausente → 0 (I1). Todo registrado en DEPTH_INDEPENDENT_REVIEW_2026-10-08."
+  },
+  {
+   "file": "crates/data-pipeline/src/persistence.rs",
+   "status": "código: muerto; prueba: vacua",
+   "note": "insert_tick convierte un precio NaN en 0,0 y lo persiste (desconocido = 0). PRAGMA mmap de 3 GB."
+  },
+  {
+   "file": "crates/data-pipeline/src/resilient_stream.rs",
+   "status": "código: muerto (reexportado por data-ingest sin usuarios); prueba: vacua/engañosa (nombre de búfer de replay sin búfer)",
+   "note": "Promete «cero pérdida» y un búfer inexistente. Jitter determinista."
+  },
+  {
+   "file": "crates/data-pipeline/src/state_db.rs",
+   "status": "código: muerto; prueba: honesta (dominios y etiquetas)",
+   "note": "Residuo Scalp/Swing en HorizonIntent y en la clave (coin_id, horizon) (R7-R1-5 conocido)."
+  },
+  {
+   "file": "crates/data-pipeline/src/storage.rs",
+   "status": "código: muerto; prueba: débil",
+   "note": "Checksum que se salta con 0 (A-M4 conocido). Precios f32."
+  },
+  {
+   "file": "crates/data-pipeline/src/telemetry_bus.rs",
+   "status": "código: muerto (duplica telemetry-server/zero_copy_bus); prueba: vacua (sin aserciones)",
+   "note": "Tipos de evento 1=ScalpIntent y 2=SwingIntent (residuo). NaN → 0."
+  },
+  {
+   "file": "crates/data-pipeline/src/teleonomia.rs",
+   "status": "código: muerto (GLOBAL_TELEONOMIA nunca se toca); prueba: honesta pero con efecto lateral",
+   "note": "new() crea data/lakehouse/quantum_ring_buffer.bin de 46 MB en el cwd (los tests lo crean en el crate; está en .gitignore). Mutex en el camino. NaN → 0."
+  }
+ ],
+ "vetos": [
+  {
+   "file": "src/bin/walkforward_evolver.rs",
+   "line": 351,
+   "name": "puerta campeón > semilla",
+   "kind": "gate",
+   "constant": "combined <= seed_combined",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "nonsense",
+   "note": "combined es aptitud de entrenamiento: oos_factor sólo castiga pérdidas. El campeón (top de entrenamiento) la supera por construcción; sólo falla si hay empate."
+  },
+  {
+   "file": "src/bin/walkforward_evolver.rs",
+   "line": 347,
+   "name": "validación con PnL neto > 0",
+   "kind": "gate",
+   "constant": "val.net_pnl() <= 0.0",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Sin margen de error muestral ni comparación con p* y costes. Con ventaja nula y 15 operaciones pasa ≈50 %."
+  },
+  {
+   "file": "src/bin/walkforward_evolver.rs",
+   "line": 349,
+   "name": "WF_MIN_TRADES",
+   "kind": "threshold",
+   "constant": "15",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "«Regla X-014» es un ID de hallazgo, no una derivación de potencia estadística."
+  },
+  {
+   "file": "src/bin/walkforward_evolver.rs",
+   "line": 211,
+   "name": "WF_TRAIN_FRACTION",
+   "kind": "parameter",
+   "constant": "0.6 clamp [0.2, 0.9]",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Partición por número de ticks, no por tiempo ni régimen."
+  },
+  {
+   "file": "src/bin/walkforward_evolver.rs",
+   "line": 220,
+   "name": "mínimo de ticks",
+   "kind": "floor",
+   "constant": "10_000 ticks",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "En ticks, no en tiempo: en aggTrades de BTC son minutos."
+  },
+  {
+   "file": "src/bin/walkforward_evolver.rs",
+   "line": 263,
+   "name": "candidato baseline inyectado",
+   "kind": "parameter",
+   "constant": "new_baseline(0.0002, 0.0005)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "TP/SL literales de 2/5 pb como candidato fijo."
+  },
+  {
+   "file": "src/bin/walkforward_evolver.rs",
+   "line": 273,
+   "name": "tasa de mutación",
+   "kind": "parameter",
+   "constant": "0.20 → 0.04 lineal",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Calendario fijo, no adaptado a la dispersión medida."
+  },
+  {
+   "file": "src/bin/oi_history_sync.rs",
+   "line": 80,
+   "name": "mínimo de filas de OI",
+   "kind": "floor",
+   "constant": "24",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Acepta una serie de 1 día como histórico válido."
+  },
+  {
+   "file": "src/bin/oi_history_sync.rs",
+   "line": 44,
+   "name": "suelo de paginación",
+   "kind": "parameter",
+   "constant": "31 días / MAX_ROWS 1000",
+   "origin": "measured",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Retención documentada del endpoint (≈30 d). Inalcanzable por el defecto de paginación."
+  },
+  {
+   "file": "src/bin/parquet_to_bin.rs",
+   "line": 105,
+   "name": "spread sintético",
+   "kind": "parameter",
+   "constant": "spread = rango de la vela previa, suelo close·1e-4",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "100-500× el spread real de BTC: los costes salen fabricados."
+  },
+  {
+   "file": "src/bin/parquet_to_bin.rs",
+   "line": 130,
+   "name": "desequilibrio de cantidades",
+   "kind": "parameter",
+   "constant": "1.15 / 0.85",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "nonsense",
+   "note": "Microestructura inventada que alimenta OBI y OFI."
+  },
+  {
+   "file": "src/bin/tape_spread_fix.rs",
+   "line": 43,
+   "name": "HALF_SPREAD_REL",
+   "kind": "floor",
+   "constant": "0.00005 (0,5 pb de medio spread)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Para BTC (≈0,02 pb reales) sobrestima unas 50 veces. El suelo de medio tick sí es derivado."
+  },
+  {
+   "file": "src/bin/votes_export.rs",
+   "line": 180,
+   "name": "recorte de τ de la etiqueta",
+   "kind": "clamp",
+   "constant": "[1_000, 43_200_000] ms",
+   "origin": "policy-adr",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "El límite inferior de 1 s cae por debajo de la banda doctrinal de 30 s (ADR-0014)."
+  },
+  {
+   "file": "src/bin/votes_export.rs",
+   "line": 71,
+   "name": "horizon_ms por defecto",
+   "kind": "parameter",
+   "constant": "300_000 ms",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Horizonte de etiqueta fijo de 5 min (residuo de banda) salvo con --tau-matched."
+  },
+  {
+   "file": "crates/data-pipeline/src/asset_selector.rs",
+   "line": 62,
+   "name": "filtro de universo",
+   "kind": "threshold",
+   "constant": "min_vol 1e6 USD, min_pct 0.1 %, pico 15 %",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sin llamadores; duplica dynamic_ranker."
+  },
+  {
+   "file": "crates/data-pipeline/src/api_client.rs",
+   "line": 210,
+   "name": "comisión de respaldo",
+   "kind": "fallback",
+   "constant": "maker 0.0002 / taker 0.0004",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sin llamadores. Si se usase, inventaría la comisión."
+  },
+  {
+   "file": "crates/data-pipeline/src/macro_feed.rs",
+   "line": 23,
+   "name": "semillas macro",
+   "kind": "fallback",
+   "constant": "DXY 104.5, NDX 18000, SPX 5100, dominancia 52",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Niveles inventados servidos como dato; código muerto."
+  },
+  {
+   "file": "crates/data-pipeline/src/onchain_feed.rs",
+   "line": 106,
+   "name": "respaldo de funding",
+   "kind": "fallback",
+   "constant": "coin_id ≥ 32 → funding de BTC",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Fuga entre monedas latente; código muerto."
+  },
+  {
+   "file": "crates/data-pipeline/src/chaos_monkey.rs",
+   "line": 24,
+   "name": "disconnect_probability",
+   "kind": "parameter",
+   "constant": "0.0001 por tick",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Duplicado de audit-engine; sin uso."
+  },
+  {
+   "file": "crates/data-pipeline/src/market_context.rs",
+   "line": 80,
+   "name": "recorte de funding histórico",
+   "kind": "clamp",
+   "constant": "[-1, 1], fallo de parseo → 0",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Un parseo fallido se guarda como funding 0 (desconocido = 0) en el parquet."
+  }
+ ],
+ "coverage": {
+  "files_read": [
+   "src/bin/oco_probe.rs",
+   "src/bin/oi_history_sync.rs",
+   "src/bin/parquet_to_bin.rs",
+   "src/bin/spectral_bench.rs",
+   "src/bin/system_health.rs",
+   "src/bin/tape_spread_fix.rs",
+   "src/bin/test_forest.rs",
+   "src/bin/test_forest2.rs",
+   "src/bin/train_dark_alpha.rs",
+   "src/bin/votes_export.rs",
+   "src/bin/walkforward_evolver.rs",
+   "crates/data-pipeline/src/api_client.rs",
+   "crates/data-pipeline/src/asset_selector.rs",
+   "crates/data-pipeline/src/bypass.rs",
+   "crates/data-pipeline/src/chaos_monkey.rs",
+   "crates/data-pipeline/src/feature_vm.rs",
+   "crates/data-pipeline/src/lakehouse_mmap.rs",
+   "crates/data-pipeline/src/macro_data.rs",
+   "crates/data-pipeline/src/macro_feed.rs",
+   "crates/data-pipeline/src/market_context.rs",
+   "crates/data-pipeline/src/multiplexer.rs",
+   "crates/data-pipeline/src/onchain_feed.rs",
+   "crates/data-pipeline/src/parser.rs",
+   "crates/data-pipeline/src/persistence.rs",
+   "crates/data-pipeline/src/resilient_stream.rs",
+   "crates/data-pipeline/src/state_db.rs",
+   "crates/data-pipeline/src/storage.rs",
+   "crates/data-pipeline/src/telemetry_bus.rs",
+   "crates/data-pipeline/src/teleonomia.rs"
+  ],
+  "unread": [],
+  "notes": "Leí completos los 29 archivos de src02 (6315 líneas). Para contrastar leí también, sólo en parte: crates/data-pipeline/src/lib.rs (completo), ws_client.rs:95-134 y :230-508, booktick_replay.rs:174-200 y :360-530, audit_forensic_backtest.rs:325-434 y la línea de FORENSIC_JSON (:1041), tick_replayer.rs:28-87, evolution-engine/src/fitness.rs:1-145, ml_inference.rs:50-139, :369-424, god-engine-core/src/lib.rs:2860-2915 y :5150-5179, dark-alpha-engine/src/lib.rs:330-359 y :755-844, train_forest.rs:1140-1189, executor.rs:685-702 y quantum-arena/tests/system_health_source_contract.rs. Consulté los registros conocidos con grep (HALLAZGOS C-F1/2/3, PLAN_LINEA_C, PLAN_LINEA_F §6, BARRIDO, DEPTH_INDEPENDENT_REVIEW, AUDITORIA XXIII y los TSV de linea_g). Evidencia de entorno, sólo lectura en el checkout principal: data/oihist/*.csv (501 filas, 500 h) y la cabecera de data/BTCUSDT_ticks.bin (sin magic, mtime 2026-08-24). Supuesto declarado: openInterestHist de Binance devuelve orden ascendente; el span de 500 h exactas en los CSV lo corrobora. No ejecuté cargo ni ningún binario."
+ }
+}

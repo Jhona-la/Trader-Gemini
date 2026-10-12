@@ -69,9 +69,13 @@
   de salto del host), LG-3 (rate-limit con caducidad), LG-4 (banda operable y
   reparación RR en [30 s, 12 h]; T-1 17 → 19/144), LG-5 (pedido OPEN: la
   puerta EV usa P(neto > 0) como P(TP primero)).
-- **Siguiente (ola 2)**: G040, G046, G049 (zona libre); contrato único de
-  resultado de orden (G4) con Monte Carlo; regla de admisión sobre los 43
-  vetos absorbentes. Entregas a cada dueño en el buzón.
+- **Ola 2 cerrada**: los 436 .rs restantes leídos (los 627 del repo con
+  veredicto); LG-6…LG-15 (OCO idempotente, examen a mercado, fee-breaker con
+  evidencia, resultado de orden sin cablear, Iceberg, logs asíncronos, límites
+  del exchange, compactación por presión, JobObject por proceso, cabecera de
+  tapes). Triaje de los 43 absorbentes en el plan §4.1.
+- **Siguiente (ola 3)**: evolver con OOS y sin alias de bosques, congelar
+  genes sin efecto, G049b, println! del núcleo; cablear LG-9 con sus dueños.
 - **No toca**: ATR/σ̂60 (Línea C), orquestador/espectro (Qoder), registro
   (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol).
 - **Recursos**: disco C: con 11 GB libres; sin `CARGO_TARGET_DIR` propio.
