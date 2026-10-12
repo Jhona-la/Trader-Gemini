@@ -9409,3 +9409,30 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   τ_k y la orden vive a √(H(τ)·τ_c). El contrato #624 («vive a la escala
   que habló») y la convergencia hacia el centroide (#565) chocan. Antes de
   arreglarlo hay que elegir cuál rige para la rama 11.
+
+## 2026-10-11 — Claude (Línea C, CL-75): convicción por rama monótona y contra p* (F3.3-01/02)
+
+- `conviccion_de_rama_en(registro, piso, p*)` compara el intervalo de
+  Wilson con el equilibrio de la orden, p* = (SL + f)/(TP + SL)
+  (`p_equilibrio`; es el umbral del veto EV con multiplicador 1).
+  - Si hi < p*: devuelve 0, así que ningún multiplicador la reinfla.
+  - Si lo > p*: devuelve máx(lo, piso).
+  - En otro caso: devuelve el piso por magnitud.
+  - Es no decreciente en los aciertos.
+- El núcleo calcula p* con la misma sonda de QO-586, a la τ de la orden
+  (`GodEngineCore::p_equilibrio_de_la_orden`). Lo usan las ramas 11, 13,
+  14 y 15.
+- **Línea E** (ramas 1-10 y 20-23): `conviccion_de_rama(registro, piso)`
+  sigue con dos argumentos y usa p* = ½, pero su semántica cambia:
+  - con hi < ½ devuelve 0 (antes, hi);
+  - con lo > ½ devuelve máx(lo, piso) (antes, lo).
+  Pedido: pasar p* con
+  `self.p_equilibrio_de_la_orden(coin_id, τ_de_la_intención, hurst_exponent)`
+  y llamar a `conviccion_de_rama_en`. Con RR ≥ 2,25, p* ronda 0,36, y una
+  rama que acierta el 45 % con EV > 0 ya no queda condenada.
+- **AGY** (Ω13, test interno `omega13_g0_3_…`): su aserción de la rama
+  perdedora pasa de «= cota superior» a «= 0», que es la regla nueva.
+  El resto del test no cambia.
+- **T-2 se mueve otra vez** (dueño del fixture: aviso): de 3c243afa79d0e3e0
+  (62 operaciones, PnL −0,259) a a8d60390ff2f0f74 (68 operaciones, PnL
+  −0,118, acierto 43 %, 899 vetos EV). Golden sin cambios.

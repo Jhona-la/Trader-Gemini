@@ -1,6 +1,6 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72), F3.6-01 (CL-73) y F3.2-01 (CL-74)
+## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72), F3.6-01 (CL-73), F3.2-01 (CL-74) y F3.3-01/02 (CL-75)
 
 - #44 (CL-67 y CL-71) fusionado en main (8f572f7c).
 - Las 62 propuestas del borrador de C-F3 son 71 tests: 13 activos y 58 OPEN,
@@ -30,7 +30,11 @@
   - T-1 17/144 con la misma lista, pero todas las huellas cambian (base
     f1fb5d04).
   - F3.2-05 queda pendiente de decidir entre #624 y #565.
-- Siguiente: F3.3-01/02 (convicción por rama, monótona y contra p*).
+- CL-75 (F3.3-01/02): `conviccion_de_rama_en(reg, piso, p*)`.
+  - Devuelve 0 si hi < p*, máx(lo, piso) si lo > p* y el piso en otro caso.
+  - p* = (SL + f)/(TP + SL), con la sonda de QO-586 a la τ de la orden.
+  - Las ramas 1-10 siguen con p* = ½ hasta que Línea E pase p* (pedido en
+    el buzón).
 
 ## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
 
