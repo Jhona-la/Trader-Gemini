@@ -112,7 +112,6 @@ fn cf3_rama_11_vive_a_la_escala_que_hablo() {
 /// rama 13, esta prueba se sustituye por una de propiedad sobre la función
 /// extraída.
 #[test]
-#[ignore = "OPEN F3.3-07 (Línea C): el piso de la rama 13 usa normalized_directional_divergence(swing_nn_pred) y la puerta ML vuelve a multiplicar por el mismo ML: doble conteo"]
 fn cf3_rama_13_cuenta_el_ml_una_sola_vez() {
     let src = codigo_produccion();
     let n = src
