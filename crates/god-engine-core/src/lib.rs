@@ -50,6 +50,7 @@ pub mod quantum_kelly_risk;
 pub mod base_z;
 pub mod reality_physics;
 pub mod recarga_genoma;
+pub mod resultado_orden;
 pub mod reexport_storage {
     pub use storage_engine::mmap_bus;
 }
