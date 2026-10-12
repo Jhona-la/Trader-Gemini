@@ -2173,12 +2173,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let rt_for_gc = rt_handle.clone();
         rt_for_gc.spawn(async move {
-            telemetry_server::telemetry_log!("🧹 [OS-GUARDIAN] Inicializando Garbage Collector Estadístico (1H interval)...");
+            // LG-13 (Línea G): compactar sólo con presión de memoria medida
+            // (disponible < working set), comprobada cada minuto; antes se
+            // vaciaba el working set del proceso vivo cada hora, siempre.
+            telemetry_server::telemetry_log!("🧹 [OS-GUARDIAN] Compactación de memoria por presión medida (comprobación cada 60 s)");
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-                telemetry_server::telemetry_log!("🧹 [OS-GUARDIAN] Ejecutando Memory Compaction OS-level...");
-                unsafe {
-                    os_guardian::memory_compaction::force_working_set_compaction();
+                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                if os_guardian::memory_compaction::compactar_si_hay_presion() {
+                    telemetry_server::telemetry_log!("🧹 [OS-GUARDIAN] Presión de memoria: working set compactado");
                 }
             }
         });
