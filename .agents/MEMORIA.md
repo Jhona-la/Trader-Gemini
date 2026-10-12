@@ -21,6 +21,9 @@
   (contratos vacuos), Codex (veto de deriva como latch, frescura del holdout
   por sha256), Sol (causalidad del replay, best-of sin multiplicidad), GLM
   (auto_trainer, config_compiler, walkforward_evolver).
+- **Verificación**: check all-targets verde; suites de los 8 crates tocados
+  verdes; golden 54/54; T-2 `998a7de2cfba2519` (131); **T-1 PASA 19/144**
+  (base `6dff337e`, misma lista que la ola 1).
 - **Lección**: `cargo test -p backtest-engine` corre el oráculo T-1 en debug
   (no está `#[ignore]`): para el golden usar `--lib` y el T-1 en release.
 - **Lección**: los heredoc de bash con ciertos contenidos rompen el parser
