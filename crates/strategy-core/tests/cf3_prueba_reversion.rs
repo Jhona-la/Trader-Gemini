@@ -3,11 +3,12 @@
 //!
 //! Teoría que se prueba. La base es un OU de reversión θ observado en pares
 //! síncronos con marcas irregulares. H0: θ ≤ θ0 = ln2/(2τ_k). En la frontera
-//! (θ = θ0) la prueba debe rechazar con probabilidad ≤ 5 % (nivel), a
-//! cualquier edad desde la madurez y con ruido de medida en la base; dentro
-//! de H0 (caminata) aún menos; y con reversión rápida (t½ = τ_k/5) debe
-//! rechazar casi siempre (potencia). El crítico (1,75) sale de este Monte
-//! Carlo: el cuantil 95 del estadístico en la frontera queda por debajo.
+//! (θ = θ0) la prueba debe rechazar con probabilidad de un 5 % como mucho
+//! (nivel), a cualquier edad desde la madurez y con ruido de medida en la
+//! base; dentro de H0 (caminata), no más; y con reversión rápida
+//! (t½ = τ_k/5) debe rechazar casi siempre (potencia). El crítico (1,75)
+//! sale del Monte Carlo de `medicion_critico_reversion.rs` (N = 10 000:
+//! tamaño máximo 5,1 %, con ruido de 1 σ); aquí se comprueba con N = 1 000.
 //!
 //! Generador. OU exacto en tiempo continuo entre marcas,
 //! x(t + h) = x(t)·e^{−θh} + s·√(1 − e^{−2θh})·N, con s = 1 pb; pares cada
@@ -54,8 +55,9 @@ fn cl97_nivel_en_la_frontera_nodo_18() {
     }
 }
 
-/// Esperado: una caminata (θ = 0, dentro de H0) se rechaza aún menos, también
-/// con ruido de medida de 10 veces la innovación por par.
+/// Esperado: una caminata (θ = 0, dentro de H0) se rechaza ≤ 0,08. Sin ruido,
+/// mucho menos que la frontera (≤ 2 %); con ruido de medida de 10 veces la
+/// innovación por par, ≈ 5 % al madurar y menos después.
 #[test]
 fn cl97_caminata_dentro_de_h0() {
     let edades = [0.6, 1.0, 2.0, 4.0];
