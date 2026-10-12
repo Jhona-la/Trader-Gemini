@@ -324,6 +324,8 @@ pub struct OrderExecutor {
     binance_weight_1m: AtomicUsize,
     binance_orders_10s: AtomicUsize,
     binance_orders_1m: AtomicUsize,
+    /// LG-3: sello (reloj sincronizado, ms) de la última cabecera de uso recibida.
+    binance_limits_ts_ms: AtomicU64,
     max_weight_1m: AtomicUsize,
     max_orders_10s: AtomicUsize,
     max_orders_1m: AtomicUsize,
@@ -380,6 +382,7 @@ impl OrderExecutor {
             binance_weight_1m: AtomicUsize::new(0),
             binance_orders_10s: AtomicUsize::new(0),
             binance_orders_1m: AtomicUsize::new(0),
+            binance_limits_ts_ms: AtomicU64::new(0),
             max_weight_1m: AtomicUsize::new(2200), // Default, but can be updated
             max_orders_10s: AtomicUsize::new(280),
             max_orders_1m: AtomicUsize::new(1100),
@@ -417,6 +420,7 @@ impl OrderExecutor {
             binance_weight_1m: AtomicUsize::new(0),
             binance_orders_10s: AtomicUsize::new(0),
             binance_orders_1m: AtomicUsize::new(0),
+            binance_limits_ts_ms: AtomicU64::new(0),
             max_weight_1m: AtomicUsize::new(2200),
             max_orders_10s: AtomicUsize::new(280),
             max_orders_1m: AtomicUsize::new(1100),
@@ -1158,6 +1162,10 @@ impl OrderExecutor {
 
     #[inline(always)]
     fn update_limits(&self, limits: &crate::client::BinanceRateLimits) {
+        if limits.weight_1m.is_some() || limits.orders_10s.is_some() || limits.orders_1m.is_some() {
+            self.binance_limits_ts_ms
+                .store(self.get_synced_timestamp(), Ordering::Relaxed);
+        }
         if let Some(w) = limits.weight_1m {
             self.binance_weight_1m.store(w, Ordering::Relaxed);
         }
@@ -1306,9 +1314,15 @@ impl OrderExecutor {
             ));
         }
 
-        let bw1m = self.binance_weight_1m.load(Ordering::Relaxed);
-        let bo10s = self.binance_orders_10s.load(Ordering::Relaxed);
-        let bo1m = self.binance_orders_1m.load(Ordering::Relaxed);
+        // LG-3: el uso que reporta una cabecera vale sólo dentro de su ventana
+        // del exchange (1 min / 10 s). Sin caducidad, una cabecera alta
+        // bloqueaba toda petición nueva —también salidas y cancelaciones—
+        // antes de enviarla, nunca llegaba la respuesta que la refrescara y el
+        // bloqueo era permanente.
+        let sello = self.binance_limits_ts_ms.load(Ordering::Relaxed);
+        let bw1m = uso_vigente(self.binance_weight_1m.load(Ordering::Relaxed), sello, timestamp_ms, 60_000);
+        let bo10s = uso_vigente(self.binance_orders_10s.load(Ordering::Relaxed), sello, timestamp_ms, 10_000);
+        let bo1m = uso_vigente(self.binance_orders_1m.load(Ordering::Relaxed), sello, timestamp_ms, 60_000);
 
         let max_bw1m = self.max_weight_1m.load(Ordering::Relaxed) as f64;
         let max_bo10s = self.max_orders_10s.load(Ordering::Relaxed) as f64;
@@ -3654,6 +3668,25 @@ impl ExecutionProvider for OrderExecutor {
     }
 }
 
+/// LG-3 (Línea G) — USO DE RATE-LIMIT VIGENTE.
+///
+/// Las cabeceras `X-MBX-USED-WEIGHT-1M` y `X-MBX-ORDER-COUNT-10S/1M` miden el
+/// uso dentro de una ventana fija del exchange. Pasada esa ventana desde la
+/// cabecera, el contador del exchange se ha reiniciado al menos una vez: el
+/// uso conocido es 0. Un sello ausente (0) o un reloj que retrocede conservan
+/// el valor (conservador).
+#[inline]
+fn uso_vigente(uso: usize, sello_ms: u64, ahora_ms: u64, ventana_ms: u64) -> usize {
+    if sello_ms == 0 || ahora_ms < sello_ms {
+        return uso;
+    }
+    if ahora_ms - sello_ms >= ventana_ms {
+        0
+    } else {
+        uso
+    }
+}
+
 // Historical merge fixture only: retains old tests, NOT an operational identity
 // contract. New traversal validates IDs and includes asset/trade_id; see
 // income_evidence. These legacy tests do not prove pagination completeness.
@@ -3688,6 +3721,40 @@ fn merge_income_page(
         }
     }
     added
+}
+
+#[cfg(test)]
+mod tests_lg3 {
+    use super::*;
+
+    #[test]
+    fn lg3_el_uso_caduca_con_su_ventana() {
+        assert_eq!(uso_vigente(2000, 1_000, 1_500, 60_000), 2000);
+        assert_eq!(uso_vigente(2000, 1_000, 61_000, 60_000), 0);
+        assert_eq!(uso_vigente(250, 1_000, 10_999, 10_000), 250);
+        assert_eq!(uso_vigente(250, 1_000, 11_000, 10_000), 0);
+        // Sin sello o con reloj regresivo: conservador.
+        assert_eq!(uso_vigente(2000, 0, 999_999, 60_000), 2000);
+        assert_eq!(uso_vigente(2000, 5_000, 4_000, 60_000), 2000);
+    }
+
+    /// Antes: una cabecera de uso alto bloqueaba para siempre las salidas
+    /// (headroom 80 %), porque ninguna petición salía y ninguna respuesta
+    /// refrescaba el contador. Ahora el bloqueo dura lo que su ventana.
+    #[test]
+    fn lg3_una_cabecera_alta_no_bloquea_las_salidas_para_siempre() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        let t0 = 1_700_000_000_000u64;
+        ex.binance_weight_1m.store(2_100, Ordering::Relaxed); // > 0,8·2200
+        ex.binance_limits_ts_ms.store(t0, Ordering::Relaxed);
+        assert!(ex.check_exit_rate_limits(t0 + 1_000).is_err(), "dentro de la ventana frena");
+        assert!(ex.check_exit_rate_limits(t0 + 60_000).is_ok(), "pasada la ventana libera");
+        ex.binance_orders_10s.store(250, Ordering::Relaxed); // > 0,8·280
+        ex.binance_limits_ts_ms.store(t0, Ordering::Relaxed);
+        ex.binance_weight_1m.store(0, Ordering::Relaxed);
+        assert!(ex.check_exit_rate_limits(t0 + 5_000).is_err());
+        assert!(ex.check_exit_rate_limits(t0 + 10_000).is_ok());
+    }
 }
 
 #[cfg(test)]
