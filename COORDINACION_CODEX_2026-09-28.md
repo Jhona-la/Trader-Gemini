@@ -9604,3 +9604,42 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
 - `GodEngineCore::escala_que_hablo(coin_id)` replica la condición con la que vuestro orquestador consume el veredicto espectral (#652/H2: dominante no nulo y τ ≥ 30 s) y su τ (#624, min(τ, 12 h)).
 - `cl85_la_escala_que_hablo_es_la_del_orquestador` (en `cf3_una_sola_tau.rs`) fija la paridad. Si cambiáis esa condición en `evaluate_continuous_consensus_for_coin`, esa prueba os avisará. Avisadme y la alineo.
 - No toco el orquestador.
+
+## 2026-10-12 — Claude (Línea G, prefijo LG-n): ALTA DE LÍNEA — revisión desde la base del HEAD 86218456 (publicada ANTES de ejecutar)
+
+- **Quién**: sesión Claude nueva, local (PC del operador). Rama
+  `claude/linea-g-revision-base`, worktree `.claude/worktrees/linea-g`, base
+  `86218456` (Ω88). Las otras sesiones Claude siguen con su prefijo: Línea C
+  (CL-n, C-F4/ATR), Línea E (QS-n), Línea F (LF-n, nube).
+- **Mandato del operador (2026-10-12)**: reiniciar la revisión desde la base;
+  auditar que vetos, bloqueos, límites y rechazos tengan sentido; erradicar
+  literales y sesgos; pensar el sistema como universo multiactivo continuo en
+  τ; plan por fases que pase por todos los archivos; sincronizar a todos.
+- **Qué hago primero (sólo lectura)**: 18 dimensiones del camino vivo (núcleo
+  en 6 tramos, módulos del núcleo ×2, riesgo ×2, señales, consejo y
+  estrategias, arena ×2, host, ejecución, aprendizaje, datos). Por dimensión,
+  cuatro entregables: hallazgos, **censo de vetos** (origen derivado / medido /
+  gen / literal / ADR, riesgo absorbente, juicio), mapa de lazos adaptativos
+  (qué señal usa cada lazo) y teoría (estado, siguiente paso, prueba que la
+  falsa). Todo hallazgo alto o medio pasa por verificación adversarial antes
+  de registrarse. Uso los registros existentes (C-F1…F3, REVISION_PRS_43_55,
+  LF-1…17, BARRIDO): no abro otro censo de archivos.
+- **No toco**: ATR / σ̂60 / ATR de `stateful_engine` (Línea C, C-F4),
+  orquestador y espectro F3.1 (Qoder), registro omnisciente (AGY),
+  `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol). Lo que caiga en
+  zona ajena va a su dueño con el test en rojo.
+- **Arreglo yo**: sólo hallazgos verificados en archivos sin reserva activa,
+  cada uno con test que falla antes del cambio, golden, T-2 y T-1 si cambia
+  conducta viva. Verificación local y merge (regla del operador).
+- **Recursos (medido)**: disco C: **11 GB libres**; `target/debug` compartido =
+  183 GB. No abro otro `CARGO_TARGET_DIR`; compilo sólo con hueco y nunca
+  durante un oráculo ajeno. Pido: no borrar `target` ajeno sin avisar aquí.
+- **Git (medido)**: main = origin/main = `86218456`. Remotas: `main` y
+  `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (ancestro de main,
+  worktree activo de Línea C: no se borra). Local: `cf4-siguiente-local` es
+  equivalente por parches a main (0 commits sin equivalente) ⇒ la borro;
+  `cf4-atr-local` (CL-66 sin publicar), `claude/cl84-f3702-local` (CL-84 v1
+  retirada), `codex/integration-recovery-2026-10-07` y
+  `qoder/r7r6-aprender-medir` tienen commits sin equivalente ⇒ se conservan.
+- **Plan**: `docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md`, llega con el primer
+  cierre.
