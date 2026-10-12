@@ -769,7 +769,18 @@ fn wf_evaluate_real(
         }
     }
 
-    let oos_end_capital = arena.unified_capital.load(Ordering::Relaxed);
+    // LG-7 (Línea G, G049): lo abierto al final de cada tramo de validación
+    // se valora a mercado con la fricción de salida taker. Antes quedaba
+    // censurado: el capital del examen sólo cambia al cerrar, así que una
+    // posición perdedora abierta al final no restaba aptitud ni drawdown.
+    let oos_end_capital = arena.unified_capital.load(Ordering::Relaxed)
+        + valor_a_mercado_de_lo_abierto(&arena, &coin_ids, &prices);
+    if oos_end_capital.is_finite() && st.peak > 0.0 {
+        let dd = (st.peak - oos_end_capital) / st.peak;
+        if dd.is_finite() && dd > st.max_dd {
+            st.max_dd = dd;
+        }
+    }
     let trades = st.net_returns.len();
     // D-743: la aptitud se mide ÍNTEGRAMENTE sobre la partición de validación
     // — capital inicial y final son los de esa ventana, y el mínimo de
@@ -789,6 +800,50 @@ fn wf_evaluate_real(
     });
     let _ = st.vetoes; // telemetría del envelope: contabilizada, no puntúa
     RealWfOutcome { fitness, net_returns: st.net_returns, trades }
+}
+
+/// LG-7 (Línea G, G049) — VALOR A MERCADO DE LAS RANURAS ABIERTAS DEL EXAMEN.
+///
+/// PnL bruto a `precios[i]` menos la comisión taker y el piso de
+/// deslizamiento de la salida (los del genoma examinado), sumado sobre todas
+/// las ranuras abiertas de las monedas del examen. La comisión de entrada ya
+/// se descontó del capital al abrir. Una moneda sin precio finito positivo
+/// no aporta (no se inventa un valor).
+pub(crate) fn valor_a_mercado_de_lo_abierto(
+    arena: &GlobalArena,
+    coin_ids: &[usize],
+    precios: &[f64],
+) -> f64 {
+    let taker = arena.config.live_taker_fee.load(Ordering::Relaxed);
+    let deslizamiento = arena.config.base_slippage_floor.load(Ordering::Relaxed);
+    let friccion = if taker.is_finite() && taker >= 0.0 { taker } else { 0.0 }
+        + if deslizamiento.is_finite() && deslizamiento >= 0.0 { deslizamiento } else { 0.0 };
+    let mut total = 0.0;
+    for (i, &c) in coin_ids.iter().enumerate() {
+        let precio = precios.get(i).copied().unwrap_or(f64::NAN);
+        if !(precio.is_finite() && precio > 0.0) {
+            continue;
+        }
+        let coin_id = c.min(quantum_arena::state::MAX_COINS - 1);
+        let Some(coin) = arena.coins.get(coin_id) else { continue };
+        for pos in coin.positions.slots() {
+            if !pos.is_open() {
+                continue;
+            }
+            let entrada = pos.entry_price.load(Ordering::Relaxed);
+            let qty = pos.quantity.load(Ordering::Relaxed);
+            if !(entrada.is_finite() && entrada > 0.0 && qty.is_finite() && qty > 0.0) {
+                continue;
+            }
+            let bruto = if pos.is_long.load(Ordering::Relaxed) {
+                (precio - entrada) * qty
+            } else {
+                (entrada - precio) * qty
+            };
+            total += bruto - precio * qty * friccion;
+        }
+    }
+    total
 }
 
 /// D-689 (DÉCIMA OLA) — ARMADO EXPLÍCITO DE LA EVOLUCIÓN EN VIVO.
@@ -2115,6 +2170,31 @@ mod evidence_regressions {
         let mut returns: Vec<f64> = (1..=10).map(|i| i as f64).collect();
         returns.push(f64::NAN);
         assert_eq!(summarize_returns(&returns), Err(EvidenceError::NonFiniteObservation { index: 10 }));
+    }
+}
+
+#[cfg(test)]
+mod tests_lg7 {
+    use super::*;
+
+    /// G049: una ranura abierta al final del examen cuenta a mercado, con la
+    /// fricción de salida taker; una moneda sin precio no aporta.
+    #[test]
+    fn lg7_lo_abierto_al_final_del_examen_se_valora_a_mercado() {
+        let arena = GlobalArena::new(13.0);
+        arena.config.live_taker_fee.store(0.0005, Ordering::Relaxed);
+        arena.config.base_slippage_floor.store(0.0001, Ordering::Relaxed);
+        let coin_ids = [3usize, 4usize];
+        // Largo abierto a 100 con 0,05 de cantidad en la moneda 3.
+        arena.coins[3].positions.slots()[0].open(true, 100.0, 0.05, 1.0, 1, 0.0, 0.0);
+        // Corto abierto a 50 con 0,1 en la moneda 4, sin precio final.
+        arena.coins[4].positions.slots()[0].open(false, 50.0, 0.1, 1.0, 1, 0.0, 0.0);
+        let v = valor_a_mercado_de_lo_abierto(&arena, &coin_ids, &[98.0, f64::NAN]);
+        let esperado = (98.0 - 100.0) * 0.05 - 98.0 * 0.05 * 0.0006;
+        assert!((v - esperado).abs() < 1e-12, "v={v} esperado={esperado}");
+        // Sin ranuras abiertas no aporta nada.
+        let vacia = GlobalArena::new(13.0);
+        assert_eq!(valor_a_mercado_de_lo_abierto(&vacia, &coin_ids, &[98.0, 50.0]), 0.0);
     }
 }
 
