@@ -1951,9 +1951,12 @@ impl GodEngineCore {
         for z in self.base_z.iter_mut() {
             *z = base_z::BaseZ::new();
         }
-        // CL-97: y la prueba de reversión de StatArb vuelve a madurar.
+        // CL-109 (W-1 de la revisión del PR #60): StatArb sólo corta el
+        // emparejamiento. Su prueba de reversión conserva lo acumulado (el
+        // hueco ya decae las sumas); antes volvía a madurar desde cero en
+        // cada reconexión y los nodos lentos no maduraban nunca.
         for e in self.statarb_ou_engines.iter_mut() {
-            *e = strategy_core::stat_arb::StatArbEngine::new(30, 1.5).with_prueba_reversion();
+            e.cortar_emparejamiento();
         }
     }
 

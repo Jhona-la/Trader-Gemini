@@ -13,8 +13,10 @@
 //!   reversión: la guarda pasa con caminatas independientes;
 //! - el futuro se compara en cada evento con un spot que no se ha refrescado;
 //! - la β RLS deja un residuo paso-alto que revierte por construcción;
-//! - la reconexión (`reset_engines`) no reinicia la prueba, y tras un hueco
-//!   largo del spot la estimación vieja sigue valiendo.
+//! - tras un hueco largo del spot la estimación vieja sigue valiendo.
+//! La reconexión (`reset_engines`) reiniciaba la prueba; desde CL-109 (W-1
+//! de la revisión del PR #60) sólo corta el emparejamiento, porque los nodos
+//! lentos no maduraban nunca con el corte diario del WS.
 //!
 //! Configuración: núcleo vivo con BTCUSDT, un evento del futuro por segundo
 //! y el spot escrito justo antes de cada evento: llega entre dos eventos,
@@ -120,25 +122,35 @@ fn cl97_un_spot_sin_refrescar_no_forma_pares() {
     assert_eq!(alguna, 0);
 }
 
-/// Verdad: la reconexión reinicia la prueba. Tras `reset_engines`, la
-/// guarda no pasa hasta que la prueba vuelve a madurar (en el primer
-/// minuto, nunca). En `main` la SDE sigue con su estimación vieja.
+/// Verdad (CL-109, W-1 de la revisión del PR #60): una reconexión sin hueco
+/// no rehace la prueba. En el minuto siguiente la guarda pasa en los mismos
+/// eventos que en un control sin reconexión, salvo el par que se pierde al
+/// cortar el emparejamiento. Antes (CL-97) la reconexión la reiniciaba y la
+/// guarda no pasaba nunca en ese minuto; el hueco largo (siguiente prueba)
+/// es lo que debe hacerla madurar de nuevo.
 #[test]
-fn cl97_la_reconexion_reinicia_la_prueba() {
+fn cl109_la_reconexion_sin_hueco_conserva_la_prueba() {
     let _g = bloqueo();
-    let (arena, mut core, mut m, mut ts) = nucleo_demostrado(3);
-    core.reset_engines();
-    let mut pasa = 0u32;
-    for _ in 0..60 {
-        let (f, sp) = m.paso();
-        evento(&arena, &mut core, ts, f, Some(sp));
-        ts += 1_000;
-        if guarda_pasa(&arena) {
-            pasa += 1;
+    let minuto = |reconectar: bool| {
+        let (arena, mut core, mut m, mut ts) = nucleo_demostrado(3);
+        if reconectar {
+            core.reset_engines();
         }
-    }
-    println!("observado: eventos con la guarda abierta en el minuto tras la reconexión: {pasa}/60");
-    assert_eq!(pasa, 0);
+        let mut pasa = 0u32;
+        for _ in 0..60 {
+            let (f, sp) = m.paso();
+            evento(&arena, &mut core, ts, f, Some(sp));
+            ts += 1_000;
+            if guarda_pasa(&arena) {
+                pasa += 1;
+            }
+        }
+        pasa
+    };
+    let (control, tras) = (minuto(false), minuto(true));
+    println!("observado: eventos con la guarda abierta en el minuto siguiente: control {control}/60, tras la reconexión {tras}/60");
+    assert!(control >= 30, "precondición: la reversión está demostrada ({control}/60)");
+    assert!(tras + 2 >= control, "la reconexión no debe cerrar la guarda: {tras} frente a {control}");
 }
 
 /// Verdad: tras 40 min sin spot (el futuro sigue), la evidencia vieja decae

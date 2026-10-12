@@ -160,6 +160,18 @@ impl StatArbEngine {
         self.mid_a_previo = (precio_a.is_finite() && precio_a > 0.0).then_some(precio_a);
     }
 
+    /// CL-109 (W-1 de la revisión del PR #60): una reconexión del feed corta
+    /// sólo el EMPAREJAMIENTO. El mid de A y la marca de B previos dejan de
+    /// valer: el primer dato de B tras la reconexión no se empareja con un
+    /// mid de antes. La prueba conserva sus sumas, porque el hueco ya las
+    /// hace decaer y corta la cadena de retardos. Rehacerla desde cero en
+    /// cada reconexión dejaba sin madurar los nodos lentos: el 22 necesita
+    /// 41 h y Binance corta la conexión cada 24 h.
+    pub fn cortar_emparejamiento(&mut self) {
+        self.mid_a_previo = None;
+        self.marca_b_previa = None;
+    }
+
     /// CL-97: veredicto a la τ de decisión `tau_decision_ms`, con `piso` como
     /// resolución de la base (≥ 0, la σ mínima del z). `None` sin prueba o
     /// sin ningún par.
