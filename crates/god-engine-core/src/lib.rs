@@ -4178,7 +4178,7 @@ impl GodEngineCore {
                     };
 
                     if self.diag_close_total < 100 {
-                        println!(
+                        telemetry_server::telemetry_log!(
                             "🚪 [CLOSE TRACE] #{} reason={} pnl_pct={:.4}% peak={:.4}% age={}s gross_pnl=${:.4} exit={:.2} entry={:.2} trail_stop={:.2} mid={:.2} h={:?} ts={}",
                             self.diag_close_total,
                             reason,
@@ -5224,7 +5224,7 @@ impl GodEngineCore {
                     // degenerado (tree_offsets ≤ 1: sin árboles usables). El
                     // viejo mensaje de "features no finitos" listaba siempre
                     // un vector vacío y ocultaba la causa real.
-                    println!(
+                    telemetry_server::telemetry_log!(
                         "🔬 [ML-DIAG] {} predict=None (modelo {}_MOTOR) — modelo degenerado (tree_offsets ≤ 1), sin splits evaluables; reciclar modelo",
                         sym, sym
                     );
@@ -5236,7 +5236,7 @@ impl GodEngineCore {
                 // hora— que ahogan el log donde vive el veredicto y frenan la
                 // corrida por E/S. La ausencia de modelo es un estado, no un
                 // evento: basta recordarlo de cuando en cuando.
-                println!(
+                telemetry_server::telemetry_log!(
                     "🔬 [ML-DIAG] {} SIN forest activo (key {}_MOTOR sin modelo y sin fallback)",
                     sym, sym
                 );
@@ -8716,7 +8716,7 @@ impl GodEngineCore {
                                 });
 
                                 if self.diag_opened <= 100 {
-                                    println!(
+                                    telemetry_server::telemetry_log!(
                                         "🚀 [OPEN TRACE] #{} dir={} slot={} tau={}ms rama={:.0} h={:?} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sc={:.3} obi={:.3} ofi={:.3} cvd={:.3} ht={:.5} st={:.5} mac={:.5} mic={:.5} ts={}",
                                         self.diag_opened,
                                         if is_long { "LONG" } else { "SHORT" },
