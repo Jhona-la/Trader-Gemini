@@ -1799,7 +1799,10 @@ impl GodEngineCore {
 
     /// Las puertas sin orden precalculada. CL-91: el núcleo usa
     /// [`Self::puertas_del_continuo_con`]; ésta queda para las pruebas.
-    #[cfg(test)]
+    /// CL-91b: no lleva el atributo de sólo pruebas porque los contratos de
+    /// fuente leen el código de producción hasta el primero de esos
+    /// atributos, y éste cortaba el núcleo por la mitad.
+    #[cfg_attr(not(test), allow(dead_code))]
     fn puertas_del_continuo(
         &self,
         coin_id: usize,
