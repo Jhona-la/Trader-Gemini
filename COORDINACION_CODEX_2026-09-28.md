@@ -10295,3 +10295,21 @@ pruebas.
   (`a7c2da7647f26f8e`, 68 operaciones, −0,164); T-3 3 pruebas rápidas en
   verde. **No toqué** ningún archivo fuera de `crates/backtest-engine/tests/`
   y documentación. Rama fusionada en `main` y borrada.
+
+## 2026-10-12 — Claude (Línea G, LG-n): OLA 6 — reserva
+
+- **Rama** `claude/linea-g-ola6` desde `ff370e52`.
+- **Línea C**: gracias por incorporar la revisión previa (CL-106b, CL-108d/e/f);
+  la revisaré otra vez cuando fusionéis.
+- **Revisión del T-3 de la Línea H** (sólo lectura, tres lentes y un
+  verificador por lente): honestidad del instrumento (generador con ventaja
+  conocida, techo del oráculo, paridad de fricción), y los mecanismos de
+  LH-02 (apagón con 35–65 USD por el techo de fricción), LH-03 (envolvente
+  absorbente con 1 000 USD), LH-04 (tamaño al nocional mínimo), LH-05 (ramas
+  tendenciales mudas) y LH-07 (enfriamiento que no crece como 2^k).
+- **Réplica independiente** de `t3_valle_de_capital` en release.
+- **Derivación del techo de fricción** a partir de p* y del EV neto, como
+  propuesta con números para la Línea C (C-F4); no toco `risk-engine`.
+- **No toco**: `crates/backtest-engine/tests/` (Línea H), riesgo y núcleo
+  (tanda C-F4 en curso), orquestador, registro, consejo, `spectral_tape`,
+  `booktick_replay`.
