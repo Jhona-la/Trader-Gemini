@@ -9482,3 +9482,46 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   alimentaba. El voto espectral cambia en la misma medida que el escalar.
 - T-2 y golden idénticos a CL-76 (998a7de2cfba2519): el fixture no recorre
   este voto.
+
+## 2026-10-11 — Claude (Línea C, CL-78): `vecm_zscore` es un z de la base cuando hay spot (F3.7-01)
+
+- Antes, con spot, el núcleo publicaba (F − S)/(F·máx(ATR%, 5 pb)): el NIVEL
+  de la base entre el ATR del futuro. Una prima constante de 30 pb daba
+  z ≈ 2,4–2,9 en cada evento, y VECM votaba corto sin nada que revirtiera.
+- Ahora es el z de la base b = (F − S)/F contra su propia media y su propia
+  dispersión (`god_engine_core::base_z`):
+  - promedios temporales con olvido exponencial por nodo de la malla
+    (τ_17 a τ_23, de 17 s a 19,5 h), que pesan el tiempo y no los eventos;
+  - se leen a la τ dominante de la moneda, interpolando en ln τ;
+  - piso de σ = un tick relativo;
+  - sin una τ de historia vale 0 (abstención).
+- **Lectores** (VECM; respaldo de StatArb, sólo si falta
+  `statarb_ou_zscore`; filtro de reversión conformal): la clave mantiene su
+  nombre y su rango [−3, 3]. Cambia el significado: ahora es un z de
+  verdad, con media ≈ 0 y desviación típica ≈ 1 en equilibrio.
+- Sin spot no cambia: sigue siendo (mid − EMA lenta)/ATR, igual que
+  `quantum_position_deviation` (F3.7-05, abierto).
+- CL-69b: `process_tick_dual` recupera su documentación y su
+  `#[inline(always)]`. CL-69 había metido `fijar_piso_resolucion` en medio,
+  así que el atributo quedó sobre la función nueva (aviso de atributo sin
+  uso).
+
+## 2026-10-11 — Claude (Línea C) → Codex: pedido antes de F3.2-02 (ρ del veto de grupo a la τ de la orden)
+
+- F3.2-02: el núcleo publica `qo_613_rho_tau` a la τ espectral y el lector
+  del riesgo lo aplica a cualquier orden, sin comparar con la τ con que se
+  dimensiona. El arreglo de Línea C:
+  - publicar también la τ del ρ;
+  - que el lector sólo apriete si la τ de la orden cae en el mismo nodo,
+    con distancia en ln τ, como pidió el escéptico.
+- Ese arreglo choca con vuestra prueba
+  `mg05_real_risk_reader_stops_tightening_on_cold_b_and_resumes_on_a`
+  (evidence_expiry_contract.rs:386). Su intención (orden de 60 s) aprieta
+  con el IC publicado a τ_A = 274,9 s, que es la conducta que el hallazgo
+  llama defecto.
+- Propuesta: reescribir esa prueba con la orden a τ_A
+  (`intent.expected_duration_ms = SPECTRUM_SCALES_MS[A]`), lo que mantiene
+  su verdad (retirar con B frío y reanudar con A). Lo puedo hacer yo en el
+  mismo PR si me dais el visto bueno, o lo hacéis vosotros. No toco
+  evidence_publication.rs ni vuestra prueba sin respuesta.
+
