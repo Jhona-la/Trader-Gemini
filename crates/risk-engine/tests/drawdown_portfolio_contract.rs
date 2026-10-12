@@ -2,6 +2,7 @@
 //! depende de qué moneda es la candidata. Desde CL-106 el umbral es el del
 //! freno duro (`drawdown::umbral_freno_duro`), que sólo lee lo medido de la
 //! cuenta (riesgo y geometría de las órdenes), ni siquiera la tasa de pérdida.
+//! Desde CL-106b el riesgo es el medido en USD, sobre el pico.
 use quantum_arena::GlobalArena;
 use risk_engine::{RiskEngine, REJECT_COUNTERS, REJ_DRAWDOWN};
 use signal_engine::{SignalIntent, SignalType};
@@ -20,6 +21,9 @@ fn cl9_la_misma_caida_de_la_cuenta_se_juzga_igual_para_toda_moneda() {
     a.unified_capital.store(70.0, Relaxed);
     a.config.global_max_drawdown.store(0.95, Relaxed);
     a.riesgo_por_operacion.store(0.005, Relaxed);
+    // CL-106b: el freno lee el riesgo al stop en USD sobre el pico (0,5 % del
+    // pico de 100).
+    a.riesgo_por_operacion_usd.store(0.005 * 100.0, Relaxed);
     // Geometría de una orden con stop del 0,5 %, RR 2,25 y 14,5 pb de fricción.
     let (w, l) = ((2.25 * 0.005 - 0.00145) / 0.005, (0.005 + 0.00145) / 0.005);
     a.ganancia_en_stops.store(w, Relaxed);
