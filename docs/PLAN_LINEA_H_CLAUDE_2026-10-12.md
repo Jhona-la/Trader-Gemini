@@ -139,9 +139,75 @@ primero) y el instrumento que la mide.
   `codex/root-spectral-zero-replay-2026-10-11`, `sol/replay-accounting-2026-10-09`.
 - Nada que borrar sin acuse de su dueño en este corte.
 
-### 6.2 La escalera (H1)
+### 6.2 La escalera (H1) — medida el 2026-10-12 sobre `e0cd88b7` (release, 3 000 velas de 1 min ≈ 50 h por peldaño)
 
-Pendiente.
+Tabla completa: [`t3_escalera_13usd.tsv`](audit/linea_h/t3_escalera_13usd.tsv),
+[`t3_escalera_capital.tsv`](audit/linea_h/t3_escalera_capital.tsv),
+[`t3_capital100_max_fee_035.tsv`](audit/linea_h/t3_capital100_max_fee_035.tsv);
+trazas del runner en `t3_trazas_*.txt`; lado de cada apertura frente al estado
+oculto en [`t3_lado_vs_estado.txt`](audit/linea_h/t3_lado_vs_estado.txt).
+
+| a | d | oráculo 5 v / 20 v (pb) | p_TP oráculo | EV_R oráculo | ops | acierto | PnL (USD) | % capital | rechazos del riesgo | aperturas−cierres | lado del estado |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0,50 | 0 | −11 / −11 | 0,275 | −0,31 | 36 | 0,361 | −0,126 | −0,97 | EV 929 | 0 | 0,42 |
+| 0,60 | 0,10 % | −7 / −10 | 0,306 | −0,20 | 63 | 0,460 | +0,057 | +0,44 | — | 0 | 0,70 |
+| 0,70 | 0,10 % | −5 / −8 | 0,313 | −0,18 | 107 | 0,477 | +0,104 | +0,80 | sonda 20 | **124** | 0,58 |
+| 0,80 | 0,10 % | +4 / +4 | 0,363 | −0,02 | 90 | 0,433 | +0,048 | +0,37 | EV 1, sonda 9 | 0 | 0,58 |
+| 0,90 | 0,10 % | +16 / +26 | 0,477 | **+0,35** | 44 | 0,409 | **−0,118** | **−0,91** | — | 0 | 0,66 |
+| 0,95 | 0,10 % | +29 / +75 | 0,573 | +0,66 | 111 | 0,640 | +1,251 | +9,62 | — | 0 | 0,75 |
+| 0,90 | 0,05 % | +1 / +7 | 0,352 | −0,06 | 81 | 0,432 | −0,143 | −1,10 | EV 502 | 1 | 0,74 |
+| 0,90 | 0,20 % | +48 / +88 | 0,657 | +0,94 | 89 | 0,652 | +1,408 | +10,83 | — | 0 | 0,82 |
+
+Los dos peldaños fuertes con la MISMA serie y más capital:
+
+| a / d | capital | ops | acierto | PnL (USD) | % capital | rechazos | aperturas−cierres |
+|---|---|---|---|---|---|---|---|
+| 0,95 / 0,10 % | 100 | 7 | 0,43 | −0,002 | −0,00 | **fee_impact 3 429** | 0 |
+| 0,90 / 0,20 % | 100 | 1 | 0,00 | −0,027 | −0,03 | **fee_impact 3 523** | 0 |
+| 0,95 / 0,10 % | 1 000 | 30 | 0,60 | −0,498 | −0,05 | — | **5 574** |
+| 0,90 / 0,20 % | 1 000 | 89 | 0,65 | +20,47 | +2,05 | — | 0 |
+| 0,95 / 0,10 % | 100, `max_fee_pct` = 3,5 % | 111 | 0,64 | +1,971 | +1,97 | — | 0 |
+| 0,90 / 0,20 % | 100, `max_fee_pct` = 3,5 % | 89 | 0,65 | +3,860 | +3,86 | — | 0 |
+
+**Lo que dice la medición (antes de los escépticos):**
+
+1. **Las puertas del riesgo no matan la ventaja; la ausencia de tamaño sí.**
+   En los peldaños con ventaja (EV_R del oráculo > 0) el riesgo no rechaza
+   nada; el EV sólo cierra el peldaño nulo y el de deriva 0,05 % (donde el
+   oráculo tampoco gana). Pero TODAS las aperturas trazadas llevan nocional
+   5,2–5,9 USD (la orden mínima), a 13, a 100 y a 1 000 USD. El mejor
+   peldaño (+10,8 % en 50 h ≈ 0,049/día) es la quinta parte del ritmo de la
+   meta (0,231/día) con una serie en la que el oráculo gana +0,94 R por
+   operación: con ese EV y esa cadencia, un tamaño en espacio de riesgo
+   compondría; la orden mínima no. Confirma H1-01/H1-02 (R-20, ADR-0016 D1).
+2. **Doblar la cuenta apaga el sistema.** Con 100 USD (régimen estándar,
+   `micro_w = 0`) el veto `fee_impact` rechaza 3 429 y 3 523 evaluaciones y
+   quedan 7 y 1 operaciones: el techo de fricción apalancada vuelve al gen
+   `max_fee_pct` (taker × 20 = 1 %) y el rescate de apalancamiento hasta la
+   orden mínima lo supera. Intervención sobre ese único gen (3,5 %, el valor
+   micro): 111 y 89 operaciones, las mismas que con 13 USD. **Entre 15 y
+   50 USD el sistema deja de operar** (`capital_regime::micro_weight`:
+   3 a 10 órdenes mínimas). Nuevo: **LH-02**, HIGH, riesgo (Línea C).
+3. **Con 1 000 USD la envolvente del replay es absorbente.** Tras los 30
+   cierres de arranque, `live_envelope_gate` declara no operable (Jeffreys,
+   z = 1,64 fuera de micro), anula y revierte 5 574 aperturas del núcleo, que
+   las repite tick a tick porque la reversión no cuenta como cierre: 30
+   operaciones y después nada, sobre una serie con EV_R +0,66. Es LF-12 /
+   `hallazgos.tsv host:255` medido: con la regla actual, la cuenta que llega
+   a 1 000 USD se apaga sola si su acierto medido no supera la cota en 30
+   cierres. Además esas reversiones no salen por `REJECT_COUNTERS`: la
+   escalera sólo las ve como `opened − closes` (H1-07/H2-6).
+4. **La ventaja moderada se pierde en la dirección y el ritmo.** En a = 0,9
+   (regímenes de 10 velas, EV_R del oráculo +0,35) el motor pierde −0,91 %:
+   la rama 15 produce ≥ 90 % de las aperturas, las ramas tendenciales 1/2/4/5
+   y 13 no abren nunca (H3-03), la τ mediana es de 64–128 s sea cual sea la
+   longitud del régimen (H3-09, la τ no sigue a la deriva) y el lado coincide
+   con el estado oculto el 58–75 % de las veces (H3-02: la dirección es la
+   vela previa ∧ la EMA). Sólo cuando los regímenes duran 20 velas o la
+   deriva dobla al ruido el acierto neto pasa de 0,64.
+5. El predictor sintético (tocón sobre la EMA) no veta nada (`ml_vetoes = 0`
+   en todos los peldaños) y el consejo casi nada (≤ 6): en este fixture
+   ninguna de las dos puertas decide.
 
 ### 6.3 Lectores y escépticos (H2)
 
