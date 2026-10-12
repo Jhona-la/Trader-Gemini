@@ -110,11 +110,29 @@ fn cl79_spot_repetido_sigue_fresco() {
 
 /// CL-79. Verdad: con el spot congelado más allá del TTL tampoco hay base:
 /// `vecm_zscore` se abstiene (0), aunque el spot siga > 0 en la arena.
+///
+/// CL-92 (spot_z-2, revisión de los PR #43–#55): el nodo τ_k de la base da z
+/// cuando lleva τ_k de observaciones, y el z se interpola entre dos nodos
+/// (τ_17 = 17,2 s, τ_18 = 68,7 s). Con los 12 s de `nucleo_maduro` ningún
+/// nodo tenía historia: el z ya era 0 antes de congelar el spot, y la prueba
+/// pasaba aunque el TTL no existiera. Ahora hay 90 s más de spot fresco y la
+/// precondición exige un z no nulo antes de congelarlo.
 #[test]
 fn cl79_spot_congelado_silencia_la_base() {
-    let (arena, mut core, ts) = nucleo_maduro();
+    let (arena, mut core, mut ts) = nucleo_maduro();
+    for i in 0..90 {
+        arena.update_spot_data(0, 50_000.0, 50_000.2, 1.0, 1.0);
+        let fut = 50_000.0 * if i % 2 == 0 { 1.0025 } else { 0.9975 };
+        let _ = core.process_tick_dual(0, fut - 0.5, fut + 0.5, 1.0, 1.0, ts, &[0.0; 54], true, true);
+        ts += 1_000;
+    }
+    let z0 = arena.registry.get_scoped_strict("BTCUSDT", "vecm_zscore");
+    assert!(
+        matches!(z0, Some(v) if v.is_finite() && v != 0.0),
+        "precondición: con 102 s de spot fresco la base da z ≠ 0, y da {z0:?}"
+    );
     let _ = core.process_tick_dual(0, 50_100.0, 50_101.0, 1.0, 1.0, ts + 31_000, &[0.0; 54], true, true);
     let z = arena.registry.get_scoped_strict("BTCUSDT", "vecm_zscore");
-    println!("observado: vecm_zscore tras 31 s con el spot congelado = {z:?}");
+    println!("observado: vecm_zscore con el spot fresco = {z0:?}, tras 31 s congelado = {z:?}");
     assert_eq!(z, Some(0.0));
 }

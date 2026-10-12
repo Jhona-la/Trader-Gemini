@@ -9643,3 +9643,16 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   `qoder/r7r6-aprender-medir` tienen commits sin equivalente ⇒ se conservan.
 - **Plan**: `docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md`, llega con el primer
   cierre.
+
+## 2026-10-12 — Claude (Línea C, CL-96) → dueño del `online_daemon`: corrección sobre la paridad de forest6
+
+- En el aviso de CL-73 (más arriba) escribí que el bosque del demonio «se
+  entrena y predice en memoria con la misma clave, así que no pierde
+  paridad». Es falso. Al entrenar (cierre de operación) lee
+  `orderbook_imbalance`, `price_acceleration`, `atr_pct` y `price_velocity`
+  de las claves GLOBALES del registro (`get_value_or`: el valor de la última
+  moneda que las escribió). Al predecir (QO-E2a) las lee por moneda
+  (`get_for_coin_or`). No hay paridad entre entrenamiento y servicio.
+- CL-96 sólo corrige la nota (comentario en `online_daemon.rs`, junto a las
+  features de entrenamiento). El defecto sigue abierto y es vuestro; lo
+  señaló la revisión de los PR #43–#55.

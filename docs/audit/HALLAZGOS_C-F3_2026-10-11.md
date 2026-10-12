@@ -30,7 +30,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 | F3.2-04 | El Kelly de la moneda lleva la τ de la operación cerrada a la siguiente orden | media | refutado (duplicado) | Línea C |
 | F3.2-05 | La τ de la señal no es la τ de la intención en las ramas 11, 12 y 13 | media | rama 11 cerrada (CL-85); ramas 12 y 13 abiertas | Línea C (ramas 11-13 del núcleo y orchestrator). La rama 12 vive en signal-engine. |
 | F3.2-06 | Una posición sin τ de decisión entrena el espectro, el enfriamiento y el Kelly con el nodo crudo | media | confirmado | Línea C (camino de cierre). La adopción corresponde a C-F5. |
-| F3.3-03 | La rama 11 mide su convicción a τ_dom pero se dimensiona a la micro τ: expected_lifetime_ms del orquestador no tiene lector | media | confirmado | Línea C. |
+| F3.3-03 | La rama 11 mide su convicción a τ_dom pero se dimensiona a la micro τ: expected_lifetime_ms del orquestador no tiene lector | media | cerrado (CL-85; prueba sustituida por CL-94) | Línea C. |
 | F3.3-04 | El sesgo spot rompe el espejo de la puerta ML: el corto recibe hasta 4,5 veces más impulso que el largo | media | confirmado | Línea C. |
 | F3.3-05 | La coherencia inter-espectral se recorta en 0: un espectro en contra da la misma confianza tensorial que uno neutro | media | confirmado | Línea C (orchestrator.rs). |
 | F3.3-06 | El peso hebbiano aprende la tasa de acierto (signo del PnL), no el EV, y multiplica el compuesto ×[0,5; 2] | media | cerrado (CL-76) | Línea C (regla y lector). Los consumidores de las ramas 1-10 son de Línea E. |
@@ -309,6 +309,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 - Escépticos: confirmado.
   - Corrección (refutar): Marcar como duplicado de LC-F3-04. Lo que añade es que el único lector, router.rs:74, no es vivo, y que la τ final la deciden K-10, K-12 y LC-F3-09, no la rama.
   - Corrección (completitud): Arreglar sólo la rama 11 no consigue «una sola τ». Después de la puerta QO-586 (lib.rs:1599-1608, que mide con la τ que lleve la intención en ese momento), la τ se reescribe dos veces: - hurst_duration_modulation (lib.rs:6830-6833); - la media geométrica con la τ resonante (lib.rs:7166-7186; K-10 y K-12). El arreglo tiene que coordinarse con esos dos y con la observación de LC-F1 sobre las tres τ que conviven. La prueba de fuente T9 es frágil (ver «pruebas»).
+- Cierre (CL-85, CL-94): CL-85 hace que la rama 11, con veredicto espectral, viva a τ_k, la escala que habló: `GodEngineCore::escala_que_hablo` lee el veredicto con la condición del orquestador, y ni Hurst ni el centroide mueven esa τ (CL-74 ya juzgaba la τ final). La lee del registro, no de `tensor_cont.expected_lifetime_ms`, así que el contrato de fuente T10 fallaba por la forma. CL-94 lo retira y lo sustituyen dos pruebas de propiedad en `cf3_una_sola_tau.rs`: `cf3_la_rama_11_vive_a_la_escala_que_hablo` y `cl85_la_escala_que_hablo_es_la_del_orquestador`. Sin veredicto espectral la rama 11 sigue en la micro τ (decisión del dueño).
 
 ### F3.3-04. El sesgo spot rompe el espejo de la puerta ML: el corto recibe hasta 4,5 veces más impulso que el largo
 
