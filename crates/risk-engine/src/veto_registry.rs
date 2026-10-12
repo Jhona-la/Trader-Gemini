@@ -144,7 +144,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
         test: Some("cl98_una_sola_sonda_abierta_en_la_cartera"),
-        deuda: Some("el recuento de cierres por moneda no se persiste: tras un reinicio cada moneda vuelve a tener 5 sondas (estado aprendido de C-F8)"),
+        deuda: Some("el recuento de cierres por moneda no se persiste (estado aprendido de C-F8, decisión del dueño). Tras cada reinicio TODAS las monedas, también las que tienen modelo _MOTOR, vuelven a la fase de sonda: la cartera abre una sola posición nueva a la vez hasta que cada moneda junta 5 cierres (5·26 = 130 sondas en serie con el universo de arranque), y las posiciones adoptadas del exchange cuentan como sondas abiertas, así que con N adoptadas no se abre nada hasta que cierran todas. Medido con el replay de producción (ATOMUSDT 2026-07, 13 USD: operación media 1,16 h; espera media de señal 4,1 h por moneda) y 26 monedas compitiendo por la sonda: ~2,4 días hasta que sale la primera moneda y ~8 días hasta que salen todas (mediana), frente a ~2 días sin D4"),
     },
     EntradaVeto {
         id: "V-LOGIC-001",

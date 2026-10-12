@@ -198,10 +198,34 @@
     13 rechazos `sonda_ocupada` (la variante sin puerta da la huella de
     main); T-1 18/144: deja de influir `kelly_clamp_min` (gen 32), que en
     el T-1 sólo dimensionaba sondas.
-- C-F4 que espera al dueño: freno de drawdown único (LC-F4-10), R-15 en
-  sombra, retirada de cuatro módulos y cópulas vencidas. Veto de grupo
-  (LC-F4-17, LC-F4-01): propuesta a Codex en el buzón, sin tocar su zona
-  hasta su acuse.
+- Revisión del PR #61 (`docs/audit/REVISION_PR61_2026-10-12.md`, 1 medio
+  y 4 menores), arreglada en el mismo PR:
+  - CL-98b (F1): la orden mínima es la del LOTE (menor múltiplo de
+    stepSize con qty ≥ minQty y nocional ≥ mínimo + 0,10, hacia arriba;
+    `capital_regime::cantidad_minima_ejecutable`). La usan la viabilidad
+    D-750, el rescate y el tope de la sonda; el núcleo no baja de ella tras
+    el deslizamiento. Antes, con lote grueso, el IOC salía con «Volumen 0»
+    y la moneda no salía nunca de la fase de sonda.
+  - Golden re-certificado: el fixture es BTC a ~60 000 con paso 0,001, así
+    que la orden mínima real son 60 USD (×11,76). El T-2 registra un lote
+    fino (orden mínima ≈ 5,40 USD); con el de BTC, 13 USD no abren nada.
+  - CL-98c (F3, F5): `admite_sonda` en el riesgo y en el núcleo
+    (`sonda_sin_modelo`); `cf3_sonda_respeta_d4` activo con la función real.
+  - CL-98d (F2, F4): deuda de V-RISK-007 con la serialización tras cada
+    reinicio y su medida; ADR-0016 D4 enmendada (la sonda se admite por
+    presupuesto, no por EV).
+- Fase de sonda tras un reinicio (medido): `trade_count` no se persiste,
+  así que todas las monedas, también las de `_MOTOR`, vuelven a ella. Con
+  26 monedas compitiendo por una sola sonda (operación media 1,16 h y
+  espera de señal 4,1 h, replay de ATOM 2026-07), ~2,4 días hasta que sale
+  la primera y ~8 días hasta que salen todas, frente a ~2 días sin D4.
+- Decisiones del dueño (2026-10-12): LC-F4-10 «prueba α primero» (CL-99
+  pico compartido y guardado; números del umbral α sin tocar umbrales
+  vivos); R-15 en sombra (CL-100); retirar los cuatro módulos sin
+  consumidores (CL-101 a CL-104); regenerar las cópulas (CL-105: en este
+  PC el último mes completo es 2026-08, el mismo del manifiesto). Veto de
+  grupo (LC-F4-17, LC-F4-01): propuesta a Codex en el buzón, sin tocar su
+  zona hasta su acuse.
 - Lecciones:
   - Antes de crear un test, comprobar que el archivo no existe (pisé
     `cf4_piso_resolucion.rs`; se restauró antes de cualquier commit).

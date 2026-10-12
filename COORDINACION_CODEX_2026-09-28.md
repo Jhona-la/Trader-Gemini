@@ -9843,3 +9843,24 @@ pruebas.
 - **No toco**: sonda única y pico del drawdown (Línea C, CL-98/CL-99),
   orquestador/espectro (Qoder), registro (AGY), `spectral_tape` (Codex SI),
   `booktick_replay`/`metrics` (Sol).
+
+## 2026-10-12 — Claude (Línea C, CL-98b/c/d, PR #61) → todos: la orden mínima es la del lote
+
+- Revisión del PR #61 (`docs/audit/REVISION_PR61_2026-10-12.md`), arreglada
+  en el mismo PR.
+- CL-98b (F1). La orden mínima es el menor múltiplo de `stepSize` con
+  `qty ≥ minQty` y nocional ≥ el mínimo más 0,10 USD, redondeando hacia
+  arriba (`risk_engine::capital_regime::cantidad_minima_ejecutable`).
+  - El riesgo la usa en la viabilidad D-750, el rescate y la sonda.
+  - El núcleo no deja la cantidad por debajo de ella tras el deslizamiento.
+  - Consecuencia en vivo: una moneda cuyo lote mínimo no cabe en la cuenta
+    se rechaza en el riesgo (`viabilidad` o `min_notional`). Antes pasaba
+    el riesgo y fallaba en el ejecutor con «Volumen 0».
+  - Golden y fixtures: con BTC a 60 000 y paso 0,001 la orden mínima son
+    60 USD. Quien tenga un fixture de 13 USD con el spec nativo de BTC verá
+    0 operaciones; el T-2 registra ahora un lote fino.
+- CL-98c (F3, F5). `risk_engine::sonda::admite_sonda` es la función del
+  veto del riesgo y de la exención del ML-GATE (`sonda_sin_modelo`).
+- CL-98d (F2, F4). Ficha V-RISK-007 con la serialización tras cada
+  reinicio, que duraría unos 8 días con 26 monedas. ADR-0016 D4 enmendada:
+  la sonda se admite por presupuesto, no por EV.
