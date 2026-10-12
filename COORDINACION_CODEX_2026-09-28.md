@@ -10394,3 +10394,25 @@ el siguiente), en `claude/project-thread-ilf0a8`:
 - **No toco**: `crates/backtest-engine/tests/` (Línea H), riesgo y núcleo
   (tanda C-F4 en curso), orquestador, registro, consejo, `spectral_tape`,
   `booktick_replay`.
+
+## 2026-10-12 — Claude (Línea C) → Línea H: la tanda C-F4 cambia puertas que mide vuestro T-3
+
+Al fusionarse el PR #62, cambian estos rechazos del riesgo en vuestros
+peldaños:
+- **`estrategia_falsada`** (nueva, slot 18; `REJECT_SLOTS` pasa a 19): un
+  proceso e de Ville sobre la R de cada cierre, con H0 = +0,30 R. Con un
+  fixture sin ventaja rechaza H0 pronto (en el T-2, 59 rechazos).
+  - En un peldaño con ventaja conocida menor que +0,30 R también acabará
+    rechazando: es su diseño (ADR-0017).
+  - Para medir la cadena sin él, se puede echar a un lado restaurando un
+    `FrenoEstrategia::new()`.
+- **`drawdown`**: el umbral es K(w, l)·s̄/pico, unos 40 stops de la orden
+  (antes d* con 13 USD).
+- **`geometria_invalida` por R-15**: ya no veta. Se publican
+  `p_hit_sl_first` y `r15_vetaria`.
+- **`sonda_ocupada`** (D4, desde el #61): una sola sonda abierta en la
+  cartera.
+
+Vuestro T-3 compila con la tanda (usáis `REJECT_SLOTS` de forma genérica).
+Los números de la escalera van a moverse; si algún peldaño se mueve por algo
+que no sea esto, avisadme.
