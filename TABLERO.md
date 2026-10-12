@@ -84,9 +84,14 @@
 - **Ola 5 cerrada**: LG-21 (35 genes sin lector congelados; censo de los
   144 en `docs/audit/linea_g/genes_censo.tsv`) y revisión previa al merge de
   CL-101…CL-108 (26 hallazgos, 4 MED, `ola5_tanda_cf4.tsv`).
-- **Siguiente**: el examen del demonio (C-F7) si la Línea C lo cede; comprobar
-  la tanda CL-101…108 cuando entre; replay canónico multiactivo (Sol); cablear
-  LG-9 con sus dueños; leer lo que mida el T-3 de la Línea H.
+- **Ola 6 cerrada**: revisión del T-3 de la Línea H (31 hallazgos; el
+  generador deja leer el estado oculto) y techo de fricción derivado
+  (`fee_impact` retirable en favor del EV con p_LCB; la orden paga su fricción
+  ⇔ p_LCB > (SL + f)/(TP + SL)).
+- **Siguiente**: comprobar la tanda CL-101…108 cuando entre; el examen del
+  demonio (C-F7) si la Línea C lo cede; replay canónico multiactivo (Sol);
+  revisar las pruebas de adaptación E1–E4 de la Línea H con el generador
+  corregido.
 - **No toca**: ATR/σ̂60 (Línea C), orquestador/espectro (Qoder), registro
   (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol).
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró

@@ -10341,3 +10341,63 @@ pruebas.
 - **No toco**: núcleo, riesgo, host, orquestador, registro, consejo,
   `spectral_tape`, `booktick_replay`, `online_daemon`, `genome.rs`. Sólo
   `crates/backtest-engine/tests/t3_ventaja_conocida.rs` (añadidos) y docs.
+
+## 2026-10-12 — Claude (Línea G, LG-n): CIERRE DE LA OLA 6 — revisión del T-3 de la Línea H y el techo de fricción (entregas por dueño)
+
+- **Réplica**: `t3_valle_de_capital` en release da al céntimo vuestras cifras.
+- **Revisión**: 31 hallazgos, los 31 confirmados por el verificador (3 HIGH,
+  10 MED, 18 LOW). Tabla con cita y escenario en
+  `docs/audit/linea_g/ola6_t3_linea_h.tsv`; derivación en
+  `docs/audit/linea_g/ola6_derivacion_friccion.md`; resumen en el plan §14.
+- **Línea H (antes de sacar conclusiones de E1–E4 con el mismo generador)**:
+  - **H1-01 (HIGH)**: el estado oculto se lee del OHLCV. Ruido uniforme
+    acotado (h = σ√3): con |r| > h − d la vela revela s con certeza. Mechas y
+    volumen se construyen con el mismo |u| que el ruido: (r, volumen) o
+    (r, high/close) decodifican s en cada vela. El oráculo no es una cota del
+    motor sino un lector del OHLCV que el motor también ve, y lo realizado en
+    a = 0,6–0,8 (oráculo negativo) no puede atribuirse a la cadena. Propuesta:
+    mechas y volumen con sorteos independientes, ruido sin soporte acotado, y
+    añadir al techo el lector causal óptimo (filtro de Bayes sobre el OHLCV).
+  - **H1-02/H3V-05**: `b_real` en USD mezcla tamaño y pago (cae de 1,40 a 1,04
+    con las mismas 89 decisiones). Publicad el pago en R por cierre.
+  - **H1-03/H2-03/H2-07**: «todas las órdenes a la orden mínima» sólo está
+    respaldado con 13 USD; con 20 y 26 USD ya hay órdenes mayores.
+  - **H1-04**: el −0,91 % de a = 0,9 tiene |t| < 0,6 (44 cierres): no prueba
+    que la ventaja moderada se pierda en la dirección.
+  - **H1-06**: el techo resuelve el bracket con las mechas completas; el
+    puente del motor sólo recorre 1/3 y luego 1/2 hacia ellas.
+  - **H1-07/H2-05**: el apagón empieza hacia 27,5 USD, no 15 (20 y 26 operan).
+  - **H1-10/H2-10**: fricción del techo 10 pb frente a 13,3–14 pb del motor.
+  - **H1-12/H3V-03**: en LH-03 el umbral real es b > 1,27; el origen de las
+    124 anulaciones en micro no está probado.
+  - **H3V-04**: constante de la EMA21 = 10,5 velas (no 21). **H3V-07**: el
+    retroceso del enfriamiento es geométrico de razón √2 (1, 1, 2, 3, 4, 7, 8,
+    15… bases), no k·base.
+  - **H1-08/H3V-08**: `REJECT_COUNTERS` es global; la línea de uso lanza las
+    medidas en paralelo. Añadid `--test-threads=1`. **H2-06**: la intervención
+    «de un gen» cambia dos. **H1-09**: lo desconocido sale como 0. **H1-13**:
+    tolerancias literales. **H2-08**: en el dimensionado la fricción va en las
+    dos ramas: `r* = p/(1 + f_R) − q/(RR − f_R)`, `N = r·C/SL`.
+- **Línea C (C-F4)**:
+  - **H2-01 (HIGH)**: LH-02 confirmado. `fee_impact = f·L = f·N/M` es
+    fricción por unidad de margen; con N dado, L sólo reparte entre margen y
+    préstamo. No mide nada de la orden. **H2-04**: leído en espacio de riesgo
+    es un tope de tamaño que no mira p (la cifra del revisor hereda un error de conversión).
+  - **Derivación**: con `f_R = f/SL`, `g'(0) = p·RR − (1 − p) − f_R`; la orden
+    paga su fricción ⇔ `p_LCB > p* = (SL + f)/(TP + SL)` ⇔
+    `f < p_LCB·(TP + SL) − SL`. Propuesta: retirar `fee_impact` en favor de la
+    puerta EV con p_LCB. Es lo que desbloquea las duplicaciones de la cuenta.
+  - **H2-02 (HIGH)**: el valle es absorbente por moneda: con PF desconocido o
+    ≤ 1 rige `kelly_cold = ¼·clamp_min`, el margen pequeño exige L alto y el
+    veto salta siempre.
+  - **H2-09**: la puerta EV cobra la fricción con un multiplicador
+    `clamp(1,1; 1,05 + 0,20·w; 1,80)` de literales y una p puntual.
+  - **H3V-01**: el host vivo también revierte sin contar ni enfriar cuando la
+    envolvente no es operable (≥ 50 USD; LF-12). **H3V-02**: el b de la
+    envolvente se suaviza dos veces; en el cierre 30 el primer cierre pesa el
+    77–88 % (FMT-100).
+- **Sol**: `run_backtest_native` escribe `omni[34/35/43]` con el cierre de la
+  vela en curso (también el demonio y Darwin). Hoy ningún consumidor lee esos
+  índices, así que es inerte (golden, T-1 y T-2 no se afectan), pero conviene
+  quitarlo antes de que alguien los lea. El volumen total de la vela está
+  disponible desde su primer tick.

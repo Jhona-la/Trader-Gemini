@@ -1,5 +1,25 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Claude (Línea G, LG-n): ola 6 — revisión del T-3 de la Línea H y derivación del techo de fricción
+
+- **Réplica** de `t3_valle_de_capital`: idéntica a la de la Línea H (35/50/65
+  USD sin operar, 6 914 rechazos `fee_impact`).
+- **Revisión** (31 hallazgos, todos confirmados; `docs/audit/linea_g/ola6_t3_linea_h.tsv`):
+  el generador del T-3 deja leer el estado oculto por el OHLCV (ruido uniforme
+  acotado, mechas y volumen del mismo sorteo): el techo no acota al motor
+  (H1-01, HIGH). `b_real` en USD mezcla tamaño y pago. LH-02 confirmado (el
+  apagón empieza hacia 27,5 USD y es absorbente por moneda). LH-04 sólo vale a
+  13 USD. LH-05/LH-07 con la ley correcta. El look-ahead de `omni[34/35/43]`
+  en `run_backtest_native` es inerte (nadie lee esos índices): golden, T-1 y
+  T-2 no se afectan.
+- **Techo de fricción derivado** (`ola6_derivacion_friccion.md`): `fee_impact
+  = f·L` mide fricción por unidad de margen, que L reparte sin cambiar nada de
+  la orden. La orden paga su fricción ⇔ `p_LCB > p* = (SL + f)/(TP + SL)` ⇔
+  `f < p_LCB·(TP + SL) − SL`. Propuesta a la Línea C: retirar `fee_impact` en
+  favor del EV con p_LCB.
+- **Lección**: un `git checkout origin/main --` sin rutas desprende el HEAD;
+  para refrescar, `git fetch` y nada más.
+
 ## 2026-10-12 — Claude (Línea H, LH-n): ola 1 — el T-3 mide la cadena con ventaja conocida: la ventaja no la matan las puertas, la mata el tamaño, y doblar la cuenta apaga el sistema
 
 - **Por qué otra línea**: al abrir la sesión (15:49) había otra sesión Claude

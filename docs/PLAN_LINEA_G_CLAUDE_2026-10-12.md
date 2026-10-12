@@ -578,3 +578,77 @@ Una tercera sesión Claude abrió la Línea H (`docs/PLAN_LINEA_H_CLAUDE_2026-10
 con lo que §12.5 dejó escrito: un T-3 con una escalera de fixtures de ventaja
 CONOCIDA, para medir si la cadena compone o mata una ventaja real y qué puerta
 la mata. Es el instrumento que faltaba para hablar de la meta con evidencia.
+
+## 14. Ola 6 (2026-10-12, base `15b6cc6f`): revisión del T-3 de la Línea H y el techo de fricción
+
+### 14.1 Réplica
+
+`t3_valle_de_capital` en release, en mi worktree: las cifras coinciden al
+céntimo con las de la Línea H (el replay es determinista). 13/20/26 USD: 89
+cierres y +10,8/+7,7/+6,0 %; **35/50/65 USD: 0 cierres, 6 914 rechazos
+`fee_impact`**; 100 USD: 1 cierre; 215/500/1 000 USD: 89 cierres y
++3,9/+3,0/+2,0 %. Con las mismas 89 decisiones el porcentaje cae al crecer el
+capital: el tamaño no escala con la cuenta.
+
+### 14.2 Revisión (tres lentes y verificación; tabla en [`ola6_t3_linea_h.tsv`](audit/linea_g/ola6_t3_linea_h.tsv))
+
+**31 hallazgos, los 31 confirmados (3 HIGH, 10 MED, 18 LOW).**
+
+- **El instrumento (H1-01, HIGH)**: el estado oculto no está oculto. El ruido
+  es uniforme y acotado, así que una vela con |r| > h − d revela el estado con
+  certeza (canal de borrado: la columna «lectura» mide esa probabilidad); y
+  mechas y volumen salen del mismo |u| que el ruido del retorno, de modo que
+  (r, volumen) decodifica el estado en cada vela. El «techo» del oráculo no
+  acota al motor: es un lector causal del OHLCV que el motor también recibe.
+  Las ganancias en peldaños con oráculo negativo (a = 0,6–0,8) no pueden
+  atribuirse a la cadena de Markov declarada. Comprobé aparte el look-ahead
+  que añadió el verificador (`omni[34/35/43]` con el cierre de la vela en
+  curso en `run_backtest_native`): ningún consumidor lee esos tres índices, así
+  que es inerte y **no afecta al golden, al T-1 ni al T-2**.
+- **El pago (H1-02)**: `b_real` es un cociente en USD; con las mismas 89
+  decisiones baja de 1,40 a 1,04 sólo porque el nocional covaría con el
+  resultado. No es el pago: hay que publicarlo en R por cierre.
+- **LH-04 matizado (H1-03/H2-03/H2-07)**: «todas las órdenes van a la orden
+  mínima» sólo está respaldado con 13 USD (micro_w = 1); con 20 y 26 USD ya hay
+  órdenes mayores (PnL distintos con las mismas decisiones).
+- **LH-02 confirmado y precisado (H2-01/H2-05)**: el apagón empieza hacia
+  27,5 USD (no 15) y lo produce `f·L > lerp(1 %, 3,5 %, w)` tras el rescate de
+  apalancamiento. **H2-02**: además es absorbente por moneda (el margen de
+  exploración `kelly_cold` rige con PF desconocido o ≤ 1).
+- **LH-03 (H3V-01/H3V-02/H3V-03)**: el host vivo hace lo mismo que el replay
+  (≥ 50 USD, no sólo 1 000); el b de la envolvente se suaviza dos veces y en el
+  cierre 30 el primer cierre pesa el 77–88 %; el umbral real es b > 1,27.
+- **LH-05/LH-07 con la ley correcta**: la constante de la EMA21 es 10,5 velas
+  (no 21; con d = 0,2 % el piso se cruza en la vela 19); el retroceso del
+  enfriamiento es geométrico de razón √2 (1, 1, 2, 3, 4, 7, 8, 15… bases), no
+  k·base.
+- Menores del instrumento: fricción del techo 10 pb frente a los 13,3–14 pb que
+  paga el motor; el techo resuelve el bracket con las mechas completas y el
+  puente del motor sólo recorre 1/3 y 1/2 del camino; lo desconocido como 0;
+  `REJECT_COUNTERS` global con pruebas en paralelo (usar `--test-threads=1`);
+  la intervención «de un gen» cambia dos.
+
+### 14.3 El techo de fricción, derivado ([`ola6_derivacion_friccion.md`](audit/linea_g/ola6_derivacion_friccion.md))
+
+`fee_impact = f·L = f·N/M` es la fricción por unidad de **margen**. Con un
+nocional dado, L sólo reparte ese nocional entre margen y préstamo: no cambia
+la comisión en USD, ni el riesgo al stop, ni la fricción en R, ni la fricción
+por unidad de capital. El veto castiga un artefacto contable y, leído en
+espacio de riesgo, es un tope de tamaño que no mira p (H2-04).
+
+Lo que decide si una orden paga su fricción sale del crecimiento log por
+operación, `g(r) = p·ln(1 + r(RR − f_R)) + (1 − p)·ln(1 − r(1 + f_R))`, con
+`f_R = f/SL`:
+
+- `g'(0) = p·RR − (1 − p) − f_R`: la fricción entra con coeficiente 1.
+- Viable ⇔ `p_LCB > p* = (1 + f_R)/(1 + RR) = (SL + f)/(TP + SL)` ⇔
+  `f < p_LCB·(TP + SL) − SL`. Ése es el techo de fricción: en R, sin L, sin
+  margen y sin capital, y es la misma p* de LG-9 y CL-107.
+- Tamaño: `r* = p_LCB/(1 + f_R) − (1 − p_LCB)/(RR − f_R)` (½ por política),
+  `N = r·C/SL`.
+
+Con la geometría de referencia (SL 0,5 %, RR 2,25, f ≈ 13,3 pb): p* = 0,390;
+en el peldaño fuerte, con la p del oráculo, el techo es f < 57 pb, y con el
+acierto realizado y su cota (p_LCB ≈ 0,568) es f < 42 pb. La propuesta a la
+Línea C: retirar `fee_impact` en favor de la puerta EV con p_LCB (que hoy usa
+una p puntual y un multiplicador de fricción con literales, H2-09).

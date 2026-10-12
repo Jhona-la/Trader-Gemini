@@ -2078,3 +2078,21 @@ tiene que seguir valiendo al doblar; cada puerta con un literal por régimen
 de capital es un apagón programado.** Entregas por dueño en el buzón
 (LH-02 fricción apalancada, LH-03 envolvente absorbente, LH-04 tamaño,
 LH-05…LH-07 núcleo; LG-5 confirmado).
+
+## 58. Línea G — ola 6: el T-3 revisado y el techo de fricción derivado (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §14](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+**El T-3.** La medición de la Línea H se replica al céntimo, pero su generador
+deja leer el estado oculto por el OHLCV, así que el «techo» del oráculo no
+acota al motor; hay que corregirlo antes de sacar conclusiones de adaptación
+con él. Se sostienen el apagón con 35–65 USD (LH-02, que empieza hacia 27,5
+USD y es absorbente por moneda), la envolvente absorbente también en el host
+(LH-03) y el tamaño que no escala (LH-04, matizado).
+
+**El techo de fricción.** `fee_impact` mide la fricción por unidad de margen,
+un reparto contable que no cambia nada de la orden. La condición correcta sale
+del crecimiento log: la orden paga su fricción si y sólo si
+`p_LCB > p* = (SL + f)/(TP + SL)`, la misma p* que deben usar los lazos que
+aprenden (LG-9, CL-107). Es la palanca que desbloquea las duplicaciones de la
+cuenta.
