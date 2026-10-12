@@ -118,6 +118,11 @@ pub const REJ_TARGET_GEOMETRY: usize = 16;
 /// abierta en la cartera: las sondas se abren de una en una (`sonda.rs`).
 pub const REJ_SONDA_OCUPADA: usize = 17;
 
+/// CL-100 — umbral del veto de primer toque R-15, que ahora sólo se publica
+/// (`r15_vetaria` por moneda): P(SL antes que TP) por encima de él habría
+/// vetado la orden. Es el literal de R7-R2-A-1 (Ola Ω73), sin derivar.
+pub const UMBRAL_R15_SOMBRA: f64 = 0.88;
+
 #[allow(clippy::declare_interior_mutable_const)]
 const REJECT_ZERO: AtomicU64 = AtomicU64::new(0);
 #[allow(clippy::declare_interior_mutable_const)]
@@ -989,11 +994,19 @@ impl RiskEngine {
             directional_drift,
             atr_pct,
         );
-        // Telemetría viva en el registro omnisciente (R-15):
+        // CL-100 (R-15 EN SOMBRA, decisión del dueño 2026-10-12): el primer
+        // toque ya no veta. Sin deriva, P(SL antes que TP) = TP/(TP + SL) =
+        // RR/(1 + RR): toda geometría con TP/SL > 7,33 se vetaba por su
+        // forma, no por la marea, y la deriva sale de la coherencia espectral
+        // por el ATR de 1 min, un modelo sin validar (LC-F4-04). Queda como
+        // telemetría por moneda: la probabilidad y si habría vetado con el
+        // umbral de antes, para medir el veto antes de devolverle poder.
         arena.registry.set_for_coin(coin_id, "p_hit_sl_first", p_hit_sl_first);
-        if p_hit_sl_first > 0.88 {
-            return rej(REJ_TARGET_GEOMETRY);
-        }
+        arena.registry.set_for_coin(
+            coin_id,
+            "r15_vetaria",
+            if p_hit_sl_first > UMBRAL_R15_SOMBRA { 1.0 } else { 0.0 },
+        );
 
         // CL-2 — EL APALANCAMIENTO SE DECIDE CON LA GEOMETRÍA YA RESUELTA.
         // Antes se calculaba ANTES de construir TP/SL: el freno de

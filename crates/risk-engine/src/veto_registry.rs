@@ -243,17 +243,17 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     },
     EntradaVeto {
         id: "V-LOGIC-008",
-        nombre: "geometria_invalida (TP/SL fuera de banda o primer toque R-15)",
-        causa: "TP/SL fuera de banda o inconsistentes con dirección; incluye compuerta analítica R7-R2-A-1 calibrada por escala tau (R-15)",
-        fuente_umbral: "literal + gen + primer toque browniano",
-        datos: "brackets del host, Hurst muestreado por reloj (CL-26), spectral_coherence decorrelada por tau",
-        responsable: "CL-26/CL-19 (Claude), 2026-09-29; puesto al día AGY Ola Ω73, 2026-10-10",
+        nombre: "geometria_invalida (TP/SL fuera de banda)",
+        causa: "TP/SL fuera de banda o inconsistentes con dirección. El primer toque R-15 (R7-R2-A-1) ya no veta: está en sombra (CL-100) y sólo publica p_hit_sl_first y r15_vetaria por moneda",
+        fuente_umbral: "literal + gen",
+        datos: "brackets del host, Hurst muestreado por reloj (CL-26)",
+        responsable: "CL-26/CL-19 (Claude), 2026-09-29; puesto al día AGY Ola Ω73, 2026-10-10; R-15 en sombra CL-100 (Claude), 2026-10-12",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
         test: Some("cl26_el_stop_a_una_hora_no_depende_del_proxy_por_eventos"),
         deuda: Some(
             "SOL-A1 / AGY-Ω73: el contrato de Hurst de CL-26 pinea la geometría; \
-             la compuerta de primer toque R-15 está pineada en test_r7_r2_a1_analytical_first_hitting_gate_contract.",
+             R-15 en sombra (cl100_r15_ya_no_veta_y_publica_que_habria_vetado): antes de devolverle el veto hay que validar la deriva (coherencia × ATR de 1 min, LC-F4-04) y derivar el umbral 0,88.",
         ),
     },
     EntradaVeto {
