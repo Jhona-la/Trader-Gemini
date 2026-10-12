@@ -123,6 +123,15 @@ fn nucleo(con_bosque: bool) -> (Arc<GlobalArena>, GodEngineCore) {
         let bosque = god_engine_core::ml_inference::NanoForest::from_data(datos)
             .expect("bosque sintético fuera de contrato");
         god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_MOTOR", bosque);
+    } else {
+        // CL-95 (cl85-2): sin bosque también en el almacén global. Lo dejaba
+        // ahí la prueba anterior que pidió bosque (el almacén es del
+        // proceso), y el resultado de esta prueba dependía del orden.
+        god_engine_core::ml_inference::GLOBAL_FORESTS.rcu(|m| {
+            let mut m = (**m).clone();
+            m.remove("BTCUSDT_MOTOR");
+            m
+        });
     }
     let arena = GlobalArena::build_in_own_stack(1_000.0);
     let mut core = GodEngineCore::new(arena.clone());
@@ -357,4 +366,23 @@ fn cl85_la_escala_que_hablo_es_la_del_orquestador() {
             );
         }
     }
+}
+
+/// CL-95 (cl85-2, revisión del #56). Verdad: `nucleo(false)` es un núcleo
+/// sin bosque, también en el almacén global de bosques, aunque una prueba
+/// anterior del mismo proceso haya pedido uno. Si no, el resultado de las
+/// pruebas sin bosque depende del orden en que corren.
+#[test]
+fn cl95_nucleo_sin_bosque_no_hereda_el_bosque_global() {
+    let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
+    let _ = nucleo(true);
+    assert!(
+        god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR").is_some(),
+        "precondición: nucleo(true) publica el bosque"
+    );
+    let _ = nucleo(false);
+    assert!(
+        god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR").is_none(),
+        "nucleo(false) hereda el bosque global de la prueba anterior"
+    );
 }
