@@ -1,6 +1,7 @@
 pub mod maker;
 pub mod momentum_booster;
 pub mod multivariate_coint;
+pub mod prueba_reversion;
 pub mod stat_arb;
 pub mod strategy_telemetry;
 pub mod types;

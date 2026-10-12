@@ -34,9 +34,9 @@
 //! rodean (continua en τ); fuera de la malla [τ_17, τ_23] (17 s a 19,5 h), el
 //! nodo extremo. Un nodo con peso no nulo sin calentar, o sin dispersión,
 //! deja el z en `None` (abstención). La τ es la escala dominante de la
-//! moneda, la misma que recibe la SDE OU de la base
-//! (`StatArbEngine::update_with_clock`): la dislocación se mide contra la
-//! base a la escala a la que opera la moneda.
+//! moneda, la misma con la que StatArb elige el nodo de su prueba de
+//! reversión de la base (CL-97): la dislocación se mide contra la base a la
+//! escala a la que opera la moneda.
 //!
 //! CL-87 (spot_z-1): la retención acredita como mucho `RETENCION_MAX_MS`
 //! (30 s, la edad máxima del spot, CL-79). Más allá no hay datos: spot

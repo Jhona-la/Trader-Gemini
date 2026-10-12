@@ -32,10 +32,13 @@ use std::sync::Arc;
 use strategy_core::{stat_arb::StatArbEngine, vecm_arbitrage::JohansenVecmEngine, QuantumStrategy};
 
 /// Esperado: mismos < activos (no coinciden en signo en todos los casos en
-/// que alguno vota). Medido hoy: coinciden en 300/300; falla de forma
-/// determinista.
+/// que alguno vota). Medido antes de CL-97: coincidían en 300/300.
+///
+/// Activada por CL-97 (F3.7-02 v2): StatArb sólo vota con su prueba de
+/// reversión propia y sin ella se abstiene (ya no cae a `vecm_zscore`).
+/// Queda abierto el resto de F3.7 (faltante 3): sin par spot, VECM,
+/// conformal y el oscilador votan sobre la misma expresión.
 #[test]
-#[ignore = "OPEN F3.7-05 (Línea C, disputado: en vivo sólo en el arranque frío de StatArb): sin statarb_ou_zscore, StatArb cae a vecm_zscore, el mismo escalar que vota VECM, y los dos votan −sign(z) para |z| > 1,5: una variable contada dos veces en el consenso"]
 fn cf3_dos_votos_del_consenso_no_son_la_misma_variable() {
     let reg = Arc::new(OmniscientRegistry::new());
     let mut sa = StatArbEngine::new(30, 1.5);
@@ -60,4 +63,17 @@ fn cf3_dos_votos_del_consenso_no_son_la_misma_variable() {
         mismos < activos,
         "StatArb y VECM coinciden en signo en {mismos}/{activos}: una variable contada dos veces"
     );
+}
+
+/// CL-97. Verdad: sin claves propias StatArb no vota con ningún valor de
+/// `vecm_zscore`.
+#[test]
+fn cl97_statarb_no_vota_sobre_vecm_zscore() {
+    let reg = Arc::new(OmniscientRegistry::new());
+    let mut sa = StatArbEngine::new(30, 1.5);
+    assert!(sa.init(reg.clone()).is_ok());
+    for i in -300..=300 {
+        reg.set("vecm_zscore", i as f64 / 100.0);
+        assert_eq!(sa.evaluate(), 0.0, "vecm_zscore = {}", i as f64 / 100.0);
+    }
 }

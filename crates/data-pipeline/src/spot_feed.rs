@@ -6,7 +6,8 @@
 //! 3. `OmniState::binance_spot` y `OmniState::spot_futures_arb_spread`
 //!
 //! Permite que el motor `statarb_ou_engines[coin_id]` en `god-engine-core` observe pares
-//! spot-futuro en tiempo físico real, madure ($\ge 10$ pares) y publique `statarb_ou_zscore`,
+//! spot-futuro en tiempo físico real y contraste la reversión de la base (CL-97: prueba
+//! por nodo, madura tras 8·τ_k de pares), y que publique `statarb_ou_zscore`,
 //! `statarb_half_life_ms` y `statarb_beta`.
 
 use fast_float::parse;
