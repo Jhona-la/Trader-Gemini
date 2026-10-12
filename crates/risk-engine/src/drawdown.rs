@@ -242,8 +242,15 @@ pub fn guardar_pico(ruta: &std::path::Path, pico: f64) -> std::io::Result<()> {
             "pico no finito o no positivo",
         ));
     }
+    // CL-108f: sincronizado con el disco antes de renombrar, para que un
+    // corte de luz no deje el archivo renombrado y vacío.
+    use std::io::Write;
     let tmp = ruta.with_extension("tmp");
-    std::fs::write(&tmp, format!("{pico}\n"))?;
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(format!("{pico}\n").as_bytes())?;
+        f.sync_all()?;
+    }
     std::fs::rename(&tmp, ruta)
 }
 

@@ -3044,19 +3044,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let ruta_estado = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
             "estado_aprendido.json",
         ));
-        match god_engine_core::estado_aprendido::cargar(&ruta_estado) {
-            Some(estado) => {
-                let n = engine_real.restaurar_estado_aprendido(&estado);
-                telemetry_server::telemetry_log!(
-                    "🧠 [ESTADO] restaurado de {}: {} monedas, freno de la estrategia {}",
-                    ruta_estado.display(),
-                    n,
-                    if estado.freno_estrategia.rechazada { "ECHADO" } else { "suelto" }
-                );
-            }
-            None => telemetry_server::telemetry_log!(
+        // CL-108f (T2-1 de la Línea G): un archivo ilegible o de otra
+        // versión no es un archivo ausente. El núcleo echa el freno de la
+        // estrategia y esta sesión no guarda nada: el archivo queda intacto
+        // hasta que el operador lo repare o lo retire.
+        use god_engine_core::estado_aprendido::Arranque;
+        let arranque = engine_real
+            .arrancar_con_estado(god_engine_core::estado_aprendido::cargar(&ruta_estado));
+        let guardar_estado = arranque.permite_guardar();
+        match &arranque {
+            Arranque::Restaurado { monedas, freno_echado } => telemetry_server::telemetry_log!(
+                "🧠 [ESTADO] restaurado de {}: {} monedas, freno de la estrategia {}",
+                ruta_estado.display(),
+                monedas,
+                if *freno_echado { "ECHADO" } else { "suelto" }
+            ),
+            Arranque::SinEstado => telemetry_server::telemetry_log!(
                 "🧠 [ESTADO] sin estado aprendido previo en {}",
                 ruta_estado.display()
+            ),
+            Arranque::Bloqueado(motivo) => telemetry_server::telemetry_log!(
+                "⛔ [ESTADO] {} ilegible ({}): se conserva intacto y esta sesión no guarda nada; el freno de la estrategia queda ECHADO (no entran posiciones nuevas) hasta que el operador lo repare o lo retire",
+                ruta_estado.display(),
+                motivo
             ),
         }
         // B3.7 (auditoría) — DEDUP cierre-bracket vs cierre-core: el MISMO
@@ -3834,11 +3844,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let unified_cap = f64::from_bits(unified_capital.load(Ordering::Relaxed));
 
                     if let Some((is_long, pnl, qty)) = closed_order {
-                        // CL-108: cada cierre cambia el estado aprendido.
-                        if let Err(e) = god_engine_core::estado_aprendido::guardar(
-                            &ruta_estado,
-                            &engine_real.estado_aprendido(),
-                        ) {
+                        // CL-108: cada cierre cambia el estado aprendido
+                        // (salvo con el estado ilegible, CL-108f).
+                        if let Some(Err(e)) = guardar_estado.then(|| {
+                            god_engine_core::estado_aprendido::guardar(
+                                &ruta_estado,
+                                &engine_real.estado_aprendido(),
+                            )
+                        }) {
                             telemetry_server::telemetry_log!(
                                 "⚠️ [ESTADO] no se pudo guardar {}: {}",
                                 ruta_estado.display(),

@@ -30,9 +30,11 @@
 //! salen los mismos salvo la tolerancia de su Newton.
 //!
 //! El host guarda el estado en cada cierre (`data/{demo|prod}/
-//! estado_aprendido.json`, escritura atómica) y lo restaura al arrancar,
-//! antes de operar. Para empezar de cero (otra estrategia es otra
-//! hipótesis), se borra el archivo.
+//! estado_aprendido.json`, escritura atómica y sincronizada) y lo restaura
+//! al arrancar, antes de operar. Para empezar de cero (otra estrategia es
+//! otra hipótesis), se borra el archivo. Un archivo ilegible o de otra
+//! versión NO es un archivo ausente (CL-108f): el freno de la estrategia
+//! queda echado y la sesión no lo sobrescribe ([`Arranque::Bloqueado`]).
 //!
 //! También, por moneda (CL-108e): el sesgo y el umbral epigenéticos con su
 //! ancla (el último cierre) y el anillo de siniestros de Cramér-Lundberg.
@@ -353,21 +355,177 @@ impl GodEngineCore {
     }
 }
 
-/// Guarda el estado (escritura atómica: tmp + rename).
+/// CL-108f (T2-1 de la Línea G) — comprueba que un estado se puede guardar
+/// y restaurar: todo número finito y dentro del rango que le da su escritor.
+/// `Err` nombra el primer campo que falla.
+pub fn validar(e: &EstadoAprendido) -> Result<(), String> {
+    fn rango(nombre: &str, v: f64, lo: f64, hi: f64) -> Result<(), String> {
+        if v.is_finite() && v >= lo && v <= hi {
+            Ok(())
+        } else {
+            Err(format!("{nombre} = {v} fuera de [{lo}, {hi}]"))
+        }
+    }
+    let todo = f64::MAX;
+    for g in &e.monedas {
+        let m = &g.metricas;
+        let s = &g.simbolo;
+        rango(&format!("{s}.win_rate"), m.win_rate, 0.0, 1.0)?;
+        rango(&format!("{s}.profit_factor"), m.profit_factor, 0.0, todo)?;
+        rango(&format!("{s}.gross_wins"), m.gross_wins, 0.0, todo)?;
+        rango(&format!("{s}.gross_losses"), m.gross_losses, 0.0, todo)?;
+        for (n, v) in [
+            ("kelly_fraction", m.kelly_fraction),
+            ("pnl_realized", m.pnl_realized),
+            ("pnl_gross", m.pnl_gross),
+            ("roi_pre_fee", m.roi_pre_fee),
+            ("roi_post_fee", m.roi_post_fee),
+        ] {
+            rango(&format!("{s}.{n}"), v, -todo, todo)?;
+        }
+        // Los rangos que impone su escritor
+        // (`CoinArena::apply_spectral_epigenetic_feedback_with_time`).
+        rango(&format!("{s}.sesgo"), g.epigenetica.sesgo, 0.5, 2.0)?;
+        rango(&format!("{s}.umbral"), g.epigenetica.umbral, 0.80, 1.25)?;
+        if g.calibrador.iter().any(|o| !o.0.is_finite()) {
+            return Err(format!("{s}.calibrador con una puntuación no finita"));
+        }
+        if g.siniestros.iter().any(|y| !y.is_finite()) {
+            return Err(format!("{s}.siniestros con un valor no finito"));
+        }
+    }
+    if e.calibrador_global.iter().any(|o| !o.0.is_finite()) {
+        return Err("calibrador_global con una puntuación no finita".into());
+    }
+    let f = &e.freno_estrategia;
+    rango("freno.e_value", f.e_value, 0.0, todo)?;
+    rango("freno.peak_e_value", f.peak_e_value, 0.0, todo)?;
+    for (n, v) in [
+        ("freno.log_wealth", f.log_wealth),
+        ("freno.running_mean", f.running_mean),
+        ("freno.running_sq_mean", f.running_sq_mean),
+        ("freno.last_lambda", f.last_lambda),
+    ] {
+        rango(n, v, -todo, todo)?;
+    }
+    for (n, v) in [
+        ("riesgo_por_operacion", e.riesgo_por_operacion),
+        ("riesgo_por_operacion_usd", e.riesgo_por_operacion_usd),
+        ("ganancia_en_stops", e.ganancia_en_stops),
+        ("perdida_en_stops", e.perdida_en_stops),
+    ] {
+        rango(n, v, 0.0, todo)?;
+    }
+    Ok(())
+}
+
+/// Guarda el estado: comprueba que se podrá leer ([`validar`]), lo escribe
+/// en un temporal sincronizado con el disco y lo renombra encima (un corte
+/// de luz no deja el archivo a medias). Un estado inválido no se escribe:
+/// el archivo anterior queda como estaba.
 pub fn guardar(ruta: &std::path::Path, e: &EstadoAprendido) -> std::io::Result<()> {
+    use std::io::Write;
+    validar(e).map_err(|m| std::io::Error::new(std::io::ErrorKind::InvalidData, m))?;
     let texto = serde_json::to_string(e).map_err(std::io::Error::other)?;
     if let Some(dir) = ruta.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let tmp = ruta.with_extension("tmp");
-    std::fs::write(&tmp, texto)?;
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(texto.as_bytes())?;
+        f.sync_all()?;
+    }
     std::fs::rename(&tmp, ruta)
 }
 
-/// Lee un estado guardado; `None` si no existe, está corrupto o es de otra
-/// versión.
-pub fn cargar(ruta: &std::path::Path) -> Option<EstadoAprendido> {
-    let texto = std::fs::read_to_string(ruta).ok()?;
-    let e: EstadoAprendido = serde_json::from_str(&texto).ok()?;
-    (e.version == VERSION_ESTADO).then_some(e)
+/// CL-108f (T2-1 de la Línea G) — lo que se encontró al leer el estado.
+/// Un archivo ilegible no es un archivo ausente: tratarlo como ausente
+/// soltaba el freno de la estrategia y, en el primer cierre, sobrescribía la
+/// única copia de la evidencia.
+#[derive(Debug)]
+pub enum Carga {
+    /// No hay archivo: primer arranque, o el operador lo borró para empezar
+    /// de cero.
+    Ausente,
+    /// El archivo existe pero no se puede leer, está truncado o corrupto, o
+    /// tiene un valor fuera de rango.
+    Ilegible(String),
+    /// El archivo es de otra versión del formato.
+    OtraVersion(u32),
+    Leido(EstadoAprendido),
+}
+
+/// Lee el estado guardado.
+pub fn cargar(ruta: &std::path::Path) -> Carga {
+    #[derive(Deserialize)]
+    struct SoloVersion {
+        version: u32,
+    }
+    let texto = match std::fs::read_to_string(ruta) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Carga::Ausente,
+        Err(e) => return Carga::Ilegible(format!("no se puede leer: {e}")),
+    };
+    match serde_json::from_str::<SoloVersion>(&texto) {
+        Err(e) => return Carga::Ilegible(format!("JSON inválido: {e}")),
+        Ok(v) if v.version != VERSION_ESTADO => return Carga::OtraVersion(v.version),
+        Ok(_) => {}
+    }
+    let e: EstadoAprendido = match serde_json::from_str(&texto) {
+        Ok(e) => e,
+        Err(err) => return Carga::Ilegible(format!("JSON inválido: {err}")),
+    };
+    match validar(&e) {
+        Ok(()) => Carga::Leido(e),
+        Err(m) => Carga::Ilegible(m),
+    }
+}
+
+/// Qué hizo el arranque con el estado guardado.
+#[derive(Debug, PartialEq)]
+pub enum Arranque {
+    Restaurado { monedas: usize, freno_echado: bool },
+    /// No había estado: se empieza de cero.
+    SinEstado,
+    /// Estado ilegible o de otra versión (fail-closed): el freno de la
+    /// estrategia queda echado (no entran posiciones nuevas; las abiertas se
+    /// siguen gestionando) y no se guarda nada en esta sesión, así que el
+    /// archivo queda intacto hasta que el operador lo repare o lo retire.
+    Bloqueado(String),
+}
+
+impl Arranque {
+    /// ¿Se puede guardar el estado en esta sesión?
+    pub fn permite_guardar(&self) -> bool {
+        !matches!(self, Arranque::Bloqueado(_))
+    }
+}
+
+impl GodEngineCore {
+    /// Aplica lo leído al arrancar (CL-108f): restaura un estado legible y,
+    /// ante uno ilegible o de otra versión, echa el freno de la estrategia.
+    /// No escribe nada en disco.
+    pub fn arrancar_con_estado(&mut self, carga: Carga) -> Arranque {
+        match carga {
+            Carga::Ausente => Arranque::SinEstado,
+            Carga::Leido(e) => {
+                let monedas = self.restaurar_estado_aprendido(&e);
+                Arranque::Restaurado {
+                    monedas,
+                    freno_echado: self.risk_engine.freno_estrategia.rechazada(),
+                }
+            }
+            Carga::Ilegible(m) => {
+                self.risk_engine.freno_estrategia.rechazada = true;
+                Arranque::Bloqueado(m)
+            }
+            Carga::OtraVersion(v) => {
+                self.risk_engine.freno_estrategia.rechazada = true;
+                Arranque::Bloqueado(format!(
+                    "versión {v} del formato; este binario lee la {VERSION_ESTADO}"
+                ))
+            }
+        }
+    }
 }

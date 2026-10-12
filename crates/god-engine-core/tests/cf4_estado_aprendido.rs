@@ -13,7 +13,7 @@
 //! observaciones a sus calibradores y registra 30 cierres en el freno de la
 //! estrategia.
 
-use god_engine_core::estado_aprendido::{cargar, guardar, VERSION_ESTADO};
+use god_engine_core::estado_aprendido::{cargar, guardar, Arranque, Carga, VERSION_ESTADO};
 use god_engine_core::GodEngineCore;
 use quantum_arena::GlobalArena;
 use std::sync::atomic::Ordering::Relaxed;
@@ -90,7 +90,9 @@ fn cl108_el_estado_aprendido_sobrevive_al_reinicio() {
     let sin = nucleo();
     // Reinicio restaurando.
     let mut con = nucleo();
-    let estado = cargar(&ruta).expect("leer el estado guardado");
+    let Carga::Leido(estado) = cargar(&ruta) else {
+        panic!("leer el estado guardado");
+    };
     let n = con.restaurar_estado_aprendido(&estado);
     let _ = std::fs::remove_file(&ruta);
 
@@ -128,19 +130,72 @@ fn cl108_un_freno_echado_sigue_echado() {
     assert!(con.risk_engine.freno_estrategia.rechazada());
 }
 
-/// Un archivo corrupto, ausente o de otra versión no se restaura.
+/// CL-108f (T2-1 de la revisión de la Línea G) — un archivo ilegible no es
+/// un archivo ausente. Antes `cargar` devolvía `None` en los dos casos y el
+/// host arrancaba en cero: el freno de la estrategia suelto y, en el primer
+/// cierre, la única copia de la evidencia sobrescrita.
+/// Esperado:
+/// - sin archivo ⇒ `Ausente` y arranque en cero;
+/// - corrupto, truncado o con un valor fuera de rango ⇒ `Ilegible`; de otra
+///   versión ⇒ `OtraVersion`; en ambos el arranque queda `Bloqueado`, con el
+///   freno echado, sin permiso para guardar y sin tocar el archivo;
+/// - `guardar` no escribe un estado inválido y deja el anterior intacto.
 #[test]
-fn cl108_un_archivo_invalido_no_se_restaura() {
+fn cl108f_un_archivo_ilegible_no_es_un_archivo_ausente() {
     registrar_simbolos();
-    let ruta = std::env::temp_dir().join(format!("cl108_{}_corrupto.json", std::process::id()));
-    std::fs::write(&ruta, "{ esto no es json").unwrap();
-    assert!(cargar(&ruta).is_none());
-    let mut e = nucleo().estado_aprendido();
-    e.version = VERSION_ESTADO + 1;
-    guardar(&ruta, &e).unwrap();
-    assert!(cargar(&ruta).is_none(), "otra versión");
+    let dir = std::env::temp_dir().join(format!("cl108f_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let ruta = dir.join("estado_aprendido.json");
     let _ = std::fs::remove_file(&ruta);
-    assert!(cargar(&ruta).is_none(), "sin archivo");
+
+    // Sin archivo: se empieza de cero, con el freno suelto.
+    assert!(matches!(cargar(&ruta), Carga::Ausente));
+    let mut c = nucleo();
+    let a = c.arrancar_con_estado(cargar(&ruta));
+    assert_eq!(a, Arranque::SinEstado);
+    assert!(a.permite_guardar() && !c.risk_engine.freno_estrategia.rechazada());
+
+    // Un estado válido, para truncarlo y estropearlo.
+    let bueno = serde_json::to_string(&con_historia().estado_aprendido()).unwrap();
+    let mut fuera_de_rango = con_historia().estado_aprendido();
+    fuera_de_rango.monedas[1].metricas.win_rate = 1.5;
+    let mut otra_version = con_historia().estado_aprendido();
+    otra_version.version = VERSION_ESTADO + 1;
+    for (caso, texto) in [
+        ("corrupto", "{ esto no es json".to_string()),
+        ("truncado", bueno[..bueno.len() / 2].to_string()),
+        ("fuera de rango", serde_json::to_string(&fuera_de_rango).unwrap()),
+        ("otra versión", serde_json::to_string(&otra_version).unwrap()),
+    ] {
+        std::fs::write(&ruta, &texto).unwrap();
+        let carga = cargar(&ruta);
+        println!("observado: {caso} ⇒ {:?}", match &carga {
+            Carga::Leido(_) => "Leido".to_string(),
+            otra => format!("{otra:?}").chars().take(90).collect(),
+        });
+        let como_se_espera = if caso == "otra versión" {
+            matches!(carga, Carga::OtraVersion(_))
+        } else {
+            matches!(carga, Carga::Ilegible(_))
+        };
+        assert!(como_se_espera, "{caso}");
+        let mut c = nucleo();
+        let a = c.arrancar_con_estado(carga);
+        assert!(matches!(a, Arranque::Bloqueado(_)), "{caso}: {a:?}");
+        assert!(!a.permite_guardar(), "{caso}: esta sesión no guarda");
+        assert!(c.risk_engine.freno_estrategia.rechazada(), "{caso}: freno echado");
+        assert_eq!(std::fs::read_to_string(&ruta).unwrap(), texto, "{caso}: el archivo queda intacto");
+    }
+
+    // `guardar` no escribe un estado que no se podría leer.
+    guardar(&ruta, &con_historia().estado_aprendido()).unwrap();
+    let antes = std::fs::read_to_string(&ruta).unwrap();
+    let mut nan = con_historia().estado_aprendido();
+    nan.freno_estrategia.e_value = f64::NAN;
+    assert!(guardar(&ruta, &nan).is_err(), "un NaN no se guarda");
+    assert_eq!(std::fs::read_to_string(&ruta).unwrap(), antes, "el archivo anterior queda intacto");
+    assert!(matches!(cargar(&ruta), Carga::Leido(_)));
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// CL-108d (T2-3 de la revisión de la Línea G) — el PnL de sesiones anteriores
