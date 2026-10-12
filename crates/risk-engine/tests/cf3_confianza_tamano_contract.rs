@@ -57,6 +57,16 @@ fn arena(capital: f64) -> Arc<GlobalArena> {
     a.coins[0].current_price.store(100.0, Relaxed);
     a.coins[0].current_atr.store(1.0, Relaxed);
     a.coins[0].hurst_exponent.store(0.5, Relaxed);
+    // CL-98 (D4): la moneda lleva historial. Sin él está en fase de sonda, y
+    // la sonda es la orden mínima: su tamaño no depende de la confianza y la
+    // prueba pasaría por la razón equivocada.
+    let m = &a.coins[0].metrics;
+    m.trade_count.store(100, Relaxed);
+    m.win_rate.store(0.75, Relaxed);
+    m.gross_wins.store(200.0, Relaxed);
+    m.gross_losses.store(100.0, Relaxed);
+    m.profit_factor.store(2.0, Relaxed);
+    m.kelly_fraction.store(0.15, Relaxed);
     a.config.global_leverage.store(20.0, Relaxed);
     a.config.global_max_drawdown.store(0.2, Relaxed);
     a.config.kelly_clamp_min.store(0.01, Relaxed);

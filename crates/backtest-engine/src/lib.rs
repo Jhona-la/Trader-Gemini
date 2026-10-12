@@ -1061,6 +1061,11 @@ mod tests {
         // en la escala de calma ante un choque. La sonda sigue siendo la única
         // operación; su gestión ve otro ATR y cierra con algo menos de
         // beneficio: 1000.04427745 → 1000.04298628.
-        assert_eq!(out_stats[2].to_bits(), 4652007686952530389u64);
+        // (CL-98, re-certificación 2026-10-12) D4 (ADR-0016): la sonda es la
+        // orden mínima del símbolo, no el Kelly de arranque en frío. Sigue
+        // siendo la única operación (trades == 1, arriba); con el nocional
+        // mínimo el beneficio pasa de 0,04299 a 0,02649 USD (×0,616):
+        // 1000.04298628 → 1000.02648643.
+        assert_eq!(out_stats[2].to_bits(), 4652007541818261327u64);
     }
 }
