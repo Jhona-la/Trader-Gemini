@@ -1,6 +1,6 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y F3.6-01 (CL-73)
+## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72), F3.6-01 (CL-73) y F3.2-01 (CL-74)
 
 - #44 (CL-67 y CL-71) fusionado en main (8f572f7c).
 - Las 62 propuestas del borrador de C-F3 son 71 tests: 13 activos y 58 OPEN,
@@ -23,8 +23,14 @@
   - El voto escalar de Navier (F2.6-01) pasa a ser antisimétrico.
   - Golden, T-2 y las 145 huellas del T-1 son idénticos a main: el fixture
     no recorre esos votos.
-- Siguiente: F3.2-01 (una τ, antes de las puertas) y F3.3-01/02 (convicción
-  por rama, monótona y contra p*), cada uno con verificación local y su PR.
+- CL-74 (F3.2-01): `tau_de_la_orden` aplica Hurst y el centroide ANTES de
+  las puertas. QO-586, el co-despacho y la ranura juzgan ya la τ de la
+  orden.
+  - T-2 se mueve: de 37 operaciones a 62, PnL de −0,348 a −0,259.
+  - T-1 17/144 con la misma lista, pero todas las huellas cambian (base
+    f1fb5d04).
+  - F3.2-05 queda pendiente de decidir entre #624 y #565.
+- Siguiente: F3.3-01/02 (convicción por rama, monótona y contra p*).
 
 ## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
 

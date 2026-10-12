@@ -6,8 +6,9 @@
 //!   si una banda paga la fricción A SU τ: σ(τ) crece con τ y el suelo de
 //!   fricción es monótono, así que el veredicto sólo es válido para la τ con
 //!   la que se evaluó. La orden que se abre debe vivir a esa misma τ
-//!   (F3.2-01). Hoy, tras las puertas, la modulación de Hurst (×[0,5; 2]) y
-//!   la media geométrica con el centroide reescriben `expected_duration_ms`.
+//!   (F3.2-01). Hasta CL-74, la modulación de Hurst (×[0,5; 2]) y la media
+//!   geométrica con el centroide reescribían `expected_duration_ms` tras las
+//!   puertas; desde CL-74 se aplican antes (`tau_de_la_orden`).
 //! - La rama 11 decide su dirección con el veredicto espectral a τ_k; el
 //!   contrato #624 dice que «la posición vive a la escala que habló», así
 //!   que su intención debe viajar a min(τ_k, 12 h) (F3.2-05). Hoy viaja a la
@@ -182,10 +183,10 @@ fn recorrer(
 /// una orden.
 ///
 /// Fixture del borrador: la cinta T-1 con trade + libro en cada evento y el
-/// bosque direccional. Abre una sola orden (la cinta T-1 cae de 60 000 a
-/// ≈ 2 000 en 4 días: su ruido no está centrado), de la rama 15.
+/// bosque direccional. Abría una sola orden (la cinta T-1 cae de 60 000 a
+/// ≈ 2 000 en 4 días: su ruido no está centrado), de la rama 15, a una τ
+/// que las puertas no juzgaron. Con CL-74 abre dos, las dos a la τ juzgada.
 #[test]
-#[ignore = "OPEN F3.2-01 (Línea C, puertas_del_continuo y X-016): tras QO-586 la modulación de Hurst y la media geométrica con el centroide reescriben expected_duration_ms; la orden vive a una τ que las puertas no juzgaron"]
 fn cf3_la_tau_que_juzga_qo586_es_la_tau_de_la_orden() {
     let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
     let (arena, mut core) = nucleo(true);
