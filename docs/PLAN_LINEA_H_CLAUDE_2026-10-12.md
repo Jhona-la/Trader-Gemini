@@ -379,6 +379,25 @@ los del tramo en frío (89/89, 36/36, 89/89): el método mide lo que dice.
 | **E3** nulo → ventaja | 65 cierres, +0,711 USD, acierto 0,615, +9 rechazos EV sobre los 929 del nulo | 89 cierres, +1,408 USD, 0,652 | Tras 50 h perdedoras el sistema **captura la mitad** de la ventaja que llega (+0,71 frente a +1,41; 65 frente a 89 cierres). La puerta reabre pronto (sólo 9 rechazos más), pero el estado heredado (ritmo, racha, calibración) cuesta 24 operaciones y 0,7 USD. |
 | **E4** ventaja → antipersistencia | 45 cierres, −0,244 USD, acierto 0,333, **0 rechazos** | 12 cierres, −0,241 USD, 0,083, 27 EV | Cuando la estructura se invierte, el motor **no invierte ni se detiene**: opera ×3,75 más que en frío, con la estructura vieja, y la puerta EV no se entera en 50 h. Pierde lo mismo en dólares porque el fresco se para a los 12 cierres y el compuesto no se para nunca. |
 
+**E1b — la misma serie dos veces** (el control que faltaba, señalado por los
+tres lectores: la serie «larga» de E1 es otra realización del ruido porque la
+sal del generador incluye n; aquí el segundo tramo es la MISMA realización que
+el primero, así que la única diferencia entre las dos pasadas es el estado que
+el motor lleva aprendido, más el nivel de precio;
+[`ola2_misma_serie_dos_veces.tsv`](audit/linea_h/ola2_misma_serie_dos_veces.tsv)):
+
+| Serie | 1.ª pasada (= en frío) | 2.ª pasada | Cierres idénticos entre pasadas | Lectura |
+|---|---|---|---|---|
+| ventaja a = 0,9, d = 0,2 % | 89 cierres, +1,408 USD, acierto 0,652 | 86 cierres, **+1,737 USD**, 0,640 | **0 / 86** | La segunda pasada gana un 23 % más con menos cierres y menos acierto: lo que cambia es el tamaño/la vida de cada operación, no la selección. |
+| régimen medio a = 0,9, d = 0,1 % | 44 cierres, −0,118 USD, 0,409 | 72 cierres, **+0,414 USD**, 0,514, 29 EV | 0 / 44 | Donde en frío perdía, con estado caliente gana: no por aprender el régimen sino porque los estimadores ya están calientes (el tramo en frío gasta parte de sus 50 h en calentarse). |
+| nulo a = 0,5 | 36 cierres, −0,126 USD, 0,361, 929 EV | **89 cierres, −0,292 USD**, 0,427, 638 EV | 0 / 36 | Con estado caliente el nulo se opera ×2,5 más y se pierde ×2,3 más: la puerta EV rechaza menos (638 frente a 929) justo donde no hay nada que ganar. |
+
+Ni un solo cierre de la segunda pasada coincide con el de la primera: el
+motor es MUY dependiente de su estado. Pero el efecto del estado es **más
+actividad**, no **más discriminación**: ayuda en el régimen favorable (+23 %),
+duplica la pérdida en el nulo y no frena en el adverso (E4). La adaptación que
+existe es de actividad; la que hace falta es de selección.
+
 **Por qué (con la cita):** la p que alimenta la puerta EV es un ajuste de Platt
 sobre las últimas `WINDOW = 512` operaciones (`calibration.rs:45`) con un
 prior de 3,84 pseudo-observaciones a la puntuación cruda (0,98 en todas las

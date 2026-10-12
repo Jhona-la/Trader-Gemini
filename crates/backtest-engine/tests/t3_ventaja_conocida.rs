@@ -879,3 +879,54 @@ fn t3_adaptacion_en_el_tiempo() {
         );
     }
 }
+
+/// E1b — LA MISMA SERIE DOS VECES. El segundo tramo es la MISMA realización
+/// del ruido que el primero (la sal del generador depende de a, d y n), así
+/// que la única diferencia entre las dos pasadas es el estado que el motor
+/// lleva aprendido al entrar en la segunda (más el nivel de precio). Si el
+/// sistema se adaptara, la segunda pasada tendría que ser distinta de la
+/// primera, y a mejor; si es idéntica, lo aprendido no decide nada.
+#[test]
+#[ignore = "medición larga: cargo test --release -p backtest-engine --test t3_ventaja_conocida -- --ignored --nocapture t3_adaptacion_misma_serie_dos_veces"]
+fn t3_adaptacion_misma_serie_dos_veces() {
+    cargar_predictor();
+    let n = std::env::var("T3_VELAS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(3_000);
+    let sigma = 0.0025;
+    let cero = [0u64; REJECT_SLOTS];
+    println!(
+        "[T3-ADAPT2-TSV] serie\tprimera_pasada_trades\tprimera_pasada_pnl_usd\tprimera_pasada_wr\tsegunda_pasada_trades\tsegunda_pasada_pnl_usd\tsegunda_pasada_wr\tcierres_iguales_entre_pasadas\tfresco_trades\tfresco_pnl_usd\trechazos_compuesto\trechazos_fresco"
+    );
+    for (nombre, p) in [
+        ("ventaja a=0,9 d=0,2%", Peldano { a: 0.90, d: 0.0020, sigma, n }),
+        ("regimen medio a=0,9 d=0,1%", Peldano { a: 0.90, d: 0.0010, sigma, n }),
+        ("nulo a=0,5", Peldano { a: 0.50, d: 0.0, sigma, n }),
+    ] {
+        let fresco = medir(p);
+        imprimir(&fresco);
+        let m = medir_serie(serie_concatenada(p, p), p, CAPITAL_MICRO);
+        imprimir(&m);
+        let n1 = fresco.pnl.len().min(m.pnl.len());
+        let primera = &m.pnl[..n1];
+        let segunda = &m.pnl[n1..];
+        let comparables = primera.len().min(segunda.len());
+        let iguales = (0..comparables)
+            .filter(|&i| (primera[i] - segunda[i]).abs() < 1e-9)
+            .count();
+        println!(
+            "[T3-ADAPT2-TSV] {nombre}\t{}\t{:.5}\t{:.4}\t{}\t{:.5}\t{:.4}\t{iguales}/{comparables}\t{}\t{:.5}\t{}\t{}",
+            primera.len(),
+            primera.iter().sum::<f64>(),
+            acierto(primera),
+            segunda.len(),
+            segunda.iter().sum::<f64>(),
+            acierto(segunda),
+            fresco.stats[1] as u64,
+            fresco.stats[6],
+            rechazos_texto(&cero, &m.rechazos),
+            rechazos_texto(&cero, &fresco.rechazos)
+        );
+    }
+}
