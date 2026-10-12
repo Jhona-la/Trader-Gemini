@@ -26,6 +26,7 @@ pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64, total_trades: 
 
 pub mod fitness_contract;
 pub mod entry_reservation;
+pub mod estado_aprendido;
 pub mod entes_consejo;
 pub mod evidence_publication;
 pub mod contagion_publisher;
@@ -1094,6 +1095,11 @@ pub struct GodEngineCore {
     /// si el slot no existe, se cae al global (compat).
     pub conformal_by_coin: Vec<conformal::ConformalCalibrator>,
     pub calibrator_by_coin: Vec<calibration::PlattCalibrator>,
+    /// CL-108 — observaciones de los calibradores (por moneda y global),
+    /// anotadas al alimentarlos para restaurarlos tras un reinicio
+    /// (`estado_aprendido.rs`).
+    pub(crate) registro_calibrador: Vec<std::collections::VecDeque<estado_aprendido::Observacion>>,
+    pub(crate) registro_calibrador_global: std::collections::VecDeque<estado_aprendido::Observacion>,
     /// CERT-M2-C02 — proceso de Hawkes POR SÍMBOLO. Cada TRADE real excita
     /// el proceso (record_event); λ/μ verdadero se publica al registry.
     /// Antes el slot 'hawkes_intensity' llevaba un proxy de aceleración/ATR
@@ -1390,6 +1396,10 @@ impl GodEngineCore {
             calibrator_by_coin: (0..n_coins)
                 .map(|_| calibration::PlattCalibrator::new())
                 .collect(),
+            registro_calibrador: (0..n_coins)
+                .map(|_| std::collections::VecDeque::new())
+                .collect(),
+            registro_calibrador_global: std::collections::VecDeque::new(),
             hawkes_by_coin: (0..n_coins)
                 .map(|_| signal_engine::hawkes_bessel::HawkesBesselEngine::new())
                 .collect(),
@@ -4465,16 +4475,16 @@ impl GodEngineCore {
                     // (para transferencia de aprendizaje cross-asset).
                     // Ola XLIV: con su instante de evento, para el olvido por
                     // tiempo de `calibrate_at` (ver calibration.rs).
+                    // CL-108: por `alimentar_calibradores`, que además anota
+                    // la observación para restaurarlos tras un reinicio.
                     if score_at_entry > 0.0 {
-                        if coin_id < self.calibrator_by_coin.len() {
-                            self.calibrator_by_coin[coin_id].update_at(
-                                score_at_entry,
-                                is_win,
-                                event_time_ms,
-                            );
-                        }
-                        self.confidence_calibrator
-                            .update_at(score_at_entry, is_win, event_time_ms);
+                        estado_aprendido::alimentar(
+                            &mut self.calibrator_by_coin,
+                            &mut self.registro_calibrador,
+                            &mut self.confidence_calibrator,
+                            &mut self.registro_calibrador_global,
+                            (coin_id, score_at_entry, is_win, event_time_ms),
+                        );
                     }
 
                     // XXIX / FMT-228: one close is one reward observation.

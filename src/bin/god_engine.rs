@@ -3037,6 +3037,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "🧬 [KELLY] Sin envolvente previa — posterior fresco de Jeffreys (HOST-005)"
             );
         }
+        // CL-108 (C-F8, decisión del dueño «Guardar todo»): el estado
+        // aprendido (cierres y evidencia por moneda, calibradores, freno de la
+        // estrategia, riesgo y geometría medidos) se restaura antes de operar
+        // y se guarda en cada cierre. Para empezar de cero, se borra el archivo.
+        let ruta_estado = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+            "estado_aprendido.json",
+        ));
+        match god_engine_core::estado_aprendido::cargar(&ruta_estado) {
+            Some(estado) => {
+                let n = engine_real.restaurar_estado_aprendido(&estado);
+                telemetry_server::telemetry_log!(
+                    "🧠 [ESTADO] restaurado de {}: {} monedas, freno de la estrategia {}",
+                    ruta_estado.display(),
+                    n,
+                    if estado.freno_estrategia.rechazada { "ECHADO" } else { "suelto" }
+                );
+            }
+            None => telemetry_server::telemetry_log!(
+                "🧠 [ESTADO] sin estado aprendido previo en {}",
+                ruta_estado.display()
+            ),
+        }
         // B3.7 (auditoría) — DEDUP cierre-bracket vs cierre-core: el MISMO
         // trade económico puede llegar por dos caminos (fill de la pierna en
         // el user-stream + condición de salida del core en el evento
@@ -3812,6 +3834,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let unified_cap = f64::from_bits(unified_capital.load(Ordering::Relaxed));
 
                     if let Some((is_long, pnl, qty)) = closed_order {
+                        // CL-108: cada cierre cambia el estado aprendido.
+                        if let Err(e) = god_engine_core::estado_aprendido::guardar(
+                            &ruta_estado,
+                            &engine_real.estado_aprendido(),
+                        ) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [ESTADO] no se pudo guardar {}: {}",
+                                ruta_estado.display(),
+                                e
+                            );
+                        }
                         // B3.14 — sólo contabiliza lo que EXISTIÓ en el
                         // exchange. Cierres de entradas vetadas/rechazadas
                         // (round-trips locales de papel, caso KOMA) no

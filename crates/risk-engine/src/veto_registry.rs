@@ -144,7 +144,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
         test: Some("cl98_una_sola_sonda_abierta_en_la_cartera"),
-        deuda: Some("el recuento de cierres por moneda no se persiste (estado aprendido de C-F8, decisión del dueño). Tras cada reinicio TODAS las monedas, también las que tienen modelo _MOTOR, vuelven a la fase de sonda: la cartera abre una sola posición nueva a la vez hasta que cada moneda junta 5 cierres (5·26 = 130 sondas en serie con el universo de arranque), y las posiciones adoptadas del exchange cuentan como sondas abiertas, así que con N adoptadas no se abre nada hasta que cierran todas. Medido con el replay de producción (ATOMUSDT 2026-07, 13 USD: operación media 1,16 h; espera media de señal 4,1 h por moneda) y 26 monedas compitiendo por la sonda: ~2,4 días hasta que sale la primera moneda y ~8 días hasta que salen todas (mediana), frente a ~2 días sin D4"),
+        deuda: Some("CL-108 guarda el recuento de cierres y la evidencia por moneda entre reinicios (estado_aprendido.json): sin él, tras cada reinicio todas las monedas volvían a la fase de sonda y la cartera abría una posición nueva a la vez durante ~8 días con 26 monedas. Queda abierto (F3.4-05) que una moneda sin _MOTOR no puede salir del ML-GATE con su evidencia realizada: tras su primera sonda queda vetada; con el recuento guardado, para siempre"),
     },
     EntradaVeto {
         id: "V-LOGIC-001",
@@ -374,7 +374,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
         test: Some("cl107_falsa_alarma_y_deteccion_del_freno_de_la_estrategia"),
-        deuda: Some("el estado se pierde al reiniciar hasta que CL-108 lo guarda con el resto del estado aprendido; la apuesta adaptativa de VilleEProcess detecta más despacio que la mezcla de apuestas fijas del Monte Carlo del dueño (ver el contrato)"),
+        deuda: Some("el estado (proceso e y si está echado) se guarda entre reinicios con el resto del estado aprendido (CL-108); un freno echado sólo se suelta borrando el estado. Con resultados periódicos antipersistentes la apuesta adaptativa de VilleEProcess detecta más despacio (~550 cierres frente a ~117 con resultados aleatorios)"),
     },
     EntradaVeto {
         id: "V-TECH-003",
