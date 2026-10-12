@@ -4428,9 +4428,16 @@ impl GodEngineCore {
                         })
                         .map(|p| p.get_value())
                         .unwrap_or(1.0);
+                    // CL-76 (F3.3-06): el peso aprende el resultado en R (PnL
+                    // neto / riesgo al stop), no el signo del PnL en USD.
+                    let resultado_r = if sl.is_finite() && sl > 0.0 {
+                        realized_ret / sl
+                    } else {
+                        f64::NAN
+                    };
                     signal_engine::perceptron_gate::PerceptronGateEngine::update_weight(
                         &mut cur_hebbian,
-                        net_trade_pnl,
+                        resultado_r,
                         atr_pct,
                     );
                     self.arena.registry.set(&hebb_key, cur_hebbian);
