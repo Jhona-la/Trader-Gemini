@@ -16,8 +16,9 @@
 //! ticks alternos de ±25 pb con spot en 50 000), pero el spot se deja
 //! congelado, como ocurre en producción.
 //!
-//! Convención (fase C-F3): un test que hoy falla por la causa de un hallazgo
-//! lleva `#[ignore = "OPEN F3.x-nn (dueño): causa"]` con el assert intacto.
+//! Activada por CL-79: la arena guarda la marca de llegada del spot
+//! (`CoinArena::spot_ts_ms`, en el reloj de eventos del núcleo) y el núcleo
+//! mide el TTL con la edad del spot.
 
 use god_engine_core::GodEngineCore;
 use quantum_arena::{symbol_registry, symbols, GlobalArena};
@@ -26,7 +27,6 @@ use quantum_arena::{symbol_registry, symbols, GlobalArena};
 /// la abstención exacta `Some(0.0)`. Precondición: la SDE maduró con spot
 /// fresco y publicó una z finita no nula.
 #[test]
-#[ignore = "OPEN F3.7-03 (Línea C, núcleo; data-pipeline debe publicar la edad del spot): la arena no guarda la marca de tiempo del spot; el núcleo alimenta la SDE en cada evento con el reloj del futuro, así que la edad medida es 0 y un spot congelado sigue votando"]
 fn cf3_spot_congelado_mas_alla_del_ttl_publica_abstencion() {
     symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
     symbol_registry::update_registry(vec![symbol_registry::get_official_binance_spec("BTCUSDT")]);
@@ -69,4 +69,52 @@ fn cf3_spot_congelado_mas_alla_del_ttl_publica_abstencion() {
         Some(0.0),
         "spot sin refrescar durante más de 30 s: debe publicar abstención"
     );
+}
+
+/// Núcleo con la SDE madura: 12 ticks alternos de ±25 pb con el spot en
+/// 50 000. Si `refrescar`, el spot se vuelve a escribir (mismo valor) antes de
+/// cada tick, como el sondeo REST en un mercado quieto.
+fn nucleo_maduro() -> (std::sync::Arc<GlobalArena>, GodEngineCore, u64) {
+    symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
+    symbol_registry::update_registry(vec![symbol_registry::get_official_binance_spec("BTCUSDT")]);
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    let mut core = GodEngineCore::new(arena.clone());
+    core.swing_nn = None;
+    core.scalp_forest = None;
+    arena.update_spot_data(0, 50_000.0, 50_000.2, 1.0, 1.0);
+    let mut ts = 1_000u64;
+    for i in 0..12 {
+        let fut = 50_000.0 * if i % 2 == 0 { 1.0025 } else { 0.9975 };
+        let _ = core.process_tick_dual(0, fut - 0.5, fut + 0.5, 1.0, 1.0, ts, &[0.0; 54], true, true);
+        ts += 1_000;
+    }
+    (arena, core, ts)
+}
+
+/// CL-79. Verdad: la frescura es por LLEGADA del spot, no por cambio de su
+/// valor. Con el spot reescrito cada segundo con el mismo valor durante
+/// 60 s, la z de StatArb no se abstiene.
+#[test]
+fn cl79_spot_repetido_sigue_fresco() {
+    let (arena, mut core, mut ts) = nucleo_maduro();
+    for i in 0..60 {
+        arena.update_spot_data(0, 50_000.0, 50_000.2, 1.0, 1.0);
+        let fut = 50_000.0 * if i % 2 == 0 { 1.0025 } else { 0.9975 };
+        let _ = core.process_tick_dual(0, fut - 0.5, fut + 0.5, 1.0, 1.0, ts, &[0.0; 54], true, true);
+        ts += 1_000;
+    }
+    let z = arena.registry.get_scoped_strict("BTCUSDT", "statarb_ou_zscore");
+    println!("observado: z con el spot repetido 60 s = {z:?}");
+    assert!(matches!(z, Some(v) if v.is_finite() && v != 0.0), "z = {z:?}");
+}
+
+/// CL-79. Verdad: con el spot congelado más allá del TTL tampoco hay base:
+/// `vecm_zscore` se abstiene (0), aunque el spot siga > 0 en la arena.
+#[test]
+fn cl79_spot_congelado_silencia_la_base() {
+    let (arena, mut core, ts) = nucleo_maduro();
+    let _ = core.process_tick_dual(0, 50_100.0, 50_101.0, 1.0, 1.0, ts + 31_000, &[0.0; 54], true, true);
+    let z = arena.registry.get_scoped_strict("BTCUSDT", "vecm_zscore");
+    println!("observado: vecm_zscore tras 31 s con el spot congelado = {z:?}");
+    assert_eq!(z, Some(0.0));
 }

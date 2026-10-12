@@ -4567,6 +4567,17 @@ impl GodEngineCore {
             // --- Inteligencia On-Chain (Spot vs Futures Correlation) ---
             let spot_bid = coin.spot_bid.load(Ordering::Relaxed);
             let spot_ask = coin.spot_ask.load(Ordering::Relaxed);
+            // CL-79 (F3.7-03): TTL anti-staleness del spot (R6-C4) medido con
+            // la EDAD DEL SPOT, no con la del último tick del futuro. Cuando
+            // cae el stream, el escritor descarta bid/ask ≤ 0 y la arena
+            // conserva el último spot: sin su marca de llegada, el TTL no
+            // saltaba nunca y la SDE, el z de la base y el sesgo seguían
+            // votando contra un spot fijo.
+            const SPOT_TTL_MS: u64 = 30_000;
+            let spot_presente = spot_bid > 0.0 && spot_ask > 0.0;
+            let spot_fresco = spot_presente
+                && event_time_ms.saturating_sub(coin.spot_ts_ms.load(Ordering::Relaxed))
+                    <= SPOT_TTL_MS;
             // MOD2/7-028 (INFORME DECIMOCUARTO): el salto ±0.15 ABSOLUTO al
             // cruzar 1.5 bps no tenía base — 15 puntos de probabilidad por
             // 1.5 bps de spread podían mover el gate sin opinión de modelo.
@@ -4577,7 +4588,7 @@ impl GodEngineCore {
             // ramas de señal.
             let mut spot_bias = 0.0;
 
-            if spot_bid > 0.0 && spot_ask > 0.0 {
+            if spot_fresco {
                 let spot_mid = (spot_bid + spot_ask) / 2.0;
                 let spread_bps = ((spot_mid - mid_price) / mid_price) * 10000.0;
                 spot_bias = (spread_bps / 10.0).clamp(-0.05, 0.05);
@@ -5360,7 +5371,10 @@ impl GodEngineCore {
             // `base_z`). Antes era el NIVEL de la
             // base entre el ATR del futuro: una prima constante votaba
             // reversión en cada evento. Sin una τ de historia, 0 (abstención).
-            let vecm_basis_z = if spot_bid > 0.0 && spot_ask > 0.0 && mid_price > 0.0 {
+            // CL-79: con el spot caducado (> TTL) también 0: no hay base.
+            let vecm_basis_z = if spot_presente && !spot_fresco {
+                0.0
+            } else if spot_presente && mid_price > 0.0 {
                 let spot_mid = (spot_bid + spot_ask) / 2.0;
                 let base = (mid_price - spot_mid) / mid_price;
                 let piso = self.feature_engines[coin_id].piso_resolucion / mid_price;
@@ -5399,15 +5413,16 @@ impl GodEngineCore {
             // (`vecm_zscore`), silenciando una señal viva sin evidencia. Con la
             // física madura, el 0.0 SÍ es honesto: abstención por feed de spot
             // stale > TTL (R6-C4 anti-staleness).
-            const STATARB_SPOT_TTL_MS: u64 = 30_000;
+            // CL-79 (F3.7-03): la SDE sólo se alimenta con spot fresco, y la
+            // abstención se decide por la edad del spot (SPOT_TTL_MS).
             let eng_st = &mut self.statarb_ou_engines[coin_id];
-            if spot_bid > 0.0 && spot_ask > 0.0 && mid_price > 0.0 {
+            if spot_fresco && mid_price > 0.0 {
                 let spot_mid_st = (spot_bid + spot_ask) / 2.0;
                 let _ = eng_st.update_with_clock(mid_price, spot_mid_st, event_time_ms, tau_dom);
             }
             if let Some(z_madura) = eng_st.last_ou_zscore() {
-                let statarb_z = if event_time_ms.saturating_sub(eng_st.last_ou_ts_ms())
-                    <= STATARB_SPOT_TTL_MS
+                let statarb_z = if spot_fresco
+                    && event_time_ms.saturating_sub(eng_st.last_ou_ts_ms()) <= SPOT_TTL_MS
                 {
                     z_madura
                 } else {
