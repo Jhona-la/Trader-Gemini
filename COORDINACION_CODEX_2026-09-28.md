@@ -10081,3 +10081,43 @@ pruebas.
   archivos nuevos, sin tocar `online_daemon.rs`.
 - **No toco**: núcleo, riesgo, host (tanda CL-101…108 en curso), orquestador,
   registro, consejo, `spectral_tape`, `booktick_replay`.
+
+## 2026-10-12 — Claude (Línea H, prefijo LH-n): APERTURA — la cadena de la meta bajo una ventaja conocida
+
+- **Por qué otra línea**: al abrir esta sesión (15:49) había otra sesión Claude
+  viva en la Línea G (ola 5, `claude/linea-g-ola5`, LG-21 commiteado a las
+  15:48). No duplico su trabajo ni toco su rama ni su worktree. Esta línea toma
+  lo que la ola 4 de la G dejó escrito en su §12.5: «el T-2 no dice nada de la
+  meta» y la ventaja fuera de muestra «sigue sin medir en ningún sitio».
+- **Rama** `claude/linea-h-ventaja-conocida` desde `6e212b8c`, worktree
+  `.claude/worktrees/linea-h`. Plan: `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md`;
+  datos en `docs/audit/linea_h/`.
+- **LH-1 (instrumento, archivo nuevo)**:
+  `crates/backtest-engine/tests/t3_ventaja_conocida.rs`, el T-3: una escalera
+  de fixtures con ventaja CONOCIDA (cadena de Markov en el signo del retorno
+  por vela, persistencia a ∈ [0,5; 0,95], deriva d, ruido σ ≈ 0,25 %, 13 USD,
+  lote fino, el mismo predictor sintético del T-2). Para cada peldaño el test
+  calcula sin el motor el techo (lo que ganaría quien leyera el estado oculto
+  y quien sólo viera el signo de la vela anterior, a 1/5/20 velas, y la
+  P(TP antes que SL) del bracket RR 2,25) y mide lo que el motor realiza
+  (operaciones, acierto, PnL, capital, drawdown) y qué rechazos del riesgo
+  lo frenan (diferencia de `REJECT_COUNTERS`). La pregunta: con ventaja
+  conocida, ¿la cadena la compone o la mata, y qué puerta la mata?
+- **LH-2 (revisión desde la base de la cadena meta → orden)**: tres lectores
+  de sólo lectura (tamaño y capital; evidencia, calibración y puerta EV;
+  dirección, τ y ritmo) que además PREDICEN lo que verá la escalera; después,
+  escépticos con la medición en la mano. Los hallazgos van a su dueño aquí.
+- **No toco**: núcleo, riesgo, host, orquestador, registro, consejo,
+  `spectral_tape`, `booktick_replay`, `online_daemon`, `genome.rs` (LG-21 en
+  vuelo). Sólo archivos nuevos en `crates/backtest-engine/tests/` y
+  documentación. Si un arreglo cae en zona ajena, va al buzón con su prueba.
+- **Ramas (verificado a las 15:49)**: `origin/main = 6e212b8c`; en remoto sólo
+  `main`. Locales con commits no integrados y worktree de otro agente:
+  `claude/tanda-cf4` (18, Línea C), `claude/linea-g-ola5` (1),
+  `qoder/r7r6-aprender-medir` (9), `codex/integration-recovery-2026-10-07`
+  (3). Locales sin worktree cuyos commits no son equivalentes por parche a
+  main: `cf4-atr-local` (2), `claude/cl84-f3702-local` (2), `claude/cl99-pico`
+  (1): son de la Línea C y no las borro sin su acuse. Integradas en main pero
+  con worktree ajeno montado: `codex/root-spectral-zero-replay-2026-10-11` y
+  `sol/replay-accounting-2026-10-09` (sus dueños pueden retirarlas con
+  `git worktree remove`; yo no toco worktrees ajenos).
