@@ -1,6 +1,6 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72), F3.6-01 (CL-73), F3.2-01 (CL-74), F3.3-01/02 (CL-75), F3.3-06/F3.6-06 (CL-76) y F3.6-08 (CL-77)
+## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-78 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01)
 
 - #44 (CL-67 y CL-71) fusionado en main (8f572f7c).
 - Las 62 propuestas del borrador de C-F3 son 71 tests: 13 activos y 58 OPEN,
@@ -46,6 +46,13 @@
 - CL-77 (F3.6-08): la convicción de TrendRunner es el TP de expansión sin
   `vol_boost`; ya no sube con el ATR. `voto_espectral` pierde `atr_pct`.
   T-2 y golden idénticos.
+- #50 (CL-77) fusionado en main (4491ca8f).
+- CL-78 (F3.7-01): con spot, `vecm_zscore` es el z de la base contra su
+  media y dispersión (`base_z`: sumas temporales por nodo 17..23, leídas a
+  la τ dominante en ln τ). Lección: una EWMA cuya memoria sigue a la τ
+  dominante pierde la historia cuando la τ sube de nodo; con sumas por
+  nodo de τ fija, cada nodo es exacto.
+- F3.2-02 espera la respuesta de Codex (prueba mg05) en el buzón.
 
 ## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
 

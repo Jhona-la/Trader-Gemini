@@ -47,6 +47,7 @@ pub mod orchestrator;
 pub mod order_flow_aggregator;
 pub mod outcome_context;
 pub mod quantum_kelly_risk;
+pub mod base_z;
 pub mod reality_physics;
 pub mod recarga_genoma;
 pub mod reexport_storage {
@@ -862,6 +863,9 @@ pub struct GodEngineCore {
     /// pura de esas claves (antes su SDE nunca corría y el voto leía
     /// `vecm_zscore` = basis/ATR sin cointegración).
     pub statarb_ou_engines: Vec<strategy_core::stat_arb::StatArbEngine>,
+    /// CL-78 (F3.7-01): z de la base futuro-spot contra su propia media y
+    /// dispersión, por moneda (`vecm_zscore` con spot).
+    pub base_z: Vec<base_z::BaseZ>,
     pub tensor_orchestrator: signal_engine::orchestrator::TensorVoteOrchestrator,
     /// #592 — ancla de la deriva de régimen por moneda: (bits de ln(τ*),
     /// ts_ms de la observación anclada). El crash_flux necesita la deriva de
@@ -1186,6 +1190,7 @@ impl GodEngineCore {
             risk_engine: RiskEngine::new(initial_capital),
             maker_engines,
             feature_engines,
+            base_z: (0..n_coins).map(|_| base_z::BaseZ::new()).collect(),
             statarb_ou_engines: (0..n_coins)
                 .map(|_| {
                     strategy_core::stat_arb::StatArbEngine::new(30, 1.5)
@@ -2991,9 +2996,6 @@ impl GodEngineCore {
             .max(f64::MIN_POSITIVE)
     }
 
-    /// Procesa un tick en el motor universal continuo unificado.
-    /// Retorna: (new_order, closed_order, maker_quote)
-    #[inline(always)]
     /// CL-69: el piso de resolución del ATR de la moneda es su tick (0 sin
     /// spec). Se fija en cada evento porque el registro de specs puede
     /// cambiar; `tick_size_de` no asigna.
@@ -3006,6 +3008,9 @@ impl GodEngineCore {
         }
     }
 
+    /// Procesa un tick en el motor universal continuo unificado.
+    /// Retorna: (new_order, closed_order, maker_quote)
+    #[inline(always)]
     pub fn process_tick_dual(
         &mut self,
         coin_id: usize,
@@ -5348,9 +5353,20 @@ impl GodEngineCore {
 
             let obi_norm = (current_obi / dynamic_obi_thr).clamp(-1.5, 1.5);
             let ofi_norm = (ofi / dynamic_ofi_thr).clamp(-1.5, 1.5);
-            let vecm_basis_z = if spot_bid > 0.0 && spot_ask > 0.0 {
+            // CL-78 (F3.7-01): con spot, `vecm_zscore` es el z de la base
+            // b = (F − S)/F contra SU media y SU dispersión (promedios
+            // temporales por nodo de la malla, leídos a la τ dominante, la de
+            // la SDE OU de la base; piso de σ = un tick relativo; ver
+            // `base_z`). Antes era el NIVEL de la
+            // base entre el ATR del futuro: una prima constante votaba
+            // reversión en cada evento. Sin una τ de historia, 0 (abstención).
+            let vecm_basis_z = if spot_bid > 0.0 && spot_ask > 0.0 && mid_price > 0.0 {
                 let spot_mid = (spot_bid + spot_ask) / 2.0;
-                ((mid_price - spot_mid) / (mid_price * atr_pct.max(0.0005))).clamp(-3.0, 3.0)
+                let base = (mid_price - spot_mid) / mid_price;
+                let piso = self.feature_engines[coin_id].piso_resolucion / mid_price;
+                self.base_z[coin_id]
+                    .observar(event_time_ms, base, tau_dom, piso)
+                    .map_or(0.0, |z| z.clamp(-3.0, 3.0))
             } else if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
                 ((mid_price - self.feature_engines[coin_id].kline_ema_slow)
                     / (mid_price * atr_pct.max(0.0005)))
