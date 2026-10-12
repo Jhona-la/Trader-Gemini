@@ -51,7 +51,6 @@ fn tramo<'a>(codigo: &'a str, desde: &str, hasta: &str) -> Option<&'a str> {
 /// impulso (desde la llamada a `evaluate_flow_impulse` hasta
 /// `fast_intent = impulso_intent;`) llama a `conviccion_de_rama`.
 #[test]
-#[ignore = "OPEN F3.3-09 (Línea C): la rama 12 registra cierres (rama_registro[..][12]) pero su confianza tanh(coh·decay·2) no pasa por conviccion_de_rama"]
 fn cf3_rama_12_lee_su_historial() {
     let src = codigo_produccion();
     let bloque = tramo(

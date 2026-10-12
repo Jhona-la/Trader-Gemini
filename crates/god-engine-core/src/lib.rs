@@ -6578,6 +6578,20 @@ impl GodEngineCore {
                                 || (impulso_intent.signal == SignalType::Short
                                     && not_overextended_short_decision))
                         {
+                            // CL-81 (F3.3-09): la convicción de la rama 12
+                            // pasa por su propio historial (D-752), contra
+                            // el equilibrio p* de la orden (CL-75), como
+                            // las ramas 11, 13, 14 y 15. Antes su registro
+                            // se escribía al cerrar y nunca se leía.
+                            impulso_intent.confidence = conviccion_de_rama_en(
+                                &registro_ramas[12],
+                                impulso_intent.confidence,
+                                self.p_equilibrio_de_la_orden(
+                                    coin_id,
+                                    impulso_intent.expected_duration_ms,
+                                    hurst_exponent,
+                                ),
+                            );
                             impulso_intent.volume_flow_rate = 12.0;
                             fast_intent = impulso_intent;
                         }
