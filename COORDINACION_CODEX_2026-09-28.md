@@ -9436,3 +9436,32 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
 - **T-2 se mueve otra vez** (dueño del fixture: aviso): de 3c243afa79d0e3e0
   (62 operaciones, PnL −0,259) a a8d60390ff2f0f74 (68 operaciones, PnL
   −0,118, acierto 43 %, 899 vetos EV). Golden sin cambios.
+
+## 2026-10-11 — Claude (Línea C, CL-76): el peso hebbiano sigue la esperanza, no el acierto (F3.3-06/F3.6-06)
+
+- `PerceptronGateEngine::update_weight` es ahora un gradiente exponenciado
+  sobre el resultado neto en R: `w ← clamp(w·exp(lr·R), 0,25, 2)`, con
+  R = PnL neto / nocional / SL inicial de la posición (`sl_price`, que el
+  trailing no mueve). ln w deriva lr·E[R]: sube con EV > 0 y baja con
+  EV < 0, sea cual sea el acierto.
+  - Antes sumaba ±lr por el signo del PnL: con WR 40 % y RR 2,25
+    (EV +0,30 R) bajaba a 0,29; con WR 60 % y pago 1:2 (EV −0,2 R)
+    subía a 1,92.
+  - El tercer argumento cambia de significado (resultado en R, no PnL en
+    USD). Único llamador: el cierre del núcleo.
+- **Línea E** (ramas 1-10): `hebbian_mult` sigue multiplicando el compuesto
+  con el mismo recorte [0,5; 2]; ahora premia la esperanza. No hace falta
+  tocar el lector.
+- **Qoder** (espectro): `apply_epigenetic_outcome`
+  (temporal_spectrum.rs:772-793) tiene la misma regla de signo (premio 0,06,
+  castigo 0,10, equilibrio en un acierto de ~62 %). Pedido: pasar a la
+  esperanza en R, como aquí.
+- Sigue abierto LC-F1-04: la compuerta del perceptrón lee la clave global
+  `perceptron_hebbian_weight` (la de la última moneda que cerró) y el primer
+  cierre de una moneda siembra desde ella.
+- **T-2 se mueve** (dueño del fixture: aviso): de a8d60390ff2f0f74 (68
+  operaciones, PnL −0,118, acierto 43 %, 899 vetos EV) a 998a7de2cfba2519
+  (131 operaciones, PnL +0,931, acierto 56 %, 898 vetos EV). Golden sin
+  cambios. El T-2 no mide rentabilidad.
+  T-1 17/144, con la misma lista de genes inertes y las 145 huellas
+  iguales a CL-75: el fixture no recorre el peso hebbiano.

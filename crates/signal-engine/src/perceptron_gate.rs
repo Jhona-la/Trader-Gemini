@@ -79,10 +79,22 @@ impl PerceptronGateEngine {
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
     }
 
-    /// Aprendizaje Hebbiano Adaptativo V2 (Fase 21)
-    /// Incorpora la varianza/volatilidad para escalar la tasa de aprendizaje.
+    /// Peso del perceptrón por el resultado de las operaciones cerradas.
+    ///
+    /// CL-76 (F3.3-06, F3.6-06): gradiente exponenciado sobre el resultado
+    /// NETO de la operación en unidades de riesgo, `resultado_r` = PnL neto /
+    /// lo que arriesgaba al stop (R). `ln w` acumula `lr·R`, así que su
+    /// deriva por operación es `lr·E[R]`: sube con esperanza positiva y baja
+    /// con esperanza negativa, sea cual sea la tasa de acierto
+    /// (RULE[growth_over_wr]). Antes sumaba ±lr según el SIGNO del PnL y
+    /// aprendía la tasa de acierto: con pago 1:2 y 60 % de acierto (EV −0,2 R)
+    /// el peso subía al tope, y con 40 % de acierto y RR 2,25 (EV +0,30 R)
+    /// bajaba al suelo.
+    ///
+    /// La tasa de aprendizaje se modula a la baja con la volatilidad
+    /// (`std_dev`): más incertidumbre, paso menor.
     #[inline(always)]
-    pub fn update_weight(weight: &mut f64, recent_pnl: f64, std_dev: f64) {
+    pub fn update_weight(weight: &mut f64, resultado_r: f64, std_dev: f64) {
         // FIX #646: Sanitizar entradas para asegurar estabilidad del perceptrón
         let safe_std = if std_dev.is_finite() && std_dev >= 0.0 {
             std_dev
@@ -90,23 +102,17 @@ impl PerceptronGateEngine {
             0.01
         };
         let current_w = if weight.is_finite() { *weight } else { 1.0 };
-
-        // Tasa de aprendizaje base (0.05) modulada inversamente por el riesgo (std_dev).
-        // A mayor volatilidad/incertidumbre (alto std_dev), menor es el paso de mutación.
         let learning_rate = (0.05 / (1.0 + safe_std * 100.0)).clamp(0.001, 0.05);
 
         if !weight.is_finite() {
             *weight = 1.0;
         }
 
-        if recent_pnl.is_finite() {
-            if recent_pnl > 0.0 {
-                *weight = (current_w + learning_rate).clamp(0.25, 2.0);
-            } else if recent_pnl < 0.0 {
-                *weight = (current_w - learning_rate).clamp(0.25, 2.0);
-            } else {
-                *weight = current_w.clamp(0.25, 2.0);
-            }
+        if resultado_r.is_finite() {
+            // El exponente se acota sólo para que `exp` no desborde; el
+            // recorte del peso a [0,25; 2] satura mucho antes.
+            let exponente = (learning_rate * resultado_r).clamp(-50.0, 50.0);
+            *weight = (current_w.clamp(0.25, 2.0) * exponente.exp()).clamp(0.25, 2.0);
         }
     }
 }
