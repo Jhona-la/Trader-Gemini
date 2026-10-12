@@ -86,6 +86,12 @@ pub struct StatefulEngine {
     /// instantánea que alimentan las features (norm_at) y el registry.
     pub a_t_spectral: f64,
     pub last_inst_v: f64,
+    /// CL-73 (F3.6-01, FMT-001): velocidad direccional, EWMA por evento
+    /// (0,85/0,15) del Δmid CON signo, en unidades de precio por evento.
+    /// Antes promediaba |Δmid| y era siempre ≥ 0: el solitón y el choque,
+    /// que la leen como `price_velocity`/`order_flow_velocity`, votaban largo
+    /// también en una caída. La rapidez sin signo sigue en `last_inst_v` y
+    /// en la aceleración `a_t`.
     pub dir_velocity: f64,
     pub tick_count: u64,
     pub hurst: RecursiveHurst,
@@ -766,7 +772,8 @@ impl StatefulEngine {
             self.ema_fast = (price - self.ema_fast) * alpha_fast + self.ema_fast;
             self.ema_slow = (price - self.ema_slow) * alpha_slow + self.ema_slow;
 
-            let diff = (price - self.last_price).abs();
+            let paso = price - self.last_price;
+            let diff = paso.abs();
             let norm_return = (price - self.last_price) / self.last_price;
             // D-758: la σ del retorno POR TICK se mide aquí, sobre el mismo
             // retorno que alimenta la entropía. Es la escala que faltaba para
@@ -814,8 +821,10 @@ impl StatefulEngine {
             let raw_a = inst_v - self.last_inst_v;
             self.a_t = self.a_t * 0.70 + raw_a * 0.30;
             self.last_inst_v = inst_v;
-            // Velocidad direccional suavizada (EMA de 10 ticks)
-            self.dir_velocity = self.dir_velocity * 0.85 + inst_v * 0.15;
+            // CL-73 (F3.6-01, FMT-001): la velocidad direccional promedia el
+            // paso CON signo. La de |paso| (`inst_v`) es una rapidez: en una
+            // caída daba el mismo valor positivo que en una subida.
+            self.dir_velocity = self.dir_velocity * 0.85 + paso * 0.15;
             // #19: Actualización del anillo tensorial de precios y extracción de derivadas cinemáticas
             self.price_ring.push(self.fair_price);
             self.jerk_t = self.price_ring.jerk();

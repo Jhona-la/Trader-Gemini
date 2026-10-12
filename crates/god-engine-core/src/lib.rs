@@ -4541,6 +4541,10 @@ impl GodEngineCore {
             let speed_of_sound = spread_val.max(v_t.abs());
             set_reg("mid_price", mid_price);
             set_reg("spread_speed_of_sound", speed_of_sound);
+            // CL-73 (F3.6-01, FMT-001): `dir_v` lleva el signo del paso del
+            // mid. Lectores vivos: solitón y choque (voto escalar), Navier
+            // (AGY) y el bosque del demonio (`forest6`, se entrena en memoria
+            // con la misma clave, así que no pierde paridad).
             set_reg("price_velocity", dir_v);
             set_reg("order_flow_velocity", dir_v);
             set_reg("price_acceleration", a_t);
