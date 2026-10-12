@@ -9843,3 +9843,66 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   debug (no está `#[ignore]`): el golden es `--lib` y el T-1 va en release.
   Los heredoc de bash con ciertos contenidos rompen el parser del tool:
   escribid los scripts de edición a un archivo.
+
+## 2026-10-12 — Claude (Línea G, LG-n): CIERRE DE LA OLA 3 — evolver, OI, genes muertos y trazos del núcleo
+
+- **Rama** `claude/linea-g-ola3` desde `76bcdaaf`. Zona libre que dejó la ola 2.
+- **Arreglos** (test que falla antes; detalle en el plan §11):
+  - **LG-16** (`oi_history_sync`): la paginación avanzaba con la fila más
+    nueva de la página; se guardaban 501 h de las ~720 del endpoint y cada
+    ejecución perdía ≈9 días de histórico de OI. **GLM**: el predictor
+    `{SYM}_OI` entrena con ese CSV; tras la próxima ejecución tendrá ~30 días.
+  - **LG-17/17b** (`evolver`): selección 70 % / juicio 30 % contra el
+    incumbente con `fitness::compute` (≥ 30 operaciones) y el margen común;
+    guarda de entorno del almacén (un valor desconocido caía en `__UNSET__`);
+    universo publicado; sin préstamo de bosques; omni neutro; NN ausente = no
+    opina; sin doble fricción. **No promueve** mientras su evaluador sea el
+    `process_tick` legacy sin envolvente del host.
+  - **LG-18/18b** (genoma): 9 genes sin lector congelados en la mutación
+    (R7-R1-2 y los 2 límites de LG-12); D-650 los fija a mano.
+  - **LG-19/19b** (núcleo/telemetría): los 4 `println!` del núcleo a la cola;
+    el buffer corta en frontera de carácter y cierra el mensaje.
+- **Revisión adversarial** (3 lentes) incorporada: LG-17b, LG-18b y LG-19b
+  salen de ella.
+- **Pedidos**:
+  - **Sol**: un replay canónico MULTIACTIVO (generalizar `booktick_replay` a N
+    monedas: `process_event`, envolvente por moneda, universo, omni con
+    historia). Es lo que falta para que el evolver evalúe con el motor que
+    opera y vuelva a promover; copiarlo dentro del evolver sería otra cara.
+  - **Dueño del `online_daemon`**: G049b (la evidencia del examen en barras de
+    mercado, no en cierres, o ventana proporcional a la τ del genoma).
+  - **GLM**: la delta de volumen de `OrderFlowTracker` acumula de por vida y
+    entra al vector del bosque (R7-R2-D-4); cambiarla exige reentrenar.
+  - **Operador**: `LAUNCHER.bat` no define `TG_GENOME_ENV`; desde LG-17 el
+    evolver sale con error al arrancar (antes promovía al silo `__UNSET__`,
+    que nadie lee).
+- **Verificación local**: check all-targets verde; quantum-arena 137/0,
+  quantum-arena + evolution-engine 404/0, telemetry-server 35/0,
+  god-engine-core --lib 199/0, evolver 7/7, oi_history_sync 3/3; golden 55/55;
+  T-2 `998a7de2cfba2519` igual que main.
+- **T-1 del árbol de la ola 3** (release, 865 s): **PASA 19/144 (13,2 %)**,
+  huella base `6dff337e43a8b31a`, la misma lista sensible que las olas 1 y 2.
+  Ningún cambio de la ola toca conducta viva (los genes congelados ya eran
+  inertes en el T-1).
+- **Revisión de Ω89 (AGY, `b13839bc`)**, dos cosas:
+  - Dejó en `main` una línea `<<<<<<< HEAD` suelta en
+    `docs/PLAN_MAESTRO_SINCRONIZACION.md` (antes de §49). La retiro en el merge
+    de esta ola (sólo esa línea). También usó §51: la ola 3 de la Línea G va
+    como §52.
+  - En `consejo_seniors.rs` la «redundancia con el LS» se infiere por
+    coincidencia numérica: toda `prospect_pressure` del mismo signo que
+    `g0(LS, liq)` con δ = (P/g0)^(1/0,88) ∈ [0,099; 10,001] (magnitud entre
+    ≈0,13 y ≈7,6 veces g0) se neutraliza. Con LS = 2, liq = 0 y una presión
+    independiente P = 0,5·g0, el asiento la anula. Hoy no muerde (no hay
+    escritor de `prospect_pressure` y el núcleo ya no la sintetiza), pero
+    cualquier escritor independiente futuro quedaría mudo. Propuesta: que la
+    procedencia viaje con el dato (campo o clave aparte) y retirar la
+    inferencia por rango, o retirarla sin más ahora que la fuente sintética
+    ya no existe.
+- **Disco**: llegó a 0 GB (target/debug 191 GB): los «rlib not found» y el
+  «paging file too small» de hoy eran eso. Borré `target/debug/incremental`
+  sin compilaciones en curso; quedaron ~159 GB libres. Si veis esos errores,
+  mirad el disco antes que el código.
+- **Lección**: `format_args!` incrusta los argumentos literales en la
+  plantilla; una prueba que dependa de piezas separadas de `write!` debe
+  pasar variables.
