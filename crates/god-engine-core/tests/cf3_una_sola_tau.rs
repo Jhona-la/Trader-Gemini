@@ -266,7 +266,9 @@ fn cf3_la_tau_que_juzga_qo586_es_la_tau_de_la_orden() {
 /// en τ = 17,2 s (< 30 s) y la rama 11 decide con el respaldo escalar. El
 /// libro trae impulsos compradores (OBI 0,85) para que pase su puerta.
 /// Precondición: al menos una intención de la rama 11.
-/// Antes de CL-85: 30/30 intenciones de la rama 11 viajaban a 173 586 ms.
+/// Antes de CL-85: 128/128 intenciones de la rama 11 viajaban a otra τ (las
+/// primeras, a 54 919, 91 512 y 203 931 ms). CL-94: sustituye también al
+/// contrato de fuente de F3.3-03.
 #[test]
 fn cf3_la_rama_11_vive_a_la_escala_que_hablo() {
     let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
