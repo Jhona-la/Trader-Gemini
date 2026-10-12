@@ -142,3 +142,31 @@ fn cl108_un_archivo_invalido_no_se_restaura() {
     let _ = std::fs::remove_file(&ruta);
     assert!(cargar(&ruta).is_none(), "sin archivo");
 }
+
+/// CL-108d (T2-3 de la revisión de la Línea G) — el PnL de sesiones anteriores
+/// no entra en el acumulador de la sesión. `pnl_realized` lo leen como PnL de
+/// ESTA sesión el demonio en línea (retornos por diferencias), la deriva vivo
+/// frente al control y el validador de paridad (capital = inicial + Σ PnL).
+/// Esperado: tras restaurar, el acumulador de la sesión está en 0 y el
+/// histórico se conserva en lo que se guarda (el de antes + el de la sesión).
+#[test]
+fn cl108d_el_pnl_historico_no_entra_en_el_acumulador_de_la_sesion() {
+    registrar_simbolos();
+    let viejo = con_historia();
+    let estado = viejo.estado_aprendido();
+    let mut con = nucleo();
+    con.restaurar_estado_aprendido(&estado);
+    let sesion = con.arena.coins[1].metrics.pnl_realized.load(Relaxed);
+    println!("observado: PnL de la sesión tras restaurar {sesion} (histórico 0,9)");
+    assert_eq!(sesion, 0.0, "el acumulador de la sesión empieza en 0");
+    // Un cierre de esta sesión de +0,25: lo guardado es el histórico + la sesión.
+    con.arena.coins[1].metrics.pnl_realized.store(0.25, Relaxed);
+    let guardado = con
+        .estado_aprendido()
+        .monedas
+        .iter()
+        .find(|m| m.simbolo == "ETHUSDT")
+        .map(|m| m.metricas.pnl_realized)
+        .unwrap();
+    assert!((guardado - 1.15).abs() < 1e-12, "guardado {guardado}");
+}

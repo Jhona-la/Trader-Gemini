@@ -1100,6 +1100,12 @@ pub struct GodEngineCore {
     /// (`estado_aprendido.rs`).
     pub(crate) registro_calibrador: Vec<std::collections::VecDeque<estado_aprendido::Observacion>>,
     pub(crate) registro_calibrador_global: std::collections::VecDeque<estado_aprendido::Observacion>,
+    /// CL-108d (T2-3 de la Línea G) — PnL realizado y bruto de las sesiones
+    /// anteriores, por moneda, restaurado del estado aprendido. No entra en
+    /// `metrics.pnl_realized`/`pnl_gross`, que son acumuladores de la sesión
+    /// (los leen el demonio, la deriva frente al control y el validador de
+    /// paridad); se suma al guardar.
+    pub(crate) pnl_previo: Vec<(f64, f64)>,
     /// CERT-M2-C02 — proceso de Hawkes POR SÍMBOLO. Cada TRADE real excita
     /// el proceso (record_event); λ/μ verdadero se publica al registry.
     /// Antes el slot 'hawkes_intensity' llevaba un proxy de aceleración/ATR
@@ -1400,6 +1406,7 @@ impl GodEngineCore {
                 .map(|_| std::collections::VecDeque::new())
                 .collect(),
             registro_calibrador_global: std::collections::VecDeque::new(),
+            pnl_previo: vec![(0.0, 0.0); n_coins],
             hawkes_by_coin: (0..n_coins)
                 .map(|_| signal_engine::hawkes_bessel::HawkesBesselEngine::new())
                 .collect(),

@@ -7,6 +7,8 @@
 //!   D4, y la cartera abría una sola posición nueva a la vez durante unos 8
 //!   días con 26 monedas;
 //! - la evidencia por moneda (acierto, PF, Kelly, PnL);
+//!   el PnL de las sesiones anteriores se conserva aparte (CL-108d): los
+//!   acumuladores `pnl_realized`/`pnl_gross` son de la sesión;
 //! - los calibradores de Platt (por moneda y global), que deciden la
 //!   probabilidad con la que el riesgo juzga el valor esperado;
 //! - el freno de la estrategia (proceso e de Ville, CL-107): un reinicio
@@ -57,6 +59,7 @@ pub struct MetricasGuardadas {
     pub kelly_fraction: f64,
     pub gross_wins: f64,
     pub gross_losses: f64,
+    /// PnL realizado y bruto de TODAS las sesiones (CL-108d).
     pub pnl_realized: f64,
     pub pnl_gross: f64,
     pub roi_pre_fee: f64,
@@ -153,6 +156,8 @@ impl GodEngineCore {
                 continue;
             };
             let m = &coin.metrics;
+            let (pnl_previo, pnl_bruto_previo) =
+                self.pnl_previo.get(coin_id).copied().unwrap_or((0.0, 0.0));
             monedas.push(MonedaGuardada {
                 simbolo,
                 metricas: MetricasGuardadas {
@@ -162,8 +167,8 @@ impl GodEngineCore {
                     kelly_fraction: m.kelly_fraction.load(Relaxed),
                     gross_wins: m.gross_wins.load(Relaxed),
                     gross_losses: m.gross_losses.load(Relaxed),
-                    pnl_realized: m.pnl_realized.load(Relaxed),
-                    pnl_gross: m.pnl_gross.load(Relaxed),
+                    pnl_realized: pnl_previo + m.pnl_realized.load(Relaxed),
+                    pnl_gross: pnl_bruto_previo + m.pnl_gross.load(Relaxed),
                     roi_pre_fee: m.roi_pre_fee.load(Relaxed),
                     roi_post_fee: m.roi_post_fee.load(Relaxed),
                     zombie_promotions: m.zombie_promotions.load(Relaxed),
@@ -220,8 +225,12 @@ impl GodEngineCore {
             m.kelly_fraction.store(s.kelly_fraction, Relaxed);
             m.gross_wins.store(s.gross_wins, Relaxed);
             m.gross_losses.store(s.gross_losses, Relaxed);
-            m.pnl_realized.store(s.pnl_realized, Relaxed);
-            m.pnl_gross.store(s.pnl_gross, Relaxed);
+            // CL-108d: el PnL de las sesiones anteriores no entra en los
+            // acumuladores de la sesión; se conserva aparte y se suma al
+            // guardar.
+            if let Some(p) = self.pnl_previo.get_mut(coin_id) {
+                *p = (s.pnl_realized, s.pnl_gross);
+            }
             m.roi_pre_fee.store(s.roi_pre_fee, Relaxed);
             m.roi_post_fee.store(s.roi_post_fee, Relaxed);
             m.zombie_promotions.store(s.zombie_promotions, Relaxed);
