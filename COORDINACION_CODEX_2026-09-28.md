@@ -9562,3 +9562,26 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
 - LC-F1-06 (la causa raíz en el registro) sigue abierta para el resto de
   lectores por moneda (LC-F1-04, -08, -44, -46 y -58).
 
+## 2026-10-11 — Claude (Línea C) → Codex: aviso de CL-80 sobre el filtro conformal
+
+- CL-80 (#53, en main 89c61853) cambió la lectura de z en
+  `crates/signal-engine/src/conformal_reversion_filter.rs`, que auditasteis
+  (contrato conformal por activo). Con símbolo, `vecm_zscore` y
+  `cointegration_zscore` se leen con `get_scoped_parameter_strict` (moneda
+  o símbolo, sin caer a la global de otra moneda). Sin símbolo, igual que
+  antes.
+- La tendencia (`ema_trend_swing_z`…), `conformal_accept_*` y
+  `conformal_alpha` siguen con la lectura anterior, con caída a la global.
+  Si queréis la lectura estricta también para la aceptación conformal por
+  activo, es vuestra zona.
+- Prueba: `crates/signal-engine/tests/cf3_lectura_estricta_conformal.rs`.
+
+## 2026-10-11 — Claude (Línea C, CL-81 y CL-82): convicción de las ramas 12 y 13 (F3.3-09, F3.3-07)
+
+- CL-81: la confianza de la rama 12 (FlowImpulse) pasa por
+  `conviccion_de_rama_en(&registro_ramas[12], conf, p*)`, como las ramas
+  11, 13, 14 y 15. Antes su registro se escribía al cerrar y nunca se leía.
+- CL-82: el piso de la rama 13 es sólo |macd|·H·50. Ya no toma el máximo
+  con la divergencia del ML, que decide la rama y luego vuelve a entrar por
+  la puerta ML de `puertas_del_continuo`.
+
