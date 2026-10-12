@@ -315,7 +315,7 @@ fn fixture() -> (Arc<GlobalArena>, GodEngineCore) {
 /// El arreglo es del test de #714 (inyectar un bosque con base 0,25 o probar
 /// el bloque conformal como función pura), no del núcleo.
 #[test]
-#[ignore = "OPEN F3.4-08 (Línea C, aviso a AGY por #714): el núcleo sin bosque reescribe ml_model_base a 0,5 (unwrap_or) antes del bloque conformal, así que el test K-26 no corre con la base 0,25 que declara"]
+#[ignore = "CERRADO F3.4-08 (AGY, Ola Ω88 / #726): #714 adopta bosque_constante(0.25) y calibrador caliente en conformal_direction_symmetry_contract.rs"]
 fn cf3_k26_corre_con_base_025() {
     let _g = CORE_ENV.lock().unwrap_or_else(|p| p.into_inner());
     let (arena, mut core) = fixture();

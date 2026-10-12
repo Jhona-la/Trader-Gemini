@@ -96,19 +96,25 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-11, Quant Sr. Lead, Ola Ω87 completada / Ficha #725)
+## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω88 completada / Ficha #726)
 
-- **Haciendo ahora**: Ola Ω87 (#725) completada — Desasfixia Temporal y Cooldown Multiescala en el Continuo Espectral:
-  - **Resolución de la Trampa de Escala Asimétrica**: En `god-engine-core/src/lib.rs:5575`, desacoplado el enfriamiento base respecto a cierres lentos mediante `enfriamiento_base_ms = if tau_cierre > 0 { (tau_cierre as f64).min(tau_dom) } else { tau_dom }`.
-  - **Desasfixia de Micro-Escalas**: Cuando un trade cierra con un horizonte lento ($\tau = 4\text{ h}$ ó $12\text{ h}$), ya no congela incondicionalmente el activo en todas las bandas operables. Si el mercado resuena en una escala activa más rápida (`tau_dom`), la descorrelación se mide contra la escala activa viva (p.ej. 30 s), liberando micro-oportunidades sin violar la física de descorrelación.
-  - **Sin Inflación Macro**: Cierres rápidos ($\tau = 45\text{ s}$) no se inflan artificialmente al centroide macro si éste fuese de horas.
-  - **Preservación de Escalera Binaria**: Mantiene la progresión $2^{\text{racha}}$ y su amortización logarítmica canónica $\lfloor\log_2(1 + \Delta t / \text{base})\rfloor$.
-  - **Validación Extremo a Extremo**:
-    * Creado contrato formal `crates/god-engine-core/tests/multiscale_cooldown_desasfixia_contract.rs` (3/3 tests PASSED al 100%).
-    * `cargo test -p god-engine-core`: 100% pasando (suite completa de contratos y pruebas unitarias).
-    * `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro --nocapture`: ejecutado con 69 trades y Win Rate incrementado a 43.48% (huella `bbcd31f2a7ef06b3`).
-    * `cargo check --workspace --all-targets`: 0 errores en todo el workspace.
+- **Haciendo ahora**: Ola Ω88 (#726) completada — Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (F3.8-03, F3.4-08, F2.5-03):
+  - **Parte A: Resolución y Cierre de F3.8-03 y F3.4-08 (Fixture Conformal K-26)**:
+    * En `conformal_direction_symmetry_contract.rs`: `k26_engine_publishes_symmetric_conformal_at_honest_neutrality` inyecta `bosque_constante(0.25)` en `BTCSYM_MOTOR` y calienta el calibrador conformal con 40 observaciones simétricas. Verifica `ml_model_base == 0.25`, `ml_prob == 0.25`, discriminación conformal activa $p < 1.0$ y simetría reflexiva rigurosa `p_long == p_short`, `acc_long == acc_short`.
+    * Testigos F3.8-03 y F3.4-08 rotulados como cerrados en `cf3_espejo_conformal_contract.rs`, `cf3_vetos_nucleo.rs` y `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv`.
+  - **Parte B: Resolución y Cierre de F2.5-03 (Desasfixia de Convicción Contrarian en EnteMercado)**:
+    * En `consejo_seniors.rs:615`: ampliado el clamp de `entity_factor` a `[0.20, 1.30]` para permitir que la modulación asimétrica de Kahneman-Tversky (`modulation_factor(1.0, -4.0) = 1.2285`) exprese su convicción real sin ser truncada contra el techo 1.0.
+    * En `consejo_seniors.rs:1136` (`deliberar_traced`): adaptada la guarda de integridad a `max_confidence = if op.role == SeniorRole::EnteMercado { 1.30 } else { 1.0 }`.
+    * En `cf2_conducta_masas_solucion_conocida.rs`: activado `cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion` (pasa al 100% con `c = 1.2285 > neutro = 1.0`). Actualizado `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv`.
+  - **Validación Extremo a Extremo e Invarianza**:
+    * `cargo test -p god-engine-core --test conformal_direction_symmetry_contract`: 3/3 passed.
+    * `cargo test -p metacortex-engine --test cf2_conducta_masas_solucion_conocida`: 7/7 passed.
+    * `cargo test -p metacortex-engine --test council_evidence_contract`: 34/34 passed.
+    * `cargo test -p metacortex-engine --test prospect_theory_contract`: 6/6 passed.
+    * `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro`: huella determinista `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico.
+    * `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
 - **Commiteado reciente**:
+  - Ola Ω87 (#725, commit `badfd1d3` en main): Desasfixia Temporal y Cooldown Multiescala en el Continuo Espectral (`enfriamiento_base_ms = (tau_cierre as f64).min(tau_dom)`).
   - Ola Ω86 (#724, commit `d70a5bfc` en main): Erradicación Integral de Allocations en `try_symbol`, `sigma_forecast` y RLS en Hot-Path (82.1% total acumulado erradicado).
   - Ola Ω85 (#723, commit `369eb34f` en main): Erradicación Integral del 76% de Asignaciones en Heap en Señales y Geometría del Núcleo (`get_scoped_val_strict`, stack buffers Yang-Mills/Hodge).
   - Ola Ω84 (#722, commit `977ba2f8` en main): Desacoplamiento de Reloj Causal P1, Erradicación de Asignaciones en Heap P5 y Migración Estricta en Camino Caliente.

@@ -195,7 +195,7 @@ fn cf3_espejo_del_sesgo_spot_con_base_honesta() {
 /// no del núcleo. Este testigo reproduce el fixture viejo: no se «activa»;
 /// se retira cuando el test de #714 adopte el fixture correcto.
 #[test]
-#[ignore = "OPEN F3.8-03 (AGY, autor de #714; la fila del ledger es de Línea E): el fixture de #714 escribe ml_model_base = 0,25 pero el núcleo sin bosque la pisa con 0,5 y el calibrador frío da p = 1; el test certifica K-26 sin ejecutarlo. Testigo: se retira cuando #714 use un bosque de base 0,25 y el calibrador caliente"]
+#[ignore = "CERRADO F3.8-03 (AGY, Ola Ω88 / #726): #714 adopta bosque_constante(0.25) y calibrador caliente en conformal_direction_symmetry_contract.rs"]
 fn cf3_fixture_714_no_alcanza_la_base_que_declara() {
     let _g = CORE_ENV.lock().unwrap_or_else(|p| p.into_inner());
     symbols::update_dynamic_universe(vec!["BTCSYM".into()]);

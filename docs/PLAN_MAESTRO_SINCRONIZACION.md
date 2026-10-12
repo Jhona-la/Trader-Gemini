@@ -1853,3 +1853,25 @@ LF-3 (vigilancia de degradación anytime-valid), LF-4 (vigilancia armada
 también con la evolución desarmada). **Pedidos**: Línea C (LF-5, LF-6,
 LF-10, LF-11, LF-12), Qoder/AGY (LF-14), AGY (LF-15…17), GLM (LF-13, LF-1b),
 Codex (LF-8). Y a AGY: las olas que cambian el camino vivo, por PR.
+
+## 48. Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (Ola Ω88, Ficha #726)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#726`.
+- **Parte A: Resolución de F3.8-03 y F3.4-08 (Cierre Definitivo de Fixture Conformal K-26)**:
+  - En `crates/god-engine-core/tests/conformal_direction_symmetry_contract.rs`:
+    * En `k26_engine_publishes_symmetric_conformal_at_honest_neutrality`: inyectado un bosque honesto `NanoForest` con base 0.25 (`init_score = ln(0.25 / 0.75)`) bajo `"BTCSYM_MOTOR"` y calentado el calibrador conformal `core.conformal_by_coin[0]` con 40 observaciones en rejilla simétrica.
+    * Verificado formalmente que el motor evalúa con `ml_model_base == 0.25`, `ml_prob == 0.25`, discriminación conformal activa $p < 1.0$, y simetría reflexiva rigurosa: `p_long == p_short` y `acc_long == acc_short`.
+    * Cerrados y rotulados los testigos F3.8-03 en `cf3_espejo_conformal_contract.rs` y F3.4-08 en `cf3_vetos_nucleo.rs`, actualizando `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv`.
+- **Parte B: Resolución de F2.5-03 (Desasfixia de Convicción Contrarian en EnteMercado)**:
+  - En `crates/metacortex-engine/src/consejo_seniors.rs`:
+    * Desasfixiado el producto de convicción `entity_factor`: ampliado el clamp a `[0.20, 1.30]` en la línea 615 para permitir que la modulación psicológica asimétrica de Kahneman-Tversky (`modulation_factor(1.0, -4.0) = 1.2285`) exprese su convicción real ante capitulación de masas sin ser mutilada contra el techo 1.0.
+    * En `deliberar_traced` (línea 1136): adaptada la guarda de integridad del consejo con `max_confidence = if op.role == SeniorRole::EnteMercado { 1.30 } else { 1.0 }`, preservando el límite estricto $[0, 1]$ para todos los demás asientos y admitiendo el edge contrarian de EnteMercado.
+    * Actualizada la documentación de `SeniorOpinion.confidence` para documentar la extensión hasta 1.30 en dicho asiento.
+  - En `crates/metacortex-engine/tests/cf2_conducta_masas_solucion_conocida.rs`: activado `cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion` (removido ignore); pasa al 100% con `c = 1.2285 > neutro = 1.0`. Actualizado `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv`.
+- **Invarianza y Verificación Exhaustiva**:
+  - `cargo test -p god-engine-core --test conformal_direction_symmetry_contract`: 3/3 passed.
+  - `cargo test -p metacortex-engine --test cf2_conducta_masas_solucion_conocida`: 7 passed, 0 failed.
+  - `cargo test -p metacortex-engine --test council_evidence_contract`: 34/34 passed.
+  - `cargo test -p metacortex-engine --test prospect_theory_contract`: 6/6 passed.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro`: huella bit a bit `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico.
+  - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
