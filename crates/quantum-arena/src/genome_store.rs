@@ -619,7 +619,14 @@ mod tests {
         g.swing_accel_min_samples = 23.0;
         g.executor_max_orders_10s = 333.0;
         g.executor_max_weight_1m = 1777.0;
-        let g = SuperGenotype::from_vector(&g.to_vector());
+        // LG-21: los 35 genes congelados por LG-21, por índice del vector, a
+        // un punto interior de sus cotas que no coincide con el de `otro`.
+        let (lo, hi) = (SuperGenotype::get_lower_bounds(), SuperGenotype::get_upper_bounds());
+        let mut v = g.to_vector();
+        for i in [36, 42, 43, 64, 65, 70, 71, 72, 73, 74, 77, 78, 79, 84, 85, 90, 91, 92, 93, 94, 97, 100, 101, 102, 103, 104, 105, 111, 122, 123, 124, 125, 126, 127, 128] {
+            v[i] = lo[i] + 0.37 * (hi[i] - lo[i]);
+        }
+        let g = SuperGenotype::from_vector(&v);
 
         // Camino A: arranque en frío.
         let arena_frio = GlobalArena::from_genome_in_own_stack(13.0, &g);
