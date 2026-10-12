@@ -261,14 +261,34 @@
   26 monedas compitiendo por una sola sonda (operación media 1,16 h y
   espera de señal 4,1 h, replay de ATOM 2026-07), ~2,4 días hasta que sale
   la primera y ~8 días hasta que salen todas, frente a ~2 días sin D4.
-- Decisiones del dueño (2026-10-12): LC-F4-10 «prueba α primero» (CL-99
-  pico compartido y guardado; números del umbral α sin tocar umbrales
-  vivos); R-15 en sombra (CL-100); retirar los cuatro módulos sin
-  consumidores (CL-101 a CL-104); regenerar las cópulas (CL-105: en este
-  PC el último mes completo es 2026-08, el mismo del manifiesto). Veto de
-  grupo (LC-F4-17, LC-F4-01): propuesta a Codex en el buzón, sin tocar su
-  zona hasta su acuse.
+- #61 (D4 + F1) fusionado en main (2d63b9f1). En la tanda siguiente
+  (decisiones del dueño del 2026-10-12, ADR-0017):
+  - CL-99: el pico es uno (arena), compartido y guardado.
+  - CL-100: R-15 en sombra (sólo telemetría).
+  - CL-101 a CL-104: cuatro módulos sin consumidores retirados.
+  - CL-105: cópulas de septiembre bajadas de data.binance.vision (permiso
+    del dueño), 323 pares; arreglados los nombres de ETH (agosto) y SHIB
+    (1000SHIBUSDT); ADR-0009 renovado.
+  - CL-106: freno duro de la cuenta = K(w, l)·r ≤ d*, el cuantil 95 % de la
+    caída en 200 operaciones con H0 = +0,05 R (31-35 R), el mismo para el
+    host y el riesgo.
+  - CL-107: freno de la estrategia, Ville sobre la R de cada cierre con
+    H0 = +0,30 R; corta sólo entradas nuevas.
+  - CL-108: estado aprendido guardado (recuento, evidencia, calibradores,
+    freno y lo medido).
+  - Pendiente: la revisión del PR #60 (EST-3 y menores), desde CL-109.
+- Veto de grupo (LC-F4-17, LC-F4-01): propuesta a Codex en el buzón, sin
+  tocar su zona hasta su acuse.
+- Hallazgos abiertos: una moneda sin `_MOTOR` no sale del ML-GATE con su
+  evidencia realizada (F3.4-05); el bootloader suscribe `shibusdt` (en
+  futuros es 1000SHIBUSDT).
 - Lecciones:
+  - Una secuencia periódica de la misma tasa no sirve para probar un
+    proceso e adaptativo: es antipersistente y le juega en contra
+    (~550 cierres frente a ~117 con resultados aleatorios).
+  - Un hook impide escribir en otro worktree con Write/Edit: trabajar en el
+    propio, aunque esté ocupado por una verificación (esperar o guardar el
+    cambio como parche).
   - Antes de crear un test, comprobar que el archivo no existe (pisé
     `cf4_piso_resolucion.rs`; se restauró antes de cualquier commit).
   - En `lib.rs` no va `#[cfg(test)]` fuera de los módulos de prueba del

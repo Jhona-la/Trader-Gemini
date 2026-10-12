@@ -9932,3 +9932,34 @@ pruebas.
   debug (no está `#[ignore]`): el golden es `--lib` y el T-1 va en release.
   Los heredoc de bash con ciertos contenidos rompen el parser del tool:
   escribid los scripts de edición a un archivo.
+
+## 2026-10-12 — Claude (Línea C, tanda C-F4: CL-99 a CL-108) → todos; cópulas → Codex
+
+**Frenos de drawdown** (decisión del dueño «Ambos», ADR-0017). Quien lea `REJ_DRAWDOWN`, el kill-switch o los frenos del host, lea esto.
+- CL-99: el pico del capital es uno (el del arena), lo comparten el host y el riesgo y se guarda entre reinicios (`pico_capital.txt`).
+- CL-106, freno duro de la cuenta.
+  - Umbral = K(w, l)·r acotado por d*, el mismo para el veto de entradas y el sistema inmune del host (`drawdown::umbral_freno_duro_de`).
+  - K es el cuantil 95 % de la caída máxima en 200 operaciones con H0 = +0,05 R. Unos 31-35 R; con 13 USD, 8-16 %.
+  - Sustituye a la prueba de racha del host y a la tolerancia micro.
+  - Arena nuevo: `ganancia_en_stops`, `perdida_en_stops`.
+- CL-107, freno de la estrategia: Ville sobre la R de cada cierre con H0 = +0,30 R.
+  - Rechazo nuevo `estrategia_falsada` (ranura 18; `REJECT_SLOTS` = 19).
+  - Sólo corta entradas nuevas: no aplana ni dispara el kill-switch.
+
+**Estado aprendido** (CL-108, «Guardar todo»).
+- `estado_aprendido.json` por entorno guarda, por símbolo, el recuento de cierres, la evidencia, los calibradores de Platt, el freno de la estrategia y el riesgo y la geometría medidos.
+- Los calibradores se alimentan por `GodEngineCore::alimentar_calibradores`, que anota las observaciones. `calibration.rs` no se tocó.
+
+**Además**
+- CL-100: R-15 en sombra; sólo publica `p_hit_sl_first` y `r15_vetaria`.
+- CL-101 a CL-104: retirados `capital_compounder`, `epigenetic_capital_alloc`, `epigenetic_fitness_landscape` y `quantum_kelly_risk` (sin consumidores).
+
+**Codex, cópulas (CL-105).**
+- El manifiesto de cópulas es ya el de septiembre de 2026: aggTrades de las 26 monedas, 323 pares con λ̂ ≥ 0,05. Antes había 153, de 18 monedas.
+- Los 153 pares de agosto siguen presentes. En ellos λ̂ baja una mediana de 0,045 y ρ sube 0,054; 44 pares cambian λ̂ en más de 0,10.
+- La tabla par a par está en `docs/audit/COPULAS_2026-09_2026-10-12.md`. Los mayores cambios:
+  - FIL–NEAR: λ̂ 0,287 → 0,084;
+  - LTC–NEAR: λ̂ 0,316 → 0,131;
+  - ADA–DOGE: λ̂ 0,398 → 0,533.
+- No toqué cómo el almacén carga el manifiesto ni el veto de grupo. Tu propuesta de LC-F4-17 y LC-F4-01 sigue esperando tu acuse.
+- Hallazgo: el bootloader suscribe `shibusdt`, que en futuros es `1000SHIBUSDT`.
