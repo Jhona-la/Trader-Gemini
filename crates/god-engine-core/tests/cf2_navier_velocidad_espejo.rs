@@ -6,9 +6,12 @@
 //! así que la velocidad de un precio que cae debe ser negativa y el voto de
 //! un mercado que cae sin desequilibrio de libro no puede ser largo. Los
 //! caminos son deterministas y monótonos: el signo verdadero de la velocidad
-//! es conocido. Hoy `price_velocity` (stateful_engine.rs, `dir_velocity`)
-//! es la EWMA(0,15) de |Δmid|, sin signo: ≈ +0,05 en los dos caminos, y el
-//! voto ≈ +0,9999 en los dos.
+//! es conocido. Hasta CL-73 `price_velocity` (stateful_engine.rs,
+//! `dir_velocity`) era la EWMA(0,15) de |Δmid|, sin signo: ≈ +0,05 en los dos
+//! caminos, y el voto ≈ +0,9999 en los dos. CL-73 la firma (FMT-001) y las
+//! dos pruebas pasan. Sigue abierta, para AGY, la dependencia del nivel de
+//! precio del voto de Navier (el 100 literal de tanh(100·v): satura en BTC y
+//! vale ≈ 0 en monedas de céntimos), que estas pruebas no miden.
 //!
 //! Siguiendo al escéptico de refutar, el productor y el consumidor van en
 //! pruebas separadas: un arreglo correcto del consumidor (AGY) no depende de
@@ -85,10 +88,10 @@ fn tramo(sym: &str, sube: bool) -> (f64, f64) {
 /// |voto_sube + voto_baja| ≤ 0,05·|voto_sube|. La tolerancia relativa del 5 %
 /// cubre la diferencia de magnitud entre los dos tramos (el espejo es exacto
 /// en log-precio, no en dólares) y la del pequeño cambio de spread; con un
-/// voto saturado en tanh la diferencia real es mucho menor. Hoy: +0,9999 en
-/// los dos.
+/// voto saturado en tanh la diferencia real es mucho menor. Antes de CL-73:
+/// +0,9999 en los dos. El consumidor no cambió: el espejo lo restablece el
+/// productor firmado.
 #[test]
-#[ignore = "OPEN F2.6-01 (AGY, consumidor NavierStokesManifoldEngine): el voto escalar vivo lee una velocidad sin signo y vota largo en cualquier mercado turbulento"]
 fn cf2_6_navier_voto_escalar_es_antisimetrico_con_el_mercado_espejado() {
     let _guarda = ENTORNO_GLOBAL.lock().unwrap_or_else(|p| p.into_inner());
     let (v_sube, voto_sube) = tramo("CF26SUBEUSDT", true);
@@ -104,9 +107,9 @@ fn cf2_6_navier_voto_escalar_es_antisimetrico_con_el_mercado_espejado() {
 /// Productor (FMT-001, pedido al dueño de stateful_engine; aviso de paridad
 /// con el bosque del daemon, que también consume la velocidad). Verdad: la
 /// velocidad de un precio que sube 5 céntimos por evento es positiva y la
-/// de su espejo, negativa. Hoy: 0,05·(1 − 0,85^49) ≈ +0,04998 en los dos.
+/// de su espejo, negativa. Antes de CL-73: 0,05·(1 − 0,85^49) ≈ +0,04998 en
+/// los dos.
 #[test]
-#[ignore = "OPEN F2.6-01 (núcleo, productor FMT-001 en stateful_engine.rs): price_velocity es la EWMA de |Δmid| y no cambia de signo con el mercado"]
 fn cf2_6_price_velocity_cambia_de_signo_con_el_mercado() {
     let _guarda = ENTORNO_GLOBAL.lock().unwrap_or_else(|p| p.into_inner());
     let (v_sube, _) = tramo("CF26VSUBEUSDT", true);

@@ -6,11 +6,12 @@
 //! toda magnitud. Un votante honesto es una función IMPAR del mercado
 //! reflejado: v(−) = −v(+). Las entradas con signo (OBI, OFI, desviación de
 //! posición, tendencia, lado del libro) cambian de signo; las magnitudes
-//! (|Δmid| por evento, spread, ATR, VPIN, Hurst, λ/μ̂) no cambian, igual que
-//! en el escritor vivo: `dir_velocity` es la EWMA de |Δmid| sin signo
-//! (stateful_engine.rs, `let diff = (price - self.last_price).abs()`) y el
-//! núcleo la publica como `price_velocity` y `order_flow_velocity`
-//! (god-engine-core/src/lib.rs, bloque `set_reg`).
+//! (spread, ATR, VPIN, Hurst, λ/μ̂) no cambian. Desde CL-73 la velocidad
+//! también tiene signo, como en el escritor vivo: `dir_velocity` es la EWMA
+//! del Δmid CON signo (stateful_engine.rs) y el núcleo la publica como
+//! `price_velocity` y `order_flow_velocity` (god-engine-core/src/lib.rs,
+//! bloque `set_reg`). Antes de CL-73 era la EWMA de |Δmid|, igual en los
+//! dos lados.
 //!
 //! El registro espejo reproduce a mano lo que publica el núcleo en
 //! 8f572f7c: desde CL-66 ya no publica `atr_1s`, `atr_5s` ni `atr_1m`, así
@@ -73,9 +74,9 @@ fn registro(s: f64) -> Arc<OmniscientRegistry> {
     publicar(&r, "quantum_position_deviation", 0.5 * s);
     publicar(&r, "trend_direction", s);
     publicar(&r, "mid_price", 100.0);
-    // |Δmid| por evento: un salto de 0,5 (M = 0,005/0,002 = 2,5). Sin signo.
-    publicar(&r, "price_velocity", 0.5);
-    publicar(&r, "order_flow_velocity", 0.5);
+    // Δmid por evento CON signo (CL-73): un salto de 0,5 (M = 0,005/0,002 = 2,5).
+    publicar(&r, "price_velocity", 0.5 * s);
+    publicar(&r, "order_flow_velocity", 0.5 * s);
     publicar(&r, "spread_speed_of_sound", 0.2);
     publicar(&r, "hurst_exponent", 0.60);
     publicar(&r, "cvpin", 0.20);
@@ -115,18 +116,19 @@ macro_rules! caso_espejo {
     };
 }
 
-// ─────────────── Espejo escalar: los dos motores que lo rompen ───────────────
+// ─────────────── Espejo escalar: los dos motores que lo rompían ───────────────
 
 caso_espejo!(
-    /// Hoy: v(+) = +0,3922 y v(−) = +0,3921. Su «velocidad» es |Δmid| sin
-    /// signo y su amplitud es |OFI|: el voto es par y siempre ≥ 0.
-    #[ignore = "OPEN F3.6-01 (Línea C, motores; raíz F2.6-01 en stateful_engine): el solitón lee price_velocity = EWMA de |Δmid| sin signo y |OFI| como amplitud; vota largo en los dos lados (+0,392 / +0,392)"]
+    /// Antes de CL-73: v(+) = +0,3922 y v(−) = +0,3921, porque la
+    /// «velocidad» era |Δmid| y la amplitud |OFI|. Con la velocidad firmada,
+    /// tanh(v) es impar y la fase del sech cambia de signo con el mercado.
     cf3_6_espejo_soliton_escalar,
     SolitonWaveEngine::new()
 );
 caso_espejo!(
-    /// Hoy: +0,5255 en los dos lados (M = 2,5, salto 0,619, tanh(1,25)).
-    #[ignore = "OPEN F3.6-01 (Línea C, motores; raíz F2.6-01 en stateful_engine): el choque usa speed = |Δmid| sin signo; en cualquier salto (M > 1) vota largo, también en una caída (+0,5255 / +0,5255)"]
+    /// Antes de CL-73: +0,5255 en los dos lados (M = 2,5, salto 0,619,
+    /// tanh(1,25)). Con la velocidad firmada, M usa |v| y la dirección el
+    /// signo de v.
     cf3_6_espejo_choque_escalar,
     SupersonicShockwaveEngine::new()
 );

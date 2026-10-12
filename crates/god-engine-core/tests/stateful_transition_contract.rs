@@ -74,7 +74,9 @@ fn warmup_does_not_change_tick_ema_kernel() {
 #[test]
 fn reset_clears_kinematics_and_tick_rule_memory() {
     let mut e = seeded();
-    assert!(e.last_inst_v > 0.0 && e.dir_velocity > 0.0 && e.last_trade_is_sell);
+    // CL-73: la velocidad direccional lleva signo (100 → 99 da < 0); lo que
+    // importa aquí es que el reinicio la borre.
+    assert!(e.last_inst_v > 0.0 && e.dir_velocity != 0.0 && e.last_trade_is_sell);
     e.reset();
     assert_eq!(e.last_inst_v, 0.0);
     assert_eq!(e.dir_velocity, 0.0);
