@@ -156,9 +156,12 @@ fn cl107_con_la_ventaja_de_h0_no_frena() {
 }
 
 /// El freno de la estrategia no aplana ni dispara el kill-switch: el host no
-/// lo lee.
+/// decide con él ni lo alimenta (sólo lo nombra al registrar en el log el
+/// estado restaurado, CL-108).
 #[test]
 fn cl107_el_host_no_aplana_por_el_freno_de_la_estrategia() {
     let host = include_str!("../../../src/bin/god_engine.rs");
-    assert!(!host.contains("freno_estrategia"));
+    assert!(!host.contains("freno_estrategia.rechazada()"));
+    assert!(!host.contains("freno_estrategia.registrar"));
+    assert!(!host.contains("REJ_ESTRATEGIA_FALSADA"));
 }
