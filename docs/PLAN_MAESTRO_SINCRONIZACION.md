@@ -2010,3 +2010,19 @@ entre entrenamiento y servicio): la autoevolución depende de que juzgue bien,
 así que es la prioridad de C-F7. La presión de prospecto que Ω88/Ω89 activan no
 tiene escritor: hoy no corre en vivo. Arreglo propio: LG-20 (base forense por
 entorno, NULL para lo desconocido, sin genomas repetidos).
+
+## 55. Línea G — ola 5: genes muertos y revisión previa al merge (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §13](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+**Genoma.** De las 144 dimensiones, 45 no tienen ningún lector (35 congeladas
+ahora por LG-21, 9 por LG-18, 1 por G0-4) y 4 son vistas de las curvas: la
+evolución sólo tiene 95 dimensiones reales, y de ellas el T-1 ve 19. El censo
+(`audit/linea_g/genes_censo.tsv`) queda para que cada dueño decida si conecta o
+retira tras GENOME-GATE.
+
+**Revisión antes del merge.** La tanda CL-101…CL-108 de la Línea C se revisó
+antes de fusionarse: 26 hallazgos, 4 MED (unidades del umbral del freno duro;
+estado corrupto tratado como ausente; restauración parcial del estado; PnL de
+sesiones anteriores tomado como de esta). Regla que sale de aquí: **revisar la
+tanda de otra línea antes de que entre, no después**.

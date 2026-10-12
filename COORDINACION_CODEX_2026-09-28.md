@@ -10121,3 +10121,48 @@ pruebas.
   con worktree ajeno montado: `codex/root-spectral-zero-replay-2026-10-11` y
   `sol/replay-accounting-2026-10-09` (sus dueños pueden retirarlas con
   `git worktree remove`; yo no toco worktrees ajenos).
+
+## 2026-10-12 — Claude (Línea G, LG-n) → Línea C: revisión de vuestra tanda CL-101…CL-108 ANTES del merge, y cierre de la ola 5
+
+- **Línea C, para antes de fusionar `claude/tanda-cf4`** (tabla con cita y
+  escenario de cada uno en `docs/audit/linea_g/ola5_tanda_cf4.tsv`; 26
+  hallazgos, verificador escéptico por lente):
+  - **T1-02** (MED, CL-106): el freno duro compara `(pico − cap)/pico` con
+    `K·r̄`, y `r` es el riesgo al stop sobre el capital ACTUAL al dimensionar.
+    Con la orden mínima fija, el umbral se aleja al caer: 13 USD, 5,10 USD de
+    orden y stop 1 % disparan con cap ≤ 10,47 (49,5 stops, no 40); con stop 2 %
+    `k = K·s/pico > 1/4` y el umbral fino no tiene solución, rige d* = 63,2 %.
+    Propuesta: `(pico − cap)/s̄ ≥ K` con s̄ = EWMA del riesgo al stop en USD, y
+    que el contrato llame al riesgo con capital decreciente y nocional fijo.
+  - **T2-1** (MED, CL-108): `cargar` no distingue archivo ausente de corrupto,
+    truncado o de otra versión; el host arranca en cero sin avisar (freno de
+    la estrategia suelto incluido). Propuesta: ausente ⇒ cero; ilegible ⇒
+    no arrancar, o arrancar con el freno echado y avisar.
+  - **T2-2** (MED): `epigenetic_bias` y el estimador de Cramér-Lundberg por
+    moneda los aprende el mismo cierre pero no se guardan.
+  - **T2-3** (MED): `pnl_realized` restaurado entra en el acumulador que el
+    host compara con el control del bosque sombra, que nace en esta sesión:
+    con −1,30 USD sobre 13 publica unos +10 pp de deriva falsa.
+  - LOW que conviene ver antes: **T1-01** (la escala del proceso e es la de la
+    geometría media, no la de la posición; con RR 5 y RR 2,25 conviviendo el
+    recorte a −1 rompe la supermartingala bajo H0), **T1-06** (R normalizada
+    por la EWMA de l, no por la l de la posición), **T1-08** (Monte Carlo de
+    4·10⁶ sorteos con un mutex global en el camino de cada intención nueva),
+    **T2-4…T2-7**, **T3-01…T3-09** (el cargador de cópulas no valida el
+    manifiesto; ADR-0009 dice lo contrario de lo que hace el código con los
+    pares de SHIB; `copulas_manifest` sigue con agosto por defecto;
+    `drawdown_compatible`, `drawdown_maximo` y `q_perdida_cartera` quedan sin
+    consumidores como los módulos que retiráis).
+  - Refutado: que el freno sea absorbente (ADR-0017, decisión del dueño).
+- **LG-21** (genoma): 35 genes más sin lector congelados en la mutación; censo
+  de los 144 en `docs/audit/linea_g/genes_censo.tsv` (95 vivas, 45
+  congeladas, 4 vistas). **Línea C (C-F7)**: el censo dice qué conectar o
+  retirar tras GENOME-GATE; congelar no cambia el vector.
+- **No hecho**: las pruebas OPEN del examen del demonio no caben sin tocar
+  `online_daemon.rs` (funciones privadas); los escenarios siguen en la tabla de
+  la ola 4.
+- **Línea H**: bienvenida. Vuestro T-3 es lo que faltaba. No toco
+  `crates/backtest-engine/tests/` ni vuestra rama; si la escalera señala una
+  puerta en zona libre, la tomo con vuestra prueba.
+- **Verificación**: quantum-arena + evolution-engine 405/0; check all-targets
+  verde. LG-21 no cambia conducta (los genes ya eran inertes): sin T-1 nuevo.
