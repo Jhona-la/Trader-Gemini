@@ -5,8 +5,8 @@
 //! Teoría. Una operación gana `w = (TP − f)/SL` o pierde `l = (SL + f)/SL`
 //! stops. Con H0 «ventaja de +0,05 R» (R = SL + f), la caída máxima de la
 //! cuenta en 200 operaciones tiene un cuantil 95 % `K(w, l)` en stops; el
-//! umbral es `K·r`, con `r` el riesgo medido al stop en fracción del capital,
-//! acotado por d* (ADR-0016 D3).
+//! umbral es `K·r`, con `r` el riesgo medido al stop en USD sobre el pico
+//! desde el que se mide la caída (CL-106b), acotado por d* (ADR-0016 D3).
 //!
 //! Contrato: los números del Monte Carlo que el dueño vio para decidir (13
 //! USD, orden mínima de 5,10 USD, RR 2,25, fricción de 14,5 pb), con
@@ -17,8 +17,9 @@
 //! - stop del 1 %: 33,3 R (15,0 %); detección en 572 y 227.
 //! El freno de antes (racha, gen 0,5, q = 0,5) daba 2,2 % y 3,8 %.
 //!
-//! El código mide la caída en R de forma aditiva, que es lo que decidió el
-//! dueño («32 R»). El Monte Carlo que vio medía la caída relativa al pico del
+//! El umbral es una caída en stops medida desde el pico, aditiva, que es lo
+//! que decidió el dueño («32 R»); CL-106b la mide con el riesgo en USD para
+//! que no dependa del capital al dimensionar (T1-02 de la Línea G). El Monte Carlo que vio medía la caída relativa al pico del
 //! capital, que crece con la ventaja: su K salía entre un 2 % (stop del
 //! 0,5 %) y un 5 % (stop del 1 %) menor. La tolerancia del umbral lo cubre;
 //! la falsa alarma y la detección se contrastan con el criterio del código.
@@ -151,6 +152,8 @@ fn veta(caida: f64) -> bool {
     a.config.global_max_drawdown.store(0.5, Relaxed);
     let (w, l, _) = geometria(0.005);
     a.riesgo_por_operacion.store(0.002, Relaxed);
+    // CL-106b: el mismo riesgo en USD (0,2 % del pico de 1 000 USD).
+    a.riesgo_por_operacion_usd.store(0.002 * pico, Relaxed);
     a.ganancia_en_stops.store(w, Relaxed);
     a.perdida_en_stops.store(l, Relaxed);
     registrar_pico(&a.pico_capital, pico);
@@ -186,6 +189,61 @@ fn cl106_sin_riesgo_medido_rige_d_estrella() {
 fn cl106_host_y_riesgo_usan_el_mismo_umbral() {
     let host: String = include_str!("../../../src/bin/god_engine.rs").split_whitespace().collect();
     let riesgo: String = include_str!("../src/lib.rs").split_whitespace().collect();
-    assert!(host.contains("letmax_dd=risk_engine::drawdown::umbral_freno_duro_de(&arena_imm);"));
-    assert!(riesgo.contains("ifdd>=crate::drawdown::umbral_freno_duro_de(arena){returnrej(REJ_DRAWDOWN);}"));
+    assert!(host.contains("letmax_dd=risk_engine::drawdown::umbral_freno_duro_de(&arena_imm,peak_capital);"));
+    assert!(riesgo.contains("ifdd>=crate::drawdown::umbral_freno_duro_de(arena,self.peak_capital){returnrej(REJ_DRAWDOWN);}"));
+}
+
+/// CL-106b (T1-02 de la revisión de la Línea G) — con NOCIONAL FIJO (la orden
+/// mínima, régimen de 13 USD) el freno dispara tras K stops, no tras
+/// K·pico/capital. El riesgo medido al dimensionar es `s/capital`, con
+/// `s = nocional·SL` en USD; la caída se mide desde el pico. Medido en la
+/// fracción del capital actual, el umbral se alejaba al caer: con stop del
+/// 1 % disparaba tras ≈ 49,5 stops en vez de 40, y con stop del 2 % el
+/// umbral fino no se alcanzaba nunca y regía d* = 63,2 %.
+///
+/// Escenario: pico de 13 USD; para cada capital (de 13 hacia abajo, en pasos
+/// de 0,01 USD) el arena tiene lo que mide el riesgo en régimen estacionario
+/// tras dimensionar la orden mínima a ese capital. Esperado: la primera
+/// caída que veta está a K stops del pico (± un paso).
+fn veta_a_13(capital: f64, sl: f64) -> bool {
+    let a: Arc<GlobalArena> = GlobalArena::build_in_own_stack(capital);
+    a.coins[0].current_price.store(100.0, Relaxed);
+    a.coins[0].current_atr.store(1.0, Relaxed);
+    a.config.global_max_drawdown.store(0.5, Relaxed);
+    let (w, l, _) = geometria(sl);
+    let s = NOCIONAL * sl;
+    a.riesgo_por_operacion.store(s / capital, Relaxed);
+    a.riesgo_por_operacion_usd.store(s, Relaxed);
+    a.ganancia_en_stops.store(w, Relaxed);
+    a.perdida_en_stops.store(l, Relaxed);
+    registrar_pico(&a.pico_capital, CAPITAL);
+    let orden = RiskEngine::new(CAPITAL).evaluate_quantum_order(0, &larga(), &a);
+    orden.signal == SignalType::Flat
+        && risk_engine::ultimo_rechazo().map(|i| REJECT_NAMES[i]) == Some("drawdown")
+}
+
+#[test]
+fn cl106b_con_nocional_fijo_el_freno_dispara_tras_k_stops() {
+    for sl in [0.005, 0.010, 0.020] {
+        let (w, l, _) = geometria(sl);
+        let k = caida_alfa_freno_duro(w, l).unwrap();
+        let s = NOCIONAL * sl;
+        let disparo = (0..1_300)
+            .map(|i| CAPITAL - 0.01 * i as f64)
+            .find(|&cap| veta_a_13(cap, sl));
+        let stops = disparo.map(|cap| (CAPITAL - cap) / s);
+        println!(
+            "observado: stop {} %: K = {k:.1} stops; dispara con capital {:?} = {:?} stops",
+            sl * 100.0,
+            disparo,
+            stops
+        );
+        let stops = stops.expect("el freno tiene que disparar antes de d*");
+        let paso = 0.01 / s;
+        assert!(
+            (stops - k).abs() <= paso + 1e-9,
+            "stop {} %: dispara tras {stops:.2} stops, K = {k:.2}",
+            sl * 100.0
+        );
+    }
 }

@@ -319,7 +319,7 @@ impl RiskEngine {
         // tolerancia micro (D-641), que en 13 USD dejaba el umbral en d*.
         if self.peak_capital > 0.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
-            if dd >= crate::drawdown::umbral_freno_duro_de(arena) {
+            if dd >= crate::drawdown::umbral_freno_duro_de(arena, self.peak_capital) {
                 return rej(REJ_DRAWDOWN);
             }
         }
@@ -1472,6 +1472,18 @@ impl RiskEngine {
                 crate::drawdown::actualizar_riesgo_ewma(
                     previo,
                     riesgo.clamp(0.0, 1.0),
+                    crate::drawdown::TRADE_HORIZON / 10.0,
+                ),
+                Ordering::Relaxed,
+            );
+            // CL-106b: el mismo riesgo en USD, que no depende del capital al
+            // dimensionar; el freno duro lo compara con la caída desde el pico.
+            let riesgo_usd = safe_vol * safe_lev * sl_pct;
+            let previo_usd = arena.riesgo_por_operacion_usd.load(Ordering::Relaxed);
+            arena.riesgo_por_operacion_usd.store(
+                crate::drawdown::actualizar_riesgo_ewma(
+                    previo_usd,
+                    riesgo_usd,
                     crate::drawdown::TRADE_HORIZON / 10.0,
                 ),
                 Ordering::Relaxed,

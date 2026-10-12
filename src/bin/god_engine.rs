@@ -1858,7 +1858,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // 2,2-3,8 % con 13 USD, que aplanaba y bloqueaba la cuenta en
                     // el 36-49 % de las rachas de 200 operaciones aun con +0,30 R
                     // de ventaja. Sin riesgo medido (arranque) rige d*.
-                    let max_dd = risk_engine::drawdown::umbral_freno_duro_de(&arena_imm);
+                    let max_dd = risk_engine::drawdown::umbral_freno_duro_de(&arena_imm, peak_capital);
                     // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
                     // inmune, no desarmarlo: el guard `cap > 0.0` anterior
                     // dejaba todos los frenos apagados exactamente en el único

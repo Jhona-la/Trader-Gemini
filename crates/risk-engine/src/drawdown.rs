@@ -357,9 +357,10 @@ pub fn caida_alfa_freno_duro(w: f64, l: f64) -> Option<f64> {
 
 /// Umbral del freno duro (CL-106), el MISMO para el veto de entradas del
 /// riesgo y el sistema inmune del host: `K(w, l)·r`, acotado por d* (½ Kelly,
-/// α = 0,05), con `r` el riesgo medido por operación (fracción del capital
-/// al stop) y `w`, `l` la geometría medida de las órdenes. Sin riesgo o
-/// geometría medidos (arranque), rige d*: no se inventa un umbral fino.
+/// α = 0,05), con `r` el riesgo medido por operación al stop en fracción del
+/// PICO desde el que se mide la caída (CL-106b) y `w`, `l` la geometría
+/// medida de las órdenes. Sin riesgo o geometría medidos (arranque), rige
+/// d*: no se inventa un umbral fino.
 pub fn umbral_freno_duro(riesgo: f64, ganancia_en_stops: f64, perdida_en_stops: f64) -> f64 {
     let d_estrella = drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION);
     if !(riesgo.is_finite() && riesgo > 0.0) {
@@ -371,11 +372,26 @@ pub fn umbral_freno_duro(riesgo: f64, ganancia_en_stops: f64, perdida_en_stops: 
     }
 }
 
-/// [`umbral_freno_duro`] con lo medido en el arena.
-pub fn umbral_freno_duro_de(arena: &quantum_arena::GlobalArena) -> f64 {
+/// [`umbral_freno_duro`] con lo medido en el arena y el pico desde el que se
+/// mide la caída.
+///
+/// CL-106b (T1-02 de la revisión de la Línea G): el riesgo es el de la orden
+/// en USD (`riesgo_por_operacion_usd`, nocional × SL) sobre el PICO, así que
+/// `caída ≥ umbral` ⇔ `(pico − capital)/s̄ ≥ K`: la caída en stops, que es lo
+/// que mide el cuantil. Antes se usaba el riesgo en fracción del capital al
+/// dimensionar; con nocional fijo crece al caer el capital, y el freno
+/// disparaba tras `K·pico/capital` stops (con stop del 2 % y 13 USD, nunca
+/// antes de d*).
+pub fn umbral_freno_duro_de(arena: &quantum_arena::GlobalArena, pico: f64) -> f64 {
     use std::sync::atomic::Ordering::Relaxed;
+    let riesgo_usd = arena.riesgo_por_operacion_usd.load(Relaxed);
+    let riesgo = if pico.is_finite() && pico > 0.0 {
+        riesgo_usd / pico
+    } else {
+        f64::NAN
+    };
     umbral_freno_duro(
-        arena.riesgo_por_operacion.load(Relaxed),
+        riesgo,
         arena.ganancia_en_stops.load(Relaxed),
         arena.perdida_en_stops.load(Relaxed),
     )

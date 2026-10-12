@@ -91,6 +91,7 @@ pub struct EstadoAprendido {
     pub calibrador_global: Vec<Observacion>,
     pub freno_estrategia: FrenoGuardado,
     pub riesgo_por_operacion: f64,
+    pub riesgo_por_operacion_usd: f64,
     pub ganancia_en_stops: f64,
     pub perdida_en_stops: f64,
 }
@@ -190,6 +191,7 @@ impl GodEngineCore {
                 rechazada: self.risk_engine.freno_estrategia.rechazada,
             },
             riesgo_por_operacion: self.arena.riesgo_por_operacion.load(Relaxed),
+            riesgo_por_operacion_usd: self.arena.riesgo_por_operacion_usd.load(Relaxed),
             ganancia_en_stops: self.arena.ganancia_en_stops.load(Relaxed),
             perdida_en_stops: self.arena.perdida_en_stops.load(Relaxed),
         }
@@ -252,6 +254,7 @@ impl GodEngineCore {
         freno.rechazada = f.rechazada;
         for (celda, valor) in [
             (&self.arena.riesgo_por_operacion, e.riesgo_por_operacion),
+            (&self.arena.riesgo_por_operacion_usd, e.riesgo_por_operacion_usd),
             (&self.arena.ganancia_en_stops, e.ganancia_en_stops),
             (&self.arena.perdida_en_stops, e.perdida_en_stops),
         ] {

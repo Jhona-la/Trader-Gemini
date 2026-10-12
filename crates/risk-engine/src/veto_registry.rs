@@ -113,9 +113,9 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     EntradaVeto {
         id: "V-RISK-005",
         nombre: "drawdown",
-        causa: "CL-106 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12): freno duro de la cuenta. La caída desde el pico (el del arena, compartido con el host y guardado entre reinicios, CL-99) supera el cuantil 95 % de la caída máxima en 200 operaciones con H0 = +0,05 R, en unidades del riesgo medido al stop: K(w, l)·r, acotado por d* (ADR-0016 D3). Es el MISMO umbral del sistema inmune del host (drawdown::umbral_freno_duro_de). Sustituye a la prueba de racha (CL-9/D-744) y a la tolerancia micro (#653)",
+        causa: "CL-106 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12): freno duro de la cuenta. La caída desde el pico (el del arena, compartido con el host y guardado entre reinicios, CL-99) supera el cuantil 95 % de la caída máxima en 200 operaciones con H0 = +0,05 R, en stops medidos en USD (nocional × SL, CL-106b: la caída desde el pico supera K(w, l) stops): K(w, l)·s̄/pico, acotado por d* (ADR-0016 D3). Es el MISMO umbral del sistema inmune del host (drawdown::umbral_freno_duro_de). Sustituye a la prueba de racha (CL-9/D-744) y a la tolerancia micro (#653)",
         fuente_umbral: "medido: riesgo r y geometría (w, l) de las órdenes dimensionadas; el umbral se deriva con un Monte Carlo determinista de la caída máxima con esa geometría medida de las órdenes (w = (TP−f)/SL, l = (SL+f)/SL) y el riesgo medido r; H0 = +0,05 R, α = 0,05 y 200 operaciones son política del dueño (tarjeta del freno, «Ambos»)",
-        datos: "pico del arena + capital + riesgo_por_operacion + ganancia_en_stops + perdida_en_stops (EWMA de las órdenes dimensionadas)",
+        datos: "pico del arena + capital + riesgo_por_operacion_usd + ganancia_en_stops + perdida_en_stops (EWMA de las órdenes dimensionadas)",
         responsable: "CL-106 (Claude, Línea C), 2026-10-12; antes CL-9 (Claude) y dd-lerp #653 (Qoder Ola 53)",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
