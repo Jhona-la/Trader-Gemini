@@ -34,8 +34,12 @@
 //! antes de operar. Para empezar de cero (otra estrategia es otra
 //! hipótesis), se borra el archivo.
 //!
+//! También, por moneda (CL-108e): el sesgo y el umbral epigenéticos con su
+//! ancla (el último cierre) y el anillo de siniestros de Cramér-Lundberg.
+//!
 //! No se guarda todavía: la evidencia por rama (`TasaAcierto`), los
-//! calibradores conformales, los pesos del ensamble ni los del perceptrón.
+//! calibradores conformales, la ganancia epigenética de las 32 escalas del
+//! espectro, los pesos del ensamble ni los del perceptrón.
 //! Tampoco cambia el ML-GATE: una moneda sin `_MOTOR` sigue necesitando un
 //! modelo después de su primera sonda.
 
@@ -67,11 +71,29 @@ pub struct MetricasGuardadas {
     pub zombie_promotions: usize,
 }
 
+/// CL-108e (T2-2 de la Línea G) — lo que el cierre enseña a la epigenética
+/// de la moneda: el sesgo (multiplica la exposición en el riesgo y no se
+/// olvida con el tiempo), el umbral (se relaja hacia 1 desde el último
+/// cierre, así que va con su ancla) y el último cierre (también lo usa la
+/// guarda anti-latigazo, D-463).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EpigeneticaGuardada {
+    pub sesgo: f64,
+    pub umbral: f64,
+    pub ultimo_cierre_ms: u64,
+    pub ultimo_cierre_largo: bool,
+    pub ultimo_cierre_gano: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MonedaGuardada {
     pub simbolo: String,
     pub metricas: MetricasGuardadas,
     pub calibrador: Vec<Observacion>,
+    pub epigenetica: EpigeneticaGuardada,
+    /// CL-108e — el anillo de siniestros de Cramér-Lundberg (retorno neto por
+    /// nocional de cada cierre), del más viejo al más nuevo.
+    pub siniestros: Vec<f64>,
 }
 
 /// El proceso e del freno de la estrategia y si ya rechazó.
@@ -113,6 +135,24 @@ fn puntuacion_valida(score: f64) -> bool {
     score.is_finite() && (0.0..=1.0).contains(&score)
 }
 
+/// Cota inferior de R de Lundberg que se publica: z = 1,645 (95 %
+/// unilateral, R7-R2-A-3), para que una muestra corta con racha ganadora no
+/// infle R ni afloje el margen de ruina del grupo.
+pub const LUNDBERG_Z: f64 = 1.645;
+
+/// Un cierre alimenta el estimador de Cramér-Lundberg de su moneda y se
+/// publica la cota (o su retirada, MG02). Es la misma función para el cierre
+/// del núcleo y para la restauración.
+pub(crate) fn observar_siniestro(
+    est: &mut risk_engine::cramer_lundberg::EstimadorSiniestros,
+    registry: &omniscient_registry::OmniscientRegistry,
+    coin_id: usize,
+    y: f64,
+) {
+    est.observar(y);
+    crate::evidence_publication::publicar_lundberg(registry, coin_id, est.lundberg_lcb(LUNDBERG_Z));
+}
+
 /// [`GodEngineCore::alimentar_calibradores`] sobre los campos sueltos, para
 /// el camino de cierre del núcleo, que mantiene prestado el arena.
 pub(crate) fn alimentar(
@@ -148,6 +188,15 @@ impl GodEngineCore {
         );
     }
 
+    /// Registra el retorno neto por nocional de un cierre en el estimador de
+    /// Cramér-Lundberg de la moneda y publica su cota (lo mismo que hace el
+    /// cierre del núcleo).
+    pub fn observar_siniestro(&mut self, coin_id: usize, y: f64) {
+        if let Some(est) = self.lundberg_siniestros.get_mut(coin_id) {
+            observar_siniestro(est, &self.arena.registry, coin_id, y);
+        }
+    }
+
     /// Foto del estado aprendido, por símbolo.
     pub fn estado_aprendido(&self) -> EstadoAprendido {
         let mut monedas = Vec::new();
@@ -177,6 +226,18 @@ impl GodEngineCore {
                     .registro_calibrador
                     .get(coin_id)
                     .map(|r| r.iter().copied().collect())
+                    .unwrap_or_default(),
+                epigenetica: EpigeneticaGuardada {
+                    sesgo: coin.epigenetic_bias.load(Relaxed),
+                    umbral: coin.epigenetic_threshold_modifier.load(Relaxed),
+                    ultimo_cierre_ms: coin.last_close_ts.load(Relaxed),
+                    ultimo_cierre_largo: coin.last_close_is_long.load(Relaxed),
+                    ultimo_cierre_gano: coin.last_close_was_win.load(Relaxed),
+                },
+                siniestros: self
+                    .lundberg_siniestros
+                    .get(coin_id)
+                    .map(|e| e.observaciones())
                     .unwrap_or_default(),
             });
         }
@@ -234,6 +295,23 @@ impl GodEngineCore {
             m.roi_pre_fee.store(s.roi_pre_fee, Relaxed);
             m.roi_post_fee.store(s.roi_post_fee, Relaxed);
             m.zombie_promotions.store(s.zombie_promotions, Relaxed);
+            let ep = &g.epigenetica;
+            coin.epigenetic_bias.store(ep.sesgo, Relaxed);
+            coin.epigenetic_threshold_modifier.store(ep.umbral, Relaxed);
+            coin.last_close_ts.store(ep.ultimo_cierre_ms, Relaxed);
+            coin.last_close_is_long.store(ep.ultimo_cierre_largo, Relaxed);
+            coin.last_close_was_win.store(ep.ultimo_cierre_gano, Relaxed);
+            if let Some(est) = self.lundberg_siniestros.get_mut(coin_id) {
+                *est = risk_engine::cramer_lundberg::EstimadorSiniestros::new();
+                for &y in &g.siniestros {
+                    est.observar(y);
+                }
+                crate::evidence_publication::publicar_lundberg(
+                    &self.arena.registry,
+                    coin_id,
+                    est.lundberg_lcb(LUNDBERG_Z),
+                );
+            }
             if let Some(c) = self.calibrator_by_coin.get_mut(coin_id) {
                 *c = PlattCalibrator::new();
                 let r = &mut self.registro_calibrador[coin_id];

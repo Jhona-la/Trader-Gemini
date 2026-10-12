@@ -4366,15 +4366,11 @@ impl GodEngineCore {
                     // publicar también None retira R/margen anteriores y
                     // enmascara el fallback global, sin cambiar ln(20)/R.
                     if let Some(est) = self.lundberg_siniestros.get_mut(coin_id) {
-                        est.observar(pnl_epigenetico);
-                        // R7-R2-A-3: publicar cota inferior conservadora LCB (z = 1.645, 95% unilateral)
-                        // para evitar que muestras pequeñas con rachas ganadoras inflen R y
-                        // desprotejan el margen de ruina en correlation_guard y risk-engine.
-                        let r_lcb = est.lundberg_lcb(1.645);
-                        evidence_publication::publicar_lundberg(
+                        estado_aprendido::observar_siniestro(
+                            est,
                             &self.arena.registry,
                             coin_id,
-                            r_lcb,
+                            pnl_epigenetico,
                         );
                     }
 

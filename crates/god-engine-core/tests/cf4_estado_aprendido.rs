@@ -170,3 +170,46 @@ fn cl108d_el_pnl_historico_no_entra_en_el_acumulador_de_la_sesion() {
         .unwrap();
     assert!((guardado - 1.15).abs() < 1e-12, "guardado {guardado}");
 }
+
+/// CL-108e (T2-2 de la revisión de la Línea G) — se restaura todo lo que
+/// aprende el cierre por moneda, no sólo el recuento: el sesgo epigenético
+/// (multiplica la exposición en el riesgo y no se olvida con el tiempo), el
+/// umbral epigenético con su ancla (el último cierre) y el anillo de
+/// siniestros de Lundberg (aprieta el tope del grupo).
+/// Escenario: tres pérdidas netas del −2 % a τ = 30 min bajan el sesgo de
+/// ETH de 1,0 a 0,55. Esperado: tras reiniciar y restaurar, el sesgo, el
+/// umbral y el último cierre son los mismos.
+#[test]
+fn cl108e_se_restaura_la_epigenetica_y_lundberg() {
+    registrar_simbolos();
+    let mut viejo = con_historia();
+    // 300 cierres con deriva positiva: el anillo de 256 da la vuelta.
+    for i in 0..300 {
+        viejo.observar_siniestro(1, if i % 3 == 2 { -0.010 } else { 0.012 });
+    }
+    let eth = &viejo.arena.coins[1];
+    for i in 0..3u64 {
+        eth.apply_spectral_epigenetic_feedback_with_time(-0.02, 60_000, 1_800_000.0, 2_000_000 + i * 60_000);
+    }
+    let epi = |c: &GodEngineCore| {
+        let m = &c.arena.coins[1];
+        (
+            m.epigenetic_bias.load(Relaxed),
+            m.epigenetic_threshold_modifier.load(Relaxed),
+            m.last_close_ts.load(Relaxed),
+            m.last_close_was_win.load(Relaxed),
+        )
+    };
+    let mut con = nucleo();
+    con.restaurar_estado_aprendido(&viejo.estado_aprendido());
+    let (e_viejo, e_con) = (epi(&viejo), epi(&con));
+    println!("observado: epigenética vieja {e_viejo:?}; restaurada {e_con:?}");
+    assert!((e_viejo.0 - 0.55).abs() < 1e-9, "precondición: el sesgo bajó a 0,55");
+    assert_eq!(e_con, e_viejo, "sesgo, umbral, ancla y último resultado");
+    // Lundberg: la cota publicada es la misma (el anillo restaurado empieza
+    // en otra posición: las sumas cambian de orden, de ahí la tolerancia).
+    let r = |c: &GodEngineCore| c.arena.registry.get_for_coin_or(1, "lundberg_r_nocional", -1.0);
+    println!("observado: R de Lundberg viejo {}; restaurado {}; sin restaurar {}", r(&viejo), r(&con), r(&nucleo()));
+    assert!(r(&viejo) > 0.0, "precondición: hay R medido");
+    assert!((r(&con) - r(&viejo)).abs() <= 1e-9 * r(&viejo), "R restaurado");
+}
