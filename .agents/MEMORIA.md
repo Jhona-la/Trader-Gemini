@@ -1,6 +1,6 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-83 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-03, F3.7-04, F3.3-09, F3.3-07, F3.2-03)
+## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-83 y CL-85 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-03, F3.7-04, F3.3-09, F3.3-07, F3.2-03, F3.2-05 rama 11)
 
 - #44 (CL-67 y CL-71) fusionado en main (8f572f7c).
 - Las 62 propuestas del borrador de C-F3 son 71 tests: 13 activos y 58 OPEN,
@@ -67,6 +67,20 @@
   puerta).
 - CL-83 (F3.2-03): R-15 sin suelo en √(30 s/τ); con brackets brownianos
   P(primer toque) no depende de τ. El modelo de R-15 sigue en LC-F4-04.
+- #55 (CL-83) fusionado en main (59557efb).
+- CL-84 (F3.7-02) no se publica. La revisión adversarial mostró que el
+  contraste de Dickey-Fuller evento a evento no cierra el hallazgo en vivo:
+  - el crítico depende de la edad del estimador (tamaño 0,44 al primer
+    minuto, 0,02 en régimen);
+  - el ruido de tick y el spot asíncrono «demuestran» reversión;
+  - la comparación t½ ≤ 2τ* no muerde.
+  Se rehace como v2 (acordado con el coordinador): pares síncronos, rejilla
+  por nodo con instrumento retardado y H0 θ ≤ ln2/(2τ_k). F3.7-02 sigue
+  abierto.
+- CL-85 (F3.2-05, decisión del dueño «escala que habló»):
+  - Con el veredicto espectral, la rama 11 emite a τ_k (contrato #624).
+    Ni Hurst ni el centroide la mueven, y las puertas juzgan τ_k.
+  - Ramas 12 y 13 siguen abiertas.
 
 ## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
 

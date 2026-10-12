@@ -28,7 +28,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 | F3.2-02 | El veto de grupo lee el ρ de una escala que no es la de la orden; la puerta del plan está mal especificada | media | confirmado | Línea C: publicación del núcleo y lector del risk-engine. |
 | F3.2-03 | R-15 sigue penalizando las τ largas por encima de 22 minutos | media | cerrado (CL-83) | Línea C (compuerta de primer toque del risk-engine). El autor anterior es AGY (Ola Ω73) y  |
 | F3.2-04 | El Kelly de la moneda lleva la τ de la operación cerrada a la siguiente orden | media | refutado (duplicado) | Línea C |
-| F3.2-05 | La τ de la señal no es la τ de la intención en las ramas 11, 12 y 13 | media | confirmado | Línea C (ramas 11-13 del núcleo y orchestrator). La rama 12 vive en signal-engine. |
+| F3.2-05 | La τ de la señal no es la τ de la intención en las ramas 11, 12 y 13 | media | rama 11 cerrada (CL-85); ramas 12 y 13 abiertas | Línea C (ramas 11-13 del núcleo y orchestrator). La rama 12 vive en signal-engine. |
 | F3.2-06 | Una posición sin τ de decisión entrena el espectro, el enfriamiento y el Kelly con el nodo crudo | media | confirmado | Línea C (camino de cierre). La adopción corresponde a C-F5. |
 | F3.3-03 | La rama 11 mide su convicción a τ_dom pero se dimensiona a la micro τ: expected_lifetime_ms del orquestador no tiene lector | media | confirmado | Línea C. |
 | F3.3-04 | El sesgo spot rompe el espejo de la puerta ML: el corto recibe hasta 4,5 veces más impulso que el largo | media | confirmado | Línea C. |
@@ -271,6 +271,14 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 - Consecuencia viva: El TP/SL y la vida de la posición se fijan a una escala en la que la señal no ha medido habilidad. La convicción de rama (Wilson) mezcla resultados de τ distintas.
 - Prueba que falla hoy: cf3_la_rama_11_vive_a_la_escala_que_hablo (crates/god-engine-core/tests/cf3_una_sola_tau.rs). Cuando last_fast_intent[0] es de la rama 11 (volume_flow_rate 11), consenso_espectral_dominante ≠ 0 y consenso_espectral_tau ≥ 30 s, debe cumplirse expected_duration_ms = min(τ_k, 12 h). Hoy da fast_duration_ms.
   - Nota de CL-74: tras CL-74 la rama 11 sigue viajando a la micro τ (128/128 intenciones), y la τ de la orden es ahora √(H(τ)·τ_c), con τ_c el centroide resonante. Para cerrar F3.2-05 hay que decidir antes si la convergencia hacia el centroide (#565) se aplica también a la rama 11: el contrato #624 dice que la posición vive a la escala que habló.
+  - Decisión del dueño (tarjeta del 2026-10-12, 05:12 UTC): «escala que habló». La orden de la rama 11 vive a τ_k, la escala que decidió su dirección (contrato #624). La convergencia al centroide (#565) deja de mover esa τ en la rama 11, y se mantiene la regla de CL-74: la τ final se fija antes de las puertas.
+  - Rama 11 cerrada por CL-85 (2026-10-12):
+    - Con el veredicto espectral activo, la rama 11 emite a τ_k = min(τ_k, 12 h), redondeada al ms (`GodEngineCore::escala_que_hablo`). Calcula su p* a esa τ, y las puertas juzgan esa misma τ.
+    - `tau_de_la_orden` no se le aplica. Además del centroide, tampoco la mueve la modulación de Hurst: «vive a τ_k» es la τ exacta.
+    - Sin veredicto espectral (consenso escalar, sin escala propia), sigue la micro τ con `tau_de_la_orden`, como antes.
+    - La condición replica la del orquestador (#652/H2: dominante no nulo y τ ≥ 30 s). `cl85_la_escala_que_hablo_es_la_del_orquestador` fija la paridad: con veredicto, la vida que escribe el orquestador y la τ de la rama 11 difieren a lo sumo en 1 ms, porque el orquestador trunca y la rama redondea.
+  - Medido en `cf3_la_rama_11_vive_a_la_escala_que_hablo`, activada: antes de CL-85, 128/128 intenciones viajaban a otra τ; ahora 210/210 viajan a τ_k. Hay más intenciones porque las puertas juzgan τ_k = 275 s y la convicción se mide contra el p* de esa τ.
+  - Siguen abiertas las ramas 12 (τ = gen `base_duration_ms`, sin relación con el espectro) y 13 (dirección de EMAs de 1 min que viaja a la macro τ). También la fusión constructiva, que puede atribuir a una rama una operación hecha a la τ de la otra banda.
 - Dueño: Línea C (ramas 11-13 del núcleo y orchestrator). La rama 12 vive en signal-engine.
 - Escépticos: confirmado.
   - Corrección (refutar): - La parte de la rama 11 ya es LC-F3-04 del plan (PLAN:1070); hay que citarla. Lo nuevo son las ramas 12 y 13. - La rama 14 que cita LC-F3-04 está contenida (CONSENSUS_BRANCH_ENABLED = false, lib.rs:8603). - Tras la media geométrica el desajuste se reduce a la mitad en ln τ, pero no desaparece. La severidad media es razonable.
