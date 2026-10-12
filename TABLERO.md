@@ -74,11 +74,17 @@
   evidencia, resultado de orden sin cablear, Iceberg, logs asíncronos, límites
   del exchange, compactación por presión, JobObject por proceso, cabecera de
   tapes). Triaje de los 43 absorbentes en el plan §4.1.
-- **Siguiente (ola 3)**: evolver con OOS y sin alias de bosques, congelar
-  genes sin efecto, G049b, println! del núcleo; cablear LG-9 con sus dueños.
+- **Ola 3 cerrada**: LG-16 (OI completo), LG-17/17b (evolver con juicio
+  fuera de muestra; no promueve mientras su evaluador no sea canónico),
+  LG-18/18b (9 genes sin lector congelados), LG-19/19b (trazos del núcleo a la
+  cola, corte UTF-8). Revisión adversarial de 3 lentes incorporada.
+- **Siguiente**: replay canónico multiactivo (pedido a Sol) para el evolver;
+  G049b con el dueño del demonio; cablear LG-9 con sus dueños; G042 si la
+  Línea C no lo toma.
 - **No toca**: ATR/σ̂60 (Línea C), orquestador/espectro (Qoder), registro
   (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol).
-- **Recursos**: disco C: con 11 GB libres; sin `CARGO_TARGET_DIR` propio.
+- **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
+  `target/debug/incremental` y quedaron ~159 GB libres.
 
 ## Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 

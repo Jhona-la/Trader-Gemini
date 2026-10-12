@@ -1,5 +1,31 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Claude (Línea G, LG-n): ola 3 — evolver honesto, OI completo, genes muertos congelados (LG-16…LG-19)
+
+- **LG-16** (`oi_history_sync`): la paginación avanzaba con la fila más nueva
+  de cada página; guardaba 501 h de las ~720 del endpoint y cada ejecución
+  perdía ≈9 días de histórico de OI. Ahora avanza con la más vieja.
+- **LG-17/17b** (`evolver`, el «Cerebro Evolutivo» de LAUNCHER): selección en
+  el 70 % cronológico, juicio del campeón y del incumbente en el 30 % final con
+  `fitness::compute` (≥ 30 operaciones) y el margen común; guarda de entorno
+  del almacén; universo publicado; sin préstamo de bosques; omni neutro; NN
+  ausente = no opina; sin doble fricción. **No promueve** mientras su
+  evaluador sea el `process_tick` legacy sin envolvente del host: hace falta un
+  replay canónico multiactivo (pedido a Sol). LAUNCHER.bat no define
+  `TG_GENOME_ENV`: el evolver sale con error al arrancar desde el lanzador.
+- **LG-18/18b** (genoma): 9 genes sin lector congelados en la mutación (los 7
+  de R7-R1-2 y los 2 límites de peticiones de LG-12); D-650 los fija a mano.
+- **LG-19/19b** (núcleo/telemetría): los 4 `println!` del núcleo van a la
+  cola; la cola corta en frontera de carácter y cierra el mensaje.
+- **Lección**: `format_args!` incrusta los argumentos LITERALES en la
+  plantilla: una prueba que quiera piezas separadas de `write!` debe pasar
+  variables (la primera versión de LG-19b pasaba con el defecto).
+- **Lección**: el núcleo (`GodEngineCore::new`) no cabe en la pila del hilo
+  principal en Windows (1 MB): construirlo en un worker de rayon.
+- **Lección**: el disco se llenó a 0 GB (target/debug 191 GB); los fallos
+  «rlib not found» y «paging file too small» eran eso. Se borró
+  `target/debug/incremental` sin compilaciones en curso (política del repo).
+
 ## 2026-10-12 — Claude (Línea G, LG-n): ola 2 — los 627 `.rs` leídos, diez arreglos (LG-6…LG-15)
 
 - **G7**: los 436 `.rs` que la ola 1 no abrió, leídos por 10 lectores

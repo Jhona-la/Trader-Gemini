@@ -170,8 +170,8 @@ dice qué le falta a cada una.
 |---|---|---|---|
 | **A. Latch por diseño** (ADR-0015/0016) | kill-switch de entradas (`lib.rs:3156`, `executor.rs:1271`), latch inmune (`god_engine.rs:1834`), insolvencia (`:1742`), X-009 (`:4756`), límite de drawdown del inmune (`:1737`), latencia del inmune (`:1751`, `:1779`), `REJ_DRAWDOWN` (`risk lib.rs:342`), d* y `ALFA_FALSACION` (`drawdown.rs:170/196`), kills del demonio (`online_daemon.rs:1253/1346/1365`) | Nada como política; sí defectos laterales: pico del drawdown no persistido y sólo caja realizada (LC-F4-10), doble lectura del gen (LC-F1-30), kills del demonio por literales sin ARL₀ | Línea C (CL-99 «pico» en curso); demonio: dueño a confirmar |
 | **B. Freno estadístico sin olvido o sin sonda** | convicción por rama (`lib.rs:181`, `:6555`), p* = ½ en ramas 1-10 (`:195`), conformal singleton (`conformal.rs:175`), habilidad del ensamble (`ensemble.rs:106`), skill de motores (`skill_motores.rs:100`), DSR de promoción (`darwin.rs:669`, `online_daemon.rs:1917`), veto de grupo (`espectral_multiactivo.rs:69`), envolvente de Kelly (`kelly_envelope.rs:261/282/387`, `envio.rs:76`, `god_engine.rs:4153`), ML-GATE sin `_MOTOR` (`lib.rs:8149`), epigenética (`state.rs:433/434`), sonda por moneda (`lib.rs:8121`) | Olvido con la semivida del calibrador **y** sonda acotada al nocional mínimo; puntuar por R neto frente a p* (LG-9) | **LG-1** cerró la convicción por rama; **CL-98** (Línea C) cerró la sonda única; el resto con su dueño (LF-12 Línea C+E, conformal Codex, skill Qoder, ensamble GLM, epigenética Línea C/AGY) |
-| **C. Filtro de datos que se autobloquea** | filtro de salto (`god_engine.rs:3369`), headroom de rate-limit (`executor.rs:1320`), umbrales de rate-limit como genes (`god_engine.rs:4781`), veto de deriva (`god_engine.rs:2986/2989/3976`, `:3752`), EWMA del OBI de trades (`microstructure.rs:52`) | Distinguir dato corrupto aislado de cambio persistente; caducidad; los límites del exchange no son genes | **LG-2** y **LG-3** cerrados; veto de deriva = centinela de contabilidad que actúa como latch cuando no hay posiciones (Codex, XXXVI); genes de rate-limit y OBI de trades → zona libre, ola 3 |
-| **D. Enrutado a una capacidad inexistente** | ruta Iceberg (`entry_dispatch.rs:59`, `god_engine.rs:4427`) | La ruta sólo debe elegirse si el adaptador la soporta | **LG-10** cerrado (techo oculto de 10 000 USD de nocional en prod); pendiente congelar el gen |
+| **C. Filtro de datos que se autobloquea** | filtro de salto (`god_engine.rs:3369`), headroom de rate-limit (`executor.rs:1320`), umbrales de rate-limit como genes (`god_engine.rs:4781`), veto de deriva (`god_engine.rs:2986/2989/3976`, `:3752`), EWMA del OBI de trades (`microstructure.rs:52`) | Distinguir dato corrupto aislado de cambio persistente; caducidad; los límites del exchange no son genes | **LG-2** y **LG-3** cerrados; veto de deriva = centinela de contabilidad que actúa como latch cuando no hay posiciones (Codex, XXXVI); genes de rate-limit congelados (**LG-18**); OBI de trades → GLM (exige reentrenar) |
+| **D. Enrutado a una capacidad inexistente** | ruta Iceberg (`entry_dispatch.rs:59`, `god_engine.rs:4427`) | La ruta sólo debe elegirse si el adaptador la soporta | **LG-10** cerrado (techo oculto de 10 000 USD de nocional en prod); el gen se conserva (vuelve a tener efecto con iceberg nativo) |
 
 ## 5. Hallazgos de la ola 1 (base `86218456`) y su estado
 
@@ -396,3 +396,50 @@ verde no prueba nada si la prueba no puede fallar.
   guarda 500 h de las 720 que pide; congelar los genes que ya no tienen efecto
   (iceberg, rate-limit, los 7 de R7-R1-2); el mínimo de 30 cierres del examen
   del demonio (G049b); los 6 `println!` síncronos del núcleo.
+
+## 11. Ola 3 (2026-10-12, base `76bcdaaf`): la zona libre que dejó la ola 2
+
+### 11.1 Arreglados (test que falla antes y pasa después)
+
+| ID | Zona | Defecto | Prueba |
+|---|---|---|---|
+| **LG-16** | herramientas (`oi_history_sync`) | La paginación hacia atrás tomaba como cursor la fila MÁS NUEVA de la página (el endpoint devuelve orden ascendente): la segunda página repetía 499 filas y añadía una. Se guardaban 501 h de las ~720 que conserva `openInterestHist`, y cada ejecución perdía para siempre ≈9 días del histórico que entrena `{SYM}_OI`. Un fallo de red en una página posterior descartaba la serie entera. | `tests_lg16` (3; RED 501 de 721) |
+| **LG-17 / LG-17b** | herramientas (`evolver`, lo arranca `LAUNCHER.bat`) | Promovía con la aptitud de la propia selección (16 × 6 sobre el mismo flujo) y con un OR que aceptaba capital final > inicial aunque la aptitud fuera INVIABLE. Evaluaba en otro mundo: bosque de BTC prestado a todas las monedas, 34 features de microestructura pisando el omni macro, red aleatoria votando sin DarkAlpha, fricción cobrada dos veces, arena construido dentro de un worker de rayon, universo sin publicar (`update_market_data` era un no-op) y, con `TG_GENOME_ENV` ausente o desconocida, promoción al silo `__UNSET__`. Ahora: selección en el 70 % cronológico inicial y juicio del campeón y del incumbente en el 30 % final con `fitness::compute` (≥ 30 operaciones) y el margen común; guarda de entorno del almacén; universo publicado; sin préstamo de bosques; omni neutro; NN ausente = no opina. **No promueve** mientras su evaluador no sea el canónico (`process_tick` legacy, sin envolvente del host): explora e informa. | `tests_lg17` (7; RED en el cableado), humo del binario con entorno ausente, desconocido y válido |
+| **LG-18 / LG-18b** | genoma | Nueve genes sin lector (los 7 de R7-R1-2 y los 2 límites de peticiones que LG-12 dejó sin efecto) seguían mutando: dimensiones que derivan sin presión y suman ensayos al recuento de selección. Se congelan como G0-4. La prueba D-650 de simetría del hot-swap se apoyaba en la mutación para distinguirlos: ahora los fija a mano (verificado por mutación: quitando un `.store`, falla en el gen 133). El gen de Iceberg NO se congela: con un adaptador con iceberg nativo vuelve a tener efecto. | `tests_lg18` (RED: los 9 mutaban), D-650 por mutación |
+| **LG-19 / LG-19b** | núcleo/telemetría | Los 4 `println!` de producción del núcleo (OPEN/CLOSE TRACE, ML-DIAG) pasan a la cola de LG-11; sin cola siguen saliendo por stdout (T-1 y forense iguales). El buffer cortaba a 512 B dentro de un carácter multibyte («UTF8_ERR») y, tras el corte, las piezas siguientes rellenaban los bytes libres (la línea dejaba de ser prefijo del original). | `tests_lg19` (3; RED por mutación) |
+
+**Revisión adversarial de la ola.** Tres revisores (corrección, paridad,
+regresión) leyeron el diff: LG-16 y LG-18 sin defectos; LG-17 sobreafirmaba la
+paridad (de ahí LG-17b); LG-19 tenía el corte a medias (LG-19b); LG-18 le
+quitaba cobertura a D-650 (LG-18b).
+
+**Lo que los tapes del evolver dicen ahora.** `data/*_ticks.bin` (agosto) no
+tienen cabecera: origen desconocido, que D-691 trata como sintético. Aunque el
+evaluador fuese canónico, con ellos no promovería.
+
+**LAUNCHER.bat (decisión del operador).** El lanzador no define
+`TG_GENOME_ENV`: con LG-17 el «Cerebro Evolutivo» sale con error al arrancar
+en una consola minimizada que se cierra sola. Antes corría y promovía al silo
+`__UNSET__`, que nadie lee: no se pierde nada, pero el operador debe saber que
+hoy el evolver no corre desde el lanzador. Para que vuelva a tener sentido
+hacen falta tapes reales y el replay canónico multiactivo.
+
+### 11.2 Lo que sigue abierto
+
+- **Replay canónico multiactivo** (pedido a **Sol**): generalizar
+  `booktick_replay` a N monedas (process_event, envolvente por moneda,
+  universo, omni con historia). Con él, el evolver pasa a evaluar con el
+  mismo motor que opera y puede volver a promover.
+- **G049b** (examen del demonio: 30 cierres en ≤ 8 tramos de 53 min sólo deja
+  juzgar τ cortas). Con LG-7 lo abierto ya se valora a mercado; el arreglo de
+  fondo es medir la evidencia en barras de mercado del examen (no en cierres)
+  o alargar la ventana con la τ del genoma. Diseño del `online_daemon`:
+  ofrecido a su dueño con la prueba de la ola 2.
+- **Cablear LG-9** (resultado de orden por R neto) en la convicción por rama,
+  los pesos del consejo, el skill de motores y la calibración: decisión de sus
+  dueños, con su T-1.
+- **G042** (cierre local que purga las piernas OCO del lado): sin acuse de la
+  Línea C; diseño en §10.3.
+- **EWMA del OBI de trades** (`microstructure.rs:41`, R7-R2-D-4): la delta de
+  volumen acumula de por vida y entra al vector del bosque; cambiarla exige
+  reentrenar (**GLM**).

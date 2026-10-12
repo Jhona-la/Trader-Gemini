@@ -1933,3 +1933,20 @@ asíncronos; LG-12 límites del exchange fuera del genoma; LG-13 compactación
 de memoria por presión medida; LG-14 tope de memoria por proceso y veto sobre
 el commit; LG-15 tapes leídos sin su cabecera en las herramientas de
 evolución. Entregas por dueño en el buzón.
+
+## 51. Línea G — ola 3: el evolver deja de promover a ciegas (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §11](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+**El evolver.** `evolver.exe` («Cerebro Evolutivo» de `LAUNCHER.bat`)
+promovía con la aptitud de la misma selección, prestaba el bosque de BTC a
+todas las monedas, pisaba el omni macro y no publicaba el universo. Ahora
+separa selección (70 %) y juicio (30 %), juzga contra el incumbente con la
+aptitud única y no promueve mientras su evaluador no sea el motor canónico:
+hace falta un replay multiactivo por `process_event` con la envolvente del
+host (pedido a Sol). **Regla que sale de aquí: ningún promotor de genomas
+puede evaluar con un motor distinto del que opera.**
+
+**Otros arreglos.** LG-16 (histórico de OI completo: se perdían ≈9 días por
+ejecución), LG-18 (9 genes sin lector dejan de mutar y de sumar ensayos al
+DSR), LG-19 (trazos del núcleo a la cola asíncrona; corte UTF-8 correcto).
