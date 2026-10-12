@@ -20,14 +20,17 @@
 //! - Test de integración K-26 (F3.4-08). El fixture escribe
 //!   ml_model_base = 0,25 por moneda, pero el núcleo sin bosque la reescribe
 //!   con `unwrap_or(0.5)` antes del bloque conformal del mismo tick.
-//! - Sonda de arranque frío (F3.4-05). D4 (LEDGER:212): una sola sonda
-//!   abierta en toda la cartera. El predicado vivo sólo mira la moneda.
+//! - Sonda de arranque frío (F3.4-05; la parte de D4, cerrada por CL-98). D4 (LEDGER:212):
+//!   una sola sonda abierta en toda la cartera. El núcleo lo decide con
+//!   `risk_engine::sonda::sonda_sin_modelo`, la misma función del veto del
+//!   riesgo.
 //!
-//! Dos pruebas (escudo y sonda) replican literalmente una regla que hoy vive
-//! en línea dentro de `process_event` (privado). Para que no prueben una
-//! copia, cada una empieza comprobando que la réplica coincide con el código
-//! de producción de lib.rs (sin espacios, antes del primer `#[cfg(test)]`).
-//! Si el código cambia, esa premisa falla y el test dice qué extraer.
+//! La prueba del escudo replica literalmente una regla que hoy vive en línea
+//! dentro de `process_event` (privado). Para que no pruebe una copia, empieza
+//! comprobando que la réplica coincide con el código de producción de lib.rs
+//! (sin espacios, antes del primer `#[cfg(test)]`). Si el código cambia, esa
+//! premisa falla y el test dice qué extraer. La de la sonda ya llama a la
+//! función de producción y su premisa comprueba que el núcleo la usa.
 //!
 //! Convención: un test que hoy falla por la causa de un hallazgo lleva
 //! `#[ignore = "OPEN F3.x-nn (dueño): causa"]` con el assert intacto. Para
@@ -331,52 +334,58 @@ fn cf3_k26_corre_con_base_025() {
 
 // ──────────────────────────────── Sonda ───────────────────────────────
 
-/// Réplica literal del predicado vivo `arranque_frio_sin_roster` (lib.rs,
-/// ML-GATE). Hoy no existe como función: el borrador pide extraer, sin
-/// cambiar la conducta,
-/// `calibration::sonda_permitida(has_roster_model, cierres_moneda,
-/// abierta_en_moneda, sondas_abiertas_en_cartera) -> bool`. Con la semántica
-/// de hoy el cuarto argumento se ignora. Cuando se extraiga, este test debe
-/// llamar a esa función y no a la réplica.
-fn sonda_permitida_hoy(
-    has_roster_model: bool,
-    cierres_moneda: u64,
-    abierta_en_moneda: bool,
-    _sondas_abiertas_en_cartera: usize,
-) -> bool {
-    !has_roster_model && cierres_moneda == 0 && !abierta_en_moneda
-}
-
-/// Premisa: la réplica es el predicado de producción.
+/// Premisa: el núcleo decide la exención del ML-GATE con la función
+/// `risk_engine::sonda::sonda_sin_modelo` (la que usa `admite_sonda`, la misma
+/// del veto del riesgo; revisión del PR #61, F3), no con un predicado en
+/// línea.
 fn sonda_es_la_viva() {
     let src = codigo_produccion();
     for trozo in [
-        "letarranque_frio_sin_roster=!has_roster_model&&self.arena.coins[coin_id].metrics.trade_count.load(Ordering::Relaxed)==0&&!self.arena.coins[coin_id].positions.is_any_open();",
+        "letarranque_frio_sin_roster=risk_engine::sonda::sonda_sin_modelo(&self.arena,coin_id,has_roster_model,);",
         "letml_gate_ok=arranque_frio_sin_roster||(has_roster_model&&ml_edge_now>=required_edge);",
     ] {
         assert!(
             src.contains(trozo),
-            "premisa: el predicado de la sonda cambió en lib.rs (falta «{trozo}»); extraer sonda_permitida y llamarla aquí"
+            "premisa: el predicado de la sonda cambió en lib.rs (falta «{trozo}»)"
         );
     }
 }
 
-/// F3.4-05 — la sonda de arranque frío respeta D4: una sonda abierta en toda
-/// la cartera. Casos deterministas.
+/// Arena de dos monedas sin historial, sin posiciones.
+fn arena_sonda() -> Arc<GlobalArena> {
+    GlobalArena::build_in_own_stack(1_000.0)
+}
+
+/// Posición pequeña abierta en la moneda dada.
+fn abrir_en(arena: &GlobalArena, coin: usize) {
+    arena.coins[coin].positions.slots()[0].open(true, 100.0, 0.01, 0.05, 1_000, 102.0, 99.0);
+}
+
+/// F3.4-05, la parte de D4 (cerrada por CL-98; que la sonda sin modelo no
+/// produce la evidencia que exige el gate sigue abierto) — la sonda de
+/// arranque frío respeta D4:
+/// una sonda abierta en toda la cartera. Casos deterministas sobre la función
+/// que llama el núcleo.
 #[test]
-#[ignore = "OPEN F3.4-05 (Línea C, con D4 decidida en LEDGER:212): el predicado de la sonda sólo mira la moneda (is_any_open de la propia moneda), así que con una sonda abierta en otra moneda abre otra"]
 fn cf3_sonda_respeta_d4() {
+    use risk_engine::sonda::sonda_sin_modelo;
     sonda_es_la_viva();
+    let a = arena_sonda();
+    assert!(sonda_sin_modelo(&a, 0, false), "sin sondas abiertas debe poder sondear");
+    assert!(!sonda_sin_modelo(&a, 0, true), "con modelo del roster decide el lift, no la sonda");
+
+    abrir_en(&a, 1);
     assert!(
-        sonda_permitida_hoy(false, 0, false, 0),
-        "sin sondas abiertas debe poder sondear"
-    );
-    assert!(
-        !sonda_permitida_hoy(true, 0, false, 0),
-        "con modelo del roster decide el lift, no la sonda"
-    );
-    assert!(
-        !sonda_permitida_hoy(false, 0, false, 1),
+        !sonda_sin_modelo(&a, 0, false),
         "D4: con una sonda abierta en otra moneda no se abre otra"
     );
+
+    // Una posición de una moneda con historial (fuera de la fase de sonda) no
+    // ocupa la sonda.
+    a.coins[1].metrics.trade_count.store(5, std::sync::atomic::Ordering::Relaxed);
+    assert!(sonda_sin_modelo(&a, 0, false), "una posición con historial no es una sonda");
+
+    // Sólo la primera orden de la moneda está exenta del ML-GATE.
+    a.coins[0].metrics.trade_count.store(1, std::sync::atomic::Ordering::Relaxed);
+    assert!(!sonda_sin_modelo(&a, 0, false), "con un cierre ya no es la primera orden");
 }

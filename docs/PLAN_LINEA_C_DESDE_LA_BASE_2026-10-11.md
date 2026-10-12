@@ -1094,7 +1094,7 @@ Ninguno está verificado salvo los marcados «confirmado por lectura», y a éso
 - **LC-F4-03** `riesgo_por_operacion` se escribe antes de los vetos del consejo, del ML-GATE y del host. Su único escritor está en `evaluate_single_intent` (risk-engine/src/lib.rs:1434-1446), que corre también en el backtest; el consejo y el ML-GATE vienen después (lib.rs:7669-7807). Lo leen risk-engine/src/lib.rs:324 y :646, god_engine.rs:1734 y online_daemon.rs:1131.
   - El arreglo no puede mover la escritura al host al confirmar el envío. El T-1, `booktick_replay`, el examen del demonio y ShadowForest no pasan por el host: lo dejarían en su valor inicial 0, y `drawdown_maximo` caería al gen.
   - La escritura va a un punto común del núcleo y del replay, después del consejo y del ML-GATE, con reversión si veta el host y su espejo en `live_envelope_gate`. Test en `bt_vivo_parity_audit`.
-- **LC-F4-04** Primer toque mal escalado (risk-engine/src/lib.rs:952-974; publica en cada evaluación en :971).
+- **LC-F4-04** Primer toque mal escalado (risk-engine/src/lib.rs:952-974; publica en cada evaluación en :971). En sombra desde CL-100 (decisión del dueño): ya no veta, publica `p_hit_sl_first` y `r15_vetaria`; el modelo de la deriva sigue abierto.
   - Con deriva nula veta todo RR > 7,33.
   - Con SL 200 pb, TP 450 pb, ATR 0,10 %, coherencia −0,02 y τ 30 s, P ≈ 0,90 y veta.
 - **LC-F4-05** Salto de la fracción de Kelly en la frontera de modo (kelly.rs:86-95).
@@ -1102,13 +1102,13 @@ Ninguno está verificado salvo los marcados «confirmado por lectura», y a éso
 - **LC-F4-07** Genes inertes: `vol_mult` (risk-engine/src/lib.rs:739-767, pasado en :989 a leverage_matrix.rs:84, donde no se usa) y `kelly_bootstrap_cold` (:401-410). En C-F4 sólo se declaran; se retiran o se conectan después de GENOME-GATE (LC-F7-16), porque cambian el vector de 144 genes.
 - **LC-F4-08** `risk_normalizer` usa la curva genómica y no el stop real (risk-engine/src/lib.rs:521-528).
 - **LC-F4-09** Prior 0,55 y sonda optimista (risk-engine/src/lib.rs:1136, 1149-1157, 1188).
-- **LC-F4-10** Dos picos y dos semánticas de drawdown entre host y riesgo.
+- **LC-F4-10** Dos picos y dos semánticas de drawdown entre host y riesgo. Cerrado (ADR-0017, decisión del dueño «Ambos»): CL-99 (un pico, guardado), CL-106 (freno duro único K(w, l)·r ≤ d*, nivel α en 200 operaciones) y CL-107 (freno de la estrategia, Ville sobre R).
   - #714 añadió `.min(d*)` al host (god_engine.rs:1729-1737) sin ningún test del host y sin el lerp por `micro_w` que aplica el riesgo (risk-engine/src/lib.rs:323-341).
   - El host usa un pico local que nace con el capital del arranque (god_engine.rs:1682, :1704-1711); el riesgo usa `peak_capital` (risk-engine/src/lib.rs:284-286). Ninguno se persiste.
   - El arreglo, en C-F4, incluye una persistencia mínima del pico con un test de reinicio.
 - **LC-F4-11** DriftRecovery absorbente (god_engine.rs:2988-2990, 3825-3827; drift_auditor.rs:46-57; lib.rs:2953).
 - **LC-F4-12** Sesgo epigenético tipo «hot hand» (state.rs:394-399; risk-engine/src/lib.rs:579-580).
-- **LC-F4-13** Cópulas vencidas cargadas sin aviso (copulas_store.rs:32-63; ADR-0009).
+- **LC-F4-13** Cópulas vencidas cargadas sin aviso (copulas_store.rs:32-63; ADR-0009). Manifiesto renovado con septiembre de 2026 (CL-105); el aviso de vencimiento al cargar sigue abierto.
 - **LC-F4-14** RA-RUIN-F01: el helper de ruina deja pasar NaN y ±Inf.
 - **LC-F4-15** La confianza entra varias veces en el tamaño (K-18/R-17).
 - **LC-F4-16** Docs que contradicen su código: ruin.rs:24-29 y correlation_guard.rs:811-833 (fórmula del doc en :816 frente al código en :826-828).

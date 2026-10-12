@@ -102,6 +102,20 @@ const MIN_N: usize = 1_500;
 /// no aportan inflado (y λ<0.05 es ruido del ajuste sobre grid coarse).
 const LAMBDA_MIN: f64 = 0.05;
 
+/// Nombre de la cinta de un símbolo del roster para el mes dado.
+/// - En 2026-08, BTC y ETH llevan el nombre histórico `{SYM}_AUG_REAL.bin`
+///   (antes sólo BTC: ETH quedaba fuera del manifiesto de agosto).
+/// - SHIB cotiza en futuros USDⓈ-M como `1000SHIBUSDT` (mil unidades por
+///   contrato); su cinta lleva ese nombre. Los retornos logarítmicos no
+///   cambian con la escala, y el manifiesto conserva el nombre del roster.
+fn nombre_de_cinta(simbolo: &str, mes: &str) -> String {
+    match (simbolo, mes) {
+        ("BTCUSDT" | "ETHUSDT", "2026-08") => format!("{simbolo}_AUG_REAL.bin"),
+        ("SHIBUSDT", _) => format!("1000SHIBUSDT_{mes}_REAL.bin"),
+        _ => format!("{simbolo}_{mes}_REAL.bin"),
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let sin_escribir = args.iter().any(|a| a == "--sin-escribir");
@@ -113,12 +127,7 @@ fn main() {
     let base = std::path::Path::new("data");
     let mut tapes = Vec::new();
     for s in SIMBOLOS {
-        // BTC de agosto usa el nombre histórico
-        let nombre = if *s == "BTCUSDT" && mes == "2026-08" {
-            "BTCUSDT_AUG_REAL.bin".to_string()
-        } else {
-            format!("{s}_{mes}_REAL.bin")
-        };
+        let nombre = nombre_de_cinta(s, &mes);
         match mid_de_tape(&base.join(&nombre)) {
             Some(t) => {
                 println!("✓ {s}: {} ticks", t.len());

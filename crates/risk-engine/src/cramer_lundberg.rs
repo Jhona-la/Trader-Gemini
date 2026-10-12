@@ -76,6 +76,19 @@ impl EstimadorSiniestros {
         }
     }
 
+    /// CL-108e — las observaciones del anillo en el orden en que llegaron
+    /// (de la más vieja a la más nueva). Reproducirlas con [`Self::observar`]
+    /// en un estimador nuevo da el mismo anillo (estado aprendido, ADR-0017).
+    pub fn observaciones(&self) -> Vec<f64> {
+        if self.count < N_SINIESTROS {
+            self.anillo[..self.count].to_vec()
+        } else {
+            let mut v = self.anillo[self.head..].to_vec();
+            v.extend_from_slice(&self.anillo[..self.head]);
+            v
+        }
+    }
+
     /// Coeficiente de ajuste R de Lundberg de la muestra, o `None` sin
     /// deriva positiva / sin convergencia / muestra insuficiente (< 30
     /// cierres — misma disciplina que MUESTRAS_MADURAS).

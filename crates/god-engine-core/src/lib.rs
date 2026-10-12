@@ -26,6 +26,7 @@ pub fn fitness_compute(initial: f64, final_cap: f64, max_dd: f64, total_trades: 
 
 pub mod fitness_contract;
 pub mod entry_reservation;
+pub mod estado_aprendido;
 pub mod entes_consejo;
 pub mod evidence_publication;
 pub mod contagion_publisher;
@@ -46,7 +47,6 @@ pub mod model_reload;
 pub mod orchestrator;
 pub mod order_flow_aggregator;
 pub mod outcome_context;
-pub mod quantum_kelly_risk;
 pub mod base_z;
 pub mod reality_physics;
 pub mod recarga_genoma;
@@ -1095,6 +1095,17 @@ pub struct GodEngineCore {
     /// si el slot no existe, se cae al global (compat).
     pub conformal_by_coin: Vec<conformal::ConformalCalibrator>,
     pub calibrator_by_coin: Vec<calibration::PlattCalibrator>,
+    /// CL-108 — observaciones de los calibradores (por moneda y global),
+    /// anotadas al alimentarlos para restaurarlos tras un reinicio
+    /// (`estado_aprendido.rs`).
+    pub(crate) registro_calibrador: Vec<std::collections::VecDeque<estado_aprendido::Observacion>>,
+    pub(crate) registro_calibrador_global: std::collections::VecDeque<estado_aprendido::Observacion>,
+    /// CL-108d (T2-3 de la Línea G) — PnL realizado y bruto de las sesiones
+    /// anteriores, por moneda, restaurado del estado aprendido. No entra en
+    /// `metrics.pnl_realized`/`pnl_gross`, que son acumuladores de la sesión
+    /// (los leen el demonio, la deriva frente al control y el validador de
+    /// paridad); se suma al guardar.
+    pub(crate) pnl_previo: Vec<(f64, f64)>,
     /// CERT-M2-C02 — proceso de Hawkes POR SÍMBOLO. Cada TRADE real excita
     /// el proceso (record_event); λ/μ verdadero se publica al registry.
     /// Antes el slot 'hawkes_intensity' llevaba un proxy de aceleración/ATR
@@ -1391,6 +1402,11 @@ impl GodEngineCore {
             calibrator_by_coin: (0..n_coins)
                 .map(|_| calibration::PlattCalibrator::new())
                 .collect(),
+            registro_calibrador: (0..n_coins)
+                .map(|_| std::collections::VecDeque::new())
+                .collect(),
+            registro_calibrador_global: std::collections::VecDeque::new(),
+            pnl_previo: vec![(0.0, 0.0); n_coins],
             hawkes_by_coin: (0..n_coins)
                 .map(|_| signal_engine::hawkes_bessel::HawkesBesselEngine::new())
                 .collect(),
@@ -4350,15 +4366,11 @@ impl GodEngineCore {
                     // publicar también None retira R/margen anteriores y
                     // enmascara el fallback global, sin cambiar ln(20)/R.
                     if let Some(est) = self.lundberg_siniestros.get_mut(coin_id) {
-                        est.observar(pnl_epigenetico);
-                        // R7-R2-A-3: publicar cota inferior conservadora LCB (z = 1.645, 95% unilateral)
-                        // para evitar que muestras pequeñas con rachas ganadoras inflen R y
-                        // desprotejan el margen de ruina en correlation_guard y risk-engine.
-                        let r_lcb = est.lundberg_lcb(1.645);
-                        evidence_publication::publicar_lundberg(
+                        estado_aprendido::observar_siniestro(
+                            est,
                             &self.arena.registry,
                             coin_id,
-                            r_lcb,
+                            pnl_epigenetico,
                         );
                     }
 
@@ -4466,16 +4478,16 @@ impl GodEngineCore {
                     // (para transferencia de aprendizaje cross-asset).
                     // Ola XLIV: con su instante de evento, para el olvido por
                     // tiempo de `calibrate_at` (ver calibration.rs).
+                    // CL-108: por `alimentar_calibradores`, que además anota
+                    // la observación para restaurarlos tras un reinicio.
                     if score_at_entry > 0.0 {
-                        if coin_id < self.calibrator_by_coin.len() {
-                            self.calibrator_by_coin[coin_id].update_at(
-                                score_at_entry,
-                                is_win,
-                                event_time_ms,
-                            );
-                        }
-                        self.confidence_calibrator
-                            .update_at(score_at_entry, is_win, event_time_ms);
+                        estado_aprendido::alimentar(
+                            &mut self.calibrator_by_coin,
+                            &mut self.registro_calibrador,
+                            &mut self.confidence_calibrator,
+                            &mut self.registro_calibrador_global,
+                            (coin_id, score_at_entry, is_win, event_time_ms),
+                        );
                     }
 
                     // XXIX / FMT-228: one close is one reward observation.
@@ -4708,6 +4720,14 @@ impl GodEngineCore {
                     } else {
                         f64::NAN
                     };
+                    // CL-107: la R de cada cierre alimenta el freno de la
+                    // estrategia (proceso e de Ville, H0 = +0,30 R).
+                    let e_estrategia = self.risk_engine.freno_estrategia.registrar(
+                        resultado_r,
+                        self.arena.ganancia_en_stops.load(Ordering::Relaxed),
+                        self.arena.perdida_en_stops.load(Ordering::Relaxed),
+                    );
+                    self.arena.registry.set("ville_estrategia_e", e_estrategia);
                     signal_engine::perceptron_gate::PerceptronGateEngine::update_weight(
                         &mut cur_hebbian,
                         resultado_r,
@@ -8423,18 +8443,17 @@ impl GodEngineCore {
                     // antes del primer cierre, y tras cada reinicio las monedas
                     // sin modelo (27 de 30 hoy) abrían de nuevo saltándose el
                     // gate ML de B3.25.
-                    // D4 (ADR-0016, CL-98): la puerta es la de la CARTERA, la
-                    // misma que aplica el riesgo (`risk_engine::sonda`). Con una
-                    // sonda abierta en cualquier moneda, también una posición
-                    // adoptada tras un reinicio, la evidencia se espera, no se
-                    // multiplica.
-                    let arranque_frio_sin_roster = !has_roster_model
-                        && self.arena.coins[coin_id]
-                            .metrics
-                            .trade_count
-                            .load(Ordering::Relaxed)
-                            == 0
-                        && !risk_engine::sonda::hay_sonda_abierta(&self.arena);
+                    // D4 (ADR-0016, CL-98): la puerta es la de la CARTERA,
+                    // `risk_engine::sonda::admite_sonda`, la misma función del
+                    // veto del riesgo. Con una sonda abierta en cualquier
+                    // moneda, también una posición adoptada tras un reinicio,
+                    // la evidencia se espera, no se multiplica. Aquí es
+                    // redundante: el riesgo ya rechazó (`sonda_ocupada`).
+                    let arranque_frio_sin_roster = risk_engine::sonda::sonda_sin_modelo(
+                        &self.arena,
+                        coin_id,
+                        has_roster_model,
+                    );
                     // K-23 resuelto (Ola Ω75): normalización proporcional al espacio disponible
                     // [0, base] y [base, 1] mediante `normalized_directional_divergence`.
                     // En base = 0.50 coincide de forma exacta con la lógica legacy.
