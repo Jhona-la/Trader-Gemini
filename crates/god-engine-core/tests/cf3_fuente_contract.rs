@@ -9,9 +9,14 @@
 //! - D-752: toda rama que registra cierres en su `TasaAcierto` debe leer ese
 //!   historial (`conviccion_de_rama`). La rama 12 (impulso de flujo) se
 //!   registra y nunca se lee (F3.3-09).
-//! - #624/H2: la posición vive a la τ a la que habló el voto. El orquestador
-//!   devuelve `TensorDecision::expected_lifetime_ms`; la rama 11 mide su
-//!   convicción a τ_dom y se dimensiona a `fast_duration_ms` (F3.3-03).
+//! - #624/H2 (F3.3-03): la posición vive a la τ a la que habló el voto.
+//!   Cerrado por CL-85. CL-94 retira de aquí su contrato de fuente, que
+//!   exigía el literal `tensor_cont.expected_lifetime_ms`: CL-85 lee la misma
+//!   escala con `GodEngineCore::escala_que_hablo` y lo rompía por la forma.
+//!   Lo sustituyen dos pruebas de propiedad en `cf3_una_sola_tau.rs`:
+//!   `cf3_la_rama_11_vive_a_la_escala_que_hablo` (la orden de la rama 11
+//!   viaja a τ_k) y `cl85_la_escala_que_hablo_es_la_del_orquestador` (τ_k es
+//!   la `expected_lifetime_ms` del orquestador, ±1 ms).
 //! - La rama 13 no debe contar dos veces la misma lectura del ML: su piso usa
 //!   `normalized_directional_divergence(swing_nn_pred, …)` y después la puerta
 //!   ML de `puertas_del_continuo` vuelve a multiplicar por (1 + 0,5·d) con el
@@ -67,39 +72,6 @@ fn cf3_rama_12_lee_su_historial() {
     assert!(
         lee,
         "la rama 12 registra cierres pero su confianza no pasa por conviccion_de_rama"
-    );
-}
-
-/// T10 (F3.3-03). La rama 11 toma la convicción del consenso tensorial a
-/// τ_dom (`tensor_cont.net_confidence`) y la duración de la micro τ
-/// (`fast_duration_ms`, recortada a [30 s; 30 min]). El contrato #624/H2
-/// (orchestrator.rs, `expected_lifetime_ms`) dice que la posición vive a la
-/// escala que habló. Se exige que el núcleo consuma
-/// `tensor_cont.expected_lifetime_ms`.
-///
-/// Nota del escéptico de completitud: tras la puerta QO-586 la τ se reescribe
-/// dos veces (hurst_duration_modulation y la media geométrica con la τ
-/// resonante); arreglar sólo la rama 11 no consigue «una sola τ».
-#[test]
-#[ignore = "OPEN F3.3-03 (Línea C): la rama 11 mide su convicción a τ_dom y se dimensiona a fast_duration_ms; TensorDecision::expected_lifetime_ms no tiene lector en el núcleo"]
-fn cf3_rama_11_vive_a_la_escala_que_hablo() {
-    let src = codigo_produccion();
-    // Diagnóstico: la expresión de duración del literal de la rama 11.
-    let literal = tramo(
-        &src,
-        "confidence:conviccion_de_rama(&registro_ramas[11]",
-        "volume_flow_rate:11.0",
-    )
-    .unwrap_or("(no encontrado)");
-    let duracion = literal
-        .split("expected_duration_ms:")
-        .nth(1)
-        .and_then(|s| s.split(',').next())
-        .unwrap_or("(no encontrada)");
-    println!("observado: la rama 11 emite expected_duration_ms: {duracion}");
-    assert!(
-        src.contains("tensor_cont.expected_lifetime_ms"),
-        "la rama 11 toma la convicción a τ_dom y la duración de la micro τ ({duracion})"
     );
 }
 

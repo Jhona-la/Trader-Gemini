@@ -15,7 +15,7 @@
   - `t2_cobertura_puertas`: huella determinista `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico.
   - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
 
-## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-83, CL-85 y CL-86 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-03, F3.7-04, F3.3-09, F3.3-07, F3.2-03, F3.2-05 rama 11, atr-1)
+## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-83 y CL-85 a CL-96 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-03, F3.7-04, F3.3-09, F3.3-07, F3.2-03, F3.2-05 rama 11, F3.3-03, revisión de los PR #43–#56)
 
 - #44 (CL-67 y CL-71) fusionado en main (8f572f7c).
 - Las 62 propuestas del borrador de C-F3 son 71 tests: 13 activos y 58 OPEN,
@@ -106,6 +106,33 @@
     600 s y se hundía con el precio quieto, que es lo que pasa en el
     examen del demonio, el que promueve genomas.
   - Ahora σ̂ conserva su valor (0,97 de la verdad, como antes del hueco).
+- #57 (CL-86) fusionado en main (54125bdb).
+- CL-87 (spot_z-1): BaseZ acredita la base retenida como mucho 30 s (la
+  edad máxima del spot) y `reset_engines` la reinicia.
+  - Tras un hueco, el z ya no satura: tras 600 s de hueco, P(|z| > 1,5)
+    pasa de 0,436 a la abstención mientras el nodo recalienta, y luego a
+    0,156.
+- #58 (CL-87 y CL-88, con Ω88 integrada por merge) fusionado en main
+  (ab89070e). T-1 del árbol integrado: 17/144, mismas 144 huellas.
+- Menores de la revisión, un commit por hallazgo (CL-88 a CL-96):
+  - CL-88 (atr-2): el examen del demonio fija su propio tick
+    (`fijar_tick_propio`); antes tomaba el del símbolo vivo de su slot.
+  - CL-89 (atr-3): el tick del piso se cachea por moneda y se invalida con
+    `symbol_registry::generacion`.
+  - CL-90, CL-93: un ln menos por evento en σ̂60 y en el z de la base.
+  - CL-91 (tau_conviccion-1): la τ y la sonda de la orden, una vez por
+    banda y evento; el p* no se calcula sin historial.
+  - CL-92, CL-94, CL-95: pruebas que pasaban por la razón equivocada o
+    dependían del orden; F3.3-03 cerrado.
+  - CL-96: corregida la nota falsa de CL-73 sobre la paridad de forest6.
+- Lecciones:
+  - Antes de crear un test, comprobar que el archivo no existe (pisé
+    `cf4_piso_resolucion.rs`; se restauró antes de cualquier commit).
+  - En `lib.rs` no va `#[cfg(test)]` fuera de los módulos de prueba del
+    final: los contratos de fuente cortan ahí (CL-91b).
+  - Con el disco casi lleno, el compilador se queda sin memoria virtual
+    (error 1455) y deja artefactos a medias: repetir con `-j2` y limpiar
+    el paquete roto (`cargo clean -p`).
 
 ## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
 

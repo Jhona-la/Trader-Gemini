@@ -50,9 +50,10 @@ pub struct SigmaMinuto {
     rejilla: [f64; SEGUNDOS + 1],
     /// Segundos cerrados escritos en la rejilla (satura en 61).
     llenos: usize,
-    /// Segundo abierto (marca / 1000) y su log-precio vigente.
+    /// Segundo abierto (marca / 1000) y su último precio. CL-90 (atr-4): el
+    /// log se toma al cerrar el segundo, una vez, no en cada evento.
     segundo_abierto: Option<u64>,
-    x_abierto: f64,
+    p_abierto: f64,
     /// Acumuladores de la vela en curso.
     suma_r2: f64,
     n_r2: u64,
@@ -75,7 +76,7 @@ impl SigmaMinuto {
             rejilla: [0.0; SEGUNDOS + 1],
             llenos: 0,
             segundo_abierto: None,
-            x_abierto: 0.0,
+            p_abierto: 0.0,
             suma_r2: 0.0,
             n_r2: 0,
             suma_ewma: 0.0,
@@ -113,16 +114,15 @@ impl SigmaMinuto {
             return;
         }
         let s = ts_ms / 1000;
-        let x = precio.ln();
         match self.segundo_abierto {
             None => {
                 self.segundo_abierto = Some(s);
-                self.x_abierto = x;
+                self.p_abierto = precio;
             }
             Some(abierto) if s < abierto => {}
-            Some(abierto) if s == abierto => self.x_abierto = x,
+            Some(abierto) if s == abierto => self.p_abierto = precio,
             Some(abierto) => {
-                let x_previo = self.x_abierto;
+                let x_previo = self.p_abierto.ln();
                 let total = s - abierto;
                 if total > SEGUNDOS as u64 + 1 {
                     // CL-86 (atr-1): hueco más largo que la ventana, dato
@@ -139,7 +139,7 @@ impl SigmaMinuto {
                     }
                 }
                 self.segundo_abierto = Some(s);
-                self.x_abierto = x;
+                self.p_abierto = precio;
             }
         }
     }

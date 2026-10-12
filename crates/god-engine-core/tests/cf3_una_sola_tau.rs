@@ -123,6 +123,15 @@ fn nucleo(con_bosque: bool) -> (Arc<GlobalArena>, GodEngineCore) {
         let bosque = god_engine_core::ml_inference::NanoForest::from_data(datos)
             .expect("bosque sintético fuera de contrato");
         god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_MOTOR", bosque);
+    } else {
+        // CL-95 (cl85-2): sin bosque también en el almacén global. Lo dejaba
+        // ahí la prueba anterior que pidió bosque (el almacén es del
+        // proceso), y el resultado de esta prueba dependía del orden.
+        god_engine_core::ml_inference::GLOBAL_FORESTS.rcu(|m| {
+            let mut m = (**m).clone();
+            m.remove("BTCUSDT_MOTOR");
+            m
+        });
     }
     let arena = GlobalArena::build_in_own_stack(1_000.0);
     let mut core = GodEngineCore::new(arena.clone());
@@ -266,7 +275,9 @@ fn cf3_la_tau_que_juzga_qo586_es_la_tau_de_la_orden() {
 /// en τ = 17,2 s (< 30 s) y la rama 11 decide con el respaldo escalar. El
 /// libro trae impulsos compradores (OBI 0,85) para que pase su puerta.
 /// Precondición: al menos una intención de la rama 11.
-/// Antes de CL-85: 30/30 intenciones de la rama 11 viajaban a 173 586 ms.
+/// Antes de CL-85: 128/128 intenciones de la rama 11 viajaban a otra τ (las
+/// primeras, a 54 919, 91 512 y 203 931 ms). CL-94: sustituye también al
+/// contrato de fuente de F3.3-03.
 #[test]
 fn cf3_la_rama_11_vive_a_la_escala_que_hablo() {
     let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
@@ -355,4 +366,23 @@ fn cl85_la_escala_que_hablo_es_la_del_orquestador() {
             );
         }
     }
+}
+
+/// CL-95 (cl85-2, revisión del #56). Verdad: `nucleo(false)` es un núcleo
+/// sin bosque, también en el almacén global de bosques, aunque una prueba
+/// anterior del mismo proceso haya pedido uno. Si no, el resultado de las
+/// pruebas sin bosque depende del orden en que corren.
+#[test]
+fn cl95_nucleo_sin_bosque_no_hereda_el_bosque_global() {
+    let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
+    let _ = nucleo(true);
+    assert!(
+        god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR").is_some(),
+        "precondición: nucleo(true) publica el bosque"
+    );
+    let _ = nucleo(false);
+    assert!(
+        god_engine_core::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR").is_none(),
+        "nucleo(false) hereda el bosque global de la prueba anterior"
+    );
 }
