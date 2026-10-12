@@ -324,7 +324,7 @@ aunque la medición los señale: son zonas de otras líneas con tandas en vuelo
 medición son el entregable; cada dueño tiene la prueba que reproduce su
 hallazgo en un comando.
 
-### 6.5 La meta con lo medido hoy
+### 6.5 La meta con lo medido hoy (ola 1)
 
 Con la serie más favorable de la escalera (regímenes de 10 velas con deriva
 0,2 %, oráculo +0,94 R por operación, 1,8 operaciones por hora) el motor
@@ -337,3 +337,74 @@ siga a la deriva.** En ese orden: LH-04 / ADR-0016 D1 (tamaño en espacio de
 riesgo), LH-02 y LH-03 (los apagones por capital), LH-05 y LH-06 (dirección y
 τ). Y sigue sin medirse la ventaja real fuera de muestra (tapes): la escalera
 mide la cadena, no el mercado.
+
+## 7. Ola 2 (2026-10-12, base `57abc601`): ¿se adapta el sistema? La ventaja conocida puesta en el tiempo
+
+### 7.1 Método
+
+El mandato del dueño es que el sistema sea autoadaptable y autoevolutivo. La
+ola 1 midió la cadena en estado estacionario; la ola 2 la mide en el tiempo con
+el mismo instrumento. El motor es determinista y una serie compuesta de dos
+tramos tiene el mismo prefijo que el primer tramo solo, así que los cierres
+del primer tramo coinciden en los dos casos y **la diferencia del segundo
+tramo frente al mismo tramo corrido en frío es exactamente lo que el estado
+aprendido en el primero hace con el segundo** (LH-10, pruebas
+`t3_adaptacion_en_el_tiempo` y helpers `serie_concatenada` / `cuartiles`
+añadidos al T-3 sin tocar el generador ni el techo, que la Línea G revisa en
+su ola 6).
+
+| Exp. | Serie | Pregunta |
+|---|---|---|
+| E1 | ventaja larga (a = 0,9, d = 0,2 %, 6 000 velas) | ¿Mejora la R por operación con la experiencia (cuartiles del índice de cierre)? |
+| E2 | ventaja (3 000) → nulo (3 000) | ¿El estado ganador agrava o reduce las pérdidas del nulo frente al nulo en frío? |
+| E3 | nulo (3 000) → ventaja (3 000) | ¿Una primera mitad perdedora deja al sistema fuera de la ventaja que llega después (estado absorbente)? |
+| E4 | ventaja (3 000) → antipersistencia (a = 0,1, 3 000) | Cuando el signo de la vela anterior pasa a ser el contrario del siguiente, ¿invierte el motor su conducta? |
+
+Antes de medir, tres lectores de sólo lectura inventariaron los lazos que
+aprenden en cada cierre (etiqueta, memoria, consumidor, escala) y predijeron
+E1–E4 con números (LH-11); después, un escéptico por lente con la medición.
+
+### 7.2 Resultado (release, 13 USD; [`ola2_adaptacion.tsv`](audit/linea_h/ola2_adaptacion.tsv), [`ola2_adaptacion_lineas.txt`](audit/linea_h/ola2_adaptacion_lineas.txt))
+
+Tramos en frío (referencia): ventaja (a = 0,9, d = 0,2 %) 89 cierres, acierto
+0,652, +1,408 USD; nulo 36 cierres, 0,361, −0,126 USD, 929 rechazos EV;
+antipersistencia (a = 0,1, d = 0,2 %) 12 cierres, 0,083, −0,241 USD, 27 EV.
+En los tres compuestos los cierres del primer tramo coinciden uno a uno con
+los del tramo en frío (89/89, 36/36, 89/89): el método mide lo que dice.
+
+| Exp. | Segundo tramo tras el primero | Segundo tramo en frío | Lectura |
+|---|---|---|---|
+| **E1** ventaja larga, 135 cierres, +3,84 USD (+29,6 % en 100 h) | cuartiles por índice de cierre (cierres, acierto, PnL medio): Q1 (33, 0,79, +0,031) · Q2 (34, 0,62, +0,021) · Q3 (34, 0,59, +0,009) · Q4 (34, 0,74, +0,053) | — | **No hay curva de aprendizaje**: el primer cuartil ya es el mejor en acierto, el tercero el peor, y el PnL por cierre no crece con la experiencia sino con el tramo de la serie. Nada de lo que el motor aprende en 100 cierres cambia la operación 101. |
+| **E2** ventaja → nulo | 40 cierres, −0,063 USD, acierto 0,40, **0 rechazos** | 36 cierres, −0,126 USD, 0,36, **929 rechazos EV** | Tras un tramo ganador la puerta EV **no se cierra en 50 h de nulo** (0 frente a 929): la pérdida es pequeña porque la orden es mínima, no porque algo frene. |
+| **E3** nulo → ventaja | 65 cierres, +0,711 USD, acierto 0,615, +9 rechazos EV sobre los 929 del nulo | 89 cierres, +1,408 USD, 0,652 | Tras 50 h perdedoras el sistema **captura la mitad** de la ventaja que llega (+0,71 frente a +1,41; 65 frente a 89 cierres). La puerta reabre pronto (sólo 9 rechazos más), pero el estado heredado (ritmo, racha, calibración) cuesta 24 operaciones y 0,7 USD. |
+| **E4** ventaja → antipersistencia | 45 cierres, −0,244 USD, acierto 0,333, **0 rechazos** | 12 cierres, −0,241 USD, 0,083, 27 EV | Cuando la estructura se invierte, el motor **no invierte ni se detiene**: opera ×3,75 más que en frío, con la estructura vieja, y la puerta EV no se entera en 50 h. Pierde lo mismo en dólares porque el fresco se para a los 12 cierres y el compuesto no se para nunca. |
+
+**Por qué (con la cita):** la p que alimenta la puerta EV es un ajuste de Platt
+sobre las últimas `WINDOW = 512` operaciones (`calibration.rs:45`) con un
+prior de 3,84 pseudo-observaciones a la puntuación cruda (0,98 en todas las
+órdenes); el olvido por tiempo (`calibrate_at`, semivida 12 h) sólo actúa
+entre cierres, y con 1–2 cierres por hora no actúa nunca. Con 89 cierres al
+65 % en la ventana, 45 cierres al 33 % en antipersistencia no bajan p por
+debajo del umbral de la puerta: **la memoria efectiva del permiso es de
+~500 operaciones (≈ 10 días a este ritmo), y no hay ningún lazo que reaccione
+en la escala de un régimen (10–20 velas) ni de un tramo (50 h)**. El único
+estado que cambia de verdad entre cierres es el enfriamiento por racha, y
+LH-07 mostró que crece linealmente, no en 2^k.
+
+**Lo que esto dice de la meta.** El sistema no es autoadaptable en la escala en
+la que cambia la estructura que explota: aprende despacio (ventana de 512
+cierres), no desaprende (E4) y arrastra el estado perdedor a la ventaja que
+sigue (E3). Y aunque aprendiera, no tendría dónde ponerlo: el tamaño no
+cambia (E1: el PnL por cierre del cuarto cuartil es el del tramo, no el de la
+experiencia). La adaptación que la meta necesita es de dos escalas: una
+rápida, en la que la estructura cambia (regímenes de minutos, medida con
+e-procesos por rama/escala como los de #661 pero sobre la R neta frente a p*),
+y una lenta para el tamaño (ADR-0016 D1).
+
+### 7.3 Lectores y escépticos
+
+Pendiente.
+
+### 7.4 Arreglos y entregas
+
+Pendiente.
