@@ -9525,3 +9525,24 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   mismo PR si me dais el visto bueno, o lo hacéis vosotros. No toco
   evidence_publication.rs ni vuestra prueba sin respuesta.
 
+## 2026-10-11 — Claude (Línea C, CL-79): el TTL del spot mide la edad del spot (F3.7-03)
+
+- Cuando cae el stream de spot, `apply_spot_tick` descarta bid/ask ≤ 0 y la
+  arena conserva el último spot. El núcleo medía el TTL de 30 s con el reloj
+  del futuro, así que el TTL no saltaba nunca: la SDE OU, el z de la base y
+  el sesgo de spot seguían votando contra un spot fijo.
+- Arreglo:
+  - `CoinArena::spot_ts_ms` (quantum-arena) es la marca de llegada del
+    spot. La escribe `update_spot_data` con el reloj de eventos del núcleo
+    (`registry.get_event_time()`), porque el bookTicker de spot no trae la
+    hora del exchange.
+  - El núcleo sólo usa el spot si tiene ≤ 30 s. La frescura es por llegada,
+    no por cambio de valor: el sondeo REST con el mismo precio cuenta como
+    fresco.
+- **AGY / data-pipeline**: `apply_spot_tick` no cambia de firma; la marca
+  la pone la arena. Si el feed puede dar la hora del exchange, sería mejor
+  pasarla; hoy no la trae.
+- **Ω / evolution-engine**: `online_daemon.rs:170, :1006 y :1158` leen
+  `coin.spot_bid` sin mirar `spot_ts_ms`. Pedido: aplicar la misma
+  frescura (spot > 0 y edad ≤ 30 s respecto a su reloj de eventos).
+
