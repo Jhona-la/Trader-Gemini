@@ -103,6 +103,14 @@ struct Sumas {
     yx1: f64,
     xy1: f64,
     xx1: f64,
+    // CL-110 (EST-1): masa y momentos de primer orden de las filas CON fila
+    // previa (las únicas que entran en las sumas de retardo 1), para
+    // centrarlas con lo que llevan y no con la masa total.
+    l1: f64,
+    l1y: f64,
+    l1yp: f64,
+    l1x: f64,
+    l1xp: f64,
     w2: f64,
     w2z: f64,
     w2zz: f64,
@@ -133,6 +141,11 @@ impl Sumas {
             &mut self.yx1,
             &mut self.xy1,
             &mut self.xx1,
+            &mut self.l1,
+            &mut self.l1y,
+            &mut self.l1yp,
+            &mut self.l1x,
+            &mut self.l1xp,
         ] {
             *v *= l1;
         }
@@ -171,6 +184,11 @@ impl Sumas {
             self.yx1 += y * xp;
             self.xy1 += x * yp;
             self.xx1 += x * xp;
+            self.l1 += 1.0;
+            self.l1y += y;
+            self.l1yp += yp;
+            self.l1x += x;
+            self.l1xp += xp;
             self.w11 += lambda;
             self.w11z += lambda * z;
             self.w11z1 += lambda * zp;
@@ -289,10 +307,17 @@ impl Nodo {
             let syy = s.yy - w * yb * yb;
             let sxy = s.xy - w * xb * yb;
             let g0 = (syy + 2.0 * c * sxy + c * c * sxx) / w;
-            let syy1 = s.yy1 - w * yb * yb;
-            let syx1 = s.yx1 - w * yb * xb;
-            let sxy1 = s.xy1 - w * xb * yb;
-            let sxx1 = s.xx1 - w * xb * xb;
+            // CL-110 (EST-1): Σ(a_t − ā)(b_{t−1} − b̄) sobre las filas con
+            // fila previa = Σ a·b₋₁ − b̄·Σa − ā·Σb₋₁ + ā·b̄·Σ1, con las sumas
+            // de ESAS filas (antes, w·ā·b̄ con la masa total: t dejaba de ser
+            // invariante a desplazar la base cuando había celdas vacías).
+            let cruz = |ab1: f64, sa: f64, sb1: f64, ma: f64, mb: f64| {
+                ab1 - mb * sa - ma * sb1 + ma * mb * s.l1
+            };
+            let syy1 = cruz(s.yy1, s.l1y, s.l1yp, yb, yb);
+            let syx1 = cruz(s.yx1, s.l1y, s.l1xp, yb, xb);
+            let sxy1 = cruz(s.xy1, s.l1x, s.l1yp, xb, yb);
+            let sxx1 = cruz(s.xx1, s.l1x, s.l1xp, xb, xb);
             let g1 = (syy1 + c * syx1 + c * sxy1 + c * c * sxx1) / w;
             let szz2 = s.w2zz - 2.0 * zb * s.w2z + zb * zb * s.w2;
             let szz11 = s.w11zz1 - zb * (s.w11z + s.w11z1) + zb * zb * s.w11;
@@ -508,6 +533,47 @@ mod tests {
         assert!((n.s.zx - zx).abs() < 1e-15, "{} {}", n.s.zx, zx);
         assert!((n.s.w11 - w11).abs() < 1e-12, "{} {}", n.s.w11, w11);
         assert!((n.s.yy1 - yy1).abs() < 1e-15, "{} {}", n.s.yy1, yy1);
+    }
+
+    /// CL-110 (EST-1 de la revisión del PR #60). Verdad: el estadístico t no
+    /// cambia si a toda la base se le suma una constante, también con
+    /// celdas vacías. Las sumas de retardo 1 sólo llevan las filas con fila
+    /// previa; centrarlas con la masa total rompía la invariancia, y la
+    /// varianza HAC encogía o quedaba ≤ 0 (t = −∞) al alejarse la base del
+    /// primer par.
+    #[test]
+    fn t_invariante_a_desplazar_la_base() {
+        let tau = SPECTRUM_SCALES_MS[17];
+        let d = tau / 8.0;
+        let mut semilla = 12345u64;
+        let mut u = || {
+            semilla = semilla.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((semilla >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+        };
+        // OU por celdas (ρ = 0,8) con una celda vacía de cada siete.
+        let mut x = 0.0f64;
+        let serie: Vec<(u64, f64)> = (0..400u64)
+            .filter_map(|c| {
+                let n = (-2.0 * u().ln()).sqrt() * (2.0 * std::f64::consts::PI * u()).cos();
+                x = 0.8 * x + 0.6 * n;
+                (c % 7 != 3).then_some((c, x))
+            })
+            .collect();
+        let t_con = |k: f64| {
+            let mut n = Nodo::new(tau);
+            for &(c, v) in &serie {
+                n.observar(((c as f64 + 0.5) * d) as u64, v + k);
+            }
+            n.estado.expect("hay estado").t
+        };
+        let t0 = t_con(0.0);
+        for k in [5.0, 10.0, 20.0] {
+            let tk = t_con(k);
+            assert!(
+                t0.is_finite() && (tk - t0).abs() <= 1e-6 * t0.abs().max(1.0),
+                "desplazar {k}: t = {tk} frente a {t0}"
+            );
+        }
     }
 
     /// Verdad: un nodo sin masa de media memoria no demuestra nada, por
