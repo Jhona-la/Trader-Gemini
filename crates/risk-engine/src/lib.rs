@@ -3,6 +3,7 @@ pub mod capital_regime;
 pub mod cramer_lundberg;
 pub mod correlation_guard;
 pub mod evidence;
+pub mod freno_estrategia;
 pub mod guard;
 pub mod hodge;
 pub mod kelly;
@@ -89,7 +90,7 @@ impl ValidatedOrder {
 /// correlación, y el suelo TP/SL y la confianza el 4 con el EV: la telemetría
 /// no podía decir qué compuerta rechazaba.
 use std::sync::atomic::AtomicU64;
-pub const REJECT_SLOTS: usize = 18;
+pub const REJECT_SLOTS: usize = 19;
 pub const REJ_FLAT_COIN: usize = 0;
 pub const REJ_EXPOSURE_ZERO: usize = 1;
 pub const REJ_CORRELATION: usize = 2;
@@ -114,6 +115,9 @@ pub const REJ_TARGET_GEOMETRY: usize = 16;
 /// D4 (ADR-0016, CL-98) — la moneda está en fase de sonda y ya hay una sonda
 /// abierta en la cartera: las sondas se abren de una en una (`sonda.rs`).
 pub const REJ_SONDA_OCUPADA: usize = 17;
+/// CL-107 — el freno de la estrategia rechazó H0 (proceso e de Ville sobre R,
+/// `freno_estrategia.rs`): no se admiten entradas nuevas.
+pub const REJ_ESTRATEGIA_FALSADA: usize = 18;
 
 /// CL-100 — umbral del veto de primer toque R-15, que ahora sólo se publica
 /// (`r15_vetaria` por moneda): P(SL antes que TP) por encima de él habría
@@ -194,6 +198,7 @@ pub const REJECT_NAMES: [&str; REJECT_SLOTS] = [
     "entrada_invalida",
     "geometria_invalida",
     "sonda_ocupada",
+    "estrategia_falsada",
 ];
 
 fn format_reject_counters(counters: &[AtomicU64; REJECT_SLOTS]) -> String {
@@ -228,12 +233,16 @@ pub fn reject_report() -> String {
 
 pub struct RiskEngine {
     pub peak_capital: f64,
+    /// CL-107 — freno de la estrategia (proceso e de Ville sobre la R de cada
+    /// cierre, H0 = +0,30 R). Echado, no se admiten entradas nuevas.
+    pub freno_estrategia: freno_estrategia::FrenoEstrategia,
 }
 
 impl RiskEngine {
     pub fn new(initial_capital: f64) -> Self {
         Self {
             peak_capital: initial_capital,
+            freno_estrategia: freno_estrategia::FrenoEstrategia::new(),
         }
     }
 
@@ -445,6 +454,11 @@ impl RiskEngine {
         // `sonda::CIERRES_DE_SONDA` cierres sólo puede abrir una SONDA, y la
         // cartera tiene una sola sonda abierta a la vez. Es la misma puerta
         // que la sonda del ML-GATE del núcleo (`arranque_frio_sin_roster`).
+        // CL-107: con el freno de la estrategia echado no entra nada nuevo
+        // (las posiciones abiertas se gestionan fuera de aquí).
+        if self.freno_estrategia.rechazada() {
+            return rej(REJ_ESTRATEGIA_FALSADA);
+        }
         let es_sonda = crate::sonda::en_fase_de_sonda(arena, coin_id);
         if !crate::sonda::admite_sonda(arena, coin_id) {
             return rej(REJ_SONDA_OCUPADA);

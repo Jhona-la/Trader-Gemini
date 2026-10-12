@@ -365,6 +365,18 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         deuda: None,
     },
     EntradaVeto {
+        id: "V-LOGIC-016",
+        nombre: "estrategia_falsada",
+        causa: "CL-107 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12): freno de la ESTRATEGIA, separado del freno duro de la cuenta. Un proceso e de Ville sobre la R realizada de cada cierre rechaza H0 «la estrategia tiene +0,30 R por operación» cuando M ≥ 1/α; desde ese momento no se admiten entradas nuevas. Las posiciones abiertas se siguen gestionando: no aplana ni dispara el kill-switch global. Queda echado hasta restaurar otro estado (otra estrategia es otra hipótesis)",
+        fuente_umbral: "medido: proceso e de Ville (VilleEProcess) sobre la R de cada cierre, con la escala de la geometría medida de las órdenes; H0 = +0,30 R (la ventaja que pide la meta) y α = 0,05 son política del dueño",
+        datos: "resultado_r de cada cierre del núcleo (PnL neto / riesgo al stop), ganancia_en_stops y perdida_en_stops del arena; telemetría ville_estrategia_e",
+        responsable: "CL-107 (Claude, Línea C), 2026-10-12",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: Some("cl107_falsa_alarma_y_deteccion_del_freno_de_la_estrategia"),
+        deuda: Some("el estado se pierde al reiniciar hasta que CL-108 lo guarda con el resto del estado aprendido; la apuesta adaptativa de VilleEProcess detecta más despacio que la mezcla de apuestas fijas del Monte Carlo del dueño (ver el contrato)"),
+    },
+    EntradaVeto {
         id: "V-TECH-003",
         nombre: "otros",
         causa: "rechazo sin clasificar (bucket catch-all) — cada uso debería reclasificarse a su compuerta real",
@@ -482,6 +494,7 @@ macro_rules! corpus_contratos {
         c.push_str(include_str!("../tests/veto_logic_contracts.rs"));
         c.push_str(include_str!("../tests/cf4_sonda_unica.rs"));
         c.push_str(include_str!("../tests/cf4_freno_duro.rs"));
+        c.push_str(include_str!("../tests/cf4_freno_estrategia.rs"));
         c.push_str(include_str!("../../god-engine-core/tests/resonancia_simetrica_contract.rs"));
         c
     }};

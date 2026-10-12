@@ -4707,6 +4707,14 @@ impl GodEngineCore {
                     } else {
                         f64::NAN
                     };
+                    // CL-107: la R de cada cierre alimenta el freno de la
+                    // estrategia (proceso e de Ville, H0 = +0,30 R).
+                    let e_estrategia = self.risk_engine.freno_estrategia.registrar(
+                        resultado_r,
+                        self.arena.ganancia_en_stops.load(Ordering::Relaxed),
+                        self.arena.perdida_en_stops.load(Ordering::Relaxed),
+                    );
+                    self.arena.registry.set("ville_estrategia_e", e_estrategia);
                     signal_engine::perceptron_gate::PerceptronGateEngine::update_weight(
                         &mut cur_hebbian,
                         resultado_r,
