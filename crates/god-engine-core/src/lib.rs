@@ -2991,9 +2991,6 @@ impl GodEngineCore {
             .max(f64::MIN_POSITIVE)
     }
 
-    /// Procesa un tick en el motor universal continuo unificado.
-    /// Retorna: (new_order, closed_order, maker_quote)
-    #[inline(always)]
     /// CL-69: el piso de resolución del ATR de la moneda es su tick (0 sin
     /// spec). Se fija en cada evento porque el registro de specs puede
     /// cambiar; `tick_size_de` no asigna.
@@ -3006,6 +3003,9 @@ impl GodEngineCore {
         }
     }
 
+    /// Procesa un tick en el motor universal continuo unificado.
+    /// Retorna: (new_order, closed_order, maker_quote)
+    #[inline(always)]
     pub fn process_tick_dual(
         &mut self,
         coin_id: usize,
