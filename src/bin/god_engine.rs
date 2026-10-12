@@ -51,6 +51,89 @@ fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTra
 /// τ de ENTRADA de la posición; τ desconocida (posición adoptada tras
 /// reinicio) ⇒ ancla rápida (comportamiento conservador). Sustituye los
 /// ±2.5%/±1.5% hardcodeados del restore de arranque.
+/// LG-8 (Línea G, G046) — FEE-BREAKER CON EVIDENCIA, NO CON TRES CIERRES.
+///
+/// QUÉ ESTABA MAL: el breaker suspendía un símbolo hasta 12 h con `trades ≥ 3`,
+/// `neto < 0` y `fees > bruto ganador`. `trades` contaba registros
+/// REALIZED_PNL (llenados, no operaciones) y tres cierres sin ganadora pasan
+/// por azar con frecuencia (1−p)³ aunque la esperanza sea positiva: con RR
+/// 2,25 y p = 0,40 ≈ 22 % de falsas suspensiones. La duración era «4 h por
+/// unidad de ofensa», un literal.
+///
+/// QUÉ GARANTIZA: (i) un cierre es un grupo de registros REALIZED_PNL del
+/// mismo símbolo separados ≤ 1 s (los llenados de una misma orden); (ii) se
+/// suspende sólo si además la cola binomial P(X ≤ ganadoras | n, p*) ≤ α, con
+/// p* el equilibrio de la geometría del genoma a la τ de la ventana: si la
+/// esperanza es positiva (p ≥ p*) la tasa de falsas suspensiones es ≤ α;
+/// (iii) la suspensión dura hasta que el cierre más antiguo de la evidencia
+/// sale de la ventana: sin operaciones nuevas, la evidencia caduca sola.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CierreAgregado {
+    t_ms: u64,
+    bruto: f64,
+}
+
+/// Agrupa registros (tiempo, PnL realizado) de UN símbolo en cierres: un
+/// registro a ≤ `separacion_ms` del anterior pertenece al mismo cierre.
+fn agrupar_cierres(mut registros: Vec<(u64, f64)>, separacion_ms: u64) -> Vec<CierreAgregado> {
+    registros.retain(|(_, v)| v.is_finite() && *v != 0.0);
+    registros.sort_by_key(|(t, _)| *t);
+    let mut out: Vec<CierreAgregado> = Vec::new();
+    let mut ultimo_t = 0u64;
+    for (t, v) in registros {
+        match out.last_mut() {
+            Some(c) if t.saturating_sub(ultimo_t) <= separacion_ms => c.bruto += v,
+            _ => out.push(CierreAgregado { t_ms: t, bruto: v }),
+        }
+        ultimo_t = t;
+    }
+    out
+}
+
+/// P(X ≤ k) con X ~ Binomial(n, p), sumando en espacio logarítmico.
+fn cola_binomial_izquierda(n: usize, k: usize, p: f64) -> f64 {
+    if !(p.is_finite() && p > 0.0 && p < 1.0) || k >= n {
+        return 1.0;
+    }
+    let (lp, lq) = (p.ln(), (1.0 - p).ln());
+    let mut log_comb = 0.0f64; // ln C(n, 0)
+    let mut total = 0.0f64;
+    for i in 0..=k {
+        if i > 0 {
+            log_comb += ((n - i + 1) as f64).ln() - (i as f64).ln();
+        }
+        total += (log_comb + i as f64 * lp + (n - i) as f64 * lq).exp();
+    }
+    total.min(1.0)
+}
+
+/// Decisión del breaker para un símbolo: `Some(hasta_ms)` si suspende.
+fn decision_fee_breaker(
+    cierres: &[CierreAgregado],
+    funding: f64,
+    fees: f64,
+    p_equilibrio: f64,
+    alfa: f64,
+    ventana_ms: u64,
+) -> Option<u64> {
+    let n = cierres.len();
+    if n == 0 || !(fees.is_finite() && fees >= 0.0) {
+        return None;
+    }
+    let bruto: f64 = cierres.iter().map(|c| c.bruto).sum();
+    let bruto_ganador: f64 = cierres.iter().filter(|c| c.bruto > 0.0).map(|c| c.bruto).sum();
+    let ganadoras = cierres.iter().filter(|c| c.bruto > 0.0).count();
+    let neto = bruto + if funding.is_finite() { funding } else { 0.0 } - fees;
+    if !(neto < 0.0 && fees > bruto_ganador) {
+        return None;
+    }
+    if cola_binomial_izquierda(n, ganadoras, p_equilibrio) > alfa {
+        return None;
+    }
+    let mas_antiguo = cierres.iter().map(|c| c.t_ms).min()?;
+    Some(mas_antiguo.saturating_add(ventana_ms))
+}
+
 /// LG-2 (Línea G) — FILTRO DE SALTO: UN PICO AISLADO NO ES UN CAMBIO DE NIVEL.
 ///
 /// QUÉ ESTABA MAL: el filtro de «flash crash» comparaba cada tick con el
@@ -2413,12 +2496,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for (symbol, reason) in &fee_partition.rejected_by_symbol {
                         telemetry_server::telemetry_log!("[FEE-BREAKER] {} numerario no utilizable: {:?}; requiere reconciliación", symbol, reason);
                     }
+                    // LG-8: los registros REALIZED_PNL se agrupan en cierres por
+                    // símbolo; funding y comisiones se suman aparte.
                     #[derive(Default)]
                     struct Agg {
-                        realized: f64,   // REALIZED_PNL + FUNDING_FEE (neto de dirección)
-                        gross_pos: f64,  // suma de cierres GANADORES
-                        fees: f64,       // |COMMISSION|
-                        trades: usize,   // cierres con PnL ≠ 0
+                        registros: Vec<(u64, f64)>, // (time, REALIZED_PNL)
+                        funding: f64,
+                        fees: f64, // |COMMISSION|
                     }
                     let mut per: std::collections::HashMap<String, Agg> =
                         std::collections::HashMap::new();
@@ -2428,23 +2512,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let a = per.entry(e.symbol.clone()).or_default();
                         match e.income_type.as_str() {
-                            "REALIZED_PNL" => {
-                                if e.income != 0.0 {
-                                    a.trades += 1;
-                                }
-                                a.realized += e.income;
-                                if e.income > 0.0 {
-                                    a.gross_pos += e.income;
-                                }
-                            }
-                            "FUNDING_FEE" => a.realized += e.income,
+                            "REALIZED_PNL" => a.registros.push((e.time, e.income)),
+                            "FUNDING_FEE" => a.funding += e.income,
                             "COMMISSION" => a.fees += e.income.abs(),
                             _ => {}
                         }
                     }
+                    // LG-8: p* de la geometría del genoma a la τ de la ventana.
+                    let tp_brk = arena_brk.config.tp_at_tau(tau_scale);
+                    let sl_brk = arena_brk.config.sl_at_tau(tau_scale);
+                    let friccion_brk = risk_engine::tp_sl::roundtrip_friction(
+                        arena_brk.config.live_taker_fee.load(std::sync::atomic::Ordering::Relaxed),
+                        arena_brk.config.base_slippage_floor.load(std::sync::atomic::Ordering::Relaxed),
+                        0.0,
+                        0.0,
+                    );
+                    let p_star_brk = god_engine_core::p_equilibrio(tp_brk, sl_brk, friccion_brk)
+                        .unwrap_or(0.5);
                     for (sym, a) in per {
-                        let net = a.realized - a.fees;
-                        if a.trades >= 3 && net < 0.0 && a.fees > a.gross_pos {
+                        let cierres = agrupar_cierres(a.registros, 1_000);
+                        let bruto: f64 = cierres.iter().map(|c| c.bruto).sum();
+                        let gross_pos: f64 = cierres.iter().filter(|c| c.bruto > 0.0).map(|c| c.bruto).sum();
+                        let net = bruto + a.funding - a.fees;
+                        let decision = decision_fee_breaker(
+                            &cierres,
+                            a.funding,
+                            a.fees,
+                            p_star_brk,
+                            risk_engine::drawdown::ALFA_FALSACION,
+                            window_ms,
+                        );
+                        if let Some(until_ms) = decision.filter(|&u| u > now_breaker) {
                             // B3.6b (auditoría): la condición se re-evalúa cada
                             // 5min y extiende until_ms en +4h por diseño (una
                             // mañana mala cuesta el día). ANTES se logueaba y
@@ -2458,21 +2556,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .map(|g| g.get(&sym).copied().unwrap_or(0))
                                 .unwrap_or(0)
                                 > now_breaker;
-                            // S-5: suspensión proporcional a la ofensa —
-                            // fees/gross mide cuánta fricción paga el símbolo
-                            // por unidad de ganancia bruta: ratio 1.0 ⇒ 4h
-                            // (histórico), ratio 3.0 ⇒ 12h, clamp [1h, 12h].
-                            let offense = (a.fees / a.gross_pos.max(1e-9)).clamp(0.25, 3.0);
-                            let suspend_hours = (offense * 4.0).clamp(1.0, 12.0) as u64;
-                            let until_ms = now_breaker + suspend_hours * 3_600_000;
+                            // LG-8: hasta que el cierre más antiguo de la
+                            // evidencia sale de la ventana.
+                            let suspend_hours = (until_ms - now_breaker) as f64 / 3_600_000.0;
                             suspend_symbol_until(&sym, until_ms);
                             // B3.6b — persistir (atómico, purga expirados): la
                             // suspensión sobrevive reinicios del motor.
                             persist_fee_breaker(now_breaker);
                             if !was_suspended {
                                 telemetry_server::telemetry_log!(
-                                    "🛑 [FEE-BREAKER] {} suspendido {}h para nuevas entradas (persistido): {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2} — el símbolo no paga su fricción",
-                                    sym, suspend_hours, a.trades, a.gross_pos, a.fees, net
+                                    "🛑 [FEE-BREAKER] {} suspendido {:.1}h para nuevas entradas (persistido): {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2}, p*={:.3} — el símbolo no paga su fricción (P ≤ α)",
+                                    sym, suspend_hours, cierres.len(), gross_pos, a.fees, net, p_star_brk
                                 );
                             }
                         }
@@ -5223,6 +5317,55 @@ mod tests {
     use super::*;
     use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
     use std::sync::atomic::Ordering;
+
+    /// LG-8: los llenados de una orden cuentan como un cierre; tres cierres
+    /// sin ganadora ya no suspenden (la cola binomial con p* ≈ 0,35 vale
+    /// 0,27 > α) y la falsa suspensión con esperanza positiva queda ≤ α.
+    #[test]
+    fn lg8_el_fee_breaker_exige_evidencia_y_cuenta_operaciones() {
+        let c = agrupar_cierres(vec![(1_000, -0.4), (1_300, -0.3), (1_900, -0.2), (60_000, 0.5)], 1_000);
+        assert_eq!(c.len(), 2, "tres llenados a ≤ 1 s son un cierre: {c:?}");
+        assert!((c[0].bruto + 0.9).abs() < 1e-12);
+        // Antes bastaban 3 cierres perdedores: ahora no hay evidencia.
+        let perdedores: Vec<CierreAgregado> =
+            (0..3).map(|i| CierreAgregado { t_ms: 1_000 + i * 60_000, bruto: -0.5 }).collect();
+        assert_eq!(decision_fee_breaker(&perdedores, 0.0, 0.3, 0.35, 0.05, 3_600_000), None);
+        // Con 8 perdedores la cola es 0,65⁸ ≈ 0,032 ≤ α: suspende hasta que el
+        // más antiguo sale de la ventana.
+        let ocho: Vec<CierreAgregado> =
+            (0..8).map(|i| CierreAgregado { t_ms: 1_000 + i * 60_000, bruto: -0.5 }).collect();
+        assert_eq!(decision_fee_breaker(&ocho, 0.0, 0.3, 0.35, 0.05, 3_600_000), Some(1_000 + 3_600_000));
+        // Monte Carlo: p = 0,40 > p* = 0,35 (esperanza positiva), ventanas de 3 a
+        // 12 cierres. La tasa de falsas suspensiones queda ≤ α.
+        let mut estado = 0x2545_f491_4f6c_dd1du64;
+        let mut suspensiones = 0u32;
+        let ensayos = 20_000u32;
+        for _ in 0..ensayos {
+            estado ^= estado << 13;
+            estado ^= estado >> 7;
+            estado ^= estado << 17;
+            let n = 3 + (estado % 10) as u64;
+            let mut cierres = Vec::new();
+            for j in 0..n {
+                estado ^= estado << 13;
+                estado ^= estado >> 7;
+                estado ^= estado << 17;
+                let u = (estado >> 11) as f64 / (1u64 << 53) as f64;
+                let bruto = if u < 0.40 { 2.25 } else { -1.0 };
+                cierres.push(CierreAgregado { t_ms: 1 + j * 1_000, bruto });
+            }
+            let fees = 0.12 * n as f64;
+            if decision_fee_breaker(&cierres, 0.0, fees, 0.35, 0.05, 3_600_000).is_some() {
+                suspensiones += 1;
+            }
+        }
+        let tasa = suspensiones as f64 / ensayos as f64;
+        assert!(tasa <= 0.05, "falsas suspensiones {tasa}");
+        // Cola binomial: valores exactos.
+        assert!((cola_binomial_izquierda(3, 0, 0.35) - 0.65f64.powi(3)).abs() < 1e-12);
+        assert!((cola_binomial_izquierda(4, 1, 0.5) - 5.0 / 16.0).abs() < 1e-12);
+        assert_eq!(cola_binomial_izquierda(4, 4, 0.5), 1.0);
+    }
 
     /// LG-2: tras un cambio de nivel real la moneda no queda ciega; un pico
     /// aislado sigue descartado.
