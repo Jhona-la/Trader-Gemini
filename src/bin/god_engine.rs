@@ -51,6 +51,37 @@ fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTra
 /// τ de ENTRADA de la posición; τ desconocida (posición adoptada tras
 /// reinicio) ⇒ ancla rápida (comportamiento conservador). Sustituye los
 /// ±2.5%/±1.5% hardcodeados del restore de arranque.
+/// LG-2 (Línea G) — FILTRO DE SALTO: UN PICO AISLADO NO ES UN CAMBIO DE NIVEL.
+///
+/// QUÉ ESTABA MAL: el filtro de «flash crash» comparaba cada tick con el
+/// último tick ACEPTADO del anillo y descartaba los que saltaban más que el
+/// gen `flash_crash_jump_pct`. Los descartados no entran al anillo, así que
+/// tras un salto REAL de nivel (un hueco del WS, una cascada) todos los ticks
+/// siguientes —ya al nuevo nivel— se comparaban con el precio viejo y se
+/// descartaban para siempre: la moneda quedaba ciega (sin gestión de sus
+/// posiciones en el núcleo, sin señales) hasta reiniciar el proceso.
+///
+/// QUÉ GARANTIZA: un tick anómalo se descarta y se recuerda. Si el siguiente
+/// tick anómalo confirma el mismo nivel (dista del recordado no más que el
+/// propio gen), el salto es un cambio de nivel y se acepta. Un pico aislado
+/// —el siguiente tick vuelve al nivel previo y pasa el filtro normal— sigue
+/// descartado, y el recuerdo se borra con cualquier tick aceptado. Devuelve
+/// `(aceptar, nuevo_pendiente)`; `pendiente = 0` significa sin recuerdo.
+fn filtro_de_salto(precio_previo: f64, pendiente: f64, precio: f64, max_salto: f64) -> (bool, f64) {
+    if !(precio_previo > 0.0) || !(max_salto > 0.0) || !max_salto.is_finite() {
+        return (true, 0.0);
+    }
+    let salto = (precio - precio_previo).abs() / precio_previo;
+    if salto <= max_salto {
+        return (true, 0.0);
+    }
+    if pendiente > 0.0 && (precio - pendiente).abs() / pendiente <= max_salto {
+        // Segundo tick anómalo en el mismo nivel: cambio de nivel confirmado.
+        return (true, 0.0);
+    }
+    (false, precio)
+}
+
 fn genome_protection_prices(
     arena: &quantum_arena::GlobalArena,
     symbol: &str,
@@ -3019,6 +3050,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|_| feature_engine::SpoofingDetector::default())
             .collect();
+        // LG-2: precio del último tick descartado por el filtro de salto, por moneda.
+        let mut salto_pendiente: Vec<f64> = vec![0.0; quantum_arena::state::MAX_COINS];
         let mut msg_count: u64 = 0;
         // D-610: guardia de secuencia del libro, un estado por símbolo del
         // universo (misma indexación que `local_orderbooks`).
@@ -3364,9 +3397,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if n_recent > 0 {
                     let prev_price = tick_buf[0].bid_price;
                     if prev_price > 0.0 {
-                        let jump_pct = (current_price - prev_price).abs() / prev_price;
                         let max_jump = engine_real.arena.config.flash_crash_jump_pct.load(std::sync::atomic::Ordering::Relaxed);
-                        if jump_pct > max_jump {
+                        let pendiente = salto_pendiente.get(coin_id).copied().unwrap_or(0.0);
+                        let (aceptar, nuevo_pendiente) =
+                            filtro_de_salto(prev_price, pendiente, current_price, max_jump);
+                        if let Some(p) = salto_pendiente.get_mut(coin_id) {
+                            *p = nuevo_pendiente;
+                        }
+                        if !aceptar {
+                            let jump_pct = (current_price - prev_price).abs() / prev_price;
                             telemetry_server::telemetry_log!("⚠️ [DATA INTEGRITY] Dropping anomalous tick for {}! Jump: {:.2}%", parsed_sym, jump_pct * 100.0);
                             continue;
                         }
@@ -5184,6 +5223,39 @@ mod tests {
     use super::*;
     use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
     use std::sync::atomic::Ordering;
+
+    /// LG-2: tras un cambio de nivel real la moneda no queda ciega; un pico
+    /// aislado sigue descartado.
+    #[test]
+    fn lg2_un_cambio_de_nivel_no_deja_ciega_a_la_moneda() {
+        let max = 0.15;
+        // Antes: cada tick al nuevo nivel (100 → 80) se comparaba con 100 y se
+        // descartaba para siempre. Ahora el primero se descarta y se recuerda,
+        // el segundo confirma el nivel y entra.
+        let (a1, p1) = filtro_de_salto(100.0, 0.0, 80.0, max);
+        assert!(!a1, "el primer tick anómalo se descarta");
+        assert_eq!(p1, 80.0);
+        let (a2, p2) = filtro_de_salto(100.0, p1, 80.4, max);
+        assert!(a2, "el segundo tick al mismo nivel confirma el cambio");
+        assert_eq!(p2, 0.0);
+        // Pico aislado: 100 → 130 → 100,2. El pico se descarta y el regreso
+        // pasa el filtro normal y borra el recuerdo.
+        let (b1, q1) = filtro_de_salto(100.0, 0.0, 130.0, max);
+        assert!(!b1);
+        let (b2, q2) = filtro_de_salto(100.0, q1, 100.2, max);
+        assert!(b2);
+        assert_eq!(q2, 0.0);
+        // Dos picos anómalos en direcciones opuestas no se confirman entre sí.
+        let (c1, r1) = filtro_de_salto(100.0, 0.0, 130.0, max);
+        let (c2, r2) = filtro_de_salto(100.0, r1, 70.0, max);
+        assert!(!c1 && !c2);
+        assert_eq!(r2, 70.0);
+        // Sin referencia o con gen inválido no se filtra.
+        assert_eq!(filtro_de_salto(0.0, 0.0, 80.0, max), (true, 0.0));
+        assert_eq!(filtro_de_salto(100.0, 0.0, 80.0, f64::NAN), (true, 0.0));
+        // Movimiento normal: se acepta sin recuerdo.
+        assert_eq!(filtro_de_salto(100.0, 0.0, 101.0, max), (true, 0.0));
+    }
 
     #[test]
     fn omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva() {
