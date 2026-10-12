@@ -179,6 +179,10 @@
       fixtures StatArb no movía ninguna decisión;
     - camino caliente: 126,9 µs frente a 125,2 µs (ruido 4,1 µs) y las
       mismas 2,218 asignaciones por evento: la puerta pasa.
+  - Integrado con main 544a5237 (Línea G) por merge; sólo el buzón tuvo
+    conflicto (unión). Sobre el árbol integrado: suites 252/0, cf como
+    en main, golden 54/0, T-2 998a7de2 (131 operaciones) y T-1 19/144
+    con la base 6dff337e y la lista de la Línea G.
 - Lecciones:
   - Antes de crear un test, comprobar que el archivo no existe (pisé
     `cf4_piso_resolucion.rs`; se restauró antes de cualquier commit).
