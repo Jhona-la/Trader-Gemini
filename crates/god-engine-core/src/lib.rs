@@ -8573,7 +8573,22 @@ impl GodEngineCore {
 
                                 // H-4: usar el fee de la FÍSICA — antes se recalculaba aparte
                                 let fee_paid = phys_entry_fee;
-                                let qty = nominal_size / real_entry_price;
+                                // Revisión del PR #61 (F1): la cantidad nunca baja
+                                // de la orden mínima ejecutable al precio de entrada
+                                // (el ejecutor redondea hacia abajo al paso; ver
+                                // `capital_regime::cantidad_de_la_orden`).
+                                let qty = match quantum_arena::symbol_registry::try_spec(coin_id) {
+                                    Some(s) => risk_engine::capital_regime::cantidad_de_la_orden(
+                                        nominal_size,
+                                        real_entry_price,
+                                        risk_engine::capital_regime::effective_min_notional(
+                                            s.min_notional,
+                                        ),
+                                        s.step_size,
+                                        s.min_qty,
+                                    ),
+                                    None => nominal_size / real_entry_price,
+                                };
 
                                 // U-ERR-5 (merge con F-009 de main): F-009 volvia a
                                 // partir la apertura en Swing/Scalping segun la

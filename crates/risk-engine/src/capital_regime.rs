@@ -245,6 +245,92 @@ pub fn orden_viable(min_notional: f64, sl_pct: f64, capital: f64, tope_riesgo: f
     riesgo_minimo_viable(min_notional, sl_pct, capital) <= tope_riesgo
 }
 
+/// Revisión del PR #61 (F1) — CANTIDAD DE LA ORDEN MÍNIMA DEL SÍMBOLO.
+///
+/// El exchange acepta cantidades que son múltiplo del paso (`stepSize`), con
+/// `qty ≥ minQty` y `qty·precio ≥ min_notional`, y el ejecutor redondea la
+/// cantidad HACIA ABAJO al paso. Un nocional de 5,10 USD de BNB a 600 USD con
+/// paso 0,01 son 0,0085 BNB, que el ejecutor deja en 0 («Volumen 0»); con paso
+/// 1 a 3 USD son 1,7 unidades, que quedan en 1 (3 USD, bajo el mínimo). La
+/// orden mínima es el MENOR múltiplo del paso que cumple los dos mínimos: se
+/// redondea hacia ARRIBA. Un múltiplo exacto (0,051/0,001 = 50,999…) no sube
+/// un paso de más: se ajusta con la misma tolerancia que el ejecutor.
+///
+/// `None` si el nocional, el paso o el precio no son utilizables.
+#[inline]
+pub fn cantidad_minima_ejecutable(
+    min_notional: f64,
+    paso: f64,
+    cantidad_minima: f64,
+    precio: f64,
+) -> Option<f64> {
+    if !(min_notional.is_finite()
+        && min_notional > 0.0
+        && paso.is_finite()
+        && paso > 0.0
+        && precio.is_finite()
+        && precio > 0.0)
+    {
+        return None;
+    }
+    let q_min = if cantidad_minima.is_finite() && cantidad_minima > 0.0 {
+        cantidad_minima
+    } else {
+        0.0
+    };
+    let cumple = |q: f64| q * precio >= min_notional && q >= q_min * (1.0 - 1e-12);
+    let escalado = q_min.max(min_notional / precio) / paso;
+    let r = escalado.round();
+    let mut pasos = if (escalado - r).abs() <= 1e-9 * r.max(1.0) {
+        r
+    } else {
+        escalado.ceil()
+    }
+    .max(1.0);
+    // El redondeo binario puede dejar `q·precio` un ulp por debajo del
+    // mínimo: como mucho hacen falta un par de pasos más.
+    for _ in 0..4 {
+        let q = pasos * paso;
+        if cumple(q) {
+            return Some(q);
+        }
+        pasos += 1.0;
+    }
+    None
+}
+
+/// Nocional de la orden mínima del símbolo al precio dado
+/// ([`cantidad_minima_ejecutable`] · precio).
+#[inline]
+pub fn nocional_minimo_ejecutable(
+    min_notional: f64,
+    paso: f64,
+    cantidad_minima: f64,
+    precio: f64,
+) -> Option<f64> {
+    cantidad_minima_ejecutable(min_notional, paso, cantidad_minima, precio).map(|q| q * precio)
+}
+
+/// Revisión del PR #61 (F1) — CANTIDAD DE UNA ORDEN DE `nominal` USD al
+/// precio de entrada. El riesgo dimensiona la orden mínima del lote al precio
+/// medio; el núcleo divide por el precio de entrada con deslizamiento (el ask
+/// de un largo), y la orden mínima quedaría una fracción de paso por debajo:
+/// el ejecutor, que redondea hacia abajo, la dejaría un paso bajo el mínimo
+/// (en 0 con lote grueso). La cantidad nunca baja de la orden mínima
+/// ejecutable al precio de entrada; por encima de ella no cambia.
+#[inline]
+pub fn cantidad_de_la_orden(
+    nominal: f64,
+    precio_entrada: f64,
+    min_notional: f64,
+    paso: f64,
+    cantidad_minima: f64,
+) -> f64 {
+    let qty = nominal / precio_entrada;
+    cantidad_minima_ejecutable(min_notional, paso, cantidad_minima, precio_entrada)
+        .map_or(qty, |q_min| qty.max(q_min))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1229,6 +1229,20 @@ impl RiskEngine {
         let max_fee_limit =
             crate::capital_regime::lerp(max_acceptable_fee_pct, 0.035, micro_w_alloc);
         let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
+        // Revisión del PR #61 (F1): la orden mínima que de verdad sale es la
+        // del LOTE, el menor múltiplo de `stepSize` con `qty ≥ minQty` y un
+        // nocional de al menos el mínimo más su margen de 0,10 USD (FASE 3),
+        // al precio actual. Con lote grueso es mayor que el nocional mínimo
+        // (BNB a 600 con paso 0,01: 6 USD, no 5,10): la viabilidad, el rescate
+        // y el tope de la sonda razonan con ella. Sin paso o precio
+        // utilizables queda el nocional mínimo de antes.
+        let nocional_minimo = crate::capital_regime::nocional_minimo_ejecutable(
+            dynamic_min_notional + 0.1,
+            spec.step_size,
+            spec.min_qty,
+            current_price,
+        )
+        .unwrap_or(dynamic_min_notional + 0.1);
         let _max_safe_leverage = if roundtrip_fee > 0.0 {
             max_acceptable_fee_pct / roundtrip_fee
         } else {
@@ -1263,7 +1277,7 @@ impl RiskEngine {
         let q_para_ruina = crate::ruin::conservative_loss_q(wr, trades_coin);
         let tope_riesgo_evento = crate::ruin::clamp_ruin(1.0, q_para_ruina);
         if !crate::capital_regime::orden_viable(
-            dynamic_min_notional,
+            nocional_minimo,
             expected_loss,
             allocated_capital,
             tope_riesgo_evento,
@@ -1315,8 +1329,9 @@ impl RiskEngine {
 
         // FASE 3 FIX: Micro-Account Notional Safety
         // Sumamos diez centavos de dólar (+0.1) al min notional para evitar rechazos
-        // por pérdida de precisión IEEE-754 en multiplicaciones de apalancamiento
-        let safe_min_notional = dynamic_min_notional + 0.1;
+        // por pérdida de precisión IEEE-754 en multiplicaciones de apalancamiento.
+        // Revisión del PR #61 (F1): y se redondea al lote (`nocional_minimo`).
+        let safe_min_notional = nocional_minimo;
         // D-750: el margen mínimo viable sale de la MISMA función que la
         // comprobación de viabilidad de más arriba: `min_notional / L`.
         let required_margin_for_min_notional =

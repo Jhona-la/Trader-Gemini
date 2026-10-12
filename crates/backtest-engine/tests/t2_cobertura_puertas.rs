@@ -20,6 +20,12 @@
 //!   signo a menudo, y con ella el OBI sintético del runner (±0,6): el libro
 //!   contradice a las señales lentas y el consejo vota dividido.
 //! - Cuenta de 13 USD: régimen micro, nocional mínimo, D2/D3 y viabilidad.
+//! - Lote fino (CL-98b, revisión del PR #61, F1): la orden mínima es la del
+//!   lote del símbolo. Con el lote real de BTC (0,001 BTC ≈ 60 USD a 60 000)
+//!   una cuenta de 13 USD no abre nada (todo `min_notional`) y el T-2 no
+//!   mediría las puertas. El fixture registra para su símbolo un paso de
+//!   0,00001 (orden mínima 0,00009 BTC ≈ 5,40 USD), como las monedas que la
+//!   cuenta opera, cuya orden mínima ronda los 5 USD.
 //! - Predictor sintético direccional como el del T-1, pero con la tasa base
 //!   de un bosque real (0,30) en vez de 0,5.
 //!
@@ -104,7 +110,26 @@ pub fn serie_lateral(n: usize) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
     (closes, highs, lows, vols)
 }
 
+/// Lote fino del símbolo del fixture (ver la cabecera). Se registra antes de
+/// la primera evaluación; `asegurar_spec_nativo` no lo pisa.
+fn registrar_lote_fino() {
+    quantum_arena::symbol_registry::update_registry(vec![
+        quantum_arena::symbol_registry::SymbolSpec {
+            symbol: "BTCUSDT".into(),
+            step_size: 0.00001,
+            tick_size: 0.1,
+            min_qty: 0.00001,
+            min_notional: 5.0,
+            max_leverage: 50,
+            maker_fee: 0.0002,
+            taker_fee: 0.0005,
+            is_shadow: false,
+        },
+    ]);
+}
+
 fn cargar_predictor() {
+    registrar_lote_fino();
     let confident = god_engine_core::ml_inference::NanoForestData {
         children_left: vec![1, -1, -1],
         children_right: vec![2, -1, -1],
