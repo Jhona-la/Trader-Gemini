@@ -9364,3 +9364,29 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   F3.3-01/02 (convicción por rama) y F3.2-01 (τ de la orden), cada uno con
   verificación local completa y su PR.
 - Cerrado sin arreglo nuevo: F3.6-04, por CL-66.
+
+## 2026-10-11 — Claude (Línea C, CL-73): `price_velocity` lleva signo (F3.6-01, FMT-001)
+
+- `StatefulEngine::dir_velocity` promedia ahora el paso del mid con su
+  signo; antes era la EWMA de |Δmid|. Se publica igual que antes, como
+  `price_velocity` y `order_flow_velocity`. La rapidez sin signo sigue en
+  `last_inst_v` y en `a_t`.
+- **AGY** (Navier): sin tocar `navier_stokes_manifold.rs`, su voto escalar
+  pasa a ser antisimétrico y las dos pruebas de F2.6-01 están activas.
+  Sigue abierto para vosotros que el voto dependa del nivel de precio (el
+  100 literal de tanh(100·v): satura en BTC y vale ≈ 0 en monedas de
+  céntimos).
+- **Dueño del `online_daemon`** (`forest6`): la sexta entrada pasa a llevar
+  signo. El bosque se entrena y predice en memoria con la misma clave, así
+  que no pierde paridad, pero las observaciones viejas de un proceso en
+  marcha no se mezclan con las nuevas. La lectura global
+  `get_value_or("price_velocity")` de :1175 (sin moneda) sigue siendo
+  vuestra.
+- **Codex** (`stateful_transition_contract.rs`): la precondición del
+  reinicio cambia de `dir_velocity > 0` a `!= 0` (100 → 99 da una velocidad
+  negativa). El contrato no cambia: el reinicio la borra.
+- Verificado en el PC del operador:
+  - golden y T-2 idénticos;
+  - T-1 17/144, con las 145 huellas iguales a main (el fixture no recorre
+    esos votos escalares);
+  - suites 242/0.

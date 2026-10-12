@@ -1,6 +1,6 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72)
+## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y F3.6-01 (CL-73)
 
 - #44 (CL-67 y CL-71) fusionado en main (8f572f7c).
 - Las 62 propuestas del borrador de C-F3 son 71 tests: 13 activos y 58 OPEN,
@@ -17,9 +17,14 @@
   - F3.1-01…06 son de Qoder: Línea C no toca el orquestador ni el espectro.
   - Antes de tocar el consejo (F3.4-01/02/06) o `calibration.rs` (F3.5-04,
     F3.8-01) hay que confirmar con AGY o Codex.
-- Siguiente: arreglar F3.6-01 (velocidad con signo, FMT-001), F3.3-01/02
-  (convicción por rama) y F3.2-01 (τ de la orden), con verificación local y
-  un PR por bloque.
+- CL-73 (F3.6-01, FMT-001): `dir_velocity` promedia el paso del mid con su
+  signo.
+  - El solitón y el choque son impares sin tocar su código.
+  - El voto escalar de Navier (F2.6-01) pasa a ser antisimétrico.
+  - Golden, T-2 y las 145 huellas del T-1 son idénticos a main: el fixture
+    no recorre esos votos.
+- Siguiente: F3.2-01 (una τ, antes de las puertas) y F3.3-01/02 (convicción
+  por rama, monótona y contra p*), cada uno con verificación local y su PR.
 
 ## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
 
