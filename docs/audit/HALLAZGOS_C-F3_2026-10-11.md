@@ -55,7 +55,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 | F3.6-07 | La vida de la rama 12 sale del gen base_duration_ms, no de una τ medida, y pesa la mitad en log tras la mezcla | media | confirmado | Línea C |
 | F3.6-08 | En TrendRunner la volatilidad sube la convicción (vol_boost), en contra de D-746 | media | cerrado (CL-77) | Línea C |
 | F3.7-01 | `vecm_zscore` es el nivel de la base entre el ATR, no un z: una prima constante vota reversión de forma permanente | media | cerrado con spot (CL-78) | Línea C (escritor en lib.rs y lectores de strategy-core). El lector conformal se ve afecta |
-| F3.7-02 | La cointegración se supone: la guarda t½ ≤ 2τ* deja pasar caminatas aleatorias independientes | media | cerrado (CL-97) | Línea C |
+| F3.7-02 | La cointegración se supone: la guarda t½ ≤ 2τ* deja pasar caminatas aleatorias independientes | media | abierto (EST-3; CL-97 lo cierra en parte) | Línea C |
 | F3.7-03 | El TTL anti-staleness del spot está muerto en producción: un spot congelado sigue votando | media | cerrado (CL-79) | Línea C (núcleo). data-pipeline debe publicar la edad del spot. |
 | F3.7-04 | StatArb sigue heredando z y t½ de otra moneda por la caída al global; las API estrictas no se usan | media | cerrado (CL-80) | Línea C (lectores de strategy-core y signal-engine) |
 | F3.7-05 | El mismo escalar entra en hasta tres votos del consenso | media | disputado; camino de StatArb cerrado (CL-97) | Línea C |
@@ -630,6 +630,10 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
     - Se contrasta el nodo más grande con τ_k ≤ τ*; rechazar H0 demuestra t½ < 2τ_k ≤ 2τ*. El núcleo publica en cada evento `statarb_half_life_ms` = 2·τ_k si la reversión está demostrada (∞ si no) y la z del último par contra la media y la dispersión del nodo (0 sin demostración o con el spot caducado). El lector conserva la guarda t½ ≤ 2τ* y ya no cae a `vecm_zscore`: sin prueba propia, StatArb se abstiene.
   - Medido: con la configuración viva pasan 0/40 caminatas en 20 min (el nodo 19 no madura y se abstiene), 0/40 con 4 h de pares y 0/40 con ruido de medida; en el núcleo, 0/40 caminatas (en `main` 39/40) y 0/20 reversiones con t½ = 1 100 s (en `main` 20/20). Potencia: con t½ = τ_k/5, 99,5 % a dos memorias. Pruebas: `cf3_guarda_t_media.rs`, `cf3_prueba_reversion.rs` (strategy-core) y `cf3_reversion_base.rs`, `statarb_live_physics_contract.rs` (god-engine-core).
   - Lo que la prueba no hace: no estima la vida media (la acota); su nivel es por decisión, no por trayectoria (repetir la mirada en el tiempo no está corregido); con una reversión mucho más rápida que la rejilla (t½ ≪ Δ) el instrumento se debilita y se abstiene. Los nodos lentos tardan en madurar (τ_20: 2,4 h; τ_22: 39 h) y mientras tanto StatArb no vota a esas escalas.
+  - Reabierto por la revisión adversarial del PR #60 (2026-10-12, `docs/audit/REVISION_PR60_2026-10-12.md`). CL-97 mejora `main` en todo lo medido (caminatas 39/40 → 0/40), pero:
+    - EST-3 (medio): la prueba mira los retardos τ_k/8 y τ_k/4 y extrapola a 2τ_k suponiendo un OU único. Con una base de dos escalas (microestructura de t½ de 1–2 celdas más deriva de la prima de t½ = 1 h, la condición viva normal) la reversión sale demostrada el 17 % de los instantes y la desviación votada sólo revierte el 42 % en 2τ_k. Mientras siga abierto, F3.7-02 no está cerrado.
+    - W-1 (medio): `reset_engines` rehace la prueba en cada reconexión del WS, y Binance corta la conexión a las 24 h: el nodo 22 no madura nunca y el «calentamiento de 39 h» de arriba no termina.
+    - Menores EST-1, EST-2, EST-5, EST-6, W-2 a W-5. Se arreglan en la tanda CL-100 en adelante, un commit por hallazgo.
 - Dueño: Línea C
 - Relación con hallazgos anteriores: Fila 20 de §3 del plan (cointegración supuesta); relacionado con LC-F3-14.
 - Escépticos: confirmado.
