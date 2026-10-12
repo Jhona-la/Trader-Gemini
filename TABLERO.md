@@ -59,6 +59,23 @@
 - **Siguiente**: LF-F4 (vetos: alcanzabilidad, frontera y recuperación desde
   cero posiciones) y revisión de cada ola nueva que entre sin PR.
 
+## Claude — Línea G (actualizado: 2026-10-12, sesión local, prefijo LG-n, rama claude/linea-g-revision-base)
+
+- **Ola 1 cerrada**: revisión desde la base del HEAD 86218456
+  (`docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md`, datos en `docs/audit/linea_g/`).
+  Censo de 1 237 vetos (64 % literales, 43 absorbentes), 211 lazos (59 con
+  señal equivocada), 411 hallazgos; 67 candidatos verificados por escépticos.
+- **Commiteado**: LG-1 (convicción 0 ⇒ Flat + olvido por rama), LG-2 (filtro
+  de salto del host), LG-3 (rate-limit con caducidad), LG-4 (banda operable y
+  reparación RR en [30 s, 12 h]; T-1 17 → 19/144), LG-5 (pedido OPEN: la
+  puerta EV usa P(neto > 0) como P(TP primero)).
+- **Siguiente (ola 2)**: G040, G046, G049 (zona libre); contrato único de
+  resultado de orden (G4) con Monte Carlo; regla de admisión sobre los 43
+  vetos absorbentes. Entregas a cada dueño en el buzón.
+- **No toca**: ATR/σ̂60 (Línea C), orquestador/espectro (Qoder), registro
+  (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol).
+- **Recursos**: disco C: con 11 GB libres; sin `CARGO_TARGET_DIR` propio.
+
 ## Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 
 - **Haciendo ahora**: docs del EV medido en el T-2 (ledger §7.5).
