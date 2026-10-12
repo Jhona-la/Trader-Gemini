@@ -1219,6 +1219,14 @@ impl LiveEvolutionDaemon {
                         // del registry/coin en el instante del cierre:
                         // obi, aceleración de precio, spread bps (spot),
                         // atr_pct, hurst y momentum como proxy macro.
+                        // CL-96: SIN PARIDAD con la predicción. Aquí obi,
+                        // aceleración, atr_pct y price_velocity se leen de
+                        // las claves GLOBALES (`get_value_or`: el valor de la
+                        // última moneda que las escribió), y QO-E2a predice
+                        // con las de la moneda (`get_for_coin_or`). El buzón
+                        // de CL-73 decía que se entrenaba y predecía con la
+                        // misma clave: era falso. El defecto sigue abierto
+                        // (dueño del demonio); sólo se corrige la nota.
                         let reg = &self.arena.registry;
                         let spot_bid = coin.spot_bid.load(std::sync::atomic::Ordering::Relaxed);
                         let spot_ask = coin.spot_ask.load(std::sync::atomic::Ordering::Relaxed);
