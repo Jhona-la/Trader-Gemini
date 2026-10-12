@@ -4918,9 +4918,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             msg_count += 1;
             if msg_count.is_multiple_of(100) {
-                let limit_10s = engine_real.arena.config.executor_max_orders_10s.load(Ordering::Relaxed) as usize;
-                let limit_w1m = engine_real.arena.config.executor_max_weight_1m.load(Ordering::Relaxed) as usize;
-                exec.load().set_rate_limit_thresholds(limit_w1m, limit_10s, 1100);
+                // LG-12: los límites de peticiones son los del exchange
+                // (constantes del ejecutor), no genes evolucionados.
 
                 let lat = start.elapsed().as_nanos();
 

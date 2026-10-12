@@ -18,6 +18,17 @@ pub const MAX_INITIAL_LEVERAGE: u32 = 125;
 /// Do not silently fall back to a fully visible order or claim paper support.
 pub const SUPPORTS_NATIVE_ICEBERG: bool = false;
 
+/// LG-12 (Línea G) — LÍMITES DE PETICIONES DEL EXCHANGE (USD-M Futures,
+/// `exchangeInfo.rateLimits`): REQUEST_WEIGHT 2 400/min, ORDERS 300/10 s y
+/// 1 200/min. Son infraestructura del exchange, no parámetros de estrategia:
+/// antes el host los tomaba del genoma (mutaban en [1 000; 5 000] y
+/// [100; 500]); con un gen por encima del límite real el freno local al 80 %
+/// no actuaba antes de un 429/418, y ningún backtest puede medirlos. El
+/// margen para las peticiones en vuelo lo pone el headroom del ejecutor.
+pub const LIMITE_PESO_1M: usize = 2_400;
+pub const LIMITE_ORDENES_10S: usize = 300;
+pub const LIMITE_ORDENES_1M: usize = 1_200;
+
 /// A successful HTTP status alone does not confirm the requested configuration.
 /// This validates identity and leverage only, not account margin tiers/capacity.
 pub fn validate_leverage_confirmation(

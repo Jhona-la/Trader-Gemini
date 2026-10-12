@@ -383,9 +383,10 @@ impl OrderExecutor {
             binance_orders_10s: AtomicUsize::new(0),
             binance_orders_1m: AtomicUsize::new(0),
             binance_limits_ts_ms: AtomicU64::new(0),
-            max_weight_1m: AtomicUsize::new(2200), // Default, but can be updated
-            max_orders_10s: AtomicUsize::new(280),
-            max_orders_1m: AtomicUsize::new(1100),
+            // LG-12: los límites documentados del exchange.
+            max_weight_1m: AtomicUsize::new(crate::binance_api::LIMITE_PESO_1M),
+            max_orders_10s: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_10S),
+            max_orders_1m: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_1M),
             kill_switch: AtomicBool::new(false),
             active_leverage: ArcSwap::from_pointee(std::collections::HashMap::new()),
             is_paper_trading: false, // Desacoplado: false por defecto para permitir órdenes reales en Testnet/Mainnet; activar con set_paper_trading(true) si se desea simular
@@ -421,9 +422,10 @@ impl OrderExecutor {
             binance_orders_10s: AtomicUsize::new(0),
             binance_orders_1m: AtomicUsize::new(0),
             binance_limits_ts_ms: AtomicU64::new(0),
-            max_weight_1m: AtomicUsize::new(2200),
-            max_orders_10s: AtomicUsize::new(280),
-            max_orders_1m: AtomicUsize::new(1100),
+            // LG-12: los límites documentados del exchange.
+            max_weight_1m: AtomicUsize::new(crate::binance_api::LIMITE_PESO_1M),
+            max_orders_10s: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_10S),
+            max_orders_1m: AtomicUsize::new(crate::binance_api::LIMITE_ORDENES_1M),
             kill_switch: AtomicBool::new(false),
             active_leverage: ArcSwap::from_pointee(std::collections::HashMap::new()),
             is_paper_trading: false,
@@ -3765,6 +3767,28 @@ fn merge_income_page(
         }
     }
     added
+}
+
+#[cfg(test)]
+mod tests_lg12 {
+    use super::*;
+
+    #[test]
+    fn lg12_los_limites_de_peticiones_son_los_del_exchange() {
+        let ex = OrderExecutor::new("k".into(), "s".into(), true);
+        assert_eq!(ex.max_weight_1m.load(Ordering::Relaxed), crate::binance_api::LIMITE_PESO_1M);
+        assert_eq!(ex.max_orders_10s.load(Ordering::Relaxed), crate::binance_api::LIMITE_ORDENES_10S);
+        assert_eq!(ex.max_orders_1m.load(Ordering::Relaxed), crate::binance_api::LIMITE_ORDENES_1M);
+    }
+
+    /// El host ya no reescribe los límites con genes.
+    #[test]
+    fn lg12_el_host_no_toma_los_limites_del_genoma() {
+        let host = include_str!("../../../src/bin/god_engine.rs");
+        let gen_peso = ["executor_max_", "weight_1m"].concat();
+        let gen_ordenes = ["executor_max_", "orders_10s"].concat();
+        assert!(!host.contains(&gen_peso) && !host.contains(&gen_ordenes));
+    }
 }
 
 #[cfg(test)]
