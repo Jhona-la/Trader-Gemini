@@ -480,7 +480,7 @@ impl RiskEngine {
         // cartera tiene una sola sonda abierta a la vez. Es la misma puerta
         // que la sonda del ML-GATE del núcleo (`arranque_frio_sin_roster`).
         let es_sonda = crate::sonda::en_fase_de_sonda(arena, coin_id);
-        if es_sonda && crate::sonda::hay_sonda_abierta(arena) {
+        if !crate::sonda::admite_sonda(arena, coin_id) {
             return rej(REJ_SONDA_OCUPADA);
         }
         // D-750 — EL NOCIONAL MÍNIMO ES EL DEL SÍMBOLO, NO UN LITERAL DE

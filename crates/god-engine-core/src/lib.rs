@@ -8425,18 +8425,17 @@ impl GodEngineCore {
                     // antes del primer cierre, y tras cada reinicio las monedas
                     // sin modelo (27 de 30 hoy) abrían de nuevo saltándose el
                     // gate ML de B3.25.
-                    // D4 (ADR-0016, CL-98): la puerta es la de la CARTERA, la
-                    // misma que aplica el riesgo (`risk_engine::sonda`). Con una
-                    // sonda abierta en cualquier moneda, también una posición
-                    // adoptada tras un reinicio, la evidencia se espera, no se
-                    // multiplica.
-                    let arranque_frio_sin_roster = !has_roster_model
-                        && self.arena.coins[coin_id]
-                            .metrics
-                            .trade_count
-                            .load(Ordering::Relaxed)
-                            == 0
-                        && !risk_engine::sonda::hay_sonda_abierta(&self.arena);
+                    // D4 (ADR-0016, CL-98): la puerta es la de la CARTERA,
+                    // `risk_engine::sonda::admite_sonda`, la misma función del
+                    // veto del riesgo. Con una sonda abierta en cualquier
+                    // moneda, también una posición adoptada tras un reinicio,
+                    // la evidencia se espera, no se multiplica. Aquí es
+                    // redundante: el riesgo ya rechazó (`sonda_ocupada`).
+                    let arranque_frio_sin_roster = risk_engine::sonda::sonda_sin_modelo(
+                        &self.arena,
+                        coin_id,
+                        has_roster_model,
+                    );
                     // K-23 resuelto (Ola Ω75): normalización proporcional al espacio disponible
                     // [0, base] y [base, 1] mediante `normalized_directional_divergence`.
                     // En base = 0.50 coincide de forma exacta con la lógica legacy.
