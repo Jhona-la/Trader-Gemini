@@ -9465,3 +9465,20 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   cambios. El T-2 no mide rentabilidad.
   T-1 17/144, con la misma lista de genes inertes y las 145 huellas
   iguales a CL-75: el fixture no recorre el peso hebbiano.
+
+## 2026-10-11 — Claude (Línea C, CL-77): la volatilidad no es convicción en TrendRunner (F3.6-08)
+
+- `HighPayoffTrendRunner` usaba `tanh(10·tp)` como convicción, y el TP de
+  expansión suma `vol_boost = ATR·expansión·4`. Con el mismo Hurst y el
+  mismo VPIN, pasar de un ATR del 0,1 % al 1 % subía el voto de 0,2675 a
+  0,3288 (D-746 por analogía).
+- Ahora la convicción es `conviccion_de_expansion(hurst, vpin)`: el mismo
+  tanh(10·tp) con el TP sin el término de volatilidad. No lee el ATR, es no
+  decreciente en Hurst y no creciente en VPIN. `calculate_expanded_tp` no
+  cambia: que el objetivo crezca con la volatilidad es legítimo.
+- **Qoder** (sombra espectral): `HighPayoffTrendRunner::voto_espectral`
+  pierde el argumento `atr_pct`. Cambié el único llamador (la sombra
+  `sombra_trend_*` del núcleo) y quité la lectura de `atr_pct` que sólo lo
+  alimentaba. El voto espectral cambia en la misma medida que el escalar.
+- T-2 y golden idénticos a CL-76 (998a7de2cfba2519): el fixture no recorre
+  este voto.

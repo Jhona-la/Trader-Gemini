@@ -245,10 +245,10 @@ fn cf3_6_coaxial_invariante_a_la_unidad_de_precio() {
 
 /// Mismo Hurst (0,60), mismo VPIN (0,20) y misma tendencia: pasar de un ATR
 /// del 0,1 % a uno del 1 % no debe subir el voto (D-746 por analogía).
-/// Hoy: vol_boost = atr·expansión·4 sube tp de 0,03723 a 0,04692 y el voto
-/// de 0,2675 a 0,3288.
+/// Antes de CL-77: vol_boost = atr·expansión·4 subía tp de 0,03723 a
+/// 0,04692 y el voto de 0,2675 a 0,3288. Desde CL-77 la convicción es el
+/// TP de expansión sin el término de volatilidad.
 #[test]
-#[ignore = "OPEN F3.6-08 (Línea C, trend_runner): calculate_expanded_tp suma vol_boost = atr·expansión·4 y el voto usa el TP como convicción; más ATR da más voto (0,2675 -> 0,3288)"]
 fn cf3_6_trend_runner_la_volatilidad_no_es_conviccion() {
     let con_atr = |atr: f64| {
         let r = Arc::new(OmniscientRegistry::new());

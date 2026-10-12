@@ -2484,16 +2484,12 @@ impl GodEngineCore {
                         .arena
                         .registry
                         .get_for_coin_or(coin_id, "cvpin", 0.50);
-                    let atr_tr = self
-                        .arena
-                        .registry
-                        .get_for_coin_or(coin_id, "atr_pct", 0.01);
+                    // CL-77 (F3.6-08): el voto de tendencia ya no lee el ATR.
                     let voto_tr =
                         signal_engine::trend_runner::HighPayoffTrendRunner::voto_espectral(
                             &desplazamientos,
                             hurst_tr,
                             vpin_tr,
-                            atr_tr,
                         );
                     if let Some(media_tr) = voto_tr.media_banda(0, 31) {
                         self.arena

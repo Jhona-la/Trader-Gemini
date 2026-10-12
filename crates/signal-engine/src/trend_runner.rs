@@ -51,10 +51,44 @@ impl HighPayoffTrendRunner {
             return 0.02;
         }
 
+        Self::tp_expandido(
+            base_tp_magnitude,
+            hurst,
+            vpin,
+            atr_pct.clamp(0.0001, 0.50),
+            upper_bound,
+        )
+    }
+
+    /// Convicción de tendencia del motor, en [0; 1).
+    ///
+    /// CL-77 (F3.6-08): es `tanh(10·tp)` con el TP de expansión SIN el
+    /// término de volatilidad (`vol_boost`). Que el objetivo crezca con el
+    /// ATR es legítimo; que la convicción lo haga no lo es (D-746, por
+    /// analogía): con el mismo Hurst y el mismo VPIN, pasar de un ATR del
+    /// 0,1 % al 1 % subía el voto de 0,2675 a 0,3288 sin más probabilidad de
+    /// continuación. Sólo depende de Hurst y VPIN: monótona creciente en
+    /// Hurst y no creciente en VPIN.
+    #[inline(always)]
+    pub fn conviccion_de_expansion(hurst: f64, vpin: f64) -> f64 {
+        let h = if hurst.is_finite() { hurst } else { 0.50 };
+        let v = if vpin.is_finite() { vpin } else { 0.50 };
+        (Self::tp_expandido(0.02, h, v, 0.0, 0.08) * 10.0).tanh()
+    }
+
+    /// TP expandido con `safe_atr` ya saneado (≥ 0). Con `safe_atr = 0` no
+    /// hay término de volatilidad.
+    #[inline(always)]
+    fn tp_expandido(
+        base_tp_magnitude: f64,
+        hurst: f64,
+        vpin: f64,
+        safe_atr: f64,
+        upper_bound: f64,
+    ) -> f64 {
         let safe_base_tp = base_tp_magnitude.clamp(0.001, 0.50);
         let safe_hurst = hurst.clamp(0.0, 1.0);
         let safe_vpin = vpin.clamp(0.0, 1.0);
-        let safe_atr = atr_pct.clamp(0.0001, 0.50);
 
         // Activación continua: Hurst (>0.5 indica persistencia de tendencia)
         let trend_score = ((safe_hurst - 0.5) * 4.0).tanh().max(0.0);
@@ -100,19 +134,16 @@ impl HighPayoffTrendRunner {
 
     /// Voto espectral multiescala (32 escalas): evalúa la inercia y persistencia
     /// de la tendencia sobre el desplazamiento direccional x(τ_k) de cada escala temporal.
+    ///
+    /// CL-77 (F3.6-08): ya no recibe el ATR; la convicción no depende de la
+    /// volatilidad (`conviccion_de_expansion`).
     pub fn voto_espectral(
         desplazamientos: &[f64; crate::voto_espectral::ESCALAS_VOTO],
         hurst: f64,
         vpin: f64,
-        atr_pct: f64,
     ) -> crate::voto_espectral::VotoEspectral {
         let safe_hurst = if hurst.is_finite() { hurst } else { 0.50 };
         let safe_vpin = if vpin.is_finite() { vpin } else { 0.50 };
-        let safe_atr = if atr_pct.is_finite() && atr_pct > 0.0 {
-            atr_pct
-        } else {
-            0.01
-        };
 
         let h_excess = (safe_hurst - 0.50).max(0.0);
         let h_weight = (h_excess / 0.04).tanh();
@@ -120,8 +151,7 @@ impl HighPayoffTrendRunner {
             return crate::voto_espectral::VotoEspectral::default();
         }
 
-        let tp = Self::calculate_expanded_tp(0.02, safe_hurst, safe_vpin, safe_atr, 0.08);
-        let tp_factor = (tp * 10.0).tanh();
+        let tp_factor = Self::conviccion_de_expansion(safe_hurst, safe_vpin);
 
         crate::voto_espectral::VotoEspectral::desde_espectro(desplazamientos, |x| {
             if x.abs() < 1e-6 {
@@ -189,19 +219,6 @@ impl QuantumStrategy for HighPayoffTrendRunner {
             .map(|p| p.get_value())
             .unwrap_or(0.50);
 
-        let atr_pct = r
-            .get_scoped_parameter(sym_opt, cid_opt, "atr_pct", "HighPayoffTrendRunner")
-            .or_else(|| {
-                r.get_scoped_parameter(
-                    sym_opt,
-                    cid_opt,
-                    "relative_atr_pct",
-                    "HighPayoffTrendRunner",
-                )
-            })
-            .map(|p| p.get_value())
-            .unwrap_or(0.01);
-
         let trend_direction = r
             .get_scoped_parameter(sym_opt, cid_opt, "trend_direction", "HighPayoffTrendRunner")
             .or_else(|| {
@@ -219,11 +236,6 @@ impl QuantumStrategy for HighPayoffTrendRunner {
         // FIX #684: Sanitizar lecturas de registros
         let safe_hurst = if hurst.is_finite() { hurst } else { 0.50 };
         let safe_vpin = if vpin.is_finite() { vpin } else { 0.50 };
-        let safe_atr = if atr_pct.is_finite() && atr_pct > 0.0 {
-            atr_pct
-        } else {
-            0.01
-        };
         let safe_dir = if trend_direction.is_finite() {
             trend_direction
         } else {
@@ -238,10 +250,10 @@ impl QuantumStrategy for HighPayoffTrendRunner {
             return 0.0;
         }
 
-        let tp = Self::calculate_expanded_tp(0.02, safe_hurst, safe_vpin, safe_atr, 0.08);
         // #664 (G2-7): escala O(1) para momentum_z (ídem voto_espectral).
         let dir_weight = safe_dir.tanh();
-        dir_weight * h_weight * (tp * 10.0).tanh()
+        // CL-77 (F3.6-08): la convicción no lee el ATR.
+        dir_weight * h_weight * Self::conviccion_de_expansion(safe_hurst, safe_vpin)
     }
 }
 
@@ -287,6 +299,45 @@ mod tests {
         assert!(eval <= 1.0);
     }
 
+    /// CL-77 (F3.6-08). Verdad: con el mismo Hurst, VPIN y dirección, el
+    /// voto es el mismo para cualquier ATR (rejilla de 0,01 % a 5 %); la
+    /// convicción es no decreciente en Hurst y no creciente en VPIN.
+    #[test]
+    fn cl77_la_conviccion_no_lee_el_atr_y_es_monotona() {
+        let voto = |h: f64, v: f64, atr: f64| {
+            let registry = Arc::new(OmniscientRegistry::new());
+            registry.set("hurst_exponent", h);
+            registry.set("cvpin", v);
+            registry.set("atr_pct", atr);
+            registry.set("trend_direction", 1.0);
+            let mut runner = HighPayoffTrendRunner::new();
+            runner.init(registry).unwrap();
+            runner.evaluate()
+        };
+        for &h in &[0.55, 0.60, 0.75, 0.95] {
+            for &v in &[0.0, 0.2, 0.6, 1.0] {
+                let base = voto(h, v, 0.001);
+                for &atr in &[0.0001, 0.003, 0.01, 0.05] {
+                    assert_eq!(voto(h, v, atr), base, "h {h}, vpin {v}, atr {atr}");
+                }
+            }
+        }
+        let mut previa = 0.0;
+        for i in 0..=100 {
+            let h = 0.5 + 0.005 * i as f64;
+            let c = HighPayoffTrendRunner::conviccion_de_expansion(h, 0.2);
+            assert!(c >= previa, "no monótona en Hurst: h {h}");
+            previa = c;
+        }
+        let mut previa = f64::INFINITY;
+        for i in 0..=100 {
+            let v = 0.01 * i as f64;
+            let c = HighPayoffTrendRunner::conviccion_de_expansion(0.7, v);
+            assert!(c <= previa, "crece con VPIN: v {v}");
+            previa = c;
+        }
+    }
+
     #[test]
     fn test_trend_runner_continuous_hurst_transition() {
         let registry = Arc::new(OmniscientRegistry::new());
@@ -321,13 +372,13 @@ mod tests {
         }
 
         // Con H <= 0.50 el voto espectral debe abstenerse (todo 0)
-        let voto_neutro = HighPayoffTrendRunner::voto_espectral(&desplazamientos, 0.48, 0.20, 0.01);
+        let voto_neutro = HighPayoffTrendRunner::voto_espectral(&desplazamientos, 0.48, 0.20);
         for k in 0..ESCALAS_VOTO {
             assert_eq!(voto_neutro.en_escala(k), 0.0);
         }
 
         // Con H = 0.70 (fuerte persistencia), el voto es antisimétrico y no cero
-        let voto_persistente = HighPayoffTrendRunner::voto_espectral(&desplazamientos, 0.70, 0.20, 0.01);
+        let voto_persistente = HighPayoffTrendRunner::voto_espectral(&desplazamientos, 0.70, 0.20);
         for k in 0..ESCALAS_VOTO {
             let idx = ESCALAS_VOTO - 1 - k;
             let vk = voto_persistente.en_escala(k);
@@ -357,8 +408,8 @@ mod qo_664_tests {
     fn qo_664_trend_runner_amplitud_no_colapsa() {
         let d_medio = [0.5f64; 32];
         let d_fuerte = [2.5f64; 32];
-        let v_medio = HighPayoffTrendRunner::voto_espectral(&d_medio, 0.58, 0.10, 0.005);
-        let v_fuerte = HighPayoffTrendRunner::voto_espectral(&d_fuerte, 0.58, 0.10, 0.005);
+        let v_medio = HighPayoffTrendRunner::voto_espectral(&d_medio, 0.58, 0.10);
+        let v_fuerte = HighPayoffTrendRunner::voto_espectral(&d_fuerte, 0.58, 0.10);
         let m_medio = v_medio.media_banda(0, 31).unwrap_or(0.0);
         let m_fuerte = v_fuerte.media_banda(0, 31).unwrap_or(0.0);
         assert!(m_fuerte > m_medio, "graduacion conservada: {m_medio} < {m_fuerte}");
