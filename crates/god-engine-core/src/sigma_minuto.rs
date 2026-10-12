@@ -12,14 +12,19 @@
 //!   log-precio del último evento con marca < (g + 1)·1000 ms.
 //! - Por cada segundo cerrado, r60 = x(g) − x(g − 60), solapados.
 //! - Varianza realizada con ponderación exponencial: dos sumas con el mismo
-//!   decaimiento (1 − α) por minuto, S = Σ r60² y N = número de r60, y
-//!   σ̂² = S/N. Cada r60 pesa lo mismo esté en la vela que esté. Una media
-//!   por vela con peso 1 − (1 − α)^(n/60) no sirve: tras un hueco de 600 s,
-//!   la vela del hueco trae 600 r60 rancios casi nulos con peso 0,80 y el
-//!   salto llega en la vela siguiente, 60 r60 con peso 0,15 (medido: +23 %
-//!   de sesgo). Con S/N los r60 rancios que subestiman y los posteriores al
-//!   salto que sobrestiman se compensan, porque Σ r60² telescopa a la
-//!   varianza del tramo entero.
+//!   decaimiento (1 − α) por minuto de datos, S = Σ r60² y N = número de
+//!   r60, y σ̂² = S/N. Cada r60 pesa lo mismo esté en la vela que esté.
+//! - CL-86 (atr-1): un hueco sin eventos más largo que la ventana (más de 61
+//!   s) es DATO AUSENTE. No fabrica r60 nulos ni decae las sumas, y reinicia
+//!   la rejilla: ningún r60 cruza el hueco, y σ̂ conserva su valor hasta
+//!   tener 61 s nuevos. Antes el hueco entraba como r60 = 0 (G − 61 en el
+//!   contador más los de la rejilla rellena con el último precio). La media
+//!   TEMPORAL salía sin sesgo, porque el salto de después lo compensaba,
+//!   pero la σ̂ que se usaba justo tras el hueco caía (0,44 de la real a
+//!   600 s y 0,14 a 3 600 s), y sin salto (precio quieto, como entre
+//!   pasadas del examen del demonio) se hundía al ~4 %. Los huecos de hasta
+//!   61 s siguen el muestreo por último precio, que es insesgado
+//!   (`cl70_browniano_misma_varianza_con_cualquier_densidad`).
 //! - E[r60²] = σ²·60 s con cualquier densidad de eventos estacionaria: el
 //!   intervalo entre los dos últimos eventos de los segundos g y g − 60 mide
 //!   60 s en esperanza. Es el estimador de varianza realizada no centrado:
@@ -117,17 +122,22 @@ impl SigmaMinuto {
             Some(abierto) if s < abierto => {}
             Some(abierto) if s == abierto => self.x_abierto = x,
             Some(abierto) => {
-                // Cierra el segundo abierto y rellena los segundos sin
-                // eventos con el último precio.
-                // Tras 61 segundos iguales la rejilla es constante y cada r60
-                // vale 0: el resto del hueco sólo cuenta como duración.
                 let x_previo = self.x_abierto;
                 let total = s - abierto;
-                let directos = total.min(SEGUNDOS as u64 + 1);
-                for g in abierto..abierto + directos {
-                    self.cerrar_segundo(g, x_previo);
+                if total > SEGUNDOS as u64 + 1 {
+                    // CL-86 (atr-1): hueco más largo que la ventana, dato
+                    // ausente. Cierra el último segundo con datos y reinicia
+                    // la rejilla, sin r60 sintéticos.
+                    self.cerrar_segundo(abierto, x_previo);
+                    self.llenos = 0;
+                } else {
+                    // Cierra el segundo abierto y rellena los segundos sin
+                    // eventos con el último precio (muestreo por último
+                    // precio, insesgado dentro de la ventana).
+                    for g in abierto..s {
+                        self.cerrar_segundo(g, x_previo);
+                    }
                 }
-                self.n_r2 += total - directos;
                 self.segundo_abierto = Some(s);
                 self.x_abierto = x;
             }

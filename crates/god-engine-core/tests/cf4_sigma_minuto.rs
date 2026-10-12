@@ -181,6 +181,12 @@ fn cl70_ar1_mide_la_varianza_de_sesenta_segundos() {
 /// Promediar una vez por vela sobrepondera el valor alto que deja el salto
 /// tras el hueco (rige 9 velas) frente al bajo de la vela del hueco, que
 /// representa 600 s (medido así: +27 % con una EWMA de medias por vela).
+///
+/// CL-86 (atr-1): desde que un hueco de más de 61 s es dato ausente (sin
+/// r60 nulos ni decaimiento), la vela del hueco ya no baja la varianza y la
+/// media sale sin sesgo también justo después del hueco
+/// (`cf4_sigma_hueco.rs`). Esta prueba conserva la verdad de la media
+/// temporal.
 #[test]
 fn cl70_huecos_de_seiscientos_segundos_sin_sesgo() {
     let sigma1 = 2e-4f64;
