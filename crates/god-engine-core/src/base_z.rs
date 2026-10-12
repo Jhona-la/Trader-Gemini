@@ -61,6 +61,11 @@ pub const NODO_MIN: usize = 17;
 pub const NODO_MAX: usize = 23;
 const NODOS: usize = NODO_MAX - NODO_MIN + 1;
 
+/// CL-93 (spot_z-3): ln 4, el logaritmo de la razón entre nodos contiguos de
+/// la malla (exactamente 4: la prueba `ln_4_es_el_de_la_malla` lo fija). Antes
+/// se recalculaba en cada evento.
+const LN_4: f64 = 2.0 * std::f64::consts::LN_2;
+
 /// CL-87: tiempo máximo que la base retenida cuenta como observada (ms). Es
 /// la edad máxima del spot con la que el núcleo todavía usa la base
 /// (SPOT_TTL_MS, CL-79).
@@ -152,8 +157,8 @@ impl BaseZ {
         if i == NODO_MAX {
             return self.z_nodo(i, b, piso);
         }
-        let (t0, t1) = (SPECTRUM_SCALES_MS[i], SPECTRUM_SCALES_MS[i + 1]);
-        let w = (tau / t0).ln() / (t1 / t0).ln();
+        let t0 = SPECTRUM_SCALES_MS[i];
+        let w = (tau / t0).ln() / LN_4;
         if w <= 0.0 {
             return self.z_nodo(i, b, piso);
         }
@@ -336,5 +341,16 @@ mod tests {
         e.observar(10_000, 0.1, 1_000.0, 0.0);
         assert!(e.observar(5_000, 0.2, 1_000.0, 0.0).is_none());
         assert_eq!(e.ultima, Some((10_000, 0.1)));
+    }
+
+    /// Verdad (CL-93): la razón entre nodos contiguos de la malla es 4 y su
+    /// logaritmo es `LN_4` bit a bit, así que precalcularlo no cambia el z.
+    #[test]
+    fn ln_4_es_el_de_la_malla() {
+        for i in NODO_MIN..NODO_MAX {
+            let r = SPECTRUM_SCALES_MS[i + 1] / SPECTRUM_SCALES_MS[i];
+            assert_eq!(r.to_bits(), 4f64.to_bits(), "nodo {i}: razón {r}");
+            assert_eq!(r.ln().to_bits(), LN_4.to_bits(), "nodo {i}: ln {}", r.ln());
+        }
     }
 }
