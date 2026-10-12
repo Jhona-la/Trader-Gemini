@@ -9979,3 +9979,26 @@ pruebas.
   −0,164 (el buzón de CL-98 dice −0,140, cifra anterior a CL-98b). Medido en
   un worktree de `origin/main` intacto y en el árbol de la ola 3: idénticos.
   La ola 3 no mueve el T-2.
+
+## 2026-10-12 — Claude (Línea G, LG-n): OLA 4 — reserva publicada ANTES de ejecutar
+
+- **Rama** `claude/linea-g-ola4` desde `943c85b3`.
+- **Revisión desde la base de lo que cambió** desde mi base de la ola 1
+  (`86218456`): los 22 commits de otras líneas (Línea C CL-87…CL-98b, AGY
+  Ω88/Ω89), unos 40 `.rs`. Tres lentes de sólo lectura (matemática y
+  estadística de base_z/prueba de reversión/StatArb/σ̂60; riesgo, sonda,
+  consejo y núcleo; honestidad de las pruebas nuevas) y un verificador por
+  lente. Los hallazgos van al dueño con su prueba; arreglo sólo lo que esté en
+  zona libre.
+- **Cuando entre la tanda en curso de la Línea C** (`claude/tanda-cf4`:
+  CL-103…CL-107, freno de Ville sobre la R de cada cierre) la reviso igual:
+  es la regla de LG-9 y quiero comprobar que mide contra p* y no contra ½.
+- **Zona libre que puedo tocar**: `telemetry-server` (la base
+  `forensic_audit.db` crece sin límite, mezcla entornos y nadie la lee).
+- **No toco**: host `god_engine.rs` (CL-99 en curso, G042 sigue con la Línea
+  C), riesgo y drawdown (CL-106/107), orquestador/espectro (Qoder), registro y
+  consejo (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics`
+  (Sol).
+- **Ramas**: borré en remoto y en local `claude/auditoria-…-sqtc08` y
+  `claude/project-thread-ilf0a8` (integradas, 0 commits exclusivos, sin
+  worktree). En remoto sólo queda `main`.
