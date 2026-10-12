@@ -1,0 +1,3 @@
+a	d_pct	sigma_pct	n	capital_inicial	a_medida	lectura	oraculo_1v_bps	oraculo_5v_bps	oraculo_20v_bps	proxy_1v_bps	proxy_5v_bps	proxy_20v_bps	p_tp_oraculo	p_tp_proxy	vencidos_oraculo	ev_R_oraculo	trades	wr_neto	pnl_pct_capital	capital_final	pnl_neto	dd_max	segundos	rechazos
+0.95	0.1000	0.2500	3000	100.00	0.957	0.603	-0.52	28.81	75.41	-7.79	-4.71	4.83	0.573	0.389	0.002	+0.66	195	0.6359	2.4	102.4165	2.42639	0.0046	43.6	sin rechazos
+0.90	0.2000	0.2500	3000	100.00	0.901	0.728	6.31	47.62	87.79	-2.65	16.31	31.65	0.657	0.513	0.002	+0.94	176	0.7102	10.6	110.5772	10.57718	0.0094	44.0	fee_impact=3

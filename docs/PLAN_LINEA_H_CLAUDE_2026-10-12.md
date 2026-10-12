@@ -169,6 +169,31 @@ Los dos peldaños fuertes con la MISMA serie y más capital:
 | 0,95 / 0,10 % | 100, `max_fee_pct` = 3,5 % | 111 | 0,64 | +1,971 | +1,97 | — | 0 |
 | 0,90 / 0,20 % | 100, `max_fee_pct` = 3,5 % | 89 | 0,65 | +3,860 | +3,86 | — | 0 |
 
+**El valle de capital** (a = 0,9 / d = 0,20 %, la misma serie, LH-1b;
+[`t3_valle_de_capital.tsv`](audit/linea_h/t3_valle_de_capital.tsv), con el
+pago realizado por cierre leído de `out_pnl`):
+
+| capital | ops | acierto | PnL (USD) | % capital | gana / pierde por cierre (USD) | b real | max \|PnL\| por cierre | rechazos |
+|---|---|---|---|---|---|---|---|---|
+| 13 | 89 | 0,652 | +1,41 | +10,83 | 0,039 / 0,028 | 1,40 | 0,10 | — |
+| 20 | 89 | 0,652 | +1,53 | +7,67 | 0,044 / 0,034 | 1,32 | 0,17 | — |
+| 26 | 89 | 0,652 | +1,57 | +6,03 | 0,047 / 0,038 | 1,24 | 0,19 | — |
+| **35** | **0** | — | 0 | 0 | — | — | — | **fee_impact 6 914** |
+| **50** | **0** | — | 0 | 0 | — | — | — | **fee_impact 6 914** |
+| **65** | **0** | — | 0 | 0 | — | — | — | **fee_impact 6 914** |
+| **100** | **1** | 0 | −0,03 | −0,03 | — | — | 0,03 | **fee_impact 3 523** |
+| 215 | 89 | 0,652 | +8,36 | +3,89 | 0,263 / 0,222 | 1,18 | 1,46 | — |
+| 500 | 89 | 0,652 | +14,87 | +2,97 | 0,489 / 0,435 | 1,12 | 2,59 | — |
+| 1 000 | 89 | 0,652 | +20,47 | +2,05 | 0,724 / 0,694 | 1,04 | 5,02 | — |
+
+Y el aislamiento del término que dispara `fee_impact` con 100 USD
+([`t3_capital100_sin_latencia_ni_suelo.tsv`](audit/linea_h/t3_capital100_sin_latencia_ni_suelo.tsv)):
+con latencia 0 y suelo de deslizamiento 0 (la fricción queda en 2 × taker =
+0,10 %) y el gen `max_fee_pct` en su 1 %, los dos peldaños operan (195 y 176
+cierres, +2,4 % y +10,6 %): el veto lo decide `roundtrip_fee · L` con el L
+del rescate hasta la orden mínima (≈ 8–10×), y bastan ≈ 3 pb de deslizamiento
+por pierna para cruzar el 1 %.
+
 **Lo que dice la medición (antes de los escépticos):**
 
 1. **Las puertas del riesgo no matan la ventaja; la ausencia de tamaño sí.**
@@ -185,9 +210,15 @@ Los dos peldaños fuertes con la MISMA serie y más capital:
    quedan 7 y 1 operaciones: el techo de fricción apalancada vuelve al gen
    `max_fee_pct` (taker × 20 = 1 %) y el rescate de apalancamiento hasta la
    orden mínima lo supera. Intervención sobre ese único gen (3,5 %, el valor
-   micro): 111 y 89 operaciones, las mismas que con 13 USD. **Entre 15 y
-   50 USD el sistema deja de operar** (`capital_regime::micro_weight`:
-   3 a 10 órdenes mínimas). Nuevo: **LH-02**, HIGH, riesgo (Línea C).
+   micro): 111 y 89 operaciones, las mismas que con 13 USD. **Medido con el
+   valle: la cuenta opera con 13, 20 y 26 USD, no opera NADA con 35, 50 y
+   65 USD (0 cierres, 6 914 rechazos), hace 1 operación con 100 y vuelve a
+   operar con 215.** El apagón empieza donde `micro_weight` deja de valer 1
+   (≥ 3 órdenes mínimas ≈ 15 USD con la rampa hacia 0 en 50 USD) y dura
+   hasta que el margen de Kelly cubre la orden mínima con L ≤ 7
+   (≈ 150–215 USD). Es exactamente el tramo de la primera, la segunda y la
+   tercera duplicación de la cuenta del dueño. Nuevo: **LH-02**, HIGH,
+   riesgo (Línea C).
 3. **Con 1 000 USD la envolvente del replay es absorbente.** Tras los 30
    cierres de arranque, `live_envelope_gate` declara no operable (Jeffreys,
    z = 1,64 fuera de micro), anula y revierte 5 574 aperturas del núcleo, que
@@ -211,8 +242,98 @@ Los dos peldaños fuertes con la MISMA serie y más capital:
 
 ### 6.3 Lectores y escépticos (H2)
 
-Pendiente.
+Tres lectores de sólo lectura (1,09 M tokens, 28 min; 27 + 23 + 22 archivos
+leídos) entregaron **30 hallazgos** (7 HIGH, 8 MED, 7 LOW, 8 INFO) y **27
+predicciones falsables** ([`lectores.tsv`](audit/linea_h/lectores.tsv),
+[`predicciones.tsv`](audit/linea_h/predicciones.tsv),
+[`lectores_resumen.md`](audit/linea_h/lectores_resumen.md)). Un escéptico por
+lente (0,60 M tokens, 15 min) los contrastó con la escalera medida
+([`verificacion.tsv`](audit/linea_h/verificacion.tsv),
+[`predicciones_veredicto.tsv`](audit/linea_h/predicciones_veredicto.tsv),
+[`nuevos_escepticos.tsv`](audit/linea_h/nuevos_escepticos.tsv),
+[`escepticos_sintesis.md`](audit/linea_h/escepticos_sintesis.md)):
+**11 confirmados, 10 plausibles, 8 ya registrados con el mismo mecanismo, 1
+refutado** (H3-08: la columna `sonda_ocupada` sí se dispara con una moneda), y
+**17 hallazgos nuevos que sólo la medición reveló** (5 HIGH).
+
+**Lo que la medición decidió sobre las tesis de los lectores:**
+
+| Tesis | Veredicto con los números |
+|---|---|
+| H1: «el dinero no muere en una puerta: muere en que el tamaño no existe como variable» | Cierto con 13 USD (todas las órdenes al mínimo, PnL por cierre ≤ +0,016 USD, 0 rechazos de tamaño). Falso en cuanto sube el capital: con 100 USD muere en `fee_impact` y con 1 000 USD en la envolvente, dos puertas que los lectores no predijeron y que la tabla de rechazos no mostraba. |
+| H2: «la puerta EV no es absorbente, es un trinquete hacia la reapertura; p sube con la ventaja» | Cierto: REJ_EV = 929 (nulo) y 502 (d = 0,05 %) y 0–1 en los seis peldaños con ventaja; pero REJ_EV **no es función del acierto** (0 con acierto 0,409; 502 con 0,432): lo fijan el prior de Platt a s = 0,98, los transitorios y el p_gate de cada τ (H2-N5). Fuera de micro la cadena se rompe por el **pago realizado** b, no por p: 30 cierres con acierto 0,60 y PnL −0,50 USD ⇒ b < 0,67 ⇒ Kelly ≤ 0 ⇒ envolvente cerrada (H2-N3). |
+| H3: «el dinero muere en el núcleo: dirección de una vela (D-472), ventana del cruce de EMA21 y τ de minutos» | Cierto a 13 USD en lo esencial (τ 64–128 s en TODOS los peldaños, rama 15 ≥ 90 % de las aperturas, tendenciales nunca, a = 0,9 pierde con oráculo +0,35 R). La rama 15 **no** pasa por la ley anti-persecución (H3-04 queda plausible, no confirmado) y la τ de la rama 15 colapsa al nodo del minuto (H3-N4): las dos bandas operan a la misma τ y el co-despacho armónico casi nunca se cumple. |
+
+**Predicciones:** 27 contrastadas (`predicciones_veredicto.tsv`). Acertaron
+la cota de capital (≤ 15 USD con 13), el tamaño binario, los contadores de
+tamaño a cero, la fracción del lado del estado (0,65–0,78 en a = 0,9; medido
+0,66), la τ insensible al régimen y las ramas tendenciales muertas. Fallaron
+en que la envolvente «sea inerte» en micro (124 anulaciones en a = 0,7:
+ventana no monótona 0 < f < f_min de `kelly_envelope.rs:408`, H1-N3), en que
+REJ_EV baje gradualmente con a (cae a 0 desde a = 0,6) y en los números por
+capital (la cadena a 100 USD ni llega a dimensionar: `fee_impact` la corta
+antes).
+
+**Nuevos de los escépticos que van a su dueño** (con cita en
+`nuevos_escepticos.tsv`): H1-N1 / H2-N1 / H3-N2 (el valle de `fee_impact`,
+HIGH, Línea C), H1-N2 / H3-N1 (envolvente absorbente a 1 000 USD y reversión
+que no enfría ni cuenta, HIGH, Línea C), H1-N3 (anulaciones en micro, MED),
+H2-N3 (la envolvente mata por b realizado, MED), H2-N4 (la puerta de confianza
+es inerte a 0,98: `confianza_modulada` y `min_required_confidence` comparten
+el techo y la comparación es estricta, LOW, Línea E), H2-N5 (REJ_EV depende
+del camino, no del acierto, MED), H3-N4 (τ de la rama 15 colapsa al minuto,
+MED). Para la propia Línea H: H1-N4 / H2-N2 / H2-N6 / H3-N3 (la escalera no
+ve la envolvente, no exporta tamaño ni motivo de cierre y su techo no es
+comparable con el acierto neto): la primera parte se cierra en LH-1b (pago
+realizado por cierre desde `out_pnl`, valle de capital); el resto exige
+exportar `envelope_vetoes` y `diag_*` del runner, que no es zona H (pedido a
+Sol/Línea C en el buzón).
 
 ### 6.4 Arreglos y entregas (H3)
 
-Pendiente.
+**En zona propia (archivos nuevos y documentación):**
+
+| ID | Qué | Prueba |
+|---|---|---|
+| **LH-1** | El T-3: generador con estado oculto, techo sin el motor, medición del motor con diferencias de `REJECT_COUNTERS`, trazas del runner (`TG_TRACE_NATIVO`) | `t3_la_serie_tiene_la_ventaja_que_declara`, `t3_diag_un_peldano_persistente_micro` (sin `--ignored`); `t3_escalera_de_ventaja_conocida` |
+| **LH-1b** | Pago realizado por cierre desde `out_pnl` (gana/pierde medios, b real, p* real, max \|PnL\|: lo que la envolvente consume fuera de micro, H2-N3, y la cota del tamaño, H1-N4); escalera por capital e intervenciones controladas sobre un gen (`T3_CAPITALES`, `T3_MAX_FEE_PCT`, `T3_LATENCY_MS`, `T3_SLIP_FLOOR`); el valle de capital | `t3_escalera_por_capital`, `t3_valle_de_capital` |
+
+Verificación: `cargo check --workspace --all-targets` verde sobre el árbol
+fusionado con `main` (`65631504`); T-2 de control idéntico a `main`
+(`a7c2da7647f26f8e`, 68 operaciones, −0,164); el golden no se toca (ningún
+archivo del motor cambia).
+
+**Entregas por dueño (en el buzón, con la prueba del T-3 que lo reproduce):**
+
+| ID | Dueño | Sev. | Qué | Cómo se reproduce |
+|---|---|---|---|---|
+| **LH-02** (= H1-N1 / H2-N1 / H3-N2) | Línea C (riesgo) | HIGH | El techo de fricción apalancada vuelve al gen `max_fee_pct` (1 %) al salir de micro y el rescate de apalancamiento hasta la orden mínima lo supera: la cuenta no opera entre ≈ 30 y ≈ 150 USD | `t3_valle_de_capital`; con `T3_MAX_FEE_PCT=0.035` o con `T3_LATENCY_MS=0 T3_SLIP_FLOOR=0` vuelve a operar |
+| **LH-03** (= H1-N2 / H3-N1 / H2-5) | Línea C (riesgo, replay) | HIGH | Fuera de micro la envolvente es absorbente al cierre 30 (z = 1,64, b realizado < 0,67) y su reversión no enfría ni cuenta: 5 574 aperturas revertidas en silencio | `t3_escalera_por_capital` con `T3_CAPITALES=1000` (a = 0,95), `opened − closes` en la traza |
+| **LH-04** (= H1-01 / H1-02, R-20 medido) | Línea C (riesgo) | HIGH | El tamaño no es variable: todas las órdenes al mínimo con 13–26 USD; de 215 a 1 000 USD el nocional crece ×3,4 cuando el capital crece ×4,65 y la fracción cae del 42 % al 8 % | `t3_valle_de_capital` (columna `max_abs_pnl_usd`) |
+| **LH-05** (= H3-03) | Qoder / Línea C (núcleo) | HIGH | Las ramas tendenciales 1/2/4/5/13 nunca abren (0 de 604 aperturas): el piso de tendencia exige un diferencial EMA9−EMA21 ≈ 2,15 σ que la deriva no alcanza en regímenes más cortos que la EMA | `t3_lado_vs_estado.txt` (histograma de ramas) |
+| **LH-06** (= H3-N4 / H3-09 / H3-02) | Qoder / Línea C (núcleo) | MED | τ mediana 64–128 s en todos los peldaños, también en la rama 15: las dos bandas operan a la misma τ; con regímenes de 10 velas y EV_R +0,35 el motor pierde | fila a = 0,9 / d = 0,1 % y τ de las trazas |
+| **LH-07** (= H3-01) | Qoder (núcleo, D-754) | MED | El retroceso binario del enfriamiento se amortiza a la misma velocidad con la que crece: espera ≈ k·base, no 2^k·base | aritmética sobre `stateful_engine.rs:567`, contrastada |
+| **LH-08** (= H2-N5 / H2-1 / H2-2) | Línea E / Codex | MED | REJ_EV depende del camino, no del acierto (0 con 0,409; 502 con 0,432): prior de Platt a s = 0,98 con olvido hacia la puntuación cruda y p puntual sin cota | columna `rechazos` frente a `wr_neto` |
+| **LH-09** (= H2-N4) | Línea E | LOW | La puerta de confianza es inerte a 0,98 (techo compartido y comparación estricta): REJ_CONFIDENCE = 0 siempre | columna `rechazos` |
+| **LG-5** (= H2-3, confirmado) | Codex / Línea E | HIGH | Los cuatro estimadores de p aprenden neto > 0 con cualquier salida; la puerta EV los usa como P(TP primero) | motivos de cierre TP/SL/TRAIL_HIT/ALPHA_DECAY en las trazas |
+| **Pedido a Sol / Línea C** | runner | MED | Exportar `envelope_vetoes` y `diag_*` del runner por `out_stats` o por la traza: sin eso la escalera publica «sin rechazos» donde la envolvente anuló 5 574 entradas (H1-07 / H2-6) | — |
+
+**Lo que no hago y por qué:** ningún arreglo de riesgo, núcleo o runner,
+aunque la medición los señale: son zonas de otras líneas con tandas en vuelo
+(CL-101…CL-108 en el riesgo; LG-21 en el genoma). El instrumento y la
+medición son el entregable; cada dueño tiene la prueba que reproduce su
+hallazgo en un comando.
+
+### 6.5 La meta con lo medido hoy
+
+Con la serie más favorable de la escalera (regímenes de 10 velas con deriva
+0,2 %, oráculo +0,94 R por operación, 1,8 operaciones por hora) el motor
+realiza +10,8 % en 50 h: 0,049/día frente a los 0,231/día de la meta, con un
+acierto de 0,65 y un pago realizado b = 1,40. Con ese acierto y ese pago el
+Kelly pleno es f* = p − (1 − p)/b = 0,40 del capital por operación; el motor
+arriesga 0,2 %. **No hace falta más acierto para la meta: hace falta que el
+tamaño exista, que no se apague al doblar la cuenta, y que la τ de las órdenes
+siga a la deriva.** En ese orden: LH-04 / ADR-0016 D1 (tamaño en espacio de
+riesgo), LH-02 y LH-03 (los apagones por capital), LH-05 y LH-06 (dirección y
+τ). Y sigue sin medirse la ventaja real fuera de muestra (tapes): la escalera
+mide la cadena, no el mercado.

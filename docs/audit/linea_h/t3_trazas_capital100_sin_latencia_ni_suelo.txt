@@ -1,0 +1,4 @@
+[T1-DIAG] opened=196 council_vetoes=0 ml_vetoes=0 closes=195
+[T3] a=0.95 d=0.10% σ=0.25% n=3000 C0=100 USD (44 s) | serie: â=0.957 lectura=0.603 oráculo(1/5/20 velas)=-0.5/+28.8/+75.4 pb proxy=-7.8/-4.7/+4.8 pb p_tp(oráculo/proxy)=0.573/0.389 vencidos=0.00 EV_R(oráculo)=+0.66 | motor: trades=195 wr=0.636 pnl=+2.4264 USD (+2.43 % del capital) capital=102.4165 dd=0.005 | rechazos: sin rechazos
+[T1-DIAG] opened=176 council_vetoes=0 ml_vetoes=0 closes=176
+[T3] a=0.90 d=0.20% σ=0.25% n=3000 C0=100 USD (44 s) | serie: â=0.901 lectura=0.728 oráculo(1/5/20 velas)=+6.3/+47.6/+87.8 pb proxy=-2.7/+16.3/+31.7 pb p_tp(oráculo/proxy)=0.657/0.513 vencidos=0.00 EV_R(oráculo)=+0.94 | motor: trades=176 wr=0.710 pnl=+10.5772 USD (+10.58 % del capital) capital=110.5772 dd=0.009 | rechazos: fee_impact=3

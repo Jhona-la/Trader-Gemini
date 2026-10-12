@@ -324,6 +324,8 @@ pub struct Medida {
     pub techo: Techo,
     pub stats: [f64; STATS_LEN],
     pub rechazos: [u64; REJECT_SLOTS],
+    /// Pago realizado por cierre, del `out_pnl` del runner.
+    pub pago: Pago,
     pub segundos: f64,
 }
 
@@ -355,6 +357,23 @@ pub fn medir_con_capital(p: Peldano, capital: f64) -> Medida {
             {
                 base.max_fee_pct = v;
             }
+            // Las otras dos entradas de la fricción del gate (XLIV-8):
+            // latencia y suelo de deslizamiento; 0 las anula para aislar el
+            // término del apalancamiento en `fee_impact`.
+            if let Some(v) = std::env::var("T3_LATENCY_MS")
+                .ok()
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| v.is_finite() && *v >= 0.0)
+            {
+                base.latency_penalty_ms = v;
+            }
+            if let Some(v) = std::env::var("T3_SLIP_FLOOR")
+                .ok()
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| v.is_finite() && *v >= 0.0)
+            {
+                base.base_slippage_floor = v;
+            }
             let mut pnl = vec![0.0f64; serie.closes.len().max(1)];
             let mut stats = [0.0f64; STATS_LEN];
             run_backtest_native(
@@ -368,24 +387,77 @@ pub fn medir_con_capital(p: Peldano, capital: f64) -> Medida {
                 "BTCUSDT",
                 capital,
             );
-            stats
+            (stats, pnl)
         })
         .expect("no se pudo lanzar el hilo del T-3")
         .join()
         .expect("el motor cayó en el T-3");
+    let (stats, pnl) = stats;
     let segundos = inicio.elapsed().as_secs_f64();
     let despues = rechazos_ahora();
     let mut rechazos = [0u64; REJECT_SLOTS];
     for i in 0..REJECT_SLOTS {
         rechazos[i] = despues[i] - antes[i];
     }
+    let cierres = (stats[1] as usize).min(pnl.len());
+    let pago = Pago::de_cierres(&pnl[..cierres]);
     Medida {
         peldano: p,
         capital,
         techo,
         stats,
         rechazos,
+        pago,
         segundos,
+    }
+}
+
+/// Lo que el motor PAGÓ por cierre, leído del PnL neto de cada operación
+/// (`out_pnl` del runner): es la variable que la envolvente de Kelly consume
+/// fuera de micro (el pago realizado b, no la probabilidad) y la que dice si
+/// el tamaño por operación se mueve o es siempre la orden mínima.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Pago {
+    pub n_gana: usize,
+    pub n_pierde: usize,
+    /// Media de los cierres netos positivos (USD).
+    pub media_gana: f64,
+    /// Media de |cierres netos negativos| (USD).
+    pub media_pierde: f64,
+    /// b realizado = media_gana / media_pierde.
+    pub b_real: f64,
+    /// Equilibrio implícito 1 / (1 + b_real).
+    pub p_estrella_real: f64,
+    /// |PnL| máximo de un cierre (USD): cota del tamaño que llegó a operar.
+    pub max_abs: f64,
+}
+
+impl Pago {
+    pub fn de_cierres(pnl: &[f64]) -> Self {
+        let mut p = Pago::default();
+        let (mut sg, mut sp) = (0.0f64, 0.0f64);
+        for &x in pnl {
+            if !x.is_finite() {
+                continue;
+            }
+            if x > 0.0 {
+                p.n_gana += 1;
+                sg += x;
+            } else if x < 0.0 {
+                p.n_pierde += 1;
+                sp += -x;
+            }
+            p.max_abs = p.max_abs.max(x.abs());
+        }
+        p.media_gana = if p.n_gana > 0 { sg / p.n_gana as f64 } else { 0.0 };
+        p.media_pierde = if p.n_pierde > 0 { sp / p.n_pierde as f64 } else { 0.0 };
+        p.b_real = if p.media_pierde > 0.0 { p.media_gana / p.media_pierde } else { f64::NAN };
+        p.p_estrella_real = if p.b_real.is_finite() && p.b_real > 0.0 {
+            1.0 / (1.0 + p.b_real)
+        } else {
+            f64::NAN
+        };
+        p
     }
 }
 
@@ -394,7 +466,7 @@ fn linea_tsv(m: &Medida) -> String {
     let s = &m.stats;
     let cero = [0u64; REJECT_SLOTS];
     format!(
-        "{:.2}\t{:.4}\t{:.4}\t{}\t{:.2}\t{:.3}\t{:.3}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.3}\t{:.3}\t{:.3}\t{:+.2}\t{}\t{:.4}\t{:.1}\t{:.4}\t{:.5}\t{:.4}\t{:.1}\t{}",
+        "{:.2}\t{:.4}\t{:.4}\t{}\t{:.2}\t{:.3}\t{:.3}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.3}\t{:.3}\t{:.3}\t{:+.2}\t{}\t{:.4}\t{:.1}\t{:.4}\t{:.5}\t{:.4}\t{}\t{:.5}\t{:.5}\t{:.3}\t{:.3}\t{:.5}\t{:.1}\t{}",
         m.peldano.a,
         m.peldano.d * 100.0,
         m.peldano.sigma * 100.0,
@@ -418,19 +490,25 @@ fn linea_tsv(m: &Medida) -> String {
         s[2],
         s[6],
         s[3],
+        m.pago.n_gana,
+        m.pago.media_gana,
+        m.pago.media_pierde,
+        m.pago.b_real,
+        m.pago.p_estrella_real,
+        m.pago.max_abs,
         m.segundos,
         rechazos_texto(&cero, &m.rechazos)
     )
 }
 
-const CABECERA_TSV: &str = "a\td_pct\tsigma_pct\tn\tcapital_inicial\ta_medida\tlectura\toraculo_1v_bps\toraculo_5v_bps\toraculo_20v_bps\tproxy_1v_bps\tproxy_5v_bps\tproxy_20v_bps\tp_tp_oraculo\tp_tp_proxy\tvencidos_oraculo\tev_R_oraculo\ttrades\twr_neto\tpnl_pct_capital\tcapital_final\tpnl_neto\tdd_max\tsegundos\trechazos";
+const CABECERA_TSV: &str = "a\td_pct\tsigma_pct\tn\tcapital_inicial\ta_medida\tlectura\toraculo_1v_bps\toraculo_5v_bps\toraculo_20v_bps\tproxy_1v_bps\tproxy_5v_bps\tproxy_20v_bps\tp_tp_oraculo\tp_tp_proxy\tvencidos_oraculo\tev_R_oraculo\ttrades\twr_neto\tpnl_pct_capital\tcapital_final\tpnl_neto\tdd_max\tn_gana\tmedia_gana_usd\tmedia_pierde_usd\tb_real\tpstar_real\tmax_abs_pnl_usd\tsegundos\trechazos";
 
 fn imprimir(m: &Medida) {
     let t = &m.techo;
     let s = &m.stats;
     let cero = [0u64; REJECT_SLOTS];
     println!(
-        "[T3] a={:.2} d={:.2}% σ={:.2}% n={} C0={:.0} USD ({:.0} s) | serie: â={:.3} lectura={:.3} oráculo(1/5/20 velas)={:+.1}/{:+.1}/{:+.1} pb proxy={:+.1}/{:+.1}/{:+.1} pb p_tp(oráculo/proxy)={:.3}/{:.3} vencidos={:.2} EV_R(oráculo)={:+.2} | motor: trades={} wr={:.3} pnl={:+.4} USD ({:+.2} % del capital) capital={:.4} dd={:.3} | rechazos: {}",
+        "[T3] a={:.2} d={:.2}% σ={:.2}% n={} C0={:.0} USD ({:.0} s) | serie: â={:.3} lectura={:.3} oráculo(1/5/20 velas)={:+.1}/{:+.1}/{:+.1} pb proxy={:+.1}/{:+.1}/{:+.1} pb p_tp(oráculo/proxy)={:.3}/{:.3} vencidos={:.2} EV_R(oráculo)={:+.2} | motor: trades={} wr={:.3} pnl={:+.4} USD ({:+.2} % del capital) capital={:.4} dd={:.3} | pago: gana {:.4}/pierde {:.4} USD b={:.2} p*={:.3} max|pnl|={:.4} | rechazos: {}",
         m.peldano.a,
         m.peldano.d * 100.0,
         m.peldano.sigma * 100.0,
@@ -455,6 +533,11 @@ fn imprimir(m: &Medida) {
         (s[6] / m.capital) * 100.0,
         s[2],
         s[3],
+        m.pago.media_gana,
+        m.pago.media_pierde,
+        m.pago.b_real,
+        m.pago.p_estrella_real,
+        m.pago.max_abs,
         rechazos_texto(&cero, &m.rechazos)
     );
 }
@@ -610,6 +693,42 @@ fn t3_escalera_por_capital() {
             imprimir(&m);
             filas.push(linea_tsv(&m));
         }
+    }
+    println!("\n[T3-TSV] {CABECERA_TSV}");
+    for f in &filas {
+        println!("[T3-TSV] {f}");
+    }
+}
+
+/// El valle de capital: el peldaño a = 0,9 / d = 0,2 % (el de más ventaja)
+/// con capitales entre la cuenta del dueño y 1 000 USD, para localizar el
+/// tramo en que la cuenta deja de operar (el techo de fricción apalancada
+/// vuelve al gen al salir del régimen micro: 3 a 10 órdenes mínimas) y el
+/// tramo en que el tamaño por operación empieza a seguir al capital.
+#[test]
+#[ignore = "medición larga: cargo test --release -p backtest-engine --test t3_ventaja_conocida -- --ignored --nocapture t3_valle_de_capital"]
+fn t3_valle_de_capital() {
+    cargar_predictor();
+    let n = std::env::var("T3_VELAS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(3_000);
+    let capitales: Vec<f64> = std::env::var("T3_CAPITALES")
+        .ok()
+        .map(|v| v.split(',').filter_map(|c| c.trim().parse::<f64>().ok()).collect())
+        .filter(|v: &Vec<f64>| !v.is_empty())
+        .unwrap_or_else(|| vec![13.0, 20.0, 26.0, 35.0, 50.0, 65.0, 100.0, 215.0, 500.0, 1_000.0]);
+    let p = Peldano {
+        a: 0.90,
+        d: 0.0020,
+        sigma: 0.0025,
+        n,
+    };
+    let mut filas = Vec::new();
+    for &capital in &capitales {
+        let m = medir_con_capital(p, capital);
+        imprimir(&m);
+        filas.push(linea_tsv(&m));
     }
     println!("\n[T3-TSV] {CABECERA_TSV}");
     for f in &filas {
