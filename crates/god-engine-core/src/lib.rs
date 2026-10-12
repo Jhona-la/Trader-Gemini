@@ -856,6 +856,10 @@ pub struct GodEngineCore {
     pub risk_engine: RiskEngine,
     pub maker_engines: Vec<MakerEngine>,
     pub feature_engines: Vec<StatefulEngine>,
+    /// CL-88 (atr-2): tick propio por moneda, para núcleos cuyos slots no son
+    /// los símbolos del universo vivo (el examen del demonio). Si está, manda
+    /// sobre `tick_size_de` como piso de resolución del ATR.
+    pub tick_propio: Vec<Option<f64>>,
     /// OLA 73 (R6-A3/B1/A4): ESCRITOR real de la física StatArb por moneda —
     /// SDE OU continua sobre la basis futuro-spot con reloj físico y β RLS
     /// adaptativa. Publica `statarb_ou_zscore`/`statarb_half_life_ms`/
@@ -1190,6 +1194,7 @@ impl GodEngineCore {
             risk_engine: RiskEngine::new(initial_capital),
             maker_engines,
             feature_engines,
+            tick_propio: vec![None; n_coins],
             base_z: (0..n_coins).map(|_| base_z::BaseZ::new()).collect(),
             statarb_ou_engines: (0..n_coins)
                 .map(|_| {
@@ -3019,13 +3024,25 @@ impl GodEngineCore {
             .max(f64::MIN_POSITIVE)
     }
 
+    /// CL-88 (atr-2): fija el tick de la moneda `coin_id` en este núcleo, en
+    /// lugar del tick del símbolo vivo de su slot. Un valor no finito o no
+    /// positivo lo retira.
+    pub fn fijar_tick_propio(&mut self, coin_id: usize, tick: f64) {
+        if let Some(t) = self.tick_propio.get_mut(coin_id) {
+            *t = (tick.is_finite() && tick > 0.0).then_some(tick);
+        }
+    }
+
     /// CL-69: el piso de resolución del ATR de la moneda es su tick (0 sin
     /// spec). Se fija en cada evento porque el registro de specs puede
-    /// cambiar; `tick_size_de` no asigna.
+    /// cambiar; `tick_size_de` no asigna. CL-88: el tick propio, si lo hay,
+    /// manda.
     #[inline]
     fn fijar_piso_resolucion(&mut self, coin_id: usize) {
+        let propio = self.tick_propio.get(coin_id).copied().flatten();
         if let Some(fe) = self.feature_engines.get_mut(coin_id) {
-            fe.piso_resolucion = quantum_arena::symbol_registry::tick_size_de(coin_id)
+            fe.piso_resolucion = propio
+                .or_else(|| quantum_arena::symbol_registry::tick_size_de(coin_id))
                 .filter(|t| t.is_finite() && *t > 0.0)
                 .unwrap_or(0.0);
         }
