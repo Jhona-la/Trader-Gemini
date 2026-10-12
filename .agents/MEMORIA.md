@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Antigravity (Ola Ω88, Ficha #726): Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (F3.8-03, F3.4-08, F2.5-03)
+
+- **Cierre definitivo de F3.8-03 / F3.4-08**:
+  - En `conformal_direction_symmetry_contract.rs`: `k26_engine_publishes_symmetric_conformal_at_honest_neutrality` inyecta `bosque_constante(0.25)` en `BTCSYM_MOTOR` y calienta el calibrador conformal con 40 observaciones simétricas. Verifica `ml_model_base == 0.25`, `ml_prob == 0.25`, discriminación `p < 1.0` y simetría exacta `p_long == p_short`, `acc_long == acc_short`.
+  - Testigos rotulados como cerrados en `cf3_espejo_conformal_contract.rs` y `cf3_vetos_nucleo.rs`.
+- **Cierre definitivo de F2.5-03 (Desasfixia de Convicción Contrarian en EnteMercado)**:
+  - En `consejo_seniors.rs`: ampliado el clamp de `entity_factor` a `[0.20, 1.30]` y adaptada la guarda de integridad en `deliberar_traced` a `max_confidence = if role == EnteMercado { 1.30 } else { 1.0 }`.
+  - En `cf2_conducta_masas_solucion_conocida.rs`: activado `cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion` (pasa con `c = 1.2285 > neutro = 1.0`).
+- **Invarianzas y Verificación**:
+  - `conformal_direction_symmetry_contract`: 3/3 passed.
+  - `cf2_conducta_masas_solucion_conocida`: 7/7 passed.
+  - `council_evidence_contract`: 34/34 passed.
+  - `t2_cobertura_puertas`: huella determinista `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico.
+  - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
+
 ## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-83 y CL-85 a CL-87 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-03, F3.7-04, F3.3-09, F3.3-07, F3.2-03, F3.2-05 rama 11, atr-1, spot_z-1)
 
 - #44 (CL-67 y CL-71) fusionado en main (8f572f7c).

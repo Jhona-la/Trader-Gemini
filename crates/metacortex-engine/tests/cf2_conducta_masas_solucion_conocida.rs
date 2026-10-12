@@ -189,7 +189,6 @@ fn cf2_tk92_ponderacion_forma_cerrada() {
 /// superar a la neutra. Hoy el producto se recorta a 1,0
 /// (consejo_seniors.rs:615) y las dos valen 1,0.
 #[test]
-#[ignore = "OPEN F2.5-03 (AGY Prospect y Línea C recorte del asiento): el impulso contrarian 1,2285 se recorta a 1,0 en entity_factor"]
 fn cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion() {
     let kt = ProspectTheoryEngine::new();
     let factor = kt.modulation_factor(1.0, -4.0);

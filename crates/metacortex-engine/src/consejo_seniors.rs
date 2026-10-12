@@ -290,7 +290,7 @@ pub enum SeniorRole {
 pub struct SeniorOpinion {
     pub role: SeniorRole,
     pub signal_direction: f64, // [-1.0, 1.0]
-    pub confidence: f64,       // [0.0, 1.0]
+    pub confidence: f64,       // [0.0, 1.0] (hasta 1.30 con impulso contrarian de EnteMercado)
     pub weight: f64,           // Dynamic weight
     pub is_veto: bool,
     pub justification: String,
@@ -612,7 +612,10 @@ impl SeniorAgent for SeniorEnteMercado {
             1.0
         };
 
-        let entity_factor = (p_whale * p_liq * p_oi * p_spoof * p_crowd * p_taker * p_macro * p_prospect).clamp(0.20, 1.0);
+        // OLA Ω88 (Ficha #726 / F2.5-03): El impulso contrarian de Prospect Theory ([1.0, 1.30])
+        // amplifica la convicción de EnteMercado cuando la multitud capitula a favor del trade.
+        // Se permite el rango [0.20, 1.30] para no anular el edge contrarian contra el techo 1.0.
+        let entity_factor = (p_whale * p_liq * p_oi * p_spoof * p_crowd * p_taker * p_macro * p_prospect).clamp(0.20, 1.30);
         let dir = safe_signum(payload.intended_direction);
         SeniorOpinion {
             role: self.role(),
@@ -1131,9 +1134,10 @@ impl ConsejoDeliberacion {
             let role = agent.role();
             let idx = role as usize;
             let mut op = agent.evaluate(payload, safe_wr);
+            let max_confidence = if op.role == SeniorRole::EnteMercado { 1.30 } else { 1.0 };
             if op.role != role
                 || !(-1.0..=1.0).contains(&op.signal_direction)
-                || !(0.0..=1.0).contains(&op.confidence)
+                || !(0.0..=max_confidence).contains(&op.confidence)
                 || !op.weight.is_finite() || op.weight < 0.0
             {
                 return CouncilDecisionTrace::integrity_failure(format!("invalid opinion from {role:?}"));

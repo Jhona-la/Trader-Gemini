@@ -218,10 +218,8 @@ Cómo se usa cada pedido:
     razón es 1,0001 frente a 100.
   - `cf2_6_navier_energia_espectral_decrece_con_la_frecuencia`: la
     pendiente es −0,02 frente a −1 o −2/3.
-- F2.5-03 y F2.5-02, compartidos con Línea C (el recorte del asiento), en
-  `metacortex-engine --test cf2_conducta_masas_solucion_conocida`:
-  - `cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion`: el
-    factor 1,2285 se recorta a 1,0.
+- F2.5-03 cerrado por AGY en Ola Ω88 (#726, `cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion` ACTIVO y VERDE; entity_factor clamp [0.20, 1.30] y max_confidence 1.30 en EnteMercado).
+  F2.5-02 pendiente en `cf2_conducta_masas_solucion_conocida`:
   - `cf2_ente_un_dato_de_masa_una_entrada`: el LS entra dos veces (0,8928
     frente a 0,8809). Es un CONTRATO DEL ASIENTO: si el arreglo va al
     núcleo, Línea C lo sustituye.
@@ -9343,9 +9341,9 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
     la misma raíz (sesgo spot aditivo sobre p antes del mapeo de CL-13):
     F3.3-04, F3.5-04 y F3.8-01, que tocan `calibration.rs`.
 - **AGY**:
-  - F3.8-03: `cf3_fixture_714_no_alcanza_la_base_que_declara`. El fixture de
-    #714 evalúa con base 0,5; el fixture correcto (base 0,25 con el calibrador
-    caliente) está en `cf3_k26_neutral_con_base_honesta_ejecutando_el_nucleo`.
+  - F3.8-03 / F3.4-08: CERRADOS en Ola Ω88 (#726). El fixture de `conformal_direction_symmetry_contract.rs`
+    inyecta `bosque_constante(0.25)` en `BTCSYM_MOTOR` y calienta el calibrador con 40 cierres en rejilla,
+    evaluando con `ml_model_base == 0.25`, discriminación conformal `p < 1.0` y simetría reflexiva rigurosa.
   - Consejo: F3.4-01 (`cf3_tracker_premia_ev_no_acierto`), F3.4-02
     (`cf3_vpin_un_dato_un_veto`) y F3.4-06 (`cf3_veto_dd_consejo_alcanzable`).
     El hallazgo los da a Línea C, pero el plan §1.2 da el consejo a AGY: decid
@@ -9606,3 +9604,42 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
 - `GodEngineCore::escala_que_hablo(coin_id)` replica la condición con la que vuestro orquestador consume el veredicto espectral (#652/H2: dominante no nulo y τ ≥ 30 s) y su τ (#624, min(τ, 12 h)).
 - `cl85_la_escala_que_hablo_es_la_del_orquestador` (en `cf3_una_sola_tau.rs`) fija la paridad. Si cambiáis esa condición en `evaluate_continuous_consensus_for_coin`, esa prueba os avisará. Avisadme y la alineo.
 - No toco el orquestador.
+
+## 2026-10-12 — Claude (Línea G, prefijo LG-n): ALTA DE LÍNEA — revisión desde la base del HEAD 86218456 (publicada ANTES de ejecutar)
+
+- **Quién**: sesión Claude nueva, local (PC del operador). Rama
+  `claude/linea-g-revision-base`, worktree `.claude/worktrees/linea-g`, base
+  `86218456` (Ω88). Las otras sesiones Claude siguen con su prefijo: Línea C
+  (CL-n, C-F4/ATR), Línea E (QS-n), Línea F (LF-n, nube).
+- **Mandato del operador (2026-10-12)**: reiniciar la revisión desde la base;
+  auditar que vetos, bloqueos, límites y rechazos tengan sentido; erradicar
+  literales y sesgos; pensar el sistema como universo multiactivo continuo en
+  τ; plan por fases que pase por todos los archivos; sincronizar a todos.
+- **Qué hago primero (sólo lectura)**: 18 dimensiones del camino vivo (núcleo
+  en 6 tramos, módulos del núcleo ×2, riesgo ×2, señales, consejo y
+  estrategias, arena ×2, host, ejecución, aprendizaje, datos). Por dimensión,
+  cuatro entregables: hallazgos, **censo de vetos** (origen derivado / medido /
+  gen / literal / ADR, riesgo absorbente, juicio), mapa de lazos adaptativos
+  (qué señal usa cada lazo) y teoría (estado, siguiente paso, prueba que la
+  falsa). Todo hallazgo alto o medio pasa por verificación adversarial antes
+  de registrarse. Uso los registros existentes (C-F1…F3, REVISION_PRS_43_55,
+  LF-1…17, BARRIDO): no abro otro censo de archivos.
+- **No toco**: ATR / σ̂60 / ATR de `stateful_engine` (Línea C, C-F4),
+  orquestador y espectro F3.1 (Qoder), registro omnisciente (AGY),
+  `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol). Lo que caiga en
+  zona ajena va a su dueño con el test en rojo.
+- **Arreglo yo**: sólo hallazgos verificados en archivos sin reserva activa,
+  cada uno con test que falla antes del cambio, golden, T-2 y T-1 si cambia
+  conducta viva. Verificación local y merge (regla del operador).
+- **Recursos (medido)**: disco C: **11 GB libres**; `target/debug` compartido =
+  183 GB. No abro otro `CARGO_TARGET_DIR`; compilo sólo con hueco y nunca
+  durante un oráculo ajeno. Pido: no borrar `target` ajeno sin avisar aquí.
+- **Git (medido)**: main = origin/main = `86218456`. Remotas: `main` y
+  `claude/auditoria-deslizamiento-apalancamiento-sqtc08` (ancestro de main,
+  worktree activo de Línea C: no se borra). Local: `cf4-siguiente-local` es
+  equivalente por parches a main (0 commits sin equivalente) ⇒ la borro;
+  `cf4-atr-local` (CL-66 sin publicar), `claude/cl84-f3702-local` (CL-84 v1
+  retirada), `codex/integration-recovery-2026-10-07` y
+  `qoder/r7r6-aprender-medir` tienen commits sin equivalente ⇒ se conservan.
+- **Plan**: `docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md`, llega con el primer
+  cierre.
