@@ -33,7 +33,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 | F3.3-03 | La rama 11 mide su convicción a τ_dom pero se dimensiona a la micro τ: expected_lifetime_ms del orquestador no tiene lector | media | confirmado | Línea C. |
 | F3.3-04 | El sesgo spot rompe el espejo de la puerta ML: el corto recibe hasta 4,5 veces más impulso que el largo | media | confirmado | Línea C. |
 | F3.3-05 | La coherencia inter-espectral se recorta en 0: un espectro en contra da la misma confianza tensorial que uno neutro | media | confirmado | Línea C (orchestrator.rs). |
-| F3.3-06 | El peso hebbiano aprende la tasa de acierto (signo del PnL), no el EV, y multiplica el compuesto ×[0,5; 2] | media | confirmado | Línea C (regla y lector). Los consumidores de las ramas 1-10 son de Línea E. |
+| F3.3-06 | El peso hebbiano aprende la tasa de acierto (signo del PnL), no el EV, y multiplica el compuesto ×[0,5; 2] | media | cerrado (CL-76) | Línea C (regla y lector). Los consumidores de las ramas 1-10 son de Línea E. |
 | F3.3-07 | La rama 13 cuenta dos veces la misma lectura del ML (piso y puerta) | media | confirmado | Línea C. |
 | F3.3-08 | La puntuación cruda dimensiona tres veces y la calibrada una | media | confirmado | Línea C, bloque C-F4 (riesgo). |
 | F3.3-09 | La rama 12 no pasa por conviccion_de_rama: su historial se escribe y nunca se lee | media | confirmado | Línea C. |
@@ -51,7 +51,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 | F3.6-03 | El votante Rényi-Tsallis es una función de OBI: la «entropía» publicada es h(|OBI|) y Rényi nunca se calcula en vivo | media | confirmado | Línea C |
 | F3.6-04 | El coaxial escalar vale 0 por álgebra en precios ≥ 0,2236 USD y fabrica votos de ±0,19 a ±0,22 en monedas más baratas | media | cerrado (CL-66) | Línea C para el lector coaxial. Los suelos van con LC-F3-02 al principio de C-F4. |
 | F3.6-05 | Las teorías nombradas no están implementadas: los motores son envolturas de OBI, OFI y la desviación de posición | media | confirmado | Línea C |
-| F3.6-06 | El peso «hebbiano» premia la tasa de acierto en vez de la esperanza, y entra dos veces en la decisión | media | confirmado | Línea C para update_weight. El consumo de hebbian_mult en el compuesto de las ramas 1–10 e |
+| F3.6-06 | El peso «hebbiano» premia la tasa de acierto en vez de la esperanza, y entra dos veces en la decisión | media | cerrado en la regla (CL-76) | Línea C para update_weight. El consumo de hebbian_mult en el compuesto de las ramas 1–10 e |
 | F3.6-07 | La vida de la rama 12 sale del gen base_duration_ms, no de una τ medida, y pesa la mitad en log tras la mezcla | media | confirmado | Línea C |
 | F3.6-08 | En TrendRunner la volatilidad sube la convicción (vol_boost), en contra de D-746 | media | confirmado | Línea C |
 | F3.7-01 | `vecm_zscore` es el nivel de la base entre el ATR, no un z: una prima constante vota reversión de forma permanente | media | confirmado | Línea C (escritor en lib.rs y lectores de strategy-core). El lector conformal se ve afecta |
@@ -333,6 +333,8 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 - Causa: update_weight suma o resta lr según el signo de net_trade_pnl, sin magnitud. El escritor recorta a [0,25; 2] y el lector a [0,5; 2].
 - Consecuencia viva: Con la geometría activa (RR 2,25), una moneda con WR 40 % y EV +0,30 R baja a ≈ 0,29, que el lector recorta a 0,5: el compuesto se reduce a la mitad. Una con WR 60 % y EV −0,10 R sube a 2,0. Afecta a los pisos sig_conf(composite) de las ramas 1-10, al gate tensorial de la rama 11 (lib.rs:6287 y :6298), al escudo macro y al cortafuegos de rachas (lib.rs:7355 y :7365).
 - Prueba que falla hoy: T4 cf3_hebbiano_sigue_el_edge_y_no_la_tasa_de_acierto: hoy da ≈ 0,29 y 2,0.
+  - Cerrado por CL-76 (2026-10-11). `update_weight` es un gradiente exponenciado sobre el resultado neto en unidades de riesgo: w ← clamp(w·exp(lr·R), 0,25, 2), con R = PnL neto / nocional / SL inicial de la posición (`sl_price`, que el trailing no mueve). ln w deriva lr·E[R] por operación, así que sube con EV > 0 y baja con EV < 0 sea cual sea el WR. Con la prueba: EV +0,30 R (WR 40 %) da w = 2,0 y EV −0,10 R (WR 60 %) da 0,26 (antes 0,29 y 2,0). No cambia la tasa de aprendizaje ni los límites del escritor [0,25; 2] y del lector [0,5; 2]. Siguen abiertos: la siembra desde la clave global (LC-F1-04) y la misma regla de signo en la ganancia epigenética espectral (`apply_epigenetic_outcome`, temporal_spectrum.rs:772-793, zona de Qoder: pedido en el buzón).
+  - T-2 con CL-76 (aviso al dueño del fixture): de a8d60390ff2f0f74 (68 operaciones, PnL −0,118, acierto 43 %, 899 vetos EV) a 998a7de2cfba2519 (131 operaciones, PnL +0,931, acierto 56 %, 898 vetos EV). Golden sin cambios. El T-2 no mide rentabilidad: el movimiento sólo dice que la regla del peso cambia qué intenciones pasan en el fixture, no que haya ventaja.
 - Dueño: Línea C (regla y lector). Los consumidores de las ramas 1-10 son de Línea E.
 - Relación con hallazgos anteriores: LC-F1-04 (contaminación entre monedas por la clave global). Añade la regla de aprendizaje y los límites incoherentes entre escritor y lector.
 - Escépticos: confirmado.
@@ -553,6 +555,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 - Causa: La regla no es de Hebb: no tiene término presináptico, así que no sabe si el perceptrón votó ni en qué lado, y del PnL sólo mira el signo, no el tamaño. Con un WR del 60 % y pago 1:2 (EV de −0,2 por operación) el peso sube hasta el tope. Ese w multiplica el compuesto entero, y además abre la compuerta del perceptrón, cuyo voto ya va dentro de tensor_boost.
 - Consecuencia viva: Contradice RULE[growth_over_wr]. Con muchas ganancias pequeñas y pérdidas grandes, el núcleo multiplica el compuesto hasta ×1,92 (lib.rs:5446) y sube sig_conf en las ramas 1–10. El umbral p85 medido de |compuesto| (lib.rs:4994, :5469) se adapta con retraso y sólo lo compensa en parte; no lo medí.
 - Prueba que falla hoy: cf3_6_peso_hebb_no_premia_acierto_con_esperanza_negativa: w = 1,917 tras 200 cierres con EV < 0. Falla hoy.
+  - Regla cerrada por CL-76 (2026-10-11): con EV −0,2 R el peso baja al suelo 0,25 (antes 1,917). Ver F3.3-06. Siguen abiertos: la falta de término presináptico (la regla no sabe si el perceptrón votó ni en qué lado), la compuerta que lee la clave global de la última moneda (LC-F1-04) y el consumo de hebbian_mult en el compuesto de las ramas 1-10 (Línea E).
 - Dueño: Línea C para update_weight. El consumo de hebbian_mult en el compuesto de las ramas 1–10 es de Línea E: petición con este test.
 - Relación con hallazgos anteriores: Parcial con LC-F3-08 (clave global) y con el plan P3 / R-17 (refuerzo ×2). Lo nuevo es que premia el WR con EV negativo y que entra dos veces.
 - Escépticos: confirmado.
