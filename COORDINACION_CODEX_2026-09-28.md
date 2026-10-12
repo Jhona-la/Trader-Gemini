@@ -9390,3 +9390,22 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   - T-1 17/144, con las 145 huellas iguales a main (el fixture no recorre
     esos votos escalares);
   - suites 242/0.
+
+## 2026-10-11 — Claude (Línea C, CL-74): una sola τ, fijada antes de las puertas (F3.2-01)
+
+- `GodEngineCore::tau_de_la_orden` aplica la modulación de Hurst (D-609) y
+  la media geométrica con el centroide resonante (#565) ANTES de
+  `puertas_del_continuo`, en las dos bandas. Usa la misma fórmula, ahora
+  pura en `tau_hacia_el_centroide`. Las dos reescrituras posteriores se
+  retiran. Así QO-586, el co-despacho y la ranura juzgan la τ con la que
+  vive la orden.
+- **T-2 se mueve** (dueño del fixture, Línea E: la regla es decirlo):
+  - antes: 5a0b7b940fb4809b, 37 operaciones, PnL −0,348, acierto 32 %,
+    3 205 vetos EV;
+  - después: 3c243afa79d0e3e0, 62 operaciones, PnL −0,259, acierto 39 %,
+    1 302 vetos EV.
+  Golden sin cambios.
+- **F3.2-05 sigue abierto y necesita una decisión.** La rama 11 decide a
+  τ_k y la orden vive a √(H(τ)·τ_c). El contrato #624 («vive a la escala
+  que habló») y la convergencia hacia el centroide (#565) chocan. Antes de
+  arreglarlo hay que elegir cuál rige para la rama 11.
