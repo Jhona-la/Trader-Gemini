@@ -1538,6 +1538,24 @@ impl GodEngineCore {
     /// comisiones publicadas, σ pronosticada al τ pedido): una lectura
     /// cuya τ no paga esa fricción será rechazada por REJ_TP_SL_FLOOR tras
     /// recorrer todo el pipeline de fusión y sizing.
+    /// CL-74 (F3.2-01) — LA τ DE LA ORDEN, ANTES DE JUZGARLA.
+    ///
+    /// QO-586 (`banda_paga_friccion`) y el co-despacho juzgan la τ que lleva
+    /// la intención. Hasta CL-74, la modulación de Hurst (D-609) y la media
+    /// geométrica con el centroide resonante (#565) la reescribían DESPUÉS de
+    /// las puertas, y la orden vivía a una τ que nadie había juzgado: σ(τ)
+    /// crece con τ, así que la banda rápida quedaba sobre-vetada y la lenta
+    /// sub-vetada (lo que pasaba moría en REJ_TP_SL_FLOOR). Misma fórmula,
+    /// aplicada una sola vez y antes de juzgar. Sin espectro de la moneda
+    /// sólo se aplica Hurst, como antes.
+    pub fn tau_de_la_orden(&self, coin_id: usize, tau_banda_ms: u64, hurst: f64) -> u64 {
+        let modulada = hurst_duration_modulation(tau_banda_ms, hurst);
+        match self.temporal_spectrum.get(coin_id) {
+            Some(spec) => tau_hacia_el_centroide(modulada, spec.continuous_resonant_tau_ms()),
+            None => modulada,
+        }
+    }
+
     fn banda_paga_friccion(&self, coin_id: usize, tau_ms: f64) -> bool {
         if coin_id >= self.arena.coins.len() || !tau_ms.is_finite() || tau_ms <= 0.0 {
             return false;
@@ -6469,6 +6487,17 @@ impl GodEngineCore {
             // banda: la lectura lenta del mismo espectro entraba sin pasar por
             // ninguno. Ahora son una función única que se aplica a las DOS
             // lecturas antes de arbitrar.
+            // CL-74 (F3.2-01): las puertas juzgan la τ con la que vivirá la orden.
+            // El Hurst de la modulación es el mismo que usaba la reescritura
+            // posterior (`features[1]`); se lee aquí, antes de la primera banda.
+            let hurst_exponent = features[1] as f64;
+            if fast_intent.signal != SignalType::Flat {
+                fast_intent.expected_duration_ms = self.tau_de_la_orden(
+                    coin_id,
+                    fast_intent.expected_duration_ms,
+                    hurst_exponent,
+                );
+            }
             fast_intent = self.puertas_del_continuo(
                 coin_id,
                 fast_intent,
@@ -6494,7 +6523,6 @@ impl GodEngineCore {
                 });
             }
 
-            let hurst_exponent = features[1] as f64;
             // X-024 (REHAB-5): el gate swing YA NO consume la NN cruda — pasa
             // por el ENSAMBLE (pesos aprendidos por Brier real). Antes: doble
             // inferencia por tick (2× actualización Welford) y los pesos del
@@ -6761,6 +6789,14 @@ impl GodEngineCore {
             // modelo y vetos de flujo y muro— antes de competir en la
             // arbitración. Hasta aquí entraba sin ninguna: un motor universal
             // con una puerta para cada mitad no es un motor universal.
+            // CL-74 (F3.2-01): las puertas juzgan la τ con la que vivirá la orden.
+            if slow_intent.signal != SignalType::Flat {
+                slow_intent.expected_duration_ms = self.tau_de_la_orden(
+                    coin_id,
+                    slow_intent.expected_duration_ms,
+                    hurst_exponent,
+                );
+            }
             slow_intent = self.puertas_del_continuo(
                 coin_id,
                 slow_intent,
@@ -6896,14 +6932,8 @@ impl GodEngineCore {
                     continue;
                 }
 
-            // D-474: Invariante Fractal Universal de Horizonte Continuo (Persistencia Browniana Hurst)
-            // En el espectro continuo universal, la duración esperada se modula continuamente por Hurst:
-            // Hurst < 0.48 (anti-persistente) comprime la duración hacia la microestructura (tau bajo);
-            // Hurst >= 0.52 (persistente/trending) expande la duración temporal para capturar la tendencia.
-            unified_intent.expected_duration_ms = hurst_duration_modulation(
-                unified_intent.expected_duration_ms,
-                hurst_exponent,
-            );
+            // D-474 / CL-74: la modulación de Hurst de la duración se aplica ya
+            // antes de las puertas (`tau_de_la_orden`), no aquí.
 
             // QO-E2a — EL APRENDIZAJE MODULA: el forest online (entrenado
             // con los resultados REALES de cierres previos vía telemetry
@@ -7234,29 +7264,8 @@ impl GodEngineCore {
                                 contagion_net_role,
                             );
 
-                        // Mapeo armónico continuo en el Universo Multivariante Continuo Temporal Espectral:
-                        // Elimina la discretización binaria rígida y converge continuamente hacia el centro de masa tau*.
-                        let raw_base = if unified_intent.expected_duration_ms > 0 {
-                            unified_intent.expected_duration_ms as f64
-                        } else {
-                            resonant_tau_ms
-                        };
-                        let safe_base = if raw_base.is_finite() && raw_base > 0.0 {
-                            raw_base.max(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
-                        } else {
-                            quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
-                        };
-                        let safe_resonant = if resonant_tau_ms.is_finite() && resonant_tau_ms > 0.0 {
-                            resonant_tau_ms.max(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS)
-                        } else {
-                            quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
-                        };
-                        let continuous_tau = (safe_base.ln() * 0.50 + safe_resonant.ln() * 0.50).exp();
-                        unified_intent.expected_duration_ms = if continuous_tau.is_finite() {
-                            continuous_tau.clamp(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS, 43_200_000.0).round() as u64
-                        } else {
-                            quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS as u64
-                        };
+                        // CL-74 (F3.2-01): la convergencia hacia el centroide τ*
+                        // (#565) ya está en `tau_de_la_orden`, antes de las puertas.
                     }
                 }
             }
@@ -8313,6 +8322,30 @@ impl GodEngineCore {
             false, // CERT-M2-H01: wrapper legacy — siempre actualiza macro
             true,  // allow_entries: por defecto permitido en wrapper legacy
         )
+    }
+}
+
+/// CL-74 (F3.2-01) — la τ de una intención se acerca al centroide resonante
+/// por media geométrica (#565), con el mismo recorte a [30 s, 12 h] que
+/// tenía la mezcla en línea. Una duración no declarada (0) toma el centroide.
+pub fn tau_hacia_el_centroide(tau_ms: u64, resonante_ms: f64) -> u64 {
+    let ancla = quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS;
+    let raw_base = if tau_ms > 0 { tau_ms as f64 } else { resonante_ms };
+    let safe_base = if raw_base.is_finite() && raw_base > 0.0 {
+        raw_base.max(ancla)
+    } else {
+        ancla
+    };
+    let safe_resonant = if resonante_ms.is_finite() && resonante_ms > 0.0 {
+        resonante_ms.max(ancla)
+    } else {
+        ancla
+    };
+    let continuous_tau = (safe_base.ln() * 0.50 + safe_resonant.ln() * 0.50).exp();
+    if continuous_tau.is_finite() {
+        continuous_tau.clamp(ancla, 43_200_000.0).round() as u64
+    } else {
+        ancla as u64
     }
 }
 
