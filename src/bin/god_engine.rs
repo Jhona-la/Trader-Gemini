@@ -897,6 +897,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 🛠️ [BOOTLOADER] Inicializar el entorno desde .env
     dotenvy::dotenv().ok();
 
+    // LG-11 (Línea G): `telemetry_log!` encola en vez de imprimir en el hilo
+    // del bucle vivo (≈8,5 MB de cola; el consumidor duerme si está vacía).
+    telemetry_server::macros::init_telemetry_logger_con_capacidad(16_384);
+
     // CERT-M4-H02 — SHUTDOWN GRACEFUL: Registrar un atexit handler que
     // mata el trainer hijo. En Windows, Ctrl+C pasa por el console handler
     // del OS que termina el proceso — este thread daemon detecta que el
@@ -1234,6 +1238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         telemetry_server::telemetry_log!(
                             "🛑 [SHUTDOWN] Segundo ^C — salida forzada."
                         );
+                        telemetry_server::macros::vaciar_telemetria(); // LG-11
                         std::process::exit(130);
                     }
                     telemetry_server::telemetry_log!(
@@ -5110,6 +5115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             telemetry_server::telemetry_log!(
                 "🛑 [SHUTDOWN] Estado persistido. Cierre limpio completo."
             );
+            telemetry_server::macros::vaciar_telemetria(); // LG-11
             std::process::exit(0);
         }
         }

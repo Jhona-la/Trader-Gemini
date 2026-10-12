@@ -45,26 +45,90 @@ impl Write for FixedLogBuffer {
 // Usamos ArrayQueue en lugar de channels MPMC para garantizar latencia O(1) determinística.
 pub static LOG_QUEUE: OnceLock<Arc<crossbeam::queue::ArrayQueue<FixedLogBuffer>>> = OnceLock::new();
 
+/// LG-11 (Línea G): capacidad por defecto de la cola de logs. Con
+/// 1 000 000 entradas de 520 B la cola reservaba ~520 MB; 65 536 son ~34 MB.
+pub const CAPACIDAD_LOG_POR_DEFECTO: usize = 65_536;
+
 /// Inicializa la cola global de logs asíncronos en modo RingBuffer Lock-Free
 pub fn init_telemetry_logger() {
-    let queue = Arc::new(crossbeam::queue::ArrayQueue::new(1_000_000));
-    let _ = LOG_QUEUE.set(queue.clone());
+    init_telemetry_logger_con_capacidad(CAPACIDAD_LOG_POR_DEFECTO);
+}
 
-    // Hilo de Ghost Flusher exclusivo para impresiones a stdout.
-    // Extrae del RingBuffer sin bloquear al GodEngine.
+/// LG-11 (Línea G) — REGISTRO ASÍNCRONO ACOTADO Y SIN GIRO ACTIVO.
+///
+/// QUÉ ESTABA MAL: el host nunca inicializaba la cola, así que cada
+/// `telemetry_log!` del bucle vivo hacía un `println!` síncrono (en Windows,
+/// una selección en la consola con QuickEdit congela la escritura y con ella
+/// el bucle). Y la cola, cuando se usaba, reservaba ~520 MB y su hilo giraba
+/// con `yield_now` ocupando un núcleo entero.
+///
+/// QUÉ GARANTIZA: capacidad acotada (`force_push` descarta lo más antiguo si
+/// se llena), el consumidor drena por lotes con un único bloqueo de stdout y
+/// duerme 200 µs cuando la cola está vacía. Idempotente: una segunda llamada
+/// no crea otro hilo. Devuelve `true` si inicializó.
+pub fn init_telemetry_logger_con_capacidad(capacidad: usize) -> bool {
+    let queue = Arc::new(crossbeam::queue::ArrayQueue::new(capacidad.max(1)));
+    if LOG_QUEUE.set(queue.clone()).is_err() {
+        return false;
+    }
     std::thread::Builder::new()
         .name("GhostLogger".to_string())
-        .spawn(move || {
-            loop {
-                if let Some(msg) = queue.pop() {
-                    println!("{}", msg.as_str());
-                } else {
-                    // Backoff nanosegundos para evitar spinlock CPU al 100%
-                    std::thread::yield_now();
-                }
+        .spawn(move || loop {
+            if vaciar_cola(&queue) == 0 {
+                std::thread::sleep(std::time::Duration::from_micros(200));
             }
         })
         .expect("Fallo al crear hilo GhostLogger");
+    true
+}
+
+/// Escribe en stdout todo lo que hay en la cola, con un solo bloqueo.
+fn vaciar_cola(queue: &crossbeam::queue::ArrayQueue<FixedLogBuffer>) -> usize {
+    use std::io::Write as _;
+    if queue.is_empty() {
+        return 0;
+    }
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    let mut n = 0;
+    while let Some(msg) = queue.pop() {
+        let _ = out.write_all(msg.as_str().as_bytes());
+        let _ = out.write_all(b"\n");
+        n += 1;
+    }
+    let _ = out.flush();
+    n
+}
+
+/// LG-11: vacía la cola de logs de forma síncrona (apagado, pruebas).
+/// Devuelve cuántos mensajes escribió.
+pub fn vaciar_telemetria() -> usize {
+    LOG_QUEUE.get().map(|q| vaciar_cola(q)).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests_lg11 {
+    use super::*;
+
+    #[test]
+    fn lg11_la_cola_es_acotada_e_idempotente_y_se_vacia() {
+        assert!(init_telemetry_logger_con_capacidad(1_024));
+        assert!(!init_telemetry_logger_con_capacidad(8), "la segunda llamada no reinicializa");
+        let q = LOG_QUEUE.get().expect("cola");
+        assert_eq!(q.capacity(), 1_024);
+        for i in 0..2_000 {
+            crate::telemetry_log!("mensaje {}", i);
+        }
+        assert!(q.len() <= 1_024, "force_push descarta lo más antiguo: {}", q.len());
+        let _ = vaciar_telemetria();
+        assert!(q.len() <= 1_024);
+    }
+
+    #[test]
+    fn lg11_la_capacidad_por_defecto_no_reserva_cientos_de_megas() {
+        let bytes = CAPACIDAD_LOG_POR_DEFECTO * std::mem::size_of::<FixedLogBuffer>();
+        assert!(bytes < 64 * 1024 * 1024, "{bytes} bytes");
+    }
 }
 
 #[macro_export]
