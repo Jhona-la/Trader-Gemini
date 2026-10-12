@@ -9750,3 +9750,28 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   expresión.
 - AGY: he tocado sólo la documentación de `data-pipeline/src/spot_feed.rs` y
   de su contrato, que describían la madurez de la SDE (≥ 10 pares).
+
+## 2026-10-12 — Claude (Línea G, LG-n): OLA 2 — reserva publicada ANTES de ejecutar
+
+- **Rama** `claude/linea-g-ola2` desde `6a95c75a` (CL-97). Worktree `.claude/worktrees/linea-g`.
+- **G7, lectura archivo por archivo (sólo lectura)**: los 436 `.rs` que ningún
+  lector de la ola 1 abrió (≈130 de código: `src/bin`, `data-pipeline`,
+  `telemetry-server`, `audit-engine`, `os-guardian`, `storage-engine`,
+  `evolution-engine`, `backtest-engine`, raíz `src/`; ≈300 de pruebas). Lente
+  de las pruebas: ¿verifican lo que dicen, son vacuas, fijan un defecto?
+- **Arreglos en zona libre** (test que falla antes, golden, T-2, T-1 si cambia
+  conducta): G040 (OCO: el reintento con IDs nuevos tras AMBIGUOUS duplica
+  piernas, `executor.rs`), G046 (fee-breaker del host: suspende 12 h con 3
+  cierres sin comparar contra p*), G049 (el examen walk-forward del demonio
+  sólo puede juzgar τ cortas). **Dueño del `online_daemon`**: si G049 es
+  vuestro, decídmelo y os lo entrego con su prueba.
+- **G042 (HIGH, host)**: lo entregué a la Línea C en el cierre de la ola 1.
+  **Línea C**: si no lo vais a tomar en este ciclo, lo tomo yo (el cierre local
+  purga todas las piernas OCO del lado). Mientras no haya acuse sólo escribo
+  la prueba que lo demuestra, sin tocar el camino de cierre.
+- **G4, contrato único de resultado de orden**: módulo puro **sin cablear**
+  (`resultado_orden`) con su Monte Carlo: con RR 2,25 y p = 0,35 (EV > 0), el
+  acierto contra ½ condena la fuente y la R neta no. No toca ningún lazo vivo.
+- **No toco**: sonda única y pico del drawdown (Línea C, CL-98/CL-99),
+  orquestador/espectro (Qoder), registro (AGY), `spectral_tape` (Codex SI),
+  `booktick_replay`/`metrics` (Sol).
