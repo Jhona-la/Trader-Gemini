@@ -247,6 +247,12 @@ pub struct CoinArena {
     pub spot_ask: AtomicF64,
     pub spot_bid_qty: AtomicF64,
     pub spot_ask_qty: AtomicF64,
+    /// CL-79 (F3.7-03): marca de llegada del último spot, en el reloj de
+    /// eventos del núcleo (`registry.get_event_time()`, la marca del último
+    /// evento del futuro procesado). El bookTicker de spot no trae la hora
+    /// del exchange, y el TTL del núcleo compara con ese mismo reloj, en vivo
+    /// y en los replays. 0 = nunca llegó.
+    pub spot_ts_ms: AtomicU64,
     /// Tracking de CVD (Cumulative Volume Delta) - Flujo de Capital
     pub agg_buy_vol: AtomicF64,
     pub agg_sell_vol: AtomicF64,
@@ -498,6 +504,7 @@ impl CoinArena {
             spot_ask: AtomicF64::new(0.0),
             spot_bid_qty: AtomicF64::new(0.0),
             spot_ask_qty: AtomicF64::new(0.0),
+            spot_ts_ms: AtomicU64::new(0),
             agg_buy_vol: AtomicF64::new(0.0),
             last_agg_trade_ms: AtomicU64::new(0),
             cvd_mean_ewma: AtomicF64::new(0.0),
@@ -759,6 +766,11 @@ impl GlobalArena {
             self.coins[coin_id]
                 .spot_ask_qty
                 .store(ask_qty, Ordering::Relaxed);
+            // CL-79 (F3.7-03): la edad del spot se mide con el reloj de
+            // eventos del núcleo; ver `CoinArena::spot_ts_ms`.
+            self.coins[coin_id]
+                .spot_ts_ms
+                .store(self.registry.get_event_time().max(0) as u64, Ordering::Relaxed);
 
             // FASE 8: Propagación paralela al Tensor
             if let Some(tensor) = &self.tensor_arena {
