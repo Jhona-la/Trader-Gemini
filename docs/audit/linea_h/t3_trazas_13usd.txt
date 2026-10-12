@@ -1,0 +1,8 @@
+[T1-DIAG] opened=36 council_vetoes=6 ml_vetoes=0 closes=36
+[T1-DIAG] opened=63 council_vetoes=0 ml_vetoes=0 closes=63
+[T1-DIAG] opened=231 council_vetoes=0 ml_vetoes=0 closes=107
+[T1-DIAG] opened=90 council_vetoes=0 ml_vetoes=0 closes=90
+[T1-DIAG] opened=44 council_vetoes=1 ml_vetoes=0 closes=44
+[T1-DIAG] opened=111 council_vetoes=0 ml_vetoes=0 closes=111
+[T1-DIAG] opened=82 council_vetoes=1 ml_vetoes=0 closes=81
+[T1-DIAG] opened=89 council_vetoes=0 ml_vetoes=0 closes=89
