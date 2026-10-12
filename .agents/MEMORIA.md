@@ -251,6 +251,25 @@
     conflicto (unión). Sobre el árbol integrado: suites 252/0, cf como
     en main, golden 54/0, T-2 998a7de2 (131 operaciones) y T-1 19/144
     con la base 6dff337e y la lista de la Línea G.
+- #60 (CL-97) fusionado en main (6a95c75a). La revisión adversarial
+  (`docs/audit/REVISION_PR60_2026-10-12.md`) reabre F3.7-02 por EST-3: la
+  prueba extrapola a 2τ_k desde τ_k/8–τ_k/4, y con una base de dos escalas
+  la reversión votada sólo revierte el 42 %. Con W-1 (cada reconexión
+  rehace la prueba) y los menores, va en la tanda CL-100 en adelante.
+- CL-98 (D4 de ADR-0016, LC-F4-19): una sola sonda abierta en la cartera.
+  - `risk_engine::sonda`: un predicado para el riesgo y el núcleo; veto
+    `REJ_SONDA_OCUPADA` (V-RISK-007); la sonda es la orden mínima.
+  - Exención del EV sin el prior 0,55: se conserva TP > f (lo común a
+    cualquier prior).
+  - Medido: golden re-certificado (misma operación, nocional mínimo); T-2
+    pasa de 131 operaciones y +0,931 a 68 y −0,140, y lo mueven sólo los
+    13 rechazos `sonda_ocupada` (la variante sin puerta da la huella de
+    main); T-1 18/144: deja de influir `kelly_clamp_min` (gen 32), que en
+    el T-1 sólo dimensionaba sondas.
+- C-F4 que espera al dueño: freno de drawdown único (LC-F4-10), R-15 en
+  sombra, retirada de cuatro módulos y cópulas vencidas. Veto de grupo
+  (LC-F4-17, LC-F4-01): propuesta a Codex en el buzón, sin tocar su zona
+  hasta su acuse.
 - Lecciones:
   - Antes de crear un test, comprobar que el archivo no existe (pisé
     `cf4_piso_resolucion.rs`; se restauró antes de cualquier commit).

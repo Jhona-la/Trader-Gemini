@@ -17,6 +17,7 @@ pub mod regime;
 pub mod drawdown;
 pub mod envio;
 pub mod ruin;
+pub mod sonda;
 pub mod tp_sl;
 pub mod veto_registry;
 pub mod selection_stats;
@@ -91,7 +92,7 @@ impl ValidatedOrder {
 /// correlación, y el suelo TP/SL y la confianza el 4 con el EV: la telemetría
 /// no podía decir qué compuerta rechazaba.
 use std::sync::atomic::AtomicU64;
-pub const REJECT_SLOTS: usize = 17;
+pub const REJECT_SLOTS: usize = 18;
 pub const REJ_FLAT_COIN: usize = 0;
 pub const REJ_EXPOSURE_ZERO: usize = 1;
 pub const REJ_CORRELATION: usize = 2;
@@ -113,6 +114,9 @@ pub const REJ_VIABILIDAD: usize = 13;
 pub const REJ_SIN_EVIDENCIA: usize = 14;
 pub const REJ_INVALID_INPUT: usize = 15;
 pub const REJ_TARGET_GEOMETRY: usize = 16;
+/// D4 (ADR-0016, CL-98) — la moneda está en fase de sonda y ya hay una sonda
+/// abierta en la cartera: las sondas se abren de una en una (`sonda.rs`).
+pub const REJ_SONDA_OCUPADA: usize = 17;
 
 #[allow(clippy::declare_interior_mutable_const)]
 const REJECT_ZERO: AtomicU64 = AtomicU64::new(0);
@@ -187,6 +191,7 @@ pub const REJECT_NAMES: [&str; REJECT_SLOTS] = [
     "sin_evidencia",
     "entrada_invalida",
     "geometria_invalida",
+    "sonda_ocupada",
 ];
 
 fn format_reject_counters(counters: &[AtomicU64; REJECT_SLOTS]) -> String {
@@ -469,6 +474,14 @@ impl RiskEngine {
         set_reject_direction(intent.signal);
         if intent.signal == SignalType::Flat || allocated_capital <= 0.0 {
             return ValidatedOrder::rejected();
+        }
+        // D4 (ADR-0016, LC-F4-19, CL-98): una moneda con menos de
+        // `sonda::CIERRES_DE_SONDA` cierres sólo puede abrir una SONDA, y la
+        // cartera tiene una sola sonda abierta a la vez. Es la misma puerta
+        // que la sonda del ML-GATE del núcleo (`arranque_frio_sin_roster`).
+        let es_sonda = crate::sonda::en_fase_de_sonda(arena, coin_id);
+        if es_sonda && crate::sonda::hay_sonda_abierta(arena) {
+            return rej(REJ_SONDA_OCUPADA);
         }
         // D-750 — EL NOCIONAL MÍNIMO ES EL DEL SÍMBOLO, NO UN LITERAL DE
         // CONFIGURACIÓN.
@@ -1138,7 +1151,6 @@ impl RiskEngine {
             .trade_count
             .load(Ordering::Relaxed);
         let arranque_frio_total = trade_count == 0;
-        let es_fase_sonda = trade_count < 5;
         let p_ganar = if intent.win_probability.is_finite()
             && intent.win_probability > 0.0
             && intent.win_probability < 1.0
@@ -1181,22 +1193,29 @@ impl RiskEngine {
         if !expected_value_pct.is_finite() || !ev_fee_multiplier.is_finite() {
             return rej(REJ_INVALID_INPUT);
         }
-        // Ω46.2: En fase de sonda (n < 5), la orden es de muestreo exploratorio con
-        // sizing mínimo D-750. No se veta con rej(4) si el EV calculado con el prior
-        // del ensamble (p=0.55) cubre comisiones brutas (ev_prior > roundtrip_fee).
-        // Esto erradica el deadlock absorbente donde 1 trade perdedor congelaba
-        // permanentemente la moneda impidiéndole acumular muestra estadística.
-        if p_ganar.is_some() {
+        // Ω46.2 / D4 (CL-98): en fase de sonda (menos de `CIERRES_DE_SONDA`
+        // cierres) la orden es una sonda: se admite porque está presupuestada
+        // (una abierta en la cartera, orden mínima, pérdidas dentro del
+        // drawdown de D3), no por un EV que nadie ha medido.
+        //
+        // Antes se le pedía que el EV con un prior de 0,55 cubriera la
+        // fricción: 0,55·TP − 0,45·SL > f. El 0,55 no tenía origen (ADR-0016
+        // D4). Para CUALQUIER prior p esa condición exige TP > f/p > f, así
+        // que lo que se conserva sin inventar p es su parte común: una sonda
+        // que, si gana, no cubre la fricción de ida y vuelta no puede medir
+        // nada rentable. Con la geometría de `compute_tp_sl` (TP ≥ 1,5·SL +
+        // 2,5·f) siempre se cumple; muerde con objetivos explícitos de la
+        // intención (TP de 1 pb frente a 1 % de stop).
+        //
+        // Fuera de la fase de sonda rige D-751 íntegro.
+        if es_sonda {
+            if expected_win <= roundtrip_fee {
+                return rej(REJ_EV);
+            }
+        } else if p_ganar.is_some() {
             let ev_minimo_requerido = roundtrip_fee * ev_fee_multiplier;
             if expected_value_pct <= ev_minimo_requerido {
-                if es_fase_sonda {
-                    let ev_prior = 0.55 * expected_win - 0.45 * expected_loss;
-                    if ev_prior <= roundtrip_fee {
-                        return rej(REJ_EV);
-                    }
-                } else {
-                    return rej(REJ_EV);
-                }
+                return rej(REJ_EV);
             }
         }
 
@@ -1210,6 +1229,20 @@ impl RiskEngine {
         let max_fee_limit =
             crate::capital_regime::lerp(max_acceptable_fee_pct, 0.035, micro_w_alloc);
         let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
+        // Revisión del PR #61 (F1): la orden mínima que de verdad sale es la
+        // del LOTE, el menor múltiplo de `stepSize` con `qty ≥ minQty` y un
+        // nocional de al menos el mínimo más su margen de 0,10 USD (FASE 3),
+        // al precio actual. Con lote grueso es mayor que el nocional mínimo
+        // (BNB a 600 con paso 0,01: 6 USD, no 5,10): la viabilidad, el rescate
+        // y el tope de la sonda razonan con ella. Sin paso o precio
+        // utilizables queda el nocional mínimo de antes.
+        let nocional_minimo = crate::capital_regime::nocional_minimo_ejecutable(
+            dynamic_min_notional + 0.1,
+            spec.step_size,
+            spec.min_qty,
+            current_price,
+        )
+        .unwrap_or(dynamic_min_notional + 0.1);
         let _max_safe_leverage = if roundtrip_fee > 0.0 {
             max_acceptable_fee_pct / roundtrip_fee
         } else {
@@ -1244,7 +1277,7 @@ impl RiskEngine {
         let q_para_ruina = crate::ruin::conservative_loss_q(wr, trades_coin);
         let tope_riesgo_evento = crate::ruin::clamp_ruin(1.0, q_para_ruina);
         if !crate::capital_regime::orden_viable(
-            dynamic_min_notional,
+            nocional_minimo,
             expected_loss,
             allocated_capital,
             tope_riesgo_evento,
@@ -1296,8 +1329,9 @@ impl RiskEngine {
 
         // FASE 3 FIX: Micro-Account Notional Safety
         // Sumamos diez centavos de dólar (+0.1) al min notional para evitar rechazos
-        // por pérdida de precisión IEEE-754 en multiplicaciones de apalancamiento
-        let safe_min_notional = dynamic_min_notional + 0.1;
+        // por pérdida de precisión IEEE-754 en multiplicaciones de apalancamiento.
+        // Revisión del PR #61 (F1): y se redondea al lote (`nocional_minimo`).
+        let safe_min_notional = nocional_minimo;
         // D-750: el margen mínimo viable sale de la MISMA función que la
         // comprobación de viabilidad de más arriba: `min_notional / L`.
         let required_margin_for_min_notional =
@@ -1308,6 +1342,12 @@ impl RiskEngine {
             // borde EXACTO — la causa terminal de los 0 trades. Épsilon
             // relativo de 5 bps de margen cierra la frontera.
             final_margin = required_margin_for_min_notional * 1.0005;
+        }
+        // D4 (ADR-0016, CL-98): la sonda es la orden mínima del símbolo, con
+        // el apalancamiento ya decidido. Es información, no alfa: su tamaño no
+        // sale del Kelly de arranque en frío.
+        if es_sonda {
+            final_margin = final_margin.min(required_margin_for_min_notional * 1.0005);
         }
 
         let (meets_min_notional, _) =

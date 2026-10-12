@@ -135,6 +135,18 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         deuda: Some("contrato de call-site (claves ausentes ⇒ bit a bit el veto anterior) en correlation_admission_contract; el cableado exige oráculo T-1 antes del merge por margen cero 11.1/11.0"),
     },
     EntradaVeto {
+        id: "V-RISK-007",
+        nombre: "sonda_ocupada",
+        causa: "D4 (ADR-0016, LC-F4-19): una moneda con menos de sonda::CIERRES_DE_SONDA cierres sólo abre SONDAS, y la cartera tiene una sola sonda abierta a la vez. Una sonda es información, no alfa: abrir varias multiplica un riesgo sin medir. Unifica la fase de sonda del riesgo (exención del EV) y la sonda del ML-GATE del núcleo (arranque_frio_sin_roster), que eran por moneda. Tras un reinicio trade_count vuelve a 0, así que una posición adoptada del exchange cuenta como sonda abierta",
+        fuente_umbral: "política del dueño (ADR-0016 D4, delegada «Tú decide»): 5 cierres por moneda («vigente») y una sonda abierta en la cartera",
+        datos: "metrics.trade_count de cada moneda + positions.is_any_open() de cada moneda (sonda::hay_sonda_abierta)",
+        responsable: "CL-98 (Claude, Línea C), 2026-10-12",
+        clase: ClaseVeto::RiesgoDuro,
+        estado: EstadoVeto::Activo,
+        test: Some("cl98_una_sola_sonda_abierta_en_la_cartera"),
+        deuda: Some("el recuento de cierres por moneda no se persiste: tras un reinicio cada moneda vuelve a tener 5 sondas (estado aprendido de C-F8)"),
+    },
+    EntradaVeto {
         id: "V-LOGIC-001",
         nombre: "viabilidad (D-755)",
         causa: "σ(τ)−fricción no supera el spread: la geometría es inviable físicamente",
@@ -468,6 +480,7 @@ macro_rules! corpus_contratos {
         c.push_str(include_str!("veto_registry.rs"));
         c.push_str(include_str!("../../god-engine-core/src/lib.rs"));
         c.push_str(include_str!("../tests/veto_logic_contracts.rs"));
+        c.push_str(include_str!("../tests/cf4_sonda_unica.rs"));
         c.push_str(include_str!("../../god-engine-core/tests/resonancia_simetrica_contract.rs"));
         c
     }};

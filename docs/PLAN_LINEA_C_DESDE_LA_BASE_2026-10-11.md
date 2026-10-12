@@ -1114,7 +1114,7 @@ Ninguno está verificado salvo los marcados «confirmado por lectura», y a éso
 - **LC-F4-16** Docs que contradicen su código: ruin.rs:24-29 y correlation_guard.rs:811-833 (fórmula del doc en :816 frente al código en :826-828).
 - **LC-F4-17** La candidata entra al veto de grupo con la EWMA y no con su riesgo real (risk-engine/src/lib.rs:612-711; la candidata en :646-650).
 - **LC-F4-18** `curl_share` infla ρ (correlation_guard.rs:690-701) aunque el publicador dice «no veta» (contagion_publisher.rs:79-87).
-- **LC-F4-19** Dos sondas de arranque frío, las dos por moneda. Confirmado por lectura.
+- **LC-F4-19** Dos sondas de arranque frío, las dos por moneda. Confirmado por lectura. Cerrado por CL-98 (D4): una sola puerta de sonda para la cartera, la sonda es la orden mínima.
   - En el riesgo, `es_fase_sonda` (`trade_count < 5`, risk-engine/src/lib.rs:1136). En el núcleo, `arranque_frio_sin_roster` (lib.rs:7764-7770, usada en :7792), que se arma con `trade_count == 0` y sin posición abierta en la moneda.
   - `trade_count` no se persiste: nace en 0 (quantum-arena/src/state.rs:48) y sólo sube al cerrar (lib.rs:4001). Tras cada reinicio, cada una de las 23 monedas sin `_MOTOR` puede volver a abrir una sonda: el universo es de 26 (bootloader.rs:320-347), y `models/` sólo tiene `_MOTOR` de ATOM, BNB y NEAR.
   - Test RED: una sola sonda en toda la cartera, también tras reiniciar (D4).
