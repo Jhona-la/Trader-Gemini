@@ -78,3 +78,7 @@ crates/god-engine-core/tests/cf3_vecm_base_constante.rs	cl78_en_equilibrio_el_z_
 crates/god-engine-core/tests/cf3_vecm_base_constante.rs	cl78_una_dislocacion_de_la_base_vota_reversion	F3.7-01	Línea C	activo	pasa: z = 3, voto VECM −1 tras ~5σ	CL-78: nueva
 crates/god-engine-core/tests/cf3_spot_congelado_ttl.rs	cl79_spot_repetido_sigue_fresco	F3.7-03	Línea C	activo	pasa: z de StatArb no nula con el spot repetido 60 s	CL-79: nueva
 crates/god-engine-core/tests/cf3_spot_congelado_ttl.rs	cl79_spot_congelado_silencia_la_base	F3.7-03	Línea C	activo	pasa: vecm_zscore = 0 tras 31 s con el spot congelado	CL-79: nueva
+crates/strategy-core/tests/cf3_lectura_estricta.rs	cl80_statarb_moneda_sin_fisica_propia_no_hereda_z_global	F3.7-04	Línea C	activo	pasa: moneda 1 = 0 (antes −0,583, la z de la moneda 0)	CL-80: nueva
+crates/strategy-core/tests/cf3_lectura_estricta.rs	cl80_vecm_moneda_sin_z_propia_no_hereda_la_global	F3.7-04	Línea C	activo	pasa: moneda 1 = 0 (antes −0,667)	CL-80: nueva
+crates/strategy-core/tests/cf3_lectura_estricta.rs	cl80_sin_simbolo_se_conserva_la_lectura_global	F3.7-04	Línea C	activo	pasa: evaluate() sin símbolo lee la global	CL-80: nueva
+crates/signal-engine/tests/cf3_lectura_estricta_conformal.rs	cl80_conformal_moneda_sin_z_propia_no_hereda_la_global	F3.7-04	Línea C	activo	pasa: moneda 1 = 0 (antes −0,630)	CL-80: nueva

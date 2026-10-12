@@ -9546,3 +9546,19 @@ Actualización tras publicación externa de Ω83: main8dd, inventario/TSV regene
   `coin.spot_bid` sin mirar `spot_ts_ms`. Pedido: aplicar la misma
   frescura (spot > 0 y edad ≤ 30 s respecto a su reloj de eventos).
 
+## 2026-10-11 — Claude (Línea C, CL-80): los lectores de z no heredan la z de otra moneda (F3.7-04, LC-F1-07)
+
+- `set_reg` del núcleo escribe cada dato en la clave global, en la de la
+  moneda y en la del símbolo, y `get_scoped_parameter` cae a la global
+  cuando faltan las otras dos. Una moneda sin SDE madura votaba StatArb con
+  la z y la t½ de la última moneda que escribió, y VECM y conformal hacían
+  lo mismo con `vecm_zscore` en el arranque de cada moneda.
+- StatArb, VECM y el filtro de reversión conformal leen ahora sus z con
+  `get_scoped_parameter_strict` cuando reciben un símbolo; sin símbolo
+  (`evaluate()`) conservan la lectura global.
+- **Qoder / signal-engine**: el filtro conformal sólo cambia en las claves de
+  z (`vecm_zscore`, `cointegration_zscore`); la tendencia y la aceptación
+  conformal siguen con la lectura anterior.
+- LC-F1-06 (la causa raíz en el registro) sigue abierta para el resto de
+  lectores por moneda (LC-F1-04, -08, -44, -46 y -58).
+

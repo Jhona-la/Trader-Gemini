@@ -57,7 +57,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 | F3.7-01 | `vecm_zscore` es el nivel de la base entre el ATR, no un z: una prima constante vota reversión de forma permanente | media | cerrado con spot (CL-78) | Línea C (escritor en lib.rs y lectores de strategy-core). El lector conformal se ve afecta |
 | F3.7-02 | La cointegración se supone: la guarda t½ ≤ 2τ* deja pasar caminatas aleatorias independientes | media | confirmado | Línea C |
 | F3.7-03 | El TTL anti-staleness del spot está muerto en producción: un spot congelado sigue votando | media | cerrado (CL-79) | Línea C (núcleo). data-pipeline debe publicar la edad del spot. |
-| F3.7-04 | StatArb sigue heredando z y t½ de otra moneda por la caída al global; las API estrictas no se usan | media | confirmado | Línea C (lectores de strategy-core y signal-engine) |
+| F3.7-04 | StatArb sigue heredando z y t½ de otra moneda por la caída al global; las API estrictas no se usan | media | cerrado (CL-80) | Línea C (lectores de strategy-core y signal-engine) |
 | F3.7-05 | El mismo escalar entra en hasta tres votos del consenso | media | disputado | Línea C |
 | F3.7-06 | Régimen global: sólo con eventos de libro del slot 0, en reloj de eventos, sin τ en `allow_trade`, sin calibrar y con un respaldo inalcanzable | media | confirmado | Línea C |
 | F3.8-01 | El sesgo spot aditivo rompe el espejo de K-06/K-26 cuando la base no es 0,5 | media | confirmado | Línea C (lib.rs fuera de las ramas 1-10 y calibration.rs) |
@@ -635,6 +635,7 @@ Recuento: 62 hallazgos, 7 altos, 41 medios y 14 bajos. Los dos escépticos confi
 - Causa: `set_reg` escribe la clave global además de la escopada. El lector usa `get_scoped_parameter`, que cae al global cuando faltan las claves del símbolo y de la moneda. Ningún lector vivo usa `get_scoped_strict`.
 - Consecuencia viva: Lo que se añade: con dos monedas, la que no tiene SDE madura vota con la z y la t½ de la última moneda que escribió, pero la guarda la compara con SU τ*. Lo mismo vale para VECM y conformal con `vecm_zscore` en el arranque de cada moneda.
 - Prueba que falla hoy: Los tests (1)/(2) de LC-F1-07, sin cambios. No añado otro.
+  - Cerrado por CL-80 (2026-10-11), junto con LC-F1-07. Los tres lectores (StatArb, VECM y el filtro de reversión conformal) leen sus z con la API estricta cuando reciben un símbolo; sin símbolo conservan la global. Tests: `cf3_lectura_estricta.rs` (strategy-core) y `cf3_lectura_estricta_conformal.rs` (signal-engine), rojos antes del arreglo.
 - Dueño: Línea C (lectores de strategy-core y signal-engine)
 - Relación con hallazgos anteriores: LC-F1-07 (causa raíz LC-F1-06)
 - Escépticos: confirmado.
