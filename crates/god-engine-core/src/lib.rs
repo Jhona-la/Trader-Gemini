@@ -195,6 +195,88 @@ pub fn conviccion_de_rama(registro: &TasaAcierto, piso_por_magnitud: f64) -> f64
     conviccion_de_rama_en(registro, piso_por_magnitud, 0.5)
 }
 
+/// LG-1 — UNA INTENCIÓN SIN CONVICCIÓN NO ES UNA INTENCIÓN.
+///
+/// QUÉ ESTABA MAL: [`conviccion_de_rama_en`] devuelve 0 cuando la cota
+/// superior de Wilson de una rama queda bajo p* (desventaja demostrada), pero
+/// las ramas seguían construyendo un Long/Short con confianza 0. Cada banda es
+/// una cascada que sólo evalúa la rama siguiente si la intención sigue `Flat`
+/// (rápida: 20 → 21 → 22-24 y 1-10 → 11 → 12; lenta: 13 → 15 → 14), así que
+/// una rama condenada tapaba en ese evento a las que venían detrás. En el
+/// arbitraje de mismo armónico (|Δ ln τ| < 0,60, direcciones opuestas) podía
+/// además ganar por densidad de energía a una intención viable de la otra
+/// banda, y el gate la rechazaba después por confianza: la orden viable se
+/// perdía.
+///
+/// QUÉ GARANTIZA: una intención con confianza no positiva o no finita se
+/// convierte en `Flat` antes de cada punto de la cascada y del arbitraje.
+/// Devuelve `true` si aplanó.
+#[inline]
+pub fn aplanar_sin_conviccion(intent: &mut SignalIntent) -> bool {
+    if intent.signal != SignalType::Flat && !(intent.confidence > 0.0) {
+        *intent = SignalIntent::flat();
+        true
+    } else {
+        false
+    }
+}
+
+/// LG-1b — OLVIDO DE LA EVIDENCIA POR RAMA.
+///
+/// QUÉ ESTABA MAL: [`TasaAcierto`] no olvidaba. Una rama con desventaja
+/// demostrada recibe convicción 0, deja de operar, su registro no recibe
+/// datos y la condena dura toda la sesión: un estado absorbente, el mismo
+/// defecto que XLIV-5 corrigió en el calibrador (sin operar no hay datos que
+/// corrijan la estimación). En un mercado no estacionario la desventaja de
+/// ayer no es la de hoy.
+///
+/// QUÉ GARANTIZA: con la semivida del calibrador
+/// ([`calibration::SEMIVIDA_EVIDENCIA_MS`], el borde lento de la banda
+/// operable: un solo criterio de olvido en el motor), por cada semivida
+/// transcurrida desde el ancla la muestra se reduce a la mitad conservando
+/// la proporción de aciertos. El intervalo de Wilson se ensancha y una rama
+/// condenada vuelve al piso de magnitud —sale a reunir evidencia nueva—
+/// cuando su muestra ya no excluye p*. Un reloj que retrocede re-ancla sin
+/// olvidar. El ancla es por moneda: el olvido depende del tiempo, no de la
+/// rama.
+#[inline]
+pub fn envejecer_registro_ramas(
+    registro: &mut [TasaAcierto],
+    ancla_ms: &mut u64,
+    ahora_ms: u64,
+) {
+    if ahora_ms == 0 {
+        return;
+    }
+    if *ancla_ms == 0 || ahora_ms < *ancla_ms {
+        *ancla_ms = ahora_ms;
+        return;
+    }
+    let semivida = calibration::SEMIVIDA_EVIDENCIA_MS as u64;
+    if semivida == 0 {
+        return;
+    }
+    let k = (ahora_ms - *ancla_ms) / semivida;
+    if k == 0 {
+        return;
+    }
+    for reg in registro.iter_mut() {
+        for _ in 0..k.min(32) {
+            if reg.n == 0 {
+                break;
+            }
+            let n = reg.n as u64;
+            let n_nuevo = n / 2;
+            // Redondeo al más cercano de aciertos·n_nuevo/n: conserva la
+            // proporción observada.
+            let a_nuevo = ((reg.aciertos as u64 * n_nuevo + n / 2) / n).min(n_nuevo);
+            reg.n = n_nuevo as u32;
+            reg.aciertos = a_nuevo as u32;
+        }
+    }
+    *ancla_ms = ancla_ms.saturating_add(k.saturating_mul(semivida));
+}
+
 /// CL-91 (tau_conviccion-1): [`conviccion_de_rama_en`] con el p* perezoso.
 /// Si el intervalo de la rama cubre [0, 1] (sin historial, n = 0), ningún p*
 /// cambia el resultado (es el piso) y no se calcula. En otro caso devuelve
@@ -1020,6 +1102,8 @@ pub struct GodEngineCore {
     pub hawkes_by_coin: Vec<signal_engine::hawkes_bessel::HawkesBesselEngine>,
     /// DIAG R4 (transitorio): cuello post-orden.
     pub diag_council_vetoes: u64,
+    /// LG-1: intenciones de rama aplanadas por convicción no positiva.
+    pub diag_sin_conviccion: u64,
     pub diag_opened: u64,
     /// B3.18 — entradas vetadas por el gate de ensamble (la predicción
     /// decidió NO): diagnóstico de cuánto consume el sistema la predicción.
@@ -1042,6 +1126,8 @@ pub struct GodEngineCore {
     /// `conviccion_de_rama`). Por moneda porque la exchangeabilidad se rompe
     /// entre activos, igual que ya ocurre con `conformal_by_coin`.
     pub rama_registro: Vec<[TasaAcierto; N_RAMAS]>,
+    /// LG-1b: ancla temporal del olvido del registro por rama, por moneda.
+    pub rama_registro_ancla_ms: Vec<u64>,
     /// Legacy last-opening mirror only: NOT evidence for any slot's close.
     /// Operational feedback uses `entry_learning_evidence` per position.
     pub rama_abierta: Vec<Option<usize>>,
@@ -1316,6 +1402,7 @@ impl GodEngineCore {
                 })
                 .collect(),
             diag_council_vetoes: 0,
+            diag_sin_conviccion: 0,
             diag_opened: 0,
             diag_ml_vetoes: 0,
             diag_close_wins: 0,
@@ -1325,6 +1412,7 @@ impl GodEngineCore {
             diag_pnl_sum: 0.0,
             diag_dir: direction_diag::DirectionDiag::default(),
             rama_registro: vec![[TasaAcierto::default(); N_RAMAS]; n_coins],
+            rama_registro_ancla_ms: vec![0; n_coins],
             rama_abierta: vec![None; n_coins],
             bosque_registro: vec![TasaAcierto::default(); n_coins],
             bosque_voto_abierto: vec![None; n_coins],
@@ -5364,6 +5452,14 @@ impl GodEngineCore {
             // la moneda al aire —por arriba o por abajo— manda la cota que esa
             // muestra garantiza. Se copia la fila de la moneda (es `Copy`)
             // para no retener un préstamo de `self` dentro de las ramas.
+            // LG-1b: olvido del registro por rama antes de leerlo.
+            if coin_id < self.rama_registro_ancla_ms.len() {
+                envejecer_registro_ramas(
+                    &mut self.rama_registro[coin_id],
+                    &mut self.rama_registro_ancla_ms[coin_id],
+                    event_time_ms,
+                );
+            }
             let registro_ramas = self.rama_registro[coin_id];
             // #657 (F3-A1): fuente única — mismos umbrales vota la entrada
             // que aprende el cierre del PPO.
@@ -6135,6 +6231,8 @@ impl GodEngineCore {
                             ..Default::default()
                         };
                     }
+                    // LG-1: una rama sin convicción no tapa la cascada.
+                    self.diag_sin_conviccion += aplanar_sin_conviccion(&mut fast_intent) as u64;
                     // Ruta 1b: SEÑAL ESPECTRAL DIRECTA — la fusión por paridad
                     // de riesgo del espectro temporal (19 escalas) produce un
                     // score [-1,+1] computado SOLO de precios reales. Si el
@@ -6206,6 +6304,8 @@ impl GodEngineCore {
                     //
                     // Ahora las tres rutas son una cascada explícita: cada respaldo
                     // se evalúa sólo si la intención sigue plana.
+                    // LG-1: una rama sin convicción no tapa la cascada.
+                    self.diag_sin_conviccion += aplanar_sin_conviccion(&mut fast_intent) as u64;
                     if fast_intent.signal == SignalType::Flat
                         && self.feature_engines[coin_id].ema_slow > 0.0
                     {
@@ -6597,6 +6697,8 @@ impl GodEngineCore {
                     }
                 }
 
+                // LG-1: una rama sin convicción no tapa la cascada.
+                self.diag_sin_conviccion += aplanar_sin_conviccion(&mut fast_intent) as u64;
                 let tensor_cutoff = tensor_min_conf.clamp(0.55, 0.85);
                 if fast_intent.signal == SignalType::Flat
                     && tensor_cont.signal != SignalType::Flat
@@ -6732,6 +6834,8 @@ impl GodEngineCore {
                     }
                 }
 
+                // LG-1: una rama sin convicción no tapa la cascada.
+                self.diag_sin_conviccion += aplanar_sin_conviccion(&mut fast_intent) as u64;
                 if fast_intent.signal == SignalType::Flat {
                     // #657 (F2-A5/F3-A2) — UNIDADES: flow_impulse espera el
                     // RATIO λ/μ̂ (estado estacionario 1.6); se le pasaba VPIN
@@ -6823,6 +6927,8 @@ impl GodEngineCore {
             // lecturas antes de arbitrar.
             // CL-74 (F3.2-01): las puertas juzgan la τ con la que vivirá la orden.
             // CL-85: la de la rama 11 con veredicto espectral ya es la final (τ_k).
+            // LG-1: una rama sin convicción no tapa la cascada.
+            self.diag_sin_conviccion += aplanar_sin_conviccion(&mut fast_intent) as u64;
             let tau_fija = tau_rama_11_fija.is_some() && fast_intent.volume_flow_rate == 11.0;
             if fast_intent.signal != SignalType::Flat && !tau_fija {
                 fast_intent.expected_duration_ms = self.tau_de_la_orden_con(
@@ -7033,6 +7139,8 @@ impl GodEngineCore {
                 }
             }
 
+            // LG-1: una rama sin convicción no tapa la cascada.
+            self.diag_sin_conviccion += aplanar_sin_conviccion(&mut slow_intent) as u64;
             // Ruta de Resonancia Cuántica Espectral Continua (Centroide de Hilbert tau* de 32 Escalas)
             // C-2 (R7-R2-C-2): Reconciliación con tau_operativa_unificada del tick
             if slow_intent.signal == SignalType::Flat {
@@ -7078,6 +7186,8 @@ impl GodEngineCore {
                 }
             }
 
+            // LG-1: una rama sin convicción no tapa la cascada.
+            self.diag_sin_conviccion += aplanar_sin_conviccion(&mut slow_intent) as u64;
             // D-685: rama de consenso tensorial contenida (ver
             // `CONSENSUS_BRANCH_ENABLED`).
             if CONSENSUS_BRANCH_ENABLED && slow_intent.signal == SignalType::Flat {
@@ -7169,6 +7279,8 @@ impl GodEngineCore {
             // bloqueaba una tesis de horas. Contaminación cruzada entre horizontes
             // que el sistema declara unificados. Lo cubre el guard D-463.
 
+            // LG-1: una rama sin convicción no tapa la cascada.
+            self.diag_sin_conviccion += aplanar_sin_conviccion(&mut slow_intent) as u64;
             // D-743: la lectura LENTA pasa por las MISMAS puertas que la rápida
             // —viabilidad de mercado, invariante bayesiano, ponderación del
             // modelo y vetos de flujo y muro— antes de competir en la
@@ -7209,6 +7321,9 @@ impl GodEngineCore {
             //   para ser evaluadas y despachadas a sus respectivas ranuras armónicas independientes.
             // - Si compiten por la misma banda de frecuencia (|Δ ln τ| < 0.60), la interferencia destructiva
             //   se resuelve seleccionando la de mayor densidad de energía espectral viva.
+            // LG-1: ninguna intención sin convicción entra al arbitraje.
+            self.diag_sin_conviccion += aplanar_sin_conviccion(&mut fast_intent) as u64;
+            self.diag_sin_conviccion += aplanar_sin_conviccion(&mut slow_intent) as u64;
             let mut candidates = [SignalIntent::flat(), SignalIntent::flat()];
             let mut num_candidates = 0;
 
@@ -10412,5 +10527,117 @@ mod tests_cf3_puertas_espejo {
             "las puertas caen a base 0,5 (d = -0,92) y vetan"
         );
         assert!((out.confidence - 0.80 * (1.0 + 0.5 * d_gate)).abs() < 1e-12);
+    }
+}
+
+#[cfg(test)]
+mod tests_lg1 {
+    //! LG-1 / LG-1b (Línea G, 2026-10-12): una rama con desventaja demostrada
+    //! no tapa la cascada ni queda condenada para siempre.
+    use super::*;
+
+    fn semivida() -> u64 {
+        calibration::SEMIVIDA_EVIDENCIA_MS as u64
+    }
+
+    /// La intención que construían las ramas con convicción 0 (Wilson hi < p*)
+    /// era un Long/Short con confianza 0 que la cascada trataba como «ya hay
+    /// intención». Debe quedar plana; la viable y la plana no cambian.
+    #[test]
+    fn lg1_una_rama_condenada_emite_flat_y_no_tapa_la_cascada() {
+        // 13/40 = 32,5 % contra p* = ½ (ramas 1-10): hi de Wilson < ½.
+        let perdedora = TasaAcierto { n: 40, aciertos: 13 };
+        let conf = conviccion_de_rama(&perdedora, 0.70);
+        assert_eq!(conf, 0.0, "precondición: la rama está condenada");
+        let mut condenada = SignalIntent {
+            signal: SignalType::Short,
+            confidence: conf,
+            volume_flow_rate: RAMA_TENDENCIA_PERSISTENTE,
+            ..Default::default()
+        };
+        assert!(aplanar_sin_conviccion(&mut condenada));
+        assert_eq!(condenada.signal, SignalType::Flat);
+
+        for mala in [f64::NAN, -0.1, 0.0] {
+            let mut i = SignalIntent { signal: SignalType::Long, confidence: mala, ..Default::default() };
+            assert!(aplanar_sin_conviccion(&mut i), "confianza {mala} debe aplanar");
+            assert_eq!(i.signal, SignalType::Flat);
+        }
+        let mut viable = SignalIntent { signal: SignalType::Long, confidence: 0.62, ..Default::default() };
+        assert!(!aplanar_sin_conviccion(&mut viable));
+        assert_eq!(viable.signal, SignalType::Long);
+        assert!((viable.confidence - 0.62).abs() < 1e-15);
+        let mut plana = SignalIntent::flat();
+        assert!(!aplanar_sin_conviccion(&mut plana));
+    }
+
+    /// Sin olvido la condena es permanente: la rama no opera, su registro no
+    /// recibe datos y su convicción sigue en 0. Con la semivida del
+    /// calibrador la muestra se reduce a la mitad por semivida conservando la
+    /// proporción, y la rama vuelve al piso de magnitud cuando su intervalo ya
+    /// no excluye p*.
+    #[test]
+    fn lg1b_el_olvido_saca_a_la_rama_del_estado_absorbente() {
+        let mut fila = [TasaAcierto::default(); N_RAMAS];
+        fila[7] = TasaAcierto { n: 40, aciertos: 13 };
+        fila[3] = TasaAcierto { n: 10, aciertos: 9 };
+        let mut ancla = 0u64;
+        let t0 = 1_700_000_000_000u64;
+
+        envejecer_registro_ramas(&mut fila, &mut ancla, t0);
+        assert_eq!(ancla, t0, "primer evento: ancla sin olvidar");
+        assert_eq!(fila[7].n, 40);
+        assert_eq!(conviccion_de_rama(&fila[7], 0.70), 0.0);
+
+        // Menos de una semivida: nada cambia.
+        envejecer_registro_ramas(&mut fila, &mut ancla, t0 + semivida() - 1);
+        assert_eq!(fila[7].n, 40);
+
+        // Una semivida: la mitad, misma proporción (13/40 → 7/20 por redondeo).
+        envejecer_registro_ramas(&mut fila, &mut ancla, t0 + semivida());
+        assert_eq!((fila[7].n, fila[7].aciertos), (20, 7));
+        assert_eq!((fila[3].n, fila[3].aciertos), (5, 5));
+        assert_eq!(ancla, t0 + semivida());
+        // Con 7/20 el intervalo ya contiene ½: la rama vuelve al piso.
+        assert_eq!(conviccion_de_rama(&fila[7], 0.70), 0.70);
+
+        // Muchas semividas de golpe: la muestra se vacía (ignorancia total).
+        envejecer_registro_ramas(&mut fila, &mut ancla, t0 + 40 * semivida());
+        assert_eq!(fila[7].n, 0);
+        assert_eq!(fila[7].aciertos, 0);
+        assert_eq!(ancla, t0 + 40 * semivida());
+
+        // Reloj que retrocede: re-ancla sin olvidar.
+        fila[7] = TasaAcierto { n: 40, aciertos: 13 };
+        envejecer_registro_ramas(&mut fila, &mut ancla, t0);
+        assert_eq!(ancla, t0);
+        assert_eq!(fila[7].n, 40);
+        // Reloj ausente (0): no toca nada.
+        envejecer_registro_ramas(&mut fila, &mut ancla, 0);
+        assert_eq!((ancla, fila[7].n), (t0, 40));
+    }
+
+    /// El olvido es monótono: nunca inventa aciertos ni cambia una
+    /// proporción en más de medio acierto por paso.
+    #[test]
+    fn lg1b_el_olvido_conserva_la_proporcion() {
+        for n in 1u32..=200 {
+            for a in 0..=n {
+                let mut fila = [TasaAcierto { n, aciertos: a }];
+                let mut ancla = 1u64;
+                envejecer_registro_ramas(&mut fila, &mut ancla, 1 + semivida());
+                let r = fila[0];
+                assert!(r.aciertos <= r.n);
+                assert_eq!(r.n, n / 2);
+                if r.n > 0 {
+                    let antes = a as f64 / n as f64;
+                    let despues = r.aciertos as f64 / r.n as f64;
+                    assert!(
+                        (antes - despues).abs() <= 0.5 / r.n as f64 + 1e-12,
+                        "n={n} a={a}: {antes} → {despues}"
+                    );
+                }
+            }
+        }
     }
 }

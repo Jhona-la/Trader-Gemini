@@ -1875,3 +1875,41 @@ Codex (LF-8). Y a AGY: las olas que cambian el camino vivo, por PR.
   - `cargo test -p metacortex-engine --test prospect_theory_contract`: 6/6 passed.
   - `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro`: huella bit a bit `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico.
   - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
+
+## 49. Línea G — Claude (sesión local, prefijo LG-n): revisión desde la base del HEAD 86218456 (2026-10-12)
+
+> Dueño: Claude, sesión nueva. Texto completo:
+> [PLAN_LINEA_G_CLAUDE_2026-10-12.md](PLAN_LINEA_G_CLAUDE_2026-10-12.md);
+> datos en [audit/linea_g/](audit/linea_g/). Este bloque no reescribe ninguna
+> sección anterior.
+
+**Frente.** Cuatro preguntas sin dueño propio: ¿tiene sentido cada veto?
+(censo completo, retoma LF-F4); ¿qué está fijado a mano?; ¿es de verdad
+autoadaptativo?; ¿es un campo multiactivo continuo en τ? Usa la lista
+`audit/REINICIO_BASE_FASES_C_2026-10-11.tsv`; no abre otro censo de archivos.
+
+**Meta en números (plan §2), con la fricción en unidades de R.** Con 12 pb de
+fricción ida y vuelta, p* = (1 + 12 pb/SL)/(RR + 1): a SL = 30 pb hace falta
+p ≥ 0,43 sólo para no perder; a SL = 150 pb, p ≥ 0,33. Con p = 0,45 y SL =
+50 pb la meta exige 24 órdenes independientes al día a Kelly pleno (f* =
+8,5 % de riesgo, nocional ≈ 221 USD con 13 USD) o 526 al tamaño actual. La τ
+operable es la que paga la fricción: el continuo en τ es una condición
+económica, no estética.
+
+**Censo de vetos.** 1 237 frenos en el camino vivo: 64 % literales, 3 %
+medidos, 43 con riesgo absorbente probable. Regla de admisión propuesta
+(plan §4): umbral derivado / medido / gen sin regiones inertes; juzgado a la τ
+de la orden; desconocido ≠ 0; con salida (olvido o sonda) o latch declarado
+en ADR; dos pruebas a través del gate real.
+
+**Lazos.** 211; 59 aprenden con la señal equivocada. Propuesta G4: un único
+resultado de orden (p*, TP, SL, f, τ al abrir; etiqueta de barrera y R neto
+al cerrar) que todos los lazos consumen con la estadística de su pregunta.
+
+**Arreglos de la ola 1** (rama propia, verificación local, merge a main):
+LG-1 (convicción 0 ⇒ Flat y olvido del registro por rama), LG-2 (filtro de
+salto del host), LG-3 (rate-limit con caducidad), LG-4 (banda operable y
+reparación RR en [30 s, 12 h]: el genoma vivo salía de cada carga con TP
+×1,68). **Pedido OPEN**: LG-5 (la puerta EV usa P(neto > 0) como P(TP
+primero)) a Codex + Línea E. **Entregas** por dueño en el buzón y en
+`audit/linea_g/verificacion.tsv`.

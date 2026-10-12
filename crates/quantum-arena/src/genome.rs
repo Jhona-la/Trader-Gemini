@@ -2162,8 +2162,9 @@ impl SuperGenotype {
     /// TODO el espectro (matemáticamente seguro por construcción).
     pub fn enforce_curve_rr(&mut self) {
         let fee = Self::REFERENCE_ROUNDTRIP_FEE;
-        let scales = crate::temporal_spectrum::SPECTRUM_SCALES_MS;
-        let hi_spec = scales[scales.len() - 1];
+        // LG-4: el extremo largo es el de la banda operable (12 h), no el de la
+        // malla representacional (~146 años).
+        let hi_spec = crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS;
         let sl_floor = Self::min_viable_sl(fee);
 
         // PASO 0 — GARANTIZAR BANDA OPERABLE. Si la curva de SL nunca alcanza
@@ -2519,7 +2520,18 @@ impl SuperGenotype {
             .map_or(f64::INFINITY, |(lo, _)| lo)
     }
 
-    /// Intersección cerrada del espectro representado con SL(tau) >= f/q.
+    /// Intersección cerrada de la BANDA OPERABLE [`TAU_ANCHOR_FAST_MS`,
+    /// `TAU_ANCHOR_SLOW_MS`] (30 s – 12 h) con SL(tau) >= f/q.
+    ///
+    /// LG-4 (Línea G): antes el dominio eran los extremos de la malla
+    /// REPRESENTACIONAL (1 ns y ~146 años). Con pendiente de SL positiva, el
+    /// borde inferior era la raíz del piso de fricción —a menudo en
+    /// nanosegundos—, donde la RR exigida es máxima, y `enforce_curve_rr`
+    /// elevaba el TP en todo el espectro para cumplirla: el genoma de
+    /// producción salía de cada carga con TP ×1,68 (RR 2,25 → 3,78) por una
+    /// escala que el host nunca opera (recorta τ a la banda). Ahora la
+    /// invariante se exige donde se opera.
+    ///
     /// En x = ln(tau / 1 ms), ln(SL) = a + b*x: b positivo impone un mínimo,
     /// b negativo un máximo, y b cero admite todo o nada. Se comprueban los
     /// extremos antes de dividir: no se aproxima una pendiente pequeña por
@@ -2530,8 +2542,10 @@ impl SuperGenotype {
     /// Esta banda geométrica no demuestra EV positiva, soporte estadístico,
     /// factibilidad de ejecución ni que los lectores operen sin recortes.
     pub fn tradeable_band_ms(&self, roundtrip_fee: f64) -> Option<(f64, f64)> {
-        let scales = crate::temporal_spectrum::SPECTRUM_SCALES_MS;
-        let (lo, hi) = (scales[0], scales[scales.len() - 1]);
+        let (lo, hi) = (
+            crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+            crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+        );
         let a = self.sl_horizon_curve.a;
         let b = self.sl_horizon_curve.b;
         let floor = Self::min_viable_sl(roundtrip_fee);

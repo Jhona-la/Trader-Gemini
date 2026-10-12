@@ -1,5 +1,36 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Claude (Línea G, sesión local, prefijo LG-n): revisión desde la base del HEAD 86218456 — censo de vetos, LG-1…LG-4 y pedido LG-5
+
+- **Línea nueva**: rama `claude/linea-g-revision-base`, worktree
+  `.claude/worktrees/linea-g`. Plan `docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md`;
+  datos en `docs/audit/linea_g/`. Retoma LF-F4 (vetos) de la Línea F.
+- **Auditoría**: 18 lectores (tandas de 3) + 13 escépticos. 411 hallazgos
+  (32 HIGH); 67 candidatos nuevos → 15 confirmados, 23 plausibles, 27 ya
+  registrados y abiertos, 1 refutado (G030), 1 ya arreglado.
+- **Censo de vetos**: 1 237; 64 % literales, 3 % medidos, 43 absorbentes
+  probables. **Lazos**: 211; 59 con señal equivocada, 16 absorbentes.
+  Propuesta G4: un único resultado de orden (p*, TP, SL, f, τ congelados al
+  abrir; etiqueta de barrera y R neto al cerrar).
+- **Arreglos**:
+  - LG-1 (núcleo): convicción 0 ⇒ `Flat` antes de cada cascada y del
+    arbitraje; `TasaAcierto` olvida con `SEMIVIDA_EVIDENCIA_MS`.
+  - LG-2 (host): filtro de salto con confirmación de cambio de nivel.
+  - LG-3 (ejecución): uso de rate-limit caduca con su ventana del exchange.
+  - LG-4 (genoma): banda operable y reparación RR en [30 s, 12 h]. Los
+    `active.json` salían de cada carga con TP ×1,68 y `validate` los
+    rechazaba. T-1 17/144 → 19/144 (vuelven 142/143).
+- **Pedido OPEN LG-5** (Codex + Línea E): la puerta EV usa P(neto > 0) como
+  P(TP primero); +0,766 R vistos frente a −0,104 R realizados.
+- **Entregas**: G042 HIGH (purga de todas las piernas del lado) y 17 más a
+  Línea C; G014/G024/G063 a Codex; G064/G004/G011 a Qoder; G037 a AGY;
+  G048 a GLM; G050 a Sol; G031 a Línea E.
+- **Lección de build**: worktree anidado ⇒ dos `.cargo/config.toml` ⇒
+  `rustflags` concatenados ⇒ recompila todo (rustc cayó con
+  STATUS_STACK_BUFFER_OVERRUN). Usar `RUSTFLAGS="-C target-cpu=native -C
+  opt-level=3"`; así se reutiliza el `target` compartido y los crates del
+  worktree tienen huellas propias.
+
 ## 2026-10-12 — Antigravity (Ola Ω88, Ficha #726): Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (F3.8-03, F3.4-08, F2.5-03)
 
 - **Cierre definitivo de F3.8-03 / F3.4-08**:

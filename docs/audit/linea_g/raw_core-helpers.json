@@ -1,0 +1,953 @@
+{
+ "findings": [
+  {
+   "title": "Convicción 0 (hi < p*) no aplana la intención: tapa la cascada de ramas, puede ganar el arbitraje por energía y es absorbente en la sesión",
+   "severity": "HIGH",
+   "category": "absorbing",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 181,
+   "evidence": "if hi < p_star { 0.0 } ...  // lib.rs:6436: if fast_intent.signal == SignalType::Flat && tensor_cont.signal != SignalType::Flat",
+   "mechanism": "conviccion_de_rama_en devuelve 0 cuando la cota superior de Wilson cae bajo p*, pero el llamador sigue construyendo un SignalIntent Long/Short con confidence 0. Las ramas posteriores de cada cascada sólo se evalúan si la intención es Flat (rápida: ramas 1-10 → 11 (:6436) → 12 (:6569); respaldo 20 → 21 (:5978) → 22-24 (:6044); lenta: 13 → 15 (:6856) → 14 (:6897)). puertas_del_continuo no la aplana (×multiplicadores sobre 0 = 0). En el arbitraje, con señales opuestas y |Δlnτ| < 0,60, gana la de mayor densidad de energía (lib.rs:7104-7108) sin mirar la confianza; con la misma dirección, best_duration puede ser la τ de la rama condenada. Después el gate rechaza (REJ_CONFIDENCE). Como la rama ya no opera, su TasaAcierto no recibe datos: no hay olvido ni exploración, y rama_registro no se persiste. Sólo la libera un reinicio o que p* baje por debajo de hi.",
+   "failure_scenario": "La rama 1 usa el envoltorio con p* = ½. Gana 13 de 40 cierres (33 %; EV de barrera +0,07 R con RR 2,25): Wilson hi = 0,488 < 0,5, así que su convicción es 0. Desde entonces, cada vez que se cumplen sus condiciones, fast_intent = Short con confianza 0. La rama 11 (consenso tensorial con su propio p*, conf_base ≥ 0,55) y la rama 12 ni se evalúan. Si en ese evento hay un Long de la rama 13 con confianza 0,70 y |Δlnτ| < 0,60 y la energía en τ_f es ≥ que en τ_s, el arbitraje elige el Short de confianza 0 y el gate lo veta. Ese Long era una orden viable y se pierde. Con p* honesto (ramas 11-15) pasa lo mismo cuando hi < p* (≈ 0,32-0,40).",
+   "fix_sketch": "Que conviccion_de_rama_en devuelva Option<f64> (None = desventaja demostrada) y que el llamador deje la intención en Flat para que la cascada siga. Excluir del arbitraje las intenciones con confianza ≤ 0. Añadir olvido temporal a TasaAcierto (pesos 2^(-Δt/semivida), como PlattCalibrator::calibrate_at) o una sonda de exploración acotada para salir del estado absorbente. Test: tras forzar hi < p* en la rama 1, la rama 11 debe poder emitir en el mismo evento.",
+   "live_path": true,
+   "known_ref": "",
+   "confidence": 0.75
+  },
+  {
+   "title": "TasaAcierto cuenta cierres con neto > 0 y se compara con el p* de la orden ACTUAL: las salidas intermedias y la mezcla de τ invalidan el veredicto de la rama",
+   "severity": "MED",
+   "category": "learning-signal",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 170,
+   "evidence": "let is_win = net_trade_pnl > 0.0; (:4079) ... self.rama_registro[coin_id][rama].observar(is_win); (:4141) ... let (lo, hi) = registro.intervalo(Z95); if hi < p_star",
+   "mechanism": "p* = (SL+f)/(TP+SL) sólo es el umbral del signo de la esperanza si cada operación de la muestra acaba en TP o en SL con la geometría de la orden juzgada (el propio doc lo declara en :134-135). La muestra no cumple eso. (a) El breakeven pone el stop en entry·(1+be_buffer) con be_buffer ≥ fricción+3,5 pb (:3580-3605): esas salidas son ganancias netas de unos +0,03 R que cuentan como un TP de +2,25 R. Las salidas por zombi, decaimiento o timeout con −comisión cuentan como un SL de −1 R. (b) El registro es por moneda y rama, sin τ: la rama 11 vive a τ_k ∈ [30 s, 12 h] y p* va de ≈ 0,40 (f/SL ≥ 0,3) a ≈ 0,32 (τ largas). La tasa de una muestra mezclada se compara con el p* de la τ de la orden siguiente. Viola la regla de la Línea F: el lazo debe puntuar por esperanza neta frente a p*, no por tasa de acierto.",
+   "failure_scenario": "Rama rentable condenada: a τ corta (p* ≈ 0,40) cierra un 30 % por TP (+2,2 R), un 25 % por decaimiento (−0,1 R) y un 45 % por SL (−1,05 R). EV ≈ +0,16 R por operación y tasa 0,30. Con n = 100, Wilson hi = 0,396 < 0,40: convicción 0 (y absorbente, ver hallazgo anterior). Rama perdedora certificada: un 55 % por BE (+0,03 R), un 5 % por TP y un 40 % por SL. EV ≈ −0,27 R y tasa 0,60. Nunca se condena, y con n = 200 su lo ≈ 0,53 > p*, así que se declara «ventaja demostrada».",
+   "fix_sketch": "Congelar p*_i en la apertura (EntryLearningEvidence) y acumular por operación el resultado en R neto (pnl_neto/riesgo_SL) o Σ(1{TP} − p*_i) con etiqueta de barrera (descartar las salidas intermedias, como hace etiqueta_barrera). Juzgar con un e-proceso o con una cota sobre la media de R > 0. Si se mantiene el binario, indexarlo por banda de τ (malla 4^k).",
+   "live_path": true,
+   "known_ref": "",
+   "confidence": 0.7
+  },
+  {
+   "title": "confianza_superpuesta refuerza por defecto: «ambas > ½» no es evidencia, porque toda convicción sin historial ya es ≥ 0,51",
+   "severity": "MED",
+   "category": "logic",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 352,
+   "evidence": "if lo > 0.5 { (hi + 0.10 * lo).min(0.96) }  // sig_conf: (0.50 + 0.40*|s|).clamp(0.51, 0.90)",
+   "mechanism": "El doc de XLIV-10 justifica el refuerzo «sólo si AMBAS bandas superan ½ (evidencia de ventaja)». Pero sin historial conviccion_de_rama_en devuelve el piso, y todos los pisos superan ½: sig_conf ≥ 0,51 (ramas 1-10, 13 y 21-24), conf_base.clamp(0,50; ·) con coherencia > 0,12 ⇒ > 0,54 (rama 15), |net| ≥ 0,55 (rama 11). Por tanto «> ½» es el estado por defecto, no evidencia. Además CL-74 acerca las dos τ al mismo centroide por media geométrica, lo que reduce Δlnτ a la mitad: la fusión (Δln' < 0,80) se aplica con τ brutas hasta ≈ 4,95× distintas, es decir, con lecturas muy correlacionadas del mismo espectro.",
+   "failure_scenario": "Sin historial, la rama 1 da sig_conf(0,30) = 0,62 y la rama 13 da 0,60, en la misma dirección. La fusión da 0,62 + 0,06 = 0,68. El gate exige min_conf·epi ≈ 0,56·[0,80; 1,25] = 0,45-0,70, así que con epi ≥ 1,12 cruza un umbral que ninguna de las dos lecturas cruzaba sola, sin ningún dato nuevo. Platt en frío (identidad) lleva además ese 0,68 al Kelly.",
+   "fix_sketch": "Exigir evidencia real: reforzar sólo si las dos ramas tienen lo > p* propio (Wilson), o combinar en log-odds descontando la correlación (ρ de las dos τ en el espectro). Para lecturas casi idénticas, usar max(a, b). Test de propiedad: confianza_superpuesta(c, c) ≤ c sin evidencia.",
+   "live_path": true,
+   "known_ref": "MAPA_C-F3_2026-10-11.md:367 (faltante sin id; aquí se añade que el umbral ½ se cumple por construcción)",
+   "confidence": 0.7
+  },
+  {
+   "title": "puertas_del_continuo veta intenciones de cualquier τ con medidas de escala fija (CVD 60 s, compuesto del tick, ML a 300 s), y el gen CVD tiene una banda fuera de la razón",
+   "severity": "MED",
+   "category": "tau-leak",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1795,
+   "evidence": "cvd_ratio < -cvd_veto ... (state.rs:793 const TAU_FLUJO_AGG_S: f64 = 60.0;) ... if (out.signal == SignalType::Long && composite_score < 0.0)",
+   "mechanism": "El doc de D-743 dice que «lo que invalida una entrada es del MERCADO». Pero cada veto mide a una escala fija y se aplica a intenciones de 30 s a 12 h. El CVD tiene memoria exponencial de 60 s. D-472 veta por el signo, sin banda muerta, del compuesto del tick. El veto ML (d < −0,80) usa un bosque entrenado a un horizonte de minutos. Así, un desequilibrio de un minuto mata una tesis de 4-12 h. Además, cvd_veto_threshold muta en [0,1; 2,0] (genome.rs:952, :1874) contra una razón en [−1, 1]: con el gen ≥ 1 el veto no puede dispararse, y la evolución explora una región inerte.",
+   "failure_scenario": "La rama 15 propone un Long a τ* = 4 h. En el último minuto hubo una ráfaga vendedora: buy = 5 y sell = 95, razón −0,90 < −0,89 (gen por defecto 0,55·φ). La intención de 4 h queda en Flat por 60 s de flujo, que equivalen a ≈ 0,25 % de su horizonte. Un compuesto de −0,0001 por ruido también la veta (D-472). Con el gen mutado a 1,2, en cambio, el veto CVD no existe para ninguna τ.",
+   "fix_sketch": "Medir el CVD y el compuesto a la τ de la intención: CVD con memoria τ_ord (o leer la escala más cercana de la malla 4^k del espectro) y signo con banda tipificada por σ(τ). Que el veto ML se exprese contra el p* de la orden y sólo en τ comparables al horizonte de entrenamiento. Acotar el gen CVD a (0, 1).",
+   "live_path": true,
+   "known_ref": "LC-F1-20 (banda del gen, sigue abierto); MAPA_C-F3_2026-10-11.md:413 y :374 (escala de 60 s ≠ τ de la orden; vetos sin contador); análogo a LF-6",
+   "confidence": 0.75
+  },
+  {
+   "title": "El calibrador Platt global, alimentado por TODAS las monedas, fija win_probability (EV y Kelly) de cada moneda con menos de 5 cierres propios",
+   "severity": "MED",
+   "category": "multiasset-leak",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 960,
+   "evidence": "pub confidence_calibrator: calibration::PlattCalibrator, ... else { self.confidence_calibrator.calibrate_at(raw_confidence_score, event_time_ms) } (:7853)",
+   "mechanism": "Cada cierre actualiza el calibrador de la moneda Y el global (:4218-4224). Para una moneda con observations() < 5, win_probability sale del global (:7848-7855), que mezcla monedas y τ, dominado por la más operada. Esa p entra en el veto EV del risk-engine (risk-engine/src/lib.rs:1142-1146) y en el Kelly. Además, como el núcleo siempre adjunta una p finita en (0, 1), la rama de arranque frío total del risk-engine (p_ganar = None, sonda D-751b) es inalcanzable desde el núcleo: la primera orden de una moneda nueva se juzga con el mapa de otras monedas, o con la identidad (p = puntuación cruda) si el global está vacío.",
+   "failure_scenario": "Tras 40 cierres perdedores de ATOM, el global mapea la puntuación 0,70 a p ≈ 0,30. Las primeras órdenes de NEAR (0 cierres propios) llegan con win_probability 0,30 aprendida de ATOM: el EV con TP/SL de NEAR sale negativo y sólo la excepción de fase de sonda (prior 0,55) la deja pasar, con un Kelly dimensionado con la p de ATOM. Al revés, tras un reinicio con el global vacío, p = 0,70 cruda dimensiona como si la moneda ganara el 70 %.",
+   "fix_sketch": "Retirar el respaldo global: con menos de N cierres propios, adjuntar win_probability = NaN para que el risk-engine use su sonda D-751b o la posterior jerárquica explícita (con prior declarado, no los datos de otra moneda). Si se quiere transferir información, hacerlo con encogimiento jerárquico explícito por moneda y por τ.",
+   "live_path": true,
+   "known_ref": "LC-F1-37 (Platt es la identidad en frío y no se persiste) — aquí se añaden la fuga entre monedas y la rama D-751b inalcanzable",
+   "confidence": 0.6
+  },
+  {
+   "title": "El tensor 54D sirve literales plausibles cuando falta el macro y mezcla unidades dependientes del activo, en contra de su propio contrato C-02",
+   "severity": "LOW",
+   "category": "hardcoded",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1443,
+   "evidence": "} else { 1.04 }; ... } else { 1.02 }; ... 1.00 ... 0.75 ... combined[36] = (cur_vol / 1000.0).tanh(); combined[34] = (delta / current_price.max(1.0))",
+   "mechanism": "El comentario C-02 (:1404-1417) exige servir 0,0 como centinela de ausencia y no un literal plausible. Aun así, [41]-[44] (DXY, SP500, NASDAQ y VIX) caen a 1,04, 1,02, 1,00 y 0,75, y [50] (fear & greed) a 1,0. [36] es tanh(cantidad del libro/1000) en unidades del activo base: satura en 1 en monedas de cantidades millonarias y es ≈ 0 en BTC. [34] divide un ATR absoluto (vt_rasgo_ml) entre price.max(1,0): en monedas de menos de 1 USD queda escalado por el precio, y en el resto duplica [35] (ATR %). El tensor de la apertura se congela por moneda para data/dark_alpha_dataset_{SYM}.csv (:8383-8394).",
+   "failure_scenario": "Si cae el feed de Yahoo, el NN de BTC infiere con un DXY fabricado de 104 en lugar de la ausencia. En DOGE, el dataset por símbolo registra [36] = 1,0 constante (feature muerta) y [34] = ATR%·0,15: cualquier DarkAlpha_DOGE entrenado con esas filas aprende escalas sin significado y no transferibles.",
+   "fix_sketch": "Aplicar C-02 también a [41]-[44] y [50] (0,0 o NaN con máscara de ausencia). Normalizar [36] por la cantidad típica del propio símbolo (cuantil P² del libro) y [34] por el precio real, o retirar [34] por duplicar [35].",
+   "live_path": false,
+   "known_ref": "MAPA_C-F3_2026-10-11.md:568 (literales 1,04/1,02/1,00/0,75 censados); [34]/[36] nuevos",
+   "confidence": 0.8
+  },
+  {
+   "title": "ultimo_libro no tiene edad: si el depth se corta, el spread y la entrada se deciden con un libro arbitrariamente viejo",
+   "severity": "LOW",
+   "category": "nan-unknown",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 600,
+   "evidence": "if let Some((b, a)) = ultimo { let spread = (a - b).max(0.0); ... return (b, a); }",
+   "mechanism": "CL-33 reemplazó el libro inventado de ±1 pb por el último libro medido, pero ultimo_libro: Vec<Option<(f64, f64)>> (:913) no guarda su instante, y sólo se limpia en reset_engines (reconexión). En trades y klines, que son los únicos eventos que pueden abrir, process_tick_dual recibe eff_bid/eff_ask (:2083-2084, :2720) y calcula spread_pct con ellos (:5669-5672) para la puerta de spread (:5728). Lo desconocido (el libro actual) se trata como lo último conocido sin límite de edad.",
+   "failure_scenario": "El stream @depth5 se cae mientras sigue el de trades. El último libro era de calma, con 1 pb de spread. Diez minutos después, en volatilidad con un spread real de 8 pb, la puerta de spread sigue viendo 1 pb y aprueba, y el precio de entrada sale del libro trasladado con el spread viejo. La entrada paga una fricción que el gate no cobró.",
+   "fix_sketch": "Guardar el ts del libro y caducarlo con un TTL ligado a la τ de la decisión o a W1_LAG/eventos. Pasado el TTL, que el libro sea desconocido: entradas en Flat, o spread como NaN para que la puerta lo rechace. Comprobar también ask ≥ bid en libro_efectivo, como ya hace el almacén (:2080).",
+   "live_path": true,
+   "known_ref": "",
+   "confidence": 0.5
+  },
+  {
+   "title": "El «seqlock» de applied_generation (CERT-M5-H02) no tiene lectores, y refresh_models no actualiza arena.applied_generation",
+   "severity": "LOW",
+   "category": "doc-mismatch",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1545,
+   "evidence": "self.applied_generation.store(env.generation + 1, Ordering::SeqCst); env.genome.apply_to_arena(&self.arena);",
+   "mechanism": "El comentario promete un protocolo de escritor seqlock en el que los lectores verifican la generación antes y después de decidir. Ni GodEngineCore::applied_generation ni arena.applied_generation tienen lectores fuera de los tests (grep). Además, la recarga llama a SuperGenotype::apply_to_arena directamente y no a GenomeEnvelope::apply_to_arena (genome_store.rs:117-123), que es la que sella arena.applied_generation. La generación «aplicada» de la arena no refleja nunca las recargas en caliente del núcleo.",
+   "failure_scenario": "Un forense o un operador que lea arena.applied_generation para saber qué genoma opera ve 0 o la generación del arranque mientras el núcleo ya aplicó la gen N+3. La garantía de no mezclar el leverage viejo con el SL nuevo que cita el doc no existe: no hay ningún lector que la ejerza.",
+   "fix_sketch": "Usar env.apply_to_arena(&self.arena) y retirar el doble store gen+1/gen, o implementar de verdad la lectura seqlock en el risk-engine (capturar la generación, decidir y re-verificar). Corregir el doc.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.8
+  },
+  {
+   "title": "W1ChangepointObserver: hazard por evento sobre un W1 de 60 s autocorrelado, y lo desconocido se publica como 0",
+   "severity": "LOW",
+   "category": "nan-unknown",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 706,
+   "evidence": "const W1_HAZARD: f64 = 1.0 / 100.0; ... let p_t = obs.observe_at(event_time_ms, w1).unwrap_or(0.0); (:2003)",
+   "mechanism": "El hazard 1/100 es por OBSERVACIÓN, y se observa en cada evento (deduplicado por ms). W1 se mide con un desfase físico de 60 s (W1_LAG_FISICO_MS), así que las observaciones consecutivas comparten casi toda la ventana: el modelo i.i.d. gaussiano no se cumple y la duración esperada de segmento (100 eventos) depende del ritmo del feed, en contra de ADR-0014 (tiempo continuo). La predictiva del segmento usa sólo σ_e = 0,35 sin la varianza posterior de la media, y el prior del segmento nuevo está centrado en 0 aunque W1 ≥ 0. Durante el calentamiento (< 8) o ante un fallo numérico se publica spectral_p_transition = 0,0, y un W1 ausente se publica como spectral_w1_transport = 0,0 (:1995).",
+   "failure_scenario": "Hoy no tiene lectores: está en sombra (el actuador se retiró en :7429-7434). Si se reconecta como freno de aperturas, el calentamiento declararía «sin transición» (0,0) justo tras cada reinicio, y en un feed de 100 ev/s una deriva lenta de W1 daría p_transition alta de forma persistente, como ya se midió en el fixture.",
+   "fix_sketch": "Observar una vez por W1_LAG (o con hazard por tiempo físico, H = 1 − e^(−Δt/T)). Usar una predictiva t-Student con la varianza posterior y un prior centrado en el nivel medido. Publicar NaN o no publicar en el calentamiento.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.7
+  },
+  {
+   "title": "El envoltorio conviccion_de_rama (p* = ½) sigue vivo en las ramas 1-10 y 20-24",
+   "severity": "MED",
+   "category": "learning-signal",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 194,
+   "evidence": "pub fn conviccion_de_rama(registro: &TasaAcierto, piso_por_magnitud: f64) -> f64 { conviccion_de_rama_en(registro, piso_por_magnitud, 0.5) }",
+   "mechanism": "CL-75 corrigió las ramas 11-15. Las ramas 1-10 (:6205-6425) y las de respaldo 20-24 (:5955-6156) siguen comparando Wilson con ½ en lugar de con p* ≈ 0,32-0,40. Una rama con una tasa de acierto de 0,33 y EV > 0 se condena (convicción 0) en ≈ 40 cierres, y por el primer hallazgo además tapa las ramas 11 y 12.",
+   "failure_scenario": "Rama 1 con 13/40 cierres: hi = 0,488 < 0,5, así que pasa a convicción 0 y queda absorbida en la sesión, pese a EV de barrera +0,07 R.",
+   "fix_sketch": "Pasar p_equilibrio_de_la_orden(coin_id, fast_duration_ms, hurst_exponent) en todos los llamadores y retirar el envoltorio.",
+   "live_path": true,
+   "known_ref": "F3.3-01 / K-02 (pedido a Línea E para ramas 1-10 y 20-23; sigue abierto, también rama 24)",
+   "confidence": 0.9
+  },
+  {
+   "title": "etiqueta_barrera puntúa el voto de forest6_prob (bosque del daemon, P(neto > 0) sin lado) contra ½: el doc describe otro modelo",
+   "severity": "MED",
+   "category": "learning-signal",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 238,
+   "evidence": "(false, 1) => Some(false), ... // lib.rs:7172: Some(f6_prob_actual > 0.5) ... if cota_bosque > 0.5",
+   "mechanism": "El doc afirma que el bosque aprende P(TP del largo antes que su SL) (train_forest --label dir). Pero el voto que se registra (forest_vote, :8369) es forest6_prob del daemon online, entrenado con was_profitable y sin la feature de lado. Un corto sólo puede dar Some(false) o None, y la base de la etiqueta de largo es ≈ 1/3, así que un votante bajista constante acumula una «exactitud» mayor que ½ y arma el freno.",
+   "failure_scenario": "20 largos TP, 40 largos SL y 60 cortos TP con voto «baja» dan 100/120: la cota es ≈ 0,757 > 0,5 y el freno recorta los largos ×2(1 − c) sin evidencia.",
+   "fix_sketch": "Registrar el acierto del bosque por log-loss contra su propia etiqueta y su base, con el mismo modelo que se sirve. Si el voto es de forest6, etiquetar con neto > 0 del lado operado.",
+   "live_path": true,
+   "known_ref": "LC-F1-18 / K-09 (sigue abierto)",
+   "confidence": 0.85
+  },
+  {
+   "title": "tau_de_la_orden aplica la modulación de Hurst ×[½, 2] con escala literal 0,02 sobre un DFA ruidoso",
+   "severity": "MED",
+   "category": "hardcoded",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1601,
+   "evidence": "let modulada = hurst_duration_modulation(tau_banda_ms, hurst); // factor = 2f64.powf((hurst - 0.5) / 0.02).clamp(0.5, 2.0) (:8558)",
+   "mechanism": "CL-74 movió la modulación antes de las puertas, pero la ley sigue igual: una desviación de H de 0,02 (del orden del sesgo de muestra finita del DFA, +0,021) duplica o divide la τ, con techo de 1 h y piso de 15 s, sin intervalo de confianza. La τ resultante gobierna QO-586, p*, el SL y el Kelly.",
+   "failure_scenario": "En un paseo aleatorio, H_DFA = 0,52 en la mitad de las ventanas: τ ×2 (luego ×√2 tras la media geométrica), con un SL más ancho y un p* distinto sin cambio físico.",
+   "fix_sketch": "Modular sólo si el IC del DFA excluye 0,5, con un factor derivado de σ(τ) ∝ τ^H, o retirar la modulación.",
+   "live_path": true,
+   "known_ref": "F2.3b-01 (sigue abierto)",
+   "confidence": 0.8
+  },
+  {
+   "title": "La guarda de base del ML en las puertas es estricta (0,05, 0,95) contra el recorte aguas arriba [0,05, 0,95]: una base recortada pasa a ½",
+   "severity": "LOW",
+   "category": "logic",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1752,
+   "evidence": "let ml_base = if ml_model_base > 0.05 && ml_model_base < 0.95 { ml_model_base } else { 0.5 };",
+   "mechanism": "ml_model_base llega como base_prob().clamp(0.05, 0.95) (:4844-4848). Un bosque con base ≤ 0,05 llega como 0,05 exacto y la puerta lo trata como inválido, así que mide la divergencia contra ½: d ≈ −0,92 para p = 0,04, lo que veta un largo que el gate ML (con otra guarda) sólo penaliza.",
+   "failure_scenario": "Base 0,05 y p = 0,04: las puertas devuelven Flat (d = −0,92) mientras el gate ML mide d = −0,2.",
+   "fix_sketch": "Una sola función de saneamiento de la base compartida por todos los caminos (inclusiva o con NaN como desconocido).",
+   "live_path": true,
+   "known_ref": "F3.8-04 (sigue abierto)",
+   "confidence": 0.85
+  },
+  {
+   "title": "La marea de la rama 15 compara macro_trend bruto con 2 pb literales, la misma clase de defecto que QS-K28 corrigió en las ramas 7-10",
+   "severity": "LOW",
+   "category": "hardcoded",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 562,
+   "evidence": "pub const MAREA_MACRO_TOLERANCIA: f64 = 0.00020; ... && marea_macro >= -MAREA_MACRO_TOLERANCIA",
+   "mechanism": "rango_admite_reversion (:439) reemplazó estas comparaciones por z_macro (Z95), porque «un pb de deriva es ruido en BTC tranquilo y un movimiento grande en una alt dormida». confluencia_resonante recibe macro_trend en fracción de precio (:6872) con una banda fija de 2 pb. H2-11 sólo la pineó.",
+   "failure_scenario": "En una alt con un ATR del 2 %, una marea adversa de −3 pb (≈ 0,01 σ) bloquea el largo de la rama 15. En BTC tranquilo, −1,9 pb (≈ 0,2 σ) no lo bloquea.",
+   "fix_sketch": "Usar s·z_macro ≥ −Z95 como en QS-K28.",
+   "live_path": true,
+   "known_ref": "H2-11 / G2-15 (pineado, sigue presente)",
+   "confidence": 0.8
+  },
+  {
+   "title": "scalp_forest no tiene lector y el arranque carga el modelo de BTC bajo la clave global UNIVERSAL",
+   "severity": "LOW",
+   "category": "dead-code",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1042,
+   "evidence": "let legacy_path = \"models/BTCUSDT_MOTOR.json\"; ... NanoForest::load_global(\"UNIVERSAL\", legacy_path)",
+   "mechanism": "El campo sólo se escribe (:1202, :1520). Nadie consulta get_global(\"UNIVERSAL\"), pero cada GodEngineCore::new hace E/S de disco y deja el bosque de BTC registrado como «universal» en el almacén global del proceso.",
+   "failure_scenario": "Las evaluaciones de genomas, que construyen muchos núcleos, repiten stat y carga de disco. Un consumidor futuro de UNIVERSAL heredaría BTC para todas las monedas.",
+   "fix_sketch": "Eliminar el campo y la carga (Fase 2 de erradicación scalp/swing).",
+   "live_path": false,
+   "known_ref": "F3-A8 (BARRIDO_EXHAUSTIVO_FASES.md:400; MAPA_C-F3:573)",
+   "confidence": 0.9
+  }
+ ],
+ "vetos": [
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 21,
+   "name": "fitness MIN_TRADES",
+   "kind": "gate",
+   "constant": "30 cierres ⇒ si no, NEG_INFINITY",
+   "origin": "policy-adr",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "D-654, la misma regla que WF_MIN_TRADES. Darwin no opera en vivo."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 104,
+   "name": "TasaAcierto::intervalo n=0",
+   "kind": "floor",
+   "constant": "(0,1)",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Ignorancia completa; Wilson correcto."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 123,
+   "name": "mejor_que_el_azar",
+   "kind": "threshold",
+   "constant": "lo > 0.5",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sólo la usan los tests; usa el criterio contra ½ que la Línea F prohíbe."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 139,
+   "name": "p_equilibrio validez",
+   "kind": "reject",
+   "constant": "tp,sl>0, f≥0, p∈(0,1)",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Álgebra idéntica a ev_primer_toque."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 175,
+   "name": "p* inválido → ½",
+   "kind": "clamp",
+   "constant": "0.5",
+   "origin": "literal",
+   "absorbing_risk": "possible",
+   "assessment": "questionable",
+   "note": "½ no es el equilibrio (p* ≈ 0,32-0,40)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 181,
+   "name": "convicción 0 si hi<p*",
+   "kind": "reject",
+   "constant": "Wilson Z95 vs p*",
+   "origin": "derived",
+   "absorbing_risk": "likely",
+   "assessment": "questionable",
+   "note": "La estadística está mal definida (neto > 0 con salidas intermedias y τ mezcladas). No aplana la intención y no hay olvido."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 183,
+   "name": "lo>p* → max(lo,piso)",
+   "kind": "floor",
+   "constant": "max(lo, piso)",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Mezcla una probabilidad (lo) con una puntuación (piso) en la misma escala que el gate."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 195,
+   "name": "conviccion_de_rama p*=½",
+   "kind": "threshold",
+   "constant": "0.5",
+   "origin": "literal",
+   "absorbing_risk": "likely",
+   "assessment": "nonsense",
+   "note": "F3.3-01 pendiente (ramas 1-10 y 20-24)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 201,
+   "name": "sig_conf",
+   "kind": "clamp",
+   "constant": "(0.50+0.40|s|).clamp(0.51,0.90)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "No es bayesiano ni está calibrado (F3.3-11). Su piso de 0,51 hace que «> ½» se cumpla por defecto."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 238,
+   "name": "etiqueta_barrera",
+   "kind": "gate",
+   "constant": "(true,1)→T,(true,2)→F,(false,1)→F",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "La traducción es correcta si TP ≥ SL, pero el consumidor es el bosque equivocado (LC-F1-18)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 266,
+   "name": "CADENCIA_REGIMEN_MS",
+   "kind": "cooldown",
+   "constant": "60 000 ms",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Cadencia de medición de la deriva de τ*, fija en lugar de relativa a τ*."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 308,
+   "name": "umbral_codespacho_armonico",
+   "kind": "threshold",
+   "constant": "0.80 misma dir / 0.60 opuesta",
+   "origin": "policy-adr",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Decisión del consejo del 2026-09-30. Tras CL-74, Δlnτ se reduce a la mitad (equivale a una razón bruta de 4,95)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 352,
+   "name": "confianza_superpuesta",
+   "kind": "threshold",
+   "constant": "lo>0.5, +0.10·lo, techo 0.96",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "El refuerzo es el caso por defecto; suma lecturas correlacionadas."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 368,
+   "name": "confianza_modulada",
+   "kind": "cap",
+   "constant": "clamp(0, 0.98)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Techo sin origen."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 419,
+   "name": "exigencia_tras_racha",
+   "kind": "threshold",
+   "constant": "umbral·2^(racha−1), ≤8 niveles, ≤1",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Base 2 literal. Con p* ≈ 0,31 una racha de 3 pérdidas es esperable (P ≈ 0,33). Racha por moneda que mezcla τ (LF-5). Un NaN se propaga y su efecto depende del llamador."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 442,
+   "name": "rango_admite_reversion",
+   "kind": "gate",
+   "constant": "Z95 sobre z_macro/z_secular",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "QS-K28; espejo exacto."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 452,
+   "name": "tau_de_apertura",
+   "kind": "floor",
+   "constant": "≥1 ms",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Nunca devuelve una τ nula."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 490,
+   "name": "activaciones BE/trailing",
+   "kind": "cap",
+   "constant": "BE≤0.90·TP, trail≤0.95·TP, +0.25·respiro, ·1.10",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Los extremos rápido y lento de la interpolación son literales (residuo de dos regímenes)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 544,
+   "name": "confluencia_resonante cortes",
+   "kind": "threshold",
+   "constant": "0.38 / 0.22 / H≥0.52 / coh>0.12 / marea ±0.00020",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Pineados por H2-11. La marea en fracción de precio no está tipificada."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 567,
+   "name": "confluencia conf_base",
+   "kind": "clamp",
+   "constant": "(0.50+0.35·coh+0.5·(H−0.5)⁺).clamp(0.50,0.95)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Piso de 0,50 fabricado; pesos sin origen."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 597,
+   "name": "libro_efectivo",
+   "kind": "gate",
+   "constant": "libro propio si bid>0&&ask>0; respaldo ±1 pb",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "No comprueba libro cruzado ni la edad del último libro."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 706,
+   "name": "W1 BOCPD constantes",
+   "kind": "threshold",
+   "constant": "R=128, H=1/100 por evento, σe=0.35, σp=2.0",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sombra: spectral_p_transition no tiene lectores."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 816,
+   "name": "W1 calentamiento",
+   "kind": "gate",
+   "constant": "n_obs ≥ 8",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "En el calentamiento el llamador publica 0,0 (lo desconocido como 0)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1057,
+   "name": "MakerEngine spread",
+   "kind": "threshold",
+   "constant": "0.0005",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "La cotización maker se calcula y se descarta (F3.7-07)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1196,
+   "name": "StatArbEngine ventana/z",
+   "kind": "threshold",
+   "constant": "(30, 1.5)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Ventana y z de entrada sin origen, por moneda y en el orquestador."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1166,
+   "name": "PPO pesos iniciales",
+   "kind": "threshold",
+   "constant": "[0.40,0.40,0.20,0.15,0.10]",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Una sola política global (LF-9)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1170,
+   "name": "OnlineLearning lr/γ",
+   "kind": "threshold",
+   "constant": "(0.001, 0.9)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sólo diagnóstico (D-693)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1434,
+   "name": "tensor[34]",
+   "kind": "clamp",
+   "constant": "delta/price.max(1.0), clamp ±0.1",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "nonsense",
+   "note": "Escala con el precio en monedas de menos de 1 USD; duplica [35]."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1436,
+   "name": "tensor[36]",
+   "kind": "clamp",
+   "constant": "tanh(qty/1000)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "nonsense",
+   "note": "En unidades del activo base: satura en monedas de cantidades grandes."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1443,
+   "name": "tensor macro respaldos",
+   "kind": "floor",
+   "constant": "1.04 / 1.02 / 1.00 / 0.75; clamps [0.5,2], [0.1,5]",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "nonsense",
+   "note": "Contradice C-02 (el centinela de ausencia es 0,0)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1485,
+   "name": "tensor[50] fear&greed",
+   "kind": "floor",
+   "constant": "/50 clamp(0,2), respaldo 1.0",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Sin dato se sirve neutralidad inventada."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1521,
+   "name": "recarga de genoma",
+   "kind": "gate",
+   "constant": "DesdeAlmacen && !GOD_NO_HOT_RELOAD",
+   "origin": "policy-adr",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "CL-40."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1539,
+   "name": "generación monótona",
+   "kind": "gate",
+   "constant": "env.generation > last",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "El contador no tiene lectores."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1601,
+   "name": "modulación Hurst de τ",
+   "kind": "clamp",
+   "constant": "2^((H−0.5)/0.02)∈[0.5,2], 15 s–1 h",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "F2.3b-01."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1603,
+   "name": "τ hacia el centroide",
+   "kind": "clamp",
+   "constant": "media geométrica 0.5/0.5, [30 s, 12 h]",
+   "origin": "policy-adr",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "El recorte es ADR-0014; los pesos 0,5/0,5 son literales."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1620,
+   "name": "escala_que_hablo",
+   "kind": "gate",
+   "constant": "|v_dom|>1e-9, τ≥30 s, ≤12 h",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Paridad con el orquestador (#652/H2)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1627,
+   "name": "QO-586 banda_paga_friccion",
+   "kind": "reject",
+   "constant": "below_tradeable_floor (SL < f/0.65)",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Paridad por construcción con el gate. El 0,65 es política declarada."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1638,
+   "name": "p_equilibrio_de_banda respaldo",
+   "kind": "clamp",
+   "constant": "0.5",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Sólo cuando no hay precio ni ATR."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1670,
+   "name": "slip_floor mínimo",
+   "kind": "floor",
+   "constant": "0.00001",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Igual que en el gate (paridad)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1711,
+   "name": "viable (ATR/spread/cooldown)",
+   "kind": "gate",
+   "constant": "viable_para_entrar",
+   "origin": "measured",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "El spread se calcula con libro_efectivo, sin edad."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1738,
+   "name": "D-472 signo del compuesto",
+   "kind": "reject",
+   "constant": "composite_score < 0 (largo)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Sin banda muerta, a escala del tick para toda τ, sin contador."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1752,
+   "name": "banda de base ML",
+   "kind": "clamp",
+   "constant": "(0.05,0.95) → si no, 0.5",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "F3.8-04."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1763,
+   "name": "veto ML fuerte",
+   "kind": "reject",
+   "constant": "d<−0.80 && |stretch|<2.5",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Horizonte del modelo ≠ τ de la orden."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1766,
+   "name": "penalización/impulso ML",
+   "kind": "clamp",
+   "constant": "(1+0.5d) en [0.20,1] / min 0.99",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Asimétrico con base ≠ ½ (F3.3-04)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1796,
+   "name": "veto CVD",
+   "kind": "reject",
+   "constant": "gen cvd_veto_threshold (banda 0.1–2.0; defecto 0.89)",
+   "origin": "gene",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "La banda excede la razón [−1, 1] (LC-F1-20). Memoria fija de 60 s."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1801,
+   "name": "veto de muro L2",
+   "kind": "reject",
+   "constant": "gen wall_veto_threshold (respaldo 2.0)",
+   "origin": "gene",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Es el OBI de nivel 0 con otro umbral (F3.4-04)."
+  }
+ ],
+ "adaptive_loops": [
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 4141,
+   "what_learns": "Convicción por rama y moneda (TasaAcierto → conviccion_de_rama_en)",
+   "signal_used": "1{neto > 0} por cierre contra el p* de la orden ACTUAL (o ½ en las ramas 1-10 y 20-24)",
+   "verdict": "wrong-signal",
+   "note": "Las salidas intermedias (BE ganador de +0,03 R, decaimiento perdedor de −0,1 R) y la mezcla de τ hacen que la tasa frente a p* no sea el signo del EV. hi < p* da 0, que es absorbente en la sesión (sin olvido ni persistencia)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 4154,
+   "what_learns": "Autoridad del bosque online (bosque_registro → freno)",
+   "signal_used": "voto forest6_prob > ½ frente a etiqueta_barrera, juzgado contra ½",
+   "verdict": "wrong-signal",
+   "note": "LC-F1-18: modelo y etiqueta distintos, y un votante bajista constante se premia."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 4131,
+   "what_learns": "Pesos Hedge del ensamble por moneda (update_with_trade_snapshot)",
+   "signal_used": "direccion_realizada: signo bruto del mid",
+   "verdict": "wrong-signal",
+   "note": "La etiqueta direccional ≠ el evento del bosque (P(TP del largo primero)). Abierto en la práctica (LF-13: una sola moneda con dos modelos)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 2003,
+   "what_learns": "Posterior de run-length del transporte W1 (BOCPD)",
+   "signal_used": "W1 a 60 s observado por evento",
+   "verdict": "open",
+   "note": "Sin lectores. Lo desconocido se publica como 0,0."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 4224,
+   "what_learns": "Platt global de confianza (respaldo de calibrator_by_coin)",
+   "signal_used": "(puntuación cruda, 1{neto > 0}) de todas las monedas",
+   "verdict": "closed-live",
+   "note": "Fuga entre monedas para las de menos de 5 cierres. La etiqueta (neto > 0) no es P(TP antes que SL), que es lo que exige la fórmula EV que la consume."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 4218,
+   "what_learns": "Platt por moneda",
+   "signal_used": "(puntuación cruda, 1{neto > 0}) con olvido de 12 h",
+   "verdict": "closed-live",
+   "note": "Sólo aprende de lo ejecutado. La misma etiqueta mal especificada frente a la EV de barrera."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 7628,
+   "what_learns": "Escalada de exigencia tras racha (exigencia_tras_racha)",
+   "signal_used": "racha de pérdidas direccionales (neto < 0 y pnl ≤ −5 pb), escalar por moneda",
+   "verdict": "wrong-signal",
+   "note": "No normaliza por p* (con RR 2,25 las rachas de 3 son esperables) y mezcla τ (LF-5)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 5163,
+   "what_learns": "Pisos medidos de |OBI| y |score| (cuantiles P²)",
+   "signal_used": "distribución propia del símbolo (p80/p85)",
+   "verdict": "closed-live",
+   "note": "Medido sin resultado. Antes de inicializarse usa respaldos literales 0,15/0,40 (adaptive_quantiles.rs:230/239)."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1519,
+   "what_learns": "Genoma operado (recarga en caliente)",
+   "signal_used": "generación del sobre activo en disco",
+   "verdict": "closed-live",
+   "note": "Aplica lo que evoluciona el daemon. El contador de generación no tiene lectores."
+  },
+  {
+   "file": "crates/god-engine-core/src/lib.rs",
+   "line": 1166,
+   "what_learns": "Política PPO global",
+   "signal_used": "recompensa de cierre sin normalizar por σ(τ)",
+   "verdict": "closed-live",
+   "note": "LF-9: una sola política para todas las monedas y τ."
+  }
+ ],
+ "theory_notes": [
+  {
+   "component": "p_equilibrio (EV de barrera)",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo (p* de las ramas 11-15 y de QO-586)",
+   "correctness": "Álgebra correcta y equivalente a TpSl::ev_primer_toque. El supuesto declarado (salida por TP o SL) se viola por diseño con el BE, el trailing, el zombi y el decaimiento.",
+   "next_step": "Congelar p*_i en la apertura y medir el resultado por operación en R neto. Modelar las salidas intermedias o descartarlas como hace etiqueta_barrera.",
+   "falsification_test": "Simular una rama con una mezcla de salidas conocida (30 % TP, 25 % decaimiento a −0,1 R, 45 % SL): EV > 0, pero el veredicto actual la condena en n ≈ 100 con p* = 0,40."
+  },
+  {
+   "component": "TasaAcierto / Wilson",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo",
+   "correctness": "El intervalo de Wilson está bien implementado. La muestra está mal definida: el éxito es neto > 0 y no hay estratificación por τ ni por geometría.",
+   "next_step": "Sustituirla por un e-proceso o una cota inferior sobre la media de R neto por operación, estratificada por banda de τ.",
+   "falsification_test": "Con una rama de EV negativo por BE masivo (60 % de tasa), la cota sobre la media de R debe ser < 0 mientras Wilson declara ventaja."
+  },
+  {
+   "component": "conviccion_de_rama_en",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo",
+   "correctness": "Monótona como afirma. Devolver 0 en lugar de Flat rompe las cascadas y el arbitraje, y el estado es absorbente.",
+   "next_step": "Devolver Option, aplanar la intención y añadir olvido o exploración.",
+   "falsification_test": "Tras forzar hi < p* en la rama 1, la rama 11 debe emitir en el mismo evento, y un Long opuesto de la rama 13 no debe perder contra un Short de confianza 0."
+  },
+  {
+   "component": "sig_conf",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo (pisos de las ramas 1-10, 13 y 21-24)",
+   "correctness": "Es una aplicación lineal literal, no un mapeo bayesiano calibrado. Su piso de 0,51 contamina confianza_superpuesta.",
+   "next_step": "Usar magnitud tipificada → probabilidad vía el calibrador de la moneda.",
+   "falsification_test": "Brier o diagrama de fiabilidad de sig_conf frente a la frecuencia de victoria neta por decil: no debe estar sobre la diagonal."
+  },
+  {
+   "component": "direccion_realizada / etiqueta_barrera",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo (Hedge y freno del bosque)",
+   "correctness": "Las dos funciones son correctas para lo que dicen. Sus consumidores califican modelos cuyo evento es otro (P(TP del largo primero) y forest6 P(neto > 0)).",
+   "next_step": "Etiqueta por modelo con su propia base y puntuación por log-loss.",
+   "falsification_test": "registro_bosque_no_premia_al_votante_constante_bajista (LC-F1-18)."
+  },
+  {
+   "component": "exigencia_tras_racha",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo",
+   "correctness": "Monótona y acotada. La base 2 es literal y no hay nulo: P(racha de k | p*) no interviene.",
+   "next_step": "Derivar la escalada de la probabilidad de la racha bajo el p* de las órdenes recientes.",
+   "falsification_test": "Con WR = p* = 0,33 i.i.d., la fracción de entradas vetadas por racha debe ser ≈ el nivel nominal; hoy crece sin control."
+  },
+  {
+   "component": "confluencia_resonante (rama 15)",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo",
+   "correctness": "Espejo correcto. Los cortes son literales y la marea está en fracción de precio.",
+   "next_step": "Usar la marea en z (como en QS-K28) y conf_base desde el calibrador.",
+   "falsification_test": "Misma marea en σ en BTC y en una alt: hoy deciden distinto."
+  },
+  {
+   "component": "confianza_superpuesta",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo",
+   "correctness": "Suma como independientes lecturas del mismo espectro, y el umbral ½ se cumple por construcción.",
+   "next_step": "Combinación en log-odds con ρ entre τ, o max.",
+   "falsification_test": "confianza_superpuesta(c, c) debe ser ≤ c."
+  },
+  {
+   "component": "libro_efectivo",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo",
+   "correctness": "La heurística es razonable, pero no tiene edad y fabrica un OFI al trasladar el libro (FICHAS C-F2 :869).",
+   "next_step": "TTL del libro y spread desconocido tras el TTL.",
+   "falsification_test": "Cortar el depth 10 min con trades activos: la puerta de spread no debe aprobar con el spread viejo."
+  },
+  {
+   "component": "W1ChangepointObserver (BOCPD-lite)",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "sombra (sin lectores)",
+   "correctness": "Implementa Adams-MacKay con la media suficiente bien actualizada. Tiene hazard por evento, emisión sin la varianza posterior, prior centrado en 0 y observaciones autocorreladas.",
+   "next_step": "Hazard por tiempo físico, una observación por W1_LAG y predictiva t-Student.",
+   "falsification_test": "W1 estacionario autocorrelado (AR(1), φ = 0,99): p_transition debe quedarse ≈ H·Δt. Hoy sube."
+  },
+  {
+   "component": "build_54d_tensor (DarkAlpha)",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "sombra en el repo (artefacto ausente); vivo sólo en BTC si existe; productor del dataset por símbolo",
+   "correctness": "Literales plausibles ante ausencia y features dependientes de unidades.",
+   "next_step": "Máscara de ausencia y normalización por el propio símbolo.",
+   "falsification_test": "Invariancia de escala: reescalar precio o cantidad de una moneda ×1000 no debe cambiar el tensor."
+  },
+  {
+   "component": "Sonda QO-586 (sonda_de_banda)",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo",
+   "correctness": "Paridad exacta con el gate (mismas entradas y la misma función pura). Correcta.",
+   "next_step": "Contar el EV bloqueado contrafactual por la puerta.",
+   "falsification_test": "Para toda intención, banda_paga_friccion == !REJ_TP_SL_FLOOR del gate en el mismo evento."
+  },
+  {
+   "component": "tau_de_la_orden",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo",
+   "correctness": "Una sola τ juzgada (CL-74 correcto). La modulación de Hurst es literal y sensible al ruido del DFA.",
+   "next_step": "Modulación sólo con un IC del DFA que excluya ½.",
+   "falsification_test": "En un paseo aleatorio, la distribución de τ modulada / τ banda debe concentrarse en 1."
+  },
+  {
+   "component": "puertas_del_continuo",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo",
+   "correctness": "La divergencia normalizada es correcta. Los vetos usan escalas fijas para toda τ y tienen literales.",
+   "next_step": "Medir CVD, compuesto y ML a la τ de la intención.",
+   "falsification_test": "Una intención de 4 h no debe quedar vetada por 60 s de CVD adverso si el CVD a 4 h es neutro."
+  },
+  {
+   "component": "fitness_compute",
+   "file": "crates/god-engine-core/src/lib.rs",
+   "status": "vivo en Darwin",
+   "correctness": "Crecimiento logarítmico − λ·dd², con un gate de 30 cierres como política declarada.",
+   "next_step": "Nada en este alcance.",
+   "falsification_test": "Paridad con fitness::compute (ya cubierta)."
+  }
+ ],
+ "coverage": {
+  "files_read": [
+   "crates/god-engine-core/src/lib.rs (1-1818 completo; además 1955-2100, 2850-2875, 3130-3147, 3564-3607, 4060-4240, 4780-5060, 5140-5180, 5880-6247, 6430-7119, 7119-7210, 7415-7491, 7595-7646, 7812-7865, 8340-8430, 8500-8566)",
+   "crates/risk-engine/src/tp_sl.rs (60-480)",
+   "crates/risk-engine/src/lib.rs (700-920, 1115-1195, 1497-1517)",
+   "crates/god-engine-core/src/calibration.rs (40-190, 285-414)",
+   "crates/quantum-arena/src/temporal_spectrum.rs (1150-1209)",
+   "crates/quantum-arena/src/state.rs (785-830)",
+   "crates/quantum-arena/src/genome_store.rs (60-175, 345-370)",
+   "crates/quantum-arena/src/adaptive_quantiles.rs (226-241)",
+   "crates/quantum-arena/src/genome.rs (constantes min_viable_sl, min_rr_for, WORST_TOLERATED_WR; genes CVD/muro)",
+   "crates/signal-engine/src/orchestrator.rs (79-117)",
+   "crates/strategy-core/src/lib.rs (trait QuantumStrategy)",
+   "docs/audit/HALLAZGOS_C-F3_2026-10-11.md (tabla y fichas F3.3-01/02 y relacionadas)",
+   "docs/audit/HALLAZGOS_C-F1_2026-10-11.md (LC-F1-18, LC-F1-20 y grep)",
+   "docs/PLAN_LINEA_F_CLAUDE_2026-10-11.md (§4.1 y §6)",
+   "docs/audit/MAPA_C-F3_2026-10-11.md y FICHAS_C-F2 (grep dirigido)",
+   "docs/BARRIDO_EXHAUSTIVO_FASES.md (grep dirigido)"
+  ],
+  "unread": [
+   "crates/god-engine-core/src/lib.rs fuera de 1-1810 salvo los rangos citados (sólo se siguieron escritores y lectores)",
+   "signal-engine: estrategias del orquestador (posible estado interior por moneda; evaluate es &self)",
+   "stateful_engine.rs: get_active_directional_streak_ms y el origen exacto de la racha",
+   "docs/audit/HALLAZGOS_C-F2_2026-10-11.md completo (sólo grep)"
+  ],
+  "notes": "Leí el alcance completo (1-1810). Comprobé cada sospecha con escritores y lectores. No compilé ni ejecuté nada. Los números de los escenarios son aritmética cerrada (Wilson con z = 1,96; p* = (1+f/SL)/(1+RR) con RR ≥ 1,5 + 2,5·f/SL desde min_rr_for a w = 0,40, de donde p* ∈ [≈ 0,32; 0,40]). Hallazgos nuevos en este alcance: convicción 0 no-Flat (cascada, arbitraje y estado absorbente), TasaAcierto frente a p* con salidas intermedias y τ mezcladas, umbral ½ de confianza_superpuesta trivial, Platt global entre monedas, ultimo_libro sin edad, seqlock sin lector y BOCPD con hazard por evento. Los demás llevan known_ref y siguen abiertos en el código de HEAD 86218456."
+ }
+}
