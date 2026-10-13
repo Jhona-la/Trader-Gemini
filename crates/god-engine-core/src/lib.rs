@@ -8291,8 +8291,25 @@ impl GodEngineCore {
                             )
                         })
                         .unwrap_or((0.0, 0.0));
-                    let council_atr_pct =
-                        self.feature_engines[coin_id].get_atr_pct().clamp(0.0, 1.0);
+                    let raw_atr_pct = self.feature_engines[coin_id].get_atr_pct().clamp(0.0, 1.0);
+                    let btc_slot = quantum_arena::symbols::get_coin_id("BTCUSDT").unwrap_or(0);
+                    let btc_atr_pct = if btc_slot < self.arena.coins.len() {
+                        let btc_price = self.arena.coins[btc_slot].current_price.load(Ordering::Relaxed).max(1e-8);
+                        let btc_atr = self.arena.coins[btc_slot].current_atr.load(Ordering::Relaxed);
+                        if btc_atr > 0.0 && btc_price > 1e-6 {
+                            (btc_atr / btc_price).clamp(0.0005, 0.50)
+                        } else {
+                            0.0015
+                        }
+                    } else {
+                        0.0015
+                    };
+                    let relative_vol = if coin_id == btc_slot {
+                        1.0
+                    } else {
+                        (raw_atr_pct / btc_atr_pct).clamp(0.5, 4.0)
+                    };
+                    let council_atr_pct = (raw_atr_pct / relative_vol).clamp(0.0, 1.0);
                     let council_loss_streak = self
                         .feature_engines[coin_id]
                         .get_active_directional_streak_ms(order.signal == SignalType::Long, enfriamiento_base_ms);
