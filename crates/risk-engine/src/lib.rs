@@ -256,11 +256,34 @@ impl RiskEngine {
     /// y era esta función: una intención, un pico, Kelly con
     /// `temporal_scale` s∈[0,1] continuo (D-427).
     /// Evalúa la intención unificada de señal cuántica continua sobre el 100% del capital disponible.
+    ///
+    /// Compatibility entry point: evidence availability is checked against the
+    /// coin's last recorded depth/tick timestamp. Callers whose decision comes
+    /// from another event must use `evaluate_quantum_order_at` with that event's
+    /// causal time; a trade event can legitimately be newer than depth.
     pub fn evaluate_quantum_order(
         &mut self,
         coin_id: usize,
         intent: &SignalIntent,
         arena: &GlobalArena,
+    ) -> ValidatedOrder {
+        let decision_time_ms = arena.coins.get(coin_id).map_or(0, |coin| {
+            coin.last_tick_timestamp_ms.load(Ordering::Relaxed)
+        });
+        self.evaluate_quantum_order_at(coin_id, intent, arena, decision_time_ms)
+    }
+
+    /// Evaluate economic evidence available at the caller's decision event.
+    ///
+    /// The caller supplies this causal clock independently of the intent's
+    /// payload. It is not wall-clock time and need not equal the last depth
+    /// timestamp. This bound does not assert an atomic snapshot of arena state.
+    pub fn evaluate_quantum_order_at(
+        &mut self,
+        coin_id: usize,
+        intent: &SignalIntent,
+        arena: &GlobalArena,
+        decision_time_ms: u64,
     ) -> ValidatedOrder {
         set_reject_direction(intent.signal);
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
@@ -281,10 +304,10 @@ impl RiskEngine {
             || !(0.0..=1.0).contains(&intent.confidence)
             || !intent.win_probability.is_finite()
             || !(0.0..=1.0).contains(&intent.win_probability)
-            || intent
-                .net_payoff
-                .as_ref()
-                .is_some_and(|estimate| !estimate.is_valid_for(coin_id, intent.signal))
+            || intent.net_payoff.as_ref().is_some_and(|estimate| {
+                !estimate.is_valid_for(coin_id, intent.signal)
+                    || estimate.as_of_ms > decision_time_ms
+            })
             || !(0.0..=1.0).contains(&clamp_min)
             || !(clamp_min..=1.0).contains(&clamp_max)
             || !(0.0..=1.0).contains(&configured_dd)

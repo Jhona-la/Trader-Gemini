@@ -169,6 +169,7 @@ fn test_r7_r2_a1_analytical_first_hitting_gate_contract() {
     // Configuración de mercado para coin 0
     arena.coins[0].current_price.store(60000.0, Ordering::Relaxed);
     arena.coins[0].current_atr.store(60000.0 * sigma, Ordering::Relaxed);
+    arena.coins[0].last_tick_timestamp_ms.store(100_000, Ordering::Relaxed);
     arena.coins[0].metrics.trade_count.store(10, Ordering::Relaxed);
     arena.coins[0].metrics.win_rate.store(0.60, Ordering::Relaxed);
     arena.coins[0].metrics.profit_factor.store(2.0, Ordering::Relaxed);

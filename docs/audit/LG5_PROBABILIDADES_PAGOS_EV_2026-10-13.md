@@ -113,6 +113,16 @@ el detector LG8/e-CUSUM ni se reutiliza su retorno bilateralmente recortado.
 - La caché release del otro Codex se usa sólo con workspace/target explícitos
   y ventana exclusiva acordada. Un build frío interrumpido no cuenta como test.
 
+Primer corte `5a3461b8`: all-targets release exit 0, 670 inputs/643 Rust,
+12 invariantes verificadas. Recibo `002-lg5-candidate-all-targets.json`, SHA256
+`cc7a7722c2a48924a83ce48991c0acfa8c5513e1d916c62e548cad345e00177e`.
+La revisión independiente detectó la falta del reloj explícito en riesgo; las
+ejecuciones 003/004 se detuvieron en compilación para corregirlo, sin pruebas
+ejecutadas ni GREEN. Sus JSON registran `command_failed`, exit −1 y freeze
+estable. El stdout del orquestador no sustituye esos recibos: el padre pwsh no
+propagó correctamente una salida negativa. Los siguientes cortes comprueban
+estado y ambos exits del JSON antes de continuar, además del resultado Cargo.
+
 Consejo: integración/core/persistencia, riesgo/admisión y revisión matemática
 independientes. Reservas preservadas: AGY F7/Hodge/LH02, C-F5/estado y freno,
 Línea H, Línea G8, Qoder y Sol. No se importan sus commits exclusivos ni se
@@ -135,5 +145,17 @@ aceptados, y no rearmar presupuesto al expulsar filas o reiniciar.
 La media reúne políticas y geometrías de salida distintas. Su uso en admisión
 es descriptivo y requiere validar transferencia fuera de muestra; no demuestra
 la esperanza condicional de cada candidato. Riesgo comprueba moneda/lado y
-orden interno de fechas; el productor Core aporta procedencia y disponibilidad
-al tiempo de decisión. El tipo público por sí solo no certifica ese productor.
+orden interno de fechas y `as_of <= decision_time_ms` en la API explícita
+`evaluate_quantum_order_at`. Core pasa el evento aceptado; no confunde ese reloj
+con la última actualización de profundidad. El wrapper legacy toma el reloj
+disponible del coin una sola vez y puede rechazar si está retrasado: llamadores
+de trades/directos deben aportar tiempo de decisión mediante la API explícita.
+Este argumento delimita sólo evidencia neta; los otros relojes permanecen con
+su contrato previo. El productor Core aporta procedencia y disponibilidad.
+El tipo público y el argumento de tiempo por sí solos no certifican productor,
+liquidación del exchange, snapshot atómico ni futuras órdenes rentables.
+
+Los contratos de integración son segmentados: cierre local elegible y restore
+real por símbolo. No prueban el ciclo entero apertura automática, confirmación
+parcial, cierre, siguiente intención y riesgo, ni reanudación del ledger de
+posiciones abiertas. Ese ledger efímero no se restaura desde archivos legacy.

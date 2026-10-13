@@ -8219,7 +8219,7 @@ impl GodEngineCore {
                 calibrated_intent.win_probability = cal_prob;
                 let order =
                     self.risk_engine
-                        .evaluate_quantum_order(coin_id, &calibrated_intent, &self.arena);
+                        .evaluate_quantum_order_at(coin_id, &calibrated_intent, &self.arena, event_time_ms);
                 self.diag_dir.record_risk(
                     calibrated_intent.signal == SignalType::Long,
                     calibrated_intent.confidence,

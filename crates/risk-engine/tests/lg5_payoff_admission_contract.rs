@@ -46,6 +46,11 @@ fn fixture(capital: f64, trades: usize) -> (Arc<GlobalArena>, SignalIntent) {
         }])
     });
     let arena = GlobalArena::build_in_own_stack(capital);
+    // Explicit synthetic decision time; the largest cohort ends at 600_000.
+    // evaluate() must never derive or advance this clock from net_payoff.
+    arena.coins[0]
+        .last_tick_timestamp_ms
+        .store(600_000, Relaxed);
     arena.coins[0].current_price.store(100.0, Relaxed);
     arena.coins[0].current_atr.store(1.0, Relaxed);
     arena.coins[0].hurst_exponent.store(0.5, Relaxed);
@@ -94,10 +99,13 @@ fn assert_rejected(arena: &GlobalArena, intent: &SignalIntent, reason: usize) {
 }
 
 fn assert_interior_order(arena: &GlobalArena, intent: &SignalIntent) {
-    let order = evaluate(arena, intent);
+    assert_interior_size(evaluate(arena, intent), intent.signal);
+}
+
+fn assert_interior_size(order: ValidatedOrder, expected_side: SignalType) {
     assert_eq!(
         order.signal,
-        intent.signal,
+        expected_side,
         "{}",
         risk_engine::reject_report()
     );
@@ -258,6 +266,7 @@ fn lg5_probe_keeps_its_budget_and_cost_covering_geometry() {
     intent.tp_price_target = 100.01; // TP de 1bp, inferior al coste de ida/vuelta.
     assert_rejected(&arena, &intent, REJ_EV);
 }
+
 #[test]
 fn lg5_valid_evidence_respects_side_and_declared_local_source() {
     for side in [SignalType::Long, SignalType::Short] {
@@ -278,4 +287,54 @@ fn lg5_valid_evidence_respects_side_and_declared_local_source() {
             assert_interior_order(&arena, &intent);
         }
     }
+}
+
+#[test]
+fn lg5_legacy_clock_admits_evidence_available_at_exact_equality() {
+    let (arena, mut intent) = fixture(1_000.0, 100);
+    // Both fixture schedules independently declare time 100_000; no clock
+    // is copied from the payload or advanced by the evaluation helper.
+    arena.coins[0]
+        .last_tick_timestamp_ms
+        .store(100_000, Relaxed);
+    intent.net_payoff = Some(measured(&[0.004; 100]));
+    assert_interior_order(&arena, &intent);
+}
+
+#[test]
+fn lg5_future_availability_rejects_for_each_clock_even_a_probe() {
+    for trades in [0, 100] {
+        for explicit_clock in [false, true] {
+            let (arena, mut intent) = fixture(1_000.0, trades);
+            intent.net_payoff = Some(measured(&[0.004; 100]));
+            // The evidence is internally valid but only available at 100_000.
+            // Explicit-time admission must not borrow the later depth clock.
+            let order = if explicit_clock {
+                RiskEngine::new(1_000.0).evaluate_quantum_order_at(0, &intent, &arena, 99_999)
+            } else {
+                arena.coins[0].last_tick_timestamp_ms.store(99_999, Relaxed);
+                evaluate(&arena, &intent)
+            };
+            assert_eq!(order.signal, SignalType::Flat, "{order:?}");
+            assert_eq!(ultimo_rechazo(), Some(REJ_INVALID_INPUT));
+        }
+    }
+}
+
+#[test]
+fn lg5_explicit_trade_clock_can_be_newer_than_depth() {
+    let (arena, mut intent) = fixture(1_000.0, 100);
+    arena.coins[0].last_tick_timestamp_ms.store(10, Relaxed);
+    intent.net_payoff = Some(NetPayoffEstimate {
+        sample_start_ms: 1,
+        sample_end_ms: 20,
+        as_of_ms: 20,
+        ..measured(&[0.004; 100])
+    });
+    // Boundary fixture for a decision triggered by a trade at t=20 while
+    // the latest depth event remains t=10. The event provides the clock.
+    let order = RiskEngine::new(1_000.0).evaluate_quantum_order_at(0, &intent, &arena, 20);
+    assert_interior_size(order, SignalType::Long);
+    assert_eq!(arena.coins[0].last_tick_timestamp_ms.load(Relaxed), 10);
+    assert_rejected(&arena, &intent, REJ_INVALID_INPUT);
 }

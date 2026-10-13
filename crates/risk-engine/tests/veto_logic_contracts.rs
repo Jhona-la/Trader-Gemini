@@ -34,6 +34,8 @@ fn fixture() -> (std::sync::Arc<GlobalArena>, SignalIntent) {
         ]);
     });
     let arena = GlobalArena::build_in_own_stack(13.0);
+    // Synthetic decision clock: the payoff cohort is available by 100_000 ms.
+    arena.coins[0].last_tick_timestamp_ms.store(100_000, Relaxed);
     arena.coins[0].current_price.store(100.0, Relaxed);
     arena.coins[0].current_atr.store(1.0, Relaxed);
     arena.coins[0].hurst_exponent.store(0.5, Relaxed);
@@ -193,6 +195,7 @@ pub fn spec_rejection_contract_handles_unregistered_coin() {
     // registrado (el fixture sólo registra la moneda 0).
     let (arena, mut intent) = fixture();
     intent.net_payoff = Some(net_payoff_fixture::positive(1, intent.signal));
+    arena.coins[1].last_tick_timestamp_ms.store(100_000, Relaxed);
     arena.coins[1].current_price.store(100.0, Relaxed);
     arena.coins[1].current_atr.store(1.0, Relaxed);
     arena.coins[1].hurst_exponent.store(0.5, Relaxed);

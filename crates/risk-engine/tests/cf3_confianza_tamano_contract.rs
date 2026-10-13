@@ -57,6 +57,8 @@ fn arena(capital: f64) -> Arc<GlobalArena> {
         }])
     });
     let a = GlobalArena::build_in_own_stack(capital);
+    // Synthetic decision clock; all payoff samples are available.
+    a.coins[0].last_tick_timestamp_ms.store(100_000, Relaxed);
     a.coins[0].current_price.store(100.0, Relaxed);
     a.coins[0].current_atr.store(1.0, Relaxed);
     a.coins[0].hurst_exponent.store(0.5, Relaxed);

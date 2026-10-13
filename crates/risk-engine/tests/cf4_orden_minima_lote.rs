@@ -81,6 +81,8 @@ fn poner_precio(arena: &GlobalArena, coin: usize, precio: f64) {
 /// Moneda con historial (fuera de la fase de sonda): 100 cierres, acierto
 /// 0,75 y PF 2.
 fn con_historial(arena: &GlobalArena, coin: usize) {
+    // Synthetic decision time for this coin's mature payoff cohort.
+    arena.coins[coin].last_tick_timestamp_ms.store(100_000, Relaxed);
     let m = &arena.coins[coin].metrics;
     m.trade_count.store(100, Relaxed);
     m.win_rate.store(0.75, Relaxed);

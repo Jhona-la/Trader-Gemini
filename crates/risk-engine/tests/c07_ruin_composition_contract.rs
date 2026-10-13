@@ -29,6 +29,8 @@ fn fixture(capital: f64, side: SignalType) -> (Arc<GlobalArena>, SignalIntent) {
     });
     let arena = GlobalArena::build_in_own_stack(capital);
     let coin = &arena.coins[0];
+    // Synthetic decision clock, independent of the intent payload.
+    coin.last_tick_timestamp_ms.store(100_000, Relaxed);
     coin.current_price.store(100.0, Relaxed);
     coin.current_atr.store(1.0, Relaxed);
     coin.hurst_exponent.store(0.5, Relaxed);

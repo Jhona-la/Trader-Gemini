@@ -64,6 +64,7 @@ fn arena_btc(cap: f64) -> Arc<GlobalArena> {
     arena.config.global_max_drawdown.store(0.10, Relaxed);
     arena.config.margin_cushion_pct.store(0.90, Relaxed);
     let c = &arena.coins[0];
+    c.last_tick_timestamp_ms.store(100_000, Relaxed);
     c.current_price.store(PRECIO, Relaxed);
     c.current_atr.store(PRECIO * ATR_PCT, Relaxed);
     c.metrics.trade_count.store(10, Relaxed);
