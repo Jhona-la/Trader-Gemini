@@ -1809,7 +1809,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // (2) drawdown vs límite del genoma sobre el pico observado,
         // (3) latencia obsoleta SOSTENIDA (3 strikes ≈ 15s).
         // Al disparar: kill-switch en arena + executor + FLATTEN de todo.
-        // LATCH: rearme solo reiniciando el proceso — decisión humana.
+        // LATCH: rearme sólo con decisión humana. Reiniciar el proceso basta
+        // para el disparo por STOP_TRADING.LOCK o por latencia. Para el de
+        // drawdown no (CL-99, CL-108): el pico y lo medido se guardan, y tras
+        // el reinicio la misma caída vuelve a disparar. Para rearmarlo hay que
+        // retirar `pico_capital.txt` del entorno, que es aceptar el capital
+        // actual como el nuevo pico (T1-07 de la Línea G).
         {
             let arena_imm = Arc::clone(&arena_real);
             let exec_imm = Arc::clone(&exec);
@@ -2009,7 +2014,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             esperar_auditoria_en_curso().await;
                             match executor.flatten_all_positions().await {
                                 Ok((syms, positions)) => telemetry_server::telemetry_log!(
-                                    "🧹 [SISTEMA INMUNE] Aplanado: {} símbolos con órdenes canceladas, {} posiciones cerradas, {} ranuras dejan de contar como reales. Reinicio manual para rearmar.",
+                                    "🧹 [SISTEMA INMUNE] Aplanado: {} símbolos con órdenes canceladas, {} posiciones cerradas, {} ranuras dejan de contar como reales. Rearme manual: si fue por drawdown, reiniciar no basta (el pico se guarda); hay que retirar pico_capital.txt del entorno, que acepta el capital actual como nuevo pico.",
                                     syms,
                                     positions,
                                     consumidas
