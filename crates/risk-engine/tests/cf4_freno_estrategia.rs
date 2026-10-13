@@ -78,7 +78,7 @@ fn cl107_falsa_alarma_y_deteccion_del_freno_de_la_estrategia() {
         let d0 = det(&mut azar, 0.0);
         let dneg = det(&mut azar, -0.10);
         println!(
-            "observado: stop {} %: falsa alarma {:.1} % en 2 000 operaciones con +0,30 R; detección (mediana) {d005} con +0,05 R, {d0} con E[R] = 0 y {dneg} con −0,10 R",
+            "observado: stop {} %: falsa alarma {:.1} % en 2 000 operaciones con +{VENTAJA_H0_ESTRATEGIA_R} R; detección (mediana) {d005} con +0,05 R, {d0} con E[R] = 0 y {dneg} con −0,10 R",
             sl * 100.0,
             fa * 100.0
         );
@@ -229,7 +229,7 @@ fn cl107_con_la_ventaja_de_h0_no_frena() {
         let gana = (n as f64 * p).fract() < p;
         f.registrar(if gana { w } else { -l }, w, l);
     }
-    println!("observado: con +0,30 R exacto, e = {:.4}", f.ville.e_value);
+    println!("observado: con +{VENTAJA_H0_ESTRATEGIA_R} R exactos, e = {:.4}", f.ville.e_value);
     assert!(!f.rechazada());
 }
 
@@ -238,8 +238,10 @@ fn cl107_con_la_ventaja_de_h0_no_frena() {
 /// estado restaurado, CL-108).
 #[test]
 fn cl107_el_host_no_aplana_por_el_freno_de_la_estrategia() {
-    let host = include_str!("../../../src/bin/god_engine.rs");
-    assert!(!host.contains("freno_estrategia.rechazada()"));
-    assert!(!host.contains("freno_estrategia.registrar"));
+    // T3-06 de la Línea G: sin comentarios, y cualquier uso del freno (antes
+    // se buscaba `rechazada()` con paréntesis y no se veía el acceso al
+    // campo). Desde CL-108f el host sólo nombra el resultado del arranque.
+    let host = codigo(include_str!("../../../src/bin/god_engine.rs"));
+    assert!(!host.contains("freno_estrategia"));
     assert!(!host.contains("REJ_ESTRATEGIA_FALSADA"));
 }

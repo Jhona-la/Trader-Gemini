@@ -373,7 +373,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         responsable: "CL-107 (Claude, Línea C), 2026-10-12",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: Some("cl107_falsa_alarma_y_deteccion_del_freno_de_la_estrategia"),
+        test: Some("cl107_con_la_estrategia_falsada_no_entra_nada_nuevo"),
         deuda: Some("el estado (proceso e y si está echado) se guarda entre reinicios con el resto del estado aprendido (CL-108); un freno echado sólo se suelta borrando el estado. Con resultados periódicos antipersistentes la apuesta adaptativa de VilleEProcess detecta más despacio (~550 cierres frente a ~117 con resultados aleatorios)"),
     },
     EntradaVeto {

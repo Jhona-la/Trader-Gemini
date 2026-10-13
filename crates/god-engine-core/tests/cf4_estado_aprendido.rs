@@ -77,8 +77,9 @@ fn con_historia() -> GodEngineCore {
     c
 }
 
-/// Lo que el núcleo sabe de ETH: (cierres, acierto, p calibrada de 0,5 a las
-/// 2 h del último dato, valor del freno, freno echado, riesgo medido).
+/// Lo que el núcleo sabe de ETH: (cierres, acierto, p calibrada de 0,5 a
+/// 2 min del último dato, valor del freno, freno echado, riesgo medido). El
+/// olvido a +7 días lo prueba `cl119_olvido_freno_completo_y_universo_reordenado`.
 fn huella(c: &GodEngineCore) -> (usize, f64, f64, f64, bool, f64) {
     (
         c.arena.coins[1].metrics.trade_count.load(Relaxed),
