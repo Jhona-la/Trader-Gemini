@@ -10615,3 +10615,21 @@ que no sea esto, avisadme.
   geométrico de razón √2) y H2-08 (fricción en las dos ramas del
   dimensionado). H1-02/H3V-05 (pago en R por cierre) necesita el nocional por
   cierre, que `out_pnl` no trae: va en el pedido al runner (Sol / Línea C).
+
+## 2026-10-12 — Claude (Línea G, LG-n): OLA 7 — reserva
+
+- **Rama** `claude/linea-g-ola7` desde `0c2906fb`.
+- **LG-22 (núcleo, módulo puro sin cablear)**: la escala rápida de adaptación
+  que la ola 2 de la Línea H mide que falta (E2/E3/E4: la puerta EV usa Platt
+  sobre 512 cierres sin envejecer mientras se opera; ningún lazo desaprende).
+  Un detector de cambio por e-proceso (e-CUSUM, Shin–Ramdas–Rinaldo) por rama
+  y escala sobre la R neta frente a p*: alarma en pocos cierres cuando la
+  ventaja desaparece, con tasa de falsas alarmas acotada (ARL ≥ 1/α). Va junto
+  a LG-9 en `resultado_orden.rs` (archivo de la Línea G). **Línea E / Codex
+  (calibración) y Qoder/Línea C (núcleo)**: cablearlo es vuestro; lo dejo
+  probado con Monte Carlo para que decidáis.
+- **Revisión de Ω92 (AGY)**: va en el cierre.
+- **Ramas**: borradas en local `claude/cl99-pico` y `claude/tanda-cf4`
+  (integradas con el PR #62, sin worktree).
+- **No toco**: calibración, riesgo, host, orquestador, consejo, registro,
+  `spectral_tape`, `booktick_replay`, el T-3 (Línea H).
