@@ -652,3 +652,150 @@ en el peldaño fuerte, con la p del oráculo, el techo es f < 57 pb, y con el
 acierto realizado y su cota (p_LCB ≈ 0,568) es f < 42 pb. La propuesta a la
 Línea C: retirar `fee_impact` en favor de la puerta EV con p_LCB (que hoy usa
 una p puntual y un multiplicador de fricción con literales, H2-09).
+
+## 15. Ola 7 (2026-10-12, base `0c2906fb`): la escala rápida de adaptación y su límite de información
+
+### 15.1 LG-22: detector de pérdida de ventaja (núcleo, sin cablear)
+
+La ola 2 de la Línea H mide que ningún lazo desaprende: la p de la puerta EV
+es un Platt sobre los últimos 512 cierres que no envejece mientras se opera
+(LH-12). En E4 (ventaja → antipersistencia), con el #62, el motor hace 41
+cierres al 31,7 % (×3,4 los del mismo tramo en frío), y sólo el freno de la
+estrategia (CL-107) lo para, al final del tramo. Su regla: hace falta una
+escala rápida por rama y escala, sobre la R neta frente a p*.
+
+`DetectorPerdidaDeVentaja` (`god-engine-core/src/resultado_orden.rs`, junto
+a LG-9) es esa escala, construida como e-detector (Shin–Ramdas–Rinaldo,
+NEJSDS 2023) para que sus falsas alarmas tengan nivel:
+
+- **H0**, por cierre y en orden de cierre: E[R_t | cierres previos,
+  geometría] ≥ μ. Con μ = 0 (`nuevo`) la fuente paga su fricción
+  (p ≥ p* = (SL + f)/(TP + SL)). Con `con_referencia(μ)`, conserva una
+  ventaja declarada de μ R.
+- **e-valor** del cierre: `e_t = 1 − λ·(r_t − μ)`, con `λ = φ/(r_max_t − μ)` y
+  `r_max_t = (TP − f)/SL` de esa orden, conocida al abrir (λ predecible).
+  Bajo H0, E[e_t] ≤ 1. Vale mientras `r − μ ≤ (r_max − μ)/φ_max`
+  (2,5 veces con φ_max = 0,4): por encima el e-valor se recortaría a 0, y
+  recortar las ganancias rompe la garantía. Con dos barreras no ocurre;
+  esos cierres se cuentan en `fuera_de_garantia`.
+- **e-CUSUM** por fracción φ ∈ {0,05; 0,1; 0,2; 0,4}:
+  `M_t = e_t·max(1, M_{t−1})`, `M_0 = 0`. Está acotado por el de
+  Shiryaev–Roberts, y la media de las cuatro fracciones es un e-detector:
+  alarmar en `M ≥ ARL` da un tiempo medio hasta la falsa alarma ≥ ARL cierres
+  para toda fuente que cumpla H0, sin fijar n. El suelo `max(1, ·)` olvida la
+  historia favorable: una racha ganadora larga no retrasa la alarma.
+- **`retardo_aproximado(rr, f_r, μ, E[R]_después, ARL)`** = ln(K·ARL)/g, una
+  aproximación pesimista (×1,3–1,6 sobre lo simulado en cambios pequeños).
+- **Por fuente y reiniciable** tras consumir la alarma. El freno de CL-107
+  falsa la estrategia entera con H0 = +0,30 R y queda echado. Quién consume la
+  alarma es decisión de sus dueños: Línea E / Codex (calibración) y Qoder /
+  Línea C (núcleo).
+
+**Pruebas** (11 en `resultado_orden`). Las tres mutaciones que la revisión
+dejó pasar en la primera versión ahora se detectan: quitar el suelo, desplazar
+la referencia y agregar con el máximo.
+
+| Prueba | Resultado |
+|---|---|
+| E[e] del primer cierre en la frontera (RR 2,25 y 5; μ = 0 y 0,3) | 1 exacto (1e-12); < 1 con ventaja |
+| ARL bajo H0 en la frontera, geometrías mezcladas | 3 813 cierres (cota 50) |
+| +0,2 R durante 600 cierres y luego −0,3 R (ARL 500, sin reinicio en el cambio) | 0/200 falsas alarmas; retardo 303 (aproximación 421) |
+| E4 (−0,24 R): μ = 0 y ARL 500 / μ = +0,3 R y ARL 20 | 480 / 56 cierres |
+| Inversión a −1 R | 45,6 cierres |
+| E[R] = 0: ventana de 512 negativa / detector (ARL 50) en alarma | 46 % del tiempo / 0,03 % de los cierres |
+| Suelo: tras 50 ganancias y una pérdida | el estadístico exacto de una sola pérdida |
+
+### 15.2 Lo que mide: la velocidad la fija la H0, y la escala del régimen no cabe en los cierres
+
+Corrijo lo que prometía la reserva («alarma en pocos cierres»). La R por
+cierre es dispersa (σ ≈ 1,58 R con RR 2,25): cada cierre informa poco y el
+retardo depende sobre todo de la referencia de la H0. Cierres hasta la
+alarma, simulados (RR 2,25, f = 0,27 R; 300–600 caminos):
+
+| H0 | ARL | −0,2 R | −0,24 R (E4) | −0,3 R | −1 R |
+|---|---|---|---|---|---|
+| μ = 0 (paga su fricción) | 500 | ≈ 670 | ≈ 470 | ≈ 310 | ≈ 46 |
+| μ = 0 | 20 | ≈ 220 | ≈ 176 | ≈ 127 | ≈ 25 |
+| μ = +0,3 R (la de CL-107) | 500 | ≈ 131 | ≈ 112 | ≈ 94 | ≈ 31 |
+| μ = +0,3 R | 20 | ≈ 63 | ≈ 55 | ≈ 48 | ≈ 17 |
+
+- **Con μ = 0**, ninguna prueba con nivel sobre la R de los cierres ve el E4
+  (41 cierres) a tiempo.
+- **Con la ventaja declarada como μ** se ve en decenas de cierres. El precio:
+  también alarma ante fuentes que siguen pagando su fricción con menos
+  ventaja (0 ≤ E[R] < μ). Es lo que hace CL-107, y por eso es la primera
+  puerta que reacciona en E4, al final del tramo.
+- **La escala del régimen (10–20 velas, la que pide la Línea H) no cabe en
+  los cierres**: el E4 cierra una vez cada ≈ 70 velas. Tampoco cabe en la
+  predicción por vela de una sola moneda. Un acierto direccional que cae a
+  0,317 aporta KL ≈ 0,069 nats por vela frente a 0,5 y ≈ 0,110 frente a una
+  ventaja declarada de 0,55; eso da ≈ 40–110 velas (estimación con velas
+  independientes). Si el cambio de estructura es común a las 13 monedas y se
+  agrega la evidencia, la información por vela se multiplica por 13:
+  ≈ 3–9 velas.
+- **Regla que sale de aquí**: la escala rápida tiene que agregar información
+  por hora, no reinterpretar los mismos cierres. Las fuentes son la predicción
+  frente a lo realizado en cada vela, la agregación entre monedas y escalas, y
+  el libro sombra de las intenciones vetadas
+  (`audit_engine::shadow_ledger::LibroSombra`, QS-R4a, sin gancho en el
+  núcleo; 929 rechazos en 50 h en frío, ≈ 18 por hora). LG-22 sirve tal cual
+  sobre cualquiera de esas series (el ARL se mide entonces en sus unidades) y,
+  sobre los cierres, para las inversiones y como prueba con nivel por fuente.
+
+### 15.3 Revisión de Ω92 (AGY)
+
+Leí el diff de `0b18e589` (`consejo_seniors.rs`) contra el riesgo vivo.
+
+- **F3.4-01, correcto.** `θ_i = Σ s_i·r / Σ |r|` acredita a cada asiento por
+  la esperanza de su apuesta direccional, no por acierto contra ½. Con |r|
+  constante se reduce exactamente al acierto, y con RR > 1 sube un asiento
+  que respalda una fuente rentable con acierto < 50 %. Es la regla que pidió
+  LF-14. Queda la selección: sólo aprende de lo ejecutado, igual que antes.
+- **F3.4-02, correcto.** El Auditor deja de co-vetar el riesgo causal que ya
+  veta `SeniorCausal`, y la supermayoría vuelve a poder anular un único veto.
+- **F3.4-06 sólo decide sin riesgo medido.**
+  - El umbral nuevo es `d*·(0,95 − 0,10·s) ∈ [0,537; 0,600]`, sobre la misma
+    caída que lee el riesgo (mismo pico, `lib.rs` ≈ 8196).
+  - El freno duro del riesgo (CL-106) es `min(K·r, d*)` con K ≈ 31–33 stops:
+    ≈ 7,8 % de la cuenta con stop del 0,5 % y ≈ 15 % con stop del 1 %. Con
+    riesgo medido, el riesgo rechaza muy por debajo de 0,54 y el veto del
+    consejo nunca es el que decide. Sólo manda en frío, cuando el freno es
+    d* = 0,632, en la franja [0,537; 0,632).
+  - Repite el dato: la caída queda vetada por dos componentes, contra el «un
+    dato, un veto» que el mismo commit aplica al Auditor.
+  - El literal `1 − 0,05^(1/3)` duplica
+    `risk_engine::drawdown::drawdown_de_falsacion`. Metacortex no depende de
+    risk-engine: si el riesgo cambia c o α, el consejo no se entera.
+- **Propuesta (AGY, consejo)**: pasar en el payload el umbral vivo del riesgo
+  (`umbral_freno_duro_de`) y que el consejo module la convicción relativa a él
+  sin vetar, o retirar el veto de caída del consejo y dejar su modulador por
+  racha. Cualquiera de las dos deja un solo veto sobre la caída.
+
+### 15.4 Revisión adversarial de LG-22 (tres lentes: estadística, código y pruebas, afirmaciones)
+
+**Sin HIGH.** El núcleo estadístico se confirmó: e-valor válido, cota de
+Shiryaev–Roberts, media de e-detectores, versión logarítmica equivalente
+(también con e = 0) y la inversa de p exacta. Lo corregido:
+
+- **Prueba del retardo (MED)**: reiniciaba el detector en el instante del
+  cambio, un dato que el detector real no tiene, y así no veía el suelo del
+  CUSUM. Ahora sólo se reinicia tras una alarma. Sin suelo, el retardo pasa
+  de ≈ 300 a ≈ 1 300 y la prueba falla.
+- **Cifras de E4 (MED)**: eran las anteriores al #62. Ahora son 41 cierres,
+  acierto 0,317 y 31 rechazos `estrategia_falsada` al final del tramo. La
+  comparación con CL-107 era incompleta: la diferencia está en la H0 (+0,30 R
+  frente a E[R] ≥ 0). De ahí sale la referencia μ.
+- **La prueba de ARL no tenía potencia (LOW)**: el ARL real es ≈ 78 veces la
+  cota. Se añade la igualdad exacta E[e] = 1 en la frontera.
+- **«≈ 1 000 cierres» venía de la aproximación (LOW)**: lo simulado es
+  ≈ 670. Las cifras de la tabla son ahora simuladas.
+- **El recorte `max(0)` limita la garantía (LOW)**: vale con
+  `r − μ ≤ (r_max − μ)/φ_max`. Está documentado y se cuenta en
+  `fuera_de_garantia`.
+- **`alarma(1.0)` con 0 cierres (LOW)**: ahora `M_0 = 0`.
+- **La demostración de la ventana no ejecutaba el detector (LOW)**: ahora lo
+  ejecuta sobre la misma serie.
+- **Contadores vitalicios (INFO)**: `cierres_totales` es el denominador de
+  `fuera_de_cota` y `fuera_de_garantia`.
+- **Filtración por orden de cierre con posiciones solapadas (INFO)**: queda
+  documentada. En simulación, el ARL no cambia de forma material.

@@ -59,7 +59,7 @@
 - **Siguiente**: LF-F4 (vetos: alcanzabilidad, frontera y recuperación desde
   cero posiciones) y revisión de cada ola nueva que entre sin PR.
 
-## Claude — Línea G (actualizado: 2026-10-12, sesión local, prefijo LG-n, rama claude/linea-g-revision-base)
+## Claude — Línea G (actualizado: 2026-10-12, sesión local, prefijo LG-n; olas 1–7 cerradas y fusionadas en main; ramas borradas)
 
 - **Ola 1 cerrada**: revisión desde la base del HEAD 86218456
   (`docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md`, datos en `docs/audit/linea_g/`).
@@ -88,10 +88,18 @@
   generador deja leer el estado oculto) y techo de fricción derivado
   (`fee_impact` retirable en favor del EV con p_LCB; la orden paga su fricción
   ⇔ p_LCB > (SL + f)/(TP + SL)).
-- **Siguiente**: comprobar la tanda CL-101…108 cuando entre; el examen del
-  demonio (C-F7) si la Línea C lo cede; replay canónico multiactivo (Sol);
-  revisar las pruebas de adaptación E1–E4 de la Línea H con el generador
-  corregido.
+- **Ola 7 cerrada**:
+  - LG-22: detector de pérdida de ventaja por e-CUSUM con nivel y
+    referencia μ, sin cablear.
+  - Su medida: la velocidad la fija la H0. El E4 se detecta en ≈ 470 cierres
+    con μ = 0 y en ≈ 55 con μ = +0,30 R. La escala del régimen exige agregar
+    información por hora (vela, monedas, libro sombra).
+  - Revisión de Ω92: el veto de caída del consejo sólo decide sin riesgo
+    medido.
+- **Siguiente**: el examen del demonio (C-F7) si la Línea C lo cede; replay
+  canónico multiactivo (Sol); medir con el T-3 v2 de la Línea H una serie
+  multiactivo con cambio común (la escala rápida agregada entre monedas);
+  revisar el cableado de LG-22 si sus dueños lo toman.
 - **No toca**: ATR/σ̂60 (Línea C), orquestador/espectro (Qoder), registro
   (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol).
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró

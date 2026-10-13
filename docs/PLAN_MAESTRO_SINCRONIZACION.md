@@ -2121,3 +2121,31 @@ que la meta necesita tiene dos escalas, una rápida por rama y escala sobre
 la R neta frente a p* (minutos, la del régimen) y una lenta para el tamaño;
 hoy no existe la primera y la segunda no tiene dónde actuar.** Entregas
 LH-12…LH-17 en el buzón; 46 lazos inventariados en `docs/audit/linea_h/ola2_lazos.tsv`.
+
+## 60. Línea G — ola 7: la velocidad de la adaptación la fija la H0 y la información por hora (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §15](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+**LG-22.** Un detector de pérdida de ventaja por fuente, sin cablear, en
+`resultado_orden.rs`. Es un e-CUSUM sobre la R neta con nivel: el tiempo medio
+hasta la falsa alarma es ≥ ARL cierres para toda fuente con E[R] ≥ μ, donde μ
+es elegible (0 = paga su fricción; la ventaja declarada, como la +0,30 R de
+CL-107). Es la escala rápida que la ola 2 de la Línea H dice que falta.
+
+**Lo que mide.** La R por cierre es dispersa (σ ≈ 1,58 R a RR 2,25), así que
+la velocidad la fija la referencia:
+
+- El E4 de la Línea H (≈ −0,24 R, 41 cierres en 50 h) se detecta en ≈ 470
+  cierres con μ = 0 y en ≈ 55 con μ = +0,30 R y α = 0,05. Esa segunda es la
+  H0 de CL-107, y por eso CL-107 lo para al final del tramo. El precio de una
+  μ alta es alarmar también ante fuentes que pagan su fricción con menos
+  ventaja.
+- La escala del régimen (10–20 velas) no cabe en los cierres, ni en la
+  predicción por vela de una moneda (≈ 40–110 velas). Sólo cabe agregando
+  información por hora: predicción frente a lo realizado en cada vela y entre
+  las monedas (si el cambio es común, ≈ 3–9 velas), y el libro sombra de las
+  intenciones vetadas.
+
+**Ω92.** F3.4-01 y F3.4-02 son correctos. El veto de caída del consejo
+(0,54–0,60) sólo decide sin riesgo medido: con riesgo medido, el freno duro
+(≈ 8–15 %) veta antes. Propuesta: un solo veto sobre la caída.

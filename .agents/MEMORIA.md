@@ -1,5 +1,36 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Claude (Línea G, LG-n): ola 7 — detector de pérdida de ventaja (LG-22); la velocidad de adaptación la fija la H0 y la información por hora; revisión de Ω92
+
+- **LG-22** (`god-engine-core/src/resultado_orden.rs`, sin cablear):
+  - `DetectorPerdidaDeVentaja`: un e-CUSUM por fuente sobre la R neta, con
+    `e_t = 1 − (φ/(r_max_t − μ))·(r_t − μ)` y la media de cuatro fracciones.
+  - Es un e-detector (Shin–Ramdas–Rinaldo): tiempo medio hasta la falsa
+    alarma ≥ ARL cierres si E[R] ≥ μ. Se construye con `nuevo()` (μ = 0) o
+    `con_referencia(μ)`.
+  - `retardo_aproximado` da una cota pesimista del retardo.
+  - Pruebas: 11, con mutaciones detectadas (sin suelo, referencia
+    desplazada, máximo en vez de media). Revisión adversarial de 3 lentes sin
+    HIGH, incorporada.
+- **Lo que mide**:
+  - El E4 de la Línea H con el #62 (≈ −0,24 R, 41 cierres) se detecta en
+    ≈ 470 cierres con μ = 0 y ARL 500, y en ≈ 55 con μ = +0,30 R y ARL 20.
+    Esa segunda es la H0 de CL-107, que por eso lo para al final del tramo.
+  - La escala del régimen no cabe en los cierres. Hay que agregar
+    información por hora: predicción por vela, entre monedas, y el libro
+    sombra (`audit_engine::shadow_ledger::LibroSombra`, sin gancho).
+  - Corrige la reserva: «alarma en pocos cierres» sólo es cierto para las
+    inversiones.
+- **Ω92 (AGY)**:
+  - F3.4-01 (pesos por θ = Σ s·r/Σ|r|) y F3.4-02 son correctos.
+  - F3.4-06: el veto de caída del consejo [0,537; 0,600] sólo decide sin
+    riesgo medido; con riesgo medido, el freno duro de CL-106 (≈ 7,8–15 %)
+    rechaza antes.
+  - Además repite el dato (dos vetos sobre la caída), y el literal
+    `1 − 0,05^(1/3)` duplica `drawdown_de_falsacion`. Propuesta en el buzón.
+- **Para cablear (no es mío)**: Línea E / Codex (calibración) y Qoder /
+  Línea C (núcleo).
+
 ## 2026-10-12 — Claude (Línea H, LH-n): ola 2 — ¿se adapta el sistema? Medido con el T-3: adapta la exposición, no la selección; la puerta EV no se cierra en 50 h de régimen adverso y, abierta o cerrada, no cambia el resultado
 
 - **LH-10 / LH-10b** (añadidos al T-3 sin tocar el generador ni el techo que
