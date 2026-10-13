@@ -1,0 +1,1364 @@
+{
+  "schema": 1,
+  "checked_utc": "2026-10-08T20:14:20.457953+00:00",
+  "scope": "Verified D1 publication and cleanup already completed. This next metadata commit is outside the D1 inventory and is verified separately; no self-referential SHA or new software/economic test claim.",
+  "publication": {
+    "checked_utc": "2026-10-08T20:06:23.708560+00:00",
+    "published_commit": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+    "published_tree": "7ad2ac40ca3113caf77bc56bc2f9de34e447d5b6",
+    "runtime_commit": "e9c6a435eb1780da7f2c6e29103f3bd7d227d94c",
+    "remote_before": "5842c8e33231131e5f2c5c600ffce15f1babaa55",
+    "remote_after": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+    "command": [
+      "git",
+      "push",
+      "origin",
+      "HEAD:refs/heads/main"
+    ],
+    "exit_code": 0,
+    "log_sha256": "b205ef50cefeacbf97bacf41f1681e608c07a6a6ec8357739f8b1b595a42be92",
+    "candidate_proof_sha256": "d0b5e76490e50348bfe03cc359f9d613269a8631443a37823a06b32eaa5cca78",
+    "identical_runtime_inputs": 532
+  },
+  "pr28": {
+    "url": "https://github.com/Jhona-la/Trader-Gemini/pull/28",
+    "state": "closed",
+    "merged": true,
+    "head_sha": "d0e02da1fc031bc45f89a14d4cb97a9b4a7c31e9",
+    "merge_commit_sha": "56eefd3145a39f856e769df43e21dc7fe0ee45c6",
+    "merged_at": "2026-10-08T20:06:24Z"
+  },
+  "compiled_input_equivalence": {
+    "created_utc": "2026-10-08T20:05:50.050116+00:00",
+    "tested_code_commit": "e9c6a435eb1780da7f2c6e29103f3bd7d227d94c",
+    "tested_code_tree": "10b8a427dfbdd5b203595b039b2dad50c69d6f68",
+    "documentation_candidate_tree": "7ad2ac40ca3113caf77bc56bc2f9de34e447d5b6",
+    "explicit_staged_paths": [
+      ".agents/MEMORIA.md",
+      "COORDINACION_CODEX_2026-09-28.md",
+      "docs/PLAN_AUDITORIA_BASE_2026-10-08.md",
+      "docs/PLAN_MAESTRO_QUANT_SR_2026-10-05.md",
+      "docs/PLAN_MAESTRO_SINCRONIZACION.md",
+      "docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md",
+      "docs/audit/CI_CANDIDATE_GUARD_R4_2026-10-07.md",
+      "docs/audit/COPY_PACKET_PREFLIGHT_REVIEW_2026-10-08.md",
+      "docs/audit/DELTA_INTEGRACION_2026-10-08.json",
+      "docs/audit/DEPTH_INDEPENDENT_REVIEW_2026-10-08.md",
+      "docs/audit/FUNDAMENTOS_R4_2026-10-07.md",
+      "docs/audit/PROTOCOLO_OOS_R4_2026-10-07.md",
+      "docs/audit/R2_SELECTION_STATS_AUDIT_2026-10-08.md",
+      "docs/audit/RECIBOS_DEPTH_R4_2026-10-08.json",
+      "docs/audit/RECIBOS_DIAGNOSTICOS_RUST_R4_2026-10-08.json",
+      "docs/audit/RECUPERACION_RUIN_R4_2026-10-07.md",
+      "docs/audit/RESIDUALES_INTEGRACION_R4_2026-10-07.md",
+      "docs/audit/REVALIDACION_FUNDAMENTOS_R4_2026-10-08.md",
+      "docs/audit/REVALIDACION_OOS_R4_2026-10-08.md",
+      "docs/audit/REVISION_CODIGO_2026-10-08.json",
+      "docs/audit/REVISION_MERGE_CORE_OU_REGISTRY_2026-10-08.md",
+      "docs/audit/REVISION_PAQUETE_CIENTIFICO_2026-10-08.md",
+      "docs/audit/REVISION_PARSER_DEPTH_R4_2026-10-08.md",
+      "scripts/audit_r4_depth_witness.py",
+      "scripts/audit_r4_rust_witnesses.py",
+      "scripts/fixtures/r4_depth_witness.rs",
+      "scripts/fixtures/r4_ou_witness.rs",
+      "scripts/fixtures/r4_selection_stats_witness.rs",
+      "docs/audit/RECIBO_ENSAMBLADO_R4_2026-10-08.json",
+      "docs/INTEGRACION_RAMAS_2026-10-07.md",
+      "docs/audit/RECIBOS_INTEGRACION_R4_2026-10-07.json"
+    ],
+    "entire_repository_diff_equals_explicit_paths": true,
+    "input_roots": [
+      "crates",
+      "src",
+      "Cargo.toml",
+      "Cargo.lock",
+      ".cargo",
+      "rust-toolchain.toml",
+      "build.rs",
+      "config_dir",
+      "tests",
+      "models",
+      "data",
+      "static"
+    ],
+    "identical_input_entries": 532,
+    "inputs_manifest_sha256": "eba336df6648a72f93904206159a0dc8c2b33f13cff7b11e17e44cc06fe92072",
+    "comparison": "mode, object kind and object ID",
+    "standalone_scripts_exclusion": "The five new scripts/fixtures files are manually invoked offline diagnostics. They are outside Cargo members/autodiscovered targets and are not referenced by crates/src/manifests/.cargo/.github (rg review). Cargo manifests, build scripts, inputs, configuration and assets are identical. They characterize known defects and do not alter pipeline behavior.",
+    "test_applicability": "Completed e9 tests remain applicable by identical complete tracked compilation inputs; not newly executed at the later documentation commit. External unrecorded state is outside Git proof."
+  },
+  "compiled_input_proof_sha256": "d0b5e76490e50348bfe03cc359f9d613269a8631443a37823a06b32eaa5cca78",
+  "root_main_fast_forward": {
+    "before_main": "90ef7af676bb5eaa7d16c35f117346aeb1d69ada",
+    "after_main": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+    "root": "C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini",
+    "dirty_status_sha256": "ab7abafbae4cbfff9e9ad08240387cec697d61ca4d396a7c2cdd7920b2fb3688",
+    "preserved_regular_file_sha256": {
+      "graphify-out/.graphify_labels.json": "651bc979d4ca8d001dfa1867b0c5fb8278f9ce69100b5e5987313fcf69493217",
+      "graphify-out/.graphify_labels.json.sig": "f3d25260d56c9f5c05001b6287c7b283d60359b0448f460d23ef083d086b61d7",
+      "graphify-out/GRAPH_REPORT.md": "cc4ef2b03a47cc6d8f9069e98cf28552ef185ac4e8b3e887736057ad506d56b3",
+      "graphify-out/cache/stat-index.json": "26dd66257b95ce677075a59bfb1fdf8e3ec481493e33d326a8411683a1545e03",
+      "graphify-out/graph.html": "87ad32fe710b8264a04ddb4342e7c9cfb8b5b9aeb09dcd638c5fb650c46b47b1",
+      "graphify-out/graph.json": "91cceb6f6d54dade22ef5d01c1877ec2a1a989ffba0a01df1a87bc814186d47b",
+      "graphify-out/manifest.json": "75e49f0311a9ad4ea2b2005c2ee27d1b26101b070f0c52a1084bbf4267228973",
+      ".workbuddy-ai/memory/2026-10-01.md": "554eff523d48df115264cc08445d9c219c0eeb946b342e1076a6fc71adc6a0e5",
+      ".workbuddy-ai/memory/2026-10-07.md": "8dd2836743c59ca7dbc1d84410953280d978549252108abfaddc92cdb7f814a3",
+      ".workbuddy-ai/memory/MEMORY.md": "cb55117d8f89cb0f29dd032073e2b86567141e8d6ec3b65747f920b1d01dd08d",
+      ".zcodeignore": "f213d19aff22b0f00e2d56c612791e0e1baff868239dd2d06f5e6654077655b6",
+      "graphify-out/.graph.html.stale": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "graphify-out/.graph.tmp.json": "37164e3a803cec0e6bfa75552599c67331c72c5bfd7206343bb731e63c639747",
+      "graphify-out/2026-10-06/.graphify_analysis.json": "8fcdefc1cd95235437fa4b763fbb1659a6fd2e8bb373b7e93dfe3031597cecbb",
+      "graphify-out/2026-10-06/.graphify_labels.json": "200692684edce1719e93cc70468499051d633d3fd6d5714d0e182cde8dd4c865",
+      "graphify-out/2026-10-06/GRAPH_REPORT.md": "9ca6962332dd4def439a3c9f937970fc028413d4c5a945f155d8a5de0578677e",
+      "graphify-out/2026-10-06/graph.json": "4a7a955a3cb2fec51d7106fbdb6f5bf9d40a5053c5b62daf43fe300b17b75638",
+      "graphify-out/2026-10-06/manifest.json": "6b829da7a91982f3e15e22d4c7f55e9901909275806c15b572ecfc7d8f6de55d",
+      "graphify-out/2026-10-07/.graphify_analysis.json": "62aee22045b956ef60b9112266d6c9ece856abaa100362e4fa687a0b6e30be82",
+      "graphify-out/2026-10-07/.graphify_labels.json": "651bc979d4ca8d001dfa1867b0c5fb8278f9ce69100b5e5987313fcf69493217",
+      "graphify-out/2026-10-07/GRAPH_REPORT.md": "cc4ef2b03a47cc6d8f9069e98cf28552ef185ac4e8b3e887736057ad506d56b3",
+      "graphify-out/2026-10-07/graph.json": "91cceb6f6d54dade22ef5d01c1877ec2a1a989ffba0a01df1a87bc814186d47b",
+      "graphify-out/2026-10-07/manifest.json": "75e49f0311a9ad4ea2b2005c2ee27d1b26101b070f0c52a1084bbf4267228973",
+      "outputs/Estado_validacion_Sol_2026-10-07.json": "a54af64d6f44db63e3e7a576dbaeec1eac9417d151db53f5e1abdc24337a20a2",
+      "outputs/Plan_auditoria_Sol_2026-10-07.html": "ae003df446df3c4acdf00c211f787313cdf37156e4654fe0fa986df8f255bffa",
+      "outputs/Plan_ejecucion_Sol_2026-10-07.md": "7d5ca347172bb93f58532e646c0021b028bcac11bfea91b0d1915b4d54ff69ea",
+      "outputs/Sol_closure_receipt_2026-10-07.txt": "776ab34ab92efaaecba5113f9996205b650d7829e4dd5929a3987f1d44aaa01c",
+      "outputs/Sol_integrated_audit_plan_2026-10-07.md": "39041b76fb06636cce66c9fd53b6e90d6d19c1e94dc7f5e760cbbf6b74ad053c",
+      "outputs/Sol_merge_review_2026-10-07.json": "7740a1116585f53689ac8aadf43a0f4cf8a5b5a6d03d1abcdcb02e0b649724fc",
+      "outputs/Sol_publication_receipt_2026-10-07.txt": "9cb6cda69bbddb6362be9516148507018ad9ce6d4cee3eeb1fef0ba1e6da7e96",
+      "outputs/Sol_published_audit_plan_2026-10-07.md": "e8c1e4755af451b189931ec327f675231c184ef9378882500819114765a2a073",
+      "outputs/Sol_published_inventory_2026-10-07.json": "e35b47d4625fd375f9922190a85273f456895fe6f368280258e50073a3b1ccd5",
+      "outputs/Sol_reporting_integration_2026-10-07.html": "f265683d5e57a36ba88393a04d1bc7705ee943396995da6f3999d6790b547245",
+      "rmetaiq29dn/full.rmeta": "81c3b0ffb951000fb9f47f79d9f13ff098dd9183c91081f049ec906c39ef17f2"
+    },
+    "untracked_directory_paths": [
+      ".antigravity/",
+      ".ola72/",
+      ".sol-plan-2026-10-07/"
+    ],
+    "incoming_paths_disjoint_from_all_dirty_prefixes": true,
+    "limit": "Ignored files and opaque worktree directories are retained, not recursively hashed; no file removals or writes beyond Git fast-forward."
+  },
+  "closed_codex_ref_cleanup": {
+    "after": {
+      "errors": [],
+      "main": {
+        "refs/heads/main": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+        "refs/remotes/origin/main": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd"
+      },
+      "snapshots": {
+        "codex/evidence-expiry-2026-10-04": {
+          "branch": null,
+          "files": [],
+          "head": "7aadf509f766a143880875210961c581c2ce75dd",
+          "index_entries_sha256": "83f0ab2b29cbea05bb501b09def431b10fe8d0a019b886a38f9e91ab6ee0aa87",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\evidence-expiry\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "codex/feature-clock-2026-10-04": {
+          "branch": null,
+          "files": [],
+          "head": "36b0063c60e271e1b9895aac40432e7ede959a2f",
+          "index_entries_sha256": "a9d6376cc1724ae1a8a9c828c36163eb0d17bef5e9041d12493901146cf05688",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\feature-clock\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "codex/forest-evaluation-2026-10-04": {
+          "branch": null,
+          "files": [],
+          "head": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15",
+          "index_entries_sha256": "885c7db00a01f4a61820c151b71702a1c9ab80cf30013335c32e08cd2e9445ce",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\forest-evaluation\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "codex/oos-partition-2026-10-04": {
+          "branch": null,
+          "files": [],
+          "head": "db3171c135d06bfd6498d061aceac9094d2b7e76",
+          "index_entries_sha256": "005d77956d899f0dec63d1d2bbe5dd33e24b09021597258f1d9d793d2e93e9b2",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\oos-partition\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "codex/quant-foundations-2026-10-07": {
+          "branch": null,
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/audit/PROTOCOLO_OOS_R4_2026-10-07.md",
+              "path_b64": "ZG9jcy9hdWRpdC9QUk9UT0NPTE9fT09TX1I0XzIwMjYtMTAtMDcubWQ=",
+              "sha256": "60bcff3fc19948b36a4a9fba64763167c8fd0e9706e22c88eb200731f32c1a9a",
+              "size": 9817
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "scripts/__pycache__/audit_inventory.cpython-314.pyc",
+              "path_b64": "c2NyaXB0cy9fX3B5Y2FjaGVfXy9hdWRpdF9pbnZlbnRvcnkuY3B5dGhvbi0zMTQucHlj",
+              "sha256": "4fce55ad7ee8ea76dcb36815bb941f97fe9f158658c60ba329ca34f1d19b3a67",
+              "size": 21024
+            }
+          ],
+          "head": "639c3e0d7c5f0dc8c376ac04af2a2fdc7a5bc5a9",
+          "index_entries_sha256": "2f86de92c3ddb2fcb0ec0c365e4bdf3c01f5bf596f997e3de419f61780e340f5",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini",
+          "status_z_b64": "Pz8gZG9jcy9hdWRpdC9QUk9UT0NPTE9fT09TX1I0XzIwMjYtMTAtMDcubWQAPz8gc2NyaXB0cy9fX3B5Y2FjaGVfXy9hdWRpdF9pbnZlbnRvcnkuY3B5dGhvbi0zMTQucHljAA==",
+          "status_z_sha256": "f5221f4b5606b06f09b351f9817c6462ce93b2de84bd3fe8da2e886dd6199160"
+        },
+        "codex/review-plan-2026-10-07": {
+          "branch": null,
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/c07_ruin_composition_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL2MwN19ydWluX2NvbXBvc2l0aW9uX2NvbnRyYWN0LnJz",
+              "sha256": "46c75f82e2465bb38c54668470c6479040c479e8426bac01c87ca6a285d21752",
+              "size": 6417
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/INVENTARIO_REVISION_2026-10-07.json",
+              "path_b64": "ZG9jcy9JTlZFTlRBUklPX1JFVklTSU9OXzIwMjYtMTAtMDcuanNvbg==",
+              "sha256": "1e32ff2b002740cd44de7d9f2800066f151437d2936c44d22d5e2db575325a4e",
+              "size": 364339
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md",
+              "path_b64": "ZG9jcy9QTEFOX1JFVklTSU9OX0FSQ0hJVk9fUE9SX0FSQ0hJVk9fMjAyNi0xMC0wNy5tZA==",
+              "sha256": "03a4b997938f0f662eaef950f776032993f280d15ce97334f358d7d3dabd2455",
+              "size": 13759
+            }
+          ],
+          "head": "a054495c70c54d83190337355aa35376cfae3c15",
+          "index_entries_sha256": "a370639b3d0348ca1a39e8f504146caf805d883ac5def58b078048184c451276",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\codex-review-2026-10-07\\Trader Gemini",
+          "status_z_b64": "Pz8gY3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL2MwN19ydWluX2NvbXBvc2l0aW9uX2NvbnRyYWN0LnJzAD8/IGRvY3MvSU5WRU5UQVJJT19SRVZJU0lPTl8yMDI2LTEwLTA3Lmpzb24APz8gZG9jcy9QTEFOX1JFVklTSU9OX0FSQ0hJVk9fUE9SX0FSQ0hJVk9fMjAyNi0xMC0wNy5tZAA=",
+          "status_z_sha256": "3f2bd6013485fe334107fc187a8deb276d6bebd7cee68259e28e800d52267d36"
+        },
+        "codex/root-audit-2026-10-04": {
+          "branch": null,
+          "files": [],
+          "head": "d0e02da1fc031bc45f89a14d4cb97a9b4a7c31e9",
+          "index_entries_sha256": "e5d872295c55ed06219b84336f6cc55656d0d92cae34a84488ed1e79f1f399ad",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\model-lineage-audit\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "codex/ruin-input-contract-2026-10-04": {
+          "branch": null,
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/src/lib.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3NyYy9saWIucnM=",
+              "sha256": "c8de752048650f41a5cf35310daaf0ae00184722f019ef8e611bcd2aeecbbc6a",
+              "size": 70880
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/src/ruin.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3NyYy9ydWluLnJz",
+              "sha256": "2e304b215316fe248d9850cd1306aaf2c8d80f85f61556fae97f5378037cb015",
+              "size": 4797
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/ruin_input_admission_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL3J1aW5faW5wdXRfYWRtaXNzaW9uX2NvbnRyYWN0LnJz",
+              "sha256": "ca841ca8d9900302da402716429aff2ad7f953004c7a75331b9dd543c9808ccd",
+              "size": 6391
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/ruin_input_helper_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL3J1aW5faW5wdXRfaGVscGVyX2NvbnRyYWN0LnJz",
+              "sha256": "88ee84a47257fbde261c3b50032b10752e2cab5bf7db7b563b7c1f220cf38ebf",
+              "size": 3558
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/AUDITORIA_RUIN_INPUT_2026-10-04.json",
+              "path_b64": "ZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lmpzb24=",
+              "sha256": "82cb09e625dfaf1271db438a20876de1daa0e2753f4d4769a3b3eb511781b203",
+              "size": 8976
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/AUDITORIA_RUIN_INPUT_2026-10-04.md",
+              "path_b64": "ZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lm1k",
+              "sha256": "ef8a7e53f8b8cd486ce6469333b1e385cd258e168d71d4faf7eb118f0a019082",
+              "size": 18141
+            }
+          ],
+          "head": "f608737803406e5e6f5cf0045755c1fbafb55558",
+          "index_entries_sha256": "6426d380fb7c39a020d1a60b424a47d93dbacc401e181242b70fc58df342efdb",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\ruin-input-contract\\Trader Gemini",
+          "status_z_b64": "IE0gY3JhdGVzL3Jpc2stZW5naW5lL3NyYy9saWIucnMAIE0gY3JhdGVzL3Jpc2stZW5naW5lL3NyYy9ydWluLnJzAD8/IGNyYXRlcy9yaXNrLWVuZ2luZS90ZXN0cy9ydWluX2lucHV0X2FkbWlzc2lvbl9jb250cmFjdC5ycwA/PyBjcmF0ZXMvcmlzay1lbmdpbmUvdGVzdHMvcnVpbl9pbnB1dF9oZWxwZXJfY29udHJhY3QucnMAPz8gZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lmpzb24APz8gZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lm1kAA==",
+          "status_z_sha256": "46d26e3296f11dc3538a3ea9f722ae3f826259adc9b60de4593156cc5ce95d75"
+        },
+        "codex/sa-score-monotonicity-2026-10-04": {
+          "branch": null,
+          "files": [],
+          "head": "94790c5c41186821c5f0931468f67ecf5a223a35",
+          "index_entries_sha256": "35f6e973c008b154eaa69960a64bda39a3bfe964cf3a872f6fbddc1b3e5dc964",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\sa-score-monotonicity\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "worktrees": [
+        {
+          "HEAD": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+          "branch": "refs/heads/main",
+          "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini"
+        },
+        {
+          "HEAD": "a054495c70c54d83190337355aa35376cfae3c15",
+          "detached": "",
+          "worktree": "C:/Users/jhona/.codex/worktrees/codex-review-2026-10-07/Trader Gemini"
+        },
+        {
+          "HEAD": "7aadf509f766a143880875210961c581c2ce75dd",
+          "detached": "",
+          "worktree": "C:/Users/jhona/.codex/worktrees/evidence-expiry/Trader Gemini"
+        },
+        {
+          "HEAD": "36b0063c60e271e1b9895aac40432e7ede959a2f",
+          "detached": "",
+          "worktree": "C:/Users/jhona/.codex/worktrees/feature-clock/Trader Gemini"
+        },
+        {
+          "HEAD": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15",
+          "detached": "",
+          "worktree": "C:/Users/jhona/.codex/worktrees/forest-evaluation/Trader Gemini"
+        },
+        {
+          "HEAD": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+          "branch": "refs/heads/codex/integration-recovery-2026-10-07",
+          "worktree": "C:/Users/jhona/.codex/worktrees/integration-recovery/Trader Gemini"
+        },
+        {
+          "HEAD": "d0e02da1fc031bc45f89a14d4cb97a9b4a7c31e9",
+          "detached": "",
+          "worktree": "C:/Users/jhona/.codex/worktrees/model-lineage-audit/Trader Gemini"
+        },
+        {
+          "HEAD": "db3171c135d06bfd6498d061aceac9094d2b7e76",
+          "detached": "",
+          "worktree": "C:/Users/jhona/.codex/worktrees/oos-partition/Trader Gemini"
+        },
+        {
+          "HEAD": "639c3e0d7c5f0dc8c376ac04af2a2fdc7a5bc5a9",
+          "detached": "",
+          "worktree": "C:/Users/jhona/.codex/worktrees/quant-foundations-2026-10-07/Trader Gemini"
+        },
+        {
+          "HEAD": "f608737803406e5e6f5cf0045755c1fbafb55558",
+          "detached": "",
+          "worktree": "C:/Users/jhona/.codex/worktrees/ruin-input-contract/Trader Gemini"
+        },
+        {
+          "HEAD": "94790c5c41186821c5f0931468f67ecf5a223a35",
+          "detached": "",
+          "worktree": "C:/Users/jhona/.codex/worktrees/sa-score-monotonicity/Trader Gemini"
+        },
+        {
+          "HEAD": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+          "branch": "refs/heads/antigravity/quant-sr-ronda6-f4-riesgo-ejecucion",
+          "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.antigravity"
+        },
+        {
+          "HEAD": "8a98ce7c364516ccbed20b2be56a5c63895d2376",
+          "branch": "refs/heads/qoder/ola72-lows-residuales",
+          "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.ola72"
+        },
+        {
+          "HEAD": "1bce45f2a7d06f89db30e59ba28f8f9fe31f959d",
+          "detached": "",
+          "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.sol-plan-2026-10-07"
+        }
+      ]
+    },
+    "before": {
+      "codex/evidence-expiry-2026-10-04": {
+        "branch": "refs/heads/codex/evidence-expiry-2026-10-04",
+        "files": [],
+        "head": "7aadf509f766a143880875210961c581c2ce75dd",
+        "index_entries_sha256": "83f0ab2b29cbea05bb501b09def431b10fe8d0a019b886a38f9e91ab6ee0aa87",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\evidence-expiry\\Trader Gemini",
+        "status_z_b64": "",
+        "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "codex/feature-clock-2026-10-04": {
+        "branch": "refs/heads/codex/feature-clock-2026-10-04",
+        "files": [],
+        "head": "36b0063c60e271e1b9895aac40432e7ede959a2f",
+        "index_entries_sha256": "a9d6376cc1724ae1a8a9c828c36163eb0d17bef5e9041d12493901146cf05688",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\feature-clock\\Trader Gemini",
+        "status_z_b64": "",
+        "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "codex/forest-evaluation-2026-10-04": {
+        "branch": "refs/heads/codex/forest-evaluation-2026-10-04",
+        "files": [],
+        "head": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15",
+        "index_entries_sha256": "885c7db00a01f4a61820c151b71702a1c9ab80cf30013335c32e08cd2e9445ce",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\forest-evaluation\\Trader Gemini",
+        "status_z_b64": "",
+        "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "codex/oos-partition-2026-10-04": {
+        "branch": "refs/heads/codex/oos-partition-2026-10-04",
+        "files": [],
+        "head": "db3171c135d06bfd6498d061aceac9094d2b7e76",
+        "index_entries_sha256": "005d77956d899f0dec63d1d2bbe5dd33e24b09021597258f1d9d793d2e93e9b2",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\oos-partition\\Trader Gemini",
+        "status_z_b64": "",
+        "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "codex/quant-foundations-2026-10-07": {
+        "branch": "refs/heads/codex/quant-foundations-2026-10-07",
+        "files": [
+          {
+            "kind": "file",
+            "mode": 438,
+            "path": "docs/audit/PROTOCOLO_OOS_R4_2026-10-07.md",
+            "path_b64": "ZG9jcy9hdWRpdC9QUk9UT0NPTE9fT09TX1I0XzIwMjYtMTAtMDcubWQ=",
+            "sha256": "60bcff3fc19948b36a4a9fba64763167c8fd0e9706e22c88eb200731f32c1a9a",
+            "size": 9817
+          },
+          {
+            "kind": "file",
+            "mode": 438,
+            "path": "scripts/__pycache__/audit_inventory.cpython-314.pyc",
+            "path_b64": "c2NyaXB0cy9fX3B5Y2FjaGVfXy9hdWRpdF9pbnZlbnRvcnkuY3B5dGhvbi0zMTQucHlj",
+            "sha256": "4fce55ad7ee8ea76dcb36815bb941f97fe9f158658c60ba329ca34f1d19b3a67",
+            "size": 21024
+          }
+        ],
+        "head": "639c3e0d7c5f0dc8c376ac04af2a2fdc7a5bc5a9",
+        "index_entries_sha256": "2f86de92c3ddb2fcb0ec0c365e4bdf3c01f5bf596f997e3de419f61780e340f5",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini",
+        "status_z_b64": "Pz8gZG9jcy9hdWRpdC9QUk9UT0NPTE9fT09TX1I0XzIwMjYtMTAtMDcubWQAPz8gc2NyaXB0cy9fX3B5Y2FjaGVfXy9hdWRpdF9pbnZlbnRvcnkuY3B5dGhvbi0zMTQucHljAA==",
+        "status_z_sha256": "f5221f4b5606b06f09b351f9817c6462ce93b2de84bd3fe8da2e886dd6199160"
+      },
+      "codex/review-plan-2026-10-07": {
+        "branch": "refs/heads/codex/review-plan-2026-10-07",
+        "files": [
+          {
+            "kind": "file",
+            "mode": 438,
+            "path": "crates/risk-engine/tests/c07_ruin_composition_contract.rs",
+            "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL2MwN19ydWluX2NvbXBvc2l0aW9uX2NvbnRyYWN0LnJz",
+            "sha256": "46c75f82e2465bb38c54668470c6479040c479e8426bac01c87ca6a285d21752",
+            "size": 6417
+          },
+          {
+            "kind": "file",
+            "mode": 438,
+            "path": "docs/INVENTARIO_REVISION_2026-10-07.json",
+            "path_b64": "ZG9jcy9JTlZFTlRBUklPX1JFVklTSU9OXzIwMjYtMTAtMDcuanNvbg==",
+            "sha256": "1e32ff2b002740cd44de7d9f2800066f151437d2936c44d22d5e2db575325a4e",
+            "size": 364339
+          },
+          {
+            "kind": "file",
+            "mode": 438,
+            "path": "docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md",
+            "path_b64": "ZG9jcy9QTEFOX1JFVklTSU9OX0FSQ0hJVk9fUE9SX0FSQ0hJVk9fMjAyNi0xMC0wNy5tZA==",
+            "sha256": "03a4b997938f0f662eaef950f776032993f280d15ce97334f358d7d3dabd2455",
+            "size": 13759
+          }
+        ],
+        "head": "a054495c70c54d83190337355aa35376cfae3c15",
+        "index_entries_sha256": "a370639b3d0348ca1a39e8f504146caf805d883ac5def58b078048184c451276",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\codex-review-2026-10-07\\Trader Gemini",
+        "status_z_b64": "Pz8gY3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL2MwN19ydWluX2NvbXBvc2l0aW9uX2NvbnRyYWN0LnJzAD8/IGRvY3MvSU5WRU5UQVJJT19SRVZJU0lPTl8yMDI2LTEwLTA3Lmpzb24APz8gZG9jcy9QTEFOX1JFVklTSU9OX0FSQ0hJVk9fUE9SX0FSQ0hJVk9fMjAyNi0xMC0wNy5tZAA=",
+        "status_z_sha256": "3f2bd6013485fe334107fc187a8deb276d6bebd7cee68259e28e800d52267d36"
+      },
+      "codex/root-audit-2026-10-04": {
+        "branch": "refs/heads/codex/root-audit-2026-10-04",
+        "files": [],
+        "head": "d0e02da1fc031bc45f89a14d4cb97a9b4a7c31e9",
+        "index_entries_sha256": "e5d872295c55ed06219b84336f6cc55656d0d92cae34a84488ed1e79f1f399ad",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\model-lineage-audit\\Trader Gemini",
+        "status_z_b64": "",
+        "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "codex/ruin-input-contract-2026-10-04": {
+        "branch": "refs/heads/codex/ruin-input-contract-2026-10-04",
+        "files": [
+          {
+            "kind": "file",
+            "mode": 438,
+            "path": "crates/risk-engine/src/lib.rs",
+            "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3NyYy9saWIucnM=",
+            "sha256": "c8de752048650f41a5cf35310daaf0ae00184722f019ef8e611bcd2aeecbbc6a",
+            "size": 70880
+          },
+          {
+            "kind": "file",
+            "mode": 438,
+            "path": "crates/risk-engine/src/ruin.rs",
+            "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3NyYy9ydWluLnJz",
+            "sha256": "2e304b215316fe248d9850cd1306aaf2c8d80f85f61556fae97f5378037cb015",
+            "size": 4797
+          },
+          {
+            "kind": "file",
+            "mode": 438,
+            "path": "crates/risk-engine/tests/ruin_input_admission_contract.rs",
+            "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL3J1aW5faW5wdXRfYWRtaXNzaW9uX2NvbnRyYWN0LnJz",
+            "sha256": "ca841ca8d9900302da402716429aff2ad7f953004c7a75331b9dd543c9808ccd",
+            "size": 6391
+          },
+          {
+            "kind": "file",
+            "mode": 438,
+            "path": "crates/risk-engine/tests/ruin_input_helper_contract.rs",
+            "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL3J1aW5faW5wdXRfaGVscGVyX2NvbnRyYWN0LnJz",
+            "sha256": "88ee84a47257fbde261c3b50032b10752e2cab5bf7db7b563b7c1f220cf38ebf",
+            "size": 3558
+          },
+          {
+            "kind": "file",
+            "mode": 438,
+            "path": "docs/AUDITORIA_RUIN_INPUT_2026-10-04.json",
+            "path_b64": "ZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lmpzb24=",
+            "sha256": "82cb09e625dfaf1271db438a20876de1daa0e2753f4d4769a3b3eb511781b203",
+            "size": 8976
+          },
+          {
+            "kind": "file",
+            "mode": 438,
+            "path": "docs/AUDITORIA_RUIN_INPUT_2026-10-04.md",
+            "path_b64": "ZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lm1k",
+            "sha256": "ef8a7e53f8b8cd486ce6469333b1e385cd258e168d71d4faf7eb118f0a019082",
+            "size": 18141
+          }
+        ],
+        "head": "f608737803406e5e6f5cf0045755c1fbafb55558",
+        "index_entries_sha256": "6426d380fb7c39a020d1a60b424a47d93dbacc401e181242b70fc58df342efdb",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\ruin-input-contract\\Trader Gemini",
+        "status_z_b64": "IE0gY3JhdGVzL3Jpc2stZW5naW5lL3NyYy9saWIucnMAIE0gY3JhdGVzL3Jpc2stZW5naW5lL3NyYy9ydWluLnJzAD8/IGNyYXRlcy9yaXNrLWVuZ2luZS90ZXN0cy9ydWluX2lucHV0X2FkbWlzc2lvbl9jb250cmFjdC5ycwA/PyBjcmF0ZXMvcmlzay1lbmdpbmUvdGVzdHMvcnVpbl9pbnB1dF9oZWxwZXJfY29udHJhY3QucnMAPz8gZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lmpzb24APz8gZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lm1kAA==",
+        "status_z_sha256": "46d26e3296f11dc3538a3ea9f722ae3f826259adc9b60de4593156cc5ce95d75"
+      },
+      "codex/sa-score-monotonicity-2026-10-04": {
+        "branch": "refs/heads/codex/sa-score-monotonicity-2026-10-04",
+        "files": [],
+        "head": "94790c5c41186821c5f0931468f67ecf5a223a35",
+        "index_entries_sha256": "35f6e973c008b154eaa69960a64bda39a3bfe964cf3a872f6fbddc1b3e5dc964",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\sa-score-monotonicity\\Trader Gemini",
+        "status_z_b64": "",
+        "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "candidates": [
+      {
+        "expected_head": "a054495c70c54d83190337355aa35376cfae3c15",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\codex-review-2026-10-07\\Trader Gemini",
+        "ref": "codex/review-plan-2026-10-07"
+      },
+      {
+        "expected_head": "d0e02da1fc031bc45f89a14d4cb97a9b4a7c31e9",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\model-lineage-audit\\Trader Gemini",
+        "ref": "codex/root-audit-2026-10-04"
+      },
+      {
+        "expected_head": "db3171c135d06bfd6498d061aceac9094d2b7e76",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\oos-partition\\Trader Gemini",
+        "ref": "codex/oos-partition-2026-10-04"
+      },
+      {
+        "expected_head": "94790c5c41186821c5f0931468f67ecf5a223a35",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\sa-score-monotonicity\\Trader Gemini",
+        "ref": "codex/sa-score-monotonicity-2026-10-04"
+      },
+      {
+        "expected_head": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\forest-evaluation\\Trader Gemini",
+        "ref": "codex/forest-evaluation-2026-10-04"
+      },
+      {
+        "expected_head": "f608737803406e5e6f5cf0045755c1fbafb55558",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\ruin-input-contract\\Trader Gemini",
+        "ref": "codex/ruin-input-contract-2026-10-04"
+      },
+      {
+        "expected_head": "36b0063c60e271e1b9895aac40432e7ede959a2f",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\feature-clock\\Trader Gemini",
+        "ref": "codex/feature-clock-2026-10-04"
+      },
+      {
+        "expected_head": "7aadf509f766a143880875210961c581c2ce75dd",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\evidence-expiry\\Trader Gemini",
+        "ref": "codex/evidence-expiry-2026-10-04"
+      },
+      {
+        "expected_head": "3139f444a2dcfd7b8ec1aca2aebb54c48ec46ff6",
+        "path": null,
+        "ref": "codex/model-reload-contract"
+      },
+      {
+        "expected_head": "639c3e0d7c5f0dc8c376ac04af2a2fdc7a5bc5a9",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini",
+        "ref": "codex/quant-foundations-2026-10-07"
+      }
+    ],
+    "limitations": [
+      "No network access: origin/main is only the locally available remote-tracking ref.",
+      "No transaction against concurrent writers; owners must remain inactive on candidates.",
+      "Ignored files are preserved without enumeration or hashing.",
+      "Unsupported directories/submodules/reparse points in status fail closed.",
+      "No rollback or automatic retry after a partial apply; inspect receipt first."
+    ],
+    "mode": "apply",
+    "preflight": {
+      "errors": [],
+      "main": {
+        "refs/heads/main": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+        "refs/remotes/origin/main": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd"
+      },
+      "worktrees": [
+        {
+          "HEAD": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+          "branch": "refs/heads/main",
+          "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini"
+        },
+        {
+          "HEAD": "a054495c70c54d83190337355aa35376cfae3c15",
+          "branch": "refs/heads/codex/review-plan-2026-10-07",
+          "worktree": "C:/Users/jhona/.codex/worktrees/codex-review-2026-10-07/Trader Gemini"
+        },
+        {
+          "HEAD": "7aadf509f766a143880875210961c581c2ce75dd",
+          "branch": "refs/heads/codex/evidence-expiry-2026-10-04",
+          "worktree": "C:/Users/jhona/.codex/worktrees/evidence-expiry/Trader Gemini"
+        },
+        {
+          "HEAD": "36b0063c60e271e1b9895aac40432e7ede959a2f",
+          "branch": "refs/heads/codex/feature-clock-2026-10-04",
+          "worktree": "C:/Users/jhona/.codex/worktrees/feature-clock/Trader Gemini"
+        },
+        {
+          "HEAD": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15",
+          "branch": "refs/heads/codex/forest-evaluation-2026-10-04",
+          "worktree": "C:/Users/jhona/.codex/worktrees/forest-evaluation/Trader Gemini"
+        },
+        {
+          "HEAD": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+          "branch": "refs/heads/codex/integration-recovery-2026-10-07",
+          "worktree": "C:/Users/jhona/.codex/worktrees/integration-recovery/Trader Gemini"
+        },
+        {
+          "HEAD": "d0e02da1fc031bc45f89a14d4cb97a9b4a7c31e9",
+          "branch": "refs/heads/codex/root-audit-2026-10-04",
+          "worktree": "C:/Users/jhona/.codex/worktrees/model-lineage-audit/Trader Gemini"
+        },
+        {
+          "HEAD": "db3171c135d06bfd6498d061aceac9094d2b7e76",
+          "branch": "refs/heads/codex/oos-partition-2026-10-04",
+          "worktree": "C:/Users/jhona/.codex/worktrees/oos-partition/Trader Gemini"
+        },
+        {
+          "HEAD": "639c3e0d7c5f0dc8c376ac04af2a2fdc7a5bc5a9",
+          "branch": "refs/heads/codex/quant-foundations-2026-10-07",
+          "worktree": "C:/Users/jhona/.codex/worktrees/quant-foundations-2026-10-07/Trader Gemini"
+        },
+        {
+          "HEAD": "f608737803406e5e6f5cf0045755c1fbafb55558",
+          "branch": "refs/heads/codex/ruin-input-contract-2026-10-04",
+          "worktree": "C:/Users/jhona/.codex/worktrees/ruin-input-contract/Trader Gemini"
+        },
+        {
+          "HEAD": "94790c5c41186821c5f0931468f67ecf5a223a35",
+          "branch": "refs/heads/codex/sa-score-monotonicity-2026-10-04",
+          "worktree": "C:/Users/jhona/.codex/worktrees/sa-score-monotonicity/Trader Gemini"
+        },
+        {
+          "HEAD": "5842c8e33231131e5f2c5c600ffce15f1babaa55",
+          "branch": "refs/heads/antigravity/quant-sr-ronda6-f9-honestidad-tests",
+          "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.antigravity"
+        },
+        {
+          "HEAD": "8a98ce7c364516ccbed20b2be56a5c63895d2376",
+          "branch": "refs/heads/qoder/ola72-lows-residuales",
+          "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.ola72"
+        },
+        {
+          "HEAD": "1bce45f2a7d06f89db30e59ba28f8f9fe31f959d",
+          "detached": "",
+          "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.sol-plan-2026-10-07"
+        }
+      ]
+    },
+    "repository": "C:\\Users\\jhona\\Documents\\Proyectos\\Trader Gemini",
+    "schema_version": 1,
+    "script_sha256": "fafacf86d22f65511c340abc19abf224243a8a81d33236e484fd5ecd17304a57",
+    "started_utc": "2026-10-08T20:07:47.226862+00:00",
+    "state": "complete",
+    "steps": [
+      {
+        "after_delete": {
+          "branch": null,
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/c07_ruin_composition_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL2MwN19ydWluX2NvbXBvc2l0aW9uX2NvbnRyYWN0LnJz",
+              "sha256": "46c75f82e2465bb38c54668470c6479040c479e8426bac01c87ca6a285d21752",
+              "size": 6417
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/INVENTARIO_REVISION_2026-10-07.json",
+              "path_b64": "ZG9jcy9JTlZFTlRBUklPX1JFVklTSU9OXzIwMjYtMTAtMDcuanNvbg==",
+              "sha256": "1e32ff2b002740cd44de7d9f2800066f151437d2936c44d22d5e2db575325a4e",
+              "size": 364339
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md",
+              "path_b64": "ZG9jcy9QTEFOX1JFVklTSU9OX0FSQ0hJVk9fUE9SX0FSQ0hJVk9fMjAyNi0xMC0wNy5tZA==",
+              "sha256": "03a4b997938f0f662eaef950f776032993f280d15ce97334f358d7d3dabd2455",
+              "size": 13759
+            }
+          ],
+          "head": "a054495c70c54d83190337355aa35376cfae3c15",
+          "index_entries_sha256": "a370639b3d0348ca1a39e8f504146caf805d883ac5def58b078048184c451276",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\codex-review-2026-10-07\\Trader Gemini",
+          "status_z_b64": "Pz8gY3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL2MwN19ydWluX2NvbXBvc2l0aW9uX2NvbnRyYWN0LnJzAD8/IGRvY3MvSU5WRU5UQVJJT19SRVZJU0lPTl8yMDI2LTEwLTA3Lmpzb24APz8gZG9jcy9QTEFOX1JFVklTSU9OX0FSQ0hJVk9fUE9SX0FSQ0hJVk9fMjAyNi0xMC0wNy5tZAA=",
+          "status_z_sha256": "3f2bd6013485fe334107fc187a8deb276d6bebd7cee68259e28e800d52267d36"
+        },
+        "after_detach": {
+          "branch": null,
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/c07_ruin_composition_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL2MwN19ydWluX2NvbXBvc2l0aW9uX2NvbnRyYWN0LnJz",
+              "sha256": "46c75f82e2465bb38c54668470c6479040c479e8426bac01c87ca6a285d21752",
+              "size": 6417
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/INVENTARIO_REVISION_2026-10-07.json",
+              "path_b64": "ZG9jcy9JTlZFTlRBUklPX1JFVklTSU9OXzIwMjYtMTAtMDcuanNvbg==",
+              "sha256": "1e32ff2b002740cd44de7d9f2800066f151437d2936c44d22d5e2db575325a4e",
+              "size": 364339
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md",
+              "path_b64": "ZG9jcy9QTEFOX1JFVklTSU9OX0FSQ0hJVk9fUE9SX0FSQ0hJVk9fMjAyNi0xMC0wNy5tZA==",
+              "sha256": "03a4b997938f0f662eaef950f776032993f280d15ce97334f358d7d3dabd2455",
+              "size": 13759
+            }
+          ],
+          "head": "a054495c70c54d83190337355aa35376cfae3c15",
+          "index_entries_sha256": "a370639b3d0348ca1a39e8f504146caf805d883ac5def58b078048184c451276",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\codex-review-2026-10-07\\Trader Gemini",
+          "status_z_b64": "Pz8gY3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL2MwN19ydWluX2NvbXBvc2l0aW9uX2NvbnRyYWN0LnJzAD8/IGRvY3MvSU5WRU5UQVJJT19SRVZJU0lPTl8yMDI2LTEwLTA3Lmpzb24APz8gZG9jcy9QTEFOX1JFVklTSU9OX0FSQ0hJVk9fUE9SX0FSQ0hJVk9fMjAyNi0xMC0wNy5tZAA=",
+          "status_z_sha256": "3f2bd6013485fe334107fc187a8deb276d6bebd7cee68259e28e800d52267d36"
+        },
+        "before_detach": {
+          "branch": "refs/heads/codex/review-plan-2026-10-07",
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/c07_ruin_composition_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL2MwN19ydWluX2NvbXBvc2l0aW9uX2NvbnRyYWN0LnJz",
+              "sha256": "46c75f82e2465bb38c54668470c6479040c479e8426bac01c87ca6a285d21752",
+              "size": 6417
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/INVENTARIO_REVISION_2026-10-07.json",
+              "path_b64": "ZG9jcy9JTlZFTlRBUklPX1JFVklTSU9OXzIwMjYtMTAtMDcuanNvbg==",
+              "sha256": "1e32ff2b002740cd44de7d9f2800066f151437d2936c44d22d5e2db575325a4e",
+              "size": 364339
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md",
+              "path_b64": "ZG9jcy9QTEFOX1JFVklTSU9OX0FSQ0hJVk9fUE9SX0FSQ0hJVk9fMjAyNi0xMC0wNy5tZA==",
+              "sha256": "03a4b997938f0f662eaef950f776032993f280d15ce97334f358d7d3dabd2455",
+              "size": 13759
+            }
+          ],
+          "head": "a054495c70c54d83190337355aa35376cfae3c15",
+          "index_entries_sha256": "a370639b3d0348ca1a39e8f504146caf805d883ac5def58b078048184c451276",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\codex-review-2026-10-07\\Trader Gemini",
+          "status_z_b64": "Pz8gY3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL2MwN19ydWluX2NvbXBvc2l0aW9uX2NvbnRyYWN0LnJzAD8/IGRvY3MvSU5WRU5UQVJJT19SRVZJU0lPTl8yMDI2LTEwLTA3Lmpzb24APz8gZG9jcy9QTEFOX1JFVklTSU9OX0FSQ0hJVk9fUE9SX0FSQ0hJVk9fMjAyNi0xMC0wNy5tZAA=",
+          "status_z_sha256": "3f2bd6013485fe334107fc187a8deb276d6bebd7cee68259e28e800d52267d36"
+        },
+        "head": "a054495c70c54d83190337355aa35376cfae3c15",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\codex-review-2026-10-07\\Trader Gemini",
+        "ref": "codex/review-plan-2026-10-07",
+        "state": "complete"
+      },
+      {
+        "after_delete": {
+          "branch": null,
+          "files": [],
+          "head": "d0e02da1fc031bc45f89a14d4cb97a9b4a7c31e9",
+          "index_entries_sha256": "e5d872295c55ed06219b84336f6cc55656d0d92cae34a84488ed1e79f1f399ad",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\model-lineage-audit\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "after_detach": {
+          "branch": null,
+          "files": [],
+          "head": "d0e02da1fc031bc45f89a14d4cb97a9b4a7c31e9",
+          "index_entries_sha256": "e5d872295c55ed06219b84336f6cc55656d0d92cae34a84488ed1e79f1f399ad",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\model-lineage-audit\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "before_detach": {
+          "branch": "refs/heads/codex/root-audit-2026-10-04",
+          "files": [],
+          "head": "d0e02da1fc031bc45f89a14d4cb97a9b4a7c31e9",
+          "index_entries_sha256": "e5d872295c55ed06219b84336f6cc55656d0d92cae34a84488ed1e79f1f399ad",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\model-lineage-audit\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "head": "d0e02da1fc031bc45f89a14d4cb97a9b4a7c31e9",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\model-lineage-audit\\Trader Gemini",
+        "ref": "codex/root-audit-2026-10-04",
+        "state": "complete"
+      },
+      {
+        "after_delete": {
+          "branch": null,
+          "files": [],
+          "head": "db3171c135d06bfd6498d061aceac9094d2b7e76",
+          "index_entries_sha256": "005d77956d899f0dec63d1d2bbe5dd33e24b09021597258f1d9d793d2e93e9b2",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\oos-partition\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "after_detach": {
+          "branch": null,
+          "files": [],
+          "head": "db3171c135d06bfd6498d061aceac9094d2b7e76",
+          "index_entries_sha256": "005d77956d899f0dec63d1d2bbe5dd33e24b09021597258f1d9d793d2e93e9b2",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\oos-partition\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "before_detach": {
+          "branch": "refs/heads/codex/oos-partition-2026-10-04",
+          "files": [],
+          "head": "db3171c135d06bfd6498d061aceac9094d2b7e76",
+          "index_entries_sha256": "005d77956d899f0dec63d1d2bbe5dd33e24b09021597258f1d9d793d2e93e9b2",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\oos-partition\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "head": "db3171c135d06bfd6498d061aceac9094d2b7e76",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\oos-partition\\Trader Gemini",
+        "ref": "codex/oos-partition-2026-10-04",
+        "state": "complete"
+      },
+      {
+        "after_delete": {
+          "branch": null,
+          "files": [],
+          "head": "94790c5c41186821c5f0931468f67ecf5a223a35",
+          "index_entries_sha256": "35f6e973c008b154eaa69960a64bda39a3bfe964cf3a872f6fbddc1b3e5dc964",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\sa-score-monotonicity\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "after_detach": {
+          "branch": null,
+          "files": [],
+          "head": "94790c5c41186821c5f0931468f67ecf5a223a35",
+          "index_entries_sha256": "35f6e973c008b154eaa69960a64bda39a3bfe964cf3a872f6fbddc1b3e5dc964",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\sa-score-monotonicity\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "before_detach": {
+          "branch": "refs/heads/codex/sa-score-monotonicity-2026-10-04",
+          "files": [],
+          "head": "94790c5c41186821c5f0931468f67ecf5a223a35",
+          "index_entries_sha256": "35f6e973c008b154eaa69960a64bda39a3bfe964cf3a872f6fbddc1b3e5dc964",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\sa-score-monotonicity\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "head": "94790c5c41186821c5f0931468f67ecf5a223a35",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\sa-score-monotonicity\\Trader Gemini",
+        "ref": "codex/sa-score-monotonicity-2026-10-04",
+        "state": "complete"
+      },
+      {
+        "after_delete": {
+          "branch": null,
+          "files": [],
+          "head": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15",
+          "index_entries_sha256": "885c7db00a01f4a61820c151b71702a1c9ab80cf30013335c32e08cd2e9445ce",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\forest-evaluation\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "after_detach": {
+          "branch": null,
+          "files": [],
+          "head": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15",
+          "index_entries_sha256": "885c7db00a01f4a61820c151b71702a1c9ab80cf30013335c32e08cd2e9445ce",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\forest-evaluation\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "before_detach": {
+          "branch": "refs/heads/codex/forest-evaluation-2026-10-04",
+          "files": [],
+          "head": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15",
+          "index_entries_sha256": "885c7db00a01f4a61820c151b71702a1c9ab80cf30013335c32e08cd2e9445ce",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\forest-evaluation\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "head": "cace007d7f790b4b0d31a8038e1b8d9a81f90e15",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\forest-evaluation\\Trader Gemini",
+        "ref": "codex/forest-evaluation-2026-10-04",
+        "state": "complete"
+      },
+      {
+        "after_delete": {
+          "branch": null,
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/src/lib.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3NyYy9saWIucnM=",
+              "sha256": "c8de752048650f41a5cf35310daaf0ae00184722f019ef8e611bcd2aeecbbc6a",
+              "size": 70880
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/src/ruin.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3NyYy9ydWluLnJz",
+              "sha256": "2e304b215316fe248d9850cd1306aaf2c8d80f85f61556fae97f5378037cb015",
+              "size": 4797
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/ruin_input_admission_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL3J1aW5faW5wdXRfYWRtaXNzaW9uX2NvbnRyYWN0LnJz",
+              "sha256": "ca841ca8d9900302da402716429aff2ad7f953004c7a75331b9dd543c9808ccd",
+              "size": 6391
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/ruin_input_helper_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL3J1aW5faW5wdXRfaGVscGVyX2NvbnRyYWN0LnJz",
+              "sha256": "88ee84a47257fbde261c3b50032b10752e2cab5bf7db7b563b7c1f220cf38ebf",
+              "size": 3558
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/AUDITORIA_RUIN_INPUT_2026-10-04.json",
+              "path_b64": "ZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lmpzb24=",
+              "sha256": "82cb09e625dfaf1271db438a20876de1daa0e2753f4d4769a3b3eb511781b203",
+              "size": 8976
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/AUDITORIA_RUIN_INPUT_2026-10-04.md",
+              "path_b64": "ZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lm1k",
+              "sha256": "ef8a7e53f8b8cd486ce6469333b1e385cd258e168d71d4faf7eb118f0a019082",
+              "size": 18141
+            }
+          ],
+          "head": "f608737803406e5e6f5cf0045755c1fbafb55558",
+          "index_entries_sha256": "6426d380fb7c39a020d1a60b424a47d93dbacc401e181242b70fc58df342efdb",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\ruin-input-contract\\Trader Gemini",
+          "status_z_b64": "IE0gY3JhdGVzL3Jpc2stZW5naW5lL3NyYy9saWIucnMAIE0gY3JhdGVzL3Jpc2stZW5naW5lL3NyYy9ydWluLnJzAD8/IGNyYXRlcy9yaXNrLWVuZ2luZS90ZXN0cy9ydWluX2lucHV0X2FkbWlzc2lvbl9jb250cmFjdC5ycwA/PyBjcmF0ZXMvcmlzay1lbmdpbmUvdGVzdHMvcnVpbl9pbnB1dF9oZWxwZXJfY29udHJhY3QucnMAPz8gZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lmpzb24APz8gZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lm1kAA==",
+          "status_z_sha256": "46d26e3296f11dc3538a3ea9f722ae3f826259adc9b60de4593156cc5ce95d75"
+        },
+        "after_detach": {
+          "branch": null,
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/src/lib.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3NyYy9saWIucnM=",
+              "sha256": "c8de752048650f41a5cf35310daaf0ae00184722f019ef8e611bcd2aeecbbc6a",
+              "size": 70880
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/src/ruin.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3NyYy9ydWluLnJz",
+              "sha256": "2e304b215316fe248d9850cd1306aaf2c8d80f85f61556fae97f5378037cb015",
+              "size": 4797
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/ruin_input_admission_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL3J1aW5faW5wdXRfYWRtaXNzaW9uX2NvbnRyYWN0LnJz",
+              "sha256": "ca841ca8d9900302da402716429aff2ad7f953004c7a75331b9dd543c9808ccd",
+              "size": 6391
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/ruin_input_helper_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL3J1aW5faW5wdXRfaGVscGVyX2NvbnRyYWN0LnJz",
+              "sha256": "88ee84a47257fbde261c3b50032b10752e2cab5bf7db7b563b7c1f220cf38ebf",
+              "size": 3558
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/AUDITORIA_RUIN_INPUT_2026-10-04.json",
+              "path_b64": "ZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lmpzb24=",
+              "sha256": "82cb09e625dfaf1271db438a20876de1daa0e2753f4d4769a3b3eb511781b203",
+              "size": 8976
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/AUDITORIA_RUIN_INPUT_2026-10-04.md",
+              "path_b64": "ZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lm1k",
+              "sha256": "ef8a7e53f8b8cd486ce6469333b1e385cd258e168d71d4faf7eb118f0a019082",
+              "size": 18141
+            }
+          ],
+          "head": "f608737803406e5e6f5cf0045755c1fbafb55558",
+          "index_entries_sha256": "6426d380fb7c39a020d1a60b424a47d93dbacc401e181242b70fc58df342efdb",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\ruin-input-contract\\Trader Gemini",
+          "status_z_b64": "IE0gY3JhdGVzL3Jpc2stZW5naW5lL3NyYy9saWIucnMAIE0gY3JhdGVzL3Jpc2stZW5naW5lL3NyYy9ydWluLnJzAD8/IGNyYXRlcy9yaXNrLWVuZ2luZS90ZXN0cy9ydWluX2lucHV0X2FkbWlzc2lvbl9jb250cmFjdC5ycwA/PyBjcmF0ZXMvcmlzay1lbmdpbmUvdGVzdHMvcnVpbl9pbnB1dF9oZWxwZXJfY29udHJhY3QucnMAPz8gZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lmpzb24APz8gZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lm1kAA==",
+          "status_z_sha256": "46d26e3296f11dc3538a3ea9f722ae3f826259adc9b60de4593156cc5ce95d75"
+        },
+        "before_detach": {
+          "branch": "refs/heads/codex/ruin-input-contract-2026-10-04",
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/src/lib.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3NyYy9saWIucnM=",
+              "sha256": "c8de752048650f41a5cf35310daaf0ae00184722f019ef8e611bcd2aeecbbc6a",
+              "size": 70880
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/src/ruin.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3NyYy9ydWluLnJz",
+              "sha256": "2e304b215316fe248d9850cd1306aaf2c8d80f85f61556fae97f5378037cb015",
+              "size": 4797
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/ruin_input_admission_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL3J1aW5faW5wdXRfYWRtaXNzaW9uX2NvbnRyYWN0LnJz",
+              "sha256": "ca841ca8d9900302da402716429aff2ad7f953004c7a75331b9dd543c9808ccd",
+              "size": 6391
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "crates/risk-engine/tests/ruin_input_helper_contract.rs",
+              "path_b64": "Y3JhdGVzL3Jpc2stZW5naW5lL3Rlc3RzL3J1aW5faW5wdXRfaGVscGVyX2NvbnRyYWN0LnJz",
+              "sha256": "88ee84a47257fbde261c3b50032b10752e2cab5bf7db7b563b7c1f220cf38ebf",
+              "size": 3558
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/AUDITORIA_RUIN_INPUT_2026-10-04.json",
+              "path_b64": "ZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lmpzb24=",
+              "sha256": "82cb09e625dfaf1271db438a20876de1daa0e2753f4d4769a3b3eb511781b203",
+              "size": 8976
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/AUDITORIA_RUIN_INPUT_2026-10-04.md",
+              "path_b64": "ZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lm1k",
+              "sha256": "ef8a7e53f8b8cd486ce6469333b1e385cd258e168d71d4faf7eb118f0a019082",
+              "size": 18141
+            }
+          ],
+          "head": "f608737803406e5e6f5cf0045755c1fbafb55558",
+          "index_entries_sha256": "6426d380fb7c39a020d1a60b424a47d93dbacc401e181242b70fc58df342efdb",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\ruin-input-contract\\Trader Gemini",
+          "status_z_b64": "IE0gY3JhdGVzL3Jpc2stZW5naW5lL3NyYy9saWIucnMAIE0gY3JhdGVzL3Jpc2stZW5naW5lL3NyYy9ydWluLnJzAD8/IGNyYXRlcy9yaXNrLWVuZ2luZS90ZXN0cy9ydWluX2lucHV0X2FkbWlzc2lvbl9jb250cmFjdC5ycwA/PyBjcmF0ZXMvcmlzay1lbmdpbmUvdGVzdHMvcnVpbl9pbnB1dF9oZWxwZXJfY29udHJhY3QucnMAPz8gZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lmpzb24APz8gZG9jcy9BVURJVE9SSUFfUlVJTl9JTlBVVF8yMDI2LTEwLTA0Lm1kAA==",
+          "status_z_sha256": "46d26e3296f11dc3538a3ea9f722ae3f826259adc9b60de4593156cc5ce95d75"
+        },
+        "head": "f608737803406e5e6f5cf0045755c1fbafb55558",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\ruin-input-contract\\Trader Gemini",
+        "ref": "codex/ruin-input-contract-2026-10-04",
+        "state": "complete"
+      },
+      {
+        "after_delete": {
+          "branch": null,
+          "files": [],
+          "head": "36b0063c60e271e1b9895aac40432e7ede959a2f",
+          "index_entries_sha256": "a9d6376cc1724ae1a8a9c828c36163eb0d17bef5e9041d12493901146cf05688",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\feature-clock\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "after_detach": {
+          "branch": null,
+          "files": [],
+          "head": "36b0063c60e271e1b9895aac40432e7ede959a2f",
+          "index_entries_sha256": "a9d6376cc1724ae1a8a9c828c36163eb0d17bef5e9041d12493901146cf05688",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\feature-clock\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "before_detach": {
+          "branch": "refs/heads/codex/feature-clock-2026-10-04",
+          "files": [],
+          "head": "36b0063c60e271e1b9895aac40432e7ede959a2f",
+          "index_entries_sha256": "a9d6376cc1724ae1a8a9c828c36163eb0d17bef5e9041d12493901146cf05688",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\feature-clock\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "head": "36b0063c60e271e1b9895aac40432e7ede959a2f",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\feature-clock\\Trader Gemini",
+        "ref": "codex/feature-clock-2026-10-04",
+        "state": "complete"
+      },
+      {
+        "after_delete": {
+          "branch": null,
+          "files": [],
+          "head": "7aadf509f766a143880875210961c581c2ce75dd",
+          "index_entries_sha256": "83f0ab2b29cbea05bb501b09def431b10fe8d0a019b886a38f9e91ab6ee0aa87",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\evidence-expiry\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "after_detach": {
+          "branch": null,
+          "files": [],
+          "head": "7aadf509f766a143880875210961c581c2ce75dd",
+          "index_entries_sha256": "83f0ab2b29cbea05bb501b09def431b10fe8d0a019b886a38f9e91ab6ee0aa87",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\evidence-expiry\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "before_detach": {
+          "branch": "refs/heads/codex/evidence-expiry-2026-10-04",
+          "files": [],
+          "head": "7aadf509f766a143880875210961c581c2ce75dd",
+          "index_entries_sha256": "83f0ab2b29cbea05bb501b09def431b10fe8d0a019b886a38f9e91ab6ee0aa87",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\evidence-expiry\\Trader Gemini",
+          "status_z_b64": "",
+          "status_z_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "head": "7aadf509f766a143880875210961c581c2ce75dd",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\evidence-expiry\\Trader Gemini",
+        "ref": "codex/evidence-expiry-2026-10-04",
+        "state": "complete"
+      },
+      {
+        "head": "3139f444a2dcfd7b8ec1aca2aebb54c48ec46ff6",
+        "path": null,
+        "ref": "codex/model-reload-contract",
+        "state": "complete"
+      },
+      {
+        "after_delete": {
+          "branch": null,
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/audit/PROTOCOLO_OOS_R4_2026-10-07.md",
+              "path_b64": "ZG9jcy9hdWRpdC9QUk9UT0NPTE9fT09TX1I0XzIwMjYtMTAtMDcubWQ=",
+              "sha256": "60bcff3fc19948b36a4a9fba64763167c8fd0e9706e22c88eb200731f32c1a9a",
+              "size": 9817
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "scripts/__pycache__/audit_inventory.cpython-314.pyc",
+              "path_b64": "c2NyaXB0cy9fX3B5Y2FjaGVfXy9hdWRpdF9pbnZlbnRvcnkuY3B5dGhvbi0zMTQucHlj",
+              "sha256": "4fce55ad7ee8ea76dcb36815bb941f97fe9f158658c60ba329ca34f1d19b3a67",
+              "size": 21024
+            }
+          ],
+          "head": "639c3e0d7c5f0dc8c376ac04af2a2fdc7a5bc5a9",
+          "index_entries_sha256": "2f86de92c3ddb2fcb0ec0c365e4bdf3c01f5bf596f997e3de419f61780e340f5",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini",
+          "status_z_b64": "Pz8gZG9jcy9hdWRpdC9QUk9UT0NPTE9fT09TX1I0XzIwMjYtMTAtMDcubWQAPz8gc2NyaXB0cy9fX3B5Y2FjaGVfXy9hdWRpdF9pbnZlbnRvcnkuY3B5dGhvbi0zMTQucHljAA==",
+          "status_z_sha256": "f5221f4b5606b06f09b351f9817c6462ce93b2de84bd3fe8da2e886dd6199160"
+        },
+        "after_detach": {
+          "branch": null,
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/audit/PROTOCOLO_OOS_R4_2026-10-07.md",
+              "path_b64": "ZG9jcy9hdWRpdC9QUk9UT0NPTE9fT09TX1I0XzIwMjYtMTAtMDcubWQ=",
+              "sha256": "60bcff3fc19948b36a4a9fba64763167c8fd0e9706e22c88eb200731f32c1a9a",
+              "size": 9817
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "scripts/__pycache__/audit_inventory.cpython-314.pyc",
+              "path_b64": "c2NyaXB0cy9fX3B5Y2FjaGVfXy9hdWRpdF9pbnZlbnRvcnkuY3B5dGhvbi0zMTQucHlj",
+              "sha256": "4fce55ad7ee8ea76dcb36815bb941f97fe9f158658c60ba329ca34f1d19b3a67",
+              "size": 21024
+            }
+          ],
+          "head": "639c3e0d7c5f0dc8c376ac04af2a2fdc7a5bc5a9",
+          "index_entries_sha256": "2f86de92c3ddb2fcb0ec0c365e4bdf3c01f5bf596f997e3de419f61780e340f5",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini",
+          "status_z_b64": "Pz8gZG9jcy9hdWRpdC9QUk9UT0NPTE9fT09TX1I0XzIwMjYtMTAtMDcubWQAPz8gc2NyaXB0cy9fX3B5Y2FjaGVfXy9hdWRpdF9pbnZlbnRvcnkuY3B5dGhvbi0zMTQucHljAA==",
+          "status_z_sha256": "f5221f4b5606b06f09b351f9817c6462ce93b2de84bd3fe8da2e886dd6199160"
+        },
+        "before_detach": {
+          "branch": "refs/heads/codex/quant-foundations-2026-10-07",
+          "files": [
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "docs/audit/PROTOCOLO_OOS_R4_2026-10-07.md",
+              "path_b64": "ZG9jcy9hdWRpdC9QUk9UT0NPTE9fT09TX1I0XzIwMjYtMTAtMDcubWQ=",
+              "sha256": "60bcff3fc19948b36a4a9fba64763167c8fd0e9706e22c88eb200731f32c1a9a",
+              "size": 9817
+            },
+            {
+              "kind": "file",
+              "mode": 438,
+              "path": "scripts/__pycache__/audit_inventory.cpython-314.pyc",
+              "path_b64": "c2NyaXB0cy9fX3B5Y2FjaGVfXy9hdWRpdF9pbnZlbnRvcnkuY3B5dGhvbi0zMTQucHlj",
+              "sha256": "4fce55ad7ee8ea76dcb36815bb941f97fe9f158658c60ba329ca34f1d19b3a67",
+              "size": 21024
+            }
+          ],
+          "head": "639c3e0d7c5f0dc8c376ac04af2a2fdc7a5bc5a9",
+          "index_entries_sha256": "2f86de92c3ddb2fcb0ec0c365e4bdf3c01f5bf596f997e3de419f61780e340f5",
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini",
+          "status_z_b64": "Pz8gZG9jcy9hdWRpdC9QUk9UT0NPTE9fT09TX1I0XzIwMjYtMTAtMDcubWQAPz8gc2NyaXB0cy9fX3B5Y2FjaGVfXy9hdWRpdF9pbnZlbnRvcnkuY3B5dGhvbi0zMTQucHljAA==",
+          "status_z_sha256": "f5221f4b5606b06f09b351f9817c6462ce93b2de84bd3fe8da2e886dd6199160"
+        },
+        "head": "639c3e0d7c5f0dc8c376ac04af2a2fdc7a5bc5a9",
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini",
+        "ref": "codex/quant-foundations-2026-10-07",
+        "state": "complete"
+      }
+    ],
+    "updated_utc": "2026-10-08T20:10:59.826793+00:00"
+  },
+  "closed_legacy_ref_cleanup": {
+    "closed_main": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+    "started_utc": "2026-10-08T20:12:17.036717+00:00",
+    "deleted_local": [
+      {
+        "ref": "antigravity/quant-sr-ronda6-f7-telemetria-guardianes",
+        "head": "18bbd1d90a073ae49ca8083c5898537013e4bfeb"
+      },
+      {
+        "ref": "antigravity/quant-sr-ronda6-f8-backtest-paridad",
+        "head": "912becfa6e116f83a9abe1b4970cb0151dfbd01e"
+      },
+      {
+        "ref": "antigravity/quant-sr-ronda6-ou-tiempo-fisico",
+        "head": "ca302616a248b7b97a92d562e7d2d7f18549700f"
+      }
+    ],
+    "remote": {
+      "ref": "refs/heads/codex/root-audit-2026-10-04",
+      "expected_head": "d0e02da1fc031bc45f89a14d4cb97a9b4a7c31e9",
+      "deleted_and_absence_verified": true
+    },
+    "scope": "Unoccupied closed AGY refs only; active AGYf9/Qoder72 preserved. Remote deletion guarded by exact lease; no force push of main or file/worktree deletion.",
+    "state": "complete",
+    "remaining_local": "antigravity/quant-sr-ronda6-f4-riesgo-ejecucion a0a5b982df0eb53d3c6d753256ea99c6428cdafd\nantigravity/quant-sr-ronda6-f9-honestidad-tests 5842c8e33231131e5f2c5c600ffce15f1babaa55\ncodex/integration-recovery-2026-10-07 a0a5b982df0eb53d3c6d753256ea99c6428cdafd\nmain a0a5b982df0eb53d3c6d753256ea99c6428cdafd\nqoder/ola72-lows-residuales 8a98ce7c364516ccbed20b2be56a5c63895d2376\n",
+    "remaining_remote": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd\trefs/heads/main\n"
+  },
+  "deleted_local_refs_at_this_cut": 13,
+  "deleted_remote_refs_at_this_cut": 1,
+  "all_directories_preserved": true,
+  "remaining_active": {
+    "qoder": {
+      "ref": "qoder/ola72-lows-residuales",
+      "head": "8a98ce7c364516ccbed20b2be56a5c63895d2376",
+      "exclusive_commits": [
+        "8a98ce7c364516ccbed20b2be56a5c63895d2376",
+        "8c8ebef41f30067bd9c47daf50a791b5d023ad73",
+        "6192546e607d983e83131a45c01298438e9083c1"
+      ],
+      "reason": "Active reserved work with dirty oscillator and committed change of oscillator API/configurability versus GLM112. Not imported or asserted to be in main."
+    },
+    "antigravity": {
+      "ref": "antigravity/quant-sr-ronda6-f9-honestidad-tests",
+      "head": "5842c8e33231131e5f2c5c600ffce15f1babaa55",
+      "reason": "Active reservation preserved even though the observed head is contained in main."
+    }
+  },
+  "integration_ref_final_cleanup": {
+    "ref": "codex/integration-recovery-2026-10-07",
+    "state_at_this_cut": "reserved for this metadata commit; detach same final HEAD and branch-d only after its remote verification",
+    "receipt_location": "C:\\Users\\jhona\\.codex\\worktrees\\quant-foundations-2026-10-07\\Trader Gemini\\target\\r4-review\\FINAL_REFS_R4_2026-10-08.json"
+  },
+  "ci_observation": [
+    {
+      "conclusion": "",
+      "databaseId": 37836951994,
+      "headSha": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+      "status": "in_progress",
+      "url": "https://github.com/Jhona-la/Trader-Gemini/actions/runs/37836951994",
+      "workflowName": "Replay contracts"
+    },
+    {
+      "conclusion": "cancelled",
+      "databaseId": 37831525825,
+      "headSha": "5842c8e33231131e5f2c5c600ffce15f1babaa55",
+      "status": "completed",
+      "url": "https://github.com/Jhona-la/Trader-Gemini/actions/runs/37831525825",
+      "workflowName": "Replay contracts"
+    }
+  ],
+  "ci_limit": "No SUCCESS claim for D1 or the next metadata commit. CI is a separate asynchronous result.",
+  "validation_limit": "737 applicable software tests, 0 failed, 1 ignored; retained results and actual executions distinguished. Doubling net equity every72h and full semantic coverage remain unvalidated."
+}
