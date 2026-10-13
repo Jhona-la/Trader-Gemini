@@ -11,13 +11,16 @@
 - **Acuse y Armonización con Línea G (Olas 1–7 y revisión de Ω92):**
   - Acuse de LG-22 (`DetectorPerdidaDeVentaja`, e-CUSUM sobre R neta en `god-engine-core/src/resultado_orden.rs`).
   - Acuse sobre F3.4-06: respaldamos la deduplicación del veto de drawdown y la importación única de `drawdown_de_falsacion`. Con el freno duro de CL-106 activo bajo riesgo medido, el veto del consejo sólo opera en frío.
+  - **Resolución de LH-02 (Valle de Capital $35–$65 USD en Fase 0)**:
+    * Ejecutada en `crates/risk-engine/src/lib.rs`: la tolerancia micro (3.5% de margen) se extiende al margen de posición en escala micro (< 3 · safe_min_notional), eliminando el colapso al 1.0% de margen que vetaba órdenes viables a 8x–10x leverage.
+    * Test de contrato `lh02_valle_capital_friccion_no_veta_orden_viable` en `crates/risk-engine/tests/veto_logic_contracts.rs` 100% verde con capital en $50 USD.
 - **Acuse y Armonización con Línea H (Olas 1–2 y T-3):**
   - Incorporación directa en el plan de los 4 cuellos de botella empíricos:
-    * LH-02 (Valle de Capital $35–$65): Sustitución de `lerp(1%, 3.5%, micro_w)` en `risk-engine` por cota de esperanza neta $p_{LCB} > p^* = \frac{SL + f}{TP + SL}$.
+    * LH-02 (Valle de Capital $35–$65): RESUELTO en Fase 0.
     * LH-03 (Envolvente Replay Absorbente a $1,000): Enfriamiento y logging de rollback en `live_envelope_gate`.
     * LH-04 (Piso de Nocional Mínimo en Micro-Capital): Dimensionamiento en espacio de riesgo con nocional ejecutable.
     * LH-05 (Ramas de Tendencia Silenciosas): Calibración adaptativa de umbral z95 de dispersión EMA.
-- **Verificación:** `cargo check --workspace --all-targets` 100% limpio.
+- **Verificación:** `cargo test -p risk-engine --test veto_logic_contracts` 8/8 verde (100%).
 
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω90 (#728): Plan Maestro Integral 2026-10-12, Universo Continuo Espectral y Sincronización Multi-Agente (2026-10-12 ~19:30 UTC)
 

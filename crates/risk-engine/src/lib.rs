@@ -1403,7 +1403,26 @@ impl RiskEngine {
             return rej(REJ_INVALID_INPUT);
         }
         let final_fee_impact = roundtrip_fee * dynamic_leverage;
-        if !final_fee_impact.is_finite() || final_fee_impact > max_fee_limit {
+        // LH-02 (Línea H / AGY): En el valle de capital ($35–$65 USD), allocated_capital
+        // sitúa a la cuenta en régimen estándar (micro_w_alloc -> 0), haciendo que
+        // max_fee_limit caiga al 1.0% de margen. Sin embargo, el dimensionamiento de
+        // posición prudente asigna un margen pequeño ($0.60–$1.50 USD) que OBLIGA a un
+        // apalancamiento L ≈ 5–10 para satisfacer el nocional mínimo de Binance ($5 USD).
+        // La comisión roundtrip multiplicada por L (0.0012 · 8 = 0.0096..0.0120) superaba
+        // el 1.0% de margen y rechazaba el 100% de las órdenes válidas con REJ_FEE_IMPACT.
+        //
+        // Solución continua: si el margen individual de la posición está en escala micro
+        // (final_margin < 3 · safe_min_notional), la posición requiere apalancamiento
+        // para alcanzar el nocional mínimo del exchange, por lo que la tolerancia sobre
+        // margen conserva el techo micro (0.035 = 3.5% de margen), garantizando la
+        // viabilidad sin relajar los frenos ante fricciones auténticamente excesivas.
+        let position_in_micro_scale = final_margin < safe_min_notional * 3.0;
+        let effective_max_fee_limit = if position_in_micro_scale {
+            max_fee_limit.max(0.035)
+        } else {
+            max_fee_limit
+        };
+        if !final_fee_impact.is_finite() || final_fee_impact > effective_max_fee_limit {
             return rej(REJ_FEE_IMPACT);
         }
         // CL-6: ninguna orden validada queda bajo el nocional mínimo del

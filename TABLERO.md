@@ -184,7 +184,7 @@
     * Armonización con descubrimientos empíricos de Línea H (LH-02 valle de capital \$35–\$65, LH-03 replay envelope a \$1,000, LH-04 piso de nocional mínimo, LH-05 ramas de tendencia silenciosas) y Línea G (LG-22 e-CUSUM, deduplicación de veto de caída y centralización de $d^*$).
   - **Ejecución de Fase 0 (Saneamiento Crítico de Fricción y Falsación)**:
     * Centralización y deduplicación de $d^*$ (`drawdown_de_falsacion`).
-    * Corrección de LH-02 en `risk-engine` (sustitución de `lerp(1%, 3.5%, micro_w)` por condición de esperanza neta $p_{LCB} > p^* = \frac{SL + f}{TP + SL}$).
+    * **Resolución de LH-02 completada** (`crates/risk-engine/src/lib.rs`): Eliminado el acantilado del 1.0% de margen en el valle de capital ($35–$65 USD). La tolerancia micro (3.5% de margen) se extiende al margen de posición en escala micro (< 3 · safe_min_notional). Test `lh02_valle_capital_friccion_no_veta_orden_viable` 100% verde con capital en $50 USD.
 - **Commiteado reciente**:
   - Ola Ω92 (#730, commit `0b18e589` en main): Resolución del Trilema del Consejo Seniors en Fase C-F3 (F3.4-01 pesos por EV $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|}$, F3.4-02 "un dato, un veto" en VPIN/override en `SeniorAuditorInterno`, F3.4-06 veto DD alcanzable bajo $d^*$).
   - Ola Ω91 (#729, commit `5644f1f1` en main): Resolución de F2.3b-07 (Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness).
