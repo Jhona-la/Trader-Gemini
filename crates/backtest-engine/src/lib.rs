@@ -348,6 +348,7 @@ pub fn run_backtest_native(
             core.arena.registry.set("macro_staleness_ms", 0.0);
 
             let sim_is_buyer_maker = tick_ret < 0.0;
+            let event_ts_ms = (i as u64 * 60_000) + (t as u64 * (60_000 / num_ticks.max(1) as u64));
             let (_new_order, closed_order) = core.process_event(
                 target_coin_id,
                 true,
@@ -361,7 +362,7 @@ pub fn run_backtest_native(
                 sim_ask_qty,
                 tick_ofi, // FIX: Propagar OFI real derivado en vez de constante 0.5
                 0.0,
-                (i as u64 * 60_000) + (t as u64 * (60_000 / num_ticks.max(1) as u64)),
+                event_ts_ms,
                 false,
                 &omni_sim,
                 sim_is_buyer_maker,
@@ -370,7 +371,7 @@ pub fn run_backtest_native(
             // CERT-M8-C05: envolvente del host sobre CADA entrada abierta.
             if target_coin_id < core.feature_engines.len() {
                 let atr_now = core.feature_engines[target_coin_id].get_atr_pct();
-                booktick_replay::live_envelope_gate(
+                if !booktick_replay::live_envelope_gate(
                     &arena,
                     &mut risk_envelope,
                     target_coin_id,
@@ -378,7 +379,10 @@ pub fn run_backtest_native(
                     atr_now,
                     pos_was_open,
                     &mut envelope_vetoes,
-                );
+                ) {
+                    // LH-03: activar enfriamiento inmediato en el reloj del evento
+                    core.feature_engines[target_coin_id].last_exit_fastband_ms = event_ts_ms;
+                }
             }
             pos_was_open = arena.coins[target_coin_id.min(arena.coins.len().saturating_sub(1))]
                 .positions

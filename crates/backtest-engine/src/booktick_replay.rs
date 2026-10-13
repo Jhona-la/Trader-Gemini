@@ -463,7 +463,7 @@ fn run_booktick_replay_observed(
             let _ = o2;
             // B3.19: envolvente del host sobre la entrada recién abierta.
             let atr_now = core.feature_engines[0].get_atr_pct();
-            live_envelope_gate(
+            if !live_envelope_gate(
                 &arena,
                 &mut risk_envelope,
                 0,
@@ -471,7 +471,12 @@ fn run_booktick_replay_observed(
                 atr_now,
                 pos_was_open,
                 &mut stats.envelope_vetoes,
-            );
+            ) {
+                // LH-03: si la envolvente veta la entrada y ejecuta rollback,
+                // activar enfriamiento inmediato en el reloj de eventos para evitar
+                // bucle infinito de reapertura y reversión sin enfriar (n congelado en 30).
+                core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
+            }
             pos_was_open = arena.coins[0].positions.is_any_open();
             c1 = None;
             c2 = closed;
@@ -498,7 +503,7 @@ fn run_booktick_replay_observed(
             let _ = o1;
             // B3.19: envolvente del host sobre la entrada recién abierta.
             let atr_now = core.feature_engines[0].get_atr_pct();
-            live_envelope_gate(
+            if !live_envelope_gate(
                 &arena,
                 &mut risk_envelope,
                 0,
@@ -506,7 +511,9 @@ fn run_booktick_replay_observed(
                 atr_now,
                 pos_was_open,
                 &mut stats.envelope_vetoes,
-            );
+            ) {
+                core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
+            }
             pos_was_open = arena.coins[0].positions.is_any_open();
             // D-717: en el modo con libro, `mid <= sim_bid` es una tautología
             // falsa (el mid nunca baja del bid simulado), de modo que el CVD
@@ -534,7 +541,7 @@ fn run_booktick_replay_observed(
             let _ = o2;
             // B3.19: el evento de trade también puede abrir — misma envolvente.
             let atr_now = core.feature_engines[0].get_atr_pct();
-            live_envelope_gate(
+            if !live_envelope_gate(
                 &arena,
                 &mut risk_envelope,
                 0,
@@ -542,7 +549,9 @@ fn run_booktick_replay_observed(
                 atr_now,
                 pos_was_open,
                 &mut stats.envelope_vetoes,
-            );
+            ) {
+                core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
+            }
             pos_was_open = arena.coins[0].positions.is_any_open();
             c1 = closed1;
             c2 = closed2;
