@@ -470,3 +470,45 @@ verde sobre el árbol fusionado; T-2 de control idéntico a `main`.
 | **LH-16** (= LH-A3-4 / LH-A3-6) | Qoder (núcleo) | MED | El peso hebbiano satura en 2,0 a los ≈ 23 cierres y vuelve a −0,008 por cierre; la rama 11 se apaga con Hurst < 0,45, justo donde un motor de reversión ganaría peso. | aritmética contrastada |
 | **LH-17** (= A2-04) | Sol / Línea C (runner) | LOW | El runner suaviza b dos veces (EWMA α 0,05 en el runner y otra en `record_trade`) y clasifica pnl ≥ 0 como ganancia donde la envolvente usa > 0. | `backtest lib.rs:389-409` |
 | **Propio (ola 3)** | Línea H | — | Publicar el pago del segundo tramo y el fresco en la fila ADAPT; E4' anti → anti y E5 antipersistencia larga por cuartiles (prueba directa de inversión); guardar las trazas completas y extender `lado_vs_estado.py` a series compuestas; pedir fuera de zona que el tope de 100 trazas del núcleo sea configurable. | — |
+
+### 7.5 Re-medición con el PR #62 de la Línea C (`fc2ba2ec`, árbol fusionado)
+
+La Línea C avisó de que la tanda C-F4 cambia puertas que el T-3 mide (nuevo
+veto `estrategia_falsada`, slot 18: proceso e de Ville sobre la R de cada
+cierre con H0 = +0,30 R; freno duro K·s̄/pico; R-15 en sombra; D4). Y la
+Línea G revisó el T-3 (31 hallazgos, 3 HIGH; `docs/audit/linea_g/ola6_t3_linea_h.tsv`).
+Medido sobre el árbol con el #62
+([`ola2_post_pr62_escalera_13usd.tsv`](audit/linea_h/ola2_post_pr62_escalera_13usd.tsv),
+[`ola2_post_pr62_valle_de_capital.tsv`](audit/linea_h/ola2_post_pr62_valle_de_capital.tsv),
+[`ola2_post_pr62_adaptacion.tsv`](audit/linea_h/ola2_post_pr62_adaptacion.tsv)):
+
+- **La escalera de 13 USD, el valle de capital y E1–E3 son idénticos al
+  céntimo** a los de antes del #62: ninguna de las puertas nuevas actúa en
+  ellos (el freno de la estrategia se alimenta en el cierre del núcleo,
+  `lib.rs:4725`, pero no se falsa en 50 h de ningún peldaño; el valle de
+  `fee_impact` sigue intacto: 35–65 USD → 0 cierres). El T-2 de `main` sí
+  se movió con el #62 (de `a7c2da76`, 68 operaciones, −0,164 a
+  `cb690a15`, 65, −0,093): lo que lo mueve no está en los peldaños del T-3.
+- **E4 cambia, poco**: el freno nuevo se falsa al final del tramo
+  antipersistente (31 evaluaciones ≈ una vela, tras ≈ 40 cierres perdedores):
+  41 cierres en vez de 45, −0,265 USD en vez de −0,244, acierto 0,317. Es la
+  primera puerta adaptativa que reacciona a un régimen adverso heredado, y
+  reacciona cuando el tramo ya ha pasado: con H0 = +0,30 R y la cadencia de
+  un cierre por hora, el proceso e necesita decenas de cierres para
+  rechazar. Lo que la meta pide es que reaccione en la escala del régimen
+  (10–20 velas), por rama y escala, sobre la R neta frente a p*: la misma
+  idea, otra escala y otra granularidad.
+- **De la revisión de la Línea G, aceptado para la ola 3 (T-3 v2)**: H1-01
+  (HIGH): el ruido uniforme acotado y las mechas y el volumen construidos con
+  el mismo |u| hacen el estado oculto decodificable del OHLCV; el «oráculo»
+  de las olas 1 y 2 es un lector de lo que el motor también ve, no una cota,
+  y lo realizado en a = 0,6–0,8 no se atribuye a la cadena. La v2 llevará
+  ruido gaussiano, sorteos independientes para mechas y volumen y el lector
+  causal óptimo (filtro de Bayes sobre el OHLCV) como techo, conservando la
+  v1 para reproducir las tablas publicadas. Aceptados también H1-07 (el
+  apagón empieza hacia 27,5 USD), H1-04 (el −0,91 % de a = 0,9 tiene
+  |t| < 0,6: indicio, no prueba), H1-10 (fricción del techo 10 pb frente a
+  13–14 pb del motor), H3V-04 (constante de la EMA21 = 10,5 velas), H3V-07
+  (LH-07: el retroceso del enfriamiento es geométrico de razón √2, no
+  k·base ni 2^k) y H2-08 (fricción en las dos ramas del dimensionado,
+  `r* = p/(1 + f_R) − q/(RR − f_R)`).
