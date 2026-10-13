@@ -23,7 +23,10 @@
 //! celda es el último par de la celda; una celda sin pares es un dato ausente:
 //! corta la cadena de retardos y sólo hace decaer las sumas (como los huecos
 //! de CL-87). Las sumas olvidan con λ = e^{−1/128} por celda: memoria de
-//! 16·τ_k.
+//! 16·τ_k. Una fila exige tres celdas seguidas con pares (EST-6 de la
+//! revisión del PR #60): con pares de Poisson por debajo de 0,615 por segundo,
+//! el nodo 17 (Δ = 2,1 s) no madura nunca. En vivo lo evita el sondeo REST
+//! del spot de 1 s.
 //!
 //! Estimador. Con las muestras b_t de celdas consecutivas, regresión
 //! Δb_t = a − c·b_{t−1} + u por variables instrumentales con instrumento
@@ -31,7 +34,13 @@
 //! centradas y ponderadas). El ruido de medida de la base (tick, horquilla)
 //! hace u de media móvil de orden 1; con b_{t−2} el instrumento no
 //! correlaciona con u, y por eso el ruido no fabrica reversión (con mínimos
-//! cuadrados sí la fabrica). Error típico HAC de retardo 1:
+//! cuadrados sí la fabrica). Eso vale con un ruido de medida de hasta una
+//! desviación típica de la base; con más, el instrumento se debilita y el
+//! tamaño en la frontera sube (EST-2 de la revisión del PR #60: 6,2-7,1 % con
+//! 2 σ, 7,3 % con 3 σ, 8,4-8,9 % con 10 σ y 8,8 % con ruido blanco puro). Lo
+//! que se vota sí revierte, así que el error va del lado seguro; la
+//! abstención con la F de la primera etapa o un crítico calibrado con más
+//! ruido llegan con la tanda C-F5b. Error típico HAC de retardo 1:
 //! var(ĉ) = (γ0·Σw²z̃² + 2γ1·Σw_t w_{t−1} z̃_t z̃_{t−1})/S_zx². Corrección de
 //! sesgo del AR(1) (Kendall): ĉ_bc = ĉ − (1 + 3ρ̂)/n_ef, con ρ̂ = 1 − ĉ y
 //! n_ef = (Σw)²/Σw². En la frontera, c0 = 1 − e^{−θ0·Δ} = 1 − 2^{−1/16}.
@@ -53,8 +62,11 @@
 //! repetición de miradas en el tiempo (el nivel es por decisión: en cada
 //! instante la probabilidad de pasar la guarda bajo H0 es ≤ 5 %), y con una
 //! reversión mucho más rápida que la rejilla (t½ ≪ Δ) el instrumento se
-//! debilita y la prueba se abstiene: a la escala de decisión esa base es
-//! ruido blanco.
+//! debilita: a la escala de decisión esa base es ruido blanco. «Se abstiene»
+//! sólo es cierto con poco ruido de medida; con más de una desviación típica
+//! el tamaño sube hasta el 8,9 % (ver arriba, EST-2). Tampoco contrasta la
+//! reversión a la escala de decisión con una base de dos escalas: extrapola
+//! de los retardos Δ y 2Δ a 2τ_k suponiendo un OU único (EST-3, tanda C-F5b).
 
 use quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS;
 
