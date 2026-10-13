@@ -703,6 +703,41 @@ impl GlobalArena {
         }
     }
 
+    /// ADR-0011 / LC-F1-03: Multiplicador de volatilidad por IDENTIDAD de símbolo,
+    /// no por slot físico rígido. BTC y ETH leen sus genes dedicados por símbolo;
+    /// las demás monedas miden su volatilidad relativa respecto al ancla de mercado (BTC).
+    #[inline]
+    pub fn volatility_multiplier_for(&self, coin_id: usize, atr_pct: f64) -> f64 {
+        let is_empty_universe = crate::symbols::get_active_universe_size() == 0;
+        let is_btc = crate::symbol_registry::slot_es_simbolo(coin_id, "BTCUSDT")
+            || (is_empty_universe && coin_id == 0);
+        let is_eth = crate::symbol_registry::slot_es_simbolo(coin_id, "ETHUSDT")
+            || (is_empty_universe && coin_id == 1);
+
+        if is_btc {
+            self.config.btc_volatility_multiplier.load(Ordering::Relaxed)
+        } else if is_eth {
+            self.config.eth_volatility_multiplier.load(Ordering::Relaxed)
+        } else {
+            let eth_mult = self.config.eth_volatility_multiplier.load(Ordering::Relaxed);
+            let btc_slot = crate::symbols::get_coin_id("BTCUSDT").unwrap_or(0);
+            let btc_atr_pct = if btc_slot < self.coins.len() {
+                let btc_price = self.coins[btc_slot].current_price.load(Ordering::Relaxed).max(1e-8);
+                let btc_atr = self.coins[btc_slot].current_atr.load(Ordering::Relaxed);
+                if btc_atr > 0.0 && btc_price > 1e-6 {
+                    (btc_atr / btc_price).clamp(0.0005, 0.50)
+                } else {
+                    0.005
+                }
+            } else {
+                0.005
+            };
+            let effective_atr_pct = atr_pct.clamp(0.0001, 1.0);
+            let relative_vol = (effective_atr_pct / btc_atr_pct.max(0.0005)).clamp(0.5, 3.0);
+            eth_mult * relative_vol
+        }
+    }
+
     #[inline(always)]
     pub fn increment_tick(&self) -> u64 {
         self.tick_counter.fetch_add(1, Ordering::Relaxed)

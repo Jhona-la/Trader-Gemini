@@ -734,35 +734,8 @@ impl RiskEngine {
         let atr_pct = current_atr / current_price;
 
         let hurst_exponent = coin.hurst_exponent.load(Ordering::Relaxed);
-        let vol_mult = if coin_id == 0 {
-            arena
-                .config
-                .btc_volatility_multiplier
-                .load(Ordering::Relaxed)
-        } else if coin_id == 1 {
-            arena
-                .config
-                .eth_volatility_multiplier
-                .load(Ordering::Relaxed)
-        } else {
-            let eth_mult = arena
-                .config
-                .eth_volatility_multiplier
-                .load(Ordering::Relaxed);
-            let btc_price = arena.coins[0]
-                .current_price
-                .load(Ordering::Relaxed)
-                .max(1e-8);
-            let btc_atr = arena.coins[0].current_atr.load(Ordering::Relaxed);
-            let btc_atr_pct = if btc_atr > 0.0 && btc_price > 1e-6 {
-                (btc_atr / btc_price).clamp(0.0005, 0.50)
-            } else {
-                0.005 // 50 bps baseline default
-            };
-            let effective_atr_pct = atr_pct.clamp(0.0001, 1.0);
-            let relative_vol = (effective_atr_pct / btc_atr_pct.max(0.0005)).clamp(0.5, 3.0);
-            eth_mult * relative_vol
-        };
+        // ADR-0011 / LC-F1-03: Multiplicador de volatilidad resuelto por IDENTIDAD de símbolo en el arena
+        let vol_mult = arena.volatility_multiplier_for(coin_id, atr_pct);
         let genomic_leverage_cap = arena.config.global_leverage.load(Ordering::Relaxed);
         if !genomic_leverage_cap.is_finite()
             || genomic_leverage_cap < 1.0

@@ -124,3 +124,33 @@ fn cl62_gate_y_sonda_del_nucleo_eligen_el_gen_igual() {
         );
     }
 }
+
+/// OLA Ω95 — El multiplicador de volatilidad va por IDENTIDAD de símbolo, no por slot.
+/// BTCUSDT en el slot 2 lee `btc_volatility_multiplier` y no el de las alts;
+/// una alt en el slot 0 no recibe el multiplicador de BTC sólo por ocupar el slot 0.
+#[test]
+fn ola95_volatilidad_multiplier_for_sigue_identidad_de_simbolo() {
+    let a = arena();
+    a.config.btc_volatility_multiplier.store(2.5, Relaxed);
+    a.config.eth_volatility_multiplier.store(1.5, Relaxed);
+
+    // Slot 2 es "BTCUSDT" en UNIVERSO: debe devolver exactamente 2.5
+    let btc_vol = a.volatility_multiplier_for(2, 0.005);
+    assert_eq!(btc_vol, 2.5, "BTCUSDT en slot 2 debe leer btc_volatility_multiplier");
+
+    // Slot 0 es "IDSLAUSDT": NO debe devolver 2.5 simplemente por ser slot 0
+    let alt_vol = a.volatility_multiplier_for(0, 0.005);
+    assert_ne!(alt_vol, 2.5, "IDSLAUSDT en slot 0 no debe recibir btc_volatility_multiplier");
+
+    // Verificar estáticamente que risk-engine no tiene el acoplamiento coin_id == 0
+    let risk_src = include_str!("../src/lib.rs");
+    let produccion = risk_src.split("#[cfg(test)]").next().unwrap();
+    assert!(
+        produccion.contains("volatility_multiplier_for(coin_id, atr_pct)"),
+        "risk-engine no usa GlobalArena::volatility_multiplier_for"
+    );
+    assert!(
+        !produccion.contains("let vol_mult = if coin_id == 0"),
+        "risk-engine aún tiene el acoplamiento de slot 'let vol_mult = if coin_id == 0'"
+    );
+}
