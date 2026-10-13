@@ -41,7 +41,22 @@
 //! la ventaja que la serie tenía.
 //!
 //! Uso: `cargo test --release -p backtest-engine --test t3_ventaja_conocida
-//! -- --include-ignored --nocapture`.
+//! -- --include-ignored --nocapture --test-threads=1` (los contadores de
+//! rechazo son globales: las mediciones tienen que ir en serie; H1-08 de la
+//! revisión de la Línea G).
+//!
+//! # Límites conocidos del generador (revisión de la Línea G, ola 6)
+//!
+//! El ruido es uniforme acotado y las mechas y el volumen se construyen con
+//! el mismo |u| que el ruido: una vela con |r| > σ√3 − d revela el estado
+//! oculto con certeza y (r, volumen) o (r, high/close) lo decodifican en
+//! cada vela (H1-01). El «oráculo» es por tanto un lector del OHLCV que el
+//! motor también ve, no una cota superior inalcanzable; lo realizado en los
+//! peldaños a = 0,6–0,8 no puede atribuirse a la cadena. La versión 2 del
+//! generador (ola 3: ruido gaussiano, sorteos independientes para mechas y
+//! volumen, y el lector causal óptimo —filtro de Bayes sobre el OHLCV— como
+//! techo) sustituye a ésta; los números de las olas 1 y 2 son de esta
+//! versión y se conservan como tales.
 
 use backtest_engine::{STATS_LEN, run_backtest_native};
 use quantum_arena::genome::SuperGenotype;
