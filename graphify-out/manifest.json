@@ -900,9 +900,9 @@
     "semantic_hash": "4dff921ffc58a0a01cf8cbdb026dc305"
   },
   "crates/metacortex-engine/src/consejo_seniors.rs": {
-    "mtime": 1791923855.8650444,
-    "seen": 1791930768.2030973,
-    "ast_hash": "b015ca68c98ff290f6c9b3798fd25246",
+    "mtime": 1791934695.0574174,
+    "seen": 1791935082.301913,
+    "ast_hash": "3e68a36be07d2b961e64e4eb8adfb730",
     "semantic_hash": ""
   },
   "crates/metacortex-engine/src/epigenoma_store.rs": {
@@ -1314,9 +1314,9 @@
     "semantic_hash": ""
   },
   "crates/signal-engine/src/orchestrator.rs": {
-    "mtime": 1791870595.9234846,
-    "seen": 1791930768.2471738,
-    "ast_hash": "ef882e6090d4694372757ea2adb3f5a2",
+    "mtime": 1791934695.0664544,
+    "seen": 1791935082.352471,
+    "ast_hash": "ab9eed0c9a1bf8930ac144e948b8665d",
     "semantic_hash": ""
   },
   "crates/signal-engine/src/perceptron_gate.rs": {
@@ -3336,9 +3336,9 @@
     "semantic_hash": ""
   },
   "crates/signal-engine/tests/ensemble_characterization.rs": {
-    "mtime": 1791448335.435289,
-    "seen": 1791504033.1774566,
-    "ast_hash": "87c4b3062076979b5cbc53a2dd7b5aab",
+    "mtime": 1791934695.0775301,
+    "seen": 1791935082.3594847,
+    "ast_hash": "cd3d45e6741cb98698b7b3bea35fa2a0",
     "semantic_hash": ""
   },
   "crates/signal-engine/tests/multi_asset_identity_contract.rs": {
@@ -3672,9 +3672,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791932979.7650473,
-    "seen": 1791933217.1702213,
-    "ast_hash": "93ff3749609314fda9ce6e0f656d6bc5",
+    "mtime": 1791934695.0433886,
+    "seen": 1791935082.4330292,
+    "ast_hash": "7c536f47c9b1ecacf21d21f11a1824b0",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3702,9 +3702,9 @@
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1791932979.772599,
-    "seen": 1791933217.475904,
-    "ast_hash": "4cd20a550171aa76f2d2a7529e1756b2",
+    "mtime": 1791934695.049408,
+    "seen": 1791935082.727524,
+    "ast_hash": "7a0b58a14215ef0631b32ee72736f1c4",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -29778,9 +29778,9 @@
     "semantic_hash": ""
   },
   "crates/signal-engine/tests/cf3_consenso_escalar.rs": {
-    "mtime": 1791789820.743858,
-    "seen": 1791858306.6149812,
-    "ast_hash": "dd215536e1d93388bbfe9b0b7f51b502",
+    "mtime": 1791934695.0720074,
+    "seen": 1791935082.3584752,
+    "ast_hash": "45f5d5d8f339f96b181b29ff5fba4d3b",
     "semantic_hash": ""
   },
   "crates/signal-engine/tests/cf3_hebbiano_contract.rs": {
@@ -30162,9 +30162,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md": {
-    "mtime": 1791932979.779613,
-    "seen": 1791933217.50773,
-    "ast_hash": "1248d89f2744417af9cfc04fb1e68d05",
+    "mtime": 1791934695.0835366,
+    "seen": 1791935082.7605934,
+    "ast_hash": "bf020f800649edf7b6811eeeb0df6dfc",
     "semantic_hash": ""
   },
   "docs/adr/ADR-0017-frenos-de-drawdown-y-estado-aprendido.md": {
