@@ -231,7 +231,6 @@ fn cf3_muro_es_obi_nivel0() {
 /// - La rejilla del consejo incluye n ∈ {0; 500} resultados en el tracker y
 ///   pesos de Metacognitivo en {1; 2} (regla de C-F2, FICHAS :872).
 #[test]
-#[ignore = "OPEN F3.4-06 (Línea C, consejo): el veto de DD de SeniorRiesgo exige dd > 0,95 − 0,10·s ≥ 0,85 y el risk-engine rechaza antes en d* ≈ 0,632: inalcanzable"]
 fn cf3_veto_dd_consejo_alcanzable() {
     let d_star = drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION);
     assert!(

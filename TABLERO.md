@@ -166,19 +166,24 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω91 completada / Ficha #729)
+## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω92 completada / Ficha #730)
 
-- **Haciendo ahora**: Ola Ω91 (#729) completada — Resolución de F2.3b-07: Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness:
-  - **Resolución Definitiva de F2.3b-07**:
-    * Eliminada degeneración de gauge puro donde $F_{\text{loop}} \equiv 0$ idénticamente con $\beta \equiv 1$ bajo numerario común.
-    * Incorporada 2-forma transversal de cointegración triangular $d_{\text{cross}}$ y acción invariante $\mathcal{S} = \frac{1}{2}(f_{\text{loop}}^2 + d_{\text{cross}}^2)$ con corrientes restauradoras conservativas $\mathcal{J} = -\nabla \mathcal{S}$.
-    * Reseteo TTL anti-staleness para precios estancados o no-finitos (`linea_g/hallazgos.tsv:316`).
-    * `cf2_ym_dislocacion_triangular_plantada_se_detecta`: `#[ignore]` eliminado; pasa con acción media $1.02 \times 10^{-7} > 10^{-9}$ y ratio media/control $> 6.6 \times 10^6 > 10\times$.
-    * `cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo`: pasa ($1.54 \times 10^{-14} < 10^{-11}$).
-    * `cf2_ym_caracterizacion_retornos_asincronos`: invertida exitosamente ($S > 10^{-9}, J > 10^{-6}$).
-    * Contratos `yang_mills_gauge_contract` (5/5) y `hodge_yang_mills_consensus_contract` (3/3) 100% verdes. Invarianza T-2 preservada.
-    * Actualizado `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv` (fila 144 a pasa/activo).
+- **Haciendo ahora**: Ola Ω92 (#730) completada — Resolución del Trilema del Consejo Seniors en Fase C-F3 (F3.4-01, F3.4-02, F3.4-06):
+  - **Resolución Definitiva de F3.4-01 (Pesos del Consejo por Esperanza Matemática EV)**:
+    * Reemplazado el conteo binario de aciertos `was_correct` en `SeniorPerformanceTracker::compute_weights` por el edge relativo normalizado $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|} \in [-1, 1]$ y $P_i = 0.5 \cdot (1 + \theta_i) \in [0.01, 0.99]$.
+    * Con geometría asimétrica ($RR > 1$, como $RR=2:1$ con $35\%$ WR y $EV=+0.0005$), premia al asiento que respalda la estrategia ($w_0 = 1.037 > w_1 = 0.963$). Con retorno constante $|r|=R$, preserva la equivalencia exacta con la tasa de acierto ($\theta_i = 2\cdot\text{acc}_i - 1 \implies P_i = \text{acc}_i$).
+    * Prueba `cf3_tracker_premia_ev_no_acierto` des-ignorada y 100% verde (en tracker y en API viva de cortos).
+  - **Resolución Definitiva de F3.4-02 ("Un Dato, Un Veto" en VPIN y Override)**:
+    * Eliminado el veto duplicado `payload.do_calculus_risk > 0.92` en `SeniorAuditorInterno` (`is_veto = false`).
+    * `SeniorCausal` queda como el único evaluador de toxicidad causal / VPIN (> 0.75), preservando la capacidad de sobreescritura por supermayoría (override) en $VPIN \in (0.92, 1.0]$.
+    * Prueba `cf3_vpin_un_dato_un_veto` des-ignorada y 100% verde en toda la rejilla $n \in \{0, 500\} \times \text{Meta} \in \{1, 2\}$.
+  - **Resolución Definitiva de F3.4-06 (Veto de Drawdown Alcanzable Bajo Cota de Falsación $d^*$)**:
+    * Escalado el umbral continuo de drawdown de `SeniorRiesgo` contra la cota de falsación $d^* = 1 - 0.05^{1/3} \approx 0.6316$: `max_drawdown = d_star * (0.95 - 0.10 * s)`.
+    * Elimina código muerto (antes $[0.85, 0.95] > d^*$), haciendo alcanzable el veto del consejo antes de la detención dura del motor.
+    * Prueba `cf3_veto_dd_consejo_alcanzable` des-ignorada y 100% verde en las 16 configuraciones ($dd = 0.999\cdot d^*$, todas las escalas $\tau$).
+  - Actualizado `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv` (filas 40, 43, 44 marcadas como pasa).
 - **Commiteado reciente**:
+  - Ola Ω91 (#729, commit `5644f1f1` en main): Resolución de F2.3b-07 (Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness).
   - Ola Ω90 (#728): Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md`).
   - Ola Ω89 (#727, commit `b13839bc` en main): Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (F2.5-02).
   - Ola Ω88 (#726, commit `86218456` en main): Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (F3.8-03, F3.4-08, F2.5-03).

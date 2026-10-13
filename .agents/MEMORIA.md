@@ -38,6 +38,20 @@
 - **Lección de build**: con `CARGO_TARGET_DIR=<raíz>/target` y `RUSTFLAGS`
   exportados, el worktree reutiliza las dependencias compiladas (19 crates
   del workspace en 3 min en vez de ~450 en 12).
+## 2026-10-12 — AGY (Ola Ω92): Consejo Seniors F3.4 — Pesos por Esperanza Matemática (EV), Un Dato Un Veto (VPIN) y Veto de Drawdown Alcanzable
+
+- **Rama**: `antigravity/ola92-consejo-ev-vetos-f34` → `main`.
+- **Hallazgos Resueltos**:
+  - **F3.4-01 (`SeniorPerformanceTracker`)**: En `crates/metacortex-engine/src/consejo_seniors.rs`, se sustituyó la tasa binaria de acierto (hit-rate) por la esperanza matemática normalizada: $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|} \in [-1, 1]$, $P_i = 0.5 \cdot (1 + \theta_i) \in [0.01, 0.99]$. Ante geometría asimétrica ($RR > 1$, como $RR=2$ con acierto $35\%$ y $EV=+0.0005$), el tracker premia el edge positivo ($w_0 = 1.037 > w_1 = 0.963$), evitando castigar estrategias asimétricas rentables. Cuando $|r|=R$ es constante, colapsa exactamente al invariante de acierto $\theta_i = 2\cdot\text{acc}_i - 1 \implies P_i = \text{acc}_i$.
+  - **F3.4-02 (`SeniorAuditorInterno`)**: En `crates/metacortex-engine/src/consejo_seniors.rs`, se eliminó el veto duplicado `is_veto = payload.do_calculus_risk > 0.92;` (`let is_veto = false;`). Se restaura la regla axiomática "un dato, un veto": `SeniorCausal` es el único evaluador de riesgo VPIN (`do_calculus_risk > 0.75`), preservando la capacidad de sobreescritura por supermayoría (override) tanto en $VPIN=0.90$ como en $VPIN=0.93$.
+  - **F3.4-06 (`SeniorRiesgo`)**: En `crates/metacortex-engine/src/consejo_seniors.rs`, se ajustó el umbral continuo de drawdown escalándolo contra la cota teórica de falsación $d^* = 1 - 0.05^{1/3} \approx 0.6316$: `max_drawdown = d_star * (0.95 - 0.10 * s)`. El veto absoluto del consejo es ahora alcanzable por debajo del rechazo del risk-engine (probado con $dd = 0.999\cdot d^*$ en todas las escalas $\tau$).
+- **Pruebas Verificadas y Des-ignoradas (100% Verdes)**:
+  - `cf3_tracker_premia_ev_no_acierto` (`metacortex-engine`): PASA (tracker y API viva de cortos).
+  - `cf3_vpin_un_dato_un_veto` (`metacortex-engine`): PASA (rejilla $n \in \{0, 500\} \times \text{Meta} \in \{1, 2\}$).
+  - `cf3_veto_dd_consejo_alcanzable` (`god-engine-core`): PASA ($16/16$ cuadrantes alcanzables).
+  - Suite completa de `metacortex-engine` (20 lib tests + 8 cf2 + 2 cf3 + 4 constant hunter + 34 council evidence + 5 ente continuo + 1 mutación + 6 prospect + 1 dirección propia + 2 simetría espejo + 1 quantum organism + 1 reminiscencia): 100% OK.
+  - Workspace `cargo check --workspace --all-targets`: limpio, sin errores.
+- **Tablas Actualizadas**: `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv` filas 40, 43, 44 marcadas como `pasa` (`AGY (consejo)`).
 ## 2026-10-12 — Claude (Línea G, LG-n): ola 6 — revisión del T-3 de la Línea H y derivación del techo de fricción
 
 - **Réplica** de `t3_valle_de_capital`: idéntica a la de la Línea H (35/50/65
