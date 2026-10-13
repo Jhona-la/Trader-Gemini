@@ -29,8 +29,8 @@ use backtest_engine::booktick_replay::{
 use quantum_arena::genome::SuperGenotype;
 use std::sync::atomic::Ordering::Relaxed;
 
+// Cerrado en Ola Ω93 (F3.4-04): booktick_replay escribe los muros L2 vía core.arena.update_l2_depth.
 #[test]
-#[ignore = "OPEN F3.4-04 (Línea C, harness de replay y puertas_del_continuo): booktick_replay no llama a update_l2_depth; los muros quedan en (0, 0) y el veto de muro (gen 57) no existe en el replay que selecciona genomas"]
 fn cf3_replay_escribe_los_muros() {
     let ticks: Vec<ReplayTick> = (0..300u64)
         .map(|i| ReplayTick {

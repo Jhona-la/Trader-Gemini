@@ -345,6 +345,9 @@ fn run_booktick_replay_observed(
             continue; // aduana F2.1 (misma regla que producción)
         }
 
+        // F3.4-04 (Línea C / Ola Ω93): paridad de muros L2 con vivo y forense.
+        core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);
+
         // ATR real del stream (TR = rango efectivo del tick).
         // FIX AUDIT: la fórmula anterior `max(spread, mid - running_atr)` era
         // un NIVEL DE PRECIO ($63K), no un rango → running_atr divergía a
