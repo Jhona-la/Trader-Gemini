@@ -104,7 +104,7 @@ el detector LG8/e-CUSUM ni se reutiliza su retorno bilateralmente recortado.
   Scope: Platt real y fórmula del fixture, sin llamada al risk-manager vivo.
   Recibo `001-lg5-baseline-red.json`, SHA256
   `2e775999443fb032c8f03b958b60e8df6fa7a104c609eb76c68fa9f51958fd60`.
-- GREEN: igual tasa de positivos con pagos distintos; salidas intermedias;
+- Contratos previstos (no atribuyen ejecución): igual tasa de positivos con pagos distintos; salidas intermedias;
   ventana y pesos iguales al oráculo; cero frente a desconocido; unidades;
   causalidad; replay tras expulsión; persistencia/legacy; consumidor de riesgo
   con control positivo y motivo de rechazo exacto; coste contado una vez.
@@ -122,6 +122,20 @@ ejecutadas ni GREEN. Sus JSON registran `command_failed`, exit −1 y freeze
 estable. El stdout del orquestador no sustituye esos recibos: el padre pwsh no
 propagó correctamente una salida negativa. Los siguientes cortes comprueban
 estado y ambos exits del JSON antes de continuar, además del resultado Cargo.
+
+Corte `2d95e605`: all-targets 005 PASS (SHA256
+`6153127919990891d5c2cf037d2eafa365f171f3312b889396464211fc8a2186`).
+007 registró Cargo 101: 2 unidades Kelly y 3 contratos aprobados; 6 contratos
+fallaron en la aserción `leverage > 1`, con órdenes admitidas de volumen
+71,88974 y leverage 1. Recibo SHA256
+`aff3435d4db9d3eed2b1b9b6eae50211349caf493d226d6fafe64bda42353ab6`.
+La revisión independiente obtiene PF_LCB=1,56256319, b=0,52085440,
+p_mix=0,69 y Kelly=0,09482407. Con genes baseline, L continuo≈1,60803
+se cuantiza por floor a 1; esos genes no están todos fijados por la fixture,
+por lo que la cifra L no es un oráculo incondicional. La admisión exige tamaño
+superior a sonda y límites válidos; no exige aumentar leverage. Se corrige
+sólo esa aserción, manteniendo motivos de veto, contrastes económicos y
+límites de volumen/nocional. El padre abortó antes de 006/008/009.
 
 Consejo: integración/core/persistencia, riesgo/admisión y revisión matemática
 independientes. Reservas preservadas: AGY F7/Hodge/LH02, C-F5/estado y freno,

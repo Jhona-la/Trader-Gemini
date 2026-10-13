@@ -8,11 +8,11 @@ use std::sync::atomic::Ordering;
 /// o derivado de métricas reales del arena (WR, PF, Hurst, ATR).
 ///
 /// QUÉ: Algoritmo de apalancamiento que combina 5 tensores matemáticos para
-///      producir un leverage óptimo por operación.
+///      recomendar un leverage por operación; no prueba optimalidad.
 ///
 /// CÓMO: 5 Tensores multiplicativos:
-///   T1 = Fractional Kelly (con profit_factor REAL, no proxy)
-///   T2 = Conviction³ (Bayesian Proxy, escala del genoma)
+///   T1 = Fractional Kelly (PF_LCB/WR publicado: proxy de pago binario)
+///   T2 = Conviction³ (escala heurística del genoma)
 ///   T3 = Volatility Brake (tanh friction, SIEMPRE activo incluso en scalp)
 ///   T4 = Growth Pressure (relativo a base_capital, no a $50)
 ///   T5 = Hurst Predictability Bonus
@@ -84,7 +84,7 @@ impl QuantumLeverageMatrix {
         tick_volatility: f64,
         volatility_multiplier: f64, // Extracted from SuperGenotype
         hurst_exponent: f64,        // TENSOR 5: Predictabilidad de la serie
-        real_profit_factor: f64, // PF REAL del coin (de arena.coins[id].scalp/swing.profit_factor)
+        real_profit_factor: f64, // El consumidor actual aporta PF_LCB, no un pago observado.
         real_win_rate: f64,      // Win Rate REAL histórico del coin
         genome_max_leverage: f64, // Límite del genoma (de config.global_leverage)
         // D-750 — NOCIONAL MÍNIMO DEL SÍMBOLO, no el literal congelado.
@@ -143,7 +143,7 @@ impl QuantumLeverageMatrix {
         };
 
         // ═══════════════════════════════════════════════════════
-        // TENSOR 1: Full Fractional Kelly (con profit_factor y win_rate REAL)
+        // TENSOR 1: Fractional Kelly con proxy PF_LCB/WR publicado
         // ═══════════════════════════════════════════════════════
         // Mezcla heurística: con historial (WR > 0.05), 70% historia + 30% señal.
         // D-690: la convicción puntual es la probabilidad calibrada cuando existe;
@@ -175,7 +175,7 @@ impl QuantumLeverageMatrix {
         let dynamic_kelly = kelly * fraction_multiplier;
 
         // ═══════════════════════════════════════════════════════
-        // TENSOR 2: Convicción de la Señal (Bayesian Proxy Adaptativo)
+        // TENSOR 2: Convicción de la Señal (escala heurística adaptativa)
         // ═══════════════════════════════════════════════════════
         // D-746 — LA VOLATILIDAD NO ES CONVICCIÓN.
         //

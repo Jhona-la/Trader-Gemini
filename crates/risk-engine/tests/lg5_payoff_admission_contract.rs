@@ -98,27 +98,33 @@ fn assert_rejected(arena: &GlobalArena, intent: &SignalIntent, reason: usize) {
     );
 }
 
-fn assert_interior_order(arena: &GlobalArena, intent: &SignalIntent) {
-    assert_interior_size(evaluate(arena, intent), intent.signal);
+fn assert_nonminimum_order(arena: &GlobalArena, intent: &SignalIntent) {
+    assert_nonminimum_size(evaluate(arena, intent), intent.signal);
 }
 
-fn assert_interior_size(order: ValidatedOrder, expected_side: SignalType) {
+fn assert_nonminimum_size(order: ValidatedOrder, expected_side: SignalType) {
     assert_eq!(
         order.signal,
         expected_side,
         "{}",
         risk_engine::reject_report()
     );
-    // El positivo debe atravesar la admisión con margen real, no pasar porque
-    // se abrió una sonda mínima o se saturó todo al techo del fixture.
+    // El positivo debe atravesar la admisión con margen y nocional holgados
+    // sobre la sonda mínima y sin alcanzar el techo de margen del fixture.
+    // La matriz calcula L=1.608... con p=.55, PF_LCB=1.56256... y WR=.75;
+    // el contrato del exchange lo cuantiza a 1. Ese entero es válido y no
+    // convierte el margen admitido de 71.889... en una sonda mínima.
     assert!(order.volume_usd > 5.1, "margin at minimum: {order:?}");
     assert!(
         order.volume_usd < 200.0,
         "margin at capital ceiling: {order:?}"
     );
     assert!(
-        order.leverage > 1.0 && order.leverage < 20.0,
-        "leverage at boundary: {order:?}"
+        order.leverage.is_finite()
+            && order.leverage.fract() == 0.0
+            && order.leverage >= 1.0
+            && order.leverage < 20.0,
+        "leverage outside admitted range: {order:?}"
     );
     assert!(
         order.volume_usd * order.leverage > 10.2,
@@ -148,7 +154,7 @@ fn lg5_many_small_net_wins_do_not_invent_positive_ev() {
     intent.net_payoff = Some(estimate);
     assert_rejected(&arena, &intent, REJ_EV);
     intent.net_payoff = Some(measured(&[0.004; 100]));
-    assert_interior_order(&arena, &intent);
+    assert_nonminimum_order(&arena, &intent);
 }
 
 #[test]
@@ -158,7 +164,7 @@ fn lg5_net_return_pays_the_base_cost_once() {
     // 1.05*FEE=.000861: el segundo umbral duplicaría el coste base.
     assert!(0.0002 > 0.05 * FEE && 0.0002 < 1.05 * FEE);
     intent.net_payoff = Some(measured(&[0.0002; 100]));
-    assert_interior_order(&arena, &intent);
+    assert_nonminimum_order(&arena, &intent);
     intent.net_payoff = Some(measured(&[0.00002; 100]));
     assert_rejected(&arena, &intent, REJ_EV);
 }
@@ -174,7 +180,7 @@ fn lg5_unknown_zero_and_negative_are_distinct_without_probability_fallback() {
             assert_rejected(&arena, &intent, REJ_EV);
         }
         intent.net_payoff = Some(measured(&[0.004; 100]));
-        assert_interior_order(&arena, &intent);
+        assert_nonminimum_order(&arena, &intent);
     }
 }
 
@@ -284,7 +290,7 @@ fn lg5_valid_evidence_respects_side_and_declared_local_source() {
                 source,
                 ..measured(&[0.004; 100])
             });
-            assert_interior_order(&arena, &intent);
+            assert_nonminimum_order(&arena, &intent);
         }
     }
 }
@@ -298,7 +304,7 @@ fn lg5_legacy_clock_admits_evidence_available_at_exact_equality() {
         .last_tick_timestamp_ms
         .store(100_000, Relaxed);
     intent.net_payoff = Some(measured(&[0.004; 100]));
-    assert_interior_order(&arena, &intent);
+    assert_nonminimum_order(&arena, &intent);
 }
 
 #[test]
@@ -334,7 +340,7 @@ fn lg5_explicit_trade_clock_can_be_newer_than_depth() {
     // Boundary fixture for a decision triggered by a trade at t=20 while
     // the latest depth event remains t=10. The event provides the clock.
     let order = RiskEngine::new(1_000.0).evaluate_quantum_order_at(0, &intent, &arena, 20);
-    assert_interior_size(order, SignalType::Long);
+    assert_nonminimum_size(order, SignalType::Long);
     assert_eq!(arena.coins[0].last_tick_timestamp_ms.load(Relaxed), 10);
     assert_rejected(&arena, &intent, REJ_INVALID_INPUT);
 }
