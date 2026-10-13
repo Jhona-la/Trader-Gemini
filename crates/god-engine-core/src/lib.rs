@@ -1443,6 +1443,45 @@ impl GodEngineCore {
         self.feature_engines[coin_id].get_features()
     }
 
+    /// Sincroniza los parámetros del Consejo Deliberativo (CouncilParams) desde la configuración
+    /// lock-free del Arena (QuantumConfig), erradicando las constantes estáticas congeladas (Ola Ω95).
+    #[inline]
+    pub fn sync_council_params(
+        params: &mut metacortex_engine::consejo_seniors::CouncilParams,
+        cfg: &quantum_arena::QuantumConfig,
+    ) {
+        let approval = cfg.council_approval_threshold.load(Ordering::Relaxed);
+        let override_sup = cfg.council_supermajority_override.load(Ordering::Relaxed);
+        let floor = cfg.council_override_signal_floor.load(Ordering::Relaxed);
+        let penalty = cfg.council_override_penalty.load(Ordering::Relaxed);
+        let k = cfg.council_shrinkage_k.load(Ordering::Relaxed);
+        let breaker = cfg.council_cascade_severity_breaker.load(Ordering::Relaxed);
+
+        if (0.0..=1.0).contains(&approval) {
+            params.approval_threshold = approval;
+        }
+        if (0.0..=1.0).contains(&override_sup) {
+            params.supermajority_override = override_sup;
+        }
+        if (0.0..=1.0).contains(&floor) {
+            params.override_signal_floor = floor;
+        }
+        if (0.0..=1.0).contains(&penalty) {
+            params.override_penalty = penalty;
+        }
+        if k.is_finite() && k > 0.0 {
+            params.shrinkage_k = k;
+        }
+        if (0.0..=1.0).contains(&breaker) {
+            params.cascade_severity_breaker = breaker;
+        }
+    }
+
+    #[inline]
+    pub fn sync_council_params_from_arena(&mut self) {
+        Self::sync_council_params(&mut self.consejo_deliberacion.params, &self.arena.config);
+    }
+
     /// Accept a reported execution snapshot, not an incremental fill. No global fallback.
     pub fn observe_liquidation(
         &mut self,
@@ -8364,6 +8403,7 @@ impl GodEngineCore {
                             },
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
+                    Self::sync_council_params(&mut self.consejo_deliberacion.params, &self.arena.config);
                     let council_decision = self.consejo_deliberacion.deliberar_traced(
                         &council_snapshot,
                         wr,
