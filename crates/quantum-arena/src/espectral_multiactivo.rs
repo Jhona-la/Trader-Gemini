@@ -45,11 +45,14 @@
 //! por ts no duplica; (v) extremo a extremo con DOS `TemporalSpectrum`
 //! reales sobre la misma serie (accesor `ultimo_bloque_maduro`).
 //!
-//! ## Alcance (observación, no política)
+//! ## Alcance (telemetría y política)
 //!
-//! Cero consumidores de política: el uso futuro — ρ(τ*) del veto de grupo,
-//! sustituyendo el ρ̄ escalar por el ρ de la escala que opera la orden —
-//! es decisión del consejo con T-1 propio.
+//! Consumidor vivo: el core alimenta maduraciones, evidence_publication
+//! publica qo_613_rho_tau y el riesgo lo usa para apretar el veto de grupo.
+//! El IC es un momento cruzado normalizado sin centrar de retornos de
+//! precio, no Pearson. Su media incluye activos con evidencia, sin filtrar
+//! posiciones ni lados; no demuestra equivalencia con la dependencia de
+//! PnL del grupo same-bet. Nulo, familia y vigencia requieren contratos.
 
 use crate::evalues::EProceso;
 use crate::temporal_spectrum::SPECTRUM_SCALES_MS;
@@ -57,13 +60,16 @@ use std::collections::HashMap;
 
 const ESCALAS: usize = 32;
 
-/// #665: escalas de banda operable por par ([30 s, 12 h] = nodos 18..22
-/// de la malla 4^k µs) — las celdas que la ruta del veto consulta de
-/// facto (la escala dominante vive siempre en banda).
+/// #665: familia histórica de cinco escalas por par: nodos interiores
+/// 18..22 de [30 s, 12 h] en la malla real tau_k = 4^k ns.
+/// La selección por distancia absoluta del publisher también puede elegir
+/// el nodo 17 cerca de 30 s: hay seis nodos potenciales en esa ruta.
+/// La familia efectiva queda abierta; este contrato conserva el M vigente.
 const ESCALAS_BANDA_PAR: usize = 5;
 
-/// #665 (F2-B8): tamaño de la FAMILIA de e-procesos que el veto de
-/// grupo efectivamente escanea — C(MAX_COINS,2) pares × ESCALAS_BANDA_PAR.
+/// #665 (F2-B8): tamaño histórico configurado de la FAMILIA de
+/// e-procesos: C(MAX_COINS,2) pares × ESCALAS_BANDA_PAR.
+/// No certifica por sí solo el conjunto efectivo consultado por la política.
 /// Alimenta el umbral Bonferroni M/α del gate Ville de la ruta del veto
 /// (`coherencia_media_con_todas` → qo_613_rho_tau).
 pub const FAMILIA_VETO_GRUPO: usize =
@@ -83,10 +89,12 @@ struct IcEscala {
     eb2: f64,
     eab: f64,
     n: u64,
-    /// #665 (F2-B8): e-proceso de Ville del IC CRUZADO — apuesta sobre
-    /// si el signo del co-movimiento (ra·rb) agrees con el signo del IC
-    /// acumulado ANTES de la observación (causal). Bajo H0 (IC=0) es
-    /// supermartingala; con acoplamiento real, el capital crece.
+    /// #665 (F2-B8): apuesta sobre el signo de ra·rb orientado por una
+    /// señal +/-1 basada en el historial anterior a observar el par.
+    /// Para Ville debe ser previsible respecto de una filtración definida;
+    /// este comentario no verifica esa filtración de mercado ni el nulo
+    /// E[score_t | F_prev] <= 0. IC=0 o independencia con drift no bastan.
+    /// Capital histórico y momentos con olvido no certifican vigencia actual.
     e: EProceso,
 }
 
@@ -94,7 +102,8 @@ impl IcEscala {
     fn acumular(&mut self, ra: f64, rb: f64) {
         // Causal: la señal es el signo del IC VIGENTE (pre-observación).
         let senal = if self.eab >= 0.0 { 1.0 } else { -1.0 };
-        let retorno = (ra * rb).signum();
+        // EProceso clasifica el signo y preserva cero/no-finito como abstención.
+        let retorno = ra * rb;
         self.e.observar(senal, retorno);
         self.ea2 += (ra * ra - self.ea2) * OLVIDO;
         self.eb2 += (rb * rb - self.eb2) * OLVIDO;
@@ -118,10 +127,9 @@ impl IcEscala {
         }
     }
 
-    /// #665 (F2-B8): IC significativo bajo Ville con corrección de
-    /// FAMILIA — la ruta del veto de grupo escanea C(N,2)·banda celdas
-    /// (par, escala); sin la corrección, en ruido el máximo de varias
-    /// IC cruza (misma patología que #663 cerró en el banco de τ*).
+    /// #665 (F2-B8): gate histórico con umbral M/alfa. La garantía de
+    /// Ville está condicionada al nulo del score y a cubrir la familia real;
+    /// no prueba significancia de Pearson ni dependencia presente del grupo.
     fn ic_veto(&self) -> Option<f64> {
         if !self.e.significativo_familia(FAMILIA_VETO_GRUPO) {
             return None;
@@ -188,8 +196,8 @@ impl EspectralMultiactivo {
             return;
         }
         let previo = self.ultimo[moneda][escala];
-        if previo.0 == ts_ms {
-            return; // mismo bloque ya emparejado — sin muestra duplicada
+        if ts_ms <= previo.0 {
+            return; // duplicado o replay anterior: abstención antes de escribir
         }
         self.ultimo[moneda][escala] = (ts_ms, r);
         let tolerancia = (RECENCIA_X * tau_ms) as u64;
@@ -220,10 +228,10 @@ impl EspectralMultiactivo {
             };
             let enlace = self.enlaces.entry((a, b)).or_default();
             let (ult_a, ult_b) = enlace.consumido[escala];
-            if ult_a == ts_a || ult_b == ts_b {
-                // H1-1: un bloque de esta muestra ya fue consumido por
-                // este par-escala — alimentarlo de nuevo crearía una
-                // muestra 1-dependiente con la anterior.
+            if ts_a <= ult_a || ts_b <= ult_b {
+                // H1-1: ambos cierres deben avanzar respecto al consumo
+                // del par-escala. Ningún bloque igual o anterior puede
+                // aportar otra muestra o reabrir historia ya consumida.
                 continue;
             }
             enlace.consumido[escala] = (ts_a, ts_b);
@@ -312,11 +320,11 @@ impl EspectralMultiactivo {
         mejor
     }
 
-    /// #613 — media del IC SIGNED de `moneda` contra TODAS las otras
-    /// monedas con evidencia madura en `escala`. Es la ρ̄ espectral del
-    /// grupo a esa escala: el reemplazo directo del ρ̄ escalar del veto de
-    /// grupo cuando la orden opera a esa τ. Signo preservado (anticorrela-
-    /// ción = cobertura, D-750b); `None` sin pares maduros.
+    /// #613 — media del IC de precio SIGNED de `moneda` contra TODAS
+    /// las otras monedas con evidencia que cruza el gate en `escala`.
+    /// No filtra posiciones, tamaños ni signos de exposición; anticorrelación
+    /// de precio no equivale a cobertura de PnL con lados opuestos.
+    /// El consumidor conserva la política de sólo apretar; `None` sin pares.
     pub fn coherencia_media_con_todas(&self, moneda: usize, escala: usize) -> Option<f64> {
         if moneda >= self.max_coins || escala >= ESCALAS {
             return None;
@@ -556,7 +564,7 @@ mod qo_613_tests {
         // madurar. La media de 0 contra todas debe promediar SOLO las maduras.
         // Serie determinista alternante (r_i = ±a): ra y rb idénticos ⇒ ic=1.
         // #665: la ruta del veto exige además capital Ville de FAMILIA
-        // (2175 celdas ⇒ umbral 43500 ⇒ ≥104 aciertos con λ=0.10).
+        // (2175 celdas ⇒ umbral 43500 ⇒ 113 aciertos únicos con λ=0.10).
         for i in 0..120u64 {
             let ts = (i + 1) * 1000;
             let r = if i % 2 == 0 { 0.02 } else { -0.02 };
@@ -579,26 +587,34 @@ mod qo_665_tests {
 
     /// #665 (F2-B8): el IC cruZado del VETO exige significancia Ville de
     /// familia — 40 muestras perfectamente correlacionadas NO bastan
-    /// (capital 1.1^40≈45 < 43500); ~104 sí. La telemetría pura
+    /// (capital 1.1^40≈45 < 43500); 113 sí. La telemetría pura
     /// (`coherencia_par`) sigue sin gate.
     #[test]
     fn qo_665_ic_veto_exige_capital_de_familia() {
         let mut uni = EspectralMultiactivo::new(4);
         let tau = 1000.0;
-        let feed = |uni: &mut EspectralMultiactivo, hasta: u64| {
-            for i in 0..hasta {
+        let feed = |uni: &mut EspectralMultiactivo, rango: std::ops::Range<u64>| {
+            for i in rango {
                 let ts = (i + 1) * 1000;
                 let r = if i % 2 == 0 { 0.02 } else { -0.02 };
                 uni.observar_maduracion(0, tau, 19, ts, r);
                 uni.observar_maduracion(1, tau, 19, ts, r);
             }
         };
-        feed(&mut uni, 40);
-        // Madurez n≥30 ✓, capital 45 < umbral ⇒ veto gate cerrado.
+        feed(&mut uni, 0..40);
+        assert_eq!(uni.muestras_par(0, 1, 19), Some(40));
         assert!(uni.coherencia_par(0, 1, 19).is_some(), "telemetria pura sin gate");
         assert_eq!(uni.coherencia_par_veto(0, 1, 19), None, "40 perfectas no cruzan familia");
-        feed(&mut uni, 110);
-        assert!(uni.coherencia_par_veto(0, 1, 19).is_some(), "120 perfectas cruzan (1.1^120 ≈ 92k > 43500)");
+        // Repetir el prefijo no aporta otras 40 muestras.
+        feed(&mut uni, 0..110);
+        assert_eq!(uni.muestras_par(0, 1, 19), Some(110));
+        assert_eq!(uni.coherencia_par_veto(0, 1, 19), None, "110 únicas no cruzan familia");
+        feed(&mut uni, 110..112);
+        assert_eq!(uni.muestras_par(0, 1, 19), Some(112));
+        assert_eq!(uni.coherencia_par_veto(0, 1, 19), None, "1.1^112 < 43500");
+        feed(&mut uni, 112..113);
+        assert_eq!(uni.muestras_par(0, 1, 19), Some(113));
+        assert!(uni.coherencia_par_veto(0, 1, 19).is_some(), "113 únicas cruzan (1.1^113 > 43500)");
     }
 
     /// #665: ruido independiente — el IC puro puede flotar, el gate del
@@ -625,3 +641,7 @@ mod qo_665_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "espectral_zero_replay_contract.rs"]
+mod zero_replay_contract;

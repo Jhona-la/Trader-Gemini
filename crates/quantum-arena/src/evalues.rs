@@ -10,53 +10,64 @@
 //! «en ruido el máximo de varias IC suele ser positivo» (diagnóstico del
 //! consejo, abierto desde #594).
 //!
-//! La solución: un E-PROCESO — producto de factores de apuesta no
-//! negativos. Bajo H0 (la señal NO tiene habilidad: mediana del producto
-//! señal·retorno ≤ 0), cada factor tiene esperanza ≤ 1 y el producto es
-//! una SUPERMARTINGALA. La desigualdad de Ville da la garantía
-//! ANYTIME-VALID: P(∃t: e_t ≥ 1/α) ≤ α — para CUALQUIER tiempo de
-//! parada, incluyendo consultas continuas.
+//! Operador: producto de factores 1 + lambda * score_t, con score en
+//! {-1, 0, +1}; cero/no-finito es abstención. Con capital inicial 1,
+//! lambda previsible y no negativa, y factores no negativos, el nulo
+//! suficiente es E[score_t | F_prev] <= 0 en toda la historia cubierta.
+//! Bajo esas condiciones el producto es una supermartingala y Ville acota
+//! P(existe t: e_t >= 1/alfa) <= alfa, incluyendo consultas continuas.
+//! Mediana del producto <= 0 no basta con átomos en cero: 51% cero y
+//! 49% positivo tiene mediana 0 pero E[score]=0.49. Momento cruzado 0
+//! tampoco implica ese nulo. La hipótesis del consumidor queda abierta;
+//! este operador no certifica independencia ni habilidad actual.
 //!
 //! #663 (G1-1, mea culpa de #661): Ville NO cubre por sí sola la
 //! MULTIPLICIDAD de la selección del máximo — la cota es POR PROCESO.
 //! Con M e-procesos consultados en la misma decisión (32 escalas del
-//! banco de τ*; 13×32 = 416 pares motor×escala del consenso), el FWER
-//! es ≤ M·α ≈ 1. Los consumidores de SELECCIÓN usan
+//! banco de τ*; 13×32 = 416 pares motor×escala del consenso), bajo el
+//! nulo condicional el FWER queda acotado por min(1, M*alfa). Para
+//! M=416 y alfa=0.05, M*alfa=20.8: la cota es trivial (1),
+//! no una estimación del FWER real. Los consumidores de SELECCIÓN usan
 //! `significativo_familia(M)` con umbral M/α (Bonferroni sobre la
 //! familia, misma anytime-validity).
 //!
-//! Robustez: el factor apuesta sobre el SIGNO de señal·retorno
-//! (winsorizado por construcción a ±1) — inmune a las colas pesadas de
-//! los retornos financieros (un solo |r| de 10σ no puede romper el
-//! proceso). La potencia se recupera acumulando evidencia: el capital
-//! crece exponencialmente cuando la señal acierta direcciones.
+//! Robustez del factor: el signo acota la apuesta a +/-1 y elimina
+//! la magnitud del retorno de cada factor. Eso no garantiza validez del
+//! nulo, crecimiento positivo ni representabilidad f64 de los productos.
+//! La dirección acertada necesita frecuencia suficiente y un contrato
+//! condicional válido; abstenciones no aportan capital.
 
 /// α por defecto del gate de significancia (5%): el umbral de capital
 /// es 1/α = 20 — el proceso necesita multiplicar su capital ×20 por
 /// pura dirección acertada antes de declarar habilidad.
 pub const ALFA_SIGNIFICANCIA: f64 = 0.05;
 
-/// λ por defecto (fracción de capital apostada por observación): acota
-/// el factor a [1−λ, 1+λ]. Pequeño ⇒ drawdowns lentos del capital y
-/// potencia moderada por observación, pero la ley de grandes números
-/// acumula: n·λ·(2p−1) en log-capital con p = tasa de acierto.
+/// λ por defecto: factor en [1-lambda, 1+lambda]. En un modelo IID con
+/// lambda fija y probabilidades p_+, p_- (p_+ + p_- <= 1), el crecimiento
+/// logarítmico medio exacto por observación es
+/// p_+ * ln(1+lambda) + p_- * ln(1-lambda); abstenciones aportan cero.
+/// Acertar más del 50% no basta por sí solo para crecimiento positivo.
+/// Es una identidad del modelo, no garantía económica ni de precisión f64.
 pub const LAMBDA_APOSTADA: f64 = 0.10;
 
 /// Muestras mínimas antes de poder declarar (evita capital trivial de
 /// 2-3 aciertos suertudos con λ pequeño... el umbral 1/α=20 ya exige
-/// ~35 aciertos netos con λ=0.10; esta guardia es documental).
+/// 32 aciertos consecutivos con λ=0.10; esta guardia es documental).
 pub const N_MIN_EVALUE: u64 = 20;
 
 /// #661 — E-PROCESO de Ville sobre el signo de señal·retorno.
 ///
-/// factor_i = 1 + λ·sign(s_i · r_i) — bajo H0 (mediana(s·r) ≤ 0):
-/// E[factor] = 1 + λ·E[sign] ≤ 1 ⇒ e_t supermartingala no-negativa.
-/// Ville: P(sup_t e_t ≥ 1/α) ≤ α para cualquier tiempo de parada.
+/// factor_t = 1 + lambda * score_t; score_t es el signo del producto
+/// finito no nulo, o 0 como abstención. El nulo condicional requerido es
+/// E[score_t | F_prev] <= 0, con lambda previsible y no negativa.
+/// Ville aplica a esa historia y familia bajo sus hipótesis; mediana <= 0
+/// o IC=0 no las establecen. La aritmética f64 no garantiza representabilidad
+/// indefinida del capital ni reemplaza la calibración de los consumidores.
 #[derive(Debug, Clone, Copy)]
 pub struct EProceso {
     /// Capital del apostador (producto de factores). Arranca en 1.0.
     capital: f64,
-    /// λ acotada a (0, 0.5): factor siempre positivo.
+    /// Con parámetro finito, lambda en [1e-4, 0.5]: factor en [0.5, 1.5].
     lambda: f64,
     /// α del gate; umbral = 1/α.
     alfa: f64,
@@ -74,7 +85,8 @@ impl EProceso {
         }
     }
 
-    /// Constructor con parámetros (tests/calibración).
+    /// Constructor con parámetros finitos (tests/calibración).
+    /// Acota lambda y alfa a [1e-4, 0.5]; no valida parámetros NaN.
     pub fn con_parametros(lambda: f64, alfa: f64) -> Self {
         Self {
             capital: 1.0,
@@ -96,13 +108,14 @@ impl EProceso {
         let apuesta = if producto > 0.0 { 1.0 } else { -1.0 };
         let factor = 1.0 + self.lambda * apuesta;
         self.capital *= factor;
-        // El capital nunca puede tocar 0 (λ ≤ 0.5 ⇒ factor ≥ 0.5).
+        // Factores positivos en aritmética exacta. f64 puede sub/sobrefluir;
+        // la representabilidad indefinida requiere un contrato independiente.
     }
 
     /// ¿El proceso ha cruzado el umbral de Ville (capital ≥ 1/α)?
-    /// Esta es la significancia ANYTIME-VALID: puede consultarse en
-    /// cualquier momento, cualquier número de veces, sin inflar el error
-    /// de Tipo I más allá de α — **POR PROCESO**.
+    /// Puede consultarse continuamente bajo el nulo condicional declarado:
+    /// la cota de Ville es POR PROCESO y para la historia cubierta.
+    /// El booleano no demuestra esas hipótesis ni vigencia tras drift.
     #[inline]
     pub fn significativo(&self) -> bool {
         self.n >= N_MIN_EVALUE && self.capital >= 1.0 / self.alfa
@@ -111,13 +124,16 @@ impl EProceso {
     /// #663 (G1-1): significancia corregida por MULTIPLICIDAD de
     /// FAMILIA. Ville acota P(∃t: e ≥ 1/α) ≤ α POR PROCESO; con M
     /// procesos consultados en la misma selección, la unión da
-    /// P(alguno cruza) ≤ M·α (FWER≈1 con M=448 y α=0.05). El umbral de
-    /// familia M/α restaura la garantía global bajo la MISMA
-    /// anytime-validity: cada par (señal,retorno) alimenta exactamente
-    /// un factor, así que la cota por proceso sigue siendo válida y la
-    /// corrección de Bonferroni sobre la familia es conservadora.
-    /// Con λ=0.10 y acierto p: cruce esperado a n ≈ ln(M/α)/(p·ln1.1+...
-    /// con p=0.58: M=32⇒585 obs, M=416⇒820 obs.
+    /// P(alguno cruza) <= min(1, M*alfa). Con M=448, alfa=0.05,
+    /// M*alfa=22.4: cota trivial (1), no estimación del FWER real.
+    /// El umbral de
+    /// familia M/α conserva la cota por unión si M cubre todos los procesos
+    /// consultados y cada proceso satisface el nulo condicional declarado.
+    /// Un factor por observación no demuestra ese nulo. Reinicios/épocas y
+    /// cambios de familia necesitan presupuesto global explícito de error.
+    /// Con lambda fija y un modelo IID, ln(M/alfa) dividido por el
+    /// drift logarítmico positivo aproxima una escala de acumulación;
+    /// no es una identidad del tiempo esperado de primer cruce.
     #[inline]
     pub fn significativo_familia(&self, num_pruebas: usize) -> bool {
         let m = num_pruebas.max(1) as f64;
