@@ -1,0 +1,703 @@
+{
+  "schema": 4,
+  "cycle": "Omega28 and mature OU consumer clock rejection",
+  "historical_validation": {
+    "receipt": "docs/audit/RECIBOS_INTEGRACION_R4_2026-10-07.json",
+    "tested_runtime_commit": "e9c6a435eb1780da7f2c6e29103f3bd7d227d94c",
+    "scope": "737 applicable historical results and T1 e9 remain at their original commits; they are not executions on or global source identity with Omega28."
+  },
+  "merge_commit": "e584d3ef288505281e7cdcda09b8e3978eafdf74",
+  "merge_check": {
+    "parents": [
+      "4feb735664b2f79ea1f25e0fbc81021fdafd323a",
+      "a5c69af3f7a05c8642b803c61a6ff72613d96100"
+    ],
+    "candidate_tree": "4eb4bf4c70d640ef643df8dd30970474ac156140",
+    "post_check_tree": "4eb4bf4c70d640ef643df8dd30970474ac156140",
+    "command": [
+      "cargo",
+      "+nightly",
+      "check",
+      "--workspace",
+      "--all-targets",
+      "--locked"
+    ],
+    "target_dir": "C:/Users/jhona/.codex/worktrees/model-lineage-audit/Trader Gemini/target",
+    "jobs": 1,
+    "exit_code": 0,
+    "elapsed_seconds": 112.458,
+    "log_sha256": "b79c8c93209194522e9af0280d9e3565c9a34f1f42de120060e618d7845dc5bd"
+  },
+  "merge_resolution": {
+    "parents": [
+      "4feb735664b2f79ea1f25e0fbc81021fdafd323a",
+      "a5c69af3f7a05c8642b803c61a6ff72613d96100"
+    ],
+    "candidate_tree": "4eb4bf4c70d640ef643df8dd30970474ac156140",
+    "document_unions": [
+      {
+        "path": ".agents/MEMORIA.md",
+        "base_tail_sha256": "ac046de861605b6e38024138b33b39dba0cceabca7f34dc67f55994919e01605",
+        "ours_insert_sha256": "5c69fe83bb79f38e269e816e860ff32ce82926c7c3a1b8f1063d6ad99e9d9443",
+        "upstream_insert_sha256": "8ead586333c13913f81014003724b6229be7433b68d3ae75da97e166d9a3990a",
+        "merged_sha256": "9d4007f09b8cc5a6394222dfa956b7294a09df2b606c5bf51f2c24d18192abbc",
+        "both_insertions_and_base_tail_byte_identical": true
+      },
+      {
+        "path": "COORDINACION_CODEX_2026-09-28.md",
+        "base_tail_sha256": "2939c2c2340f222b4d16080b077f28ff135f6690f11cf1bff090bf2dc8e35363",
+        "ours_insert_sha256": "f73c8bacf9ed77a72eb0fca77216a50e53193591b1ddc4fa90eed31f9df6c289",
+        "upstream_insert_sha256": "b3acabfca5471fa98cdc46f0614d9808c82fa162424f7fa1ca0e92bec5661cfb",
+        "merged_sha256": "04c6e7112a380fbd72c8174698e582b3bb498c3f36dd7ee5da0281016b688fed",
+        "both_insertions_and_base_tail_byte_identical": true
+      }
+    ],
+    "runtime_exactly_upstream": true,
+    "sol_complete_files_identical_to_d2": [
+      "docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md",
+      "docs/PLAN_MAESTRO_SINCRONIZACION.md",
+      "docs/PLAN_MAESTRO_QUANT_SR_2026-10-05.md"
+    ]
+  },
+  "initial_snapshot": {
+    "checked_utc": "2026-10-08T20:29:24.030620+00:00",
+    "head": "e584d3ef288505281e7cdcda09b8e3978eafdf74",
+    "head_tree": "4eb4bf4c70d640ef643df8dd30970474ac156140",
+    "index_tree": "4eb4bf4c70d640ef643df8dd30970474ac156140",
+    "index_entries_sha256": "e27bdcb48a6af46fbce9193d7f310d12b58fa1183c90367bbe3cee57f4489c27",
+    "status": "",
+    "source_files": {
+      "crates/strategy-core/src/multivariate_coint.rs": {
+        "raw_sha256": "f71e96aeff3f3a4ebcc479a39fabe164c2341411a9f88f35ddd78a4f09822479",
+        "git_blob_if_added": "798b5c5377ba9fe7e64dfedc60c45d1897dfa4e9"
+      },
+      "crates/strategy-core/src/vecm_arbitrage.rs": {
+        "raw_sha256": "7e10d7c576169c230169ec8392dbfd2fdd8fde6a04b21a27d81d1cbc14f81138",
+        "git_blob_if_added": "2516f965c456e446e8af4387b517faa156de5cfc"
+      }
+    }
+  },
+  "compiler": "rustc 1.98.0-nightly (096694416 2026-06-29)\nbinary: rustc\ncommit-hash: 096694416a41840709140eb0fd0ca193d1a3e6ba\ncommit-date: 2026-06-29\nhost: x86_64-pc-windows-msvc\nrelease: 1.98.0-nightly\nLLVM version: 22.1.8",
+  "selected_environment": {
+    "CARGO_TARGET_DIR": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/target",
+    "CARGO_BUILD_JOBS": "1",
+    "TG_GENOME_ENV": "backtest",
+    "RUSTFLAGS": null,
+    "CARGO_ENCODED_RUSTFLAGS": null,
+    "RUST_TEST_THREADS": null,
+    "RAYON_NUM_THREADS": null,
+    "TG_TRACE_NATIVO": null
+  },
+  "approved_patch_sha256": {
+    "OMEGA28_CONSUMER_CLOCK_TEST.patch": "636f92b3fc671a5168ccb41a38f48e17007d91ce5a9279603475b47d1e3718aa",
+    "OMEGA28_CONSUMER_CLOCK_GATE.patch": "0744124ff8fbfe64634d5cc593803d2a321807dbb7685a736872034467616b82"
+  },
+  "state": "Completed final validation; publication pending",
+  "regressions": [
+    {
+      "label": "42-omega28-strategy-lib",
+      "head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "candidate_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "post_head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "post_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "command": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--release",
+        "-p",
+        "strategy-core",
+        "--locked",
+        "--lib",
+        "--",
+        "--test-threads=1"
+      ],
+      "environment": {
+        "CARGO_TARGET_DIR": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/target",
+        "CARGO_BUILD_JOBS": "1",
+        "TG_GENOME_ENV": "backtest"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 6.647,
+      "log_sha256": "5eaab42bdac1fc72335e4421773a47f50d4b2200597aa53e60f69b866ffb15e8",
+      "test_results": [
+        {
+          "status": "ok",
+          "passed": 29,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    {
+      "label": "43-omega28-strategy-contracts",
+      "head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "candidate_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "post_head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "post_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "command": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--release",
+        "-p",
+        "strategy-core",
+        "--test",
+        "basket_state_contract",
+        "--test",
+        "maker_quote_contract",
+        "--test",
+        "pair_model_characterization",
+        "--test",
+        "omega28_consumer_clock_contract",
+        "--locked",
+        "--",
+        "--test-threads=1"
+      ],
+      "environment": {
+        "CARGO_TARGET_DIR": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/target",
+        "CARGO_BUILD_JOBS": "1",
+        "TG_GENOME_ENV": "backtest"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 6.002,
+      "log_sha256": "2eb5882585a14b6fd099f04cf8a09f0ed2f0fd4b2e085a4134c79a79686bdd1a",
+      "test_results": [
+        {
+          "status": "ok",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "status": "ok",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "status": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "status": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    {
+      "label": "44-omega28-core-lib",
+      "head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "candidate_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "post_head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "post_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "command": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--release",
+        "-p",
+        "god-engine-core",
+        "--locked",
+        "--lib",
+        "--",
+        "--test-threads=1"
+      ],
+      "environment": {
+        "CARGO_TARGET_DIR": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/target",
+        "CARGO_BUILD_JOBS": "1",
+        "TG_GENOME_ENV": "backtest"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 67.37,
+      "log_sha256": "d0e60a87db72e81e8c2efbdf528ae001cb7be18bf1b993397c4e389654dc59f7",
+      "test_results": [
+        {
+          "status": "ok",
+          "passed": 170,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    {
+      "label": "45-omega28-core-contracts",
+      "head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "candidate_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "post_head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "post_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "command": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--release",
+        "-p",
+        "god-engine-core",
+        "--test",
+        "stateful_transition_contract",
+        "--test",
+        "evidence_expiry_contract",
+        "--test",
+        "model_reload_contract",
+        "--test",
+        "model_publication_contract",
+        "--test",
+        "ml_model_contract",
+        "--test",
+        "ml_base_publication_contract",
+        "--test",
+        "reality_physics_open_diagnostics",
+        "--test",
+        "resonancia_simetrica_contract",
+        "--test",
+        "sombras_espectrales_telemetria_contract",
+        "--test",
+        "close_outcome_contract",
+        "--locked",
+        "--",
+        "--test-threads=1"
+      ],
+      "environment": {
+        "CARGO_TARGET_DIR": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/target",
+        "CARGO_BUILD_JOBS": "1",
+        "TG_GENOME_ENV": "backtest"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 183.483,
+      "log_sha256": "87b47918be284ddd11b52cd895f3816941fdff63fdc0c3fd9c01de578dd1969f",
+      "test_results": [
+        {
+          "status": "ok",
+          "passed": 28,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "status": "ok",
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "status": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "status": "ok",
+          "passed": 12,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "status": "ok",
+          "passed": 14,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "status": "ok",
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "status": "ok",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "status": "ok",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "status": "ok",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "status": "ok",
+          "passed": 25,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    {
+      "label": "46-omega28-stateful-open",
+      "head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "candidate_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "post_head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "post_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "command": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--release",
+        "-p",
+        "god-engine-core",
+        "--locked",
+        "--test",
+        "stateful_open_diagnostics",
+        "--",
+        "--test-threads=1"
+      ],
+      "environment": {
+        "CARGO_TARGET_DIR": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/target",
+        "CARGO_BUILD_JOBS": "1",
+        "TG_GENOME_ENV": "backtest"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 4.546,
+      "log_sha256": "7f5e7451c65e89af3c411ef21d1e8d635658f438349cd8b64a72d70ea975b2e7",
+      "test_results": [
+        {
+          "status": "ok",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    {
+      "label": "47-omega28-reporting",
+      "head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "candidate_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "post_head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+      "post_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "command": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--release",
+        "-p",
+        "backtest-engine",
+        "--locked",
+        "--bin",
+        "continuous_evolution_backtest",
+        "reporting_contract",
+        "--",
+        "--test-threads=1"
+      ],
+      "environment": {
+        "CARGO_TARGET_DIR": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/target",
+        "CARGO_BUILD_JOBS": "1",
+        "TG_GENOME_ENV": "backtest"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 95.792,
+      "log_sha256": "3e39988bf832a1c360dde597bbeba9c9656145d86f71a27b25c7060c22b1956e",
+      "test_results": [
+        {
+          "status": "ok",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    }
+  ],
+  "updated_utc": "2026-10-08T21:06:02.370838+00:00",
+  "red": {
+    "before": {
+      "checked_utc": "2026-10-08T20:29:25.225147+00:00",
+      "head": "e584d3ef288505281e7cdcda09b8e3978eafdf74",
+      "head_tree": "4eb4bf4c70d640ef643df8dd30970474ac156140",
+      "index_tree": "bd082fdb3d5a6f92a8cf742d570ea76eccbad4a8",
+      "index_entries_sha256": "154e9ee2a209809a06a49943171036fe26174f18ebbd3d54e4374769ca85df90",
+      "status": "A  crates/strategy-core/tests/omega28_consumer_clock_contract.rs",
+      "source_files": {
+        "crates/strategy-core/src/multivariate_coint.rs": {
+          "raw_sha256": "f71e96aeff3f3a4ebcc479a39fabe164c2341411a9f88f35ddd78a4f09822479",
+          "git_blob_if_added": "798b5c5377ba9fe7e64dfedc60c45d1897dfa4e9"
+        },
+        "crates/strategy-core/src/vecm_arbitrage.rs": {
+          "raw_sha256": "7e10d7c576169c230169ec8392dbfd2fdd8fde6a04b21a27d81d1cbc14f81138",
+          "git_blob_if_added": "2516f965c456e446e8af4387b517faa156de5cfc"
+        },
+        "crates/strategy-core/tests/omega28_consumer_clock_contract.rs": {
+          "raw_sha256": "e85e62ed78a1e6d02f9568d7058ae663d5d0dad5908a3f4c37b4fefcec92f8d1",
+          "git_blob_if_added": "f8812c55c5a5c2fbfb1152576c7e5886b5eea320"
+        }
+      }
+    },
+    "after": {
+      "checked_utc": "2026-10-08T20:29:31.474011+00:00",
+      "head": "e584d3ef288505281e7cdcda09b8e3978eafdf74",
+      "head_tree": "4eb4bf4c70d640ef643df8dd30970474ac156140",
+      "index_tree": "bd082fdb3d5a6f92a8cf742d570ea76eccbad4a8",
+      "index_entries_sha256": "154e9ee2a209809a06a49943171036fe26174f18ebbd3d54e4374769ca85df90",
+      "status": "A  crates/strategy-core/tests/omega28_consumer_clock_contract.rs",
+      "source_files": {
+        "crates/strategy-core/src/multivariate_coint.rs": {
+          "raw_sha256": "f71e96aeff3f3a4ebcc479a39fabe164c2341411a9f88f35ddd78a4f09822479",
+          "git_blob_if_added": "798b5c5377ba9fe7e64dfedc60c45d1897dfa4e9"
+        },
+        "crates/strategy-core/src/vecm_arbitrage.rs": {
+          "raw_sha256": "7e10d7c576169c230169ec8392dbfd2fdd8fde6a04b21a27d81d1cbc14f81138",
+          "git_blob_if_added": "2516f965c456e446e8af4387b517faa156de5cfc"
+        },
+        "crates/strategy-core/tests/omega28_consumer_clock_contract.rs": {
+          "raw_sha256": "e85e62ed78a1e6d02f9568d7058ae663d5d0dad5908a3f4c37b4fefcec92f8d1",
+          "git_blob_if_added": "f8812c55c5a5c2fbfb1152576c7e5886b5eea320"
+        }
+      }
+    },
+    "receipt": {
+      "label": "39-omega28-consumer-red",
+      "head": "e584d3ef288505281e7cdcda09b8e3978eafdf74",
+      "candidate_tree": "bd082fdb3d5a6f92a8cf742d570ea76eccbad4a8",
+      "post_head": "e584d3ef288505281e7cdcda09b8e3978eafdf74",
+      "post_tree": "bd082fdb3d5a6f92a8cf742d570ea76eccbad4a8",
+      "command": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--release",
+        "-p",
+        "strategy-core",
+        "--locked",
+        "--test",
+        "omega28_consumer_clock_contract",
+        "--",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "environment": {
+        "CARGO_TARGET_DIR": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/target",
+        "CARGO_BUILD_JOBS": "1",
+        "TG_GENOME_ENV": "backtest"
+      },
+      "exit_code": 101,
+      "elapsed_seconds": 5.419,
+      "log_sha256": "7e7349d9f05dd3b75d52bf35796f80ae07c991512361ca6476264e36774b5e53",
+      "test_results": [
+        {
+          "status": "FAILED",
+          "passed": 0,
+          "failed": 1,
+          "ignored": 0
+        }
+      ]
+    },
+    "causal_failure_verified": "a duplicate observation must not emit a new intent",
+    "scope": "Only the new test was staged. Omega28 source was unchanged and the mature-emission precondition completed before the duplicate-event assertion failed. This is a temporary test index tree, not a failure of a future corrected HEAD."
+  },
+  "green": {
+    "before": {
+      "checked_utc": "2026-10-08T20:29:39.313244+00:00",
+      "head": "e584d3ef288505281e7cdcda09b8e3978eafdf74",
+      "head_tree": "4eb4bf4c70d640ef643df8dd30970474ac156140",
+      "index_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "index_entries_sha256": "184d16f297dd77f547e57c8f0d18a5bd01ec8df07ac455e3b02ca1bdd030e675",
+      "status": "M  crates/strategy-core/src/multivariate_coint.rs\nA  crates/strategy-core/tests/omega28_consumer_clock_contract.rs",
+      "source_files": {
+        "crates/strategy-core/src/multivariate_coint.rs": {
+          "raw_sha256": "db4f4dc93d8f8d3d45a54919b2b4539892f0e3feff3d624c94ac52b3e6ad27c3",
+          "git_blob_if_added": "9d642b5bccef78a77c24589220f41d05e944bb7f"
+        },
+        "crates/strategy-core/src/vecm_arbitrage.rs": {
+          "raw_sha256": "7e10d7c576169c230169ec8392dbfd2fdd8fde6a04b21a27d81d1cbc14f81138",
+          "git_blob_if_added": "2516f965c456e446e8af4387b517faa156de5cfc"
+        },
+        "crates/strategy-core/tests/omega28_consumer_clock_contract.rs": {
+          "raw_sha256": "e85e62ed78a1e6d02f9568d7058ae663d5d0dad5908a3f4c37b4fefcec92f8d1",
+          "git_blob_if_added": "f8812c55c5a5c2fbfb1152576c7e5886b5eea320"
+        }
+      }
+    },
+    "after": {
+      "checked_utc": "2026-10-08T20:29:44.332232+00:00",
+      "head": "e584d3ef288505281e7cdcda09b8e3978eafdf74",
+      "head_tree": "4eb4bf4c70d640ef643df8dd30970474ac156140",
+      "index_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "index_entries_sha256": "184d16f297dd77f547e57c8f0d18a5bd01ec8df07ac455e3b02ca1bdd030e675",
+      "status": "M  crates/strategy-core/src/multivariate_coint.rs\nA  crates/strategy-core/tests/omega28_consumer_clock_contract.rs",
+      "source_files": {
+        "crates/strategy-core/src/multivariate_coint.rs": {
+          "raw_sha256": "db4f4dc93d8f8d3d45a54919b2b4539892f0e3feff3d624c94ac52b3e6ad27c3",
+          "git_blob_if_added": "9d642b5bccef78a77c24589220f41d05e944bb7f"
+        },
+        "crates/strategy-core/src/vecm_arbitrage.rs": {
+          "raw_sha256": "7e10d7c576169c230169ec8392dbfd2fdd8fde6a04b21a27d81d1cbc14f81138",
+          "git_blob_if_added": "2516f965c456e446e8af4387b517faa156de5cfc"
+        },
+        "crates/strategy-core/tests/omega28_consumer_clock_contract.rs": {
+          "raw_sha256": "e85e62ed78a1e6d02f9568d7058ae663d5d0dad5908a3f4c37b4fefcec92f8d1",
+          "git_blob_if_added": "f8812c55c5a5c2fbfb1152576c7e5886b5eea320"
+        }
+      }
+    },
+    "receipt": {
+      "label": "40-omega28-consumer-green",
+      "head": "e584d3ef288505281e7cdcda09b8e3978eafdf74",
+      "candidate_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "post_head": "e584d3ef288505281e7cdcda09b8e3978eafdf74",
+      "post_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+      "command": [
+        "cargo",
+        "+nightly",
+        "test",
+        "--release",
+        "-p",
+        "strategy-core",
+        "--locked",
+        "--test",
+        "omega28_consumer_clock_contract",
+        "--",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "environment": {
+        "CARGO_TARGET_DIR": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/target",
+        "CARGO_BUILD_JOBS": "1",
+        "TG_GENOME_ENV": "backtest"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 3.895,
+      "log_sha256": "a9b62531a37f5f367b567802343b353523aba66d938bb3c049d12e78763226b1",
+      "test_results": [
+        {
+          "status": "ok",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    }
+  },
+  "fix_commit": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+  "freeze": {
+    "head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+    "tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+    "started_utc": "2026-10-08T20:31:16.425582+00:00",
+    "workspace_clean": true
+  },
+  "final_check": {
+    "label": "41-omega28-final-check",
+    "head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+    "tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+    "post_head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+    "post_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+    "command": [
+      "cargo",
+      "+nightly",
+      "check",
+      "--workspace",
+      "--all-targets",
+      "--locked"
+    ],
+    "environment": {
+      "CARGO_TARGET_DIR": "C:/Users/jhona/.codex/worktrees/model-lineage-audit/Trader Gemini/target",
+      "CARGO_BUILD_JOBS": "1",
+      "TG_GENOME_ENV": "backtest"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 88.29,
+    "log_sha256": "cff86d3f3b60af94102b129dee9a978a86e1a9ba8c086cb75c17ee1d5e869493"
+  },
+  "actual_executed_regression_totals_on_freeze": {
+    "passed": 333,
+    "failed": 0,
+    "ignored": 1
+  },
+  "ci_proposal": {
+    "source_head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+    "workflow_blob": "fd97d52896d71db2ebe02c1fc21de41455294d02",
+    "patch_sha256": "35d276023aa4bf74b53dc7a9be6ddd16e711b5fd4f5d6d584e8b9bbdf09928fc",
+    "command": "cargo +nightly-2026-06-30 test --release -p strategy-core --locked --lib --test basket_state_contract --test maker_quote_contract --test pair_model_characterization --test omega28_consumer_clock_contract -- --test-threads=1",
+    "scope": "Proposed directed CI execution of the same strategy library and four contract targets validated locally in release. Existing workflow currently compiles but does not execute strategy-core. Patch checked for application only and not applied during frozen validation; this is not evidence of a GitHub run.",
+    "apply_check_exit_code": 0,
+    "tracked_workflow_unchanged": true
+  },
+  "ignored_tests": [
+    {
+      "name": "inspect_saved_models_without_activation_or_cache_writes",
+      "reason": "read-only local inventory, not a portable CI fixture"
+    }
+  ],
+  "validation_scope": "Selected regression targets and exact T1 on a single frozen software composition. Passing open-debt diagnostics characterize remaining limitations; they are not bug fixes. No live trading, model promotion, economic return or exhaustive semantic correctness is demonstrated.",
+  "remote_before_t1": {
+    "checked_utc": "2026-10-08T20:39:00.673475+00:00",
+    "head": "a5c69af3f7a05c8642b803c61a6ff72613d96100\trefs/heads/main"
+  },
+  "t1_started_utc": "2026-10-08T20:39:01.516166+00:00",
+  "t1": {
+    "label": "48-omega28-t1",
+    "head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+    "candidate_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+    "post_head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+    "post_tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+    "command": [
+      "cargo",
+      "+nightly",
+      "test",
+      "--release",
+      "-p",
+      "backtest-engine",
+      "--locked",
+      "--test",
+      "t1_cobertura_genetica",
+      "t1_cobertura_genetica_del_oraculo_de_aptitud",
+      "--",
+      "--exact",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "CARGO_TARGET_DIR": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/target",
+      "CARGO_BUILD_JOBS": "1",
+      "TG_GENOME_ENV": "backtest"
+    },
+    "exit_code": 0,
+    "elapsed_seconds": 1619.667,
+    "log_sha256": "864c7daf715b4536288d06287e07b31e25933ac59843a26d8ca44a9fd41cef68",
+    "test_results": [
+      {
+        "status": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  "t1_measurement": {
+    "head": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+    "tree": "10ecee6c773a37d6ac6a0ff7908f3c2c800d8ea0",
+    "log_sha256": "864c7daf715b4536288d06287e07b31e25933ac59843a26d8ca44a9fd41cef68",
+    "sensitive_genes": 16,
+    "total_genes": 144,
+    "fraction": 0.1111111111111111,
+    "ratchet": 0.11,
+    "printed_probe_count": 144,
+    "no_realized_coordinate_change": [
+      13,
+      14,
+      15,
+      16,
+      140
+    ],
+    "scope": "One endpoint per coordinate on the unchanged synthetic fixture. Conditional replay-statistic sensitivity, not profitability, canonical fitness, statistical sufficiency or global gene inertness."
+  },
+  "t1_completed_utc": "2026-10-08T21:06:01.763625+00:00",
+  "remote_after_t1": {
+    "checked_utc": "2026-10-08T21:06:01.763651+00:00",
+    "head": "3f0d37e951f847c560c097f158b7005ff4a8f9af\trefs/heads/main"
+  },
+  "actual_executed_total_on_freeze": {
+    "passed": 334,
+    "failed": 0,
+    "ignored": 1
+  },
+  "counting_scope": "Only executions 42 through 48 on fix commit are summed. RED is expected failing evidence; GREEN repeats the consumer contract and is excluded from this unique regression total. Historical e9/7acf results are not added.",
+  "remote_still_same": false
+}

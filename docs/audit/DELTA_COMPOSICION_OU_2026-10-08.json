@@ -1,0 +1,86 @@
+{
+  "from_commit": "a0a5b982df0eb53d3c6d753256ea99c6428cdafd",
+  "to_commit": "eb32ac9613c847eec75bd8e2591add8ae88234cf",
+  "added": [
+    "crates/strategy-core/tests/omega28_consumer_clock_contract.rs",
+    "docs/audit/DELTA_CIERRE_2026-10-08.json",
+    "docs/audit/RECIBO_PUBLICACION_R4_2026-10-08.json",
+    "docs/audit/REVISION_CIERRE_2026-10-08.json"
+  ],
+  "removed": [],
+  "changed": [
+    {
+      "path": ".agents/MEMORIA.md",
+      "old_blob": "4ae5a9524f984ce36a057afa9517f88d261d0269",
+      "new_blob": "c1d807713a2a7eb8ba2186de8bbdb072affd62c3",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "COORDINACION_CODEX_2026-09-28.md",
+      "old_blob": "238d66d65d5d81fa11ab5fdbd89426e9c3913865",
+      "new_blob": "16b50e5a2e87bb9dcdd1894503fcb359c36e59ab",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/strategy-core/src/multivariate_coint.rs",
+      "old_blob": "3d87089163cf2011e7e9a4efb7d98c88985d4a51",
+      "new_blob": "9d642b5bccef78a77c24589220f41d05e944bb7f",
+      "mode_changed": false,
+      "previous_status": "hallazgo_abierto",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/strategy-core/src/vecm_arbitrage.rs",
+      "old_blob": "f3a2cc9d344995b7cdf40f7d96324fe2b42a3f4a",
+      "new_blob": "2516f965c456e446e8af4387b517faa156de5cfc",
+      "mode_changed": false,
+      "previous_status": "hallazgo_abierto",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/INTEGRACION_RAMAS_2026-10-07.md",
+      "old_blob": "624485a84ff125034f5c7dbcbdf002162fbeb503",
+      "new_blob": "6abdfa4fe5c41b7d28e1c86c99ffe72568a2f44e",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_AUDITORIA_BASE_2026-10-08.md",
+      "old_blob": "cb2b8f0069f02fa7a41e434e620aea0475e198dd",
+      "new_blob": "259ca67a9f2974682d1239668d1cbee824746116",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_QUANT_SR_2026-10-05.md",
+      "old_blob": "e9eee2a562e95a431bb350199db525de3add80ff",
+      "new_blob": "7b20dc881562de1d30e8081b3cc14cc6dc9e5853",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_SINCRONIZACION.md",
+      "old_blob": "5ec4832b8bd67a3b376ff8d854c590d827b73cb9",
+      "new_blob": "2aaaa91dfc02e72c821ad3303591cc0b7709ef34",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_REVISION_ARCHIVO_POR_ARCHIVO_2026-10-07.md",
+      "old_blob": "9a2b55a1482a88aada08850267783f1958a2a842",
+      "new_blob": "290ab033b78c640c51530d579792959bcc486e73",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    }
+  ],
+  "unchanged_count": 1491
+}

@@ -1,0 +1,52 @@
+# Lote propuesto: OU multivariante, tiempo irregular y espectro — 2026-10-08
+
+Estado: diseño para R2/R3, sin implementación, benchmark ni resultado económico. Base leída: `eb32ac9613c847eec75bd8e2591add8ae88234cf`. Los rechazos temporales corregidos no validan el estimador ni convierten el basket escalar actual en un universo multivariante completo.
+
+## Contrato observado y brecha
+
+`multivariate_coint.rs` transforma hasta cuatro precios con pesos suministrados en un solo spread de logaritmos. No estima un vector de cointegración ni una matriz conjunta de transición/covarianza. El SDE acumula transiciones con intervalos distintos y transforma una pendiente agrupada usando el último intervalo. Hay que contrastar ese procedimiento antes de atribuirle calibración continua. La guarda de reloj y el test maduro resuelven un contrato de aceptación y emisión; ambos archivos siguen abiertos en el ledger.
+
+## Modelo candidato, dominio y unidades
+
+Propuesta del consejo, inferida para este sistema: elegir primero un estado `X(t)` de dimensión d declarada (activos, spreads o features), con marca de procedencia, antigüedad y disponibilidad por componente. La transición de estado plenamente observado es el caso base; no rellenar un activo con datos posteriores al tiempo de decisión, ni convertir una ausencia en cero. Si no se observan todos los componentes simultáneamente, declarar un modelo de observación, por ejemplo `Y_i = H_i X(t_i) + epsilon_i`, con ruido/covarianza y reglas de disponibilidad explícitos. La likelihood de los Y requiere marginalizar o filtrar el estado; mantener una cotización vieja no equivale a observar de nuevo ese componente en t_i.
+
+Para el candidato homogéneo `dX = -A(X-m) dt + B dW`, A, B y m son constantes, el tiempo se expresa en segundos y W es un Wiener estándar de r componentes (`Cov(dW)=I_r dt`), con `B` de dimensión d por r. Se exige finitud y autovalores de A con parte real positiva: es `-A` la matriz Hurwitz. No se exige que A sea simétrica. Para una transición causal, `delta_t_i = t_i-t_(i-1) > 0`:
+
+- `F_i = exp(-A * delta_t_i)` y `E[X_i | X_(i-1)] = m + F_i * (X_(i-1)-m)`.
+- `Q_i = integral_0^delta_t_i exp(-A*s) B B^T exp(-A^T*s) ds`.
+- Existe una covarianza estacionaria única P semidefinida positiva, que satisface `A P + P A^T = B B^T`, y `Q_i = P - F_i P F_i^T`.
+
+Las identidades corresponden al modelo homogéneo con parámetros fijos; una secuencia de reajustes adaptativos no tiene automáticamente una única P ni un único espectro estacionario. T0 puede ser un origen válido de la primera observación. `Q(0)=0` y `F(0)=I` son límites/identidades, no una densidad de transición ordinaria para un duplicado.
+
+Estas transiciones y la ecuación de Lyapunov se sustentan en las ecuaciones 4–6 de [Singh, Ghosh y Adhikari, Physical Review E / arXiv](https://arxiv.org/html/1706.04961). Su sección de estimación con cuatro estadísticas suficientes parte de tiempos equiespaciados: no se importa automáticamente ese estimador a intervalos irregulares. Aplicar una transición distinta a cada intervalo y construir su likelihood es la propuesta de este lote, todavía sin validar para mercados.
+
+En el caso escalar centrado, con theta>0: `F_i = exp(-theta*delta_t_i)` y `Q_i = sigma^2/(2*theta) * (1-exp(-2*theta*delta_t_i))`. Si el componente j tiene unidad u_j, `A_ij` tiene unidad `u_i/(u_j*s)` y `F_ij` unidad `u_i/u_j`; todos los elementos de A pueden expresarse como s^-1 cuando las coordenadas están normalizadas a unidades comunes/adimensionales. Cada fila i de B tiene unidad `u_i/sqrt(s)`, y `Q_ij/P_ij` unidad `u_i*u_j`. Declarar el escalado de features antes de comparar activos. Usar `expm1` o una evaluación equivalente estable para el límite escalar de intervalos pequeños; contrastar la transición contra la integral y no sólo contra otra copia de la fórmula.
+
+## Likelihood, soporte y causalidad
+
+Q es un Gramian semidefinido positivo; estabilidad de A no garantiza por sí sola que Q sea invertible. Para usar la densidad gaussiana ordinaria en todo R^d, con residuo `r_i = X_i-m-F_i(X_(i-1)-m)` y términos `log(det(Q_i))` / `r_i^T Q_i^-1 r_i`, se requiere Q_i definida positiva. Debe comprobarse el dominio y el condicionamiento numérico. Un B de rango reducido no obliga a Q singular: la dinámica puede propagar el ruido a otras componentes. La relación entre controlabilidad, Gramian y definitud se recoge en [Boyd, Stanford EE363, teoría de Lyapunov](https://web.stanford.edu/class/ee363/lectures/lq-lyap.pdf).
+
+Si Q es singular, declarar el soporte afín de la transición y evaluar una medida gaussiana sobre él, comprobando que el residuo pertenece a ese soporte; no basta reemplazar silenciosamente inversa/determinante por pseudoinversa/pseudodeterminante. Alternativamente, un modelo de observación explícito puede dar una covarianza de innovación no singular. Añadir jitter o un suelo cambia el modelo/criterio y requiere justificación y registro, no sirve como prueba de positividad matemática. Distinguir errores numéricos acotados de un modelo fuera de dominio. Declarar también si la primera observación se condiciona o se evalúa con una distribución inicial; el término estacionario exige su propio dominio.
+
+La malla del caso base es exógena o se decide antes de observar la innovación del intervalo. Si los tiempos son eventos informativos de la propia trayectoria (por ejemplo, cruces de niveles), no se asume sin contraste que condicionar sólo por el delta observado preserve esta likelihood: se necesita el contrato del proceso de observación.
+
+Separar ajuste en calibración de puntuación predictiva. El ajuste puede utilizar el bloque de entrenamiento declarado. En evaluación secuencial, parámetros y transformaciones empleados para puntuar X_i deben fijarse con información disponible antes de X_i; su actualización posterior puede incorporarlo según una regla preregistrada. No normalizar la predicción anterior usando X_i ni datos futuros. Un escalado invertible fijo D transforma el modelo mediante `A'=D^-1 A D`, `B'=D^-1 B`, `m'=D^-1 m`; si D o el centrado cambian con el tiempo, la transición debe incluir ambas transformaciones de frontera y sus desplazamientos. No conservar sin más el mismo F/Q. Para comparar densidades en coordenadas diferentes, declarar también el jacobiano y la medida de referencia. La política de actualización causal forma parte del modelo examinado, no una decisión añadida después de ver el examen final.
+
+## Interpretación espectral y límites
+
+El espectro cruzado derivado depende del modelo estacionario y de estas matrices. Fijar convención de Fourier, unidades de frecuencia (Hz o rad/s), normalización y orden de los índices: las covarianzas cruzadas a retardos negativos son transpuestas de las de retardo positivo, no necesariamente matrices pares. Exigir espectro hermitiano semidefinido positivo donde corresponda, y declarar aliasing/resolución y el efecto de observación parcial. Una matriz de dependencia espectral no demuestra causalidad económica.
+
+El modelo no certifica estacionariedad de precios, ventajas cuánticas, independencia de estrategias ni rendimientos. Horizonte y resolución son coordenadas observadas con banda y error declarados, no categorías económicas binarias. Una extensión cuántica o inspirada en física debe formular su hipótesis, referencia clásica, coste y mejora incremental contrastable; no se deriva del nombre del proceso ni de que las identidades algebraicas se cumplan.
+
+## Pruebas y salida del lote
+
+1. Generar trayectorias con parámetros conocidos, malla uniforme y varias mallas irregulares preregistradas; registrar semillas, parámetros, tiempos y mecanismo de muestreo. Recuperar distribución/incertidumbre, no exigir igualdad puntual con el parámetro verdadero. No usar exclusivamente el mismo kernel de transición para generar, ajustar y validar: contrastar con un oráculo independiente (por ejemplo, integración de la ODE de covarianza/cuadratura con controles propios, además de casos analíticos).
+2. Verificar por separado finitud, estabilidad de -A, simetría/PSD de Q y dominio SPD o soporte singular de la likelihood. Incluir difusión de rango reducido con y sin propagación entre componentes, matrices estables no normales, unidades, rechazo sin estado ni intención, T0, duplicados, gaps, ausencia de activos y límites de delta. Estabilidad asintótica no implica que toda norma de F disminuya monótonamente; no imponer esa propiedad como test universal.
+3. Contrastar semigrupo `F(t+s)=F(t)F(s)` y `Q(t+s)=Q(t)+F(t)Q(s)F(t)^T`; límites `F(0)=I`, `Q(0)=0`, `(F(delta)-I)/delta -> -A`, `Q(delta)/delta -> B B^T`, y, bajo estabilidad, `F(delta)->0`, `Q(delta)->P` al crecer delta. Fijar tolerancias por escala/condicionamiento y contrastar transición, covarianza e innovación con el oráculo; no copiar sólo la expresión implementada al valor esperado.
+4. Comparar el basket escalar actual, matrices diagonales y matrices completas bajo el mismo flujo causal, modelo de observación, escalado y presupuesto de selección. El modelo completo debe justificar su coste adicional; medir latencia y memoria con dimensión variable. No atribuirle automáticamente el O(N) de un estimador con otros supuestos.
+5. Examinar innovaciones, residuos temporales/cruzados y sensibilidad a cambios de parámetros. Si el modelo estacionario no explica los observables, contrastar alternativas explícitas (saltos, estado no estacionario o cambios causales) con presupuesto y criterios definidos; no cambiar la familia después de mirar el examen final. Probar que la normalización o el reajuste no modifican retrospectivamente puntuaciones pasadas.
+6. Sólo después evaluar efecto incremental OOS sobre patrimonio multiactivo MTM, costes y capacidad. Reservar datos/ventanas para selección y para examen; registrar cada intento. El resultado podría rechazar el modelo candidato.
+
+Dueños propuestos: senior de inferencia y senior de física/control; revisión de datos/reloj y ejecución antes de consumo vivo. Falta acuse y reserva de implementación. La corrección R4 de reloj, T1 y la meta 100%/72 h mantienen estimandos separados.
+
+Nota de revisión independiente (quant_foundations, 2026-10-08): fórmulas y dominios aprobados como diseño condicionado a los supuestos explícitos anteriores. Se distinguieron PSD/SPD/soporte, unidades heterogéneas, filtración y observación parcial; no se ejecutó ni implementó el modelo. La comprobación del documento no cierra la auditoría de las fuentes runtime ni demuestra utilidad económica.
