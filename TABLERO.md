@@ -197,7 +197,7 @@
 
 ## Antigravity (actualizado: 2026-10-13 16:50 local, Quant Sr. Lead, Ola Ω95 en vuelo)
 
-- **Haciendo ahora**: Ola Ω95 — Resolución LH-03, desacoplamiento multiactivo ADR-0011, resolución LH-05 y cableado dinámico de CouncilParams:
+- **Haciendo ahora**: Ola Ω95 — Resolución LH-03, desacoplamiento multiactivo ADR-0011, resolución LH-05, cableado de CouncilParams y normalización multiactivo de volatilidad:
   - **Resolución de LH-03 (commit e20c0eec)**: Cuando `live_envelope_gate` rechazaba en $n \ge 30$ (Kelly $\le 0$), `rollback_local_position` no activaba `last_exit_fastband_ms`, creando 5.604 rollbacks sin enfriamiento. Ahora se fuerza cooldown tras rollback. Full test suite verde.
   - **Resolución de Desacoplamiento Multiactivo ADR-0011 (commit 1c9da3d3)**: Erradicado el acoplamiento físico `if coin_id == 0 { btc } else if coin_id == 1 { eth }` en `crates/risk-engine/src/lib.rs:737-764`. Centralizado en `GlobalArena::volatility_multiplier_for(coin_id, atr_pct)` en `crates/quantum-arena/src/state.rs`. Los símbolos leen sus genes dedicados por IDENTIDAD (`slot_es_simbolo`), nunca por índice de slot rígido, y las alts miden su volatilidad relativa contra el slot dinámico del ancla de mercado. Certificado con nueva prueba contractual `ola95_volatilidad_multiplier_for_sigue_identidad_de_simbolo` en `stop_por_simbolo_contract.rs`.
   - **Resolución Definitiva de LH-05 (commit d7a37dcb)**: Erradicada la contradicción algebraica en `crates/god-engine-core/src/lib.rs:6104-6134` que asfixiaba el 100% de las entradas tendenciales (0 de 604 operaciones):
@@ -209,6 +209,10 @@
     * `QuantumConfig` expone ahora 6 campos atómicos lock-free (`council_approval_threshold`, `council_supermajority_override`, `council_override_signal_floor`, `council_override_penalty`, `council_shrinkage_k`, `council_cascade_severity_breaker`).
     * `GodEngineCore` ejecuta `Self::sync_council_params` con préstamos de campos disjuntos en cada deliberación sin contención de locks.
     * Certificación: Nuevo contrato formal `council_params_arena_wiring_contract.rs` con 2/2 pruebas pasando al 100% (validación dinámica y protección de cotas).
+  - **Normalización Multiactivo de Volatilidad para SeniorVolatilidad (commit 095b28eb)**:
+    * Erradicada la asfixia estructural del 60% en convicción sobre altcoins en `crates/god-engine-core/src/lib.rs:8294-8313`.
+    * La volatilidad enviada al consejo (`council_snapshot.atr_pct`) se normaliza por el ratio relativo frente al ancla BTC. BTC conserva su valor exacto 1.0x sin alteración; altcoins con mayor beta normal ya no son artificialmente confinadas a la cota máxima de peligro.
+    * Certificación: Nuevo contrato formal `multiactivo_volatilidad_council_contract.rs` (3/3 pruebas pasando al 100%).
   - **Siguiente**: Sustituir la clasificación rígida de Hurst (0.45/0.52) por modulación adaptativa continua basada en intervalo de confianza de DFA en `god-engine-core`.
   - **Plan Maestro Canónico Publicado** (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md`):
     * Gobernanza integral bajo Consejo Colegiado de 10 Roles Senior en riguroso Modo Profesor (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).

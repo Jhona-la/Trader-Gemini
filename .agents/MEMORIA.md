@@ -30,7 +30,7 @@
     * CRÍTICO: `coin_id == 0/1` acoplamiento BTC/ETH a índices de array (`risk-engine/src/lib.rs:737-764`) [RESUELTO en 1c9da3d3].
     * ALTO: `CouncilParams::default()` con 6 constantes congeladas (`consejo_seniors.rs:1006-1036`) [RESUELTO en 5845ab41: cableado lock-free a QuantumConfig y sincronización continua en GodEngineCore].
     * ALTO: H2-11 cinco umbrales de `confluencia_resonante` (`god-engine-core/src/lib.rs:667-671`), deuda reconocida.
-    * ALTO: Senior Volatilidad con 10/40 bps absolutos y Senior Ejecución con 35/65 bps (`consejo_seniors.rs:499-502,769`).
+    * ALTO: Senior Volatilidad con 10/40 bps absolutos y Senior Ejecución con 35/65 bps (`consejo_seniors.rs:499-502,769`) [RESUELTO en 095b28eb: normalización relativa frente al ancla BTC en council_snapshot.atr_pct].
     * MEDIO: Clasificación Hurst rígida 0.45/0.52 sin IC del estimador DFA (`god-engine-core/src/lib.rs:9219-9220`).
     * MEDIO: Exploración Kelly `0.25 * clamp_min, max 0.05` y `cold [0.05, 0.35]` (`risk-engine/src/lib.rs:387-389`).
     * MEDIO: 70/30 blend espectro/convicción en orquestador (`signal-engine/src/orchestrator.rs:498`).
