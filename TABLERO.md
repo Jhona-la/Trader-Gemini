@@ -174,23 +174,19 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-12, Quant Sr. Lead, Ola Ω92 completada / Ficha #730)
+## Antigravity (actualizado: 2026-10-13, Quant Sr. Lead, Ola Ω93 en vuelo / Ficha #731)
 
-- **Haciendo ahora**: Ola Ω92 (#730) completada — Resolución del Trilema del Consejo Seniors en Fase C-F3 (F3.4-01, F3.4-02, F3.4-06):
-  - **Resolución Definitiva de F3.4-01 (Pesos del Consejo por Esperanza Matemática EV)**:
-    * Reemplazado el conteo binario de aciertos `was_correct` en `SeniorPerformanceTracker::compute_weights` por el edge relativo normalizado $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|} \in [-1, 1]$ y $P_i = 0.5 \cdot (1 + \theta_i) \in [0.01, 0.99]$.
-    * Con geometría asimétrica ($RR > 1$, como $RR=2:1$ con $35\%$ WR y $EV=+0.0005$), premia al asiento que respalda la estrategia ($w_0 = 1.037 > w_1 = 0.963$). Con retorno constante $|r|=R$, preserva la equivalencia exacta con la tasa de acierto ($\theta_i = 2\cdot\text{acc}_i - 1 \implies P_i = \text{acc}_i$).
-    * Prueba `cf3_tracker_premia_ev_no_acierto` des-ignorada y 100% verde (en tracker y en API viva de cortos).
-  - **Resolución Definitiva de F3.4-02 ("Un Dato, Un Veto" en VPIN y Override)**:
-    * Eliminado el veto duplicado `payload.do_calculus_risk > 0.92` en `SeniorAuditorInterno` (`is_veto = false`).
-    * `SeniorCausal` queda como el único evaluador de toxicidad causal / VPIN (> 0.75), preservando la capacidad de sobreescritura por supermayoría (override) en $VPIN \in (0.92, 1.0]$.
-    * Prueba `cf3_vpin_un_dato_un_veto` des-ignorada y 100% verde en toda la rejilla $n \in \{0, 500\} \times \text{Meta} \in \{1, 2\}$.
-  - **Resolución Definitiva de F3.4-06 (Veto de Drawdown Alcanzable Bajo Cota de Falsación $d^*$)**:
-    * Escalado el umbral continuo de drawdown de `SeniorRiesgo` contra la cota de falsación $d^* = 1 - 0.05^{1/3} \approx 0.6316$: `max_drawdown = d_star * (0.95 - 0.10 * s)`.
-    * Elimina código muerto (antes $[0.85, 0.95] > d^*$), haciendo alcanzable el veto del consejo antes de la detención dura del motor.
-    * Prueba `cf3_veto_dd_consejo_alcanzable` des-ignorada y 100% verde en las 16 configuraciones ($dd = 0.999\cdot d^*$, todas las escalas $\tau$).
-  - Actualizado `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv` (filas 40, 43, 44 marcadas como pasa).
+- **Haciendo ahora**: Ola Ω93 (#731) en vuelo — Plan Maestro Canónico de Revisión desde la Base, Universo Continuo Temporal-Espectral, Sincronización Multi-Agente y Ejecución de Fase 0:
+  - **Plan Maestro Canónico Publicado** (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md`):
+    * Gobernanza integral bajo Consejo Colegiado de 10 Roles Senior en riguroso Modo Profesor (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).
+    * Matemática financiera de crecimiento continuo compuesto: duplicación cada 72 horas ($g = \frac{\ln 2}{3} \approx +25.9921\%/\text{día}$) con micro-capital (\$13.00 USD), asimetría de pagos $RR \ge 2.25$, optimal fraction $\frac{1}{2}$ Kelly, y cota teórica de falsación $d^* = 1 - 0.05^{1/3} \approx 0.6316$ (\$4.79 USD suelo).
+    * Variedad continua temporal-espectral multivariante $\mathcal{M} = \mathbb{R}^+ \times \mathbb{R}^N \times \Delta^3 \times \mathbb{R}$ en $L^2$ con 32 escalas diádicas $\tau_k = 4^k\ \mu\text{s}$, erradicando binarismos discretos scalping/swing.
+    * Armonización con descubrimientos empíricos de Línea H (LH-02 valle de capital \$35–\$65, LH-03 replay envelope a \$1,000, LH-04 piso de nocional mínimo, LH-05 ramas de tendencia silenciosas) y Línea G (LG-22 e-CUSUM, deduplicación de veto de caída y centralización de $d^*$).
+  - **Ejecución de Fase 0 (Saneamiento Crítico de Fricción y Falsación)**:
+    * Centralización y deduplicación de $d^*$ (`drawdown_de_falsacion`).
+    * Corrección de LH-02 en `risk-engine` (sustitución de `lerp(1%, 3.5%, micro_w)` por condición de esperanza neta $p_{LCB} > p^* = \frac{SL + f}{TP + SL}$).
 - **Commiteado reciente**:
+  - Ola Ω92 (#730, commit `0b18e589` en main): Resolución del Trilema del Consejo Seniors en Fase C-F3 (F3.4-01 pesos por EV $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|}$, F3.4-02 "un dato, un veto" en VPIN/override en `SeniorAuditorInterno`, F3.4-06 veto DD alcanzable bajo $d^*$).
   - Ola Ω91 (#729, commit `5644f1f1` en main): Resolución de F2.3b-07 (Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness).
   - Ola Ω90 (#728): Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md`).
   - Ola Ω89 (#727, commit `b13839bc` en main): Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (F2.5-02).
