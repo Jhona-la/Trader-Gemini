@@ -27,7 +27,6 @@ use signal_engine::skill_motores::ttl_consenso_ms;
 /// Hoy: ttl = max(τ, 30 s) sin techo; en k = 23 da 7,04·10⁷ ms frente a una
 /// vida de 4,32·10⁷ ms.
 #[test]
-#[ignore = "OPEN F3.1-04 (Qoder, skill_motores): ttl_consenso_ms = max(τ_dom, 30 s) sin acotar por TAU_ANCHOR_SLOW_MS; desde k = 23 el dominante sobrevive a la vida min(τ, 12 h) que fija el orquestador"]
 fn cf3_ttl_del_veredicto_no_supera_la_vida_que_fija_el_orquestador() {
     let mut primera_rota: Option<usize> = None;
     for (k, &tau) in SPECTRUM_SCALES_MS.iter().enumerate() {

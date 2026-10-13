@@ -195,6 +195,16 @@
     * Desbloqueado y certificado test canónico `cf2_hodge_cadena_censurada_no_es_ciclo` (árbol de 3 nodos $\to$ curl = 0.0 exacto).
     * Armonizada condición de rescate de fricción LH-02 en `crates/risk-engine/src/lib.rs` preservando los contratos de veto estricto por presupuesto micro de comisiones.
     * Verificación: `cargo test -p risk-engine` 100% verde (147 pruebas de librería y todas las suites de contratos pasando).
+  - **Ejecución de Fase 3 (Signal Engine, Modelos No-Lineales, Feynman Propagator, Navier-Stokes Manifold & Ensembles)**:
+    * **Resolución de F3.1-04 (Línea C / Qoder)** en `crates/signal-engine/src/skill_motores.rs`: `ttl_consenso_ms` ahora acota formalmente el TTL del veredicto espectral entre $[\text{TAU\_ANCHOR\_FAST\_MS}, \text{TAU\_ANCHOR\_SLOW\_MS}]$ ($[30\text{ s}, 12\text{ h}]$). Erradicada la supervivencia de 146 años en $k=31$. Test `cf3_ttl_del_veredicto_no_supera_la_vida_que_fija_el_orquestador` 100% verde.
+    * **Resolución de F3.3-05 (Línea C)** en `crates/signal-engine/src/orchestrator.rs`: la coherencia inter-espectral $\frac{\text{media\_espectral}}{v_{\text{dom}}}$ se clampa en $[-1.0, 1.0]$. Un espectro en contra penaliza monótonamente la convicción neta en el tensor continuo ($0.8 \cdot 0.40 = 0.32$ vs $0.8 \cdot 0.70 = 0.56$). Test `cf3_espectro_opuesto_baja_la_confianza_tensorial` 100% verde.
+    * Cero heap-allocation en el censo: sustituido `format!("censo_*_{}", nombre)` por `omniscient_registry::format_scoped_key` en stack buffer.
+    * En `feynman_propagator.rs`: sustituido `get_scoped_parameter` por `get_scoped_val_or` (cero clonaciones de `Arc` en hot-path) y suavizado $C^1$ Hermite cúbico en transmisión cuántica. 11/11 tests pasando.
+    * En `navier_stokes_manifold.rs`: sustituido `get_scoped_parameter` por `get_scoped_val_or` (cero clonaciones de `Arc` por tick). 6/6 tests pasando.
+    * En `conformal_reversion_filter.rs`: sustituido `get_scoped_parameter` y `get_scoped_parameter_strict` por `get_scoped_val_or` y `get_scoped_val_strict_or` (zero heap alloc).
+    * En `god-engine-core/src/calibration.rs`: añadido `calibrate_at_tau(&self, score: f64, now_ms: u64, tau_ms: f64) -> f64` en `PlattCalibrator` permitiendo decaimiento adaptativo continuo según la escala temporal de la orden. 8/8 tests de Platt pasando.
+    * En `omniscient-registry/src/lib.rs`: exportadas públicamente las utilidades de formateo en stack `format_scoped_key` y `format_coin_key`.
+    * Verificación: 121 tests unitarios de `signal-engine`, 50 tests de `dark-alpha-engine`, y suite de calibración 100% verdes.
 - **Commiteado reciente**:
   - Ola Ω92 (#730, commit `0b18e589` en main): Resolución del Trilema del Consejo Seniors en Fase C-F3 (F3.4-01 pesos por EV $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|}$, F3.4-02 "un dato, un veto" en VPIN/override en `SeniorAuditorInterno`, F3.4-06 veto DD alcanzable bajo $d^*$).
   - Ola Ω91 (#729, commit `5644f1f1` en main): Resolución de F2.3b-07 (Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness).

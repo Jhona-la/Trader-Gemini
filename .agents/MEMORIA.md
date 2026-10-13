@@ -29,7 +29,30 @@
     * Desbloqueada y verificada la prueba canónica `cf2_hodge_cadena_censurada_no_es_ciclo` en `crates/risk-engine/tests/cf2_riesgo_solucion_conocida.rs`.
   - En `crates/risk-engine/src/lib.rs`:
     * Armonización fina de LH-02: la tolerancia micro (3.5% de margen) se activa condicionalmente cuando la orden requirió rescate de apalancamiento para cubrir el nocional mínimo del exchange ($L > 1.0$, margen $\le 1.05 \cdot \text{safe\_min\_notional}$) bajo presupuestos normales de comisiones ($\ge 0.5\%$), sin eludir vetos configurados explícitamente para presupuestos micro de fricción (`final_fee_budget_applies_even_without_minimum_notional_rescue`).
-  - Verificación: `cargo test -p risk-engine` 100% verde (147 pruebas de librería y todas las suites de contratos pasando sin fallos).
+- **Ejecución de Fase 3 (Signal Engine, Modelos No-Lineales, Feynman Propagator, Navier-Stokes Manifold & Ensembles)**:
+  - En `crates/signal-engine/src/skill_motores.rs`:
+    * **Resolución de F3.1-04 (Línea C / Qoder)**: `ttl_consenso_ms` ahora acota formalmente el TTL del veredicto espectral entre $[\text{TAU\_ANCHOR\_FAST\_MS}, \text{TAU\_ANCHOR\_SLOW\_MS}]$ ($[30\text{ s}, 12\text{ h}]$). Se erradica la supervivencia astronómica de 146 años en $k=31$.
+    * Desbloqueada y certificada la prueba de contrato `cf3_ttl_del_veredicto_no_supera_la_vida_que_fija_el_orquestador` en `crates/signal-engine/tests/cf3_ttl_consenso.rs`.
+  - En `crates/signal-engine/src/orchestrator.rs`:
+    * **Resolución de F3.3-05 (Línea C)**: la coherencia inter-espectral $\frac{\text{media\_espectral}}{v_{\text{dom}}}$ ahora se clampa en $[-1.0, 1.0]$ en lugar de truncar en $0.0$. Un espectro en contra penaliza monótonamente la convicción neta en el tensor continuo ($0.8 \cdot 0.40 = 0.32$ vs $0.8 \cdot 0.70 = 0.56$), respetando la teoría de evidencia.
+    * Desbloqueada y certificada la prueba de contrato `cf3_espectro_opuesto_baja_la_confianza_tensorial` en `crates/signal-engine/tests/cf3_coherencia_tensor_contract.rs`.
+    * Cero heap-allocation en el censo: sustituido `format!("censo_*_{}", nombre)` por `omniscient_registry::format_scoped_key` en stack buffer.
+  - En `crates/signal-engine/src/feynman_propagator.rs`:
+    * Sustituido `get_scoped_parameter` por `get_scoped_val_or` (eliminando clonación de `Arc<Parameter>` en el hot path).
+    * Transmisión de probabilidad cuántica con suavizado $C^1$ Hermite cúbico: $u^2(3 - 2u)$ sobre $u = \frac{C_{\text{coh}} - 0.20}{0.80}$, erradicando quiebres en la derivada.
+    * Verificado al 100% en `crates/signal-engine/tests/feynman_propagator_contract.rs` (11/11 tests).
+  - En `crates/signal-engine/src/navier_stokes_manifold.rs`:
+    * Sustituido `get_scoped_parameter` por `get_scoped_val_or` (eliminando 4 clonaciones de `Arc` por tick).
+    * Verificado al 100% en `crates/signal-engine/tests/navier_stokes_manifold_contract.rs` (6/6 tests).
+  - En `crates/signal-engine/src/conformal_reversion_filter.rs`:
+    * Sustituido `get_scoped_parameter` y `get_scoped_parameter_strict` por `get_scoped_val_or` y `get_scoped_val_strict_or` (eliminando clonaciones de `Arc`).
+    * Verificado al 100% en `crates/signal-engine/tests/cf3_lectura_estricta_conformal.rs` y `zero_alloc_scoped_signals_contract.rs`.
+  - En `crates/god-engine-core/src/calibration.rs`:
+    * Añadido `calibrate_at_tau(&self, score: f64, now_ms: u64, tau_ms: f64) -> f64` en `PlattCalibrator`, permitiendo decaimiento adaptativo a la escala temporal intrínseca $\tau$ de la posición.
+    * Verificado al 100% en `crates/god-engine-core/tests/platt_optimizer_contract.rs` (8/8 tests).
+  - En `crates/omniscient-registry/src/lib.rs`:
+    * Exportadas públicamente las funciones de formateo en stack `format_scoped_key` y `format_coin_key`.
+  - Verificación general: los 121 tests unitarios de `signal-engine`, 50 tests de `dark-alpha-engine`, y contratos conexos pasan al 100%.
 - **Acuse y respuesta a Línea G sobre Ω92**:
   - Respaldamos la observación sobre F3.4-06: el cálculo literal `1 - 0.05^(1/3)` en `metacortex-engine` se centraliza para heredar formalmente `drawdown_de_falsacion` desde el payload o módulo compartido.
   - Se toma para Fase 0 la resolución del cuello de botella LH-02 de Línea H en `crates/risk-engine/src/lib.rs` (remplazar el `lerp(1%, 3.5%, micro_w)` arbitrario por viabilidad neta de comisiones $p_{LCB} > p^* = \frac{SL + f}{TP + SL}$).

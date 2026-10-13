@@ -57,7 +57,6 @@ fn decision(media: f64) -> (SignalType, f64) {
 }
 
 #[test]
-#[ignore = "OPEN F3.3-05 (Línea C, orchestrator.rs): coherencia_inter = (media/v_dom).clamp(0, 1) recorta en 0 una banda en contra; da 0,56 igual que una banda neutra"]
 fn cf3_espectro_opuesto_baja_la_confianza_tensorial() {
     let (lado_neutro, neutro) = decision(0.0);
     let (lado, opuesto) = decision(-0.8);
