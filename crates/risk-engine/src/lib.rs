@@ -1416,8 +1416,10 @@ impl RiskEngine {
         // para alcanzar el nocional mínimo del exchange, por lo que la tolerancia sobre
         // margen conserva el techo micro (0.035 = 3.5% de margen), garantizando la
         // viabilidad sin relajar los frenos ante fricciones auténticamente excesivas.
-        let position_in_micro_scale = final_margin < safe_min_notional * 3.0;
-        let effective_max_fee_limit = if position_in_micro_scale {
+        let rescued_for_min_notional = dynamic_leverage > 1.0
+            && final_margin <= safe_min_notional * 1.05
+            && max_acceptable_fee_pct >= 0.005;
+        let effective_max_fee_limit = if rescued_for_min_notional {
             max_fee_limit.max(0.035)
         } else {
             max_fee_limit

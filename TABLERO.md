@@ -190,6 +190,11 @@
     * Indexación plana contigua triangular $\mathcal{O}(1)$ de tamaño $\frac{N(N-1)}{2}$ (`pair_idx`). Recorrido restringido a $N-1$ pares incidentes.
     * Incorporados accesores atómicos directos `entry_tau_ms()` y `spectral_horizon_band()` en `crates/quantum-arena/src/position.rs` garantizando diferenciación analítica continua sin desarmonías discretas.
     * Verificación: `cargo test -p quantum-arena` 100% verde (todos los tests pasando).
+  - **Ejecución de Fase 2 (Física Matemática: Descomposición de Helmholtz-Hodge y Resolución F2.1-03)**:
+    * Resuelto problema abierto F2.1-03 de Línea C en `crates/risk-engine/src/hodge.rs`: solucionador analítico exacto de Laplaciano sobre grafos censurados con eliminación Gaussiana en stack buffer (cero alocaciones).
+    * Desbloqueado y certificado test canónico `cf2_hodge_cadena_censurada_no_es_ciclo` (árbol de 3 nodos $\to$ curl = 0.0 exacto).
+    * Armonizada condición de rescate de fricción LH-02 en `crates/risk-engine/src/lib.rs` preservando los contratos de veto estricto por presupuesto micro de comisiones.
+    * Verificación: `cargo test -p risk-engine` 100% verde (147 pruebas de librería y todas las suites de contratos pasando).
 - **Commiteado reciente**:
   - Ola Ω92 (#730, commit `0b18e589` en main): Resolución del Trilema del Consejo Seniors en Fase C-F3 (F3.4-01 pesos por EV $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|}$, F3.4-02 "un dato, un veto" en VPIN/override en `SeniorAuditorInterno`, F3.4-06 veto DD alcanzable bajo $d^*$).
   - Ola Ω91 (#729, commit `5644f1f1` en main): Resolución de F2.3b-07 (Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness).

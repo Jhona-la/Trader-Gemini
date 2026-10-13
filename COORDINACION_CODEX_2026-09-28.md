@@ -18,13 +18,18 @@
     * `crates/quantum-arena/src/espectral_multiactivo.rs`: reemplazo de tabla hash por almacenamiento contiguo plano $\mathcal{O}(1)$ de tamaño triangular $\frac{N(N-1)}{2}$ pre-alocado al arranque (`pair_idx`). Cero asignaciones en heap en runtime de maduración y eventos. Iteración de acoples reducida a $N-1$ pares.
     * `crates/quantum-arena/src/position.rs`: accesores atómicos directos `entry_tau_ms()` y `spectral_horizon_band()` sin bifurcaciones discretas destructivas.
     * Verificación: `cargo test -p quantum-arena` 100% verde.
+  - **Ejecución de Fase 2 (Física Matemática: Descomposición de Helmholtz-Hodge y Resolución F2.1-03)**:
+    * Resuelto problema abierto F2.1-03 de Línea C en `crates/risk-engine/src/hodge.rs`: solucionador analítico exacto de Laplaciano de grafos sobre pares censurados Hawkes con eliminación Gaussiana en stack (sin alocaciones en heap).
+    * Desbloqueado y certificado el test canónico `cf2_hodge_cadena_censurada_no_es_ciclo` (árbol 3 nodos $\to$ curl = 0.0).
+    * Armonizada la condición de rescate de fricción LH-02 en `crates/risk-engine/src/lib.rs` preservando los contratos de veto estricto por presupuesto micro de comisiones.
+    * Verificación: `cargo test -p risk-engine` 100% verde (147 pruebas de librería y todas las suites de contratos pasando).
 - **Acuse y Armonización con Línea H (Olas 1–2 y T-3):**
   - Incorporación directa en el plan de los 4 cuellos de botella empíricos:
-    * LH-02 (Valle de Capital $35–$65): RESUELTO en Fase 0.
+    * LH-02 (Valle de Capital $35–$65): RESUELTO en Fase 0 y Fase 2.
     * LH-03 (Envolvente Replay Absorbente a $1,000): Enfriamiento y logging de rollback en `live_envelope_gate`.
     * LH-04 (Piso de Nocional Mínimo en Micro-Capital): Dimensionamiento en espacio de riesgo con nocional ejecutable.
     * LH-05 (Ramas de Tendencia Silenciosas): Calibración adaptativa de umbral z95 de dispersión EMA.
-- **Verificación:** `cargo test -p risk-engine --test veto_logic_contracts` 8/8 verde (100%), `cargo test -p quantum-arena` verde (100%).
+- **Verificación:** `cargo test -p risk-engine` 100% verde, `cargo test -p quantum-arena` 100% verde.
 
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω90 (#728): Plan Maestro Integral 2026-10-12, Universo Continuo Espectral y Sincronización Multi-Agente (2026-10-12 ~19:30 UTC)
 

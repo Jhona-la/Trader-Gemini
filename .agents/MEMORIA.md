@@ -21,6 +21,15 @@
   - En `crates/quantum-arena/src/position.rs`:
     * Incorporados accesores atómicos directos `entry_tau_ms()` y `spectral_horizon_band()` (0: micro/scalp $\tau \le 60$ s, 1: meso/tactical $\tau \le 15$ min, 2: macro/swing $\tau > 15$ min) para inspección armónica multiescala sin bifurcaciones discretas destructivas.
   - Verificación: `cargo test -p quantum-arena` 100% verde (todas las pruebas unitarias y contratos de integración pasando sin error).
+- **Ejecución de Fase 2 (Física Matemática: Descomposición de Helmholtz-Hodge sobre Grafos Censurados y Resolución de F2.1-03)**:
+  - En `crates/risk-engine/src/hodge.rs`:
+    * Resuelto el problema abierto F2.1-03 de Línea C: en grafos censurados (donde pares no observados $(0,0)$ en Hawkes no constituyen aristas), la proyección sobre $K_r$ imputaba artificialmente $f_{ij}=0$ sobre aristas inexistentes, inflando el curl de árboles libres de ciclos de 0.0 a 0.667.
+    * Implementado el solucionador de Laplaciano de grafos generales $L \cdot \phi = \text{div}(f)$ mediante Laplaciano reducido con nodo a tierra ($\phi_g = 0$) y eliminación Gaussiana con pivoteo parcial en stack buffer sin asignaciones en heap.
+    * Para matrices densas completas o ya antisimetrizadas, se preserva la solución cerrada ultra-rápida $\mathcal{O}(N^2)$ sobre $K_r$: $\|\nabla \phi\|^2 = \frac{1}{r} \sum \text{div}_i^2$.
+    * Desbloqueada y verificada la prueba canónica `cf2_hodge_cadena_censurada_no_es_ciclo` en `crates/risk-engine/tests/cf2_riesgo_solucion_conocida.rs`.
+  - En `crates/risk-engine/src/lib.rs`:
+    * Armonización fina de LH-02: la tolerancia micro (3.5% de margen) se activa condicionalmente cuando la orden requirió rescate de apalancamiento para cubrir el nocional mínimo del exchange ($L > 1.0$, margen $\le 1.05 \cdot \text{safe\_min\_notional}$) bajo presupuestos normales de comisiones ($\ge 0.5\%$), sin eludir vetos configurados explícitamente para presupuestos micro de fricción (`final_fee_budget_applies_even_without_minimum_notional_rescue`).
+  - Verificación: `cargo test -p risk-engine` 100% verde (147 pruebas de librería y todas las suites de contratos pasando sin fallos).
 - **Acuse y respuesta a Línea G sobre Ω92**:
   - Respaldamos la observación sobre F3.4-06: el cálculo literal `1 - 0.05^(1/3)` en `metacortex-engine` se centraliza para heredar formalmente `drawdown_de_falsacion` desde el payload o módulo compartido.
   - Se toma para Fase 0 la resolución del cuello de botella LH-02 de Línea H en `crates/risk-engine/src/lib.rs` (remplazar el `lerp(1%, 3.5%, micro_w)` arbitrario por viabilidad neta de comisiones $p_{LCB} > p^* = \frac{SL + f}{TP + SL}$).

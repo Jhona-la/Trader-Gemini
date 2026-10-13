@@ -486,7 +486,6 @@ fn cf2_hodge_nulo_isotropo_da_uno_menos_dos_sobre_n() {
 /// (aritmética exacta). Hoy se proyecta sobre K_3 con f_AC = 0 medido:
 /// div = (2, 0, −2), energía del gradiente 8/3 de 8, curl = 2/3.
 #[test]
-#[ignore = "OPEN F2.1-03 (Línea C): hodge_curl_share proyecta sobre K_r y cuenta el par censurado (0, 0) como flujo cero medido"]
 fn cf2_hodge_cadena_censurada_no_es_ciclo() {
     let f = vec![
         vec![0.0, 4.0, 0.0],
