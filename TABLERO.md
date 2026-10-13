@@ -197,14 +197,19 @@
 
 ## Antigravity (actualizado: 2026-10-13 16:50 local, Quant Sr. Lead, Ola Ω95 en vuelo)
 
-- **Haciendo ahora**: Ola Ω95 — Resolución LH-03, desacoplamiento multiactivo ADR-0011, auditoría forense y resolución de LH-05:
+- **Haciendo ahora**: Ola Ω95 — Resolución LH-03, desacoplamiento multiactivo ADR-0011, resolución LH-05 y cableado dinámico de CouncilParams:
   - **Resolución de LH-03 (commit e20c0eec)**: Cuando `live_envelope_gate` rechazaba en $n \ge 30$ (Kelly $\le 0$), `rollback_local_position` no activaba `last_exit_fastband_ms`, creando 5.604 rollbacks sin enfriamiento. Ahora se fuerza cooldown tras rollback. Full test suite verde.
   - **Resolución de Desacoplamiento Multiactivo ADR-0011 (commit 1c9da3d3)**: Erradicado el acoplamiento físico `if coin_id == 0 { btc } else if coin_id == 1 { eth }` en `crates/risk-engine/src/lib.rs:737-764`. Centralizado en `GlobalArena::volatility_multiplier_for(coin_id, atr_pct)` en `crates/quantum-arena/src/state.rs`. Los símbolos leen sus genes dedicados por IDENTIDAD (`slot_es_simbolo`), nunca por índice de slot rígido, y las alts miden su volatilidad relativa contra el slot dinámico del ancla de mercado. Certificado con nueva prueba contractual `ola95_volatilidad_multiplier_for_sigue_identidad_de_simbolo` en `stop_por_simbolo_contract.rs`.
   - **Resolución Definitiva de LH-05 (commit d7a37dcb)**: Erradicada la contradicción algebraica en `crates/god-engine-core/src/lib.rs:6104-6134` que asfixiaba el 100% de las entradas tendenciales (0 de 604 operaciones):
     * Causa raíz: En tendencia (`!is_mean_reverting`), `max_stretch_long = 0.00` exigía simultáneamente $P \le \text{EMA}_{\text{slow}}$ y macro/micro tendencia alcista ($P \ge \text{EMA}_{\text{slow}}$), restringiendo la entrada a un conjunto de medida nula.
     * Solución canónica: En tendencia, la disciplina anti-extensión (No Chasing Law) se desacopla de la condición de retroceso de reversión a la media y se rige por el envolvente difusivo del 95% derivado en `D-621`: $|stretch\_z| \le Z_{95}$ ($|stretch\_z\_decision| \le Z_{95}$). Se preserva el rigor de descuento y sobreprecio en reversión a la media ($\le -0.05$ / $\ge 0.05$).
     * Certificación: Nuevo contrato formal `lh05_antiextension_tendencial_contract.rs` con 4/4 pruebas pasando en 0.00s.
-  - **Siguiente**: Migrar `CouncilParams` (6 constantes congeladas en `consejo_seniors.rs:1006-1036`) a `ArenaConfig` para cableado dinámico autoadaptativo.
+  - **Cableado Dinámico de CouncilParams a QuantumConfig (commit 5845ab41)**:
+    * Erradicadas las 6 constantes congeladas de `CouncilParams` en `metacortex-engine`.
+    * `QuantumConfig` expone ahora 6 campos atómicos lock-free (`council_approval_threshold`, `council_supermajority_override`, `council_override_signal_floor`, `council_override_penalty`, `council_shrinkage_k`, `council_cascade_severity_breaker`).
+    * `GodEngineCore` ejecuta `Self::sync_council_params` con préstamos de campos disjuntos en cada deliberación sin contención de locks.
+    * Certificación: Nuevo contrato formal `council_params_arena_wiring_contract.rs` con 2/2 pruebas pasando al 100% (validación dinámica y protección de cotas).
+  - **Siguiente**: Sustituir la clasificación rígida de Hurst (0.45/0.52) por modulación adaptativa continua basada en intervalo de confianza de DFA en `god-engine-core`.
   - **Plan Maestro Canónico Publicado** (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md`):
     * Gobernanza integral bajo Consejo Colegiado de 10 Roles Senior en riguroso Modo Profesor (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).
     * Matemática financiera de crecimiento continuo compuesto: duplicación cada 72 horas ($g = \frac{\ln 2}{3} \approx +25.9921\%/\text{día}$) con micro-capital (\$13.00 USD), asimetría de pagos $RR \ge 2.25$, optimal fraction $\frac{1}{2}$ Kelly, y cota teórica de falsación $d^* = 1 - 0.05^{1/3} \approx 0.6316$ (\$4.79 USD suelo).
