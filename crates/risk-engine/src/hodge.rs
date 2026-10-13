@@ -71,7 +71,15 @@ pub fn hodge_curl_share(flow: &[Vec<f64>]) -> Option<f64> {
         heap_node_has_flow = vec![false; n];
         &mut heap_node_has_flow[..]
     };
-    let mut non_isolated_nodes = 0usize;
+
+    let mut stack_edge_measured = [false; 64 * 64];
+    let mut heap_edge_measured;
+    let edge_measured: &mut [bool] = if n <= 64 {
+        &mut stack_edge_measured[..n * n]
+    } else {
+        heap_edge_measured = vec![false; n * n];
+        &mut heap_edge_measured[..]
+    };
 
     for i in 0..n {
         for j in (i + 1)..n {
@@ -80,42 +88,234 @@ pub fn hodge_curl_share(flow: &[Vec<f64>]) -> Option<f64> {
             if !a.is_finite() || !b.is_finite() {
                 return None;
             }
-            let fij = (a - b) * 0.5;
-            if fij.abs() > 1e-15 {
-                energia += fij * fij;
-                div[i] += fij;
-                div[j] -= fij;
+            // F2.1-03: Un par está medido/observado si al menos una dirección tiene z-score o flujo > 0.
+            // Si a == 0 y b == 0, el par fue censurado (no observado), por lo que no es arista en el grafo G.
+            let is_measured = a.abs() > 1e-15 || b.abs() > 1e-15;
+            if is_measured {
+                edge_measured[i * n + j] = true;
+                edge_measured[j * n + i] = true;
                 node_has_flow[i] = true;
                 node_has_flow[j] = true;
+
+                let fij = (a - b) * 0.5;
+                if fij.abs() > 1e-15 {
+                    energia += fij * fij;
+                    div[i] += fij;
+                    div[j] -= fij;
+                }
             }
         }
     }
 
+    let mut active_indices = [0usize; 64];
+    let mut r = 0usize;
     for i in 0..n {
         if node_has_flow[i] {
-            non_isolated_nodes += 1;
+            if r < 64 {
+                active_indices[r] = i;
+            }
+            r += 1;
         }
     }
 
-    if energia <= 1e-15 || !energia.is_finite() || non_isolated_nodes < 3 {
+    if energia <= 1e-15 || !energia.is_finite() || r < 3 {
         return None; // flujo simétrico o nulo, o menos de 3 nodos activos con flujo dirigido
     }
 
-    // Teorema analítico exacto de Helmholtz-Hodge sobre grafos completos inducidos K_r:
-    // L = r·I - 1·1^T. Con div ortogonal al kernel (Σ div_i = 0),
-    // el potencial es φ = div / r (salvo constante aditiva).
-    // La energía de Dirichlet del gradiente ‖∇φ‖² = Σ_{i<j} (φ_i − φ_j)²
-    // satisface de forma idéntica e invariante:
-    // ‖∇φ‖² = (1/r) · Σ_{i in V_r} div_i².
-    // Solución analítica O(n²) de precisión de máquina, sin eliminación gaussiana ni alocaciones.
-    let mut sum_div_sq = 0.0_f64;
-    for (i, &d) in div.iter().enumerate() {
-        if node_has_flow[i] {
-            sum_div_sq += d * d;
+    // Verificar si el llamador pasó una matriz ya antisimetrizada (con valores negativos)
+    // o una matriz cruda de Hawkes (todos los z >= 0, donde (0,0) codifica censura F2.1-03).
+    let mut has_negative = false;
+    for r_row in flow {
+        for &v in r_row {
+            if v < -1e-15 {
+                has_negative = true;
+                break;
+            }
+        }
+        if has_negative {
+            break;
         }
     }
-    let energia_grad = sum_div_sq / (non_isolated_nodes as f64);
-    let curl = 1.0 - energia_grad / energia;
+
+    // Verificar si el subgrafo inducido por los nodos activos es completo (K_r)
+    let mut active_measured_edges = 0usize;
+    for idx_a in 0..r.min(64) {
+        let u = active_indices[idx_a];
+        for idx_b in (idx_a + 1)..r.min(64) {
+            let v = active_indices[idx_b];
+            if edge_measured[u * n + v] {
+                active_measured_edges += 1;
+            }
+        }
+    }
+    let total_possible_pairs = r * (r - 1) / 2;
+    let is_complete = has_negative || active_measured_edges == total_possible_pairs;
+
+    if is_complete {
+        // Teorema analítico exacto de Helmholtz-Hodge sobre grafos completos inducidos K_r:
+        // L = r·I - 1·1^T. Con div ortogonal al kernel (Σ div_i = 0),
+        // el potencial es φ = div / r (salvo constante aditiva).
+        // La energía de Dirichlet del gradiente ‖∇φ‖² = Σ_{i<j} (φ_i − φ_j)²
+        // satisface de forma idéntica e invariante:
+        // ‖∇φ‖² = (1/r) · Σ_{i in V_r} div_i².
+        // Solución analítica O(n²) de precisión de máquina, sin eliminación gaussiana ni alocaciones.
+        let mut sum_div_sq = 0.0_f64;
+        for &u in &active_indices[..r.min(64)] {
+            let d = div[u];
+            sum_div_sq += d * d;
+        }
+        let energia_grad = sum_div_sq / (r as f64);
+        let curl = 1.0 - energia_grad / energia;
+        return Some(curl.clamp(0.0, 1.0));
+    }
+
+    // F2.1-03: Resolución analítica exacta de Helmholtz-Hodge para grafos generales con pares censurados.
+    // L · φ = div(f) resuelto componente a componente mediante Laplaciano reducido con nodo a tierra (φ_ground = 0).
+    if r > 64 {
+        // Fallback de seguridad en caso de grafos anormalmente masivos
+        let mut sum_div_sq = 0.0_f64;
+        for i in 0..n {
+            if node_has_flow[i] {
+                sum_div_sq += div[i] * div[i];
+            }
+        }
+        let energia_grad = sum_div_sq / (r as f64);
+        let curl = 1.0 - energia_grad / energia;
+        return Some(curl.clamp(0.0, 1.0));
+    }
+
+    let r_eff = r.min(64);
+    let mut visited = [false; 64];
+    let mut phi = [0.0_f64; 64];
+    let mut comp_nodes = [0usize; 64];
+    let mut queue = [0usize; 64];
+    let mut total_energia_grad = 0.0_f64;
+
+    for start_k in 0..r_eff {
+        if visited[start_k] {
+            continue;
+        }
+        let mut comp_len = 0usize;
+        let mut q_head = 0usize;
+        let mut q_tail = 0usize;
+
+        visited[start_k] = true;
+        queue[q_tail] = start_k;
+        q_tail += 1;
+
+        while q_head < q_tail {
+            let curr = queue[q_head];
+            q_head += 1;
+            comp_nodes[comp_len] = curr;
+            comp_len += 1;
+
+            let u = active_indices[curr];
+            for next_k in 0..r_eff {
+                if !visited[next_k] {
+                    let v = active_indices[next_k];
+                    if edge_measured[u * n + v] {
+                        visited[next_k] = true;
+                        queue[q_tail] = next_k;
+                        q_tail += 1;
+                    }
+                }
+            }
+        }
+
+        if comp_len < 2 {
+            continue;
+        }
+
+        // Laplaciano reducido de tamaño m = comp_len - 1 con tierra en comp_nodes[comp_len - 1]
+        let m = comp_len - 1;
+        let mut mat = [0.0_f64; 64 * 64];
+        let mut rhs = [0.0_f64; 64];
+
+        for i in 0..m {
+            let u_k = comp_nodes[i];
+            let u = active_indices[u_k];
+            rhs[i] = div[u];
+
+            let mut deg = 0.0_f64;
+            for j in 0..comp_len {
+                if i == j {
+                    continue;
+                }
+                let v_k = comp_nodes[j];
+                let v = active_indices[v_k];
+                if edge_measured[u * n + v] {
+                    deg += 1.0;
+                    if j < m {
+                        mat[i * m + j] = -1.0;
+                    }
+                }
+            }
+            mat[i * m + i] = deg;
+        }
+
+        // Eliminación Gaussiana con pivoteo parcial O(m^3) sobre stack sin asignaciones
+        let mut solvable = true;
+        for i in 0..m {
+            let mut max_row = i;
+            let mut max_val = mat[i * m + i].abs();
+            for k in (i + 1)..m {
+                let val = mat[k * m + i].abs();
+                if val > max_val {
+                    max_val = val;
+                    max_row = k;
+                }
+            }
+            if max_val < 1e-12 {
+                solvable = false;
+                break;
+            }
+            if max_row != i {
+                for col in i..m {
+                    let tmp = mat[i * m + col];
+                    mat[i * m + col] = mat[max_row * m + col];
+                    mat[max_row * m + col] = tmp;
+                }
+                let tmp_rhs = rhs[i];
+                rhs[i] = rhs[max_row];
+                rhs[max_row] = tmp_rhs;
+            }
+
+            let pivot = mat[i * m + i];
+            for k in (i + 1)..m {
+                let factor = mat[k * m + i] / pivot;
+                mat[k * m + i] = 0.0;
+                for col in (i + 1)..m {
+                    mat[k * m + col] -= factor * mat[i * m + col];
+                }
+                rhs[k] -= factor * rhs[i];
+            }
+        }
+
+        if solvable {
+            for i in (0..m).rev() {
+                let mut sum = rhs[i];
+                for col in (i + 1)..m {
+                    sum -= mat[i * m + col] * rhs[col];
+                }
+                rhs[i] = sum / mat[i * m + i];
+            }
+
+            for i in 0..m {
+                let u_k = comp_nodes[i];
+                phi[u_k] = rhs[i];
+            }
+            let ground_k = comp_nodes[m];
+            phi[ground_k] = 0.0;
+
+            // Energía del gradiente: sum_{k in C} phi_k * div_k
+            for &c_k in &comp_nodes[..comp_len] {
+                let orig = active_indices[c_k];
+                total_energia_grad += phi[c_k] * div[orig];
+            }
+        }
+    }
+
+    let curl = 1.0 - total_energia_grad / energia;
     Some(curl.clamp(0.0, 1.0))
 }
 

@@ -71,6 +71,11 @@ const WF_BAR_MS: u64 = WF_REAL_MICRO_TICKS as u64 * 2_000;
 /// publicado su propia rejilla (ver `WfMarketEnv::half_spread`).
 const WF_SYNTH_PRICE_BASE: f64 = 100.0;
 
+/// Tick del instrumento sintético WFD{i} del examen (en el numerario
+/// `WF_SYNTH_PRICE_BASE`). Es la rejilla del examen mientras el universo vivo
+/// no haya publicado la suya (`WfMarketEnv::tick_del_examen`).
+const WF_SYNTH_TICK: f64 = 0.01;
+
 struct RealWfOutcome {
     fitness: f64,
     net_returns: Vec<f64>,
@@ -123,6 +128,22 @@ impl WfMarketEnv {
     /// del instrumento, luego un spread menor que un tick es imposible.
     /// `exam_tick_pct` es la rejilla del propio instrumento del examen, usada
     /// sólo cuando el universo vivo aún no ha publicado ninguna.
+    /// CL-88 (atr-2): tick del instrumento del examen, en el numerario
+    /// `WF_SYNTH_PRICE_BASE`: la rejilla relativa del universo vivo
+    /// (`tick_pct`) llevada a ese precio y, si aún no hay ninguna publicada,
+    /// la del spec WFD. Antes el examen tomaba el tick del símbolo vivo que
+    /// ocupa su slot (`tick_size_de(i)` lee `universe[i]`): con BTCUSDT
+    /// (tick 0,1) en el slot, una serie de 100 USD tenía un piso de 10 pb en
+    /// el ATR.
+    #[inline]
+    pub fn tick_del_examen(&self) -> f64 {
+        if self.tick_pct.is_finite() && self.tick_pct > 0.0 {
+            self.tick_pct * WF_SYNTH_PRICE_BASE
+        } else {
+            WF_SYNTH_TICK
+        }
+    }
+
     #[inline]
     pub fn half_spread(&self, exam_tick_pct: f64) -> f64 {
         let grid = if self.tick_pct > 0.0 { self.tick_pct } else { exam_tick_pct };
@@ -435,7 +456,7 @@ fn wf_real_coin_ids(n: usize) -> Vec<usize> {
             let spec = quantum_arena::symbol_registry::SymbolSpec {
                 symbol: sym.clone(),
                 step_size: 0.001,
-                tick_size: 0.01,
+                tick_size: WF_SYNTH_TICK,
                 min_qty: 0.001,
                 min_notional: 5.0,
                 max_leverage: 50,
@@ -468,6 +489,63 @@ struct WfReplayState {
     ruina: bool,
 }
 
+impl WfReplayState {
+    fn new(capital: f64) -> Self {
+        Self {
+            ts: 60_000,
+            vetoes: 0,
+            avg_win: 0.0,
+            avg_loss: 0.0,
+            peak: capital,
+            max_dd: 0.0,
+            net_returns: Vec::new(),
+            pos_open_flags: [false; quantum_arena::state::MAX_COINS],
+            ruina: false,
+        }
+    }
+}
+
+/// Núcleo y arena del examen, con el genoma del candidato aplicado.
+///
+/// CL-88 (atr-2): los slots del examen son los del universo vivo, pero su
+/// instrumento es el del examen. Cada moneda fija el tick del examen como
+/// piso de resolución del ATR (`fijar_tick_propio`).
+fn nucleo_del_examen(
+    candidate: &SuperGenotype,
+    initial_capital: f64,
+    market: &WfMarketEnv,
+    coin_ids: &[usize],
+) -> (Arc<GlobalArena>, GodEngineCore) {
+    let arena = Arc::new(GlobalArena::new(initial_capital));
+    candidate.apply_to_arena(&arena);
+    let mut core = GodEngineCore::new(arena.clone());
+    let tick = market.tick_del_examen();
+    for &c in coin_ids {
+        core.fijar_tick_propio(c.min(quantum_arena::state::MAX_COINS - 1), tick);
+    }
+    (arena, core)
+}
+
+/// CL-88 (atr-2): ATR relativo de la primera moneda del examen tras
+/// reproducir `serie` entera sin puntuar, con el genoma por defecto. Sólo lo
+/// usa la prueba `cf4_tick_del_examen`, que fija el universo vivo en su
+/// propio proceso.
+#[doc(hidden)]
+pub fn atr_pct_del_examen(serie: &[f64], market: &WfMarketEnv) -> f64 {
+    let coin_ids = wf_real_coin_ids(1);
+    let coin_id = coin_ids[0].min(quantum_arena::state::MAX_COINS - 1);
+    let (arena, mut core) =
+        nucleo_del_examen(&SuperGenotype::default(), WF_INITIAL_CAPITAL, market, &coin_ids);
+    let mut envelope = RiskEnvelope::new();
+    let mut st = WfReplayState::new(WF_INITIAL_CAPITAL);
+    let mut precio = WF_SYNTH_PRICE_BASE;
+    wf_replay_segment(
+        &mut core, &arena, &mut envelope, &mut st, &mut precio, coin_id,
+        serie, 0, serie.len(), market, WF_INITIAL_CAPITAL, false,
+    );
+    core.feature_engines[coin_id].get_atr_pct()
+}
+
 /// Reproduce el tramo `[from, to)` de una serie contra el MOTOR REAL.
 ///
 /// `puntua` separa las dos pasadas del walk-forward (D-743): en la de
@@ -491,9 +569,8 @@ fn wf_replay_segment(
 ) {
     // Rejilla de precios del instrumento del examen — sólo se usa como piso
     // del spread cuando el universo vivo aún no ha publicado la suya.
-    let tick_size = quantum_arena::symbol_registry::try_spec(coin_id)
-        .map(|s| s.tick_size)
-        .unwrap_or(0.0);
+    // CL-88 (atr-2): es la del examen, no la del símbolo vivo del slot.
+    let tick_size = market.tick_del_examen();
     let to = to.min(rets.len());
     for ri in from..to {
         let r = rets[ri];
@@ -650,21 +727,9 @@ fn wf_evaluate_real(
     }
     let coin_ids = wf_real_coin_ids(ranked_series.len());
 
-    let arena = Arc::new(GlobalArena::new(initial_capital));
-    candidate.apply_to_arena(&arena);
-    let mut core = GodEngineCore::new(arena.clone());
+    let (arena, mut core) = nucleo_del_examen(candidate, initial_capital, market, &coin_ids);
     let mut envelope = RiskEnvelope::new();
-    let mut st = WfReplayState {
-        ts: 60_000,
-        vetoes: 0,
-        avg_win: 0.0,
-        avg_loss: 0.0,
-        peak: initial_capital,
-        max_dd: 0.0,
-        net_returns: Vec::new(),
-        pos_open_flags: [false; quantum_arena::state::MAX_COINS],
-        ruina: false,
-    };
+    let mut st = WfReplayState::new(initial_capital);
     let mut prices = vec![WF_SYNTH_PRICE_BASE; ranked_series.len()];
 
     // ── PASADA 1 — ENTRENAMIENTO (no puntúa) ─────────────────────────────
@@ -704,7 +769,18 @@ fn wf_evaluate_real(
         }
     }
 
-    let oos_end_capital = arena.unified_capital.load(Ordering::Relaxed);
+    // LG-7 (Línea G, G049): lo abierto al final de cada tramo de validación
+    // se valora a mercado con la fricción de salida taker. Antes quedaba
+    // censurado: el capital del examen sólo cambia al cerrar, así que una
+    // posición perdedora abierta al final no restaba aptitud ni drawdown.
+    let oos_end_capital = arena.unified_capital.load(Ordering::Relaxed)
+        + valor_a_mercado_de_lo_abierto(&arena, &coin_ids, &prices);
+    if oos_end_capital.is_finite() && st.peak > 0.0 {
+        let dd = (st.peak - oos_end_capital) / st.peak;
+        if dd.is_finite() && dd > st.max_dd {
+            st.max_dd = dd;
+        }
+    }
     let trades = st.net_returns.len();
     // D-743: la aptitud se mide ÍNTEGRAMENTE sobre la partición de validación
     // — capital inicial y final son los de esa ventana, y el mínimo de
@@ -724,6 +800,50 @@ fn wf_evaluate_real(
     });
     let _ = st.vetoes; // telemetría del envelope: contabilizada, no puntúa
     RealWfOutcome { fitness, net_returns: st.net_returns, trades }
+}
+
+/// LG-7 (Línea G, G049) — VALOR A MERCADO DE LAS RANURAS ABIERTAS DEL EXAMEN.
+///
+/// PnL bruto a `precios[i]` menos la comisión taker y el piso de
+/// deslizamiento de la salida (los del genoma examinado), sumado sobre todas
+/// las ranuras abiertas de las monedas del examen. La comisión de entrada ya
+/// se descontó del capital al abrir. Una moneda sin precio finito positivo
+/// no aporta (no se inventa un valor).
+pub(crate) fn valor_a_mercado_de_lo_abierto(
+    arena: &GlobalArena,
+    coin_ids: &[usize],
+    precios: &[f64],
+) -> f64 {
+    let taker = arena.config.live_taker_fee.load(Ordering::Relaxed);
+    let deslizamiento = arena.config.base_slippage_floor.load(Ordering::Relaxed);
+    let friccion = if taker.is_finite() && taker >= 0.0 { taker } else { 0.0 }
+        + if deslizamiento.is_finite() && deslizamiento >= 0.0 { deslizamiento } else { 0.0 };
+    let mut total = 0.0;
+    for (i, &c) in coin_ids.iter().enumerate() {
+        let precio = precios.get(i).copied().unwrap_or(f64::NAN);
+        if !(precio.is_finite() && precio > 0.0) {
+            continue;
+        }
+        let coin_id = c.min(quantum_arena::state::MAX_COINS - 1);
+        let Some(coin) = arena.coins.get(coin_id) else { continue };
+        for pos in coin.positions.slots() {
+            if !pos.is_open() {
+                continue;
+            }
+            let entrada = pos.entry_price.load(Ordering::Relaxed);
+            let qty = pos.quantity.load(Ordering::Relaxed);
+            if !(entrada.is_finite() && entrada > 0.0 && qty.is_finite() && qty > 0.0) {
+                continue;
+            }
+            let bruto = if pos.is_long.load(Ordering::Relaxed) {
+                (precio - entrada) * qty
+            } else {
+                (entrada - precio) * qty
+            };
+            total += bruto - precio * qty * friccion;
+        }
+    }
+    total
 }
 
 /// D-689 (DÉCIMA OLA) — ARMADO EXPLÍCITO DE LA EVOLUCIÓN EN VIVO.
@@ -799,7 +919,7 @@ pub struct LiveEvolutionDaemon {
     pub post_promo_returns: Vec<f64>,
     pub promoted_generation: Option<(u64, u64)>, // (generación, padre)
     /// Ω31 — Supermartingala de Ville para watchdog anytime-valid inmune a optional stopping.
-    pub post_promo_ville: Option<crate::return_evidence::SequentialVilleEvidence>,
+    pub post_promo_ville: Option<crate::return_evidence::VigilanciaDegradacion>,
     /// D-746 (DÉCIMA OLA) — PRUEBAS ACUMULADAS PARA LA CORRECCIÓN POR
     /// MULTIPLICIDAD. El gate DSR recibía el literal `2_000` en cada ronda,
     /// como si cada evaluación de tres minutos fuese el primer experimento de
@@ -1140,8 +1260,11 @@ impl LiveEvolutionDaemon {
                                         }
                                     }
                                 };
-                                let normalized_ret = (ret / unit_risk).clamp(-1.0, 1.0);
-                                ville.observe(normalized_ret);
+                                // LF-3: la vigilancia acota el soporte en [−1, RR máx]
+                                // (`nueva_vigilancia_ville`); recortar aquí a +1 R
+                                // vigilaba la tasa de acierto contra 0,5, no la esperanza.
+                                let normalized_ret = ret / unit_risk;
+                                ville.observe_r(normalized_ret);
                             }
                         }
 
@@ -1151,6 +1274,14 @@ impl LiveEvolutionDaemon {
                         // del registry/coin en el instante del cierre:
                         // obi, aceleración de precio, spread bps (spot),
                         // atr_pct, hurst y momentum como proxy macro.
+                        // CL-96: SIN PARIDAD con la predicción. Aquí obi,
+                        // aceleración, atr_pct y price_velocity se leen de
+                        // las claves GLOBALES (`get_value_or`: el valor de la
+                        // última moneda que las escribió), y QO-E2a predice
+                        // con las de la moneda (`get_for_coin_or`). El buzón
+                        // de CL-73 decía que se entrenaba y predecía con la
+                        // misma clave: era falso. El defecto sigue abierto
+                        // (dueño del demonio); sólo se corrige la nota.
                         let reg = &self.arena.registry;
                         let spot_bid = coin.spot_bid.load(std::sync::atomic::Ordering::Relaxed);
                         let spot_ask = coin.spot_ask.load(std::sync::atomic::Ordering::Relaxed);
@@ -1195,17 +1326,36 @@ impl LiveEvolutionDaemon {
     /// revierte al padre vía el embudo versionado y lo reaplica al arena.
     /// Es el complemento operativo del gate de `promote`: sanidad antes,
     /// rendición de cuentas después.
+    /// LF-3: vigilancia de degradación con el soporte de la geometría vigente.
+    /// Los retornos llegan en R-múltiplos (riesgo al stop = 1 R): por abajo el
+    /// soporte es −1 R y por arriba el TP/SL máximo de las curvas del genoma
+    /// en la banda operable [τ rápida, τ lenta].
+    fn nueva_vigilancia_ville(&self) -> Option<crate::return_evidence::VigilanciaDegradacion> {
+        use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
+        let cfg = &self.arena.config;
+        let soporte = crate::return_evidence::soporte_superior_en_r(&[
+            (cfg.tp_at_tau(TAU_ANCHOR_FAST_MS), cfg.sl_at_tau(TAU_ANCHOR_FAST_MS)),
+            (cfg.tp_at_tau(TAU_ANCHOR_SLOW_MS), cfg.sl_at_tau(TAU_ANCHOR_SLOW_MS)),
+        ]);
+        crate::return_evidence::VigilanciaDegradacion::new(0.05, 0.05, 0.50, soporte).ok()
+    }
+
     fn check_post_promotion_degradation(&mut self) {
         let Some((generation_id, parent)) = self.promoted_generation else {
             return;
         };
-        // R7-R6-EV-1: Desacoplamiento de la vigilancia anytime-valid de Ville:
-        // Ville posee validez matemática finita para cualquier tiempo de parada (N >= 3)
-        // y detecta colapso de evidencia en 5-15 operaciones sin esperar al tamaño asintótico N >= 20.
+        // R7-R6-EV-1: la vigilancia anytime-valid de Ville no espera al tamaño
+        // asintótico N >= 20: es válida en cualquier tiempo de parada. Con LF-3
+        // su velocidad depende de la magnitud de la pérdida (−0,67 R por
+        // operación: ~27 operaciones; −0,19 R: cientos) y su error tipo I
+        // (revertir un genoma con esperanza ≥ 0) queda acotado por α.
         let ville_degraded = self
             .post_promo_ville
             .as_ref()
-            .map(|v| v.is_exhausted() || v.is_evidence_decayed(0.50))
+            // LF-3: degradación = evidencia anytime-valid contra E[X] ≥ 0
+            // (falsa reversión ≤ α). La caída del 50 % desde el pico de un
+            // e-proceso a favor revertía también genomas rentables.
+            .map(|v| v.degradada())
             .unwrap_or(false);
 
         // Prueba Studentizada descriptiva asintótica (requiere N >= 20 para estabilidad de varianza)
@@ -1351,18 +1501,12 @@ impl LiveEvolutionDaemon {
             // Recovery of a strategy score does not resolve those causes.
         }
 
-        // D-689: la deriva y el kill-switch de arriba son protección y siguen
-        // siempre activos; la búsqueda y promoción de mutaciones en vivo no.
-        if !live_evolution_armed_for_env() {
-            return;
-        }
-
-        println!(
-            "[ADAPTIVE SEARCH] Evaluando mutaciones (t descriptivo actual: {:.2})...",
-            current_shadow_sharpe
-        );
-
-        // FASE I: Random Forest / Thousands of Universes Evaluation (Estasis de Probabilidad)
+        // LF-4 (Línea F): la vigilancia de rollback se arma ANTES del gate de
+        // armado de la evolución en vivo. Con la evolución desarmada (lo normal
+        // en prod) el bloque quedaba detrás del `return` de abajo, nunca se
+        // armaba y `check_post_promotion_degradation` salía en su primera
+        // línea para siempre, aunque el doc de `live_evolution_armed_for_env`
+        // y el log del host dicen que el rollback no depende del armado.
         // E2/HERENCIA: la semilla de la mutación es el GENOMA ACTIVO del
         // almacén versionado (champion real), no un champion_path que
         // nadie escribe. Antes: cada ciclo clonaba SuperGenotype::default()
@@ -1385,7 +1529,7 @@ impl LiveEvolutionDaemon {
                     env.parent_generation,
                 );
                 if reiniciada || self.post_promo_ville.is_none() {
-                    self.post_promo_ville = crate::return_evidence::SequentialVilleEvidence::with_bounds(0.05, 0.05, 0.50).ok();
+                    self.post_promo_ville = self.nueva_vigilancia_ville();
                     println!(
                         "🐕 [WATCHDOG-EXTERN] Promoción/restauración externa detectada (gen {}, padre {}) — vigilancia de rollback ARMADA (Ville anytime-valid activo).",
                         env.generation, env.parent_generation
@@ -1393,6 +1537,18 @@ impl LiveEvolutionDaemon {
                 }
             }
         }
+        // D-689: la deriva y el kill-switch de arriba son protección y siguen
+        // siempre activos; la búsqueda y promoción de mutaciones en vivo no.
+        if !live_evolution_armed_for_env() {
+            return;
+        }
+
+        println!(
+            "[ADAPTIVE SEARCH] Evaluando mutaciones (t descriptivo actual: {:.2})...",
+            current_shadow_sharpe
+        );
+
+        // FASE I: Random Forest / Thousands of Universes Evaluation (Estasis de Probabilidad)
         let current_genome = current_envelope
             .map(|env| env.genome)
             .or_else(|| {
@@ -1945,7 +2101,7 @@ impl LiveEvolutionDaemon {
                     env.parent_generation,
                 );
                 if reiniciada || self.post_promo_ville.is_none() {
-                    self.post_promo_ville = crate::return_evidence::SequentialVilleEvidence::with_bounds(0.05, 0.05, 0.50).ok();
+                    self.post_promo_ville = self.nueva_vigilancia_ville();
                     println!(
                         "⚡ [HOT-SWAP] Genoma generación {} promovida (padre {}). Watchdog de rollback armado (Ville anytime-valid activo).",
                         env.generation, env.parent_generation
@@ -2014,6 +2170,31 @@ mod evidence_regressions {
         let mut returns: Vec<f64> = (1..=10).map(|i| i as f64).collect();
         returns.push(f64::NAN);
         assert_eq!(summarize_returns(&returns), Err(EvidenceError::NonFiniteObservation { index: 10 }));
+    }
+}
+
+#[cfg(test)]
+mod tests_lg7 {
+    use super::*;
+
+    /// G049: una ranura abierta al final del examen cuenta a mercado, con la
+    /// fricción de salida taker; una moneda sin precio no aporta.
+    #[test]
+    fn lg7_lo_abierto_al_final_del_examen_se_valora_a_mercado() {
+        let arena = GlobalArena::new(13.0);
+        arena.config.live_taker_fee.store(0.0005, Ordering::Relaxed);
+        arena.config.base_slippage_floor.store(0.0001, Ordering::Relaxed);
+        let coin_ids = [3usize, 4usize];
+        // Largo abierto a 100 con 0,05 de cantidad en la moneda 3.
+        arena.coins[3].positions.slots()[0].open(true, 100.0, 0.05, 1.0, 1, 0.0, 0.0);
+        // Corto abierto a 50 con 0,1 en la moneda 4, sin precio final.
+        arena.coins[4].positions.slots()[0].open(false, 50.0, 0.1, 1.0, 1, 0.0, 0.0);
+        let v = valor_a_mercado_de_lo_abierto(&arena, &coin_ids, &[98.0, f64::NAN]);
+        let esperado = (98.0 - 100.0) * 0.05 - 98.0 * 0.05 * 0.0006;
+        assert!((v - esperado).abs() < 1e-12, "v={v} esperado={esperado}");
+        // Sin ranuras abiertas no aporta nada.
+        let vacia = GlobalArena::new(13.0);
+        assert_eq!(valor_a_mercado_de_lo_abierto(&vacia, &coin_ids, &[98.0, 50.0]), 0.0);
     }
 }
 

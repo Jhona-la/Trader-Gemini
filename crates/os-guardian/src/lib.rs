@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-    SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_JOB_MEMORY,
+    SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
 };
 use windows::Win32::System::Threading::{
     GetCurrentProcess, GetCurrentThread, SetPriorityClass, SetProcessAffinityMask,
@@ -65,9 +65,13 @@ pub fn init_guardian(affinity_mask: usize, max_memory_mb: usize, arena: Arc<Glob
 
         // 3. Establecer límites de Memoria vía JobObject
         if let Ok(job) = CreateJobObjectW(None, None) {
+            // LG-14 (Línea G): límite POR PROCESO. Con JOB_OBJECT_LIMIT_JOB_MEMORY
+            // el commit del entrenador hijo (que hereda el job) se sumaba al del
+            // proceso vivo y la asignación fallida abortaba el motor con
+            // posiciones abiertas, sin pasar por el veto de memoria.
             let mut limit_info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-            limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_JOB_MEMORY;
-            limit_info.JobMemoryLimit = max_memory_mb * 1024 * 1024;
+            limit_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+            limit_info.ProcessMemoryLimit = max_memory_mb * 1024 * 1024;
 
             let result = SetInformationJobObject(
                 job,

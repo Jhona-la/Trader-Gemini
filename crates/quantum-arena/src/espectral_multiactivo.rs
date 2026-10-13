@@ -56,7 +56,6 @@
 
 use crate::evalues::EProceso;
 use crate::temporal_spectrum::SPECTRUM_SCALES_MS;
-use std::collections::HashMap;
 
 const ESCALAS: usize = 32;
 
@@ -151,12 +150,27 @@ struct EnlacePar {
     consumido: [(u64, u64); ESCALAS],
 }
 
+#[inline(always)]
+fn pair_idx(a: usize, b: usize, max_coins: usize) -> usize {
+    debug_assert!(a < b && b < max_coins);
+    a * max_coins - (a * (a + 1)) / 2 + (b - a - 1)
+}
+
+#[inline(always)]
+fn total_pairs(max_coins: usize) -> usize {
+    max_coins * max_coins.saturating_sub(1) / 2
+}
+
 /// El universo espectral multivariante: un IC cruzado por par y escala,
 /// alimentado por las maduraciones de bloque de cada moneda.
+///
+/// Optimización cuántica (Fase 1 / Ω93): almacenamiento contiguo plano
+/// en vector pre-dimensionado de pares sin asignaciones dinámicas en runtime
+/// ni tabla hash en el camino caliente de eventos de profundidad.
 #[derive(Clone)]
 pub struct EspectralMultiactivo {
     max_coins: usize,
-    enlaces: HashMap<(u16, u16), EnlacePar>,
+    enlaces: Vec<EnlacePar>,
     /// Último bloque maduro por (moneda, escala): (ts de cierre, retorno).
     ultimo: Vec<[(u64, f64); ESCALAS]>,
 }
@@ -169,9 +183,10 @@ impl Default for EspectralMultiactivo {
 
 impl EspectralMultiactivo {
     pub fn new(max_coins: usize) -> Self {
+        let num_pairs = total_pairs(max_coins);
         Self {
             max_coins,
-            enlaces: HashMap::new(),
+            enlaces: vec![EnlacePar::default(); num_pairs],
             ultimo: vec![[(0u64, 0.0f64); ESCALAS]; max_coins],
         }
     }
@@ -214,9 +229,9 @@ impl EspectralMultiactivo {
                 continue; // bloques no contemporáneos: mezclaría regímenes
             }
             let (a, b, ra, rb) = if moneda < otra {
-                (moneda as u16, otra as u16, r, r_b)
+                (moneda, otra, r, r_b)
             } else {
-                (otra as u16, moneda as u16, r_b, r)
+                (otra, moneda, r_b, r)
             };
             // Los ts en ORDEN CANÓNICO (a < b): el trigger y el partner
             // según quién es a y quién b — el consumo se registra por
@@ -226,7 +241,11 @@ impl EspectralMultiactivo {
             } else {
                 (ts_b, ts_ms)
             };
-            let enlace = self.enlaces.entry((a, b)).or_default();
+            let idx = pair_idx(a, b, self.max_coins);
+            if idx >= self.enlaces.len() {
+                continue;
+            }
+            let enlace = &mut self.enlaces[idx];
             let (ult_a, ult_b) = enlace.consumido[escala];
             if ts_a <= ult_a || ts_b <= ult_b {
                 // H1-1: ambos cierres deben avanzar respecto al consumo
@@ -244,8 +263,9 @@ impl EspectralMultiactivo {
         if a >= self.max_coins || b >= self.max_coins || a == b || escala >= ESCALAS {
             return None;
         }
-        let clave = if a < b { (a as u16, b as u16) } else { (b as u16, a as u16) };
-        self.enlaces.get(&clave)?.escalas[escala].ic()
+        let (min_c, max_c) = if a < b { (a, b) } else { (b, a) };
+        let idx = pair_idx(min_c, max_c, self.max_coins);
+        self.enlaces.get(idx)?.escalas[escala].ic()
     }
 
     /// H1-1 (RONDA 3): n de muestras acumuladas del par-escala — el conteo
@@ -256,8 +276,9 @@ impl EspectralMultiactivo {
         if a >= self.max_coins || b >= self.max_coins || a == b || escala >= ESCALAS {
             return None;
         }
-        let clave = if a < b { (a as u16, b as u16) } else { (b as u16, a as u16) };
-        Some(self.enlaces.get(&clave)?.escalas[escala].n)
+        let (min_c, max_c) = if a < b { (a, b) } else { (b, a) };
+        let idx = pair_idx(min_c, max_c, self.max_coins);
+        Some(self.enlaces.get(idx)?.escalas[escala].n)
     }
 
     /// #665 (F2-B8): versión de VETO — el IC sólo cuenta si su e-proceso
@@ -267,8 +288,9 @@ impl EspectralMultiactivo {
         if a >= self.max_coins || b >= self.max_coins || a == b || escala >= ESCALAS {
             return None;
         }
-        let clave = if a < b { (a as u16, b as u16) } else { (b as u16, a as u16) };
-        self.enlaces.get(&clave)?.escalas[escala].ic_veto()
+        let (min_c, max_c) = if a < b { (a, b) } else { (b, a) };
+        let idx = pair_idx(min_c, max_c, self.max_coins);
+        self.enlaces.get(idx)?.escalas[escala].ic_veto()
     }
 
     fn escalas_en_banda(lo: f64, hi: f64) -> impl Iterator<Item = usize> {
@@ -278,16 +300,23 @@ impl EspectralMultiactivo {
     /// Media de |IC| en banda a través de TODOS los pares vivos de `moneda`
     /// con evidencia madura; `None` si ninguna escala-par maduró.
     pub fn acople_banda(&self, moneda: usize, lo: f64, hi: f64) -> Option<f64> {
+        if moneda >= self.max_coins {
+            return None;
+        }
         let mut suma = 0.0f64;
         let mut cuenta = 0u64;
-        for ((a, b), enlace) in &self.enlaces {
-            if *a as usize != moneda && *b as usize != moneda {
+        for otra in 0..self.max_coins {
+            if otra == moneda {
                 continue;
             }
-            for k in Self::escalas_en_banda(lo, hi) {
-                if let Some(ic) = enlace.escalas[k].ic() {
-                    suma += ic.abs();
-                    cuenta += 1;
+            let (min_c, max_c) = if moneda < otra { (moneda, otra) } else { (otra, moneda) };
+            let idx = pair_idx(min_c, max_c, self.max_coins);
+            if let Some(enlace) = self.enlaces.get(idx) {
+                for k in Self::escalas_en_banda(lo, hi) {
+                    if let Some(ic) = enlace.escalas[k].ic() {
+                        suma += ic.abs();
+                        cuenta += 1;
+                    }
                 }
             }
         }
@@ -300,19 +329,22 @@ impl EspectralMultiactivo {
 
     /// El (otro, τ, IC) de mayor |IC| en banda para `moneda`.
     pub fn mejor_acople(&self, moneda: usize, lo: f64, hi: f64) -> Option<(usize, f64, f64)> {
+        if moneda >= self.max_coins {
+            return None;
+        }
         let mut mejor: Option<(usize, f64, f64)> = None;
-        for ((a, b), enlace) in &self.enlaces {
-            let otro = if *a as usize == moneda {
-                *b as usize
-            } else if *b as usize == moneda {
-                *a as usize
-            } else {
+        for otra in 0..self.max_coins {
+            if otra == moneda {
                 continue;
-            };
-            for k in Self::escalas_en_banda(lo, hi) {
-                if let Some(ic) = enlace.escalas[k].ic() {
-                    if mejor.map(|(_, _, m)| ic.abs() > m.abs()).unwrap_or(true) {
-                        mejor = Some((otro, SPECTRUM_SCALES_MS[k], ic));
+            }
+            let (min_c, max_c) = if moneda < otra { (moneda, otra) } else { (otra, moneda) };
+            let idx = pair_idx(min_c, max_c, self.max_coins);
+            if let Some(enlace) = self.enlaces.get(idx) {
+                for k in Self::escalas_en_banda(lo, hi) {
+                    if let Some(ic) = enlace.escalas[k].ic() {
+                        if mejor.map(|(_, _, m)| ic.abs() > m.abs()).unwrap_or(true) {
+                            mejor = Some((otra, SPECTRUM_SCALES_MS[k], ic));
+                        }
                     }
                 }
             }

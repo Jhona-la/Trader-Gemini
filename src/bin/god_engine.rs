@@ -51,6 +51,120 @@ fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTra
 /// τ de ENTRADA de la posición; τ desconocida (posición adoptada tras
 /// reinicio) ⇒ ancla rápida (comportamiento conservador). Sustituye los
 /// ±2.5%/±1.5% hardcodeados del restore de arranque.
+/// LG-8 (Línea G, G046) — FEE-BREAKER CON EVIDENCIA, NO CON TRES CIERRES.
+///
+/// QUÉ ESTABA MAL: el breaker suspendía un símbolo hasta 12 h con `trades ≥ 3`,
+/// `neto < 0` y `fees > bruto ganador`. `trades` contaba registros
+/// REALIZED_PNL (llenados, no operaciones) y tres cierres sin ganadora pasan
+/// por azar con frecuencia (1−p)³ aunque la esperanza sea positiva: con RR
+/// 2,25 y p = 0,40 ≈ 22 % de falsas suspensiones. La duración era «4 h por
+/// unidad de ofensa», un literal.
+///
+/// QUÉ GARANTIZA: (i) un cierre es un grupo de registros REALIZED_PNL del
+/// mismo símbolo separados ≤ 1 s (los llenados de una misma orden); (ii) se
+/// suspende sólo si además la cola binomial P(X ≤ ganadoras | n, p*) ≤ α, con
+/// p* el equilibrio de la geometría del genoma a la τ de la ventana: si la
+/// esperanza es positiva (p ≥ p*) la tasa de falsas suspensiones es ≤ α;
+/// (iii) la suspensión dura hasta que el cierre más antiguo de la evidencia
+/// sale de la ventana: sin operaciones nuevas, la evidencia caduca sola.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CierreAgregado {
+    t_ms: u64,
+    bruto: f64,
+}
+
+/// Agrupa registros (tiempo, PnL realizado) de UN símbolo en cierres: un
+/// registro a ≤ `separacion_ms` del anterior pertenece al mismo cierre.
+fn agrupar_cierres(mut registros: Vec<(u64, f64)>, separacion_ms: u64) -> Vec<CierreAgregado> {
+    registros.retain(|(_, v)| v.is_finite() && *v != 0.0);
+    registros.sort_by_key(|(t, _)| *t);
+    let mut out: Vec<CierreAgregado> = Vec::new();
+    let mut ultimo_t = 0u64;
+    for (t, v) in registros {
+        match out.last_mut() {
+            Some(c) if t.saturating_sub(ultimo_t) <= separacion_ms => c.bruto += v,
+            _ => out.push(CierreAgregado { t_ms: t, bruto: v }),
+        }
+        ultimo_t = t;
+    }
+    out
+}
+
+/// P(X ≤ k) con X ~ Binomial(n, p), sumando en espacio logarítmico.
+fn cola_binomial_izquierda(n: usize, k: usize, p: f64) -> f64 {
+    if !(p.is_finite() && p > 0.0 && p < 1.0) || k >= n {
+        return 1.0;
+    }
+    let (lp, lq) = (p.ln(), (1.0 - p).ln());
+    let mut log_comb = 0.0f64; // ln C(n, 0)
+    let mut total = 0.0f64;
+    for i in 0..=k {
+        if i > 0 {
+            log_comb += ((n - i + 1) as f64).ln() - (i as f64).ln();
+        }
+        total += (log_comb + i as f64 * lp + (n - i) as f64 * lq).exp();
+    }
+    total.min(1.0)
+}
+
+/// Decisión del breaker para un símbolo: `Some(hasta_ms)` si suspende.
+fn decision_fee_breaker(
+    cierres: &[CierreAgregado],
+    funding: f64,
+    fees: f64,
+    p_equilibrio: f64,
+    alfa: f64,
+    ventana_ms: u64,
+) -> Option<u64> {
+    let n = cierres.len();
+    if n == 0 || !(fees.is_finite() && fees >= 0.0) {
+        return None;
+    }
+    let bruto: f64 = cierres.iter().map(|c| c.bruto).sum();
+    let bruto_ganador: f64 = cierres.iter().filter(|c| c.bruto > 0.0).map(|c| c.bruto).sum();
+    let ganadoras = cierres.iter().filter(|c| c.bruto > 0.0).count();
+    let neto = bruto + if funding.is_finite() { funding } else { 0.0 } - fees;
+    if !(neto < 0.0 && fees > bruto_ganador) {
+        return None;
+    }
+    if cola_binomial_izquierda(n, ganadoras, p_equilibrio) > alfa {
+        return None;
+    }
+    let mas_antiguo = cierres.iter().map(|c| c.t_ms).min()?;
+    Some(mas_antiguo.saturating_add(ventana_ms))
+}
+
+/// LG-2 (Línea G) — FILTRO DE SALTO: UN PICO AISLADO NO ES UN CAMBIO DE NIVEL.
+///
+/// QUÉ ESTABA MAL: el filtro de «flash crash» comparaba cada tick con el
+/// último tick ACEPTADO del anillo y descartaba los que saltaban más que el
+/// gen `flash_crash_jump_pct`. Los descartados no entran al anillo, así que
+/// tras un salto REAL de nivel (un hueco del WS, una cascada) todos los ticks
+/// siguientes —ya al nuevo nivel— se comparaban con el precio viejo y se
+/// descartaban para siempre: la moneda quedaba ciega (sin gestión de sus
+/// posiciones en el núcleo, sin señales) hasta reiniciar el proceso.
+///
+/// QUÉ GARANTIZA: un tick anómalo se descarta y se recuerda. Si el siguiente
+/// tick anómalo confirma el mismo nivel (dista del recordado no más que el
+/// propio gen), el salto es un cambio de nivel y se acepta. Un pico aislado
+/// —el siguiente tick vuelve al nivel previo y pasa el filtro normal— sigue
+/// descartado, y el recuerdo se borra con cualquier tick aceptado. Devuelve
+/// `(aceptar, nuevo_pendiente)`; `pendiente = 0` significa sin recuerdo.
+fn filtro_de_salto(precio_previo: f64, pendiente: f64, precio: f64, max_salto: f64) -> (bool, f64) {
+    if !(precio_previo > 0.0) || !(max_salto > 0.0) || !max_salto.is_finite() {
+        return (true, 0.0);
+    }
+    let salto = (precio - precio_previo).abs() / precio_previo;
+    if salto <= max_salto {
+        return (true, 0.0);
+    }
+    if pendiente > 0.0 && (precio - pendiente).abs() / pendiente <= max_salto {
+        // Segundo tick anómalo en el mismo nivel: cambio de nivel confirmado.
+        return (true, 0.0);
+    }
+    (false, precio)
+}
+
 fn genome_protection_prices(
     arena: &quantum_arena::GlobalArena,
     symbol: &str,
@@ -783,6 +897,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 🛠️ [BOOTLOADER] Inicializar el entorno desde .env
     dotenvy::dotenv().ok();
 
+    // LG-11 (Línea G): `telemetry_log!` encola en vez de imprimir en el hilo
+    // del bucle vivo (≈8,5 MB de cola; el consumidor duerme si está vacía).
+    telemetry_server::macros::init_telemetry_logger_con_capacidad(16_384);
+
     // CERT-M4-H02 — SHUTDOWN GRACEFUL: Registrar un atexit handler que
     // mata el trainer hijo. En Windows, Ctrl+C pasa por el console handler
     // del OS que termina el proceso — este thread daemon detecta que el
@@ -1120,6 +1238,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         telemetry_server::telemetry_log!(
                             "🛑 [SHUTDOWN] Segundo ^C — salida forzada."
                         );
+                        telemetry_server::macros::vaciar_telemetria(); // LG-11
                         std::process::exit(130);
                     }
                     telemetry_server::telemetry_log!(
@@ -1677,9 +1796,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // exchange real) — antes solo leía el arena: en live el funding/
             // slippage real invisibilizaban el drawdown contable verdadero.
             let exchange_capital_imm = Arc::clone(&unified_capital);
+            // CL-99 (LC-F4-10, LC-F0-10): el pico del capital es uno, el del
+            // arena, compartido con el veto de entradas del riesgo, y se
+            // guarda por entorno para que un reinicio no borre la caída
+            // acumulada (antes el pico nacía en el capital ya caído). Para
+            // empezar de cero tras un retiro de fondos, se borra el archivo.
+            let ruta_pico = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+                "pico_capital.txt",
+            ));
+            if let Some(guardado) = risk_engine::drawdown::cargar_pico(&ruta_pico) {
+                let pico = risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, guardado);
+                telemetry_server::telemetry_log!(
+                    "🛡️ [IMMUNE] pico del capital restaurado: ${:.4} (guardado ${:.4})",
+                    pico,
+                    guardado
+                );
+            }
             rt_handle.spawn(async move {
                 let mut latched = false;
-                let mut peak_capital = arena_imm.unified_capital.load(Ordering::Relaxed);
+                // 0 ⇒ el primer ciclo guarda el pico aunque no haya subido.
+                let mut pico_guardado = 0.0_f64;
                 let mut latency_strikes: u32 = 0;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -1701,40 +1837,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         cap_arena
                     };
-                    if cap > peak_capital {
-                        peak_capital = cap;
+                    let peak_capital =
+                        risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);
+                    if peak_capital > pico_guardado
+                        && risk_engine::drawdown::guardar_pico(&ruta_pico, peak_capital).is_ok()
+                    {
+                        pico_guardado = peak_capital;
                     }
                     let dd = if peak_capital > 0.0 {
                         (peak_capital - cap) / peak_capital
                     } else {
                         0.0
                     };
-                    // D-744: el sistema inmune deja de leer el gen CRUDO (0,95
-                    // en el genoma base: con $13 esperaba a $0,65 para actuar)
-                    // y usa la MISMA prueba que el veto de entradas del
-                    // risk-engine — la caída máxima compatible con el riesgo
-                    // que el motor toma de verdad y con su tasa de pérdida
-                    // observada, con el gen como confianza de la prueba.
-                    // CL-9: la MISMA función que el veto de entradas.
-                    let q_perdida_global =
-                        risk_engine::drawdown::q_perdida_cartera(arena_imm.coins.iter().map(|c| {
-                            (
-                                c.metrics.win_rate.load(Ordering::Relaxed),
-                                c.metrics.trade_count.load(Ordering::Relaxed) as f64,
-                            )
-                        }));
-                    // D-744b / QS-D3 (Ola Ω76): sin riesgo medido rige el gen acotado por la cota
-                    // superior de falsación del modelo de ½ Kelly a α = 0,05 (d* ≈ 0,632, suelo $4,79 en cuenta de $13).
-                    // Sincroniza el cortacircuitos del host con el veto de entradas de risk-engine (lib.rs:341).
-                    let d_falsacion = risk_engine::drawdown::drawdown_de_falsacion(
-                        risk_engine::drawdown::FRACCION_KELLY_MAXIMA,
-                        risk_engine::drawdown::ALFA_FALSACION,
-                    );
-                    let max_dd = risk_engine::drawdown::drawdown_maximo(
-                        arena_imm.riesgo_por_operacion.load(Ordering::Relaxed),
-                        q_perdida_global,
-                        arena_imm.config.global_max_drawdown.load(Ordering::Relaxed),
-                    ).min(d_falsacion);
+                    // CL-106 (LC-F4-10, decisión del dueño «Ambos»): el MISMO
+                    // umbral que el veto de entradas del riesgo, una prueba de
+                    // nivel α con el tamaño real de las órdenes (cuantil 95 % de
+                    // la caída máxima en 200 operaciones con H0 = +0,05 R, en
+                    // unidades del riesgo medido al stop), acotado por d*. Antes
+                    // era la prueba de racha (D-744/CL-9): con riesgo medido,
+                    // 2,2-3,8 % con 13 USD, que aplanaba y bloqueaba la cuenta en
+                    // el 36-49 % de las rachas de 200 operaciones aun con +0,30 R
+                    // de ventaja. Sin riesgo medido (arranque) rige d*.
+                    let max_dd = risk_engine::drawdown::umbral_freno_duro_de(&arena_imm, peak_capital);
                     // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
                     // inmune, no desarmarlo: el guard `cap > 0.0` anterior
                     // dejaba todos los frenos apagados exactamente en el único
@@ -2054,12 +2178,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let rt_for_gc = rt_handle.clone();
         rt_for_gc.spawn(async move {
-            telemetry_server::telemetry_log!("🧹 [OS-GUARDIAN] Inicializando Garbage Collector Estadístico (1H interval)...");
+            // LG-13 (Línea G): compactar sólo con presión de memoria medida
+            // (disponible < working set), comprobada cada minuto; antes se
+            // vaciaba el working set del proceso vivo cada hora, siempre.
+            telemetry_server::telemetry_log!("🧹 [OS-GUARDIAN] Compactación de memoria por presión medida (comprobación cada 60 s)");
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-                telemetry_server::telemetry_log!("🧹 [OS-GUARDIAN] Ejecutando Memory Compaction OS-level...");
-                unsafe {
-                    os_guardian::memory_compaction::force_working_set_compaction();
+                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                if os_guardian::memory_compaction::compactar_si_hay_presion() {
+                    telemetry_server::telemetry_log!("🧹 [OS-GUARDIAN] Presión de memoria: working set compactado");
                 }
             }
         });
@@ -2382,12 +2508,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for (symbol, reason) in &fee_partition.rejected_by_symbol {
                         telemetry_server::telemetry_log!("[FEE-BREAKER] {} numerario no utilizable: {:?}; requiere reconciliación", symbol, reason);
                     }
+                    // LG-8: los registros REALIZED_PNL se agrupan en cierres por
+                    // símbolo; funding y comisiones se suman aparte.
                     #[derive(Default)]
                     struct Agg {
-                        realized: f64,   // REALIZED_PNL + FUNDING_FEE (neto de dirección)
-                        gross_pos: f64,  // suma de cierres GANADORES
-                        fees: f64,       // |COMMISSION|
-                        trades: usize,   // cierres con PnL ≠ 0
+                        registros: Vec<(u64, f64)>, // (time, REALIZED_PNL)
+                        funding: f64,
+                        fees: f64, // |COMMISSION|
                     }
                     let mut per: std::collections::HashMap<String, Agg> =
                         std::collections::HashMap::new();
@@ -2397,23 +2524,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let a = per.entry(e.symbol.clone()).or_default();
                         match e.income_type.as_str() {
-                            "REALIZED_PNL" => {
-                                if e.income != 0.0 {
-                                    a.trades += 1;
-                                }
-                                a.realized += e.income;
-                                if e.income > 0.0 {
-                                    a.gross_pos += e.income;
-                                }
-                            }
-                            "FUNDING_FEE" => a.realized += e.income,
+                            "REALIZED_PNL" => a.registros.push((e.time, e.income)),
+                            "FUNDING_FEE" => a.funding += e.income,
                             "COMMISSION" => a.fees += e.income.abs(),
                             _ => {}
                         }
                     }
+                    // LG-8: p* de la geometría del genoma a la τ de la ventana.
+                    let tp_brk = arena_brk.config.tp_at_tau(tau_scale);
+                    let sl_brk = arena_brk.config.sl_at_tau(tau_scale);
+                    let friccion_brk = risk_engine::tp_sl::roundtrip_friction(
+                        arena_brk.config.live_taker_fee.load(std::sync::atomic::Ordering::Relaxed),
+                        arena_brk.config.base_slippage_floor.load(std::sync::atomic::Ordering::Relaxed),
+                        0.0,
+                        0.0,
+                    );
+                    let p_star_brk = god_engine_core::p_equilibrio(tp_brk, sl_brk, friccion_brk)
+                        .unwrap_or(0.5);
                     for (sym, a) in per {
-                        let net = a.realized - a.fees;
-                        if a.trades >= 3 && net < 0.0 && a.fees > a.gross_pos {
+                        let cierres = agrupar_cierres(a.registros, 1_000);
+                        let bruto: f64 = cierres.iter().map(|c| c.bruto).sum();
+                        let gross_pos: f64 = cierres.iter().filter(|c| c.bruto > 0.0).map(|c| c.bruto).sum();
+                        let net = bruto + a.funding - a.fees;
+                        let decision = decision_fee_breaker(
+                            &cierres,
+                            a.funding,
+                            a.fees,
+                            p_star_brk,
+                            risk_engine::drawdown::ALFA_FALSACION,
+                            window_ms,
+                        );
+                        if let Some(until_ms) = decision.filter(|&u| u > now_breaker) {
                             // B3.6b (auditoría): la condición se re-evalúa cada
                             // 5min y extiende until_ms en +4h por diseño (una
                             // mañana mala cuesta el día). ANTES se logueaba y
@@ -2427,21 +2568,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .map(|g| g.get(&sym).copied().unwrap_or(0))
                                 .unwrap_or(0)
                                 > now_breaker;
-                            // S-5: suspensión proporcional a la ofensa —
-                            // fees/gross mide cuánta fricción paga el símbolo
-                            // por unidad de ganancia bruta: ratio 1.0 ⇒ 4h
-                            // (histórico), ratio 3.0 ⇒ 12h, clamp [1h, 12h].
-                            let offense = (a.fees / a.gross_pos.max(1e-9)).clamp(0.25, 3.0);
-                            let suspend_hours = (offense * 4.0).clamp(1.0, 12.0) as u64;
-                            let until_ms = now_breaker + suspend_hours * 3_600_000;
+                            // LG-8: hasta que el cierre más antiguo de la
+                            // evidencia sale de la ventana.
+                            let suspend_hours = (until_ms - now_breaker) as f64 / 3_600_000.0;
                             suspend_symbol_until(&sym, until_ms);
                             // B3.6b — persistir (atómico, purga expirados): la
                             // suspensión sobrevive reinicios del motor.
                             persist_fee_breaker(now_breaker);
                             if !was_suspended {
                                 telemetry_server::telemetry_log!(
-                                    "🛑 [FEE-BREAKER] {} suspendido {}h para nuevas entradas (persistido): {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2} — el símbolo no paga su fricción",
-                                    sym, suspend_hours, a.trades, a.gross_pos, a.fees, net
+                                    "🛑 [FEE-BREAKER] {} suspendido {:.1}h para nuevas entradas (persistido): {} cierres, bruto_ganador ${:.2} < fees ${:.2}, neto ${:.2}, p*={:.3} — el símbolo no paga su fricción (P ≤ α)",
+                                    sym, suspend_hours, cierres.len(), gross_pos, a.fees, net, p_star_brk
                                 );
                             }
                         }
@@ -2900,6 +3037,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "🧬 [KELLY] Sin envolvente previa — posterior fresco de Jeffreys (HOST-005)"
             );
         }
+        // CL-108 (C-F8, decisión del dueño «Guardar todo»): el estado
+        // aprendido (cierres y evidencia por moneda, calibradores, freno de la
+        // estrategia, riesgo y geometría medidos) se restaura antes de operar
+        // y se guarda en cada cierre. Para empezar de cero, se borra el archivo.
+        let ruta_estado = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+            "estado_aprendido.json",
+        ));
+        // CL-108f (T2-1 de la Línea G): un archivo ilegible o de otra
+        // versión no es un archivo ausente. El núcleo echa el freno de la
+        // estrategia y esta sesión no guarda nada: el archivo queda intacto
+        // hasta que el operador lo repare o lo retire.
+        use god_engine_core::estado_aprendido::Arranque;
+        let arranque = engine_real
+            .arrancar_con_estado(god_engine_core::estado_aprendido::cargar(&ruta_estado));
+        let guardar_estado = arranque.permite_guardar();
+        match &arranque {
+            Arranque::Restaurado { monedas, freno_echado } => telemetry_server::telemetry_log!(
+                "🧠 [ESTADO] restaurado de {}: {} monedas, freno de la estrategia {}",
+                ruta_estado.display(),
+                monedas,
+                if *freno_echado { "ECHADO" } else { "suelto" }
+            ),
+            Arranque::SinEstado => telemetry_server::telemetry_log!(
+                "🧠 [ESTADO] sin estado aprendido previo en {}",
+                ruta_estado.display()
+            ),
+            Arranque::Bloqueado(motivo) => telemetry_server::telemetry_log!(
+                "⛔ [ESTADO] {} ilegible ({}): se conserva intacto y esta sesión no guarda nada; el freno de la estrategia queda ECHADO (no entran posiciones nuevas) hasta que el operador lo repare o lo retire",
+                ruta_estado.display(),
+                motivo
+            ),
+        }
         // B3.7 (auditoría) — DEDUP cierre-bracket vs cierre-core: el MISMO
         // trade económico puede llegar por dos caminos (fill de la pierna en
         // el user-stream + condición de salida del core en el evento
@@ -3019,6 +3188,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|_| feature_engine::SpoofingDetector::default())
             .collect();
+        // LG-2: precio del último tick descartado por el filtro de salto, por moneda.
+        let mut salto_pendiente: Vec<f64> = vec![0.0; quantum_arena::state::MAX_COINS];
         let mut msg_count: u64 = 0;
         // D-610: guardia de secuencia del libro, un estado por símbolo del
         // universo (misma indexación que `local_orderbooks`).
@@ -3364,9 +3535,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if n_recent > 0 {
                     let prev_price = tick_buf[0].bid_price;
                     if prev_price > 0.0 {
-                        let jump_pct = (current_price - prev_price).abs() / prev_price;
                         let max_jump = engine_real.arena.config.flash_crash_jump_pct.load(std::sync::atomic::Ordering::Relaxed);
-                        if jump_pct > max_jump {
+                        let pendiente = salto_pendiente.get(coin_id).copied().unwrap_or(0.0);
+                        let (aceptar, nuevo_pendiente) =
+                            filtro_de_salto(prev_price, pendiente, current_price, max_jump);
+                        if let Some(p) = salto_pendiente.get_mut(coin_id) {
+                            *p = nuevo_pendiente;
+                        }
+                        if !aceptar {
+                            let jump_pct = (current_price - prev_price).abs() / prev_price;
                             telemetry_server::telemetry_log!("⚠️ [DATA INTEGRITY] Dropping anomalous tick for {}! Jump: {:.2}%", parsed_sym, jump_pct * 100.0);
                             continue;
                         }
@@ -3667,6 +3844,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let unified_cap = f64::from_bits(unified_capital.load(Ordering::Relaxed));
 
                     if let Some((is_long, pnl, qty)) = closed_order {
+                        // CL-108: cada cierre cambia el estado aprendido
+                        // (salvo con el estado ilegible, CL-108f).
+                        if let Some(Err(e)) = guardar_estado.then(|| {
+                            god_engine_core::estado_aprendido::guardar(
+                                &ruta_estado,
+                                &engine_real.estado_aprendido(),
+                            )
+                        }) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [ESTADO] no se pudo guardar {}: {}",
+                                ruta_estado.display(),
+                                e
+                            );
+                        }
                         // B3.14 — sólo contabiliza lo que EXISTIÓ en el
                         // exchange. Cierres de entradas vetadas/rechazadas
                         // (round-trips locales de papel, caso KOMA) no
@@ -4424,7 +4615,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let client_id = new_entry_client_id(final_is_long);
                             let route = if force_maker {
                                 EntryRoute::Maker { price: maker_price }
-                            } else if notional_volume > iceberg_threshold {
+                            } else if execution_engine::entry_dispatch::admite_iceberg(
+                                execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG,
+                                notional_volume,
+                                iceberg_threshold,
+                            ) {
                                 let iceberg_qty = final_qty / iceberg_slices;
                                 EntryRoute::Iceberg {
                                     price: maker_price,
@@ -4776,9 +4971,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             msg_count += 1;
             if msg_count.is_multiple_of(100) {
-                let limit_10s = engine_real.arena.config.executor_max_orders_10s.load(Ordering::Relaxed) as usize;
-                let limit_w1m = engine_real.arena.config.executor_max_weight_1m.load(Ordering::Relaxed) as usize;
-                exec.load().set_rate_limit_thresholds(limit_w1m, limit_10s, 1100);
+                // LG-12: los límites de peticiones son los del exchange
+                // (constantes del ejecutor), no genes evolucionados.
 
                 let lat = start.elapsed().as_nanos();
 
@@ -4973,6 +5167,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             telemetry_server::telemetry_log!(
                 "🛑 [SHUTDOWN] Estado persistido. Cierre limpio completo."
             );
+            telemetry_server::macros::vaciar_telemetria(); // LG-11
             std::process::exit(0);
         }
         }
@@ -5184,6 +5379,102 @@ mod tests {
     use super::*;
     use quantum_arena::temporal_spectrum::{TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS};
     use std::sync::atomic::Ordering;
+
+    /// LG-10: con el adaptador de Binance (sin iceberg nativo) ningún nocional
+    /// enruta a Iceberg; antes todo nocional sobre el gen se rechazaba.
+    #[test]
+    fn lg10_sin_iceberg_nativo_ningun_nocional_enruta_a_iceberg() {
+        use execution_engine::entry_dispatch::admite_iceberg;
+        assert!(!execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG);
+        for nocional in [5.1, 600.0, 10_001.0, 1e9] {
+            assert!(!admite_iceberg(execution_engine::binance_api::SUPPORTS_NATIVE_ICEBERG, nocional, 500.0));
+        }
+        assert!(admite_iceberg(true, 600.0, 500.0));
+        assert!(!admite_iceberg(true, 400.0, 500.0));
+        assert!(!admite_iceberg(true, f64::NAN, 500.0));
+    }
+
+    /// LG-8: los llenados de una orden cuentan como un cierre; tres cierres
+    /// sin ganadora ya no suspenden (la cola binomial con p* ≈ 0,35 vale
+    /// 0,27 > α) y la falsa suspensión con esperanza positiva queda ≤ α.
+    #[test]
+    fn lg8_el_fee_breaker_exige_evidencia_y_cuenta_operaciones() {
+        let c = agrupar_cierres(vec![(1_000, -0.4), (1_300, -0.3), (1_900, -0.2), (60_000, 0.5)], 1_000);
+        assert_eq!(c.len(), 2, "tres llenados a ≤ 1 s son un cierre: {c:?}");
+        assert!((c[0].bruto + 0.9).abs() < 1e-12);
+        // Antes bastaban 3 cierres perdedores: ahora no hay evidencia.
+        let perdedores: Vec<CierreAgregado> =
+            (0..3).map(|i| CierreAgregado { t_ms: 1_000 + i * 60_000, bruto: -0.5 }).collect();
+        assert_eq!(decision_fee_breaker(&perdedores, 0.0, 0.3, 0.35, 0.05, 3_600_000), None);
+        // Con 8 perdedores la cola es 0,65⁸ ≈ 0,032 ≤ α: suspende hasta que el
+        // más antiguo sale de la ventana.
+        let ocho: Vec<CierreAgregado> =
+            (0..8).map(|i| CierreAgregado { t_ms: 1_000 + i * 60_000, bruto: -0.5 }).collect();
+        assert_eq!(decision_fee_breaker(&ocho, 0.0, 0.3, 0.35, 0.05, 3_600_000), Some(1_000 + 3_600_000));
+        // Monte Carlo: p = 0,40 > p* = 0,35 (esperanza positiva), ventanas de 3 a
+        // 12 cierres. La tasa de falsas suspensiones queda ≤ α.
+        let mut estado = 0x2545_f491_4f6c_dd1du64;
+        let mut suspensiones = 0u32;
+        let ensayos = 20_000u32;
+        for _ in 0..ensayos {
+            estado ^= estado << 13;
+            estado ^= estado >> 7;
+            estado ^= estado << 17;
+            let n = 3 + (estado % 10) as u64;
+            let mut cierres = Vec::new();
+            for j in 0..n {
+                estado ^= estado << 13;
+                estado ^= estado >> 7;
+                estado ^= estado << 17;
+                let u = (estado >> 11) as f64 / (1u64 << 53) as f64;
+                let bruto = if u < 0.40 { 2.25 } else { -1.0 };
+                cierres.push(CierreAgregado { t_ms: 1 + j * 1_000, bruto });
+            }
+            let fees = 0.12 * n as f64;
+            if decision_fee_breaker(&cierres, 0.0, fees, 0.35, 0.05, 3_600_000).is_some() {
+                suspensiones += 1;
+            }
+        }
+        let tasa = suspensiones as f64 / ensayos as f64;
+        assert!(tasa <= 0.05, "falsas suspensiones {tasa}");
+        // Cola binomial: valores exactos.
+        assert!((cola_binomial_izquierda(3, 0, 0.35) - 0.65f64.powi(3)).abs() < 1e-12);
+        assert!((cola_binomial_izquierda(4, 1, 0.5) - 5.0 / 16.0).abs() < 1e-12);
+        assert_eq!(cola_binomial_izquierda(4, 4, 0.5), 1.0);
+    }
+
+    /// LG-2: tras un cambio de nivel real la moneda no queda ciega; un pico
+    /// aislado sigue descartado.
+    #[test]
+    fn lg2_un_cambio_de_nivel_no_deja_ciega_a_la_moneda() {
+        let max = 0.15;
+        // Antes: cada tick al nuevo nivel (100 → 80) se comparaba con 100 y se
+        // descartaba para siempre. Ahora el primero se descarta y se recuerda,
+        // el segundo confirma el nivel y entra.
+        let (a1, p1) = filtro_de_salto(100.0, 0.0, 80.0, max);
+        assert!(!a1, "el primer tick anómalo se descarta");
+        assert_eq!(p1, 80.0);
+        let (a2, p2) = filtro_de_salto(100.0, p1, 80.4, max);
+        assert!(a2, "el segundo tick al mismo nivel confirma el cambio");
+        assert_eq!(p2, 0.0);
+        // Pico aislado: 100 → 130 → 100,2. El pico se descarta y el regreso
+        // pasa el filtro normal y borra el recuerdo.
+        let (b1, q1) = filtro_de_salto(100.0, 0.0, 130.0, max);
+        assert!(!b1);
+        let (b2, q2) = filtro_de_salto(100.0, q1, 100.2, max);
+        assert!(b2);
+        assert_eq!(q2, 0.0);
+        // Dos picos anómalos en direcciones opuestas no se confirman entre sí.
+        let (c1, r1) = filtro_de_salto(100.0, 0.0, 130.0, max);
+        let (c2, r2) = filtro_de_salto(100.0, r1, 70.0, max);
+        assert!(!c1 && !c2);
+        assert_eq!(r2, 70.0);
+        // Sin referencia o con gen inválido no se filtra.
+        assert_eq!(filtro_de_salto(0.0, 0.0, 80.0, max), (true, 0.0));
+        assert_eq!(filtro_de_salto(100.0, 0.0, 80.0, f64::NAN), (true, 0.0));
+        // Movimiento normal: se acepta sin recuerdo.
+        assert_eq!(filtro_de_salto(100.0, 0.0, 101.0, max), (true, 0.0));
+    }
 
     #[test]
     fn omega14_g0_5_genome_protection_prices_usa_fuente_unica_curva() {

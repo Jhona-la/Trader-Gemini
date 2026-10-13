@@ -301,16 +301,11 @@ impl strategy_core::QuantumStrategy for FlowImpulseEngine {
         let Some(r) = self.registry.as_ref() else {
             return 0.0;
         };
-        let scoped = |key: &str| -> Option<f64> {
-            r.get(&format!("{}_{}", symbol, key), "FlowImpulseEngine")
-                .or_else(|| r.get(&format!("c{}:{}", coin_id, key), "FlowImpulseEngine"))
-                .map(|p| p.get_value())
-                .filter(|v| v.is_finite())
-        };
-
-        let obi = scoped("order_book_imbalance").or_else(|| scoped("orderbook_imbalance"));
-        let ofi = scoped("order_flow_imbalance");
-        let hawkes = scoped("hawkes_intensity");
+        // P5 (Camino Caliente): Lectura cero-alocaciones mediante get_scoped_val_strict (0 heap bytes)
+        let obi = r.get_scoped_val_strict(Some(symbol), Some(coin_id), "order_book_imbalance")
+            .or_else(|| r.get_scoped_val_strict(Some(symbol), Some(coin_id), "orderbook_imbalance"));
+        let ofi = r.get_scoped_val_strict(Some(symbol), Some(coin_id), "order_flow_imbalance");
+        let hawkes = r.get_scoped_val_strict(Some(symbol), Some(coin_id), "hawkes_intensity");
 
         match (obi, ofi, hawkes) {
             (Some(o), Some(f), Some(h)) => Self::vote(o, f, h),

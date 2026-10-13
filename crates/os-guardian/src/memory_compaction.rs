@@ -80,6 +80,38 @@ pub unsafe fn force_working_set_compaction() {
     }
 }
 
+/// LG-13 (Línea G) — ¿HAY PRESIÓN DE MEMORIA QUE JUSTIFIQUE COMPACTAR?
+///
+/// QUÉ ESTABA MAL: el host llamaba a `EmptyWorkingSet` sobre el proceso vivo
+/// cada hora, la necesitara el sistema o no. Recortar el working set obliga
+/// a volver a cargar cada página no bloqueada en el siguiente acceso: una
+/// ráfaga de fallos de página en el camino caliente justo después, a cambio
+/// de nada cuando sobra memoria.
+///
+/// QUÉ GARANTIZA: sólo hay presión cuando la memoria física disponible del
+/// sistema es menor que el working set del proceso (el sistema no podría
+/// alojar otra copia de lo que ocupamos sin paginar). Sin datos (0), no hay
+/// presión: no se compacta a ciegas.
+pub fn hay_presion_de_memoria(disponible_bytes: u64, working_set_bytes: u64) -> bool {
+    working_set_bytes > 0 && disponible_bytes > 0 && disponible_bytes < working_set_bytes
+}
+
+/// LG-13: mide y compacta sólo con presión. Devuelve `true` si compactó.
+pub fn compactar_si_hay_presion() -> bool {
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    let disponible = sys.available_memory();
+    let working_set = (crate::memory_audit::get_memory_usage_mb().max(0.0) * 1024.0 * 1024.0) as u64;
+    if hay_presion_de_memoria(disponible, working_set) {
+        // SAFETY: llamada de sistema sobre el propio proceso; sólo descarta
+        // páginas no bloqueadas del working set.
+        unsafe { force_working_set_compaction() };
+        true
+    } else {
+        false
+    }
+}
+
 /// # Safety
 /// Safe to call on valid processes.
 pub unsafe fn ensure_working_set_size(size_needed: usize) {
@@ -105,6 +137,20 @@ pub unsafe fn ensure_working_set_size(size_needed: usize) {
 
             let _ = SetProcessWorkingSetSize(handle, requested_min, requested_max);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_lg13 {
+    use super::*;
+
+    #[test]
+    fn lg13_solo_hay_presion_si_no_cabe_otra_copia_del_working_set() {
+        let gb = 1u64 << 30;
+        assert!(!hay_presion_de_memoria(8 * gb, gb), "con 8 GB libres y 1 GB ocupado no se compacta");
+        assert!(hay_presion_de_memoria(gb / 2, gb), "con menos libre que el working set sí");
+        assert!(!hay_presion_de_memoria(0, gb), "sin dato del sistema no se compacta a ciegas");
+        assert!(!hay_presion_de_memoria(gb, 0), "sin dato del proceso no se compacta a ciegas");
     }
 }
 

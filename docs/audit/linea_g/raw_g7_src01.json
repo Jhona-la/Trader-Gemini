@@ -1,0 +1,512 @@
+{
+ "findings": [
+  {
+   "title": "evolver y evolution leen data/{SYM}_ticks.bin desde el byte 0 e ignoran la cabecera TGMSYNT1 de 8 B: cada registro sale desplazado y se optimiza sobre basura",
+   "severity": "MED",
+   "category": "units/data-format",
+   "file": "src/bin/evolver.rs",
+   "line": 130,
+   "evidence": "evolver.rs:130-135 `let num_ticks = mmap.len() / tick_size; ... let start = i * tick_size;`; evolution.rs:123 `let original_len = bytes_len / tick_size;` y :166 `let ptr = mmap.as_ptr() as *const BinTick;`; el escritor parquet_to_bin.rs:184 `bin_file.write_all(backtest_engine::tick_replayer::TICK_MAGIC_SYNTH)?;` sobre data/{BTC,ETH,BNB,SOL,XRP}USDT_ticks.bin (parquet_to_bin.rs:20-27). El forense, backtest_windows y ml_path_probe sí saltan la cabecera (TickOrigin::from_header).",
+   "mechanism": "parquet_to_bin, el conversor «For Evolution Engine», escribe 8 B de magia antes de los registros de 40 B. evolver y evolution mapean desde el byte 0. La estructura k toma: timestamp = bits del ask_qty del registro k−1 (≈4,6e18), bid = bits del ts de k leídos como f64 (subnormal ≈1e-311 > 0), ask = el bid real, bid_qty = el ask real y ask_qty = el bid_qty real. El filtro del evolver (`bid_price > 0.0 && ask_price > bid_price`, :136) deja pasar todo. Después `master_stream.sort_by_key(|t| t.timestamp)` (:152) ordena el flujo por cantidad, no por tiempo. En evolution, la partición 70/30 y los días simulados también se calculan con esos timestamps.",
+   "failure_scenario": "El operador ejecuta LAUNCH_TRAINING_PIPELINE.bat (download_history → … → evolver) o la opción 1 de LAUNCHER.bat. Los cinco tapes actuales llevan TGMSYNT1. Cada individuo se evalúa con mid ≈ bid/2, spread del 100 % y un orden temporal aleatorio. El «campeón» resultante se promueve y el batch dice «The AI is now updated». Con TG_GENOME_ENV=demo en el entorno, ese genoma llega al demo vivo por refresh_models.",
+   "fix_sketch": "Sustituir el lector ad hoc por backtest_engine::tick_replayer (from_header + validate_alignment) en los dos binarios. Abortar si el origen no es el esperado o si los timestamps no son monótonos. Añadir un test: tape con TGMSYNT1 → primer tick con ts y bid exactos.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.8
+  },
+  {
+   "title": "evolver.exe, que LAUNCHER.bat arranca como «Cerebro Evolutivo», promueve sólo con fitness in-sample, presta el bosque de BTC a todas las monedas y por defecto escribe en el silo muerto __UNSET__ informando éxito",
+   "severity": "MED",
+   "category": "promotion-without-evidence",
+   "file": "src/bin/evolver.rs",
+   "line": 669,
+   "evidence": "evolver.rs:488-489 `oos_start_capital: final_capital, // mismo período (sin split IS/OOS aquí)`; :669 `if best_cap > initial_capital || best_fitness > 0.01 {`; :353-354 `store_global(&key, (*btc_forest).clone())`; :390 `engine.scalp_forest = ...get_global(\"BTCUSDT_MOTOR\")`; LAUNCHER.bat:92 `start \"Cerebro Evolutivo...\" /MIN ...evolver.exe`; LAUNCHER.bat:74 `set EVOLVER_LOW_RESOURCES=1` (sin lector en el repo); genome_store.rs:62 `Err(_) => \"config_dir/genomes/__UNSET__\"`",
+   "mechanism": "(1) No hay holdout: la utilidad se mide en el mismo flujo con el que se selecciona (16 individuos × 6 generaciones), y la promoción usa un OR que acepta capital final > inicial aunque el fitness sea INVIABLE. (2) Si a ETH/SOL/BNB/XRP les falta _MOTOR, se les asigna el bosque de BTC, así que la puerta de roster B3.25, que en vivo los vetaría, deja operar a todas las monedas. Además swing_nn es DarkAlpha_BTCUSDT para todas. (3) La isla 1 impone RR con `child.swing_tp_base = child.swing_sl_base * 3.5` (:590-592), pero apply_to_arena sólo lee las curvas (genome.rs:1055-1070): es código muerto. (4) LAUNCHER no fija TG_GENOME_ENV y god_engine la fija sólo dentro de su propio proceso (god_engine.rs:912). promote crea config_dir/genomes/__UNSET__ (create_dir_all) y devuelve Ok, y el evolver imprime «✅ Genoma generación N promovido». (5) EVOLVER_LOW_RESOURCES no tiene lector: el pool rayon por defecto ocupa todos los núcleos junto al god_engine en modo simulación. Riesgo adicional, sin verificar porque no ejecuté nada: las arenas y el process_tick de cada individuo corren en hilos rayon con la pila por defecto (:379), mientras el arena de 64 MiB de :52-57 no se usa.",
+   "failure_scenario": "Con la configuración por defecto, el evolver quema CPU durante la sesión de paper trading y su «promoción» acaba en un silo que nadie lee. El operador cree que el cerebro entrena el motor. Si exporta TG_GENOME_ENV=demo (o prod) para «arreglarlo», un genoma sobreajustado in-sample, en un mundo donde todas las monedas operan con el bosque de BTC, sustituye al activo en cuanto pasa el filtro de sanidad del GENOME-GATE, que no es de desempeño (genome_store.rs:246-247).",
+   "fix_sketch": "Retirar el evolver de LAUNCHER, o exigir partición IS/OOS con un gate común (oos_context + fitness::compute con OOS real) y comparar contra el incumbente. Sin _MOTOR propio la moneda no opera; nada de alias. Fallar si TG_GENOME_ENV no está definida. Leer EVOLVER_LOW_RESOURCES con un ThreadPoolBuilder acotado y con stack_size explícito.",
+   "live_path": false,
+   "known_ref": "C-F1 L603 sólo registra el capital 13 del evolver; lo demás es nuevo",
+   "confidence": 0.75
+  },
+  {
+   "title": "evolver y multi_coin_simulator pisan los slots 0..33 del omni con features de microestructura: el bloque macro del bosque (DXY/SP500/NASDAQ/VIX) y el funding/OI reciben valores ajenos y fuera de soporte",
+   "severity": "MED",
+   "category": "parity-bt-live",
+   "file": "src/bin/evolver.rs",
+   "line": 415,
+   "evidence": "evolver.rs:410-420 `omni[21] = 104.0; // DXY ... omni[24] = 15.0; ... for (idx, &f) in swing_feats.iter().enumerate() { if idx < 34 { omni[idx] = f as f64; } }` y :424-428 `omni[0] = tick.bid_price; ... omni[31] = (tick.bid_qty - tick.ask_qty) * 1.2;`; multi_coin_simulator.rs:404-420 igual sobre omni_state.get_features(); el layout real (omni_multiplexer.rs:192-206): [11] funding, [12] OI, [21] dxy, [22] sp500, [23] nasdaq, [24] vix; macro_ml_features (ml_inference.rs:418-424) `aff(omni[21], 100.0, 5.0)`",
+   "mechanism": "get_universal_features() devuelve 34 features del StatefulEngine que no tienen nada que ver con el layout del OmniState. Copiarlas a omni[0..34] sobrescribe los slots macro 21-24, que el núcleo convierte en las dims 44-47 del bosque (lib.rs:5204), y los de funding, OI, LS y fear&greed. Las constantes macro del evolver (:410-413) quedan muertas. Un feature normalizado x > 0 en el slot DXY da (x−100)/5 ≈ −20, y en SP500 (x−5000)/500 ≈ −10: muy fuera del soporte del entrenamiento, y variando tick a tick con la microestructura. Además omni[0]/[1] = precios crudos y omni[30]/[31]/[39] son cantidades fabricadas.",
+   "failure_scenario": "En ambas herramientas los splits macro del bosque se disparan con ruido de microestructura, y el consejo y el funding leen valores de otra semántica. El fitness del evolver, que promueve, y el «forense multiactivo de 30 monedas» miden un motor que no existe en vivo.",
+   "fix_sketch": "Construir el omni sólo con OmniState, alimentado as-of t−1 desde data/macro (como booktick_replay::OmniHistory), y marcar como ausentes (NaN, abstención del bosque) las series que no haya. No copiar get_universal_features al omni.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.8
+  },
+  {
+   "title": "El forense alimenta el bloque macro con otra serie de DXY (DTWEXBGS ≈120) que la del entrenador y el vivo (ICE DX-Y.NYB ≈100), y sin red no tiene respaldo local: el macro vale 0 = centro",
+   "severity": "MED",
+   "category": "parity-bt-live",
+   "file": "src/bin/audit_forensic_backtest.rs",
+   "line": 492,
+   "evidence": "audit_forensic_backtest.rs:487-494 `(\"DTWEXBGS\", 4)`; :496 `.timeout(std::time::Duration::from_millis(1500))`; :541 `Err(0) => s.first().map(|v| v.1).unwrap_or(0.0)`; ml_inference.rs:420-423 «B3.23: ICE DXY (DX-Y.NYB ~99-105) en trainer y vivo — la serie Fed DTWEXBGS (~120) quedó fuera»; omni_multiplexer.rs:553 `(\"DX-Y.NYB\", &state.dxy)`; macro_history_sync.rs:150 `(\"DX-Y.NYB\", \"DXY\")`",
+   "mechanism": "El contrato del bosque centra el DXY en 100 con escala 5 (ICE). Cuando FRED responde, el forense publica DTWEXBGS (~120): (120−100)/5 ≈ +4, fuera de soporte en cada barra. macro_history_sync.rs:5-8 documenta que reqwest recibe connection-reset de FRED en esta red. En ese caso, con 1,5 s de timeout y sin lectura de data/macro/*.csv (booktick_replay sí la tiene, :115-129), las seis series quedan vacías, macro_lookup devuelve 0,0 y macro_ml_features lo convierte en 0 = centro: desconocido tratado como dato. Además, el primer día simulado usa el cierre de ese mismo día, porque Err(0) toma s[0] = cosd: una mirada al futuro residual pese a D-719.",
+   "failure_scenario": "El veredicto forense que alimenta walkforward_evolver (con WF_PROMOTE=1 promueve) evalúa el bosque con el bloque macro fijo en el centro (red del operador) o con DXY a +4σ (red abierta). Ninguno de los dos es el contrato con el que se entrenó y con el que opera en vivo, así que el mismo genoma da veredictos distintos según la red.",
+   "fix_sketch": "Reutilizar backtest_engine::booktick_replay::OmniHistory (o leer data/macro con DX-Y.NYB) con caducidad por serie. Sin la serie, el bosque se abstiene (NaN), nunca 0. Cortar el lookup a fecha < día, con un None explícito antes del primer dato.",
+   "live_path": false,
+   "known_ref": "Contradice el «RESUELTO» de F6-A-H3 (BARRIDO_EXHAUSTIVO_FASES.md:516), que da por buena la misma serie en los dos lados; B3.23 la cambió después",
+   "confidence": 0.7
+  },
+  {
+   "title": "Forense, simulador y evolver sustituyen la ausencia de DarkAlpha por una red aleatoria que vota, y forense y simulador la escriben en models/DarkAlpha_BTCUSDT.json; en vivo la ausencia es no-opinión",
+   "severity": "MED",
+   "category": "nan-unknown/parity",
+   "file": "src/bin/audit_forensic_backtest.rs",
+   "line": 186,
+   "evidence": "audit_forensic_backtest.rs:169-170 y :185-187 `let clean = dark_alpha_engine::DarkAlphaEngine::default_model(); let _ = clean.save_json(\"models/DarkAlpha_BTCUSDT.json\"); clean`; multi_coin_simulator.rs:319-321 y :333-335 igual; evolver.rs:315-319 default_model sin congelar; dark-alpha-engine lib.rs:699-700 `Self::new(34, 64, 32)`; núcleo lib.rs:1284-1294 «LXXXXI (B-H1): ídem — ausencia = no-opinión, no red aleatoria. None»",
+   "mechanism": "F5-B-H1 eliminó la red Xavier de respaldo sólo en el núcleo. Estas herramientas la siguen fabricando y la instalan sin congelar como swing_nn. Por la rama no congelada de predict_in_context, los Welford por moneda se calientan y la red empieza a votar ruido en el ensamble. Además la persisten en el directorio de modelos de producción (34D, aunque el mensaje dice «54D»), y con pesos no finitos en layer1 pisan el artefacto existente. En vivo, god_engine.rs:2955 la carga al arrancar sin congelar durante ~10 s, hasta que el vigilante envía la copia congelada, que con normalizadores vacíos devuelve None.",
+   "failure_scenario": "En el repo no hay DarkAlpha_BTCUSDT.json (F3.5-03). Al correr el forense, o cada corrida del walkforward_evolver, el validador mide un motor con un voto NN aleatorio que el vivo no tiene. Al mismo tiempo crea el fichero, que el host leerá descongelado en el próximo arranque.",
+   "fix_sketch": "Hacer como el núcleo: ausencia o corrupción ⇒ swing_nn = None y nunca save_json desde una herramienta de medición. Cargar con freeze/sanitize igual que el host, sin el fallback.",
+   "live_path": false,
+   "known_ref": "Residuo de F5-B-H1 (BARRIDO_EXHAUSTIVO_FASES.md:491), corregido sólo en el núcleo; relación con F3.5-03",
+   "confidence": 0.75
+  },
+  {
+   "title": "El codificador de aggTrades REAL usa un suelo de profundidad absoluto (0,1 unidades base): el OBI del tape depende de la escala de la moneda (BTC ≈ ±0,05, DOGE ±0,667 fijo)",
+   "severity": "MED",
+   "category": "multiasset-units",
+   "file": "src/bin/binance_vision_sync.rs",
+   "line": 204,
+   "evidence": "binance_vision_sync.rs:204-209 `let base_depth = (qty * 0.25).max(0.1); let (bq, aq) = if is_maker { (base_depth, qty + base_depth) } else { (qty + base_depth, base_depth) };` (duplicado en :422-427); consumidores: lib.rs:3526-3527 `let obi = if total_vol > 0.0 { (bid_qty - ask_qty) / total_vol }`; audit_forensic_backtest.rs:662-667 y :676-680 pasan bq/aq como libro y real_obi",
+   "mechanism": "OBI = ±qty/(qty+2·base). Con qty ≥ 0,4 unidades base, base = 0,25·qty y |OBI| = 0,667 constante. Con qty < 0,4, base = 0,1 y OBI ≈ qty/(qty+0,2). En BTC (aggTrades típicos < 0,4 BTC) el OBI es pequeño y variable; en monedas de precio bajo (miles de unidades por trade) cada tick lleva ±0,667. update_l2_depth recibe además muros fabricados. El tape se etiqueta REAL, alimenta forense y replays y es la fuente de entrenamiento y certificación del roster. En vivo el OBI sale del libro.",
+   "failure_scenario": "En el forense o el replay sobre DOGE, XRP o ADA, toda compuerta de OBI con umbral del orden de 0,18-0,38 (dynamic_obi_threshold) se cumple en la dirección del agresor en cada trade. Sobre BTC casi nunca. Un modelo entrenado con estos tapes aprende un OBI que es artefacto de la unidad de cotización.",
+   "fix_sketch": "Codificar el flujo sin inventar libro: guardar qty e is_buyer_maker explícitos (formato v2) y marcar el libro como ausente. Si se mantiene la mezcla, que el suelo sea relativo a la mediana de qty del símbolo, no 0,1 unidades.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.6
+  },
+  {
+   "title": "El SA de evolution muta TP/SL en campos que el motor no lee y puntúa con penalizaciones cuyos umbrales elige el propio candidato (global_max_drawdown, min_trades_per_day, survival_capital_threshold)",
+   "severity": "MED",
+   "category": "learning-signal",
+   "file": "src/bin/evolution.rs",
+   "line": 267,
+   "evidence": "evolution.rs:267-268 `test_cfg.scalp_sl_base += ...; test_cfg.scalp_tp_base += ...`; genome.rs:1055-1070 apply_to_arena sólo usa tp_horizon_curve/sl_horizon_curve; evolution.rs:282-284 mutan global_max_drawdown, min_trades_per_day y survival_capital_threshold; :395 `let dd_threshold = test_cfg.global_max_drawdown / 3.0;`, :410 `if trades < (days_simulated * test_cfg.min_trades_per_day)`, :415-416, :422 `if dd > test_cfg.global_max_drawdown`; :633-634 «raíz demo por defecto»",
+   "mechanism": "La geometría que el SA «optimiza» no llega a la evaluación (booktick_replay.rs:286 → apply_to_arena), y el informe imprime como «Best Config» un SL/TP que nunca se evaluó (:499-500). La utilidad castiga drawdown, inactividad y pérdida respecto a umbrales que son genes del mismo candidato: subir gmd hacia 0,30, bajar min_trades a 1 y bajar survival a 0,50 reduce las penalizaciones de forma monótona sin cambiar el riesgo real. global_max_drawdown es un gen vivo de riesgo (drawdown.rs). Además el comentario de :633 es falso desde D-651: sin TG_GENOME_ENV la promoción va a __UNSET__.",
+   "failure_scenario": "Con TG_GENOME_ENV definida, la selección empuja global_max_drawdown al techo de la banda. Si el OOS sale > 0 con ≥ 15 operaciones, se promueve un genoma con el freno de drawdown relajado, y el operador lee un SL/TP «óptimo» que el motor no aplica.",
+   "fix_sketch": "Mutar las curvas (o los nodos de curva) y no las anclas, llamando a derive_anchors_from_curves. Fijar los umbrales de penalización como política (ADR) o constantes del evaluador, fuera del vector del candidato. Corregir el comentario y exigir el entorno.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.75
+  },
+  {
+   "title": "config_compiler promueve quantum_champion.json a demo y backtest sin evaluarlo, con un motivo literal («RR >= 2.25, SL 0.80%») que no comprueba",
+   "severity": "MED",
+   "category": "promotion-without-evidence",
+   "file": "src/bin/config_compiler.rs",
+   "line": 74,
+   "evidence": "config_compiler.rs:72-80 `for target_env in [\"demo\", \"backtest\"] { std::env::set_var(\"TG_GENOME_ENV\", target_env); match ...GenomeEnvelope::promote(sanitized.clone(), \"quantum_champion_sync\", &format!(\"Sincronización de genoma calibrado sin ruido browniano (RR >= 2.25, SL 0.80%) → {}\", ...`; genome_store.rs:246-247 «Es un filtro de sanidad, no de desempeño»",
+   "mechanism": "Cada ejecución sube la generación del linaje demo con el fichero campeón, sin backtest ni comparación con el activo y por encima de lo que hubieran sancionado el demonio o el walk-forward. god_engine en demo sigue al almacén (RecargaGenoma::DesdeAlmacen) y lo adopta en el siguiente refresh_models. El motivo grabado en la historia inmutable afirma propiedades (RR ≥ 2,25 y SL 0,80 %) que nadie verifica: el gate sólo usa min_rr_for.",
+   "failure_scenario": "El operador corre config_compiler para regenerar data/dynamic_config.bin. Como efecto lateral, el demo vivo cambia de genoma a mitad de sesión, y la historia de linaje registra una justificación falsa.",
+   "fix_sketch": "Separar la compilación de configs de la promoción. Que la sincronización exija un recibo de evaluación (FORENSIC_JSON/OOS) y escriba un motivo derivado de métricas medidas.",
+   "live_path": true,
+   "known_ref": "",
+   "confidence": 0.7
+  },
+  {
+   "title": "auto_trainer_daemon reescribe la red viva de BTC con un gate de BCE sobre una etiqueta sin lado y umbral literal, no por esperanza neta frente a p*",
+   "severity": "MED",
+   "category": "learning-signal",
+   "file": "src/bin/auto_trainer_daemon.rs",
+   "line": 377,
+   "evidence": "auto_trainer_daemon.rs:124 `let label = if target_return > 0.0005 { 1.0 } else { 0.0 };`; :377 `if val_after >= val_before {`; :85 respaldo `data/dark_alpha_dataset.csv`; :396-401 escribe models/DarkAlpha_{symbol}.json, que el vigilante de god_engine.rs:2072-2079 recarga cada 10 s",
+   "mechanism": "La etiqueta mezcla corto y plano en la clase 0, con un umbral de 5 pb que no sale de la geometría (fricción ni p*). La promoción compara BCE, una medida de acierto, no esperanza neta. Además, tras un rechazo se restauran los pesos pero no los momentos de Adam (m, v, t), así que el optimizador deriva entre generaciones; la pérdida de época se divide por num_samples (que incluye la validación). El respaldo a un dataset genérico puede entrenar la red de un símbolo con datos de otro.",
+   "failure_scenario": "Con el demonio corriendo, la red que vota en el ensamble de BTC se promueve cada 30 s si baja la BCE, aunque empeore la esperanza neta de las entradas que habilita.",
+   "fix_sketch": "Etiqueta de primer toque con lado (TP/SL de la geometría) y gate por esperanza neta en R frente a p* en el holdout. Restaurar el estado de Adam en el rollback. Prohibir el respaldo cruzado de dataset.",
+   "live_path": true,
+   "known_ref": "F3.5-03 (HALLAZGOS_C-F3); MAPA_C-F3:562 (umbral 0,0005) y :576 (respaldo sin escritor); fila 24 del plan (etiqueta sin lado). Lo nuevo es el estado de Adam",
+   "confidence": 0.85
+  },
+  {
+   "title": "El símbolo y el origen del tape no viajan con el resultado: el forense desacopla FORENSIC_SYMBOL de la ruta de datos y FORENSIC_JSON omite ambos; backtest_windows deduce el símbolo con split('/')",
+   "severity": "LOW",
+   "category": "identity",
+   "file": "src/bin/audit_forensic_backtest.rs",
+   "line": 256,
+   "evidence": "audit_forensic_backtest.rs:256-258 `std::env::var(\"FORENSIC_SYMBOL\").unwrap_or_else(|_| \"BTCUSDT\"...)` frente a :331-340 (ruta por argumento o FORENSIC_DATA_PATH); :390-394 sólo avisa si `!origen.es_real()`; :1041 FORENSIC_JSON sin campos de símbolo ni origen; walkforward_evolver.rs:214 `WF_DATA ... \"data/BTCUSDT_ticks.bin\"` (sintético TGMSYNT1); backtest_windows.rs:169-176 `file.split('/')`, y en :178-190 una ficha genérica (tick 0,01, paso 0,001, lev 20) para cualquier símbolo",
+   "mechanism": "`audit_forensic_backtest ETHUSDT` carga el tape de ETH, pero registra la ficha, la clave _MOTOR y las comisiones de BTCUSDT (el residuo que D-748 quiso cerrar). El walk-forward lanza el forense sin FORENSIC_SYMBOL y por defecto sobre el tape sintético. El resumen legible por máquina no deja que el llamador rechace un tape no real ni un símbolo cruzado. En Windows, `data\\\\BNBUSDT_ticks_REAL.bin` produce el símbolo «data\\\\BNBUSDT», y la puerta de roster lo veta todo en silencio.",
+   "failure_scenario": "Un walk-forward con WF_PROMOTE=1 elige un campeón medido sobre velas expandidas, o con el modelo de otra moneda, sin que nada en el JSON lo delate.",
+   "fix_sketch": "Derivar el símbolo del tape (o exigir que coincidan), emitir \"symbol\" y \"origin\" en FORENSIC_JSON y hacer que el walk-forward rechace origin != real. Usar Path::file_name en backtest_windows y fichas reales del registro.",
+   "live_path": false,
+   "known_ref": "Relacionado con C-F1 L123/L133 (tablas de ficha y slot 0 del forense); el desacople y la omisión en el JSON son nuevos",
+   "confidence": 0.65
+  },
+  {
+   "title": "binance_vision_sync --daily escribe siempre data/{SYM}_ticks_REAL.bin, aunque estén vacíos o con huecos, y comparte nombre con el tape mensual",
+   "severity": "LOW",
+   "category": "data-integrity",
+   "file": "src/bin/binance_vision_sync.rs",
+   "line": 291,
+   "evidence": "binance_vision_sync.rs:281-289 un día fallido se «omite»; :291 `write_ticks(symbol, ticks);` incondicional; :312 y :462 el mismo destino `{}_ticks_REAL.bin` en los modos diario y mensual; File::create sin escritura atómica",
+   "mechanism": "Si ningún zip diario está publicado, o falla la red, se escribe un fichero con sólo la cabecera encima del tape bueno. Los días ausentes dejan huecos silenciosos. El modo diario (OOS del mes vivo) sobrescribe el tape mensual de entrenamiento porque usan el mismo nombre.",
+   "failure_scenario": "`--daily SOLUSDT 2026-10-01 2026-10-12` antes de que Binance publique los zips deja data/SOLUSDT_ticks_REAL.bin con 8 bytes. El siguiente forense o entrenamiento falla o mide sobre otra ventana.",
+   "fix_sketch": "No escribir si ticks está vacío. Abortar, o declarar los días faltantes en un sidecar. Escritura tmp+rename y nombres con el rango.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.8
+  },
+  {
+   "title": "El tablero TUI (src/bin/dashboard.rs) está muerto desde U-ERR-6: exige campos _scalp/_swing que /api/state ya no sirve",
+   "severity": "LOW",
+   "category": "dead-code/scalp-swing",
+   "file": "src/bin/dashboard.rs",
+   "line": 18,
+   "evidence": "dashboard.rs:18-25 `pnl_realized_scalp: f64, ... win_rate_swing: f64` sin #[serde(default)]; telemetry-server/src/lib.rs:86-105 SystemState sólo tiene pnl_realized, pnl_gross, pnl_unrealized y win_rate",
+   "mechanism": "La deserialización falla en cada sondeo y `if let Ok(state)` no pinta nada ni limpia la pantalla, así que la terminal se queda en «Esperando a que God Engine encienda...» con el motor ya encendido. Es residuo de la dicotomía scalp/swing (U-ERR-5).",
+   "failure_scenario": "El operador abre el tablero, ve que el motor «no arranca» y lo reinicia sin motivo.",
+   "fix_sketch": "Borrar el binario o migrarlo a los campos unificados.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.85
+  },
+  {
+   "title": "benchmark y latency_flow_audit certifican latencia «nano» midiendo caminos que no deciden (rechazo sin ficha, sólo depth y capital 0)",
+   "severity": "LOW",
+   "category": "misleading-benchmark",
+   "file": "src/bin/latency_flow_audit.rs",
+   "line": 44,
+   "evidence": "latency_flow_audit.rs:22 `GlobalArena::new(0.0)`, :44-47 y :70-73 `is_trade` = false en todos los eventos; :127 «AUDIT PASSED»; benchmark.rs:92 `evaluate_quantum_order(2, ...)` sin update_registry (try_spec=None ⇒ rechazo, según backtest_windows.rs:164-165); benchmark.rs:110 «Rendimiento cuántico confirmado»",
+   "mechanism": "La evaluación de estrategias, ML y riesgo ocurre en los eventos de trade con capital > 0 y ficha registrada. Las dos herramientas miden el camino corto y emiten un veredicto verde. Además latency_flow_audit construye GodEngineCore y ejecuta process_event en el hilo principal (1 MiB en Windows), justo lo que D-684 advierte.",
+   "failure_scenario": "Una regresión con asignaciones en el camino caliente de decisión pasa el «AUDIT PASSED (<10us P99)».",
+   "fix_sketch": "Alimentar trades con capital y ficha válidos, y medir por separado la ruta de decisión, o retirar los veredictos.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.6
+  },
+  {
+   "title": "ml_path_probe arma un vector de 44 dims frente al contrato ML_VECTOR_DIM = 48: predict devuelve siempre None y la sonda lo atribuye a «índices no finitos» con una lista vacía",
+   "severity": "LOW",
+   "category": "dead-code",
+   "file": "src/bin/ml_path_probe.rs",
+   "line": 59,
+   "evidence": "ml_path_probe.rs:59-61 `let mut input = [0f32; 44]; input[..34]...; input[34..]...`; ml_inference.rs:50 `ML_VECTOR_DIM: usize = 48`; :370-374 `features.len() < self.required_features → None`",
+   "mechanism": "La sonda se quedó en el vector previo al bloque macro B3.4. Con un bosque de 48 dims, cada predicción es None, y el diagnóstico imprime «predict=None ×N — índices no finitos: []».",
+   "failure_scenario": "Quien depure «ml=0,5 constante» concluye que los datos reales producen NaN cuando el fallo es la dimensión.",
+   "fix_sketch": "Construir el vector con build_ml_input del núcleo (incluido macro_ml_features), o borrar la sonda.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.8
+  }
+ ],
+ "file_verdicts": [
+  {
+   "file": "src/bin/algo_fetch_probe.rs",
+   "status": "código: offline; prueba: sin contrato",
+   "note": "Sonda de lectura de piernas algo en demo/testnet con credenciales del entorno. No coloca órdenes. Sin defectos materiales."
+  },
+  {
+   "file": "src/bin/audit_forensic_backtest.rs",
+   "status": "código: offline; prueba: sin contrato",
+   "note": "Validador que invoca walkforward_evolver (puede promover con WF_PROMOTE=1). Defectos: macro DXY de otra serie y sin respaldo, con 0 como centro; red DarkAlpha aleatoria que vota y se escribe en models/; símbolo y origen desacoplados del JSON. Conocidos: capital 0 (C-F1 L603), tabla de fichas y lev 125 (C-F1 L123), slot 0 (C-F1 L133), L2 de un nivel (C-F1 L697)."
+  },
+  {
+   "file": "src/bin/auto_trainer_daemon.rs",
+   "status": "código: offline (escribe artefacto vivo recargado en caliente); prueba: mixta",
+   "note": "Escribe models/DarkAlpha_{SYM}.json, que el vigilante del host recarga. Gate BCE, etiqueta sin lado 0,0005, Adam sin rollback. Conocido F3.5-03. cf3_darkalpha_coordenadas_contract.rs cubre sólo el lado del núcleo."
+  },
+  {
+   "file": "src/bin/backtest_windows.rs",
+   "status": "código: offline; prueba: sin contrato",
+   "note": "Backtest multiventana sobre booktick_replay. Ficha genérica para cualquier símbolo y símbolo deducido con split('/'), frágil en Windows. Sí salta la cabecera TGMTICK1, pero no reconoce TGMSYNT1 (sólo compara b\"TGMTICK1\", :106). Imprime «BTC:» y la meta 100 %/3d como literales."
+  },
+  {
+   "file": "src/bin/benchmark.rs",
+   "status": "código: offline; prueba: engañosa (veredicto propio)",
+   "note": "Mide el camino de rechazo del riesgo sin ficha registrada y emite «rendimiento cuántico confirmado»."
+  },
+  {
+   "file": "src/bin/binance_vision_sync.rs",
+   "status": "código: offline (generador de los tapes REAL de entrenamiento y certificación); prueba: sin contrato",
+   "note": "Codificador con suelo de profundidad absoluto 0,1 (OBI dependiente de la unidad). El modo diario escribe vacíos o con huecos sobre el tape mensual. El modo mensual duplica el parser y conserva sort_unstable, inocuo si la entrada ya viene ordenada. Lista SYMBOLS con FTM/WAVES deslistados."
+  },
+  {
+   "file": "src/bin/config_compiler.rs",
+   "status": "código: offline (promueve al linaje demo vivo); prueba: sin contrato",
+   "note": "Promoción a demo/backtest sin evidencia y con un motivo literal falso. Escribe models/nano_forest.bin con un layout bincode propio que el registro vivo rechazaría. data/dynamic_config.bin aparece en LC-F1-74."
+  },
+  {
+   "file": "src/bin/copulas_manifest.rs",
+   "status": "código: offline (escribe config_dir/copulas_manifest.json, que consume el veto vivo); prueba: fija-defecto/espejo",
+   "note": "La fórmula está espejada en cf2_dependencia_solucion_conocida y copula_real tiene #[ignore]. Conocidos: λ sólo paramétrica (R7-R2-E-8), τ-a con empates (fila 230), horizonte único de 5 min ignorado por el consumidor (fila 374). Roster de 26 símbolos duplicado del bootloader y escritura no atómica."
+  },
+  {
+   "file": "src/bin/dashboard.rs",
+   "status": "código: muerto; prueba: sin contrato",
+   "note": "Incompatible con /api/state desde U-ERR-6 (campos _scalp/_swing obligatorios): nunca pinta."
+  },
+  {
+   "file": "src/bin/download_history.rs",
+   "status": "código: offline (paso 1 de LAUNCH_TRAINING_PIPELINE); prueba: sin contrato",
+   "note": "Ventana fija 2025-08..2026-01, caduca a 2026-10, que alimenta parquet_to_bin → evolver. Lista de 40 símbolos con deslistados. Sin defectos de lógica relevantes."
+  },
+  {
+   "file": "src/bin/evolution.rs",
+   "status": "código: offline (promueve si TG_GENOME_ENV está definida); prueba: sin contrato",
+   "note": "Lee el tape con un desfase de 8 B (cabecera ignorada). Muta TP/SL en anclas que no se leen. Penalizaciones con umbrales del propio candidato. Gate OOS > 0 con 15 operaciones, sin comparar con el incumbente. Comentario «raíz demo por defecto» falso. Sigue exportando data/dynamic_config.json."
+  },
+  {
+   "file": "src/bin/evolver.rs",
+   "status": "código: vivo (lo lanza LAUNCHER.bat:92 y LAUNCH_TRAINING_PIPELINE.bat:23), salida a silo muerto por defecto; prueba: sin contrato",
+   "note": "Desfase de cabecera, fitness in-sample, alias del bosque de BTC, omni fabricado, RR de la isla 1 muerto, EVOLVER_LOW_RESOURCES sin lector y posible desborde de pila en los hilos rayon."
+  },
+  {
+   "file": "src/bin/feature_exporter.rs",
+   "status": "código: offline (investigación v2); prueba: honesta",
+   "note": "Contratos en el propio fichero: presupuestos, nulos no imputados, sin fuga del futuro, sin salida existente sobrescrita. Literal tanh(depth/1000) en unidades base, documentado en el manifiesto. El volumen pasado al StatefulEngine es bq+aq (documentado como «not host parity»)."
+  },
+  {
+   "file": "src/bin/feature_validator.rs",
+   "status": "código: muerto/POC; prueba: sin contrato",
+   "note": "OBI sintético desde velas, RR 1, sin comisiones, veredicto por WR > 55 % (acierto contra 0,5, contrario a la doctrina p*) y TP evaluado antes que SL en la misma barra. Sin consumidores."
+  },
+  {
+   "file": "src/bin/graph_server.rs",
+   "status": "código: offline (herramienta de desarrollo); prueba: sin contrato",
+   "note": "La capa de latencias lee GLOBAL_AGGREGATOR del propio proceso, donde no corre ningún motor: siempre vacía (código que se cree vivo). Carga cytoscape desde un CDN."
+  },
+  {
+   "file": "src/bin/income_report.rs",
+   "status": "código: offline (contabilidad); prueba: honesta (en execution_engine::income_evidence)",
+   "note": "Lógica de agregación delegada y prudente. Su mini-dotenv no quita comillas ni comentarios (template.env usa comillas), así que la firma puede fallar con un .env de plantilla. Menor."
+  },
+  {
+   "file": "src/bin/latency_flow_audit.rs",
+   "status": "código: offline; prueba: engañosa (veredicto propio)",
+   "note": "Capital 0 y sólo eventos depth: no mide la decisión. GodEngineCore corre en el hilo principal."
+  },
+  {
+   "file": "src/bin/macro_history_sync.rs",
+   "status": "código: offline (prerrequisito de train_forest); prueba: sin contrato",
+   "note": "Correcto en lo esencial: falla cerrado con menos de 500 filas o con series ausentes. La cabecera (:9-12, :134) aún dice que el DXY es DTWEXBGS de FRED aunque usa DX-Y.NYB. fred_daily es código muerto."
+  },
+  {
+   "file": "src/bin/ml_path_probe.rs",
+   "status": "código: muerto (caducado); prueba: sin contrato",
+   "note": "Vector de 44 dims frente al contrato de 48: predict siempre None y diagnóstico engañoso."
+  },
+  {
+   "file": "src/bin/model_manifest.rs",
+   "status": "código: offline; prueba: sin contrato",
+   "note": "Escribe config_dir/models_manifest.json, que no tiene lector vivo (C-F3:788). Sin defectos."
+  },
+  {
+   "file": "src/bin/multi_coin_simulator.rs",
+   "status": "código: offline (build_loop.ps1); prueba: sin contrato",
+   "note": "Omni con los slots 0..33 pisados (macro y funding con features ajenas). Red DarkAlpha aleatoria escrita en models/. DarkAlpha de BTC para 30 monedas. `closed_1.or(closed_2)` pierde un cierre doble. Klines expandidas sin cabecera de origen."
+  }
+ ],
+ "vetos": [
+  {
+   "file": "src/bin/copulas_manifest.rs",
+   "line": 103,
+   "name": "LAMBDA_MIN (entrada al manifest del veto misma-apuesta)",
+   "kind": "threshold",
+   "constant": "0.05",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Los pares por debajo se omiten y el consumidor (lambda_entre → None) no distingue «medido ≈0» de «sin tape». El 0,05 se justifica como ruido del grid, sin derivación."
+  },
+  {
+   "file": "src/bin/copulas_manifest.rs",
+   "line": 98,
+   "name": "HORIENTE_MS (rejilla de λ̂)",
+   "kind": "horizon",
+   "constant": "300000 ms",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Una sola τ (5 min) para un veto que se aplica en τ ∈ [30 s, 12 h]. El consumidor ignora horizonte_ms (fila 374)."
+  },
+  {
+   "file": "src/bin/copulas_manifest.rs",
+   "line": 100,
+   "name": "MIN_N / TOPE_N",
+   "kind": "min-sample",
+   "constant": "1500 / 4000",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Sin cálculo de potencia para ν̂ MLE. TOPE_N submuestrea por paso fijo."
+  },
+  {
+   "file": "src/bin/auto_trainer_daemon.rs",
+   "line": 124,
+   "name": "umbral de la etiqueta DarkAlpha",
+   "kind": "label",
+   "constant": "target_return > 0.0005",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Sin lado y sin fricción. Conocido en MAPA_C-F3:562."
+  },
+  {
+   "file": "src/bin/auto_trainer_daemon.rs",
+   "line": 377,
+   "name": "gate de promoción de la red viva",
+   "kind": "gate",
+   "constant": "val_after >= val_before (BCE)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Puntúa acierto (BCE), no esperanza neta frente a p*."
+  },
+  {
+   "file": "src/bin/evolution.rs",
+   "line": 638,
+   "name": "gate de promoción del SA",
+   "kind": "gate",
+   "constant": "oos_net_pnl > 0 && oos_trades >= 15",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Sin comparación con el incumbente ni significancia. Una sola partición 70/30."
+  },
+  {
+   "file": "src/bin/evolution.rs",
+   "line": 395,
+   "name": "penalizaciones de drawdown, actividad y supervivencia",
+   "kind": "penalty",
+   "constant": "gmd/3; −10000; −200000; dd·200000 (umbrales = genes del candidato)",
+   "origin": "gene",
+   "absorbing_risk": "none",
+   "assessment": "nonsense",
+   "note": "Autorreferenciales: el candidato relaja sus propios umbrales y global_max_drawdown es un gen vivo."
+  },
+  {
+   "file": "src/bin/evolver.rs",
+   "line": 669,
+   "name": "gate de promoción del evolver de islas",
+   "kind": "gate",
+   "constant": "best_cap > initial_capital || best_fitness > 0.01",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "nonsense",
+   "note": "In-sample y con OR: acepta fitness INVIABLE si el capital final supera al inicial."
+  },
+  {
+   "file": "src/bin/evolver.rs",
+   "line": 463,
+   "name": "penalización de deslizamiento del fitness",
+   "kind": "cost",
+   "constant": "fee 0.0004, nocional 35.0",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Nocional sin relación con el capital (13) y comisión cobrada dos veces sobre el PnL del motor, que ya la descuenta."
+  },
+  {
+   "file": "src/bin/evolver.rs",
+   "line": 487,
+   "name": "min_trades_required",
+   "kind": "min-sample",
+   "constant": "5",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Sin derivación estadística."
+  },
+  {
+   "file": "src/bin/binance_vision_sync.rs",
+   "line": 204,
+   "name": "suelo de profundidad del codificador",
+   "kind": "encoding-floor",
+   "constant": "max(0.25·qty, 0.1 unidades base)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "nonsense",
+   "note": "Absoluto en unidades base: el OBI depende de la escala de cada moneda."
+  },
+  {
+   "file": "src/bin/binance_vision_sync.rs",
+   "line": 222,
+   "name": "semi-spread sintético del tape REAL",
+   "kind": "spread-floor",
+   "constant": "price·0.00005 (1 pb de spread)",
+   "origin": "policy-adr",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "D-723 lo hace relativo, pero sigue siendo un literal igual para todas las monedas. No es medio tick del instrumento."
+  },
+  {
+   "file": "src/bin/audit_forensic_backtest.rs",
+   "line": 268,
+   "name": "ficha por defecto para símbolo desconocido",
+   "kind": "spec",
+   "constant": "(step 0.001, tick 0.00001, min_qty 0.001)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "El comentario dice «relativo», pero el tick es absoluto. Las tablas literales contradicen el registro (C-F1 L123)."
+  },
+  {
+   "file": "src/bin/audit_forensic_backtest.rs",
+   "line": 439,
+   "name": "calentamiento del forense",
+   "kind": "warmup",
+   "constant": "15000.min(n/10) ticks",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "El comentario dice 200. No se deriva de la memoria de los estimadores."
+  },
+  {
+   "file": "src/bin/config_compiler.rs",
+   "line": 74,
+   "name": "gate de promoción del campeón",
+   "kind": "gate",
+   "constant": "ausente (promoción incondicional)",
+   "origin": "unknown",
+   "absorbing_risk": "none",
+   "assessment": "nonsense",
+   "note": "Sólo la sanidad del GENOME-GATE. El motivo literal (RR ≥ 2,25, SL 0,80 %) no se comprueba."
+  },
+  {
+   "file": "src/bin/macro_history_sync.rs",
+   "line": 39,
+   "name": "longitud mínima de serie macro",
+   "kind": "min-sample",
+   "constant": "500 filas",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Falla cerrado y no fabrica series: conducta correcta aunque la cifra sea literal."
+  }
+ ],
+ "coverage": {
+  "files_read": [
+   "src/bin/algo_fetch_probe.rs",
+   "src/bin/audit_forensic_backtest.rs",
+   "src/bin/auto_trainer_daemon.rs",
+   "src/bin/backtest_windows.rs",
+   "src/bin/benchmark.rs",
+   "src/bin/binance_vision_sync.rs",
+   "src/bin/config_compiler.rs",
+   "src/bin/copulas_manifest.rs",
+   "src/bin/dashboard.rs",
+   "src/bin/download_history.rs",
+   "src/bin/evolution.rs",
+   "src/bin/evolver.rs",
+   "src/bin/feature_exporter.rs",
+   "src/bin/feature_validator.rs",
+   "src/bin/graph_server.rs",
+   "src/bin/income_report.rs",
+   "src/bin/latency_flow_audit.rs",
+   "src/bin/macro_history_sync.rs",
+   "src/bin/ml_path_probe.rs",
+   "src/bin/model_manifest.rs",
+   "src/bin/multi_coin_simulator.rs"
+  ],
+  "unread": [],
+  "notes": "Leí completos los 21 archivos de src01 (6498 líneas), cada uno en una sola lectura sin recortes. Para verificar consumidores y escritores consulté fragmentos de: crates/quantum-arena/src/genome_store.rs (current_env, env_root, promote, legacy_mirror, atomic_write), genome.rs (load_or_baseline, apply_to_arena, derive_anchors_from_curves), crates/backtest-engine/src/booktick_replay.rs (OmniHistory, stop), tick_replayer.rs (from_header), god-engine-core/src/ml_inference.rs (ML_VECTOR_DIM, macro_ml_features, predict), lib.rs (carga y recarga de DarkAlpha, OBI), recarga_genoma.rs, data-pipeline/src/omni_multiplexer.rs (layout de get_features y DX-Y.NYB), dark-alpha-engine (default_model, predict_in_context), telemetry-server (SystemState), src/bin/parquet_to_bin.rs (cabecera TGMSYNT1), src/bin/walkforward_evolver.rs (invocación del forense), src/bin/god_engine.rs (TG_GENOME_ENV y vigilante DarkAlpha), LAUNCHER.bat, LAUNCH_TRAINING_PIPELINE.bat, build_loop.ps1 y template.env. Revisé los registros conocidos con grep (C-F1, C-F2, C-F3, MAPA_C-F3, FICHAS_C-F2, BARRIDO, línea G hallazgos/verificación/vetos, PLAN_LINEA_F, REVISION_PRS). Transparencia: un grep de 'FORENSIC_SYMBOL' sobre todo el repo devolvió incidentalmente una línea de .agents/MEMORIA.md. No abrí ni usé ese archivo. No ejecuté cargo ni ninguna escritura. Las afirmaciones de los hallazgos 1 y 2 sobre el contenido real de los ficheros data/*_ticks.bin del operador y sobre el desborde de pila en los hilos rayon se infieren del código, no las comprobé ejecutando."
+ }
+}

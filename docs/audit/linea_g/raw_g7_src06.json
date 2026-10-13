@@ -1,0 +1,364 @@
+{
+ "findings": [
+  {
+   "title": "PruebaReversion: la varianza HAC centra los productos cruzados de retardo 1 con la masa de todas las filas y no con la de los pares, y el sesgo crece con ĉ²·x̄²",
+   "severity": "MED",
+   "category": "stats",
+   "file": "crates/strategy-core/src/prueba_reversion.rs",
+   "line": 295,
+   "evidence": "prueba_reversion.rs:292-296 «let syy1 = s.yy1 - w * yb * yb; … let sxx1 = s.xx1 - w * xb * xb; let g1 = (syy1 + c * syx1 + c * sxy1 + c * c * sxx1) / w;». En cambio, :155 «self.w += 1.0;» suma siempre y :168 «if let Some((zp, xp, yp)) = previa {» sólo suma yy1, yx1, xy1 y xx1 cuando la fila anterior existe. :383 «let o = *self.origen.get_or_insert(b);» fija el origen una sola vez, hasta el próximo reset.",
+   "mechanism": "El producto cruzado centrado correcto es Σ_p w_t (x_t−x̄)(x_{t−1}−x̄) ≈ xx1 − x̄²·W_p, donde W_p es la masa de las filas que tienen fila previa. El código resta w·x̄², con w > W_p en cuanto una fila sigue a una celda vacía (la primera tras cada hueco). La sxx1 queda corta en x̄²(w−W_p), y g1 baja en ĉ²·x̄²·(w−W_p)/w. x̄ es la media de la base respecto a la PRIMERA base desde el último reset, así que crece con la deriva de la base y no con su dispersión. var = (g0·szz2 + 2·g1·szz11)/szx² baja con szz11 > 0, y |t| se infla, más justo cuando ĉ es grande, cerca del rechazo. Si la deriva es grande, var ≤ 0 y el nodo se abstiene (−∞). El MC que calibró CRITICO = 1,75 nunca ejercita este camino: comun_reversion::barrido usa h = paso·(0,5+u) < 1,5·paso, siempre por debajo de Δ en las cinco configuraciones (nodo 17 con 1 s frente a Δ = 2,15 s, nodo 18 con 2 s frente a 8,6 s, nodo 19 con 4 s frente a 34 s). No hay celdas vacías (W_p ≈ w) y el OU es estacionario alrededor del origen (x̄ ≈ σ).",
+   "failure_scenario": "Alt con el spot intermitente (bookTicker WS más REST de 1 s, con cortes de > 2,15 s) y τ* ∈ [30 s; 68,7 s) (nodo 17, memoria 4,6 min). La base ha derivado x̄ ≈ 20σ desde la reconexión. Con fracción de filas tras hueco f = 0,2, ruido de ½σ y ĉ en la frontera c0 = 0,042, la var queda ≈ 65 % baja y t ≈ ×1,7: el crítico efectivo es ≈ 1,0 y el tamaño sube a ~15 % frente al 5,1 % documentado. StatArb vota una reversión no demostrada. Con más deriva (x̄ ≳ 25σ) el nodo queda mudo hasta el próximo reset. La magnitud real depende de f (pequeña con el REST de 1 Hz, grande tras cortes del spot) y de la deriva: no está medida.",
+   "fix_sketch": "Llevar los momentos de primer orden restringidos a filas con previa: Σ_p w, Σ_p w·x_t, Σ_p w·x_{t−1}, Σ_p w·y_t y Σ_p w·y_{t−1}, decaídos con λ, y centrar con ellos syy1, syx1, sxy1 y sxx1. O bien re-anclar el origen a la media ponderada en cada cierre de celda, trasladando las sumas algebraicamente. Añadir al MC huecos de Poisson (P(celda vacía) de 0,1 a 0,4) y un OU con la media desplazada ≥ 20σ del primer valor, y exigir un tamaño ≤ 5,5 %.",
+   "live_path": true,
+   "known_ref": "NUEVO. F3.7-02 figura como cerrado por CL-97 (HALLAZGOS_C-F3:624-632), y ni REVISION_CL-84 ni PRUEBAS_C-F3 (cl97_nivel_en_la_frontera_*) tratan el centrado de retardo 1 ni los huecos de rejilla.",
+   "confidence": 0.5
+  },
+  {
+   "title": "Los nodos 21 y 22 de la prueba de reversión no maduran con el reinicio en cada reconexión (≤ 24 h): StatArb queda mudo de forma estructural para τ* ≥ 73 min, y siempre para τ* ≥ 4,9 h",
+   "severity": "MED",
+   "category": "absorbing",
+   "file": "crates/strategy-core/src/prueba_reversion.rs",
+   "line": 84,
+   "evidence": "prueba_reversion.rs:84 «-(-0.5f64).exp_m1() / (1.0 - lambda)» (madurez = 64 celdas = 8·τ_k), :70 «pub const MEMORIA_EN_TAU: f64 = 16.0;» y :429 «demostrada: e.madura && e.t > CRITICO». god-engine-core/src/lib.rs:1504-1505 «for e in self.statarb_ou_engines.iter_mut() { *e = strategy_core::stat_arb::StatArbEngine::new(30, 1.5).with_prueba_reversion();» dentro de reset_engines, que src/bin/god_engine.rs:3177-3179 llama en cada centinela de reconexión.",
+   "mechanism": "La malla es ×4 por nodo: τ_21 = 4^21 ns ≈ 73,3 min y τ_22 ≈ 4,89 h. La madurez exige 8·τ_k de pares sin reinicio: 9,8 h en el nodo 21 y 39,1 h en el 22. Binance corta toda conexión WS a las 24 h, y cada reconexión, así como cada centinela perdido o reinicio del proceso, rehace la PruebaReversion de TODAS las monedas con masa 0. El nodo 22 nunca alcanza la madurez. El 21 sólo la alcanza en la cola de cada ventana de conexión, y nunca si las reconexiones llegan antes de 9,8 h. La prueba ya maneja los huecos haciendo decaer las sumas (:236-246), así que el reset no añade seguridad: sólo borra masa. Es un estado sin salida para esas τ.",
+   "failure_scenario": "τ* de una moneda en [4,89 h; 12 h] (nodo 22): veredicto().demostrada es siempre false, se publica statarb_ou_zscore = 0 y t½ = ∞, y StatArb nunca vota en ese tramo de la banda continua. Con τ* ∈ [73 min; 4,89 h) (nodo 21) vota como mucho ~14 de cada 24 h, y nada si el feed reconecta más a menudo. El consenso de las τ largas pierde de forma sistemática al único votante de reversión de la base, mientras el doc (:61-63) afirma la cobertura de [30 s, 12 h].",
+   "fix_sketch": "No reiniciar la prueba en reset_engines y dejar que el hueco de la reconexión haga decaer las sumas (ya implementado, y probado en cl97_un_hueco_largo_devuelve_a_la_inmadurez), o reiniciar sólo los nodos cuyo hueco supere su memoria. Si se quiere un corte, definir la madurez en número de celdas con un techo compatible con la ventana de conexión, o persistir las sumas. Ajustar cf3_reversion_base.rs::cl97_la_reconexion_reinicia_la_prueba, que hoy fija el reset, y añadir un contrato: tras dos reconexiones a 24 h con reversión real a τ_22, el nodo 22 llega a demostrar.",
+   "live_path": true,
+   "known_ref": "NUEVO en su consecuencia. HALLAZGOS_C-F3:629 declara el reset como diseño. Relacionado: linea_g/hallazgos.tsv:260 (host, reset_engines en cada reconexión de 24 h; trata los rasgos fríos, no la madurez de StatArb).",
+   "confidence": 0.7
+  },
+  {
+   "title": "graph-architecture: el detector de huérfanos no es fiable (llamadas entre módulos mal resueltas, métodos invisibles) y la «latencia» vale 0 siempre",
+   "severity": "LOW",
+   "category": "dead-code",
+   "file": "crates/graph-architecture/src/lib.rs",
+   "line": 96,
+   "evidence": "lib.rs:96 «let target_id = format!(\"{}::{}\", self.current_module, target_name);» (y :114 para los métodos). Sólo se sobrescribe visit_item_fn (:57), no visit_impl_item_fn. :244 «node.is_orphan = calls == 0;». En :73, :142, :169 y :217 «average_latency_ns: 0,», e index.html:84 pinta «⚠️ ORPHAN NODE».",
+   "mechanism": "Toda llamada se atribuye al módulo del llamador: crate::otro::f() o Tipo::new() apuntan a «modulo_actual::f». Una función libre que sólo se llama desde otro módulo o crate queda marcada como huérfana. Los métodos de impl nunca son nodos, y sus llamadas salen del módulo, no de la función. El campo de latencia nunca se mide.",
+   "failure_scenario": "Quien use el Panóptico (bin en 127.0.0.1:3030) para decidir qué es código muerto ve en rojo funciones vivas que se llaman entre crates (falsos positivos) y no ve los métodos. BARRIDO_EXHAUSTIVO_FASES.md:570 lo certifica como «Panóptico con latencias reales», lo cual es falso.",
+   "fix_sketch": "Resolver las rutas con use y prefijos crate::/super::, o marcar las aristas no resueltas como «unknown» y no declarar huérfanos con ellas. Visitar ImplItemFn. Quitar average_latency_ns o alimentarlo con medición real. Corregir BARRIDO:570.",
+   "live_path": false,
+   "known_ref": "NUEVO; contradice BARRIDO_EXHAUSTIVO_FASES.md:570.",
+   "confidence": 0.8
+  },
+  {
+   "title": "telemetry-engine: las pruebas unitarias comparten las colas globales (BINARY_QUEUE, STATS_QUEUE) en hilos paralelos y la del canal tensorial es vacía",
+   "severity": "LOW",
+   "category": "test-fragility",
+   "file": "crates/telemetry-engine/src/atomic_telemetry.rs",
+   "line": 109,
+   "evidence": "atomic_telemetry.rs:109 «while pop_trade_stats().is_some() {}» y :139 (dos tests que vacían y leen la misma STATS_QUEUE). :129 «while pop_binary_telemetry().is_some() {}» contra lib.rs:118-127, que empuja dos mensajes y espera sacarlos. lib.rs:108 «if let Ok(rec) = rx.try_recv() {».",
+   "mechanism": "Los statics OnceLock se comparten en el mismo binario de tests, y cargo test ejecuta en paralelo. Un test puede vaciar o robar el registro que el otro acaba de empujar. El test del canal no afirma nada si try_recv falla.",
+   "failure_scenario": "Intercalado T1 push → T2 drain → T1 pop = None: «assert!(popped.is_some())» falla de forma intermitente, o test_macro_telemetry_stack_buffer_and_pop saca el mensaje del otro test. test_tensor_telemetry_channel pasa en verde aunque push_tensor_record no entregue nada.",
+   "fix_sketch": "Serializar con un Mutex de test o #[serial], o parametrizar las colas (instancia por test). Sustituir el if let por expect/assert. Aparte, TradeStats y TensorRecord no tienen productor ni consumidor vivo: retirar o documentar.",
+   "live_path": false,
+   "known_ref": "Posible solapamiento con BARRIDO_EXHAUSTIVO_FASES.md:585 («mutación de estado global sin mutex en 3 tests», sin archivos citados); DnsOptimizer muerto ya en CENSUS_CODE_MUERTO_RONDA7:171.",
+   "confidence": 0.55
+  },
+  {
+   "title": "QuantumSocketPool sigue muerto, pero ws_executor lo presenta como la ruta REST sancionada, y reenvía un POST tras un error leyendo el cuerpo",
+   "severity": "LOW",
+   "category": "dead-code",
+   "file": "crates/execution-engine/src/quantum_socket.rs",
+   "line": 104,
+   "evidence": "quantum_socket.rs:101-106 «match response.text().await { … Err(e) => { if retry_count == 0 { retry_count += 1; continue; }» sin distinguir el método; sólo la rama de error de envío (:115) excluye POST. ws_executor.rs:5 «a la ruta REST (QuantumSocketPool HFT), que es la única ruta sancionada». La única referencia fuera del módulo es el re-export lib.rs:30, y la ruta viva es BinanceClient (client.rs:136).",
+   "mechanism": "Si Binance respondió (orden aceptada) y falla la lectura del cuerpo, se reenvía el mismo POST: orden duplicada. El cliente no tiene timeout, y el fallback Client::new() pierde en silencio la cabecera X-MBX-APIKEY.",
+   "failure_scenario": "Hoy es latente. Si alguien sigue la doc de ws_executor y cablea QuantumSocketPool para órdenes, un corte durante la lectura del cuerpo duplica la orden en vivo.",
+   "fix_sketch": "Borrar el módulo y el re-export, o como mínimo no reintentar POST/DELETE en ningún camino. Corregir ws_executor.rs:5 para nombrar BinanceClient.",
+   "live_path": false,
+   "known_ref": "BARRIDO_EXHAUSTIVO_FASES.md:436 F3-C11 («QuantumSocketPool reintenta POST»); la doc engañosa de ws_executor.rs:5 no está registrada.",
+   "confidence": 0.85
+  }
+ ],
+ "file_verdicts": [
+  {
+   "file": "crates/data-ingest/src/tensor_parser.rs",
+   "status": "muerto; prueba: honesta",
+   "note": "Sólo lo usan sus tests y data-ingest/tests/liquidation_contract.rs. El productor vivo de liquidaciones es liquidation::decode_liquidation_snapshots (god_engine.rs:3207). Latente: fast_parse_f64 devuelve 0,0 ante entrada vacía o inválida, extract_tensor_feature devuelve Some(0,0) con un valor malformado y decode_binance_trade_to_tensor devuelve [0,0] (desconocido = 0). Los tests in-file prueban bien el parseo. El contrato externo legacy_liquidation_scanner_* fija el defecto legacy de forma declarada."
+  },
+  {
+   "file": "crates/data-ingest/src/world_bank.rs",
+   "status": "muerto; prueba: vacua",
+   "note": "Copia muerta: el vivo es data-pipeline omni_multiplexer::run_world_bank_poller (start_polling sin llamador, CENSUS:92). Los tests no ejercen fetch ni clamp: escriben el atómico directamente y prueban f64::clamp. test_world_bank_nan_and_negative_immunity afirma soporte de tasas negativas que el código anula (clamp [0,100] en :86). Inflación en 0,0 antes del primer fetch."
+  },
+  {
+   "file": "crates/strategy-core/src/prueba_reversion.rs",
+   "status": "vivo; prueba: honesta",
+   "note": "Vivo en StatArbEngine por moneda (god-engine-core lib.rs:1333, :4860 y :5707), sin fuga entre monedas y sin asignaciones por evento. Los tests in-file son honestos (sumas crudas frente a la definición, madurez, nodo de decisión, entradas inválidas), pero no cubren el centrado de retardo 1 con huecos ni la deriva del origen. El MC externo no genera celdas vacías (hallazgo 1). La madurez a 8·τ_k con reset por reconexión deja mudos los nodos 21 y 22 (hallazgo 2)."
+  },
+  {
+   "file": "crates/god-engine-core/src/bin/nano_benchmark.rs",
+   "status": "offline; prueba: ninguna",
+   "note": "Bin de diagnóstico. Mide process_tick_dual con features cero y precios casi constantes (camino no representativo), con rdtsc sin serialización (el comentario dice «barrera atómica») y 3,5 GHz literal. Imprime «operando a escala de nanosegundos» sea cual sea el resultado. Sólo lee modelos al construir el núcleo."
+  },
+  {
+   "file": "crates/god-engine-core/src/bin/test_ml.rs",
+   "status": "offline; prueba: ninguna",
+   "note": "Diagnóstico de sólo lectura (models/, data/BTCUSDT_AUG_REAL.bin). Hace unwrap en la carga. Usa from_raw_parts sobre un Vec<u8> convertido a BinTick sin alineación garantizada. Rellena los slots 40-53 con literales copiados «as defined in build_54d_tensor», que pueden divergir. Resume la salida contra 0,5, no contra p*. No escribe ni publica."
+  },
+  {
+   "file": "crates/god-engine-core/src/fitness_contract.rs",
+   "status": "vivo; prueba: honesta",
+   "note": "Lo usan evolution-engine::fitness::compute y god_engine_core::fitness_compute (darwin.rs:402). DRAWDOWN_LAMBDA = 4·ln2 sale de una equivalencia elegida y documentada como preferencia. Contrato en tests/fitness_numeric_contract.rs (honesto). Fija que una DD negativa se trate como 0 (fail-open latente; los productores calculan dd ≥ 0)."
+  },
+  {
+   "file": "crates/god-engine-core/src/latency_accelerator.rs",
+   "status": "muerto; prueba: honesta",
+   "note": "Sin llamadores fuera de tests (BARRIDO F3-B9). Literales ±5000 ms y [0,01; 100]. El doc es honesto sobre lo que no hace."
+  },
+  {
+   "file": "crates/god-engine-core/src/order_flow_aggregator.rs",
+   "status": "muerto; prueba: honesta",
+   "note": "Sin llamadores fuera de tests (F3-B9). Latente: un NaN o negativo en un solo lado se toma como volumen 0 y da un ratio extremo de 0 o 1 (desconocido ≠ 0). Con volumen nulo devuelve el neutro 0,5."
+  },
+  {
+   "file": "crates/graph-architecture/src/lib.rs",
+   "status": "offline; prueba: mixta",
+   "note": "Herramienta dev, re-exportada en src/features/mod.rs sin uso. Huérfanos no fiables y latencia siempre 0 (hallazgo 3). Tests 1 y 5 honestos; los 2-4 sólo empujan a structs (vacíos)."
+  },
+  {
+   "file": "crates/graph-architecture/src/main.rs",
+   "status": "offline; prueba: ninguna",
+   "note": "Servidor warp en 127.0.0.1:3030 con rutas relativas al CWD. No toca datos de producción."
+  },
+  {
+   "file": "crates/telemetry-engine/src/atomic_telemetry.rs",
+   "status": "vivo (parcial); prueba: fragil",
+   "note": "La cola binaria está viva (telemetry!/telemetry_err! en god_engine.rs y varios crates; consumidor en god_engine.rs:919-928). Va sin heap, pero trunca a 512 B y descarta lo más viejo sin contador. La cola TradeStats está muerta. Tests con estado global compartido (hallazgo 4). La capacidad 100 000 se recorta en silencio a 65 536."
+  },
+  {
+   "file": "crates/telemetry-engine/src/dns_optimizer.rs",
+   "status": "muerto; prueba: vacua",
+   "note": "Sin uso (CENSUS:171). Latente si se cablea: to_socket_addrs bloqueante dentro de async, mide el tiempo de la caché DNS y no la latencia, y con «best_lat < 50» salta entre stream (spot), fstream (USDT-M) y dstream (COIN-M), que son mercados distintos. Los tests sólo prueban el RwLock."
+  },
+  {
+   "file": "crates/telemetry-engine/src/lib.rs",
+   "status": "vivo; prueba: mixta",
+   "note": "init_telemetry, pop_telemetry y las macros están vivos. El canal TensorRecord está muerto (sin productor ni consumidor) y lleva campos ml_long/short_thresh de la era de umbrales fijos. El test de macros es frágil (cola global) y el del canal es vacío (if let)."
+  },
+  {
+   "file": "crates/flight-recorder/src/lib.rs",
+   "status": "muerto; prueba: honesta",
+   "note": "Miembro del workspace sin dependientes (F7-A-H3); el núcleo usa telemetry_server::FlightRecorder. Latente: tras 10 vueltas lee de forma no atómica (registro roto), NaN → 0 borra la evidencia forense, y los slots reservados pero aún no escritos devuelven el registro de la vuelta anterior. Tests honestos en un solo hilo."
+  },
+  {
+   "file": "crates/phase-runner/src/lib.rs",
+   "status": "offline; prueba: honesta",
+   "note": "Lo usan el bin audit-engine y multi_coin_simulator (cada 1M ticks). Literales: CPU 0,5/0,8 → ×2/×5, y RAM > 16 GB·0,85 → HIGH. No decide trading."
+  },
+  {
+   "file": "crates/phase-runner/src/tests.rs",
+   "status": "muerto; prueba: copia-muerta",
+   "note": "Eclipsado por el mod tests inline (lib.rs:126). No compilaría: el campo max_memory_mb no existe. Ya registrado en R7-R0-4 / F8-B-H2."
+  },
+  {
+   "file": "crates/execution-engine/src/quantum_socket.rs",
+   "status": "muerto; prueba: vacua",
+   "note": "Sólo re-export (F3-C11). La doc de ws_executor lo llama ruta sancionada. Reenvía POST tras un error de lectura del cuerpo, no tiene timeout y el fallback pierde la API key (hallazgo 5). Los tests sólo comprueban get_host y el método no soportado."
+  },
+  {
+   "file": "crates/graph-4d/src/lib.rs",
+   "status": "offline; prueba: honesta",
+   "note": "Lo usa el bin audit-engine y está re-exportado en src/features. Grafo estructural sin aristas de llamada. Tests honestos (archivos temporales con nombre fijo)."
+  },
+  {
+   "file": "crates/risk-engine/src/epigenetic_fitness_landscape.rs",
+   "status": "muerto; prueba: fija-defecto",
+   "note": "Sin llamadores (R7-R2-G-1, B-3). Puntúa por acierto, Sharpe saturado y PF con pesos 0,4/0,3/0,3 literales. El test fija que NaN en todo dé 0,15 (desconocido → puntuación positiva). El doc arrastra «$50 / Top 10»."
+  },
+  {
+   "file": "crates/omniscient-registry/src/tests.rs",
+   "status": "muerto; prueba: copia-muerta",
+   "note": "Eclipsado por el mod tests inline (lib.rs:399). test_detect_collisions no tiene asserts («I'll just check it compiles»). Ya registrado en R7-R0-4 / F8-B-H3."
+  },
+  {
+   "file": "src/risk/mod.rs",
+   "status": "muerto; prueba: ninguna",
+   "note": "Huérfano: src/lib.rs no declara mod risk. Re-export de 4 líneas. Ya registrado en R7-R0-2 y CENSUS:203."
+  }
+ ],
+ "vetos": [
+  {
+   "file": "crates/strategy-core/src/prueba_reversion.rs",
+   "line": 74,
+   "name": "CRITICO",
+   "kind": "umbral de estadístico t (veto de voto StatArb)",
+   "constant": "1.75",
+   "origin": "measured",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Medido por MC (q95 máx. 1,76) sólo en los nodos 17-19, sin celdas vacías y con x̄≈0: no certifica el tamaño con huecos ni con deriva desde el origen (hallazgo 1)."
+  },
+  {
+   "file": "crates/strategy-core/src/prueba_reversion.rs",
+   "line": 82,
+   "name": "masa_madura (media memoria)",
+   "kind": "compuerta de madurez",
+   "constant": "(1−e^{−1/2})/(1−λ) ≈ 50,6 filas = 64 celdas = 8·τ_k",
+   "origin": "literal",
+   "absorbing_risk": "likely",
+   "assessment": "questionable",
+   "note": "Con reset_engines en cada reconexión (≤ 24 h), el nodo 22 (39,1 h) no madura nunca y el 21 (9,8 h) rara vez: abstención estructural (hallazgo 2). La fracción «media memoria» no está derivada."
+  },
+  {
+   "file": "crates/strategy-core/src/prueba_reversion.rs",
+   "line": 70,
+   "name": "MEMORIA_EN_TAU",
+   "kind": "memoria del estimador (fija la madurez)",
+   "constant": "16.0",
+   "origin": "literal",
+   "absorbing_risk": "likely",
+   "assessment": "questionable",
+   "note": "Fija λ y la madurez en 8·τ_k; junto con el reset produce el bloqueo de los nodos largos."
+  },
+  {
+   "file": "crates/strategy-core/src/prueba_reversion.rs",
+   "line": 68,
+   "name": "CELDAS_POR_TAU",
+   "kind": "resolución de la rejilla de la prueba",
+   "constant": "8.0",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "El crítico se calibró con este valor y depende de él. No hay justificación de 8 frente a otras resoluciones."
+  },
+  {
+   "file": "crates/strategy-core/src/prueba_reversion.rs",
+   "line": 77,
+   "name": "c_frontera (H0: t½ ≥ 2·τ_k)",
+   "kind": "frontera de hipótesis",
+   "constant": "θ0 = ln2/(2·τ_k) ⇒ c0 = 1 − 2^{−1/16}",
+   "origin": "unknown",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Coherente con la guarda del lector (stat_arb.rs:361, t½ ≤ 2·τ*). El factor 2 no tiene derivación."
+  },
+  {
+   "file": "crates/strategy-core/src/prueba_reversion.rs",
+   "line": 64,
+   "name": "NODO_MIN/NODO_MAX",
+   "kind": "rango de nodos contrastables",
+   "constant": "17 / 22",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Derivado de la banda [30 s, 12 h] y de la malla ×4: τ_17 = 17,2 s y τ_23 = 19,5 h > 12 h."
+  },
+  {
+   "file": "crates/god-engine-core/src/fitness_contract.rs",
+   "line": 5,
+   "name": "DRAWDOWN_LAMBDA",
+   "kind": "peso de penalización del fitness",
+   "constant": "4·ln2 ≈ 2.7726",
+   "origin": "derived",
+   "absorbing_risk": "none",
+   "assessment": "sound",
+   "note": "Derivado de una equivalencia elegida (DD 50 % ≡ duplicar capital), documentada honestamente como preferencia (evolution-engine fitness.rs:76-80); sin ADR."
+  },
+  {
+   "file": "crates/god-engine-core/src/fitness_contract.rs",
+   "line": 47,
+   "name": "InsufficientTrades",
+   "kind": "compuerta de evidencia mínima (INVIABLE)",
+   "constant": "min_trades_required.max(1); el llamador pasa 30",
+   "origin": "policy-adr",
+   "absorbing_risk": "possible",
+   "assessment": "sound",
+   "note": "Política D-654 (WF_MIN_TRADES). El arranque en frío lo mitiga compute_with_bayesian_prior; 30 no es una prueba de independencia, y el doc lo admite."
+  },
+  {
+   "file": "crates/god-engine-core/src/fitness_contract.rs",
+   "line": 53,
+   "name": "dd.clamp(0,1)",
+   "kind": "saneado de drawdown",
+   "constant": "[0, 1]",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "questionable",
+   "note": "Una DD negativa pasa a 0 (sin penalización, fail-open) y queda fijado por fitness_numeric_contract.rs:77-80. Latente: los productores calculan dd ≥ 0."
+  },
+  {
+   "file": "crates/god-engine-core/src/latency_accelerator.rs",
+   "line": 23,
+   "name": "compute_ntp_clock_drift_correction clamp",
+   "kind": "recorte de deriva de reloj",
+   "constant": "±5000 ms",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sin llamadores; el clamp(0,01; 100) de :16 está igual de muerto."
+  },
+  {
+   "file": "crates/god-engine-core/src/order_flow_aggregator.rs",
+   "line": 13,
+   "name": "saneado de volumen agresor",
+   "kind": "neutralización de entrada",
+   "constant": "NaN/negativo → 0; volumen nulo → ratio 0,5",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Un NaN en un solo lado daría un ratio extremo 0/1 (desconocido ≠ 0); muerto."
+  },
+  {
+   "file": "crates/risk-engine/src/epigenetic_fitness_landscape.rs",
+   "line": 29,
+   "name": "pesos de densidad de fitness",
+   "kind": "puntuación de asignación",
+   "constant": "0.4·Sharpe + 0.3·WR + 0.3·(PF−1); WR NaN → 0,5",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sin llamadores. Puntúa por acierto, sin p* ni esperanza neta."
+  },
+  {
+   "file": "crates/data-ingest/src/world_bank.rs",
+   "line": 86,
+   "name": "clamp tasa de interés",
+   "kind": "saneado macro",
+   "constant": "[0, 100] (inflación [−50, 100] en :75)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Copia muerta; contradice su propio test de tasas negativas."
+  },
+  {
+   "file": "crates/telemetry-engine/src/dns_optimizer.rs",
+   "line": 45,
+   "name": "best_lat < 50",
+   "kind": "conmutación de endpoint",
+   "constant": "50 ms (sobre tiempo de DNS)",
+   "origin": "literal",
+   "absorbing_risk": "none",
+   "assessment": "dead",
+   "note": "Sin uso. Si se cablea, conmutaría entre spot, USDT-M y COIN-M."
+  }
+ ],
+ "coverage": {
+  "files_read": [
+   "crates/data-ingest/src/tensor_parser.rs",
+   "crates/data-ingest/src/world_bank.rs",
+   "crates/strategy-core/src/prueba_reversion.rs",
+   "crates/god-engine-core/src/bin/nano_benchmark.rs",
+   "crates/god-engine-core/src/bin/test_ml.rs",
+   "crates/god-engine-core/src/fitness_contract.rs",
+   "crates/god-engine-core/src/latency_accelerator.rs",
+   "crates/god-engine-core/src/order_flow_aggregator.rs",
+   "crates/graph-architecture/src/lib.rs",
+   "crates/graph-architecture/src/main.rs",
+   "crates/telemetry-engine/src/atomic_telemetry.rs",
+   "crates/telemetry-engine/src/dns_optimizer.rs",
+   "crates/telemetry-engine/src/lib.rs",
+   "crates/flight-recorder/src/lib.rs",
+   "crates/phase-runner/src/lib.rs",
+   "crates/phase-runner/src/tests.rs",
+   "crates/execution-engine/src/quantum_socket.rs",
+   "crates/graph-4d/src/lib.rs",
+   "crates/risk-engine/src/epigenetic_fitness_landscape.rs",
+   "crates/omniscient-registry/src/tests.rs",
+   "src/risk/mod.rs"
+  ],
+  "unread": [],
+  "notes": "Leí enteros los 21 archivos de la dimensión src06 (3 260 líneas). Contexto consultado en parte para verificar vida y llamadores: strategy-core/src/stat_arb.rs (:110-189, :315-374), god-engine-core/src/lib.rs (:1-40, :985-1074, :1480-1510, :4835-4884, :5385-5400, :5680-5739, :4515-4555), strategy-core/tests/comun_reversion/mod.rs (entero), tests/medicion_critico_reversion.rs y cf3_prueba_reversion.rs (por grep), god-engine-core/tests/fitness_numeric_contract.rs (entero), data-ingest/src/lib.rs, data-ingest/tests/liquidation_contract.rs (:145-180), evolution-engine/src/fitness.rs (:60-139), execution-engine client.rs (:120-160) y ws_executor.rs (:1-30), src/bin/god_engine.rs (:910-939, :3165-3184, :5190-5240), data-pipeline omni_multiplexer.rs (:785-834) y quantum-arena temporal_spectrum.rs (malla ×4). Registros consultados con Grep: HALLAZGOS_C-F1/C-F3, PRUEBAS_C-F3, REVISION_CL-84, REVISION_PRS_43_55, BARRIDO_EXHAUSTIVO_FASES, CENSUS_CODE_MUERTO_RONDA7, linea_g/hallazgos.tsv y verificacion.tsv. No ejecuté cargo: las magnitudes del hallazgo 1 son analíticas (orden de magnitud) y no están medidas. No leí .agents/MEMORIA.md (sólo apareció en la salida de un grep)."
+ }
+}

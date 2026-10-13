@@ -230,3 +230,25 @@ pub fn flat_coin_contract_rejects_flat_intent() {
     assert_eq!(out_flat.signal, SignalType::Flat, "Señal Flat debe evaluarse como Flat");
     assert_eq!(ultimo_rechazo(), Some(REJ_FLAT_COIN));
 }
+
+#[test]
+pub fn lh02_valle_capital_friccion_no_veta_orden_viable() {
+    let (arena, intent) = fixture();
+    // LH-02: En el valle de capital ($35–$65 USD), allocated_capital y unified_capital
+    // están en ~$50 USD, donde micro_w_alloc cae a 0.0.
+    arena.config.base_capital.store(50.0, Relaxed);
+    arena.unified_capital.store(50.0, Relaxed);
+    // Taker fee normal de Binance futures (0.05% por pierna = 0.10% roundtrip):
+    arena.config.live_taker_fee.store(0.0005, Relaxed);
+    let mut engine = RiskEngine::new(50.0);
+    let out = engine.evaluate_quantum_order(0, &intent, &arena);
+    assert_ne!(
+        ultimo_rechazo(),
+        Some(REJ_FEE_IMPACT),
+        "LH-02: La orden en el valle de capital ($50 USD) no debe ser vetada por fee_impact: {}",
+        risk_engine::reject_report()
+    );
+    assert_eq!(out.signal, SignalType::Long, "Orden viable debe admitirse en Long");
+    assert!(out.volume_usd > 0.0);
+}
+

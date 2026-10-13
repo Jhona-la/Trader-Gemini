@@ -1,11 +1,9 @@
-pub mod capital_compounder;
 pub mod copulas_store;
 pub mod capital_regime;
 pub mod cramer_lundberg;
 pub mod correlation_guard;
-pub mod epigenetic_capital_alloc;
-pub mod epigenetic_fitness_landscape;
 pub mod evidence;
+pub mod freno_estrategia;
 pub mod guard;
 pub mod hodge;
 pub mod kelly;
@@ -17,6 +15,7 @@ pub mod regime;
 pub mod drawdown;
 pub mod envio;
 pub mod ruin;
+pub mod sonda;
 pub mod tp_sl;
 pub mod veto_registry;
 pub mod selection_stats;
@@ -91,7 +90,7 @@ impl ValidatedOrder {
 /// correlación, y el suelo TP/SL y la confianza el 4 con el EV: la telemetría
 /// no podía decir qué compuerta rechazaba.
 use std::sync::atomic::AtomicU64;
-pub const REJECT_SLOTS: usize = 17;
+pub const REJECT_SLOTS: usize = 19;
 pub const REJ_FLAT_COIN: usize = 0;
 pub const REJ_EXPOSURE_ZERO: usize = 1;
 pub const REJ_CORRELATION: usize = 2;
@@ -113,6 +112,17 @@ pub const REJ_VIABILIDAD: usize = 13;
 pub const REJ_SIN_EVIDENCIA: usize = 14;
 pub const REJ_INVALID_INPUT: usize = 15;
 pub const REJ_TARGET_GEOMETRY: usize = 16;
+/// D4 (ADR-0016, CL-98) — la moneda está en fase de sonda y ya hay una sonda
+/// abierta en la cartera: las sondas se abren de una en una (`sonda.rs`).
+pub const REJ_SONDA_OCUPADA: usize = 17;
+/// CL-107 — el freno de la estrategia rechazó H0 (proceso e de Ville sobre R,
+/// `freno_estrategia.rs`): no se admiten entradas nuevas.
+pub const REJ_ESTRATEGIA_FALSADA: usize = 18;
+
+/// CL-100 — umbral del veto de primer toque R-15, que ahora sólo se publica
+/// (`r15_vetaria` por moneda): P(SL antes que TP) por encima de él habría
+/// vetado la orden. Es el literal de R7-R2-A-1 (Ola Ω73), sin derivar.
+pub const UMBRAL_R15_SOMBRA: f64 = 0.88;
 
 #[allow(clippy::declare_interior_mutable_const)]
 const REJECT_ZERO: AtomicU64 = AtomicU64::new(0);
@@ -187,6 +197,8 @@ pub const REJECT_NAMES: [&str; REJECT_SLOTS] = [
     "sin_evidencia",
     "entrada_invalida",
     "geometria_invalida",
+    "sonda_ocupada",
+    "estrategia_falsada",
 ];
 
 fn format_reject_counters(counters: &[AtomicU64; REJECT_SLOTS]) -> String {
@@ -221,12 +233,16 @@ pub fn reject_report() -> String {
 
 pub struct RiskEngine {
     pub peak_capital: f64,
+    /// CL-107 — freno de la estrategia (proceso e de Ville sobre la R de cada
+    /// cierre, H0 = +0,30 R). Echado, no se admiten entradas nuevas.
+    pub freno_estrategia: freno_estrategia::FrenoEstrategia,
 }
 
 impl RiskEngine {
     pub fn new(initial_capital: f64) -> Self {
         Self {
             peak_capital: initial_capital,
+            freno_estrategia: freno_estrategia::FrenoEstrategia::new(),
         }
     }
 
@@ -281,65 +297,29 @@ impl RiskEngine {
             return rej(REJ_TARGET_GEOMETRY);
         }
 
-        if current_capital > self.peak_capital {
-            self.peak_capital = current_capital;
-        }
+        // CL-99 (LC-F4-10): el pico es el del arena, compartido con el
+        // sistema inmune del host y guardado por él entre reinicios.
+        // `peak_capital` queda como su copia para los lectores de este motor.
+        self.peak_capital = crate::drawdown::registrar_pico(
+            &arena.pico_capital,
+            current_capital.max(self.peak_capital),
+        );
         // U-3: los picos espejo scalp/swing (sin lectores) extirpados.
 
-        // O-04 — CIRCUIT BREAKER DE DRAWDOWN en el path cuántico: el gen
-        // global_max_drawdown era funcionalmente MUERTO (se convertía en cap
-        // de margen constante). Ahora es un VETO REAL: si el drawdown desde
-        // el pico supera el gen, no se abre nueva posición hasta recuperación.
-        // D-641 (completo): el cortacircuitos de drawdown deja de saltar en $15.
-        // En régimen micro pleno (≤3 operaciones mínimas, p. ej. $13) conserva
-        // la tolerancia de 0,85 diseñada para permitir la recuperación del
-        // crecimiento compuesto; en régimen estándar rige el gen; entre ambos,
-        // transición continua. Antes el gen quedaba anulado en producción.
-        // #653 (Ola 53): DOS defectos del hallazgo B cerrados —
-        // (1) micro_w usaba `config.min_notional` congelado (5.0, nadie lo
-        // escribe): ahora el mínimo DINÁMICO del spec del símbolo (paridad
-        // con evaluate_single_intent D-641 completo).
-        // (2) el lerp micro era CÓDIGO MUERTO: el `max_dd` lerpado sólo
-        // vivía en el if-guard; el veto real comparaba contra el
-        // sombreado de D-744b (gen crudo). Ahora la tolerancia micro se
-        // compone con la cota medida: umbral = lerp(dd_max_medido, 0.85,
-        // micro_w) — el régimen micro relaja la cota MEDIDA, no la salta.
-        let min_notional_dyn = quantum_arena::symbol_registry::try_spec(coin_id)
-            .map(|s| crate::capital_regime::effective_min_notional(s.min_notional))
-            .unwrap_or_else(|| arena.config.min_notional.load(Ordering::Relaxed));
-        let micro_w = crate::capital_regime::micro_weight(current_capital, min_notional_dyn);
+        // O-04 → CL-106 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12):
+        // FRENO DURO DE LA CUENTA. No se abre posición nueva mientras la caída
+        // desde el pico (el del arena, compartido con el host y guardado entre
+        // reinicios, CL-99) supere un umbral de nivel α con el tamaño real de
+        // las órdenes: el cuantil 95 % de la caída máxima en 200 operaciones
+        // con H0 = +0,05 R, en unidades del riesgo medido al stop
+        // (`drawdown::umbral_freno_duro`), acotado por d* (ADR-0016 D3). Es la
+        // MISMA función del sistema inmune del host. Sustituye a la prueba de
+        // racha (`drawdown_compatible`), que con 8-12 R daba un 36-49 % de
+        // falsa alarma en 200 operaciones aun con +0,30 R de ventaja, y a la
+        // tolerancia micro (D-641), que en 13 USD dejaba el umbral en d*.
         if self.peak_capital > 0.0 {
             let dd = (self.peak_capital - current_capital) / self.peak_capital;
-            // CL-9: la caída es de la cuenta; la tasa de pérdida también
-            // (antes la de la moneda candidata: una moneda perdedora o sin
-            // historial aflojaba el freno de toda la cartera).
-            let q_perdida = crate::drawdown::q_perdida_cartera(arena.coins.iter().map(|c| {
-                (
-                    c.metrics.win_rate.load(Ordering::Relaxed),
-                    c.metrics.trade_count.load(Ordering::Relaxed) as f64,
-                )
-            }));
-            // D-744b: sin riesgo medido rige el gen; el veto nunca se salta.
-            let dd_max_medido = crate::drawdown::drawdown_maximo(
-                arena.riesgo_por_operacion.load(Ordering::Relaxed),
-                q_perdida,
-                arena.config.global_max_drawdown.load(Ordering::Relaxed),
-            );
-            // D-641 × D-744b compuestos: la tolerancia micro relaja la COTA
-            // MEDIDA continuamente; el estándar la respeta. QS-D3 (ADR-0016):
-            // la tolerancia micro es la caída que FALSIFICA el modelo de ½
-            // Kelly a α = 0,05 (d* = 0,632), no el literal 0,85 (que con 13
-            // USD permitía caer a 1,95 USD). d* es además la COTA SUPERIOR de
-            // todo el veto: ninguna política ≤ ½ Kelly sobrevive con
-            // probabilidad ≥ α a una caída mayor, así que tampoco el respaldo
-            // del gen (hasta 0,95 sin riesgo medido) puede superarla.
-            let d_falsacion = crate::drawdown::drawdown_de_falsacion(
-                crate::drawdown::FRACCION_KELLY_MAXIMA,
-                crate::drawdown::ALFA_FALSACION,
-            );
-            let umbral = crate::capital_regime::lerp(dd_max_medido, d_falsacion, micro_w)
-                .min(d_falsacion);
-            if dd >= umbral {
+            if dd >= crate::drawdown::umbral_freno_duro_de(arena, self.peak_capital) {
                 return rej(REJ_DRAWDOWN);
             }
         }
@@ -469,6 +449,19 @@ impl RiskEngine {
         set_reject_direction(intent.signal);
         if intent.signal == SignalType::Flat || allocated_capital <= 0.0 {
             return ValidatedOrder::rejected();
+        }
+        // D4 (ADR-0016, LC-F4-19, CL-98): una moneda con menos de
+        // `sonda::CIERRES_DE_SONDA` cierres sólo puede abrir una SONDA, y la
+        // cartera tiene una sola sonda abierta a la vez. Es la misma puerta
+        // que la sonda del ML-GATE del núcleo (`arranque_frio_sin_roster`).
+        // CL-107: con el freno de la estrategia echado no entra nada nuevo
+        // (las posiciones abiertas se gestionan fuera de aquí).
+        if self.freno_estrategia.rechazada() {
+            return rej(REJ_ESTRATEGIA_FALSADA);
+        }
+        let es_sonda = crate::sonda::en_fase_de_sonda(arena, coin_id);
+        if !crate::sonda::admite_sonda(arena, coin_id) {
+            return rej(REJ_SONDA_OCUPADA);
         }
         // D-750 — EL NOCIONAL MÍNIMO ES EL DEL SÍMBOLO, NO UN LITERAL DE
         // CONFIGURACIÓN.
@@ -952,7 +945,15 @@ impl RiskEngine {
         // Se escala dimensionalmente con (30s / tau)^{1/2} para evitar que horizontes extendidos
         // sobre-acumulen deriva constante un-física y veten señales válidas con desacuerdos mínimos.
         let spectral_tide = arena.coins[coin_id].spectral_coherence.load(Ordering::Relaxed);
-        let tau_ratio = (30_000.0 / tau_for_sizing.max(30_000.0)).sqrt().clamp(0.15, 1.0);
+        // CL-83 (F3.2-03): sin suelo. El recorte a 0,15 se activaba con
+        // τ > 30 s/0,15² = 1 333 s y por encima la deriva volvía a acumularse
+        // ∝ √τ: con brackets brownianos (∝ √τ) R-15 vetaba las τ largas que
+        // decía dejar de castigar (P = 0,883 a 4 h y 0,953 a 12 h con una
+        // coherencia de −0,3, frente a 0,762 hasta 1 333 s). Sin el suelo,
+        // θ·tp no depende de τ. El modelo de fondo (la coherencia como
+        // deriva, el ATR de 1 min como σ y el ancla de 30 s) sigue abierto
+        // en C-F4 (LC-F4-04).
+        let tau_ratio = (30_000.0 / tau_for_sizing.max(30_000.0)).sqrt();
         let directional_drift = if spectral_tide.is_finite() {
             dir * spectral_tide * atr_pct * tau_ratio
         } else {
@@ -964,11 +965,19 @@ impl RiskEngine {
             directional_drift,
             atr_pct,
         );
-        // Telemetría viva en el registro omnisciente (R-15):
+        // CL-100 (R-15 EN SOMBRA, decisión del dueño 2026-10-12): el primer
+        // toque ya no veta. Sin deriva, P(SL antes que TP) = TP/(TP + SL) =
+        // RR/(1 + RR): toda geometría con TP/SL > 7,33 se vetaba por su
+        // forma, no por la marea, y la deriva sale de la coherencia espectral
+        // por el ATR de 1 min, un modelo sin validar (LC-F4-04). Queda como
+        // telemetría por moneda: la probabilidad y si habría vetado con el
+        // umbral de antes, para medir el veto antes de devolverle poder.
         arena.registry.set_for_coin(coin_id, "p_hit_sl_first", p_hit_sl_first);
-        if p_hit_sl_first > 0.88 {
-            return rej(REJ_TARGET_GEOMETRY);
-        }
+        arena.registry.set_for_coin(
+            coin_id,
+            "r15_vetaria",
+            if p_hit_sl_first > UMBRAL_R15_SOMBRA { 1.0 } else { 0.0 },
+        );
 
         // CL-2 — EL APALANCAMIENTO SE DECIDE CON LA GEOMETRÍA YA RESUELTA.
         // Antes se calculaba ANTES de construir TP/SL: el freno de
@@ -1130,7 +1139,6 @@ impl RiskEngine {
             .trade_count
             .load(Ordering::Relaxed);
         let arranque_frio_total = trade_count == 0;
-        let es_fase_sonda = trade_count < 5;
         let p_ganar = if intent.win_probability.is_finite()
             && intent.win_probability > 0.0
             && intent.win_probability < 1.0
@@ -1173,22 +1181,29 @@ impl RiskEngine {
         if !expected_value_pct.is_finite() || !ev_fee_multiplier.is_finite() {
             return rej(REJ_INVALID_INPUT);
         }
-        // Ω46.2: En fase de sonda (n < 5), la orden es de muestreo exploratorio con
-        // sizing mínimo D-750. No se veta con rej(4) si el EV calculado con el prior
-        // del ensamble (p=0.55) cubre comisiones brutas (ev_prior > roundtrip_fee).
-        // Esto erradica el deadlock absorbente donde 1 trade perdedor congelaba
-        // permanentemente la moneda impidiéndole acumular muestra estadística.
-        if p_ganar.is_some() {
+        // Ω46.2 / D4 (CL-98): en fase de sonda (menos de `CIERRES_DE_SONDA`
+        // cierres) la orden es una sonda: se admite porque está presupuestada
+        // (una abierta en la cartera, orden mínima, pérdidas dentro del
+        // drawdown de D3), no por un EV que nadie ha medido.
+        //
+        // Antes se le pedía que el EV con un prior de 0,55 cubriera la
+        // fricción: 0,55·TP − 0,45·SL > f. El 0,55 no tenía origen (ADR-0016
+        // D4). Para CUALQUIER prior p esa condición exige TP > f/p > f, así
+        // que lo que se conserva sin inventar p es su parte común: una sonda
+        // que, si gana, no cubre la fricción de ida y vuelta no puede medir
+        // nada rentable. Con la geometría de `compute_tp_sl` (TP ≥ 1,5·SL +
+        // 2,5·f) siempre se cumple; muerde con objetivos explícitos de la
+        // intención (TP de 1 pb frente a 1 % de stop).
+        //
+        // Fuera de la fase de sonda rige D-751 íntegro.
+        if es_sonda {
+            if expected_win <= roundtrip_fee {
+                return rej(REJ_EV);
+            }
+        } else if p_ganar.is_some() {
             let ev_minimo_requerido = roundtrip_fee * ev_fee_multiplier;
             if expected_value_pct <= ev_minimo_requerido {
-                if es_fase_sonda {
-                    let ev_prior = 0.55 * expected_win - 0.45 * expected_loss;
-                    if ev_prior <= roundtrip_fee {
-                        return rej(REJ_EV);
-                    }
-                } else {
-                    return rej(REJ_EV);
-                }
+                return rej(REJ_EV);
             }
         }
 
@@ -1202,6 +1217,20 @@ impl RiskEngine {
         let max_fee_limit =
             crate::capital_regime::lerp(max_acceptable_fee_pct, 0.035, micro_w_alloc);
         let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
+        // Revisión del PR #61 (F1): la orden mínima que de verdad sale es la
+        // del LOTE, el menor múltiplo de `stepSize` con `qty ≥ minQty` y un
+        // nocional de al menos el mínimo más su margen de 0,10 USD (FASE 3),
+        // al precio actual. Con lote grueso es mayor que el nocional mínimo
+        // (BNB a 600 con paso 0,01: 6 USD, no 5,10): la viabilidad, el rescate
+        // y el tope de la sonda razonan con ella. Sin paso o precio
+        // utilizables queda el nocional mínimo de antes.
+        let nocional_minimo = crate::capital_regime::nocional_minimo_ejecutable(
+            dynamic_min_notional + 0.1,
+            spec.step_size,
+            spec.min_qty,
+            current_price,
+        )
+        .unwrap_or(dynamic_min_notional + 0.1);
         let _max_safe_leverage = if roundtrip_fee > 0.0 {
             max_acceptable_fee_pct / roundtrip_fee
         } else {
@@ -1236,7 +1265,7 @@ impl RiskEngine {
         let q_para_ruina = crate::ruin::conservative_loss_q(wr, trades_coin);
         let tope_riesgo_evento = crate::ruin::clamp_ruin(1.0, q_para_ruina);
         if !crate::capital_regime::orden_viable(
-            dynamic_min_notional,
+            nocional_minimo,
             expected_loss,
             allocated_capital,
             tope_riesgo_evento,
@@ -1288,8 +1317,9 @@ impl RiskEngine {
 
         // FASE 3 FIX: Micro-Account Notional Safety
         // Sumamos diez centavos de dólar (+0.1) al min notional para evitar rechazos
-        // por pérdida de precisión IEEE-754 en multiplicaciones de apalancamiento
-        let safe_min_notional = dynamic_min_notional + 0.1;
+        // por pérdida de precisión IEEE-754 en multiplicaciones de apalancamiento.
+        // Revisión del PR #61 (F1): y se redondea al lote (`nocional_minimo`).
+        let safe_min_notional = nocional_minimo;
         // D-750: el margen mínimo viable sale de la MISMA función que la
         // comprobación de viabilidad de más arriba: `min_notional / L`.
         let required_margin_for_min_notional =
@@ -1300,6 +1330,12 @@ impl RiskEngine {
             // borde EXACTO — la causa terminal de los 0 trades. Épsilon
             // relativo de 5 bps de margen cierra la frontera.
             final_margin = required_margin_for_min_notional * 1.0005;
+        }
+        // D4 (ADR-0016, CL-98): la sonda es la orden mínima del símbolo, con
+        // el apalancamiento ya decidido. Es información, no alfa: su tamaño no
+        // sale del Kelly de arranque en frío.
+        if es_sonda {
+            final_margin = final_margin.min(required_margin_for_min_notional * 1.0005);
         }
 
         let (meets_min_notional, _) =
@@ -1367,7 +1403,28 @@ impl RiskEngine {
             return rej(REJ_INVALID_INPUT);
         }
         let final_fee_impact = roundtrip_fee * dynamic_leverage;
-        if !final_fee_impact.is_finite() || final_fee_impact > max_fee_limit {
+        // LH-02 (Línea H / AGY): En el valle de capital ($35–$65 USD), allocated_capital
+        // sitúa a la cuenta en régimen estándar (micro_w_alloc -> 0), haciendo que
+        // max_fee_limit caiga al 1.0% de margen. Sin embargo, el dimensionamiento de
+        // posición prudente asigna un margen pequeño ($0.60–$1.50 USD) que OBLIGA a un
+        // apalancamiento L ≈ 5–10 para satisfacer el nocional mínimo de Binance ($5 USD).
+        // La comisión roundtrip multiplicada por L (0.0012 · 8 = 0.0096..0.0120) superaba
+        // el 1.0% de margen y rechazaba el 100% de las órdenes válidas con REJ_FEE_IMPACT.
+        //
+        // Solución continua: si el margen individual de la posición está en escala micro
+        // (final_margin < 3 · safe_min_notional), la posición requiere apalancamiento
+        // para alcanzar el nocional mínimo del exchange, por lo que la tolerancia sobre
+        // margen conserva el techo micro (0.035 = 3.5% de margen), garantizando la
+        // viabilidad sin relajar los frenos ante fricciones auténticamente excesivas.
+        let rescued_for_min_notional = dynamic_leverage > 1.0
+            && final_margin <= safe_min_notional * 1.05
+            && max_acceptable_fee_pct >= 0.005;
+        let effective_max_fee_limit = if rescued_for_min_notional {
+            max_fee_limit.max(0.035)
+        } else {
+            max_fee_limit
+        };
+        if !final_fee_impact.is_finite() || final_fee_impact > effective_max_fee_limit {
             return rej(REJ_FEE_IMPACT);
         }
         // CL-6: ninguna orden validada queda bajo el nocional mínimo del
@@ -1440,6 +1497,38 @@ impl RiskEngine {
                 ),
                 Ordering::Relaxed,
             );
+            // CL-106b: el mismo riesgo en USD, que no depende del capital al
+            // dimensionar; el freno duro lo compara con la caída desde el pico.
+            let riesgo_usd = safe_vol * safe_lev * sl_pct;
+            let previo_usd = arena.riesgo_por_operacion_usd.load(Ordering::Relaxed);
+            arena.riesgo_por_operacion_usd.store(
+                crate::drawdown::actualizar_riesgo_ewma(
+                    previo_usd,
+                    riesgo_usd,
+                    crate::drawdown::TRADE_HORIZON / 10.0,
+                ),
+                Ordering::Relaxed,
+            );
+            // CL-106: la geometría de la orden en unidades de su stop, con
+            // la fricción, para el umbral del freno duro de drawdown.
+            let ganancia = (expected_win - roundtrip_fee) / sl_pct;
+            let perdida = (sl_pct + roundtrip_fee) / sl_pct;
+            if ganancia.is_finite() && perdida.is_finite() && perdida > 0.0 {
+                for (celda, nuevo) in [
+                    (&arena.ganancia_en_stops, ganancia),
+                    (&arena.perdida_en_stops, perdida),
+                ] {
+                    let previo = celda.load(Ordering::Relaxed);
+                    celda.store(
+                        crate::drawdown::actualizar_riesgo_ewma(
+                            previo,
+                            nuevo,
+                            crate::drawdown::TRADE_HORIZON / 10.0,
+                        ),
+                        Ordering::Relaxed,
+                    );
+                }
+            }
         }
 
         ValidatedOrder {

@@ -1,0 +1,632 @@
+{
+ "A1-nucleo-cierre": {
+  "lente": "A1-nucleo-cierre (escéptico): lo que el núcleo aprende en cada cierre, contrastado con E1–E4 (13 USD, 3 000 velas por tramo, E1 6 000)",
+  "veredictos": [
+   {
+    "id": "A1-01",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "calibration.rs:145-151 `update_at` sólo sella `ultimo_dato_ms` y delega en `update`; :160-165 FIFO de 512 pares sin pesos; :167-178 `fit` pondera cada fila con `1 + 3,84/n` (uniforme en edad); :130-142 `calibrate_at` mezcla con el prior sólo por `dt` desde el ÚLTIMO dato. Los tests del propio módulo (:542-562) certifican que a una sola puntuación el mapa reproduce la media Beta (3,84·s + aciertos)/(3,84 + n): de ahí sale la memoria que crece con n (velocidad 1/(n + 3,84)). H2-1 (trinquete) y hallazgos_g:86 registran el olvido del hueco; «la evidencia no envejece mientras se opera» es nuevo. Severidad MED por el defecto estructural (la semivida declarada no es la memoria), aunque el daño medido sea nulo.",
+    "lo_que_dice_la_medicion": "Mecanismo confirmado: REJ_EV = 0 en el segundo tramo de E2 y de E4 (929 y 27 en frío), como exige p(0,665 → 0,43) ≥ 146 cierres. Consecuencia refutada: E2₂ −0,0632 USD frente a −0,1264 en frío (menos pérdida, no más); E4₂ −0,2441 frente a −0,2413; la puerta abierta todo el tramo (más el resto del estado heredado) dio 40 cierres frente a 36 en el nulo: ≈ 4 cierres y ≈ 0,01–0,06 USD es todo lo que la puerta EV vale a esta cadencia. Diferencias de PnL dentro del ruido (sd ≈ 0,19 USD con 40 cierres).",
+    "dueno": "Línea E (calibration.rs; H2-1 ya era suyo)"
+   },
+   {
+    "id": "A1-02",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "LOW",
+    "razon": "Código confirmado: lib.rs:261-279 halving `k.min(32)` conservando la proporción; :104-118 Wilson con Z95; :182-185 `hi < p* ⇒ 0; lo > p* ⇒ max(lo, piso); si no, piso`. Aritmética verificada: lo(0,65; 43) = 0,501, hi(0,28; 43) = 0,428, hi(0,36; 36) = 0,523 > 0,42; n vivo ∈ [21,6; 43] a 1,8 cierres/h. Pero el «nunca sube la convicción» es irrelevante: con conf_base ≥ 0,542 el piso manda de todos modos y aguas abajo la confianza satura en 0,98 (H2-N4), así que la rama es binaria (0 o piso) en cualquier caso. La inercia está registrada en espíritu (LG-1b, lazos_g:96, hallazgos_g:62/128); la cota numérica de n es nueva pero sin consecuencia observable.",
+    "lo_que_dice_la_medicion": "Ningún experimento traza la rama ni el instante de condena. Indirecto: E4₂ tuvo 45 cierres con 0 rechazos, compatible con «rama 15 no condenada con n heredado»; pero el frío (12 cierres en 50 h) ni se acercó a los 45–55 cierres que la predicción necesitaba para condenarse, así que la medición no decide.",
+    "dueno": "Línea E (lib.rs:244-279, LG-1b; H2-8 era suyo)"
+   },
+   {
+    "id": "A1-03",
+    "veredicto": "REFUTADO",
+    "severidad_final": "INFO",
+    "razon": "El lector afirma que `get_active_epigenetic_threshold` «sólo aparece en quantum-arena/tests» y que risk-engine «sólo lee epigenetic_bias». Falso: crates/risk-engine/src/lib.rs:1109-1120 lo lee (`arena.coins[coin_id].get_active_epigenetic_threshold(now_ts)`) y multiplica `min_required_confidence` por `epi_thresh.clamp(0.75, 1.35)` justo antes de `REJ_CONFIDENCE` (:1121-1122), dentro de `evaluate_quantum_order`, la misma función que el gate EV. El lazo tiene lector; es inerte en el T-3 porque conf = 0,98 y el umbral se recorta a 0,98 (H2-N4, ya registrado, Línea E). La fila 8 del inventario A1 (ola2_lazos.tsv:9, «consumidor: NINGUNO») y el arreglo propuesto («retirar el lazo») caen con ello.",
+    "lo_que_dice_la_medicion": "REJ_CONFIDENCE = 0 en los siete tramos, exactamente lo que H2-N4 ya explicaba por el techo 0,98; nada que atribuir a la ausencia de lector.",
+    "dueno": "Línea E (código, H2-N4) / Línea H (corregir ola2_lazos.tsv:9)"
+   },
+   {
+    "id": "A1-04",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "LOW",
+    "razon": "Código confirmado: lib.rs:5893 `composite_score = (raw_composite * hebbian_mult).clamp(-1.0, 1.0)`; :5916 `cuantiles.update(ofi, current_obi, composite_score, atr_pct)`; adaptive_quantiles.rs:5 «No incorpora olvido temporal, ventana móvil» y :212 `holistic_p85.update(holistic.abs())`; :5437 `piso_score_medido = dynamic_holistic_threshold()` lo consumen D-500 (:7938/:7948) y los umbrales de rama (:6448, :6532, :6746). perceptron_gate.rs:105 da lr = 0,05/(1 + 100·σ) = 0,038 con σ = 0,003 ⇒ ×1,080/×0,953 ✓. El acoplamiento hebbiano→P² no está registrado (H3-07 y lazos_g:29 registran el P² sin olvido/autorreferente; lazos_g:82 el ámbito del hebbiano). Queda PLAUSIBLE porque la predicción asociada no tiene contador que la separe de la τ/Hurst.",
+    "lo_que_dice_la_medicion": "«Más intenciones cruzan en las primeras horas del segundo tramo»: E2₂ +4 cierres (40 frente a 36), E4₂ +33 (45 frente a 12), sin traza de vetos D-500 ni del piso; el efecto en E4 es enorme pero compatible con otros portadores (DFA heredado, ausencia de sonda). Severidad LOW hasta medirlo.",
+    "dueno": "Línea C (adaptive_quantiles.rs, como H3-07) con medición de Línea H"
+   },
+   {
+    "id": "A1-05",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "INFO",
+    "razon": "t3_ventaja_conocida.rs:98 `sal = ((a·1e6) as u64) ^ (((d·1e8) as u64) << 20) ^ ((n as u64) << 44)`; :826 `larga = Peldano { n: 2*n, .. }` ⇒ otro sorteo del ruido; :773-783 `serie_concatenada` construye cada tramo con n = 3 000 ⇒ mismo prefijo que el tramo en frío.",
+    "lo_que_dice_la_medicion": "E1 (n = 6 000): â = 0,899, lectura = 0,743, oráculo 5v = +43,4 pb frente a 0,901 / 0,728 / +47,6 del tramo de 3 000: realización distinta. Compuestos: iguales = 89/89, 36/36, 89/89. El lector subestima la consecuencia: no sólo Q1 no es la ola 1; el PnL de E1 (+3,84) no es «2 × 1,41» por ninguna vía y hay que descontar acierto (×1,10) y cadencia (×0,76) antes de leer un residuo (ver A1-N1).",
+    "dueno": "Línea H"
+   },
+   {
+    "id": "A1-06",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "INFO",
+    "razon": "online_ppo.rs:109-111 `advantage = tanh(10·(r − EMA))` con r = neto/nocional ≈ ±0,005 ⇒ |adv| ≤ tanh(0,08) = 0,080; :155-158 `ratio = 1 + 0,01·feat·sign·adv` con |feat| ≤ 1,5 ⇒ |ratio − 1| ≤ 0,0012 por cierre ⇒ ≤ 11 % en 89 cierres incluso con gradiente siempre del mismo signo; además `evaluate_policy` (:181-190) divide por Σw, así que sólo cuenta el cociente entre pesos. Conclusión ya registrada (hallazgos_g:286 «no puede invertir un rasgo», lazos_g:164/83); la cota numérica es nueva pero no cambia nada.",
+    "lo_que_dice_la_medicion": "No observable (los pesos no se trazan). E4₂ es compatible con «sigue votando lo mismo»: acierto 0,333 frente a p_tp_proxy = 0,256 (+1,2 sd con n = 45) y lejos de lo que daría invertir la vela previa (1v = +17,7 pb).",
+    "dueno": "Línea E (lib.rs:4761; política en dark-alpha-engine)"
+   }
+  ],
+  "predicciones": [
+   {
+    "experimento": "E1",
+    "medida": "Cierres, acierto y PnL medio por cuartil del índice de cierre; REJ_EV; PnL total",
+    "prediccion": "160–200 cierres; acierto por cuartil ∈ [0,51; 0,79] y |Q4 − Q1| < 0,14; PnL medio por cuartil ∈ [+0,004; +0,028] USD y |Q4 − Q1| < 0,012; sin orden monótono; REJ_EV = 0; PnL total +2,3 a +3,3 USD (lineal, no compuesto, «porque el nocional es el mínimo»)",
+    "resultado": "PARCIAL",
+    "numero": "135 cierres (✗); acierto 0,788 / 0,618 / 0,588 / 0,735 (✓; |Q4 − Q1| = 0,053); PnL medio 0,0307 / 0,0208 / 0,0093 / 0,0531 USD (Q1 y Q4 fuera de [0,004; 0,028] ✗; |Q4 − Q1| = 0,0224 ✗); sin monotonía ✓; REJ_EV = 0 (sonda_ocupada = 3) ✓; PnL +3,8426 USD (✗): +29,56 % en 100 h frente a +10,83 % en 50 h; gana/pierde 0,0633/0,0460 frente a 0,0393/0,0282 del tramo de 3 000 (×1,6); max|pnl| 0,1564 frente a 0,0976; cadencia 1,35 frente a 1,78 cierres/h",
+    "que_aprende": "No hay curva de aprendizaje en el ACIERTO (U de ruido: Q1 0,79, Q3 0,59, Q4 0,74; sd binomial ≈ 0,08 con n = 34). Pero la premisa «nocional mínimo ⇒ PnL lineal» falla: Q4 paga ×1,73 lo de Q1 con 5 puntos MENOS de acierto, y, descontados acierto (×1,10) y cadencia (×0,76) de la otra realización, el pago por operación es ×1,6 el del tramo de 3 000; el capital compuesto explica ≤ ×1,15. Algo del estado crece con la experiencia en el canal tamaño/geometría, no en la dirección: candidatos PF_LCB, cuyo factor e^(−1,64·√(2/n)) (evidence.rs:85) sube con n a wr constante → kelly_fraction (core:4603-4616), o la τ dominante sin olvido (lente A3). El instrumento no lo separa (A1-N1)."
+   },
+   {
+    "experimento": "E2",
+    "medida": "primer_tramo_cierres_iguales; cierres, acierto, PnL, b y REJ_EV del segundo tramo frente al nulo en frío (36, 0,361, −0,126 USD, EV = 929)",
+    "prediccion": "iguales = n1 o n1 − 1; segundo tramo 50–90 cierres, acierto 0,32–0,42, PnL −0,40 a −0,15 USD (≥ 0,03 más negativo que −0,126), b 1,2–1,45; REJ_EV ≤ 30; PnL(E2) − PnL(ventaja) ∈ [−0,40; −0,15]",
+    "resultado": "FALLADA",
+    "numero": "iguales 89/89 ✓; segundo tramo 40 cierres (✗), acierto 0,400 (✓), PnL −0,0632 USD (✗: 0,063 MENOS negativo que el frío), b del tramo ≈ 1,31 (gana 0,0264 / pierde 0,0202, derivado del agregado: 74 ganadas × 0,0365 − 58 × 0,0393; 55 perdidas × 0,0247 − 31 × 0,0282) ✓, REJ_EV = 0 ✓; PnL(E2) − PnL(ventaja) = 1,3444 − 1,4076 = −0,0632 (✗)",
+    "que_aprende": "La premisa (puerta EV abierta todo el tramo) se cumple; la consecuencia (el estado ganador agrava el nulo) no. Los 929 rechazos del frío valen ≈ 4 cierres y ≈ 0,01–0,06 USD: un rechazo se repite 30 veces por vela mientras la intención persiste y hay un solo hueco de posición, así que 929 evaluaciones ≠ 929 entradas; la cadencia del nulo la fija la generación de intenciones, no Platt. El segundo tramo opera además MÁS PEQUEÑO que el frío (gana 0,0264 frente a 0,0340, pierde 0,0202 frente a 0,0247: ×0,8), señal de que algo del estado (sesgo epigenético, PF, τ) sí cruza la frontera, en sentido protector. La diferencia de PnL (0,063) es la tercera parte de una sd (≈ 0,19 USD)."
+   },
+   {
+    "experimento": "E3",
+    "medida": "Cierres, acierto, PnL y REJ_EV del segundo tramo frente a la ventaja en frío (89, 0,652, +1,41 USD, EV = 0); instante del primer cierre tras la frontera",
+    "prediccion": "Segundo tramo 78–92 cierres, acierto 0,60–0,69, PnL +1,05 a +1,50 USD; REJ_EV(E3) − 929 ≤ 60; primera apertura ≤ 1,5 h tras la frontera; PnL(E3) − PnL(nulo) ∈ [+1,0; +1,5]; sin estado absorbente; «si < 60 cierres o < +0,8 USD, hay un portador no modelado»",
+    "resultado": "PARCIAL",
+    "numero": "iguales 36/36 ✓; REJ_EV(E3) − 929 = 9 ✓ (reabre de inmediato; sin estado absorbente ✓); 65 cierres (✗, 73 % del frío); acierto 0,615 ✓; PnL +0,7110 USD (✗, 50 % de +1,4076); PnL(E3) − PnL(nulo) = 0,5847 + 0,1264 = +0,7111 (✗); primera apertura: NO MEDIBLE. Derivado del agregado: gana 0,0310 / pierde 0,0210 en el segundo tramo frente a 0,0393 / 0,0282 en frío (×0,76); max|pnl| del compuesto 0,0640 = el del nulo, nunca el 0,0976 del frío",
+    "que_aprende": "Se dispara el criterio de refutación que el propio lector fijó (< +0,8 USD): la mitad de la ventaja la pierde un estado que NO es Platt (9 evaluaciones y reabre) y que actúa por dos canales a la vez: cadencia ×0,73 y magnitud por operación ×0,76 (0,73 × 0,76 ≈ 0,55 ≈ 0,505 ✓). Lazos del cierre capaces de hacerlo: sesgo epigenético en 0,5 (risk lib.rs:596-599: conf ×0,6, y sólo puede ENCOGER porque 0,98·1,4 se recorta a 0,98), PF_LCB < 1 ⇒ kelly frío (¼·clamp_min), win_rate 0,365; o la τ/Hurst heredados del nulo (A3). El «suelo del nocional mínimo» no absorbe nada hacia abajo: si el frío estuviera en el suelo el segundo tramo no podría pagar menos por operación."
+   },
+   {
+    "experimento": "E4",
+    "medida": "Cierres, acierto, PnL y REJ_EV del segundo tramo frente a la antipersistencia en frío; lado frente al estado oculto y a la vela previa; cierre en que la rama 15 se condena",
+    "prediccion": "Frío: 25–50 cierres, acierto 0,22–0,35, PnL −0,45 a −0,15 USD, REJ_EV ≥ 800. Segundo tramo: 55–110 cierres (≥ 1,5 × frío), acierto 0,22–0,35, PnL −0,95 a −0,40 USD, REJ_EV ≤ 30; PnL(E4₂) − PnL(frío) ≤ −0,20; ≥ 75 % de aperturas siguen la vela previa, lado = estado ≤ 0,30; rama 15 nunca condenada en el compuesto",
+    "resultado": "PARCIAL",
+    "numero": "Frío: 12 cierres (✗), acierto 0,083 (✗), PnL −0,2413 (✓), REJ_EV = 27 (✗✗: sólo 43 intenciones llegaron al riesgo en 50 h = 12 + 27 + 4 sonda_ocupada). Segundo tramo: 45 cierres (✗ al rango, ✓ como ratio: ×3,75 ≥ ×1,5), acierto 0,333 (✓), PnL −0,2441 (✗), REJ_EV = 0 (✓); PnL(E4₂) − PnL(frío) = −0,0028 (✗). Lado y condena de la rama 15: NO MEDIBLES. Indirecto: 0,333 frente a p_tp_proxy = 0,256 (+1,2 sd, n = 45) y lejos de invertir la vela previa (1v = +17,7 pb) ⇒ sin inversión. Derivado: gana 0,0257 / pierde 0,0209 (b 1,23) frente a 0,0117 / 0,0230 (b 0,51) en frío",
+    "que_aprende": "A «¿cuántos cierres siguen la estructura vieja?» la medición responde «los 45, hasta donde el acierto deja ver» (ninguna señal de inversión; A1-06 y la regla de lado se sostienen). Pero el modelo A1 del tramo en frío es falso: al antipersistente no lo apaga Platt (27 rechazos, no ≥ 800) sino el núcleo aguas arriba, que deja de emitir intenciones (lib.rs:5994 `is_anti_persistent = hurst < 0,45` quita el camino moderado y sube los pisos OBI, :6125-6141): un freno de RASGOS, no de resultados. El estado heredado multiplica ×3,75 las entradas con la puerta EV abierta en ambos casos; la pérdida total coincide (−0,244 frente a −0,241) porque las 12 del frío son casi todas SL (acierto 0,083, b 0,51) y las 45 del cálido son brackets normales (b 1,23) con acierto 1/3: el estado viejo no cambia el lado, cambia cuántas veces se juega."
+   },
+   {
+    "experimento": "otro",
+    "medida": "Huecos sin apertura en los segundos tramos de E2–E4 atribuibles al enfriamiento frente a la puerta EV",
+    "prediccion": "Ningún hueco por enfriamiento > 30 min; todo hueco > 1 h coincide con REJ_EV acumulándose o con ausencia de confluencia, nunca con cooldown_ok = false",
+    "resultado": "NO_MEDIBLE",
+    "numero": "La salida no tiene instantes por cierre. Sólo se sabe: E2₂ = 40 y E4₂ = 45 cierres en 50 h (0,8–0,9/h, la mitad de la ventaja, 1,78/h) con REJ_EV = 0 ⇒ los huecos no son de la puerta EV; por A1 tampoco del enfriamiento (≤ 27 min); quedan confluencia y Hurst",
+    "que_aprende": "La cadencia la gobierna la generación de intenciones. Es medible en zona H: el OPEN TRACE (core:8733-8749, 100 primeras aperturas) lleva `ts`, `tau`, `rama`, `ht`; parsearlo como hace lado_vs_estado.py cubre 64 de las 65 aperturas de E3₂ pero sólo 11 de E2₂/E4₂."
+   },
+   {
+    "experimento": "otro",
+    "medida": "win_probability en cada apertura del segundo tramo (E2, E4)",
+    "prediccion": "Casi monótona decreciente desde ≈ 0,66 con pendiente −0,003/−0,004 por cierre; nunca < 0,50 (nulo) ni < 0,45 (anti) en 50 h; saltos hacia 0,98 sólo tras huecos ≥ 2 h",
+    "resultado": "NO_MEDIBLE",
+    "numero": "El runner no traza p (H2-6 sigue abierto). Cota indirecta: 0 rechazos EV en las 40 + 45 aperturas evaluadas ⇒ p ≥ p_gate (≈ 0,43–0,46) en todas ellas, compatible con la predicción",
+    "que_aprende": "Nada nuevo; la aritmética Beta (A1-01) sigue siendo la única p disponible."
+   }
+  ],
+  "nuevos": [
+   {
+    "id": "A1-N1",
+    "severidad": "MED",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 787,
+    "defecto": "E1 muestra una curva de aprendizaje en el PAGO por cierre (no en el acierto) y el instrumento no puede atribuirla: `cuartiles` publica sólo acierto y PnL medio, `Pago` (:432-445) sólo lee `out_pnl`. El runner tiene `qty` en `closed_order` (backtest lib.rs:411), el núcleo acumula `diag_notional_sum/max` (core:4437-4438) y traza `notional`, `lev`, `margin`, `conf`, `tau`, `ht`, `rama`, `ts` en las 100 primeras aperturas (core:8733-8749), pero nada de eso llega al TSV. Sin nocional y τ por cierre no se distingue «el Kelly con evidencia sube el nocional» de «la τ se alarga y el bracket paga más», y las lentes A1/A2 dieron por inertes los lazos de tamaño a 13 USD.",
+    "evidencia": "+29,56 % en 100 h frente a +10,83 % en 50 h; gana/pierde 0,0633/0,0460 frente a 0,0393/0,0282 (×1,6); max|pnl| 0,1564 frente a 0,0976; Q4 0,0531 USD/cierre con acierto 0,735 frente a Q1 0,0307 con 0,788; cadencia 1,35 frente a 1,78/h. Descontados acierto (×1,10) y cadencia (×0,76): ×1,64 por operación; capital compuesto ≤ ×1,15. Candidato de cierre: evidence.rs:85 `factor = e^(−1,64·√(2/n))` sube con n a wr constante → kelly_fraction (core:4603-4616); candidato de rasgos: τ dominante sin olvido (A3).",
+    "dueno": "Línea H (parsear OPEN TRACE por cuartil de E1 y publicar nocional/τ/lev medianos; añadir diag_notional a la fila)"
+   },
+   {
+    "id": "A1-N2",
+    "severidad": "MED",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 865,
+    "defecto": "El límite del tramo antipersistente en frío está AGUAS ARRIBA del riesgo (43 intenciones en 50 h: 12 abiertas + 27 EV + 4 sonda_ocupada), no en Platt como modela la lente (predijo ≥ 800 rechazos); el estado heredado reactiva las intenciones (45 cierres, 0 rechazos) y la fila ADAPT-TSV no tiene ninguna columna que diga qué lazo lo hace: Hurst DFA heredado (1 024 muestras, alimentado en stateful_engine.rs:921/:1079: ≈ 34 min si por tick, ≈ 17 h si por vela), hebbiano 2,0 contra pisos P² heredados (A1-04), rama 15 con n heredado, ausencia de fase de sonda. El experimento central de la adaptación queda sin atribución.",
+    "evidencia": "Frío: EV=27 sonda_ocupada=4 trades=12 acierto 0,083; cálido: trades=45 «sin rechazos» acierto 0,333; lib.rs:5994 `is_anti_persistent = hurst_val < HURST_ANTI_PERSISTENT (0,45)`, :6125-6141 quita el camino moderado y sube los pisos OBI; hurst_dfa.rs:65/72 MAX_HISTORY 1024, MIN_SAMPLES 512.",
+    "dueno": "Línea H (contar intenciones por tramo = opened + Σrechazos; parsear `ht`/`rama`/`ts` del OPEN TRACE; correr el anti en frío con T3_VELAS = 6 000 para datar cuándo el DFA lo apaga del todo; añadir E5 anti→ventaja)"
+   },
+   {
+    "id": "A1-N3",
+    "severidad": "LOW",
+    "archivo": "crates/risk-engine/src/lib.rs",
+    "linea": 597,
+    "defecto": "El sesgo epigenético es asimétrico en el T-3 y el inventario lo da por inerte en ambos sentidos «por el suelo del nocional»: con conf = 0,98, `(0,98 × clamp(bias, 0,6, 1,4)).clamp(0,05, 0,98)` no puede subir (0,98 es el techo) pero baja a 0,588 con bias ≤ 0,6 (4 pérdidas netas a ±0,15). E2₂ y E3₂ pagan MENOS por operación que el frío, lo que exige que el frío no esté en el suelo del nocional o que la τ cambie; en cualquiera de los dos casos la frase «el suelo absorbe cualquier valor» (lazos A1 filas 6 y 7) es falsa hacia abajo.",
+    "evidencia": "E3₂ gana/pierde 0,0310/0,0210 frente a 0,0393/0,0282 en frío (×0,76); E2₂ 0,0264/0,0202 frente a 0,0340/0,0247 (×0,8); max|pnl| de E3 = 0,0640 (el del nulo), nunca 0,0976; risk lib.rs:593-599.",
+    "dueno": "Línea C (tamaño) con medición de Línea H (OPEN TRACE `margin`/`notional` en E3₂: 64 de 65 aperturas trazables)"
+   },
+   {
+    "id": "A1-N4",
+    "severidad": "INFO",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 306,
+    "defecto": "`rechazos_texto` publica diferencias de REJECT_COUNTERS, que cuentan EVALUACIONES (30 por vela) de una intención que persiste mientras está vetada, no entradas evitadas: 929 rechazos EV en el nulo frío equivalen a ≈ 4 cierres (36 frente a 40 con la puerta abierta) y ≈ 0,01–0,06 USD. Leer «929 ⇒ la puerta cerró media corrida» (lente A1, H2-2) sobreinterpreta el contador y sobreestima lo que la puerta EV protege.",
+    "evidencia": "E2: rechazos_fresco EV=929 / rechazos_compuesto «sin rechazos» con 36 frente a 40 cierres; E3: 938 − 929 = 9 tras la frontera; README: «una evaluación de intención por tick, 30 ticks por vela».",
+    "dueno": "Línea H (añadir «velas con ≥ 1 rechazo» o episodios contiguos al TSV)"
+   },
+   {
+    "id": "A1-N5",
+    "severidad": "INFO",
+    "archivo": "docs/audit/linea_h/ola2_lazos.tsv",
+    "linea": 9,
+    "defecto": "La fila «epigenetic_threshold_modifier … consumidor: NINGUNO fuera de telemetría y tests» es falsa: crates/risk-engine/src/lib.rs:1109-1120 lo lee y escala `min_required_confidence` ×[0,75; 1,35] antes de REJ_CONFIDENCE. La inercia viene del techo 0,98 (H2-N4), no de la ausencia de lector; el arreglo de A1-03 («retirar el lazo») no procede.",
+    "evidencia": "grep `get_active_epigenetic_threshold` → crates/risk-engine/src/lib.rs:1109; :1121-1122 `if confidence < min_required_confidence { return rej(REJ_CONFIDENCE) }`.",
+    "dueno": "Línea H (corregir inventario) / Línea E (H2-N4)"
+   }
+  ],
+  "sintesis": "Según la medición el sistema NO adapta la dirección: en E4 los 45 cierres del segundo tramo son compatibles con seguir la vela previa (acierto 0,333 ≈ p_tp_proxy 0,256) y en E1 el acierto por cuartil es una U de ruido (0,79/0,62/0,59/0,74). Sí adapta dos cosas que la lente A1 declaró inertes a 13 USD: el PAGO por operación (E1 ×1,6 con acierto plano; E2₂/E3₂ ×0,76–0,8 tras un tramo perdedor) y la CADENCIA de intenciones (E4: 12 en frío frente a 45 con estado heredado; E1: 1,35/h frente a 1,78/h). El lazo que decide PERMISO (Platt → REJ_EV) hace exactamente lo que A1-01 predice —no cierra con historia heredada (0 rechazos en E2₂/E4₂) y reabre en 9 evaluaciones tras el nulo (E3)—, pero su efecto en dinero es nulo: los 929 rechazos del nulo frío valen 4 cierres. El lazo que ESTORBA es el que ningún contador ve: tras el nulo la ventaja rinde la mitad (+0,711 frente a +1,408) con la puerta abierta, por tamaño (sesgo epigenético 0,5 → conf ×0,6; PF_LCB < 1 → kelly frío) y/o τ heredada; tras la ventaja el antipersistente se opera 3,75 veces más. El lazo que NO EXISTE es el que invierta o apague la estructura vieja desde los cierres: hebbiano y PPO sólo escalan, la rama 15 no se condena con n heredado, y el único freno real del antipersistente (Hurst < 0,45) es de rasgos, no de resultados. Dos piezas del lector caen: A1-03 (el umbral epigenético sí tiene lector, risk lib.rs:1109; inerte por el techo 0,98) y la mitad de sus números (E2 FALLADA; E1/E3/E4 PARCIALES con la premisa correcta y la consecuencia equivocada). Arreglo en zona H, sin tocar el runner: (a) un script/test nuevo que parsee el OPEN TRACE (100 primeras aperturas: notional, lev, margin, conf, tau, ht, rama, ts) y publique por cuartil de E1 y para E3₂ (64/65 trazables) el nocional y la τ medianos, que separan tamaño de geometría; (b) añadir al ADAPT-TSV el número de intenciones por tramo (opened + Σrechazos) y las velas con rechazo; (c) un anti en frío con T3_VELAS = 6 000 para datar cuándo el DFA lo apaga, y un E5 anti→ventaja; (d) corregir ola2_lazos.tsv:9."
+ },
+ "A2-riesgo-evidencia": {
+  "lente": "A2 — la evidencia del riesgo y la reapertura del EV (envolvente de Kelly, puerta EV con la p de Platt, q/tope de ruina, drawdown, sonda) sobre run_backtest_native a 13 USD, contrastada con E1–E4",
+  "veredictos": [
+   {
+    "id": "A2-01",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "calibration.rs:133-141: calibrate_at mezcla p_ajustada con la PUNTUACIÓN CRUDA (prior = score) con w = 2^(−Δt/SEMIVIDA) medido desde ultimo_dato_ms, y update_at (:146-152) sólo sella ese reloj; fit() (:168-178) pesa los 512 pares por igual (1 + 3,84/n), así que a una sola puntuación el ajuste es la media Beta (3,84·s + k)/(3,84 + n) — el propio módulo lo usa como oráculo en su test (beta_mean, :530). La aritmética del lector (p = 0,665 tras 89 cierres a 0,652; ≈ 310 cierres al 36 % para bajar de 0,43; Δt* = 12 h·log2((s − p_adj)/(s − p_gate)) ≈ 0,3 h desde 0,421) se deriva de esas líneas. Parcialmente registrado (H2-1 da la fórmula; LEDGER:443-444 dice «horas», sólo cierto con p_adj ≤ 0,30).",
+    "lo_que_dice_la_medicion": "Mecanismo confirmado: E2 tramo 2 (p entrante 0,665) REJ_EV = 0 en 40 cierres; E4 tramo 2 REJ_EV = 0 en 45; E3 tramo 2 REJ_EV = 938 − 929 = 9 evaluaciones (< 1 vela a 30 evaluaciones/vela) con p_adj 0,421: la reapertura fue inmediata. Daño NO confirmado: E2 tramo 2 −0,063 USD frente a −0,126 del nulo en frío en el mismo camino; E4 −0,244 frente a −0,241. La inercia de la puerta es real y no costó nada a 13 USD.",
+    "dueno": "Línea E (calibration.rs) — fuera de la zona propia de la Línea H"
+   },
+   {
+    "id": "A2-02",
+    "veredicto": "REFUTADO",
+    "severidad_final": "LOW",
+    "razon": "La ventana no monótona existe (kelly_envelope.rs:387-389 exime f ≤ 0 con f = clamp_ruin(f_min, q); :408-410 veta 0 < f < f_min) y YA está registrada (H1-N3; hallazgos.tsv:372 de la Línea G). Lo nuevo del hallazgo — que la ventana se ensancha ×6 (f_min 0,0098) cuando dos posiciones retienen 5,4 USD a 1× — es un estado que la puerta NUNCA evalúa: booktick_replay.rs:692 devuelve antes de dictaminar si prev_open, así que en toda evaluación la única posición abierta es la recién creada, con el margen validado por el riesgo (≈ 0,9 USD; el reajuste a 1× ocurre DESPUÉS, :786-795) ⇒ cap_now ≈ 12,1 y f_min ≈ 5,4·0,0045/12,1 ≈ 0,002, nunca 0,0098. El propio A2-07 del lector lo contradice. Con esa anchura (≈ 0,0013 en p_lcb) el cruce de E3 (m ≈ 32-33 cierres del tramo 2: p_lcb 0,426 → 0,4325, kelly −0,001 → +0,0026, f ≈ 0,0023 > 0,002) salta la ventana en un paso.",
+    "lo_que_dice_la_medicion": "opened − closes = 0 en los cuatro experimentos (135/135, 129/129, 101/101, 134/134): ninguna reversión de la envolvente ni en el cruce ascendente de E3 ni en el descendente de E4 (que con 45 cierres no llegó a los 50-70 previstos).",
+    "dueno": "Línea C (envolvente / replay)"
+   },
+   {
+    "id": "A2-03",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "MED",
+    "razon": "Cada pieza está registrada: drawdown 63,2 % en micro (H1-04; lib.rs:345-348 con d* = 1 − 0,05^(0,5/1,5) = 0,632 en drawdown.rs:193-197, confirmado), envolvente exenta con f ≤ 0 (H2-5; kelly_envelope.rs:387), tope de ruina ≥ 0,10 frente a f_min 0,0017 (lazos.tsv:187 / ruin.rs:60-62), reapertura por olvido (H2-1). La composición «ningún freno vincula a 13 USD» es correcta por código, pero el escenario que la eleva a HIGH (E4: 80-150 cierres, −0,9 a −2,5 USD) supone que el núcleo abre ≥ 1,5/h, y la rama alternativa del propio hallazgo (el núcleo deja de abrir) es la que ocurrió.",
+    "lo_que_dice_la_medicion": "Caída máxima en los siete tramos: 2,6 % (E4 compuesto), 2,0 % (E3), 1,3 % (E1): a 25× del umbral. E4 tramo 2: 45 cierres (0,9/h), −0,244 USD (−1,9 %), pérdida por cierre −0,0054 USD, no −0,015/−0,02. Ningún REJ_DRAWDOWN, ninguna reversión. El freno que faltaba no hizo falta en 50 h; lo que limitó la pérdida fue la cadencia del núcleo.",
+    "dueno": "Línea C (riesgo); LG-9 pendiente"
+   },
+   {
+    "id": "A2-04",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "LOW",
+    "razon": "backtest-engine/src/lib.rs:389-409: el runner suaviza |pnl_net| con α 0,05 (clasificando pnl_net ≥ 0 como ganancia, :391) y pasa el resultado a record_trade con won = pnl_net > 0 (:404-408); kelly_envelope.rs:202-224 vuelve a suavizar con α 0,05 y enruta por `won`. Un cierre a 0 decae avg_win en el runner y cuenta como pérdida en el posterior. lazos.tsv:140 (Línea G) registra la ruta del HOST (god_engine.rs:3522), no la del runner ni la discrepancia ≥ 0 / > 0: esa parte es nueva.",
+    "lo_que_dice_la_medicion": "No medible: la b de la envolvente no sale del runner (H1-07). En micro sólo mueve el margen retenido y no hubo reversiones (0 en E1-E4). La b_real del compuesto E4 SUBIÓ a 1,484 (no bajó a 1,15-1,30), lo que no habla de la envolvente sino del pago realizado.",
+    "dueno": "Motor del backtest (src/lib.rs, fuera de la zona propia de H) / Línea C"
+   },
+   {
+    "id": "A2-05",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "MED",
+    "razon": "H2-2 (lectores.tsv:12) y hallazgos risk-a:354/355 ya dicen que la puerta consume la p puntual y que la rama jerárquica (lib.rs:1162-1174, sólo si win_probability ∉ (0,1)) es inalcanzable; confirmado en lib.rs:1154-1176 y en core lib.rs:8158-8166, que siempre adjunta cal_prob ∈ (0,1). Lo único nuevo es n₁ ≈ 30 de 36 para el nulo medido.",
+    "lo_que_dice_la_medicion": "Consistente y apoyado por el par E2: el mismo camino del nulo con la puerta abierta dio 40 cierres frente a 36, es decir los 929 REJ_EV bloquearon ≈ 4 cierres al final del tramo (p = (3,76 + 13)/39,84 = 0,421 sólo bajo 0,43 desde el cierre ≈ 30-36); E2 compuesto: REJ_EV = 0.",
+    "dueno": "Línea C (puerta EV)"
+   },
+   {
+    "id": "A2-06",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "LOW",
+    "razon": "t3_ventaja_conocida.rs:98 `sal = … ^ ((n as u64) << 44)` y :826 `larga = Peldano { n: 2 * n }`: la serie de 6 000 velas es otra realización. La regla de resta para los rechazos del tramo 2 (compuesto − fresco del primer tramo) es válida porque el prefijo es idéntico (:860-863 lo verifica).",
+    "lo_que_dice_la_medicion": "E1 tiene otros estadísticos de serie que la ventaja de 3 000 (â 0,899/0,901; lectura 0,743/0,728; oráculo 5v +43,4/+47,6 pb; p_tp 0,630/0,657) y sus 67 primeros cierres (Q1+Q2, acierto 0,70) no son los 89 del fresco. La resta funcionó: E3 REJ_EV tramo 2 = 938 − 929 = 9; prefijos 89/89, 36/36, 89/89.",
+    "dueno": "Línea H (zona propia: tests)"
+   },
+   {
+    "id": "A2-07",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "MED",
+    "razon": "MEMORIA:4140-4141 lo dice literalmente («el replay no evalúa la envolvente en la 2.ª/3.ª ranura de una moneda con otra abierta; el host sí»); booktick_replay.rs:692 `if prev_open { return true; }` confirmado. La consecuencia que el lector no sacó: es exactamente lo que hace inalcanzable la ventana ×6 de su A2-02 (cap_now en la evaluación ≈ capital − 0,9).",
+    "lo_que_dice_la_medicion": "Sin efecto medible aquí (0 reversiones en E1-E4); la cobertura de 1/3 de las aperturas sigue siendo un agujero fuera de micro (H3-N1), no a 13 USD.",
+    "dueno": "Línea C (replay/envolvente)"
+   },
+   {
+    "id": "A2-08",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "LOW",
+    "razon": "lazos.tsv:187 (Línea G) registra el doble prior y el 0,60 sin cierres; ruin.rs:90-99 y evidence.rs:103-120 lo confirman (win_rate ya posteriorizado con k = 3,84 a 0,40 → Beta(½ + n·w, ½ + n(1 − w))).",
+    "lo_que_dice_la_medicion": "Inerte, como dice el hallazgo: ningún REJ_VIABILIDAD/REJ_OTROS en los siete tramos; E3 al cierre 36 (wr 0,365, tope ≈ 0,144 ≫ 0,0017) operó sin traba.",
+    "dueno": "Línea C (riesgo)"
+   },
+   {
+    "id": "A2-09",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "LOW",
+    "razon": "G050 (PLAN_LINEA_G:220). booktick_replay.rs:713-714 calcula stop_pct del stop real y :754-769 usa sl_at_tau(τ_entry) de la curva del gen (genome.rs:2115) en lev_from_risk: dos stops en la misma función, confirmado; los valores 0,18-0,25 % de la curva no los verifiqué (dependen de sl_horizon_curve).",
+    "lo_que_dice_la_medicion": "No medible (el apalancamiento de envío no sale); en micro sólo cambia el margen retenido y no hubo reversiones.",
+    "dueno": "Línea G (G050)"
+   },
+   {
+    "id": "A2-10",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "INFO",
+    "razon": "R-18 (LEDGER:137: el gen vale 1,0 bajo el suelo 1,05); lib.rs:1187-1192 confirmado (min_ev_mult = 1,05 + 0,20·scarcity → 1,25 en micro; p_gate ≈ 0,43).",
+    "lo_que_dice_la_medicion": "El número del escenario («50-65 cierres si la puerta no se cerrase») lo contradice E2: el mismo camino del nulo con la puerta abierta todo el tramo dio 40 cierres.",
+    "dueno": "Línea C (riesgo)"
+   }
+  ],
+  "predicciones": [
+   {
+    "experimento": "E1",
+    "medida": "Acierto por cuartil del índice de cierre (m_l.pnl)",
+    "prediccion": "Cuatro cuartiles en [0,55; 0,75], |Q4 − Q1| ≤ 0,10, sin tendencia monótona; global 0,58-0,70",
+    "resultado": "PARCIAL",
+    "numero": "Q1 0,788 / Q2 0,618 / Q3 0,588 / Q4 0,735 (Q1 fuera del rango); |Q4 − Q1| = 0,053; global 0,681; 135 cierres",
+    "que_aprende": "No hay mejora con la experiencia (el mejor cuartil es el primero, el peor el tercero); la dispersión muestral (±0,07 en 34 cierres) es mayor que el rango que el lector concedió."
+   },
+   {
+    "experimento": "E1",
+    "medida": "PnL medio por cierre por cuartil y max|pnl|",
+    "prediccion": "Cuartiles en [+0,004; +0,022] USD, |Q4 − Q1| ≤ 0,008, max|pnl| ≤ 0,12, nocional 5,4-5,9 (Q4 ≤ 1,10·Q1)",
+    "resultado": "FALLADA",
+    "numero": "Q1 0,0307 / Q2 0,0208 / Q3 0,0093 / Q4 0,0531; |Q4 − Q1| = 0,0224; Q4/Q1 = 1,73; max|pnl| 0,1564; pago E1 gana 0,0633/pierde 0,0460 (ventaja 3 000: 0,0393/0,0282)",
+    "que_aprende": "El pago por cierre de E1 es 1,6× el de la ventaja de 3 000 con la misma b (1,38/1,40): o el nocional no está clavado en 5,4 o la duración/salida cambió; el test no imprime nocional ni τ por cierre, así que la hipótesis «tamaño invariante» no es verificable con esta salida."
+   },
+   {
+    "experimento": "E1",
+    "medida": "Rechazos del riesgo y reversiones de la envolvente",
+    "prediccion": "REJ_EV ≤ 10, drawdown/confianza/viabilidad/min_notional/fee_impact = 0, opened − closes = 0",
+    "resultado": "CUMPLIDA",
+    "numero": "REJ_EV 0; único rechazo sonda_ocupada = 3 (no enunciado); opened 135 = closes 135",
+    "que_aprende": "En 100 h de ventaja estacionaria el riesgo no toca nada: p de Platt siempre > 0,43 y la envolvente nunca revierte."
+   },
+   {
+    "experimento": "E2",
+    "medida": "primer_tramo_cierres_iguales y REJ_EV del compuesto",
+    "prediccion": "89/89; REJ_EV ≤ 60 (frente a 929); ningún otro rechazo > 5",
+    "resultado": "CUMPLIDA",
+    "numero": "89/89; rechazos del compuesto: ninguno (REJ_EV 0 frente a 929 del nulo fresco)",
+    "que_aprende": "La p aprendida (0,665) mantiene la puerta abierta durante 40 cierres del nulo: la inercia de A2-01 es real."
+   },
+   {
+    "experimento": "E2",
+    "medida": "segundo_tramo_trades / wr / pnl frente al nulo fresco (36, 0,361, −0,126)",
+    "prediccion": "40-70 cierres; acierto 0,28-0,44; PnL −0,35 a −0,08: el estado ganador AGRAVA, nunca reduce",
+    "resultado": "PARCIAL",
+    "numero": "40 cierres (en el borde), wr 0,400, PnL −0,063 USD; diferencia frente al fresco +0,063 (predicho entre −0,35 y −0,08); pago derivado del tramo 2 gana 0,0264/pierde 0,0202",
+    "que_aprende": "Cadencia y acierto acertados, signo del efecto refutado: en el mismo camino, el estado ganador perdió la MITAD que el nulo en frío. La puerta abierta no agravó; el pago por cierre se encogió ≈ 20 % sin que el riesgo actuase."
+   },
+   {
+    "experimento": "E2",
+    "medida": "Reversiones de la envolvente en el tramo nulo y margen retenido",
+    "prediccion": "0 reversiones; exec 4-5× (margen 1,1-1,4 USD)",
+    "resultado": "CUMPLIDA",
+    "numero": "opened 129 = closes 129 → 0 reversiones; margen retenido no medible",
+    "que_aprende": "El posterior (≈ 0,57 tras 129 cierres) queda lejos del equilibrio; la envolvente no interviene."
+   },
+   {
+    "experimento": "E3",
+    "medida": "Velas hasta reabrir, REJ_EV del tramo 2 (= compuesto − 929), 36/36",
+    "prediccion": "Primera apertura entre las velas 3 005-3 090; REJ_EV tramo 2 ≤ 150; 36/36",
+    "resultado": "CUMPLIDA",
+    "numero": "36/36; REJ_EV tramo 2 = 938 − 929 = 9 evaluaciones (< 1 vela); vela de la primera apertura: no medible con esta salida",
+    "que_aprende": "La puerta EV reabre casi al instante tras el nulo (p_adj 0,421 → Δt* ≈ 0,3 h, un acierto la fija en 0,435): el estado absorbente NO está en la puerta EV."
+   },
+   {
+    "experimento": "E3",
+    "medida": "segundo_tramo_trades / wr / pnl frente a la ventaja fresca (89, 0,652, +1,408)",
+    "prediccion": "76-90 cierres; acierto 0,58-0,70; PnL +1,10 a +1,45 (≥ 85 % de la ventaja fresca); no hay estado absorbente",
+    "resultado": "FALLADA",
+    "numero": "65 cierres (−27 %), wr 0,615, PnL +0,711 USD = 50,5 % del fresco; PnL(E3) − PnL(nulo) = 0,585 + 0,126 = 0,711; max|pnl| del compuesto 0,0640 (el del nulo) < 0,0976; pago derivado del tramo 2 gana 0,031/pierde 0,021 (−21 %/−25 %)",
+    "que_aprende": "La mitad de la ventaja se pierde con el riesgo completamente abierto (9 REJ_EV, 0 otros, 0 reversiones, 0 vetos de consejo/ML en el tramo 2): hay un estado parcialmente absorbente aguas arriba del riesgo (cadencia y tamaño/duración del cierre), invisible a la lente A2."
+   },
+   {
+    "experimento": "E3",
+    "medida": "opened − closes del compuesto (reversiones de la envolvente)",
+    "prediccion": "30-400 aperturas revertidas entre los cierres 55 y 85",
+    "resultado": "FALLADA",
+    "numero": "opened 101 = closes 101 → 0 reversiones",
+    "que_aprende": "El cruce del equilibrio (≈ cierre 68-69 del compuesto) saltó la ventana vetada porque ésta mide ≈ 0,0013 en p_lcb (cap_now ≈ 12,1 en la evaluación, por :692), no las 6 veces más que el lector supuso."
+   },
+   {
+    "experimento": "E4",
+    "medida": "lado_del_estado y acierto del tramo 2",
+    "prediccion": "lado_del_estado ≤ 0,30 y acierto ≤ 0,28",
+    "resultado": "FALLADA",
+    "numero": "acierto tramo 2 = 0,333 (fresco 0,083); lado_del_estado: no medido en los compuestos (NO_MEDIBLE)",
+    "que_aprende": "El motor con el estado de la ventaja acierta 4× más que en frío sobre el mismo camino antipersistente: algo de la conducta sí cambia (duración o salida), aunque la dirección siga siendo la vela previa."
+   },
+   {
+    "experimento": "E4",
+    "medida": "REJ_EV del tramo 2 y cierres hasta el primero",
+    "prediccion": "Primer REJ_EV tras ≥ 65 cierres; 300-3 000 si el núcleo abre ≥ 1,5/h, ≤ 100 si deja de abrir",
+    "resultado": "CUMPLIDA",
+    "numero": "REJ_EV tramo 2 = 0; 45 cierres en 50 h (0,9/h, rama «el núcleo deja de abrir»); p al final ≈ (3,76 + 73)/137,84 = 0,557 > 0,43",
+    "que_aprende": "La puerta no se cerró en todo el tramo antipersistente, como la aritmética de A2-01 exige; la cadencia la puso el núcleo, no el riesgo."
+   },
+   {
+    "experimento": "E4",
+    "medida": "segundo_tramo_pnl / trades frente al antipersistente fresco",
+    "prediccion": "80-150 cierres y −2,5 a −0,9 USD (peor que el fresco, 25-60 cierres, −1,0 a −0,3), o ≤ 25 cierres y −0,5 a −0,1 en ambos; acierto ≤ 0,30",
+    "resultado": "FALLADA",
+    "numero": "tramo 2: 45 cierres, −0,244 USD; fresco: 12 cierres, −0,241; diferencia −0,003 (predicho [−1,8; −0,4]); pérdida por cierre −0,0054 frente a −0,0201; wr 0,333",
+    "que_aprende": "El estado ganador no multiplica las pérdidas: 33 cierres más al mismo coste total. Los frenos ausentes (A2-03) no costaron nada medible; dd máximo 2,6 %."
+   },
+   {
+    "experimento": "E4",
+    "medida": "opened − closes y b_real del compuesto",
+    "prediccion": "Con p ≈ 0,4 una ráfaga de 20-300 reversiones entre los cierres 50-75 del tramo 2; b_real del compuesto baja a 1,15-1,30",
+    "resultado": "PARCIAL",
+    "numero": "0 reversiones (134/134; el tramo tuvo 45 cierres, no llegó a 50); b_real compuesto 1,484 (SUBE desde 1,40); b derivada del tramo 2 = 0,0257/0,0209 = 1,23",
+    "que_aprende": "La b del tramo antipersistente sí cae a 1,23, pero la del compuesto sube porque las pérdidas del tramo 2 son más pequeñas (0,0209) que las de la ventaja (0,0282): el pago se mide mal si se mezcla el prefijo."
+   },
+   {
+    "experimento": "otro",
+    "medida": "Antipersistente fresco (a = 0,1)",
+    "prediccion": "25-60 cierres, acierto 0,08-0,25, PnL −1,0 a −0,3, REJ_EV 800-3 500 (el mayor de la escalera), b_real < 1,25",
+    "resultado": "FALLADA",
+    "numero": "12 cierres, wr 0,083, PnL −0,241, REJ_EV 27 + sonda_ocupada 4 (el nulo tiene 929), b_real 0,51",
+    "que_aprende": "El núcleo casi no propone en antipersistencia (≈ 43 evaluaciones en 90 000 ticks): la puerta EV se cerró tras la sonda (p = 3,76/8,84 = 0,425) pero sólo tuvo 27 ocasiones de rechazar; el supuesto «≥ 1,5 aperturas/h» era falso."
+   },
+   {
+    "experimento": "otro",
+    "medida": "Determinismo del prefijo (primer_tramo_cierres_iguales)",
+    "prediccion": "89/89 en E2 y E4, 36/36 en E3",
+    "resultado": "CUMPLIDA",
+    "numero": "89/89, 36/36, 89/89",
+    "que_aprende": "El reescalado por ratio y la longitud del búfer no contaminan el prefijo; la resta compuesto − fresco es legítima."
+   }
+  ],
+  "nuevos": [
+   {
+    "id": "A2-N1",
+    "severidad": "MED",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 864,
+    "defecto": "E3 pierde la mitad de la ventaja (65 cierres, +0,711 USD, wr 0,615 frente a 89, +1,408, 0,652 en el MISMO camino) con la cadena del riesgo abierta: REJ_EV del tramo 2 = 9, otros rechazos 0, reversiones 0, vetos de consejo 0 (los 6 son del nulo) y ML 0. El estado absorbente que la lente A2 negó existe a medias y está aguas arriba del riesgo (cadencia: −27 % de cierres; y tamaño o duración del cierre: pago derivado gana 0,031/pierde 0,021, −21 %/−25 %; max|pnl| del compuesto 0,0640 = el del nulo). Ningún lazo del inventario A2 lo produce ni lo ve.",
+    "evidencia": "[T3-ADAPT-TSV] E3: 101, 0,5248, 0,58468, 36/36, 65, 0,71104, 0,6154, 89, 1,40762, 0,6517, EV=938, sin rechazos; traza opened=101 council_vetoes=6 ml_vetoes=0 closes=101; max|pnl| 0,0640",
+    "dueno": "Línea H (instrumento por cierre) + A3/núcleo (τ y cadencia)"
+   },
+   {
+    "id": "A2-N2",
+    "severidad": "MED",
+    "archivo": "crates/risk-engine/src/lib.rs",
+    "linea": 1215,
+    "defecto": "La puerta EV no protege en el nulo: en el mismo camino, cerrada 929 veces (fresco) → 36 cierres, −0,126 USD, wr 0,361; abierta todo el tramo (E2, estado de la ventaja) → 40 cierres, −0,063, wr 0,400. Los ≈ 4 cierres que la puerta evitó al final del tramo no redujeron la pérdida; la selectividad de REJ_EV sobre el nulo es nula o negativa, coherente con que las operaciones que entran al reabrir por olvido (H2-1) sean las peores. Muestra pequeña (4 cierres, 0,06 USD, σ de la suma ≈ 0,19 USD) pero apareada en el camino.",
+    "evidencia": "[T3-ADAPT-TSV] E2: 40 / −0,06321 / 0,4000 frente a fresco 36 / −0,12637 / 0,3611; rechazos compuesto: ninguno; fresco EV=929",
+    "dueno": "Línea C (puerta EV) / Línea E (calibrador)"
+   },
+   {
+    "id": "A2-N3",
+    "severidad": "LOW",
+    "archivo": "crates/risk-engine/src/lib.rs",
+    "linea": 1211,
+    "defecto": "En el camino antipersistente la puerta EV tampoco decide el resultado: con la puerta cerrada tras la sonda (fresco: 27 REJ_EV, 12 cierres) se perdió −0,241; con la puerta abierta todo el tramo (E4: 0 REJ_EV, 45 cierres) −0,244. Lo que limita la pérdida es la tasa de propuesta del núcleo (fresco ≈ 12 + 27 + 4 = 43 evaluaciones en 90 000 ticks), no ningún freno del riesgo; el pago derivado del tramo 2 (gana 0,0257/pierde 0,0209 frente a 0,0117/0,0230 fresco) dice que el estado heredado cambia la salida, no el permiso.",
+    "evidencia": "[T3] anti: trades=12 wr=0,083 pnl=−0,2413 rechazos EV=27 sonda_ocupada=4; [T3-ADAPT-TSV] E4: 45 / −0,24411 / 0,3333; rechazos compuesto: ninguno",
+    "dueno": "A3/núcleo (propuesta) + Línea H (traza)"
+   },
+   {
+    "id": "A2-N4",
+    "severidad": "LOW",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 866,
+    "defecto": "La fila [T3-ADAPT-TSV] no publica el Pago del segundo tramo (gana/pierde/b/max|pnl|) ni el del fresco, y los rechazos del tramo 2 sólo se obtienen restando a mano; el patrón que la medición revela — el pago por cierre del segundo tramo se encoge ≈ 20 % en E2 (0,0264/0,0202 frente a 0,0340/0,0247) y E3 (0,031/0,021 frente a 0,0393/0,0282) con el nocional clavado en la orden mínima (lib.rs:1311-1345) y sin acción del riesgo — sólo se ve derivándolo de los totales, y no puede atribuirse a τ, a motivo de salida o a nocional porque el test no cuenta la traza por apertura que el núcleo ya emite ([OPEN TRACE] core lib.rs:8735: τ, rama, lev, margin, notional).",
+    "evidencia": "t3:866-879 imprime stats[1], stats[0], stats[6], pago.b_real del COMPUESTO y segundo.len()/sum/acierto; no Pago::de_cierres(segundo)",
+    "dueno": "Línea H (zona propia: tests)"
+   },
+   {
+    "id": "A2-N5",
+    "severidad": "INFO",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 835,
+    "defecto": "E1 paga 1,6× por cierre que la ventaja de 3 000 (gana 0,0633/pierde 0,0460/max 0,1564 frente a 0,0393/0,0282/0,0976) con la misma b (1,38/1,40): una pérdida media de 0,046 USD sobre 5,4 USD de nocional es un movimiento del 0,85 % (stop 0,5 % + fricción 0,1 %) — huecos de vela o nocional mayor, indecidible sin el nocional por apertura. No es cambio de régimen: a 16,8 USD trades_of_room = 3,12 y micro_w = 0,997 (capital_regime.rs:94-107).",
+    "evidencia": "[T3] n=6000: pago gana 0,0633/pierde 0,0460 b=1,38 max|pnl|=0,1564 capital=16,8426; [T3] n=3000: 0,0393/0,0282 b=1,40 max 0,0976",
+    "dueno": "Línea H (zona propia: tests)"
+   }
+  ],
+  "sintesis": "El sistema sí se adapta, pero no donde la lente A2 miraba: en los tres compuestos el segundo tramo difiere del fresco sobre el mismo camino (E2 40 cierres/−0,063 USD frente a 36/−0,126; E3 65/+0,711 frente a 89/+1,408; E4 45/−0,244 frente a 12/−0,241) con la cadena del riesgo prácticamente inerte (REJ_EV del tramo 2 = 0, 9 y 0; otros rechazos 0; reversiones de la envolvente 0; vetos de consejo/ML 0). El único lazo del riesgo que decide algo a 13 USD es la puerta EV con la p de Platt, y su mecánica queda confirmada (inercia tras 89 aciertos: p 0,665, ≈ 310 cierres para cerrarse; reapertura inmediata tras el nulo: p 0,421, 9 evaluaciones rechazadas), pero su valor medido es nulo: donde se cerró (nulo fresco 929, anti fresco 27) no redujo la pérdida frente al mismo camino con la puerta abierta. Los lazos que «estorban» según el inventario (ventana no monótona de la envolvente, drawdown 63 %, tope de ruina, doble prior) no actuaron ni una vez (dd máximo 2,6 %), y la ventana ×6 de A2-02 es inalcanzable por el propio :692 (la envolvente sólo evalúa con la cartera vacía, cap_now ≈ 12,1). El lazo que no existe en el riesgo es cualquiera que cambie la cadencia o la duración; y es justo eso lo que la medición revela aguas arriba: tras la ventaja el sistema opera MÁS en nulo y anti (40 frente a 36; 45 frente a 12) y tras el nulo opera MENOS en la ventaja (65 frente a 89) con pagos por cierre un 20-25 % menores, un estado parcialmente absorbente (la mitad de la ventaja) que el riesgo ni produce ni ve y que E1 no muestra (cuartiles 0,788/0,618/0,588/0,735, sin tendencia). Las predicciones de A2 aciertan en lo mecánico (determinismo 89/89-36/36-89/89, REJ_EV 0/9/0, reversiones 0) y fallan en el signo de todas las consecuencias (E2/E4 «agrava»: refutado; E3 «≥ 85 %»: 50 %; ráfaga de reversiones: 0; anti fresco 800-3 500 REJ_EV: 27). Arreglo en zona propia de la Línea H: (a) en t3_adaptacion_en_el_tiempo publicar Pago::de_cierres(segundo) y del fresco, y los rechazos del tramo 2 como resta explícita; (b) construir E1 como serie_concatenada(ventaja, ventaja) para que el prefijo sea idéntico (A2-06); (c) contar en el test, por tramo, la traza por apertura que el núcleo ya emite bajo TG_TRACE_NATIVO ([OPEN TRACE]: τ, rama, nocional, margen) para atribuir la pérdida de E3 a τ/cadencia o a nocional; (d) añadir E3b (nulo de 1 500 velas → ventaja) y E3c (nulo → 12 h de velas planas → ventaja) para separar la memoria de cadencia del olvido por tiempo; (e) dejar escrito en docs/audit/linea_h que a 13 USD ningún freno del riesgo vincula y que la puerta EV no protege en el nulo ni en el anti (comparación apareada)."
+ },
+ "A3-direccion-tau": {
+  "lente": "A3-direccion-tau",
+  "veredictos": [
+   {
+    "id": "LH-A3-1",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "HIGH",
+    "razon": "lib.rs:1966-1970 aplana si sign(signal) ≠ sign(composite) (D-472); composite = clamp(raw·w, −1, 1) en :5893 con w leído en [0,5, 2] (:5072-5076, positivo); conviccion_de_rama_en (:181-188) devuelve {0, piso, max(lo,piso)} — sólo apaga; skill_motores.rs:39/227-230 PISO_EXPLORACION = 0,15 con ic.clamp(0,1): el IC negativo va al piso, nunca invierte; la rama RAMA_REVERSION_ANTIPERSISTENTE vive dentro del bloque `if book_absent && …` (:6189 → :6374-6388) y en el runner bid/ask = vol·0,8/0,2 > 0 siempre (backtest lib.rs:153-160), así que es inalcanzable. Matiz: el lado NO es exactamente la vela previa (lado_del_estado = 0,82 en la ventaja fría frente a 0,68 del proxy de una vela): es una lectura suavizada; la imposibilidad de invertir no depende de ese matiz.",
+    "lo_que_dice_la_medicion": "E4 tramo 2: acierto 0,333 ≈ 0,32 que la lente deriva para «lado = vela previa» en a = 0,1 (ℓ = 0,73); PnL −0,244 USD. Un motor que invirtiera leería ≈ 0,68 y PnL positivo. El motor persiste.",
+    "dueno": "núcleo (god-engine-core lib.rs) / lente A3"
+   },
+   {
+    "id": "LH-A3-2",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "HIGH",
+    "razon": "tau_de_la_orden (:1745-1751) = tau_hacia_el_centroide(hurst_duration_modulation(τ_banda, H), centroide); :8862 media geométrica 0,5/0,5 en log con suelo TAU_ANCHOR_FAST_MS = 30 s (:8850-8864); :8883 factor 2^((H−0,5)/0,02) ∈ [½, 2]; centroide clamp [30 s, 12 h] (temporal_spectrum.rs:1187). Aritmética: gm(2·68 719, 30 000) = 64,2 s; gm(2·274 878, 30 000) = 128,4 s = las medianas de la ola 1 (64 s / 128 s; los 124 s implican factor 1,87 ⇒ H_DFA ≈ 0,518). Inconsistencia interna: el colapso a 30 s en E4 exige τ_dom = centroide; con la τ_dom = 275 s heredada (que LH-A3-5 dice que sigue «significativa» 25 h) y factor ½ sale gm(137 s, 30 s) = 64 s, no 30–45 s. El cierre real lo decide el signo del IC (:665 exige ic > best_skill ≥ 0; :1202-1204 habilidad_en > 0), con memoria 1/64 bloques.",
+    "lo_que_dice_la_medicion": "La salida de la ola 2 no exporta τ por apertura: la consecuencia en E4/E1 no es medible. Pista indirecta: en E1 el pago por cierre crece ×1,6 (gana 0,0633/pierde 0,0460 frente a 0,0393/0,0282) con b constante (1,38/1,40) y capital sólo ×1,3 (el valle: 26 USD ⇒ 0,0474), compatible con una τ mayor que 128 s en la segunda mitad (nodo 1 099 s cruzando Ville a ≈ 40 h ⇒ gm(2 198 s, 30 s) = 257 s), que la propia predicción «Q2–Q4 = 128 ± 10 s» excluye.",
+    "dueno": "núcleo (god-engine-core lib.rs / temporal_spectrum.rs) / lente A3"
+   },
+   {
+    "id": "LH-A3-3",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "conviccion_de_rama_en :171-189 y Wilson :104-119 (z = Z95); envejecer_registro_ramas :244-279 parte n por 2 por cada 12 h desde el ancla (semivida = SEMIVIDA_EVIDENCIA_MS). Recalculado: p̂ = 0,30, n = 40 ⇒ hi = (0,30 + 0,048 + 0,150)/1,096 = 0,454 > 0,40; sin olvido hace falta n ≈ 85 para hi < 0,40. A 1,78 cierres/h el halving cada 12 h deja n_eff oscilando 18–40. Parcialmente registrado (H2-8, LG-1b): la cuantificación con p* = 0,40 para la rama 15 es nueva.",
+    "lo_que_dice_la_medicion": "E4: 45 cierres en antipersistencia sin que la rama se apague (cero rechazos, las aperturas continúan hasta el final); E3: tras 36 cierres a 0,36 la rama no queda condenada (65 cierres siguen con 0,615). Coherente con «nunca condena / nunca sube».",
+    "dueno": "núcleo (god-engine-core lib.rs:171) / lente A3"
+   },
+   {
+    "id": "LH-A3-4",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "perceptron_gate.rs:97-116: lr = clamp(0,05/(1+100·σ)) = 0,04 a ATR 0,25 %, w ← clamp(w·e^{lr·R}, 0,25, 2) sin olvido; lectura clamp [0,5, 2] (:5076); composite = clamp(raw·w, −1, 1) (:5893); cuantiles.update recibe el composite YA multiplicado por w (:5916); cortafuegos :7934-7954 con exigencia_tras_racha = min(umbral·2^(racha−1), 1) (:538-544): a la segunda pérdida min_score = min(2·p85, 1), que sólo un compuesto saturado en ±1 pasa. La cifra «satura en ≈ 23 cierres» depende de R medio ≈ +0,76, no medido.",
+    "lo_que_dice_la_medicion": "E4 tramo 2 abre 45 posiciones frente a 12 en frío (×3,75) con «sin rechazos»: el estado heredado atraviesa lo que en frío frena al núcleo; el w = 2 heredado (compuesto saturado ⇒ pasa los umbrales ×1,2 del régimen antipersistente y el cortafuegos con min_score = 1) es el candidato natural, junto con la τ_dom heredada (LH-A3-5). No se exporta w: mecanismo PLAUSIBLE, código CONFIRMADO.",
+    "dueno": "núcleo (god-engine-core lib.rs:4712/5893/7938) / lente A3"
+   },
+   {
+    "id": "LH-A3-5",
+    "veredicto": "PLAUSIBLE",
+    "severidad_final": "MED",
+    "razon": "temporal_spectrum.rs:664-668: dominante = max IC entre escalas con significativo_familia(5) (umbral 5/α = 100 ⇒ 4,6 nats) y exige ic > best_skill ≥ 0; evalues.rs:43 λ = 0,10, :90-100 capital multiplicativo sin olvido; IC EWMA 1/64 (:304, :493-495). Aritmética correcta: +0,035 nats/bloque a p = 0,7, −0,065 a p = 0,2, −0,005 a p = 0,5 ⇒ 92 nats en 50 h a 68,7 s, 25 h para bajar de 4,6, deuda −13 nats tras el nulo ⇒ ≈ 9,6 h de recuperación. Pero la consecuencia en E4 está sobredicha: el signo del IC (memoria 50 min a 68,7 s, 4,9 h a 275 s) gobierna tanto la dominante (:665) como tau_operativa_unificada (:1202-1204); en antipersistencia el IC es negativo de forma fiable, no «ruido», y τ* cae al centroide aunque el capital siga rancio. El rancio pesa en E2 (nulo: IC = ruido) y la deuda en E3.",
+    "lo_que_dice_la_medicion": "E3: el tramo 2 recupera 73 % de los cierres (65/89) y 50 % del PnL (0,711/1,408) con sólo +9 REJ_EV: la puerta EV queda exonerada y el déficit cae del lado del núcleo/τ, mayor que las «≤ 6 h» que la lente predijo, lo que refuerza la deuda del e-proceso más de lo que la lente afirmó. Cifras de nats no medibles.",
+    "dueno": "arena (temporal_spectrum.rs:664) / lente A3"
+   },
+   {
+    "id": "LH-A3-6",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": ":6704-6707 la rama 11 exige !is_anti_persistent; is_anti_persistent = hurst_val < HURST_ANTI_PERSISTENT = 0,45 (:5994, :9200); skill_motores.rs:39/227-230 piso 0,15 y ic.clamp(0,1) (jamás voto invertido); umbral de familia 416/0,05 = 8 320 ⇒ 9,03 nats (:100, evalues significativo_familia). Parcialmente registrado (core-tick-c:170); la consecuencia para la inversión es nueva.",
+    "lo_que_dice_la_medicion": "Reparto por ramas no exportado en la ola 2; en la ola 1 la rama 11 fue ≤ 3 % en todos los peldaños. Consecuencia en E4 NO medible, pero el acierto 0,333 con PnL negativo descarta que algún consenso de reversión haya orientado las órdenes.",
+    "dueno": "núcleo (god-engine-core lib.rs:6706) / lente A3"
+   },
+   {
+    "id": "LH-A3-7",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "MED",
+    "razon": "La sal está en t3_ventaja_conocida.rs:98 (`((n as u64) << 44)`), no en :102 (interior del cierre LCG): error de línea menor. Con 135 cierres en E1 hay 33–34 por cuartil ⇒ σ(acierto) ≈ 0,08 y σ(PnL medio) ≈ 0,045/√34 ≈ 0,008 USD, no 0,006. Subo a MED porque el arreglo cae en zona propia de la Línea H y la lectura de E1 depende de él.",
+    "lo_que_dice_la_medicion": "E1 es otra realización, como avisa: â = 0,899 / lectura 0,743 / oráculo 5v +43,4 pb / p_tp 0,630 frente a 0,901 / 0,728 / +47,6 / 0,657 del tramo frío. Los cuartiles 0,788 / 0,618 / 0,588 / 0,735 (rango 0,20 ≈ 2,5 σ, forma de U) son exactamente lo que la lente advirtió que se leería mal como «aprende y olvida».",
+    "dueno": "Línea H (crates/backtest-engine/tests/t3_ventaja_conocida.rs)"
+   },
+   {
+    "id": "LH-A3-8",
+    "veredicto": "YA_REGISTRADO",
+    "severidad_final": "INFO",
+    "razon": "stateful_engine.rs:555-569: requerido = min(base·2^racha_amortizada, 12 h); la ley k·base es LH-07/H3-01. La lente sólo añade la cifra para E4.",
+    "lo_que_dice_la_medicion": "La cifra añadida queda refutada: E4 compuesto reporta «sin rechazos» en 100 h, así que ninguno de los huecos entre los 45 cierres del tramo 2 (media 67 min) es de REJ_EV; todos nacen en el núcleo (whiplash post-loss contrario con disyunto de estiramiento SIN límite temporal :7872-7873, cortafuegos :7934-7954, umbrales ×1,2) o de la vida de la posición.",
+    "dueno": "núcleo (stateful_engine.rs:555) — registrado como LH-07"
+   },
+   {
+    "id": "LH-A3-9",
+    "veredicto": "CONFIRMADO",
+    "severidad_final": "INFO",
+    "razon": "temporal_spectrum.rs:772-793: +0,06·k·(1+min(20·pnl, 2)) por ganancia, −0,10·k·(1+min(15·|pnl|, 2)) por pérdida, clamp [0,2, 3]; relajación hacia 1 con τ = 30 min en :467-471 (citado :458). Recalculado con pnl ≈ 0,9 %/0,4 %: +0,071/−0,106; e^(−34/30) = 0,32 entre cierres ⇒ gain ∈ [0,89, 1,08]. Consumidor: fusion_weight = |p|·2·gain (:247-256). Lazo inerte por relación memoria/cadencia.",
+    "lo_que_dice_la_medicion": "Ningún observable de la ola 2 depende de la ganancia epigenética; a 1,35–1,8 cierres/h la aritmética basta: no es medible y no hace falta.",
+    "dueno": "arena (temporal_spectrum.rs:772) / lente A3"
+   }
+  ],
+  "predicciones": [
+   {
+    "experimento": "E1",
+    "medida": "Totales de la serie larga (6 000 velas): cierres, acierto, PnL, b_real, rechazos, ramas",
+    "prediccion": "165–190 cierres, acierto 0,60–0,68, PnL +2,4 a +3,2 USD, b 1,25–1,45, REJ_EV ≤ 5, ningún contador de tamaño, rama 15 ≥ 85 %",
+    "resultado": "PARCIAL",
+    "numero": "135 cierres (1,35/h), wr 0,681, PnL +3,8426 USD (+29,56 %), b 1,38, rechazos sólo sonda_ocupada=3 (REJ_EV = 0); ramas no exportadas",
+    "que_aprende": "Menos cierres de los previstos pero más pago por cierre (gana 0,0633 frente a 0,0393 del tramo de 3 000): la cadencia baja y el pago sube con b constante. Hay un cambio de conducta con la experiencia que la lente no previó, en el bracket/τ o en el tamaño, no en la dirección."
+   },
+   {
+    "experimento": "E1",
+    "medida": "Cuartiles por índice de cierre (acierto, PnL medio USD)",
+    "prediccion": "Aciertos en [0,52, 0,78], |Q4−Q1| < 0,15, |máx−mín| del PnL medio < 0,012 USD, no monótono; refutación si Q1<Q2<Q3<Q4 con Q4−Q1 > 0,15",
+    "resultado": "PARCIAL",
+    "numero": "Q1 (33, 0,788, 0,0307) Q2 (34, 0,618, 0,0208) Q3 (34, 0,588, 0,0093) Q4 (34, 0,735, 0,0531): |Q4−Q1| = 0,053; rango del PnL medio 0,0438 USD (×5,7 entre Q3 y Q4); forma de U, no monótono",
+    "que_aprende": "La tesis «no aprende la dirección» sobrevive (no hay monotonía; Q1 0,788 roza el borde 0,78). El PnL por cierre varía 3,6× más de lo que la lente admitía: no es acierto, es pago (Q4 tiene menor acierto que Q1 y PnL medio ×1,7), lo que apunta a τ/bracket o tamaño cambiando tarde en la corrida."
+   },
+   {
+    "experimento": "E1",
+    "medida": "τ por apertura (OPEN TRACE) por cuartil",
+    "prediccion": "Q1 mediana 64–100 s; Q2–Q4 128 ± 10 s; ninguna > 300 s",
+    "resultado": "NO_MEDIBLE",
+    "numero": "La salida de la ola 2 (ola2_adaptacion_lineas.txt) sólo conserva [T3] y [T1-DIAG]; sin OPEN TRACE. El núcleo además sólo traza 100 aperturas por corrida (lado_vs_estado.py) y E1 tiene 135.",
+    "que_aprende": "Pista indirecta contra «Q2–Q4 = 128 ± 10 s»: pago ×1,6 con capital ×1,3 (el valle de capital a 26 USD da sólo 0,0474), compatible con τ = 257 s si el nodo de 1 099 s cruza Ville a ≈ 40 h, usando la propia fórmula de la lente."
+   },
+   {
+    "experimento": "E2",
+    "medida": "primer_tramo_cierres_iguales y segundo tramo (cierres, acierto, PnL, REJ_EV) frente al nulo en frío (36, 0,361, −0,126, EV=929)",
+    "prediccion": "89/89; 40–60 cierres; acierto 0,30–0,40; PnL −0,12 a −0,28 USD; REJ_EV 450–850; PnL(E2)−PnL(A) ≤ PnL(nulo frío)",
+    "resultado": "PARCIAL",
+    "numero": "89/89; 40 cierres; wr 0,4000; PnL −0,06321 USD; rechazos «sin rechazos» (REJ_EV = 0 en 100 h); PnL(E2)−PnL(A) = 1,34441 − 1,4076 = −0,0632 > −0,1264",
+    "que_aprende": "Cierres y acierto en el borde; la puerta EV no se cerró ni una vez (p de Platt heredada ≈ 0,58–0,67 > p_gate) y el estado ganador NO agravó el nulo: perdió la mitad que el frío (diferencia 0,063 USD, dentro del ruido σ ≈ 0,19). El freno por REJ_EV que la lente daba por hecho no actuó."
+   },
+   {
+    "experimento": "E2",
+    "medida": "τ mediana del segundo tramo y ramas",
+    "prediccion": "τ 64–128 s con saltos; rama 15 ≥ 85 %; rama 11 ≤ 3 %",
+    "resultado": "NO_MEDIBLE",
+    "numero": "Sin OPEN TRACE en la salida de la ola 2",
+    "que_aprende": "Nada medible; el arreglo es del instrumento (guardar el log completo y ampliar lado_vs_estado.py a series concatenadas)."
+   },
+   {
+    "experimento": "E3",
+    "medida": "primer_tramo_cierres_iguales y segundo tramo frente a la ventaja en frío (89, 0,652, +1,41)",
+    "prediccion": "36/36; 70–88 cierres; acierto 0,58–0,68; PnL +0,9 a +1,4 USD; ΔREJ_EV ≤ 150; sin estado absorbente, déficit ≤ 6 h de retraso",
+    "resultado": "PARCIAL",
+    "numero": "36/36; 65 cierres; wr 0,6154; PnL +0,71104 USD; ΔREJ_EV = 938 − 929 = 9; déficit = 24 cierres (≈ 13 h a 1,78/h) y 0,697 USD (50 % del fresco ≈ 25 h al ritmo fresco de 0,028 USD/h)",
+    "que_aprende": "No hay estado absorbente (acierta) y la puerta EV reabre casi al instante (acierta), pero la deuda es 2–4× mayor que las «≤ 6 h»: con la EV exonerada (+9), el retraso vive en el núcleo/τ (deuda del e-proceso de LH-A3-5 y τ* = centroide mientras tanto)."
+   },
+   {
+    "experimento": "E3",
+    "medida": "τ mediana del segundo tramo por mitades",
+    "prediccion": "Primeras ≈ 10 h: 45–64 s; resto 64–128 s; mediana global < 124 s",
+    "resultado": "NO_MEDIBLE",
+    "numero": "Sin OPEN TRACE",
+    "que_aprende": "Es la medida que decidiría si la deuda de E3 es de τ (centroide 30 s ⇒ gm(60, 30) = 42 s, bracket dentro del ruido) o del compuesto (w ≈ 0,76): pedir τ por cierre."
+   },
+   {
+    "experimento": "E4",
+    "medida": "Antipersistencia en frío (m_k): cierres, acierto, PnL, REJ_EV, τ, ramas",
+    "prediccion": "30–60 cierres; acierto 0,25–0,36; PnL −0,10 a −0,30 USD; REJ_EV 600–1 500; τ 30–45 s; ramas {15 ≥ 85 %, 11 = 0, 23 = 0}",
+    "resultado": "FALLADA",
+    "numero": "12 cierres; wr 0,083 (1/12); PnL −0,2413 USD; rechazos EV=27 sonda_ocupada=4; τ/ramas no exportados",
+    "que_aprende": "Sólo el PnL cae en banda. En frío el antipersistente lo frena el NÚCLEO (12 aperturas en 50 h con 27 REJ_EV ≈ una vela de bloqueo), no la puerta EV: la lente atribuyó el grifo al riesgo y el grifo está en los umbrales ×1,2, el cortafuegos y el whiplash."
+   },
+   {
+    "experimento": "E4",
+    "medida": "Segundo tramo del compuesto frente al primero (89, 0,652, +1,41) y frente al frío (12, 0,083, −0,241)",
+    "prediccion": "89/89; 45–80 cierres; acierto 0,25–0,36; PnL −0,15 a −0,40 USD; b 0,8–1,2; lado = estado 0,30–0,38; τ 30–45 s; rama 15 ≥ 85 %; el motor NO invierte en ningún momento",
+    "resultado": "PARCIAL",
+    "numero": "89/89; 45 cierres (borde inferior); wr 0,3333; PnL −0,24411 USD; b del tramo 2 no separable (b compuesto 1,484 dominado por el tramo 1); lado/τ/ramas no exportados",
+    "que_aprende": "Todo lo medible se cumple y la pregunta central queda contestada por proxy: 0,333 ≈ 0,32 de «lado = vela previa» y PnL negativo ⇒ el motor PERSISTE (invertir daría ≈ 0,68 y PnL > 0). Lo que la lente no vio: la experiencia multiplica ×3,75 la exposición al régimen adverso (45 frente a 12) con pérdida por cierre ¼ (−0,0054 frente a −0,0201 USD) y total igual."
+   },
+   {
+    "experimento": "E4",
+    "medida": "Huecos entre cierres del segundo tramo y su causa",
+    "prediccion": "Ningún hueco > 15 min por enfriamiento/whiplash/cortafuegos; todo hueco > 1 h coincide con tandas de REJ_EV; primera tanda tras 8–15 cierres",
+    "resultado": "FALLADA",
+    "numero": "rechazos_compuesto = «sin rechazos»: 0 REJ_EV en 100 h; 45 cierres en 50 h ⇒ hueco medio 67 min",
+    "que_aprende": "No hay tandas de REJ_EV: la puerta EV nunca se cerró con la p heredada. Los huecos de ≈ 1 h son del núcleo (whiplash post-loss contrario con estiramiento sin límite temporal, cortafuegos, umbrales) o de la vida de la posición. El «único freno» que la lente concedía al riesgo no existe en E4."
+   },
+   {
+    "experimento": "otro",
+    "medida": "Contadores no exportados: qo_626_maduros, consenso_espectral_dominante, H_DFA, τ_dom, centroide por apertura, {sym}_hebbian_weight por cierre",
+    "prediccion": "w = 2,0 desde el cierre ≈ 25 y ≥ 1,1 al final de E4; qo_626_maduros > 0 a partir de 5–10 h; H_DFA < 0,48 en > 70 % de las aperturas del tramo antipersistente",
+    "resultado": "NO_MEDIBLE",
+    "numero": "Ninguno exportado por run_backtest_native ni por el test",
+    "que_aprende": "Sin w y τ por apertura no se puede separar cuál de los dos lazos heredados (hebbiano saturado o τ_dom/e-proceso) abre 45 posiciones en E4."
+   }
+  ],
+  "nuevos": [
+   {
+    "id": "LH-A3-N1",
+    "severidad": "HIGH",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 5893,
+    "defecto": "El estado ganador heredado multiplica la exposición al régimen adverso sin que ningún freno actúe: en E4 el tramo antipersistente abre 45 posiciones frente a 12 en frío (×3,75) con CERO rechazos del riesgo, y el antipersistente frío lo frena el propio núcleo (12 aperturas con 27 REJ_EV ≈ una vela). Lo que en frío frena (cortafuegos con min_score = min(2·p85, 1) que sólo un compuesto saturado pasa, :7938-7951; umbrales ×1,2 del régimen anti; whiplash) lo atraviesa el compuesto saturado por w = 2 (:5893) y/o la τ_dom heredada. La pérdida por cierre es ¼ (−0,0054 frente a −0,0201 USD) y el total igual (−0,244 frente a −0,241), así que a 13 USD cuesta lo mismo; con tamaño que siga al capital costaría ×3,75.",
+    "evidencia": "ola2_adaptacion.tsv: E4 segundo_tramo_trades=45 fresco_trades=12 rechazos_compuesto=«sin rechazos» rechazos_fresco=«EV=27 sonda_ocupada=4»; lib.rs:5893 composite = clamp(raw·hebbian_mult, −1, 1); :538-544 exigencia_tras_racha = min(umbral·2^(racha−1), 1)",
+    "dueno": "núcleo (god-engine-core) / lente A3; experimento de separación en zona Línea H: E4' = anti→anti (anti calentado) para distinguir calentamiento de herencia"
+   },
+   {
+    "id": "LH-A3-N2",
+    "severidad": "MED",
+    "archivo": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+    "linea": 837,
+    "defecto": "E1 muestra un cambio de conducta con la experiencia que ninguna lente predijo y que los cuartiles no distinguen: el pago por cierre crece ×1,6 (gana 0,0633/pierde 0,0460 frente a 0,0393/0,0282 del tramo de 3 000; max|pnl| 0,1564 frente a 0,0976) con b constante (1,38/1,40) y capital sólo ×1,3; el valle de capital (26 USD ⇒ gana 0,0474) descarta que sea el capital. Es τ/bracket o nocional, y la función `cuartiles` sólo publica acierto y PnL medio, de modo que se lee como «PnL por cuartil» (Q4 0,053 con acierto 0,735 < Q1 0,788). Candidato con la fórmula de la lente: nodo 1 099 s cruzando Ville a ≈ 40 h ⇒ τ = gm(2 198 s, 30 s) = 257 s.",
+    "evidencia": "[T3] n=6000: pago gana 0.0633/pierde 0.0460 b=1.38 max|pnl|=0.1564 capital=16.84; [T3] n=3000: gana 0.0393/pierde 0.0282 b=1.40 max|pnl|=0.0976; t3_valle_de_capital.tsv C0=26: media_gana 0.04735 max_abs 0.19382; E1 cuartiles Q1 0.0307 Q2 0.0208 Q3 0.0093 Q4 0.0531",
+    "dueno": "Línea H (test): publicar por cuartil media_gana/media_pierde/max|pnl| y, si el runner lo expone, τ y nocional por cierre"
+   },
+   {
+    "id": "LH-A3-N3",
+    "severidad": "MED",
+    "archivo": "crates/quantum-arena/src/temporal_spectrum.rs",
+    "linea": 1201,
+    "defecto": "La deuda de E3 es mayor que la de cualquier predicción y no es de la puerta EV: el tramo 2 recupera 73 % de los cierres (65/89) y 50 % del PnL (0,711/1,408) con sólo +9 REJ_EV. El retraso vive en el núcleo/τ: mientras el e-proceso del nodo 68,7 s paga su deuda (−13 nats ⇒ ≈ 9,6 h; el de 275 s ≈ 12 h), tau_operativa_unificada devuelve el centroide (30 s) ⇒ τ_orden = gm(60 s, 30 s) ≈ 42 s, un bracket dentro del ruido de 25 pb/vela o inoperable por qo_586; a eso se suma w ≈ 0,76 heredado. Equivale a ≈ 13 h de cierres y ≈ 25 h de PnL al ritmo fresco.",
+    "evidencia": "ola2_adaptacion.tsv E3: segundo_tramo_trades=65 pnl=0.71104 wr=0.6154 fresco 89/1.40762/0.6517 rechazos_compuesto EV=938 rechazos_fresco(nulo) EV=929; temporal_spectrum.rs:1202-1207 (habilidad_en > 0 o centroide); lib.rs:8862 media geométrica",
+    "dueno": "arena/núcleo / lente A3; en zona Línea H: E3 por mitades del tramo 2 (primeras 10 h frente al resto) con Pago por mitad"
+   },
+   {
+    "id": "LH-A3-N4",
+    "severidad": "MED",
+    "archivo": "docs/audit/linea_h/lado_vs_estado.py",
+    "linea": 4,
+    "defecto": "La ola 2 no conserva las OPEN TRACE (ola2_adaptacion_lineas.txt sólo tiene [T3] y [T1-DIAG]), así que toda predicción de esta lente sobre τ, lado y ramas es inmedible; además el núcleo sólo traza las 100 primeras aperturas por corrida y las corridas de 6 000 velas tienen 101–135, de modo que el segundo tramo quedaría truncado aunque se guardara el log; y el script regenera el estado oculto de UNA serie (a, d, n), no de una concatenada.",
+    "evidencia": "ola2_adaptacion_lineas.txt (12 líneas, sin OPEN TRACE); lado_vs_estado.py docstring «sólo las 100 primeras por corrida» y estado_oculto(a, d, n); t3_ventaja_conocida.rs:283 TG_TRACE_NATIVO=1",
+    "dueno": "Línea H (docs/audit + test): guardar el log completo, extender lado_vs_estado.py a estado = tramo1 ++ tramo2 y pedir fuera de zona que el tope de 100 trazas sea configurable"
+   },
+   {
+    "id": "LH-A3-N5",
+    "severidad": "LOW",
+    "archivo": "crates/god-engine-core/src/lib.rs",
+    "linea": 8849,
+    "defecto": "Inconsistencia interna de la lente: su predicción de τ 30–45 s en E4 supone τ_dom = centroide, pero LH-A3-5 sostiene que el nodo de 275 s sigue significativo 25 h; con τ_dom = 275 s y factor ½ la fórmula de LH-A3-2 da gm(137 s, 30 s) = 64 s. Además lo que de verdad decide es el signo del IC (memoria 1/64 bloques), no el capital del e-proceso: :665 exige ic > best_skill ≥ 0 y :1202-1204 habilidad_en > 0.",
+    "evidencia": "lib.rs:8849-8868 tau_hacia_el_centroide; :8883 factor clamp(0,5, 2); temporal_spectrum.rs:665, :1202-1204",
+    "dueno": "lector A3 (corrección de la predicción); medible sólo con τ por apertura"
+   },
+   {
+    "id": "LH-A3-N6",
+    "severidad": "INFO",
+    "archivo": "crates/god-engine-core/src/calibration.rs",
+    "linea": 45,
+    "defecto": "Para esta lente la consecuencia de que la p de Platt heredada no envejezca operando (WINDOW = 512 pares, olvido sólo en el hueco) es que en E2 y E4 el riesgo no rechaza NADA en 100 h: los únicos frenos que actúan en los regímenes nulo y antipersistente con estado heredado son los del núcleo (A3), y en el nulo heredado el motor pierde la mitad que en frío (−0,063 frente a −0,126, dentro del ruido). Todo «por tandas de REJ_EV» de la lente queda sin objeto.",
+    "evidencia": "ola2_adaptacion.tsv: E2 rechazos_compuesto «sin rechazos» frente a EV=929 en frío; E4 «sin rechazos» frente a EV=27",
+    "dueno": "lente A2 (calibración) — aquí sólo la consecuencia para A3"
+   }
+  ],
+  "sintesis": "El sistema no adapta la dirección: el acierto por cuartiles de E1 es una U (0,79/0,62/0,59/0,74) sin monotonía, y en E4 el tramo antipersistente acierta 0,333 ≈ el 0,32 de «lado = vela previa» con PnL negativo, así que el motor persiste y nunca invierte (D-472, hebbiano positivo, pesos #626 al piso, rama 23 inalcanzable: LH-A3-1 confirmado). Lo que sí cambia con la experiencia es la exposición y el pago: en E4 el estado heredado abre 45 posiciones en el régimen adverso frente a 12 en frío (×3,75) con cero rechazos del riesgo, y en E1 el pago por cierre crece ×1,6 con b constante y sin que el capital lo explique; los lazos que se mueven son el peso hebbiano (compuesto saturado, cortafuegos desarmado) y la τ_dom/e-proceso, ninguno con signo. El lazo que estorba es esa herencia: mantiene al motor operando en antipersistencia (E4) y retrasa la recuperación en E3 (73 % de los cierres, 50 % del PnL, con sólo +9 REJ_EV), una deuda 2–4 veces mayor que las «≤ 6 h» de la lente. El lazo que no existe es un freno en régimen nulo o antipersistente: E2 y E4 corren 50 h de tramo 2 sin un solo rechazo (la lente predijo 450–850 y «tandas»), y el antipersistente frío lo frena el núcleo (27 REJ_EV ≈ una vela), no el riesgo. El estado ganador tampoco agrava el nulo (−0,063 frente a −0,126, dentro del ruido). Todo lo relativo a τ, lado y ramas es inmedible en esta corrida porque no se guardó la OPEN TRACE y el núcleo la limita a 100 aperturas. Arreglo en zona propia de la Línea H: añadir a t3_adaptacion_en_el_tiempo E1' = serie_concatenada(ventaja, ventaja) (primer tramo idéntico por construcción), E4' = anti→anti (separa calentamiento de herencia) y E5 = antipersistencia fría de 6 000 velas por cuartiles (prueba directa de inversión: cualquier cuartil > 0,5 refutaría LH-A3-1); publicar Pago (b, media_gana/pierde, max|pnl|) y bandas de Wilson por tramo y cuartil; extender lado_vs_estado.py a series concatenadas y archivar el log completo con OPEN TRACE en docs/audit/linea_h."
+ }
+}

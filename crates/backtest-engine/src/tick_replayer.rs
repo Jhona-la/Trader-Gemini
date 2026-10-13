@@ -51,6 +51,19 @@ pub enum TickOrigin {
     LegadoSinCabecera,
 }
 
+/// LG-15 (Línea G) — CUERPO DE UN FICHERO DE TICKS SIN SU CABECERA.
+///
+/// `evolver` y `evolution` mapeaban `data/{SYM}_ticks.bin` desde el byte 0 e
+/// ignoraban la cabecera de 8 B (`TGMSYNT1`/`TGMTRAW…`): cada registro salía
+/// desplazado (timestamp = bits de una cantidad, bid ≈ 1e-311, ask = bid real)
+/// y el flujo se ordenaba por cantidad, no por tiempo; el evolver promovía el
+/// genoma que mejor operaba esa basura. Devuelve el origen y los bytes de los
+/// registros, ya sin cabecera.
+pub fn cuerpo_de_ticks(bytes: &[u8]) -> (TickOrigin, &[u8]) {
+    let (origen, cabecera) = TickOrigin::from_header(bytes);
+    (origen, &bytes[cabecera.min(bytes.len())..])
+}
+
 impl TickOrigin {
     /// Lee el origen de los primeros bytes de un fichero de ticks.
     pub fn from_header(bytes: &[u8]) -> (TickOrigin, usize) {
@@ -163,6 +176,30 @@ pub fn load_multi_coin_binary_ticks(files: &[(&Path, usize)]) -> std::io::Result
     }
     all_ticks.sort_by_key(|t| t.timestamp);
     Ok(all_ticks)
+}
+
+#[cfg(test)]
+mod tests_lg15 {
+    use super::*;
+
+    /// El primer registro de un tape con cabecera sale con su timestamp y su
+    /// bid exactos; sin cabecera, el cuerpo es el fichero entero.
+    #[test]
+    fn lg15_el_cuerpo_empieza_tras_la_cabecera() {
+        let mut bytes = TICK_MAGIC_SYNTH.to_vec();
+        let tick = BinTick { timestamp: 1_700_000_000_000, bid_price: 100.0, ask_price: 100.5, bid_qty: 2.0, ask_qty: 3.0 };
+        let crudo: [u8; std::mem::size_of::<BinTick>()] = unsafe { std::mem::transmute(tick) };
+        bytes.extend_from_slice(&crudo);
+        let (origen, cuerpo) = cuerpo_de_ticks(&bytes);
+        assert!(matches!(origen, TickOrigin::Sintetico));
+        assert_eq!(cuerpo.len(), std::mem::size_of::<BinTick>());
+        let leido: BinTick = unsafe { std::ptr::read_unaligned(cuerpo.as_ptr() as *const BinTick) };
+        assert_eq!(leido.timestamp, 1_700_000_000_000);
+        assert_eq!(leido.bid_price, 100.0);
+        let (origen_legado, todo) = cuerpo_de_ticks(&crudo);
+        assert!(matches!(origen_legado, TickOrigin::LegadoSinCabecera));
+        assert_eq!(todo.len(), crudo.len());
+    }
 }
 
 #[cfg(test)]

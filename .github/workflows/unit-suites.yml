@@ -51,7 +51,8 @@ jobs:
             paquetes: -p quantum-arena -p signal-engine -p feature-engine -p metacortex-engine -p strategy-core --lib --tests
           - grupo: entrenador
             # Sintético: ni entrenamiento, ni promoción, ni modelos reales.
-            paquetes: -p trader-gemini-v5 --lib --bin train_forest
+            # SI: ejecutar también el contrato de ingestión del benchmark.
+            paquetes: -p trader-gemini-v5 --lib --bin train_forest --bin spectral_bench
     env:
       # QS-P3: los runners windows-2022 tienen 4 vCPU y 16 GB. Con 2 jobs la
       # compilación (casi todo el tiempo del job: 23–31 min en el PR #30)

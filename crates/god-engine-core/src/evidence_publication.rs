@@ -1,8 +1,9 @@
 //! Publication of the current evidence consumed by the group risk gate.
 //!
 //! Absence stays in the coin key: deleting it would expose the global
-//! fallback, and the registry normalizes nonfinite values to zero. Each
-//! consumer therefore reads one finite value, not a separate validity flag.
+//! fallback. Since Ω82 the registry stores nonfinite values raw (it no longer
+//! maps them to zero), and the `*_or` readers skip them. Each consumer still
+//! reads one finite value here, not a separate validity flag.
 //! This is per-key publication in this registry, not a multi-key/order
 //! snapshot. Cores sharing a registry also share these coin keys.
 use omniscient_registry::OmniscientRegistry;
@@ -49,7 +50,7 @@ pub fn publicar_lundberg(registry: &OmniscientRegistry, coin_id: usize, r: Optio
     }
 }
 
-/// Publish signed IC at the closest dominant scale, or -1 on cold/invalid
+/// Publish signed IC at the closest dominant scale (in ln τ), or -1 on cold/invalid
 /// evidence. The scalar base is in [-1, 1]; this floor never tightens it,
 /// including a negative base. It is indistinguishable from a valid IC=-1
 /// numerically, which has the same effect in the current tightening-only gate.
@@ -59,19 +60,31 @@ pub fn publicar_coherencia(
     coin_id: usize,
     tau_dom: f64,
 ) {
-    let ic = if tau_dom.is_finite() && tau_dom > 0.0 {
-        let mut escala_dom = 0usize;
-        let mut mejor_d = f64::INFINITY;
-        for (k, &tau_k) in SPECTRUM_SCALES_MS.iter().enumerate() {
-            let d = (tau_k - tau_dom).abs();
-            if d < mejor_d {
-                mejor_d = d;
-                escala_dom = k;
-            }
-        }
-        multiactivo.coherencia_media_con_todas(coin_id, escala_dom)
-    } else {
-        None
-    };
+    let ic = escala_espectral_mas_cercana(tau_dom)
+        .and_then(|escala_dom| multiactivo.coherencia_media_con_todas(coin_id, escala_dom));
     publicar_finito(registry, coin_id, "qo_613_rho_tau", ic, -1.0);
+}
+
+/// Nodo de `SPECTRUM_SCALES_MS` más cercano a `tau_ms` en ln τ; `None` si τ
+/// no es finito y positivo.
+///
+/// LF-2 (Línea F): la malla es geométrica (razón 4), así que la distancia se
+/// mide en ln τ y la frontera entre dos nodos es su punto medio geométrico
+/// (2·τ_k). En distancia lineal caía en 2,5·τ_k: una τ de 40 s se asignaba al
+/// nodo de 17,2 s, fuera de la banda operable [30 s, 12 h].
+pub fn escala_espectral_mas_cercana(tau_ms: f64) -> Option<usize> {
+    if !(tau_ms.is_finite() && tau_ms > 0.0) {
+        return None;
+    }
+    let ln_tau = tau_ms.ln();
+    let mut escala = 0usize;
+    let mut mejor_d = f64::INFINITY;
+    for (k, &tau_k) in SPECTRUM_SCALES_MS.iter().enumerate() {
+        let d = (tau_k.ln() - ln_tau).abs();
+        if d < mejor_d {
+            mejor_d = d;
+            escala = k;
+        }
+    }
+    Some(escala)
 }

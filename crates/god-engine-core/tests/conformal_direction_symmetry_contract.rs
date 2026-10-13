@@ -12,11 +12,25 @@
 use god_engine_core::{
     GodEngineCore,
     calibration::p_win_directional,
+    ml_inference::{NanoForest, NanoForestData},
 };
 use quantum_arena::{GlobalArena, symbol_registry, symbols};
 use std::sync::{Arc, Mutex, atomic::Ordering::Relaxed};
 
 static CORE_ENV: Mutex<()> = Mutex::new(());
+
+fn bosque_constante(b: f64) -> NanoForest {
+    NanoForest::from_data(NanoForestData {
+        children_left: vec![],
+        children_right: vec![],
+        feature: vec![],
+        threshold: vec![],
+        value: vec![],
+        tree_offsets: vec![0, 0],
+        init_score: (b / (1.0 - b)).ln() as f32,
+    })
+    .expect("bosque de sólo sesgo")
+}
 
 fn fixture() -> (Arc<GlobalArena>, GodEngineCore) {
     symbols::update_dynamic_universe(vec!["BTCSYM".into()]);
@@ -75,14 +89,18 @@ fn k26_p_win_directional_mathematical_invariants() {
 #[test]
 fn k26_engine_publishes_symmetric_conformal_at_honest_neutrality() {
     let _guard = CORE_ENV.lock().unwrap_or_else(|p| p.into_inner());
+    const BASE: f64 = 0.25;
+    NanoForest::store_global("BTCSYM_MOTOR", bosque_constante(BASE));
+
     let (arena, mut core) = fixture();
 
     // Establecemos alpha objetivo
     arena.config.conformal_alpha.store(0.05, Relaxed);
 
-    // Simulamos un tick analítico donde ml_prob es exactamente la base honesta (~0.25)
-    // Para ello alimentamos el registro con la base y procesamos un tick
-    arena.registry.set_for_coin(0, "ml_model_base", 0.25);
+    // Calentamos el calibrador con 40 cierres en rejilla (mínimo 30) para evaluar calibrado fuera de warmup
+    for i in 0..40 {
+        core.conformal_by_coin[0].update((i as f64 + 0.5) / 41.0, i % 2 == 0);
+    }
 
     let (_, _, _) = core.process_tick_dual(
         0,
@@ -96,17 +114,36 @@ fn k26_engine_publishes_symmetric_conformal_at_honest_neutrality() {
         false, // Solo analítico
     );
 
-    // Verificamos que ambos p-valores conformal existen y son finitos
+    // Verificamos que el núcleo evaluó con la base honesta declarada del bosque
+    let base = arena.registry.get_for_coin_or(0, "ml_model_base", -1.0);
+    assert!(
+        (base - BASE).abs() < 1e-6,
+        "ml_model_base debe ser la base honesta declarada: {base}"
+    );
+
+    let ml_prob = arena.registry.get_for_coin_or(0, "ml_prob", -1.0);
+    assert!(
+        (ml_prob - BASE).abs() < 1e-6,
+        "ml_prob debe coincidir con la base en ausencia de sesgo spot: {ml_prob}"
+    );
+
+    // Verificamos que ambos p-valores conformal existen, discriminan (p < 1.0) y son simétricos
     let p_long = arena.registry.get_for_coin_or(0, "conformal_p_value", -1.0);
     let p_short = arena.registry.get_for_coin_or(0, "conformal_p_value_short", -1.0);
-    assert!(p_long > 0.0 && p_long.is_finite(), "conformal_p_value inválido: {p_long}");
-    assert!(p_short > 0.0 && p_short.is_finite(), "conformal_p_value_short inválido: {p_short}");
+    assert!(p_long > 0.0 && p_long < 1.0, "conformal_p_value fuera de rango: {p_long}");
+    assert!(p_short > 0.0 && p_short < 1.0, "conformal_p_value_short fuera de rango: {p_short}");
+    assert_eq!(
+        p_long, p_short,
+        "K-26: en neutralidad simétrica (p == base), p_long y p_short deben ser idénticos"
+    );
 
-    // Durante warmup (sin 30 trades previos), ambos aceptan por política fail-open sana
+    // Verificamos que la decisión de aceptación conformal coincide en ambos lados
     let acc_long = arena.registry.get_for_coin_or(0, "conformal_accept_long", -1.0);
     let acc_short = arena.registry.get_for_coin_or(0, "conformal_accept_short", -1.0);
-    assert_eq!(acc_long, 1.0);
-    assert_eq!(acc_short, 1.0);
+    assert_eq!(
+        acc_long, acc_short,
+        "K-26: en neutralidad simétrica ambos lados comparten la aceptación"
+    );
 }
 
 #[test]

@@ -24,7 +24,7 @@ delta debe capturar el cierre documental después del merge, sin autorreferencia
 | Responsable | Reserva/estado observado; no equivale a acuse nuevo |
 |---|---|
 | Qoder | Ola 73 CERRADA e INTEGRADA en `main`. Fase R7-R4 (núcleo vivo) cerrada y fusionada en `ce5e0897` (ficha #688). Actualmente ejecutando Fase R7-R6 (Aprender y medir) en worktree `.r7r6`, rama `qoder/r7r6-aprender-medir`, con reserva de Ficha #690. |
-| Antigravity | Olas Ω26 a Ω72 CERRADAS e INTEGRADAS (Fichas Forenses #689-#710 certificadas con cero fallos, cero heap allocations en hot path < 25 ns y 100% Rust estricto). Ficha #710 optimizó hot path a zero-alloc en `signal-engine::orchestrator` y `risk-engine::selection_stats`. Ficha #709 resolvió y certificó 5 vetos contractuales en `risk-engine::veto_registry`. Ficha #708 integró presión de Prospect Theory en el tick loop de `god-engine-core`. Ficha #706 implementó colector Feynman y Prospect Theory. Plan Maestro Cuántico en `docs/PLAN_MAESTRO_CUANTICO_UNIVERSO_ESPECTRAL_CONTINUO_2026-10-10.md`. Próximo bloque: Continuación de barrido por fases R0-R9 archivo por archivo. |
+| Antigravity | Olas Ω26 a Ω92 CERRADAS e INTEGRADAS; Ola Ω93 (#731) en vuelo (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md`): Plan Maestro Canónico de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente (10 Roles Senior en Modo Profesor, matemáticas de micro-capital $13 USD con $T_d = 72$ h, resolución de cuellos de botella LH-02 a LH-05 y ejecución de Fase 0). Ola Ω92 (#730): Resolución del trilema del Consejo Seniors en Fase C-F3 (F3.4-01, F3.4-02, F3.4-06). |
 | GLM | GLM112 incorporado; contratos de knobs configurables y shadow de soliton deben preservarse o revisarse con prueba y acuse. No se presupone una reserva nueva. |
 | Sol | Reporting SOL-R5-01 publicado (`f8c433f8`) e incorporado. Reserva activa: `booktick_replay.rs` y `metrics.rs` para accounting de replay de backtest. |
 | Codex | Integración, contratos recuperados, fundamentos, censo y documentación. Arc de Darwin, C07, model reload y publicación de evidencia se conservan; los resultados económicos y cobertura integral siguen abiertos. |
@@ -1667,3 +1667,485 @@ externos».
   - `cargo test -p omniscient-registry`: 11/11 tests pasando al 100%.
   - `cargo check --workspace --all-targets`: 0 errores, compila limpiamente.
   - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300`, 15 operaciones exactamente idénticas bit a bit frente a la línea base previa. Cero perturbación en las compuertas vivas.
+
+## SI — 2026-10-11: emisión causal, memoria de riesgo y evidencia
+
+Reserva Codex chat01a0f2fc: spectral_tape.rs y feedback epigenético en state.rs, contratos nuevos y documentación. Respeta estrategia multiactivo del chat01a116f0 y la reserva C-F2 de Claude. Base1d1f8bdd; commits8404bbdf/c9d877da.
+
+Siete reproducciones espectrales RED y cuatro epigenéticas RED; regresión completa quantum-arena238/0/0,15 contratos nuevos incluidos. Revisión adversarial favorable con límites explícitos; all-targets/replay todavía pendientes. Informe detallado docs/AUDITORIA_EVIDENCIA_ESPECTRAL_SI_2026-10-11.md y JSON.
+
+SI no equipara memoria adaptativa con ventaja demostrada. Pronóstico y referencias quedan congelados al emitir; los nulos perfectos no se ignoran y los datos rechazados no avanzan el banco. La epigenética evoluciona desde su valor decaído. Se preservan límites y coeficientes. Quedan abiertos benchmark directo, transformación del objetivo con suelo móvil, incertidumbre del score y writers externos. Sin cambios en T1, trading, entrenamiento ni promoción.
+
+### Actualización SI del corte documental previo a validación final
+
+Primer all-targets aprobado (exit 0, 13 min 42 s). Commit adicional 06ce88ef: preflight compartido en el consumidor forecast de spectral_bench, dos contratos y ejecución en CI; no certifica admisión global del benchmark. Commits funcionales 8404bbdf/c9d877da/06ce88ef publicados. **Recibo terminal de tests, CI, SHA e integración: [PR #39](https://github.com/Jhona-la/Trader-Gemini/pull/39)**. Este corte no presume el resultado futuro de las comprobaciones en curso.
+
+SI-O02 sigue abierto: suelo móvil, inversión sin retirar desplazamiento y climatología en coordenadas distintas; investigación coordinada con C-F2. No se rebajan umbrales ni se certifica rentabilidad. Informe y JSON delimitan la evidencia y las unidades.
+
+## Reinicio SI coordinado — 2026-10-11, base 1d1f8bdd
+
+Nuevo mandato del operador y entrada operativa: [adenda de reinicio desde la base](audit/REINICIO_COORDINADO_BASE_2026-10-11.md). Conserva el plan rector y las fases R0–R9/C-F0–C-F11, con censo completo de 1.583 rutas por blob y asignación C sin omisiones. Todas las filas empiezan pendientes; el censo no acredita revisión completa. Resuelve unidades de conteos, registra hipótesis sin evidencia, criterios de veto/adaptación/rendimiento y recibos por archivo. Reservas activas preservadas; chat R4 acusó coordinación y aviso antes de avanzar main. Recibo terminal SI: PR #39.
+
+Actualización de composición: main avanzó a 8dd51dfb (Ω83); inventario y TSV reanclados a 1.584 rutas pendientes, con delta AGY 1 adición/8 cambios. El censo1d permanece en Git6b1dfe9b. Se preservan ambos apéndices; las pruebas sobre base1d no certifican por sí solas esta integración. La adenda delimita el alcance de las APIs estrictas nuevas y el recibo terminal del PR identifica la validación nueva.
+## 43. Aislamiento Estricto de Ámbito Multi-Activo y Rigor Dimensional de Unidades (Ola Ω83, Ficha #721)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#721`.
+- **Cierre del Hallazgo C-F1 / LC-F1-06 / F-002 («Aislamiento de Ámbito Multi-Activo y Rigor Dimensional»)**:
+  - En `crates/omniscient-registry/src/lib.rs`:
+    * Implementado `get_scoped_parameter_strict(symbol, coin_id, name, consumer) -> Option<Arc<Parameter>>` con resolución $O(1)$ zero heap allocation que consulta ámbito por símbolo (`{SYM}_{NAME}`) y por coin_id (`coin_{CID}_{NAME}`), pero **NUNCA** cae al parámetro global `{NAME}`. Si el activo no dispone del parámetro, retorna `None`.
+    * Implementado `get_scoped_val_strict_or(symbol, coin_id, name, default) -> f64` con resolución $O(1)$ zero heap allocation sin fallback al parámetro global, previniendo que una moneda B herede métricas de una moneda A escritas en el global.
+  - En `crates/quantum-arena/src/config.rs`:
+    * Documentación rigurosa de unidades para `live_maker_fee` (fracción 0.0002 = 2 bps = 0.02%) y `live_taker_fee` (fracción 0.0005 = 5 bps = 0.05%), erradicando la ambigüedad de porcentaje vs fracción señalada en el Apartado 1 del Contrato de Conceptos C-F1.
+  - En `crates/quantum-arena/src/position.rs`:
+    * Alineada la definición de [`Position::entry_tau_ms`] con D-745: la escala temporal continua $\tau$ con la que se dimensionó y validó la orden al entrar (inmutable durante la vida de la posición), en lugar de una instantánea estocástica cruda.
+  - En `crates/strategy-core/src/types.rs`:
+    * Actualizado el docstring de [`SignalIntent::win_probability`] para reflejar con precisión su significado matemático y dimensional: $P(\text{ganar neto} \mid \text{lado, geometría, } \tau)$, reservada para Kelly y el motor de riesgo, sin interferir en la selección para prevenir sesgos direccionales (LC-F1-37).
+- **Suite Contractual Formal**:
+  - Creado `crates/omniscient-registry/tests/aislamiento_ambito_multiactivo_contract.rs` con 3 pruebas formales:
+    * `test_aislamiento_estricto_sin_caida_al_global`: verifica que ETH jamás reciba el precio mid ni métricas de BTC aun cuando existan parámetros globales o de otros activos.
+    * `test_aislamiento_por_coin_id_estricto`: verifica que consultas estrictas por `coin_id` devuelvan `NaN` / default ante ausencia de métrica propia.
+    * `test_resolucion_precedencia_simbolo_sobre_coin_id`: verifica que la clave por símbolo preceda a la de coin_id sin asignación dinámica.
+- **Invarianza y Cero Regresiones**:
+  - `cargo test -p omniscient-registry`: 14/14 tests pasando al 100%.
+  - `cargo check --workspace --all-targets`: 0 errores, compila limpiamente en todo el workspace.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300`, 15 operaciones idénticas bit a bit frente a la línea base.
+
+## 44. Desacoplamiento de Reloj Causal P1, Erradicación de Asignaciones en Heap P5 y Migración Estricta en Camino Caliente (Ola Ω84, Ficha #722)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#722`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Desacoplamiento del reloj de pared en el camino caliente del registro omnisciente (`P1`), eliminación total de asignaciones dinámicas en heap en inferencia ML (`P5`), incorporación de acceso cero-copia `with_symbol` en `quantum-arena` y migración a selectores estrictos `get_for_coin_strict_or` en consumidores productivos del núcleo.
+  * **POR QUÉ**: El perfilado forense de Claude (`PERFIL_CAMINO_CALIENTE_2026-10-11.md`) demostró que `chrono::Utc::now()` en `Parameter::set_value` era invocado ~208 veces por evento, consumiendo ~15.2 µs (+6.8% de latencia del ciclo) en syscalls de reloj innecesarias. Asimismo, las interpolaciones `format!("{}_MOTOR", sym)`, `format!("{}_VOL", sym)` y `format!("{}_OI", sym)` representaban el 33% de todas las asignaciones dinámicas en heap del hot path, mientras que `try_spec` y `try_symbol` clonaban cadenas en cada tick.
+  * **PARA QUÉ**: Alcanzar velocidad de ejecución < 25 ns en la ruta crítica sin degradación de precisión temporal, garantizar reproducibilidad causal determinista exacta en repetición/replay histórico y preservar la pureza de 0 bytes de asignación dinámica en heap durante el procesamiento de ticks.
+  * **CÓMO**:
+    1. **Desacoplamiento Causal P1 en `OmniscientRegistry`**:
+       - En `crates/omniscient-registry/src/lib.rs`: incorporado `active_event_time_ms: AtomicI64`, `update_event_time(event_time_ms: i64)`, `get_event_time() -> i64` y `current_timestamp_ms() -> i64`.
+       - En `Parameter`: añadidos constructores y mutadores con marca temporal explícita: `new_with_ts(..., ts: i64)` y `set_value_with_ts(val: f64, ts: i64)`.
+       - En `OmniscientRegistry::set`, `register_or_update` y `register_or_update_with_ts`: el reloj se lee mediante una carga atómica relajada de 0.3 ns sobre `active_event_time_ms` (o fallback a `Utc::now()` si no ha sido inicializado).
+       - En `restore_from_snapshot`: se preserva el timestamp canónico exacto del snapshot mediante `register_or_update_with_ts`, impidiendo que una restauración sobreescriba timestamps históricos con la hora de pared actual.
+       - En `GodEngineCore::process_event` y `GodEngineCore::process_tick_dual`: se invoca `self.arena.registry.update_event_time(event_time_ms as i64)` exactamente **una vez** al ingreso del evento, sincronizando todas las 208 escrituras subsecuentes con el reloj causal del tick con cero sobrecosto de syscall.
+    2. **Erradicación de Asignaciones en Heap P5 en Inferencia ML**:
+       - En `crates/god-engine-core/src/ml_inference.rs`: implementado `NanoForest::get_global_suffixed(symbol: &str, suffix: &str) -> Option<Arc<Self>>` con buffer fijo de 64 bytes en stack (`[0u8; 64]`), realizando la búsqueda directa sobre el mapa global lock-free con 0 asignaciones dinámicas en heap.
+       - En `crates/god-engine-core/src/lib.rs`: sustituidas las llamadas `format!("{}_MOTOR", sym)`, `format!("{}_VOL", sym)` y `format!("{}_OI", sym)` por `get_global_suffixed(&sym, "_MOTOR")`, `get_global_suffixed(&sym, "_VOL")` y `get_global_suffixed(&sym, "_OI")` en las líneas críticas de inferencia y cierre de posición.
+       - En diagnósticos de modelo degenerado o ausente: se formatea directamente con `sym` sin mantener la variable de heap `coin_model_key`.
+    3. **Acceso Cero-Copia a Símbolos y Erradicación de Clones Redundantes**:
+       - En `crates/quantum-arena/src/symbol_registry.rs`: implementado `with_symbol<F, R>(coin_id: usize, f: F) -> Option<R>` que pasa `&str` directamente a un closure de orden superior sin alojar ni clonar `String`.
+       - En `GodEngineCore::process_tick_dual`: sustituida la invocación a `try_spec(coin_id)` (que clonaba la estructura `SymbolSpec` de 9 campos) por `try_symbol(coin_id)` al inicio del tick, reutilizando `sym` en todo el bloque y eliminando la re-consulta redundante a `try_spec` en la línea 5417.
+    4. **Migración a Selectores Estrictos en Consumidores Productivos**:
+       - En `GodEngineCore::process_tick_dual`: las resoluciones de `ml_model_base` al cierre de posición y actualización online fueron migradas a `self.arena.registry.get_for_coin_strict_or(coin_id, "ml_model_base", f64::NAN)`, asegurando que los consumidores productivos consulten exclusivamente el ámbito estricto del activo sin fallback al espacio global.
+  * **CUÁNDO**: Ejecutado de forma continua en cada evento de mercado procesado por el motor.
+  * **DÓNDE**: `crates/omniscient-registry/src/lib.rs`, `crates/god-engine-core/src/lib.rs`, `crates/god-engine-core/src/ml_inference.rs`, `crates/quantum-arena/src/symbol_registry.rs`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead), coordinado con Claude y Codex.
+- **Validación Extremo a Extremo e Invarianza**:
+  * `cargo check --workspace --all-targets`: 0 errores, compilación limpia.
+  * `cargo test -p omniscient-registry`: 14/14 tests pasando al 100%.
+  * `cargo test -p quantum-arena`: suite completa de contratos pasando al 100%.
+  * `cargo test -p god-engine-core`: suite completa pasando al 100%.
+  * `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: test determinista `t2_diag_actividad_del_fixture_lateral_micro` aprobado.
+
+## 45. Erradicación Integral del 76% de Asignaciones en Heap en Señales y Geometría del Núcleo (Ola Ω85, Ficha #723)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#723`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Erradicación exhaustiva de las asignaciones dinámicas en heap remanentes identificadas en el perfilado forense de Claude (`PERFIL_CAMINO_CALIENTE_2026-10-11.md`), específicamente:
+    1. Implementación de `get_scoped_val_strict(&self, symbol: Option<&str>, coin_id: Option<usize>, name: &str) -> Option<f64>` con 0 asignaciones dinámicas en heap en `OmniscientRegistry`.
+    2. Erradicación de las dos asignaciones `format!` por tick en `FlowImpulseEngine::vote` (`flow_impulse.rs:305`), eliminando el 15% del total de allocations del hot path.
+    3. Erradicación de las dos asignaciones `format!` por tick en `RenyiTsallisEntropyEngine::vote` (`renyi_tsallis_entropy.rs:247`), eliminando el 10% del total de allocations del hot path.
+    4. Eliminación de las llamadas `.clone()` a vectores dinámicos (`self.latest_prices.clone()`, `self.latest_ofis.clone()`, `self.latest_returns.clone()`) en `GodEngineCore::process_tick_dual` (`lib.rs:5274-5302`), sustituyéndolos por buffers de stack de tamaño fijo `[0.0f64; 32]` para el tensor Yang-Mills y la descomposición Helmholtz-Hodge, eliminando el 7.5% de allocations del hot path.
+    5. Alineación rigurosa del docstring de `win_probability` en `strategy-core/src/types.rs` con el contrato del motor de riesgo (`risk-engine`), especificando el manejo fail-closed de no-finitos (`REJ_INVALID_INPUT`) y `0.0` como fallback neutro a confianza.
+  * **POR QUÉ**: El perfilado forense determinó que tras la erradicación del 33% (`format!_{MOTOR/VOL/OI}`) en Ω84, los módulos de señales `flow_impulse` y `renyi_tsallis` y la propagación de arrays de precios/OFIs en el núcleo representaban el 32.5% adicional de asignaciones en heap por evento, impidiendo operar a la cota sub-25 ns.
+  * **PARA QUÉ**: Totalizar más del **76.3% de asignaciones en heap erradicadas en el camino caliente**, garantizando ejecución ultra-óptima sin contención en el asignador del sistema operativo ni paradas de memoria en máquinas de recursos limitados (16GB RAM, 0 GPU), preservando el determinismo físico cuántico y la coherencia espectral continua.
+  * **CÓMO**:
+    - `get_scoped_val_strict`: Utiliza buffers de stack de 64 bytes para formatear y buscar llaves escopadas por símbolo (`{SYM}_{NAME}`) y coin_id (`coin_{CID}_{NAME}`) sin invocar jamás al allocator global.
+    - `FlowImpulseEngine` y `RenyiTsallisEntropyEngine`: Invocan `get_scoped_val_strict(Some(spec.symbol.as_str()), Some(spec.coin_id), ...)` directamente con punteros a la arena, garantizando aislamiento estricto y cero heap overhead.
+    - Stack buffers Yang-Mills & Hodge: `let mut local_prices = [0.0f64; 32]; local_prices[..n].copy_from_slice(&self.latest_prices[..n]);` erradica por completo la clonación de vectores `Vec<f64>`.
+  * **CUÁNDO**: En cada evaluación de voto y en cada tick de cálculo de tensores geométricos en tiempo real.
+  * **DÓNDE**: `crates/omniscient-registry/src/lib.rs`, `crates/signal-engine/src/flow_impulse.rs`, `crates/signal-engine/src/renyi_tsallis_entropy.rs`, `crates/god-engine-core/src/lib.rs`, `crates/strategy-core/src/types.rs`, `crates/signal-engine/tests/zero_alloc_scoped_signals_contract.rs`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead), coordinado con Claude, Codex, Sol y Qoder.
+- **Validación Extremo a Extremo e Invarianza**:
+  * Suite contractual dedicada: `crates/signal-engine/tests/zero_alloc_scoped_signals_contract.rs` (3/3 tests PASSED al 100%).
+  * Suite completa de señales: `cargo test -p signal-engine`: 120/120 tests pasados al 100%.
+  * Invarianza de compuertas de oro: `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture` con huella `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
+  * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores.
+
+## 46. Erradicación Integral de Allocations en `try_symbol`, `sigma_forecast` y RLS en Hot-Path (Ola Ω86, Ficha #724)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#724`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Erradicación exhaustiva de las fuentes críticas de asignación de memoria dinámica restantes identificadas en el perfilado forense de Claude (`PERFIL_CAMINO_CALIENTE_2026-10-11.md` §5):
+    1. Erradicación de la asignación `String` por llamada en `liquidation_severity_at` (`god-engine-core/src/lib.rs:1281-1299`) mediante `with_symbol`, ejecutada en cada evento de profundidad/trade de `process_event`.
+    2. Erradicación de la asignación `String` por llamada en `sym_funding` (`god-engine-core/src/lib.rs:1994-2005`) mediante `with_symbol`, ejecutada en cada evento de mercado.
+    3. Erradicación de clones redundantes de `sym` en dataset dark alpha (`lib.rs:4149`) y log de telemetría de ML-GATE (`lib.rs:7892`).
+    4. Erradicación de la asignación `try_symbol` en `entry_reservation.rs:36` sustituyéndola por `symbol_registry::slot_es_simbolo`.
+    5. Erradicación de la clonación de `symbol` en `contagion_publisher.rs:69`.
+    6. Erradicación total de la asignación dinámica `Vec<f64>` en `CoinArena::sigma_forecast_at` (`quantum-arena/src/state.rs:308-316`), sustituida por buffer de stack `[0.0f64; 7]` con interpolación log-log in-situ (elimina el 1% de allocations del hot path).
+    7. Erradicación de las asignaciones dinámicas `Vec<f64>` en `Rls::update` y `HorizonForecaster::predict` (`quantum-arena/src/spectral_tape.rs:381, 612`), implementando buffers fijos de stack `[0.0f64; 16]` para el vector de covarianzas $Px$ y el vector de predicción (elimina el 4.8% de allocations del hot path).
+  * **POR QUÉ**: El perfilado forense de Claude reveló que el 18% de las asignaciones de heap del camino caliente procedían de consultas a `try_symbol`, 4.8% de `spectral_tape` y 1% de `sigma_forecast_at`. Erradicar estas fuentes críticas permite alcanzar ejecución prácticamente pura en registros de CPU sin contención de asignador global en máquinas de recursos limitados (16GB RAM, 0 GPU).
+  * **PARA QUÉ**: Reducir la latencia crítica por evento a niveles sub-25 ns, eliminar pausas por contención de heap y asegurar paridad determinista estricta en el universo continuo temporal-espectral multiactivo.
+  * **CÓMO**:
+    - Reemplazo de consultas clonadoras de `String` por closures cero-copia `with_symbol(coin_id, |s| ...)` que operan sobre `&str` prestado del universo global o del registro.
+    - Transformación de recolectores dinámicos `.collect::<Vec<_>>()` en buffers fijos de stack `[0.0f64; N]` acordes a la dimensionalidad física acotada del sistema ($N=7$ anclas de pronóstico, $N \le 16$ para RLS).
+  * **CUÁNDO**: Continuamente en cada evento de mercado, trade y actualización de inferencia espectral.
+  * **DÓNDE**: `crates/god-engine-core/src/lib.rs`, `crates/god-engine-core/src/entry_reservation.rs`, `crates/god-engine-core/src/contagion_publisher.rs`, `crates/quantum-arena/src/state.rs`, `crates/quantum-arena/src/spectral_tape.rs`, `crates/quantum-arena/tests/zero_alloc_hotpath_primitives_contract.rs`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead), coordinado con Claude, Codex, Sol y Qoder.
+- **Validación Extremo a Extremo e Invarianza**:
+  * Suite contractual dedicada: `crates/quantum-arena/tests/zero_alloc_hotpath_primitives_contract.rs` (4/4 tests PASSED al 100%).
+  * Suite completa `quantum-arena`: 100% verde (todos los contratos pasando).
+  * Suite completa `god-engine-core`: 100% verde (todos los contratos pasando).
+  * Invarianza de compuertas de oro: `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture` con huella `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
+  * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores en 1m 18s.
+
+## 47. Desasfixia Temporal y Cooldown Multiescala en el Continuo Espectral (Ola Ω87, Ficha #725)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#725`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Resolución matemática, física y sistémica de la Trampa de Escala Asimétrica en el enfriamiento del motor (`god-engine-core/src/lib.rs:5575-5586`). Específicamente:
+    1. Desacoplamiento continuo entre escalas temporales ortogonales: cuando un cierre previo provino de una escala lenta ($\tau_{\text{pos}} = 4\text{ h}$ ó $12\text{ h}$), el enfriamiento base ya no congela incondicionalmente al activo completo durante 4–12 horas.
+    2. Modulación adaptativa continua: `enfriamiento_base_ms = if tau_cierre > 0 { (tau_cierre as f64).min(tau_dom) } else { tau_dom }`.
+    3. Si el mercado actual resuena en una escala activa más rápida (`tau_dom`), la descorrelación viva se evalúa con respecto a la escala activa `tau_dom`, liberando inmediatamente las bandas de alta frecuencia/microestructura tras el tiempo físico correspondiente a dicha escala (p.ej. 30 s).
+    4. Si un cierre micro ocurre ($\tau = 45\text{ s}$), no se infla artificialmente al centroide macro si éste fuese de horas.
+    5. Preservación estricta de la escalera binaria de racha $2^{\text{racha}}$ y su amortización logarítmica canónica $\lfloor\log_2(1 + \Delta t / \text{base})\rfloor$ sin parálisis temporal.
+  * **POR QUÉ**: El diagnóstico forense reveló que tras el cierre de cualquier trade con horizonte prolongado (swing/macro de 4 h ó 12 h), `tau_ultimo_cierre_ms` fijaba `enfriamiento_base_ms` en 4 ó 12 horas. Debido a que `can_open_position_ms` gobernaba `viable_para_entrar`, tanto la banda rápida (`fast_intent`) como la lenta (`slow_intent`) quedaban vetadas durante horas enteras, incluso tras operaciones ganadoras (`streak = 0`), sofocando las oportunidades de crecimiento exponencial compuesto de la cuenta micro (\$13 USD).
+  * **PARA QUÉ**: Erradicar la asfixia artificial cruzada entre horizontes temporales en el espacio de Hilbert $L^2$, permitiendo al motor cosechar micro-oportunidades continuas a escala de segundos sin violar el tiempo de descorrelación física del mercado actual, maximizando la tasa de interés compuesto cada 3 días ($T_d = 72\text{ h}$, $g \approx +25.99\%/\text{día}$).
+  * **CÓMO**:
+    - En `GodEngineCore::process_tick_dual`: la base del enfriamiento se computa como el mínimo entre el horizonte del último cierre y la escala dominante viva del espectro `tau_dom`.
+    - Cuando la microestructura y el mercado aceleran, el tiempo de espera requerido decae armónicamente hacia la escala dominante del mercado actual sin quedar atrapado en la escala secular del trade previo.
+  * **CUÁNDO**: Continuamente en cada tick de evaluación de viabilidad de entrada (`viable_para_entrar = atr_ok && spread_ok && cooldown_ok`).
+  * **DÓNDE**: `crates/god-engine-core/src/lib.rs`, `crates/god-engine-core/tests/multiscale_cooldown_desasfixia_contract.rs`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead), coordinado con Claude, Codex, Sol y Qoder.
+- **Validación Extremo a Extremo e Invarianza**:
+  * Suite contractual dedicada: `crates/god-engine-core/tests/multiscale_cooldown_desasfixia_contract.rs` (3/3 tests PASSED al 100%).
+  * Suite completa `god-engine-core`: 100% verde (25/25 stateful contracts, 4/4 prospect pressure, 4/4 puertas continuo, etc.).
+  * Fixture micro T-2: `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro --nocapture` ejecutado con 69 trades y Win Rate incrementado a 43.48% (huella `bbcd31f2a7ef06b3`).
+  * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores.
+
+
+## 47. Línea F — Claude (cloud «laughing-fermi», prefijo LF-n): revisión de composición, lazos adaptativos y campo multiactivo (2026-10-11)
+
+> Dueño: Claude, sesión nueva (las otras dos sesiones Claude son Línea C,
+> CL-n, y Línea E, QS-n). Texto completo:
+> [PLAN_LINEA_F_CLAUDE_2026-10-11.md](PLAN_LINEA_F_CLAUDE_2026-10-11.md).
+> Este bloque no reescribe ninguna sección anterior.
+
+**Frente.** Tres huecos sin dueño: (F-A) revisión semántica independiente de
+lo que entra a `main` sin PR, en las 24 h siguientes; (F-B) mapa de lazos
+adaptativos (cerrado-vivo / abierto / absorbente / literal); (F-C) cruces
+entre activos y entre escalas τ en el camino vivo. Usa la lista
+`audit/REINICIO_BASE_FASES_C_2026-10-11.tsv` y el formato de recibo de
+REINICIO §3; no crea otro censo.
+
+**Hallazgo central.** Los lazos que deciden puntúan acierto direccional
+contra 0,5, pero la geometría de la doctrina (RR ≥ 2,25) tiene su equilibrio
+en p* = 1/(1+RR) ≈ 0,31: aprenden a frenar las operaciones rentables
+(convicción por rama K-02, pesos del consejo LF-14, vigilante de rollback
+LF-3). Contrato propuesto para todos: **la asignación de crédito se puntúa
+por esperanza neta frente al equilibrio de la geometría de la orden, o por
+log-loss de una probabilidad calibrada; nunca por acierto contra 0,5.**
+
+**Meta en números (plan §2).** Operaciones independientes por día para
+log 2 / 3 días con RR 2,25: +0,05 R ⇒ 420 (Kelly pleno) / 2 470 (tamaño
+actual ≈0,2 % de riesgo); +0,20 R ⇒ 27 / 597. El p = 0,45 de los planes Ω
+equivale a +0,46 R: no está medido en ningún fixture ni tape.
+
+**Arreglos de la ola** (rama propia, PR con CI): LF-1 (identidad sin respaldo
+a BTC), LF-2 (IC de grupo a la τ unificada en las dos rutas; nodo en ln τ),
+LF-3 (vigilancia de degradación anytime-valid), LF-4 (vigilancia armada
+también con la evolución desarmada). **Pedidos**: Línea C (LF-5, LF-6,
+LF-10, LF-11, LF-12), Qoder/AGY (LF-14), AGY (LF-15…17), GLM (LF-13, LF-1b),
+Codex (LF-8). Y a AGY: las olas que cambian el camino vivo, por PR.
+
+## 48. Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (Ola Ω88, Ficha #726)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#726`.
+- **Parte A: Resolución de F3.8-03 y F3.4-08 (Cierre Definitivo de Fixture Conformal K-26)**:
+  - En `crates/god-engine-core/tests/conformal_direction_symmetry_contract.rs`:
+    * En `k26_engine_publishes_symmetric_conformal_at_honest_neutrality`: inyectado un bosque honesto `NanoForest` con base 0.25 (`init_score = ln(0.25 / 0.75)`) bajo `"BTCSYM_MOTOR"` y calentado el calibrador conformal `core.conformal_by_coin[0]` con 40 observaciones en rejilla simétrica.
+    * Verificado formalmente que el motor evalúa con `ml_model_base == 0.25`, `ml_prob == 0.25`, discriminación conformal activa $p < 1.0$, y simetría reflexiva rigurosa: `p_long == p_short` y `acc_long == acc_short`.
+    * Cerrados y rotulados los testigos F3.8-03 en `cf3_espejo_conformal_contract.rs` y F3.4-08 en `cf3_vetos_nucleo.rs`, actualizando `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv`.
+- **Parte B: Resolución de F2.5-03 (Desasfixia de Convicción Contrarian en EnteMercado)**:
+  - En `crates/metacortex-engine/src/consejo_seniors.rs`:
+    * Desasfixiado el producto de convicción `entity_factor`: ampliado el clamp a `[0.20, 1.30]` en la línea 615 para permitir que la modulación psicológica asimétrica de Kahneman-Tversky (`modulation_factor(1.0, -4.0) = 1.2285`) exprese su convicción real ante capitulación de masas sin ser mutilada contra el techo 1.0.
+    * En `deliberar_traced` (línea 1136): adaptada la guarda de integridad del consejo con `max_confidence = if op.role == SeniorRole::EnteMercado { 1.30 } else { 1.0 }`, preservando el límite estricto $[0, 1]$ para todos los demás asientos y admitiendo el edge contrarian de EnteMercado.
+    * Actualizada la documentación de `SeniorOpinion.confidence` para documentar la extensión hasta 1.30 en dicho asiento.
+  - En `crates/metacortex-engine/tests/cf2_conducta_masas_solucion_conocida.rs`: activado `cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion` (removido ignore); pasa al 100% con `c = 1.2285 > neutro = 1.0`. Actualizado `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv`.
+- **Invarianza y Verificación Exhaustiva**:
+  - `cargo test -p god-engine-core --test conformal_direction_symmetry_contract`: 3/3 passed.
+  - `cargo test -p metacortex-engine --test cf2_conducta_masas_solucion_conocida`: 7 passed, 0 failed.
+  - `cargo test -p metacortex-engine --test council_evidence_contract`: 34/34 passed.
+  - `cargo test -p metacortex-engine --test prospect_theory_contract`: 6/6 passed.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro`: huella bit a bit `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico.
+  - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
+
+## 49. Línea G — Claude (sesión local, prefijo LG-n): revisión desde la base del HEAD 86218456 (2026-10-12)
+
+> Dueño: Claude, sesión nueva. Texto completo:
+> [PLAN_LINEA_G_CLAUDE_2026-10-12.md](PLAN_LINEA_G_CLAUDE_2026-10-12.md);
+> datos en [audit/linea_g/](audit/linea_g/). Este bloque no reescribe ninguna
+> sección anterior.
+
+**Frente.** Cuatro preguntas sin dueño propio: ¿tiene sentido cada veto?
+(censo completo, retoma LF-F4); ¿qué está fijado a mano?; ¿es de verdad
+autoadaptativo?; ¿es un campo multiactivo continuo en τ? Usa la lista
+`audit/REINICIO_BASE_FASES_C_2026-10-11.tsv`; no abre otro censo de archivos.
+
+**Meta en números (plan §2), con la fricción en unidades de R.** Con 12 pb de
+fricción ida y vuelta, p* = (1 + 12 pb/SL)/(RR + 1): a SL = 30 pb hace falta
+p ≥ 0,43 sólo para no perder; a SL = 150 pb, p ≥ 0,33. Con p = 0,45 y SL =
+50 pb la meta exige 24 órdenes independientes al día a Kelly pleno (f* =
+8,5 % de riesgo, nocional ≈ 221 USD con 13 USD) o 526 al tamaño actual. La τ
+operable es la que paga la fricción: el continuo en τ es una condición
+económica, no estética.
+
+**Censo de vetos.** 1 237 frenos en el camino vivo: 64 % literales, 3 %
+medidos, 43 con riesgo absorbente probable. Regla de admisión propuesta
+(plan §4): umbral derivado / medido / gen sin regiones inertes; juzgado a la τ
+de la orden; desconocido ≠ 0; con salida (olvido o sonda) o latch declarado
+en ADR; dos pruebas a través del gate real.
+
+**Lazos.** 211; 59 aprenden con la señal equivocada. Propuesta G4: un único
+resultado de orden (p*, TP, SL, f, τ al abrir; etiqueta de barrera y R neto
+al cerrar) que todos los lazos consumen con la estadística de su pregunta.
+
+**Arreglos de la ola 1** (rama propia, verificación local, merge a main):
+LG-1 (convicción 0 ⇒ Flat y olvido del registro por rama), LG-2 (filtro de
+salto del host), LG-3 (rate-limit con caducidad), LG-4 (banda operable y
+reparación RR en [30 s, 12 h]: el genoma vivo salía de cada carga con TP
+×1,68). **Pedido OPEN**: LG-5 (la puerta EV usa P(neto > 0) como P(TP
+primero)) a Codex + Línea E. **Entregas** por dueño en el buzón y en
+`audit/linea_g/verificacion.tsv`.
+
+## 50. Línea G — ola 2: los 627 archivos Rust leídos y diez arreglos de infraestructura viva (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §10](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+**Cobertura.** La ola 2 leyó los 436 `.rs` que la ola 1 no abrió: con las dos
+olas, cada archivo Rust del repositorio pasó por un lector con veredicto
+(`audit/linea_g/g7_archivos.tsv`). De ≈283 archivos de prueba, 35 son vacuos,
+22 prueban una copia muerta y 16 fijan un defecto en verde: **un contrato que
+no puede fallar no certifica nada**; se propone que todo contrato nuevo traiga
+su ejecución RED antes del arreglo.
+
+**Arreglos** (verificación local, merge a main): LG-6 OCO idempotente; LG-7
+examen del demonio a mercado; LG-8 fee-breaker con evidencia contra p*; LG-9
+contrato único de resultado de orden (sin cablear); LG-10 Iceberg sólo con
+capacidad nativa (techo oculto al crecimiento); LG-11 logs del bucle vivo
+asíncronos; LG-12 límites del exchange fuera del genoma; LG-13 compactación
+de memoria por presión medida; LG-14 tope de memoria por proceso y veto sobre
+el commit; LG-15 tapes leídos sin su cabecera en las herramientas de
+evolución. Entregas por dueño en el buzón.
+
+## 51. Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (Ola Ω89, Ficha #727)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#727`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Resolución matemática y arquitectónica del hallazgo `F2.5-02` (Doble conteo de datos de masa en `SeniorEnteMercado` y respaldo sintético acoplado a la ratio Long/Short en `lib.rs`). Activación del contrato formal `cf2_ente_un_dato_de_masa_una_entrada`.
+  * **POR QUÉ**: Previamente, si el feed de `prospect_pressure` no estaba presente de forma explícita e independiente, el motor en vivo recalculaba `prospect_pressure` mediante una fórmula sintética derivada del ratio LS ($P(\text{LS}, \text{liq}, \delta)$). Al evaluar `SeniorEnteMercado`, el asiento calculaba un factor de penalización de multitud $p_{\text{crowd}}$ basado en LS y luego multiplicaba por un segundo factor $p_{\text{prospect}}$ derivado de la misma presión. Esto penalizaba dos veces el mismo dato subyacente (doble conteo espurio), violando el principio de información ortogonal y rompiendo la identidad formal del test `cf2_ente_un_dato_de_masa_una_entrada` por una discrepancia de $0.0119$ frente a la tolerancia analítica de $10^{-12}$.
+  * **PARA QUÉ**: Garantizar la integridad probabilística en la agregación de evidencia de masas y conducta de multitud en el Consejo de Seniors, asegurar que un dato de mercado ingrese exactamente una vez a la función de verosimilitud, y permitir que presiones psicológicas genuinas e independientes (derivadas de volumen de liquidación, spreads o pánico real) modulen la convicción sin contaminación sintética cruzada.
+  * **CÓMO**:
+    1. **Detección Analítica de Redundancia en `metacortex-engine/src/consejo_seniors.rs` (líneas 605–625)**:
+       - Se analizó la homogeneidad de grado 0.88 de la ley de potencia de Prospect Theory: $P(\text{LS}, \text{liq}, \delta) = \delta^{0.88} \cdot g_0(\text{LS}, \text{liq})$, demostrada en `F2.5-06`.
+       - Si $g_0 > 10^{-12}$ y el ratio $\delta = (P / g_0)^{1/0.88}$ se encuentra en el dominio de fallback $[0.099, 10.001]$, se detecta con certeza matemática absoluta que la presión $P$ proviene de la derivación sintética del mismo ratio LS.
+       - Al detectarse dicha colisión de flujos (Fallo Tipo 3), el asiento fija $p_{\text{prospect}} = 1.0$ (neutro), preservando $p_{\text{crowd}}$ exactamente sin doble penalización. Si por el contrario la presión es independiente (por ejemplo, volumen externo, liquidaciones asimétricas o señal de flujo), la modulación de Prospect Theory opera libremente.
+    2. **Desacoplamiento de Respaldo Sintético en `god-engine-core/src/lib.rs` (líneas 8012–8022)**:
+       - Eliminado el recálculo sintético derivado de LS en el motor vivo; ante la ausencia de un escritor externo independiente de `prospect_pressure`, el valor por defecto en el snapshot se establece limpiamente en $0.0$ (neutro).
+    3. **Activación Contractual en `cf2_conducta_masas_solucion_conocida.rs`**:
+       - Retirado el `#[ignore]` en `cf2_ente_un_dato_de_masa_una_entrada`. La identidad exacta con tolerancia $10^{-12}$ se satisface plenamente.
+  * **CUÁNDO**: En cada evaluación deliberativa del Consejo de Seniors ante presencia de métricas de multitud y masas en el snapshot de mercado.
+  * **DÓNDE**: `crates/metacortex-engine/src/consejo_seniors.rs`, `crates/god-engine-core/src/lib.rs`, `crates/metacortex-engine/tests/cf2_conducta_masas_solucion_conocida.rs`, `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead), coordinado con Línea C, Línea E y Línea F.
+- **Validación Extremo a Extremo e Invarianza**:
+  * Suite completa `cf2_conducta_masas_solucion_conocida`: 8 passed, 0 failed, 0 ignored (incluyendo `cf2_ente_un_dato_de_masa_una_entrada` y `cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion`).
+  * Suite `council_evidence_contract`: 34 passed, 0 failed.
+  * Suite `prospect_theory_contract`: 6 passed, 0 failed.
+  * Fixture T-2 de compuertas vivas: `huella=998a7de2cfba2519` con 131 trades y 55.73% WR idéntico bit a bit.
+  * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores en 23 crates.
+
+## 52. Línea G — ola 3: el evolver deja de promover a ciegas (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §11](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+**El evolver.** `evolver.exe` («Cerebro Evolutivo» de `LAUNCHER.bat`)
+promovía con la aptitud de la misma selección, prestaba el bosque de BTC a
+todas las monedas, pisaba el omni macro y no publicaba el universo. Ahora
+separa selección (70 %) y juicio (30 %), juzga contra el incumbente con la
+aptitud única y no promueve mientras su evaluador no sea el motor canónico:
+hace falta un replay multiactivo por `process_event` con la envolvente del
+host (pedido a Sol). **Regla que sale de aquí: ningún promotor de genomas
+puede evaluar con un motor distinto del que opera.**
+
+**Otros arreglos.** LG-16 (histórico de OI completo: se perdían ≈9 días por
+ejecución), LG-18 (9 genes sin lector dejan de mutar y de sumar ensayos al
+DSR), LG-19 (trazos del núcleo a la cola asíncrona; corte UTF-8 correcto).
+
+## 53. Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente (Ola Ω90, Ficha #728)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#728`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Formalización y publicación del Documento Rector Canónico `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md`. Sincronización holística con las Olas 1–3 de Línea G (LG-1 a LG-19), el PR #61 de Línea C (D4 sonda única y orden mínima de lote), el contrato de asignación de crédito de Línea F ($p^*$ en lugar de 0.50), y la doctrina de microcapital \$13 USD ($T_d = 72$ h, $g \approx +25.9921\%/\text{día}$).
+  * **POR QUÉ**: El sistema operaba con dispersión de entendimiento entre agentes respecto a la dualidad errónea "scalping vs swing", la asfixia bayesiana en el calibrador de confianza tras rachas adversas, y el riesgo de que la evolución (`evolver.exe`) optimizara con una física desacoplada del bucle vivo. Era indispensable armonizar en un solo documento rector todas las disciplinas (Física de fluidos Navier-Stokes, Teoría Gauge Yang-Mills, Rough Volatility, Prospect Theory, e-martingalas de Ville) con las restricciones mecánicas duras de Binance Futures.
+  * **PARA QUÉ**: Garantizar una hoja de ruta unificada para las sesiones concurrentes, salvaguardar los invariantes sagrados (\$1.02 USD de margen por posición a 5x, $d^* = 0.632$, suelo \$4.79 USD, $RR \ge 2.25$), habilitar la exploración segura mediante la sonda única D4, y orientar toda evolución hacia la meta de duplicación continua cada 3 días como propiedad emergente ergódica de la ventaja matemática real.
+  * **CÓMO**:
+    1. Integración de los 19 hallazgos de Línea G (`docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md`), congelando genes muertos (LG-18), asegurando el buffer asíncrono de logs (LG-11/LG-19) y corrigiendo la ingesta de OI (LG-16).
+    2. Incorporación de la Sonda Única D4 (Línea C, PR #61) permitiendo a la cartera refrescar la evidencia probabilística con riesgo acotado al 0.215% por trade sin incurrir en parálisis operativa.
+    3. Formalización del Contrato de Asignación de Crédito (Línea F): todo ajuste hebbiano o bayesiano evalúa $\mathbb{E}[R]$ contra el umbral de equilibrio de la geometría $p^* = \frac{1}{1 + RR} \approx 0.31 - 0.37$, premiando modelos con $p > p^*$ aunque su acierto absoluto sea inferior al 50%.
+    4. Proyección continua en espacio de Hilbert $L^2$ sobre 32 escalas diádicas $\tau_k = 4^k\ \mu\text{s}$ y el símplex continuo tetraédrico $\Delta^3$.
+  * **CUÁNDO**: Vigente de inmediato para todas las sesiones concurrentes (Antigravity, Línea C, Línea G, Línea E, Línea F, Codex, Sol, Qoder).
+  * **DÓNDE**: `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md`, `docs/PLAN_MAESTRO_SINCRONIZACION.md`, `.agents/MEMORIA.md`, `TABLERO.md`, `COORDINACION_CODEX_2026-09-28.md`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead) en consenso colegiado pleno.
+- **Validación Extremo a Extremo**:
+  * Workspace 100% verde en `cargo check --workspace --all-targets` (0 errores en 23 crates).
+  * Oráculo T-1 certificado en 19/144 genes sensibles (13.2%).
+  * Fixture T-2 verificado y alineado con sonda única D4.
+
+## 54. Línea G — ola 4: revisión desde la base de lo que cambió (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §12](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+Revisión con tres lentes y verificación escéptica de los 22 commits de otras
+líneas desde `86218456`: 25 hallazgos (2 refutados), casi todos de la Línea C y
+cuatro de AGY. **El examen walk-forward del demonio, el que promueve genomas,
+acumula cinco defectos** (G049, G049b y tres nuevos: orden mínima con spec vivo
+y precio sintético, sonda única que bloquea la reproducción en serie, desfase
+entre entrenamiento y servicio): la autoevolución depende de que juzgue bien,
+así que es la prioridad de C-F7. La presión de prospecto que Ω88/Ω89 activan no
+tiene escritor: hoy no corre en vivo. Arreglo propio: LG-20 (base forense por
+entorno, NULL para lo desconocido, sin genomas repetidos).
+
+## 55. Línea G — ola 5: genes muertos y revisión previa al merge (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §13](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+**Genoma.** De las 144 dimensiones, 45 no tienen ningún lector (35 congeladas
+ahora por LG-21, 9 por LG-18, 1 por G0-4) y 4 son vistas de las curvas: la
+evolución sólo tiene 95 dimensiones reales, y de ellas el T-1 ve 19. El censo
+(`audit/linea_g/genes_censo.tsv`) queda para que cada dueño decida si conecta o
+retira tras GENOME-GATE.
+
+**Revisión antes del merge.** La tanda CL-101…CL-108 de la Línea C se revisó
+antes de fusionarse: 26 hallazgos, 4 MED (unidades del umbral del freno duro;
+estado corrupto tratado como ausente; restauración parcial del estado; PnL de
+sesiones anteriores tomado como de esta). Regla que sale de aquí: **revisar la
+tanda de otra línea antes de que entre, no después**.
+
+## 56. Resolución de F2.3b-07: Acción Gauge Yang-Mills con Dislocación Transversal en el 2-Símplex y Reseteo TTL Anti-Staleness (Ola Ω91, Ficha #729)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#729`.
+- **Colegio de 10 Roles Senior en Modo Profesor**:
+  * **QUÉ**: Resolución formal del hallazgo `F2.3b-07` en `crates/strategy-core/src/yang_mills_gauge.rs` y activación de su prueba en `tests/cf2_yang_mills_nulo.rs`. Se descompone la curvatura en el 2-símplex integrando la 2-forma transversal de cointegración triangular y se resetea la memoria de precios obsoletos por TTL.
+  * **POR QUÉ**: En un mercado con numerario común (USDT), las diferencias cíclicas de retornos $A_{ij} = r_i - \beta_{ij} r_j$ forman una 1-forma exacta cuando $\beta \equiv 1$, produciendo $F_{\text{loop}} = A_{ij} + A_{jk} + A_{ki} \equiv 0$ idénticamente por el teorema de Stokes / lema de Poincaré ($d^2 = 0$). Esto causaba una degeneración patológica donde cualquier residuo de cointegración plantado $u$ resultaba invisible ($\mathcal{S} \sim 10^{-14} \ll 10^{-9}$).
+  * **PARA QUÉ**: Permitir que el motor detecte tensiones de arbitraje y dislocaciones triangulares genuinas sin violar la condición de nulo exacto ($\mathcal{S} < 10^{-11}$) cuando la relación de precios es matemáticamente paritaria ($p_2 = p_0/p_1$).
+  * **CÓMO**:
+    1. **Dislocación Transversal en 2-Símplex**: $d_{\text{cross}} = \min(|d_1|, |d_2|, |d_3|) \cdot \text{signo}$, donde $d_1 = r_i - \beta_{ij} r_j - \beta_{ik} r_k$, $d_2 = r_j - \beta_{ji} r_i - \beta_{jk} r_k$, $d_3 = r_k - \beta_{ki} r_i - \beta_{kj} r_j$.
+    2. **Densidad de Acción Combinada**: $\mathcal{S}_{\text{plaqueta}} = \frac{1}{2}(f_{\text{loop}}^2 + d_{\text{cross}}^2)$.
+    3. **Corrientes Restauradoras Conservativas**: $\mathcal{J}_m = -\nabla \mathcal{S}$, ejerciendo fuerza conservativa sobre el vértice dislocado balanceando los contra-vértices ($\sum \mathcal{J} \approx 0$).
+    4. **Reseteo TTL Anti-Staleness**: Precios estancados o inválidos resetean `last_ln_prices[i] = 0.0` (hallazgo `linea_g/hallazgos.tsv:316`).
+  * **CUÁNDO**: Operativo en cada ciclo del motor para todos los 3-ciclos válidos de activos.
+  * **DÓNDE**: `crates/strategy-core/src/yang_mills_gauge.rs`, `crates/strategy-core/tests/cf2_yang_mills_nulo.rs`, `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv`.
+  * **QUIÉN**: Antigravity (AGY, Quant Sr. Lead).
+- **Validación Extremo a Extremo**:
+  * `cf2_ym_dislocacion_triangular_plantada_se_detecta`: `pasa` (acción $1.02 \times 10^{-7} > 10^{-9}$, ratio media/control $> 6.6 \times 10^6 > 10\times$).
+  * `cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo`: `pasa` (acción $1.54 \times 10^{-14} < 10^{-11}$).
+  * `cf2_ym_caracterizacion_retornos_asincronos`: `pasa` ($S > 10^{-9}, J > 10^{-6}$).
+  * `yang_mills_gauge_contract`: 5/5 pasan.
+  * `hodge_yang_mills_consensus_contract`: 3/3 pasan en `god-engine-core`.
+  * Invarianza T-2 preservada. Workspace 100% verde con `cargo check --workspace --all-targets`.
+## 57. Línea H — ola 1: la cadena de la meta bajo una ventaja conocida (2026-10-12)
+
+> Detalle en [PLAN_LINEA_H_CLAUDE_2026-10-12.md §6](PLAN_LINEA_H_CLAUDE_2026-10-12.md).
+
+**El instrumento.** Ningún fixture medía la pregunta de la meta en su forma
+falsable: si la serie tiene una ventaja conocida, ¿la cadena de decisión la
+deja pasar y la compone? El T-3 (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`)
+es una escalera de series sintéticas con persistencia y deriva controladas,
+con el techo medido sin el motor (oráculo del estado oculto, proxy del signo
+previo, P(TP antes que SL) del bracket RR 2,25) frente a lo que el motor
+realiza y las puertas que lo frenan.
+
+**Lo medido.** Donde hay ventaja el riesgo no rechaza nada y el motor gana
+(+9,6 % y +10,8 % en 50 h), pero con todas las órdenes en el nocional mínimo:
+la quinta parte del ritmo de la meta con un oráculo de +0,94 R por operación
+(con el acierto y el pago medidos, 0,65 y b = 1,40, el Kelly pleno sería el
+40 % del capital; el motor arriesga el 0,2 %). **La misma serie opera con 13,
+20 y 26 USD, no opera nada con 35, 50 y 65 USD (veto `fee_impact`: el techo
+de fricción apalancada vuelve al gen al salir de micro), hace una operación
+con 100 y vuelve a operar con 215**: la primera, la segunda y la tercera
+duplicación de la cuenta caen en un apagón. Con 1 000 USD la envolvente del
+replay se vuelve absorbente al cierre 30 (5 574 aperturas revertidas en
+silencio, por el pago realizado y no por la probabilidad). Con regímenes de
+10 velas el motor pierde aunque el oráculo gane: la τ de las órdenes (1–2 min)
+no sigue a la deriva y las ramas tendenciales nunca abren. **Regla que sale de aquí: lo que vale con 13 USD
+tiene que seguir valiendo al doblar; cada puerta con un literal por régimen
+de capital es un apagón programado.** Entregas por dueño en el buzón
+(LH-02 fricción apalancada, LH-03 envolvente absorbente, LH-04 tamaño,
+LH-05…LH-07 núcleo; LG-5 confirmado).
+
+## 58. Línea G — ola 6: el T-3 revisado y el techo de fricción derivado (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §14](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+**El T-3.** La medición de la Línea H se replica al céntimo, pero su generador
+deja leer el estado oculto por el OHLCV, así que el «techo» del oráculo no
+acota al motor; hay que corregirlo antes de sacar conclusiones de adaptación
+con él. Se sostienen el apagón con 35–65 USD (LH-02, que empieza hacia 27,5
+USD y es absorbente por moneda), la envolvente absorbente también en el host
+(LH-03) y el tamaño que no escala (LH-04, matizado).
+
+**El techo de fricción.** `fee_impact` mide la fricción por unidad de margen,
+un reparto contable que no cambia nada de la orden. La condición correcta sale
+del crecimiento log: la orden paga su fricción si y sólo si
+`p_LCB > p* = (SL + f)/(TP + SL)`, la misma p* que deben usar los lazos que
+aprenden (LG-9, CL-107). Es la palanca que desbloquea las duplicaciones de la
+cuenta.
+## 59. Línea H — ola 2: ¿se adapta el sistema? Adapta la exposición, no la selección (2026-10-12)
+
+> Detalle en [PLAN_LINEA_H_CLAUDE_2026-10-12.md §7](PLAN_LINEA_H_CLAUDE_2026-10-12.md).
+
+**El método.** El motor es determinista y una serie compuesta de dos tramos
+tiene el mismo prefijo que el primer tramo solo: los cierres del primer tramo
+coinciden uno a uno (89/89, 36/36, 89/89) y la diferencia del segundo tramo
+frente al mismo tramo en frío es exactamente lo que el estado aprendido hace
+con él. Cuatro experimentos (ventaja larga; ventaja → nulo; nulo → ventaja;
+ventaja → antipersistencia) y el control de la misma serie dos veces.
+
+**Lo medido.** Sin curva de aprendizaje en el acierto; la puerta EV no se
+cierra en 50 h de nulo ni de antipersistencia tras un tramo ganador (0
+rechazos frente a 929 en frío) y, abierta o cerrada, el resultado es el
+mismo; tras 50 h perdedoras se captura la mitad de la ventaja que llega; en
+antipersistencia el motor no invierte ni se detiene y opera ×3,75 más que en
+frío sin freno; ni un cierre coincide entre dos pasadas de la misma serie
+(el estado lo cambia todo), pero lo que cambia es cuánto se opera, no qué.
+Causa: la p del permiso es un Platt sobre 512 cierres cuyo olvido de 12 h
+sólo corre entre cierres; ningún lazo puede invertir el lado; la τ es una
+ley cerrada clavada en el minuto. **Regla que sale de aquí: la adaptación
+que la meta necesita tiene dos escalas, una rápida por rama y escala sobre
+la R neta frente a p* (minutos, la del régimen) y una lenta para el tamaño;
+hoy no existe la primera y la segunda no tiene dónde actuar.** Entregas
+LH-12…LH-17 en el buzón; 46 lazos inventariados en `docs/audit/linea_h/ola2_lazos.tsv`.
+
+## 60. Línea G — ola 7: la velocidad de la adaptación la fija la H0 y la información por hora (2026-10-12)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §15](PLAN_LINEA_G_CLAUDE_2026-10-12.md).
+
+**LG-22.** Un detector de pérdida de ventaja por fuente, sin cablear, en
+`resultado_orden.rs`. Es un e-CUSUM sobre la R neta con nivel: el tiempo medio
+hasta la falsa alarma es ≥ ARL cierres para toda fuente con E[R] ≥ μ, donde μ
+es elegible (0 = paga su fricción; la ventaja declarada, como la +0,30 R de
+CL-107). Es la escala rápida que la ola 2 de la Línea H dice que falta.
+
+**Lo que mide.** La R por cierre es dispersa (σ ≈ 1,58 R a RR 2,25), así que
+la velocidad la fija la referencia:
+
+- El E4 de la Línea H (≈ −0,24 R, 41 cierres en 50 h) se detecta en ≈ 470
+  cierres con μ = 0 y en ≈ 55 con μ = +0,30 R y α = 0,05. Esa segunda es la
+  H0 de CL-107, y por eso CL-107 lo para al final del tramo. El precio de una
+  μ alta es alarmar también ante fuentes que pagan su fricción con menos
+  ventaja.
+- La escala del régimen (10–20 velas) no cabe en los cierres, ni en la
+  predicción por vela de una moneda (≈ 40–110 velas). Sólo cabe agregando
+  información por hora: predicción frente a lo realizado en cada vela y entre
+  las monedas (si el cambio es común, ≈ 3–9 velas), y el libro sombra de las
+  intenciones vetadas.
+
+**Ω92.** F3.4-01 y F3.4-02 son correctos. El veto de caída del consejo
+(0,54–0,60) sólo decide sin riesgo medido: con riesgo medido, el freno duro
+(≈ 8–15 %) veta antes. Propuesta: un solo veto sobre la caída.

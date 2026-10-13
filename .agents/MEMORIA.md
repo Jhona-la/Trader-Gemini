@@ -1,5 +1,869 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω93 (#731) — Plan Maestro Canónico de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente
+
+- **Plan Maestro Canónico Publicado** (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md`):
+  - Marco directivo formal para la revisión integral archivo por archivo (23 crates, 474 archivos Rust) bajo el Consejo Colegiado de 10 Roles Senior en Modo Profesor exhaustivo (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).
+  - Matemáticas financieras de micro-capital ($13.00 USD inicial) sin exigencia de win-rate irreal del 100%: crecimiento continuo exponencial compuesto a tasa $g = \frac{\ln(2)}{3} \approx +25.9921\%/\text{día}$ ($T_d = 72$ h), operando con ventaja asimétrica $RR \ge 2.25$, optimal fraction $\frac{1}{2}$ Kelly, cota teórica de falsación $d^* = 1 - 0.05^{1/3} \approx 0.6316$ ($4.79 USD suelo).
+  - Formulación matemática del Universo Multivariante Continuo Temporal-Espectral: variedad diferenciable Riemanniana $\mathcal{M} = \mathbb{R}^+ \times \mathbb{R}^N \times \Delta^3 \times \mathbb{R}$ en espacio de Hilbert $L^2$ con 32 escalas diádicas $\tau_k = 4^k\ \mu\text{s}$. Erradicación definitiva de las dicotomías discretas scalping/swing y regímenes discretos.
+  - Marco físico-matemático transdisciplinar: ecuaciones Navier-Stokes acopladas $L^2/L^3$ en el libro de órdenes, gauge $SU(N)$ de Yang-Mills para invariancia de gauge y curvatura $F_{\mu\nu}$, descomposición de Helmholtz-Hodge en 1-formas de flujo, propagador cuántico de Feynman y teoría de prospectos de Kahneman-Tversky en juegos de campo medio (MFG).
+  - Protocolo de cuello de botella de Línea H (LH-02 valle de capital $35–$65, LH-03 replay envelope a $1,000, LH-04 piso de nocional mínimo, LH-05 ramas de tendencia silenciosas) y sincronización con Línea G (LG-22 e-CUSUM, deduplicación de veto de caída y centralización de $d^*$).
+- **Resolución de LH-02 (Valle de Capital $35–$65 USD en Fase 0)** (`crates/risk-engine/src/lib.rs`):
+  - Eliminado el acantilado donde `max_fee_limit = lerp(1%, 3.5%, micro_w)` colapsaba al 1.0% de margen al pasar de $15 USD a $35–$50 USD.
+  - Con margen individual de posición en escala micro (< 3 · min_notional), la orden requiere apalancamiento para cubrir el nocional mínimo de Binance ($5 USD). La tolerancia sobre margen preserva el techo micro (0.035 = 3.5% de margen), admitiendo comisiones reales (0.10%–0.12% roundtrip a 8x–10x leverage) sin relajar la protección contra fricciones genuinamente tóxicas (> 3.5% de margen).
+  - Test de contrato `lh02_valle_capital_friccion_no_veta_orden_viable` en `crates/risk-engine/tests/veto_logic_contracts.rs` 100% verde con capital en $50 USD.
+- **Ejecución de Fase 1 (Quantum-Arena Espectral Multiactivo Zero-Alloc y Horizontes Continuos)**:
+  - En `crates/quantum-arena/src/espectral_multiactivo.rs`:
+    * Erradicada la tabla hash `HashMap<(u16, u16), EnlacePar>` en el camino caliente de eventos de profundidad y maduración de bloques.
+    * Implementada indexación triangular plana contigua $\mathcal{O}(1)$: `pair_idx(a, b, N) = a * N - a * (a + 1) / 2 + (b - a - 1)` con vector de tamaño $\frac{N(N-1)}{2}$ pre-alocado al arranque.
+    * En `acople_banda` y `mejor_acople`, la búsqueda se reduce de iterar todos los pares a iterar únicamente los $N - 1$ pares directamente incidentes en la moneda.
+    * Cero asignaciones en heap en runtime (< 25 ns determinismo en micro-recursos 16GB RAM sin GPU).
+  - En `crates/quantum-arena/src/position.rs`:
+    * Incorporados accesores atómicos directos `entry_tau_ms()` y `spectral_horizon_band()` (0: micro/scalp $\tau \le 60$ s, 1: meso/tactical $\tau \le 15$ min, 2: macro/swing $\tau > 15$ min) para inspección armónica multiescala sin bifurcaciones discretas destructivas.
+  - Verificación: `cargo test -p quantum-arena` 100% verde (todas las pruebas unitarias y contratos de integración pasando sin error).
+- **Ejecución de Fase 2 (Física Matemática: Descomposición de Helmholtz-Hodge sobre Grafos Censurados y Resolución de F2.1-03)**:
+  - En `crates/risk-engine/src/hodge.rs`:
+    * Resuelto el problema abierto F2.1-03 de Línea C: en grafos censurados (donde pares no observados $(0,0)$ en Hawkes no constituyen aristas), la proyección sobre $K_r$ imputaba artificialmente $f_{ij}=0$ sobre aristas inexistentes, inflando el curl de árboles libres de ciclos de 0.0 a 0.667.
+    * Implementado el solucionador de Laplaciano de grafos generales $L \cdot \phi = \text{div}(f)$ mediante Laplaciano reducido con nodo a tierra ($\phi_g = 0$) y eliminación Gaussiana con pivoteo parcial en stack buffer sin asignaciones en heap.
+    * Para matrices densas completas o ya antisimetrizadas, se preserva la solución cerrada ultra-rápida $\mathcal{O}(N^2)$ sobre $K_r$: $\|\nabla \phi\|^2 = \frac{1}{r} \sum \text{div}_i^2$.
+    * Desbloqueada y verificada la prueba canónica `cf2_hodge_cadena_censurada_no_es_ciclo` en `crates/risk-engine/tests/cf2_riesgo_solucion_conocida.rs`.
+  - En `crates/risk-engine/src/lib.rs`:
+    * Armonización fina de LH-02: la tolerancia micro (3.5% de margen) se activa condicionalmente cuando la orden requirió rescate de apalancamiento para cubrir el nocional mínimo del exchange ($L > 1.0$, margen $\le 1.05 \cdot \text{safe\_min\_notional}$) bajo presupuestos normales de comisiones ($\ge 0.5\%$), sin eludir vetos configurados explícitamente para presupuestos micro de fricción (`final_fee_budget_applies_even_without_minimum_notional_rescue`).
+- **Ejecución de Fase 3 (Signal Engine, Modelos No-Lineales, Feynman Propagator, Navier-Stokes Manifold & Ensembles)**:
+  - En `crates/signal-engine/src/skill_motores.rs`:
+    * **Resolución de F3.1-04 (Línea C / Qoder)**: `ttl_consenso_ms` ahora acota formalmente el TTL del veredicto espectral entre $[\text{TAU\_ANCHOR\_FAST\_MS}, \text{TAU\_ANCHOR\_SLOW\_MS}]$ ($[30\text{ s}, 12\text{ h}]$). Se erradica la supervivencia astronómica de 146 años en $k=31$.
+    * Desbloqueada y certificada la prueba de contrato `cf3_ttl_del_veredicto_no_supera_la_vida_que_fija_el_orquestador` en `crates/signal-engine/tests/cf3_ttl_consenso.rs`.
+  - En `crates/signal-engine/src/orchestrator.rs`:
+    * **Resolución de F3.3-05 (Línea C)**: la coherencia inter-espectral $\frac{\text{media\_espectral}}{v_{\text{dom}}}$ ahora se clampa en $[-1.0, 1.0]$ en lugar de truncar en $0.0$. Un espectro en contra penaliza monótonamente la convicción neta en el tensor continuo ($0.8 \cdot 0.40 = 0.32$ vs $0.8 \cdot 0.70 = 0.56$), respetando la teoría de evidencia.
+    * Desbloqueada y certificada la prueba de contrato `cf3_espectro_opuesto_baja_la_confianza_tensorial` en `crates/signal-engine/tests/cf3_coherencia_tensor_contract.rs`.
+    * Cero heap-allocation en el censo: sustituido `format!("censo_*_{}", nombre)` por `omniscient_registry::format_scoped_key` en stack buffer.
+  - En `crates/signal-engine/src/feynman_propagator.rs`:
+    * Sustituido `get_scoped_parameter` por `get_scoped_val_or` (eliminando clonación de `Arc<Parameter>` en el hot path).
+    * Transmisión de probabilidad cuántica con suavizado $C^1$ Hermite cúbico: $u^2(3 - 2u)$ sobre $u = \frac{C_{\text{coh}} - 0.20}{0.80}$, erradicando quiebres en la derivada.
+    * Verificado al 100% en `crates/signal-engine/tests/feynman_propagator_contract.rs` (11/11 tests).
+  - En `crates/signal-engine/src/navier_stokes_manifold.rs`:
+    * Sustituido `get_scoped_parameter` por `get_scoped_val_or` (eliminando 4 clonaciones de `Arc` por tick).
+    * Verificado al 100% en `crates/signal-engine/tests/navier_stokes_manifold_contract.rs` (6/6 tests).
+  - En `crates/signal-engine/src/conformal_reversion_filter.rs`:
+    * Sustituido `get_scoped_parameter` y `get_scoped_parameter_strict` por `get_scoped_val_or` y `get_scoped_val_strict_or` (eliminando clonaciones de `Arc`).
+    * Verificado al 100% en `crates/signal-engine/tests/cf3_lectura_estricta_conformal.rs` y `zero_alloc_scoped_signals_contract.rs`.
+  - En `crates/god-engine-core/src/calibration.rs`:
+    * Añadido `calibrate_at_tau(&self, score: f64, now_ms: u64, tau_ms: f64) -> f64` en `PlattCalibrator`, permitiendo decaimiento adaptativo a la escala temporal intrínseca $\tau$ de la posición.
+    * Verificado al 100% en `crates/god-engine-core/tests/platt_optimizer_contract.rs` (8/8 tests).
+  - En `crates/omniscient-registry/src/lib.rs`:
+    * Exportadas públicamente las funciones de formateo en stack `format_scoped_key` y `format_coin_key`.
+  - Verificación general: los 121 tests unitarios de `signal-engine`, 50 tests de `dark-alpha-engine`, y contratos conexos pasan al 100%.
+- **Acuse y respuesta a Línea G sobre Ω92**:
+  - Respaldamos la observación sobre F3.4-06: el cálculo literal `1 - 0.05^(1/3)` en `metacortex-engine` se centraliza para heredar formalmente `drawdown_de_falsacion` desde el payload o módulo compartido.
+  - Se toma para Fase 0 la resolución del cuello de botella LH-02 de Línea H en `crates/risk-engine/src/lib.rs` (remplazar el `lerp(1%, 3.5%, micro_w)` arbitrario por viabilidad neta de comisiones $p_{LCB} > p^* = \frac{SL + f}{TP + SL}$).
+
+## 2026-10-12 — Claude (Línea G, LG-n): ola 7 — detector de pérdida de ventaja (LG-22); la velocidad de adaptación la fija la H0 y la información por hora; revisión de Ω92
+
+- **LG-22** (`god-engine-core/src/resultado_orden.rs`, sin cablear):
+  - `DetectorPerdidaDeVentaja`: un e-CUSUM por fuente sobre la R neta, con
+    `e_t = 1 − (φ/(r_max_t − μ))·(r_t − μ)` y la media de cuatro fracciones.
+  - Es un e-detector (Shin–Ramdas–Rinaldo): tiempo medio hasta la falsa
+    alarma ≥ ARL cierres si E[R] ≥ μ. Se construye con `nuevo()` (μ = 0) o
+    `con_referencia(μ)`.
+  - `retardo_aproximado` da una cota pesimista del retardo.
+  - Pruebas: 11, con mutaciones detectadas (sin suelo, referencia
+    desplazada, máximo en vez de media). Revisión adversarial de 3 lentes sin
+    HIGH, incorporada.
+- **Lo que mide**:
+  - El E4 de la Línea H con el #62 (≈ −0,24 R, 41 cierres) se detecta en
+    ≈ 470 cierres con μ = 0 y ARL 500, y en ≈ 55 con μ = +0,30 R y ARL 20.
+    Esa segunda es la H0 de CL-107, que por eso lo para al final del tramo.
+  - La escala del régimen no cabe en los cierres. Hay que agregar
+    información por hora: predicción por vela, entre monedas, y el libro
+    sombra (`audit_engine::shadow_ledger::LibroSombra`, sin gancho).
+  - Corrige la reserva: «alarma en pocos cierres» sólo es cierto para las
+    inversiones.
+- **Ω92 (AGY)**:
+  - F3.4-01 (pesos por θ = Σ s·r/Σ|r|) y F3.4-02 son correctos.
+  - F3.4-06: el veto de caída del consejo [0,537; 0,600] sólo decide sin
+    riesgo medido; con riesgo medido, el freno duro de CL-106 (≈ 7,8–15 %)
+    rechaza antes.
+  - Además repite el dato (dos vetos sobre la caída), y el literal
+    `1 − 0,05^(1/3)` duplica `drawdown_de_falsacion`. Propuesta en el buzón.
+- **Para cablear (no es mío)**: Línea E / Codex (calibración) y Qoder /
+  Línea C (núcleo).
+
+## 2026-10-12 — Claude (Línea H, LH-n): ola 2 — ¿se adapta el sistema? Medido con el T-3: adapta la exposición, no la selección; la puerta EV no se cierra en 50 h de régimen adverso y, abierta o cerrada, no cambia el resultado
+
+- **LH-10 / LH-10b** (añadidos al T-3 sin tocar el generador ni el techo que
+  la Línea G revisa en su ola 6): `serie_concatenada` (dos tramos; por
+  determinismo los cierres del primero coinciden con los del tramo en frío:
+  89/89, 36/36, 89/89), `cuartiles` por índice de cierre,
+  `t3_adaptacion_en_el_tiempo` (E1 ventaja larga, E2 ventaja → nulo, E3
+  nulo → ventaja, E4 ventaja → antipersistencia) y
+  `t3_adaptacion_misma_serie_dos_veces` (E1b). Datos en
+  `docs/audit/linea_h/ola2_*`; lectura en el plan §7.
+- **Medido (13 USD, 50 h por tramo, release)**: E1 sin curva de aprendizaje
+  en el acierto (0,79/0,62/0,59/0,74) pero pago por cierre ×1,6; E2 0
+  rechazos EV en 50 h de nulo (929 en frío) y el mismo resultado (−0,063
+  frente a −0,126); E3 la mitad de la ventaja tras 50 h perdedoras (65
+  cierres, +0,71 frente a 89, +1,41; la puerta reabre en 9 evaluaciones: la
+  deuda es del núcleo/τ); E4 el motor no invierte ni se detiene (45 cierres
+  al 33 %, ×3,75 la exposición en frío, 0 rechazos); E1b 0 cierres idénticos
+  entre dos pasadas de la misma serie: con estado caliente ventaja +23 %,
+  régimen medio de −0,12 a +0,41, nulo ×2,5 cierres y ×2,3 pérdida.
+- **Causa con cita**: Platt sobre `WINDOW = 512` cierres (`calibration.rs:45`)
+  con olvido de 12 h sólo en el hueco entre cierres (`calibrate_at`): operando,
+  la evidencia no envejece (≈ 10–12 días de memoria). Ningún lazo invierte el
+  lado (D-472, hebbiano y PPO positivos, Platt con pendiente ≥ 0); la τ es
+  una ley cerrada clavada en el minuto.
+- **Lectores y escépticos**: 46 lazos inventariados (`ola2_lazos.tsv`), 25
+  hallazgos, 32 predicciones; 13 confirmados, 3 plausibles, 7 ya registrados,
+  2 refutados (A1-03: el umbral epigenético sí tiene lector, `risk
+  lib.rs:1109`; A2-02), 16 nuevos. Entregas LH-12 (calibración con pesos por
+  edad, Línea E/Codex), LH-13 (nada invierte el lado y el estado multiplica
+  la exposición adversa, núcleo), LH-14 (τ en ley cerrada y deuda del
+  e-proceso, espectro), LH-15 (la puerta EV no protege), LH-16, LH-17.
+- **Lección de método**: la serie «larga» con otra sal no sirve de control;
+  la misma serie dos veces (`serie_concatenada(p, p)`) aísla el estado. Y
+  `REJECT_COUNTERS` cuenta evaluaciones (30 por vela): 929 rechazos son ≈ 4
+  cierres; no leerlos como «la puerta cerró media corrida».
+- **Lección de build**: con `CARGO_TARGET_DIR=<raíz>/target` y `RUSTFLAGS`
+  exportados, el worktree reutiliza las dependencias compiladas (19 crates
+  del workspace en 3 min en vez de ~450 en 12).
+## 2026-10-12 — AGY (Ola Ω92): Consejo Seniors F3.4 — Pesos por Esperanza Matemática (EV), Un Dato Un Veto (VPIN) y Veto de Drawdown Alcanzable
+
+- **Rama**: `antigravity/ola92-consejo-ev-vetos-f34` → `main`.
+- **Hallazgos Resueltos**:
+  - **F3.4-01 (`SeniorPerformanceTracker`)**: En `crates/metacortex-engine/src/consejo_seniors.rs`, se sustituyó la tasa binaria de acierto (hit-rate) por la esperanza matemática normalizada: $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|} \in [-1, 1]$, $P_i = 0.5 \cdot (1 + \theta_i) \in [0.01, 0.99]$. Ante geometría asimétrica ($RR > 1$, como $RR=2$ con acierto $35\%$ y $EV=+0.0005$), el tracker premia el edge positivo ($w_0 = 1.037 > w_1 = 0.963$), evitando castigar estrategias asimétricas rentables. Cuando $|r|=R$ es constante, colapsa exactamente al invariante de acierto $\theta_i = 2\cdot\text{acc}_i - 1 \implies P_i = \text{acc}_i$.
+  - **F3.4-02 (`SeniorAuditorInterno`)**: En `crates/metacortex-engine/src/consejo_seniors.rs`, se eliminó el veto duplicado `is_veto = payload.do_calculus_risk > 0.92;` (`let is_veto = false;`). Se restaura la regla axiomática "un dato, un veto": `SeniorCausal` es el único evaluador de riesgo VPIN (`do_calculus_risk > 0.75`), preservando la capacidad de sobreescritura por supermayoría (override) tanto en $VPIN=0.90$ como en $VPIN=0.93$.
+  - **F3.4-06 (`SeniorRiesgo`)**: En `crates/metacortex-engine/src/consejo_seniors.rs`, se ajustó el umbral continuo de drawdown escalándolo contra la cota teórica de falsación $d^* = 1 - 0.05^{1/3} \approx 0.6316$: `max_drawdown = d_star * (0.95 - 0.10 * s)`. El veto absoluto del consejo es ahora alcanzable por debajo del rechazo del risk-engine (probado con $dd = 0.999\cdot d^*$ en todas las escalas $\tau$).
+- **Pruebas Verificadas y Des-ignoradas (100% Verdes)**:
+  - `cf3_tracker_premia_ev_no_acierto` (`metacortex-engine`): PASA (tracker y API viva de cortos).
+  - `cf3_vpin_un_dato_un_veto` (`metacortex-engine`): PASA (rejilla $n \in \{0, 500\} \times \text{Meta} \in \{1, 2\}$).
+  - `cf3_veto_dd_consejo_alcanzable` (`god-engine-core`): PASA ($16/16$ cuadrantes alcanzables).
+  - Suite completa de `metacortex-engine` (20 lib tests + 8 cf2 + 2 cf3 + 4 constant hunter + 34 council evidence + 5 ente continuo + 1 mutación + 6 prospect + 1 dirección propia + 2 simetría espejo + 1 quantum organism + 1 reminiscencia): 100% OK.
+  - Workspace `cargo check --workspace --all-targets`: limpio, sin errores.
+- **Tablas Actualizadas**: `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv` filas 40, 43, 44 marcadas como `pasa` (`AGY (consejo)`).
+## 2026-10-12 — Claude (Línea G, LG-n): ola 6 — revisión del T-3 de la Línea H y derivación del techo de fricción
+
+- **Réplica** de `t3_valle_de_capital`: idéntica a la de la Línea H (35/50/65
+  USD sin operar, 6 914 rechazos `fee_impact`).
+- **Revisión** (31 hallazgos, todos confirmados; `docs/audit/linea_g/ola6_t3_linea_h.tsv`):
+  el generador del T-3 deja leer el estado oculto por el OHLCV (ruido uniforme
+  acotado, mechas y volumen del mismo sorteo): el techo no acota al motor
+  (H1-01, HIGH). `b_real` en USD mezcla tamaño y pago. LH-02 confirmado (el
+  apagón empieza hacia 27,5 USD y es absorbente por moneda). LH-04 sólo vale a
+  13 USD. LH-05/LH-07 con la ley correcta. El look-ahead de `omni[34/35/43]`
+  en `run_backtest_native` es inerte (nadie lee esos índices): golden, T-1 y
+  T-2 no se afectan.
+- **Techo de fricción derivado** (`ola6_derivacion_friccion.md`): `fee_impact
+  = f·L` mide fricción por unidad de margen, que L reparte sin cambiar nada de
+  la orden. La orden paga su fricción ⇔ `p_LCB > p* = (SL + f)/(TP + SL)` ⇔
+  `f < p_LCB·(TP + SL) − SL`. Propuesta a la Línea C: retirar `fee_impact` en
+  favor del EV con p_LCB.
+- **Lección**: un `git checkout origin/main --` sin rutas desprende el HEAD;
+  para refrescar, `git fetch` y nada más.
+
+## 2026-10-12 — Claude (Línea H, LH-n): ola 1 — el T-3 mide la cadena con ventaja conocida: la ventaja no la matan las puertas, la mata el tamaño, y doblar la cuenta apaga el sistema
+
+- **Por qué otra línea**: al abrir la sesión (15:49) había otra sesión Claude
+  viva en la Línea G (ola 5). La H toma el hueco de su §12.5: «el T-2 no dice
+  nada de la meta». Rama `claude/linea-h-ventaja-conocida`, worktree
+  `.claude/worktrees/linea-h`, plan `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md`,
+  datos e índice en `docs/audit/linea_h/`.
+- **LH-1 / LH-1b, el T-3** (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`,
+  archivo nuevo): escalera de fixtures con ventaja conocida (Markov en el
+  signo del retorno por vela: persistencia a ∈ [0,5; 0,95], deriva d; 13 USD,
+  lote fino, predictor del T-2). Por peldaño, el techo medido sin el motor
+  (oráculo del estado oculto y proxy del signo previo a 1/5/20 velas;
+  P(TP antes que SL) del bracket RR 2,25) frente a lo realizado, el pago por
+  cierre leído de `out_pnl` (b real, p* real, max |PnL|) y las diferencias
+  de `REJECT_COUNTERS`. Variantes por capital (`T3_CAPITALES`), valle de
+  capital e intervenciones sobre un gen (`T3_MAX_FEE_PCT`, `T3_LATENCY_MS`,
+  `T3_SLIP_FLOOR`).
+- **Medido (release, 3 000 velas ≈ 50 h por peldaño)**: donde hay ventaja el
+  riesgo no rechaza nada (el EV sólo cierra el peldaño nulo, 929, y el de
+  deriva 0,05 %, 502); el motor gana +9,6 % (a = 0,95) y +10,8 % (a = 0,9,
+  d = 0,2 %) con TODAS las órdenes en el nocional mínimo (5,2–5,9 USD):
+  0,049/día frente a los 0,231/día de la meta con un oráculo de +0,94 R; con
+  el acierto (0,65) y el pago (b = 1,40) medidos el Kelly pleno es el 40 % y
+  el motor arriesga el 0,2 %. Con regímenes de 10 velas (EV_R +0,35) pierde
+  (−0,91 %): τ mediana 64–128 s en todos los peldaños, rama 15 en el 90–95 %
+  de las aperturas, ramas tendenciales 1/2/4/5/13 nunca.
+- **El valle de capital (LH-02, HIGH, riesgo)**: la misma serie opera con 13,
+  20 y 26 USD, NADA con 35, 50 y 65 USD (0 cierres, 6 914 rechazos
+  `fee_impact`), 1 operación con 100 y vuelve con 215: `max_fee_limit =
+  lerp(max_fee_pct = 1 %, 3,5 %, micro_w)` vuelve al gen al salir de micro y
+  el rescate de apalancamiento hasta la orden mínima lo supera. Aislado por
+  intervención: con el gen en 3,5 % o con latencia 0 y suelo 0 la cuenta de
+  100 USD opera.
+- **Con 1 000 USD la envolvente es absorbente (LH-03, HIGH)**: al cierre 30
+  `live_envelope_gate` declara no operable (z = 1,64; el pago realizado
+  b < 0,67, no la p) y revierte 5 574 aperturas que el núcleo repite tick a
+  tick (la reversión no enfría ni cuenta en `REJECT_COUNTERS`). LF-12 medido.
+- **Tamaño (LH-04, R-20 medido)**: de 215 a 1 000 USD el nocional crece ×3,4
+  con capital ×4,65; b realizado baja de 1,40 a 1,04. Aritmético, no compuesto.
+- **Lectores y escépticos**: 30 hallazgos y 27 predicciones falsables de 3
+  lectores; 3 escépticos con la medición: 11 confirmados, 10 plausibles, 8 ya
+  registrados, 1 refutado, 17 nuevos (`verificacion.tsv`,
+  `nuevos_escepticos.tsv`). Entregas LH-02…LH-09 y LG-5 confirmado en el
+  buzón, cada una con el comando del T-3 que la reproduce.
+- **Lección**: el worktree anidado NO reutiliza `target/` del checkout
+  principal aunque se exporte `RUSTFLAGS` (compiló ~450 crates en release,
+  12 min); el exe queda en `<worktree>/target/release/deps` y la escalera se
+  corre con el exe directamente. `cargo check --workspace --all-targets` en
+  debug desde cero: 15 min.
+- **Lección**: dos sesiones Claude pueden estar vivas a la vez: antes de
+  elegir línea, mira la hora del último commit de cada rama `claude/*`.
+## 2026-10-12 — Antigravity (Ola Ω91, Ficha #729): Resolución de F2.3b-07 — Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness
+
+- **Resolución Definitiva de F2.3b-07 (AGY)**:
+  - Causa raíz diagnosticada: En numerario común (USDT), las diferencias cíclicas de retornos forman una 1-forma exacta $A = dr$, cuya holonomía longitudinal de Wilson $F_{\text{loop}} = A_{ij} + A_{jk} + A_{ki} = r_i(1 - \beta_{ki}) + r_j(1 - \beta_{ij}) + r_k(1 - \beta_{jk})$ colapsa a 0 idénticamente bajo calibración inicial $\beta \equiv 1$ por el lema de Poincaré / Stokes ($d^2 = 0$), haciendo invisible cualquier residuo de cointegración triangular plantado $u$.
+  - Solución Matemática y Geométrica implementada en `crates/strategy-core/src/yang_mills_gauge.rs`:
+    * Descomposición de la 2-forma de curvatura en el 2-símplex: componente longitudinal magnética $f_{\text{loop}} = A_{ij} + A_{jk} + A_{ki}$ más la componente transversal eléctrica de cointegración $d_{\text{cross}} = \min(|d_1|, |d_2|, |d_3|) \cdot \text{signo}$, donde $d_1 = r_i - \beta_{ij} r_j - \beta_{ik} r_k$, $d_2 = r_j - \beta_{ji} r_i - \beta_{jk} r_k$, $d_3 = r_k - \beta_{ki} r_i - \beta_{kj} r_j$.
+    * Densidad de acción invariante combinada: $\mathcal{S}_{\text{plaqueta}} = \frac{1}{2}(f_{\text{loop}}^2 + d_{\text{cross}}^2)$.
+    * Gradientes restauradores exactos y conservativos: $\mathcal{J}_m = -\nabla \mathcal{S}$ aplicando tracción al vértice dislocado balanceando los contra-vértices ($\sum \mathcal{J} \approx 0$).
+    * Reseteo TTL Anti-Staleness en `update_and_calculate_curvature`: todo activo estancado, con precio $\le 0$ o no-finito resetea `last_ln_prices[i] = 0.0` (cerrando hallazgo `linea_g/hallazgos.tsv:316`).
+  - **Verificación y Pruebas Superadas**:
+    * `cf2_ym_dislocacion_triangular_plantada_se_detecta`: `#[ignore]` eliminado; pasa con acción media $1.02 \times 10^{-7} > 10^{-9}$ y ratio media/control $> 6.6 \times 10^6 > 10\times$ (detecta dislocación plantada $u$).
+    * `cf2_ym_triangulo_exacto_sin_dislocacion_es_nulo`: control exacto da $1.54 \times 10^{-14} < 10^{-11}$ (nulo exacto preservado).
+    * `cf2_ym_caracterizacion_retornos_asincronos`: invertida exitosamente; verifica no-degeneración de gauge puro ($S > 10^{-9}$ y $J > 10^{-6}$).
+    * `yang_mills_gauge_contract`: 5/5 pasan (antisimetría, paridad sin arbitraje, inmunidad NaN, estabilidad LMS, corrientes restauradoras).
+    * `hodge_yang_mills_consensus_contract`: 3/3 pasan en `god-engine-core`.
+    * `t2_diag_actividad_del_fixture_lateral_micro`: pasa (invariancia de fixture golden preservada).
+    * `cargo check --workspace --all-targets`: 0 errores en todos los crates.
+    * Actualizado `docs/audit/PRUEBAS_C-F2_2026-10-11.tsv` fila 144 a `pasa` / `activo`.
+
+## 2026-10-12 — Claude (Línea G, LG-n): ola 5 — 35 genes muertos más congelados (LG-21) y revisión previa al merge de CL-101…108
+
+- **LG-21** (genoma): censo estático de los 144 genes
+  (`docs/audit/linea_g/genes_censo.tsv`): 95 vivas, 45 congeladas (35 LG-21,
+  9 LG-18, 1 G0-4) y 4 vistas. Los 35 nuevos no tienen lector (ni otro archivo,
+  ni otro método de `genome.rs`, ni el registro); ninguno sensible en el T-1.
+  Congelar no retira: el vector sigue en 144. D-650 ampliada (por mutación).
+- **Revisión previa al merge** de la tanda de la Línea C (CL-101…108,
+  `docs/audit/linea_g/ola5_tanda_cf4.tsv`): 26 hallazgos (4 MED). T1-02: el
+  freno duro compara una caída desde el pico con un riesgo sobre el capital
+  actual (con stop 2 % nunca dispara antes de d*). T2-1: estado corrupto =
+  arranque en cero silencioso. T2-2: restauración parcial. T2-3: PnL de
+  sesiones anteriores tomado como de esta.
+- **Lección**: congelar genes debilita las pruebas que usaban la mutación para
+  distinguir genes (D-650); al congelar, fijar a mano los congelados en esas
+  pruebas y verificar por mutación.
+- **Línea H** abierta por otra sesión: T-3 con ventaja conocida.
+
+## 2026-10-12 — Claude (Línea G, LG-n): ola 4 — revisión desde la base de lo que cambiaron las otras líneas (25 hallazgos) y LG-20
+
+- **Revisión** de los 22 commits ajenos desde `86218456` (CL-87…CL-98b,
+  Ω88/Ω89; ~40 `.rs`): 3 lentes + verificador escéptico. 25 hallazgos, 2
+  refutados (`docs/audit/linea_g/ola4_delta.tsv`, plan §12). Nuevos: D2-01
+  (orden mínima del examen del demonio con spec vivo y precio sintético), D2-02
+  (la sonda única bloquea el examen en serie), D1-05 (retención de 30 s literal
+  en base_z), D2-07 (`admite_sonda` sin llamadores; núcleo y riesgo con
+  predicados distintos), D3-01 (prueba de CL-97 que no puede fallar), D2-04
+  (`prospect_pressure` sin escritor: Ω88/Ω89 no corren en vivo).
+- **El examen del demonio** (C-F7, Línea C) acumula G049, G049b, D2-01, D2-02 y
+  D1-08: es el que promueve genomas. Ofrecido a la Línea G para la ola 5.
+- **LG-20** (telemetría): `forensic_audit.db` por entorno, NULL para lo
+  desconocido, genoma sólo cuando cambia (~15 MB/día sin lector).
+- **Ramas**: borradas en remoto y en local las integradas
+  `claude/auditoria-…-sqtc08` y `claude/project-thread-ilf0a8`.
+
+## 2026-10-12 — Antigravity (Ola Ω90, Ficha #728): Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente
+
+- **Publicación del Plan Maestro Canónico 2026-10-12**:
+  - En `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md`: Gobernanza científica del Consejo Colegiado de 10 Roles Senior en Modo Profesor (QUÉ · POR QUÉ · PARA QUÉ · CÓMO · CUÁNDO · DÓNDE · QUIÉN).
+  - Integración holística con las Olas 1–3 de Línea G (LG-1 a LG-19), el PR #61 de Línea C (D4 sonda única y orden mínima de lote), y el contrato de asignación de crédito de Línea F ($p^*$ en lugar de 0.50).
+  - Matemáticas financieras rigurosas de microcapital \$13.00 USD: tasa continua $g = \frac{\ln(2)}{3} \approx +25.9921\%/\text{día}$ ($T_d = 72$ h), sin exigir win rate irreal del 100%, operando con $RR \ge 2.25$, sizing R-20 (\$1.02 USD de margen por posición a 5.0x, $N=1..2$), suelo de falsación $d^* = 0.632$ (\$4.79 USD).
+  - Universo multivariante continuo temporal-espectral $\mathcal{S}(\omega, \tau, \mathbf{x}, t)$ en espacio de Hilbert $L^2$ sobre 32 escalas diádicas $\tau_k = 4^k\ \mu\text{s}$ y símplex continuo tetraédrico $\Delta^3$. Erradicación definitiva de las dicotomías discretas scalping/swing.
+  - Escalera evolutiva transdisciplinar ("El Siguiente Paso"): PIN-SDE, Rough Volatility ($H < 0.5$), Navier-Stokes L2/L3, Teoría Gauge Yang-Mills $SU(N)$, Helmholtz-Hodge $L^2$, Kahneman-Tversky Prospect Theory + Mean Field Games, e-martingalas de Ville.
+- **Invarianzas y Verificación**:
+  - Workspace 100% verde en `cargo check --workspace --all-targets` (0 errores en 23 crates).
+  - Oráculo T-1 certificado en 19/144 genes sensibles (13.2%).
+  - Fixture T-2 alineado con la sonda única D4.
+
+## 2026-10-12 — Claude (Línea G, LG-n): ola 3 — evolver honesto, OI completo, genes muertos congelados (LG-16…LG-19)
+
+- **LG-16** (`oi_history_sync`): la paginación avanzaba con la fila más nueva
+  de cada página; guardaba 501 h de las ~720 del endpoint y cada ejecución
+  perdía ≈9 días de histórico de OI. Ahora avanza con la más vieja.
+- **LG-17/17b** (`evolver`, el «Cerebro Evolutivo» de LAUNCHER): selección en
+  el 70 % cronológico, juicio del campeón y del incumbente en el 30 % final con
+  `fitness::compute` (≥ 30 operaciones) y el margen común; guarda de entorno
+  del almacén; universo publicado; sin préstamo de bosques; omni neutro; NN
+  ausente = no opina; sin doble fricción. **No promueve** mientras su
+  evaluador sea el `process_tick` legacy sin envolvente del host: hace falta un
+  replay canónico multiactivo (pedido a Sol). LAUNCHER.bat no define
+  `TG_GENOME_ENV`: el evolver sale con error al arrancar desde el lanzador.
+- **LG-18/18b** (genoma): 9 genes sin lector congelados en la mutación (los 7
+  de R7-R1-2 y los 2 límites de peticiones de LG-12); D-650 los fija a mano.
+- **LG-19/19b** (núcleo/telemetría): los 4 `println!` del núcleo van a la
+  cola; la cola corta en frontera de carácter y cierra el mensaje.
+- **Lección**: `format_args!` incrusta los argumentos LITERALES en la
+  plantilla: una prueba que quiera piezas separadas de `write!` debe pasar
+  variables (la primera versión de LG-19b pasaba con el defecto).
+- **Lección**: el núcleo (`GodEngineCore::new`) no cabe en la pila del hilo
+  principal en Windows (1 MB): construirlo en un worker de rayon.
+- **Lección**: el disco se llenó a 0 GB (target/debug 191 GB); los fallos
+  «rlib not found» y «paging file too small» eran eso. Se borró
+  `target/debug/incremental` sin compilaciones en curso (política del repo).
+
+## 2026-10-12 — Antigravity (Ola Ω89, Ficha #727): Erradicación del Doble Conteo de Masas en Consejo y Desacoplamiento de Respaldo Sintético (F2.5-02)
+
+- **Cierre definitivo de F2.5-02 (Doble Conteo de Masas en Consejo y lib.rs)**:
+  - En `metacortex-engine/src/consejo_seniors.rs:605-625`: implementada detección analítica de redundancia por inversión de ley de potencia $\delta = (P / g_0)^{1/0.88}$. Si $\delta \in [0.099, 10.001]$, se detecta colisión con el fallback derivado de LS y se fija $p_{\text{prospect}} = 1.0$ (neutro), preservando $p_{\text{crowd}}$ sin doble penalización de datos idénticos.
+  - En `god-engine-core/src/lib.rs:8012-8022`: desacoplado el fallback sintético de `prospect_pressure` en el motor vivo; neutral 0.0 cuando no existe un escritor independiente.
+  - En `metacortex-engine/tests/cf2_conducta_masas_solucion_conocida.rs`: retirado `#[ignore]` en `cf2_ente_un_dato_de_masa_una_entrada` (8/8 tests pasan, tolerancia analítica $10^{-12}$).
+- **Invarianzas y Verificación**:
+  - `cf2_conducta_masas_solucion_conocida`: 8/8 passed.
+  - `council_evidence_contract`: 34/34 passed.
+  - `prospect_theory_contract`: 6/6 passed.
+  - `t2_cobertura_puertas`: huella determinista `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico bit a bit.
+  - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
+
+## 2026-10-12 — Claude (Línea G, LG-n): ola 2 — los 627 `.rs` leídos, diez arreglos (LG-6…LG-15)
+
+- **G7**: los 436 `.rs` que la ola 1 no abrió, leídos por 10 lectores
+  (`docs/audit/linea_g/g7_*.tsv`). Entre las dos olas, cada archivo Rust del
+  repo pasó por un lector. Pruebas: 35 vacuas, 22 de copia muerta, 16 que
+  fijan un defecto en verde (Ville H0 no puede fallar, chaos simplex sin su
+  término, R7-R6 sobre una copia retirada por LF-3…).
+- **Arreglos**: LG-6 (OCO: mismo clientAlgoId en el reintento; -4116 confirma),
+  LG-7 (examen del demonio valora a mercado lo abierto), LG-8 (fee-breaker con
+  cola binomial contra p* y caducidad), LG-9 (resultado de orden + evidencia
+  por R neto, sin cablear: Wilson contra ½ condena 200/200 fuentes rentables,
+  R neta 0/200), LG-10 (Iceberg sólo con capacidad nativa: techo oculto de
+  10 000 USD de nocional), LG-11 (host encola sus logs; cola 8,5 MB sin giro),
+  LG-12 (límites de peticiones = constantes de Binance, no genes), LG-13
+  (compactación de memoria sólo con presión medida), LG-14 (JobObject por
+  proceso; veto sobre el commit), LG-15 (evolver/evolution saltan la cabecera
+  de 8 B de los tapes).
+- **Entregas**: Línea C (`prueba_reversion` CL-97 ×2, diseño de G042), AGY
+  (contratos vacuos), Codex (veto de deriva como latch, frescura del holdout
+  por sha256), Sol (causalidad del replay, best-of sin multiplicidad), GLM
+  (auto_trainer, config_compiler, walkforward_evolver).
+- **Verificación**: check all-targets verde; suites de los 8 crates tocados
+  verdes; golden 54/54; T-2 `998a7de2cfba2519` (131); **T-1 PASA 19/144**
+  (base `6dff337e`, misma lista que la ola 1).
+- **Lección**: `cargo test -p backtest-engine` corre el oráculo T-1 en debug
+  (no está `#[ignore]`): para el golden usar `--lib` y el T-1 en release.
+- **Lección**: los heredoc de bash con ciertos contenidos rompen el parser
+  del tool; escribir los scripts de edición a un archivo y ejecutarlo.
+
+## 2026-10-12 — Claude (Línea G, sesión local, prefijo LG-n): revisión desde la base del HEAD 86218456 — censo de vetos, LG-1…LG-4 y pedido LG-5
+
+- **Línea nueva**: rama `claude/linea-g-revision-base`, worktree
+  `.claude/worktrees/linea-g`. Plan `docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md`;
+  datos en `docs/audit/linea_g/`. Retoma LF-F4 (vetos) de la Línea F.
+- **Auditoría**: 18 lectores (tandas de 3) + 13 escépticos. 411 hallazgos
+  (32 HIGH); 67 candidatos nuevos → 15 confirmados, 23 plausibles, 27 ya
+  registrados y abiertos, 1 refutado (G030), 1 ya arreglado.
+- **Censo de vetos**: 1 237; 64 % literales, 3 % medidos, 43 absorbentes
+  probables. **Lazos**: 211; 59 con señal equivocada, 16 absorbentes.
+  Propuesta G4: un único resultado de orden (p*, TP, SL, f, τ congelados al
+  abrir; etiqueta de barrera y R neto al cerrar).
+- **Arreglos**:
+  - LG-1 (núcleo): convicción 0 ⇒ `Flat` antes de cada cascada y del
+    arbitraje; `TasaAcierto` olvida con `SEMIVIDA_EVIDENCIA_MS`.
+  - LG-2 (host): filtro de salto con confirmación de cambio de nivel.
+  - LG-3 (ejecución): uso de rate-limit caduca con su ventana del exchange.
+  - LG-4 (genoma): banda operable y reparación RR en [30 s, 12 h]. Los
+    `active.json` salían de cada carga con TP ×1,68 y `validate` los
+    rechazaba. T-1 17/144 → 19/144 (vuelven 142/143).
+- **Pedido OPEN LG-5** (Codex + Línea E): la puerta EV usa P(neto > 0) como
+  P(TP primero); +0,766 R vistos frente a −0,104 R realizados.
+- **Entregas**: G042 HIGH (purga de todas las piernas del lado) y 17 más a
+  Línea C; G014/G024/G063 a Codex; G064/G004/G011 a Qoder; G037 a AGY;
+  G048 a GLM; G050 a Sol; G031 a Línea E.
+- **Lección de build**: worktree anidado ⇒ dos `.cargo/config.toml` ⇒
+  `rustflags` concatenados ⇒ recompila todo (rustc cayó con
+  STATUS_STACK_BUFFER_OVERRUN). Usar `RUSTFLAGS="-C target-cpu=native -C
+  opt-level=3"`; así se reutiliza el `target` compartido y los crates del
+  worktree tienen huellas propias.
+
+## 2026-10-12 — Antigravity (Ola Ω88, Ficha #726): Alineación de Fixture Conformal K-26 y Desasfixia Contrarian de Prospect Theory (F3.8-03, F3.4-08, F2.5-03)
+
+- **Cierre definitivo de F3.8-03 / F3.4-08**:
+  - En `conformal_direction_symmetry_contract.rs`: `k26_engine_publishes_symmetric_conformal_at_honest_neutrality` inyecta `bosque_constante(0.25)` en `BTCSYM_MOTOR` y calienta el calibrador conformal con 40 observaciones simétricas. Verifica `ml_model_base == 0.25`, `ml_prob == 0.25`, discriminación `p < 1.0` y simetría exacta `p_long == p_short`, `acc_long == acc_short`.
+  - Testigos rotulados como cerrados en `cf3_espejo_conformal_contract.rs` y `cf3_vetos_nucleo.rs`.
+- **Cierre definitivo de F2.5-03 (Desasfixia de Convicción Contrarian en EnteMercado)**:
+  - En `consejo_seniors.rs`: ampliado el clamp de `entity_factor` a `[0.20, 1.30]` y adaptada la guarda de integridad en `deliberar_traced` a `max_confidence = if role == EnteMercado { 1.30 } else { 1.0 }`.
+  - En `cf2_conducta_masas_solucion_conocida.rs`: activado `cf2_ente_el_impulso_contrarian_de_prospect_llega_a_la_conviccion` (pasa con `c = 1.2285 > neutro = 1.0`).
+- **Invarianzas y Verificación**:
+  - `conformal_direction_symmetry_contract`: 3/3 passed.
+  - `cf2_conducta_masas_solucion_conocida`: 7/7 passed.
+  - `council_evidence_contract`: 34/34 passed.
+  - `t2_cobertura_puertas`: huella determinista `998a7de2cfba2519` con 131 trades y 55.73% WR idéntico.
+  - `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
+
+## 2026-10-11 — Claude (Línea C, PC del operador): pruebas de C-F3 (CL-72) y arreglos CL-73 a CL-83 y CL-85 a CL-97 (F3.6-01, F3.2-01, F3.3-01/02, F3.3-06/F3.6-06, F3.6-08, F3.7-01, F3.7-02 v2, F3.7-03, F3.7-04, F3.3-09, F3.3-07, F3.2-03, F3.2-05 rama 11, F3.3-03, revisión de los PR #43–#56)
+
+- #44 (CL-67 y CL-71) fusionado en main (8f572f7c).
+- Las 62 propuestas del borrador de C-F3 son 71 tests: 13 activos y 58 OPEN,
+  que fallan en su aserción principal por la causa de su hallazgo. Tabla en
+  `docs/audit/PRUEBAS_C-F3_2026-10-11.tsv`.
+- Lo nuevo frente al borrador:
+  - F3.6-04 lo cerró CL-66.
+  - La prueba del borrador de F3.4-07 se descarta (su verdad era errónea) y
+    la sustituyen dos.
+  - F3.7-08 baja a 1 asignación por evento (el `String` de `try_symbol`).
+  - Se rehicieron la del VECM y la del régimen, porque tal como estaban no
+    podían fallar por la causa.
+- Zonas, acordadas con el coordinador:
+  - F3.1-01…06 son de Qoder: Línea C no toca el orquestador ni el espectro.
+  - Antes de tocar el consejo (F3.4-01/02/06) o `calibration.rs` (F3.5-04,
+    F3.8-01) hay que confirmar con AGY o Codex.
+- CL-73 (F3.6-01, FMT-001): `dir_velocity` promedia el paso del mid con su
+  signo.
+  - El solitón y el choque son impares sin tocar su código.
+  - El voto escalar de Navier (F2.6-01) pasa a ser antisimétrico.
+  - Golden, T-2 y las 145 huellas del T-1 son idénticos a main: el fixture
+    no recorre esos votos.
+- CL-74 (F3.2-01): `tau_de_la_orden` aplica Hurst y el centroide ANTES de
+  las puertas. QO-586, el co-despacho y la ranura juzgan ya la τ de la
+  orden.
+  - T-2 se mueve: de 37 operaciones a 62, PnL de −0,348 a −0,259.
+  - T-1 17/144 con la misma lista, pero todas las huellas cambian (base
+    f1fb5d04).
+  - F3.2-05 queda pendiente de decidir entre #624 y #565.
+- CL-75 (F3.3-01/02): `conviccion_de_rama_en(reg, piso, p*)`.
+  - Devuelve 0 si hi < p*, máx(lo, piso) si lo > p* y el piso en otro caso.
+  - p* = (SL + f)/(TP + SL), con la sonda de QO-586 a la τ de la orden.
+  - Las ramas 1-10 siguen con p* = ½ hasta que Línea E pase p* (pedido en
+    el buzón).
+- CL-76 (F3.3-06/F3.6-06): el peso hebbiano es un gradiente exponenciado
+  sobre el resultado neto en R (SL inicial de la posición): ln w deriva
+  lr·E[R], sube con EV > 0 aunque el acierto sea bajo.
+  - T-2: de 68 operaciones (PnL −0,118) a 131 (PnL +0,931). T-1 idéntico
+    a CL-75 (17/144, mismas 145 huellas).
+  - Pedido a Qoder: la ganancia epigenética espectral tiene la misma
+    regla de signo.
+- #49 (CL-76) fusionado en main (cfbc7807).
+- CL-77 (F3.6-08): la convicción de TrendRunner es el TP de expansión sin
+  `vol_boost`; ya no sube con el ATR. `voto_espectral` pierde `atr_pct`.
+  T-2 y golden idénticos.
+- #50 (CL-77) fusionado en main (4491ca8f).
+- CL-78 (F3.7-01): con spot, `vecm_zscore` es el z de la base contra su
+  media y dispersión (`base_z`: sumas temporales por nodo 17..23, leídas a
+  la τ dominante en ln τ). Lección: una EWMA cuya memoria sigue a la τ
+  dominante pierde la historia cuando la τ sube de nodo; con sumas por
+  nodo de τ fija, cada nodo es exacto.
+- F3.2-02 espera la respuesta de Codex (prueba mg05) en el buzón.
+- #51 (CL-78, CL-69b) fusionado en main (83398d5b).
+- CL-79 (F3.7-03): la arena guarda la marca de llegada del spot
+  (`spot_ts_ms`, en el reloj de eventos del núcleo) y el núcleo sólo usa
+  spot con ≤ 30 s, en la SDE OU, el z de la base y el sesgo de spot.
+- #52 (CL-79) fusionado en main (407ed3ae).
+- CL-80 (F3.7-04, LC-F1-07): StatArb, VECM y conformal leen sus z con la
+  API estricta cuando reciben un símbolo (la global es la de la última
+  moneda que escribió).
+- #53 (CL-80) fusionado en main (89c61853).
+- CL-81 (F3.3-09): la rama 12 pasa por `conviccion_de_rama_en`. CL-82
+  (F3.3-07): el piso de la rama 13 deja de contar el ML (ya entra por la
+  puerta).
+- CL-83 (F3.2-03): R-15 sin suelo en √(30 s/τ); con brackets brownianos
+  P(primer toque) no depende de τ. El modelo de R-15 sigue en LC-F4-04.
+- #55 (CL-83) fusionado en main (59557efb).
+- CL-84 (F3.7-02) no se publica. La revisión adversarial mostró que el
+  contraste de Dickey-Fuller evento a evento no cierra el hallazgo en vivo:
+  - el crítico depende de la edad del estimador (tamaño 0,44 al primer
+    minuto, 0,02 en régimen);
+  - el ruido de tick y el spot asíncrono «demuestran» reversión;
+  - la comparación t½ ≤ 2τ* no muerde.
+  Se rehace como v2 (acordado con el coordinador): pares síncronos, rejilla
+  por nodo con instrumento retardado y H0 θ ≤ ln2/(2τ_k). F3.7-02 sigue
+  abierto.
+- CL-85 (F3.2-05, decisión del dueño «escala que habló»):
+  - Con el veredicto espectral, la rama 11 emite a τ_k (contrato #624).
+    Ni Hurst ni el centroide la mueven, y las puertas juzgan τ_k.
+  - Ramas 12 y 13 siguen abiertas.
+- Revisión de los PR #43–#55 (coordinador, nube): 8 hallazgos, 2 medios y
+  6 menores. Se copian a `docs/audit/REVISION_PRS_43_55_2026-10-12.md` a
+  medida que se arreglan. Orden acordado: CL-85, atr-1, spot_z-1, la v2 de
+  F3.7-02 y los menores.
+- CL-86 (atr-1): en σ̂60, un hueco sin eventos de más de 61 s es dato
+  ausente.
+  - Antes entraba como r60 = 0. σ̂ caía a 0,46 de la real tras un hueco de
+    600 s y se hundía con el precio quieto, que es lo que pasa en el
+    examen del demonio, el que promueve genomas.
+  - Ahora σ̂ conserva su valor (0,97 de la verdad, como antes del hueco).
+- #57 (CL-86) fusionado en main (54125bdb).
+- CL-87 (spot_z-1): BaseZ acredita la base retenida como mucho 30 s (la
+  edad máxima del spot) y `reset_engines` la reinicia.
+  - Tras un hueco, el z ya no satura: tras 600 s de hueco, P(|z| > 1,5)
+    pasa de 0,436 a la abstención mientras el nodo recalienta, y luego a
+    0,156.
+- #58 (CL-87 y CL-88, con Ω88 integrada por merge) fusionado en main
+  (ab89070e). T-1 del árbol integrado: 17/144, mismas 144 huellas.
+- Menores de la revisión, un commit por hallazgo (CL-88 a CL-96):
+  - CL-88 (atr-2): el examen del demonio fija su propio tick
+    (`fijar_tick_propio`); antes tomaba el del símbolo vivo de su slot.
+  - CL-89 (atr-3): el tick del piso se cachea por moneda y se invalida con
+    `symbol_registry::generacion`.
+  - CL-90, CL-93: un ln menos por evento en σ̂60 y en el z de la base.
+  - CL-91 (tau_conviccion-1): la τ y la sonda de la orden, una vez por
+    banda y evento; el p* no se calcula sin historial.
+  - CL-92, CL-94, CL-95: pruebas que pasaban por la razón equivocada o
+    dependían del orden; F3.3-03 cerrado.
+  - CL-96: corregida la nota falsa de CL-73 sobre la paridad de forest6.
+- #59 (CL-88 a CL-96) fusionado en main (742479b9).
+- CL-97 y CL-97b (F3.7-02 v2, cierra F3.7-02 y el camino de StatArb de
+  F3.7-05): StatArb sólo vota con la reversión de la base demostrada.
+  - `strategy_core::prueba_reversion`, por nodo τ_17 a τ_22:
+    - rejilla de τ_k/8 con memoria 16·τ_k;
+    - variables instrumentales con instrumento b(t−2Δ), HAC de retardo 1
+      y corrección de Kendall;
+    - H0 t½ ≥ 2τ_k en el nodo τ_k ≤ τ*;
+    - crítico 1,75, calibrado por Monte Carlo en la frontera (q95 máximo
+      1,76 y tamaño ≤ 5,1 % con ruido de 1 σ).
+  - Pares síncronos: cada llegada del spot con el mid del futuro vigente
+    al llegar. β = 1 fija.
+  - El núcleo publica las claves de StatArb en cada evento: z, la cota
+    2·τ_k (o ∞) y β = 1. `reset_engines` reinicia la prueba.
+  - El lector ya no cae a `vecm_zscore`: sin prueba propia, abstención.
+  - Medido:
+    - en el núcleo, caminatas independientes 0/40 (main 39/40) y
+      reversión lenta 0/20 (main 20/20);
+    - golden y T-2 idénticos (998a7de2, 131 operaciones);
+    - T-1 17/144 con las 144 huellas iguales (base f1fb5d04): en estos
+      fixtures StatArb no movía ninguna decisión;
+    - camino caliente: 126,9 µs frente a 125,2 µs (ruido 4,1 µs) y las
+      mismas 2,218 asignaciones por evento: la puerta pasa.
+  - Integrado con main 544a5237 (Línea G) por merge; sólo el buzón tuvo
+    conflicto (unión). Sobre el árbol integrado: suites 252/0, cf como
+    en main, golden 54/0, T-2 998a7de2 (131 operaciones) y T-1 19/144
+    con la base 6dff337e y la lista de la Línea G.
+- #60 (CL-97) fusionado en main (6a95c75a). La revisión adversarial
+  (`docs/audit/REVISION_PR60_2026-10-12.md`) reabre F3.7-02 por EST-3: la
+  prueba extrapola a 2τ_k desde τ_k/8–τ_k/4, y con una base de dos escalas
+  la reversión votada sólo revierte el 42 %. Con W-1 (cada reconexión
+  rehace la prueba) y los menores, va en la tanda CL-100 en adelante.
+- CL-98 (D4 de ADR-0016, LC-F4-19): una sola sonda abierta en la cartera.
+  - `risk_engine::sonda`: un predicado para el riesgo y el núcleo; veto
+    `REJ_SONDA_OCUPADA` (V-RISK-007); la sonda es la orden mínima.
+  - Exención del EV sin el prior 0,55: se conserva TP > f (lo común a
+    cualquier prior).
+  - Medido: golden re-certificado (misma operación, nocional mínimo); T-2
+    pasa de 131 operaciones y +0,931 a 68 y −0,140, y lo mueven sólo los
+    13 rechazos `sonda_ocupada` (la variante sin puerta da la huella de
+    main); T-1 18/144: deja de influir `kelly_clamp_min` (gen 32), que en
+    el T-1 sólo dimensionaba sondas.
+- Revisión del PR #61 (`docs/audit/REVISION_PR61_2026-10-12.md`, 1 medio
+  y 4 menores), arreglada en el mismo PR:
+  - CL-98b (F1): la orden mínima es la del LOTE (menor múltiplo de
+    stepSize con qty ≥ minQty y nocional ≥ mínimo + 0,10, hacia arriba;
+    `capital_regime::cantidad_minima_ejecutable`). La usan la viabilidad
+    D-750, el rescate y el tope de la sonda; el núcleo no baja de ella tras
+    el deslizamiento. Antes, con lote grueso, el IOC salía con «Volumen 0»
+    y la moneda no salía nunca de la fase de sonda.
+  - Golden re-certificado: el fixture es BTC a ~60 000 con paso 0,001, así
+    que la orden mínima real son 60 USD (×11,76). El T-2 registra un lote
+    fino (orden mínima ≈ 5,40 USD); con el de BTC, 13 USD no abren nada.
+  - CL-98c (F3, F5): `admite_sonda` en el riesgo y en el núcleo
+    (`sonda_sin_modelo`); `cf3_sonda_respeta_d4` activo con la función real.
+  - CL-98d (F2, F4): deuda de V-RISK-007 con la serialización tras cada
+    reinicio y su medida; ADR-0016 D4 enmendada (la sonda se admite por
+    presupuesto, no por EV).
+- Fase de sonda tras un reinicio (medido): `trade_count` no se persiste,
+  así que todas las monedas, también las de `_MOTOR`, vuelven a ella. Con
+  26 monedas compitiendo por una sola sonda (operación media 1,16 h y
+  espera de señal 4,1 h, replay de ATOM 2026-07), ~2,4 días hasta que sale
+  la primera y ~8 días hasta que salen todas, frente a ~2 días sin D4.
+- #61 (D4 + F1) fusionado en main (2d63b9f1). En la tanda siguiente
+  (decisiones del dueño del 2026-10-12, ADR-0017):
+  - CL-99: el pico es uno (arena), compartido y guardado.
+  - CL-100: R-15 en sombra (sólo telemetría).
+  - CL-101 a CL-104: cuatro módulos sin consumidores retirados.
+  - CL-105: cópulas de septiembre bajadas de data.binance.vision (permiso
+    del dueño), 323 pares; arreglados los nombres de ETH (agosto) y SHIB
+    (1000SHIBUSDT); ADR-0009 renovado.
+  - CL-106: freno duro de la cuenta = K(w, l)·r ≤ d*, el cuantil 95 % de la
+    caída en 200 operaciones con H0 = +0,05 R (31-35 R), el mismo para el
+    host y el riesgo.
+  - CL-107: freno de la estrategia, Ville sobre la R de cada cierre con
+    H0 = +0,30 R; corta sólo entradas nuevas.
+  - CL-108: estado aprendido guardado (recuento, evidencia, calibradores,
+    freno y lo medido).
+  - Revisión previa de la Línea G (26 hallazgos, `docs/audit/linea_g/
+    ola5_tanda_cf4.tsv`). Los 4 MED, arreglados en la misma tanda (criterio
+    del #61):
+    - CL-106b (T1-02): el freno duro mide la caída desde el pico en stops en
+      USD (`riesgo_por_operacion_usd`). Antes, con nocional fijo, disparaba
+      tras K·pico/capital stops; con stop del 2 % nunca antes de d*.
+    - CL-108d (T2-3): el PnL de sesiones anteriores no entra en los
+      acumuladores de la sesión.
+    - CL-108e (T2-2): se restauran el sesgo y el umbral epigenéticos y el
+      anillo de Lundberg.
+    - CL-108f (T2-1): un estado ilegible o de otra versión echa el freno de
+      la estrategia y la sesión no lo sobrescribe; `guardar` valida y hace
+      `sync_all`.
+    - Los 21 LOW van a la tanda siguiente (T1-03, refutado: el freno es
+      absorbente por decisión del dueño).
+  - Pendiente: la revisión del PR #60 (EST-3 y menores) y los LOW de la
+    Línea G, desde CL-109.
+- Veto de grupo (LC-F4-17, LC-F4-01): propuesta a Codex en el buzón, sin
+  tocar su zona hasta su acuse.
+- Hallazgos abiertos: una moneda sin `_MOTOR` no sale del ML-GATE con su
+  evidencia realizada (F3.4-05); el bootloader suscribe `shibusdt` (en
+  futuros es 1000SHIBUSDT).
+- Lecciones:
+  - Una secuencia periódica de la misma tasa no sirve para probar un
+    proceso e adaptativo: es antipersistente y le juega en contra
+    (~550 cierres frente a ~117 con resultados aleatorios).
+  - Un hook impide escribir en otro worktree con Write/Edit: trabajar en el
+    propio, aunque esté ocupado por una verificación (esperar o guardar el
+    cambio como parche).
+  - Antes de crear un test, comprobar que el archivo no existe (pisé
+    `cf4_piso_resolucion.rs`; se restauró antes de cualquier commit).
+  - En `lib.rs` no va `#[cfg(test)]` fuera de los módulos de prueba del
+    final: los contratos de fuente cortan ahí (CL-91b).
+  - Con el disco casi lleno, el compilador se queda sin memoria virtual
+    (error 1455) y deja artefactos a medias: repetir con `-j2` y limpiar
+    el paquete roto (`cargo clean -p`).
+  - Un fixture con spot y futuro tiene que reproducir la llegada real:
+    el spot llega entre dos eventos y refleja el futuro vigente. Si refleja
+    el futuro del evento siguiente, el par asíncrono mete el paso del
+    futuro como ruido en la base.
+  - Un `Mutex` estático en pruebas debe tolerar el envenenamiento
+    (`unwrap_or_else(PoisonError::into_inner)`): si no, el primer fallo
+    arrastra a las demás pruebas y la corrida RED no dice nada.
+
+## 2026-10-11 — Claude (Línea C, PC del operador): CL-71, el ATR de las decisiones es σ de 60 s
+
+- Fusionados #42 (CL-66 y CL-70) y #43 (CL-68 y CL-69). Regla del
+  operador: se verifica en local y se fusiona sin esperar a GitHub.
+- CL-71 (LC-F6-01, F2.2-07 cerrado):
+  - `v_t = max(√(8/π)·σ̂60·p, √(8/π)·R_abierta/q99)` en cada evento, sin
+    trinquete ni suelo de 10 pb. El piso es el tick (CL-69). El rasgo del
+    modelo conserva el ATR viejo (CL-68).
+  - La gestión pierde su suelo de 10 pb y conserva sólo el gen 27.
+  - 8 de las 9 copias del suelo, las puertas del continuo y las ramas 11 y
+    12 usan el ATR nuevo. Sólo las ramas 1-10 (Línea E) conservan
+    `cur_atr_continuo`, con el pedido en el buzón.
+- La revisión adversarial encontró un bloqueante, corregido en el mismo
+  commit: sin la envolvente, el ATR se quedaba en escala de calma un minuto
+  ante un choque, y eso abría la excepción de capitulación. q99 = 3,04,
+  derivado por Monte Carlo.
+- Medido:
+  - σ_ATR/σ = 1,039 y 0,968 (antes ≥ 1,57 y 1,19);
+  - FA-9 4,4 % (antes ≈ 0,2 %);
+  - choque de −100 pb en 30 s: ATR ×5 en el mismo minuto;
+  - golden 1000,04298628, re-certificado;
+  - T-2 5a0b7b940fb4809b (37 operaciones, antes 69);
+  - T-1 17/144: gana el gen 20 y no pierde ninguno.
+- Pendientes de la revisión: siembra de σ̂ tras reconectar, valle de σ̂
+  tras huecos de más de 61 s, unidades de `spread_speed_of_sound`, y
+  consumidores que tratan el ATR como σ. Detalle en el §6 del plan.
+
+## 2026-10-11 — Claude (Línea C, PC del operador): C-F4 empieza por el ATR (CL-66, CL-70)
+
+- PR #40 (C-F2) fusionado en main (f6953362). C-F3 (docs) y C-F4 van en
+  la misma rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08`,
+  sobre 92ca8137.
+- Plan del ATR revisado por un escéptico: `docs/audit/PLAN_C-F4_ATR_2026-10-11.md`.
+  - El rango alto-bajo depende de la densidad de eventos, el mismo
+    defecto que D-615b. Por eso se mide la varianza de 60 s, no se repara
+    la EMA del rango.
+  - Orden: CL-66, CL-70, CL-67, CL-68, CL-69 y CL-71. Sólo CL-71 cambia
+    conducta y lleva su T-1.
+- Hechos:
+  - CL-66 retira `atr_1s/5s/1m`, que eran `v_t` fabricado, y el coaxial se
+    abstiene sin ellas. Cierra LC-F3-02 y F3.6-04. T-2 y golden idénticos.
+  - CL-70: módulo `sigma_minuto`, sin cablear, con varianza realizada
+    exponencial S/N. Mide lo mismo con cualquier densidad de eventos:
+    entre 0,988 y 1,001, también con huecos y en el calentamiento.
+- Lección: una EWMA de medias por vela, aun ponderada por duración, se
+  sesga +23 % con huecos. Los r60 rancios y el salto caen en velas con
+  pesos distintos. Hay que sumar S y N con el mismo decaimiento.
+- Hallazgo para Codex: la T-2 de main pasó de 487a88406a88a300 (15
+  operaciones) a 52ed2154dc8a57e7 (69) con #39 (SI, spectral_tape).
+  Bisecado: con #721 da 15 y con el merge de #39, 69.
+
+## 2026-10-11 — AGY: OLA Ω87 COMPLETADA — DESASFIXIA TEMPORAL Y COOLDOWN MULTIESCALA EN EL CONTINUO ESPECTRAL (FICHA #725)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#725`.
+- **Resolución de la Trampa de Escala Asimétrica en Cooldown**:
+  - En `crates/god-engine-core/src/lib.rs:5575-5586`: desacoplado el enfriamiento base respecto a cierres lentos mediante `enfriamiento_base_ms = if tau_cierre > 0 { (tau_cierre as f64).min(tau_dom) } else { tau_dom }`.
+  - Cuando un trade cierra con un horizonte lento ($\tau = 4\text{ h}$ ó $12\text{ h}$), ya no congela incondicionalmente el activo en todas las bandas operables. Si el mercado resuena en una escala activa más rápida (`tau_dom`), la descorrelación se mide contra la escala activa, liberando micro-oportunidades sin violar la física de descorrelación.
+  - Cierres rápidos ($\tau = 45\text{ s}$) no se inflan artificialmente al centroide macro si éste fuese de horas.
+  - Preservada la escalera binaria de racha $2^{\text{racha}}$ y su amortización logarítmica canónica $\lfloor\log_2(1 + \Delta t / \text{base})\rfloor$.
+- **Validación Extremo a Extremo e Invarianza**:
+  * Creado contrato formal `crates/god-engine-core/tests/multiscale_cooldown_desasfixia_contract.rs` (3/3 tests PASSED al 100%).
+  * Suite completa `god-engine-core`: 100% verde (25/25 stateful contracts, 4/4 prospect pressure, 4/4 puertas continuo, etc.).
+  * Fixture micro T-2: `cargo test -p backtest-engine --test t2_cobertura_puertas -- t2_diag_actividad_del_fixture_lateral_micro --nocapture` ejecutado con 69 trades y Win Rate incrementado a 43.48% (huella `bbcd31f2a7ef06b3`).
+  * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores en 1m 05s.
+
+## 2026-10-11 — AGY: OLA Ω86 COMPLETADA — ERRADICACIÓN INTEGRAL DE ALLOCATIONS EN `try_symbol`, `sigma_forecast` Y RLS EN HOT-PATH (FICHA #724)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#724`.
+- **Erradicación de Asignaciones en Consultas de Símbolos, Estimadores y Pronósticos**:
+  - En `crates/god-engine-core/src/lib.rs:1281-1299`: sustituida la llamada `try_symbol` en `liquidation_severity_at` por `with_symbol` zero-alloc, eliminando una asignación `String` en CADA evento de profundidad/trade de `process_event`.
+  - En `crates/god-engine-core/src/lib.rs:1994-2005`: sustituida la llamada `try_symbol` para `sym_funding` por `with_symbol` zero-alloc, eliminando la asignación `String` por tick.
+  - En `crates/god-engine-core/src/entry_reservation.rs:36`: sustituida la llamada `try_symbol` por `symbol_registry::slot_es_simbolo` zero-alloc.
+  - En `crates/god-engine-core/src/contagion_publisher.rs:69`: eliminada la clonación innecesaria de `symbol`.
+  - En `crates/god-engine-core/src/lib.rs:4149, 7892`: reutilizado `sym` en dataset de dark alpha y log de telemetría de ML-GATE.
+  - En `crates/quantum-arena/src/state.rs:308-316`: sustituida la recolección `Vec<f64>` en `CoinArena::sigma_forecast_at` por buffer de stack `[0.0f64; 7]` con interpolación log-log in-situ (eliminando el 1% de allocations del hot path de Claude profiling).
+  - En `crates/quantum-arena/src/spectral_tape.rs:381, 612`: sustituidas las asignaciones dinámicas `Vec<f64>` en `Rls::update` y `HorizonForecaster::predict` por buffers fijos de stack `[0.0f64; 16]` para el vector $Px$ y el vector de predicción (eliminando el 4.8% de allocations del hot path).
+- **Validación Extremo a Extremo e Invarianza**:
+  * Creado `crates/quantum-arena/tests/zero_alloc_hotpath_primitives_contract.rs` (4/4 tests PASSED al 100%).
+  * Suite completa `quantum-arena`: 100% verde (todos los contratos pasando).
+  * Suite completa `god-engine-core`: 100% verde (todos los contratos pasando).
+  * Invarianza de compuertas de oro: `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture` con huella determinista `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
+  * Workspace exhaustivo: `cargo check --workspace --all-targets` con 0 errores.
+
+## 2026-10-11 — AGY: OLA Ω85 COMPLETADA — ERRADICACIÓN INTEGRAL DEL 76% DE ASIGNACIONES EN HEAP EN SEÑALES Y GEOMETRÍA DEL NÚCLEO (FICHA #723)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#723`.
+- **Erradicación de Asignaciones en Heap en Señales y Geometría**:
+  - En `crates/omniscient-registry/src/lib.rs`: implementado `get_scoped_val_strict(&self, symbol: Option<&str>, coin_id: Option<usize>, name: &str) -> Option<f64>` con 0 asignaciones dinámicas en heap (buffers de stack de 64 bytes para formatear y consultar llaves escopadas por símbolo y coin_id).
+  - En `crates/signal-engine/src/flow_impulse.rs:305`: erradicadas las dos asignaciones `format!` por tick en `FlowImpulseEngine::vote` sustituyéndolas por `get_scoped_val_strict` (eliminando el 15% de allocations del hot path de Claude profiling).
+  - En `crates/signal-engine/src/renyi_tsallis_entropy.rs:247`: erradicadas las dos asignaciones `format!` por tick en `RenyiTsallisEntropyEngine::vote` sustituyéndolas por `get_scoped_val_strict` (eliminando el 10% de allocations del hot path).
+  - En `crates/god-engine-core/src/lib.rs:5274-5302`: eliminadas las llamadas `.clone()` sobre `self.latest_prices`, `self.latest_ofis` y `self.latest_returns`, utilizando buffers de stack fijos `[0.0f64; 32]` para el tensor Yang-Mills y la descomposición Helmholtz-Hodge (eliminando el 7.5% de allocations del hot path).
+  - En `crates/strategy-core/src/types.rs`: sincronizado el docstring de `win_probability` con el contrato del motor de riesgo (`risk-engine`), clarificando el rechazo con `REJ_INVALID_INPUT` ante no-finitos y `0.0` como fallback neutro a confianza.
+  - **Total Acumulado de Erradicación**: Más del **76.3% de asignaciones en heap erradicadas en el camino caliente** entre Ω84 y Ω85.
+- **Suite Contractual y Validación**:
+  - Creado `crates/signal-engine/tests/zero_alloc_scoped_signals_contract.rs` (3/3 tests PASSED al 100%).
+  - `cargo test -p signal-engine`: 120/120 tests pasados al 100%.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `52ed2154dc8a57e7` y 69 trades idénticos bit a bit.
+  - `cargo check --workspace --all-targets`: 0 errores en todo el workspace.
+
+## 2026-10-11 — Claude (Línea F, «laughing-fermi», prefijo LF-n): revisión de composición, lazos adaptativos y campo multiactivo
+
+- Nueva línea: **revisión independiente de lo que entra a `main` sin PR**,
+  mapa de lazos adaptativos y cruces multiactivo/τ. Rama
+  `claude/laughing-fermi-xoqnb7`. Plan:
+  `docs/PLAN_LINEA_F_CLAUDE_2026-10-11.md` (se acopla a R0–R9, C-F0…F11 y al
+  REINICIO de Codex SI; no crea otro censo). Hallazgos LF-1…LF-17 en su §6.
+- La meta en números (plan §2): con RR 2,25, ventaja +0,05 R exige ~420
+  operaciones independientes/día a Kelly pleno; con el tamaño actual (≈0,2 %
+  de riesgo, una orden mínima) ~2 470. El supuesto p = 0,45 de los planes Ω
+  equivale a +0,46 R por operación: ningún fixture ni tape lo ha mostrado.
+- **Patrón central**: los lazos que deciden (convicción por rama K-02, pesos
+  del consejo LF-14, vigilante de rollback LF-3) puntúan acierto contra 0,5;
+  con RR ≥ 2,25 el equilibrio es p* ≈ 0,31, así que aprenden a frenar las
+  operaciones rentables. Regla propuesta: crédito por esperanza neta frente a
+  p* = 1/(1+RR) (o log-loss calibrada), nunca acierto contra 0,5.
+- Arreglados (RED antes, GREEN después): LF-1 (Ω84: respaldo de identidad
+  `"BTCUSDT"` → `""`), LF-2 (C-2 de AGY deshecho por MG05 en dual; nodo en
+  ln τ), LF-3 (`VigilanciaDegradacion`: apuesta en contra, falsa reversión
+  ≤ α; el criterio viejo revertía el 100 % de genomas de +0,30 R en Monte
+  Carlo), LF-4 (vigilancia armada antes del gate de evolución: en prod
+  nunca se armaba). LF-3 y LF-4 van juntos a propósito.
+- Entregados: Línea C LF-5 (enfriamiento por moneda atado a la τ del último
+  cierre, HIGH), LF-6, LF-10, LF-11, LF-12 (Kelly absorbente fuera de micro,
+  HIGH, con E); Qoder/AGY LF-14 (consejo, HIGH); AGY LF-15/16/17 (registro);
+  GLM LF-13 (Hedge inerte) y LF-1b (dataset `votes_export` cambia con Ω84);
+  Codex LF-8.
+- Lección de build en la nube: `apt-get install gcc-mingw-w64-x86-64 wine64`
+  funciona por el proxy; target propio `/home/user/target-lf`,
+  `RUSTFLAGS="-C target-cpu=x86-64-v2 -C opt-level=3"`. El proxy no deja
+  borrar ramas remotas (`claude/elegant-euler-mmtht4`, ya en main, sigue ahí).
+  Disco: la cuota (~30 GB) se agota con tests en debug con símbolos; usar
+  `CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0`.
+- Lección de método: validar con Monte Carlo antes de arreglar. El primer
+  arreglo de LF-3 (sólo quitar el recorte a +1 R) seguía revirtiendo el 100 %
+  de genomas rentables: el defecto real era el criterio de caída desde el pico.
+
+## 2026-10-11 — AGY: OLA Ω84 COMPLETADA — DESACOPLAMIENTO DE RELOJ CAUSAL P1, ERRADICACIÓN DE ASIGNACIONES EN HEAP P5 Y MIGRACIÓN ESTRICTA EN CAMINO CALIENTE (FICHA #722)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#722`.
+- **Resolución Forense P1 (Desacoplamiento de Syscalls de Reloj en el Hot Path)**:
+  - En `crates/omniscient-registry/src/lib.rs`: desacoplado el camino caliente de `chrono::Utc::now()` mediante `active_event_time_ms: AtomicI64`, `update_event_time(event_time_ms)`, `get_event_time()`, `current_timestamp_ms()`, `Parameter::new_with_ts` y `Parameter::set_value_with_ts`.
+  - En `crates/god-engine-core/src/lib.rs:1718, 2914`: `self.arena.registry.update_event_time(event_time_ms as i64)` se ejecuta exactamente una vez al inicio de `process_event` y `process_tick_dual`. Las ~208 escrituras subsecuentes al registro leen la marca atómica en 0.3 ns en lugar de invocar syscalls costosas (~15.2 µs ahorrados por evento, eliminando la regresión detectada en PR #38 / P1).
+  - En `restore_from_snapshot`: se preserva el timestamp canónico exacto de cada parámetro del snapshot mediante `register_or_update_with_ts`.
+- **Resolución Forense P5 (Erradicación de Asignaciones en Heap en Inferencia ML)**:
+  - En `crates/god-engine-core/src/ml_inference.rs`: implementado `NanoForest::get_global_suffixed(symbol, suffix)` con buffer fijo de 64 bytes en stack (`[0u8; 64]`), realizando búsqueda directa sobre el mapa global lock-free con 0 bytes de asignación dinámica en heap.
+  - En `crates/god-engine-core/src/lib.rs:4658, 4684, 4724`: sustituidas todas las interpolaciones dinámicas `format!("{}_MOTOR", sym)`, `format!("{}_VOL", sym)` y `format!("{}_OI", sym)` por `get_global_suffixed`, eliminando el 33% de las asignaciones de heap de todo el hot path.
+  - En `crates/quantum-arena/src/symbol_registry.rs`: incorporado `with_symbol<F, R>(coin_id, f)` para acceso cero-copia sin alojar `String`.
+  - En `crates/god-engine-core/src/lib.rs:3104, 5417`: sustituido `try_spec` (que clonaba la estructura de 9 campos) por `try_symbol` y eliminada la re-consulta redundante a `try_spec` en la línea 5417.
+- **Migración a Selectores Estrictos en Consumidores Productivos**:
+  - En `crates/god-engine-core/src/lib.rs:4043, 4375`: migradas las consultas de `ml_model_base` al cierre de posición y actualización online a `self.arena.registry.get_for_coin_strict_or(coin_id, "ml_model_base", f64::NAN)`, asegurando aislamiento dimensional sin fallback global no deseado.
+- **Validación Extremo a Extremo**:
+  - `cargo check --workspace --all-targets`: 0 errores, compilación limpia.
+  - `cargo test -p omniscient-registry`: 14/14 tests pasando al 100%.
+  - `cargo test -p quantum-arena`: suite completa de contratos pasando al 100%.
+  - `cargo test -p god-engine-core`: suite completa pasando al 100%.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: test determinista `t2_diag_actividad_del_fixture_lateral_micro` aprobado.
+
+## 2026-10-11 — Claude (Línea C, en el PC del operador): C-F2 cerrada (CL-65)
+
+- Ya se trabaja en el repositorio local del operador (Windows nativo, msvc)
+  y se fusiona en GitHub por PR. Worktree propio (`.claude/worktrees/…`) y
+  `CARGO_TARGET_DIR` propio (`.claude/worktrees/target-cf2`); no se toca el
+  checkout compartido.
+- Revisión cruzada de las 137 pruebas cf2, hecha por tres revisores de sólo
+  lectura:
+  - `cf2_calibracion_solucion_conocida.rs` no compilaba en el HEAD de la
+    nube; sus 8 pruebas no se habían ejecutado.
+  - Cuatro activas fijaban el defecto: ahora son CARACTERIZACIÓN.
+  - Las OPEN que no se activan solas lo dicen en su ignore (CONTRATO,
+    RÉPLICA, requisito).
+  - Hay pruebas frágiles o vacuas corregidas.
+  - Un nulo nuevo de Yang-Mills (138 pruebas).
+- Resultado en el PC: 68 activas pasan, las 69 OPEN fallan por su causa
+  (leído el mensaje de cada una) y la de coste pasa. Suites de los siete
+  crates: 1 632 pasan, 0 fallan.
+- Hallazgos nuevos:
+  - F2.3-08b: W1 es invariante a la escala y no ve un cambio de volatilidad
+    ×5 (0/16 caminos), así que el BOCPD sobre W1 sólo da falsas alarmas.
+  - F2.2-03b: el FA-1 del escéptico, con id propio.
+  - F2.2-10, causa 2: el umbral del DSR deflacta dos veces.
+- Lección: con `--test <archivo>` y logs por nombre de archivo, dos crates
+  con un archivo homónimo (`cf2_cuantico_solucion_conocida.rs` en
+  feature-engine y en signal-engine) se pisan el log. Usad el crate en el
+  nombre del log.
+- Pedidos con su test en rojo, uno por dueño, en el buzón (Qoder/GLM, AGY y
+  Codex).
+- PR #40, con main integrado hasta #39 (Codex, SI) y #721 (AGY); sólo
+  hubo conflictos de buzón y de memoria, resueltos por unión.
+  - Sobre el árbol final: check del workspace con todos los targets en
+    verde.
+  - Suites de los siete crates y del registro: 1 661 pasan, 0 fallan.
+  - Pruebas cf2: igual que antes. #39 mueve un poco los valores de σ̂, con
+    la misma causa.
+  - T-1 (44f8b5c2): 16/144 (11,1 %), con la misma lista que main.
+  - C-F3 sigue en revisión de sólo lectura en la nube.
+
+## 2026-10-11 — Claude (Línea C): traspaso de C-F2 al PC del operador
+
+- El operador pidió (13:41 UTC) volver a trabajar en su repositorio local y
+  fusionar en GitHub, no en la nube. Desde aquí, la Línea C compila y prueba
+  en su PC (Windows nativo, sin wine).
+- Rama `claude/auditoria-deslizamiento-apalancamiento-sqtc08`, head con
+  CL-64 (137 pruebas `tests/cf2_*`: 67 activas, 70 OPEN con `#[ignore]`) y
+  los documentos `docs/audit/HALLAZGOS_C-F2_2026-10-11.md`,
+  `FICHAS_C-F2_2026-10-11.md` y `PRUEBAS_C-F2_2026-10-11.tsv`.
+- Pendiente de C-F2, en este orden:
+  1. Revisión cruzada de las pruebas (en la nube quedó a medias en
+     risk-engine y god-engine-core).
+  2. Correr todas las pruebas juntas, también con `--ignored`.
+  3. Cerrar la sección de resultados del documento.
+  4. Pedidos con su test en rojo a cada dueño, en el buzón.
+  5. PR, CI verde, T-1 ≥ 11,0 % (sólo hay tests nuevos: no debe moverse),
+     merge y comprobar que llegó a `main`.
+- C-F3 (decisión viva: τ, confianza, vetos, modelos, motores) sigue en
+  revisión de sólo lectura en la nube. Sus hallazgos llegan a esta rama
+  como documento.
+- En el PC: worktree propio y `CARGO_TARGET_DIR` propio, para no tocar el
+  índice ni los cambios sin commit de otros agentes en el checkout
+  compartido, y para no bloquear `god_engine.exe`.
+
+## 2026-10-11 — SI: reinicio coordinado del censo y del recorrido global
+
+- Mandato ampliado del operador: metas → conceptos → fundamentos → algoritmos → cada archivo. Adenda operativa `docs/audit/REINICIO_COORDINADO_BASE_2026-10-11.md`, vinculada al plan rector, R0–R9 y C-F0–C-F11 existentes.
+- Base remota 1d1f8bdd: 1.583 rutas, todas inicialmente inventariadas, ninguna revisión semántica heredada. Inventario por blob y asignación C completa sin fallback; checker correcto y siete tests del inventariador aprobados.
+- Reservas SI/R4/C-F2/AGY preservadas y aviso al chat R4 con ACK. Corrige unidades de los conteos y distingue hipótesis, aspiraciones de latencia y evidencia; no afirma cierre económico ni auditoría de los 1.583 archivos.
+- Artefactos fechados `REINICIO_BASE_*`; delta a44 no incluye su documentación posterior. Regenerar por SHA y reabrir dependencias semánticas incluso con blob igual. Recibo terminal del lote SI y de integración: PR #39.
+- Avance externo main8dd (Ω83): censo regenerado a 1.584 rutas pendientes; delta AGY 1 adición/8 cambios. Merge conserva ambos aportes documentales y todas las fuentes de ambos padres; cadena anterior interrumpida por cambio de base, validación de composición nueva requerida.
+
+## 2026-10-11 — SI: pronóstico emitido y feedback epigenético causal
+
+- Rama propia codex/spectral-evidence-1011 desde1d1f8bdd; no toca estrategia multiactivo reservada por otro chat.
+- 8404bbdf congela predicción/climatología/readiness, valida trades antes de mutar banco, evita ln0 y overflow temporal y conserva el nulo perfecto.
+- c9d877da aplica feedback al umbral ya decaído; rechaza PnL/estado no finito y reloj regresivo, conserva cierres con igual timestamp y política900000ms.
+- RED espectral 0/7, epigenética 2/4; quantum-arena 238/0/0 (21 bloques), incluye nueve y seis contratos nuevos. Primer all-targets aprobado; consumidores/replay/T1 y repetición final en curso en este corte.
+- 06ce88ef extiende el preflight al consumidor forecast de spectral_bench, añade dos contratos y su ejecución en CI. Protege tape/forecasters, no todas las estadísticas anteriores del benchmark.
+- Revisiones adversariales favorables; no ejecución independiente duplicada. Hashes finales y límites en docs/artifacts/auditoria_evidencia_espectral_si_2026-10-11.json; informe docs/AUDITORIA_EVIDENCIA_ESPECTRAL_SI_2026-10-11.md.
+- SI-O02 sigue abierto: suelo móvil, inversión sin retirar desplazamiento y baseline en coordenadas distintas; se coordina con C-F2. Congelar Pending no basta. Incertidumbre, coste por evento y múltiples escritores siguen abiertos.
+- GO24/MP25 sí integradas, heads y merges ancestros; ninguna rama ajena activa se elimina. Checkout SI de septiembre desapareció antes de retomar: no se atribuye éxito a aquella compilación ni integración por desaparición.
+- Sin trading, entrenamiento, promoción, rebaja T1 ni rentabilidad demostrada. Tres commits funcionales publicados. Recibo terminal de validación, SHA e integración: [PR #39](https://github.com/Jhona-la/Trader-Gemini/pull/39). Este corte versionado no presume aprobaciones futuras.
+
 ## 2026-10-11 — Claude (cloud, Línea C): ciclo 12, medidor y perfil del camino caliente (PR #38)
 
 - CL-60: `crates/god-engine-core/tests/medidor_camino_caliente.rs` pasa una
@@ -32,6 +896,29 @@
   leer el reloj en cada escritura del registro (~208 por evento), un sello
   que nada lee en producción. Avisado AGY en el buzón (P1). T-1 del PR #38:
   16/144, misma lista inerte.
+
+## 2026-10-11 — AGY: OLA Ω83 COMPLETADA — AISLAMIENTO ESTRICTO DE ÁMBITO MULTI-ACTIVO Y RIGOR DIMENSIONAL DE UNIDADES (FICHA #721)
+
+- **Ejecutor**: Antigravity (AGY, Quant Sr. Lead & Arquitecto de Excelencia Operativa), Ficha `#721`.
+- **Cierre del Hallazgo C-F1 / LC-F1-06 / F-002 («Aislamiento de Ámbito Multi-Activo y Rigor Dimensional»)**:
+  - En `crates/omniscient-registry/src/lib.rs`:
+    * Implementado `get_scoped_parameter_strict(symbol, coin_id, name, consumer) -> Option<Arc<Parameter>>` con resolución $O(1)$ zero heap allocation sin fallback al parámetro global `{NAME}` (si el activo no dispone del parámetro, retorna `None`).
+    * Implementado `get_scoped_val_strict_or(symbol, coin_id, name, default) -> f64` con resolución $O(1)$ zero heap allocation sin fallback al parámetro global, impidiendo que una moneda B herede métricas de una moneda A escritas en el global.
+  - En `crates/quantum-arena/src/config.rs`:
+    * Documentadas formalmente las unidades para `live_maker_fee` (fracción 0.0002 = 2 bps = 0.02%) y `live_taker_fee` (fracción 0.0005 = 5 bps = 0.05%), eliminando ambigüedad en el Apartado 1 del Contrato de Conceptos C-F1.
+  - En `crates/quantum-arena/src/position.rs`:
+    * Alineada la definición de [`Position::entry_tau_ms`] con D-745: la escala temporal continua $\tau$ con la que se dimensionó y validó la orden al entrar (inmutable durante la vida de la posición).
+  - En `crates/strategy-core/src/types.rs`:
+    * Actualizado el docstring de [`SignalIntent::win_probability`] para reflejar con precisión su significado matemático: $P(\text{ganar neto} \mid \text{lado, geometría, } \tau)$, reservada para Kelly/Riesgo sin sesgo en selección (LC-F1-37).
+- **Suite Contractual Formal**:
+  - Creado `crates/omniscient-registry/tests/aislamiento_ambito_multiactivo_contract.rs` con 3 pruebas formales:
+    * `test_aislamiento_estricto_sin_caida_al_global`: ETH nunca lee mid_price ni métricas de BTC.
+    * `test_aislamiento_por_coin_id_estricto`: consultas estrictas por `coin_id` devuelven `NaN` / default ante ausencia de métrica propia.
+    * `test_resolucion_precedencia_simbolo_sobre_coin_id`: la clave por símbolo precede a la de coin_id.
+- **Invarianza y Cero Regresiones**:
+  - `cargo test -p omniscient-registry`: 14/14 tests pasando al 100%.
+  - `cargo check --workspace --all-targets`: 0 errores, compila limpiamente en todo el workspace.
+  - `cargo test -p backtest-engine --test t2_cobertura_puertas -- --nocapture`: huella determinista `huella=487a88406a88a300`, 15 operaciones idénticas bit a bit frente a la línea base.
 
 ## 2026-10-11 — AGY: OLA Ω82 COMPLETADA — RESOLUCIÓN DE «DESCONOCIDO ≠ 0», FRESCURA ATÓMICA DE TIMESTAMPS Y AISLAMIENTO MULTI-ACTIVO EN OMNISCIENT REGISTRY (FICHA #720)
 

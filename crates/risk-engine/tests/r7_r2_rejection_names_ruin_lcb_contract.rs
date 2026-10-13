@@ -5,12 +5,14 @@ use risk_engine::{
     REJ_CONFIDENCE, REJ_CORRELATION, REJ_DRAWDOWN, REJ_EV, REJ_EXPOSURE_ZERO,
     REJ_FEE_IMPACT, REJ_FLAT_COIN, REJ_INVALID_INPUT, REJ_MARGIN_INSUFFICIENT,
     REJ_MIN_NOTIONAL, REJ_ORCHESTRATOR, REJ_OTROS, REJ_SIN_EVIDENCIA, REJ_SPEC,
-    REJ_TARGET_GEOMETRY, REJ_TP_SL_FLOOR, REJ_VIABILIDAD,
+    REJ_ESTRATEGIA_FALSADA, REJ_SONDA_OCUPADA, REJ_TARGET_GEOMETRY, REJ_TP_SL_FLOOR, REJ_VIABILIDAD,
 };
 
 #[test]
 fn test_all_17_rejection_slots_map_to_named_constants_with_exact_parity() {
-    assert_eq!(REJECT_SLOTS, 17, "Deben existir exactamente 17 ranuras de rechazo");
+    // CL-98 (D4): la ranura 17 es `sonda_ocupada`; CL-107, la 18 es
+    // `estrategia_falsada`.
+    assert_eq!(REJECT_SLOTS, 19, "Deben existir exactamente 19 ranuras de rechazo");
     assert_eq!(REJ_FLAT_COIN, 0);
     assert_eq!(REJ_EXPOSURE_ZERO, 1);
     assert_eq!(REJ_CORRELATION, 2);
@@ -28,6 +30,8 @@ fn test_all_17_rejection_slots_map_to_named_constants_with_exact_parity() {
     assert_eq!(REJ_SIN_EVIDENCIA, 14);
     assert_eq!(REJ_INVALID_INPUT, 15);
     assert_eq!(REJ_TARGET_GEOMETRY, 16);
+    assert_eq!(REJ_SONDA_OCUPADA, 17);
+    assert_eq!(REJ_ESTRATEGIA_FALSADA, 18);
 
     assert_eq!(REJECT_NAMES[REJ_FLAT_COIN], "flat/coin");
     assert_eq!(REJECT_NAMES[REJ_EXPOSURE_ZERO], "exposure0");
@@ -46,13 +50,15 @@ fn test_all_17_rejection_slots_map_to_named_constants_with_exact_parity() {
     assert_eq!(REJECT_NAMES[REJ_SIN_EVIDENCIA], "sin_evidencia");
     assert_eq!(REJECT_NAMES[REJ_INVALID_INPUT], "entrada_invalida");
     assert_eq!(REJECT_NAMES[REJ_TARGET_GEOMETRY], "geometria_invalida");
+    assert_eq!(REJECT_NAMES[REJ_SONDA_OCUPADA], "sonda_ocupada");
+    assert_eq!(REJECT_NAMES[REJ_ESTRATEGIA_FALSADA], "estrategia_falsada");
 }
 
 #[test]
 fn test_zero_raw_magic_number_rejections_in_risk_engine_source() {
     let src = include_str!("../src/lib.rs");
     // Verificar que no queden llamadas a return rej(0) .. return rej(16) con números literales
-    for i in 0..17 {
+    for i in 0..REJECT_SLOTS {
         let pattern_space = format!("return rej({});", i);
         let pattern_padded = format!("return rej( {} );", i);
         assert!(

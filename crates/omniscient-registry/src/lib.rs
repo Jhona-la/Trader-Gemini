@@ -50,13 +50,17 @@ pub struct Parameter {
 
 impl Parameter {
     pub fn new(name: &str, kind: ParameterKind, initial_value: f64, owner: &str) -> Self {
+        Self::new_with_ts(name, kind, initial_value, owner, chrono::Utc::now().timestamp_millis())
+    }
+
+    pub fn new_with_ts(name: &str, kind: ParameterKind, initial_value: f64, owner: &str, timestamp: i64) -> Self {
         Self {
             id: Uuid::now_v7(),
             name: name.to_string(),
             kind,
             value: AtomicU64::new(initial_value.to_bits()),
             owner: owner.to_string(),
-            timestamp: AtomicI64::new(chrono::Utc::now().timestamp_millis()),
+            timestamp: AtomicI64::new(timestamp),
         }
     }
 
@@ -65,9 +69,12 @@ impl Parameter {
     }
 
     pub fn set_value(&self, val: f64) {
+        self.set_value_with_ts(val, chrono::Utc::now().timestamp_millis());
+    }
+
+    pub fn set_value_with_ts(&self, val: f64, ts: i64) {
         self.value.store(val.to_bits(), Ordering::Relaxed);
-        self.timestamp
-            .store(chrono::Utc::now().timestamp_millis(), Ordering::Relaxed);
+        self.timestamp.store(ts, Ordering::Relaxed);
     }
 
     pub fn get_timestamp(&self) -> i64 {
@@ -78,6 +85,8 @@ impl Parameter {
 pub struct OmniscientRegistry {
     // Usamos SkipMap para concurrencia lock-free verdadera
     map: SkipMap<String, Arc<Parameter>>,
+    /// Reloj de eventos activo (ms) para desacoplar el camino caliente de llamadas a chrono::Utc::now() (P1)
+    active_event_time_ms: AtomicI64,
 }
 
 impl std::fmt::Debug for OmniscientRegistry {
@@ -89,7 +98,7 @@ impl std::fmt::Debug for OmniscientRegistry {
 }
 
 #[inline(always)]
-fn format_scoped_key<F, R>(prefix: &str, separator: &str, suffix: &str, f: F) -> R
+pub fn format_scoped_key<F, R>(prefix: &str, separator: &str, suffix: &str, f: F) -> R
 where
     F: FnOnce(&str) -> R,
 {
@@ -110,7 +119,7 @@ where
 }
 
 #[inline(always)]
-fn format_coin_key<F, R>(coin_id: usize, name: &str, f: F) -> R
+pub fn format_coin_key<F, R>(coin_id: usize, name: &str, f: F) -> R
 where
     F: FnOnce(&str) -> R,
 {
@@ -146,6 +155,30 @@ impl OmniscientRegistry {
     pub fn new() -> Self {
         Self {
             map: SkipMap::new(),
+            active_event_time_ms: AtomicI64::new(0),
+        }
+    }
+
+    /// P1: Actualiza el reloj de eventos en el registro (1 atomic write por evento, 0.3 ns).
+    #[inline(always)]
+    pub fn update_event_time(&self, event_time_ms: i64) {
+        self.active_event_time_ms.store(event_time_ms, Ordering::Relaxed);
+    }
+
+    /// P1: Obtiene el reloj de eventos activo registrado.
+    #[inline(always)]
+    pub fn get_event_time(&self) -> i64 {
+        self.active_event_time_ms.load(Ordering::Relaxed)
+    }
+
+    /// P1: Obtiene el timestamp actual para escrituras sin syscall en el camino caliente.
+    #[inline(always)]
+    pub fn current_timestamp_ms(&self) -> i64 {
+        let ts = self.active_event_time_ms.load(Ordering::Relaxed);
+        if ts > 0 {
+            ts
+        } else {
+            chrono::Utc::now().timestamp_millis()
         }
     }
 
@@ -159,19 +192,25 @@ impl OmniscientRegistry {
     }
 
     pub fn set(&self, name: &str, val: f64) {
+        let ts = self.current_timestamp_ms();
         if let Some(entry) = self.map.get(name) {
-            entry.value().set_value(val);
+            entry.value().set_value_with_ts(val, ts);
         } else {
-            let param = Parameter::new(name, ParameterKind::Adaptive, val, "system");
+            let param = Parameter::new_with_ts(name, ParameterKind::Adaptive, val, "system", ts);
             self.map.insert(name.to_string(), Arc::new(param));
         }
     }
 
     pub fn register_or_update(&self, name: &str, kind: ParameterKind, val: f64, owner: &str) {
+        let ts = self.current_timestamp_ms();
+        self.register_or_update_with_ts(name, kind, val, owner, ts);
+    }
+
+    pub fn register_or_update_with_ts(&self, name: &str, kind: ParameterKind, val: f64, owner: &str, ts: i64) {
         if let Some(entry) = self.map.get(name) {
-            entry.value().set_value(val);
+            entry.value().set_value_with_ts(val, ts);
         } else {
-            let param = Parameter::new(name, kind, val, owner);
+            let param = Parameter::new_with_ts(name, kind, val, owner, ts);
             self.map.insert(name.to_string(), Arc::new(param));
         }
     }
@@ -368,6 +407,89 @@ impl OmniscientRegistry {
         default
     }
 
+    /// LC-F1-06 / D-219: Lectura polimórfica escopada por activo (símbolo + coin_id)
+    /// SIN fallback al parámetro global (Aislamiento Multi-Activo Estricto, Zero Heap Alloc).
+    #[inline(always)]
+    pub fn get_scoped_parameter_strict(
+        &self,
+        symbol: Option<&str>,
+        coin_id: Option<usize>,
+        name: &str,
+        consumer_name: &str,
+    ) -> Option<Arc<Parameter>> {
+        if let Some(sym) = symbol {
+            if !sym.is_empty() {
+                let p = format_scoped_key(sym, "_", name, |scoped_name| {
+                    self.get(scoped_name, consumer_name)
+                });
+                if p.is_some() {
+                    return p;
+                }
+            }
+        }
+        if let Some(cid) = coin_id {
+            let p = format_coin_key(cid, name, |scoped_cid| {
+                self.get(scoped_cid, consumer_name)
+            });
+            if p.is_some() {
+                return p;
+            }
+        }
+        None
+    }
+
+    /// LC-F1-06 / D-219: Lectura rápida O(1) de valor numérico escopado por activo (símbolo + coin_id)
+    /// SIN fallback al parámetro global (Aislamiento Multi-Activo Estricto, Zero Heap Alloc).
+    #[inline(always)]
+    pub fn get_scoped_val_strict_or(
+        &self,
+        symbol: Option<&str>,
+        coin_id: Option<usize>,
+        name: &str,
+        default: f64,
+    ) -> f64 {
+        if let Some(sym) = symbol {
+            if !sym.is_empty() {
+                let val = format_scoped_key(sym, "_", name, |scoped_name| {
+                    self.get_value_fast(scoped_name)
+                });
+                if let Some(v) = val {
+                    if v.is_finite() {
+                        return v;
+                    }
+                }
+            }
+        }
+        if let Some(cid) = coin_id {
+            let val = format_coin_key(cid, name, |scoped_cid| {
+                self.get_value_fast(scoped_cid)
+            });
+            if let Some(v) = val {
+                if v.is_finite() {
+                    return v;
+                }
+            }
+        }
+        default
+    }
+
+    /// LC-F1-06 / D-219 / P5: Lectura rápida O(1) opcional de valor numérico escopado por activo (símbolo + coin_id)
+    /// SIN fallback al parámetro global (Aislamiento Multi-Activo Estricto, Zero Heap Alloc).
+    #[inline(always)]
+    pub fn get_scoped_val_strict(
+        &self,
+        symbol: Option<&str>,
+        coin_id: Option<usize>,
+        name: &str,
+    ) -> Option<f64> {
+        let v = self.get_scoped_val_strict_or(symbol, coin_id, name, f64::NAN);
+        if v.is_finite() {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
     pub fn detect_collisions(&self) -> Vec<String> {
         // Since we prevent duplicates on register, collisions in a strict map sense are avoided.
         // However, if strategies attempt to register the same name, the `register` returns Err.
@@ -401,7 +523,7 @@ impl OmniscientRegistry {
         let mut restored = 0;
         for p in &snapshot.parameters {
             let val = f64::from_bits(p.value_bits);
-            self.register_or_update(&p.name, p.kind, val, &p.owner);
+            self.register_or_update_with_ts(&p.name, p.kind, val, &p.owner, p.timestamp);
             restored += 1;
         }
         restored

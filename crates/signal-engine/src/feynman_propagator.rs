@@ -265,18 +265,12 @@ impl QuantumStrategy for FeynmanPropagatorEngine {
         let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
 
         let coherence = match self.registry.as_ref() {
-            Some(r) => r
-                .get_scoped_parameter(sym_opt, cid_opt, "feynman_coherence", "FeynmanPropagatorEngine")
-                .map(|p| p.get_value())
-                .unwrap_or(0.50),
+            Some(r) => r.get_scoped_val_or(sym_opt, cid_opt, "feynman_coherence", 0.50),
             None => 0.50,
         };
 
         let dominant_v = match self.registry.as_ref() {
-            Some(r) => r
-                .get_scoped_parameter(sym_opt, cid_opt, "consenso_espectral_dominante", "FeynmanPropagatorEngine")
-                .map(|p| p.get_value())
-                .unwrap_or(0.0),
+            Some(r) => r.get_scoped_val_or(sym_opt, cid_opt, "consenso_espectral_dominante", 0.0),
             None => 0.0,
         };
 
@@ -284,10 +278,7 @@ impl QuantumStrategy for FeynmanPropagatorEngine {
         // orquestador no consume el veredicto espectral y su consenso escalar
         // debe quedar bit a bit. Reinyectarlo aquí lo saltaría (CL-59).
         let tau_dom = match self.registry.as_ref() {
-            Some(r) => r
-                .get_scoped_parameter(sym_opt, cid_opt, "consenso_espectral_tau", "FeynmanPropagatorEngine")
-                .map(|p| p.get_value())
-                .unwrap_or(0.0),
+            Some(r) => r.get_scoped_val_or(sym_opt, cid_opt, "consenso_espectral_tau", 0.0),
             None => 0.0,
         };
         if !(tau_dom >= quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS) {
@@ -303,8 +294,10 @@ impl QuantumStrategy for FeynmanPropagatorEngine {
 
         // Si la coherencia cuántica es alta (C > 0.40), amplifica suavemente la dirección dominante;
         // si la coherencia colapsa (C < 0.20), atenúa a cero por decoherencia térmica.
+        // Transmisión C¹ suave via smoothstep cúbico Hermite (sin torceduras en derivada).
         if safe_coh > 0.20 {
-            let transmission = ((safe_coh - 0.20) / 0.80).clamp(0.0, 1.0);
+            let u = ((safe_coh - 0.20) / 0.80).clamp(0.0, 1.0);
+            let transmission = u * u * (3.0 - 2.0 * u);
             (safe_v * transmission).clamp(-1.0, 1.0)
         } else {
             0.0

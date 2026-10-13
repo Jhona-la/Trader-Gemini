@@ -1052,6 +1052,27 @@ mod tests {
         // de 30 s. La sonda sigue siendo un corto y la única operación, y
         // cierra por TRAIL_HIT a +0,64 % tras 848 s:
         // 1001.47074438 → 1000.04427745.
-        assert_eq!(out_stats[2].to_bits(), 4652007698309796339u64);
+        // (CL-71, re-certificación 2026-10-11) El ATR de las decisiones es el
+        // rango equivalente de la σ de 60 s (varianza realizada de r60 sobre
+        // una rejilla de 1 s), sin el trinquete intra-vela ni el suelo de
+        // 10 pb, y la gestión pierde su suelo literal de 10 pb (queda el gen).
+        // El ATR se recalcula en cada evento (σ̂60 con la vela abierta) con
+        // una envolvente que sólo sube, √(8/π)·R_abierta/q99, para no quedarse
+        // en la escala de calma ante un choque. La sonda sigue siendo la única
+        // operación; su gestión ve otro ATR y cierra con algo menos de
+        // beneficio: 1000.04427745 → 1000.04298628.
+        // (CL-98, re-certificación 2026-10-12) D4 (ADR-0016): la sonda es la
+        // orden mínima del símbolo, no el Kelly de arranque en frío. Sigue
+        // siendo la única operación (trades == 1, arriba); con el nocional
+        // mínimo el beneficio pasa de 0,04299 a 0,02649 USD (×0,616):
+        // 1000.04298628 → 1000.02648643.
+        // (CL-98b, re-certificación 2026-10-12, revisión del PR #61, F1) La
+        // orden mínima es la del LOTE: el fixture es BTCUSDT a ~60 000 USD
+        // con paso y cantidad mínima de 0,001 BTC, así que la orden mínima
+        // que el exchange acepta son 0,001 BTC ≈ 60 USD, no 5,10 USD (0,000085
+        // BTC, que el ejecutor redondea a 0). La sonda sigue siendo la única
+        // operación, con el mismo recorrido, y el beneficio escala con el
+        // nocional (×11,76 = 60/5,10): 1000.02648643 → 1000.31148491.
+        assert_eq!(out_stats[2].to_bits(), 4652010048691470773u64);
     }
 }

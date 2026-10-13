@@ -99,6 +99,11 @@ El PR #29 ya integró ese main en aa716edf. Su mensaje registra, sobre el merge 
   - **Propuesta:** una pregunta y un test de fuente: todo escritor de `kill_switch_active` figura en ADR-0015 con su criterio.
   - Mientras un estadístico descriptivo pueda armar el latch, Línea C no recomienda el latch permanente con rearme manual. La histéresis automática sólo llega cuando el disparo sea un e-proceso con ARL0 medido.
 - **Meta.** Rige la reformulación del dueño: maximizar el crecimiento geométrico neto bajo límites de riesgo, drawdown, costes y capacidad, subordinado a la supervivencia del capital. §9 la escribe como requisito medible con su falsación; «duplicar cada 3 días» queda como cota de referencia que se reporta como brecha, no como puerta. Hoy hay dos doctrinas aceptadas a la vez (LC-F0-01): fijarla en un ADR nuevo que reemplace la meta de ADR-0016 es decisión del dueño.
+- **La rama 11 vive a la escala que habló (CL-85, F3.2-05).** Decisión del dueño, tomada en una tarjeta el 2026-10-12 a las 05:12 UTC: «escala que habló».
+  - Con el veredicto espectral, la orden de la rama 11 vive a τ_k, la escala que decidió su dirección (contrato #624).
+  - La convergencia al centroide (#565) y la modulación de Hurst no mueven esa τ.
+  - La τ final se fija antes de las puertas (CL-74).
+  - Sin veredicto espectral sigue la micro τ.
 - **Sesión viva con la familia honesta.** **Propuesta:** no autorizar, porque el edge OOS está sin medir.
 - **FDUSD y los ~51 GB de .antigravity/target** (52 576 MB según BARRIDO :1821). No son zona C. Si se pide opinión: archivar (opción B) antes que borrar, que es también la recomendación registrada para FDUSD (plan sinc. :211).
 - **graphify-out.** La propuesta está en C-F11.
@@ -1089,7 +1094,7 @@ Ninguno está verificado salvo los marcados «confirmado por lectura», y a éso
 - **LC-F4-03** `riesgo_por_operacion` se escribe antes de los vetos del consejo, del ML-GATE y del host. Su único escritor está en `evaluate_single_intent` (risk-engine/src/lib.rs:1434-1446), que corre también en el backtest; el consejo y el ML-GATE vienen después (lib.rs:7669-7807). Lo leen risk-engine/src/lib.rs:324 y :646, god_engine.rs:1734 y online_daemon.rs:1131.
   - El arreglo no puede mover la escritura al host al confirmar el envío. El T-1, `booktick_replay`, el examen del demonio y ShadowForest no pasan por el host: lo dejarían en su valor inicial 0, y `drawdown_maximo` caería al gen.
   - La escritura va a un punto común del núcleo y del replay, después del consejo y del ML-GATE, con reversión si veta el host y su espejo en `live_envelope_gate`. Test en `bt_vivo_parity_audit`.
-- **LC-F4-04** Primer toque mal escalado (risk-engine/src/lib.rs:952-974; publica en cada evaluación en :971).
+- **LC-F4-04** Primer toque mal escalado (risk-engine/src/lib.rs:952-974; publica en cada evaluación en :971). En sombra desde CL-100 (decisión del dueño): ya no veta, publica `p_hit_sl_first` y `r15_vetaria`; el modelo de la deriva sigue abierto.
   - Con deriva nula veta todo RR > 7,33.
   - Con SL 200 pb, TP 450 pb, ATR 0,10 %, coherencia −0,02 y τ 30 s, P ≈ 0,90 y veta.
 - **LC-F4-05** Salto de la fracción de Kelly en la frontera de modo (kelly.rs:86-95).
@@ -1097,19 +1102,19 @@ Ninguno está verificado salvo los marcados «confirmado por lectura», y a éso
 - **LC-F4-07** Genes inertes: `vol_mult` (risk-engine/src/lib.rs:739-767, pasado en :989 a leverage_matrix.rs:84, donde no se usa) y `kelly_bootstrap_cold` (:401-410). En C-F4 sólo se declaran; se retiran o se conectan después de GENOME-GATE (LC-F7-16), porque cambian el vector de 144 genes.
 - **LC-F4-08** `risk_normalizer` usa la curva genómica y no el stop real (risk-engine/src/lib.rs:521-528).
 - **LC-F4-09** Prior 0,55 y sonda optimista (risk-engine/src/lib.rs:1136, 1149-1157, 1188).
-- **LC-F4-10** Dos picos y dos semánticas de drawdown entre host y riesgo.
+- **LC-F4-10** Dos picos y dos semánticas de drawdown entre host y riesgo. Cerrado (ADR-0017, decisión del dueño «Ambos»): CL-99 (un pico, guardado), CL-106 (freno duro único K(w, l)·r ≤ d*, nivel α en 200 operaciones) y CL-107 (freno de la estrategia, Ville sobre R).
   - #714 añadió `.min(d*)` al host (god_engine.rs:1729-1737) sin ningún test del host y sin el lerp por `micro_w` que aplica el riesgo (risk-engine/src/lib.rs:323-341).
   - El host usa un pico local que nace con el capital del arranque (god_engine.rs:1682, :1704-1711); el riesgo usa `peak_capital` (risk-engine/src/lib.rs:284-286). Ninguno se persiste.
   - El arreglo, en C-F4, incluye una persistencia mínima del pico con un test de reinicio.
 - **LC-F4-11** DriftRecovery absorbente (god_engine.rs:2988-2990, 3825-3827; drift_auditor.rs:46-57; lib.rs:2953).
 - **LC-F4-12** Sesgo epigenético tipo «hot hand» (state.rs:394-399; risk-engine/src/lib.rs:579-580).
-- **LC-F4-13** Cópulas vencidas cargadas sin aviso (copulas_store.rs:32-63; ADR-0009).
+- **LC-F4-13** Cópulas vencidas cargadas sin aviso (copulas_store.rs:32-63; ADR-0009). Manifiesto renovado con septiembre de 2026 (CL-105); el aviso de vencimiento al cargar sigue abierto.
 - **LC-F4-14** RA-RUIN-F01: el helper de ruina deja pasar NaN y ±Inf.
 - **LC-F4-15** La confianza entra varias veces en el tamaño (K-18/R-17).
 - **LC-F4-16** Docs que contradicen su código: ruin.rs:24-29 y correlation_guard.rs:811-833 (fórmula del doc en :816 frente al código en :826-828).
 - **LC-F4-17** La candidata entra al veto de grupo con la EWMA y no con su riesgo real (risk-engine/src/lib.rs:612-711; la candidata en :646-650).
 - **LC-F4-18** `curl_share` infla ρ (correlation_guard.rs:690-701) aunque el publicador dice «no veta» (contagion_publisher.rs:79-87).
-- **LC-F4-19** Dos sondas de arranque frío, las dos por moneda. Confirmado por lectura.
+- **LC-F4-19** Dos sondas de arranque frío, las dos por moneda. Confirmado por lectura. Cerrado por CL-98 (D4): una sola puerta de sonda para la cartera, la sonda es la orden mínima.
   - En el riesgo, `es_fase_sonda` (`trade_count < 5`, risk-engine/src/lib.rs:1136). En el núcleo, `arranque_frio_sin_roster` (lib.rs:7764-7770, usada en :7792), que se arma con `trade_count == 0` y sin posición abierta en la moneda.
   - `trade_count` no se persiste: nace en 0 (quantum-arena/src/state.rs:48) y sólo sube al cerrar (lib.rs:4001). Tras cada reinicio, cada una de las 23 monedas sin `_MOTOR` puede volver a abrir una sonda: el universo es de 26 (bootloader.rs:320-347), y `models/` sólo tiene `_MOTOR` de ATOM, BNB y NEAR.
   - Test RED: una sola sonda en toda la cartera, también tras reiniciar (D4).

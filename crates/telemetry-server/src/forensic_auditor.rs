@@ -4,6 +4,14 @@ use tokio::sync::broadcast::Receiver;
 
 pub struct ForensicAuditor {
     conn: Connection,
+    /// LG-20: JSON del último genoma guardado. El host reenvía el genoma
+    /// actual cada 5 000 mensajes aunque no cambie (~5 KB por fila).
+    ultimo_genoma: Option<String>,
+}
+
+/// LG-20: un valor no finito es desconocido y se guarda como NULL, no como 0.
+fn finito(x: f64) -> Option<f64> {
+    x.is_finite().then_some(x)
 }
 
 impl ForensicAuditor {
@@ -87,10 +95,10 @@ impl ForensicAuditor {
         )
         .expect("Fallo al crear tabla trade_events");
 
-        Self { conn }
+        Self { conn, ultimo_genoma: None }
     }
 
-    pub async fn start(self, mut rx: Receiver<TelemetryEvent>) {
+    pub async fn start(mut self, mut rx: Receiver<TelemetryEvent>) {
         println!("🔍 [FORENSIC] Auditoría en base de datos WAL iniciada en hilo independiente.");
 
         // Bucle asíncrono pasivo, no bloquea al motor HFT
@@ -118,28 +126,12 @@ impl ForensicAuditor {
                     win_rate,
                     trade_duration_avg,
                 } => {
-                    let safe_dark = if dark_alpha.is_finite() {
-                        dark_alpha
-                    } else {
-                        0.0
-                    };
-                    let safe_unrealized = if unrealized_pnl.is_finite() {
-                        unrealized_pnl
-                    } else {
-                        0.0
-                    };
-                    let safe_gross = if gross_pnl.is_finite() {
-                        gross_pnl
-                    } else {
-                        0.0
-                    };
-                    let safe_net = if net_pnl.is_finite() { net_pnl } else { 0.0 };
-                    let safe_wr = if win_rate.is_finite() { win_rate } else { 0.0 };
-                    let safe_avg = if trade_duration_avg.is_finite() {
-                        trade_duration_avg
-                    } else {
-                        0.0
-                    };
+                    let safe_dark = finito(dark_alpha);
+                    let safe_unrealized = finito(unrealized_pnl);
+                    let safe_gross = finito(gross_pnl);
+                    let safe_net = finito(net_pnl);
+                    let safe_wr = finito(win_rate);
+                    let safe_avg = finito(trade_duration_avg);
 
                     let _ = self.conn.execute(
                         "INSERT INTO global_metrics (
@@ -160,10 +152,15 @@ impl ForensicAuditor {
                 }
                 TelemetryEvent::GenomeUpdate(genome) => {
                     if let Ok(json) = serde_json::to_string(&*genome) {
-                        let _ = self.conn.execute(
-                            "INSERT INTO genome_snapshots (genome_json) VALUES (?1)",
-                            params![json],
-                        );
+                        if self.ultimo_genoma.as_deref() != Some(json.as_str()) {
+                            let escrito = self.conn.execute(
+                                "INSERT INTO genome_snapshots (genome_json) VALUES (?1)",
+                                params![json],
+                            );
+                            if escrito.is_ok() {
+                                self.ultimo_genoma = Some(json);
+                            }
+                        }
                     }
                 }
                 TelemetryEvent::TradeClosed {
@@ -174,9 +171,9 @@ impl ForensicAuditor {
                     duration_ms,
                     ml_prob,
                 } => {
-                    let safe_pnl = if pnl.is_finite() { pnl } else { 0.0 };
-                    let safe_roi = if roi_pct.is_finite() { roi_pct } else { 0.0 };
-                    let safe_ml_prob = if ml_prob.is_finite() { ml_prob } else { 0.0 };
+                    let safe_pnl = finito(pnl);
+                    let safe_roi = finito(roi_pct);
+                    let safe_ml_prob = finito(ml_prob);
 
                     let _ = self.conn.execute(
                         "INSERT INTO trade_events (coin_id, trade_type, pnl, roi_pct, duration_ms, ml_prob) 
@@ -357,5 +354,85 @@ mod tests {
         assert!((nuevo - 9.75).abs() < 1e-9);
 
         let _ = std::fs::remove_file(db_path);
+    }
+}
+
+
+#[cfg(test)]
+mod tests_lg20 {
+    use super::*;
+
+    fn base_temporal(etiqueta: &str) -> String {
+        let id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("lg20_{etiqueta}_{id}.db"))
+            .to_string_lossy()
+            .to_string()
+    }
+
+    /// LG-20: un valor no finito es desconocido, no cero.
+    #[tokio::test]
+    async fn lg20_lo_desconocido_se_guarda_como_null() {
+        let ruta = base_temporal("null");
+        let auditor = ForensicAuditor::new(&ruta);
+        let (tx, rx) = tokio::sync::broadcast::channel(16);
+        tokio::spawn(async move { auditor.start(rx).await });
+        let _ = tx.send(TelemetryEvent::OmniUpdate {
+            latency_ms: 3,
+            latency_panic: false,
+            dark_alpha: f64::NAN,
+            unrealized_pnl: f64::INFINITY,
+            gross_pnl: 1.0,
+            net_pnl: 0.9,
+            win_rate: 0.5,
+            trade_duration_avg: 10.0,
+        });
+        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+        let conn = Connection::open(&ruta).unwrap();
+        let (da_null, up_null, gross): (bool, bool, f64) = conn
+            .query_row(
+                "SELECT dark_alpha IS NULL, unrealized_pnl IS NULL, gross_pnl FROM global_metrics",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert!(da_null && up_null, "NaN/Inf deben quedar como NULL, no 0");
+        assert!((gross - 1.0).abs() < 1e-12);
+        let _ = std::fs::remove_file(ruta);
+    }
+
+    /// LG-20: el host reenvía el mismo genoma cada 5 000 mensajes; sólo se
+    /// guarda cuando cambia.
+    #[tokio::test]
+    async fn lg20_un_genoma_repetido_no_se_reescribe() {
+        let ruta = base_temporal("genoma");
+        let auditor = ForensicAuditor::new(&ruta);
+        let (tx, rx) = tokio::sync::broadcast::channel(16);
+        tokio::spawn(async move { auditor.start(rx).await });
+        let a = quantum_arena::genome::SuperGenotype::default();
+        let mut b = a.clone();
+        b.global_leverage += 1.0;
+        for g in [&a, &a, &a, &b, &b, &a] {
+            let _ = tx.send(TelemetryEvent::GenomeUpdate(Box::new(g.clone())));
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        let conn = Connection::open(&ruta).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT count(*) FROM genome_snapshots", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 3, "a, b, a: un snapshot por cambio");
+        let _ = std::fs::remove_file(ruta);
+    }
+
+    /// LG-20: la base va por entorno (demo y prod no se mezclan), como el
+    /// resto del estado del host (CL-48).
+    #[test]
+    fn lg20_la_base_forense_va_por_entorno() {
+        let src = include_str!("lib.rs");
+        assert!(src.contains("env_data_path(\"forensic_audit.db\")"));
+        assert!(!src.contains(&["ForensicAuditor::new(\"data/", "forensic_audit.db\")"].concat()));
     }
 }

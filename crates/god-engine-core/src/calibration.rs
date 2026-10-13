@@ -141,6 +141,31 @@ impl PlattCalibrator {
         w * ajustada + (1.0 - w) * prior
     }
 
+    /// Probabilidad calibrada con semivida continua respecto al horizonte temporal τ (Ola Ω93).
+    /// Permite que la evidencia de corto o largo plazo decaiga al ritmo intrínseco de su escala.
+    #[inline]
+    pub fn calibrate_at_tau(&self, score: f64, now_ms: u64, tau_ms: f64) -> f64 {
+        let ajustada = self.calibrate(score);
+        let Some(ultimo) = self.ultimo_dato_ms else {
+            return ajustada;
+        };
+        if !score.is_finite() || now_ms <= ultimo {
+            return ajustada;
+        }
+        let dt = (now_ms - ultimo) as f64;
+        let safe_tau = if tau_ms.is_finite() && tau_ms > 0.0 {
+            tau_ms.clamp(
+                quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+                quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS * 4.0,
+            )
+        } else {
+            SEMIVIDA_EVIDENCIA_MS
+        };
+        let w = 0.5f64.powf(dt / safe_tau);
+        let prior = score.clamp(EPS, 1.0 - EPS);
+        w * ajustada + (1.0 - w) * prior
+    }
+
     /// Añade un resultado con su instante de evento (Ola XLIV) y reajusta.
     pub fn update_at(&mut self, score: f64, won: bool, now_ms: u64) {
         if !valid_training_score(score) {

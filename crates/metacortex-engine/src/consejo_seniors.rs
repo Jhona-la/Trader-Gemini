@@ -290,7 +290,7 @@ pub enum SeniorRole {
 pub struct SeniorOpinion {
     pub role: SeniorRole,
     pub signal_direction: f64, // [-1.0, 1.0]
-    pub confidence: f64,       // [0.0, 1.0]
+    pub confidence: f64,       // [0.0, 1.0] (hasta 1.30 con impulso contrarian de EnteMercado)
     pub weight: f64,           // Dynamic weight
     pub is_veto: bool,
     pub justification: String,
@@ -604,15 +604,38 @@ impl SeniorAgent for SeniorEnteMercado {
             1.0
         };
 
-        // OLA Ω69: Modulación por presión psicológica asimétrica de Prospect Theory (Kahneman-Tversky)
+        // OLA Ω69/Ω89 (F2.5-02 / Ficha #727): Modulación por presión psicológica asimétrica de Prospect Theory (Kahneman-Tversky)
+        // Erradicación de doble conteo de masa: P(LS, liq, delta) = delta^0.88 * g0(LS, liq).
+        // Si prospect_pressure proviene de dicha fórmula para delta in [0.1, 10.0], es redundante
+        // con crowd_ls_ratio y el asiento no penaliza doblemente el mismo dato de la multitud.
         let p_prospect = if payload.prospect_pressure.is_finite() && payload.prospect_pressure != 0.0 {
-            crate::prospect_theory::ProspectTheoryEngine::new()
-                .modulation_factor(payload.intended_direction, payload.prospect_pressure)
+            let kt = crate::prospect_theory::ProspectTheoryEngine::new();
+            let es_redundante_de_ls = if (ls - 1.0).abs() > 1e-4 {
+                let g0 = kt.compute_crowd_net_prospect_pressure(ls, payload.liquidation_severity, 1.0);
+                if g0.abs() > 1e-9 && (payload.prospect_pressure * g0) > 0.0 {
+                    let ratio = payload.prospect_pressure / g0;
+                    let delta = ratio.powf(1.0 / 0.88);
+                    (0.099..=10.001).contains(&delta)
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if es_redundante_de_ls {
+                1.0 // Un mismo dato de masa, una sola entrada (F2.5-02)
+            } else {
+                kt.modulation_factor(payload.intended_direction, payload.prospect_pressure)
+            }
         } else {
             1.0
         };
 
-        let entity_factor = (p_whale * p_liq * p_oi * p_spoof * p_crowd * p_taker * p_macro * p_prospect).clamp(0.20, 1.0);
+        // OLA Ω88 (Ficha #726 / F2.5-03): El impulso contrarian de Prospect Theory ([1.0, 1.30])
+        // amplifica la convicción de EnteMercado cuando la multitud capitula a favor del trade.
+        // Se permite el rango [0.20, 1.30] para no anular el edge contrarian contra el techo 1.0.
+        let entity_factor = (p_whale * p_liq * p_oi * p_spoof * p_crowd * p_taker * p_macro * p_prospect).clamp(0.20, 1.30);
         let dir = safe_signum(payload.intended_direction);
         SeniorOpinion {
             role: self.role(),
@@ -690,12 +713,12 @@ impl SeniorAgent for SeniorRiesgo {
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let drawdown = payload.current_drawdown_pct;
 
-        // U-4 (MOTOR UNIVERSAL CONTINUO): cap de DD continuo en τ — antes
-        // escalones por horizonte (Scalping 0.95 / Continuous 0.90 / Swing
-        // 0.85). Misma semántica (banda rápida tolera más DD para recovery,
-        // banda lenta menos), sin saltos ni etiquetas: s=0 (τ 30s) ⇒ 0.95,
-        // s=1 (τ 12h) ⇒ 0.85.
-        let max_drawdown = 0.95 - 0.10 * payload.spectral_s();
+        // F3.4-06 (Línea C / AGY): El veto de DD del consejo debe ser alcanzable
+        // por debajo del corte del risk-engine d* = 1 - α^(c/(2-c)) ≈ 0.6316
+        // (½ Kelly, α=0.05). Antes: [0.85, 0.95] inalcanzable (código muerto).
+        // Escalado continuo a d*: banda rápida tolera 0.95·d*, banda lenta 0.85·d*.
+        let d_star = 1.0 - (0.05_f64).powf(1.0 / 3.0);
+        let max_drawdown = d_star * (0.95 - 0.10 * payload.spectral_s());
 
         let is_veto = drawdown > max_drawdown;
 
@@ -903,15 +926,14 @@ impl SeniorAgent for SeniorAuditorInterno {
         SeniorRole::AuditorInterno
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        // Umbral de drawdown continuo en τ alineado con SeniorRiesgo para
-        // evitar vetos contradictorios (D-343, U-4: antes escalones
-        // Scalping/Continuous/Swing — misma curva que SeniorRiesgo).
-        // (Ola XLI·D7) El drawdown ya veto en SeniorRiesgo con la MISMA curva:
-        // co-firmarlo aquí hacía que todo exceso de DD produjera DOS vetos, y el
-        // override por supermayoría (quórum D-342) jamás podía aplicar a drawdown
-        // — deadlock por diseño. El Auditor conserva SU condición propia (riesgo
-        // do_calculus) y el DD cuenta una sola vez.
-        let is_veto = payload.do_calculus_risk > 0.92;
+        // F3.4-02 (Línea C / AGY): "Un dato, un veto".
+        // El riesgo causal (do_calculus / VPIN) ya es evaluado y vetado por
+        // SeniorCausal (> 0.75). Co-vetarlo aquí con > 0.92 duplicaba el veto
+        // sobre el mismo dato, destruyendo el override por supermayoría por
+        // encima de 0.92 al producir 2 vetos (rechazo irrevocable).
+        // Al igual que con el DD (Ola XLI·D7), el Auditor actúa como agente de
+        // permiso / abogado del diablo sin duplicar vetos de otros asientos.
+        let is_veto = false;
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent
@@ -1131,9 +1153,10 @@ impl ConsejoDeliberacion {
             let role = agent.role();
             let idx = role as usize;
             let mut op = agent.evaluate(payload, safe_wr);
+            let max_confidence = if op.role == SeniorRole::EnteMercado { 1.30 } else { 1.0 };
             if op.role != role
                 || !(-1.0..=1.0).contains(&op.signal_direction)
-                || !(0.0..=1.0).contains(&op.confidence)
+                || !(0.0..=max_confidence).contains(&op.confidence)
                 || !op.weight.is_finite() || op.weight < 0.0
             {
                 return CouncilDecisionTrace::integrity_failure(format!("invalid opinion from {role:?}"));
@@ -1484,26 +1507,53 @@ impl SeniorPerformanceTracker {
     }
 
     /// Calcula multiplicadores adaptativos normalizados en el rango [0.5, 2.0]
+    /// F3.4-01 (Línea C / AGY): Premia la ESPERANZA MATEMÁTICA / EV, no la mera
+    /// tasa de acierto binaria. Con RR > 1 (geometría asimétrica), un asiento que
+    /// respalda una estrategia con acierto < 50% pero EV > 0 debe recibir mayor
+    /// peso que el asiento que se opone.
+    ///
+    /// Derivación:
+    /// θ_i = (Σ s_i · r) / (Σ |r|) ∈ [-1, 1]  (edge relativo normalizado)
+    /// P_i = 0.5 · (1 + θ_i) ∈ [0.01, 0.99]
+    /// Con |r| = R constante, θ_i = 2·acc_i - 1 ⇒ P_i = acc_i (invariante exacto).
     pub fn compute_weights(&self) -> [f64; 11] {
         let mut weights = [1.0; 11];
-        let mut sum_acc = 0.0;
+        let mut sum_p = 0.0;
         let mut active_seniors = 0;
+        let mut perf = [0.5; 11];
 
-        let mut accuracies = [0.5; 11];
+        let mut sum_edge = [0.0_f64; 11];
+        let mut sum_abs_ret = [0.0_f64; 11];
+        for &(signals, r) in &self.history {
+            let abs_r = r.abs();
+            for i in 0..11 {
+                let sig = signals[i];
+                if sig != 0.0 {
+                    sum_edge[i] += sig * r;
+                    sum_abs_ret[i] += abs_r;
+                }
+            }
+        }
+
         for i in 0..11 {
             if self.total_counts[i] >= 5 {
-                let acc = self.correct_counts[i] as f64 / self.total_counts[i] as f64;
-                accuracies[i] = acc.clamp(0.01, 0.99);
-                sum_acc += accuracies[i];
+                let theta = if sum_abs_ret[i] > 0.0 {
+                    (sum_edge[i] / sum_abs_ret[i]).clamp(-1.0, 1.0)
+                } else {
+                    0.0
+                };
+                let p = (0.5 * (1.0 + theta)).clamp(0.01, 0.99);
+                perf[i] = p;
+                sum_p += p;
                 active_seniors += 1;
             }
         }
 
-        if active_seniors >= 2 && sum_acc > 0.0 {
-            let mean_acc = sum_acc / active_seniors as f64;
+        if active_seniors >= 2 && sum_p > 0.0 {
+            let mean_p = sum_p / active_seniors as f64;
             for i in 0..11 {
                 if self.total_counts[i] >= 5 {
-                    let relative = accuracies[i] / mean_acc.max(0.01);
+                    let relative = perf[i] / mean_p.max(0.01);
                     weights[i] = relative.clamp(0.5, 2.0);
                 }
             }
@@ -1607,7 +1657,8 @@ mod tests {
     fn test_consejo_deliberacion_veto() {
         let consejo = ConsejoDeliberacion::new();
         let mut payload = diverse_bullish_payload();
-        payload.do_calculus_risk = 0.95; // Doble veto: Causal (>0.80) + Auditor (>0.92)
+        payload.do_calculus_risk = 0.95; // Veto Causal (>0.80)
+        payload.book_imbalance = -0.50; // Sin supermayoría que lo sobreescriba (flujo disidente)
 
         let result = consejo.deliberar(&payload, 0.70);
         assert!(!result.approved, "Trade must be rejected due to VETO");

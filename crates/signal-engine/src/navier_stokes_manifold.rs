@@ -184,25 +184,10 @@ impl QuantumStrategy for NavierStokesManifoldEngine {
             None => return 0.0,
         };
 
-        let laminar_share = registry
-            .get_scoped_parameter(sym_opt, cid_opt, "navier_laminar_share", "NavierStokesManifoldEngine")
-            .map(|p| p.get_value())
-            .unwrap_or(1.0);
-
-        let kinematic_visc = registry
-            .get_scoped_parameter(sym_opt, cid_opt, "kinematic_viscosity", "NavierStokesManifoldEngine")
-            .map(|p| p.get_value())
-            .unwrap_or(1.0);
-
-        let ofi = registry
-            .get_scoped_parameter(sym_opt, cid_opt, "order_flow_imbalance", "NavierStokesManifoldEngine")
-            .map(|p| p.get_value())
-            .unwrap_or(0.0);
-
-        let velocity = registry
-            .get_scoped_parameter(sym_opt, cid_opt, "price_velocity", "NavierStokesManifoldEngine")
-            .map(|p| p.get_value())
-            .unwrap_or(0.0);
+        let laminar_share = registry.get_scoped_val_or(sym_opt, cid_opt, "navier_laminar_share", 1.0);
+        let kinematic_visc = registry.get_scoped_val_or(sym_opt, cid_opt, "kinematic_viscosity", 1.0);
+        let ofi = registry.get_scoped_val_or(sym_opt, cid_opt, "order_flow_imbalance", 0.0);
+        let velocity = registry.get_scoped_val_or(sym_opt, cid_opt, "price_velocity", 0.0);
 
         if !laminar_share.is_finite() || !kinematic_visc.is_finite() || !ofi.is_finite() || !velocity.is_finite() {
             return 0.0;

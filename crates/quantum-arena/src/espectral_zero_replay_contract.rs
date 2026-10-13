@@ -18,7 +18,8 @@ struct IcBits {
 
 #[derive(Debug, PartialEq, Eq)]
 struct EnlaceBits {
-    par: (u16, u16),
+    indice: usize,
+    par: (usize, usize),
     consumido: [(u64, u64); ESCALAS],
     escalas: [IcBits; ESCALAS],
 }
@@ -31,11 +32,23 @@ struct EstadoBits {
 }
 
 fn estado_bits(uni: &EspectralMultiactivo) -> EstadoBits {
-    let mut enlaces: Vec<_> = uni
+    // Enumera el orden triangular independientemente de pair_idx. El snapshot
+    // conserva TODAS las celdas físicas, incluidos pares fríos preasignados.
+    let pares: Vec<_> = (0..uni.max_coins)
+        .flat_map(|a| ((a + 1)..uni.max_coins).map(move |b| (a, b)))
+        .collect();
+    assert_eq!(
+        uni.enlaces.len(),
+        pares.len(),
+        "el Vec debe contener todos los pares canónicos"
+    );
+    let enlaces: Vec<_> = uni
         .enlaces
         .iter()
-        .map(|(&par, enlace)| EnlaceBits {
-            par,
+        .enumerate()
+        .map(|(indice, enlace)| EnlaceBits {
+            indice,
+            par: pares[indice],
             consumido: enlace.consumido,
             escalas: std::array::from_fn(|k| {
                 let ic = enlace.escalas[k];
@@ -50,7 +63,6 @@ fn estado_bits(uni: &EspectralMultiactivo) -> EstadoBits {
             }),
         })
         .collect();
-    enlaces.sort_unstable_by_key(|enlace| enlace.par);
     EstadoBits {
         max_coins: uni.max_coins,
         ultimo: uni
@@ -64,7 +76,11 @@ fn estado_bits(uni: &EspectralMultiactivo) -> EstadoBits {
 
 fn par(uni: &mut EspectralMultiactivo, ordinal: u64, ra: f64, rb: f64, b_primero: bool) {
     let ts = (ordinal + 1) * 1_000;
-    let eventos = if b_primero { [(1, rb), (0, ra)] } else { [(0, ra), (1, rb)] };
+    let eventos = if b_primero {
+        [(1, rb), (0, ra)]
+    } else {
+        [(0, ra), (1, rb)]
+    };
     for (moneda, retorno) in eventos {
         uni.observar_maduracion(moneda, TAU, K, ts, retorno);
     }
@@ -97,10 +113,13 @@ fn ceros_con_ambos_signos_no_apuestan_tras_semillas_positiva_y_negativa() {
         for &(ra, rb) in &ceros {
             let mut uni = EspectralMultiactivo::new(2);
             par(&mut uni, 0, 0.02, semilla_b, false);
-            let capital_semilla = uni.enlaces[&(0, 1)].escalas[K].e.capital().to_bits();
+            let capital_semilla = uni.enlaces[pair_idx(0, 1, uni.max_coins)].escalas[K]
+                .e
+                .capital()
+                .to_bits();
             for ordinal in 1..113 {
                 par(&mut uni, ordinal, ra, rb, ordinal % 2 == 0);
-                let ic = &uni.enlaces[&(0, 1)].escalas[K];
+                let ic = &uni.enlaces[pair_idx(0, 1, uni.max_coins)].escalas[K];
                 assert_eq!(
                     ic.e.capital().to_bits(),
                     capital_semilla,
@@ -108,11 +127,18 @@ fn ceros_con_ambos_signos_no_apuestan_tras_semillas_positiva_y_negativa() {
                     ra.to_bits(),
                     rb.to_bits(),
                 );
-                assert_eq!(ic.n, ordinal + 1, "los bloques cero siguen siendo observaciones");
+                assert_eq!(
+                    ic.n,
+                    ordinal + 1,
+                    "los bloques cero siguen siendo observaciones"
+                );
                 assert_eq!(ic.e.n(), ic.n);
             }
             assert_eq!(uni.muestras_par(0, 1, K), Some(113));
-            assert!(uni.coherencia_par(0, 1, K).is_some(), "la telemetría conserva los momentos");
+            assert!(
+                uni.coherencia_par(0, 1, K).is_some(),
+                "la telemetría conserva los momentos"
+            );
             assert_eq!(uni.coherencia_par_veto(0, 1, K), None);
             assert_eq!(uni.coherencia_media_con_todas(0, K), None);
         }
@@ -126,7 +152,7 @@ fn ceros_desde_estado_frio_no_fabrican_capital_ni_coherencia() {
         for ordinal in 0..120 {
             par(&mut uni, ordinal, ra, rb, ordinal % 2 == 0);
         }
-        let ic = &uni.enlaces[&(0, 1)].escalas[K];
+        let ic = &uni.enlaces[pair_idx(0, 1, uni.max_coins)].escalas[K];
         assert_eq!(ic.e.capital().to_bits(), 1.0_f64.to_bits());
         assert_eq!(ic.n, 120);
         assert_eq!(ic.e.n(), 120);
@@ -147,11 +173,21 @@ fn control_positivo_cruza_solo_con_113_pares_informativos_unicos() {
         correlacionados(&mut uni, 0, 112, b_primero);
         assert_eq!(uni.muestras_par(0, 1, K), Some(112));
         assert!(uni.coherencia_par(0, 1, K).unwrap() > 0.99);
-        assert!(uni.enlaces[&(0, 1)].escalas[K].e.capital() < umbral);
+        assert!(
+            uni.enlaces[pair_idx(0, 1, uni.max_coins)].escalas[K]
+                .e
+                .capital()
+                < umbral
+        );
         assert_eq!(uni.coherencia_par_veto(0, 1, K), None);
         correlacionados(&mut uni, 112, 113, b_primero);
         assert_eq!(uni.muestras_par(0, 1, K), Some(113));
-        assert!(uni.enlaces[&(0, 1)].escalas[K].e.capital() >= umbral);
+        assert!(
+            uni.enlaces[pair_idx(0, 1, uni.max_coins)].escalas[K]
+                .e
+                .capital()
+                >= umbral
+        );
         assert!(uni.coherencia_par_veto(0, 1, K).unwrap() > 0.99);
         assert!(uni.coherencia_media_con_todas(0, K).unwrap() > 0.99);
     }
@@ -168,10 +204,17 @@ fn ceros_no_aceleran_el_cruce_y_evidencia_fresca_aun_puede_cruzar() {
     assert_eq!(uni.coherencia_par_veto(0, 1, K), None);
     correlacionados(&mut uni, 113, 224, false);
     assert_eq!(uni.muestras_par(0, 1, K), Some(224));
-    assert_eq!(uni.coherencia_par_veto(0, 1, K), None, "112 pares informativos totales");
+    assert_eq!(
+        uni.coherencia_par_veto(0, 1, K),
+        None,
+        "112 pares informativos totales"
+    );
     correlacionados(&mut uni, 224, 225, false);
     assert_eq!(uni.muestras_par(0, 1, K), Some(225));
-    assert!(uni.coherencia_par_veto(0, 1, K).unwrap() > 0.99, "113 pares informativos totales");
+    assert!(
+        uni.coherencia_par_veto(0, 1, K).unwrap() > 0.99,
+        "113 pares informativos totales"
+    );
 }
 
 fn comprobar_replay_y_continuacion(b_primero: bool) {
@@ -187,7 +230,11 @@ fn comprobar_replay_y_continuacion(b_primero: bool) {
     // Igualdad con payload distinto, retroceso inmediato e historia distante.
     for ordinal in [109, 108, 0, 39, 73] {
         let ts = (ordinal + 1) * 1_000;
-        let eventos = if b_primero { [(1, -0.7), (0, 0.4)] } else { [(0, 0.4), (1, -0.7)] };
+        let eventos = if b_primero {
+            [(1, -0.7), (0, 0.4)]
+        } else {
+            [(0, 0.4), (1, -0.7)]
+        };
         for (moneda, retorno) in eventos {
             uni.observar_maduracion(moneda, TAU, K, ts, retorno);
             assert_eq!(

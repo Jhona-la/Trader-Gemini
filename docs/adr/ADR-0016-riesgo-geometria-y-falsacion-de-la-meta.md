@@ -128,6 +128,35 @@ d*(c, α)  = 1 − α^{c/(2 − c)}
   verdad el mínimo, y sustituir el 0,55 por la tasa base medida del modelo
   para esa geometría (cambia conducta: requiere T-1).
 
+#### Enmienda (2026-10-12, CL-98, PR #61; revisión F4)
+
+- **La sonda se admite por presupuesto, no por EV.** Se retira la exención
+  del EV con el prior 0,55 y NO se sustituye por la tasa base medida, como
+  pedía el párrafo anterior. La tasa base de los bosques reales es de
+  0,18–0,30 (primer toque del largo); con p ≈ 0,30 y la geometría de
+  `compute_tp_sl` (TP ≥ 1,5·SL + 2,5·f) el EV de la sonda sale negativo, y
+  la sonda no abriría nunca: es el bloqueo absorbente que Ω46.2 evitó (sin
+  sonda no hay cierres, y sin cierres no hay evidencia con la que salir de
+  la fase de sonda). Una sonda es información: lo que la acota es su
+  presupuesto (una abierta en la cartera, orden mínima, 5 por moneda, sus
+  pérdidas en D3), no un EV estimado sin datos.
+- Lo único que se conserva de la exención es su parte común a cualquier
+  prior: `p·TP − (1−p)·SL > f` exige `TP > f/p > f`, así que una sonda
+  ganadora debe cubrir la fricción de ida y vuelta (`TP > f`). Con la
+  geometría de `compute_tp_sl` nunca muerde en producción; sólo rechaza
+  objetivos explícitos degenerados.
+- **Tamaño: la orden mínima del LOTE** (revisión F1): el menor múltiplo del
+  paso (`stepSize`) con `qty ≥ minQty` y nocional ≥ el mínimo más su margen
+  de 0,10 USD, redondeando hacia arriba. Si su riesgo al stop supera el tope
+  de ruina, la orden es inviable (`viabilidad`, D-750) y no abre la ranura.
+- **Reinicio.** El recuento de cierres por moneda no se persiste: tras cada
+  reinicio todas las monedas, también las que tienen modelo `_MOTOR`,
+  vuelven a la fase de sonda, y la cartera abre una sola posición nueva a la
+  vez hasta que cada moneda junta 5 cierres. Las posiciones adoptadas del
+  exchange cuentan como sondas abiertas. Persistir el recuento es estado
+  aprendido (C-F8) y decisión del dueño; la ficha V-RISK-007 lleva la medida.
+- Implementado en CL-98 (`risk_engine::sonda`, veto `sonda_ocupada`).
+
 ## Consecuencias
 
 - D2 y D3 cambian conducta en régimen micro. Se certifican con el oráculo

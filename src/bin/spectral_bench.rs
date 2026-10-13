@@ -205,6 +205,30 @@ impl Corr {
     }
 }
 
+/// Conserva el orden de la evidencia: rechazo, maduración, trade y emisión.
+/// Durante la maduración sólo se presta &SpectralTape, de modo que la
+/// consulta de admisión sigue vigente cuando on_trade vuelve a validarla.
+fn ingest_forecast_trade(
+    tape: &mut SpectralTape,
+    forecasters: &mut [HorizonForecaster],
+    ts: u64,
+    price: f64,
+    qty: f64,
+    buyer: bool,
+) -> bool {
+    if !tape.accepts_trade(ts, price, qty, buyer) {
+        return false;
+    }
+    for f in forecasters.iter_mut() {
+        f.before_trade(tape, ts);
+    }
+    tape.on_trade(ts, price, qty, buyer);
+    for f in forecasters.iter_mut() {
+        f.after_trade(tape, ts);
+    }
+    true
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
@@ -315,13 +339,7 @@ fn main() {
             pend.push_back((ts, fus.fused, price));
         }
 
-        for f in forecasters.iter_mut() {
-            f.before_trade(&tape, ts);
-        }
-        tape.on_trade(ts, price, qty, buyer);
-        for f in forecasters.iter_mut() {
-            f.after_trade(&tape, ts);
-        }
+        ingest_forecast_trade(&mut tape, &mut forecasters, ts, price, qty, buyer);
 
         if i > 0 && i % 10_000_000 == 0 {
             println!("   … {} trades ({:.0}s)", i, t_start.elapsed().as_secs_f64());
@@ -395,4 +413,111 @@ fn main() {
         "   (vs persist. > 0 ⇒ el modelo bate al pronóstico ingenuo; persist/clim = cuánto explica ya la persistencia; tiempo {:.0}s)",
         t_start.elapsed().as_secs_f64()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quantum_arena::spectral_tape::OBS_NOTIONAL;
+    use std::collections::VecDeque;
+
+    #[test]
+    fn si_bench_rejection_preserves_state_and_continuation() {
+        let mut tape = SpectralTape::new(&[100.0, 400.0]);
+        let mut forecasters: Vec<_> = ForecastTarget::ALL
+            .into_iter()
+            .map(|target| HorizonForecaster::new(&tape, target, 100.0))
+            .collect();
+        for i in 0..40u64 {
+            assert!(ingest_forecast_trade(
+                &mut tape,
+                &mut forecasters,
+                i * 25,
+                100.0 + (i % 3) as f64,
+                1.0 + (i % 5) as f64,
+                i % 2 == 0,
+            ));
+        }
+        let mut control_tape = tape.clone();
+        let mut control_forecasters = forecasters.clone();
+        let before = format!("{tape:?}|{forecasters:?}");
+        for (ts, price, qty) in [
+            (10_000, 100.0, 0.0),
+            (1, 100.0, 1.0),
+            (10_000, f64::MAX, 1.0),
+            (10_000, f64::NAN, 1.0),
+        ] {
+            assert!(!ingest_forecast_trade(
+                &mut tape,
+                &mut forecasters,
+                ts,
+                price,
+                qty,
+                true,
+            ));
+            assert_eq!(format!("{tape:?}|{forecasters:?}"), before);
+        }
+        for (tape, forecasters) in [
+            (&mut tape, &mut forecasters),
+            (&mut control_tape, &mut control_forecasters),
+        ] {
+            assert!(ingest_forecast_trade(
+                tape, forecasters, 1_000, 101.0, 2.0, false,
+            ));
+        }
+        assert_eq!(
+            format!("{tape:?}|{forecasters:?}"),
+            format!("{control_tape:?}|{control_forecasters:?}")
+        );
+    }
+
+    #[test]
+    fn si_bench_valid_trades_preserve_issued_ledger_and_closed_boundary() {
+        let mut tape = SpectralTape::new(&[100.0]);
+        let mut forecasters = vec![HorizonForecaster::new(
+            &tape,
+            ForecastTarget::Volume,
+            100.0,
+        )];
+        // One scale gives an intercept-only RLS with memory four and lambda 3/4.
+        // This external ledger stores forecasts at issue, never re-estimates them.
+        let mut issued: VecDeque<(u64, f64, f64, bool)> = VecDeque::new();
+        let (mut expected_n, mut expected_sse) = (0u64, 0.0);
+        for i in 0..40u64 {
+            let ts = i * 25;
+            while issued.front().map(|s| s.0 + 100 < ts).unwrap_or(false) {
+                let (_, total0, prediction, ready) = issued.pop_front().unwrap();
+                let y = (tape.totals()[OBS_NOTIONAL] - total0 + tape.notional_floor()).ln();
+                if ready {
+                    expected_n += 1;
+                    expected_sse = 0.75 * expected_sse + (y - prediction).powi(2);
+                }
+            }
+            assert!(ingest_forecast_trade(
+                &mut tape,
+                &mut forecasters,
+                ts,
+                100.0,
+                if i % 7 < 3 { 1.0 } else { 9.0 },
+                true,
+            ));
+            let f = &forecasters[0];
+            assert_eq!(f.score.n, expected_n);
+            assert!((f.score.sse_model - expected_sse).abs() < 1e-10);
+            if ts == 325 {
+                assert_eq!(f.score.n, 0, "the first ready forecast ends exactly now");
+            } else if ts == 350 {
+                assert_eq!(f.score.n, 1, "the closed horizon matures at the next event");
+            }
+            if ts > 0 {
+                issued.push_back((
+                    ts,
+                    tape.totals()[OBS_NOTIONAL],
+                    f.last_prediction().expect("positive volume has a forecast"),
+                    f.warmed_up(),
+                ));
+            }
+        }
+        assert!(expected_n > 20);
+    }
 }

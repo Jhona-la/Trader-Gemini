@@ -429,6 +429,37 @@ fn atomic_write(path: &str, contents: &str) -> io::Result<()> {
 }
 
 #[cfg(test)]
+mod tests_lg4 {
+    use super::*;
+
+    /// LG-4 — el gate de promoción/carga juzga la RR en la banda operable.
+    /// Con el dominio anterior (1 ns – 146 años) `validate` rechazaba el
+    /// genoma activo de demo y prod (TP/SL = 2,05 < 3,125 en la raíz del piso
+    /// a ~156 ns) y `from_vector` le subía el TP ×1,68: si GENOME-GATE al
+    /// cargar (LC-F7-16) aterrizaba antes, demo y prod se quedaban sin genoma.
+    #[test]
+    fn lg4_el_genoma_activo_pasa_el_gate_y_la_carga_no_le_toca_el_tp() {
+        let mut g = SuperGenotype::new_baseline(0.0002, 0.0005);
+        g.tp_horizon_curve = crate::temporal_spectrum::HorizonCurve {
+            a: -4.9600174176553296,
+            b: 0.09143837668088041,
+        };
+        g.sl_horizon_curve = crate::temporal_spectrum::HorizonCurve {
+            a: -5.719394858308684,
+            b: 0.08643759946713066,
+        };
+        assert!(GenomeEnvelope::validate(&g).is_ok(), "{:?}", GenomeEnvelope::validate(&g));
+        let cargado = SuperGenotype::from_vector(&g.to_vector());
+        assert!(
+            (cargado.tp_horizon_curve.a - g.tp_horizon_curve.a).abs() < 1e-9,
+            "a_tp {} → {}",
+            g.tp_horizon_curve.a,
+            cargado.tp_horizon_curve.a
+        );
+    }
+}
+
+#[cfg(test)]
 mod tests {
     /// T-2 (DÉCIMA OLA) — SIMETRÍA ENTRE ARRANQUE EN FRÍO Y HOT-SWAP (D-650).
     ///
@@ -576,7 +607,26 @@ mod tests {
         // gen no refrescado se note.
         let mut g = SuperGenotype::new_baseline(0.0002, 0.0005);
         g = g.mutate_cmaes_seeded(0.45, 20260910);
-        let g = SuperGenotype::from_vector(&g.to_vector());
+        // LG-18: los genes congelados no mutan; se fijan a mano dentro de sus
+        // cotas para que sigan distinguiéndose de `otro` y la prueba vea si
+        // `apply_to_arena` los refresca.
+        g.scalp_trail_max_atr = 7.0;
+        g.swing_trail_max_atr = 9.0;
+        g.scalp_trail_min_pnl = 3.0;
+        g.swing_trail_min_pnl = 4.0;
+        g.hurst_swing_threshold = 0.66;
+        g.scalp_accel_min_samples = 17.0;
+        g.swing_accel_min_samples = 23.0;
+        g.executor_max_orders_10s = 333.0;
+        g.executor_max_weight_1m = 1777.0;
+        // LG-21: los 35 genes congelados por LG-21, por índice del vector, a
+        // un punto interior de sus cotas que no coincide con el de `otro`.
+        let (lo, hi) = (SuperGenotype::get_lower_bounds(), SuperGenotype::get_upper_bounds());
+        let mut v = g.to_vector();
+        for i in [36, 42, 43, 64, 65, 70, 71, 72, 73, 74, 77, 78, 79, 84, 85, 90, 91, 92, 93, 94, 97, 100, 101, 102, 103, 104, 105, 111, 122, 123, 124, 125, 126, 127, 128] {
+            v[i] = lo[i] + 0.37 * (hi[i] - lo[i]);
+        }
+        let g = SuperGenotype::from_vector(&v);
 
         // Camino A: arranque en frío.
         let arena_frio = GlobalArena::from_genome_in_own_stack(13.0, &g);

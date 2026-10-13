@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "snapshot_utc": "2026-10-11T14:15:28.5462377Z",
+  "snapshot_kind": "pre-final-validation",
+  "date": "2026-10-11",
+  "base": "1d1f8bdd35640e5ab12b6e55edb9bf582c41c33a",
+  "branch": "codex/spectral-evidence-1011",
+  "functional_commits": [
+    "8404bbdf",
+    "c9d877da",
+    "06ce88ef"
+  ],
+  "final_receipt": "https://github.com/Jhona-la/Trader-Gemini/pull/39",
+  "scope": "Spectral evidence, causal epigenetic feedback and benchmark forecast ingestion; not global certification",
+  "findings": [
+    "SI-01",
+    "SI-02",
+    "SI-03",
+    "SI-04",
+    "SI-05",
+    "SI-06",
+    "SI-07",
+    "SI-08",
+    "SI-O01"
+  ],
+  "open": [
+    "SI-O02 target transform, inverse and climatology consistency",
+    "SI-O03 average-anchor skill and statistical uncertainty",
+    "SI-O04 hot-path cost unmeasured",
+    "Feedback multi-writer transaction and external clock writers",
+    "Global admission before benchmark forecast helper"
+  ],
+  "validation": {
+    "spectral_red": {
+      "failed": 7,
+      "passed": 0
+    },
+    "epigenetic_red": {
+      "failed": 4,
+      "passed": 2
+    },
+    "arena_initial": {
+      "passed": 238,
+      "ignored": 0,
+      "blocks": 21,
+      "failed": 0
+    },
+    "workspace_initial": {
+      "exit_code": 0,
+      "duration": "13m42s"
+    },
+    "benchmark_final": "in_progress",
+    "arena_final": "queued",
+    "workspace_final": "queued",
+    "core_risk": "in_progress",
+    "replay": "queued",
+    "t1": "queued",
+    "ci": "five_jobs_in_progress_at_snapshot"
+  },
+  "source_sha256": {
+    "crates/quantum-arena/src/spectral_tape.rs": "A9B74BCB40A010731AE9E98EBFDC11E6E8D24817901BF36410705E0B771C99E9",
+    "crates/quantum-arena/src/state.rs": "579B88A034680C1AA16FFCC5E213C504B0255EBD2A14B3A066BD116BDDF8FD86",
+    "crates/quantum-arena/tests/support/spectral_evidence.rs": "FE08943401C66F861B0CC7E9BACD88E9A8BC176AAC16B695250BCC9EC4FB25C1",
+    "crates/quantum-arena/tests/epigenetic_decay_contract.rs": "D4D1A5666D43F83300707CA279B78E9CFB2BA03D280DA6C28563B5D38B246755",
+    "src/bin/spectral_bench.rs": "26BB0161AFF516079366BB0AA20CBA3CF56941A63257B005318B390443703F1C",
+    ".github/workflows/unit-suites.yml": "1C6E1C3462D712E2FA661FED77101B27B36E86070ACDE58A9C5F4ECE5FE47D8C"
+  },
+  "rustc": "1.98.0-nightly (096694416 2026-06-29)",
+  "operating_actions": [],
+  "profit_claim": "not established",
+  "source_notes": "The PR records terminal test and merge results for the exact final head. Snapshot states are intentionally historical."
+}

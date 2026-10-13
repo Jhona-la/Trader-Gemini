@@ -81,10 +81,29 @@ lazy_static! {
         ArcSwap::from_pointee(get_default_specs());
 }
 
+/// CL-89 (atr-3): generación del registro de specs y del universo. Sube cada
+/// vez que se publica uno de los dos, después de publicarlo. Quien guarda un
+/// valor derivado de ellos (el tick de un slot) lo recalcula sólo cuando
+/// cambia: si lee la generación vieja y el registro nuevo, recalcula en la
+/// siguiente consulta.
+static GENERACION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// CL-89: generación vigente del registro y del universo (nunca 0).
+#[inline(always)]
+pub fn generacion() -> u64 {
+    GENERACION.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// CL-89: marca una publicación del registro o del universo.
+pub(crate) fn nueva_generacion() {
+    GENERACION.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+}
+
 pub fn update_registry(new_specs: Vec<SymbolSpec>) {
     let current = DYNAMIC_REGISTRY.load();
     if current.is_empty() {
         DYNAMIC_REGISTRY.store(Arc::new(new_specs));
+        nueva_generacion();
         return;
     }
 
@@ -101,6 +120,7 @@ pub fn update_registry(new_specs: Vec<SymbolSpec>) {
         }
     }
     DYNAMIC_REGISTRY.store(Arc::new(updated));
+    nueva_generacion();
 }
 
 // D-725 (DÉCIMA OLA · auditoría integral): UN SOLO ESPACIO DE ÍNDICE.
@@ -133,6 +153,22 @@ pub fn try_spec(coin_id: usize) -> Option<SymbolSpec> {
         .cloned()
 }
 
+/// CL-69: el tick del slot `coin_id`, con la misma resolución que `try_spec`
+/// pero sin clonar el spec (sin asignaciones: se lee en cada evento).
+#[inline(always)]
+pub fn tick_size_de(coin_id: usize) -> Option<f64> {
+    let registry = DYNAMIC_REGISTRY.load();
+    let universe = crate::symbols::get_active_universe_ref();
+    if universe.is_empty() {
+        return registry.get(coin_id).map(|s| s.tick_size);
+    }
+    let symbol = universe.get(coin_id)?;
+    registry
+        .iter()
+        .find(|s| s.symbol.eq_ignore_ascii_case(symbol))
+        .map(|s| s.tick_size)
+}
+
 #[inline(always)]
 pub fn try_symbol(coin_id: usize) -> Option<String> {
     let universe = crate::symbols::get_active_universe_ref();
@@ -141,6 +177,20 @@ pub fn try_symbol(coin_id: usize) -> Option<String> {
     }
     let registry = DYNAMIC_REGISTRY.load();
     registry.get(coin_id).map(|s| s.symbol.clone())
+}
+
+/// P5 (Camino Caliente): Acceso cero-copia al símbolo del slot `coin_id` sin alojar `String` en el heap.
+#[inline(always)]
+pub fn with_symbol<F, R>(coin_id: usize, f: F) -> Option<R>
+where
+    F: FnOnce(&str) -> R,
+{
+    let universe = crate::symbols::get_active_universe_ref();
+    if !universe.is_empty() {
+        return universe.get(coin_id).map(|s| f(s.as_str()));
+    }
+    let registry = DYNAMIC_REGISTRY.load();
+    registry.get(coin_id).map(|s| f(s.symbol.as_str()))
 }
 
 /// CL-62 (LC-F1-03): ¿el slot `coin_id` es `simbolo`? Mismo espacio de

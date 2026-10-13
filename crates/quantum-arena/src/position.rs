@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 /// `match` en `PositionManager::get_position`, que tampoco tenía llamadores.
 ///
 /// El motor tiene UN modo de horizonte. El horizonte REAL de una posición no
-/// es esta etiqueta sino [`Position::entry_tau_ms`]: la τ dominante del
-/// espectro temporal en el instante de la entrada, un valor continuo en ms.
+/// es esta etiqueta sino [`Position::entry_tau_ms`]: la τ con la que se dimensionó
+/// y validó la orden al entrar (D-745), un valor continuo e inmutable en ms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PositionHorizon {
     Continuous,
@@ -646,6 +646,25 @@ impl Position {
         // Contención patológica: preferible no operar a operar con datos
         // posiblemente inconsistentes.
         None
+    }
+
+    /// Retorna el valor continuo inmutable de tau (ms) con el que se abrió la posición.
+    #[inline(always)]
+    pub fn entry_tau_ms(&self) -> u64 {
+        self.entry_tau_ms.load(Ordering::Relaxed)
+    }
+
+    /// Retorna la banda espectral continua [0: micro/scalp, 1: meso/tactical, 2: macro/swing].
+    #[inline(always)]
+    pub fn spectral_horizon_band(&self) -> usize {
+        let tau = self.entry_tau_ms.load(Ordering::Relaxed);
+        if tau == 0 || tau <= 60_000 {
+            0
+        } else if tau <= 900_000 {
+            1
+        } else {
+            2
+        }
     }
 
     /// Proyección espectral diagnóstica/informativa en nanosegundos (branchless/O(1), R6-C9):

@@ -1,0 +1,529 @@
+{
+ "findings": [
+  {
+   "title": "La prueba de F3.3-01 se dio por «activada» llamando a la función nueva, pero 18 ramas vivas siguen con p* = ½ y condenan justo la rama de su escenario",
+   "severity": "HIGH",
+   "category": "test-certifica-defecto",
+   "file": "crates/god-engine-core/tests/cf3_confianza_contract.rs",
+   "line": 109,
+   "evidence": "tests: `let c = conviccion_de_rama_en(&rama, 0.75, p_star);` (180/400, p* 0,369, exige c ≥ 0,5). Producción: lib.rs:195-196 `pub fn conviccion_de_rama(..) { conviccion_de_rama_en(registro, piso_por_magnitud, 0.5) }` sigue en 18 llamadas vivas (lib.rs:6217, 6228, 6265, 6277, 6359, 6368, 6377, 6386, 6405, 6422, 6471, 6504, 6556, 6584, 6626, 6643, 6664, 6689). PRUEBAS_C-F3_2026-10-11.tsv:7 la marca «activo … CL-75: activada».",
+   "mechanism": "El docstring de T2 dice que la función compara con ½ y condena a la rama de 180/400 (hi 0,499), y que el arreglo añadiría p* a `conviccion_de_rama`. CL-75 añadió otra función (`conviccion_de_rama_en`) que sólo usan las ramas 11-15, y la prueba pasó a llamarla. Las ramas 1-10 y 20-24 siguen con el envoltorio de ½. Así la prueba queda en verde y el registro la anota como activada aunque la conducta que describe siga viva en la mayoría de las ramas.",
+   "failure_scenario": "Rama 1 (ML) con 180/400 cierres netos ganadores y RR 2,25 (p* ≈ 0,37, EV > 0): en vivo, Wilson hi = 0,499 < ½ ⇒ convicción 0 ⇒ aplanar_sin_conviccion la vuelve Flat, y sin cierres nuevos la rama queda absorbida en la sesión. Mientras tanto la CI pasa cf3_conviccion_no_condena_una_rama_sobre_su_equilibrio y el registro de pruebas da F3.3-01 por cerrado.",
+   "fix_sketch": "Hacer que la prueba ejercite a los llamadores vivos: añadir una guarda que exija 0 usos de `conviccion_de_rama(` en el código de producción, o conducir una rama 1-10 por el núcleo. Devolver la fila de PRUEBAS_C-F3 a abierta para las ramas 1-10 y 20-24 hasta que pasen p_equilibrio_de_banda.",
+   "live_path": true,
+   "known_ref": "Defecto: F3.3-01 / K-02 / LF-14 (ola 1: hallazgos.tsv core-tick-c:6205 HIGH y core-helpers:194). Nuevo: la certificación en verde de esta prueba y su estado «activada» en el registro.",
+   "confidence": 0.85
+  },
+  {
+   "title": "mg02 fija en verde que 256 pérdidas seguidas retiran el tope Lundberg (μ ≤ 0 ⇒ None ⇒ 0 ⇒ sin veto) y lo llama «caducidad»",
+   "severity": "MED",
+   "category": "fija-defecto",
+   "file": "crates/god-engine-core/tests/evidence_expiry_contract.rs",
+   "line": 276,
+   "evidence": "tests:294-301 `for _ in 0..256 { est.observar(-0.01); } publicar_lundberg(&arena.registry, 0, est.lundberg()); assert_eq!(risk.evaluate_quantum_order(0, &intent, &arena).signal, SignalType::Long);`. cramer_lundberg.rs:93-95 `if !(media.is_finite() && media > 0.0) { return None; // sin deriva positiva`; evidence_publication.rs:44-48 publica 0; risk-engine lib.rs:673 `(r_raw.is_finite() && r_raw > 0.0).then(..)`.",
+   "mechanism": "El estimador devuelve None tanto con menos de 30 cierres (desconocido de verdad) como con deriva media ≤ 0 (ruina segura: la peor evidencia). La publicación lo convierte en 0 y el lector lo trata como «sin cota»: con edge positivo el grupo se aprieta (Flat) y con edge negativo medido el veto desaparece (Long). La prueba presenta esa inversión como caducidad correcta de la evidencia. Contradice la doctrina (desconocido ≠ 0; lo desconocido no relaja vetos) y es el extremo de la inversión de F2.1-01.",
+   "failure_scenario": "Una moneda con ≥ 30 cierres de media negativa: lundberg_lcb → None → c{id}:lundberg_r_nocional = 0 → `veto_por_riesgo_cramer_lundberg` recibe r = None y no aprieta el tope del grupo. Otra moneda del mismo grupo con edge positivo sí queda apretada. Hoy el efecto vivo es pequeño porque el veto es casi inerte (F2.1-01, ÷L_max), pero un arreglo del factor lo destaparía y esta prueba seguiría pidiendo la inversión.",
+   "fix_sketch": "Separar «sin muestra» de «μ ≤ 0» en el estimador (p. ej. Result con motivo) y que μ ≤ 0 publique la cota más estricta (o vete). Reescribir mg02 para que sólo la falta de muestra retire la cota.",
+   "live_path": true,
+   "known_ref": "F2.1-01 (raíz: el veto aprieta más cuanto mejor es el edge). Nuevo: esta prueba fija el caso límite y lo llama caducidad.",
+   "confidence": 0.75
+  },
+  {
+   "title": "close_kelly_retains_… fija el Kelly a la τ de la operación cerrada (LC-F1-36) y contradice al testigo ignorado de cf3_tau_aprendizaje",
+   "severity": "MED",
+   "category": "fija-defecto",
+   "file": "crates/god-engine-core/tests/close_outcome_contract.rs",
+   "line": 328,
+   "evidence": "`let expected = expected_at(tau as f64); let wrong_fallback = expected_at(30_000.0); … assert!((actual - expected).abs() < 1e-12` (kelly_at_tau(τ_cerrada) guardado en metrics.kelly_fraction). Frente a cf3_tau_aprendizaje.rs:159-169: `#[ignore = \"OPEN LC-F1-36 …\"]` exige `(corta - larga).abs() < 1e-12`.",
+   "mechanism": "La prueba activa exige que el escalar por moneda que dimensiona la orden SIGUIENTE sea la curva de Kelly evaluada a la τ de la posición que se cerró. Es justo la conducta que LC-F1-36 (disputado, apoyado en D-745) señala como defecto. El testigo de LC-F1-36 exige lo contrario. Las dos pruebas codifican contratos incompatibles y la CI sólo corre la que fija el defecto.",
+   "failure_scenario": "Quien arregle LC-F1-36 (Kelly evaluado en el riesgo a la τ de la orden) ve en rojo una prueba cuyo nombre presenta el defecto como corrección («retains the trade horizon»), y puede revertir el arreglo o «arreglar» la prueba equivocada. Mientras tanto, una orden de 12 h se dimensiona con el Kelly de un cierre de 60 s (×0,55).",
+   "fix_sketch": "Decidir el contrato (ADR: Kelly del cierre frente a Kelly de la orden). Si gana LC-F1-36, retirar esta prueba en el mismo commit que active el testigo. Si gana D-745, cerrar LC-F1-36 y retirar el testigo. Mientras tanto, enlazar las dos pruebas en sus comentarios.",
+   "live_path": true,
+   "known_ref": "LC-F1-36 (disputado; F3.2-04 retirado por duplicado), hallazgos.tsv core-tick-a:4328 y risk-a:387. Nuevo: la contradicción entre pruebas.",
+   "confidence": 0.8
+  },
+  {
+   "title": "El «contrato TTL multiactivo» no comprueba el TTL y el punto de macro_staleness es una tautología del registro",
+   "severity": "MED",
+   "category": "vacua",
+   "file": "crates/god-engine-core/tests/hodge_yang_mills_consensus_contract.rs",
+   "line": 227,
+   "evidence": "Comentario «ETH y SOL deben ser considerados obsoletos (TTL excedido)», seguido sólo de `assert!((mid_btc_nuevo - 50_101.0).abs() < 1e-6`. :118-120 `arena.registry.set(\"macro_staleness_ms\", 45_000.0); let stale_ms = arena.registry.get_value_or(\"macro_staleness_ms\", 0.0)…; assert_eq!(stale_ms, 45_000`. El TTL vive en lib.rs:5720-5729 (GEOMETRIA_MULTIACTIVO_TTL_MS).",
+   "mechanism": "test_mid_price_published_and_multiasset_ttl_contract sólo mira el mid de BTC. Ninguna aserción depende de fresh_prices, fresh_ofis ni yang_mills/hodge tras 11 s, así que borrar el filtro TTL de lib.rs:5724-5753 la deja verde. En el primer test, el punto 4 («se refleja fielmente en el snapshot del Consejo») escribe y relee la misma clave sin tocar el núcleo. En el segundo, el `laminar_factor` se recalcula en el propio test, sin pasar por SeniorMicroestructura.",
+   "failure_scenario": "Una regresión que deje entrar en Yang-Mills/Hodge precios de monedas paradas hace horas, o que el núcleo deje de leer macro_staleness_ms en el payload (lib.rs:8291), pasa la CI con estos tres tests verdes.",
+   "fix_sketch": "Tras el tick de t = 12 000 ms, comprobar yang_mills_current/hodge con ETH y SOL fuera, o un espía de fresh_prices. Para macro, leer el MarketSnapshotPayload que construye el núcleo. Quitar el laminar_factor local.",
+   "live_path": true,
+   "known_ref": "Parcial: R7-R3-A-2 (FICHAS_C-F2:499, el test del vórtice no discrimina). El TTL y la tautología de macro son nuevos.",
+   "confidence": 0.9
+  },
+  {
+   "title": "cushion_symmetry_contract prueba una copia del colchón y «verifica la publicación» escribiendo él mismo las claves",
+   "severity": "LOW",
+   "category": "copia-muerta",
+   "file": "crates/god-engine-core/tests/cushion_symmetry_contract.rs",
+   "line": 13,
+   "evidence": "Cierre local `let modulate = |is_long, tide, flux| { … free_cap *= (1.0 - 0.95 * directional_flux).clamp(0.05, 1.0); …}` (también en :73-83). La fórmula viva está en lib.rs:8496. :115-122 `registry.set(\"market_regime_shannon_entropy\", shannon);` …; quien publica de verdad es lib.rs:3049-3052.",
+   "mechanism": "Los dos primeros tests ejercitan un cierre del propio archivo, no el código de lib.rs. El tercero calcula las métricas del símplex, las escribe en un registro nuevo y las relee: no ejecuta nunca la publicación del núcleo.",
+   "failure_scenario": "Si lib.rs:8496 rompe el espejo (p. ej. `tide <= 0.0` para largos) o si lib.rs:3049-3052 deja de publicar, los tres tests siguen verdes.",
+   "fix_sketch": "Llamar a SpectralRegimeField::margin_multiplier desde lib.rs y probar esa función (F3.3-10). Comprobar la publicación con un GodEngineCore real tras un evento del slot 0.",
+   "live_path": true,
+   "known_ref": "F3.3-10 (copia del colchón; sigue: lib.rs:8496). Nuevo: el test de publicación autoescrito.",
+   "confidence": 0.9
+  },
+  {
+   "title": "r7_r4_a2 reimplementa entes_consejo::leer dentro del test y sólo pasa por el orden de los valores",
+   "severity": "LOW",
+   "category": "copia-muerta",
+   "file": "crates/god-engine-core/tests/identidad_simbolo_nucleo_contract.rs",
+   "line": 66,
+   "evidence": "`arena.registry.get_for_coin_or(coin_id, \"spoof_score\", 0.0).max(arena.registry.get_scoped_value_or(sym, \"spoof_score\", 0.0))` escrito en el test. Producción: entes_consejo.rs:63-67 (`leer`), que el núcleo usa en lib.rs:8257-8271; `publicar` (entes_consejo.rs:48-59) ya escribe en los dos espacios.",
+   "mechanism": "El test no llama al lector del núcleo ni a entes_consejo, sino a una copia en línea. El caso 2 («se resuelve desde set_for_coin») sólo pasa porque 0,92 > 0,85: con un valor por moneda menor, el max devolvería el valor viejo del ámbito de símbolo, que es justo el valor pegado que CL-49 combate. El escenario de un escritor de un solo ámbito ya no existe.",
+   "failure_scenario": "Cambiar entes_consejo::leer (p. ej. a sólo por moneda) o el campo del payload no afecta al test. Un escritor que publicara sólo por moneda un valor decaído (0,1 tras 0,85 por símbolo) dejaría al consejo leyendo 0,85, y el test no lo detectaría.",
+   "fix_sketch": "Llamar a entes_consejo::leer/publicar y añadir el caso decreciente. O retirar el test, porque entes_consejo_host_contract y los tests del módulo ya cubren el contrato.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.8
+  },
+  {
+   "title": "r7_r4_c1 copia la lambda multi-ranura del host en vez de ejecutarla, y no comprueba la apertura del slot 2",
+   "severity": "LOW",
+   "category": "copia-muerta",
+   "file": "crates/god-engine-core/tests/close_outcome_contract.rs",
+   "line": 741,
+   "evidence": "Test: `coin.positions.slots().iter().any(|p| p.last_close_confirmed.swap(false, Ordering::Relaxed))`. Host: god_engine.rs:3817-3827 con la misma expresión. :733 `pos.open_with_horizon(...)` sin assert sobre una ranura 2 que `core()` ya abrió.",
+   "mechanism": "La regla que se dice verificar («el verificador multi-ranura no descarta scalp/swing») vive en el binario y el test reescribe su expresión. Sólo prueba Position::close y swap. En el slot 2 la reapertura falla en silencio y el flag nace limpio por otra razón.",
+   "failure_scenario": "Si el host vuelve a mirar sólo `positions.position` (el defecto R7-R4-C-1 original), este test sigue verde.",
+   "fix_sketch": "Extraer la lambda a una función pública del núcleo o de quantum-arena (p. ej. `PositionSlots::consumir_cierre_confirmado`), usarla en god_engine.rs y probarla. O bien una guarda de fuente sobre el host, como kill_switch_host_contract. Añadir assert!(open_with_horizon(..)).",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.8
+  },
+  {
+   "title": "Testigos «CERRADO» que siguen en el código: fallan siempre con --include-ignored y el registro dice otra cosa",
+   "severity": "LOW",
+   "category": "ignore-rancio",
+   "file": "crates/god-engine-core/tests/cf3_espejo_conformal_contract.rs",
+   "line": 198,
+   "evidence": "`#[ignore = \"CERRADO F3.8-03 (AGY, Ola Ω88 / #726): #714 adopta bosque_constante(0.25)…\"] fn cf3_fixture_714_no_alcanza_la_base_que_declara` y cf3_vetos_nucleo.rs:318 `#[ignore = \"CERRADO F3.4-08 …\"] fn cf3_k26_corre_con_base_025`. PRUEBAS_C-F3_2026-10-11.tsv:17 dice «testigo retirado» y la fila :41 sigue en «ignorado_open».",
+   "mechanism": "Los dos testigos reproducen el fixture viejo de #714 (sin bosque) y afirman la base 0,25, imposible por construcción (el núcleo publica 0,5 sin bosque). Su propio doc dice que se retiran cuando #714 adopte el fixture correcto, y ya lo adoptó. La convención del proyecto es correr `--include-ignored` para detectar arreglos, y ahí estos dos salen en rojo permanente.",
+   "failure_scenario": "Una corrida `cargo test -- --include-ignored` para ver qué OPEN se ha activado da dos fallos de hallazgos cerrados. El ruido entrena a ignorar rojos, y la fila :41 del registro sigue contando F3.4-08 como abierto.",
+   "fix_sketch": "Borrar los dos tests (su verdad ya la cubren k26_engine_publishes_symmetric_conformal_at_honest_neutrality y cf3_k26_neutral_con_base_honesta_ejecutando_el_nucleo) y actualizar la fila 41 de PRUEBAS_C-F3.",
+   "live_path": false,
+   "known_ref": "F3.8-03 / F3.4-08 (cerrados); la permanencia de los testigos es nueva.",
+   "confidence": 0.85
+  },
+  {
+   "title": "La API de confirmación trata un llenado de 0 como «sin evidencia» y confirma la cantidad completa; la prueba lo fija",
+   "severity": "LOW",
+   "category": "fija-defecto",
+   "file": "crates/god-engine-core/tests/entry_reservation_fill_contract.rs",
+   "line": 77,
+   "evidence": "`for ejecutada in [None, Some(1.0), Some(1.5), Some(f64::NAN), Some(0.0)] { … assert!(cerca(s.quantity…, 1.0)); assert!(s.exchange_confirmed…)`. position.rs:493 `if ejecutada.is_finite() && ejecutada > 0.0 && cantidad > 0.0 && ejecutada < cantidad {` y si no, confirma igual (:508).",
+   "mechanism": "Un 0 ejecutado es evidencia conocida (no se llenó nada), no ausencia de evidencia. La API lo confunde con None/NaN y certifica una posición de cantidad completa que no existe. Hoy el host lo evita aguas arriba: cantidad_ejecutada_terminal (ioc_evidence.rs:87-93) devuelve None con 0, y la IOC sin llenado sale por Err/Revertir. Por eso es latente. Aun así, la prueba consagra la semántica para cualquier llamador nuevo.",
+   "failure_scenario": "Una ruta futura (maker-chase, reconciliación) que pase el executedQty crudo = 0 de una IOC EXPIRED confirmaría la reserva: posición fantasma confirmada, cierres contabilizados como reales y Kelly/capital contaminados.",
+   "fix_sketch": "Que confirmar_llenado(Some(q ≤ 0)) devuelva un error (o revierta) en lugar de confirmar, y cambiar el caso Some(0.0) de la prueba para exigirlo.",
+   "live_path": false,
+   "known_ref": "",
+   "confidence": 0.6
+  }
+ ],
+ "file_verdicts": [
+  {
+   "file": "crates/god-engine-core/tests/bocpd_temporal_contract.rs",
+   "status": "honesta",
+   "note": "Cada propiedad (NaN no consume reloj, reloj no retrocede, fallo numérico no compromete) se compara contra un observador de referencia; discrimina."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf2_calibracion_solucion_conocida.rs",
+   "status": "mixta",
+   "note": "Platt, conformal marginal y ATR: soluciones conocidas honestas. Ignores F2.2-06/F2.2-05 vigentes (contratos del sucesor, declarados). cf2_conformal_riesgo_entre_aceptadas_valor_analitico fija F2.2-05 pero se declara CARACTERIZACIÓN. El nombre cf2_atr_vivo_sin_piso_aisla_el_trinquete quedó rancio tras CL-71."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf2_hodge_contagio_solucion_conocida.rs",
+   "status": "honesta",
+   "note": "Ignore F2.1-03 vigente; contrato del sucesor declarado."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf2_hurst_bandas_solucion_conocida.rs",
+   "status": "honesta",
+   "note": "Ignores F2.3b-01 y F2.3b-08 vigentes (la vela interna sigue re-anclándose en el evento: stateful_engine.rs:903-954)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf2_navier_velocidad_espejo.rs",
+   "status": "honesta",
+   "note": "Discrimina el signo (antes de CL-73 fallaba). La saturación de tanh(100·v) la hace insensible a magnitudes; está declarado."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf2_regimen_solucion_conocida.rs",
+   "status": "mixta",
+   "note": "cf2_rw_bocpd_no_dispara_en_ruido queda verde con una métrica que su propio doc reconoce inadecuada (≈14 episodios/h): conocido, F2.3-08 (HALLAZGOS_C-F2:667). campo_vivo replica el ancla del núcleo (copia, comprobada a mano). Los demás ignores siguen vigentes."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf2_vpin_entropia_solucion_conocida.rs",
+   "status": "honesta",
+   "note": "Formas cerradas correctas. Ignore F2.3b-02 vigente: process_tick(price, _volume, t) sigue sin agresor (stateful_engine.rs:707). F2.3b-03 vigente."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_6_entropia_no_es_obi.rs",
+   "status": "honesta",
+   "note": "Ignore F3.6-03 vigente: tsallis sale de p_bid = bid/(bid+ask) del mismo evento (lib.rs:4899-4906)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_base_z_hueco.rs",
+   "status": "honesta",
+   "note": "Control con hueco 0 y criterio de colas; reset_engines se prueba sobre el núcleo real."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_cobertura_modelos_contract.rs",
+   "status": "honesta",
+   "note": "Ignores F3.5-01/F3.5-06 vigentes (NEARUSDT_MOTOR.json sigue en models/)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_confianza_contract.rs",
+   "status": "fija-defecto",
+   "note": "HALLAZGO HIGH: T2 se «activó» llamando a conviccion_de_rama_en mientras las 18 ramas vivas 1-10/20-24 usan p* = ½. cf3_desventaja_demostrada_no_se_reinfla es ahora trivial (convicción 0 por construcción)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_consenso_espectral.rs",
+   "status": "honesta",
+   "note": "Cuatro ignores OPEN de F3.1 con nulo martingala y aserciones intactas; usa cerrojo para el universo global."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_darkalpha_coordenadas_contract.rs",
+   "status": "honesta",
+   "note": "Ignore F3.5-03 vigente: la recarga sólo hace init_buffers/sanitize/freeze (lib.rs:2081-2086)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_ensamble_dos_bases_contract.rs",
+   "status": "honesta",
+   "note": "Ignore F3.5-05 vigente (ensemble.rs:197-212 sigue promediando las opiniones)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_espejo_conformal_contract.rs",
+   "status": "mixta",
+   "note": "K-26 activo y honesto (bosque de base 0,25, calibrador caliente). F3.8-01 vigente (compose_ml_prob aditivo, calibration.rs:285-289). El testigo CERRADO F3.8-03 está muerto (hallazgo LOW)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_espejo_ml_contract.rs",
+   "status": "honesta",
+   "note": "Ignore F3.3-04 vigente."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_fuente_contract.rs",
+   "status": "fragil",
+   "note": "Contratos de fuente, frágiles por diseño (declarado). Ramas 12 y 13 pasan por arreglos reales (lib.rs:6898 y CL-82 en 7074-7094). F3.3-10 vigente (lib.rs:8496)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_libro_sin_asignar.rs",
+   "status": "honesta",
+   "note": "Ignore F3.7-08 vigente: try_symbol devuelve String (symbol_registry.rs:173; lib.rs:3503)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_macro_caducado_contract.rs",
+   "status": "honesta",
+   "note": "Ignore F3.5-02 vigente: macro_staleness_ms sólo lo lee el consejo (lib.rs:8291-8294)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_maker_sin_consumidor.rs",
+   "status": "honesta",
+   "note": "Ignore F3.7-07 vigente (lo confirma la ola 1)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_regimen_tasa_eventos.rs",
+   "status": "honesta",
+   "note": "Ignore F3.7-06 vigente: el símplex usa EMAs de ticks y σ por tick (lib.rs:3003-3009). La corrección del borrador está bien razonada."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_reversion_base.rs",
+   "status": "honesta",
+   "note": "Generador adversarial: el spot llega con el futuro anterior, lo que añade ruido de asincronía. El par caminata/OU discrimina."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_rho_tau_orden.rs",
+   "status": "honesta",
+   "note": "Ignore F3.2-02 vigente: el lector lee qo_613_rho_tau sin τ (risk-engine lib.rs:684-699). El fixture es copia literal del de evidence_expiry (riesgo de deriva)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_sesgo_spot_espejo.rs",
+   "status": "honesta",
+   "note": "Ignore F3.1-07 vigente, con control b = ½."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_sesgo_spot_espejo_contract.rs",
+   "status": "honesta",
+   "note": "Ignore F3.5-04 vigente."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_spot_congelado_ttl.rs",
+   "status": "honesta",
+   "note": "Precondiciones explícitas (z ≠ 0 antes de congelar, prueba aún demostrada) que eliminan el pase vacuo detectado en CL-92."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_tau_aprendizaje.rs",
+   "status": "honesta",
+   "note": "Ignores LC-F1-36 y F3.2-06 vigentes (fallback a dominant_tau_ms en lib.rs:3696-3709). Contradice close_kelly_retains_… (hallazgo MED)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_una_sola_tau.rs",
+   "status": "honesta",
+   "note": "last_*_intent se guarda justo tras puertas_del_continuo (lib.rs:7299-7315). Aceptar coincidencia con la τ rápida O la lenta es algo laxo. CL-95 corrige la dependencia del orden del almacén de bosques."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_vecm_base_constante.rs",
+   "status": "honesta",
+   "note": "Verdad de sesgo bien planteada (media de z y del voto); dispersión y dislocación como controles."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf3_vetos_nucleo.rs",
+   "status": "mixta",
+   "note": "Réplicas del escudo y de la sonda con premisa de fuente (siguen coincidiendo: lib.rs:5581-5592 y 8431-8460). El muro documenta la equivalencia con OBI. El testigo CERRADO F3.4-08 está muerto (hallazgo LOW)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf4_atr_sigma_minuto.rs",
+   "status": "honesta",
+   "note": "Tamaño nominal, rango equivalente, reinicio bit a bit, choque y cuantil por Monte Carlo independiente."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf4_coaxial_sin_atr_fabricado.rs",
+   "status": "honesta",
+   "note": "Control de publicación (mid_price) antes de afirmar la ausencia de claves."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf4_conviccion_perezosa.rs",
+   "status": "honesta",
+   "note": "Equivalencia bit a bit sobre la rejilla completa y conteo de llamadas."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf4_piso_cache.rs",
+   "status": "honesta",
+   "note": "Correcta con la semántica de fusión de update_registry (symbol_registry.rs:102-124)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf4_piso_resolucion.rs",
+   "status": "honesta",
+   "note": "Control sin spec bit a bit."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf4_rasgo_ml_congelado.rs",
+   "status": "honesta",
+   "note": "Réplica independiente del ATR legado bit a bit. La guarda de lectores es de fuente (frágil) y sus cadenas están en el código de producción (lib.rs:1575-1577)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf4_sigma_hueco.rs",
+   "status": "honesta",
+   "note": "El envoltorio reproduce el orden del núcleo (observar y luego cerrar_vela: stateful_engine.rs:872 y 903-926)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cf4_sigma_minuto.rs",
+   "status": "honesta",
+   "note": "Soluciones conocidas con EE por bloques; la robustez incluye retroceso y NaN."
+  },
+  {
+   "file": "crates/god-engine-core/tests/close_outcome_contract.rs",
+   "status": "mixta",
+   "note": "Casi todo honesto (procedencia, kill-switch, consejo, liquidaciones). close_kelly_retains_… fija LC-F1-36 (MED); r7_r4_c1 copia la lambda del host (LOW)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/comun_base_spot/mod.rs",
+   "status": "honesta",
+   "note": "Helper con cerrojo tolerante al envenenamiento; el mercado con asincronía es un buen adversario."
+  },
+  {
+   "file": "crates/god-engine-core/tests/conformal_direction_symmetry_contract.rs",
+   "status": "honesta",
+   "note": "K-26 ejecuta el núcleo con base honesta. k27 es una guarda de fuente débil (todo lib.rs, incluidos los tests), pero la condición existe en producción (lib.rs:6464-6689)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/conformal_wiring_contract.rs",
+   "status": "honesta",
+   "note": "Los diagnósticos (adaptación recortada, rejilla finita) fijan a sabiendas un bloqueo hasta nueva realimentación. El alcance vivo es limitado: sólo silencia el votante ConformalReversionFilter (conformal_reversion_filter.rs:211-212), y la actualización llega en cada cierre (lib.rs:4458)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/cushion_symmetry_contract.rs",
+   "status": "copia-muerta",
+   "note": "Prueba un cierre local, no lib.rs:8496 (F3.3-10). El test de publicación escribe y relee sus propias claves."
+  },
+  {
+   "file": "crates/god-engine-core/tests/darwin_genotype_open_diagnostics.rs",
+   "status": "fija-defecto",
+   "note": "Fija, como diagnóstico declarado, que apply_to_arena acepta un apalancamiento de 2000 y otros valores fuera de dominio. Darwin es legado y opcional (ENABLE_LEGACY_DARWIN_DAEMON), así que no está en el camino vivo."
+  },
+  {
+   "file": "crates/god-engine-core/tests/darwin_margin_contract.rs",
+   "status": "honesta",
+   "note": "Fija las fronteras literales del margen legado (1,05 / 1e-4 / 0,95) y declara que no es significancia. Fuera de línea."
+  },
+  {
+   "file": "crates/god-engine-core/tests/decay_causality_contract.rs",
+   "status": "honesta",
+   "note": "Causalidad, semigrupo y rechazo sin mutación."
+  },
+  {
+   "file": "crates/god-engine-core/tests/dfa_contract.rs",
+   "status": "honesta",
+   "note": "Prueba el envoltorio consumidor real."
+  },
+  {
+   "file": "crates/god-engine-core/tests/entes_consejo_host_contract.rs",
+   "status": "fragil",
+   "note": "Guardas de fuente del binario, frágiles por diseño (declarado); el contrato se corresponde con el código."
+  },
+  {
+   "file": "crates/god-engine-core/tests/entry_reservation_contract.rs",
+   "status": "honesta",
+   "note": "Generación, vecino confirmado y concurrencia. `.lock().unwrap()` provoca fallos en cascada si un test entra en pánico."
+  },
+  {
+   "file": "crates/god-engine-core/tests/entry_reservation_fill_contract.rs",
+   "status": "mixta",
+   "note": "Escalado parcial e idempotencia, honestos. El caso Some(0.0) fija que un llenado de 0 confirma la cantidad completa (LOW, latente)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/evidence_expiry_contract.rs",
+   "status": "mixta",
+   "note": "Publicación por moneda, aislamiento entre arenas y concurrencia, honestos. mg02_real_risk_reader_… fija la retirada del tope Lundberg con μ ≤ 0 (MED)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/ewma_initialization_contract.rs",
+   "status": "honesta",
+   "note": "Lee los priors reales de la arena; el α 0,0033 está replicado en el test."
+  },
+  {
+   "file": "crates/god-engine-core/tests/fitness_numeric_contract.rs",
+   "status": "honesta",
+   "note": "Dominio numérico y razones de error distintas."
+  },
+  {
+   "file": "crates/god-engine-core/tests/genoma_fijado_contract.rs",
+   "status": "honesta",
+   "note": "Ejecuta refresh_models real con almacén temporal. Cambia cwd/env (binario propio y cerrojo). Las guardas de fuente sobre el host son frágiles."
+  },
+  {
+   "file": "crates/god-engine-core/tests/hodge_contagion_contract.rs",
+   "status": "mixta",
+   "note": "El umbral 0,5 de la cascada es arbitrario (conocido, FICHAS_C-F2:37). La paridad risk/feature es honesta."
+  },
+  {
+   "file": "crates/god-engine-core/tests/hodge_yang_mills_consensus_contract.rs",
+   "status": "vacua",
+   "note": "Ninguna aserción sobre el TTL; macro_staleness es una tautología; laminar_factor se calcula en local (MED). El vórtice no discrimina (conocido, R7-R3-A-2). `.lock().unwrap()` provoca fallos en cascada."
+  },
+  {
+   "file": "crates/god-engine-core/tests/identidad_simbolo_nucleo_contract.rs",
+   "status": "mixta",
+   "note": "El test CL-37 es honesto (núcleo real). r7_r4_a2 es una copia en línea de entes_consejo::leer (LOW)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/ingesta_ws_host_contract.rs",
+   "status": "fragil",
+   "note": "Guardas de fuente del host más una prueba real de reset_engines (pico conservado)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/kill_switch_host_contract.rs",
+   "status": "fragil",
+   "note": "Guardas de fuente con anclas y orden; frágiles por diseño, honestas."
+  },
+  {
+   "file": "crates/god-engine-core/tests/lf1_slot_sin_identidad_contract.rs",
+   "status": "honesta",
+   "note": "Precondición explícita de slot sin identidad y control de publicación por moneda."
+  },
+  {
+   "file": "crates/god-engine-core/tests/lf2_escala_coherencia_contract.rs",
+   "status": "honesta",
+   "note": "Frontera geométrica en todos los nodos."
+  },
+  {
+   "file": "crates/god-engine-core/tests/lg_calibracion_ev_contract.rs",
+   "status": "honesta",
+   "note": "Ignore LG-5 vigente: is_win = net_trade_pnl > 0 (lib.rs:4332)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/libro_efectivo_contract.rs",
+   "status": "honesta",
+   "note": "Función pura más el núcleo real (OFI 0 con libro quieto)."
+  },
+  {
+   "file": "crates/god-engine-core/tests/liquidation_state_contract.rs",
+   "status": "honesta",
+   "note": "Envolvente, duplicados, as-of futuro y límite."
+  },
+  {
+   "file": "crates/god-engine-core/tests/medidor_camino_caliente.rs",
+   "status": "honesta",
+   "note": "El ignore del banco es legítimo (release). Los tests del instrumento son correctos. El humo la_cinta_pasa_por_el_nucleo tiene una aserción trivial: sólo prueba que no hay pánico."
+  }
+ ],
+ "vetos": [],
+ "coverage": {
+  "files_read": [
+   "crates/god-engine-core/tests/bocpd_temporal_contract.rs",
+   "crates/god-engine-core/tests/cf2_calibracion_solucion_conocida.rs",
+   "crates/god-engine-core/tests/cf2_hodge_contagio_solucion_conocida.rs",
+   "crates/god-engine-core/tests/cf2_hurst_bandas_solucion_conocida.rs",
+   "crates/god-engine-core/tests/cf2_navier_velocidad_espejo.rs",
+   "crates/god-engine-core/tests/cf2_regimen_solucion_conocida.rs",
+   "crates/god-engine-core/tests/cf2_vpin_entropia_solucion_conocida.rs",
+   "crates/god-engine-core/tests/cf3_6_entropia_no_es_obi.rs",
+   "crates/god-engine-core/tests/cf3_base_z_hueco.rs",
+   "crates/god-engine-core/tests/cf3_cobertura_modelos_contract.rs",
+   "crates/god-engine-core/tests/cf3_confianza_contract.rs",
+   "crates/god-engine-core/tests/cf3_consenso_espectral.rs",
+   "crates/god-engine-core/tests/cf3_darkalpha_coordenadas_contract.rs",
+   "crates/god-engine-core/tests/cf3_ensamble_dos_bases_contract.rs",
+   "crates/god-engine-core/tests/cf3_espejo_conformal_contract.rs",
+   "crates/god-engine-core/tests/cf3_espejo_ml_contract.rs",
+   "crates/god-engine-core/tests/cf3_fuente_contract.rs",
+   "crates/god-engine-core/tests/cf3_libro_sin_asignar.rs",
+   "crates/god-engine-core/tests/cf3_macro_caducado_contract.rs",
+   "crates/god-engine-core/tests/cf3_maker_sin_consumidor.rs",
+   "crates/god-engine-core/tests/cf3_regimen_tasa_eventos.rs",
+   "crates/god-engine-core/tests/cf3_reversion_base.rs",
+   "crates/god-engine-core/tests/cf3_rho_tau_orden.rs",
+   "crates/god-engine-core/tests/cf3_sesgo_spot_espejo.rs",
+   "crates/god-engine-core/tests/cf3_sesgo_spot_espejo_contract.rs",
+   "crates/god-engine-core/tests/cf3_spot_congelado_ttl.rs",
+   "crates/god-engine-core/tests/cf3_tau_aprendizaje.rs",
+   "crates/god-engine-core/tests/cf3_una_sola_tau.rs",
+   "crates/god-engine-core/tests/cf3_vecm_base_constante.rs",
+   "crates/god-engine-core/tests/cf3_vetos_nucleo.rs",
+   "crates/god-engine-core/tests/cf4_atr_sigma_minuto.rs",
+   "crates/god-engine-core/tests/cf4_coaxial_sin_atr_fabricado.rs",
+   "crates/god-engine-core/tests/cf4_conviccion_perezosa.rs",
+   "crates/god-engine-core/tests/cf4_piso_cache.rs",
+   "crates/god-engine-core/tests/cf4_piso_resolucion.rs",
+   "crates/god-engine-core/tests/cf4_rasgo_ml_congelado.rs",
+   "crates/god-engine-core/tests/cf4_sigma_hueco.rs",
+   "crates/god-engine-core/tests/cf4_sigma_minuto.rs",
+   "crates/god-engine-core/tests/close_outcome_contract.rs",
+   "crates/god-engine-core/tests/comun_base_spot/mod.rs",
+   "crates/god-engine-core/tests/conformal_direction_symmetry_contract.rs",
+   "crates/god-engine-core/tests/conformal_wiring_contract.rs",
+   "crates/god-engine-core/tests/cushion_symmetry_contract.rs",
+   "crates/god-engine-core/tests/darwin_genotype_open_diagnostics.rs",
+   "crates/god-engine-core/tests/darwin_margin_contract.rs",
+   "crates/god-engine-core/tests/decay_causality_contract.rs",
+   "crates/god-engine-core/tests/dfa_contract.rs",
+   "crates/god-engine-core/tests/entes_consejo_host_contract.rs",
+   "crates/god-engine-core/tests/entry_reservation_contract.rs",
+   "crates/god-engine-core/tests/entry_reservation_fill_contract.rs",
+   "crates/god-engine-core/tests/evidence_expiry_contract.rs",
+   "crates/god-engine-core/tests/ewma_initialization_contract.rs",
+   "crates/god-engine-core/tests/fitness_numeric_contract.rs",
+   "crates/god-engine-core/tests/genoma_fijado_contract.rs",
+   "crates/god-engine-core/tests/hodge_contagion_contract.rs",
+   "crates/god-engine-core/tests/hodge_yang_mills_consensus_contract.rs",
+   "crates/god-engine-core/tests/identidad_simbolo_nucleo_contract.rs",
+   "crates/god-engine-core/tests/ingesta_ws_host_contract.rs",
+   "crates/god-engine-core/tests/kill_switch_host_contract.rs",
+   "crates/god-engine-core/tests/lf1_slot_sin_identidad_contract.rs",
+   "crates/god-engine-core/tests/lf2_escala_coherencia_contract.rs",
+   "crates/god-engine-core/tests/lg_calibracion_ev_contract.rs",
+   "crates/god-engine-core/tests/libro_efectivo_contract.rs",
+   "crates/god-engine-core/tests/liquidation_state_contract.rs",
+   "crates/god-engine-core/tests/medidor_camino_caliente.rs"
+  ],
+  "unread": [],
+  "notes": "Leí los 65 archivos de tst01 completos (10 995 líneas), sin recortes. Para verificar, hice lecturas puntuales de código de producción fuera de la lista: lib.rs (171-296, 490, 2078-2102, 2985-3052, 3655-3709, 4225-4270, 4332, 4352-4358, 4885-4962, 5345-5354, 5526-5593, 5700-5767, 6217-6689, 6960-7144, 7270-7330, 8250-8294, 8428-8460, 8496), entry_reservation.rs, position.rs:469-513, ioc_evidence.rs:77-150, god_engine.rs:3805-3845 y 4600-4730, cramer_lundberg.rs:48-212, risk-engine lib.rs:645-724, evidence_publication.rs, entes_consejo.rs, conformal_reversion_filter.rs:180-260, symbol_registry.rs (update_registry, try_symbol), stateful_engine.rs (707, 868-954), darwin.rs (1-140, 312-321, 440-520) y ensemble.rs:187-212. Contrasté los registros: hallazgos/verificacion de la ola 1, C-F1/C-F2/C-F3, PRUEBAS_C-F3, MAPA_C-F3 y FICHAS_C-F2. vetos va vacío porque la lista sólo contiene pruebas (más un helper de test): no hay código de producción propio de esta dimensión. Revisé uno por uno que los #[ignore] OPEN siguieran vigentes contra el código (ningún motivo rancio, salvo los dos testigos CERRADO). No ejecuté pruebas: los estados verde/rojo se infieren del código y de los registros."
+ }
+}
