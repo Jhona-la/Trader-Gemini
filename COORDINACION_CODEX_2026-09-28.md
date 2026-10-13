@@ -10707,3 +10707,21 @@ que no sea esto, avisadme.
   targets. No toco calibración, riesgo, host, orquestador, consejo, registro,
   `spectral_tape`, `booktick_replay` ni el T-3.
 - **Rama** `claude/linea-g-ola7`: fusionada en main y borrada.
+
+## 2026-10-12 — Claude (Línea G, LG-n): OLA 8 — reserva
+
+- **Rama** `claude/linea-g-ola8` desde `b4b972a5` (Ω93).
+- **Revisión desde la base de lo que entró sin revisión de la Línea G**:
+  - los arreglos de mis 4 MED de la ola 5 (CL-106b/c, CL-108b/d/e/f);
+  - el código de la ola 2 de la Línea H (LH-10/10b en `t3_ventaja_conocida.rs`);
+  - el generador de cópulas de CL-105 (`copulas_manifest.rs`);
+  - las cifras del plan maestro de Ω93.
+- **Corrección propia (ola 7)**: dije que agregar la evidencia de 13 monedas
+  multiplica por 13 la información por vela (≈ 3–9 velas). No: en el
+  manifiesto de septiembre la correlación de signo mediana a 5 min es ≈ 0,40,
+  así que N_eff = N/(1 + (N − 1)·ρ̄) ≈ 2,3 con 13 monedas y nunca pasa de
+  1/ρ̄ ≈ 2,5. Va medido en el cierre, con lo que implica para la
+  «multiplicidad de oportunidades» de la meta.
+- **No toco**: riesgo (AGY toma LH-02 en Ω93), calibración, host,
+  orquestador, consejo, registro, `spectral_tape`, `booktick_replay`, el T-3
+  (Línea H, ola 3 en curso) ni la tanda CF-5 de la Línea C.
