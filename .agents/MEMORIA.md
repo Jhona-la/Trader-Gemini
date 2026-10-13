@@ -6114,3 +6114,9 @@ LG22: el producto de factores exige filtración, integrabilidad, nulo condiciona
 Main remoto confirmado en 88f8812199eea80333d0c13d910ec9f7c1796900 mediante push FF, con ascendencia f625, SI927 y eb32. Los 664 inputs compilables y los bytes de siete recibos publicados son iguales a los verificados; T1 18/144 y agregado 713/0/7/1 conservan su alcance sintético. Censo publicado: 1.824 rutas; ledger histórico de 1.816 íntegramente pendiente, salvo tres hunks verificados. Copia externa sellada: 1.030 archivos, 286.020.220 bytes, manifest SHA41301930675f4689a870e782ba597606377e8592046bffb519e879ea9b9c5c34.
 
 [Recibo de publicación](../docs/audit/RECIBO_PUBLICACION_R4_2026-10-13.json). Este recibo certifica el primer push; el siguiente commit sólo documental y el cierre de refs se verifican después, sin atribuir CI de padres. Se preserva AGY F7 local y toda rama activa o con commits exclusivos. Continúan R4-O01/O02/EPOCHS, SI-O02 y la meta económica sin demostrar.
+
+
+<!-- R4-OCT13-REFS-CLOSED-V1 -->
+## R4 — referencias cerradas y sincronización — 2026-10-13
+
+Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales a T1. Root cerró sus refs espectrales e históricas; SI cerró platt-age-evidence-1013 local/remota. Worktrees, modelos, genomas y 229 recibos históricos conservados. Remoto observado: sólo main. CI de f59 pendiente; ninguna aprobación heredada. [Cierre efectivo y recibos](../docs/audit/CIERRE_R4_REFERENCIAS_2026-10-13.md). Esta última actualización documental se publica por rama temporal propia y su SHA/cierre se verifican externamente.
