@@ -1,0 +1,4 @@
+experimento	trades	wr	pnl_usd	b_real	primer_tramo_cierres_iguales	segundo_tramo_trades	segundo_tramo_pnl_usd	segundo_tramo_wr	fresco_trades	fresco_pnl_usd	fresco_wr	rechazos_compuesto	rechazos_fresco
+E2 ventaja→nulo	129	0.5736	1.34441	1.480	89/89	40	-0.06321	0.4000	36	-0.12637	0.3611	sin rechazos	EV=929
+E3 nulo→ventaja	101	0.5248	0.58468	1.390	36/36	65	0.71104	0.6154	89	1.40762	0.6517	EV=938	sin rechazos
+E4 ventaja→anti	134	0.5448	1.16351	1.484	89/89	45	-0.24411	0.3333	12	-0.24125	0.0833	sin rechazos	EV=27 sonda_ocupada=4

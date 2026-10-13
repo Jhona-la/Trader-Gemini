@@ -41,7 +41,22 @@
 //! la ventaja que la serie tenía.
 //!
 //! Uso: `cargo test --release -p backtest-engine --test t3_ventaja_conocida
-//! -- --include-ignored --nocapture`.
+//! -- --include-ignored --nocapture --test-threads=1` (los contadores de
+//! rechazo son globales: las mediciones tienen que ir en serie; H1-08 de la
+//! revisión de la Línea G).
+//!
+//! # Límites conocidos del generador (revisión de la Línea G, ola 6)
+//!
+//! El ruido es uniforme acotado y las mechas y el volumen se construyen con
+//! el mismo |u| que el ruido: una vela con |r| > σ√3 − d revela el estado
+//! oculto con certeza y (r, volumen) o (r, high/close) lo decodifican en
+//! cada vela (H1-01). El «oráculo» es por tanto un lector del OHLCV que el
+//! motor también ve, no una cota superior inalcanzable; lo realizado en los
+//! peldaños a = 0,6–0,8 no puede atribuirse a la cadena. La versión 2 del
+//! generador (ola 3: ruido gaussiano, sorteos independientes para mechas y
+//! volumen, y el lector causal óptimo —filtro de Bayes sobre el OHLCV— como
+//! techo) sustituye a ésta; los números de las olas 1 y 2 son de esta
+//! versión y se conservan como tales.
 
 use backtest_engine::{STATS_LEN, run_backtest_native};
 use quantum_arena::genome::SuperGenotype;
@@ -326,6 +341,8 @@ pub struct Medida {
     pub rechazos: [u64; REJECT_SLOTS],
     /// Pago realizado por cierre, del `out_pnl` del runner.
     pub pago: Pago,
+    /// PnL neto de cada cierre, en orden de cierre (`out_pnl` del runner).
+    pub pnl: Vec<f64>,
     pub segundos: f64,
 }
 
@@ -339,7 +356,16 @@ pub fn medir(p: Peldano) -> Medida {
 /// Como [`medir`], con el capital inicial dado: la meta es componer, así que
 /// lo que vale con 13 USD tiene que seguir valiendo al doblar.
 pub fn medir_con_capital(p: Peldano, capital: f64) -> Medida {
-    let serie = serie_persistente(p);
+    medir_serie(serie_persistente(p), p, capital)
+}
+
+/// Como [`medir_con_capital`] sobre una serie ya construida (p. ej. una
+/// compuesta de dos tramos); `p` sólo rotula la fila y `n` se toma de la serie.
+pub fn medir_serie(serie: Serie, p: Peldano, capital: f64) -> Medida {
+    let p = Peldano {
+        n: serie.closes.len(),
+        ..p
+    };
     let techo = techo(&serie);
     let antes = rechazos_ahora();
     let inicio = std::time::Instant::now();
@@ -408,6 +434,7 @@ pub fn medir_con_capital(p: Peldano, capital: f64) -> Medida {
         stats,
         rechazos,
         pago,
+        pnl: pnl[..cierres].to_vec(),
         segundos,
     }
 }
@@ -733,5 +760,188 @@ fn t3_valle_de_capital() {
     println!("\n[T3-TSV] {CABECERA_TSV}");
     for f in &filas {
         println!("[T3-TSV] {f}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LH-10 — LA VENTAJA CONOCIDA PUESTA EN EL TIEMPO: ¿se adapta el sistema?
+//
+// El motor es determinista y la serie compuesta de dos tramos tiene el
+// mismo prefijo que el primer tramo solo: los cierres del primer tramo son
+// los mismos en los dos casos. Lo que cambia en el segundo tramo frente al
+// mismo tramo corrido en frío es, exactamente, lo que el estado aprendido en
+// el primero hace con el segundo. Cuatro experimentos:
+//   E1 ventaja estacionaria larga: R por operación por cuartiles del índice
+//      de cierre (¿mejora con la experiencia?);
+//   E2 ventaja → nulo: ¿el estado ganador agrava o reduce las pérdidas del
+//      nulo frente al nulo en frío?;
+//   E3 nulo → ventaja: ¿una primera mitad perdedora deja al sistema fuera de
+//      la ventaja que llega después (estado absorbente)?;
+//   E4 persistencia → antipersistencia: cuando el signo de la vela anterior
+//      pasa a ser exactamente el contrario del siguiente, ¿invierte el motor
+//      su conducta o sigue operando con la estructura vieja?
+// ---------------------------------------------------------------------------
+
+/// Serie compuesta de dos tramos: el segundo continúa el precio del primero
+/// (se reescala por el cociente entre el último cierre del primero y el
+/// precio base del generador, así conserva su primer retorno).
+pub fn serie_concatenada(p1: Peldano, p2: Peldano) -> Serie {
+    let mut a = serie_persistente(p1);
+    let b = serie_persistente(p2);
+    let ratio = a.closes.last().copied().unwrap_or(60_000.0) / 60_000.0;
+    a.closes.extend(b.closes.iter().map(|x| x * ratio));
+    a.highs.extend(b.highs.iter().map(|x| x * ratio));
+    a.lows.extend(b.lows.iter().map(|x| x * ratio));
+    a.vols.extend(b.vols.iter().copied());
+    a.estado.extend(b.estado.iter().copied());
+    a
+}
+
+/// (cierres, acierto, PnL medio por cierre en USD) por cuartil del índice de
+/// cierre: la experiencia acumulada, no el tiempo.
+pub fn cuartiles(pnl: &[f64]) -> [(usize, f64, f64); 4] {
+    let n = pnl.len();
+    let mut out = [(0usize, 0.0f64, 0.0f64); 4];
+    for (q, fila) in out.iter_mut().enumerate() {
+        let (lo, hi) = (n * q / 4, n * (q + 1) / 4);
+        let s = &pnl[lo..hi];
+        if s.is_empty() {
+            continue;
+        }
+        let ganadas = s.iter().filter(|x| **x > 0.0).count();
+        *fila = (
+            s.len(),
+            ganadas as f64 / s.len() as f64,
+            s.iter().sum::<f64>() / s.len() as f64,
+        );
+    }
+    out
+}
+
+fn acierto(pnl: &[f64]) -> f64 {
+    if pnl.is_empty() {
+        return 0.0;
+    }
+    pnl.iter().filter(|x| **x > 0.0).count() as f64 / pnl.len() as f64
+}
+
+/// Los cuatro experimentos de adaptación (13 USD, `T3_VELAS` velas por tramo).
+#[test]
+#[ignore = "medición larga: cargo test --release -p backtest-engine --test t3_ventaja_conocida -- --ignored --nocapture t3_adaptacion_en_el_tiempo"]
+fn t3_adaptacion_en_el_tiempo() {
+    cargar_predictor();
+    let n = std::env::var("T3_VELAS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(3_000);
+    let sigma = 0.0025;
+    let ventaja = Peldano { a: 0.90, d: 0.0020, sigma, n };
+    let nulo = Peldano { a: 0.50, d: 0.0, sigma, n };
+    let anti = Peldano { a: 0.10, d: 0.0020, sigma, n };
+    let larga = Peldano { a: 0.90, d: 0.0020, sigma, n: 2 * n };
+
+    // Tramos en frío (referencia) y E1.
+    let m_v = medir(ventaja);
+    imprimir(&m_v);
+    let m_n = medir(nulo);
+    imprimir(&m_n);
+    let m_k = medir(anti);
+    imprimir(&m_k);
+    let m_l = medir(larga);
+    imprimir(&m_l);
+    let q = cuartiles(&m_l.pnl);
+    println!(
+        "[T3-ADAPT] E1 ventaja larga ({} cierres): cuartiles por índice de cierre (cierres, acierto, PnL medio USD) = Q1 {:?} Q2 {:?} Q3 {:?} Q4 {:?}",
+        m_l.pnl.len(),
+        q[0],
+        q[1],
+        q[2],
+        q[3]
+    );
+
+    // Compuestos: E2, E3, E4.
+    let cero = [0u64; REJECT_SLOTS];
+    println!(
+        "[T3-ADAPT-TSV] experimento\ttrades\twr\tpnl_usd\tb_real\tprimer_tramo_cierres_iguales\tsegundo_tramo_trades\tsegundo_tramo_pnl_usd\tsegundo_tramo_wr\tfresco_trades\tfresco_pnl_usd\tfresco_wr\trechazos_compuesto\trechazos_fresco"
+    );
+    let compuestos: [(&str, Peldano, Peldano, &Medida, &Medida); 3] = [
+        ("E2 ventaja→nulo", ventaja, nulo, &m_v, &m_n),
+        ("E3 nulo→ventaja", nulo, ventaja, &m_n, &m_v),
+        ("E4 ventaja→anti", ventaja, anti, &m_v, &m_k),
+    ];
+    for (nombre, p1, p2, primero, fresco) in compuestos {
+        let m = medir_serie(serie_concatenada(p1, p2), p1, CAPITAL_MICRO);
+        imprimir(&m);
+        let n1 = primero.pnl.len().min(m.pnl.len());
+        let iguales = (0..n1)
+            .filter(|&i| (m.pnl[i] - primero.pnl[i]).abs() < 1e-9)
+            .count();
+        let segundo = &m.pnl[n1..];
+        println!(
+            "[T3-ADAPT-TSV] {nombre}\t{}\t{:.4}\t{:.5}\t{:.3}\t{iguales}/{n1}\t{}\t{:.5}\t{:.4}\t{}\t{:.5}\t{:.4}\t{}\t{}",
+            m.stats[1] as u64,
+            m.stats[0],
+            m.stats[6],
+            m.pago.b_real,
+            segundo.len(),
+            segundo.iter().sum::<f64>(),
+            acierto(segundo),
+            fresco.stats[1] as u64,
+            fresco.stats[6],
+            fresco.stats[0],
+            rechazos_texto(&cero, &m.rechazos),
+            rechazos_texto(&cero, &fresco.rechazos)
+        );
+    }
+}
+
+/// E1b — LA MISMA SERIE DOS VECES. El segundo tramo es la MISMA realización
+/// del ruido que el primero (la sal del generador depende de a, d y n), así
+/// que la única diferencia entre las dos pasadas es el estado que el motor
+/// lleva aprendido al entrar en la segunda (más el nivel de precio). Si el
+/// sistema se adaptara, la segunda pasada tendría que ser distinta de la
+/// primera, y a mejor; si es idéntica, lo aprendido no decide nada.
+#[test]
+#[ignore = "medición larga: cargo test --release -p backtest-engine --test t3_ventaja_conocida -- --ignored --nocapture t3_adaptacion_misma_serie_dos_veces"]
+fn t3_adaptacion_misma_serie_dos_veces() {
+    cargar_predictor();
+    let n = std::env::var("T3_VELAS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(3_000);
+    let sigma = 0.0025;
+    let cero = [0u64; REJECT_SLOTS];
+    println!(
+        "[T3-ADAPT2-TSV] serie\tprimera_pasada_trades\tprimera_pasada_pnl_usd\tprimera_pasada_wr\tsegunda_pasada_trades\tsegunda_pasada_pnl_usd\tsegunda_pasada_wr\tcierres_iguales_entre_pasadas\tfresco_trades\tfresco_pnl_usd\trechazos_compuesto\trechazos_fresco"
+    );
+    for (nombre, p) in [
+        ("ventaja a=0,9 d=0,2%", Peldano { a: 0.90, d: 0.0020, sigma, n }),
+        ("regimen medio a=0,9 d=0,1%", Peldano { a: 0.90, d: 0.0010, sigma, n }),
+        ("nulo a=0,5", Peldano { a: 0.50, d: 0.0, sigma, n }),
+    ] {
+        let fresco = medir(p);
+        imprimir(&fresco);
+        let m = medir_serie(serie_concatenada(p, p), p, CAPITAL_MICRO);
+        imprimir(&m);
+        let n1 = fresco.pnl.len().min(m.pnl.len());
+        let primera = &m.pnl[..n1];
+        let segunda = &m.pnl[n1..];
+        let comparables = primera.len().min(segunda.len());
+        let iguales = (0..comparables)
+            .filter(|&i| (primera[i] - segunda[i]).abs() < 1e-9)
+            .count();
+        println!(
+            "[T3-ADAPT2-TSV] {nombre}\t{}\t{:.5}\t{:.4}\t{}\t{:.5}\t{:.4}\t{iguales}/{comparables}\t{}\t{:.5}\t{}\t{}",
+            primera.len(),
+            primera.iter().sum::<f64>(),
+            acierto(primera),
+            segunda.len(),
+            segunda.iter().sum::<f64>(),
+            acierto(segunda),
+            fresco.stats[1] as u64,
+            fresco.stats[6],
+            rechazos_texto(&cero, &m.rechazos),
+            rechazos_texto(&cero, &fresco.rechazos)
+        );
     }
 }

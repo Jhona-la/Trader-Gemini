@@ -324,7 +324,7 @@ aunque la medición los señale: son zonas de otras líneas con tandas en vuelo
 medición son el entregable; cada dueño tiene la prueba que reproduce su
 hallazgo en un comando.
 
-### 6.5 La meta con lo medido hoy
+### 6.5 La meta con lo medido hoy (ola 1)
 
 Con la serie más favorable de la escalera (regímenes de 10 velas con deriva
 0,2 %, oráculo +0,94 R por operación, 1,8 operaciones por hora) el motor
@@ -337,3 +337,178 @@ siga a la deriva.** En ese orden: LH-04 / ADR-0016 D1 (tamaño en espacio de
 riesgo), LH-02 y LH-03 (los apagones por capital), LH-05 y LH-06 (dirección y
 τ). Y sigue sin medirse la ventaja real fuera de muestra (tapes): la escalera
 mide la cadena, no el mercado.
+
+## 7. Ola 2 (2026-10-12, base `57abc601`): ¿se adapta el sistema? La ventaja conocida puesta en el tiempo
+
+### 7.1 Método
+
+El mandato del dueño es que el sistema sea autoadaptable y autoevolutivo. La
+ola 1 midió la cadena en estado estacionario; la ola 2 la mide en el tiempo con
+el mismo instrumento. El motor es determinista y una serie compuesta de dos
+tramos tiene el mismo prefijo que el primer tramo solo, así que los cierres
+del primer tramo coinciden en los dos casos y **la diferencia del segundo
+tramo frente al mismo tramo corrido en frío es exactamente lo que el estado
+aprendido en el primero hace con el segundo** (LH-10, pruebas
+`t3_adaptacion_en_el_tiempo` y helpers `serie_concatenada` / `cuartiles`
+añadidos al T-3 sin tocar el generador ni el techo, que la Línea G revisa en
+su ola 6).
+
+| Exp. | Serie | Pregunta |
+|---|---|---|
+| E1 | ventaja larga (a = 0,9, d = 0,2 %, 6 000 velas) | ¿Mejora la R por operación con la experiencia (cuartiles del índice de cierre)? |
+| E2 | ventaja (3 000) → nulo (3 000) | ¿El estado ganador agrava o reduce las pérdidas del nulo frente al nulo en frío? |
+| E3 | nulo (3 000) → ventaja (3 000) | ¿Una primera mitad perdedora deja al sistema fuera de la ventaja que llega después (estado absorbente)? |
+| E4 | ventaja (3 000) → antipersistencia (a = 0,1, 3 000) | Cuando el signo de la vela anterior pasa a ser el contrario del siguiente, ¿invierte el motor su conducta? |
+
+Antes de medir, tres lectores de sólo lectura inventariaron los lazos que
+aprenden en cada cierre (etiqueta, memoria, consumidor, escala) y predijeron
+E1–E4 con números (LH-11); después, un escéptico por lente con la medición.
+
+### 7.2 Resultado (release, 13 USD; [`ola2_adaptacion.tsv`](audit/linea_h/ola2_adaptacion.tsv), [`ola2_adaptacion_lineas.txt`](audit/linea_h/ola2_adaptacion_lineas.txt))
+
+Tramos en frío (referencia): ventaja (a = 0,9, d = 0,2 %) 89 cierres, acierto
+0,652, +1,408 USD; nulo 36 cierres, 0,361, −0,126 USD, 929 rechazos EV;
+antipersistencia (a = 0,1, d = 0,2 %) 12 cierres, 0,083, −0,241 USD, 27 EV.
+En los tres compuestos los cierres del primer tramo coinciden uno a uno con
+los del tramo en frío (89/89, 36/36, 89/89): el método mide lo que dice.
+
+| Exp. | Segundo tramo tras el primero | Segundo tramo en frío | Lectura |
+|---|---|---|---|
+| **E1** ventaja larga, 135 cierres, +3,84 USD (+29,6 % en 100 h) | cuartiles por índice de cierre (cierres, acierto, PnL medio): Q1 (33, 0,79, +0,031) · Q2 (34, 0,62, +0,021) · Q3 (34, 0,59, +0,009) · Q4 (34, 0,74, +0,053) | — | **No hay curva de aprendizaje**: el primer cuartil ya es el mejor en acierto, el tercero el peor, y el PnL por cierre no crece con la experiencia sino con el tramo de la serie. Nada de lo que el motor aprende en 100 cierres cambia la operación 101. |
+| **E2** ventaja → nulo | 40 cierres, −0,063 USD, acierto 0,40, **0 rechazos** | 36 cierres, −0,126 USD, 0,36, **929 rechazos EV** | Tras un tramo ganador la puerta EV **no se cierra en 50 h de nulo** (0 frente a 929): la pérdida es pequeña porque la orden es mínima, no porque algo frene. |
+| **E3** nulo → ventaja | 65 cierres, +0,711 USD, acierto 0,615, +9 rechazos EV sobre los 929 del nulo | 89 cierres, +1,408 USD, 0,652 | Tras 50 h perdedoras el sistema **captura la mitad** de la ventaja que llega (+0,71 frente a +1,41; 65 frente a 89 cierres). La puerta reabre pronto (sólo 9 rechazos más), pero el estado heredado (ritmo, racha, calibración) cuesta 24 operaciones y 0,7 USD. |
+| **E4** ventaja → antipersistencia | 45 cierres, −0,244 USD, acierto 0,333, **0 rechazos** | 12 cierres, −0,241 USD, 0,083, 27 EV | Cuando la estructura se invierte, el motor **no invierte ni se detiene**: opera ×3,75 más que en frío, con la estructura vieja, y la puerta EV no se entera en 50 h. Pierde lo mismo en dólares porque el fresco se para a los 12 cierres y el compuesto no se para nunca. |
+
+**E1b — la misma serie dos veces** (el control que faltaba, señalado por los
+tres lectores: la serie «larga» de E1 es otra realización del ruido porque la
+sal del generador incluye n; aquí el segundo tramo es la MISMA realización que
+el primero, así que la única diferencia entre las dos pasadas es el estado que
+el motor lleva aprendido, más el nivel de precio;
+[`ola2_misma_serie_dos_veces.tsv`](audit/linea_h/ola2_misma_serie_dos_veces.tsv)):
+
+| Serie | 1.ª pasada (= en frío) | 2.ª pasada | Cierres idénticos entre pasadas | Lectura |
+|---|---|---|---|---|
+| ventaja a = 0,9, d = 0,2 % | 89 cierres, +1,408 USD, acierto 0,652 | 86 cierres, **+1,737 USD**, 0,640 | **0 / 86** | La segunda pasada gana un 23 % más con menos cierres y menos acierto: lo que cambia es el tamaño/la vida de cada operación, no la selección. |
+| régimen medio a = 0,9, d = 0,1 % | 44 cierres, −0,118 USD, 0,409 | 72 cierres, **+0,414 USD**, 0,514, 29 EV | 0 / 44 | Donde en frío perdía, con estado caliente gana: no por aprender el régimen sino porque los estimadores ya están calientes (el tramo en frío gasta parte de sus 50 h en calentarse). |
+| nulo a = 0,5 | 36 cierres, −0,126 USD, 0,361, 929 EV | **89 cierres, −0,292 USD**, 0,427, 638 EV | 0 / 36 | Con estado caliente el nulo se opera ×2,5 más y se pierde ×2,3 más: la puerta EV rechaza menos (638 frente a 929) justo donde no hay nada que ganar. |
+
+Ni un solo cierre de la segunda pasada coincide con el de la primera: el
+motor es MUY dependiente de su estado. Pero el efecto del estado es **más
+actividad**, no **más discriminación**: ayuda en el régimen favorable (+23 %),
+duplica la pérdida en el nulo y no frena en el adverso (E4). La adaptación que
+existe es de actividad; la que hace falta es de selección.
+
+**Por qué (con la cita):** la p que alimenta la puerta EV es un ajuste de Platt
+sobre las últimas `WINDOW = 512` operaciones (`calibration.rs:45`) con un
+prior de 3,84 pseudo-observaciones a la puntuación cruda (0,98 en todas las
+órdenes); el olvido por tiempo (`calibrate_at`, semivida 12 h) sólo actúa
+entre cierres, y con 1–2 cierres por hora no actúa nunca. Con 89 cierres al
+65 % en la ventana, 45 cierres al 33 % en antipersistencia no bajan p por
+debajo del umbral de la puerta: **la memoria efectiva del permiso es de
+~500 operaciones (≈ 10 días a este ritmo), y no hay ningún lazo que reaccione
+en la escala de un régimen (10–20 velas) ni de un tramo (50 h)**. El único
+estado que cambia de verdad entre cierres es el enfriamiento por racha, y
+LH-07 mostró que crece linealmente, no en 2^k.
+
+**Lo que esto dice de la meta.** El sistema no es autoadaptable en la escala en
+la que cambia la estructura que explota: aprende despacio (ventana de 512
+cierres), no desaprende (E4) y arrastra el estado perdedor a la ventaja que
+sigue (E3). Y aunque aprendiera, no tendría dónde ponerlo: el tamaño no
+cambia (E1: el PnL por cierre del cuarto cuartil es el del tramo, no el de la
+experiencia). La adaptación que la meta necesita es de dos escalas: una
+rápida, en la que la estructura cambia (regímenes de minutos, medida con
+e-procesos por rama/escala como los de #661 pero sobre la R neta frente a p*),
+y una lenta para el tamaño (ADR-0016 D1).
+
+### 7.3 Lectores y escépticos
+
+Tres lectores (0,93 M tokens, 20 min; 30 + 32 + 27 archivos) inventariaron
+**46 lazos que aprenden en cada cierre** con etiqueta, memoria, consumidor y
+escala ([`ola2_lazos.tsv`](audit/linea_h/ola2_lazos.tsv)), entregaron 25
+hallazgos y 32 predicciones falsables de E1–E4 ([`ola2_lectores.tsv`](audit/linea_h/ola2_lectores.tsv),
+[`ola2_predicciones.tsv`](audit/linea_h/ola2_predicciones.tsv)). Tres
+escépticos (0,59 M tokens, 15 min) los contrastaron con la medición
+([`ola2_verificacion.tsv`](audit/linea_h/ola2_verificacion.tsv),
+[`ola2_predicciones_veredicto.tsv`](audit/linea_h/ola2_predicciones_veredicto.tsv),
+[`ola2_nuevos_escepticos.tsv`](audit/linea_h/ola2_nuevos_escepticos.tsv),
+[`ola2_escepticos_sintesis.md`](audit/linea_h/ola2_escepticos_sintesis.md)):
+**13 confirmados, 3 plausibles, 7 ya registrados, 2 refutados** (A1-03: el
+umbral epigenético SÍ tiene lector, `risk-engine/src/lib.rs:1109-1120`, y es
+inerte por el techo 0,98 de H2-N4; A2-02: la ventana ×6 de la envolvente es
+inalcanzable porque sólo evalúa con la cartera vacía). Predicciones: 6
+cumplidas, 11 parciales, 9 falladas, 6 no medibles; **16 nuevos** de la
+medición. Correcciones al inventario en
+[`ola2_correcciones.md`](audit/linea_h/ola2_correcciones.md).
+
+**Lo que la medición decidió:**
+
+| Tesis | Veredicto con los números |
+|---|---|
+| A1: «tras 89 cierres la operación 90 es igual a la 1; la p de Platt heredada no cierra la puerta» | Mecánica confirmada (0 rechazos EV en E2₂ y E4₂; 9 en E3₂). Consecuencia equivocada: la puerta abierta no agrava (E2₂ −0,063 frente a −0,126), y **lo que sí cambia con la experiencia es el pago por cierre y la cadencia**, que la lente dio por inertes a 13 USD. |
+| A2: «ningún freno del riesgo actúa en micro; el estado ganador agrava el nulo; E3 recupera ≥ 85 %» | Frenos inertes: confirmado (dd máximo 2,6 %; 0 reversiones; 0 rechazos salvo EV). El signo de las consecuencias, refutado: E2 no agrava, E3 recupera el 50 %, el antipersistente frío lo frena el núcleo (43 intenciones en 50 h), no Platt. |
+| A3: «ningún lazo puede invertir el lado; la τ es una ley cerrada» | **Confirmado (HIGH)**: E4₂ acierta 0,333 ≈ seguir la vela previa (0,32), y lo hace ×3,75 veces más que en frío con cero frenos. |
+
+**Las tres lecturas convergen:** el sistema adapta la EXPOSICIÓN (cadencia,
+pago por cierre: E1 ×1,6 por cierre con acierto plano; E4 ×3,75 aperturas),
+no la SELECCIÓN (ni dirección ni τ ni permiso útil). Y la puerta EV, el único
+lazo del riesgo que decide a 13 USD, vale ≈ 4 cierres y ≈ 0,01–0,06 USD en
+50 h de nulo (A2-N2): cerrada o abierta, el resultado es el mismo.
+
+### 7.4 Arreglos y entregas
+
+**En zona propia:** LH-10 (`serie_concatenada`, `cuartiles`,
+`t3_adaptacion_en_el_tiempo`), LH-10b (`t3_adaptacion_misma_serie_dos_veces`,
+el control que pedían los tres lectores). Verificación: check del workspace
+verde sobre el árbol fusionado; T-2 de control idéntico a `main`.
+
+| ID | Dueño | Sev. | Qué | Reproducir |
+|---|---|---|---|---|
+| **LH-12** (= A1-01 / A2-01 / LH-A3-N6) | Línea E / Codex | HIGH | La memoria del permiso es la ventana de 512 cierres del Platt; la semivida de 12 h sólo corre en el hueco entre cierres: operando, la evidencia no envejece. Tras 89 cierres de ventaja hacen falta ≈ 146 de antipersistencia para cerrar la puerta (en frío, 12). | E2/E4: 0 rechazos EV en 50 h |
+| **LH-13** (= LH-A3-1 / LH-A3-N1) | Qoder / Línea C (núcleo) | HIGH | Ningún lazo puede invertir el lado (D-472, hebbiano y PPO positivos, Platt con pendiente ≥ 0); el estado ganador heredado multiplica ×3,75 la exposición al régimen adverso sin que ningún freno actúe. | E4₂: 45 cierres al 33 %, 0 rechazos |
+| **LH-14** (= LH-A3-2 / LH-A3-N3) | Qoder (espectro) | HIGH | La τ de la orden es una ley cerrada (media geométrica entre la τ dominante modulada por Hurst y el centroide, clavado en 30 s por la persistencia negativa de las escalas sub-minuto del puente intravela); la deuda del e-proceso del nodo de 68,7 s tarda ≈ 10 h en pagarse: la mitad de la ventaja de E3 se pierde ahí. | E3₂: 65 cierres / +0,71 frente a 89 / +1,41 |
+| **LH-15** (= A2-N2 / A2-N3) | Línea C (riesgo) / Línea E | MED | La puerta EV no protege: en el mismo camino, cerrada 929 veces (nulo frío) o abierta todo el tramo (E2₂) el resultado es el mismo; lo que limita la pérdida en antipersistencia es la tasa de propuesta del núcleo, no el riesgo. | E2, E4 frente a frescos |
+| **LH-16** (= LH-A3-4 / LH-A3-6) | Qoder (núcleo) | MED | El peso hebbiano satura en 2,0 a los ≈ 23 cierres y vuelve a −0,008 por cierre; la rama 11 se apaga con Hurst < 0,45, justo donde un motor de reversión ganaría peso. | aritmética contrastada |
+| **LH-17** (= A2-04) | Sol / Línea C (runner) | LOW | El runner suaviza b dos veces (EWMA α 0,05 en el runner y otra en `record_trade`) y clasifica pnl ≥ 0 como ganancia donde la envolvente usa > 0. | `backtest lib.rs:389-409` |
+| **Propio (ola 3)** | Línea H | — | Publicar el pago del segundo tramo y el fresco en la fila ADAPT; E4' anti → anti y E5 antipersistencia larga por cuartiles (prueba directa de inversión); guardar las trazas completas y extender `lado_vs_estado.py` a series compuestas; pedir fuera de zona que el tope de 100 trazas del núcleo sea configurable. | — |
+
+### 7.5 Re-medición con el PR #62 de la Línea C (`fc2ba2ec`, árbol fusionado)
+
+La Línea C avisó de que la tanda C-F4 cambia puertas que el T-3 mide (nuevo
+veto `estrategia_falsada`, slot 18: proceso e de Ville sobre la R de cada
+cierre con H0 = +0,30 R; freno duro K·s̄/pico; R-15 en sombra; D4). Y la
+Línea G revisó el T-3 (31 hallazgos, 3 HIGH; `docs/audit/linea_g/ola6_t3_linea_h.tsv`).
+Medido sobre el árbol con el #62
+([`ola2_post_pr62_escalera_13usd.tsv`](audit/linea_h/ola2_post_pr62_escalera_13usd.tsv),
+[`ola2_post_pr62_valle_de_capital.tsv`](audit/linea_h/ola2_post_pr62_valle_de_capital.tsv),
+[`ola2_post_pr62_adaptacion.tsv`](audit/linea_h/ola2_post_pr62_adaptacion.tsv)):
+
+- **La escalera de 13 USD, el valle de capital y E1–E3 son idénticos al
+  céntimo** a los de antes del #62: ninguna de las puertas nuevas actúa en
+  ellos (el freno de la estrategia se alimenta en el cierre del núcleo,
+  `lib.rs:4725`, pero no se falsa en 50 h de ningún peldaño; el valle de
+  `fee_impact` sigue intacto: 35–65 USD → 0 cierres). El T-2 de `main` sí
+  se movió con el #62 (de `a7c2da76`, 68 operaciones, −0,164 a
+  `cb690a15`, 65, −0,093): lo que lo mueve no está en los peldaños del T-3.
+- **E4 cambia, poco**: el freno nuevo se falsa al final del tramo
+  antipersistente (31 evaluaciones ≈ una vela, tras ≈ 40 cierres perdedores):
+  41 cierres en vez de 45, −0,265 USD en vez de −0,244, acierto 0,317. Es la
+  primera puerta adaptativa que reacciona a un régimen adverso heredado, y
+  reacciona cuando el tramo ya ha pasado: con H0 = +0,30 R y la cadencia de
+  un cierre por hora, el proceso e necesita decenas de cierres para
+  rechazar. Lo que la meta pide es que reaccione en la escala del régimen
+  (10–20 velas), por rama y escala, sobre la R neta frente a p*: la misma
+  idea, otra escala y otra granularidad.
+- **De la revisión de la Línea G, aceptado para la ola 3 (T-3 v2)**: H1-01
+  (HIGH): el ruido uniforme acotado y las mechas y el volumen construidos con
+  el mismo |u| hacen el estado oculto decodificable del OHLCV; el «oráculo»
+  de las olas 1 y 2 es un lector de lo que el motor también ve, no una cota,
+  y lo realizado en a = 0,6–0,8 no se atribuye a la cadena. La v2 llevará
+  ruido gaussiano, sorteos independientes para mechas y volumen y el lector
+  causal óptimo (filtro de Bayes sobre el OHLCV) como techo, conservando la
+  v1 para reproducir las tablas publicadas. Aceptados también H1-07 (el
+  apagón empieza hacia 27,5 USD), H1-04 (el −0,91 % de a = 0,9 tiene
+  |t| < 0,6: indicio, no prueba), H1-10 (fricción del techo 10 pb frente a
+  13–14 pb del motor), H3V-04 (constante de la EMA21 = 10,5 velas), H3V-07
+  (LH-07: el retroceso del enfriamiento es geométrico de razón √2, no
+  k·base ni 2^k) y H2-08 (fricción en las dos ramas del dimensionado,
+  `r* = p/(1 + f_R) − q/(RR − f_R)`).
