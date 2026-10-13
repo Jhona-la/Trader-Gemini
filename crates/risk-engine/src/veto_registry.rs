@@ -494,7 +494,6 @@ pub const TESTS_EXISTENTES_RIESGO: &[&str] = &[
     "xlvie_riesgos_uniformes_reducen_a_la_formula_d748",
     "replay_con_envolvente_sigue_determinista",
     "cl6_ninguna_orden_validada_queda_bajo_el_nocional_minimo",
-    "cl9_la_tasa_de_perdida_es_la_de_la_cartera_ponderada",
     "ola9_veto_por_riesgo_cramer_lundberg_bounds",
     "qo_602_el_veto_de_grupo_consume_la_cota_lundberg_del_registro",
     "t1_diag_camino_nativo_una_evaluacion",
