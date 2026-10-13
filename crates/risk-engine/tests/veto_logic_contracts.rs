@@ -252,3 +252,29 @@ pub fn lh02_valle_capital_friccion_no_veta_orden_viable() {
     assert!(out.volume_usd > 0.0);
 }
 
+#[test]
+pub fn risk_a_micro_safe_limit_escala_con_capital() {
+    let (arena, intent) = fixture();
+    // risk-a: Con capital de 40 USD, el margen seguro debe ser capaz de escalar
+    // proporcionalmente (hasta 40 * 0.25 = 10.0 USD) en lugar de estar congelado en 2.60 USD.
+    arena.config.base_capital.store(40.0, Relaxed);
+    arena.unified_capital.store(40.0, Relaxed);
+    arena.coins[0].metrics.kelly_fraction.store(0.20, Relaxed);
+    arena.config.kelly_clamp_max.store(0.25, Relaxed);
+
+    let mut engine = RiskEngine::new(40.0);
+    let out = engine.evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out.signal, SignalType::Long, "La orden debe ser admitida");
+    // Con Kelly 0.20 sobre 40 USD, el margen pedido es ~8 USD. Con el límite antiguo
+    // a 2.60 USD, se recortaba a 2.60 USD. Ahora el límite seguro es 40 * 0.25 = 10 USD,
+    // permitiendo un margen > 2.60 USD.
+    let margin = out.volume_usd / out.leverage;
+    assert!(
+        margin > 2.60,
+        "risk-a: el margen ({:.4} USD) debe escalar por encima del antiguo techo congelado de 2.60 USD",
+        margin
+    );
+}
+
+
+

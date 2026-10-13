@@ -1355,10 +1355,13 @@ impl RiskEngine {
             return rej(REJ_MIN_NOTIONAL);
         }
 
-        // D-641 (completo): límite de margen por operación continuo. En régimen
-        // micro pleno conserva el 20–25 % diseñado para cubrir el notional mínimo
-        // con apalancamiento prudente; en estándar, el colchón genómico.
-        let micro_safe_limit = (allocated_capital * 0.25).clamp(1.20, 2.60);
+        // D-641 / Ω94: límite de margen por operación continuo sin anclaje rígido
+        // en dólares (resuelve hallazgo risk-a de Línea G). En régimen micro pleno
+        // conserva el 25% del capital como límite seguro, garantizando como piso
+        // el margen necesario para cubrir el nocional mínimo ejecutable. Al crecer
+        // la cuenta (interés compuesto), el límite escala proporcionalmente sin
+        // estrangular el crecimiento en 2.60 USD.
+        let micro_safe_limit = (allocated_capital * 0.25).max(required_margin_for_min_notional);
         let standard_safe_limit = (allocated_capital * safe_cushion).min(current_cap * 0.90);
         let safe_limit =
             crate::capital_regime::lerp(standard_safe_limit, micro_safe_limit, micro_w_alloc);
