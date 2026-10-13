@@ -11,8 +11,13 @@ use risk_engine::RiskEngine;
 use signal_engine::{SignalIntent, SignalType};
 use std::sync::{atomic::Ordering::Relaxed, Arc};
 
+#[path = "../../risk-engine/tests/support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 const K: usize = 19;
 const RIESGO_FIJO: f64 = 0.13;
+// Fixture event clock, after the close cohort and all 233 paired blocks.
+const DECISION_TIME_MS: u64 = 100_000_000;
 
 fn risk_fixture() -> (Arc<GlobalArena>, SignalIntent) {
     quantum_arena::symbol_registry::update_registry(
@@ -36,6 +41,9 @@ fn risk_fixture() -> (Arc<GlobalArena>, SignalIntent) {
     coin.current_price.store(100.0, Relaxed);
     coin.current_atr.store(1.0, Relaxed);
     coin.hurst_exponent.store(0.5, Relaxed);
+    coin.last_tick_timestamp_ms.store(DECISION_TIME_MS, Relaxed);
+    // Declared cohort: 75 closes at +4%, 25 at -6% net, each with $200/3
+    // entry notional. Preserve the existing dollar sums and PF lower bound.
     coin.metrics.trade_count.store(100, Relaxed);
     coin.metrics.profit_factor.store(2.0, Relaxed);
     coin.metrics.gross_wins.store(200.0, Relaxed);
@@ -95,6 +103,7 @@ fn risk_fixture() -> (Arc<GlobalArena>, SignalIntent) {
             signal: SignalType::Long,
             confidence: 0.9,
             expected_duration_ms: SPECTRUM_SCALES_MS[K].ceil() as u64,
+            net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
             ..SignalIntent::default()
         },
     )

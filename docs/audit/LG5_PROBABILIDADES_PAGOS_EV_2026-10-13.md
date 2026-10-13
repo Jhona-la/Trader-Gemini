@@ -137,6 +137,17 @@ superior a sonda y límites válidos; no exige aumentar leverage. Se corrige
 sólo esa aserción, manteniendo motivos de veto, contrastes económicos y
 límites de volumen/nocional. El padre abortó antes de 006/008/009.
 
+Corte `33d4617d`: 010 all-targets PASS; 011: 2 unidades Kelly y 9 contratos
+LG5 PASS; 012: 11 del modelo, 5 de restore/cierre y 1 contraejemplo activado
+PASS. 013 full terminó con 367 aprobados, 2 fallidos y 40 ignorados, antes de
+la suite completa de riesgo. Los dos fallos son controles positivos de
+`evidence_expiry_contract`: la fixture madura no declaraba pagos netos y
+LG5 rechazó la orden. Recibo 013 SHA256
+`e1e281939239a0262060b19a36bd5b4b343ad53738e8a1be55aa61214accedf5`;
+54 binarios retenidos. No se reporta full GREEN ni replay 014 ejecutado.
+La migración de fixtures conserva expiración, aislamiento y motivos de veto;
+aporta retornos sintéticos explícitos, nunca inferidos de score/PF.
+
 Consejo: integración/core/persistencia, riesgo/admisión y revisión matemática
 independientes. Reservas preservadas: AGY F7/Hodge/LH02, C-F5/estado y freno,
 Línea H, Línea G8, Qoder y Sol. No se importan sus commits exclusivos ni se
@@ -173,3 +184,13 @@ Los contratos de integración son segmentados: cierre local elegible y restore
 real por símbolo. No prueban el ciclo entero apertura automática, confirmación
 parcial, cierre, siguiente intención y riesgo, ni reanudación del ledger de
 posiciones abiertas. Ese ledger efímero no se restaura desde archivos legacy.
+
+La matriz recibe PF calculado con sumas de PnL neto en dólares y WR publicado
+por moneda, sin el filtro lado/procedencia de NetPayoff. Son cocientes
+adimensionales, pero sus ponderaciones y cohortes difieren. 50 cierres +1 %
+sobre nocional 1000 y 50 cierres −2 % sobre nocional 100 dan PF_USD=5 y razón
+de pagos medios USD=5; por retorno, la razón es 0,5 y la media uniforme
+−0,005. Incluso con p empírica exacta, PF*(1−p)/p reconstruye el pago en USD,
+no necesariamente el pago por nocional. PF_LCB y WR posterior agregan otras
+aproximaciones. El proxy conservado es sensible al sizing histórico y no
+representa la misma evidencia ni acredita Kelly óptimo.
