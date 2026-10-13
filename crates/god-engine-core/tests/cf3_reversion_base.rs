@@ -213,3 +213,63 @@ fn cl97_con_la_reversion_demostrada_el_lector_vota() {
     }
     panic!("en 20 intentos la guarda no siguió abierta en el evento de la dislocación");
 }
+
+/// CL-113 (W-2 de la revisión del PR #60; F3.7-05). Con spot y la reversión
+/// demostrada, StatArb (`statarb_ou_zscore`) y VECM (`vecm_zscore`, el z de
+/// la base con spot) votan sobre la misma desviación de la base. La prueba
+/// de strategy-core era vacua: StatArb no votaba en su escenario y
+/// `0.0.signum()` es +1.
+///
+/// Medida: en los eventos en que votan los dos (|z| > 1,5 en ambos y la
+/// guarda abierta), la coincidencia de signo. Se informa también la
+/// correlación de los dos z con la guarda abierta. Medido (semilla 21):
+/// coinciden en 61 de 65 (94 %), con correlación 0,34; votan sobre la misma
+/// desviación de la base en los extremos, que es cuando votan. Convención de
+/// la prueba (no es un umbral de producción): coincidir en ≥ 90 % de los
+/// votos conjuntos es contar la misma evidencia dos veces. El arreglo
+/// (contarlos como un solo voto) es del consenso.
+#[test]
+#[ignore = "OPEN F3.7-05 (consenso, Qoder): con spot y reversión demostrada, StatArb y VECM coinciden en signo en el 94 % de los eventos en que votan los dos"]
+fn cl113_statarb_y_vecm_con_spot_no_son_la_misma_variable() {
+    let _g = bloqueo();
+    let (arena, mut core, mut m, mut ts) = nucleo_demostrado(21);
+    let (mut ambos, mut mismos) = (0u32, 0u32);
+    let mut pares: Vec<(f64, f64)> = Vec::new();
+    for _ in 0..3_000 {
+        let (f, sp) = m.paso();
+        evento(&arena, &mut core, ts, f, Some(sp));
+        ts += 1_000;
+        if !guarda_pasa(&arena) {
+            continue;
+        }
+        let (Some(zs), Some(zv)) = (leer(&arena, "statarb_ou_zscore"), leer(&arena, "vecm_zscore")) else {
+            continue;
+        };
+        pares.push((zs, zv));
+        if zs.abs() > 1.5 && zv.abs() > 1.5 {
+            ambos += 1;
+            if zs.signum() == zv.signum() {
+                mismos += 1;
+            }
+        }
+    }
+    let n = pares.len() as f64;
+    let (ma, mb) = (pares.iter().map(|p| p.0).sum::<f64>() / n, pares.iter().map(|p| p.1).sum::<f64>() / n);
+    let (mut sab, mut saa, mut sbb) = (0.0, 0.0, 0.0);
+    for &(a, b) in &pares {
+        sab += (a - ma) * (b - mb);
+        saa += (a - ma) * (a - ma);
+        sbb += (b - mb) * (b - mb);
+    }
+    let corr = sab / (saa * sbb).sqrt();
+    println!(
+        "observado: {} eventos con la guarda abierta; votan los dos en {ambos} y coinciden en signo en {mismos}; correlación de los z {corr:.3}",
+        pares.len()
+    );
+    assert!(ambos > 0, "precondición: votan los dos");
+    let coincidencia = mismos as f64 / ambos as f64;
+    assert!(
+        coincidencia < 0.9,
+        "StatArb y VECM votan la misma evidencia: coinciden en {mismos}/{ambos} (correlación {corr:.3})"
+    );
+}
