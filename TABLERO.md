@@ -237,12 +237,16 @@
     * Principio "Un dato, un veto" (F3.4-02): eliminado veto redundante en `SeniorAuditorInterno` sobre `do_calculus_risk`/VPIN. Test `cf3_vpin_un_dato_un_veto` 100% verde.
     * Drawdown del consejo (F3.4-06): escalado continuo a cota $d^* \cdot (0.95 - 0.10 \cdot s)$ con $d^* = 1 - 0.05^{1/3} \approx 0.6316$.
     * **Resolución de F3.4-07**: Censadas e incorporadas formalmente las 6 compuertas de veto del consejo (`V-CNCL-001` a `V-CNCL-006`) en `crates/risk-engine/src/veto_registry.rs`. Desbloqueado y certificado test `cf3_registro_cubre_los_vetos_de_asiento_del_consejo` (2/2 tests pasando).
-  - **Ejecución de Fase 6 (Motor de Riesgo, Stop Loss Difusivo y Trailing Multiescala)**:
-    * **Resolución de F3.3-08**: El dimensionamiento de exposición (`raw_exposure`, `conviccion`) y el tensor de convicción de apalancamiento (`conviction`) ahora consumen la probabilidad calibrada `SignalIntent::win_probability` (con fallback elegante a `confidence`), eliminando la inflación espuria de nocional por confianza cruda.
-    * Desbloqueada y certificada la prueba de contrato `cf3_la_puntuacion_cruda_no_dimensiona_por_su_cuenta` en `crates/risk-engine/tests/cf3_confianza_tamano_contract.rs` (1/1 test pasando).
-    * Verificada invariancia en escala $\tau$ de primer toque browniano en `cf3_r15_tau.rs` (1/1 test pasando).
-    * Verificación: 147 tests de `risk-engine --lib` y todas las suites de contratos pasando al 100%.
+  - **Ejecución de Fase 7 (Simulación Determinista, Paridad y Benchmarks T-1/T-2/T-3)**:
+    * **Resolución de F3.4-04**: Ingesta de muros L2 en `crates/backtest-engine/src/booktick_replay.rs` (`core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty)`), garantizando paridad 1:1 con `god_engine.rs` y replay forense. Desbloqueado y certificado test canónico `cf3_replay_escribe_los_muros` en `cf3_muros_replay.rs`.
+    * Certificación de paridad: `bt_vivo_parity_audit` (8 passed, 2 ignored de cómputo largo), `t2_cobertura_puertas` (1 passed, 1 ignored), `t1_cobertura_genetica` (2 passed con barrido completo de perturbación de 145 genes).
+  - **Ejecución de Ola Ω94 (Resolución de Hallazgo risk-a & Auditoría Estructural)**:
+    * **Resolución Definitiva de Hallazgo risk-a**: En `crates/risk-engine/src/lib.rs`, erradicado el techo congelado en dólares absolutos `micro_safe_limit = (allocated_capital * 0.25).clamp(1.20, 2.60)`. Sustituido por ley continua proporcional al capital `(allocated_capital * 0.25).max(required_margin_for_min_notional)`. Con $40 USD de capital, el margen seguro escala a $10.0 USD en lugar de asfixiarse en $2.60 USD, desbloqueando el interés compuesto y el crecimiento exponencial del 100% cada 3 días.
+    * Certificado con nueva prueba contractual `risk_a_micro_safe_limit_escala_con_capital` en `crates/risk-engine/tests/veto_logic_contracts.rs` (100% verde).
+    * Auditoría estructural completa de los 23 crates (576 archivos `.rs` bajo `crates/`, 643 totales compilables, 290 suites de tests contractuales/integración; detectado crate huérfano `flight-recorder` duplicado con `telemetry-server/flight_recorder`).
 - **Commiteado reciente**:
+  - Ola Ω94 (commit `0019e846` en branch personal): Resolución de hallazgo `risk-a` (desasfixia de techo de margen micro para interés compuesto) y `56697269` (F3.4-04 muros L2 en `booktick_replay`).
+  - Ola Ω93 (#731, commits `b4b972a5`, `43879501`, `f55e7994`, `6bb08fdf`, `3dc88468`, `98aadd2e` en main): Fases 0 a 6 completadas y certificadas.
   - Ola Ω92 (#730, commit `0b18e589` en main): Resolución del Trilema del Consejo Seniors en Fase C-F3 (F3.4-01 pesos por EV $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|}$, F3.4-02 "un dato, un veto" en VPIN/override en `SeniorAuditorInterno`, F3.4-06 veto DD alcanzable bajo $d^*$).
   - Ola Ω91 (#729, commit `5644f1f1` en main): Resolución de F2.3b-07 (Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness).
   - Ola Ω90 (#728): Plan Maestro Integral de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-12.md`).

@@ -1,5 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω94 — Cierre de Fase 7 (F3.4-04 Muros L2), Resolución de Hallazgo risk-a (Interés Compuesto Desasfixiado) y Censo Forense de Hardcodes
+
+- **Cierre y Certificación de Fase 7 (Simulación Determinista y Paridad)**:
+  - En `crates/backtest-engine/src/booktick_replay.rs`: resuelto **F3.4-04** incorporando `core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);` dentro del bucle de replay de ticks. Se garantiza paridad estricta 1:1 entre producción (`god_engine.rs`), el harness de replay y el análisis forense, activando la observabilidad del gen 57 (veto de muro L2).
+  - Test canónico des-ignorado y verificado al 100%: `cf3_replay_escribe_los_muros` en `crates/backtest-engine/tests/cf3_muros_replay.rs`.
+  - Certificación de Paridad: `bt_vivo_parity_audit` (8/8 pass, 2 mediciones manuales ignoradas), `t2_cobertura_puertas` (1/1 pass), `t1_cobertura_genetica` (2/2 pass).
+- **Resolución Definitiva de Hallazgo risk-a (Línea G / Desasfixia de Interés Compuesto)**:
+  - En `crates/risk-engine/src/lib.rs`: erradicado el techo congelado en dólares absolutos `micro_safe_limit = (allocated_capital * 0.25).clamp(1.20, 2.60);`.
+  - Causa raíz diagnosticada: $2.60 USD correspondía al 20% del capital inicial de $13 USD. Al crecer la cuenta por interés compuesto ($26, $50, $100 USD), el clamp superior a $2.60 USD forzaba un recorte artificial del margen pedido (`sol_a2_margen_reducido`), impidiendo la reinversión geométrica y asfixiando la meta de duplicación cada 72 horas.
+  - Solución analítica implementada: `let micro_safe_limit = (allocated_capital * 0.25).max(required_margin_for_min_notional);`.
+  - El límite seguro escala ahora proporcionalmente con el 25% del capital sin techo arbitrario, garantizando como piso el margen mínimo viable para órdenes que rescatan el nocional mínimo de Binance.
+  - Certificado con nuevo test contractual `risk_a_micro_safe_limit_escala_con_capital` en `crates/risk-engine/tests/veto_logic_contracts.rs` (100% verde; margen escala holgadamente > $2.60 USD cuando el capital crece).
+- **Auditoría Sistémica de Base (23 Crates y Censo de Hardcodes)**:
+  - 576 archivos `.rs` bajo `crates/`, 643 archivos `.rs` compilables en el proyecto, 290 suites de test de integración.
+  - Crate huérfano detectado: `crates/flight-recorder` (duplicado e inerte, reemplazado funcionalmente por `crates/telemetry-server/src/flight_recorder.rs`).
+  - Inventario de 5 bloqueadores críticos por hardcoding priorizados para las fases siguientes: Hurst rígidamente clasificado en 0.45/0.52 sin intervalo nulo, 5 umbrales discretos en Rama 15 `confluencia_resonante` (H2-11), bandas fijas de bps en Senior Volatilidad (10/40 bps) y Senior Ejecución (35/65 bps), y parámetros estáticos en `CouncilParams`.
+- **Verificación**: `cargo check --workspace --all-targets` 100% limpio en 1m02s; 148 tests en `risk-engine` pasando al 100%.
+
 ## 2026-10-13 — Codex LH-12: reanclaje matemático y edad individual de calibración (candidato)
 
 - Corte fijo de esta revisión `3dc88468`, árbol `de98a1257e0db515b4d4471a865c508a0d27b8f3`: 1.794 rutas, 633 Rust, 576 bajo crates. Recorrido completo `docs/audit/RECORRIDO_BASE_2026-10-13.tsv`, todas pendientes; no son archivos auditados. Plan Oct13 rectificado: 48 ejemplos Rust existentes, antes 29 rutas inexistentes entre 49 citas.
