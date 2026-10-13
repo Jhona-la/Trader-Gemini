@@ -225,6 +225,22 @@ impl GodEngineCore {
         }
     }
 
+    /// CL-120 (T2-4 y T2-6 de la Línea G) — firma barata del estado
+    /// aprendido: los cierres aprendidos más la suma de los recuentos por
+    /// moneda. Cambia con cada cierre que enseña algo y con cada ajuste del
+    /// recuento que hace la reconciliación; no cambia con un cierre de papel
+    /// (entrada que no existió en el exchange), que no enseña nada. El host
+    /// sólo guarda cuando cambia.
+    pub fn firma_estado_aprendido(&self) -> u64 {
+        let recuentos: u64 = self
+            .arena
+            .coins
+            .iter()
+            .map(|c| c.metrics.trade_count.load(Relaxed) as u64)
+            .sum();
+        self.diag_close_total.wrapping_add(recuentos)
+    }
+
     /// Foto del estado aprendido, por símbolo.
     pub fn estado_aprendido(&self) -> EstadoAprendido {
         let mut monedas = Vec::new();

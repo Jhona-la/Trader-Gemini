@@ -3174,6 +3174,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 motivo
             ),
         }
+        // CL-120 (T2-4 y T2-6 de la Línea G): el estado se escribe en un hilo
+        // aparte, no en el del bucle de eventos (serializar y escribir unos
+        // 0,5 MB por cierre). El bucle envía una foto cuando cambia la firma
+        // del estado: con cada cierre aprendido (no con uno de papel) y, al
+        // comprobarla cada 4 096 mensajes, con los ajustes del recuento que
+        // hace la reconciliación. El escritor sólo escribe la foto más
+        // reciente. Al apagar se envía la última y se espera a que termine.
+        let (tx_estado, rx_estado) =
+            std::sync::mpsc::channel::<god_engine_core::estado_aprendido::EstadoAprendido>();
+        let escritor_estado = {
+            let ruta = ruta_estado.clone();
+            std::thread::Builder::new()
+                .name("estado-aprendido".into())
+                .spawn(move || {
+                    while let Ok(mut foto) = rx_estado.recv() {
+                        while let Ok(mas_reciente) = rx_estado.try_recv() {
+                            foto = mas_reciente;
+                        }
+                        if let Err(e) = god_engine_core::estado_aprendido::guardar(&ruta, &foto) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [ESTADO] no se pudo guardar {}: {}",
+                                ruta.display(),
+                                e
+                            );
+                        }
+                    }
+                })
+                .expect("hilo escritor del estado aprendido")
+        };
+        let mut firma_estado = engine_real.firma_estado_aprendido();
+        let mut mensajes_desde_firma: u32 = 0;
         // B3.7 (auditoría) — DEDUP cierre-bracket vs cierre-core: el MISMO
         // trade económico puede llegar por dos caminos (fill de la pierna en
         // el user-stream + condición de salida del core en el evento
@@ -3309,6 +3340,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // flag ordena el drenaje (el mensaje mismo se descarta).
             if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
                 break;
+            }
+            // CL-120 (T2-4): los ajustes de la reconciliación (otra tarea)
+            // cambian el recuento sin pasar por un cierre del núcleo.
+            mensajes_desde_firma = mensajes_desde_firma.wrapping_add(1);
+            if guardar_estado && mensajes_desde_firma % 4_096 == 0 {
+                let firma = engine_real.firma_estado_aprendido();
+                if firma != firma_estado {
+                    firma_estado = firma;
+                    let _ = tx_estado.send(engine_real.estado_aprendido());
+                }
             }
             // CL-52: la reconexión llega en banda (centinela) o, si la cola
             // llena se llevó el centinela, por la marca de la cola; en ese
@@ -3949,19 +3990,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let unified_cap = f64::from_bits(unified_capital.load(Ordering::Relaxed));
 
                     if let Some((is_long, pnl, qty)) = closed_order {
-                        // CL-108: cada cierre cambia el estado aprendido
-                        // (salvo con el estado ilegible, CL-108f).
-                        if let Some(Err(e)) = guardar_estado.then(|| {
-                            god_engine_core::estado_aprendido::guardar(
-                                &ruta_estado,
-                                &engine_real.estado_aprendido(),
-                            )
-                        }) {
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [ESTADO] no se pudo guardar {}: {}",
-                                ruta_estado.display(),
-                                e
-                            );
+                        // CL-108: un cierre aprendido cambia el estado (salvo
+                        // con el estado ilegible, CL-108f). CL-120: se envía la
+                        // foto al escritor sólo si cambió la firma (un cierre
+                        // de papel no enseña nada).
+                        if guardar_estado {
+                            let firma = engine_real.firma_estado_aprendido();
+                            if firma != firma_estado {
+                                firma_estado = firma;
+                                let _ = tx_estado.send(engine_real.estado_aprendido());
+                            }
                         }
                         // B3.14 — sólo contabiliza lo que EXISTIÓ en el
                         // exchange. Cierres de entradas vetadas/rechazadas
@@ -5269,6 +5307,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rt_handle_for_thread.block_on(purge_orphan_legs(&executor, &positions));
             }
             persist_kelly_envelope(&risk_envelope);
+            // CL-120 (T2-4): la última foto del estado aprendido, y se espera
+            // a que el escritor la deje en disco antes de salir.
+            if guardar_estado {
+                let _ = tx_estado.send(engine_real.estado_aprendido());
+            }
+            drop(tx_estado);
+            let _ = escritor_estado.join();
             telemetry_server::telemetry_log!(
                 "🛑 [SHUTDOWN] Estado persistido. Cierre limpio completo."
             );

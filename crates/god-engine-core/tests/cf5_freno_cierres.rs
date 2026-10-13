@@ -89,3 +89,68 @@ fn cl115_solo_alimentan_el_freno_los_cierres_de_la_estrategia() {
     assert_eq!(sonda, 0, "una sonda no es evidencia de la estrategia");
     assert_eq!(adoptada, 0, "sin stop propio la R no es medible");
 }
+
+/// Firma del estado tras cerrar una posición larga a 100 por stop, con la
+/// moneda fuera de sonda. `confirmada` decide si la entrada existió en el
+/// exchange (con el contexto del host, uno de papel no enseña nada).
+fn firma_tras_cierre(contexto: OutcomeContext, confirmada: bool) -> (u64, u64) {
+    quantum_arena::symbols::update_dynamic_universe(vec!["CLAAAUSDT".into(), "CLBBBUSDT".into()]);
+    symbol_registry::update_registry(vec![
+        symbol_registry::get_official_binance_spec("CLAAAUSDT"),
+        symbol_registry::get_official_binance_spec("CLBBBUSDT"),
+    ]);
+    let arena: Arc<GlobalArena> = GlobalArena::build_in_own_stack(100.0);
+    let mut core = GodEngineCore::new_with_outcome_context(arena.clone(), contexto);
+    core.swing_nn = None;
+    core.scalp_forest = None;
+    arena.coins[0].metrics.trade_count.store(10, Ordering::Relaxed);
+    let pos = &arena.coins[0].positions.position;
+    assert!(pos.open_with_horizon(true, 100.0, 1.0, 10.0, 1_000, 101.0, 99.0, PositionHorizon::Continuous));
+    pos.exchange_confirmed.store(confirmada, Ordering::Relaxed);
+    arena.used_margin.store(10.0, Ordering::Relaxed);
+    let antes = core.firma_estado_aprendido();
+    let _ = core.process_tick_dual(0, 98.5, 98.51, 5.0, 5.0, 2_000, &[0.0; 54], true, false);
+    (antes, core.firma_estado_aprendido())
+}
+
+/// CL-120 (T2-4 y T2-6 de la revisión de la Línea G). Esperado: la firma del
+/// estado cambia con un cierre que se aprende y no con uno de papel (el host
+/// guardaba también en esos, sin que hubiera nada nuevo), y cambia cuando la
+/// reconciliación ajusta un recuento (que antes no disparaba ningún
+/// guardado).
+#[test]
+fn cl120_la_firma_del_estado_cambia_solo_cuando_hay_algo_que_guardar() {
+    let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
+    let _d = Directorio::nuevo("firma");
+    let (a, b) = firma_tras_cierre(OutcomeContext::IsolatedSimulation, false);
+    let (c, d) = firma_tras_cierre(OutcomeContext::ExchangeLocalEstimate, false);
+    println!("observado: firma con un cierre aprendido {a} → {b}; con un cierre de papel {c} → {d}");
+    assert_ne!(a, b, "un cierre aprendido cambia la firma");
+    assert_eq!(c, d, "un cierre de papel no");
+    // Un ajuste de la reconciliación (recuento de una ranura fantasma).
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    let core = GodEngineCore::new(arena.clone());
+    let antes = core.firma_estado_aprendido();
+    arena.coins[1].metrics.trade_count.fetch_add(1, Ordering::Relaxed);
+    assert_ne!(core.firma_estado_aprendido(), antes, "un ajuste del recuento cambia la firma");
+}
+
+/// CL-120: el host no escribe el estado en el hilo del bucle de eventos.
+/// Contrato de fuente (sin comentarios): el único `guardar` está en el hilo
+/// escritor, que recibe las fotos por un canal; al apagar se envía la última
+/// y se espera a que el escritor termine.
+#[test]
+fn cl120_el_host_guarda_el_estado_en_un_hilo_aparte() {
+    let host: String = include_str!("../../../src/bin/god_engine.rs")
+        .lines()
+        .map(|l| l.split("//").next().unwrap_or(""))
+        .collect::<String>()
+        .split_whitespace()
+        .collect();
+    assert!(host.contains(
+        "let(tx_estado,rx_estado)=std::sync::mpsc::channel::<god_engine_core::estado_aprendido::EstadoAprendido>();"
+    ));
+    assert_eq!(host.matches("estado_aprendido::guardar(").count(), 1, "un solo sitio escribe el estado");
+    assert!(host.contains("guardar(&ruta,&foto)"), "y es el hilo escritor");
+    assert!(host.contains("drop(tx_estado);let_=escritor_estado.join();"), "al apagar se espera al escritor");
+}
