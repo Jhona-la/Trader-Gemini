@@ -18,12 +18,12 @@
   - Centralizado en `GlobalArena::volatility_multiplier_for(coin_id, atr_pct)` en `crates/quantum-arena/src/state.rs`.
   - Los símbolos leen sus genes dedicados por IDENTIDAD (`slot_es_simbolo`), nunca por índice de slot rígido, y las alts miden su volatilidad relativa contra el slot dinámico del ancla de mercado.
   - Certificado con nueva prueba contractual `ola95_volatilidad_multiplier_for_sigue_identidad_de_simbolo` en `crates/risk-engine/tests/stop_por_simbolo_contract.rs` (5/5 tests pasando). Full workspace check limpio.
-- **Disección Matemática de LH-05 (Catch-22 en Ramas Tendenciales 1, 2, 4, 5, 13)**:
-  - Descubierta la causa raíz exacta de por qué las ramas tendenciales abren 0 de 604 veces:
-    * Para activar tendencia alcista: la rama 5 exige `micro_trend >= 0.0` ($P \ge \text{EMA}_{\text{fast}}$) y `macro_trend >= 0.0` ($\text{EMA}_{\text{fast}} \ge \text{EMA}_{\text{slow}}$) $\implies P \ge \text{EMA}_{\text{slow}}$.
-    * Pero simultáneamente exige `not_overextended_long`, donde `max_stretch_long` en tendencia está congelado en $0.00$ (`D-472`), obligando a $(P - \text{EMA}_{\text{slow}})/\text{ATR} \le 0.00 \implies P \le \text{EMA}_{\text{slow}}$.
-    * Intersección algebraica: $P \ge \text{EMA}_{\text{slow}} \land P \le \text{EMA}_{\text{slow}} \implies P = \text{EMA}_{\text{slow}} = \text{EMA}_{\text{fast}}$ exacto a 10 decimales flotantes (probabilidad casi nula). La "No Chasing Law" aplicó la condición de reversión a la media a las ramas tendenciales, asfixiándolas al 100%.
-  - Solución derivada: en tendencia (`!is_mean_reverting`), la cota antiextensión debe ser la cota de difusión natural $Z_{95}$ derivada en `D-621` (`stretch_z <= Z95` $\approx 1.50$ a $2.0\ \text{ATR}$), NO $0.00$.
+- **Resolución Definitiva de LH-05 (commit d7a37dcb)**:
+  - Causa raíz diagnosticada: En `crates/god-engine-core/src/lib.rs:6104-6134`, en régimen tendencial (`!is_mean_reverting`), `max_stretch_long` y `min_stretch_short` estaban fijados rígidamente en $0.00$.
+  - La rama 5 (Trend Long) requería simultáneamente `micro_trend >= 0.0` y `macro_trend >= 0.0` ($P \ge \text{EMA}_{\text{slow}}$), mientras `not_overextended_long` exigía $(P - \text{EMA}_{\text{slow}})/\text{ATR} \le 0.00$ ($P \le \text{EMA}_{\text{slow}}$).
+  - La conjunción forzaba $P = \text{EMA}_{\text{slow}}$ con precisión de punto flotante ($m(\mathbb{R})=0$), asfixiando al 100% las entradas tendenciales (0 de 604 en los fixtures de ventaja conocida).
+  - Solución matemática canónica implementada: En tendencia, la disciplina anti-extensión (No Chasing Law) se desacopla del sesgo de retroceso de reversión a la media y se rige por el envolvente difusivo canónico $Z_{95}$ derivado en `D-621`: $|stretch\_z| \le Z_{95}$ ($|stretch\_z\_decision| \le Z_{95}$). Se preserva intacto el requerimiento estricto de descuento/sobreprecio ($\le -0.05$ / $\ge 0.05$) en reversión a la media.
+  - Certificado con nuevo test contractual `lh05_antiextension_tendencial_contract.rs` (4/4 pruebas pasando al 100% en 0.00s). Workspace check 100% limpio.
 - **Auditoría Forense de Hardcodes (~150 valores censados)**:
   - Ejecutada por subagente investigador sobre los 576 archivos .rs bajo crates/.
   - Hallazgos clasificados por criticidad para el objetivo de +100%/72h con $13 USD:
