@@ -2195,3 +2195,11 @@ R4 13Oct: composición documental b661dcfaca00a1d46a26ebd7e44b2dc252e6348c; fuen
 [Adenda y alcance](audit/ADENDA_CIERRE_R4_2026-10-13.md); [ledger exhaustivo pendiente](audit/INVENTARIO_FINAL_R4_2026-10-13.json). Todos los estados de archivo completo siguen pendientes. SI-O02 (escala/estimando/Jensen), R4-O01 (IC sin centrar, nulo condicional y familia real), R4-O02 (mapping precio/cartera/PnL) y R4-EPOCHS (historia, frescura, reinicio/replay y gasto de error) siguen abiertos. Riesgo parte de HY sin centrar y usa Pearson como fallback; onlytighten no acredita igual universo, signo, peso u horizonte. Las referencias antiguas a 29 rutas ausentes describen el texto anterior; los 48 ejemplos corregidos existen. Nueva deuda semántica: independencia o centrado de retornos no implican E[χ(s_t A_tB_t)|Fprev]<=0; el comentario multiactivo43 sigue pendiente de corrección documental y evidencia de hunk, sin cambio runtime.
 
 LG22: el producto de factores exige filtración, integrabilidad, nulo condicional E[R_t|F_(t-1)]>=mu, cotas y apuestas predecibles; Ville y ARL del e-detector son garantías distintas bajo sus respectivos supuestos. La formulación marginal E[R]>=mu de un resumen histórico no debe transferirse como garantía general.
+
+
+<!-- R4-OCT13-REMOTE-PUBLICATION-V1 -->
+## R4 — publicación verificada — 2026-10-13
+
+Main remoto confirmado en 88f8812199eea80333d0c13d910ec9f7c1796900 mediante push FF, con ascendencia f625, SI927 y eb32. Los 664 inputs compilables y los bytes de siete recibos publicados son iguales a los verificados; T1 18/144 y agregado 713/0/7/1 conservan su alcance sintético. Censo publicado: 1.824 rutas; ledger histórico de 1.816 íntegramente pendiente, salvo tres hunks verificados. Copia externa sellada: 1.030 archivos, 286.020.220 bytes, manifest SHA41301930675f4689a870e782ba597606377e8592046bffb519e879ea9b9c5c34.
+
+[Recibo de publicación](audit/RECIBO_PUBLICACION_R4_2026-10-13.json). Este recibo certifica el primer push; el siguiente commit sólo documental y el cierre de refs se verifican después, sin atribuir CI de padres. Se preserva AGY F7 local y toda rama activa o con commits exclusivos. Continúan R4-O01/O02/EPOCHS, SI-O02 y la meta económica sin demostrar.

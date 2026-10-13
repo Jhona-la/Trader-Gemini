@@ -1,0 +1,206 @@
+{
+  "schema": "r4-first-publication-receipt-v1",
+  "observed_utc": "2026-10-13T08:47:06.3116954Z",
+  "status": "REMOTE_MAIN_VERIFIED",
+  "published_main": "88f8812199eea80333d0c13d910ec9f7c1796900",
+  "published_tree": "f836f476eba92a9097df824c17575fa7609189d7",
+  "publication_mode": "ordinary-fast-forward-no-force",
+  "previous_main": "98aadd2ef21abae85e68e81f10598c6660ec7c7f",
+  "integrated_ancestors": [
+    "f62590e33a76a61a67320fed0e1ecc9ae0514ebd",
+    "927921160e87a425a793d6a23460ab7f2fbff033",
+    "eb32ac9613c847eec75bd8e2591add8ae88234cf"
+  ],
+  "executed_test_head": "f62590e33a76a61a67320fed0e1ecc9ae0514ebd",
+  "tests": {
+    "passed": 713,
+    "failed": 0,
+    "ignored": 7,
+    "filtered": 1,
+    "scope": "recorded final executions, not unique tests or all-file audit"
+  },
+  "t1": {
+    "sensitive": 18,
+    "dimensions": 144,
+    "ratio": 0.125,
+    "minimum_unchanged": 0.11,
+    "economic_growth_proof": false
+  },
+  "compiled_equivalence": {
+    "path": "target/r4-zero-replay/23-post-doc-commit.compiled-equivalence.json",
+    "sha256": "2d4655ecfb689ea0240a3ae2d47a43785d3b52c1483c9fe3567a50c6ca608f33",
+    "inputs": 664,
+    "rust_inputs": 637,
+    "head": "88f8812199eea80333d0c13d910ec9f7c1796900",
+    "source_head": "f62590e33a76a61a67320fed0e1ecc9ae0514ebd"
+  },
+  "published_receipt_bytes": [
+    {
+      "path": "docs/audit/CHECK_ALL_TARGETS_R4_2026-10-13.json",
+      "raw_sha256": "1a34752d855ae07d43b2621afc9bc21c3b5120f2aabbeadf1ff4d1ff2c2ce17f",
+      "git_blob": "5bb18356c063a25983dd4b3c7b551f3064903bdc",
+      "published_blob_equals_raw": true
+    },
+    {
+      "path": "docs/audit/EQUIVALENCIA_COMPILABLES_R4_POST_SI_2026-10-13.json",
+      "raw_sha256": "afe65e52c45141dd8ccae36571700e9393325cd8e6d58fae1e3417d07457cf1d",
+      "git_blob": "bdf6bc42a2f63040075ad0db0bd6c42caf652b52",
+      "published_blob_equals_raw": true
+    },
+    {
+      "path": "docs/audit/INVENTARIO_FINAL_R4_2026-10-13.json",
+      "raw_sha256": "4d00bedb9b3ce5154ad7ed056d4b5ce921a35cb13193ef67dbf3d6edb0981ce1",
+      "git_blob": "ca81456393cb9e8d57411e27f75fe4d38de61dff",
+      "published_blob_equals_raw": true
+    },
+    {
+      "path": "docs/audit/MODELOS_T1_R4_2026-10-13.after.json",
+      "raw_sha256": "99dc066d4baae154da6feb0f38633e172d9553f12c98301d2ee184e44ea28ec6",
+      "git_blob": "c27279cd6d1c4cccc7f2a96963d01cc432b4ae00",
+      "published_blob_equals_raw": true
+    },
+    {
+      "path": "docs/audit/MODELOS_T1_R4_2026-10-13.before.json",
+      "raw_sha256": "1307101eb2e94ec5c541c0f3a8a94ebbd83d4ded8567b8cc1ce9f91b3c3a9411",
+      "git_blob": "7b9cb365f3d5ab02f4f6c4ff1b92a2bdecf6ed4f",
+      "published_blob_equals_raw": true
+    },
+    {
+      "path": "docs/audit/RECIBO_VALIDACION_R4_2026-10-13.json",
+      "raw_sha256": "5d5188a7bf6834b7bdbaa62a49f8f2bd1a56522c9545bf633c3c99b03f80848e",
+      "git_blob": "6ddea08ba5cc4b641139c505a4c5da5e796541e8",
+      "published_blob_equals_raw": true
+    },
+    {
+      "path": "docs/audit/REVISION_INDEPENDIENTE_R4_LH12_2026-10-13.json",
+      "raw_sha256": "c097d2fb09acd616bfe136a25ff02930fa9904c726e06946d086801f227e9ebe",
+      "git_blob": "e75043524ff0181b811a23c41e3552166975f321",
+      "published_blob_equals_raw": true
+    }
+  ],
+  "independent_plan_review": {
+    "path": "target/r4-zero-replay/oct13/REVISION_PROPUESTAS_APPLY_R4_PLAN_SYNC_2026-10-13.json",
+    "sha256": "c45bedd86d330f1b91dced73fe17637a3a4d639fc0048e2c28bf882b605754f8",
+    "status": "favorable; eight proposals and applied guards"
+  },
+  "external_backup": {
+    "directory": "C:/Users/jhona/.codex/audit-evidence/trader-gemini/r4-final-evidence-2026-10-13-2ba4eac6-b539-42f2-8e5a-bff267692028",
+    "manifest": "MANIFEST_FINAL_EVIDENCE.json",
+    "manifest_sha256": "41301930675f4689a870e782ba597606377e8592046bffb519e879ea9b9c5c34",
+    "completion_sha256": "ba064b5c2f142110bf1600e01f2aa50a0404add17bb92b39599f46ae97de309a",
+    "files": 1030,
+    "bytes": 286020220,
+    "scope": "evidence and declared compiler inputs; not a full reproducible environment"
+  },
+  "inventory": {
+    "publication_paths": 1824,
+    "ledger_head": "b661dcfaca00a1d46a26ebd7e44b2dc252e6348c",
+    "ledger_paths": 1816,
+    "whole_files_audited": 0,
+    "verified_hunk_paths": 3,
+    "whole_files_status": "all pending",
+    "metadata_after_ledger": "pending R8/R9"
+  },
+  "ci_observed": [
+    {
+      "id": 38371243175,
+      "name": "Replay contracts",
+      "head_sha": "88f8812199eea80333d0c13d910ec9f7c1796900",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/Jhona-la/Trader-Gemini/actions/runs/38371243175"
+    },
+    {
+      "id": 38371243044,
+      "name": "Unit and contract suites",
+      "head_sha": "88f8812199eea80333d0c13d910ec9f7c1796900",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/Jhona-la/Trader-Gemini/actions/runs/38371243044"
+    }
+  ],
+  "ci_scope": "only this published SHA; no inherited parent successes",
+  "cleanup": {
+    "status": "pending final documentary publication and fresh ancestry/owner checks",
+    "root_closed_refs": [
+      "codex/root-spectral-zero-replay-2026-10-11",
+      "codex/integration-recovery-2026-10-07"
+    ],
+    "si_ref": "codex/platt-age-evidence-1013",
+    "method": "detach same SHA, branch -d; preserve worktrees/files; SI owner closes its ref",
+    "active_reservations": "AGY F7, C/H/G8, Sol and Qoder remain reserved or exclusive"
+  },
+  "followup": "First publication only. Its document-only successor must be checked externally; this receipt cannot contain its own hash.",
+  "branch_census": {
+    "observed_utc": "2026-10-13T08:45:32Z",
+    "compared_main": "88f8812199eea80333d0c13d910ec9f7c1796900",
+    "source": "independent git_closure_1011 read-only census",
+    "branches": [
+      {
+        "branch": "antigravity/ola93-fase7-backtest-paridad-t3",
+        "exclusive_commits": 0,
+        "retain": "active dirty checkout; AGY F7"
+      },
+      {
+        "branch": "cf4-atr-local",
+        "exclusive_commits": 4,
+        "retain": "unmerged exclusive commits"
+      },
+      {
+        "branch": "claude/cl84-f3702-local",
+        "exclusive_commits": 2,
+        "retain": "unmerged withdrawn v1; no closure certification"
+      },
+      {
+        "branch": "claude/linea-g-ola8",
+        "exclusive_commits": 0,
+        "retain": "active G8 reservation"
+      },
+      {
+        "branch": "claude/linea-h-ola3",
+        "exclusive_commits": 3,
+        "retain": "active dirty H3"
+      },
+      {
+        "branch": "claude/tanda-cf5",
+        "exclusive_commits": 18,
+        "retain": "active C-F5"
+      },
+      {
+        "branch": "codex/integration-recovery-2026-10-07",
+        "exclusive_commits": 0,
+        "retain": "root-owned closure candidate"
+      },
+      {
+        "branch": "codex/platt-age-evidence-1013",
+        "exclusive_commits": 0,
+        "retain": "SI owner closes after final publication"
+      },
+      {
+        "branch": "codex/root-spectral-zero-replay-2026-10-11",
+        "exclusive_commits": 0,
+        "retain": "root-owned closure candidate"
+      },
+      {
+        "branch": "main",
+        "exclusive_commits": 0,
+        "retain": "update local main CAS after final publication"
+      },
+      {
+        "branch": "qoder/r7r6-aprender-medir",
+        "exclusive_commits": 9,
+        "retain": "active dirty Qoder"
+      },
+      {
+        "branch": "sol/replay-accounting-2026-10-09",
+        "exclusive_commits": 0,
+        "retain": "active Sol reservation"
+      }
+    ],
+    "remote_heads": [
+      "main",
+      "codex/platt-age-evidence-1013"
+    ],
+    "additional_safe_cleanup_candidates": 0
+  }
+}
