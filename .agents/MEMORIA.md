@@ -38,6 +38,25 @@
 - **Lección de build**: con `CARGO_TARGET_DIR=<raíz>/target` y `RUSTFLAGS`
   exportados, el worktree reutiliza las dependencias compiladas (19 crates
   del workspace en 3 min en vez de ~450 en 12).
+## 2026-10-12 — Claude (Línea G, LG-n): ola 6 — revisión del T-3 de la Línea H y derivación del techo de fricción
+
+- **Réplica** de `t3_valle_de_capital`: idéntica a la de la Línea H (35/50/65
+  USD sin operar, 6 914 rechazos `fee_impact`).
+- **Revisión** (31 hallazgos, todos confirmados; `docs/audit/linea_g/ola6_t3_linea_h.tsv`):
+  el generador del T-3 deja leer el estado oculto por el OHLCV (ruido uniforme
+  acotado, mechas y volumen del mismo sorteo): el techo no acota al motor
+  (H1-01, HIGH). `b_real` en USD mezcla tamaño y pago. LH-02 confirmado (el
+  apagón empieza hacia 27,5 USD y es absorbente por moneda). LH-04 sólo vale a
+  13 USD. LH-05/LH-07 con la ley correcta. El look-ahead de `omni[34/35/43]`
+  en `run_backtest_native` es inerte (nadie lee esos índices): golden, T-1 y
+  T-2 no se afectan.
+- **Techo de fricción derivado** (`ola6_derivacion_friccion.md`): `fee_impact
+  = f·L` mide fricción por unidad de margen, que L reparte sin cambiar nada de
+  la orden. La orden paga su fricción ⇔ `p_LCB > p* = (SL + f)/(TP + SL)` ⇔
+  `f < p_LCB·(TP + SL) − SL`. Propuesta a la Línea C: retirar `fee_impact` en
+  favor del EV con p_LCB.
+- **Lección**: un `git checkout origin/main --` sin rutas desprende el HEAD;
+  para refrescar, `git fetch` y nada más.
 
 ## 2026-10-12 — Claude (Línea H, LH-n): ola 1 — el T-3 mide la cadena con ventaja conocida: la ventaja no la matan las puertas, la mata el tamaño, y doblar la cuenta apaga el sistema
 
@@ -423,11 +442,71 @@
     13 rechazos `sonda_ocupada` (la variante sin puerta da la huella de
     main); T-1 18/144: deja de influir `kelly_clamp_min` (gen 32), que en
     el T-1 sólo dimensionaba sondas.
-- C-F4 que espera al dueño: freno de drawdown único (LC-F4-10), R-15 en
-  sombra, retirada de cuatro módulos y cópulas vencidas. Veto de grupo
-  (LC-F4-17, LC-F4-01): propuesta a Codex en el buzón, sin tocar su zona
-  hasta su acuse.
+- Revisión del PR #61 (`docs/audit/REVISION_PR61_2026-10-12.md`, 1 medio
+  y 4 menores), arreglada en el mismo PR:
+  - CL-98b (F1): la orden mínima es la del LOTE (menor múltiplo de
+    stepSize con qty ≥ minQty y nocional ≥ mínimo + 0,10, hacia arriba;
+    `capital_regime::cantidad_minima_ejecutable`). La usan la viabilidad
+    D-750, el rescate y el tope de la sonda; el núcleo no baja de ella tras
+    el deslizamiento. Antes, con lote grueso, el IOC salía con «Volumen 0»
+    y la moneda no salía nunca de la fase de sonda.
+  - Golden re-certificado: el fixture es BTC a ~60 000 con paso 0,001, así
+    que la orden mínima real son 60 USD (×11,76). El T-2 registra un lote
+    fino (orden mínima ≈ 5,40 USD); con el de BTC, 13 USD no abren nada.
+  - CL-98c (F3, F5): `admite_sonda` en el riesgo y en el núcleo
+    (`sonda_sin_modelo`); `cf3_sonda_respeta_d4` activo con la función real.
+  - CL-98d (F2, F4): deuda de V-RISK-007 con la serialización tras cada
+    reinicio y su medida; ADR-0016 D4 enmendada (la sonda se admite por
+    presupuesto, no por EV).
+- Fase de sonda tras un reinicio (medido): `trade_count` no se persiste,
+  así que todas las monedas, también las de `_MOTOR`, vuelven a ella. Con
+  26 monedas compitiendo por una sola sonda (operación media 1,16 h y
+  espera de señal 4,1 h, replay de ATOM 2026-07), ~2,4 días hasta que sale
+  la primera y ~8 días hasta que salen todas, frente a ~2 días sin D4.
+- #61 (D4 + F1) fusionado en main (2d63b9f1). En la tanda siguiente
+  (decisiones del dueño del 2026-10-12, ADR-0017):
+  - CL-99: el pico es uno (arena), compartido y guardado.
+  - CL-100: R-15 en sombra (sólo telemetría).
+  - CL-101 a CL-104: cuatro módulos sin consumidores retirados.
+  - CL-105: cópulas de septiembre bajadas de data.binance.vision (permiso
+    del dueño), 323 pares; arreglados los nombres de ETH (agosto) y SHIB
+    (1000SHIBUSDT); ADR-0009 renovado.
+  - CL-106: freno duro de la cuenta = K(w, l)·r ≤ d*, el cuantil 95 % de la
+    caída en 200 operaciones con H0 = +0,05 R (31-35 R), el mismo para el
+    host y el riesgo.
+  - CL-107: freno de la estrategia, Ville sobre la R de cada cierre con
+    H0 = +0,30 R; corta sólo entradas nuevas.
+  - CL-108: estado aprendido guardado (recuento, evidencia, calibradores,
+    freno y lo medido).
+  - Revisión previa de la Línea G (26 hallazgos, `docs/audit/linea_g/
+    ola5_tanda_cf4.tsv`). Los 4 MED, arreglados en la misma tanda (criterio
+    del #61):
+    - CL-106b (T1-02): el freno duro mide la caída desde el pico en stops en
+      USD (`riesgo_por_operacion_usd`). Antes, con nocional fijo, disparaba
+      tras K·pico/capital stops; con stop del 2 % nunca antes de d*.
+    - CL-108d (T2-3): el PnL de sesiones anteriores no entra en los
+      acumuladores de la sesión.
+    - CL-108e (T2-2): se restauran el sesgo y el umbral epigenéticos y el
+      anillo de Lundberg.
+    - CL-108f (T2-1): un estado ilegible o de otra versión echa el freno de
+      la estrategia y la sesión no lo sobrescribe; `guardar` valida y hace
+      `sync_all`.
+    - Los 21 LOW van a la tanda siguiente (T1-03, refutado: el freno es
+      absorbente por decisión del dueño).
+  - Pendiente: la revisión del PR #60 (EST-3 y menores) y los LOW de la
+    Línea G, desde CL-109.
+- Veto de grupo (LC-F4-17, LC-F4-01): propuesta a Codex en el buzón, sin
+  tocar su zona hasta su acuse.
+- Hallazgos abiertos: una moneda sin `_MOTOR` no sale del ML-GATE con su
+  evidencia realizada (F3.4-05); el bootloader suscribe `shibusdt` (en
+  futuros es 1000SHIBUSDT).
 - Lecciones:
+  - Una secuencia periódica de la misma tasa no sirve para probar un
+    proceso e adaptativo: es antipersistente y le juega en contra
+    (~550 cierres frente a ~117 con resultados aleatorios).
+  - Un hook impide escribir en otro worktree con Write/Edit: trabajar en el
+    propio, aunque esté ocupado por una verificación (esperar o guardar el
+    cambio como parche).
   - Antes de crear un test, comprobar que el archivo no existe (pisé
     `cf4_piso_resolucion.rs`; se restauró antes de cualquier commit).
   - En `lib.rs` no va `#[cfg(test)]` fuera de los módulos de prueba del

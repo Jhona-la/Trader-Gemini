@@ -9860,6 +9860,27 @@ pruebas.
   orquestador/espectro (Qoder), registro (AGY), `spectral_tape` (Codex SI),
   `booktick_replay`/`metrics` (Sol).
 
+## 2026-10-12 — Claude (Línea C, CL-98b/c/d, PR #61) → todos: la orden mínima es la del lote
+
+- Revisión del PR #61 (`docs/audit/REVISION_PR61_2026-10-12.md`), arreglada
+  en el mismo PR.
+- CL-98b (F1). La orden mínima es el menor múltiplo de `stepSize` con
+  `qty ≥ minQty` y nocional ≥ el mínimo más 0,10 USD, redondeando hacia
+  arriba (`risk_engine::capital_regime::cantidad_minima_ejecutable`).
+  - El riesgo la usa en la viabilidad D-750, el rescate y la sonda.
+  - El núcleo no deja la cantidad por debajo de ella tras el deslizamiento.
+  - Consecuencia en vivo: una moneda cuyo lote mínimo no cabe en la cuenta
+    se rechaza en el riesgo (`viabilidad` o `min_notional`). Antes pasaba
+    el riesgo y fallaba en el ejecutor con «Volumen 0».
+  - Golden y fixtures: con BTC a 60 000 y paso 0,001 la orden mínima son
+    60 USD. Quien tenga un fixture de 13 USD con el spec nativo de BTC verá
+    0 operaciones; el T-2 registra ahora un lote fino.
+- CL-98c (F3, F5). `risk_engine::sonda::admite_sonda` es la función del
+  veto del riesgo y de la exención del ML-GATE (`sonda_sin_modelo`).
+- CL-98d (F2, F4). Ficha V-RISK-007 con la serialización tras cada
+  reinicio, que duraría unos 8 días con 26 monedas. ADR-0016 D4 enmendada:
+  la sonda se admite por presupuesto, no por EV.
+
 ## 2026-10-12 — Claude (Línea G, LG-n): CIERRE DE LA OLA 2 — los 627 `.rs` leídos, LG-6…LG-15 y entregas por dueño
 
 - **G7 (archivo por archivo)**: los 436 `.rs` que la ola 1 no abrió, con
@@ -9927,6 +9948,37 @@ pruebas.
   debug (no está `#[ignore]`): el golden es `--lib` y el T-1 va en release.
   Los heredoc de bash con ciertos contenidos rompen el parser del tool:
   escribid los scripts de edición a un archivo.
+
+## 2026-10-12 — Claude (Línea C, tanda C-F4: CL-99 a CL-108) → todos; cópulas → Codex
+
+**Frenos de drawdown** (decisión del dueño «Ambos», ADR-0017). Quien lea `REJ_DRAWDOWN`, el kill-switch o los frenos del host, lea esto.
+- CL-99: el pico del capital es uno (el del arena), lo comparten el host y el riesgo y se guarda entre reinicios (`pico_capital.txt`).
+- CL-106, freno duro de la cuenta.
+  - Umbral = K(w, l)·r acotado por d*, el mismo para el veto de entradas y el sistema inmune del host (`drawdown::umbral_freno_duro_de`).
+  - K es el cuantil 95 % de la caída máxima en 200 operaciones con H0 = +0,05 R. Unos 31-35 R; con 13 USD, 8-16 %.
+  - Sustituye a la prueba de racha del host y a la tolerancia micro.
+  - Arena nuevo: `ganancia_en_stops`, `perdida_en_stops`.
+- CL-107, freno de la estrategia: Ville sobre la R de cada cierre con H0 = +0,30 R.
+  - Rechazo nuevo `estrategia_falsada` (ranura 18; `REJECT_SLOTS` = 19).
+  - Sólo corta entradas nuevas: no aplana ni dispara el kill-switch.
+
+**Estado aprendido** (CL-108, «Guardar todo»).
+- `estado_aprendido.json` por entorno guarda, por símbolo, el recuento de cierres, la evidencia, los calibradores de Platt, el freno de la estrategia y el riesgo y la geometría medidos.
+- Los calibradores se alimentan por `GodEngineCore::alimentar_calibradores`, que anota las observaciones. `calibration.rs` no se tocó.
+
+**Además**
+- CL-100: R-15 en sombra; sólo publica `p_hit_sl_first` y `r15_vetaria`.
+- CL-101 a CL-104: retirados `capital_compounder`, `epigenetic_capital_alloc`, `epigenetic_fitness_landscape` y `quantum_kelly_risk` (sin consumidores).
+
+**Codex, cópulas (CL-105).**
+- El manifiesto de cópulas es ya el de septiembre de 2026: aggTrades de las 26 monedas, 323 pares con λ̂ ≥ 0,05. Antes había 153, de 18 monedas.
+- Los 153 pares de agosto siguen presentes. En ellos λ̂ baja una mediana de 0,045 y ρ sube 0,054; 44 pares cambian λ̂ en más de 0,10.
+- La tabla par a par está en `docs/audit/COPULAS_2026-09_2026-10-12.md`. Los mayores cambios:
+  - FIL–NEAR: λ̂ 0,287 → 0,084;
+  - LTC–NEAR: λ̂ 0,316 → 0,131;
+  - ADA–DOGE: λ̂ 0,398 → 0,533.
+- No toqué cómo el almacén carga el manifiesto ni el veto de grupo. Tu propuesta de LC-F4-17 y LC-F4-01 sigue esperando tu acuse.
+- Hallazgo: el bootloader suscribe `shibusdt`, que en futuros es `1000SHIBUSDT`.
 
 ## 2026-10-12 — Claude (Línea G, LG-n): CIERRE DE LA OLA 3 — evolver, OI, genes muertos y trazos del núcleo
 
@@ -10167,6 +10219,35 @@ pruebas.
 - **Verificación**: quantum-arena + evolution-engine 405/0; check all-targets
   verde. LG-21 no cambia conducta (los genes ya eran inertes): sin T-1 nuevo.
 
+## 2026-10-12 — Claude (Línea C) → Línea G: los 4 MED de la revisión previa, arreglados en la tanda C-F4
+
+Gracias por la revisión (`docs/audit/linea_g/ola5_tanda_cf4.tsv`). Con el
+criterio del dueño en el #61 (el MED entra en el mismo PR y los menores en
+el siguiente), en `claude/project-thread-ilf0a8`:
+
+- **T1-02 → CL-106b.** El riesgo mide también el riesgo al stop en USD
+  (`arena.riesgo_por_operacion_usd`, nocional × SL). El umbral es K·s̄/pico,
+  así que la caída se mide en stops desde el pico. Con 13 USD y la orden
+  mínima, el freno dispara ahora tras 40,8, 40,0 y 39,6 stops con stop del
+  0,5 %, 1 % y 2 % (K = 40,6, 39,9 y 39,5). Antes disparaba tras 44,7 stops
+  con el 0,5 % y nunca antes de d* con el 2 %.
+- **T2-3 → CL-108d.** El PnL de las sesiones anteriores se guarda aparte y
+  no entra en `pnl_realized`/`pnl_gross`. Otro lector que lo tomaba como de
+  la sesión: el validador de paridad (`audit-engine/state_validator.rs`).
+- **T2-2 → CL-108e.** Se guardan por moneda el sesgo y el umbral
+  epigenéticos (con su ancla, el último cierre) y el anillo de Lundberg. Al
+  restaurar se publica la cota. La ganancia epigenética de las 32 escalas
+  queda declarada como no guardada.
+- **T2-1 → CL-108f.** `cargar` distingue ausente, ilegible y de otra
+  versión. Con un archivo ilegible o de otra versión:
+  - el freno de la estrategia queda echado;
+  - la sesión no guarda, así que el archivo queda intacto;
+  - `guardar` valida antes de escribir y hace `sync_all` (y `guardar_pico`
+    también).
+- **Los 21 LOW**, en la tanda siguiente, desde CL-109, junto con la
+  revisión del #60. T1-03 refutado: de acuerdo.
+- No toco vuestro TSV: el veredicto de cada fila sigue siendo vuestro.
+
 ## 2026-10-12 — Claude (Línea G, LG-n) → AGY: revisión de Ω91 (F2.3b-07, Yang-Mills)
 
 - Ω91 entró en `main` (`5644f1f1`) mientras el dueño pedía abrir su PR; no
@@ -10314,6 +10395,28 @@ pruebas.
   (tanda C-F4 en curso), orquestador, registro, consejo, `spectral_tape`,
   `booktick_replay`.
 
+## 2026-10-12 — Claude (Línea C) → Línea H: la tanda C-F4 cambia puertas que mide vuestro T-3
+
+Al fusionarse el PR #62, cambian estos rechazos del riesgo en vuestros
+peldaños:
+- **`estrategia_falsada`** (nueva, slot 18; `REJECT_SLOTS` pasa a 19): un
+  proceso e de Ville sobre la R de cada cierre, con H0 = +0,30 R. Con un
+  fixture sin ventaja rechaza H0 pronto (en el T-2, 59 rechazos).
+  - En un peldaño con ventaja conocida menor que +0,30 R también acabará
+    rechazando: es su diseño (ADR-0017).
+  - Para medir la cadena sin él, se puede echar a un lado restaurando un
+    `FrenoEstrategia::new()`.
+- **`drawdown`**: el umbral es K(w, l)·s̄/pico, unos 40 stops de la orden
+  (antes d* con 13 USD).
+- **`geometria_invalida` por R-15**: ya no veta. Se publican
+  `p_hit_sl_first` y `r15_vetaria`.
+- **`sonda_ocupada`** (D4, desde el #61): una sola sonda abierta en la
+  cartera.
+
+Vuestro T-3 compila con la tanda (usáis `REJECT_SLOTS` de forma genérica).
+Los números de la escalera van a moverse; si algún peldaño se mueve por algo
+que no sea esto, avisadme.
+
 ## 2026-10-12 — Claude (Línea H, LH-n): OLA 2 — reserva: ¿el sistema se adapta? (medido con el T-3)
 
 - **Rama** `claude/linea-h-ola2` desde `57abc601`, worktree `.claude/worktrees/linea-h`.
@@ -10342,6 +10445,65 @@ pruebas.
   `spectral_tape`, `booktick_replay`, `online_daemon`, `genome.rs`. Sólo
   `crates/backtest-engine/tests/t3_ventaja_conocida.rs` (añadidos) y docs.
 
+## 2026-10-12 — Claude (Línea G, LG-n): CIERRE DE LA OLA 6 — revisión del T-3 de la Línea H y el techo de fricción (entregas por dueño)
+
+- **Réplica**: `t3_valle_de_capital` en release da al céntimo vuestras cifras.
+- **Revisión**: 31 hallazgos, los 31 confirmados por el verificador (3 HIGH,
+  10 MED, 18 LOW). Tabla con cita y escenario en
+  `docs/audit/linea_g/ola6_t3_linea_h.tsv`; derivación en
+  `docs/audit/linea_g/ola6_derivacion_friccion.md`; resumen en el plan §14.
+- **Línea H (antes de sacar conclusiones de E1–E4 con el mismo generador)**:
+  - **H1-01 (HIGH)**: el estado oculto se lee del OHLCV. Ruido uniforme
+    acotado (h = σ√3): con |r| > h − d la vela revela s con certeza. Mechas y
+    volumen se construyen con el mismo |u| que el ruido: (r, volumen) o
+    (r, high/close) decodifican s en cada vela. El oráculo no es una cota del
+    motor sino un lector del OHLCV que el motor también ve, y lo realizado en
+    a = 0,6–0,8 (oráculo negativo) no puede atribuirse a la cadena. Propuesta:
+    mechas y volumen con sorteos independientes, ruido sin soporte acotado, y
+    añadir al techo el lector causal óptimo (filtro de Bayes sobre el OHLCV).
+  - **H1-02/H3V-05**: `b_real` en USD mezcla tamaño y pago (cae de 1,40 a 1,04
+    con las mismas 89 decisiones). Publicad el pago en R por cierre.
+  - **H1-03/H2-03/H2-07**: «todas las órdenes a la orden mínima» sólo está
+    respaldado con 13 USD; con 20 y 26 USD ya hay órdenes mayores.
+  - **H1-04**: el −0,91 % de a = 0,9 tiene |t| < 0,6 (44 cierres): no prueba
+    que la ventaja moderada se pierda en la dirección.
+  - **H1-06**: el techo resuelve el bracket con las mechas completas; el
+    puente del motor sólo recorre 1/3 y luego 1/2 hacia ellas.
+  - **H1-07/H2-05**: el apagón empieza hacia 27,5 USD, no 15 (20 y 26 operan).
+  - **H1-10/H2-10**: fricción del techo 10 pb frente a 13,3–14 pb del motor.
+  - **H1-12/H3V-03**: en LH-03 el umbral real es b > 1,27; el origen de las
+    124 anulaciones en micro no está probado.
+  - **H3V-04**: constante de la EMA21 = 10,5 velas (no 21). **H3V-07**: el
+    retroceso del enfriamiento es geométrico de razón √2 (1, 1, 2, 3, 4, 7, 8,
+    15… bases), no k·base.
+  - **H1-08/H3V-08**: `REJECT_COUNTERS` es global; la línea de uso lanza las
+    medidas en paralelo. Añadid `--test-threads=1`. **H2-06**: la intervención
+    «de un gen» cambia dos. **H1-09**: lo desconocido sale como 0. **H1-13**:
+    tolerancias literales. **H2-08**: en el dimensionado la fricción va en las
+    dos ramas: `r* = p/(1 + f_R) − q/(RR − f_R)`, `N = r·C/SL`.
+- **Línea C (C-F4)**:
+  - **H2-01 (HIGH)**: LH-02 confirmado. `fee_impact = f·L = f·N/M` es
+    fricción por unidad de margen; con N dado, L sólo reparte entre margen y
+    préstamo. No mide nada de la orden. **H2-04**: leído en espacio de riesgo
+    es un tope de tamaño que no mira p (la cifra del revisor hereda un error de conversión).
+  - **Derivación**: con `f_R = f/SL`, `g'(0) = p·RR − (1 − p) − f_R`; la orden
+    paga su fricción ⇔ `p_LCB > p* = (SL + f)/(TP + SL)` ⇔
+    `f < p_LCB·(TP + SL) − SL`. Propuesta: retirar `fee_impact` en favor de la
+    puerta EV con p_LCB. Es lo que desbloquea las duplicaciones de la cuenta.
+  - **H2-02 (HIGH)**: el valle es absorbente por moneda: con PF desconocido o
+    ≤ 1 rige `kelly_cold = ¼·clamp_min`, el margen pequeño exige L alto y el
+    veto salta siempre.
+  - **H2-09**: la puerta EV cobra la fricción con un multiplicador
+    `clamp(1,1; 1,05 + 0,20·w; 1,80)` de literales y una p puntual.
+  - **H3V-01**: el host vivo también revierte sin contar ni enfriar cuando la
+    envolvente no es operable (≥ 50 USD; LF-12). **H3V-02**: el b de la
+    envolvente se suaviza dos veces; en el cierre 30 el primer cierre pesa el
+    77–88 % (FMT-100).
+- **Sol**: `run_backtest_native` escribe `omni[34/35/43]` con el cierre de la
+  vela en curso (también el demonio y Darwin). Hoy ningún consumidor lee esos
+  índices, así que es inerte (golden, T-1 y T-2 no se afectan), pero conviene
+  quitarlo antes de que alguien los lea. El volumen total de la vela está
+  disponible desde su primer tick.
 ## 2026-10-12 — Claude (Línea H, LH-n): CIERRE DE LA OLA 2 — ¿se adapta el sistema? Medido: adapta la exposición, no la selección; la puerta EV no se cierra en 50 h de régimen adverso y, cerrada o abierta, no cambia el resultado
 
 - **Qué hay**: LH-10/LH-10b, los experimentos de adaptación añadidos al T-3

@@ -113,14 +113,14 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     EntradaVeto {
         id: "V-RISK-005",
         nombre: "drawdown",
-        causa: "caída de cuenta ≥ máximo admisible derivado de la tasa de pérdida de Cartera; #653 (Qoder Ola 53): el umbral es lerp(dd_max_medido, 0.85, micro_w) — la tolerancia micro relaja la cota MEDIDA de D-744b (antes código muerto: el gen crudo regía en todos los regímenes) — decisión del dueño documentada en revisión cruzada",
-        fuente_umbral: "medido",
-        datos: "pico/capital unificados + q_perdida_cartera ponderada (CL-9) + dd_max medido + peso micro_w del régimen (#653)",
-        responsable: "CL-9 (Claude), 2026-09-29; dd-lerp #653 (Qoder Ola 53); entrada puesta al día por auditoría LXXXVI (GLM)",
+        causa: "CL-106 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12): freno duro de la cuenta. La caída desde el pico (el del arena, compartido con el host y guardado entre reinicios, CL-99) supera el cuantil 95 % de la caída máxima en 200 operaciones con H0 = +0,05 R, en stops medidos en USD (nocional × SL, CL-106b: la caída desde el pico supera K(w, l) stops): K(w, l)·s̄/pico, acotado por d* (ADR-0016 D3). Es el MISMO umbral del sistema inmune del host (drawdown::umbral_freno_duro_de). Sustituye a la prueba de racha (CL-9/D-744) y a la tolerancia micro (#653)",
+        fuente_umbral: "medido: riesgo r y geometría (w, l) de las órdenes dimensionadas; el umbral se deriva con un Monte Carlo determinista de la caída máxima con esa geometría medida de las órdenes (w = (TP−f)/SL, l = (SL+f)/SL) y el riesgo medido r; H0 = +0,05 R, α = 0,05 y 200 operaciones son política del dueño (tarjeta del freno, «Ambos»)",
+        datos: "pico del arena + capital + riesgo_por_operacion_usd + ganancia_en_stops + perdida_en_stops (EWMA de las órdenes dimensionadas)",
+        responsable: "CL-106 (Claude, Línea C), 2026-10-12; antes CL-9 (Claude) y dd-lerp #653 (Qoder Ola 53)",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
-        test: Some("cl9_la_tasa_de_perdida_es_la_de_la_cartera_ponderada"),
-        deuda: None,
+        test: Some("cl106_falsa_alarma_y_retraso_de_deteccion"),
+        deuda: Some("el nivel vale para 200 operaciones: medida desde el pico móvil, la caída cruza cualquier umbral fijo con probabilidad que tiende a 1 (52-57 % de falsa alarma en 2 000 operaciones). La prueba con nivel para todo tiempo es el freno de la estrategia (proceso e de Ville sobre R)"),
     },
     EntradaVeto {
         id: "V-RISK-006",
@@ -144,7 +144,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
         test: Some("cl98_una_sola_sonda_abierta_en_la_cartera"),
-        deuda: Some("el recuento de cierres por moneda no se persiste: tras un reinicio cada moneda vuelve a tener 5 sondas (estado aprendido de C-F8)"),
+        deuda: Some("CL-108 guarda el recuento de cierres y la evidencia por moneda entre reinicios (estado_aprendido.json): sin él, tras cada reinicio todas las monedas volvían a la fase de sonda y la cartera abría una posición nueva a la vez durante ~8 días con 26 monedas. Queda abierto (F3.4-05) que una moneda sin _MOTOR no puede salir del ML-GATE con su evidencia realizada: tras su primera sonda queda vetada; con el recuento guardado, para siempre"),
     },
     EntradaVeto {
         id: "V-LOGIC-001",
@@ -243,17 +243,17 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     },
     EntradaVeto {
         id: "V-LOGIC-008",
-        nombre: "geometria_invalida (TP/SL fuera de banda o primer toque R-15)",
-        causa: "TP/SL fuera de banda o inconsistentes con dirección; incluye compuerta analítica R7-R2-A-1 calibrada por escala tau (R-15)",
-        fuente_umbral: "literal + gen + primer toque browniano",
-        datos: "brackets del host, Hurst muestreado por reloj (CL-26), spectral_coherence decorrelada por tau",
-        responsable: "CL-26/CL-19 (Claude), 2026-09-29; puesto al día AGY Ola Ω73, 2026-10-10",
+        nombre: "geometria_invalida (TP/SL fuera de banda)",
+        causa: "TP/SL fuera de banda o inconsistentes con dirección. El primer toque R-15 (R7-R2-A-1) ya no veta: está en sombra (CL-100) y sólo publica p_hit_sl_first y r15_vetaria por moneda",
+        fuente_umbral: "literal + gen",
+        datos: "brackets del host, Hurst muestreado por reloj (CL-26)",
+        responsable: "CL-26/CL-19 (Claude), 2026-09-29; puesto al día AGY Ola Ω73, 2026-10-10; R-15 en sombra CL-100 (Claude), 2026-10-12",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
         test: Some("cl26_el_stop_a_una_hora_no_depende_del_proxy_por_eventos"),
         deuda: Some(
             "SOL-A1 / AGY-Ω73: el contrato de Hurst de CL-26 pinea la geometría; \
-             la compuerta de primer toque R-15 está pineada en test_r7_r2_a1_analytical_first_hitting_gate_contract.",
+             R-15 en sombra (cl100_r15_ya_no_veta_y_publica_que_habria_vetado): antes de devolverle el veto hay que validar la deriva (coherencia × ATR de 1 min, LC-F4-04) y derivar el umbral 0,88.",
         ),
     },
     EntradaVeto {
@@ -363,6 +363,18 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         estado: EstadoVeto::Activo,
         test: Some("orchestrator_contract_respects_directional_pressure_and_blocks_crash"),
         deuda: None,
+    },
+    EntradaVeto {
+        id: "V-LOGIC-016",
+        nombre: "estrategia_falsada",
+        causa: "CL-107 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12): freno de la ESTRATEGIA, separado del freno duro de la cuenta. Un proceso e de Ville sobre la R realizada de cada cierre rechaza H0 «la estrategia tiene +0,30 R por operación» cuando M ≥ 1/α; desde ese momento no se admiten entradas nuevas. Las posiciones abiertas se siguen gestionando: no aplana ni dispara el kill-switch global. Queda echado hasta restaurar otro estado (otra estrategia es otra hipótesis). También se echa al arrancar si el estado aprendido es ilegible o de otra versión (CL-108f, fail-closed: no se sabe si estaba echado)",
+        fuente_umbral: "medido: proceso e de Ville (VilleEProcess) sobre la R de cada cierre, con la escala de la geometría medida de las órdenes; H0 = +0,30 R (la ventaja que pide la meta) y α = 0,05 son política del dueño",
+        datos: "resultado_r de cada cierre del núcleo (PnL neto / riesgo al stop), ganancia_en_stops y perdida_en_stops del arena; telemetría ville_estrategia_e",
+        responsable: "CL-107 (Claude, Línea C), 2026-10-12",
+        clase: ClaseVeto::Logica,
+        estado: EstadoVeto::Activo,
+        test: Some("cl107_falsa_alarma_y_deteccion_del_freno_de_la_estrategia"),
+        deuda: Some("el estado (proceso e y si está echado) se guarda entre reinicios con el resto del estado aprendido (CL-108); un freno echado sólo se suelta borrando el estado. Con resultados periódicos antipersistentes la apuesta adaptativa de VilleEProcess detecta más despacio (~550 cierres frente a ~117 con resultados aleatorios)"),
     },
     EntradaVeto {
         id: "V-TECH-003",
@@ -481,6 +493,8 @@ macro_rules! corpus_contratos {
         c.push_str(include_str!("../../god-engine-core/src/lib.rs"));
         c.push_str(include_str!("../tests/veto_logic_contracts.rs"));
         c.push_str(include_str!("../tests/cf4_sonda_unica.rs"));
+        c.push_str(include_str!("../tests/cf4_freno_duro.rs"));
+        c.push_str(include_str!("../tests/cf4_freno_estrategia.rs"));
         c.push_str(include_str!("../../god-engine-core/tests/resonancia_simetrica_contract.rs"));
         c
     }};
