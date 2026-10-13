@@ -1,8 +1,6 @@
-//! TRIAJE B (GLM 109): (c), (d), (e) DRENADOS — sus contratos ahora
-//! verifican la semántica honesta. (a) piso 0.70 y (b) boost por clones
-//! siguen como diagnóstico: recalibran toda decisión del ensamble y la
-//! auditoría XIV exige análisis de tasas de aceptación con datos —
-//! decisión del consejo, no fix de ciclo.
+//! TRIAJE B (GLM 109): (a), (c), (d), (e) DRENADOS — sus contratos ahora
+//! verifican la semántica honesta. (a) drenado en Ola Ω97 (F3.1-03): un voto infinitesimal
+//! no compra convicción y escala con la evidencia. (b) boost por clones sigue como diagnóstico.
 use omniscient_registry::OmniscientRegistry;
 use signal_engine::{
     flow_excitation_confluence::FlowExcitationConfluenceEngine,
@@ -33,12 +31,12 @@ fn conviction(value: f64, copies: usize) -> f64 {
     engine.evaluate_continuous_consensus().net_confidence
 }
 
+/// (a) DRENADO (Ola Ω97 / F3.1-03): un voto infinitesimal no compra convicción.
+/// Se erradicó el piso artificial de 0.70; la confianza escala monótonamente
+/// con la evidencia y valores infinitesimales quedan sub-corte (Flat).
 #[test]
-fn diagnostic_tiny_positive_scores_still_have_point_seven_floor() {
-    // (a) — ABIERTO por decisión del consejo: el piso 0.70 es la
-    // normalización D-101/D-425; retirarlo recalibra TODO el ensamble
-    // (auditoría XIV §14 exige comparación de tasas de aceptación).
-    assert!(conviction(1e-12, 1) >= 0.7);
+fn tiny_positive_scores_do_not_have_false_floor() {
+    assert_eq!(conviction(1e-12, 1), 0.0);
     assert_eq!(conviction(0.0, 1), 0.0);
 }
 

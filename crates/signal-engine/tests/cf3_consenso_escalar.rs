@@ -55,7 +55,6 @@ fn decide(votos: &[f64]) -> (bool, f64) {
 }
 
 #[test]
-#[ignore = "OPEN F3.1-03 (Qoder, consenso): net = Σv/Σ|v|·(0,70 + 0,30·eff) sólo mira signos y tiene piso 0,70; un único voto de 2e-9 da Long con 0,70 y (0,002; 0,002) da 0,70 frente a 0,997"]
 fn cf3_un_voto_infinitesimal_no_compra_conviccion() {
     let (plano, c) = decide(&[2e-9]);
     let (_, c_debil) = decide(&[0.002, 0.002]);

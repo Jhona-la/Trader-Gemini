@@ -590,8 +590,8 @@ La auditoría forense integral ejecutada por el agente buscador de números mág
 | `risk-engine/src/lib.rs:1223` | `0.035` ($3.5\%$) | Límite de comisión micro | Escalar analíticamente como función de la holgura del stop loss $\text{SL}$. |
 | `risk-engine/src/veto_registry.rs:141` | `5` cierres | Fin de fase de sonda | Reemplazar por criterio secuencial SPRT de Wald sobre potencia estadística. |
 | `signal-engine/src/orchestrator.rs:177` | `1.0 + (len - 1) * 0.1` | Boost por conteo de estrategias | Reemplazar por número efectivo de señales independientes $N_{\text{eff}} = k / (1 + (k-1)\bar{\rho})$. |
-| `signal-engine/src/orchestrator.rs:498` | Reparto $70/30$ | Ponderación de voto y convicción | Promover a gen del `SuperGenotype` para optimización evolutiva continua. |
-| `metacortex-engine/src/consejo_seniors.rs:769` | `35.0 + 65.0 * s` | Veto de slippage de ejecución | Normalizar contra el spread dinámico mediano del libro y ATR local del activo. |
+| `signal-engine/src/orchestrator.rs:498` | Reparto $70/30$ | Ponderación de voto y convicción | **RESUELTO en Ola Ω97 (F3.1-03):** Erradicado el piso artificial de $0.70$. Convicción neta proporcional a evidencia $\text{raw\_net} \cdot \text{effective\_conviction}$. Certificado con `cf3_un_voto_infinitesimal_no_compra_conviccion`. |
+| `metacortex-engine/src/consejo_seniors.rs:769` | `35.0 + 65.0 * s` | Veto de slippage de ejecución | **RESUELTO en Ola Ω97:** Normalizado adaptativamente con volatilidad local ATR $(\text{atr\_bps}/10.0)^{0.5} \in [0.70, 2.0]$. Evita estrangulamiento en alts con spreads naturales. |
 | `metacortex-engine/src/consejo_seniors.rs:887` | Reparto $60/40$ | Ponderación Teleonomia espectro/ML | Modular dinámicamente según la precisión inversa (entropía) de cada predictor. |
 | `god-engine-core/src/lib.rs:667-671` | 5 umbrales fijos | Rama 15 Confluencia Resonante | Conectar a genes del genoma adaptativo con oráculo de paridad. |
 | `god-engine-core/src/lib.rs:9219` | `[0.45, 0.52]` | Bandas canónicas de Hurst | Sustituir por intervalo de confianza muestral del DFA bajo hipótesis nula browniana. |
@@ -607,8 +607,10 @@ El sistema se modela estrictamente como un **grafo vivo dirigido**:
 2. **Nodos Silenciosos (Fallos Tipo 2)**: Nodos que reciben datos válidos pero no generan acción o se bloquean indefinidamente.
    - *Caso resuelto en Ω95:* `LH-05` (Catch-22 de ramas tendenciales). Condición contradictoria bloqueaba la emisión del 100% de las entradas tendenciales. Resuelto desacoplando a difusión D-621.
    - *Caso resuelto en Ω95:* `LH-03` (Bucle de rollback infinito en replay). La falta de actualización de `last_exit_fastband_ms` dejaba al motor en un nodo silencioso de 5.604 ciclos repetidos. Resuelto con enfriamiento forzado inmediato.
-3. **Colisión de Flujos (Fallos Tipo 3)**: Modificación concurrente con información contradictoria o acoplamientos rígidos.
+   - *Caso resuelto en Ω97:* `SeniorEjecucion` (Veto de slippage rígido a 35 bps en alts). Bloqueaba órdenes legítimas en monedas con spreads normales de 5-10 bps. Resuelto modulando el umbral continuo por ratio de ATR relativo.
+3. **Colisión de Flujos y Falsas Señales (Fallos Tipo 3)**: Modificación concurrente con información contradictoria, acoplamientos rígidos o magnificación de ruido.
    - *Caso resuelto en Ω95:* `ADR-0011` (Acoplamiento de arrays físicos `0=BTC, 1=ETH`). Resuelto mediante mapeo dinámico por símbolo en `GlobalArena`.
+   - *Caso resuelto en Ω97:* `F3.1-03` (Magnificación espuria de convicción escalar). Un voto infinitesimal ($2 \cdot 10^{-9}$) compraba $70\%$ de confianza por el piso artificial `0.70 + 0.30 * eff`, gatillando órdenes en falso. Resuelto con escalamiento lineal con evidencia $\text{raw\_net} \cdot \text{eff}$.
 
 ---
 

@@ -766,7 +766,18 @@ impl SeniorAgent for SeniorEjecucion {
         // horizonte (Scalping 35 / Continuous 65 / Swing 100 bps). Un trade
         // de τ corto no puede pagar 100 bps; uno de 12 h puede absorberlos.
         // D-113: extremo rápido conserva la tolerancia estrecha de altcoins.
-        let max_slippage = 35.0 + 65.0 * payload.spectral_s();
+        let base_slippage = 35.0 + 65.0 * payload.spectral_s();
+        // OLA Ω97: Modulación adaptativa continua por volatilidad de régimen (ATR relativo):
+        // si atr_pct está disponible (> 0), el presupuesto de slippage escala suavemente con
+        // (atr_bps / 10.0)^0.5 acotado en [0.70, 2.0]. En BTC (atr_bps ≈ 10) el factor es 1.0;
+        // en altcoins volátiles evita estrangulamiento espurio por micro-spreads naturales.
+        let atr_mult = if payload.atr_pct.is_finite() && payload.atr_pct > 0.0 {
+            let atr_bps = payload.atr_pct * 10_000.0;
+            (atr_bps / 10.0).sqrt().clamp(0.70, 2.0)
+        } else {
+            1.0
+        };
+        let max_slippage = base_slippage * atr_mult;
         let is_veto = effective_slippage_bps > max_slippage;
         SeniorOpinion {
             role: self.role(),

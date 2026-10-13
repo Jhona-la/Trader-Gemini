@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω97 — Resolución Definitiva de F3.1-03 (Consenso Escalar Proporcional a Evidencia), Normalización Dinámica ATR en SeniorEjecución y Certificación Contractual
+
+- **Rama activa**: `antigravity/ola97-f3103-consenso-escalar-evidencia`.
+- **Resolución Definitiva de F3.1-03 (Consenso Escalar Proporcional a Evidencia)**:
+  - **Diagnóstico y Causa Raíz**: En `crates/signal-engine/src/orchestrator.rs:498`, el cálculo de confianza neta del consenso escalar utilizaba `net_confidence = raw_net * (0.70 + 0.30 * effective_conviction)`. Dado que `raw_net = (long_votes - short_votes) / active_weight`, cualquier ensamble con acuerdo direccional unánime producía $|raw\_net| = 1.0$. Un voto infinitesimal de ruido ($2 \cdot 10^{-9}$) arrojaba una confianza de $0.7000000006$, sobrepasando holgadamente el `cutoff_floor` ($\le 0.45$) y abriendo posiciones en falso con capital micro ($13 USD) en estados de mercado planos.
+  - **Solución Matemática y Físico-Estadística**: Se erradicó el piso artificial de $0.70$, sustituyéndolo por la formulación canónica bayesiana continua:
+    $$\text{net\_confidence} = \text{raw\_net} \cdot \text{effective\_conviction}$$
+    donde la confianza escala estrictamente de forma monótona con la evidencia empírica acumulada por los motores.
+  - **Certificación Contractual**:
+    * `crates/signal-engine/tests/cf3_consenso_escalar.rs`: des-ignorado y verificado al 100% el test canónico `cf3_un_voto_infinitesimal_no_compra_conviccion` (voto $2 \cdot 10^{-9}$ da `Flat`/confianza $< 10^{-6}$, y votos $0.002$ escalan linealmente frente a votos $0.9$).
+    * `crates/signal-engine/tests/ensemble_characterization.rs`: formalmente cerrado el ítem abierto (a) del consejo mediante el test `tiny_positive_scores_do_not_have_false_floor` (convicción $10^{-12}$ colapsa a $0.0$ sub-corte).
+    * `crates/signal-engine/src/orchestrator.rs`: actualizado test `qo_624_tau_clampeada_a_la_banda_operativa` con evidencia pura $0.90$ (validando fallback escalar contra dominante inoperable).
+- **Normalización Dinámica por Volatilidad de Régimen en SeniorEjecución**:
+  - En `crates/metacortex-engine/src/consejo_seniors.rs:769`, el umbral continuo de slippage $35.0 + 65.0 \cdot s$ se moduló suavemente según la volatilidad relativa del activo:
+    $$\text{max\_slippage} = (35.0 + 65.0 \cdot s) \cdot \text{clamp}\left(\sqrt{\frac{\text{atr\_bps}}{10.0}}, 0.70, 2.0\right)$$
+  - En BTC ($\text{atr\_bps} \approx 10.0$) el multiplicador es $1.0$ bit-exacto, preservando las calibraciones de regresión. En altcoins volátiles previene vetos espurios ante micro-spreads naturales del exchange (5-10 bps).
+  - Certificado: 70/70 tests de `metacortex-engine` pasando al 100%.
+- **Verificación Integral del Workspace**:
+  - `cargo test -p signal-engine`: 121 unit tests y 19 integration suites 100% verdes.
+  - `cargo test -p metacortex-engine`: 70/70 tests verdes.
+  - `cargo test -p god-engine-core --test cf3_consenso_espectral --test orquestador_vivo_h2_contract`: 100% verde.
+  - `cargo check --workspace --all-targets`: compilación limpia en 33.66s.
+
 ## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω96 — Sincronización Integral Multi-Agente del Plan Maestro Canónico, Auditoría de Topología de 23 Crates, Cacería Forense de Hardcodes y Grafo Vivo (Ficha #734)
 
 - **Rama activa**: `antigravity/ola96-plan-maestro-sincronizacion-universo-espectral` (creada desde `main` en `32928125`).

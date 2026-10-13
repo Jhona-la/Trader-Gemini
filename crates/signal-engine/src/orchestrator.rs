@@ -493,9 +493,12 @@ impl TensorVoteOrchestrator {
         } else {
             0.5
         };
-        // D-101 & D-425: Normalización continua sin double-squashing cuadrático y alineada con el quórum bayesiano
+        // F3.1-03 / D-101 / D-425: Normalización continua proporcional a la evidencia del ensamble.
+        // La confianza debe escalar monótonamente con la masa empírica (effective_conviction).
+        // Se erradica el piso artificial de 0.70 que permitía a un voto infinitesimal (2e-9) comprar
+        // convicción de supermayoría sin evidencia real.
         let raw_net = prob_long - prob_short;
-        let net_confidence = raw_net * (0.70 + 0.30 * effective_conviction);
+        let net_confidence = raw_net * effective_conviction;
         let net_confidence = if net_confidence.is_finite() {
             net_confidence
         } else {
@@ -918,10 +921,10 @@ mod tests {
         arena.registry.set_for_coin(0, "consenso_espectral_tau", 1_000.0);
         let baja = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert!(baja.expected_lifetime_ms >= 30_000);
-        // Escalar el que decide: conf = 0.97 (ya modulada por el
-        // ensamble) — NO el 0.8·0.70=0.56 que daría el espectral.
+        // Escalar el que decide: conf = 0.90 (ya modulada por el
+        // ensamble: 1.0 * 0.90 = 0.90) — NO el 0.8·0.70=0.56 que daría el espectral.
         assert!(
-            (baja.net_confidence - 0.97).abs() < 1e-9,
+            (baja.net_confidence - 0.90).abs() < 1e-9,
             "fallback escalar con tau inoperable: {}",
             baja.net_confidence
         );
