@@ -24,7 +24,11 @@ use std::sync::atomic::Ordering;
 /// CERT-M5-H03: productor PURO de fracción — también pasa por el tope de
 /// ruina central (streak-bound + axioma), como todos los demás.
 pub fn kelly_from_pf(prob_win: f64, profit_factor: f64) -> f64 {
-    if !prob_win.is_finite() || !profit_factor.is_finite() || profit_factor <= 1.0 {
+    if !prob_win.is_finite()
+        || !(0.0..=1.0).contains(&prob_win)
+        || !profit_factor.is_finite()
+        || profit_factor <= 1.0
+    {
         return 0.0;
     }
     crate::ruin::clamp_ruin(
@@ -405,6 +409,7 @@ mod tests {
         }
         for p_new in [f64::NAN, f64::INFINITY, -0.1, 1.1] {
             assert_eq!(kelly_with_historical_payoff(p_new, 0.5, 1.5), 0.0);
+            assert_eq!(kelly_from_pf(p_new, 1.5), 0.0);
         }
         assert_eq!(kelly_with_historical_payoff(0.0, 0.5, 1.5), 0.0);
         assert_eq!(
