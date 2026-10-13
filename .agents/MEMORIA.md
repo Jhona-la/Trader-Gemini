@@ -1,5 +1,12 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-13 — Codex LG5: probabilidad de cierre y payoff económico (en curso)
+
+- Base `3327300a`: CI exacto completed/success en Unit `38373292385` y Replay `38373292396`; no se heredan a un candidato nuevo.
+- Rama `codex/lg5-payoff-evidence-1013`, WT `spectral-evidence-1011`. Contrato: `SignalIntent.net_payoff` opcional, media neta por nocional por moneda/lado/procedencia. Scores y horizontes permanecen continuos como atributos; la media es agregada, no calibración condicional ni LCB.
+- Corrección propuesta: EV madura consume media neta y prima `(m−1)c`; desconocido no se fabrica a partir de Platt/P(TP), cero no equivale a ausencia, sonda presupuestada preservada. Estado aditivo; legacy sin magnitudes no se reconstruye. Implementación y pruebas en curso.
+- [Auditoría LG5](../docs/audit/LG5_PROBABILIDADES_PAGOS_EV_2026-10-13.md). Reservas C-F5/core/estado y AGY F7 preservadas por hunks; no se modifica freno/e-CUSUM. Rentabilidad y Kelly óptimo siguen sin demostrar.
+
 ## 2026-10-13 — Codex LH-12: reanclaje matemático y edad individual de calibración (candidato)
 
 - Corte fijo de esta revisión `3dc88468`, árbol `de98a1257e0db515b4d4471a865c508a0d27b8f3`: 1.794 rutas, 633 Rust, 576 bajo crates. Recorrido completo `docs/audit/RECORRIDO_BASE_2026-10-13.tsv`, todas pendientes; no son archivos auditados. Plan Oct13 rectificado: 48 ejemplos Rust existentes, antes 29 rutas inexistentes entre 49 citas.
