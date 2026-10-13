@@ -18,9 +18,20 @@ use god_engine_core::GodEngineCore;
 use quantum_arena::GlobalArena;
 use std::sync::atomic::Ordering::Relaxed;
 
-fn registrar_simbolos() {
+/// Las pruebas cambian el registro global de símbolos (una lo reordena): se
+/// serializan.
+static ENTORNO: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn registrar_simbolos() -> std::sync::MutexGuard<'static, ()> {
+    let g = ENTORNO.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    registrar(&["BTCUSDT", "ETHUSDT"]);
+    g
+}
+
+fn registrar(simbolos: &[&str]) {
+    quantum_arena::symbols::update_dynamic_universe(simbolos.iter().map(|s| s.to_string()).collect());
     quantum_arena::symbol_registry::update_registry(
-        ["BTCUSDT", "ETHUSDT"]
+        simbolos
             .iter()
             .map(|s| quantum_arena::symbol_registry::SymbolSpec {
                 symbol: (*s).into(),
@@ -81,7 +92,7 @@ fn huella(c: &GodEngineCore) -> (usize, f64, f64, f64, bool, f64) {
 
 #[test]
 fn cl108_el_estado_aprendido_sobrevive_al_reinicio() {
-    registrar_simbolos();
+    let _g = registrar_simbolos();
     let viejo = con_historia();
     let ruta = std::env::temp_dir().join(format!("cl108_{}_estado.json", std::process::id()));
     guardar(&ruta, &viejo.estado_aprendido()).expect("guardar");
@@ -116,7 +127,7 @@ fn cl108_el_estado_aprendido_sobrevive_al_reinicio() {
 /// Un freno echado sigue echado tras el reinicio.
 #[test]
 fn cl108_un_freno_echado_sigue_echado() {
-    registrar_simbolos();
+    let _g = registrar_simbolos();
     let mut viejo = nucleo();
     let mut n = 0;
     while !viejo.risk_engine.freno_estrategia.rechazada() && n < 5_000 {
@@ -175,7 +186,7 @@ fn cl130_la_caida_en_stops_sobrevive_al_reinicio() {
 /// - `guardar` no escribe un estado inválido y deja el anterior intacto.
 #[test]
 fn cl108f_un_archivo_ilegible_no_es_un_archivo_ausente() {
-    registrar_simbolos();
+    let _g = registrar_simbolos();
     let dir = std::env::temp_dir().join(format!("cl108f_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let ruta = dir.join("estado_aprendido.json");
@@ -239,7 +250,7 @@ fn cl108f_un_archivo_ilegible_no_es_un_archivo_ausente() {
 /// histórico se conserva en lo que se guarda (el de antes + el de la sesión).
 #[test]
 fn cl108d_el_pnl_historico_no_entra_en_el_acumulador_de_la_sesion() {
-    registrar_simbolos();
+    let _g = registrar_simbolos();
     let viejo = con_historia();
     let estado = viejo.estado_aprendido();
     let mut con = nucleo();
@@ -269,7 +280,7 @@ fn cl108d_el_pnl_historico_no_entra_en_el_acumulador_de_la_sesion() {
 /// umbral y el último cierre son los mismos.
 #[test]
 fn cl108e_se_restaura_la_epigenetica_y_lundberg() {
-    registrar_simbolos();
+    let _g = registrar_simbolos();
     let mut viejo = con_historia();
     // 300 cierres con deriva positiva: el anillo de 256 da la vuelta.
     for i in 0..300 {
@@ -310,7 +321,7 @@ fn cl108e_se_restaura_la_epigenetica_y_lundberg() {
 /// el archivo entero: en el primer cierre desaparecía.
 #[test]
 fn cl118_la_evidencia_de_una_moneda_fuera_del_universo_se_conserva() {
-    registrar_simbolos();
+    let _g = registrar_simbolos();
     let mut estado = con_historia().estado_aprendido();
     let mut ausente = estado.monedas[1].clone();
     ausente.simbolo = "NOESTAUSDT".into();
@@ -322,4 +333,58 @@ fn cl118_la_evidencia_de_una_moneda_fuera_del_universo_se_conserva() {
     let vuelve = guardado.monedas.iter().find(|m| m.simbolo == "NOESTAUSDT");
     println!("observado: la moneda fuera del universo se guarda: {:?}", vuelve.map(|m| m.metricas.trade_count));
     assert_eq!(vuelve, Some(&ausente));
+}
+
+/// CL-119 (T2-8 y T3-05 de la revisión de la Línea G) — lo que la prueba de
+/// CL-108 no cubría:
+/// - el olvido del calibrador (semivida de 12 h) sobrevive a la
+///   restauración: a +7 días el restaurado y el viejo dan la misma p (ya
+///   ≈ la puntuación), lo que exige restaurar las marcas de tiempo;
+/// - el freno de la estrategia se restaura entero, no sólo e y el veredicto;
+/// - con el universo en otro orden (ETH en otro slot), ETH recupera lo suyo.
+#[test]
+fn cl119_olvido_freno_completo_y_universo_reordenado() {
+    let g = registrar_simbolos();
+    let viejo = con_historia();
+    let estado = viejo.estado_aprendido();
+    let mut con = nucleo();
+    con.restaurar_estado_aprendido(&estado);
+    let semana = 1_000_000 + 39 * 60_000 + 7 * 24 * 3_600_000;
+    let (p_viejo, p_con) = (
+        viejo.calibrator_by_coin[1].calibrate_at(0.5, semana),
+        con.calibrator_by_coin[1].calibrate_at(0.5, semana),
+    );
+    println!("observado: p a +7 días, vieja {p_viejo}, restaurada {p_con}");
+    assert!((p_con - p_viejo).abs() < 1e-9);
+    assert!((p_viejo - 0.5).abs() < 0.01, "a +7 días el calibrador ya olvidó: {p_viejo}");
+    assert_eq!(con.estado_aprendido().freno_estrategia, estado.freno_estrategia);
+
+    // Universo en otro orden: ETH en el slot 0.
+    registrar(&["ETHUSDT", "BTCUSDT"]);
+    let mut otro = nucleo();
+    otro.restaurar_estado_aprendido(&estado);
+    let eth_nuevo = quantum_arena::symbols::get_coin_id("ETHUSDT").expect("ETH registrada");
+    println!("observado: ETH pasa al slot {eth_nuevo}");
+    assert_eq!(eth_nuevo, 0);
+    assert_eq!(otro.arena.coins[0].metrics.trade_count.load(Relaxed), 7);
+    assert_eq!(otro.arena.coins[1].metrics.trade_count.load(Relaxed), 0, "BTC no hereda lo de ETH");
+    drop(g);
+}
+
+/// CL-119 (T3-05): la restauración reproduce las observaciones que anota el
+/// CIERRE del núcleo. Contrato de fuente (sin comentarios): el cierre
+/// alimenta los calibradores por `estado_aprendido::alimentar`, que anota
+/// cada observación; si los alimentara directamente, no se guardarían.
+#[test]
+fn cl119_el_cierre_anota_lo_que_alimenta() {
+    let fuente: String = include_str!("../src/lib.rs")
+        .lines()
+        .map(|l| l.split("//").next().unwrap_or(""))
+        .collect::<String>()
+        .split_whitespace()
+        .collect();
+    assert!(fuente.contains(
+        "estado_aprendido::alimentar(&mutself.calibrator_by_coin,&mutself.registro_calibrador,&mutself.confidence_calibrator,&mutself.registro_calibrador_global,"
+    ));
+    assert!(!fuente.contains(".update_at(score_at_entry"), "nadie alimenta los calibradores sin anotar");
 }

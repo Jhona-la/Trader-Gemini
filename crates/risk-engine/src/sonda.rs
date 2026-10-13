@@ -16,7 +16,7 @@
 //! (`arranque_frio_sin_roster`: sin modelo, `trade_count == 0` y sin
 //! posición en la moneda, exención del ML-GATE). Ninguna miraba la cartera,
 //! así que cada moneda podía abrir su sonda a la vez. Y como `trade_count`
-//! no se persiste, tras cada reinicio todas volvían a la fase de sonda.
+//! no se persistía, tras cada reinicio todas volvían a la fase de sonda.
 //! Las dos llaman ahora a la misma función, [`admite_sonda`]:
 //! - el veto del riesgo decide: rechaza con `sonda_ocupada` antes de
 //!   dimensionar;
@@ -27,12 +27,11 @@
 //!   de las puertas cambia.
 //!
 //! Reinicio. Una moneda en fase de sonda es la que tiene menos de
-//! [`CIERRES_DE_SONDA`] cierres en este proceso. Tras un reinicio todas
-//! vuelven a 0, así que una posición adoptada del exchange cuenta como
-//! sonda abierta. La cartera no abre otra sonda hasta que esa posición
-//! cierra. La regla de «una sola» se conserva sin estado persistido. Lo
-//! que sí se pierde al reiniciar es el recuento por moneda; persistirlo es
-//! del estado aprendido (C-F8).
+//! [`CIERRES_DE_SONDA`] cierres. Desde CL-108 el recuento por moneda se
+//! guarda y se restaura con el estado aprendido (ADR-0017). Sin estado
+//! guardado (primer arranque, o el archivo retirado) todas parten de 0: una
+//! posición adoptada del exchange cuenta entonces como sonda abierta y la
+//! cartera no abre otra hasta que cierra.
 //!
 //! F3.4-05 (Ola Ω107): Desacoplamiento adaptativo de [`CIERRES_DE_SONDA`] y prueba
 //! secuencial de razón de verosimilitudes (SPRT de Wald). Si la evidencia de aciertos

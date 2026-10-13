@@ -9621,7 +9621,7 @@ impl GodEngineCore {
                     // exige — sin ella el motor jamás arrancaría (oráculo 0/144).
                     //
                     // Ola XLIV: UNA sonda a la vez. `trade_count` sólo sube al
-                    // CERRAR y no se persiste, así que sin este límite la
+                    // CERRAR (y entonces no se persistía), así que sin este límite la
                     // «sonda» podía llenar los 3 slots espectrales de la moneda
                     // antes del primer cierre, y tras cada reinicio las monedas
                     // sin modelo (27 de 30 hoy) abrían de nuevo saltándose el
