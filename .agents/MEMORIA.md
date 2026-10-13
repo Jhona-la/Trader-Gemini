@@ -1,6 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω94 — Cierre de Fase 7 (F3.4-04 Muros L2), Resolución de Hallazgo risk-a (Interés Compuesto Desasfixiado) y Censo Forense de Hardcodes
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω95 — Plan Maestro de Revisión Base, Auditoría de Oráculos Cerrados y Sincronización Multi-Agente
+
+- **Rama activa**: `antigravity/ola95-optimizacion-sistemica` (creada desde `main` en `1c3a3d39`).
+- **Publicación de Ola Ω94 en main y origin/main confirmada**:
+  - Commits `56697269` (F3.4-04 muros L2 en `booktick_replay.rs`), `0019e846` (risk-a: eliminación de techo de $2.60 USD de margen micro para interés compuesto), y `1c3a3d39` (sincronización de memoria y tablero) fusionados fast-forward en `main` y empujados exitosamente a `origin/main`.
+  - Rama `antigravity/ola94-plan-maestro-revision-total` eliminada limpiamente tras confirmar ascendencia remota.
+- **Auditoría Forense de Oráculos Matemáticos de Forma Cerrada (Tolerancia 1e-12)**:
+  - Hallazgo crítico: los contratos del sistema (`cf2_conducta_masas_solucion_conocida.rs`, `resonancia_simetrica_contract.rs` / `H2-11`, `qs_r2_simetria_espejo_contract.rs`) contienen derivaciones analíticas bit-exactas calculadas por oráculos colegiados.
+  - Modificar constantes fijadas en estos contratos sin re-derivar la ecuación analítica rompe la certificación matemática del sistema.
+  - El camino riguroso hacia el crecimiento exponencial (+100% cada 72 horas con $13 USD) se apoya en erradicar cuellos de botella de flujo y capital (LH-02 resuelto, risk-a resuelto), en lugar de perturbar anclas analíticas calibradas.
+- **Ruta de Desasfixia en Curso (Ola Ω95)**:
+  - Foco en los cuellos de botella de Línea H pendientes: `LH-03` (envolvente absorbente a $1,000 USD que trunca Kelly), `LH-04` (escalamiento de dimensionamiento óptimo bajo mínimos de exchange) y `LH-05` (reactivación de ramas de tendencia mediante flexibilización fractal por exponente de Hurst).
+  - Verificación workspace: `cargo check --workspace --all-targets` 100% limpio (40s).
+
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω94 — Cierre de Fase 7 (F3.4-04 Muros L2), Resolución de Hallazgo risk-a (Interés Compuesto Desasfixiado) y Censo Forense de Hardcodes (Publicado en main: commit 1c3a3d39)
 
 - **Cierre y Certificación de Fase 7 (Simulación Determinista y Paridad)**:
   - En `crates/backtest-engine/src/booktick_replay.rs`: resuelto **F3.4-04** incorporando `core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);` dentro del bucle de replay de ticks. Se garantiza paridad estricta 1:1 entre producción (`god_engine.rs`), el harness de replay y el análisis forense, activando la observabilidad del gen 57 (veto de muro L2).
