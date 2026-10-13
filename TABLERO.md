@@ -195,10 +195,16 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-13 16:50 local, Quant Sr. Lead, Ola Ω95 en vuelo)
+## Antigravity (actualizado: 2026-10-13 18:00 local, Quant Sr. Lead, Ola Ω96 en vuelo)
 
-- **Haciendo ahora**: Ola Ω95 — Resolución LH-03, desacoplamiento multiactivo ADR-0011, resolución LH-05, cableado de CouncilParams y normalización multiactivo de volatilidad:
-  - **Resolución de LH-03 (commit e20c0eec)**: Cuando `live_envelope_gate` rechazaba en $n \ge 30$ (Kelly $\le 0$), `rollback_local_position` no activaba `last_exit_fastband_ms`, creando 5.604 rollbacks sin enfriamiento. Ahora se fuerza cooldown tras rollback. Full test suite verde.
+- **Haciendo ahora**: Ola Ω96 — Sincronización Integral Multi-Agente del Plan Maestro Canónico, Auditoría de Topología de 23 Crates, Cacería Forense de Hardcodes y Trazado de Grafo Vivo:
+  - **Sincronización del Plan Maestro Canónico (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md`)**:
+    * Actualizada la base consolidada `32928125` (prevaleciente sobre `3dc88468`) con 643 archivos `.rs` compilables y 290 suites contractuales.
+    * Incorporadas formalmente las resoluciones certificadas de Ola Ω95: LH-03 (replay cooldown, commit `e20c0eec`), LH-05 (anti-extensión tendencial D-621, commit `d7a37dcb`), ADR-0011 (desacoplamiento multiactivo, commit `1c9da3d3`), CouncilParams arena wiring (commit `5845ab41`) y normalización multiactivo de volatilidad (commit `095b28eb`).
+    * Incorporada la Topología Estructural Completa y Grafo de Dependencias de los 23 Crates del workspace, con su mapeo matemático/físico/cuántico específico por crate (Navier-Stokes, Yang-Mills, Hodge, Feynman, Hawkes, Soliton, Renyi/Tsallis, Cramér-Lundberg, Ville, Prospect Theory).
+    * Incorporado el Censo Forense de Hardcodes, Números Mágicos y Sesgos con su hoja de ruta evolutiva hacia el continuo y el genoma.
+  - **Resultados de Ola Ω95 Completados y Certificados en main (`32928125`)**:
+    - **Resolución de LH-03 (commit e20c0eec)**: Cuando `live_envelope_gate` rechazaba en $n \ge 30$ (Kelly $\le 0$), `rollback_local_position` no activaba `last_exit_fastband_ms`, creando 5.604 rollbacks sin enfriamiento. Ahora se fuerza cooldown tras rollback. Full test suite verde.
   - **Resolución de Desacoplamiento Multiactivo ADR-0011 (commit 1c9da3d3)**: Erradicado el acoplamiento físico `if coin_id == 0 { btc } else if coin_id == 1 { eth }` en `crates/risk-engine/src/lib.rs:737-764`. Centralizado en `GlobalArena::volatility_multiplier_for(coin_id, atr_pct)` en `crates/quantum-arena/src/state.rs`. Los símbolos leen sus genes dedicados por IDENTIDAD (`slot_es_simbolo`), nunca por índice de slot rígido, y las alts miden su volatilidad relativa contra el slot dinámico del ancla de mercado. Certificado con nueva prueba contractual `ola95_volatilidad_multiplier_for_sigue_identidad_de_simbolo` en `stop_por_simbolo_contract.rs`.
   - **Resolución Definitiva de LH-05 (commit d7a37dcb)**: Erradicada la contradicción algebraica en `crates/god-engine-core/src/lib.rs:6104-6134` que asfixiaba el 100% de las entradas tendenciales (0 de 604 operaciones):
     * Causa raíz: En tendencia (`!is_mean_reverting`), `max_stretch_long = 0.00` exigía simultáneamente $P \le \text{EMA}_{\text{slow}}$ y macro/micro tendencia alcista ($P \ge \text{EMA}_{\text{slow}}$), restringiendo la entrada a un conjunto de medida nula.
