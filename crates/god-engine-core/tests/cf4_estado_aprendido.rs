@@ -303,3 +303,23 @@ fn cl108e_se_restaura_la_epigenetica_y_lundberg() {
     assert!(r(&viejo) > 0.0, "precondición: hay R medido");
     assert!((r(&con) - r(&viejo)).abs() <= 1e-9 * r(&viejo), "R restaurado");
 }
+
+/// CL-118 (T2-5 de la revisión de la Línea G) — la evidencia de una moneda
+/// que no está en el universo de este arranque no se pierde al guardar.
+/// Antes la foto sólo llevaba las monedas del universo y `guardar` reescribía
+/// el archivo entero: en el primer cierre desaparecía.
+#[test]
+fn cl118_la_evidencia_de_una_moneda_fuera_del_universo_se_conserva() {
+    registrar_simbolos();
+    let mut estado = con_historia().estado_aprendido();
+    let mut ausente = estado.monedas[1].clone();
+    ausente.simbolo = "NOESTAUSDT".into();
+    ausente.metricas.trade_count = 42;
+    estado.monedas.push(ausente.clone());
+    let mut c = nucleo();
+    c.restaurar_estado_aprendido(&estado);
+    let guardado = c.estado_aprendido();
+    let vuelve = guardado.monedas.iter().find(|m| m.simbolo == "NOESTAUSDT");
+    println!("observado: la moneda fuera del universo se guarda: {:?}", vuelve.map(|m| m.metricas.trade_count));
+    assert_eq!(vuelve, Some(&ausente));
+}

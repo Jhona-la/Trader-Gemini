@@ -272,6 +272,8 @@ impl GodEngineCore {
                 detector_lg22: self.lg22_detectores.get(coin_id).map(|d| d.guardado()),
             });
         }
+        // CL-118: y las que se restauraron sin estar en este universo.
+        monedas.extend(self.monedas_fuera_del_universo.iter().cloned());
         let v = &self.risk_engine.freno_estrategia.ville;
         EstadoAprendido {
             version: VERSION_ESTADO,
@@ -298,15 +300,19 @@ impl GodEngineCore {
     }
 
     /// Restaura un estado guardado. Las monedas se buscan por símbolo en el
-    /// universo de este arranque; las que ya no están se ignoran. Devuelve
-    /// cuántas monedas se restauraron.
+    /// universo de este arranque; las que ya no están no se restauran, pero
+    /// se conservan para volver a guardarlas (CL-118). Devuelve cuántas
+    /// monedas se restauraron.
     pub fn restaurar_estado_aprendido(&mut self, e: &EstadoAprendido) -> usize {
         if e.version != VERSION_ESTADO {
             return 0;
         }
         let mut restauradas = 0;
+        self.monedas_fuera_del_universo.clear();
         for g in &e.monedas {
             let Some(coin_id) = quantum_arena::symbols::get_coin_id(&g.simbolo) else {
+                // CL-118: no está en este universo; se conserva para guardarla.
+                self.monedas_fuera_del_universo.push(g.clone());
                 continue;
             };
             let Some(coin) = self.arena.coins.get(coin_id) else {

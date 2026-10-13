@@ -1174,6 +1174,10 @@ pub struct GodEngineCore {
     /// (los leen el demonio, la deriva frente al control y el validador de
     /// paridad); se suma al guardar.
     pub(crate) pnl_previo: Vec<(f64, f64)>,
+    /// CL-118 (T2-5 de la Línea G) — monedas del estado restaurado que no
+    /// están en el universo de este arranque: se vuelven a guardar tal cual,
+    /// para no perder su evidencia.
+    pub(crate) monedas_fuera_del_universo: Vec<estado_aprendido::MonedaGuardada>,
     /// CERT-M2-C02 — proceso de Hawkes POR SÍMBOLO. Cada TRADE real excita
     /// el proceso (record_event); λ/μ verdadero se publica al registry.
     /// Antes el slot 'hawkes_intensity' llevaba un proxy de aceleración/ATR
@@ -1500,6 +1504,7 @@ impl GodEngineCore {
                 .collect(),
             registro_calibrador_global: std::collections::VecDeque::new(),
             pnl_previo: vec![(0.0, 0.0); n_coins],
+            monedas_fuera_del_universo: Vec::new(),
             hawkes_by_coin: (0..n_coins)
                 .map(|_| signal_engine::hawkes_bessel::HawkesBesselEngine::new())
                 .collect(),
