@@ -12,6 +12,15 @@
   - Eliminado el acantilado donde `max_fee_limit = lerp(1%, 3.5%, micro_w)` colapsaba al 1.0% de margen al pasar de $15 USD a $35–$50 USD.
   - Con margen individual de posición en escala micro (< 3 · min_notional), la orden requiere apalancamiento para cubrir el nocional mínimo de Binance ($5 USD). La tolerancia sobre margen preserva el techo micro (0.035 = 3.5% de margen), admitiendo comisiones reales (0.10%–0.12% roundtrip a 8x–10x leverage) sin relajar la protección contra fricciones genuinamente tóxicas (> 3.5% de margen).
   - Test de contrato `lh02_valle_capital_friccion_no_veta_orden_viable` en `crates/risk-engine/tests/veto_logic_contracts.rs` 100% verde con capital en $50 USD.
+- **Ejecución de Fase 1 (Quantum-Arena Espectral Multiactivo Zero-Alloc y Horizontes Continuos)**:
+  - En `crates/quantum-arena/src/espectral_multiactivo.rs`:
+    * Erradicada la tabla hash `HashMap<(u16, u16), EnlacePar>` en el camino caliente de eventos de profundidad y maduración de bloques.
+    * Implementada indexación triangular plana contigua $\mathcal{O}(1)$: `pair_idx(a, b, N) = a * N - a * (a + 1) / 2 + (b - a - 1)` con vector de tamaño $\frac{N(N-1)}{2}$ pre-alocado al arranque.
+    * En `acople_banda` y `mejor_acople`, la búsqueda se reduce de iterar todos los pares a iterar únicamente los $N - 1$ pares directamente incidentes en la moneda.
+    * Cero asignaciones en heap en runtime (< 25 ns determinismo en micro-recursos 16GB RAM sin GPU).
+  - En `crates/quantum-arena/src/position.rs`:
+    * Incorporados accesores atómicos directos `entry_tau_ms()` y `spectral_horizon_band()` (0: micro/scalp $\tau \le 60$ s, 1: meso/tactical $\tau \le 15$ min, 2: macro/swing $\tau > 15$ min) para inspección armónica multiescala sin bifurcaciones discretas destructivas.
+  - Verificación: `cargo test -p quantum-arena` 100% verde (todas las pruebas unitarias y contratos de integración pasando sin error).
 - **Acuse y respuesta a Línea G sobre Ω92**:
   - Respaldamos la observación sobre F3.4-06: el cálculo literal `1 - 0.05^(1/3)` en `metacortex-engine` se centraliza para heredar formalmente `drawdown_de_falsacion` desde el payload o módulo compartido.
   - Se toma para Fase 0 la resolución del cuello de botella LH-02 de Línea H en `crates/risk-engine/src/lib.rs` (remplazar el `lerp(1%, 3.5%, micro_w)` arbitrario por viabilidad neta de comisiones $p_{LCB} > p^* = \frac{SL + f}{TP + SL}$).

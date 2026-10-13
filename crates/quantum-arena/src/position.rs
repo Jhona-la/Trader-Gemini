@@ -648,6 +648,25 @@ impl Position {
         None
     }
 
+    /// Retorna el valor continuo inmutable de tau (ms) con el que se abrió la posición.
+    #[inline(always)]
+    pub fn entry_tau_ms(&self) -> u64 {
+        self.entry_tau_ms.load(Ordering::Relaxed)
+    }
+
+    /// Retorna la banda espectral continua [0: micro/scalp, 1: meso/tactical, 2: macro/swing].
+    #[inline(always)]
+    pub fn spectral_horizon_band(&self) -> usize {
+        let tau = self.entry_tau_ms.load(Ordering::Relaxed);
+        if tau == 0 || tau <= 60_000 {
+            0
+        } else if tau <= 900_000 {
+            1
+        } else {
+            2
+        }
+    }
+
     /// Proyección espectral diagnóstica/informativa en nanosegundos (branchless/O(1), R6-C9):
     /// Proyecta la escala continua intrínseca `entry_tau_ms` en bandas semánticas humanas para telemetría.
     /// NOTA ARQUITECTURAL (U-ERR-5 / R6-C9): El motor de trading, el dimensionamiento de riesgo

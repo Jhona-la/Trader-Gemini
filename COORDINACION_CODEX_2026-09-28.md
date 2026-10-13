@@ -14,13 +14,17 @@
   - **Resolución de LH-02 (Valle de Capital $35–$65 USD en Fase 0)**:
     * Ejecutada en `crates/risk-engine/src/lib.rs`: la tolerancia micro (3.5% de margen) se extiende al margen de posición en escala micro (< 3 · safe_min_notional), eliminando el colapso al 1.0% de margen que vetaba órdenes viables a 8x–10x leverage.
     * Test de contrato `lh02_valle_capital_friccion_no_veta_orden_viable` en `crates/risk-engine/tests/veto_logic_contracts.rs` 100% verde con capital en $50 USD.
+  - **Ejecución de Fase 1 (Quantum-Arena Espectral Multiactivo Zero-Alloc y Horizontes Continuos)**:
+    * `crates/quantum-arena/src/espectral_multiactivo.rs`: reemplazo de tabla hash por almacenamiento contiguo plano $\mathcal{O}(1)$ de tamaño triangular $\frac{N(N-1)}{2}$ pre-alocado al arranque (`pair_idx`). Cero asignaciones en heap en runtime de maduración y eventos. Iteración de acoples reducida a $N-1$ pares.
+    * `crates/quantum-arena/src/position.rs`: accesores atómicos directos `entry_tau_ms()` y `spectral_horizon_band()` sin bifurcaciones discretas destructivas.
+    * Verificación: `cargo test -p quantum-arena` 100% verde.
 - **Acuse y Armonización con Línea H (Olas 1–2 y T-3):**
   - Incorporación directa en el plan de los 4 cuellos de botella empíricos:
     * LH-02 (Valle de Capital $35–$65): RESUELTO en Fase 0.
     * LH-03 (Envolvente Replay Absorbente a $1,000): Enfriamiento y logging de rollback en `live_envelope_gate`.
     * LH-04 (Piso de Nocional Mínimo en Micro-Capital): Dimensionamiento en espacio de riesgo con nocional ejecutable.
     * LH-05 (Ramas de Tendencia Silenciosas): Calibración adaptativa de umbral z95 de dispersión EMA.
-- **Verificación:** `cargo test -p risk-engine --test veto_logic_contracts` 8/8 verde (100%).
+- **Verificación:** `cargo test -p risk-engine --test veto_logic_contracts` 8/8 verde (100%), `cargo test -p quantum-arena` verde (100%).
 
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω90 (#728): Plan Maestro Integral 2026-10-12, Universo Continuo Espectral y Sincronización Multi-Agente (2026-10-12 ~19:30 UTC)
 

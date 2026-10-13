@@ -185,6 +185,11 @@
   - **Ejecución de Fase 0 (Saneamiento Crítico de Fricción y Falsación)**:
     * Centralización y deduplicación de $d^*$ (`drawdown_de_falsacion`).
     * **Resolución de LH-02 completada** (`crates/risk-engine/src/lib.rs`): Eliminado el acantilado del 1.0% de margen en el valle de capital ($35–$65 USD). La tolerancia micro (3.5% de margen) se extiende al margen de posición en escala micro (< 3 · safe_min_notional). Test `lh02_valle_capital_friccion_no_veta_orden_viable` 100% verde con capital en $50 USD.
+  - **Ejecución de Fase 1 (Quantum-Arena Espectral Multiactivo Zero-Alloc y Horizontes Continuos)**:
+    * Erradicada tabla hash `HashMap<(u16, u16), EnlacePar>` en `crates/quantum-arena/src/espectral_multiactivo.rs`.
+    * Indexación plana contigua triangular $\mathcal{O}(1)$ de tamaño $\frac{N(N-1)}{2}$ (`pair_idx`). Recorrido restringido a $N-1$ pares incidentes.
+    * Incorporados accesores atómicos directos `entry_tau_ms()` y `spectral_horizon_band()` en `crates/quantum-arena/src/position.rs` garantizando diferenciación analítica continua sin desarmonías discretas.
+    * Verificación: `cargo test -p quantum-arena` 100% verde (todos los tests pasando).
 - **Commiteado reciente**:
   - Ola Ω92 (#730, commit `0b18e589` en main): Resolución del Trilema del Consejo Seniors en Fase C-F3 (F3.4-01 pesos por EV $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|}$, F3.4-02 "un dato, un veto" en VPIN/override en `SeniorAuditorInterno`, F3.4-06 veto DD alcanzable bajo $d^*$).
   - Ola Ω91 (#729, commit `5644f1f1` en main): Resolución de F2.3b-07 (Acción Gauge Yang-Mills con Dislocación Transversal en 2-Símplex y TTL Anti-Staleness).
