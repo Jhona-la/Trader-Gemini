@@ -369,7 +369,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         nombre: "estrategia_falsada",
         causa: "CL-107 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12): freno de la ESTRATEGIA, separado del freno duro de la cuenta. Un proceso e de Ville sobre la R realizada de cada cierre rechaza H0 «la estrategia tiene +0,30 R por operación» cuando M ≥ 1/α; desde ese momento no se admiten entradas nuevas. Las posiciones abiertas se siguen gestionando: no aplana ni dispara el kill-switch global. Queda echado hasta restaurar otro estado (otra estrategia es otra hipótesis). También se echa al arrancar si el estado aprendido es ilegible o de otra versión (CL-108f, fail-closed: no se sabe si estaba echado)",
         fuente_umbral: "medido: proceso e de Ville (VilleEProcess) sobre la R de cada cierre, con la escala de la geometría medida de las órdenes; H0 = +0,30 R (la ventaja que pide la meta) y α = 0,05 son política del dueño",
-        datos: "resultado_r de cada cierre del núcleo (PnL neto / riesgo al stop), ganancia_en_stops y perdida_en_stops del arena (EWMA de las operaciones, registradas al cerrarlas, CL-135); telemetría ville_estrategia_e",
+        datos: "resultado_r de cada cierre de la estrategia (PnL neto / riesgo al stop), medido con la geometría de su posición (CL-114); no cuentan las sondas ni las posiciones sin stop propio (CL-115). Las medias ganancia_en_stops y perdida_en_stops del arena son EWMA de las operaciones, registradas al cerrarlas (CL-135); telemetría ville_estrategia_e",
         responsable: "CL-107 (Claude, Línea C), 2026-10-12",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,

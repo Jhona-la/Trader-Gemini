@@ -4713,6 +4713,16 @@ impl GodEngineCore {
                     // CL-130: el SL PROPIO de la posición (0 si se adoptó del
                     // exchange sin él); `close_with_fee` lo borra.
                     let sl_propio = pos.sl_price.load(Ordering::Relaxed);
+                    // CL-115 (T1-04 y T1-05 de la Línea G): qué cierres son
+                    // evidencia del freno de la estrategia. Se lee ANTES de
+                    // cerrar (la ranura se limpia) y antes de que suba el
+                    // recuento: una posición sin TP ni SL propios (adoptada
+                    // del exchange) se gestiona con un stop de respaldo y su R
+                    // no es medible; una posición de una moneda en fase de
+                    // sonda es exploración (D4), no una decisión de la
+                    // estrategia.
+                    let stop_propio = sl_propio > 0.0 && pos.tp_price.load(Ordering::Relaxed) > 0.0;
+                    let era_sonda = risk_engine::sonda::en_fase_de_sonda(&self.arena, coin_id);
                     let (closed_side, closed_entry, closed_qty, margin_used, entry_fee_paid) = pos.close_with_fee();
                     // CL-45b: lo cerrado manda (un llenado parcial confirmado
                     // en paralelo pudo reescalar la ranura tras la lectura).
@@ -5343,8 +5353,11 @@ impl GodEngineCore {
                         } else {
                             (f64::NAN, f64::NAN)
                         };
+                    // CL-115: sólo los cierres de la estrategia (con stop
+                    // propio y fuera de la fase de sonda) son evidencia.
+                    let r_freno = if stop_propio && !era_sonda { resultado_r } else { f64::NAN };
                     let e_estrategia = self.risk_engine.freno_estrategia.registrar(
-                        resultado_r,
+                        r_freno,
                         ganancia_pos,
                         perdida_pos,
                     );

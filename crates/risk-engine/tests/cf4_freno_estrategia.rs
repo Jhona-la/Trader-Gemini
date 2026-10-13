@@ -167,7 +167,7 @@ fn codigo(fuente: &str) -> String {
 #[test]
 fn cl114_el_nucleo_pasa_la_geometria_de_la_posicion() {
     let nucleo = codigo(include_str!("../../god-engine-core/src/lib.rs"));
-    assert!(nucleo.contains("freno_estrategia.registrar(resultado_r,ganancia_pos,perdida_pos,)"));
+    assert!(nucleo.contains("freno_estrategia.registrar(r_freno,ganancia_pos,perdida_pos,)"));
     assert!(!nucleo.contains("freno_estrategia.registrar(resultado_r,self.arena.ganancia_en_stops"));
 }
 
