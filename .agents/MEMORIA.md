@@ -1,5 +1,44 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-12 — Claude (Línea H, LH-n): ola 2 — ¿se adapta el sistema? Medido con el T-3: adapta la exposición, no la selección; la puerta EV no se cierra en 50 h de régimen adverso y, abierta o cerrada, no cambia el resultado
+
+- **LH-10 / LH-10b** (añadidos al T-3 sin tocar el generador ni el techo que
+  la Línea G revisa en su ola 6): `serie_concatenada` (dos tramos; por
+  determinismo los cierres del primero coinciden con los del tramo en frío:
+  89/89, 36/36, 89/89), `cuartiles` por índice de cierre,
+  `t3_adaptacion_en_el_tiempo` (E1 ventaja larga, E2 ventaja → nulo, E3
+  nulo → ventaja, E4 ventaja → antipersistencia) y
+  `t3_adaptacion_misma_serie_dos_veces` (E1b). Datos en
+  `docs/audit/linea_h/ola2_*`; lectura en el plan §7.
+- **Medido (13 USD, 50 h por tramo, release)**: E1 sin curva de aprendizaje
+  en el acierto (0,79/0,62/0,59/0,74) pero pago por cierre ×1,6; E2 0
+  rechazos EV en 50 h de nulo (929 en frío) y el mismo resultado (−0,063
+  frente a −0,126); E3 la mitad de la ventaja tras 50 h perdedoras (65
+  cierres, +0,71 frente a 89, +1,41; la puerta reabre en 9 evaluaciones: la
+  deuda es del núcleo/τ); E4 el motor no invierte ni se detiene (45 cierres
+  al 33 %, ×3,75 la exposición en frío, 0 rechazos); E1b 0 cierres idénticos
+  entre dos pasadas de la misma serie: con estado caliente ventaja +23 %,
+  régimen medio de −0,12 a +0,41, nulo ×2,5 cierres y ×2,3 pérdida.
+- **Causa con cita**: Platt sobre `WINDOW = 512` cierres (`calibration.rs:45`)
+  con olvido de 12 h sólo en el hueco entre cierres (`calibrate_at`): operando,
+  la evidencia no envejece (≈ 10–12 días de memoria). Ningún lazo invierte el
+  lado (D-472, hebbiano y PPO positivos, Platt con pendiente ≥ 0); la τ es
+  una ley cerrada clavada en el minuto.
+- **Lectores y escépticos**: 46 lazos inventariados (`ola2_lazos.tsv`), 25
+  hallazgos, 32 predicciones; 13 confirmados, 3 plausibles, 7 ya registrados,
+  2 refutados (A1-03: el umbral epigenético sí tiene lector, `risk
+  lib.rs:1109`; A2-02), 16 nuevos. Entregas LH-12 (calibración con pesos por
+  edad, Línea E/Codex), LH-13 (nada invierte el lado y el estado multiplica
+  la exposición adversa, núcleo), LH-14 (τ en ley cerrada y deuda del
+  e-proceso, espectro), LH-15 (la puerta EV no protege), LH-16, LH-17.
+- **Lección de método**: la serie «larga» con otra sal no sirve de control;
+  la misma serie dos veces (`serie_concatenada(p, p)`) aísla el estado. Y
+  `REJECT_COUNTERS` cuenta evaluaciones (30 por vela): 929 rechazos son ≈ 4
+  cierres; no leerlos como «la puerta cerró media corrida».
+- **Lección de build**: con `CARGO_TARGET_DIR=<raíz>/target` y `RUSTFLAGS`
+  exportados, el worktree reutiliza las dependencias compiladas (19 crates
+  del workspace en 3 min en vez de ~450 en 12).
+
 ## 2026-10-12 — Claude (Línea H, LH-n): ola 1 — el T-3 mide la cadena con ventaja conocida: la ventaja no la matan las puertas, la mata el tamaño, y doblar la cuenta apaga el sistema
 
 - **Por qué otra línea**: al abrir la sesión (15:49) había otra sesión Claude

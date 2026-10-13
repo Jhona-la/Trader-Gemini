@@ -10341,3 +10341,82 @@ pruebas.
 - **No toco**: núcleo, riesgo, host, orquestador, registro, consejo,
   `spectral_tape`, `booktick_replay`, `online_daemon`, `genome.rs`. Sólo
   `crates/backtest-engine/tests/t3_ventaja_conocida.rs` (añadidos) y docs.
+
+## 2026-10-12 — Claude (Línea H, LH-n): CIERRE DE LA OLA 2 — ¿se adapta el sistema? Medido: adapta la exposición, no la selección; la puerta EV no se cierra en 50 h de régimen adverso y, cerrada o abierta, no cambia el resultado
+
+- **Qué hay**: LH-10/LH-10b, los experimentos de adaptación añadidos al T-3
+  (`t3_adaptacion_en_el_tiempo`, `t3_adaptacion_misma_serie_dos_veces`;
+  helpers `serie_concatenada` y `cuartiles`), sin tocar el generador ni el
+  techo que la Línea G revisa. Datos en `docs/audit/linea_h/ola2_*`; lectura
+  en `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md` §7. Tres lectores (46 lazos que
+  aprenden por cierre con etiqueta, memoria, consumidor y escala; 25
+  hallazgos; 32 predicciones) y tres escépticos con la medición (13
+  confirmados, 3 plausibles, 7 ya registrados, 2 refutados; 6 predicciones
+  cumplidas, 11 parciales, 9 falladas; 16 nuevos). Por determinismo, los
+  cierres del primer tramo de cada serie compuesta coinciden uno a uno con
+  los del tramo en frío (89/89, 36/36, 89/89): el método mide lo que dice.
+- **Lo medido (13 USD, 50 h por tramo, release)**:
+  - **E1** ventaja larga: sin curva de aprendizaje en el acierto (0,79 /
+    0,62 / 0,59 / 0,74 por cuartiles de experiencia), pero el PAGO por cierre
+    crece ×1,6 con b constante y capital ×1,3: hay un canal de
+    tamaño/geometría que cambia con la experiencia y que nadie predijo.
+  - **E2** ventaja → nulo: tras un tramo ganador la puerta EV NO se cierra en
+    50 h de nulo (0 rechazos frente a 929 en frío); 40 cierres, −0,063 USD
+    frente a 36 y −0,126: **abierta o cerrada, el resultado es el mismo**.
+  - **E3** nulo → ventaja: tras 50 h perdedoras se captura la MITAD de la
+    ventaja (65 cierres, +0,711 USD frente a 89 y +1,408); la puerta reabre
+    en 9 evaluaciones: la deuda está en el núcleo/τ, no en el riesgo.
+  - **E4** ventaja → antipersistencia: el motor NO invierte ni se detiene:
+    45 cierres al 33 % (≈ seguir la vela previa) con la estructura vieja,
+    ×3,75 más exposición que en frío y 0 rechazos en 50 h; en frío lo frena
+    el núcleo (43 intenciones), no Platt.
+  - **E1b** la misma serie dos veces (idéntica entrada, sólo cambia el
+    estado): 0 cierres idénticos entre pasadas (0/86, 0/44, 0/36). Con
+    estado caliente: ventaja +23 %, régimen medio de −0,12 a +0,41, nulo
+    ×2,5 cierres y ×2,3 pérdida. **El estado añade actividad, no selección.**
+- **La causa, con cita**: la p de la puerta EV es un ajuste de Platt sobre
+  las últimas `WINDOW = 512` operaciones (`calibration.rs:45`) con prior de
+  3,84 pseudo-observaciones a la puntuación cruda (0,98 en todas las
+  órdenes); el olvido de 12 h (`calibrate_at`, `:130-142`) sólo corre en el
+  hueco desde el último dato: operando, la evidencia no envejece (memoria
+  efectiva ≈ 500 cierres ≈ 10–12 días). Ningún lazo puede invertir el lado
+  (D-472; pesos hebbiano y PPO positivos; pendiente de Platt ≥ 0) y la τ es
+  una ley cerrada clavada en el minuto.
+- **Entregas por dueño** (cita y escenario en `ola2_lectores.tsv`,
+  `ola2_verificacion.tsv`, `ola2_nuevos_escepticos.tsv`):
+  - **Línea E / Codex (calibración)** — **LH-12 (HIGH)**: evidencia con pesos
+    por edad o e-proceso por rama/escala sobre la R neta frente a p* (#661)
+    en vez de la ventana de 512; y cota inferior en la puerta (la rama
+    jerárquica de `risk lib.rs:1166` es inalcanzable). **LH-15 (MED)**: la
+    puerta EV no protege (A2-N2/A2-N3).
+  - **Qoder / Línea C (núcleo)** — **LH-13 (HIGH)**: ningún lazo invierte el
+    lado y el estado ganador multiplica ×3,75 la exposición al régimen
+    adverso sin freno (LH-A3-1, LH-A3-N1). **LH-16 (MED)**: hebbiano saturado
+    en 2,0 a los ≈ 23 cierres y rama 11 apagada con Hurst < 0,45.
+  - **Qoder (espectro)** — **LH-14 (HIGH)**: la τ de la orden es una ley
+    cerrada con el centroide clavado en 30 s por la persistencia negativa
+    determinista del puente intravela; la deuda del e-proceso del nodo de
+    68,7 s tarda ≈ 10 h en pagarse: ahí se pierde la mitad de E3.
+  - **Sol / Línea C (runner)** — **LH-17 (LOW)**: b suavizado dos veces y
+    pnl ≥ 0 contado como ganancia donde la envolvente usa > 0
+    (`backtest lib.rs:389-409`).
+  - **Refutados (para el registro)**: A1-03 (el umbral epigenético SÍ tiene
+    lector, `risk lib.rs:1109`; inerte por el techo 0,98) y A2-02 (la
+    ventana ×6 de la envolvente es inalcanzable). En
+    `docs/audit/linea_h/ola2_correcciones.md`.
+- **Lo que esto dice de la meta**: el sistema aprende despacio (ventana de
+  512 cierres), no desaprende (E4), arrastra el estado perdedor (E3) y lo
+  que sí cambia con la experiencia es cuánto opera, no qué opera. Dos
+  escalas de adaptación hacen falta: una rápida (régimen, minutos) por rama
+  y escala sobre la R neta frente a p*, y una lenta para el tamaño (ADR-0016
+  D1). Sin la primera, cada cambio de estructura cuesta ≈ 50 h; sin la
+  segunda, nada compone.
+- **Siguiente (ola 3, si se reabre)**: pago del segundo tramo en la fila
+  ADAPT; E4' anti → anti y E5 antipersistencia larga por cuartiles (prueba
+  directa de inversión); trazas completas y `lado_vs_estado.py` sobre series
+  compuestas; pedido fuera de zona: que el tope de 100 trazas del núcleo sea
+  configurable.
+- **Verificación**: `cargo check --workspace --all-targets` verde sobre el
+  árbol fusionado; T-2 de control idéntico a `main`; T-3 pruebas rápidas en
+  verde. **No toqué** nada fuera de `crates/backtest-engine/tests/` y
+  documentación. Rama fusionada en `main` y borrada.

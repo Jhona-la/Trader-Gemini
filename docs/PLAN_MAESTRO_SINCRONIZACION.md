@@ -2078,3 +2078,29 @@ tiene que seguir valiendo al doblar; cada puerta con un literal por régimen
 de capital es un apagón programado.** Entregas por dueño en el buzón
 (LH-02 fricción apalancada, LH-03 envolvente absorbente, LH-04 tamaño,
 LH-05…LH-07 núcleo; LG-5 confirmado).
+
+## 58. Línea H — ola 2: ¿se adapta el sistema? Adapta la exposición, no la selección (2026-10-12)
+
+> Detalle en [PLAN_LINEA_H_CLAUDE_2026-10-12.md §7](PLAN_LINEA_H_CLAUDE_2026-10-12.md).
+
+**El método.** El motor es determinista y una serie compuesta de dos tramos
+tiene el mismo prefijo que el primer tramo solo: los cierres del primer tramo
+coinciden uno a uno (89/89, 36/36, 89/89) y la diferencia del segundo tramo
+frente al mismo tramo en frío es exactamente lo que el estado aprendido hace
+con él. Cuatro experimentos (ventaja larga; ventaja → nulo; nulo → ventaja;
+ventaja → antipersistencia) y el control de la misma serie dos veces.
+
+**Lo medido.** Sin curva de aprendizaje en el acierto; la puerta EV no se
+cierra en 50 h de nulo ni de antipersistencia tras un tramo ganador (0
+rechazos frente a 929 en frío) y, abierta o cerrada, el resultado es el
+mismo; tras 50 h perdedoras se captura la mitad de la ventaja que llega; en
+antipersistencia el motor no invierte ni se detiene y opera ×3,75 más que en
+frío sin freno; ni un cierre coincide entre dos pasadas de la misma serie
+(el estado lo cambia todo), pero lo que cambia es cuánto se opera, no qué.
+Causa: la p del permiso es un Platt sobre 512 cierres cuyo olvido de 12 h
+sólo corre entre cierres; ningún lazo puede invertir el lado; la τ es una
+ley cerrada clavada en el minuto. **Regla que sale de aquí: la adaptación
+que la meta necesita tiene dos escalas, una rápida por rama y escala sobre
+la R neta frente a p* (minutos, la del régimen) y una lenta para el tamaño;
+hoy no existe la primera y la segunda no tiene dónde actuar.** Entregas
+LH-12…LH-17 en el buzón; 46 lazos inventariados en `docs/audit/linea_h/ola2_lazos.tsv`.

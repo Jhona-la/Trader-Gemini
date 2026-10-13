@@ -92,38 +92,35 @@
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
   `target/debug/incremental` y quedaron ~159 GB libres.
 
-## Claude — Línea H (actualizado: 2026-10-12 18:30 local, prefijo LH-n; ola 2 en vuelo en `claude/linea-h-ola2`, worktree `.claude/worktrees/linea-h`)
+## Claude — Línea H (actualizado: 2026-10-12 ~19:30 local, prefijo LH-n; olas 1 y 2 cerradas y fusionadas en main; rama borrada)
 
 - **Qué es**: la cadena de la meta bajo una ventaja CONOCIDA. El T-3
-  (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`) es una escalera de
-  fixtures sintéticos con persistencia y deriva controladas; mide el techo sin
-  el motor (oráculo, proxy, P(TP antes que SL)) frente a lo realizado, el pago
-  por cierre y los rechazos por puerta. Plan y lectura:
-  `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md` §6; datos: `docs/audit/linea_h/`.
-- **Commiteado (ola 1)**: LH-1 y LH-1b (el T-3 con variantes por capital,
-  valle de capital e intervenciones sobre un gen); 30 hallazgos de 3 lectores
-  y 3 escépticos con la medición (11 confirmados, 17 nuevos).
-- **Lo medido**: con ventaja el riesgo no rechaza nada y el motor gana
-  +10,8 % en 50 h, pero todo al nocional mínimo (0,049/día frente a 0,231/día
-  de la meta; Kelly pleno medido 40 %, arriesgado 0,2 %). La cuenta opera con
-  13–26 USD, NO opera con 35–65 USD (`fee_impact`, LH-02 HIGH), 1 operación
-  con 100, vuelve con 215. Con 1 000 USD la envolvente es absorbente al cierre
-  30 (5 574 reversiones silenciosas, LH-03 HIGH). τ 64–128 s en todos los
-  peldaños y ramas tendenciales nunca (LH-05/06).
-- **Entregado**: LH-02/03/04 a Línea C (riesgo), LH-05/06/07 a Qoder/Línea C
-  (núcleo), LH-08/09 y LG-5 confirmado a Línea E/Codex, pedido de exportar
-  `envelope_vetoes`/`diag_*` a Sol. Todo en el buzón con el comando del T-3
-  que lo reproduce.
-- **Haciendo ahora (ola 2)**: LH-10, la ventaja conocida PUESTA EN EL TIEMPO
-  (¿se adapta el sistema?): E1 ventaja larga por cuartiles de experiencia, E2
-  ventaja → nulo, E3 nulo → ventaja (estado absorbente), E4 persistencia →
-  antipersistencia; pruebas `t3_adaptacion_*` añadidas al T-3 sin tocar el
-  generador ni el techo (la Línea G los revisa). LH-11: tres lectores de los
-  lazos que aprenden por cierre con predicciones de E1–E4, y escépticos
-  después.
-- **Siguiente (ola 3)**: peldaño con dos símbolos (D4 y co-despacho);
-  columna P(cierre por TP) cuando el runner exporte motivos; techo con la
-  geometría real del motor (τ ≈ 1 min).
+  (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`): escalera de fixtures
+  sintéticos con persistencia y deriva controladas; techo sin el motor frente
+  a lo realizado, pago por cierre y rechazos por puerta; variantes por
+  capital, valle de capital, intervenciones sobre un gen y experimentos de
+  adaptación (series compuestas, cuartiles por experiencia, misma serie dos
+  veces). Plan y lectura: `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md` §6–7;
+  datos e índice: `docs/audit/linea_h/`.
+- **Ola 1 (medido)**: con ventaja el riesgo no rechaza nada y el motor gana
+  +10,8 % en 50 h, todo al nocional mínimo (0,049/día frente a 0,231/día de la
+  meta). La cuenta opera con 13–26 USD, NO opera con 35–65 USD (`fee_impact`,
+  LH-02 HIGH), 1 operación con 100, vuelve con 215. Con 1 000 USD la
+  envolvente es absorbente al cierre 30 (LH-03 HIGH). τ 64–128 s siempre;
+  ramas tendenciales nunca (LH-05/06).
+- **Ola 2 (medido)**: el sistema adapta la EXPOSICIÓN, no la SELECCIÓN: sin
+  curva de aprendizaje en el acierto (E1), la puerta EV no se cierra en 50 h
+  de nulo ni de antipersistencia tras un tramo ganador (E2/E4: 0 rechazos),
+  tras 50 h perdedoras captura la mitad de la ventaja (E3), ×3,75 exposición
+  en régimen adverso sin freno (E4), 0 cierres idénticos entre dos pasadas de
+  la misma serie (E1b). Causa: Platt sobre 512 cierres, olvido sólo entre
+  cierres; ningún lazo invierte el lado; τ en ley cerrada.
+- **Entregado**: LH-02…LH-09 (ola 1) y LH-12…LH-17 (ola 2) en el buzón con
+  el comando del T-3 que los reproduce; 46 lazos inventariados
+  (`ola2_lazos.tsv`).
+- **Siguiente (ola 3, si se reabre)**: pago del segundo tramo en la fila
+  ADAPT; E4' anti → anti y E5 antipersistencia larga por cuartiles; trazas
+  completas; peldaño con dos símbolos (D4 y co-despacho).
 - **No tocó**: ningún archivo fuera de `crates/backtest-engine/tests/` y
   documentación.
 
