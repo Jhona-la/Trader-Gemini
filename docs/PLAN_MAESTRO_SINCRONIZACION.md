@@ -14,7 +14,8 @@ en `estado_aprendido.rs` y dos contratos nuevos, en rama propia aislada.
 Envejece cada cierre del MAP y preserva el reloj máximo fuera del anillo.
 Ω93 `calibrate_at_tau` se conserva al integrar. Prefijo Rust: 8 aprobados;
 R4 validó 11 nuevos y 10 existentes (3 ignores); all-targets ROOT3dc exit 0,
-662 inputs estables. Composición98/CI/cierre siguen pendientes. R4 conserva espectro,
+662 inputs estables; también con 98aadd2 exit 0/3m25s. CI/publicación
+compartida siguen pendientes. R4 conserva espectro,
 evalues y contratos ceros/replay; Línea H conserva T3-v2, Línea G su ola 8,
 Línea C/CF5 y Qoder sus fuentes. Reservas ajenas no se convierten en cierre.
 

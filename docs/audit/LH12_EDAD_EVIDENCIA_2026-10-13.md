@@ -1,7 +1,7 @@
 # LH-12: envejecimiento de cada cierre y restauración del reloj
 
 Consejo Codex, 13 de octubre de 2026. Hallazgo reproducido en `6bb08fdf`;
-composición con `3dc88468` de Ω93. Alcance: calibración de Platt, su estado
+composición con `3dc88468` y `98aadd2` de Ω93. Alcance: calibración de Platt, su estado
 guardado y dos contratos nuevos. No cierra la revisión de todo el núcleo.
 
 ## Problema y comportamiento resultante
@@ -84,7 +84,7 @@ contrastada con `temporal_spectrum.rs`. No ejecuta el núcleo completo.
   expulsado, lectura de formato anterior y rechazo de reloj inconsistente.
   Los ocho contratos de edad y los tres de restauración pasaron en la
   composición R4 descrita abajo. El check privado con 3dc terminó según el
-  recibo propio de esta sección; la composición con 98aadd2 aún es posterior.
+  recibo propio de esta sección; el segundo check incorpora 98aadd2.
 
 El otro Codex ejecutó seis contratos core en release sobre
 `f62590e33a76a61a67320fed0e1ecc9ae0514ebd`: 59 aprobados, cero fallidos,
@@ -134,6 +134,17 @@ El check compila targets y no ejecuta los tests. Recibo
 `bd38076914a4d4a9bd0e766636fa44a3468ac77a7e677f44df3adf18ee185085`;
 log SHA-256 `13deab5c192d0ddb6eb42c522fd2f92598b2b0ff23058545d28dcfe6ff074423`.
 
+La composición posterior con `98aadd2` también pasó el mismo comando:
+exit 0, 3 min 25 s, terminado a `2026-10-13T07:31:31.9302538Z`.
+Mismo número de inputs/Rust, estables antes/después, y mismo warning
+heredado. Padres inspeccionados `e7d55626` y `98aadd2`; los cuatro blobs
+LH12 siguen idénticos a los probados por R4. Recibo
+`logs/lh12-all-targets-98.json`, SHA-256
+`60fa34510bd41176d53d219d9b176621b14d45e35ece52ee333e18c1ec282f64`;
+log SHA-256 `5d1546f33ece47453854a444674f725891c87f044824b368a0fdaa74beba1ee7`.
+Estas dos compilaciones habilitan el cierre de los merges locales; no
+constituyen CI de la publicación compartida ni validación económica.
+
 Las lecturas matemáticas y la revisión adversarial de persistencia se hicieron
 por revisores separados. El segundo detectó el caso de reloj expulsado y
 la necesidad del oráculo de dos bins antes del cierre de esta ola.
@@ -164,6 +175,13 @@ preservando el grafo curado versionado. SHA-256 del AST `graph.json`:
 `b2bbc7a35e8fbd39ad008925bc145696b4921ad52b102a489ad54af43791bc64`.
 Estos resultados no certifican lectura, semántica ni actualidad de todo
 el conocimiento. Re-grep y blobs de fuente gobiernan los contratos.
+
+Se repitió update tras incorporar 98aadd2: exit 0, 129 extracciones
+no cacheadas, 16.718 nodos, 26.561 aristas, 985 comunidades. Se preservaron
+el AST en `logs/lh12-graphify-ast-98/` y el respaldo curado en
+`logs/lh12-graphify-curated-backup-98/`; nuevamente se restauraron sólo
+los ocho derivados de esta ejecución. SHA-256 del segundo AST:
+`2c75db91e9461b29d4077aa4ba366ce28d4ff40bcac7a6a3d9ec9600d16db2ac`.
 
 ## Límites y continuación
 

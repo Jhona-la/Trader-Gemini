@@ -102,12 +102,8 @@ fn orden(conf: f64) -> (f64, f64) {
 /// Esperado: nocional (margen·apalancamiento) igual para conf 0,80 y 0,95,
 /// con tolerancia relativa 1e-6 (las dos órdenes recorren la misma
 /// aritmética; cualquier diferencia mayor sólo puede venir de la confianza).
-/// Medido hoy: margen ×1,1875 (= 0,95/0,80, el factor conf·epi_bias) y
-/// apalancamiento 3 en las dos (la cuantización entera enmascara el factor
-/// 0,40 + 0,60·conf en este fixture): nocional ×1,1875, cota inferior del
-/// ≈ 1,31 del hallazgo.
+/// Medido hoy: cerrado en Ola Ω93 (F3.3-08), margen y apalancamiento idénticos bajo la misma probabilidad calibrada.
 #[test]
-#[ignore = "OPEN F3.3-08 (Línea C, C-F4 riesgo): la confianza cruda multiplica el margen (conf·epi_bias, ×1,1875 medido de 0,80 a 0,95) además de la convicción del apalancamiento (0,40 + 0,60·conf, aquí enmascarada por la cuantización entera); con la misma p calibrada, conf 0,95 da más nocional que 0,80"]
 fn cf3_la_puntuacion_cruda_no_dimensiona_por_su_cuenta() {
     let (m_bajo, l_bajo) = orden(0.80);
     let (m_alto, l_alto) = orden(0.95);
