@@ -27,7 +27,43 @@ pub fn kelly_from_pf(prob_win: f64, profit_factor: f64) -> f64 {
     if !prob_win.is_finite() || !profit_factor.is_finite() || profit_factor <= 1.0 {
         return 0.0;
     }
-    crate::ruin::clamp_ruin((prob_win * (1.0 - 1.0 / profit_factor)).max(0.0), 1.0 - prob_win.clamp(0.0, 1.0))
+    crate::ruin::clamp_ruin(
+        (prob_win * (1.0 - 1.0 / profit_factor)).max(0.0),
+        1.0 - prob_win.clamp(0.0, 1.0),
+    )
+}
+
+/// LG5: conserva el pago del modelo binario al cambiar la probabilidad.
+/// PF = p_hist * b / (1-p_hist), por lo que b = PF*(1-p_hist)/p_hist.
+/// La transferencia de b a p_new presupone estabilidad de los pagos;
+/// no convierte la mezcla de probabilidades en una estimación bayesiana.
+/// El consumidor actual aporta PF_LCB y WR publicado: b es un proxy,
+/// no el pago histórico recuperado ni una cota inferior demostrada de b.
+#[inline(always)]
+pub fn kelly_with_historical_payoff(
+    prob_win: f64,
+    historical_win_rate: f64,
+    historical_profit_factor: f64,
+) -> f64 {
+    if !prob_win.is_finite()
+        || !(0.0..=1.0).contains(&prob_win)
+        || !historical_win_rate.is_finite()
+        || historical_win_rate <= 0.0
+        || historical_win_rate >= 1.0
+        || !historical_profit_factor.is_finite()
+        || historical_profit_factor <= 0.0
+    {
+        return 0.0;
+    }
+    let payoff = historical_profit_factor * ((1.0 - historical_win_rate) / historical_win_rate);
+    if !payoff.is_finite() || payoff <= 0.0 {
+        return 0.0;
+    }
+    let loss_probability = 1.0 - prob_win;
+    crate::ruin::clamp_ruin(
+        (prob_win - loss_probability / payoff).max(0.0),
+        loss_probability,
+    )
 }
 
 pub struct QuantumLeverageMatrix;
@@ -91,11 +127,6 @@ impl QuantumLeverageMatrix {
         } else {
             0.5
         };
-        let safe_pf = if real_profit_factor.is_finite() && real_profit_factor > 0.0 {
-            real_profit_factor.max(0.1)
-        } else {
-            1.0
-        };
         let safe_wr = if real_win_rate.is_finite() && real_win_rate >= 0.0 {
             real_win_rate.clamp(0.0, 1.0)
         } else {
@@ -110,7 +141,7 @@ impl QuantumLeverageMatrix {
         // ═══════════════════════════════════════════════════════
         // TENSOR 1: Full Fractional Kelly (con profit_factor y win_rate REAL)
         // ═══════════════════════════════════════════════════════
-        // Fusión Bayesiana: si hay historial (WR > 0.05), pondera 70% historia + 30% convicción puntual
+        // Mezcla heurística: con historial (WR > 0.05), 70% historia + 30% señal.
         // D-690: la convicción puntual es la probabilidad calibrada cuando existe;
         // la puntuación cruda sólo cuando el núcleo no la ha calibrado.
         let signal_probability = if signal.win_probability > 0.0 {
@@ -123,13 +154,11 @@ impl QuantumLeverageMatrix {
         } else {
             signal_probability.clamp(0.10, 0.95)
         };
-        let pf = safe_pf; // PF real, fallback si no hay historial
-        // QO-M0.1 (auditoría matemática): la fórmula anterior usaba el PF
-        // como el pago b de Kelly — K = p − (1−p)/PF — pero b = PF·q/p, no
-        // PF: sistemáticamente MISestimaba Kelly. La identidad correcta
-        // (misma que kelly.rs:69): f* = W·(1 − 1/PF). Y el piso .max(0.01)
-        // forzaba apuesta con edge negativo — abajo 0: sin edge, sin size.
-        let kelly = kelly_from_pf(prob_win, pf);
+        // p*(1−1/PF) sólo vale si p y PF pertenecen a la misma cohorte.
+        // LG5: primero deriva b del modelo PF/WR; después evalúa p mezclada.
+        // PF_LCB y WR publicado producen un proxy, no un pago observado.
+        // Datos históricos inválidos no inventan b.
+        let kelly = kelly_with_historical_payoff(prob_win, real_win_rate, real_profit_factor);
 
         // Fracción adaptativa: Hurst × confidence determinan agresividad
         let fraction_multiplier =
@@ -345,6 +374,45 @@ impl QuantumLeverageMatrix {
 mod tests {
     use super::*;
 
+    #[test]
+    fn lg5_kelly_preserva_el_pago_al_cambiar_probabilidad() {
+        for p_hist in [0.2, 0.5, 0.62, 0.9] {
+            for pf in [0.5, 1.0, 1.05, 1.5, 4.0] {
+                assert!(
+                    (kelly_with_historical_payoff(p_hist, p_hist, pf) - kelly_from_pf(p_hist, pf))
+                        .abs()
+                        < 1e-12
+                );
+            }
+        }
+        // 70% de WR=.5 + 30% de p=.1 = .38: el pago sigue siendo 1.05.
+        let p_new = 0.5 * 0.7 + 0.1 * 0.3;
+        assert!(kelly_from_pf(p_new, 1.05) > 0.0);
+        assert_eq!(kelly_with_historical_payoff(p_new, 0.5, 1.05), 0.0);
+        assert!(
+            kelly_with_historical_payoff(0.62, 0.5, 1.5)
+                > kelly_with_historical_payoff(0.44, 0.5, 1.5)
+        );
+    }
+
+    #[test]
+    fn lg5_kelly_no_fabrica_pagos_de_historial_invalido() {
+        for p_hist in [f64::NAN, f64::INFINITY, -0.1, 0.0, 1.0, 1.1] {
+            assert_eq!(kelly_with_historical_payoff(0.6, p_hist, 1.5), 0.0);
+        }
+        for pf in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
+            assert_eq!(kelly_with_historical_payoff(0.6, 0.5, pf), 0.0);
+        }
+        for p_new in [f64::NAN, f64::INFINITY, -0.1, 1.1] {
+            assert_eq!(kelly_with_historical_payoff(p_new, 0.5, 1.5), 0.0);
+        }
+        assert_eq!(kelly_with_historical_payoff(0.0, 0.5, 1.5), 0.0);
+        assert_eq!(
+            kelly_with_historical_payoff(0.6, f64::MIN_POSITIVE, f64::MAX),
+            0.0
+        );
+    }
+
     fn leverage_for(signal: &SignalIntent, arena: &GlobalArena) -> f64 {
         QuantumLeverageMatrix::calculate_dynamic_leverage(
             signal, 0.0, 10_000.0, 10_000.0, 0.001, 1.0, 0.5, 1.0, 0.0, 20.0, 5.0, 0.0, arena,
@@ -400,8 +468,7 @@ mod tests {
         };
         let lev = |sl: f64| {
             QuantumLeverageMatrix::calculate_dynamic_leverage(
-                &signal, 0.0, 10_000.0, 10_000.0, 0.004, 1.0, 0.5, 2.0, 0.6, 50.0, 5.0, sl,
-                &arena,
+                &signal, 0.0, 10_000.0, 10_000.0, 0.004, 1.0, 0.5, 2.0, 0.6, 50.0, 5.0, sl, &arena,
             )
         };
         let estrecho = lev(0.002);

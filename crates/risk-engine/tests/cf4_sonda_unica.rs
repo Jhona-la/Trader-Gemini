@@ -22,6 +22,9 @@
 //! son pequeñas (0,01 unidades, riesgo al stop 1e-5 del capital): el veto
 //! de grupo no puede ser el motivo del rechazo.
 
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::GlobalArena;
 use risk_engine::{RiskEngine, REJECT_NAMES};
 use signal_engine::{SignalIntent, SignalType};
@@ -95,7 +98,11 @@ fn larga() -> SignalIntent {
 
 /// Nocional de la orden admitida, o el nombre del motivo del rechazo.
 fn evaluar(arena: &GlobalArena, coin: usize) -> Result<f64, &'static str> {
-    let orden = RiskEngine::new(CAPITAL).evaluate_quantum_order(coin, &larga(), arena);
+    let mut intent = larga();
+    if arena.coins[coin].metrics.trade_count.load(Relaxed) >= risk_engine::sonda::CIERRES_DE_SONDA {
+        intent.net_payoff = Some(net_payoff_fixture::positive(coin, intent.signal));
+    }
+    let orden = RiskEngine::new(CAPITAL).evaluate_quantum_order(coin, &intent, arena);
     if orden.signal == SignalType::Flat {
         Err(risk_engine::ultimo_rechazo().map_or("sin motivo", |i| REJECT_NAMES[i]))
     } else {

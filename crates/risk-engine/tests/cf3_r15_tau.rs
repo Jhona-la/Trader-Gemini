@@ -31,6 +31,9 @@
 //! `#[ignore = "OPEN F3.x-nn (dueño): causa"]` con el assert intacto. Para
 //! correrla: `cargo test -p risk-engine --test cf3_r15_tau -- --include-ignored`.
 
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::GlobalArena;
 use risk_engine::RiskEngine;
 use signal_engine::{SignalIntent, SignalType};
@@ -79,6 +82,7 @@ fn p_primer_toque(tau_ms: u64) -> f64 {
     let tp = 2.25 * sl;
     let intent = SignalIntent {
         signal: SignalType::Long,
+        net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
         confidence: 0.80,
         win_probability: 0.60,
         tp_price_target: PRECIO * (1.0 + tp),

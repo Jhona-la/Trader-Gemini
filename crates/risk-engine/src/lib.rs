@@ -281,6 +281,10 @@ impl RiskEngine {
             || !(0.0..=1.0).contains(&intent.confidence)
             || !intent.win_probability.is_finite()
             || !(0.0..=1.0).contains(&intent.win_probability)
+            || intent
+                .net_payoff
+                .as_ref()
+                .is_some_and(|estimate| !estimate.is_valid_for(coin_id, intent.signal))
             || !(0.0..=1.0).contains(&clamp_min)
             || !(clamp_min..=1.0).contains(&clamp_max)
             || !(0.0..=1.0).contains(&configured_dd)
@@ -1115,65 +1119,11 @@ impl RiskEngine {
 
         // D-751 — LA CONFIANZA DE UNA RAMA NO ES P(GANAR).
         //
-        // El valor esperado se calculaba como
-        // `ev = confianza · TP − (1 − confianza) · SL`, tratando la puntuación
-        // de convicción de la señal como si fuera una probabilidad calibrada.
-        // No lo es: es una puntuación heurística cuya escala ni siquiera está
-        // acotada a la frecuencia con la que esas señales ganan —el propio
-        // núcleo lo documenta en D-619/D-690, y por eso mantiene un calibrador
-        // aparte—. Con una puntuación típica de 0,70 el EV salía positivo por
-        // construcción aunque la rama ganase el 40 % de las veces.
+        // LG-5: P(neto > 0) no es P(TP antes de SL). Fuera de sonda,
+        // la admisión consume el retorno neto esperado por unidad de nocional,
+        // con contexto y fechas validados antes de dimensionar. No recupera
+        // una probabilidad o un prior cuando falta evidencia económica.
         //
-        // Orden de preferencia, de más a menos informativo:
-        //   1. la probabilidad CALIBRADA con resultados reales que el núcleo
-        //      adjunta a la intención (`win_probability`, D-690);
-        //   2. la frecuencia OBSERVADA de la moneda con su cota inferior
-        //      bayesiana (posterior de Jeffreys, el mismo z del sistema);
-        //   3. ninguna: entonces el EV no puede evaluarse y la entrada se
-        //      rechaza POR FALTA DE EVIDENCIA, no con un número inventado.
-        // D-751b (fusión PR #5 + FMT): ARRANQUE FRÍO TOTAL. D-750 financia la
-        // sonda mínima pero D-751 rechazaba el EV «sin evidencia»: sin
-        // trades jamás hay evidencia — deadlock que mató el oráculo genético
-        // (T-1: 0/144 tras la fusión). Unificación doctrinal: en arranque
-        // frío TOTAL (cero operaciones del símbolo y sin probabilidad
-        // calibrada adjunta) el EV no se inventa ni bloquea: la orden sigue
-        // como SONDA D-750, cuyo sizing mínimo ya está acotado por el control
-        // de ruina. Con evidencia (aunque sea una) rige D-751 íntegro.
-        let trade_count = arena.coins[coin_id]
-            .metrics
-            .trade_count
-            .load(Ordering::Relaxed);
-        let arranque_frio_total = trade_count == 0;
-        let p_ganar = if intent.win_probability.is_finite()
-            && intent.win_probability > 0.0
-            && intent.win_probability < 1.0
-        {
-            Some(intent.win_probability)
-        } else if arranque_frio_total {
-            None
-        } else {
-            // Ω46.1: Contracción jerárquica bayesiana (Empirical Bayes Shrinkage).
-            // Para muestras pequeñas (n < 20), el estimador no colapsa a 0.0 ni crea
-            // un estado absorbente de muerte en n=1. Contrae suavemente hacia el prior
-            // del ensamble (0.55) con pseudo-masa k0 = 10.0.
-            Some(crate::evidence::win_rate_hierarchical_lcb(
-                arena.coins[coin_id]
-                    .metrics
-                    .win_rate
-                    .load(Ordering::Relaxed),
-                trade_count as f64,
-                0.55,
-                10.0,
-            ))
-        };
-        let expected_value_pct = match p_ganar {
-            Some(p) => (p * expected_win) - ((1.0 - p) * expected_loss),
-            // Sonda en arranque frío: EV neutral-conservador al 50 %, sólo
-            // para atravesar los literales de abajo; el veto EV real no
-            // aplica a la sonda (ver abajo).
-            None => 0.5 * expected_win - 0.5 * expected_loss,
-        };
-
         // D-641: misma transición continua para la barrera de comisiones.
         // Con la cuenta al límite se exige hasta un 25 % de margen sobre la
         // fricción; con holgura, un 5 %. Sin escalón.
@@ -1183,7 +1133,7 @@ impl RiskEngine {
             .ev_fee_multiplier
             .load(Ordering::Relaxed)
             .clamp(min_ev_mult, 1.80);
-        if !expected_value_pct.is_finite() || !ev_fee_multiplier.is_finite() {
+        if !ev_fee_multiplier.is_finite() {
             return rej(REJ_INVALID_INPUT);
         }
         // Ω46.2 / D4 (CL-98): en fase de sonda (menos de `CIERRES_DE_SONDA`
@@ -1205,9 +1155,16 @@ impl RiskEngine {
             if expected_win <= roundtrip_fee {
                 return rej(REJ_EV);
             }
-        } else if p_ganar.is_some() {
-            let ev_minimo_requerido = roundtrip_fee * ev_fee_multiplier;
-            if expected_value_pct <= ev_minimo_requerido {
+        } else {
+            let Some(payoff) = intent.net_payoff.as_ref() else {
+                return rej(REJ_SIN_EVIDENCIA);
+            };
+            // El estimador ya descuenta los costes realizados. Conservamos
+            // sólo la prima de coste (m-1)*c. Si EV_neto = EV_bruto-c,
+            // ésta equivale a EV_bruto > m*c; la cohorte histórica no
+            // certifica que los costes futuros sean iguales a los pasados.
+            let required_net_return = roundtrip_fee * (ev_fee_multiplier - 1.0);
+            if payoff.mean_net_return_pct <= required_net_return {
                 return rej(REJ_EV);
             }
         }

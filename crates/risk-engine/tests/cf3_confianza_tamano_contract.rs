@@ -30,6 +30,9 @@
 //! Convención: una prueba que hoy falla por la causa de un hallazgo lleva
 //! `#[ignore = "OPEN F3.x-nn (dueño): causa"]` con el assert intacto.
 
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::{
     symbol_registry::{update_registry, SymbolSpec},
     GlobalArena,
@@ -84,6 +87,7 @@ fn orden(conf: f64) -> (f64, f64) {
     let a = arena(1000.0);
     let intent = SignalIntent {
         signal: SignalType::Long,
+        net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
         confidence: conf,
         win_probability: 0.9, // misma probabilidad calibrada
         expected_duration_ms: 60_000,

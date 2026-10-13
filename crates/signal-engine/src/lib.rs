@@ -32,4 +32,4 @@ pub use maker::{MakerEngine, MakerQuote};
 pub use navier_stokes_manifold::NavierStokesManifoldEngine;
 pub use renyi_tsallis_entropy::RenyiTsallisEntropyEngine;
 pub use stat_arb::StatArbEngine;
-pub use strategy_core::{SignalIntent, SignalType, TradeHorizon};
+pub use strategy_core::{NetPayoffEstimate, NetPayoffSource, SignalIntent, SignalType, TradeHorizon};

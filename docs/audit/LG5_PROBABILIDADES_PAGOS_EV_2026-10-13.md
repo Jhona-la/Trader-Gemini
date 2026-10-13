@@ -84,16 +84,26 @@ una prueba contrafactual ni una garantía causal de rentabilidad.
 La optimización de Kelly necesita la distribución del retorno y sus hipótesis
 de escala, no sólo la media o el porcentaje de victorias.
 [Busseti, Ryu y Boyd, secciones 2–3](https://arxiv.org/pdf/1603.06183).
-El sizing vigente y la mezcla de probabilidades con PF se auditan separadamente;
-esta corrección no se presenta como un nuevo óptimo logarítmico. No se modifica
+LG5 también corrige la mezcla de probabilidades con PF histórico: recupera
+`b = PF_hist·(1−p_hist)/p_hist`, y evalúa `max(0,p_new−(1−p_new)/b)`.
+La identidad `p·(1−1/PF)` sólo sirve con p y PF de la misma cohorte.
+El consumidor vigente suministra PF_LCB y WR publicado/posterior: b es un
+proxy sintético, no el pago histórico recuperado ni una LCB demostrada de b.
+Con `p_hist=.5`, `PF_hist=1.05`, `p_new=.38`, la fórmula anterior daba una
+fracción positiva y la corregida devuelve cero. La transferencia de b sigue
+suponiendo pagos estables y unidades compatibles; la mezcla 70/30 es heurística.
+Esta corrección algebraica no se presenta como un nuevo óptimo logarítmico. No se modifica
 el detector LG8/e-CUSUM ni se reutiliza su retorno bilateralmente recortado.
 
 ## Validación y coordinación
 
 - CI de la base 332: workflows Unit and contract suites `38373292385` y Replay
   contracts `38373292396`, ambos completed/success sobre el SHA completo.
-- RED de LG5 existente: ejecutar la prueba ignorada sobre la base sin cambios,
-  conservando log, snapshot y versión. Pendiente al iniciar este documento.
+- RED de LG5 existente reproducido sobre 332 sin cambios: 0 passed/1 failed,
+  Cargo 101 esperado; fórmula standalone +0.766 R frente a media −0.104 R.
+  Scope: Platt real y fórmula del fixture, sin llamada al risk-manager vivo.
+  Recibo `001-lg5-baseline-red.json`, SHA256
+  `2e775999443fb032c8f03b958b60e8df6fa7a104c609eb76c68fa9f51958fd60`.
 - GREEN: igual tasa de positivos con pagos distintos; salidas intermedias;
   ventana y pesos iguales al oráculo; cero frente a desconocido; unidades;
   causalidad; replay tras expulsión; persistencia/legacy; consumidor de riesgo
@@ -107,3 +117,23 @@ Consejo: integración/core/persistencia, riesgo/admisión y revisión matemátic
 independientes. Reservas preservadas: AGY F7/Hodge/LH02, C-F5/estado y freno,
 Línea H, Línea G8, Qoder y Sol. No se importan sus commits exclusivos ni se
 reemplazan sus hunks por la reserva de LG5. La meta +100 %/72 h sigue abierta.
+
+## Hallazgos que permanecen abiertos
+
+La migración legacy conserva sus contadores de operaciones, pero no tiene
+pagos reconstruibles. Fuera de la sonda existente, la ausencia madura se veta
+con `SIN_EVIDENCIA`; lo mismo sucede con un lado o fuente sin filas retenidas.
+No se resuelve este bloqueo reseteando historial, infiriendo magnitudes de
+etiquetas ni concediendo sondas ilimitadas. Falta un protocolo separado de
+exploración por cohorte, con presupuesto persistente y exclusión global.
+La sonda vigente admite cinco cierres totales por moneda. Una media negativa
+tras agotar las sondas también puede crear un estado absorbente: sin nuevas
+órdenes no entran nuevos cierres. El paso del tiempo no altera esta media.
+El protocolo pendiente debe contabilizar aperturas/intentos realmente
+aceptados, y no rearmar presupuesto al expulsar filas o reiniciar.
+
+La media reúne políticas y geometrías de salida distintas. Su uso en admisión
+es descriptivo y requiere validar transferencia fuera de muestra; no demuestra
+la esperanza condicional de cada candidato. Riesgo comprueba moneda/lado y
+orden interno de fechas; el productor Core aporta procedencia y disponibilidad
+al tiempo de decisión. El tipo público por sí solo no certifica ese productor.

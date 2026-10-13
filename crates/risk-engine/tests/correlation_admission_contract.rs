@@ -1,4 +1,7 @@
 //! Domain and live-admission contracts, no orders, exchange or engine process.
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::{state::CompactTick, GlobalArena};
 use risk_engine::correlation_guard::{
     rho_efectivo_para_agregacion, rho_promedio, CorrelationGuardEngine,
@@ -130,6 +133,7 @@ fn fixture() -> (Arc<GlobalArena>, SignalIntent) {
         arena,
         SignalIntent {
             signal: SignalType::Long,
+            net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
             confidence: 0.9,
             expected_duration_ms: 60_000,
             ..SignalIntent::default()

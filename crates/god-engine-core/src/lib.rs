@@ -47,6 +47,7 @@ pub mod model_reload;
 pub mod orchestrator;
 pub mod order_flow_aggregator;
 pub mod outcome_context;
+pub mod net_payoff;
 pub mod base_z;
 pub mod reality_physics;
 pub mod recarga_genoma;
@@ -1052,6 +1053,8 @@ pub struct GodEngineCore {
     pub last_senior_signals: Vec<[[f64; 11]; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
     pub council_entry_evidence: Vec<[Option<CouncilEntryEvidence>; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
     pub entry_learning_evidence: Vec<[Option<EntryLearningEvidence>; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
+    /// LG5: independent, fixed-size entry provenance for measured net payoffs.
+    pub entry_payoff_evidence: Vec<[Option<net_payoff::EntryPayoffEvidence>; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
     pub lakehouse: Option<Arc<storage_engine::LakehouseWarehouse>>,
     pub consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion,
     pub lead_lag_engine: feature_engine::LeadLagAlphaEngine,
@@ -1095,6 +1098,8 @@ pub struct GodEngineCore {
     /// si el slot no existe, se cae al global (compat).
     pub conformal_by_coin: Vec<conformal::ConformalCalibrator>,
     pub calibrator_by_coin: Vec<calibration::PlattCalibrator>,
+    /// Uniform realized-return evidence, kept separate from Platt's win labels.
+    pub net_payoff_by_coin: Vec<net_payoff::NetPayoffModel>,
     /// CL-108 — observaciones de los calibradores (por moneda y global),
     /// anotadas al alimentarlos para restaurarlos tras un reinicio
     /// (`estado_aprendido.rs`).
@@ -1373,6 +1378,7 @@ impl GodEngineCore {
             last_senior_signals: vec![[[0.0; 11]; quantum_arena::position::MAX_SPECTRAL_SLOTS]; n_coins],
             council_entry_evidence: (0..n_coins).map(|_| std::array::from_fn(|_| None)).collect(),
             entry_learning_evidence: (0..n_coins).map(|_| std::array::from_fn(|_| None)).collect(),
+            entry_payoff_evidence: vec![[None; quantum_arena::position::MAX_SPECTRAL_SLOTS]; n_coins],
             lakehouse: None,
             consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion::new(),
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
@@ -1402,6 +1408,7 @@ impl GodEngineCore {
             calibrator_by_coin: (0..n_coins)
                 .map(|_| calibration::PlattCalibrator::new())
                 .collect(),
+            net_payoff_by_coin: (0..n_coins).map(net_payoff::NetPayoffModel::new).collect(),
             registro_calibrador: (0..n_coins)
                 .map(|_| std::collections::VecDeque::new())
                 .collect(),
@@ -4249,6 +4256,17 @@ impl GodEngineCore {
                             && closed_entry == entry && closed_qty == qty && closed_qty > 0.0
                             && pos.generation.load(Ordering::Acquire) == position_generation.wrapping_add(1));
 
+                    // LG5: always consume the separate ledger, including closes
+                    // rejected by the provenance gate below. Reuse the already
+                    // checked symbol/slot occupant identity, never a live stop.
+                    let payoff_evidence = self.entry_payoff_evidence
+                        .get_mut(coin_id).and_then(|slots| slots.get_mut(slot_idx))
+                        .and_then(Option::take)
+                        .filter(|e| e.slot == slot_idx && e.generation == position_generation
+                            && e.is_long == is_long && e.entry_time_ms == entry_time
+                            && e.source == net_payoff::source_for(self.outcome_context)
+                            && learning_evidence.is_some());
+
 
                     // B3.14 — ¿la entrada EXISTIÓ en el exchange? La
                     // posición local nace ANTES de la ejecución asíncrona;
@@ -4285,6 +4303,14 @@ impl GodEngineCore {
                         self.diag_unverified_close_total += 1;
                         closed_order = Some((is_long, net_trade_pnl, qty));
                         break; // stop slot scan, NOT downstream market analytics
+                    }
+                    if let (Some(evidence), Some(model)) =
+                        (payoff_evidence, self.net_payoff_by_coin.get_mut(coin_id))
+                    {
+                        // Both fees are already included. The denominator is
+                        // the actual closed entry notional, never margin or SL.
+                        model.observe(evidence, net_trade_pnl, closed_entry, closed_qty,
+                            event_time_ms, event_time_ms);
                     }
                     let publish_estimate = self.outcome_context
                         .permits_shared_estimate_outputs(was_exchange_confirmed);
@@ -8170,11 +8196,18 @@ impl GodEngineCore {
                 // absorbente. Calibrar la selección exige resultados contrafactuales.
                 let raw_confidence_score = unified_intent.confidence;
                 let mut calibrated_intent = unified_intent;
+                // LG5: overwrite any inherited evidence after signal fusion.
+                // This is a pooled coin/side/source mean, not conditioning on
+                // this candidate's score, tau or target geometry. No global
+                // fallback and no fabricated magnitudes from Platt booleans.
+                calibrated_intent.net_payoff = self.net_payoff_by_coin.get(coin_id)
+                    .and_then(|model| model.estimate(coin_id, calibrated_intent.signal,
+                        net_payoff::source_for(self.outcome_context), event_time_ms));
                 // Cierre del lazo adaptativo por moneda con fallback bayesiano al calibrador global:
                 // Ola XLIV: `calibrate_at` olvida la evidencia con el tiempo
-                // sin operar; sin él, una p hundida vetaba la moneda en el EV
-                // para siempre (estado absorbente: sin operaciones no hay datos
-                // que la corrijan).
+                // sin operar. Este mapa de etiquetas netas conserva el sizing
+                // legacy; no estima pagos ni una probabilidad first-hit o
+                // condicionada a lado/geometría/tau. El EV usa net_payoff aparte.
                 let cal_prob = if coin_id < self.calibrator_by_coin.len()
                     && self.calibrator_by_coin[coin_id].observations() >= 5
                 {
@@ -8676,6 +8709,25 @@ impl GodEngineCore {
                                 }
                                 self.diag_opened += 1;
                                 self.diag_dir.record_open(is_long);
+                                // LG5: freeze only after a successful local
+                                // opening. Actual settlement remains a separate
+                                // contract; partial-fill notional comes at close.
+                                let payoff_entry = net_payoff::EntryPayoffEvidence {
+                                    slot: target_pos_slot,
+                                    generation: expected_generation,
+                                    is_long,
+                                    entry_time_ms: event_time_ms,
+                                    score: raw_confidence_score,
+                                    tau_ms: tau_entry,
+                                    entry_price: real_entry_price,
+                                    initial_tp_price: order.tp_target,
+                                    initial_sl_price: order.sl_target,
+                                    source: net_payoff::source_for(self.outcome_context),
+                                };
+                                self.entry_payoff_evidence[coin_id][target_pos_slot] =
+                                    (payoff_entry.is_valid()
+                                        && target_pos.generation.load(Ordering::Acquire) == expected_generation
+                                        && target_pos.is_open()).then_some(payoff_entry);
                                 // Fail closed for attribution if another transition
                                 // interleaved. This is not a transactional fill ledger.
                                 self.council_entry_evidence[coin_id][target_pos_slot] =

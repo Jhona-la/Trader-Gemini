@@ -1,5 +1,6 @@
 pub mod maker;
 pub mod momentum_booster;
+pub mod net_payoff;
 pub mod multivariate_coint;
 pub mod prueba_reversion;
 pub mod stat_arb;
@@ -14,6 +15,7 @@ pub use yang_mills_gauge::YangMillsGaugeEngine;
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
 pub use types::*;
+pub use net_payoff::{NetPayoffEstimate, NetPayoffSource};
 
 pub trait QuantumStrategy: Send + Sync {
     fn name(&self) -> &str;

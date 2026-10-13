@@ -4,6 +4,9 @@
 //! - Superficie Ω58 / R5': Consumo de caos espectral `p_chaos` en `PortfolioOrchestrator`.
 //! - R7-R2-A-1 [HIGH]: Consumo analítico de primer toque (`probabilidad_tocar_sl_antes_de_tp`) en la compuerta de geometría de riesgo.
 
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::GlobalArena;
 use risk_engine::{
     orchestrator::PortfolioOrchestrator,
@@ -177,6 +180,7 @@ fn test_r7_r2_a1_analytical_first_hitting_gate_contract() {
 
     let buy_intent = SignalIntent {
         signal: SignalType::Long,
+        net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
         confidence: 0.80,
         win_probability: 0.60,
         tp_price_target: 60000.0 * (1.0 + tp),
