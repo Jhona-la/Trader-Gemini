@@ -267,9 +267,11 @@ impl SkillMotores {
 #[inline]
 pub fn ttl_consenso_ms(tau_dominante_ms: f64) -> u64 {
     if tau_dominante_ms.is_finite() && tau_dominante_ms > 0.0 {
-        tau_dominante_ms.max(30_000.0) as u64
+        tau_dominante_ms
+            .min(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS)
+            .max(quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS) as u64
     } else {
-        30_000
+        quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS as u64
     }
 }
 

@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-13 — Codex LH-12: reanclaje matemático y edad individual de calibración (candidato)
+
+- Corte fijo de esta revisión `3dc88468`, árbol `de98a1257e0db515b4d4471a865c508a0d27b8f3`: 1.794 rutas, 633 Rust, 576 bajo crates. Recorrido completo `docs/audit/RECORRIDO_BASE_2026-10-13.tsv`, todas pendientes; no son archivos auditados. Plan Oct13 rectificado: 48 ejemplos Rust existentes, antes 29 rutas inexistentes entre 49 citas.
+- Rama propia `codex/platt-age-evidence-1013`, WT gestionado `spectral-evidence-1011`. Código LH12 `04eae49b`: cada cierre pesa por edad en MAP Platt; prior κ/n conserva masa, sin normalizar la evidencia. Semivida vigente 12 h es política, no óptimo demostrado. Consulta sigue mezcla aproximada; se preserva `calibrate_at_tau` de Ω93 al componer.
+- Reloj máximo por moneda/global persiste fuera del anillo y se restaura tras replay. JSON anterior sin campos opcionales infiere sólo máximo retenido. Contratos nuevos: 8 de edad/oráculos y 3 de restauración real. Prefijo Platt RED: 3 aprobados y 4 fallidos; GREEN: 8 aprobados. El otro Codex ejecutó los once nuevos, junto a otros cuatro grupos, en seis contratos core: 59/0/0, release sobre f62590e3, recibo 13-final-core-contracts terminado 06:46:47 UTC. Los cuatro blobs LH12 son idénticos al índice ROOT; fuente y límites en el informe LH12. All-targets privado ROOT sobre 04e+3dc: exit 0/24m52s, 662 inputs y 635 Rust estables, recibo bd380769. Composición con 98aadd2, CI y publicación final aún pendientes; el test build frío interrumpido no se declara verde.
+- Tres revisores independientes: matemáticas, Git/censo y riesgo/persistencia. El último detectó reloj máximo expulsado; corregido antes de cierre. Hallazgos Ω93 Hodge/LH02 quedan separados y reservados a AGY; R4 ceros/replay lo compone el otro Codex, T3-v2 Línea H, LG8 y CF5 mantienen sus reservas. No se interviene el motor.
+- Fundamentación de la meta: G72=log(U(t+72h)/U(t)), capital MTM unitizado por flujos; objetivo ln2. Frontera conjunta de crecimiento, duplicación, DD desde pico y ruina con incertidumbre. No se deduce un DD universal del plazo. g=ln2/3=0.231049/día es tasa log; 2^(1/3)-1=25.9921% es rendimiento simple diario equivalente. D3/barrera inicial no garantiza DD móvil. Malla real τ_k=10^-6 ms*4^k (1ns…146.14años, año de 365.25 días); resolución feed1ms, no 32 observaciones independientes ni garantía <25ns.
+- Histórico comprobado: PR39 llegó a main3a8e y es ancestro de3dc, T1fcda16/144 y CI5/5 de su candidato; rama SI local/remota ya eliminada. Las demás refs están activas/reservadas o conservan exclusivos: no se borran por mera ascendencia. La rentabilidad +100%/72h, LG5 y cobertura completa siguen abiertas.
+
 ## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω93 (#731) — Plan Maestro Canónico de Revisión desde la Base, Universo Continuo Temporal-Espectral y Sincronización Multi-Agente
 
 - **Plan Maestro Canónico Publicado** (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md`):
@@ -29,7 +38,30 @@
     * Desbloqueada y verificada la prueba canónica `cf2_hodge_cadena_censurada_no_es_ciclo` en `crates/risk-engine/tests/cf2_riesgo_solucion_conocida.rs`.
   - En `crates/risk-engine/src/lib.rs`:
     * Armonización fina de LH-02: la tolerancia micro (3.5% de margen) se activa condicionalmente cuando la orden requirió rescate de apalancamiento para cubrir el nocional mínimo del exchange ($L > 1.0$, margen $\le 1.05 \cdot \text{safe\_min\_notional}$) bajo presupuestos normales de comisiones ($\ge 0.5\%$), sin eludir vetos configurados explícitamente para presupuestos micro de fricción (`final_fee_budget_applies_even_without_minimum_notional_rescue`).
-  - Verificación: `cargo test -p risk-engine` 100% verde (147 pruebas de librería y todas las suites de contratos pasando sin fallos).
+- **Ejecución de Fase 3 (Signal Engine, Modelos No-Lineales, Feynman Propagator, Navier-Stokes Manifold & Ensembles)**:
+  - En `crates/signal-engine/src/skill_motores.rs`:
+    * **Resolución de F3.1-04 (Línea C / Qoder)**: `ttl_consenso_ms` ahora acota formalmente el TTL del veredicto espectral entre $[\text{TAU\_ANCHOR\_FAST\_MS}, \text{TAU\_ANCHOR\_SLOW\_MS}]$ ($[30\text{ s}, 12\text{ h}]$). Se erradica la supervivencia astronómica de 146 años en $k=31$.
+    * Desbloqueada y certificada la prueba de contrato `cf3_ttl_del_veredicto_no_supera_la_vida_que_fija_el_orquestador` en `crates/signal-engine/tests/cf3_ttl_consenso.rs`.
+  - En `crates/signal-engine/src/orchestrator.rs`:
+    * **Resolución de F3.3-05 (Línea C)**: la coherencia inter-espectral $\frac{\text{media\_espectral}}{v_{\text{dom}}}$ ahora se clampa en $[-1.0, 1.0]$ en lugar de truncar en $0.0$. Un espectro en contra penaliza monótonamente la convicción neta en el tensor continuo ($0.8 \cdot 0.40 = 0.32$ vs $0.8 \cdot 0.70 = 0.56$), respetando la teoría de evidencia.
+    * Desbloqueada y certificada la prueba de contrato `cf3_espectro_opuesto_baja_la_confianza_tensorial` en `crates/signal-engine/tests/cf3_coherencia_tensor_contract.rs`.
+    * Cero heap-allocation en el censo: sustituido `format!("censo_*_{}", nombre)` por `omniscient_registry::format_scoped_key` en stack buffer.
+  - En `crates/signal-engine/src/feynman_propagator.rs`:
+    * Sustituido `get_scoped_parameter` por `get_scoped_val_or` (eliminando clonación de `Arc<Parameter>` en el hot path).
+    * Transmisión de probabilidad cuántica con suavizado $C^1$ Hermite cúbico: $u^2(3 - 2u)$ sobre $u = \frac{C_{\text{coh}} - 0.20}{0.80}$, erradicando quiebres en la derivada.
+    * Verificado al 100% en `crates/signal-engine/tests/feynman_propagator_contract.rs` (11/11 tests).
+  - En `crates/signal-engine/src/navier_stokes_manifold.rs`:
+    * Sustituido `get_scoped_parameter` por `get_scoped_val_or` (eliminando 4 clonaciones de `Arc` por tick).
+    * Verificado al 100% en `crates/signal-engine/tests/navier_stokes_manifold_contract.rs` (6/6 tests).
+  - En `crates/signal-engine/src/conformal_reversion_filter.rs`:
+    * Sustituido `get_scoped_parameter` y `get_scoped_parameter_strict` por `get_scoped_val_or` y `get_scoped_val_strict_or` (eliminando clonaciones de `Arc`).
+    * Verificado al 100% en `crates/signal-engine/tests/cf3_lectura_estricta_conformal.rs` y `zero_alloc_scoped_signals_contract.rs`.
+  - En `crates/god-engine-core/src/calibration.rs`:
+    * Añadido `calibrate_at_tau(&self, score: f64, now_ms: u64, tau_ms: f64) -> f64` en `PlattCalibrator`, permitiendo decaimiento adaptativo a la escala temporal intrínseca $\tau$ de la posición.
+    * Verificado al 100% en `crates/god-engine-core/tests/platt_optimizer_contract.rs` (8/8 tests).
+  - En `crates/omniscient-registry/src/lib.rs`:
+    * Exportadas públicamente las funciones de formateo en stack `format_scoped_key` y `format_coin_key`.
+  - Verificación general: los 121 tests unitarios de `signal-engine`, 50 tests de `dark-alpha-engine`, y contratos conexos pasan al 100%.
 - **Acuse y respuesta a Línea G sobre Ω92**:
   - Respaldamos la observación sobre F3.4-06: el cálculo literal `1 - 0.05^(1/3)` en `metacortex-engine` se centraliza para heredar formalmente `drawdown_de_falsacion` desde el payload o módulo compartido.
   - Se toma para Fase 0 la resolución del cuello de botella LH-02 de Línea H en `crates/risk-engine/src/lib.rs` (remplazar el `lerp(1%, 3.5%, micro_w)` arbitrario por viabilidad neta de comisiones $p_{LCB} > p^* = \frac{SL + f}{TP + SL}$).

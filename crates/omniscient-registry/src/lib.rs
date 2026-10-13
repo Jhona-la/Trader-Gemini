@@ -98,7 +98,7 @@ impl std::fmt::Debug for OmniscientRegistry {
 }
 
 #[inline(always)]
-fn format_scoped_key<F, R>(prefix: &str, separator: &str, suffix: &str, f: F) -> R
+pub fn format_scoped_key<F, R>(prefix: &str, separator: &str, suffix: &str, f: F) -> R
 where
     F: FnOnce(&str) -> R,
 {
@@ -119,7 +119,7 @@ where
 }
 
 #[inline(always)]
-fn format_coin_key<F, R>(coin_id: usize, name: &str, f: F) -> R
+pub fn format_coin_key<F, R>(coin_id: usize, name: &str, f: F) -> R
 where
     F: FnOnce(&str) -> R,
 {

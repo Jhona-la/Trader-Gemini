@@ -23,6 +23,16 @@
     * Desbloqueado y certificado el test canónico `cf2_hodge_cadena_censurada_no_es_ciclo` (árbol 3 nodos $\to$ curl = 0.0).
     * Armonizada la condición de rescate de fricción LH-02 en `crates/risk-engine/src/lib.rs` preservando los contratos de veto estricto por presupuesto micro de comisiones.
     * Verificación: `cargo test -p risk-engine` 100% verde (147 pruebas de librería y todas las suites de contratos pasando).
+  - **Ejecución de Fase 3 (Signal Engine, Modelos No-Lineales, Feynman Propagator, Navier-Stokes Manifold & Ensembles)**:
+    * **Resolución de F3.1-04 (Línea C / Qoder)** en `crates/signal-engine/src/skill_motores.rs`: `ttl_consenso_ms` ahora acota formalmente el TTL del veredicto espectral entre $[\text{TAU\_ANCHOR\_FAST\_MS}, \text{TAU\_ANCHOR\_SLOW\_MS}]$ ($[30\text{ s}, 12\text{ h}]$). Erradicada la supervivencia de 146 años en $k=31$. Test `cf3_ttl_del_veredicto_no_supera_la_vida_que_fija_el_orquestador` 100% verde.
+    * **Resolución de F3.3-05 (Línea C)** en `crates/signal-engine/src/orchestrator.rs`: la coherencia inter-espectral $\frac{\text{media\_espectral}}{v_{\text{dom}}}$ se clampa en $[-1.0, 1.0]$. Un espectro en contra penaliza monótonamente la convicción neta en el tensor continuo ($0.8 \cdot 0.40 = 0.32$ vs $0.8 \cdot 0.70 = 0.56$). Test `cf3_espectro_opuesto_baja_la_confianza_tensorial` 100% verde.
+    * Cero heap-allocation en el censo: sustituido `format!("censo_*_{}", nombre)` por `omniscient_registry::format_scoped_key` en stack buffer.
+    * En `feynman_propagator.rs`: sustituido `get_scoped_parameter` por `get_scoped_val_or` (cero clonaciones de `Arc` en hot-path) y suavizado $C^1$ Hermite cúbico en transmisión cuántica. 11/11 tests pasando.
+    * En `navier_stokes_manifold.rs`: sustituido `get_scoped_parameter` por `get_scoped_val_or` (cero clonaciones de `Arc` por tick). 6/6 tests pasando.
+    * En `conformal_reversion_filter.rs`: sustituido `get_scoped_parameter` y `get_scoped_parameter_strict` por `get_scoped_val_or` y `get_scoped_val_strict_or` (zero heap alloc).
+    * En `god-engine-core/src/calibration.rs`: añadido `calibrate_at_tau(&self, score: f64, now_ms: u64, tau_ms: f64) -> f64` en `PlattCalibrator` permitiendo decaimiento adaptativo continuo según la escala temporal de la orden. 8/8 tests de Platt pasando.
+    * En `omniscient-registry/src/lib.rs`: exportadas públicamente las utilidades de formateo en stack `format_scoped_key` y `format_coin_key`.
+    * Verificación: 121 tests unitarios de `signal-engine`, 50 tests de `dark-alpha-engine`, y suite de calibración 100% verdes.
 - **Acuse y Armonización con Línea H (Olas 1–2 y T-3):**
   - Incorporación directa en el plan de los 4 cuellos de botella empíricos:
     * LH-02 (Valle de Capital $35–$65): RESUELTO en Fase 0 y Fase 2.
@@ -10737,3 +10747,29 @@ que no sea esto, avisadme.
 - **No toco**: riesgo (AGY toma LH-02 en Ω93), calibración, host,
   orquestador, consejo, registro, `spectral_tape`, `booktick_replay`, el T-3
   (Línea H, ola 3 en curso) ni la tanda CF-5 de la Línea C.
+## 2026-10-13 — Codex LH12: reserva, consejo y reanclaje actual
+
+- Base `3dc88468`; WT propio `spectral-evidence-1011`, rama `codex/platt-age-evidence-1013`.
+  Código `04eae49b` en calibración/estado aprendido y contratos: 8 de edad, 3 de restauración.
+  Se preserva `calibrate_at_tau` de Ω93. No se cambia riesgo, motores, T3 ni R4.
+- Seis magnitudes separadas: objetivo G72 sobre capital unitizado, frecuencia
+  de duplicación, DD desde pico, ruina, incertidumbre inferencial y política de aceptación.
+  g=ln2/3=.231049/d; rendimiento diario equivalente 25.9921%, sin garantía.
+  Malla base 4 nominal de 1 ns a 146.14 años (365.25d/año) con feed de 1 ms: no certifica resolución ni 25 ns.
+- Tres revisores: quantum/estadística, Git/censo y riesgo/persistencia. El
+  contraejemplo del watermark expulsado se incorpora a estado y prueba real.
+  Prefijo Platt RED: 3 aprobados, 4 fallidos; GREEN: 8 aprobados. R4 f625:
+  11 nuevos y 10 existentes verdes (3 ignores conservados), más core en sus libs.
+  All-targets ROOT3dc: exit 0/24m52s, 662 inputs/635 Rust estables.
+  Composición98, CI y cierre Git siguen pendientes de recibo.
+- Recorrido: 1.794 filas/633 Rust, todo pendiente, y 48 ejemplos reales en el plan Oct13.
+  R4 recibe `04e` para composición antes de T1; H/T3-v2, G8, CF5/Qoder y AGY
+  conservan reservas. Hallazgos Hodge/fees se registran para su dueño AGY.
+- Adenda de `98aadd2e`: contratos activados sin debilitar aserciones;
+  el sizing conserva una vía de confianza cruda en rescates micro. Registro
+  nuevo requiere corregir estado de AuditorInterno, `abs()` de Teleonomía,
+  procedencia de umbrales y clase del DD. Fuentes reservadas a AGY; derivación
+  estática sin admisión final. Ver informe HALLAZGOS_RIESGO_OMEGA93 en docs/audit.
+- PR39/3a8 comprobado como ancestro actual, T1 de fcda con 16/144 histórico y SI borrada.
+  Ninguna otra rama acreditada para limpieza. No operar motor ni atribuir
+  contratos aislados a crecimiento económico. Ver docs/audit/LH12_EDAD_EVIDENCIA_2026-10-13.md.

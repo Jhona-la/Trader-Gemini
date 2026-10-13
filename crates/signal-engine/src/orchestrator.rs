@@ -438,14 +438,12 @@ impl TensorVoteOrchestrator {
                         .get(idx)
                         .map(|a| a.load(Ordering::Relaxed))
                         .unwrap_or(0);
-                    self.arena.registry.set(
-                        &format!("censo_total_{}", nombre),
-                        total as f64,
-                    );
-                    self.arena.registry.set(
-                        &format!("censo_no_cero_{}", nombre),
-                        no_cero as f64,
-                    );
+                    omniscient_registry::format_scoped_key("censo_total", "_", nombre, |key| {
+                        self.arena.registry.set(key, total as f64);
+                    });
+                    omniscient_registry::format_scoped_key("censo_no_cero", "_", nombre, |key| {
+                        self.arena.registry.set(key, no_cero as f64);
+                    });
                 }
                 // #624 — adopción del consenso espectral: decisiones
                 // dirigidas por la escala dominante vs total evaluado.
@@ -516,10 +514,11 @@ impl TensorVoteOrchestrator {
             "consenso_espectral_media",
             0.0,
         );
+        // F3.3-05 (Ola Ω93): Modulación monótona continua respecto a la evidencia:
+        // un espectro con media en contra (media/v_dom < 0) penaliza la convicción
+        // neta en lugar de recortar a 0 como si fuera neutro.
         let coherencia_inter = if espectral_activo && v_dom.abs() > 1e-9 {
-            (media_espectral / v_dom)
-                .clamp(0.0, 1.0)
-                .min(1.0)
+            (media_espectral / v_dom).clamp(-1.0, 1.0)
         } else {
             0.0
         };

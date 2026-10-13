@@ -177,21 +177,16 @@ impl QuantumStrategy for ConformalReversionFilterEngine {
             None => return 0.0,
         };
         let get = |key: &str| {
-            r.get_scoped_parameter(sym_opt, cid_opt, key, "ConformalReversionFilterEngine")
-                .map(|p| p.get_value())
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, key, f64::NAN);
+            if v.is_finite() { Some(v) } else { None }
         };
         // CL-80 (F3.7-04, LC-F1-07): la z con símbolo se lee ESTRICTA (moneda o
         // símbolo, nunca la global, que es la de la última moneda que
         // escribió). Sin símbolo, la global.
         let get_z = |key: &str| {
             if sym_opt.is_some() {
-                r.get_scoped_parameter_strict(
-                    sym_opt,
-                    cid_opt,
-                    key,
-                    "ConformalReversionFilterEngine",
-                )
-                .map(|p| p.get_value())
+                let v = r.get_scoped_val_strict_or(sym_opt, cid_opt, key, f64::NAN);
+                if v.is_finite() { Some(v) } else { None }
             } else {
                 get(key)
             }
