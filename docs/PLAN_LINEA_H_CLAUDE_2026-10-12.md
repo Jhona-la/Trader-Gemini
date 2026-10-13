@@ -422,8 +422,51 @@ y una lenta para el tamaño (ADR-0016 D1).
 
 ### 7.3 Lectores y escépticos
 
-Pendiente.
+Tres lectores (0,93 M tokens, 20 min; 30 + 32 + 27 archivos) inventariaron
+**46 lazos que aprenden en cada cierre** con etiqueta, memoria, consumidor y
+escala ([`ola2_lazos.tsv`](audit/linea_h/ola2_lazos.tsv)), entregaron 25
+hallazgos y 32 predicciones falsables de E1–E4 ([`ola2_lectores.tsv`](audit/linea_h/ola2_lectores.tsv),
+[`ola2_predicciones.tsv`](audit/linea_h/ola2_predicciones.tsv)). Tres
+escépticos (0,59 M tokens, 15 min) los contrastaron con la medición
+([`ola2_verificacion.tsv`](audit/linea_h/ola2_verificacion.tsv),
+[`ola2_predicciones_veredicto.tsv`](audit/linea_h/ola2_predicciones_veredicto.tsv),
+[`ola2_nuevos_escepticos.tsv`](audit/linea_h/ola2_nuevos_escepticos.tsv),
+[`ola2_escepticos_sintesis.md`](audit/linea_h/ola2_escepticos_sintesis.md)):
+**13 confirmados, 3 plausibles, 7 ya registrados, 2 refutados** (A1-03: el
+umbral epigenético SÍ tiene lector, `risk-engine/src/lib.rs:1109-1120`, y es
+inerte por el techo 0,98 de H2-N4; A2-02: la ventana ×6 de la envolvente es
+inalcanzable porque sólo evalúa con la cartera vacía). Predicciones: 6
+cumplidas, 11 parciales, 9 falladas, 6 no medibles; **16 nuevos** de la
+medición. Correcciones al inventario en
+[`ola2_correcciones.md`](audit/linea_h/ola2_correcciones.md).
+
+**Lo que la medición decidió:**
+
+| Tesis | Veredicto con los números |
+|---|---|
+| A1: «tras 89 cierres la operación 90 es igual a la 1; la p de Platt heredada no cierra la puerta» | Mecánica confirmada (0 rechazos EV en E2₂ y E4₂; 9 en E3₂). Consecuencia equivocada: la puerta abierta no agrava (E2₂ −0,063 frente a −0,126), y **lo que sí cambia con la experiencia es el pago por cierre y la cadencia**, que la lente dio por inertes a 13 USD. |
+| A2: «ningún freno del riesgo actúa en micro; el estado ganador agrava el nulo; E3 recupera ≥ 85 %» | Frenos inertes: confirmado (dd máximo 2,6 %; 0 reversiones; 0 rechazos salvo EV). El signo de las consecuencias, refutado: E2 no agrava, E3 recupera el 50 %, el antipersistente frío lo frena el núcleo (43 intenciones en 50 h), no Platt. |
+| A3: «ningún lazo puede invertir el lado; la τ es una ley cerrada» | **Confirmado (HIGH)**: E4₂ acierta 0,333 ≈ seguir la vela previa (0,32), y lo hace ×3,75 veces más que en frío con cero frenos. |
+
+**Las tres lecturas convergen:** el sistema adapta la EXPOSICIÓN (cadencia,
+pago por cierre: E1 ×1,6 por cierre con acierto plano; E4 ×3,75 aperturas),
+no la SELECCIÓN (ni dirección ni τ ni permiso útil). Y la puerta EV, el único
+lazo del riesgo que decide a 13 USD, vale ≈ 4 cierres y ≈ 0,01–0,06 USD en
+50 h de nulo (A2-N2): cerrada o abierta, el resultado es el mismo.
 
 ### 7.4 Arreglos y entregas
 
-Pendiente.
+**En zona propia:** LH-10 (`serie_concatenada`, `cuartiles`,
+`t3_adaptacion_en_el_tiempo`), LH-10b (`t3_adaptacion_misma_serie_dos_veces`,
+el control que pedían los tres lectores). Verificación: check del workspace
+verde sobre el árbol fusionado; T-2 de control idéntico a `main`.
+
+| ID | Dueño | Sev. | Qué | Reproducir |
+|---|---|---|---|---|
+| **LH-12** (= A1-01 / A2-01 / LH-A3-N6) | Línea E / Codex | HIGH | La memoria del permiso es la ventana de 512 cierres del Platt; la semivida de 12 h sólo corre en el hueco entre cierres: operando, la evidencia no envejece. Tras 89 cierres de ventaja hacen falta ≈ 146 de antipersistencia para cerrar la puerta (en frío, 12). | E2/E4: 0 rechazos EV en 50 h |
+| **LH-13** (= LH-A3-1 / LH-A3-N1) | Qoder / Línea C (núcleo) | HIGH | Ningún lazo puede invertir el lado (D-472, hebbiano y PPO positivos, Platt con pendiente ≥ 0); el estado ganador heredado multiplica ×3,75 la exposición al régimen adverso sin que ningún freno actúe. | E4₂: 45 cierres al 33 %, 0 rechazos |
+| **LH-14** (= LH-A3-2 / LH-A3-N3) | Qoder (espectro) | HIGH | La τ de la orden es una ley cerrada (media geométrica entre la τ dominante modulada por Hurst y el centroide, clavado en 30 s por la persistencia negativa de las escalas sub-minuto del puente intravela); la deuda del e-proceso del nodo de 68,7 s tarda ≈ 10 h en pagarse: la mitad de la ventaja de E3 se pierde ahí. | E3₂: 65 cierres / +0,71 frente a 89 / +1,41 |
+| **LH-15** (= A2-N2 / A2-N3) | Línea C (riesgo) / Línea E | MED | La puerta EV no protege: en el mismo camino, cerrada 929 veces (nulo frío) o abierta todo el tramo (E2₂) el resultado es el mismo; lo que limita la pérdida en antipersistencia es la tasa de propuesta del núcleo, no el riesgo. | E2, E4 frente a frescos |
+| **LH-16** (= LH-A3-4 / LH-A3-6) | Qoder (núcleo) | MED | El peso hebbiano satura en 2,0 a los ≈ 23 cierres y vuelve a −0,008 por cierre; la rama 11 se apaga con Hurst < 0,45, justo donde un motor de reversión ganaría peso. | aritmética contrastada |
+| **LH-17** (= A2-04) | Sol / Línea C (runner) | LOW | El runner suaviza b dos veces (EWMA α 0,05 en el runner y otra en `record_trade`) y clasifica pnl ≥ 0 como ganancia donde la envolvente usa > 0. | `backtest lib.rs:389-409` |
+| **Propio (ola 3)** | Línea H | — | Publicar el pago del segundo tramo y el fresco en la fila ADAPT; E4' anti → anti y E5 antipersistencia larga por cuartiles (prueba directa de inversión); guardar las trazas completas y extender `lado_vs_estado.py` a series compuestas; pedir fuera de zona que el tope de 100 trazas del núcleo sea configurable. | — |
