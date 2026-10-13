@@ -61,9 +61,11 @@ const ESCALAS: usize = 32;
 
 /// #665: familia histórica de cinco escalas por par: nodos interiores
 /// 18..22 de [30 s, 12 h] en la malla real tau_k = 4^k ns.
-/// La selección por distancia absoluta del publisher también puede elegir
-/// el nodo 17 cerca de 30 s: hay seis nodos potenciales en esa ruta.
-/// La familia efectiva queda abierta; este contrato conserva el M vigente.
+/// El publisher actual selecciona por distancia en ln(tau), con fronteras
+/// geométricas 2*tau_k. Si la banda efectiva consultada es [30 s, 12 h],
+/// hay siete nodos potenciales (17..23), incluidos exteriores a la banda.
+/// La familia real queda abierta; se conserva M histórico sin certificar
+/// que cubra todo lo consultado por la política.
 const ESCALAS_BANDA_PAR: usize = 5;
 
 /// #665 (F2-B8): tamaño histórico configurado de la FAMILIA de

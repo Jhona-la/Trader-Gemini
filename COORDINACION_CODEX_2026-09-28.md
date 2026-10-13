@@ -33,13 +33,29 @@
     * En `god-engine-core/src/calibration.rs`: añadido `calibrate_at_tau(&self, score: f64, now_ms: u64, tau_ms: f64) -> f64` en `PlattCalibrator` permitiendo decaimiento adaptativo continuo según la escala temporal de la orden. 8/8 tests de Platt pasando.
     * En `omniscient-registry/src/lib.rs`: exportadas públicamente las utilidades de formateo en stack `format_scoped_key` y `format_coin_key`.
     * Verificación: 121 tests unitarios de `signal-engine`, 50 tests de `dark-alpha-engine`, y suite de calibración 100% verdes.
+  - **Ejecución de Fase 4 (Psicología Financiera, Conducta de Masas y Teoría de Prospectos)**:
+    * Función de valor asimétrica Kahneman-Tversky auditada: $\lambda = 2.25$, $\alpha = \beta = 0.88$.
+    * Ponderación Prelec/Tversky $w(p)$ con $\gamma = 0.65$ sobreponderando colas/liquidaciones y subponderando medianas.
+    * Presión neta de masas $P_{kt}$ anti-simétrica estricta $P(1/LS) = -P(LS)$.
+    * Asiento `SeniorEnteMercado`: deduplicación F2.5-02 (no doble conteo de $L/S$), edge contrarian F2.5-03 en $[0.20, 1.30]$, cortacircuitos de cascada $> 0.85$.
+    * Verificación: 100% verde en `prospect_theory_contract.rs` (6/6 tests) y `cf2_conducta_masas_solucion_conocida.rs` (8/8 tests).
+  - **Ejecución de Fase 5 (Consejo de Seniors, Ponderación por Esperanza y Quórum Bayesiano)**:
+    * `SeniorPerformanceTracker` (F3.4-01): pesos por esperanza matemática $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|} \in [-1, 1]$ y $P_i = 0.5(1 + \theta_i)$. Test `cf3_tracker_premia_ev_no_acierto` 100% verde.
+    * Principio "Un dato, un veto" (F3.4-02): eliminado veto redundante en `SeniorAuditorInterno` sobre `do_calculus_risk`/VPIN. Test `cf3_vpin_un_dato_un_veto` 100% verde.
+    * Drawdown del consejo (F3.4-06): escalado continuo a cota $d^* \cdot (0.95 - 0.10 \cdot s)$ con $d^* = 1 - 0.05^{1/3} \approx 0.6316$.
+    * **Resolución de F3.4-07**: Censadas e incorporadas formalmente las 6 compuertas de veto del consejo (`V-CNCL-001` a `V-CNCL-006`) en `crates/risk-engine/src/veto_registry.rs`. Desbloqueado y certificado test `cf3_registro_cubre_los_vetos_de_asiento_del_consejo` (2/2 tests pasando).
+  - **Ejecución de Fase 6 (Motor de Riesgo, Stop Loss Difusivo y Trailing Multiescala)**:
+    * **Resolución de F3.3-08**: El dimensionamiento de exposición (`raw_exposure`, `conviccion`) y el tensor de convicción de apalancamiento (`conviction`) ahora consumen la probabilidad calibrada `SignalIntent::win_probability` (con fallback elegante a `confidence`), eliminando la inflación espuria de nocional por confianza cruda.
+    * Desbloqueada y certificada la prueba de contrato `cf3_la_puntuacion_cruda_no_dimensiona_por_su_cuenta` en `crates/risk-engine/tests/cf3_confianza_tamano_contract.rs` (1/1 test pasando).
+    * Verificada invariancia en escala $\tau$ de primer toque browniano en `cf3_r15_tau.rs` (1/1 test pasando).
+    * Verificación: 147 tests de `risk-engine --lib` y todas las suites de contratos pasando al 100%.
 - **Acuse y Armonización con Línea H (Olas 1–2 y T-3):**
   - Incorporación directa en el plan de los 4 cuellos de botella empíricos:
     * LH-02 (Valle de Capital $35–$65): RESUELTO en Fase 0 y Fase 2.
     * LH-03 (Envolvente Replay Absorbente a $1,000): Enfriamiento y logging de rollback en `live_envelope_gate`.
     * LH-04 (Piso de Nocional Mínimo en Micro-Capital): Dimensionamiento en espacio de riesgo con nocional ejecutable.
     * LH-05 (Ramas de Tendencia Silenciosas): Calibración adaptativa de umbral z95 de dispersión EMA.
-- **Verificación:** `cargo test -p risk-engine` 100% verde, `cargo test -p quantum-arena` 100% verde.
+- **Verificación:** `cargo test -p risk-engine` 100% verde, `cargo test -p quantum-arena` 100% verde, `cargo test -p metacortex-engine` 100% verde, workspace 100% verde (0 errores).
 
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω90 (#728): Plan Maestro Integral 2026-10-12, Universo Continuo Espectral y Sincronización Multi-Agente (2026-10-12 ~19:30 UTC)
 
