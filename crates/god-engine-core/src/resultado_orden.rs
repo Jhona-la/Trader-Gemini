@@ -166,6 +166,197 @@ impl EvidenciaDeVentaja {
     }
 }
 
+/// LG-22 (Línea G) — DETECTOR DE PÉRDIDA DE VENTAJA. **Sin cablear.**
+///
+/// QUÉ FALTA HOY (ola 2 de la Línea H, E2/E3/E4): la probabilidad de la puerta
+/// EV es un ajuste de Platt sobre las últimas 512 operaciones y no envejece
+/// mientras se opera (LH-12). En E4 (ventaja → antipersistencia), con el #62,
+/// el motor hace 41 cierres al 31,7 % (×3,4 los del mismo tramo en frío) y
+/// sólo el freno de la estrategia (CL-107) lo para, al final del tramo.
+///
+/// QUÉ ES: la escala RÁPIDA de adaptación por fuente (rama, escala o moneda).
+/// Un detector de cambio secuencial por e-proceso (e-CUSUM, Shin–Ramdas–
+/// Rinaldo, «E-detectors», NEJSDS 2023) sobre la R neta de cada cierre:
+///
+/// - H0 (antes del cambio), por cierre y en orden de cierre:
+///   E[R_t | cierres previos, geometría] ≥ μ, con μ = [`Self::referencia`].
+///   Con μ = 0, p ≥ p* = (SL + f)/(TP + SL): la fuente paga su fricción. Con
+///   varias posiciones abiertas de la misma fuente las pérdidas tienden a
+///   cerrar antes, así que esto no equivale a que cada orden tenga E[R] ≥ μ
+///   (en simulación, sin efecto material sobre el ARL).
+/// - e-valor del cierre t: `e_t = 1 − λ·(r_t − μ)`, con `λ = φ/(r_max_t − μ)` y
+///   `r_max_t = (TP − f)/SL` la mayor R de ESA orden, conocida al abrir (λ es
+///   predecible). Bajo H0, E[e_t | pasado] = 1 − λ·(E[R] − μ) ≤ 1.
+/// - La garantía exige `r − μ ≤ (r_max − μ)/φ_max` (= 2,5·(r_max − μ) con
+///   φ_max = 0,4): por encima el e-valor de esa fracción se recortaría a 0, y
+///   recortar las ganancias rompe E[e] ≤ 1. Esos cierres se cuentan en
+///   [`Self::fuera_de_garantia`]; con dos barreras no ocurren.
+/// - e-CUSUM por fracción: `M_t = e_t·max(1, M_{t−1})`, `M_0 = 0`; el
+///   estadístico es la media de los de las cuatro fracciones de [`FRACCIONES`].
+///   El suelo `max(1, ·)` olvida la historia favorable: una racha ganadora
+///   larga no retrasa la alarma cuando la ventaja se pierde.
+/// - Garantía: el e-CUSUM está acotado por el de Shiryaev–Roberts
+///   (`S_t = e_t·(S_{t−1} + 1)`, `S_0 = 0`), y bajo H0 `S_t − t` es una
+///   supermartingala; por muestreo opcional E[M_τ] ≤ E[τ] para todo tiempo de
+///   parada (es un e-detector, y la media de e-detectores también lo es).
+///   Alarmar en `M ≥ ARL` da un tiempo medio hasta la falsa alarma ≥ ARL
+///   cierres para toda fuente que cumpla H0, sin fijar n de antemano.
+/// - Retardo: la R por operación es dispersa (σ ≈ 1,58 R con RR 2,25), así
+///   que cada cierre informa poco y el retardo depende sobre todo de μ.
+///   Cierres hasta la alarma, simulados (RR 2,25, f = 0,27 R;
+///   [`retardo_aproximado`] es una aproximación pesimista):
+///
+///   | H0                        | ARL | −0,2 R | −0,24 R (E4) | −0,3 R | −1 R |
+///   |---------------------------|-----|--------|--------------|--------|------|
+///   | μ = 0 (paga su fricción)  | 500 | ≈ 670  | ≈ 470        | ≈ 310  | ≈ 46 |
+///   | μ = 0                     |  20 | ≈ 220  | ≈ 176        | ≈ 127  | ≈ 25 |
+///   | μ = +0,3 R (la de CL-107) | 500 | ≈ 131  | ≈ 112        | ≈ 94   | ≈ 31 |
+///   | μ = +0,3 R                |  20 | ≈ 63   | ≈ 55         | ≈ 48   | ≈ 17 |
+///
+///   El E4 tuvo 41 cierres en 50 h. Con μ = 0 ninguna prueba con nivel sobre
+///   la R de los cierres lo ve a tiempo; con la ventaja declarada como μ se ve
+///   en decenas de cierres, a cambio de alarmar también ante fuentes que
+///   siguen pagando su fricción con menos ventaja (0 ≤ E[R] < μ). CL-107 lo
+///   ve por eso: contrasta H0 = +0,30 R. Para bajar de decenas de cierres a la
+///   escala del régimen hace falta más información por hora (predicción
+///   frente a lo realizado en cada vela, libro sombra de las intenciones
+///   vetadas), no otra prueba sobre los mismos cierres.
+///
+/// Distinto del freno de la estrategia (CL-107, ADR-0017): aquél falsa la
+/// estrategia entera con H0 = +0,30 R y queda echado; éste es por fuente,
+/// con μ elegible, y se reinicia tras la alarma para seguir midiendo. Quién
+/// consume la alarma (pausar la rama, bajar su convicción, reabrir con una
+/// sonda) es decisión de sus dueños.
+#[derive(Debug, Clone)]
+pub struct DetectorPerdidaDeVentaja {
+    /// ln M de cada fracción; −∞ es M = 0 (ningún cierre desde el reinicio).
+    log_cusum: [f64; FRACCIONES.len()],
+    /// μ: ventaja (en R por cierre) que supone la H0.
+    referencia: f64,
+    pub cierres_desde_reinicio: u64,
+    /// Cierres observados desde que se creó (no se reinicia).
+    pub cierres_totales: u64,
+    /// Cierres con R > r_max de su orden (fuera del modelo de dos barreras),
+    /// desde que se creó.
+    pub fuera_de_cota: u64,
+    /// Cierres con `r − μ > (r_max − μ)/φ_max`: para ellos el e-valor de la
+    /// fracción mayor se recorta a 0 y la garantía no vale. Desde que se creó.
+    pub fuera_de_garantia: u64,
+}
+
+/// La mayor fracción de apuesta: fija hasta dónde vale la garantía.
+const FRACCION_MAXIMA: f64 = FRACCIONES[FRACCIONES.len() - 1];
+
+impl Default for DetectorPerdidaDeVentaja {
+    fn default() -> Self {
+        Self::nuevo()
+    }
+}
+
+impl DetectorPerdidaDeVentaja {
+    /// H0: la fuente paga su fricción (μ = 0).
+    pub fn nuevo() -> Self {
+        Self::con_referencia(0.0)
+    }
+
+    /// H0: la fuente conserva una ventaja de `referencia` R por cierre (la
+    /// que declara, como la +0,30 R de CL-107). Más rápido cuanto mayor es μ;
+    /// también alarma ante fuentes con 0 ≤ E[R] < μ. No finita o negativa ⇒ 0.
+    pub fn con_referencia(referencia: f64) -> Self {
+        let referencia = if referencia.is_finite() && referencia > 0.0 { referencia } else { 0.0 };
+        Self {
+            log_cusum: [f64::NEG_INFINITY; FRACCIONES.len()],
+            referencia,
+            cierres_desde_reinicio: 0,
+            cierres_totales: 0,
+            fuera_de_cota: 0,
+            fuera_de_garantia: 0,
+        }
+    }
+
+    pub fn referencia(&self) -> f64 {
+        self.referencia
+    }
+
+    /// Observa la R neta de un cierre y la R máxima de su orden,
+    /// `(TP − f)/SL`. Lo no finito se ignora, y también una orden con
+    /// `r_max ≤ μ` (no puede ganar la ventaja que supone la H0).
+    pub fn observar(&mut self, r: f64, r_max: f64) {
+        let escala = r_max - self.referencia;
+        if !(r.is_finite() && r_max.is_finite() && escala > 0.0) {
+            return;
+        }
+        let x = r - self.referencia;
+        if r > r_max {
+            self.fuera_de_cota += 1;
+        }
+        if x * FRACCION_MAXIMA > escala {
+            self.fuera_de_garantia += 1;
+        }
+        for (w, phi) in self.log_cusum.iter_mut().zip(FRACCIONES.iter()) {
+            let e = (1.0 - phi / escala * x).max(0.0);
+            // W_t = max(W_{t−1}, 0) + ln e_t  ⇔  M_t = e_t · max(1, M_{t−1}).
+            *w = w.max(0.0) + e.ln();
+        }
+        self.cierres_desde_reinicio += 1;
+        self.cierres_totales += 1;
+    }
+
+    /// Estadístico del detector (media de los e-CUSUM de cada fracción); 0
+    /// sin cierres desde el reinicio.
+    pub fn estadistico(&self) -> f64 {
+        self.log_cusum.iter().map(|w| w.exp()).sum::<f64>() / FRACCIONES.len() as f64
+    }
+
+    /// Alarma con un tiempo medio mínimo hasta la falsa alarma de `arl`
+    /// cierres bajo H0. `arl < 1` no es una política válida.
+    pub fn alarma(&self, arl: f64) -> bool {
+        arl.is_finite() && arl >= 1.0 && self.estadistico() >= arl
+    }
+
+    /// Vuelve a empezar a medir (tras consumir una alarma). Los contadores
+    /// totales se conservan.
+    pub fn reiniciar(&mut self) {
+        self.log_cusum = [f64::NEG_INFINITY; FRACCIONES.len()];
+        self.cierres_desde_reinicio = 0;
+    }
+}
+
+/// LG-22 — retardo aproximado del detector con referencia `referencia` (μ),
+/// en cierres, tras un cambio a una fuente de dos barreras con `rr`, fricción
+/// `f_r` (en R) y esperanza neta `er_despues` < μ: `ln(K·arl)/g`, con
+/// `g = max_φ E[ln(1 − φ·(r − μ)/(r_max − μ))]`. Es pesimista: ignora que
+/// varias fracciones crecen a la vez y la reflexión en el suelo; el retardo
+/// simulado es ≈ 0,65 veces éste a −0,2 R, ≈ 0,75 a −0,3 R y ≈ 1 a −1 R.
+/// `None` si ninguna fracción tiene crecimiento positivo (el cambio no es
+/// detectable con estas fracciones) o la entrada no es válida.
+pub fn retardo_aproximado(rr: f64, f_r: f64, referencia: f64, er_despues: f64, arl: f64) -> Option<f64> {
+    if !(rr.is_finite()
+        && f_r.is_finite()
+        && referencia.is_finite()
+        && er_despues.is_finite()
+        && arl.is_finite())
+        || f_r < 0.0
+        || referencia < 0.0
+        || rr - f_r <= referencia
+        || arl < 1.0
+    {
+        return None;
+    }
+    let p = ((er_despues + 1.0 + f_r) / (1.0 + rr)).clamp(0.0, 1.0);
+    let r_max = rr - f_r;
+    let escala = r_max - referencia;
+    let (gana, pierde) = (r_max - referencia, -1.0 - f_r - referencia);
+    let g = FRACCIONES
+        .iter()
+        .map(|phi| {
+            p * (1.0 - phi / escala * gana).max(f64::MIN_POSITIVE).ln()
+                + (1.0 - p) * (1.0 - phi / escala * pierde).ln()
+        })
+        .fold(f64::NEG_INFINITY, f64::max);
+    (g > 0.0).then(|| (FRACCIONES.len() as f64 * arl).ln() / g)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,5 +472,264 @@ mod tests {
         assert!((r.exceso_sobre_equilibrio().unwrap() - (1.0 - r.p_equilibrio)).abs() < 1e-12);
         assert!(ResultadoDeOrden::nuevo(0, 0, 0, 0.0, 0.0, 0.01, 0.001, None, 0.0, 5.0).is_none());
         assert!(ResultadoDeOrden::nuevo(0, 0, 0, 0.0, 0.02, 0.01, 0.001, None, f64::NAN, 5.0).is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests_lg22 {
+    use super::*;
+
+    struct Xorshift(u64);
+    impl Xorshift {
+        fn u(&mut self) -> f64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 >> 11) as f64 / (1u64 << 53) as f64
+        }
+    }
+
+    /// Orden de dos barreras con fricción f_R (en R): gana RR − f_R, pierde
+    /// 1 + f_R. Con p = p* = (1 + f_R)/(1 + RR) la esperanza neta es 0.
+    struct Geometria {
+        rr: f64,
+        f_r: f64,
+    }
+    impl Geometria {
+        fn p_con_esperanza(&self, er: f64) -> f64 {
+            // E[R] = p(RR − f) − (1 − p)(1 + f) = p(1 + RR) − (1 + f)
+            ((er + 1.0 + self.f_r) / (1.0 + self.rr)).clamp(0.0, 1.0)
+        }
+        fn r_max(&self) -> f64 {
+            self.rr - self.f_r
+        }
+        fn pierde(&self) -> f64 {
+            -1.0 - self.f_r
+        }
+        fn cierre(&self, p: f64, rng: &mut Xorshift) -> f64 {
+            if rng.u() < p { self.r_max() } else { self.pierde() }
+        }
+    }
+
+    const REF: Geometria = Geometria { rr: 2.25, f_r: 0.27 };
+
+    /// Retardo medio hasta la alarma (cierres) de una fuente con esperanza
+    /// `er` desde un detector recién creado.
+    fn retardo_medio(mu: f64, er: f64, arl: f64, caminos: usize, semilla: u64) -> f64 {
+        let p = REF.p_con_esperanza(er);
+        let mut rng = Xorshift(semilla);
+        let mut suma = 0.0;
+        for _ in 0..caminos {
+            let mut d = DetectorPerdidaDeVentaja::con_referencia(mu);
+            let mut k = 0u64;
+            while !d.alarma(arl) && k < 20_000 {
+                d.observar(REF.cierre(p, &mut rng), REF.r_max());
+                k += 1;
+            }
+            suma += k as f64;
+        }
+        suma / caminos as f64
+    }
+
+    /// En la frontera de H0 (E[R] = μ) el e-valor del primer cierre tiene
+    /// esperanza exactamente 1 para cada geometría y cada μ, y menor con
+    /// ventaja. Es exacta (sin Monte Carlo): falla si la referencia se
+    /// desplaza, si las ganancias se recortan a una cota común o si las
+    /// fracciones se agregan con algo distinto de la media. No ve un λ mal
+    /// escalado (no cambia E[e] en la frontera): de eso se ocupa la prueba del
+    /// retardo.
+    #[test]
+    fn lg22_en_la_frontera_el_e_valor_tiene_esperanza_uno() {
+        for g in [Geometria { rr: 2.25, f_r: 0.27 }, Geometria { rr: 5.0, f_r: 0.27 }] {
+            for mu in [0.0, 0.3] {
+                let primero = |r: f64| {
+                    let mut d = DetectorPerdidaDeVentaja::con_referencia(mu);
+                    d.observar(r, g.r_max());
+                    d.estadistico()
+                };
+                let (gana, pierde) = (primero(g.r_max()), primero(g.pierde()));
+                let esperanza = |p: f64| p * gana + (1.0 - p) * pierde;
+                let p0 = g.p_con_esperanza(mu);
+                assert!((esperanza(p0) - 1.0).abs() < 1e-12, "RR {} μ {mu}: {}", g.rr, esperanza(p0));
+                assert!(esperanza(p0 + 0.05) < 1.0, "con ventaja E[e] < 1");
+            }
+        }
+    }
+
+    /// Cota de nivel (laxa): bajo H0 en la frontera, mezclando geometrías, el
+    /// tiempo medio hasta una falsa alarma supera 1/α. La exactitud la da la
+    /// prueba anterior; ésta comprueba el detector entero.
+    #[test]
+    fn lg22_arl_bajo_h0_en_la_frontera_con_geometrias_mezcladas() {
+        const ARL: f64 = 50.0;
+        let geos = [Geometria { rr: 2.25, f_r: 0.27 }, Geometria { rr: 5.0, f_r: 0.27 }];
+        let mut rng = Xorshift(0x5EED_1234);
+        let caminos = 400;
+        let tope = (ARL * 200.0) as u64;
+        let mut suma_tiempos = 0.0;
+        for _ in 0..caminos {
+            let mut d = DetectorPerdidaDeVentaja::nuevo();
+            let mut t = 0u64;
+            while t < tope && !d.alarma(ARL) {
+                let g = &geos[(rng.u() * 2.0) as usize % 2];
+                d.observar(g.cierre(g.p_con_esperanza(0.0), &mut rng), g.r_max());
+                t += 1;
+            }
+            suma_tiempos += t as f64; // censurado en el tope: cota inferior
+        }
+        let arl_medido = suma_tiempos / caminos as f64;
+        println!("observado: ARL bajo H0 = {arl_medido:.0} cierres (cota 1/α = {ARL})");
+        assert!(arl_medido >= ARL, "ARL medido {arl_medido} < {ARL}");
+    }
+
+    /// Uso documentado: el detector sólo se reinicia tras una alarma. Una
+    /// fuente con +0,2 R durante 600 cierres casi nunca alarma, y cuando pasa
+    /// a −0,3 R se detecta en todos los caminos con un retardo cercano a la
+    /// aproximación, aunque llegue con una historia favorable larga (sin el
+    /// suelo del CUSUM tardaría más del triple).
+    #[test]
+    fn lg22_retardo_tras_una_historia_favorable_sin_falsas_alarmas() {
+        let (p_antes, p_despues) = (REF.p_con_esperanza(0.2), REF.p_con_esperanza(-0.3));
+        let arl = 500.0;
+        let mut rng = Xorshift(0xC0FFEE);
+        let (caminos, antes) = (200usize, 600usize);
+        let (mut falsas, mut suma_retardo, mut detectados) = (0, 0.0, 0);
+        for _ in 0..caminos {
+            let mut d = DetectorPerdidaDeVentaja::nuevo();
+            let mut alarma_previa = false;
+            for _ in 0..antes {
+                d.observar(REF.cierre(p_antes, &mut rng), REF.r_max());
+                if d.alarma(arl) {
+                    alarma_previa = true;
+                    d.reiniciar();
+                }
+            }
+            if alarma_previa {
+                falsas += 1;
+            }
+            for k in 1..=5_000usize {
+                d.observar(REF.cierre(p_despues, &mut rng), REF.r_max());
+                if d.alarma(arl) {
+                    suma_retardo += k as f64;
+                    detectados += 1;
+                    break;
+                }
+            }
+        }
+        let retardo = suma_retardo / detectados.max(1) as f64;
+        let teorico = retardo_aproximado(REF.rr, REF.f_r, 0.0, -0.3, arl).unwrap();
+        println!(
+            "observado: falsas alarmas con +0,2 R en {antes} cierres = {falsas}/{caminos}; retardo medio = {retardo:.0} cierres; aproximación ln(K·ARL)/g = {teorico:.0}"
+        );
+        assert_eq!(detectados, caminos, "todas las pérdidas de ventaja se detectan");
+        assert!(falsas * 20 <= caminos, "falsas alarmas {falsas}/{caminos} con ventaja real");
+        assert!(retardo > 0.4 * teorico && retardo < 1.6 * teorico, "retardo {retardo} frente a {teorico}");
+    }
+
+    /// El E4 de la Línea H con el #62 (acierto 0,317 ⇒ E[R] ≈ −0,24 R) tuvo 41
+    /// cierres en 50 h. Con H0 «paga su fricción» el detector necesita varias
+    /// veces eso; con la ventaja declarada de CL-107 (+0,3 R) y su α (ARL 20),
+    /// del orden de esos 41. Una inversión (−1 R) se ve en pocas decenas.
+    #[test]
+    fn lg22_el_e4_depende_de_la_referencia_y_la_inversion_se_ve_pronto() {
+        let e4_paga = retardo_medio(0.0, -0.24, 500.0, 200, 0xBADC0DE);
+        let e4_declarada = retardo_medio(0.3, -0.24, 20.0, 400, 0xD15EA5E);
+        let inversion = retardo_medio(0.0, -1.0, 500.0, 400, 0xFACADE);
+        println!(
+            "observado: E4 con μ = 0 y ARL 500 = {e4_paga:.0} cierres; con μ = +0,3 R y ARL 20 = {e4_declarada:.0}; inversión a −1 R = {inversion:.1}"
+        );
+        assert!(e4_paga > 5.0 * 41.0, "E4 con μ = 0: {e4_paga}");
+        assert!(e4_declarada < 2.5 * 41.0, "E4 con μ = +0,3 R: {e4_declarada}");
+        assert!(inversion < 60.0, "inversión {inversion}");
+    }
+
+    /// Demostración (no prueba el detector por sí sola): con E[R] = 0 exacto,
+    /// la suma de las últimas 512 R es negativa del orden de la mitad del
+    /// tiempo; el detector sobre la misma serie, reiniciado tras cada alarma,
+    /// alarma en una fracción ínfima de los cierres.
+    #[test]
+    fn lg22_la_ventana_de_512_no_controla_las_falsas_alarmas() {
+        let mut rng = Xorshift(0xFEED);
+        let mut ventana: std::collections::VecDeque<f64> = std::collections::VecDeque::new();
+        let mut d = DetectorPerdidaDeVentaja::nuevo();
+        let (mut negativa, mut alarmas, mut medidas) = (0usize, 0usize, 0usize);
+        for t in 0..20_000usize {
+            let r = REF.cierre(REF.p_con_esperanza(0.0), &mut rng);
+            ventana.push_back(r);
+            if ventana.len() > 512 {
+                ventana.pop_front();
+            }
+            d.observar(r, REF.r_max());
+            if t >= 512 {
+                medidas += 1;
+                if ventana.iter().sum::<f64>() < 0.0 {
+                    negativa += 1;
+                }
+                if d.alarma(50.0) {
+                    alarmas += 1;
+                    d.reiniciar();
+                }
+            }
+        }
+        let (frac_ventana, frac_detector) =
+            (negativa as f64 / medidas as f64, alarmas as f64 / medidas as f64);
+        println!(
+            "observado: bajo E[R] = 0, ventana de 512 negativa {frac_ventana:.2} del tiempo; detector (ARL 50) alarma en {frac_detector:.4} de los cierres"
+        );
+        assert!(frac_ventana > 0.25, "fracción {frac_ventana}");
+        assert!(frac_detector < 0.02, "fracción {frac_detector}");
+    }
+
+    /// El suelo del CUSUM olvida la historia favorable: tras cualquier número
+    /// de ganancias el estadístico queda en la media de 1 − φ (el de una sola
+    /// ganancia), y una pérdida lo deja exactamente en la media de los
+    /// e-valores de esa pérdida (M = e·max(1, M) con M ≤ 1).
+    #[test]
+    fn lg22_el_suelo_olvida_la_historia_favorable() {
+        for mu in [0.0, 0.3] {
+            let escala = REF.r_max() - mu;
+            let esperado = FRACCIONES.iter().map(|phi| 1.0 - phi / escala * (REF.pierde() - mu)).sum::<f64>()
+                / FRACCIONES.len() as f64;
+            let mut d = DetectorPerdidaDeVentaja::con_referencia(mu);
+            for _ in 0..50 {
+                d.observar(REF.r_max(), REF.r_max());
+            }
+            // Con suelo, cada ganancia deja M = 1 − φ (sin él, (1 − φ)^50).
+            let tras_ganar = FRACCIONES.iter().map(|phi| 1.0 - phi).sum::<f64>() / FRACCIONES.len() as f64;
+            assert!((d.estadistico() - tras_ganar).abs() < 1e-12, "tras 50 ganancias, M = {}", d.estadistico());
+            d.observar(REF.pierde(), REF.r_max());
+            assert!((d.estadistico() - esperado).abs() < 1e-12, "μ {mu}: {} frente a {esperado}", d.estadistico());
+        }
+    }
+
+    #[test]
+    fn lg22_bordes_contadores_y_reinicio() {
+        let mut d = DetectorPerdidaDeVentaja::nuevo();
+        assert_eq!(d.estadistico(), 0.0, "sin cierres, M = 0");
+        assert!(!d.alarma(1.0), "sin cierres no hay alarma, tampoco con ARL 1");
+        assert!(!d.alarma(0.5), "un ARL < 1 no es una política válida");
+        d.observar(f64::NAN, 2.0);
+        d.observar(-1.0, f64::NAN);
+        d.observar(-1.0, 0.0);
+        assert_eq!(d.cierres_desde_reinicio, 0);
+        assert_eq!(d.estadistico(), 0.0);
+        for _ in 0..40 {
+            d.observar(REF.pierde(), REF.r_max());
+        }
+        assert!(d.alarma(50.0), "40 pérdidas seguidas alarman");
+        d.observar(3.0, REF.r_max()); // por encima de r_max, dentro de la garantía
+        d.observar(6.0, REF.r_max()); // por encima de r_max/φ_max = 4,95
+        assert_eq!((d.fuera_de_cota, d.fuera_de_garantia), (2, 1));
+        d.reiniciar();
+        assert_eq!(d.estadistico(), 0.0);
+        assert!(!d.alarma(50.0));
+        assert_eq!((d.cierres_desde_reinicio, d.cierres_totales, d.fuera_de_cota), (0, 42, 2));
+        assert_eq!(DetectorPerdidaDeVentaja::con_referencia(f64::NAN).referencia(), 0.0);
+        assert_eq!(DetectorPerdidaDeVentaja::con_referencia(-0.2).referencia(), 0.0);
+        let mut alto = DetectorPerdidaDeVentaja::con_referencia(3.0);
+        alto.observar(-1.0, 2.0);
+        assert_eq!(alto.cierres_totales, 0, "r_max ≤ μ: la orden no puede ganar la referencia");
+        assert!(retardo_aproximado(2.25, 0.27, 2.0, -0.2, 500.0).is_none());
+        assert!(retardo_aproximado(2.25, 0.27, 0.0, 0.1, 500.0).is_none(), "con ventaja no hay retardo");
     }
 }
