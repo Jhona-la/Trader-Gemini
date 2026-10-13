@@ -310,6 +310,22 @@ impl SystemBootloader {
     }
 }
 
+/// CL-123 — EL ROSTER DEL MOTOR, con el nombre que el símbolo tiene en
+/// futuros USDⓈ-M de Binance, en MAYÚSCULAS (CL-37: la grafía del registro y
+/// de `models/`; los streams del WS se construyen aparte en minúsculas). Es
+/// la única lista: el generador de cópulas (`copulas_manifest`) la usa tal
+/// cual, así que sus claves son las del roster.
+///
+/// SHIB cotiza en USDⓈ-M como `1000SHIBUSDT` (mil unidades por contrato).
+/// Antes el roster decía `shibusdt`, que no existe en futuros: esa moneda no
+/// recibía datos.
+pub const ROSTER: &[&str] = &[
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "ADAUSDT",
+    "1000SHIBUSDT", "DOTUSDT", "LINKUSDT", "POLUSDT", "LTCUSDT", "BCHUSDT", "ATOMUSDT",
+    "UNIUSDT", "XLMUSDT", "NEARUSDT", "ICPUSDT", "FILUSDT", "VETUSDT", "AVAXUSDT",
+    "OPUSDT", "APTUSDT", "ARBUSDT", "RENDERUSDT", "LDOUSDT",
+];
+
 // --- LEGACY SYSTEM DIAGNOSTICS FOR MAIN ENGINE COMPATIBILITY ---
 pub struct SystemDiagnostics;
 
@@ -317,37 +333,7 @@ impl SystemDiagnostics {
     pub async fn execute_phase_1_and_2(
         _is_demo: bool,
     ) -> Result<(i64, Vec<String>), Box<dyn std::error::Error>> {
-        let syms = vec![
-            "btcusdt".to_string(),
-            "ethusdt".to_string(),
-            "bnbusdt".to_string(),
-            "solusdt".to_string(),
-            "xrpusdt".to_string(),
-            "dogeusdt".to_string(),
-            "adausdt".to_string(),
-            "shibusdt".to_string(),
-            "dotusdt".to_string(),
-            "linkusdt".to_string(),
-            "polusdt".to_string(),
-            "ltcusdt".to_string(),
-            "bchusdt".to_string(),
-            "atomusdt".to_string(),
-            "uniusdt".to_string(),
-            "xlmusdt".to_string(),
-            "nearusdt".to_string(),
-            "icpusdt".to_string(),
-            "filusdt".to_string(),
-            "vetusdt".to_string(),
-            "avaxusdt".to_string(),
-            "opusdt".to_string(),
-            "aptusdt".to_string(),
-            "arbusdt".to_string(),
-            "renderusdt".to_string(),
-            "ldousdt".to_string(),
-        ];
-        // CL-37: grafía canónica (MAYÚSCULAS), la del registro y de `models/`.
-        // Los streams del WS se construyen aparte en minúsculas.
-        Ok((0, syms.into_iter().map(|s| s.to_ascii_uppercase()).collect()))
+        Ok((0, ROSTER.iter().map(|s| s.to_string()).collect()))
     }
 
     /// X-017 (REHAB-6): OHLCV COMPLETO por kline — antes solo closes con

@@ -86,14 +86,10 @@ fn scores_por_rango(x: &[f64], y: &[f64]) -> (Vec<f64>, Vec<f64>) {
     (ranks(x), ranks(y))
 }
 
-/// Roster vivo (bootloader.rs:301-328) con tape del mes dado. XMR está
-/// FUERA del roster (sólo existe en el simulador forense) — no se mide.
-const SIMBOLOS: &[&str] = &[
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "ADAUSDT",
-    "SHIBUSDT", "DOTUSDT", "LINKUSDT", "POLUSDT", "LTCUSDT", "BCHUSDT", "ATOMUSDT",
-    "UNIUSDT", "XLMUSDT", "NEARUSDT", "ICPUSDT", "FILUSDT", "VETUSDT", "AVAXUSDT",
-    "OPUSDT", "APTUSDT", "ARBUSDT", "RENDERUSDT", "LDOUSDT",
-];
+/// CL-123: el roster vivo, la MISMA lista del bootloader (antes una copia,
+/// que decía SHIBUSDT como el bootloader). XMR está FUERA del roster (sólo
+/// existe en el simulador forense) — no se mide.
+const SIMBOLOS: &[&str] = god_engine_core::bootloader::ROSTER;
 
 const HORIENTE_MS: u64 = 300_000; // 5 min: mediana λ̂ de LXXI y horizonte de trading
 const TOPE_N: usize = 4_000;
@@ -106,12 +102,11 @@ const LAMBDA_MIN: f64 = 0.05;
 /// - En 2026-08, BTC y ETH llevan el nombre histórico `{SYM}_AUG_REAL.bin`
 ///   (antes sólo BTC: ETH quedaba fuera del manifiesto de agosto).
 /// - SHIB cotiza en futuros USDⓈ-M como `1000SHIBUSDT` (mil unidades por
-///   contrato); su cinta lleva ese nombre. Los retornos logarítmicos no
-///   cambian con la escala, y el manifiesto conserva el nombre del roster.
+///   contrato), que es su nombre en el roster desde CL-123; su cinta lleva
+///   ese nombre. Los retornos logarítmicos no cambian con la escala.
 fn nombre_de_cinta(simbolo: &str, mes: &str) -> String {
     match (simbolo, mes) {
         ("BTCUSDT" | "ETHUSDT", "2026-08") => format!("{simbolo}_AUG_REAL.bin"),
-        ("SHIBUSDT", _) => format!("1000SHIBUSDT_{mes}_REAL.bin"),
         _ => format!("{simbolo}_{mes}_REAL.bin"),
     }
 }

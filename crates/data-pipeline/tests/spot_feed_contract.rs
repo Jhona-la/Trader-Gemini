@@ -11,7 +11,9 @@
 //!    `god-engine-core/tests/statarb_live_physics_contract.rs`).
 
 use data_pipeline::omni_multiplexer::OmniState;
-use data_pipeline::spot_feed::{apply_spot_tick, parse_rest_book_tickers, parse_ws_book_ticker};
+use data_pipeline::spot_feed::{
+    aplicar_tick_de_spot, apply_spot_tick, par_spot, parse_rest_book_tickers, parse_ws_book_ticker,
+};
 use quantum_arena::{symbol_registry, symbols, GlobalArena};
 use std::sync::atomic::Ordering;
 
@@ -107,4 +109,36 @@ fn c02_test_apply_spot_tick_populates_arena_registry_and_macro_tensor() {
     let arb_spread = f64::from_bits(omni.spot_futures_arb_spread.load(Ordering::Relaxed));
     let expected_spread = (fut_price - 50_001.0) / 50_001.0;
     assert!((arb_spread - expected_spread).abs() < 1e-6);
+}
+
+/// CL-123: un contrato `1000X` (1000SHIBUSDT) se consulta en spot como `X`
+/// (SHIBUSDT) y su tick se aplica a la moneda del contrato en su escala:
+/// precios × 1 000 y cantidades ÷ 1 000. Antes el feed pedía el símbolo de
+/// futuros también en spot, y uno que no existe hace fallar la consulta
+/// agrupada entera.
+#[test]
+fn cl123_un_contrato_de_mil_unidades_se_lee_en_spot_y_se_escala() {
+    assert_eq!(par_spot("1000SHIBUSDT"), ("SHIBUSDT".to_string(), 1000.0));
+    assert_eq!(par_spot("1000pepeusdt"), ("PEPEUSDT".to_string(), 1000.0));
+    assert_eq!(par_spot("BTCUSDT"), ("BTCUSDT".to_string(), 1.0));
+    symbols::update_dynamic_universe(vec!["BTCUSDT".into(), "1000SHIBUSDT".into()]);
+    symbol_registry::update_registry(vec![
+        symbol_registry::get_official_binance_spec("BTCUSDT"),
+        symbol_registry::get_official_binance_spec("1000SHIBUSDT"),
+    ]);
+    let arena = GlobalArena::build_in_own_stack(100.0);
+    let omni = OmniState::new();
+    let (_, escala) = par_spot("1000SHIBUSDT");
+    let destino = (1usize, escala, "1000SHIBUSDT".to_string());
+    aplicar_tick_de_spot(&arena, &omni, &destino, 0.000012, 0.000013, 4.0e9, 5.0e9);
+    let bid = arena.coins[1].spot_bid.load(Ordering::Relaxed);
+    let qty = arena.coins[1].spot_bid_qty.load(Ordering::Relaxed);
+    assert!((bid - 0.012).abs() < 1e-12, "{bid}");
+    assert!((qty - 4.0e6).abs() < 1e-3, "{qty}");
+    let mid = arena
+        .registry
+        .get_scoped_parameter(Some("1000SHIBUSDT"), Some(1), "spot_mid", "test")
+        .expect("spot_mid con el símbolo de futuros")
+        .get_value();
+    assert!((mid - 0.0125).abs() < 1e-12, "{mid}");
 }

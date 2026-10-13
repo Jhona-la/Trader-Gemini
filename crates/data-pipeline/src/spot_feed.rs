@@ -137,6 +137,48 @@ pub fn apply_spot_tick(
     }
 }
 
+/// CL-123 — par de spot de un contrato de futuros USDⓈ-M y el factor que pasa
+/// su precio a la escala del contrato. Los contratos `1000X` (mil unidades
+/// por contrato, p. ej. `1000SHIBUSDT`) cotizan en spot como `X`: su precio de
+/// contrato es 1 000 veces el de spot. El resto se llama igual en los dos
+/// mercados.
+pub fn par_spot(simbolo_futuro: &str) -> (String, f64) {
+    let s = simbolo_futuro.to_ascii_uppercase();
+    match s.strip_prefix("1000") {
+        Some(resto) if !resto.is_empty() => (resto.to_string(), 1000.0),
+        _ => (s, 1.0),
+    }
+}
+
+/// Moneda del roster a la que va un par de spot: (coin_id, factor de escala,
+/// símbolo de futuros).
+pub type DestinoSpot = (usize, f64, String);
+
+/// CL-123: aplica un tick del par de spot a su moneda, en la escala del
+/// contrato de futuros (precios × factor, cantidades ÷ factor) y con el
+/// símbolo de futuros, que es el del registro.
+pub fn aplicar_tick_de_spot(
+    arena: &GlobalArena,
+    omni_state: &crate::omni_multiplexer::OmniState,
+    destino: &DestinoSpot,
+    bid: f64,
+    ask: f64,
+    bid_qty: f64,
+    ask_qty: f64,
+) {
+    let (coin_id, escala, simbolo) = destino;
+    apply_spot_tick(
+        arena,
+        omni_state,
+        *coin_id,
+        simbolo,
+        bid * escala,
+        ask * escala,
+        bid_qty / escala,
+        ask_qty / escala,
+    );
+}
+
 /// Inicia la sincronización en vivo del feed spot de Binance usando un bucle híbrido
 /// (WebSocket de baja latencia + Sondeo REST de alta fiabilidad).
 pub fn start_spot_feed_sync(
@@ -145,13 +187,16 @@ pub fn start_spot_feed_sync(
     omni_state: Arc<crate::omni_multiplexer::OmniState>,
     symbols: Vec<String>,
 ) {
-    let mut symbol_to_coin_id = HashMap::new();
+    let mut symbol_to_coin_id: HashMap<String, DestinoSpot> = HashMap::new();
     let mut valid_spot_symbols = Vec::new();
 
+    // CL-123: se consulta el par de SPOT de cada contrato (1000SHIBUSDT →
+    // SHIBUSDT). Un símbolo que no existe en spot hace fallar la consulta
+    // REST agrupada entera.
     for (idx, sym) in symbols.iter().enumerate() {
-        let sym_upper = sym.to_ascii_uppercase();
-        symbol_to_coin_id.insert(sym_upper.clone(), idx);
-        valid_spot_symbols.push(sym_upper);
+        let (spot, escala) = par_spot(sym);
+        symbol_to_coin_id.insert(spot.clone(), (idx, escala, sym.to_ascii_uppercase()));
+        valid_spot_symbols.push(spot);
     }
 
     if valid_spot_symbols.is_empty() {
@@ -194,7 +239,7 @@ pub fn start_spot_feed_sync(
 async fn run_spot_rest_poller(
     arena: Arc<GlobalArena>,
     omni_state: Arc<crate::omni_multiplexer::OmniState>,
-    symbol_map: Arc<HashMap<String, usize>>,
+    symbol_map: Arc<HashMap<String, DestinoSpot>>,
     symbols: Arc<Vec<String>>,
 ) {
     let client = reqwest::Client::builder()
@@ -218,8 +263,8 @@ async fn run_spot_rest_poller(
                 if let Ok(body) = resp.text().await {
                     let entries = parse_rest_book_tickers(&body);
                     for (sym, bid, ask, bid_qty, ask_qty) in entries {
-                        if let Some(&coin_id) = symbol_map.get(&sym) {
-                            apply_spot_tick(&arena, &omni_state, coin_id, &sym, bid, ask, bid_qty, ask_qty);
+                        if let Some(destino) = symbol_map.get(&sym) {
+                            aplicar_tick_de_spot(&arena, &omni_state, destino, bid, ask, bid_qty, ask_qty);
                         }
                     }
                 }
@@ -233,8 +278,8 @@ async fn run_spot_rest_poller(
                             if let Ok(body) = resp.text().await {
                                 let entries = parse_rest_book_tickers(&body);
                                 for (s, bid, ask, bid_qty, ask_qty) in entries {
-                                    if let Some(&coin_id) = symbol_map.get(&s) {
-                                        apply_spot_tick(&arena, &omni_state, coin_id, &s, bid, ask, bid_qty, ask_qty);
+                                    if let Some(destino) = symbol_map.get(&s) {
+                                        aplicar_tick_de_spot(&arena, &omni_state, destino, bid, ask, bid_qty, ask_qty);
                                     }
                                 }
                             }
@@ -249,7 +294,7 @@ async fn run_spot_rest_poller(
 async fn run_spot_ws_streamer(
     arena: Arc<GlobalArena>,
     omni_state: Arc<crate::omni_multiplexer::OmniState>,
-    symbol_map: Arc<HashMap<String, usize>>,
+    symbol_map: Arc<HashMap<String, DestinoSpot>>,
     symbols: Arc<Vec<String>>,
 ) {
     let mut streams_vec = Vec::new();
@@ -277,8 +322,8 @@ async fn run_spot_ws_streamer(
                     match msg_result {
                         Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                             if let Some((sym, bid, ask, bid_qty, ask_qty)) = parse_ws_book_ticker(&text) {
-                                if let Some(&coin_id) = symbol_map.get(&sym) {
-                                    apply_spot_tick(&arena, &omni_state, coin_id, &sym, bid, ask, bid_qty, ask_qty);
+                                if let Some(destino) = symbol_map.get(&sym) {
+                                    aplicar_tick_de_spot(&arena, &omni_state, destino, bid, ask, bid_qty, ask_qty);
                                 }
                             }
                         }
