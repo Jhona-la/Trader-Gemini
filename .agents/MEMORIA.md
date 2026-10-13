@@ -6096,3 +6096,13 @@ El [censo de cierre](../docs/audit/REVISION_CIERRE_2026-10-08.json) contiene 1.5
 Limpieza ya realizada: 13 refs locales cerradas y 1 remota; directorios y bytes de checkouts conservados. Qoder72 mantiene tres commits exclusivos en vuelo y oscillator sucio, con contrato pendiente frente a GLM112; AGYf9 conserva reserva activa. La rama Codex de integración se liberará al verificar el siguiente commit de metadatos, con recibo final en la ruta indicada por el JSON. CI del SHA publicado sigue separada, sin éxito certificado. La meta económica y la revisión semántica integral continúan abiertas.
 
 
+
+
+<!-- R4-OCT13-TERMINAL-DOCUMENTATION-V1 -->
+## R4 — recibos terminales y continuidad — 2026-10-13
+
+R4 13Oct: composición documental b661dcfaca00a1d46a26ebd7e44b2dc252e6348c; fuente ejecutada f62590e33a76a61a67320fed0e1ecc9ae0514ebd. Agregado terminal: 713 aprobadas / 0 fallidas / 7 ignoradas / 1 filtradas; son ejecuciones registradas, con repeticiones, no tests únicos. T1: 18/144 genes sensibles (12.5000%). Ledger: 1816 rutas pendientes, cero archivos completos auditados y sólo tres rutas con hunks ceros/replay verificados. evalues.rs sigue doc-only pendiente. SI final declarado: 927921160e87a425a793d6a23460ab7f2fbff033; no se transfiere CI de padres ni se certifica main remoto.
+
+[Adenda y alcance](../docs/audit/ADENDA_CIERRE_R4_2026-10-13.md); [ledger exhaustivo pendiente](../docs/audit/INVENTARIO_FINAL_R4_2026-10-13.json). Todos los estados de archivo completo siguen pendientes. SI-O02 (escala/estimando/Jensen), R4-O01 (IC sin centrar, nulo condicional y familia real), R4-O02 (mapping precio/cartera/PnL) y R4-EPOCHS (historia, frescura, reinicio/replay y gasto de error) siguen abiertos. Riesgo parte de HY sin centrar y usa Pearson como fallback; onlytighten no acredita igual universo, signo, peso u horizonte. Las referencias antiguas a 29 rutas ausentes describen el texto anterior; los 48 ejemplos corregidos existen. Nueva deuda semántica: independencia o centrado de retornos no implican E[χ(s_t A_tB_t)|Fprev]<=0; el comentario multiactivo43 sigue pendiente de corrección documental y evidencia de hunk, sin cambio runtime.
+
+LG22: el producto de factores exige filtración, integrabilidad, nulo condicional E[R_t|F_(t-1)]>=mu, cotas y apuestas predecibles; Ville y ARL del e-detector son garantías distintas bajo sus respectivos supuestos. La formulación marginal E[R]>=mu de un resumen histórico no debe transferirse como garantía general.

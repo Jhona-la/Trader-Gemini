@@ -4,3 +4,13 @@
 *.lock text eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# R4 Oct13: preserve exact receipt bytes and their recorded SHA256.
+docs/audit/RECIBO_VALIDACION_R4_2026-10-13.json -text
+docs/audit/INVENTARIO_FINAL_R4_2026-10-13.json -text
+docs/audit/MODELOS_T1_R4_2026-10-13.before.json -text
+docs/audit/MODELOS_T1_R4_2026-10-13.after.json -text
+docs/audit/EQUIVALENCIA_COMPILABLES_R4_POST_SI_2026-10-13.json -text
+docs/audit/CHECK_ALL_TARGETS_R4_2026-10-13.json -text
+docs/audit/REVISION_INDEPENDIENTE_R4_LH12_2026-10-13.json -text
+docs/audit/RECIBO_PUBLICACION_R4_2026-10-13.json -text

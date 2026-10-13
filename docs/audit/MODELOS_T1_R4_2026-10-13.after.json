@@ -1,0 +1,307 @@
+{
+  "receipt_schema": 1,
+  "mode": "After",
+  "label": "20-final-t1",
+  "started_utc": "2026-10-13T08:10:48.5276907Z",
+  "completed_utc": "2026-10-13T08:10:48.7235368Z",
+  "identity_sha256": "5364d6d17afb0e80f08d647c76401f21f20cadb41dd2479539c931a1ab94bac4",
+  "readable": true,
+  "stable_double_snapshot": true,
+  "payload": {
+    "schema": 1,
+    "repository_root": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini",
+    "helper_raw_sha256": "3975061280cb6fe40e15979baa44a8843b646d84efc83ab573fd094bcea94b06",
+    "caller_environment": {
+      "TG_GENOME_ENV": "backtest",
+      "TGM_DATA_DIR": null,
+      "T1_THREADS": "4",
+      "TG_TRACE_NATIVO": null,
+      "GOD_NO_HOT_RELOAD": null
+    },
+    "source_inputs": [
+      {
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\god-engine-core\\src\\lib.rs",
+        "status": "present-and-hashed",
+        "bytes": 569933,
+        "raw_sha256": "15e60b161e7004ad545ec4e84707dffcc4f5d7660c2e07d5f30f024393c4db29",
+        "modified_utc": "2026-10-13T05:55:33.4770687Z",
+        "read_error": null
+      },
+      {
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\god-engine-core\\src\\ml_inference.rs",
+        "status": "present-and-hashed",
+        "bytes": 27531,
+        "raw_sha256": "c7d596777d1c68edd07d2ff8cb226bd60e965fb74ba14c6a3859d791a48be362",
+        "modified_utc": "2026-10-13T05:55:33.4800683Z",
+        "read_error": null
+      },
+      {
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\god-engine-core\\src\\model_reload.rs",
+        "status": "present-and-hashed",
+        "bytes": 3462,
+        "raw_sha256": "eada08ead055abf2afa8669b821bd97e5c8fc4226e81ccc6784e7d6e3ba27962",
+        "modified_utc": "2026-10-11T13:36:05.5418993Z",
+        "read_error": null
+      },
+      {
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\god-engine-core\\src\\ml_registry.rs",
+        "status": "present-and-hashed",
+        "bytes": 19758,
+        "raw_sha256": "b7114e469217349c83754c58358341c6504415f98c24f091d852a9cf10868f44",
+        "modified_utc": "2026-10-11T13:36:05.5403203Z",
+        "read_error": null
+      },
+      {
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\god-engine-core\\src\\ml_coverage.rs",
+        "status": "present-and-hashed",
+        "bytes": 6158,
+        "raw_sha256": "affa93e0522b84befd21b4a1800c8aa64aedd5e65418209832c3a039b366f267",
+        "modified_utc": "2026-10-11T13:36:05.5360482Z",
+        "read_error": null
+      },
+      {
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\backtest-engine\\src\\lib.rs",
+        "status": "present-and-hashed",
+        "bytes": 42240,
+        "raw_sha256": "87ae21a8d86c520d5e585861b52e40cfd09187e539112265b4e376b9bb2e3811",
+        "modified_utc": "2026-10-13T05:55:33.3630340Z",
+        "read_error": null
+      },
+      {
+        "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\backtest-engine\\tests\\t1_cobertura_genetica.rs",
+        "status": "present-and-hashed",
+        "bytes": 18566,
+        "raw_sha256": "14f3ebf659680ccbd7ec089a3e38fa4b0a4380c175b36124853dc4627a44693e",
+        "modified_utc": "2026-10-11T13:36:05.1417676Z",
+        "read_error": null
+      }
+    ],
+    "contexts": [
+      {
+        "context": "workspace",
+        "cwd": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini",
+        "scope": "explicit-workspace-CWD comparison, not the normal Cargo test CWD",
+        "directory": {
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models",
+          "status": "present-and-enumerated",
+          "directories": [
+            {
+              "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models",
+              "modified_utc": "2026-10-11T13:36:08.7736647Z"
+            }
+          ],
+          "files": [
+            {
+              "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\ATOMUSDT_MOTOR.json",
+              "status": "present-and-hashed",
+              "bytes": 50032,
+              "raw_sha256": "0e5fdce0886ba87733a37cacb13dcf5909e416bbf448f83480c80c61063d3a99",
+              "modified_utc": "2026-10-11T13:36:08.7662221Z",
+              "read_error": null
+            },
+            {
+              "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\BNBUSDT_MOTOR.json",
+              "status": "present-and-hashed",
+              "bytes": 45872,
+              "raw_sha256": "6813d8940c7e560d4888bf36bd35e4f8ed047bbcf5eb9a3e4f5b01060476b853",
+              "modified_utc": "2026-10-11T13:36:08.7689532Z",
+              "read_error": null
+            },
+            {
+              "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\NEARUSDT_MOTOR.json",
+              "status": "present-and-hashed",
+              "bytes": 75636,
+              "raw_sha256": "4eb402644fadd7c86bfc5a58db8f3771dc0e113d426be9f6ab97623d51a6b536",
+              "modified_utc": "2026-10-11T13:36:08.7720825Z",
+              "read_error": null
+            },
+            {
+              "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\NEARUSDT_VOL.json",
+              "status": "present-and-hashed",
+              "bytes": 32149,
+              "raw_sha256": "3d72ed2a650756a0ff549fccacb6d4226d4fb27c7f7c2f6713ffd58539d55f2d",
+              "modified_utc": "2026-10-11T13:36:08.7752392Z",
+              "read_error": null
+            }
+          ],
+          "read_error": null
+        },
+        "candidates": [
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\ATOMUSDT_MOTOR.bin",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\ATOMUSDT_MOTOR.json",
+            "status": "present-and-hashed",
+            "bytes": 50032,
+            "raw_sha256": "0e5fdce0886ba87733a37cacb13dcf5909e416bbf448f83480c80c61063d3a99",
+            "modified_utc": "2026-10-11T13:36:08.7662221Z",
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\BNBUSDT_MOTOR.bin",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\BNBUSDT_MOTOR.json",
+            "status": "present-and-hashed",
+            "bytes": 45872,
+            "raw_sha256": "6813d8940c7e560d4888bf36bd35e4f8ed047bbcf5eb9a3e4f5b01060476b853",
+            "modified_utc": "2026-10-11T13:36:08.7689532Z",
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\BTCUSDT_MOTOR.bin",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\BTCUSDT_MOTOR.json",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\DarkAlpha_BTCUSDT.json",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\NEARUSDT_MOTOR.bin",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\NEARUSDT_MOTOR.json",
+            "status": "present-and-hashed",
+            "bytes": 75636,
+            "raw_sha256": "4eb402644fadd7c86bfc5a58db8f3771dc0e113d426be9f6ab97623d51a6b536",
+            "modified_utc": "2026-10-11T13:36:08.7720825Z",
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\NEARUSDT_VOL.bin",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\NEARUSDT_VOL.json",
+            "status": "present-and-hashed",
+            "bytes": 32149,
+            "raw_sha256": "3d72ed2a650756a0ff549fccacb6d4226d4fb27c7f7c2f6713ffd58539d55f2d",
+            "modified_utc": "2026-10-11T13:36:08.7752392Z",
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\UNIVERSAL_FOREST.bin",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\models\\UNIVERSAL_FOREST.json",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          }
+        ]
+      },
+      {
+        "context": "backtest-engine",
+        "cwd": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\backtest-engine",
+        "scope": "normal Cargo package CWD candidate",
+        "directory": {
+          "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\backtest-engine\\models",
+          "status": "absent",
+          "directories": [],
+          "files": [],
+          "read_error": null
+        },
+        "candidates": [
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\backtest-engine\\models\\BTCUSDT_MOTOR.bin",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\backtest-engine\\models\\BTCUSDT_MOTOR.json",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\backtest-engine\\models\\DarkAlpha_BTCUSDT.json",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\backtest-engine\\models\\UNIVERSAL_FOREST.bin",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          },
+          {
+            "path": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\crates\\backtest-engine\\models\\UNIVERSAL_FOREST.json",
+            "status": "absent",
+            "bytes": null,
+            "raw_sha256": null,
+            "modified_utc": null,
+            "read_error": null
+          }
+        ]
+      }
+    ]
+  },
+  "scope": "Pinned source candidate paths and recursive lexical model inventories at workspace/backtest CWD; caller allowlist only",
+  "limitations": [
+    "No syscall tracing or assertion of actual model reads",
+    "No identity/activation certificate for GLOBAL_FORESTS in test memory",
+    "No transient-change detection between Before and After",
+    "No filesystem absences outside the two inventoried model directories",
+    "Genome snapshot remains a separate runner receipt",
+    "Directory watcher/manifest files are an upper-bound inventory, not a T1 callsite claim",
+    "JSON loader cache writes are legitimate mutations and still fail an immutable freeze"
+  ],
+  "passed": true,
+  "before_receipt": "C:\\Users\\jhona\\.codex\\worktrees\\root-spectral-zero-replay-1011\\Trader Gemini\\target\\r4-zero-replay\\20-final-t1-models-before.json",
+  "before_receipt_raw_sha256": "1307101eb2e94ec5c541c0f3a8a94ebbd83d4ded8567b8cc1ce9f91b3c3a9411",
+  "before_payload_identity_consistent": true,
+  "unchanged": true
+}
