@@ -51,7 +51,9 @@ impl Lcg {
 /// publicada ≤ 2τ*). La configuración es la viva del núcleo; la β
 /// adaptativa se deja activa para probar que la prueba no la usa.
 fn pasa_la_guarda(eng: &StatArbEngine, tau_ms: f64) -> (bool, f64) {
-    match eng.veredicto(tau_ms, 0.0) {
+    // Resolución de la base de 1e-6 (un tick de 0,1 USD a 100 000 USD): sin
+    // piso StatArb no vota (CL-111) y la guarda no probaría nada.
+    match eng.veredicto(tau_ms, 1e-6) {
         Some(v) => (v.demostrada && v.t_media_cota_ms <= 2.0 * tau_ms, v.prueba.t),
         None => (false, f64::NEG_INFINITY),
     }

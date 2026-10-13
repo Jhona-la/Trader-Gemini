@@ -48,7 +48,8 @@ fn huella(c: &GodEngineCore) -> (Option<bool>, Option<f64>, u64) {
     let e = &c.statarb_ou_engines[1];
     let tau = SPECTRUM_SCALES_MS[17];
     (
-        e.veredicto(tau, 0.0).map(|v| v.demostrada),
+        // Piso de la base de un tick de 0,01 a 100 USD (CL-111: sin piso no hay voto).
+        e.veredicto(tau, 1e-4).map(|v| v.demostrada),
         e.prueba.as_ref().and_then(|p| p.estado_nodo(17)).map(|n| n.masa),
         e.prueba.as_ref().map_or(0, |p| p.pares()),
     )

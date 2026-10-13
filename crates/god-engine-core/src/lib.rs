@@ -6403,9 +6403,12 @@ impl GodEngineCore {
             // de reversión de la base a la τ de decisión: z del último par y
             // cota de vida media demostrada (2·τ_k del nodo τ_k ≤ τ*), o z = 0
             // y t½ = ∞ sin demostración. Con el spot caducado (> TTL, CL-79)
-            // la z es 0. Se publica en cada evento y para toda moneda: así una
-            // clave nunca queda con un veredicto viejo (reconexión, nodo que
-            // deja de estar maduro, spot que desaparece). β = 1 fija.
+            // la z es 0. Se publica en cada evento que llega hasta aquí y para
+            // toda moneda (no con las entradas bloqueadas, que salen antes; W-5
+            // de la revisión del PR #60): así una clave no queda con un
+            // veredicto viejo (nodo que deja de estar maduro, spot que
+            // desaparece). β = 1 fija. Sin la resolución de la base (sin spec
+            // de tick) no hay voto (CL-111).
             {
                 let piso_base = self.feature_engines[coin_id].piso_resolucion / mid_price;
                 let eng_st = &self.statarb_ou_engines[coin_id];

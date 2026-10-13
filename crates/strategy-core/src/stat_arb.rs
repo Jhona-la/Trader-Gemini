@@ -175,12 +175,17 @@ impl StatArbEngine {
     /// CL-97: veredicto a la τ de decisión `tau_decision_ms`, con `piso` como
     /// resolución de la base (≥ 0, la σ mínima del z). `None` sin prueba o
     /// sin ningún par.
+    ///
+    /// CL-111 (EST-5 de la revisión del PR #60): sin la resolución de la base
+    /// (piso ≤ 0, sin spec de tick) no hay voto. Con los mids redondeados a un
+    /// tick y la base lenta, el redondeo fabrica reversión, y sólo el piso de
+    /// la σ (un tick) impedía votarla.
     pub fn veredicto(&self, tau_decision_ms: f64, piso: f64) -> Option<VeredictoStatArb> {
         let v = self.prueba.as_ref()?.veredicto(tau_decision_ms)?;
         let piso = if piso.is_finite() { piso.max(0.0) } else { 0.0 };
         let sigma = v.sigma.max(piso);
         let z = (v.base - v.media) / sigma;
-        let demostrada = v.demostrada && sigma > 0.0 && z.is_finite();
+        let demostrada = v.demostrada && piso > 0.0 && sigma > 0.0 && z.is_finite();
         Some(VeredictoStatArb {
             z: if demostrada { z } else { 0.0 },
             t_media_cota_ms: if demostrada { 2.0 * v.tau_nodo_ms } else { f64::INFINITY },
@@ -530,6 +535,29 @@ mod tests {
         }
     }
 
+    /// CL-111 (EST-5 de la revisión del PR #60). Verdad: sin la resolución de
+    /// la base (piso 0, sin spec de tick) StatArb no vota, aunque la prueba
+    /// demuestre reversión. Con mids redondeados a un tick y la base lenta,
+    /// el redondeo fabrica reversión: la revisión midió votos en el 2-5 % de
+    /// los instantes sin piso. Con piso, el veredicto no cambia.
+    #[test]
+    fn cl111_sin_resolucion_de_la_base_no_vota() {
+        let mut e = StatArbEngine::new(30, 1.5).with_prueba_reversion();
+        let mut azar = Lcg(3);
+        let rho = (-std::f64::consts::LN_2 / 3.0).exp();
+        let mut x = 0.0f64;
+        for s in 1..=600u64 {
+            x = rho * x + (1.0 - rho * rho).sqrt() * 1e-4 * azar.n();
+            e.observar_par(100.0 * (1.0 + x), 100.0, s * 1_000);
+        }
+        let tau = quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[17];
+        let con_piso = e.veredicto(tau, 1e-6).expect("hay pares");
+        let sin_piso = e.veredicto(tau, 0.0).expect("hay pares");
+        assert!(con_piso.demostrada, "precondición: reversión demostrada");
+        assert!(!sin_piso.demostrada && sin_piso.z == 0.0, "{sin_piso:?}");
+        assert!(sin_piso.t_media_cota_ms.is_infinite());
+    }
+
     /// CL-97. Verdad: un par nace sólo cuando cambia la marca de llegada de
     /// B, con el mid de A del evento anterior (el vigente cuando llegó B) y
     /// la marca de llegada. Un B que no se refresca no forma pares.
@@ -575,6 +603,8 @@ mod tests {
     fn cl97_una_reversion_rapida_se_demuestra() {
         use quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS;
         let tau17 = SPECTRUM_SCALES_MS[17];
+        // Resolución de la base (CL-111: sin piso no hay voto).
+        const PISO: f64 = 1e-6;
         let theta = std::f64::consts::LN_2 / (tau17 / 5.0);
         let mut g = Lcg(11);
         let mut e = StatArbEngine::new(30, 1.5).with_prueba_reversion();
@@ -589,16 +619,16 @@ mod tests {
             let ts = 1_000 + i * dt as u64;
             e.observar_par(lf.exp(), (lf - x - 3e-4).exp(), ts);
             if i == 100 {
-                let v = e.veredicto(30_000.0, 0.0).expect("hay pares");
+                let v = e.veredicto(30_000.0, PISO).expect("hay pares");
                 assert!(!v.demostrada && v.t_media_cota_ms.is_infinite() && v.z == 0.0, "{v:?}");
             }
         }
-        let v = e.veredicto(30_000.0, 0.0).expect("hay pares");
+        let v = e.veredicto(30_000.0, PISO).expect("hay pares");
         assert!(v.demostrada, "{v:?}");
         assert_eq!(v.t_media_cota_ms, 2.0 * tau17);
         assert!(v.z.is_finite() && v.z != 0.0, "{v:?}");
         // La misma prueba a una τ bajo la malla no demuestra nada.
-        assert!(!e.veredicto(10_000.0, 0.0).unwrap().demostrada);
+        assert!(!e.veredicto(10_000.0, PISO).unwrap().demostrada);
     }
 
     #[test]
