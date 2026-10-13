@@ -713,12 +713,12 @@ impl SeniorAgent for SeniorRiesgo {
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let drawdown = payload.current_drawdown_pct;
 
-        // U-4 (MOTOR UNIVERSAL CONTINUO): cap de DD continuo en τ — antes
-        // escalones por horizonte (Scalping 0.95 / Continuous 0.90 / Swing
-        // 0.85). Misma semántica (banda rápida tolera más DD para recovery,
-        // banda lenta menos), sin saltos ni etiquetas: s=0 (τ 30s) ⇒ 0.95,
-        // s=1 (τ 12h) ⇒ 0.85.
-        let max_drawdown = 0.95 - 0.10 * payload.spectral_s();
+        // F3.4-06 (Línea C / AGY): El veto de DD del consejo debe ser alcanzable
+        // por debajo del corte del risk-engine d* = 1 - α^(c/(2-c)) ≈ 0.6316
+        // (½ Kelly, α=0.05). Antes: [0.85, 0.95] inalcanzable (código muerto).
+        // Escalado continuo a d*: banda rápida tolera 0.95·d*, banda lenta 0.85·d*.
+        let d_star = 1.0 - (0.05_f64).powf(1.0 / 3.0);
+        let max_drawdown = d_star * (0.95 - 0.10 * payload.spectral_s());
 
         let is_veto = drawdown > max_drawdown;
 
@@ -926,15 +926,14 @@ impl SeniorAgent for SeniorAuditorInterno {
         SeniorRole::AuditorInterno
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        // Umbral de drawdown continuo en τ alineado con SeniorRiesgo para
-        // evitar vetos contradictorios (D-343, U-4: antes escalones
-        // Scalping/Continuous/Swing — misma curva que SeniorRiesgo).
-        // (Ola XLI·D7) El drawdown ya veto en SeniorRiesgo con la MISMA curva:
-        // co-firmarlo aquí hacía que todo exceso de DD produjera DOS vetos, y el
-        // override por supermayoría (quórum D-342) jamás podía aplicar a drawdown
-        // — deadlock por diseño. El Auditor conserva SU condición propia (riesgo
-        // do_calculus) y el DD cuenta una sola vez.
-        let is_veto = payload.do_calculus_risk > 0.92;
+        // F3.4-02 (Línea C / AGY): "Un dato, un veto".
+        // El riesgo causal (do_calculus / VPIN) ya es evaluado y vetado por
+        // SeniorCausal (> 0.75). Co-vetarlo aquí con > 0.92 duplicaba el veto
+        // sobre el mismo dato, destruyendo el override por supermayoría por
+        // encima de 0.92 al producir 2 vetos (rechazo irrevocable).
+        // Al igual que con el DD (Ola XLI·D7), el Auditor actúa como agente de
+        // permiso / abogado del diablo sin duplicar vetos de otros asientos.
+        let is_veto = false;
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent
@@ -1508,26 +1507,53 @@ impl SeniorPerformanceTracker {
     }
 
     /// Calcula multiplicadores adaptativos normalizados en el rango [0.5, 2.0]
+    /// F3.4-01 (Línea C / AGY): Premia la ESPERANZA MATEMÁTICA / EV, no la mera
+    /// tasa de acierto binaria. Con RR > 1 (geometría asimétrica), un asiento que
+    /// respalda una estrategia con acierto < 50% pero EV > 0 debe recibir mayor
+    /// peso que el asiento que se opone.
+    ///
+    /// Derivación:
+    /// θ_i = (Σ s_i · r) / (Σ |r|) ∈ [-1, 1]  (edge relativo normalizado)
+    /// P_i = 0.5 · (1 + θ_i) ∈ [0.01, 0.99]
+    /// Con |r| = R constante, θ_i = 2·acc_i - 1 ⇒ P_i = acc_i (invariante exacto).
     pub fn compute_weights(&self) -> [f64; 11] {
         let mut weights = [1.0; 11];
-        let mut sum_acc = 0.0;
+        let mut sum_p = 0.0;
         let mut active_seniors = 0;
+        let mut perf = [0.5; 11];
 
-        let mut accuracies = [0.5; 11];
+        let mut sum_edge = [0.0_f64; 11];
+        let mut sum_abs_ret = [0.0_f64; 11];
+        for &(signals, r) in &self.history {
+            let abs_r = r.abs();
+            for i in 0..11 {
+                let sig = signals[i];
+                if sig != 0.0 {
+                    sum_edge[i] += sig * r;
+                    sum_abs_ret[i] += abs_r;
+                }
+            }
+        }
+
         for i in 0..11 {
             if self.total_counts[i] >= 5 {
-                let acc = self.correct_counts[i] as f64 / self.total_counts[i] as f64;
-                accuracies[i] = acc.clamp(0.01, 0.99);
-                sum_acc += accuracies[i];
+                let theta = if sum_abs_ret[i] > 0.0 {
+                    (sum_edge[i] / sum_abs_ret[i]).clamp(-1.0, 1.0)
+                } else {
+                    0.0
+                };
+                let p = (0.5 * (1.0 + theta)).clamp(0.01, 0.99);
+                perf[i] = p;
+                sum_p += p;
                 active_seniors += 1;
             }
         }
 
-        if active_seniors >= 2 && sum_acc > 0.0 {
-            let mean_acc = sum_acc / active_seniors as f64;
+        if active_seniors >= 2 && sum_p > 0.0 {
+            let mean_p = sum_p / active_seniors as f64;
             for i in 0..11 {
                 if self.total_counts[i] >= 5 {
-                    let relative = accuracies[i] / mean_acc.max(0.01);
+                    let relative = perf[i] / mean_p.max(0.01);
                     weights[i] = relative.clamp(0.5, 2.0);
                 }
             }
@@ -1631,7 +1657,8 @@ mod tests {
     fn test_consejo_deliberacion_veto() {
         let consejo = ConsejoDeliberacion::new();
         let mut payload = diverse_bullish_payload();
-        payload.do_calculus_risk = 0.95; // Doble veto: Causal (>0.80) + Auditor (>0.92)
+        payload.do_calculus_risk = 0.95; // Veto Causal (>0.80)
+        payload.book_imbalance = -0.50; // Sin supermayoría que lo sobreescriba (flujo disidente)
 
         let result = consejo.deliberar(&payload, 0.70);
         assert!(!result.approved, "Trade must be rejected due to VETO");

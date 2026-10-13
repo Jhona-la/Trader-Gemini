@@ -80,7 +80,6 @@ fn pesos_corto_api_viva(ganancia: f64, perdida: f64, ganadoras_de_20: usize) -> 
 /// Comparación exacta (los pesos salen de cocientes de conteos enteros).
 /// Hoy: EV > 0 (RR 2:1, acierto 35 %) da w0 = 0,70 y w1 = 1,30.
 #[test]
-#[ignore = "OPEN F3.4-01 (Línea C, consejo C-F3): el tracker puntúa el signo del retorno neto (acierto), no su magnitud; con RR > 1 y acierto < ½ (EV > 0) el asiento que respalda pierde peso frente al que se opone (w0 = 0,70, w1 = 1,30)"]
 fn cf3_tracker_premia_ev_no_acierto() {
     // RR 2:1 y acierto 35 %: EV = 0,35·0,02 − 0,65·0,01 = +0,0005 por operación.
     let w_pos = pesos_tracker(0.02, 0.01, 7);
@@ -159,7 +158,6 @@ fn consejo_con_n(n: usize) -> ConsejoDeliberacion {
 /// veto único de Causal con supermayoría se sobreescribe). Hoy, con 0,93
 /// veta también el Auditor: dos vetos ⇒ rechazo irrevocable.
 #[test]
-#[ignore = "OPEN F3.4-02 (Línea C, consejo): do_calculus_risk (VPIN) alimenta dos vetos (Causal > 0,75 y Auditor > 0,92); con VPIN > 0,92 hay dos vetos y el override por supermayoría desaparece por duplicación del mismo dato"]
 fn cf3_vpin_un_dato_un_veto() {
     let mut rejilla = Vec::new();
     for n in [0usize, 500] {
