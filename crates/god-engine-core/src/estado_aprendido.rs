@@ -27,7 +27,9 @@
 //! alimenta por [`GodEngineCore::alimentar_calibradores`], que además anota
 //! cada observación. Al restaurar se reproducen en el mismo orden: el ajuste
 //! de Platt (logística con cresta) es convexo, así que los coeficientes
-//! salen los mismos salvo la tolerancia de su Newton.
+//! salen los mismos salvo la tolerancia de su Newton. LH-12 conserva además
+//! el reloj máximo: un cierre tardío puede expulsar de la ventana la fila
+//! que lo fijó, sin hacer retroceder el reloj del calibrador.
 //!
 //! El host guarda el estado en cada cierre (`data/{demo|prod}/
 //! estado_aprendido.json`, escritura atómica y sincronizada) y lo restaura
@@ -92,6 +94,10 @@ pub struct MonedaGuardada {
     pub simbolo: String,
     pub metricas: MetricasGuardadas,
     pub calibrador: Vec<Observacion>,
+    /// LH-12: máximo conocido, no necesariamente presente en la ventana.
+    /// Estados anteriores sin este campo infieren sólo el máximo retenido.
+    #[serde(default)]
+    pub calibrador_reloj_ms: Option<u64>,
     pub epigenetica: EpigeneticaGuardada,
     /// CL-108e — el anillo de siniestros de Cramér-Lundberg (retorno neto por
     /// nocional de cada cierre), del más viejo al más nuevo.
@@ -116,6 +122,8 @@ pub struct EstadoAprendido {
     pub version: u32,
     pub monedas: Vec<MonedaGuardada>,
     pub calibrador_global: Vec<Observacion>,
+    #[serde(default)]
+    pub calibrador_global_reloj_ms: Option<u64>,
     pub freno_estrategia: FrenoGuardado,
     pub riesgo_por_operacion: f64,
     pub riesgo_por_operacion_usd: f64,
@@ -229,6 +237,8 @@ impl GodEngineCore {
                     .get(coin_id)
                     .map(|r| r.iter().copied().collect())
                     .unwrap_or_default(),
+                calibrador_reloj_ms: self.calibrator_by_coin.get(coin_id)
+                    .and_then(PlattCalibrator::evidence_clock_ms),
                 epigenetica: EpigeneticaGuardada {
                     sesgo: coin.epigenetic_bias.load(Relaxed),
                     umbral: coin.epigenetic_threshold_modifier.load(Relaxed),
@@ -248,6 +258,7 @@ impl GodEngineCore {
             version: VERSION_ESTADO,
             monedas,
             calibrador_global: self.registro_calibrador_global.iter().copied().collect(),
+            calibrador_global_reloj_ms: self.confidence_calibrator.evidence_clock_ms(),
             freno_estrategia: FrenoGuardado {
                 e_value: v.e_value,
                 log_wealth: v.log_wealth,
@@ -322,6 +333,9 @@ impl GodEngineCore {
                     c.update_at(score, won, ts);
                     anotar(r, (score, won, ts));
                 }
+                if let Some(clock) = g.calibrador_reloj_ms {
+                    c.restore_evidence_clock_ms(clock);
+                }
             }
             restauradas += 1;
         }
@@ -330,6 +344,9 @@ impl GodEngineCore {
         for &(score, won, ts) in e.calibrador_global.iter().filter(|o| puntuacion_valida(o.0)) {
             self.confidence_calibrator.update_at(score, won, ts);
             anotar(&mut self.registro_calibrador_global, (score, won, ts));
+        }
+        if let Some(clock) = e.calibrador_global_reloj_ms {
+            self.confidence_calibrator.restore_evidence_clock_ms(clock);
         }
         let f = &e.freno_estrategia;
         let freno = &mut self.risk_engine.freno_estrategia;
@@ -390,12 +407,18 @@ pub fn validar(e: &EstadoAprendido) -> Result<(), String> {
         if g.calibrador.iter().any(|o| !o.0.is_finite()) {
             return Err(format!("{s}.calibrador con una puntuación no finita"));
         }
+        if g.calibrador_reloj_ms.is_some_and(|t| g.calibrador.iter().any(|o| o.2 > t)) {
+            return Err(format!("{s}.calibrador_reloj_ms anterior a una observación"));
+        }
         if g.siniestros.iter().any(|y| !y.is_finite()) {
             return Err(format!("{s}.siniestros con un valor no finito"));
         }
     }
     if e.calibrador_global.iter().any(|o| !o.0.is_finite()) {
         return Err("calibrador_global con una puntuación no finita".into());
+    }
+    if e.calibrador_global_reloj_ms.is_some_and(|t| e.calibrador_global.iter().any(|o| o.2 > t)) {
+        return Err("calibrador_global_reloj_ms anterior a una observación".into());
     }
     let f = &e.freno_estrategia;
     rango("freno.e_value", f.e_value, 0.0, todo)?;

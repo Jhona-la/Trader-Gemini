@@ -13,8 +13,10 @@
 //! # El modelo
 //!
 //! Escalado de Platt: `p = σ(a·logit(s) + b)`, con `s` la puntuación cruda,
-//! estimado por máximo a posteriori sobre una ventana acotada de pares
-//! (puntuación, resultado).
+//! estimado por máximo a posteriori sobre una ventana acotada de cierres.
+//! LH-12: cada resultado fechado pesa `2^(-edad/semivida)` en la
+//! verosimilitud; un cierre nuevo no rejuvenece los anteriores. El prior
+//! conserva su masa total y el ajuste sólo ocurre al recibir un resultado.
 //!
 //! * **Sin datos, identidad en [EPS, 1−EPS].** Los extremos se acotan por el
 //!   dominio numérico del logit. El sistema arranca con el comportamiento
@@ -40,8 +42,8 @@ use std::collections::VecDeque;
 /// Pseudo-observaciones del prior: `z²` con `z` = 1,959964.
 pub const PRIOR_PSEUDO_OBSERVATIONS: f64 = 1.959_963_984_540_054 * 1.959_963_984_540_054;
 
-/// Pares (puntuación, resultado) conservados. Una ventana acotada deja que el
-/// mapa siga cambios de régimen sin olvidar de golpe.
+/// Cota de almacenamiento y trabajo por ajuste. A alta cadencia también
+/// recorta la memoria: puede expulsar cierres cuyo peso temporal sigue alto.
 pub const WINDOW: usize = 512;
 
 /// Margen que aleja la puntuación de 0 y 1 antes del logit.
@@ -65,7 +67,7 @@ fn sigmoid(x: f64) -> f64 {
 
 #[derive(Debug, Clone)]
 pub struct PlattCalibrator {
-    obs: VecDeque<(f64, bool)>,
+    obs: VecDeque<(f64, bool, Option<u64>)>,
     a: f64,
     b: f64,
     /// Ola XLIV: instante (ms de evento) del último resultado incorporado.
@@ -73,8 +75,8 @@ pub struct PlattCalibrator {
 }
 
 /// Semivida de la evidencia del calibrador (Ola XLIV): el borde LENTO de la
-/// banda operativa (12 h). Es el horizonte más largo en el que el motor dice
-/// medir y mantener posiciones; evidencia más vieja describe otro régimen.
+/// banda operativa (12 h). Es una política de olvido vigente, no una semivida
+/// óptima estimada ni una garantía sobre la duración del régimen.
 pub const SEMIVIDA_EVIDENCIA_MS: f64 = quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS;
 
 impl Default for PlattCalibrator {
@@ -95,6 +97,26 @@ impl PlattCalibrator {
 
     pub fn observations(&self) -> usize {
         self.obs.len()
+    }
+
+    /// Reloj máximo de la evidencia, incluso si su fila salió de la ventana.
+    pub fn evidence_clock_ms(&self) -> Option<u64> {
+        self.ultimo_dato_ms
+    }
+
+    /// Restaura el reloj guardado después de reproducir los datos retenidos.
+    /// No admite rebobinado. Reajusta fuera del camino caliente de consulta.
+    pub fn restore_evidence_clock_ms(&mut self, clock_ms: u64) {
+        if self.ultimo_dato_ms.is_some_and(|t| clock_ms <= t) {
+            return;
+        }
+        for (_, _, timestamp) in &mut self.obs {
+            if timestamp.is_none() {
+                *timestamp = Some(clock_ms);
+            }
+        }
+        self.ultimo_dato_ms = Some(clock_ms);
+        self.fit();
     }
 
     /// Coeficientes actuales `(a, b)`.
@@ -123,9 +145,10 @@ impl PlattCalibrator {
     /// frío del propio calibrador—: `p = w·p_ajustada + (1 − w)·s`. Un
     /// régimen perdedor se olvida gradualmente y el sistema vuelve a sondear
     /// (a tamaño Kelly pequeño, porque el Kelly lee la misma p); un resultado
-    /// nuevo restablece el peso completo. Aproximación barata de una
-    /// verosimilitud con pesos por antigüedad: en el camino caliente no se
-    /// reajusta el modelo.
+    /// nuevo reajusta con la edad individual de cada cierre (LH-12).
+    /// La mezcla entre cierres es una aproximación barata: no equivale a
+    /// reajustar la verosimilitud ponderada en cada consulta. En el camino
+    /// caliente no se reajusta el modelo ni se asigna memoria.
     #[inline]
     pub fn calibrate_at(&self, score: f64, now_ms: u64) -> f64 {
         let ajustada = self.calibrate(score);
@@ -146,21 +169,36 @@ impl PlattCalibrator {
         if !valid_training_score(score) {
             return;
         }
+        // La API sin fechas no permite reconstruir edades. Al recibir el
+        // primer reloj explícito, sus datos se anclan una sola vez aquí.
+        if self.ultimo_dato_ms.is_none() {
+            for (_, _, timestamp) in &mut self.obs {
+                *timestamp = Some(now_ms);
+            }
+        }
         self.ultimo_dato_ms = Some(self.ultimo_dato_ms.map_or(now_ms, |u| u.max(now_ms)));
-        self.update(score, won);
+        // Un cierre tardío conserva su fecha; el ajuste usa el reloj máximo
+        // ya conocido, sin rebobinar ni rejuvenecer esa observación.
+        self.push_observation(score, won, Some(now_ms));
     }
 
     /// Añade un resultado y reajusta el mapa. Puntuaciones fuera de [0,1]
     /// o no finitas se rechazan sin modificar datos, coeficientes ni reloj.
     /// El logit acota los extremos sólo para cómputo; el prior conserva s.
+    /// Sin reloj explícito mantiene el ajuste legacy. Después de `update_at`,
+    /// la observación se ancla al último reloj conocido y también envejece.
     pub fn update(&mut self, score: f64, won: bool) {
         if !valid_training_score(score) {
             return;
         }
+        self.push_observation(score, won, self.ultimo_dato_ms);
+    }
+
+    fn push_observation(&mut self, score: f64, won: bool, timestamp: Option<u64>) {
         if self.obs.len() == WINDOW {
             self.obs.pop_front();
         }
-        self.obs.push_back((score, won));
+        self.obs.push_back((score, won, timestamp));
         self.fit();
     }
 
@@ -172,13 +210,19 @@ impl PlattCalibrator {
         let pseudo_weight = PRIOR_PSEUDO_OBSERVATIONS / n as f64;
         // Precalcular el logit fuera del bucle de Newton y de la búsqueda.
         // Cada fila combina su etiqueta real y su pseudo-observación suave.
-        let weight = 1.0 + pseudo_weight;
-        let data: Vec<(f64, f64)> = self.obs.iter().map(|&(s, won)| {
-            (logit(s), (f64::from(won) + pseudo_weight * s) / weight)
+        // No normalizar los pesos reales a n: eso reviviría evidencia vieja
+        // frente al prior. La pseudo-observación sigue pesando κ/n por fila.
+        let data: Vec<(f64, f64, f64)> = self.obs.iter().map(|&(s, won, timestamp)| {
+            let evidence_weight = match (self.ultimo_dato_ms, timestamp) {
+                (Some(now), Some(t)) => 0.5f64.powf(now.saturating_sub(t) as f64 / SEMIVIDA_EVIDENCIA_MS),
+                _ => 1.0,
+            };
+            let weight = evidence_weight + pseudo_weight;
+            (logit(s), (evidence_weight * f64::from(won) + pseudo_weight * s) / weight, weight)
         }).collect();
         let objective = |a: f64, b: f64| {
             let ridge = 0.5 * RIDGE * ((a - 1.0).powi(2) + b * b);
-            ridge + data.iter().map(|&(x, target)| {
+            ridge + data.iter().map(|&(x, target, weight)| {
                 let z = a * x + b;
                 // softplus(z) - target*z, estable incluso si sigmoid satura.
                 weight * (z.max(0.0) - target * z + (-z.abs()).exp().ln_1p())
@@ -198,7 +242,7 @@ impl PlattCalibrator {
             // Gradiente y hessiana del negativo del log-posterior.
             let (mut ga, mut gb) = (RIDGE * (a - 1.0), RIDGE * b);
             let (mut haa, mut hab, mut hbb) = (RIDGE, 0.0, RIDGE);
-            for &(x, target) in &data {
+            for &(x, target, weight) in &data {
                 let p = sigmoid(a * x + b);
                 let w = p * (1.0 - p);
                 let r = weight * (p - target);
@@ -711,13 +755,18 @@ mod tests_xliv_olvido {
         }
     }
 
-    /// Un resultado nuevo restablece el peso completo de la evidencia.
+    /// Un resultado nuevo pesa uno; los antiguos conservan su edad.
     #[test]
-    fn xliv_un_dato_nuevo_restablece_la_evidencia() {
+    fn lh12_un_dato_nuevo_no_restablece_la_evidencia_antigua() {
         let mut c = calibrador_perdedor(0);
         let t = 5 * SEMIVIDA_EVIDENCIA_MS as u64;
         c.update_at(0.80, false, t);
         assert_eq!(c.calibrate_at(0.80, t), c.calibrate(0.80));
+        let count = (0..40u64).map(|i| {
+            0.5f64.powf((t - i) as f64 / SEMIVIDA_EVIDENCIA_MS)
+        }).sum::<f64>() + 1.0;
+        let expected = PRIOR_PSEUDO_OBSERVATIONS * 0.80 / (PRIOR_PSEUDO_OBSERVATIONS + count);
+        assert!((c.calibrate(0.80) - expected).abs() < 1e-3);
     }
 
     #[test]
