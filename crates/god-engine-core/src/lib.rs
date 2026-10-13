@@ -6101,36 +6101,50 @@ impl GodEngineCore {
                 let is_mean_reverting = is_anti_persistent;
 
                 let price_stretch = price_stretch_continuo;
-                // D-472, D-474 & D-478: Disciplina Antiextensión y Cero Persecución (No Chasing Law)
-                // Prohibido vender por debajo de la media (price_stretch < 0.0) o comprar por encima (price_stretch > 0.0).
-                // En tendencia, entrar exclusivamente en o por encima de la EMA slow para cortos (y en o por debajo para largos).
-                let (min_stretch_short, max_stretch_long) = if is_mean_reverting {
-                    (0.05, -0.05)
-                } else {
-                    (0.00, 0.00)
-                };
-                // D-621 (DÉCIMA OLA): la cota de magnitud era ±1,50 ATR. Se expresa
-                // en desviaciones típicas de la distancia a la EMA de 21 velas: más
-                // allá del 95 % el desplazamiento es significativo y deja de ser un
-                // retroceso que se pueda operar.
+                // D-472, D-474, D-478 & LH-05 (Ola Ω95): Disciplina Antiextensión y Cero Persecución (No Chasing Law)
+                // - En reversión a la media (anti-persistencia):
+                //   Exige retroceso/rebote previo contra la media:
+                //   Long:  price_stretch <= -0.05 && stretch_z >= -Z95 (comprar descuento, sin colapso).
+                //   Short: price_stretch >=  0.05 && stretch_z <=  Z95 (vender sobreprecio, sin explosión).
+                // - En tendencia (!is_mean_reverting):
+                //   Erradicación de LH-05: El antiguo max_stretch_long = 0.0 obligaba a que en tendencia alcista
+                //   (macro >= 0, micro >= 0, composite > 0) el precio estuviera simultáneamente por debajo de
+                //   la EMA slow (price_stretch <= 0.0), una contradicción algebraica de medida nula que bloqueó
+                //   el 100% (604 de 604) de las entradas tendenciales.
+                //   En tendencia, la anti-persecución canónica D-621 consiste en no perseguir fuera del
+                //   envolvente difusivo del 95%: |stretch_z| <= Z95.
                 let stretch_z = crate::diffusion::atr_stretch_z(
                     price_stretch,
                     crate::diffusion::EMA_SLOW_BARS,
                 );
-                let not_overextended_long =
-                    price_stretch <= max_stretch_long && stretch_z >= -crate::diffusion::Z95;
-                let not_overextended_short =
-                    price_stretch >= min_stretch_short && stretch_z <= crate::diffusion::Z95;
+                let (not_overextended_long, not_overextended_short) = if is_mean_reverting {
+                    (
+                        price_stretch <= -0.05 && stretch_z >= -crate::diffusion::Z95,
+                        price_stretch >= 0.05 && stretch_z <= crate::diffusion::Z95,
+                    )
+                } else {
+                    (
+                        stretch_z >= -crate::diffusion::Z95 && stretch_z <= crate::diffusion::Z95,
+                        stretch_z >= -crate::diffusion::Z95 && stretch_z <= crate::diffusion::Z95,
+                    )
+                };
                 // CL-71: los mismos límites con el estiramiento de decisión, para
                 // las ramas 11 y 12.
                 let stretch_z_decision = crate::diffusion::atr_stretch_z(
                     price_stretch_decision,
                     crate::diffusion::EMA_SLOW_BARS,
                 );
-                let not_overextended_long_decision = price_stretch_decision <= max_stretch_long
-                    && stretch_z_decision >= -crate::diffusion::Z95;
-                let not_overextended_short_decision = price_stretch_decision >= min_stretch_short
-                    && stretch_z_decision <= crate::diffusion::Z95;
+                let (not_overextended_long_decision, not_overextended_short_decision) = if is_mean_reverting {
+                    (
+                        price_stretch_decision <= -0.05 && stretch_z_decision >= -crate::diffusion::Z95,
+                        price_stretch_decision >= 0.05 && stretch_z_decision <= crate::diffusion::Z95,
+                    )
+                } else {
+                    (
+                        stretch_z_decision >= -crate::diffusion::Z95 && stretch_z_decision <= crate::diffusion::Z95,
+                        stretch_z_decision >= -crate::diffusion::Z95 && stretch_z_decision <= crate::diffusion::Z95,
+                    )
+                };
 
                 // D-105: Mapeo de convicción Bayesiana calibrada (ver fn sig_conf a nivel de crate)
 
