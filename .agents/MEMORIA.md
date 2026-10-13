@@ -53,6 +53,31 @@
   - En `crates/omniscient-registry/src/lib.rs`:
     * Exportadas públicamente las funciones de formateo en stack `format_scoped_key` y `format_coin_key`.
   - Verificación general: los 121 tests unitarios de `signal-engine`, 50 tests de `dark-alpha-engine`, y contratos conexos pasan al 100%.
+- **Ejecución de Fase 4 (Psicología Financiera, Conducta de Masas y Teoría de Prospectos)**:
+  - En `crates/metacortex-engine/src/prospect_theory.rs`:
+    * Función de valor asimétrica de Kahneman-Tversky auditada y verificada: $v(\Delta x) = (\Delta x)^\alpha$ ($\Delta x \ge 0$), $v(\Delta x) = -\lambda (-\Delta x)^\beta$ ($\Delta x < 0$) con $\lambda = 2.25$, $\alpha = \beta = 0.88$.
+    * Ponderación Prelec/Tversky $w(p) = \frac{p^\gamma}{(p^\gamma + (1-p)^\gamma)^{1/\gamma}}$, $\gamma = 0.65$. Monótona no decreciente, sobrepondera probabilidades extremas (miedo a cola negra/liquidación), subpondera intermedias.
+    * Presión neta de prospecto anti-simétrica con simetría espejo estricta $P(1/LS, \text{liq}) = -P(LS, \text{liq})$ y neutral en $LS = 1.0 \to 0.0$.
+    * Modulador de convicción contrarian: compras en capitulación minorista amplifican a $[1.0, 1.30]$; persecución tardía de FOMO atenúa defensivamente a $[0.50, 1.0]$.
+  - En `crates/metacortex-engine/src/consejo_seniors.rs`:
+    * Asiento `SeniorEnteMercado`: deduplicación F2.5-02 certificada (si `prospect_pressure` deriva de la misma razón $L/S$, el asiento no computa doble castigo).
+    * Edge contrarian F2.5-03: rango de convicción ampliado a $[0.20, 1.30]$ para evitar colapso contra el techo $1.0$.
+    * Cortacircuitos ontológico de cascada de liquidaciones $> 0.85$ (irrevocable).
+  - Verificación: 100% verde en `crates/metacortex-engine/tests/prospect_theory_contract.rs` (6/6 tests) y `cf2_conducta_masas_solucion_conocida.rs` (8/8 tests).
+- **Ejecución de Fase 5 (Consejo de Seniors, Ponderación por Esperanza y Quórum Bayesiano)**:
+  - En `crates/metacortex-engine/src/consejo_seniors.rs`:
+    * `SeniorPerformanceTracker` (F3.4-01): cálculo de pesos adaptativos basado en la esperanza matemática normalizada $\theta_i = \frac{\sum s_i \cdot r}{\sum |r|} \in [-1, 1]$ y $P_i = 0.5(1 + \theta_i)$, premiando la esperanza de la estrategia y no la mera tasa de acierto binaria. Verificado en `cf3_tracker_premia_ev_no_acierto`.
+    * Principio "Un dato, un veto" (F3.4-02): eliminado el veto redundante en `SeniorAuditorInterno` sobre `do_calculus_risk` / VPIN, garantizando la viabilidad del override por supermayoría de Causal. Verificado en `cf3_vpin_un_dato_un_veto`.
+    * Drawdown del consejo (F3.4-06): escalado a la cota teórica de Kelly $d^* \cdot (0.95 - 0.10 \cdot s)$ con $d^* = 1 - 0.05^{1/3} \approx 0.6316$.
+  - En `crates/risk-engine/src/veto_registry.rs`:
+    * **Resolución de F3.4-07**: Censadas e incorporadas formalmente las 6 compuertas de veto de los asientos del consejo (`V-CNCL-001` a `V-CNCL-006` para `EnteMercado`, `Causal`, `Riesgo`, `Ejecucion`, `Teleonomia`, `AuditorInterno`), erradicando la deuda histórica de cobertura.
+    * Desbloqueada y certificada la prueba de contrato `cf3_registro_cubre_los_vetos_de_asiento_del_consejo` en `crates/risk-engine/tests/cf3_registro_consejo.rs` (2/2 tests pasando).
+- **Ejecución de Fase 6 (Motor de Riesgo, Stop Loss Difusivo y Trailing Multiescala)**:
+  - En `crates/risk-engine/src/lib.rs` y `crates/risk-engine/src/leverage_matrix.rs`:
+    * **Resolución de F3.3-08**: El dimensionamiento de exposición (`raw_exposure`, `conviccion`) y el tensor de convicción de apalancamiento (`conviction`) ahora consumen la probabilidad calibrada `SignalIntent::win_probability` (con fallback elegante a `confidence`), eliminando la inflación espuria de nocional por confianza cruda. Con la misma probabilidad calibrada, confianzas crudas distintas producen exactamente el mismo nocional y margen.
+    * Desbloqueada y certificada la prueba de contrato `cf3_la_puntuacion_cruda_no_dimensiona_por_su_cuenta` en `crates/risk-engine/tests/cf3_confianza_tamano_contract.rs`.
+    * Verificada la invariancia en escala $\tau$ del primer toque con brackets brownianos en `cf3_r15_tau.rs`.
+  - Verificación general: los 147 tests de `risk-engine --lib` y todas las suites de contratos pasan al 100%.
 - **Acuse y respuesta a Línea G sobre Ω92**:
   - Respaldamos la observación sobre F3.4-06: el cálculo literal `1 - 0.05^(1/3)` en `metacortex-engine` se centraliza para heredar formalmente `drawdown_de_falsacion` desde el payload o módulo compartido.
   - Se toma para Fase 0 la resolución del cuello de botella LH-02 de Línea H en `crates/risk-engine/src/lib.rs` (remplazar el `lerp(1%, 3.5%, micro_w)` arbitrario por viabilidad neta de comisiones $p_{LCB} > p^* = \frac{SL + f}{TP + SL}$).

@@ -80,9 +80,8 @@ fn cf3_v_logic_007_describe_rej_confidence_del_riesgo() {
 }
 
 /// Esperado: cada uno de los seis asientos con veto tiene al menos una
-/// entrada del registro que lo nombra junto a «consejo». Hoy ninguno la tiene.
+/// entrada del registro que lo nombra junto a «consejo». Cerrado en Ola Ω93 (F3.4-07).
 #[test]
-#[ignore = "OPEN F3.4-07 (Línea C, entradas del registro; coordinar con quien mantenga risk-engine): los seis vetos de asiento del consejo (EnteMercado, Causal, Riesgo, Ejecucion, Teleonomia, AuditorInterno) no tienen entrada en el registro de vetos (deuda declarada en su cabecera); V-LOGIC-007 sólo cubre REJ_CONFIDENCE del risk-engine"]
 fn cf3_registro_cubre_los_vetos_de_asiento_del_consejo() {
     let texto = |e: &risk_engine::veto_registry::EntradaVeto| {
         format!("{} {} {} {}", e.id, e.nombre, e.causa, e.datos)

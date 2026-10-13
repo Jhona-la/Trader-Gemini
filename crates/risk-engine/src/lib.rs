@@ -555,8 +555,13 @@ impl RiskEngine {
         // de literales `(confianza − 0,65) · 1,5`: el exceso relevante es el
         // que hay SOBRE LA PUERTA DE CONFIANZA del genoma, que es el punto a
         // partir del cual el sistema considera la señal accionable.
+        let signal_prob = if intent.win_probability > 0.0 {
+            intent.win_probability
+        } else {
+            intent.confidence
+        };
         let conviccion = 1.0
-            + (intent.confidence - arena.config.min_confidence_btc.load(Ordering::Relaxed))
+            + (signal_prob - arena.config.min_confidence_btc.load(Ordering::Relaxed))
                 .max(0.0);
         let micro_kelly_input = kelly_adjusted * conviccion;
         // A zero returned for invalid size must not be blended with the
@@ -575,7 +580,7 @@ impl RiskEngine {
             1.0
         };
         let effective_confidence =
-            (intent.confidence * epi_bias.clamp(0.60, 1.40)).clamp(0.05, 0.98);
+            (signal_prob * epi_bias.clamp(0.60, 1.40)).clamp(0.05, 0.98);
         let raw_exposure = dir * effective_confidence * kelly_for_scale * allocated_capital;
         if !raw_exposure.is_finite() {
             return rej(REJ_INVALID_INPUT);

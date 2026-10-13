@@ -158,11 +158,8 @@ impl QuantumLeverageMatrix {
         // de margen crecía con el cuadrado de la volatilidad exactamente en
         // los activos donde debía encogerse.
         //
-        // La convicción es de la SEÑAL. La volatilidad ya gobierna el tamaño
-        // por donde debe: la distancia del stop (`compute_tp_sl`, σ(τ)) y el
-        // apalancamiento derivado del riesgo entre esa distancia (S-4/D-745b
-        // en el host).
-        let conviction = 0.40 + signal.confidence.clamp(0.1, 1.0) * 0.60;
+        // La convicción es de la SEÑAL (probabilidad calibrada con fallback a confianza).
+        let conviction = 0.40 + signal_probability.clamp(0.1, 1.0) * 0.60;
 
         // ═══════════════════════════════════════════════════════
         // TENSOR 3: Freno de Volatilidad (SIEMPRE activo)
