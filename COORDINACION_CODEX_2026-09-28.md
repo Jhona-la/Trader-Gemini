@@ -10772,3 +10772,33 @@ El [censo de cierre](docs/audit/REVISION_CIERRE_2026-10-08.json) contiene 1.500 
 Limpieza ya realizada: 13 refs locales cerradas y 1 remota; directorios y bytes de checkouts conservados. Qoder72 mantiene tres commits exclusivos en vuelo y oscillator sucio, con contrato pendiente frente a GLM112; AGYf9 conserva reserva activa. La rama Codex de integración se liberará al verificar el siguiente commit de metadatos, con recibo final en la ruta indicada por el JSON. CI del SHA publicado sigue separada, sin éxito certificado. La meta económica y la revisión semántica integral continúan abiertas.
 
 
+## 2026-10-13 — Codex LH12: reserva, consejo y reanclaje actual
+
+- Base `3dc88468`; WT propio `spectral-evidence-1011`, rama `codex/platt-age-evidence-1013`.
+  Código `04eae49b` en calibración/estado aprendido y contratos: 8 de edad, 3 de restauración.
+  Se preserva `calibrate_at_tau` de Ω93. No se cambia riesgo, motores, T3 ni R4.
+- Seis magnitudes separadas: objetivo G72 sobre capital unitizado, frecuencia
+  de duplicación, DD desde pico, ruina, incertidumbre inferencial y política de aceptación.
+  g=ln2/3=.231049/d; rendimiento diario equivalente 25.9921%, sin garantía.
+  Malla base 4 nominal de 1 ns a 146.14 años (365.25d/año) con feed de 1 ms: no certifica resolución ni 25 ns.
+- Tres revisores: quantum/estadística, Git/censo y riesgo/persistencia. El
+  contraejemplo del watermark expulsado se incorpora a estado y prueba real.
+  Prefijo Platt RED: 3 aprobados, 4 fallidos; GREEN: 8 aprobados. R4 f625:
+  11 nuevos y 10 existentes verdes (3 ignores conservados), más core en sus libs.
+  All-targets ROOT3dc: exit 0/24m52s, 662 inputs/635 Rust estables.
+  All-targets con 98aadd2: exit 0/3m25s, mismos inputs estables; ambos
+  padres revisados y sin conflictos. CI y publicación compartida pendientes.
+- Recorrido: 1.794 filas/633 Rust, todo pendiente, y 48 ejemplos reales en el plan Oct13.
+  R4 recibe `04e` para composición antes de T1; H/T3-v2, G8, CF5/Qoder y AGY
+  conservan reservas. Hallazgos Hodge/fees se registran para su dueño AGY.
+- Adenda de `98aadd2e`: contratos activados sin debilitar aserciones;
+  el sizing conserva una vía de confianza cruda en rescates micro. Registro
+  nuevo requiere corregir estado de AuditorInterno, `abs()` de Teleonomía,
+  procedencia de umbrales y clase del DD. Fuentes reservadas a AGY; derivación
+  estática sin admisión final. Ver informe HALLAZGOS_RIESGO_OMEGA93 en docs/audit.
+- PR39/3a8 comprobado como ancestro actual, T1 de fcda con 16/144 histórico y SI borrada.
+  Ninguna otra rama acreditada para limpieza. No operar motor ni atribuir
+  contratos aislados a crecimiento económico. Ver docs/audit/LH12_EDAD_EVIDENCIA_2026-10-13.md.
+- Fase 7 de AGY: al leer el checkout principal se observaron cambios locales
+  en booktick_replay.rs/cf3_muros_replay.rs. Se preservan las reservas de
+  replay/paridad y sus fuentes; ese trabajo aún no es main98.

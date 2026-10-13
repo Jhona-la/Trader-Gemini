@@ -1,5 +1,32 @@
 # PLAN MAESTRO DE SINCRONIZACIÓN — Crecimiento Exponencial Compuesto
 
+## Reanclaje vigente — 13 de octubre de 2026, consejo Codex LH-12
+
+Este corte se fija en `3dc88468` y prevalece sobre las cifras históricas de
+la sección siguiente: 1.794 rutas/633 Rust, [recorrido por archivo](audit/RECORRIDO_BASE_2026-10-13.tsv),
+[informe de versión y reservas](audit/REANCLAJE_BASE_2026-10-13.md) y
+[fundamentos de la meta](audit/FUNDAMENTOS_META_ESPECTRO_2026-10-13.md).
+Se conserva la continuidad R0–R9/C-F0–C-F11; no se reinicia evidencia por
+nombrar otra fase. Todas las filas del nuevo censo parten pendientes.
+
+Codex LH12 reserva `god-engine-core/src/calibration.rs`, su reloj persistido
+en `estado_aprendido.rs` y dos contratos nuevos, en rama propia aislada.
+Envejece cada cierre del MAP y preserva el reloj máximo fuera del anillo.
+Ω93 `calibrate_at_tau` se conserva al integrar. Prefijo Rust: 8 aprobados;
+R4 validó 11 nuevos y 10 existentes (3 ignores); all-targets ROOT3dc exit 0,
+662 inputs estables; también con 98aadd2 exit 0/3m25s. CI/publicación
+compartida siguen pendientes. R4 conserva espectro,
+evalues y contratos ceros/replay; Línea H conserva T3-v2, Línea G su ola 8,
+Línea C/CF5 y Qoder sus fuentes. Reservas ajenas no se convierten en cierre.
+
+Meta matemática: G72≥ln2 sobre NAV unitizado, junto con curvas de DD y ruina,
+costes y disponibilidad causal. Medio Kelly, la semivida de 12 h y niveles
+inferenciales son políticas/modelos contrastables. No se certifica la meta
+por tests funcionales ni se retiran vetos con probabilidades mal etiquetadas.
+PR39/T1 histórico y eliminación SI están comprobados; no hay otra rama
+demostrada como libre y cerrada para borrar. La próxima incorporación exige
+comparar padres y all-targets sobre el candidato compuesto.
+
 ## Cierre de publicación R4 — 2026-10-08
 
 Main remoto verificado en `a0a5b982df0eb53d3c6d753256ea99c6428cdafd`; código probado `e9c6a435eb1780da7f2c6e29103f3bd7d227d94c`. PR28 fusionada; 532 inputs compilables idénticos. El [recibo de publicación](audit/RECIBO_PUBLICACION_R4_2026-10-08.json) sustituye los estados pendientes de publicación anteriores, que conservan su corte histórico.

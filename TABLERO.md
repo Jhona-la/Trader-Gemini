@@ -1,5 +1,26 @@
 # TABLERO COMPARTIDO — estado por agente
 
+## Codex LH12 — 13 de octubre de 2026, candidato en revisión
+
+- Rama `codex/platt-age-evidence-1013`, WT propio `spectral-evidence-1011`;
+  base `3dc88468`, código propio `04eae49b`. Reserva Platt/estado aprendido
+  y contratos de edad/restauración. API temporal Ω93 conservada.
+- Hallazgo reproducido: cierre nuevo rejuvenecía toda la ventana. Ajuste
+  ponderado por edad individual y reloj máximo persistido; prefijo Rust: 8 aprobados.
+  R4 validó 11 nuevos y 10 existentes (3 ignores preservados). All-targets
+  ROOT con 3dc: exit 0/24m52s; con 98aadd2: exit 0/3m25s, ambos
+  con 662 inputs/635 Rust estables. CI/publicación compartida aún pendientes.
+- Censo fijo en 3dc: 1.794 rutas/633 Rust, todas pendientes, recorrido con blob/fase.
+  Plan rectificado: 48 ejemplos existentes. Fundamentos y protocolo G72
+  separados de resultados económicos. g=.231049/d y rendimiento simple de 25.9921% son
+  magnitudes distintas; malla nominal de 1 ns·4^k y reloj del feed de 1 ms.
+- Otro Codex conserva R4 y compone el código LH12 antes de su T1 final;
+  AGY fases siguientes, H/T3-v2, G8, CF5 y Qoder mantienen sus reservas.
+  PR39 comprobada en main; SI ya borrada. Otras refs activas/exclusivas se
+  conservan. +100%/72h, selección/etiquetas y auditoría completa siguen abiertos.
+  Fase 7 de AGY tiene booktick_replay/cf3_muros_replay aún locales al corte;
+  no se atribuyen al main98 ni se alteran desde esta rama.
+
 > Ítem del marco del operador: "debe existir un tablero compartido donde
 > cada agente declare qué está haciendo, qué commiteó y qué falta".
 > Actualízalo EN TU PROPIO COMMIT cuando cambies de frente de trabajo.
