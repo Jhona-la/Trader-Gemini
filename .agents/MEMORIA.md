@@ -1,8 +1,29 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω95 — Plan Maestro de Revisión Base, Auditoría de Oráculos Cerrados y Sincronización Multi-Agente
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω95 — Resolución LH-03, Auditoría Forense de Hardcodes, Plan de Evolución
 
 - **Rama activa**: `antigravity/ola95-optimizacion-sistemica` (creada desde `main` en `1c3a3d39`).
+- **Resolución de LH-03 (commit e20c0eec)**:
+  - Diagnóstico: Cuando `live_envelope_gate` rechazaba entrada en $n \ge 30$ (Kelly $\le 0$),
+    `rollback_local_position` cancelaba la reserva pero NO ponía
+    `core.feature_engines[target_coin_id].last_exit_fastband_ms = event_ts_ms`.
+    Sin timestamp de salida, el motor re-entraba en el tick siguiente → 5.604 rollbacks sin
+    enfriamiento congelados en $n = 30$.
+  - Solución: Si `!live_envelope_gate(...)`, forzar `last_exit_fastband_ms = t.ts_ms` inmediatamente.
+  - Archivos: `crates/backtest-engine/src/booktick_replay.rs` (3 puntos de rollback) y
+    `crates/backtest-engine/src/lib.rs` (1 punto de rollback).
+  - Verificación: Full `cargo test -p backtest-engine` 100% verde. Workspace `cargo check --workspace --all-targets` limpio.
+- **Auditoría Forense de Hardcodes (~150 valores censados)**:
+  - Ejecutada por subagente investigador sobre los 576 archivos .rs bajo crates/.
+  - Hallazgos clasificados por criticidad para el objetivo de +100%/72h con $13 USD:
+    * CRÍTICO: `coin_id == 0/1` acoplamiento BTC/ETH a índices de array (`risk-engine/src/lib.rs:737-764`).
+    * ALTO: `CouncilParams::default()` con 6 constantes congeladas (`consejo_seniors.rs:1006-1036`).
+    * ALTO: H2-11 cinco umbrales de `confluencia_resonante` (`god-engine-core/src/lib.rs:667-671`), deuda reconocida.
+    * ALTO: Senior Volatilidad con 10/40 bps absolutos y Senior Ejecución con 35/65 bps (`consejo_seniors.rs:499-502,769`).
+    * MEDIO: Clasificación Hurst rígida 0.45/0.52 sin IC del estimador DFA (`god-engine-core/src/lib.rs:9219-9220`).
+    * MEDIO: Exploración Kelly `0.25 * clamp_min, max 0.05` y `cold [0.05, 0.35]` (`risk-engine/src/lib.rs:387-389`).
+    * MEDIO: 70/30 blend espectro/convicción en orquestador (`signal-engine/src/orchestrator.rs:498`).
+  - Regla establecida: constantes ancladas a oráculos de forma cerrada (tolerancia $10^{-12}$) NO se tocan sin re-derivación simbólica completa.
 - **Publicación de Ola Ω94 en main y origin/main confirmada**:
   - Commits `56697269` (F3.4-04 muros L2 en `booktick_replay.rs`), `0019e846` (risk-a: eliminación de techo de $2.60 USD de margen micro para interés compuesto), y `1c3a3d39` (sincronización de memoria y tablero) fusionados fast-forward en `main` y empujados exitosamente a `origin/main`.
   - Rama `antigravity/ola94-plan-maestro-revision-total` eliminada limpiamente tras confirmar ascendencia remota.
