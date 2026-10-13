@@ -5321,10 +5321,32 @@ impl GodEngineCore {
                     }
                     // CL-107: la R de cada cierre alimenta el freno de la
                     // estrategia (proceso e de Ville, H0 = +0,30 R).
+                    // CL-114 (T1-01 y T1-06 de la Línea G): con la geometría
+                    // de ESTA posición, no la media de las órdenes (EWMA). La
+                    // salida no pasa de su TP, así que con su propia escala
+                    // una ganancia no se recorta a −1 (recortar sólo el lado
+                    // favorable a H0 rompía la supermartingala), y su R se
+                    // normaliza con su propia l. La fricción es la que se
+                    // conoce antes del resultado (comisión taker y
+                    // deslizamiento base de la configuración, sin el término
+                    // de latencia, que depende del ATR del cierre): la
+                    // apuesta del proceso e tiene que ser predecible.
+                    let friccion_previa = risk_engine::tp_sl::roundtrip_friction(
+                        self.arena.config.live_taker_fee.load(Ordering::Relaxed),
+                        self.arena.config.base_slippage_floor.load(Ordering::Relaxed).max(0.0),
+                        0.0,
+                        0.0,
+                    );
+                    let (ganancia_pos, perdida_pos) =
+                        if sl.is_finite() && sl > 0.0 && friccion_previa.is_finite() {
+                            ((tp - friccion_previa) / sl, (sl + friccion_previa) / sl)
+                        } else {
+                            (f64::NAN, f64::NAN)
+                        };
                     let e_estrategia = self.risk_engine.freno_estrategia.registrar(
                         resultado_r,
-                        self.arena.ganancia_en_stops.load(Ordering::Relaxed),
-                        self.arena.perdida_en_stops.load(Ordering::Relaxed),
+                        ganancia_pos,
+                        perdida_pos,
                     );
                     self.arena.registry.set("ville_estrategia_e", e_estrategia);
                     // CL-130 (R1 de la revisión del PR #62): la caída del freno
