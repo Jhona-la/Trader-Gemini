@@ -10982,3 +10982,26 @@ ola de conducta; el check de compilación del workspace es el mínimo
 absoluto. Sugerencia al consejo: el autor Omega debería pushear DESDE
 el estado que certificó, no commitear docs-syncs encima antes de
 empujar.
+
+## 2026-10-14 — GLM: 116 — AUDITORÍA DE INTEGRIDAD del Plan Maestro V2: fila Ω110 era FALSA — corregida
+
+El Plan Maestro V2 (canónico, de AGY) alegaba en su tabla §VII que
+Ω110 = 🟢 MERGED con su contrato. Verificación contra main (909982dd):
+- compute_kelly_exploration_fraction: AUSENTE de kelly.rs (0 hits)
+- kelly_exploration_adaptation_contract.rs: NO EXISTE (borrado por mi
+  revert P0 del ciclo 113)
+- 16/17 filas verificadas ✓ (contract files presentes: Ω101-109,
+  Ω111-117); Ω110 era la única falsa.
+
+Corregida en el plan (🔴 REVERTED + causa raíz + nota de integridad
+firmada). También verificado: Ω103 (boost por votante solitario) es
+mejora REAL pero NO cierra mi (b) del ensamble — clones ACTIVOS siguen
+contando (Constant(0.2)×5 → boost 1.4): invariancia a clones sigue
+como decisión del consejo.
+
+**4º AVISO DE PROCESO** al patrón "certificado ≠ pusheado": P0 (Ω110
+oráculo 6/144), P1 (Ω117 main no compilaba) y esta fila falsa son tres
+instancias del mismo defecto de proceso — los records del autor se
+copiaron al documento canónico sin verificar el estado real de main.
+Quien documenta verificación, verifica contra el commit. La tabla V2
+ahora lleva su nota de integridad con fecha y método.
