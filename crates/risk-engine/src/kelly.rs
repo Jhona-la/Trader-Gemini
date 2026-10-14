@@ -1,3 +1,14 @@
+use quantum_arena::GlobalArena;
+
+/// Ratio canónico de exploración Kelly para monedas sin edge probado (quarter Kelly fraccional).
+pub const DEFAULT_KELLY_EXPLORATION_RATIO: f64 = 0.25;
+
+/// Techo canónico de fracción de capital en exploración en frío.
+pub const DEFAULT_KELLY_EXPLORATION_MAX: f64 = 0.05;
+
+/// Piso canónico de atenuación de exploración ante drawdown máximo.
+pub const DRAWDOWN_EXPLORATION_FLOOR: f64 = 0.20;
+
 /// Fórmula Dinámica de Kelly para Supervivencia y Crecimiento Exponencial
 /// Con Profit Factor PF: Edge > 0 si y sólo si PF > 1.0.
 /// f* = W * (1 - 1 / PF) = W - (1 - W) / R donde R = PF * (1 - W) / W (Payoff Ratio)
@@ -113,6 +124,111 @@ pub fn calculate_kelly_fraction(
     // neural, régimen) puede empujar por encima.
     let kelly_prelim = (kelly * capital_scale).clamp(mn, mx);
     crate::ruin::clamp_ruin(kelly_prelim, 1.0 - win_rate.clamp(0.0, 1.0))
+}
+
+/// F3.4-08 (Ola Ω110): Cálculo analítico puro de la fracción Kelly de exploración.
+///
+/// Modula la exploración según:
+/// 1. `pf_ramp`: Si `trades_n > 0` y `pf` medido, rampa continua de (pf - 0.5)/0.5 en [0.0, 1.0].
+///    Si `trades_n == 0` (arranque en frío sin historial), preserva 1.0 (baseline neutro).
+/// 2. `dd_factor`: Si el portafolio está en drawdown (`peak_cap > current_cap`),
+///    atenúa suavemente: `(1.0 - dd).clamp(0.20, 1.0)`.
+/// 3. `exploration_ratio`: Parámetro gamma (default 0.25).
+/// 4. `exploration_max`: Techo defensivo (default 0.05).
+#[inline]
+pub fn compute_kelly_exploration_fraction(
+    clamp_min: f64,
+    pf: f64,
+    trades_n: usize,
+    peak_capital: f64,
+    current_capital: f64,
+    exploration_ratio: f64,
+    exploration_max: f64,
+) -> f64 {
+    if !clamp_min.is_finite() || clamp_min <= 0.0 {
+        return 0.0;
+    }
+    let gamma = if exploration_ratio.is_finite() && exploration_ratio > 0.0 {
+        exploration_ratio.clamp(0.01, 1.0)
+    } else {
+        DEFAULT_KELLY_EXPLORATION_RATIO
+    };
+    let max_cap = if exploration_max.is_finite() && exploration_max > 0.0 {
+        exploration_max.clamp(0.005, 0.35)
+    } else {
+        DEFAULT_KELLY_EXPLORATION_MAX
+    };
+
+    // Rampa continua de Profit Factor si hay trades observados
+    let pf_ramp = if trades_n > 0 && pf.is_finite() {
+        ((pf - 0.50).clamp(0.0, 0.50)) / 0.50
+    } else {
+        1.0
+    };
+
+    // Atenuación suave por Drawdown del portafolio
+    let dd_factor = if peak_capital.is_finite() && peak_capital > 0.0 && current_capital < peak_capital {
+        let dd = (peak_capital - current_capital) / peak_capital;
+        (1.0 - dd).clamp(DRAWDOWN_EXPLORATION_FLOOR, 1.0)
+    } else {
+        1.0
+    };
+
+    let exploration_raw = clamp_min * gamma * pf_ramp * dd_factor;
+    exploration_raw.clamp(0.0, max_cap)
+}
+
+/// F3.4-08 (Ola Ω110): Resolución adaptativa y continua de la fracción Kelly en arranque en frío / exploración.
+///
+/// Consulta overrides en el registro omnisciente:
+/// - Por activo: `c{coin_id}:kelly_exploration_ratio` / `c{coin_id}:kelly_exploration_max`
+/// - Global: `"kelly_exploration_ratio"` / `"kelly_exploration_max"`
+/// - Bootstrap cuando PF > 1.0: `"kelly_bootstrap_cold_min"` / `"kelly_bootstrap_cold_max"`
+#[inline]
+pub fn resolve_kelly_cold(
+    arena: &GlobalArena,
+    coin_id: usize,
+    pf: f64,
+    clamp_min: f64,
+    kelly_cold_raw: f64,
+    peak_capital: f64,
+    current_capital: f64,
+    trades_n: usize,
+) -> f64 {
+    if pf <= 1.0 {
+        let gamma = arena.registry.get_for_coin_or(
+            coin_id,
+            "kelly_exploration_ratio",
+            DEFAULT_KELLY_EXPLORATION_RATIO,
+        );
+        let max_cap = arena.registry.get_for_coin_or(
+            coin_id,
+            "kelly_exploration_max",
+            DEFAULT_KELLY_EXPLORATION_MAX,
+        );
+
+        compute_kelly_exploration_fraction(
+            clamp_min,
+            pf,
+            trades_n,
+            peak_capital,
+            current_capital,
+            gamma,
+            max_cap,
+        )
+    } else {
+        let cold_min = arena
+            .registry
+            .get_for_coin_or(coin_id, "kelly_bootstrap_cold_min", 0.05)
+            .max(0.01);
+        let cold_max = arena
+            .registry
+            .get_for_coin_or(coin_id, "kelly_bootstrap_cold_max", 0.35)
+            .min(1.0);
+        let eff_min = cold_min.min(cold_max);
+        let eff_max = cold_max.max(eff_min);
+        kelly_cold_raw.clamp(eff_min, eff_max)
+    }
 }
 
 #[cfg(test)]
