@@ -1496,6 +1496,10 @@ impl GodEngineCore {
         let causal_veto = cfg.council_causal_veto_threshold.load(Ordering::Relaxed);
         let causal_imbalance = cfg.council_causal_min_book_imbalance.load(Ordering::Relaxed);
         let causal_risk = cfg.council_causal_aligned_max_risk.load(Ordering::Relaxed);
+        let curl_att = cfg.council_hodge_curl_attenuation.load(Ordering::Relaxed);
+        let lam_floor = cfg.council_hodge_laminar_floor.load(Ordering::Relaxed);
+        let ym_ref = cfg.council_ym_ref_current.load(Ordering::Relaxed);
+        let ym_max_w = cfg.council_ym_max_weight.load(Ordering::Relaxed);
 
         if (0.0..=1.0).contains(&approval) {
             params.approval_threshold = approval;
@@ -1541,6 +1545,18 @@ impl GodEngineCore {
         }
         if (0.0..=1.0).contains(&causal_risk) {
             params.causal_aligned_max_risk = causal_risk;
+        }
+        if (0.0..=1.0).contains(&curl_att) {
+            params.hodge_curl_attenuation = curl_att;
+        }
+        if (0.0..=1.0).contains(&lam_floor) {
+            params.hodge_laminar_floor = lam_floor;
+        }
+        if (0.0..=1.0).contains(&ym_ref) && ym_ref > 0.0 {
+            params.ym_ref_current = ym_ref;
+        }
+        if (0.0..=1.0).contains(&ym_max_w) {
+            params.ym_max_weight = ym_max_w;
         }
     }
 
@@ -8619,6 +8635,50 @@ impl GodEngineCore {
                                     coin_risk
                                 } else {
                                     self.consejo_deliberacion.params.causal_aligned_max_risk
+                                }
+                            },
+                            hodge_curl_attenuation: {
+                                let coin_att = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "hodge_curl_attenuation", f64::NAN);
+                                if coin_att.is_finite() && (0.0..=1.0).contains(&coin_att) {
+                                    coin_att
+                                } else {
+                                    self.consejo_deliberacion.params.hodge_curl_attenuation
+                                }
+                            },
+                            hodge_laminar_floor: {
+                                let coin_floor = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "hodge_laminar_floor", f64::NAN);
+                                if coin_floor.is_finite() && (0.0..=1.0).contains(&coin_floor) {
+                                    coin_floor
+                                } else {
+                                    self.consejo_deliberacion.params.hodge_laminar_floor
+                                }
+                            },
+                            ym_ref_current: {
+                                let coin_ref = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "ym_ref_current", f64::NAN);
+                                if coin_ref.is_finite() && (0.0..=1.0).contains(&coin_ref) && coin_ref > 0.0 {
+                                    coin_ref
+                                } else {
+                                    self.consejo_deliberacion.params.ym_ref_current
+                                }
+                            },
+                            ym_max_weight: {
+                                let coin_w = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "ym_max_weight", f64::NAN);
+                                if coin_w.is_finite() && (0.0..=1.0).contains(&coin_w) {
+                                    coin_w
+                                } else {
+                                    self.consejo_deliberacion.params.ym_max_weight
                                 }
                             },
                         };

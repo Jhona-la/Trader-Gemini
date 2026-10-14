@@ -41,6 +41,10 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.causal_veto_threshold, 0.75);
     assert_eq!(core.consejo_deliberacion.params.causal_min_book_imbalance, 0.25);
     assert_eq!(core.consejo_deliberacion.params.causal_aligned_max_risk, 0.88);
+    assert_eq!(core.consejo_deliberacion.params.hodge_curl_attenuation, 0.70);
+    assert_eq!(core.consejo_deliberacion.params.hodge_laminar_floor, 0.30);
+    assert_eq!(core.consejo_deliberacion.params.ym_ref_current, 0.05);
+    assert_eq!(core.consejo_deliberacion.params.ym_max_weight, 0.20);
 
     // 2. Modificación lock-free desde arena.config (ej. Evolución adaptativa o feedback cuántico)
     arena.config.council_approval_threshold.store(0.45, Ordering::Relaxed);
@@ -58,6 +62,10 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     arena.config.council_causal_veto_threshold.store(0.65, Ordering::Relaxed);
     arena.config.council_causal_min_book_imbalance.store(0.35, Ordering::Relaxed);
     arena.config.council_causal_aligned_max_risk.store(0.92, Ordering::Relaxed);
+    arena.config.council_hodge_curl_attenuation.store(0.85, Ordering::Relaxed);
+    arena.config.council_hodge_laminar_floor.store(0.15, Ordering::Relaxed);
+    arena.config.council_ym_ref_current.store(0.08, Ordering::Relaxed);
+    arena.config.council_ym_max_weight.store(0.30, Ordering::Relaxed);
 
     // 3. Ejecutar sincronización
     core.sync_council_params_from_arena();
@@ -78,6 +86,10 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.causal_veto_threshold, 0.65);
     assert_eq!(core.consejo_deliberacion.params.causal_min_book_imbalance, 0.35);
     assert_eq!(core.consejo_deliberacion.params.causal_aligned_max_risk, 0.92);
+    assert_eq!(core.consejo_deliberacion.params.hodge_curl_attenuation, 0.85);
+    assert_eq!(core.consejo_deliberacion.params.hodge_laminar_floor, 0.15);
+    assert_eq!(core.consejo_deliberacion.params.ym_ref_current, 0.08);
+    assert_eq!(core.consejo_deliberacion.params.ym_max_weight, 0.30);
 }
 
 #[test]
@@ -93,8 +105,12 @@ fn council_params_protege_contra_valores_corruptos_o_fuera_de_cota() {
     let prev_causal_veto = core.consejo_deliberacion.params.causal_veto_threshold;
     let prev_causal_imb = core.consejo_deliberacion.params.causal_min_book_imbalance;
     let prev_causal_risk = core.consejo_deliberacion.params.causal_aligned_max_risk;
+    let prev_curl_att = core.consejo_deliberacion.params.hodge_curl_attenuation;
+    let prev_lam_floor = core.consejo_deliberacion.params.hodge_laminar_floor;
+    let prev_ym_ref = core.consejo_deliberacion.params.ym_ref_current;
+    let prev_ym_max_w = core.consejo_deliberacion.params.ym_max_weight;
 
-    // Intentar inyectar valor corrupto/fuera de cota (approval > 1.0, k negativo o NaN, max_dd > 1.0, decay < 0, causal_veto > 1.0)
+    // Intentar inyectar valor corrupto/fuera de cota
     arena.config.council_approval_threshold.store(2.50, Ordering::Relaxed);
     arena.config.council_shrinkage_k.store(-5.0, Ordering::Relaxed);
     arena.config.council_max_drawdown_limit.store(1.50, Ordering::Relaxed);
@@ -102,6 +118,10 @@ fn council_params_protege_contra_valores_corruptos_o_fuera_de_cota() {
     arena.config.council_causal_veto_threshold.store(1.50, Ordering::Relaxed);
     arena.config.council_causal_min_book_imbalance.store(-0.50, Ordering::Relaxed);
     arena.config.council_causal_aligned_max_risk.store(1.20, Ordering::Relaxed);
+    arena.config.council_hodge_curl_attenuation.store(1.50, Ordering::Relaxed);
+    arena.config.council_hodge_laminar_floor.store(-0.10, Ordering::Relaxed);
+    arena.config.council_ym_ref_current.store(-0.05, Ordering::Relaxed);
+    arena.config.council_ym_max_weight.store(2.0, Ordering::Relaxed);
 
     core.sync_council_params_from_arena();
 
@@ -133,5 +153,21 @@ fn council_params_protege_contra_valores_corruptos_o_fuera_de_cota() {
     assert_eq!(
         core.consejo_deliberacion.params.causal_aligned_max_risk, prev_causal_risk,
         "Causal aligned max risk corrupto > 1.0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.hodge_curl_attenuation, prev_curl_att,
+        "Hodge curl attenuation corrupto > 1.0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.hodge_laminar_floor, prev_lam_floor,
+        "Hodge laminar floor corrupto < 0.0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.ym_ref_current, prev_ym_ref,
+        "YM ref current corrupto <= 0.0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.ym_max_weight, prev_ym_max_w,
+        "YM max weight corrupto > 1.0 no debe aplicarse al consejo"
     );
 }

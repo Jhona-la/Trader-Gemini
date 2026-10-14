@@ -89,6 +89,10 @@ fn carga(obi: f64, fused: f64, pers: f64, ml: f64) -> MarketSnapshotPayload {
         streak_decay_rate: 0.50,
         causal_min_book_imbalance: 0.25,
         causal_aligned_max_risk: 0.88,
+        hodge_curl_attenuation: 0.70,
+        hodge_laminar_floor: 0.30,
+        ym_ref_current: 0.05,
+        ym_max_weight: 0.20,
     }
 }
 

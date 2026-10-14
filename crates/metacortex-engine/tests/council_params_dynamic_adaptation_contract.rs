@@ -104,6 +104,10 @@ fn ola101_consejo_deliberacion_with_params_falla_ante_parametros_corruptos() {
         causal_veto_threshold: 0.75,
         causal_min_book_imbalance: 0.25,
         causal_aligned_max_risk: 0.88,
+        hodge_curl_attenuation: 0.70,
+        hodge_laminar_floor: 0.30,
+        ym_ref_current: 0.05,
+        ym_max_weight: 0.20,
     };
 
     match ConsejoDeliberacion::with_params(corrupt_params) {

@@ -209,6 +209,18 @@ pub struct MarketSnapshotPayload {
     /// OLA Ω115: Cota de riesgo máximo permitido en breakout alineado para SeniorCausal (default: 0.88).
     #[serde(default = "default_causal_aligned_max_risk")]
     pub causal_aligned_max_risk: f64,
+    /// OLA Ω116: Coeficiente de atenuación de rotacional de Helmholtz-Hodge (default: 0.70).
+    #[serde(default = "default_hodge_curl_attenuation")]
+    pub hodge_curl_attenuation: f64,
+    /// OLA Ω116: Piso de confianza laminar ante rotacional máximo de Helmholtz-Hodge (default: 0.30).
+    #[serde(default = "default_hodge_laminar_floor")]
+    pub hodge_laminar_floor: f64,
+    /// OLA Ω116: Corriente de referencia gauge de Yang-Mills (default: 0.05).
+    #[serde(default = "default_ym_ref_current")]
+    pub ym_ref_current: f64,
+    /// OLA Ω116: Peso asintótico máximo de corriente de Yang-Mills en series temporales (default: 0.20).
+    #[serde(default = "default_ym_max_weight")]
+    pub ym_max_weight: f64,
 }
 
 impl Default for MarketSnapshotPayload {
@@ -249,6 +261,10 @@ impl Default for MarketSnapshotPayload {
             streak_decay_rate: DEFAULT_STREAK_DECAY_RATE,
             causal_min_book_imbalance: DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE,
             causal_aligned_max_risk: DEFAULT_CAUSAL_ALIGNED_MAX_RISK,
+            hodge_curl_attenuation: DEFAULT_HODGE_CURL_ATTENUATION,
+            hodge_laminar_floor: DEFAULT_HODGE_LAMINAR_FLOOR,
+            ym_ref_current: DEFAULT_YM_REF_CURRENT,
+            ym_max_weight: DEFAULT_YM_MAX_WEIGHT,
         }
     }
 }
@@ -303,6 +319,10 @@ impl MarketSnapshotPayload {
             ("streak_decay_rate", self.streak_decay_rate),
             ("causal_min_book_imbalance", self.causal_min_book_imbalance),
             ("causal_aligned_max_risk", self.causal_aligned_max_risk),
+            ("hodge_curl_attenuation", self.hodge_curl_attenuation),
+            ("hodge_laminar_floor", self.hodge_laminar_floor),
+            ("ym_ref_current", self.ym_ref_current),
+            ("ym_max_weight", self.ym_max_weight),
         ];
 
         for (name, val) in metrics {
@@ -355,10 +375,16 @@ impl MarketSnapshotPayload {
             ("streak_decay_rate", self.streak_decay_rate, 0.0, 10.0),
             ("causal_min_book_imbalance", self.causal_min_book_imbalance, 0.0, 1.0),
             ("causal_aligned_max_risk", self.causal_aligned_max_risk, 0.0, 1.0),
+            ("hodge_curl_attenuation", self.hodge_curl_attenuation, 0.0, 1.0),
+            ("hodge_laminar_floor", self.hodge_laminar_floor, 0.0, 1.0),
+            ("ym_max_weight", self.ym_max_weight, 0.0, 1.0),
         ] {
             if !(low..=high).contains(&value) {
                 return Err(format!("Out-of-bounds {name}: {value}"));
             }
+        }
+        if !(0.0..=1.0).contains(&self.ym_ref_current) || self.ym_ref_current <= 0.0 {
+            return Err(format!("Out-of-bounds ym_ref_current: {}", self.ym_ref_current));
         }
         if !(0.0..=1.0).contains(&self.max_drawdown_limit) || self.max_drawdown_limit <= 0.0 {
             return Err(format!("Out-of-bounds max_drawdown_limit: {}", self.max_drawdown_limit));
@@ -506,7 +532,141 @@ fn ml_opinion(ml_prob: f64, ml_base: f64) -> f64 {
     }
 }
 
-// 1. Senior Microestructura (Flujo) — MOD2/7-006 & OLA Ω37/Ω38:
+pub const DEFAULT_HODGE_CURL_ATTENUATION: f64 = 0.70;
+pub const DEFAULT_HODGE_LAMINAR_FLOOR: f64 = 0.30;
+pub const DEFAULT_YM_REF_CURRENT: f64 = 0.05;
+pub const DEFAULT_YM_MAX_WEIGHT: f64 = 0.20;
+
+#[inline(always)]
+pub fn default_hodge_curl_attenuation() -> f64 {
+    DEFAULT_HODGE_CURL_ATTENUATION
+}
+
+#[inline(always)]
+pub fn default_hodge_laminar_floor() -> f64 {
+    DEFAULT_HODGE_LAMINAR_FLOOR
+}
+
+#[inline(always)]
+pub fn default_ym_ref_current() -> f64 {
+    DEFAULT_YM_REF_CURRENT
+}
+
+#[inline(always)]
+pub fn default_ym_max_weight() -> f64 {
+    DEFAULT_YM_MAX_WEIGHT
+}
+
+/// Evalúa la confianza en el flujo de microestructura modulada por el rotacional
+/// de Helmholtz-Hodge y la fracción laminar de Navier-Stokes (Ola Ω116).
+///
+/// # Formulación
+/// - `curl`: Fracción de vorticidad rotacional en $[0, 1]$.
+/// - `laminar_factor`: $(1.0 - \text{curl\_att} \cdot \text{curl}).\text{clamp}(\text{lam\_floor}, 1.0)$.
+/// - `re_laminar`: Fracción laminar Navier-Stokes en $[0, 1]$.
+/// - `hydro_factor`: $(0.40 + 0.60 \cdot \text{re\_laminar}).\text{clamp}(0.40, 1.0)$.
+/// - `confidence`: $(|\text{imbalance}| \cdot \text{laminar\_factor} \cdot \text{hydro\_factor}).\text{clamp}(0.0, 1.0)$.
+///
+/// # Sanitización Fail-Closed
+/// - Si `curl_att` es no-finito o fuera de $[0.0, 1.0]$, usa `DEFAULT_HODGE_CURL_ATTENUATION`.
+/// - Si `lam_floor` es no-finito o fuera de $[0.0, 1.0]$, usa `DEFAULT_HODGE_LAMINAR_FLOOR`.
+/// - Si `curl` es no-finito o negativo, usa `0.0`.
+/// - Si `re_laminar` es no-finito o negativo, usa `1.0`.
+/// - Si `imbalance` es no-finito, usa `0.0`.
+#[inline(always)]
+pub fn evaluate_microstructure_flow_confidence(
+    imbalance: f64,
+    curl: f64,
+    re_laminar: f64,
+    curl_attenuation: f64,
+    laminar_floor: f64,
+) -> (f64, f64, f64, f64) {
+    let safe_imbalance = if imbalance.is_finite() {
+        imbalance.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    };
+    let safe_curl = if curl.is_finite() && curl > 0.0 {
+        curl.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let safe_re_laminar = if re_laminar.is_finite() && re_laminar > 0.0 {
+        re_laminar.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let safe_curl_att = if curl_attenuation.is_finite() && (0.0..=1.0).contains(&curl_attenuation) {
+        curl_attenuation
+    } else {
+        DEFAULT_HODGE_CURL_ATTENUATION
+    };
+    let safe_lam_floor = if laminar_floor.is_finite() && (0.0..=1.0).contains(&laminar_floor) {
+        laminar_floor
+    } else {
+        DEFAULT_HODGE_LAMINAR_FLOOR
+    };
+
+    let laminar_factor = (1.0 - safe_curl_att * safe_curl).clamp(safe_lam_floor, 1.0);
+    let hydro_factor = (0.40 + 0.60 * safe_re_laminar).clamp(0.40, 1.0);
+    let confidence = (safe_imbalance.abs() * laminar_factor * hydro_factor).clamp(0.0, 1.0);
+
+    (confidence, laminar_factor, hydro_factor, safe_imbalance)
+}
+
+/// Evalúa la opinión espectral de series temporales combinada suavemente con la
+/// corriente restauradora gauge de Yang-Mills mediante soft-switch Lorentz-Cauchy C^∞ (Ola Ω116).
+///
+/// # Formulación
+/// - `signal_spectral`: `spectral_opinion(fused_score, persistence)`.
+/// - `ym_sq`: `ym_curr^2`.
+/// - `thresh_sq`: `ym_ref^2`.
+/// - `w_ym`: `ym_max_w * (ym_sq / (ym_sq + thresh_sq))`.
+/// - `combined_signal`: `((1.0 - w_ym) * signal_spectral + w_ym * ym_curr).clamp(-1.0, 1.0)`.
+///
+/// # Sanitización Fail-Closed
+/// - Si `ym_ref` no es finito o <= 0.0 o > 1.0, recurre a `DEFAULT_YM_REF_CURRENT`.
+/// - Si `ym_max_w` no es finito o fuera de $[0.0, 1.0]$, recurre a `DEFAULT_YM_MAX_WEIGHT`.
+/// - Si `ym_current` no es finito, recurre a `0.0`.
+#[inline(always)]
+pub fn evaluate_series_temporales_ym(
+    fused_score: f64,
+    persistence: f64,
+    ym_current: f64,
+    ym_ref: f64,
+    ym_max_w: f64,
+) -> (f64, f64, f64, f64) {
+    let raw_signal = spectral_opinion(fused_score, persistence);
+    let safe_ym_curr = if ym_current.is_finite() {
+        ym_current.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    };
+    let safe_ym_ref = if ym_ref.is_finite() && ym_ref > 0.0 && ym_ref <= 1.0 {
+        ym_ref
+    } else {
+        DEFAULT_YM_REF_CURRENT
+    };
+    let safe_ym_max_w = if ym_max_w.is_finite() && (0.0..=1.0).contains(&ym_max_w) {
+        ym_max_w
+    } else {
+        DEFAULT_YM_MAX_WEIGHT
+    };
+
+    let ym_sq = safe_ym_curr * safe_ym_curr;
+    let thresh_sq = safe_ym_ref * safe_ym_ref;
+    let w_ym = if (ym_sq + thresh_sq) > 1e-15 {
+        safe_ym_max_w * (ym_sq / (ym_sq + thresh_sq))
+    } else {
+        0.0
+    };
+    let combined_signal = ((1.0 - w_ym) * raw_signal + w_ym * safe_ym_curr).clamp(-1.0, 1.0);
+    let confidence = combined_signal.abs().clamp(0.0, 1.0);
+
+    (combined_signal, confidence, w_ym, safe_ym_curr)
+}
+
+// 1. Senior Microestructura (Flujo) — MOD2/7-006 & OLA Ω37/Ω38 & OLA Ω116:
 // Evalúa la presión del libro L2 (OBI) modulada por el componente laminar
 // de Helmholtz-Hodge (curl_share): si la vorticidad es alta, la liquidez
 // está atrapada en circuitos cerrados/rotacionales y no hay empuje laminar.
@@ -516,25 +676,15 @@ impl SeniorAgent for SeniorMicroestructura {
         SeniorRole::Microestructura
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let imbalance = payload.book_imbalance;
-        let curl = if payload.hodge_curl_share.is_finite() && payload.hodge_curl_share > 0.0 {
-            payload.hodge_curl_share.clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        // Modulación física continua: si curl -> 1 (vórtice cerrado), la confianza laminar se reduce suavemente
-        let laminar_factor = (1.0 - 0.70 * curl).clamp(0.30, 1.0);
+        let (confidence, _laminar_factor, re_laminar, imbalance) =
+            evaluate_microstructure_flow_confidence(
+                payload.book_imbalance,
+                payload.hodge_curl_share,
+                payload.navier_laminar_share,
+                payload.hodge_curl_attenuation,
+                payload.hodge_laminar_floor,
+            );
 
-        // OLA Ω53: Modulación hidrodinámica Navier-Stokes (Reynolds).
-        // En flujo laminar (Re < 1.0, laminar_share -> 1.0), el desequilibrio de libro es fiel y altamente predecible.
-        // En flujo turbulento (Re >= 5.0, laminar_share -> 0.0), vórtices y ráfagas rompen la microestructura pasiva.
-        let re_laminar = if payload.navier_laminar_share.is_finite() && payload.navier_laminar_share > 0.0 {
-            payload.navier_laminar_share.clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
-        let hydro_factor = (0.40 + 0.60 * re_laminar).clamp(0.40, 1.0);
-        let confidence = (imbalance.abs().clamp(0.0, 1.0) * laminar_factor * hydro_factor).clamp(0.0, 1.0);
         SeniorOpinion {
             role: self.role(),
             signal_direction: safe_signum(imbalance),
@@ -543,13 +693,13 @@ impl SeniorAgent for SeniorMicroestructura {
             is_veto: false,
             justification: format!(
                 "Flujo L2 (OBI: {:.4}, Hodge curl: {:.3}, Re: {:.2}, Lam: {:.2})",
-                imbalance, curl, payload.navier_reynolds_number, re_laminar
+                imbalance, payload.hodge_curl_share, payload.navier_reynolds_number, re_laminar
             ),
         }
     }
 }
 
-// 2. Senior Series Temporales (Espectral) — MOD2/7-006 & OLA Ω36/Ω38:
+// 2. Senior Series Temporales (Espectral) — MOD2/7-006 & OLA Ω36/Ω38 & OLA Ω116:
 // Opina desde el espectro temporal (fused_score y persistence) integrado con
 // la corriente restauradora gauge de Yang-Mills (yang_mills_current).
 pub struct SeniorSeriesTemporales;
@@ -559,22 +709,14 @@ impl SeniorAgent for SeniorSeriesTemporales {
     }
     #[inline(always)]
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let mut signal = spectral_opinion(payload.fused_score, payload.persistence);
-        let ym_curr = if payload.yang_mills_current.is_finite() {
-            payload.yang_mills_current.clamp(-1.0, 1.0)
-        } else {
-            0.0
-        };
-        // R6-C12 / OLA Ω42 — Modulación continua suave C¹:
-        // Sustituir el escalón discontinuo C⁰ (`if > 0.05`) por soft-switch Lorentz-Cauchy suave C∞.
-        // En ym_curr -> 0, w_ym -> 0 con derivada nula (sin ruido en reposo).
-        // A |ym_curr| = 0.05, w_ym = 0.10 (50% de la fuerza).
-        // En |ym_curr| >> 0.05, w_ym converge asintóticamente a 0.20 (fuerza de paridad plena).
-        let ym_sq = ym_curr * ym_curr;
-        const YM_THRESH_SQ: f64 = 0.05 * 0.05;
-        let w_ym = 0.20 * (ym_sq / (ym_sq + YM_THRESH_SQ));
-        signal = ((1.0 - w_ym) * signal + w_ym * ym_curr).clamp(-1.0, 1.0);
-        let confidence = signal.abs().clamp(0.0, 1.0);
+        let (signal, confidence, _w_ym, ym_curr) = evaluate_series_temporales_ym(
+            payload.fused_score,
+            payload.persistence,
+            payload.yang_mills_current,
+            payload.ym_ref_current,
+            payload.ym_max_weight,
+        );
+
         let regime = if payload.persistence >= 0.0 {
             "momentum"
         } else {
@@ -1396,6 +1538,14 @@ pub struct CouncilParams {
     pub causal_min_book_imbalance: f64, // 0.25
     /// OLA Ω115: Cota de riesgo máximo permitido en breakout alineado para SeniorCausal (default: 0.88).
     pub causal_aligned_max_risk: f64,  // 0.88
+    /// OLA Ω116: Coeficiente de atenuación de rotacional de Helmholtz-Hodge (default: 0.70).
+    pub hodge_curl_attenuation: f64,   // 0.70
+    /// OLA Ω116: Piso de confianza laminar ante rotacional de Helmholtz-Hodge (default: 0.30).
+    pub hodge_laminar_floor: f64,      // 0.30
+    /// OLA Ω116: Corriente de referencia gauge de Yang-Mills (default: 0.05).
+    pub ym_ref_current: f64,           // 0.05
+    /// OLA Ω116: Peso asintótico máximo de corriente de Yang-Mills (default: 0.20).
+    pub ym_max_weight: f64,            // 0.20
 }
 
 impl CouncilParams {
@@ -1423,6 +1573,10 @@ impl CouncilParams {
             causal_veto_threshold: DEFAULT_CAUSAL_VETO_THRESHOLD,
             causal_min_book_imbalance: DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE,
             causal_aligned_max_risk: DEFAULT_CAUSAL_ALIGNED_MAX_RISK,
+            hodge_curl_attenuation: DEFAULT_HODGE_CURL_ATTENUATION,
+            hodge_laminar_floor: DEFAULT_HODGE_LAMINAR_FLOOR,
+            ym_ref_current: DEFAULT_YM_REF_CURRENT,
+            ym_max_weight: DEFAULT_YM_MAX_WEIGHT,
         };
         params.validate()?;
         Ok(params)
@@ -1466,6 +1620,22 @@ impl CouncilParams {
         Ok(self)
     }
 
+    /// OLA Ω116: Builder para configurar tolerancias de rotacional Helmholtz-Hodge y corriente gauge Yang-Mills.
+    pub fn with_physical_gauge_bounds(
+        mut self,
+        curl_att: f64,
+        lam_floor: f64,
+        ym_ref: f64,
+        ym_max_w: f64,
+    ) -> Result<Self, String> {
+        self.hodge_curl_attenuation = curl_att;
+        self.hodge_laminar_floor = lam_floor;
+        self.ym_ref_current = ym_ref;
+        self.ym_max_weight = ym_max_w;
+        self.validate()?;
+        Ok(self)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         for (name, value) in [
             ("approval_threshold", self.approval_threshold),
@@ -1503,6 +1673,18 @@ impl CouncilParams {
         if !(0.0..=1.0).contains(&self.causal_aligned_max_risk) {
             return Err(format!("Invalid council parameter causal_aligned_max_risk: {}", self.causal_aligned_max_risk));
         }
+        if !(0.0..=1.0).contains(&self.hodge_curl_attenuation) {
+            return Err(format!("Invalid council parameter hodge_curl_attenuation: {}", self.hodge_curl_attenuation));
+        }
+        if !(0.0..=1.0).contains(&self.hodge_laminar_floor) {
+            return Err(format!("Invalid council parameter hodge_laminar_floor: {}", self.hodge_laminar_floor));
+        }
+        if !(0.0..=1.0).contains(&self.ym_ref_current) || self.ym_ref_current <= 0.0 {
+            return Err(format!("Invalid council parameter ym_ref_current: {}", self.ym_ref_current));
+        }
+        if !(0.0..=1.0).contains(&self.ym_max_weight) {
+            return Err(format!("Invalid council parameter ym_max_weight: {}", self.ym_max_weight));
+        }
         if !self.shrinkage_k.is_finite() || self.shrinkage_k <= 0.0 {
             return Err("shrinkage_k must be finite and positive".into());
         }
@@ -1528,6 +1710,10 @@ impl Default for CouncilParams {
             causal_veto_threshold: DEFAULT_CAUSAL_VETO_THRESHOLD,
             causal_min_book_imbalance: DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE,
             causal_aligned_max_risk: DEFAULT_CAUSAL_ALIGNED_MAX_RISK,
+            hodge_curl_attenuation: DEFAULT_HODGE_CURL_ATTENUATION,
+            hodge_laminar_floor: DEFAULT_HODGE_LAMINAR_FLOOR,
+            ym_ref_current: DEFAULT_YM_REF_CURRENT,
+            ym_max_weight: DEFAULT_YM_MAX_WEIGHT,
         }
     }
 }
@@ -1674,7 +1860,7 @@ impl ConsejoDeliberacion {
         // N-12: Si no se proporcionan multiplicadores externos, usar pesos adaptativos empíricos del tracker
         let active_mults = weight_multipliers.or(dynamic_weights.as_ref());
 
-        // OLA Ω111 / Ω113 / Ω114 / Ω115: Si CouncilParams define umbrales de utilidad/wr, slippage, riesgo o causal dinámicos distintos de los canónicos
+        // OLA Ω111 / Ω113 / Ω114 / Ω115 / Ω116: Si CouncilParams define umbrales dinámicos distintos de los canónicos
         // y el payload porta los defaults, propagar los parámetros del consejo al payload evaluado.
         let has_custom_utility = (self.params.utility_veto_floor - UTILITY_VETO_FLOOR).abs() > 1e-9
             || (self.params.utility_veto_wr - UTILITY_VETO_WR).abs() > 1e-9;
@@ -1685,8 +1871,12 @@ impl ConsejoDeliberacion {
         let has_custom_causal = (self.params.causal_veto_threshold - DEFAULT_CAUSAL_VETO_THRESHOLD).abs() > 1e-9
             || (self.params.causal_min_book_imbalance - DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE).abs() > 1e-9
             || (self.params.causal_aligned_max_risk - DEFAULT_CAUSAL_ALIGNED_MAX_RISK).abs() > 1e-9;
+        let has_custom_physical_gauge = (self.params.hodge_curl_attenuation - DEFAULT_HODGE_CURL_ATTENUATION).abs() > 1e-9
+            || (self.params.hodge_laminar_floor - DEFAULT_HODGE_LAMINAR_FLOOR).abs() > 1e-9
+            || (self.params.ym_ref_current - DEFAULT_YM_REF_CURRENT).abs() > 1e-9
+            || (self.params.ym_max_weight - DEFAULT_YM_MAX_WEIGHT).abs() > 1e-9;
 
-        let effective_payload = if has_custom_utility || has_custom_slippage || has_custom_risk || has_custom_causal {
+        let effective_payload = if has_custom_utility || has_custom_slippage || has_custom_risk || has_custom_causal || has_custom_physical_gauge {
             let mut p = payload.clone();
             if has_custom_utility {
                 if (p.utility_veto_floor - UTILITY_VETO_FLOOR).abs() < 1e-9 {
@@ -1721,6 +1911,20 @@ impl ConsejoDeliberacion {
                 }
                 if (p.causal_aligned_max_risk - DEFAULT_CAUSAL_ALIGNED_MAX_RISK).abs() < 1e-9 {
                     p.causal_aligned_max_risk = self.params.causal_aligned_max_risk;
+                }
+            }
+            if has_custom_physical_gauge {
+                if (p.hodge_curl_attenuation - DEFAULT_HODGE_CURL_ATTENUATION).abs() < 1e-9 {
+                    p.hodge_curl_attenuation = self.params.hodge_curl_attenuation;
+                }
+                if (p.hodge_laminar_floor - DEFAULT_HODGE_LAMINAR_FLOOR).abs() < 1e-9 {
+                    p.hodge_laminar_floor = self.params.hodge_laminar_floor;
+                }
+                if (p.ym_ref_current - DEFAULT_YM_REF_CURRENT).abs() < 1e-9 {
+                    p.ym_ref_current = self.params.ym_ref_current;
+                }
+                if (p.ym_max_weight - DEFAULT_YM_MAX_WEIGHT).abs() < 1e-9 {
+                    p.ym_max_weight = self.params.ym_max_weight;
                 }
             }
             std::borrow::Cow::Owned(p)
@@ -2192,6 +2396,10 @@ mod tests {
             streak_decay_rate: DEFAULT_STREAK_DECAY_RATE,
             causal_min_book_imbalance: DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE,
             causal_aligned_max_risk: DEFAULT_CAUSAL_ALIGNED_MAX_RISK,
+            hodge_curl_attenuation: DEFAULT_HODGE_CURL_ATTENUATION,
+            hodge_laminar_floor: DEFAULT_HODGE_LAMINAR_FLOOR,
+            ym_ref_current: DEFAULT_YM_REF_CURRENT,
+            ym_max_weight: DEFAULT_YM_MAX_WEIGHT,
         }
     }
 

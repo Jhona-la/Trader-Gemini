@@ -198,6 +198,10 @@ pub struct QuantumConfig {
     pub council_causal_veto_threshold: AtomicF64,
     pub council_causal_min_book_imbalance: AtomicF64,
     pub council_causal_aligned_max_risk: AtomicF64,
+    pub council_hodge_curl_attenuation: AtomicF64,
+    pub council_hodge_laminar_floor: AtomicF64,
+    pub council_ym_ref_current: AtomicF64,
+    pub council_ym_max_weight: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -433,6 +437,10 @@ impl QuantumConfig {
             council_causal_veto_threshold: AtomicF64::new(0.75),
             council_causal_min_book_imbalance: AtomicF64::new(0.25),
             council_causal_aligned_max_risk: AtomicF64::new(0.88),
+            council_hodge_curl_attenuation: AtomicF64::new(0.70),
+            council_hodge_laminar_floor: AtomicF64::new(0.30),
+            council_ym_ref_current: AtomicF64::new(0.05),
+            council_ym_max_weight: AtomicF64::new(0.20),
         }
     }
 
