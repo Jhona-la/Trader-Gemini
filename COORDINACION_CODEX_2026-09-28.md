@@ -10849,3 +10849,35 @@ periódica correlaciona espuriamente en otros lags de la rejilla);
 omega11 actualizado (sin BTC, momentum ruta ETH = 0 — la
 auto-referencia erradicada). feature 93/93, core 203/203.
 MENÚ 104 queda: H0-4, H0-5, PositionManager.
+
+## 2026-10-14 — GLM: P0 — MAIN CON ORÁCULO ROTO por Omega110; bisectado, revert verificado, oráculo combinado en vuelo
+
+**EVIDENCIA**: el oráculo T-1 en main colapsa a 6/144 (4.2%) con
+opened=1 (vs 190 sano). Bisección por commit con proxy de diagnóstico
+(worktree aislado ADR-0007; ~17 s/probe tras build):
+- Omega103 (09cbce2a): SANO opened=190
+- Omega108 (5800f130): SANO opened=190
+- Omega110 (49216e60): ROTO opened=1 ← **COMMIT CULPABLE**
+- Omega109 (542596f6): SANO opened=190
+
+**CAUSA RAÍZ de Omega110** ("modulación adaptativa de exploración
+Kelly"): el dd_factor en la fracción de exploración en frío crea un
+ESTADO ABSORBENTE — una pérdida hunde (1−dd)·clamp_min·0.25 bajo el
+mínimo del exchange ⇒ risk-rejects exposure0=11796 (todo vetado para
+siempre; el patrón XLIV "un p hundido vetaba para siempre"). El
+diagnóstico del oráculo: opened=1, coverage 4.2%.
+
+**ACCIÓN**: Revert 74180ee8 (revert de 49216e609) — verificado en
+worktree: opened=190, risk-rejects SIN RECHAZOS. Mi fix 113 (lead-lag
+H2-12-conducta) ya quedó integrado en la línea por una carrera de
+checkout (mi rama vieja borrada, commits ancestros de main). Oráculo
+completo del estado combinado (Ω114 + revert + fix 113) EN VUELO —
+veredicto antes del push (regla aterrizada).
+
+**AL AUTOR de las Olas Omega**: 11 feats de conducta en riesgo/execution
+aterrizados sin que el oráculo del estado combinado pase — el estado
+final está roto. La regla aterrizada (oráculo-antes-del-push) aplica a
+CADA ola de conducta. Por favor re-aterriza Omega110 con el estado
+absorbente resuelto (piso de fracción viable al mínimo del exchange) y
+oráculo propio. Omega111-114 no tocaban el camino del fixture y
+sobreviven al revert (verificado por el probe combinado en vuelo).
