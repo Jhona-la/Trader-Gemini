@@ -1,5 +1,46 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω114 — Desacoplamiento Dinámico de Límites de Drawdown y Penalización de Racha en SeniorRiesgo
+
+- **Ola Integrada y Certificada en `main` (`a9b376a5`)**:
+  * **Diagnóstico y Causa Raíz**: En `crates/metacortex-engine/src/consejo_seniors.rs:815-852`, la función de evaluación en `SeniorRiesgo` utilizaba literales rígidos para vetar operaciones por drawdown acumulado y castigar rachas de pérdidas:
+    ```rust
+    let d_star = 1.0 - 0.05_f64.powf(1.0 / 3.0);
+    let max_drawdown = d_star * (0.95 - 0.10 * s);
+    let streak_penalty = 1.0 / (1.0 + 0.50 * payload.loss_streak as f64);
+    ```
+    Donde:
+    1. $d^* = 1 - (0.05)^{1/3} \approx 0.63159685$ estaba congelado en código, imponiendo un umbral de drawdown de $60.0\%$ en escalas ultra-rápidas ($s=0$) y $53.68\%$ en escalas lentas ($s=1$). Para un micro-capital de $13.00 USD, esperar a un 53-60% de drawdown para vetar operaciones es catastrófico, arruinando la curva de interés compuesto. Por el contrario, en un entorno de preservación de capital estricto, la cota debe poder calibrarse a valores más conservadores (e.g. 20-30%) o adaptarse por activo desde el registro omnisciente (`arena.registry`).
+    2. La tasa de decaimiento por racha $\gamma_{\text{streak}} = 0.50$ estaba igualmente congelada en el código sin posibilidad de ajuste dinámico.
+    3. Ninguno de estos parámetros podía ser gobernado por `CouncilParams` ni sincronizado desde `QuantumConfig`.
+  * **Solución Matemática y Continua**:
+    1. En `crates/metacortex-engine/src/consejo_seniors.rs`:
+       - Definidas constantes canónicas de referencia:
+         `DEFAULT_MAX_DRAWDOWN_LIMIT = 0.6315968501359614` y `DEFAULT_STREAK_DECAY_RATE = 0.50`.
+       - Implementada la función pura `evaluate_risk_drawdown_and_conviction(drawdown, loss_streak, spectral_s, intended_direction, d_star, streak_decay) -> (f64, bool, f64)` con sanitización total fail-closed contra valores negativos, no finitos o fuera de cota, cayendo deterministamente a los valores canónicos seguros.
+       - Agregados campos dinámicos `max_drawdown_limit: f64` y `streak_decay_rate: f64` a `MarketSnapshotPayload` con serde defaults y validaciones de rango `(0.0..=1.0)` y `(0.0..=10.0)`.
+       - Agregados campos correspondientes a `CouncilParams` con método builder `with_risk_bounds(max_dd, streak_decay)` y validación estricta de cotas.
+       - En `SeniorRiesgo::evaluate`: lectura dinámica de `payload.max_drawdown_limit` y `payload.streak_decay_rate` con fallback a defaults canónicos.
+       - En `deliberar_traced`: propagación lock-free de `CouncilParams` hacia el payload efectivo mediante `Cow` (cero asignación en el hot-path).
+    2. En `crates/metacortex-engine/src/lib.rs`:
+       - Re-exportadas `DEFAULT_MAX_DRAWDOWN_LIMIT`, `DEFAULT_STREAK_DECAY_RATE` y `evaluate_risk_drawdown_and_conviction`.
+    3. En `crates/quantum-arena/src/config.rs`:
+       - Agregados campos atómicos `council_max_drawdown_limit: AtomicF64` y `council_streak_decay_rate: AtomicF64` a `QuantumConfig`, inicializados con `0.6315968501359614` y `0.50`.
+    4. En `crates/god-engine-core/src/lib.rs`:
+       - Sincronización en `sync_council_params` leyendo atómicamente de `arena.config`.
+       - Resolución omnisciente por activo en `council_snapshot` mediante `self.arena.registry.get_for_coin_or(coin_id, "max_drawdown_limit", ...)` y `"streak_decay_rate"`.
+  * **Certificación Contractual**:
+    - `risk_opinion_adaptation_contract.rs` (5/5 pass):
+      1. `test_risk_opinion_canonical_defaults_exact_parity`: Paridad numérica bit a bit con el cálculo canónico original.
+      2. `test_risk_opinion_dynamic_payload_override`: Verificación de anulación dinámica para micro-capital ($13 USD, cota de 25%).
+      3. `test_risk_opinion_council_params_propagation`: Propagación fluida desde `CouncilParams` hacia `SeniorRiesgo`.
+      4. `test_risk_opinion_bounds_validation_and_fail_closed`: Rechazo estricto de parámetros corruptos (NaN, Inf, cotas ilegales).
+      5. `test_risk_opinion_spectral_continuity_and_monotonicity`: Continuidad y monotonicidad a lo largo del espectro continuo $s \in [0, 1]$.
+    - `council_params_arena_wiring_contract.rs` (2/2 pass): Validación de sincronización y resiliencia en `GodEngineCore`.
+    - Suite completa de `metacortex-engine` (68/68 tests pass, 100% verde).
+    - `prospect_pressure_integration_contract.rs` (4/4 pass).
+    - `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω113 — Desacoplamiento Dinámico de Tolerancias de Slippage de Ejecución en SeniorEjecucion
 
 - **Ola Integrada y Certificada en `main` (`75529044`)**:
