@@ -276,5 +276,61 @@ pub fn risk_a_micro_safe_limit_escala_con_capital() {
     );
 }
 
+#[test]
+pub fn ola100_epigenetic_bias_full_range_expression() {
+    let (arena, mut intent) = fixture();
+    arena.config.base_capital.store(100.0, Relaxed);
+    arena.unified_capital.store(100.0, Relaxed);
+    arena.coins[0].metrics.kelly_fraction.store(0.20, Relaxed);
+    arena.config.kelly_clamp_max.store(0.25, Relaxed);
+    // Usamos confidence = 0.75 para pasar la puerta de confianza (min ~0.55),
+    // y win_probability = 0.52 calibrada para signal_prob sin saturar el techo 0.98:
+    // 0.52 * 1.80 = 0.936 (< 0.98); 0.52 * 1.40 = 0.728;
+    // 0.52 * 0.60 = 0.312; 0.52 * 0.50 = 0.260 (> 0.05).
+    intent.confidence = 0.75;
+    intent.win_probability = 0.52;
+
+    // 1. Con epigenetic_bias = 1.80 (activo en racha ganadora, rango nativo CoinArena [0.5, 2.0]),
+    // el clamp expandido [0.50, 2.00] no trunca a 1.40.
+    arena.coins[0].epigenetic_bias.store(1.80, Relaxed);
+    let mut engine_high = RiskEngine::new(100.0);
+    let out_high = engine_high.evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_high.signal, SignalType::Long, "Error: {}", risk_engine::reject_report());
+
+    // 2. Con epigenetic_bias = 1.40 (el antiguo techo rígido)
+    arena.coins[0].epigenetic_bias.store(1.40, Relaxed);
+    let mut engine_mid = RiskEngine::new(100.0);
+    let out_mid = engine_mid.evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_mid.signal, SignalType::Long, "Error: {}", risk_engine::reject_report());
+
+    // El volumen con sesgo 1.80 debe ser superior al volumen con sesgo 1.40
+    assert!(
+        out_high.volume_usd > out_mid.volume_usd,
+        "Ola Ω100: epigenetic_bias=1.80 ({}) debe generar mayor exposición que 1.40 ({})",
+        out_high.volume_usd,
+        out_mid.volume_usd
+    );
+
+    // 3. Con epigenetic_bias = 0.50 (activo en racha perdedora, piso nativo CoinArena),
+    // el clamp expandido [0.50, 2.00] permite contraer la exposición por debajo del antiguo piso 0.60
+    arena.coins[0].epigenetic_bias.store(0.50, Relaxed);
+    let mut engine_low = RiskEngine::new(100.0);
+    let out_low = engine_low.evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_low.signal, SignalType::Long, "Error: {}", risk_engine::reject_report());
+
+    arena.coins[0].epigenetic_bias.store(0.60, Relaxed);
+    let mut engine_old_floor = RiskEngine::new(100.0);
+    let out_old_floor = engine_old_floor.evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_old_floor.signal, SignalType::Long, "Error: {}", risk_engine::reject_report());
+
+    assert!(
+        out_low.volume_usd < out_old_floor.volume_usd,
+        "Ola Ω100: epigenetic_bias=0.50 ({}) debe contraer más la exposición que 0.60 ({})",
+        out_low.volume_usd,
+        out_old_floor.volume_usd
+    );
+}
+
+
 
 

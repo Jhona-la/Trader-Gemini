@@ -579,8 +579,12 @@ impl RiskEngine {
         } else {
             1.0
         };
+        // Ola Ω100: Armonización cuántica del rango epigenético. CoinArena adapta
+        // epigenetic_bias en [0.50, 2.00]. Expandir el clamp de [0.60, 1.40] a [0.50, 2.00]
+        // desasfixia el 40% de la plasticidad biológica del activo, permitiendo tanto
+        // la máxima aceleración tras rachas ganadoras como mayor contracción prudencial tras pérdidas.
         let effective_confidence =
-            (signal_prob * epi_bias.clamp(0.60, 1.40)).clamp(0.05, 0.98);
+            (signal_prob * epi_bias.clamp(0.50, 2.00)).clamp(0.05, 0.98);
         let raw_exposure = dir * effective_confidence * kelly_for_scale * allocated_capital;
         if !raw_exposure.is_finite() {
             return rej(REJ_INVALID_INPUT);
