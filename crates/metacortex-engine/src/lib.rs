@@ -23,10 +23,11 @@ pub use cazador_constantes::CazadorConstantes;
 pub use compiler_sandbox::{CompilationConfig, CompilationResult, CompilerSandbox};
 pub use consejo_seniors::{
     evaluate_execution_slippage, evaluate_execution_slippage_with_bounds,
+    evaluate_risk_drawdown_and_conviction,
     evaluate_volatility_regime, evaluate_volatility_regime_spectral,
     evaluate_volatility_regime_with_bounds, ConsejoDeliberacion, ConsensusResult,
     MarketSnapshotPayload, SeniorOpinion, SeniorRole, DEFAULT_FAST_SLIPPAGE_FLOOR,
-    DEFAULT_SLOW_SLIPPAGE_SPAN,
+    DEFAULT_MAX_DRAWDOWN_LIMIT, DEFAULT_SLOW_SLIPPAGE_SPAN, DEFAULT_STREAK_DECAY_RATE,
 };
 pub use prospect_theory::ProspectTheoryEngine;
 pub use epigenoma_store::{read_epigenoma_gene, set_epigenoma_gene};

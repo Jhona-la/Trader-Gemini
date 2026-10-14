@@ -84,6 +84,8 @@ fn casos() -> Vec<MarketSnapshotPayload> {
                                     utility_veto_wr: 0.35,
                                     fast_slippage_floor: 35.0,
                                     slow_slippage_span: 65.0,
+                                    max_drawdown_limit: 0.6315968501359614,
+                                    streak_decay_rate: 0.50,
                                 });
                             }
                         }

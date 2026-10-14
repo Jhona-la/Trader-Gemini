@@ -36,6 +36,8 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.utility_veto_wr, 0.35);
     assert_eq!(core.consejo_deliberacion.params.fast_slippage_floor, 35.0);
     assert_eq!(core.consejo_deliberacion.params.slow_slippage_span, 65.0);
+    assert_eq!(core.consejo_deliberacion.params.max_drawdown_limit, 0.6315968501359614);
+    assert_eq!(core.consejo_deliberacion.params.streak_decay_rate, 0.50);
 
     // 2. Modificación lock-free desde arena.config (ej. Evolución adaptativa o feedback cuántico)
     arena.config.council_approval_threshold.store(0.45, Ordering::Relaxed);
@@ -48,6 +50,8 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     arena.config.council_utility_veto_wr.store(0.30, Ordering::Relaxed);
     arena.config.council_fast_slippage_floor.store(45.0, Ordering::Relaxed);
     arena.config.council_slow_slippage_span.store(80.0, Ordering::Relaxed);
+    arena.config.council_max_drawdown_limit.store(0.40, Ordering::Relaxed);
+    arena.config.council_streak_decay_rate.store(0.75, Ordering::Relaxed);
 
     // 3. Ejecutar sincronización
     core.sync_council_params_from_arena();
@@ -63,6 +67,8 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.utility_veto_wr, 0.30);
     assert_eq!(core.consejo_deliberacion.params.fast_slippage_floor, 45.0);
     assert_eq!(core.consejo_deliberacion.params.slow_slippage_span, 80.0);
+    assert_eq!(core.consejo_deliberacion.params.max_drawdown_limit, 0.40);
+    assert_eq!(core.consejo_deliberacion.params.streak_decay_rate, 0.75);
 }
 
 #[test]
@@ -73,10 +79,14 @@ fn council_params_protege_contra_valores_corruptos_o_fuera_de_cota() {
     // Estado base conocido
     let prev_approval = core.consejo_deliberacion.params.approval_threshold;
     let prev_k = core.consejo_deliberacion.params.shrinkage_k;
+    let prev_max_dd = core.consejo_deliberacion.params.max_drawdown_limit;
+    let prev_decay = core.consejo_deliberacion.params.streak_decay_rate;
 
-    // Intentar inyectar valor corrupto/fuera de cota (approval > 1.0, k negativo o NaN)
+    // Intentar inyectar valor corrupto/fuera de cota (approval > 1.0, k negativo o NaN, max_dd > 1.0, decay < 0)
     arena.config.council_approval_threshold.store(2.50, Ordering::Relaxed);
     arena.config.council_shrinkage_k.store(-5.0, Ordering::Relaxed);
+    arena.config.council_max_drawdown_limit.store(1.50, Ordering::Relaxed);
+    arena.config.council_streak_decay_rate.store(-2.0, Ordering::Relaxed);
 
     core.sync_council_params_from_arena();
 
@@ -88,5 +98,13 @@ fn council_params_protege_contra_valores_corruptos_o_fuera_de_cota() {
     assert_eq!(
         core.consejo_deliberacion.params.shrinkage_k, prev_k,
         "Shrinkage k corrupto <= 0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.max_drawdown_limit, prev_max_dd,
+        "Max drawdown corrupto > 1.0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.streak_decay_rate, prev_decay,
+        "Streak decay corrupto < 0 no debe aplicarse al consejo"
     );
 }

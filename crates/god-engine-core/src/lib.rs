@@ -1491,6 +1491,8 @@ impl GodEngineCore {
         let veto_wr = cfg.council_utility_veto_wr.load(Ordering::Relaxed);
         let slip_floor = cfg.council_fast_slippage_floor.load(Ordering::Relaxed);
         let slip_span = cfg.council_slow_slippage_span.load(Ordering::Relaxed);
+        let max_dd = cfg.council_max_drawdown_limit.load(Ordering::Relaxed);
+        let streak_decay = cfg.council_streak_decay_rate.load(Ordering::Relaxed);
 
         if (0.0..=1.0).contains(&approval) {
             params.approval_threshold = approval;
@@ -1521,6 +1523,12 @@ impl GodEngineCore {
         }
         if (0.0..=1000.0).contains(&slip_span) {
             params.slow_slippage_span = slip_span;
+        }
+        if (0.0..=1.0).contains(&max_dd) && max_dd > 0.0 {
+            params.max_drawdown_limit = max_dd;
+        }
+        if (0.0..=10.0).contains(&streak_decay) {
+            params.streak_decay_rate = streak_decay;
         }
     }
 
@@ -8543,6 +8551,29 @@ impl GodEngineCore {
                                     coin_span
                                 } else {
                                     self.consejo_deliberacion.params.slow_slippage_span
+                                }
+                            },
+                            // OLA Ω114: Umbrales adaptativos continuos de drawdown y racha para SeniorRiesgo
+                            max_drawdown_limit: {
+                                let coin_dd = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "max_drawdown_limit", f64::NAN);
+                                if coin_dd.is_finite() && (0.0..=1.0).contains(&coin_dd) && coin_dd > 0.0 {
+                                    coin_dd
+                                } else {
+                                    self.consejo_deliberacion.params.max_drawdown_limit
+                                }
+                            },
+                            streak_decay_rate: {
+                                let coin_decay = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "streak_decay_rate", f64::NAN);
+                                if coin_decay.is_finite() && (0.0..=10.0).contains(&coin_decay) {
+                                    coin_decay
+                                } else {
+                                    self.consejo_deliberacion.params.streak_decay_rate
                                 }
                             },
                         };

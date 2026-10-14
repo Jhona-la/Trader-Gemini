@@ -70,6 +70,22 @@ fn default_slow_slippage_span() -> f64 {
     DEFAULT_SLOW_SLIPPAGE_SPAN
 }
 
+/// OLA Ω114: Cota superior canónica de falsación d* = 1 - α^(c/(2-c)) ≈ 0.63159685 (½ Kelly, α=0.05).
+pub const DEFAULT_MAX_DRAWDOWN_LIMIT: f64 = 0.6315968501359614;
+
+/// OLA Ω114: Tasa canónica de penalización por racha de pérdidas γ_streak = 0.50.
+pub const DEFAULT_STREAK_DECAY_RATE: f64 = 0.50;
+
+#[inline(always)]
+fn default_max_drawdown_limit() -> f64 {
+    DEFAULT_MAX_DRAWDOWN_LIMIT
+}
+
+#[inline(always)]
+fn default_streak_decay_rate() -> f64 {
+    DEFAULT_STREAK_DECAY_RATE
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketSnapshotPayload {
     pub horizon: TradingHorizon,
@@ -156,6 +172,12 @@ pub struct MarketSnapshotPayload {
     /// OLA Ω113: Rango espectral adicional de tolerancia a slippage para horizontes lentos (bps, default: 65.0).
     #[serde(default = "default_slow_slippage_span")]
     pub slow_slippage_span: f64,
+    /// OLA Ω114: Cota base de drawdown (d*) para SeniorRiesgo (default: 1 - 0.05^(1/3) ≈ 0.6316).
+    #[serde(default = "default_max_drawdown_limit")]
+    pub max_drawdown_limit: f64,
+    /// OLA Ω114: Tasa de penalización por racha de pérdidas para SeniorRiesgo (default: 0.50).
+    #[serde(default = "default_streak_decay_rate")]
+    pub streak_decay_rate: f64,
 }
 
 impl Default for MarketSnapshotPayload {
@@ -192,6 +214,8 @@ impl Default for MarketSnapshotPayload {
             utility_veto_wr: UTILITY_VETO_WR,
             fast_slippage_floor: DEFAULT_FAST_SLIPPAGE_FLOOR,
             slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
+            max_drawdown_limit: DEFAULT_MAX_DRAWDOWN_LIMIT,
+            streak_decay_rate: DEFAULT_STREAK_DECAY_RATE,
         }
     }
 }
@@ -242,6 +266,8 @@ impl MarketSnapshotPayload {
             ("utility_veto_wr", self.utility_veto_wr),
             ("fast_slippage_floor", self.fast_slippage_floor),
             ("slow_slippage_span", self.slow_slippage_span),
+            ("max_drawdown_limit", self.max_drawdown_limit),
+            ("streak_decay_rate", self.streak_decay_rate),
         ];
 
         for (name, val) in metrics {
@@ -291,10 +317,14 @@ impl MarketSnapshotPayload {
             ("utility_veto_wr", self.utility_veto_wr, 0.0, 1.0),
             ("fast_slippage_floor", self.fast_slippage_floor, 0.0, 500.0),
             ("slow_slippage_span", self.slow_slippage_span, 0.0, 1000.0),
+            ("streak_decay_rate", self.streak_decay_rate, 0.0, 10.0),
         ] {
             if !(low..=high).contains(&value) {
                 return Err(format!("Out-of-bounds {name}: {value}"));
             }
+        }
+        if !(0.0..=1.0).contains(&self.max_drawdown_limit) || self.max_drawdown_limit <= 0.0 {
+            return Err(format!("Out-of-bounds max_drawdown_limit: {}", self.max_drawdown_limit));
         }
         if self.dominant_tau_ms <= 0.0
             || self.estimated_slippage_bps < 0.0
@@ -812,6 +842,50 @@ impl SeniorAgent for SeniorCausal {
 // entrada bajo deliberación (`intended_direction`) con la convicción que
 // merecen el drawdown reciente y la racha de pérdidas de esa dirección.
 // streak = 0 → convicción plena; streak > 2 → convicción claramente reducida.
+
+/// Evalúa el límite de drawdown admisible (d*), el veto de riesgo y la modulación
+/// de convicción por racha con parámetros dinámicos desacoplados (Ola Ω114).
+#[inline(always)]
+pub fn evaluate_risk_drawdown_and_conviction(
+    drawdown: f64,
+    loss_streak: u32,
+    spectral_s: f64,
+    intended_direction: f64,
+    d_star: f64,
+    streak_decay: f64,
+) -> (f64, bool, f64) {
+    let dd = if drawdown.is_finite() && drawdown >= 0.0 {
+        drawdown
+    } else {
+        0.0
+    };
+    let s = if spectral_s.is_finite() {
+        spectral_s.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let effective_d_star = if d_star.is_finite() && d_star > 0.0 && d_star <= 1.0 {
+        d_star
+    } else {
+        DEFAULT_MAX_DRAWDOWN_LIMIT
+    };
+    let effective_decay = if streak_decay.is_finite() && streak_decay >= 0.0 {
+        streak_decay
+    } else {
+        DEFAULT_STREAK_DECAY_RATE
+    };
+
+    let max_drawdown = effective_d_star * (0.95 - 0.10 * s);
+    let is_veto = dd > max_drawdown;
+
+    let streak_factor = 1.0 / (1.0 + effective_decay * loss_streak as f64);
+    let conviction = (streak_factor * (1.0 - dd.clamp(0.0, 1.0))).clamp(0.05, 1.0);
+    let dir = safe_signum(intended_direction);
+    let confidence = if dir != 0.0 { conviction } else { 0.0 };
+
+    (confidence, is_veto, max_drawdown)
+}
+
 pub struct SeniorRiesgo;
 impl SeniorAgent for SeniorRiesgo {
     fn role(&self) -> SeniorRole {
@@ -820,32 +894,37 @@ impl SeniorAgent for SeniorRiesgo {
     #[inline(always)]
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let drawdown = payload.current_drawdown_pct;
+        let s = payload.spectral_s();
+        let d_star = if payload.max_drawdown_limit.is_finite() && payload.max_drawdown_limit > 0.0 {
+            payload.max_drawdown_limit
+        } else {
+            DEFAULT_MAX_DRAWDOWN_LIMIT
+        };
+        let streak_decay = if payload.streak_decay_rate.is_finite() && payload.streak_decay_rate >= 0.0 {
+            payload.streak_decay_rate
+        } else {
+            DEFAULT_STREAK_DECAY_RATE
+        };
 
-        // F3.4-06 (Línea C / AGY): El veto de DD del consejo debe ser alcanzable
-        // por debajo del corte del risk-engine d* = 1 - α^(c/(2-c)) ≈ 0.6316
-        // (½ Kelly, α=0.05). Antes: [0.85, 0.95] inalcanzable (código muerto).
-        // Escalado continuo a d*: banda rápida tolera 0.95·d*, banda lenta 0.85·d*.
-        let d_star = 1.0 - (0.05_f64).powf(1.0 / 3.0);
-        let max_drawdown = d_star * (0.95 - 0.10 * payload.spectral_s());
-
-        let is_veto = drawdown > max_drawdown;
-
-        // MOD2/7-006: convicción por racha — 1/(1 + 0.5·streak): plena con
-        // streak 0, ~0.67 con 1, 0.5 con 2, ≤0.4 cuando streak > 2.
-        let streak = payload.loss_streak;
-        let streak_factor = 1.0 / (1.0 + 0.5 * streak as f64);
-        let conviction = (streak_factor * (1.0 - drawdown.clamp(0.0, 1.0))).clamp(0.05, 1.0);
+        let (confidence, is_veto, _max_drawdown) = evaluate_risk_drawdown_and_conviction(
+            drawdown,
+            payload.loss_streak,
+            s,
+            payload.intended_direction,
+            d_star,
+            streak_decay,
+        );
         let dir = safe_signum(payload.intended_direction);
 
         SeniorOpinion {
             role: self.role(),
             signal_direction: dir, // Modula la entrada bajo deliberación
-            confidence: if dir != 0.0 { conviction } else { 0.0 },
+            confidence,
             weight: 1.0, // C-W RESOLUCIÓN: Modulador neutral (no inflar con peso meta 1.5 que amplifica sesgos)
             is_veto,
             justification: format!(
                 "Riesgo: DD={:.4}, racha={} → convicción {:.2} (dir={:+.0})",
-                drawdown, streak, conviction, dir
+                drawdown, payload.loss_streak, confidence, dir
             ),
         }
     }
@@ -1226,6 +1305,10 @@ pub struct CouncilParams {
     pub fast_slippage_floor: f64,      // 35.0
     /// OLA Ω113: Span base de tolerancia a slippage para SeniorEjecucion (base canónica: 65.0 bps).
     pub slow_slippage_span: f64,       // 65.0
+    /// OLA Ω114: Cota base de drawdown (d*) para SeniorRiesgo (default: 1 - 0.05^(1/3) ≈ 0.6316).
+    pub max_drawdown_limit: f64,       // 0.6315968501359614
+    /// OLA Ω114: Tasa de penalización por racha de pérdidas para SeniorRiesgo (default: 0.50).
+    pub streak_decay_rate: f64,        // 0.50
 }
 
 impl CouncilParams {
@@ -1248,6 +1331,8 @@ impl CouncilParams {
             utility_veto_wr: UTILITY_VETO_WR,
             fast_slippage_floor: DEFAULT_FAST_SLIPPAGE_FLOOR,
             slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
+            max_drawdown_limit: DEFAULT_MAX_DRAWDOWN_LIMIT,
+            streak_decay_rate: DEFAULT_STREAK_DECAY_RATE,
         };
         params.validate()?;
         Ok(params)
@@ -1265,6 +1350,14 @@ impl CouncilParams {
     pub fn with_slippage_bounds(mut self, floor: f64, span: f64) -> Result<Self, String> {
         self.fast_slippage_floor = floor;
         self.slow_slippage_span = span;
+        self.validate()?;
+        Ok(self)
+    }
+
+    /// OLA Ω114: Builder para configurar tolerancias adaptativas de drawdown y racha en SeniorRiesgo.
+    pub fn with_risk_bounds(mut self, max_dd: f64, streak_decay: f64) -> Result<Self, String> {
+        self.max_drawdown_limit = max_dd;
+        self.streak_decay_rate = streak_decay;
         self.validate()?;
         Ok(self)
     }
@@ -1291,6 +1384,12 @@ impl CouncilParams {
         if !(0.0..=1000.0).contains(&self.slow_slippage_span) {
             return Err(format!("Invalid council parameter slow_slippage_span: {}", self.slow_slippage_span));
         }
+        if !(0.0..=1.0).contains(&self.max_drawdown_limit) || self.max_drawdown_limit <= 0.0 {
+            return Err(format!("Invalid council parameter max_drawdown_limit: {}", self.max_drawdown_limit));
+        }
+        if !(0.0..=10.0).contains(&self.streak_decay_rate) {
+            return Err(format!("Invalid council parameter streak_decay_rate: {}", self.streak_decay_rate));
+        }
         if !self.shrinkage_k.is_finite() || self.shrinkage_k <= 0.0 {
             return Err("shrinkage_k must be finite and positive".into());
         }
@@ -1311,6 +1410,8 @@ impl Default for CouncilParams {
             utility_veto_wr: UTILITY_VETO_WR,
             fast_slippage_floor: DEFAULT_FAST_SLIPPAGE_FLOOR,
             slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
+            max_drawdown_limit: DEFAULT_MAX_DRAWDOWN_LIMIT,
+            streak_decay_rate: DEFAULT_STREAK_DECAY_RATE,
         }
     }
 }
@@ -1457,14 +1558,16 @@ impl ConsejoDeliberacion {
         // N-12: Si no se proporcionan multiplicadores externos, usar pesos adaptativos empíricos del tracker
         let active_mults = weight_multipliers.or(dynamic_weights.as_ref());
 
-        // OLA Ω111 / Ω113: Si CouncilParams define umbrales de utilidad/wr o slippage dinámicos distintos de los canónicos
+        // OLA Ω111 / Ω113 / Ω114: Si CouncilParams define umbrales de utilidad/wr, slippage o riesgo dinámicos distintos de los canónicos
         // y el payload porta los defaults, propagar los parámetros del consejo al payload evaluado.
         let has_custom_utility = (self.params.utility_veto_floor - UTILITY_VETO_FLOOR).abs() > 1e-9
             || (self.params.utility_veto_wr - UTILITY_VETO_WR).abs() > 1e-9;
         let has_custom_slippage = (self.params.fast_slippage_floor - DEFAULT_FAST_SLIPPAGE_FLOOR).abs() > 1e-9
             || (self.params.slow_slippage_span - DEFAULT_SLOW_SLIPPAGE_SPAN).abs() > 1e-9;
+        let has_custom_risk = (self.params.max_drawdown_limit - DEFAULT_MAX_DRAWDOWN_LIMIT).abs() > 1e-9
+            || (self.params.streak_decay_rate - DEFAULT_STREAK_DECAY_RATE).abs() > 1e-9;
 
-        let effective_payload = if has_custom_utility || has_custom_slippage {
+        let effective_payload = if has_custom_utility || has_custom_slippage || has_custom_risk {
             let mut p = payload.clone();
             if has_custom_utility {
                 if (p.utility_veto_floor - UTILITY_VETO_FLOOR).abs() < 1e-9 {
@@ -1480,6 +1583,14 @@ impl ConsejoDeliberacion {
                 }
                 if (p.slow_slippage_span - DEFAULT_SLOW_SLIPPAGE_SPAN).abs() < 1e-9 {
                     p.slow_slippage_span = self.params.slow_slippage_span;
+                }
+            }
+            if has_custom_risk {
+                if (p.max_drawdown_limit - DEFAULT_MAX_DRAWDOWN_LIMIT).abs() < 1e-9 {
+                    p.max_drawdown_limit = self.params.max_drawdown_limit;
+                }
+                if (p.streak_decay_rate - DEFAULT_STREAK_DECAY_RATE).abs() < 1e-9 {
+                    p.streak_decay_rate = self.params.streak_decay_rate;
                 }
             }
             std::borrow::Cow::Owned(p)
@@ -1947,6 +2058,8 @@ mod tests {
             utility_veto_wr: UTILITY_VETO_WR,
             fast_slippage_floor: DEFAULT_FAST_SLIPPAGE_FLOOR,
             slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
+            max_drawdown_limit: DEFAULT_MAX_DRAWDOWN_LIMIT,
+            streak_decay_rate: DEFAULT_STREAK_DECAY_RATE,
         }
     }
 
