@@ -1,5 +1,21 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): Olas Ω103, Ω104, Ω105 — Ensamble Efectivo, Desacoplamiento de Techo de Fricción Micro y Confluencia Resonante Dinámica
+
+- **Olas Integradas y Certificadas en `main`**:
+  * **Ola Ω103 (`09cbce2a`) — Erradicación de Sesgo de Votantes Fantasma en Ensamble de Señales (`crates/signal-engine/src/orchestrator.rs`)**:
+    - **Diagnóstico y Causa Raíz**: En `evaluate_horizon_consensus` y `evaluate_continuous_consensus_for_coin`, el factor `ensemble_boost` se calculaba como `1.0 + (all.len().min(5) - 1.0) * 0.1` basándose en el total de estrategias registradas en el vector (`all.len()`) en lugar de las estrategias que efectivamente emitieron un voto activo (|voto| > 1e-9). Cuando 4 de 5 estrategias se abstenían (voto = 0.0), un votante solitario recibía indebidamente un bono de amplificación de ensamble del +40% (boost = 1.4).
+    - **Solución Matemática**: Se introdujo `compute_ensemble_boost(active_voters: usize, total_registered: usize) -> f64`. Si `active_voters <= 1`, el boost es estrictamente neutro (1.0). Cuando 2 o más motores emiten evidencia activa concurrente, el boost escala monótonamente a razón de +0.1 por votante activo hasta saturar en 1.4 (5 votantes).
+    - **Contrato**: Certificado con `crates/signal-engine/tests/ensemble_effective_voters_contract.rs` (4/4 tests pasando) y validado con `ensemble_characterization.rs`.
+  * **Ola Ω104 (`94ca0f97`) — Desacoplamiento Dinámico de Techo de Comisión Micro en Riesgo (`crates/risk-engine/src/capital_regime.rs`, `crates/risk-engine/src/lib.rs`)**:
+    - **Diagnóstico y Causa Raíz**: En `evaluate_quantum_order`, el límite de comisión admisible sobre margen en régimen micro y rescate de nocional mínimo utilizaba el literal rígido `0.035` (3.5% del margen) en dos puntos críticos (líneas 1200 y 1408), impidiendo parametrización adaptativa, evolutiva o por activo.
+    - **Solución Matemática**: Se implementó `resolve_micro_max_fee_pct(arena, coin_id)` en `capital_regime.rs`, que consulta la clave omnisciente `"micro_max_fee_pct"` (escopada por moneda o global). Si no se define un override, retorna el límite canónico por defecto `DEFAULT_MICRO_MAX_FEE_PCT = 0.035` con estricta sanitización contra NaN, infinitos y valores negativos.
+    - **Contrato**: Certificado con `crates/risk-engine/tests/micro_fee_decoupling_contract.rs` (2/2 tests pasando) y suite completa de `risk-engine` (100% verde).
+  * **Ola Ω105 (`81c1bbc7`) — Cableado Dinámico de Umbrales de Confluencia Resonante en Camino Caliente (`crates/god-engine-core/src/lib.rs`)**:
+    - **Diagnóstico y Causa Raíz**: La ruta de resonancia cuántica espectral continua en `god-engine-core` (línea 7260) llamaba a `confluencia_resonante`, utilizando constantes congeladas fijas (`FUSED_UMBAL_PLENO = 0.38`, etc.), sin consultar los umbrales configurados o aprendidos en el registro omnisciente por moneda.
+    - **Solución Matemática**: Se conectó `confluencia_resonante_con_umbrales` al hot path de `god-engine-core`, leyendo `fused_umbral_pleno`, `fused_umbral_moderado`, `hurst_continuacion`, `coherencia_minima` y `marea_macro_tolerancia` directamente del registro omnisciente escopado por `coin_id`, con fallback exacto a las constantes canónicas de `h2_11`.
+    - **Contrato**: Certificado con `crates/god-engine-core/tests/confluencia_resonante_live_wiring_contract.rs` (2/2 tests pasando), `resonancia_simetrica_contract.rs` y `multiactivo_volatilidad_council_contract.rs`.
+
 ## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω102 — Normalización Dinámica de Volatilidad y Slippage en Metacortex por ATR Relativo y Continuo Temporal Espectral
 
 - **Rama activa**: `antigravity/ola102-volatility-slippage-dynamic-spectral`.
