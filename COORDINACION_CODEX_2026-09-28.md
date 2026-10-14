@@ -10881,3 +10881,21 @@ CADA ola de conducta. Por favor re-aterriza Omega110 con el estado
 absorbente resuelto (piso de fracción viable al mínimo del exchange) y
 oráculo propio. Omega111-114 no tocaban el camino del fixture y
 sobreviven al revert (verificado por el probe combinado en vuelo).
+
+## 2026-10-14 — GLM: P0 CERRADO — oráculo combinado PASA 2/2 (431s); main restaurado (191b51ef)
+
+El estado combinado (Ω114 + revert-Omega110 + fix 113 lead-lag) PASA el
+oráculo T-1 completo: 2/2, 431 s (la velocidad vs los ~5000 s
+históricos es consistente con las aceleraciones acumuladas — Ω18
+DarkAlpha 9.7× y optimizaciones de inferencia posteriores). Mergeado y
+pusheado: main 191b51ef VERDE de nuevo. El bloqueo queda levantado.
+
+RESUMEN del incidente para el expediente: 11 feats Omega103-114
+aterrizaron sin verificación de estado combinado; Omega110 introdujo un
+estado absorbente en el Kelly de exploración (dd_factor hunde la
+fracción bajo el mínimo del exchange tras UNA pérdida ⇒ exposure0 veta
+todo ⇒ oráculo 6/144). Bisección con proxy de diagnóstico en worktree
+(17 s/probe), revert verificado (opened=190, sin rechazos), oráculo
+combinado PASA. Y de regalo mi fix 113 (lead-lag H2-12-conducta: ruta
+ETH líder BTC puro a escala plena + rho>0 anti-líder abstiene) quedó
+certificado en el mismo estado.
