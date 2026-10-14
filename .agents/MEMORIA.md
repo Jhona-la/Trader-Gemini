@@ -1,5 +1,26 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω110 — Modulación Adaptativa Continua de Exploración Kelly y Desacoplamiento de Cotas Estáticas
+
+- **Ola Integrada y Certificada en `main` (`49216e60`)**:
+  * **Diagnóstico y Causa Raíz**: En `crates/risk-engine/src/lib.rs:387`, la fracción Kelly de exploración para activos en arranque en frío o sin ventaja probada ($PF \le 1.0$) estaba gobernada por la fórmula rígida `(clamp_min.max(0.0) * 0.25).clamp(0.0, 0.05)`. Esto introducía múltiples defectos sistémicos:
+    1. Literal congelado `0.25` (quarter Kelly) sin admitir modulación por convicción bayesiana ni calibración dinámica.
+    2. Literal techo `0.05` arbitrario que saturaba la exploración independientemente del apetito de riesgo configurado.
+    3. Ausencia de la rampa de Profit Factor ($PF \in [0.5, 1.0]$): un activo con pérdidas severas ($PF = 0.10$, donde las pérdidas superan 10x a las ganancias) recibía exactamente la misma fracción de exploración que un activo en equilibrio ($PF = 1.00$), violando la disciplina de preservación de capital y dilapidando el micro-capital de $13 USD.
+    4. Ceguera ante el drawdown y calor del portafolio: se exploraban activos no probados a tasa completa incluso si la cuenta sufría un drawdown activo.
+  * **Solución Matemática y Dinámica**:
+    1. Se implementó la función pura `compute_kelly_exploration_fraction(clamp_min, pf, trades_n, peak_capital, current_capital, exploration_ratio, exploration_max)` en `crates/risk-engine/src/kelly.rs`:
+       - Rampa continua de $PF$: si $trades_n > 0$, $r_{\text{pf}} = ((PF - 0.50).\text{clamp}(0.0, 0.50)) / 0.50 \in [0.0, 1.0]$, extinguiendo la exploración en activos con $PF \le 0.50$. Si $trades_n == 0$ (en frío puro), preserva $1.0$ canónico.
+       - Atenuación por drawdown: $(1.0 - DD).\text{clamp}(0.20, 1.0)$, reduciendo el apetito de exploración conforme el drawdown aumenta.
+       - Ratio y techo adaptativos: $\gamma = \text{exploration\_ratio}.\text{clamp}(0.01, 1.0)$ y $\text{max\_cap} = \text{exploration\_max}.\text{clamp}(0.005, 0.35)$.
+    2. Se implementó `resolve_kelly_cold(arena, coin_id, pf, clamp_min, kelly_cold_raw, peak_capital, current_capital, trades_n)`:
+       - Resuelve overrides lock-free en el registro omnisciente sin asignaciones en heap: por activo (`c{coin_id}:kelly_exploration_ratio`, `c{coin_id}:kelly_exploration_max`) y globales (`"kelly_exploration_ratio"`, `"kelly_exploration_max"`).
+       - Cuando $PF > 1.0$, acota dinámicamente `kelly_cold_raw` mediante `"kelly_bootstrap_cold_min"` y `"kelly_bootstrap_cold_max"`.
+    3. Se conectó en `RiskEngine::evaluate_quantum_order` sustituyendo los literales fijos.
+  * **Certificación Contractual**:
+    - Certificado con `crates/risk-engine/tests/kelly_exploration_adaptation_contract.rs` (5/5 tests pasando: paridad canónica bit a bit, rampa monotónica por $PF$, atenuación por drawdown, overrides lock-free por activo/global y bounding adaptativo de bootstrap).
+    - Preservada la suite completa de `risk-engine` (100% verde) y paridad con `cf4_estado_aprendido.rs` (5/5 verde).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω109 — Relajación Homeostática Continua Ornstein-Uhlenbeck para Sesgo Epigenético Multivariante
 
 - **Ola Integrada y Certificada en `main` (`542596f6`)**:

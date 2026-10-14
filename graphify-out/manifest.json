@@ -1242,9 +1242,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/kelly.rs": {
-    "mtime": 1789849316.1209266,
-    "seen": 1789876924.7582126,
-    "ast_hash": "cad4cca4e8bd4ebd881e37ffa01822dc",
+    "mtime": 1791984552.1442878,
+    "seen": 1791985429.5181236,
+    "ast_hash": "892f2800f283d36ae1dacf8b6502ee93",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/kelly_envelope.rs": {
@@ -1260,9 +1260,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/lib.rs": {
-    "mtime": 1791983137.6123066,
-    "seen": 1791984095.5055504,
-    "ast_hash": "38b987960202fb217529372ee5d65466",
+    "mtime": 1791984494.052672,
+    "seen": 1791985429.5191243,
+    "ast_hash": "53e6d9b47e733f91df5c5664455d8479",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/orchestrator.rs": {
@@ -3672,9 +3672,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791983676.2775779,
-    "seen": 1791984095.6124883,
-    "ast_hash": "3b59cdcbbd799af76b189359db416aba",
+    "mtime": 1791985048.0976477,
+    "seen": 1791985429.6060088,
+    "ast_hash": "698e75522ed87615b3f252ae87677769",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3702,9 +3702,9 @@
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1791983662.8543186,
-    "seen": 1791984095.9512863,
-    "ast_hash": "c92b3a1b3c28a6e3818595d3ceb1764e",
+    "mtime": 1791985033.1105013,
+    "seen": 1791985429.9052207,
+    "ast_hash": "45f017e5beaa336b6f398bc66987a9b7",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -30162,9 +30162,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md": {
-    "mtime": 1791983709.5117047,
-    "seen": 1791984095.9903407,
-    "ast_hash": "4d044fff30da195f1e158be6a2ff7a2b",
+    "mtime": 1791985092.9686906,
+    "seen": 1791985429.9400496,
+    "ast_hash": "f239643ef7c59bc3d507e524277e42c5",
     "semantic_hash": ""
   },
   "docs/adr/ADR-0017-frenos-de-drawdown-y-estado-aprendido.md": {
@@ -30603,6 +30603,12 @@
     "mtime": 1791983200.3341534,
     "seen": 1791984095.4955497,
     "ast_hash": "4c31fee13af7752821702f52b93df1d7",
+    "semantic_hash": ""
+  },
+  "crates/risk-engine/tests/kelly_exploration_adaptation_contract.rs": {
+    "mtime": 1791984612.6243792,
+    "seen": 1791985429.5252013,
+    "ast_hash": "d840d0d121d24e1a2227abf4fb7536c6",
     "semantic_hash": ""
   }
 }
