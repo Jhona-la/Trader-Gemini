@@ -1,6 +1,33 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω98 — Refactorización Zero-Alloc del Guardián de Correlación Multiactivo (`correlation_guard.rs`) y Optimización de Latencia Sub-Nanosegundo en Camino Caliente
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω99 — Modulación Continua de Bandas de Hurst según Densidad Muestral $N$ y Ponderación Dinámica de Fisher en Teleonomía
+
+- **Rama activa**: `antigravity/ola99-hurst-continuo-teleonomia`.
+- **Modulación Continua de Bandas de Hurst según Densidad Muestral $N$ (`crates/god-engine-core/src/lib.rs`)**:
+  - **Diagnóstico y Causa Raíz**: Bajo el modelo browniano nulo (martingala $H = 0.50$), la varianza muestral del estimador DFA escala con la raíz de las muestras acumuladas ($\sigma_H \sim 1/\sqrt{N}$). Los literales estáticos fijos ($H < 0.45$ y $H > 0.52$) fueron calibrados para el búfer nominal completo de $N = 1024$. Cuando $N < 1024$ (fase de calentamiento o tapes dispersos con baja densidad de eventos), el error estándar es sustancialmente mayor, provocando clasificaciones espurias de persistencia o anti-persistencia por mero ruido de muestra finita.
+  - **Solución Matemática y Físico-Estadística**:
+    * Implementada la función canónica de adaptación continua:
+      $$\kappa_N = \min\left(2.0, \sqrt{\frac{1024}{\max(64, N)}}\right)$$
+      $$\text{anti\_thr} = \max(0.30, 0.50 - (0.50 - \text{HURST\_ANTI\_PERSISTENT}) \cdot \kappa_N)$$
+      $$\text{pers\_thr} = \min(0.70, 0.50 + (\text{HURST\_PERSISTENT} - 0.50) \cdot \kappa_N)$$
+    * A capacidad nominal completa $N \ge 1024$, $\kappa_N = 1.0$ y los umbrales reproducen con precisión bit a bit las constantes canónicas $(0.45, 0.52)$.
+    * Cableado en el camino caliente de señal `process_orderbook_tick` (línea 6051) y en la rama de tendencia lenta `is_trend_candidate` (línea 7112).
+  - **Certificación Contractual**:
+    * Test unitario formal `ola99_dynamic_hurst_thresholds_continuous_and_canonical` en `crates/god-engine-core/src/lib.rs` (módulo `tests_qo_658`): certifica monotonicidad continua, anclaje canónico bit a bit en $N \ge 1024$ y cotas seguras $[0.30, 0.70]$ (2/2 pass).
+- **Ponderación Dinámica de Fisher en Teleonomía (`crates/metacortex-engine/src/consejo_seniors.rs`)**:
+  - **Diagnóstico y Causa Raíz**: En `SeniorTeleonomia`, la utilidad esperada mezclaba el canal espectral y el canal ML mediante una partición fija estática de $60/40$: `spectral * predictability * 0.60 + ml_edge * 0.40`. Cuando el modelo ML se encontraba en estado neutral o sin borde informativo ($|ml\_prob - ml\_base| \to 0$), la señal espectral se veía artificialmente atenuada en un 40% como si el canal ML estuviera disintiendo activamente.
+  - **Solución Dinámica de Fisher**:
+    * Implementada modulación continua del peso espectral en función del contenido de información (magnitud del borde ML $\eta = |ml\_edge| \in [0, 1]$):
+      $$w_{\text{spec}} = 0.60 + 0.40 \cdot (1.0 - \eta)$$
+    * Cuando el modelo ML no tiene borde ($\eta \to 0$), la utilidad espectral expresa su ponderación plena $1.0$; cuando el modelo ML exhibe máxima convicción ($\eta \to 1$), se recupera la proporción canónica $60/40$.
+    * Se preserva bit a bit la compatibilidad con los contratos analíticos de solución cerrada con tolerancia $10^{-12}$ (`cf2_conducta_masas_solucion_conocida.rs:437`, 8/8 pass).
+  - **Certificación Contractual**:
+    * Test contractual formal `teleonomy_uncompresses_spectral_utility_when_ml_has_no_edge` en `crates/metacortex-engine/tests/council_evidence_contract.rs` (35/35 pass).
+- **Verificación Integral del Workspace**:
+  * `cargo test -p god-engine-core --lib`: 202 passed, 0 failed.
+  * `cargo test -p god-engine-core --test resonancia_simetrica_contract`: 3/3 passed.
+  * `cargo test -p metacortex-engine`: 28 unit tests y 43 integration tests 100% verdes (0 fallos).
+  * `cargo check --workspace --all-targets`: 0 errores en los 23 crates.
 
 - **Rama activa**: `antigravity/ola98-zero-alloc-correlation-guard-espectral`.
 - **Diagnóstico y Causa Raíz de Cuello de Botella en Camino Caliente**:

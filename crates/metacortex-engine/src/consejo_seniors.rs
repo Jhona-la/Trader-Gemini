@@ -904,7 +904,16 @@ impl SeniorAgent for SeniorTeleonomia {
         // economic expected return or proof of calibrated directional skill.
         let ml_edge = ((payload.ml_prob - payload.ml_model_base) * 2.0).clamp(-1.0, 1.0);
         let toxicity_penalty = 1.0 - 0.30 * payload.do_calculus_risk.clamp(0.0, 1.0);
-        let expected_utility = (spectral * predictability * 0.6 + ml_edge * 0.4)
+
+        // MOD2/7-006 / Ω99: Ponderación dinámica de Fisher / entropía inversa.
+        // Cuando el modelo ML no tiene borde (|ml_prob - ml_model_base| -> 0), el canal
+        // espectral no debe sufrir una compresión artificial al 60% como si el ML estuviera
+        // diluyendo la señal, sino expresar su certeza íntegra (hasta 1.0 según predictibilidad).
+        // A medida que el borde ML se manifiesta (|ml_edge| -> 1), la ponderación espectral
+        // transiciona suavemente a la proporción canónica 60/40.
+        let ml_edge_mag = ml_edge.abs();
+        let spectral_weight = 0.60 + 0.40 * (1.0 - ml_edge_mag);
+        let expected_utility = (spectral * predictability * spectral_weight + ml_edge * 0.40)
             * execution_quality
             * toxicity_penalty;
 

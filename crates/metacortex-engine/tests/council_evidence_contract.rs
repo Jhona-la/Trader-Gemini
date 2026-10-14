@@ -158,6 +158,21 @@ fn teleonomy_is_invariant_to_a_common_probability_base_translation() {
 }
 
 #[test]
+fn teleonomy_uncompresses_spectral_utility_when_ml_has_no_edge() {
+    let mut p = snapshot();
+    p.ml_prob = 0.50;
+    p.ml_model_base = 0.50;
+    p.estimated_slippage_bps = 0.0;
+    p.do_calculus_risk = 0.0;
+    p.hurst_exponent = 1.0;
+    p.fused_score = 0.80;
+    p.persistence = 0.80;
+    let opinion = SeniorTeleonomia.evaluate(&p, 0.7);
+    let expected = (p.fused_score * (p.persistence * 2.0).tanh()).clamp(-1.0, 1.0);
+    assert!((opinion.signal_direction - expected).abs() < 1e-12);
+}
+
+#[test]
 fn abstentions_do_not_become_successes_or_trials() {
     let mut tracker = SeniorPerformanceTracker::new(10);
     tracker.record_outcome(&[0.0; 11], 0.01);

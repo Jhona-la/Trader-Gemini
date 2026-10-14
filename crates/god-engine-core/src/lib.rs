@@ -6048,10 +6048,11 @@ impl GodEngineCore {
                 (recorrido_alcanzable - friccion_ida_vuelta).max(tick_pct);
             let spread_ok = spread_pct <= dynamic_max_spread;
 
-            // MOD2/7-014: clasificación canónica de Hurst — UNA definición
-            // (consts HURST_*) usada por TODAS las ramas de señal de abajo.
-            let is_anti_persistent = hurst_val < HURST_ANTI_PERSISTENT;
-            let is_persistent = hurst_val > HURST_PERSISTENT;
+            // MOD2/7-014 / Ω99: clasificación continua de Hurst adaptada a la densidad muestral N.
+            let hurst_samples = self.feature_engines[coin_id].hurst.samples();
+            let (hurst_anti_thr, hurst_pers_thr) = dynamic_hurst_thresholds(hurst_samples);
+            let is_anti_persistent = hurst_val < hurst_anti_thr;
+            let is_persistent = hurst_val > hurst_pers_thr;
 
             // D-743: la VIABILIDAD de una entrada —que haya volatilidad que
             // recorrer, que el spread no se coma el recorrido y que la reentrada
@@ -7109,7 +7110,7 @@ impl GodEngineCore {
             // merge (#568 frente a D-754). El enfriamiento de esta intención lo
             // aplica `puertas_del_continuo` vía `viable_para_entrar` (D-743),
             // igual que a las demás.
-            let is_trend_candidate = hurst_exponent >= HURST_ANTI_PERSISTENT
+            let is_trend_candidate = hurst_exponent >= hurst_anti_thr
                 && (hurst_exponent >= trend_threshold || ma_trend_strength > 0.0020);
 
             if is_trend_candidate {
@@ -9290,6 +9291,36 @@ mod tests_cl22 {
 pub const HURST_ANTI_PERSISTENT: f64 = 0.45;
 pub const HURST_PERSISTENT: f64 = 0.52;
 
+/// OLA Ω99: Adaptación continua de bandas de Hurst según densidad muestral N.
+///
+/// QUÉ: Modula los umbrales de anti-persistencia y persistencia en función del
+/// número de retornos acumulados en el estimador DFA.
+/// POR QUÉ: Bajo la hipótesis nula browniana (H = 0.50), el error estándar del
+/// estimador escala como σ_H ~ 1/√N. Con N < 1024 (fase de calentamiento o tapes
+/// dispersos), una banda estática fija produce falsos positivos espurios.
+/// PARA QUÉ: Evitar clasificaciones de tendencia/reversión sin suficiente potencia
+/// estadística, manteniendo simultáneamente la compatibilidad canónica exacta a N >= 1024.
+/// CÓMO: Factor de escala κ_N = min(2.0, √(1024 / max(64, N))).
+///   anti_thr = max(0.30, 0.50 - (0.50 - HURST_ANTI_PERSISTENT) * κ_N)
+///   pers_thr = min(0.70, 0.50 + (HURST_PERSISTENT - 0.50) * κ_N)
+/// A N >= 1024, κ_N = 1.0 y los umbrales coinciden con exactitud bit a bit
+/// con (HURST_ANTI_PERSISTENT = 0.45, HURST_PERSISTENT = 0.52).
+/// CUÁNDO: En cada evaluación del camino caliente de señal en `god-engine-core`.
+/// DÓNDE: `crates/god-engine-core/src/lib.rs`.
+/// QUIÉN: Orquestador central de ejecución y confluencia espectral.
+#[inline(always)]
+pub fn dynamic_hurst_thresholds(samples: usize) -> (f64, f64) {
+    if samples >= 1024 {
+        (HURST_ANTI_PERSISTENT, HURST_PERSISTENT)
+    } else {
+        let n_clamped = samples.max(64) as f64;
+        let scale = (1024.0 / n_clamped).sqrt().min(2.0);
+        let anti = (0.50 - (0.50 - HURST_ANTI_PERSISTENT) * scale).max(0.30);
+        let pers = (0.50 + (HURST_PERSISTENT - 0.50) * scale).min(0.70);
+        (anti, pers)
+    }
+}
+
 /// D-685 (DÉCIMA OLA) — CONTENCIÓN DE LA RAMA DE CONSENSO TENSORIAL (rama 14).
 ///
 /// Cuando ninguna otra rama emite señal, el consenso tensorial abre una
@@ -10412,6 +10443,38 @@ mod tests_qo_658 {
         let h = hurst_escala_continua(600_000.0, m, me, ma);
         assert!(h >= m.min(me.min(ma)) - 1e-6 && h <= m.max(me.max(ma)) + 1e-6);
         assert!(hurst_escala_continua(f64::NAN, m, me, ma) == m);
+    }
+
+    #[test]
+    fn ola99_dynamic_hurst_thresholds_continuous_and_canonical() {
+        use super::{dynamic_hurst_thresholds, HURST_ANTI_PERSISTENT, HURST_PERSISTENT};
+        // A capacidad nominal N >= 1024, bit-exacto con las constantes canónicas:
+        let (anti_1024, pers_1024) = dynamic_hurst_thresholds(1024);
+        assert_eq!(anti_1024, HURST_ANTI_PERSISTENT);
+        assert_eq!(pers_1024, HURST_PERSISTENT);
+        let (anti_2048, pers_2048) = dynamic_hurst_thresholds(2048);
+        assert_eq!(anti_2048, HURST_ANTI_PERSISTENT);
+        assert_eq!(pers_2048, HURST_PERSISTENT);
+
+        // A menor N (fase de calentamiento o baja densidad), la banda nula se ensancha continuamente:
+        let (anti_512, pers_512) = dynamic_hurst_thresholds(512);
+        assert!(anti_512 < anti_1024, "anti debe ser más estricto con menos datos");
+        assert!(pers_512 > pers_1024, "pers debe ser más estricto con menos datos");
+
+        // Monotonía continua:
+        let mut prev_anti = 0.0;
+        let mut prev_pers = 1.0;
+        for n in [64, 128, 256, 512, 1024] {
+            let (a, p) = dynamic_hurst_thresholds(n);
+            assert!(a >= 0.30 && a <= HURST_ANTI_PERSISTENT);
+            assert!(p <= 0.70 && p >= HURST_PERSISTENT);
+            if n > 64 {
+                assert!(a >= prev_anti, "anti-threshold debe crecer monótonamente hacia 0.45");
+                assert!(p <= prev_pers, "pers-threshold debe decrecer monótonamente hacia 0.52");
+            }
+            prev_anti = a;
+            prev_pers = p;
+        }
     }
 }
 

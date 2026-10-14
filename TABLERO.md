@@ -195,9 +195,22 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-13 19:25 local, Quant Sr. Lead, Ola Ω98 en vuelo)
+## Antigravity (actualizado: 2026-10-13 20:10 local, Quant Sr. Lead, Ola Ω99 completada y certificada)
 
-- **Haciendo ahora**: Ola Ω98 — Refactorización Zero-Alloc del Guardián de Correlación Multiactivo (`correlation_guard.rs`), erradicación de asignaciones en heap en el hot path, y verificación de contratos de riesgo:
+- **Completado en Ola Ω99**: Modulación Continua de Bandas de Hurst según Densidad Muestral $N$ y Ponderación Dinámica de Fisher en Teleonomía:
+  - **Modulación Continua de Bandas de Hurst (`crates/god-engine-core/src/lib.rs`)**:
+    * Función canónica `dynamic_hurst_thresholds(samples: usize) -> (f64, f64)`.
+    * A capacidad nominal $N \ge 1024$, reproduce exactamente bit a bit los umbrales canónicos `(HURST_ANTI_PERSISTENT = 0.45, HURST_PERSISTENT = 0.52)`.
+    * A menor $N$ (calentamiento o baja densidad de ticks), ensancha suavemente la banda nula browniana como $\kappa_N = \min(2.0, \sqrt{1024 / \max(64, N)})$, blindando al motor contra falsos positivos de persistencia/anti-persistencia sin significación estadística.
+    * Conectado en el camino caliente de señal en `process_orderbook_tick` (línea 6051) y en el filtro tendencial lento (línea 7112).
+    * Certificado contractualmente por `ola99_dynamic_hurst_thresholds_continuous_and_canonical` (2/2 pass).
+  - **Ponderación Dinámica de Fisher en Teleonomía (`crates/metacortex-engine/src/consejo_seniors.rs`)**:
+    * Erradicada la atenuación artificial del 40% sobre la utilidad espectral cuando el modelo ML no tiene borde direccional ($|ml\_prob - ml\_base| \to 0$).
+    * Implementada modulación dinámica del peso espectral $w_{\text{spec}} = 0.60 + 0.40 \cdot (1.0 - |ml\_edge|)$. En neutralidad ML, la utilidad espectral expresa su ponderación plena $1.0$; con máximo borde ML se recupera la partición canónica $60/40$, preservando bit a bit los oráculos analíticos de forma cerrada (`cf2_conducta_masas_solucion_conocida` 8/8 pass a $1e-12$).
+    * Certificado contractualmente por `teleonomy_uncompresses_spectral_utility_when_ml_has_no_edge` en `council_evidence_contract.rs` (35/35 pass).
+  - **Siguiente**: Fase 4/5 de la revisión espectral continua: normalización del flujo de órdenes (Navier-Stokes Reynolds dinámico) y auditoría de puertas de entrada multiactivo.
+
+- **Resultados de Ola Ω98 Completados en main (`9a09ed89`)**:
   - **Optimización Zero-Alloc en `dependency_exposure` (`crates/risk-engine/src/correlation_guard.rs`)**:
     * Erradicada la asignación dinámica de `let slots: Vec<(bool, Option<_>)> = coin.positions.slots().iter().map(...).collect();` por cada moneda evaluada en cada tick.
     * Reemplazada por inspección directa in-situ sobre stack array `let mut slots = [(false, None); 3];` aprovechando que `slots()` retorna `[&Position; 3]` fijos.
@@ -206,9 +219,6 @@
     * Erradicado `let v: Vec<usize> = grupo.collect();` en la evaluación de pares de cópulas extremas.
     * Reemplazado por buffer acotado en stack `let mut v = [0usize; MAX_COINS + 1];` con rebanado directo `&v[..n]`.
     * Certificación: 147 unit tests y 83 integration tests en `risk-engine` (11 suites contractuales) pasando al 100% verde (0 fallos).
-  - **Siguiente**: Sustituir la clasificación rígida de Hurst (0.45/0.52) por modulación adaptativa continua basada en intervalo de confianza de DFA en `god-engine-core`.
-
-- **Resultados de Ola Ω97 Completados en main (`e593fa33`)**:
   - **Resolución Definitiva de F3.1-03 (Consenso Escalar Proporcional a Evidencia)**:
     * Erradicado el piso artificial de $0.70$ en `crates/signal-engine/src/orchestrator.rs:498` (`net_confidence = raw_net * effective_conviction`).
     * Certificado y des-ignorado `cf3_un_voto_infinitesimal_no_compra_conviccion` en `crates/signal-engine/tests/cf3_consenso_escalar.rs`.

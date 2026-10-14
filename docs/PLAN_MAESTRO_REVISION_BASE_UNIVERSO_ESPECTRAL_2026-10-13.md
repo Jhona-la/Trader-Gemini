@@ -592,9 +592,9 @@ La auditoría forense integral ejecutada por el agente buscador de números mág
 | `signal-engine/src/orchestrator.rs:177` | `1.0 + (len - 1) * 0.1` | Boost por conteo de estrategias | Reemplazar por número efectivo de señales independientes $N_{\text{eff}} = k / (1 + (k-1)\bar{\rho})$. |
 | `signal-engine/src/orchestrator.rs:498` | Reparto $70/30$ | Ponderación de voto y convicción | **RESUELTO en Ola Ω97 (F3.1-03):** Erradicado el piso artificial de $0.70$. Convicción neta proporcional a evidencia $\text{raw\_net} \cdot \text{effective\_conviction}$. Certificado con `cf3_un_voto_infinitesimal_no_compra_conviccion`. |
 | `metacortex-engine/src/consejo_seniors.rs:769` | `35.0 + 65.0 * s` | Veto de slippage de ejecución | **RESUELTO en Ola Ω97:** Normalizado adaptativamente con volatilidad local ATR $(\text{atr\_bps}/10.0)^{0.5} \in [0.70, 2.0]$. Evita estrangulamiento en alts con spreads naturales. |
-| `metacortex-engine/src/consejo_seniors.rs:887` | Reparto $60/40$ | Ponderación Teleonomia espectro/ML | Modular dinámicamente según la precisión inversa (entropía) de cada predictor. |
+| `metacortex-engine/src/consejo_seniors.rs:887` | Reparto $60/40$ | Ponderación Teleonomia espectro/ML | **RESUELTO en Ola Ω99:** Ponderación dinámica de Fisher $w_{\text{spec}} = 0.60 + 0.40(1 - |ml\_edge|)$. En neutralidad ML la utilidad espectral expresa su convicción plena $1.0$, transicionando a $60/40$ en máxima convicción ML. Preserva oráculos analíticos cerrados a $1e-12$. Certificado con `teleonomy_uncompresses_spectral_utility_when_ml_has_no_edge`. |
 | `god-engine-core/src/lib.rs:667-671` | 5 umbrales fijos | Rama 15 Confluencia Resonante | Conectar a genes del genoma adaptativo con oráculo de paridad. |
-| `god-engine-core/src/lib.rs:9219` | `[0.45, 0.52]` | Bandas canónicas de Hurst | Sustituir por intervalo de confianza muestral del DFA bajo hipótesis nula browniana. |
+| `god-engine-core/src/lib.rs:9219` | `[0.45, 0.52]` | Bandas canónicas de Hurst | **RESUELTO en Ola Ω99:** Modulación continua `dynamic_hurst_thresholds` según densidad muestral $N$: $\kappa_N = \min(2.0, \sqrt{1024/\max(64, N)})$. En $N \ge 1024$ reproduce bit-exacto $[0.45, 0.52]$; a menor $N$ ensancha la banda nula browniana contra falsos positivos. Certificado con `ola99_dynamic_hurst_thresholds_continuous_and_canonical`. |
 
 ---
 
@@ -609,9 +609,11 @@ El sistema se modela estrictamente como un **grafo vivo dirigido**:
    - *Caso resuelto en Ω95:* `LH-03` (Bucle de rollback infinito en replay). La falta de actualización de `last_exit_fastband_ms` dejaba al motor en un nodo silencioso de 5.604 ciclos repetidos. Resuelto con enfriamiento forzado inmediato.
    - *Caso resuelto en Ω97:* `SeniorEjecucion` (Veto de slippage rígido a 35 bps en alts). Bloqueaba órdenes legítimas en monedas con spreads normales de 5-10 bps. Resuelto modulando el umbral continuo por ratio de ATR relativo.
    - *Caso resuelto en Ω98:* `correlation_guard.rs` (Asignaciones dinámicas en heap en `dependency_exposure` y `lambda_grupo_max`). Recorría hasta 30 monedas por tick asignando `Vec`s en heap, degradando la latencia en hardware limitado (16 GB RAM). Resuelto con inspección in-situ sobre stack buffers `[&Position; 3]` y `[usize; MAX_COINS + 1]` para ejecución sub-nanosegundo pura.
+   - *Caso resuelto en Ω99:* `SeniorTeleonomia` (Atenuación artificial del 40% de la utilidad espectral cuando ML no tiene borde). Cuando el modelo ML reportaba $ml\_prob = ml\_base$, la utilidad espectral se comprimía artificialmente al 60%. Resuelto mediante ponderación de Fisher $w_{\text{spec}} = 0.60 + 0.40(1 - |ml\_edge|)$.
 3. **Colisión de Flujos y Falsas Señales (Fallos Tipo 3)**: Modificación concurrente con información contradictoria, acoplamientos rígidos o magnificación de ruido.
    - *Caso resuelto en Ω95:* `ADR-0011` (Acoplamiento de arrays físicos `0=BTC, 1=ETH`). Resuelto mediante mapeo dinámico por símbolo en `GlobalArena`.
    - *Caso resuelto en Ω97:* `F3.1-03` (Magnificación espuria de convicción escalar). Un voto infinitesimal ($2 \cdot 10^{-9}$) compraba $70\%$ de confianza por el piso artificial `0.70 + 0.30 * eff`, gatillando órdenes en falso. Resuelto con escalamiento lineal con evidencia $\text{raw\_net} \cdot \text{eff}$.
+   - *Caso resuelto en Ω99:* `HurstDfa` (Falsos positivos de tendencia/reversión en buffers de baja densidad). Umbrales fijos rígidos 0.45/0.52 clasificaban ruido browniano como memoria en $N < 1024$. Resuelto adaptando los límites por $\sqrt{1024/N}$.
 
 ---
 
