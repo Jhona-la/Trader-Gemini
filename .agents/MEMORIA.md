@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω100 — Armonización Cuántica del Rango Epigenético en Sizing [0.50, 2.00] y Desasfixia Biológica del Activo
+
+- **Rama activa**: `antigravity/ola100-epigenetic-dynamic-range-and-council-evolution`.
+- **Armonización Cuántica del Rango Epigenético (`crates/risk-engine/src/lib.rs:583`)**:
+  - **Diagnóstico y Causa Raíz**: En `CoinArena` (`crates/quantum-arena/src/state.rs:386, 434`), la retroalimentación biológica adapta `epigenetic_bias` en el rango físico $[0.50, 2.00]$ ($0.5\times \to 2.0\times$ según el PnL de las operaciones cerradas). Sin embargo, en `risk-engine/src/lib.rs:583`, el cálculo de confianza efectiva truncaba artificialmente el sesgo con `.clamp(0.60, 1.40)`:
+    `let effective_confidence = (signal_prob * epi_bias.clamp(0.60, 1.40)).clamp(0.05, 0.98);`
+    Esto estrangulaba el 40% de la capacidad de adaptación plástica del activo: cuando una moneda acumulaba victorias consecutivas y su sesgo biológico subía a 1.80 o 2.00, el dimensionamiento de riesgo lo comprimía a 1.40, impidiendo la aceleración óptima del interés compuesto; y cuando el activo acumulaba pérdidas continuas y su sesgo descendía a 0.50, el motor lo inflaba forzosamente a 0.60, sobre-exponiendo la cuenta en activos en racha perdedora.
+  - **Solución Matemática y Físico-Estadística**:
+    * Expandido el clamp en `risk-engine/src/lib.rs:583` de `[0.60, 1.40]` a `[0.50, 2.00]`:
+      ```rust
+      let effective_confidence =
+          (signal_prob * epi_bias.clamp(0.50, 2.00)).clamp(0.05, 0.98);
+      ```
+    * Armoniza al 100% el espacio de estados entre `CoinArena` y `RiskEngine`, permitiendo la expresión plena del aprendizaje epigenético sin acoplamientos rígidos arbitrarios.
+  - **Certificación Contractual**:
+    * Diseñado e implementado el nuevo contrato formal `ola100_epigenetic_bias_full_range_expression` en `crates/risk-engine/tests/veto_logic_contracts.rs`:
+      1. Certifica que con `epigenetic_bias = 1.80`, la exposición asignada es estrictamente superior a la obtenida con el antiguo techo congelado de 1.40.
+      2. Certifica que con `epigenetic_bias = 0.50`, la exposición asignada se contrae estrictamente por debajo del antiguo suelo de 0.60, maximizando la defensa actuarial ante rachas perdedoras.
+    * Suite completa de contratos `veto_logic_contracts.rs` pasando 10/10 al 100% (0 fallos).
+- **Verificación Integral del Workspace**:
+  * `cargo test -p risk-engine`: 100% de tests unitarios y de integración pasando verdes (0 fallos).
+  * `cargo check --workspace --all-targets`: 0 errores en los 23 crates (30.79s).
+
 ## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω99 — Modulación Continua de Bandas de Hurst según Densidad Muestral $N$ y Ponderación Dinámica de Fisher en Teleonomía
 
 - **Rama activa**: `antigravity/ola99-hurst-continuo-teleonomia`.
