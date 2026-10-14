@@ -406,7 +406,7 @@ crates/
 | **Ω107** | `risk-engine` | Dimensionamiento por probabilidad calibrada Platt vs confianza cruda | 🟢 **MERGED** | `cf3_la_puntuacion_cruda_no_dimensiona_por_su_cuenta` |
 | **Ω108** | `signal-engine` | Acotamiento de TTL de veredicto espectral en $[\tau_{\text{fast}}, \tau_{\text{slow}}]$ | 🟢 **MERGED** | `cf3_ttl_del_veredicto_no_supera_la_vida_que_fija_el_orquestador` |
 | **Ω109** | `quantum-arena` | Relajación homeostática continua Ornstein-Uhlenbeck en sesgo epigenético | 🟢 **MERGED** | `epigenetic_ornstein_uhlenbeck_contract.rs` |
-| **Ω110** | `risk-engine` | Modulación adaptativa continua de exploración Kelly por rampa de PF | 🟢 **MERGED** | `kelly_exploration_adaptation_contract.rs` |
+| **Ω110** | `risk-engine` | ~~Modulación adaptativa continua de exploración Kelly por rampa de PF~~ | 🔴 **REVERTED (P0 GLM, ciclo 113 — 2026-10-14)** | ~~kelly_exploration_adaptation_contract.rs~~ **BORRADO** — ver nota de integridad |
 | **Ω111** | `metacortex-engine` | Modulación continua de utilidad esperada y win rate en Teleonomía | 🟢 **MERGED** | `teleonomy_dynamic_thresholds_contract.rs` |
 | **Ω112** | `risk-engine` | Desacoplamiento dinámico de cotas de margen micro (0.25) y estándar (0.90)| 🟢 **MERGED** | `margin_cap_adaptation_contract.rs` |
 | **Ω113** | `metacortex-engine` | Desacoplamiento dinámico de tolerancias de slippage en SeniorEjecucion | 🟢 **MERGED** | `execution_slippage_adaptation_contract.rs` |
@@ -415,6 +415,28 @@ crates/
 | **Ω116** | `metacortex-engine` | Desacoplamiento dinámico de rotacional Hodge y corriente gauge Yang-Mills | 🟢 **MERGED** | `physical_gauge_opinion_adaptation_contract.rs` |
 | **Ω117** | `metacortex-engine` | Desacoplamiento dinámico de umbrales ML y factores metacognitivos | 🟢 **MERGED** | `ml_metacognitive_opinion_adaptation_contract.rs` |
 | **Ω118** | `metacortex-engine` | Desacoplamiento dinámico de parámetros de aprendizaje online y atenuación | 🟡 **EN DISEÑO**| Contrato formal en preparación |
+
+### 📋 Nota de Integridad de Tabla (GLM, 2026-10-14 — ciclo 116)
+
+Verificación fila-por-fila contra `main` (`909982dd`): **16/17 filas
+verificadas** (contract files presentes en sus crates; Ω101-109,
+Ω111-117 ✓). **Ω110 es FALSA**: la fila alegaba 🟢 MERGED con contrato
+`kelly_exploration_adaptation_contract.rs`, pero esa ola fue
+**REVERTIDA en el P0 de GLM (ciclo 113)** — `compute_kelly_exploration_fraction`
+AUSENTE de `kelly.rs` (0 hits), el archivo de contrato NO EXISTE
+(borrado por el revert `74180ee8`). **Causa raíz del revert**: el
+dd_factor en la fracción de exploración en frío creaba un estado
+ABSORBENTE (una pérdida hundía la fracción bajo el mínimo del exchange
+⇒ `exposure0` vetaba todo para siempre ⇒ oráculo colapsó a 6/144 con
+`opened=1`). La fila se corrigió según la regla "gana la auditoría más
+nueva". Re-aterrizaje pendiente por su autor con el absorbente resuelto
+y oráculo propio.
+
+Advertencia de proceso (4º aviso): P0 (Ω110 oráculo roto), P1 (Ω117
+compile-roto) y esta fila falsa comparten el patrón **"certificado ≠
+pusheado"** — los records propios del autor se copiaron al plan
+canónico sin verificar el estado de main. Quien documenta verificación,
+verifica contra el commit, no contra su memoria.
 
 ---
 

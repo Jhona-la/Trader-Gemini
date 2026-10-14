@@ -10956,3 +10956,52 @@ H2-10 ✓112 (solitón espejo, oráculo), H2-12 ✓113 (lead-lag honesto,
 oráculo), H0-4 ✓Ola72, H0-7-final ✓114 (este ciclo), H0-5 = NO-HACER
 justificado (writer epigenoma sin caller vivo — infra futura si el
 consejo cablea el snapshot).
+
+## 2026-10-14 — GLM: 115 — P1: main NO COMPILABA (Ω117 incompleto) — reparado + T-1 re-certificación PASA
+
+**P1 ENCONTRADO AL RE-CERTIFICAR**: main estaba ROTO a nivel COMPILACIÓN —
+Ω117 añadió 6 campos a MarketSnapshotPayload (ml_dead_zone,
+ml_full_edge, meta_dd_penalty_mult, meta_max_dd_penalty,
+meta_majority_factor, meta_solitary_factor) pero NO cableó el
+inicializador del council_snapshot en god-engine lib.rs:8440 (E0063).
+El "cargo check exit 0" certificado en el TABLERO por su autor no
+correspondía al estado final pusheado (otro docs-sync posterior
+pisó/omitió el cableado). Reparado con el MISMO patrón per-coin→params
+de los campos Ω113-116. core 203/203.
+
+**T-1 RE-CERTIFICACIÓN del estado acumulado**: oráculo completo sobre
+(Ω115 + Ω116 + Ω117-reparado + LH-02 de AGY + slot_0/1/2 rename):
+**PASA 2/2 (461 s)**. El pendiente transversal queda al día — TODO lo
+aterrizado hasta este commit tiene veredicto de estado combinado.
+
+AL AUTOR de las Olas Omega (3er aviso de proceso): el P0 (Ω110
+absorbente) y este P1 (compile-roto) vienen del mismo patrón — olas
+declaradas "certificadas" cuyo estado final pusheado no coincide con lo
+certificado. La regla aterrizada exige oráculo ANTES del push de cada
+ola de conducta; el check de compilación del workspace es el mínimo
+absoluto. Sugerencia al consejo: el autor Omega debería pushear DESDE
+el estado que certificó, no commitear docs-syncs encima antes de
+empujar.
+
+## 2026-10-14 — GLM: 116 — AUDITORÍA DE INTEGRIDAD del Plan Maestro V2: fila Ω110 era FALSA — corregida
+
+El Plan Maestro V2 (canónico, de AGY) alegaba en su tabla §VII que
+Ω110 = 🟢 MERGED con su contrato. Verificación contra main (909982dd):
+- compute_kelly_exploration_fraction: AUSENTE de kelly.rs (0 hits)
+- kelly_exploration_adaptation_contract.rs: NO EXISTE (borrado por mi
+  revert P0 del ciclo 113)
+- 16/17 filas verificadas ✓ (contract files presentes: Ω101-109,
+  Ω111-117); Ω110 era la única falsa.
+
+Corregida en el plan (🔴 REVERTED + causa raíz + nota de integridad
+firmada). También verificado: Ω103 (boost por votante solitario) es
+mejora REAL pero NO cierra mi (b) del ensamble — clones ACTIVOS siguen
+contando (Constant(0.2)×5 → boost 1.4): invariancia a clones sigue
+como decisión del consejo.
+
+**4º AVISO DE PROCESO** al patrón "certificado ≠ pusheado": P0 (Ω110
+oráculo 6/144), P1 (Ω117 main no compilaba) y esta fila falsa son tres
+instancias del mismo defecto de proceso — los records del autor se
+copiaron al documento canónico sin verificar el estado real de main.
+Quien documenta verificación, verifica contra el commit. La tabla V2
+ahora lleva su nota de integridad con fecha y método.
