@@ -49,6 +49,8 @@
 //! gobierna**, que era el requisito.
 
 use crate::kelly_envelope::EdgePosterior;
+use quantum_arena::GlobalArena;
+use std::sync::atomic::Ordering;
 
 /// Nivel de confianza de TODA cota inferior del sistema: `z = 1,64` ≈ 95 %.
 ///
@@ -57,6 +59,12 @@ use crate::kelly_envelope::EdgePosterior;
 /// para que el profit factor y la probabilidad de ganar se acoten con el MISMO
 /// nivel: una sola lectura del 95 % en todo el motor.
 pub const Z_LCB: f64 = 1.64;
+
+/// Prior canónico por defecto del win rate para contracción jerárquica empírica en frío.
+pub const DEFAULT_BAYES_PRIOR_WIN_RATE: f64 = 0.55;
+
+/// Masa de pseudomuestras canónica por defecto para regularización bayesiana en frío.
+pub const DEFAULT_BAYES_PRIOR_MASS: f64 = 10.0;
 
 /// Valor neutro de un profit factor DESCONOCIDO: 1,0 — exactamente el punto en
 /// que no hay edge. Ni 1,50 ni 5,0: lo que no se ha medido no se apuesta.
@@ -163,6 +171,74 @@ pub fn win_rate_hierarchical_lcb(
     } else {
         p0
     }
+}
+
+/// Resuelve dinámicamente el prior bayesiano (p0, k0) para el shrinkage jerárquico de Empirical Bayes.
+///
+/// F3.4-06 (Ola Ω108): Erradicación de hiperparámetros estáticos congelados (0.55 y 10.0).
+///
+/// Jerarquía de resolución adaptativa y evolutiva:
+/// 1. Overrides en el registro omnisciente:
+///    - Por activo: `c{id}:bayes_prior_win_rate` y `c{id}:bayes_prior_mass`
+///    - Global: `"bayes_prior_win_rate"` y `"bayes_prior_mass"`
+/// 2. Estimación empírica agregada (Empirical Bayes genuino): calcula la media ponderada de win rate
+///    observado en el resto de los activos del portafolio que tengan al menos 10 operaciones acumuladas:
+///    $$\bar{p}_{\text{pool}} = \frac{\sum_{j \neq i} n_j \cdot w_j}{\sum_{j \neq i} n_j}$$
+///    con pseudo-masa regularizadora $k_0 = \min(20.0, \max(5.0, \sqrt{N_{\text{total}}}))$.
+/// 3. Fallback canónico por defecto: (0.55, 10.0) garantizando paridad exacta bit a bit en arranque frío.
+pub fn resolve_bayes_prior(arena: &GlobalArena, coin_id: usize) -> (f64, f64) {
+    let key_coin_p = format!("c{}:bayes_prior_win_rate", coin_id);
+    let key_coin_k = format!("c{}:bayes_prior_mass", coin_id);
+
+    let reg_p = arena
+        .registry
+        .get_value_fast(&key_coin_p)
+        .or_else(|| arena.registry.get_value_fast("bayes_prior_win_rate"));
+    let reg_k = arena
+        .registry
+        .get_value_fast(&key_coin_k)
+        .or_else(|| arena.registry.get_value_fast("bayes_prior_mass"));
+
+    let p0 = if let Some(p) = reg_p {
+        if p.is_finite() && p > 0.05 && p < 0.95 {
+            p
+        } else {
+            DEFAULT_BAYES_PRIOR_WIN_RATE
+        }
+    } else {
+        // Empirical Bayes a partir de la experiencia agregada de la cartera
+        let mut total_wins = 0.0;
+        let mut total_trades = 0.0;
+        for (i, coin) in arena.coins.iter().enumerate() {
+            if i != coin_id {
+                let n = coin.metrics.trade_count.load(Ordering::Relaxed) as f64;
+                if n > 0.0 {
+                    let w = coin.metrics.win_rate.load(Ordering::Relaxed);
+                    if w.is_finite() && w >= 0.0 && w <= 1.0 {
+                        total_wins += n * w;
+                        total_trades += n;
+                    }
+                }
+            }
+        }
+        if total_trades >= 10.0 {
+            (total_wins / total_trades).clamp(0.40, 0.85)
+        } else {
+            DEFAULT_BAYES_PRIOR_WIN_RATE
+        }
+    };
+
+    let k0 = if let Some(k) = reg_k {
+        if k.is_finite() && k > 0.5 {
+            k.clamp(1.0, 100.0)
+        } else {
+            DEFAULT_BAYES_PRIOR_MASS
+        }
+    } else {
+        DEFAULT_BAYES_PRIOR_MASS
+    };
+
+    (p0, k0)
 }
 
 #[cfg(test)]

@@ -22,6 +22,10 @@ pub mod selection_stats;
 pub mod ville_e_process;
 
 pub use capital_regime::{resolve_micro_max_fee_pct, DEFAULT_MICRO_MAX_FEE_PCT};
+pub use evidence::{
+    profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
+    DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
+};
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
 pub use sonda::{en_fase_de_sonda, resolve_max_cierres_sonda, sprt_bernoulli, SprtDecision, CIERRES_DE_SONDA};
 pub use tp_sl::{
@@ -1134,18 +1138,19 @@ impl RiskEngine {
         } else if arranque_frio_total {
             None
         } else {
-            // Ω46.1: Contracción jerárquica bayesiana (Empirical Bayes Shrinkage).
+            // Ω46.1 / Ola Ω108 (F3.4-06): Contracción jerárquica bayesiana (Empirical Bayes Shrinkage).
             // Para muestras pequeñas (n < 20), el estimador no colapsa a 0.0 ni crea
-            // un estado absorbente de muerte en n=1. Contrae suavemente hacia el prior
-            // del ensamble (0.55) con pseudo-masa k0 = 10.0.
+            // un estado absorbente de muerte en n=1. Contrae suavemente hacia el prior empírico
+            // resuelto dinámicamente desde el ensamble/portafolio (resolve_bayes_prior) con fallback a 0.55 y k0=10.0.
+            let (p_prior, k_prior) = crate::evidence::resolve_bayes_prior(arena, coin_id);
             Some(crate::evidence::win_rate_hierarchical_lcb(
                 arena.coins[coin_id]
                     .metrics
                     .win_rate
                     .load(Ordering::Relaxed),
                 trade_count as f64,
-                0.55,
-                10.0,
+                p_prior,
+                k_prior,
             ))
         };
         let expected_value_pct = match p_ganar {
