@@ -1,5 +1,41 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω113 — Desacoplamiento Dinámico de Tolerancias de Slippage de Ejecución en SeniorEjecucion
+
+- **Ola Integrada y Certificada en `main` (`75529044`)**:
+  * **Diagnóstico y Causa Raíz**: En `crates/metacortex-engine/src/consejo_seniors.rs:880-920`, la función `evaluate_execution_slippage` evaluaba el impacto de deslizamiento de órdenes mediante literales fijos:
+    ```rust
+    let base_slippage = 35.0 + 65.0 * s;
+    ```
+    Donde `FAST_SLIPPAGE_FLOOR = 35.0` bps y `SLOW_SLIPPAGE_SPAN = 65.0` bps estaban estáticamente congelados en código. Esto provocaba dos fallos de diseño fundamentales:
+    1. En mercados o activos con spreads naturales y slippage de impacto diferente (e.g. altcoins de baja liquidez vs BTC/USDT), un piso de 35 bps resultaba o bien demasiado permisivo para activos ultra-líquidos o bien artificialmente prohibitivo para activos con mayor beta o en momentos de alta volatilidad donde el spread natural puede oscilar entre 40 y 60 bps.
+    2. No permitía parametrización por activo desde el registro omnisciente (`arena.registry`) ni calibración unificada vía `CouncilParams` o `QuantumConfig`, rompiendo la arquitectura adaptativa y evolutiva del sistema.
+  * **Solución Matemática y Continua**:
+    1. En `crates/metacortex-engine/src/consejo_seniors.rs`:
+       - Definidas constantes canónicas `DEFAULT_FAST_SLIPPAGE_FLOOR = 35.0` y `DEFAULT_SLOW_SLIPPAGE_SPAN = 65.0`.
+       - Implementada la función pura `evaluate_execution_slippage_with_bounds(estimated_slippage_bps, navier_laminar_share, spectral_s, atr_pct, fast_slippage_floor, slow_slippage_span) -> (f64, f64, bool)` con total sanitización fail-closed contra valores no finitos o negativos (cayendo de forma determinista y segura a los defaults canónicos).
+       - Agregados campos `fast_slippage_floor: f64` y `slow_slippage_span: f64` a `MarketSnapshotPayload` con serde defaults y validaciones de rango `[0.0, 500.0]` y `[0.0, 1000.0]`.
+       - Agregados campos y método builder `with_slippage_bounds(floor, span)` a `CouncilParams` con validación estricta de cotas.
+       - En `SeniorEjecucion::evaluate`: lectura dinámica de `payload.fast_slippage_floor` y `payload.slow_slippage_span` con fallback canónico seguro.
+       - En `deliberar_traced`: propagación lock-free de `CouncilParams` hacia el payload efectivo mediante `Cow` (cero asignación de memoria en el hot-path si se usan los valores por defecto).
+    2. En `crates/metacortex-engine/src/lib.rs`:
+       - Re-exportadas `DEFAULT_FAST_SLIPPAGE_FLOOR`, `DEFAULT_SLOW_SLIPPAGE_SPAN` y `evaluate_execution_slippage_with_bounds`.
+    3. En `crates/quantum-arena/src/config.rs`:
+       - Agregados campos atómicos `council_fast_slippage_floor: AtomicF64` y `council_slow_slippage_span: AtomicF64` a `QuantumConfig`, inicializados con `35.0` y `65.0`.
+    4. En `crates/god-engine-core/src/lib.rs`:
+       - Sincronización en `sync_council_params` leyendo atómicamente de `arena.config`.
+       - Resolución omnisciente por activo en `council_snapshot` mediante `self.arena.registry.get_for_coin_or(coin_id, "fast_slippage_floor", ...)` y `"slow_slippage_span"`.
+  * **Certificación Contractual**:
+    - `execution_slippage_adaptation_contract.rs` (4/4 pass):
+      1. `test_execution_slippage_canonical_defaults_exact_parity`: Paridad idéntica bit a bit con los cálculos canónicos en ausencia de overrides.
+      2. `test_execution_slippage_dynamic_payload_override`: Verificación de anulación dinámica por payload adaptada a condiciones de mercado.
+      3. `test_execution_slippage_council_params_propagation`: Verificación de propagación transparente desde `CouncilParams` hacia `SeniorEjecucion`.
+      4. `test_execution_slippage_bounds_validation_and_fail_closed`: Validación de rechazo de parámetros fuera de rango y robustez numérica contra NaN/Infinitos.
+    - `council_params_arena_wiring_contract.rs` (2/2 pass): Verificación de sincronización lock-free desde `arena.config`.
+    - Suite completa de `metacortex-engine` (67/67 tests pass, 100% verde).
+    - `prospect_pressure_integration_contract.rs` (4/4 pass).
+    - `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω112 — Desacoplamiento Dinámico de Cotas de Margen por Operación en evaluate_quantum_order
 
 - **Ola Integrada y Certificada en `main` (`0ef069cc`)**:
