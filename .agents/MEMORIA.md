@@ -1,5 +1,48 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω102 — Normalización Dinámica de Volatilidad y Slippage en Metacortex por ATR Relativo y Continuo Temporal Espectral
+
+- **Rama activa**: `antigravity/ola102-volatility-slippage-dynamic-spectral`.
+- **Desacoplamiento Matemático de Volatilidad (`crates/metacortex-engine/src/consejo_seniors.rs:484`)**:
+  - **Diagnóstico y Causa Raíz**:
+    * `SeniorVolatilidad` empleaba dos constantes escalares rígidas congeladas: `CALM_ATR_PCT = 0.0010` (10 bps) y `DANGER_ATR_PCT = 0.0040` (40 bps).
+    * Al evaluar activos con alta beta natural (altcoins como SOL, DOGE, PEPE con ATR intradía de 50-120 bps) o al evaluar trades en horizontes temporales más lentos ($s > 0$ o $\tau \gg 30\text{ s}$), `SeniorVolatilidad` saturaba permanentemente al piso de convicción defensiva de 0.40, amputando el 60% de la confianza en entradas viables y estrangulando el crecimiento exponencial del capital (\$13 USD a +100% cada 72 horas).
+    * Asimismo, si `atr_pct` contenía NaN o Infinitos, el cálculo numérico no sanitizado podía propagar estados no finitos.
+  - **Solución Cuántica, Espectral y Continua**:
+    * Implementada la función pura desacoplada:
+      ```rust
+      pub fn evaluate_volatility_regime_with_bounds(atr_pct: f64, calm: f64, danger: f64) -> f64
+      ```
+      con sanitización rigurosa de cotas: `atr_pct.is_nan()` degrada a calma segura, `+inf` satura limpiamente a piso defensivo 0.40, y `danger <= calm` se autocorrige garantizando `danger > calm` sin pánico.
+    * Implementada la función con paridad analítica canónica cerrada:
+      ```rust
+      pub fn evaluate_volatility_regime(atr_pct: f64) -> f64
+      ```
+      utilizando las constantes canónicas `CALM_ATR_PCT` y `DANGER_ATR_PCT`, garantizando paridad exacta bit a bit ($10^{-12}$) con los oráculos analíticos de Línea C (`tests/cf2_conducta_masas_solucion_conocida.rs`).
+    * Implementada la modulación continua espectral en $\tau$:
+      ```rust
+      pub fn evaluate_volatility_regime_spectral(atr_pct: f64, spectral_s: f64, base_calm: f64, base_danger: f64, spectral_expansion: f64) -> f64
+      ```
+      donde las bandas de calma y peligro se expanden suavemente por $(1.0 + \kappa \cdot s)$ con $s \in [0, 1]$ (desde 30 s a 12 h) modelando la dispersión difusiva Browniana.
+- **Desacoplamiento Funcional de Slippage en Ejecución (`crates/metacortex-engine/src/consejo_seniors.rs:790`)**:
+  - Implementadas las funciones desacopladas:
+    ```rust
+    pub fn evaluate_execution_slippage_with_bounds(estimated_slippage_bps: f64, navier_laminar_share: f64, spectral_s: f64, atr_pct: f64, fast_slippage_floor: f64, slow_slippage_span: f64) -> (f64, f64, bool)
+    pub fn evaluate_execution_slippage(estimated_slippage_bps: f64, navier_laminar_share: f64, spectral_s: f64, atr_pct: f64) -> (f64, f64, bool)
+    ```
+    aislando el cálculo de slippage efectivo amplificado por selección adversa hidrodinámica Navier-Stokes ($Re$) y presupuesto adaptativo por ATR relativo.
+- **Certificación Contractual**:
+  * Diseñado y certificado el contrato formal `crates/metacortex-engine/tests/volatilidad_y_slippage_dinamica_contract.rs`:
+    1. `ola102_volatilidad_regime_paridad_canonica`: paridad exacta en 10 bps (1.0), 40 bps (0.40), 25 bps (0.70) y 50 bps (0.40).
+    2. `ola102_volatilidad_regime_dinamica_con_cotas_desacopladas`: certifica operación sana de altcoin con calma a 30 bps y peligro a 120 bps.
+    3. `ola102_volatilidad_regime_spectral_expansion_continua`: certifica monotonía estricta de convicción en horizontes $s=1.0 > s=0.5 > s=0.0$ para un ATR dado.
+    4. `ola102_volatilidad_regime_inmunidad_a_nan_y_negativos`: certifica robustez ante NaN, Infinito y negativos.
+    5. `ola102_execution_slippage_paridad_y_dinamismo`: certifica paridad laminar/turbulento y calibración con cotas desacopladas.
+- **Verificación Integral del Workspace**:
+  * `cargo test -p metacortex-engine`: 102 tests PASSED (0 fallos).
+  * `cargo test -p god-engine-core --test multiactivo_volatilidad_council_contract --test resonancia_simetrica_contract --test council_params_arena_wiring_contract`: 9 tests PASSED (0 fallos).
+  * `cargo check --workspace --all-targets`: 0 errores en los 23 crates (28.21s).
+
 ## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω101 — Adaptabilidad Dinámica de CouncilParams y Desacoplamiento Parametrizado de Confluencia Resonante
 
 - **Rama activa**: `antigravity/ola101-council-and-resonance-evolution`.
