@@ -44,6 +44,8 @@ fn test_prospect_pressure_live_computation_in_god_engine() {
         navier_reynolds_number: 0.8,
         navier_laminar_share: 0.6,
         prospect_pressure: p_kt,
+        utility_veto_floor: 0.02,
+        utility_veto_wr: 0.35,
     };
 
     assert!(payload.validate().is_ok());
@@ -107,6 +109,8 @@ fn test_feynman_and_prospect_confluence_in_god_engine() {
         navier_reynolds_number: 0.4,
         navier_laminar_share: 0.85,
         prospect_pressure: panic_pressure,
+        utility_veto_floor: 0.02,
+        utility_veto_wr: 0.35,
     };
 
     assert!(payload.validate().is_ok());

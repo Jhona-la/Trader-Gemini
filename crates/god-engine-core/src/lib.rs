@@ -1487,6 +1487,8 @@ impl GodEngineCore {
         let penalty = cfg.council_override_penalty.load(Ordering::Relaxed);
         let k = cfg.council_shrinkage_k.load(Ordering::Relaxed);
         let breaker = cfg.council_cascade_severity_breaker.load(Ordering::Relaxed);
+        let veto_floor = cfg.council_utility_veto_floor.load(Ordering::Relaxed);
+        let veto_wr = cfg.council_utility_veto_wr.load(Ordering::Relaxed);
 
         if (0.0..=1.0).contains(&approval) {
             params.approval_threshold = approval;
@@ -1505,6 +1507,12 @@ impl GodEngineCore {
         }
         if (0.0..=1.0).contains(&breaker) {
             params.cascade_severity_breaker = breaker;
+        }
+        if (0.0..=0.50).contains(&veto_floor) {
+            params.utility_veto_floor = veto_floor;
+        }
+        if (0.0..=1.0).contains(&veto_wr) {
+            params.utility_veto_wr = veto_wr;
         }
     }
 
@@ -8382,6 +8390,8 @@ impl GodEngineCore {
                         SignalType::Flat => 0.0,
                     };
 
+                    Self::sync_council_params(&mut self.consejo_deliberacion.params, &self.arena.config);
+
                     let council_snapshot =
                         metacortex_engine::consejo_seniors::MarketSnapshotPayload {
                             horizon: council_horizon,
@@ -8481,9 +8491,31 @@ impl GodEngineCore {
                                     0.0
                                 }
                             },
+                            // OLA Ω111: Umbrales adaptativos continuos de utilidad y win-rate para SeniorTeleonomia
+                            utility_veto_floor: {
+                                let coin_floor = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "utility_veto_floor", f64::NAN);
+                                if coin_floor.is_finite() && (0.0..=0.50).contains(&coin_floor) {
+                                    coin_floor
+                                } else {
+                                    self.consejo_deliberacion.params.utility_veto_floor
+                                }
+                            },
+                            utility_veto_wr: {
+                                let coin_wr = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "utility_veto_wr", f64::NAN);
+                                if coin_wr.is_finite() && (0.0..=1.0).contains(&coin_wr) {
+                                    coin_wr
+                                } else {
+                                    self.consejo_deliberacion.params.utility_veto_wr
+                                }
+                            },
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
-                    Self::sync_council_params(&mut self.consejo_deliberacion.params, &self.arena.config);
                     let council_decision = self.consejo_deliberacion.deliberar_traced(
                         &council_snapshot,
                         wr,

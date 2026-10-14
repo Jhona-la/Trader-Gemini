@@ -50,6 +50,16 @@ fn default_navier_laminar_share() -> f64 {
     1.0
 }
 
+#[inline(always)]
+fn default_utility_veto_floor() -> f64 {
+    UTILITY_VETO_FLOOR
+}
+
+#[inline(always)]
+fn default_utility_veto_wr() -> f64 {
+    UTILITY_VETO_WR
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketSnapshotPayload {
     pub horizon: TradingHorizon,
@@ -122,6 +132,14 @@ pub struct MarketSnapshotPayload {
     /// P_kt < 0 pánico minorista asimétrico (-λ V(pérdida)); P_kt > 0 euforia FOMO minorista (+V(ganancia)).
     #[serde(default)]
     pub prospect_pressure: f64,
+    /// OLA Ω111: Umbral piso de utilidad esperada para SeniorTeleonomia (base canónica: 0.02).
+    /// En micro-scalping (tau -> 30s), modula suavemente hacia base_floor * 0.50 (0.010).
+    #[serde(default = "default_utility_veto_floor")]
+    pub utility_veto_floor: f64,
+    /// OLA Ω111: Umbral de win rate para veto por futilidad (base canónica: 0.35).
+    /// Permite asimetría matemática continua ante predictibilidad fractal (Hurst).
+    #[serde(default = "default_utility_veto_wr")]
+    pub utility_veto_wr: f64,
 }
 
 impl Default for MarketSnapshotPayload {
@@ -154,6 +172,8 @@ impl Default for MarketSnapshotPayload {
             navier_reynolds_number: 0.0,
             navier_laminar_share: 1.0,
             prospect_pressure: 0.0,
+            utility_veto_floor: UTILITY_VETO_FLOOR,
+            utility_veto_wr: UTILITY_VETO_WR,
         }
     }
 }
@@ -200,6 +220,8 @@ impl MarketSnapshotPayload {
             ("navier_reynolds_number", self.navier_reynolds_number),
             ("navier_laminar_share", self.navier_laminar_share),
             ("prospect_pressure", self.prospect_pressure),
+            ("utility_veto_floor", self.utility_veto_floor),
+            ("utility_veto_wr", self.utility_veto_wr),
         ];
 
         for (name, val) in metrics {
@@ -245,6 +267,8 @@ impl MarketSnapshotPayload {
             ("yang_mills_current", self.yang_mills_current, -1.0, 1.0),
             ("navier_laminar_share", self.navier_laminar_share, 0.0, 1.0),
             ("prospect_pressure", self.prospect_pressure, -50.0, 50.0),
+            ("utility_veto_floor", self.utility_veto_floor, 0.0, 0.50),
+            ("utility_veto_wr", self.utility_veto_wr, 0.0, 1.0),
         ] {
             if !(low..=high).contains(&value) {
                 return Err(format!("Out-of-bounds {name}: {value}"));
@@ -986,6 +1010,50 @@ impl SeniorAgent for SeniorMetacognitivo {
     }
 }
 
+/// OLA Ω111: Modulación adaptativa continua de los umbrales de utilidad esperada y win rate de Teleonomia.
+/// En lugar de constantes estáticas congeladas (UTILITY_VETO_FLOOR=0.02, UTILITY_VETO_WR=0.35),
+/// modula continuamente sobre la coordenada espectral s∈[0,1] y la predictibilidad fractal de Hurst.
+/// - s -> 0 (micro-scalping, tau ~ 30s): floor escala suavemente a base_floor * 0.50 (ej. 0.010)
+/// - s -> 1 (swing secular, tau ~ 12h): floor escala a base_floor * 1.00 (ej. 0.020)
+/// - Predictibilidad |H - 0.5|: reduce el umbral de win rate exigido ante asimetría fractal continua.
+#[inline]
+pub fn compute_teleonomy_utility_thresholds(
+    base_floor: f64,
+    base_wr: f64,
+    spectral_s: f64,
+    hurst: f64,
+) -> (f64, f64) {
+    let s = if spectral_s.is_finite() {
+        spectral_s.clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let h = if hurst.is_finite() {
+        hurst.clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let bf = if base_floor.is_finite() && base_floor >= 0.0 {
+        base_floor
+    } else {
+        UTILITY_VETO_FLOOR
+    };
+    let bwr = if base_wr.is_finite() && (0.0..=1.0).contains(&base_wr) {
+        base_wr
+    } else {
+        UTILITY_VETO_WR
+    };
+
+    let floor_factor = 0.50 + 0.50 * s;
+    let effective_floor = (bf * floor_factor).clamp(0.001, 0.50);
+
+    let predictability = ((h - 0.5).abs() * 2.0).clamp(0.0, 1.0);
+    let wr_factor = 1.0 - 0.20 * predictability;
+    let effective_wr = (bwr * wr_factor).clamp(0.10, 0.90);
+
+    (effective_floor, effective_wr)
+}
+
 // 9. Senior Teleonomia (VETO ON UTILITY)
 // MOD2/7-006: descolinearizado — la utilidad ya NO se compone de
 // graph_correlation (OBI) y book_imbalance (OBI). Ahora: contribución
@@ -1019,7 +1087,15 @@ impl SeniorAgent for SeniorTeleonomia {
             * execution_quality
             * toxicity_penalty;
 
-        let is_veto = expected_utility.abs() < UTILITY_VETO_FLOOR && wr < UTILITY_VETO_WR;
+        // OLA Ω111: Umbrales adaptativos continuos modulados por la coordenada espectral s y predictibilidad fractal.
+        let (effective_floor, effective_wr) = compute_teleonomy_utility_thresholds(
+            payload.utility_veto_floor,
+            payload.utility_veto_wr,
+            payload.spectral_s(),
+            payload.hurst_exponent,
+        );
+
+        let is_veto = expected_utility.abs() < effective_floor && wr < effective_wr;
         let signal = if is_veto {
             0.0
         } else {
@@ -1034,8 +1110,8 @@ impl SeniorAgent for SeniorTeleonomia {
             weight: 1.0,
             is_veto,
             justification: format!(
-                "Teleonomia: utilidad={:.4}, sig={:.4}, wr={:.4}, veto={}",
-                expected_utility, signal, wr, is_veto
+                "Teleonomia: utilidad={:.4}, sig={:.4}, wr={:.4}, floor={:.4}, wr_lim={:.4}, veto={}",
+                expected_utility, signal, wr, effective_floor, effective_wr, is_veto
             ),
         }
     }
@@ -1100,6 +1176,10 @@ pub struct CouncilParams {
     /// >P99 de la distribución de severidad de liquidaciones observada
     /// (familia kill-switch, no sobreescribible por supermayoría).
     pub cascade_severity_breaker: f64, // 0.85
+    /// OLA Ω111: Umbral base de utilidad esperada para SeniorTeleonomia (base canónica: 0.02).
+    pub utility_veto_floor: f64,       // 0.02
+    /// OLA Ω111: Umbral base de win rate para SeniorTeleonomia (base canónica: 0.35).
+    pub utility_veto_wr: f64,          // 0.35
 }
 
 impl CouncilParams {
@@ -1118,9 +1198,19 @@ impl CouncilParams {
             override_penalty,
             shrinkage_k,
             cascade_severity_breaker,
+            utility_veto_floor: UTILITY_VETO_FLOOR,
+            utility_veto_wr: UTILITY_VETO_WR,
         };
         params.validate()?;
         Ok(params)
+    }
+
+    /// OLA Ω111: Builder para configurar umbrales adaptativos de utilidad esperada y win rate.
+    pub fn with_utility_thresholds(mut self, floor: f64, wr: f64) -> Result<Self, String> {
+        self.utility_veto_floor = floor;
+        self.utility_veto_wr = wr;
+        self.validate()?;
+        Ok(self)
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -1130,10 +1220,14 @@ impl CouncilParams {
             ("override_signal_floor", self.override_signal_floor),
             ("override_penalty", self.override_penalty),
             ("cascade_severity_breaker", self.cascade_severity_breaker),
+            ("utility_veto_wr", self.utility_veto_wr),
         ] {
             if !(0.0..=1.0).contains(&value) {
                 return Err(format!("Invalid council parameter {name}: {value}"));
             }
+        }
+        if !(0.0..=0.50).contains(&self.utility_veto_floor) {
+            return Err(format!("Invalid council parameter utility_veto_floor: {}", self.utility_veto_floor));
         }
         if !self.shrinkage_k.is_finite() || self.shrinkage_k <= 0.0 {
             return Err("shrinkage_k must be finite and positive".into());
@@ -1151,6 +1245,8 @@ impl Default for CouncilParams {
             override_penalty: 0.75,
             shrinkage_k: 8.0,
             cascade_severity_breaker: 0.85,
+            utility_veto_floor: UTILITY_VETO_FLOOR,
+            utility_veto_wr: UTILITY_VETO_WR,
         }
     }
 }
@@ -1293,6 +1389,23 @@ impl ConsejoDeliberacion {
         // N-12: Si no se proporcionan multiplicadores externos, usar pesos adaptativos empíricos del tracker
         let active_mults = weight_multipliers.or(dynamic_weights.as_ref());
 
+        // OLA Ω111: Si CouncilParams define umbrales de utilidad/wr dinámicos distintos de los canónicos
+        // y el payload porta los defaults, propagar los parámetros del consejo al payload evaluado.
+        let effective_payload = if (self.params.utility_veto_floor - UTILITY_VETO_FLOOR).abs() > 1e-9
+            || (self.params.utility_veto_wr - UTILITY_VETO_WR).abs() > 1e-9
+        {
+            let mut p = payload.clone();
+            if (p.utility_veto_floor - UTILITY_VETO_FLOOR).abs() < 1e-9 {
+                p.utility_veto_floor = self.params.utility_veto_floor;
+            }
+            if (p.utility_veto_wr - UTILITY_VETO_WR).abs() < 1e-9 {
+                p.utility_veto_wr = self.params.utility_veto_wr;
+            }
+            std::borrow::Cow::Owned(p)
+        } else {
+            std::borrow::Cow::Borrowed(payload)
+        };
+
         let mut opinions = Vec::new();
         let mut signals = [0.0; 11];
         let mut total_weighted_signal = 0.0;
@@ -1302,7 +1415,7 @@ impl ConsejoDeliberacion {
         for agent in &self.agents {
             let role = agent.role();
             let idx = role as usize;
-            let mut op = agent.evaluate(payload, safe_wr);
+            let mut op = agent.evaluate(&effective_payload, safe_wr);
             let max_confidence = if op.role == SeniorRole::EnteMercado { 1.30 } else { 1.0 };
             if op.role != role
                 || !(-1.0..=1.0).contains(&op.signal_direction)
@@ -1749,6 +1862,8 @@ mod tests {
             navier_reynolds_number: 0.0,
             navier_laminar_share: 1.0,
             prospect_pressure: 0.0,
+            utility_veto_floor: UTILITY_VETO_FLOOR,
+            utility_veto_wr: UTILITY_VETO_WR,
         }
     }
 

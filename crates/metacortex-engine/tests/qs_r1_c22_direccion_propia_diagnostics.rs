@@ -81,6 +81,8 @@ fn carga(obi: f64, fused: f64, pers: f64, ml: f64) -> MarketSnapshotPayload {
         navier_reynolds_number: 0.0,
         navier_laminar_share: 1.0,
         prospect_pressure: 0.0,
+        utility_veto_floor: 0.02,
+        utility_veto_wr: 0.35,
     }
 }
 

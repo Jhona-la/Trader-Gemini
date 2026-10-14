@@ -32,6 +32,8 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.override_penalty, 0.75);
     assert_eq!(core.consejo_deliberacion.params.shrinkage_k, 8.0);
     assert_eq!(core.consejo_deliberacion.params.cascade_severity_breaker, 0.85);
+    assert_eq!(core.consejo_deliberacion.params.utility_veto_floor, 0.02);
+    assert_eq!(core.consejo_deliberacion.params.utility_veto_wr, 0.35);
 
     // 2. Modificación lock-free desde arena.config (ej. Evolución adaptativa o feedback cuántico)
     arena.config.council_approval_threshold.store(0.45, Ordering::Relaxed);
@@ -40,6 +42,8 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     arena.config.council_override_penalty.store(0.60, Ordering::Relaxed);
     arena.config.council_shrinkage_k.store(12.0, Ordering::Relaxed);
     arena.config.council_cascade_severity_breaker.store(0.92, Ordering::Relaxed);
+    arena.config.council_utility_veto_floor.store(0.012, Ordering::Relaxed);
+    arena.config.council_utility_veto_wr.store(0.30, Ordering::Relaxed);
 
     // 3. Ejecutar sincronización
     core.sync_council_params_from_arena();
@@ -51,6 +55,8 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.override_penalty, 0.60);
     assert_eq!(core.consejo_deliberacion.params.shrinkage_k, 12.0);
     assert_eq!(core.consejo_deliberacion.params.cascade_severity_breaker, 0.92);
+    assert_eq!(core.consejo_deliberacion.params.utility_veto_floor, 0.012);
+    assert_eq!(core.consejo_deliberacion.params.utility_veto_wr, 0.30);
 }
 
 #[test]

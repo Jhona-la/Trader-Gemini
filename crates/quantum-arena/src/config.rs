@@ -182,13 +182,15 @@ pub struct QuantumConfig {
     pub obi_curve_a: AtomicF64,
     pub obi_curve_b: AtomicF64,
 
-    // --- Meta-Consejo Deliberativo (Ola Ω95) ---
+    // --- Meta-Consejo Deliberativo (Ola Ω95 / Ω111) ---
     pub council_approval_threshold: AtomicF64,
     pub council_supermajority_override: AtomicF64,
     pub council_override_signal_floor: AtomicF64,
     pub council_override_penalty: AtomicF64,
     pub council_shrinkage_k: AtomicF64,
     pub council_cascade_severity_breaker: AtomicF64,
+    pub council_utility_veto_floor: AtomicF64,
+    pub council_utility_veto_wr: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -408,13 +410,15 @@ impl QuantumConfig {
             obi_curve_a: AtomicF64::new(curvas.obi_horizon_curve.a),
             obi_curve_b: AtomicF64::new(curvas.obi_horizon_curve.b),
 
-            // --- Meta-Consejo Deliberativo (Ola Ω95) ---
+            // --- Meta-Consejo Deliberativo (Ola Ω95 / Ω111) ---
             council_approval_threshold: AtomicF64::new(0.35),
             council_supermajority_override: AtomicF64::new(0.80),
             council_override_signal_floor: AtomicF64::new(0.28),
             council_override_penalty: AtomicF64::new(0.75),
             council_shrinkage_k: AtomicF64::new(8.0),
             council_cascade_severity_breaker: AtomicF64::new(0.85),
+            council_utility_veto_floor: AtomicF64::new(0.02),
+            council_utility_veto_wr: AtomicF64::new(0.35),
         }
     }
 

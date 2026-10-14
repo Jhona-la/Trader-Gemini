@@ -80,6 +80,8 @@ fn casos() -> Vec<MarketSnapshotPayload> {
                                     navier_reynolds_number: 1.5,
                                     navier_laminar_share: 0.3,
                                     prospect_pressure: pk,
+                                    utility_veto_floor: 0.02,
+                                    utility_veto_wr: 0.35,
                                 });
                             }
                         }
