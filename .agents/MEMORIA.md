@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω107 — Desacoplamiento Adaptativo de Fase de Sonda y Parada Secuencial por SPRT de Wald
+
+- **Ola Integrada y Certificada en `main` (`71f3c36e`)**:
+  * **Diagnóstico y Causa Raíz**: En `crates/risk-engine/src/sonda.rs`, la fase de sonda estaba gobernada por la constante fija `CIERRES_DE_SONDA = 5`. Cualquier moneda requería rígidamente 5 trades para salir de la fase de sonda, independientemente de si los primeros trades ya presentaban una tasa de acierto y ventaja estadística abrumadoras que hacían innecesario restringir el tamaño a la orden mínima de exploración. Además, el cupo de sonda no admitía configuración adaptativa ni por moneda ni globalmente.
+  * **Solución Matemática y Secuencial (SPRT de Wald)**:
+    1. Se implementó la prueba secuencial de razón de verosimilitudes (Sequential Probability Ratio Test de Wald para ensayos de Bernoulli) en `sprt_bernoulli(n, k, p0, p1, alpha, beta) -> SprtDecision`.
+       $$\Lambda_n = k \ln\left(\frac{p_1}{p_0}\right) + (n - k) \ln\left(\frac{1 - p_1}{1 - p_0}\right)$$
+       con fronteras de parada $A = \ln(\beta / (1 - \alpha))$ y $B = \ln((1 - \beta) / \alpha)$.
+    2. Se implementó `resolve_max_cierres_sonda(arena, coin_id)` que consulta dinámicamente `c{coin_id}:sonda_max_cierres`, luego `"sonda_max_cierres"`, con fallback canónico a `CIERRES_DE_SONDA = 5` y clamp defensivo a `[1, 50]`.
+    3. Se implementó `sprt_evalua_salida_sonda`: si una moneda con $n \ge 2$ demuestra ventaja estadística ($H_1: p \ge p_1$) con significancia $\alpha=0.05$, egresa de la sonda anticipadamente sin esperar a agotar 5 trades, liberando el escalamiento con Kelly hacia la meta de duplicación de micro-capital.
+    4. Se actualizó `hay_sonda_abierta` para verificar dinámicamente el estado de cada moneda con `en_fase_de_sonda(arena, coin_id)`.
+  * **Certificación Contractual**:
+    - Certificado con `crates/risk-engine/tests/sonda_sprt_adaptation_contract.rs` (5/5 tests pasando).
+    - Preservada paridad exacta con suites canónicas: `cf4_sonda_unica.rs` (7/7 pass), `cf4_estado_aprendido.rs` (5/5 pass), y suite completa de `risk-engine` (100% verde).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω106 — Normalización Dinámica de Latencia Fraccional Anómala y Ruteo Idempotente de Órdenes
 
 - **Ola Integrada y Certificada en `main` (`91682537`)**:

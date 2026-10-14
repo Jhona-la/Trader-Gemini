@@ -1260,9 +1260,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/lib.rs": {
-    "mtime": 1791959704.9090714,
-    "seen": 1791960509.606547,
-    "ast_hash": "6884759f670a5197ad60aec8f22d8431",
+    "mtime": 1791960794.1193547,
+    "seen": 1791961607.0022128,
+    "ast_hash": "8407fc6f4e20146cf4305f30987cf18a",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/orchestrator.rs": {
@@ -3216,9 +3216,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/veto_registry.rs": {
-    "mtime": 1791871664.8851767,
-    "seen": 1791930768.234096,
-    "ast_hash": "5ffd1456e0633fe142619ab034932ec8",
+    "mtime": 1791960815.7065127,
+    "seen": 1791961607.0037582,
+    "ast_hash": "c77beb068ff0efc8f54e45d0a0f27a66",
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/compounding_audit.rs": {
@@ -3672,9 +3672,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791960077.1511264,
-    "seen": 1791960509.7049127,
-    "ast_hash": "292f6b1bd855a5e7fa8b7e4a35909362",
+    "mtime": 1791961201.3372126,
+    "seen": 1791961607.0887346,
+    "ast_hash": "e8fea1fa96d88a905f6f79f0f5ba3456",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3702,9 +3702,9 @@
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1791960058.1374664,
-    "seen": 1791960510.0055802,
-    "ast_hash": "4b46421f07aac6eb4091c7fd9dd91a4b",
+    "mtime": 1791961187.2440875,
+    "seen": 1791961607.3690546,
+    "ast_hash": "497a064007ebbf40741fe0a09b21aadc",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -29658,9 +29658,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/sonda.rs": {
-    "mtime": 1791849668.1284332,
-    "seen": 1791858306.6149812,
-    "ast_hash": "51e267387f49391e50ed0ddd3bd774ad",
+    "mtime": 1791960879.3154306,
+    "seen": 1791961607.0037582,
+    "ast_hash": "722f31d53e1130279cea64b48c686cd8",
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/cf2_estadistica_solucion_conocida.rs": {
@@ -30162,9 +30162,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md": {
-    "mtime": 1791960103.6645787,
-    "seen": 1791960510.038417,
-    "ast_hash": "1229c75c862ca16b7446c9890b71cd9b",
+    "mtime": 1791961231.874277,
+    "seen": 1791961607.4011579,
+    "ast_hash": "3962d19296b03b79fee2ae8b0b161bae",
     "semantic_hash": ""
   },
   "docs/adr/ADR-0017-frenos-de-drawdown-y-estado-aprendido.md": {
@@ -30585,6 +30585,12 @@
     "mtime": 1791959856.0937903,
     "seen": 1791960509.5048988,
     "ast_hash": "247e7b5be459ab122c8afba828b9da54",
+    "semantic_hash": ""
+  },
+  "crates/risk-engine/tests/sonda_sprt_adaptation_contract.rs": {
+    "mtime": 1791960853.0946817,
+    "seen": 1791961607.0119345,
+    "ast_hash": "01681fa56d841524e1e02598421674f5",
     "semantic_hash": ""
   }
 }
