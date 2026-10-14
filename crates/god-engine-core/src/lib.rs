@@ -1500,6 +1500,18 @@ impl GodEngineCore {
         let lam_floor = cfg.council_hodge_laminar_floor.load(Ordering::Relaxed);
         let ym_ref = cfg.council_ym_ref_current.load(Ordering::Relaxed);
         let ym_max_w = cfg.council_ym_max_weight.load(Ordering::Relaxed);
+        let ml_dz = cfg.council_ml_dead_zone.load(Ordering::Relaxed);
+        let ml_fe = cfg.council_ml_full_edge.load(Ordering::Relaxed);
+        let meta_dd_m = cfg.council_meta_dd_penalty_mult.load(Ordering::Relaxed);
+        let meta_max_dd = cfg.council_meta_max_dd_penalty.load(Ordering::Relaxed);
+        let meta_maj_f = cfg.council_meta_majority_factor.load(Ordering::Relaxed);
+        let meta_sol_f = cfg.council_meta_solitary_factor.load(Ordering::Relaxed);
+        let whale_z_thresh = cfg.council_whale_z_threshold.load(Ordering::Relaxed);
+        let whale_floor = cfg.council_whale_min_floor.load(Ordering::Relaxed);
+        let liq_mult = cfg.council_liq_decay_mult.load(Ordering::Relaxed);
+        let liq_floor = cfg.council_liq_min_floor.load(Ordering::Relaxed);
+        let crowd_decay = cfg.council_crowd_imbalance_decay.load(Ordering::Relaxed);
+        let crowd_floor = cfg.council_crowd_min_floor.load(Ordering::Relaxed);
 
         if (0.0..=1.0).contains(&approval) {
             params.approval_threshold = approval;
@@ -1557,6 +1569,42 @@ impl GodEngineCore {
         }
         if (0.0..=1.0).contains(&ym_max_w) {
             params.ym_max_weight = ym_max_w;
+        }
+        if (0.0..=0.40).contains(&ml_dz) {
+            params.ml_dead_zone = ml_dz;
+        }
+        if (0.01..=0.80).contains(&ml_fe) && ml_fe > params.ml_dead_zone {
+            params.ml_full_edge = ml_fe;
+        }
+        if (0.0..=20.0).contains(&meta_dd_m) {
+            params.meta_dd_penalty_mult = meta_dd_m;
+        }
+        if (0.0..=1.0).contains(&meta_max_dd) {
+            params.meta_max_dd_penalty = meta_max_dd;
+        }
+        if (0.0..=1.0).contains(&meta_maj_f) {
+            params.meta_majority_factor = meta_maj_f;
+        }
+        if (0.0..=1.0).contains(&meta_sol_f) {
+            params.meta_solitary_factor = meta_sol_f;
+        }
+        if (0.5..=10.0).contains(&whale_z_thresh) {
+            params.whale_z_threshold = whale_z_thresh;
+        }
+        if (0.10..=0.99).contains(&whale_floor) {
+            params.whale_min_floor = whale_floor;
+        }
+        if (0.1..=10.0).contains(&liq_mult) {
+            params.liq_decay_mult = liq_mult;
+        }
+        if (0.05..=0.95).contains(&liq_floor) {
+            params.liq_min_floor = liq_floor;
+        }
+        if (0.01..=5.0).contains(&crowd_decay) {
+            params.crowd_imbalance_decay = crowd_decay;
+        }
+        if (0.10..=0.99).contains(&crowd_floor) {
+            params.crowd_min_floor = crowd_floor;
         }
     }
 
@@ -8679,6 +8727,151 @@ impl GodEngineCore {
                                     coin_w
                                 } else {
                                     self.consejo_deliberacion.params.ym_max_weight
+                                }
+                            },
+                            // OLA Ω117: Umbrales adaptativos continuos de ML y metacognición
+                            ml_dead_zone: {
+                                let coin_dz = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "ml_dead_zone", f64::NAN);
+                                if coin_dz.is_finite() && (0.0..=0.40).contains(&coin_dz) {
+                                    coin_dz
+                                } else {
+                                    self.consejo_deliberacion.params.ml_dead_zone
+                                }
+                            },
+                            ml_full_edge: {
+                                let coin_fe = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "ml_full_edge", f64::NAN);
+                                if coin_fe.is_finite() && (0.01..=0.80).contains(&coin_fe) {
+                                    coin_fe
+                                } else {
+                                    self.consejo_deliberacion.params.ml_full_edge
+                                }
+                            },
+                            meta_dd_penalty_mult: {
+                                let coin_m = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_dd_penalty_mult", f64::NAN);
+                                if coin_m.is_finite() && (0.0..=20.0).contains(&coin_m) {
+                                    coin_m
+                                } else {
+                                    self.consejo_deliberacion.params.meta_dd_penalty_mult
+                                }
+                            },
+                            meta_max_dd_penalty: {
+                                let coin_pen = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_max_dd_penalty", f64::NAN);
+                                if coin_pen.is_finite() && (0.0..=1.0).contains(&coin_pen) {
+                                    coin_pen
+                                } else {
+                                    self.consejo_deliberacion.params.meta_max_dd_penalty
+                                }
+                            },
+                            meta_majority_factor: {
+                                let coin_maj = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_majority_factor", f64::NAN);
+                                if coin_maj.is_finite() && (0.0..=1.0).contains(&coin_maj) {
+                                    coin_maj
+                                } else {
+                                    self.consejo_deliberacion.params.meta_majority_factor
+                                }
+                            },
+                            meta_solitary_factor: {
+                                let coin_sol = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_solitary_factor", f64::NAN);
+                                if coin_sol.is_finite() && (0.0..=1.0).contains(&coin_sol) {
+                                    coin_sol
+                                } else {
+                                    self.consejo_deliberacion.params.meta_solitary_factor
+                                }
+                            },
+                            // OLA Ω118: Umbrales y amortiguamientos adaptativos de SeniorEnteMercado
+                            cascade_severity_breaker: {
+                                let coin_casc = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "cascade_severity_breaker", f64::NAN);
+                                if coin_casc.is_finite() && (0.0..=1.0).contains(&coin_casc) {
+                                    coin_casc
+                                } else {
+                                    self.consejo_deliberacion.params.cascade_severity_breaker
+                                }
+                            },
+                            whale_z_threshold: {
+                                let coin_wz = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "whale_z_threshold", f64::NAN);
+                                if coin_wz.is_finite() && (0.5..=10.0).contains(&coin_wz) {
+                                    coin_wz
+                                } else {
+                                    self.consejo_deliberacion.params.whale_z_threshold
+                                }
+                            },
+                            whale_min_floor: {
+                                let coin_wf = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "whale_min_floor", f64::NAN);
+                                if coin_wf.is_finite() && (0.10..=0.99).contains(&coin_wf) {
+                                    coin_wf
+                                } else {
+                                    self.consejo_deliberacion.params.whale_min_floor
+                                }
+                            },
+                            liq_decay_mult: {
+                                let coin_lm = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "liq_decay_mult", f64::NAN);
+                                if coin_lm.is_finite() && (0.1..=10.0).contains(&coin_lm) {
+                                    coin_lm
+                                } else {
+                                    self.consejo_deliberacion.params.liq_decay_mult
+                                }
+                            },
+                            liq_min_floor: {
+                                let coin_lf = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "liq_min_floor", f64::NAN);
+                                if coin_lf.is_finite() && (0.05..=0.95).contains(&coin_lf) {
+                                    coin_lf
+                                } else {
+                                    self.consejo_deliberacion.params.liq_min_floor
+                                }
+                            },
+                            crowd_imbalance_decay: {
+                                let coin_cd = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "crowd_imbalance_decay", f64::NAN);
+                                if coin_cd.is_finite() && (0.01..=5.0).contains(&coin_cd) {
+                                    coin_cd
+                                } else {
+                                    self.consejo_deliberacion.params.crowd_imbalance_decay
+                                }
+                            },
+                            crowd_min_floor: {
+                                let coin_cf = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "crowd_min_floor", f64::NAN);
+                                if coin_cf.is_finite() && (0.10..=0.99).contains(&coin_cf) {
+                                    coin_cf
+                                } else {
+                                    self.consejo_deliberacion.params.crowd_min_floor
                                 }
                             },
                         };

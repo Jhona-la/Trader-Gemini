@@ -239,6 +239,27 @@ pub struct MarketSnapshotPayload {
     /// OLA Ω117: Factor de evidencia solitaria para SeniorMetacognitivo (default: 0.40).
     #[serde(default = "default_meta_solitary_factor")]
     pub meta_solitary_factor: f64,
+    /// OLA Ω118: Umbral de corte de severidad de cascada de liquidaciones para SeniorEnteMercado (default: 0.85).
+    #[serde(default = "default_cascade_severity_breaker")]
+    pub cascade_severity_breaker: f64,
+    /// OLA Ω118: Umbral de z-score de volumen de ballenas para amortiguación en SeniorEnteMercado (default: 4.0).
+    #[serde(default = "default_whale_z_threshold")]
+    pub whale_z_threshold: f64,
+    /// OLA Ω118: Piso mínimo de convicción ante shock de ballenas para SeniorEnteMercado (default: 0.60).
+    #[serde(default = "default_whale_min_floor")]
+    pub whale_min_floor: f64,
+    /// OLA Ω118: Multiplicador de decaimiento cuadrático por liquidaciones para SeniorEnteMercado (default: 1.2).
+    #[serde(default = "default_liq_decay_mult")]
+    pub liq_decay_mult: f64,
+    /// OLA Ω118: Piso mínimo de convicción ante liquidaciones para SeniorEnteMercado (default: 0.40).
+    #[serde(default = "default_liq_min_floor")]
+    pub liq_min_floor: f64,
+    /// OLA Ω118: Tasa de decaimiento por desbalance de masas para SeniorEnteMercado (default: 0.25).
+    #[serde(default = "default_crowd_imbalance_decay")]
+    pub crowd_imbalance_decay: f64,
+    /// OLA Ω118: Piso mínimo de convicción ante masas para SeniorEnteMercado (default: 0.70).
+    #[serde(default = "default_crowd_min_floor")]
+    pub crowd_min_floor: f64,
 }
 
 impl Default for MarketSnapshotPayload {
@@ -289,6 +310,13 @@ impl Default for MarketSnapshotPayload {
             meta_max_dd_penalty: DEFAULT_META_MAX_DD_PENALTY,
             meta_majority_factor: DEFAULT_META_MAJORITY_FACTOR,
             meta_solitary_factor: DEFAULT_META_SOLITARY_FACTOR,
+            cascade_severity_breaker: DEFAULT_CASCADE_SEVERITY_BREAKER,
+            whale_z_threshold: DEFAULT_WHALE_Z_THRESHOLD,
+            whale_min_floor: DEFAULT_WHALE_MIN_FLOOR,
+            liq_decay_mult: DEFAULT_LIQ_DECAY_MULT,
+            liq_min_floor: DEFAULT_LIQ_MIN_FLOOR,
+            crowd_imbalance_decay: DEFAULT_CROWD_IMBALANCE_DECAY,
+            crowd_min_floor: DEFAULT_CROWD_MIN_FLOOR,
         }
     }
 }
@@ -587,6 +615,50 @@ pub fn default_meta_majority_factor() -> f64 {
 #[inline(always)]
 pub fn default_meta_solitary_factor() -> f64 {
     DEFAULT_META_SOLITARY_FACTOR
+}
+
+/// OLA Ω118: Parámetros canónicos desacoplados para SeniorEnteMercado (psicología de masas, ballenas y cascadas).
+pub const DEFAULT_CASCADE_SEVERITY_BREAKER: f64 = 0.85;
+pub const DEFAULT_WHALE_Z_THRESHOLD: f64 = 4.0;
+pub const DEFAULT_WHALE_MIN_FLOOR: f64 = 0.60;
+pub const DEFAULT_LIQ_DECAY_MULT: f64 = 1.2;
+pub const DEFAULT_LIQ_MIN_FLOOR: f64 = 0.40;
+pub const DEFAULT_CROWD_IMBALANCE_DECAY: f64 = 0.25;
+pub const DEFAULT_CROWD_MIN_FLOOR: f64 = 0.70;
+
+#[inline(always)]
+pub fn default_cascade_severity_breaker() -> f64 {
+    DEFAULT_CASCADE_SEVERITY_BREAKER
+}
+
+#[inline(always)]
+pub fn default_whale_z_threshold() -> f64 {
+    DEFAULT_WHALE_Z_THRESHOLD
+}
+
+#[inline(always)]
+pub fn default_whale_min_floor() -> f64 {
+    DEFAULT_WHALE_MIN_FLOOR
+}
+
+#[inline(always)]
+pub fn default_liq_decay_mult() -> f64 {
+    DEFAULT_LIQ_DECAY_MULT
+}
+
+#[inline(always)]
+pub fn default_liq_min_floor() -> f64 {
+    DEFAULT_LIQ_MIN_FLOOR
+}
+
+#[inline(always)]
+pub fn default_crowd_imbalance_decay() -> f64 {
+    DEFAULT_CROWD_IMBALANCE_DECAY
+}
+
+#[inline(always)]
+pub fn default_crowd_min_floor() -> f64 {
+    DEFAULT_CROWD_MIN_FLOOR
 }
 
 /// Evalúa la opinión direccional del ensamble ML con zona muerta y borde de saturación plena desacoplados (Ola Ω117).
@@ -1048,144 +1120,218 @@ impl SeniorAgent for SeniorVolatilidad {
 }
 
 // P-5b — Senior Ente del Mercado (MODULADOR: quién opera AHORA)
+
+/// Evalúa la opinión del SeniorEnteMercado con parámetros dinámicos desacoplados de psicología de masas, ballenas y cascadas (Ola Ω118).
+///
+/// # Formulación Continua C¹
+/// - `whale_z`: amortiguación $p_{\text{whale}} = \frac{1}{1 + (z / z_{\text{thresh}})^2}$, acotada por `[whale_floor, 1.0]`.
+/// - `liq`: amortiguación exponencial de cascada $p_{\text{liq}} = \exp(-\mu_{\text{liq}} \cdot \text{liq}^2)$, acotada por `[liq_floor, 1.0]`.
+/// - `is_veto`: se activa estrictamente ante cascada mayor `liq > cascade_severity_breaker`.
+/// - `crowd`: desbalance logarítmico contrarian $z_{\text{crowd}} = \max(0, \text{dir} \cdot \ln(LS))$. Amortiguación $p_{\text{crowd}} = \frac{1}{1 + \gamma_{\text{crowd}} \cdot z_{\text{crowd}}^2}$, acotada por `[crowd_floor, 1.0]`.
+/// - `prospect_pressure`: modulación asimétrica de Kahneman-Tversky con erradicación de doble conteo de masa (F2.5-02).
+/// - `entity_factor = (p_whale * p_liq * p_oi * p_spoof * p_crowd * p_taker * p_macro * p_prospect).clamp(0.20, 1.30)`
+///
+/// # Sanitización Fail-Closed
+/// - Observables no finitos se resetean a sus estados basales neutros.
+/// - Parámetros fuera de rango se clamean a sus límites seguros de diseño.
+#[inline]
+pub fn evaluate_ente_mercado_opinion(
+    whale_burst_z: f64,
+    liquidation_severity: f64,
+    open_interest_norm: f64,
+    spoof_score: f64,
+    crowd_ls_ratio: f64,
+    crowd_taker_ratio: f64,
+    intended_direction: f64,
+    macro_staleness_ms: u64,
+    prospect_pressure: f64,
+    cascade_severity_breaker: f64,
+    whale_z_threshold: f64,
+    whale_min_floor: f64,
+    liq_decay_mult: f64,
+    liq_min_floor: f64,
+    crowd_imbalance_decay: f64,
+    crowd_min_floor: f64,
+) -> (f64, f64, bool, String) {
+    let whale_z = if whale_burst_z.is_finite() {
+        whale_burst_z.clamp(0.0, 10.0)
+    } else {
+        0.0
+    };
+    let liq = if liquidation_severity.is_finite() {
+        liquidation_severity.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let oi = if open_interest_norm.is_finite() {
+        open_interest_norm.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let spoof = if spoof_score.is_finite() {
+        spoof_score.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+
+    let cascade_breaker = if cascade_severity_breaker.is_finite() && (0.0..=1.0).contains(&cascade_severity_breaker) {
+        cascade_severity_breaker
+    } else {
+        DEFAULT_CASCADE_SEVERITY_BREAKER
+    };
+
+    let safe_whale_z = if whale_z_threshold.is_finite() && whale_z_threshold > 0.0 {
+        whale_z_threshold.clamp(0.5, 10.0)
+    } else {
+        DEFAULT_WHALE_Z_THRESHOLD
+    };
+    let safe_whale_floor = if whale_min_floor.is_finite() {
+        whale_min_floor.clamp(0.10, 0.99)
+    } else {
+        DEFAULT_WHALE_MIN_FLOOR
+    };
+
+    let safe_liq_mult = if liq_decay_mult.is_finite() && liq_decay_mult > 0.0 {
+        liq_decay_mult.clamp(0.1, 10.0)
+    } else {
+        DEFAULT_LIQ_DECAY_MULT
+    };
+    let safe_liq_floor = if liq_min_floor.is_finite() {
+        liq_min_floor.clamp(0.05, 0.95)
+    } else {
+        DEFAULT_LIQ_MIN_FLOOR
+    };
+
+    let safe_crowd_decay = if crowd_imbalance_decay.is_finite() && crowd_imbalance_decay > 0.0 {
+        crowd_imbalance_decay.clamp(0.01, 5.0)
+    } else {
+        DEFAULT_CROWD_IMBALANCE_DECAY
+    };
+    let safe_crowd_floor = if crowd_min_floor.is_finite() {
+        crowd_min_floor.clamp(0.10, 0.99)
+    } else {
+        DEFAULT_CROWD_MIN_FLOOR
+    };
+
+    let is_veto = liq > cascade_breaker;
+
+    let p_whale = if whale_z > 0.0 {
+        (1.0 / (1.0 + (whale_z / safe_whale_z).powi(2))).clamp(safe_whale_floor, 1.0)
+    } else {
+        1.0
+    };
+    let p_liq = if liq > 0.0 {
+        (-safe_liq_mult * liq * liq).exp().clamp(safe_liq_floor, 1.0)
+    } else {
+        1.0
+    };
+    let p_oi = if oi > 0.0 {
+        (1.0 / (1.0 + 0.3 * oi * oi)).clamp(0.80, 1.0)
+    } else {
+        1.0
+    };
+    let p_spoof = if spoof > 0.0 {
+        (1.0 / (1.0 + 0.3 * spoof * spoof)).clamp(0.80, 1.0)
+    } else {
+        1.0
+    };
+
+    let ls = if crowd_ls_ratio.is_finite() && crowd_ls_ratio > 0.0 {
+        crowd_ls_ratio.clamp(0.01, 20.0)
+    } else {
+        1.0
+    };
+    let tk = if crowd_taker_ratio.is_finite() && crowd_taker_ratio > 0.0 {
+        crowd_taker_ratio.clamp(0.01, 20.0)
+    } else {
+        1.0
+    };
+    let dir_sign = safe_signum(intended_direction);
+    let crowd_imbalance = (dir_sign * ls.ln()).max(0.0);
+    let p_crowd = (1.0 / (1.0 + safe_crowd_decay * crowd_imbalance * crowd_imbalance)).clamp(safe_crowd_floor, 1.0);
+
+    let taker_imbalance = (dir_sign * tk.ln()).max(0.0);
+    let p_taker = (1.0 / (1.0 + 0.20 * taker_imbalance * taker_imbalance)).clamp(0.75, 1.0);
+
+    let p_macro = if macro_staleness_ms > 180_000 {
+        let excess_s = (macro_staleness_ms - 180_000) as f64 / 1000.0;
+        (-excess_s / 300.0).exp().clamp(0.40, 1.0)
+    } else {
+        1.0
+    };
+
+    let p_prospect = if prospect_pressure.is_finite() && prospect_pressure != 0.0 {
+        let kt = crate::prospect_theory::ProspectTheoryEngine::new();
+        let es_redundante_de_ls = if (ls - 1.0).abs() > 1e-4 {
+            let g0 = kt.compute_crowd_net_prospect_pressure(ls, liq, 1.0);
+            if g0.abs() > 1e-9 && (prospect_pressure * g0) > 0.0 {
+                let ratio = prospect_pressure / g0;
+                let delta = ratio.powf(1.0 / 0.88);
+                (0.099..=10.001).contains(&delta)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if es_redundante_de_ls {
+            1.0 // Un mismo dato de masa, una sola entrada (F2.5-02)
+        } else {
+            kt.modulation_factor(intended_direction, prospect_pressure)
+        }
+    } else {
+        1.0
+    };
+
+    let entity_factor = (p_whale * p_liq * p_oi * p_spoof * p_crowd * p_taker * p_macro * p_prospect).clamp(0.20, 1.30);
+    let dir = safe_signum(intended_direction);
+    let confidence = if dir != 0.0 { entity_factor } else { 0.0 };
+    let justification = format!(
+        "EnteMercado: ballena_z={:.1} cascada={:.2} OI={:.2} spoof={:.2} macro_stale_ms={} kt_p={:.2} → convicción {:.2}{}",
+        whale_z,
+        liq,
+        oi,
+        spoof,
+        macro_staleness_ms,
+        prospect_pressure,
+        entity_factor,
+        if is_veto { " [VETO CASCADA]" } else { "" }
+    );
+    (dir, confidence, is_veto, justification)
+}
+
 pub struct SeniorEnteMercado;
 impl SeniorAgent for SeniorEnteMercado {
     fn role(&self) -> SeniorRole {
         SeniorRole::EnteMercado
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let whale_z = if payload.whale_burst_z.is_finite() {
-            payload.whale_burst_z.clamp(0.0, 10.0)
-        } else {
-            0.0
-        };
-        let liq = if payload.liquidation_severity.is_finite() {
-            payload.liquidation_severity.clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        let oi = if payload.open_interest_norm.is_finite() {
-            payload.open_interest_norm.clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        let spoof = if payload.spoof_score.is_finite() {
-            payload.spoof_score.clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        // VETO sólo ante cascada MAYOR en curso (sev > 0.85): no se entra
-        // contra un tsunami de liquidaciones — ni a favor: el path es
-        // caótico en ambos sentidos hasta que la cascada se agote.
-        let is_veto = liq > 0.85;
-        // Convicción: los entes grandes (ballena burst z>4) y el calor de
-        // cascada activa (sev>0.6) reducen la confianza en el desenlace
-        // limpio de la entrada — el precio en ese momento lo mueven ELLOS,
-        // no el flujo que motivó la señal. OI alto (apalancamiento denso)
-        // amplifica movimientos: misma modulación.
-        // Modulación continua C¹ autoadaptativa de entes adversariales y psicología de masas:
-        // En lugar de funciones de escalón discretas C⁰ (if > threshold), cada magnitud modula
-        // la convicción suavemente mediante leyes continuas de amortiguamiento físico.
-        let p_whale = if whale_z > 0.0 {
-            (1.0 / (1.0 + (whale_z / 4.0).powi(2))).clamp(0.60, 1.0)
-        } else {
-            1.0
-        };
-        let p_liq = if liq > 0.0 {
-            (-1.2 * liq * liq).exp().clamp(0.40, 1.0)
-        } else {
-            1.0
-        };
-        let p_oi = if oi > 0.0 {
-            (1.0 / (1.0 + 0.3 * oi * oi)).clamp(0.80, 1.0)
-        } else {
-            1.0
-        };
-        let p_spoof = if spoof > 0.0 {
-            (1.0 / (1.0 + 0.3 * spoof * spoof)).clamp(0.80, 1.0)
-        } else {
-            1.0
-        };
-
-        // QO-U2 / Conducta de masas contrarian continua:
-        // Desbalance logarítmico de multitud: z = dir_sign * ln(L/S).
-        // Si z > 0, la masa está concentrada en nuestra misma dirección (riesgo de squeeze adverso).
-        let ls = if payload.crowd_ls_ratio.is_finite() && payload.crowd_ls_ratio > 0.0 {
-            payload.crowd_ls_ratio.clamp(0.01, 20.0)
-        } else {
-            1.0
-        };
-        let tk = if payload.crowd_taker_ratio.is_finite() && payload.crowd_taker_ratio > 0.0 {
-            payload.crowd_taker_ratio.clamp(0.01, 20.0)
-        } else {
-            1.0
-        };
-        let dir_sign = safe_signum(payload.intended_direction);
-        let crowd_imbalance = (dir_sign * ls.ln()).max(0.0);
-        let p_crowd = (1.0 / (1.0 + 0.25 * crowd_imbalance * crowd_imbalance)).clamp(0.70, 1.0);
-
-        let taker_imbalance = (dir_sign * tk.ln()).max(0.0);
-        let p_taker = (1.0 / (1.0 + 0.20 * taker_imbalance * taker_imbalance)).clamp(0.75, 1.0);
-
-        // OLA Ω38 (A-M6 / H-08) — Modulación continua por staleness de feeds macro:
-        // Antigüedad > 180s amortigua suavemente con decaimiento exponencial continuo
-        let p_macro = if payload.macro_staleness_ms > 180_000 {
-            let excess_s = (payload.macro_staleness_ms - 180_000) as f64 / 1000.0;
-            (-excess_s / 300.0).exp().clamp(0.40, 1.0)
-        } else {
-            1.0
-        };
-
-        // OLA Ω69/Ω89 (F2.5-02 / Ficha #727): Modulación por presión psicológica asimétrica de Prospect Theory (Kahneman-Tversky)
-        // Erradicación de doble conteo de masa: P(LS, liq, delta) = delta^0.88 * g0(LS, liq).
-        // Si prospect_pressure proviene de dicha fórmula para delta in [0.1, 10.0], es redundante
-        // con crowd_ls_ratio y el asiento no penaliza doblemente el mismo dato de la multitud.
-        let p_prospect = if payload.prospect_pressure.is_finite() && payload.prospect_pressure != 0.0 {
-            let kt = crate::prospect_theory::ProspectTheoryEngine::new();
-            let es_redundante_de_ls = if (ls - 1.0).abs() > 1e-4 {
-                let g0 = kt.compute_crowd_net_prospect_pressure(ls, payload.liquidation_severity, 1.0);
-                if g0.abs() > 1e-9 && (payload.prospect_pressure * g0) > 0.0 {
-                    let ratio = payload.prospect_pressure / g0;
-                    let delta = ratio.powf(1.0 / 0.88);
-                    (0.099..=10.001).contains(&delta)
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
-
-            if es_redundante_de_ls {
-                1.0 // Un mismo dato de masa, una sola entrada (F2.5-02)
-            } else {
-                kt.modulation_factor(payload.intended_direction, payload.prospect_pressure)
-            }
-        } else {
-            1.0
-        };
-
-        // OLA Ω88 (Ficha #726 / F2.5-03): El impulso contrarian de Prospect Theory ([1.0, 1.30])
-        // amplifica la convicción de EnteMercado cuando la multitud capitula a favor del trade.
-        // Se permite el rango [0.20, 1.30] para no anular el edge contrarian contra el techo 1.0.
-        let entity_factor = (p_whale * p_liq * p_oi * p_spoof * p_crowd * p_taker * p_macro * p_prospect).clamp(0.20, 1.30);
-        let dir = safe_signum(payload.intended_direction);
+        let (signal_direction, confidence, is_veto, justification) = evaluate_ente_mercado_opinion(
+            payload.whale_burst_z,
+            payload.liquidation_severity,
+            payload.open_interest_norm,
+            payload.spoof_score,
+            payload.crowd_ls_ratio,
+            payload.crowd_taker_ratio,
+            payload.intended_direction,
+            payload.macro_staleness_ms,
+            payload.prospect_pressure,
+            payload.cascade_severity_breaker,
+            payload.whale_z_threshold,
+            payload.whale_min_floor,
+            payload.liq_decay_mult,
+            payload.liq_min_floor,
+            payload.crowd_imbalance_decay,
+            payload.crowd_min_floor,
+        );
         SeniorOpinion {
             role: self.role(),
-            signal_direction: dir, // hereda la dirección: modula, no genera
-            confidence: if dir != 0.0 { entity_factor } else { 0.0 },
+            signal_direction,
+            confidence,
             weight: 1.0,
             is_veto,
-            justification: format!(
-                "EnteMercado: ballena_z={:.1} cascada={:.2} OI={:.2} spoof={:.2} macro_stale_ms={} kt_p={:.2} → convicción {:.2}{}",
-                whale_z,
-                liq,
-                oi,
-                spoof,
-                payload.macro_staleness_ms,
-                payload.prospect_pressure,
-                entity_factor,
-                if is_veto { " [VETO CASCADA]" } else { "" }
-            ),
+            justification,
         }
     }
 }
@@ -1756,6 +1902,18 @@ pub struct CouncilParams {
     pub meta_majority_factor: f64,     // 0.70
     /// OLA Ω117: Factor de evidencia solitaria para SeniorMetacognitivo (default: 0.40).
     pub meta_solitary_factor: f64,     // 0.40
+    /// OLA Ω118: Umbral de z-score de volumen de ballenas para amortiguación en SeniorEnteMercado (default: 4.0).
+    pub whale_z_threshold: f64,        // 4.0
+    /// OLA Ω118: Piso mínimo de convicción ante shock de ballenas para SeniorEnteMercado (default: 0.60).
+    pub whale_min_floor: f64,          // 0.60
+    /// OLA Ω118: Multiplicador de decaimiento cuadrático por liquidaciones para SeniorEnteMercado (default: 1.2).
+    pub liq_decay_mult: f64,           // 1.2
+    /// OLA Ω118: Piso mínimo de convicción ante liquidaciones para SeniorEnteMercado (default: 0.40).
+    pub liq_min_floor: f64,            // 0.40
+    /// OLA Ω118: Tasa de decaimiento por desbalance de masas para SeniorEnteMercado (default: 0.25).
+    pub crowd_imbalance_decay: f64,    // 0.25
+    /// OLA Ω118: Piso mínimo de convicción ante masas para SeniorEnteMercado (default: 0.70).
+    pub crowd_min_floor: f64,          // 0.70
 }
 
 impl CouncilParams {
@@ -1793,6 +1951,12 @@ impl CouncilParams {
             meta_max_dd_penalty: DEFAULT_META_MAX_DD_PENALTY,
             meta_majority_factor: DEFAULT_META_MAJORITY_FACTOR,
             meta_solitary_factor: DEFAULT_META_SOLITARY_FACTOR,
+            whale_z_threshold: DEFAULT_WHALE_Z_THRESHOLD,
+            whale_min_floor: DEFAULT_WHALE_MIN_FLOOR,
+            liq_decay_mult: DEFAULT_LIQ_DECAY_MULT,
+            liq_min_floor: DEFAULT_LIQ_MIN_FLOOR,
+            crowd_imbalance_decay: DEFAULT_CROWD_IMBALANCE_DECAY,
+            crowd_min_floor: DEFAULT_CROWD_MIN_FLOOR,
         };
         params.validate()?;
         Ok(params)
@@ -1872,6 +2036,28 @@ impl CouncilParams {
         Ok(self)
     }
 
+    /// OLA Ω118: Builder para configurar tolerancias y amortiguamientos adaptativos de SeniorEnteMercado.
+    pub fn with_market_entity_bounds(
+        mut self,
+        cascade_breaker: f64,
+        whale_z_thresh: f64,
+        whale_floor: f64,
+        liq_mult: f64,
+        liq_floor: f64,
+        crowd_decay: f64,
+        crowd_floor: f64,
+    ) -> Result<Self, String> {
+        self.cascade_severity_breaker = cascade_breaker;
+        self.whale_z_threshold = whale_z_thresh;
+        self.whale_min_floor = whale_floor;
+        self.liq_decay_mult = liq_mult;
+        self.liq_min_floor = liq_floor;
+        self.crowd_imbalance_decay = crowd_decay;
+        self.crowd_min_floor = crowd_floor;
+        self.validate()?;
+        Ok(self)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         for (name, value) in [
             ("approval_threshold", self.approval_threshold),
@@ -1939,6 +2125,24 @@ impl CouncilParams {
         if !(0.0..=1.0).contains(&self.meta_solitary_factor) {
             return Err(format!("Invalid council parameter meta_solitary_factor: {}", self.meta_solitary_factor));
         }
+        if !(0.5..=10.0).contains(&self.whale_z_threshold) {
+            return Err(format!("Invalid council parameter whale_z_threshold: {}", self.whale_z_threshold));
+        }
+        if !(0.10..=0.99).contains(&self.whale_min_floor) {
+            return Err(format!("Invalid council parameter whale_min_floor: {}", self.whale_min_floor));
+        }
+        if !(0.1..=10.0).contains(&self.liq_decay_mult) {
+            return Err(format!("Invalid council parameter liq_decay_mult: {}", self.liq_decay_mult));
+        }
+        if !(0.05..=0.95).contains(&self.liq_min_floor) {
+            return Err(format!("Invalid council parameter liq_min_floor: {}", self.liq_min_floor));
+        }
+        if !(0.01..=5.0).contains(&self.crowd_imbalance_decay) {
+            return Err(format!("Invalid council parameter crowd_imbalance_decay: {}", self.crowd_imbalance_decay));
+        }
+        if !(0.10..=0.99).contains(&self.crowd_min_floor) {
+            return Err(format!("Invalid council parameter crowd_min_floor: {}", self.crowd_min_floor));
+        }
         if !self.shrinkage_k.is_finite() || self.shrinkage_k <= 0.0 {
             return Err("shrinkage_k must be finite and positive".into());
         }
@@ -1954,7 +2158,7 @@ impl Default for CouncilParams {
             override_signal_floor: 0.28,
             override_penalty: 0.75,
             shrinkage_k: 8.0,
-            cascade_severity_breaker: 0.85,
+            cascade_severity_breaker: DEFAULT_CASCADE_SEVERITY_BREAKER,
             utility_veto_floor: UTILITY_VETO_FLOOR,
             utility_veto_wr: UTILITY_VETO_WR,
             fast_slippage_floor: DEFAULT_FAST_SLIPPAGE_FLOOR,
@@ -1974,6 +2178,12 @@ impl Default for CouncilParams {
             meta_max_dd_penalty: DEFAULT_META_MAX_DD_PENALTY,
             meta_majority_factor: DEFAULT_META_MAJORITY_FACTOR,
             meta_solitary_factor: DEFAULT_META_SOLITARY_FACTOR,
+            whale_z_threshold: DEFAULT_WHALE_Z_THRESHOLD,
+            whale_min_floor: DEFAULT_WHALE_MIN_FLOOR,
+            liq_decay_mult: DEFAULT_LIQ_DECAY_MULT,
+            liq_min_floor: DEFAULT_LIQ_MIN_FLOOR,
+            crowd_imbalance_decay: DEFAULT_CROWD_IMBALANCE_DECAY,
+            crowd_min_floor: DEFAULT_CROWD_MIN_FLOOR,
         }
     }
 }
@@ -2141,6 +2351,13 @@ impl ConsejoDeliberacion {
             || (self.params.meta_max_dd_penalty - DEFAULT_META_MAX_DD_PENALTY).abs() > 1e-9
             || (self.params.meta_majority_factor - DEFAULT_META_MAJORITY_FACTOR).abs() > 1e-9
             || (self.params.meta_solitary_factor - DEFAULT_META_SOLITARY_FACTOR).abs() > 1e-9;
+        let has_custom_market_entity = (self.params.cascade_severity_breaker - DEFAULT_CASCADE_SEVERITY_BREAKER).abs() > 1e-9
+            || (self.params.whale_z_threshold - DEFAULT_WHALE_Z_THRESHOLD).abs() > 1e-9
+            || (self.params.whale_min_floor - DEFAULT_WHALE_MIN_FLOOR).abs() > 1e-9
+            || (self.params.liq_decay_mult - DEFAULT_LIQ_DECAY_MULT).abs() > 1e-9
+            || (self.params.liq_min_floor - DEFAULT_LIQ_MIN_FLOOR).abs() > 1e-9
+            || (self.params.crowd_imbalance_decay - DEFAULT_CROWD_IMBALANCE_DECAY).abs() > 1e-9
+            || (self.params.crowd_min_floor - DEFAULT_CROWD_MIN_FLOOR).abs() > 1e-9;
 
         let effective_payload = if has_custom_utility
             || has_custom_slippage
@@ -2148,6 +2365,7 @@ impl ConsejoDeliberacion {
             || has_custom_causal
             || has_custom_physical_gauge
             || has_custom_ml_metacognitive
+            || has_custom_market_entity
         {
             let mut p = payload.clone();
             if has_custom_utility {
@@ -2219,6 +2437,29 @@ impl ConsejoDeliberacion {
                     p.meta_solitary_factor = self.params.meta_solitary_factor;
                 }
             }
+            if has_custom_market_entity {
+                if (p.cascade_severity_breaker - DEFAULT_CASCADE_SEVERITY_BREAKER).abs() < 1e-9 {
+                    p.cascade_severity_breaker = self.params.cascade_severity_breaker;
+                }
+                if (p.whale_z_threshold - DEFAULT_WHALE_Z_THRESHOLD).abs() < 1e-9 {
+                    p.whale_z_threshold = self.params.whale_z_threshold;
+                }
+                if (p.whale_min_floor - DEFAULT_WHALE_MIN_FLOOR).abs() < 1e-9 {
+                    p.whale_min_floor = self.params.whale_min_floor;
+                }
+                if (p.liq_decay_mult - DEFAULT_LIQ_DECAY_MULT).abs() < 1e-9 {
+                    p.liq_decay_mult = self.params.liq_decay_mult;
+                }
+                if (p.liq_min_floor - DEFAULT_LIQ_MIN_FLOOR).abs() < 1e-9 {
+                    p.liq_min_floor = self.params.liq_min_floor;
+                }
+                if (p.crowd_imbalance_decay - DEFAULT_CROWD_IMBALANCE_DECAY).abs() < 1e-9 {
+                    p.crowd_imbalance_decay = self.params.crowd_imbalance_decay;
+                }
+                if (p.crowd_min_floor - DEFAULT_CROWD_MIN_FLOOR).abs() < 1e-9 {
+                    p.crowd_min_floor = self.params.crowd_min_floor;
+                }
+            }
             std::borrow::Cow::Owned(p)
         } else {
             std::borrow::Cow::Borrowed(payload)
@@ -2245,12 +2486,12 @@ impl ConsejoDeliberacion {
             // The council's configured threshold must both create and protect
             // this breaker. The standalone seat retains its legacy default.
             if op.role == SeniorRole::EnteMercado {
-                op.is_veto = payload.liquidation_severity > self.params.cascade_severity_breaker;
+                op.is_veto = effective_payload.liquidation_severity > effective_payload.cascade_severity_breaker;
                 op.justification = format!(
                     "EnteMercado/council: cascada={:.4}, limite={:.4}, veto={}, conviccion={:.4}; ballena_z={:.4}, OI={:.4}, spoof={:.4}",
-                    payload.liquidation_severity, self.params.cascade_severity_breaker,
-                    op.is_veto, op.confidence, payload.whale_burst_z,
-                    payload.open_interest_norm, payload.spoof_score
+                    effective_payload.liquidation_severity, effective_payload.cascade_severity_breaker,
+                    op.is_veto, op.confidence, effective_payload.whale_burst_z,
+                    effective_payload.open_interest_norm, effective_payload.spoof_score
                 );
             }
             if let Some(multipliers) = active_mults {
@@ -2698,6 +2939,13 @@ mod tests {
             meta_max_dd_penalty: DEFAULT_META_MAX_DD_PENALTY,
             meta_majority_factor: DEFAULT_META_MAJORITY_FACTOR,
             meta_solitary_factor: DEFAULT_META_SOLITARY_FACTOR,
+            cascade_severity_breaker: DEFAULT_CASCADE_SEVERITY_BREAKER,
+            whale_z_threshold: DEFAULT_WHALE_Z_THRESHOLD,
+            whale_min_floor: DEFAULT_WHALE_MIN_FLOOR,
+            liq_decay_mult: DEFAULT_LIQ_DECAY_MULT,
+            liq_min_floor: DEFAULT_LIQ_MIN_FLOOR,
+            crowd_imbalance_decay: DEFAULT_CROWD_IMBALANCE_DECAY,
+            crowd_min_floor: DEFAULT_CROWD_MIN_FLOOR,
         }
     }
 

@@ -98,6 +98,13 @@ fn casos() -> Vec<MarketSnapshotPayload> {
                                     meta_max_dd_penalty: 0.50,
                                     meta_majority_factor: 0.70,
                                     meta_solitary_factor: 0.40,
+                                    cascade_severity_breaker: 0.85,
+                                    whale_z_threshold: 4.0,
+                                    whale_min_floor: 0.60,
+                                    liq_decay_mult: 1.2,
+                                    liq_min_floor: 0.40,
+                                    crowd_imbalance_decay: 0.25,
+                                    crowd_min_floor: 0.70,
                                 });
                             }
                         }

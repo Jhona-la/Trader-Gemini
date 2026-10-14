@@ -208,6 +208,12 @@ pub struct QuantumConfig {
     pub council_meta_max_dd_penalty: AtomicF64,
     pub council_meta_majority_factor: AtomicF64,
     pub council_meta_solitary_factor: AtomicF64,
+    pub council_whale_z_threshold: AtomicF64,
+    pub council_whale_min_floor: AtomicF64,
+    pub council_liq_decay_mult: AtomicF64,
+    pub council_liq_min_floor: AtomicF64,
+    pub council_crowd_imbalance_decay: AtomicF64,
+    pub council_crowd_min_floor: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -453,6 +459,12 @@ impl QuantumConfig {
             council_meta_max_dd_penalty: AtomicF64::new(0.50),
             council_meta_majority_factor: AtomicF64::new(0.70),
             council_meta_solitary_factor: AtomicF64::new(0.40),
+            council_whale_z_threshold: AtomicF64::new(4.0),
+            council_whale_min_floor: AtomicF64::new(0.60),
+            council_liq_decay_mult: AtomicF64::new(1.2),
+            council_liq_min_floor: AtomicF64::new(0.40),
+            council_crowd_imbalance_decay: AtomicF64::new(0.25),
+            council_crowd_min_floor: AtomicF64::new(0.70),
         }
     }
 
