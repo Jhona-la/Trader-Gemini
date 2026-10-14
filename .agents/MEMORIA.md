@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω111 — Desacoplamiento Dinámico de Umbrales de Utilidad Esperada y Win Rate en SeniorTeleonomia
+
+- **Ola Integrada y Certificada en `main` (`5cc86bd0`)**:
+  * **Diagnóstico y Causa Raíz**: En `SeniorTeleonomia::evaluate` (`crates/metacortex-engine/src/consejo_seniors.rs:1042`), el veto por futilidad de utilidad esperada (`is_veto = expected_utility.abs() < UTILITY_VETO_FLOOR && wr < UTILITY_VETO_WR`) estaba sujeto a dos constantes estáticas rígidas: `UTILITY_VETO_FLOOR = 0.02` y `UTILITY_VETO_WR = 0.35`. Esto introducía dos defectos críticos:
+    1. En micro-scalping de muy alta velocidad ($s \to 0$, escalas $\tau \sim 30\text{ s}$), las utilidades esperadas netas operan legítimamente en el rango de 5 a 15 bps ($0.005$ a $0.015$). El piso rígido de 0.02 (200 bps) actuaba como un filtro ciego que vetaba sistemáticamente micro-trades con esperanza matemática positiva.
+    2. Con un ratio asimétrico de riesgo-beneficio ($RR \ge 2.5$), una estrategia con win rate de $32\%$ genera una esperanza estrictamente positiva ($0.32 \times 2.5 - 0.68 \times 1.0 = +0.12 > 0$), pero era rechazada rígidamente por el umbral de $0.35$.
+  * **Solución Matemática y Continua**:
+    1. Se implementó la función pura `compute_teleonomy_utility_thresholds(base_floor, base_wr, spectral_s, hurst) -> (f64, f64)`:
+       - Modulación continua log-lineal sobre la coordenada espectral $s \in [0, 1]$: $\text{floor\_factor} = 0.50 + 0.50 \cdot s$, resultando en $0.010$ (10 bps) en micro-scalping ($\tau = 30\text{ s}$, $s = 0.0$) hasta $0.020$ en swing secular ($\tau = 12\text{ h}$, $s = 1.0$).
+       - Modulación por predictibilidad fractal de Hurst: $\text{predictability} = (|H - 0.5| \cdot 2.0).\text{clamp}(0.0, 1.0)$, ajustando el win rate admisible $\text{base\_wr} \cdot (1.0 - 0.20 \cdot \text{predictability})$ hacia $0.301$ ante fuerte persistencia ($H = 0.85$).
+       - Inmunidad a NaN/Inf y clamping estricto.
+    2. Se incorporaron campos `utility_veto_floor: f64` y `utility_veto_wr: f64` en `MarketSnapshotPayload` con serde defaults y validación en `[0.0, 0.50]` y `[0.0, 1.0]`.
+    3. Se incorporaron campos y builder `with_utility_thresholds` en `CouncilParams`, con sincronización lock-free en `ConsejoDeliberacion::deliberar_traced` vía `Cow` (cero asignación en heap en hot-path).
+    4. Cableado atómico en `QuantumConfig` (`council_utility_veto_floor`, `council_utility_veto_wr`) y sincronización en `GodEngineCore::sync_council_params` y `council_snapshot` (leyendo del registro por activo `c{id}:utility_veto_floor` o del consejo).
+  * **Certificación Contractual**:
+    - `teleonomy_dynamic_thresholds_contract.rs` (4/4 pass): cálculo puro de umbrales en rejilla espectral y Hurst, diferenciación no-arbitraria entre micro-scalping y swing, validación y builder de `CouncilParams`, y propagación end-to-end en deliberación de consejo.
+    - `council_params_arena_wiring_contract.rs` (2/2 pass): verificación de sincronización lock-free desde `arena.config` para ambos nuevos umbrales.
+    - Preservada la suite completa de `metacortex-engine` (100% verde), `god-engine-core` (100% verde), y `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω110 — Modulación Adaptativa Continua de Exploración Kelly y Desacoplamiento de Cotas Estáticas
 
 - **Ola Integrada y Certificada en `main` (`49216e60`)**:

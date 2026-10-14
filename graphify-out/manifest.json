@@ -798,9 +798,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/lib.rs": {
-    "mtime": 1791947816.8034084,
-    "seen": 1791948613.6391027,
-    "ast_hash": "9e8ed8dd97415dbd228e973caac14451",
+    "mtime": 1791987233.9863894,
+    "seen": 1791988277.6955245,
+    "ast_hash": "f3f4066d24479456aab1e3f1bd7c1ba5",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/math_kernels.rs": {
@@ -900,9 +900,9 @@
     "semantic_hash": "4dff921ffc58a0a01cf8cbdb026dc305"
   },
   "crates/metacortex-engine/src/consejo_seniors.rs": {
-    "mtime": 1791946036.7711422,
-    "seen": 1791946705.8379166,
-    "ast_hash": "1fde77f202759e26099703bc600f0158",
+    "mtime": 1791987337.77783,
+    "seen": 1791988277.7282245,
+    "ast_hash": "3157e48489013421d6ce494688c5f8d3",
     "semantic_hash": ""
   },
   "crates/metacortex-engine/src/epigenoma_store.rs": {
@@ -1110,9 +1110,9 @@
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/config.rs": {
-    "mtime": 1791929730.1230438,
-    "seen": 1791930768.2150993,
-    "ast_hash": "5fa29f8c8df1c7f58f5db00c5b142fe1",
+    "mtime": 1791986899.492715,
+    "seen": 1791988277.7390027,
+    "ast_hash": "11ca48dcdf4ba55684de986fa9785932",
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/feed_health.rs": {
@@ -3672,9 +3672,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791985048.0976477,
-    "seen": 1791985429.6060088,
-    "ast_hash": "698e75522ed87615b3f252ae87677769",
+    "mtime": 1791987808.7626624,
+    "seen": 1791988277.848956,
+    "ast_hash": "d4c9884ef0bcf0217b68bc930e514212",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3702,9 +3702,9 @@
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1791985033.1105013,
-    "seen": 1791985429.9052207,
-    "ast_hash": "45f017e5beaa336b6f398bc66987a9b7",
+    "mtime": 1791987786.5729313,
+    "seen": 1791988278.1383574,
+    "ast_hash": "9ea5f72ac90c9985b4834514fc489612",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -29046,9 +29046,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/prospect_pressure_integration_contract.rs": {
-    "mtime": 1791696697.17738,
-    "seen": 1791697106.5113974,
-    "ast_hash": "7bd97116b2650a2be60ce85457ee2750",
+    "mtime": 1791987640.8994577,
+    "seen": 1791988277.721853,
+    "ast_hash": "935dfd1ebcd8857e9d0aea5a36aa7a93",
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/puertas_del_continuo_symmetry_contract.rs": {
@@ -29064,21 +29064,21 @@
     "semantic_hash": ""
   },
   "crates/metacortex-engine/tests/prospect_theory_contract.rs": {
-    "mtime": 1791655795.0464242,
-    "seen": 1791697106.5113974,
-    "ast_hash": "37859f7b57773077da10a17e17e6ddde",
+    "mtime": 1791987433.6296084,
+    "seen": 1791988277.7323554,
+    "ast_hash": "4cd11ac5a9a4f06f69cbf895df8646e9",
     "semantic_hash": ""
   },
   "crates/metacortex-engine/tests/qs_r1_c22_direccion_propia_diagnostics.rs": {
-    "mtime": 1791669768.4592505,
-    "seen": 1791697106.5113974,
-    "ast_hash": "bfd915e2db5d5a4a64f22be93557213f",
+    "mtime": 1791987142.3663337,
+    "seen": 1791988277.7323554,
+    "ast_hash": "b0fda1a349bcb5990df145721bd883ae",
     "semantic_hash": ""
   },
   "crates/metacortex-engine/tests/qs_r2_simetria_espejo_contract.rs": {
-    "mtime": 1791667250.500873,
-    "seen": 1791697106.5113974,
-    "ast_hash": "543e02658e1185d70098b17d60991bc9",
+    "mtime": 1791987153.545995,
+    "seen": 1791988277.7323554,
+    "ast_hash": "56e58bb311c221b1b38de06a19e5d6ec",
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/hodge_zero_alloc_contract.rs": {
@@ -30162,9 +30162,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md": {
-    "mtime": 1791985092.9686906,
-    "seen": 1791985429.9400496,
-    "ast_hash": "f239643ef7c59bc3d507e524277e42c5",
+    "mtime": 1791987870.7586803,
+    "seen": 1791988278.17612,
+    "ast_hash": "dc82b1cb01528371a819dbd3cc5dcbcb",
     "semantic_hash": ""
   },
   "docs/adr/ADR-0017-frenos-de-drawdown-y-estado-aprendido.md": {
@@ -30354,9 +30354,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/council_params_arena_wiring_contract.rs": {
-    "mtime": 1791929730.1175191,
-    "seen": 1791930768.1891046,
-    "ast_hash": "45cd42159d4a9c4e77792c10296970d8",
+    "mtime": 1791987257.4109652,
+    "seen": 1791988277.7114153,
+    "ast_hash": "c41af1f8f0676da8969343660ad3ee15",
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/lh05_antiextension_tendencial_contract.rs": {
@@ -30552,9 +30552,9 @@
     "semantic_hash": ""
   },
   "crates/metacortex-engine/tests/council_params_dynamic_adaptation_contract.rs": {
-    "mtime": 1791945159.2431438,
-    "seen": 1791945649.4026074,
-    "ast_hash": "ab7669d0dff48fce82c3029b49b43f85",
+    "mtime": 1791987167.366101,
+    "seen": 1791988277.7313454,
+    "ast_hash": "cbf5092e0b31c449d68dbc5d92b0a488",
     "semantic_hash": ""
   },
   "crates/metacortex-engine/tests/volatilidad_y_slippage_dinamica_contract.rs": {
@@ -30609,6 +30609,12 @@
     "mtime": 1791984612.6243792,
     "seen": 1791985429.5252013,
     "ast_hash": "d840d0d121d24e1a2227abf4fb7536c6",
+    "semantic_hash": ""
+  },
+  "crates/metacortex-engine/tests/teleonomy_dynamic_thresholds_contract.rs": {
+    "mtime": 1791987374.5639877,
+    "seen": 1791988277.7323554,
+    "ast_hash": "5670c1fc0d43a9041814376ce5ea66f8",
     "semantic_hash": ""
   }
 }
