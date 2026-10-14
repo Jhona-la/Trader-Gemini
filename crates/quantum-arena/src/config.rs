@@ -223,6 +223,13 @@ pub struct QuantumConfig {
     pub online_q_noise: AtomicF64,
     pub online_r_noise: AtomicF64,
     pub online_l2_decay: AtomicF64,
+
+    // --- Tribunal de Autoengaño y Auditor Interno (Ola Ω120) ---
+    pub tribunal_autoengaño_threshold: AtomicF64,
+    pub tribunal_culpable_peligroso_threshold: AtomicF64,
+    pub tribunal_culpable_recuperable_threshold: AtomicF64,
+    pub tribunal_overfitting_recent_min: AtomicF64,
+    pub tribunal_overfitting_oos_max: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -483,6 +490,11 @@ impl QuantumConfig {
             online_q_noise: AtomicF64::new(1e-4),
             online_r_noise: AtomicF64::new(1e-2),
             online_l2_decay: AtomicF64::new(0.99999),
+            tribunal_autoengaño_threshold: AtomicF64::new(0.20),
+            tribunal_culpable_peligroso_threshold: AtomicF64::new(0.10),
+            tribunal_culpable_recuperable_threshold: AtomicF64::new(0.05),
+            tribunal_overfitting_recent_min: AtomicF64::new(0.05),
+            tribunal_overfitting_oos_max: AtomicF64::new(-0.01),
         }
     }
 

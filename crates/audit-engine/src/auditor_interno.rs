@@ -40,6 +40,180 @@ pub struct CognitiveBiasReport {
     pub bias_detected: bool,
 }
 
+/// OLA Ω120: Constantes canónicas por defecto para el Tribunal de Autoengaño y Auditor Interno
+pub const DEFAULT_AUTOENGANO_THRESHOLD: f64 = 0.20;
+pub const DEFAULT_CULPABLE_PELIGROSO_THRESHOLD: f64 = 0.10;
+pub const DEFAULT_CULPABLE_RECUPERABLE_THRESHOLD: f64 = 0.05;
+pub const DEFAULT_OVERFITTING_RECENT_MIN: f64 = 0.05;
+pub const DEFAULT_OVERFITTING_OOS_MAX: f64 = -0.01;
+pub const DEFAULT_MAX_FEATURES_NOMINAL: usize = 64;
+
+#[inline]
+pub const fn default_autoengano_threshold() -> f64 {
+    DEFAULT_AUTOENGANO_THRESHOLD
+}
+#[inline]
+pub const fn default_culpable_peligroso_threshold() -> f64 {
+    DEFAULT_CULPABLE_PELIGROSO_THRESHOLD
+}
+#[inline]
+pub const fn default_culpable_recuperable_threshold() -> f64 {
+    DEFAULT_CULPABLE_RECUPERABLE_THRESHOLD
+}
+#[inline]
+pub const fn default_overfitting_recent_min() -> f64 {
+    DEFAULT_OVERFITTING_RECENT_MIN
+}
+#[inline]
+pub const fn default_overfitting_oos_max() -> f64 {
+    DEFAULT_OVERFITTING_OOS_MAX
+}
+#[inline]
+pub const fn default_max_features_nominal() -> usize {
+    DEFAULT_MAX_FEATURES_NOMINAL
+}
+
+/// OLA Ω120: Parámetros desacoplados y configurables para el Tribunal de Autoengaño y Detección de Sesgos Cognitivos
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct TribunalThresholds {
+    #[serde(default = "default_autoengano_threshold")]
+    pub autoengano_threshold: f64,
+    #[serde(default = "default_culpable_peligroso_threshold")]
+    pub culpable_peligroso_threshold: f64,
+    #[serde(default = "default_culpable_recuperable_threshold")]
+    pub culpable_recuperable_threshold: f64,
+    #[serde(default = "default_overfitting_recent_min")]
+    pub overfitting_recent_min: f64,
+    #[serde(default = "default_overfitting_oos_max")]
+    pub overfitting_oos_max: f64,
+    #[serde(default = "default_max_features_nominal")]
+    pub max_features_nominal: usize,
+}
+
+impl Default for TribunalThresholds {
+    fn default() -> Self {
+        Self {
+            autoengano_threshold: DEFAULT_AUTOENGANO_THRESHOLD,
+            culpable_peligroso_threshold: DEFAULT_CULPABLE_PELIGROSO_THRESHOLD,
+            culpable_recuperable_threshold: DEFAULT_CULPABLE_RECUPERABLE_THRESHOLD,
+            overfitting_recent_min: DEFAULT_OVERFITTING_RECENT_MIN,
+            overfitting_oos_max: DEFAULT_OVERFITTING_OOS_MAX,
+            max_features_nominal: DEFAULT_MAX_FEATURES_NOMINAL,
+        }
+    }
+}
+
+impl TribunalThresholds {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.autoengano_threshold.is_finite() || !(0.05..=1.0).contains(&self.autoengano_threshold) {
+            return Err(format!("Invalid autoengano_threshold: {}", self.autoengano_threshold));
+        }
+        if !self.culpable_peligroso_threshold.is_finite() || !(0.01..=0.50).contains(&self.culpable_peligroso_threshold) {
+            return Err(format!("Invalid culpable_peligroso_threshold: {}", self.culpable_peligroso_threshold));
+        }
+        if !self.culpable_recuperable_threshold.is_finite() || !(0.001..=0.25).contains(&self.culpable_recuperable_threshold) {
+            return Err(format!("Invalid culpable_recuperable_threshold: {}", self.culpable_recuperable_threshold));
+        }
+        if self.culpable_recuperable_threshold >= self.culpable_peligroso_threshold {
+            return Err(format!(
+                "culpable_recuperable_threshold ({}) must be < culpable_peligroso_threshold ({})",
+                self.culpable_recuperable_threshold, self.culpable_peligroso_threshold
+            ));
+        }
+        if self.culpable_peligroso_threshold >= self.autoengano_threshold {
+            return Err(format!(
+                "culpable_peligroso_threshold ({}) must be < autoengano_threshold ({})",
+                self.culpable_peligroso_threshold, self.autoengano_threshold
+            ));
+        }
+        if !self.overfitting_recent_min.is_finite() || !(0.0..=1.0).contains(&self.overfitting_recent_min) {
+            return Err(format!("Invalid overfitting_recent_min: {}", self.overfitting_recent_min));
+        }
+        if !self.overfitting_oos_max.is_finite() || !(-1.0..=0.0).contains(&self.overfitting_oos_max) {
+            return Err(format!("Invalid overfitting_oos_max: {}", self.overfitting_oos_max));
+        }
+        if !(1..=256).contains(&self.max_features_nominal) {
+            return Err(format!("Invalid max_features_nominal: {}", self.max_features_nominal));
+        }
+        Ok(())
+    }
+}
+
+/// OLA Ω120: Función pura analítica que evalúa el veredicto del Tribunal a partir de la máxima discrepancia observada
+#[inline(always)]
+pub fn evaluate_tribunal_verdict(max_disc: f64, thresholds: &TribunalThresholds) -> TribunalVerdict {
+    let disc = if max_disc.is_finite() && max_disc >= 0.0 {
+        max_disc
+    } else {
+        1.0 // Fail-closed ante flotante no finito
+    };
+
+    let auto = if thresholds.autoengano_threshold.is_finite() && thresholds.autoengano_threshold > 0.0 {
+        thresholds.autoengano_threshold
+    } else {
+        DEFAULT_AUTOENGANO_THRESHOLD
+    };
+
+    let peligroso = if thresholds.culpable_peligroso_threshold.is_finite() && thresholds.culpable_peligroso_threshold > 0.0 {
+        thresholds.culpable_peligroso_threshold
+    } else {
+        DEFAULT_CULPABLE_PELIGROSO_THRESHOLD
+    };
+
+    let recuperable = if thresholds.culpable_recuperable_threshold.is_finite() && thresholds.culpable_recuperable_threshold > 0.0 {
+        thresholds.culpable_recuperable_threshold
+    } else {
+        DEFAULT_CULPABLE_RECUPERABLE_THRESHOLD
+    };
+
+    if disc > auto {
+        TribunalVerdict::AutoengañoDetectado
+    } else if disc > peligroso {
+        TribunalVerdict::CulpablePeligroso
+    } else if disc > recuperable {
+        TribunalVerdict::CulpableRecuperable
+    } else {
+        TribunalVerdict::Inocente
+    }
+}
+
+/// OLA Ω120: Calcula la discrepancia máxima normalizada entre métricas internas y realidad de ejecución
+#[inline(always)]
+pub fn calculate_max_discrepancy(
+    internal_sharpe: f64,
+    internal_win_rate: f64,
+    internal_drawdown: f64,
+    independent: &IndependentMetrics,
+) -> (f64, f64, f64, f64) {
+    let safe_sharpe = if internal_sharpe.is_finite() {
+        internal_sharpe
+    } else {
+        0.0
+    };
+    let safe_wr = if internal_win_rate.is_finite() {
+        internal_win_rate
+    } else {
+        0.0
+    };
+    let safe_dd = if internal_drawdown.is_finite() {
+        internal_drawdown
+    } else {
+        0.0
+    };
+
+    let sharpe_disc = if safe_sharpe > 0.0 {
+        (safe_sharpe - independent.calculated_sharpe).abs() / safe_sharpe
+    } else {
+        0.0
+    };
+
+    let wr_disc = (safe_wr - independent.calculated_win_rate).abs();
+    let dd_disc = (safe_dd - independent.calculated_max_drawdown).abs();
+
+    let max_disc = sharpe_disc.max(wr_disc).max(dd_disc);
+    (max_disc, sharpe_disc, wr_disc, dd_disc)
+}
+
 /// Daily Tribunal Verdict
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TribunalVerdict {
@@ -170,6 +344,7 @@ impl VerificadorResultados {
 pub struct AuditorInterno {
     fills_journal: Vec<ExchangeFillRecord>,
     base_capital: f64,
+    pub thresholds: TribunalThresholds,
 }
 
 impl Default for AuditorInterno {
@@ -177,6 +352,7 @@ impl Default for AuditorInterno {
         Self {
             fills_journal: Vec::new(),
             base_capital: 13.0,
+            thresholds: TribunalThresholds::default(),
         }
     }
 }
@@ -190,6 +366,20 @@ impl AuditorInterno {
         Self {
             fills_journal: Vec::new(),
             base_capital: base_capital.max(1.0),
+            thresholds: TribunalThresholds::default(),
+        }
+    }
+
+    /// OLA Ω120: Builder para configurar umbrales adaptativos del Tribunal de Autoengaño
+    pub fn with_thresholds(mut self, thresholds: TribunalThresholds) -> Self {
+        self.thresholds = thresholds;
+        self
+    }
+
+    /// OLA Ω120: Actualiza dinámicamente los umbrales del Tribunal de Autoengaño
+    pub fn update_thresholds(&mut self, thresholds: TribunalThresholds) {
+        if thresholds.validate().is_ok() {
+            self.thresholds = thresholds;
         }
     }
 
@@ -205,6 +395,35 @@ impl AuditorInterno {
         self.fills_journal.push(fill);
     }
 
+    /// OLA Ω120: Calcula la discrepancia máxima normalizada entre métricas internas y realidad
+    /// para alimentar el registro omnisciente y el asiento SeniorAuditorInterno en el Consejo.
+    pub fn compute_internal_discrepancy(
+        &self,
+        internal_sharpe: f64,
+        internal_win_rate: f64,
+        internal_drawdown: f64,
+    ) -> f64 {
+        let independent = VerificadorResultados::compute_metrics_with_capital(
+            &self.fills_journal,
+            self.base_capital,
+        );
+        let (max_disc, _, _, _) = calculate_max_discrepancy(
+            internal_sharpe,
+            internal_win_rate,
+            internal_drawdown,
+            &independent,
+        );
+        max_disc
+    }
+
+    /// Computa directamente las métricas de rendimiento independientes calculadas desde los fills reales
+    pub fn compute_independent_metrics(&self) -> IndependentMetrics {
+        VerificadorResultados::compute_metrics_with_capital(
+            &self.fills_journal,
+            self.base_capital,
+        )
+    }
+
     /// Evaluates internal claims against independent exchange fill verification
     pub fn verify_internal_claims(
         &self,
@@ -212,19 +431,8 @@ impl AuditorInterno {
         internal_win_rate: f64,
         internal_drawdown: f64,
     ) -> DailyTribunalReport {
-        // FIX #677: Sanitizar claims internos
         let safe_sharpe = if internal_sharpe.is_finite() {
             internal_sharpe
-        } else {
-            0.0
-        };
-        let safe_wr = if internal_win_rate.is_finite() {
-            internal_win_rate
-        } else {
-            0.0
-        };
-        let safe_dd = if internal_drawdown.is_finite() {
-            internal_drawdown
         } else {
             0.0
         };
@@ -234,26 +442,14 @@ impl AuditorInterno {
             self.base_capital,
         );
 
-        let sharpe_disc = if safe_sharpe > 0.0 {
-            (safe_sharpe - independent.calculated_sharpe).abs() / safe_sharpe
-        } else {
-            0.0
-        };
+        let (max_disc, sharpe_disc, wr_disc, _) = calculate_max_discrepancy(
+            internal_sharpe,
+            internal_win_rate,
+            internal_drawdown,
+            &independent,
+        );
 
-        let wr_disc = (safe_wr - independent.calculated_win_rate).abs();
-        let dd_disc = (safe_dd - independent.calculated_max_drawdown).abs();
-
-        let max_disc = sharpe_disc.max(wr_disc).max(dd_disc);
-
-        let verdict = if max_disc > 0.20 {
-            TribunalVerdict::AutoengañoDetectado
-        } else if max_disc > 0.10 {
-            TribunalVerdict::CulpablePeligroso
-        } else if max_disc > 0.05 {
-            TribunalVerdict::CulpableRecuperable
-        } else {
-            TribunalVerdict::Inocente
-        };
+        let verdict = evaluate_tribunal_verdict(max_disc, &self.thresholds);
 
         DailyTribunalReport {
             verdict,
@@ -286,8 +482,9 @@ impl AuditorInterno {
         } else {
             0.0
         };
-        let overfitting = (safe_7d > 0.05) && (safe_oos < -0.01);
-        let complexity_inflation = num_features > 64;
+        let overfitting = (safe_7d > self.thresholds.overfitting_recent_min)
+            && (safe_oos < self.thresholds.overfitting_oos_max);
+        let complexity_inflation = num_features > self.thresholds.max_features_nominal;
 
         let bias_detected = overfitting || complexity_inflation;
 

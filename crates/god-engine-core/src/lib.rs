@@ -1100,6 +1100,8 @@ pub struct GodEngineCore {
     pub immune_system: metacortex_engine::immune_system::LivingImmuneSystem,
     /// #15: Auditor forense ShadowGraph para detección lock-free de concept drift
     pub shadow_auditor: std::sync::Arc<metacortex_engine::shadow_graph_auditor::ShadowGraphAuditor>,
+    /// OLA Ω120: Auditor Interno (El Anti-Sistema) para verificación independiente de fills y tribunal de autoengaño
+    pub auditor_interno: audit_engine::auditor_interno::AuditorInterno,
     /// Cache de generación del genoma aplicado: refresh_models solo
     /// re-aplica el envelope de disco si su generación es MÁS NUEVA que la
     /// última aplicada. Antes re-aplicaba ciegamente cada 1000 ticks y PISABA
@@ -1420,6 +1422,7 @@ impl GodEngineCore {
             shadow_auditor: std::sync::Arc::new(
                 metacortex_engine::shadow_graph_auditor::ShadowGraphAuditor::new(),
             ),
+            auditor_interno: audit_engine::auditor_interno::AuditorInterno::with_capital(initial_capital),
             applied_generation: std::sync::atomic::AtomicU64::new(0),
             genomes_mtime: None,
             recarga_genoma: recarga_genoma::RecargaGenoma::para(outcome_context),
@@ -1644,9 +1647,29 @@ impl GodEngineCore {
     }
 
     #[inline]
+    pub fn sync_auditor_interno_params(
+        auditor: &mut audit_engine::auditor_interno::AuditorInterno,
+        cfg: &quantum_arena::QuantumConfig,
+    ) {
+        let auto = cfg.tribunal_autoengaño_threshold.load(Ordering::Relaxed);
+        let pelig = cfg.tribunal_culpable_peligroso_threshold.load(Ordering::Relaxed);
+        let recup = cfg.tribunal_culpable_recuperable_threshold.load(Ordering::Relaxed);
+        let of_rec = cfg.tribunal_overfitting_recent_min.load(Ordering::Relaxed);
+        let of_oos = cfg.tribunal_overfitting_oos_max.load(Ordering::Relaxed);
+        let mut t = auditor.thresholds;
+        if (0.05..=1.0).contains(&auto) { t.autoengano_threshold = auto; }
+        if (0.01..=0.50).contains(&pelig) { t.culpable_peligroso_threshold = pelig; }
+        if (0.001..=0.25).contains(&recup) { t.culpable_recuperable_threshold = recup; }
+        if (0.0..=1.0).contains(&of_rec) { t.overfitting_recent_min = of_rec; }
+        if (-1.0..=0.0).contains(&of_oos) { t.overfitting_oos_max = of_oos; }
+        auditor.update_thresholds(t);
+    }
+
+    #[inline]
     pub fn sync_council_params_from_arena(&mut self) {
         Self::sync_council_params(&mut self.consejo_deliberacion.params, &self.arena.config);
         Self::sync_online_learning_params(&mut self.online_learner, &self.arena.config);
+        Self::sync_auditor_interno_params(&mut self.auditor_interno, &self.arena.config);
     }
 
     /// Accept a reported execution snapshot, not an incremental fill. No global fallback.
@@ -4655,6 +4678,37 @@ impl GodEngineCore {
                     self.diag_notional_sum += qty * exit_price;
                     self.diag_notional_max = self.diag_notional_max.max(qty * exit_price);
                     self.diag_pnl_sum += net_trade_pnl;
+
+                    // OLA Ω120: Registrar fill en AuditorInterno independiente (El Anti-Sistema)
+                    // y calcular la discrepancia real vs interna para alimentar el registro omnisciente.
+                    let fill_record = audit_engine::auditor_interno::ExchangeFillRecord {
+                        timestamp_ns: event_time_ms.saturating_mul(1_000_000),
+                        symbol_id: coin_id as u16,
+                        is_buyer: !is_long,
+                        price: exit_price,
+                        qty,
+                        fee_usd: (entry * qty + exit_price * qty) * 0.0004,
+                        realized_pnl: net_trade_pnl,
+                        is_closed_position: true,
+                    };
+                    self.auditor_interno.record_fill(fill_record);
+
+                    let internal_wr = if self.diag_close_total > 0 {
+                        self.diag_close_wins as f64 / self.diag_close_total as f64
+                    } else {
+                        0.0
+                    };
+                    let internal_sharpe = self.arena.registry.get_value_or("internal_sharpe", 0.0);
+                    let internal_dd = self.arena.unified_capital.load(Ordering::Relaxed);
+                    let base_cap = self.arena.config.base_capital.load(Ordering::Relaxed);
+                    let dd_pct = if base_cap > 0.0 && internal_dd < base_cap {
+                        (base_cap - internal_dd) / base_cap
+                    } else {
+                        0.0
+                    };
+
+                    let disc = self.auditor_interno.compute_internal_discrepancy(internal_sharpe, internal_wr, dd_pct);
+                    self.arena.registry.set("internal_discrepancy", disc);
 
                     if ml_at_entry > 0.0 {
                         // K-26 (Ola Ω76 / D-676): la posición guarda `ml_prob` crudo (P(subida)).
@@ -8520,6 +8574,7 @@ impl GodEngineCore {
 
                     Self::sync_council_params(&mut self.consejo_deliberacion.params, &self.arena.config);
                     Self::sync_online_learning_params(&mut self.online_learner, &self.arena.config);
+                    Self::sync_auditor_interno_params(&mut self.auditor_interno, &self.arena.config);
 
                     let council_snapshot =
                         metacortex_engine::consejo_seniors::MarketSnapshotPayload {
