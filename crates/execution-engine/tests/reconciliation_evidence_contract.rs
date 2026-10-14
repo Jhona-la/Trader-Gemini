@@ -51,7 +51,7 @@ fn invalid_metadata_and_unmapped_exposure_are_reported_without_adoption() {
         r.unresolved[0].kind,
         ReconciliationIssueKind::UnmappedInstrument
     );
-    assert!(!a.coins[0].positions.position.is_open());
+    assert!(!a.coins[0].positions.slot_2.is_open());
 }
 #[test]
 fn mixed_position_modes_and_oversized_universe_do_not_mutate() {
@@ -69,7 +69,7 @@ fn mixed_position_modes_and_oversized_universe_do_not_mutate() {
         r.unresolved[0].kind,
         ReconciliationIssueKind::InvalidUniverse
     );
-    assert!(a.coins[0].positions.position.is_open());
+    assert!(a.coins[0].positions.slot_2.is_open());
 }
 fn arena() -> std::sync::Arc<GlobalArena> {
     symbol_registry::update_registry(vec![symbol_registry::get_official_binance_spec("XIXUSDT")]);
@@ -110,7 +110,7 @@ fn balanced_hedge_does_not_clear_known_exposure() {
         reconcile_arena(&[row(1.0, "LONG"), row(-1.0, "SHORT")], &a, 3),
         0
     );
-    assert!(a.coins[0].positions.position.is_open());
+    assert!(a.coins[0].positions.slot_2.is_open());
     assert_eq!(a.used_margin.load(Ordering::Relaxed), 10.0);
 }
 #[test]
@@ -125,7 +125,7 @@ fn unequal_hedge_does_not_replace_gross_with_net() {
     assert_eq!(
         a.coins[0]
             .positions
-            .position
+            .slot_2
             .quantity
             .load(Ordering::Relaxed),
         2.0
@@ -137,7 +137,7 @@ fn reversal_cannot_confirm_a_stale_direction() {
     let a = arena();
     open(&a, 2, 1.0);
     assert_eq!(reconcile_arena(&[row(-1.0, "BOTH")], &a, 3), 0);
-    let p = &a.coins[0].positions.position;
+    let p = &a.coins[0].positions.slot_2;
     assert!(!p.exchange_confirmed.load(Ordering::Relaxed));
     assert_eq!(p.entry_price.load(Ordering::Relaxed), 100.0);
 }
@@ -147,7 +147,7 @@ fn absent_row_is_not_explicit_flat_evidence() {
     let a = arena();
     open(&a, 2, 1.0);
     assert_eq!(reconcile_arena(&[], &a, 3), 0);
-    assert!(a.coins[0].positions.position.is_open());
+    assert!(a.coins[0].positions.slot_2.is_open());
 }
 #[test]
 fn invalid_quantity_does_not_become_flat() {
@@ -155,7 +155,7 @@ fn invalid_quantity_does_not_become_flat() {
     let a = arena();
     open(&a, 2, 1.0);
     assert_eq!(reconcile_arena(&[row(f64::NAN, "BOTH")], &a, 3), 0);
-    assert!(a.coins[0].positions.position.is_open());
+    assert!(a.coins[0].positions.slot_2.is_open());
 }
 #[test]
 fn duplicate_leg_rows_are_not_added_together() {
@@ -169,7 +169,7 @@ fn duplicate_leg_rows_are_not_added_together() {
     assert_eq!(
         a.coins[0]
             .positions
-            .position
+            .slot_2
             .quantity
             .load(Ordering::Relaxed),
         1.0
@@ -183,13 +183,13 @@ fn multiple_local_allocations_are_not_each_given_total_remote_quantity() {
     open(&a, 2, 0.6);
     assert_eq!(reconcile_arena(&[row(1.2, "LONG")], &a, 3), 0);
     assert_eq!(
-        a.coins[0].positions.scalp.quantity.load(Ordering::Relaxed),
+        a.coins[0].positions.slot_0.quantity.load(Ordering::Relaxed),
         0.4
     );
     assert_eq!(
         a.coins[0]
             .positions
-            .position
+            .slot_2
             .quantity
             .load(Ordering::Relaxed),
         0.6
@@ -201,7 +201,7 @@ fn nonzero_small_exchange_quantity_is_not_flat() {
     let a = arena();
     open(&a, 2, 5e-9);
     reconcile_arena(&[row(5e-9, "LONG")], &a, 3);
-    assert!(a.coins[0].positions.position.is_open());
+    assert!(a.coins[0].positions.slot_2.is_open());
 }
 #[test]
 fn small_drift_does_not_close_a_nonzero_position() {
@@ -209,7 +209,7 @@ fn small_drift_does_not_close_a_nonzero_position() {
     let a = arena();
     open(&a, 2, 2e-6);
     reconcile_arena(&[row(1e-7, "LONG")], &a, 3);
-    let p = &a.coins[0].positions.position;
+    let p = &a.coins[0].positions.slot_2;
     assert!(p.is_open());
     assert_eq!(p.quantity.load(Ordering::Relaxed), 1e-7);
 }
@@ -219,11 +219,11 @@ fn explicit_flat_and_single_position_adoption_still_work() {
     let a = arena();
     open(&a, 2, 1.0);
     assert_eq!(reconcile_arena(&[row(0.0, "BOTH")], &a, 3), 1);
-    assert!(!a.coins[0].positions.position.is_open());
+    assert!(!a.coins[0].positions.slot_2.is_open());
     assert_eq!(reconcile_arena(&[row(-2.0, "SHORT")], &a, 4), 1);
     assert!(!a.coins[0]
         .positions
-        .position
+        .slot_2
         .is_long
         .load(Ordering::Relaxed));
 }

@@ -31,7 +31,7 @@ fn fixture() -> (Arc<GlobalArena>, EntryReservation) {
             30_000
         ));
     }
-    let other = &a.coins[0].positions.position;
+    let other = &a.coins[0].positions.slot_2;
     other
         .confirm_generation(other.generation.load(Ordering::Acquire))
         .unwrap();
@@ -40,7 +40,7 @@ fn fixture() -> (Arc<GlobalArena>, EntryReservation) {
     let token = EntryReservation {
         coin_id: 0,
         slot: 0,
-        generation: a.coins[0].positions.scalp.generation.load(Ordering::Acquire),
+        generation: a.coins[0].positions.slot_0.generation.load(Ordering::Acquire),
         symbol: "RESFUSDT".into(),
     };
     (a, token)
@@ -55,14 +55,14 @@ fn cl45_un_llenado_parcial_escala_solo_la_propia_reserva() {
     let _guard = REGISTRY.lock().unwrap_or_else(|p| p.into_inner());
     let (a, t) = fixture();
     assert_eq!(t.confirmar_llenado(&a, Some(0.4)), Ok(()));
-    let s = &a.coins[0].positions.scalp;
+    let s = &a.coins[0].positions.slot_0;
     assert!(cerca(s.quantity.load(Ordering::Relaxed), 0.4));
     assert!(cerca(s.margin_used.load(Ordering::Relaxed), 4.0));
     assert!(cerca(s.entry_fee.load(Ordering::Relaxed), 0.1));
     assert!(s.exchange_confirmed.load(Ordering::Acquire));
     assert!(cerca(a.used_margin.load(Ordering::Relaxed), 24.0));
     assert!(cerca(a.unified_capital.load(Ordering::Relaxed), 99.40));
-    let p = &a.coins[0].positions.position;
+    let p = &a.coins[0].positions.slot_2;
     assert!(cerca(p.quantity.load(Ordering::Relaxed), 2.0));
     assert!(cerca(p.margin_used.load(Ordering::Relaxed), 20.0));
     // Idempotente: una segunda confirmación no vuelve a escalar.
@@ -77,7 +77,7 @@ fn cl45_un_llenado_completo_o_sin_evidencia_confirma_sin_escalar() {
     for ejecutada in [None, Some(1.0), Some(1.5), Some(f64::NAN), Some(0.0)] {
         let (a, t) = fixture();
         assert_eq!(t.confirmar_llenado(&a, ejecutada), Ok(()), "{ejecutada:?}");
-        let s = &a.coins[0].positions.scalp;
+        let s = &a.coins[0].positions.slot_0;
         assert!(s.exchange_confirmed.load(Ordering::Acquire));
         assert!(cerca(s.quantity.load(Ordering::Relaxed), 1.0), "{ejecutada:?}");
         assert!(cerca(s.margin_used.load(Ordering::Relaxed), 10.0));
@@ -93,7 +93,7 @@ fn cl45_un_llenado_de_otra_generacion_no_toca_la_ranura() {
     let (a, t) = fixture();
     let ajena = EntryReservation { generation: t.generation + 1, ..t.clone() };
     assert!(ajena.confirmar_llenado(&a, Some(0.4)).is_err());
-    let s = &a.coins[0].positions.scalp;
+    let s = &a.coins[0].positions.slot_0;
     assert!(!s.exchange_confirmed.load(Ordering::Acquire));
     assert!(cerca(s.quantity.load(Ordering::Relaxed), 1.0));
     assert!(cerca(a.used_margin.load(Ordering::Relaxed), 30.0));

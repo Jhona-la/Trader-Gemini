@@ -25,7 +25,7 @@ fn cl16_las_dos_piernas_hedge_viven_en_ranuras_distintas() {
 fn cl16_la_primera_adopcion_sigue_en_la_ranura_de_siempre() {
     let pm = PositionManager::default();
     assert_eq!(adoptar_en_ranura_libre(&pm, true, 100.0, 0.5, 10.0, 1_000), Some(2));
-    assert!(pm.position.is_open());
+    assert!(pm.slot_2.is_open());
 }
 
 #[test]
@@ -42,7 +42,7 @@ fn cl16_sin_ranura_o_entrada_invalida_no_hay_adopcion() {
 }
 
 /// El host reserva margen SÓLO tras una adopción aceptada y ya no escribe
-/// la adopción en la ranura fija `positions.position`.
+/// la adopción en la ranura fija `positions.slot_2`.
 #[test]
 fn cl16_el_host_adopta_por_ranura_y_reserva_solo_si_abre() {
     let host: String = include_str!("../../../src/bin/god_engine.rs")
@@ -54,9 +54,9 @@ fn cl16_el_host_adopta_por_ranura_y_reserva_solo_si_abre() {
         .expect("bloque FASE 5");
     let fase5 = &fase5[..fase5.find("letarena_telemetry=").expect("fin de FASE 5")];
     assert!(fase5.contains("adoptar_en_ranura_libre("));
-    assert!(!fase5.contains("positions.position.open_with_horizon("));
-    assert!(!fase5.contains("positions.position.exchange_confirmed"));
-    assert!(!fase5.contains("positions.position.entry_tau_ms"));
+    assert!(!fase5.contains("positions.slot_2.open_with_horizon("));
+    assert!(!fase5.contains("positions.slot_2.exchange_confirmed"));
+    assert!(!fase5.contains("positions.slot_2.entry_tau_ms"));
     let reserva = fase5
         .find(".fetch_add(calculated_margin,")
         .expect("reserva de margen");

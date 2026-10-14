@@ -54,7 +54,7 @@ fn core(context: OutcomeContext, confirmed: bool) -> (Arc<GlobalArena>, GodEngin
     let mut core = GodEngineCore::new_with_outcome_context(arena.clone(), context);
     core.swing_nn = None;
     core.scalp_forest = None;
-    let pos = &arena.coins[0].positions.position;
+    let pos = &arena.coins[0].positions.slot_2;
     assert!(pos.open_with_horizon(
         true,
         100.0,
@@ -109,7 +109,7 @@ fn unconfirmed_exchange_proposal_does_not_train_or_change_capital() {
     assert_eq!(core.ppo_engine.reward_ema.load(Ordering::Relaxed), 0.0);
     assert_eq!(core.diag_close_total, 0);
     assert_eq!(core.diag_unverified_close_total, 1);
-    assert!(!arena.coins[0].positions.position.is_open());
+    assert!(!arena.coins[0].positions.slot_2.is_open());
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn simulation_learns_locally_without_shared_dataset_or_trauma_files() {
     let (arena, mut core) = core(OutcomeContext::IsolatedSimulation, false);
     *arena.coins[0]
         .positions
-        .position
+        .slot_2
         .nn_entry_tensor
         .lock()
         .unwrap() = vec![0.25; 54];
@@ -146,7 +146,7 @@ fn unconfirmed_loss_cannot_write_training_data_or_trauma() {
     let (arena, mut engine) = core(OutcomeContext::ExchangeLocalEstimate, false);
     *arena.coins[0]
         .positions
-        .position
+        .slot_2
         .nn_entry_tensor
         .lock()
         .unwrap() = vec![0.25; 54];
@@ -166,7 +166,7 @@ fn missing_evidence_for_one_asset_does_not_veto_another_assets_local_estimate() 
     let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
     let _dir = FixtureDirectory::new();
     let (arena, mut engine) = core(OutcomeContext::ExchangeLocalEstimate, false);
-    let other = &arena.coins[1].positions.position;
+    let other = &arena.coins[1].positions.slot_2;
     assert!(other.open_with_horizon(
         true,
         100.0,
@@ -233,7 +233,7 @@ fn default_constructor_is_isolated_even_if_entry_flag_is_true() {
     engine.scalp_forest = None;
     *arena.coins[0]
         .positions
-        .position
+        .slot_2
         .nn_entry_tensor
         .lock()
         .unwrap() = vec![0.25; 54];
@@ -263,7 +263,7 @@ fn confirmed_exchange_entry_preserves_the_legacy_local_estimate_path() {
     assert!(
         arena.coins[0]
             .positions
-            .position
+            .slot_2
             .last_close_confirmed
             .load(Ordering::Relaxed)
     );
@@ -278,7 +278,7 @@ fn close_kelly_retains_the_trade_horizon_instead_of_using_cleared_slot() {
     let tau = 1_000_000_000_u64;
     arena.coins[0]
         .positions
-        .position
+        .slot_2
         .entry_tau_ms
         .store(tau, Ordering::Relaxed);
     // A continuous curve with 0.2 at 30s and 0.6 at the actual horizon.
@@ -334,7 +334,7 @@ fn close_kelly_retains_the_trade_horizon_instead_of_using_cleared_slot() {
     assert_eq!(
         arena.coins[0]
             .positions
-            .position
+            .slot_2
             .entry_tau_ms
             .load(Ordering::Relaxed),
         0
@@ -365,7 +365,7 @@ fn kill_switch_preserves_local_stop_close_and_blocks_new_entry() {
         proposal.expect("FMT-232/ADR-0015: el kill-switch no suprime el cierre local por SL");
     assert_eq!(qty, 1.0);
     assert!(pnl < 0.0);
-    assert!(!arena.coins[0].positions.position.is_open());
+    assert!(!arena.coins[0].positions.slot_2.is_open());
     assert!(arena.kill_switch_active.load(Ordering::SeqCst));
 }
 
@@ -386,7 +386,7 @@ fn kill_switch_process_event_preserves_stop_close() {
     let (_, pnl, qty) = closed.expect("ADR-0015: el cierre por SL viaja bajo el kill-switch");
     assert_eq!(qty, 1.0);
     assert!(pnl < 0.0);
-    assert!(!arena.coins[0].positions.position.is_open());
+    assert!(!arena.coins[0].positions.slot_2.is_open());
     assert!(arena.kill_switch_active.load(Ordering::SeqCst));
 }
 
@@ -417,7 +417,7 @@ fn cl44b_tras_el_aplanado_inmune_el_cierre_local_no_aprende() {
     assert!(
         !arena.coins[0]
             .positions
-            .position
+            .slot_2
             .last_close_confirmed
             .load(Ordering::Relaxed),
         "el host no lo contabiliza ni persiste el sobre de Kelly"
@@ -436,7 +436,7 @@ fn drift_entry_veto_preserves_local_defensive_close_and_blocks_new_entry() {
     assert!(entry.is_none());
     assert!(maker.is_none());
     assert!(close.is_some());
-    assert!(!arena.coins[0].positions.position.is_open());
+    assert!(!arena.coins[0].positions.slot_2.is_open());
     assert!(engine.drift_entry_veto());
     assert!(!arena.kill_switch_active.load(Ordering::Relaxed));
 }
@@ -470,7 +470,7 @@ fn unowned_symbol_rollback_preserves_all_slots_and_margin() {
     arena.used_margin.store(30.0, Ordering::Relaxed);
     engine.rollback_position(0);
     assert!(other.is_open());
-    assert!(arena.coins[0].positions.position.is_open());
+    assert!(arena.coins[0].positions.slot_2.is_open());
     assert_eq!(arena.used_margin.load(Ordering::Relaxed), 30.0);
 }
 
@@ -480,11 +480,11 @@ fn winning_short_rewards_the_councils_short_prediction_not_its_opposite() {
     let _dir = FixtureDirectory::new();
     let (arena, mut core) = core(OutcomeContext::IsolatedSimulation, false);
     // Modify only this fixture's already-open position; the live account is untouched.
-    let pos = &arena.coins[0].positions.position;
+    let pos = &arena.coins[0].positions.slot_2;
     pos.is_long.store(false, Ordering::Relaxed);
     pos.tp_price.store(99.0, Ordering::Relaxed);
     pos.sl_price.store(101.0, Ordering::Relaxed);
-    // positions.position is slot 2 in positions.slots(), not slot 0.
+    // positions.slot_2 is slot 2 in positions.slots(), not slot 0.
     core.last_senior_signals[0][2][0] = -1.0;
     core.last_senior_signals[0][2][6] = 1.0;
     core.council_entry_evidence[0][2] = Some(god_engine_core::CouncilEntryEvidence {
@@ -528,7 +528,7 @@ fn bound_votes_are_consumed_once_and_do_not_survive_slot_reuse() {
     let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
     let _dir = FixtureDirectory::new();
     let (arena, mut engine) = core(OutcomeContext::IsolatedSimulation, false);
-    let pos = &arena.coins[0].positions.position;
+    let pos = &arena.coins[0].positions.slot_2;
     bind_council_votes(&mut engine, pos.generation.load(Ordering::Acquire), true, "XXIXUSDT");
     assert!(close(&mut engine, 101.1) > 0.0);
     assert_eq!(engine.consejo_deliberacion.tracker.read().unwrap().total_outcomes(), 1);
@@ -545,7 +545,7 @@ fn wrong_generation_side_or_symbol_cannot_receive_credit() {
     let _dir = FixtureDirectory::new();
     for (generation_offset, side, symbol) in [(1, true, "XXIXUSDT"), (0, false, "XXIXUSDT"), (0, true, "XXIYUSDT")] {
         let (arena, mut engine) = core(OutcomeContext::IsolatedSimulation, false);
-        let generation = arena.coins[0].positions.position.generation.load(Ordering::Acquire);
+        let generation = arena.coins[0].positions.slot_2.generation.load(Ordering::Acquire);
         bind_council_votes(&mut engine, generation + generation_offset, side, symbol);
         assert!(close(&mut engine, 101.1) > 0.0);
         assert_eq!(engine.consejo_deliberacion.tracker.read().unwrap().total_outcomes(), 0);
@@ -559,7 +559,7 @@ fn unconfirmed_exchange_close_consumes_binding_without_training() {
     let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
     let _dir = FixtureDirectory::new();
     let (arena, mut engine) = core(OutcomeContext::ExchangeLocalEstimate, false);
-    bind_council_votes(&mut engine, arena.coins[0].positions.position.generation.load(Ordering::Acquire), true, "XXIXUSDT");
+    bind_council_votes(&mut engine, arena.coins[0].positions.slot_2.generation.load(Ordering::Acquire), true, "XXIXUSDT");
     assert!(close(&mut engine, 101.1) > 0.0);
     assert_eq!(engine.consejo_deliberacion.tracker.read().unwrap().total_outcomes(), 0);
     assert!(engine.council_entry_evidence[0][2].is_none());
@@ -571,7 +571,7 @@ fn legacy_signal_mirror_cannot_overwrite_the_frozen_binding() {
     let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
     let _dir = FixtureDirectory::new();
     let (arena, mut engine) = core(OutcomeContext::IsolatedSimulation, false);
-    bind_council_votes(&mut engine, arena.coins[0].positions.position.generation.load(Ordering::Acquire), true, "XXIXUSDT");
+    bind_council_votes(&mut engine, arena.coins[0].positions.slot_2.generation.load(Ordering::Acquire), true, "XXIXUSDT");
     engine.last_senior_signals[0][2] = [-1.0; 11];
     assert!(close(&mut engine, 101.1) > 0.0);
     assert_eq!(engine.consejo_deliberacion.tracker.read().unwrap().correct_counts[0], 1);

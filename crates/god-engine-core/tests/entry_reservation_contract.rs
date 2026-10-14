@@ -26,7 +26,7 @@ fn fixture() -> (Arc<GlobalArena>, EntryReservation) {
             30_000
         ));
     }
-    let other = &a.coins[0].positions.position;
+    let other = &a.coins[0].positions.slot_2;
     other
         .confirm_generation(other.generation.load(Ordering::Acquire))
         .unwrap();
@@ -37,7 +37,7 @@ fn fixture() -> (Arc<GlobalArena>, EntryReservation) {
         slot: 0,
         generation: a.coins[0]
             .positions
-            .scalp
+            .slot_0
             .generation
             .load(Ordering::Acquire),
         symbol: "RESVUSDT".into(),
@@ -50,8 +50,8 @@ fn cancel_preserves_confirmed_neighbor_and_compensates_only_own_reservation_once
     let _guard = REGISTRY.lock().unwrap();
     let (a, t) = fixture();
     assert_eq!(t.cancel(&a), Ok(()));
-    assert!(!a.coins[0].positions.scalp.is_open());
-    assert!(a.coins[0].positions.position.is_open());
+    assert!(!a.coins[0].positions.slot_0.is_open());
+    assert!(a.coins[0].positions.slot_2.is_open());
     assert_eq!(a.used_margin.load(Ordering::Relaxed), 20.0);
     assert_eq!(a.unified_capital.load(Ordering::Relaxed), 99.5);
     assert!(t.cancel(&a).is_err());
@@ -63,7 +63,7 @@ fn cancel_preserves_confirmed_neighbor_and_compensates_only_own_reservation_once
 fn delayed_rejection_cannot_cancel_a_reused_slot() {
     let _guard = REGISTRY.lock().unwrap();
     let (a, t) = fixture();
-    let p = &a.coins[0].positions.scalp;
+    let p = &a.coins[0].positions.slot_0;
     p.close_with_fee();
     assert!(p.open_with_horizon(
         false,
@@ -92,18 +92,18 @@ fn confirmation_targets_captured_slot_and_prevents_later_rejection_refund() {
     let (a, t) = fixture();
     a.coins[0]
         .positions
-        .position
+        .slot_2
         .exchange_confirmed
         .store(false, Ordering::Relaxed);
     t.confirm(&a).unwrap();
     assert!(a.coins[0]
         .positions
-        .scalp
+        .slot_0
         .exchange_confirmed
         .load(Ordering::Acquire));
     assert!(!a.coins[0]
         .positions
-        .position
+        .slot_2
         .exchange_confirmed
         .load(Ordering::Acquire));
     assert_eq!(
@@ -120,7 +120,7 @@ fn stale_confirmation_cannot_mark_a_new_occupant() {
     let _guard = REGISTRY.lock().unwrap();
     let (a, t) = fixture();
     t.cancel(&a).unwrap();
-    let p = &a.coins[0].positions.scalp;
+    let p = &a.coins[0].positions.slot_0;
     p.open_with_horizon(
         true,
         200.0,
@@ -149,7 +149,7 @@ fn missing_coin_slot_and_changed_symbol_refuse_without_mutation() {
     bad.symbol = "OTHERUSDT".into();
     assert_eq!(bad.cancel(&a), Err(ReservationError::SymbolMismatch));
     assert_eq!(a.used_margin.load(Ordering::Relaxed), 30.0);
-    assert!(a.coins[0].positions.scalp.is_open());
+    assert!(a.coins[0].positions.slot_0.is_open());
 }
 
 #[test]

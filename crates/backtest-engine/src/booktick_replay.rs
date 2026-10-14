@@ -946,7 +946,7 @@ mod tests {
 
     fn open_test_position(arena: &Arc<GlobalArena>, entry: f64, qty: f64, margin: f64, fee: f64) {
         use quantum_arena::position::PositionHorizon;
-        arena.coins[0].positions.position.open_with_fee(
+        arena.coins[0].positions.slot_2.open_with_fee(
             true,
             entry,
             qty,
@@ -975,13 +975,13 @@ mod tests {
         let kept = live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes);
         assert!(kept, "bootstrap no veta entrada sostenible");
         assert_eq!(vetoes, 0);
-        assert!(arena.coins[0].positions.position.is_open());
+        assert!(arena.coins[0].positions.slot_2.is_open());
         // CL-41b + F4-H2 (Ω6-Ω7): la reserva retiene el margen del exchange.
         // El riesgo validó 10× (margen 10 de nocional 100) y el arranque AHORA
         // envía al apalancamiento VALIDADO (notional/margin = 10×, paridad con
         // god_engine.rs): el exchange retiene 10 — igual a la reserva, sin
         // margen fantasma. Antes enviaba a 1× y retenía 100.
-        let margen_ranura = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
+        let margen_ranura = arena.coins[0].positions.slot_2.margin_used.load(Ordering::Relaxed);
         assert!((margen_ranura - 10.0).abs() < 1e-9, "F4-H2: retiene el validado (10×); leído {margen_ranura}");
         assert!((arena.used_margin.load(Ordering::Relaxed) - 10.0).abs() < 1e-9);
         assert!((arena.unified_capital.load(Ordering::Relaxed) - 999.95).abs() < 1e-9);
@@ -1003,7 +1003,7 @@ mod tests {
         let kept = live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes);
         assert!(!kept, "la envolvente autoritativa debía vetar");
         assert_eq!(vetoes, 1);
-        assert!(!arena.coins[0].positions.position.is_open());
+        assert!(!arena.coins[0].positions.slot_2.is_open());
         assert!((arena.used_margin.load(Ordering::Relaxed) - 0.0).abs() < 1e-9);
         // Reembolso del entry_fee: capital vuelve a 1000 exacto.
         assert!((arena.unified_capital.load(Ordering::Relaxed) - 1000.0).abs() < 1e-9);
@@ -1022,7 +1022,7 @@ mod tests {
         let kept = live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes);
         assert!(!kept, "margin-guard debía abortar (600/20 > 0.95·12,99)");
         assert_eq!(vetoes, 1);
-        assert!(!arena.coins[0].positions.position.is_open());
+        assert!(!arena.coins[0].positions.slot_2.is_open());
         assert!((arena.unified_capital.load(Ordering::Relaxed) - 13.0).abs() < 1e-9);
     }
 
@@ -1054,7 +1054,7 @@ mod tests {
         let mut env = RiskEnvelope::new();
         let mut vetoes = 0u64;
         let abrir = |coin: usize, margen: f64| {
-            arena.coins[coin].positions.position.open_with_fee(
+            arena.coins[coin].positions.slot_2.open_with_fee(
                 true, 100.0, 0.13, margen, 1_700_000_000_000, 101.0, 99.0,
                 PositionHorizon::Continuous, 0.6, 0.5, 0.0,
             );
@@ -1065,7 +1065,7 @@ mod tests {
         // el exchange retiene 2,6 (antes el arranque 1× retenía 6,5).
         abrir(0, 2.6);
         assert!(live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, false, &mut vetoes));
-        let margen_a = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
+        let margen_a = arena.coins[0].positions.slot_2.margin_used.load(Ordering::Relaxed);
         assert!((margen_a - 2.6).abs() < 1e-9, "F4-H2: A retiene su reserva validada (5×); leído {margen_a}");
         assert!((arena.used_margin.load(Ordering::Relaxed) - 2.6).abs() < 1e-9);
 
@@ -1096,7 +1096,7 @@ mod tests {
         open_test_position(&arena, 100.0, 1.0, 10.0, 0.05);
         let kept = live_envelope_gate(&arena, &mut env, 0, 100.0, 0.001, true, &mut vetoes);
         assert!(kept && vetoes == 0);
-        assert!(arena.coins[0].positions.position.is_open());
+        assert!(arena.coins[0].positions.slot_2.is_open());
     }
 
     #[test]

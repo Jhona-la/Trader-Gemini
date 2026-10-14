@@ -77,7 +77,7 @@ fn core_con_posicion() -> (Arc<GlobalArena>, GodEngineCore) {
         GodEngineCore::new_with_outcome_context(arena.clone(), OutcomeContext::IsolatedSimulation);
     core.swing_nn = None;
     core.scalp_forest = None;
-    let pos = &arena.coins[0].positions.position;
+    let pos = &arena.coins[0].positions.slot_2;
     assert!(pos.open_with_horizon(
         true,
         100.0,
@@ -140,7 +140,7 @@ fn kelly_tras_cierre(entry_tau_ms: u64) -> f64 {
     m.gross_losses.store(100.0, Relaxed);
     arena.coins[0]
         .positions
-        .position
+        .slot_2
         .entry_tau_ms
         .store(entry_tau_ms, Relaxed);
     close_at(&mut core, 0, 101.1);
@@ -181,7 +181,7 @@ fn cf3_posicion_sin_tau_de_decision_no_entrena_el_espectro() {
     let (arena, mut core) = core_con_posicion();
     arena.coins[0]
         .positions
-        .position
+        .slot_2
         .entry_tau_ms
         .store(0, Relaxed);
     let antes: Vec<f64> = core.temporal_spectrum[0]

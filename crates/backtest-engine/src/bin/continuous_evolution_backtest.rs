@@ -1064,7 +1064,7 @@ mod reporting_contract {
         let arena = GlobalArena::build_in_own_stack(100.0);
         let (mut previous, mut sum) = (100.0, 0.0);
         checkpoint(&arena, &mut previous, &mut sum, 0.0, 100.0);
-        let pos = &arena.coins[0].positions.position;
+        let pos = &arena.coins[0].positions.slot_2;
         assert!(pos.open_with_fee(true, 100.0, 1.0, 10.0, 1_000, 150.0, 50.0,
             PositionHorizon::Continuous, 0.6, 0.5, 0.05));
         arena.used_margin.fetch_add(10.0, Ordering::Relaxed);
@@ -1090,8 +1090,8 @@ mod reporting_contract {
     fn sol_r5_01_multiactivo_multislot_negative_carry_is_not_counted_twice() {
         let arena = GlobalArena::build_in_own_stack(100.0);
         let (mut previous, mut sum) = (100.0, 0.0);
-        let long = &arena.coins[0].positions.position;
-        let short = &arena.coins[1].positions.position;
+        let long = &arena.coins[0].positions.slot_2;
+        let short = &arena.coins[1].positions.slot_2;
         let second_slot = &arena.coins[0].positions.slots()[0];
         for (pos, is_long, qty) in [(long, true, 1.0), (short, false, 2.0), (second_slot, true, 0.5)] {
             assert!(pos.open_with_fee(is_long, 100.0, qty, 1.0, 1_000, 0.0, 0.0,

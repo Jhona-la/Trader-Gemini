@@ -833,6 +833,12 @@ G0-10 VIVO (epigenoma TOML).
   DRENADO (GLM 104)**: 7 identificadores scalp_* de stateful_engine
   renombrados a fastband_* (59+5 reemplazos, rol espectral real;
   PositionManager pub scalp/swing queda como DECISIÓN — repr(C) público).
+  **H0-7-FINAL DRENADO (GLM 114)**: PositionManager scalp/swing/position →
+  slot_0/slot_1/slot_2 (pares por índice, alineados con get_slot/slots();
+  ~170 reemplazos en 15+ archivos incl. tests y reconciliation; doc
+  histórica U-ERR-5 restaurada con nombres originales citados + nota del
+  rename). Cero conducta — rename mecánico certificado por compilación
+  workspace completa + suites).
   H0-4 (fricción dual buf_fast/slow vs roundtrip_friction unificada en la
   misma función) **DRENADO (Ola 72, oráculo PASA 16/144)**: unificada a
   `tp_sl::roundtrip_friction` canónica (XLIV-8) con fee vivo, ATR vivo,

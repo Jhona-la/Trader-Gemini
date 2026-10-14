@@ -2,7 +2,7 @@
 //!
 //! Verifica:
 //! 1. HOST-004 / R7-R4-C-1 residual: Verificación multi-ranura de `exchange_confirmed` en PositionManager.
-//!    Impide que posiciones legítimamente confirmadas en scalp (slot 0) o swing (slot 1) sean liquidadas
+//!    Impide que posiciones legítimamente confirmadas en slot_0 (slot 0) o slot_1 (slot 1) sean liquidadas
 //!    accidentalmente por la orden reduce-only de respaldo de papel.
 //! 2. R7-R4-D-2: Preservación de la diversidad fenotípica del Nicho 3 en `scalp_trail_act_atr` [0.8, 1.8],
 //!    sin truncamiento prematuro por el blindaje global.
@@ -13,9 +13,9 @@ use std::sync::atomic::Ordering;
 use quantum_arena::position::PositionManager;
 
 /// 1. HOST-004 & R7-R4-C-1 residual:
-/// Demuestra que una posición confirmada en slot 0 (scalp) o slot 1 (swing) es correctamente
+/// Demuestra que una posición confirmada en slot 0 (slot_0) o slot 1 (slot_1) es correctamente
 /// identificada como `exchange_confirmed` por el scanner multi-ranura `slots().iter().any(...)`,
-/// mientras que el código previo inspeccionaba exclusivamente slot 2 (`position`), fallando
+/// mientras que el código previo inspeccionaba exclusivamente slot 2 (`slot_2`), fallando
 /// falsamente y disparando órdenes de mercado que cerraban posiciones reales en Binance.
 #[test]
 fn test_host004_r7_r4_c1_multi_slot_exchange_confirmed() {
@@ -25,26 +25,26 @@ fn test_host004_r7_r4_c1_multi_slot_exchange_confirmed() {
     let any_confirmed_init = pm.slots().iter().any(|p| p.exchange_confirmed.load(Ordering::Relaxed));
     assert!(!any_confirmed_init, "Inicialmente ningún slot debe estar confirmado");
 
-    // Simular que el exchange confirma un fill en el slot 0 (scalp)
-    pm.scalp.exchange_confirmed.store(true, Ordering::Relaxed);
+    // Simular que el exchange confirma un fill en el slot 0 (slot_0)
+    pm.slot_0.exchange_confirmed.store(true, Ordering::Relaxed);
 
-    // Inspección antigua defectuosa (solo slot 2 `position`):
-    let old_buggy_check = pm.position.exchange_confirmed.load(Ordering::Relaxed);
-    assert!(!old_buggy_check, "El chequeo antiguo fallaba en detectar la confirmación de scalp");
+    // Inspección antigua defectuosa (solo slot 2 `slot_2`):
+    let old_buggy_check = pm.slot_2.exchange_confirmed.load(Ordering::Relaxed);
+    assert!(!old_buggy_check, "El chequeo antiguo fallaba en detectar la confirmación de slot_0");
 
     // Inspección corregida multi-ranura:
     let new_correct_check = pm.slots().iter().any(|p| p.exchange_confirmed.load(Ordering::Relaxed));
-    assert!(new_correct_check, "El chequeo multi-ranura detecta la confirmación en slot 0 (scalp)");
+    assert!(new_correct_check, "El chequeo multi-ranura detecta la confirmación en slot 0 (slot_0)");
 
-    // Simular que el exchange confirma un fill en el slot 1 (swing) y slot 0 se cierra
-    pm.scalp.exchange_confirmed.store(false, Ordering::Relaxed);
-    pm.swing.exchange_confirmed.store(true, Ordering::Relaxed);
+    // Simular que el exchange confirma un fill en el slot 1 (slot_1) y slot 0 se cierra
+    pm.slot_0.exchange_confirmed.store(false, Ordering::Relaxed);
+    pm.slot_1.exchange_confirmed.store(true, Ordering::Relaxed);
 
-    let old_buggy_check_swing = pm.position.exchange_confirmed.load(Ordering::Relaxed);
-    assert!(!old_buggy_check_swing, "El chequeo antiguo fallaba en detectar la confirmación de swing");
+    let old_buggy_check_swing = pm.slot_2.exchange_confirmed.load(Ordering::Relaxed);
+    assert!(!old_buggy_check_swing, "El chequeo antiguo fallaba en detectar la confirmación de slot_1");
 
     let new_correct_check_swing = pm.slots().iter().any(|p| p.exchange_confirmed.load(Ordering::Relaxed));
-    assert!(new_correct_check_swing, "El chequeo multi-ranura detecta la confirmación en slot 1 (swing)");
+    assert!(new_correct_check_swing, "El chequeo multi-ranura detecta la confirmación en slot 1 (slot_1)");
 }
 
 /// 2. R7-R4-D-2:

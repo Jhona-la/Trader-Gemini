@@ -654,7 +654,7 @@ impl Position {
         self.entry_tau_ms.load(Ordering::Relaxed)
     }
 
-    /// Retorna la banda espectral continua [0: micro/scalp, 1: meso/tactical, 2: macro/swing].
+    /// Retorna la banda espectral continua [0: micro/slot_0, 1: meso/tactical, 2: macro/slot_1].
     #[inline(always)]
     pub fn spectral_horizon_band(&self) -> usize {
         let tau = self.entry_tau_ms.load(Ordering::Relaxed);
@@ -671,7 +671,7 @@ impl Position {
     /// Proyecta la escala continua intrínseca `entry_tau_ms` en bandas semánticas humanas para telemetría.
     /// NOTA ARQUITECTURAL (U-ERR-5 / R6-C9): El motor de trading, el dimensionamiento de riesgo
     /// y los brackets TP/SL operan sobre el continuo físico estocástico `entry_tau_ms` incondicionalmente,
-    /// sin bifurcaciones if/else discretas scalping vs swing en la toma de decisiones.
+    /// sin bifurcaciones if/else discretas scalping vs slot_1 en la toma de decisiones.
     /// - Micro: τ <= 60_000 ms (≤ 1 min)
     /// - Meso: 60_000 ms < τ <= 900_000 ms (1 min - 15 min)
     /// - Macro: τ > 900_000 ms (> 15 min)
@@ -753,40 +753,45 @@ pub const MAX_SPECTRAL_SLOTS: usize = 3;
 ///
 /// # RANURAS ESPECTRALES (decisión de fusión PR #5)
 ///
-/// U-ERR-5 erradicó las ranuras `scalp`/`swing` tras auditar que ningún
-/// productor escribía en ellas — cierto en la base de esa auditoría. Las
-/// Olas 22-26 de main (#565-#586) convirtieron después las tres ranuras en
-/// SLOTS ESPECTRALES reales con productores: `find_resonant_slot` admite
-/// posiciones en espacio log(τ) y el despacho multi-banda concurrente
-/// escribe en las tres. La fusión conserva la arquitectura de main (3
-/// slots por moneda); el binario de horizonte sigue erradicado: los tres
-/// slots viven en `TradeHorizon::Continuous` y se distinguen por τ, no
-/// por etiqueta.
+/// U-ERR-5 erradicó las ranuras `scalp`/`swing` (nombres históricos) tras
+/// auditar que ningún productor escribía en ellas — cierto en la base de
+/// esa auditoría. Las Olas 22-26 de main (#565-#586) convirtieron después
+/// las tres ranuras en SLOTS ESPECTRALES reales con productores:
+/// `find_resonant_slot` admite posiciones en espacio log(τ) y el despacho
+/// multi-banda concurrente escribe en las tres. La fusión conserva la
+/// arquitectura de main (3 slots por moneda); el binario de horizonte
+/// sigue erradicado: los tres slots viven en `TradeHorizon::Continuous`
+/// y se distinguen por τ, no por etiqueta.
+///
+/// H0-7-final (GLM 114): los CAMPOS pasaron a llamarse `slot_0/1/2` —
+/// pares por índice, alineados con `get_slot`/`slots()`. El nombre
+/// heredado scalp/swing era una etiqueta de estrategia mintiendo sobre
+/// contenido espectral (la doctrina: se distinguen por τ).
 #[repr(C, align(64))]
 #[derive(Default)]
 pub struct PositionManager {
-    pub scalp: Position,
-    pub swing: Position,
-    pub position: Position,
+    pub slot_0: Position,
+    pub slot_1: Position,
+    pub slot_2: Position,
 }
 
 impl PositionManager {
     #[inline(always)]
     pub fn is_any_open(&self) -> bool {
-        self.scalp.is_open() || self.swing.is_open() || self.position.is_open()
+        self.slot_0.is_open() || self.slot_1.is_open() || self.slot_2.is_open()
     }
 
     #[inline(always)]
     pub fn slots(&self) -> [&Position; MAX_SPECTRAL_SLOTS] {
-        [&self.scalp, &self.swing, &self.position]
+        [&self.slot_0, &self.slot_1, &self.slot_2]
     }
 
     #[inline(always)]
     pub fn get_slot(&self, idx: usize) -> &Position {
         match idx {
-            0 => &self.scalp,
-            1 => &self.swing,
-            _ => &self.position,
+            0 => &self.slot_0,
+            1 => &self.slot_1,
+            _ => &self.slot_2,
         }
     }
 
@@ -845,7 +850,7 @@ impl PositionManager {
         false
     }
 
-    /// Retorna true si hay alguna posición abierta en régimen de macroescala (swing).
+    /// Retorna true si hay alguna posición abierta en régimen de macroescala (slot_1).
     #[inline(always)]
     pub fn has_open_macro_swing(&self) -> bool {
         for p in self.slots() {
@@ -874,7 +879,7 @@ impl PositionManager {
         is_long: bool,
         threshold_ln: f64,
     ) -> Option<usize> {
-        let slots = [&self.scalp, &self.swing, &self.position];
+        let slots = [&self.slot_0, &self.slot_1, &self.slot_2];
         let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 {
             tau_ms
         } else {
@@ -925,7 +930,7 @@ impl PositionManager {
         is_long: bool,
         threshold_ln: f64,
     ) -> u8 {
-        let slots = [&self.scalp, &self.swing, &self.position];
+        let slots = [&self.slot_0, &self.slot_1, &self.slot_2];
         let safe_tau = if tau_ms.is_finite() && tau_ms > 10.0 {
             tau_ms
         } else {
@@ -1332,7 +1337,7 @@ mod tests {
         let mgr = PositionManager::default();
 
         // Continuous Long
-        mgr.position.open_with_horizon(
+        mgr.slot_2.open_with_horizon(
             true,
             60000.0,
             0.1,
@@ -1343,15 +1348,15 @@ mod tests {
             PositionHorizon::Continuous,
         );
 
-        assert!(mgr.position.is_open());
+        assert!(mgr.slot_2.is_open());
         assert!(mgr.is_any_open());
-        assert_eq!(mgr.position.horizon(), PositionHorizon::Continuous);
+        assert_eq!(mgr.slot_2.horizon(), PositionHorizon::Continuous);
 
-        let (is_long, price, qty, _) = mgr.position.close();
+        let (is_long, price, qty, _) = mgr.slot_2.close();
         assert!(is_long);
         assert_eq!(price, 60000.0);
         assert_eq!(qty, 0.1);
-        assert!(!mgr.position.is_open());
+        assert!(!mgr.slot_2.is_open());
         assert!(!mgr.is_any_open());
     }
 
@@ -1388,7 +1393,7 @@ mod tests {
     /// U-ERR-5 — UNA MONEDA, UNA POSICIÓN.
     ///
     /// Sustituye a `test_position_dual_scalp_swing_independence`, que abría a
-    /// la vez una posición en la ranura `swing` y otra en `scalp` y
+    /// la vez una posición en la ranura `slot_1` y otra en `slot_0` y
     /// comprobaba que eran independientes. Esa independencia nunca existió en
     /// producción: ningún productor del repositorio escribía en esas dos
     /// ranuras, de modo que el test verdeaba sobre una capacidad que el motor
@@ -1397,7 +1402,7 @@ mod tests {
     ///
     /// Este test FALLA con el código viejo: allí `is_any_open` devolvía `true`
     /// mientras cualquiera de las tres ranuras estuviese abierta, así que
-    /// cerrar `position` no bastaba para dejar la moneda plana. La invariante
+    /// cerrar `slot_2` no bastaba para dejar la moneda plana. La invariante
     /// que se fija ahora: la ocupación de la moneda es exactamente la
     /// ocupación de su ÚNICA posición.
     #[test]
@@ -1405,7 +1410,7 @@ mod tests {
         let mgr = PositionManager::default();
         assert!(!mgr.is_any_open());
 
-        mgr.position.open_with_horizon(
+        mgr.slot_2.open_with_horizon(
             true,
             90000.0,
             0.1,
@@ -1416,9 +1421,9 @@ mod tests {
             PositionHorizon::Continuous,
         );
         assert!(mgr.is_any_open());
-        assert_eq!(mgr.is_any_open(), mgr.position.is_open());
+        assert_eq!(mgr.is_any_open(), mgr.slot_2.is_open());
 
-        let (is_long, price, qty, _) = mgr.position.close();
+        let (is_long, price, qty, _) = mgr.slot_2.close();
         assert!(is_long);
         assert_eq!(price, 90000.0);
         assert_eq!(qty, 0.1);
@@ -1426,7 +1431,7 @@ mod tests {
         // Cerrada la única posición, la moneda queda plana: no hay ninguna
         // otra ranura que pueda sostener un `true` fantasma.
         assert!(!mgr.is_any_open());
-        assert_eq!(mgr.is_any_open(), mgr.position.is_open());
+        assert_eq!(mgr.is_any_open(), mgr.slot_2.is_open());
     }
 
     #[test]
@@ -1438,11 +1443,11 @@ mod tests {
         assert_eq!(slot_fast, Some(0));
 
         // Abrir la ranura 0 con tau = 15s Long
-        mgr.scalp.open_with_fee(
+        mgr.slot_0.open_with_fee(
             true, 50_000.0, 0.01, 10.0, 1000, 50_500.0, 49_800.0,
             PositionHorizon::Continuous, 0.7, 0.8, 0.05,
         );
-        mgr.scalp.entry_tau_ms.store(15_000, Ordering::Relaxed);
+        mgr.slot_0.entry_tau_ms.store(15_000, Ordering::Relaxed);
 
         // 2. Misma dirección Long con escala idéntica (16s): INTERFERENCIA DESTRUCTIVA -> Rechazo (None)
         let slot_interf = mgr.find_resonant_slot(16_000.0, true);
@@ -1454,11 +1459,11 @@ mod tests {
         assert_eq!(slot_macro, Some(1), "Debe permitir coexistencia espectral armónica");
 
         // Abrir la ranura 1 con tau = 1 hora
-        mgr.swing.open_with_fee(
+        mgr.slot_1.open_with_fee(
             true, 50_000.0, 0.02, 10.0, 1000, 52_000.0, 49_000.0,
             PositionHorizon::Continuous, 0.75, 0.85, 0.10,
         );
-        mgr.swing.entry_tau_ms.store(3_600_000, Ordering::Relaxed);
+        mgr.slot_1.entry_tau_ms.store(3_600_000, Ordering::Relaxed);
 
         // 4. Dirección opuesta Short con cualquier tau no colisiona por dirección
         let slot_short = mgr.find_resonant_slot(15_000.0, false);
@@ -1484,7 +1489,7 @@ mod tests {
         );
 
         // Larga abierta a τ=30 s, entrada 100, mid 100.0 (plano).
-        assert!(pm.scalp.open_with_tau_and_fee(
+        assert!(pm.slot_0.open_with_tau_and_fee(
             true,
             100.0,
             0.01,
@@ -1531,7 +1536,7 @@ mod tests {
     fn qo_588_short_perdiente_veta_y_opuesta_no() {
         let pm = PositionManager::default();
         // Short abierta a τ=30 s, entrada 100; mid 101 ⇒ (ep−mid)/ep = −1 %.
-        assert!(pm.swing.open_with_tau_and_fee(
+        assert!(pm.slot_1.open_with_tau_and_fee(
             false,
             100.0,
             0.01,
@@ -1563,7 +1568,7 @@ mod tests {
     fn qo_589_razon_de_rechazo_distingue_colision_de_capacidad() {
         let pm = PositionManager::default();
         // Larga abierta a τ=30 s.
-        assert!(pm.scalp.open_with_tau_and_fee(
+        assert!(pm.slot_0.open_with_tau_and_fee(
             true,
             100.0,
             0.01,
@@ -1596,7 +1601,7 @@ mod tests {
         // LARGA nunca colisiona con ellos ⇒ la única razón de None es que
         // los tres slots físicos están ocupados.
         let pm2 = PositionManager::default();
-        for slot in [&pm2.scalp, &pm2.swing, &pm2.position] {
+        for slot in [&pm2.slot_0, &pm2.slot_1, &pm2.slot_2] {
             assert!(slot.open_with_tau_and_fee(
                 false,
                 100.0,
@@ -1624,7 +1629,7 @@ mod tests {
         let pm = PositionManager::default();
 
         // 1. Slot 0: MicroScalp (τ = 15s = 15_000 ms <= 60_000 ms)
-        assert!(pm.scalp.open_with_tau_and_fee(
+        assert!(pm.slot_0.open_with_tau_and_fee(
             true,
             100.0,
             0.05,
@@ -1638,12 +1643,12 @@ mod tests {
             0.0004,
             15_000
         ));
-        assert_eq!(pm.scalp.spectral_regime_name(), "MicroScalp");
-        assert!(pm.scalp.is_micro_scalp());
-        assert!(!pm.scalp.is_macro_swing());
+        assert_eq!(pm.slot_0.spectral_regime_name(), "MicroScalp");
+        assert!(pm.slot_0.is_micro_scalp());
+        assert!(!pm.slot_0.is_macro_swing());
 
         // 2. Slot 1: MacroSwing (τ = 1h = 3_600_000 ms > 900_000 ms)
-        assert!(pm.swing.open_with_tau_and_fee(
+        assert!(pm.slot_1.open_with_tau_and_fee(
             false,
             200.0,
             0.02,
@@ -1657,12 +1662,12 @@ mod tests {
             0.0004,
             3_600_000
         ));
-        assert_eq!(pm.swing.spectral_regime_name(), "MacroSwing");
-        assert!(!pm.swing.is_micro_scalp());
-        assert!(pm.swing.is_macro_swing());
+        assert_eq!(pm.slot_1.spectral_regime_name(), "MacroSwing");
+        assert!(!pm.slot_1.is_micro_scalp());
+        assert!(pm.slot_1.is_macro_swing());
 
         // 3. Slot 2: MesoTactical (τ = 5m = 300_000 ms)
-        assert!(pm.position.open_with_tau_and_fee(
+        assert!(pm.slot_2.open_with_tau_and_fee(
             true,
             50.0,
             0.10,
@@ -1676,9 +1681,9 @@ mod tests {
             0.0004,
             300_000
         ));
-        assert_eq!(pm.position.spectral_regime_name(), "MesoTactical");
-        assert!(!pm.position.is_micro_scalp());
-        assert!(!pm.position.is_macro_swing());
+        assert_eq!(pm.slot_2.spectral_regime_name(), "MesoTactical");
+        assert!(!pm.slot_2.is_micro_scalp());
+        assert!(!pm.slot_2.is_macro_swing());
 
         // 4. Verificación de agregación del PositionManager
         let (micro, meso, macro_cnt) = pm.open_positions_by_regime();
@@ -1690,11 +1695,11 @@ mod tests {
         assert!(pm.has_open_macro_swing());
 
         // 5. Verificación de snapshot coherente
-        let snap_scalp = pm.scalp.snapshot().expect("snapshot scalp");
+        let snap_scalp = pm.slot_0.snapshot().expect("snapshot slot_0");
         assert_eq!(snap_scalp.spectral_regime_name(), "MicroScalp");
         assert!(snap_scalp.is_micro_scalp());
 
-        let snap_swing = pm.swing.snapshot().expect("snapshot swing");
+        let snap_swing = pm.slot_1.snapshot().expect("snapshot slot_1");
         assert_eq!(snap_swing.spectral_regime_name(), "MacroSwing");
         assert!(snap_swing.is_macro_swing());
     }

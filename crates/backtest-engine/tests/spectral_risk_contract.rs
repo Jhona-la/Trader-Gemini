@@ -6,7 +6,7 @@ use risk_engine::kelly_envelope::RiskEnvelope;
 use std::sync::{Arc, atomic::Ordering};
 
 fn open_candidate(arena: &Arc<GlobalArena>) {
-    arena.coins[0].positions.position.open_with_fee(
+    arena.coins[0].positions.slot_2.open_with_fee(
         true,
         100.0,
         0.05,
@@ -26,7 +26,7 @@ fn open_candidate(arena: &Arc<GlobalArena>) {
 /// CL-41b: la reserva admitida retiene el margen del exchange (nocional 5 /
 /// apalancamiento de envío), nunca menos que el validado (1, es decir 5×).
 fn assert_reserva_del_exchange(arena: &Arc<GlobalArena>) {
-    let ranura = arena.coins[0].positions.position.margin_used.load(Ordering::Relaxed);
+    let ranura = arena.coins[0].positions.slot_2.margin_used.load(Ordering::Relaxed);
     let usado = arena.used_margin.load(Ordering::Relaxed);
     assert!((usado - ranura).abs() < 1e-12, "used_margin {usado} != ranura {ranura}");
     assert!(ranura >= 1.0 - 1e-12, "la reserva bajó del margen validado: {ranura}");
@@ -57,7 +57,7 @@ fn mature_micro_no_edge_keeps_the_minimal_probe_alive() {
         &mut vetoes
     ));
     assert_eq!(vetoes, 0);
-    assert!(arena.coins[0].positions.position.is_open());
+    assert!(arena.coins[0].positions.slot_2.is_open());
     assert_reserva_del_exchange(&arena);
 }
 
@@ -80,7 +80,7 @@ fn positive_evidence_still_allows_a_feasible_micro_candidate() {
         &mut vetoes
     ));
     assert_eq!(vetoes, 0);
-    assert!(arena.coins[0].positions.position.is_open());
+    assert!(arena.coins[0].positions.slot_2.is_open());
     assert_reserva_del_exchange(&arena);
 }
 
@@ -101,6 +101,6 @@ fn invalid_posterior_does_not_admit_a_new_candidate() {
         &mut vetoes
     ));
     assert_eq!(vetoes, 1);
-    assert!(!arena.coins[0].positions.position.is_open());
+    assert!(!arena.coins[0].positions.slot_2.is_open());
     assert!((arena.unified_capital.load(Ordering::Relaxed) - 13.0).abs() < 1e-12);
 }

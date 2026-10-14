@@ -95,7 +95,7 @@ fn regression_ambiguous_hedge_and_reversal_preserve_local_state() {
     )]);
     symbols::update_dynamic_universe(vec!["AUDITUSDT".into()]);
     let arena = GlobalArena::build_in_own_stack(100.0);
-    let slot = &arena.coins[0].positions.position;
+    let slot = &arena.coins[0].positions.slot_2;
     let remote = |qty, side: &str, price| PositionRiskEntry {
         symbol: "AUDITUSDT".into(),
         position_amt: qty,

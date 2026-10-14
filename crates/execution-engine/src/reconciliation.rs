@@ -593,7 +593,7 @@ pub fn reconcile_arena_checked(
                 let adopted_entry_fee = notional * 0.0004;
                 // #595: el reloj de la adopción es el del EXCHANGE (updateTime,
                 // cota inferior de la edad), no el arranque del proceso.
-                let adoptada = coin.positions.position.open_with_fee(
+                let adoptada = coin.positions.slot_2.open_with_fee(
                     is_long,
                     price,
                     abs_qty,
@@ -619,7 +619,7 @@ pub fn reconcile_arena_checked(
                 // ciclo de 60s: remanentes de maker-chase parcial, fills
                 // tras rollback, posiciones abiertas fuera del motor).
                 coin.positions
-                    .position
+                    .slot_2
                     .exchange_confirmed
                     .store(true, std::sync::atomic::Ordering::Relaxed);
                 arena
@@ -652,7 +652,7 @@ pub fn reconcile_arena_checked(
                                     == is_remote_long
                         })
                         .or_else(|| coin.positions.slots().into_iter().find(|p| p.is_open()))
-                        .unwrap_or(&coin.positions.position);
+                        .unwrap_or(&coin.positions.slot_2);
 
                     target_slot
                         .exchange_confirmed
@@ -857,7 +857,7 @@ mod tests {
         let arena = quantum_arena::GlobalArena::build_in_own_stack(100.0);
 
         // Simulate phantom position on BTC (arena has it open, but Binance is flat)
-        arena.coins[0].positions.position.open_with_horizon(
+        arena.coins[0].positions.slot_2.open_with_horizon(
             true,
             60000.0,
             0.01,
@@ -891,14 +891,14 @@ mod tests {
         );
 
         // BTC phantom position must be closed and margin reclaimed
-        assert!(!arena.coins[0].positions.position.is_open());
+        assert!(!arena.coins[0].positions.slot_2.is_open());
 
         // ETH position must be adopted in Continuous position
-        assert!(arena.coins[1].positions.position.is_open());
+        assert!(arena.coins[1].positions.slot_2.is_open());
         assert_eq!(
             arena.coins[1]
                 .positions
-                .position
+                .slot_2
                 .quantity
                 .load(std::sync::atomic::Ordering::Relaxed),
             0.5
@@ -908,7 +908,7 @@ mod tests {
         assert!(
             arena.coins[1]
                 .positions
-                .position
+                .slot_2
                 .exchange_confirmed
                 .load(std::sync::atomic::Ordering::Relaxed),
             "la adopción de reconcile_arena debe marcar exchange_confirmed"
@@ -916,7 +916,7 @@ mod tests {
         // Y el fantasma cerrado consume su confirmación (slot limpio).
         assert!(!arena.coins[0]
             .positions
-            .position
+            .slot_2
             .exchange_confirmed
             .load(std::sync::atomic::Ordering::Relaxed));
     }
@@ -926,7 +926,7 @@ mod tests {
         quantum_arena::symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
         let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
         arena.coins[0].current_price.store(60_000.0, std::sync::atomic::Ordering::Relaxed);
-        arena.coins[0].positions.position.open_with_horizon(
+        arena.coins[0].positions.slot_2.open_with_horizon(
             true,
             60_000.0,
             0.001,
@@ -956,7 +956,7 @@ mod tests {
         assert!(used.is_finite(), "used_margin must be finite, got {}", used);
         assert_eq!(used, 24.0, "used_margin must be 24.0, got {}", used);
 
-        let slot_margin = arena.coins[0].positions.position.margin_used.load(std::sync::atomic::Ordering::Relaxed);
+        let slot_margin = arena.coins[0].positions.slot_2.margin_used.load(std::sync::atomic::Ordering::Relaxed);
         assert!(slot_margin.is_finite(), "slot margin must be finite, got {}", slot_margin);
         assert_eq!(slot_margin, 24.0, "slot margin must be 24.0, got {}", slot_margin);
     }
@@ -983,7 +983,7 @@ mod tests {
 
         // Notional = 0.001 * 50_000 = 50.0.
         // Margin = 50.0 / 5.0 = 10.0.
-        let slot_margin = arena.coins[0].positions.position.margin_used.load(std::sync::atomic::Ordering::Relaxed);
+        let slot_margin = arena.coins[0].positions.slot_2.margin_used.load(std::sync::atomic::Ordering::Relaxed);
         assert_eq!(slot_margin, 10.0, "slot margin must be 10.0, got {}", slot_margin);
     }
 }

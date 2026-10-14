@@ -107,32 +107,32 @@ fn bayesian_prior_discounts_insufficient_sample_and_prevents_phantom_edge() {
 }
 
 /// Verifica que `PositionManager::is_any_open` detecta aperturas en cualquiera
-/// de las tres ranuras espectrales (`scalp`, `swing`, `position`), previniendo
+/// de las tres ranuras espectrales (`slot_0`, `slot_1`, `slot_2`), previniendo
 /// re-evaluaciones redundantes en `live_envelope_gate`.
 #[test]
 fn multi_slot_openness_reflects_all_spectral_slots() {
     let pm = PositionManager::default();
 
     assert!(!pm.is_any_open());
-    assert!(!pm.scalp.is_open());
-    assert!(!pm.swing.is_open());
-    assert!(!pm.position.is_open());
+    assert!(!pm.slot_0.is_open());
+    assert!(!pm.slot_1.is_open());
+    assert!(!pm.slot_2.is_open());
 
-    // Abrir ranura scalp
-    pm.scalp.is_open.store(true, Relaxed);
+    // Abrir ranura slot_0
+    pm.slot_0.is_open.store(true, Relaxed);
     assert!(pm.is_any_open());
-    pm.scalp.is_open.store(false, Relaxed);
+    pm.slot_0.is_open.store(false, Relaxed);
     assert!(!pm.is_any_open());
 
-    // Abrir ranura swing
-    pm.swing.is_open.store(true, Relaxed);
+    // Abrir ranura slot_1
+    pm.slot_1.is_open.store(true, Relaxed);
     assert!(pm.is_any_open());
-    pm.swing.is_open.store(false, Relaxed);
+    pm.slot_1.is_open.store(false, Relaxed);
     assert!(!pm.is_any_open());
 
     // Abrir ranura genérica
-    pm.position.is_open.store(true, Relaxed);
+    pm.slot_2.is_open.store(true, Relaxed);
     assert!(pm.is_any_open());
-    pm.position.is_open.store(false, Relaxed);
+    pm.slot_2.is_open.store(false, Relaxed);
     assert!(!pm.is_any_open());
 }

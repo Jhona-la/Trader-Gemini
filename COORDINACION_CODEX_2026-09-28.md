@@ -10915,3 +10915,25 @@ dueño aparente (Claude/Qoder/Consejo). Lo único sin ambigüedad es MI menú:
 Con esto el MENÚ 104 queda CERRADO (H2-9 ✓112, H2-10 ✓112, H2-12 ✓113,
 H0-7-final ✓114, H0-4 ✓114; H0-5 cableado = no-hacer justificado: writer
 sin caller vivo, infra-futura).
+
+## 2026-10-14 — GLM: 114 CIERRE — PositionManager espectral (slot_0/1/2); H0-4 verificado ya-cerrado por Ola 72; MENÚ 104 CERRADO
+
+**P1 (sin conducta)**: PositionManager pub scalp/swing/position →
+slot_0/slot_1/slot_2 — pares por índice, alineados con get_slot/slots(),
+doctrina-honesto ("se distinguen por τ, no por etiqueta" — el nombre
+heredado era etiqueta de estrategia mintiendo sobre contenido espectral).
+~170 reemplazos en 15+ archivos (incl. reconciliation vivo y 8 archivos
+de tests). La cita histórica U-ERR-5 restaurada con los nombres
+originales (scalp/swing citados como históricos) + nota del rename.
+Workspace completo compila; suites: arena 145/145, execution 87/87
+(1 flaky env-dependiente re-run verde), core 203/203.
+
+**P2**: H0-4 RESUELTO-POR-VERIFICACIÓN — ya estaba unificado a
+tp_sl::roundtrip_friction canónica por la Ola 72 de Qoder CON oráculo
+PASA (BARRIDO :836-840). Nada que hacer.
+
+**MENÚ 104 CERRADO**: H2-9 ✓112 (contrato knobs cuánticos),
+H2-10 ✓112 (solitón espejo, oráculo), H2-12 ✓113 (lead-lag honesto,
+oráculo), H0-4 ✓Ola72, H0-7-final ✓114 (este ciclo), H0-5 = NO-HACER
+justificado (writer epigenoma sin caller vivo — infra futura si el
+consejo cablea el snapshot).
