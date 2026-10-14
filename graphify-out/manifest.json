@@ -798,9 +798,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/lib.rs": {
-    "mtime": 1791930235.0029216,
-    "seen": 1791930768.1731036,
-    "ast_hash": "c94de0cbccebc1603c51f77897b972ce",
+    "mtime": 1791939974.758837,
+    "seen": 1791940359.4838345,
+    "ast_hash": "b21dd30dcb3979a1d6ac06085a6456ff",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/math_kernels.rs": {
@@ -900,9 +900,9 @@
     "semantic_hash": "4dff921ffc58a0a01cf8cbdb026dc305"
   },
   "crates/metacortex-engine/src/consejo_seniors.rs": {
-    "mtime": 1791934695.0574174,
-    "seen": 1791935082.301913,
-    "ast_hash": "3e68a36be07d2b961e64e4eb8adfb730",
+    "mtime": 1791939974.7635305,
+    "seen": 1791940359.5223942,
+    "ast_hash": "6391b94db954311229d8bba86b0bd42a",
     "semantic_hash": ""
   },
   "crates/metacortex-engine/src/epigenoma_store.rs": {
@@ -3078,9 +3078,9 @@
     "semantic_hash": ""
   },
   "crates/metacortex-engine/tests/council_evidence_contract.rs": {
-    "mtime": 1791515280.2301385,
-    "seen": 1791515632.683763,
-    "ast_hash": "33c68883097cfe7e4224b253ef73b652",
+    "mtime": 1791939974.7666793,
+    "seen": 1791940359.529633,
+    "ast_hash": "d5718a9e66ebcb12c4f4582f0fba03d1",
     "semantic_hash": ""
   },
   "crates/quantum-arena/src/horizon_policy.rs": {
@@ -3672,9 +3672,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791937388.4880345,
-    "seen": 1791937790.9623377,
-    "ast_hash": "055117e9f65b944b92b8576b35940c00",
+    "mtime": 1791939974.746824,
+    "seen": 1791940359.6801772,
+    "ast_hash": "36ac423cf1d7de2cb93115bc27c97de9",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3702,9 +3702,9 @@
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1791937388.493013,
-    "seen": 1791937791.2234726,
-    "ast_hash": "fb47bd8d11e9c40b0166ab4614b95723",
+    "mtime": 1791939974.7521298,
+    "seen": 1791940360.0319936,
+    "ast_hash": "a6db5830ec269507497c8e22d9fb689e",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -30162,9 +30162,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md": {
-    "mtime": 1791937388.5050857,
-    "seen": 1791937791.2532778,
-    "ast_hash": "04239d3bd1de55bb0348af23debdf8b1",
+    "mtime": 1791939974.7713232,
+    "seen": 1791940360.0653768,
+    "ast_hash": "2d4a53176aa733e0f86006cb18292c29",
     "semantic_hash": ""
   },
   "docs/adr/ADR-0017-frenos-de-drawdown-y-estado-aprendido.md": {
