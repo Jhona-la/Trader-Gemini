@@ -1,5 +1,46 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω117 — Desacoplamiento Dinámico de Umbrales ML y Factores Metacognitivos en SeniorML y SeniorMetacognitivo
+
+- **Ola Integrada y Certificada en `main`**:
+  * **Diagnóstico y Causa Raíz**: En `crates/metacortex-engine/src/consejo_seniors.rs`, las opiniones direccionales del ensamble ML y la síntesis metacognitiva del tribunal estaban restringidas por constantes rígidas congeladas en código:
+    1. En `SeniorML::evaluate`:
+       `DEAD_ZONE = 0.05` y `FULL_EDGE = 0.20`.
+       Esto impedía que regímenes de micro-scalping de alta eficiencia estrecharan la zona muerta a `0.01-0.02` para explotar pequeñas asimetrías de micro-retorno, o que regímenes caóticos ensancharan la cota de saturación plena para requerir mayor convicción del ensamble.
+    2. En `SeniorMetacognitivo::evaluate`:
+       `dd_penalty_mult = 5.0`, `max_dd_penalty = 0.50`, `majority_factor = 0.70`, `solitary_factor = 0.40`.
+       La penalización de drawdown y la modulación del consenso (unanimidad 3/3, mayoría 2/3, evidencia solitaria 1/3) estaban petrificadas rígidamente en código, imposibilitando modular la aversión al riesgo según la fase del micro-capital ($13 USD) o el régimen macro.
+    3. Ninguno de estos 6 parámetros críticos se exponía en `CouncilParams`, ni en `QuantumConfig`, ni se resolvía en el registro omnisciente.
+  * **Solución Matemática y Continua**:
+    1. En `crates/metacortex-engine/src/consejo_seniors.rs`:
+       - Declaradas 6 constantes canónicas:
+         `DEFAULT_ML_DEAD_ZONE = 0.05`, `DEFAULT_ML_FULL_EDGE = 0.20`, `DEFAULT_META_DD_PENALTY_MULT = 5.0`, `DEFAULT_META_MAX_DD_PENALTY = 0.50`, `DEFAULT_META_MAJORITY_FACTOR = 0.70`, `DEFAULT_META_SOLITARY_FACTOR = 0.40`.
+       - Implementadas funciones default serde para deserialización robusta.
+       - Implementadas funciones puras desacopladas:
+         * `evaluate_ml_opinion_with_bounds(ml_prob, ml_base, dead_zone, full_edge) -> (f64, f64)`: modela la función continua de señal direccional linealmente interpolada fuera de la zona muerta, con saturación en $[-1.0, 1.0]$ y sanitización estricta fail-closed (inmunidad ante NaN/Inf y desbordamientos).
+         * `evaluate_metacognitive_opinion(ml_prob, ml_base, fused_score, persistence, book_imbalance, current_drawdown_pct, wr, ml_dead_zone, ml_full_edge, dd_mult, max_dd_penalty, majority_factor, solitary_factor) -> (f64, f64, f64, bool, String)`: evalúa la divergencia y consenso de las 3 perspectivas independientes (ML, Espectral, Flujo L2) con penalización continua por drawdown y modulación de consenso desacoplada.
+       - Agregados los 6 campos a `MarketSnapshotPayload`, constructor `CouncilParams::new`, constructor builder `with_ml_metacognitive_bounds(...)`, y validaciones estrictas de cota en `validate()`.
+       - Conectados `SeniorML::evaluate` y `SeniorMetacognitivo::evaluate` a las funciones puras.
+       - En `deliberar_traced`: propagación lock-free de `CouncilParams` hacia el payload evaluado vía `Cow`.
+    2. En `crates/metacortex-engine/src/lib.rs`:
+       - Re-exportadas las 6 constantes canónicas y las dos funciones puras `evaluate_ml_opinion_with_bounds` y `evaluate_metacognitive_opinion`.
+    3. En `crates/quantum-arena/src/config.rs`:
+       - Agregados 6 campos atómicos lock-free en `QuantumConfig`: `council_ml_dead_zone: AtomicF64` (0.05), `council_ml_full_edge: AtomicF64` (0.20), `council_meta_dd_penalty_mult: AtomicF64` (5.0), `council_meta_max_dd_penalty: AtomicF64` (0.50), `council_meta_majority_factor: AtomicF64` (0.70), `council_meta_solitary_factor: AtomicF64` (0.40), con soporte en `from_genome`.
+    4. En `crates/god-engine-core/src/lib.rs`:
+       - Sincronización en `sync_council_params` leyendo de forma segura y validada los 6 campos atómicos de `arena.config`.
+       - Resolución omnisciente por activo en `council_snapshot`: `c{id}:ml_dead_zone`, `c{id}:ml_full_edge`, `c{id}:meta_dd_penalty_mult`, `c{id}:meta_max_dd_penalty`, `c{id}:meta_majority_factor`, `c{id}:meta_solitary_factor` con fallback a `self.consejo_deliberacion.params`.
+  * **Certificación Contractual**:
+    - `ml_metacognitive_opinion_adaptation_contract.rs` (5/5 pass):
+      1. `test_ml_opinion_bounds_canonical_parity`: Paridad exacta bit a bit con el comportamiento canónico.
+      2. `test_ml_opinion_bounds_dynamic_overrides`: Sensibilidad determinista a overrides dinámicos (zona muerta estrechada a 0.01 para micro-scalping).
+      3. `test_metacognitive_opinion_drawdown_penalty_and_consensus_scaling`: Modulación exacta de penalización por drawdown y factores de mayoría/aislamiento.
+      4. `test_ml_metacognitive_opinion_fail_closed_sanitization`: Sanitización estricta fail-closed ante NaN/Infinitos y cotas invertidas.
+      5. `test_deliberar_traced_cow_propagation`: Propagación lock-free `Cow` en la deliberación del tribunal.
+    - `council_params_arena_wiring_contract.rs` (2/2 pass): Cableado atómico y resiliencia en la arena global.
+    - `prospect_pressure_integration_contract.rs` (4/4 pass): Confluencia conductual y cuántica.
+    - Suite completa de `metacortex-engine` (83/83 tests pass, 100% verde).
+    - `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω116 — Desacoplamiento Dinámico de Rotacional Helmholtz-Hodge y Corriente Gauge Yang-Mills en Microestructura y Series Temporales
 
 - **Ola Integrada y Certificada en `main` (`9c4fd4fb`)**:

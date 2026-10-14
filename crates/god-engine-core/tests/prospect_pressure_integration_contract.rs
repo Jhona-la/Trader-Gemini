@@ -56,6 +56,12 @@ fn test_prospect_pressure_live_computation_in_god_engine() {
         hodge_laminar_floor: 0.30,
         ym_ref_current: 0.05,
         ym_max_weight: 0.20,
+        ml_dead_zone: 0.05,
+        ml_full_edge: 0.20,
+        meta_dd_penalty_mult: 5.0,
+        meta_max_dd_penalty: 0.50,
+        meta_majority_factor: 0.70,
+        meta_solitary_factor: 0.40,
     };
 
     assert!(payload.validate().is_ok());
@@ -131,6 +137,12 @@ fn test_feynman_and_prospect_confluence_in_god_engine() {
         hodge_laminar_floor: 0.30,
         ym_ref_current: 0.05,
         ym_max_weight: 0.20,
+        ml_dead_zone: 0.05,
+        ml_full_edge: 0.20,
+        meta_dd_penalty_mult: 5.0,
+        meta_max_dd_penalty: 0.50,
+        meta_majority_factor: 0.70,
+        meta_solitary_factor: 0.40,
     };
 
     assert!(payload.validate().is_ok());

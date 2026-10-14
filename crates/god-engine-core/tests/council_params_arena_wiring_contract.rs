@@ -45,6 +45,12 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.hodge_laminar_floor, 0.30);
     assert_eq!(core.consejo_deliberacion.params.ym_ref_current, 0.05);
     assert_eq!(core.consejo_deliberacion.params.ym_max_weight, 0.20);
+    assert_eq!(core.consejo_deliberacion.params.ml_dead_zone, 0.05);
+    assert_eq!(core.consejo_deliberacion.params.ml_full_edge, 0.20);
+    assert_eq!(core.consejo_deliberacion.params.meta_dd_penalty_mult, 5.0);
+    assert_eq!(core.consejo_deliberacion.params.meta_max_dd_penalty, 0.50);
+    assert_eq!(core.consejo_deliberacion.params.meta_majority_factor, 0.70);
+    assert_eq!(core.consejo_deliberacion.params.meta_solitary_factor, 0.40);
 
     // 2. Modificación lock-free desde arena.config (ej. Evolución adaptativa o feedback cuántico)
     arena.config.council_approval_threshold.store(0.45, Ordering::Relaxed);
@@ -66,6 +72,12 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     arena.config.council_hodge_laminar_floor.store(0.15, Ordering::Relaxed);
     arena.config.council_ym_ref_current.store(0.08, Ordering::Relaxed);
     arena.config.council_ym_max_weight.store(0.30, Ordering::Relaxed);
+    arena.config.council_ml_dead_zone.store(0.08, Ordering::Relaxed);
+    arena.config.council_ml_full_edge.store(0.25, Ordering::Relaxed);
+    arena.config.council_meta_dd_penalty_mult.store(7.5, Ordering::Relaxed);
+    arena.config.council_meta_max_dd_penalty.store(0.40, Ordering::Relaxed);
+    arena.config.council_meta_majority_factor.store(0.75, Ordering::Relaxed);
+    arena.config.council_meta_solitary_factor.store(0.45, Ordering::Relaxed);
 
     // 3. Ejecutar sincronización
     core.sync_council_params_from_arena();
@@ -90,6 +102,12 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.hodge_laminar_floor, 0.15);
     assert_eq!(core.consejo_deliberacion.params.ym_ref_current, 0.08);
     assert_eq!(core.consejo_deliberacion.params.ym_max_weight, 0.30);
+    assert_eq!(core.consejo_deliberacion.params.ml_dead_zone, 0.08);
+    assert_eq!(core.consejo_deliberacion.params.ml_full_edge, 0.25);
+    assert_eq!(core.consejo_deliberacion.params.meta_dd_penalty_mult, 7.5);
+    assert_eq!(core.consejo_deliberacion.params.meta_max_dd_penalty, 0.40);
+    assert_eq!(core.consejo_deliberacion.params.meta_majority_factor, 0.75);
+    assert_eq!(core.consejo_deliberacion.params.meta_solitary_factor, 0.45);
 }
 
 #[test]
@@ -109,6 +127,12 @@ fn council_params_protege_contra_valores_corruptos_o_fuera_de_cota() {
     let prev_lam_floor = core.consejo_deliberacion.params.hodge_laminar_floor;
     let prev_ym_ref = core.consejo_deliberacion.params.ym_ref_current;
     let prev_ym_max_w = core.consejo_deliberacion.params.ym_max_weight;
+    let prev_ml_dz = core.consejo_deliberacion.params.ml_dead_zone;
+    let prev_ml_fe = core.consejo_deliberacion.params.ml_full_edge;
+    let prev_meta_mult = core.consejo_deliberacion.params.meta_dd_penalty_mult;
+    let prev_meta_max_pen = core.consejo_deliberacion.params.meta_max_dd_penalty;
+    let prev_meta_maj = core.consejo_deliberacion.params.meta_majority_factor;
+    let prev_meta_sol = core.consejo_deliberacion.params.meta_solitary_factor;
 
     // Intentar inyectar valor corrupto/fuera de cota
     arena.config.council_approval_threshold.store(2.50, Ordering::Relaxed);
@@ -122,6 +146,12 @@ fn council_params_protege_contra_valores_corruptos_o_fuera_de_cota() {
     arena.config.council_hodge_laminar_floor.store(-0.10, Ordering::Relaxed);
     arena.config.council_ym_ref_current.store(-0.05, Ordering::Relaxed);
     arena.config.council_ym_max_weight.store(2.0, Ordering::Relaxed);
+    arena.config.council_ml_dead_zone.store(0.80, Ordering::Relaxed);
+    arena.config.council_ml_full_edge.store(-0.10, Ordering::Relaxed);
+    arena.config.council_meta_dd_penalty_mult.store(50.0, Ordering::Relaxed);
+    arena.config.council_meta_max_dd_penalty.store(1.50, Ordering::Relaxed);
+    arena.config.council_meta_majority_factor.store(1.50, Ordering::Relaxed);
+    arena.config.council_meta_solitary_factor.store(-0.20, Ordering::Relaxed);
 
     core.sync_council_params_from_arena();
 
@@ -169,5 +199,29 @@ fn council_params_protege_contra_valores_corruptos_o_fuera_de_cota() {
     assert_eq!(
         core.consejo_deliberacion.params.ym_max_weight, prev_ym_max_w,
         "YM max weight corrupto > 1.0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.ml_dead_zone, prev_ml_dz,
+        "ML dead zone corrupto > 0.40 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.ml_full_edge, prev_ml_fe,
+        "ML full edge corrupto <= dead_zone no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.meta_dd_penalty_mult, prev_meta_mult,
+        "Meta DD penalty mult corrupto > 20.0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.meta_max_dd_penalty, prev_meta_max_pen,
+        "Meta max DD penalty corrupto > 1.0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.meta_majority_factor, prev_meta_maj,
+        "Meta majority factor corrupto > 1.0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.meta_solitary_factor, prev_meta_sol,
+        "Meta solitary factor corrupto < 0.0 no debe aplicarse al consejo"
     );
 }

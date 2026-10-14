@@ -221,6 +221,24 @@ pub struct MarketSnapshotPayload {
     /// OLA Ω116: Peso asintótico máximo de corriente de Yang-Mills en series temporales (default: 0.20).
     #[serde(default = "default_ym_max_weight")]
     pub ym_max_weight: f64,
+    /// OLA Ω117: Banda muerta de borde para SeniorML (default: 0.05).
+    #[serde(default = "default_ml_dead_zone")]
+    pub ml_dead_zone: f64,
+    /// OLA Ω117: Borde pleno de saturación para SeniorML (default: 0.20).
+    #[serde(default = "default_ml_full_edge")]
+    pub ml_full_edge: f64,
+    /// OLA Ω117: Multiplicador de penalización por drawdown para SeniorMetacognitivo (default: 5.0).
+    #[serde(default = "default_meta_dd_penalty_mult")]
+    pub meta_dd_penalty_mult: f64,
+    /// OLA Ω117: Penalización máxima por drawdown para SeniorMetacognitivo (default: 0.50).
+    #[serde(default = "default_meta_max_dd_penalty")]
+    pub meta_max_dd_penalty: f64,
+    /// OLA Ω117: Factor de consenso de mayoría para SeniorMetacognitivo (default: 0.70).
+    #[serde(default = "default_meta_majority_factor")]
+    pub meta_majority_factor: f64,
+    /// OLA Ω117: Factor de evidencia solitaria para SeniorMetacognitivo (default: 0.40).
+    #[serde(default = "default_meta_solitary_factor")]
+    pub meta_solitary_factor: f64,
 }
 
 impl Default for MarketSnapshotPayload {
@@ -265,6 +283,12 @@ impl Default for MarketSnapshotPayload {
             hodge_laminar_floor: DEFAULT_HODGE_LAMINAR_FLOOR,
             ym_ref_current: DEFAULT_YM_REF_CURRENT,
             ym_max_weight: DEFAULT_YM_MAX_WEIGHT,
+            ml_dead_zone: DEFAULT_ML_DEAD_ZONE,
+            ml_full_edge: DEFAULT_ML_FULL_EDGE,
+            meta_dd_penalty_mult: DEFAULT_META_DD_PENALTY_MULT,
+            meta_max_dd_penalty: DEFAULT_META_MAX_DD_PENALTY,
+            meta_majority_factor: DEFAULT_META_MAJORITY_FACTOR,
+            meta_solitary_factor: DEFAULT_META_SOLITARY_FACTOR,
         }
     }
 }
@@ -323,6 +347,12 @@ impl MarketSnapshotPayload {
             ("hodge_laminar_floor", self.hodge_laminar_floor),
             ("ym_ref_current", self.ym_ref_current),
             ("ym_max_weight", self.ym_max_weight),
+            ("ml_dead_zone", self.ml_dead_zone),
+            ("ml_full_edge", self.ml_full_edge),
+            ("meta_dd_penalty_mult", self.meta_dd_penalty_mult),
+            ("meta_max_dd_penalty", self.meta_max_dd_penalty),
+            ("meta_majority_factor", self.meta_majority_factor),
+            ("meta_solitary_factor", self.meta_solitary_factor),
         ];
 
         for (name, val) in metrics {
@@ -378,10 +408,18 @@ impl MarketSnapshotPayload {
             ("hodge_curl_attenuation", self.hodge_curl_attenuation, 0.0, 1.0),
             ("hodge_laminar_floor", self.hodge_laminar_floor, 0.0, 1.0),
             ("ym_max_weight", self.ym_max_weight, 0.0, 1.0),
+            ("ml_dead_zone", self.ml_dead_zone, 0.0, 0.40),
+            ("meta_dd_penalty_mult", self.meta_dd_penalty_mult, 0.0, 20.0),
+            ("meta_max_dd_penalty", self.meta_max_dd_penalty, 0.0, 1.0),
+            ("meta_majority_factor", self.meta_majority_factor, 0.0, 1.0),
+            ("meta_solitary_factor", self.meta_solitary_factor, 0.0, 1.0),
         ] {
             if !(low..=high).contains(&value) {
                 return Err(format!("Out-of-bounds {name}: {value}"));
             }
+        }
+        if !(0.01..=0.80).contains(&self.ml_full_edge) || self.ml_full_edge <= self.ml_dead_zone {
+            return Err(format!("Out-of-bounds ml_full_edge: {}", self.ml_full_edge));
         }
         if !(0.0..=1.0).contains(&self.ym_ref_current) || self.ym_ref_current <= 0.0 {
             return Err(format!("Out-of-bounds ym_ref_current: {}", self.ym_ref_current));
@@ -514,22 +552,199 @@ fn spectral_opinion(fused_score: f64, persistence: f64) -> f64 {
     (fused_score * (persistence * 2.0).tanh()).clamp(-1.0, 1.0)
 }
 
-/// MOD2/7-006: opinión del ensamble ML con banda muerta. ml_prob > 0.55 →
-/// alcista, < 0.45 → bajista, neutral en la banda muerta (±0.05 alrededor de
-/// 0.5). Convicción plena con |edge| ≥ 0.20 (ml 0.70/0.30 — el techo B3.19).
+pub const DEFAULT_ML_DEAD_ZONE: f64 = 0.05;
+pub const DEFAULT_ML_FULL_EDGE: f64 = 0.20;
+pub const DEFAULT_META_DD_PENALTY_MULT: f64 = 5.0;
+pub const DEFAULT_META_MAX_DD_PENALTY: f64 = 0.50;
+pub const DEFAULT_META_MAJORITY_FACTOR: f64 = 0.70;
+pub const DEFAULT_META_SOLITARY_FACTOR: f64 = 0.40;
+
 #[inline(always)]
-/// CERT-M2-C04: centrada en la BASE del modelo (no en 0.5). El centro
-/// absoluto creaba sesgo short estructural en 3 de 5 asientos
-/// direccionales cuando la base del etiquetado honesto es ~0.30.
-fn ml_opinion(ml_prob: f64, ml_base: f64) -> f64 {
-    let edge = ml_prob - ml_base;
-    const DEAD_ZONE: f64 = 0.05;
-    const FULL_EDGE: f64 = 0.20;
-    if edge.abs() < DEAD_ZONE {
+pub fn default_ml_dead_zone() -> f64 {
+    DEFAULT_ML_DEAD_ZONE
+}
+
+#[inline(always)]
+pub fn default_ml_full_edge() -> f64 {
+    DEFAULT_ML_FULL_EDGE
+}
+
+#[inline(always)]
+pub fn default_meta_dd_penalty_mult() -> f64 {
+    DEFAULT_META_DD_PENALTY_MULT
+}
+
+#[inline(always)]
+pub fn default_meta_max_dd_penalty() -> f64 {
+    DEFAULT_META_MAX_DD_PENALTY
+}
+
+#[inline(always)]
+pub fn default_meta_majority_factor() -> f64 {
+    DEFAULT_META_MAJORITY_FACTOR
+}
+
+#[inline(always)]
+pub fn default_meta_solitary_factor() -> f64 {
+    DEFAULT_META_SOLITARY_FACTOR
+}
+
+/// Evalúa la opinión direccional del ensamble ML con zona muerta y borde de saturación plena desacoplados (Ola Ω117).
+///
+/// # Formulación
+/// - `edge = ml_prob - ml_base`
+/// - Si `|edge| < dead_zone`: `signal = 0.0`
+/// - Si no: `signal = ((edge - dead_zone * signum(edge)) / (full_edge - dead_zone)).clamp(-1.0, 1.0)`
+/// - `confidence = |signal|.clamp(0.0, 1.0)`
+///
+/// # Sanitización Fail-Closed
+/// - Si `ml_prob` es no finito, usa `0.5` (abstención neutral).
+/// - Si `ml_base` es no finito, usa `0.5`.
+/// - Si `dead_zone` es no finito o negativo, usa `DEFAULT_ML_DEAD_ZONE`.
+/// - Si `full_edge <= dead_zone`, ensancha `full_edge` para evitar división por cero.
+#[inline(always)]
+pub fn evaluate_ml_opinion_with_bounds(
+    ml_prob: f64,
+    ml_base: f64,
+    dead_zone: f64,
+    full_edge: f64,
+) -> (f64, f64) {
+    let p = if ml_prob.is_finite() {
+        ml_prob.clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let base = if ml_base.is_finite() {
+        ml_base.clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let dz = if dead_zone.is_finite() && dead_zone >= 0.0 {
+        dead_zone.clamp(0.0, 0.40)
+    } else {
+        DEFAULT_ML_DEAD_ZONE
+    };
+    let fe = if full_edge.is_finite() && full_edge > dz {
+        full_edge.clamp(dz + 0.001, 1.0)
+    } else {
+        (dz + 0.15).min(1.0)
+    };
+
+    let edge = p - base;
+    let signal = if edge.abs() < dz {
         0.0
     } else {
-        ((edge - DEAD_ZONE * edge.signum()) / (FULL_EDGE - DEAD_ZONE)).clamp(-1.0, 1.0)
-    }
+        let span = (fe - dz).max(1e-6);
+        ((edge - dz * edge.signum()) / span).clamp(-1.0, 1.0)
+    };
+    let confidence = signal.abs().clamp(0.0, 1.0);
+    (signal, confidence)
+}
+
+#[inline(always)]
+pub fn ml_opinion(ml_prob: f64, ml_base: f64) -> f64 {
+    evaluate_ml_opinion_with_bounds(
+        ml_prob,
+        ml_base,
+        DEFAULT_ML_DEAD_ZONE,
+        DEFAULT_ML_FULL_EDGE,
+    ).0
+}
+
+/// Evalúa la opinión metacognitiva modulando la convergencia/divergencia de las 3 perspectivas independientes
+/// (ML, Espectral y Flujo L2) y penalizando el drawdown y win rate de forma desacoplada (Ola Ω117).
+///
+/// # Retorno
+/// `(signal_direction, confidence, weight, divergence, justification)`
+#[inline(always)]
+pub fn evaluate_metacognitive_opinion(
+    ml_prob: f64,
+    ml_base: f64,
+    fused_score: f64,
+    persistence: f64,
+    book_imbalance: f64,
+    current_drawdown_pct: f64,
+    wr: f64,
+    ml_dead_zone: f64,
+    ml_full_edge: f64,
+    dd_mult: f64,
+    max_dd_penalty: f64,
+    majority_factor: f64,
+    solitary_factor: f64,
+) -> (f64, f64, f64, bool, String) {
+    let dd = if current_drawdown_pct.is_finite() {
+        current_drawdown_pct.max(0.0)
+    } else {
+        0.0
+    };
+    let mult = if dd_mult.is_finite() && dd_mult >= 0.0 {
+        dd_mult.clamp(0.0, 20.0)
+    } else {
+        DEFAULT_META_DD_PENALTY_MULT
+    };
+    let max_pen = if max_dd_penalty.is_finite() && max_dd_penalty >= 0.0 {
+        max_dd_penalty.clamp(0.0, 1.0)
+    } else {
+        DEFAULT_META_MAX_DD_PENALTY
+    };
+    let maj_f = if majority_factor.is_finite() && (0.0..=1.0).contains(&majority_factor) {
+        majority_factor
+    } else {
+        DEFAULT_META_MAJORITY_FACTOR
+    };
+    let sol_f = if solitary_factor.is_finite() && (0.0..=1.0).contains(&solitary_factor) {
+        solitary_factor
+    } else {
+        DEFAULT_META_SOLITARY_FACTOR
+    };
+
+    let dd_penalty = (dd * mult).clamp(0.0, max_pen);
+    let effective_wr = if wr.is_finite() && wr > 0.0 {
+        wr.clamp(0.20, 1.0)
+    } else {
+        0.50
+    };
+    let adjusted_confidence = (effective_wr - dd_penalty).clamp(0.05, 1.0);
+
+    let ml_sig = evaluate_ml_opinion_with_bounds(ml_prob, ml_base, ml_dead_zone, ml_full_edge).0;
+    let spec_sig = spectral_opinion(fused_score, persistence);
+    let flow_sig = if book_imbalance.is_finite() {
+        book_imbalance.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    };
+
+    let dirs = [
+        safe_signum(ml_sig),
+        safe_signum(spec_sig),
+        safe_signum(flow_sig),
+    ];
+    let pos = dirs.iter().filter(|&&d| d > 0.0).count();
+    let neg = dirs.iter().filter(|&&d| d < 0.0).count();
+    let mean = (ml_sig + spec_sig + flow_sig) / 3.0;
+
+    let (signal_dir, divergence) = if pos == 3 || neg == 3 {
+        (mean, false)
+    } else if (pos >= 2 && neg == 0) || (neg >= 2 && pos == 0) {
+        (mean * maj_f, false)
+    } else if pos + neg == 1 {
+        (mean * sol_f, false)
+    } else {
+        (0.0, true)
+    };
+
+    let weight = (1.0 + (effective_wr - 0.20) / 0.80).clamp(1.0, 2.0);
+    let confidence = if divergence { 0.0 } else { adjusted_confidence };
+    let justification = format!(
+        "Metacognitivo: ml={:.2}, spec={:.2}, flujo={:.2} → {} (wr={:.3})",
+        ml_sig,
+        spec_sig,
+        flow_sig,
+        if divergence { "divergencia → abstención" } else { "consenso de perspectivas" },
+        effective_wr
+    );
+
+    (signal_dir, confidence, weight, divergence, justification)
 }
 
 pub const DEFAULT_HODGE_CURL_ATTENUATION: f64 = 0.70;
@@ -1274,19 +1489,23 @@ impl SeniorAgent for SeniorML {
         SeniorRole::Ml
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let p = if payload.ml_prob.is_finite() {
-            payload.ml_prob.clamp(0.0, 1.0)
-        } else {
-            0.5 // Falla segura: sin modelo no hay opinión
-        };
-        let signal = ml_opinion(p, payload.ml_model_base);
+        let (signal, confidence) = evaluate_ml_opinion_with_bounds(
+            payload.ml_prob,
+            payload.ml_model_base,
+            payload.ml_dead_zone,
+            payload.ml_full_edge,
+        );
         SeniorOpinion {
             role: self.role(),
             signal_direction: signal,
-            confidence: signal.abs().clamp(0.0, 1.0),
+            confidence,
             weight: 1.0,
             is_veto: false,
-            justification: format!("ML ensemble: ml_prob={:.4} → sig={:.3}", p, signal),
+            justification: format!(
+                "ML ensemble: ml_prob={:.4} → sig={:.3}",
+                if payload.ml_prob.is_finite() { payload.ml_prob } else { 0.5 },
+                signal
+            ),
         }
     }
 }
@@ -1307,49 +1526,28 @@ impl SeniorAgent for SeniorMetacognitivo {
         SeniorRole::Metacognitivo
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, wr: f64) -> SeniorOpinion {
-        let dd_penalty = (payload.current_drawdown_pct * 5.0).clamp(0.0, 0.5);
-        let effective_wr = if wr > 0.0 { wr.clamp(0.20, 1.0) } else { 0.50 };
-        let adjusted_confidence = (effective_wr - dd_penalty).clamp(0.05, 1.0);
-
-        // Las tres perspectivas independientes, cada una con su propio dato:
-        let ml_sig = ml_opinion(payload.ml_prob.clamp(0.0, 1.0), payload.ml_model_base);
-        let spec_sig = spectral_opinion(payload.fused_score, payload.persistence);
-        let flow_sig = payload.book_imbalance.clamp(-1.0, 1.0);
-
-        let dirs = [
-            safe_signum(ml_sig),
-            safe_signum(spec_sig),
-            safe_signum(flow_sig),
-        ];
-        let pos = dirs.iter().filter(|&&d| d > 0.0).count();
-        let neg = dirs.iter().filter(|&&d| d < 0.0).count();
-        let mean = (ml_sig + spec_sig + flow_sig) / 3.0;
-
-        let (signal_dir, divergence) = if pos == 3 || neg == 3 {
-            (mean, false) // Unanimidad de las 3 perspectivas
-        } else if (pos >= 2 && neg == 0) || (neg >= 2 && pos == 0) {
-            (mean * 0.7, false) // Mayoría sin disenso
-        } else if pos + neg == 1 {
-            (mean * 0.4, false) // Una sola voz: evidencia fina
-        } else {
-            (0.0, true) // Disonancia genuina: abstención / humildad epistémica
-        };
-
-        let weight = (1.0 + (effective_wr - 0.20) / 0.80).clamp(1.0, 2.0);
+        let (signal_dir, confidence, weight, _divergence, justification) = evaluate_metacognitive_opinion(
+            payload.ml_prob,
+            payload.ml_model_base,
+            payload.fused_score,
+            payload.persistence,
+            payload.book_imbalance,
+            payload.current_drawdown_pct,
+            wr,
+            payload.ml_dead_zone,
+            payload.ml_full_edge,
+            payload.meta_dd_penalty_mult,
+            payload.meta_max_dd_penalty,
+            payload.meta_majority_factor,
+            payload.meta_solitary_factor,
+        );
         SeniorOpinion {
             role: self.role(),
             signal_direction: signal_dir,
-            confidence: if divergence { 0.0 } else { adjusted_confidence },
+            confidence,
             weight,
             is_veto: false,
-            justification: format!(
-                "Metacognitivo: ml={:.2}, spec={:.2}, flujo={:.2} → {} (wr={:.3})",
-                ml_sig,
-                spec_sig,
-                flow_sig,
-                if divergence { "divergencia → abstención" } else { "consenso de perspectivas" },
-                wr
-            ),
+            justification,
         }
     }
 }
@@ -1546,6 +1744,18 @@ pub struct CouncilParams {
     pub ym_ref_current: f64,           // 0.05
     /// OLA Ω116: Peso asintótico máximo de corriente de Yang-Mills (default: 0.20).
     pub ym_max_weight: f64,            // 0.20
+    /// OLA Ω117: Banda muerta de borde para SeniorML (default: 0.05).
+    pub ml_dead_zone: f64,             // 0.05
+    /// OLA Ω117: Borde pleno de saturación para SeniorML (default: 0.20).
+    pub ml_full_edge: f64,             // 0.20
+    /// OLA Ω117: Multiplicador de penalización por drawdown para SeniorMetacognitivo (default: 5.0).
+    pub meta_dd_penalty_mult: f64,     // 5.0
+    /// OLA Ω117: Penalización máxima por drawdown para SeniorMetacognitivo (default: 0.50).
+    pub meta_max_dd_penalty: f64,      // 0.50
+    /// OLA Ω117: Factor de consenso de mayoría para SeniorMetacognitivo (default: 0.70).
+    pub meta_majority_factor: f64,     // 0.70
+    /// OLA Ω117: Factor de evidencia solitaria para SeniorMetacognitivo (default: 0.40).
+    pub meta_solitary_factor: f64,     // 0.40
 }
 
 impl CouncilParams {
@@ -1577,6 +1787,12 @@ impl CouncilParams {
             hodge_laminar_floor: DEFAULT_HODGE_LAMINAR_FLOOR,
             ym_ref_current: DEFAULT_YM_REF_CURRENT,
             ym_max_weight: DEFAULT_YM_MAX_WEIGHT,
+            ml_dead_zone: DEFAULT_ML_DEAD_ZONE,
+            ml_full_edge: DEFAULT_ML_FULL_EDGE,
+            meta_dd_penalty_mult: DEFAULT_META_DD_PENALTY_MULT,
+            meta_max_dd_penalty: DEFAULT_META_MAX_DD_PENALTY,
+            meta_majority_factor: DEFAULT_META_MAJORITY_FACTOR,
+            meta_solitary_factor: DEFAULT_META_SOLITARY_FACTOR,
         };
         params.validate()?;
         Ok(params)
@@ -1636,6 +1852,26 @@ impl CouncilParams {
         Ok(self)
     }
 
+    /// OLA Ω117: Builder para configurar tolerancias adaptativas de SeniorML y SeniorMetacognitivo.
+    pub fn with_ml_metacognitive_bounds(
+        mut self,
+        ml_dead_zone: f64,
+        ml_full_edge: f64,
+        dd_mult: f64,
+        max_dd_pen: f64,
+        majority_factor: f64,
+        solitary_factor: f64,
+    ) -> Result<Self, String> {
+        self.ml_dead_zone = ml_dead_zone;
+        self.ml_full_edge = ml_full_edge;
+        self.meta_dd_penalty_mult = dd_mult;
+        self.meta_max_dd_penalty = max_dd_pen;
+        self.meta_majority_factor = majority_factor;
+        self.meta_solitary_factor = solitary_factor;
+        self.validate()?;
+        Ok(self)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         for (name, value) in [
             ("approval_threshold", self.approval_threshold),
@@ -1685,6 +1921,24 @@ impl CouncilParams {
         if !(0.0..=1.0).contains(&self.ym_max_weight) {
             return Err(format!("Invalid council parameter ym_max_weight: {}", self.ym_max_weight));
         }
+        if !(0.0..=0.40).contains(&self.ml_dead_zone) {
+            return Err(format!("Invalid council parameter ml_dead_zone: {}", self.ml_dead_zone));
+        }
+        if !(0.01..=0.80).contains(&self.ml_full_edge) || self.ml_full_edge <= self.ml_dead_zone {
+            return Err(format!("Invalid council parameter ml_full_edge: {}", self.ml_full_edge));
+        }
+        if !(0.0..=20.0).contains(&self.meta_dd_penalty_mult) {
+            return Err(format!("Invalid council parameter meta_dd_penalty_mult: {}", self.meta_dd_penalty_mult));
+        }
+        if !(0.0..=1.0).contains(&self.meta_max_dd_penalty) {
+            return Err(format!("Invalid council parameter meta_max_dd_penalty: {}", self.meta_max_dd_penalty));
+        }
+        if !(0.0..=1.0).contains(&self.meta_majority_factor) {
+            return Err(format!("Invalid council parameter meta_majority_factor: {}", self.meta_majority_factor));
+        }
+        if !(0.0..=1.0).contains(&self.meta_solitary_factor) {
+            return Err(format!("Invalid council parameter meta_solitary_factor: {}", self.meta_solitary_factor));
+        }
         if !self.shrinkage_k.is_finite() || self.shrinkage_k <= 0.0 {
             return Err("shrinkage_k must be finite and positive".into());
         }
@@ -1714,6 +1968,12 @@ impl Default for CouncilParams {
             hodge_laminar_floor: DEFAULT_HODGE_LAMINAR_FLOOR,
             ym_ref_current: DEFAULT_YM_REF_CURRENT,
             ym_max_weight: DEFAULT_YM_MAX_WEIGHT,
+            ml_dead_zone: DEFAULT_ML_DEAD_ZONE,
+            ml_full_edge: DEFAULT_ML_FULL_EDGE,
+            meta_dd_penalty_mult: DEFAULT_META_DD_PENALTY_MULT,
+            meta_max_dd_penalty: DEFAULT_META_MAX_DD_PENALTY,
+            meta_majority_factor: DEFAULT_META_MAJORITY_FACTOR,
+            meta_solitary_factor: DEFAULT_META_SOLITARY_FACTOR,
         }
     }
 }
@@ -1860,7 +2120,7 @@ impl ConsejoDeliberacion {
         // N-12: Si no se proporcionan multiplicadores externos, usar pesos adaptativos empíricos del tracker
         let active_mults = weight_multipliers.or(dynamic_weights.as_ref());
 
-        // OLA Ω111 / Ω113 / Ω114 / Ω115 / Ω116: Si CouncilParams define umbrales dinámicos distintos de los canónicos
+        // OLA Ω111 / Ω113 / Ω114 / Ω115 / Ω116 / Ω117: Si CouncilParams define umbrales dinámicos distintos de los canónicos
         // y el payload porta los defaults, propagar los parámetros del consejo al payload evaluado.
         let has_custom_utility = (self.params.utility_veto_floor - UTILITY_VETO_FLOOR).abs() > 1e-9
             || (self.params.utility_veto_wr - UTILITY_VETO_WR).abs() > 1e-9;
@@ -1875,8 +2135,20 @@ impl ConsejoDeliberacion {
             || (self.params.hodge_laminar_floor - DEFAULT_HODGE_LAMINAR_FLOOR).abs() > 1e-9
             || (self.params.ym_ref_current - DEFAULT_YM_REF_CURRENT).abs() > 1e-9
             || (self.params.ym_max_weight - DEFAULT_YM_MAX_WEIGHT).abs() > 1e-9;
+        let has_custom_ml_metacognitive = (self.params.ml_dead_zone - DEFAULT_ML_DEAD_ZONE).abs() > 1e-9
+            || (self.params.ml_full_edge - DEFAULT_ML_FULL_EDGE).abs() > 1e-9
+            || (self.params.meta_dd_penalty_mult - DEFAULT_META_DD_PENALTY_MULT).abs() > 1e-9
+            || (self.params.meta_max_dd_penalty - DEFAULT_META_MAX_DD_PENALTY).abs() > 1e-9
+            || (self.params.meta_majority_factor - DEFAULT_META_MAJORITY_FACTOR).abs() > 1e-9
+            || (self.params.meta_solitary_factor - DEFAULT_META_SOLITARY_FACTOR).abs() > 1e-9;
 
-        let effective_payload = if has_custom_utility || has_custom_slippage || has_custom_risk || has_custom_causal || has_custom_physical_gauge {
+        let effective_payload = if has_custom_utility
+            || has_custom_slippage
+            || has_custom_risk
+            || has_custom_causal
+            || has_custom_physical_gauge
+            || has_custom_ml_metacognitive
+        {
             let mut p = payload.clone();
             if has_custom_utility {
                 if (p.utility_veto_floor - UTILITY_VETO_FLOOR).abs() < 1e-9 {
@@ -1925,6 +2197,26 @@ impl ConsejoDeliberacion {
                 }
                 if (p.ym_max_weight - DEFAULT_YM_MAX_WEIGHT).abs() < 1e-9 {
                     p.ym_max_weight = self.params.ym_max_weight;
+                }
+            }
+            if has_custom_ml_metacognitive {
+                if (p.ml_dead_zone - DEFAULT_ML_DEAD_ZONE).abs() < 1e-9 {
+                    p.ml_dead_zone = self.params.ml_dead_zone;
+                }
+                if (p.ml_full_edge - DEFAULT_ML_FULL_EDGE).abs() < 1e-9 {
+                    p.ml_full_edge = self.params.ml_full_edge;
+                }
+                if (p.meta_dd_penalty_mult - DEFAULT_META_DD_PENALTY_MULT).abs() < 1e-9 {
+                    p.meta_dd_penalty_mult = self.params.meta_dd_penalty_mult;
+                }
+                if (p.meta_max_dd_penalty - DEFAULT_META_MAX_DD_PENALTY).abs() < 1e-9 {
+                    p.meta_max_dd_penalty = self.params.meta_max_dd_penalty;
+                }
+                if (p.meta_majority_factor - DEFAULT_META_MAJORITY_FACTOR).abs() < 1e-9 {
+                    p.meta_majority_factor = self.params.meta_majority_factor;
+                }
+                if (p.meta_solitary_factor - DEFAULT_META_SOLITARY_FACTOR).abs() < 1e-9 {
+                    p.meta_solitary_factor = self.params.meta_solitary_factor;
                 }
             }
             std::borrow::Cow::Owned(p)
@@ -2400,6 +2692,12 @@ mod tests {
             hodge_laminar_floor: DEFAULT_HODGE_LAMINAR_FLOOR,
             ym_ref_current: DEFAULT_YM_REF_CURRENT,
             ym_max_weight: DEFAULT_YM_MAX_WEIGHT,
+            ml_dead_zone: DEFAULT_ML_DEAD_ZONE,
+            ml_full_edge: DEFAULT_ML_FULL_EDGE,
+            meta_dd_penalty_mult: DEFAULT_META_DD_PENALTY_MULT,
+            meta_max_dd_penalty: DEFAULT_META_MAX_DD_PENALTY,
+            meta_majority_factor: DEFAULT_META_MAJORITY_FACTOR,
+            meta_solitary_factor: DEFAULT_META_SOLITARY_FACTOR,
         }
     }
 

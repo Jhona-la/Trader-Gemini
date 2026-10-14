@@ -108,6 +108,12 @@ fn ola101_consejo_deliberacion_with_params_falla_ante_parametros_corruptos() {
         hodge_laminar_floor: 0.30,
         ym_ref_current: 0.05,
         ym_max_weight: 0.20,
+        ml_dead_zone: 0.05,
+        ml_full_edge: 0.20,
+        meta_dd_penalty_mult: 5.0,
+        meta_max_dd_penalty: 0.50,
+        meta_majority_factor: 0.70,
+        meta_solitary_factor: 0.40,
     };
 
     match ConsejoDeliberacion::with_params(corrupt_params) {

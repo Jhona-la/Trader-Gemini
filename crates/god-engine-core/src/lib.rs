@@ -1500,6 +1500,12 @@ impl GodEngineCore {
         let lam_floor = cfg.council_hodge_laminar_floor.load(Ordering::Relaxed);
         let ym_ref = cfg.council_ym_ref_current.load(Ordering::Relaxed);
         let ym_max_w = cfg.council_ym_max_weight.load(Ordering::Relaxed);
+        let ml_dz = cfg.council_ml_dead_zone.load(Ordering::Relaxed);
+        let ml_fe = cfg.council_ml_full_edge.load(Ordering::Relaxed);
+        let meta_mult = cfg.council_meta_dd_penalty_mult.load(Ordering::Relaxed);
+        let meta_max_pen = cfg.council_meta_max_dd_penalty.load(Ordering::Relaxed);
+        let meta_maj = cfg.council_meta_majority_factor.load(Ordering::Relaxed);
+        let meta_sol = cfg.council_meta_solitary_factor.load(Ordering::Relaxed);
 
         if (0.0..=1.0).contains(&approval) {
             params.approval_threshold = approval;
@@ -1557,6 +1563,24 @@ impl GodEngineCore {
         }
         if (0.0..=1.0).contains(&ym_max_w) {
             params.ym_max_weight = ym_max_w;
+        }
+        if (0.0..=0.40).contains(&ml_dz) {
+            params.ml_dead_zone = ml_dz;
+        }
+        if (0.0..=1.0).contains(&ml_fe) && ml_fe > params.ml_dead_zone {
+            params.ml_full_edge = ml_fe;
+        }
+        if (0.0..=20.0).contains(&meta_mult) {
+            params.meta_dd_penalty_mult = meta_mult;
+        }
+        if (0.0..=1.0).contains(&meta_max_pen) {
+            params.meta_max_dd_penalty = meta_max_pen;
+        }
+        if (0.0..=1.0).contains(&meta_maj) {
+            params.meta_majority_factor = meta_maj;
+        }
+        if (0.0..=1.0).contains(&meta_sol) {
+            params.meta_solitary_factor = meta_sol;
         }
     }
 
@@ -8679,6 +8703,72 @@ impl GodEngineCore {
                                     coin_w
                                 } else {
                                     self.consejo_deliberacion.params.ym_max_weight
+                                }
+                            },
+                            ml_dead_zone: {
+                                let coin_dz = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "ml_dead_zone", f64::NAN);
+                                if coin_dz.is_finite() && (0.0..=0.40).contains(&coin_dz) {
+                                    coin_dz
+                                } else {
+                                    self.consejo_deliberacion.params.ml_dead_zone
+                                }
+                            },
+                            ml_full_edge: {
+                                let coin_fe = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "ml_full_edge", f64::NAN);
+                                if coin_fe.is_finite() && (0.0..=1.0).contains(&coin_fe) {
+                                    coin_fe
+                                } else {
+                                    self.consejo_deliberacion.params.ml_full_edge
+                                }
+                            },
+                            meta_dd_penalty_mult: {
+                                let coin_mult = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_dd_penalty_mult", f64::NAN);
+                                if coin_mult.is_finite() && (0.0..=20.0).contains(&coin_mult) {
+                                    coin_mult
+                                } else {
+                                    self.consejo_deliberacion.params.meta_dd_penalty_mult
+                                }
+                            },
+                            meta_max_dd_penalty: {
+                                let coin_max_pen = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_max_dd_penalty", f64::NAN);
+                                if coin_max_pen.is_finite() && (0.0..=1.0).contains(&coin_max_pen) {
+                                    coin_max_pen
+                                } else {
+                                    self.consejo_deliberacion.params.meta_max_dd_penalty
+                                }
+                            },
+                            meta_majority_factor: {
+                                let coin_maj = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_majority_factor", f64::NAN);
+                                if coin_maj.is_finite() && (0.0..=1.0).contains(&coin_maj) {
+                                    coin_maj
+                                } else {
+                                    self.consejo_deliberacion.params.meta_majority_factor
+                                }
+                            },
+                            meta_solitary_factor: {
+                                let coin_sol = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_solitary_factor", f64::NAN);
+                                if coin_sol.is_finite() && (0.0..=1.0).contains(&coin_sol) {
+                                    coin_sol
+                                } else {
+                                    self.consejo_deliberacion.params.meta_solitary_factor
                                 }
                             },
                         };

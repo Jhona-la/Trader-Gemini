@@ -190,6 +190,12 @@ fn test_consejo_deliberacion_prospect_theory_integration() {
         hodge_laminar_floor: 0.30,
         ym_ref_current: 0.05,
         ym_max_weight: 0.20,
+        ml_dead_zone: 0.05,
+        ml_full_edge: 0.20,
+        meta_dd_penalty_mult: 5.0,
+        meta_max_dd_penalty: 0.50,
+        meta_majority_factor: 0.70,
+        meta_solitary_factor: 0.40,
     };
 
     let ente = SeniorEnteMercado;

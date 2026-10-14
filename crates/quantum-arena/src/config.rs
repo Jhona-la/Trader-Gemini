@@ -202,6 +202,12 @@ pub struct QuantumConfig {
     pub council_hodge_laminar_floor: AtomicF64,
     pub council_ym_ref_current: AtomicF64,
     pub council_ym_max_weight: AtomicF64,
+    pub council_ml_dead_zone: AtomicF64,
+    pub council_ml_full_edge: AtomicF64,
+    pub council_meta_dd_penalty_mult: AtomicF64,
+    pub council_meta_max_dd_penalty: AtomicF64,
+    pub council_meta_majority_factor: AtomicF64,
+    pub council_meta_solitary_factor: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -441,6 +447,12 @@ impl QuantumConfig {
             council_hodge_laminar_floor: AtomicF64::new(0.30),
             council_ym_ref_current: AtomicF64::new(0.05),
             council_ym_max_weight: AtomicF64::new(0.20),
+            council_ml_dead_zone: AtomicF64::new(0.05),
+            council_ml_full_edge: AtomicF64::new(0.20),
+            council_meta_dd_penalty_mult: AtomicF64::new(5.0),
+            council_meta_max_dd_penalty: AtomicF64::new(0.50),
+            council_meta_majority_factor: AtomicF64::new(0.70),
+            council_meta_solitary_factor: AtomicF64::new(0.40),
         }
     }
 
