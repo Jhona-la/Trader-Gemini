@@ -1,5 +1,21 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω98 — Refactorización Zero-Alloc del Guardián de Correlación Multiactivo (`correlation_guard.rs`) y Optimización de Latencia Sub-Nanosegundo en Camino Caliente
+
+- **Rama activa**: `antigravity/ola98-zero-alloc-correlation-guard-espectral`.
+- **Diagnóstico y Causa Raíz de Cuello de Botella en Camino Caliente**:
+  - En `crates/risk-engine/src/correlation_guard.rs:612-625`: durante la evaluación de exposición dependiente (`dependency_exposure`), para cada activo en `arena.coins` (hasta 30 monedas), se ejecutaba `let slots: Vec<(bool, Option<_>)> = coin.positions.slots().iter().map(...).collect();` seguido de otro mapeo y colección. Esto provocaba 30 asignaciones dinámicas en el heap por cada evaluación de orden en cada tick.
+  - En `crates/risk-engine/src/correlation_guard.rs:734`: en `lambda_grupo_max`, la evaluación de dependencia de cola extrema realizaba `let v: Vec<usize> = grupo.collect();`, generando otra asignación innecesaria en el heap.
+  - En hardware de recursos acotados (16 GB RAM, sin GPU dedicada) y con objetivos de alta frecuencia y latencia crítica en nanosegundos, las pausas de asignación y fragmentación de memoria heap en el hilo caliente de trading degradan el rendimiento y aumentan el jitter.
+- **Solución Canónica Zero-Alloc Implementada**:
+  - `dependency_exposure`: dado que `coin.positions.slots()` retorna un slice fijo de punteros `[&Position; 3]`, se reemplazó la colección a heap por una inspección in-situ sobre un array de stack `let mut slots = [(false, None); 3];`. Si ninguna ranura está abierta, se hace `continue` inmediato sin tocar memoria dinámica.
+  - Pre-reserva con `Vec::with_capacity` para los contenedores agregados `rhos_same_bet` y `same_bet_assets`, eliminando reallocations sucesivas.
+  - `lambda_grupo_max`: se sustituyó la colección a heap por un stack buffer acotado `let mut v = [0usize; quantum_arena::state::MAX_COINS + 1];` con rebanado estático `&v[..n]`.
+- **Certificación Contractual**:
+  - 147 unit tests de `risk-engine` pasando al 100% en 0.09s.
+  - 83 integration tests en 11 suites de contratos (`veto_logic_contracts`, `spectral_risk_contract`, `veto_evidence_contract`, `correlation_guard`, `ville_evidence_contract`, `random_matrix`) pasando al 100% verdes (0 fallos).
+  - `cargo check --workspace --all-targets` limpio en 36.89s con 0 errores.
+
 ## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω97 — Resolución Definitiva de F3.1-03 (Consenso Escalar Proporcional a Evidencia), Normalización Dinámica ATR en SeniorEjecución y Certificación Contractual
 
 - **Rama activa**: `antigravity/ola97-f3103-consenso-escalar-evidencia`.

@@ -594,35 +594,28 @@ pub fn dependency_exposure(
     let mut result = DependencyExposure::default();
     // XLVI·D: correlación PnL de cada miembro del grupo same-bet contra la
     // candidata (None = no medida) — para la ρ efectiva del grupo.
-    let mut rhos_same_bet: Vec<Option<f64>> = Vec::new();
+    let mut rhos_same_bet: Vec<Option<f64>> = Vec::with_capacity(arena.coins.len() * 3);
     // LXXII: coin_ids de los miembros misma-apuesta (para el λ̂ de cópulas
     // por par contra la candidata).
-    let mut same_bet_assets: Vec<usize> = Vec::new();
+    let mut same_bet_assets: Vec<usize> = Vec::with_capacity(arena.coins.len());
+    result.same_bet_riesgos_bits.reserve(arena.coins.len() * 3);
     // XLVI·E (SPECTRAL-010): riesgo REAL al stop de cada miembro, como
     // fracción del capital unificado — el veto agregará estos, no una
     // escala única supuesta.
     let capital = arena.unified_capital.load(std::sync::atomic::Ordering::Relaxed);
     for (asset_id, coin) in arena.coins.iter().enumerate() {
-        // Outer None: slot observed closed. Inner None: open but no usable
-        // snapshot, which must count as unknown rather than disappear.
-        // XLVI·E: estado por ranura (cerrada | abierta sin snapshot |
-        // abierta con snapshot) — misma semántica tri-estado que antes,
-        // reteniendo el snapshot COMPLETO (entry/sl/qty) emparejado con su
-        // lado para el riesgo al stop.
-        let slots: Vec<(bool, Option<_>)> = coin
-            .positions
-            .slots()
-            .iter()
-            .map(|p| {
-                let open = p.is_open();
-                let snap = if open { p.snapshot() } else { None };
-                (open, snap)
-            })
-            .collect();
-        let sides = slots
-            .iter()
-            .map(|(open, snap)| if *open { Some(snap.as_ref().map(|x| x.is_long)) } else { None });
-        if sides.clone().all(|s| s.is_none()) {
+        // XLVI·E / OLA Ω98 (Zero-Alloc Hot Path): slots() devuelve [&Position; 3] en stack.
+        // Inspección in-situ sin reservar ningún Vec en heap por moneda en cada tick.
+        let mut slots = [(false, None); 3];
+        let mut has_open = false;
+        for (i, p) in coin.positions.slots().iter().enumerate() {
+            let open = p.is_open();
+            if open {
+                has_open = true;
+                slots[i] = (true, p.snapshot());
+            }
+        }
+        if !has_open {
             continue;
         }
         let price_rho = if asset_id == candidate_id {
@@ -639,13 +632,13 @@ pub fn dependency_exposure(
             let z_contagio = if net_role < -3.0 { Some(-net_role) } else { None };
             CorrelationGuardEngine::amplificar_por_contagio(raw_rho, z_contagio)
         };
-        for (slot_idx, side_outer) in sides.into_iter().enumerate() {
+        for (open, snap_opt) in &slots {
             // Ranura cerrada: no cuenta (semántica original del flatten).
-            let side = match side_outer {
-                None => continue,
-                Some(inner) => inner,
-            };
+            if !*open {
+                continue;
+            }
             result.open_positions += 1;
+            let side = snap_opt.as_ref().map(|x| x.is_long);
             let pnl_rho = side.and_then(|long| {
                 price_rho
                     .filter(|r| r.is_finite() && (-1.0..=1.0).contains(r))
@@ -662,7 +655,7 @@ pub fn dependency_exposure(
                 // Bits 0 = no medido (sin stop utilizable, lado del stop
                 // inconsistente con la dirección, o capital inválido).
                 let r = side.and_then(|long| {
-                    let snap = slots[slot_idx].1.as_ref()?;
+                    let snap = snap_opt.as_ref()?;
                     let sl_ok = if long {
                         snap.sl_price > 0.0 && snap.sl_price < snap.entry_price
                     } else {
@@ -729,12 +722,16 @@ pub fn dependency_exposure(
 /// mediciones ⇒ None (bit-exact legado). Grupos pequeños ⇒ O(k²)
 /// consultas al mapa del store.
 pub fn lambda_grupo_max(candidata: usize, miembros: &[usize]) -> Option<f64> {
-    let grupo = std::iter::once(candidata).chain(miembros.iter().copied());
     let mut mejor: Option<f64> = None;
-    let v: Vec<usize> = grupo.collect();
-    for i in 0..v.len() {
-        for j in (i + 1)..v.len() {
-            if let Some(l) = crate::copulas_store::lambda_entre(v[i], v[j]) {
+    // OLA Ω98 (Zero-Alloc Hot Path): buffer acotado en stack sin asignación heap
+    let mut v = [0usize; quantum_arena::state::MAX_COINS + 1];
+    v[0] = candidata;
+    let n = 1 + miembros.len().min(quantum_arena::state::MAX_COINS);
+    v[1..n].copy_from_slice(&miembros[..n - 1]);
+    let slice = &v[..n];
+    for i in 0..slice.len() {
+        for j in (i + 1)..slice.len() {
+            if let Some(l) = crate::copulas_store::lambda_entre(slice[i], slice[j]) {
                 mejor = Some(match mejor {
                     Some(m) => m.max(l),
                     None => l,

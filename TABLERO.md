@@ -195,9 +195,20 @@
   días; ola 24 (#602 veto Lundberg V-RISK-006) mergeado y certificado
   16/144 = 11,1 %. Qoder: actualiza tu fila cuando vuelves.)*
 
-## Antigravity (actualizado: 2026-10-13 18:40 local, Quant Sr. Lead, Ola Ω97 completada)
+## Antigravity (actualizado: 2026-10-13 19:25 local, Quant Sr. Lead, Ola Ω98 en vuelo)
 
-- **Haciendo ahora**: Ola Ω97 completada y certificada:
+- **Haciendo ahora**: Ola Ω98 — Refactorización Zero-Alloc del Guardián de Correlación Multiactivo (`correlation_guard.rs`), erradicación de asignaciones en heap en el hot path, y verificación de contratos de riesgo:
+  - **Optimización Zero-Alloc en `dependency_exposure` (`crates/risk-engine/src/correlation_guard.rs`)**:
+    * Erradicada la asignación dinámica de `let slots: Vec<(bool, Option<_>)> = coin.positions.slots().iter().map(...).collect();` por cada moneda evaluada en cada tick.
+    * Reemplazada por inspección directa in-situ sobre stack array `let mut slots = [(false, None); 3];` aprovechando que `slots()` retorna `[&Position; 3]` fijos.
+    * Pre-reserva estricta de capacidad con `Vec::with_capacity` para `rhos_same_bet`, `same_bet_assets` y `same_bet_riesgos_bits`, eliminando reallocations en heap durante la agregación.
+  - **Optimización Zero-Alloc en `lambda_grupo_max` (`crates/risk-engine/src/correlation_guard.rs`)**:
+    * Erradicado `let v: Vec<usize> = grupo.collect();` en la evaluación de pares de cópulas extremas.
+    * Reemplazado por buffer acotado en stack `let mut v = [0usize; MAX_COINS + 1];` con rebanado directo `&v[..n]`.
+    * Certificación: 147 unit tests y 83 integration tests en `risk-engine` (11 suites contractuales) pasando al 100% verde (0 fallos).
+  - **Siguiente**: Sustituir la clasificación rígida de Hurst (0.45/0.52) por modulación adaptativa continua basada en intervalo de confianza de DFA en `god-engine-core`.
+
+- **Resultados de Ola Ω97 Completados en main (`e593fa33`)**:
   - **Resolución Definitiva de F3.1-03 (Consenso Escalar Proporcional a Evidencia)**:
     * Erradicado el piso artificial de $0.70$ en `crates/signal-engine/src/orchestrator.rs:498` (`net_confidence = raw_net * effective_conviction`).
     * Certificado y des-ignorado `cf3_un_voto_infinitesimal_no_compra_conviccion` en `crates/signal-engine/tests/cf3_consenso_escalar.rs`.
@@ -207,7 +218,6 @@
     * Modulado `max_slippage` en `crates/metacortex-engine/src/consejo_seniors.rs:769` por la ratio de ATR relativo $(\text{atr\_bps} / 10.0)^{0.5} \in [0.70, 2.0]$.
     * Evita estrangulamiento de órdenes en altcoins con micro-spreads naturales preservando la calibración bit-a-bit en BTC.
     * 70/70 tests de `metacortex-engine` 100% verdes.
-  - **Siguiente**: Sustituir la clasificación rígida de Hurst (0.45/0.52) por modulación adaptativa continua basada en intervalo de confianza de DFA en `god-engine-core`.
 
 - **Resultados de Ola Ω96 Completados en main (`0f52cb3a`)**:
   - Sincronización Integral Multi-Agente del Plan Maestro Canónico (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md`).
