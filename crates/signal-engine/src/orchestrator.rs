@@ -36,7 +36,26 @@ pub struct TensorDecision {
 ///
 /// Queda UNA superficie: el consenso continuo escopado por moneda, que es la
 /// que el core llama de verdad. En un motor temporal-espectral continuo no hay
-/// bandas que arbitrar; hay un ensamble con UNA opinión por tick.
+/// F3.1-04 (Ola Ω103): Factor de amplificación por ensamble efectivo.
+///
+/// Modela la ganancia informativa cuando múltiples motores independientes coinciden.
+/// Si un único motor opina (o ninguno), no existe concurrencia de ensamble y el boost
+/// es estrictamente neutro (1.0). Cuando múltiples motores activos (|output| > 1e-9)
+/// aportan evidencia empírica simultánea, la amplificación escala monótonamente
+/// a razón de +0.1 por votante activo concurrente, hasta saturar en 1.4 (5 votantes).
+///
+/// Previene la distorsión donde la mera presencia de estrategias silentes/abstenidas
+/// inflaba artificialmente la convicción de un votante solitario en un 40%.
+#[inline(always)]
+pub fn compute_ensemble_boost(active_voters: usize, total_registered: usize) -> f64 {
+    let effective_count = active_voters.min(total_registered);
+    if effective_count <= 1 {
+        1.0
+    } else {
+        1.0 + (effective_count.min(5) as f64 - 1.0) * 0.1
+    }
+}
+
 pub struct TensorVoteOrchestrator {
     strategies: Vec<Box<dyn QuantumStrategy>>,
     arena: std::sync::Arc<quantum_arena::GlobalArena>,
@@ -139,6 +158,7 @@ impl TensorVoteOrchestrator {
         let mut short_votes = 0.0;
         let mut active_weight = 0.0;
         let mut max_volatility = 0.0;
+        let mut active_voters: usize = 0;
 
         for strategy in &horizon_strategies {
             let output = strategy.evaluate();
@@ -146,6 +166,9 @@ impl TensorVoteOrchestrator {
                 continue;
             }
             let abs_weight = output.abs();
+            if abs_weight > 1e-9 {
+                active_voters += 1;
+            }
 
             if output > 0.0 {
                 long_votes += abs_weight;
@@ -174,7 +197,7 @@ impl TensorVoteOrchestrator {
         let prob_short = short_votes / active_weight;
 
         let avg_conviction = active_weight / horizon_strategies.len().max(1) as f64;
-        let ensemble_boost = 1.0 + (horizon_strategies.len().min(5) as f64 - 1.0) * 0.1;
+        let ensemble_boost = compute_ensemble_boost(active_voters, horizon_strategies.len());
         // FASE 2 (calibración): la convicción efectiva ya NO toma
         // `max_volatility` como término — mezclar volatilidad con convicción
         // inflaba la confianza de forma estructural (toda señal "sonaba" a
@@ -389,6 +412,7 @@ impl TensorVoteOrchestrator {
         let mut short_votes = 0.0;
         let mut active_weight = 0.0;
         let mut max_volatility = 0.0f64;
+        let mut active_voters: usize = 0;
         // #611 — censo empírico: por estrategia, total de evaluaciones y
         // las que produjeron voto no-cero. Telemetría pura: no toca la
         // decisión (los acumuladores de abajo son los de siempre).
@@ -405,6 +429,9 @@ impl TensorVoteOrchestrator {
                 if no_cero != 0 {
                     a.fetch_add(1, Ordering::Relaxed);
                 }
+            }
+            if no_cero != 0 {
+                active_voters += 1;
             }
             if !output.is_finite() {
                 continue;
@@ -487,7 +514,7 @@ impl TensorVoteOrchestrator {
         let prob_long = long_votes / active_weight;
         let prob_short = short_votes / active_weight;
         let avg_conviction = active_weight / all.len().max(1) as f64;
-        let ensemble_boost = 1.0 + (all.len().min(5) as f64 - 1.0) * 0.1;
+        let ensemble_boost = compute_ensemble_boost(active_voters, all.len());
         let effective_conviction = if avg_conviction.is_finite() {
             (avg_conviction * ensemble_boost).clamp(0.0, 1.0)
         } else {
