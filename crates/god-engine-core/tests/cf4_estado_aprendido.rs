@@ -259,7 +259,9 @@ fn cl108e_se_restaura_la_epigenetica_y_lundberg() {
     con.restaurar_estado_aprendido(&viejo.estado_aprendido());
     let (e_viejo, e_con) = (epi(&viejo), epi(&con));
     println!("observado: epigenética vieja {e_viejo:?}; restaurada {e_con:?}");
-    assert!((e_viejo.0 - 0.55).abs() < 1e-9, "precondición: el sesgo bajó a 0,55");
+    // F3.4-07 (Ola Ω109): Relajación continua Ornstein-Uhlenbeck (tau = 30 min)
+    // entre cierres a dt=60s: el sesgo baja de 1.0 a ~0.5646 en lugar del valor estático 0.55.
+    assert!((e_viejo.0 - 0.5645915371729564).abs() < 1e-9, "precondición: el sesgo bajó con relajación OU");
     assert_eq!(e_con, e_viejo, "sesgo, umbral, ancla y último resultado");
     // Lundberg: la cota publicada es la misma (el anillo restaurado empieza
     // en otra posición: las sumas cambian de orden, de ahí la tolerancia).

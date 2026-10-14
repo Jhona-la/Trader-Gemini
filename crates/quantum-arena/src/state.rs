@@ -354,6 +354,31 @@ impl CoinArena {
         self.tick_head.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Retorna el sesgo epigenético activo aplicando decaimiento homeostático continuo Ornstein-Uhlenbeck
+    /// hacia 1.0 (equilibrio físico sin histeresis no-ergódica petrificada).
+    #[inline]
+    pub fn get_active_epigenetic_bias(&self, now_ms: u64) -> f64 {
+        let stored = self.epigenetic_bias.load(Ordering::Relaxed);
+        let last_close = self.last_close_ts.load(Ordering::Relaxed);
+        Self::epigenetic_bias_at(stored, last_close, now_ms)
+    }
+
+    #[inline]
+    pub fn epigenetic_bias_at(stored: f64, last_close: u64, now_ms: u64) -> f64 {
+        if last_close == 0 || now_ms <= last_close {
+            return stored;
+        }
+        let elapsed_ms = (now_ms - last_close) as f64;
+        // Relajación homeostática Ornstein-Uhlenbeck hacia 1.0 (tau_homeo = 30 minutos = 1,800,000 ms)
+        let decay = (-elapsed_ms / 1_800_000.0).exp();
+        let bias = 1.0 + (stored - 1.0) * decay;
+        if bias.is_finite() {
+            bias.clamp(0.50, 2.00)
+        } else {
+            1.0
+        }
+    }
+
     /// Retorna el modificador epigenético de umbral activo aplicando decaimiento homeostático continuo
     /// hacia 1.0 (equilibrio físico sin estados absorbentes).
     #[inline]
@@ -418,9 +443,9 @@ impl CoinArena {
         if close_ts < last_close {
             return;
         }
-        let old_bias = self.epigenetic_bias.load(Ordering::Relaxed);
+        let stored_bias = self.epigenetic_bias.load(Ordering::Relaxed);
         let stored_threshold = self.epigenetic_threshold_modifier.load(Ordering::Relaxed);
-        if !old_bias.is_finite() || !stored_threshold.is_finite() {
+        if !stored_bias.is_finite() || !stored_threshold.is_finite() {
             return;
         }
         let safe_tau = if tau_trade_ms.is_finite() && tau_trade_ms > 10.0 {
@@ -431,7 +456,11 @@ impl CoinArena {
         // Las ondas rápidas (tau bajo) operan con mayor agilidad; las ondas lentas poseen inercia secular
         let tau_inertia = (safe_tau / 3_600_000.0).clamp(0.10, 2.0);
         let pnl_shift = (pnl_pct * (4.0 / tau_inertia)).clamp(-0.15, 0.15);
-        let new_bias = (old_bias + pnl_shift).clamp(0.5, 2.0);
+
+        // Advance the old bias to this event before applying its feedback.
+        // F3.4-07 (Ola Ω109): Relajación continua Ornstein-Uhlenbeck para erradicar petrificación no-ergódica.
+        let old_bias = Self::epigenetic_bias_at(stored_bias, last_close, close_ts);
+        let new_bias = (old_bias + pnl_shift).clamp(0.50, 2.00);
 
         // Modificador de umbral adaptativo continuo con proporcionalidad de pérdida y saturación controlada
         let duration_factor = 1.0 - (trade_duration_ms as f64 / (safe_tau * 3.0)).clamp(0.0, 1.0);

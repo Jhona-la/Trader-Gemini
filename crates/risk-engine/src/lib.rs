@@ -584,14 +584,16 @@ impl RiskEngine {
             crate::capital_regime::lerp(kelly_adjusted, micro_kelly, micro_w_alloc);
 
         let epi_bias = if coin_id < arena.coins.len() {
-            arena.coins[coin_id].epigenetic_bias.load(Ordering::Relaxed)
+            let now_ts = arena.coins[coin_id]
+                .last_tick_timestamp_ms
+                .load(Ordering::Relaxed);
+            arena.coins[coin_id].get_active_epigenetic_bias(now_ts)
         } else {
             1.0
         };
-        // Ola Ω100: Armonización cuántica del rango epigenético. CoinArena adapta
-        // epigenetic_bias en [0.50, 2.00]. Expandir el clamp de [0.60, 1.40] a [0.50, 2.00]
-        // desasfixia el 40% de la plasticidad biológica del activo, permitiendo tanto
-        // la máxima aceleración tras rachas ganadoras como mayor contracción prudencial tras pérdidas.
+        // Ola Ω100 / Ola Ω109 (F3.4-07): Relajación continua Ornstein-Uhlenbeck del sesgo
+        // epigenético en [0.50, 2.00] evaluada al reloj causal `now_ts`. Erradica la
+        // petrificación estática no-ergódica de rachas históricas.
         let effective_confidence =
             (signal_prob * epi_bias.clamp(0.50, 2.00)).clamp(0.05, 0.98);
         let raw_exposure = dir * effective_confidence * kelly_for_scale * allocated_capital;
