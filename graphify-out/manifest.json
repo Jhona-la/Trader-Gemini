@@ -1230,9 +1230,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/correlation_guard.rs": {
-    "mtime": 1791421609.6726124,
-    "seen": 1791504033.1774566,
-    "ast_hash": "025377d6019b9fc9a87e63c0ab27c72d",
+    "mtime": 1791937388.4992294,
+    "seen": 1791937790.871452,
+    "ast_hash": "34d165ecfc82c80d59da66450218c637",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/guard.rs": {
@@ -3672,9 +3672,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791934695.0433886,
-    "seen": 1791935082.4330292,
-    "ast_hash": "7c536f47c9b1ecacf21d21f11a1824b0",
+    "mtime": 1791937388.4880345,
+    "seen": 1791937790.9623377,
+    "ast_hash": "055117e9f65b944b92b8576b35940c00",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3702,9 +3702,9 @@
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1791934695.049408,
-    "seen": 1791935082.727524,
-    "ast_hash": "7a0b58a14215ef0631b32ee72736f1c4",
+    "mtime": 1791937388.493013,
+    "seen": 1791937791.2234726,
+    "ast_hash": "fb47bd8d11e9c40b0166ab4614b95723",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -4368,9 +4368,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_SINCRONIZACION.md": {
-    "mtime": 1791932979.7872498,
-    "seen": 1791933217.50773,
-    "ast_hash": "3808becb7dcfaac55267337e97064b2c",
+    "mtime": 1791937388.5113075,
+    "seen": 1791937791.2532778,
+    "ast_hash": "dd1dd25dcaf7884c8a4f9fa666089d85",
     "semantic_hash": ""
   },
   "docs/TRIAJE_ROJOS_PERPETUOS.md": {
@@ -30162,9 +30162,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md": {
-    "mtime": 1791934695.0835366,
-    "seen": 1791935082.7605934,
-    "ast_hash": "bf020f800649edf7b6811eeeb0df6dfc",
+    "mtime": 1791937388.5050857,
+    "seen": 1791937791.2532778,
+    "ast_hash": "04239d3bd1de55bb0348af23debdf8b1",
     "semantic_hash": ""
   },
   "docs/adr/ADR-0017-frenos-de-drawdown-y-estado-aprendido.md": {
