@@ -1,5 +1,49 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω115 — Desacoplamiento Dinámico de Tolerancias Causales y Breakout en SeniorCausal
+
+- **Ola Integrada y Certificada en `main` (`eb3afa35`)**:
+  * **Diagnóstico y Causa Raíz**: En `crates/metacortex-engine/src/consejo_seniors.rs:770-805`, la función de evaluación en `SeniorCausal` evaluaba el riesgo de manipulación de mercado y veto do-calculus mediante cotas fijas congeladas:
+    ```rust
+    let safe_threshold = payload.causal_veto_threshold.clamp(0.60, 0.90);
+    // ...
+    let is_breakout = payload.book_imbalance.abs() > 0.25
+        && payload.book_imbalance * payload.intended_direction > 0.0
+        && s < 0.50
+        && payload.do_calculus_risk < 0.88;
+    ```
+    Donde:
+    1. `payload.causal_veto_threshold` sufría un clamp arbitrario a `[0.60, 0.90]`, impidiendo fijar umbrales más estrictos (e.g. 0.50 ante sospecha sistémica de spoofing) o más tolerantes en regímenes de alta liquidez.
+    2. El umbral de desequilibrio de libro `0.25` (25%) estaba congelado en código sin posibilidad de calibración por activo según el grosor del libro L2 (e.g. BTC vs altcoins de baja liquidez donde un 25% ocurre constantemente por ruido).
+    3. La cota máxima de riesgo alineado `payload.do_calculus_risk < 0.88` estaba rígidamente fijada sin permitir flexibilización o endurecimiento por activo o régimen.
+    4. Ninguno de estos umbrales podía configurarse en `CouncilParams`, gobernarse atómicamente desde `QuantumConfig`, ni resolverse por símbolo en el registro omnisciente (`arena.registry`).
+  * **Solución Matemática y Continua**:
+    1. En `crates/metacortex-engine/src/consejo_seniors.rs`:
+       - Definidas constantes canónicas:
+         `DEFAULT_CAUSAL_VETO_THRESHOLD = 0.75`, `DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE = 0.25`, `DEFAULT_CAUSAL_ALIGNED_MAX_RISK = 0.88`.
+       - Implementada la función pura `evaluate_causal_manipulation_veto(risk, threshold, obi, dir, s, min_obi, aligned_max_risk) -> (bool, f64, f64, bool)` con sanitización estricta fail-closed (ante valores NaN/Inf en riesgo o parámetros, fuerza veto determinista o recurre a defaults seguros).
+       - Agregados campos `causal_min_book_imbalance: f64` y `causal_aligned_max_risk: f64` a `MarketSnapshotPayload` con serde defaults y validaciones de rango `[0.0, 1.0]`.
+       - Agregados campos correspondientes a `CouncilParams` con método builder `with_causal_bounds(threshold, min_obi, max_risk)` y validaciones en `validate()`.
+       - En `SeniorCausal::evaluate`: invocación de `evaluate_causal_manipulation_veto` con parámetros dinámicos del payload.
+       - En `deliberar_traced`: propagación lock-free de `CouncilParams` hacia el payload mediante `Cow`.
+    2. En `crates/metacortex-engine/src/lib.rs`:
+       - Re-exportadas `DEFAULT_CAUSAL_VETO_THRESHOLD`, `DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE`, `DEFAULT_CAUSAL_ALIGNED_MAX_RISK` y `evaluate_causal_manipulation_veto`.
+    3. En `crates/quantum-arena/src/config.rs`:
+       - Agregados campos atómicos lock-free en `QuantumConfig`: `council_causal_veto_threshold: AtomicF64` (0.75), `council_causal_min_book_imbalance: AtomicF64` (0.25), `council_causal_aligned_max_risk: AtomicF64` (0.88).
+    4. En `crates/god-engine-core/src/lib.rs`:
+       - Sincronización en `sync_council_params` leyendo de `arena.config`.
+       - Resolución omnisciente por activo en `council_snapshot`: `c{id}:causal_veto_threshold`, `c{id}:causal_min_book_imbalance`, `c{id}:causal_aligned_max_risk`.
+  * **Certificación Contractual**:
+    - `causal_opinion_adaptation_contract.rs` (5/5 pass):
+      1. `test_causal_opinion_canonical_defaults_exact_parity`: Paridad exacta con el comportamiento original.
+      2. `test_causal_opinion_dynamic_payload_override`: Adaptación a umbrales personalizados por payload.
+      3. `test_causal_opinion_council_params_propagation`: Propagación fluida a través de `CouncilParams`.
+      4. `test_causal_opinion_bounds_validation_and_fail_closed`: Fail-closed robusto contra NaN/Inf.
+      5. `test_causal_opinion_directional_conjunction_and_symmetry`: Simetría estricta Long/Short en breakout institucional.
+    - `council_params_arena_wiring_contract.rs` (2/2 pass): Verificación de cableado atómico y protección contra corrupción.
+    - Suite completa de `metacortex-engine` (73/73 tests pass, 100% verde).
+    - `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω114 — Desacoplamiento Dinámico de Límites de Drawdown y Penalización de Racha en SeniorRiesgo
 
 - **Ola Integrada y Certificada en `main` (`a9b376a5`)**:
