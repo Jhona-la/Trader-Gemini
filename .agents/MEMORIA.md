@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω108 — Inyección Dinámica de Prior Bayesiano y Empirical Bayes Pooling en Contracción Jerárquica de Win Rate
+
+- **Ola Integrada y Certificada en `main` (`5800f130`)**:
+  * **Diagnóstico y Causa Raíz**: En `crates/risk-engine/src/lib.rs:1141`, la contracción bayesiana jerárquica de win rate (`win_rate_hierarchical_lcb`) utilizaba los literales fijos congelados `0.55` (prior de probabilidad) y `10.0` (pseudo-masa regularizadora). Esto forzaba una contracción arbitraria hacia 0.55 incluso cuando el ensamble o portafolio acumulaba una tasa de acierto superior (ej. 70-80%), o cuando la evolución definía un prior adaptativo por régimen de mercado.
+  * **Solución Matemática de Empirical Bayes**:
+    1. Se implementó `resolve_bayes_prior(arena: &GlobalArena, coin_id: usize) -> (f64, f64)` en `crates/risk-engine/src/evidence.rs`.
+    2. Jerarquía adaptativa y evolutiva:
+       - Consulta de overrides en el registro omnisciente: `c{id}:bayes_prior_win_rate` / `c{id}:bayes_prior_mass` (por moneda) o `"bayes_prior_win_rate"` / `"bayes_prior_mass"` (global).
+       - Pooling empírico de la cartera (Empirical Bayes genuino): calcula la media ponderada de win rate del resto de las monedas con historial suficiente ($N_{\text{total}} \ge 10$):
+         $$\bar{p}_{\text{pool}} = \frac{\sum_{j \neq i} n_j \cdot w_j}{\sum_{j \neq i} n_j}, \quad \bar{p}_{\text{pool}} \in [0.40, 0.85]$$
+         transmitiendo la experiencia acumulada de los activos maduros hacia los activos jóvenes en arranque.
+       - Fallback canónico por defecto: `(0.55, 10.0)` asegurando paridad exacta bit a bit en arranque en frío total.
+    3. Conexión limpia en el hot path de `RiskEngine::evaluate_quantum_order` sustituyendo los literales mágicos.
+  * **Certificación Contractual**:
+    - Certificado con `crates/risk-engine/tests/empirical_bayes_prior_contract.rs` (4/4 tests pasando).
+    - Preservada paridad exacta en `veto_logic_contracts.rs` (10/10 pass) y suite íntegra de `risk-engine` (100% verde).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω107 — Desacoplamiento Adaptativo de Fase de Sonda y Parada Secuencial por SPRT de Wald
 
 - **Ola Integrada y Certificada en `main` (`71f3c36e`)**:

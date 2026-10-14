@@ -1260,9 +1260,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/lib.rs": {
-    "mtime": 1791960794.1193547,
-    "seen": 1791961607.0022128,
-    "ast_hash": "8407fc6f4e20146cf4305f30987cf18a",
+    "mtime": 1791961797.7100413,
+    "seen": 1791962439.3483305,
+    "ast_hash": "8c770d0398970b5e0cb4709d31b6a82d",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/orchestrator.rs": {
@@ -3198,9 +3198,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/evidence.rs": {
-    "mtime": 1791577869.7455878,
-    "seen": 1791601137.0000458,
-    "ast_hash": "8466d39940ef6427e8b4388cd0862660",
+    "mtime": 1791961766.4015298,
+    "seen": 1791962439.3467832,
+    "ast_hash": "75cf8f3c1c6fec55a2a3d1a9d2500f51",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/hodge.rs": {
@@ -3672,9 +3672,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791961201.3372126,
-    "seen": 1791961607.0887346,
-    "ast_hash": "e8fea1fa96d88a905f6f79f0f5ba3456",
+    "mtime": 1791962035.6558106,
+    "seen": 1791962439.472902,
+    "ast_hash": "6f5555abf78a9e12d8daa84b5f9b51e9",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3702,9 +3702,9 @@
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1791961187.2440875,
-    "seen": 1791961607.3690546,
-    "ast_hash": "497a064007ebbf40741fe0a09b21aadc",
+    "mtime": 1791962016.1889703,
+    "seen": 1791962439.8441365,
+    "ast_hash": "e4b8087fa08c161cebe4c802c51746cc",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -30162,9 +30162,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md": {
-    "mtime": 1791961231.874277,
-    "seen": 1791961607.4011579,
-    "ast_hash": "3962d19296b03b79fee2ae8b0b161bae",
+    "mtime": 1791962068.32596,
+    "seen": 1791962439.886637,
+    "ast_hash": "5e958f60f7dadd0d14057f6240f69e09",
     "semantic_hash": ""
   },
   "docs/adr/ADR-0017-frenos-de-drawdown-y-estado-aprendido.md": {
@@ -30591,6 +30591,12 @@
     "mtime": 1791960853.0946817,
     "seen": 1791961607.0119345,
     "ast_hash": "01681fa56d841524e1e02598421674f5",
+    "semantic_hash": ""
+  },
+  "crates/risk-engine/tests/empirical_bayes_prior_contract.rs": {
+    "mtime": 1791961816.0823574,
+    "seen": 1791962439.357235,
+    "ast_hash": "724114183ffd2a90f110e0c564e38a38",
     "semantic_hash": ""
   }
 }
