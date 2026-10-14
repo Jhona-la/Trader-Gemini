@@ -8681,6 +8681,75 @@ impl GodEngineCore {
                                     self.consejo_deliberacion.params.ym_max_weight
                                 }
                             },
+                            // P1 (GLM 115): los 6 campos de Ω117 faltaban en ESTE
+                            // inicializador (main no compilaba) — mismo patrón
+                            // per-coin → params que los demás campos dinámicos.
+                            ml_dead_zone: {
+                                let v = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "ml_dead_zone", f64::NAN);
+                                if v.is_finite() && v >= 0.0 {
+                                    v
+                                } else {
+                                    self.consejo_deliberacion.params.ml_dead_zone
+                                }
+                            },
+                            ml_full_edge: {
+                                let v = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "ml_full_edge", f64::NAN);
+                                if v.is_finite() && v > 0.0 {
+                                    v
+                                } else {
+                                    self.consejo_deliberacion.params.ml_full_edge
+                                }
+                            },
+                            meta_dd_penalty_mult: {
+                                let v = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_dd_penalty_mult", f64::NAN);
+                                if v.is_finite() && v > 0.0 {
+                                    v
+                                } else {
+                                    self.consejo_deliberacion.params.meta_dd_penalty_mult
+                                }
+                            },
+                            meta_max_dd_penalty: {
+                                let v = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_max_dd_penalty", f64::NAN);
+                                if v.is_finite() && (0.0..=1.0).contains(&v) {
+                                    v
+                                } else {
+                                    self.consejo_deliberacion.params.meta_max_dd_penalty
+                                }
+                            },
+                            meta_majority_factor: {
+                                let v = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_majority_factor", f64::NAN);
+                                if v.is_finite() && (0.0..=1.0).contains(&v) {
+                                    v
+                                } else {
+                                    self.consejo_deliberacion.params.meta_majority_factor
+                                }
+                            },
+                            meta_solitary_factor: {
+                                let v = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "meta_solitary_factor", f64::NAN);
+                                if v.is_finite() && (0.0..=1.0).contains(&v) {
+                                    v
+                                } else {
+                                    self.consejo_deliberacion.params.meta_solitary_factor
+                                }
+                            },
                         };
                     let wr = coin.metrics.win_rate.load(Ordering::Relaxed);
                     let council_decision = self.consejo_deliberacion.deliberar_traced(
