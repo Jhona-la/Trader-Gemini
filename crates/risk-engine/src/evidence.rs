@@ -52,6 +52,12 @@ use crate::kelly_envelope::EdgePosterior;
 use quantum_arena::GlobalArena;
 use std::sync::atomic::Ordering;
 
+pub use crate::capital_regime::{
+    compute_safe_margin_limit, resolve_margin_cap_limits, DEFAULT_MICRO_MARGIN_CAP_RATIO,
+    DEFAULT_STANDARD_MARGIN_CAP_RATIO, MAX_MICRO_MARGIN_CAP_RATIO, MAX_STANDARD_MARGIN_CAP_RATIO,
+    MIN_MICRO_MARGIN_CAP_RATIO, MIN_STANDARD_MARGIN_CAP_RATIO,
+};
+
 /// Nivel de confianza de TODA cota inferior del sistema: `z = 1,64` ≈ 95 %.
 ///
 /// No es un parámetro de trading sino el nivel de confianza que la envolvente

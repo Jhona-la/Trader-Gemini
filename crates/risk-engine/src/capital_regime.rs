@@ -200,6 +200,119 @@ pub fn resolve_micro_max_fee_pct(arena: &quantum_arena::GlobalArena, coin_id: us
     }
 }
 
+/// Ratio canónico de margen máximo por operación en régimen micro (25% del capital asignado).
+pub const DEFAULT_MICRO_MARGIN_CAP_RATIO: f64 = 0.25;
+
+/// Ratio mínimo admisible de margen en régimen micro (10%).
+pub const MIN_MICRO_MARGIN_CAP_RATIO: f64 = 0.10;
+
+/// Ratio máximo admisible de margen en régimen micro (50%).
+pub const MAX_MICRO_MARGIN_CAP_RATIO: f64 = 0.50;
+
+/// Ratio canónico de margen máximo total en régimen estándar (90% del capital).
+pub const DEFAULT_STANDARD_MARGIN_CAP_RATIO: f64 = 0.90;
+
+/// Ratio mínimo admisible de margen en régimen estándar (50%).
+pub const MIN_STANDARD_MARGIN_CAP_RATIO: f64 = 0.50;
+
+/// Ratio máximo admisible de margen en régimen estándar (98%, coherente con MAX_MARGIN_UTILIZATION).
+pub const MAX_STANDARD_MARGIN_CAP_RATIO: f64 = 0.98;
+
+/// F3.1-06 (Ola Ω112): Cálculo puro del límite seguro de margen por operación.
+///
+/// Modula continuamente la cota de margen entre el régimen estándar y el régimen micro
+/// sin anclajes rígidos a literales en código, garantizando como piso ejecutable
+/// el margen mínimo requerido por el exchange.
+#[inline]
+pub fn compute_safe_margin_limit(
+    allocated_capital: f64,
+    required_margin_for_min_notional: f64,
+    safe_cushion: f64,
+    current_cap: f64,
+    micro_w_alloc: f64,
+    micro_margin_cap_ratio: f64,
+    standard_margin_cap_ratio: f64,
+) -> f64 {
+    let alloc = if allocated_capital.is_finite() && allocated_capital > 0.0 {
+        allocated_capital
+    } else {
+        0.0
+    };
+    let cur_cap = if current_cap.is_finite() && current_cap > 0.0 {
+        current_cap
+    } else {
+        0.0
+    };
+    let req_margin = if required_margin_for_min_notional.is_finite() && required_margin_for_min_notional > 0.0 {
+        required_margin_for_min_notional
+    } else {
+        0.0
+    };
+    let cushion = if safe_cushion.is_finite() && safe_cushion > 0.0 {
+        safe_cushion.clamp(MIN_MARGIN_UTILIZATION, MAX_MARGIN_UTILIZATION)
+    } else {
+        FALLBACK_MARGIN_UTILIZATION
+    };
+    let micro_ratio = if micro_margin_cap_ratio.is_finite() && micro_margin_cap_ratio > 0.0 {
+        micro_margin_cap_ratio.clamp(MIN_MICRO_MARGIN_CAP_RATIO, MAX_MICRO_MARGIN_CAP_RATIO)
+    } else {
+        DEFAULT_MICRO_MARGIN_CAP_RATIO
+    };
+    let std_ratio = if standard_margin_cap_ratio.is_finite() && standard_margin_cap_ratio > 0.0 {
+        standard_margin_cap_ratio.clamp(MIN_STANDARD_MARGIN_CAP_RATIO, MAX_STANDARD_MARGIN_CAP_RATIO)
+    } else {
+        DEFAULT_STANDARD_MARGIN_CAP_RATIO
+    };
+
+    let micro_safe_limit = (alloc * micro_ratio).max(req_margin);
+    let standard_safe_limit = (alloc * cushion).min(cur_cap * std_ratio);
+    let safe_limit = lerp(standard_safe_limit, micro_safe_limit, micro_w_alloc);
+
+    if safe_limit.is_finite() && safe_limit >= 0.0 {
+        safe_limit
+    } else {
+        req_margin
+    }
+}
+
+/// F3.1-06 (Ola Ω112): Resolución continua de las cotas de margen por operación.
+///
+/// Consulta los ratios en el registro omnisciente de la arena (`micro_margin_cap_ratio`
+/// y `standard_margin_cap_ratio`, con fallback a los valores canónicos 0.25 y 0.90)
+/// permitiendo overrides específicos por activo (`c{coin_id}:...`) o globales,
+/// y calcula el límite seguro continuo respetando la física del capital.
+#[inline]
+pub fn resolve_margin_cap_limits(
+    arena: &quantum_arena::GlobalArena,
+    coin_id: usize,
+    allocated_capital: f64,
+    required_margin_for_min_notional: f64,
+    safe_cushion: f64,
+    current_cap: f64,
+    micro_w_alloc: f64,
+) -> f64 {
+    let micro_ratio = arena.registry.get_for_coin_or(
+        coin_id,
+        "micro_margin_cap_ratio",
+        arena.registry.get_value_or("micro_margin_cap_ratio", DEFAULT_MICRO_MARGIN_CAP_RATIO),
+    );
+    let std_ratio = arena.registry.get_for_coin_or(
+        coin_id,
+        "standard_margin_cap_ratio",
+        arena.registry.get_value_or("standard_margin_cap_ratio", DEFAULT_STANDARD_MARGIN_CAP_RATIO),
+    );
+
+    compute_safe_margin_limit(
+        allocated_capital,
+        required_margin_for_min_notional,
+        safe_cushion,
+        current_cap,
+        micro_w_alloc,
+        micro_ratio,
+        std_ratio,
+    )
+}
+
 /// D-750 — VIABILIDAD DE LA ORDEN: FUENTE ÚNICA.
 ///
 /// # Qué estaba mal
@@ -482,4 +595,40 @@ mod tests {
         // El punto medio geométrico entre 4× y 36× es 12×.
         assert!((log_lerp(36.0, 4.0, 0.5) - 12.0).abs() < 1e-9);
     }
+
+    #[test]
+    fn compute_safe_margin_limit_preserves_canonical_defaults_and_respects_clamps() {
+        // En micro pleno (w = 1.0) con defaults (0.25), 13 USD da max(13 * 0.25 = 3.25, 1.02) = 3.25
+        let limit_canonico = compute_safe_margin_limit(
+            13.0,
+            1.02,
+            0.80,
+            13.0,
+            1.0,
+            DEFAULT_MICRO_MARGIN_CAP_RATIO,
+            DEFAULT_STANDARD_MARGIN_CAP_RATIO,
+        );
+        assert!((limit_canonico - 3.25).abs() < 1e-12);
+
+        // Clamp inferior del ratio micro (0.10): con ratio 0.01 se fija a 0.10 -> max(13 * 0.10 = 1.30, 1.02) = 1.30
+        let limit_min = compute_safe_margin_limit(13.0, 1.02, 0.80, 13.0, 1.0, 0.01, 0.90);
+        assert!((limit_min - 1.30).abs() < 1e-12);
+
+        // Clamp superior del ratio micro (0.50): con ratio 0.80 se fija a 0.50 -> max(13 * 0.50 = 6.50, 1.02) = 6.50
+        let limit_max = compute_safe_margin_limit(13.0, 1.02, 0.80, 13.0, 1.0, 0.80, 0.90);
+        assert!((limit_max - 6.50).abs() < 1e-12);
+
+        // Resiliencia contra NaN / Inf: cae a defaults seguros y nunca paniquea
+        let limit_nan = compute_safe_margin_limit(
+            13.0,
+            1.02,
+            f64::NAN,
+            13.0,
+            1.0,
+            f64::NAN,
+            f64::INFINITY,
+        );
+        assert!((limit_nan - 3.25).abs() < 1e-12);
+    }
 }
+
