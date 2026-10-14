@@ -1,5 +1,42 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω112 — Desacoplamiento Dinámico de Cotas de Margen por Operación en evaluate_quantum_order
+
+- **Ola Integrada y Certificada en `main` (`0ef069cc`)**:
+  * **Diagnóstico y Causa Raíz**: En `crates/risk-engine/src/lib.rs:1366, 1367`, el cálculo de cotas de margen por operación contenía factores fijos congelados en código:
+    ```rust
+    let micro_safe_limit = (allocated_capital * 0.25).max(required_margin_for_min_notional);
+    let standard_safe_limit = (allocated_capital * safe_cushion).min(current_cap * 0.90);
+    ```
+    Los literales `0.25` (25% del capital como límite en régimen micro) y `0.90` (90% del capital como límite estándar) introducían una barrera no-adaptativa:
+    1. En micro-capital ($13 USD), truncar rígidamente al 25% ($3.25 USD) estrangula la aceleración geométrica cuando la convicción bayesiana, la predictibilidad fractal de Hurst ($H > 0.70$) y la esperanza matemática ($EV$) son máximas con $RR \ge 2.5$.
+    2. Impedía calibraciones dinámicas o por activo (e.g. mayor holgura de margen en activos altamente líquidos o reducción defensiva en activos volátiles).
+    3. Acoplaba heurísticas fijas en el hot-path en lugar de respetar la arquitectura de registro omnisciente y continua del sistema.
+  * **Solución Matemática y Continua**:
+    1. En `crates/risk-engine/src/capital_regime.rs`:
+       - Definidas constantes canónicas y rangos de clamping de seguridad:
+         `DEFAULT_MICRO_MARGIN_CAP_RATIO = 0.25` con clamp en `[0.10, 0.50]`.
+         `DEFAULT_STANDARD_MARGIN_CAP_RATIO = 0.90` con clamp en `[0.50, 0.98]`.
+       - Implementada la función pura `compute_safe_margin_limit(alloc, req_margin, safe_cushion, cur_cap, micro_w_alloc, micro_ratio, std_ratio) -> f64`:
+         Cero heap allocations, evaluación de orden matemático pura, resiliencia total contra NaN/infinitos (fail-closed seguro hacia defaults y piso ejecutable).
+       - Implementada la función resolutora `resolve_margin_cap_limits(arena, coin_id, alloc, req_margin, safe_cushion, cur_cap, micro_w_alloc) -> f64`:
+         Consulta lock-free en el registro de la arena por activo (`c{id}:micro_margin_cap_ratio`, `c{id}:standard_margin_cap_ratio`) con fallback global y canónico.
+    2. En `crates/risk-engine/src/evidence.rs`:
+       - Re-exportadas `compute_safe_margin_limit`, `resolve_margin_cap_limits` y constantes asociadas para consumo ergonómico por los motores y evaluadores.
+    3. En `crates/risk-engine/src/lib.rs:1366`:
+       - Sustituidos los literales fijos por la invocación a `crate::capital_regime::resolve_margin_cap_limits(...)`, preservando la paridad canónica exacta bit a bit en ausencia de overrides y garantizando el piso mínimo ejecutable.
+  * **Certificación Contractual**:
+    - `margin_cap_adaptation_contract.rs` (5/5 pass):
+      1. `test_margin_cap_canonical_defaults_exact_parity`: Paridad idéntica bit a bit con los cálculos previos en micro y estándar.
+      2. `test_margin_cap_dynamic_registry_overrides_micro`: Validación de override dinámico por activo (`0.35` vs `0.25`) y su impacto en `evaluate_quantum_order`.
+      3. `test_margin_cap_dynamic_registry_overrides_standard`: Validación de override en cuentas estándar ($500 USD).
+      4. `test_margin_cap_clamp_boundaries_and_sanitization`: Verificación de límites de seguridad y fail-closed ante NaN/Inf.
+      5. `test_margin_cap_monotonicity_across_capital_spectrum`: Comprobación de monotonía no-decreciente a lo largo del espectro de capital ($5 a $1,000 USD).
+    - `veto_logic_contracts.rs` (10/10 pass): Incluyendo `risk_a_micro_safe_limit_escala_con_capital`.
+    - `sol_a2_margen_reducido_auditable.rs` (4/4 pass).
+    - `cf4_estado_aprendido.rs` (5/5 pass).
+    - `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω111 — Desacoplamiento Dinámico de Umbrales de Utilidad Esperada y Win Rate en SeniorTeleonomia
 
 - **Ola Integrada y Certificada en `main` (`5cc86bd0`)**:
