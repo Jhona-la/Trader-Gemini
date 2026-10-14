@@ -21,6 +21,7 @@ pub mod veto_registry;
 pub mod selection_stats;
 pub mod ville_e_process;
 
+pub use capital_regime::{resolve_micro_max_fee_pct, DEFAULT_MICRO_MAX_FEE_PCT};
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
 pub use ville_e_process::VilleEProcess;
 
@@ -1196,8 +1197,10 @@ impl RiskEngine {
         // Cost per notional times L is cost per unit of allocated margin.
         // Preserve the existing micro policy, but enforce it on every final
         // order, not just branches that rescue a minimum notional (FMT-217).
+        let micro_fee_ceiling =
+            crate::capital_regime::resolve_micro_max_fee_pct(arena, coin_id);
         let max_fee_limit =
-            crate::capital_regime::lerp(max_acceptable_fee_pct, 0.035, micro_w_alloc);
+            crate::capital_regime::lerp(max_acceptable_fee_pct, micro_fee_ceiling, micro_w_alloc);
         let dynamic_min_notional = crate::capital_regime::effective_min_notional(spec.min_notional);
         // Revisión del PR #61 (F1): la orden mínima que de verdad sale es la
         // del LOTE, el menor múltiplo de `stepSize` con `qty ≥ minQty` y un
@@ -1405,7 +1408,7 @@ impl RiskEngine {
             && final_margin <= safe_min_notional * 1.05
             && max_acceptable_fee_pct >= 0.005;
         let effective_max_fee_limit = if rescued_for_min_notional {
-            max_fee_limit.max(0.035)
+            max_fee_limit.max(micro_fee_ceiling)
         } else {
             max_fee_limit
         };

@@ -178,6 +178,28 @@ pub fn min_notional_del_simbolo(coin_id: usize) -> f64 {
     )
 }
 
+/// Techo canónico de comisión admisible sobre margen en régimen micro (3.5% del margen).
+pub const DEFAULT_MICRO_MAX_FEE_PCT: f64 = 0.035;
+
+/// F3.1-05 (Ola Ω104): Resolución continua del techo de comisión admisible sobre margen en micro-capital.
+///
+/// Si la clave omnisciente `"micro_max_fee_pct"` (o escopada por moneda) está configurada
+/// en el registro de la arena, se adopta su valor sanitizado. En caso contrario,
+/// se retorna el límite canónico por defecto `DEFAULT_MICRO_MAX_FEE_PCT` (0.035 = 3.5%).
+#[inline]
+pub fn resolve_micro_max_fee_pct(arena: &quantum_arena::GlobalArena, coin_id: usize) -> f64 {
+    let custom = arena.registry.get_for_coin_or(
+        coin_id,
+        "micro_max_fee_pct",
+        arena.registry.get_value_or("micro_max_fee_pct", DEFAULT_MICRO_MAX_FEE_PCT),
+    );
+    if custom.is_finite() && custom > 0.0 {
+        custom
+    } else {
+        DEFAULT_MICRO_MAX_FEE_PCT
+    }
+}
+
 /// D-750 — VIABILIDAD DE LA ORDEN: FUENTE ÚNICA.
 ///
 /// # Qué estaba mal
