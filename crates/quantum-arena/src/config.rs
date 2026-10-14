@@ -195,6 +195,9 @@ pub struct QuantumConfig {
     pub council_slow_slippage_span: AtomicF64,
     pub council_max_drawdown_limit: AtomicF64,
     pub council_streak_decay_rate: AtomicF64,
+    pub council_causal_veto_threshold: AtomicF64,
+    pub council_causal_min_book_imbalance: AtomicF64,
+    pub council_causal_aligned_max_risk: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -427,6 +430,9 @@ impl QuantumConfig {
             council_slow_slippage_span: AtomicF64::new(65.0),
             council_max_drawdown_limit: AtomicF64::new(0.6315968501359614),
             council_streak_decay_rate: AtomicF64::new(0.50),
+            council_causal_veto_threshold: AtomicF64::new(0.75),
+            council_causal_min_book_imbalance: AtomicF64::new(0.25),
+            council_causal_aligned_max_risk: AtomicF64::new(0.88),
         }
     }
 

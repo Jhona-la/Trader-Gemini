@@ -76,6 +76,15 @@ pub const DEFAULT_MAX_DRAWDOWN_LIMIT: f64 = 0.6315968501359614;
 /// OLA Ω114: Tasa canónica de penalización por racha de pérdidas γ_streak = 0.50.
 pub const DEFAULT_STREAK_DECAY_RATE: f64 = 0.50;
 
+/// OLA Ω115: Umbral base canónico de veto causal Pearl do-calculus (0.75).
+pub const DEFAULT_CAUSAL_VETO_THRESHOLD: f64 = 0.75;
+
+/// OLA Ω115: Desequilibrio de libro L2 mínimo canónico para breakout alineado (0.25).
+pub const DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE: f64 = 0.25;
+
+/// OLA Ω115: Riesgo máximo causal canónico permitido durante breakout alineado (0.88).
+pub const DEFAULT_CAUSAL_ALIGNED_MAX_RISK: f64 = 0.88;
+
 #[inline(always)]
 fn default_max_drawdown_limit() -> f64 {
     DEFAULT_MAX_DRAWDOWN_LIMIT
@@ -84,6 +93,21 @@ fn default_max_drawdown_limit() -> f64 {
 #[inline(always)]
 fn default_streak_decay_rate() -> f64 {
     DEFAULT_STREAK_DECAY_RATE
+}
+
+#[inline(always)]
+fn default_causal_veto_threshold() -> f64 {
+    DEFAULT_CAUSAL_VETO_THRESHOLD
+}
+
+#[inline(always)]
+fn default_causal_min_book_imbalance() -> f64 {
+    DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE
+}
+
+#[inline(always)]
+fn default_causal_aligned_max_risk() -> f64 {
+    DEFAULT_CAUSAL_ALIGNED_MAX_RISK
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,6 +135,7 @@ pub struct MarketSnapshotPayload {
     /// modulan sin generar dirección propia.
     pub intended_direction: f64,
     pub do_calculus_risk: f64,
+    #[serde(default = "default_causal_veto_threshold")]
     pub causal_veto_threshold: f64,
     pub current_drawdown_pct: f64,
     pub estimated_slippage_bps: f64,
@@ -178,6 +203,12 @@ pub struct MarketSnapshotPayload {
     /// OLA Ω114: Tasa de penalización por racha de pérdidas para SeniorRiesgo (default: 0.50).
     #[serde(default = "default_streak_decay_rate")]
     pub streak_decay_rate: f64,
+    /// OLA Ω115: Umbral de desequilibrio de libro para breakout alineado en SeniorCausal (default: 0.25).
+    #[serde(default = "default_causal_min_book_imbalance")]
+    pub causal_min_book_imbalance: f64,
+    /// OLA Ω115: Cota de riesgo máximo permitido en breakout alineado para SeniorCausal (default: 0.88).
+    #[serde(default = "default_causal_aligned_max_risk")]
+    pub causal_aligned_max_risk: f64,
 }
 
 impl Default for MarketSnapshotPayload {
@@ -193,7 +224,7 @@ impl Default for MarketSnapshotPayload {
             loss_streak: 0,
             intended_direction: 0.0,
             do_calculus_risk: 0.0,
-            causal_veto_threshold: 0.75,
+            causal_veto_threshold: DEFAULT_CAUSAL_VETO_THRESHOLD,
             current_drawdown_pct: 0.0,
             estimated_slippage_bps: 0.0,
             dominant_tau_ms: 1_138_000.0,
@@ -216,6 +247,8 @@ impl Default for MarketSnapshotPayload {
             slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
             max_drawdown_limit: DEFAULT_MAX_DRAWDOWN_LIMIT,
             streak_decay_rate: DEFAULT_STREAK_DECAY_RATE,
+            causal_min_book_imbalance: DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE,
+            causal_aligned_max_risk: DEFAULT_CAUSAL_ALIGNED_MAX_RISK,
         }
     }
 }
@@ -268,6 +301,8 @@ impl MarketSnapshotPayload {
             ("slow_slippage_span", self.slow_slippage_span),
             ("max_drawdown_limit", self.max_drawdown_limit),
             ("streak_decay_rate", self.streak_decay_rate),
+            ("causal_min_book_imbalance", self.causal_min_book_imbalance),
+            ("causal_aligned_max_risk", self.causal_aligned_max_risk),
         ];
 
         for (name, val) in metrics {
@@ -318,6 +353,8 @@ impl MarketSnapshotPayload {
             ("fast_slippage_floor", self.fast_slippage_floor, 0.0, 500.0),
             ("slow_slippage_span", self.slow_slippage_span, 0.0, 1000.0),
             ("streak_decay_rate", self.streak_decay_rate, 0.0, 10.0),
+            ("causal_min_book_imbalance", self.causal_min_book_imbalance, 0.0, 1.0),
+            ("causal_aligned_max_risk", self.causal_aligned_max_risk, 0.0, 1.0),
         ] {
             if !(low..=high).contains(&value) {
                 return Err(format!("Out-of-bounds {name}: {value}"));
@@ -797,41 +834,85 @@ impl SeniorAgent for SeniorEnteMercado {
 }
 
 // 4. Senior Causal (VETO ON MANIPULATION - PEARL DO-CALCULUS)
+
+/// Evalúa el riesgo causal de manipulación y la condición de breakout institucional alineado (Ola Ω115).
+///
+/// # Formulación
+/// - `do_calculus_risk` no finito falla cerrado retornando riesgo 1.0 y veto.
+/// - `causal_veto_threshold` se valida y clampa a [0.05, 0.98] con fallback canónico a 0.75.
+/// - `min_book_imbalance` se valida y clampa a [0.0, 1.0] con fallback canónico a 0.25.
+/// - `aligned_max_risk` se valida y clampa a [0.0, 1.0] con fallback canónico a 0.88.
+/// - Un breakout institucional legítimo exige la conjunción estricta:
+///   `|book_imbalance| > min_imbalance && (book_imbalance * intended_direction > 0) && spectral_s < 0.5 && risk < aligned_max_risk`.
+/// - Se veta la operación si `risk > effective_threshold && !is_aligned_breakout`.
+#[inline(always)]
+pub fn evaluate_causal_manipulation_veto(
+    do_calculus_risk: f64,
+    causal_veto_threshold: f64,
+    book_imbalance: f64,
+    intended_direction: f64,
+    spectral_s: f64,
+    min_book_imbalance: f64,
+    aligned_max_risk: f64,
+) -> (bool, f64, f64, bool) {
+    let safe_risk = if do_calculus_risk.is_finite() {
+        do_calculus_risk.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let safe_threshold = if causal_veto_threshold.is_finite() && (0.0..=1.0).contains(&causal_veto_threshold) && causal_veto_threshold > 0.0 {
+        causal_veto_threshold.clamp(0.05, 0.98)
+    } else {
+        DEFAULT_CAUSAL_VETO_THRESHOLD
+    };
+    let safe_min_imbalance = if min_book_imbalance.is_finite() && (0.0..=1.0).contains(&min_book_imbalance) {
+        min_book_imbalance
+    } else {
+        DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE
+    };
+    let safe_aligned_max_risk = if aligned_max_risk.is_finite() && (0.0..=1.0).contains(&aligned_max_risk) {
+        aligned_max_risk
+    } else {
+        DEFAULT_CAUSAL_ALIGNED_MAX_RISK
+    };
+    let safe_s = if spectral_s.is_finite() {
+        spectral_s.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+
+    let is_aligned_breakout = (book_imbalance.abs() > safe_min_imbalance
+        && book_imbalance * intended_direction > 0.0
+        && safe_s < 0.5)
+        && safe_risk < safe_aligned_max_risk;
+    let is_veto = safe_risk > safe_threshold && !is_aligned_breakout;
+    (is_veto, safe_risk, safe_threshold, is_aligned_breakout)
+}
+
 pub struct SeniorCausal;
 impl SeniorAgent for SeniorCausal {
     fn role(&self) -> SeniorRole {
         SeniorRole::Causal
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let do_calculus_risk = if payload.do_calculus_risk.is_finite() {
-            payload.do_calculus_risk.clamp(0.0, 1.0)
-        } else {
-            1.0 // Falla segura: veto preventivo si el riesgo causal no es finito
-        };
-        // D-112: El umbral causal protege contra toxicidad extrema (>0.85) sin asfixiar
-        // los breakouts institucionales legítimos (VPIN entre 0.60 y 0.80).
-        let effective_threshold = payload.causal_veto_threshold.clamp(0.60, 0.90);
-        // CERT-M7-C01: el OR anterior hacía spectral_s()<0.5 (cierto para
-        // τ<19min = la mayoría de la banda operativa) suficiente para
-        // calificar como "breakout alineado" — el veto quedaba
-        // efectivamente DESARMADO para toda entrada de banda rápida sin
-        // importar el VPIN hasta 0.88. Ahora exige CONJUNCIÓN: libro
-        // alineado Y banda rápida (la microestructura que lidera breakouts
-        // reales tiene ambas características).
-        let is_aligned_breakout = (payload.book_imbalance.abs() > 0.25
-            && payload.book_imbalance * payload.intended_direction > 0.0
-            && payload.spectral_s() < 0.5)
-            && do_calculus_risk < 0.88;
-        let is_veto = do_calculus_risk > effective_threshold && !is_aligned_breakout;
+        let (is_veto, safe_risk, effective_threshold, is_aligned_breakout) = evaluate_causal_manipulation_veto(
+            payload.do_calculus_risk,
+            payload.causal_veto_threshold,
+            payload.book_imbalance,
+            payload.intended_direction,
+            payload.spectral_s(),
+            payload.causal_min_book_imbalance,
+            payload.causal_aligned_max_risk,
+        );
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent (not a trend predictor)
-            confidence: (1.0 - do_calculus_risk).clamp(0.0, 1.0),
+            confidence: (1.0 - safe_risk).clamp(0.0, 1.0),
             weight: 1.0, // C-W RESOLUCIÓN: Agente de permiso/veto neutral sin prima de flujo
             is_veto,
             justification: format!(
                 "Causal manipulation risk: {:.4} (Threshold: {:.4}, aligned={})",
-                do_calculus_risk, effective_threshold, is_aligned_breakout
+                safe_risk, effective_threshold, is_aligned_breakout
             ),
         }
     }
@@ -1309,6 +1390,12 @@ pub struct CouncilParams {
     pub max_drawdown_limit: f64,       // 0.6315968501359614
     /// OLA Ω114: Tasa de penalización por racha de pérdidas para SeniorRiesgo (default: 0.50).
     pub streak_decay_rate: f64,        // 0.50
+    /// OLA Ω115: Umbral base de veto por riesgo causal do-calculus (default: 0.75).
+    pub causal_veto_threshold: f64,    // 0.75
+    /// OLA Ω115: Umbral de desequilibrio de libro para breakout alineado en SeniorCausal (default: 0.25).
+    pub causal_min_book_imbalance: f64, // 0.25
+    /// OLA Ω115: Cota de riesgo máximo permitido en breakout alineado para SeniorCausal (default: 0.88).
+    pub causal_aligned_max_risk: f64,  // 0.88
 }
 
 impl CouncilParams {
@@ -1333,6 +1420,9 @@ impl CouncilParams {
             slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
             max_drawdown_limit: DEFAULT_MAX_DRAWDOWN_LIMIT,
             streak_decay_rate: DEFAULT_STREAK_DECAY_RATE,
+            causal_veto_threshold: DEFAULT_CAUSAL_VETO_THRESHOLD,
+            causal_min_book_imbalance: DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE,
+            causal_aligned_max_risk: DEFAULT_CAUSAL_ALIGNED_MAX_RISK,
         };
         params.validate()?;
         Ok(params)
@@ -1358,6 +1448,20 @@ impl CouncilParams {
     pub fn with_risk_bounds(mut self, max_dd: f64, streak_decay: f64) -> Result<Self, String> {
         self.max_drawdown_limit = max_dd;
         self.streak_decay_rate = streak_decay;
+        self.validate()?;
+        Ok(self)
+    }
+
+    /// OLA Ω115: Builder para configurar tolerancias causales y condiciones de breakout alineado en SeniorCausal.
+    pub fn with_causal_bounds(
+        mut self,
+        veto_threshold: f64,
+        min_imbalance: f64,
+        aligned_max_risk: f64,
+    ) -> Result<Self, String> {
+        self.causal_veto_threshold = veto_threshold;
+        self.causal_min_book_imbalance = min_imbalance;
+        self.causal_aligned_max_risk = aligned_max_risk;
         self.validate()?;
         Ok(self)
     }
@@ -1390,6 +1494,15 @@ impl CouncilParams {
         if !(0.0..=10.0).contains(&self.streak_decay_rate) {
             return Err(format!("Invalid council parameter streak_decay_rate: {}", self.streak_decay_rate));
         }
+        if !(0.0..=1.0).contains(&self.causal_veto_threshold) || self.causal_veto_threshold <= 0.0 {
+            return Err(format!("Invalid council parameter causal_veto_threshold: {}", self.causal_veto_threshold));
+        }
+        if !(0.0..=1.0).contains(&self.causal_min_book_imbalance) {
+            return Err(format!("Invalid council parameter causal_min_book_imbalance: {}", self.causal_min_book_imbalance));
+        }
+        if !(0.0..=1.0).contains(&self.causal_aligned_max_risk) {
+            return Err(format!("Invalid council parameter causal_aligned_max_risk: {}", self.causal_aligned_max_risk));
+        }
         if !self.shrinkage_k.is_finite() || self.shrinkage_k <= 0.0 {
             return Err("shrinkage_k must be finite and positive".into());
         }
@@ -1412,6 +1525,9 @@ impl Default for CouncilParams {
             slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
             max_drawdown_limit: DEFAULT_MAX_DRAWDOWN_LIMIT,
             streak_decay_rate: DEFAULT_STREAK_DECAY_RATE,
+            causal_veto_threshold: DEFAULT_CAUSAL_VETO_THRESHOLD,
+            causal_min_book_imbalance: DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE,
+            causal_aligned_max_risk: DEFAULT_CAUSAL_ALIGNED_MAX_RISK,
         }
     }
 }
@@ -1558,7 +1674,7 @@ impl ConsejoDeliberacion {
         // N-12: Si no se proporcionan multiplicadores externos, usar pesos adaptativos empíricos del tracker
         let active_mults = weight_multipliers.or(dynamic_weights.as_ref());
 
-        // OLA Ω111 / Ω113 / Ω114: Si CouncilParams define umbrales de utilidad/wr, slippage o riesgo dinámicos distintos de los canónicos
+        // OLA Ω111 / Ω113 / Ω114 / Ω115: Si CouncilParams define umbrales de utilidad/wr, slippage, riesgo o causal dinámicos distintos de los canónicos
         // y el payload porta los defaults, propagar los parámetros del consejo al payload evaluado.
         let has_custom_utility = (self.params.utility_veto_floor - UTILITY_VETO_FLOOR).abs() > 1e-9
             || (self.params.utility_veto_wr - UTILITY_VETO_WR).abs() > 1e-9;
@@ -1566,8 +1682,11 @@ impl ConsejoDeliberacion {
             || (self.params.slow_slippage_span - DEFAULT_SLOW_SLIPPAGE_SPAN).abs() > 1e-9;
         let has_custom_risk = (self.params.max_drawdown_limit - DEFAULT_MAX_DRAWDOWN_LIMIT).abs() > 1e-9
             || (self.params.streak_decay_rate - DEFAULT_STREAK_DECAY_RATE).abs() > 1e-9;
+        let has_custom_causal = (self.params.causal_veto_threshold - DEFAULT_CAUSAL_VETO_THRESHOLD).abs() > 1e-9
+            || (self.params.causal_min_book_imbalance - DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE).abs() > 1e-9
+            || (self.params.causal_aligned_max_risk - DEFAULT_CAUSAL_ALIGNED_MAX_RISK).abs() > 1e-9;
 
-        let effective_payload = if has_custom_utility || has_custom_slippage || has_custom_risk {
+        let effective_payload = if has_custom_utility || has_custom_slippage || has_custom_risk || has_custom_causal {
             let mut p = payload.clone();
             if has_custom_utility {
                 if (p.utility_veto_floor - UTILITY_VETO_FLOOR).abs() < 1e-9 {
@@ -1591,6 +1710,17 @@ impl ConsejoDeliberacion {
                 }
                 if (p.streak_decay_rate - DEFAULT_STREAK_DECAY_RATE).abs() < 1e-9 {
                     p.streak_decay_rate = self.params.streak_decay_rate;
+                }
+            }
+            if has_custom_causal {
+                if (p.causal_veto_threshold - DEFAULT_CAUSAL_VETO_THRESHOLD).abs() < 1e-9 {
+                    p.causal_veto_threshold = self.params.causal_veto_threshold;
+                }
+                if (p.causal_min_book_imbalance - DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE).abs() < 1e-9 {
+                    p.causal_min_book_imbalance = self.params.causal_min_book_imbalance;
+                }
+                if (p.causal_aligned_max_risk - DEFAULT_CAUSAL_ALIGNED_MAX_RISK).abs() < 1e-9 {
+                    p.causal_aligned_max_risk = self.params.causal_aligned_max_risk;
                 }
             }
             std::borrow::Cow::Owned(p)
@@ -2060,6 +2190,8 @@ mod tests {
             slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
             max_drawdown_limit: DEFAULT_MAX_DRAWDOWN_LIMIT,
             streak_decay_rate: DEFAULT_STREAK_DECAY_RATE,
+            causal_min_book_imbalance: DEFAULT_CAUSAL_MIN_BOOK_IMBALANCE,
+            causal_aligned_max_risk: DEFAULT_CAUSAL_ALIGNED_MAX_RISK,
         }
     }
 

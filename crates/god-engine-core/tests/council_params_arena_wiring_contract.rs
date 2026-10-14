@@ -38,6 +38,9 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.slow_slippage_span, 65.0);
     assert_eq!(core.consejo_deliberacion.params.max_drawdown_limit, 0.6315968501359614);
     assert_eq!(core.consejo_deliberacion.params.streak_decay_rate, 0.50);
+    assert_eq!(core.consejo_deliberacion.params.causal_veto_threshold, 0.75);
+    assert_eq!(core.consejo_deliberacion.params.causal_min_book_imbalance, 0.25);
+    assert_eq!(core.consejo_deliberacion.params.causal_aligned_max_risk, 0.88);
 
     // 2. Modificación lock-free desde arena.config (ej. Evolución adaptativa o feedback cuántico)
     arena.config.council_approval_threshold.store(0.45, Ordering::Relaxed);
@@ -52,6 +55,9 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     arena.config.council_slow_slippage_span.store(80.0, Ordering::Relaxed);
     arena.config.council_max_drawdown_limit.store(0.40, Ordering::Relaxed);
     arena.config.council_streak_decay_rate.store(0.75, Ordering::Relaxed);
+    arena.config.council_causal_veto_threshold.store(0.65, Ordering::Relaxed);
+    arena.config.council_causal_min_book_imbalance.store(0.35, Ordering::Relaxed);
+    arena.config.council_causal_aligned_max_risk.store(0.92, Ordering::Relaxed);
 
     // 3. Ejecutar sincronización
     core.sync_council_params_from_arena();
@@ -69,6 +75,9 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.slow_slippage_span, 80.0);
     assert_eq!(core.consejo_deliberacion.params.max_drawdown_limit, 0.40);
     assert_eq!(core.consejo_deliberacion.params.streak_decay_rate, 0.75);
+    assert_eq!(core.consejo_deliberacion.params.causal_veto_threshold, 0.65);
+    assert_eq!(core.consejo_deliberacion.params.causal_min_book_imbalance, 0.35);
+    assert_eq!(core.consejo_deliberacion.params.causal_aligned_max_risk, 0.92);
 }
 
 #[test]
@@ -81,12 +90,18 @@ fn council_params_protege_contra_valores_corruptos_o_fuera_de_cota() {
     let prev_k = core.consejo_deliberacion.params.shrinkage_k;
     let prev_max_dd = core.consejo_deliberacion.params.max_drawdown_limit;
     let prev_decay = core.consejo_deliberacion.params.streak_decay_rate;
+    let prev_causal_veto = core.consejo_deliberacion.params.causal_veto_threshold;
+    let prev_causal_imb = core.consejo_deliberacion.params.causal_min_book_imbalance;
+    let prev_causal_risk = core.consejo_deliberacion.params.causal_aligned_max_risk;
 
-    // Intentar inyectar valor corrupto/fuera de cota (approval > 1.0, k negativo o NaN, max_dd > 1.0, decay < 0)
+    // Intentar inyectar valor corrupto/fuera de cota (approval > 1.0, k negativo o NaN, max_dd > 1.0, decay < 0, causal_veto > 1.0)
     arena.config.council_approval_threshold.store(2.50, Ordering::Relaxed);
     arena.config.council_shrinkage_k.store(-5.0, Ordering::Relaxed);
     arena.config.council_max_drawdown_limit.store(1.50, Ordering::Relaxed);
     arena.config.council_streak_decay_rate.store(-2.0, Ordering::Relaxed);
+    arena.config.council_causal_veto_threshold.store(1.50, Ordering::Relaxed);
+    arena.config.council_causal_min_book_imbalance.store(-0.50, Ordering::Relaxed);
+    arena.config.council_causal_aligned_max_risk.store(1.20, Ordering::Relaxed);
 
     core.sync_council_params_from_arena();
 
@@ -106,5 +121,17 @@ fn council_params_protege_contra_valores_corruptos_o_fuera_de_cota() {
     assert_eq!(
         core.consejo_deliberacion.params.streak_decay_rate, prev_decay,
         "Streak decay corrupto < 0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.causal_veto_threshold, prev_causal_veto,
+        "Causal veto threshold corrupto > 1.0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.causal_min_book_imbalance, prev_causal_imb,
+        "Causal min book imbalance corrupto < 0.0 no debe aplicarse al consejo"
+    );
+    assert_eq!(
+        core.consejo_deliberacion.params.causal_aligned_max_risk, prev_causal_risk,
+        "Causal aligned max risk corrupto > 1.0 no debe aplicarse al consejo"
     );
 }

@@ -1493,6 +1493,9 @@ impl GodEngineCore {
         let slip_span = cfg.council_slow_slippage_span.load(Ordering::Relaxed);
         let max_dd = cfg.council_max_drawdown_limit.load(Ordering::Relaxed);
         let streak_decay = cfg.council_streak_decay_rate.load(Ordering::Relaxed);
+        let causal_veto = cfg.council_causal_veto_threshold.load(Ordering::Relaxed);
+        let causal_imbalance = cfg.council_causal_min_book_imbalance.load(Ordering::Relaxed);
+        let causal_risk = cfg.council_causal_aligned_max_risk.load(Ordering::Relaxed);
 
         if (0.0..=1.0).contains(&approval) {
             params.approval_threshold = approval;
@@ -1529,6 +1532,15 @@ impl GodEngineCore {
         }
         if (0.0..=10.0).contains(&streak_decay) {
             params.streak_decay_rate = streak_decay;
+        }
+        if (0.0..=1.0).contains(&causal_veto) && causal_veto > 0.0 {
+            params.causal_veto_threshold = causal_veto;
+        }
+        if (0.0..=1.0).contains(&causal_imbalance) {
+            params.causal_min_book_imbalance = causal_imbalance;
+        }
+        if (0.0..=1.0).contains(&causal_risk) {
+            params.causal_aligned_max_risk = causal_risk;
         }
     }
 
@@ -8420,7 +8432,18 @@ impl GodEngineCore {
                             loss_streak: council_loss_streak,
                             intended_direction: council_intended_dir,
                             do_calculus_risk: vpin_risk,
-                            causal_veto_threshold: 0.75,
+                            // OLA Ω115: Umbrales adaptativos continuos de veto causal y breakout alineado para SeniorCausal
+                            causal_veto_threshold: {
+                                let coin_causal = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "causal_veto_threshold", f64::NAN);
+                                if coin_causal.is_finite() && (0.0..=1.0).contains(&coin_causal) && coin_causal > 0.0 {
+                                    coin_causal
+                                } else {
+                                    self.consejo_deliberacion.params.causal_veto_threshold
+                                }
+                            },
                             current_drawdown_pct: drawdown,
                             estimated_slippage_bps: slip_bps,
                             // U-4: τ dominante — los asientos interpolan sus
@@ -8574,6 +8597,28 @@ impl GodEngineCore {
                                     coin_decay
                                 } else {
                                     self.consejo_deliberacion.params.streak_decay_rate
+                                }
+                            },
+                            causal_min_book_imbalance: {
+                                let coin_imb = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "causal_min_book_imbalance", f64::NAN);
+                                if coin_imb.is_finite() && (0.0..=1.0).contains(&coin_imb) {
+                                    coin_imb
+                                } else {
+                                    self.consejo_deliberacion.params.causal_min_book_imbalance
+                                }
+                            },
+                            causal_aligned_max_risk: {
+                                let coin_risk = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "causal_aligned_max_risk", f64::NAN);
+                                if coin_risk.is_finite() && (0.0..=1.0).contains(&coin_risk) {
+                                    coin_risk
+                                } else {
+                                    self.consejo_deliberacion.params.causal_aligned_max_risk
                                 }
                             },
                         };

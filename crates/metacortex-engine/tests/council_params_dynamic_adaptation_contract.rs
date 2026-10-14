@@ -101,6 +101,9 @@ fn ola101_consejo_deliberacion_with_params_falla_ante_parametros_corruptos() {
         slow_slippage_span: 65.0,
         max_drawdown_limit: 0.6315968501359614,
         streak_decay_rate: 0.50,
+        causal_veto_threshold: 0.75,
+        causal_min_book_imbalance: 0.25,
+        causal_aligned_max_risk: 0.88,
     };
 
     match ConsejoDeliberacion::with_params(corrupt_params) {

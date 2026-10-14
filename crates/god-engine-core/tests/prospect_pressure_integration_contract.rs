@@ -50,6 +50,8 @@ fn test_prospect_pressure_live_computation_in_god_engine() {
         slow_slippage_span: 65.0,
         max_drawdown_limit: 0.6315968501359614,
         streak_decay_rate: 0.50,
+        causal_min_book_imbalance: 0.25,
+        causal_aligned_max_risk: 0.88,
     };
 
     assert!(payload.validate().is_ok());
@@ -119,6 +121,8 @@ fn test_feynman_and_prospect_confluence_in_god_engine() {
         slow_slippage_span: 65.0,
         max_drawdown_limit: 0.6315968501359614,
         streak_decay_rate: 0.50,
+        causal_min_book_imbalance: 0.25,
+        causal_aligned_max_risk: 0.88,
     };
 
     assert!(payload.validate().is_ok());
