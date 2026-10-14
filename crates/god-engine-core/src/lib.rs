@@ -7259,13 +7259,44 @@ impl GodEngineCore {
                     let tau_star_duration = tau_star.round() as u64;
 
                     // Confluencia armónica constructiva en el centroide espectral tau*
-                    // (condiciones en `confluencia_resonante`, CL-31).
-                    if let Some((is_long, conf_base)) = confluencia_resonante(
+                    // (condiciones en `confluencia_resonante`, CL-31, dinamizadas en Ola Ω105).
+                    let fused_pleno = self.arena.registry.get_for_coin_or(
+                        coin_id,
+                        "fused_umbral_pleno",
+                        FUSED_UMBAL_PLENO,
+                    );
+                    let fused_moderado = self.arena.registry.get_for_coin_or(
+                        coin_id,
+                        "fused_umbral_moderado",
+                        FUSED_UMBAL_MODERADO,
+                    );
+                    let hurst_cont = self.arena.registry.get_for_coin_or(
+                        coin_id,
+                        "hurst_continuacion",
+                        HURST_CONTINUACION,
+                    );
+                    let coh_min = self.arena.registry.get_for_coin_or(
+                        coin_id,
+                        "coherencia_minima",
+                        COHERENCIA_MINIMA,
+                    );
+                    let marea_tol = self.arena.registry.get_for_coin_or(
+                        coin_id,
+                        "marea_macro_tolerancia",
+                        MAREA_MACRO_TOLERANCIA,
+                    );
+
+                    if let Some((is_long, conf_base)) = confluencia_resonante_con_umbrales(
                         fused,
                         tau_star_hurst,
                         field_long.global_coherence,
                         field_short.global_coherence,
                         macro_trend,
+                        fused_pleno,
+                        fused_moderado,
+                        hurst_cont,
+                        coh_min,
+                        marea_tol,
                     ) {
                         let confidence =
                             conviccion_de_rama_con(&registro_ramas[15], conf_base, || {
