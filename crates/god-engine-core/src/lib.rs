@@ -1489,6 +1489,8 @@ impl GodEngineCore {
         let breaker = cfg.council_cascade_severity_breaker.load(Ordering::Relaxed);
         let veto_floor = cfg.council_utility_veto_floor.load(Ordering::Relaxed);
         let veto_wr = cfg.council_utility_veto_wr.load(Ordering::Relaxed);
+        let slip_floor = cfg.council_fast_slippage_floor.load(Ordering::Relaxed);
+        let slip_span = cfg.council_slow_slippage_span.load(Ordering::Relaxed);
 
         if (0.0..=1.0).contains(&approval) {
             params.approval_threshold = approval;
@@ -1513,6 +1515,12 @@ impl GodEngineCore {
         }
         if (0.0..=1.0).contains(&veto_wr) {
             params.utility_veto_wr = veto_wr;
+        }
+        if (0.0..=500.0).contains(&slip_floor) {
+            params.fast_slippage_floor = slip_floor;
+        }
+        if (0.0..=1000.0).contains(&slip_span) {
+            params.slow_slippage_span = slip_span;
         }
     }
 
@@ -8512,6 +8520,29 @@ impl GodEngineCore {
                                     coin_wr
                                 } else {
                                     self.consejo_deliberacion.params.utility_veto_wr
+                                }
+                            },
+                            // OLA Ω113: Umbrales adaptativos continuos de tolerancia a slippage para SeniorEjecucion
+                            fast_slippage_floor: {
+                                let coin_floor = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "fast_slippage_floor", f64::NAN);
+                                if coin_floor.is_finite() && (0.0..=500.0).contains(&coin_floor) {
+                                    coin_floor
+                                } else {
+                                    self.consejo_deliberacion.params.fast_slippage_floor
+                                }
+                            },
+                            slow_slippage_span: {
+                                let coin_span = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "slow_slippage_span", f64::NAN);
+                                if coin_span.is_finite() && (0.0..=1000.0).contains(&coin_span) {
+                                    coin_span
+                                } else {
+                                    self.consejo_deliberacion.params.slow_slippage_span
                                 }
                             },
                         };

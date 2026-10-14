@@ -180,6 +180,8 @@ fn test_consejo_deliberacion_prospect_theory_integration() {
         prospect_pressure: 0.0,
         utility_veto_floor: 0.02,
         utility_veto_wr: 0.35,
+        fast_slippage_floor: 35.0,
+        slow_slippage_span: 65.0,
     };
 
     let ente = SeniorEnteMercado;

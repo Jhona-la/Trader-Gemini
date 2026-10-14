@@ -34,6 +34,8 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.cascade_severity_breaker, 0.85);
     assert_eq!(core.consejo_deliberacion.params.utility_veto_floor, 0.02);
     assert_eq!(core.consejo_deliberacion.params.utility_veto_wr, 0.35);
+    assert_eq!(core.consejo_deliberacion.params.fast_slippage_floor, 35.0);
+    assert_eq!(core.consejo_deliberacion.params.slow_slippage_span, 65.0);
 
     // 2. Modificación lock-free desde arena.config (ej. Evolución adaptativa o feedback cuántico)
     arena.config.council_approval_threshold.store(0.45, Ordering::Relaxed);
@@ -44,6 +46,8 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     arena.config.council_cascade_severity_breaker.store(0.92, Ordering::Relaxed);
     arena.config.council_utility_veto_floor.store(0.012, Ordering::Relaxed);
     arena.config.council_utility_veto_wr.store(0.30, Ordering::Relaxed);
+    arena.config.council_fast_slippage_floor.store(45.0, Ordering::Relaxed);
+    arena.config.council_slow_slippage_span.store(80.0, Ordering::Relaxed);
 
     // 3. Ejecutar sincronización
     core.sync_council_params_from_arena();
@@ -57,6 +61,8 @@ fn council_params_sincronizan_dinamicamente_desde_arena_config() {
     assert_eq!(core.consejo_deliberacion.params.cascade_severity_breaker, 0.92);
     assert_eq!(core.consejo_deliberacion.params.utility_veto_floor, 0.012);
     assert_eq!(core.consejo_deliberacion.params.utility_veto_wr, 0.30);
+    assert_eq!(core.consejo_deliberacion.params.fast_slippage_floor, 45.0);
+    assert_eq!(core.consejo_deliberacion.params.slow_slippage_span, 80.0);
 }
 
 #[test]

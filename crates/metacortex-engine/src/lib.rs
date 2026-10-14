@@ -25,7 +25,8 @@ pub use consejo_seniors::{
     evaluate_execution_slippage, evaluate_execution_slippage_with_bounds,
     evaluate_volatility_regime, evaluate_volatility_regime_spectral,
     evaluate_volatility_regime_with_bounds, ConsejoDeliberacion, ConsensusResult,
-    MarketSnapshotPayload, SeniorOpinion, SeniorRole,
+    MarketSnapshotPayload, SeniorOpinion, SeniorRole, DEFAULT_FAST_SLIPPAGE_FLOOR,
+    DEFAULT_SLOW_SLIPPAGE_SPAN,
 };
 pub use prospect_theory::ProspectTheoryEngine;
 pub use epigenoma_store::{read_epigenoma_gene, set_epigenoma_gene};

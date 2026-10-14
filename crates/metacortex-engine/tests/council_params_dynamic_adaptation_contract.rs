@@ -97,6 +97,8 @@ fn ola101_consejo_deliberacion_with_params_falla_ante_parametros_corruptos() {
         cascade_severity_breaker: 0.85,
         utility_veto_floor: 0.02,
         utility_veto_wr: 0.35,
+        fast_slippage_floor: 35.0,
+        slow_slippage_span: 65.0,
     };
 
     match ConsejoDeliberacion::with_params(corrupt_params) {

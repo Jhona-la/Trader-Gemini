@@ -46,6 +46,8 @@ fn test_prospect_pressure_live_computation_in_god_engine() {
         prospect_pressure: p_kt,
         utility_veto_floor: 0.02,
         utility_veto_wr: 0.35,
+        fast_slippage_floor: 35.0,
+        slow_slippage_span: 65.0,
     };
 
     assert!(payload.validate().is_ok());
@@ -111,6 +113,8 @@ fn test_feynman_and_prospect_confluence_in_god_engine() {
         prospect_pressure: panic_pressure,
         utility_veto_floor: 0.02,
         utility_veto_wr: 0.35,
+        fast_slippage_floor: 35.0,
+        slow_slippage_span: 65.0,
     };
 
     assert!(payload.validate().is_ok());

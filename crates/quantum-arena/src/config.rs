@@ -191,6 +191,8 @@ pub struct QuantumConfig {
     pub council_cascade_severity_breaker: AtomicF64,
     pub council_utility_veto_floor: AtomicF64,
     pub council_utility_veto_wr: AtomicF64,
+    pub council_fast_slippage_floor: AtomicF64,
+    pub council_slow_slippage_span: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -419,6 +421,8 @@ impl QuantumConfig {
             council_cascade_severity_breaker: AtomicF64::new(0.85),
             council_utility_veto_floor: AtomicF64::new(0.02),
             council_utility_veto_wr: AtomicF64::new(0.35),
+            council_fast_slippage_floor: AtomicF64::new(35.0),
+            council_slow_slippage_span: AtomicF64::new(65.0),
         }
     }
 

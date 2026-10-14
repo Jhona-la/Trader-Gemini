@@ -60,6 +60,16 @@ fn default_utility_veto_wr() -> f64 {
     UTILITY_VETO_WR
 }
 
+#[inline(always)]
+fn default_fast_slippage_floor() -> f64 {
+    DEFAULT_FAST_SLIPPAGE_FLOOR
+}
+
+#[inline(always)]
+fn default_slow_slippage_span() -> f64 {
+    DEFAULT_SLOW_SLIPPAGE_SPAN
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketSnapshotPayload {
     pub horizon: TradingHorizon,
@@ -140,6 +150,12 @@ pub struct MarketSnapshotPayload {
     /// Permite asimetría matemática continua ante predictibilidad fractal (Hurst).
     #[serde(default = "default_utility_veto_wr")]
     pub utility_veto_wr: f64,
+    /// OLA Ω113: Piso canónico de tolerancia a slippage de ejecución en fast scalping (bps, default: 35.0).
+    #[serde(default = "default_fast_slippage_floor")]
+    pub fast_slippage_floor: f64,
+    /// OLA Ω113: Rango espectral adicional de tolerancia a slippage para horizontes lentos (bps, default: 65.0).
+    #[serde(default = "default_slow_slippage_span")]
+    pub slow_slippage_span: f64,
 }
 
 impl Default for MarketSnapshotPayload {
@@ -174,6 +190,8 @@ impl Default for MarketSnapshotPayload {
             prospect_pressure: 0.0,
             utility_veto_floor: UTILITY_VETO_FLOOR,
             utility_veto_wr: UTILITY_VETO_WR,
+            fast_slippage_floor: DEFAULT_FAST_SLIPPAGE_FLOOR,
+            slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
         }
     }
 }
@@ -222,6 +240,8 @@ impl MarketSnapshotPayload {
             ("prospect_pressure", self.prospect_pressure),
             ("utility_veto_floor", self.utility_veto_floor),
             ("utility_veto_wr", self.utility_veto_wr),
+            ("fast_slippage_floor", self.fast_slippage_floor),
+            ("slow_slippage_span", self.slow_slippage_span),
         ];
 
         for (name, val) in metrics {
@@ -269,6 +289,8 @@ impl MarketSnapshotPayload {
             ("prospect_pressure", self.prospect_pressure, -50.0, 50.0),
             ("utility_veto_floor", self.utility_veto_floor, 0.0, 0.50),
             ("utility_veto_wr", self.utility_veto_wr, 0.0, 1.0),
+            ("fast_slippage_floor", self.fast_slippage_floor, 0.0, 500.0),
+            ("slow_slippage_span", self.slow_slippage_span, 0.0, 1000.0),
         ] {
             if !(low..=high).contains(&value) {
                 return Err(format!("Out-of-bounds {name}: {value}"));
@@ -859,7 +881,17 @@ pub fn evaluate_execution_slippage_with_bounds(
     } else {
         0.0
     };
-    let base_slippage = fast_slippage_floor + slow_slippage_span * s;
+    let floor = if fast_slippage_floor.is_finite() && fast_slippage_floor >= 0.0 {
+        fast_slippage_floor
+    } else {
+        DEFAULT_FAST_SLIPPAGE_FLOOR
+    };
+    let span = if slow_slippage_span.is_finite() && slow_slippage_span >= 0.0 {
+        slow_slippage_span
+    } else {
+        DEFAULT_SLOW_SLIPPAGE_SPAN
+    };
+    let base_slippage = floor + span * s;
     let atr_mult = if atr_pct.is_finite() && atr_pct > 0.0 {
         let atr_bps = atr_pct * 10_000.0;
         (atr_bps / 10.0).sqrt().clamp(0.70, 2.0)
@@ -878,15 +910,13 @@ pub fn evaluate_execution_slippage(
     spectral_s: f64,
     atr_pct: f64,
 ) -> (f64, f64, bool) {
-    const FAST_SLIPPAGE_FLOOR: f64 = 35.0;
-    const SLOW_SLIPPAGE_SPAN: f64 = 65.0;
     evaluate_execution_slippage_with_bounds(
         estimated_slippage_bps,
         navier_laminar_share,
         spectral_s,
         atr_pct,
-        FAST_SLIPPAGE_FLOOR,
-        SLOW_SLIPPAGE_SPAN,
+        DEFAULT_FAST_SLIPPAGE_FLOOR,
+        DEFAULT_SLOW_SLIPPAGE_SPAN,
     )
 }
 
@@ -899,11 +929,23 @@ impl SeniorAgent for SeniorEjecucion {
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
         let slippage_bps = payload.estimated_slippage_bps.max(0.0);
         let s = payload.spectral_s();
-        let (effective_slippage_bps, max_slippage, is_veto) = evaluate_execution_slippage(
+        let floor = if payload.fast_slippage_floor.is_finite() && payload.fast_slippage_floor > 0.0 {
+            payload.fast_slippage_floor
+        } else {
+            DEFAULT_FAST_SLIPPAGE_FLOOR
+        };
+        let span = if payload.slow_slippage_span.is_finite() && payload.slow_slippage_span >= 0.0 {
+            payload.slow_slippage_span
+        } else {
+            DEFAULT_SLOW_SLIPPAGE_SPAN
+        };
+        let (effective_slippage_bps, max_slippage, is_veto) = evaluate_execution_slippage_with_bounds(
             slippage_bps,
             payload.navier_laminar_share,
             s,
             payload.atr_pct,
+            floor,
+            span,
         );
         SeniorOpinion {
             role: self.role(),
@@ -1180,6 +1222,10 @@ pub struct CouncilParams {
     pub utility_veto_floor: f64,       // 0.02
     /// OLA Ω111: Umbral base de win rate para SeniorTeleonomia (base canónica: 0.35).
     pub utility_veto_wr: f64,          // 0.35
+    /// OLA Ω113: Piso base de tolerancia a slippage para SeniorEjecucion (base canónica: 35.0 bps).
+    pub fast_slippage_floor: f64,      // 35.0
+    /// OLA Ω113: Span base de tolerancia a slippage para SeniorEjecucion (base canónica: 65.0 bps).
+    pub slow_slippage_span: f64,       // 65.0
 }
 
 impl CouncilParams {
@@ -1200,6 +1246,8 @@ impl CouncilParams {
             cascade_severity_breaker,
             utility_veto_floor: UTILITY_VETO_FLOOR,
             utility_veto_wr: UTILITY_VETO_WR,
+            fast_slippage_floor: DEFAULT_FAST_SLIPPAGE_FLOOR,
+            slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
         };
         params.validate()?;
         Ok(params)
@@ -1209,6 +1257,14 @@ impl CouncilParams {
     pub fn with_utility_thresholds(mut self, floor: f64, wr: f64) -> Result<Self, String> {
         self.utility_veto_floor = floor;
         self.utility_veto_wr = wr;
+        self.validate()?;
+        Ok(self)
+    }
+
+    /// OLA Ω113: Builder para configurar umbrales adaptativos de slippage de ejecución.
+    pub fn with_slippage_bounds(mut self, floor: f64, span: f64) -> Result<Self, String> {
+        self.fast_slippage_floor = floor;
+        self.slow_slippage_span = span;
         self.validate()?;
         Ok(self)
     }
@@ -1229,6 +1285,12 @@ impl CouncilParams {
         if !(0.0..=0.50).contains(&self.utility_veto_floor) {
             return Err(format!("Invalid council parameter utility_veto_floor: {}", self.utility_veto_floor));
         }
+        if !(0.0..=500.0).contains(&self.fast_slippage_floor) {
+            return Err(format!("Invalid council parameter fast_slippage_floor: {}", self.fast_slippage_floor));
+        }
+        if !(0.0..=1000.0).contains(&self.slow_slippage_span) {
+            return Err(format!("Invalid council parameter slow_slippage_span: {}", self.slow_slippage_span));
+        }
         if !self.shrinkage_k.is_finite() || self.shrinkage_k <= 0.0 {
             return Err("shrinkage_k must be finite and positive".into());
         }
@@ -1247,6 +1309,8 @@ impl Default for CouncilParams {
             cascade_severity_breaker: 0.85,
             utility_veto_floor: UTILITY_VETO_FLOOR,
             utility_veto_wr: UTILITY_VETO_WR,
+            fast_slippage_floor: DEFAULT_FAST_SLIPPAGE_FLOOR,
+            slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
         }
     }
 }
@@ -1272,6 +1336,10 @@ pub const UTILITY_VETO_FLOOR: f64 = 0.02;
 /// estructural y no racha: mismo umbral de aprobación del consejo — bajo
 /// wr 0.35 el sistema no tiene minoría sustancial que sostenga la entrada.
 pub const UTILITY_VETO_WR: f64 = 0.35;
+/// Piso canónico de tolerancia a slippage de ejecución en fast scalping (35 bps).
+pub const DEFAULT_FAST_SLIPPAGE_FLOOR: f64 = 35.0;
+/// Rango espectral canónico adicional de tolerancia a slippage para horizontes lentos (65 bps).
+pub const DEFAULT_SLOW_SLIPPAGE_SPAN: f64 = 65.0;
 
 /// CERT-M7-H02 — MÁSCARA DE ASIENTOS MODULADORES (D-345 rubber-stamp).
 /// Volatilidad(2), Riesgo(4) y EnteMercado(10) HEREDAN `intended_direction`
@@ -1389,17 +1457,30 @@ impl ConsejoDeliberacion {
         // N-12: Si no se proporcionan multiplicadores externos, usar pesos adaptativos empíricos del tracker
         let active_mults = weight_multipliers.or(dynamic_weights.as_ref());
 
-        // OLA Ω111: Si CouncilParams define umbrales de utilidad/wr dinámicos distintos de los canónicos
+        // OLA Ω111 / Ω113: Si CouncilParams define umbrales de utilidad/wr o slippage dinámicos distintos de los canónicos
         // y el payload porta los defaults, propagar los parámetros del consejo al payload evaluado.
-        let effective_payload = if (self.params.utility_veto_floor - UTILITY_VETO_FLOOR).abs() > 1e-9
-            || (self.params.utility_veto_wr - UTILITY_VETO_WR).abs() > 1e-9
-        {
+        let has_custom_utility = (self.params.utility_veto_floor - UTILITY_VETO_FLOOR).abs() > 1e-9
+            || (self.params.utility_veto_wr - UTILITY_VETO_WR).abs() > 1e-9;
+        let has_custom_slippage = (self.params.fast_slippage_floor - DEFAULT_FAST_SLIPPAGE_FLOOR).abs() > 1e-9
+            || (self.params.slow_slippage_span - DEFAULT_SLOW_SLIPPAGE_SPAN).abs() > 1e-9;
+
+        let effective_payload = if has_custom_utility || has_custom_slippage {
             let mut p = payload.clone();
-            if (p.utility_veto_floor - UTILITY_VETO_FLOOR).abs() < 1e-9 {
-                p.utility_veto_floor = self.params.utility_veto_floor;
+            if has_custom_utility {
+                if (p.utility_veto_floor - UTILITY_VETO_FLOOR).abs() < 1e-9 {
+                    p.utility_veto_floor = self.params.utility_veto_floor;
+                }
+                if (p.utility_veto_wr - UTILITY_VETO_WR).abs() < 1e-9 {
+                    p.utility_veto_wr = self.params.utility_veto_wr;
+                }
             }
-            if (p.utility_veto_wr - UTILITY_VETO_WR).abs() < 1e-9 {
-                p.utility_veto_wr = self.params.utility_veto_wr;
+            if has_custom_slippage {
+                if (p.fast_slippage_floor - DEFAULT_FAST_SLIPPAGE_FLOOR).abs() < 1e-9 {
+                    p.fast_slippage_floor = self.params.fast_slippage_floor;
+                }
+                if (p.slow_slippage_span - DEFAULT_SLOW_SLIPPAGE_SPAN).abs() < 1e-9 {
+                    p.slow_slippage_span = self.params.slow_slippage_span;
+                }
             }
             std::borrow::Cow::Owned(p)
         } else {
@@ -1864,6 +1945,8 @@ mod tests {
             prospect_pressure: 0.0,
             utility_veto_floor: UTILITY_VETO_FLOOR,
             utility_veto_wr: UTILITY_VETO_WR,
+            fast_slippage_floor: DEFAULT_FAST_SLIPPAGE_FLOOR,
+            slow_slippage_span: DEFAULT_SLOW_SLIPPAGE_SPAN,
         }
     }
 
