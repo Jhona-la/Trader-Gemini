@@ -166,14 +166,13 @@ impl LeadLagAlphaEngine {
         ((cov / denom).clamp(-1.0, 1.0), n)
     }
 
-    /// Lag óptimo (ms) de un líder contra el alt: el de ρ máxima en
-    /// magnitud. H2-12 (RONDA 3): la doc decía "exigido POSITIVO" pero el
-    /// código compara `rho.abs()` — un rho NEGATIVO pasa el gate y su
-    /// signo voltea la firma de la divergencia aguas abajo
-    /// (`predict_eth_impulse_con_reloj`: div ∝ rho). ¿Vetar rho<0 (el
-    /// anti-líder no lidera, engaña) es cambio de conducta que exige
-    /// oráculo — DECISIÓN ABIERTA para el consejo, ver BARRIDO H2-12.
-    /// Mientras tanto esta doc describe el comportamiento REAL.
+    /// Lag óptimo (ms) de un líder contra el alt: el de ρ máxima.
+    /// H2-12-conducta (GLM 113): ρ POSITIVO exigido — un ρ negativo a
+    /// lag positivo es un ANTI-líder (se mueve en contra): el código
+    /// viejo lo admitía por `rho.abs()` y su signo VOLTEABA la firma de
+    /// la divergencia aguas abajo (div ∝ rho), fabricando una señal
+    /// invertida "confiable". El anti-líder no lidera: abstención
+    /// (lag 0 ⇒ div 0). El umbral adaptativo t-Student se conserva.
     /// 0 si no hay evidencia.
     fn lag_optimo(
         &self,
@@ -185,7 +184,7 @@ impl LeadLagAlphaEngine {
         for &lag in LAGS_MS.iter() {
             let (rho, n) = Self::rho_con_lag(leader, alt, lag, ahora_ms);
             let rho_umbral = rho_critico_adaptativo(n);
-            if rho.abs() >= rho_umbral && rho.abs() > mejor.1.abs() {
+            if rho >= rho_umbral && rho > mejor.1 {
                 mejor = (lag, rho);
             }
         }
@@ -202,6 +201,21 @@ impl LeadLagAlphaEngine {
             }
         };
         aporte(&self.btc_buf) * 0.60 + aporte(&self.eth_buf) * 0.40
+    }
+
+    /// H2-12-conducta (GLM 113): momentum de BTC SIN mezcla — el líder
+    /// macro de la ruta ETH. El compuesto 60/40 dejaba el exceso de esa
+    /// ruta en 0.6·(B−E): divergencia atenuada al 60% y con el propio
+    /// ETH como 40% de su "líder" — contradiciendo la doctrina de la
+    /// función ("EXCLUSIVAMENTE contra BTC", Ω11) y descuadrando la
+    /// ganancia 0.8 del tanh (calibrada para el exceso pleno). El
+    /// compuesto SE CONSERVA para la ruta genérica de altcoins y el
+    /// feature BTC (diseño dual-líder documentado).
+    fn momentum_btc_puro(&self, ahora_ms: f64) -> f64 {
+        match self.btc_buf.back() {
+            Some(&(ts, ofi)) if ahora_ms - ts <= MAX_EDAD_MS => ofi,
+            _ => 0.0,
+        }
     }
 
     /// Señal de propagación para el altcoin `coin_id` al tiempo `ts_ms`.
@@ -257,7 +271,10 @@ impl LeadLagAlphaEngine {
             return (0.0, 0.0);
         }
         self.push_alt(coin_id, eth_ofi, ts_ms);
-        let leader_momentum = self.momentum_lider(ts_ms);
+        // H2-12-conducta (GLM 113): líder BTC PURO — sin el 40% de
+        // auto-referencia ETH del compuesto. La divergencia vive a
+        // escala plena: tanh(0.8·(B−E))·rho_btc.
+        let leader_momentum = self.momentum_btc_puro(ts_ms);
         let alt = match self.alt_bufs.get(&coin_id) {
             Some(b) => b,
             None => return (leader_momentum, 0.0),
@@ -414,7 +431,65 @@ mod tests {
         assert_eq!(e.ultimo_lag_eth_ms, 0.0, "ETH no debe generar lag de sí mismo");
         assert_eq!(e.ultimo_lag_btc_ms, 0.0, "Sin BTC no hay lag de BTC");
         assert_eq!(div, 0.0, "Sin liderazgo de BTC la divergencia debe ser 0.0");
-        assert!(mom.abs() > 0.0, "Momentum de líder existe por ponderación");
+        // H2-12 (GLM 113): con líder BTC PURO, sin BTC tampoco hay
+        // MOMENTUM de líder en la ruta ETH — el viejo `mom > 0` vivía de
+        // la ponderación ETH (exactamente la auto-referencia erradicada:
+        // el propio sujeto de la señal haciéndose pasar por su líder).
+        assert_eq!(mom, 0.0, "sin BTC no hay momentum de líder para la ruta ETH");
+    }
+
+    /// H2-12-conducta (GLM 113): la divergencia de la ruta ETH vive a
+    /// ESCALA PLENA — sin el atenuador 0.6 del compuesto. BTC adelanta
+    /// al ETH 1 s (patrón qo_658); con BTC vivo y ETH en 0, la firma
+    /// supera la cota del viejo 0.6·(B−E).
+    #[test]
+    fn h2_12_ruta_eth_divergencia_a_escala_plena_sin_autoreferencia() {
+        let mut e = LeadLagAlphaEngine::new(200);
+        let t0 = 5_000_000.0;
+        for i in 0..40 {
+            let t = t0 + i as f64 * 250.0;
+            let impulso = ((i as f64) * 0.05).sin() * 1.2;
+            e.update_leader(true, impulso, t); // BTC (el líder macro)
+            e.predict_eth_impulse_con_reloj(2, impulso * 0.8, t + 1_000.0); // ETH rezaga 1 s
+        }
+        // BTC con impulso vivo positivo; ETH en 0: exceso = B (pleno).
+        let (_, div) = e.predict_eth_impulse_con_reloj(2, 0.0, t0 + 41.0 * 250.0);
+        assert!(e.ultimo_lag_btc_ms > 0.0, "lag líder→ETH acreditado");
+        assert!(div > 0.0, "BTC arriba de ETH: firma larga: {div}");
+        // Cota del viejo régimen atenuado: exceso 0.6·B con B ≤ 1.2 ⇒
+        // tanh(0.8·0.6·1.2)·rho ≤ tanh(0.576) ≈ 0.520. Escala plena la
+        // supera cuando B > 0.5 aprox (impulso sin() vivo).
+        assert!(
+            div > (0.8_f64 * 0.6 * 1.2).tanh() * 0.5,
+            "escala plena supera al atenuado 0.6: {div}"
+        );
+    }
+
+    /// H2-12-conducta (GLM 113): el ANTI-líder (ρ negativo a lag
+    /// positivo — el líder se mueve EN CONTRA del alt rezagado) NO
+    /// firma. El código viejo lo admitía por |rho| y su signo voltaba
+    /// la divergencia: señal invertida fabricada. Ahora: abstención.
+    #[test]
+    fn h2_12_rho_negativo_anti_lider_no_firma() {
+        let mut e = LeadLagAlphaEngine::new(200);
+        let t0 = 6_000_000.0;
+        // Pulso ÚNICO (no periódico — la sinusoide correlaciona espuriamente
+        // a otros lags de la rejilla): alt(t+1000) = −btc(t) ⇒ anti-correlación
+        // ~perfecta a lag 1 s (el viejo |rho|≈1 la habría firmado al MÁXIMO,
+        // invertida); a los demás lags no hay covarianza.
+        for i in 0..40 {
+            let t = t0 + i as f64 * 250.0;
+            let pulso = if (8..16).contains(&i) { 1.0 } else { 0.0 };
+            e.update_leader(true, pulso, t);
+            e.predict_altcoin_impulse_con_reloj(4, -pulso, t + 1_000.0);
+        }
+        let (mom, div) = e.predict_altcoin_impulse_con_reloj(4, 0.0, t0 + 41.0 * 250.0);
+        assert_eq!(
+            e.ultimo_lag_btc_ms, 0.0,
+            "anti-líder: ningún lag positivo acredita liderazgo"
+        );
+        assert_eq!(div, 0.0, "el anti-líder no firma: {div}");
+        assert!(mom.is_finite(), "momentum finito (el líder sigue existiendo como feature)");
     }
 
     #[test]
