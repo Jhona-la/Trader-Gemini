@@ -10826,3 +10826,26 @@ Main remoto confirmado en 88f8812199eea80333d0c13d910ec9f7c1796900 mediante push
 ## R4 — referencias cerradas y sincronización — 2026-10-13
 
 Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales a T1. Root cerró sus refs espectrales e históricas; SI cerró platt-age-evidence-1013 local/remota. Worktrees, modelos, genomas y 229 recibos históricos conservados. Remoto observado: sólo main. CI de f59 pendiente; ninguna aprobación heredada. [Cierre efectivo y recibos](docs/audit/CIERRE_R4_REFERENCIAS_2026-10-13.md). Esta última actualización documental se publica por rama temporal propia y su SHA/cierre se verifican externamente.
+
+## 2026-10-09 — GLM: 113 — H2-12-CONDUCTA drenada: ruta ETH sin sesgos heurísticos (oráculo en vuelo)
+
+Dos sesgos heurísticos erradicados del lead-lag VIVO (consumidor
+lib.rs:3611-3619):
+1. **0.6/0.4 hardcodeado**: el leader_momentum de la ruta ETH era el
+   compuesto — exceso 0.6·(B−E): divergencia atenuada al 60% con el
+   propio ETH como 40% de su "líder". La doctrina de la función
+   ("EXCLUSIVAMENTE contra BTC", Ω11) y la ganancia 0.8 del tanh
+   (calibrada para exceso pleno) mandan: líder BTC PURO, escala plena.
+   El compuesto SE CONSERVA para altcoins genéricos + feature BTC
+   (diseño dual-líder documentado) — ítem futuro del consejo si quiere
+   revisarlo.
+2. **rho negativo pasaba por |rho|**: el anti-líder (se mueve EN
+   CONTRA a lag positivo) firmaba la divergencia INVERTIDA al máximo.
+   Ahora rho ≥ umbral positivo: abstención honesta.
+
+Tests: escala plena supera la cota del atenuado; pulso único
+anti-correlacionado → sin firma (fixture de pulso, no sinusoide — la
+periódica correlaciona espuriamente en otros lags de la rejilla);
+omega11 actualizado (sin BTC, momentum ruta ETH = 0 — la
+auto-referencia erradicada). feature 93/93, core 203/203.
+MENÚ 104 queda: H0-4, H0-5, PositionManager.
