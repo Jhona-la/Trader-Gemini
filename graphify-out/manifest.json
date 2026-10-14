@@ -1260,9 +1260,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/lib.rs": {
-    "mtime": 1791928236.1330833,
-    "seen": 1791930768.2311037,
-    "ast_hash": "89218681d93a9a76f9fc0ac831a10f7f",
+    "mtime": 1791943440.212417,
+    "seen": 1791944034.714872,
+    "ast_hash": "fca7e41b24d9692035d85c264f4c56f7",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/orchestrator.rs": {
@@ -3672,9 +3672,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791939974.746824,
-    "seen": 1791940359.6801772,
-    "ast_hash": "36ac423cf1d7de2cb93115bc27c97de9",
+    "mtime": 1791943506.1165018,
+    "seen": 1791944034.821253,
+    "ast_hash": "28cbffa5a7f5039b89633efc1d59d10f",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3702,9 +3702,9 @@
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1791939974.7521298,
-    "seen": 1791940360.0319936,
-    "ast_hash": "a6db5830ec269507497c8e22d9fb689e",
+    "mtime": 1791943484.3148303,
+    "seen": 1791944035.1215973,
+    "ast_hash": "3c49f8b97a692989ac04db1c41e7fa8f",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -28866,9 +28866,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/tests/veto_logic_contracts.rs": {
-    "mtime": 1791923190.3811874,
-    "seen": 1791930768.2451892,
-    "ast_hash": "84a2895bb445af3eaba57366396b83b4",
+    "mtime": 1791943440.2157876,
+    "seen": 1791944034.7267861,
+    "ast_hash": "a63d464ceabb5e10e450a87813b0584b",
     "semantic_hash": ""
   },
   ".r7r6/crates/risk-engine/tests/spectral_regime_contract.rs": {
@@ -30162,9 +30162,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md": {
-    "mtime": 1791939974.7713232,
-    "seen": 1791940360.0653768,
-    "ast_hash": "2d4a53176aa733e0f86006cb18292c29",
+    "mtime": 1791943549.7909636,
+    "seen": 1791944035.1542516,
+    "ast_hash": "ec3d8eaf267b78ea8a3c0b27c6257ea2",
     "semantic_hash": ""
   },
   "docs/adr/ADR-0017-frenos-de-drawdown-y-estado-aprendido.md": {
