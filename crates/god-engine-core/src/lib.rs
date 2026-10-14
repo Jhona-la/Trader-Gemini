@@ -678,14 +678,43 @@ pub fn confluencia_resonante(
     coherencia_corta: f64,
     marea_macro: f64,
 ) -> Option<(bool, f64)> {
-    let continuacion = hurst_tau_star >= HURST_CONTINUACION;
+    confluencia_resonante_con_umbrales(
+        fused,
+        hurst_tau_star,
+        coherencia_larga,
+        coherencia_corta,
+        marea_macro,
+        FUSED_UMBAL_PLENO,
+        FUSED_UMBAL_MODERADO,
+        HURST_CONTINUACION,
+        COHERENCIA_MINIMA,
+        MAREA_MACRO_TOLERANCIA,
+    )
+}
+
+/// Variante desacoplada y parametrizable de confluencia resonante (Ola Ω101).
+/// Permite calibración continua, adaptativa y evolutiva preservando bit a bit el contrato canónico h2_11.
+#[inline]
+pub fn confluencia_resonante_con_umbrales(
+    fused: f64,
+    hurst_tau_star: f64,
+    coherencia_larga: f64,
+    coherencia_corta: f64,
+    marea_macro: f64,
+    fused_umbral_pleno: f64,
+    fused_umbral_moderado: f64,
+    hurst_continuacion: f64,
+    coherencia_minima: f64,
+    marea_macro_tolerancia: f64,
+) -> Option<(bool, f64)> {
+    let continuacion = hurst_tau_star >= hurst_continuacion;
     let bono = (hurst_tau_star - 0.50).max(0.0) * 0.50;
-    let largo = (fused > FUSED_UMBAL_PLENO || (fused > FUSED_UMBAL_MODERADO && continuacion))
-        && coherencia_larga > COHERENCIA_MINIMA
-        && marea_macro >= -MAREA_MACRO_TOLERANCIA;
-    let corto = (fused < -FUSED_UMBAL_PLENO || (fused < -FUSED_UMBAL_MODERADO && continuacion))
-        && coherencia_corta > COHERENCIA_MINIMA
-        && marea_macro <= MAREA_MACRO_TOLERANCIA;
+    let largo = (fused > fused_umbral_pleno || (fused > fused_umbral_moderado && continuacion))
+        && coherencia_larga > coherencia_minima
+        && marea_macro >= -marea_macro_tolerancia;
+    let corto = (fused < -fused_umbral_pleno || (fused < -fused_umbral_moderado && continuacion))
+        && coherencia_corta > coherencia_minima
+        && marea_macro <= marea_macro_tolerancia;
     if largo {
         let conf_base = (0.50 + coherencia_larga * 0.35 + bono).clamp(0.50, 0.95);
         Some((true, conf_base))
@@ -1313,7 +1342,7 @@ impl GodEngineCore {
         let online_learner =
             metacortex_engine::online_learning::OnlineLearningModule::new(0.001, 0.9);
 
-        Self {
+        let mut core = Self {
             arena,
             outcome_context,
             lundberg_siniestros: (0..n_coins)
@@ -1436,7 +1465,9 @@ impl GodEngineCore {
             cuantiles: (0..n_coins)
                 .map(|_| quantum_arena::adaptive_quantiles::AdaptiveQuantileEngine::new())
                 .collect(),
-        }
+        };
+        core.sync_council_params_from_arena();
+        core
     }
 
     pub fn get_features(&self, coin_id: usize) -> [f32; 12] {

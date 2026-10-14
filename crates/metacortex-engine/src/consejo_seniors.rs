@@ -1001,6 +1001,26 @@ pub struct CouncilParams {
 }
 
 impl CouncilParams {
+    pub fn new(
+        approval_threshold: f64,
+        supermajority_override: f64,
+        override_signal_floor: f64,
+        override_penalty: f64,
+        shrinkage_k: f64,
+        cascade_severity_breaker: f64,
+    ) -> Result<Self, String> {
+        let params = Self {
+            approval_threshold,
+            supermajority_override,
+            override_signal_floor,
+            override_penalty,
+            shrinkage_k,
+            cascade_severity_breaker,
+        };
+        params.validate()?;
+        Ok(params)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         for (name, value) in [
             ("approval_threshold", self.approval_threshold),
@@ -1105,6 +1125,14 @@ impl Default for ConsejoDeliberacion {
 impl ConsejoDeliberacion {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Construye un ConsejoDeliberacion con parámetros validados de deliberación dinámica (Ola Ω101).
+    pub fn with_params(params: CouncilParams) -> Result<Self, String> {
+        params.validate()?;
+        let mut consejo = Self::default();
+        consejo.params = params;
+        Ok(consejo)
     }
 
     /// Deliberates on market snapshot with optional adaptive weight multipliers

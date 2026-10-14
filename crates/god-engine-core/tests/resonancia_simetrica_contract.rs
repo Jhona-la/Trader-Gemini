@@ -88,3 +88,79 @@ fn cl31_en_la_zona_moderada_decide_la_continuacion() {
     assert!(matches!(largo, Some((true, _))), "{largo:?}");
     assert!(matches!(corto, Some((false, _))), "{corto:?}");
 }
+
+#[test]
+fn ola101_confluencia_resonante_con_umbrales_paridad_y_dinamismo() {
+    use god_engine_core::{
+        confluencia_resonante_con_umbrales, COHERENCIA_MINIMA, FUSED_UMBAL_MODERADO,
+        FUSED_UMBAL_PLENO, HURST_CONTINUACION, MAREA_MACRO_TOLERANCIA,
+    };
+
+    // 1. Paridad bit a bit con los umbrales canónicos para múltiples casos
+    let casos: &[(f64, f64, f64, f64, f64)] = &[
+        (0.40, 0.50, 0.20, 0.20, 0.0),
+        (-0.40, 0.50, 0.20, 0.20, 0.0),
+        (0.30, 0.60, 0.20, 0.20, 0.0),
+        (-0.30, 0.60, 0.20, 0.20, 0.0),
+        (0.30, 0.50, 0.20, 0.20, 0.0),
+        (0.40, 0.50, 0.10, 0.20, 0.0),
+        (0.40, 0.50, 0.20, 0.20, -0.0003),
+    ];
+    for &(fused, h, coh_l, coh_s, marea) in casos {
+        let canonical = confluencia_resonante(fused, h, coh_l, coh_s, marea);
+        let parametrized = confluencia_resonante_con_umbrales(
+            fused,
+            h,
+            coh_l,
+            coh_s,
+            marea,
+            FUSED_UMBAL_PLENO,
+            FUSED_UMBAL_MODERADO,
+            HURST_CONTINUACION,
+            COHERENCIA_MINIMA,
+            MAREA_MACRO_TOLERANCIA,
+        );
+        assert_eq!(
+            canonical, parametrized,
+            "Paridad divergente para input ({fused}, {h}, {coh_l}, {coh_s}, {marea})"
+        );
+    }
+
+    // 2. Adaptabilidad dinámica: umbral pleno más estricto (0.50) veta señal que con 0.38 pasaría
+    let res_canon = confluencia_resonante(0.40, 0.50, 0.20, 0.20, 0.0);
+    assert!(res_canon.is_some(), "Con 0.38 canonical debe pasar");
+    let res_estricto = confluencia_resonante_con_umbrales(
+        0.40,
+        0.50,
+        0.20,
+        0.20,
+        0.0,
+        0.50, // Pleno más exigente
+        FUSED_UMBAL_MODERADO,
+        HURST_CONTINUACION,
+        COHERENCIA_MINIMA,
+        MAREA_MACRO_TOLERANCIA,
+    );
+    assert_eq!(
+        res_estricto, None,
+        "Con umbral pleno 0.50, score 0.40 sin persistencia debe vetar"
+    );
+
+    // 3. Adaptabilidad dinámica: umbral pleno más permisivo (0.20) admite señal débil sin persistencia
+    let res_permisivo = confluencia_resonante_con_umbrales(
+        0.25,
+        0.50,
+        0.20,
+        0.20,
+        0.0,
+        0.20, // Pleno permisivo
+        0.15,
+        HURST_CONTINUACION,
+        COHERENCIA_MINIMA,
+        MAREA_MACRO_TOLERANCIA,
+    );
+    assert!(
+        matches!(res_permisivo, Some((true, _))),
+        "Con umbral pleno 0.20, score 0.25 debe aprobar"
+    );
+}
