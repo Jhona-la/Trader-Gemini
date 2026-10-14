@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω109 — Relajación Homeostática Continua Ornstein-Uhlenbeck para Sesgo Epigenético Multivariante
+
+- **Ola Integrada y Certificada en `main` (`542596f6`)**:
+  * **Diagnóstico y Causa Raíz**: En `crates/quantum-arena/src/state.rs`, mientras que `epigenetic_threshold_modifier` disponía de relajación temporal hacia 1.0 (`epigenetic_threshold_at`, $\tau=900\text{ s}$), el `epigenetic_bias` (multiplicador de confianza en `[0.50, 2.00]`) carecía de función de decaimiento continuo en el tiempo. Si una moneda sufría pérdidas consecutivas días o semanas atrás, su sesgo quedaba petrificado en 0.50 indefinidamente incluso si el régimen de mercado se normalizaba plenamente y los retornos eran altamente favorables. Además, `apply_spectral_epigenetic_feedback_with_time` sumaba el nuevo `pnl_shift` directamente al sesgo estático almacenado sin avanzar previamente la memoria al timestamp causal del evento de cierre, resucitando memoria histórica desfasada.
+  * **Solución Matemática y Física (Ecuación de Langevin / Ornstein-Uhlenbeck)**:
+    1. Se implementó la relajación homeostática hacia el punto de equilibrio canónico $x_\infty = 1.0$:
+       $$x(t) = 1.0 + (x_{\text{stored}} - 1.0) e^{-\Delta t / \tau_{\text{bias}}}, \quad \tau_{\text{bias}} = 1\,800\,000\text{ ms (30 minutos)}$$
+       mediante la función pura `CoinArena::epigenetic_bias_at(stored, last_close, now_ms)` y el método `CoinArena::get_active_epigenetic_bias(&self, now_ms)`.
+    2. En `apply_spectral_epigenetic_feedback_with_time`:
+       - Se avanza `stored_bias` al timestamp causal del cierre `close_ts` mediante `epigenetic_bias_at` antes de aplicar `pnl_shift`, erradicando discontinuidades no-ergódicas en el aprendizaje continuo.
+    3. En `RiskEngine::evaluate_quantum_order` (`crates/risk-engine/src/lib.rs:586`):
+       - Se evalúa `epi_bias` de forma adaptativa y continua al reloj causal del último tick (`now_ts = last_tick_timestamp_ms`) llamando a `arena.coins[coin_id].get_active_epigenetic_bias(now_ts)`, en perfecta armonía con el modificador de umbral `get_active_epigenetic_threshold(now_ts)`.
+  * **Certificación Contractual**:
+    - Creado y verificado el contrato `crates/quantum-arena/tests/epigenetic_ornstein_uhlenbeck_contract.rs` (4/4 tests pasando: decaimiento temporal monotónico hacia 1.0, recuperación homeostática tras penalización, paridad en $\Delta t = 0$ y avance causal previo a la actualización).
+    - Verificada la preservación y restauración armónica del estado aprendido en `crates/god-engine-core/tests/cf4_estado_aprendido.rs` (5/5 tests pasando, incluyendo `cl108e_se_restaura_la_epigenetica_y_lundberg`).
+    - Suite de `quantum-arena` (100% verde) y `risk-engine` (100% verde).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω108 — Inyección Dinámica de Prior Bayesiano y Empirical Bayes Pooling en Contracción Jerárquica de Win Rate
 
 - **Ola Integrada y Certificada en `main` (`5800f130`)**:

@@ -1,16 +1,16 @@
 # Graph Report - Trader Gemini  (2026-10-14)
 
 ## Corpus Check
-- 4961 files · ~12,357,659 words
+- 4962 files · ~12,358,455 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 85562 nodes · 129919 edges · 5314 communities (4413 shown, 427 thin omitted)
+- 85570 nodes · 129928 edges · 5348 communities (4447 shown, 426 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 2054 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `5800f130`
+- Built from commit: `542596f6`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -320,7 +320,7 @@
 - 👨‍🏫 EXPLICACIÓN MÉTODO PROFESOR: El Poder del Enjambre
 - 🔬 AUDITORÍA FORENSE: NANO-LATENCY & METAL-CORE (Abril 2026)
 - ESPECTRO TEMPORAL CONTINUO (F8) — diseño y migración
-- PLAN MAESTRO — Sincronización del consejo hacia la meta
+- opposed_scales
 - 🔬 QUINTO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA
 - 📚 DOCUMENTACIÓN TÉCNICA MAESTRA EN MODO PROFESOR
 - Auditoría Forense y Corrección Sistémica: Motor Evolutivo y Realidad (Modo Profesor)
@@ -543,7 +543,7 @@
 - crates/risk-engine/src/ruin.rs
 - Plan de la Línea H (Claude, prefijo LH-n) — la cadena de la meta bajo una ventaja conocida
 - Auditoría de fundamentos científicos y diseño del motor espectral multivariante
-- 13. Actualización posterior: integración documental y reservas de vigencia
+- TemporalObjectStore
 - Adenda científica XXIX — procedencia económica, continuidad temporal y vetos defensivos
 - ADENDA FORENSE XXXIV — CAUSALIDAD, EJECUCIÓN Y EVOLUCIÓN IDENTIFICABLE — 2026-09-25
 - Ampliación XXXVI — auditoría causal de vetos, rechazos y certificación interna (2026-09-25)
@@ -886,7 +886,7 @@
 - Option
 - .sol-plan-2026-10-07/crates/god-engine-core/src/bootloader.rs
 - .sol-plan-2026-10-07/crates/god-engine-core/src/darwin.rs
-- .pesos_espectrales
+- .sol-plan-2026-10-07/crates/quantum-arena/src/temporal_spectrum.rs
 - .sol-plan-2026-10-07/crates/telemetry-server/src/lib.rs
 - Auditoría OA — causalidad del aprendizaje y contrato numérico del ensamble
 - 🏛️ TRADER GEMINI: ENCICLOPEDIA OMNIBÚS DE ESTRATEGIAS (V7.2 - SUPREMO)
@@ -1039,7 +1039,7 @@
 - ResilientStreamManager
 - TelemetryStorage
 - TeleonomiaState
-- P
+- .mutate_json_config
 - .ola73/crates/evolution-engine/tests/cma_supervision_contract.rs
 - Severidad media
 - AUDITORÍA DE ESTADO DESDE LA BASE — 2026-10-01
@@ -1067,7 +1067,7 @@
 - 🧠 MÓDULO 2: INFERENCIA DE IA, MODELOS PREDICTIVOS Y SEÑALES
 - MacroState
 - .sol-plan-2026-10-07/crates/quantum-arena/src/protection_health.rs
-- .sol-plan-2026-10-07/crates/quantum-arena/src/temporal_spectrum.rs
+- .new
 - CoaxialBreakoutEngine
 - StochasticResonanceEngine
 - .sol-plan-2026-10-07/crates/storage-engine/src/ledger.rs
@@ -1081,7 +1081,7 @@
 - QuantumSocketPool
 - .ola73/crates/feature-engine/tests/transfer_entropy_real.rs
 - .ola73/crates/god-engine-core/tests/ml_model_contract.rs
-- Preparación del examen económico OOS — R4
+- R4 — cierre de T1 histórico y reconciliación de integración
 - .ola73/crates/signal-engine/tests/ensemble_characterization.rs
 - TRIAGE TEÓRICO DEL ARSENAL EXPANDIDO (2026-09-29)
 - 🌊 NOVENA OLA FORENSE — AUDITORÍA SISTÉMICA DE RAÍZ A CIMA (D-311 A D-399)
@@ -1234,7 +1234,7 @@
 - medidor_camino_caliente.rs
 - Severidad baja
 - crates/risk-engine/tests/drawdown_portfolio_contract.rs
-- .mutate_json_config
+- P
 - SaScoreState
 - src/bin/backtest_windows.rs
 - .ola73/src/bin/income_report.rs
@@ -1487,7 +1487,7 @@
 - 🔭 Décima Ola — Adenda de auditoría integral: el medidor mentía y el fuego real no estaba cerrado (D-696 a D-740)
 - 📚 DOCUMENTACIÓN TÉCNICA MAESTRA EN MODO PROFESOR
 - Adenda científica XXIX — procedencia económica, continuidad temporal y vetos defensivos
-- wf_evaluate_real
+- wf_replay_segment
 - EmergencyCrashDump
 - MarketCorrelationHeatmap
 - Ewma
@@ -1532,7 +1532,7 @@
 - 🐳 Docker Deployment Guide (OMEGA Level VIII)
 - .ola73/docs/adr/README.md
 - Position
-- EmergencyCrashDump
+- R4 — Recuperación mínima del consumidor de clamp_ruin
 - MAPA MAESTRO API BINANCE — USDT-M Futures (F1.0)
 - 9. GESTIÓN DE FUTUROS PERPETUOS — BINANCE ESPECÍFICO
 - .ola73/docs/PROJECT_BIBLE.md
@@ -1894,7 +1894,7 @@
 - .r7r6/crates/execution-engine/tests/income_evidence_contract.rs
 - .sol-replay-2026-10-09/crates/execution-engine/tests/income_evidence_contract.rs
 - .new
-- 🔬 NOVENO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA
+- .new
 - 🛡️ 8. MÓDULO 5 — RIESGO, ECUACIÓN DE KELLY Y GENOMA EVOLUTIVO
 - 🛡️ 8. MÓDULO 5 — RIESGO, ECUACIÓN DE KELLY Y GENOMA EVOLUTIVO
 - .ola73/AGENTS.md
@@ -2758,7 +2758,7 @@
 - .r7r4/crates/backtest-engine/src/vectorized.rs
 - .r7r4/crates/data-ingest/src/dynamic_selector.rs
 - .r7r4/crates/execution-engine/tests/reconciliation_evidence_contract.rs
-- VI. EVOLUCIÓN Y SELECCIÓN — «mejorarse a sí mismo sin mentirse»
+- 🔬 DÉCIMO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA
 - classify_query_result
 - cf3_consenso_espectral.rs
 - MetacortexEngine
@@ -2923,7 +2923,7 @@
 - .sol-plan-2026-10-07/crates/god-engine-core/src/bin/nano_benchmark.rs
 - .sol-plan-2026-10-07/crates/god-engine-core/src/contagion_publisher.rs
 - .sol-plan-2026-10-07/crates/os-guardian/src/telemetry.rs
-- .observado_por_completo
+- Self
 - Self
 - 🔬 DÉCIMO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA
 - TensorTelemetryRing
@@ -3564,7 +3564,7 @@
 - 🔬 OCTAVO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA
 - 🔬 SEGUNDO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN — POST R1/R2/R3
 - 3. 🔬 ANATOMÍA DE LAS REMEDIACIONES FINALES (D-502 A D-506)
-- 🛡️ 8. MÓDULO 5 — RIESGO, ECUACIÓN DE KELLY Y GENOMA EVOLUTIVO
+- 14. Corte operativo consolidado y secuencia de cierre
 - 🏁 RESULTADO DEL BACKTEST DE CERTIFICACIÓN POST-R2 (30 días)
 - .sol-replay-2026-10-09/src/bin/oi_history_sync.rs
 - OmniStrategyEngine
@@ -3768,7 +3768,7 @@
 - export_to
 - .sol-replay-2026-10-09/src/bin/macro_history_sync.rs
 - main
-- VII. DEFENSA, EJECUCIÓN Y ESTADO — «sobrevivir a lo inesperado»
+- VI. EVOLUCIÓN Y SELECCIÓN — «mejorarse a sí mismo sin mentirse»
 - PLAN RONDA 7 — BARRIDO EXHAUSTIVO DESDE LA BASE, ARCHIVO POR ARCHIVO
 - R4: deuda confirmada durante la revisión de ramas
 - PLAN RONDA 7 — BARRIDO EXHAUSTIVO DESDE LA BASE, ARCHIVO POR ARCHIVO
@@ -4034,7 +4034,7 @@
 - IX. ADENDA 2026-09-24 — Qué mide realmente el estado espectral
 - ═══════════════════════════════════════════════════════════════════
 - Option
-- IV. RIESGO Y SIZING — «cuánto arriesgar por lo que sabemos»
+- R4: deuda confirmada durante la revisión de ramas
 - .r7r6/crates/audit-engine/src/state_validator.rs
 - .fetch_and_save_macro_data
 - AntiBiasGovernor
@@ -4071,9 +4071,9 @@
 - main
 - main
 - cargar_tape
-- IX. ADENDA 2026-09-24 — Qué mide realmente el estado espectral
-- III. PROBABILIDAD, MODELOS Y CALIBRACIÓN — «cuánto creerle al modelo»
-- II. ESPECTRO TEMPORAL CONTINUO — «el mercado como banda, no como reloj»
+- Auditoría desde la base y coordinación del consejo — 8 de octubre de 2026
+- 48. Revalidación de F2 y del corte mainEA5d: coherencia de evidencia y teoría
+- Censo de cobertura RA — 2026-10-04
 - .sol-replay-2026-10-09/crates/audit-engine/src/state_validator.rs
 - .fetch_and_save_macro_data
 - AntiBiasGovernor
@@ -4097,7 +4097,7 @@
 - 📜 TRADER GEMINI: MANUAL DE OPERACIONES INSTITUCIONAL (SOP)
 - DECISIÓN PENDIENTE DEL DUEÑO — Modelos FDUSD inertes
 - 🛡️ PROTOCOLO DE AUDITORÍA "NIVEL DIOS-BINANCE" (50 FASES)
-- Revisión independiente R4-I6 y alcance productor → consumidor
+- 7. Estimación espectral: tiempo, soporte y significado estadístico
 - 4.1 Base de Conocimiento de Errores (Post-Mortems)
 - 🎯 15. HOJA DE RUTA SISTÉMICA DE INTERVENCIÓN QUIRÚRGICA COMPLETA (NIVELES L-0 A L-5)
 - crates/risk-engine/tests/spectral_matrix_contract.rs
@@ -4365,7 +4365,7 @@
 - bosque_con_base
 - bosque_con_base
 - .r7r4/crates/quantum-arena/src/paths.rs
-- 20. Regresión de integración confirmada: contratos del trainer desconectados
+- VII. DEFENSA, EJECUCIÓN Y ESTADO — «sobrevivir a lo inesperado»
 - Ampliación científica III — autoevolución y validez de la evidencia (24-09-2026)
 - 📊 Horizonte Evaluado: 1 Días
 - 8. INGENIERÍA DE FEATURES Y FEATURE STORE
@@ -4652,19 +4652,19 @@
 - 🧪 11. MÓDULO 8 — BACKTESTING, AUDITORÍA INTERNA Y GOBERNANZA
 - 19. Recibo posterior de revisión GLM y gates no equivalentes
 - 🔒 9. MÓDULO 6 — ESTADO ATÓMICO, CONCURRENCIA, MEMORIA Y SISTEMA OPERATIVO
-- 18. R8-A, segunda revisión: el motivo de salida tampoco identifica el target
+- IV. RIESGO Y SIZING — «cuánto arriesgar por lo que sabemos»
 - recorrer
 - spectral_evidence.rs
 - F5 — CERRADA (GLM, LXXXX, 2026-10-05): evolution-engine + backtest-engine resto + dark-alpha
 - cf3_consenso_escalar.rs
 - cf3_guarda_t_media.rs
 - Perfil del camino caliente (ciclo 12, Línea C, 2026-10-11)
-- 21. Revisión del avance GLM: contrato de espectro y alcance de N_eff
+- 6. Genoma, examen y atribución del rendimiento
 - Plan de Línea F — revisión independiente de composición, lazos adaptativos y campo multiactivo (2026-10-11)
 - toolchain_pin_contract.rs
 - cf4_r15_sombra.rs
 - pearson
-- 24. Hawkes cruzado y amplificación: auditoría del modelo, no sólo del código
+- 17. Revisión matemática multiactivo MG: defectos y validaciones separados
 - F2.4. Procesos puntuales, dependencia y contagio
 - F2.3a. Espectro continuo temporal y régimen
 - Severidad alta
@@ -4774,8 +4774,7 @@
 - 🗺️ 0. PARADIGMA DE GRAFO VIVO: EL DIAGNÓSTICO TOPOLÓGICO CENTRAL
 - ⚛️ 10. MÓDULO 7 — SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA
 - 🔬 4. MÓDULO 1 — INGESTIÓN, PARSERS, LIBROS L2 Y NORMALIZACIÓN
-- 12. EWMA-W1-14/15 — límites de integración todavía abiertos
-- 23. Continuación autorizada: contrato espectral único y evidencia roja
+- 7. Estimación espectral: tiempo, soporte y significado estadístico
 - 23. Revalidación de telemetría: dos implementaciones, seguridad y consumidor
 - bosque_con_base
 - cf3_lectura_estricta_conformal.rs
@@ -4832,28 +4831,62 @@
 - 5. Riesgo: validez local frente a validez de la composición
 - Ampliación científica III — autoevolución y validez de la evidencia (24-09-2026)
 - 2026-09-28 — Codex: contratos espectrales y coordinación (en curso)
-- 28. Cierre de validación del árbol integrado antes de fusionar PR11
-- 29. Recibo de integración remota y eliminación segura de la rama
-- 30. Regresión posterior de main: import roto del modulador (PR12)
+- 4. Ingestión y normalización
+- 2026-10-04 — Contratos de base RA y significado de los cálculos
+- Ampliación científica II — contratos, identificabilidad y evolución temporal (24-09-2026)
 - 2026-09-28 — Codex: contratos espectrales y coordinación (en curso)
 - 16. Avance remoto concurrente: dos commits todavía fuera del árbol probado
 - 17. Nuevo corte de integración: aislamiento por agente
 - 26. Evidencia ejecutada del avance matricial y coordinación posterior
-- 2026-10-04 — Contratos de base RA y significado de los cálculos
-- Ampliación científica II — contratos, identificabilidad y evolución temporal (24-09-2026)
 - V. GEOMETRÍA DEL TRADE — «dónde entrar, dónde salir, cuánto respirar»
-- 16. Avance remoto concurrente: dos commits todavía fuera del árbol probado
-- 17. Nuevo corte de integración: aislamiento por agente
-- 26. Evidencia ejecutada del avance matricial y coordinación posterior
+- 18. Segundo corte de sincronización, cobertura y Git
+- 18. Segundo corte de sincronización, cobertura y Git
+- 49. Sincronización F3 y verificación de integración por corte
+- 4. Ingestión y normalización
+- 1. Las tres líneas ( quién es dueño de qué )
+- Adenda 2026-09-28 — EWMA, reloj de evidencia y alcance del oráculo
+- Ampliación científica FMT — 24 de septiembre de 2026
 - 2026-09-29 — Codex ST: firmas y contratos de transferencia científica
+- 19. Recibo posterior de revisión GLM y gates no equivalentes
+- 20. Revalidación adversarial de expedientes existentes sobre el nuevo main
 - Adenda científica II — auditoría del contrato matemático y del aprendizaje (24-09-2026)
 - Adenda científica III — auditoría de autoevolución y evidencia causal (24-09-2026)
 - Adenda científica XIII — persistencia, arranque y recuperación causal (2026-09-24)
+- 27. Revisión matemática del oscilador: densidad, dominio y analogía
 - 2026-09-29 — Codex ST: firmas y contratos de transferencia científica
+- 31. Nuevo seguimiento de reloj aceptado: RA-I-F01
+- 34. E03/E04: control negativo efectivo y cierre técnico local del bosque
 - 2026-09-28 — Codex: contratos espectrales y coordinación (en curso)
-- Adenda 2026-09-28 — EWMA, reloj de evidencia y alcance del oráculo
-- Ampliación científica FMT — 24 de septiembre de 2026
+- 43. Reconciliación con el barrido F0 de Qoder y verificación de identidad
+- 44. Sincronización F1 recién publicada y control de ruina reproducido
+- 19. Recibo posterior de revisión GLM y gates no equivalentes
+- 20. Revalidación adversarial de expedientes existentes sobre el nuevo main
+- 27. Revisión matemática del oscilador: densidad, dominio y analogía
+- 31. Nuevo seguimiento de reloj aceptado: RA-I-F01
+- 34. E03/E04: control negativo efectivo y cierre técnico local del bosque
+- 43. Reconciliación con el barrido F0 de Qoder y verificación de identidad
+- 44. Sincronización F1 recién publicada y control de ruina reproducido
+- 6. Consolidación técnica y alcance de las afirmaciones (Codex)
+- 8. Grafo de dependencias y criterios de aceptación
 - Ampliación científica III — autoevolución y validez de la evidencia (24-09-2026)
+- 23. Revalidación de telemetría: dos implementaciones, seguridad y consumidor
+- 24. Segunda revisión cruzada del candidato RA y seguimiento OOS
+- 29. Semántica del multifractal/Hurst y continuidad temporal real
+- 30. MG02/MG05: oráculos efectivos recibidos, reparación todavía aislada
+- 37. Anatomía de exclusivos legacy: recibo local posterior a la publicación
+- 39. Revalidación causal: memoria estadística no equivale a evidencia vigente
+- 40. RA-OOS-F01: cierre estructural local, fuera de PR28
+- 5. Riesgo: validez local frente a validez de la composición
+- 23. Revalidación de telemetría: dos implementaciones, seguridad y consumidor
+- 24. Segunda revisión cruzada del candidato RA y seguimiento OOS
+- 29. Semántica del multifractal/Hurst y continuidad temporal real
+- 30. MG02/MG05: oráculos efectivos recibidos, reparación todavía aislada
+- 37. Anatomía de exclusivos legacy: recibo local posterior a la publicación
+- 39. Revalidación causal: memoria estadística no equivale a evidencia vigente
+- 40. RA-OOS-F01: cierre estructural local, fuera de PR28
+- 5. Riesgo: validez local frente a validez de la composición
+- SI — 2026-10-11: emisión causal, memoria de riesgo y evidencia
+- 2026-09-28 — Codex: contratos espectrales y coordinación (en curso)
 - 2026-09-29 — Codex ST: firmas y contratos de transferencia científica
 
 ## God Nodes (most connected - your core abstractions)
@@ -4863,7 +4896,7 @@
 4. `Coordinación Codex / Claude / GLM — 2026-09-28` - 376 edges
 5. `Coordinación Codex / Claude / GLM — 2026-09-28` - 371 edges
 6. `Coordinación Codex / Claude / GLM — 2026-09-28` - 304 edges
-7. `MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)` - 270 edges
+7. `MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)` - 271 edges
 8. `🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA` - 207 edges
 9. `🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA` - 207 edges
 10. `🧪 MÓDULO 8: BACKTESTING VECTORIZADO, AUDITORÍA INTERNA Y GOBERNANZA DE ARQUITECTURA` - 207 edges
@@ -4883,7 +4916,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (5314 total, 427 thin omitted)
+## Communities (5348 total, 426 thin omitted)
 
 ### Community 0 - "Coordinación Codex / Claude / GLM — 2026-09-28"
 Cohesion: 0.01
@@ -5062,8 +5095,8 @@ Cohesion: 0.05
 Nodes (40): 1. Decoradores Centralizados (`utils/common.py`), 1. El Circuito de Retroalimentación de Atribución, 1. Numba Structured Array (El "OhlcvStruct"), 2. Corrección BUG #12: NameError `tf` en WebSocket Live (`data/binance_loader.py`), 2. Flujo de Datos de Telemetría Cognitiva, 2. Market Ring Buffer (Numba JIT Class), 3. El Puente Neural y Auditoría Multiverso, 3. Forensic Fill Anatomy (V5.88) (+32 more)
 
 ### Community 44 - "crates/quantum-arena/src/temporal_spectrum.rs"
-Cohesion: 0.07
-Nodes (51): c05_dominant_tau_opera_dentro_de_la_banda_operativa(), cl30_caminata_aleatoria_persistencia_nula(), cl30_tendencia_persiste(), cl30_zigzag_a_la_escala_revierte(), cl32_la_masa_espectral_no_duplica_el_ultimo_evento(), cl32_las_escalas_no_resueltas_no_gobiernan_la_fusion(), d638b_la_banda_operativa_son_las_anclas_no_el_espectro(), d638b_tau_y_escala_temporal_son_inversas() (+43 more)
+Cohesion: 0.06
+Nodes (57): cl28_el_umbral_de_la_fisher_no_separa_el_ruido_de_una_tendencia(), c05_dominant_tau_opera_dentro_de_la_banda_operativa(), cl30_caminata_aleatoria_persistencia_nula(), cl30_tendencia_persiste(), cl30_zigzag_a_la_escala_revierte(), cl32_la_masa_espectral_no_duplica_el_ultimo_evento(), cl32_las_escalas_no_resueltas_no_gobiernan_la_fusion(), d638b_la_banda_operativa_son_las_anclas_no_el_espectro() (+49 more)
 
 ### Community 45 - "crates/execution-engine/src/reconciliation.rs"
 Cohesion: 0.14
@@ -5731,7 +5764,7 @@ Nodes (6): main(), NanoForestData, Box, Error, Result, Vec
 
 ### Community 213 - "RA — Revisión desde la base: contratos, causalidad y composición"
 Cohesion: 0.02
-Nodes (109): 10. Recibos de pruebas: no mezclar runners ni snapshots, 11. Inventario Git y reconciliación, por objetos inmutables, 12. Cobertura y siguiente orden de trabajo, 13. Publicación autorizada y verificación analítica del informe, 14. Segundo corte de ramas y plan concurrente, 15. Recibo local final de integración, 16. Adenda de sincronización y CI efectivamente ejecutada, 17. Revisión matemática multiactivo MG: defectos y validaciones separados (+101 more)
+Nodes (104): 10. Recibos de pruebas: no mezclar runners ni snapshots, 11. Inventario Git y reconciliación, por objetos inmutables, 12. Cobertura y siguiente orden de trabajo, 13. Publicación autorizada y verificación analítica del informe, 14. Segundo corte de ramas y plan concurrente, 15. Recibo local final de integración, 16. Adenda de sincronización y CI efectivamente ejecutada, 17. Revisión matemática multiactivo MG: defectos y validaciones separados (+96 more)
 
 ### Community 214 - "TensorRing<N>"
 Cohesion: 0.20
@@ -6077,9 +6110,9 @@ Nodes (8): 1. El Salto Cuántico en Velocidad, 2. Eliminación de Pausas de Memo
 Cohesion: 0.22
 Nodes (8): 1. Fronteras físicas honestas (qué significa "de 1ns a 100 años"), 2. Qué existe hoy (post-F8 núcleo), 3. Migración (el binario muere por absorción, no por big-bang), 4. Por qué la fusión paridad-de-riesgo y no "pesos por bucket", ESPECTRO TEMPORAL CONTINUO (F8) — diseño y migración, Genoma: las curvas mandan, Motor: observación continua, `quantum-arena/src/temporal_spectrum.rs`
 
-### Community 320 - "PLAN MAESTRO — Sincronización del consejo hacia la meta"
-Cohesion: 0.10
-Nodes (20): 1. La meta, encuadrada sin decoración (doctrina ADR-0003), 2. Estado del sistema (una página, 2026-10-04), 3. Mapa de frentes por agente (lo que ya está en vuelo), 4. Ruta crítica compartida (lo que bloquea la meta, en orden), 5. Compromisos del próximo ciclo (cada agente append aquí), 5b. Mapa de sincronización de planes (LXXXV), 6. El marco que nos sincroniza (ya operativo), Antigravity (+12 more)
+### Community 320 - "opposed_scales"
+Cohesion: 0.17
+Nodes (9): factor_de_resolucion(), opposed_scales(), spectral_contract_energy_is_consistent_at_grid_nodes(), spectral_contract_invalid_queries_are_neutral(), spectral_contract_learning_reaches_field_and_projection(), spectral_contract_maximum_energy_entropy_can_have_full_agreement(), SpectralFieldState, umbral_fisher_identificable() (+1 more)
 
 ### Community 321 - "🔬 QUINTO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA"
 Cohesion: 0.22
@@ -6142,8 +6175,8 @@ Cohesion: 0.03
 Nodes (64): 10. EWMA-W1-13 — el oráculo no demuestra inercia global de un gen, 11. Corte de validación intermedia — 15:01 America/Bogota, 12. EWMA-W1-14/15 — límites de integración todavía abiertos, 13. Revalidación de modelos guardados — FMT-037/190 sigue abierto, 14. Traspaso de integración y límites de certificación, 15. Resultado final de regresión local — 15:18 America/Bogota, 16. Avance remoto concurrente: dos commits todavía fuera del árbol probado, 17. Nuevo corte de integración: aislamiento por agente (+56 more)
 
 ### Community 336 - "crates/evolution-engine/src/online_daemon.rs"
-Cohesion: 0.08
-Nodes (30): accumulated_trials(), armar_vigilancia(), cl23_el_examen_solo_lleva_series_que_el_juez_puede_juzgar(), cl24_el_umbral_corto_del_pre_examen_es_el_espejo_del_largo(), cl28_el_umbral_de_la_fisher_no_separa_el_ruido_de_una_tendencia(), d743_longitud_minima_derivada_del_minimo_de_operaciones(), d743_particion_temporal_por_la_mediana(), d744_el_muestreo_vivo_no_divide_por_el_capital_post_operacion() (+22 more)
+Cohesion: 0.09
+Nodes (31): accumulated_trials(), armar_vigilancia(), cl23_el_examen_solo_lleva_series_que_el_juez_puede_juzgar(), cl24_el_umbral_corto_del_pre_examen_es_el_espejo_del_largo(), d743_longitud_minima_derivada_del_minimo_de_operaciones(), d743_particion_temporal_por_la_mediana(), d744_el_muestreo_vivo_no_divide_por_el_capital_post_operacion(), d744_retorno_normalizado_por_el_capital_del_momento() (+23 more)
 
 ### Community 337 - "📉 Análisis Forense de Pérdidas (Fee Drag vs MFE)"
 Cohesion: 0.29
@@ -6227,7 +6260,7 @@ Nodes (17): MetacortexEngine, Arc, CompilationResult, CompilerSandbox, ConsejoDe
 
 ### Community 357 - "MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)"
 Cohesion: 0.01
-Nodes (266): 2026-09-28 — Codex: admisión multiactivo, contratos y publicación concurrente, 2026-09-28 — Codex: autorización recibida y reparación RMT, 2026-09-28 — Codex CF: contrato conformal por activo, 2026-09-28 — Codex: checkout aislado y publicación EWMA/W1 pendiente, 2026-09-28 — Codex: integración EWMA/W1 y publicación parcial verificable, 2026-09-28 — Codex OA: atribución causal y contrato numérico, 2026-09-28 — Codex: Platt con Newton factible (CAL-01/02/03), 2026-09-28 — Codex: PR12 ampliado por rotura posterior de main (+258 more)
+Nodes (267): 2026-09-28 — Codex: admisión multiactivo, contratos y publicación concurrente, 2026-09-28 — Codex: autorización recibida y reparación RMT, 2026-09-28 — Codex CF: contrato conformal por activo, 2026-09-28 — Codex: checkout aislado y publicación EWMA/W1 pendiente, 2026-09-28 — Codex: integración EWMA/W1 y publicación parcial verificable, 2026-09-28 — Codex OA: atribución causal y contrato numérico, 2026-09-28 — Codex: Platt con Newton factible (CAL-01/02/03), 2026-09-28 — Codex: PR12 ampliado por rotura posterior de main (+259 more)
 
 ### Community 358 - "13. GESTIÓN DE PORTAFOLIO AVANZADA"
 Cohesion: 0.40
@@ -6271,15 +6304,15 @@ Nodes (42): classify_query_result(), parse_account_equity(), parse_active_positi
 
 ### Community 378 - "LiveEvolutionDaemon"
 Cohesion: 0.13
-Nodes (17): barra_de_mercado(), cl27_el_examen_del_daemon_se_alimenta_del_mercado_y_no_del_pnl(), cl27_la_barra_del_examen_es_el_retorno_del_precio_por_reloj(), detectar_promocion_externa(), live_evolution_armed_for_env(), LiveEvolutionDaemon, median(), EvidenceEwma (+9 more)
+Nodes (18): barra_de_mercado(), cl27_el_examen_del_daemon_se_alimenta_del_mercado_y_no_del_pnl(), cl27_la_barra_del_examen_es_el_retorno_del_precio_por_reloj(), detectar_promocion_externa(), live_evolution_armed_for_env(), LiveEvolutionDaemon, median(), EvidenceEwma (+10 more)
 
 ### Community 379 - "StatArbEngine"
 Cohesion: 0.09
 Nodes (28): cl97_la_prueba_usa_beta_fija(), cl97_los_pares_son_sincronos(), cl97_sin_prueba_propia_statarb_se_abstiene(), cl97_una_reversion_rapida_se_demuestra(), DEFAULT_DOMINANT_TAU_MS, Lcg, Arc, OmniscientRegistry (+20 more)
 
 ### Community 380 - "docs/PLAN_AUDITORIA_BASE_2026-10-08.md"
-Cohesion: 0.05
-Nodes (38): Dictamen acotado del helper de publicación documental, Ajuste documental sugerido antes de publicar, Comprobación adicional del paquete documental, Esquema oficial y alcance de las dos rutas, Identidad comprobada por lectura y hashes, Lecturas concretas y límites, Revisión independiente R4-I6 y alcance productor → consumidor, Veredicto sobre el testigo (+30 more)
+Cohesion: 0.04
+Nodes (44): Dictamen acotado del helper de publicación documental, Ajuste documental sugerido antes de publicar, Comprobación adicional del paquete documental, Esquema oficial y alcance de las dos rutas, Identidad comprobada por lectura y hashes, Lecturas concretas y límites, Revisión independiente R4-I6 y alcance productor → consumidor, Veredicto sobre el testigo (+36 more)
 
 ### Community 381 - "src/bin/oi_history_sync.rs"
 Cohesion: 0.18
@@ -6407,7 +6440,7 @@ Nodes (35): 10. Pruebas ejecutadas y límites de la verificación, 11. Complejid
 
 ### Community 415 - "MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)"
 Cohesion: 0.01
-Nodes (196): 2026-09-28 — Codex: admisión multiactivo, contratos y publicación concurrente, 2026-09-28 — Codex: autorización recibida y reparación RMT, 2026-09-28 — Codex CF: contrato conformal por activo, 2026-09-28 — Codex: checkout aislado y publicación EWMA/W1 pendiente, 2026-09-28 — Codex: contratos espectrales y coordinación (en curso), 2026-09-28 — Codex: integración EWMA/W1 y publicación parcial verificable, 2026-09-28 — Codex OA: atribución causal y contrato numérico, 2026-09-28 — Codex: Platt con Newton factible (CAL-01/02/03) (+188 more)
+Nodes (194): 2026-09-28 — Codex: admisión multiactivo, contratos y publicación concurrente, 2026-09-28 — Codex: autorización recibida y reparación RMT, 2026-09-28 — Codex CF: contrato conformal por activo, 2026-09-28 — Codex: checkout aislado y publicación EWMA/W1 pendiente, 2026-09-28 — Codex: integración EWMA/W1 y publicación parcial verificable, 2026-09-28 — Codex OA: atribución causal y contrato numérico, 2026-09-28 — Codex: Platt con Newton factible (CAL-01/02/03), 2026-09-28 — Codex: PR12 ampliado por rotura posterior de main (+186 more)
 
 ### Community 416 - "Self"
 Cohesion: 0.16
@@ -6582,8 +6615,8 @@ Cohesion: 0.25
 Nodes (3): hy_common_window_must_not_depend_on_disjoint_history(), CompactTick, tick()
 
 ### Community 459 - "TemporalSpectrum"
-Cohesion: 0.07
-Nodes (16): cl35_lo_no_observado_no_pesa_en_la_masa(), factor_de_resolucion(), opposed_scales(), peso_masa_continuo(), qo_662_w1_lag_fisico_alcanza_60s_a_cualquier_tasa_de_feed(), Default, Option, spectral_contract_energy_is_consistent_at_grid_nodes() (+8 more)
+Cohesion: 0.08
+Nodes (11): cl35_lo_no_observado_no_pesa_en_la_masa(), factor_de_resolucion(), peso_masa_continuo(), Default, EProceso, Option, ScaleState, spectral_contract_learning_reaches_field_and_projection() (+3 more)
 
 ### Community 460 - "Auditoría científica XVI — identidad multiactivo, evidencia conjunta y contratos de asignación"
 Cohesion: 0.08
@@ -6723,7 +6756,7 @@ Nodes (18): checked_api_explains_shape_capital_and_forced_evidence_failures(), d
 
 ### Community 494 - "crates/risk-engine/src/drawdown.rs"
 Cohesion: 0.10
-Nodes (29): actualizar_riesgo_ewma(), alfa_desde_gen(), ALFA_FALSACION, caida_alfa_en_stops(), caida_alfa_freno_duro(), CAMINOS_FRENO_DURO, cl9_la_tasa_de_perdida_es_la_de_la_cartera_ponderada(), drawdown_compatible() (+21 more)
+Nodes (28): actualizar_riesgo_ewma(), alfa_desde_gen(), ALFA_FALSACION, caida_alfa_en_stops(), caida_alfa_freno_duro(), CAMINOS_FRENO_DURO, cl9_la_tasa_de_perdida_es_la_de_la_cartera_ponderada(), drawdown_compatible() (+20 more)
 
 ### Community 495 - "MultiAssetOrchestrator"
 Cohesion: 0.23
@@ -6953,9 +6986,9 @@ Nodes (19): 0. Por qué otra línea y por qué ésta, 1. La meta en números (lo
 Cohesion: 0.22
 Nodes (8): 10. Continuación aditiva: auditoría científica II, 1. Dictamen, alcance y preservación del trabajo existente, 2. Matriz consolidada de esta ronda, 6. Problemas del Milenio: relación legítima y fronteras, 9. Conclusión, Auditoría de fundamentos científicos y diseño del motor espectral multivariante, Corte de evidencia, Qué significa cada estado
 
-### Community 555 - "13. Actualización posterior: integración documental y reservas de vigencia"
-Cohesion: 0.11
-Nodes (18): 13.10 Acuse Qoder posterior y límites del sello, 13.11 Contrato matemático del oscilador y límite de reutilización, 13.12 Recibo de bosque y semántica de features temporales, 13.13 Vigencia de evidencias: reproducibilidad antes de integración, 13.14 Frontera del reloj aceptado, G1 antes de G4/G7, 13.15 Actualización posterior: límites cruzados y reparación comprobada, 13.16 T1 RA completo y límites del gate G0, 13.17 Commits listos dentro de alcance, integración aún pendiente (+10 more)
+### Community 555 - "TemporalObjectStore"
+Cohesion: 0.21
+Nodes (9): AtomicUsize, MmapMut, Result, Self, Send, Sync, TemporalObjectStore, test_temporal_object_store_capacity_overflow_boundary() (+1 more)
 
 ### Community 556 - "Adenda científica XXIX — procedencia económica, continuidad temporal y vetos defensivos"
 Cohesion: 0.22
@@ -7234,8 +7267,8 @@ Cohesion: 0.50
 Nodes (4): Anexo FMT — Fundamentos científicos, causalidad y evolución verificable (2026-09-24), Fallos de conexión que afectan al aprendizaje y al genoma, Fallos de significado, dimensiones y filtros, Rehabilitación científica propuesta y límites del corte
 
 ### Community 643 - "ATLAS ANALÍTICO DEL MOTOR — Qué calcula, para qué existe, cómo se interpreta"
-Cohesion: 0.03
-Nodes (60): 2026-09-24 — Ronda científica IX: evidencia operativa y autoridad de parada, 2026-09-24 — Ronda científica VIII: continuidad y evidencia evolutiva, 2026-09-28 — Codex: auditoría del optimizador Platt y reloj de evidencia, 2026-09-28 — Codex CF: genoma, calibración y veto de entradas, 2026-09-28 — Codex OA: aprendizaje causal por posición y ensamble, Adenda 2026-09-28 — admisión multiactivo y tercer corte de evidencia, Adenda 2026-09-28 — contratos numéricos y contraste de integración, Adenda científica XI — contrato de lectura y adaptación estadística (2026-09-24) (+52 more)
+Cohesion: 0.02
+Nodes (128): 2026-09-24 — Ronda científica IX: evidencia operativa y autoridad de parada, 2026-09-24 — Ronda científica VIII: continuidad y evidencia evolutiva, 2026-09-28 — Codex: auditoría del optimizador Platt y reloj de evidencia, 2026-09-28 — Codex CF: genoma, calibración y veto de entradas, 2026-09-28 — Codex OA: aprendizaje causal por posición y ensamble, 2026-09-29 — Codex ST: firmas y contratos de transferencia científica, 2026-10-04 — Contratos de base RA y significado de los cálculos, Adenda 2026-09-28 — admisión multiactivo y tercer corte de evidencia (+120 more)
 
 ### Community 648 - "📁 II. MAPA COMPLETO DE ARCHIVOS (~350+ archivos)"
 Cohesion: 0.05
@@ -7359,7 +7392,7 @@ Nodes (25): active_json_path(), active_path(), atomic_write(), current_env(), d6
 
 ### Community 687 - ".sol-plan-2026-10-07/crates/evolution-engine/src/online_daemon.rs"
 Cohesion: 0.08
-Nodes (36): accumulated_trials(), cl23_el_examen_solo_lleva_series_que_el_juez_puede_juzgar(), cl24_el_umbral_corto_del_pre_examen_es_el_espejo_del_largo(), d742_el_spread_del_examen_es_del_mercado_con_piso_de_medio_tick(), d742_profundidad_derivada_del_apalancamiento_publicado(), d743_longitud_minima_derivada_del_minimo_de_operaciones(), d743_particion_temporal_por_la_mediana(), d744_el_muestreo_vivo_no_divide_por_el_capital_post_operacion() (+28 more)
+Nodes (38): accumulated_trials(), armar_vigilancia(), cl23_el_examen_solo_lleva_series_que_el_juez_puede_juzgar(), cl24_el_umbral_corto_del_pre_examen_es_el_espejo_del_largo(), cl28_el_umbral_de_la_fisher_no_separa_el_ruido_de_una_tendencia(), d742_el_spread_del_examen_es_del_mercado_con_piso_de_medio_tick(), d742_profundidad_derivada_del_apalancamiento_publicado(), d743_longitud_minima_derivada_del_minimo_de_operaciones() (+30 more)
 
 ### Community 688 - ".sol-plan-2026-10-07/crates/god-engine-core/tests/close_outcome_contract.rs"
 Cohesion: 0.11
@@ -7614,8 +7647,8 @@ Cohesion: 0.13
 Nodes (9): ActivePosition, ExecutionProvider, IncomeWindow, OpenAlgoOrder, Result, Send, String, Sync (+1 more)
 
 ### Community 751 - "TemporalSpectrum"
-Cohesion: 0.11
-Nodes (8): qo_594_habilidad_requiere_evidencia_madura(), qo_662_w1_lag_fisico_alcanza_60s_a_cualquier_tasa_de_feed(), Default, EProceso, Option, ScaleState, SpectralFieldState, TemporalSpectrum
+Cohesion: 0.10
+Nodes (8): cl35_lo_no_observado_no_pesa_en_la_masa(), qo_594_habilidad_requiere_evidencia_madura(), qo_662_w1_lag_fisico_alcanza_60s_a_cualquier_tasa_de_feed(), Default, EProceso, Option, ScaleState, TemporalSpectrum
 
 ### Community 752 - "Registro de hallazgos"
 Cohesion: 0.06
@@ -8297,9 +8330,9 @@ Nodes (16): cl37_universo_de_arranque_canonico_unico_y_dentro_de_capacidad(), pa
 Cohesion: 0.14
 Nodes (21): DarwinDaemon, empty_replay_preserves_missing_evidence_instead_of_a_finite_loss(), evaluate_genotype(), Genotype, invalid_replay_policy_is_rejected_before_constructing_an_engine(), meets_promotion_margin(), omega15_h1_2_muestreo_periodico_continuo_retornos(), omega15_h1_3_darwin_daemon_multiplicidad_acumulada_monotona() (+13 more)
 
-### Community 922 - ".pesos_espectrales"
-Cohesion: 0.13
-Nodes (13): cl30_caminata_aleatoria_persistencia_nula(), cl30_tendencia_persiste(), cl32_la_masa_espectral_no_duplica_el_ultimo_evento(), cl32_las_escalas_no_resueltas_no_gobiernan_la_fusion(), cl35_lo_no_observado_no_pesa_en_la_masa(), espectro_a_un_segundo_cl32(), factor_de_resolucion(), fraccion_no_resuelta_cl32() (+5 more)
+### Community 922 - ".sol-plan-2026-10-07/crates/quantum-arena/src/temporal_spectrum.rs"
+Cohesion: 0.09
+Nodes (28): cl30_caminata_aleatoria_persistencia_nula(), cl30_tendencia_persiste(), cl32_la_masa_espectral_no_duplica_el_ultimo_evento(), cl32_las_escalas_no_resueltas_no_gobiernan_la_fusion(), d638b_la_banda_operativa_son_las_anclas_no_el_espectro(), d638b_tau_y_escala_temporal_son_inversas(), espectro_a_un_segundo_cl32(), FEED_CLOCK_RESOLUTION_MS (+20 more)
 
 ### Community 923 - ".sol-plan-2026-10-07/crates/telemetry-server/src/lib.rs"
 Cohesion: 0.13
@@ -8542,8 +8575,8 @@ Cohesion: 0.17
 Nodes (14): GLOBAL_TENSOR_TELEMETRY, AtomicU64, AtomicUsize, Option, Result, Self, Send, Sync (+6 more)
 
 ### Community 983 - ".new"
-Cohesion: 0.16
-Nodes (19): canonical_vector(), cl25_el_rollback_no_vuelve_al_genoma_que_un_rollback_retiro(), cl25_el_rollback_salta_los_re_registros_del_mismo_genoma(), d747_same_genome_reconoce_igualdad_y_diferencia(), destino_de_rollback(), genoma_distinto(), lg7_lo_abierto_al_final_del_examen_se_valora_a_mercado(), QuantumHotSwapState (+11 more)
+Cohesion: 0.17
+Nodes (18): canonical_vector(), cl25_el_rollback_no_vuelve_al_genoma_que_un_rollback_retiro(), cl25_el_rollback_salta_los_re_registros_del_mismo_genoma(), d747_same_genome_reconoce_igualdad_y_diferencia(), destino_de_rollback(), genoma_distinto(), QuantumHotSwapState, AtomicBool (+10 more)
 
 ### Community 984 - "Revisión desde la base: plan y recibos por archivo"
 Cohesion: 0.10
@@ -8586,8 +8619,8 @@ Cohesion: 0.24
 Nodes (9): FlightEvent, FlightRecorder, AtomicUsize, MmapMut, Self, Send, Sync, test_flight_recorder_circular_wrap_around_and_zero_capacity_clamping() (+1 more)
 
 ### Community 995 - "RA — Revisión desde la base: contratos, causalidad y composición"
-Cohesion: 0.02
-Nodes (93): 10. Recibos de pruebas: no mezclar runners ni snapshots, 11. Inventario Git y reconciliación, por objetos inmutables, 12. Cobertura y siguiente orden de trabajo, 13. Publicación autorizada y verificación analítica del informe, 14. Segundo corte de ramas y plan concurrente, 15. Recibo local final de integración, 16. Adenda de sincronización y CI efectivamente ejecutada, 18.1 Evidencia de coordinación, sin aprobación inferida (+85 more)
+Cohesion: 0.07
+Nodes (30): 10. Recibos de pruebas: no mezclar runners ni snapshots, 11. Inventario Git y reconciliación, por objetos inmutables, 12. Cobertura y siguiente orden de trabajo, 13. Publicación autorizada y verificación analítica del informe, 14. Segundo corte de ramas y plan concurrente, 15. Recibo local final de integración, 16. Adenda de sincronización y CI efectivamente ejecutada, 1. Dictamen y alcance verificable (+22 more)
 
 ### Community 996 - "QuantumTensorStore"
 Cohesion: 0.20
@@ -8690,8 +8723,8 @@ Cohesion: 0.13
 Nodes (17): CompressedTickBatch, DROPPED_LAKEHOUSE_EVENTS, LakehouseEvent, LakehouseWarehouse, AtomicU64, Default, LakehouseEvent, Option (+9 more)
 
 ### Community 1021 - "RA — Revisión desde la base: contratos, causalidad y composición"
-Cohesion: 0.02
-Nodes (122): 10. Recibos de pruebas: no mezclar runners ni snapshots, 11. Inventario Git y reconciliación, por objetos inmutables, 12. Cobertura y siguiente orden de trabajo, 13. Publicación autorizada y verificación analítica del informe, 14. Segundo corte de ramas y plan concurrente, 15. Recibo local final de integración, 16. Adenda de sincronización y CI efectivamente ejecutada, 17. Revisión matemática multiactivo MG: defectos y validaciones separados (+114 more)
+Cohesion: 0.07
+Nodes (30): 10. Recibos de pruebas: no mezclar runners ni snapshots, 11. Inventario Git y reconciliación, por objetos inmutables, 12. Cobertura y siguiente orden de trabajo, 13. Publicación autorizada y verificación analítica del informe, 14. Segundo corte de ramas y plan concurrente, 15. Recibo local final de integración, 16. Adenda de sincronización y CI efectivamente ejecutada, 1. Dictamen y alcance verificable (+22 more)
 
 ### Community 1022 - "🔒 MÓDULO 6: ESTADO ATÓMICO, MEMORIA MMAP, TELEMETRÍA Y SISTEMA OPERATIVO"
 Cohesion: 0.11
@@ -8778,8 +8811,8 @@ Cohesion: 0.07
 Nodes (28): ═══════════════════════════════════════════════════════════════════, 2026-10-07 — R4 / Sol: reconciliación y continuación archivo por archivo, 3 auditores: H0 metas/conceptos, H1 matemática, H2 física/motores., 3 auditores paralelo: G0 metas/conceptos, G1 matemática/estadística,, 3 veces: #661→G1-1, G2-6→H2-1, Ville 62→H2-3). 22 hallazgos., ═══════════════════════════════════════════════════════════════════, (9 olas nuevas desde ronda 2: Qoder 61-64, AGY Ω10-Ω14, GLM XCVIII), Certificación (+20 more)
 
 ### Community 1043 - "PLAN MAESTRO DE SINCRONIZACIÓN — Crecimiento Exponencial Compuesto"
-Cohesion: 0.02
-Nodes (85): 0. La meta y su física, 0b. Barrido exhaustivo (mandato 2026-10-04), 10. Registro obligatorio de vetos, filtros y límites, 11. Integración científica y auditoría archivo por archivo, 12. Protocolo de sincronización y próximos entregables, 14.1 CI final del candidato anterior, gate del nuevo corte separado, 14.2 Recibo local legacy, sin churn de CI, 14.3 Reinicio causal sobre main44bc8 y tareas sincronizadas propuestas (+77 more)
+Cohesion: 0.03
+Nodes (66): 0. La meta y su física, 0b. Barrido exhaustivo (mandato 2026-10-04), 10. Registro obligatorio de vetos, filtros y límites, 11. Integración científica y auditoría archivo por archivo, 12. Protocolo de sincronización y próximos entregables, 15. Codex — contrato SA signado y selección evaluada (ola aislada), 16. Plan exhaustivo por ruta desde los fundamentos (ampliación del mandato), 17. Correspondencia canónica de métricas72h (adenda, no borrado) (+58 more)
 
 ### Community 1044 - ".ola73/crates/quantum-arena/src/symbols.rs"
 Cohesion: 0.18
@@ -8905,9 +8938,9 @@ Nodes (11): AtomicUsize, MmapMut, Result, Self, Send, Sync, UnsafeCell, Telemetr
 Cohesion: 0.18
 Nodes (13): RingBufferRecord, AtomicU64, AtomicUsize, MmapMut, Mutex, Option, Pod, Self (+5 more)
 
-### Community 1075 - "P"
-Cohesion: 0.06
-Nodes (33): P, AtomicUsize, MmapMut, Result, Self, Send, Sync, TemporalObjectStore (+25 more)
+### Community 1075 - ".mutate_json_config"
+Cohesion: 0.23
+Nodes (11): ASTMutator, Box, Error, QuantumConfig, Result, Self, String, Value (+3 more)
 
 ### Community 1076 - ".ola73/crates/evolution-engine/tests/cma_supervision_contract.rs"
 Cohesion: 0.24
@@ -9017,9 +9050,9 @@ Nodes (8): MacroState, Arc, AtomicU64, Default, Self, run_macro_feed_poller(), t
 Cohesion: 0.08
 Nodes (15): anchored_code(), BRACKET_REJECTIONS, is_exchange_rejection(), note_rejection(), PROTECTION_DIRTY, rejections_of(), AtomicBool, AtomicU64 (+7 more)
 
-### Community 1103 - ".sol-plan-2026-10-07/crates/quantum-arena/src/temporal_spectrum.rs"
-Cohesion: 0.08
-Nodes (42): c05_dominant_tau_opera_dentro_de_la_banda_operativa(), cl30_zigzag_a_la_escala_revierte(), d638b_la_banda_operativa_son_las_anclas_no_el_espectro(), d638b_tau_y_escala_temporal_son_inversas(), d742_las_escalas_vacias_no_gobiernan_la_fusion(), escala_con_habilidad(), FEED_CLOCK_RESOLUTION_MS, FISHER_ESCALA_MAX (+34 more)
+### Community 1103 - ".new"
+Cohesion: 0.14
+Nodes (21): c05_dominant_tau_opera_dentro_de_la_banda_operativa(), cl30_zigzag_a_la_escala_revierte(), d742_las_escalas_vacias_no_gobiernan_la_fusion(), escala_con_habilidad(), omega12_g1_4_segundo_momento_central_sin_sesgo_jensen(), qo_594_escalas_inmaduras_conservan_el_respaldo_de_energia(), qo_594_tau_dominante_sigue_la_habilidad_madura(), qo_599_el_maximo_de_ics_de_ruido_no_opina_sin_significancia() (+13 more)
 
 ### Community 1104 - "CoaxialBreakoutEngine"
 Cohesion: 0.11
@@ -9073,9 +9106,9 @@ Nodes (11): medir_par_obligatorio(), partial_record_is_not_silently_discarded(),
 Cohesion: 0.22
 Nodes (13): cycles_are_rejected_at_construction_without_running_them(), invalid_children_and_split_features_are_rejected(), invalid_json_and_binary_are_rejected_before_cache_or_activation(), invalid_offsets_are_rejected(), missing_required_features_are_not_neutral_predictions(), nonfinite_model_numbers_are_rejected(), raw_invalid_inputs_do_not_produce_valid_evidence(), NanoForestData (+5 more)
 
-### Community 1117 - "Preparación del examen económico OOS — R4"
-Cohesion: 0.12
-Nodes (14): Alcance de integración y hashes, Bloqueos y evidencia observada, Dictamen acotado, Evaluación de una política que aprende, Preparación del examen económico OOS — R4, Próximo lote concreto y recibos de salida, Revalidación de alcance sobre el candidato integrado, Revalidación del 8 de octubre (+6 more)
+### Community 1117 - "R4 — cierre de T1 histórico y reconciliación de integración"
+Cohesion: 0.22
+Nodes (9): Adenda de integración y limpieza — 2026-10-11, segundo censo, Censo de ramas y reservas observado, Corte posterior de R4 — 13 de octubre de 2026, Los tres JSON D2 recuperados por el merge, Qué llegó a main y qué quedó pendiente, R4 — cierre de T1 histórico y reconciliación de integración, Regresiones de la misma composición, Resolución exacta del merge histórico propuesto (+1 more)
 
 ### Community 1118 - ".ola73/crates/signal-engine/tests/ensemble_characterization.rs"
 Cohesion: 0.16
@@ -9649,9 +9682,9 @@ Nodes (30): F2.1-05. Documentación falsa en Hodge y Lundberg, F2.1-06. Marchenk
 Cohesion: 0.50
 Nodes (3): GlobalArena, SignalIntent, vetada_por_drawdown()
 
-### Community 1275 - ".mutate_json_config"
-Cohesion: 0.23
-Nodes (11): ASTMutator, Box, Error, QuantumConfig, Result, Self, String, Value (+3 more)
+### Community 1275 - "P"
+Cohesion: 0.09
+Nodes (27): Connection, Result, Self, test_wal_storage_creation_and_insertion(), test_wal_storage_nan_and_negative_price_sanitization(), WalStorage, EmergencyCrashDump, PositionDumpEntry (+19 more)
 
 ### Community 1276 - "SaScoreState"
 Cohesion: 0.24
@@ -9718,12 +9751,12 @@ Cohesion: 0.18
 Nodes (14): AssetScore, DynamicSelector, Client, Result, Self, String, Value, Vec (+6 more)
 
 ### Community 1292 - "LiveEvolutionDaemon"
-Cohesion: 0.13
-Nodes (19): armar_vigilancia(), barra_de_mercado(), cl27_el_examen_del_daemon_se_alimenta_del_mercado_y_no_del_pnl(), cl27_la_barra_del_examen_es_el_retorno_del_precio_por_reloj(), d747_el_watchdog_no_se_reinicia_con_el_mismo_genoma(), detectar_promocion_externa(), live_evolution_armed_for_env(), LiveEvolutionDaemon (+11 more)
+Cohesion: 0.14
+Nodes (17): barra_de_mercado(), cl27_el_examen_del_daemon_se_alimenta_del_mercado_y_no_del_pnl(), cl27_la_barra_del_examen_es_el_retorno_del_precio_por_reloj(), detectar_promocion_externa(), live_evolution_armed_for_env(), LiveEvolutionDaemon, EvidenceEwma, EvolutionLedger (+9 more)
 
 ### Community 1293 - ".new"
-Cohesion: 0.18
-Nodes (18): canonical_vector(), cl25_el_rollback_no_vuelve_al_genoma_que_un_rollback_retiro(), cl25_el_rollback_salta_los_re_registros_del_mismo_genoma(), d747_same_genome_reconoce_igualdad_y_diferencia(), destino_de_rollback(), genoma_distinto(), QuantumHotSwapState, AtomicBool (+10 more)
+Cohesion: 0.17
+Nodes (19): canonical_vector(), cl25_el_rollback_no_vuelve_al_genoma_que_un_rollback_retiro(), cl25_el_rollback_salta_los_re_registros_del_mismo_genoma(), d747_same_genome_reconoce_igualdad_y_diferencia(), destino_de_rollback(), genoma_distinto(), QuantumHotSwapState, Arc (+11 more)
 
 ### Community 1294 - ".sol-plan-2026-10-07/crates/execution-engine/tests/reconciliation_evidence_contract.rs"
 Cohesion: 0.17
@@ -10159,7 +10192,7 @@ Nodes (6): ChaosMonkey, AtomicU64, Default, Self, test_chaos_monkey_disabled_by_
 
 ### Community 1417 - "cf4_freno_duro.rs"
 Cohesion: 0.16
-Nodes (18): CAPITAL, cl106_falsa_alarma_y_retraso_de_deteccion(), cl106_sin_riesgo_medido_rige_d_estrella(), cl106_una_caida_del_3_por_ciento_ya_no_bloquea_la_cuenta(), cl106b_con_nocional_fijo_el_freno_dispara_tras_k_stops(), FRICCION, geometria(), larga() (+10 more)
+Nodes (19): CAPITAL, cl106_el_umbral_es_el_cuantil_de_la_caida_con_el_tamano_real(), cl106_falsa_alarma_y_retraso_de_deteccion(), cl106_sin_riesgo_medido_rige_d_estrella(), cl106_una_caida_del_3_por_ciento_ya_no_bloquea_la_cuenta(), cl106b_con_nocional_fijo_el_freno_dispara_tras_k_stops(), FRICCION, geometria() (+11 more)
 
 ### Community 1418 - ".ola73/crates/evolution-engine/tests/cma_generation_contract.rs"
 Cohesion: 0.36
@@ -10511,7 +10544,7 @@ Nodes (9): [M8-C01] Cadena de sizing backtest ≠ cadena vivo (CAUSA #1 del gap)
 
 ### Community 1545 - "TABLERO COMPARTIDO — estado por agente"
 Cohesion: 0.12
-Nodes (17): Antigravity (actualizado: 2026-10-13 20:10 local, Quant Sr. Lead, Ola Ω99 completada y certificada), Antigravity (AGY, Quant Sr. Lead) — 14 de octubre de 2026, OLAS Ω103, Ω104, Ω105, Ω106, Ω107, Ω108 COMPLETADAS, Claude (actualizado: 2026-10-11 ~09:00 UTC, Línea C, prefijo CL-n, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08), Claude — Línea F (actualizado: 2026-10-11, sesión «laughing-fermi», prefijo LF-n, rama claude/laughing-fermi-xoqnb7), Claude — Línea G (actualizado: 2026-10-12, sesión local, prefijo LG-n; olas 1–7 cerradas y fusionadas en main; ramas borradas), Claude — Línea H (actualizado: 2026-10-12 ~19:30 local, prefijo LH-n; olas 1 y 2 cerradas y fusionadas en main; rama borrada), Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4), Codex LH12 — 13 de octubre de 2026, candidato en revisión (+9 more)
+Nodes (17): Antigravity (actualizado: 2026-10-13 20:10 local, Quant Sr. Lead, Ola Ω99 completada y certificada), Antigravity (AGY, Quant Sr. Lead) — 14 de octubre de 2026, OLAS Ω103, Ω104, Ω105, Ω106, Ω107, Ω108, Ω109 COMPLETADAS, Claude (actualizado: 2026-10-11 ~09:00 UTC, Línea C, prefijo CL-n, rama claude/auditoria-deslizamiento-apalancamiento-sqtc08), Claude — Línea F (actualizado: 2026-10-11, sesión «laughing-fermi», prefijo LF-n, rama claude/laughing-fermi-xoqnb7), Claude — Línea G (actualizado: 2026-10-12, sesión local, prefijo LG-n; olas 1–7 cerradas y fusionadas en main; ramas borradas), Claude — Línea H (actualizado: 2026-10-12 ~19:30 local, prefijo LH-n; olas 1 y 2 cerradas y fusionadas en main; rama borrada), Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4), Codex LH12 — 13 de octubre de 2026, candidato en revisión (+9 more)
 
 ### Community 1546 - "🔭 Décima Ola — Adenda de auditoría integral: el medidor mentía y el fuego real no estaba cerrado (D-696 a D-740)"
 Cohesion: 0.22
@@ -10525,9 +10558,9 @@ Nodes (9): 1. D-507: Resolución del Trapdoor de Producción en Carga de Genoma,
 Cohesion: 0.22
 Nodes (9): Adenda científica XXIX — procedencia económica, continuidad temporal y vetos defensivos, Alcance científico, módulos y verificación, FMT-225 — contención parcial del cierre no confirmado, FMT-227 — contaminación de salidas entre evaluación y circuito vivo, P1 parcial, FMT-228 — doble evidencia de recompensa, P1 reparado en consumidor, FMT-229 — horizonte borrado y gen desconectado, P1 reparado en consumidor, FMT-230 — pérdida de feedback por cursor de reserva, P1 abierto reproducido, FMT-231 — acceso anterior a validación de cabecera, P1 abierto estático (+1 more)
 
-### Community 1549 - "wf_evaluate_real"
-Cohesion: 0.24
-Nodes (13): atr_pct_del_examen(), d742_el_spread_del_examen_es_del_mercado_con_piso_de_medio_tick(), d742_profundidad_derivada_del_apalancamiento_publicado(), nucleo_del_examen(), observed_market_env(), Arc, GlobalArena, GodEngineCore (+5 more)
+### Community 1549 - "wf_replay_segment"
+Cohesion: 0.25
+Nodes (11): atr_pct_del_examen(), d742_el_spread_del_examen_es_del_mercado_con_piso_de_medio_tick(), d742_profundidad_derivada_del_apalancamiento_publicado(), nucleo_del_examen(), observed_market_env(), Arc, GlobalArena, GodEngineCore (+3 more)
 
 ### Community 1550 - "EmergencyCrashDump"
 Cohesion: 0.29
@@ -10701,9 +10734,9 @@ Nodes (4): ADR-0008: Reloj de revalidación de modelos promovidos, ADR-0009: Reg
 Cohesion: 0.06
 Nodes (35): b3_14_ciclo_confirmacion_open_fill_close_swap(), b3_14_cierre_de_papel_no_confirma(), b3_14_reapertura_no_hereda_estado_del_ocupante_previo(), cl41c_el_reajuste_publica_el_margen_despues_de_reservarlo(), cl41c_reajuste_y_cierre_concurrentes_no_dejan_margen_fantasma(), MAX_SPECTRAL_SLOTS, Position, PositionHorizon (+27 more)
 
-### Community 1597 - "EmergencyCrashDump"
-Cohesion: 0.29
-Nodes (9): EmergencyCrashDump, PositionDumpEntry, Result, Self, String, Vec, test_emergency_crash_dump_atomic_file_write(), test_emergency_crash_dump_empty_positions_and_zero_balance() (+1 more)
+### Community 1597 - "R4 — Recuperación mínima del consumidor de clamp_ruin"
+Cohesion: 0.22
+Nodes (8): Alcance de C07 y comprobaciones pendientes, Delta recuperado, Límites y riesgos de compatibilidad, Procedencia y decisión de recuperación, Qué ya estaba integrado y qué faltaba, R4 — Recuperación mínima del consumidor de clamp_ruin, Reejecución RED/GREEN del consumidor, Revalidación del 8 de octubre
 
 ### Community 1598 - "MAPA MAESTRO API BINANCE — USDT-M Futures (F1.0)"
 Cohesion: 0.25
@@ -11022,8 +11055,8 @@ Cohesion: 0.29
 Nodes (7): 🎯 15. HOJA DE RUTA SISTÉMICA DE INTERVENCIÓN QUIRÚRGICA COMPLETA (NIVELES L-0 A L-5), Nivel L-0: Integridad de Red, Concurrencia Lock-Free y Parsers (Hot-Path Ingest & Exec), Nivel L-1: Microestructura L2, Features y Consistencia Sensorial, Nivel L-2: Redes Neuronales 54D, Inferencia y Calibración Conformal, Nivel L-3: Variedad Continua, Consejo de Seniors y Scoping de Dominio, Nivel L-4: Gestión de Riesgo Micro-Capital ($13 USD), Epigenética y Hardware 16GB, Nivel L-5: Paridad 1:1 en Backtesting y Fricción Real Binance VIP0
 
 ### Community 1687 - "Auditoría de integración, EWMA y reloj de evidencia — 2026-09-28"
-Cohesion: 0.10
-Nodes (20): 10. EWMA-W1-13 — el oráculo no demuestra inercia global de un gen, 11. Corte de validación intermedia — 15:01 America/Bogota, 13. Revalidación de modelos guardados — FMT-037/190 sigue abierto, 14. Traspaso de integración y límites de certificación, 15. Resultado final de regresión local — 15:18 America/Bogota, 19. Lo que esta ola no certifica, 1. Dictamen y universo revisado, 22. Cierre verificable de esta pasada: commits locales y pruebas aisladas (+12 more)
+Cohesion: 0.03
+Nodes (64): 10. EWMA-W1-13 — el oráculo no demuestra inercia global de un gen, 11. Corte de validación intermedia — 15:01 America/Bogota, 12. EWMA-W1-14/15 — límites de integración todavía abiertos, 13. Revalidación de modelos guardados — FMT-037/190 sigue abierto, 14. Traspaso de integración y límites de certificación, 15. Resultado final de regresión local — 15:18 America/Bogota, 16. Avance remoto concurrente: dos commits todavía fuera del árbol probado, 17. Nuevo corte de integración: aislamiento por agente (+56 more)
 
 ### Community 1688 - ".r7r4/crates/god-engine-core/src/lib.rs"
 Cohesion: 0.04
@@ -11134,8 +11167,8 @@ Cohesion: 0.10
 Nodes (20): 1. La meta, encuadrada sin decoración (doctrina ADR-0003), 2. Estado del sistema (una página, 2026-10-04), 3. Mapa de frentes por agente (lo que ya está en vuelo), 4. Ruta crítica compartida (lo que bloquea la meta, en orden), 5. Compromisos del próximo ciclo (cada agente append aquí), 5b. Mapa de sincronización de planes (LXXXV), 6. El marco que nos sincroniza (ya operativo), Antigravity (+12 more)
 
 ### Community 1717 - "Revisión exhaustiva desde los fundamentos — plan por archivo y contrato"
-Cohesion: 0.09
-Nodes (20): Censo de cobertura RA — 2026-10-04, Cómo convertir inventario en cobertura verificable, Nuevo corte main237 y plan archivo-a-archivo (adenda, no sustitución), Objeto y frontera del recibo, Prioridad desde la raíz, Topología declarada: recibo estructural, no grafo vivo certificado, 10. Adenda de revisión: nomenclatura canónica, reversión y anexo externo, 11. Recibo del inventario y del método, no de auditoría completa (+12 more)
+Cohesion: 0.14
+Nodes (14): 10. Adenda de revisión: nomenclatura canónica, reversión y anexo externo, 11. Recibo del inventario y del método, no de auditoría completa, 12. Delta de corte mainEA5d y continuidad de las fases, 13. Corte F3/main749d: avanzar por contratos, no por etiquetas de cierre, 1. Objetivo, frontera y evidencia, 2. Primero definir lo que se quiere medir, 3. Orden desde los fundamentos, sin alterar la numeración compartida, 4. Concepto continuo sin fingir resolución o información inexistentes (+6 more)
 
 ### Community 1718 - ".r7r6/crates/god-engine-core/src/lib.rs"
 Cohesion: 0.04
@@ -11194,8 +11227,8 @@ Cohesion: 0.33
 Nodes (5): Alcance de la evidencia, Composición sobre el candidato local del 8 de octubre, Defecto y cambio, Prueba de comportamiento, sin Cargo ni red, R4-CI-01: validar el candidato original sin mover HEAD
 
 ### Community 1739 - "ATLAS ANALÍTICO DEL MOTOR — Qué calcula, para qué existe, cómo se interpreta"
-Cohesion: 0.02
-Nodes (107): 2026-09-24 — Ronda científica IX: evidencia operativa y autoridad de parada, 2026-09-24 — Ronda científica VIII: continuidad y evidencia evolutiva, 2026-09-28 — Codex: auditoría del optimizador Platt y reloj de evidencia, 2026-09-28 — Codex CF: genoma, calibración y veto de entradas, 2026-09-28 — Codex OA: aprendizaje causal por posición y ensamble, 2026-09-29 — Codex ST: firmas y contratos de transferencia científica, 2026-10-04 — Contratos de base RA y significado de los cálculos, Adenda 2026-09-28 — admisión multiactivo y tercer corte de evidencia (+99 more)
+Cohesion: 0.03
+Nodes (60): 2026-09-24 — Ronda científica IX: evidencia operativa y autoridad de parada, 2026-09-24 — Ronda científica VIII: continuidad y evidencia evolutiva, 2026-09-28 — Codex: auditoría del optimizador Platt y reloj de evidencia, 2026-09-28 — Codex CF: genoma, calibración y veto de entradas, 2026-09-28 — Codex OA: aprendizaje causal por posición y ensamble, Adenda 2026-09-28 — admisión multiactivo y tercer corte de evidencia, Adenda 2026-09-28 — contratos numéricos y contraste de integración, Adenda científica XI — contrato de lectura y adaptación estadística (2026-09-24) (+52 more)
 
 ### Community 1740 - "4. Diseño matemático objetivo: un campo continuo, no dos motores renombrados"
 Cohesion: 0.33
@@ -11918,8 +11951,8 @@ Cohesion: 0.09
 Nodes (28): format_coin_key(), format_scoped_key(), OmniscientRegistry, Parameter, ParameterKind, ParameterSnapshot, RegistrySnapshot, Arc (+20 more)
 
 ### Community 1940 - "🌊 DÉCIMA OLA FORENSE — AUDITORÍA DE RAÍZ A CIMA POST-REHABILITACIÓN F8/REHAB-7"
-Cohesion: 0.03
-Nodes (72): 0.1 Definición operativa de los nodos, 0.2 El hallazgo topológico maestro de esta ola, 0.3 Topología de la desconexión (diagrama de flujo real), 🗺️ 0. PARADIGMA DE GRAFO VIVO: EL DIAGNÓSTICO TOPOLÓGICO CENTRAL, ⚛️ 10. MÓDULO 7 — SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA, 🧪 11. MÓDULO 8 — BACKTESTING, AUDITORÍA INTERNA Y GOBERNANZA, 12.1 Principio rector, 12.2 Fase L-5 — CONTENCIÓN INMEDIATA (antes de operar capital real) (+64 more)
+Cohesion: 0.02
+Nodes (84): 0.1 Definición operativa de los nodos, 0.2 El hallazgo topológico maestro de esta ola, 0.3 Topología de la desconexión (diagrama de flujo real), 🗺️ 0. PARADIGMA DE GRAFO VIVO: EL DIAGNÓSTICO TOPOLÓGICO CENTRAL, ⚛️ 10. MÓDULO 7 — SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUENCIA, 🧪 11. MÓDULO 8 — BACKTESTING, AUDITORÍA INTERNA Y GOBERNANZA, 12.1 Principio rector, 12.2 Fase L-5 — CONTENCIÓN INMEDIATA (antes de operar capital real) (+76 more)
 
 ### Community 1941 - "§R7-5 — Fase R1 cerrada: doctrina/nomenclatura y grep `scalp|swing`"
 Cohesion: 0.15
@@ -12049,9 +12082,9 @@ Nodes (40): partition_income(), aggregation_is_permutation_invariant_for_exactly
 Cohesion: 0.14
 Nodes (21): c05_dominant_tau_opera_dentro_de_la_banda_operativa(), cl30_zigzag_a_la_escala_revierte(), d742_las_escalas_vacias_no_gobiernan_la_fusion(), escala_con_habilidad(), omega12_g1_4_segundo_momento_central_sin_sesgo_jensen(), qo_594_escalas_inmaduras_conservan_el_respaldo_de_energia(), qo_594_tau_dominante_sigue_la_habilidad_madura(), qo_599_el_maximo_de_ics_de_ruido_no_opina_sin_significancia() (+13 more)
 
-### Community 1989 - "🔬 NOVENO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA"
-Cohesion: 0.25
-Nodes (7): 🗺️ 0. Diagnóstico central, 🚦 1. Resumen de resolución, 📊 2. Matriz de CRÍTICOS/ALTOS, 📈 3. La física que falta (asimetría completa), 🎯 4. Hoja de ruta, 🔬 NOVENO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA, Post-física: el bug de unidades que satura el slippage al 5%, la salida sin física, y la verificación de los O-fixes
+### Community 1989 - ".new"
+Cohesion: 0.31
+Nodes (6): Connection, Result, Self, test_wal_storage_creation_and_insertion(), test_wal_storage_nan_and_negative_price_sanitization(), WalStorage
 
 ### Community 1990 - "🛡️ 8. MÓDULO 5 — RIESGO, ECUACIÓN DE KELLY Y GENOMA EVOLUTIVO"
 Cohesion: 0.17
@@ -13182,8 +13215,8 @@ Cohesion: 0.06
 Nodes (35): 10. FMT-267 — un acumulador llamado SPRT no hereda sus garantías, 11.1 Qué se puede derivar y qué sigue siendo una elección, 11.2 Integración coherente con el continuo multiactivo, 11.3 Puertas de admisión de nueva teoría, 11. Fundamento científico y teorías candidatas, 12. Matriz de sentido de vetos y hoja de ruta, 13.1 Resultados sin doble cómputo, 13.2 Comandos y advertencias (+27 more)
 
 ### Community 2354 - "PLAN MAESTRO DE SINCRONIZACIÓN — Crecimiento Exponencial Compuesto"
-Cohesion: 0.05
-Nodes (41): 0. La meta y su física, 0b. Barrido exhaustivo (mandato 2026-10-04), 10. Registro obligatorio de vetos, filtros y límites, 11. Integración científica y auditoría archivo por archivo, 12. Protocolo de sincronización y próximos entregables, 14.1 CI final del candidato anterior, gate del nuevo corte separado, 14.2 Recibo local legacy, sin churn de CI, 14.3 Reinicio causal sobre main44bc8 y tareas sincronizadas propuestas (+33 more)
+Cohesion: 0.03
+Nodes (59): 0. La meta y su física, 0b. Barrido exhaustivo (mandato 2026-10-04), 10. Registro obligatorio de vetos, filtros y límites, 11. Integración científica y auditoría archivo por archivo, 12. Protocolo de sincronización y próximos entregables, 13.10 Acuse Qoder posterior y límites del sello, 13.11 Contrato matemático del oscilador y límite de reutilización, 13.12 Recibo de bosque y semántica de features temporales (+51 more)
 
 ### Community 2355 - ".r7r6/src/bin/god_engine.rs"
 Cohesion: 0.09
@@ -13747,7 +13780,7 @@ Nodes (31): 🚨 D-400: Colapso Booleano Incondicional de la Variedad Continua e
 
 ### Community 2499 - ".sol-replay-2026-10-09/INFORME_FORENSE_MAESTRO.md"
 Cohesion: 0.10
-Nodes (15): 🗺️ 0. Diagnóstico central, 🚦 1. Resumen de resolución, 📊 2. Matriz de CRÍTICOS/ALTOS, 📈 3. El inventario de lo que YA está correcto, 🎯 4. Hoja de ruta final, 🔬 DÉCIMO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA, Post todos los fixes: el EV gate sin física, el OCO retry eterno, y el genoma sin re-certificar, 🔬 DECIMOTERCER INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA (+7 more)
+Nodes (15): 🔬 DECIMOTERCER INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA, Los 8 circuitos verificados, TOP-5 puntos de endurecimiento (no bloqueantes), 🚦 Veredicto, Verificación final: los 8 circuitos FUNCIONAN — sistema CERTIFICABLE para overnight y LISTO para demo, 🗺️ 0. Diagnóstico central, 🚦 1. Resumen de resolución, 📊 2. Matriz de CRÍTICOS/ALTOS (+7 more)
 
 ### Community 2500 - ".sol-replay-2026-10-09/crates/backtest-engine/tests/label_evidence_contract.rs"
 Cohesion: 0.10
@@ -14666,8 +14699,8 @@ Cohesion: 0.33
 Nodes (6): Bus mmap con seqlock (M6-H01), Lazo de confirmación de órdenes (M4-C01), Reconciliación — la verdad del exchange, Shutdown graceful (M4-H02), Sistema inmune (kill-switch por capas), VII. DEFENSA, EJECUCIÓN Y ESTADO — «sobrevivir a lo inesperado»
 
 ### Community 2747 - "Revisión exhaustiva desde los fundamentos — plan por archivo y contrato"
-Cohesion: 0.09
-Nodes (20): Censo de cobertura RA — 2026-10-04, Cómo convertir inventario en cobertura verificable, Nuevo corte main237 y plan archivo-a-archivo (adenda, no sustitución), Objeto y frontera del recibo, Prioridad desde la raíz, Topología declarada: recibo estructural, no grafo vivo certificado, 10. Adenda de revisión: nomenclatura canónica, reversión y anexo externo, 11. Recibo del inventario y del método, no de auditoría completa (+12 more)
+Cohesion: 0.05
+Nodes (40): Censo de cobertura RA — 2026-10-04, Cómo convertir inventario en cobertura verificable, Nuevo corte main237 y plan archivo-a-archivo (adenda, no sustitución), Objeto y frontera del recibo, Prioridad desde la raíz, Topología declarada: recibo estructural, no grafo vivo certificado, 1. La meta, encuadrada sin decoración (doctrina ADR-0003), 2. Estado del sistema (una página, 2026-10-04) (+32 more)
 
 ### Community 2748 - "Auditoría de fundamentos científicos IX — Evidencia operativa, autoridad de parada y trazabilidad"
 Cohesion: 0.08
@@ -15277,9 +15310,9 @@ Nodes (14): AssetScore, DynamicSelector, Client, Result, Self, String, Value, Ve
 Cohesion: 0.17
 Nodes (21): absent_row_is_not_explicit_flat_evidence(), arena(), balanced_hedge_does_not_clear_known_exposure(), checked_report_explains_hedge_and_is_order_invariant(), duplicate_leg_rows_are_not_added_together(), explicit_flat_and_single_position_adoption_still_work(), invalid_metadata_and_unmapped_exposure_are_reported_without_adoption(), invalid_quantity_does_not_become_flat() (+13 more)
 
-### Community 2909 - "VI. EVOLUCIÓN Y SELECCIÓN — «mejorarse a sí mismo sin mentirse»"
-Cohesion: 0.29
-Nodes (7): CMA-ES + recocido del daemon, DSR — Deflated Sharpe Ratio (Bailey & López de Prado 2014), Fitness único — utilidad logarítmica penalizada por ruina, RANSAC de Sharpe — control de degradación, Shadow Forest — el mundo de control, VI. EVOLUCIÓN Y SELECCIÓN — «mejorarse a sí mismo sin mentirse», Walk-forward del daemon — el motor real de juez (M8-H01)
+### Community 2909 - "🔬 DÉCIMO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA"
+Cohesion: 0.25
+Nodes (7): 🗺️ 0. Diagnóstico central, 🚦 1. Resumen de resolución, 📊 2. Matriz de CRÍTICOS/ALTOS, 📈 3. El inventario de lo que YA está correcto, 🎯 4. Hoja de ruta final, 🔬 DÉCIMO INFORME DE ASEGURAMIENTO Y CERTIFICACIÓN PROFUNDA, Post todos los fixes: el EV gate sin física, el OCO retry eterno, y el genoma sin re-certificar
 
 ### Community 2910 - "classify_query_result"
 Cohesion: 0.27
@@ -15687,7 +15720,7 @@ Nodes (7): ⚡ 7. MÓDULO 4 — EJECUCIÓN HFT, PROTOCOLO DE RED Y CONECTIVIDAD 
 
 ### Community 3021 - ".r7r6/docs/PLAN_AUDITORIA_BASE_2026-10-08.md"
 Cohesion: 0.05
-Nodes (31): 1. El pipeline de decisión (punta a punta), 2. Invariantes duros (romperlos = bug, no decisión de diseño), 3. Zonas por agente (no-choque), 4. Telemetría/registro — claves del contrato escritor→lector, 5. Protocolo de ola (obligatorio para cambios de conducta), 6. Deuda viva (verificada por grep contra el árbol 09186b81, 2026-10-05 post Ω9/LXXXXVIII), ARQUITECTURA VIVA — Trader Gemini (mapa para el consejo), Huellas y alcance (+23 more)
+Nodes (30): 1. El pipeline de decisión (punta a punta), 2. Invariantes duros (romperlos = bug, no decisión de diseño), 3. Zonas por agente (no-choque), 4. Telemetría/registro — claves del contrato escritor→lector, 5. Protocolo de ola (obligatorio para cambios de conducta), 6. Deuda viva (verificada por grep contra el árbol 09186b81, 2026-10-05 post Ω9/LXXXXVIII), ARQUITECTURA VIVA — Trader Gemini (mapa para el consejo), Huellas y alcance (+22 more)
 
 ### Community 3022 - "RONDA 5 (2026-10-07, contra .ola69 — post Ola 68/69, Ω17/Ω18, GLM 104)"
 Cohesion: 0.33
@@ -15897,9 +15930,9 @@ Nodes (7): 🗺️ 0. Diagnóstico central, 🚦 1. Resumen de resolución, 📊
 Cohesion: 0.19
 Nodes (17): BINARY_QUEUE, init_binary_telemetry(), init_stats_telemetry(), pop_binary_telemetry(), pop_trade_stats(), push_binary_telemetry(), push_trade_stats(), ArrayQueue (+9 more)
 
-### Community 3090 - ".observado_por_completo"
-Cohesion: 0.18
-Nodes (7): cl28_el_umbral_de_la_fisher_no_separa_el_ruido_de_una_tendencia(), curva_horizonte_pasa_por_los_anchos_legacy(), HorizonCurve, Self, spectral_contract_maximum_energy_entropy_can_have_full_agreement(), umbral_fisher_identificable(), xliv_fisher_de_escala_tiene_techo_y_umbral_alcanzable()
+### Community 3090 - "Self"
+Cohesion: 0.38
+Nodes (3): curva_horizonte_pasa_por_los_anchos_legacy(), HorizonCurve, Self
 
 ### Community 3091 - "Self"
 Cohesion: 0.31
@@ -16882,8 +16915,8 @@ Cohesion: 0.16
 Nodes (8): Constant, conviction(), missing_model_base_means_ml_abstains_not_fabricated_lift(), Arc, OmniscientRegistry, QuantumStrategy, Result, String
 
 ### Community 3420 - "Preparación del examen económico OOS — R4"
-Cohesion: 0.12
-Nodes (14): Alcance de integración y hashes, Bloqueos y evidencia observada, Dictamen acotado, Evaluación de una política que aprende, Preparación del examen económico OOS — R4, Próximo lote concreto y recibos de salida, Revalidación de alcance sobre el candidato integrado, Revalidación del 8 de octubre (+6 more)
+Cohesion: 0.25
+Nodes (8): Alcance de integración y hashes, Bloqueos y evidencia observada, Dictamen acotado, Evaluación de una política que aprende, Preparación del examen económico OOS — R4, Próximo lote concreto y recibos de salida, Revalidación de alcance sobre el candidato integrado, Revalidación del 8 de octubre
 
 ### Community 3421 - "TRIAGE TEÓRICO DEL ARSENAL EXPANDIDO (2026-09-29)"
 Cohesion: 0.12
@@ -18277,9 +18310,9 @@ Nodes (11): 🗺️ 0. Topología del grafo tras las reparaciones, 🚦 1. Resum
 Cohesion: 0.17
 Nodes (12): 1. 📊 RESUMEN EJECUTIVO DEL HITO HISTÓRICO, 2. 📈 EVOLUCIÓN HISTÓRICA DE LA AUDITORÍA FORENSE, 3. 🔬 ANATOMÍA DE LAS REMEDIACIONES FINALES (D-502 A D-506), 4. 🚀 CERTIFICACIÓN DE PRODUCCIÓN Y LISTO PARA `LAUNCH_GOD_MODE.bat`, Backtest Forense Hiperrealista 1:1 sobre 1,033,320 Ticks Reales de Binance (Diciembre 2025 – Mayo 2026), 🏆 CAPÍTULO XII: EL CRUCE DEL RUBICÓN — CONVERGENCIA DEFINITIVA A ALPHA NETO POSITIVO, Certificación de Paridad Absoluta con Producción (`LAUNCH_GOD_MODE.bat`), [D-502] Invariante de No Aceleración Adversa en Scalping Tensorial (`lib.rs:2090-2130`) (+4 more)
 
-### Community 3775 - "🛡️ 8. MÓDULO 5 — RIESGO, ECUACIÓN DE KELLY Y GENOMA EVOLUTIVO"
-Cohesion: 0.17
-Nodes (12): 🛡️ 8. MÓDULO 5 — RIESGO, ECUACIÓN DE KELLY Y GENOMA EVOLUTIVO, D-636 — `MIN_RR_GATE = 1,5`: derivación dimensionalmente errónea que certifica genomas con EV negativo · **S0**, D-637 — El gate de EV valida un trade que no es el que se ejecuta · **S0**, D-638 / D-639 / D-640 — El TP/SL tiene cinco derivaciones, un piso que se anula y un rango efectivo de 20 bps · **S2 / S0 / S1**, D-641 — Tres acantilados de conducta en `capital = $15`: la frontera invisible entre backtest y producción · **S1**, D-642 / D-645 / D-646 / D-647 — Corrupción de la probabilidad y ceguera a comisiones · **S2 / S1 / S2 / S2**, D-648 — El oráculo de fitness lee 6 de 144 genes: el 95,8 % del genoma nunca fue seleccionado · **S0 — HALLAZGO MAESTRO**, D-649 — 33 genes completamente muertos: subsistemas enteros desconectados · **S1** (+4 more)
+### Community 3775 - "14. Corte operativo consolidado y secuencia de cierre"
+Cohesion: 0.29
+Nodes (7): 14.1 CI final del candidato anterior, gate del nuevo corte separado, 14.2 Recibo local legacy, sin churn de CI, 14.3 Reinicio causal sobre main44bc8 y tareas sincronizadas propuestas, 14.4 Recibo del candidato con LXXXVIII, sin trasladar CI, 14.5 Sincronización F0/F1 y verificación de artefactos por fuente, 14.6 Recibo F1 de Qoder y riesgo no finito reproducido, 14. Corte operativo consolidado y secuencia de cierre
 
 ### Community 3776 - "🏁 RESULTADO DEL BACKTEST DE CERTIFICACIÓN POST-R2 (30 días)"
 Cohesion: 0.17
@@ -19081,9 +19114,9 @@ Nodes (9): fred_daily(), http_get(), main(), Option, String, Vec, UA, write_seri
 Cohesion: 0.29
 Nodes (5): BinTick, Corr, Fusiones, main(), Self
 
-### Community 3986 - "VII. DEFENSA, EJECUCIÓN Y ESTADO — «sobrevivir a lo inesperado»"
-Cohesion: 0.33
-Nodes (6): Bus mmap con seqlock (M6-H01), Lazo de confirmación de órdenes (M4-C01), Reconciliación — la verdad del exchange, Shutdown graceful (M4-H02), Sistema inmune (kill-switch por capas), VII. DEFENSA, EJECUCIÓN Y ESTADO — «sobrevivir a lo inesperado»
+### Community 3986 - "VI. EVOLUCIÓN Y SELECCIÓN — «mejorarse a sí mismo sin mentirse»"
+Cohesion: 0.29
+Nodes (7): CMA-ES + recocido del daemon, DSR — Deflated Sharpe Ratio (Bailey & López de Prado 2014), Fitness único — utilidad logarítmica penalizada por ruina, RANSAC de Sharpe — control de degradación, Shadow Forest — el mundo de control, VI. EVOLUCIÓN Y SELECCIÓN — «mejorarse a sí mismo sin mentirse», Walk-forward del daemon — el motor real de juez (M8-H01)
 
 ### Community 3987 - "PLAN RONDA 7 — BARRIDO EXHAUSTIVO DESDE LA BASE, ARCHIVO POR ARCHIVO"
 Cohesion: 0.22
@@ -20085,9 +20118,9 @@ Nodes (6): ═══════════════════════
 Cohesion: 0.14
 Nodes (11): confluencia_resonante(), etiqueta_barrera(), libro_efectivo(), LiquidationObservation, MakerQuote, ObservationUpdate, Option, Result (+3 more)
 
-### Community 4272 - "IV. RIESGO Y SIZING — «cuánto arriesgar por lo que sabemos»"
-Cohesion: 0.33
-Nodes (6): Envolvente Kelly Bayesiana — el juicio de evidencia, IV. RIESGO Y SIZING — «cuánto arriesgar por lo que sabemos», Kelly exacta desde Profit Factor, Ruina centralizada — streak-bound (M5-H03), Régimen de capital — z/k continuos, VOL-BRAKE — el freno de volatilidad prevista
+### Community 4272 - "R4: deuda confirmada durante la revisión de ramas"
+Cohesion: 0.29
+Nodes (7): Alcance de la revisión cruzada, R4: deuda confirmada durante la revisión de ramas, R4-I1 — AggTrade no distingue timestamp ausente de timestamp inválido, R4-I2 — Mutación de anclas sin efecto en curvas del CLI evolution, R4-I3 — Alcance limitado del watcher recuperado, R4-I4 — Dominio del conteo de familia del veto multiactivo, Revalidación del 8 de octubre y residual OU
 
 ### Community 4273 - ".r7r6/crates/audit-engine/src/state_validator.rs"
 Cohesion: 0.48
@@ -20205,17 +20238,17 @@ Nodes (6): main(), NanoForestData, Box, Error, Result, Vec
 Cohesion: 0.38
 Nodes (6): cargar_tape(), main(), Result, String, Vec, Tick
 
-### Community 4314 - "IX. ADENDA 2026-09-24 — Qué mide realmente el estado espectral"
+### Community 4314 - "Auditoría desde la base y coordinación del consejo — 8 de octubre de 2026"
 Cohesion: 0.29
-Nodes (7): Aprendizaje y trazabilidad, Entropía de masa y dirección son análisis diferentes, Estado de integración en este corte, IX. ADENDA 2026-09-24 — Qué mide realmente el estado espectral, Normalización de sorpresa y persistencia de signo, Tiempo, resolución y evidencia, Una medida común para el aprendizaje y sus consumidores
+Nodes (7): Auditoría desde la base y coordinación del consejo — 8 de octubre de 2026, Base, medición y estado, Concepto rector, Consejo y sincronización, Fases y criterio de salida, Primeros lotes concretos, Transferencia de teorías
 
-### Community 4315 - "III. PROBABILIDAD, MODELOS Y CALIBRACIÓN — «cuánto creerle al modelo»"
+### Community 4315 - "48. Revalidación de F2 y del corte mainEA5d: coherencia de evidencia y teoría"
 Cohesion: 0.29
-Nodes (7): Conformal + ACI — intervalos con garantía distribucional, Ensamble Hedge/Brier — pesos por conocimiento real, Etiquetado honesto — triple barrera, Gate ML por LIFT (B3.18 + B3.36 + D-715), III. PROBABILIDAD, MODELOS Y CALIBRACIÓN — «cuánto creerle al modelo», NanoForest (GBDT) — el modelo por símbolo, Platt por símbolo — calibración de temperatura
+Nodes (7): 48.1. Corte, procedencia y alcance de la sincronización, 48.2. RA-DOC-F02: recuento de severidades F2 inconsistente, 48.3. Admisión científica condicionada, no adopción por prestigio, 48.4. Próximas fronteras y reservas entre agentes, 48.5. RA-SIG-F01/F2-A1: paridad Hawkes y rectificación de inferencias, 48.6. Recibo de compilación del candidato y límites, 48. Revalidación de F2 y del corte mainEA5d: coherencia de evidencia y teoría
 
-### Community 4316 - "II. ESPECTRO TEMPORAL CONTINUO — «el mercado como banda, no como reloj»"
-Cohesion: 0.29
-Nodes (7): Estadística de difusión — z comparables entre horizontes, Fusión espectral — por qué pesa cada escala, Hurst por DFA — estimador multiescala real, II. ESPECTRO TEMPORAL CONTINUO — «el mercado como banda, no como reloj», Las 32 escalas, Persistencia — el análogo discreto de |Hurst − 0.5|, τ dominante — la escala que manda HOY
+### Community 4316 - "Censo de cobertura RA — 2026-10-04"
+Cohesion: 0.33
+Nodes (6): Censo de cobertura RA — 2026-10-04, Cómo convertir inventario en cobertura verificable, Nuevo corte main237 y plan archivo-a-archivo (adenda, no sustitución), Objeto y frontera del recibo, Prioridad desde la raíz, Topología declarada: recibo estructural, no grafo vivo certificado
 
 ### Community 4317 - ".sol-replay-2026-10-09/crates/audit-engine/src/state_validator.rs"
 Cohesion: 0.48
@@ -20281,9 +20314,9 @@ Nodes (6): DECISIÓN PENDIENTE DEL DUEÑO — Modelos FDUSD inertes, El estado (
 Cohesion: 0.29
 Nodes (6): 🛡️ NIVEL I: EL CORAZÓN ATÓMICO (ESTRUCTURA Y NÚCLEO VITAL), 📊 NIVEL II: CONTRATOS DE DATOS Y APIS (PROTOCOLO HFT), ⚙️ NIVEL III: CONCURRENCIA Y OPTIMIZACIÓN "GOD-MODE", 🧠 NIVEL IV: MEJORAS ESPECTACULARES E INTELIGENCIA SUPERIOR, 🚀 NIVEL V: EL FUTURO (MEJORAS DE NIVEL DIOS), 🛡️ PROTOCOLO DE AUDITORÍA "NIVEL DIOS-BINANCE" (50 FASES)
 
-### Community 4343 - "Revisión independiente R4-I6 y alcance productor → consumidor"
-Cohesion: 0.29
-Nodes (7): Ajuste documental sugerido antes de publicar, Comprobación adicional del paquete documental, Esquema oficial y alcance de las dos rutas, Identidad comprobada por lectura y hashes, Lecturas concretas y límites, Revisión independiente R4-I6 y alcance productor → consumidor, Veredicto sobre el testigo
+### Community 4343 - "7. Estimación espectral: tiempo, soporte y significado estadístico"
+Cohesion: 0.33
+Nodes (6): 7. Estimación espectral: tiempo, soporte y significado estadístico, RA-S-01 — Voto fijado tarde, retorno puntuado desde antes del voto, RA-S-02 — El score usa una predicción recalculada al vencimiento, RA-S-03 — Tener coordenada temporal no equivale a tener historia en ella, RA-S-04 — Muestra acumulada no es muestra efectiva de momentos con olvido, RA-S-05 — TrendRunner no es C∞ en la frontera implementada
 
 ### Community 4344 - "4.1 Base de Conocimiento de Errores (Post-Mortems)"
 Cohesion: 0.29
@@ -20910,8 +20943,8 @@ Cohesion: 0.29
 Nodes (14): asegurar_spec_nativo(), ffi_run_polars_backtest_mmap(), ffi_run_unified_backtest(), ffi_run_unified_backtest_mmap(), golden_backtest_determinism(), c_char, SuperGenotype, run_backtest_native() (+6 more)
 
 ### Community 4539 - "docs/PLAN_MAESTRO_SINCRONIZACION.md"
-Cohesion: 0.05
-Nodes (31): ADR-0005 — Teoría nueva: triage de 4 estados y la medición como portón, Consecuencias, Contexto, Decisión, Cierre R4 de T1, integración y referencias — 2026-10-13, Huellas y alcance, R4-CONT-01: el filtro direccional conserva un corte en alineación táctica cero, R4-CONT-02: el presupuesto de margen salta al cambiar el signo de coherencia (+23 more)
+Cohesion: 0.06
+Nodes (22): ADR-0005 — Teoría nueva: triage de 4 estados y la medición como portón, Consecuencias, Contexto, Decisión, Cierre R4 de T1, integración y referencias — 2026-10-13, Huellas y alcance, R4-CONT-01: el filtro direccional conserva un corte en alineación táctica cero, R4-CONT-02: el presupuesto de margen salta al cambiar el signo de coherencia (+14 more)
 
 ### Community 4540 - "cf2_hurst_bandas_solucion_conocida.rs"
 Cohesion: 0.26
@@ -21257,9 +21290,9 @@ Nodes (3): bosque_con_base(), cl21_la_base_del_modelo_se_publica_por_simbolo_y_m
 Cohesion: 0.67
 Nodes (3): data_join(), data_root(), String
 
-### Community 4652 - "20. Regresión de integración confirmada: contratos del trainer desconectados"
+### Community 4652 - "VII. DEFENSA, EJECUCIÓN Y ESTADO — «sobrevivir a lo inesperado»"
 Cohesion: 0.33
-Nodes (6): 20. Regresión de integración confirmada: contratos del trainer desconectados, Evidencia causal de la pérdida, FMT-190 reabierto parcialmente, P1: juez y artefacto vuelven a separarse, FMT-193 reabierto, P1: promoción sin prueba independiente conectada, FMT-194 reabierto, P2: presupuesto de muestras sólo en una función no usada, Medida de coordinación y límites de la reparación
+Nodes (6): Bus mmap con seqlock (M6-H01), Lazo de confirmación de órdenes (M4-C01), Reconciliación — la verdad del exchange, Shutdown graceful (M4-H02), Sistema inmune (kill-switch por capas), VII. DEFENSA, EJECUCIÓN Y ESTADO — «sobrevivir a lo inesperado»
 
 ### Community 4653 - "Ampliación científica III — autoevolución y validez de la evidencia (24-09-2026)"
 Cohesion: 0.67
@@ -21817,9 +21850,9 @@ Nodes (4): 19.1 Qué revisión llegó, 19.2 Qué no prueba una suite llamada par
 Cohesion: 0.40
 Nodes (5): 🔒 9. MÓDULO 6 — ESTADO ATÓMICO, CONCURRENCIA, MEMORIA Y SISTEMA OPERATIVO, D-659 — Carrera ABA entre cierre y apertura: posiciones vivas con precio de entrada cero · **S0**, D-660 — Desequilibrio de órdenes de memoria: 1365 `Relaxed` frente a 88 accesos ordenados · **S3**, D-661 / D-662 / D-663 — Perfil de compilación en conflicto con los objetivos declarados · **S3 / S3 / S1**, D-XXX-bis — Nota sobre soundness en `MmapTelemetryBus` (hallazgo colateral)
 
-### Community 5095 - "18. R8-A, segunda revisión: el motivo de salida tampoco identifica el target"
-Cohesion: 0.40
-Nodes (5): 18. R8-A, segunda revisión: el motivo de salida tampoco identifica el target, Consecuencia sobre aprendizaje y veto, Contrato matemático que sí necesita el registro, Criterios de reparación y prueba, Dos contraejemplos deterministas
+### Community 5095 - "IV. RIESGO Y SIZING — «cuánto arriesgar por lo que sabemos»"
+Cohesion: 0.33
+Nodes (6): Envolvente Kelly Bayesiana — el juicio de evidencia, IV. RIESGO Y SIZING — «cuánto arriesgar por lo que sabemos», Kelly exacta desde Profit Factor, Ruina centralizada — streak-bound (M5-H03), Régimen de capital — z/k continuos, VOL-BRAKE — el freno de volatilidad prevista
 
 ### Community 5096 - "recorrer"
 Cohesion: 0.30
@@ -21845,9 +21878,9 @@ Nodes (8): caminatas(), cf3_guarda_t_media_no_deja_pasar_caminatas_independiente
 Cohesion: 0.17
 Nodes (11): 1. Qué se midió, 2. Método (CL-63), 3. CPU por categoría, 4. Coste de la libm por llamada, 5. Origen de las asignaciones, 5b. Puerta del medidor: PR #38 y coste de #720, 6. Límites de estas medidas, 7. Propuestas (cada una con su dueño y su prueba) (+3 more)
 
-### Community 5104 - "21. Revisión del avance GLM: contrato de espectro y alcance de N_eff"
-Cohesion: 0.40
-Nodes (5): 21. Revisión del avance GLM: contrato de espectro y alcance de N_eff, Confirmación ejecutable posterior de GLM-RMT-A, GLM-RMT-A — nuevo solver público omite el contrato de correlación, P1 potencial, GLM-RMT-B — métrica auxiliar no equivale a apuestas efectivas vivas, GLM-RMT-C — trabajo auxiliar sin consumidor
+### Community 5104 - "6. Genoma, examen y atribución del rendimiento"
+Cohesion: 0.33
+Nodes (6): 6. Genoma, examen y atribución del rendimiento, RA-E-01 — Elegir una cinta no cambia automáticamente la identidad del slot, RA-E-02 — El examen intrabar inventa un prefijo usando el cierre futuro, RA-E-03 — Latencia del genoma examinado no coincide con la publicada, RA-E-04 — Recuperar capital borra la penalización del drawdown histórico, RA-E-05 — Warmup fijo puede consumir o anular la validación OOS
 
 ### Community 5106 - "Plan de Línea F — revisión independiente de composición, lazos adaptativos y campo multiactivo (2026-10-11)"
 Cohesion: 0.17
@@ -21865,9 +21898,9 @@ Nodes (10): arena(), cl100_r15_geometria_normal_no_habria_vetado(), cl100_r15_ya
 Cohesion: 0.25
 Nodes (8): pearson_preserves_translation_and_positive_rescaling(), cf3_6_resonancia_estocastica_tiene_maximo_interior(), Lcg, pearson(), pearson_preserves_translation_and_positive_rescaling(), pearson_preserves_translation_and_positive_rescaling(), pearson_preserves_translation_and_positive_rescaling(), pearson_preserves_translation_and_positive_rescaling()
 
-### Community 5110 - "24. Hawkes cruzado y amplificación: auditoría del modelo, no sólo del código"
-Cohesion: 0.40
-Nodes (5): 24.1 Objeto estimado y unidades, 24.2 Referencia probabilística incompatible con el numerador, 24.3 Soporte observacional y falsación insuficiente, 24.4 Amplificador 5cdc0fe0: discrepancias de contrato aún abiertas, 24. Hawkes cruzado y amplificación: auditoría del modelo, no sólo del código
+### Community 5110 - "17. Revisión matemática multiactivo MG: defectos y validaciones separados"
+Cohesion: 0.33
+Nodes (6): 17. Revisión matemática multiactivo MG: defectos y validaciones separados, MG-01 — Validación del significado y capacidad de vinculación de Lundberg, MG-02 — Coeficiente publicado obsoleto tras perder su raíz válida, MG-03 — La proyección equicorrelacionada no es la matriz del grupo, MG-04 — Coseno sin centrar e interpretación como correlación de riesgo, MG-05 — Cambio de escala hereda evidencia delτ anterior
 
 ### Community 5111 - "F2.4. Procesos puntuales, dependencia y contagio"
 Cohesion: 0.18
@@ -22301,13 +22334,9 @@ Nodes (4): ⚛️ 10. MÓDULO 7 — SEÑALES CUÁNTICAS, ORQUESTACIÓN Y CONFLUE
 Cohesion: 0.50
 Nodes (4): 🔬 4. MÓDULO 1 — INGESTIÓN, PARSERS, LIBROS L2 Y NORMALIZACIÓN, D-610 — `last_update_id` se parsea y jamás se valida: no existe detección de huecos de secuencia · **S1**, D-611 — `depth10@100ms` no es un libro L2: la afirmación de microestructura no está sostenida por la fuente de datos · **S2**, D-612 — Parsers y motores duplicados entre `src/` y `crates/` · **S3**
 
-### Community 5222 - "12. EWMA-W1-14/15 — límites de integración todavía abiertos"
-Cohesion: 0.50
-Nodes (4): 12. EWMA-W1-14/15 — límites de integración todavía abiertos, EWMA-W1-14 (P2): ausencia de evidencia publicada como cero, EWMA-W1-15 (P2): coordenada de deriva declarada pero no alimentada, Topología diagnóstica de esta revisión
-
-### Community 5223 - "23. Continuación autorizada: contrato espectral único y evidencia roja"
-Cohesion: 0.50
-Nodes (4): 23.1 GLM-RMT-A: reproducción, causa y corrección acotada, 23.2 Qué calcula effective_bets y qué no significa, 23.3 Cobertura falsable añadida, 23. Continuación autorizada: contrato espectral único y evidencia roja
+### Community 5222 - "7. Estimación espectral: tiempo, soporte y significado estadístico"
+Cohesion: 0.33
+Nodes (6): 7. Estimación espectral: tiempo, soporte y significado estadístico, RA-S-01 — Voto fijado tarde, retorno puntuado desde antes del voto, RA-S-02 — El score usa una predicción recalculada al vencimiento, RA-S-03 — Tener coordenada temporal no equivale a tener historia en ella, RA-S-04 — Muestra acumulada no es muestra efectiva de momentos con olvido, RA-S-05 — TrendRunner no es C∞ en la frontera implementada
 
 ### Community 5224 - "23. Revalidación de telemetría: dos implementaciones, seguridad y consumidor"
 Cohesion: 0.67
@@ -22489,29 +22518,57 @@ Nodes (3): 5. Riesgo: validez local frente a validez de la composición, RA-R-01
 Cohesion: 0.67
 Nodes (3): Ampliación científica III — autoevolución y validez de la evidencia (24-09-2026), Contratos que explican la diferencia entre evolución aparente y efectiva, Nueva transferencia científica, con supuestos y rechazo
 
-### Community 5291 - "28. Cierre de validación del árbol integrado antes de fusionar PR11"
-Cohesion: 0.67
-Nodes (3): 28.1 Reprueba de la respuesta GLM y límites que quedan, 28.2 Estado de entrega y prioridades restantes, 28. Cierre de validación del árbol integrado antes de fusionar PR11
+### Community 5291 - "4. Ingestión y normalización"
+Cohesion: 0.40
+Nodes (5): 4. Ingestión y normalización, RA-I-01 — Un prefijo numérico no es un timestamp válido, RA-I-02 — Un agresor no se clasifica mirando una sola letra, RA-I-03 — El fast path puede borrar un lado válido del libro, RA-I-04 — El crédito temporal puede reutilizarse sin respetar la capacidad
 
-### Community 5292 - "29. Recibo de integración remota y eliminación segura de la rama"
-Cohesion: 0.67
-Nodes (3): 29.1 Incidente real de coordinación, sin pérdida de fuentes, 29.2 Límites de la entrega, 29. Recibo de integración remota y eliminación segura de la rama
-
-### Community 5293 - "30. Regresión posterior de main: import roto del modulador (PR12)"
-Cohesion: 0.67
-Nodes (3): 30.1 Contrato económico todavía abierto, 30.2 Conflictos compartidos y atribución posterior del incidente, 30. Regresión posterior de main: import roto del modulador (PR12)
-
-### Community 5298 - "2026-10-04 — Contratos de base RA y significado de los cálculos"
+### Community 5292 - "2026-10-04 — Contratos de base RA y significado de los cálculos"
 Cohesion: 0.40
 Nodes (5): 2026-10-04 — Contratos de base RA y significado de los cálculos, Adenda MG y plan continuo multiactivo, Adenda RA posterior — relojes aceptados y semántica del soporte, Adenda RA — significado de secuencias y dependencias, Recibo posterior: trayectoria del bosque frente a fotografía de capital
 
-### Community 5299 - "Ampliación científica II — contratos, identificabilidad y evolución temporal (24-09-2026)"
+### Community 5293 - "Ampliación científica II — contratos, identificabilidad y evolución temporal (24-09-2026)"
 Cohesion: 0.40
 Nodes (5): Ampliación científica II — contratos, identificabilidad y evolución temporal (24-09-2026), Continuidad temporal y justificaciones que sí se conservan, Investigación propuesta y conexión con el genoma, Qué calculan las cantidades y dónde cambia su significado, Verificación y estado
 
-### Community 5300 - "V. GEOMETRÍA DEL TRADE — «dónde entrar, dónde salir, cuánto respirar»"
+### Community 5298 - "V. GEOMETRÍA DEL TRADE — «dónde entrar, dónde salir, cuánto respirar»"
 Cohesion: 0.40
 Nodes (5): Curvas TP/SL por horizonte (el genoma geométrico), Escalera del núcleo (BE/trailing en process_event), Escudo cuántico — escalera de protección espectral, Pisos de fricción — nada opera debajo del costo, V. GEOMETRÍA DEL TRADE — «dónde entrar, dónde salir, cuánto respirar»
+
+### Community 5299 - "18. Segundo corte de sincronización, cobertura y Git"
+Cohesion: 0.40
+Nodes (5): 18.1 Evidencia de coordinación, sin aprobación inferida, 18.2 Censo completo de rutas; revisión semántica incompleta, 18.3 Todas las referencias observadas frente a main c6ce, 18.4 Gates que permanecen abiertos, 18. Segundo corte de sincronización, cobertura y Git
+
+### Community 5300 - "18. Segundo corte de sincronización, cobertura y Git"
+Cohesion: 0.40
+Nodes (5): 18.1 Evidencia de coordinación, sin aprobación inferida, 18.2 Censo completo de rutas; revisión semántica incompleta, 18.3 Todas las referencias observadas frente a main c6ce, 18.4 Gates que permanecen abiertos, 18. Segundo corte de sincronización, cobertura y Git
+
+### Community 5301 - "49. Sincronización F3 y verificación de integración por corte"
+Cohesion: 0.40
+Nodes (5): 49.1. Qué llegó realmente a main y qué no, 49.2. Revisión cruzada de RA y alcance de la CI, 49.3. Integraciones locales y bloqueo de publicación acotado, 49.4. Compilación local y preservación de la nueva composición, 49. Sincronización F3 y verificación de integración por corte
+
+### Community 5302 - "4. Ingestión y normalización"
+Cohesion: 0.40
+Nodes (5): 4. Ingestión y normalización, RA-I-01 — Un prefijo numérico no es un timestamp válido, RA-I-02 — Un agresor no se clasifica mirando una sola letra, RA-I-03 — El fast path puede borrar un lado válido del libro, RA-I-04 — El crédito temporal puede reutilizarse sin respetar la capacidad
+
+### Community 5303 - "1. Las tres líneas ( quién es dueño de qué )"
+Cohesion: 0.50
+Nodes (4): 1. Las tres líneas ( quién es dueño de qué ), LÍNEA A — ENTENDER el universo (Qoder): el continuo espectral, LÍNEA B — APRENDER del universo (GLM): DL-modular, escalera falsable, LÍNEA C — EJECUTAR sin perder un bps (Claude): cimientos
+
+### Community 5304 - "Adenda 2026-09-28 — EWMA, reloj de evidencia y alcance del oráculo"
+Cohesion: 0.50
+Nodes (4): Adenda 2026-09-28 — EWMA, reloj de evidencia y alcance del oráculo, Adenda Codex: publicación y contratos espectrales (2026-09-28), Adenda de aislamiento Codex y segunda revisión de etiquetas, Reapertura P1/P2: integración del trainer (2026-09-28)
+
+### Community 5305 - "Ampliación científica FMT — 24 de septiembre de 2026"
+Cohesion: 0.50
+Nodes (4): Ampliación científica FMT — 24 de septiembre de 2026, Estado verificable de esta ampliación, Modelo unificado propuesto, Qué calculan realmente las cantidades y para qué pueden servir
+
+### Community 5307 - "19. Recibo posterior de revisión GLM y gates no equivalentes"
+Cohesion: 0.50
+Nodes (4): 19.1 Qué revisión llegó, 19.2 Qué no prueba una suite llamada paridad, 19.3 Calibración y limpieza selectiva, 19. Recibo posterior de revisión GLM y gates no equivalentes
+
+### Community 5308 - "20. Revalidación adversarial de expedientes existentes sobre el nuevo main"
+Cohesion: 0.50
+Nodes (4): 20.1 R-01: una reserva contablemente correcta puede violar el techo admitido, 20.2 E-03: el defecto de equivalencia está en el ShadowForest inicial, 20.3 E-04: recuperación de capital borra el riesgo de selección en el bosque, 20. Revalidación adversarial de expedientes existentes sobre el nuevo main
 
 ### Community 5309 - "Adenda científica II — auditoría del contrato matemático y del aprendizaje (24-09-2026)"
 Cohesion: 0.67
@@ -22525,34 +22582,146 @@ Nodes (3): Adenda científica III — auditoría de autoevolución y evidencia c
 Cohesion: 0.67
 Nodes (3): Adenda científica XIII — persistencia, arranque y recuperación causal (2026-09-24), T36: contrato de estado del grafo vivo, Verificación y alcance XIII
 
-### Community 5329 - "Adenda 2026-09-28 — EWMA, reloj de evidencia y alcance del oráculo"
+### Community 5312 - "27. Revisión matemática del oscilador: densidad, dominio y analogía"
 Cohesion: 0.50
-Nodes (4): Adenda 2026-09-28 — EWMA, reloj de evidencia y alcance del oráculo, Adenda Codex: publicación y contratos espectrales (2026-09-28), Adenda de aislamiento Codex y segunda revisión de etiquetas, Reapertura P1/P2: integración del trainer (2026-09-28)
+Nodes (4): 27.1 RA-Q-F01: densidad recortada presentada como probabilidad, 27.2 Paridad de envolvente: válida en su dominio, no idéntica sin límites, 27.3 Qué cálculo se implementa realmente, 27. Revisión matemática del oscilador: densidad, dominio y analogía
 
-### Community 5330 - "Ampliación científica FMT — 24 de septiembre de 2026"
+### Community 5314 - "31. Nuevo seguimiento de reloj aceptado: RA-I-F01"
 Cohesion: 0.50
-Nodes (4): Ampliación científica FMT — 24 de septiembre de 2026, Estado verificable de esta ampliación, Modelo unificado propuesto, Qué calculan realmente las cantidades y para qué pueden servir
+Nodes (4): 31.1 Reparación local del reloj: RED efectivo y GREEN efectivo, 31.2 Revisión cruzada posterior y residuales fuera del arreglo, 31.3 Cierre técnico local del reloj, sin integración, 31. Nuevo seguimiento de reloj aceptado: RA-I-F01
 
-### Community 5354 - "Ampliación científica III — autoevolución y validez de la evidencia (24-09-2026)"
+### Community 5315 - "34. E03/E04: control negativo efectivo y cierre técnico local del bosque"
+Cohesion: 0.50
+Nodes (4): 34.1 Qué resultado llegó y qué se preservó, 34.2 Reparación, cálculo y límites económicos, 34.3 Candidato conjunto propio, no integración en main, 34. E03/E04: control negativo efectivo y cierre técnico local del bosque
+
+### Community 5317 - "43. Reconciliación con el barrido F0 de Qoder y verificación de identidad"
+Cohesion: 0.50
+Nodes (4): 43.1 Alcance del candidato, preservación y coordinación, 43.2 Hallazgo de verificación: caché compartida no acredita fuente, 43.3 Frentes locales independientes y cobertura aún parcial, 43. Reconciliación con el barrido F0 de Qoder y verificación de identidad
+
+### Community 5318 - "44. Sincronización F1 recién publicada y control de ruina reproducido"
+Cohesion: 0.50
+Nodes (4): 44.1 Inventario ajeno preservado; estados y responsabilidades, 44.2 RA-RUIN-F01 — cap de dimensionado deja salir no finitos, 44.3 Errores de explicación y límites de la teoría de rachas, 44. Sincronización F1 recién publicada y control de ruina reproducido
+
+### Community 5319 - "19. Recibo posterior de revisión GLM y gates no equivalentes"
+Cohesion: 0.50
+Nodes (4): 19.1 Qué revisión llegó, 19.2 Qué no prueba una suite llamada paridad, 19.3 Calibración y limpieza selectiva, 19. Recibo posterior de revisión GLM y gates no equivalentes
+
+### Community 5320 - "20. Revalidación adversarial de expedientes existentes sobre el nuevo main"
+Cohesion: 0.50
+Nodes (4): 20.1 R-01: una reserva contablemente correcta puede violar el techo admitido, 20.2 E-03: el defecto de equivalencia está en el ShadowForest inicial, 20.3 E-04: recuperación de capital borra el riesgo de selección en el bosque, 20. Revalidación adversarial de expedientes existentes sobre el nuevo main
+
+### Community 5321 - "27. Revisión matemática del oscilador: densidad, dominio y analogía"
+Cohesion: 0.50
+Nodes (4): 27.1 RA-Q-F01: densidad recortada presentada como probabilidad, 27.2 Paridad de envolvente: válida en su dominio, no idéntica sin límites, 27.3 Qué cálculo se implementa realmente, 27. Revisión matemática del oscilador: densidad, dominio y analogía
+
+### Community 5322 - "31. Nuevo seguimiento de reloj aceptado: RA-I-F01"
+Cohesion: 0.50
+Nodes (4): 31.1 Reparación local del reloj: RED efectivo y GREEN efectivo, 31.2 Revisión cruzada posterior y residuales fuera del arreglo, 31.3 Cierre técnico local del reloj, sin integración, 31. Nuevo seguimiento de reloj aceptado: RA-I-F01
+
+### Community 5323 - "34. E03/E04: control negativo efectivo y cierre técnico local del bosque"
+Cohesion: 0.50
+Nodes (4): 34.1 Qué resultado llegó y qué se preservó, 34.2 Reparación, cálculo y límites económicos, 34.3 Candidato conjunto propio, no integración en main, 34. E03/E04: control negativo efectivo y cierre técnico local del bosque
+
+### Community 5324 - "43. Reconciliación con el barrido F0 de Qoder y verificación de identidad"
+Cohesion: 0.50
+Nodes (4): 43.1 Alcance del candidato, preservación y coordinación, 43.2 Hallazgo de verificación: caché compartida no acredita fuente, 43.3 Frentes locales independientes y cobertura aún parcial, 43. Reconciliación con el barrido F0 de Qoder y verificación de identidad
+
+### Community 5325 - "44. Sincronización F1 recién publicada y control de ruina reproducido"
+Cohesion: 0.50
+Nodes (4): 44.1 Inventario ajeno preservado; estados y responsabilidades, 44.2 RA-RUIN-F01 — cap de dimensionado deja salir no finitos, 44.3 Errores de explicación y límites de la teoría de rachas, 44. Sincronización F1 recién publicada y control de ruina reproducido
+
+### Community 5326 - "6. Consolidación técnica y alcance de las afirmaciones (Codex)"
+Cohesion: 0.67
+Nodes (3): 6.1 Qué significa exactamente la meta de compuesto, 6.2 Qué medir para aceptar o refutar una aproximación a la meta, 6. Consolidación técnica y alcance de las afirmaciones (Codex)
+
+### Community 5327 - "8. Grafo de dependencias y criterios de aceptación"
+Cohesion: 0.67
+Nodes (3): 8.1 Frentes del plan GLM reconciliados sin borrar su historial, 8.2 Evidencia de vigencia: dos defectos y tres validaciones MG, 8. Grafo de dependencias y criterios de aceptación
+
+### Community 5328 - "Ampliación científica III — autoevolución y validez de la evidencia (24-09-2026)"
 Cohesion: 0.67
 Nodes (3): Ampliación científica III — autoevolución y validez de la evidencia (24-09-2026), Contratos que explican la diferencia entre evolución aparente y efectiva, Nueva transferencia científica, con supuestos y rechazo
 
+### Community 5329 - "23. Revalidación de telemetría: dos implementaciones, seguridad y consumidor"
+Cohesion: 0.67
+Nodes (3): 23.1 D-127/D-237: la secuencia no proporciona seguridad al payload, 23.2 #80/#101: consumidor distinto y evidencia de desconexión acotada, 23. Revalidación de telemetría: dos implementaciones, seguridad y consumidor
+
+### Community 5330 - "24. Segunda revisión cruzada del candidato RA y seguimiento OOS"
+Cohesion: 0.67
+Nodes (3): 24.1 RA-OOS-F01: tape de una fila admitido hasta índice inválido, 24.2 RA-OOS-F02: duración de contexto incluida en el panel post-OOS, 24. Segunda revisión cruzada del candidato RA y seguimiento OOS
+
+### Community 5331 - "29. Semántica del multifractal/Hurst y continuidad temporal real"
+Cohesion: 0.67
+Nodes (3): 29.1 RA-S-F01: proxy de magnitud interpretado como persistencia Hurst, 29.2 Lo que aún queda fijo y lo que no debe confundirse, 29. Semántica del multifractal/Hurst y continuidad temporal real
+
+### Community 5332 - "30. MG02/MG05: oráculos efectivos recibidos, reparación todavía aislada"
+Cohesion: 0.67
+Nodes (3): 30.1 Recibo cruzado MG posterior: publicación no es frescura del estimador, 30.2 Commit local MG tras cotejo de padres y all-targets, 30. MG02/MG05: oráculos efectivos recibidos, reparación todavía aislada
+
+### Community 5333 - "37. Anatomía de exclusivos legacy: recibo local posterior a la publicación"
+Cohesion: 0.67
+Nodes (3): 37.1 Qué significan los tamaños y qué no prueban, 37.2 Equivalencia parcial y frontera de integración, 37. Anatomía de exclusivos legacy: recibo local posterior a la publicación
+
+### Community 5334 - "39. Revalidación causal: memoria estadística no equivale a evidencia vigente"
+Cohesion: 0.67
+Nodes (3): 39.1 MG05 — IC histórico de la misma escala sobrevive a la desincronización, 39.2 RA-SA-F01 — Persistencia de inversión de signo en otro consumidor, 39. Revalidación causal: memoria estadística no equivale a evidencia vigente
+
+### Community 5335 - "40. RA-OOS-F01: cierre estructural local, fuera de PR28"
+Cohesion: 0.67
+Nodes (3): 40.1 Cobertura de esta ronda y criterio de preparación, 40.2 Calidad de la auditoría y robustez: cinco unidades, no el proyecto entero, 40. RA-OOS-F01: cierre estructural local, fuera de PR28
+
+### Community 5336 - "5. Riesgo: validez local frente a validez de la composición"
+Cohesion: 0.67
+Nodes (3): 5. Riesgo: validez local frente a validez de la composición, RA-R-01 — Menos leverage puede consumir más margen que el admitido, RA-R-02 — NaN/Inf borran la presión de riesgo
+
+### Community 5337 - "23. Revalidación de telemetría: dos implementaciones, seguridad y consumidor"
+Cohesion: 0.67
+Nodes (3): 23.1 D-127/D-237: la secuencia no proporciona seguridad al payload, 23.2 #80/#101: consumidor distinto y evidencia de desconexión acotada, 23. Revalidación de telemetría: dos implementaciones, seguridad y consumidor
+
+### Community 5338 - "24. Segunda revisión cruzada del candidato RA y seguimiento OOS"
+Cohesion: 0.67
+Nodes (3): 24.1 RA-OOS-F01: tape de una fila admitido hasta índice inválido, 24.2 RA-OOS-F02: duración de contexto incluida en el panel post-OOS, 24. Segunda revisión cruzada del candidato RA y seguimiento OOS
+
+### Community 5339 - "29. Semántica del multifractal/Hurst y continuidad temporal real"
+Cohesion: 0.67
+Nodes (3): 29.1 RA-S-F01: proxy de magnitud interpretado como persistencia Hurst, 29.2 Lo que aún queda fijo y lo que no debe confundirse, 29. Semántica del multifractal/Hurst y continuidad temporal real
+
+### Community 5340 - "30. MG02/MG05: oráculos efectivos recibidos, reparación todavía aislada"
+Cohesion: 0.67
+Nodes (3): 30.1 Recibo cruzado MG posterior: publicación no es frescura del estimador, 30.2 Commit local MG tras cotejo de padres y all-targets, 30. MG02/MG05: oráculos efectivos recibidos, reparación todavía aislada
+
+### Community 5341 - "37. Anatomía de exclusivos legacy: recibo local posterior a la publicación"
+Cohesion: 0.67
+Nodes (3): 37.1 Qué significan los tamaños y qué no prueban, 37.2 Equivalencia parcial y frontera de integración, 37. Anatomía de exclusivos legacy: recibo local posterior a la publicación
+
+### Community 5342 - "39. Revalidación causal: memoria estadística no equivale a evidencia vigente"
+Cohesion: 0.67
+Nodes (3): 39.1 MG05 — IC histórico de la misma escala sobrevive a la desincronización, 39.2 RA-SA-F01 — Persistencia de inversión de signo en otro consumidor, 39. Revalidación causal: memoria estadística no equivale a evidencia vigente
+
+### Community 5343 - "40. RA-OOS-F01: cierre estructural local, fuera de PR28"
+Cohesion: 0.67
+Nodes (3): 40.1 Cobertura de esta ronda y criterio de preparación, 40.2 Calidad de la auditoría y robustez: cinco unidades, no el proyecto entero, 40. RA-OOS-F01: cierre estructural local, fuera de PR28
+
+### Community 5344 - "5. Riesgo: validez local frente a validez de la composición"
+Cohesion: 0.67
+Nodes (3): 5. Riesgo: validez local frente a validez de la composición, RA-R-01 — Menos leverage puede consumir más margen que el admitido, RA-R-02 — NaN/Inf borran la presión de riesgo
+
 ## Knowledge Gaps
-- **29004 isolated node(s):** `trader-gemini-v5`, `build.sh script`, `RUSTFLAGS`, `audit-engine`, `backtest-engine` (+28999 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 41973 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **427 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **29005 isolated node(s):** `trader-gemini-v5`, `build.sh script`, `RUSTFLAGS`, `audit-engine`, `backtest-engine` (+29000 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 41978 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **426 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `P` connect `P` to `.new`, `.ola73/crates/metacortex-engine/src/evolutionary_templates.rs`, `LivingImmuneSystem`, `SystemGraph`, `OnlineLearningModule`, `.sol-plan-2026-10-07/crates/storage-engine/src/lakehouse.rs`, `EmergencyCrashDump`, `crates/flight-recorder/src/lib.rs`, `.sol-plan-2026-10-07/crates/metacortex-engine/src/evolutionary_templates.rs`, `LivingImmuneSystem`, `OnlineLearningModule`, `crates/storage-engine/src/lakehouse.rs`, `.new`, `TemporalObjectStore`, `CompilationResult`, `.r7r6/crates/storage-engine/src/lakehouse.rs`, `HotSwapController`, `TelemetryStorage`, `.new`, `.sol-replay-2026-10-09/crates/storage-engine/src/lakehouse.rs`, `EmergencyCrashDump`, `AdnBackupCatalog`, `CompilationResult`, `TemporalObjectStore`, `CompilationResult`, `LivingImmuneSystem`, `.new`, `.mutate_json_config`, `.new`, `OnlineLearningModule`, `LakehouseMmap`, `.new`, `.new`, `.new`, `TelemetryStorage`, `.new`, `TemporalObjectStore`, `TelemetryStorage`, `AdnBackupCatalog`, `.r7r4/crates/storage-engine/src/mmap_bus.rs`, `.mutate_json_config`, `.r7r6/crates/storage-engine/src/mmap_bus.rs`, `crates/data-pipeline/src/state_db.rs`, `.sol-replay-2026-10-09/crates/storage-engine/src/mmap_bus.rs`, `SystemGraph`, `.new`, `AdnBackupCatalog`, `crates/metacortex-engine/src/evolutionary_templates.rs`, `CompilationResult`, `LakehouseMmap`, `EmergencyCrashDump`, `.mutate_json_config`, `.r7r4/crates/metacortex-engine/src/evolutionary_templates.rs`, `LivingImmuneSystem`, `OnlineLearningModule`, `LakehouseMmap`, `.r7r6/crates/metacortex-engine/src/evolutionary_templates.rs`, `LivingImmuneSystem`, `OnlineLearningModule`, `HotSwapController`, `.new`, `.sol-replay-2026-10-09/crates/metacortex-engine/src/evolutionary_templates.rs`, `.new`, `LivingImmuneSystem`, `OnlineLearningModule`, `.new`, `.sol-plan-2026-10-07/crates/storage-engine/src/mmap_bus.rs`, `.new`, `.new`, `SystemGraph`, `TelemetryStorage`, `.mutate_json_config`, `SystemGraph`, `.new`, `SystemGraph`, `crates/storage-engine/src/mmap_bus.rs`, `AdnBackupCatalog`, `HotSwapController`, `.ola73/crates/flight-recorder/src/lib.rs`, `SystemGraph`, `HotSwapController`, `TemporalObjectStore`, `HotSwapController`, `.mutate_json_config`, `.ola73/crates/data-pipeline/src/state_db.rs`, `TelemetryStorage`, `MetacortexEngine`, `.ola73/crates/storage-engine/src/lakehouse.rs`, `AdnBackupCatalog`, `LakehouseMmap`, `TelemetryStorage`, `AdnBackupCatalog`, `EmergencyCrashDump`, `.new`, `.new`, `cf2_riesgo_solucion_conocida.rs`, `MetacortexEngine`, `HotSwapController`, `MetacortexEngine`, `.r7r4/crates/flight-recorder/src/lib.rs`, `.r7r6/crates/flight-recorder/src/lib.rs`, `MetacortexEngine`, `.sol-replay-2026-10-09/crates/flight-recorder/src/lib.rs`, `MetacortexEngine`, `.sol-plan-2026-10-07/crates/flight-recorder/src/lib.rs`, `EmergencyCrashDump`, `TemporalObjectStore`, `MetacortexEngine`, `EmergencyCrashDump`, `.new`, `LakehouseMmap`, `.new`, `.sol-plan-2026-10-07/crates/data-pipeline/src/state_db.rs`, `LakehouseMmap`, `.r7r4/crates/data-pipeline/src/state_db.rs`, `.r7r6/crates/data-pipeline/src/state_db.rs`, `CompilationResult`, `.new`, `CompilationResult`, `.sol-replay-2026-10-09/crates/data-pipeline/src/state_db.rs`, `.new`, `.r7r4/crates/storage-engine/src/lakehouse.rs`, `.ola73/crates/storage-engine/src/mmap_bus.rs`?**
+- **Why does `P` connect `P` to `.new`, `.ola73/crates/metacortex-engine/src/evolutionary_templates.rs`, `LivingImmuneSystem`, `SystemGraph`, `OnlineLearningModule`, `.sol-plan-2026-10-07/crates/storage-engine/src/lakehouse.rs`, `EmergencyCrashDump`, `crates/flight-recorder/src/lib.rs`, `.sol-plan-2026-10-07/crates/metacortex-engine/src/evolutionary_templates.rs`, `LivingImmuneSystem`, `OnlineLearningModule`, `crates/storage-engine/src/lakehouse.rs`, `.new`, `TemporalObjectStore`, `TemporalObjectStore`, `CompilationResult`, `.r7r6/crates/storage-engine/src/lakehouse.rs`, `HotSwapController`, `TelemetryStorage`, `.mutate_json_config`, `.new`, `.sol-replay-2026-10-09/crates/storage-engine/src/lakehouse.rs`, `AdnBackupCatalog`, `CompilationResult`, `TemporalObjectStore`, `CompilationResult`, `LivingImmuneSystem`, `.new`, `.mutate_json_config`, `.new`, `OnlineLearningModule`, `LakehouseMmap`, `.new`, `.new`, `.new`, `TelemetryStorage`, `.new`, `TemporalObjectStore`, `TelemetryStorage`, `AdnBackupCatalog`, `.r7r4/crates/storage-engine/src/mmap_bus.rs`, `.mutate_json_config`, `.r7r6/crates/storage-engine/src/mmap_bus.rs`, `crates/data-pipeline/src/state_db.rs`, `.sol-replay-2026-10-09/crates/storage-engine/src/mmap_bus.rs`, `SystemGraph`, `.new`, `AdnBackupCatalog`, `crates/metacortex-engine/src/evolutionary_templates.rs`, `CompilationResult`, `LakehouseMmap`, `EmergencyCrashDump`, `.mutate_json_config`, `.r7r4/crates/metacortex-engine/src/evolutionary_templates.rs`, `LivingImmuneSystem`, `OnlineLearningModule`, `LakehouseMmap`, `.r7r6/crates/metacortex-engine/src/evolutionary_templates.rs`, `LivingImmuneSystem`, `OnlineLearningModule`, `HotSwapController`, `.new`, `.sol-replay-2026-10-09/crates/metacortex-engine/src/evolutionary_templates.rs`, `.new`, `LivingImmuneSystem`, `OnlineLearningModule`, `.new`, `.sol-plan-2026-10-07/crates/storage-engine/src/mmap_bus.rs`, `.new`, `.new`, `SystemGraph`, `TelemetryStorage`, `.mutate_json_config`, `SystemGraph`, `.new`, `SystemGraph`, `crates/storage-engine/src/mmap_bus.rs`, `AdnBackupCatalog`, `HotSwapController`, `.ola73/crates/flight-recorder/src/lib.rs`, `SystemGraph`, `HotSwapController`, `TemporalObjectStore`, `HotSwapController`, `.ola73/crates/data-pipeline/src/state_db.rs`, `TelemetryStorage`, `MetacortexEngine`, `.ola73/crates/storage-engine/src/lakehouse.rs`, `AdnBackupCatalog`, `LakehouseMmap`, `TelemetryStorage`, `AdnBackupCatalog`, `EmergencyCrashDump`, `.new`, `.new`, `cf2_riesgo_solucion_conocida.rs`, `MetacortexEngine`, `HotSwapController`, `MetacortexEngine`, `.r7r4/crates/flight-recorder/src/lib.rs`, `.r7r6/crates/flight-recorder/src/lib.rs`, `MetacortexEngine`, `.sol-replay-2026-10-09/crates/flight-recorder/src/lib.rs`, `MetacortexEngine`, `.sol-plan-2026-10-07/crates/flight-recorder/src/lib.rs`, `EmergencyCrashDump`, `TemporalObjectStore`, `MetacortexEngine`, `EmergencyCrashDump`, `.new`, `LakehouseMmap`, `.new`, `.new`, `.sol-plan-2026-10-07/crates/data-pipeline/src/state_db.rs`, `LakehouseMmap`, `.r7r4/crates/data-pipeline/src/state_db.rs`, `.r7r6/crates/data-pipeline/src/state_db.rs`, `CompilationResult`, `.new`, `CompilationResult`, `.sol-replay-2026-10-09/crates/data-pipeline/src/state_db.rs`, `.new`, `.r7r4/crates/storage-engine/src/lakehouse.rs`, `.ola73/crates/storage-engine/src/mmap_bus.rs`?**
   _High betweenness centrality (0.007) - this node is a cross-community bridge._
 - **Why does `simulated_sd()` connect `crates/god-engine-core/src/diffusion.rs` to `cf2_riesgo_solucion_conocida.rs`?**
   _High betweenness centrality (0.004) - this node is a cross-community bridge._
 - **Why does `cf3_stouffer_tasa_en_ruido()` connect `cf3_vetos_nucleo.rs` to `crates/god-engine-core/src/diffusion.rs`?**
   _High betweenness centrality (0.004) - this node is a cross-community bridge._
 - **What connects `trader-gemini-v5`, `build.sh script`, `RUSTFLAGS` to the rest of the system?**
-  _29004 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _29005 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Coordinación Codex / Claude / GLM — 2026-09-28` be split into smaller, more focused modules?**
   _Cohesion score 0.005390835579514825 - nodes in this community are weakly interconnected._
 - **Should `crates/dark-alpha-engine/src/lib.rs` be split into smaller, more focused modules?**
