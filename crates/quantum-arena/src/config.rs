@@ -214,6 +214,15 @@ pub struct QuantumConfig {
     pub council_liq_min_floor: AtomicF64,
     pub council_crowd_imbalance_decay: AtomicF64,
     pub council_crowd_min_floor: AtomicF64,
+    pub council_devil_advocate_weight: AtomicF64,
+    pub council_discrepancy_veto_threshold: AtomicF64,
+    pub council_tracker_weight_floor: AtomicF64,
+    pub council_tracker_weight_cap: AtomicF64,
+    pub online_learning_rate: AtomicF64,
+    pub online_momentum: AtomicF64,
+    pub online_q_noise: AtomicF64,
+    pub online_r_noise: AtomicF64,
+    pub online_l2_decay: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -465,6 +474,15 @@ impl QuantumConfig {
             council_liq_min_floor: AtomicF64::new(0.40),
             council_crowd_imbalance_decay: AtomicF64::new(0.25),
             council_crowd_min_floor: AtomicF64::new(0.70),
+            council_devil_advocate_weight: AtomicF64::new(3.0),
+            council_discrepancy_veto_threshold: AtomicF64::new(0.20),
+            council_tracker_weight_floor: AtomicF64::new(0.50),
+            council_tracker_weight_cap: AtomicF64::new(2.0),
+            online_learning_rate: AtomicF64::new(0.001),
+            online_momentum: AtomicF64::new(0.90),
+            online_q_noise: AtomicF64::new(1e-4),
+            online_r_noise: AtomicF64::new(1e-2),
+            online_l2_decay: AtomicF64::new(0.99999),
         }
     }
 

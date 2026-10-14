@@ -1512,6 +1512,10 @@ impl GodEngineCore {
         let liq_floor = cfg.council_liq_min_floor.load(Ordering::Relaxed);
         let crowd_decay = cfg.council_crowd_imbalance_decay.load(Ordering::Relaxed);
         let crowd_floor = cfg.council_crowd_min_floor.load(Ordering::Relaxed);
+        let devil_weight = cfg.council_devil_advocate_weight.load(Ordering::Relaxed);
+        let disc_thresh = cfg.council_discrepancy_veto_threshold.load(Ordering::Relaxed);
+        let tr_floor = cfg.council_tracker_weight_floor.load(Ordering::Relaxed);
+        let tr_cap = cfg.council_tracker_weight_cap.load(Ordering::Relaxed);
 
         if (0.0..=1.0).contains(&approval) {
             params.approval_threshold = approval;
@@ -1606,11 +1610,43 @@ impl GodEngineCore {
         if (0.10..=0.99).contains(&crowd_floor) {
             params.crowd_min_floor = crowd_floor;
         }
+        if (0.5..=10.0).contains(&devil_weight) {
+            params.devil_advocate_weight = devil_weight;
+        }
+        if (0.05..=0.50).contains(&disc_thresh) {
+            params.discrepancy_veto_threshold = disc_thresh;
+        }
+        if (0.10..=0.90).contains(&tr_floor) && (1.10..=5.0).contains(&tr_cap) && tr_floor < tr_cap {
+            params.tracker_weight_floor = tr_floor;
+            params.tracker_weight_cap = tr_cap;
+        }
+    }
+
+    /// Sincroniza los hiperparámetros del módulo de aprendizaje online continuo (Ola Ω119).
+    #[inline]
+    pub fn sync_online_learning_params(
+        learner: &mut metacortex_engine::online_learning::OnlineLearningModule,
+        cfg: &quantum_arena::QuantumConfig,
+    ) {
+        let lr = cfg.online_learning_rate.load(Ordering::Relaxed);
+        let mom = cfg.online_momentum.load(Ordering::Relaxed);
+        let q = cfg.online_q_noise.load(Ordering::Relaxed);
+        let r = cfg.online_r_noise.load(Ordering::Relaxed);
+        let l2 = cfg.online_l2_decay.load(Ordering::Relaxed);
+
+        let opt_lr = if lr.is_finite() && lr > 0.0 { Some(lr as f32) } else { None };
+        let opt_mom = if mom.is_finite() && mom >= 0.0 { Some(mom as f32) } else { None };
+        let opt_q = if q.is_finite() && q > 0.0 { Some(q as f32) } else { None };
+        let opt_r = if r.is_finite() && r > 0.0 { Some(r as f32) } else { None };
+        let opt_l2 = if l2.is_finite() && l2 > 0.0 { Some(l2 as f32) } else { None };
+
+        learner.update_hyperparameters(opt_lr, opt_mom, opt_q, opt_r, opt_l2);
     }
 
     #[inline]
     pub fn sync_council_params_from_arena(&mut self) {
         Self::sync_council_params(&mut self.consejo_deliberacion.params, &self.arena.config);
+        Self::sync_online_learning_params(&mut self.online_learner, &self.arena.config);
     }
 
     /// Accept a reported execution snapshot, not an incremental fill. No global fallback.
@@ -8483,6 +8519,7 @@ impl GodEngineCore {
                     };
 
                     Self::sync_council_params(&mut self.consejo_deliberacion.params, &self.arena.config);
+                    Self::sync_online_learning_params(&mut self.online_learner, &self.arena.config);
 
                     let council_snapshot =
                         metacortex_engine::consejo_seniors::MarketSnapshotPayload {
@@ -8872,6 +8909,46 @@ impl GodEngineCore {
                                     coin_cf
                                 } else {
                                     self.consejo_deliberacion.params.crowd_min_floor
+                                }
+                            },
+                            // OLA Ω119: Desacoplamiento de autoridad disidente del Abogado del Diablo y autoengaño para SeniorAuditorInterno
+                            devil_advocate_weight: {
+                                let coin_daw = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "devil_advocate_weight", f64::NAN);
+                                if coin_daw.is_finite() && (0.5..=10.0).contains(&coin_daw) {
+                                    coin_daw
+                                } else {
+                                    self.consejo_deliberacion.params.devil_advocate_weight
+                                }
+                            },
+                            discrepancy_veto_threshold: {
+                                let coin_dvt = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "discrepancy_veto_threshold", f64::NAN);
+                                if coin_dvt.is_finite() && (0.05..=0.50).contains(&coin_dvt) {
+                                    coin_dvt
+                                } else {
+                                    self.consejo_deliberacion.params.discrepancy_veto_threshold
+                                }
+                            },
+                            internal_discrepancy: {
+                                let coin_disc = self
+                                    .arena
+                                    .registry
+                                    .get_for_coin_or(coin_id, "internal_discrepancy", f64::NAN);
+                                let sym_disc = self
+                                    .arena
+                                    .registry
+                                    .get_scoped_value_or(&sym, "internal_discrepancy", f64::NAN);
+                                if coin_disc.is_finite() && coin_disc >= 0.0 {
+                                    coin_disc.clamp(0.0, 1.0)
+                                } else if sym_disc.is_finite() && sym_disc >= 0.0 {
+                                    sym_disc.clamp(0.0, 1.0)
+                                } else {
+                                    0.0
                                 }
                             },
                         };

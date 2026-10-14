@@ -413,8 +413,9 @@ crates/
 | **Ω114** | `metacortex-engine` | Desacoplamiento dinámico de límite de drawdown $d^*$ y racha en Riesgo | 🟢 **MERGED** | `risk_opinion_adaptation_contract.rs` |
 | **Ω115** | `metacortex-engine` | Desacoplamiento dinámico de tolerancias causales y breakout alineado | 🟢 **MERGED** | `causal_opinion_adaptation_contract.rs` |
 | **Ω116** | `metacortex-engine` | Desacoplamiento dinámico de rotacional Hodge y corriente gauge Yang-Mills | 🟢 **MERGED** | `physical_gauge_opinion_adaptation_contract.rs` |
-| **Ω117** | `metacortex-engine` | Desacoplamiento dinámico de umbrales ML y factores metacognitivos | 🟢 **MERGED** | `ml_metacognitive_opinion_adaptation_contract.rs` |
-| **Ω118** | `metacortex-engine` | Desacoplamiento dinámico de parámetros de aprendizaje online y atenuación | 🟡 **EN DISEÑO**| Contrato formal en preparación |
+| **Ω118** | `metacortex-engine` | Desacoplamiento dinámico de psicología de masas, ballenas y cascadas | 🟢 **MERGED** | `market_entity_opinion_adaptation_contract.rs` |
+| **Ω119** | `metacortex-engine` | Desacoplamiento dinámico de Abogado del Diablo, autoengaño y online learning | 🟢 **MERGED** | `auditor_internal_and_tracker_adaptation_contract.rs` |
+| **Ω120** | `audit-engine` | Auditoría y desacoplamiento de umbrales en Tribunal de Autoengaño y homeostasis | 🟡 **EN DISEÑO**| Contrato formal en preparación |
 
 ### 📋 Nota de Integridad de Tabla (GLM, 2026-10-14 — ciclo 116)
 

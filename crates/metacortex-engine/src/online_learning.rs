@@ -200,6 +200,43 @@ impl OnlineLearningModule {
             l2_decay,
         }
     }
+
+    /// OLA Ω119: Actualiza los hiperparámetros de aprendizaje online y filtro de Kalman de forma dinámica y desacoplada.
+    #[inline(always)]
+    pub fn update_hyperparameters(
+        &mut self,
+        learning_rate: Option<f32>,
+        momentum: Option<f32>,
+        q_noise: Option<f32>,
+        r_noise: Option<f32>,
+        l2_decay: Option<f32>,
+    ) {
+        if let Some(lr) = learning_rate {
+            if lr.is_finite() && (1e-6..=1.0).contains(&lr) {
+                self.learning_rate = lr;
+            }
+        }
+        if let Some(m) = momentum {
+            if m.is_finite() && (0.0..=0.999).contains(&m) {
+                self.momentum = m;
+            }
+        }
+        if let Some(q) = q_noise {
+            if q.is_finite() && (1e-7..=1.0).contains(&q) {
+                self.q_noise = q;
+            }
+        }
+        if let Some(r) = r_noise {
+            if r.is_finite() && (1e-6..=10.0).contains(&r) {
+                self.r_noise = r;
+            }
+        }
+        if let Some(l2) = l2_decay {
+            if l2.is_finite() && (0.90..=1.0).contains(&l2) {
+                self.l2_decay = l2;
+            }
+        }
+    }
 }
 
 use std::sync::Arc;

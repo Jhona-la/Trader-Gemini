@@ -110,6 +110,31 @@ fn default_causal_aligned_max_risk() -> f64 {
     DEFAULT_CAUSAL_ALIGNED_MAX_RISK
 }
 
+/// OLA Ω119: Peso canónico de autoridad disidente para SeniorAuditorInterno (3.0).
+pub const DEFAULT_DEVIL_ADVOCATE_WEIGHT: f64 = 3.0;
+
+/// OLA Ω119: Umbral base canónico de tolerancia a discrepancia interna / autoengaño (0.20).
+pub const DEFAULT_DISCREPANCY_VETO_THRESHOLD: f64 = 0.20;
+
+/// OLA Ω119: Número mínimo canónico de ensayos requeridos para activar ponderación adaptativa del tracker (5).
+pub const DEFAULT_TRACKER_MIN_TRIALS: usize = 5;
+
+/// OLA Ω119: Piso canónico de peso relativo normalizado para el tracker de desempeño (0.50).
+pub const DEFAULT_TRACKER_WEIGHT_FLOOR: f64 = 0.50;
+
+/// OLA Ω119: Techo canónico de peso relativo normalizado para el tracker de desempeño (2.0).
+pub const DEFAULT_TRACKER_WEIGHT_CAP: f64 = 2.0;
+
+#[inline(always)]
+fn default_devil_advocate_weight() -> f64 {
+    DEFAULT_DEVIL_ADVOCATE_WEIGHT
+}
+
+#[inline(always)]
+fn default_discrepancy_veto_threshold() -> f64 {
+    DEFAULT_DISCREPANCY_VETO_THRESHOLD
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketSnapshotPayload {
     pub horizon: TradingHorizon,
@@ -260,6 +285,15 @@ pub struct MarketSnapshotPayload {
     /// OLA Ω118: Piso mínimo de convicción ante masas para SeniorEnteMercado (default: 0.70).
     #[serde(default = "default_crowd_min_floor")]
     pub crowd_min_floor: f64,
+    /// OLA Ω119: Peso dinámico de disidencia para SeniorAuditorInterno (default: 3.0).
+    #[serde(default = "default_devil_advocate_weight")]
+    pub devil_advocate_weight: f64,
+    /// OLA Ω119: Umbral de tolerancia a discrepancia de ejecución / autoengaño (default: 0.20).
+    #[serde(default = "default_discrepancy_veto_threshold")]
+    pub discrepancy_veto_threshold: f64,
+    /// OLA Ω119: Discrepancia observada entre métricas internas y ejecución real en exchange (default: 0.0).
+    #[serde(default)]
+    pub internal_discrepancy: f64,
 }
 
 impl Default for MarketSnapshotPayload {
@@ -317,6 +351,9 @@ impl Default for MarketSnapshotPayload {
             liq_min_floor: DEFAULT_LIQ_MIN_FLOOR,
             crowd_imbalance_decay: DEFAULT_CROWD_IMBALANCE_DECAY,
             crowd_min_floor: DEFAULT_CROWD_MIN_FLOOR,
+            devil_advocate_weight: DEFAULT_DEVIL_ADVOCATE_WEIGHT,
+            discrepancy_veto_threshold: DEFAULT_DISCREPANCY_VETO_THRESHOLD,
+            internal_discrepancy: 0.0,
         }
     }
 }
@@ -381,6 +418,9 @@ impl MarketSnapshotPayload {
             ("meta_max_dd_penalty", self.meta_max_dd_penalty),
             ("meta_majority_factor", self.meta_majority_factor),
             ("meta_solitary_factor", self.meta_solitary_factor),
+            ("devil_advocate_weight", self.devil_advocate_weight),
+            ("discrepancy_veto_threshold", self.discrepancy_veto_threshold),
+            ("internal_discrepancy", self.internal_discrepancy),
         ];
 
         for (name, val) in metrics {
@@ -441,6 +481,9 @@ impl MarketSnapshotPayload {
             ("meta_max_dd_penalty", self.meta_max_dd_penalty, 0.0, 1.0),
             ("meta_majority_factor", self.meta_majority_factor, 0.0, 1.0),
             ("meta_solitary_factor", self.meta_solitary_factor, 0.0, 1.0),
+            ("devil_advocate_weight", self.devil_advocate_weight, 0.5, 10.0),
+            ("discrepancy_veto_threshold", self.discrepancy_veto_threshold, 0.05, 0.50),
+            ("internal_discrepancy", self.internal_discrepancy, 0.0, 1.0),
         ] {
             if !(low..=high).contains(&value) {
                 return Err(format!("Out-of-bounds {name}: {value}"));
@@ -1805,6 +1848,61 @@ impl SeniorAgent for SeniorTeleonomia {
     }
 }
 
+/// OLA Ω119: Función pura analítica de deliberación de SeniorAuditorInterno.
+/// Evalúa de forma continua y desacoplada la autoridad disidente del Abogado del Diablo
+/// y la integridad de ejecución / autoengaño estructural sin duplicar vetos de otros asientos
+/// (F3.4-02: "Un dato, un veto").
+///
+/// Retorna: (signal_direction, confidence, weight, is_veto, justification)
+pub fn evaluate_auditor_interno_opinion(
+    payload: &MarketSnapshotPayload,
+) -> (f64, f64, f64, bool, String) {
+    let effective_weight = if payload.devil_advocate_weight.is_finite()
+        && (0.5..=10.0).contains(&payload.devil_advocate_weight)
+    {
+        payload.devil_advocate_weight
+    } else {
+        DEFAULT_DEVIL_ADVOCATE_WEIGHT
+    };
+
+    let effective_threshold = if payload.discrepancy_veto_threshold.is_finite()
+        && (0.05..=0.50).contains(&payload.discrepancy_veto_threshold)
+    {
+        payload.discrepancy_veto_threshold
+    } else {
+        DEFAULT_DISCREPANCY_VETO_THRESHOLD
+    };
+
+    let disc = if payload.internal_discrepancy.is_finite() && payload.internal_discrepancy >= 0.0 {
+        payload.internal_discrepancy.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+
+    // F3.4-02: "Un dato, un veto".
+    // El Auditor Interno no duplica vetos de DD (SeniorRiesgo) ni de VPIN/do-calculus (SeniorCausal).
+    // Su veto propio protege contra AUTOENGAÑO ESTRUCTURAL y DISCREPANCIA de ejecución
+    // (cuando la discrepancia entre métricas internas y realidad supera la tolerancia).
+    let is_veto = disc > effective_threshold;
+    let justification = if is_veto {
+        format!(
+            "Auditor Interno VETO: autoengaño/discrepancia={:.4} > umbral={:.4} (peso={:.2})",
+            disc, effective_threshold, effective_weight
+        )
+    } else {
+        format!(
+            "Auditor Interno OK: disc={:.4} <= umbral={:.4}, DD={:.4}, Risk={:.4} (peso={:.2})",
+            disc,
+            effective_threshold,
+            payload.current_drawdown_pct,
+            payload.do_calculus_risk,
+            effective_weight
+        )
+    };
+
+    (0.0, 1.0, effective_weight, is_veto, justification)
+}
+
 // 10. Senior Auditor Interno (El Anti-Sistema / VETO ON DISCREPANCY & SELF-DECEPTION)
 pub struct SeniorAuditorInterno;
 impl SeniorAgent for SeniorAuditorInterno {
@@ -1812,24 +1910,15 @@ impl SeniorAgent for SeniorAuditorInterno {
         SeniorRole::AuditorInterno
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        // F3.4-02 (Línea C / AGY): "Un dato, un veto".
-        // El riesgo causal (do_calculus / VPIN) ya es evaluado y vetado por
-        // SeniorCausal (> 0.75). Co-vetarlo aquí con > 0.92 duplicaba el veto
-        // sobre el mismo dato, destruyendo el override por supermayoría por
-        // encima de 0.92 al producir 2 vetos (rechazo irrevocable).
-        // Al igual que con el DD (Ola XLI·D7), el Auditor actúa como agente de
-        // permiso / abogado del diablo sin duplicar vetos de otros asientos.
-        let is_veto = false;
+        let (signal_direction, confidence, weight, is_veto, justification) =
+            evaluate_auditor_interno_opinion(payload);
         SeniorOpinion {
             role: self.role(),
-            signal_direction: 0.0, // Neutral permission agent
-            confidence: 1.0,
-            weight: SEAT_WEIGHT_DEVIL, // Maximum authority as Devil's Advocate
+            signal_direction,
+            confidence,
+            weight,
             is_veto,
-            justification: format!(
-                "Auditor Interno check: DD={:.4}, Risk={:.4}",
-                payload.current_drawdown_pct, payload.do_calculus_risk
-            ),
+            justification,
         }
     }
 }
@@ -1914,6 +2003,16 @@ pub struct CouncilParams {
     pub crowd_imbalance_decay: f64,    // 0.25
     /// OLA Ω118: Piso mínimo de convicción ante masas para SeniorEnteMercado (default: 0.70).
     pub crowd_min_floor: f64,          // 0.70
+    /// OLA Ω119: Peso canónico de autoridad disidente para SeniorAuditorInterno (default: 3.0).
+    pub devil_advocate_weight: f64,    // 3.0
+    /// OLA Ω119: Umbral base de tolerancia a discrepancia interna / autoengaño (default: 0.20).
+    pub discrepancy_veto_threshold: f64, // 0.20
+    /// OLA Ω119: Mínimo de ensayos para activar pesos adaptativos en el tracker (default: 5).
+    pub tracker_min_trials: usize,     // 5
+    /// OLA Ω119: Piso mínimo de peso relativo normalizado en el tracker (default: 0.50).
+    pub tracker_weight_floor: f64,     // 0.50
+    /// OLA Ω119: Techo máximo de peso relativo normalizado en el tracker (default: 2.0).
+    pub tracker_weight_cap: f64,       // 2.0
 }
 
 impl CouncilParams {
@@ -1957,6 +2056,11 @@ impl CouncilParams {
             liq_min_floor: DEFAULT_LIQ_MIN_FLOOR,
             crowd_imbalance_decay: DEFAULT_CROWD_IMBALANCE_DECAY,
             crowd_min_floor: DEFAULT_CROWD_MIN_FLOOR,
+            devil_advocate_weight: DEFAULT_DEVIL_ADVOCATE_WEIGHT,
+            discrepancy_veto_threshold: DEFAULT_DISCREPANCY_VETO_THRESHOLD,
+            tracker_min_trials: DEFAULT_TRACKER_MIN_TRIALS,
+            tracker_weight_floor: DEFAULT_TRACKER_WEIGHT_FLOOR,
+            tracker_weight_cap: DEFAULT_TRACKER_WEIGHT_CAP,
         };
         params.validate()?;
         Ok(params)
@@ -2058,6 +2162,24 @@ impl CouncilParams {
         Ok(self)
     }
 
+    /// OLA Ω119: Builder para configurar autoridad disidente del Abogado del Diablo y parámetros adaptativos del tracker.
+    pub fn with_auditor_and_tracker_bounds(
+        mut self,
+        devil_weight: f64,
+        discrepancy_threshold: f64,
+        min_trials: usize,
+        weight_floor: f64,
+        weight_cap: f64,
+    ) -> Result<Self, String> {
+        self.devil_advocate_weight = devil_weight;
+        self.discrepancy_veto_threshold = discrepancy_threshold;
+        self.tracker_min_trials = min_trials;
+        self.tracker_weight_floor = weight_floor;
+        self.tracker_weight_cap = weight_cap;
+        self.validate()?;
+        Ok(self)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         for (name, value) in [
             ("approval_threshold", self.approval_threshold),
@@ -2143,6 +2265,27 @@ impl CouncilParams {
         if !(0.10..=0.99).contains(&self.crowd_min_floor) {
             return Err(format!("Invalid council parameter crowd_min_floor: {}", self.crowd_min_floor));
         }
+        if !(0.5..=10.0).contains(&self.devil_advocate_weight) {
+            return Err(format!("Invalid council parameter devil_advocate_weight: {}", self.devil_advocate_weight));
+        }
+        if !(0.05..=0.50).contains(&self.discrepancy_veto_threshold) {
+            return Err(format!("Invalid council parameter discrepancy_veto_threshold: {}", self.discrepancy_veto_threshold));
+        }
+        if !(1..=50).contains(&self.tracker_min_trials) {
+            return Err(format!("Invalid council parameter tracker_min_trials: {}", self.tracker_min_trials));
+        }
+        if !(0.10..=0.90).contains(&self.tracker_weight_floor) {
+            return Err(format!("Invalid council parameter tracker_weight_floor: {}", self.tracker_weight_floor));
+        }
+        if !(1.10..=5.0).contains(&self.tracker_weight_cap) {
+            return Err(format!("Invalid council parameter tracker_weight_cap: {}", self.tracker_weight_cap));
+        }
+        if self.tracker_weight_floor >= self.tracker_weight_cap {
+            return Err(format!(
+                "Invalid tracker bounds: floor ({}) must be strictly less than cap ({})",
+                self.tracker_weight_floor, self.tracker_weight_cap
+            ));
+        }
         if !self.shrinkage_k.is_finite() || self.shrinkage_k <= 0.0 {
             return Err("shrinkage_k must be finite and positive".into());
         }
@@ -2184,6 +2327,11 @@ impl Default for CouncilParams {
             liq_min_floor: DEFAULT_LIQ_MIN_FLOOR,
             crowd_imbalance_decay: DEFAULT_CROWD_IMBALANCE_DECAY,
             crowd_min_floor: DEFAULT_CROWD_MIN_FLOOR,
+            devil_advocate_weight: DEFAULT_DEVIL_ADVOCATE_WEIGHT,
+            discrepancy_veto_threshold: DEFAULT_DISCREPANCY_VETO_THRESHOLD,
+            tracker_min_trials: DEFAULT_TRACKER_MIN_TRIALS,
+            tracker_weight_floor: DEFAULT_TRACKER_WEIGHT_FLOOR,
+            tracker_weight_cap: DEFAULT_TRACKER_WEIGHT_CAP,
         }
     }
 }
@@ -2319,8 +2467,16 @@ impl ConsejoDeliberacion {
         // Capture count and adaptive weights under the SAME read lock, then
         // release it before agent callbacks. Poison is not a cold start.
         let (aggregate_outcome_count, dynamic_weights) = match self.tracker.read() {
-            Ok(tracker) => (tracker.total_outcomes(),
-                weight_multipliers.is_none().then(|| tracker.compute_weights())),
+            Ok(tracker) => (
+                tracker.total_outcomes(),
+                weight_multipliers.is_none().then(|| {
+                    tracker.compute_weights_with_params(
+                        self.params.tracker_min_trials,
+                        self.params.tracker_weight_floor,
+                        self.params.tracker_weight_cap,
+                    )
+                }),
+            ),
             Err(_) => return CouncilDecisionTrace::integrity_failure("poisoned performance tracker".into()),
         };
         let n_obs = aggregate_outcome_count as f64;
@@ -2330,7 +2486,7 @@ impl ConsejoDeliberacion {
         // N-12: Si no se proporcionan multiplicadores externos, usar pesos adaptativos empíricos del tracker
         let active_mults = weight_multipliers.or(dynamic_weights.as_ref());
 
-        // OLA Ω111 / Ω113 / Ω114 / Ω115 / Ω116 / Ω117: Si CouncilParams define umbrales dinámicos distintos de los canónicos
+        // OLA Ω111 / Ω113 / Ω114 / Ω115 / Ω116 / Ω117 / Ω118 / Ω119: Si CouncilParams define umbrales dinámicos distintos de los canónicos
         // y el payload porta los defaults, propagar los parámetros del consejo al payload evaluado.
         let has_custom_utility = (self.params.utility_veto_floor - UTILITY_VETO_FLOOR).abs() > 1e-9
             || (self.params.utility_veto_wr - UTILITY_VETO_WR).abs() > 1e-9;
@@ -2358,6 +2514,8 @@ impl ConsejoDeliberacion {
             || (self.params.liq_min_floor - DEFAULT_LIQ_MIN_FLOOR).abs() > 1e-9
             || (self.params.crowd_imbalance_decay - DEFAULT_CROWD_IMBALANCE_DECAY).abs() > 1e-9
             || (self.params.crowd_min_floor - DEFAULT_CROWD_MIN_FLOOR).abs() > 1e-9;
+        let has_custom_auditor_internal = (self.params.devil_advocate_weight - DEFAULT_DEVIL_ADVOCATE_WEIGHT).abs() > 1e-9
+            || (self.params.discrepancy_veto_threshold - DEFAULT_DISCREPANCY_VETO_THRESHOLD).abs() > 1e-9;
 
         let effective_payload = if has_custom_utility
             || has_custom_slippage
@@ -2366,6 +2524,7 @@ impl ConsejoDeliberacion {
             || has_custom_physical_gauge
             || has_custom_ml_metacognitive
             || has_custom_market_entity
+            || has_custom_auditor_internal
         {
             let mut p = payload.clone();
             if has_custom_utility {
@@ -2458,6 +2617,14 @@ impl ConsejoDeliberacion {
                 }
                 if (p.crowd_min_floor - DEFAULT_CROWD_MIN_FLOOR).abs() < 1e-9 {
                     p.crowd_min_floor = self.params.crowd_min_floor;
+                }
+            }
+            if has_custom_auditor_internal {
+                if (p.devil_advocate_weight - DEFAULT_DEVIL_ADVOCATE_WEIGHT).abs() < 1e-9 {
+                    p.devil_advocate_weight = self.params.devil_advocate_weight;
+                }
+                if (p.discrepancy_veto_threshold - DEFAULT_DISCREPANCY_VETO_THRESHOLD).abs() < 1e-9 {
+                    p.discrepancy_veto_threshold = self.params.discrepancy_veto_threshold;
                 }
             }
             std::borrow::Cow::Owned(p)
@@ -2839,6 +3006,32 @@ impl SeniorPerformanceTracker {
     /// P_i = 0.5 · (1 + θ_i) ∈ [0.01, 0.99]
     /// Con |r| = R constante, θ_i = 2·acc_i - 1 ⇒ P_i = acc_i (invariante exacto).
     pub fn compute_weights(&self) -> [f64; 11] {
+        self.compute_weights_with_params(
+            DEFAULT_TRACKER_MIN_TRIALS,
+            DEFAULT_TRACKER_WEIGHT_FLOOR,
+            DEFAULT_TRACKER_WEIGHT_CAP,
+        )
+    }
+
+    /// OLA Ω119: Calcula multiplicadores adaptativos del tracker con cotas y umbrales dinámicos.
+    pub fn compute_weights_with_params(
+        &self,
+        min_trials: usize,
+        weight_floor: f64,
+        weight_cap: f64,
+    ) -> [f64; 11] {
+        let safe_min_trials = min_trials.max(1).min(50);
+        let safe_floor = if weight_floor.is_finite() && (0.10..=0.90).contains(&weight_floor) {
+            weight_floor
+        } else {
+            DEFAULT_TRACKER_WEIGHT_FLOOR
+        };
+        let safe_cap = if weight_cap.is_finite() && (1.10..=5.0).contains(&weight_cap) && weight_cap > safe_floor {
+            weight_cap
+        } else {
+            DEFAULT_TRACKER_WEIGHT_CAP
+        };
+
         let mut weights = [1.0; 11];
         let mut sum_p = 0.0;
         let mut active_seniors = 0;
@@ -2858,7 +3051,7 @@ impl SeniorPerformanceTracker {
         }
 
         for i in 0..11 {
-            if self.total_counts[i] >= 5 {
+            if self.total_counts[i] >= safe_min_trials {
                 let theta = if sum_abs_ret[i] > 0.0 {
                     (sum_edge[i] / sum_abs_ret[i]).clamp(-1.0, 1.0)
                 } else {
@@ -2874,9 +3067,9 @@ impl SeniorPerformanceTracker {
         if active_seniors >= 2 && sum_p > 0.0 {
             let mean_p = sum_p / active_seniors as f64;
             for i in 0..11 {
-                if self.total_counts[i] >= 5 {
+                if self.total_counts[i] >= safe_min_trials {
                     let relative = perf[i] / mean_p.max(0.01);
-                    weights[i] = relative.clamp(0.5, 2.0);
+                    weights[i] = relative.clamp(safe_floor, safe_cap);
                 }
             }
         }
@@ -2946,6 +3139,9 @@ mod tests {
             liq_min_floor: DEFAULT_LIQ_MIN_FLOOR,
             crowd_imbalance_decay: DEFAULT_CROWD_IMBALANCE_DECAY,
             crowd_min_floor: DEFAULT_CROWD_MIN_FLOOR,
+            devil_advocate_weight: DEFAULT_DEVIL_ADVOCATE_WEIGHT,
+            discrepancy_veto_threshold: DEFAULT_DISCREPANCY_VETO_THRESHOLD,
+            internal_discrepancy: 0.0,
         }
     }
 

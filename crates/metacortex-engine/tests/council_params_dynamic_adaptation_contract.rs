@@ -120,6 +120,11 @@ fn ola101_consejo_deliberacion_with_params_falla_ante_parametros_corruptos() {
         liq_min_floor: 0.40,
         crowd_imbalance_decay: 0.25,
         crowd_min_floor: 0.70,
+        devil_advocate_weight: 3.0,
+        discrepancy_veto_threshold: 0.20,
+        tracker_min_trials: 5,
+        tracker_weight_floor: 0.50,
+        tracker_weight_cap: 2.0,
     };
 
     match ConsejoDeliberacion::with_params(corrupt_params) {

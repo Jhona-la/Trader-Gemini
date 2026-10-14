@@ -69,6 +69,9 @@ fn test_prospect_pressure_live_computation_in_god_engine() {
         liq_min_floor: 0.40,
         crowd_imbalance_decay: 0.25,
         crowd_min_floor: 0.70,
+        devil_advocate_weight: 3.0,
+        discrepancy_veto_threshold: 0.20,
+        internal_discrepancy: 0.0,
     };
 
     assert!(payload.validate().is_ok());
@@ -157,6 +160,9 @@ fn test_feynman_and_prospect_confluence_in_god_engine() {
         liq_min_floor: 0.40,
         crowd_imbalance_decay: 0.25,
         crowd_min_floor: 0.70,
+        devil_advocate_weight: 3.0,
+        discrepancy_veto_threshold: 0.20,
+        internal_discrepancy: 0.0,
     };
 
     assert!(payload.validate().is_ok());
