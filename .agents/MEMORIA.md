@@ -1,5 +1,63 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω101 — Adaptabilidad Dinámica de CouncilParams y Desacoplamiento Parametrizado de Confluencia Resonante
+
+- **Rama activa**: `antigravity/ola101-council-and-resonance-evolution`.
+- **Adaptabilidad Dinámica del Consejo Deliberativo (`crates/metacortex-engine/src/consejo_seniors.rs`)**:
+  - **Diagnóstico y Causa Raíz**: El tribunal supremo de trading (`ConsejoDeliberacion`) dependía únicamente de `CouncilParams::default()`, impidiendo la construcción directa de consejos con parámetros evolucionados o calibrados. Aunque en Ola Ω95 se cablearon 6 átomos lock-free en `QuantumConfig`, `ConsejoDeliberacion` carecía de un constructor formal `with_params(params)` que validase cotas y protegiese contra corrupción numérica. Asimismo, `GodEngineCore::new` nacía con los parámetros estáticos por defecto sin sincronizar inmediatamente con `arena.config`.
+  - **Solución Cuántica y Matemática**:
+    * Implementado el constructor canónico con validación rigurosa de cotas:
+      ```rust
+      impl CouncilParams {
+          pub fn new(
+              approval_threshold: f64,
+              supermajority_override: f64,
+              override_signal_floor: f64,
+              override_penalty: f64,
+              shrinkage_k: f64,
+              cascade_severity_breaker: f64,
+          ) -> Result<Self, String>
+      ```
+    * Implementado `ConsejoDeliberacion::with_params(params: CouncilParams) -> Result<Self, String>` para instanciación directa del consejo con políticas de deliberación evaluadas en tiempo real.
+    * Sincronización inmediata en el arranque de `GodEngineCore::new(arena)`:
+      ```rust
+      let mut core = Self { ... };
+      core.sync_council_params_from_arena();
+      core
+      ```
+      garantizando sincronización determinista desde tick cero.
+  - **Certificación Contractual**:
+    * Diseñado y certificado el contrato formal `crates/metacortex-engine/tests/council_params_dynamic_adaptation_contract.rs`:
+      1. `ola101_council_params_new_valida_cotas_correctamente`: verifica aprobación de parámetros válidos y rechazo estricto de valores fuera de [0, 1], negativos, NaN, infinitos y shrinkage_k <= 0.
+      2. `ola101_consejo_deliberacion_with_params_adopta_politica_dinamica`: certifica que un umbral de breaker adaptativo (ej. 0.60) veta de inmediato severidades de 0.65 mediante `SeniorRole::EnteMercado`.
+      3. `ola101_consejo_deliberacion_with_params_falla_ante_parametros_corruptos`: certifica fail-closed ante configuraciones corruptas sin pánico.
+    * Suite `metacortex-engine`: 100% verde (38 tests pasando).
+- **Desacoplamiento Parametrizado de Confluencia Resonante (`crates/god-engine-core/src/lib.rs:674`)**:
+  - **Diagnóstico y Causa Raíz**: En Rama 15 (`confluencia_resonante`), cinco cortes críticos (`FUSED_UMBAL_PLENO = 0.38`, `FUSED_UMBAL_MODERADO = 0.22`, `HURST_CONTINUACION = 0.52`, `COHERENCIA_MINIMA = 0.12`, `MAREA_MACRO_TOLERANCIA = 0.00020`) estaban fijados como constantes estáticas rígidas (deuda técnica H2-11 documentada: "promoverlos a knobs sería cambio de conducta").
+  - **Solución Matemática de Continuidad**:
+    * Implementada la función desacoplada general:
+      ```rust
+      pub fn confluencia_resonante_con_umbrales(
+          fused: f64,
+          hurst_tau_star: f64,
+          coherencia_larga: f64,
+          coherencia_corta: f64,
+          marea_macro: f64,
+          fused_umbral_pleno: f64,
+          fused_umbral_moderado: f64,
+          hurst_continuacion: f64,
+          coherencia_minima: f64,
+          marea_macro_tolerancia: f64,
+      ) -> Option<(bool, f64)>
+      ```
+    * `confluencia_resonante` delega en `confluencia_resonante_con_umbrales` con las constantes canónicas, garantizando paridad bit a bit con el contrato canónico `h2_11` y habilitando a la vez exploración evolutiva y calibración adaptativa continua.
+  - **Certificación Contractual**:
+    * Nuevo test formal `ola101_confluencia_resonante_con_umbrales_paridad_y_dinamismo` en `crates/god-engine-core/tests/resonancia_simetrica_contract.rs`: certifica paridad exacta bit a bit para inputs long, short, neutrales y extremos, y prueba la plasticidad adaptativa de umbrales estrictos vs permisivos (4/4 pass).
+- **Verificación Integral del Workspace**:
+  * `cargo test -p metacortex-engine`: 38 tests PASSED (0 fallos).
+  * `cargo test -p god-engine-core --test resonancia_simetrica_contract --test council_params_arena_wiring_contract`: 6 tests PASSED (0 fallos).
+  * `cargo check --workspace --all-targets`: 0 errores en los 23 crates (34.73s).
+
 ## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): ola Ω100 — Armonización Cuántica del Rango Epigenético en Sizing [0.50, 2.00] y Desasfixia Biológica del Activo
 
 - **Rama activa**: `antigravity/ola100-epigenetic-dynamic-range-and-council-evolution`.
