@@ -27,10 +27,6 @@ pub use evidence::{
     DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
 };
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
-pub use kelly::{
-    compute_kelly_exploration_fraction, resolve_kelly_cold, DEFAULT_KELLY_EXPLORATION_MAX,
-    DEFAULT_KELLY_EXPLORATION_RATIO, DRAWDOWN_EXPLORATION_FLOOR,
-};
 pub use sonda::{en_fase_de_sonda, resolve_max_cierres_sonda, sprt_bernoulli, SprtDecision, CIERRES_DE_SONDA};
 pub use tp_sl::{
     latency_slippage_pct, latency_slippage_pct_hurst, roundtrip_friction, roundtrip_friction_hurst,
@@ -395,19 +391,12 @@ impl RiskEngine {
             .config
             .kelly_bootstrap_cold
             .load(Ordering::Relaxed);
-        // F3.4-08 (Ola Ω110): Resolución adaptativa y continua de la fracción Kelly de exploración/bootstrap.
-        // Erradica los literales fijos 0.25 y 0.05 modulando según la rampa continua de PF, atenuación
-        // por drawdown de cartera y overrides omniscientes por activo (c{id}:kelly_exploration_*) o globales.
-        let kelly_cold = crate::kelly::resolve_kelly_cold(
-            arena,
-            coin_id,
-            pf,
-            clamp_min,
-            kelly_cold_raw,
-            self.peak_capital,
-            current_capital,
-            trades_n,
-        );
+        let kelly_cold = if pf <= 1.0 {
+            // Sin edge probado: exploración ultra-conservadora (¼ del piso)
+            (clamp_min.max(0.0) * 0.25).clamp(0.0, 0.05)
+        } else {
+            kelly_cold_raw.clamp(0.05, 0.35)
+        };
         let kelly_frac = if trades_n == 0 || raw_kelly <= 0.0 {
             kelly_cold
         } else {
