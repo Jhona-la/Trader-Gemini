@@ -22,7 +22,10 @@ use std::time::Instant;
 pub use cazador_constantes::CazadorConstantes;
 pub use compiler_sandbox::{CompilationConfig, CompilationResult, CompilerSandbox};
 pub use consejo_seniors::{
-    ConsejoDeliberacion, ConsensusResult, MarketSnapshotPayload, SeniorOpinion, SeniorRole,
+    evaluate_execution_slippage, evaluate_execution_slippage_with_bounds,
+    evaluate_volatility_regime, evaluate_volatility_regime_spectral,
+    evaluate_volatility_regime_with_bounds, ConsejoDeliberacion, ConsensusResult,
+    MarketSnapshotPayload, SeniorOpinion, SeniorRole,
 };
 pub use prospect_theory::ProspectTheoryEngine;
 pub use epigenoma_store::{read_epigenoma_gene, set_epigenoma_gene};

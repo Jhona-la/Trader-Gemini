@@ -481,26 +481,88 @@ impl SeniorAgent for SeniorSeriesTemporales {
     }
 }
 
-// 3. Senior Volatilidad (antes Grafos) — MOD2/7-006: el asiento "grafos" leía
-// impulse_mom del lead_lag_engine, computado A PARTIR del OBI (colinealidad
-// literal). Ahora opina desde el ATR relativo: mercados tranquilos autorizan
-// convicción plena; mercados peligrosos la reducen. NO genera dirección:
-// modula la convicción de la entrada bajo deliberación.
+// 3. Senior Volatilidad (antes Grafos) — MOD2/7-006 & OLA Ω102:
+// Opina desde el ATR relativo: mercados tranquilos autorizan convicción plena;
+// volatilidad anómala la modula hacia el piso defensivo de 0.40. NO genera dirección:
+// modula la convicción de la entrada bajo deliberación de forma suave y sin discontinuidades.
+
+pub const CALM_ATR_PCT: f64 = 0.0010;
+pub const DANGER_ATR_PCT: f64 = 0.0040;
+
+/// Evalúa el factor de régimen de volatilidad con cotas desacopladas (Ola Ω102).
+///
+/// # Formulación
+/// - Mercados en calma (atr ≤ calm) otorgan convicción plena 1.0.
+/// - Mercados peligrosos (atr ≥ danger) atenúan linealmente hasta el piso defensivo de 0.40.
+/// - Sanitización estricta contra NaN y valores negativos.
+#[inline(always)]
+pub fn evaluate_volatility_regime_with_bounds(
+    atr_pct: f64,
+    calm: f64,
+    danger: f64,
+) -> f64 {
+    let safe_calm = if calm.is_finite() && calm >= 0.0 {
+        calm
+    } else {
+        CALM_ATR_PCT
+    };
+    let safe_danger = if danger.is_finite() && danger > safe_calm {
+        danger
+    } else {
+        (safe_calm + 1e-6).max(DANGER_ATR_PCT)
+    };
+    let safe_atr = if atr_pct.is_nan() {
+        safe_calm
+    } else if atr_pct.is_infinite() && atr_pct.is_sign_positive() {
+        safe_danger
+    } else if atr_pct.is_finite() && atr_pct >= 0.0 {
+        atr_pct
+    } else {
+        safe_calm
+    };
+
+    1.0 - 0.6 * ((safe_atr - safe_calm) / (safe_danger - safe_calm)).clamp(0.0, 1.0)
+}
+
+/// Evalúa el régimen de volatilidad con las bandas de referencia canónicas crypto (10 bps / 40 bps).
+#[inline(always)]
+pub fn evaluate_volatility_regime(atr_pct: f64) -> f64 {
+    evaluate_volatility_regime_with_bounds(atr_pct, CALM_ATR_PCT, DANGER_ATR_PCT)
+}
+
+/// Evalúa el régimen de volatilidad escalando continuamente en el espectro temporal s ∈ [0, 1] (Ola Ω102).
+#[inline(always)]
+pub fn evaluate_volatility_regime_spectral(
+    atr_pct: f64,
+    spectral_s: f64,
+    base_calm: f64,
+    base_danger: f64,
+    spectral_expansion: f64,
+) -> f64 {
+    let s = if spectral_s.is_finite() {
+        spectral_s.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let scale = 1.0 + spectral_expansion * s;
+    let calm = base_calm * scale;
+    let danger = base_danger * scale;
+    evaluate_volatility_regime_with_bounds(atr_pct, calm, danger)
+}
+
 pub struct SeniorVolatilidad;
 impl SeniorAgent for SeniorVolatilidad {
     fn role(&self) -> SeniorRole {
         SeniorRole::Volatilidad
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let atr_pct = payload.atr_pct.max(0.0);
-        // Bandas de referencia crypto (scalp 1m): calma ≤ 10 bps del precio,
-        // peligro ≥ 40 bps. La convicción decae linealmente hasta un piso de
-        // 0.4 — nunca cero: la volatilidad es riesgo, no veto direccional.
-        const CALM_ATR_PCT: f64 = 0.0010;
-        const DANGER_ATR_PCT: f64 = 0.0040;
-        let regime_factor =
-            1.0 - 0.6 * ((atr_pct - CALM_ATR_PCT) / (DANGER_ATR_PCT - CALM_ATR_PCT)).clamp(0.0, 1.0);
+        let regime_factor = evaluate_volatility_regime(payload.atr_pct);
         let dir = safe_signum(payload.intended_direction);
+        let safe_atr = if payload.atr_pct.is_finite() && payload.atr_pct >= 0.0 {
+            payload.atr_pct
+        } else {
+            0.0
+        };
         SeniorOpinion {
             role: self.role(),
             signal_direction: dir,
@@ -509,7 +571,7 @@ impl SeniorAgent for SeniorVolatilidad {
             is_veto: false,
             justification: format!(
                 "Volatilidad: ATR%={:.4} → convicción {:.2} (dir={:+.0})",
-                atr_pct, regime_factor, dir
+                safe_atr, regime_factor, dir
             ),
         }
     }
@@ -743,7 +805,67 @@ impl SeniorAgent for SeniorRiesgo {
     }
 }
 
-// 6. Senior Ejecucion (VETO ON IMPACT)
+// 6. Senior Ejecucion (VETO ON IMPACT) — OLA Ω102:
+// Evalúa el impacto de slippage efectivo modulado por la vorticidad de Navier-Stokes y la tolerancia
+// temporal espectral s ∈ [0, 1], escalando con la volatilidad relativa ATR.
+
+/// Evalúa el slippage efectivo y el umbral de veto de ejecución con parámetros desacoplados (Ola Ω102).
+#[inline(always)]
+pub fn evaluate_execution_slippage_with_bounds(
+    estimated_slippage_bps: f64,
+    navier_laminar_share: f64,
+    spectral_s: f64,
+    atr_pct: f64,
+    fast_slippage_floor: f64,
+    slow_slippage_span: f64,
+) -> (f64, f64, bool) {
+    let slippage_bps = if estimated_slippage_bps.is_finite() && estimated_slippage_bps >= 0.0 {
+        estimated_slippage_bps
+    } else {
+        0.0
+    };
+    let re_laminar = if navier_laminar_share.is_finite() && navier_laminar_share > 0.0 {
+        navier_laminar_share.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let effective_slippage_bps = slippage_bps * (1.0 + (1.0 - re_laminar) * 0.50);
+    let s = if spectral_s.is_finite() {
+        spectral_s.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let base_slippage = fast_slippage_floor + slow_slippage_span * s;
+    let atr_mult = if atr_pct.is_finite() && atr_pct > 0.0 {
+        let atr_bps = atr_pct * 10_000.0;
+        (atr_bps / 10.0).sqrt().clamp(0.70, 2.0)
+    } else {
+        1.0
+    };
+    let max_slippage = base_slippage * atr_mult;
+    let is_veto = effective_slippage_bps > max_slippage;
+    (effective_slippage_bps, max_slippage, is_veto)
+}
+
+#[inline(always)]
+pub fn evaluate_execution_slippage(
+    estimated_slippage_bps: f64,
+    navier_laminar_share: f64,
+    spectral_s: f64,
+    atr_pct: f64,
+) -> (f64, f64, bool) {
+    const FAST_SLIPPAGE_FLOOR: f64 = 35.0;
+    const SLOW_SLIPPAGE_SPAN: f64 = 65.0;
+    evaluate_execution_slippage_with_bounds(
+        estimated_slippage_bps,
+        navier_laminar_share,
+        spectral_s,
+        atr_pct,
+        FAST_SLIPPAGE_FLOOR,
+        SLOW_SLIPPAGE_SPAN,
+    )
+}
+
 pub struct SeniorEjecucion;
 impl SeniorAgent for SeniorEjecucion {
     fn role(&self) -> SeniorRole {
@@ -751,34 +873,14 @@ impl SeniorAgent for SeniorEjecucion {
     }
     #[inline(always)]
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        // FIX #387: estimated_slippage_bps ya está expresado en puntos básicos (bps)
         let slippage_bps = payload.estimated_slippage_bps.max(0.0);
-        // OLA Ω53: Modulación hidrodinámica Navier-Stokes sobre slippage efectivo:
-        // En régimen turbulento (Re >= 5.0, laminar_share -> 0.0), la rotura de capas límite
-        // y micro-vórtices de flujo amplifican el slippage efectivo por selección adversa.
-        let re_laminar = if payload.navier_laminar_share.is_finite() && payload.navier_laminar_share > 0.0 {
-            payload.navier_laminar_share.clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
-        let effective_slippage_bps = slippage_bps * (1.0 + (1.0 - re_laminar) * 0.50);
-        // U-4: umbral de slippage continuo en τ — antes escalones por
-        // horizonte (Scalping 35 / Continuous 65 / Swing 100 bps). Un trade
-        // de τ corto no puede pagar 100 bps; uno de 12 h puede absorberlos.
-        // D-113: extremo rápido conserva la tolerancia estrecha de altcoins.
-        let base_slippage = 35.0 + 65.0 * payload.spectral_s();
-        // OLA Ω97: Modulación adaptativa continua por volatilidad de régimen (ATR relativo):
-        // si atr_pct está disponible (> 0), el presupuesto de slippage escala suavemente con
-        // (atr_bps / 10.0)^0.5 acotado en [0.70, 2.0]. En BTC (atr_bps ≈ 10) el factor es 1.0;
-        // en altcoins volátiles evita estrangulamiento espurio por micro-spreads naturales.
-        let atr_mult = if payload.atr_pct.is_finite() && payload.atr_pct > 0.0 {
-            let atr_bps = payload.atr_pct * 10_000.0;
-            (atr_bps / 10.0).sqrt().clamp(0.70, 2.0)
-        } else {
-            1.0
-        };
-        let max_slippage = base_slippage * atr_mult;
-        let is_veto = effective_slippage_bps > max_slippage;
+        let s = payload.spectral_s();
+        let (effective_slippage_bps, max_slippage, is_veto) = evaluate_execution_slippage(
+            slippage_bps,
+            payload.navier_laminar_share,
+            s,
+            payload.atr_pct,
+        );
         SeniorOpinion {
             role: self.role(),
             signal_direction: 0.0, // Neutral permission agent
@@ -786,8 +888,8 @@ impl SeniorAgent for SeniorEjecucion {
             weight: 1.0,
             is_veto,
             justification: format!(
-                "Execution impact slippage: {:.2} bps (eff: {:.2} bps, Re: {:.2}, mode={:?})",
-                slippage_bps, effective_slippage_bps, payload.navier_reynolds_number, payload.horizon
+                "Execution impact slippage: {:.2} bps (eff: {:.2} bps, max: {:.2} bps, Re: {:.2}, mode={:?})",
+                slippage_bps, effective_slippage_bps, max_slippage, payload.navier_reynolds_number, payload.horizon
             ),
         }
     }
