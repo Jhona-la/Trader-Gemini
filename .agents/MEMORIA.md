@@ -1,5 +1,23 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω106 — Normalización Dinámica de Latencia Fraccional Anómala y Ruteo Idempotente de Órdenes
+
+- **Ola Integrada y Certificada en `main` (`91682537`)**:
+  * **Difusión Fraccional Anómala en Slippage por Latencia (`crates/risk-engine/src/tp_sl.rs`, `crates/risk-engine/src/lib.rs`)**:
+    - **Diagnóstico y Causa Raíz**: El deslizamiento por latencia modelaba exclusivamente difusión Browniana estándar ($\sqrt{t / \tau_{\text{ref}}}$ con $H = 0.50$). En micro-regímenes de alta persistencia fractal ($H > 0.50$, momentum acelerado) o anti-persistencia ($H < 0.50$, sub-difusión por reversión a la media), la estimación de deslizamiento de ejecución y fricción de ida y vuelta divergía de la física real de micro-estructura del mercado.
+    - **Solución Matemática y Espectral**: Se implementó `latency_slippage_pct_hurst(atr_ratio, latency_ms, hurst)` y `roundtrip_friction_hurst(...)` modelando la ley de potencia fraccional:
+      $$\sigma(t) = \text{atr\_ratio} \cdot \left(\frac{t}{\tau_{\text{ref}}}\right)^H, \quad H \in [0.30, 0.75]$$
+      con `latency_slippage_pct` y `roundtrip_friction` delegando estrictamente a $H = 0.50$, preservando paridad canónica bit-a-bit exacta a través de `ratio.sqrt()`.
+  * **Ruteo Dinámico e Idempotencia en Emergencias (`crates/execution-engine/src/router.rs`)**:
+    - **Diagnóstico y Causa Raíz**: En `QuantumOrderRouter::route_order`, la condición de pánico por alta latencia / spread evaluaba constantes estáticas rígidas (500 ms y 0.005 de spread) y llamaba a `execute_raw_qty` ignorando `client_order_id`, lo que introducía riesgo de duplicación de órdenes y pérdida de trazabilidad en Binance durante contingencias. Adicionalmente, el clamp de deslizamiento IOC estaba limitado a 35 bps fijos.
+    - **Solución de Arquitectura y Resiliencia**:
+      1. Se desacoplaron los umbrales de pánico, consultando dinámicamente `arena.config.latency_ms_panic_threshold` y `arena.registry.get_value_or("router_max_spread_pct", 0.005)`.
+      2. Se preservó el `client_order_id` en la rama de pánico invocando `execute_raw_qty_with_client_id`, garantizando idempotencia estricta en el exchange.
+      3. Se expandió adaptativamente el techo de tolerancia de slippage IOC a `vol_gate.clamp(0.0035, 0.0150)` en función del presupuesto continuo de volatilidad $sl(\tau)$.
+  * **Certificación Contractual**:
+    - Certificado formalmente con `crates/execution-engine/tests/router_latency_diffusion_contract.rs` (3/3 tests pasando: paridad canónica bit-a-bit, propiedades de difusión anómala y preservación de idempotencia en pánico).
+    - Suite de pruebas de `execution-engine` (100% verde) y `risk-engine` (100% verde).
+
 ## 2026-10-13 — Antigravity (AGY, Quant Sr. Lead): Olas Ω103, Ω104, Ω105 — Ensamble Efectivo, Desacoplamiento de Techo de Fricción Micro y Confluencia Resonante Dinámica
 
 - **Olas Integradas y Certificadas en `main`**:

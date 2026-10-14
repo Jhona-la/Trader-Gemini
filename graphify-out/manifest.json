@@ -582,9 +582,9 @@
     "semantic_hash": ""
   },
   "crates/execution-engine/src/router.rs": {
-    "mtime": 1790819830.6255977,
-    "seen": 1790819957.9565508,
-    "ast_hash": "7f00c8d9a74d120b56b4bbf8f9b85454",
+    "mtime": 1791959749.8142831,
+    "seen": 1791960509.4921417,
+    "ast_hash": "d911354ae653a2fcb97c8d4db0951032",
     "semantic_hash": ""
   },
   "crates/execution-engine/src/shadow.rs": {
@@ -798,9 +798,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/lib.rs": {
-    "mtime": 1791939974.758837,
-    "seen": 1791940359.4838345,
-    "ast_hash": "b21dd30dcb3979a1d6ac06085a6456ff",
+    "mtime": 1791947816.8034084,
+    "seen": 1791948613.6391027,
+    "ast_hash": "9e8ed8dd97415dbd228e973caac14451",
     "semantic_hash": ""
   },
   "crates/god-engine-core/src/math_kernels.rs": {
@@ -900,9 +900,9 @@
     "semantic_hash": "4dff921ffc58a0a01cf8cbdb026dc305"
   },
   "crates/metacortex-engine/src/consejo_seniors.rs": {
-    "mtime": 1791939974.7635305,
-    "seen": 1791940359.5223942,
-    "ast_hash": "6391b94db954311229d8bba86b0bd42a",
+    "mtime": 1791946036.7711422,
+    "seen": 1791946705.8379166,
+    "ast_hash": "1fde77f202759e26099703bc600f0158",
     "semantic_hash": ""
   },
   "crates/metacortex-engine/src/epigenoma_store.rs": {
@@ -936,9 +936,9 @@
     "semantic_hash": ""
   },
   "crates/metacortex-engine/src/lib.rs": {
-    "mtime": 1791655795.0417058,
-    "seen": 1791697106.5113974,
-    "ast_hash": "d62015a74a898c416eb8a1d45e982be1",
+    "mtime": 1791945966.4595327,
+    "seen": 1791946705.8391597,
+    "ast_hash": "544249c92dce71e552d047aec70e9ed1",
     "semantic_hash": ""
   },
   "crates/metacortex-engine/src/online_learning.rs": {
@@ -1224,9 +1224,9 @@
     "semantic_hash": "0d9fa10b83a6a82ce5d37b4efe7445c4"
   },
   "crates/risk-engine/src/capital_regime.rs": {
-    "mtime": 1791831415.1155899,
-    "seen": 1791858306.6149812,
-    "ast_hash": "2e662e1305e070a0e5c20053f0396802",
+    "mtime": 1791947474.5814605,
+    "seen": 1791948613.7037306,
+    "ast_hash": "0ab95d2798648f5f7fc4d67765b7bb51",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/correlation_guard.rs": {
@@ -1260,9 +1260,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/lib.rs": {
-    "mtime": 1791943440.212417,
-    "seen": 1791944034.714872,
-    "ast_hash": "fca7e41b24d9692035d85c264f4c56f7",
+    "mtime": 1791959704.9090714,
+    "seen": 1791960509.606547,
+    "ast_hash": "6884759f670a5197ad60aec8f22d8431",
     "semantic_hash": ""
   },
   "crates/risk-engine/src/orchestrator.rs": {
@@ -1278,9 +1278,9 @@
     "semantic_hash": ""
   },
   "crates/risk-engine/src/tp_sl.rs": {
-    "mtime": 1791585833.8009932,
-    "seen": 1791601137.0000458,
-    "ast_hash": "40362677689df9a93d55b5ba01ff106d",
+    "mtime": 1791959688.7656047,
+    "seen": 1791960509.6097152,
+    "ast_hash": "2912b7f29d5219e7d69274f2a6075fac",
     "semantic_hash": ""
   },
   "crates/signal-engine/Cargo.toml": {
@@ -1308,15 +1308,15 @@
     "semantic_hash": ""
   },
   "crates/signal-engine/src/lib.rs": {
-    "mtime": 1791655795.0521593,
-    "seen": 1791697106.5113974,
-    "ast_hash": "6be4dd3e8805cbc4132a68d7b4f07fa6",
+    "mtime": 1791947117.4854436,
+    "seen": 1791948613.7240791,
+    "ast_hash": "33ce8d5e00c3ce356addcd1e2d7aefc4",
     "semantic_hash": ""
   },
   "crates/signal-engine/src/orchestrator.rs": {
-    "mtime": 1791934695.0664544,
-    "seen": 1791935082.352471,
-    "ast_hash": "ab9eed0c9a1bf8930ac144e948b8665d",
+    "mtime": 1791947110.0818348,
+    "seen": 1791948613.7250826,
+    "ast_hash": "e1c4e73dec86928b97128fe1f0918485",
     "semantic_hash": ""
   },
   "crates/signal-engine/src/perceptron_gate.rs": {
@@ -3042,9 +3042,9 @@
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/resonancia_simetrica_contract.rs": {
-    "mtime": 1791404051.9722173,
-    "seen": 1791504033.1764297,
-    "ast_hash": "f20e59d66cd6e4d53cdf8633b7bedba2",
+    "mtime": 1791945159.2341661,
+    "seen": 1791945649.395608,
+    "ast_hash": "24962d8e8020e9ec64fa9a55137073f1",
     "semantic_hash": ""
   },
   "crates/god-engine-core/tests/slippage_continuity_contract.rs": {
@@ -3672,9 +3672,9 @@
     "semantic_hash": ""
   },
   ".agents/MEMORIA.md": {
-    "mtime": 1791943506.1165018,
-    "seen": 1791944034.821253,
-    "ast_hash": "28cbffa5a7f5039b89633efc1d59d10f",
+    "mtime": 1791960077.1511264,
+    "seen": 1791960509.7049127,
+    "ast_hash": "292f6b1bd855a5e7fa8b7e4a35909362",
     "semantic_hash": ""
   },
   ".github/workflows/replay-contracts.yml": {
@@ -3702,9 +3702,9 @@
     "semantic_hash": ""
   },
   "TABLERO.md": {
-    "mtime": 1791943484.3148303,
-    "seen": 1791944035.1215973,
-    "ast_hash": "3c49f8b97a692989ac04db1c41e7fa8f",
+    "mtime": 1791960058.1374664,
+    "seen": 1791960510.0055802,
+    "ast_hash": "4b46421f07aac6eb4091c7fd9dd91a4b",
     "semantic_hash": ""
   },
   "docs/AUDITORIA_ADMISION_MULTIACTIVO_2026-09-28.md": {
@@ -30162,9 +30162,9 @@
     "semantic_hash": ""
   },
   "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-13.md": {
-    "mtime": 1791943549.7909636,
-    "seen": 1791944035.1542516,
-    "ast_hash": "ec3d8eaf267b78ea8a3c0b27c6257ea2",
+    "mtime": 1791960103.6645787,
+    "seen": 1791960510.038417,
+    "ast_hash": "1229c75c862ca16b7446c9890b71cd9b",
     "semantic_hash": ""
   },
   "docs/adr/ADR-0017-frenos-de-drawdown-y-estado-aprendido.md": {
@@ -30549,6 +30549,42 @@
     "mtime": 1791907801.5043657,
     "seen": 1791930768.7158837,
     "ast_hash": "e8f05fb7a8cb5dc64ecfd1d92814e5db",
+    "semantic_hash": ""
+  },
+  "crates/metacortex-engine/tests/council_params_dynamic_adaptation_contract.rs": {
+    "mtime": 1791945159.2431438,
+    "seen": 1791945649.4026074,
+    "ast_hash": "ab7669d0dff48fce82c3029b49b43f85",
+    "semantic_hash": ""
+  },
+  "crates/metacortex-engine/tests/volatilidad_y_slippage_dinamica_contract.rs": {
+    "mtime": 1791946042.4453518,
+    "seen": 1791946705.8431618,
+    "ast_hash": "62b4863e3fe67f1db0b551aeadfa7c63",
+    "semantic_hash": ""
+  },
+  "crates/god-engine-core/tests/confluencia_resonante_live_wiring_contract.rs": {
+    "mtime": 1791947958.848926,
+    "seen": 1791948613.6572206,
+    "ast_hash": "7e2bafe0ac28508ab426bdfc3721a7b1",
+    "semantic_hash": ""
+  },
+  "crates/risk-engine/tests/micro_fee_decoupling_contract.rs": {
+    "mtime": 1791947614.6827476,
+    "seen": 1791948613.7168148,
+    "ast_hash": "df46509cb7e458f96d02ace4c48ff92f",
+    "semantic_hash": ""
+  },
+  "crates/signal-engine/tests/ensemble_effective_voters_contract.rs": {
+    "mtime": 1791947162.147825,
+    "seen": 1791948613.7316277,
+    "ast_hash": "741d511275040c95502c7c7f19a3cf17",
+    "semantic_hash": ""
+  },
+  "crates/execution-engine/tests/router_latency_diffusion_contract.rs": {
+    "mtime": 1791959856.0937903,
+    "seen": 1791960509.5048988,
+    "ast_hash": "247e7b5be459ab122c8afba828b9da54",
     "semantic_hash": ""
   }
 }
