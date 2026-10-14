@@ -960,9 +960,13 @@ VERIFICADO CERRADO (BTC exogeno, ETH sin rho=1).
   contrato h2_11 que fija valores y fronteras justo-adentro/afuera —
   bit-exact; promoverlos a genoma = conducta ⇒ oráculo (opción abierta).
   **H2-12-pata-doc DRENADA (GLM 104)**: doc de lag_optimo corregida al
-  comportamiento real (rho.abs() pasa — la doc decía "exigido POSITIVO"
-  y un rho negativo VOLTEA la firma de la divergencia); decisión de
-  vetar rho<0 + ruta ETH 0.6/0.4 SIGUEN ABIERTAS (conducta ⇒ oráculo).
+  comportamiento real. **H2-12-CONDUCTA DRENADA (GLM 113, con oráculo)**:
+  ruta ETH con líder BTC PURO — el compuesto 0.6/0.4 hardcodeado dejaba
+  la divergencia atenuada al 60% con 40% de auto-referencia
+  (contradiciendo la doctrina 'EXCLUSIVAMENTE contra BTC' de Ω11);
+  ahora a escala plena. Y rho>0 exigido en lag_optimo — el anti-líder
+  antes pasaba por |rho| y VOLTEABA la firma: ahora abstención. El
+  compuesto 60/40 se conserva para altcoins genéricos (dual-líder).
   **H2-10 DRENADO (GLM 112, con oráculo)**: la sombra del solitón leía
   el knob global muerto soliton_amplitude (0 escritores ⇒ siempre 1.0)
   — ahora ESPEJA la cascada del vivo (per-coin soliton_amplitude → OFI
