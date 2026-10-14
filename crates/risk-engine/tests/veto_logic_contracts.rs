@@ -108,7 +108,12 @@ pub fn fee_impact_contract_rejects_excessive_friction_and_admits_viable_order() 
     // suelo y el EV (τ = 1 h, stop ancho) y una fricción que, multiplicada
     // por el apalancamiento final, supera el tope (0,035 en micro). Valores
     // medidos con una sonda sobre el risk-engine actual, no supuestos.
+    // LH-04 (GLM 117): PF=0 aísla el TECHO de fee del sizing — con
+    // evidencia (PF>1) LH-04 cambia el margen y con él el fee-por-margen;
+    // PF=0 es fail-closed en LH-04 (f=0) sin activar la puerta de sonda
+    // (n=100 la mantiene cerrada) — el régimen donde este techo vive.
     let (arena, mut intent) = fixture();
+    arena.coins[0].metrics.profit_factor.store(0.0, Relaxed);
     intent.expected_duration_ms = 3_600_000;
 
     // 1. Fricción estándar: admitida.
@@ -134,8 +139,10 @@ pub fn fee_impact_contract_rejects_excessive_friction_and_admits_viable_order() 
     // 4. Caso de AGY (#716, Ω78): con el τ por defecto del fixture, ATR 3,0
     // (el stop difusivo pasa el suelo) y 0,6 % por pierna, el impacto en
     // margen (≈ 0,036) supera el tope de 0,035. Fixture propio: el de arriba
-    // fija τ = 1 h.
+    // fija τ = 1 h. LH-04 (GLM 117): PF=0 aquí también — mismo aislamiento
+    // del techo respecto al sizing por evidencia.
     let (arena_b, intent_b) = fixture();
+    arena_b.coins[0].metrics.profit_factor.store(0.0, Relaxed);
     arena_b.coins[0].current_atr.store(3.0, Relaxed);
     arena_b.config.live_taker_fee.store(0.0060, Relaxed);
     let out_b = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent_b, &arena_b);
@@ -279,6 +286,13 @@ pub fn risk_a_micro_safe_limit_escala_con_capital() {
 #[test]
 pub fn ola100_epigenetic_bias_full_range_expression() {
     let (arena, mut intent) = fixture();
+    // LH-04 (GLM 117): el sesgo epigenético escala el tamaño en el camino
+    // SIN evidencia (convicción × bias → margen). Con evidencia (PF>1,
+    // n≥10) el tamaño viene de f(p_LCB, b) y el bias ya no escala. PF=0
+    // apaga LH-04 (fail-closed: sin b no hay f) SIN activar la sonda
+    // (n=100 la mantiene cerrada) — el régimen donde el bias escala.
+    // (Si el consejo quiere streak-adaptación DENTRO de p_LCB, ola futura.)
+    arena.coins[0].metrics.profit_factor.store(0.0, Relaxed);
     arena.config.base_capital.store(100.0, Relaxed);
     arena.unified_capital.store(100.0, Relaxed);
     arena.coins[0].metrics.kelly_fraction.store(0.20, Relaxed);

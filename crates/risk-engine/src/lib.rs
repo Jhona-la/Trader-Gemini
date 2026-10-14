@@ -1271,6 +1271,93 @@ impl RiskEngine {
 
         let bounded_exposure = raw_exposure.clamp(-allocated_capital, allocated_capital);
         let mut final_margin = bounded_exposure.abs();
+
+        // LH-04 (Línea H ola 1, Claude — GLM 117): DIMENSIONADO EN ESPACIO
+        // DE RIESGO cuando hay evidencia medida. La medición T-3: con
+        // oráculo +0.94 R/op, acierto 0.65 y pago b=1.40, el Kelly pleno
+        // es 40% del capital por operación — el motor arriesgaba 0.2%
+        // (todas las órdenes al nocional mínimo; 0.049/día vs 0.231/día
+        // de la meta). El tamaño ES la palanca.
+        //
+        // f = ½ · max(0, p_LCB − (1 − p_LCB)/b)   [Plan V2 §1.1.4]
+        //
+        // - p_LCB: cota INFERIOR de Wilson (z=1.64, 90% uniladal — misma
+        //   familia que `conviccion_de_rama` D-752) del win-rate MEDIDO de
+        //   la moneda. Bajo incertidumbre (n chico) la cota cae sola y f
+        //   → 0: honesto por construcción, no por gate.
+        // - b: pago realizado = PF·(1−p̂)/p̂ (de PF = p̂·b/(1−p̂)).
+        // - ½: medio-Kelly amortiguando la varianza de trayectoria
+        //   (doctrina canónica del Plan V2 §1.1.4, no un literal libre).
+        // - f se acota por el ÚNICO tope de riesgo por evento del sistema
+        //   (`clamp_ruin`: streak-bound + axioma 25%).
+        //
+        // El margen se deriva del nocional objetivo al apalancamiento YA
+        // decidido por la matriz (L no depende del margen — :981), de
+        // modo que el riesgo al stop de la orden final ≈ f·C. TODOS los
+        // floors downstream (viabilidad D-750, rescate de nocional
+        // mínimo, fee_impact LH-02, invariantes) se aplican IGUAL sobre
+        // este margen. Sin evidencia (n < mínimo, p̂ degenerado, PF ≤ 0):
+        // f = 0 y el camino sizing/micro/exploración existente queda
+        // INTACTO — fail-closed al estado actual.
+        const Z_LCB_LH04: f64 = 1.64;
+        const HALF_KELLY_LH04: f64 = 0.5;
+        const MUESTRAS_MIN_LH04: f64 = 10.0;
+        let lh04_wr = arena.coins[coin_id]
+            .metrics
+            .win_rate
+            .load(Ordering::Relaxed);
+        let lh04_n = arena.coins[coin_id]
+            .metrics
+            .trade_count
+            .load(Ordering::Relaxed) as f64;
+        let lh04_pf = arena.coins[coin_id]
+            .metrics
+            .profit_factor
+            .load(Ordering::Relaxed);
+        let mut lh04_f = 0.0f64;
+        let mut lh04_p_lcb = f64::NAN;
+        let mut lh04_b = f64::NAN;
+        if lh04_wr.is_finite()
+            && (0.0..=1.0).contains(&lh04_wr)
+            && lh04_n >= MUESTRAS_MIN_LH04
+            && lh04_pf.is_finite()
+            && lh04_pf > 0.0
+            && lh04_wr > 0.0
+            && lh04_wr < 1.0
+        {
+            let n = lh04_n;
+            let z2 = Z_LCB_LH04 * Z_LCB_LH04;
+            let denom = 1.0 + z2 / n;
+            let centro = (lh04_wr + z2 / (2.0 * n)) / denom;
+            let radio = Z_LCB_LH04
+                * ((lh04_wr * (1.0 - lh04_wr) / n + z2 / (4.0 * n * n)).sqrt() / denom);
+            let p_lcb = (centro - radio).clamp(0.0, 1.0);
+            let b = lh04_pf * (1.0 - lh04_wr) / lh04_wr;
+            let f_raw = HALF_KELLY_LH04 * (p_lcb - (1.0 - p_lcb) / b).max(0.0);
+            let q_lh04 = crate::ruin::conservative_loss_q(lh04_wr, lh04_n);
+            let tope_lh04 = crate::ruin::clamp_ruin(1.0, q_lh04);
+            lh04_f = if f_raw.is_finite() { f_raw.min(tope_lh04) } else { 0.0 };
+            lh04_p_lcb = p_lcb;
+            lh04_b = b;
+        }
+        if lh04_f > 0.0 && dynamic_leverage >= 1.0 {
+            let nocional_obj = lh04_f * allocated_capital / continuous_sl;
+            let margen_obj = nocional_obj / dynamic_leverage;
+            if margen_obj.is_finite() && margen_obj > 0.0 {
+                final_margin = margen_obj.min(allocated_capital);
+            }
+        }
+        // Telemetría LH-04 (auditable por moneda).
+        arena
+            .registry
+            .set_for_coin(coin_id, "lh04_f_riesgo", lh04_f);
+        arena
+            .registry
+            .set_for_coin(coin_id, "lh04_p_lcb", lh04_p_lcb);
+        arena
+            .registry
+            .set_for_coin(coin_id, "lh04_b_realizado", lh04_b);
+
         let margin_cushion_pct = arena.config.margin_cushion_pct.load(Ordering::Relaxed);
         // D-641: el colchón de margen sale SIEMPRE del gen; la escasez sólo lo
         // relaja de forma continua hacia el máximo operativo. Antes el literal

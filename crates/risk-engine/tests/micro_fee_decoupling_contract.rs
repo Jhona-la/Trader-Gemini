@@ -90,6 +90,11 @@ fn test_resolve_micro_max_fee_pct_defaults_and_scoping() {
 #[test]
 fn test_micro_fee_override_controls_admission_in_risk_engine() {
     let (arena, intent) = fixture();
+    // LH-04 (GLM 117): este contrato aísla el TECHO DE FRICCIÓN, no el
+    // sizing — se desactiva la evidencia madura del fixture para que la
+    // orden siga el camino frío (f=0) y el rechazo dependa SÓLO del
+    // mecanismo de techo que Ω104 certificó.
+    arena.coins[0].metrics.trade_count.store(0, Relaxed);
     // Configurar fricción que arroja ~0.036 de impacto en margen:
     // Con techo default (0.035), esta fricción es rechazada con REJ_FEE_IMPACT.
     arena.coins[0].current_atr.store(3.0, Relaxed);
@@ -100,8 +105,15 @@ fn test_micro_fee_override_controls_admission_in_risk_engine() {
     assert_eq!(out_default.signal, SignalType::Flat);
     assert_eq!(ultimo_rechazo(), Some(REJ_FEE_IMPACT));
 
-    // Ahora se eleva dinámicamente el techo de micro fee a 0.045 (4.5% de margen)
-    arena.registry.set_for_coin(0, "micro_max_fee_pct", 0.045);
+    // Techo elevado: el "~0.036" original era del modelo de fricción
+    // PRE-unificación (la Ola 72 lo llevó a tp_sl::roundtrip_friction
+    // con ATR/fee vivos — el impacto real con fee 0.006 y ATR 3% es ~0.24
+    // tras el rescate de apalancamiento). El override a 0.30 cubre el
+    // régimen unificado y sigue probando LO MISMO: que el techo dinámico
+    // controla la admisión (default veta; override elevado no veta por
+    // fee_impact). Test roto desde la Ola 72 — encontrado al certificar
+    // LH-04 (GLM 117).
+    arena.registry.set_for_coin(0, "micro_max_fee_pct", 0.30);
     let out_elevated = engine.evaluate_quantum_order(0, &intent, &arena);
 
     // Al haber expandido la tolerancia micro, la orden ya no es vetada por fee_impact
@@ -109,7 +121,7 @@ fn test_micro_fee_override_controls_admission_in_risk_engine() {
         assert_ne!(
             ultimo_rechazo(),
             Some(REJ_FEE_IMPACT),
-            "Con techo elevado a 0.045, no debe ser vetado por fee_impact"
+            "Con techo elevado a 0.30, no debe ser vetado por fee_impact"
         );
     }
 }
