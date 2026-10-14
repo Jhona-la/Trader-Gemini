@@ -1,5 +1,51 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω116 — Desacoplamiento Dinámico de Rotacional Helmholtz-Hodge y Corriente Gauge Yang-Mills en Microestructura y Series Temporales
+
+- **Ola Integrada y Certificada en `main` (`9c4fd4fb`)**:
+  * **Diagnóstico y Causa Raíz**: En `crates/metacortex-engine/src/consejo_seniors.rs`, las evaluaciones de microestructura L2 y de dinámica espectral de series temporales estaban constreñidas por constantes rígidas y literales numéricos congelados:
+    1. En `SeniorMicroestructura::evaluate`:
+       ```rust
+       let laminar_factor = (1.0 - 0.70 * payload.hodge_curl_share).clamp(0.30, 1.0);
+       ```
+       Donde la atenuación de rotacional solenoidal `0.70` y el piso laminar `0.30` eran fijos. En libros con micro-vorticidad espuria o manipulación de alta frecuencia (wash trading, spoofing), el hot path no podía intensificar la penalización del rotacional ni ajustar el piso laminar de acuerdo con la liquidez del activo o el régimen del mercado.
+    2. En `SeniorSeriesTemporales::evaluate`:
+       ```rust
+       const YM_THRESH_SQ: f64 = 0.05 * 0.05;
+       let w_ym = 0.20 * (ym_sq / (ym_sq + YM_THRESH_SQ));
+       ```
+       Donde la corriente gauge de referencia $J_0 = 0.05$ y el peso asintótico $w_{\max} = 0.20$ estaban congelados rígidamente dentro de la función de evaluación, imposibilitando calibrar por activo o régimen macro la fuerza restauradora hacia la curvatura gauge del flujo de precios.
+    3. Ninguno de estos parámetros de física fundamental podía gobernarse desde `CouncilParams`, adaptarse en tiempo real desde `QuantumConfig`, ni resolverse por símbolo en el registro omnisciente (`arena.registry`).
+  * **Solución Matemática y Continua**:
+    1. En `crates/metacortex-engine/src/consejo_seniors.rs`:
+       - Definidas constantes canónicas:
+         `DEFAULT_HODGE_CURL_ATTENUATION = 0.70`, `DEFAULT_HODGE_LAMINAR_FLOOR = 0.30`, `DEFAULT_YM_REF_CURRENT = 0.05`, `DEFAULT_YM_MAX_WEIGHT = 0.20`.
+       - Implementadas funciones serde default: `default_hodge_curl_attenuation`, `default_hodge_laminar_floor`, `default_ym_ref_current`, `default_ym_max_weight`.
+       - Implementadas funciones puras desacopladas:
+         - `evaluate_microstructure_flow_confidence(imbalance, curl, re_laminar, curl_attenuation, laminar_floor) -> (f64, f64, f64, f64)`: modela la descomposición ortogonal de Helmholtz-Hodge donde la componente solenoidal (rotacional) atenúa de forma continua y monótona decreciente la convicción del desequilibrio de órdenes, garantizando sanitización fail-closed ante NaN/Infinitos.
+         - `evaluate_series_temporales_ym(fused_score, persistence, ym_current, ym_ref, ym_max_w) -> (f64, f64, f64, f64)`: implementa la modulación $C^\infty$ suave de Lorentz-Cauchy $w_{\text{ym}} = w_{\max} \cdot \frac{J^2}{J^2 + J_0^2}$, preservando continuidad analítica sin discontinuidades en la opinión de series temporales.
+       - Agregados campos `hodge_curl_attenuation: f64`, `hodge_laminar_floor: f64`, `ym_ref_current: f64`, `ym_max_weight: f64` en `MarketSnapshotPayload` con serde defaults y validaciones de rango `[0.0, 1.0]`.
+       - Agregados campos correspondientes en `CouncilParams` con builder `with_physical_gauge_bounds(curl_att, lam_floor, ym_ref, ym_max_w)` y validaciones en `validate()`.
+       - En `SeniorMicroestructura::evaluate` y `SeniorSeriesTemporales::evaluate`: invocación de las funciones puras desacopladas utilizando los parámetros dinámicos del payload.
+       - En `deliberar_traced`: propagación lock-free de `CouncilParams` hacia el payload evaluado vía `Cow`.
+    2. En `crates/metacortex-engine/src/lib.rs`:
+       - Re-exportadas las 4 constantes canónicas y las 2 funciones puras `evaluate_microstructure_flow_confidence` y `evaluate_series_temporales_ym`.
+    3. En `crates/quantum-arena/src/config.rs`:
+       - Agregados campos atómicos lock-free en `QuantumConfig`: `council_hodge_curl_attenuation: AtomicF64` (0.70), `council_hodge_laminar_floor: AtomicF64` (0.30), `council_ym_ref_current: AtomicF64` (0.05), `council_ym_max_weight: AtomicF64` (0.20), con soporte en `from_genome`.
+    4. En `crates/god-engine-core/src/lib.rs`:
+       - Sincronización en `sync_council_params` leyendo de forma segura y validada los campos atómicos de `arena.config`.
+       - Resolución omnisciente por activo en `council_snapshot`: `c{id}:hodge_curl_attenuation`, `c{id}:hodge_laminar_floor`, `c{id}:ym_ref_current`, `c{id}:ym_max_weight`.
+  * **Certificación Contractual**:
+    - `physical_gauge_opinion_adaptation_contract.rs` (5/5 pass):
+      1. `test_physical_gauge_opinion_canonical_defaults_exact_parity`: Paridad exacta bit a bit con los valores canónicos pre-Ola Ω116.
+      2. `test_physical_gauge_opinion_dynamic_payload_override`: Adaptación precisa ante overrides en tiempo de snapshot.
+      3. `test_physical_gauge_opinion_council_params_propagation`: Propagación integral desde `CouncilParams`.
+      4. `test_physical_gauge_opinion_bounds_validation_and_fail_closed`: Sanitización fail-closed ante NaN/Infinitos y desbordamientos.
+      5. `test_physical_gauge_lorentz_smoothness_and_hodge_monotonicity`: Verificación analítica de regularidad Lorentz-Cauchy $C^\infty$ y monotonicidad de Helmholtz-Hodge.
+    - `council_params_arena_wiring_contract.rs` (2/2 pass): Cableado atómico y resiliencia en la arena global.
+    - Suite completa de `metacortex-engine` (78/78 tests pass, 100% verde).
+    - `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω115 — Desacoplamiento Dinámico de Tolerancias Causales y Breakout en SeniorCausal
 
 - **Ola Integrada y Certificada en `main` (`eb3afa35`)**:

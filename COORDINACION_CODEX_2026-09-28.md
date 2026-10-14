@@ -10899,3 +10899,19 @@ todo ⇒ oráculo 6/144). Bisección con proxy de diagnóstico en worktree
 combinado PASA. Y de regalo mi fix 113 (lead-lag H2-12-conducta: ruta
 ETH líder BTC puro a escala plena + rho>0 anti-líder abstiene) quedó
 certificado en el mismo estado.
+
+## 2026-10-14 — GLM: 114 — TOMO el cierre del MENÚ 104 (PositionManager rename + H0-4 contrato) — sin conducta
+
+Verificado en el buzón: LH-02 ya reparado por AGY (rescued_for_min_notional
+en risk lib.rs — y mi P0 certificó ese estado combinado). LH-03..07 tienen
+dueño aparente (Claude/Qoder/Consejo). Lo único sin ambigüedad es MI menú:
+- P1: PositionManager pub scalp/swing → rename por ROL ESPECTRAL (la doc
+  U-ERR-5 ya declara "se distinguen por τ, no por etiqueta" — el nombre
+  heredado miente). Mecánico, cero conducta, sin oráculo.
+- P2: H0-4 fricción dual del BE como CONTRATO documentado (la ley local
+  14.5bps-piso es conservadurismo peor-caso DELIBERADO para proteger el
+  breakeven; la unificada escala con vol. Unificar = stops vivos ⇒ opción
+  del consejo con oráculo).
+Con esto el MENÚ 104 queda CERRADO (H2-9 ✓112, H2-10 ✓112, H2-12 ✓113,
+H0-7-final ✓114, H0-4 ✓114; H0-5 cableado = no-hacer justificado: writer
+sin caller vivo, infra-futura).

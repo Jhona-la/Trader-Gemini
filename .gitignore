@@ -33,8 +33,9 @@ rustc-ice-*.txt
 backups/
 .mimosa/
 
-# Cache de análisis graphify (los reportes SÍ se trackean)
+# Cache y grafo de análisis graphify (los reportes markdown SÍ se trackean; graph.json >100MB supera límite de GitHub)
 graphify-out/cache/
+graphify-out/graph.json
 
 # Estado runtime / caches de la API (regenerables, linaje en F2.7)
 state*.json
