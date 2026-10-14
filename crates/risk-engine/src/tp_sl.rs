@@ -170,23 +170,47 @@ pub const RANGO_PARKINSON: f64 = 1.595_769_121_605_730_8;
 /// exponente son parámetros: la escala es aquella en la que se estima la
 /// volatilidad y el exponente ½ es el de la difusión.
 ///
-/// Esta es la FUENTE ÚNICA del término de latencia. `reality_physics` debe
-/// llamarla para que la ejecución y la compuerta cobren el mismo número.
+/// F3.1-07 (Ola Ω106): Deslizamiento por latencia bajo difusión fraccional / anómala.
+///
+/// Modela el desplazamiento esperado del precio bajo un movimiento Browniano fraccional
+/// con exponente de Hurst $H \in [0.30, 0.75]$:
+/// $$\sigma(t) = \text{atr\_ratio} \cdot \left(\frac{t}{\tau_{\text{ref}}}\right)^H$$
+/// En $H = 0.50$, la ley reproduce bit-exacto la difusión Browniana estándar ($\sqrt{t/\tau_{\text{ref}}}$).
+/// En regímenes persistentes ($H > 0.50$), la difusión super-lineal amplifica el deslizamiento
+/// por momentum adverso; en regímenes anti-persistentes ($H < 0.50$), la compresión sub-difusiva
+/// mitiga el deslizamiento efectivo.
 #[inline]
-pub fn latency_slippage_pct(atr_ratio: f64, latency_ms: f64) -> f64 {
+pub fn latency_slippage_pct_hurst(atr_ratio: f64, latency_ms: f64, hurst: f64) -> f64 {
     if !atr_ratio.is_finite() || atr_ratio <= 0.0 {
         return 0.0;
     }
     if !latency_ms.is_finite() || latency_ms <= 0.0 {
         return 0.0;
     }
-    let r = (latency_ms / TAU_REFERENCE_MS).sqrt();
+    let h = if hurst.is_finite() {
+        hurst.clamp(0.30, 0.75)
+    } else {
+        0.50
+    };
+    let ratio = latency_ms / TAU_REFERENCE_MS;
+    let r = if (h - 0.50).abs() < 1e-9 {
+        ratio.sqrt()
+    } else {
+        ratio.powf(h)
+    };
     let s = atr_ratio * r;
     if s.is_finite() {
         s
     } else {
         0.0
     }
+}
+
+/// Esta es la FUENTE ÚNICA del término de latencia canónico ($H = 0.50$). `reality_physics` debe
+/// llamarla para que la ejecución y la compuerta cobren el mismo número exacto.
+#[inline]
+pub fn latency_slippage_pct(atr_ratio: f64, latency_ms: f64) -> f64 {
+    latency_slippage_pct_hurst(atr_ratio, latency_ms, 0.50)
 }
 
 /// σ del jitter lognormal del RTT a Binance Tokyo/AWS AP-Northeast.
@@ -275,10 +299,23 @@ pub fn latency_seed(event_time_ms: u64, coin_id: usize) -> u64 {
 /// tampoco lo es y quien lo reciba debe rechazarlo. Unifica la FÓRMULA; que
 /// gate, host y daemon lean el mismo ATR y la misma latencia en el mismo
 /// instante es otra paridad, todavía abierta.
+/// F3.1-07 (Ola Ω106): Fricción de ida y vuelta bajo difusión fraccional / anómala.
+#[inline]
+pub fn roundtrip_friction_hurst(
+    taker_fee: f64,
+    slip_floor: f64,
+    atr_ratio: f64,
+    latency_ms: f64,
+    hurst: f64,
+) -> f64 {
+    let per_side_slip =
+        (slip_floor + latency_slippage_pct_hurst(atr_ratio, latency_ms, hurst)).clamp(0.0, 0.05);
+    2.0 * taker_fee + 2.0 * per_side_slip
+}
+
 #[inline]
 pub fn roundtrip_friction(taker_fee: f64, slip_floor: f64, atr_ratio: f64, latency_ms: f64) -> f64 {
-    let per_side_slip = (slip_floor + latency_slippage_pct(atr_ratio, latency_ms)).clamp(0.0, 0.05);
-    2.0 * taker_fee + 2.0 * per_side_slip
+    roundtrip_friction_hurst(taker_fee, slip_floor, atr_ratio, latency_ms, 0.50)
 }
 
 /// FUNCIÓN PURA ÚNICA. La invocan, con las MISMAS entradas, tanto el gate de

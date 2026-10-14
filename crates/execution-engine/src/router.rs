@@ -46,28 +46,9 @@ impl QuantumOrderRouter {
             SignalType::Flat => return Ok(()),
         };
 
-        // Reglas de Ruteo Avanzadas (FASE 15)
-
-        // 1. Condición de Pánico / Alta Latencia: Si la red es inestable (>500ms)
-        // o el spread es enorme, ir directo a MARKET — la velocidad de
-        // aterrizaje es la protección. MOD1/4-016 (auditoría DEC-14): antes
-        // ruteaba a maker-chase (400ms + cancel + query = la ruta MÁS LENTA
-        // justo cuando la red está degradada).
-        if latency_ms > 500 || spread_pct > 0.005 {
-            println!("🛡️ [QUANTUM ROUTER] High Latency ({}ms) / Spread ({:.2}%). MARKET directo: velocidad de aterrizaje.", latency_ms, spread_pct * 100.0);
-            return self
-                .executor
-                .load()
-                .execute_raw_qty(symbol, is_long, quantity, step_size)
-                .await;
-        }
-
-        // 2. Extrema Convicción / Breakout (Volatilidad Esperada Alta)
-        // Continuo Espectral: umbrales leídos del GENOMA y evaluados en la escala
-        // temporal continua del horizonte tau de la orden vía sl_at_tau — no
-        // con scalp_sl_base discreto. Si la volatilidad esperada supera la
-        // mitad del stop continuo a esa tau, un limit arriesga quedarse fuera.
-        let (conf_gate, vol_gate) = {
+        // Reglas de Ruteo Avanzadas (FASE 15, Ola Ω106)
+        // Se resuelven umbrales dinámicos de latencia, spread y volatilidad continua desde la arena.
+        let (panic_latency_ms, panic_spread_pct, conf_gate, vol_gate) = {
             let exec = self.executor.load();
             match exec.arena.load_full() {
                 Some(arena) => {
@@ -76,7 +57,26 @@ impl QuantumOrderRouter {
                     } else {
                         quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
                     };
+                    let panic_lat = arena
+                        .config
+                        .latency_ms_panic_threshold
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    let panic_lat = if panic_lat.is_finite() && panic_lat > 0.0 {
+                        panic_lat
+                    } else {
+                        500.0
+                    };
+                    let max_spread = arena
+                        .registry
+                        .get_value_or("router_max_spread_pct", 0.005);
+                    let max_spread = if max_spread.is_finite() && max_spread > 0.0 {
+                        max_spread
+                    } else {
+                        0.005
+                    };
                     (
+                        panic_lat,
+                        max_spread,
                         arena
                             .config
                             .min_confidence_btc
@@ -84,16 +84,42 @@ impl QuantumOrderRouter {
                         arena.config.sl_at_tau(tau_ms) * 0.5,
                     )
                 }
-                // Sin arena inyectada (tests/boot temprano): conserva el
-                // umbral conservador histórico hasta que el engine lo provea.
-                None => (0.85, 0.015),
+                None => (500.0, 0.005, 0.85, 0.015),
             }
         };
+
+        // 1. Condición de Pánico / Alta Latencia: Si la red es inestable (>panic_latency_ms)
+        // o el spread es enorme, ir directo a MARKET — la velocidad de
+        // aterrizaje es la protección.
+        // Ola Ω106: Se preserva client_order_id (FIX #630) para garantizar idempotencia en ruteo de emergencia.
+        if (latency_ms as f64) > panic_latency_ms || spread_pct > panic_spread_pct {
+            println!(
+                "🛡️ [QUANTUM ROUTER] High Latency ({}ms vs {:.0}ms) / Spread ({:.2}% vs {:.2}%). MARKET directo (ID: {}).",
+                latency_ms,
+                panic_latency_ms,
+                spread_pct * 100.0,
+                panic_spread_pct * 100.0,
+                client_order_id
+            );
+            return self
+                .executor
+                .load()
+                .execute_raw_qty_with_client_id(symbol, is_long, quantity, step_size, client_order_id)
+                .await;
+        }
+
+        // 2. Extrema Convicción / Breakout (Volatilidad Esperada Alta)
+        // Continuo Espectral: umbrales leídos del GENOMA y evaluados en la escala
+        // temporal continua del horizonte tau de la orden vía sl_at_tau — no
+        // con scalp_sl_base discreto. Si la volatilidad esperada supera la
+        // mitad del stop continuo a esa tau, un limit arriesga quedarse fuera.
         if decision.net_confidence > conf_gate && decision.expected_volatility > vol_gate {
             // El mercado se va a mover rapidísimo. Un Limit no se llenará.
             // Usar IOC (Immediate-Or-Cancel) a un precio ligeramente peor para garantizar la entrada
-            // Tolerancia de slippage adaptativa a la volatilidad esperada (D-448)
-            let dyn_slip = (decision.expected_volatility * 0.5).clamp(0.0008, 0.0035);
+            // Tolerancia de slippage adaptativa a la volatilidad esperada (D-448, Ola Ω106)
+            // Se desacopla el techo estático de 35 bps expandiéndolo según el presupuesto de stop continuo:
+            let max_slip_cap = vol_gate.clamp(0.0035, 0.0150);
+            let dyn_slip = (decision.expected_volatility * 0.5).clamp(0.0008, max_slip_cap);
             let slippage_allowance = if is_long { dyn_slip } else { -dyn_slip };
             let raw_ioc_price = current_price * (1.0 + slippage_allowance);
             let min_price = tick_size.max(1e-8);

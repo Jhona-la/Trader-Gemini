@@ -23,6 +23,9 @@ pub mod ville_e_process;
 
 pub use capital_regime::{resolve_micro_max_fee_pct, DEFAULT_MICRO_MAX_FEE_PCT};
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
+pub use tp_sl::{
+    latency_slippage_pct, latency_slippage_pct_hurst, roundtrip_friction, roundtrip_friction_hurst,
+};
 pub use ville_e_process::VilleEProcess;
 
 use quantum_arena::GlobalArena;
