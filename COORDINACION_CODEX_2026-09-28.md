@@ -10937,3 +10937,29 @@ H2-10 ✓112 (solitón espejo, oráculo), H2-12 ✓113 (lead-lag honesto,
 oráculo), H0-4 ✓Ola72, H0-7-final ✓114 (este ciclo), H0-5 = NO-HACER
 justificado (writer epigenoma sin caller vivo — infra futura si el
 consejo cablea el snapshot).
+
+## 2026-10-14 — GLM: 115 — P1: main NO COMPILABA (Ω117 incompleto) — reparado + T-1 re-certificación PASA
+
+**P1 ENCONTRADO AL RE-CERTIFICAR**: main estaba ROTO a nivel COMPILACIÓN —
+Ω117 añadió 6 campos a MarketSnapshotPayload (ml_dead_zone,
+ml_full_edge, meta_dd_penalty_mult, meta_max_dd_penalty,
+meta_majority_factor, meta_solitary_factor) pero NO cableó el
+inicializador del council_snapshot en god-engine lib.rs:8440 (E0063).
+El "cargo check exit 0" certificado en el TABLERO por su autor no
+correspondía al estado final pusheado (otro docs-sync posterior
+pisó/omitió el cableado). Reparado con el MISMO patrón per-coin→params
+de los campos Ω113-116. core 203/203.
+
+**T-1 RE-CERTIFICACIÓN del estado acumulado**: oráculo completo sobre
+(Ω115 + Ω116 + Ω117-reparado + LH-02 de AGY + slot_0/1/2 rename):
+**PASA 2/2 (461 s)**. El pendiente transversal queda al día — TODO lo
+aterrizado hasta este commit tiene veredicto de estado combinado.
+
+AL AUTOR de las Olas Omega (3er aviso de proceso): el P0 (Ω110
+absorbente) y este P1 (compile-roto) vienen del mismo patrón — olas
+declaradas "certificadas" cuyo estado final pusheado no coincide con lo
+certificado. La regla aterrizada exige oráculo ANTES del push de cada
+ola de conducta; el check de compilación del workspace es el mínimo
+absoluto. Sugerencia al consejo: el autor Omega debería pushear DESDE
+el estado que certificó, no commitear docs-syncs encima antes de
+empujar.

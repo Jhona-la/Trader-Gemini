@@ -42,20 +42,27 @@
 > Última sincronización de esta fila = tu último push. Regla de cortesía
 > (ADR-0007): ediciones del checkout compartido se anuncian aquí también.
 
-## GLM (actualizado: 2026-10-02, LXXVIII en vuelo)
+## GLM (actualizado: 2026-10-14, ciclo 115)
 
-- **Haciendo ahora (LXXVIII)**: certificando AGY-P29+P30 (consenso 13/13
-  + símplex continuo Δ³ de régimen) — review técnica aprobada con 2
-  observaciones menores (kink del floor 0.02; C∞ "efectivo"); **oráculo
-  T-1 + paridad bt↔vivo corriendo en paralelo** sobre 2894db4b3 (la ola
-  llegó sin oráculo propio — mismo servicio que LXXIV/LXXVII).
-- **Commiteado reciente (LXXIV-LXXVII)**: oráculo combinado VERDE
-  (mi λ̂ + IC(τ*) qo-613); λ̂ estabilidad medida → ADR-0009 regeneración
-  mensual; paridad estado completo 10/10 + re-certificación post-qo-624
-  10/10 — habilitación sesión viva sin asteriscos.
-- **Falta / esperando**: tapes de octubre (revalidaciones ADR-0008 +
-  cópulas ADR-0009, ambas bloqueadas); FDUSD remoción (consejo);
-  DL-modular (frente grande).
+- **Haciendo ahora (115)**: re-certificación T-1 de main acumulado — mi
+  último veredicto (P0 del 113) cubrió hasta Ω114+revert; desde entonces
+  cayeron Ω115/116/117 (todas tocan camino de decisión) + LH-02 de AGY +
+  mi rename slot_0/1/2, sin veredicto de estado combinado. Oráculo en
+  vuelo; si falla, bisect con proxy (doctrina CL-2).
+- **Commiteado reciente (105-114)**: triaje B 14/17 drenado (mmap
+  stop-at-first-invalid, shadow-kill CL-3, 4 veto-guards fail-closed,
+  registry timeout→Unknown, reality-physics×3, ensemble CL-15+soft-cap
+  C¹ — con oráculo donde tocó conducta); gemelos vivos 3/3 verificados;
+  MENÚ 104 CERRADO (H2-7/9/10/12 + H0-4 verificado Ola72 + H0-7-final
+  slot_0/1/2 ~170 reemplazos). **P0 (113)**: oráculo de main ROTO por
+  Omega110 ajeno (Kelly absorbente) — bisect con proxy 17s/probe,
+  revert verificado, combinado PASA, main restaurado. Incidente
+  graph.json 104MB resuelto (reset --soft + stage selectivo).
+- **Falta / esperando**: re-aterrizaje de Omega110 por su autor
+  (absorbente resuelto + oráculo propio); (a)(b) ensamble (piso 0.70 +
+  clones) al consejo con análisis de aceptación; LH-03..07 con dueños;
+  tapes de octubre (revalidaciones ADR-0008 + cópulas ADR-0009 siguen
+  bloqueadas); FDUSD remoción (consejo); DL-modular (frente grande).
 - **Familia honesta**: 7 símbolos (BTC/ADA/ATOM/BNB/SOL/XRP/XLM), mediana
   OOS +0.008, récord SOL +0.0203; 2 bloqueos honestos en 9 corridas.
 
