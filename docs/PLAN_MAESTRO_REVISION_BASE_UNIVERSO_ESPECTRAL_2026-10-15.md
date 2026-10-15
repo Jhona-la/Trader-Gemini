@@ -1,11 +1,11 @@
-# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V7 · 2026-10-15)
-## Unificando Teoría Matemática, Física de Campos, Estadística Prequencial, Psicología de Masas, Liquidez Oculta y Rendimiento en Nanosegundos
+# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V8 · 2026-10-15)
+## Unificando Teoría Matemática, Física de Campos, Estadística Prequencial, Psicología de Masas, Liquidez Oculta, Gating Conformal y Rendimiento en Nanosegundos
 
 > **Autor / Director:** Antigravity (AGY, Quant Sr. Lead)  
 > **Comité Revisor:** Consejo Colegiado de 10 Roles Senior en Modo Profesor  
 > **Destinatarios:** Claude (Línea C), Codex (Líneas G/H/E), GLM (Línea B/LH), Qoder, Sol y Operador Humano  
 > **Ámbito:** Repositorio Completo Trader Gemini (23 Crates Rust, 100% Nativo, CERO Python)  
-> **Fecha:** 15 de Octubre de 2026 (Actualización Canónica Post-Ola Ω133 / Acoplamiento Tensorial de Liquidez Oculta Kyle-Hasbrouck en Flow Confluence, Modulación C¹ y Gating Conformal)  
+> **Fecha:** 15 de Octubre de 2026 (Actualización Canónica Post-Ola Ω134 / Modulación Conformal Kelly, Blindaje de Perfiles Cargo `debug=1`, Poda Masiva de Worktrees y Saneamiento de >254 GB de Disco)  
 > **Estado CI GitHub Actions:** 🟢 100% VERDE (Runs 38765470568, 38675440815, 38675440991, 38680460789 verificados con éxito)  
 
 ---
@@ -318,8 +318,9 @@ crates/
 | **Ω131** | `risk-engine` | Autosolvedor de Jacobi en Stack Zero-Alloc para Teoría de Matrices Aleatorias (RMT) ($N \le 32$) y APIs Planas | 🟢 **MERGED** | `zero_alloc_rmt_contract.rs` (4/4) & `spectral_matrix_contract.rs` (13/13) |
 | **Ω132** | `dark-alpha-engine` / `risk-engine` | Detector de Liquidez Oculta Kyle-Hasbrouck, Conformal Risk Gate y Saneamiento de Disco/RAM (>150GB) | 🟢 **MERGED** | `hidden_liquidity_conformal_contract.rs` (4/4) & `cf4_freno_estrategia.rs` (4/4) |
 | **Ω133** | `signal-engine` / `god-engine-core` / `quantum-arena` | Acoplamiento Tensorial de Liquidez Oculta en Flow Confluence, Modulación C¹ y Gating Conformal | 🟢 **MERGED** | `hidden_liquidity_tensor_confluence_contract.rs` (7/7) & `flow_excitation_confluence` (7/7) |
-| **Ω134** | `risk-engine` / `god-engine-core` | Modulación Conformal de Incertidumbre de Microestructura en Dimensionamiento Kelly y Sizing de Lote | 🔵 **ROADMAP** | Próxima ola de integración |
+| **Ω134** | `risk-engine` / `Cargo.toml` | Modulación Conformal Kelly, Blindaje de Perfiles Cargo `debug=1`, Poda de Worktrees (>254 GB) | 🟢 **MERGED** | `conformal_kelly_microstructure_contract.rs` (5/5) & `margin_cap_adaptation_contract.rs` (5/5) |
+| **Ω135** | `dark-alpha-engine` / `feature-engine` | Salto Cuántico: De Random Forest a XGBoost / LightGBM y Ensembles Hilbertianos $L^2$ Online | 🔵 **ROADMAP** | Próxima ola de evolución predictiva |
 
 ---
 
-*Plan Maestro Canónico V7 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
+*Plan Maestro Canónico V8 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*

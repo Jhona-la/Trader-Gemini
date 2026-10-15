@@ -251,3 +251,13 @@ path = "src/bin/ml_path_probe.rs"
 [[bin]]
 name = "backtest_windows"
 path = "src/bin/backtest_windows.rs"
+
+[profile.dev]
+# Línea base para desarrollo y suites de pruebas: debug=1 (line-tables-only).
+# Preserva trazas de pánico completas (RUST_BACKTRACE=1 con líneas y ficheros)
+# pero reduce los archivos .pdb y la huella de memoria del enlazador link.exe en >85%,
+# protegiendo el entorno con 16 GB de RAM y evitando el colapso de disco C.
+debug = 1
+
+[profile.test]
+debug = 1

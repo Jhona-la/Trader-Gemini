@@ -583,6 +583,27 @@ impl RiskEngine {
         let kelly_for_scale =
             crate::capital_regime::lerp(kelly_adjusted, micro_kelly, micro_w_alloc);
 
+        // OLA Ω134: Modulación Conformal de Microestructura en Dimensionamiento Kelly
+        // Leemos la escala conformal de incertidumbre de absorción de bloques (Kyle-Hasbrouck).
+        // Si hay compresión de absorción alineada (conformal_band_scale = 0.70 < 1.0), la certidumbre
+        // local permite aceleración controlada (+25%). Si hay choque/expansión (conformal_band_scale = 1.50 > 1.0),
+        // se reduce la fracción de Kelly (-33%) para blindar el micro-capital ($13 USD).
+        let sym_opt = Some(spec.symbol.as_str());
+        let conformal_band_scale = arena
+            .registry
+            .get_scoped_parameter(
+                sym_opt,
+                Some(coin_id),
+                "hidden_liquidity_conformal_scale",
+                "RiskEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(1.0)
+            .clamp(0.50, 2.0);
+        let conformal_kelly_mult = (1.0 / conformal_band_scale).clamp(0.50, 1.25);
+        let kelly_for_scale = kelly_for_scale * conformal_kelly_mult;
+
         let epi_bias = if coin_id < arena.coins.len() {
             let now_ts = arena.coins[coin_id]
                 .last_tick_timestamp_ms

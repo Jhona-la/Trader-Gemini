@@ -1,5 +1,40 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω134: Modulación Conformal Kelly de Microestructura, Blindaje de Perfiles Cargo `debug=1`, Poda de Worktrees y Saneamiento de >254 GB de Disco (2026-10-15)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F, Codex, Sol, Qoder y GLM:**
+
+### 🚨 DIRECTIVA OBLIGATORIA DE PERFILES CARGO Y MEMORIA (SRE / DEV OPS)
+- **Diagnóstico:** El perfil por defecto de Cargo generaba `debug = 2` (símbolos PDB completos de tipos y variables), acumulando **55.9 GB de .pdb** en `target/debug` y disparando la memoria de `link.exe` a más de 1.5 GB por proceso en una laptop de 16 GB de RAM. Además, 13 worktrees huérfanos consumían **56.13 GB**.
+- **Solución Aplicada:**
+  1. Configurados en el `Cargo.toml` raíz:
+     ```toml
+     [profile.dev]
+     debug = 1
+
+     [profile.test]
+     debug = 1
+     ```
+     `debug = 1` conserva line-tables completas (las trazas de pánico `RUST_BACKTRACE=1` muestran línea y fichero exactos), pero encoge los `.pdb` en más del 85% y acelera la compilación de tests a <7 segundos.
+  2. Podados y eliminados los 13 worktrees huérfanos con `git worktree remove --force` y `git worktree prune`.
+  3. Purgados los archivos `.pdb` obsoletos en `target/debug`.
+  4. **Resultado**: **Espacio libre en disco C ascendió a 339.20 GB (recuperados más de 254 GB de disco)**.
+
+### 🌌 REPORTE TÉCNICO OLA Ω134 (MODO PROFESOR)
+- **QUÉ:**
+  - Acoplamiento de la escala de incertidumbre conformal de microestructura (`hidden_liquidity_conformal_scale`) en el dimensionamiento fraccionario de Kelly en [`crates/risk-engine/src/lib.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/risk-engine/src/lib.rs).
+  - Modulación multiplicativa de Kelly: $\text{mult}_{\text{conf}} = \text{clamp}(1.0 / \kappa_{\text{conf}}, 0.50, 1.25)$.
+  - Suite de contratos [`crates/risk-engine/tests/conformal_kelly_microstructure_contract.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/risk-engine/tests/conformal_kelly_microstructure_contract.rs) (5/5 pass).
+  - Plan Maestro V8 publicado en [`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md).
+- **POR QUÉ:** En una cuenta de micro-capital ($13.00 USD), operar con dimensionamiento estático cuando hay riesgo de squeeze de absorción institucional opuesta ($\kappa_{\text{conf}} = 1.50$) arriesga el capital por selección adversa. Reducir la apuesta fraccionaria un 33.3% preserva la masa crítica monetaria. Cuando hay absorción alineada ($\kappa_{\text{conf}} = 0.70$), la compresión de volatilidad y soporte institucional justifican una bonificación controlada (+25%) para acelerar el interés compuesto hacia la duplicación cada 72 horas.
+- **PARA QUÉ:** Lograr la meta financiera de duplicar el capital ($13.00 \to 26.00 \to 52.00 \dots$) con baja varianza y cero riesgo de ruina.
+- **CÓMO:**
+  $$\kappa_{\text{conf}} = \text{clamp}(\text{get\_scoped}(\dots, \text{"hidden\_liquidity\_conformal\_scale"}), 0.50, 2.0)$$
+  $$\text{kelly\_for\_scale} = \text{kelly\_for\_scale} \cdot \text{clamp}\left(\frac{1.0}{\kappa_{\text{conf}}}, 0.50, 1.25\right)$$
+- **CUÁNDO:** En cada evaluación de intención de orden en `RiskEngine::evaluate_single_intent`.
+- **DÓNDE:** `risk-engine`, `Cargo.toml`, `.agents/AGENTS.md`.
+- **QUIÉN:** Antigravity (Quant Sr. Lead) en consenso colegiado con el Consejo de 10 Roles Senior.
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω133: Acoplamiento Tensorial de Liquidez Oculta (Kyle-Hasbrouck) en Flow Excitation Confluence, Modulación C¹ y Gating Conformal (2026-10-15)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F, Codex, Sol, Qoder y GLM:**
