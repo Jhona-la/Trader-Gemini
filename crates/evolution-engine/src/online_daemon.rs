@@ -1057,7 +1057,7 @@ impl LiveEvolutionDaemon {
                                     hurst,
                                     if is_long { ml_prob - 0.50 } else { 0.50 - ml_prob },
                                 ];
-                                self.forest.shadow_evaluate_with_features(features, net_pnl_pct);
+                                self.forest.shadow_evaluate_with_features_dir(features, net_pnl_pct, is_long);
                                 pending_new_obs += 1;
                             }
                         }
@@ -1268,20 +1268,10 @@ impl LiveEvolutionDaemon {
                             }
                         }
 
-                        // E4a — FEATURES REALES para el Shadow Forest (antes:
-                        // shadow_evaluate con 5/6 constantes — el clasificador
-                        // solo aprendía long-vs-short). Se lee el estado vivo
-                        // del registry/coin en el instante del cierre:
-                        // obi, aceleración de precio, spread bps (spot),
-                        // atr_pct, hurst y momentum como proxy macro.
-                        // CL-96: SIN PARIDAD con la predicción. Aquí obi,
-                        // aceleración, atr_pct y price_velocity se leen de
-                        // las claves GLOBALES (`get_value_or`: el valor de la
-                        // última moneda que las escribió), y QO-E2a predice
-                        // con las de la moneda (`get_for_coin_or`). El buzón
-                        // de CL-73 decía que se entrenaba y predecía con la
-                        // misma clave: era falso. El defecto sigue abierto
-                        // (dueño del demonio); sólo se corrige la nota.
+                        // E4a & Ω135: FEATURES REALES para el Shadow Forest con PARIDAD TOTAL (CL-96 y CL-73 resueltos).
+                        // Se leen las claves escopadas por moneda (get_for_coin_or) garantizando paridad exacta
+                        // con la inferencia de predict_6d y eliminando la contaminación cruzada entre activos.
+                        // Se incorpora además la dirección de la posición viva (is_long) para paridad direccional (LC-F1-18).
                         let reg = &self.arena.registry;
                         let spot_bid = coin.spot_bid.load(std::sync::atomic::Ordering::Relaxed);
                         let spot_ask = coin.spot_ask.load(std::sync::atomic::Ordering::Relaxed);
@@ -1290,19 +1280,32 @@ impl LiveEvolutionDaemon {
                         } else {
                             1.0
                         };
+                        let is_long = coin
+                            .positions
+                            .slots()
+                            .iter()
+                            .find(|p| p.is_open())
+                            .map(|p| p.is_long.load(std::sync::atomic::Ordering::Relaxed))
+                            .unwrap_or_else(|| {
+                                coin.positions
+                                    .slot_0
+                                    .is_long
+                                    .load(std::sync::atomic::Ordering::Relaxed)
+                            });
                         let features = [
-                            reg.get_value_or("orderbook_imbalance", 0.0)
+                            reg.get_for_coin_or(coin_id, "orderbook_imbalance", 0.0)
                                 .clamp(-1.0, 1.0),
-                            reg.get_value_or("price_acceleration", 0.0)
+                            reg.get_for_coin_or(coin_id, "price_acceleration", 0.0)
                                 .clamp(-10.0, 10.0),
                             spread_bps,
-                            reg.get_value_or("atr_pct", 0.002).clamp(0.0, 1.0),
+                            reg.get_for_coin_or(coin_id, "atr_pct", 0.002).clamp(0.0, 1.0),
                             coin.hurst_exponent
                                 .load(std::sync::atomic::Ordering::Relaxed)
                                 .clamp(0.0, 1.0),
-                            reg.get_value_or("price_velocity", 0.0).clamp(-10.0, 10.0),
+                            reg.get_for_coin_or(coin_id, "price_velocity", 0.0)
+                                .clamp(-10.0, 10.0),
                         ];
-                        self.forest.shadow_evaluate_with_features(features, ret);
+                        self.forest.shadow_evaluate_with_features_dir(features, ret, is_long);
                     }
                 }
             }

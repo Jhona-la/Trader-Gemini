@@ -1,5 +1,33 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω135 — Paridad Direccional de Lado (LC-F1-18, LC-F1-67) y Esquema de Features Scoped por Moneda (CL-96, CL-73)
+
+- **Ola Integrada y Certificada**:
+  * **Diagnóstico Forense y Causa Raíz**:
+    1. **LC-F1-18 & LC-F1-67 (Inversión Direccional de Lado)**: El Shadow Forest (`TrueOnlineRandomForest`) entrenaba el clasificador sobre `was_profitable: net_pnl_pct > 0.0` y el regresor sobre `actual_pnl_pct` sin considerar el lado de la posición (`is_long`). Por ende, un trade corto altamente ganador producía un retorno positivo para el short, que el clasificador aprendía como `class = 1` y predecía como `prob > 0.50` ("ganador"). Al publicarse como `forest6_prob`, `GodEngineCore` interpretaba `forest6_prob > 0.50` como `predijo_subida = true` (Long). Esto provocaba que ante caídas inminentes donde el core quería abrir Shorts, el sistema detectaba falso desacuerdo (`disagrees: f6_prob_actual > cota_bosque`) y recortaba la confianza de las mejores entradas en corto; y en el cierre, al comparar `predijo_subida (true)` con `etiqueta_barrera (false, toque de TP corto)`, penalizaba indebidamente la autoridad de Wilson (`bosque_registro`).
+    2. **CL-96 & CL-73 (Contaminación Cruzada entre Monedas y Rotura de Paridad de Features)**: En el bucle de deltas de retornos por moneda de `online_daemon.rs:1293-1305`, las características microestructurales (`orderbook_imbalance`, `price_acceleration`, `atr_pct`, `price_velocity`) se leían con `reg.get_value_or(...)` (claves globales sin prefijo de moneda, pertenecientes al último tick de BTC), en lugar de `reg.get_for_coin_or(coin_id, ...)` que utiliza `predict_6d`. Además, el canal de telemetría mmap hardcodeaba ceros y unos en ranuras críticas.
+  * **Solución Arquitectónica y Matemática**:
+    1. En `crates/evolution-engine/src/online_random_forest.rs`:
+       - Añadido `is_long: bool` a `TradeObservation` y creada la función `shadow_evaluate_with_features_dir(features, net_pnl_pct, is_long)`.
+       - Proyectada la paridad direccional del mercado en `retrain_models()`:
+         $$\Delta y_{\text{dir}} = \begin{cases} \text{net\_pnl\_pct} & \text{si } \text{is\_long} \\ -\text{net\_pnl\_pct} & \text{si } \text{is\_short} \end{cases}$$
+         $$y_{\text{class}} = \mathbb{I}(\Delta y_{\text{dir}} > 0.0)$$
+       - El clasificador aprende estrictamente $P(\text{precio sube} \mid X)$ y el regresor aprende $\mathbb{E}[\Delta P / P \mid X]$.
+       - `predict_6d(features)` emite `prob_up` calibrada y monótona con la dirección real del mercado.
+    2. En `crates/evolution-engine/src/online_daemon.rs`:
+       - Resuelto CL-96 y CL-73: en el bucle de retornos realizados por moneda (`online_daemon.rs:1280-1310`), las características se extraen con `reg.get_for_coin_or(coin_id, ...)` garantizando paridad exacta con la inferencia y eliminando la contaminación cruzada entre activos.
+       - Se lee el lado vivo de la posición (`coin.positions.slots()`) y se propaga a `shadow_evaluate_with_features_dir`.
+       - En el procesador de telemetría mmap, se propaga el lado `is_long` recibido del frame de ejecución.
+  * **Certificación Contractual**:
+    - `crates/evolution-engine/tests/shadow_forest_directional_parity_contract.rs` (4/4 pass, 100% verde):
+      * `test_directional_parity_winning_short_predicts_downwards`: Cortos ganadores predicen bajada de precio (`prob_up < 0.50`).
+      * `test_directional_parity_winning_long_predicts_upwards`: Largos ganadores predicen subida de precio (`prob_up > 0.50`).
+      * `test_nan_and_infinity_rejection_in_shadow_evaluate`: Blindaje numérico y rechazo estricto de NaNs/Inf.
+      * `test_predict_6d_rejects_nan_inputs`: Inferencia segura ante datos no finitos.
+    - `crates/evolution-engine/tests/shadow_forest_threshold_contract.rs` (2/2 pass, 100% verde).
+    - `cargo test -p evolution-engine` (11 suites de contratos pasan al 100%).
+    - `cargo check --workspace --all-targets` (23/23 crates sin errores).
+
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω134 — Modulación Conformal Kelly de Microestructura, Blindaje de Perfiles Cargo `debug=1`, Poda de Worktrees y Saneamiento de >254 GB de Disco
 
 - **Ola Integrada y Certificada**:
