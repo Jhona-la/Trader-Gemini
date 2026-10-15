@@ -7,6 +7,63 @@ use std::sync::Arc;
 /// ⚡ ARBITRAJE ESTADÍSTICO COINTEGRADO VECTORES VECM (JOHANSEN COINTEGRATION ENGINE)
 /// Mide la relación de equilibrio a largo plazo entre pares de activos (e.g. ADA/AVAX, DOGE/SHIB).
 /// Opera la reversión a la media en nanosegundos cuando el Z-Score supera |Z| > 2.5.
+/// ⚡ OLA Ω129: Parámetros desacoplados y configurables para el motor de cointegración VECM
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VecmArbitrageParams {
+    /// Umbral Z-score de entrada para reversión continua (default: 1.5)
+    pub z_entry_threshold: f64,
+    /// Umbral Z-score de saturación plena de señal (default: 3.0)
+    pub z_saturation: f64,
+    /// Cota mínima de velocidad de reversión (default: 0.01)
+    pub speed_clamp_min: f64,
+    /// Cota máxima de velocidad de reversión (default: 1.0)
+    pub speed_clamp_max: f64,
+    /// Ganancia adaptativa RLS para estimación de beta (default: 0.001)
+    pub rls_gain: f64,
+}
+
+impl Default for VecmArbitrageParams {
+    fn default() -> Self {
+        Self {
+            z_entry_threshold: 1.5,
+            z_saturation: 3.0,
+            speed_clamp_min: 0.01,
+            speed_clamp_max: 1.0,
+            rls_gain: 0.001,
+        }
+    }
+}
+
+impl VecmArbitrageParams {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.z_entry_threshold.is_finite() || !(0.1..=10.0).contains(&self.z_entry_threshold) {
+            return Err(format!("Invalid z_entry_threshold: {}", self.z_entry_threshold));
+        }
+        if !self.z_saturation.is_finite()
+            || !(0.5..=20.0).contains(&self.z_saturation)
+            || self.z_saturation <= self.z_entry_threshold
+        {
+            return Err(format!("Invalid z_saturation: {}", self.z_saturation));
+        }
+        if !self.speed_clamp_min.is_finite() || !(1e-5..=1.0).contains(&self.speed_clamp_min) {
+            return Err(format!("Invalid speed_clamp_min: {}", self.speed_clamp_min));
+        }
+        if !self.speed_clamp_max.is_finite()
+            || !(0.01..=10.0).contains(&self.speed_clamp_max)
+            || self.speed_clamp_max <= self.speed_clamp_min
+        {
+            return Err(format!("Invalid speed_clamp_max: {}", self.speed_clamp_max));
+        }
+        if !self.rls_gain.is_finite() || !(1e-6..=0.1).contains(&self.rls_gain) {
+            return Err(format!("Invalid rls_gain: {}", self.rls_gain));
+        }
+        Ok(())
+    }
+}
+
+/// ⚡ ARBITRAJE ESTADÍSTICO COINTEGRADO VECTORES VECM (JOHANSEN COINTEGRATION ENGINE)
+/// Mide la relación de equilibrio a largo plazo entre pares de activos (e.g. ADA/AVAX, DOGE/SHIB).
+/// Opera la reversión a la media en nanosegundos cuando el Z-Score supera |Z| > 2.5.
 #[derive(Clone)]
 pub struct JohansenVecmEngine {
     pub alpha_speed: f64, // Velocidad de ajuste a la media (speed of adjustment)
@@ -15,6 +72,7 @@ pub struct JohansenVecmEngine {
     pub spread_std: f64,  // Desviación estándar del spread
     pub window_count: f64,
     pub sde: ContinuousOrnsteinUhlenbeckSde,
+    pub params: VecmArbitrageParams,
     registry: Option<Arc<OmniscientRegistry>>,
 }
 
@@ -26,12 +84,21 @@ impl fmt::Debug for JohansenVecmEngine {
             .field("spread_mean", &self.spread_mean)
             .field("spread_std", &self.spread_std)
             .field("window_count", &self.window_count)
+            .field("params", &self.params)
             .finish()
     }
 }
 
 impl JohansenVecmEngine {
     pub fn new(alpha_speed: f64, beta_hedge_ratio: f64) -> Self {
+        Self::new_with_params(alpha_speed, beta_hedge_ratio, VecmArbitrageParams::default())
+    }
+
+    pub fn new_with_params(
+        alpha_speed: f64,
+        beta_hedge_ratio: f64,
+        params: VecmArbitrageParams,
+    ) -> Self {
         Self {
             alpha_speed,
             beta_hedge_ratio,
@@ -39,8 +106,26 @@ impl JohansenVecmEngine {
             spread_std: 0.001,
             window_count: 0.0,
             sde: ContinuousOrnsteinUhlenbeckSde::new(alpha_speed, 0.0, 0.01),
+            params,
             registry: None,
         }
+    }
+
+    pub fn with_params(mut self, params: VecmArbitrageParams) -> Self {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+        self
+    }
+
+    pub fn update_params(&mut self, params: VecmArbitrageParams) {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+    }
+
+    pub fn params(&self) -> &VecmArbitrageParams {
+        &self.params
     }
 
     /// Actualiza el spread con timestamp físico y alimenta el estimador de difusión continua SDE
@@ -95,7 +180,7 @@ impl JohansenVecmEngine {
         }
 
         self.window_count += 1.0;
-        let alpha = self.alpha_speed.clamp(0.01, 1.0);
+        let alpha = self.alpha_speed.clamp(self.params.speed_clamp_min, self.params.speed_clamp_max);
         let weight = (alpha / self.window_count.max(1.0)).clamp(0.001, alpha);
 
         // FIX #604: Actualización Welford O(1) con varianza estrictamente no negativa
@@ -136,7 +221,8 @@ impl JohansenVecmEngine {
         if self.window_count > 10.0 {
             let beta_err = ln_a - self.beta_hedge_ratio * ln_b;
             if beta_err.is_finite() {
-                let gain = 0.001 / (1.0 + ln_b * ln_b * 0.001);
+                let rls = self.params.rls_gain;
+                let gain = rls / (1.0 + ln_b * ln_b * rls);
                 self.beta_hedge_ratio =
                     (self.beta_hedge_ratio + gain * ln_b * beta_err).clamp(0.1, 10.0);
             }
@@ -194,12 +280,37 @@ impl QuantumStrategy for JohansenVecmEngine {
             return 0.0;
         }
 
-        // Activación continua en el continuo temporal-espectral:
-        // Erradica la discontinuidad abrupta que saltaba de 0.0 a -0.50 en |z| = 1.5.
+        let z_entry = match self.registry.as_ref() {
+            Some(r) => r
+                .get_scoped_parameter(sym_opt, cid_opt, "vecm_z_entry", "JohansenVecmEngine")
+                .map(|p| p.get_value())
+                .unwrap_or(self.params.z_entry_threshold),
+            None => self.params.z_entry_threshold,
+        };
+        let z_sat = match self.registry.as_ref() {
+            Some(r) => r
+                .get_scoped_parameter(sym_opt, cid_opt, "vecm_z_saturation", "JohansenVecmEngine")
+                .map(|p| p.get_value())
+                .unwrap_or(self.params.z_saturation),
+            None => self.params.z_saturation,
+        };
+        let safe_entry = if z_entry.is_finite() && z_entry > 0.1 {
+            z_entry
+        } else {
+            1.5
+        };
+        let safe_sat = if z_sat.is_finite() && z_sat > safe_entry {
+            z_sat
+        } else {
+            (safe_entry + 1.5).max(3.0)
+        };
+
+        // Activación continua C1 cúbica Hermite en el continuo temporal-espectral (Ola Ω129):
+        // Derivada suave idénticamente nula en |z| = z_entry y saturación asintótica a |z| = z_sat.
         let abs_z = z.abs();
-        if abs_z > 1.5 {
-            let excess = abs_z - 1.5;
-            let smooth_scale = (excess / 1.5).min(1.0);
+        if abs_z > safe_entry {
+            let u = ((abs_z - safe_entry) / (safe_sat - safe_entry)).clamp(0.0, 1.0);
+            let smooth_scale = 3.0 * u * u - 2.0 * u * u * u;
             (-z.signum() * smooth_scale).clamp(-1.0, 1.0)
         } else {
             0.0
