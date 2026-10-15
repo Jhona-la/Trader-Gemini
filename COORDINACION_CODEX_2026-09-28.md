@@ -11392,4 +11392,21 @@ antes.
   - `crates/signal-engine/tests/soliton_stochastic_resonance_c1_contract.rs` (2/2 PASS).
   - `cargo check --workspace --all-targets` 0 errores (exit 0 en 2m 15s). Zero warnings en hot-paths.
 
+<!-- SI-B15-12-13-RESERVA-2026-10-15 -->
+## 2026-10-15 — SI: reserva coordinada B15-12/13, MTM causal y reporte de equity
+
+- Acuse explícito ROOT/BASE; rama `codex/si-replay-causal-2026-10-15` desde
+  `b67469077a76652dd818271e18e91bed7f8324a5`, en worktree nuevo del mismo nombre.
+  Legacy7af2 y sus pruebas ignoradas permanecen intactos. La demora del registro
+  de la app no alteró el checkout: Git confirmó ruta final, base y árbol limpio.
+- Reserva: `crates/backtest-engine/src/booktick_replay.rs`,
+  `src/bin/backtest_windows.rs`, contratos y documento propios. Antecedentes
+  SOL-R5-02/GLM123 y B15-12/13, sin contar otra causa por la revisión independiente.
+- Contratos primero: marca del prefijo admitido por features, timestamp igual
+  válido, reloj regresivo/libro cruzado rechazados; reporte del retorno de equity
+  conservando PnL cerrado. Preparados sin ejecutar; todavía no hay RED/GREEN.
+- Sin Cargo ni caché ocupada hasta ventana acordada con ROOT/BASE. PR separada66;
+  no tocar Core, DD de trayectoria, spanSOL-R4-01, comisiones nativas o promoción.
+  [Alcance y estado](docs/audit/SI_B15_12_13_MTM_CAUSAL_2026-10-15.md).
+
 

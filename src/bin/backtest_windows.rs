@@ -296,3 +296,75 @@ fn print_window(_label: &str, s: &backtest_engine::booktick_replay::ReplayStats,
         println!("   ⚠️ Omni neutro (sin FRED)");
     }
 }
+
+#[cfg(test)]
+mod si_b15_report_contract {
+    use super::*;
+    use backtest_engine::booktick_replay::ReplayStats;
+    use std::process::Command;
+
+    const CHILD_CASE: &str = "TRADER_GEMINI_B15_REPORT_CHILD_CASE";
+
+    // Exercise print_window itself: an unused replacement formula must not
+    // make this contract green. The child runs only the named Rust test,
+    // never main, tape loading, training or promotion.
+    fn captured_report(test_name: &str, case: &str) -> String {
+        let output = Command::new(std::env::current_exe().expect("test executable"))
+            .args(["--exact", test_name, "--nocapture"])
+            .env(CHILD_CASE, case)
+            .output()
+            .expect("run report fixture");
+        assert!(output.status.success(), "fixture failed: {:?}", output.status);
+        String::from_utf8(output.stdout).expect("report must be UTF-8")
+    }
+
+    #[test]
+    fn capital_and_rates_follow_equity_despite_positive_closed_pnl() {
+        let case = "closed_profit_open_loss";
+        if std::env::var(CHILD_CASE).ok().as_deref() == Some(case) {
+            let stats = ReplayStats {
+                final_capital: 64.0,
+                net_pnl: 32.0,
+                trades: 1,
+                ..Default::default()
+            };
+            assert_eq!(stats.roi_net(128.0), 0.25, "closed PnL keeps its meaning");
+            print_window("fixture", &stats, 128.0, 3.0);
+            return;
+        }
+        let report = captured_report(
+            "si_b15_report_contract::capital_and_rates_follow_equity_despite_positive_closed_pnl",
+            case,
+        );
+        let capital = report.lines().find(|line| line.contains("Capital:")).expect("capital line");
+        assert!(capital.contains("$128.00 → $64.00 (-50.00%)"), "{report}");
+        let rate = report.lines().find(|line| line.contains("equivalente 3d:")).expect("rate line");
+        assert!(rate.contains("-20.630%/d"), "{report}");
+        assert!(rate.contains("equivalente 3d: -50.0%"), "{report}");
+    }
+
+    #[test]
+    fn capital_return_does_not_require_closed_trades() {
+        let case = "open_equity_without_closes";
+        if std::env::var(CHILD_CASE).ok().as_deref() == Some(case) {
+            let stats = ReplayStats {
+                final_capital: 256.0,
+                net_pnl: 0.0,
+                trades: 0,
+                ..Default::default()
+            };
+            assert_eq!(stats.roi_net(128.0), 0.0, "no realized PnL is invented");
+            print_window("fixture", &stats, 128.0, 3.0);
+            return;
+        }
+        let report = captured_report(
+            "si_b15_report_contract::capital_return_does_not_require_closed_trades",
+            case,
+        );
+        let capital = report.lines().find(|line| line.contains("Capital:")).expect("capital line");
+        assert!(capital.contains("$128.00 → $256.00 (+100.00%)"), "{report}");
+        let rate = report.lines().find(|line| line.contains("equivalente 3d:")).expect("rate line");
+        assert!(rate.contains("+25.992%/d"), "{report}");
+        assert!(rate.contains("equivalente 3d: +100.0%"), "{report}");
+    }
+}
