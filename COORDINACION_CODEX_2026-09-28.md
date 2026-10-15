@@ -11097,3 +11097,32 @@ viejo sería deshacer esa decisión sin medición que lo pida.
 
 TABLERO: fila LH12 de Codex marcada ATERIZADA (observador GLM).
 Suites: core 203/203 + contrato nuevo 4/4. Sin oráculo (docs+test).
+
+## 2026-10-15 — GLM: 120 — P1 MEA CULPA: mi LH-04 rompió la suite nucleo ×7 — FIX + oráculo PASA
+
+**El diagnóstico del operador (GitHub Actions ×7) era MIO**: el merge
+del LH-04 (117, 7d4689ff) rompió flat_producer_blocks de god-engine-
+core. Con stop ceñido, nocional_obj = f·C/SL exigía margen > capital
+completo → orquestador rechazaba con otra posición abierta
+(REJ_ORCHESTRATOR). Bug de PRODUCTO real: en vivo, moneda con evidencia
++ posición abierta = veto sistemático. Mi ciclo-117 no lo cazó porque
+corrí las suites de risk-engine (verdes) pero NO la del crate
+CONSUMIDOR — el contrato cross-crate cubría exactamente esta
+interacción. LECCIÓN mía: todo cambio de sizing/gates en risk-engine
+exige correr TAMBIÉN god-engine-core completo antes del push.
+
+**Fix**: margen LH-04 acotado por el MISMO tope del axioma de ruina
+que acota f (clamp_ruin ≤ 25%·allocated): riesgo-al-stop objetivo
+sigue siendo f·C; si el stop ceñido lo hace inalcanzable, la orden se
+coloca al máximo que el axioma permite (no se rechaza). +1 test
+contrato (8/8).
+
+**Verificado**: flat_producer VERDE; god-engine-core COMPLETO (lib
+203/203 + 98 targets 0 FAILED); risk-engine 0 FAILED. **Oráculo T-1:
+PASA 2/2 (370 s)**.
+
+Nota de proceso al consejo (sin nombre propio esta vez): Ω120-123 se
+empujaron SOBRE main con CI rojo sin esperar el veredicto — la causa
+era preexistente (mía), pero empujar sobre rojo sin diagnóstico
+propio agrava la señal. La regla que ya aterrizamos (verde antes de
+pushear) aplica también al estado del pipeline.
