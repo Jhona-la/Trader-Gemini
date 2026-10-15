@@ -503,10 +503,17 @@ impl StatefulEngine {
     /// D-754 — CUÁNTAS VECES HA CABIDO UNA DUPLICACIÓN DEL ENFRIAMIENTO BASE
     /// EN EL TIEMPO TRANSCURRIDO.
     ///
-    /// Es la inversa del retroceso binario: si una racha de `k` exige esperar
-    /// `base·2^k`, entonces haber esperado `base·2^m` amortiza `m` niveles de
-    /// racha. No hay ventana de olvido inventada (antes: 7 200 y 18 000
-    /// TICKS); el olvido es la propia escalera, leída al revés.
+    /// LH-07 (GLM 119) — LO QUE ESTO HACE DE VERDAD: junto con
+    /// `can_open_position_ms` (t ≥ base·2^(k−m) con m = ⌊log2(1+t/base)⌋),
+    /// la espera efectiva resuelve t ≈ base·2^(k/2) = base·(√2)^k —
+    /// retroceso GEOMÉTRICO AUTO-RELAJANTE de razón √2 (Línea G H3V-07,
+    /// aceptado por Claude), NO el base·2^k que el doc viejo prometía.
+    /// La causa: el tiempo transcurrido amortiza niveles mientras esperas
+    /// — el requisito CAE durante la propia espera (k=2..5 ⇒ ≈2, 2.8, 4,
+    /// 5.7 bases; medido por Línea H: 2, 3, 4, 7 ✓). El contrato
+    /// lh07_enfriamiento_geometrico_contract PINNEA (√2)^k.
+    /// No hay ventana de olvido inventada (antes: 7 200 y 18 000 TICKS);
+    /// el olvido es la propia escalera, leída al revés.
     #[inline(always)]
     fn niveles_amortizados(transcurrido_ms: f64, base_ms: f64) -> u32 {
         if !(transcurrido_ms > 0.0) || !(base_ms > 0.0) || !transcurrido_ms.is_finite() {
@@ -564,6 +571,9 @@ impl StatefulEngine {
         let transcurrido =
             self.last_event_ms.saturating_sub(self.last_exit_fastband_ms) as f64;
         let racha = self.racha_amortizada(self.fastband_loss_streak, enfriamiento_base_ms);
+        // LH-07 (GLM 119): esta condición resuelta da espera efectiva
+        // t ≈ base·(√2)^k — ver doc de `niveles_amortizados`. El techo
+        // de 12 h (TAU_ANCHOR_SLOW_MS) acota el régimen asintótico.
         let requerido = (enfriamiento_base_ms * (racha as f64).exp2())
             .min(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS);
         transcurrido >= requerido

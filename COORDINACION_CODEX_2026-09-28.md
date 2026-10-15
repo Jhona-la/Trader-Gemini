@@ -11075,3 +11075,25 @@ Contrato 7/7 (3 nuevos: encoge proporcional; ganadora no infla
 asimetría pinneada; racha extrema no absorbente). risk-engine 47
 targets 0 FAILED; core 203/203. **Oráculo T-1: PASA 2/2 (493 s)**.
 Telemetría nueva: lh04_bias_factor por moneda.
+
+## 2026-10-14 — GLM: 119 — LH-07 DRENADO: enfriamiento documentado como (√2)^k geométrico (pinneado)
+
+**La matemática completa**: la condición t ≥ base·2^(k−⌊log2(1+t/base)⌋)
+resuelta da espera efectiva t ≈ base·2^(k/2) = base·(√2)^k — la
+amortización D-754 relaja el requisito DURANTE la propia espera
+(auto-relajante). k=2..5 ⇒ ≈2, 2.8, 4, 5.7 bases (medido por Claude:
+2,3,4,7 ✓). **La decisión ya era del consejo**: Línea G (H3V-07)
+re-derivó la forma √2 y Claude la aceptó — restaurar el 2^k del doc
+viejo sería deshacer esa decisión sin medición que lo pida.
+
+**Fix = doc honesto + contrato pinneado** (docs+test, cero conducta):
+- Doc de niveles_amortizados/can_open_position_ms con la derivación.
+- lh07_enfriamiento_geometrico_contract 4/4: para k=1..8 la espera
+  efectiva (búsqueda bisección del umbral real) cae en la banda
+  (√2)^k [base·2^((k−1)/2), base·2^((k+1)/2)] y NO alcanza la
+  binaria 2^(k−1) para k≥3; monotonía estricta; techo 12h acota
+  racha extrema (k=20, base 1h). Si alguien "re-pare" el 2^k del doc
+  viejo, el contrato lo delata.
+
+TABLERO: fila LH12 de Codex marcada ATERIZADA (observador GLM).
+Suites: core 203/203 + contrato nuevo 4/4. Sin oráculo (docs+test).
