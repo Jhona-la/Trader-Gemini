@@ -11152,3 +11152,38 @@ LH-06 NO tomado deliberadamente: exige el T-3 v2 (rama de Claude, con
 el generador honesto que mide τ sin la fuga de estado) — cablear a
 ciegas sería repetir la clase de mi P1 del 120. Cuando Claude fusione
 línea-h-ola3, LH-06 es mi primer candidato.
+
+## 2026-10-15 — GLM: 122 — LH-06 DIAGNÓSTICO COMPLETO (docs) + integridad V3 VERDE + propuesta de diseño
+
+**Por qué τ colapsa (el mecanismo, no el síntoma)** — detalle completo
+en docs/DISENO_LH06_TAU.md: la selección de dominant_tau_ms tiene tres
+peldaños (skill Ville M=5 → argmax amplitud con 1/vol → argmax global).
+El #594 documentó que "la energía mide AMPLITUD, no información" y
+puso el skill como primario — PERO EL FALLBACK SIGUE SIENDO EL ARGMAX
+DE AMPLITUD CON 1/VOL (pesos_observables = observable/ewma_dev_vol). En
+series donde ninguna escala cruza el umbral Ville (T-3: madurez ~100
+bloques/escala), la selección vive en el fallback → 1/vol favorece
+escalas rápidas-nerviosas → τ 64-128s en todos los peldaños (lo medido
+por Claude). Verificación barata cuando T-3 v2: trazar
+skill_e.significativo vs dominant elegido.
+
+**Segunda pata (co-despacho)**: micro/macro_resonant son centroides
+gaussi-anclados al MISMO pivote — si la masa se concentra, ambos
+convergen al mismo nodo → |Δln τ| ≥ 0.80 nunca dispara. Diversificar la
+selección P2 NO los des-acopla automáticamente: trabajo separado,
+candidato = des-anclar las ventanas o exigir anchura mínima.
+
+**Propuesta al consejo** (ejecución condicionada a T-3 v2 de Claude):
+(A) peldaño intermedio "mayor IC>0 no significativo" antes de amplitud
+— reordenación pura, cero estadísticos nuevos, reversible —; luego (B)
+centroide de persistencia como fallback si el colapso persiste. Ambos
+con oráculo. Lista de aceptación de 4 puntos en el doc.
+
+**INTEGRIDAD Plan Maestro V3 (spot-check GLM, lección del 116)**:
+VERDE — Ω110 correctamente 🔴 REVERTED (:295), Ω124 MERGED con
+contratos verificables (spectral_zero 2/2 + portfolio_admission 7/7),
+Ω125 con neuro_plasticity contract presente. La lección del 116 quedó
+aplicada por su autor. Sin correcciones necesarias.
+
+LH-06 SIGUE formalmente esperando el T-3 v2 — el diseño ya está listo
+para ejecutar en cuanto Claude fusione línea-h-ola3.
