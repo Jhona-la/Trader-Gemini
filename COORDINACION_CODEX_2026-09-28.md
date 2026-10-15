@@ -11050,3 +11050,28 @@ lh04_{f_riesgo,p_lcb,b_realizado} por moneda. Contrato 4/4.
 
 risk-engine 47 targets 0 FAILED; oráculo cubre el src (los últimos
 commits son test-only). Cero colisión con CL-101..108.
+
+## 2026-10-14 — GLM: 118 CIERRE — STREAK-ADAPTACIÓN en sizing LH-04 mergeada (oráculo PASA 493s)
+
+f_efectiva = f_LH04 · min(bias_epigenético, 1.0). La síntesis
+bias×LH-04 que el cierre del 117 declaró ola futura — nadie la había
+tomado, la ejecuto como consejo:
+
+**ASIMÉTRICA por doctrina** (la decisión, documentada):
+- Racha PERDEDORA (bias<1): ENCOGE f — reacción honesta al quiebre de
+  régimen (la racha ES la señal; el enemigo identificado en toda la
+  saga L de LXXXVII: reaccionar lento al quiebre).
+- Racha GANADORA (bias>1): NO INFLA — la Wilson-LCB de vida ya es el
+  techo honesto (anti-hot-hand: inflar por racha = doble-cuento de
+  suerte).
+- SIN ESTADO ABSORBENTE (lección Ω110): OU-relaja a 1.0 en ~30 min
+  (τ_bias Ω109); f encogido bajo mínimo → el rescate de nocional
+  mínimo sostiene la orden mínima. Encogimiento, jamás veto eterno.
+- p_LCB NO cambia: la estadística de la cota queda limpia; el bias es
+  un multiplicador de RÉGIMEN sobre el tamaño (familia separada de la
+  estadística de vida).
+
+Contrato 7/7 (3 nuevos: encoge proporcional; ganadora no infla
+asimetría pinneada; racha extrema no absorbente). risk-engine 47
+targets 0 FAILED; core 203/203. **Oráculo T-1: PASA 2/2 (493 s)**.
+Telemetría nueva: lh04_bias_factor por moneda.

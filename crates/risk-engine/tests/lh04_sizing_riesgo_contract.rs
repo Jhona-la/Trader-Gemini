@@ -140,3 +140,75 @@ fn lh04_f_acotada_por_el_axioma_de_ruina() {
         "evidencia extrema NO rompe el axioma del 25%: f={f}"
     );
 }
+
+/// (5) Streak-adaptación (GLM 118) — RACHA PERDEDORA ENCOGE f: con
+/// epigenetic_bias = 0.6 (racha perdedora activa), f_efectiva = f·0.6 —
+/// el factor OU-relajado multiplica el tamaño hacia abajo (reacción al
+/// quiebre de régimen). Sin bias guardado: factor neutro 1.0.
+#[test]
+fn lh04_racha_perdedora_encoge_f_proporcionalmente() {
+    let (arena, intent) = fixture();
+    arena.coins[0].metrics.win_rate.store(0.65, Relaxed);
+    arena.coins[0].metrics.trade_count.store(100, Relaxed);
+    arena.coins[0].metrics.profit_factor.store(2.6, Relaxed);
+    let mut engine = RiskEngine::new(1000.0);
+    let _ = engine.evaluate_quantum_order(0, &intent, &arena);
+    let f_neutra = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+    let bias_neutro = arena.registry.get_for_coin_or(0, "lh04_bias_factor", f64::NAN);
+    assert!(f_neutra > 0.0);
+    assert!((bias_neutro - 1.0).abs() < 1e-9, "sin racha: factor neutro");
+
+    arena.coins[0].epigenetic_bias.store(0.6, Relaxed);
+    let mut engine2 = RiskEngine::new(1000.0);
+    let _ = engine2.evaluate_quantum_order(0, &intent, &arena);
+    let f_perdedora = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+    let factor = arena.registry.get_for_coin_or(0, "lh04_bias_factor", f64::NAN);
+    assert!((factor - 0.6).abs() < 1e-9, "factor = bias en racha perdedora: {factor}");
+    assert!(
+        (f_perdedora - f_neutra * 0.6).abs() < 1e-9,
+        "f encoge proporcionalmente: {f_perdedora} vs {f_neutra}·0.6"
+    );
+    assert!(f_perdedora < f_neutra && f_perdedora > 0.0, "encoge, no muere");
+}
+
+/// (6) Streak-adaptación — RACHA GANADORA NO INFLA (asimetría pinneada):
+/// bias 1.8 (racha ganadora) deja f EFECTIVA igual a la neutra — la cota
+/// inferior de Wilson de vida ya es el techo honesto (anti-hot-hand).
+#[test]
+fn lh04_racha_ganadora_no_infla_f_asimetria_anti_hot_hand() {
+    let (arena, intent) = fixture();
+    arena.coins[0].metrics.win_rate.store(0.65, Relaxed);
+    arena.coins[0].metrics.trade_count.store(100, Relaxed);
+    arena.coins[0].metrics.profit_factor.store(2.6, Relaxed);
+    let mut engine = RiskEngine::new(1000.0);
+    let _ = engine.evaluate_quantum_order(0, &intent, &arena);
+    let f_neutra = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+
+    arena.coins[0].epigenetic_bias.store(1.8, Relaxed);
+    let mut engine2 = RiskEngine::new(1000.0);
+    let _ = engine2.evaluate_quantum_order(0, &intent, &arena);
+    let f_ganadora = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+    let factor = arena.registry.get_for_coin_or(0, "lh04_bias_factor", f64::NAN);
+    assert!((factor - 1.0).abs() < 1e-9, "bias 1.8 clampea a 1.0: {factor}");
+    assert!(
+        (f_ganadora - f_neutra).abs() < 1e-12,
+        "racha ganadora NO infla: {f_ganadora} == {f_neutra}"
+    );
+}
+
+/// (7) Streak-adaptación — SIN ESTADO ABSORBENTE: racha perdedora extrema
+/// (bias 0.5, el piso nativo) con evidencia madura: f encoge al 50% pero
+/// sigue viva (>0) — el multiplicador es de régimen, no de veto; el bias
+/// OU-relaja a 1.0 en ~30 min (lo que distingue esto del Ω110 absorbente).
+#[test]
+fn lh04_racha_extrema_no_crea_estado_absorbente() {
+    let (arena, intent) = fixture();
+    arena.coins[0].metrics.win_rate.store(0.65, Relaxed);
+    arena.coins[0].metrics.trade_count.store(100, Relaxed);
+    arena.coins[0].metrics.profit_factor.store(2.6, Relaxed);
+    arena.coins[0].epigenetic_bias.store(0.5, Relaxed);
+    let mut engine = RiskEngine::new(1000.0);
+    let _ = engine.evaluate_quantum_order(0, &intent, &arena);
+    let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+    assert!(f > 0.0, "bias 0.5: f encoge pero NO muere: {f}");
+}

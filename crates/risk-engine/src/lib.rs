@@ -1340,23 +1340,54 @@ impl RiskEngine {
             lh04_p_lcb = p_lcb;
             lh04_b = b;
         }
-        if lh04_f > 0.0 && dynamic_leverage >= 1.0 {
-            let nocional_obj = lh04_f * allocated_capital / continuous_sl;
+        // Streak-adaptación (GLM 118): la síntesis bias×LH-04. El bias
+        // epigenético (racha, OU-relajado Ω109, rango [0.5, 2.0], leído
+        // al RELOJ CAUSAL del último tick — mismo acceso que el camino de
+        // convicción en :586) modula el tamaño de forma ASIMÉTRICA:
+        // - Racha PERDEDORA (bias < 1): encoge f — información honesta de
+        //   quiebre de régimen; la racha ES la señal (el enemigo de toda
+        //   la saga L: reaccionar lento al quiebre).
+        // - Racha GANADORA (bias > 1): NO infla — min(bias, 1.0). La cota
+        //   inferior de Wilson de vida ya es el techo honesto; inflar por
+        //   racha sería doble-cuento de suerte (cautela anti-hot-hand).
+        // - SIN ESTADO ABSORBENTE (lección Ω110): el bias OU-relaja a 1.0
+        //   en ~30 min (τ_bias de Ω109) — nada de (1−DD/d*) que muere en
+        //   d*; y si f encogido deja el margen bajo el mínimo, el rescate
+        //   de nocional mínimo existente sostiene la orden mínima (piso
+        //   tipo sonda): encogimiento, jamás veto eterno.
+        // p_LCB misma NO cambia: la estadística de la cota queda limpia;
+        // la adaptación es un multiplicador de régimen sobre el tamaño.
+        let lh04_bias_factor = if lh04_f > 0.0 && coin_id < arena.coins.len() {
+            let now_ts = arena.coins[coin_id]
+                .last_tick_timestamp_ms
+                .load(Ordering::Relaxed);
+            arena.coins[coin_id]
+                .get_active_epigenetic_bias(now_ts)
+                .clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let lh04_f_efectiva = lh04_f * lh04_bias_factor;
+        if lh04_f_efectiva > 0.0 && dynamic_leverage >= 1.0 {
+            let nocional_obj = lh04_f_efectiva * allocated_capital / continuous_sl;
             let margen_obj = nocional_obj / dynamic_leverage;
             if margen_obj.is_finite() && margen_obj > 0.0 {
                 final_margin = margen_obj.min(allocated_capital);
             }
         }
-        // Telemetría LH-04 (auditable por moneda).
+        // Telemetría LH-04 (auditable por moneda): f EFECTIVA (post-racha).
         arena
             .registry
-            .set_for_coin(coin_id, "lh04_f_riesgo", lh04_f);
+            .set_for_coin(coin_id, "lh04_f_riesgo", lh04_f_efectiva);
         arena
             .registry
             .set_for_coin(coin_id, "lh04_p_lcb", lh04_p_lcb);
         arena
             .registry
             .set_for_coin(coin_id, "lh04_b_realizado", lh04_b);
+        arena
+            .registry
+            .set_for_coin(coin_id, "lh04_bias_factor", lh04_bias_factor);
 
         let margin_cushion_pct = arena.config.margin_cushion_pct.load(Ordering::Relaxed);
         // D-641: el colchón de margen sale SIEMPRE del gen; la escasez sólo lo
