@@ -11270,3 +11270,15 @@ para ejecutar en cuanto Claude fusione línea-h-ola3.
 - Cero trading, cero entrenamiento, cero promoción, cero borrado de ramas
   o worktrees ajenos. Rama propia `sol/replay-accounting-2026-10-09`
   (ff-only a main) con `git add` explícito de mis 5 rutas.
+
+## 2026-10-15 — Codex, Línea H: entrega T-3 v2 en revisión
+
+- Rama `codex/t3-v2-2026-10-15`, base `310f729f`; histórico H preservado.
+- Instrumento HMM/generador, abstención con cobertura, EV de brackets con
+  vencimientos y censura, causalidad de prefijo y NaN sin observaciones.
+- **10/0 contratos std-only**; Cargo all-targets e integración pendientes.
+  No se atribuyen resultados históricos a Ω128 ni se certifica rentabilidad.
+- Registro: `docs/audit/LINEA_H_T3_V2_CIERRE_2026-10-15.md`.
+- Reserva: sólo instrumento/documentación H y CI. LH-06, Core, riesgo y
+  ejecución permanecen con sus dueños. Target compartido sin tocar.
+

@@ -512,3 +512,63 @@ Medido sobre el árbol con el #62
   (LH-07: el retroceso del enfriamiento es geométrico de razón √2, no
   k·base ni 2^k) y H2-08 (fricción en las dos ramas del dimensionado,
   `r* = p/(1 + f_R) − q/(RR − f_R)`).
+
+## 8. Ola 3 — revisión del instrumento y cierre del 15 de octubre
+
+Base histórica: `aecc33d4`; commits LH-18/LH-18b hasta `2359ba19`.
+La revisión y los datos `ola3_*` recuperados pertenecen a ese trabajo previo.
+Las tablas no incluyen una huella verificable del binario y del código exacto
+que las produjo. Se preservan como evidencia histórica; no certifican Ω128 ni
+el motor actual. El manifiesto `ola3_historical_manifest.json` fija sus bytes.
+
+### 8.1 Cambios del instrumento
+
+V2 usa ruido gaussiano con Box–Muller y sorteos separados para mechas y
+volumen. El filtro HMM usa los parámetros conocidos del generador y el calendario
+de tramos: es una referencia privilegiada para cierres observados. No constituye
+un techo universal de PnL por operación, ni comparte la información intravela
+del runner OHLC, cuyo puente conserva el canal H1-01(iii).
+
+La revisión corrige la dirección del lector latente en antipersistencia;
+reinicia el posterior en cada tramo; omite retornos y Brier que crucen la unión;
+usa log-odds para evitar perder evidencia por subdesbordamiento gaussiano;
+publica abstención por fricción junto a su cobertura; y representa ausencia de
+operaciones con NaN. El retorno esperado que decide la abstención es logarítmico
+y asume las comisiones de referencia; no es un modelo completo de ejecución.
+
+El bracket informa tanto el EV condicional legado como el promedio en R de
+entradas con seguimiento completo, con vencimientos al precio final. Excluye
+la censura al final de serie y las uniones de tramo; supone fills exactos en
+barreras y cuenta SL primero si ambas se tocan en una vela. No mide impacto,
+gaps ni fills reales. La correlación ruido-volumen detecta la fuga conocida con
+V1 como control positivo; no demuestra independencia frente a toda alternativa.
+
+### 8.2 Qué permiten concluir los datos históricos
+
+En la corrida guardada E3 (nulo→ventaja), el segundo tramo tuvo cero cierres
+y el contador total `estrategia_falsada` fue 2075; el tramo equivalente en frío
+registró 169 cierres y +2,33107 USD. Es un testigo de bloqueo en aquella
+composición, pendiente de repetirse con el motor actualizado. E4 guardó 119
+cierres y −0,20895 USD frente a 63 y −0,12671 en frío.
+
+Estas diferencias no aíslan aprendizaje: también cambian capital, precio,
+posiciones heredadas, geometría y estado de filtros. El corte por índice de
+cierre sólo atribuye temporalmente si se verifica el prefijo; una posición
+abierta al cambiar el tramo mezcla las dos poblaciones. Los cuartiles de una
+realización no demuestran ausencia de aprendizaje ni inversión. V1 y V2
+cambian colas, rango, mechas y volumen, por lo que su comparación no identifica
+causalmente el efecto de eliminar una fuga. El crecimiento observado en un
+fixture tampoco demuestra duplicación sostenida cada 72 horas.
+
+### 8.3 Validación y trabajo restante
+
+El modelo puro se comparte desde `tests/support/t3_synthetic.rs` y admite
+pruebas con `rustc --test` sin compilar Polars. Los contratos exactos cubren
+abstención, dirección, censura, vencimientos, evidencia extrema y causalidad
+de prefijo. La compilación del workspace, pruebas de integración y nuevas
+mediciones se registran en `docs/audit/LINEA_H_T3_V2_CIERRE_2026-10-15.md`.
+Sólo ese registro determina qué se verificó contra la composición actual.
+
+Pendientes fuera de esta entrega: replay causal de eventos reales, atribución
+de fills por tiempo y nocional, múltiples semillas con intervalos que respeten
+dependencia, y evaluación fuera de muestra de los cambios de política.

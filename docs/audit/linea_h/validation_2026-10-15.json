@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-15",
+  "historical_head": "2359ba1927d87c260affce2e2fe302db99fd9766",
+  "integration_parent": "310f729ff7c998c5b3d3a0f1722422910bcffebb",
+  "compiler": "rustc 1.98.0-nightly (096694416 2026-06-29)",
+  "source_sha256_lf": {
+    "crates/backtest-engine/tests/t3_ventaja_conocida.rs": "21b1050f58362da7e53739aba6232eb5d3ad120a1fd37e002377d98413615a75",
+    "crates/backtest-engine/tests/support/t3_synthetic.rs": "1514150b3f4821fbd6434f34705ab9528245ecd792b7f7a35adcd9e1adf63a18"
+  },
+  "standalone_model": {
+    "passed": 10,
+    "failed": 0,
+    "command": "rustc --edition=2024 --test crates/backtest-engine/tests/support/t3_synthetic.rs -O -o model-tests.exe; model-tests.exe --test-threads=1"
+  },
+  "cargo_all_targets": "pending resource window",
+  "engine_integration": "pending; no new engine measurements certified"
+}
