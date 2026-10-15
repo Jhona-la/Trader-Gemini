@@ -149,6 +149,77 @@ class AuditInventoryTests(unittest.TestCase):
         row["evidence"][0]["blob"] = "0" * 40
         self.assertTrue(any("bind current blob" in error for error in inventory.validate_structure(ledger)))
 
+    def test_evidence_is_bound_and_structured_in_every_review_status(self):
+        for status in sorted(inventory.STATUSES):
+            for defect in ("stale_blob", "missing_reference", "not_an_object"):
+                with self.subTest(status=status, defect=defect):
+                    ledger = self.ledger()
+                    row = self.verify_row(ledger, self.paths[0])
+                    row["status"] = status
+                    row["evidence"][0].update({
+                        "scope": "Only the timestamp hunk; the remainder is pending",
+                        "whole_file_closed": False,
+                        "reviewed_lines": [[5, 12]],
+                    })
+                    ledger["summary"] = inventory.summarize(ledger["files"])
+                    self.assertEqual([], inventory.check(self.repo, ledger))
+                    if defect == "stale_blob":
+                        row["evidence"][0]["blob"] = "0" * 40
+                    elif defect == "missing_reference":
+                        del row["evidence"][0]["reference"]
+                    else:
+                        row["evidence"][0] = None
+                    self.assertTrue(inventory.check(self.repo, ledger))
+
+    def test_partial_evidence_stays_partial_and_is_archived_on_content_change(self):
+        old = self.ledger()
+        path = self.paths[0]
+        row = self.verify_row(old, path)
+        row["status"] = "hallazgo_abierto"
+        row["evidence"][0].update({
+            "scope": "One adverse-input contract, not a complete file review",
+            "whole_file_closed": False,
+            "reviewed_lines": [[5, 12]],
+        })
+        old["summary"] = inventory.summarize(old["files"])
+        proof = copy.deepcopy(row["evidence"])
+        unchanged = inventory.generate(self.repo, self.baseline, old)
+        unchanged_row = next(row for row in unchanged["files"] if row["path"] == path)
+        self.assertEqual("hallazgo_abierto", unchanged_row["status"])
+        self.assertEqual(proof, unchanged_row["evidence"])
+        self.assertFalse(unchanged_row["evidence"][0]["whole_file_closed"])
+        self.write(path, "new implementation\n")
+        self.commit("change a partially reviewed source")
+        changed = inventory.generate(self.repo, "HEAD", unchanged)
+        changed_row = next(row for row in changed["files"] if row["path"] == path)
+        self.assertEqual("inventariado", changed_row["status"])
+        self.assertEqual([], changed_row["evidence"])
+        self.assertEqual(proof, changed_row["history"][-1]["evidence"])
+        self.assertEqual([], inventory.check(self.repo, changed))
+
+    def test_gitlink_and_special_filenames_survive_snapshot_and_json(self):
+        # Construct Git objects directly: tabs/newlines are valid Git names even
+        # where the host filesystem cannot create them (notably Windows).
+        blob = self.git("rev-parse", f"{self.baseline}:{self.paths[0]}").strip()
+        names = ["space name.md", "unicode-\u00e1-\u96ea.md", "tab\tname.md", "new\nline.md"]
+        records = [f"100644 blob {blob}\t{name}".encode("utf-8") for name in names]
+        records.append(f"160000 commit {self.baseline}\tlinked-checkout".encode("ascii"))
+        tree = subprocess.run(
+            ["git", "-C", str(self.repo), "mktree", "-z"],
+            input=b"\0".join(records) + b"\0", capture_output=True, check=True,
+        ).stdout.decode("ascii").strip()
+        commit = self.git("commit-tree", tree, "-p", self.baseline, "-m", "special names").strip()
+        ledger = inventory.generate(self.repo, commit)
+        rows = {row["path"]: row for row in ledger["files"]}
+        self.assertEqual(set(names + ["linked-checkout"]), set(rows))
+        self.assertEqual("160000", rows["linked-checkout"]["git_mode"])
+        self.assertEqual("commit", rows["linked-checkout"]["git_type"])
+        self.assertEqual(self.baseline, rows["linked-checkout"]["blob"])
+        self.assertEqual("submodule", rows["linked-checkout"]["category"])
+        restored = json.loads(json.dumps(ledger, ensure_ascii=True))
+        self.assertEqual(ledger, restored)
+        self.assertEqual([], inventory.check(self.repo, restored))
+
     def test_cli_generate_check_delta_and_invalid_ledger_exit(self):
         output = self.repo / "ledger.json"
         commands = [
