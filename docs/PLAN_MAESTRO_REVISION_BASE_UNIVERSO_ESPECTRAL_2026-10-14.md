@@ -417,6 +417,11 @@ crates/
 | **Ω119** | `metacortex-engine` | Desacoplamiento dinámico de Abogado del Diablo, autoengaño y online learning | 🟢 **MERGED** | `auditor_internal_and_tracker_adaptation_contract.rs` |
 | **Ω120** | `audit-engine` / `god-engine-core` | Resurrección de arista muerta y desacoplamiento de umbrales en Tribunal de Autoengaño | 🟢 **MERGED** | `tribunal_and_discrepancy_adaptation_contract.rs` |
 | **Ω121** | `feature-engine` / `signal-engine` / `quantum-arena` | Desacoplamiento dinámico de Navier-Stokes ($Re$, $\tau_{\text{relax}}$, $\alpha$) y Microestructura (OFI, OrderFlow, Welford) | 🟢 **MERGED** | `navier_stokes_and_microstructure_adaptation_contract.rs` & `navier_stokes_manifold_adaptation_contract.rs` |
+| **Ω124** | `quantum-arena` / `risk-engine` | Admisión espectral multislot zero-alloc y resolución de capacidad | 🟢 **MERGED** | `spectral_zero_replay_contract.rs` & `portfolio_admission_contract.rs` |
+| **Ω125** | `dark-alpha-engine` / `god-engine-core` | Desacoplamiento continuo $C^1$ de neuroplasticidad Oja y PPO online | 🟢 **MERGED** | `neuro_plasticity_ppo_adaptation_contract.rs` |
+| **Ω126** | `signal-engine` / `quantum-arena` | Continuidad $C^1$ en proyección espectral, desacoplamiento perceptrón y Hawkes-Bessel | 🟢 **MERGED** | `spectral_projection_hawkes_perceptron_adaptation_contract.rs` |
+| **Ω127** | `quantum-arena` / `risk-engine` | Desacoplamiento continuo $C^1$ de espectral multiactivo, régimen y sizing LH-04 | 🟢 **MERGED** | `espectral_multiactivo_regime_adaptation_contract.rs` |
+| **Ω128** | `feature-engine` / `execution-engine` | Continuidad $C^1$ en multifractal, microestructura de spoofing y fill realista | 🟢 **MERGED** | `multifractal_microstructure_c1_contract.rs` |
 
 ### 📋 Nota de Integridad de Tabla (GLM, 2026-10-14 — ciclo 116)
 
