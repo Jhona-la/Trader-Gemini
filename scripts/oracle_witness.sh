@@ -23,12 +23,18 @@
 set -uo pipefail
 
 PKG="backtest-engine"
+PKG_DIR="crates/backtest-engine"
 TEST_NAME="t1_cobertura_genetica"
 TARGET_DIR="${CARGO_TARGET_DIR:-../target}"
+# Presupuesto de RAM compartido (convención del repo — Sol usa -j2 en
+# worktrees): la compilación full-graph en release sin límite muere por
+# OOM con otras sesiones vivas.
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
 OUT_DIR="outputs"
 TS="$(date +%Y%m%d_%H%M%S)"
 LOG="$OUT_DIR/oracle_witness_${TS}.log"
 BIN_GLOB="${TARGET_DIR}/release/deps/${TEST_NAME}-*.exe"
+SCRIPT_START_EPOCH="$(date +%s)"
 
 mkdir -p "$OUT_DIR"
 
@@ -37,12 +43,13 @@ mkdir -p "$OUT_DIR"
   echo "# repo: $(pwd)"
   echo "# HEAD: $(git rev-parse HEAD)"
   echo "# rama: $(git branch --show-current)  (status: $(git status --porcelain | wc -l) archivos sucios)"
+  echo "# jobs: ${CARGO_BUILD_JOBS} (RAM compartida)"
 } >> "$LOG"
 
 # 1. TOCAR el paquete: con target compartido, esto obliga a que el binario
 #    se reconstruya desde ESTE árbol (mitigación CL-60b).
-find "crates/${PKG//-/_}" -name '*.rs' -newer "$(git rev-parse --git-dir)/HEAD" -print -quit 2>/dev/null | grep -q . || \
-  touch "crates/${PKG//-/_}/src/lib.rs"
+find "$PKG_DIR" -name '*.rs' -newer "$(git rev-parse --git-dir)/HEAD" -print -quit 2>/dev/null | grep -q . || \
+  touch "$PKG_DIR/src/lib.rs"
 
 # 2. Compilar SIN correr.
 echo "[witness] compilando (--no-run)…" >&2
@@ -51,11 +58,26 @@ if ! cargo test -p "$PKG" --release --test "$TEST_NAME" --no-run >> "$LOG" 2>&1;
   exit 2
 fi
 
-# 3. Testigo PRE: el binario más reciente tras la compilación.
+# 3. Testigo PRE + GUARD DE FRESCURA (incidente GLM 124, 2026-10-15 15:10:
+#    con target compartido cargo recompiló el lib del worktree pero reutilizó
+#    el test exe VIEJO del otro árbol — mtime 12:16 del ciclo anterior — y el
+#    oráculo habría corrido fuentes ajenas. Este guard lo aborta).
 BIN="$(ls -t $BIN_GLOB 2>/dev/null | head -1)"
 if [[ -z "$BIN" ]]; then
   echo "BINARIO NO ENCONTRADO ($BIN_GLOB)" >> "$LOG"
   exit 3
+fi
+BIN_EPOCH="$(date -r "$BIN" +%s)"
+if [[ "$BIN_EPOCH" -lt "$SCRIPT_START_EPOCH" ]]; then
+  {
+    echo "GUARD CL-60b DISPARADO: el binario ($BIN, mtime $(date -Is -r "$BIN"))"
+    echo "es ANTERIOR al inicio del testigo — cargo reutilizó un test exe de"
+    echo "OTRO árbol. NO se corre el oráculo sobre fuentes no verificadas."
+    echo "Solución: target propio del worktree, o correr en el checkout dueño"
+    echo "del target tras actualizar su working tree."
+  } >> "$LOG"
+  echo "[witness] GUARD: binario ajeno/viejo — abortado (ver $LOG)" >&2
+  exit 4
 fi
 {
   echo "PRE binario: $BIN"
