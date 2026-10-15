@@ -328,3 +328,13 @@ crates/
 Las garantías financieras, de ruina, latencia y autoevolución en el cuerpo del plan requieren evidencia específica del candidato. Este ciclo no acredita crecimiento100%/72h, riesgo0, nulo condicional, familia efectiva ni latencia de producción. Sin bypass de vetos, umbralesT1 o promoción de modelos. Cada archivo completo sigue pendiente salvo su recibo individual; revisar un hunk o inventariar una ruta no constituye auditoría integral.
 
 Continuación ROOT metadata004: main940 incorporado en a457; all-targets previo al merge pasa con708inputs idénticos. Guardas λ/SPRT y oráculos sin vacuidad preparados en98b6/d14d/4a73; tests todavía sin ejecución, pues protegido004 falló enlace antes de pruebas. Siguiente composición incorpora docs b46/SI7af2, BASE15 PR65, Hawkes validado y T3 PR64 antes del full/T1 final. Mantener abiertos WR posterior/pseudoconteo Wald y causalidad/DD/ranking de MTM; el inventario BASE15 no equivale a auditoría completa de cada archivo. Véase el [informe actualizado](audit/INTEGRACION_LG5_MAIN_2026-10-15.md).
+
+
+<!-- ROOT-LG5-STANDARD-SIRED-20261015 -->
+## ROOT — continuidad de recursos y fuente de validación
+
+La entrega fija94eff4571b65668ac8d2a13c3fbddc73ef9d853a añade la [adenda coordinada de recursos T1](audit/ADENDA_RECURSOS_T1_2026-10-15.md), delta BASE15→Ω132 y recibo stub. Su enlace se activa al incorporar ese padre; no es un segundo censo ni cierre de archivos completos. Once métodos/25escenarios con Cargo simulado no certifican T1 ni crecimiento. Avances de la rama posteriores a94eff pertenecen a otra revisión.
+
+ROOT conserva el censo/cola BASE15. Su siguiente turno acordado usará target estándar/logs, guardas intactas y fuente fijada; BASE aún no lo ha cedido. SI publicó05bc tras RED causal693fd2/3/0; GREEN del fix, composición, fullT1, main y limpieza de refs siguen pendientes. [Estado con hashes y alcance](audit/INTEGRACION_LG5_MAIN_2026-10-15.md). Las analogías de teoría no sustituyen los contratos de identidad/unidades/causalidad ni la evidencia fuera de muestra.
+
+La aceptación final de recursos94eff se reabrió por el dominio de hilos02/+02; testigoSTUB y commit posterior acotado solicitados al dueño. La adenda/recibo históricos siguen válidos para sus11métodos/25escenarios, no para ese borde aún pendiente.

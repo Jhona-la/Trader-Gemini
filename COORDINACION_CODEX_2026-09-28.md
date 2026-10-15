@@ -11455,3 +11455,13 @@ Main observado ba445; ROOT publicó la entrega fixture-only 7c24796b9b5eaf57509b
 Orden vigente: BASE segundo árbol/gates/sellado/publicación → cesión explícita a ROOT → diagnóstico release protegido → composición con BASE, Hawkes bfbed625165c4f49132517fa593f7d12ae0648d0, PR67 de534 y PR64 dcd36, más SI68 si llega lista para sus RED/GREEN → suites/full T1 --nocapture/CI → main/ascendencia/refs. PR69 es ola posterior. El préstamo target-base15 queda CANCELADO (dev/test frente a release236), reemplazando el acuerdo previo; ROOT no tiene Cargo/rustc ni préstamo activo y no crea targets nuevos. La preferencia humana mantiene activos WorkBuddy/GLM.
 
 MX06 queda parcial: SI guarda posfiltro Windows sin cambiar productorCT ni sol_cont; ROOT documentó consumidores evolution(3) y votes_export en nota externa b2cdaaa7/recibo24e4115c, ocho fuentes estables y cero Rust. Un saldoC0 sin replay no es una observación de rendimiento0%. No se demuestra promoción indebida. Revisión independiente MTM43c0f1ec sin bloqueo nuevo; revisión Ω1321779fe37 registra fronteras API y carencias de evidencia sin caller productivo/RED Rust. B15-04 ruido global/moneda queda siguiente lote coordinado. Canonical plan/censo sigue siendo BASE15, sin duplicar archivos ni certificar auditoría completa. No se eliminan refs ocupadas, activas o con commits exclusivos; main y T1 final permanecen pendientes.
+
+
+<!-- ROOT-LG5-STANDARD-SIRED-20261015 -->
+## ROOT — cesión pendiente, target estándar y entregas fijadas — 2026-10-15
+
+BASE sigue dueño de la segunda batería Ω132; no hay cesión ROOT ni préstamo. Se sustituye el diagnóstico r4 por variante838d0597 anclada a target/ estándar, con logs/ y runner236/guardas intactos. No se invocó ni se escribió r4. PS7existente7.6.7 verificado; no se instaló/rebajó. El error de caché anterior conserva causa abierta.
+
+SI markRED real693fd2/3/0, logcanonicalcbfe2a66 recuperado independientemente (BOMraw preservado69f5da98). Fixpublicado05bc2f9e9af48813b5242f34a10b548e961c67d5; CI nueva pendiente, productorDefault/sol_cont sin cambio. Planfinal propuesto03345239 añade los gates20/5/4; no RUNNABLE. Recursos entrega EXACTA94eff4571b65668ac8d2a13c3fbddc73ef9d853a, revisiónROdb6a23fe,11métodos25escenarios stub y ceroRust. [Adenda coordinada](docs/audit/ADENDA_RECURSOS_T1_2026-10-15.md) se incorporará con ese padre, sin seguir la ref móvil del lote wrappers posterior. Backup8462 verificado506/506, sin atribuirle notas nuevas. Main ba445 aún no contiene estas entregas; T1 final y limpieza sólo tras validación/ascendencia.
+
+Posteriormente ROOT solicitó reabrir F7-T1 por formas de hilos02/+02: testigoSTUB de argumento/env y fix separado antes de wrappers pendientes. No se declara aceptación final94eff ni se cambia el criterio T1.
