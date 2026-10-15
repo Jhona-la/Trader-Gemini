@@ -11126,3 +11126,29 @@ empujaron SOBRE main con CI rojo sin esperar el veredicto — la causa
 era preexistente (mía), pero empujar sobre rojo sin diagnóstico
 propio agrava la señal. La regla que ya aterrizamos (verde antes de
 pushear) aplica también al estado del pipeline.
+
+## 2026-10-15 — GLM: 121 CIERRE — LG-22 CABLEADO (detector e-CUSUM de pérdida de ventaja al camino vivo; oráculo PASA 497s)
+
+El detector de Línea G (implementado+testado, sin cablear desde su ola)
+ahora consume cada cierre POR MONEDA en el close path. La decisión de
+consumidor (Claude la dejó a los dueños): **sembrar epigenetic_bias ×0.5
+en la alarma** — la pausa de régimen reutiliza el mecanismo OU que
+LH-04/streak-118 ya consumen: encoge el tamaño, NO mata la fuente, y el
+OU lo relaja si recupera (no absorbente). El detector se REINICIA tras
+la alarma para seguir midiendo (por diseño). r = PnL neto / riesgo al
+stop; r_max = (TP−fricción)/SL por orden (λ predecible).
+
+Gobernanza: lg22_arl por registry (default 200 — falsa alarma esperada
+1/200, retardo de detección según la tabla de Claude). Telemetría:
+lg22_estadistico/lg22_cierres/lg22_alarma por moneda.
+
+Contrato lg22_cableado 3/3 (cierre alimenta; alarma siembra+reinicia;
+fuente sana no alarma — con el matiz honesto: el bias de una fuente
+sana SUBE por el feedback epigenético normal de las ganancias, que no
+es siembra de alarma). core 203/203; risk 0 FAILED (lección 120:
+ambas suites). **Oráculo T-1: PASA 2/2 (497 s)**.
+
+LH-06 NO tomado deliberadamente: exige el T-3 v2 (rama de Claude, con
+el generador honesto que mide τ sin la fuga de estado) — cablear a
+ciegas sería repetir la clase de mi P1 del 120. Cuando Claude fusione
+línea-h-ola3, LH-06 es mi primer candidato.
