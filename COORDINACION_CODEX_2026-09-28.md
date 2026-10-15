@@ -11473,3 +11473,28 @@ Posteriormente ROOT solicitó reabrir F7-T1 por formas de hilos02/+02: testigoST
 MainΩ133cd9feaa0aaa89e6b45d6363a23a4fbf365ea41d5 ya publica Core→hidden→Flow; BASE sigue sólo Ω132 congelado/lease. ROOT compone el nuevo padre después de su cesión y resuelve semánticamente Hawkes/confluencia (merge-treeRO2ad7363a contiene conflicto, no es validación). Diseño hidden simetría/continuidad/overflow queda coordinado, sin editar árboles ajenos ni reclamar cobertura conformal.
 
 PIN recursos corregido16b02279c4b0ca79d66f6cac95ac44ddbe473077 sobre94eff:1método/4subtests STUB02/+02 RED4→GREEN0, dictamenRO ba592b04, histórico11/25 intacto. Wrappers2a496435 posteriores son otra entrega, no se incorporan por ref móvil ni se borrará su rama por integrar sólo16b. ROOT sigue sinCargo; SI05bcCI y fullT1/main final pendientes.
+
+
+<!-- ROOT-LG5-PREPARED-B15-16-V2-20261015 -->
+## ROOT — B15-16(propuesto; ledger BASE pendiente) preparado, pins F7 y coordinación de gates
+
+BASE mantiene cadena Ω132 hasta completar7gates→commit exacto→archivo→metadata/push65→cesión explícita. ROOT conserva integración main/BASE/entregas; ceroCargo/rustc hasta esa cesión y ningún préstamo cache. No se abrirá PR T1/merge paralelo por recursos. Main22:37 siguecd9/Ω133; la revisión integral/censo BASE no se marca completa.
+
+Paquetes externos, NOaplicados: hiddenV2 módulo0cbce411/patch27a37e53/14tests6e5a35a6; Core2 bb48a62c con revisiónindependientec3e271a0; FlowHawkes19ad510f/joint7/manifestaffa31d4. ROOT verificó overlay y contratos estáticamente8ca4f30f; no son GREEN Rust. V1 rechazada por cuantización subnormal28,8%(testigo6454c0ba). Mantener política interpolada≠flujo firmado observado, sin cambios de theta/defaults/gate/Deserialize. Instalar primero contratos con módulo previo para RED real, despuésV2 y renovargates; planV4 externob778c575 no es ejecutable sinfreeze/manifiesto/lease. Nuevos7Hawkes no sustituyen los7anteriores ni7tensorΩ133. Corregir prosa heredada k<12 al integrar: el micro_factor recorre32nodos. Core espectral sigue presión0.
+
+PIN recursos aceptado amplía16b con ef4cd9c4→2a496435 trasRO073a92d2 (5rutas,stub7/14 RED10→GREEN0);59ebb58f añade4docs revisadasROOT y conserva fuente. No inclusión automática por HEAD móvil. La nota causal de59 describe V1/13tests y mantiene ese corte histórico; no acepta su fastpath rechazado ni transfierevalidación aV2. SI05bc congelado: ROOT verificó20reportPASS c529 y371/3/40Core, reciboc8709cf2; los3errores expiry no son causasnuevas ni verde del agregado. Replay terminal autenticado en la adenda siguiente.
+
+Backup019e545/9.843.199B verificado independiente3c3b71c9, sin nuevos drafts. OldROOTWT desaparecido sin autoría/recibo acreditados; protegido236/helpers sobreviveexacto en copiaROOT. Censo22:06:0mergedlibres,3ocupadas; sin limpiezaROOT. No restaurar, borrar o atribuir cachés ajenos. T1final/main/refs sólo después de su evidencia real.
+
+Aclaración para integrar59ebb: corregir las dos frases que presentan B15-16 como ID ya publicado en el censoBASE y marcar su revisión deV1 como histórica, posterior fastpath rechazado. Patch editorial preparado en root-continuity-20261015/resource59-clarification-prepared; no nuevo ledger ni fuente runtime.
+
+V3 queda preservado y bloqueado por dos suffix de28/31caracteres frente al máximo26 inmutable. V4 sólo los acorta a hidden-symmetry-red19 y hidden-publication-red22:15IDs válidos, mismos argv y11jobs previos, guardas intactas y ceroCargo. No manifiesto/HEAD/lease ni ejecución por esta preparación.
+
+
+### Cierre de evidencia SI y revisión independiente de las propuestas
+
+Replay SI terminó sobre checkout `c52983ac2bc9b67341d1993eb085fcb401c06685`: 13 resúmenes, 194 aprobadas / 3 fallidas / 1 ignorada / 55 filtradas. Pasaron los cinco nombres del contrato de marca terminal y los tres de `sol_r5_02_tests`, cotejados con la fuente `05bc2f9e`. Sumados a los veinte contratos del reporte ya verificados, son 28 contratos dirigidos aprobados en ese checkout; no una aprobación global de main o del agregado ROOT. Fallan los mismos tres nombres de expiry en Core y Replay; seis ejecuciones fallidas no son seis causas. Las etapas posteriores, incluido fast genome, quedaron omitidas y ese job no ejecutó full T1.
+
+Recibo ROOT `C:/Users/jhona/.codex/tmp/root-si-fix-verification-20261015/REPLAY_VERIFICATION.json`, SHA256 `aca050e02d97496f642966dde2aa84993aa5df8bced92c81619d2c8ce433511a`; log canónico `cf01342d76de47dbf1dbca1294fd56b0db403ed4eb112efa08f9db28bda9f396`. El helper RO V1 paró al buscar una ruta inexistente después de guardar los logs; V2 verificó esos mismos bytes y la ruta real localizada con git-grep, `crates/backtest-engine/src/booktick_replay.rs`. Ese error del verificador no fue una prueba Rust fallida. Logs crudos y ambas revisiones del helper se conservan.
+
+La revisión independiente de V4 y de la aclaración editorial para 59ebb cerró sin bloqueos nuevos: adenda RO `DOC59_PLAN_V4_RO_ADDENDUM-2b450727-ef20-477d-8f3c-ed693ab2d35a.md`, SHA256 `cef99e2743eaabcf2bf2023404f63993289c90e53cdbd401b800985b18784fd2`; evidencia conjunta `84470489df212566bc0aa2111e8d6227255d82f8c0e26b1063d54fda447af002`. V4 sigue PREPARED; la aclaración de los dos documentos de Git59 sigue pendiente de aplicar al componer. No se ejecutaron Cargo/rustc ni se obtuvo una cesión por estas revisiones. BASE confirmó que Core continúa compilando Polars; T1 final, integración en main y cierre de ramas siguen pendientes.
