@@ -21,6 +21,65 @@ fn est_maduro() -> EstimadorSiniestros {
     est
 }
 
+// Reader-only fixture: p=9/16 on +/-0.2 has R=ln(9/7)/0.2.
+// Keep est_maduro unchanged for the independent publication contracts.
+fn est_restrictivo_para_lector() -> EstimadorSiniestros {
+    let mut est = EstimadorSiniestros::new();
+    for i in 0..256 {
+        est.observar(if i % 16 < 9 { 0.2 } else { -0.2 });
+    }
+    let r = est.lundberg().expect("mature positive-drift fixture");
+    let analytic_r = (9.0_f64 / 7.0).ln() / 0.2;
+    assert!((r - analytic_r).abs() < 1e-9, "R={r}, analytic={analytic_r}");
+    assert!(r < 0.75 * 20.0_f64.ln());
+    est
+}
+
+fn reader_group_cap(arena: &GlobalArena) -> f64 {
+    let coin = &arena.coins[0];
+    let q = risk_engine::ruin::conservative_loss_q(
+        coin.metrics.win_rate.load(Relaxed),
+        coin.metrics.trade_count.load(Relaxed) as f64,
+    );
+    let tope = risk_engine::ruin::clamp_ruin(1.0, q);
+    assert!(tope.is_finite() && tope > 0.0);
+    tope
+}
+
+fn seed_candidate_risk(arena: &GlobalArena) -> f64 {
+    let tope = reader_group_cap(arena);
+    arena.riesgo_por_operacion.store(0.75 * tope, Relaxed);
+    tope
+}
+
+fn assert_lundberg_reader_preconditions(arena: &GlobalArena, r: f64, mature_ic: bool) {
+    use risk_engine::correlation_guard::{
+        calcular_riesgo_grupo, dependency_exposure, veto_por_riesgo_cramer_lundberg,
+    };
+    let tope = reader_group_cap(arena);
+    let dependence = dependency_exposure(
+        arena, 0, true, arena.config.global_correlation_threshold.load(Relaxed),
+    ).expect("valid reader group");
+    let mut riesgos = dependence.same_bet_riesgos_hibridos(tope / 8.0);
+    riesgos.push(arena.riesgo_por_operacion.load(Relaxed));
+    // Fixture specs have Lmax=1. A mature IC=1 tightens the actual peer group.
+    let rho = if mature_ic && dependence.same_bet_positions > 0 {
+        Some(1.0)
+    } else {
+        dependence.same_bet_rho_efectivo()
+    };
+    let group = calcular_riesgo_grupo(&riesgos, rho);
+    let reference_cap = tope * (r / 20.0_f64.ln()).min(1.0);
+    assert!(reference_cap > 0.0 && group > reference_cap && group < tope,
+        "fixture must separate CL from the base cap: CL={reference_cap}, group={group}, base={tope}");
+    if mature_ic {
+        assert_eq!(dependence.same_bet_positions, 1);
+        assert!((group - 0.875 * tope).abs() < 1e-12);
+    }
+    assert!(!veto_por_riesgo_cramer_lundberg(&riesgos, rho, tope, None, 0.05));
+    assert!(veto_por_riesgo_cramer_lundberg(&riesgos, rho, tope, Some(r), 0.05));
+}
+
 fn multiactivo_maduro() -> EspectralMultiactivo {
     let mut ma = EspectralMultiactivo::new(3);
     let tau = SPECTRUM_SCALES_MS[A];
@@ -258,9 +317,7 @@ fn risk_fixture() -> (Arc<GlobalArena>, SignalIntent) {
         .config
         .global_correlation_threshold
         .store(0.5, Relaxed);
-    arena
-        .riesgo_por_operacion
-        .store(0.75 * risk_engine::ruin::clamp_ruin(1.0, 0.25), Relaxed);
+    seed_candidate_risk(&arena);
     (
         arena,
         SignalIntent {
@@ -276,35 +333,26 @@ fn risk_fixture() -> (Arc<GlobalArena>, SignalIntent) {
 fn mg02_real_risk_reader_stops_using_expired_r_even_with_positive_global() {
     let (arena, intent) = risk_fixture();
     let mut risk = RiskEngine::new(100.0);
-    let mut est = est_maduro();
-    arena
-        .registry
-        .set("lundberg_r_nocional", est.lundberg().unwrap());
-    publicar_lundberg(&arena.registry, 0, est.lundberg());
-    assert_eq!(
-        risk.evaluate_quantum_order(0, &intent, &arena).signal,
-        SignalType::Flat
-    );
-    assert_eq!(
-        arena
-            .registry
-            .get_for_coin_or(0, "qo_602_veto_lundberg", 0.0),
-        1.0
-    );
+    let mut est = est_restrictivo_para_lector();
+    let r = est.lundberg().unwrap();
+    assert_lundberg_reader_preconditions(&arena, r, false);
+    assert_eq!(risk.evaluate_quantum_order(0, &intent, &arena).signal, SignalType::Long);
+    assert_eq!(arena.registry.get_for_coin_or(0, "qo_602_veto_lundberg", 0.0), 0.0);
+    seed_candidate_risk(&arena);
+    arena.registry.set("lundberg_r_nocional", r);
+    publicar_lundberg(&arena.registry, 0, Some(r));
+    assert_eq!(risk.evaluate_quantum_order(0, &intent, &arena).signal, SignalType::Flat);
+    assert_eq!(arena.registry.get_for_coin_or(0, "qo_602_veto_lundberg", 0.0), 1.0);
     for _ in 0..256 {
         est.observar(-0.01);
     }
+    assert_eq!(est.lundberg(), None);
     publicar_lundberg(&arena.registry, 0, est.lundberg());
-    assert_eq!(
-        risk.evaluate_quantum_order(0, &intent, &arena).signal,
-        SignalType::Long
-    );
-    assert_eq!(
-        arena
-            .registry
-            .get_for_coin_or(0, "qo_602_veto_lundberg", 0.0),
-        1.0
-    );
+    assert_eq!(arena.registry.get_for_coin_or(0, "lundberg_r_nocional", -9.0), 0.0);
+    assert_eq!(arena.registry.get_value_fast("lundberg_r_nocional"), Some(r));
+    seed_candidate_risk(&arena);
+    assert_eq!(risk.evaluate_quantum_order(0, &intent, &arena).signal, SignalType::Long);
+    assert_eq!(arena.registry.get_for_coin_or(0, "qo_602_veto_lundberg", 0.0), 1.0);
 }
 
 #[test]
@@ -312,10 +360,17 @@ fn expiring_one_arena_does_not_expire_another_arena_with_the_same_coin_id() {
     let (first, intent) = risk_fixture();
     let (second, _) = risk_fixture();
     let ma = multiactivo_maduro();
-    let r = est_maduro().lundberg().unwrap();
+    let r = est_restrictivo_para_lector().lundberg().unwrap();
     for arena in [&first, &second] {
+        let mut baseline = RiskEngine::new(100.0);
+        assert_lundberg_reader_preconditions(arena, r, false);
+        assert_eq!(baseline.evaluate_quantum_order(0, &intent, arena).signal, SignalType::Long);
+        assert_eq!(arena.registry.get_for_coin_or(0, "qo_602_veto_lundberg", 0.0), 0.0);
+        seed_candidate_risk(arena);
         publicar_lundberg(&arena.registry, 0, Some(r));
         publicar_coherencia(&arena.registry, &ma, 0, SPECTRUM_SCALES_MS[A]);
+        assert_eq!(baseline.evaluate_quantum_order(0, &intent, arena).signal, SignalType::Flat);
+        assert_eq!(arena.registry.get_for_coin_or(0, "qo_602_veto_lundberg", 0.0), 1.0);
     }
     publicar_lundberg(&first.registry, 0, None);
     publicar_coherencia(&first.registry, &ma, 0, SPECTRUM_SCALES_MS[B]);
@@ -354,9 +409,15 @@ fn expiring_one_arena_does_not_expire_another_arena_with_the_same_coin_id() {
         risk.evaluate_quantum_order(0, &intent, &second).signal,
         SignalType::Flat
     );
+    assert_eq!(first.registry.get_for_coin_or(0, "qo_602_veto_lundberg", 0.0), 1.0);
+    assert_eq!(second.registry.get_for_coin_or(0, "qo_602_veto_lundberg", 0.0), 2.0);
 }
 
 fn open_correlated_peer(arena: &GlobalArena) {
+    open_correlated_peer_with_quantity(arena, 8.0);
+}
+
+fn open_correlated_peer_with_quantity(arena: &GlobalArena, quantity: f64) {
     for i in 0..200u64 {
         let t = i as f64 * 0.7;
         for coin in 0..2 {
@@ -375,7 +436,7 @@ fn open_correlated_peer(arena: &GlobalArena) {
             });
         }
     }
-    arena.coins[1].positions.slots()[0].open(true, 100.0, 8.0, 0.1, 1000, 102.0, 99.0);
+    arena.coins[1].positions.slots()[0].open(true, 100.0, quantity, 0.1, 1000, 102.0, 99.0);
     let d = risk_engine::correlation_guard::dependency_exposure(arena, 0, true, 0.5).unwrap();
     assert_eq!(d.same_bet_positions, 1);
     let rho = d.same_bet_rho_efectivo().unwrap();
@@ -433,33 +494,39 @@ fn legacy_finite_scoped_values_and_global_fallback_still_reach_real_risk_reader(
         2.0
     );
     let (other, intent) = risk_fixture();
-    other.registry.set("lundberg_r_nocional", 32.0);
-    assert_eq!(
-        risk.evaluate_quantum_order(0, &intent, &other).signal,
-        SignalType::Flat
-    );
-    assert_eq!(
-        other
-            .registry
-            .get_for_coin_or(0, "qo_602_veto_lundberg", 0.0),
-        1.0
-    );
-    other.registry.set_for_coin(0, "lundberg_r_nocional", 30.0);
-    risk.evaluate_quantum_order(0, &intent, &other);
-    assert_eq!(
-        other
-            .registry
-            .get_for_coin_or(0, "qo_602_veto_lundberg", 0.0),
-        2.0
-    );
+    assert_eq!(risk.evaluate_quantum_order(0, &intent, &other).signal, SignalType::Long);
+    seed_candidate_risk(&other);
+    assert_lundberg_reader_preconditions(&other, 1.0, false);
+    other.registry.set("lundberg_r_nocional", 1.0);
+    assert_eq!(risk.evaluate_quantum_order(0, &intent, &other).signal, SignalType::Flat);
+    assert_eq!(other.registry.get_for_coin_or(0, "qo_602_veto_lundberg", 0.0), 1.0);
+    // A permissive scoped value must win over the restrictive global fallback.
+    other.registry.set_for_coin(0, "lundberg_r_nocional", 8.0);
+    assert_eq!(risk.evaluate_quantum_order(0, &intent, &other).signal, SignalType::Long);
+    assert_eq!(other.registry.get_for_coin_or(0, "qo_602_veto_lundberg", 0.0), 1.0);
+    seed_candidate_risk(&other);
+    assert_lundberg_reader_preconditions(&other, 1.5, false);
+    other.registry.set_for_coin(0, "lundberg_r_nocional", 1.5);
+    assert_eq!(risk.evaluate_quantum_order(0, &intent, &other).signal, SignalType::Flat);
+    assert_eq!(other.registry.get_for_coin_or(0, "qo_602_veto_lundberg", 0.0), 2.0);
+    publicar_lundberg(&other.registry, 0, None);
+    assert_eq!(other.registry.get_for_coin_or(0, "lundberg_r_nocional", -9.0), 0.0);
+    assert_eq!(other.registry.get_value_fast("lundberg_r_nocional"), Some(1.0));
+    seed_candidate_risk(&other);
+    assert_eq!(risk.evaluate_quantum_order(0, &intent, &other).signal, SignalType::Long);
+    assert_eq!(other.registry.get_for_coin_or(0, "qo_602_veto_lundberg", 0.0), 2.0);
 }
 
 #[test]
 fn concurrent_readers_see_expiry_after_publication_without_cross_coin_reactivation() {
     let (arena, intent) = risk_fixture();
-    open_correlated_peer(&arena);
+    let tope = seed_candidate_risk(&arena);
+    // At IC=1, peer risk 0.125T plus candidate 0.75T stays below the base cap.
+    let peer_quantity = 0.125 * tope * arena.unified_capital.load(Relaxed);
+    open_correlated_peer_with_quantity(&arena, peer_quantity);
     let ma = multiactivo_maduro();
-    let r = est_maduro().lundberg().unwrap();
+    let r = est_restrictivo_para_lector().lundberg().unwrap();
+    assert_lundberg_reader_preconditions(&arena, r, true);
     let mut risk = RiskEngine::new(100.0);
     publicar_lundberg(&arena.registry, 0, Some(r));
     publicar_coherencia(&arena.registry, &ma, 0, SPECTRUM_SCALES_MS[A]);
@@ -491,7 +558,7 @@ fn concurrent_readers_see_expiry_after_publication_without_cross_coin_reactivati
             for _ in 0..256 {
                 publicar_lundberg(&arena.registry, 1, Some(30.0));
                 publicar_coherencia(&arena.registry, &ma, 1, SPECTRUM_SCALES_MS[A]);
-                arena.registry.set("lundberg_r_nocional", 40.0);
+                arena.registry.set("lundberg_r_nocional", 1.0);
                 arena.registry.set("qo_613_rho_tau", 0.95);
                 publicar_lundberg(&arena.registry, 1, None);
                 publicar_coherencia(&arena.registry, &ma, 1, SPECTRUM_SCALES_MS[B]);
@@ -541,10 +608,12 @@ fn concurrent_readers_see_expiry_after_publication_without_cross_coin_reactivati
             );
             // Keep the candidate risk fixed: admitted cold phases can update
             // its EWMA, which is independent of evidence publication.
-            arena
-                .riesgo_por_operacion
-                .store(0.75 * risk_engine::ruin::clamp_ruin(1.0, 0.25), Relaxed);
-            risk.evaluate_quantum_order(0, &intent, &arena);
+            seed_candidate_risk(&arena);
+            assert_lundberg_reader_preconditions(&arena, r, true);
+            assert_eq!(
+                risk.evaluate_quantum_order(0, &intent, &arena).signal,
+                if active { SignalType::Flat } else { SignalType::Long }
+            );
             if active {
                 active_phases += 1.0;
             }
