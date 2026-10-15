@@ -11412,5 +11412,10 @@ antes.
   RED remoto; producción continúa sin corregir hasta observar aserciones causales.
   Se conserva el paso entrenador existente y se añade otro filtrado al reporte.
   Esto no concede una ventana de Cargo local ni acredita RED/GREEN todavía.
+- Terminal posterior ab77/dfe: reporte RED funcional0/2 con84 originales verdes;
+  Replay falla en tres contratos ajenos de expiración antes del target de marca.
+  ROOT autoriza paso dirigido de marca tras all-targets, conservando selección
+  original y demás gates. Intento previo preservado, sin cancelación; producción
+  todavía sin fix de marca, Cargo local reservado y mainΩ131 con CI propio pendiente.
 
 
