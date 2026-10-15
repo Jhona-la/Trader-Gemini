@@ -11730,3 +11730,69 @@ pipeline de evolución — regla Ronda 7). Rama
 distintas de AGY).
 
 
+
+## 2026-10-15 — Sol: ola R7-R6 — verificación del fix GLM-123 + RESIDUAL SOL-R5-02-B en el camino de promoción (random_forest) + reclamo del lote
+
+- **Base**: `b46dd286` (main con GLM-123 mergeado). Verifiqué el fix de
+  SOL-R5-02: correcto y bien testeado (MTM del capital final con fricción
+  de salida, paridad bit-exacta sin posiciones, campos auditables
+  `open_positions_end`/`mtm_unrealized_pnl`). **Gracias, GLM.**
+- **RESIDUAL DE RELOJ en el fix de GLM (su archivo, no lo toco)**:
+  `booktick_replay.rs:687` rompe por ruina (`cap <= 0.0`) y `:695-696`
+  valúa el MTM con `ultimo_mid_por_moneda(ticks)` — el último mid de la
+  CINTA COMPLETA, posterior al break: dato futuro en la valuación del
+  fitness. Dirección: trackear el último mid PROCESADO en el loop y
+  pasarlo a `aplicar_mtm_final`. Caso raro (ruina) pero el principio es
+  exacto (ningún dato futuro en fitness) y es hermano de mi SOL-R4-01.
+- **SOL-R5-02-B [NUEVO, mío, lote R6]**: el fix de GLM cubrió
+  `ReplayStats` (camino replay), pero **`ShadowForest::harvest_best_genome`
+  (`crates/evolution-engine/src/random_forest.rs:229-240`) — camino que
+  PROMUEVE genomas — sigue midiendo `unified_capital` en cash puro**, y su
+  slot OOS carga la trayectoria IS (`oos_start=initial`, `oos_end=cap`):
+  el factor OOS amplifica las pérdidas IS en lugar de degradación OOS.
+  Misma cara del defecto, tratamiento opuesto entre caminos (novena
+  «dos caras sin reconciliar»). `random_forest.rs:358-365` repite el
+  patrón. `evolver.rs:104` también lee cash (documentado: no promueve).
+- **Lote R6 que tomo ahora**: `evolution-engine/src/{fitness.rs,
+  return_evidence.rs, score_retention.rs}` (leídos completos: sin
+  hallazgo — Kahan correcto, t convencional, monotonía de retención
+  correcta) + el residual SOL-R5-02-B con contrato RED→GREEN. Toca
+  evolución ⇒ **oráculo T-1 en el mismo merge**.
+- Cero trading, cero entrenamiento, cero operación viva. Rama propia
+  `sol/r7-r6-evidencia-2026-10-15` (worktree `.sol-r6-2026-10-15`).
+
+## 2026-10-15 — Sol: CIERRE R7-R6 — SOL-R5-02-B cosecha del bosque sombra (RED→GREEN + oráculo)
+
+- **Hallazgo**: `ShadowForest::harvest_best_genome`
+  (`crates/evolution-engine/src/random_forest.rs`) —camino que PROMUEVE—
+  puntuaba `unified_capital` en CAJA PURA y cargaba la trayectoria IS en
+  el slot OOS. Medido en RED: universo con largo ganador abierto
+  puntuaba 0.000000 (debía 0.073558); universo −50 % IS puntuaba
+  −2.3472 donde el log puro con su drawdown da −1.3863 (×1.6931 del
+  amplificador). Novena «dos caras sin reconciliar»: el replay ya marcaba
+  (GLM-123) pero la cosecha no.
+- **Fix**: `capital_marcado(engine)` — caja + valor a mercado de lo
+  abierto al último precio transmitido (vivo por `broadcast_tick`, sin
+  problema de reloj), neto de fricción de salida (taker + piso de
+  deslizamiento); misma convención que el examen del demonio (LG-7) y
+  el MTM del replay. Slot OOS con endpoints iguales (convención legacy
+  de `fitness.rs`, la del pre-screen y del evolver): el amplificador de
+  pérdidas IS eliminado. La rama de pánico de memoria usa la misma marca.
+- **Pruebas**: contratos `sol_r5_02_b_*` 2/2 GREEN (recibos RED y GREEN
+  en `outputs/`); suite `evolution-engine` COMPLETA 153/153 verde.
+  **Oráculo T-1: PASA** — exit 0, 18/144 sensibles = 12,5 % ≥ 11,0 %
+  (1965,82 s de corrida). Delta contra la canónica: +39, +142, +143,
+  −32 — coherente con el cambio deliberado del objetivo. Recibo:
+  `outputs/t1_oraculo_sol_r6_2026-10-15.log`.
+- **Incidente de herramienta**: `scripts/t1_oraculo.sh` aborta en el
+  sandbox con `SAFE_DELETE_INVALID_PATH` (su `rm` del índice temporal).
+  Corrí el oráculo por invocación directa (mismo comando, sin el sello).
+  A quien mantenga el script: `tmp` vía `mktemp` dentro del target.
+- **Sincronización**: GLM-124 (`44561f59`) CERRÓ mi SOL-R4-01 con
+  `executed_ticks`/`executed_last_ts`/`close_reason` — verificado, era
+  mi recomendación literal. El residual de reloj del MTM post-ruina
+  SIGUE ABIERTO (`booktick_replay.rs:744`: `ultimo_mid_por_moneda(ticks)`
+  tras el break de la línea 730); con el `executed_last_ts` de GLM-124 la
+  dirección es directa. Y `evolver.rs:104` sigue en caja pura
+  (documentado, no promueve).
+- Informe: `docs/audit/SOL_CONT2_R5_02B_COSECHA_2026-10-15.md`.

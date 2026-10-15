@@ -61,6 +61,39 @@ fn observe_capital(capital: f64, peak: &mut f64, max_dd: &mut f64) {
     }
 }
 
+/// SOL-R5-02-B (Sol, medición 2026-10-15): equity MARCADA de un universo
+/// al instante de la cosecha — caja más el valor a mercado de las
+/// posiciones abiertas al último precio transmitido, neto de la fricción
+/// de salida (taker + piso de deslizamiento). Misma convención que el
+/// examen del demonio (`valor_a_mercado_de_lo_abierto`, LG-7) y que el
+/// MTM del replay (GLM-123). Sin posiciones abiertas es bit-idéntico a
+/// la caja.
+fn capital_marcado(engine: &GodEngineCore) -> f64 {
+    let cash = engine.arena.unified_capital.load(Ordering::Relaxed);
+    let taker = engine.arena.config.live_taker_fee.load(Ordering::Relaxed);
+    let deslizamiento = engine.arena.config.base_slippage_floor.load(Ordering::Relaxed);
+    let friccion = if taker.is_finite() && taker >= 0.0 { taker } else { 0.0 }
+        + if deslizamiento.is_finite() && deslizamiento >= 0.0 { deslizamiento } else { 0.0 };
+    let mut mtm = 0.0;
+    for coin in engine.arena.coins.iter() {
+        let precio = coin.current_price.load(Ordering::Relaxed);
+        if !(precio.is_finite() && precio > 0.0) {
+            continue;
+        }
+        for pos in coin.positions.slots() {
+            if !pos.is_open() {
+                continue;
+            }
+            if let Some(snap) = pos.snapshot() {
+                let dir = if snap.is_long { 1.0 } else { -1.0 };
+                let pnl_bruto = (precio - snap.entry_price) * snap.quantity * dir;
+                mtm += pnl_bruto - snap.quantity * precio * friccion;
+            }
+        }
+    }
+    cash + mtm
+}
+
 impl ShadowForest {
     pub fn new(initial_capital: f64, base_genome: SuperGenotype, num_trees: usize) -> Self {
         let mut engines = Vec::with_capacity(num_trees);
@@ -166,7 +199,7 @@ impl ShadowForest {
             // La suspensión del motor no borra la observación contable actual.
             for (i, engine) in self.engines.iter().enumerate() {
                 observe_capital(
-                    engine.arena.unified_capital.load(Ordering::Relaxed),
+                    capital_marcado(engine),
                     &mut self.peak_capital[i],
                     &mut self.max_drawdown_pct[i],
                 );
@@ -211,6 +244,7 @@ impl ShadowForest {
         }
     }
 
+
     /// Evalúa todos los genomas y devuelve el mejor si superó al de control,
     /// además devuelve el Leaderboard (fitness de todos los universos).
     pub fn harvest_best_genome(&mut self) -> (Option<(SuperGenotype, f64)>, Vec<f64>) {
@@ -226,16 +260,23 @@ impl ShadowForest {
         let mut best_idx = 0usize;
         for i in 0..self.engines.len() {
             let engine = &self.engines[i];
-            let cap = engine.arena.unified_capital.load(Ordering::Relaxed);
+            // SOL-R5-02-B: equity MARCADA (caja + lo abierto a mercado),
+            // no la caja sola — la cosecha PROMUEVE, así que su objetivo
+            // debe ser el mismo que el del replay (GLM-123) y el del
+            // examen del demonio (LG-7).
+            let cap = capital_marcado(engine);
             observe_capital(cap, &mut self.peak_capital[i], &mut self.max_drawdown_pct[i]);
             // La misma lectura de capital actualiza la historia y puntúa.
+            // Sin split OOS en la cosecha: convención legacy documentada
+            // en fitness.rs (endpoints iguales ⇒ factor 1.0) — el slot
+            // OOS ya NO amplifica las pérdidas IS que `ln` ya penaliza.
             let f = crate::fitness::compute(&crate::fitness::FitnessInputs {
                 initial_capital: self.initial_capital,
                 final_capital: cap,
                 max_drawdown_pct: self.max_drawdown_pct[i],
                 total_trades: closed_trades(engine) as u32,
                 min_trades_required: MIN_HARVEST_TRADES as u32,
-                oos_start_capital: self.initial_capital,
+                oos_start_capital: cap,
                 oos_end_capital: cap,
             });
             leaderboard.push(f);
@@ -361,7 +402,7 @@ mod tests {
             max_drawdown_pct: max_dd,
             total_trades: trades as u32,
             min_trades_required: MIN_HARVEST_TRADES as u32,
-            oos_start_capital: 13.0,
+            oos_start_capital: capital, // sin split: convención legacy (SOL-R5-02-B)
             oos_end_capital: capital,
         })
     }
@@ -713,6 +754,97 @@ mod tests {
                 .unified_capital
                 .load(Ordering::Relaxed),
             13.0
+        );
+    }
+
+    // ── SOL-R5-02-B (Sol, medición 2026-10-15): la cosecha puntúa equity
+    // MARCADA, no caja ─────────────────────────────────────────────────
+    //
+    // Hallazgo: `harvest_best_genome` leía `unified_capital` (caja) para
+    // puntuar cada universo. Con una posición abierta ganadora al momento
+    // de la cosecha, la marca no entraba en el fitness: el bosque
+    // aprendía a preferir universos que cierran (o que dejan el riesgo
+    // sin valuar), igual que el replay antes del fix de GLM-123. El slot
+    // OOS cargaba además la trayectoria IS (`initial → caja`),
+    // amplificando las pérdidas IS que `ln(caja/inicial)` ya penaliza —
+    // doble conteo sin ser degradación fuera de muestra.
+    use quantum_arena::position::PositionHorizon;
+
+    fn abrir_largo(engine: &GodEngineCore, entry: f64, qty: f64) {
+        engine.arena.coins[0].positions.slot_2.open_with_fee(
+            true,
+            entry,
+            qty,
+            qty * entry / 10.0, // margen 10×
+            1_600_000_000_000,
+            entry * 1.10,
+            entry * 0.90,
+            PositionHorizon::Continuous,
+            0.6,
+            0.5,
+            0.0,
+        );
+    }
+
+    #[test]
+    fn sol_r5_02_b_la_cosecha_marca_la_posicion_abierta() {
+        let mut forest = ShadowForest::new(13.0, SuperGenotype::default(), 2);
+        for i in 0..2 {
+            set_trades(&forest, i, 30);
+            forest.engines[i].arena.config.live_taker_fee.store(0.0005, Ordering::Relaxed);
+            forest.engines[i].arena.config.base_slippage_floor.store(0.0002, Ordering::Relaxed);
+        }
+        // Universo 1: caja plana 13.0 y un largo ganador abierto
+        // (entry 100, qty 0.1, mid 110 ⇒ bruto +1.0, fricción 11×0.0007).
+        abrir_largo(&forest.engines[1], 100.0, 0.1);
+        forest.engines[1].arena.coins[0].current_price.store(110.0, Ordering::Relaxed);
+
+        let (winner, scores) = forest.harvest_best_genome();
+
+        // Equity marcada esperada: 13.0 + (1.0 − 11.0×0.0007) = 13.9923.
+        let marcado = 13.0 + 1.0 - 11.0 * 0.0007;
+        let esperado = crate::fitness::compute(&crate::fitness::FitnessInputs {
+            initial_capital: 13.0,
+            final_capital: marcado,
+            max_drawdown_pct: 0.0,
+            total_trades: 30,
+            min_trades_required: MIN_HARVEST_TRADES as u32,
+            oos_start_capital: marcado, // sin split: convención legacy
+            oos_end_capital: marcado,
+        });
+        assert!(
+            (scores[1] - esperado).abs() < 1e-9,
+            "score del universo con marca {:.6} != esperado {:.6} — la cosecha debe puntuar equity marcada",
+            scores[1],
+            esperado
+        );
+        assert!(
+            winner.is_some(),
+            "el universo con la posición ganadora abierta debe ganar la cosecha (hoy la caja plana empata)"
+        );
+        // El control (caja plana, sin posiciones) puntúa exactamente 0.
+        assert_eq!(scores[0], 0.0);
+    }
+
+    #[test]
+    fn sol_r5_02_b_sin_split_el_factor_oos_no_amplifica_perdidas_is() {
+        let mut forest = ShadowForest::new(13.0, SuperGenotype::default(), 2);
+        for i in 0..2 {
+            set_trades(&forest, i, 30);
+        }
+        set_capital(&forest, 1, 6.5); // −50 % IS, sin posiciones
+        let (_, scores) = forest.harvest_best_genome();
+        // Sin split, el score es el crecimiento log puro MENOS la
+        // penalización de drawdown observado (la cosecha vio la caída
+        // 13→6.5 ⇒ dd = 0.5), con factor OOS 1.0 — SIN el amplificador
+        // 1+|ln| que medí en RED (−2.3472 vs −1.3863 = ×1.6931).
+        let puro = (6.5_f64 / 13.0).ln()
+            - crate::fitness::DRAWDOWN_LAMBDA * 0.5 * 0.5;
+        assert!(
+            (scores[1] - puro).abs() < 1e-9,
+            "score {:.6} != log puro {:.6} — el slot OOS no puede amplificar pérdidas IS",
+            scores[1],
+            puro
         );
     }
 }
