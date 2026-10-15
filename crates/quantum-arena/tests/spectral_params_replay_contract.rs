@@ -140,3 +140,117 @@ fn invalid_constructor_olvido_cannot_poison_finite_coincident_closes() {
         "constructor and hot update must both guard invalid numeric tuning"
     );
 }
+
+fn invalid_olvido_domain() -> [f64; 9] {
+    [
+        f64::NAN,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        0.0,
+        -0.0,
+        -1.0,
+        -f64::MIN_POSITIVE,
+        1.0 + f64::EPSILON,
+        2.0,
+    ]
+}
+
+fn custom_valid_params() -> EspectralMultiactivoParams {
+    EspectralMultiactivoParams {
+        recencia_x: 0.25,
+        olvido: 0.125,
+        // Both are stricter than defaults; no statistical budget is relaxed.
+        muestras_maduras: 60,
+        familia_veto_override: Some(4_350),
+    }
+}
+
+#[test]
+fn invalid_constructor_olvido_domain_preserves_other_supplied_parameters() {
+    for invalid in invalid_olvido_domain() {
+        let incoming = EspectralMultiactivoParams {
+            olvido: invalid,
+            ..custom_valid_params()
+        };
+        let expected = EspectralMultiactivoParams {
+            olvido: EspectralMultiactivoParams::default().olvido,
+            ..custom_valid_params()
+        };
+        let subject = EspectralMultiactivo::with_params(2, incoming);
+        assert_eq!(
+            *subject.params(),
+            expected,
+            "invalid constructor olvido={invalid:?} must replace only that field"
+        );
+        assert_eq!(subject.params().recencia_x, 0.25);
+        assert_eq!(subject.params().muestras_maduras, 60);
+        assert_eq!(subject.params().familia_veto_override, Some(4_350));
+        assert_eq!(subject.muestras_par(0, 1, SCALE), Some(0));
+    }
+}
+
+#[test]
+fn invalid_olvido_updates_retain_custom_configuration_and_fresh_continuation() {
+    let custom = custom_valid_params();
+    let mut subject = EspectralMultiactivo::with_params(2, custom);
+    let mut control = EspectralMultiactivo::with_params(2, custom);
+    for ordinal in 1..=SEED_PAIRS {
+        feed_both(&mut subject, &mut control, ordinal);
+    }
+    assert_healthy(&subject, SEED_PAIRS);
+    assert_healthy(&control, SEED_PAIRS);
+    for (index, invalid) in invalid_olvido_domain().into_iter().enumerate() {
+        // Other proposed fields differ from custom: patching only olvido would
+        // silently replace maturity, family and recency instead of rejecting all.
+        subject.update_params(EspectralMultiactivoParams {
+            olvido: invalid,
+            ..EspectralMultiactivoParams::default()
+        });
+        assert_eq!(
+            *subject.params(),
+            custom,
+            "invalid update olvido={invalid:?} must preserve every valid parameter"
+        );
+        let last = SEED_PAIRS + index as u64;
+        let before = observable(&control);
+        for ordinal in [last, last - 1] {
+            for (coin, r) in [(0, 0.8), (1, -0.6)] {
+                for ma in [&mut subject, &mut control] {
+                    ma.observar_maduracion(
+                        coin,
+                        SPECTRUM_SCALES_MS[SCALE],
+                        SCALE,
+                        close_time(ordinal),
+                        r,
+                    );
+                }
+                assert_eq!(observable(&subject), before);
+                assert_eq!(observable(&control), before);
+            }
+        }
+        feed_both(&mut subject, &mut control, last + 1);
+        assert_healthy(&control, last + 1);
+        assert_eq!(observable(&subject), observable(&control));
+    }
+}
+
+#[test]
+fn valid_olvido_near_zero_and_one_preserves_configuration_without_clamping() {
+    for olvido in [1e-12, 1.0] {
+        let params = EspectralMultiactivoParams {
+            olvido,
+            ..custom_valid_params()
+        };
+        let mut subject = EspectralMultiactivo::new(2);
+        subject.update_params(params);
+        let mut control = EspectralMultiactivo::with_params(2, params);
+        assert_eq!(*subject.params(), params);
+        assert_eq!(*control.params(), params);
+        for ordinal in 1..=SEED_PAIRS {
+            feed_both(&mut subject, &mut control, ordinal);
+        }
+        assert_healthy(&subject, SEED_PAIRS);
+        assert_healthy(&control, SEED_PAIRS);
+        assert_eq!(observable(&subject), observable(&control));
+    }
+}
