@@ -200,6 +200,24 @@ impl Default for ReplayConfig {
     }
 }
 
+/// SOL-R4-01 (Sol, medición 2026-10-15 — fix GLM 124): causa de fin del
+/// replay. Antes el corte por ruina y el agotamiento de cinta eran
+/// INDISTINGUIBLES y el panel anualizaba la cinta COMPLETA pese al break
+/// (fixture 5-de-10 días de Sol: anualización ×2.000000 exacta,
+/// turnover/día +100%).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReplayCloseReason {
+    /// Guard degenerado (cinta corta tras warmup): NO corrió replay —
+    /// centinela «sin replay» (final_capital=0.0 no es capital medido),
+    /// distinto de ruina.
+    NoReplay,
+    /// Agotamiento de la cinta — camino completo ejecutado.
+    #[default]
+    TapeEnd,
+    /// Break por ruina: unified_capital <= 0 a mitad de cinta.
+    Ruin,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ReplayStats {
     pub trades: u64,
@@ -224,6 +242,16 @@ pub struct ReplayStats {
     /// SOL-R5-02 (GLM 123): PnL no realizado (neto de fricción de
     /// salida estimada) añadido al capital final por el MTM.
     pub mtm_unrealized_pnl: f64,
+    /// SOL-R4-01 (GLM 124): ticks de la cinta EJECUTADOS de verdad (el
+    /// break por ruina corta el loop antes del final). El primer tick
+    /// procesado siempre es ticks[0] — derivable, no se duplica.
+    pub executed_ticks: u64,
+    /// SOL-R4-01 (GLM 124): ts del ÚLTIMO tick procesado. El panel
+    /// anualiza `executed_last_ts − ticks[0].ts_ms`, no la cinta.
+    pub executed_last_ts: u64,
+    /// SOL-R4-01 (GLM 124): por qué terminó el replay (ruina vs cinta
+    /// vs guard degenerado — antes indistinguibles).
+    pub close_reason: ReplayCloseReason,
     /// XLVIII·A — panel ex-post de la meta re-encuadrada (CAGR, Sharpe/
     /// Sortino anualizados, Calmar, MaxDD, CVaR95, turnover, WR, PF).
     pub metrics: crate::metrics::ExPostMetrics,
@@ -353,6 +381,10 @@ fn run_booktick_replay_observed(
         || !cfg.initial_capital.is_finite()
         || cfg.initial_capital <= 0.0
     {
+        // SOL-R4-01: centinela «sin replay» — distinto de ruina y de
+        // cinta agotada (el consumidor puede distinguir el cero del
+        // final_capital como instrumento, no como resultado económico).
+        stats.close_reason = ReplayCloseReason::NoReplay;
         return stats;
     }
 
@@ -404,6 +436,13 @@ fn run_booktick_replay_observed(
     let mut peak = cfg.initial_capital;
     let warmup = cfg.warmup_ticks;
 
+    // SOL-R4-01 (Sol, medición 2026-10-15 — fix GLM 124): cuánta cinta
+    // se EJECUTÓ y por qué terminó. Solo cuentan ticks ACEPTADOS por la
+    // aduana (los invalidados con `continue` no se procesaron).
+    let mut executed_ticks: u64 = 0;
+    let mut executed_last_ts: u64 = 0;
+    let mut close_reason = ReplayCloseReason::TapeEnd;
+
     // CX / XLIX-A integration: there is no preloaded prefix to skip here.
     // Observe each accepted row once; only entries wait for the declared W.
     // A max(W, 600) skip would discard history and impose an undeclared floor.
@@ -418,6 +457,10 @@ fn run_booktick_replay_observed(
         if !mid.is_finite() || mid <= 0.0 || t.bid <= 0.0 || t.ask <= 0.0 || t.bid > t.ask {
             continue; // aduana F2.1 (misma regla que producción)
         }
+        // SOL-R4-01: este tick se ejecutó de verdad (pasó la aduana) —
+        // acumulador, no índice: los inválidos intermedios no cuentan.
+        executed_ticks += 1;
+        executed_last_ts = t.ts_ms;
 
         // F3.4-04 (Línea C / Ola Ω93): paridad de muros L2 con vivo y forense.
         core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);
@@ -685,10 +728,16 @@ fn run_booktick_replay_observed(
             stats.max_dd = dd;
         }
         if cap <= 0.0 {
+            // SOL-R4-01: la ruina CORTA la cinta — el span ejecutado
+            // termina en este tick, no al final de la cinta.
+            close_reason = ReplayCloseReason::Ruin;
             break;
         }
     }
 
+    stats.executed_ticks = executed_ticks;
+    stats.executed_last_ts = executed_last_ts;
+    stats.close_reason = close_reason;
     stats.final_capital = arena.unified_capital.load(Ordering::Relaxed);
     // SOL-R5-02 (Sol, medición 2026-10-15 — fix GLM 123): la caja sola
     // no es el capital final — ver `aplicar_mtm_final`.
@@ -706,13 +755,17 @@ fn run_booktick_replay_observed(
     }
     // XLVIII·A — panel ex-post de la meta re-encuadrada (doctrina
     // 2026-09-29: crecimiento geométrico sujeto a restricciones, medido).
+    // SOL-R4-01 (GLM 124): anualiza el span EJECUTADO — la ruina corta la
+    // cinta y el día 5 de 10 no puede anualizarse como 10 días (×2.000000
+    // exacto, turnover/día +100% pre-fix). Sin ruina, executed_last_ts ==
+    // ticks.last().ts_ms ⇒ bit-paridad con el régimen anterior.
     stats.metrics = crate::metrics::ex_post_metrics(
         &pnl_list,
         turnover_notional,
         cfg.initial_capital,
         stats.final_capital,
         stats.max_dd,
-        ticks.last().map(|t| t.ts_ms).unwrap_or(0).saturating_sub(ticks[0].ts_ms),
+        executed_last_ts.saturating_sub(ticks[0].ts_ms),
     );
     stats.omni_neutral = omni.is_none();
     stats
@@ -1540,5 +1593,144 @@ mod sol_r5_02_tests {
             short_neto
         );
         assert!(stats.final_capital < 1000.0, "el perdedor se refleja: {} < 1000", stats.final_capital);
+    }
+}
+
+// ── SOL-R4-01 (GLM 124): span EJECUTADO del panel y causa de fin ─────
+#[cfg(test)]
+mod sol_r4_01_tests {
+    use super::*;
+
+    fn synth_ticks(n: usize) -> Vec<ReplayTick> {
+        let mut seed: u64 = 7;
+        let mut p = 60_000.0f64;
+        (0..n)
+            .map(|i| {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let noise = ((seed >> 33) as f64 / u32::MAX as f64) - 0.5;
+                p *= 1.0 + noise * 0.0004;
+                ReplayTick {
+                    ts_ms: 1_700_000_000_000 + i as u64 * 100,
+                    bid: p - 0.5,
+                    ask: p + 0.5,
+                    bid_qty: 1.0 + noise.abs(),
+                    ask_qty: 1.0 + (1.0 - noise.abs()),
+                }
+            })
+            .collect()
+    }
+
+    fn cfg() -> ReplayConfig {
+        ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 200,
+            trade_only: false,
+            shift_atr_frac: 0.10,
+        }
+    }
+
+    /// (1) Sin ruina: el camino completo se ejecuta — span ejecutado ==
+    /// cinta (bit-paridad del panel con el régimen pre-fix: la cinta se
+    /// recorre entera y TapeEnd es la causa).
+    #[test]
+    fn sol_r4_01_sin_ruina_span_ejecutado_es_la_cinta_entera() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        let ticks = synth_ticks(8_000);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let stats = run_booktick_replay(&ticks, &genome, None, &cfg());
+        assert_eq!(stats.close_reason, ReplayCloseReason::TapeEnd);
+        assert_eq!(stats.executed_ticks, ticks.len() as u64);
+        assert_eq!(stats.executed_last_ts, ticks.last().unwrap().ts_ms);
+        let span_ms = ticks.last().unwrap().ts_ms - ticks[0].ts_ms;
+        let span_dias_esperado = span_ms as f64 / 86_400_000.0;
+        assert!(
+            (stats.metrics.span_days - span_dias_esperado).abs() < 1e-12,
+            "sin ruina el panel anualiza la cinta: {} == {}",
+            stats.metrics.span_days,
+            span_dias_esperado
+        );
+    }
+
+    /// (2) CONTRATO CENTRAL (fixture 5-de-10 de Sol, inyectado): ruina a
+    /// MITAD de cinta ⇒ el span ejecutado termina EN el tick de ruina, la
+    /// causa es distinguible y el panel anualiza sobre lo EJECUTADO (pre-
+    /// fix anualizaba la cinta completa: ×2.000000 exacto, turnover/día
+    /// +100%). La ruina se inyecta por la API pública del observer
+    /// (unified_capital.store(0.0) — el loop corta en su check de cap).
+    #[test]
+    fn sol_r4_01_ruina_a_mitad_anualiza_solo_lo_ejecutado() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        // 8001 ticks = 8000 intervalos: la ruina en el tick 4000 deja
+        // 4000 intervalos ejecutados — la cinta es EXACTAMENTE el doble
+        // (paridad del fixture 5-de-10 de Sol).
+        let ticks = synth_ticks(8_001);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        const RUINA_EN: usize = 4_000;
+        let stats = run_booktick_replay_with_observer(
+            &ticks,
+            &genome,
+            None,
+            &cfg(),
+            |i, core| {
+                if i == RUINA_EN {
+                    core.arena
+                        .unified_capital
+                        .store(0.0, std::sync::atomic::Ordering::Relaxed);
+                }
+            },
+        );
+        assert_eq!(stats.close_reason, ReplayCloseReason::Ruin, "causa distinguible");
+        assert_eq!(stats.executed_last_ts, ticks[RUINA_EN].ts_ms);
+        assert_eq!(stats.executed_ticks, (RUINA_EN + 1) as u64);
+        // El panel anualiza lo EJECUTADO: mitad de cinta exacta.
+        let span_ejecutado_ms = ticks[RUINA_EN].ts_ms - ticks[0].ts_ms;
+        let span_dias = span_ejecutado_ms as f64 / 86_400_000.0;
+        assert!(
+            (stats.metrics.span_days - span_dias).abs() < 1e-12,
+            "span_days {} == ejecutado {} (NO la cinta completa)",
+            stats.metrics.span_days,
+            span_dias
+        );
+        // La relación estructural del testigo de Sol: el span de cinta es
+        // EXACTAMENTE el doble del ejecutado (fixture 5-de-10) — anualizar
+        // la cinta duplicaría todo lo por-día.
+        let span_cinta_ms = ticks.last().unwrap().ts_ms - ticks[0].ts_ms;
+        assert_eq!(span_cinta_ms, 2 * span_ejecutado_ms);
+    }
+
+    /// (3) Guard degenerado: NO corrió replay — causa NoReplay, cero
+    /// ejecutado. Extiende la caracterización del centinela de Sol
+    /// (final_capital=0.0): ahora además es distinguible POR CAMPO.
+    #[test]
+    fn sol_r4_01_guard_degenerado_dice_noreplay() {
+        let ticks = synth_ticks(205); // 205 − warmup 200 = 5 ≤ 10
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let stats = run_booktick_replay(&ticks, &genome, None, &cfg());
+        assert_eq!(stats.close_reason, ReplayCloseReason::NoReplay);
+        assert_eq!(stats.executed_ticks, 0);
+        assert_eq!(stats.executed_last_ts, 0);
+        assert_eq!(stats.final_capital, 0.0, "centinela sin replay");
+    }
+
+    /// (4) Aduana: los ticks invalidados (bid<=0) NO cuentan como
+    /// ejecutados — executed_last_ts es el ts del último tick VÁLIDO.
+    #[test]
+    fn sol_r4_01_aduana_rechazados_no_cuentan_como_ejecutados() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        let mut ticks = synth_ticks(8_000);
+        // Invalidar el tramo final: los últimos 100 ticks violan la aduana.
+        for t in ticks.iter_mut().rev().take(100) {
+            t.bid = 0.0;
+        }
+        let ultimo_valido_ts = ticks[ticks.len() - 101].ts_ms;
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let stats = run_booktick_replay(&ticks, &genome, None, &cfg());
+        assert_eq!(stats.close_reason, ReplayCloseReason::TapeEnd);
+        assert_eq!(
+            stats.executed_ticks,
+            (ticks.len() - 100) as u64,
+            "solo los aceptados por la aduana cuentan"
+        );
+        assert_eq!(stats.executed_last_ts, ultimo_valido_ts);
     }
 }
