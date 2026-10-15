@@ -5087,15 +5087,40 @@ impl GodEngineCore {
                                 close_dir_sign
                             }),
                     ];
-                    self.ppo_engine.update_policy(
+                    let spectral_entropy_val = self.arena.coins[coin_id]
+                        .spectral_entropy
+                        .load(Ordering::Relaxed);
+                    let safe_entropy = if spectral_entropy_val.is_finite() && spectral_entropy_val >= 0.0 {
+                        spectral_entropy_val
+                    } else {
+                        self.feature_engines[coin_id].entropy.current()
+                    };
+                    let capital = self.arena.unified_capital.load(Ordering::Relaxed);
+                    let plasticity_params = dark_alpha_engine::NeuroPlasticityParams {
+                        min_multiplier: self.arena.config.plasticity_min_mult.load(Ordering::Relaxed),
+                        max_multiplier: self.arena.config.plasticity_max_mult.load(Ordering::Relaxed),
+                        center_entropy: 0.50,
+                        steepness: self.arena.config.plasticity_steepness.load(Ordering::Relaxed),
+                        micro_boost_cap: 0.25,
+                        micro_capital_ref: 50.0,
+                    };
+                    let plasticity_mult = dark_alpha_engine::NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
+                        &plasticity_params,
+                        safe_entropy,
+                        capital,
+                    );
+                    let ppo_params = dark_alpha_engine::PpoHyperParams {
+                        alpha_ema: self.arena.config.ppo_alpha_ema.load(Ordering::Relaxed),
+                        learning_rate: self.arena.config.ppo_learning_rate.load(Ordering::Relaxed),
+                        clip_eps: self.arena.config.ppo_clip_eps.load(Ordering::Relaxed),
+                        min_weight_clip: self.arena.config.ppo_weight_min_clip.load(Ordering::Relaxed),
+                    };
+                    self.ppo_engine.update_policy_with_params(
                         realized_ret,
                         &ppo_close_features,
                         if is_long { 1.0 } else { -1.0 },
-                        1.0,
-                        0.05,
-                        0.01,
-                        0.20,
-                        0.01,
+                        plasticity_mult,
+                        &ppo_params,
                     );
                     let cur_features = self.feature_engines[coin_id].get_features();
                     let mut online_feat = [0.0f32; 64];

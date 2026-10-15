@@ -47,6 +47,42 @@ pub mod atomic_compat {
     }
 }
 
+use serde::{Deserialize, Serialize};
+
+/// Hiperparámetros configurables y desacoplados del motor de política PPO en vivo.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct PpoHyperParams {
+    pub alpha_ema: f64,
+    pub learning_rate: f64,
+    pub clip_eps: f64,
+    pub min_weight_clip: f64,
+}
+
+impl Default for PpoHyperParams {
+    fn default() -> Self {
+        Self {
+            alpha_ema: 0.05,
+            learning_rate: 0.01,
+            clip_eps: 0.20,
+            min_weight_clip: 0.01,
+        }
+    }
+}
+
+impl PpoHyperParams {
+    #[inline(always)]
+    pub fn validate(&self) -> bool {
+        self.alpha_ema.is_finite()
+            && (0.001..=1.0).contains(&self.alpha_ema)
+            && self.learning_rate.is_finite()
+            && (0.00001..=1.0).contains(&self.learning_rate)
+            && self.clip_eps.is_finite()
+            && (0.005..=0.50).contains(&self.clip_eps)
+            && self.min_weight_clip.is_finite()
+            && (0.0001..=1.0).contains(&self.min_weight_clip)
+    }
+}
+
 use atomic_compat::AtomicF64;
 
 /// 🧬 MOTOR DE APRENDIZAJE POR REFUERZO CONTINUO PPO (ONLINE PPO POLICY ENGINE)
@@ -70,6 +106,33 @@ impl OnlinePpoPolicyEngine {
             ],
             reward_ema: AtomicF64::new(0.0),
         }
+    }
+
+    /// Actualiza la política PPO utilizando el conjunto de hiperparámetros desacoplados
+    #[inline(always)]
+    pub fn update_policy_with_params(
+        &self,
+        reward: f64,
+        state_features: &[f64; 5],
+        action_sign: f64,
+        plasticity_multiplier: f64,
+        params: &PpoHyperParams,
+    ) {
+        let safe_params = if params.validate() {
+            *params
+        } else {
+            PpoHyperParams::default()
+        };
+        self.update_policy(
+            reward,
+            state_features,
+            action_sign,
+            plasticity_multiplier,
+            safe_params.alpha_ema,
+            safe_params.learning_rate,
+            safe_params.clip_eps,
+            safe_params.min_weight_clip,
+        );
     }
 
     /// Actualiza la política PPO basada en el resultado de la operación realizada (reward)
