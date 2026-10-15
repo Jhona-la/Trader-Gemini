@@ -30,6 +30,9 @@
 //! Convención: una prueba que hoy falla por la causa de un hallazgo lleva
 //! `#[ignore = "OPEN F3.x-nn (dueño): causa"]` con el assert intacto.
 
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::{
     symbol_registry::{update_registry, SymbolSpec},
     GlobalArena,
@@ -54,6 +57,8 @@ fn arena(capital: f64) -> Arc<GlobalArena> {
         }])
     });
     let a = GlobalArena::build_in_own_stack(capital);
+    // Synthetic decision clock; all payoff samples are available.
+    a.coins[0].last_tick_timestamp_ms.store(100_000, Relaxed);
     a.coins[0].current_price.store(100.0, Relaxed);
     a.coins[0].current_atr.store(1.0, Relaxed);
     a.coins[0].hurst_exponent.store(0.5, Relaxed);
@@ -84,6 +89,7 @@ fn orden(conf: f64) -> (f64, f64) {
     let a = arena(1000.0);
     let intent = SignalIntent {
         signal: SignalType::Long,
+        net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
         confidence: conf,
         win_probability: 0.9, // misma probabilidad calibrada
         expected_duration_ms: 60_000,

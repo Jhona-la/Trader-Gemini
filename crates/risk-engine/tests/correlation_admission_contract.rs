@@ -1,4 +1,7 @@
 //! Domain and live-admission contracts, no orders, exchange or engine process.
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::{state::CompactTick, GlobalArena};
 use risk_engine::correlation_guard::{
     rho_efectivo_para_agregacion, rho_promedio, CorrelationGuardEngine,
@@ -107,6 +110,8 @@ fn fixture() -> (Arc<GlobalArena>, SignalIntent) {
         )
     });
     let arena = GlobalArena::build_in_own_stack(100.0);
+    // Synthetic decision clock: the payoff cohort is available by 100_000 ms.
+    arena.coins[0].last_tick_timestamp_ms.store(100_000, Relaxed);
     arena.coins[0].current_price.store(100.0, Relaxed);
     arena.coins[0].current_atr.store(1.0, Relaxed);
     arena.coins[0].hurst_exponent.store(0.5, Relaxed);
@@ -130,6 +135,7 @@ fn fixture() -> (Arc<GlobalArena>, SignalIntent) {
         arena,
         SignalIntent {
             signal: SignalType::Long,
+            net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
             confidence: 0.9,
             expected_duration_ms: 60_000,
             ..SignalIntent::default()

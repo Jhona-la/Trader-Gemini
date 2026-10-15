@@ -9,8 +9,13 @@ use risk_engine::{RiskEngine, cramer_lundberg::EstimadorSiniestros};
 use signal_engine::{SignalIntent, SignalType};
 use std::sync::{Arc, Once, atomic::Ordering::Relaxed};
 
+#[path = "../../risk-engine/tests/support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 const A: usize = 19;
 const B: usize = 20;
+// Fixture event clock, after both the close cohort and the paired history.
+const DECISION_TIME_MS: u64 = 100_000_000;
 
 fn est_maduro() -> EstimadorSiniestros {
     let mut est = EstimadorSiniestros::new();
@@ -244,8 +249,13 @@ fn risk_fixture() -> (Arc<GlobalArena>, SignalIntent) {
     coin.current_price.store(100.0, Relaxed);
     coin.current_atr.store(1.0, Relaxed);
     coin.hurst_exponent.store(0.5, Relaxed);
+    coin.last_tick_timestamp_ms.store(DECISION_TIME_MS, Relaxed);
+    // Declared cohort: 75 closes at +4%, 25 at -6% net, each with $100
+    // entry notional. These sums and the intent's payoff share that cohort.
     coin.metrics.trade_count.store(100, Relaxed);
     coin.metrics.profit_factor.store(2.0, Relaxed);
+    coin.metrics.gross_wins.store(300.0, Relaxed);
+    coin.metrics.gross_losses.store(150.0, Relaxed);
     coin.metrics.win_rate.store(0.75, Relaxed);
     coin.metrics.kelly_fraction.store(0.15, Relaxed);
     arena.config.latency_penalty_ms.store(0.0, Relaxed);
@@ -267,6 +277,7 @@ fn risk_fixture() -> (Arc<GlobalArena>, SignalIntent) {
             signal: SignalType::Long,
             confidence: 0.9,
             expected_duration_ms: 60_000,
+            net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
             ..SignalIntent::default()
         },
     )

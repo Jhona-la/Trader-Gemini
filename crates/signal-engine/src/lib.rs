@@ -37,5 +37,5 @@ pub use proyeccion_espectral::{ProyeccionEspectralEngine, ProyeccionEspectralPar
 pub use quantum_oscillator::{QuantumOscillatorEngine, QuantumOscillatorParams};
 pub use renyi_tsallis_entropy::{RenyiTsallisEntropyEngine, RenyiTsallisEntropyParams};
 pub use stat_arb::StatArbEngine;
-pub use strategy_core::{SignalIntent, SignalType, TradeHorizon};
+pub use strategy_core::{NetPayoffEstimate, NetPayoffSource, SignalIntent, SignalType, TradeHorizon};
 pub use supersonic_shockwave::{SupersonicShockwaveEngine, SupersonicShockwaveParams};

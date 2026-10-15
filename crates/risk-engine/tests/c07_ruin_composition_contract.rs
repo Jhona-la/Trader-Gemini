@@ -4,6 +4,9 @@
 //! Recovery R4 (2026-10-07): only provenance header changed; test bodies retained.
 //! RED/GREEN on the integration tree is pending; the original "rerun" label is not evidence.
 //! No engine process, model, tape, exchange or claim of economic performance.
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::GlobalArena;
 use risk_engine::{RiskEngine, ValidatedOrder, REJECT_COUNTERS_DIR, REJ_INVALID_INPUT};
 use signal_engine::{SignalIntent, SignalType};
@@ -26,6 +29,8 @@ fn fixture(capital: f64, side: SignalType) -> (Arc<GlobalArena>, SignalIntent) {
     });
     let arena = GlobalArena::build_in_own_stack(capital);
     let coin = &arena.coins[0];
+    // Synthetic decision clock, independent of the intent payload.
+    coin.last_tick_timestamp_ms.store(100_000, Relaxed);
     coin.current_price.store(100.0, Relaxed);
     coin.current_atr.store(1.0, Relaxed);
     coin.hurst_exponent.store(0.5, Relaxed);
@@ -43,6 +48,7 @@ fn fixture(capital: f64, side: SignalType) -> (Arc<GlobalArena>, SignalIntent) {
     let dir = if side == SignalType::Long { 1.0 } else { -1.0 };
     let intent = SignalIntent {
         signal: side, confidence: 0.9, win_probability: 0.9,
+        net_payoff: Some(net_payoff_fixture::positive(0, side)),
         expected_duration_ms: 60_000,
         tp_price_target: 100.0 + dir * 2.0,
         sl_price_target: 100.0 - dir,

@@ -865,6 +865,12 @@
   - Crate huérfano detectado: `crates/flight-recorder` (duplicado e inerte, reemplazado funcionalmente por `crates/telemetry-server/src/flight_recorder.rs`).
   - Inventario de 5 bloqueadores críticos por hardcoding priorizados para las fases siguientes: Hurst rígidamente clasificado en 0.45/0.52 sin intervalo nulo, 5 umbrales discretos en Rama 15 `confluencia_resonante` (H2-11), bandas fijas de bps en Senior Volatilidad (10/40 bps) y Senior Ejecución (35/65 bps), y parámetros estáticos en `CouncilParams`.
 - **Verificación**: `cargo check --workspace --all-targets` 100% limpio en 1m02s; 148 tests en `risk-engine` pasando al 100%.
+## 2026-10-13 — Codex LG5: probabilidad de cierre y payoff económico (en curso)
+
+- Base `3327300a`: CI exacto completed/success en Unit `38373292385` y Replay `38373292396`; no se heredan a un candidato nuevo.
+- Rama `codex/lg5-payoff-evidence-1013`, WT `spectral-evidence-1011`. Contrato: `SignalIntent.net_payoff` opcional, media neta por nocional por moneda/lado/procedencia. Scores y horizontes permanecen continuos como atributos; la media es agregada, no calibración condicional ni LCB.
+- Corrección propuesta: EV madura consume media neta y prima `(m−1)c`; desconocido no se fabrica a partir de Platt/P(TP), cero no equivale a ausencia, sonda presupuestada preservada. Estado aditivo; legacy sin magnitudes no se reconstruye. Implementación y pruebas en curso.
+- [Auditoría LG5](../docs/audit/LG5_PROBABILIDADES_PAGOS_EV_2026-10-13.md). Reservas C-F5/core/estado y AGY F7 preservadas por hunks; no se modifica freno/e-CUSUM. Rentabilidad y Kelly óptimo siguen sin demostrar.
 
 ## 2026-10-13 — Codex LH-12: reanclaje matemático y edad individual de calibración (candidato)
 
@@ -6986,3 +6992,10 @@ Main remoto confirmado en 88f8812199eea80333d0c13d910ec9f7c1796900 mediante push
 ## R4 — referencias cerradas y sincronización — 2026-10-13
 
 Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales a T1. Root cerró sus refs espectrales e históricas; SI cerró platt-age-evidence-1013 local/remota. Worktrees, modelos, genomas y 229 recibos históricos conservados. Remoto observado: sólo main. CI de f59 pendiente; ninguna aprobación heredada. [Cierre efectivo y recibos](../docs/audit/CIERRE_R4_REFERENCIAS_2026-10-13.md). Esta última actualización documental se publica por rama temporal propia y su SHA/cierre se verifican externamente.
+
+<!-- ROOT-LG5-MAIN-20261015-CANDIDATE -->
+## 2026-10-15 — ROOT LG5: T1 histórico terminado, composición actual pendiente
+
+T1 016 terminó sobre971:2/0; backtest/T1 137/0/2 y Core/risk015 1006/0/53. No se capturó conteo exacto de genes;18/144 es R4 anterior. 145binarios y seis commits LG5 respaldados externamente. Nueva rama codex/root-lg5-main-2026-10-15 compone b9+971 en WT aislado; remoto4096 sólo añade2docs/+25 y debe incorporarse. No GREEN de composición ni publicación en este corte.
+
+Core revisado contra ambos padres; riesgo preserva main LH04/OU/SPRT/headroom. Fixtures maduros con payoff explícito y reloj causal independiente. Corregidas unidades de tests margen y stop; cota LH04 original permanece para verificar posible RED por topes/stop efectivo. Nuevo candidato Ω127: olvidoNaN por API directa puede envenenar EWMA tras pareja fresca; contratoRED en preparación, sin certificado. BASE15 reserva multifractal/simulator y compilación pesada; ROOT coordina ventana antes de Cargo. [Detalle y siguientes gates](../docs/audit/INTEGRACION_LG5_MAIN_2026-10-15.md).

@@ -1,4 +1,7 @@
 //! Admission contracts; no exchange, market data, or live engine.
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::GlobalArena;
 use risk_engine::RiskEngine;
 use signal_engine::{SignalIntent, SignalType};
@@ -22,6 +25,8 @@ fn fixture() -> (std::sync::Arc<GlobalArena>, SignalIntent) {
         ])
     });
     let arena = GlobalArena::build_in_own_stack(100.0);
+    // Synthetic decision clock: the payoff cohort is available by 100_000 ms.
+    arena.coins[0].last_tick_timestamp_ms.store(100_000, Relaxed);
     arena.coins[0].current_price.store(100.0, Relaxed);
     arena.coins[0].current_atr.store(1.0, Relaxed);
     arena.coins[0].hurst_exponent.store(0.5, Relaxed);
@@ -37,6 +42,7 @@ fn fixture() -> (std::sync::Arc<GlobalArena>, SignalIntent) {
     arena.config.kelly_clamp_max.store(0.25, Relaxed);
     let intent = SignalIntent {
         signal: SignalType::Long,
+        net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
         confidence: 0.9,
         expected_duration_ms: 60_000,
         ..SignalIntent::default()
@@ -49,6 +55,7 @@ fn finite_baseline_accepts_both_directions() {
     let (arena, mut intent) = fixture();
     for side in [SignalType::Long, SignalType::Short] {
         intent.signal = side;
+        intent.net_payoff = Some(net_payoff_fixture::positive(0, side));
         let out = RiskEngine::new(100.0).evaluate_quantum_order(0, &intent, &arena);
         assert_eq!(out.signal, side, "{}", risk_engine::reject_report());
         assert!(out.volume_usd > 0.0);
@@ -60,6 +67,7 @@ fn target_on_wrong_side_or_at_entry_cannot_pass() {
     let (arena, mut intent) = fixture();
     for side in [SignalType::Long, SignalType::Short] {
         intent.signal = side;
+        intent.net_payoff = Some(net_payoff_fixture::positive(0, side));
         for (tp, sl) in if side == SignalType::Long {
             [(99.0, 99.0), (101.0, 101.0), (100.0, 99.0), (101.0, 100.0)]
         } else {
@@ -81,12 +89,16 @@ fn target_on_wrong_side_or_at_entry_cannot_pass() {
 #[test]
 fn actual_explicit_payoff_must_pass_the_ev_gate() {
     let (arena, mut intent) = fixture();
-    // p=.9, gain=.0001, loss=.01 => gross EV=-.00091, before costs.
+    // Ten synthetic closes: nine +.0001 gross and one -.01 gross, each
+    // paying .00082 roundtrip. Measured net mean=-.00173, for either side.
     for side in [SignalType::Long, SignalType::Short] {
         intent.signal = side;
         let d = if side == SignalType::Long { 1.0 } else { -1.0 };
         intent.tp_price_target = 100.0 + d * 0.01;
         intent.sl_price_target = 100.0 - d;
+        let mut returns = [0.0001 - 0.00082; 10];
+        returns[9] = -0.01 - 0.00082;
+        intent.net_payoff = Some(net_payoff_fixture::measured(0, side, &returns));
         assert_eq!(
             RiskEngine::new(100.0)
                 .evaluate_quantum_order(0, &intent, &arena)
@@ -102,6 +114,7 @@ fn valid_explicit_targets_are_preserved() {
     let (arena, mut intent) = fixture();
     for side in [SignalType::Long, SignalType::Short] {
         intent.signal = side;
+        intent.net_payoff = Some(net_payoff_fixture::positive(0, side));
         let d = if side == SignalType::Long { 1.0 } else { -1.0 };
         intent.tp_price_target = 100.0 + d * 2.0;
         intent.sl_price_target = 100.0 - d;
@@ -255,6 +268,9 @@ fn diagnostics_distinguish_input_geometry_and_economic_vetoes() {
         intent.confidence = confidence;
         intent.tp_price_target = tp;
         intent.sl_price_target = sl;
+        if index == risk_engine::REJ_EV {
+            intent.net_payoff = Some(net_payoff_fixture::measured(0, intent.signal, &[-0.00173; 100]));
+        }
         assert_eq!(
             RiskEngine::new(100.0)
                 .evaluate_quantum_order(0, &intent, &arena)
@@ -281,8 +297,9 @@ fn test_suavizado_c1_micro_suelo_no_tiene_escalon_discreto() {
 #[test]
 fn test_fase_sonda_ev_prior_gate_contract() {
     let (arena, mut intent) = fixture();
+    intent.net_payoff = None;
     // Caso A: Fase de sonda con n=1 y trade perdedor previo (w=0.0).
-    // Con geometría de diseño (EV prior viable > comisiones), la sonda NO entra en deadlock
+    // Con geometría de diseño (TP > comisiones), la sonda NO entra en deadlock
     // y es admitida con sizing mínimo.
     arena.coins[0].metrics.trade_count.store(1, Relaxed);
     arena.coins[0].metrics.win_rate.store(0.0, Relaxed);
@@ -296,9 +313,9 @@ fn test_fase_sonda_ev_prior_gate_contract() {
     );
     assert!(out_sonda.volume_usd > 0.0);
 
-    // Caso B: Fase de sonda con geometría degradada donde EV prior <= fee.
+    // Caso B: Fase de sonda con geometría degradada donde TP <= fee.
     // Demuestra que rej(4) SÍ es alcanzable en la fase de sonda si el payoff no cubre comisiones.
-    // tp = 100.01 (0.01%), sl = 99.00 (1.0%): ev_prior = 0.55*0.0001 - 0.45*0.01 = -0.004445 <= fee.
+    // tp = 100.01 (0.01%), sl = 99.00 (1.0%): TP=.0001 < fee=.00082.
     intent.tp_price_target = 100.01;
     intent.sl_price_target = 99.00;
     let out_degradada = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
@@ -309,7 +326,8 @@ fn test_fase_sonda_ev_prior_gate_contract() {
     );
 
     // Caso C: Fuera de fase de sonda (n=20 maduro con w=0.0).
-    // El LCB estricto detecta ausencia de edge estadístico y rechaza con rej(4).
+    // Veinte cierres netos negativos aportan evidencia económica y rechazan con rej(4).
+    intent.net_payoff = Some(net_payoff_fixture::measured(0, intent.signal, &[-0.01; 20]));
     arena.coins[0].metrics.trade_count.store(20, Relaxed);
     intent.tp_price_target = 0.0;
     intent.sl_price_target = 0.0;

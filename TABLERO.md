@@ -400,3 +400,8 @@ Main remoto confirmado en 88f8812199eea80333d0c13d910ec9f7c1796900 mediante push
 ## R4 — referencias cerradas y sincronización — 2026-10-13
 
 Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales a T1. Root cerró sus refs espectrales e históricas; SI cerró platt-age-evidence-1013 local/remota. Worktrees, modelos, genomas y 229 recibos históricos conservados. Remoto observado: sólo main. CI de f59 pendiente; ninguna aprobación heredada. [Cierre efectivo y recibos](docs/audit/CIERRE_R4_REFERENCIAS_2026-10-13.md). Esta última actualización documental se publica por rama temporal propia y su SHA/cierre se verifican externamente.
+
+<!-- ROOT-LG5-MAIN-20261015-CANDIDATE -->
+## ROOT LG5 — 2026-10-15, candidato local
+
+T1 histórico971 finalizó (2/0; agregado016137/0/2, conteo genes no capturado). Integración b9+971 en rama propia, revisión estática Core/risk realizada; runtime/main/CI pendientes. Oráculos margen/stop corregidos; cota LH04 por verificar. Candidato nuevo Ω127: olvidoNaN→EWMA contaminada, reproducción preparada. BASE15 independiente en multifractal/simulator; coordinar recursos y main. [Estado, evidencia y gates](docs/audit/INTEGRACION_LG5_MAIN_2026-10-15.md).

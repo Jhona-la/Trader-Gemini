@@ -312,3 +312,10 @@ crates/
 ---
 
 *Plan Maestro Canónico V3 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
+
+<!-- ROOT-LG5-MAIN-20261015-CANDIDATE -->
+## Adenda ROOT: distinguir candidato, evidencia y publicación — 2026-10-15
+
+[Integración LG5, T1 histórico y contratos ceros/replay](audit/INTEGRACION_LG5_MAIN_2026-10-15.md): composición local b9+971 pendiente de all-targets/suites y publicación. T1 histórico016 terminado2/0, sin conteo genes capturado; no hereda18/144 de R4. Preservar Ω127/128 y avancesdocumentales4096. BASE15 lleva inventario/fundamentos y dos fuentes MF/simulador; ROOT lleva composición Core/risk/payoff y dominio numérico de parámetros espectrales.
+
+Las garantías financieras, de ruina, latencia y autoevolución en el cuerpo del plan requieren evidencia específica del candidato. Este ciclo no acredita crecimiento100%/72h, riesgo0, nulo condicional, familia efectiva ni latencia de producción. Sin bypass de vetos, umbralesT1 o promoción de modelos. Cada archivo completo sigue pendiente salvo su recibo individual; revisar un hunk o inventariar una ruta no constituye auditoría integral.

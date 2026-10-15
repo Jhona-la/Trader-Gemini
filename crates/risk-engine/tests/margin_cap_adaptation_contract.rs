@@ -7,6 +7,9 @@
 //! 4. Inmunidad total contra NaN, infinitos y valores degenerados (fail-closed a defaults seguros).
 //! 5. Monotonía estricta a lo largo del espectro continuo de capital ($5 a $10,000 USD).
 
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::symbol_registry::SymbolSpec;
 use quantum_arena::GlobalArena;
 use risk_engine::capital_regime::{
@@ -17,6 +20,8 @@ use risk_engine::RiskEngine;
 use signal_engine::{SignalIntent, SignalType};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Once};
+
+const DECISION_TIME_MS: u64 = 200_000;
 
 static INIT_SYMBOLS: Once = Once::new();
 
@@ -72,6 +77,8 @@ fn build_fixture(capital: f64) -> (Arc<GlobalArena>, SignalIntent) {
         confidence: 0.85,
         win_probability: 0.70,
         expected_duration_ms: 60_000,
+        // Retornos netos observados sintéticos; no se reconstruyen de PF/WR.
+        net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
         ..SignalIntent::default()
     };
 
@@ -120,16 +127,17 @@ fn test_margin_cap_dynamic_registry_overrides_micro() {
 
     // 1. Con ratio canónico por defecto (0.25):
     let mut engine_default = RiskEngine::new(13.0);
-    let out_default = engine_default.evaluate_quantum_order(0, &intent, &arena);
+    let out_default = engine_default.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     assert_eq!(out_default.signal, SignalType::Long);
-    let margin_default = out_default.volume_usd / out_default.leverage;
+    // ValidatedOrder.volume_usd es margen; nocional = margen * leverage.
+    let margin_default = out_default.volume_usd;
 
     // 2. Con override adaptativo por activo c0:micro_margin_cap_ratio = 0.35 (35% de capital)
     arena.registry.set_for_coin(0, "micro_margin_cap_ratio", 0.35);
     let mut engine_override = RiskEngine::new(13.0);
-    let out_override = engine_override.evaluate_quantum_order(0, &intent, &arena);
+    let out_override = engine_override.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     assert_eq!(out_override.signal, SignalType::Long);
-    let margin_override = out_override.volume_usd / out_override.leverage;
+    let margin_override = out_override.volume_usd;
 
     // Con ratio expandido a 0.35, el margen seguro es 13.0 * 0.35 = 4.55 USD (vs 3.25 USD).
     assert!(
