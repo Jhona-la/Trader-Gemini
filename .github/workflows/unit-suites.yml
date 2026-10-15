@@ -76,3 +76,7 @@ jobs:
           cargo +nightly-2026-06-30 --version
       - name: Tests (${{ matrix.grupo }})
         run: cargo +nightly-2026-06-30 test ${{ matrix.paquetes }} --locked -- --test-threads=1
+      - name: Terminal equity report contracts
+        if: matrix.grupo == 'entrenador'
+        # Exercise the production report with synthetic equity, without loading tapes.
+        run: cargo +nightly-2026-06-30 test -p trader-gemini-v5 --bin backtest_windows --locked si_b15_report_contract -- --test-threads=1
