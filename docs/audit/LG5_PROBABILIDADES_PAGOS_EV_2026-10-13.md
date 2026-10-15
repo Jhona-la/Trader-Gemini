@@ -4,6 +4,55 @@ Fecha: 13 de octubre de 2026. Base congelada: `3327300a24a6c65bac2971fce236140e4
 Rama: `codex/lg5-payoff-evidence-1013`, worktree `spectral-evidence-1011`.
 Estado inicial: implementación y validación en curso; este plan no es un certificado.
 
+## Reconciliación del 15 de octubre: ejecución histórica y composición nueva
+
+Las ejecuciones del 13 de octubre sí terminaron sobre
+`971ec9ed212eabb888a3f306739d37e84be44e57`. Los recibos completos, el gate
+estricto y las copias de binarios delimitan estos resultados:
+
+| Recibo | Resultado | SHA256 del JSON |
+| --- | --- | --- |
+| `015-lg5-fixture-full-core-risk` | 1006 aprobadas, 0 fallidas, 53 ignoradas; 137 binarios | `ad72f47e81cc20d7ac839084613752ca53d1de502689daa06e67fed67c046a15` |
+| `016-lg5-fixture-backtest-t1` | 137 aprobadas, 0 fallidas, 2 ignoradas; 8 binarios | `5f9fe9c40485ba0e003d8a0e0ac3b9fd662237bedb6fb564cea4c2c2b617ed74` |
+
+Ambos registran exit 0 y las 12 invariantes y 8 guardas verdaderas. T1 ejecutó
+sus dos pruebas, con el umbral vigente íntegro. Al faltar `--nocapture`, el
+log no fija el número exacto de genes: no se le atribuye el 18/144 histórico
+de R4. Model Before/After 016 conservan identidad
+`122d97e15473e37f4e23d9b44fde83bb8ac1b8d12a9ff53801e6b2ee8f0c401f`;
+ese inventario no prueba carga de modelos ni escrituras transitorias.
+
+ROOT retuvo ambos recibos, 145 binarios y un bundle de los seis commits LG5
+en `C:/Users/jhona/.codex/audit-evidence/trader-gemini/lg5-terminal-015-016-2026-10-15-8649302e-7e22-4a2d-9f52-807d0f2207f7`.
+Manifest SHA256 `bc3b665e4e7b9ed4e1cacee0fbc47a6ed3616c71ee2cbebb0657e353a18449d0`;
+su sello y hash fueron releídos durante esta reconciliación. El bundle requiere
+la base 332 y las copias no certifican procedencia de la caché al ejecutable.
+
+Main avanzó a `310f729ff7c998c5b3d3a0f1722422910bcffebb`. El candidato compuesto
+ROOT `e443c4d526ef41c5865c5a3d7ee597a07afac163` conserva LG5 y los cambios
+posteriores LH04, OU, SPRT y headroom. Su [informe de integración](INTEGRACION_LG5_MAIN_2026-10-15.md)
+gobierna ese frente. Los resultados 015/016 no se transfieren al árbol nuevo;
+faltan sus pruebas dinámicas y publicación. El CI de 332 fue verde; el de
+main310 observado el 15 de octubre tenía Unit success y Replay pending,
+sin certificar el candidato LG5 compuesto.
+
+El presupuesto fijo de cinco cierres descrito abajo corresponde a la base
+332 y al corte 971. Main310/e443 usa un máximo configurable en [1,50] y salida
+anticipada mediante SPRT sobre signos. Esa prueba no demuestra esperanza neta
+positiva ni sustituye la evidencia de pagos. La recuperación de cohortes sin
+evidencia sigue pendiente. La prima `(m−1)c` evita restar por segunda vez los
+costes ya incluidos; no ajusta automáticamente cambios futuros de comisiones,
+slippage, geometría o política de salida.
+
+Revisión estática independiente de e443: Matrix es idéntica a 971 y el gate
+económico mantiene moneda/lado/disponibilidad y ausencia distinta de cero.
+LH04 usa PF puntual, Wilson y su propio orden de multiplicadores y topes;
+Matrix usa PF_LCB y mezcla heurística. No se intercambian sus helpers:
+`half*clamp(f)` y `clamp(half*f)` pueden diferir. El riesgo de stop realizado
+es `margen*L*abs(entry−stop)/entry`; el objetivo LH04 basado en SL genética
+debe distinguirse de la geometría final y de los topes de margen. Las pruebas
+de unidades/caps del candidato siguen bajo validación del integrador.
+
 ## Diagnóstico y objetivo
 
 El productor Platt recibe `(score, net_trade_pnl > 0, close_time)`.

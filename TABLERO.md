@@ -405,3 +405,5 @@ Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales 
 ## ROOT LG5 — 2026-10-15, candidato local
 
 T1 histórico971 finalizó (2/0; agregado016137/0/2, conteo genes no capturado). Integración b9+971 en rama propia, revisión estática Core/risk realizada; runtime/main/CI pendientes. Oráculos margen/stop corregidos; cota LH04 por verificar. Candidato nuevo Ω127: olvidoNaN→EWMA contaminada, reproducción preparada. BASE15 independiente en multifractal/simulator; coordinar recursos y main. [Estado, evidencia y gates](docs/audit/INTEGRACION_LG5_MAIN_2026-10-15.md).
+
+ROOT metadata004: a457 compone main940 y fixes98b6/d14d/4a73; all-targets premerge0/708inputs/7m40s. Pruebas nuevas pendientes: protegido004 falló antes de tests, no RED funcional. Merge docs b46+SI7af2 pendiente de check; BASE15 PR65 y T3 PR64/Hawkes siguen sus gates antes de full/T1 final. No publicar como GREEN, ni cerrar nulo/familia/épocas/Wald/MTM causal o meta económica con estos checks.
