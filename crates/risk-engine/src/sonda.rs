@@ -82,7 +82,18 @@ pub fn sprt_bernoulli(
     alpha: f64,
     beta: f64,
 ) -> SprtDecision {
-    if n == 0 || k > n || p0 <= 0.0 || p0 >= 1.0 || p1 <= 0.0 || p1 >= 1.0 || p1 <= p0 {
+    if !p0.is_finite()
+        || !p1.is_finite()
+        || !alpha.is_finite()
+        || !beta.is_finite()
+        || n == 0
+        || k > n
+        || p0 <= 0.0
+        || p0 >= 1.0
+        || p1 <= 0.0
+        || p1 >= 1.0
+        || p1 <= p0
+    {
         return SprtDecision::ContinuarMuestreo;
     }
     let a_err = alpha.clamp(1e-4, 0.49);
@@ -147,6 +158,10 @@ pub fn sprt_evalua_salida_sonda(arena: &GlobalArena, coin_id: usize) -> bool {
     if !wr.is_finite() || wr <= 0.0 {
         return false;
     }
+    // La interpretación Wald de la primitiva exige conteos Bernoulli observados
+    // y supuestos de muestreo/nulo adecuados. win_rate puede ser una posterior:
+    // round(n * wr) es un pseudoconteo, no recupera las victorias observadas.
+    // Esta corrección numérica no certifica IID, épocas, nulo ni errores Wald.
     let k = ((n as f64) * wr).round() as usize;
     let k = k.min(n);
 
@@ -154,10 +169,16 @@ pub fn sprt_evalua_salida_sonda(arena: &GlobalArena, coin_id: usize) -> bool {
         .registry
         .get_value_or("sonda_sprt_p0", 0.50)
         .clamp(0.10, 0.90);
+    // At p0=0.90, binary64 addition can place p0+0.05 above 0.95.
+    // Keep the existing upper limit while constructing an ordered interval.
+    let p1_lower = (p0 + 0.05).min(0.95);
+    if !p1_lower.is_finite() || p1_lower <= p0 || p1_lower > 0.95 {
+        return false;
+    }
     let p1 = arena
         .registry
         .get_value_or("sonda_sprt_p1", 0.70)
-        .clamp(p0 + 0.05, 0.95);
+        .clamp(p1_lower, 0.95);
     let alpha = arena
         .registry
         .get_value_or("sonda_sprt_alpha", 0.05)
