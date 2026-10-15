@@ -56,6 +56,9 @@ jobs:
       - name: Accepted-prefix terminal mark contract
         # Check the quote boundary before the other independent contract suites.
         run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --test booktick_terminal_mark_contract -- --test-threads=1
+      - name: Terminal equity ledger contracts
+        # Includes the open-position zero-MTM case before unrelated suites.
+        run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --lib sol_r5_02_tests -- --test-threads=1
       - name: Model publication and loader contracts
         # Existing model contracts are preserved below.
         # Synthetic models only. No real-model inventory, training or promotion.

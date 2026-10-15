@@ -102,18 +102,19 @@ fn assert_valuation(case: TerminalCase, trade_only: bool, is_long: bool, entry: 
     let mut injected = false;
     let mut admitted_at_injection = None;
     let mut admitted_at_end = None;
-    let stats: ReplayStats = run_booktick_replay_with_observer(
-        &rows,
-        &genome,
-        None,
-        &cfg,
-        |i, core| {
+    let stats: ReplayStats =
+        run_booktick_replay_with_observer(&rows, &genome, None, &cfg, |i, core| {
             visited += 1;
             let fe = &core.feature_engines[0];
             let state = (fe.tick_count, fe.current_ts, fe.last_price);
             if i == INJECTION_ROW {
                 assert!(!injected);
-                assert!(core.arena.coins.iter().all(|coin| !coin.positions.is_any_open()));
+                assert!(
+                    core.arena
+                        .coins
+                        .iter()
+                        .all(|coin| !coin.positions.is_any_open())
+                );
                 assert_eq!(
                     core.arena.unified_capital.load(Ordering::Relaxed).to_bits(),
                     CAPITAL.to_bits(),
@@ -123,9 +124,19 @@ fn assert_valuation(case: TerminalCase, trade_only: bool, is_long: bool, entry: 
                 // Position::open does not represent an exchange fill or debit
                 // an entry fee. The oracle below starts from this known cash
                 // balance and charges only the existing estimated exit cost.
-                let (tp, sl) = if is_long { (1_000.0, 1.0) } else { (1.0, 1_000.0) };
+                let (tp, sl) = if is_long {
+                    (1_000.0, 1.0)
+                } else {
+                    (1.0, 1_000.0)
+                };
                 core.arena.coins[0].positions.slot_0.open(
-                    is_long, entry, QUANTITY, MARGIN, LAST_PREFIX_TS, tp, sl,
+                    is_long,
+                    entry,
+                    QUANTITY,
+                    MARGIN,
+                    LAST_PREFIX_TS,
+                    tp,
+                    sl,
                 );
                 assert!(core.arena.coins[0].positions.slot_0.is_open());
                 final_arena = Some(Arc::clone(&core.arena));
@@ -134,10 +145,12 @@ fn assert_valuation(case: TerminalCase, trade_only: bool, is_long: bool, entry: 
             if i == ROWS - 1 {
                 admitted_at_end = Some(state);
             }
-        },
-    );
+        });
 
-    assert_eq!(visited, ROWS, "this fixture must reach the terminal observer");
+    assert_eq!(
+        visited, ROWS,
+        "this fixture must reach the terminal observer"
+    );
     assert!(injected, "the open-position precondition is mandatory");
     let arena = final_arena.expect("observer must retain the actual final arena");
     let (accepted_count, accepted_clock, accepted_price) =
@@ -145,17 +158,31 @@ fn assert_valuation(case: TerminalCase, trade_only: bool, is_long: bool, entry: 
     assert_eq!(admitted_at_end, admitted_at_injection);
     let additional_accepted = u64::from(matches!(case, TerminalCase::EqualClockAccepted));
     let events_per_row = if trade_only { 1u64 } else { 2u64 };
-    assert_eq!(accepted_count, (VALID_PREFIX as u64 + additional_accepted) * events_per_row);
+    assert_eq!(
+        accepted_count,
+        (VALID_PREFIX as u64 + additional_accepted) * events_per_row
+    );
     assert_eq!(accepted_clock, LAST_PREFIX_TS);
-    let expected_mark = if additional_accepted == 1 { CASE_MARK } else { PREFIX_MARK };
+    let expected_mark = if additional_accepted == 1 {
+        CASE_MARK
+    } else {
+        PREFIX_MARK
+    };
     assert!((accepted_price - expected_mark).abs() < 1e-10);
 
     let cash = arena.unified_capital.load(Ordering::Relaxed);
     assert_eq!(cash.to_bits(), CAPITAL.to_bits());
-    assert_eq!(stats.trades, 0, "the fixture must not rely on an executed close");
+    assert_eq!(
+        stats.trades, 0,
+        "the fixture must not rely on an executed close"
+    );
     assert_eq!(stats.net_pnl.to_bits(), 0.0f64.to_bits());
     assert_eq!(stats.open_positions_end, 1);
-    let slot = arena.coins[0].positions.slot_0.snapshot().expect("slot must remain open");
+    let slot = arena.coins[0]
+        .positions
+        .slot_0
+        .snapshot()
+        .expect("slot must remain open");
     assert_eq!(slot.is_long, is_long);
     assert_eq!(slot.entry_price.to_bits(), entry.to_bits());
     assert_eq!(slot.quantity.to_bits(), QUANTITY.to_bits());
@@ -227,7 +254,11 @@ fn equal_terminal_timestamp_can_supply_a_new_accepted_mark() {
 // Identity and economic exposure of the same open occupant. Defensive TP/SL
 // levels may evolve naturally; this fixture never disables that management.
 fn open_slot_identity(arena: &GlobalArena) -> [u64; 8] {
-    let slot = arena.coins[0].positions.slot_0.snapshot().expect("break fixture requires an open slot");
+    let slot = arena.coins[0]
+        .positions
+        .slot_0
+        .snapshot()
+        .expect("break fixture requires an open slot");
     [
         slot.generation,
         u64::from(slot.is_long),
@@ -262,51 +293,81 @@ fn replay_until_cash_break(trade_only: bool, suffix_mark: f64, suffix_step_ms: u
     let mut final_arena: Option<Arc<GlobalArena>> = None;
     let mut injected_identity = None;
     let mut identity_before_break = None;
-    let stats = run_booktick_replay_with_observer(
-        &rows,
-        &genome,
-        None,
-        &cfg,
-        |i, core| {
-            visited += 1;
-            assert!(i <= 1, "the replay consumed a row after the cash break");
-            if i == 0 {
-                assert!(core.arena.coins.iter().all(|coin| !coin.positions.is_any_open()));
-                assert_eq!(core.arena.unified_capital.load(Ordering::Relaxed).to_bits(), CAPITAL.to_bits());
-                core.arena.coins[0].positions.slot_0.open(
-                    true, PREFIX_MARK, BREAK_QUANTITY, BREAK_MARGIN, BASE_TS, 110.0, 90.0,
-                );
-                core.arena.used_margin.store(BREAK_MARGIN, Ordering::Relaxed);
-                injected_identity = Some(open_slot_identity(&core.arena));
-                final_arena = Some(Arc::clone(&core.arena));
-            } else {
-                // Mandatory fixture validation: event zero and its host gate
-                // must have preserved this exact occupant and exposure. An
-                // exit or rollback is a fixture failure, never a passing case.
-                let identity = open_slot_identity(&core.arena);
-                assert_eq!(Some(identity), injected_identity);
-                assert_eq!(core.arena.unified_capital.load(Ordering::Relaxed).to_bits(), CAPITAL.to_bits());
-                assert_eq!(core.arena.used_margin.load(Ordering::Relaxed).to_bits(), BREAK_MARGIN.to_bits());
-                assert_eq!(core.feature_engines[0].tick_count, if trade_only { 1 } else { 2 });
-                assert_eq!(core.feature_engines[0].current_ts, BASE_TS);
-                identity_before_break = Some(identity);
-                // A controlled accounting shock exercises the existing cash
-                // stop. It is not a claim of naturally generated trading loss.
-                // No position is opened here and no defense is reconfigured.
-                core.arena.unified_capital.store(BREAK_CASH, Ordering::Relaxed);
-            }
-        },
-    );
+    let stats = run_booktick_replay_with_observer(&rows, &genome, None, &cfg, |i, core| {
+        visited += 1;
+        assert!(i <= 1, "the replay consumed a row after the cash break");
+        if i == 0 {
+            assert!(
+                core.arena
+                    .coins
+                    .iter()
+                    .all(|coin| !coin.positions.is_any_open())
+            );
+            assert_eq!(
+                core.arena.unified_capital.load(Ordering::Relaxed).to_bits(),
+                CAPITAL.to_bits()
+            );
+            core.arena.coins[0].positions.slot_0.open(
+                true,
+                PREFIX_MARK,
+                BREAK_QUANTITY,
+                BREAK_MARGIN,
+                BASE_TS,
+                110.0,
+                90.0,
+            );
+            core.arena
+                .used_margin
+                .store(BREAK_MARGIN, Ordering::Relaxed);
+            injected_identity = Some(open_slot_identity(&core.arena));
+            final_arena = Some(Arc::clone(&core.arena));
+        } else {
+            // Mandatory fixture validation: event zero and its host gate
+            // must have preserved this exact occupant and exposure. An
+            // exit or rollback is a fixture failure, never a passing case.
+            let identity = open_slot_identity(&core.arena);
+            assert_eq!(Some(identity), injected_identity);
+            assert_eq!(
+                core.arena.unified_capital.load(Ordering::Relaxed).to_bits(),
+                CAPITAL.to_bits()
+            );
+            assert_eq!(
+                core.arena.used_margin.load(Ordering::Relaxed).to_bits(),
+                BREAK_MARGIN.to_bits()
+            );
+            assert_eq!(
+                core.feature_engines[0].tick_count,
+                if trade_only { 1 } else { 2 }
+            );
+            assert_eq!(core.feature_engines[0].current_ts, BASE_TS);
+            identity_before_break = Some(identity);
+            // A controlled accounting shock exercises the existing cash
+            // stop. It is not a claim of naturally generated trading loss.
+            // No position is opened here and no defense is reconfigured.
+            core.arena
+                .unified_capital
+                .store(BREAK_CASH, Ordering::Relaxed);
+        }
+    });
 
     assert_eq!(visited, 2, "the fixture must terminate at the intended row");
     let arena = final_arena.expect("the first event must retain the actual arena");
     assert!(identity_before_break.is_some());
-    assert_eq!(stats.open_positions_end, 1, "an empty position set cannot prove terminal MTM");
+    assert_eq!(
+        stats.open_positions_end, 1,
+        "an empty position set cannot prove terminal MTM"
+    );
     assert_eq!(Some(open_slot_identity(&arena)), identity_before_break);
-    assert_eq!(arena.used_margin.load(Ordering::Relaxed).to_bits(), BREAK_MARGIN.to_bits());
+    assert_eq!(
+        arena.used_margin.load(Ordering::Relaxed).to_bits(),
+        BREAK_MARGIN.to_bits()
+    );
     let cash = arena.unified_capital.load(Ordering::Relaxed);
     assert_eq!(cash.to_bits(), BREAK_CASH.to_bits());
-    assert_eq!(stats.trades, 0, "the fixture must retain the injected position");
+    assert_eq!(
+        stats.trades, 0,
+        "the fixture must retain the injected position"
+    );
     assert_eq!(stats.net_pnl.to_bits(), 0.0f64.to_bits());
 
     let taker = arena.config.live_taker_fee.load(Ordering::Relaxed);
@@ -329,8 +390,8 @@ fn replay_until_cash_break(trade_only: bool, suffix_mark: f64, suffix_step_ms: u
 
 #[test]
 fn unvisited_suffix_after_cash_break_cannot_change_terminal_mark() {
-    // FIXTURE PENDING EXECUTION: public APIs were checked against the base;
-    // compilation and survival through the real core/envelope remain unverified.
+    // Baseline693 reached the MTM assertion with the injected position alive
+    // through the real core/envelope; the mutated suffix supplied a false mark.
     // Keep every precondition above: never replace one with an empty-slot
     // branch, ignore, disabled defense, or a successful early return.
     std::thread::Builder::new()
@@ -342,8 +403,14 @@ fn unvisited_suffix_after_cash_break_cannot_change_terminal_mark() {
                 let changed_suffix = replay_until_cash_break(trade_only, 200.0, 10_000);
                 assert_eq!(unchanged_suffix.open_positions_end, 1);
                 assert_eq!(changed_suffix.open_positions_end, 1);
-                assert_eq!(unchanged_suffix.mtm_unrealized_pnl.to_bits(), changed_suffix.mtm_unrealized_pnl.to_bits());
-                assert_eq!(unchanged_suffix.final_capital.to_bits(), changed_suffix.final_capital.to_bits());
+                assert_eq!(
+                    unchanged_suffix.mtm_unrealized_pnl.to_bits(),
+                    changed_suffix.mtm_unrealized_pnl.to_bits()
+                );
+                assert_eq!(
+                    unchanged_suffix.final_capital.to_bits(),
+                    changed_suffix.final_capital.to_bits()
+                );
             }
         })
         .expect("spawn cash-break contract worker")

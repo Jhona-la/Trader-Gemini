@@ -11417,5 +11417,13 @@ antes.
   ROOT autoriza paso dirigido de marca tras all-targets, conservando selección
   original y demás gates. Intento previo preservado, sin cancelación; producción
   todavía sin fix de marca, Cargo local reservado y mainΩ131 con CI propio pendiente.
+- Corte posterior693: RED causal2/3/0 con supervivencia real del cash-break y
+  dos fallos del renderer, cinco logs terminales sellados (manifest8ac95256).
+  Se aplican marca del prefijo aceptado y retorno/log/composición de equity,
+  más guarda posfiltro anterior a modelos/B&H/FRED y contratos numéricos.
+  Veinte contratos del consumidor y tres de ledger se seleccionan en CI;
+  GREEN posterior e integración main pendientes, sin Cargo local.
+  Default del productor/sol_cont intactos; MX-06 general sigue abierto para
+  evolution/votes_export. No incorporar fixture ajeno para declarar verde global.
 
 

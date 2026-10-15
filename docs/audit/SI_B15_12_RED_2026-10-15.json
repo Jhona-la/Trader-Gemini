@@ -1,0 +1,127 @@
+{
+  "classification": "functional_RED_expected_terminal_mark_causality",
+  "pull_request": "https://github.com/Jhona-la/Trader-Gemini/pull/68",
+  "head": "bf9e2ba8fed32172c2b23f5044fe36c81a2297d9",
+  "head_tree": "628bf59d272ffc7e8f3a0a0ae89962c5600bd477",
+  "actual_checkout": "693fd646994da23b82f1c736297a1be9d1f94c16",
+  "actual_checkout_tree": "3f68da2ce5e3f9d520b330b782a4467c7458170d",
+  "actual_checkout_parents": [
+    "dfa4ae6b7d5f89757cb24a70c012cc90534e376e",
+    "bf9e2ba8fed32172c2b23f5044fe36c81a2297d9"
+  ],
+  "run": 38804036288,
+  "job": 116660134254,
+  "job_url": "https://github.com/Jhona-la/Trader-Gemini/actions/runs/38804036288/job/116660134254",
+  "step": "Accepted-prefix terminal mark contract",
+  "command": "cargo +nightly-2026-06-30 test -p backtest-engine --locked --test booktick_terminal_mark_contract -- --test-threads=1",
+  "conclusion": "failure",
+  "exit_code": 1,
+  "completed_utc": "2026-10-15T21:19:17Z",
+  "summary": {
+    "passed": 2,
+    "failed": 3,
+    "ignored": 0,
+    "filtered": 0,
+    "measured_seconds": 0.25
+  },
+  "controls_passed": [
+    "equal_terminal_timestamp_can_supply_a_new_accepted_mark",
+    "terminal_mark_values_an_open_position_from_the_accepted_prefix"
+  ],
+  "failures": [
+    {
+      "contract": "backward_terminal_timestamp_cannot_supply_the_mark",
+      "assertion_line": 175,
+      "first_case": {
+        "trade_only": true,
+        "long": true,
+        "entry": 90
+      },
+      "actual_mtm": 23.8776,
+      "expected_mtm": 19.88,
+      "validated_before_failure": [
+        "observer reaches full tape",
+        "feature admission count, clock and price",
+        "cash bit-exact at C0",
+        "trades=0, closed net PnL=0",
+        "one real open position with unchanged side, entry and quantity"
+      ],
+      "coverage_limit": "Fails on the first case; subsequent modes/sides/entries are not credited as RED."
+    },
+    {
+      "contract": "crossed_terminal_book_cannot_supply_the_mark",
+      "assertion_line": 175,
+      "first_case": {
+        "trade_only": true,
+        "long": true,
+        "entry": 90
+      },
+      "actual_mtm": 23.8776,
+      "expected_mtm": 19.88,
+      "validated_before_failure": [
+        "observer reaches full tape",
+        "feature admission count, clock and price",
+        "cash bit-exact at C0",
+        "trades=0, closed net PnL=0",
+        "one real open position with unchanged side, entry and quantity"
+      ],
+      "coverage_limit": "Fails on the first case; subsequent modes/sides/entries are not credited as RED."
+    },
+    {
+      "contract": "unvisited_suffix_after_cash_break_cannot_change_terminal_mark",
+      "assertion_line": 321,
+      "first_case": {
+        "trade_only": true,
+        "suffix_mark": 200
+      },
+      "actual_mtm": 0.9988,
+      "expected_mtm": -0.0006000000000000001,
+      "validated_before_failure": [
+        "observer visited exactly two rows",
+        "same real open slot identity/generation before and after break",
+        "used margin unchanged",
+        "cash bit-exact at -1",
+        "trades=0, closed net PnL=0",
+        "one open position survives actual Core/envelope"
+      ],
+      "control": "The preceding suffix=100 invocation completed all its valuation assertions.",
+      "coverage_limit": "The mutated suffix=200 case fails before final equity identity and final cross-tape comparisons; dual-event mode is not credited as RED."
+    }
+  ],
+  "log": "bf9-116660134254.log",
+  "log_sha256": "cbfe2a66dc1dd49e4f628e86189f4429f0a0a612af29d3e9da99aa9757dd9f1b",
+  "log_representation": "Complete decoded job log, UTF-8 without BOM, CRLF normalized to LF and trailing line breaks canonicalized to one final LF.",
+  "all_targets_check": "success before this contract; log identifies the exact checkout",
+  "related_report_red_receipt_local": "B15_13_RED_693_RECEIPT.json",
+  "related_report_red_job_url": "https://github.com/Jhona-la/Trader-Gemini/actions/runs/38804036523/job/116660137290",
+  "report_red_on_this_checkout": {
+    "original_trainer_passed": 84,
+    "parent_contracts_passed": 0,
+    "parent_contracts_failed": 2,
+    "nested_children_are_not_parent_contracts": true,
+    "renderer_log_sha256": "2e79c0914809533edf132cdc2996e645e160d790e5ec2c0196725b490d0e4fa5"
+  },
+  "historical_report_red_receipt": "SI_B15_13_RED_2026-10-15.json",
+  "related_report_red_receipt_sha256": "df9a54b40ff84df156caf8f33235b505c3a2227660144ccfed0a25cc097bedb3",
+  "unrelated_core": {
+    "run": 38804036523,
+    "job": 116660136801,
+    "conclusion": "failure",
+    "completed_utc": "2026-10-15T21:10:51Z",
+    "suite": "evidence_expiry_contract",
+    "summary": {
+      "passed": 10,
+      "failed": 3,
+      "ignored": 0
+    },
+    "log": "bf9-116660136801.log",
+    "log_sha256": "cb9886f144c417fb362def7ee030a51528d3c9a818ca813033659c00182466c9",
+    "owner": "ROOT/BASE; not B15-12 RED"
+  },
+  "scope": "Real Core replay with controlled open-position injection/accounting shock and estimated exit friction. Not naturally generated entries/loss, liquidated fills, calibrated probability, OOS profitability, global Core atomicity or consistent doubling.",
+  "production_fix_applied_at_red": false,
+  "local_cargo_or_rustc_started": false,
+  "main_publication_verified": false,
+  "log_storage": "Complete normalized logs and sealed source evidence retained by the owner; public job URL identifies original run. Local log filenames are not repository artifacts.",
+  "evidence_archive_manifest_sha256": "8ac952560864270a0d0f238ea38304bee5786d29f13e4fa3d5106718f19b5f89"
+}
