@@ -1299,9 +1299,10 @@ impl RiskEngine {
         // este margen. Sin evidencia (n < mínimo, p̂ degenerado, PF ≤ 0):
         // f = 0 y el camino sizing/micro/exploración existente queda
         // INTACTO — fail-closed al estado actual.
-        const Z_LCB_LH04: f64 = 1.64;
-        const HALF_KELLY_LH04: f64 = 0.5;
-        const MUESTRAS_MIN_LH04: f64 = 10.0;
+        // OLA Ω127: Desacoplamiento de constantes estáticas hacia el registro omnisciente con fallbacks canónicos.
+        let z_lcb_lh04 = arena.registry.get_or("lh04_z_lcb", 1.64);
+        let half_kelly_lh04 = arena.registry.get_or("lh04_kelly_fraction", 0.5);
+        let muestras_min_lh04 = arena.registry.get_or("lh04_muestras_min", 10.0);
         let lh04_wr = arena.coins[coin_id]
             .metrics
             .win_rate
@@ -1319,21 +1320,21 @@ impl RiskEngine {
         let mut lh04_b = f64::NAN;
         if lh04_wr.is_finite()
             && (0.0..=1.0).contains(&lh04_wr)
-            && lh04_n >= MUESTRAS_MIN_LH04
+            && lh04_n >= muestras_min_lh04
             && lh04_pf.is_finite()
             && lh04_pf > 0.0
             && lh04_wr > 0.0
             && lh04_wr < 1.0
         {
             let n = lh04_n;
-            let z2 = Z_LCB_LH04 * Z_LCB_LH04;
+            let z2 = z_lcb_lh04 * z_lcb_lh04;
             let denom = 1.0 + z2 / n;
             let centro = (lh04_wr + z2 / (2.0 * n)) / denom;
-            let radio = Z_LCB_LH04
+            let radio = z_lcb_lh04
                 * ((lh04_wr * (1.0 - lh04_wr) / n + z2 / (4.0 * n * n)).sqrt() / denom);
             let p_lcb = (centro - radio).clamp(0.0, 1.0);
             let b = lh04_pf * (1.0 - lh04_wr) / lh04_wr;
-            let f_raw = HALF_KELLY_LH04 * (p_lcb - (1.0 - p_lcb) / b).max(0.0);
+            let f_raw = half_kelly_lh04 * (p_lcb - (1.0 - p_lcb) / b).max(0.0);
             let q_lh04 = crate::ruin::conservative_loss_q(lh04_wr, lh04_n);
             let tope_lh04 = crate::ruin::clamp_ruin(1.0, q_lh04);
             lh04_f = if f_raw.is_finite() { f_raw.min(tope_lh04) } else { 0.0 };
@@ -1384,7 +1385,7 @@ impl RiskEngine {
                 // cuando el stop ceñido lo haría inalcanzable, la orden
                 // se coloca al máximo que el axioma permite (no se
                 // rechaza) — riesgo realizado acotado por exposición.
-                let tope_margen_lh04 = if lh04_n >= 10.0 {
+                let tope_margen_lh04 = if lh04_n >= muestras_min_lh04 {
                     crate::ruin::clamp_ruin(
                         1.0,
                         crate::ruin::conservative_loss_q(lh04_wr, lh04_n),

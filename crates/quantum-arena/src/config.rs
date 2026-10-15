@@ -267,6 +267,17 @@ pub struct QuantumConfig {
     pub perceptron_ganancia: AtomicF64,
     pub espectral_masa_minima: AtomicF64,
     pub espectral_masa_plena: AtomicF64,
+
+    // --- Universo Espectral Multiactivo y Régimen Continuo (Ola Ω127) ---
+    pub espectral_recencia_x: AtomicF64,
+    pub espectral_olvido: AtomicF64,
+    pub espectral_muestras_maduras: AtomicF64,
+    pub espectral_familia_veto: AtomicF64,
+    pub regime_w_accel_fast: AtomicF64,
+    pub regime_w_adverse_tide: AtomicF64,
+    pub regime_w_coherence_collapse: AtomicF64,
+    pub regime_w_micro_anti: AtomicF64,
+    pub regime_min_margin_floor: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -559,6 +570,15 @@ impl QuantumConfig {
             perceptron_ganancia: AtomicF64::new(2.5),
             espectral_masa_minima: AtomicF64::new(0.20),
             espectral_masa_plena: AtomicF64::new(0.35),
+            espectral_recencia_x: AtomicF64::new(0.5),
+            espectral_olvido: AtomicF64::new(1.0 / 64.0),
+            espectral_muestras_maduras: AtomicF64::new(30.0),
+            espectral_familia_veto: AtomicF64::new(2175.0),
+            regime_w_accel_fast: AtomicF64::new(0.35),
+            regime_w_adverse_tide: AtomicF64::new(0.30),
+            regime_w_coherence_collapse: AtomicF64::new(0.20),
+            regime_w_micro_anti: AtomicF64::new(0.15),
+            regime_min_margin_floor: AtomicF64::new(0.05),
         }
     }
 

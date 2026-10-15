@@ -78,11 +78,71 @@ pub const FAMILIA_VETO_GRUPO: usize =
 /// Guardia de recencia del emparejamiento: los bloques de ambos deben
 /// cerrar dentro de 0.5·τ el uno del otro (contemporáneos) (bloques de τ no solapados y
 /// aproximadamente contemporáneos — sino el par mezcla regímenes).
-const RECENCIA_X: f64 = 0.5;
+pub const RECENCIA_X: f64 = 0.5;
 /// Olvido del IC cruzado: media de ~64 muestras de par (vida media ≈ 44),
 /// la misma ventana que la habilidad univariante de #594.
-const OLVIDO: f64 = 1.0 / 64.0;
-const MUESTRAS_MADURAS: u64 = 30;
+pub const OLVIDO: f64 = 1.0 / 64.0;
+pub const MUESTRAS_MADURAS: u64 = 30;
+
+/// Parámetros dinámicos desacoplados y adaptables para el Universo Espectral Multiactivo (Ola Ω127).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EspectralMultiactivoParams {
+    /// Multiplicador de recencia para el emparejamiento contemporáneo (|Δts| ≤ recencia_x · τ).
+    pub recencia_x: f64,
+    /// Factor de olvido EWMA para los momentos no centrados de retornos cruzados.
+    pub olvido: f64,
+    /// Número mínimo de muestras acumuladas para considerar madura la escala-par.
+    pub muestras_maduras: u64,
+    /// Override opcional de la familia de hipótesis para el gate Ville de veto de grupo.
+    /// Si es `None`, se utiliza el estándar `FAMILIA_VETO_GRUPO`.
+    pub familia_veto_override: Option<usize>,
+}
+
+impl Default for EspectralMultiactivoParams {
+    fn default() -> Self {
+        Self {
+            recencia_x: RECENCIA_X,
+            olvido: OLVIDO,
+            muestras_maduras: MUESTRAS_MADURAS,
+            familia_veto_override: None,
+        }
+    }
+}
+
+impl EspectralMultiactivoParams {
+    pub fn from_registry_or_default(registry: &crate::state::OmniscientRegistry) -> Self {
+        let mut p = Self::default();
+        let rec = registry.get_or("espectral_recencia_x", p.recencia_x);
+        if rec.is_finite() && rec > 0.0 {
+            p.recencia_x = rec.clamp(0.05, 2.0);
+        }
+        let olv = registry.get_or("espectral_olvido", p.olvido);
+        if olv.is_finite() && olv > 0.0 {
+            p.olvido = olv.clamp(1e-4, 0.5);
+        }
+        let mm = registry.get_or("espectral_muestras_maduras", p.muestras_maduras as f64);
+        if mm.is_finite() && mm >= 1.0 {
+            p.muestras_maduras = mm as u64;
+        }
+        let fam = registry.get_or("espectral_familia_veto", 0.0);
+        if fam.is_finite() && fam >= 1.0 {
+            p.familia_veto_override = Some(fam as usize);
+        }
+        p
+    }
+}
+
+/// Función suave C^1 de Hermite cúbico (smoothstep) para la credibilidad continua de la
+/// coherencia espectral en función del número de muestras observadas vs madurez de diseño.
+/// Erradica discontinuidades de umbral duro tipo acantilado (0.0 en n=0 hasta 1.0 en n>=muestras_maduras).
+#[inline]
+pub fn credibilidad_continua(n: u64, muestras_maduras: u64) -> f64 {
+    if muestras_maduras == 0 {
+        return 1.0;
+    }
+    let u = (n as f64 / muestras_maduras as f64).clamp(0.0, 1.0);
+    u * u * (3.0 - 2.0 * u)
+}
 
 #[derive(Clone, Copy, Default)]
 struct IcEscala {
@@ -100,20 +160,30 @@ struct IcEscala {
 }
 
 impl IcEscala {
+    #[inline]
     fn acumular(&mut self, ra: f64, rb: f64) {
+        self.acumular_con_olvido(ra, rb, OLVIDO);
+    }
+
+    fn acumular_con_olvido(&mut self, ra: f64, rb: f64, olvido: f64) {
         // Causal: la señal es el signo del IC VIGENTE (pre-observación).
         let senal = if self.eab >= 0.0 { 1.0 } else { -1.0 };
         // EProceso clasifica el signo y preserva cero/no-finito como abstención.
         let retorno = ra * rb;
         self.e.observar(senal, retorno);
-        self.ea2 += (ra * ra - self.ea2) * OLVIDO;
-        self.eb2 += (rb * rb - self.eb2) * OLVIDO;
-        self.eab += (ra * rb - self.eab) * OLVIDO;
+        self.ea2 += (ra * ra - self.ea2) * olvido;
+        self.eb2 += (rb * rb - self.eb2) * olvido;
+        self.eab += (ra * rb - self.eab) * olvido;
         self.n = self.n.saturating_add(1);
     }
 
+    #[inline]
     fn ic(&self) -> Option<f64> {
-        if self.n < MUESTRAS_MADURAS {
+        self.ic_con_madurez(MUESTRAS_MADURAS)
+    }
+
+    fn ic_con_madurez(&self, min_muestras: u64) -> Option<f64> {
+        if self.n < min_muestras {
             return None;
         }
         let den = self.ea2 * self.eb2;
@@ -131,11 +201,16 @@ impl IcEscala {
     /// #665 (F2-B8): gate histórico con umbral M/alfa. La garantía de
     /// Ville está condicionada al nulo del score y a cubrir la familia real;
     /// no prueba significancia de Pearson ni dependencia presente del grupo.
+    #[inline]
     fn ic_veto(&self) -> Option<f64> {
-        if !self.e.significativo_familia(FAMILIA_VETO_GRUPO) {
+        self.ic_veto_con_params(FAMILIA_VETO_GRUPO, MUESTRAS_MADURAS)
+    }
+
+    fn ic_veto_con_params(&self, familia: usize, min_muestras: u64) -> Option<f64> {
+        if !self.e.significativo_familia(familia) {
             return None;
         }
-        self.ic()
+        self.ic_con_madurez(min_muestras)
     }
 }
 
@@ -175,6 +250,7 @@ pub struct EspectralMultiactivo {
     enlaces: Vec<EnlacePar>,
     /// Último bloque maduro por (moneda, escala): (ts de cierre, retorno).
     ultimo: Vec<[(u64, f64); ESCALAS]>,
+    params: EspectralMultiactivoParams,
 }
 
 impl Default for EspectralMultiactivo {
@@ -185,17 +261,32 @@ impl Default for EspectralMultiactivo {
 
 impl EspectralMultiactivo {
     pub fn new(max_coins: usize) -> Self {
+        Self::with_params(max_coins, EspectralMultiactivoParams::default())
+    }
+
+    pub fn with_params(max_coins: usize, params: EspectralMultiactivoParams) -> Self {
         let num_pairs = total_pairs(max_coins);
         Self {
             max_coins,
             enlaces: vec![EnlacePar::default(); num_pairs],
             ultimo: vec![[(0u64, 0.0f64); ESCALAS]; max_coins],
+            params,
         }
+    }
+
+    #[inline]
+    pub fn params(&self) -> &EspectralMultiactivoParams {
+        &self.params
+    }
+
+    #[inline]
+    pub fn update_params(&mut self, params: EspectralMultiactivoParams) {
+        self.params = params;
     }
 
     /// Registra la maduración del bloque `escala` de `moneda` (ts de cierre
     /// y retorno) y la empareja contra el último bloque maduro de cada otra
-    /// moneda con guardia de recencia 0.5·τ. Detecta borde por ts.
+    /// moneda con guardia de recencia parametrizada (default 0.5·τ). Detecta borde por ts.
     pub fn observar_maduracion(
         &mut self,
         moneda: usize,
@@ -217,7 +308,7 @@ impl EspectralMultiactivo {
             return; // duplicado o replay anterior: abstención antes de escribir
         }
         self.ultimo[moneda][escala] = (ts_ms, r);
-        let tolerancia = (RECENCIA_X * tau_ms) as u64;
+        let tolerancia = (self.params.recencia_x * tau_ms) as u64;
         for otra in 0..self.max_coins {
             if otra == moneda {
                 continue;
@@ -256,7 +347,7 @@ impl EspectralMultiactivo {
                 continue;
             }
             enlace.consumido[escala] = (ts_a, ts_b);
-            enlace.escalas[escala].acumular(ra, rb);
+            enlace.escalas[escala].acumular_con_olvido(ra, rb, self.params.olvido);
         }
     }
 
@@ -267,7 +358,28 @@ impl EspectralMultiactivo {
         }
         let (min_c, max_c) = if a < b { (a, b) } else { (b, a) };
         let idx = pair_idx(min_c, max_c, self.max_coins);
-        self.enlaces.get(idx)?.escalas[escala].ic()
+        self.enlaces.get(idx)?.escalas[escala].ic_con_madurez(self.params.muestras_maduras)
+    }
+
+    /// Coherencia espectral par ponderada con factor de credibilidad continuo C^1.
+    /// Retorna `Some((ic, peso_credibilidad))` donde `peso_credibilidad` se calcula
+    /// con un smoothstep de Hermite cúbico entre 0.0 y 1.0 según las muestras acumuladas,
+    /// permitiendo al decisor continuo evitar discontinuidades de borde.
+    pub fn coherencia_ponderada_par(&self, a: usize, b: usize, escala: usize) -> Option<(f64, f64)> {
+        if a >= self.max_coins || b >= self.max_coins || a == b || escala >= ESCALAS {
+            return None;
+        }
+        let (min_c, max_c) = if a < b { (a, b) } else { (b, a) };
+        let idx = pair_idx(min_c, max_c, self.max_coins);
+        let enlace = self.enlaces.get(idx)?;
+        let item = &enlace.escalas[escala];
+        let den = item.ea2 * item.eb2;
+        if !(den.is_finite() && den > 0.0) {
+            return None;
+        }
+        let ic = (item.eab / den.sqrt()).clamp(-1.0, 1.0);
+        let cred = credibilidad_continua(item.n, self.params.muestras_maduras);
+        Some((ic, cred))
     }
 
     /// H1-1 (RONDA 3): n de muestras acumuladas del par-escala — el conteo
@@ -284,7 +396,7 @@ impl EspectralMultiactivo {
     }
 
     /// #665 (F2-B8): versión de VETO — el IC sólo cuenta si su e-proceso
-    /// cruza el umbral de FAMILIA (C(N,2)·banda). Telemetría pura sigue
+    /// cruza el umbral de FAMILIA (C(N,2)·banda o configurable). Telemetría pura sigue
     /// usando `coherencia_par`.
     pub fn coherencia_par_veto(&self, a: usize, b: usize, escala: usize) -> Option<f64> {
         if a >= self.max_coins || b >= self.max_coins || a == b || escala >= ESCALAS {
@@ -292,7 +404,8 @@ impl EspectralMultiactivo {
         }
         let (min_c, max_c) = if a < b { (a, b) } else { (b, a) };
         let idx = pair_idx(min_c, max_c, self.max_coins);
-        self.enlaces.get(idx)?.escalas[escala].ic_veto()
+        let familia = self.params.familia_veto_override.unwrap_or(FAMILIA_VETO_GRUPO);
+        self.enlaces.get(idx)?.escalas[escala].ic_veto_con_params(familia, self.params.muestras_maduras)
     }
 
     fn escalas_en_banda(lo: f64, hi: f64) -> impl Iterator<Item = usize> {
@@ -315,7 +428,7 @@ impl EspectralMultiactivo {
             let idx = pair_idx(min_c, max_c, self.max_coins);
             if let Some(enlace) = self.enlaces.get(idx) {
                 for k in Self::escalas_en_banda(lo, hi) {
-                    if let Some(ic) = enlace.escalas[k].ic() {
+                    if let Some(ic) = enlace.escalas[k].ic_con_madurez(self.params.muestras_maduras) {
                         suma += ic.abs();
                         cuenta += 1;
                     }
@@ -343,7 +456,7 @@ impl EspectralMultiactivo {
             let idx = pair_idx(min_c, max_c, self.max_coins);
             if let Some(enlace) = self.enlaces.get(idx) {
                 for k in Self::escalas_en_banda(lo, hi) {
-                    if let Some(ic) = enlace.escalas[k].ic() {
+                    if let Some(ic) = enlace.escalas[k].ic_con_madurez(self.params.muestras_maduras) {
                         if mejor.map(|(_, _, m)| ic.abs() > m.abs()).unwrap_or(true) {
                             mejor = Some((otra, SPECTRUM_SCALES_MS[k], ic));
                         }

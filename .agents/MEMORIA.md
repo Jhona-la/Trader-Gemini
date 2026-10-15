@@ -1,5 +1,46 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω127 — Desacoplamiento Continuo C1 de Espectral Multiactivo, Campo de Régimen Espectral y Sizing de Riesgo LH-04
+
+- **Ola Integrada y Certificada**:
+  * **Diagnóstico Forense y Causa Raíz**:
+    1. En `crates/quantum-arena/src/espectral_multiactivo.rs`: las constantes `RECENCIA_X = 0.5`, `OLVIDO = 1.0 / 64.0`, `MUESTRAS_MADURAS = 30` y `FAMILIA_VETO_GRUPO = 2175` estaban fijadas estáticamente en el módulo. La condición `self.n < MUESTRAS_MADURAS` creaba una discontinuidad dura de acantilado $C^0$: con 29 muestras la correlación se reportaba como inexistente (`None`), y con 30 pasaba repentinamente a validez total, impidiendo la utilización de información de credibilidad continua en el continuo de Hilbert. Además, `FAMILIA_VETO_GRUPO = 2175` fijaba un umbral de Ville de $2175 / 0.05 = 43500$, asfixiando la sensibilidad del veto de grupo (`qo_613_rho_tau` inerte).
+    2. En `crates/quantum-arena/src/spectral_regime.rs`: los pesos de componentes de crash-ness (`0.35, 0.30, 0.20, 0.15`), la ventana mínima de regularización Hermite $C^1$ (`5000.0 ms`) y la escala/piso de contracción de margen (`0.95` y `0.05`) eran números mágicos hardcodeados.
+    3. En `crates/quantum-arena/src/config.rs`: faltaban los 9 campos atómicos correspondientes para permitir mutación adaptativa y lock-free desde el optimizador o genoma.
+    4. En `crates/god-engine-core/src/lib.rs`: el ciclo caliente evaluaba `from_spectrum` de forma estática y `espectral_ma` no recibía sincronización de parámetros en `sync_navier_stokes_and_microstructure_params`.
+    5. En `crates/risk-engine/src/lib.rs`: el dimensionado de espacio de riesgo LH-04 forzaba constantes locales `Z_LCB_LH04 = 1.64`, `HALF_KELLY_LH04 = 0.5` y `MUESTRAS_MIN_LH04 = 10.0` sin conexión al registro omnisciente.
+  * **Solución Arquitectónica y Matemática**:
+    1. En `crates/quantum-arena/src/espectral_multiactivo.rs`:
+       - Definido struct `EspectralMultiactivoParams` (`recencia_x`, `olvido`, `muestras_maduras`, `familia_veto_override`) y constructor `from_registry_or_default`.
+       - Implementada la función suave $C^1$ derivable de Hermite cúbico (smoothstep):
+         $$\mu(n) = 3u^2 - 2u^3, \quad u = \text{clamp}\left(\frac{n}{n_{\text{maduras}}}, 0, 1\right)$$
+       - Implementado método continuo `coherencia_ponderada_par(&self, a, b, escala) -> Option<(f64, f64)>` retornando `(ic, credibilidad)`.
+       - Integrados `with_params`, `update_params`, `params()` y actualizados `observar_maduracion`, `coherencia_par`, `coherencia_par_veto`, `acople_banda`, `mejor_acople`.
+    2. En `crates/quantum-arena/src/spectral_regime.rs`:
+       - Definido struct `SpectralRegimeParams` (`w_accel_fast`, `w_adverse_tide`, `w_coherence_collapse`, `w_micro_anti`, `tau_min_drift_res_ms`, `margin_contraction_scale`, `min_margin_floor`) y `from_registry_or_default`.
+       - Implementado `from_spectrum_with_params` con normalización convexa en el símplex $\Delta^3$.
+       - Implementados `long_margin_multiplier_with_params`, `short_margin_multiplier_with_params` y `margin_multiplier_with_params`.
+    3. En `crates/quantum-arena/src/lib.rs`:
+       - Re-exportados `EspectralMultiactivoParams`, `credibilidad_continua`, `SpectralRegimeParams`, `LegacyRegimeView`.
+    4. En `crates/quantum-arena/src/config.rs`:
+       - Añadidos 9 campos atómicos lock-free en `QuantumConfig`, inicializados en `from_genome`.
+    5. En `crates/god-engine-core/src/lib.rs`:
+       - Añadido campo `regime_params: SpectralRegimeParams` en `GodEngineCore` (zero cost en hot-path).
+       - Sincronizados `self.espectral_ma` y `self.regime_params` en `sync_navier_stokes_and_microstructure_params` y publicados en el registro omnisciente.
+       - Actualizadas las llamadas a `from_spectrum_with_params` en los ticks de eventos.
+    6. En `crates/risk-engine/src/lib.rs`:
+       - Desacopladas `z_lcb_lh04`, `half_kelly_lh04` y `muestras_min_lh04` con resolución dinámica desde el registro omnisciente y fallbacks canónicos.
+  * **Certificación Contractual**:
+    - `espectral_multiactivo_regime_adaptation_contract.rs` (4/4 pass):
+      1. `contrato_espectral_multiactivo_adaptacion_dinamica`: Reconfiguración adaptativa de madurez de par y recencia sin reiniciar estado.
+      2. `contrato_credibilidad_continua_hermite_c1_smoothstep`: Monotonía estricta, derivada cero en extremos y punto de inflexión exacto a mitad de madurez.
+      3. `contrato_coherencia_ponderada_par_preserva_continuo`: Exposición honesta de coherencia ponderada continua para muestras intermedias.
+      4. `contrato_spectral_regime_params_normalizacion_convexa_y_margen`: Normalización en símplex y preservación del piso contra asfixia.
+    - Suite completa `quantum-arena` (100% verde).
+    - Suite completa `risk-engine` (100% verde, incluidos todos los contratos LH-04 y veto logic).
+    - `god-engine-core` contratos espectrales (`cf3_rho_tau_orden`, `evidence_expiry_contract`, `spectral_zero_replay_contract` - pass).
+    - `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω126 — Continuidad C1 en Proyección Espectral, Desacoplamiento de Compuerta Perceptrón y Proceso de Hawkes-Bessel
 
 - **Ola Integrada y Certificada**:

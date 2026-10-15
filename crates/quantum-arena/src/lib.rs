@@ -29,6 +29,10 @@ pub mod zero_copy_stream;
 pub use adaptive_quantiles::{AdaptiveQuantileEngine, P2Quantile};
 pub use atomic_float::AtomicF64;
 pub use config::QuantumConfig;
+pub use espectral_multiactivo::{
+    credibilidad_continua, EspectralMultiactivo, EspectralMultiactivoParams,
+};
 pub use position::{Position, PositionManager};
+pub use spectral_regime::{LegacyRegimeView, SpectralRegimeField, SpectralRegimeParams};
 pub use state::{GlobalArena, ScalpState};
 pub use tick_source::{TickEvent, TickSource};

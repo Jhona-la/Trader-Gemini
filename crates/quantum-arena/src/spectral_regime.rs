@@ -49,14 +49,92 @@ pub struct SpectralRegimeField {
     pub crash_flux: f64,
 }
 
+/// Parámetros dinámicos desacoplados para la evaluación continua del Campo de Régimen Espectral (Ola Ω127).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpectralRegimeParams {
+    /// Peso de la componente de aceleración hacia escalas rápidas (ruptura).
+    pub w_accel_fast: f64,
+    /// Peso de la componente de marea portadora adversa.
+    pub w_adverse_tide: f64,
+    /// Peso de la componente de colapso de entropía (energía coherente concentrada).
+    pub w_coherence_collapse: f64,
+    /// Peso de la componente de anti-persistencia en la banda micro.
+    pub w_micro_anti: f64,
+    /// Ventana mínima de regularización continua Hermite C^1 (ms) para la derivada de régimen.
+    pub tau_min_drift_res_ms: f64,
+    /// Escala de contracción de margen en condiciones adversas [0.0, 1.0].
+    pub margin_contraction_scale: f64,
+    /// Piso mínimo de margen para evitar la asfixia total de liquidez [0.01, 0.50].
+    pub min_margin_floor: f64,
+}
+
+impl Default for SpectralRegimeParams {
+    fn default() -> Self {
+        Self {
+            w_accel_fast: 0.35,
+            w_adverse_tide: 0.30,
+            w_coherence_collapse: 0.20,
+            w_micro_anti: 0.15,
+            tau_min_drift_res_ms: 5_000.0,
+            margin_contraction_scale: 0.95,
+            min_margin_floor: 0.05,
+        }
+    }
+}
+
+impl SpectralRegimeParams {
+    pub fn from_registry_or_default(registry: &crate::state::OmniscientRegistry) -> Self {
+        let mut p = Self::default();
+        let w_acc = registry.get_or("regime_w_accel_fast", p.w_accel_fast);
+        if w_acc.is_finite() && w_acc >= 0.0 {
+            p.w_accel_fast = w_acc;
+        }
+        let w_tide = registry.get_or("regime_w_adverse_tide", p.w_adverse_tide);
+        if w_tide.is_finite() && w_tide >= 0.0 {
+            p.w_adverse_tide = w_tide;
+        }
+        let w_col = registry.get_or("regime_w_coherence_collapse", p.w_coherence_collapse);
+        if w_col.is_finite() && w_col >= 0.0 {
+            p.w_coherence_collapse = w_col;
+        }
+        let w_anti = registry.get_or("regime_w_micro_anti", p.w_micro_anti);
+        if w_anti.is_finite() && w_anti >= 0.0 {
+            p.w_micro_anti = w_anti;
+        }
+        let tau_res = registry.get_or("regime_tau_min_drift_res_ms", p.tau_min_drift_res_ms);
+        if tau_res.is_finite() && tau_res > 0.0 {
+            p.tau_min_drift_res_ms = tau_res;
+        }
+        let floor = registry.get_or("regime_min_margin_floor", p.min_margin_floor);
+        if floor.is_finite() && floor > 0.0 {
+            p.min_margin_floor = floor.clamp(0.01, 0.50);
+        }
+        p
+    }
+}
+
 impl SpectralRegimeField {
-    /// Deriva el campo del espectro vivo. `prev_dominant_ln_tau` es el ln(τ*)
-    /// de la observación anterior (None en frío) y `elapsed_ms` el tiempo
-    /// entre observaciones, para la deriva de la escala dominante.
+    /// Deriva el campo del espectro vivo con parámetros por defecto.
+    #[inline]
     pub fn from_spectrum(
         spec: &TemporalSpectrum,
         prev_dominant_ln_tau: Option<f64>,
         elapsed_ms: f64,
+    ) -> Self {
+        Self::from_spectrum_with_params(
+            spec,
+            prev_dominant_ln_tau,
+            elapsed_ms,
+            &SpectralRegimeParams::default(),
+        )
+    }
+
+    /// Deriva el campo del espectro vivo con parámetros desacoplados configurables.
+    pub fn from_spectrum_with_params(
+        spec: &TemporalSpectrum,
+        prev_dominant_ln_tau: Option<f64>,
+        elapsed_ms: f64,
+        params: &SpectralRegimeParams,
     ) -> Self {
         let field = spec.spectral_field(true);
         let mut out = Self {
@@ -78,11 +156,11 @@ impl SpectralRegimeField {
                 // Evita que un elapsed_ms infinitesimal (ej. 1 ms tras renovar el ancla) sature
                 // artificialmente a +/-1.0 por micro-ruido de ordering.
                 // Modulación de confianza suave con Hermite cúbico hasta la ventana mínima de
-                // resolución macro (5.0 s = 5000 ms).
-                const TAU_MIN_DRIFT_RES_MS: f64 = 5_000.0;
-                let u_t = (elapsed_ms / TAU_MIN_DRIFT_RES_MS).clamp(0.0, 1.0);
+                // resolución macro parametrizada.
+                let tau_res = params.tau_min_drift_res_ms.max(1.0);
+                let u_t = (elapsed_ms / tau_res).clamp(0.0, 1.0);
                 let w_t = u_t * u_t * (3.0 - 2.0 * u_t);
-                let eff_elapsed = elapsed_ms.max(TAU_MIN_DRIFT_RES_MS);
+                let eff_elapsed = elapsed_ms.max(tau_res);
                 let per_hour = (cur_ln - prev_ln) * 3_600_000.0 / eff_elapsed;
                 out.dominant_drift = if per_hour.is_finite() {
                     per_hour.clamp(-1.0, 1.0) * w_t
@@ -91,7 +169,7 @@ impl SpectralRegimeField {
                 };
             }
         }
-        // Coordenadas de crash-ness (cada una en [0,1], combinación acotada):
+        // Coordenadas de crash-ness (cada una en [0,1], combinación convexa acotada):
         // (a) aceleración hacia lo rápido: deriva negativa fuerte.
         let accel_fast = if out.dominant_drift.is_finite() {
             (-out.dominant_drift).clamp(0.0, 1.0)
@@ -117,8 +195,16 @@ impl SpectralRegimeField {
         } else {
             0.0
         };
-        let raw_crash =
-            0.35 * accel_fast + 0.30 * adverse_tide + 0.20 * coherence_collapse + 0.15 * micro_anti;
+        let sum_w = (params.w_accel_fast
+            + params.w_adverse_tide
+            + params.w_coherence_collapse
+            + params.w_micro_anti)
+            .max(1e-9);
+        let raw_crash = (params.w_accel_fast * accel_fast
+            + params.w_adverse_tide * adverse_tide
+            + params.w_coherence_collapse * coherence_collapse
+            + params.w_micro_anti * micro_anti)
+            / sum_w;
         out.crash_flux = if raw_crash.is_finite() {
             raw_crash.clamp(0.0, 1.0)
         } else {
@@ -157,35 +243,51 @@ impl SpectralRegimeField {
         }
     }
 
-    /// Multiplicador continuo de margen para largos bajo crash-ness creciente:
-    /// 1.0 en calma; desciende suavemente hasta ~0.05 en crash-ness extrema.
-    /// El veto absoluto binario del enum queda SOLO como el extremo medido
-    /// (legacy_view Crash, crash-ness > 0.80 con marea adversa).
+    /// Multiplicador continuo de margen para largos bajo crash-ness creciente con parámetros default.
+    #[inline]
     pub fn long_margin_multiplier(&self) -> f64 {
+        self.long_margin_multiplier_with_params(&SpectralRegimeParams::default())
+    }
+
+    /// Multiplicador continuo de margen para largos bajo crash-ness creciente:
+    /// 1.0 en calma; desciende suavemente hasta el piso parametrizado en crash-ness extrema.
+    pub fn long_margin_multiplier_with_params(&self, params: &SpectralRegimeParams) -> f64 {
         if !self.carrier_tide.is_finite() || self.carrier_tide >= 0.0 {
             return 1.0;
         }
         let cf = if self.crash_flux.is_finite() { self.crash_flux } else { 0.0 };
-        (1.0 - 0.95 * cf).clamp(0.05, 1.0)
+        (1.0 - params.margin_contraction_scale * cf).clamp(params.min_margin_floor, 1.0)
+    }
+
+    /// Multiplicador continuo de margen para posiciones cortas con parámetros default.
+    #[inline]
+    pub fn short_margin_multiplier(&self) -> f64 {
+        self.short_margin_multiplier_with_params(&SpectralRegimeParams::default())
     }
 
     /// Multiplicador continuo de margen para posiciones Cortas:
     /// Si la marea portadora es intensamente ALCISTA (short squeeze / blow-off),
     /// contrae el margen del corto en proporción a la crash_flux inversa.
-    pub fn short_margin_multiplier(&self) -> f64 {
+    pub fn short_margin_multiplier_with_params(&self, params: &SpectralRegimeParams) -> f64 {
         if !self.carrier_tide.is_finite() || self.carrier_tide <= 0.0 {
             return 1.0;
         }
         let cf = if self.crash_flux.is_finite() { self.crash_flux } else { 0.0 };
-        (1.0 - 0.95 * cf).clamp(0.05, 1.0)
+        (1.0 - params.margin_contraction_scale * cf).clamp(params.min_margin_floor, 1.0)
     }
 
-    /// Multiplicador de margen continuo simétrico según la dirección de la orden.
+    /// Multiplicador de margen continuo simétrico según la dirección de la orden con parámetros default.
+    #[inline]
     pub fn margin_multiplier(&self, is_long: bool) -> f64 {
+        self.margin_multiplier_with_params(is_long, &SpectralRegimeParams::default())
+    }
+
+    /// Multiplicador de margen continuo simétrico según la dirección de la orden y parámetros desacoplados.
+    pub fn margin_multiplier_with_params(&self, is_long: bool, params: &SpectralRegimeParams) -> f64 {
         if is_long {
-            self.long_margin_multiplier()
+            self.long_margin_multiplier_with_params(params)
         } else {
-            self.short_margin_multiplier()
+            self.short_margin_multiplier_with_params(params)
         }
     }
 }

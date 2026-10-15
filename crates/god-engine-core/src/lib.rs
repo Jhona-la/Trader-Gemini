@@ -997,6 +997,8 @@ pub struct GodEngineCore {
     /// #607 (Ola 29): IC cruzado por par×escala entre monedas (observación
     /// al registro; el ρ(τ*) de grupo es decisión del consejo con T-1).
     espectral_ma: quantum_arena::espectral_multiactivo::EspectralMultiactivo,
+    /// Ola Ω127: Parámetros dinámicos desacoplados de régimen continuo sin re-alocación ni lookups en hot-path.
+    regime_params: quantum_arena::spectral_regime::SpectralRegimeParams,
     /// #626 (Ola 47): habilidad prequential por motor×escala por moneda —
     /// alimenta los pesos de la composición del consenso espectral.
     skill_motores: Vec<signal_engine::skill_motores::SkillMotores>,
@@ -1365,6 +1367,7 @@ impl GodEngineCore {
             espectral_ma: quantum_arena::espectral_multiactivo::EspectralMultiactivo::new(
                 n_coins,
             ),
+            regime_params: quantum_arena::spectral_regime::SpectralRegimeParams::default(),
             skill_motores: (0..n_coins)
                 .map(|_| signal_engine::skill_motores::SkillMotores::new())
                 .collect(),
@@ -1731,6 +1734,45 @@ impl GodEngineCore {
         let esp_masa_plena = self.arena.config.espectral_masa_plena.load(Ordering::Relaxed);
         self.arena.registry.set("espectral_masa_minima", esp_masa_min);
         self.arena.registry.set("espectral_masa_plena", esp_masa_plena);
+
+        // OLA Ω127: Sincronización de Espectral Multiactivo y Régimen Continuo desde QuantumConfig
+        let esp_rec_x = self.arena.config.espectral_recencia_x.load(Ordering::Relaxed);
+        let esp_olv = self.arena.config.espectral_olvido.load(Ordering::Relaxed);
+        let esp_mm = self.arena.config.espectral_muestras_maduras.load(Ordering::Relaxed);
+        let esp_fam = self.arena.config.espectral_familia_veto.load(Ordering::Relaxed);
+        let ma_params = quantum_arena::espectral_multiactivo::EspectralMultiactivoParams {
+            recencia_x: esp_rec_x,
+            olvido: esp_olv,
+            muestras_maduras: esp_mm as u64,
+            familia_veto_override: if esp_fam > 0.0 { Some(esp_fam as usize) } else { None },
+        };
+        self.espectral_ma.update_params(ma_params);
+
+        self.arena.registry.set("espectral_recencia_x", esp_rec_x);
+        self.arena.registry.set("espectral_olvido", esp_olv);
+        self.arena.registry.set("espectral_muestras_maduras", esp_mm);
+        self.arena.registry.set("espectral_familia_veto", esp_fam);
+
+        let reg_accel = self.arena.config.regime_w_accel_fast.load(Ordering::Relaxed);
+        let reg_tide = self.arena.config.regime_w_adverse_tide.load(Ordering::Relaxed);
+        let reg_col = self.arena.config.regime_w_coherence_collapse.load(Ordering::Relaxed);
+        let reg_anti = self.arena.config.regime_w_micro_anti.load(Ordering::Relaxed);
+        let reg_floor = self.arena.config.regime_min_margin_floor.load(Ordering::Relaxed);
+
+        self.regime_params = quantum_arena::spectral_regime::SpectralRegimeParams {
+            w_accel_fast: reg_accel,
+            w_adverse_tide: reg_tide,
+            w_coherence_collapse: reg_col,
+            w_micro_anti: reg_anti,
+            min_margin_floor: reg_floor,
+            ..Default::default()
+        };
+
+        self.arena.registry.set("regime_w_accel_fast", reg_accel);
+        self.arena.registry.set("regime_w_adverse_tide", reg_tide);
+        self.arena.registry.set("regime_w_coherence_collapse", reg_col);
+        self.arena.registry.set("regime_w_micro_anti", reg_anti);
+        self.arena.registry.set("regime_min_margin_floor", reg_floor);
     }
 
     #[inline]
@@ -2511,10 +2553,11 @@ impl GodEngineCore {
                         }
                         (prev, elapsed)
                     };
-                    let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum(
+                    let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum_with_params(
                         spec,
                         regimen_prev_ln,
                         regimen_elapsed,
+                        &self.regime_params,
                     );
                     self.arena.coins[coin_id].spectral_crash_flux.store(regime_field.crash_flux, Ordering::Relaxed);
                     let intermittency = spec
@@ -3686,10 +3729,11 @@ impl GodEngineCore {
                         }
                         (prev, elapsed)
                     };
-                    let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum(
+                    let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum_with_params(
                         spec,
                         regimen_prev_ln,
                         regimen_elapsed,
+                        &self.regime_params,
                     );
                     self.arena.coins[coin_id].spectral_crash_flux.store(regime_field.crash_flux, Ordering::Relaxed);
                     let intermittency = spec
