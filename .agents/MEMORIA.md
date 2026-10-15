@@ -1,5 +1,31 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω132 — Detector de Liquidez Oculta Kyle-Hasbrouck, Conformal Risk Gate y Saneamiento de Disco/RAM (>150GB)
+
+- **Ola Integrada y Certificada**:
+  * **Diagnóstico Forense y Saneamiento Crítico de Infraestructura**:
+    1. El disco C del portátil anfitrión presentaba una saturación crítica (**solo 85 GB libres**).
+    2. Se detectaron 6 carpetas `target` secundarias abandonadas desde agosto y septiembre (`target-verify` 34.5 GB, `target_persistent` 18.9 GB, `target_build` 3.5 GB, `target_release_god` 1.25 GB, `target_god` 0.44 GB, y `.claude/worktrees/target-cf2` 75.07 GB).
+    3. Se detectaron 4 worktrees desprendidos en `detached HEAD` consumiendo 26 GB (`.ola73`, `.sol-plan-2026-10-07`, `.sol-replay-2026-10-09`, `.r7r4`).
+    4. Se ejecutó un saneamiento quirúrgico sin tocar el código fuente, **liberando más de 152.5 GB inmediatamente (espacio libre subió a 237.6 GB)**.
+    5. Se instituyó la regla formal `<RULE[higiene_disco_y_memoria]>` en `.agents/AGENTS.md` para prohibir la creación de targets alternativos y forzar la poda inmediata de worktrees tras merge.
+  * **Solución Arquitectónica y Matemática**:
+    1. En `crates/dark-alpha-engine/src/hidden_liquidity.rs`:
+       - Diseñado e implementado el motor `HiddenLiquidityEngine`, el estado `BlockAbsorptionState` y el veredicto `ConformalGateVerdict`.
+       - Formulado el ratio de absorción no-paramétrico amortiguado por desplazamiento relativo al ATR:
+         $$\text{AbsorptionIndex} = \frac{V_{\text{trade}}}{\text{Depth}_{\text{visible}} + \epsilon} \cdot \exp\left(-\frac{\gamma \cdot |\Delta P|}{\text{ATR} + \epsilon}\right)$$
+       - Calculada la presión neta de iceberg $\Pi_{\text{iceberg}} \in [-1.0, 1.0]$.
+       - Evaluada la compuerta conformal: emite `OpposingAbsorptionVeto` ante colisiones frontales severas contra muros institucionales ($|\Pi| > 0.70$), `ProbeOnlyDeescalation` (25% del lote con ensanchamiento de incertidumbre $1.50\times$) ante colisiones moderadas, y `Admitted` con bonus de confianza (hasta +25%) y contracción conformal ($0.70\times$) ante flujo alineado.
+    2. En `crates/risk-engine/src/freno_estrategia.rs`:
+       - Incorporados métodos para adaptación dinámica de hipótesis nula $\mu_0$ (`registrar_con_ventaja`, `escala_con_ventaja`), desacoplando la hipótesis de ventaja de la constante fija $0.30 R$ para soportar regímenes adaptativos.
+    3. En `crates/dark-alpha-engine/tests/hidden_liquidity_conformal_contract.rs`:
+       - Creada suite de contratos (4/4 pass) validando parámetros, detección de iceberg, veredictos conformales e inmunidad a NaN/Inf y cold start.
+  * **Certificación Contractual**:
+    - `hidden_liquidity_conformal_contract.rs` (4/4 pass, 100% verde).
+    - `cf4_freno_estrategia.rs` (4/4 pass, 100% verde).
+    - `dark-alpha-engine` (54/54 pass, 100% verde).
+    - `cargo check --workspace --all-targets` (23/23 crates sin errores).
+
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω131 — Autosolvedor de Jacobi en Stack Zero-Alloc para RMT (Marchenko-Pastur, N<=32) y Nuevas APIs Planas Contiguas
 
 - **Ola Integrada y Certificada**:

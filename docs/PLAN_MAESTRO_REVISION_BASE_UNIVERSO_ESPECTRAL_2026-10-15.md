@@ -1,11 +1,11 @@
-# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V5 · 2026-10-15)
-## Unificando Teoría Matemática, Física de Campos, Estadística Prequencial, Psicología de Masas y Rendimiento en Nanosegundos
+# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V6 · 2026-10-15)
+## Unificando Teoría Matemática, Física de Campos, Estadística Prequencial, Psicología de Masas, Liquidez Oculta y Rendimiento en Nanosegundos
 
 > **Autor / Director:** Antigravity (AGY, Quant Sr. Lead)  
 > **Comité Revisor:** Consejo Colegiado de 10 Roles Senior en Modo Profesor  
 > **Destinatarios:** Claude (Línea C), Codex (Líneas G/H/E), GLM (Línea B/LH), Qoder, Sol y Operador Humano  
 > **Ámbito:** Repositorio Completo Trader Gemini (23 Crates Rust, 100% Nativo, CERO Python)  
-> **Fecha:** 15 de Octubre de 2026 (Actualización Canónica Post-Olas Ω130-Ω131 / Monotonicidad Cramér-Lundberg, Zero-Alloc RMT Eigensolver en Stack N<=32 y Continuidad Cuántica)  
+> **Fecha:** 15 de Octubre de 2026 (Actualización Canónica Post-Ola Ω132 / Liquidez Oculta Kyle-Hasbrouck, Conformal Risk Gate, Protocolo de Higiene de Disco/RAM y Saneamiento de >150GB)  
 > **Estado CI GitHub Actions:** 🟢 100% VERDE (Runs 38765470568, 38675440815, 38675440991, 38680460789 verificados con éxito)  
 
 ---
@@ -316,8 +316,9 @@ crates/
 | **LH-06** | `signal-engine` | Diagnóstico colapso de $\tau$ y propuesta de peldaño intermedio $IC > 0$ | 🟡 **EN ESPERA** | Condicionado a T-3 v2 de Claude (`docs/DISENO_LH06_TAU.md`) |
 | **Ω130** | `risk-engine` / `quantum-arena` | Corrección Monotonicidad Cramér-Lundberg en $R$, Desbloqueo Test CF2 Canónico y Desacoplamiento Dinámico Cuántico | 🟢 **MERGED** | `cramer_lundberg_exposure_monotonicity_contract.rs` (3/3) & `cf2_lundberg_veto_monotono_en_r` (1/1) |
 | **Ω131** | `risk-engine` | Autosolvedor de Jacobi en Stack Zero-Alloc para Teoría de Matrices Aleatorias (RMT) ($N \le 32$) y APIs Planas | 🟢 **MERGED** | `zero_alloc_rmt_contract.rs` (4/4) & `spectral_matrix_contract.rs` (13/13) |
-| **Ω132** | `dark-alpha-engine` / `risk-engine` | Modelado de liquidez oculta, absorción de bloques y compuertas conformales | 🔵 **ROADMAP** | Próxima ola de desacoplamiento |
+| **Ω132** | `dark-alpha-engine` / `risk-engine` | Detector de Liquidez Oculta Kyle-Hasbrouck, Conformal Risk Gate y Saneamiento de Disco/RAM (>150GB) | 🟢 **MERGED** | `hidden_liquidity_conformal_contract.rs` (4/4) & `cf4_freno_estrategia.rs` (4/4) |
+| **Ω133** | `signal-engine` / `risk-engine` | Acoplamiento de Presión Iceberg con Tensor de Votos del Consejo y Kelly Conformal | 🔵 **ROADMAP** | Próxima ola de integración |
 
 ---
 
-*Plan Maestro Canónico V5 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
+*Plan Maestro Canónico V6 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*

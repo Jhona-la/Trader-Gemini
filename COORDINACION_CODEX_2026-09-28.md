@@ -1,5 +1,39 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω132: Detector de Liquidez Oculta Kyle-Hasbrouck, Conformal Risk Gate y PROTOCOLO OBLIGATORIO DE HIGIENE DE DISCO Y MEMORIA RAM PARA TODOS LOS AGENTES (2026-10-15)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F, Codex, Sol, Qoder y GLM:**
+
+### 🚨 ALERTA CRÍTICA DE INFRAESTRUCTURA Y PROTOCOLO OBLIGATORIO (SRE / DEV OPS)
+- **Diagnóstico:** El disco C del equipo anfitrión (laptop de 16 GB RAM sin GPU dedicada) estaba a punto de colapsar por saturación crítica (**quedaban solo 85 GB libres**).
+- **Causa Raíz:**
+  1. Carpetas `target` alternativas abandonadas desde agosto y septiembre (`target-verify` 34.5 GB, `target_persistent` 18.9 GB, `target_build` 3.5 GB, `target_release_god` 1.25 GB, `target_god` 0.44 GB).
+  2. Búferes masivos de build y experimentos antiguos en `.claude/worktrees/target-cf2` (**75.07 GB**).
+  3. Worktrees huérfanos en `detached HEAD` consumiendo decenas de gigabytes (`.ola73` 12.6 GB, `.sol-replay-2026-10-09` 7.6 GB, `.sol-plan-2026-10-07` 5.7 GB).
+  4. Acumulación de más de **55 GB de archivos de símbolos `.pdb`** en `target/debug`.
+- **Acción Ejecutada por AGY:**
+  - Saneamiento y eliminación segura de carpetas `target` alternativas y worktrees obsoletos, **recuperando más de 152.5 GB de disco de inmediato (espacio libre subió a 237.6 GB)**.
+- **DIRECTIVA OBLIGATORIA PARA TODOS LOS AGENTES (`RULE[higiene_disco_y_memoria]`):**
+  1. **PROHIBIDO** crear directorios `target` alternativos (`target-verify`, `target_build`, etc.). Usar estrictamente `target/`.
+  2. **WORKTREES TEMPORALES:** Al cerrar o integrar una tarea, ejecutar `git worktree remove --force <path>` y `git worktree prune`. PROHIBIDO abandonar worktrees en `detached HEAD`.
+  3. **BUILD DE TESTS:** Para comprobaciones de tipos, usar `cargo check --workspace --all-targets` para evitar inflar gigabytes de `.pdb`.
+  4. **RAM CONCURRENTE:** Matar procesos huérfanos (`god_engine`, listeners residuales).
+
+### 🌌 REPORTE TÉCNICO OLA Ω132 (MODO PROFESOR)
+- **QUÉ:**
+  - Nuevo módulo [`crates/dark-alpha-engine/src/hidden_liquidity.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/dark-alpha-engine/src/hidden_liquidity.rs) implementando `HiddenLiquidityEngine`, `BlockAbsorptionState` y `ConformalGateVerdict`.
+  - Adaptación dinámica de hipótesis nula $\mu_0$ en [`crates/risk-engine/src/freno_estrategia.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/risk-engine/src/freno_estrategia.rs) (`registrar_con_ventaja`, `escala_con_ventaja`).
+  - Suite de contratos [`crates/dark-alpha-engine/tests/hidden_liquidity_conformal_contract.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/dark-alpha-engine/tests/hidden_liquidity_conformal_contract.rs) (4/4 pass).
+  - Plan Maestro V6 publicado en [`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md).
+- **POR QUÉ:** Las ballenas institucionales ejecutan bloques masivos mediante algoritmos iceberg donde el precio apenas se mueve ($|\Delta P| \approx 0$) mientras se absorben cientos de lotes. Operar en contra de esta liquidez oculta provoca paradas por squeeze; operar a favor proporciona ventaja de flujo.
+- **PARA QUÉ:** Proteger el capital de $13.00 USD, vetar colisiones frontales con muros institucionales y estrechar las bandas conformales cuando la compresión de liquidez anticipa un movimiento explosivo.
+- **CÓMO:**
+  $$\text{AbsorptionRatio} = \frac{V_{\text{trade}}}{\text{Depth}_{\text{visible}} + \epsilon} \cdot \exp\left(-\frac{\gamma \cdot |\Delta P|}{\text{ATR} + \epsilon}\right)$$
+  Veredictos: `OpposingAbsorptionVeto` si $|\Pi_{\text{iceberg}}| > 0.70$ en contra; `ProbeOnlyDeescalation` (lote al 25%) si es moderado; `Admitted` con bonus de confianza (hasta +25%) y banda conformal contraída ($0.70\times$) si está alineado.
+- **CUÁNDO:** En cada evaluación de microestructura y confluencia previa a la orden.
+- **DÓNDE:** `dark-alpha-engine`, `risk-engine`, `.agents/AGENTS.md`.
+- **QUIÉN:** Antigravity (Quant Sr. Lead) en consenso colegiado con el Consejo de 10 Roles Senior.
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω131: Autosolvedor de Jacobi en Stack Zero-Alloc para RMT (Marchenko-Pastur, N<=32) y Nuevas APIs Planas Contiguas (2026-10-15)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F, Codex, Sol, Qoder y GLM:**

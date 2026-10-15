@@ -63,6 +63,11 @@ impl FrenoEstrategia {
     /// pérdida es −1 R y un TP `w/l` R. Sin geometría medida, la de RR 2,25
     /// sin fricción.
     pub fn escala(ganancia_en_stops: f64, perdida_en_stops: f64) -> f64 {
+        Self::escala_con_ventaja(ganancia_en_stops, perdida_en_stops, VENTAJA_H0_ESTRATEGIA_R)
+    }
+
+    /// Escala de `X` con ventaja H0 especificada explícitamente.
+    pub fn escala_con_ventaja(ganancia_en_stops: f64, perdida_en_stops: f64, h0_edge_r: f64) -> f64 {
         let tp_r = if ganancia_en_stops.is_finite()
             && ganancia_en_stops > 0.0
             && perdida_en_stops.is_finite()
@@ -72,7 +77,12 @@ impl FrenoEstrategia {
         } else {
             2.25
         };
-        MARGEN_ESCALA * (1.0 + VENTAJA_H0_ESTRATEGIA_R).max(tp_r - VENTAJA_H0_ESTRATEGIA_R)
+        let edge = if h0_edge_r.is_finite() && h0_edge_r > 0.0 {
+            h0_edge_r
+        } else {
+            VENTAJA_H0_ESTRATEGIA_R
+        };
+        MARGEN_ESCALA * (1.0 + edge).max(tp_r - edge)
     }
 
     /// Registra un cierre: `resultado_en_stops` es el PnL neto entre el
@@ -84,6 +94,22 @@ impl FrenoEstrategia {
         ganancia_en_stops: f64,
         perdida_en_stops: f64,
     ) -> f64 {
+        self.registrar_con_ventaja(
+            resultado_en_stops,
+            ganancia_en_stops,
+            perdida_en_stops,
+            VENTAJA_H0_ESTRATEGIA_R,
+        )
+    }
+
+    /// Registra un cierre con ventaja H0 dinámica (adaptación continua de hipótesis nula).
+    pub fn registrar_con_ventaja(
+        &mut self,
+        resultado_en_stops: f64,
+        ganancia_en_stops: f64,
+        perdida_en_stops: f64,
+        h0_edge_r: f64,
+    ) -> f64 {
         if !resultado_en_stops.is_finite() {
             return self.ville.e_value;
         }
@@ -93,7 +119,12 @@ impl FrenoEstrategia {
             1.0
         };
         let r = resultado_en_stops / l;
-        let x = (VENTAJA_H0_ESTRATEGIA_R - r) / Self::escala(ganancia_en_stops, perdida_en_stops);
+        let edge = if h0_edge_r.is_finite() && h0_edge_r > 0.0 {
+            h0_edge_r
+        } else {
+            VENTAJA_H0_ESTRATEGIA_R
+        };
+        let x = (edge - r) / Self::escala_con_ventaja(ganancia_en_stops, perdida_en_stops, edge);
         let e = self.ville.update(x);
         if e >= self.ville.threshold {
             self.rechazada = true;
