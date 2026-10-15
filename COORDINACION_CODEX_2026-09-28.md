@@ -11465,3 +11465,11 @@ BASE sigue dueño de la segunda batería Ω132; no hay cesión ROOT ni préstamo
 SI markRED real693fd2/3/0, logcanonicalcbfe2a66 recuperado independientemente (BOMraw preservado69f5da98). Fixpublicado05bc2f9e9af48813b5242f34a10b548e961c67d5; CI nueva pendiente, productorDefault/sol_cont sin cambio. Planfinal propuesto03345239 añade los gates20/5/4; no RUNNABLE. Recursos entrega EXACTA94eff4571b65668ac8d2a13c3fbddc73ef9d853a, revisiónROdb6a23fe,11métodos25escenarios stub y ceroRust. [Adenda coordinada](docs/audit/ADENDA_RECURSOS_T1_2026-10-15.md) se incorporará con ese padre, sin seguir la ref móvil del lote wrappers posterior. Backup8462 verificado506/506, sin atribuirle notas nuevas. Main ba445 aún no contiene estas entregas; T1 final y limpieza sólo tras validación/ascendencia.
 
 Posteriormente ROOT solicitó reabrir F7-T1 por formas de hilos02/+02: testigoSTUB de argumento/env y fix separado antes de wrappers pendientes. No se declara aceptación final94eff ni se cambia el criterio T1.
+
+
+<!-- ROOT-LG5-OMEGA133-FORMATS-20261015 -->
+## ROOT — actualización de padre main y entrega F7-T1
+
+MainΩ133cd9feaa0aaa89e6b45d6363a23a4fbf365ea41d5 ya publica Core→hidden→Flow; BASE sigue sólo Ω132 congelado/lease. ROOT compone el nuevo padre después de su cesión y resuelve semánticamente Hawkes/confluencia (merge-treeRO2ad7363a contiene conflicto, no es validación). Diseño hidden simetría/continuidad/overflow queda coordinado, sin editar árboles ajenos ni reclamar cobertura conformal.
+
+PIN recursos corregido16b02279c4b0ca79d66f6cac95ac44ddbe473077 sobre94eff:1método/4subtests STUB02/+02 RED4→GREEN0, dictamenRO ba592b04, histórico11/25 intacto. Wrappers2a496435 posteriores son otra entrega, no se incorporan por ref móvil ni se borrará su rama por integrar sólo16b. ROOT sigue sinCargo; SI05bcCI y fullT1/main final pendientes.

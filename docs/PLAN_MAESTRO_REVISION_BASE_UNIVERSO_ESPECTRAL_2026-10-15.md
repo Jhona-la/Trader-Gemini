@@ -338,3 +338,11 @@ La entrega fija94eff4571b65668ac8d2a13c3fbddc73ef9d853a añade la [adenda coordi
 ROOT conserva el censo/cola BASE15. Su siguiente turno acordado usará target estándar/logs, guardas intactas y fuente fijada; BASE aún no lo ha cedido. SI publicó05bc tras RED causal693fd2/3/0; GREEN del fix, composición, fullT1, main y limpieza de refs siguen pendientes. [Estado con hashes y alcance](audit/INTEGRACION_LG5_MAIN_2026-10-15.md). Las analogías de teoría no sustituyen los contratos de identidad/unidades/causalidad ni la evidencia fuera de muestra.
 
 La aceptación final de recursos94eff se reabrió por el dominio de hilos02/+02; testigoSTUB y commit posterior acotado solicitados al dueño. La adenda/recibo históricos siguen válidos para sus11métodos/25escenarios, no para ese borde aún pendiente.
+
+
+<!-- ROOT-LG5-OMEGA133-FORMATS-20261015 -->
+## ROOT — Ω133 y PIN de recursos corregido
+
+El padre main avanzó a cd9feaa0/Ω133: el caller hidden es productivo y su defecto de simetría/continuidad sigue abierto, sin volver a contar la misma causa. BASE termina Ω132 congelado; ROOT incorporará el nuevo padre y resolverá Hawkes/confluencia con gates renovados. Ningún auto-merge o argumento teórico sustituye esas pruebas.
+
+F7-T102/+02 corregido en PIN16b02279c4b0ca79d66f6cac95ac44ddbe473077 sobre94eff:1método/4subtests STUB RED4→GREEN0, revisión independienteba592b04, ceroRust y harness11/25 intacto. Los wrappers posteriores de la ref son otro lote. Main/T1final/ascendencia y cierre de ramas permanecen pendientes; [estado y hashes](audit/INTEGRACION_LG5_MAIN_2026-10-15.md).
