@@ -2209,3 +2209,11 @@ Main remoto confirmado en 88f8812199eea80333d0c13d910ec9f7c1796900 mediante push
 ## R4 — referencias cerradas y sincronización — 2026-10-13
 
 Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales a T1. Root cerró sus refs espectrales e históricas; SI cerró platt-age-evidence-1013 local/remota. Worktrees, modelos, genomas y 229 recibos históricos conservados. Remoto observado: sólo main. CI de f59 pendiente; ninguna aprobación heredada. [Cierre efectivo y recibos](audit/CIERRE_R4_REFERENCIAS_2026-10-13.md). Esta última actualización documental se publica por rama temporal propia y su SHA/cierre se verifican externamente.
+
+
+<!-- BASE15-2026-10-15 -->
+## BASE15 — reinicio desde fundamentos y cola completa (2026-10-15)
+
+El [plan BASE15](audit/PLAN_BASE15_2026-10-15.md) complementa el maestro15 con contratos por fase, reservas y prioridades. [Inventario](audit/INVENTARIO_BASE15_2026-10-15.json) y [cola TSV](audit/COLA_BASE15_2026-10-15.tsv): b9cd7735, 1.863 rutas / 672 Rust, 13 rutas con hallazgos abiertos, una en revisión y 1.849 sólo inventariadas; cero archivos completos verificados. Reparaciones acotadas de contabilidad reduce-only y dominio multifractal se respaldan en [validación](audit/VALIDACION_BASE15_2026-10-15.json).
+
+Permanecen abiertos wiring/persistencia de 24 knobs, Hawkes desanclado de α/β, covarianza miembro–miembro, nulo del freno tras clipping, R4-EPOCHS/O01 y fee terminal reservado a Sol. El plan distingue constante externa, política, parámetro estimado y cota numérica; continuidad no elimina restricciones exactas. No se certifican lucro, autoevolución integral ni latencia sin medición. [Censo Git](audit/GIT_BASE15_2026-10-15.json): conserva ramas activas/exclusivas; sus commits no se declaran integrados por desaparecer una ref o por pasar CI de un padre. ROOT histórico acusó la coordinación; avisos restantes no equivalen a acuse.

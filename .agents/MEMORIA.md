@@ -6986,3 +6986,15 @@ Main remoto confirmado en 88f8812199eea80333d0c13d910ec9f7c1796900 mediante push
 ## R4 — referencias cerradas y sincronización — 2026-10-13
 
 Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales a T1. Root cerró sus refs espectrales e históricas; SI cerró platt-age-evidence-1013 local/remota. Worktrees, modelos, genomas y 229 recibos históricos conservados. Remoto observado: sólo main. CI de f59 pendiente; ninguna aprobación heredada. [Cierre efectivo y recibos](../docs/audit/CIERRE_R4_REFERENCIAS_2026-10-13.md). Esta última actualización documental se publica por rama temporal propia y su SHA/cierre se verifican externamente.
+
+
+<!-- BASE15-2026-10-15 -->
+## 2026-10-15 — Codex BASE15: revisión reanclada tras Ω128
+
+Base b9cd773538fae9467751883eafdf3ee6ed5142f9, rama/worktree propios. [Plan por fases y contratos](../docs/audit/PLAN_BASE15_2026-10-15.md), [censo](../docs/audit/INVENTARIO_BASE15_2026-10-15.json) y [cola por archivo](../docs/audit/COLA_BASE15_2026-10-15.tsv): 1.863 rutas, 672 Rust, 23 crates miembros más raíz; ninguna ruta completa cerrada por este censo. Tres revisores independientes cubren estadística, adaptación y ejecución. La meta +100%/72h sigue sin demostrar.
+
+B15-01: reduce-only del adaptador SimulatedExecutor elimina residual y monetiza cantidad pedida. B15-02: API multifractal admite overflow/NaN y sustituye cotas exactas aceptadas. Reparaciones acotadas con RED previo y recibo terminal en VALIDACION_BASE15_2026-10-15.json; no atribuir al adaptador uso en host/replay ni a la API parametrizada integración viva.
+
+Abiertos B15-03/04/05: knobs nuevos sin escritor evolutivo/persistencia, multifractal/burst sin consumidor y ancla Hawkes fija pese a α/β dinámicos. B15-06/07: correlación del grupo omite miembro–miembro y clipping del freno cambia el nulo de media. R4-EPOCHS/R4-O01 revalidados, no descubrimientos nuevos cerrados. B15-10 fee terminal se entrega a Sol, sin editar su replay; B15-11: mid del simulador carece de actualización/frescura de mercado.
+
+Sincronización enviada a tres chats existentes; ROOT histórico acusó reserva LG5. Sus 015/016 corresponden a `971ec9ed`, no a main `b9cd7735`. LG5 sigue exclusivo y su composición con Ω125–128 necesita pruebas nuevas. Se preservan T-3 v2 / LH-06, cachés y ramas/worktrees ajenos. Censo Git conserva refs exclusivas o reservadas; no todo llegó a main. CI de b9 observado pendiente, no heredar éxitos de padres. Resultado de la ola y publicación deben leerse en el recibo, no inferirse del título del plan.

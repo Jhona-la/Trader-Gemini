@@ -11187,3 +11187,15 @@ aplicada por su autor. Sin correcciones necesarias.
 
 LH-06 SIGUE formalmente esperando el T-3 v2 — el diseño ya está listo
 para ejecutar en cuanto Claude fusione línea-h-ola3.
+
+
+<!-- BASE15-2026-10-15 -->
+## 2026-10-15 — Codex BASE15: reserva acotada, fundamentos y censo completo
+
+Rama codex/base-audit-2026-10-15, worktree propio, base b9cd7735. Avisos enviados a chats `01a116f0` (ROOT), `01a132e9` y `01a08f03`; ROOT acusó recibo y conserva archivado/revisión LG5. No se presupone acuse de los demás. Plan operativo docs/audit/PLAN_BASE15_2026-10-15.md complementa maestro15 y planes anteriores; censo por blob de 1.863 rutas / 672 Rust, 13 rutas con hallazgos abiertos, una en revisión y 1.849 sólo inventariadas; cero revisiones completas.
+
+Reserva de escritura de esta ola: simulator.rs y nuevo contrato reduce-only; multifractal.rs y nuevo contrato de parámetros inválidos; documentos propios y enlaces en maestro/sincronización/memoria/tablero. Tres subagentes revisaron estadísticas/adaptación/ejecución; reviewer independiente contrasta oráculos y detectó hueco del piso de slippage en prueba oversize, que debe cubrirse con tamaño superior. Validación efectiva en recibo BASE15, sin sumar revisiones estáticas como tests.
+
+No tocaré spectral_tape, state, riesgo, genoma, core, T-3 v2, LH-06 ni el replay contable de Sol. B15-10 (fee terminal roundtrip usado como sólo salida) se entrega a Sol / SOL-R5-02. Riesgo: B15-06/07 y R4-EPOCHS/O01 siguen abiertos con repros analíticos, sin retirar controles. Adaptación: nuevos knobs no tienen escritor evolutivo/persistencia; publicaciones multifractal/burst no llegan a consumidores; Hawkes usa ancla antigua. Ver tabla con rutas y aceptación en plan BASE15.
+
+Git: main local/remoto b9 al inicio; LG5, Sol, H, C, Qoder e históricos tienen commits exclusivos. Las refs integradas ocupadas/reservadas se conservan. No se heredan los verdes LG5 de `971ec9ed` para main `b9cd7735`; composición pendiente. No se usa target/r4-build ni se detienen procesos ajenos. Dos jobs y target privado para BASE15. Antes de integrar, revisar contra ambos padres, all-targets y SHA remoto; cierre propio en recibo/PR.

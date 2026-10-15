@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "wave": "BASE15",
+  "status": "in_progress",
+  "base_snapshot": "b9cd773538fae9467751883eafdf3ee6ed5142f9",
+  "scope": "Two narrowly scoped API repairs, plan, partial source audits and inventory; no complete-file certification, trading, model promotion, economic backtest or new latency claim.",
+  "inventory": {
+    "tracked_entries": 1863,
+    "rust_files": 672,
+    "open_finding_paths": 13,
+    "partial_review_paths": 1,
+    "inventoried_only_paths": 1849,
+    "complete_files_verified": 0
+  },
+  "runs": [
+    {
+      "label": "multifractal-red",
+      "command": "cargo test -p feature-engine --locked --test multifractal_invalid_params_contract",
+      "exit_code": 101,
+      "passed": 1,
+      "failed": 3,
+      "ignored": 0,
+      "expected_failure": true,
+      "scope": "Base multifractal implementation; new regression contract. Demonstrates NaN, sum overflow and exact lower-bound substitution.",
+      "log_sha256": "de5452871534bc422417e44032c87ec725cd31dd6d28d20a669285be97eac80e"
+    },
+    {
+      "label": "simulator-red",
+      "status": "running",
+      "scope": "Base simulator implementation; feature dependency edited independently during cold dependency build, so this run does not certify a pristine whole-tree b9 snapshot."
+    },
+    {
+      "label": "feature-green-suite",
+      "status": "running",
+      "target": "target-base15-feature",
+      "jobs": 1
+    },
+    {
+      "label": "simulator-reinforced-red",
+      "status": "pending"
+    },
+    {
+      "label": "execution-green-suite",
+      "status": "pending"
+    },
+    {
+      "label": "workspace-all-targets",
+      "status": "pending"
+    }
+  ],
+  "analytical_diagnostics": {
+    "scope": "Independent arithmetic diagnostics, not Rust API tests, FWER measurement, realized PnL or production calibration",
+    "base": "b9cd773538fae9467751883eafdf3ee6ed5142f9",
+    "growth_log_per_day": 0.23104906018664842,
+    "growth_compound_daily": 0.2599210498948732,
+    "portfolio": {
+      "own_model_mean_rho": 0.12247448713915891,
+      "own_model_all_pairs": 0.13228756555322954,
+      "threshold": 0.128
+    },
+    "clipped_null": {
+      "w": 2.25,
+      "l": 1,
+      "scale": 2.925,
+      "mean_R": 0.30999999999999994,
+      "mean_clipped_X": 0.30000000000000004
+    },
+    "spectral_family": {
+      "nearest_log_nodes": [
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23
+      ],
+      "default_family": 2175,
+      "enumerated_family": 3045
+    },
+    "hawkes": {
+      "alpha": 0.45,
+      "beta": 0.5,
+      "empirical_anchor": 1.9,
+      "legacy_norm_at_new_anchor": 0.1853331999081394
+    }
+  },
+  "findings": {
+    "B15-01": "fix_pending",
+    "B15-02": "implemented_green_pending",
+    "B15-03": "open",
+    "B15-04": "open",
+    "B15-05": "open",
+    "B15-06": "open",
+    "B15-07": "open",
+    "B15-08": "open",
+    "B15-09": "open",
+    "B15-10": "open",
+    "B15-11": "open"
+  },
+  "publication": {
+    "status": "unpublished",
+    "last_observed_remote_main": "310f729ff7c998c5b3d3a0f1722422910bcffebb"
+  },
+  "limitations": [
+    "RED/GREEN execution counts may repeat tests; no sum here implies unique tests.",
+    "No T1, full workspace test run, OOS study or runtime performance benchmark executed by BASE15.",
+    "Remaining code, CI, documentation, data and tooling reviews are queued by blob.",
+    "Standalone scripts outside Cargo targets are not compiled by cargo check --all-targets."
+  ],
+  "primary_references": [
+    "https://arxiv.org/abs/1603.06183",
+    "https://arxiv.org/abs/1810.08240",
+    "https://arxiv.org/abs/1801.00862",
+    "https://www.bybit.com/en/help-center/article/Profit-Loss-calculations-USDT-Contract",
+    "https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Order"
+  ]
+}

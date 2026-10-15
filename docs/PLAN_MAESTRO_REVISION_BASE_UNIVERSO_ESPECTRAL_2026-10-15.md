@@ -4,9 +4,10 @@
 > **Autor / Director:** Antigravity (AGY, Quant Sr. Lead)  
 > **Comité Revisor:** Consejo Colegiado de 10 Roles Senior en Modo Profesor  
 > **Destinatarios:** Claude (Línea C), Codex (Líneas G/H/E), GLM (Línea B/LH), Qoder, Sol y Operador Humano  
-> **Ámbito:** Repositorio Completo Trader Gemini (23 Crates Rust, 100% Nativo, CERO Python)  
+> **Ámbito:** 23 crates miembros Rust y paquete raíz; herramientas auxiliares de auditoría incluyen Python.
 > **Fecha:** 15 de Octubre de 2026 (Actualización Canónica Post-Ola Ω124 / Hotfix CI Núcleo y Merge GLM 120)  
-> **Estado CI GitHub Actions:** 🟢 100% VERDE (Runs 38675440815, 38675440991, 38680460789 verificados con éxito)  
+> **Corte de revisión BASE15:** base `b9cd773538fae9467751883eafdf3ee6ed5142f9` (Ω128). Los runs `38765470568` y `38765470612` de ese SHA se observaron pendientes; los éxitos anteriores no certifican esta composición.
+> **Plan de ejecución y evidencia vigente:** [BASE15: fases, contratos, reservas y hallazgos](audit/PLAN_BASE15_2026-10-15.md). Censo exacto de la base: 1.863 rutas / 672 Rust; inventariadas, no auditadas. La tabla histórica de olas conserva el alcance de sus contratos locales y no demuestra autoevolución extremo a extremo.
 
 ---
 
@@ -52,14 +53,14 @@
    - NO se persigue ni se requiere un Win Rate del 100%. Un sistema que exige el 100% de aciertos colapsa ante el primer evento de cola o se paraliza en una asfixia total de vetos.
    - El crecimiento exponencial exige **Esperanza Matemática Positiva Neta**:
      $$\mathbb{E}[R] = p \cdot W - (1 - p) \cdot L - \text{Fricción}_{\text{roundtrip}} > 0$$
-   - Con un Payoff Asimétrico riguroso ($RR = \frac{W}{L} \ge 2.25$), un Win Rate realista del $55\% - 75\%$ genera una curva de capital parabólica sin riesgo de ruina.
+   - El pago y la probabilidad deben estimarse netos, con incertidumbre y dependencia. Ni un $RR \ge 2.25$ ni un Win Rate del $55\% - 75\%$ garantizan crecimiento geométrico o ausencia de ruina; son hipótesis que debe contrastar el examen independiente.
 4. **Dimensionamiento Óptimo Fraccionario de Kelly Continuo y Axioma de Ruina:**
    $$f^* = \frac{1}{2} \cdot \frac{p \cdot (RR + 1) - 1}{RR} \cdot \left(1 - \frac{DD}{d^*}\right)$$
-   Donde el factor $\frac{1}{2}$ amortigua la volatilidad de la trayectoria y $d^* = 1 - (0.05)^{1/3} \approx 0.6316$ representa el suelo teórico de falsación. Acoplado con el axioma de ruina (`clamp_ruin \le 0.25`), garantizando que ninguna orden individual exponga más del 25% del capital independientemente del stop loss.
+   Esta expresión es una política aproximada de dimensionamiento que requiere auditar pagos, costes y dependencia. El factor $\frac{1}{2}$ y el tope `clamp_ruin` son elecciones de riesgo; $d^* = 1 - (0.05)^{1/3} \approx 0.6316$ sólo tiene la interpretación que permitan sus hipótesis. Ninguna de estas expresiones demuestra ruina nula ni una garantía universal de drawdown. Véase [Kelly con restricción explícita de riesgo](https://arxiv.org/abs/1603.06183).
 5. **Restricción Física del Entorno de Ejecución:**
    - Hardware: Laptop de recursos compartidos (16 GB RAM total, **CERO GPU dedicada**).
-   - Presupuesto de memoria para el motor: $< 2.5\text{ GB}$ en producción.
-   - Latencia crítica: Hot-path de decisión en microsegundos/nanosegundos ($< 50\text{ }\mu\text{s}$), libre de allocations dinámicas en heap (cero llamadas a `malloc`/`alloc` en el loop crítico mediante `AtomicF64`, stack buffers fijos y `Cow`).
+   - Objetivo de memoria para el motor: $< 2.5\text{ GB}$; verificar pico y crecimiento residual con workload identificado.
+   - Objetivo de latencia crítica: $< 50\text{ }\mu\text{s}$ y reducción de allocations del loop. Requiere medir percentiles y asignaciones del motor completo; los atomics y buffers de stack no certifican por sí solos duración ni cero heap.
 
 ### 1.2. Doctrina Pedagógica Obligatoria (Modo Profesor)
 Toda interacción, código, commit y documentación debe responder con precisión analítica a la plantilla séptuple:
@@ -96,15 +97,15 @@ El mercado financiero no es una alternancia binaria entre "scalping" y "swing", 
   - $w_3$: Fracción de Ruptura de Volatilidad (Expansión Caótica)
   - $w_4$: Fracción de Compresión Asimétrica (Vorticidad Solenoidal)
 
-Ninguna compuerta ni asiento puede bifurcar con un `if is_scalp` ni con umbrales booleanos rígidos. Todo cálculo de Take Profit, Stop Loss, Trailing, Sizing de Margen, Veto de Slippage o Penalización de Drawdown debe ser una **función analítica suave $C^\infty$** evaluada sobre $\tau$ y $s$.
+Las decisiones sobre horizonte y mezcla se modelan sobre $\tau$ y $s$, con continuidad y regularidad justificadas por el modelo. La malla aproxima un continuo y debe probar consistencia y observabilidad. Los filtros discretos del instrumento, el rechazo de datos inválidos y los invariantes contables conservan contratos exactos; no se suavizan por una exigencia universal $C^\infty$.
 
 ---
 
 ## 🚀 PARTE III — "EL SIGUIENTE PASO" TRANSDISCIPLINAR (REVOLUCIÓN CIENTÍFICA)
 
-Si el Gradient Boosting (XGBoost) es el siguiente paso del Random Forest, el sistema Trader Gemini implementa el siguiente paso de cada teoría, modelo y cálculo:
+Las propuestas siguientes son un catálogo de hipótesis de evolución, sujeto a [ADR-0005](adr/ADR-0005-triage-teorico-y-medicion.md). Un modelo más complejo no supera universalmente al anterior: cada candidato debe justificar transferencia, consumidor, calidad fuera de muestra y coste. Los nombres físicos o cuánticos no acreditan sus garantías en mercados.
 
-| Área Científica | Paradigma Convencional (Obsoleto) | Estado Previo en Repo | **EL SIGUIENTE PASO CANÓNICO (V3)** |
+| Área Científica | Referencia convencional para comparar | Estado previo declarado | **Candidato a contrastar, sin superioridad certificada** |
 | :--- | :--- | :--- | :--- |
 | **Filtrado Temporal** | Medias Móviles (SMA, EMA) | Filtro de Kalman Discreto | **Wavelets Continuas Morlet/Daubechies en Espacios de Sobolev $\mathcal{H}^s$ con Regularización Variacional de Tikhonov** |
 | **Modelado de Volatilidad** | Desviación Estándar / ATR fijo | GARCH(1,1) / Volatilidad Histórica | **Rough Volatility Fractional Brownian Motion ($H < 0.5$) acoplada a PIN-SDE con Saltos de Lévy y Procesos de Hawkes Mutuamente Excitados** |
@@ -137,7 +138,7 @@ Si el Gradient Boosting (XGBoost) es el siguiente paso del Random Forest, el sis
    *Implementado en `crates/signal-engine/src/feynman_propagator.rs`.*
 
 4. **Entropía No-Extensiva de Rényi-Tsallis:**
-   $$S_q = \frac{1}{1 - q} \left( 1 - \sum_{i} p_i^q \right) \quad \text{y} \quad H_\alpha = \frac{1}{1 - \alpha} \ln \left( \sum_i p_i^\alpha \right)$$
+   $$S_q = \frac{1}{q - 1} \left( 1 - \sum_{i} p_i^q \right) \quad \text{y} \quad H_\alpha = \frac{1}{1 - \alpha} \ln \left( \sum_i p_i^\alpha \right)$$
    Captura la correlación de largo alcance y las distribuciones de colas pesadas de la microestructura financiera con parámetro adaptativo $q$.
    *Implementado en `crates/signal-engine/src/renyi_tsallis_entropy.rs`.*
 
@@ -195,11 +196,11 @@ El sistema ha erradicado las siguientes compuertas de asfixia:
 
 ### 📊 Inventario General de Código
 - **Crates Totales:** 23
-- **Archivos Rust (`.rs`):** >510
+- **Archivos Rust (`.rs`):** 672 en el snapshot b9cd7735; 1.863 rutas totales en el inventario BASE15.
 - **Líneas de Código Rust:** >125,000
-- **Suites de Pruebas Unitarias y de Contrato:** >80 suites (>660 tests pasando al 100%)
-- **Presupuesto de Memoria RAM:** <2.5 GB utilizados (holgado en laptop de 16 GB, sin GPU)
-- **Latencia de Hot-Path de Decisión:** <25 microsegundos (cero asignaciones en heap)
+- **Suites de Pruebas Unitarias y de Contrato:** los conteos históricos pertenecen a sus recibos/SHA; BASE15 informa sólo ejecuciones propias en su recibo, sin certificar aquí la suite global.
+- **Presupuesto de Memoria RAM:** objetivo <2.5 GB para el motor; uso actual no medido en esta ola.
+- **Latencia de Hot-Path de Decisión:** pendiente de una medición nueva con workload y binario identificados; no se certifican aquí <25 microsegundos ni cero asignaciones globales.
 
 ```
 crates/
@@ -271,7 +272,7 @@ crates/
 2. **Prohibición Absoluta de `git add -A` o `git add .`:**
    - Ejecutar `git status` antes de cada commit y realizar `git add <archivo>` individualmente sobre los archivos modificados de la tarea en curso.
 3. **Verificación Previa a la Ejecución:**
-   - Detener cualquier proceso residual (`Stop-Process god_engine* -ErrorAction SilentlyContinue`) antes de compilar con `cargo check` o `cargo test`.
+   - Usar targets privados para `cargo check`/`cargo test`; no detener procesos ajenos ni el motor vivo. Si una tarea autorizada necesita reemplazar su ejecutable bloqueado, verificar PID y StartTime, propiedad y reserva antes de detenerlo, conforme a `.agents/AGENTS.md`.
 4. **Ciclo de Integración Limpia:**
    - Crear rama de trabajo `agy/<número>-<nombre>`, implementar, certificar contratos, sincronizar con `origin/main`, commitear atómicamente, mergear a `main`, pushear a `origin/main` y eliminar la rama local una vez integrada.
 5. **Sincronización Transversal de Memoria:**
@@ -311,4 +312,4 @@ crates/
 
 ---
 
-*Plan Maestro Canónico V3 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
+*Documento vivo de coordinación. Los roles de revisión son responsabilidades propuestas; cada cierre requiere evidencia y recibo ligados al SHA correspondiente. Este plan no constituye una certificación matemática, estadística, económica o de rendimiento del sistema completo.*

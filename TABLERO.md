@@ -400,3 +400,9 @@ Main remoto confirmado en 88f8812199eea80333d0c13d910ec9f7c1796900 mediante push
 ## R4 — referencias cerradas y sincronización — 2026-10-13
 
 Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales a T1. Root cerró sus refs espectrales e históricas; SI cerró platt-age-evidence-1013 local/remota. Worktrees, modelos, genomas y 229 recibos históricos conservados. Remoto observado: sólo main. CI de f59 pendiente; ninguna aprobación heredada. [Cierre efectivo y recibos](docs/audit/CIERRE_R4_REFERENCIAS_2026-10-13.md). Esta última actualización documental se publica por rama temporal propia y su SHA/cierre se verifican externamente.
+
+
+<!-- BASE15-2026-10-15 -->
+## BASE15 — revisión desde la base tras Ω128 (2026-10-15)
+
+[Plan y asignación por contratos](docs/audit/PLAN_BASE15_2026-10-15.md). Snapshot b9cd7735: 1.863 rutas/672 Rust inventariadas, cero archivos completos certificados por esta ola. Prioridad: contabilidad y dominio numérico reproducidos; después wiring/persistencia de adaptación, normalización Hawkes y supuestos del riesgo. Las reparaciones de adaptadores no certifican conducta productiva. [Validación](docs/audit/VALIDACION_BASE15_2026-10-15.json) y [censo Git](docs/audit/GIT_BASE15_2026-10-15.json) separan prueba, publicación e integración. Meta económica y rendimiento global permanecen abiertos.
