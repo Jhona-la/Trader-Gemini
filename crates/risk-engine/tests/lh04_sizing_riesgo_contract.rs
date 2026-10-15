@@ -5,6 +5,9 @@
 //! del win-rate medido, b = PF·(1−p̂)/p̂, acotado por clamp_ruin (axioma 25%).
 //! El margen se deriva: notional = f·C/SL; margen = notional/L. Sin
 //! evidencia (n<10, p̂ degenerado, PF≤0): f=0 y el sizing existente intacto.
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::{
     symbol_registry::{update_registry, SymbolSpec},
     GlobalArena,
@@ -12,6 +15,8 @@ use quantum_arena::{
 use risk_engine::RiskEngine;
 use signal_engine::{SignalIntent, SignalType};
 use std::sync::atomic::Ordering::Relaxed;
+
+const DECISION_TIME_MS: u64 = 200_000;
 
 fn fixture() -> (std::sync::Arc<GlobalArena>, SignalIntent) {
     update_registry(vec![SymbolSpec {
@@ -39,6 +44,9 @@ fn fixture() -> (std::sync::Arc<GlobalArena>, SignalIntent) {
         signal: SignalType::Long,
         confidence: 0.9,
         expected_duration_ms: 60_000,
+        // Cohorte Long/local explícita para aislar LG5 de las métricas
+        // agregadas de LH04 que cada caso cambia; no se deriva de WR/PF.
+        net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
         ..SignalIntent::default()
     };
     (arena, intent)
@@ -48,9 +56,10 @@ fn fixture() -> (std::sync::Arc<GlobalArena>, SignalIntent) {
 /// telemetría lo dice. El pedido sale por el camino existente.
 #[test]
 fn lh04_sin_evidencia_f_cero_y_camino_existente_intacto() {
-    let (arena, intent) = fixture();
+    let (arena, mut intent) = fixture();
+    intent.net_payoff = None; // Arranque frío sin evidencia económica.
     let mut engine = RiskEngine::new(1000.0);
-    let out = engine.evaluate_quantum_order(0, &intent, &arena);
+    let out = engine.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     // El pedido puede pasar o ser vetado por otras gates — lo que se
     // contrata es que la telemetría LH-04 reporta SIN EVIDENCIA.
     let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
@@ -64,19 +73,28 @@ fn lh04_sin_evidencia_f_cero_y_camino_existente_intacto() {
     let _ = out;
 }
 
-/// (2) CON evidencia (n=100, p̂=0.65, PF=2.6 ⇒ b=1.4): f > 0 y el
-/// riesgo al stop de la orden final ≈ f·C (dentro del orden del rescate
-/// de nocional mínimo). La fórmula: Wilson-LCB(0.65, 100, 1.64) ≈ 0.5720;
-/// f = ½·max(0, 0.572 − 0.428/1.4) = ½·0.2666 ≈ 0.1333 (≤ axioma 25%).
+/// (2) Evidencia calibrada y objetivo que NO cabe en el tope de margen.
+/// Wilson-LCB(.65, 100, 1.64) = .5687795275; b=1.4 y f=.1303824521.
+/// Con C=1000, SL genómico=.01 y L=1, el objetivo supera 13 000 USD
+/// de margen. El cap LH04 existente impone 250 USD. Un stop de precio
+/// a 99 desde entrada100 arriesga 2.5 USD, no f*C ni el precio del stop.
 #[test]
-fn lh04_con_evidencia_dimensiona_por_riesgo_calibrado() {
-    let (arena, intent) = fixture();
+fn lh04_evidencia_calibrada_respeta_tope_cuando_objetivo_no_cabe() {
+    let (arena, mut intent) = fixture();
     // Evidencia medida de la moneda: 100 cierres, 65% acierto, PF 2.6.
     arena.coins[0].metrics.win_rate.store(0.65, Relaxed);
     arena.coins[0].metrics.trade_count.store(100, Relaxed);
     arena.coins[0].metrics.profit_factor.store(2.6, Relaxed);
+    arena.config.global_leverage.store(1.0, Relaxed);
+    arena.config.update_sl_curve(0.01, 0.01);
+    intent.sl_price_target = 99.0;
+    intent.tp_price_target = 103.0;
+    let continuous_sl = arena.config.sl_at_tau(intent.expected_duration_ms as f64);
+    assert!((continuous_sl - 0.01).abs() < 1e-12);
+    assert_eq!(arena.riesgo_por_operacion.load(Relaxed), 0.0);
+    assert_eq!(arena.riesgo_por_operacion_usd.load(Relaxed), 0.0);
     let mut engine = RiskEngine::new(1000.0);
-    let out = engine.evaluate_quantum_order(0, &intent, &arena);
+    let out = engine.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
 
     let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
     assert!(f.is_finite() && f > 0.0, "con evidencia: f > 0, f={f}");
@@ -84,6 +102,7 @@ fn lh04_con_evidencia_dimensiona_por_riesgo_calibrado() {
     let p_lcb = arena.registry.get_for_coin_or(0, "lh04_p_lcb", f64::NAN);
     let b = arena.registry.get_for_coin_or(0, "lh04_b_realizado", f64::NAN);
     assert!(p_lcb.is_finite() && b.is_finite());
+    assert!((p_lcb - 0.5687795275010941).abs() < 1e-12);
     assert!((b - 1.4).abs() < 1e-9, "b = PF·(1−p̂)/p̂ = 2.6·0.35/0.65 = 1.4: {b}");
     let f_esperada = 0.5 * (p_lcb - (1.0 - p_lcb) / b).max(0.0);
     assert!(
@@ -91,20 +110,26 @@ fn lh04_con_evidencia_dimensiona_por_riesgo_calibrado() {
         "f = ½·max(0, p_LCB − (1−p_LCB)/b): {f} vs {f_esperada}"
     );
     assert!(f < 0.25, "f respeta el axioma del 25%: {f}");
+    assert!((f - 0.1303824521437949).abs() < 1e-12);
     // p_LCB < p̂ (la cota inferior es conservadora).
     assert!(p_lcb < 0.65, "LCB por debajo del estimador puntual: {p_lcb}");
 
-    // El riesgo al stop de la orden emitida ≈ f·C (si la orden pasó).
-    if out.signal != SignalType::Flat {
-        let riesgo_stop = out.volume_usd * out.leverage * out.sl_target.max(1e-9);
-        // SL_target es fracción del precio; tolerancia generosa por el
-        // rescate de nocional mínimo y la cuantización del apalancamiento.
-        let objetivo = f * 1000.0;
-        assert!(
-            riesgo_stop >= objetivo * 0.5,
-            "riesgo al stop {riesgo_stop} en el orden del objetivo {objetivo} (rescate min-notional puede subirlo, no bajarlo a <50%)"
-        );
-    }
+    // Precondición independiente del tamaño emitido: la curva y el L
+    // controlados hacen vinculante el cap de margen de GLM120.
+    let objetivo = f * 1000.0;
+    assert!(objetivo / continuous_sl > 250.0);
+    assert_eq!(out.signal, SignalType::Long, "{out:?}");
+    assert_eq!(risk_engine::ultimo_rechazo(), None);
+    assert_eq!(out.leverage, 1.0);
+    assert!((out.volume_usd - 250.0).abs() < 1e-9, "{out:?}");
+    assert_eq!(out.sl_target, 99.0);
+    assert_eq!(out.tp_target, 103.0);
+    let stop_fraction = (100.0 - out.sl_target) / 100.0;
+    let riesgo_stop = out.volume_usd * out.leverage * stop_fraction;
+    assert!((riesgo_stop - 2.5).abs() < 1e-9);
+    assert!(2.5 < objetivo * 0.5, "la cota antigua era inviable tras el cap");
+    assert!((arena.riesgo_por_operacion_usd.load(Relaxed) - 2.5).abs() < 1e-9);
+    assert!((arena.riesgo_por_operacion.load(Relaxed) - 0.0025).abs() < 1e-12);
 }
 
 /// (3) Evidencia DÉBIL se autolimita: con n=12 y p̂=0.9, la Wilson-LCB
@@ -118,7 +143,7 @@ fn lh04_evidencia_debil_y_sin_edge_fall_closed() {
     arena.coins[0].metrics.trade_count.store(200, Relaxed);
     arena.coins[0].metrics.profit_factor.store(0.9, Relaxed);
     let mut engine = RiskEngine::new(1000.0);
-    let _ = engine.evaluate_quantum_order(0, &intent, &arena);
+    let _ = engine.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
     assert_eq!(f, 0.0, "PF<1 (sin edge): b degrada a f=0 — no dimensiona");
 }
@@ -132,7 +157,7 @@ fn lh04_f_acotada_por_el_axioma_de_ruina() {
     arena.coins[0].metrics.trade_count.store(500, Relaxed);
     arena.coins[0].metrics.profit_factor.store(10.0, Relaxed);
     let mut engine = RiskEngine::new(1000.0);
-    let _ = engine.evaluate_quantum_order(0, &intent, &arena);
+    let _ = engine.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
     assert!(f.is_finite() && f > 0.0);
     assert!(
@@ -152,7 +177,7 @@ fn lh04_racha_perdedora_encoge_f_proporcionalmente() {
     arena.coins[0].metrics.trade_count.store(100, Relaxed);
     arena.coins[0].metrics.profit_factor.store(2.6, Relaxed);
     let mut engine = RiskEngine::new(1000.0);
-    let _ = engine.evaluate_quantum_order(0, &intent, &arena);
+    let _ = engine.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     let f_neutra = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
     let bias_neutro = arena.registry.get_for_coin_or(0, "lh04_bias_factor", f64::NAN);
     assert!(f_neutra > 0.0);
@@ -160,7 +185,7 @@ fn lh04_racha_perdedora_encoge_f_proporcionalmente() {
 
     arena.coins[0].epigenetic_bias.store(0.6, Relaxed);
     let mut engine2 = RiskEngine::new(1000.0);
-    let _ = engine2.evaluate_quantum_order(0, &intent, &arena);
+    let _ = engine2.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     let f_perdedora = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
     let factor = arena.registry.get_for_coin_or(0, "lh04_bias_factor", f64::NAN);
     assert!((factor - 0.6).abs() < 1e-9, "factor = bias en racha perdedora: {factor}");
@@ -181,12 +206,12 @@ fn lh04_racha_ganadora_no_infla_f_asimetria_anti_hot_hand() {
     arena.coins[0].metrics.trade_count.store(100, Relaxed);
     arena.coins[0].metrics.profit_factor.store(2.6, Relaxed);
     let mut engine = RiskEngine::new(1000.0);
-    let _ = engine.evaluate_quantum_order(0, &intent, &arena);
+    let _ = engine.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     let f_neutra = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
 
     arena.coins[0].epigenetic_bias.store(1.8, Relaxed);
     let mut engine2 = RiskEngine::new(1000.0);
-    let _ = engine2.evaluate_quantum_order(0, &intent, &arena);
+    let _ = engine2.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     let f_ganadora = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
     let factor = arena.registry.get_for_coin_or(0, "lh04_bias_factor", f64::NAN);
     assert!((factor - 1.0).abs() < 1e-9, "bias 1.8 clampea a 1.0: {factor}");
@@ -208,38 +233,29 @@ fn lh04_racha_extrema_no_crea_estado_absorbente() {
     arena.coins[0].metrics.profit_factor.store(2.6, Relaxed);
     arena.coins[0].epigenetic_bias.store(0.5, Relaxed);
     let mut engine = RiskEngine::new(1000.0);
-    let _ = engine.evaluate_quantum_order(0, &intent, &arena);
+    let _ = engine.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
     assert!(f > 0.0, "bias 0.5: f encoge pero NO muere: {f}");
 }
 
-/// (8) P1 (GLM 120, mea culpa): el margen LH-04 NUNCA supera el tope
-/// del axioma de ruina × capital asignado. Con stop ceñido el nocional
-/// objetivo (f·C/SL) exigía margen > capital completo ⇒ el orquestador
-/// rechazaba sistemáticamente con otra posición abierta (REJ_ORCHESTRATOR,
-/// 7 corridas CI rojas — contrato flat_producer de god-engine-core).
-/// Ahora: margen ≤ tope·C (mismo tope que acota f, ≤25%).
+/// (8) El fixture de ATR diminuto no llega a LH04: su stop difusivo
+/// queda bajo el suelo de fricción y debe rechazarse antes del sizing.
+/// El antiguo `if f>0 && !Flat` permitía pasar sin comprobar el cap.
+/// El caso (2) exige una orden real y comprueba ese cap por separado.
 #[test]
-fn lh04_margen_nunca_supera_el_tope_del_axioma_por_capital() {
+fn lh04_stop_bajo_suelo_se_rechaza_antes_del_dimensionado() {
     let (arena, intent) = fixture();
-    // Evidencia madura (activa LH-04) + ATR BAJO ⇒ stop ceñido ⇒
-    // nocional objetivo enorme (el caso que rompía).
+    // Las métricas maduras no pueden saltarse la viabilidad del horizonte.
     arena.coins[0].metrics.win_rate.store(0.75, Relaxed);
     arena.coins[0].metrics.trade_count.store(100, Relaxed);
     arena.coins[0].metrics.profit_factor.store(2.0, Relaxed);
     arena.coins[0].current_atr.store(0.01, Relaxed); // stop MUY ceñido
     let mut engine = RiskEngine::new(1000.0);
-    let out = engine.evaluate_quantum_order(0, &intent, &arena);
+    let out = engine.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
-    if f > 0.0 && out.signal != SignalType::Flat {
-        // f ≤ 0.25 (axioma) ⇒ margen = min(obj, 0.25·1000) ≤ 250.
-        assert!(
-            out.volume_usd / out.leverage <= 250.0 + 1e-6,
-            "margen {} ≤ tope(0.25)·allocated(1000): el stop ceñido no
-            puede exigir el capital completo",
-            out.volume_usd / out.leverage
-        );
-    }
-    // Y si fue rechazado, NO fue por pedir margen desorbitado del
-    // orquestador en ESTE caso (una sola posición, capital holgado).
+    assert_eq!(out.signal, SignalType::Flat, "{out:?}");
+    assert_eq!(risk_engine::ultimo_rechazo(), Some(risk_engine::REJ_TP_SL_FLOOR));
+    assert!(f.is_nan(), "el rechazo previo no debe atribuir cobertura a LH04: {f}");
+    assert_eq!(arena.riesgo_por_operacion.load(Relaxed), 0.0);
+    assert_eq!(arena.riesgo_por_operacion_usd.load(Relaxed), 0.0);
 }

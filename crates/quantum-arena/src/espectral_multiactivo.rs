@@ -89,7 +89,7 @@ pub const MUESTRAS_MADURAS: u64 = 30;
 pub struct EspectralMultiactivoParams {
     /// Multiplicador de recencia para el emparejamiento contemporáneo (|Δts| ≤ recencia_x · τ).
     pub recencia_x: f64,
-    /// Factor de olvido EWMA para los momentos no centrados de retornos cruzados.
+    /// Factor EWMA finito en (0, 1] para los momentos no centrados de retornos cruzados.
     pub olvido: f64,
     /// Número mínimo de muestras acumuladas para considerar madura la escala-par.
     pub muestras_maduras: u64,
@@ -110,6 +110,11 @@ impl Default for EspectralMultiactivoParams {
 }
 
 impl EspectralMultiactivoParams {
+    #[inline]
+    fn has_valid_olvido(&self) -> bool {
+        self.olvido.is_finite() && self.olvido > 0.0 && self.olvido <= 1.0
+    }
+
     pub fn from_registry_or_default(registry: &crate::state::OmniscientRegistry) -> Self {
         let mut p = Self::default();
         let rec = registry.get_value_or("espectral_recencia_x", p.recencia_x);
@@ -267,7 +272,17 @@ impl EspectralMultiactivo {
         Self::with_params(max_coins, EspectralMultiactivoParams::default())
     }
 
+    /// Constructor sin historia: sustituye solo el olvido invalido por OLVIDO.
+    /// Preserva los otros campos; este metodo no los valida.
     pub fn with_params(max_coins: usize, params: EspectralMultiactivoParams) -> Self {
+        let params = if params.has_valid_olvido() {
+            params
+        } else {
+            EspectralMultiactivoParams {
+                olvido: OLVIDO,
+                ..params
+            }
+        };
         let num_pairs = total_pairs(max_coins);
         Self {
             max_coins,
@@ -282,8 +297,13 @@ impl EspectralMultiactivo {
         &self.params
     }
 
+    /// Con historia existente, un olvido invalido rechaza el conjunto completo.
+    /// Conserva configuracion, momentos, e-proceso, contadores y bloques consumidos.
     #[inline]
     pub fn update_params(&mut self, params: EspectralMultiactivoParams) {
+        if !params.has_valid_olvido() {
+            return;
+        }
         self.params = params;
     }
 

@@ -9,8 +9,10 @@
 //! - la evidencia por moneda (acierto, PF, Kelly, PnL);
 //!   el PnL de las sesiones anteriores se conserva aparte (CL-108d): los
 //!   acumuladores `pnl_realized`/`pnl_gross` son de la sesión;
-//! - los calibradores de Platt (por moneda y global), que deciden la
-//!   probabilidad con la que el riesgo juzga el valor esperado;
+//! - los calibradores de Platt (por moneda y global), con etiquetas de ganar
+//!   neto para el sizing legacy; no describen magnitudes de pagos;
+//! - LG5: pagos netos por nocional, con cohortes moneda/lado/procedencia,
+//!   reloj de disponibilidad y deduplicación por ranura, separados de Platt;
 //! - el freno de la estrategia (proceso e de Ville, CL-107): un reinicio
 //!   borraba la evidencia contra H0, o soltaba un freno ya echado;
 //! - el riesgo y la geometría medidos de las órdenes, de los que el freno
@@ -98,6 +100,10 @@ pub struct MonedaGuardada {
     /// Estados anteriores sin este campo infieren sólo el máximo retenido.
     #[serde(default)]
     pub calibrador_reloj_ms: Option<u64>,
+    /// Legacy files have no measured payoff magnitudes. Do not infer them
+    /// from wins, profit factor, live stops or aggregate dollar metrics.
+    #[serde(default)]
+    pub net_payoff: crate::net_payoff::PayoffSnapshot,
     pub epigenetica: EpigeneticaGuardada,
     /// CL-108e — el anillo de siniestros de Cramér-Lundberg (retorno neto por
     /// nocional de cada cierre), del más viejo al más nuevo.
@@ -239,6 +245,8 @@ impl GodEngineCore {
                     .unwrap_or_default(),
                 calibrador_reloj_ms: self.calibrator_by_coin.get(coin_id)
                     .and_then(PlattCalibrator::evidence_clock_ms),
+                net_payoff: self.net_payoff_by_coin.get(coin_id)
+                    .map(crate::net_payoff::NetPayoffModel::snapshot).unwrap_or_default(),
                 epigenetica: EpigeneticaGuardada {
                     sesgo: coin.epigenetic_bias.load(Relaxed),
                     umbral: coin.epigenetic_threshold_modifier.load(Relaxed),
@@ -280,7 +288,9 @@ impl GodEngineCore {
     /// universo de este arranque; las que ya no están se ignoran. Devuelve
     /// cuántas monedas se restauraron.
     pub fn restaurar_estado_aprendido(&mut self, e: &EstadoAprendido) -> usize {
-        if e.version != VERSION_ESTADO {
+        // LG5: reject malformed additive evidence before any restoration
+        // mutation, including when this API is called without cargar().
+        if e.version != VERSION_ESTADO || e.monedas.iter().any(|g| g.net_payoff.validate().is_err()) {
             return 0;
         }
         let mut restauradas = 0;
@@ -337,6 +347,11 @@ impl GodEngineCore {
                     c.restore_evidence_clock_ms(clock);
                 }
             }
+            if let Some(model) = self.net_payoff_by_coin.get_mut(coin_id) {
+                // Rows carry symbol-relative slot identity, not an old coin
+                // index; the destination model retains this startup's index.
+                let _ = model.restore(&g.net_payoff);
+            }
             restauradas += 1;
         }
         self.confidence_calibrator = PlattCalibrator::new();
@@ -387,6 +402,7 @@ pub fn validar(e: &EstadoAprendido) -> Result<(), String> {
     for g in &e.monedas {
         let m = &g.metricas;
         let s = &g.simbolo;
+        g.net_payoff.validate().map_err(|reason| format!("{s}.{reason}"))?;
         rango(&format!("{s}.win_rate"), m.win_rate, 0.0, 1.0)?;
         rango(&format!("{s}.profit_factor"), m.profit_factor, 0.0, todo)?;
         rango(&format!("{s}.gross_wins"), m.gross_wins, 0.0, todo)?;

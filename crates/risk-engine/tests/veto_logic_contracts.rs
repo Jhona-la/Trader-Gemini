@@ -4,6 +4,9 @@
 //!  - V-LOGIC-007: `council_confidence_threshold_respects_graceful_cold_modulation`
 //!  - V-LOGIC-009: `insufficient_evidence_contract_without_deadlock`
 
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::GlobalArena;
 use risk_engine::{
     evidence::win_rate_hierarchical_lcb, ultimo_rechazo, RiskEngine, REJ_CONFIDENCE, REJ_FEE_IMPACT,
@@ -31,6 +34,8 @@ fn fixture() -> (std::sync::Arc<GlobalArena>, SignalIntent) {
         ]);
     });
     let arena = GlobalArena::build_in_own_stack(13.0);
+    // Synthetic decision clock: the payoff cohort is available by 100_000 ms.
+    arena.coins[0].last_tick_timestamp_ms.store(100_000, Relaxed);
     arena.coins[0].current_price.store(100.0, Relaxed);
     arena.coins[0].current_atr.store(1.0, Relaxed);
     arena.coins[0].hurst_exponent.store(0.5, Relaxed);
@@ -46,6 +51,7 @@ fn fixture() -> (std::sync::Arc<GlobalArena>, SignalIntent) {
     arena.config.kelly_clamp_max.store(0.25, Relaxed);
     let intent = SignalIntent {
         signal: SignalType::Long,
+        net_payoff: Some(net_payoff_fixture::positive(0, SignalType::Long)),
         confidence: 0.9,
         expected_duration_ms: 60_000,
         ..SignalIntent::default()
@@ -74,6 +80,8 @@ pub fn council_confidence_threshold_respects_graceful_cold_modulation() {
 #[test]
 pub fn insufficient_evidence_contract_without_deadlock() {
     let (arena, mut intent) = fixture();
+
+    intent.net_payoff = None;
 
     // 1. Arranque frío total (trade_count == 0): la sonda exploratoria D-750 es admitida sin deadlock
     arena.coins[0].metrics.trade_count.store(0, Relaxed);
@@ -165,6 +173,7 @@ pub fn orchestrator_contract_respects_directional_pressure_and_blocks_crash() {
 
     // 2. Cortos en crash: admitidos.
     intent.signal = SignalType::Short;
+    intent.net_payoff = Some(net_payoff_fixture::positive(0, intent.signal));
     let out_short = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(out_short.signal, SignalType::Short, "Shorts en crash deben admitirse");
     assert!(out_short.volume_usd > 0.0);
@@ -179,6 +188,7 @@ pub fn orchestrator_contract_respects_directional_pressure_and_blocks_crash() {
     assert_eq!(out_short_bull.signal, SignalType::Flat, "Ventas en euforia sistémica deben vetarse");
     assert_eq!(ultimo_rechazo(), Some(REJ_ORCHESTRATOR));
     intent.signal = SignalType::Long;
+    intent.net_payoff = Some(net_payoff_fixture::positive(0, intent.signal));
     let out_long_bull = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(out_long_bull.signal, SignalType::Long, "Compras en euforia deben admitirse");
     assert_eq!(ultimo_rechazo(), None);
@@ -190,7 +200,9 @@ pub fn spec_rejection_contract_handles_unregistered_coin() {
     // ranuras): salía por REJ_FLAT_COIN y el veto de spec no se ejecutaba.
     // Ahora: una moneda DENTRO del arena, con precios válidos y sin spec
     // registrado (el fixture sólo registra la moneda 0).
-    let (arena, intent) = fixture();
+    let (arena, mut intent) = fixture();
+    intent.net_payoff = Some(net_payoff_fixture::positive(1, intent.signal));
+    arena.coins[1].last_tick_timestamp_ms.store(100_000, Relaxed);
     arena.coins[1].current_price.store(100.0, Relaxed);
     arena.coins[1].current_atr.store(1.0, Relaxed);
     arena.coins[1].hurst_exponent.store(0.5, Relaxed);

@@ -1,4 +1,7 @@
 //! Final-leverage admission; offline synthetic state, no active genome writes.
+#[path = "support/net_payoff_fixture.rs"]
+mod net_payoff_fixture;
+
 use quantum_arena::{
     symbol_registry::{update_registry, SymbolSpec},
     GlobalArena,
@@ -94,7 +97,9 @@ fn invalid_genomic_leverage_is_not_replaced_with_twenty() {
 
 #[test]
 fn final_fee_budget_applies_even_without_minimum_notional_rescue() {
-    let (a, intent) = fixture(100.0);
+    let (a, mut intent) = fixture(100.0);
+    intent.net_payoff = Some(net_payoff_fixture::positive(0, intent.signal));
+    a.coins[0].last_tick_timestamp_ms.store(100_000, Relaxed);
     a.coins[0].metrics.trade_count.store(100, Relaxed);
     a.coins[0].metrics.kelly_fraction.store(0.15, Relaxed);
     a.coins[0].metrics.win_rate.store(0.75, Relaxed);
