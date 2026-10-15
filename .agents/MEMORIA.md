@@ -7049,3 +7049,10 @@ El merge local `a3156b1` une `2da58` y `b674` tras check006 all-targets/release/
 Las reservas ya recibidas asignan a SI B15-12/13 de replay causal, con su nuevo worktree en creación; el chat `01a140a8` reserva B15-14 de VECM. BASE15 conserva el censo canónico y la coordinación de recursos. El último aviso a ese chat Quant aún no tiene acuse confirmado; sus reservas proceden de mensajes previos. SI autorizó cerrar su antigua rama LG5 sólo después de comprobar la ascendencia de `7af2` en main publicado; esa condición aún no se cumple y no se declara cerrada.
 
 El P2 del IC con `1e200` corresponde a robustez de la API directa: el productor sano de log-retornos está acotado aproximadamente por ±1454,23. El diseño numérico del e-proceso es una propuesta; no se ha implementado ni validado en Rust. [Adenda vigente](../docs/audit/INTEGRACION_LG5_MAIN_2026-10-15.md).
+
+<!-- ROOT-LG5-MAIN-20261015-CI5 -->
+La CI de los cinco jobs de PR66 sobre `2da58` terminó: 2943/0/105 y 196 filtradas en 342 resúmenes; checkout `112770b` / árbol `31b311`, con 13 contratos `ok`. Recibo V3 `e9d85073`; no certifica Ω129, Ω130, main ni T1 completo.
+
+Respaldo `3de` verificado: 79 archivos / 5.490.582 bytes, manifiesto `eb4b0863`, sin atribuirle V3 ni notas creadas después. Main remoto `f78a4706` / Ω130 requiere una integración nueva. El resultado BASE 257/0/5 permanece ligado a Ω129; el all-targets posterior se reanudó tras una interrupción sin resultado terminal (`interrupted_unknown`).
+
+Los acuses ya se recibieron: SI lleva PR68 con contratos y hooks antes del fix, con el RED de CI pendiente; Quant lleva PR67 VECM/checker, después de BASE/Hawkes y antes del full/T1 de ROOT. Las compilaciones nuevas están congeladas por presión de RAM; ROOT no tiene Cargo/rustc ni préstamos activos. El diseño EProceso V2 sigue sin aplicar: 13 tests declarados / 0 ejecutados; la revisión matemática no sustituye Rust ni valida las hipótesis estadísticas. El informe LG5 conserva los SHA de 40 caracteres, los límites y el orden actual.

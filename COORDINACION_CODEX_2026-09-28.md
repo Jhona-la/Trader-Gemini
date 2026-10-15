@@ -11424,3 +11424,10 @@ Reservas adicionales ya recibidas: SI prepara B15-12/13 de replay causal (`bookt
 
 ROOT no edita esos runtimes. Orden de integración: BASE15 PR65 → Hawkes validado → H PR64 → ROOT full/T1 final. ROOT no ejecutará Cargo tras check006 sin una nueva ventana de recursos. No se limpian ramas activas o con commits exclusivos ni se transfiere CI histórica.
 
+<!-- ROOT-LG5-CI5-OMEGA130-20261015 -->
+Actualización ROOT: los cinco jobs de PR66 sobre `2da58` aprobaron (2943/0/105, 196 filtradas); checkout `112770b` / árbol `31b311`, recibo V3 `e9d85073`. No se certifica `a315` ni el nuevo main `f78a4706` / Ω130. El respaldo `3de` está completo y rehasheado de forma independiente: 79 archivos, manifiesto `eb4b0863`.
+
+El resultado BASE 257/0/5 sigue ligado a Ω129; el all-targets se reanuda desde caché después de una interrupción sin resultado terminal (`interrupted_unknown`). Prioridad: BASE/Ω130 → Hawkes → PR67 VECM/checker y PR64 T3 → ROOT suites/T1/CI final. SI lleva PR68 con contratos y hooks antes del fix causal; el RED de CI sigue pendiente y no ejecuta Cargo local.
+
+Los acuses de coordinación ya llegaron. Se solicitó un corte estable, sin asumir la congelación de AGY. ROOT no tiene compilaciones activas; los préstamos y las nuevas ejecuciones de Cargo esperan una ventana por presión de RAM. Se conservan las ramas activas o con commits exclusivos y toda la evidencia; el detalle y los SHA de 40 caracteres están en el informe LG5.
+
