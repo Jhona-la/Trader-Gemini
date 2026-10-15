@@ -2,24 +2,142 @@ use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
 use strategy_core::QuantumStrategy;
 
+/// ⚡ OLA Ω129: Parámetros desacoplados y configurables para el motor de resonancia estocástica
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StochasticResonanceParams {
+    /// Ganancia de base cuando la señal está lejos de la resonancia (default: 1.0)
+    pub base_gain: f64,
+    /// Ganancia pico máxima en resonancia |s| = σ (default: 2.0)
+    pub peak_gain: f64,
+    /// Factor de nitidez/calidad Q del pico de resonancia (default: 1.0)
+    pub q_sharpness: f64,
+    /// Suelo mínimo de varianza de ruido para estabilidad numérica (default: 1e-6)
+    pub noise_floor: f64,
+}
+
+impl Default for StochasticResonanceParams {
+    fn default() -> Self {
+        Self {
+            base_gain: 1.0,
+            peak_gain: 2.0,
+            q_sharpness: 1.0,
+            noise_floor: 1e-6,
+        }
+    }
+}
+
+impl StochasticResonanceParams {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.base_gain.is_finite() || !(0.1..=5.0).contains(&self.base_gain) {
+            return Err(format!("Invalid base_gain: {}", self.base_gain));
+        }
+        if !self.peak_gain.is_finite()
+            || !(1.0..=10.0).contains(&self.peak_gain)
+            || self.peak_gain < self.base_gain
+        {
+            return Err(format!("Invalid peak_gain: {}", self.peak_gain));
+        }
+        if !self.q_sharpness.is_finite() || !(0.1..=10.0).contains(&self.q_sharpness) {
+            return Err(format!("Invalid q_sharpness: {}", self.q_sharpness));
+        }
+        if !self.noise_floor.is_finite() || !(1e-12..=1e-2).contains(&self.noise_floor) {
+            return Err(format!("Invalid noise_floor: {}", self.noise_floor));
+        }
+        Ok(())
+    }
+}
+
 /// ⚡ ALGORITMO #98: FILTRO DE RESONANCIA ESTOCÁSTICA CUÁNTICA (STOCHASTIC RESONANCE ENGINE)
 /// Utiliza el ruido de fondo de microestructura para amplificar señales sub-umbral débiles de Alpha,
 /// mediante el fenómeno de resonancia estocástica no-lineal en pozos de potencial simétricos.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 #[repr(C, align(64))]
 pub struct StochasticResonanceEngine {
+    pub params: StochasticResonanceParams,
     registry: Option<Arc<OmniscientRegistry>>,
+}
+
+impl Default for StochasticResonanceEngine {
+    fn default() -> Self {
+        Self {
+            params: StochasticResonanceParams::default(),
+            registry: None,
+        }
+    }
 }
 
 impl std::fmt::Debug for StochasticResonanceEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StochasticResonanceEngine").finish()
+        f.debug_struct("StochasticResonanceEngine")
+            .field("params", &self.params)
+            .finish()
     }
 }
 
 impl StochasticResonanceEngine {
     pub fn new() -> Self {
-        Self { registry: None }
+        Self::default()
+    }
+
+    pub fn new_with_params(params: StochasticResonanceParams) -> Self {
+        Self {
+            params,
+            registry: None,
+        }
+    }
+
+    pub fn with_params(mut self, params: StochasticResonanceParams) -> Self {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+        self
+    }
+
+    pub fn update_params(&mut self, params: StochasticResonanceParams) {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+    }
+
+    pub fn params(&self) -> &StochasticResonanceParams {
+        &self.params
+    }
+
+    /// Amplifica una señal combinándola con la intensidad de ruido σ con parámetros desacoplados
+    #[inline(always)]
+    pub fn amplify_signal_with_params(
+        weak_signal: f64,
+        noise_variance: f64,
+        params: &StochasticResonanceParams,
+    ) -> f64 {
+        let safe_signal = if weak_signal.is_finite() {
+            weak_signal
+        } else {
+            0.0
+        };
+        let safe_noise = if noise_variance.is_finite() && noise_variance > 0.0 {
+            noise_variance.max(params.noise_floor)
+        } else {
+            params.noise_floor
+        };
+        // σ = raíz de la varianza del ruido.
+        let sigma = safe_noise.sqrt();
+        // U-invertida en escala logarítmica con factor Q: pico exacto en |s| = σ.
+        let raw_ratio = (safe_signal.abs().max(1e-12) / sigma).ln() * params.q_sharpness;
+        let ratio = if raw_ratio.is_finite() {
+            raw_ratio.clamp(-50.0, 50.0)
+        } else {
+            0.0
+        };
+        let cosh_val = (ratio.exp() + (-ratio).exp()) * 0.5;
+        let delta_gain = (params.peak_gain - params.base_gain).max(0.0);
+        let resonance_gain = params.base_gain + delta_gain / cosh_val;
+        let res = safe_signal * resonance_gain;
+        if res.is_finite() {
+            res
+        } else {
+            0.0
+        }
     }
 
     /// Amplifica una señal combinándola con la intensidad de ruido σ en O(1)
@@ -30,36 +148,13 @@ impl StochasticResonanceEngine {
     /// decae a ×1 cuando |s| ≫ σ (señal fuerte pasa SIN cambio) y ×1 cuando
     /// |s| ≪ σ (señal enterrada: no hay dirección que amplificar). C∞,
     /// acotada (ganancia ∈ [1, 2]), antisimétrica.
-    ///
-    /// Lo que REEMPLAZA (quirk #614 documentado en #636, confirmado por
-    /// auditoría): sigmoid(|s|/σ) era MONÓTONA creciente — amplificaba la
-    /// señal FUERTE ×2 y la sub-umbral sólo ×1.5 (lo inverso de la
-    /// resonancia), y en el régimen vivo |x| ≫ σ era un ×2 casi constante
-    /// que no discriminaba nada.
     #[inline(always)]
     pub fn amplify_signal_with_noise(weak_signal: f64, noise_variance: f64) -> f64 {
-        let safe_signal = if weak_signal.is_finite() {
-            weak_signal
-        } else {
-            0.0
-        };
-        let safe_noise = if noise_variance.is_finite() && noise_variance > 0.0 {
-            noise_variance.max(1e-6)
-        } else {
-            0.0001
-        };
-        // σ = raíz de la varianza del ruido.
-        let sigma = safe_noise.sqrt();
-        // U-invertida en escala logarítmica: pico exacto en |s| = σ.
-        let ratio = (safe_signal.abs().max(1e-12) / sigma).ln();
-        let ratio = if ratio.is_finite() { ratio.clamp(-50.0, 50.0) } else { 0.0 };
-        let resonance_gain = 1.0 + 2.0 / (ratio.exp() + (-ratio).exp());
-        let res = safe_signal * resonance_gain;
-        if res.is_finite() {
-            res
-        } else {
-            0.0
-        }
+        Self::amplify_signal_with_params(
+            weak_signal,
+            noise_variance,
+            &StochasticResonanceParams::default(),
+        )
     }
 
     /// #614 (Ola 36) — VOTO ESPECTRAL de la resonancia estocástica: el
@@ -163,7 +258,33 @@ impl QuantumStrategy for StochasticResonanceEngine {
             return 0.0;
         }
 
-        Self::amplify_signal_with_noise(weak_signal, noise_variance).clamp(-1.0, 1.0)
+        let peak_gain = registry
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "stochastic_res_peak_gain",
+                "StochasticResonanceEngine",
+            )
+            .map(|p| p.get_value())
+            .unwrap_or(self.params.peak_gain);
+        let q_sharpness = registry
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "stochastic_res_q",
+                "StochasticResonanceEngine",
+            )
+            .map(|p| p.get_value())
+            .unwrap_or(self.params.q_sharpness);
+        let mut active_params = self.params;
+        if peak_gain.is_finite() && peak_gain >= active_params.base_gain {
+            active_params.peak_gain = peak_gain;
+        }
+        if q_sharpness.is_finite() && q_sharpness > 0.05 {
+            active_params.q_sharpness = q_sharpness;
+        }
+
+        Self::amplify_signal_with_params(weak_signal, noise_variance, &active_params).clamp(-1.0, 1.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {

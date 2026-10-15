@@ -1793,6 +1793,17 @@ impl GodEngineCore {
         self.arena.registry.set("multifractal_w_macro", mf_mac);
         self.arena.registry.set("multifractal_tanh_scale", mf_scale);
         self.arena.registry.set("burst_threshold_zscore", burst_th);
+
+        // OLA Ω129: Sincronización de VECM Cointegración, Solitón y Resonancia Estocástica
+        let vecm_entry = self.arena.config.vecm_z_entry.load(Ordering::Relaxed);
+        let vecm_sat = self.arena.config.vecm_z_saturation.load(Ordering::Relaxed);
+        let sol_sat = self.arena.config.soliton_sat_momento.load(Ordering::Relaxed);
+        let stoch_gain = self.arena.config.stochastic_res_peak_gain.load(Ordering::Relaxed);
+
+        self.arena.registry.set("vecm_z_entry", vecm_entry);
+        self.arena.registry.set("vecm_z_saturation", vecm_sat);
+        self.arena.registry.set("soliton_sat_momento", sol_sat);
+        self.arena.registry.set("stochastic_res_peak_gain", stoch_gain);
     }
 
     #[inline]
