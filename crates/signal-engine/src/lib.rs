@@ -29,7 +29,7 @@ pub mod trend_runner;
 
 pub use feynman_propagator::FeynmanPropagatorEngine;
 pub use maker::{MakerEngine, MakerQuote};
-pub use navier_stokes_manifold::NavierStokesManifoldEngine;
+pub use navier_stokes_manifold::{NavierStokesManifoldEngine, NavierStokesManifoldParams};
 pub use orchestrator::compute_ensemble_boost;
 pub use renyi_tsallis_entropy::RenyiTsallisEntropyEngine;
 pub use stat_arb::StatArbEngine;

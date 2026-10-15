@@ -230,6 +230,12 @@ pub struct QuantumConfig {
     pub tribunal_culpable_recuperable_threshold: AtomicF64,
     pub tribunal_overfitting_recent_min: AtomicF64,
     pub tribunal_overfitting_oos_max: AtomicF64,
+
+    // --- Navier-Stokes e Hidrodinámica (Ola Ω121) ---
+    pub navier_critical_laminar: AtomicF64,
+    pub navier_critical_turbulent: AtomicF64,
+    pub navier_relaxation_time_s: AtomicF64,
+    pub ofi_ewma_alpha: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -495,6 +501,10 @@ impl QuantumConfig {
             tribunal_culpable_recuperable_threshold: AtomicF64::new(0.05),
             tribunal_overfitting_recent_min: AtomicF64::new(0.05),
             tribunal_overfitting_oos_max: AtomicF64::new(-0.01),
+            navier_critical_laminar: AtomicF64::new(1.0),
+            navier_critical_turbulent: AtomicF64::new(5.0),
+            navier_relaxation_time_s: AtomicF64::new(0.200),
+            ofi_ewma_alpha: AtomicF64::new(0.10),
         }
     }
 

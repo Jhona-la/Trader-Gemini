@@ -416,6 +416,7 @@ crates/
 | **Ω118** | `metacortex-engine` | Desacoplamiento dinámico de psicología de masas, ballenas y cascadas | 🟢 **MERGED** | `market_entity_opinion_adaptation_contract.rs` |
 | **Ω119** | `metacortex-engine` | Desacoplamiento dinámico de Abogado del Diablo, autoengaño y online learning | 🟢 **MERGED** | `auditor_internal_and_tracker_adaptation_contract.rs` |
 | **Ω120** | `audit-engine` / `god-engine-core` | Resurrección de arista muerta y desacoplamiento de umbrales en Tribunal de Autoengaño | 🟢 **MERGED** | `tribunal_and_discrepancy_adaptation_contract.rs` |
+| **Ω121** | `feature-engine` / `signal-engine` / `quantum-arena` | Desacoplamiento dinámico de Navier-Stokes ($Re$, $\tau_{\text{relax}}$, $\alpha$) y Microestructura (OFI, OrderFlow, Welford) | 🟢 **MERGED** | `navier_stokes_and_microstructure_adaptation_contract.rs` & `navier_stokes_manifold_adaptation_contract.rs` |
 
 ### 📋 Nota de Integridad de Tabla (GLM, 2026-10-14 — ciclo 116)
 

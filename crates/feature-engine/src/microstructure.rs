@@ -8,6 +8,8 @@ pub struct OrderFlowTracker {
     pub short_ema_obi: f64,
     pub long_ema_obi: f64,
     pub velocity_obi: f64,
+    pub short_alpha: f64,
+    pub long_alpha: f64,
 }
 
 impl Default for OrderFlowTracker {
@@ -17,6 +19,9 @@ impl Default for OrderFlowTracker {
 }
 
 impl OrderFlowTracker {
+    pub const DEFAULT_SHORT_ALPHA: f64 = 0.10;
+    pub const DEFAULT_LONG_ALPHA: f64 = 0.01;
+
     pub fn new() -> Self {
         Self {
             cumulative_buy_vol: 0.0,
@@ -24,6 +29,24 @@ impl OrderFlowTracker {
             short_ema_obi: 0.0,
             long_ema_obi: 0.0,
             velocity_obi: 0.0,
+            short_alpha: Self::DEFAULT_SHORT_ALPHA,
+            long_alpha: Self::DEFAULT_LONG_ALPHA,
+        }
+    }
+
+    /// OLA Ω121: Constructor con coeficientes EWMA específicos
+    pub fn with_alphas(mut self, short_alpha: f64, long_alpha: f64) -> Self {
+        self.set_alphas(short_alpha, long_alpha);
+        self
+    }
+
+    /// OLA Ω121: Modifica dinámicamente los coeficientes EWMA con validación continua
+    pub fn set_alphas(&mut self, short_alpha: f64, long_alpha: f64) {
+        if short_alpha.is_finite() && (0.001..=0.999).contains(&short_alpha) {
+            self.short_alpha = short_alpha;
+        }
+        if long_alpha.is_finite() && (0.0001..=0.50).contains(&long_alpha) {
+            self.long_alpha = long_alpha;
         }
     }
 
@@ -48,9 +71,17 @@ impl OrderFlowTracker {
             ((buy_v - sell_v) / v).clamp(-1.0, 1.0)
         };
 
-        // EWMA update
-        let short_alpha = 0.1; // Fast
-        let long_alpha = 0.01; // Slow
+        // EWMA update con parámetros dinámicos
+        let short_alpha = if self.short_alpha.is_finite() && self.short_alpha > 0.0 {
+            self.short_alpha
+        } else {
+            Self::DEFAULT_SHORT_ALPHA
+        };
+        let long_alpha = if self.long_alpha.is_finite() && self.long_alpha > 0.0 {
+            self.long_alpha
+        } else {
+            Self::DEFAULT_LONG_ALPHA
+        };
 
         let prev_short = self.short_ema_obi;
         self.short_ema_obi =
@@ -94,6 +125,7 @@ pub struct OFIModel {
     pub prev_ask_qty: f64,
     pub prev_depth: f64,
     pub ema_ofi: f64,
+    pub ewma_alpha: f64,
 }
 
 impl Default for OFIModel {
@@ -103,6 +135,8 @@ impl Default for OFIModel {
 }
 
 impl OFIModel {
+    pub const DEFAULT_EWMA_ALPHA: f64 = 0.10;
+
     pub fn new() -> Self {
         Self {
             prev_bid_price: 0.0,
@@ -111,6 +145,20 @@ impl OFIModel {
             prev_ask_qty: 0.0,
             prev_depth: 0.0,
             ema_ofi: 0.0,
+            ewma_alpha: Self::DEFAULT_EWMA_ALPHA,
+        }
+    }
+
+    /// OLA Ω121: Constructor con factor de suavizado EWMA específico
+    pub fn with_alpha(mut self, alpha: f64) -> Self {
+        self.set_alpha(alpha);
+        self
+    }
+
+    /// OLA Ω121: Modifica dinámicamente el factor de suavizado EWMA con validación de estabilidad
+    pub fn set_alpha(&mut self, alpha: f64) {
+        if alpha.is_finite() && (0.001..=0.999).contains(&alpha) {
+            self.ewma_alpha = alpha;
         }
     }
 
@@ -186,8 +234,13 @@ impl OFIModel {
         self.prev_ask_qty = a_qty;
         self.prev_depth = current_depth;
 
-        // Suavizado EWMA para evitar ruido (alpha = 0.1)
-        self.ema_ofi = (ofi_norm - self.ema_ofi) * 0.1 + self.ema_ofi;
+        // Suavizado EWMA adaptativo (OLA Ω121)
+        let alpha = if self.ewma_alpha.is_finite() && (0.001..=0.999).contains(&self.ewma_alpha) {
+            self.ewma_alpha
+        } else {
+            Self::DEFAULT_EWMA_ALPHA
+        };
+        self.ema_ofi = (ofi_norm - self.ema_ofi) * alpha + self.ema_ofi;
 
         self.ema_ofi
     }
@@ -221,6 +274,7 @@ pub struct InstitutionalVolumeTracker {
     pub prev_volume: f64,
     pub volume_acceleration: f64,
     pub burst_threshold_zscore: f64,
+    pub min_sample_count: f64,
 }
 
 impl Default for InstitutionalVolumeTracker {
@@ -230,12 +284,28 @@ impl Default for InstitutionalVolumeTracker {
 }
 
 impl InstitutionalVolumeTracker {
+    pub const DEFAULT_MIN_SAMPLE_COUNT: f64 = 20.0;
+
     pub fn new(burst_threshold_zscore: f64) -> Self {
         Self {
             welford_volume: crate::welford::WelfordOnline::new(),
             prev_volume: 0.0,
             volume_acceleration: 0.0,
             burst_threshold_zscore: burst_threshold_zscore.max(1.0),
+            min_sample_count: Self::DEFAULT_MIN_SAMPLE_COUNT,
+        }
+    }
+
+    /// OLA Ω121: Constructor con umbral de muestras mínimas específico
+    pub fn with_min_samples(mut self, min_samples: f64) -> Self {
+        self.set_min_samples(min_samples);
+        self
+    }
+
+    /// OLA Ω121: Modifica dinámicamente el número mínimo de muestras para ráfagas
+    pub fn set_min_samples(&mut self, min_samples: f64) {
+        if min_samples.is_finite() && min_samples >= 2.0 {
+            self.min_sample_count = min_samples;
         }
     }
 
@@ -252,7 +322,12 @@ impl InstitutionalVolumeTracker {
 
         self.welford_volume.update(v);
         let z_score = self.welford_volume.z_score(v);
-        let is_burst = self.welford_volume.count >= 20.0 && z_score >= self.burst_threshold_zscore;
+        let min_samples = if self.min_sample_count.is_finite() && self.min_sample_count >= 2.0 {
+            self.min_sample_count
+        } else {
+            Self::DEFAULT_MIN_SAMPLE_COUNT
+        };
+        let is_burst = self.welford_volume.count >= min_samples && z_score >= self.burst_threshold_zscore;
 
         (z_score, accel, is_burst)
     }

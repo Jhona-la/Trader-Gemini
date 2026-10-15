@@ -36,6 +36,50 @@ pub enum HydrodynamicRegime {
     Turbulent,
 }
 
+/// OLA Ω121: Parámetros desacoplados y configurables para el motor de Navier-Stokes y Número de Reynolds
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NavierStokesParams {
+    pub critical_reynolds_laminar: f64,
+    pub critical_reynolds_turbulent: f64,
+    pub relaxation_time_s: f64,
+    pub ewma_alpha: f64,
+}
+
+impl Default for NavierStokesParams {
+    fn default() -> Self {
+        Self {
+            critical_reynolds_laminar: NavierStokesReynoldsEngine::CRITICAL_REYNOLDS_LAMINAR,
+            critical_reynolds_turbulent: NavierStokesReynoldsEngine::CRITICAL_REYNOLDS_TURBULENT,
+            relaxation_time_s: NavierStokesReynoldsEngine::DEFAULT_RELAXATION_TIME_S,
+            ewma_alpha: 0.05,
+        }
+    }
+}
+
+impl NavierStokesParams {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.critical_reynolds_laminar.is_finite() || !(0.05..=20.0).contains(&self.critical_reynolds_laminar) {
+            return Err(format!("Invalid critical_reynolds_laminar: {}", self.critical_reynolds_laminar));
+        }
+        if !self.critical_reynolds_turbulent.is_finite() || !(0.1..=100.0).contains(&self.critical_reynolds_turbulent) {
+            return Err(format!("Invalid critical_reynolds_turbulent: {}", self.critical_reynolds_turbulent));
+        }
+        if self.critical_reynolds_laminar >= self.critical_reynolds_turbulent {
+            return Err(format!(
+                "critical_reynolds_laminar ({}) must be < critical_reynolds_turbulent ({})",
+                self.critical_reynolds_laminar, self.critical_reynolds_turbulent
+            ));
+        }
+        if !self.relaxation_time_s.is_finite() || !(0.005..=10.0).contains(&self.relaxation_time_s) {
+            return Err(format!("Invalid relaxation_time_s: {}", self.relaxation_time_s));
+        }
+        if !self.ewma_alpha.is_finite() || !(0.001..=0.50).contains(&self.ewma_alpha) {
+            return Err(format!("Invalid ewma_alpha: {}", self.ewma_alpha));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NavierStokesReynoldsEngine {
     pub prev_mid_price: f64,
@@ -50,6 +94,8 @@ pub struct NavierStokesReynoldsEngine {
     pub sample_count: u64,
     /// Tiempo de relajación característico del libro de órdenes τ_relax en segundos
     pub relaxation_time_s: f64,
+    /// OLA Ω121: Parámetros hidrodinámicos dinámicos
+    pub params: NavierStokesParams,
 }
 
 impl Default for NavierStokesReynoldsEngine {
@@ -63,7 +109,7 @@ impl NavierStokesReynoldsEngine {
     pub const CRITICAL_REYNOLDS_TURBULENT: f64 = 5.0;
     /// Tiempo de relajación característico estándar de reposición del libro: 200 ms
     pub const DEFAULT_RELAXATION_TIME_S: f64 = 0.200;
-    const EWMA_ALPHA: f64 = 0.05;
+    pub const DEFAULT_EWMA_ALPHA: f64 = 0.05;
 
     pub fn new() -> Self {
         Self {
@@ -78,24 +124,61 @@ impl NavierStokesReynoldsEngine {
             laminar_share: 1.0,
             sample_count: 0,
             relaxation_time_s: Self::DEFAULT_RELAXATION_TIME_S,
+            params: NavierStokesParams::default(),
+        }
+    }
+
+    /// OLA Ω121: Constructor con parámetros hidrodinámicos específicos
+    pub fn with_params(mut self, params: NavierStokesParams) -> Self {
+        if params.validate().is_ok() {
+            self.relaxation_time_s = params.relaxation_time_s;
+            self.params = params;
+        }
+        self
+    }
+
+    /// OLA Ω121: Actualiza dinámicamente los parámetros hidrodinámicos
+    pub fn update_params(&mut self, params: NavierStokesParams) {
+        if params.validate().is_ok() {
+            self.relaxation_time_s = params.relaxation_time_s;
+            self.params = params;
         }
     }
 
     /// Configura un tiempo de relajación característico específico en segundos
     pub fn with_relaxation_time_s(mut self, tau_s: f64) -> Self {
         if tau_s.is_finite() && tau_s > 0.0 {
-            self.relaxation_time_s = tau_s.clamp(0.010, 5.0);
+            let clamped = tau_s.clamp(0.010, 5.0);
+            self.relaxation_time_s = clamped;
+            self.params.relaxation_time_s = clamped;
         }
         self
     }
 
-    /// Calcula la fracción laminar suave C^∞ a partir del número de Reynolds continuo:
+    /// Calcula la fracción laminar suave C^∞ a partir del número de Reynolds continuo con umbral canónico:
     /// laminar_share = 1.0 / (1.0 + (Re / Re_crit)^2) ∈ [0.0, 1.0].
     #[inline(always)]
     pub fn compute_laminar_share(re: f64) -> f64 {
+        Self::compute_laminar_share_with_crit(re, Self::CRITICAL_REYNOLDS_LAMINAR)
+    }
+
+    /// OLA Ω121: Calcula la fracción laminar suave C^∞ con umbral crítico parametrizable
+    #[inline(always)]
+    pub fn compute_laminar_share_with_crit(re: f64, crit_laminar: f64) -> f64 {
         let safe_re = if re.is_finite() && re >= 0.0 { re } else { 0.0 };
-        let re_ratio = safe_re / Self::CRITICAL_REYNOLDS_LAMINAR;
+        let safe_crit = if crit_laminar.is_finite() && crit_laminar > 0.0 {
+            crit_laminar
+        } else {
+            Self::CRITICAL_REYNOLDS_LAMINAR
+        };
+        let re_ratio = safe_re / safe_crit;
         (1.0 / (1.0 + re_ratio * re_ratio)).clamp(0.0, 1.0)
+    }
+
+    /// OLA Ω121: Fracción laminar evaluada bajo los parámetros activos de esta instancia
+    #[inline(always)]
+    pub fn laminar_share_for_re(&self, re: f64) -> f64 {
+        Self::compute_laminar_share_with_crit(re, self.params.critical_reynolds_laminar)
     }
 
     /// Actualiza el estado hidrodinámico en tiempo real ante cada evento de mercado.
@@ -192,11 +275,16 @@ impl NavierStokesReynoldsEngine {
         self.reynolds_number = raw_reynolds;
 
         // 9. EWMA continua del número de Reynolds
+        let alpha = if self.params.ewma_alpha.is_finite() && self.params.ewma_alpha > 0.0 {
+            self.params.ewma_alpha
+        } else {
+            Self::DEFAULT_EWMA_ALPHA
+        };
         if self.sample_count == 0 {
             self.ewma_reynolds = raw_reynolds;
         } else {
             self.ewma_reynolds =
-                self.ewma_reynolds * (1.0 - Self::EWMA_ALPHA) + raw_reynolds * Self::EWMA_ALPHA;
+                self.ewma_reynolds * (1.0 - alpha) + raw_reynolds * alpha;
         }
         self.sample_count = self.sample_count.saturating_add(1);
 
@@ -204,7 +292,8 @@ impl NavierStokesReynoldsEngine {
         // C-02 RESOLUCIÓN: Calculada sobre la EWMA continua ewma_reynolds en lugar
         // del valor instantáneo de un solo tick, erradicando falsos colapsos de confianza
         // y saltos artificiales de slippage provocados por ruido de microestructura aislado.
-        self.laminar_share = Self::compute_laminar_share(self.ewma_reynolds);
+        // OLA Ω121: Utiliza el umbral crítico parametrizado de self.params
+        self.laminar_share = self.laminar_share_for_re(self.ewma_reynolds);
 
         // 11. Tasa de disipación de energía de Kolmogorov: ε = ν * (u / L)^2 en [USD^2 / s^3]
         let velocity_gradient = (self.velocity / characteristic_length).abs();
@@ -218,11 +307,14 @@ impl NavierStokesReynoldsEngine {
     }
 
     /// Retorna el régimen hidrodinámico clasificado según la EWMA del número de Reynolds (C-02)
+    /// OLA Ω121: Adaptativo según los umbrales configurados en self.params
     #[inline(always)]
     pub fn regime(&self) -> HydrodynamicRegime {
-        if self.ewma_reynolds < Self::CRITICAL_REYNOLDS_LAMINAR {
+        let crit_laminar = self.params.critical_reynolds_laminar;
+        let crit_turbulent = self.params.critical_reynolds_turbulent;
+        if self.ewma_reynolds < crit_laminar {
             HydrodynamicRegime::Laminar
-        } else if self.ewma_reynolds < Self::CRITICAL_REYNOLDS_TURBULENT {
+        } else if self.ewma_reynolds < crit_turbulent {
             HydrodynamicRegime::Transitional
         } else {
             HydrodynamicRegime::Turbulent
@@ -232,13 +324,13 @@ impl NavierStokesReynoldsEngine {
     /// Retorna si el régimen actual es estrictamente laminar
     #[inline(always)]
     pub fn is_laminar(&self) -> bool {
-        self.ewma_reynolds < Self::CRITICAL_REYNOLDS_LAMINAR
+        self.ewma_reynolds < self.params.critical_reynolds_laminar
     }
 
     /// Retorna si el régimen actual es turbulento (riesgo inercial extremo)
     #[inline(always)]
     pub fn is_turbulent(&self) -> bool {
-        self.ewma_reynolds >= Self::CRITICAL_REYNOLDS_TURBULENT
+        self.ewma_reynolds >= self.params.critical_reynolds_turbulent
     }
 }
 

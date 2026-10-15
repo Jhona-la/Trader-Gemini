@@ -1666,10 +1666,32 @@ impl GodEngineCore {
     }
 
     #[inline]
+    pub fn sync_navier_stokes_and_microstructure_params(&mut self) {
+        let crit_lam = self.arena.config.navier_critical_laminar.load(Ordering::Relaxed);
+        let crit_turb = self.arena.config.navier_critical_turbulent.load(Ordering::Relaxed);
+        let tau_relax = self.arena.config.navier_relaxation_time_s.load(Ordering::Relaxed);
+        let ns_params = feature_engine::NavierStokesParams {
+            critical_reynolds_laminar: crit_lam,
+            critical_reynolds_turbulent: crit_turb,
+            relaxation_time_s: tau_relax,
+            ewma_alpha: 0.05,
+        };
+        for engine in self.navier_stokes_engines.iter_mut() {
+            engine.update_params(ns_params);
+        }
+
+        let ofi_alpha = self.arena.config.ofi_ewma_alpha.load(Ordering::Relaxed);
+        for fe in self.feature_engines.iter_mut() {
+            fe.ofi_model.set_alpha(ofi_alpha);
+        }
+    }
+
+    #[inline]
     pub fn sync_council_params_from_arena(&mut self) {
         Self::sync_council_params(&mut self.consejo_deliberacion.params, &self.arena.config);
         Self::sync_online_learning_params(&mut self.online_learner, &self.arena.config);
         Self::sync_auditor_interno_params(&mut self.auditor_interno, &self.arena.config);
+        self.sync_navier_stokes_and_microstructure_params();
     }
 
     /// Accept a reported execution snapshot, not an incremental fill. No global fallback.

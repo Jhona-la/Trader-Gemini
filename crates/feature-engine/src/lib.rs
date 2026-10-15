@@ -33,7 +33,7 @@ pub use microstructure::{
     InstitutionalVolumeTracker, OFIModel, OrderFlowTracker, SpoofingDetector,
 };
 pub use multifractal::{MultiScaleHurstConfluence, MultifractalSpectrumEngine};
-pub use navier_stokes::{HydrodynamicRegime, NavierStokesReynoldsEngine};
+pub use navier_stokes::{HydrodynamicRegime, NavierStokesParams, NavierStokesReynoldsEngine};
 pub use normalizer::{GarmanKlassVolatilityEstimator, StatisticalNormalizer};
 pub use omni_strategies::OmniStrategyEngine;
 pub use quantum_tensor_store::{QuantumTensorStore, NUM_FEATURES, NUM_TIMEFRAMES};
