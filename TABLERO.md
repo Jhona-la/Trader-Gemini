@@ -21,7 +21,7 @@
   * Ola Ω109 (`542596f6`): Relajación homeostática continua Ornstein-Uhlenbeck para sesgo epigenético multivariante.
 - **Verificación**: `cargo test -p signal-engine --test feynman_propagator_adaptation_contract` (5/5 pass), `cargo test -p strategy-core --test yang_mills_adaptation_contract` (4/4 pass), `cargo test -p feature-engine --test hodge_flow_adaptation_contract` (4/4 pass), suites completas de `signal-engine`, `strategy-core`, `feature-engine`, `cargo check -p god-engine-core` (exit 0), `cargo check --workspace --all-targets` (exit 0).
 
-## Codex LH12 — 13 de octubre de 2026, candidato en revisión
+## Codex LH12 — 13 de octubre de 2026 (GLM 119: OBSERVADOR — ya ATERIZÓ en main: platt-age-evidence commiteado 04eae49b+, rama cerrada)
 
 - Rama `codex/platt-age-evidence-1013`, WT propio `spectral-evidence-1011`;
   base `3dc88468`, código propio `04eae49b`. Reserva Platt/estado aprendido
