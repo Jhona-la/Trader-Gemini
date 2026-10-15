@@ -1300,9 +1300,9 @@ impl RiskEngine {
         // f = 0 y el camino sizing/micro/exploración existente queda
         // INTACTO — fail-closed al estado actual.
         // OLA Ω127: Desacoplamiento de constantes estáticas hacia el registro omnisciente con fallbacks canónicos.
-        let z_lcb_lh04 = arena.registry.get_or("lh04_z_lcb", 1.64);
-        let half_kelly_lh04 = arena.registry.get_or("lh04_kelly_fraction", 0.5);
-        let muestras_min_lh04 = arena.registry.get_or("lh04_muestras_min", 10.0);
+        let z_lcb_lh04 = arena.registry.get_value_or("lh04_z_lcb", 1.64);
+        let half_kelly_lh04 = arena.registry.get_value_or("lh04_kelly_fraction", 0.5);
+        let muestras_min_lh04 = arena.registry.get_value_or("lh04_muestras_min", 10.0);
         let lh04_wr = arena.coins[coin_id]
             .metrics
             .win_rate

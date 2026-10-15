@@ -32,7 +32,10 @@ pub use microstructure::{
     obi_acceleration, order_book_imbalance, AdaptiveResonanceClustering,
     InstitutionalVolumeTracker, OFIModel, OrderFlowTracker, SpoofingDetector,
 };
-pub use multifractal::{MultiScaleHurstConfluence, MultifractalSpectrumEngine};
+pub use multifractal::{
+    smooth_persistence_degree, MultiScaleHurstConfluence, MultifractalParams,
+    MultifractalSpectrumEngine,
+};
 pub use navier_stokes::{HydrodynamicRegime, NavierStokesParams, NavierStokesReynoldsEngine};
 pub use normalizer::{GarmanKlassVolatilityEstimator, StatisticalNormalizer};
 pub use omni_strategies::OmniStrategyEngine;

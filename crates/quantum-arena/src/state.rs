@@ -1,6 +1,6 @@
 use crate::atomic_float::AtomicF64;
 use crate::config::QuantumConfig;
-use omniscient_registry::OmniscientRegistry;
+pub use omniscient_registry::OmniscientRegistry;
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;

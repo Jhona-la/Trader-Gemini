@@ -85,27 +85,27 @@ impl Default for SpectralRegimeParams {
 impl SpectralRegimeParams {
     pub fn from_registry_or_default(registry: &crate::state::OmniscientRegistry) -> Self {
         let mut p = Self::default();
-        let w_acc = registry.get_or("regime_w_accel_fast", p.w_accel_fast);
+        let w_acc = registry.get_value_or("regime_w_accel_fast", p.w_accel_fast);
         if w_acc.is_finite() && w_acc >= 0.0 {
             p.w_accel_fast = w_acc;
         }
-        let w_tide = registry.get_or("regime_w_adverse_tide", p.w_adverse_tide);
+        let w_tide = registry.get_value_or("regime_w_adverse_tide", p.w_adverse_tide);
         if w_tide.is_finite() && w_tide >= 0.0 {
             p.w_adverse_tide = w_tide;
         }
-        let w_col = registry.get_or("regime_w_coherence_collapse", p.w_coherence_collapse);
+        let w_col = registry.get_value_or("regime_w_coherence_collapse", p.w_coherence_collapse);
         if w_col.is_finite() && w_col >= 0.0 {
             p.w_coherence_collapse = w_col;
         }
-        let w_anti = registry.get_or("regime_w_micro_anti", p.w_micro_anti);
+        let w_anti = registry.get_value_or("regime_w_micro_anti", p.w_micro_anti);
         if w_anti.is_finite() && w_anti >= 0.0 {
             p.w_micro_anti = w_anti;
         }
-        let tau_res = registry.get_or("regime_tau_min_drift_res_ms", p.tau_min_drift_res_ms);
+        let tau_res = registry.get_value_or("regime_tau_min_drift_res_ms", p.tau_min_drift_res_ms);
         if tau_res.is_finite() && tau_res > 0.0 {
             p.tau_min_drift_res_ms = tau_res;
         }
-        let floor = registry.get_or("regime_min_margin_floor", p.min_margin_floor);
+        let floor = registry.get_value_or("regime_min_margin_floor", p.min_margin_floor);
         if floor.is_finite() && floor > 0.0 {
             p.min_margin_floor = floor.clamp(0.01, 0.50);
         }

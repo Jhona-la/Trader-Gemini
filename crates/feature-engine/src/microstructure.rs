@@ -309,11 +309,41 @@ impl InstitutionalVolumeTracker {
         }
     }
 
-    /// Actualiza el tracker con una nueva muestra de volumen y devuelve (z_score, acceleration, is_burst)
+    /// Intensidad continua C^1 en [0, 1] de ráfaga institucional mediante activación Hermite cúbica.
+    /// Erradica escalones discretos y produce una señal suave diferenciable.
     #[inline(always)]
-    pub fn update(&mut self, volume: f64) -> (f64, f64, bool) {
+    pub fn burst_intensity(&self, z_score: f64, transition_delta: f64) -> f64 {
+        let min_samples = if self.min_sample_count.is_finite() && self.min_sample_count >= 2.0 {
+            self.min_sample_count
+        } else {
+            Self::DEFAULT_MIN_SAMPLE_COUNT
+        };
+        if !z_score.is_finite() || self.welford_volume.count < min_samples {
+            return 0.0;
+        }
+        let delta = if transition_delta.is_finite() && transition_delta > 1e-4 {
+            transition_delta
+        } else {
+            0.50
+        };
+        let z_th = self.burst_threshold_zscore;
+        let lo = (z_th - delta).max(0.0);
+        let hi = z_th + delta;
+        if z_score <= lo {
+            0.0
+        } else if z_score >= hi {
+            1.0
+        } else {
+            let u = (z_score - lo) / (hi - lo);
+            u * u * (3.0 - 2.0 * u)
+        }
+    }
+
+    /// Actualización continua C^1 que retorna (z_score, aceleracion, burst_intensity)
+    #[inline(always)]
+    pub fn update_continuous(&mut self, volume: f64) -> (f64, f64, f64) {
         if !volume.is_finite() {
-            return (0.0, 0.0, false);
+            return (0.0, 0.0, 0.0);
         }
         let v = volume.max(0.0);
         let accel = v - self.prev_volume;
@@ -322,13 +352,16 @@ impl InstitutionalVolumeTracker {
 
         self.welford_volume.update(v);
         let z_score = self.welford_volume.z_score(v);
-        let min_samples = if self.min_sample_count.is_finite() && self.min_sample_count >= 2.0 {
-            self.min_sample_count
-        } else {
-            Self::DEFAULT_MIN_SAMPLE_COUNT
-        };
-        let is_burst = self.welford_volume.count >= min_samples && z_score >= self.burst_threshold_zscore;
+        let intensity = self.burst_intensity(z_score, 0.50);
 
+        (z_score, accel, intensity)
+    }
+
+    /// Actualiza el tracker con una nueva muestra de volumen y devuelve (z_score, acceleration, is_burst)
+    #[inline(always)]
+    pub fn update(&mut self, volume: f64) -> (f64, f64, bool) {
+        let (z_score, accel, intensity) = self.update_continuous(volume);
+        let is_burst = intensity >= 0.50;
         (z_score, accel, is_burst)
     }
 }
@@ -778,15 +811,31 @@ impl SpoofingDetector {
             let decay = (-self.spoofing_decay_lambda * dt_sec).exp();
             self.spoofing_risk_score *= decay;
 
-            // Detección de caída abrupta de muro (>50% de evaporación en <250ms)
+            // Detección continua C^1 de caída abrupta de muro (>50% de evaporación en <250ms)
             if dt_sec < 0.25 {
                 let bid_drop = (self.prev_max_bid_wall - current_max_bid).max(0.0);
                 let ask_drop = (self.prev_max_ask_wall - current_max_ask).max(0.0);
-                if self.prev_max_bid_wall > 0.0 && bid_drop / self.prev_max_bid_wall > 0.50 {
-                    self.spoofing_risk_score = (self.spoofing_risk_score + 0.50).min(1.0);
-                }
-                if self.prev_max_ask_wall > 0.0 && ask_drop / self.prev_max_ask_wall > 0.50 {
-                    self.spoofing_risk_score = (self.spoofing_risk_score + 0.50).min(1.0);
+
+                let eval_drop_risk = |prev: f64, drop: f64| -> f64 {
+                    if prev > 0.0 {
+                        let drop_ratio = drop / prev;
+                        if drop_ratio > 0.50 {
+                            // Activación suave Hermite C^1 entre 0.50 y 0.80 de evaporación
+                            let u = ((drop_ratio - 0.50) / 0.30).clamp(0.0, 1.0);
+                            u * u * (3.0 - 2.0 * u)
+                        } else {
+                            0.0
+                        }
+                    } else {
+                        0.0
+                    }
+                };
+
+                let delta_bid = eval_drop_risk(self.prev_max_bid_wall, bid_drop);
+                let delta_ask = eval_drop_risk(self.prev_max_ask_wall, ask_drop);
+                let delta_risk = delta_bid.max(delta_ask);
+                if delta_risk > 0.0 {
+                    self.spoofing_risk_score = (self.spoofing_risk_score + delta_risk).min(1.0);
                 }
             }
         }

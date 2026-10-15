@@ -112,19 +112,19 @@ impl Default for EspectralMultiactivoParams {
 impl EspectralMultiactivoParams {
     pub fn from_registry_or_default(registry: &crate::state::OmniscientRegistry) -> Self {
         let mut p = Self::default();
-        let rec = registry.get_or("espectral_recencia_x", p.recencia_x);
+        let rec = registry.get_value_or("espectral_recencia_x", p.recencia_x);
         if rec.is_finite() && rec > 0.0 {
             p.recencia_x = rec.clamp(0.05, 2.0);
         }
-        let olv = registry.get_or("espectral_olvido", p.olvido);
+        let olv = registry.get_value_or("espectral_olvido", p.olvido);
         if olv.is_finite() && olv > 0.0 {
             p.olvido = olv.clamp(1e-4, 0.5);
         }
-        let mm = registry.get_or("espectral_muestras_maduras", p.muestras_maduras as f64);
+        let mm = registry.get_value_or("espectral_muestras_maduras", p.muestras_maduras as f64);
         if mm.is_finite() && mm >= 1.0 {
             p.muestras_maduras = mm as u64;
         }
-        let fam = registry.get_or("espectral_familia_veto", 0.0);
+        let fam = registry.get_value_or("espectral_familia_veto", 0.0);
         if fam.is_finite() && fam >= 1.0 {
             p.familia_veto_override = Some(fam as usize);
         }
@@ -161,6 +161,7 @@ struct IcEscala {
 
 impl IcEscala {
     #[inline]
+    #[allow(dead_code)]
     fn acumular(&mut self, ra: f64, rb: f64) {
         self.acumular_con_olvido(ra, rb, OLVIDO);
     }
@@ -178,6 +179,7 @@ impl IcEscala {
     }
 
     #[inline]
+    #[allow(dead_code)]
     fn ic(&self) -> Option<f64> {
         self.ic_con_madurez(MUESTRAS_MADURAS)
     }
@@ -202,6 +204,7 @@ impl IcEscala {
     /// Ville está condicionada al nulo del score y a cubrir la familia real;
     /// no prueba significancia de Pearson ni dependencia presente del grupo.
     #[inline]
+    #[allow(dead_code)]
     fn ic_veto(&self) -> Option<f64> {
         self.ic_veto_con_params(FAMILIA_VETO_GRUPO, MUESTRAS_MADURAS)
     }

@@ -48,6 +48,11 @@ impl MultifractalSpectrumEngine {
 
     #[inline(always)]
     pub fn update(&mut self, price: f64) -> (f64, f64) {
+        self.update_with_prior_k(price, 12.0)
+    }
+
+    #[inline(always)]
+    pub fn update_with_prior_k(&mut self, price: f64, prior_k: f64) -> (f64, f64) {
         if price <= 0.0 || !price.is_finite() {
             return (0.50, 0.0);
         }
@@ -162,8 +167,13 @@ impl MultifractalSpectrumEngine {
         };
 
         // Regularización Bayesiana hacia el prior browniano H_0 = 0.50
-        // con peso muestral w = n / (n + 12.0) para estabilizar ventanas finitas.
-        let w = n as f64 / (n as f64 + 12.0);
+        // con peso muestral w = n / (n + k) para estabilizar ventanas finitas.
+        let k = if prior_k.is_finite() && prior_k >= 0.1 {
+            prior_k
+        } else {
+            12.0
+        };
+        let w = n as f64 / (n as f64 + k);
         let h_bayes = 0.50 + w * (h_raw - 0.50);
         let dynamic_hurst = h_bayes.clamp(0.05, 0.95);
 
@@ -342,6 +352,114 @@ impl Default for MultifractalSpectrumEngine {
     }
 }
 
+/// Hiperparámetros desacoplados y continuos para el análisis multifractal multiescala.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MultifractalParams {
+    /// Peso relativo para la escala rápida/micro en la confluencia (default 0.40)
+    pub w_micro: f64,
+    /// Peso relativo para la escala media/meso en la confluencia (default 0.30)
+    pub w_meso: f64,
+    /// Peso relativo para la escala lenta/macro en la confluencia (default 0.30)
+    pub w_macro: f64,
+    /// Factor de escala del denominador para modulación tangente hiperbólica (default 0.08)
+    pub tanh_scale: f64,
+    /// Peso prior Bayesiano K0 hacia el nulo browniano H=0.50 (default 12.0)
+    pub prior_weight_k: f64,
+    /// Umbral continuo de persistencia micro (|H - 0.50|, default 0.10)
+    pub persistence_threshold_micro: f64,
+    /// Umbral continuo de persistencia macro (|H - 0.50|, default 0.15)
+    pub persistence_threshold_macro: f64,
+    /// Semi-ancho de transición C1 Hermite para activación continua de persistencia (default 0.03)
+    pub transition_width: f64,
+}
+
+impl Default for MultifractalParams {
+    fn default() -> Self {
+        Self {
+            w_micro: 0.40,
+            w_meso: 0.30,
+            w_macro: 0.30,
+            tanh_scale: 0.08,
+            prior_weight_k: 12.0,
+            persistence_threshold_micro: 0.10,
+            persistence_threshold_macro: 0.15,
+            transition_width: 0.03,
+        }
+    }
+}
+
+impl MultifractalParams {
+    pub fn new(
+        w_micro: f64,
+        w_meso: f64,
+        w_macro: f64,
+        tanh_scale: f64,
+        prior_weight_k: f64,
+    ) -> Self {
+        Self {
+            w_micro,
+            w_meso,
+            w_macro,
+            tanh_scale,
+            prior_weight_k,
+            ..Self::default()
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if !self.w_micro.is_finite() || self.w_micro < 0.0
+            || !self.w_meso.is_finite() || self.w_meso < 0.0
+            || !self.w_macro.is_finite() || self.w_macro < 0.0
+        {
+            return Err("Pesos multifractales deben ser finitos y no negativos");
+        }
+        if self.w_micro + self.w_meso + self.w_macro < 1e-6 {
+            return Err("Suma de pesos multifractales debe ser positiva");
+        }
+        if !self.tanh_scale.is_finite() || self.tanh_scale < 1e-4 {
+            return Err("Escala tanh debe ser finita y positiva (> 1e-4)");
+        }
+        if !self.prior_weight_k.is_finite() || self.prior_weight_k < 0.1 {
+            return Err("Peso prior Bayesiano k debe ser finito y >= 0.1");
+        }
+        if !self.persistence_threshold_micro.is_finite() || self.persistence_threshold_micro <= 0.0 {
+            return Err("Umbral de persistencia micro debe ser finito y positivo");
+        }
+        if !self.persistence_threshold_macro.is_finite() || self.persistence_threshold_macro <= 0.0 {
+            return Err("Umbral de persistencia macro debe ser finito y positivo");
+        }
+        if !self.transition_width.is_finite() || self.transition_width < 1e-4 {
+            return Err("Ancho de transición C1 debe ser finito y >= 1e-4");
+        }
+        Ok(())
+    }
+}
+
+/// Grado de persistencia fractal continuo C^1 en [0, 1] mediante smoothstep cúbico Hermite.
+/// Erradica acantilados booleanos en la frontera de persistencia/anti-persistencia.
+#[inline(always)]
+pub fn smooth_persistence_degree(hurst: f64, threshold: f64, transition_width: f64) -> f64 {
+    if !hurst.is_finite() || !threshold.is_finite() || threshold <= 0.0 {
+        return 0.0;
+    }
+    let dev = (hurst - 0.50).abs();
+    let delta = if transition_width.is_finite() && transition_width > 1e-4 {
+        transition_width
+    } else {
+        0.03
+    };
+    let lo = (threshold - delta).max(0.0);
+    let hi = threshold + delta;
+    if dev <= lo {
+        0.0
+    } else if dev >= hi {
+        1.0
+    } else {
+        let u = (dev - lo) / (hi - lo);
+        u * u * (3.0 - 2.0 * u)
+    }
+}
+
 /// Confluencia de Régimen por Exponente de Hurst Multi-Escala (Punto #104)
 /// Calcula el exponente de Hurst en 3 escalas temporales distintas:
 /// - Micro-Escala (Scalp, ventana corta de 10 ticks)
@@ -409,24 +527,63 @@ impl MultiScaleHurstConfluence {
         self.falpha_calls
     }
 
+    /// Actualización multiescala continua C^1 con parámetros dinámicos.
+    /// Retorna: (h_micro, h_meso, h_macro, confluence_score, p_micro_persistent, p_macro_persistent)
+    /// donde p_micro_persistent y p_macro_persistent son grados continuos C^1 en [0, 1].
+    #[inline(always)]
+    pub fn update_continuous_with_params(
+        &mut self,
+        price: f64,
+        params: &MultifractalParams,
+    ) -> (f64, f64, f64, f64, f64, f64) {
+        let (h_micro, _) = self.engine_micro.update_with_prior_k(price, params.prior_weight_k);
+        let (h_meso, _) = self.engine_meso.update_with_prior_k(price, params.prior_weight_k);
+        let (h_macro, _) = self.engine_macro.update_with_prior_k(price, params.prior_weight_k);
+
+        let t_scale = if params.tanh_scale.is_finite() && params.tanh_scale > 1e-4 {
+            params.tanh_scale
+        } else {
+            0.08
+        };
+
+        let c_micro = ((h_micro - 0.50) / t_scale).tanh();
+        let c_meso = ((h_meso - 0.50) / t_scale).tanh();
+        let c_macro = ((h_macro - 0.50) / t_scale).tanh();
+
+        let w_sum = (params.w_micro + params.w_meso + params.w_macro).max(1e-6);
+        let norm_w_micro = params.w_micro / w_sum;
+        let norm_w_meso = params.w_meso / w_sum;
+        let norm_w_macro = params.w_macro / w_sum;
+
+        let confluence_score =
+            (c_micro * norm_w_micro + c_meso * norm_w_meso + c_macro * norm_w_macro).clamp(-1.0, 1.0);
+
+        let p_micro = smooth_persistence_degree(
+            h_micro,
+            params.persistence_threshold_micro,
+            params.transition_width,
+        );
+        let p_macro = smooth_persistence_degree(
+            h_macro,
+            params.persistence_threshold_macro,
+            params.transition_width,
+        );
+
+        (h_micro, h_meso, h_macro, confluence_score, p_micro, p_macro)
+    }
+
+    /// Actualización continua con parámetros por defecto
+    #[inline(always)]
+    pub fn update_continuous(&mut self, price: f64) -> (f64, f64, f64, f64, f64, f64) {
+        self.update_continuous_with_params(price, &MultifractalParams::default())
+    }
+
     #[inline(always)]
     pub fn update(&mut self, price: f64) -> (f64, f64, f64, f64, bool, bool) {
-        let (h_micro, _) = self.engine_micro.update(price);
-        let (h_meso, _) = self.engine_meso.update(price);
-        let (h_macro, _) = self.engine_macro.update(price);
-
-        // AGY-AUD-P09: Continuidad suave C^infinito en confluencia fractal:
-        // Erradica funciones escalón discretas (+1, 0, -1) con umbrales rígidos 0.55/0.45.
-        // Utiliza una modulación hiperbólica continua centrada en el punto nulo browniano H=0.50.
-        let c_micro = ((h_micro - 0.50) / 0.08).tanh();
-        let c_meso = ((h_meso - 0.50) / 0.08).tanh();
-        let c_macro = ((h_macro - 0.50) / 0.08).tanh();
-
-        let confluence_score: f64 = (c_micro * 0.4 + c_meso * 0.3 + c_macro * 0.3).clamp(-1.0, 1.0);
-
-        // O(1) Indicadores continuos de persistencia fractal en el espectro universal
-        let is_micro_persistent = (h_micro - 0.5).abs() > 0.10;
-        let is_macro_persistent = (h_macro - 0.5).abs() > 0.15;
+        let (h_micro, h_meso, h_macro, confluence_score, p_micro, p_macro) =
+            self.update_continuous(price);
+        let is_micro_persistent = p_micro >= 0.50;
+        let is_macro_persistent = p_macro >= 0.50;
 
         (
             h_micro,

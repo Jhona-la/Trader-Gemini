@@ -330,7 +330,21 @@ impl ExecutionProvider for SimulatedExecutor {
 
         if let Ok(mut pos_map) = self.open_positions.write() {
             if let Some(pos) = pos_map.remove(symbol) {
-                let exit_price = if is_long_close {
+                let current_mid = self
+                    .last_mids
+                    .read()
+                    .ok()
+                    .and_then(|m| m.get(symbol).copied())
+                    .filter(|&p| p > 0.0 && p.is_finite());
+                let nominal_usd = quantity * current_mid.unwrap_or(pos.entry_price);
+                let slippage = self.market_slippage(nominal_usd);
+                let exit_price = if let Some(mid) = current_mid {
+                    if is_long_close {
+                        mid * (1.0 - slippage)
+                    } else {
+                        mid * (1.0 + slippage)
+                    }
+                } else if is_long_close {
                     pos.entry_price * 1.002
                 } else {
                     pos.entry_price * 0.998

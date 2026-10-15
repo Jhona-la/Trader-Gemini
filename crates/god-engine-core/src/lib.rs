@@ -1773,6 +1773,19 @@ impl GodEngineCore {
         self.arena.registry.set("regime_w_coherence_collapse", reg_col);
         self.arena.registry.set("regime_w_micro_anti", reg_anti);
         self.arena.registry.set("regime_min_margin_floor", reg_floor);
+
+        // OLA Ω128: Sincronización de Multifractal y Ráfagas Institucionales desde QuantumConfig
+        let mf_mic = self.arena.config.multifractal_w_micro.load(Ordering::Relaxed);
+        let mf_mes = self.arena.config.multifractal_w_meso.load(Ordering::Relaxed);
+        let mf_mac = self.arena.config.multifractal_w_macro.load(Ordering::Relaxed);
+        let mf_scale = self.arena.config.multifractal_tanh_scale.load(Ordering::Relaxed);
+        let burst_th = self.arena.config.burst_threshold_zscore.load(Ordering::Relaxed);
+
+        self.arena.registry.set("multifractal_w_micro", mf_mic);
+        self.arena.registry.set("multifractal_w_meso", mf_mes);
+        self.arena.registry.set("multifractal_w_macro", mf_mac);
+        self.arena.registry.set("multifractal_tanh_scale", mf_scale);
+        self.arena.registry.set("burst_threshold_zscore", burst_th);
     }
 
     #[inline]
