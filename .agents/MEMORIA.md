@@ -1,5 +1,37 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω125 — Desacoplamiento Continuo C1 de Neuroplasticidad Oja y PPO Online en `dark-alpha-engine` y `god-engine-core`
+
+- **Ola Integrada y Certificada**:
+  * **Diagnóstico Forense y Causa Raíz**:
+    1. En `crates/dark-alpha-engine/src/neuro_plasticity.rs`: la función `compute_plasticity_multiplier` implementaba una escalera discreta de 4 escalones rígidos según la entropía de Shannon del activo: `>0.85 -> 2.0`, `>0.60 -> 1.5`, `>0.30 -> 1.0`, `else -> 0.5`. Esta discretización violaba el axioma de suavidad analítica $C^1$ en el continuo de Hilbert, provocando discontinuidades artificiales en la tasa de aprendizaje hebbiano/Oja ante fluctuaciones infinitesimales de entropía.
+    2. En `crates/dark-alpha-engine/src/online_ppo.rs`: el método `update_policy` forzaba hiperparámetros congelados en código (`clip_eps = 0.20`, `learning_rate = 0.001`, `entropy_coeff = 0.01`, etc.) sin permitir adaptación lock-free en tiempo de ejecución.
+    3. En `crates/god-engine-core/src/lib.rs` (línea ~5090): al cerrarse una posición en el ciclo caliente, el motor llamaba a `self.ppo_engine.update_policy(&obs, action, reward, 1.0, 0.05, 0.01, 0.20, 0.01)`. Se pasaba un multiplicador de plasticidad duro de `1.0` (anulando por completo el motor de neuroplasticidad `NeuroPlasticityEngine` presente en el sistema) junto con 4 literales numéricos mágicos hardcodeados.
+  * **Solución Arquitectónica y Matemática**:
+    1. En `crates/dark-alpha-engine/src/neuro_plasticity.rs`:
+       - Definido struct `NeuroPlasticityParams` con campos `min_multiplier`, `max_multiplier`, `steepness_k`, `midpoint_entropy` y validación estricta de cotas en `validate()`.
+       - Implementada la función de activación logística continua $C^1$:
+         $$M(H) = M_{\min} + \frac{M_{\max} - M_{\min}}{1 + \exp(-k(H - H_0))}$$
+         monótona, analítica, acotada y estrictamente diferenciable, con fail-closed ante entradas $\text{NaN}$ o negativas colapsando a $M_{\min}$.
+       - Integrado `compute_plasticity_multiplier_with_params(&self, entropy, params)` y `update_synaptic_weights_with_params`.
+    2. En `crates/dark-alpha-engine/src/online_ppo.rs`:
+       - Definido struct `PpoHyperParams` con validaciones rigurosas en `validate()`.
+       - Implementados `update_policy_with_params` y `update_hyperparams(&mut self, params)` para permitir actualización sin allocations en hot-path.
+    3. En `crates/quantum-arena/src/config.rs`:
+       - Expuestos 5 campos atómicos lock-free en `QuantumConfig`: `ppo_alpha_ema`, `ppo_learning_rate`, `plasticity_min_mult`, `plasticity_max_mult`, `plasticity_steepness`, inicializados en `from_genome`.
+    4. En `crates/god-engine-core/src/lib.rs`:
+       - Erradicados los literales duros en la llamada a PPO al cerrar posición.
+       - Cableada la modulación de plasticidad continua calculada a partir de la entropía espectral del activo, modulada por la fase del micro-capital ($13 USD) y los parámetros de `QuantumConfig`.
+  * **Certificación Contractual**:
+    - `neuro_plasticity_ppo_adaptation_contract.rs` (4/4 pass):
+      1. `test_neuro_plasticity_params_validation_and_defaults`: Validación y saneamiento de parámetros.
+      2. `test_plasticity_multiplier_c1_continuity_and_monotonicity`: Verificación de continuidad $C^1$, monotonía estricta y convergencia asintótica a cotas.
+      3. `test_plasticity_multiplier_nan_and_negative_immunity`: Inmunidad matemática ante $\text{NaN}$ o valores fuera de dominio.
+      4. `test_ppo_hyperparams_validation_and_dynamic_update`: Paridad de hiperparámetros PPO dinámicos y adaptación lock-free.
+    - Suite completa `cargo test -p dark-alpha-engine` (54/54 pass, 100% verde).
+    - `cargo check -p god-engine-core` (exit 0).
+    - `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Plan Maestro Canónico V3 Publicado (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md`)
 
 - **Sincronización Total Multiagente & Nueva Doctrina Espectral Continua**:

@@ -1,3 +1,47 @@
+use serde::{Deserialize, Serialize};
+
+/// Parámetros adaptativos del motor de neuro-plasticidad y reconexión sináptica.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct NeuroPlasticityParams {
+    pub min_multiplier: f64,
+    pub max_multiplier: f64,
+    pub center_entropy: f64,
+    pub steepness: f64,
+    pub micro_boost_cap: f64,
+    pub micro_capital_ref: f64,
+}
+
+impl Default for NeuroPlasticityParams {
+    fn default() -> Self {
+        Self {
+            min_multiplier: 0.20,
+            max_multiplier: 2.00,
+            center_entropy: 0.50,
+            steepness: 6.00,
+            micro_boost_cap: 0.25,
+            micro_capital_ref: 50.0,
+        }
+    }
+}
+
+impl NeuroPlasticityParams {
+    #[inline(always)]
+    pub fn validate(&self) -> bool {
+        self.min_multiplier.is_finite()
+            && self.max_multiplier.is_finite()
+            && self.min_multiplier > 0.0
+            && self.max_multiplier >= self.min_multiplier
+            && self.center_entropy.is_finite()
+            && (0.01..=0.99).contains(&self.center_entropy)
+            && self.steepness.is_finite()
+            && self.steepness > 0.0
+            && self.micro_boost_cap.is_finite()
+            && self.micro_boost_cap >= 0.0
+            && self.micro_capital_ref.is_finite()
+            && self.micro_capital_ref > 0.0
+    }
+}
+
 /// ⚡ ALGORITMO #40: MOTOR DE NEURO-PLASTICIDAD Y RECONEXIÓN SINÁPTICA EN TIEMPO REAL (NEURO-PLASTICITY ENGINE)
 /// Reconecta pesos y conexiones sinápticas neuronales en tiempo real durante la ejecución
 /// ante la detección de anomalías CUSUM/SPRT o cambios drásticos de régimen en el mercado.
@@ -47,19 +91,30 @@ impl NeuroPlasticityEngine {
         count
     }
 
-    /// 🛡️ FASE 7: META-EVOLUCIÓN
-    /// Conecta la entropía cuántica del Order Book para alterar cómo el bot aprende.
-    /// Si el mercado entra en pánico (alta entropía > 0.80), la red "derrite" sus pesos
-    /// para adaptarse rápidamente (Learning Rate x 10).
-    /// Si el mercado es predecible, congela los genes para exprimir ganancias.
-    /// Para Micro Cuentas (< $50), aplica el multiplicador de Hyper-Mutation (x3 adicional).
+    /// 🛡️ FASE 7: META-EVOLUCIÓN CONTINUA C^1
+    /// Conecta la entropía cuántica del Order Book para alterar cómo el bot aprende de forma continua.
+    /// Si el mercado entra en alta entropía (pánico / turbulencia), la red incrementa suavemente
+    /// su plasticidad hasta max_multiplier para adaptarse velozmente.
+    /// Si el mercado es altamente predecible (baja entropía), reduce suavemente la tasa de mutación
+    /// hacia min_multiplier para explotar el régimen estacionario sin sobreajuste.
+    /// Modulación suave para micro-cuentas ($13 USD) usando ponderación monótona de capital.
     #[inline(always)]
-    pub fn compute_plasticity_multiplier(entropy: f64, capital: f64) -> f64 {
-        // FIX #708: Sanitización de finitud en entropía y capital para evitar modulación indeterminada
+    pub fn compute_plasticity_multiplier_with_params(
+        params: &NeuroPlasticityParams,
+        entropy: f64,
+        capital: f64,
+    ) -> f64 {
+        let safe_params = if params.validate() {
+            *params
+        } else {
+            NeuroPlasticityParams::default()
+        };
+
+        // Sanitización de finitud en entropía y capital para evitar modulación indeterminada
         let safe_entropy = if entropy.is_finite() {
             entropy.clamp(0.0, 1.0)
         } else {
-            0.5
+            safe_params.center_entropy
         };
         let safe_capital = if capital.is_finite() && capital > 0.0 {
             capital
@@ -67,22 +122,17 @@ impl NeuroPlasticityEngine {
             13.0
         };
 
-        let base_mult = if safe_entropy > 0.85 {
-            2.0
-        } else if safe_entropy > 0.60 {
-            1.5
-        } else if safe_entropy < 0.30 {
-            0.2
-        } else {
-            1.0
-        };
+        // Rampa continua C^1 vía sigmoide logística suave (sin escalones discretos heurísticos)
+        let delta = safe_entropy - safe_params.center_entropy;
+        let t = 1.0 / (1.0 + (-safe_params.steepness * delta).exp());
+        let base_mult = safe_params.min_multiplier
+            + (safe_params.max_multiplier - safe_params.min_multiplier) * t;
 
-        // MicroAccount Modulation: Modulación suave y segura acotada para micro-cuentas ($13 USD)
-        let micro_factor = if safe_capital < 50.0 {
-            1.0 + ((50.0 - safe_capital.max(1.0)) / 50.0) * 0.25
-        } else {
-            1.0
-        };
+        // Modulación continua para micro-cuentas: transición cuadrática Hermite suave
+        let micro_ratio = ((safe_params.micro_capital_ref - safe_capital)
+            / safe_params.micro_capital_ref)
+            .clamp(0.0, 1.0);
+        let micro_factor = 1.0 + micro_ratio * safe_params.micro_boost_cap;
 
         let raw = base_mult * micro_factor;
         if raw.is_finite() {
@@ -90,6 +140,16 @@ impl NeuroPlasticityEngine {
         } else {
             1.0
         }
+    }
+
+    /// Cálculo con parámetros por defecto (compatibilidad con API existente)
+    #[inline(always)]
+    pub fn compute_plasticity_multiplier(entropy: f64, capital: f64) -> f64 {
+        Self::compute_plasticity_multiplier_with_params(
+            &NeuroPlasticityParams::default(),
+            entropy,
+            capital,
+        )
     }
 
     /// Plasticidad de Oja (Hebbian Learning Modificado)

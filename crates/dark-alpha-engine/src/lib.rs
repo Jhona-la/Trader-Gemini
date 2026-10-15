@@ -33,8 +33,8 @@
 pub mod neuro_plasticity;
 pub mod online_ppo;
 
-pub use neuro_plasticity::NeuroPlasticityEngine;
-pub use online_ppo::OnlinePpoPolicyEngine;
+pub use neuro_plasticity::{NeuroPlasticityEngine, NeuroPlasticityParams};
+pub use online_ppo::{OnlinePpoPolicyEngine, PpoHyperParams};
 
 use serde::{Deserialize, Serialize};
 

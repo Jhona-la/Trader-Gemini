@@ -253,6 +253,13 @@ pub struct QuantumConfig {
     pub quantum_osc_alpha: AtomicF64,
     pub shockwave_sonic_speed_z: AtomicF64,
     pub shockwave_mach_threshold: AtomicF64,
+
+    // --- Online PPO y Neuro-Plasticidad (Ola Ω125) ---
+    pub ppo_alpha_ema: AtomicF64,
+    pub ppo_learning_rate: AtomicF64,
+    pub plasticity_min_mult: AtomicF64,
+    pub plasticity_max_mult: AtomicF64,
+    pub plasticity_steepness: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -535,6 +542,11 @@ impl QuantumConfig {
             quantum_osc_alpha: AtomicF64::new(0.5),
             shockwave_sonic_speed_z: AtomicF64::new(1.0),
             shockwave_mach_threshold: AtomicF64::new(1.0),
+            ppo_alpha_ema: AtomicF64::new(0.05),
+            ppo_learning_rate: AtomicF64::new(0.01),
+            plasticity_min_mult: AtomicF64::new(0.20),
+            plasticity_max_mult: AtomicF64::new(2.00),
+            plasticity_steepness: AtomicF64::new(6.00),
         }
     }
 
