@@ -1,5 +1,43 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω129 — Continuidad C1 Hermite en VECM, Momentum Booster, Solitón y Resonancia Estocástica + Plan Maestro Canónico V4
+
+- **Ola Integrada y Certificada**:
+  * **Diagnóstico Forense y Causa Raíz**:
+    1. En `crates/strategy-core/src/vecm_arbitrage.rs`: La activación de reversión a la media presentaba una discontinuidad de derivada (kink no-$C^1$) en $|z| = 1.5$ y $|z| = 3.0$ mediante `(excess / 1.5).min(1.0)`. Además, los umbrales de entrada y saturación (`1.5` y `3.0`), así como las cotas de velocidad (`0.01`, `1.0`) y la ganancia RLS (`0.001`), estaban congelados en el código.
+    2. En `crates/strategy-core/src/momentum_booster.rs`: La dirección de alineación de momentum en `calculate_tp_extension` bifurcaba de forma escalonada con `if positive_pnl > 0.0 { 1.0 } else { 0.0 }`, introduciendo un acantilado $C^0$ donde una micro-ganancia infinitesimal ($10^{-9}$) saltaba abruptamente de 0 a 1.
+    3. En `crates/signal-engine/src/soliton_wave.rs`: La escala de normalización de velocidad (`10.0`), la saturación de momentum (`SAT_MOMENTO = 1e4`), el factor de potencia de envolvente (`2.0`) y el tiempo característico (`0.05`) carecían de un struct desacoplado `SolitonWaveParams` para mutación adaptativa y configuración en caliente.
+    4. En `crates/signal-engine/src/stochastic_resonance.rs`: La ganancia pico (`2.0`), la ganancia base (`1.0`) y el factor de nitidez $Q$ del pozo bi-estable carecían de desacoplamiento dinámico en un struct `StochasticResonanceParams`.
+    5. En `crates/quantum-arena/src/config.rs` y `crates/god-engine-core/src/lib.rs`: Faltaban los campos atómicos lock-free correspondientes en `QuantumConfig` y su sincronización en el registro omnisciente.
+  * **Solución Arquitectónica y Matemática**:
+    1. En `crates/strategy-core/src/vecm_arbitrage.rs`:
+       - Definido struct `VecmArbitrageParams` (`z_entry_threshold`, `z_saturation`, `speed_clamp_min`, `speed_clamp_max`, `rls_gain`) con validación de invariantes en `validate()`.
+       - Implementada la función suave cúbica Hermite $C^1$ derivable:
+         $$u = \text{clamp}\left(\frac{|z| - z_{\text{entry}}}{z_{\text{saturation}} - z_{\text{entry}}}, 0, 1\right), \quad S(u) = 3u^2 - 2u^3, \quad \text{señal} = -\text{sign}(z) \cdot S(u)$$
+         garantizando derivada nula en la frontera $|z| = z_{\text{entry}}$ y saturación suave en $|z| = z_{\text{saturation}}$.
+       - Integrados `with_params`, `update_params`, `params()` y overrides dinámicos desde el registro omnisciente (`"vecm_z_entry"`, `"vecm_z_saturation"`).
+    2. En `crates/strategy-core/src/momentum_booster.rs`:
+       - Erradicado el salto discreto $C^0$, implementando la función Hermite $C^1$ en $u = \text{clamp}(\text{positive\_pnl} / (0.5 \cdot \text{safe\_atr}), 0, 1)$, $\text{alignment} = 3u^2 - 2u^3$.
+    3. En `crates/signal-engine/src/soliton_wave.rs`:
+       - Definido struct `SolitonWaveParams` y constructor `new_with_params`, `with_params`, `update_params`, `compute_soliton_envelope_power_with_factor` y overrides dinámicos (`"soliton_amp_scale"`, `"soliton_vel_norm_scale"`, `"soliton_sat_momento"`).
+    4. En `crates/signal-engine/src/stochastic_resonance.rs`:
+       - Definido struct `StochasticResonanceParams` y función `amplify_signal_with_params` con resonancia canónica en U-invertida pico en $|s| = \sigma$, modulada por factor de agudeza $Q$ y overrides dinámicos (`"stochastic_res_peak_gain"`, `"stochastic_res_q"`).
+    5. En `crates/quantum-arena/src/config.rs`:
+       - Añadidos 4 campos atómicos lock-free en `QuantumConfig`: `vecm_z_entry`, `vecm_z_saturation`, `soliton_sat_momento`, `stochastic_res_peak_gain`.
+    6. En `crates/god-engine-core/src/lib.rs`:
+       - Sincronizados y publicados los parámetros en el registro omnisciente en `sync_navier_stokes_and_microstructure_params`.
+  * **Certificación Contractual**:
+    - `vecm_momentum_booster_c1_contract.rs` (3/3 pass):
+      1. `test_vecm_arbitrage_params_validation_and_defaults`: Validación rigurosa de cotas y fallbacks.
+      2. `test_vecm_c1_smoothstep_and_zero_derivatives`: Verificación de derivada cero en la frontera, orden cuadrático y saturación suave.
+      3. `test_momentum_booster_c1_hermite_smooth_alignment`: Verificación de transición continua, inmunidad a micro-saltos y simetría Short/Long.
+    - `soliton_stochastic_resonance_c1_contract.rs` (2/2 pass):
+      1. `test_soliton_params_validation_and_dynamic_scale`: Validación de parámetros, invarianza de escala y overrides dinámicos.
+      2. `test_stochastic_resonance_tunable_q_and_peak_gain`: Resonancia canónica en $|s|=\sigma$, factor $Q$ y decaimiento asintótico.
+    - Suite completa `strategy-core` (45/45 pass, 100% verde).
+    - Suite completa `signal-engine` (121/121 pass, 100% verde).
+    - `cargo check --workspace --all-targets` (exit 0 en 2m 15s).
+
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω128 — Continuidad C1 en Espectro Multifractal, Microestructura de Flujo de Órdenes y Fill Realista en Simulador de Ejecución
 
 - **Ola Integrada y Certificada**:

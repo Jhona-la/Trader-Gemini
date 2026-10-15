@@ -52,7 +52,18 @@ impl VolatileMomentumBooster {
         // ganancia realizada. (Los shorts ganadores de P15 van por la
         // rama positive_pnl > 0 — intactos.)
         let excess_hawkes = (hawkes_ratio - 1.0).clamp(-2.0, 2.0);
-        let alignment_direction = if positive_pnl > 0.0 { 1.0 } else { 0.0 };
+        // OLA Ω129: Transición suave C1 Hermite en el continuo Hilbert.
+        // Erradica el acantilado C0 escalonado `if positive_pnl > 0.0 { 1.0 } else { 0.0 }`,
+        // modulando la dirección con continuidad C1 según la madurez de la ganancia respecto al ATR.
+        let delta_pnl = 0.50 * safe_atr;
+        let u = if delta_pnl > 1e-8 {
+            (positive_pnl / delta_pnl).clamp(0.0, 1.0)
+        } else if positive_pnl > 0.0 {
+            1.0
+        } else {
+            0.0
+        };
+        let alignment_direction = 3.0 * u * u - 2.0 * u * u * u;
         let momentum_alignment = excess_hawkes * alignment_direction;
 
         // Función de activación sigmoidea escalar para determinar qué tan alineado está el mercado

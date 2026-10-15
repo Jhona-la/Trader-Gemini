@@ -217,6 +217,13 @@ pub struct ReplayStats {
     /// B3.19 — entradas VETADAS por la envolvente D-442/margin-guards
     /// (rollback inmediato, paridad con los aborts del host en vivo).
     pub envelope_vetoes: u64,
+    /// SOL-R5-02 (GLM 123): posiciones abiertas al cierre de la cinta
+    /// (conteo por moneda) — el MTM del capital final las valúa; este
+    /// campo lo hace auditable.
+    pub open_positions_end: usize,
+    /// SOL-R5-02 (GLM 123): PnL no realizado (neto de fricción de
+    /// salida estimada) añadido al capital final por el MTM.
+    pub mtm_unrealized_pnl: f64,
     /// XLVIII·A — panel ex-post de la meta re-encuadrada (CAGR, Sharpe/
     /// Sortino anualizados, Calmar, MaxDD, CVaR95, turnover, WR, PF).
     pub metrics: crate::metrics::ExPostMetrics,
@@ -237,6 +244,73 @@ impl ReplayStats {
             0.0
         }
     }
+}
+
+/// SOL-R5-02 (GLM 123): último mid válido por moneda, reconstruido de
+/// la cinta ya consumida (monoactiva — coin 0, mismo supuesto que el
+/// loop principal).
+fn ultimo_mid_por_moneda(ticks: &[ReplayTick]) -> [f64; 4] {
+    let mut mids = [0.0f64; 4];
+    for t in ticks.iter().rev() {
+        let m = t.mid();
+        if m.is_finite() && m > 0.0 {
+            mids[0] = m;
+            break;
+        }
+    }
+    mids
+}
+
+/// SOL-R5-02 (Sol, medición 2026-10-15 — fix GLM 123): mark-to-market
+/// del capital final del replay. Antes el final era SÓLO CAJA — las
+/// posiciones abiertas al cierre de la cinta no se valuaban y el
+/// evolver seleccionaba con ese número: el sistema de evolución
+/// aprendía a preferir genomas que dejan riesgo abierto (fitness real
+/// −0,73% donde el reporte decía +3069,92%). Cada posición abierta se
+/// valúa al último mid de su moneda descontando la fricción de salida
+/// (taker + slippage floor) — conservador: no fingir que cierra gratis.
+/// Sin posiciones abiertas ⇒ bit-idéntico (paridad del caso cerrado).
+fn aplicar_mtm_final(arena: &GlobalArena, ultimo_mid: &[f64; 4], stats: &mut ReplayStats) {
+    let taker = arena.config.live_taker_fee.load(Ordering::Relaxed);
+    let slip = arena
+        .config
+        .base_slippage_floor
+        .load(Ordering::Relaxed)
+        .max(0.0);
+    let friccion_salida = (taker + slip).max(0.0);
+    let mut mtm = 0.0f64;
+    for (cid, coin) in arena.coins.iter().enumerate() {
+        let mid = if cid < ultimo_mid.len() {
+            ultimo_mid[cid]
+        } else {
+            0.0
+        };
+        if mid <= 0.0 {
+            continue;
+        }
+        for slot in coin.positions.slots() {
+            if !slot.is_open() {
+                continue;
+            }
+            if let Some(snap) = slot.snapshot() {
+                let dir = if snap.is_long { 1.0 } else { -1.0 };
+                let pnl_bruto = (mid - snap.entry_price) * snap.quantity * dir;
+                // Fricción de salida estimada sobre el nocional actual.
+                let nocional = snap.quantity * mid;
+                let pnl_neto = pnl_bruto - nocional * friccion_salida;
+                mtm += pnl_neto;
+            }
+        }
+    }
+    if mtm.abs() > 1e-12 && stats.final_capital.is_finite() {
+        stats.final_capital += mtm;
+    }
+    stats.mtm_unrealized_pnl = mtm;
+    stats.open_positions_end = arena
+        .coins
+        .iter()
+        .map(|c| c.positions.slots().iter().filter(|s| s.is_open()).count())
+        .sum();
 }
 
 /// Evalúa un genoma contra ticks REALES con el core de producción.
@@ -616,6 +690,10 @@ fn run_booktick_replay_observed(
     }
 
     stats.final_capital = arena.unified_capital.load(Ordering::Relaxed);
+    // SOL-R5-02 (Sol, medición 2026-10-15 — fix GLM 123): la caja sola
+    // no es el capital final — ver `aplicar_mtm_final`.
+    let mids = ultimo_mid_por_moneda(ticks);
+    aplicar_mtm_final(&arena, &mids, &mut stats);
     if !pnl_list.is_empty() {
         let mean = stats.net_pnl / pnl_list.len() as f64;
         let var = pnl_list
@@ -1305,5 +1383,162 @@ mod tests {
             "Con macro válido en replay debe publicar staleness <= 60s (fresco), visto: {}",
             staleness_seen_valid
         );
+    }
+}
+
+// ── SOL-R5-02 (GLM 123): mark-to-market del capital final ─────────────
+#[cfg(test)]
+mod sol_r5_02_tests {
+    use super::*;
+
+    /// Copia local del helper de `mod tests` (privado ahí): caminata
+    /// determinista suave + spread, SIN direccionalidad falsa.
+    fn synth_ticks(n: usize) -> Vec<ReplayTick> {
+        let mut seed: u64 = 7;
+        let mut p = 60_000.0f64;
+        (0..n)
+            .map(|i| {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let noise = ((seed >> 33) as f64 / u32::MAX as f64) - 0.5;
+                p *= 1.0 + noise * 0.0004;
+                ReplayTick {
+                    ts_ms: 1_700_000_000_000 + i as u64 * 100,
+                    bid: p - 0.5,
+                    ask: p + 0.5,
+                    bid_qty: 1.0 + noise.abs(),
+                    ask_qty: 1.0 + (1.0 - noise.abs()),
+                }
+            })
+            .collect()
+    }
+
+    fn cfg() -> ReplayConfig {
+        ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 200,
+            trade_only: false,
+            shift_atr_frac: 0.10,
+        }
+    }
+
+    /// (1) INTEGRACIÓN: la cinta sintética con el forest baseline no
+    /// dispara entradas (predicciones 0.5 — el motor real necesita ML
+    /// entrenado), así que materializa el caso cerrado. El contrato se
+    /// verifica en CUALQUIERA de los dos casos posibles (no-vacuo por
+    /// construcción): sin posiciones ⇒ MTM exactamente 0 y final ==
+    /// caja (bit-idéntico al régimen pre-SOL-R5-02); con posiciones ⇒
+    /// el final se MOVIÓ (nunca un no-op silencioso con riesgo abierto).
+    #[test]
+    fn sol_r5_02_caso_cerrado_o_abierto_pero_nunca_ciego() {
+        crate::asegurar_spec_nativo("BTCUSDT"); // sin spec: 0 trades, rechazo «spec»
+        let ticks = synth_ticks(8_000);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let mut caja_final = 0.0f64;
+        let stats = run_booktick_replay_with_observer(&ticks, &genome, None, &cfg(), |_, core| {
+            caja_final = core.arena.unified_capital.load(std::sync::atomic::Ordering::Relaxed);
+        });
+        if stats.open_positions_end == 0 {
+            assert!(
+                (stats.final_capital - caja_final).abs() < 1e-6,
+                "caso cerrado: final {} == caja {}",
+                stats.final_capital,
+                caja_final
+            );
+            assert_eq!(stats.mtm_unrealized_pnl, 0.0);
+        } else {
+            assert_ne!(
+                stats.final_capital.to_bits(),
+                caja_final.to_bits(),
+                "riesgo abierto sin valuar: final {} == caja {}",
+                stats.final_capital,
+                caja_final
+            );
+        }
+    }
+
+    /// (2) UNITARIO del bloque MTM con posición INYECTADA por la API
+    /// pública del PositionManager (el contrato es «dado riesgo abierto
+    /// al cierre, se valúa», no «el ML sintético dispara»): ganador
+    /// sube neto de fricción, perdedor baja, la fricción NO es gratis,
+    /// y sin posiciones la paridad es bit-exacta.
+    #[test]
+    fn sol_r5_02_mtm_unitario_ganador_perdedor_y_paridad() {
+        let arena = GlobalArena::build_in_own_stack(1000.0);
+
+        // (a) Paridad: sin posiciones el MTM es un no-op bit-exacto.
+        let mut stats = ReplayStats {
+            final_capital: 1000.0,
+            ..Default::default()
+        };
+        aplicar_mtm_final(&arena, &[0.0; 4], &mut stats);
+        assert_eq!(stats.final_capital.to_bits(), 1000.0f64.to_bits());
+        assert_eq!(stats.open_positions_end, 0);
+        assert_eq!(stats.mtm_unrealized_pnl, 0.0);
+
+        let taker = arena.config.live_taker_fee.load(Ordering::Relaxed);
+        let slip = arena
+            .config
+            .base_slippage_floor
+            .load(Ordering::Relaxed)
+            .max(0.0);
+        let fric = (taker + slip).max(0.0);
+
+        // (b) Long GANADOR: entry 60_000, mid final 66_000, qty 0.01.
+        // open_positions_end == 1 también es el assert de que abrió.
+        arena.coins[0].positions.slot_0.open(
+            true,
+            60_000.0,
+            0.01,
+            100.0,
+            1_700_000_000_000,
+            66_000.0,
+            54_000.0,
+        );
+        let mut stats = ReplayStats {
+            final_capital: 1000.0,
+            ..Default::default()
+        };
+        aplicar_mtm_final(&arena, &[66_000.0, 0.0, 0.0, 0.0], &mut stats);
+        assert_eq!(stats.open_positions_end, 1);
+        let bruto = (66_000.0 - 60_000.0) * 0.01; // 60.0
+        let esperado = bruto - 66_000.0 * 0.01 * fric;
+        assert!(
+            (stats.mtm_unrealized_pnl - esperado).abs() < 1e-9,
+            "mtm {} == esperado {} (fric={})",
+            stats.mtm_unrealized_pnl,
+            esperado,
+            fric
+        );
+        assert!((stats.final_capital - (1000.0 + esperado)).abs() < 1e-9);
+        assert!(stats.final_capital > 1000.0, "ganador neto de fricción");
+        assert!(esperado < bruto, "la fricción NO es gratis: {} < {}", esperado, bruto);
+
+        // (c) Short PERDEDOR en el mismo mid (entry 60_000, subió a
+        // 66_000): se refleja hacia abajo — final < caja.
+        arena.coins[0].positions.slot_1.open(
+            false,
+            60_000.0,
+            0.01,
+            100.0,
+            1_700_000_000_001,
+            54_000.0,
+            66_000.0,
+        );
+        let mut stats = ReplayStats {
+            final_capital: 1000.0,
+            ..Default::default()
+        };
+        aplicar_mtm_final(&arena, &[66_000.0, 0.0, 0.0, 0.0], &mut stats);
+        assert_eq!(stats.open_positions_end, 2);
+        let short_neto = -bruto - 66_000.0 * 0.01 * fric;
+        let total = esperado + short_neto;
+        assert!(
+            (stats.mtm_unrealized_pnl - total).abs() < 1e-9,
+            "mtm agregado {} == long {} + short {}",
+            stats.mtm_unrealized_pnl,
+            esperado,
+            short_neto
+        );
+        assert!(stats.final_capital < 1000.0, "el perdedor se refleja: {} < 1000", stats.final_capital);
     }
 }

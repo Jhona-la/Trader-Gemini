@@ -285,6 +285,12 @@ pub struct QuantumConfig {
     pub multifractal_w_macro: AtomicF64,
     pub multifractal_tanh_scale: AtomicF64,
     pub burst_threshold_zscore: AtomicF64,
+
+    // --- VECM Cointegración, Ondas Solitónicas y Resonancia Estocástica (Ola Ω129) ---
+    pub vecm_z_entry: AtomicF64,
+    pub vecm_z_saturation: AtomicF64,
+    pub soliton_sat_momento: AtomicF64,
+    pub stochastic_res_peak_gain: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -591,6 +597,10 @@ impl QuantumConfig {
             multifractal_w_macro: AtomicF64::new(0.30),
             multifractal_tanh_scale: AtomicF64::new(0.08),
             burst_threshold_zscore: AtomicF64::new(2.50),
+            vecm_z_entry: AtomicF64::new(1.50),
+            vecm_z_saturation: AtomicF64::new(3.00),
+            soliton_sat_momento: AtomicF64::new(10000.0),
+            stochastic_res_peak_gain: AtomicF64::new(2.00),
         }
     }
 

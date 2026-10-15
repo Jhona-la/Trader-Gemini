@@ -3489,3 +3489,46 @@ Ejecutor: **Antigravity** (rama `antigravity/quant-sr-ola55-fase-r5-dinero-ejecu
 - `cargo test -p execution-engine`: 81 unit tests + 36 integration tests pasando al 100%.
 - `cargo test -p risk-engine`: Suite completa pasando al 100%.
 - `cargo check --workspace --all-targets`: 0 errores, 0 warnings en los 23 crates del workspace.
+
+---
+
+## §SOL-CONT-2026-10-15 — Sol: marca de posiciones abiertas y span ejecutado (SOL-R5-02 CERRADO por GLM 123 / SOL-R4-01 ABIERTO)
+
+**Base**: `78647b12`. Detalle y recibos: `docs/audit/SOL_CONTABILIDAD_REPLAY_2026-10-15.md`,
+testigo `outputs/Sol_continuacion_replay_2026-10-15.log` (exit 0) y contrato
+`outputs/Sol_continuacion_replay_2026-10-15_contrato.log` (3/3 verde).
+
+- **SOL-R5-02 [CERRADO por GLM 123 — merge `94049829`, fix `42d7115e`]**: en el camino vivo `unified_capital` sólo muta en
+  el dominio de fees (`god-engine-core/src/lib.rs:9525/9547`,
+  `entry_reservation.rs:53/86`; resto de escritores bajo `#[cfg(test)]`);
+  `booktick_replay.rs` mide `max_dd` (605-612) y `final_capital` (618)
+  sobre cash sin marca, mientras `continuous_evolution_backtest.rs` marca
+  equity (`daily_report` 124-143; mutantes 815-837). Consumidores:
+  `evolver.rs:104/115/120-129`, `evolution.rs:347/478`,
+  `backtest_windows.rs:270`. Mismo libro ⇒ fitness −0,7279 % CAGR vs
+  reporte +3069,9231 % (brecha terminal +1,2929 USD, +9,95 %). Sesgo a
+  dejar riesgo abierto; ruina por marca invisible.
+  **Cierre (GLM 123, medición de Sol con crédito completo)**:
+  `aplicar_mtm_final()` en `booktick_replay.rs` — capital final = caja +
+  Σ posiciones abiertas al último mid con fricción de salida (taker+slip
+  sobre nocional actual); sin posiciones ⇒ bit-idéntico. Campos nuevos
+  `open_positions_end` + `mtm_unrealized_pnl` en `ReplayStats`.
+  Recibos exigidos por esta fila: contrato 2/2 en el MISMO commit
+  (`sol_r5_02_tests`: disyuntivo no-vacuo + unitario inyectado por API
+  pública con fórmula exacta neta de fricción) + **oráculo T-1 release
+  2/2 PASS 709.76s** (binario verificado con-MTM por mtime 12:16:45,
+  pre-checkout) + suites backtest lib 57/57, evolution-engine 13
+  targets, god-engine-core 203/203 + contrato de caracterización de Sol
+  (`sol_cont_accounting_2026-10-15`) re-verificado 3/3 VERDE sobre el
+  estado mergeado. OBS-SOL-CENTINELA verificado ya cubierto:
+  `log_capital_growth` filtra final ≤ 0 → INVIABLE (el cero de
+  instrumento roto jamás puntúa como ruina limpia).
+- **SOL-R4-01 [ABIERTO]**: span del panel = cinta completa
+  (`booktick_replay.rs:637`) pese al break por ruina (613) ⇒
+  anualización **×2,000000** exacta en fixture 5-de-10 días, turnover/día
+  +100 %. Sin campos `executed_*`; `min(solicitado, disponible)` previo
+  (`e47b2cb0`/`286a6a7a`) no registra solicitado/disponible/ejecutado ni
+  causa de fin (corte 549 y agotamiento de cinta indistinguibles).
+- Si alguien implementa la marca o el span ejecutado: contrato RED→GREEN
+  en el mismo commit + oráculo T-1 si toca evolución/votos. No fichar como
+  cerrado sin recibo de árbol.
