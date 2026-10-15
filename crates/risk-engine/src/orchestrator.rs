@@ -95,6 +95,81 @@ impl<'a> PortfolioOrchestrator<'a> {
         }
     }
 
+    /// Calcula el margen máximo admisible que la cartera puede alojar para una nueva posición,
+    /// respetando tanto el límite de exposición bruta como el direccional y las presiones sistémicas.
+    #[inline]
+    pub fn available_margin_headroom(
+        &self,
+        intent_is_long: bool,
+        min_notional_simbolo: f64,
+    ) -> f64 {
+        let capital = self.arena.unified_capital.load(Ordering::Relaxed);
+        if !capital.is_finite() || capital <= 0.0 {
+            return 0.0;
+        }
+        let p_crash = self.arena.regime_p_crash.load(Ordering::Relaxed);
+        let p_bull = self.arena.regime_p_bull.load(Ordering::Relaxed);
+        let p_chaos = self.arena.regime_p_chaos.load(Ordering::Relaxed);
+        if !p_crash.is_finite() || !p_bull.is_finite() || !p_chaos.is_finite() {
+            return 0.0;
+        }
+        let mut directional_max = 0.0f64;
+        for coin in self.arena.coins.iter() {
+            let tide = coin.spectral_coherence.load(Ordering::Relaxed);
+            let flux = coin.spectral_crash_flux.load(Ordering::Relaxed);
+            if !tide.is_finite() || !flux.is_finite() {
+                return 0.0;
+            }
+            if (intent_is_long && tide < 0.0) || (!intent_is_long && tide > 0.0) {
+                directional_max = directional_max.max(flux);
+            }
+        }
+        let directional_adverse = if intent_is_long { p_crash } else { p_bull };
+        let systemic_pressure = directional_adverse.max(0.50 * p_chaos.clamp(0.0, 1.0));
+        let directional_pressure = 0.25
+            * directional_max
+                .clamp(0.0, 1.0)
+                .max(systemic_pressure.clamp(0.0, 1.0));
+
+        let escasez = crate::capital_regime::micro_weight(
+            capital,
+            crate::capital_regime::effective_min_notional(min_notional_simbolo),
+        );
+        let exposure_limit = (crate::capital_regime::margin_cushion(
+            self.arena.config.margin_cushion_pct.load(Ordering::Relaxed),
+            escasez,
+        ) - directional_pressure)
+            .max(0.05);
+
+        let max_capital = capital * exposure_limit;
+
+        let mut total_long_margin = 0.0;
+        let mut total_short_margin = 0.0;
+        for coin in self.arena.coins.iter() {
+            for pos in coin.positions.slots() {
+                if pos.is_open() {
+                    let margin = pos.margin_used.load(Ordering::Relaxed);
+                    if !margin.is_finite() || margin < 0.0 {
+                        return 0.0;
+                    }
+                    if pos.is_long.load(Ordering::Relaxed) {
+                        total_long_margin += margin;
+                    } else {
+                        total_short_margin += margin;
+                    }
+                }
+            }
+        }
+
+        let gross_headroom = (max_capital - (total_long_margin + total_short_margin)).max(0.0);
+        let dir_headroom = if intent_is_long {
+            (max_capital - total_long_margin).max(0.0)
+        } else {
+            (max_capital - total_short_margin).max(0.0)
+        };
+        gross_headroom.min(dir_headroom)
+    }
+
     /// Evalúa si el portafolio permite la apertura de una nueva posición direccional
     #[inline(always)]
     pub fn allow_trade(
@@ -130,143 +205,29 @@ impl<'a> PortfolioOrchestrator<'a> {
             return false;
         }
         // Regime Orchestration (Fase 13: Kill-Switch macro)
-        // (Ola XLII·B1-wire) CRASH POLICY CONTINUA: la crash-ness MEDIDA del
-        // campo espectral (publicada por símbolo) contrae el margen admisible
-        // continuamente — el largo pierde hasta 25 PUNTOS PORCENTUALES de
-        // colchón (0,25 de la fracción de capital) a crash-ness plena. El veto
-        // binario del enum queda como el extremo declarado (caída libre
-        // sistémica); el rango medio es gradiente, no caja.
-        //
-        // Ola XLIV: `crash_flux` usa |marea| («describe el evento, no el
-        // lado»), así que una tendencia ALCISTA intensa también lo eleva.
-        // Tomar el máximo de todas las monedas sin mirar el signo recortaba
-        // el margen de TODOS los largos cuando cualquier moneda subía con
-        // fuerza. Sólo cuenta la crash-ness de las monedas cuya marea
-        // portadora (`spectral_coherence`) es BAJISTA — la misma regla que
-        // Ola XLIV & AGY-AUD-P07: SIMETRÍA DIRECCIONAL EN PRESIÓN ESPECTRAL DE COLCHÓN.
-        // Para largos: contrae por crash_pressure (marea portadora bajista + crash flux).
-        // Para cortos: contrae simétricamente por squeeze_pressure (marea portadora alcista + crash flux),
-        // protegiendo posiciones cortas contra short squeezes violentos y blow-off tops.
-        // AGY-AUD-P31: Conexión del símplex continuo de régimen de mercado al colchón direccional de riesgo.
-        // A la presión de crash_max por moneda se añade la probabilidad sistémica p_crash del mercado,
-        // contrayendo el margen admisible continuamente sin escalones discretos.
-        // Para cortos: contrae simétricamente por squeeze_pressure y p_bull, protegiendo
-        // posiciones cortas contra short squeezes violentos y blow-off tops.
-        // P2: unknown pressure is not calm. Validate both systemic inputs and
-        // every spectral pair before filtering by direction; finite cold zeros
-        // remain admissible. Reuse the values checked here for this decision.
         let p_crash = self.arena.regime_p_crash.load(Ordering::Relaxed);
         let p_bull = self.arena.regime_p_bull.load(Ordering::Relaxed);
         let p_chaos = self.arena.regime_p_chaos.load(Ordering::Relaxed);
         if !p_crash.is_finite() || !p_bull.is_finite() || !p_chaos.is_finite() {
             return false;
         }
-        let mut directional_max = 0.0f64;
-        for coin in self.arena.coins.iter() {
-            let tide = coin.spectral_coherence.load(Ordering::Relaxed);
-            let flux = coin.spectral_crash_flux.load(Ordering::Relaxed);
-            if !tide.is_finite() || !flux.is_finite() {
-                return false;
-            }
-            if (intent_is_long && tide < 0.0) || (!intent_is_long && tide > 0.0) {
-                directional_max = directional_max.max(flux);
-            }
-        }
-        let directional_adverse = if intent_is_long { p_crash } else { p_bull };
-        // Ficha #696: El caos espectral omnidireccional (p_chaos) eleva la presión sistémica
-        // en ambos lados, contrayendo el margen admisible ante regímenes turbulentos.
-        let systemic_pressure = directional_adverse.max(0.50 * p_chaos.clamp(0.0, 1.0));
-        let directional_pressure = 0.25
-            * directional_max
-                .clamp(0.0, 1.0)
-                .max(systemic_pressure.clamp(0.0, 1.0));
-        // Preserve Omega12 continuity while rejecting nonfinite evidence above.
-        // Reuse the validated snapshot instead of reloading systemic pressure.
+
         let systemic_crash_veto = p_crash >= 0.90;
         let fallback_discrete_veto = p_crash <= 0.0
             && regime == crate::regime::MarketRegime::Crash;
         if (systemic_crash_veto || fallback_discrete_veto) && intent_is_long {
             return false; // Bloqueo absoluto de compras en caída libre sistémica.
         }
-        // QS-REV4: espejo del veto anterior. D-403 dejaba vender en euforia
-        // sistémica («contratendencia con stops ceñidos») mientras vetaba
-        // comprar en caída: dos lados, dos reglas. Con D2 el stop es el de la
-        // τ y ya no es ceñido. La presión continua de arriba ya era simétrica
-        // (p_crash para largos, p_bull para cortos); el veto duro también lo
-        // es ahora. El respaldo discreto (`fallback_discrete_veto`, simplex
-        // sin poblar) sigue sólo para largos: lo pinea un contrato de Codex
-        // (`finite_crash_threshold_and_legacy_regime_veto_are_preserved`).
+
         let systemic_squeeze_veto = p_bull >= 0.90;
         if systemic_squeeze_veto && !intent_is_long {
             return false; // Bloqueo absoluto de ventas en euforia sistémica.
         }
 
-        let mut total_long_margin = 0.0;
-        let mut total_short_margin = 0.0;
-
-        // Sum collateral across spectral slots; this is NOT market delta.
-        // Individual atomic loads do not provide a coherent portfolio snapshot.
-        for coin in self.arena.coins.iter() {
-            for pos in coin.positions.slots() {
-                if pos.is_open() {
-                    let margin = pos.margin_used.load(Ordering::Relaxed);
-                    if !margin.is_finite() || margin < 0.0 {
-                        return false;
-                    }
-                    if pos.is_long.load(Ordering::Relaxed) {
-                        total_long_margin += margin;
-                    } else {
-                        total_short_margin += margin;
-                    }
-                }
-            }
-        }
-
-        // (Ola XLI·D6) Una sola definición: la segunda era una sombra literal
-        // de la primera, y el límite TOTAL contra el mismo exposure_limit era
-        // redundante con el direccional (siempre dispara antes o igual).
-        let total_exposure = total_long_margin + total_short_margin + required_margin;
-        if !total_exposure.is_finite() {
+        let headroom = self.available_margin_headroom(intent_is_long, min_notional_simbolo);
+        if !headroom.is_finite() || headroom <= 0.0 {
             return false;
         }
-
-        // D-744: el tope de margen ya NO se deriva del gen de drawdown. Eran
-        // dos conceptos distintos leyendo el mismo número: con el gen base
-        // (0,95) el `min(0,20)` lo aplastaba a 0,20 y el colchón quedaba
-        // clavado en 0,80 pasara lo que pasara — evolucionar el drawdown
-        // movía, de paso y sin decirlo, cuánto capital podía comprometerse.
-        // El colchón tiene su propio gen (`margin_cushion_pct`) y su propia
-        // fuente única, la misma que usa el núcleo al comprobar margen libre.
-        // D-750: escasez medida contra el mínimo DEL SÍMBOLO.
-        let escasez = crate::capital_regime::micro_weight(
-            capital,
-            crate::capital_regime::effective_min_notional(min_notional_simbolo),
-        );
-        let exposure_limit = (crate::capital_regime::margin_cushion(
-            self.arena.config.margin_cushion_pct.load(Ordering::Relaxed),
-            escasez,
-        ) - directional_pressure)
-            .max(0.05);
-
-        // GROSS exposure cap: margen comprometido en AMBAS direcciones a la
-        // vez — el límite direccional no lo captura (40 long + 50 short caben
-        // por lado y suman 90 sobre un techo de 90). (Ola XLI·D6 corrección:
-        // el total NO era redundante; sólo lo era la doble computación.)
-        if total_exposure > capital * exposure_limit {
-            return false;
-        }
-
-        // Directional collateral limit; leverage/notional are not modeled here.
-        if intent_is_long {
-            if (total_long_margin + required_margin) > capital * exposure_limit {
-                return false;
-            }
-        } else {
-            if (total_short_margin + required_margin) > capital * exposure_limit {
-                return false;
-            }
-        }
-
-        true
+        required_margin <= headroom + 1e-9
     }
 }

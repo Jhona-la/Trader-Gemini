@@ -1,5 +1,35 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω124 — Resolución de Fallo Recurrente de CI (GitHub Actions: Suite Núcleo / `spectral_zero_replay_contract` REJ_ORCHESTRATOR 8)
+
+- **Ola Integrada y Certificada**:
+  * **Diagnóstico Forense y Causa Raíz**:
+    1. En GitHub Actions, la suite de pruebas unitarias y contratos `nucleo` (`cargo test -p god-engine-core`) fallaba recurrentemente en `spectral_zero_replay_contract.rs:140`:
+       `assertion left == right failed: cold rejection: Some(8)` (donde `Some(8)` es `REJ_ORCHESTRATOR` emitido por `PortfolioOrchestrator::allow_trade`).
+    2. Las olas GLM 117 (`2eec8f3b`) y GLM 118 (`cdc99b1b`) incorporaron el dimensionamiento adaptativo en espacio de riesgo LH-04 en `crates/risk-engine/src/lib.rs` (`lines 1340-1375`).
+    3. En `spectral_zero_replay_contract.rs`, la moneda 1 ya mantenía una posición abierta con margen 50.0 sobre un capital total de 100.0 (`exposure_limit = 0.98`, resultando en un espacio libre o headroom admisible de `98.0 - 50.0 = 48.0`).
+    4. Al evaluar la intención de compra para la moneda 0 (con 100 operaciones, win rate 0.75 y profit factor 2.0), el cálculo LH-04 determinó un `nocional_obj` alto con apalancamiento 1x, arrojando `margen_obj = 437.5`, acotado a `allocated_capital = 100.0`.
+    5. La función `resolve_margin_cap_limits` evalúa los límites de margen a nivel de activo individual basándose en `allocated_capital` (dando un `safe_limit` de 90.0). Sin embargo, desconocía el colateral vivo ya comprometido en otros slots/monedas de la arena multiactivo.
+    6. Debido a esta desconexión, `safe_limit` permanecía en 90.0 en vez de coordinarse con la cartera, por lo que `final_margin` no se recortaba a 48.0. Posteriormente, en `PortfolioOrchestrator::allow_trade`, la comprobación `total_long_margin + required_margin = 50.0 + 90.0 = 140.0 > 98.0` rechazaba la orden con `REJ_ORCHESTRATOR` (8), convirtiendo una señal legítima en `SignalType::Flat`.
+  * **Solución Arquitectónica y Matemática**:
+    1. En `crates/risk-engine/src/orchestrator.rs`:
+       - Extraído el método público `PortfolioOrchestrator::available_margin_headroom(&self, intent_is_long: bool, min_notional_simbolo: f64) -> f64` que proyecta la capacidad neta disponible de la cartera considerando la presión sistémica continua de crash/squeeze/caos, mareas portadoras, colchón de margen y colateral ya comprometido en ambas direcciones.
+       - Implementada política estricta fail-closed ante corrupción de datos: si alguna posición abierta reporta un margen no finito o negativo (`!margin.is_finite() || margin < 0.0`), el headroom colapsa inmediatamente a `0.0`.
+       - Simplificado `allow_trade` para validar que `required_margin <= headroom + 1e-9` con rechazo seguro si `headroom <= 0.0`.
+    2. En `crates/risk-engine/src/lib.rs`:
+       - En `evaluate_single_intent`, conectado el orquestador de cartera antes del rescate de margen:
+         `let orchestrator = orchestrator::PortfolioOrchestrator::new(arena);`
+         `let portfolio_headroom = orchestrator.available_margin_headroom(bounded_exposure > 0.0, dynamic_min_notional);`
+         `let safe_limit = single_asset_cap.min(portfolio_headroom);`
+       - De esta forma, el mecanismo existente de recorte seguro auditado (`sol_a2_margen_reducido`) reduce el margen solicitado exactamente al headroom admisible disponible en la cartera (48.0 en la prueba), permitiendo que la orden se ejecute respetando la física multiactivo y pasando sin rechazo espurio por `allow_trade`.
+  * **Certificación Contractual**:
+    - `spectral_zero_replay_contract.rs` (2/2 pass): `flat_producer_blocks_cannot_publish_a_fictitious_risk_tightening` pasa al 100% (cold signal = `SignalType::Long`, cold_reason = `None`).
+    - `lh04_sizing_riesgo_contract.rs` (7/7 pass): Todos los contratos de dimensionamiento LH-04 y streak-adaptación epigenética verificados en verde.
+    - `portfolio_admission_contract.rs` (7/7 pass): Invariante de seguridad fail-closed ante márgenes no finitos o negativos en posiciones abiertas verificado al 100%.
+    - Suite completa de `risk-engine` (148+ tests pass, 100% verde).
+    - Suite completa de `god-engine-core` (suite `nucleo` del CI, 100% verde con 0 fallos).
+    - `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω123 — Desacoplamiento Dinámico y Parametrización Adaptativa en Rényi-Tsallis Entropy, Quantum Oscillator y Supersonic Shockwave
 
 - **Ola Integrada y Certificada en `main`**:

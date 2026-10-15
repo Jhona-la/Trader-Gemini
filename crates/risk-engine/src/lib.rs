@@ -1471,7 +1471,10 @@ impl RiskEngine {
         // el margen necesario para cubrir el nocional mínimo ejecutable. Al crecer
         // la cuenta (interés compuesto), el límite escala proporcionalmente sin
         // estrangular el crecimiento.
-        let safe_limit = crate::capital_regime::resolve_margin_cap_limits(
+        let orchestrator = orchestrator::PortfolioOrchestrator::new(arena);
+        let portfolio_headroom = orchestrator
+            .available_margin_headroom(bounded_exposure > 0.0, dynamic_min_notional);
+        let single_asset_cap = crate::capital_regime::resolve_margin_cap_limits(
             arena,
             coin_id,
             allocated_capital,
@@ -1480,6 +1483,7 @@ impl RiskEngine {
             current_cap,
             micro_w_alloc,
         );
+        let safe_limit = single_asset_cap.min(portfolio_headroom);
         if final_margin > safe_limit {
             // SOL-A2 — el "rescate" de margen era SILENCIOSO: reducía el
             // tamaño evaluado y, si hacia falta, SUBÍA el apalancamiento para
@@ -1559,7 +1563,6 @@ impl RiskEngine {
         // (fusión PR #5: la viabilidad de margen mínimo ya se exigió arriba con
         // rej(6); el duplicado del hunk se elimina)
 
-        let orchestrator = orchestrator::PortfolioOrchestrator::new(arena);
         let raw_regime = arena.market_regime.load(Ordering::Relaxed);
         let regime = crate::regime::MarketRegime::from(raw_regime);
 
