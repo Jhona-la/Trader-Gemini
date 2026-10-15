@@ -413,11 +413,12 @@ impl MultifractalParams {
         {
             return Err("Pesos multifractales deben ser finitos y no negativos");
         }
-        if self.w_micro + self.w_meso + self.w_macro < 1e-6 {
-            return Err("Suma de pesos multifractales debe ser positiva");
+        let weight_sum = self.w_micro + self.w_meso + self.w_macro;
+        if !weight_sum.is_finite() || weight_sum < 1e-6 {
+            return Err("Suma de pesos multifractales debe ser finita y >= 1e-6");
         }
         if !self.tanh_scale.is_finite() || self.tanh_scale < 1e-4 {
-            return Err("Escala tanh debe ser finita y positiva (> 1e-4)");
+            return Err("Escala tanh debe ser finita y >= 1e-4");
         }
         if !self.prior_weight_k.is_finite() || self.prior_weight_k < 0.1 {
             return Err("Peso prior Bayesiano k debe ser finito y >= 0.1");
@@ -443,7 +444,7 @@ pub fn smooth_persistence_degree(hurst: f64, threshold: f64, transition_width: f
         return 0.0;
     }
     let dev = (hurst - 0.50).abs();
-    let delta = if transition_width.is_finite() && transition_width > 1e-4 {
+    let delta = if transition_width.is_finite() && transition_width >= 1e-4 {
         transition_width
     } else {
         0.03
@@ -536,21 +537,25 @@ impl MultiScaleHurstConfluence {
         price: f64,
         params: &MultifractalParams,
     ) -> (f64, f64, f64, f64, f64, f64) {
+        // Resolve the entire set before updating any scale: invalid fields must
+        // not combine with an otherwise custom prior or mutate the trajectory.
+        let safe_params = if params.validate().is_ok() {
+            *params
+        } else {
+            MultifractalParams::default()
+        };
+        let params = &safe_params;
         let (h_micro, _) = self.engine_micro.update_with_prior_k(price, params.prior_weight_k);
         let (h_meso, _) = self.engine_meso.update_with_prior_k(price, params.prior_weight_k);
         let (h_macro, _) = self.engine_macro.update_with_prior_k(price, params.prior_weight_k);
 
-        let t_scale = if params.tanh_scale.is_finite() && params.tanh_scale > 1e-4 {
-            params.tanh_scale
-        } else {
-            0.08
-        };
+        let t_scale = params.tanh_scale;
 
         let c_micro = ((h_micro - 0.50) / t_scale).tanh();
         let c_meso = ((h_meso - 0.50) / t_scale).tanh();
         let c_macro = ((h_macro - 0.50) / t_scale).tanh();
 
-        let w_sum = (params.w_micro + params.w_meso + params.w_macro).max(1e-6);
+        let w_sum = params.w_micro + params.w_meso + params.w_macro;
         let norm_w_micro = params.w_micro / w_sum;
         let norm_w_meso = params.w_meso / w_sum;
         let norm_w_macro = params.w_macro / w_sum;

@@ -31,9 +31,31 @@
     },
     {
       "label": "feature-green-suite",
-      "status": "running",
+      "status": "passed",
       "target": "target-base15-feature",
-      "jobs": 1
+      "jobs": 1,
+      "command": "cargo test -p feature-engine --locked",
+      "exit_code": 0,
+      "passed": 239,
+      "failed": 0,
+      "ignored": 22,
+      "measured": 0,
+      "filtered_out": 0,
+      "summary_count": 32,
+      "log_sha256": "e42fcde024326e8cdfb2e5c1c7b66c69406da2d65f9c421d6da939ad82afe2b0",
+      "binary_manifest_sha256": "75c188545b29ad9b71e4739f0ec8d2bc19da87b965529ac7cfa8e506e5f7a4eb",
+      "retained_binaries": 31,
+      "scope": "Complete feature-engine Cargo suite, including new 4/4 regressions. Ignored manual/empirical measurements remain ignored; not economic or whole-workspace evidence.",
+      "source_fingerprints": {
+        "crates/feature-engine/src/multifractal.rs": {
+          "raw_sha256": "195ee9cdec864a5bbe6da76973ca71022d51a286e3f86b17aead10d91c968bd1",
+          "git_blob": "7dab5da4c8314c81336d4b43b824ad4f923f978b"
+        },
+        "crates/feature-engine/tests/multifractal_invalid_params_contract.rs": {
+          "raw_sha256": "c95c2419bc37c3b9057931459d29b50fa1b0c531dfea63ac6f0a3429eae8893f",
+          "git_blob": "b28a74e10b9a6cca17367c9bdbf6dbb3eb34a3c0"
+        }
+      }
     },
     {
       "label": "simulator-reinforced-red",
@@ -87,7 +109,7 @@
   },
   "findings": {
     "B15-01": "fix_pending",
-    "B15-02": "implemented_green_pending",
+    "B15-02": "fixed_unit_verified",
     "B15-03": "open",
     "B15-04": "open",
     "B15-05": "open",
