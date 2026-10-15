@@ -1711,6 +1711,26 @@ impl GodEngineCore {
             ..Default::default()
         };
         self.hodge_flow_engine.update_params(hodge_params);
+
+        // OLA Ω126: Sincronización de Hawkes-Bessel, Perceptrón y Proyección Espectral desde QuantumConfig
+        let hk_alpha = self.arena.config.hawkes_alpha.load(Ordering::Relaxed);
+        let hk_beta = self.arena.config.hawkes_beta.load(Ordering::Relaxed);
+        let hk_params = signal_engine::HawkesBesselParams {
+            alpha: hk_alpha,
+            beta: hk_beta,
+            ..Default::default()
+        };
+        for hk in self.hawkes_by_coin.iter_mut() {
+            hk.update_params(hk_params);
+        }
+
+        let perc_ganancia = self.arena.config.perceptron_ganancia.load(Ordering::Relaxed);
+        self.arena.registry.set("perceptron_ganancia", perc_ganancia);
+
+        let esp_masa_min = self.arena.config.espectral_masa_minima.load(Ordering::Relaxed);
+        let esp_masa_plena = self.arena.config.espectral_masa_plena.load(Ordering::Relaxed);
+        self.arena.registry.set("espectral_masa_minima", esp_masa_min);
+        self.arena.registry.set("espectral_masa_plena", esp_masa_plena);
     }
 
     #[inline]

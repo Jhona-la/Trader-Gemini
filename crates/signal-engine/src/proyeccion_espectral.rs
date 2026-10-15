@@ -24,18 +24,95 @@ use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
 use strategy_core::QuantumStrategy;
 
-/// Masa resuelta mínima para opinar. Por debajo, la proyección está dominada
-/// por escalas sin observar: abstenerse es la única respuesta honesta.
-const MASA_MINIMA_PARA_OPINAR: f64 = 0.25;
+/// Masa resuelta mínima canónica por debajo de la cual la proyección se abstiene.
+pub const DEFAULT_MASA_MINIMA_PARA_OPINAR: f64 = 0.20;
+/// Masa resuelta a partir de la cual la proyección opina con 100% de fuerza.
+pub const DEFAULT_MASA_PLENA_PARA_OPINAR: f64 = 0.35;
 
-#[derive(Default)]
+/// Parámetros de modulación continua para la proyección espectral temporal.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ProyeccionEspectralParams {
+    /// Masa resuelta mínima por debajo de la cual el peso de la proyección es exactamente 0.0.
+    pub masa_minima: f64,
+    /// Masa resuelta plena a partir de la cual la proyección opina con 100% de fuerza.
+    pub masa_plena: f64,
+}
+
+impl Default for ProyeccionEspectralParams {
+    fn default() -> Self {
+        Self {
+            masa_minima: DEFAULT_MASA_MINIMA_PARA_OPINAR,
+            masa_plena: DEFAULT_MASA_PLENA_PARA_OPINAR,
+        }
+    }
+}
+
+impl ProyeccionEspectralParams {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if !self.masa_minima.is_finite() || !self.masa_plena.is_finite() {
+            return Err("ProyeccionEspectralParams: valores no finitos");
+        }
+        if self.masa_minima < 0.0 || self.masa_minima >= self.masa_plena || self.masa_plena > 1.0 {
+            return Err("ProyeccionEspectralParams: cotas inválidas (0.0 <= masa_minima < masa_plena <= 1.0)");
+        }
+        Ok(())
+    }
+
+    /// Factor de peso de modulación continua C^1 en [0, 1] según la masa observada.
+    #[inline]
+    pub fn compute_weight(&self, masa: f64) -> f64 {
+        if !masa.is_finite() || masa <= self.masa_minima {
+            return 0.0;
+        }
+        if masa >= self.masa_plena {
+            return 1.0;
+        }
+        let t = ((masa - self.masa_minima) / (self.masa_plena - self.masa_minima)).clamp(0.0, 1.0);
+        // Polinomio cúbico Hermite C^1 (smoothstep): 3t^2 - 2t^3
+        t * t * (3.0 - 2.0 * t)
+    }
+}
+
+#[derive(Clone)]
 pub struct ProyeccionEspectralEngine {
     registry: Option<Arc<OmniscientRegistry>>,
+    params: ProyeccionEspectralParams,
+}
+
+impl Default for ProyeccionEspectralEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProyeccionEspectralEngine {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            registry: None,
+            params: ProyeccionEspectralParams::default(),
+        }
+    }
+
+    pub fn with_params(params: ProyeccionEspectralParams) -> Self {
+        let safe_params = if params.validate().is_ok() {
+            params
+        } else {
+            ProyeccionEspectralParams::default()
+        };
+        Self {
+            registry: None,
+            params: safe_params,
+        }
+    }
+
+    pub fn update_params(&mut self, params: ProyeccionEspectralParams) {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+    }
+
+    pub fn params(&self) -> &ProyeccionEspectralParams {
+        &self.params
     }
 
     fn lee(&self, coin_id: usize, symbol: &str, clave: &str) -> Option<f64> {
@@ -66,9 +143,26 @@ impl QuantumStrategy for ProyeccionEspectralEngine {
         let Some(masa) = self.lee(coin_id, symbol, "espectral_masa_resuelta") else {
             return 0.0;
         };
-        if !masa.is_finite() || masa < MASA_MINIMA_PARA_OPINAR {
+
+        // Resolución dinámica de parámetros desde el registro omnisciente si existen
+        let custom_min = self.lee(coin_id, symbol, "espectral_masa_minima")
+            .unwrap_or(self.params.masa_minima);
+        let custom_plena = self.lee(coin_id, symbol, "espectral_masa_plena")
+            .unwrap_or(self.params.masa_plena);
+        let effective_params = if custom_min.is_finite() && custom_plena.is_finite() && custom_min < custom_plena {
+            ProyeccionEspectralParams {
+                masa_minima: custom_min,
+                masa_plena: custom_plena,
+            }
+        } else {
+            self.params
+        };
+
+        let weight = effective_params.compute_weight(masa);
+        if weight <= 0.0 {
             return 0.0;
         }
+
         let (Some(senal), Some(conc)) = (
             self.lee(coin_id, symbol, "espectral_senal_proyectada"),
             self.lee(coin_id, symbol, "espectral_concentracion"),
@@ -78,7 +172,7 @@ impl QuantumStrategy for ProyeccionEspectralEngine {
         if !senal.is_finite() || !conc.is_finite() {
             return 0.0;
         }
-        (senal * conc.clamp(0.0, 1.0)).clamp(-1.0, 1.0)
+        (senal * conc.clamp(0.0, 1.0) * weight).clamp(-1.0, 1.0)
     }
 }
 

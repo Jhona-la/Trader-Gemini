@@ -1,5 +1,43 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω126 — Continuidad C1 en Proyección Espectral, Desacoplamiento de Compuerta Perceptrón y Proceso de Hawkes-Bessel
+
+- **Ola Integrada y Certificada**:
+  * **Diagnóstico Forense y Causa Raíz**:
+    1. En `crates/signal-engine/src/proyeccion_espectral.rs`: la función `evaluate_for_coin` aplicaba un umbral rígido escalonado `if masa < MASA_MINIMA_PARA_OPINAR (0.25) { return 0.0; }`. Si la masa resuelta fluctuaba infinitesimalmente alrededor de 0.25 (p. ej. de 0.2499 a 0.2501), el voto saltaba bruscamente de 0.0 a `senal * conc`, introduciendo una discontinuidad de orden $C^0$ que desestabilizaba el gradiente y las probabilidades del ensamble.
+    2. En `crates/signal-engine/src/perceptron_gate.rs`: la inferencia del perceptrón utilizaba una constante fija `const GANANCIA_PERCEPTRON: f64 = 2.5` y parámetros de aprendizaje y exploración cableados (`0.15`, `0.5`, `0.05`), impidiendo adaptar la sensibilidad de respuesta tanh y la exploración ante regímenes de micro-scalping de alta agudeza.
+    3. En `crates/signal-engine/src/hawkes_bessel.rs`: los parámetros del proceso auto-excitado de Hawkes ($\alpha = 0.3, \beta = 0.5, \mu_{\text{tau\_s}} = 60.0$) estaban anclados rígidamente como constantes globales sin posibilidad de calibración en tiempo de ejecución ni exposición de sus estados estacionarios $SS = 1 + \alpha/\beta$.
+  * **Solución Arquitectónica y Matemática**:
+    1. En `crates/signal-engine/src/proyeccion_espectral.rs`:
+       - Definido struct `ProyeccionEspectralParams` con campos `masa_minima` (0.20) y `masa_plena` (0.35) y validación rigurosa de cotas.
+       - Implementado cálculo de peso continuo $C^1$ derivable cúbico Hermite (smoothstep):
+         $$\mu(\text{masa}) = 3t^2 - 2t^3, \quad t = \text{clamp}\left(\frac{\text{masa} - \text{masa}_{\min}}{\text{masa}_{\text{plena}} - \text{masa}_{\min}}, 0, 1\right)$$
+         eliminando todo escalón y garantizando diferenciabilidad en todo el espectro de observación.
+       - Integrados `with_params`, `update_params` y resolución dinámica per-coin desde el registro omnisciente (`"espectral_masa_minima"`, `"espectral_masa_plena"`).
+    2. En `crates/signal-engine/src/perceptron_gate.rs`:
+       - Definido struct `PerceptronGateParams` con campos `ganancia` (2.5), `min_exploration_floor` (0.15), `activation_threshold` (0.5), `base_learning_rate` (0.05) y validación en `validate()`.
+       - Implementados `infer_with_params`, `update_weight_with_params`, `with_params` y `update_params`.
+       - Integrada resolución dinámica per-coin de ganancia y exploración en `evaluate_for_coin` leyendo `"perceptron_ganancia"` y `"perceptron_min_exploration_floor"`.
+    3. En `crates/signal-engine/src/hawkes_bessel.rs`:
+       - Definido struct `HawkesBesselParams` con campos `default_mu`, `alpha`, `beta`, `mu_tau_s`, `mu_floor`, `max_events` y validación en `validate()`.
+       - Implementados `with_params`, `update_params`, método `steady_state_ratio(&self) -> f64` ($1 + \alpha/\beta$) y `excitacion_hawkes_norm_with_ss(ratio, ss)`.
+       - Conectado `record_event` para utilizar los parámetros dinámicos de decaimiento y memoria de tasa base.
+    4. En `crates/signal-engine/src/lib.rs`:
+       - Re-exportados públicamente: `HawkesBesselParams`, `PerceptronGateParams`, `ProyeccionEspectralParams`.
+    5. En `crates/quantum-arena/src/config.rs`:
+       - Expuestos 5 campos atómicos lock-free en `QuantumConfig`: `hawkes_alpha`, `hawkes_beta`, `perceptron_ganancia`, `espectral_masa_minima`, `espectral_masa_plena`, inicializados en `from_genome`.
+    6. En `crates/god-engine-core/src/lib.rs`:
+       - Sincronizados dinámicamente en hot-path en `sync_navier_stokes_and_microstructure_params` para actualizar los motores de Hawkes per-coin y publicar en el registro omnisciente las claves de perceptrón y masa espectral.
+  * **Certificación Contractual**:
+    - `spectral_projection_hawkes_perceptron_adaptation_contract.rs` (4/4 pass):
+      1. `test_spectral_projection_c1_continuity_and_smoothness`: Continuidad $C^1$, monotonía estricta sin saltos e inmunidad matemática a $\text{NaN}$ / $-\infty$.
+      2. `test_spectral_projection_engine_dynamic_registry_override`: Modulación suave en masa intermedia y overrides dinámicos desde el registro omnisciente.
+      3. `test_perceptron_gate_params_validation_and_dynamic_infer`: Validación de parámetros, inferencia con alta ganancia y actualización Hebbiana adaptativa.
+      4. `test_hawkes_bessel_params_validation_and_branching_ratio`: Validación, ratio de ramificación $\eta = \alpha/\beta$, excitación sobre estado estacionario $SS$ y registro de eventos.
+    - Suite completa `signal-engine` (79 pass, 1 ignore).
+    - `cargo check -p god-engine-core` (exit 0).
+    - `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω125 — Desacoplamiento Continuo C1 de Neuroplasticidad Oja y PPO Online en `dark-alpha-engine` y `god-engine-core`
 
 - **Ola Integrada y Certificada**:

@@ -2,49 +2,123 @@ use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
 use strategy_core::QuantumStrategy;
 
+/// Parámetros adaptativos de la compuerta perceptrón.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PerceptronGateParams {
+    /// Ganancia de saturación suave tanh de la señal emitida.
+    pub ganancia: f64,
+    /// Piso de exploración mínima continua (evita bloqueo cognitivo tras pérdidas).
+    pub min_exploration_floor: f64,
+    /// Umbral de activación para la rampa smoothstep.
+    pub activation_threshold: f64,
+    /// Tasa de aprendizaje base para la actualización Hebbiana por resultado R.
+    pub base_learning_rate: f64,
+}
+
+impl Default for PerceptronGateParams {
+    fn default() -> Self {
+        Self {
+            ganancia: 2.5,
+            min_exploration_floor: 0.15,
+            activation_threshold: 0.5,
+            base_learning_rate: 0.05,
+        }
+    }
+}
+
+impl PerceptronGateParams {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if !self.ganancia.is_finite()
+            || !self.min_exploration_floor.is_finite()
+            || !self.activation_threshold.is_finite()
+            || !self.base_learning_rate.is_finite()
+        {
+            return Err("PerceptronGateParams: valores no finitos");
+        }
+        if self.ganancia <= 0.0
+            || self.min_exploration_floor < 0.0
+            || self.min_exploration_floor >= 1.0
+            || self.activation_threshold < 0.0
+            || self.base_learning_rate <= 0.0
+        {
+            return Err("PerceptronGateParams: cotas inválidas");
+        }
+        Ok(())
+    }
+}
+
 /// 🧠 ALGORITMO #96: MOTOR DE COMPUERTA PERCEPTRÓN HEBBIANA ADAPTATIVA (PERCEPTRON GATE ENGINE)
 /// Perceptrón binario ultra-rápido de ciclo único de CPU con regla de actualización Hebbiana adaptativa,
 /// regulando el paso atómico de señales de compra/venta en función de los PnL recientes.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 #[repr(C, align(64))]
 pub struct PerceptronGateEngine {
     registry: Option<Arc<OmniscientRegistry>>,
+    params: PerceptronGateParams,
+}
+
+impl Default for PerceptronGateEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl std::fmt::Debug for PerceptronGateEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PerceptronGateEngine").finish()
+        f.debug_struct("PerceptronGateEngine")
+            .field("params", &self.params)
+            .finish()
     }
 }
 
 impl PerceptronGateEngine {
     pub fn new() -> Self {
-        Self { registry: None }
+        Self {
+            registry: None,
+            params: PerceptronGateParams::default(),
+        }
     }
 
-    /// Inferencia del tensor sin actualizar el peso (para el Engine Core), simétrica para Long y Short
+    pub fn with_params(params: PerceptronGateParams) -> Self {
+        let safe_params = if params.validate().is_ok() {
+            params
+        } else {
+            PerceptronGateParams::default()
+        };
+        Self {
+            registry: None,
+            params: safe_params,
+        }
+    }
+
+    pub fn update_params(&mut self, params: PerceptronGateParams) {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+    }
+
+    pub fn params(&self) -> &PerceptronGateParams {
+        &self.params
+    }
+
+    /// Inferencia del tensor parametrizada, simétrica para Long y Short
     #[inline(always)]
-    pub fn infer(signal_score: f64, weight: f64) -> f64 {
+    pub fn infer_with_params(signal_score: f64, weight: f64, params: &PerceptronGateParams) -> f64 {
         if !signal_score.is_finite() || !weight.is_finite() || signal_score == 0.0 {
             return 0.0;
         }
         let abs_score = signal_score.abs();
         let activation = abs_score * weight;
-        // R4-C4: rampa C¹ con piso de exploración — el viejo
-        // tanh((a−0.5)·5).clamp(0.15,1) tenía un kink C⁰ en a≈0.53
-        // (derivada 0→4.9 al salir del clamp). Smoothstep sobre
-        // [0.5, 1.5] con piso 0.15: misma intención (exploración
-        // mínima contra el bloqueo cognitivo tras pérdidas), sin
-        // quiebre de derivada.
-        let t = (activation - 0.5).clamp(0.0, 1.0);
-        let gate_strength = 0.15 + 0.85 * (t * t * (3.0 - 2.0 * t));
-        // #668 / H2-6 (RONDA 3): ganancia C¹ continua graduada (2.5) en vez
-        // de 10.0. Con 10.0 cualquier score moderado (|x| ≥ 0.3) saturaba a
-        // ±0.995 actuando como un signum encubierto (G2-4). Con ganancia 2.5,
-        // la amplitud se conserva graduada a lo largo de toda la región emisora
-        // [-1.0, 1.0], garantizando diferenciabilidad y sensibilidad continua.
-        const GANANCIA_PERCEPTRON: f64 = 2.5;
-        (signal_score * GANANCIA_PERCEPTRON).tanh() * gate_strength
+        let t = (activation - params.activation_threshold).clamp(0.0, 1.0);
+        let gate_strength = params.min_exploration_floor
+            + (1.0 - params.min_exploration_floor) * (t * t * (3.0 - 2.0 * t));
+        (signal_score * params.ganancia).tanh() * gate_strength
+    }
+
+    /// Inferencia del tensor sin actualizar el peso (para el Engine Core), simétrica para Long y Short
+    #[inline(always)]
+    pub fn infer(signal_score: f64, weight: f64) -> f64 {
+        Self::infer_with_params(signal_score, weight, &PerceptronGateParams::default())
     }
 
     /// #620 (Ola 42) — VOTO ESPECTRAL de la compuerta perceptrón: la
@@ -79,30 +153,21 @@ impl PerceptronGateEngine {
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
     }
 
-    /// Peso del perceptrón por el resultado de las operaciones cerradas.
-    ///
-    /// CL-76 (F3.3-06, F3.6-06): gradiente exponenciado sobre el resultado
-    /// NETO de la operación en unidades de riesgo, `resultado_r` = PnL neto /
-    /// lo que arriesgaba al stop (R). `ln w` acumula `lr·R`, así que su
-    /// deriva por operación es `lr·E[R]`: sube con esperanza positiva y baja
-    /// con esperanza negativa, sea cual sea la tasa de acierto
-    /// (RULE[growth_over_wr]). Antes sumaba ±lr según el SIGNO del PnL y
-    /// aprendía la tasa de acierto: con pago 1:2 y 60 % de acierto (EV −0,2 R)
-    /// el peso subía al tope, y con 40 % de acierto y RR 2,25 (EV +0,30 R)
-    /// bajaba al suelo.
-    ///
-    /// La tasa de aprendizaje se modula a la baja con la volatilidad
-    /// (`std_dev`): más incertidumbre, paso menor.
+    /// Peso del perceptrón por el resultado de las operaciones cerradas con parámetros adaptativos.
     #[inline(always)]
-    pub fn update_weight(weight: &mut f64, resultado_r: f64, std_dev: f64) {
-        // FIX #646: Sanitizar entradas para asegurar estabilidad del perceptrón
+    pub fn update_weight_with_params(
+        weight: &mut f64,
+        resultado_r: f64,
+        std_dev: f64,
+        params: &PerceptronGateParams,
+    ) {
         let safe_std = if std_dev.is_finite() && std_dev >= 0.0 {
             std_dev
         } else {
             0.01
         };
         let current_w = if weight.is_finite() { *weight } else { 1.0 };
-        let learning_rate = (0.05 / (1.0 + safe_std * 100.0)).clamp(0.001, 0.05);
+        let learning_rate = (params.base_learning_rate / (1.0 + safe_std * 100.0)).clamp(0.001, 0.05);
 
         if !weight.is_finite() {
             *weight = 1.0;
@@ -114,6 +179,12 @@ impl PerceptronGateEngine {
             let exponente = (learning_rate * resultado_r).clamp(-50.0, 50.0);
             *weight = (current_w.clamp(0.25, 2.0) * exponente.exp()).clamp(0.25, 2.0);
         }
+    }
+
+    /// Peso del perceptrón por el resultado de las operaciones cerradas (compatibilidad canónica).
+    #[inline(always)]
+    pub fn update_weight(weight: &mut f64, resultado_r: f64, std_dev: f64) {
+        Self::update_weight_with_params(weight, resultado_r, std_dev, &PerceptronGateParams::default());
     }
 }
 
@@ -183,7 +254,28 @@ impl QuantumStrategy for PerceptronGateEngine {
         if !signal_score.is_finite() || !weight.is_finite() {
             return 0.0;
         }
-        Self::infer(signal_score, weight)
+
+        // Resolución dinámica de parámetros desde el registro omnisciente si existen
+        let custom_ganancia = registry
+            .get_scoped_parameter(sym_opt, cid_opt, "perceptron_ganancia", "PerceptronGateEngine")
+            .map(|p| p.get_value())
+            .unwrap_or(self.params.ganancia);
+        let custom_floor = registry
+            .get_scoped_parameter(sym_opt, cid_opt, "perceptron_min_exploration_floor", "PerceptronGateEngine")
+            .map(|p| p.get_value())
+            .unwrap_or(self.params.min_exploration_floor);
+
+        let effective_params = if custom_ganancia.is_finite() && custom_floor.is_finite() && custom_ganancia > 0.0 && custom_floor >= 0.0 && custom_floor < 1.0 {
+            PerceptronGateParams {
+                ganancia: custom_ganancia,
+                min_exploration_floor: custom_floor,
+                ..self.params
+            }
+        } else {
+            self.params
+        };
+
+        Self::infer_with_params(signal_score, weight, &effective_params)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {

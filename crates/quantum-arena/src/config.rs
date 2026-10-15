@@ -260,6 +260,13 @@ pub struct QuantumConfig {
     pub plasticity_min_mult: AtomicF64,
     pub plasticity_max_mult: AtomicF64,
     pub plasticity_steepness: AtomicF64,
+
+    // --- Hawkes-Bessel, Perceptrón y Proyección Espectral (Ola Ω126) ---
+    pub hawkes_alpha: AtomicF64,
+    pub hawkes_beta: AtomicF64,
+    pub perceptron_ganancia: AtomicF64,
+    pub espectral_masa_minima: AtomicF64,
+    pub espectral_masa_plena: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -547,6 +554,11 @@ impl QuantumConfig {
             plasticity_min_mult: AtomicF64::new(0.20),
             plasticity_max_mult: AtomicF64::new(2.00),
             plasticity_steepness: AtomicF64::new(6.00),
+            hawkes_alpha: AtomicF64::new(0.3),
+            hawkes_beta: AtomicF64::new(0.5),
+            perceptron_ganancia: AtomicF64::new(2.5),
+            espectral_masa_minima: AtomicF64::new(0.20),
+            espectral_masa_plena: AtomicF64::new(0.35),
         }
     }
 

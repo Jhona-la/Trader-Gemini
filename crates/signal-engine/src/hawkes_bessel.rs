@@ -25,6 +25,100 @@ use strategy_core::QuantumStrategy;
 /// La intensidad λ(t) mide el RITMO esperido de próximos eventos dado el
 /// pasado: alta λ = cascada en curso (liquidaciones auto-excitándose);
 /// el decay hacia μ mide cuánto queda de la cascada.
+/// Parámetros adaptativos del proceso de Hawkes con excitación y decaimiento.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HawkesBesselParams {
+    pub default_mu: f64,
+    pub alpha: f64,
+    pub beta: f64,
+    pub mu_tau_s: f64,
+    pub mu_floor: f64,
+    pub max_events: usize,
+}
+
+/// Parámetros por defecto calibrados a liquidaciones de crypto:
+/// cada liquidación excita la siguiente dentro de ~2 segundos.
+pub const DEFAULT_MU: f64 = 0.5; // evento exógeno cada ~2s (prior inicial de μ̂)
+pub const DEFAULT_ALPHA: f64 = 0.3; // cada evento suma 0.3 a λ
+pub const DEFAULT_BETA: f64 = 0.5; // decae con τ = 2s
+pub const MAX_EVENTS: usize = 128;
+
+/// #535 — Memoria del estimador de μ (EWMA de la tasa de llegada). τ = 60 s
+pub const MU_TAU_S: f64 = 60.0;
+pub const MU_FLOOR: f64 = 0.05;
+pub const MU_INST_MIN: f64 = 0.01;
+pub const MU_INST_MAX: f64 = 200.0;
+pub const MU_SEED_MAX: f64 = 50.0;
+
+impl Default for HawkesBesselParams {
+    fn default() -> Self {
+        Self {
+            default_mu: DEFAULT_MU,
+            alpha: DEFAULT_ALPHA,
+            beta: DEFAULT_BETA,
+            mu_tau_s: MU_TAU_S,
+            mu_floor: MU_FLOOR,
+            max_events: MAX_EVENTS,
+        }
+    }
+}
+
+impl HawkesBesselParams {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if !self.default_mu.is_finite()
+            || !self.alpha.is_finite()
+            || !self.beta.is_finite()
+            || !self.mu_tau_s.is_finite()
+            || !self.mu_floor.is_finite()
+        {
+            return Err("HawkesBesselParams: valores no finitos");
+        }
+        if self.default_mu <= 0.0
+            || self.alpha < 0.0
+            || self.beta <= 0.0
+            || self.mu_tau_s <= 0.0
+            || self.mu_floor <= 0.0
+            || self.max_events == 0
+        {
+            return Err("HawkesBesselParams: cotas inválidas");
+        }
+        Ok(())
+    }
+
+    #[inline]
+    pub fn steady_state_ratio(&self) -> f64 {
+        if self.beta > 0.0 {
+            1.0 + self.alpha / self.beta
+        } else {
+            1.0
+        }
+    }
+}
+
+/// #535 — Ancla del estado estacionario del proceso con parámetros por defecto:
+pub const STEADY_STATE_RATIO: f64 = 1.0 + DEFAULT_ALPHA / DEFAULT_BETA;
+
+/// Exceso de excitación Hawkes normalizado con ratio de estado estacionario parametrizable.
+#[inline]
+pub fn excitacion_hawkes_norm_with_ss(ratio: f64, ss: f64) -> f64 {
+    if ratio.is_finite() && ratio > 0.0 && ss.is_finite() && ss > 0.0 {
+        ((ratio - ss) / ss).tanh()
+    } else {
+        0.0
+    }
+}
+
+/// #649 (Ola 49) — EXCESO DE EXCITACIÓN HAWKES λ/μ̂ sobre el estado
+/// estacionario, saturado a (−1, 1): 0 = régimen normal (abstención),
+/// →+1 cascada, →−1 calma extrema. La MONEDA de la casa (#582, #617,
+/// #625, PPO): todo consumidor de λ/μ̂ expresa su convicción en esta
+/// escala-libre. Vive AQUÍ (junto a STEADY_STATE_RATIO, su única
+/// constante) y el core la re-exporta — fuente única.
+#[inline]
+pub fn excitacion_hawkes_norm(ratio: f64) -> f64 {
+    excitacion_hawkes_norm_with_ss(ratio, STEADY_STATE_RATIO)
+}
+
 pub struct HawkesBesselEngine {
     registry: Option<Arc<OmniscientRegistry>>,
     /// CERT-M2-C02: historia con INTERIOR MUTABILITY — el trait da &self,
@@ -32,6 +126,7 @@ pub struct HawkesBesselEngine {
     /// orchestrator. Antes sin Mutex: record_event era INCALLABLE desde
     /// el trait, y el QO-M2.2 entero era código muerto.
     events: std::sync::Mutex<VecDeque<f64>>,
+    params: HawkesBesselParams,
     /// Intensidad base μ.
     mu: f64,
     /// Auto-excitación α.
@@ -51,6 +146,7 @@ impl Clone for HawkesBesselEngine {
             events: std::sync::Mutex::new(
                 self.events.lock().map(|e| e.clone()).unwrap_or_default()
             ),
+            params: self.params,
             mu: self.mu,
             alpha: self.alpha,
             beta: self.beta,
@@ -69,6 +165,7 @@ impl Default for HawkesBesselEngine {
 impl std::fmt::Debug for HawkesBesselEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HawkesBesselEngine")
+            .field("params", &self.params)
             .field("mu", &self.mu)
             .field("alpha", &self.alpha)
             .field("beta", &self.beta)
@@ -76,45 +173,6 @@ impl std::fmt::Debug for HawkesBesselEngine {
             .finish()
     }
 }
-
-/// Parámetros por defecto calibrados a liquidaciones de crypto:
-/// cada liquidación excita la siguiente dentro de ~2 segundos.
-pub const DEFAULT_MU: f64 = 0.5; // evento exógeno cada ~2s (prior inicial de μ̂)
-pub const DEFAULT_ALPHA: f64 = 0.3; // cada evento suma 0.3 a λ
-pub const DEFAULT_BETA: f64 = 0.5; // decae con τ = 2s
-pub const MAX_EVENTS: usize = 128;
-
-/// #535 — Ancla del estado estacionario del proceso: con ritmo constante r,
-/// λ_ss = μ + α·r/β y μ̂ → r, así que λ/μ → 1 + α/β. Éste es el "ritmo
-/// normal" del símbolo en unidades del propio proceso; las ráfagas lo
-/// superan, las pausas quedan por debajo (piso 1.0 con ventana vacía).
-pub const STEADY_STATE_RATIO: f64 = 1.0 + DEFAULT_ALPHA / DEFAULT_BETA;
-
-/// #649 (Ola 49) — EXCESO DE EXCITACIÓN HAWKES λ/μ̂ sobre el estado
-/// estacionario, saturado a (−1, 1): 0 = régimen normal (abstención),
-/// →+1 cascada, →−1 calma extrema. La MONEDA de la casa (#582, #617,
-/// #625, PPO): todo consumidor de λ/μ̂ expresa su convicción en esta
-/// escala-libre. Vive AQUÍ (junto a STEADY_STATE_RATIO, su única
-/// constante) y el core la re-exporta — fuente única.
-#[inline]
-pub fn excitacion_hawkes_norm(ratio: f64) -> f64 {
-    const SS: f64 = STEADY_STATE_RATIO;
-    if ratio.is_finite() && ratio > 0.0 {
-        ((ratio - SS) / SS).tanh()
-    } else {
-        0.0
-    }
-}
-
-/// #535 — Memoria del estimador de μ (EWMA de la tasa de llegada). τ = 60 s
-/// separa la banda de adaptación (minutos) de la banda del kernel (τ = 2 s):
-/// una ráfaga de ≤10 s mueve μ̂ a lo sumo ~15 %, preservando la señal de
-/// excitación en lugar de absorberla en la línea base.
-const MU_TAU_S: f64 = 60.0;
-const MU_FLOOR: f64 = 0.05;
-const MU_INST_MIN: f64 = 0.01;
-const MU_INST_MAX: f64 = 200.0;
-const MU_SEED_MAX: f64 = 50.0;
 
 impl HawkesBesselEngine {
     /// #649 (Ola 49) — VOTO ESPECTRAL de la excitación Hawkes, versión
@@ -155,15 +213,38 @@ impl HawkesBesselEngine {
     }
 
     pub fn new() -> Self {
+        Self::with_params(HawkesBesselParams::default())
+    }
+
+    pub fn with_params(params: HawkesBesselParams) -> Self {
+        let safe_params = if params.validate().is_ok() {
+            params
+        } else {
+            HawkesBesselParams::default()
+        };
+        let cap = safe_params.max_events;
         Self {
             registry: None,
-            events: std::sync::Mutex::new(VecDeque::with_capacity(MAX_EVENTS)),
-            mu: DEFAULT_MU,
-            alpha: DEFAULT_ALPHA,
-            beta: DEFAULT_BETA,
+            events: std::sync::Mutex::new(VecDeque::with_capacity(cap)),
+            params: safe_params,
+            mu: safe_params.default_mu,
+            alpha: safe_params.alpha,
+            beta: safe_params.beta,
             last_ts: 0.0,
             n_seen: 0,
         }
+    }
+
+    pub fn update_params(&mut self, params: HawkesBesselParams) {
+        if params.validate().is_ok() {
+            self.params = params;
+            self.alpha = params.alpha;
+            self.beta = params.beta;
+        }
+    }
+
+    pub fn params(&self) -> &HawkesBesselParams {
+        &self.params
     }
 
     /// #535 — μ̂ EMPÍRICO: la base de normalización λ/μ debe ser el ritmo
@@ -196,10 +277,10 @@ impl HawkesBesselEngine {
                 if self.n_seen == 1 {
                     // Siembra: un solo salto al primer estimador — evita ~τ
                     // de warmup en el que el ratio seguiría inflado.
-                    self.mu = inst.min(MU_SEED_MAX).max(MU_FLOOR);
+                    self.mu = inst.min(MU_SEED_MAX).max(self.params.mu_floor);
                 } else {
-                    let w = (-dt / MU_TAU_S).exp();
-                    self.mu = (self.mu * w + inst * (1.0 - w)).max(MU_FLOOR);
+                    let w = (-dt / self.params.mu_tau_s).exp();
+                    self.mu = (self.mu * w + inst * (1.0 - w)).max(self.params.mu_floor);
                 }
             }
         }
