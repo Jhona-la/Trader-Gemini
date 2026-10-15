@@ -73,17 +73,26 @@ fn lh04_sin_evidencia_f_cero_y_camino_existente_intacto() {
     let _ = out;
 }
 
-/// (2) CON evidencia (n=100, p̂=0.65, PF=2.6 ⇒ b=1.4): f > 0 y el
-/// riesgo al stop de la orden final ≈ f·C (dentro del orden del rescate
-/// de nocional mínimo). La fórmula: Wilson-LCB(0.65, 100, 1.64) ≈ 0.5720;
-/// f = ½·max(0, 0.572 − 0.428/1.4) = ½·0.2666 ≈ 0.1333 (≤ axioma 25%).
+/// (2) Evidencia calibrada y objetivo que NO cabe en el tope de margen.
+/// Wilson-LCB(.65, 100, 1.64) = .5687795275; b=1.4 y f=.1303824521.
+/// Con C=1000, SL genómico=.01 y L=1, el objetivo supera 13 000 USD
+/// de margen. El cap LH04 existente impone 250 USD. Un stop de precio
+/// a 99 desde entrada100 arriesga 2.5 USD, no f*C ni el precio del stop.
 #[test]
-fn lh04_con_evidencia_dimensiona_por_riesgo_calibrado() {
-    let (arena, intent) = fixture();
+fn lh04_evidencia_calibrada_respeta_tope_cuando_objetivo_no_cabe() {
+    let (arena, mut intent) = fixture();
     // Evidencia medida de la moneda: 100 cierres, 65% acierto, PF 2.6.
     arena.coins[0].metrics.win_rate.store(0.65, Relaxed);
     arena.coins[0].metrics.trade_count.store(100, Relaxed);
     arena.coins[0].metrics.profit_factor.store(2.6, Relaxed);
+    arena.config.global_leverage.store(1.0, Relaxed);
+    arena.config.update_sl_curve(0.01, 0.01);
+    intent.sl_price_target = 99.0;
+    intent.tp_price_target = 103.0;
+    let continuous_sl = arena.config.sl_at_tau(intent.expected_duration_ms as f64);
+    assert!((continuous_sl - 0.01).abs() < 1e-12);
+    assert_eq!(arena.riesgo_por_operacion.load(Relaxed), 0.0);
+    assert_eq!(arena.riesgo_por_operacion_usd.load(Relaxed), 0.0);
     let mut engine = RiskEngine::new(1000.0);
     let out = engine.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
 
@@ -93,6 +102,7 @@ fn lh04_con_evidencia_dimensiona_por_riesgo_calibrado() {
     let p_lcb = arena.registry.get_for_coin_or(0, "lh04_p_lcb", f64::NAN);
     let b = arena.registry.get_for_coin_or(0, "lh04_b_realizado", f64::NAN);
     assert!(p_lcb.is_finite() && b.is_finite());
+    assert!((p_lcb - 0.5687795275010941).abs() < 1e-12);
     assert!((b - 1.4).abs() < 1e-9, "b = PF·(1−p̂)/p̂ = 2.6·0.35/0.65 = 1.4: {b}");
     let f_esperada = 0.5 * (p_lcb - (1.0 - p_lcb) / b).max(0.0);
     assert!(
@@ -100,25 +110,26 @@ fn lh04_con_evidencia_dimensiona_por_riesgo_calibrado() {
         "f = ½·max(0, p_LCB − (1−p_LCB)/b): {f} vs {f_esperada}"
     );
     assert!(f < 0.25, "f respeta el axioma del 25%: {f}");
+    assert!((f - 0.1303824521437949).abs() < 1e-12);
     // p_LCB < p̂ (la cota inferior es conservadora).
     assert!(p_lcb < 0.65, "LCB por debajo del estimador puntual: {p_lcb}");
 
-    // El riesgo al stop de la orden emitida ≈ f·C (si la orden pasó).
-    if out.signal != SignalType::Flat {
-        // sl_target es precio y volume_usd es margen: el stop debe
-        // convertirse a retorno relativo antes de medir la pérdida en USD.
-        let entry_price = arena.coins[0].current_price.load(Relaxed);
-        let stop_fraction = ((entry_price - out.sl_target) / entry_price).abs();
-        let riesgo_stop = out.volume_usd * out.leverage * stop_fraction;
-        // Se conserva la cota original para exponer un posible RED de LH04:
-        // el sizing usa continuous_sl, distinto del stop final, y sus topes
-        // pueden reducir el objetivo. No se modifica la ecuación para pasar.
-        let objetivo = f * 1000.0;
-        assert!(
-            riesgo_stop >= objetivo * 0.5,
-            "riesgo al stop {riesgo_stop} frente al objetivo {objetivo}; revisar diferencia de stop genómico/efectivo y topes LH04 si queda bajo el 50%"
-        );
-    }
+    // Precondición independiente del tamaño emitido: la curva y el L
+    // controlados hacen vinculante el cap de margen de GLM120.
+    let objetivo = f * 1000.0;
+    assert!(objetivo / continuous_sl > 250.0);
+    assert_eq!(out.signal, SignalType::Long, "{out:?}");
+    assert_eq!(risk_engine::ultimo_rechazo(), None);
+    assert_eq!(out.leverage, 1.0);
+    assert!((out.volume_usd - 250.0).abs() < 1e-9, "{out:?}");
+    assert_eq!(out.sl_target, 99.0);
+    assert_eq!(out.tp_target, 103.0);
+    let stop_fraction = (100.0 - out.sl_target) / 100.0;
+    let riesgo_stop = out.volume_usd * out.leverage * stop_fraction;
+    assert!((riesgo_stop - 2.5).abs() < 1e-9);
+    assert!(2.5 < objetivo * 0.5, "la cota antigua era inviable tras el cap");
+    assert!((arena.riesgo_por_operacion_usd.load(Relaxed) - 2.5).abs() < 1e-9);
+    assert!((arena.riesgo_por_operacion.load(Relaxed) - 0.0025).abs() < 1e-12);
 }
 
 /// (3) Evidencia DÉBIL se autolimita: con n=12 y p̂=0.9, la Wilson-LCB
@@ -227,17 +238,14 @@ fn lh04_racha_extrema_no_crea_estado_absorbente() {
     assert!(f > 0.0, "bias 0.5: f encoge pero NO muere: {f}");
 }
 
-/// (8) P1 (GLM 120, mea culpa): el margen LH-04 NUNCA supera el tope
-/// del axioma de ruina × capital asignado. Con stop ceñido el nocional
-/// objetivo (f·C/SL) exigía margen > capital completo ⇒ el orquestador
-/// rechazaba sistemáticamente con otra posición abierta (REJ_ORCHESTRATOR,
-/// 7 corridas CI rojas — contrato flat_producer de god-engine-core).
-/// Ahora: margen ≤ tope·C (mismo tope que acota f, ≤25%).
+/// (8) El fixture de ATR diminuto no llega a LH04: su stop difusivo
+/// queda bajo el suelo de fricción y debe rechazarse antes del sizing.
+/// El antiguo `if f>0 && !Flat` permitía pasar sin comprobar el cap.
+/// El caso (2) exige una orden real y comprueba ese cap por separado.
 #[test]
-fn lh04_margen_nunca_supera_el_tope_del_axioma_por_capital() {
+fn lh04_stop_bajo_suelo_se_rechaza_antes_del_dimensionado() {
     let (arena, intent) = fixture();
-    // Evidencia madura (activa LH-04) + ATR BAJO ⇒ stop ceñido ⇒
-    // nocional objetivo enorme (el caso que rompía).
+    // Las métricas maduras no pueden saltarse la viabilidad del horizonte.
     arena.coins[0].metrics.win_rate.store(0.75, Relaxed);
     arena.coins[0].metrics.trade_count.store(100, Relaxed);
     arena.coins[0].metrics.profit_factor.store(2.0, Relaxed);
@@ -245,16 +253,9 @@ fn lh04_margen_nunca_supera_el_tope_del_axioma_por_capital() {
     let mut engine = RiskEngine::new(1000.0);
     let out = engine.evaluate_quantum_order_at(0, &intent, &arena, DECISION_TIME_MS);
     let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
-    if f > 0.0 && out.signal != SignalType::Flat {
-        // volume_usd ya es margen; dividir por L subestimaría el tope.
-        // f ≤ 0.25 (axioma) ⇒ margen = min(obj, 0.25·1000) ≤ 250.
-        assert!(
-            out.volume_usd <= 250.0 + 1e-6,
-            "margen {} ≤ tope(0.25)·allocated(1000): el stop ceñido no
-            puede exigir el capital completo",
-            out.volume_usd
-        );
-    }
-    // Y si fue rechazado, NO fue por pedir margen desorbitado del
-    // orquestador en ESTE caso (una sola posición, capital holgado).
+    assert_eq!(out.signal, SignalType::Flat, "{out:?}");
+    assert_eq!(risk_engine::ultimo_rechazo(), Some(risk_engine::REJ_TP_SL_FLOOR));
+    assert!(f.is_nan(), "el rechazo previo no debe atribuir cobertura a LH04: {f}");
+    assert_eq!(arena.riesgo_por_operacion.load(Relaxed), 0.0);
+    assert_eq!(arena.riesgo_por_operacion_usd.load(Relaxed), 0.0);
 }

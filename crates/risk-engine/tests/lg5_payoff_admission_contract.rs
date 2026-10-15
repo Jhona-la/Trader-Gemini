@@ -109,15 +109,14 @@ fn assert_nonminimum_size(order: ValidatedOrder, expected_side: SignalType) {
         "{}",
         risk_engine::reject_report()
     );
-    // El positivo debe atravesar la admisión con margen y nocional holgados
-    // sobre la sonda mínima y sin alcanzar el techo de margen del fixture.
-    // La matriz calcula L=1.608... con p=.55, PF_LCB=1.56256... y WR=.75;
-    // el contrato del exchange lo cuantiza a 1. Ese entero es válido y no
-    // convierte el margen admitido de 71.889... en una sonda mínima.
+    // El positivo atraviesa EV con margen/nocional sobre la sonda mínima.
+    // La composición con main conserva LH04: con C=1000 su tope de margen
+    // es 25% del capital y puede ser vinculante. El límite interior 200
+    // del sizing anterior no era una condición de admisión LG5.
     assert!(order.volume_usd > 5.1, "margin at minimum: {order:?}");
     assert!(
-        order.volume_usd < 200.0,
-        "margin at capital ceiling: {order:?}"
+        order.volume_usd <= 250.0 + 1e-9,
+        "margin exceeds the fixture's LH04 capital cap: {order:?}"
     );
     assert!(
         order.leverage.is_finite()
@@ -343,4 +342,38 @@ fn lg5_explicit_trade_clock_can_be_newer_than_depth() {
     assert_nonminimum_size(order, SignalType::Long);
     assert_eq!(arena.coins[0].last_tick_timestamp_ms.load(Relaxed), 10);
     assert_rejected(&arena, &intent, REJ_INVALID_INPUT);
+}
+
+#[test]
+fn lg5_early_sprt_exit_does_not_bypass_payoff_or_availability() {
+    let (arena, mut intent) = fixture(1_000.0, 2);
+    // Isolate the policy handoff with an explicit algebraic fixture. This
+    // is not a certificate for the producer's posterior win_rate or Wald's
+    // market assumptions: the numerical primitive receives two wins here.
+    arena.coins[0].metrics.win_rate.store(1.0, Relaxed);
+    for (key, value) in [
+        ("sonda_sprt_enabled", 1.0),
+        ("sonda_max_cierres", 50.0),
+        ("sonda_sprt_p0", 0.10),
+        ("sonda_sprt_p1", 0.95),
+        ("sonda_sprt_alpha", 0.05),
+        ("sonda_sprt_beta", 0.10),
+    ] {
+        arena.registry.set(key, value);
+    }
+    assert!(risk_engine::sonda::sprt_evalua_salida_sonda(&arena, 0));
+    assert!(!risk_engine::sonda::en_fase_de_sonda(&arena, 0));
+    assert_eq!(risk_engine::sonda::resolve_max_cierres_sonda(&arena, 0), 50);
+    assert_eq!(arena.coins[0].metrics.trade_count.load(Relaxed), 2);
+
+    assert_rejected(&arena, &intent, REJ_SIN_EVIDENCIA);
+    intent.net_payoff = Some(measured(&[-0.001; 100]));
+    assert_rejected(&arena, &intent, REJ_EV);
+    intent.net_payoff = Some(NetPayoffEstimate {
+        as_of_ms: 600_001,
+        ..measured(&[0.004; 100])
+    });
+    assert_rejected(&arena, &intent, REJ_INVALID_INPUT);
+    intent.net_payoff = Some(measured(&[0.004; 100]));
+    assert_nonminimum_order(&arena, &intent);
 }
