@@ -324,53 +324,89 @@ impl ExecutionProvider for SimulatedExecutor {
         quantity: f64,
         _step_size: f64,
     ) -> Result<(), String> {
+        if !quantity.is_finite() || quantity <= 0.0 {
+            return Err("[SIM] Reduce-only requiere cantidad finita positiva".to_string());
+        }
         self.simulate_network_delay().await;
-        let mut pnl = 0.0;
-        let mut fee = 0.0;
+        let mut pos_map = self
+            .open_positions
+            .write()
+            .map_err(|_| "[SIM] Estado de posiciones no disponible".to_string())?;
+        let pos = pos_map
+            .get_mut(symbol)
+            .ok_or_else(|| "[SIM] Reduce-only sin posicion abierta".to_string())?;
+        if pos.is_long != is_long_close {
+            return Err("[SIM] Reduce-only no puede aumentar la posicion".to_string());
+        }
+        if !pos.qty.is_finite()
+            || pos.qty <= 0.0
+            || !pos.entry_price.is_finite()
+            || pos.entry_price <= 0.0
+        {
+            return Err("[SIM] Posicion invalida para reduce-only".to_string());
+        }
 
-        if let Ok(mut pos_map) = self.open_positions.write() {
-            if let Some(pos) = pos_map.remove(symbol) {
-                let current_mid = self
-                    .last_mids
-                    .read()
-                    .ok()
-                    .and_then(|m| m.get(symbol).copied())
-                    .filter(|&p| p > 0.0 && p.is_finite());
-                let nominal_usd = quantity * current_mid.unwrap_or(pos.entry_price);
-                let slippage = self.market_slippage(nominal_usd);
-                let exit_price = if let Some(mid) = current_mid {
-                    if is_long_close {
-                        mid * (1.0 - slippage)
-                    } else {
-                        mid * (1.0 + slippage)
-                    }
-                } else if is_long_close {
-                    pos.entry_price * 1.002
-                } else {
-                    pos.entry_price * 0.998
-                };
-                if exit_price.is_finite() && pos.entry_price.is_finite() && quantity.is_finite() {
-                    pnl = if pos.is_long {
-                        (exit_price - pos.entry_price) * quantity
-                    } else {
-                        (pos.entry_price - exit_price) * quantity
-                    };
-                    // FIX #699: Comisión en nocional USD — B3.11: taker de la
-                    // cuenta VIVA (live_taker_fee), no el hardcode 0.0004 que
-                    // desalineaba el PnL simulado del real ~20% por cierre.
-                    fee = quantity * exit_price * live_taker_fee();
-                }
-            }
+        // Reduce-only realiza como maximo la cantidad abierta; un cierre
+        // parcial conserva la exposicion restante y su precio de entrada.
+        let filled_quantity = quantity.min(pos.qty);
+        let remaining_quantity = pos.qty - filled_quantity;
+        if remaining_quantity >= pos.qty {
+            return Err("[SIM] Reduccion de cantidad no representable".to_string());
         }
-        if let Ok(mut cap) = self.simulated_capital.write() {
-            if pnl.is_finite() && fee.is_finite() {
-                *cap += pnl - fee;
-            }
+        let current_mid = self
+            .last_mids
+            .read()
+            .map_err(|_| "[SIM] Estado de precios no disponible".to_string())?
+            .get(symbol)
+            .copied()
+            .filter(|&p| p > 0.0 && p.is_finite());
+        let nominal_usd = filled_quantity * current_mid.unwrap_or(pos.entry_price);
+        if !nominal_usd.is_finite() || nominal_usd <= 0.0 {
+            return Err("[SIM] Nocional de cierre invalido".to_string());
         }
+        let slippage = self.market_slippage(nominal_usd);
+        let exit_price = if let Some(mid) = current_mid {
+            if is_long_close {
+                mid * (1.0 - slippage)
+            } else {
+                mid * (1.0 + slippage)
+            }
+        } else if is_long_close {
+            pos.entry_price * 1.002
+        } else {
+            pos.entry_price * 0.998
+        };
+        let pnl = if pos.is_long {
+            (exit_price - pos.entry_price) * filled_quantity
+        } else {
+            (pos.entry_price - exit_price) * filled_quantity
+        };
+        // FIX #699 / B3.11: fee del nocional realmente llenado, con la
+        // tasa taker de la cuenta viva.
+        let fee = filled_quantity * exit_price * live_taker_fee();
+        let mut cap = self
+            .simulated_capital
+            .write()
+            .map_err(|_| "[SIM] Estado de capital no disponible".to_string())?;
+        let next_capital = *cap + (pnl - fee);
+        if !exit_price.is_finite()
+            || exit_price <= 0.0
+            || !pnl.is_finite()
+            || !fee.is_finite()
+            || !next_capital.is_finite()
+        {
+            return Err("[SIM] Contabilidad de cierre no finita".to_string());
+        }
+        // Publicar posicion y capital solo cuando toda la contabilidad sea valida.
+        pos.qty = remaining_quantity;
+        if remaining_quantity == 0.0 {
+            pos_map.remove(symbol);
+        }
+        *cap = next_capital;
         let side = if is_long_close { "SELL" } else { "BUY" };
         println!(
             "👻 [SHADOW MODE] Reduce-Only {} {:.4} {} (PnL: {:.4}, Fee: {:.4})",
-            side, quantity, symbol, pnl, fee
+            side, filled_quantity, symbol, pnl, fee
         );
         Ok(())
     }

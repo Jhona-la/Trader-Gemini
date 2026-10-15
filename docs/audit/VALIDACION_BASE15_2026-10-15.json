@@ -26,8 +26,13 @@
     },
     {
       "label": "simulator-red",
-      "status": "running",
-      "scope": "Base simulator implementation; feature dependency edited independently during cold dependency build, so this run does not certify a pristine whole-tree b9 snapshot."
+      "status": "build_failed_before_tests",
+      "scope": "Base simulator implementation; feature dependency edited independently during cold dependency build, so this run does not certify a pristine whole-tree b9 snapshot.",
+      "exit_code": 101,
+      "tests_executed": false,
+      "expected_failure": false,
+      "diagnostic": "polars-expr E0463: cannot find std; target and physical std files present when checked. Cause not established. This is not a causal regression RED.",
+      "log_sha256": "25a25394acebffa4fe85f7fbace262c2319ca9d4070763559ddca838b85b68e1"
     },
     {
       "label": "feature-green-suite",
@@ -45,7 +50,7 @@
       "log_sha256": "e42fcde024326e8cdfb2e5c1c7b66c69406da2d65f9c421d6da939ad82afe2b0",
       "binary_manifest_sha256": "75c188545b29ad9b71e4739f0ec8d2bc19da87b965529ac7cfa8e506e5f7a4eb",
       "retained_binaries": 31,
-      "scope": "Complete feature-engine Cargo suite, including new 4/4 regressions. Ignored manual/empirical measurements remain ignored; not economic or whole-workspace evidence.",
+      "scope": "Complete feature-engine Cargo suite, including new 4/4 regressions. All pre-existing ignored tests retain their status and reasons; they are not certified. No economic or whole-workspace evidence.",
       "source_fingerprints": {
         "crates/feature-engine/src/multifractal.rs": {
           "raw_sha256": "195ee9cdec864a5bbe6da76973ca71022d51a286e3f86b17aead10d91c968bd1",
@@ -55,11 +60,180 @@
           "raw_sha256": "c95c2419bc37c3b9057931459d29b50fa1b0c531dfea63ac6f0a3429eae8893f",
           "git_blob": "b28a74e10b9a6cca17367c9bdbf6dbb3eb34a3c0"
         }
-      }
+      },
+      "ignored_tests": [
+        {
+          "name": "cf2_6_lyapunov_de_un_punto_fijo_estable_es_negativo",
+          "reason": "OPEN F2.6-05 (L\u00ednea C): calculate_lyapunov_chaos es RMS(tf0 \u2212 tf1) \u2265 0 y no puede dar el exponente negativo de un punto fijo estable"
+        },
+        {
+          "name": "cf2_6_lyapunov_no_depende_de_la_unidad_de_medida",
+          "reason": "OPEN F2.6-05 (L\u00ednea C): el \u00abLyapunov\u00bb es una RMS lineal en la unidad de los datos; multiplicar la serie por 1000 lo multiplica por 1000"
+        },
+        {
+          "name": "cf2_contagio_potencia_con_acople_a_1000ms",
+          "reason": "OPEN F2.4-02 (Qoder/GLM): la base lineal densidad\u00b7lag se recorta a 1 cuando densidad\u00b7lag \u2265 1 y deja ciegos los lags de 500 ms en adelante"
+        },
+        {
+          "name": "cf2_contagio_relojes_periodicos_independientes_no_son_contagio",
+          "reason": "OPEN F2.4-02 (Qoder/GLM): el nulo binomial de cross_excitation supone llegadas sin estructura; dos relojes peri\u00f3dicos con fase estable dan z \u2248 7,9 en 200 ms"
+        },
+        {
+          "name": "cf2_contagio_un_empate_no_anula_la_matriz",
+          "reason": "OPEN F2.4-09 (Qoder/GLM): un solo empate de timestamps en una serie devuelve None para toda la matriz de contagio (LC-F1-35, pedido 2)"
+        },
+        {
+          "name": "cf2_copula_gaussiana_no_fabrica_cola",
+          "reason": "COSTE (\u2248 2 min en debug, 60 000 pares por nu_mle): pasa hoy; correr con --include-ignored"
+        },
+        {
+          "name": "cf2_lead_lag_desfase_plantado_a_cadencia_viva",
+          "reason": "OPEN F2.4-07 (L\u00ednea C): la ventana del l\u00edder es de 50 muestras; a ~40 eventos/s cubre 1,25 s y el lag de 2000 ms s\u00f3lo ve el alt congelado"
+        },
+        {
+          "name": "cf2_lead_lag_nulo_ruido_blanco_tasa_de_falsos_lideres",
+          "reason": "OPEN F2.4-07 (L\u00ednea C): el m\u00e1ximo de |\u03c1| sobre 5 lags sin correcci\u00f3n por multiplicidad infla los falsos l\u00edderes aun con ruido blanco"
+        },
+        {
+          "name": "cf2_lead_lag_nulo_tasa_de_falsos_lideres",
+          "reason": "OPEN F2.4-07 (L\u00ednea C): Pearson sobre OFI autocorrelado con umbral para muestras iid y m\u00e1ximo sobre 5 lags: falsos l\u00edderes muy por encima del 5 %"
+        },
+        {
+          "name": "cf2_ciclo_muestreo_irregular_bin_4",
+          "reason": "OPEN F2.3b-04 (L\u00ednea C), CONTRATO DE API, no se activa sola: push(valor) no lleva tiempo; reescribir con la firma (t, valor). El FFT trabaja en tiempo de eventos y el bin del mismo ciclo f\u00edsico depende de la densidad de eventos (sale el 8, no el 4)"
+        },
+        {
+          "name": "cf2_dfa_fgn_07_error_por_realizacion",
+          "reason": "OPEN F2.3b-01 (L\u00ednea C), requisito de precisi\u00f3n, no se cierra con el arreglo del sesgo: la sd por realizaci\u00f3n del DFA1 a N = 1024 (\u2248 0,037) deja \u2248 81/100 realizaciones con error < 0,05, no 95"
+        },
+        {
+          "name": "cf2_dfa_paseo_aleatorio_centrado_en_medio",
+          "reason": "OPEN F2.3b-01 (L\u00ednea C): el DFA1 a N = 1024 tiene un sesgo de muestra finita de \u2248 +0,02 sobre el paseo aleatorio y el estimador no lo descuenta"
+        },
+        {
+          "name": "cf2_ballena_plantada_x50_al_uno_por_ciento",
+          "reason": "OPEN F2.5-08 (L\u00ednea C): las ballenas inflan el \u03c3\u0302 EWMA y se enmascaran; a la misma tasa de falsas alarmas el recall queda por debajo del or\u00e1culo de Neyman-Pearson"
+        },
+        {
+          "name": "cf2_ballena_tasa_de_falsas_alarmas_sin_ballenas",
+          "reason": "OPEN F2.5-08 (L\u00ednea C): z gaussiano \u2265 2,5 sobre un nocional de cola pesada; con LN(0,1) marca \u2248 4 veces el nominal 0,0062"
+        },
+        {
+          "name": "cf2_ofi_no_depende_del_numero_de_trades_entre_snapshots",
+          "reason": "OPEN F2.5-09 (L\u00ednea C): la EMA del OFI es por evento y cada trade con el libro quieto le mete un 0; con 9 trades por snapshot la lectura cae al 15 %"
+        },
+        {
+          "name": "cf2_spoof_cancelacion_plantada_a_la_cadencia_de_depth5",
+          "reason": "OPEN F2.5-07 (L\u00ednea C): la ventana de detecci\u00f3n es dt < 0,25 s estricto, igual a la cadencia de @depth5: una cancelaci\u00f3n del 90 % a 250 ms da score 0"
+        },
+        {
+          "name": "cf2_spoof_nulos_estructurales_sin_cancelacion",
+          "reason": "OPEN F2.5-07 (L\u00ednea C), CONTRATO DE API, no se activa sola: reescribir con la firma nueva; hoy s\u00f3lo recibe el m\u00e1ximo nocional de 5 niveles sin trades, y ejecuci\u00f3n o traslaci\u00f3n dan la misma se\u00f1al que una cancelaci\u00f3n"
+        },
+        {
+          "name": "cf2_generacion_cache_cambia_una_vez_cada_16",
+          "reason": "OPEN F2.3b-10 (L\u00ednea C): cache_generation devuelve el contador de consultas, que cambia en cada consulta, y la deduplicaci\u00f3n de D0 nunca act\u00faa"
+        },
+        {
+          "name": "cf2_vr_macro_fgn_07_dentro_de_005",
+          "reason": "OPEN F2.3b-09 (L\u00ednea C): el cociente de varianzas macro est\u00e1 encogido hacia 0,5 (w = 50/62) y sesgado por la media muestral: con H = 0,7 da \u2248 0,62-0,64"
+        },
+        {
+          "name": "cf2_re_invariante_a_la_cadencia",
+          "reason": "OPEN F2.3b-05 (AGY): el Reynolds es proporcional a 1/\u221adt y mide la cadencia de eventos, no el r\u00e9gimen de la difusi\u00f3n (cociente \u221a10 entre 10 ms y 100 ms)"
+        },
+        {
+          "name": "lxxi_copulas_t_pares_reales_agosto",
+          "reason": "medici\u00f3n manual: ~2 min en release sobre tapes de agosto en data/"
+        },
+        {
+          "name": "xlviiie_te_entre_pares_reales_agosto",
+          "reason": "medici\u00f3n manual: ~2 min sobre tapes reales presentes en data/"
+        }
+      ]
     },
     {
       "label": "simulator-reinforced-red",
-      "status": "pending"
+      "status": "interrupted_without_result",
+      "command": "cargo test -p execution-engine --locked --test simulator_reduce_only_accounting_contract",
+      "target": "target-base15",
+      "jobs": 2,
+      "scope": "Baseline simulator + committed MF repair; stable test with oversize request1000. Inputs retained locally; no RED claim until assertions execute.",
+      "exit_code": null,
+      "tests_executed": false,
+      "expected_failure": false,
+      "diagnostic": "Executor session62810 disappeared; no Cargo/rustc of this attempt remained and log has no terminal status. Do not infer cause or a RED result.",
+      "log_sha256": "092b9e9869c6bf8b7df560103ea9721d82f003f9872198a06f50e86497f0f058"
+    },
+    {
+      "label": "simulator-retry-red",
+      "status": "failed_as_expected",
+      "command": "cargo test -p execution-engine --locked --test simulator_reduce_only_accounting_contract --jobs 1",
+      "target": "target-base15",
+      "jobs": 1,
+      "scope": "Stable baseline simulator, committed MF repair, strengthened contract requesting1000. Prior interrupted attempt retained independently.",
+      "exit_code": 101,
+      "passed": 0,
+      "failed": 5,
+      "ignored": 0,
+      "measured": 0,
+      "filtered_out": 0,
+      "tests_executed": true,
+      "expected_failure": true,
+      "finished_utc": "2026-10-15T18:04:53.9903715Z",
+      "log_sha256": "d1319093ce6d289c76ee98fda75c6f557b0349dbf209fead5deddabd7ea01fad",
+      "source_fingerprints": {
+        "crates/execution-engine/src/simulator.rs": {
+          "raw_sha256": "21ce6cbe945a7a106af4a3f246ba00711c44b3acf641b58346c006dd323aeb7b",
+          "git_blob": "5c2f748b2183ecd11850c396885065cc6a15bc49"
+        },
+        "crates/execution-engine/tests/simulator_reduce_only_accounting_contract.rs": {
+          "raw_sha256": "da1fbf8fc570fdf4efd6c9f0f15015ff1bc19d277bb428fa8a514988bace994a",
+          "git_blob": "f99f910eb9bcdba95fc06f6b82806e69515baa7b"
+        },
+        "crates/feature-engine/src/multifractal.rs": {
+          "raw_sha256": "195ee9cdec864a5bbe6da76973ca71022d51a286e3f86b17aead10d91c968bd1",
+          "git_blob": "7dab5da4c8314c81336d4b43b824ad4f923f978b"
+        }
+      },
+      "source_head_unchanged": true,
+      "source_inputs_unchanged": true,
+      "binary_manifest_sha256": "330be54a34cec5ffc06087b279d5eea7edb3863cf911fcd197833443e34c3833",
+      "retained_binaries": 1
+    },
+    {
+      "label": "simulator-paired-green",
+      "status": "passed",
+      "command": "cargo test -p execution-engine --locked --test simulator_reduce_only_accounting_contract --jobs 1",
+      "target": "target-base15",
+      "jobs": 1,
+      "scope": "Same strengthened test and dependencies as successful RED attempt; only simulator repair changed.",
+      "exit_code": 0,
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "measured": 0,
+      "filtered_out": 0,
+      "finished_utc": "2026-10-15T18:10:31.3884110Z",
+      "log_sha256": "5a22a2b728e9060c1a42b8c9e16cc605bf77f93fec2f440dcebcaf22c0cf7207",
+      "source_fingerprints": {
+        "crates/execution-engine/src/simulator.rs": {
+          "raw_sha256": "9a8cb8de2fc39f824f5b7a022c42ed93c090e0b635cbd935da65c35ff847cfda",
+          "git_blob": "e2cf6b5bf821d62c06ea3ffa63101460fb1aecc6"
+        },
+        "crates/execution-engine/tests/simulator_reduce_only_accounting_contract.rs": {
+          "raw_sha256": "da1fbf8fc570fdf4efd6c9f0f15015ff1bc19d277bb428fa8a514988bace994a",
+          "git_blob": "f99f910eb9bcdba95fc06f6b82806e69515baa7b"
+        },
+        "crates/feature-engine/src/multifractal.rs": {
+          "raw_sha256": "195ee9cdec864a5bbe6da76973ca71022d51a286e3f86b17aead10d91c968bd1",
+          "git_blob": "7dab5da4c8314c81336d4b43b824ad4f923f978b"
+        }
+      },
+      "source_inputs_unchanged": true,
+      "head_unchanged": true,
+      "binary_manifest_sha256": "5c49db3f44dee0286477e23ce77e8664a8a5698bd59d16bd022196d9e6fcff5a",
+      "retained_binaries": 1
     },
     {
       "label": "execution-green-suite",
@@ -108,7 +282,7 @@
     }
   },
   "findings": {
-    "B15-01": "fix_pending",
+    "B15-01": "fixed_unit_verified",
     "B15-02": "fixed_unit_verified",
     "B15-03": "open",
     "B15-04": "open",
@@ -118,11 +292,16 @@
     "B15-08": "open",
     "B15-09": "open",
     "B15-10": "open",
-    "B15-11": "open"
+    "B15-11": "open",
+    "B15-12": "open_post_base940",
+    "B15-13": "open_post_base940",
+    "B15-14": "open_post_base_omega129"
   },
   "publication": {
-    "status": "unpublished",
-    "last_observed_remote_main": "310f729ff7c998c5b3d3a0f1722422910bcffebb"
+    "status": "draft_branch_published_main_pending",
+    "last_observed_remote_main": "b67469077a76652dd818271e18e91bed7f8324a5",
+    "pull_request": "https://github.com/Jhona-la/Trader-Gemini/pull/65",
+    "published_head": "482aaadc3af358936cc63d54309c292bc070d4fc"
   },
   "limitations": [
     "RED/GREEN execution counts may repeat tests; no sum here implies unique tests.",
@@ -136,5 +315,59 @@
     "https://arxiv.org/abs/1801.00862",
     "https://www.bybit.com/en/help-center/article/Profit-Loss-calculations-USDT-Contract",
     "https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Order"
-  ]
+  ],
+  "post_base_review": {
+    "snapshot": "940498293889433f63681aab306b68473679c806",
+    "scope": "Independent static review of GLM123 and arithmetic counterexamples; no Rust replay execution, measured incidence or correction by BASE15. Initial base ledger remains unchanged.",
+    "path": "crates/backtest-engine/src/booktick_replay.rs",
+    "findings": [
+      "B15-12",
+      "B15-13"
+    ],
+    "relative_ranking_counterexample": {
+      "A_cash": 1100,
+      "A_mtm": -200,
+      "A_equity": 900,
+      "B_cash": 1050,
+      "B_mtm": 0,
+      "B_equity": 1050
+    },
+    "terminal_drawdown_counterexample": {
+      "cash_peak": 1000,
+      "cash_final": 1000,
+      "long_entry": 100,
+      "qty": 1,
+      "last_mid": 90,
+      "equity_before_exit_costs": 990,
+      "cash_dd": 0
+    },
+    "handoff": "Author and ROOT notified; author acknowledgment not assumed; replay source reserved.",
+    "upstream_documentary_closure": "b46dd286: GLM declares SOL-R5-02 closed and reports T1/suites; BASE15 neither reexecutes nor inherits them. B15-12/13 are separate residual contracts. Binary mtime alone does not bind full source inputs."
+  },
+  "omega129_review": {
+    "snapshot": "b6746907",
+    "scope": "Independent static diff review only; no Rust tests of the new domain witness and no live path demonstrated.",
+    "api_witness": {
+      "speed_clamp_min": 1e-05,
+      "speed_clamp_max": 0.01,
+      "constructor_alpha_speed": 0.0001,
+      "constructor_beta_rls": 1.0,
+      "updates": [
+        [
+          100,
+          100
+        ],
+        [
+          100,
+          100
+        ]
+      ],
+      "reached_clamp": [
+        0.001,
+        0.0001
+      ]
+    },
+    "adaptation": "Four new config fields initialized from literals, no genetic writer identified; scalar readers partly wired while spectral readers retain static/default paths.",
+    "repaired_paths_untouched_by_omega129": true
+  }
 }
