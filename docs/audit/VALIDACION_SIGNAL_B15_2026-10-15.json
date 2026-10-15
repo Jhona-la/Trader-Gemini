@@ -1,0 +1,123 @@
+{
+  "schema": "B15-signal-domain-partial-validation-v1",
+  "state": "partial_std_witness_passed_Cargo_and_CI_pending_at_document_commit",
+  "base_revision": "dfa4ae6b7d5f89757cb24a70c012cc90534e376e",
+  "source_revision": "208c3c07b5fc4cd4b289cc94e51700ca1c6b5a8f",
+  "compiled_git_head": "dfa4ae6b7d5f89757cb24a70c012cc90534e376e",
+  "compiled_source_equivalence": "All four compiled project inputs equal source_revision bytes; receipt records pre-source-commit HEAD plus dirty input hashes.",
+  "branch": "codex/signal-domain-20261015",
+  "whole_files_certified": 0,
+  "canonical_inventory_unchanged": "BASE15 b9cd773538fae9467751883eafdf3ee6ed5142f9; no new census or whole-file status changes",
+  "compiled_inputs": {
+    "crates/signal-engine/src/soliton_wave.rs": {
+      "sha256": "a73f6debbc74ecd07f4563750419dd354bfa46bb199d9ba4b9cc0f1be4bb70d0",
+      "matches_source_commit_and_compiled_bytes": true
+    },
+    "crates/signal-engine/src/stochastic_resonance.rs": {
+      "sha256": "cd0c8b78e27d10b6970687caff6ac3cb06c53b1b38589b79d13200d8c3e77c47",
+      "matches_source_commit_and_compiled_bytes": true
+    },
+    "crates/signal-engine/src/voto_espectral.rs": {
+      "sha256": "a9c8679ca3dff0a4551f752ae0ed9326d0f11ca1a138831ef55d0d549c408ec8",
+      "matches_source_commit_and_compiled_bytes": true
+    },
+    "crates/signal-engine/tests/b15_signal_parameter_domain_contract.rs": {
+      "sha256": "f9c0e296a8b9f57a52506d9dfa4be97f81c061a5e66044008104ef42ac0bddd9",
+      "matches_source_commit_and_compiled_bytes": true
+    }
+  },
+  "originals_captured": {
+    "soliton-original.rs": {
+      "sha256": "f3739d9acc41a028b7fbe6b8eaea549945b5ecee0a5cbb14a63b8c880b08c4d2",
+      "source_path": "crates/signal-engine/src/soliton_wave.rs",
+      "matches_base_git_blob_bytes": true
+    },
+    "stochastic-original.rs": {
+      "sha256": "de07dd9b5337477f1fa49afd787cbb2d7281e177dd83d86bc5cac27133671a17",
+      "source_path": "crates/signal-engine/src/stochastic_resonance.rs",
+      "matches_base_git_blob_bytes": true
+    }
+  },
+  "test_result": {
+    "passed": 28,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 11,
+    "groups": {
+      "new_contracts": 12,
+      "positive_original_counterexamples": 1,
+      "current_soliton_inline": 7,
+      "current_stochastic_inline": 4,
+      "real_voto_inline": 4
+    },
+    "not_a_RED_suite": "Positive original counterexamples are not RED 0/12; original inline tests were filtered by original_.",
+    "known_physical_test": "F3.6-05 remains open and is not included in this std-only run."
+  },
+  "compiler": {
+    "path": "C:/Users/jhona/.rustup/toolchains/nightly-2026-06-30-x86_64-pc-windows-msvc/bin/rustc.exe",
+    "sha256": "1ef18239087c948b9657304b7d8c1486f527ff10a634daf0112fd20d9c5297e3",
+    "version_note": "Nightly toolchain path pinned to 2026-06-30; no separate rustc version invocation",
+    "argv": [
+      "--edition=2021",
+      "--test",
+      "C:\\Users\\jhona\\.codex\\tmp\\quant-reaudit-20261015\\signal-domain-20261015\\signal-domain-final-harness.rs",
+      "-o",
+      "C:\\Users\\jhona\\.codex\\tmp\\quant-reaudit-20261015\\signal-domain-20261015\\signal-domain-final-witness.exe"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 2.8490486,
+    "max_sampled_process_rss_bytes": 94216192
+  },
+  "execution": {
+    "argv": [
+      "--test-threads=1",
+      "--skip",
+      "original_",
+      "--nocapture"
+    ],
+    "exit_code": 0,
+    "process_elapsed_seconds": 1.2080338,
+    "runner_reported_seconds": 0.42,
+    "max_sampled_process_rss_bytes": 5779456,
+    "binary_sha256": "2871d7ec21f8a5614535b079461ed6eb74277ca131931a926d7ff1835ebe96ad"
+  },
+  "external_artifacts_sha256": {
+    "single-witness-receipt.json": "35bf3c7995631cbe5b4701a8be9e5f3a0bd2155c9f1421137a893298d2a7363a",
+    "signal-domain-final-harness.rs": "3bc1e292da2c10c7531a8ea95283d6c9c4c15deb7ac3433ef712b8c635821cea",
+    "signal-domain-final-commands.json": "363d86bc8db427327df8359360f33dc057710d1ba4bf578eba6ca76b24d14f22",
+    "run-single-witness.ps1": "6291f4424cef000fb1d381801bb9a89d5acf761f5857f1e8455b80350a8a07e3",
+    "compile.stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "compile.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run.stdout.log": "14cf1ab08a9289e1011ff9e6793550d2de78bb7a441e7cae0451bb01be765b98",
+    "run.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "validacion.md": "f3c443b1875f694550987b9ebfbd6afcaf24bd235ff6cb67f701e344f82b1075"
+  },
+  "external_artifact_directory": "C:\\Users\\jhona\\.codex\\tmp\\quant-reaudit-20261015\\signal-domain-20261015",
+  "doubles": {
+    "registry": "Mutex/HashMap preserving present NaN, symbol -> cID:key -> global for tested lanes",
+    "trait": "Minimal QuantumStrategy/TradeHorizon double",
+    "real": "Both signal source modules, actual VotoEspectral, actual integration contract file",
+    "unverified": "Real registry lifecycle, clocks, lock-free concurrency, production consumers, Cargo dependency integration"
+  },
+  "review": "Independent read-only review found no blockers in the three functional paths.",
+  "pending": [
+    "Cargo with real dependencies",
+    "workspace all-targets",
+    "new PR CI and final merged-tree checks",
+    "productive latency/allocation measurements",
+    "Soliton scale/units and noise-variance units",
+    "B15-03 writer/persistence and B15-04 productive readers",
+    "physical resonance F3.6-05",
+    "economic growth objective"
+  ],
+  "resources": {
+    "cargo_invocations": 0,
+    "rustc_compilations": 1,
+    "witness_executions": 1,
+    "new_cargo_target_directories": 0,
+    "measurement_scope": "Sampled owned compiler/test RSS, not host/tree absolute peak or trading latency",
+    "external_agents": "Latest human instruction keeps WorkBuddyAI/GLM active; no further interruption authorized by this wave"
+  },
+  "deduplication": "Constructor/domain findings remain in B15-02/B15-14 family; B15-03 is writer/persistence. No new unique-cause count.",
+  "publication_state": "New PR/workflow results are authoritative for later status; PR67 CI is not inherited."
+}
