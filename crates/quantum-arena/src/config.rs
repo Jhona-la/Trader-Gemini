@@ -301,6 +301,10 @@ pub struct QuantumConfig {
     pub base_micro_ratio: AtomicF64,
     pub spec_coh_scale: AtomicF64,
     pub spec_ent_scale: AtomicF64,
+
+    // --- Liquidez Oculta y Compuerta Conformal de Microestructura (Ola Ω133) ---
+    pub hidden_liquidity_weight: AtomicF64,
+    pub conformal_gate_strictness: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -619,6 +623,8 @@ impl QuantumConfig {
             base_micro_ratio: AtomicF64::new(0.66 / 0.62),
             spec_coh_scale: AtomicF64::new(0.10),
             spec_ent_scale: AtomicF64::new(0.30),
+            hidden_liquidity_weight: AtomicF64::new(0.30),
+            conformal_gate_strictness: AtomicF64::new(1.0),
         }
     }
 

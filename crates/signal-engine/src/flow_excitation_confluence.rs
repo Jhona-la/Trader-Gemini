@@ -61,34 +61,45 @@ impl FlowExcitationConfluenceEngine {
     /// sólo votaban escalas con τ ≲ 1 s. La media geométrica es continua,
     /// antisimétrica y acotada por construcción.
     /// Observacional: el voto vivo queda bit a bit (T-1 cero).
-    pub fn voto_espectral(
+    /// OLA Ω133 — VOTO ESPECTRAL CON MODULACIÓN DE LIQUIDEZ OCULTA (KYLE-HASBROUCK)
+    /// Modula la proyección espectral incorporando la presión neta de absorción
+    /// de bloques en las escalas rápidas del micro-flujo (k < 12, τ < 1 s).
+    pub fn voto_espectral_con_liquidez(
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
+        hidden_liq_pressure: f64,
     ) -> crate::voto_espectral::VotoEspectral {
-        // #663 (G2-1): la excitación es el EXCESO sobre el estado
-        // estacionario, recortado a ≥0 — la CALMA (λ/μ̂ → 0.1, excit
-        // ≈ −0.73) ABSTIENE como en los dos motores hermanos
-        // (hawkes_bessel .max(0.0), flow_impulse excit ≤ 0 ⇒ 0) y en
-        // el propio gate vivo (hawkes ≥ SS). El `.abs()` anterior
-        // invertía la semántica: la calma votaba 0.734, MÁS que una
-        // cascada 3× (0.703) — el motor opinaba fuerte en mercados
-        // muertos dentro del consenso vivo.
         let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
             ratio_lambda_mu,
         )
         .max(0.0);
         let mut por_escala = [0.0f64; 32];
+        let p_ice = if hidden_liq_pressure.is_finite() {
+            hidden_liq_pressure.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
         for k in 0..32 {
             let x = desplazamientos[k];
             if !x.is_finite() {
                 continue;
             }
-            let flujo = x.clamp(-10.0, 10.0);
+            // En micro-escalas (k < 12, τ < 1 s), la presión de iceberg modula el flujo;
+            // en macro-escalas decae suavemente hacia 0 para preservar el horizonte de tendencia.
+            let micro_factor = (1.0 - (k as f64 / 32.0)).max(0.0);
+            let flujo = (x + p_ice * 0.5 * micro_factor).clamp(-10.0, 10.0);
             let direccion = flujo.tanh();
             let coherencia = (flujo.abs().min(1.0) * excitacion).sqrt();
             por_escala[k] = (direccion * coherencia).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
+
+    pub fn voto_espectral(
+        desplazamientos: &[f64; 32],
+        ratio_lambda_mu: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        Self::voto_espectral_con_liquidez(desplazamientos, ratio_lambda_mu, 0.0)
     }
 }
 
@@ -262,6 +273,45 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             .unwrap_or(0.15);
         let obi_floor = (obi_p80 * obi_gene).max(0.02);
 
+        // OLA Ω133: ACOPLAMIENTO TENSORIAL DE LIQUIDEZ OCULTA (KYLE-HASBROUCK)
+        // Leemos la presión neta de iceberg y el estado de absorción desde el registro.
+        let hidden_liq_pressure = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "hidden_liquidity_pressure",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite())
+            .unwrap_or(0.0)
+            .clamp(-1.0, 1.0);
+
+        let is_iceberg_active = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "is_iceberg_active",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite())
+            .unwrap_or(0.0) > 0.5;
+
+        let hidden_liq_weight = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "hidden_liquidity_weight",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && *v >= 0.0 && *v <= 1.0)
+            .unwrap_or(0.30);
+
+        // Modulación de OBI efectivo: el libro visible se complementa con la absorción oculta
+        let obi_eff = (obi + hidden_liq_weight * hidden_liq_pressure).clamp(-1.0, 1.0);
+
         // #664 (G2-3): pertenencia CONTINUA por exceso (rampas C¹
         // smoothstep de ancho relativo) — con el gate duro el voto
         // saltaba de 0 a obi·lift·4·hawkes_scale al cruzar cualquiera
@@ -275,7 +325,13 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             hawkes - effective_hawkes_thresh,
             0.30 * effective_hawkes_thresh.max(0.01),
         );
-        let w_obi = rampa(obi.abs() - obi_floor, 0.50 * obi_floor);
+        let w_obi_raw = rampa(obi.abs() - obi_floor, 0.50 * obi_floor);
+        let w_iceberg = if is_iceberg_active {
+            rampa(hidden_liq_pressure.abs() - 0.25, 0.25)
+        } else {
+            0.0
+        };
+        let w_obi = (w_obi_raw + hidden_liq_weight * w_iceberg).min(1.0);
 
         // #666 (H2-4): TERCERA puerta CONTINUA — el gate de ML
         // (ml_prob ≥ base ± lift) quedaba binario: el voto saltaba de 0 a
@@ -284,8 +340,8 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         // región profunda conservado.
         let w_ml_long = rampa(ml_prob - (ml_base + ml_lift), ml_lift.max(1e-4));
         let w_ml_short = rampa((ml_base - ml_lift) - ml_prob, ml_lift.max(1e-4));
-        let is_long = obi > 0.0;
-        let is_short = obi < 0.0;
+        let is_long = obi_eff > 0.0;
+        let is_short = obi_eff < 0.0;
 
         // Ola 9 (SPECTRAL CONTINUITY): El factor de escala de excitación
         // se normaliza contra el umbral crítico efectivo del proceso (anclado
@@ -294,14 +350,36 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         // eliminando el divisor literal 2.0 que desalineaba la señal según el gen.
         let hawkes_scale = (hawkes / effective_hawkes_thresh.max(0.01)).min(2.0);
 
-        let voto = if is_long {
-            (obi * (ml_prob - ml_base) * 4.0 * hawkes_scale).clamp(0.0, 1.0) * w_ml_long
+        let base_voto = if is_long {
+            (obi_eff * (ml_prob - ml_base) * 4.0 * hawkes_scale).clamp(0.0, 1.0) * w_ml_long
         } else if is_short {
-            (obi * (ml_base - ml_prob) * 4.0 * hawkes_scale).clamp(-1.0, 0.0) * w_ml_short
+            (obi_eff * (ml_base - ml_prob) * 4.0 * hawkes_scale).clamp(-1.0, 0.0) * w_ml_short
         } else {
             0.0
         };
-        voto * w_hawkes * w_obi
+
+        // Modulación Direccional Tensorial por Liquidez Oculta:
+        let mut mult_liq = 1.0;
+        if base_voto.abs() > 1e-9 && hidden_liq_pressure.abs() > 1e-4 {
+            let intent_dir = base_voto.signum();
+            let alignment = intent_dir * hidden_liq_pressure; // in [-1.0, 1.0]
+
+            if alignment >= 0.0 {
+                // Flujo ALINEADO con la absorción institucional:
+                // La absorción actúa como soporte/trampolín dinámico (+bonus hasta +30%)
+                mult_liq = 1.0 + hidden_liq_weight * rampa(alignment, 0.50);
+            } else {
+                // Flujo OPUESTO a la absorción institucional (ej. Long atacando muro de venta iceberg)
+                // Atenuación suave C¹ (smoothstep):
+                // x_opp ∈ (0.0, 1.0]. A partir de x_opp = 0.15 comienza a atenuar,
+                // y al alcanzar x_opp >= 0.70 (veto conformal) el voto se extingue a 0.0
+                let x_opp = -alignment;
+                let t_opp = ((x_opp - 0.15) / 0.55).clamp(0.0, 1.0);
+                mult_liq = 1.0 - t_opp * t_opp * (3.0 - 2.0 * t_opp);
+            }
+        }
+
+        (base_voto * w_hawkes * w_obi * mult_liq).clamp(-1.0, 1.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {

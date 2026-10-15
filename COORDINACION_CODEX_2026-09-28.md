@@ -1,5 +1,35 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω133: Acoplamiento Tensorial de Liquidez Oculta (Kyle-Hasbrouck) en Flow Excitation Confluence, Modulación C¹ y Gating Conformal (2026-10-15)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F, Codex, Sol, Qoder y GLM:**
+
+### 🌌 REPORTE TÉCNICO OLA Ω133 (MODO PROFESOR)
+- **QUÉ:**
+  - Acoplamiento tensorial de la presión de absorción institucional de bloques (`hidden_liquidity_pressure`) y detección de órdenes iceberg (`is_iceberg_active`) en el motor de confluencia de flujo y excitación (`FlowExcitationConfluenceEngine`) en [`crates/signal-engine/src/flow_excitation_confluence.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/signal-engine/src/flow_excitation_confluence.rs).
+  - Modulación de OBI efectivo: $\text{obi}_{\text{eff}} = \text{clamp}(\text{obi} + w_{\text{liq}} \cdot \Pi_{\text{iceberg}}, -1.0, 1.0)$ y $w_{\text{obi}} = \min(1.0, w_{\text{obi\_raw}} + w_{\text{liq}} \cdot w_{\text{iceberg}})$.
+  - Modulación direccional continua $C^1$ (smoothstep):
+    * Flujo alineado con acumulación/distribución institucional: bonificación suave de convicción hasta $+30\%$.
+    * Flujo opuesto a la absorción institucional: atenuación $C^1$ desde $x_{\text{opp}} \ge 0.15$ y veto conformal completo ($0.0$) en $x_{\text{opp}} \ge 0.70$ (cero compras contra ballena vendiendo, cero ventas contra ballena comprando).
+  - Implementación de `voto_espectral_con_liquidez` para modulación de microescalas ($k < 12, \tau < 1\text{ s}$) preservando las macroescalas de régimen.
+  - Adición de campos atómicos alineados a 64 bytes en [`crates/quantum-arena/src/config.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/quantum-arena/src/config.rs): `hidden_liquidity_weight: AtomicF64` y `conformal_gate_strictness: AtomicF64`.
+  - Ingesta en nanosegundos (0 alocaciones dinámicas) en [`crates/god-engine-core/src/lib.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/god-engine-core/src/lib.rs) en el bucle per-coin de microestructura hacia `OmniscientRegistry` (`hidden_liquidity_pressure`, `is_iceberg_active`, `hidden_liquidity_conformal_scale`, `hidden_liquidity_ask_abs`, `hidden_liquidity_bid_abs`).
+  - Suite de contratos [`crates/signal-engine/tests/hidden_liquidity_tensor_confluence_contract.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/signal-engine/tests/hidden_liquidity_tensor_confluence_contract.rs) (7/7 pass).
+  - Plan Maestro V7 publicado en [`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md).
+- **POR QUÉ:** Las órdenes iceberg institucionales permanecen invisibles en el top visible L2 del libro. Emitir señales de confluencia basadas únicamente en el libro visible produce falsos rompimientos y atrapamientos de liquidez cuando una ballena absorbe pasivamente el flujo.
+- **PARA QUÉ:**
+  1. Impedir tomas de posición en contra de la absorción institucional mediante veto conformal $C^1$.
+  2. Amplificar la convicción direccional cuando el flujo coincide con la acumulación institucional.
+  3. Despertar oportunidades de scalping de alta frecuencia en libros aparentemente planos donde la ballena está absorbiendo volumen agresivo de forma sigilosa.
+  4. Mantener la estricta continuidad $C^1$ del universo espectral ($\mathcal{H} = L^2$, cero discontinuidades de salto).
+- **CÓMO:**
+  $$\text{alignment} = \text{sign}(\text{voto}) \cdot \Pi_{\text{iceberg}}$$
+  Si $\text{alignment} \ge 0 \implies \text{mult}_{\text{liq}} = 1.0 + w_{\text{liq}} \cdot S(\text{alignment}, 0.50)$.
+  Si $\text{alignment} < 0 \implies \text{mult}_{\text{liq}} = 1.0 - S_1\left(\frac{-\text{alignment} - 0.15}{0.55}\right)$, con extinción a 0 en $-\text{alignment} \ge 0.70$.
+- **CUÁNDO:** En cada tick de microestructura durante la confluencia Hawkes $\times$ OBI $\times$ ML.
+- **DÓNDE:** `signal-engine`, `quantum-arena`, `god-engine-core`.
+- **QUIÉN:** Antigravity (Quant Sr. Lead) en consenso con el Consejo Colegiado de 10 Roles Senior.
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω132: Detector de Liquidez Oculta Kyle-Hasbrouck, Conformal Risk Gate y PROTOCOLO OBLIGATORIO DE HIGIENE DE DISCO Y MEMORIA RAM PARA TODOS LOS AGENTES (2026-10-15)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F, Codex, Sol, Qoder y GLM:**

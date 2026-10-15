@@ -1,5 +1,33 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω133 — Acoplamiento Tensorial de Liquidez Oculta (Kyle-Hasbrouck) en Flow Excitation Confluence, Modulación C¹ y Gating Conformal
+
+- **Ola Integrada y Certificada**:
+  * **Diagnóstico Forense y Causa Raíz**:
+    1. En `crates/signal-engine/src/flow_excitation_confluence.rs`: El motor de confluencia evaluaba únicamente el OBI visible (`order_book_imbalance`), el lift del modelo ML (`ml_prob_motor`) y la excitación de Hawkes (`hawkes_intensity`).
+    2. En presencia de absorción masiva institucional mediante órdenes iceberg o bloques algorítmicos TWAP/VWAP, el libro visible L2 quedaba expuesto a spoofing o vacío aparente. El motor emitía señales que colisionaban frontalmente contra muros de acumulación o distribución institucional oculta, causando liquidaciones por squeezes adversos.
+    3. No existía acoplamiento dinámico entre la presión de liquidez oculta calculada por `dark-alpha-engine` (`hidden_liquidity_pressure`, `is_iceberg_active`) y el tensor de señales per-tick de `god-engine-core`.
+  * **Solución Arquitectónica y Matemática**:
+    1. En `crates/signal-engine/src/flow_excitation_confluence.rs`:
+       - Incorporados los parámetros dinámicos con scoping `(sym, coin_id)`: `hidden_liquidity_pressure`, `is_iceberg_active` y `hidden_liquidity_weight`.
+       - Formulado el OBI efectivo $\text{obi}_{\text{eff}} = \text{clamp}(\text{obi} + w_{\text{liq}} \cdot \Pi_{\text{iceberg}}, -1.0, 1.0)$ y modulado el peso de entrada $w_{\text{obi}} = \min(1.0, w_{\text{obi\_raw}} + w_{\text{liq}} \cdot w_{\text{iceberg}})$.
+       - Implementada la modulación tensorial direccional continua $C^1$:
+         * **Flujo Alineado**: Bonificación suave de convicción hasta $+30\%$ ($1.0 + w_{\text{liq}} \cdot S(\text{alignment}, 0.50)$).
+         * **Flujo Opuesto**: Atenuación suave $C^1$ tipo smoothstep $1 - t^2(3 - 2t)$ a partir de $x_{\text{opp}} \ge 0.15$, alcanzando la extinción completa del voto ($0.0$, veto conformal sin saltos cliff) en $x_{\text{opp}} \ge 0.70$.
+       - Implementado `voto_espectral_con_liquidez` para modular las microescalas de flujo ($k < 12, \tau < 1\text{ s}$) preservando las macroescalas de régimen.
+    2. En `crates/quantum-arena/src/config.rs`:
+       - Añadidos los campos atómicos alineados a 64 bytes: `hidden_liquidity_weight: AtomicF64` (default 0.30) y `conformal_gate_strictness: AtomicF64` (default 1.0).
+    3. En `crates/god-engine-core/src/lib.rs`:
+       - Sincronizados los parámetros en `publish_quantum_parameters`.
+       - En el bucle per-coin de procesamiento de eventos (`lib.rs:5540+`), instanciado en stack y ejecutado en nanosegundos (0 alocaciones) `compute_absorption` con `ultima_cantidad_trade`, `bid_qty`, `ask_qty`, `dir_v` y `v_t`.
+       - Publicadas al `OmniscientRegistry` en 3 niveles (global, coin_id, sym): `hidden_liquidity_pressure`, `is_iceberg_active`, `hidden_liquidity_conformal_scale`, `hidden_liquidity_ask_abs`, `hidden_liquidity_bid_abs`.
+    4. En `crates/signal-engine/tests/hidden_liquidity_tensor_confluence_contract.rs`:
+       - Creada suite de 7 pruebas de contrato: equivalencia con baseline, amplificación de convicción alineada, atenuación y veto conformal $C^1$, comportamiento simétrico short, detección en libros planos (stealth accumulation), paridad espectral, y resiliencia ante NaNs e infinitos.
+  * **Certificación Contractual**:
+    - `hidden_liquidity_tensor_confluence_contract.rs` (7/7 pass, 100% verde).
+    - `flow_excitation_confluence` unit tests (7/7 pass, 100% verde).
+    - `cargo check --workspace --all-targets` (23/23 crates sin errores).
+
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω132 — Detector de Liquidez Oculta Kyle-Hasbrouck, Conformal Risk Gate y Saneamiento de Disco/RAM (>150GB)
 
 - **Ola Integrada y Certificada**:

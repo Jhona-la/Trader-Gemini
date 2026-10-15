@@ -1816,6 +1816,12 @@ impl GodEngineCore {
         self.arena.registry.set("base_micro_ratio", b_ratio);
         self.arena.registry.set("spec_coh_scale", coh_sc);
         self.arena.registry.set("spec_ent_scale", ent_sc);
+
+        // OLA Ω133: Sincronización de Parámetros Dinámicos de Liquidez Oculta y Compuerta Conformal
+        let hid_liq_w = self.arena.config.hidden_liquidity_weight.load(Ordering::Relaxed);
+        let conf_strict = self.arena.config.conformal_gate_strictness.load(Ordering::Relaxed);
+        self.arena.registry.set("hidden_liquidity_weight", hid_liq_w);
+        self.arena.registry.set("conformal_gate_strictness", conf_strict);
     }
 
     #[inline]
@@ -5535,6 +5541,28 @@ impl GodEngineCore {
                 "obi_p80_medido",
                 self.cuantiles[coin_id].dynamic_obi_threshold(),
             );
+
+            // OLA Ω133: Detector de Absorción Institucional y Liquidez Oculta (Kyle-Hasbrouck)
+            let hidden_liq_engine = dark_alpha_engine::hidden_liquidity::HiddenLiquidityEngine::default();
+            let abs_state = hidden_liq_engine.compute_absorption(
+                self.feature_engines[coin_id].ultima_cantidad_trade,
+                bid_qty,
+                ask_qty,
+                dir_v,
+                v_t.abs().max(1e-6),
+            );
+            set_reg("hidden_liquidity_pressure", abs_state.net_iceberg_pressure);
+            set_reg(
+                "is_iceberg_active",
+                if abs_state.is_iceberg_active { 1.0 } else { 0.0 },
+            );
+            set_reg(
+                "hidden_liquidity_conformal_scale",
+                abs_state.conformal_band_scale,
+            );
+            set_reg("hidden_liquidity_ask_abs", abs_state.ask_absorption_ratio);
+            set_reg("hidden_liquidity_bid_abs", abs_state.bid_absorption_ratio);
+
             // #591 — PROYECCIÓN ESPECTRAL TEMPORAL al motor de señales. El
             // espectro (32 escalas) vivía confinado al núcleo: los motores
             // votaban sobre micro-features sin NINGUNA lectura del estado
