@@ -423,9 +423,9 @@ fn cf2_lundberg_exposicion_real_convierte_r() {
 /// debe admitir un conjunto no decreciente en R: para R1 < R2,
 /// veto(R2) ⇒ veto(R1). Comparación booleana exacta, sin tolerancia. Riesgos
 /// [0,04; 0,04; 0,04], ρ = 0,2 (riesgo de grupo 0,04·√4,2 = 0,0820), tope 0,10
-/// y ε = 0,05. Hoy: R = 15 admite (m = 0,1997) y R = 40 veta (m = 0,0749).
+/// y ε = 0,05. Resuelto en Ola Ω130 (F2.1-01): la cota de exposición f ≤ tope_streak / m
+/// garantiza monotonicidad estricta en R.
 #[test]
-#[ignore = "OPEN F2.1-01 (Codex): el veto Lundberg compara el riesgo al stop con un margen ln(1/ε)/R; un R mayor veta lo que uno menor admite"]
 fn cf2_lundberg_veto_monotono_en_r() {
     let riesgos = [0.04_f64, 0.04, 0.04];
     let (rho, tope, eps) = (Some(0.2), 0.10, 0.05);

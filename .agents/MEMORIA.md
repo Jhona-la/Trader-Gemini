@@ -1,5 +1,34 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω130 — Resolución F2.1-01 (Monotonía Actuarial Cramér-Lundberg), Activación cf2_lundberg_veto_monotono_en_r y Desacoplamiento Dinámico de Micro-Apalancamiento
+
+- **Ola Integrada y Certificada**:
+  * **Diagnóstico Forense y Causa Raíz (F2.1-01)**:
+    1. En `crates/risk-engine/src/correlation_guard.rs:552-565`: `veto_por_riesgo_cramer_lundberg` comparaba el riesgo de grupo equicorrelacionado contra `tope_efectivo = min(tope_streak, m)` donde $m = \frac{\ln(1/\epsilon)}{R}$.
+    2. En la teoría de Cramér-Lundberg, $\psi(m) \le e^{-R m}$. Cuando el edge es muy alto ($R = 40$), la cota de ruina exige un cojín de capital menor ($m \approx 0.075$), mientras que cuando el edge es débil ($R = 15$), exige un cojín mayor ($m \approx 0.20$). Al hacer `min(0.10, m)`, el sistema reducía el tope a $0.075$ para $R = 40$, vetando intenciones viables ($0.082 > 0.075$), mientras que con $R = 15$ el tope se quedaba en $0.10$, admitiéndolas ($0.082 \le 0.10$). Castigaba el alto rendimiento y premiaba el bajo rendimiento.
+    3. En `crates/risk-engine/src/lib.rs:1073-1080` y `1423-1432`: Las escalas de coherencia espectral (`spec_coh_scale = 0.10`, `spec_ent_scale = 0.30`, `base_micro_ratio = 0.66 / 0.62`), techos de micro-apalancamiento (`5.0`, `1.5`, `0.65`, `0.10`) y límite macro (`50.0`) eran literales rígidos hardcodeados.
+  * **Solución Arquitectónica y Matemática**:
+    1. En `crates/risk-engine/src/correlation_guard.rs`:
+       - Formalizada la cota de exposición de capital $f$: dado que $R_{\text{capital}} = R_n / f$, la condición $\psi(D) \le e^{-R_n D / f} \le \epsilon \iff f \le \frac{R_n \cdot D}{\ln(1/\epsilon)} = \frac{D}{m}$ con $D = \text{tope\_streak}$.
+       - Por ende, `cota_l = tope_streak / m`, y `tope_efectivo = tope_streak.min(cota_l)`.
+       - Cuando $R \to \infty$, $m \to 0 \implies \text{cota\_l} \to \infty \implies \text{tope\_efectivo} = \text{tope\_streak}$.
+       - Cuando $R \to 0$, $m \to \infty \implies \text{cota\_l} \to 0 \implies \text{tope\_efectivo} \to 0$ (veto estricto ante pérdida de ventaja).
+       - Esto garantiza monotonicidad estricta no-decreciente: para $R_1 < R_2$, $\text{veto}(R_2) \implies \text{veto}(R_1)$.
+    2. En `crates/risk-engine/tests/cf2_riesgo_solucion_conocida.rs`:
+       - Retirado `#[ignore = "OPEN F2.1-01..."]` en `cf2_lundberg_veto_monotono_en_r`. Test verificado verde.
+    3. En `crates/risk-engine/tests/cramer_lundberg_exposure_monotonicity_contract.rs`:
+       - Creado contrato de integración validando monotonicidad en $R \in [0.1, 2000.0]$, condición de frontera $R \to \infty$ y fallbacks bit a bit.
+    4. En `crates/quantum-arena/src/config.rs`:
+       - Añadidos 8 campos atómicos en `QuantumConfig`: `micro_lev_base`, `micro_lev_bonus`, `micro_lev_conf_center`, `micro_lev_conf_width`, `macro_lev_cap`, `base_micro_ratio`, `spec_coh_scale`, `spec_ent_scale`.
+    5. En `crates/god-engine-core/src/lib.rs`:
+       - Publicación atómica continua a `arena.registry` en `publish_quantum_parameters`.
+    6. En `crates/risk-engine/src/lib.rs`:
+       - Lectura dinámica desde `arena.registry.get_for_coin_or(...)` con defaults canónicos seguros y funciones suaves $C^1$ Hermite cúbico.
+  * **Certificación Contractual**:
+    - `cf2_lundberg_veto_monotono_en_r` (1/1 pass, 100% verde).
+    - `ola9_veto_por_riesgo_cramer_lundberg_bounds` (1/1 pass, 100% verde).
+    - `cramer_lundberg_exposure_monotonicity_contract.rs` (3/3 pass, 100% verde).
+
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω129 — Continuidad C1 Hermite en VECM, Momentum Booster, Solitón y Resonancia Estocástica + Plan Maestro Canónico V4
 
 - **Ola Integrada y Certificada**:

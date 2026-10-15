@@ -1071,12 +1071,14 @@ impl RiskEngine {
             1.0
         };
         // Transición suave C^1 Hermite cúbico (smoothstep) erradicando la discontinuidad discreta.
-        let u_coh = (spec_coh / 0.10).clamp(0.0, 1.0);
+        let spec_coh_scale = arena.registry.get_for_coin_or(coin_id, "spec_coh_scale", 0.10).max(1e-4);
+        let spec_ent_scale = arena.registry.get_for_coin_or(coin_id, "spec_ent_scale", 0.30).max(1e-4);
+        let u_coh = (spec_coh / spec_coh_scale).clamp(0.0, 1.0);
         let s_coh = u_coh * u_coh * (3.0 - 2.0 * u_coh);
-        let u_ent = ((1.0 - spec_ent) / 0.30).clamp(0.0, 1.0);
+        let u_ent = ((1.0 - spec_ent) / spec_ent_scale).clamp(0.0, 1.0);
         let s_ent = u_ent * u_ent * (3.0 - 2.0 * u_ent);
         let coh_benefit = (spec_coh.max(0.0) * (1.0 - spec_ent * 0.5) * s_coh * s_ent).clamp(0.0, 0.80);
-        let base_micro_ratio = 0.66 / 0.62;
+        let base_micro_ratio = arena.registry.get_for_coin_or(coin_id, "base_micro_ratio", 0.66 / 0.62);
         let effective_micro_ratio = base_micro_ratio - (base_micro_ratio - 1.0) * coh_benefit;
 
         let now_ts = if coin_id < arena.coins.len() {
@@ -1426,9 +1428,15 @@ impl RiskEngine {
         // punto medio natural entre 5× y 50× es ~16×, no 27,5×.
         // CL-6: se calcula una vez y lo respetan LOS DOS rescates del nocional
         // mínimo (el segundo usaba el literal 50).
-        let conf_t = ((intent.confidence - 0.65) / 0.10).clamp(0.0, 1.0);
-        let micro_lev_cap = 5.0 + 1.5 * conf_t * conf_t * (3.0 - 2.0 * conf_t);
-        let max_lev_cap = crate::capital_regime::log_lerp(50.0, micro_lev_cap, micro_w_alloc);
+        let lev_base = arena.registry.get_for_coin_or(coin_id, "micro_lev_base", 5.0);
+        let lev_bonus = arena.registry.get_for_coin_or(coin_id, "micro_lev_bonus", 1.5);
+        let conf_center = arena.registry.get_for_coin_or(coin_id, "micro_lev_conf_center", 0.65);
+        let conf_width = arena.registry.get_for_coin_or(coin_id, "micro_lev_conf_width", 0.10).max(1e-4);
+        let macro_cap = arena.registry.get_for_coin_or(coin_id, "macro_lev_cap", 50.0);
+
+        let conf_t = ((intent.confidence - conf_center) / conf_width).clamp(0.0, 1.0);
+        let micro_lev_cap = lev_base + lev_bonus * conf_t * conf_t * (3.0 - 2.0 * conf_t);
+        let max_lev_cap = crate::capital_regime::log_lerp(macro_cap, micro_lev_cap, micro_w_alloc);
 
         // D-130: Evaluar si el notional real de la orden (final_margin * dynamic_leverage) cumple con el mínimo
         if final_margin > 0.0 && final_margin * dynamic_leverage < dynamic_min_notional {

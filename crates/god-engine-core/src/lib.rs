@@ -1797,6 +1797,25 @@ impl GodEngineCore {
         self.arena.registry.set("vecm_z_saturation", vecm_sat);
         self.arena.registry.set("soliton_sat_momento", sol_sat);
         self.arena.registry.set("stochastic_res_peak_gain", stoch_gain);
+
+        // OLA Ω130: Sincronización de Parámetros Dinámicos de Micro-Apalancamiento y Coherencia Espectral
+        let m_base = self.arena.config.micro_lev_base.load(Ordering::Relaxed);
+        let m_bonus = self.arena.config.micro_lev_bonus.load(Ordering::Relaxed);
+        let m_center = self.arena.config.micro_lev_conf_center.load(Ordering::Relaxed);
+        let m_width = self.arena.config.micro_lev_conf_width.load(Ordering::Relaxed);
+        let macro_cap = self.arena.config.macro_lev_cap.load(Ordering::Relaxed);
+        let b_ratio = self.arena.config.base_micro_ratio.load(Ordering::Relaxed);
+        let coh_sc = self.arena.config.spec_coh_scale.load(Ordering::Relaxed);
+        let ent_sc = self.arena.config.spec_ent_scale.load(Ordering::Relaxed);
+
+        self.arena.registry.set("micro_lev_base", m_base);
+        self.arena.registry.set("micro_lev_bonus", m_bonus);
+        self.arena.registry.set("micro_lev_conf_center", m_center);
+        self.arena.registry.set("micro_lev_conf_width", m_width);
+        self.arena.registry.set("macro_lev_cap", macro_cap);
+        self.arena.registry.set("base_micro_ratio", b_ratio);
+        self.arena.registry.set("spec_coh_scale", coh_sc);
+        self.arena.registry.set("spec_ent_scale", ent_sc);
     }
 
     #[inline]

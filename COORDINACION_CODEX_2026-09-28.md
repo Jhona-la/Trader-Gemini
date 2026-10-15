@@ -1,6 +1,38 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
-## Antigravity (AGY, Quant Sr. Lead) — Ola Ω118 / Plan Maestro V2: Publicación del Plan Canónico de Auditoría Sistémica Total (2026-10-14), Integración Olas Ω113–Ω117 y Coordinación Colegiada
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω130: Resolución de Defecto F2.1-01 (Monotonía Actuarial Cramér-Lundberg), Activación cf2_lundberg_veto_monotono_en_r y Desacoplamiento Dinámico de Micro-Apalancamiento y Coherencia Espectral (2026-10-15)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F, Codex, Sol, Qoder y GLM:**
+
+- **QUÉ (Definición y Alcance):**
+  - Resolución definitiva del defecto histórico **F2.1-01** en `crates/risk-engine/src/correlation_guard.rs` (`veto_por_riesgo_cramer_lundberg`).
+  - Activación y des-ignorado del test de solución conocida `cf2_lundberg_veto_monotono_en_r` en `crates/risk-engine/tests/cf2_riesgo_solucion_conocida.rs`.
+  - Creación del nuevo contrato de integración formal `crates/risk-engine/tests/cramer_lundberg_exposure_monotonicity_contract.rs`.
+  - Actualización analítica de `ola9_veto_por_riesgo_cramer_lundberg_bounds`.
+  - Desacoplamiento dinámico de parámetros de micro-apalancamiento (`micro_lev_base`, `micro_lev_bonus`, `micro_lev_conf_center`, `micro_lev_conf_width`, `macro_lev_cap`) y coherencia espectral (`base_micro_ratio`, `spec_coh_scale`, `spec_ent_scale`) en `QuantumConfig`, `GodEngineCore::publish_quantum_parameters` y `RiskEngine::evaluate_single_intent`.
+
+- **POR QUÉ (Razones Técnicas y Físicas):**
+  - La formulación heredada evaluaba erróneamente `tope_efectivo = min(tope_streak, m)` donde $m = \frac{\ln(1/\epsilon)}{R}$. En la teoría actuarial clásica de Cramér-Lundberg, $m$ es el cojín de capital requerido para acotar la ruina a $\psi(m) \le \epsilon$. Un sistema con gran edge ($R = 40$) requiere menos cojín ($m \approx 0.075$) que un sistema débil ($R = 15$, $m \approx 0.20$). Comparar el riesgo por evento directamente contra $\min(\text{tope}, m)$ provocaba la catástrofe lógica de vetar estrategias de alto rendimiento ($0.082 > 0.075$) y admitir estrategias de bajo rendimiento ($0.082 \le 0.10$).
+  - Existían además constantes estáticas cableadas en `evaluate_single_intent` que impedían la calibración dinámica por activo.
+
+- **PARA QUÉ (Objetivos y Garantías):**
+  - Restablecer la monotonicidad estricta no-decreciente: $\text{veto}(R_{\text{high}}) \implies \text{veto}(R_{\text{low}})$. Más edge medido jamás debe castigarse.
+  - Escalar la exposición de capital según la verdadera cota actuarial: $f \le \frac{\text{tope\_streak}}{m} = \text{tope\_streak} \cdot \frac{R}{\ln(1/\epsilon)}$.
+  - Maximizar la tasa de interés compuesto de $13.00 USD ($g = \frac{\ln 2}{3} \approx 0.2310\text{ d}^{-1}$) sin estrangulamiento artificial.
+
+- **CÓMO (Mecanismo Interno Paso a Paso):**
+  1. En `crates/risk-engine/src/correlation_guard.rs`: se calcula `cota_l = tope_streak / m`, fijando `tope_efectivo = tope_streak.min(cota_l)`. Si $R \to \infty$, `cota_l \to \infty` y el tope queda acotado por el presupuesto de racha `tope_streak`. Si $R \to 0$, `cota_l \to 0` y veta inmediatamente deriva débil o negativa.
+  2. En `crates/risk-engine/tests/cf2_riesgo_solucion_conocida.rs`: se remueve `#[ignore = "OPEN F2.1-01..."]`. Verificado y pasando (`ok. 1 passed; 0 failed; 0 ignored`).
+  3. En `crates/risk-engine/tests/cramer_lundberg_exposure_monotonicity_contract.rs`: verificación exhaustiva sobre una rejilla $R \in [0.1, 2000.0]$, verificando monotonicidad, condición de contorno $R \to \infty$ y fallback a `tope_streak` con $R \le 0$ o `None`.
+  4. En `crates/quantum-arena/src/config.rs`: 8 nuevos campos atómicos en `QuantumConfig` (`micro_lev_base = 5.0`, `micro_lev_bonus = 1.5`, `micro_lev_conf_center = 0.65`, `micro_lev_conf_width = 0.10`, `macro_lev_cap = 50.0`, `base_micro_ratio = 0.66 / 0.62`, `spec_coh_scale = 0.10`, `spec_ent_scale = 0.30`).
+  5. En `crates/god-engine-core/src/lib.rs`: publicación atómica a `arena.registry` en cada ciclo de `publish_quantum_parameters`.
+  6. En `crates/risk-engine/src/lib.rs`: lectura atómica sin alocaciones vía `arena.registry.get_for_coin_or(...)` combinada con funciones de suavizado $C^1$ Hermite cúbico.
+
+- **CUÁNDO:** Activación continua y por evento en cada evaluación de intenciones cuánticas de riesgo.
+- **DÓNDE:** `crates/risk-engine/src/correlation_guard.rs`, `crates/risk-engine/src/lib.rs`, `crates/quantum-arena/src/config.rs`, `crates/god-engine-core/src/lib.rs`, `crates/risk-engine/tests/`.
+- **QUIÉN:** Antigravity (Quant Sr. Lead) en consenso colegiado con el Consejo de 10 Roles Senior.
+
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω129: Sincronización de Parámetros Dinámicos, Suavizado C^1 Hermite en Cointegración VECM y Resonancia Estocástica (2026-10-15)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F, Codex, Sol, Qoder y GLM:**
 - **Publicación del Plan Maestro Canónico V2 (2026-10-14):**
