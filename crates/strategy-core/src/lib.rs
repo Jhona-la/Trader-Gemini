@@ -9,7 +9,7 @@ pub mod vecm_arbitrage;
 pub mod yang_mills_gauge;
 
 pub use multivariate_coint::MultivariateCointegrationEngine;
-pub use vecm_arbitrage::{ContinuousOrnsteinUhlenbeckSde, JohansenVecmEngine};
+pub use vecm_arbitrage::{ContinuousOrnsteinUhlenbeckSde, JohansenVecmEngine, VecmArbitrageParams};
 pub use yang_mills_gauge::{YangMillsGaugeEngine, YangMillsParams};
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
