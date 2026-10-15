@@ -212,3 +212,34 @@ fn lh04_racha_extrema_no_crea_estado_absorbente() {
     let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
     assert!(f > 0.0, "bias 0.5: f encoge pero NO muere: {f}");
 }
+
+/// (8) P1 (GLM 120, mea culpa): el margen LH-04 NUNCA supera el tope
+/// del axioma de ruina × capital asignado. Con stop ceñido el nocional
+/// objetivo (f·C/SL) exigía margen > capital completo ⇒ el orquestador
+/// rechazaba sistemáticamente con otra posición abierta (REJ_ORCHESTRATOR,
+/// 7 corridas CI rojas — contrato flat_producer de god-engine-core).
+/// Ahora: margen ≤ tope·C (mismo tope que acota f, ≤25%).
+#[test]
+fn lh04_margen_nunca_supera_el_tope_del_axioma_por_capital() {
+    let (arena, intent) = fixture();
+    // Evidencia madura (activa LH-04) + ATR BAJO ⇒ stop ceñido ⇒
+    // nocional objetivo enorme (el caso que rompía).
+    arena.coins[0].metrics.win_rate.store(0.75, Relaxed);
+    arena.coins[0].metrics.trade_count.store(100, Relaxed);
+    arena.coins[0].metrics.profit_factor.store(2.0, Relaxed);
+    arena.coins[0].current_atr.store(0.01, Relaxed); // stop MUY ceñido
+    let mut engine = RiskEngine::new(1000.0);
+    let out = engine.evaluate_quantum_order(0, &intent, &arena);
+    let f = arena.registry.get_for_coin_or(0, "lh04_f_riesgo", f64::NAN);
+    if f > 0.0 && out.signal != SignalType::Flat {
+        // f ≤ 0.25 (axioma) ⇒ margen = min(obj, 0.25·1000) ≤ 250.
+        assert!(
+            out.volume_usd / out.leverage <= 250.0 + 1e-6,
+            "margen {} ≤ tope(0.25)·allocated(1000): el stop ceñido no
+            puede exigir el capital completo",
+            out.volume_usd / out.leverage
+        );
+    }
+    // Y si fue rechazado, NO fue por pedir margen desorbitado del
+    // orquestador en ESTE caso (una sola posición, capital holgado).
+}

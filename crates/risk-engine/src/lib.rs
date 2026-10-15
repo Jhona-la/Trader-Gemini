@@ -1372,7 +1372,27 @@ impl RiskEngine {
             let nocional_obj = lh04_f_efectiva * allocated_capital / continuous_sl;
             let margen_obj = nocional_obj / dynamic_leverage;
             if margen_obj.is_finite() && margen_obj > 0.0 {
-                final_margin = margen_obj.min(allocated_capital);
+                // P1 (GLM 120, mea culpa): con stop ceñido el nocional
+                // objetivo (f·C/SL) puede exigir un margen mayor que todo
+                // el capital — el clamps a allocated_capital COMPLETO
+                // hacía que el orquestador (colchón de exposición +
+                // posiciones abiertas) rechazara sistemáticamente
+                // (REJ_ORCHESTRATOR ×7 corridas CI: contrato
+                // flat_producer de god-engine-core). El margen se acota
+                // por el MISMO tope del axioma de ruina que acota f
+                // (≤25%): el riesgo-al-stop OBJETIVO sigue siendo f·C;
+                // cuando el stop ceñido lo haría inalcanzable, la orden
+                // se coloca al máximo que el axioma permite (no se
+                // rechaza) — riesgo realizado acotado por exposición.
+                let tope_margen_lh04 = if lh04_n >= 10.0 {
+                    crate::ruin::clamp_ruin(
+                        1.0,
+                        crate::ruin::conservative_loss_q(lh04_wr, lh04_n),
+                    )
+                } else {
+                    0.25
+                };
+                final_margin = margen_obj.min(allocated_capital * tope_margen_lh04);
             }
         }
         // Telemetría LH-04 (auditable por moneda): f EFECTIVA (post-racha).
