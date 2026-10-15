@@ -34,15 +34,84 @@ use crate::voto_espectral::{VotoEspectral, ESCALAS_VOTO};
 /// 4. **Garantías de Alto Rendimiento**:
 ///    - O(1) determinista en CPU (< 25 ns en hot path), #[inline(always)], zero heap allocations.
 ///    - Inmunidad total fail-closed ante NaN, ±Inf o parámetros no finitos.
-#[derive(Clone, Default)]
+/// ⚛️ OLA Ω122: Parámetros desacoplados y configurables para el propagador cuántico de Feynman
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FeynmanPropagatorParams {
+    /// Constante de Planck efectiva del mercado ħ_eff (default: 1.0)
+    pub hbar_effective: f64,
+    /// Masa inercial efectiva modal m (default: 1.0)
+    pub mass: f64,
+    /// Constante armónica de resorte cuántico k_spring (default: 1.0)
+    pub k_spring: f64,
+    /// Coeficiente de no-linealidad cuántica cuártica λ_quartic (default: 0.10)
+    pub lambda_quartic: f64,
+    /// Factor de acoplamiento de la acción cuántica lagrangiana en la fase (default: 0.10)
+    pub action_coupling: f64,
+    /// Factor de escala del argumento tanh en la amplitud modal (default: 0.50)
+    pub amplitude_scale: f64,
+    /// Umbral mínimo de coherencia cuántica constructiva C_coh (default: 0.20)
+    pub coherence_threshold: f64,
+}
+
+impl Default for FeynmanPropagatorParams {
+    fn default() -> Self {
+        Self {
+            hbar_effective: FeynmanPropagatorEngine::DEFAULT_HBAR_EFF,
+            mass: FeynmanPropagatorEngine::DEFAULT_MASS,
+            k_spring: FeynmanPropagatorEngine::DEFAULT_K_SPRING,
+            lambda_quartic: FeynmanPropagatorEngine::DEFAULT_LAMBDA_QUARTIC,
+            action_coupling: 0.10,
+            amplitude_scale: 0.50,
+            coherence_threshold: 0.20,
+        }
+    }
+}
+
+impl FeynmanPropagatorParams {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.hbar_effective.is_finite() || !(0.01..=100.0).contains(&self.hbar_effective) {
+            return Err(format!("Invalid hbar_effective: {}", self.hbar_effective));
+        }
+        if !self.mass.is_finite() || !(0.01..=100.0).contains(&self.mass) {
+            return Err(format!("Invalid mass: {}", self.mass));
+        }
+        if !self.k_spring.is_finite() || !(0.0..=100.0).contains(&self.k_spring) {
+            return Err(format!("Invalid k_spring: {}", self.k_spring));
+        }
+        if !self.lambda_quartic.is_finite() || !(0.0..=10.0).contains(&self.lambda_quartic) {
+            return Err(format!("Invalid lambda_quartic: {}", self.lambda_quartic));
+        }
+        if !self.action_coupling.is_finite() || !(0.0..=2.0).contains(&self.action_coupling) {
+            return Err(format!("Invalid action_coupling: {}", self.action_coupling));
+        }
+        if !self.amplitude_scale.is_finite() || !(0.05..=5.0).contains(&self.amplitude_scale) {
+            return Err(format!("Invalid amplitude_scale: {}", self.amplitude_scale));
+        }
+        if !self.coherence_threshold.is_finite() || !(0.01..=0.80).contains(&self.coherence_threshold) {
+            return Err(format!("Invalid coherence_threshold: {}", self.coherence_threshold));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 #[repr(C, align(64))]
 pub struct FeynmanPropagatorEngine {
     registry: Option<Arc<OmniscientRegistry>>,
+    pub params: FeynmanPropagatorParams,
+}
+
+impl Default for FeynmanPropagatorEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl std::fmt::Debug for FeynmanPropagatorEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FeynmanPropagatorEngine").finish()
+        f.debug_struct("FeynmanPropagatorEngine")
+            .field("params", &self.params)
+            .finish()
     }
 }
 
@@ -53,7 +122,25 @@ impl FeynmanPropagatorEngine {
     pub const DEFAULT_LAMBDA_QUARTIC: f64 = 0.10;
 
     pub fn new() -> Self {
-        Self { registry: None }
+        Self {
+            registry: None,
+            params: FeynmanPropagatorParams::default(),
+        }
+    }
+
+    /// OLA Ω122: Constructor con parámetros desacoplados específicos
+    pub fn with_params(mut self, params: FeynmanPropagatorParams) -> Self {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+        self
+    }
+
+    /// OLA Ω122: Actualización dinámica de parámetros
+    pub fn update_params(&mut self, params: FeynmanPropagatorParams) {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
     }
 
     /// Calcula la función lagrangiana L(z, v) = T - V:
@@ -167,15 +254,21 @@ impl FeynmanPropagatorEngine {
     ///
     /// Modula la señal por la coherencia cuántica multiescala: si las escalas interfieren destructivamente,
     /// el voto colapsa a 0.0 protegiendo contra fases estocásticas desalineadas.
+    /// OLA Ω122: Genera el voto espectral de la integral de camino con parámetros dinámicos configurables.
     #[inline(always)]
-    pub fn voto_espectral_con_coherencia(
+    pub fn voto_espectral_con_coherencia_with_params(
         desplazamientos: &[f64; ESCALAS_VOTO],
-        hbar_eff: f64,
-        mass: f64,
-        k_spring: f64,
+        params: &FeynmanPropagatorParams,
     ) -> (VotoEspectral, f64) {
         let mut phases = [(1.0f64, 0.0f64); ESCALAS_VOTO];
         let mut amplitudes = [0.0f64; ESCALAS_VOTO];
+
+        let safe_m = if params.mass.is_finite() && params.mass > 0.0 { params.mass } else { Self::DEFAULT_MASS };
+        let safe_k = if params.k_spring.is_finite() && params.k_spring >= 0.0 { params.k_spring } else { Self::DEFAULT_K_SPRING };
+        let safe_lambda = if params.lambda_quartic.is_finite() && params.lambda_quartic >= 0.0 { params.lambda_quartic } else { Self::DEFAULT_LAMBDA_QUARTIC };
+        let safe_hbar = if params.hbar_effective.is_finite() && params.hbar_effective > 0.0 { params.hbar_effective } else { Self::DEFAULT_HBAR_EFF };
+        let action_coupling = if params.action_coupling.is_finite() { params.action_coupling } else { 0.10 };
+        let amp_scale = if params.amplitude_scale.is_finite() && params.amplitude_scale > 0.0 { params.amplitude_scale } else { 0.50 };
 
         // 1. Calcular lagrangiano, acción y fase canónica en cada escala
         for k in 0..ESCALAS_VOTO {
@@ -195,20 +288,17 @@ impl FeynmanPropagatorEngine {
             // En el espacio de fases de Hilbert (z, vel), la fase cuántica modal se define por el ángulo de fase canónico:
             //   θ_k = atan2(vel · mass, safe_z · √k_spring)
             // Cuando todas las escalas están alineadas en la misma dirección, θ_k ≈ constante (en fase coherente pura).
-            let safe_m = if mass.is_finite() && mass > 0.0 { mass } else { Self::DEFAULT_MASS };
-            let safe_k = if k_spring.is_finite() && k_spring >= 0.0 { k_spring } else { Self::DEFAULT_K_SPRING };
             let p_momentum = vel * safe_m;
             let q_coord = safe_z * safe_k.max(1e-4).sqrt();
             let phase_angle = p_momentum.atan2(q_coord);
 
             // REV-6: Modulación por acción cuántica lagrangiana S / ħ acotada sobre la superficie de energía
-            let lagrangian = Self::compute_lagrangian(safe_z, vel, safe_m, safe_k, Self::DEFAULT_LAMBDA_QUARTIC);
-            let safe_hbar = if hbar_eff.is_finite() && hbar_eff > 0.0 { hbar_eff } else { Self::DEFAULT_HBAR_EFF };
+            let lagrangian = Self::compute_lagrangian(safe_z, vel, safe_m, safe_k, safe_lambda);
             let action_phase = (lagrangian / (safe_hbar * (1.0 + safe_z * safe_z + vel * vel))).tanh();
-            let total_theta = phase_angle + 0.10 * action_phase;
+            let total_theta = phase_angle + action_coupling * action_phase;
 
             phases[k] = (total_theta.cos(), total_theta.sin());
-            amplitudes[k] = (safe_z.abs() * 0.5).tanh().clamp(0.0, 1.0);
+            amplitudes[k] = (safe_z.abs() * amp_scale).tanh().clamp(0.0, 1.0);
         }
 
         // 2. REV-7: Coherencia cuántica global normalizada por el número de escalas activas (no static 32)
@@ -232,6 +322,31 @@ impl FeynmanPropagatorEngine {
         }
 
         (VotoEspectral::desde_arr(&por_escala), normalized_coherence)
+    }
+
+    /// OLA Ω122: Voto espectral con parámetros completos
+    #[inline(always)]
+    pub fn voto_espectral_with_params(
+        desplazamientos: &[f64; ESCALAS_VOTO],
+        params: &FeynmanPropagatorParams,
+    ) -> VotoEspectral {
+        Self::voto_espectral_con_coherencia_with_params(desplazamientos, params).0
+    }
+
+    /// Genera el voto espectral de la integral de camino y retorna simultáneamente (VotoEspectral, coherencia_normalizada).
+    /// Delegado a `voto_espectral_con_coherencia_with_params` para retrocompatibilidad total.
+    #[inline(always)]
+    pub fn voto_espectral_con_coherencia(
+        desplazamientos: &[f64; ESCALAS_VOTO],
+        hbar_eff: f64,
+        mass: f64,
+        k_spring: f64,
+    ) -> (VotoEspectral, f64) {
+        let mut params = FeynmanPropagatorParams::default();
+        if hbar_eff.is_finite() && hbar_eff > 0.0 { params.hbar_effective = hbar_eff; }
+        if mass.is_finite() && mass > 0.0 { params.mass = mass; }
+        if k_spring.is_finite() && k_spring >= 0.0 { params.k_spring = k_spring; }
+        Self::voto_espectral_con_coherencia_with_params(desplazamientos, &params)
     }
 
     /// Genera el voto espectral de la integral de camino VotoEspectral en O(1) puro sobre la malla de 32 escalas.
@@ -292,11 +407,15 @@ impl QuantumStrategy for FeynmanPropagatorEngine {
         let safe_coh = coherence.clamp(0.0, 1.0);
         let safe_v = dominant_v.clamp(-1.0, 1.0);
 
-        // Si la coherencia cuántica es alta (C > 0.40), amplifica suavemente la dirección dominante;
-        // si la coherencia colapsa (C < 0.20), atenúa a cero por decoherencia térmica.
-        // Transmisión C¹ suave via smoothstep cúbico Hermite (sin torceduras en derivada).
-        if safe_coh > 0.20 {
-            let u = ((safe_coh - 0.20) / 0.80).clamp(0.0, 1.0);
+        // OLA Ω122: Transmisión C¹ suave via smoothstep cúbico Hermite adaptativa
+        let thresh = if self.params.coherence_threshold.is_finite() {
+            self.params.coherence_threshold.clamp(0.01, 0.90)
+        } else {
+            0.20
+        };
+        let range = (1.0 - thresh).max(0.01);
+        if safe_coh > thresh {
+            let u = ((safe_coh - thresh) / range).clamp(0.0, 1.0);
             let transmission = u * u * (3.0 - 2.0 * u);
             (safe_v * transmission).clamp(-1.0, 1.0)
         } else {

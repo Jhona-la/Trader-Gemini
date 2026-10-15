@@ -25,7 +25,7 @@ pub mod welford;
 pub use correlation::MarketCorrelationHeatmap;
 pub use ewma::Ewma;
 pub use hawkes::HawkesProcessEngine;
-pub use hodge_flow::{HelmholtzHodgeFlowEngine, HodgeDecompositionResult};
+pub use hodge_flow::{HelmholtzHodgeFlowEngine, HelmholtzHodgeParams, HodgeDecompositionResult};
 pub use kalman::KalmanFilter1D;
 pub use lead_lag::LeadLagAlphaEngine;
 pub use microstructure::{

@@ -52,11 +52,49 @@ pub struct HodgeDecompositionResult {
     pub num_nodes: usize,
 }
 
+/// 🌊 OLA Ω122: Parámetros desacoplados y configurables para la descomposición de Helmholtz-Hodge
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HelmholtzHodgeParams {
+    /// Sensibilidad de escala para el argumento tanh en los retornos cruzados L2/L3 (default: 100.0)
+    pub return_sensitivity: f64,
+    /// Umbral mínimo de energía de flujo para considerar el grafo activo (default: 1e-15)
+    pub min_flow_energy_threshold: f64,
+}
+
+impl Default for HelmholtzHodgeParams {
+    fn default() -> Self {
+        Self {
+            return_sensitivity: 100.0,
+            min_flow_energy_threshold: 1e-15,
+        }
+    }
+}
+
+impl HelmholtzHodgeParams {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.return_sensitivity.is_finite() || !(1.0..=10000.0).contains(&self.return_sensitivity) {
+            return Err(format!("Invalid return_sensitivity: {}", self.return_sensitivity));
+        }
+        if !self.min_flow_energy_threshold.is_finite() || self.min_flow_energy_threshold < 0.0 || self.min_flow_energy_threshold > 1e-3 {
+            return Err(format!("Invalid min_flow_energy_threshold: {}", self.min_flow_energy_threshold));
+        }
+        Ok(())
+    }
+}
+
 /// Motor de descomposición de Helmholtz-Hodge sobre flujos de liquidez multiactivo.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct HelmholtzHodgeFlowEngine {
     /// Número de activos en la red (≤ MAX_HODGE_ASSETS)
     pub num_assets: usize,
+    /// OLA Ω122: Parámetros desacoplados y configurables
+    pub params: HelmholtzHodgeParams,
+}
+
+impl Default for HelmholtzHodgeFlowEngine {
+    fn default() -> Self {
+        Self::new(MAX_HODGE_ASSETS)
+    }
 }
 
 impl HelmholtzHodgeFlowEngine {
@@ -64,6 +102,22 @@ impl HelmholtzHodgeFlowEngine {
     pub fn new(num_assets: usize) -> Self {
         Self {
             num_assets: num_assets.clamp(3, MAX_HODGE_ASSETS),
+            params: HelmholtzHodgeParams::default(),
+        }
+    }
+
+    /// OLA Ω122: Constructor con parámetros específicos
+    pub fn with_params(mut self, params: HelmholtzHodgeParams) -> Self {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+        self
+    }
+
+    /// OLA Ω122: Actualización dinámica de parámetros
+    pub fn update_params(&mut self, params: HelmholtzHodgeParams) {
+        if params.validate().is_ok() {
+            self.params = params;
         }
     }
 
@@ -119,7 +173,8 @@ impl HelmholtzHodgeFlowEngine {
             }
         }
 
-        if total_energy <= 1e-15 || !total_energy.is_finite() || non_isolated_nodes < 3 {
+        let min_energy = self.params.min_flow_energy_threshold.max(1e-15);
+        if total_energy <= min_energy || !total_energy.is_finite() || non_isolated_nodes < 3 {
             return None; // Flujo simétrico o nulo, o menos de 3 nodos activos con flujo dirigido
         }
 
@@ -207,23 +262,21 @@ impl HelmholtzHodgeFlowEngine {
         (matrix, 3)
     }
 
-    /// Construye una matriz de flujo cruzado asimétrico a partir de desequilibrios de órdenes (OFI)
-    /// y retornos de precio instantáneos de cada activo.
-    ///
-    /// El flujo neto dirigido entre el activo i y el activo j se modela como:
-    ///   F_{ij} = 0.5 * (OFI_i * tanh(ret_j * 100.0) - OFI_j * tanh(ret_i * 100.0))
-    ///
-    /// Esta construcción es estrictamente antisimétrica (F_{ji} = -F_{ij}), nula en la diagonal (F_{ii} = 0),
-    /// y captura la interacción cruzada L2/L3: cuando la presión de liquidez en i induce movimiento en j
-    /// de forma dislocada respecto a la reacción de i ante j, surge un rotacional genuino de Helmholtz-Hodge (curl_share > 0).
-    pub fn build_cross_microstructure_flow_matrix(
+    /// OLA Ω122: Construye una matriz de flujo cruzado asimétrico con parámetros adaptativos de Helmholtz-Hodge
+    pub fn build_cross_microstructure_flow_matrix_with_params(
         ofis: &[f64],
         returns: &[f64],
+        params: &HelmholtzHodgeParams,
     ) -> Option<([[f64; MAX_HODGE_ASSETS]; MAX_HODGE_ASSETS], usize)> {
         let n = ofis.len().min(returns.len()).min(MAX_HODGE_ASSETS);
         if n < 3 {
             return None;
         }
+        let ret_scale = if params.return_sensitivity.is_finite() && params.return_sensitivity > 0.0 {
+            params.return_sensitivity
+        } else {
+            100.0
+        };
         let mut matrix = [[0.0_f64; MAX_HODGE_ASSETS]; MAX_HODGE_ASSETS];
         for i in 0..n {
             let ofi_i = ofis[i];
@@ -231,7 +284,7 @@ impl HelmholtzHodgeFlowEngine {
             if !ofi_i.is_finite() || !ret_i.is_finite() {
                 return None;
             }
-            let sig_i = (ret_i * 100.0).tanh();
+            let sig_i = (ret_i * ret_scale).tanh();
             for j in 0..n {
                 if i == j {
                     continue;
@@ -241,10 +294,27 @@ impl HelmholtzHodgeFlowEngine {
                 if !ofi_j.is_finite() || !ret_j.is_finite() {
                     return None;
                 }
-                let sig_j = (ret_j * 100.0).tanh();
+                let sig_j = (ret_j * ret_scale).tanh();
                 matrix[i][j] = 0.5 * (ofi_i * sig_j - ofi_j * sig_i);
             }
         }
         Some((matrix, n))
+    }
+
+    /// Construye una matriz de flujo cruzado asimétrico a partir de desequilibrios de órdenes (OFI)
+    /// y retornos de precio instantáneos de cada activo con parámetros por defecto.
+    ///
+    /// El flujo neto dirigido entre el activo i y el activo j se modela como:
+    ///   F_{ij} = 0.5 * (OFI_i * tanh(ret_j * sensitivity) - OFI_j * tanh(ret_i * sensitivity))
+    ///
+    /// Esta construcción es estrictamente antisimétrica (F_{ji} = -F_{ij}), nula en la diagonal (F_{ii} = 0),
+    /// y captura la interacción cruzada L2/L3: cuando la presión de liquidez en i induce movimiento en j
+    /// de forma dislocada respecto a la reacción de i ante j, surge un rotacional genuino de Helmholtz-Hodge (curl_share > 0).
+    #[inline]
+    pub fn build_cross_microstructure_flow_matrix(
+        ofis: &[f64],
+        returns: &[f64],
+    ) -> Option<([[f64; MAX_HODGE_ASSETS]; MAX_HODGE_ASSETS], usize)> {
+        Self::build_cross_microstructure_flow_matrix_with_params(ofis, returns, &HelmholtzHodgeParams::default())
     }
 }

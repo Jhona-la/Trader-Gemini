@@ -37,6 +37,48 @@ use std::sync::Arc;
 
 pub const MAX_GAUGE_ASSETS: usize = 32;
 
+/// ⚡ OLA Ω122: Parámetros desacoplados y configurables para la teoría de gauge Yang-Mills
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct YangMillsParams {
+    /// Tasa de adaptación estocástica LMS normalizada $\gamma$ (default: 0.005)
+    pub adaptation_rate: f64,
+    /// Cota inferior admisible para ratios de conexión $\beta_{ij}$ (default: 0.01)
+    pub beta_min: f64,
+    /// Cota superior admisible para ratios de conexión $\beta_{ij}$ (default: 100.0)
+    pub beta_max: f64,
+    /// Factor de escala para corrientes restauradoras $\mathcal{J}_i$ en el argumento tanh (default: 1.0)
+    pub current_scale: f64,
+}
+
+impl Default for YangMillsParams {
+    fn default() -> Self {
+        Self {
+            adaptation_rate: 0.005,
+            beta_min: 0.01,
+            beta_max: 100.0,
+            current_scale: 1.0,
+        }
+    }
+}
+
+impl YangMillsParams {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.adaptation_rate.is_finite() || !(1e-5..=0.1).contains(&self.adaptation_rate) {
+            return Err(format!("Invalid adaptation_rate: {}", self.adaptation_rate));
+        }
+        if !self.beta_min.is_finite() || !(0.0001..=1.0).contains(&self.beta_min) {
+            return Err(format!("Invalid beta_min: {}", self.beta_min));
+        }
+        if !self.beta_max.is_finite() || !(1.0..=10000.0).contains(&self.beta_max) || self.beta_max <= self.beta_min {
+            return Err(format!("Invalid beta_max: {}", self.beta_max));
+        }
+        if !self.current_scale.is_finite() || !(0.01..=10.0).contains(&self.current_scale) {
+            return Err(format!("Invalid current_scale: {}", self.current_scale));
+        }
+        Ok(())
+    }
+}
+
 /// Estado y estimador de curvatura de Yang-Mills sobre el universo multiactivo.
 #[derive(Debug, Clone)]
 pub struct YangMillsGaugeEngine {
@@ -46,6 +88,8 @@ pub struct YangMillsGaugeEngine {
     pub beta_matrix: [[f64; MAX_GAUGE_ASSETS]; MAX_GAUGE_ASSETS],
     /// Tasa de adaptación RLS para betas de conexión
     pub adaptation_rate: f64,
+    /// OLA Ω122: Parámetros desacoplados y configurables
+    pub params: YangMillsParams,
     /// Últimos log-precios observados
     pub last_ln_prices: [f64; MAX_GAUGE_ASSETS],
     /// Conteo de observaciones válidas
@@ -68,20 +112,41 @@ impl YangMillsGaugeEngine {
         for i in 0..MAX_GAUGE_ASSETS {
             beta[i][i] = 1.0;
         }
+        let default_params = YangMillsParams::default();
         Self {
             num_assets: n,
             beta_matrix: beta,
-            adaptation_rate: 0.005,
+            adaptation_rate: default_params.adaptation_rate,
+            params: default_params,
             last_ln_prices: [0.0; MAX_GAUGE_ASSETS],
             count: 0,
             registry: None,
         }
     }
 
+    /// OLA Ω122: Constructor con parámetros desacoplados específicos
+    pub fn with_params(mut self, params: YangMillsParams) -> Self {
+        if params.validate().is_ok() {
+            self.adaptation_rate = params.adaptation_rate;
+            self.params = params;
+        }
+        self
+    }
+
+    /// OLA Ω122: Actualización dinámica de parámetros
+    pub fn update_params(&mut self, params: YangMillsParams) {
+        if params.validate().is_ok() {
+            self.adaptation_rate = params.adaptation_rate;
+            self.params = params;
+        }
+    }
+
     /// Configura la tasa de adaptación adaptativa de los coeficientes de conexión $\beta_{ij}$.
     pub fn with_adaptation_rate(mut self, rate: f64) -> Self {
         if rate.is_finite() && rate > 0.0 {
-            self.adaptation_rate = rate.clamp(1e-5, 0.1);
+            let r = rate.clamp(1e-5, 0.1);
+            self.adaptation_rate = r;
+            self.params.adaptation_rate = r;
         }
         self
     }
@@ -89,9 +154,9 @@ impl YangMillsGaugeEngine {
     /// Configura el ratio de elasticidad de conexión beta entre dos activos i y j.
     pub fn with_beta(mut self, i: usize, j: usize, beta: f64) -> Self {
         if i < MAX_GAUGE_ASSETS && j < MAX_GAUGE_ASSETS && beta.is_finite() && beta > 0.0 {
-            let b = beta.clamp(0.01, 100.0);
+            let b = beta.clamp(self.params.beta_min, self.params.beta_max);
             self.beta_matrix[i][j] = b;
-            self.beta_matrix[j][i] = (1.0 / b).clamp(0.01, 100.0);
+            self.beta_matrix[j][i] = (1.0 / b).clamp(self.params.beta_min, self.params.beta_max);
         }
         self
     }
@@ -150,7 +215,9 @@ impl YangMillsGaugeEngine {
         // R6-C6: Si r_j == 0 (el activo j no cotizó en este tick), step == 0 exactamente,
         // eliminando cualquier deriva espuria o dependencia del camino de llegada de ticks.
         if self.count > 0 {
-            let gamma = self.adaptation_rate;
+            let gamma = self.params.adaptation_rate;
+            let b_min = self.params.beta_min;
+            let b_max = self.params.beta_max;
             for vi in 0..n_valid {
                 let i = valid_indices[vi];
                 let r_i = returns[i];
@@ -161,9 +228,9 @@ impl YangMillsGaugeEngine {
                     let err = r_i - self.beta_matrix[i][j] * r_j;
                     if err.is_finite() && r_j.abs() > 1e-12 {
                         let step = gamma * ((err * r_j) / (1.0 + r_j * r_j));
-                        let new_beta = (self.beta_matrix[i][j] + step).clamp(0.01, 100.0);
+                        let new_beta = (self.beta_matrix[i][j] + step).clamp(b_min, b_max);
                         self.beta_matrix[i][j] = new_beta;
-                        self.beta_matrix[j][i] = (1.0 / new_beta).clamp(0.01, 100.0);
+                        self.beta_matrix[j][i] = (1.0 / new_beta).clamp(b_min, b_max);
                     }
                 }
             }
@@ -259,10 +326,15 @@ impl YangMillsGaugeEngine {
         self.count += 1;
 
         // Normalización de corrientes por el número de ciclos incidentes y clamp suave a [-1.0, 1.0]
+        let c_scale = if self.params.current_scale.is_finite() && self.params.current_scale > 0.0 {
+            self.params.current_scale
+        } else {
+            1.0
+        };
         for vi in 0..n_valid {
             let i = valid_indices[vi];
             if cycle_counts[i] > 0.0 {
-                currents[i] = (currents[i] / cycle_counts[i]).tanh();
+                currents[i] = ((currents[i] / cycle_counts[i]) * c_scale).tanh();
             }
         }
 

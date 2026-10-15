@@ -1684,6 +1684,21 @@ impl GodEngineCore {
         for fe in self.feature_engines.iter_mut() {
             fe.ofi_model.set_alpha(ofi_alpha);
         }
+
+        // OLA Ω122: Sincronización de Yang-Mills y Helmholtz-Hodge desde QuantumConfig
+        let ym_rate = self.arena.config.yang_mills_adaptation_rate.load(Ordering::Relaxed);
+        let ym_params = strategy_core::YangMillsParams {
+            adaptation_rate: ym_rate,
+            ..Default::default()
+        };
+        self.yang_mills_engine.update_params(ym_params);
+
+        let hodge_ret_sens = self.arena.config.hodge_return_sensitivity.load(Ordering::Relaxed);
+        let hodge_params = feature_engine::HelmholtzHodgeParams {
+            return_sensitivity: hodge_ret_sens,
+            ..Default::default()
+        };
+        self.hodge_flow_engine.update_params(hodge_params);
     }
 
     #[inline]
@@ -3048,12 +3063,19 @@ impl GodEngineCore {
                     }
 
                     // REV-5: SOMBRA ESPECTRAL de FEYNMAN PROPAGATOR (Integral de Camino de Hilbert)
+                    let fey_hbar = self.arena.config.feynman_hbar.load(Ordering::Relaxed);
+                    let fey_mass = self.arena.config.feynman_mass.load(Ordering::Relaxed);
+                    let fey_k = self.arena.config.feynman_k_spring.load(Ordering::Relaxed);
+                    let fey_params = signal_engine::feynman_propagator::FeynmanPropagatorParams {
+                        hbar_effective: fey_hbar,
+                        mass: fey_mass,
+                        k_spring: fey_k,
+                        ..Default::default()
+                    };
                     let (voto_feynman, fey_coherence) =
-                        signal_engine::feynman_propagator::FeynmanPropagatorEngine::voto_espectral_con_coherencia(
+                        signal_engine::feynman_propagator::FeynmanPropagatorEngine::voto_espectral_con_coherencia_with_params(
                             &desplazamientos,
-                            1.0,
-                            1.0,
-                            1.0,
+                            &fey_params,
                         );
                     self.arena
                         .registry

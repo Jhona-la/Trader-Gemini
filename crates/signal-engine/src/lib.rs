@@ -27,7 +27,7 @@ pub mod stochastic_resonance;
 pub mod supersonic_shockwave;
 pub mod trend_runner;
 
-pub use feynman_propagator::FeynmanPropagatorEngine;
+pub use feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
 pub use maker::{MakerEngine, MakerQuote};
 pub use navier_stokes_manifold::{NavierStokesManifoldEngine, NavierStokesManifoldParams};
 pub use orchestrator::compute_ensemble_boost;

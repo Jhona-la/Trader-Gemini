@@ -236,6 +236,14 @@ pub struct QuantumConfig {
     pub navier_critical_turbulent: AtomicF64,
     pub navier_relaxation_time_s: AtomicF64,
     pub ofi_ewma_alpha: AtomicF64,
+
+    // --- Física Cuántica, Gauge y Topología de Flujos (Ola Ω122) ---
+    pub feynman_hbar: AtomicF64,
+    pub feynman_mass: AtomicF64,
+    pub feynman_k_spring: AtomicF64,
+    pub feynman_coherence_threshold: AtomicF64,
+    pub yang_mills_adaptation_rate: AtomicF64,
+    pub hodge_return_sensitivity: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -505,6 +513,12 @@ impl QuantumConfig {
             navier_critical_turbulent: AtomicF64::new(5.0),
             navier_relaxation_time_s: AtomicF64::new(0.200),
             ofi_ewma_alpha: AtomicF64::new(0.10),
+            feynman_hbar: AtomicF64::new(1.0),
+            feynman_mass: AtomicF64::new(1.0),
+            feynman_k_spring: AtomicF64::new(1.0),
+            feynman_coherence_threshold: AtomicF64::new(0.20),
+            yang_mills_adaptation_rate: AtomicF64::new(0.005),
+            hodge_return_sensitivity: AtomicF64::new(100.0),
         }
     }
 
