@@ -1,5 +1,41 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω123 — Desacoplamiento Dinámico y Parametrización Adaptativa en Rényi-Tsallis Entropy, Quantum Oscillator y Supersonic Shockwave
+
+- **Ola Integrada y Certificada en `main`**:
+  * **Diagnóstico y Causa Raíz**:
+    1. En `crates/signal-engine/src/renyi_tsallis_entropy.rs`, la pertenencia continua smoothstep $C^1$ y el cálculo de convicción de orden OBI estaban acoplados a constantes fijas congeladas en el código: `tsallis < 0.60`, `|obi| > 0.15`, con bandas de transición fijas `[0.40, 0.60]` y `[0.15, 0.30]`. Esto impedía adaptar el umbral de entropía no-extensiva o la sensibilidad OBI ante cambios de volatilidad o régimen de mercado.
+    2. En `crates/signal-engine/src/quantum_oscillator.rs`, la fuerza restauradora del pozo de potencial anarmónico $V(x) = \frac{1}{2} k x^2 + \lambda x^4$ y la envolvente de confinamiento cuántico $C(x) = \exp(-\alpha x^2)$ utilizaban valores por defecto fijos no configurables en la instancia del motor ni en la votación espectral. En la sombra espectral de `god-engine-core`, se leían del registro con literales de fallback hardcodeados (`1.0, 0.1, 0.5`).
+    3. En `crates/signal-engine/src/supersonic_shockwave.rs`, el cálculo del salto de compresión de Rankine-Hugoniot en el frente de onda supersónico asumía un umbral de número de Mach unitario rígido ($M > 1.0$), una escala tanh arbitraria fija (`2.0`), y en la sombra espectral de `god-engine-core` se pasaba un literal fijo `1.0`.
+  * **Solución Matemática y Continua**:
+    1. En `crates/signal-engine/src/renyi_tsallis_entropy.rs`:
+       - Definido `RenyiTsallisEntropyParams` con campos `q_tsallis`, `alpha_renyi`, `entropy_threshold_low`, `entropy_threshold_high`, `obi_threshold_low`, `obi_threshold_high` y validaciones estrictas en `validate()`.
+       - Integrados `with_params`, `update_params`, y `vote_with_params` con rampa suave $C^1$ cubic Hermite y política de cierre seguro fail-closed (inmunidad estricta ante valores no-finitos o negativos en $q$ u OBI).
+       - Conectadas las funciones `evaluate` y `evaluate_for_coin` a `self.params`.
+    2. En `crates/signal-engine/src/quantum_oscillator.rs`:
+       - Definido `QuantumOscillatorParams` con campos `k_spring`, `lambda_anharmonic`, `alpha_confinement` y validaciones en `validate()`.
+       - Integrados `with_params`, `update_params`, `voto_espectral_with_params` sobre la malla diádica de 32 escalas, y conectadas las evaluaciones locales y por moneda.
+    3. En `crates/signal-engine/src/supersonic_shockwave.rs`:
+       - Definido `SupersonicShockwaveParams` con campos `sonic_speed_z`, `mach_threshold`, `signature_scale`, `min_speed_of_sound` y validaciones en `validate()`.
+       - Implementado `compute_shockwave_jump_with_threshold(mach, threshold)`.
+       - Implementado `voto_espectral_with_params` y conectada la evaluación en `evaluate_for_coin` usando `self.params.mach_threshold` y `self.params.signature_scale`.
+    4. En `crates/signal-engine/src/lib.rs`:
+       - Re-exportados todos los nuevos structs y parámetros: `RenyiTsallisEntropyParams`, `QuantumOscillatorEngine`, `QuantumOscillatorParams`, `SupersonicShockwaveEngine`, `SupersonicShockwaveParams`.
+    5. En `crates/quantum-arena/src/config.rs`:
+       - Agregados 7 campos atómicos lock-free en `QuantumConfig`: `tsallis_q`, `renyi_alpha`, `quantum_osc_k`, `quantum_osc_lambda`, `quantum_osc_alpha`, `shockwave_sonic_speed_z`, `shockwave_mach_threshold`, inicializados en `from_genome`.
+    6. En `crates/god-engine-core/src/lib.rs`:
+       - Erradicados los literales estáticos en las sombras espectrales de `QuantumOscillatorEngine` y `SupersonicShockwaveEngine`, leyendo dinámicamente de `self.arena.config` con overlay del registro omnisciente.
+       - Conectado `RenyiTsallisEntropyEngine::new(q_tsallis, alpha_renyi)` a los parámetros atómicos de `QuantumConfig`.
+  * **Certificación Contractual**:
+    - `entropy_oscillator_shockwave_adaptation_contract.rs` (4/4 pass):
+      1. `test_renyi_tsallis_params_validation_and_defaults`: Paridad física y validación de cotas e inversiones.
+      2. `test_renyi_tsallis_engine_adaptation_and_smoothness`: Rampa suave $C^1$, monotonía OBI y fail-closed ante NaN.
+      3. `test_quantum_oscillator_params_validation_and_force`: Fuerza restauradora $F(x) = -(k x + 4 \lambda x^3)$, modulación de confinamiento y voto espectral en 32 escalas.
+      4. `test_supersonic_shockwave_params_validation_and_mach_jump`: Número de Mach, compresión de choque con umbral adaptativo y firma antisimétrica de onda.
+    - Suite completa de `signal-engine` (75 pass, 1 ignore).
+    - `cargo check -p god-engine-core` (pass).
+    - `cargo check --workspace --all-targets` (exit 0).
+
 ## 2026-10-14 — Antigravity (AGY, Quant Sr. Lead): Ola Ω117 — Desacoplamiento Dinámico de Umbrales ML y Factores Metacognitivos en SeniorML y SeniorMetacognitivo
 
 - **Ola Integrada y Certificada en `main`**:

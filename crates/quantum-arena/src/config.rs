@@ -244,6 +244,15 @@ pub struct QuantumConfig {
     pub feynman_coherence_threshold: AtomicF64,
     pub yang_mills_adaptation_rate: AtomicF64,
     pub hodge_return_sensitivity: AtomicF64,
+
+    // --- Entropía no-extensiva, Oscilador Cuántico y Ondas de Choque (Ola Ω123) ---
+    pub tsallis_q: AtomicF64,
+    pub renyi_alpha: AtomicF64,
+    pub quantum_osc_k: AtomicF64,
+    pub quantum_osc_lambda: AtomicF64,
+    pub quantum_osc_alpha: AtomicF64,
+    pub shockwave_sonic_speed_z: AtomicF64,
+    pub shockwave_mach_threshold: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -519,6 +528,13 @@ impl QuantumConfig {
             feynman_coherence_threshold: AtomicF64::new(0.20),
             yang_mills_adaptation_rate: AtomicF64::new(0.005),
             hodge_return_sensitivity: AtomicF64::new(100.0),
+            tsallis_q: AtomicF64::new(1.5),
+            renyi_alpha: AtomicF64::new(2.0),
+            quantum_osc_k: AtomicF64::new(1.0),
+            quantum_osc_lambda: AtomicF64::new(0.1),
+            quantum_osc_alpha: AtomicF64::new(0.5),
+            shockwave_sonic_speed_z: AtomicF64::new(1.0),
+            shockwave_mach_threshold: AtomicF64::new(1.0),
         }
     }
 

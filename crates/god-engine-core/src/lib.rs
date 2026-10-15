@@ -2699,17 +2699,18 @@ impl GodEngineCore {
                             0.0
                         };
                     }
+                    let k_osc = self.arena.config.quantum_osc_k.load(Ordering::Relaxed);
+                    let l_osc = self.arena.config.quantum_osc_lambda.load(Ordering::Relaxed);
+                    let a_osc = self.arena.config.quantum_osc_alpha.load(Ordering::Relaxed);
+                    let osc_params = signal_engine::QuantumOscillatorParams {
+                        k_spring: self.arena.registry.get_value_or("quantum_k_spring", k_osc),
+                        lambda_anharmonic: self.arena.registry.get_value_or("quantum_lambda_anharmonic", l_osc),
+                        alpha_confinement: self.arena.registry.get_value_or("quantum_alpha", a_osc).clamp(0.01, 10.0),
+                    };
                     let voto_sombra =
-                        signal_engine::quantum_oscillator::QuantumOscillatorEngine::voto_espectral(
+                        signal_engine::quantum_oscillator::QuantumOscillatorEngine::voto_espectral_with_params(
                             &desplazamientos,
-                            self.arena.registry.get_value_or("quantum_k_spring", 1.0),
-                            self.arena
-                                .registry
-                                .get_value_or("quantum_lambda_anharmonic", 0.1),
-                            self.arena
-                                .registry
-                                .get_value_or("quantum_alpha", 0.5)
-                                .clamp(0.01, 10.0),
+                            &osc_params,
                         );
                     if let Some((k_dom, v_dom)) = voto_sombra.dominante() {
                         self.arena.registry.set_for_coin(
@@ -2764,15 +2765,17 @@ impl GodEngineCore {
                             .registry
                             .set_for_coin(coin_id, "sombra_soliton_amplitud_max", v_sol.abs());
                     }
+                    let sonic_z = self.arena.config.shockwave_sonic_speed_z.load(Ordering::Relaxed);
+                    let mach_th = self.arena.config.shockwave_mach_threshold.load(Ordering::Relaxed);
+                    let shock_params = signal_engine::SupersonicShockwaveParams {
+                        sonic_speed_z: sonic_z,
+                        mach_threshold: mach_th,
+                        ..signal_engine::SupersonicShockwaveParams::default()
+                    };
                     let voto_shock =
-                        signal_engine::supersonic_shockwave::SupersonicShockwaveEngine::voto_espectral(
+                        signal_engine::supersonic_shockwave::SupersonicShockwaveEngine::voto_espectral_with_params(
                             &desplazamientos,
-                            // #650: el umbral sónico de la SOMBRA vive en
-                            // espacio de z (x = momentum_z O(1)); el del
-                            // vivo (`spread_speed_of_sound`) está en
-                            // unidades de precio — mezclarlos saturaba M
-                            // a ~10³. 1.0 = una desviación.
-                            1.0,
+                            &shock_params,
                         );
                     if let Some(media_shock) = voto_shock.media_banda(0, 31) {
                         self.arena
@@ -3043,8 +3046,10 @@ impl GodEngineCore {
                     }
 
                     // #615: SOMBRA ESPECTRAL de RENYI-TSALLIS ENTROPY
+                    let q_tsallis = self.arena.config.tsallis_q.load(Ordering::Relaxed);
+                    let alpha_renyi = self.arena.config.renyi_alpha.load(Ordering::Relaxed);
                     let voto_entropy =
-                        signal_engine::renyi_tsallis_entropy::RenyiTsallisEntropyEngine::default()
+                        signal_engine::renyi_tsallis_entropy::RenyiTsallisEntropyEngine::new(q_tsallis, alpha_renyi)
                             .voto_espectral(&desplazamientos);
                     if let Some(media_ent) = voto_entropy.media_banda(0, 31) {
                         self.arena

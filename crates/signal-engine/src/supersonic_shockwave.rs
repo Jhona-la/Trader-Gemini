@@ -5,21 +5,90 @@ use strategy_core::QuantumStrategy;
 /// ⚡ ALGORITMO #82: MOTOR DE ONDA DE CHOQUE SUPERSÓNICA Y NÚMERO DE MACH (SUPERSONIC SHOCKWAVE ENGINE)
 /// Modela el flujo de órdenes como una onda de presión supersónica, calculando el número de Mach M = v_flujo / v_sonido,
 /// identificando la ignición explosiva de rupturas de volatilidad cuando M > 1.0.
-#[derive(Clone, Default)]
+/// ⚡ OLA Ω123: Parámetros desacoplados y configurables para el motor de onda de choque supersónica
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SupersonicShockwaveParams {
+    /// Umbral sónico modal en espacio de z-score (default: 1.0)
+    pub sonic_speed_z: f64,
+    /// Umbral crítico del número de Mach para ignición de salto de choque (default: 1.0)
+    pub mach_threshold: f64,
+    /// Factor de escala del argumento tanh en la firma direccional del flujo (default: 2.0)
+    pub signature_scale: f64,
+    /// Suelo mínimo de velocidad del sonido para evitar singularidades (default: 1e-6)
+    pub min_speed_of_sound: f64,
+}
+
+impl Default for SupersonicShockwaveParams {
+    fn default() -> Self {
+        Self {
+            sonic_speed_z: 1.0,
+            mach_threshold: 1.0,
+            signature_scale: 2.0,
+            min_speed_of_sound: 1e-6,
+        }
+    }
+}
+
+impl SupersonicShockwaveParams {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.sonic_speed_z.is_finite() || !(0.05..=10.0).contains(&self.sonic_speed_z) {
+            return Err(format!("Invalid sonic_speed_z: {}", self.sonic_speed_z));
+        }
+        if !self.mach_threshold.is_finite() || !(0.5..=5.0).contains(&self.mach_threshold) {
+            return Err(format!("Invalid mach_threshold: {}", self.mach_threshold));
+        }
+        if !self.signature_scale.is_finite() || !(0.1..=10.0).contains(&self.signature_scale) {
+            return Err(format!("Invalid signature_scale: {}", self.signature_scale));
+        }
+        if !self.min_speed_of_sound.is_finite() || !(1e-9..=1e-3).contains(&self.min_speed_of_sound) {
+            return Err(format!("Invalid min_speed_of_sound: {}", self.min_speed_of_sound));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 #[repr(C, align(64))]
 pub struct SupersonicShockwaveEngine {
     registry: Option<Arc<OmniscientRegistry>>,
+    pub params: SupersonicShockwaveParams,
+}
+
+impl Default for SupersonicShockwaveEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl std::fmt::Debug for SupersonicShockwaveEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SupersonicShockwaveEngine").finish()
+        f.debug_struct("SupersonicShockwaveEngine")
+            .field("params", &self.params)
+            .finish()
     }
 }
 
 impl SupersonicShockwaveEngine {
     pub fn new() -> Self {
-        Self { registry: None }
+        Self {
+            registry: None,
+            params: SupersonicShockwaveParams::default(),
+        }
+    }
+
+    /// OLA Ω123: Constructor con parámetros desacoplados específicos
+    pub fn with_params(mut self, params: SupersonicShockwaveParams) -> Self {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+        self
+    }
+
+    /// OLA Ω123: Actualización dinámica de parámetros
+    pub fn update_params(&mut self, params: SupersonicShockwaveParams) {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
     }
 
     /// Calcula el número de Mach de mercado M en O(1) con protección contra división por cero
@@ -39,14 +108,17 @@ impl SupersonicShockwaveEngine {
         safe_speed / safe_sound
     }
 
-    /// Evalúa la compresión de salto de Rankine-Hugoniot en el frente de onda
+    /// OLA Ω123: Evalúa la compresión de salto de Rankine-Hugoniot con umbral crítico configurable
     #[inline(always)]
-    pub fn compute_shockwave_jump(mach: f64) -> f64 {
-        if mach.is_finite() && mach > 1.0 {
-            // Equivalent ratio after dividing numerator/denominator by M^2.
-            // For M>1 the reciprocal is bounded and cannot overflow on squaring.
-            // This stabilizes the heuristic, not a physical conservation law.
-            let inverse_square = mach.recip().powi(2);
+    pub fn compute_shockwave_jump_with_threshold(mach: f64, threshold: f64) -> f64 {
+        let thresh = if threshold.is_finite() && threshold > 0.0 {
+            threshold
+        } else {
+            1.0
+        };
+        if mach.is_finite() && mach > thresh {
+            let m_norm = mach / thresh;
+            let inverse_square = m_norm.recip().powi(2);
             ((1.0 - inverse_square) / (1.0 + inverse_square))
                 .tanh()
                 .clamp(0.0, 1.0)
@@ -55,41 +127,53 @@ impl SupersonicShockwaveEngine {
         }
     }
 
+    /// Evalúa la compresión de salto de Rankine-Hugoniot en el frente de onda con umbral sónico unitario (Mach > 1.0)
+    #[inline(always)]
+    pub fn compute_shockwave_jump(mach: f64) -> f64 {
+        Self::compute_shockwave_jump_with_threshold(mach, 1.0)
+    }
+
+    /// OLA Ω123: VOTO ESPECTRAL del choque supersónico con parámetros desacoplados configurables
+    pub fn voto_espectral_with_params(
+        desplazamientos: &[f64; 32],
+        params: &SupersonicShockwaveParams,
+    ) -> crate::voto_espectral::VotoEspectral {
+        let c_z = if params.sonic_speed_z.is_finite() && params.sonic_speed_z > 0.0 {
+            params.sonic_speed_z.clamp(0.1, 10.0)
+        } else {
+            1.0
+        };
+        let scale = if params.signature_scale.is_finite() && params.signature_scale > 0.0 {
+            params.signature_scale
+        } else {
+            2.0
+        };
+        let mach_thresh = params.mach_threshold;
+        crate::voto_espectral::VotoEspectral::desde_espectro(desplazamientos, |x| {
+            if !x.is_finite() {
+                return 0.0;
+            }
+            let m = Self::compute_mach_number(x.abs().min(10.0), c_z);
+            ((x.clamp(-10.0, 10.0) / c_z) / scale).tanh()
+                * Self::compute_shockwave_jump_with_threshold(m, mach_thresh).clamp(-1.0, 1.0)
+        })
+    }
+
     /// #650 (Ola 50) — VOTO ESPECTRAL del choque supersónico, con firma
     /// direccional y unidades coherentes: `voto_k = tanh(x(τ_k)) ·
     /// salto(M)` con `M = |x|/c_z` en ESPACIO DE Z (c_z = umbral sónico en
     /// desviaciones — el core pasa 1.0 = 1σ). La compresión del salto
     /// Rankine-Hugoniot es MAGNITUD; la DIRECCIÓN la aporta el flujo de esa
     /// escala con tanh (continua, sin escalón de signo).
-    ///
-    /// Lo que ELIMINA (auditor A, verificado): (a) el voto era SIN signo
-    /// [0,1] — en la composición del consenso (media de votos firmados)
-    /// inyectaba un sesgo LARGO permanente de ~0.76 en cada escala activa;
-    /// (b) c llegaba en unidades de PRECIO del vivo (0.001) contra x en
-    /// z-scores O(1) ⇒ M ~ 10³ saturado ⇒ salto ≈ 0.76 constante sin
-    /// discriminación espectral. Con c_z = 1σ, sólo las escalas con
-    /// desplazamiento超 sónico (>1σ) declaran choque.
-    /// Observacional: el voto vivo queda bit a bit (T-1 cero).
     pub fn voto_espectral(
         desplazamientos: &[f64; 32],
         velocidad_sonido_z: f64,
     ) -> crate::voto_espectral::VotoEspectral {
-        let c_z = if velocidad_sonido_z.is_finite() && velocidad_sonido_z > 0.0 {
-            velocidad_sonido_z.clamp(0.1, 10.0)
-        } else {
-            1.0
+        let params = SupersonicShockwaveParams {
+            sonic_speed_z: velocidad_sonido_z,
+            ..SupersonicShockwaveParams::default()
         };
-        crate::voto_espectral::VotoEspectral::desde_espectro(desplazamientos, |x| {
-            if !x.is_finite() {
-                return 0.0;
-            }
-            let m = Self::compute_mach_number(x.abs().min(10.0), c_z);
-            // R5-A2: firma a la ESCALA DEL ESTADÍSTICO en PARIDAD con el
-            // camino vivo ((speed/sound)/2 de la Ola 69) — antes tanh(x)
-            // crudo era 2× más empinado que el vivo del MISMO motor.
-            ((x.clamp(-10.0, 10.0) / c_z) / 2.0).tanh() * Self::compute_shockwave_jump(m)
-                .clamp(-1.0, 1.0)
-        })
+        Self::voto_espectral_with_params(desplazamientos, &params)
     }
 }
 
@@ -222,15 +306,16 @@ impl QuantumStrategy for SupersonicShockwaveEngine {
         }
 
         let mach = Self::compute_mach_number(speed_norm.abs(), sound_norm);
-        let jump = Self::compute_shockwave_jump(mach);
+        let jump = Self::compute_shockwave_jump_with_threshold(mach, self.params.mach_threshold);
         // #659 (F2-A11): firma CONTINUA del flujo (familia tanh del
         // solitón #657 — sin escalón de signum en speed=0).
-        // R4-C2: firma a la ESCALA DEL ESTADÍSTICO — el divisor 1e4
-        // saturaba speed_norm O(1e-4..1e-2)/s a signum disfrazado
-        // (media respuesta en 5e-5); tanh(mach/2) es el análogo vivo de
-        // la sombra (tanh natural en z) y conserva ambos contratos de
-        // qo_666: mach 1.2 → 0.53·jump, mach 10 → 0.99991·jump.
-        (speed_norm / sound_norm / 2.0).tanh() * jump
+        // R4-C2 & OLA Ω123: firma a la ESCALA DEL ESTADÍSTICO desacoplada
+        let scale = if self.params.signature_scale.is_finite() && self.params.signature_scale > 0.0 {
+            self.params.signature_scale
+        } else {
+            2.0
+        };
+        (speed_norm / sound_norm / scale).tanh() * jump
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {

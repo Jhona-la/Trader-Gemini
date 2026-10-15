@@ -2,10 +2,65 @@
 /// Cuantifica transiciones de fase críticas en el flujo de órdenes y detección de flash crashes (#266-#280).
 /// $S_q(P) = \frac{1}{q-1} (1 - \sum p_i^q)$ y $R_\alpha(P) = \frac{1}{1-\alpha} \ln(\sum p_i^\alpha)$.
 
+/// 🌌 OLA Ω123: Parámetros desacoplados y configurables para la entropía de Rényi y Tsallis
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RenyiTsallisEntropyParams {
+    /// Parámetro no-extensivo de Tsallis $q$ (default: 1.5)
+    pub q_tsallis: f64,
+    /// Orden generalizado de Rényi $\alpha$ (default: 2.0)
+    pub alpha_renyi: f64,
+    /// Cota inferior de entropía normalizada para rampa de orden (default: 0.40)
+    pub entropy_threshold_low: f64,
+    /// Cota superior de entropía normalizada para rampa de orden (default: 0.60)
+    pub entropy_threshold_high: f64,
+    /// Cota inferior de desequilibrio OBI para rampa de convicción (default: 0.15)
+    pub obi_threshold_low: f64,
+    /// Cota superior de desequilibrio OBI para rampa de convicción (default: 0.30)
+    pub obi_threshold_high: f64,
+}
+
+impl Default for RenyiTsallisEntropyParams {
+    fn default() -> Self {
+        Self {
+            q_tsallis: 1.5,
+            alpha_renyi: 2.0,
+            entropy_threshold_low: 0.40,
+            entropy_threshold_high: 0.60,
+            obi_threshold_low: 0.15,
+            obi_threshold_high: 0.30,
+        }
+    }
+}
+
+impl RenyiTsallisEntropyParams {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.q_tsallis.is_finite() || !(0.01..=10.0).contains(&self.q_tsallis) {
+            return Err(format!("Invalid q_tsallis: {}", self.q_tsallis));
+        }
+        if !self.alpha_renyi.is_finite() || !(0.01..=10.0).contains(&self.alpha_renyi) {
+            return Err(format!("Invalid alpha_renyi: {}", self.alpha_renyi));
+        }
+        if !self.entropy_threshold_low.is_finite() || !(0.0..=1.0).contains(&self.entropy_threshold_low) {
+            return Err(format!("Invalid entropy_threshold_low: {}", self.entropy_threshold_low));
+        }
+        if !self.entropy_threshold_high.is_finite() || !(0.0..=1.0).contains(&self.entropy_threshold_high) || self.entropy_threshold_high <= self.entropy_threshold_low {
+            return Err(format!("Invalid entropy_threshold_high: {}", self.entropy_threshold_high));
+        }
+        if !self.obi_threshold_low.is_finite() || !(0.0..=1.0).contains(&self.obi_threshold_low) {
+            return Err(format!("Invalid obi_threshold_low: {}", self.obi_threshold_low));
+        }
+        if !self.obi_threshold_high.is_finite() || !(0.0..=1.0).contains(&self.obi_threshold_high) || self.obi_threshold_high <= self.obi_threshold_low {
+            return Err(format!("Invalid obi_threshold_high: {}", self.obi_threshold_high));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone)]
 pub struct RenyiTsallisEntropyEngine {
     pub q_tsallis: f64,
     pub alpha_renyi: f64,
+    pub params: RenyiTsallisEntropyParams,
     registry: Option<std::sync::Arc<omniscient_registry::OmniscientRegistry>>,
 }
 
@@ -14,6 +69,7 @@ impl std::fmt::Debug for RenyiTsallisEntropyEngine {
         f.debug_struct("RenyiTsallisEntropyEngine")
             .field("q_tsallis", &self.q_tsallis)
             .field("alpha_renyi", &self.alpha_renyi)
+            .field("params", &self.params)
             .finish()
     }
 }
@@ -31,10 +87,33 @@ impl RenyiTsallisEntropyEngine {
         } else {
             2.0
         };
+        let mut params = RenyiTsallisEntropyParams::default();
+        params.q_tsallis = safe_q.max(0.01);
+        params.alpha_renyi = safe_alpha.max(0.01);
         Self {
             q_tsallis: safe_q.max(0.01),
             alpha_renyi: safe_alpha.max(0.01),
+            params,
             registry: None,
+        }
+    }
+
+    /// OLA Ω123: Constructor con parámetros desacoplados específicos
+    pub fn with_params(mut self, params: RenyiTsallisEntropyParams) -> Self {
+        if params.validate().is_ok() {
+            self.q_tsallis = params.q_tsallis;
+            self.alpha_renyi = params.alpha_renyi;
+            self.params = params;
+        }
+        self
+    }
+
+    /// OLA Ω123: Actualización dinámica de parámetros
+    pub fn update_params(&mut self, params: RenyiTsallisEntropyParams) {
+        if params.validate().is_ok() {
+            self.q_tsallis = params.q_tsallis;
+            self.alpha_renyi = params.alpha_renyi;
+            self.params = params;
         }
     }
 
@@ -138,29 +217,40 @@ impl RenyiTsallisEntropyEngine {
 
     /// Voto puro (compartido por el camino global legado de `evaluate` y el
     /// escopado por moneda de `evaluate_for_coin`).
+    /// OLA Ω123: Voto con parámetros desacoplados configurables
     #[inline(always)]
-    pub(crate) fn vote(tsallis_q: f64, obi: f64) -> f64 {
-        // FIX #681: Sanitizar lecturas de registro
-        let safe_tsallis = if tsallis_q.is_finite() && tsallis_q >= 0.0 {
-            tsallis_q
-        } else {
-            0.5
-        };
-        let safe_obi = if obi.is_finite() { obi } else { 0.0 };
+    pub fn vote_with_params(tsallis_q: f64, obi: f64, params: &RenyiTsallisEntropyParams) -> f64 {
+        if !tsallis_q.is_finite() || !obi.is_finite() || tsallis_q < 0.0 {
+            return 0.0;
+        }
+        let safe_tsallis = tsallis_q;
+        let safe_obi = obi;
 
         // #664 (G2-9): pertenencia CONTINUA (smoothstep C¹) en vez de
         // los gates duros `tsallis < 0.60 && |obi| > 0.15` — el voto
         // saltaba de 0 a ~(1−tsallis)·obi al cruzar cualquiera de los
-        // dos umbrales. Rampa de orden: 1 con entropía ≤0.40, 0 en ≥0.60;
-        // rampa de desequilibrio: 1 con |obi| ≥0.30, 0 en ≤0.15.
+        // dos umbrales.
         let smooth = |t: f64| {
             let t = t.clamp(0.0, 1.0);
             t * t * (3.0 - 2.0 * t)
         };
-        let orden = smooth((0.60 - safe_tsallis) / 0.20);
-        let desequilibrio = smooth((safe_obi.abs() - 0.15) / 0.15);
+        let ent_high = params.entropy_threshold_high;
+        let ent_band = (ent_high - params.entropy_threshold_low).max(1e-4);
+        let orden = smooth((ent_high - safe_tsallis) / ent_band);
+
+        let obi_low = params.obi_threshold_low;
+        let obi_band = (params.obi_threshold_high - obi_low).max(1e-4);
+        let desequilibrio = smooth((safe_obi.abs() - obi_low) / obi_band);
         let conviction = (1.0 - safe_tsallis) * safe_obi * orden * desequilibrio;
         conviction.clamp(-1.0, 1.0)
+    }
+
+    /// Voto puro legado (compartido por el camino global legado de `evaluate` y el
+    /// escopado por moneda de `evaluate_for_coin`).
+    #[inline(always)]
+    #[allow(dead_code)]
+    pub fn vote(tsallis_q: f64, obi: f64) -> f64 {
+        Self::vote_with_params(tsallis_q, obi, &RenyiTsallisEntropyParams::default())
     }
 }
 
@@ -227,7 +317,7 @@ impl strategy_core::QuantumStrategy for RenyiTsallisEntropyEngine {
             .map(|p| p.get_value())
             .unwrap_or(0.0);
 
-        Self::vote(tsallis_q, obi)
+        Self::vote_with_params(tsallis_q, obi, &self.params)
     }
 
     /// MOD2/7-009 (INFORME DECIMOCUARTO): esta estrategia no sobreescribía
@@ -248,7 +338,7 @@ impl strategy_core::QuantumStrategy for RenyiTsallisEntropyEngine {
         let obi = r.get_scoped_val_strict(Some(symbol), Some(coin_id), "order_book_imbalance");
 
         match (tsallis, obi) {
-            (Some(t), Some(o)) => Self::vote(t, o),
+            (Some(t), Some(o)) => Self::vote_with_params(t, o, &self.params),
             _ if coin_id == 0 => self.evaluate(),
             _ => 0.0, // voto neutralizado para no contaminar cross-coin (MOD2/7-009)
         }

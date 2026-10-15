@@ -8,21 +8,84 @@ pub const ESCALAS_OSCILADOR: usize = 32;
 /// ⚛️ ALGORITMO #80: SUAVIZADOR POR OSCILADOR ANARMÓNICO CUÁNTICO (QUANTUM OSCILLATOR ENGINE)
 /// Simula el comportamiento del estado fundamental del precio en un pozo de potencial anarmónico V(x) = 1/2 k x^2 + lambda x^4,
 /// filtrando ruido estocástico no-lineal con cero desfase de fase.
-#[derive(Clone, Default)]
+/// ⚛️ OLA Ω123: Parámetros desacoplados y configurables para el oscilador anarmónico cuántico
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QuantumOscillatorParams {
+    /// Constante del resorte cuántico k_spring (default: 1.0)
+    pub k_spring: f64,
+    /// Coeficiente anarmónico no-lineal lambda_anharmonic (default: 0.1)
+    pub lambda_anharmonic: f64,
+    /// Factor de escala de confinamiento cuántico alpha_confinement (default: 0.5)
+    pub alpha_confinement: f64,
+}
+
+impl Default for QuantumOscillatorParams {
+    fn default() -> Self {
+        Self {
+            k_spring: 1.0,
+            lambda_anharmonic: 0.1,
+            alpha_confinement: 0.5,
+        }
+    }
+}
+
+impl QuantumOscillatorParams {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.k_spring.is_finite() || !(0.0..=100.0).contains(&self.k_spring) {
+            return Err(format!("Invalid k_spring: {}", self.k_spring));
+        }
+        if !self.lambda_anharmonic.is_finite() || !(0.0..=10.0).contains(&self.lambda_anharmonic) {
+            return Err(format!("Invalid lambda_anharmonic: {}", self.lambda_anharmonic));
+        }
+        if !self.alpha_confinement.is_finite() || !(0.01..=10.0).contains(&self.alpha_confinement) {
+            return Err(format!("Invalid alpha_confinement: {}", self.alpha_confinement));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 #[repr(C, align(64))]
 pub struct QuantumOscillatorEngine {
     registry: Option<Arc<OmniscientRegistry>>,
+    pub params: QuantumOscillatorParams,
+}
+
+impl Default for QuantumOscillatorEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl std::fmt::Debug for QuantumOscillatorEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("QuantumOscillatorEngine").finish()
+        f.debug_struct("QuantumOscillatorEngine")
+            .field("params", &self.params)
+            .finish()
     }
 }
 
 impl QuantumOscillatorEngine {
     pub fn new() -> Self {
-        Self { registry: None }
+        Self {
+            registry: None,
+            params: QuantumOscillatorParams::default(),
+        }
+    }
+
+    /// OLA Ω123: Constructor con parámetros desacoplados específicos
+    pub fn with_params(mut self, params: QuantumOscillatorParams) -> Self {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+        self
+    }
+
+    /// OLA Ω123: Actualización dinámica de parámetros
+    pub fn update_params(&mut self, params: QuantumOscillatorParams) {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
     }
 
     /// Calcula la fuerza del pozo de potencial anarmónico en O(1)
@@ -88,30 +151,41 @@ impl QuantumOscillatorEngine {
     /// un espectro que τ* del consejo puede rebanar. Puro y sin estado —
     /// la sombra observacional del core lo computa AL LADO del voto vivo
     /// (bit a bit intacto hasta el cambio ordenado con oráculo).
+    /// OLA Ω123: Voto espectral con parámetros desacoplados configurables
+    pub fn voto_espectral_with_params(
+        desplazamientos: &[f64; ESCALAS_OSCILADOR],
+        params: &QuantumOscillatorParams,
+    ) -> VotoEspectral {
+        let safe_alpha = if params.alpha_confinement.is_finite() && params.alpha_confinement > 0.0 {
+            params.alpha_confinement.clamp(0.01, 10.0)
+        } else {
+            0.5
+        };
+        let k_spring = params.k_spring;
+        let lambda_anharmonic = params.lambda_anharmonic;
+        VotoEspectral::desde_espectro(desplazamientos, |x| {
+            let safe_x = if x.is_finite() { x.clamp(-10.0, 10.0) } else { 0.0 };
+            let force = Self::compute_quantum_restoring_force(safe_x, k_spring, lambda_anharmonic);
+            let confinement = (-safe_alpha * safe_x * safe_x).exp().clamp(0.0, 1.0);
+            (force * confinement).clamp(-1.0, 1.0)
+        })
+    }
+
+    /// #609 (Ola 31) — VOTO ESPECTRAL del pozo legado
     pub fn voto_espectral(
         desplazamientos: &[f64; ESCALAS_OSCILADOR],
         k_spring: f64,
         lambda_anharmonic: f64,
         alpha: f64,
     ) -> VotoEspectral {
-        let safe_alpha = if alpha.is_finite() && alpha > 0.0 {
-            alpha.clamp(0.01, 10.0)
-        } else {
-            0.5
-        };
-        VotoEspectral::desde_espectro(desplazamientos, |x| {
-            let safe_x = if x.is_finite() { x.clamp(-10.0, 10.0) } else { 0.0 };
-            let force = Self::compute_quantum_restoring_force(safe_x, k_spring, lambda_anharmonic);
-            // #650 (Ola 50) — PARIDAD con el vivo (AGY-P14): la MISMA
-            // envolvente C(x) = e^{−α·x²} ∈ (0,1] que modula la fuerza del
-            // motor vivo. La sombra usaba √|ψ|² = (α/π)^{1/4}·e^{−αx²/2}:
-            // exponente a la MITAD (supresión de ruptura 3-4 órdenes más
-            // débil que el vivo, p.ej. x=6, α=0.5: e^{−9} vs e^{−18}) y
-            // una constante (α/π)^{1/4} que supera 1 para α > π (rompía la
-            // cota antes del clamp).
-            let confinement = (-safe_alpha * safe_x * safe_x).exp().clamp(0.0, 1.0);
-            (force * confinement).clamp(-1.0, 1.0)
-        })
+        Self::voto_espectral_with_params(
+            desplazamientos,
+            &QuantumOscillatorParams {
+                k_spring,
+                lambda_anharmonic,
+                alpha_confinement: alpha,
+            },
+        )
     }
 }
 
@@ -185,7 +259,7 @@ impl QuantumStrategy for QuantumOscillatorEngine {
                 "QuantumOscillatorEngine",
             )
             .map(|p| p.get_value())
-            .unwrap_or(1.0);
+            .unwrap_or(self.params.k_spring);
         let lambda = r
             .get_scoped_parameter(
                 sym_opt,
@@ -194,7 +268,7 @@ impl QuantumStrategy for QuantumOscillatorEngine {
                 "QuantumOscillatorEngine",
             )
             .map(|p| p.get_value())
-            .unwrap_or(0.1);
+            .unwrap_or(self.params.lambda_anharmonic);
 
         let alpha = r
             .get_scoped_parameter(
@@ -204,7 +278,7 @@ impl QuantumStrategy for QuantumOscillatorEngine {
                 "QuantumOscillatorEngine",
             )
             .map(|p| p.get_value())
-            .unwrap_or(0.5)
+            .unwrap_or(self.params.alpha_confinement)
             .clamp(0.01, 10.0);
 
         if !pos.is_finite() || !k_spring.is_finite() || !lambda.is_finite() {
