@@ -1,6 +1,6 @@
 # LG5, ceros y replay: integración sobre main — 2026-10-15
 
-Estado de este corte: composición local en revisión, sin publicación ni validación dinámica del nuevo árbol. Responsable ROOT, rama `codex/root-lg5-main-2026-10-15`, worktree aislado `root-lg5-main-1015/Trader Gemini`.
+Estado vigente tras check006: PR66 draft publicada sobre `2da58`, con cuatro jobs de CI aprobados y replay aún pendiente. La integración local Ω129, commit `a3156b1`, pasó la comprobación all-targets, pero no tiene tests ejecutados de esa composición. Los cortes siguientes conservan su historia; la última adenda actualiza los estados anteriores dentro de su alcance. Responsable ROOT, rama `codex/root-lg5-main-2026-10-15`, worktree aislado `root-lg5-main-1015/Trader Gemini`.
 
 ## Fuente y evidencia que se conserva
 
@@ -83,3 +83,30 @@ Los siguientes expedientes proceden de lectura de código y álgebra; no tienen 
 | b674, `strategy-core/src/vecm_arbitrage.rs:283–301` y `momentum_booster.rs:58–73` | Entry=.1 aceptado por validate puede sustituirse por1.5 en evaluate. El Hermite aislado no demuestra C1 de toda la composición: persisten ramas en ATR diminuto y max(0). | Validación y lectura consistentes, derivadas laterales de la función completa y evidencia de callers productivos antes de atribuir impacto vivo. |
 
 También sigue pendiente demostrar el consumo de envelope_power_factor y la paridad de parámetros efectivos entre shadows/Core. La sustitución del fallback de ruido1e−4 por1e−6 cambia resultados por defecto; requiere caracterización, sin atribuir automáticamente mejora. Los tests nuevos de Ω129 no certifican por sí solos estos dominios, el cableado ni C1 global. Son expedientes de un corte posterior a b9; no deben sumarse retroactivamente al censo BASE15 original.
+
+## Check006, CI parcial y reservas vigentes
+
+La integración local Ω129 terminó como `a3156b1ed2cebcfc063837b1ba51854edac33196`, con padres `2da58` y `b674`. Check006 ejecutó el mismo comando workspace/all-targets/release/locked con un job: exit 0 en 21 min 28 s. Se conservaron los 710 inputs compilables (683 Rust), ambos padres, el estado lógico y el árbol preparado `db43a7e149409ab4d3846050fe038263cad4be92`. El índice físico sí cambió: el recibo v2 lo registra como diagnóstico; no se afirma igualdad física. Una segunda revisión cotejó los 710 archivos actuales y el índice stage 0 completo, además de los diffs contra cada padre; no encontró un bloqueante concreto en el delta revisado. JSON006 SHA256 `af069ada29ab2f968e12252ff0f77f5952dafb5f0dfb2db6a49978d96bb7e10b`, log `bf3732f5373e0c5af1283a04ce028741e4d36559bd7033c948911b6e62c41a9b`; dictamen `7486b33494cea5d306d0774a9b21ab889104bb90cba376f10a5011e41bb49637`. Este check no ejecutó tests ni acredita T1.
+
+Cuatro jobs de CI de PR66 sobre `2da58` ya ejecutaron las pruebas nuevas. Riesgo: 436/0/11; espectro/consejo: 954/0/44; trainer: 84/0/0; Core: 623/0/42, en orden aprobadas/fallidas/ignoradas. En total, 2097/0/97 ejecuciones en 272 resúmenes; no son tests únicos. Los 13 contratos nuevos requeridos constan `ok`; no existe RED funcional previo de esas correcciones. El checkout real de los logs es `112770b916b5173d9206ffba3d47ec2a7bc733af`, merge sintético de `b46` y `2da58`, con árbol `31b31138959593f483c71f8204c7507ae8bb16de`, igual al de `2da58`. Replay sigue pendiente: no hay GREEN de los cinco jobs ni de Ω129, `a3156b1`, main o el T1 final. El job trainer ejecuta fixtures; no acredita entrenamiento ni promoción de modelos.
+
+El recibo local V2 de sólo estos cuatro jobs quedó sellado en `target/lg5-ci-1015/pr66-2da58-partial-ci-v2.json` (113642 bytes, SHA256 `eca93c8b5e59b82e0b3ec18b9fea382ad0371ad544b486d4e087b1d246cce996`), con verificador SHA256 `df07f3b3070d0e758619a538fac38f5d7484bf6bf4e52caeee3de4c7c7977ce8`.
+
+El recibo parcial inicial de dos jobs permanece inmutable: SHA256 `9b3f7c298949141cdd19e6009ef9d05f424c7cfe501b1a9bc59b87e569f759cb`. Los logs decodificados se conservan normalizados a LF; no se presentan como bytes originales del transporte GitHub. La inspección adicional de ar/COFF de la cadena futures_channel/reqwest/hyper no detectó truncamiento ni archivos incompletos en dos lecturas estables, pero tampoco demuestra identidad de crate o compatibilidad ABI. El diagnóstico de enlace `--no-run -vv --jobs1` sigue pendiente de ventana; no se limpia caché por una corrupción no demostrada.
+
+La tabla recoge las reservas ya recibidas y conserva el orden de integración anterior. El último aviso al chat Quant `01a140a8` aún no tiene acuse confirmado; sus reservas proceden de mensajes previos. El nuevo worktree de SI está en creación.
+
+| Dueño | Reserva y gate concreto |
+| --- | --- |
+| BASE15, PR65 | `multifractal.rs`, adaptador `simulator.rs`, fundamentos y censo canónico. Reduce-only ya tiene contrato RED 0/5 y GREEN 5/0; falta cerrar la suite completa y all-targets de su composición Ω129. |
+| Hawkes | Cuatro fuentes ya delimitadas y siete contratos preparados. Debe recibir ventana de BASE15 y validar antes de publicar e integrar. No se declara GREEN desde lectura estática. |
+| H, PR64 | T3v2 y su instrumento de medición. Resuelve sus conflictos documentales y preserva generador histórico; no modifica el riesgo productivo. |
+| SI, nueva rama `codex/si-replay-causal-2026-10-15`, worktree en creación | B15-12/13: `booktick_replay.rs`, `backtest_windows.rs` y contratos propios. Preparar admisión causal/mark y denominador explícito sin confundir veto de orden con tick rechazado. Sin ampliar silenciosamente a DD de trayectoria, span Sol-R4-01, fee nativo ni política OOS. |
+| Revisión Quant, chat `01a140a8` | B15-14: dominio de VECM y contrato propio. Reutiliza PLAN_BASE15, el inventario y la cola; cualquier reparación de `audit_inventory.py` requiere acordar la propiedad con BASE15. Sin segundo censo canónico. |
+| ROOT, PR66 | LG5, ceros/replay y parámetros espectrales/SPRT, composición y evidencia final. Después de check006 no se encadena Cargo sin una nueva ventana de recursos. |
+
+Se precisó el alcance del extremo `1e200` del IC: `TemporalSpectrum::update` rechaza precios no positivos o no finitos y produce diferencias de logaritmos. Con precios binary64 positivos finitos, el retorno sano está acotado aproximadamente por ±1454,23. El extremo queda como robustez de la API directa y de futuras integraciones, sin reproducción viva por ese productor. El diseño propuesto requiere preflight antes de modificar momentos o contadores y estudiar el sesgo de censura; omitir un dato no conserva automáticamente el nulo condicional. Nota de diseño SHA256 `fef896738081305f36ecd3b76fa3e55a15ff54f63be6c3aa16e97e36b3ec10f0`: propuesta sin implementación ni tests ejecutados en Rust.
+
+Para el e-proceso se preparó un diseño que usa mantisa y exponente como estado autoritativo, sin reinicio, límite artificial ni retención del máximo histórico. El ejemplo aritmético de 8000 aciertos seguidos de 8000 fallos debe terminar con capital ≈1,20658e−35 y retirar significancia aunque el prefijo fuese significativo; la proyección `capital()` puede ser 0/Inf sin convertirse en el estado autoritativo. Nota SHA256 `55313c0d62d62eae65be5357e8f0da0a4b0d758134dd2ad1a3e5f4c9d92e0c0d`: propuesta sin reparación ni RED/GREEN ejecutados en Rust. Nulo, familia, épocas y sesgo siguen como expedientes separados.
+
+No se cerraron refs activas en este corte. SI autorizó cerrar su antigua rama LG5 sólo después de comprobar la ascendencia de `7af2` en main publicado; esa condición aún no se cumple y no se declara cerrada. Las ramas ocupadas o con commits exclusivos, sus worktrees y su evidencia se conservan. El T1 histórico sí terminó, pero falta la ejecución final con conteo capturado sobre la composición que llegue a main.

@@ -11417,3 +11417,10 @@ Merge documental en preparación: b46 main y SI7af2, preservando todos los cuerp
   - `cargo check --workspace --all-targets` 0 errores (exit 0 en 2m 15s). Zero warnings en hot-paths.
 
 
+<!-- ROOT-LG5-CHECK006-20261015 -->
+ROOT: el merge local `a3156b1ed2cebcfc063837b1ba51854edac33196` incorpora main `b674`/Ω129 conservando LG5. Check006 workspace/all-targets/release/locked, con un job: exit 0 en 21 min 28 s, con 710 inputs compilables, 683 Rust y árbol lógico `db43a7e` estables. El índice físico cambió; la fuente actual fue revisada independientemente. PR66 sigue publicada en `2da58`: cuatro jobs de CI aprobados registraron 2097/0/97 ejecuciones en 272 resúmenes, sobre el checkout real `112770b`, cuyo árbol es igual al de `2da58`. Replay sigue pendiente; no se certifican Ω129, `a315`, main ni T1. El informe LG5 conserva SHA, logs, recibos y alcance.
+
+Reservas adicionales ya recibidas: SI prepara B15-12/13 de replay causal (`booktick_replay`, `backtest_windows` y contratos), con una rama nueva y su worktree en creación, preservando la rama antigua que contiene `7af2`. SI autorizó cerrar esa rama antigua sólo después de comprobar la ascendencia de `7af2` en main publicado; aún no se cumple y no se declara cerrada. El chat `01a140a8` reserva B15-14 de VECM y reutiliza PLAN_BASE15, la cola y el inventario; cualquier cambio en `audit_inventory.py` requiere acordar la propiedad con BASE15. La tabla de dueños del informe recoge esas reservas previas; el último aviso a ese chat Quant aún no tiene acuse confirmado.
+
+ROOT no edita esos runtimes. Orden de integración: BASE15 PR65 → Hawkes validado → H PR64 → ROOT full/T1 final. ROOT no ejecutará Cargo tras check006 sin una nueva ventana de recursos. No se limpian ramas activas o con commits exclusivos ni se transfiere CI histórica.
+
