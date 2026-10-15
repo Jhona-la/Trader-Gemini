@@ -985,6 +985,15 @@ pub struct GodEngineCore {
     /// P-A (Ola 23): estimador Cramér–Lundberg por moneda sobre cierres
     /// netos (observación al registro; sin consumidor de sizing).
     lundberg_siniestros: Vec<risk_engine::cramer_lundberg::EstimadorSiniestros>,
+    /// LG-22 (Línea G, cableado GLM 121): detector e-CUSUM de pérdida de
+    /// ventaja POR MONEDA sobre la R neta de cada cierre. Al alarmar
+    /// (estadístico ≥ ARL, gobernanza `lg22_arl`, default 200) siembra el
+    /// epigenetic_bias (×0.5) — la pausa via el mecanismo de régimen que
+    /// LH-04/streak-118 ya consumen (el OU lo relaja si la fuente
+    /// recupera: NO absorbente por diseño) — y se REINICIA para seguir
+    /// midiendo (Claude: "quién consume la alarma es decisión de sus
+    /// dueños": ésta es la de GLM — encoger el tamaño, no matar la fuente).
+    pub lg22_detectores: Vec<resultado_orden::DetectorPerdidaDeVentaja>,
     /// #607 (Ola 29): IC cruzado por par×escala entre monedas (observación
     /// al registro; el ρ(τ*) de grupo es decisión del consejo con T-1).
     espectral_ma: quantum_arena::espectral_multiactivo::EspectralMultiactivo,
@@ -1349,6 +1358,9 @@ impl GodEngineCore {
             outcome_context,
             lundberg_siniestros: (0..n_coins)
                 .map(|_| risk_engine::cramer_lundberg::EstimadorSiniestros::new())
+                .collect(),
+            lg22_detectores: (0..n_coins)
+                .map(|_| resultado_orden::DetectorPerdidaDeVentaja::nuevo())
                 .collect(),
             espectral_ma: quantum_arena::espectral_multiactivo::EspectralMultiactivo::new(
                 n_coins,
@@ -4650,6 +4662,58 @@ impl GodEngineCore {
                             coin_id,
                             pnl_epigenetico,
                         );
+                    }
+
+                    // LG-22 (Línea G, cableado GLM 121): el cierre alimenta
+                    // el detector e-CUSUM de pérdida de ventaja POR MONEDA.
+                    // r = R neta del cierre (PnL neto / riesgo al stop);
+                    // r_max = (TP − fricción)/SL de ESA orden (la mayor R
+                    // conocida al abrir, λ predecible — contrato de Claude).
+                    // Al alarmar: sembrar el bias (×0.5) — el tamaño se
+                    // encoge vía LH-04/streak-118 y el OU lo relaja si la
+                    // fuente recupera (no absorbente) — y reiniciar.
+                    {
+                        let riesgo_al_stop = (sl * entry * qty).max(1e-12);
+                        let friccion_rt = live_fee * 2.0;
+                        let r_max = ((tp - friccion_rt).max(1e-9)) / sl.max(1e-9);
+                        let r_neta = net_trade_pnl / riesgo_al_stop;
+                        let arl = self
+                            .arena
+                            .registry
+                            .get_value_or("lg22_arl", 200.0)
+                            .max(1.0);
+                        let mut alarma_lg22 = false;
+                        if let Some(det) = self.lg22_detectores.get_mut(coin_id) {
+                            det.observar(r_neta, r_max);
+                            alarma_lg22 = det.alarma(arl);
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "lg22_estadistico",
+                                det.estadistico(),
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "lg22_cierres", det.cierres_totales as f64);
+                            if alarma_lg22 {
+                                det.reiniciar();
+                            }
+                        }
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "lg22_alarma",
+                            if alarma_lg22 { 1.0 } else { 0.0 },
+                        );
+                        if alarma_lg22 {
+                            // Sembrar el bias: la pausa de régimen reutiliza
+                            // el mecanismo OU que LH-04/streak-118 ya
+                            // consumen — encoge el tamaño, no mata la fuente.
+                            let bias_prev =
+                                self.arena.coins[coin_id].epigenetic_bias.load(Ordering::Relaxed);
+                            self.arena.coins[coin_id].epigenetic_bias.store(
+                                (bias_prev * 0.5).max(0.05),
+                                Ordering::Relaxed,
+                            );
+                        }
                     }
 
                     coin.apply_spectral_epigenetic_feedback_with_time(pnl_epigenetico, position_age_ms, tau_trade_ms, event_time_ms);
