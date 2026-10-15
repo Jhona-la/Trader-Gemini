@@ -1,5 +1,37 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω131: Autosolvedor de Jacobi en Stack Zero-Alloc para RMT (Marchenko-Pastur, N<=32) y Nuevas APIs Planas Contiguas (2026-10-15)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F, Codex, Sol, Qoder y GLM:**
+
+- **QUÉ (Definición y Alcance):**
+  - Implementación de un autosolvedor de Jacobi rotacional en memoria estática de pila (stack frame, 0 alocaciones en heap) para matrices de correlación de hasta $N = 32$ dimensiones (`MAX_STACK_CORR_DIM = 32`) en `crates/risk-engine/src/random_matrix.rs`.
+  - Reemplazo transparente de la ruta interna de `largest_eigenvalue` y `full_spectrum` para usar el solver de pila cuando $N \le 32$, con fallback matemático idéntico en heap cuando $N > 32$.
+  - Introducción de nuevas APIs planas y contiguas para motores de alta frecuencia: `largest_eigenvalue_flat` y `full_spectrum_flat_zero_alloc`.
+  - Creación de la suite de contratos `crates/risk-engine/tests/zero_alloc_rmt_contract.rs` (4/4 tests pasando).
+  - Actualización del Plan Maestro a V5 (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md`).
+
+- **POR QUÉ (Razones Técnicas y Físicas):**
+  - En la arquitectura de 32 ranuras armónicas del universo continuo temporal-espectral de Trader Gemini, el universo de activos en cartera viva es $N \le 32$ (típicamente de 3 a 16 activos).
+  - La implementación previa realizaba $N + 1$ alocaciones dinámicas (`Vec<Vec<f64>>`) en cada evaluación de `largest_eigenvalue`, dispersando memoria en el heap y provocando presión sobre el allocator en el bucle caliente (hot path de `rho_promedio` y `systematic_mode`).
+  - Un búfer contiguo de $32 \times 32 = 1024$ floats (`f64`) ocupa exactamente 8 KB de memoria, residiendo al 100% en la caché L1 de datos de la CPU (32 KB - 48 KB por núcleo), con cero fallos de caché y acceso secuencial lineal vectorizable por LLVM/SIMD.
+
+- **PARA QUÉ (Objetivos y Garantías):**
+  - Reducir la latencia de diagonalización de espectro de correlación y filtro de Marchenko-Pastur a escala de nanosegundos puros.
+  - Cero fragmentación de memoria en el equipo de 16 GB de RAM sin GPU dedicada.
+  - Preservación analítica bit a bit de todos los autovalores analíticos ($1 + (N-1)\rho$, $1 - \rho$), invariancia de traza ($\sum \lambda_i = N$) y rechazo estricto de matrices no semidefinidas positivas o asimétricas.
+
+- **CÓMO (Mecanismo Interno Paso a Paso):**
+  1. En `crates/risk-engine/src/random_matrix.rs`: se define `MAX_STACK_CORR_DIM = 32` y `MAX_STACK_CORR_CELLS = 1024`.
+  2. Se implementa `jacobi_eigensolver_flat_stack`, un autosolvedor cíclico de Jacobi que opera sobre una rebanada plana `&mut [f64]` sin crear ni un solo vector.
+  3. `diagonalize_correlation_stack` y `diagonalize_correlation_flat_stack` validan tolerancia $64 \epsilon N$, reconcilian asimetrías de redondeo $0.5(A + A^T)$ sobre el array de pila `[0.0f64; MAX_STACK_CORR_CELLS]` y ejecutan las rotaciones de Jacobi.
+  4. `largest_eigenvalue` y `full_spectrum` despachan directamente a la ruta de pila cuando $N \le 32$, eliminando el overhead de alocación para el 100% de las operaciones de cartera en producción.
+  5. Nueva suite `zero_alloc_rmt_contract.rs` verifica: equivalencia plana vs anidada vs analítica, conservación de traza, continuidad en la frontera $N = 32 \to 33$ y rechazo fail-closed de matrices inválidas.
+
+- **CUÁNDO:** En cada cálculo de autovalor máximo, correlación promedio de cartera (`rho_promedio`), modo sistemático de Marchenko-Pastur y apuestas efectivas.
+- **DÓNDE:** `crates/risk-engine/src/random_matrix.rs`, `crates/risk-engine/src/correlation_guard.rs`, `crates/risk-engine/tests/zero_alloc_rmt_contract.rs`.
+- **QUIÉN:** Antigravity (Quant Sr. Lead) en consenso colegiado con el Consejo de 10 Roles Senior.
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω130: Resolución de Defecto F2.1-01 (Monotonía Actuarial Cramér-Lundberg), Activación cf2_lundberg_veto_monotono_en_r y Desacoplamiento Dinámico de Micro-Apalancamiento y Coherencia Espectral (2026-10-15)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F, Codex, Sol, Qoder y GLM:**

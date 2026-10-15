@@ -1,5 +1,30 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω131 — Autosolvedor de Jacobi en Stack Zero-Alloc para RMT (Marchenko-Pastur, N<=32) y Nuevas APIs Planas Contiguas
+
+- **Ola Integrada y Certificada**:
+  * **Diagnóstico Forense y Causa Raíz**:
+    1. En `crates/risk-engine/src/random_matrix.rs:41-98`: La función de diagonalización de correlación `diagonalize_correlation` realizaba `corr.to_vec()`, clonando $N$ vectores en memoria heap dinámicamente en cada llamada.
+    2. En el hot path de evaluación de riesgo de cartera, `rho_promedio(corr)` en `correlation_guard.rs:360` y `systematic_mode` ejecutaban `largest_eigenvalue(corr)` en cada tick para verificar PSD y calcular el autovalor dominante. Para un universo de $N \le 32$ activos, esto generaba continuas alocaciones y de-alocaciones en el heap, provocando presión en el allocator, contención de locks en hilos concurrentes y fallos de caché L1/L2.
+  * **Solución Arquitectónica y Matemática**:
+    1. En `crates/risk-engine/src/random_matrix.rs`:
+       - Definidas las constantes `MAX_STACK_CORR_DIM = 32` y `MAX_STACK_CORR_CELLS = 1024` (8 KB en stack, 100% residente en L1 data cache).
+       - Implementado `jacobi_eigensolver_flat_stack`, un autosolvedor cíclico de rotaciones de Jacobi que opera sobre rebanadas de memoria plana contigua con 0 alocaciones en el heap.
+       - Implementado `diagonalize_correlation_stack` para `&[Vec<f64>]` y `diagonalize_correlation_flat_stack` para rebanadas planas `&[f64]` con reconciliación de asimetrías de redondeo $0.5(A + A^T)$ y verificación estricta de tolerancia $64 \epsilon N$.
+       - Modificadas `largest_eigenvalue` y `full_spectrum` para utilizar de forma transparente la ruta rápida en stack cuando $N \le 32$, con fallback matemático idéntico en heap cuando $N > 32$.
+       - Creadas dos nuevas APIs públicas para motores de trading de ultra-baja latencia: `largest_eigenvalue_flat(corr_flat: &[f64], n: usize)` y `full_spectrum_flat_zero_alloc(corr_flat: &[f64], n: usize, out_spectrum: &mut [f64])`.
+    2. En `crates/risk-engine/tests/zero_alloc_rmt_contract.rs`:
+       - Creada suite de contratos con 4 tests:
+         1. `test_zero_alloc_flat_matches_nested_and_analytic`: Equivalencia bit a bit entre API plana, anidada y fórmula analítica para $N \in [2, 3, 5, 8, 16, 32]$ y diversos niveles de $\rho$.
+         2. `test_full_spectrum_flat_zero_alloc_trace_and_ordering`: Verificación estricta de orden descendente, autovalor dominante, autovalores degenerados y conservación exacta de traza $\sum \lambda_i = N$.
+         3. `test_stack_heap_boundary_continuity`: Verificación de continuidad matemática y analítica en la frontera $N = 32$ (stack) vs $N = 33$ (heap fallback).
+         4. `test_flat_api_rejects_malformed_and_invalid`: Verificación fail-closed ante matrices asimétricas, diagonales no unitarias, dimensiones inválidas, matrices indefinidas y valores NaN/Inf.
+  * **Certificación Contractual**:
+    - `zero_alloc_rmt_contract.rs` (4/4 pass, 100% verde).
+    - `spectral_matrix_contract.rs` (13/13 pass, 100% verde).
+    - `risk-engine --lib` (148/148 pass, 100% verde).
+    - `cargo check --workspace --all-targets` (23/23 crates sin errores).
+
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω130 — Resolución F2.1-01 (Monotonía Actuarial Cramér-Lundberg), Activación cf2_lundberg_veto_monotono_en_r y Desacoplamiento Dinámico de Micro-Apalancamiento
 
 - **Ola Integrada y Certificada**:

@@ -27,17 +27,220 @@ pub fn mp_upper_edge(n_assets: usize, t_observations: usize) -> Option<f64> {
     Some((1.0 + gamma.sqrt()).powi(2))
 }
 
+/// Maximum matrix dimension supported on the stack without heap allocation (O(1) stack, 0 heap allocations).
+pub const MAX_STACK_CORR_DIM: usize = 32;
+const MAX_STACK_CORR_CELLS: usize = MAX_STACK_CORR_DIM * MAX_STACK_CORR_DIM;
+
 /// Largest eigenvalue of a numerically valid correlation matrix.
 /// Returns None on invalid input or nonconvergence. Singular PSD matrices are
 /// valid. No eigenvalue clipping, diagonal loading or imputation is performed.
+/// For N <= MAX_STACK_CORR_DIM (32), operates with ZERO heap allocations.
 pub fn largest_eigenvalue(corr: &[Vec<f64>]) -> Option<f64> {
-    let diagonalized = diagonalize_correlation(corr)?;
-    Some(diagonalized.iter().enumerate().map(|(i, row)| row[i]).fold(f64::NEG_INFINITY, f64::max))
+    let n = corr.len();
+    if n >= 2 && n <= MAX_STACK_CORR_DIM {
+        let diag = diagonalize_correlation_stack(corr)?;
+        Some(diag[..n].iter().fold(f64::NEG_INFINITY, |acc, &x| acc.max(x)))
+    } else {
+        let diagonalized = diagonalize_correlation(corr)?;
+        Some(diagonalized.iter().enumerate().map(|(i, row)| row[i]).fold(f64::NEG_INFINITY, f64::max))
+    }
 }
 
-// One validation and eigensolver path for every spectral entry point. Keep
-// the diagonalized matrix so the maximum-only API needs no spectrum allocation
-// or sorting. A failed contract is never repaired into a different estimate.
+/// Largest eigenvalue of a row-major flat correlation matrix of dimension n*n.
+/// Operates with ZERO heap allocations for n <= MAX_STACK_CORR_DIM (32).
+pub fn largest_eigenvalue_flat(corr_flat: &[f64], n: usize) -> Option<f64> {
+    if n < 2 || corr_flat.len() != n * n {
+        return None;
+    }
+    if n <= MAX_STACK_CORR_DIM {
+        let diag = diagonalize_correlation_flat_stack(corr_flat, n)?;
+        Some(diag[..n].iter().fold(f64::NEG_INFINITY, |acc, &x| acc.max(x)))
+    } else {
+        let nested: Vec<Vec<f64>> = (0..n)
+            .map(|i| corr_flat[i * n..(i + 1) * n].to_vec())
+            .collect();
+        largest_eigenvalue(&nested)
+    }
+}
+
+/// Full descending spectrum of a row-major flat correlation matrix of dimension n*n.
+/// Writes eigenvalues into out_spectrum (must have len >= n).
+/// Operates with ZERO heap allocations for n <= MAX_STACK_CORR_DIM (32).
+pub fn full_spectrum_flat_zero_alloc(
+    corr_flat: &[f64],
+    n: usize,
+    out_spectrum: &mut [f64],
+) -> Option<usize> {
+    if n < 2 || corr_flat.len() != n * n || out_spectrum.len() < n {
+        return None;
+    }
+    if n <= MAX_STACK_CORR_DIM {
+        let diag = diagonalize_correlation_flat_stack(corr_flat, n)?;
+        out_spectrum[..n].copy_from_slice(&diag[..n]);
+        out_spectrum[..n].sort_by(|a, b| b.total_cmp(a));
+        Some(n)
+    } else {
+        let nested: Vec<Vec<f64>> = (0..n)
+            .map(|i| corr_flat[i * n..(i + 1) * n].to_vec())
+            .collect();
+        let spec = full_spectrum(&nested)?;
+        out_spectrum[..n].copy_from_slice(&spec);
+        Some(n)
+    }
+}
+
+// Zero-allocation cyclic Jacobi rotation eigensolver for flat buffer of size n*n.
+fn jacobi_eigensolver_flat_stack(
+    a: &mut [f64],
+    n: usize,
+    tolerance: f64,
+) -> Option<[f64; MAX_STACK_CORR_DIM]> {
+    const MAX_SWEEPS: usize = 64;
+    for sweep in 0..=MAX_SWEEPS {
+        let mut off_diagonal_norm = 0.0_f64;
+        for i in 0..n {
+            let row_offset = i * n;
+            for j in (i + 1)..n {
+                let entry = a[row_offset + j];
+                off_diagonal_norm = off_diagonal_norm.hypot(entry * std::f64::consts::SQRT_2);
+            }
+        }
+        if !off_diagonal_norm.is_finite() {
+            return None;
+        }
+        if off_diagonal_norm <= tolerance {
+            for i in 0..n {
+                let diag = a[i * n + i];
+                if !diag.is_finite() || diag < -tolerance {
+                    return None;
+                }
+            }
+            let mut out = [0.0f64; MAX_STACK_CORR_DIM];
+            for i in 0..n {
+                out[i] = a[i * n + i];
+            }
+            return Some(out);
+        }
+        if sweep == MAX_SWEEPS {
+            break;
+        }
+        for p in 0..n {
+            let p_offset = p * n;
+            for q in (p + 1)..n {
+                let q_offset = q * n;
+                let apq = a[p_offset + q];
+                if apq == 0.0 {
+                    continue;
+                }
+                let app = a[p_offset + p];
+                let aqq = a[q_offset + q];
+                let tau = (aqq - app) / (2.0 * apq);
+                let t = tau.signum() / (tau.abs() + tau.hypot(1.0));
+                let cosine = 1.0 / (1.0 + t * t).sqrt();
+                let sine = t * cosine;
+                a[p_offset + p] -= t * apq;
+                a[q_offset + q] += t * apq;
+                a[p_offset + q] = 0.0;
+                a[q_offset + p] = 0.0;
+                for k in 0..n {
+                    if k != p && k != q {
+                        let k_offset = k * n;
+                        let akp = a[k_offset + p];
+                        let akq = a[k_offset + q];
+                        let new_p = cosine * akp - sine * akq;
+                        let new_q = sine * akp + cosine * akq;
+                        a[k_offset + p] = new_p;
+                        a[p_offset + k] = new_p;
+                        a[k_offset + q] = new_q;
+                        a[q_offset + k] = new_q;
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+// Stack-allocated diagonalizer for &[Vec<f64>] without dynamic heap allocations.
+fn diagonalize_correlation_stack(corr: &[Vec<f64>]) -> Option<[f64; MAX_STACK_CORR_DIM]> {
+    let n = corr.len();
+    if n < 2 || n > MAX_STACK_CORR_DIM || corr.iter().any(|row| row.len() != n) {
+        return None;
+    }
+    let tolerance = 64.0 * f64::EPSILON * n as f64;
+    for i in 0..n {
+        if !corr[i][i].is_finite() || (corr[i][i] - 1.0).abs() > tolerance {
+            return None;
+        }
+        for j in (i + 1)..n {
+            let a = corr[i][j];
+            let b = corr[j][i];
+            if !a.is_finite()
+                || !b.is_finite()
+                || a.abs() > 1.0 + tolerance
+                || b.abs() > 1.0 + tolerance
+                || (a - b).abs() > tolerance
+            {
+                return None;
+            }
+        }
+    }
+
+    let mut a = [0.0f64; MAX_STACK_CORR_CELLS];
+    for i in 0..n {
+        a[i * n + i] = corr[i][i];
+        for j in (i + 1)..n {
+            let symmetric = 0.5 * corr[i][j] + 0.5 * corr[j][i];
+            a[i * n + j] = symmetric;
+            a[j * n + i] = symmetric;
+        }
+    }
+
+    jacobi_eigensolver_flat_stack(&mut a[..n * n], n, tolerance)
+}
+
+// Stack-allocated diagonalizer for &[f64] row-major slice without heap allocations.
+fn diagonalize_correlation_flat_stack(
+    corr_flat: &[f64],
+    n: usize,
+) -> Option<[f64; MAX_STACK_CORR_DIM]> {
+    if n < 2 || n > MAX_STACK_CORR_DIM || corr_flat.len() != n * n {
+        return None;
+    }
+    let tolerance = 64.0 * f64::EPSILON * n as f64;
+    for i in 0..n {
+        let c_ii = corr_flat[i * n + i];
+        if !c_ii.is_finite() || (c_ii - 1.0).abs() > tolerance {
+            return None;
+        }
+        for j in (i + 1)..n {
+            let a = corr_flat[i * n + j];
+            let b = corr_flat[j * n + i];
+            if !a.is_finite()
+                || !b.is_finite()
+                || a.abs() > 1.0 + tolerance
+                || b.abs() > 1.0 + tolerance
+                || (a - b).abs() > tolerance
+            {
+                return None;
+            }
+        }
+    }
+
+    let mut a = [0.0f64; MAX_STACK_CORR_CELLS];
+    for i in 0..n {
+        a[i * n + i] = corr_flat[i * n + i];
+        for j in (i + 1)..n {
+            let symmetric = 0.5 * corr_flat[i * n + j] + 0.5 * corr_flat[j * n + i];
+            a[i * n + j] = symmetric;
+            a[j * n + i] = symmetric;
+        }
+    }
+
+    jacobi_eigensolver_flat_stack(&mut a[..n * n], n, tolerance)
+}
+
+// Fallback dynamic heap diagonalizer for N > MAX_STACK_CORR_DIM.
 fn diagonalize_correlation(corr: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
     let n = corr.len();
     if n < 2 || corr.iter().any(|row| row.len() != n) {
@@ -137,12 +340,21 @@ fn diagonalize_correlation(corr: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
 /// domain, numerical tolerance and convergence checks of largest_eigenvalue.
 /// Returns None for invalid inputs or nonconvergence; trace equals N up to
 /// numerical error, not by normalizing an arbitrary covariance matrix.
+/// For N <= MAX_STACK_CORR_DIM (32), internal diagonalization performs zero heap allocations.
 pub fn full_spectrum(corr: &[Vec<f64>]) -> Option<Vec<f64>> {
-    let diagonalized = diagonalize_correlation(corr)?;
-    let mut eigenvalues: Vec<f64> =
-        diagonalized.into_iter().enumerate().map(|(i, row)| row[i]).collect();
-    eigenvalues.sort_by(|a, b| b.total_cmp(a));
-    Some(eigenvalues)
+    let n = corr.len();
+    if n >= 2 && n <= MAX_STACK_CORR_DIM {
+        let diag = diagonalize_correlation_stack(corr)?;
+        let mut eigenvalues = diag[..n].to_vec();
+        eigenvalues.sort_by(|a, b| b.total_cmp(a));
+        Some(eigenvalues)
+    } else {
+        let diagonalized = diagonalize_correlation(corr)?;
+        let mut eigenvalues: Vec<f64> =
+            diagonalized.into_iter().enumerate().map(|(i, row)| row[i]).collect();
+        eigenvalues.sort_by(|a, b| b.total_cmp(a));
+        Some(eigenvalues)
+    }
 }
 
 /// Legacy name for the participation of modes ABOVE the MP reference edge:
