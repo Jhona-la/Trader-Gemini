@@ -11408,5 +11408,9 @@ antes.
 - Sin Cargo ni caché ocupada hasta ventana acordada con ROOT/BASE. PR separada66;
   no tocar Core, DD de trayectoria, spanSOL-R4-01, comisiones nativas o promoción.
   [Alcance y estado](docs/audit/SI_B15_12_13_MTM_CAUSAL_2026-10-15.md).
+- Acuse ROOT posterior: publicar draft con contratos0950 y dos hooks de CI para
+  RED remoto; producción continúa sin corregir hasta observar aserciones causales.
+  Se conserva el paso entrenador existente y se añade otro filtrado al reporte.
+  Esto no concede una ventana de Cargo local ni acredita RED/GREEN todavía.
 
 
