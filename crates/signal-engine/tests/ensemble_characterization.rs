@@ -1,6 +1,8 @@
 //! TRIAJE B (GLM 109): (a), (c), (d), (e) DRENADOS — sus contratos ahora
 //! verifican la semántica honesta. (a) drenado en Ola Ω97 (F3.1-03): un voto infinitesimal
-//! no compra convicción y escala con la evidencia. (b) boost por clones sigue como diagnóstico.
+//! no compra convicción y escala con la evidencia. (b) DRENADO (GLM 127):
+//! invariancia a clones — el consenso agrupa por fuente (`name()`) y k
+//! copias aportan la masa de UNA (media, XIV §202).
 use omniscient_registry::OmniscientRegistry;
 use signal_engine::{
     flow_excitation_confluence::FlowExcitationConfluenceEngine,
@@ -22,11 +24,35 @@ impl QuantumStrategy for Constant {
     }
 }
 
+/// Fuente con NOMBRE propio — para distinguir clones (mismo name) de
+/// fuentes independientes (names distintos) en los contratos de (b).
+struct NamedSource(&'static str, f64);
+impl QuantumStrategy for NamedSource {
+    fn name(&self) -> &str {
+        self.0
+    }
+    fn init(&mut self, _: Arc<OmniscientRegistry>) -> Result<(), String> {
+        Ok(())
+    }
+    fn evaluate(&self) -> f64 {
+        self.1
+    }
+}
+
 fn conviction(value: f64, copies: usize) -> f64 {
     let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
     let mut engine = TensorVoteOrchestrator::new(arena);
     for _ in 0..copies {
         engine.add_strategy(Box::new(Constant(value)));
+    }
+    engine.evaluate_continuous_consensus().net_confidence
+}
+
+fn conviction_of(sources: &[(&'static str, f64)]) -> f64 {
+    let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+    let mut engine = TensorVoteOrchestrator::new(arena);
+    for (name, value) in sources {
+        engine.add_strategy(Box::new(NamedSource(name, *value)));
     }
     engine.evaluate_continuous_consensus().net_confidence
 }
@@ -40,12 +66,49 @@ fn tiny_positive_scores_do_not_have_false_floor() {
     assert_eq!(conviction(0.0, 1), 0.0);
 }
 
+/// (b) DRENADO (GLM 127): INVARIANCIA A CLONES — k copias de una misma
+/// fuente aportan la masa de UNA (media del grupo). XIV §202: "clonar
+/// un experto debe dividir su masa previa en lugar de crearla". Antes:
+/// conviction(0.2, 5) > conviction(0.2, 1) — el boost por instancias
+/// compraba concordancia sin evidencia nueva. (0.5 para estar holgado
+/// sobre el corte de señal, no en su borde.)
 #[test]
-fn diagnostic_clones_change_conviction_without_new_evidence() {
-    // (b) — ABIERTO por decisión del consejo: invariancia a clones exige
-    // preservar masa/prior por fuente (auditoría XIV §14), no sólo
-    // quitar el boost.
-    assert!(conviction(0.2, 5) > conviction(0.2, 1));
+fn clones_divide_mass_instead_of_creating_it() {
+    let una = conviction(0.5, 1);
+    let cinco = conviction(0.5, 5);
+    assert!(
+        (cinco - una).abs() < 1e-15,
+        "5 clones == 1 fuente: {cinco} vs {una}"
+    );
+    assert!(una > 0.4, "la fuente sola sí opina: {una}");
+}
+
+/// La concordancia REAL sigue premiada: 5 fuentes INDEPENDIENTES con el
+/// mismo voto elevan la convicción efectiva frente a 1 sola (el boost
+/// cuenta fuentes únicas, no representaciones).
+#[test]
+fn distinct_concordant_sources_still_boost() {
+    let una = conviction_of(&[("src_a", 0.2)]);
+    let cinco_fuentes = conviction_of(&[
+        ("src_a", 0.2),
+        ("src_b", 0.2),
+        ("src_c", 0.2),
+        ("src_d", 0.2),
+        ("src_e", 0.2),
+    ]);
+    assert!(
+        cinco_fuentes > una,
+        "5 fuentes independientes > 1: {cinco_fuentes} > {una}"
+    );
+}
+
+/// Discordancia interna de una fuente: copias con signos opuestos se
+/// cancelan por la media — la masa del grupo es la del veredicto medio,
+/// no la suma de gritos.
+#[test]
+fn mixed_signs_in_one_source_attenuate_by_mean() {
+    let split = conviction_of(&[("src_a", 0.2), ("src_a", -0.2)]);
+    assert_eq!(split, 0.0, "media 0 ⇒ masa 0: {split}");
 }
 
 /// (c) DRENADO (GLM 109, CL-15): sin base medida el motor ML NO OPINA —
