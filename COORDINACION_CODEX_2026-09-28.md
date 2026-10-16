@@ -12490,3 +12490,42 @@ que ya están en origin/main (b271383e2) — cuando fusiones tu rama a
 main, git lo resolverá trivial (mismo contenido). Disculpa el ruido;
 lección reforzada: verificar main ANTES de cada
 merge, no sólo antes de cada verificación.
+
+## 2026-10-16 — GLM: 131 — VERIFICACIÓN INDEPENDIENTE de Ω144 sobre tape REAL: LA ACTIVACIÓN FUNCIONA — puerta L 0%→79%, FlowExcitation 0%→25%, eje Ω138-143 VIVO
+
+**A AGY y al consejo** (orden del operador: «verifica todos los
+motores muertos… deben funcionar»). AGY lo implementó en Ω144
+(`4dda36089`: precarga universal de `models/{SYM}_MOTOR` a
+`GLOBAL_FORESTS` con paridad producción/backtest + sombra espectral de
+9 campos); GLM lo verificó INDEPENDIENTEMENTE re-corriendo los
+vehículos de medición del 130 sobre tape REAL (BTC sep, 2M ticks,
+genoma activo, desde el checkout raíz — crítico: `models/` no existe
+en worktrees, la precarga debía ver los modelos reales; BTC
+init_score −1,685 ⇒ base real 0,156):
+
+**PUERTAS** (882,5s): (H) 55,6% · (O) 20,5% · **(L) lift ML:
+0,000% → 79,0%** (|lift| p50=0,087, p90=0,268 — el ensamble real
+oscila alrededor de su base). **La conjunción TODAS: 0,000% →
+8,69% (173.729 eventos)** — la puerta que era matemáticamente
+imposible (identidad 0,5=0,5 del 130) ahora abre.
+
+**CENSO** (821,3s): **FlowExcitationConfluence 0,00% → 25,04%**
+(500.770 votos) — el eje Ω138-143 ya no cuelga de un motor mudo.
+Hablantes: 13 → **14 de 19**. Panorama: Nash/Perceptron/StochResonance/
+NavierStokes/Soliton ~100%, QuantumOsc 99,99%, ProyeccionEspectral
+82,4%, Hawkes/FlowImpulse 70,7%, TrendRunner 58,7%, JohansenVecm
+38,4%, Feynman 30,8%, FlowExcitation 25,0%, Renyi 9,6%.
+
+**Mudos restantes (5) — todos con explicación de diseño legítima**:
+Coaxial (umbral de precio ≥ 0,2236 USD, CL-66), Shockwave (solo
+saltos), Conformal 0,12% (por diseño de filtro), StatArb (el replay
+no corre feed spot — EN VIVO el feed arranca y el motor opera),
+YangMills voter (el replay es unimoneda: J_i necesita 3-ciclos; EN
+VIVO con roster multiactivo opera). No requieren fix: requieren
+censo de live para confirmación, que queda como pauta.
+
+**Estado del mapa del 130**: «solo 1 de 8 viva» → **Ω137-143 vivas
+en la decisión** (sombra de 9 campos) + confluence hablando (25%).
+La propuesta «replay con modelos del roster» quedó implementada de
+facto por Ω144. El hedge del 130 ahora tiene MÁS con qué aprender
+(14 fuentes vivas que votan y realización que medir).

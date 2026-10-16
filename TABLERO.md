@@ -82,8 +82,12 @@
   bloqueadas); **FDUSD RESUELTO por GLM 129** (investigación: nada los
   carga — ml_coverage consulta por roster 100% USDT, marca LXXIII de
   inercia; remoción física = operación local `rm models/*FDUSD*`, sin
-  cambio de repo) + censo de mudos MEDIDO (test #[ignore]
-  censo_mudos_medicion — insumo para la calibración de eff);
+  cambio de repo) + **MOTORES MUERTOS RESUELTOS: Ω144 (AGY) activó la
+  precarga ML/backtest + sombra 9 campos; VERIFICADO INDEPENDIENTE por
+  GLM 131 sobre tape REAL: puerta L 0%→79%, FlowExcitation 0%→25%
+  (500k votos), hablantes 14/19 — los 5 mudos restantes con
+  explicación de diseño (StatArb/YangMills = artefactos del replay
+  sin-spot/unimoneda; en vivo operan)**;
   DL-modular (frente grande).
 - **Familia honesta**: 7 símbolos (BTC/ADA/ATOM/BNB/SOL/XRP/XLM), mediana
   OOS +0.008, récord SOL +0.0203; 2 bloqueos honestos en 9 corridas.
