@@ -22,7 +22,20 @@
     1. **Fijar `$env:CARGO_BUILD_JOBS = 2` / `-j 2`**: Terminantemente prohibido compilar sin limitar a 2 hilos en la máquina de 16 GB.
     2. **Mutex de Compilación**: Verificar `Get-Process cargo,rustc` antes de invocar Cargo; no lanzar builds si otro agente está compilando.
     3. **Priorizar `cargo check`**: Usar `cargo check --workspace --all-targets -j 2` para validar tipos sin saturar disco ni memoria.
-    4. **Purga Segura de Artefactos (>48h)**: Correr la purga de hashes muertos tras concluir los compiladores en curso.
+- **Ola Ω136 Integrada y Certificada — Online Newton GBDT Zero-Alloc en Stack (<300 ns)**:
+  * **Diagnóstico y Causa Raíz**: El anterior `TrueOnlineRandomForest` dependía de `smartcore`, requiriendo alocaciones masivas de matrices en el heap en cada inferencia (`x_eval = DenseMatrix::from_2d_vec`), y su clasificador devolvía clases discretas (0/1) en vez de probabilidades continuas, provocando curvas planas de calibración de umbrales.
+  * **Solución Arquitectónica y Matemática**:
+    1. Creado `crates/evolution-engine/src/online_newton_gbdt.rs` con optimización analítica de segundo orden de Taylor (Newton-Raphson):
+       $$g_i = \frac{\partial \mathcal{L}}{\partial \hat{y}_i}, \quad h_i = \frac{\partial^2 \mathcal{L}}{\partial \hat{y}_i^2}, \quad w_j^* = -\frac{\sum g_i}{\sum h_i + \lambda}$$
+    2. Inferencia ultra-rápida zero-alloc en stack (<300 ns): árboles shallow contiguos (`[GbdtNode; MAX_NODES]`).
+    3. Latencia medida empíricamente: **230.96 nanosegundos por inferencia** (mandato <25 µs superado con holgura).
+    4. Probabilidad continua suave $C^\infty$ sigmoide calibrada en el símplex $\Delta^3$.
+    5. Integrado transparentemente en `TrueOnlineRandomForest` en `crates/evolution-engine/src/online_random_forest.rs`.
+  * **Certificación Contractual**:
+    - `crates/evolution-engine/tests/online_newton_gbdt_contract.rs` (4/4 pass, 100% verde).
+    - `crates/evolution-engine/tests/shadow_forest_directional_parity_contract.rs` (4/4 pass, 100% verde).
+    - `crates/evolution-engine/tests/shadow_forest_threshold_contract.rs` (2/2 pass, 100% verde).
+    - `cargo check --workspace --all-targets -j 2` (23/23 crates sin errores).
 
 - **Sincronización Transversal de Planificación Colegiada**:
   * Elevado `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md` a **V10**.

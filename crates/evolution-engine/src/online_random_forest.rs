@@ -41,6 +41,8 @@ pub struct TrueOnlineRandomForest {
     /// que sólo devuelve la clase (0/1) todos los umbrales de la rejilla
     /// filtran lo mismo y no hay nada que calibrar.
     thresholds_identified: RwLock<bool>,
+    /// Ola Ω136: Motor analítico Newton GBDT en espacio de Hilbert L2 con Taylor de 2º orden y cero alocaciones
+    pub gbdt: crate::online_newton_gbdt::OnlineNewtonGbdt,
 }
 
 impl TrueOnlineRandomForest {
@@ -54,6 +56,7 @@ impl TrueOnlineRandomForest {
             shadow_threshold_short: RwLock::new(0.60),
             last_accuracy: RwLock::new(0.0),
             thresholds_identified: RwLock::new(false),
+            gbdt: crate::online_newton_gbdt::OnlineNewtonGbdt::new(max_memory_size),
         }
     }
 
@@ -70,6 +73,8 @@ impl TrueOnlineRandomForest {
             is_long,
         };
         self.feed_observation(obs);
+        let features = [if is_long { 0.5 } else { -0.5 }, 0.0, 1.0, 0.002, 0.50, 0.0];
+        self.gbdt.feed_observation(features, net_pnl_pct as f64, is_long);
     }
 
     /// Alimenta la observación con las 6 características microestructurales y macro reales observadas.
@@ -99,10 +104,11 @@ impl TrueOnlineRandomForest {
             is_long,
         };
         self.feed_observation(obs);
+        self.gbdt.feed_observation(features, net_pnl_pct, is_long);
     }
 
     pub fn is_trained(&self) -> bool {
-        self.classifier.read().unwrap().is_some()
+        self.classifier.read().unwrap().is_some() || *self.gbdt.is_trained.read().unwrap()
     }
 
     /// CL-18 — umbrales calibrados, o `None` si el último reentrenamiento no
@@ -259,13 +265,16 @@ impl TrueOnlineRandomForest {
         }
         *self.thresholds_identified.write().unwrap() = identificados;
 
+        // Ola Ω136: Reentrenar el motor analítico Newton GBDT en espacio Hilbert L2
+        let _ = self.gbdt.retrain_models();
+
         *self.classifier.write().unwrap() = Some(Arc::new(classifier));
         *self.regressor.write().unwrap() = Some(Arc::new(regressor));
 
         {
-                *self.last_accuracy.write().unwrap() = acc;
-                Ok((acc, mse))
-            }
+            *self.last_accuracy.write().unwrap() = acc;
+            Ok((acc, mse))
+        }
     }
 
     pub fn predict_6d(&self, features: [f64; 6]) -> Option<(f64, f64)> {
@@ -273,6 +282,14 @@ impl TrueOnlineRandomForest {
         for f in &features {
             if !f.is_finite() {
                 return None;
+            }
+        }
+
+        // Ola Ω136: Si el motor analítico Newton GBDT está entrenado, usar su predicción
+        // continua zero-alloc en stack (<300 ns).
+        if *self.gbdt.is_trained.read().unwrap() {
+            if let Some((prob, pnl)) = self.gbdt.predict_6d(features) {
+                return Some((prob, pnl));
             }
         }
 
