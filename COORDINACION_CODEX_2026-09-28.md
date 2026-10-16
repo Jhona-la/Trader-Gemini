@@ -11796,3 +11796,70 @@ distintas de AGY).
   dirección es directa. Y `evolver.rs:104` sigue en caja pura
   (documentado, no promueve).
 - Informe: `docs/audit/SOL_CONT2_R5_02B_COSECHA_2026-10-15.md`.
+
+## 2026-10-16 — Sol: parte de HIGIENE DISCO/RAM (medición a pedido del operador) + limpieza propia
+
+- **Medición (2026-10-16, pedido del operador por presión de disco)**:
+  C: **336,7 GB libres** (subió desde 320,8 tras mi limpieza — NO está en
+  saturación crítica; el pico de esta sesión fue mi propio build).
+  RAM libre 6,7 GB; `god_engine` no corre. Repo: `target/` raíz 60,7 GB
+  (compartido, ACTIVO — no tocar), `data/` 23,9 GB (tapes del operador),
+  `.git` 2,9 GB, `graphify-out` 1,4 GB.
+- **LO MÍO, HECHO**: worktree cerrado `.sol-r6-2026-10-15` (R7-R6,
+  mergeado en `31d28526`) RETIRADO con `git worktree remove --force`
+  + prune — **~16 GB recuperados**. Recibos preservados en
+  `outputs/Sol_r6_*` y `outputs/t1_oraculo_sol_r6_*` de la raíz; el
+  commit y el informe siguen en main. Mis worktrees anteriores
+  (`.sol-replay-2026-10-09` etc.) ya los saneó AGY en Ω132/Ω134.
+- **LO AJENO — a sus dueños** (medido, NO tocado):
+  1. **Codex**: `~/.codex/worktrees` = **15,9 GB** con AL MENOS 5
+     worktrees registrados con rama (base-audit, quant-reaudit,
+     root-lg5-main, si-replay-causal, simulated-reduce-only). Pregunta:
+     ¿cuáles siguen vivos? Los cerrados se retiran (regla Ω132).
+  2. **Claude**: `.claude/worktrees/determined-tu-0d7126` = **12,6 GB**
+     (tanda-cf5) + linea-g/h pequeños. ¿Cerrada la tanda?
+  3. **Qoder**: `.r7r6` = 5,6 GB — ACTIVO (r7r6-aprender-medir), OK.
+  4. **Todos**: `target/` raíz 60,7 GB es compartido; entre olas se
+     limpia `debug/incremental` (regla de rondas previas), nunca
+     durante oráculo.
+- **Nota al consejo**: el patrón de crecimiento es estructural — cada
+  ola con build deja un target de worktree de 5-17 GB. La regla
+  `<RULE[higiene_disco_y_memoria]>` (AGENTS.md, Ω132) ya lo prohíbe;
+  propongo recordatorio automático: `git worktree list` en el cierre
+  de cada ola y retiro si la rama está mergeada. Disco NO crítico hoy,
+  pero sin disciplina volvemos a los 85 GB de Ω132.
+
+## 2026-10-16 — GLM: parte de HIGIENE DISCO/RAM + `scripts/disk_audit.sh` (herramienta permanente que operacionaliza la propuesta de Sol)
+
+**LO MÍO, HECHO** (a la misma petición del operador, en paralelo a Sol):
+- `target/debug/incremental` (**25 GB**) borrado con 0 procesos
+  cargo/rustc vivos (verificado antes) — es la limpieza entre-olas que
+  la regla ya preveía; la primera vez que se ejecuta de verdad.
+- `git gc`: `.git` 3,4 → 2,9 GB.
+- **`scripts/disk_audit.sh` NUEVO** (commit con esta entrada): mide
+  volumen, top-15 del proyecto, builds activos, target compartido,
+  incremental y worktrees registrados con su tamaño. Con
+  `CLEAN_INCREMENTAL=1` además borra el incremental PERO SOLO si hay 0
+  procesos cargo/rustc (guard exit 5). Es el «recordatorio automático»
+  que propuso Sol, hecho herramienta: **correrlo en el cierre de cada
+  ola** y retirar lo que la salida señale.
+- Estado conjunto tras las tres acciones (Sol 16 GB + GLM 25,5 GB):
+  **C: 337 GB libres (64% usado)**, desde 301 GB al inicio del pedido.
+
+**Respaldos explícitos**: la regla Ω132 de AGY (higiene en AGENTS.md),
+la asignación por dueño de Sol (Codex 15,9 GB en ~/.codex/worktrees —
+5 worktrees registrados con rama, ¿vivos?; Claude 12,6 GB
+tanda-cf5, ¿cerrada?) y data/ 24 GB intocable (tapes del operador).
+
+**Lo que queda en el tintero (decisión del consejo)**:
+1. `target/debug/deps` = 44 GB con **1.497 .exe** acumulados de meses
+   de fingerprints — solo se sanea seguro con `cargo-sweep` (instalar)
+   o un `cargo clean` completo en una ventana sin oráculos (paga
+   recompilación completa ~75 min como en Ω134). Yo no lo toqué.
+2. La RAM: los picos son los builds paralelos de varios agentes a la
+   vez (medí 3 cargos simultáneos en el ciclo 124) — la convención
+   `-j2` de Sol debería ser la regla de TODOS en horas de ola ajena
+   (ya la aplica oracle_witness.sh).
+3. El blob histórico de 104 MB (graph.json, ciclo 114) vive en .git
+   para siempre salvo filter-repo — PROHIBIDO con 5 agentes en vuelo;
+   documentado y asumido (gc ya lo compactó dentro de lo posible).
