@@ -1,3 +1,4 @@
+pub mod birch_swinnerton_dyer;
 pub mod kahler_hodge;
 pub mod maker;
 pub mod momentum_booster;
@@ -9,6 +10,10 @@ pub mod types;
 pub mod vecm_arbitrage;
 pub mod yang_mills_gauge;
 
+pub use birch_swinnerton_dyer::{
+    bsd_hermite_c1, frobenius_trace_mod_p, legendre_symbol, BirchSwinnertonDyerEngine,
+    BirchSwinnertonDyerMetrics, BSD_NUM_PRIMES, BSD_ODD_PRIMES,
+};
 pub use kahler_hodge::{KahlerHodgeEngine, KahlerHodgeMetrics, KahlerHodgeParams};
 pub use multivariate_coint::MultivariateCointegrationEngine;
 pub use vecm_arbitrage::{ContinuousOrnsteinUhlenbeckSde, JohansenVecmEngine, VecmArbitrageParams};

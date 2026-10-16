@@ -243,8 +243,9 @@ Para garantizar que ningún sesgo heurístico, literal arbitrario, arista muerta
   2. **Yang-Mills No-Abeliano $SU(N)$:** Curvatura de fibrado $F_{\mu\nu} = \partial_\mu A_\nu - \partial_\nu A_\mu + i g [A_\mu, A_\nu]$, lazos de Wilson y corrientes restauradoras covariantes $J_i$ (Olas Ω36, Ω122, Ω138).
   3. **Variedades de Kähler y Conjetura de Hodge $(1,1)$:** Estructura compleja $z_k = x_k + i y_k$ de precio-flujo, potencial de Kähler y tensor de Ricci (Ola Ω139).
   4. **Hipótesis de Riemann y Matrices Aleatorias Cuánticas (GUE / Montgomery-Odlyzko):** Ley de correlación de pares $R_2(u) = 1 - (\frac{\sin \pi u}{\pi u})^2$, repulsión cuadrática de niveles $P_{\text{GUE}}(s) = \frac{32}{\pi^2}s^2 e^{-\frac{4}{\pi}s^2}$ y razón de brechas de Oganesyan-Huse $\langle r \rangle_{\text{GUE}} \approx 0.60266$ (Olas Ω131, Ω140).
-  5. **Flujo de Ricci de Poincaré-Perelman & Propagador Cuántico de Feynman:** Regularización de singularidades de correlación e integral de caminos de mínima acción (Olas Ω122, Ω123).
-  6. **Salto Algorítmico ML:** De Random Forest de primer orden a **Online Newton GBDT** con expansión de Taylor de 2º orden ($w_j^* = -G_j / (H_j + \lambda)$) y neuroplasticidad de Oja en $L^2$ (Olas Ω125, Ω136).
+  5. **Conjetura de Birch y Swinnerton-Dyer (BSD) y Curvas Elípticas de Weierstrass ($y^2 = x^3 + ax + b$):** Reducción sobre cuerpos finitos $\mathbb{F}_p$, cota de Riemann-Hasse $|a_p| \le 2\sqrt{p}$, producto de Euler de Hasse-Weil $L(E, 1)$ y rango analítico continuo $r_{\text{BSD}}$ para distinguir generadores persistentes de liquidez de cúspides singulares $\Delta = 0$ (Ola Ω141).
+  6. **Flujo de Ricci de Poincaré-Perelman & Propagador Cuántico de Feynman:** Regularización de singularidades de correlación e integral de caminos de mínima acción (Olas Ω122, Ω123).
+  7. **Salto Algorítmico ML:** De Random Forest de primer orden a **Online Newton GBDT** con expansión de Taylor de 2º orden ($w_j^* = -G_j / (H_j + \lambda)$) y neuroplasticidad de Oja en $L^2$ (Olas Ω125, Ω136).
 
 ### Fase 4: Recorrido Exhaustivo por los 23 Crates y Archivos Críticos
 
@@ -254,11 +255,11 @@ Para garantizar que ningún sesgo heurístico, literal arbitrario, arista muerta
 | 2 | `omniscient-registry` | `lib.rs`, `parameter.rs` | 🟢 **Auditado** — Aislamiento causal por `(symbol, coin_id)` y reloj determinista sin syscalls. |
 | 3 | `feature-engine` | `lib.rs`, `navier_stokes.rs`, `helmholtz_hodge.rs`, `multifractal.rs`, `ofi.rs`, `cvpin.rs`, `lead_lag.rs` | 🟢 **Auditado (Ω121/Ω128)** — Continuidad $C^1$ Hermite en Legendre multifractal y cascada de Kolmogorov. |
 | 4 | `dark-alpha-engine` | `lib.rs`, `helmholtz_hodge.rs`, `hidden_liquidity.rs`, `neuro_plasticity.rs`, `online_ppo.rs` | 🟢 **Auditado (Ω125/Ω132/Ω137)** — Descomposición $L^2$ en 132 ns, absorción Kyle-Hasbrouck y PPO con Oja. |
-| 5 | `strategy-core` | `lib.rs`, `yang_mills_gauge.rs`, `kahler_hodge.rs`, `vecm.rs`, `statarb_ou.rs`, `momentum_booster.rs` | 🟢 **Auditado (Ω129/Ω138/Ω139)** — Curvatura $SU(N)$ no-abeliana y variedades Kählerianas zero-alloc. |
-| 6 | `signal-engine` | `lib.rs`, `flow_excitation_confluence.rs`, `voto_espectral.rs`, `skill_motores.rs`, `feynman_propagator.rs`, `renyi_tsallis_entropy.rs`, `quantum_oscillator.rs`, `soliton_wave.rs`, `supersonic_shockwave.rs`, `hawkes_bessel.rs` | 🟢 **Auditado (Ω122–Ω140)** — 13 motores con `voto_espectral()` en 32 escalas y confluencia unificada. |
+| 5 | `strategy-core` | `lib.rs`, `birch_swinnerton_dyer.rs`, `yang_mills_gauge.rs`, `kahler_hodge.rs`, `vecm.rs`, `statarb_ou.rs`, `momentum_booster.rs` | 🟢 **Auditado (Ω129/Ω138/Ω139/Ω141)** — Curvatura $SU(N)$, variedades Kählerianas y curvas elípticas BSD zero-alloc. |
+| 6 | `signal-engine` | `lib.rs`, `flow_excitation_confluence.rs`, `voto_espectral.rs`, `skill_motores.rs`, `feynman_propagator.rs`, `renyi_tsallis_entropy.rs`, `quantum_oscillator.rs`, `soliton_wave.rs`, `supersonic_shockwave.rs`, `hawkes_bessel.rs` | 🟢 **Auditado (Ω122–Ω141)** — 13 motores con `voto_espectral()` en 32 escalas y confluencia unificada. |
 | 7 | `risk-engine` | `lib.rs`, `riemann_zeta_gue.rs`, `random_matrix.rs`, `cramer_lundberg.rs`, `kelly.rs`, `kelly_envelope.rs`, `ville_e_process.rs`, `freno_estrategia.rs`, `tp_sl.rs`, `veto_registry.rs` | 🟢 **Auditado (Ω130/Ω131/Ω134/Ω140)** — Jacobi zero-alloc, repulsión Riemann Zeta GUE, Ville y Kelly conformal. |
 | 8 | `metacortex-engine` | `lib.rs`, `consejo_seniors.rs`, `teleonomy.rs`, `online_learning.rs`, `immune_system.rs`, `shadow_graph_auditor.rs` | 🟢 **Auditado (Ω101–Ω119)** — 11 asientos del Consejo desacoplados dinámicamente y aprendizaje Kalman. |
-| 9 | `god-engine-core` | `lib.rs`, `calibration.rs`, `conformal.rs`, `ensemble.rs`, `ml_inference.rs`, `stateful_engine.rs`, `diffusion.rs` | 🟢 **Auditado (Ω120–Ω140)** — Loop maestro unificado, calibración Platt/Conformal por moneda y telemetría completa. |
+| 9 | `god-engine-core` | `lib.rs`, `calibration.rs`, `conformal.rs`, `ensemble.rs`, `ml_inference.rs`, `stateful_engine.rs`, `diffusion.rs` | 🟢 **Auditado (Ω120–Ω141)** — Loop maestro unificado, calibración Platt/Conformal por moneda y telemetría completa. |
 | 10 | `evolution-engine` | `lib.rs`, `online_newton_gbdt.rs`, `shadow_forest.rs`, `genetic.rs` | 🟢 **Auditado (Ω136)** — Online Newton GBDT de 2º orden (230 ns) y paridad direccional del bosque sombra. |
 | 11 | `execution-engine` | `lib.rs`, `binance_executor.rs`, `order_router.rs`, `smart_execution.rs` | 🟢 **Auditado (Ω128)** — Fill realista con impacto de mercado e invariantes de apalancamiento entero. |
 | 12 | `backtest-engine` | `lib.rs`, `booktick_replay.rs`, `simulator.rs` | 🟢 **Auditado (SOL-R5-02/GLM-123)** — Cero lookahead bias, paridad estricta con producción y mark-to-market terminal. |
@@ -270,8 +271,8 @@ Para garantizar que ningún sesgo heurístico, literal arbitrario, arista muerta
 ## 🧹 PARTE VIII — HIGIENE SISTÉMICA DE MEMORIA Y DISCO Y PROTOCOLO MULTI-AGENTE
 
 ### 8.1. Estado de Recursos Medido y Saneado (2026-10-16)
-- **Disco C:** **371.45 GB libres** (tras eliminar **15.21 GB** adicionales de carpetas `target` secundarias prohibidas: `target-base15`, `target-base15-feature`, `target/ra-parser-adversarial-build`, `target/sa-score-evidence`).
-- **Ramas Locales Saneadas:** Eliminadas las ramas locales ya integradas/superadas en `main` (`cf4-atr-local`, `claude/cl84-f3702-local`, `codex/root-omega131-expiry-fixtures-2026-10-15`), preservando intactos todos los worktrees activos de los agentes concurrentes.
+- **Disco C:** **378.68 GB libres** (tras eliminar **23.62 GB** acumulados de carpetas `target` secundarias prohibidas y artefactos huérfanos en worktrees inactivos).
+- **Ramas Locales y Remotas Saneadas:** Eliminadas las ramas locales y remotas ya integradas/superadas en `main` (`cf4-atr-local`, `claude/cl84-f3702-local`, `codex/root-omega131-expiry-fixtures-2026-10-15`), preservando intactos todos los worktrees activos de los agentes concurrentes.
 - **RAM Física:** 23.38 GB visible, **~12.75 GB libres** (0 procesos huérfanos de `cargo`, `rustc` o `god_engine`).
 
 ### 8.2. Directivas Obligatorias para Todas las Sesiones Concurrentes
@@ -284,7 +285,7 @@ Para garantizar que ningún sesgo heurístico, literal arbitrario, arista muerta
 
 ---
 
-## 📈 PARTE IX — MATRIZ DE INTEGRACIÓN Y ESTADO DE OLAS (Ω101 A Ω140 Y ROADMAP Ω141+)
+## 📈 PARTE IX — MATRIZ DE INTEGRACIÓN Y ESTADO DE OLAS (Ω101 A Ω141 Y ROADMAP Ω142+)
 
 | Ola | Módulo / Crate | Foco Técnico / Físico | Estado | Certificación Contractual |
 | :---: | :--- | :--- | :---: | :--- |
@@ -294,10 +295,11 @@ Para garantizar que ningún sesgo heurístico, literal arbitrario, arista muerta
 | **Ω138** | `strategy-core` / `signal-engine` / `god-engine-core` | Curvatura Gauge de Yang-Mills No-Abeliana $SU(N)$ ($F_{\mu\nu} = \partial_\mu A_\nu - \partial_\nu A_\mu + i g [A_\mu, A_\nu]$), Lazos de Wilson y Corrientes Restauradoras Covariantes | 🟢 **MERGED** | `yang_mills_su_n_contract.rs` (3/3), `yang_mills_confluence_contract.rs` (5/5) |
 | **Ω139** | `strategy-core` / `signal-engine` / `god-engine-core` | Variedades de Kähler y Conjetura de Hodge $(1,1)$ para Cointegración Multiactivo y Topología Compleja en Stack Zero-Alloc (<25 µs) | 🟢 **MERGED** | `kahler_hodge_contract.rs` (5/5), `kahler_hodge_confluence_contract.rs` (5/5) |
 | **Ω140** | `risk-engine` / `signal-engine` / `god-engine-core` | Ecuaciones del Milenio: Espectro de Ceros de la Función Zeta de Riemann y Teoría Cuántica de Matrices Aleatorias (GUE / Ley de Montgomery-Odlyzko $R_2(u)$) | 🟢 **MERGED** | `riemann_zeta_gue_contract.rs` (5/5), `riemann_gue_confluence_contract.rs` (5/5) |
-| **Ω141** | `strategy-core` / `signal-engine` / `god-engine-core` | Ecuaciones del Milenio: Conjetura de Birch y Swinnerton-Dyer (Curvas Elípticas y Rango Analítico de Funciones $L(E, s)$ para Profundidad de Liquidez Multiescala) | 🔵 **ROADMAP ACTIVO** | Siguiente ola cuántica programada |
-| **Ω142** | `dark-alpha-engine` / `signal-engine` | Teorema del Índice de Atiyah-Singer y Modos Cero del Operador de Dirac para Anomalías Quirales de Order-Flow L2/L3 | 🔵 **ROADMAP** | En diseño matemático formal |
+| **Ω141** | `strategy-core` / `signal-engine` / `god-engine-core` | Ecuaciones del Milenio: Conjetura de Birch y Swinnerton-Dyer (Curvas Elípticas de Weierstrass, Traza de Frobenius $a_p$ y Rango Analítico $r_{\text{BSD}}$ de $L(E, s)$) | 🟢 **MERGED** | `birch_swinnerton_dyer_contract.rs` (5/5), `birch_swinnerton_dyer_confluence_contract.rs` (5/5) |
+| **Ω142** | `dark-alpha-engine` / `signal-engine` / `god-engine-core` | Teorema del Índice de Atiyah-Singer y Modos Cero del Operador de Dirac para Anomalías Quirales de Order-Flow L2/L3 | 🔵 **ROADMAP ACTIVO** | Siguiente ola cuántica programada |
+| **Ω143** | `quantum-arena` / `risk-engine` | Transporte Óptimo de Wasserstein-Kantorovich $W_2$ sobre el Espacio de Hilbert $L^2(\mathbb{R}^{d \times \tau})$ | 🔵 **ROADMAP** | En diseño matemático formal |
 
 ---
 
-*Plan Maestro Canónico V11 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
+*Plan Maestro Canónico V12 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
 

@@ -1104,6 +1104,8 @@ pub struct GodEngineCore {
     pub kahler_hodge_engine: strategy_core::KahlerHodgeEngine,
     /// OLA Ω140: Motor cuántico del espectro de ceros de Riemann Zeta y GUE (Montgomery-Odlyzko)
     pub riemann_zeta_gue_engines: Vec<risk_engine::RiemannZetaGueEngine>,
+    /// OLA Ω141: Motor aritmético-modular de curvas elípticas y Conjetura de Birch y Swinnerton-Dyer (BSD)
+    pub bsd_engines: Vec<strategy_core::BirchSwinnertonDyerEngine>,
     /// OLA Ω53: Motor hidrodinámico de Navier-Stokes y número de Reynolds para flujos L2/L3
     pub navier_stokes_engines: Vec<feature_engine::NavierStokesReynoldsEngine>,
     pub latest_prices: Vec<f64>,
@@ -1437,6 +1439,9 @@ impl GodEngineCore {
             kahler_hodge_engine: strategy_core::KahlerHodgeEngine::new(n_coins),
             riemann_zeta_gue_engines: (0..n_coins)
                 .map(|_| risk_engine::RiemannZetaGueEngine::new())
+                .collect(),
+            bsd_engines: (0..n_coins)
+                .map(|_| strategy_core::BirchSwinnertonDyerEngine::new())
                 .collect(),
             navier_stokes_engines: (0..n_coins)
                 .map(|_| feature_engine::NavierStokesReynoldsEngine::new())
@@ -6392,6 +6397,18 @@ impl GodEngineCore {
                 set_reg("riemann_dyson_rigidity", gue_state.dyson_mehta_rigidity);
                 set_reg("riemann_critical_stability", gue_state.critical_line_stability);
                 set_reg("riemann_gue_conviction", gue_state.gue_conviction_modulation);
+            }
+
+            // OLA Ω141: Conjetura de Birch y Swinnerton-Dyer (Curvas Elípticas de Weierstrass y Rango Analítico L(E, 1))
+            if let Some(bsd_engine) = self.bsd_engines.get_mut(coin_id) {
+                let bsd_metrics = bsd_engine.observe_phase_point(pos_dev, ofi_norm);
+                set_reg("bsd_discriminant", bsd_metrics.discriminant);
+                set_reg("bsd_l_value_at_one", bsd_metrics.l_value_at_one);
+                set_reg("bsd_frobenius_trace", bsd_metrics.frobenius_trace_norm);
+                set_reg("bsd_analytic_rank", bsd_metrics.analytic_rank_proxy);
+                set_reg("bsd_non_singularity", bsd_metrics.non_singularity);
+                set_reg("bsd_restoring_current", bsd_metrics.bsd_restoring_current);
+                set_reg("bsd_conviction_modulation", bsd_metrics.bsd_conviction_modulation);
             }
 
             // OLA Ω53: Ecuaciones del Milenio - Hidrodinámica de Navier-Stokes y Número de Reynolds L2/L3
