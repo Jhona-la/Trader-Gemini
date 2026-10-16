@@ -30,11 +30,16 @@
 //! ## QUIÉN
 //! Llamado desde `GodEngineCore::process_event()` y desde `evolution.rs` para optimizar.
 
+pub mod atiyah_singer_dirac;
 pub mod hidden_liquidity;
 pub mod helmholtz_hodge;
 pub mod neuro_plasticity;
 pub mod online_ppo;
 
+pub use atiyah_singer_dirac::{
+    a_roof_generating_function, dirac_hermite_c1, AtiyahSingerDiracEngine,
+    AtiyahSingerDiracMetrics, DIRAC_WINDOW_CAP,
+};
 pub use hidden_liquidity::{
     BlockAbsorptionState, ConformalGateVerdict, HiddenLiquidityEngine, HiddenLiquidityParams,
 };

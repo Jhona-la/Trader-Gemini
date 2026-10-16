@@ -1106,6 +1106,8 @@ pub struct GodEngineCore {
     pub riemann_zeta_gue_engines: Vec<risk_engine::RiemannZetaGueEngine>,
     /// OLA Ω141: Motor aritmético-modular de curvas elípticas y Conjetura de Birch y Swinnerton-Dyer (BSD)
     pub bsd_engines: Vec<strategy_core::BirchSwinnertonDyerEngine>,
+    /// OLA Ω142: Motor cuántico-topológico del Teorema del Índice de Atiyah-Singer y Operador de Dirac
+    pub dirac_engines: Vec<dark_alpha_engine::AtiyahSingerDiracEngine>,
     /// OLA Ω53: Motor hidrodinámico de Navier-Stokes y número de Reynolds para flujos L2/L3
     pub navier_stokes_engines: Vec<feature_engine::NavierStokesReynoldsEngine>,
     pub latest_prices: Vec<f64>,
@@ -1442,6 +1444,9 @@ impl GodEngineCore {
                 .collect(),
             bsd_engines: (0..n_coins)
                 .map(|_| strategy_core::BirchSwinnertonDyerEngine::new())
+                .collect(),
+            dirac_engines: (0..n_coins)
+                .map(|_| dark_alpha_engine::AtiyahSingerDiracEngine::new())
                 .collect(),
             navier_stokes_engines: (0..n_coins)
                 .map(|_| feature_engine::NavierStokesReynoldsEngine::new())
@@ -6409,6 +6414,17 @@ impl GodEngineCore {
                 set_reg("bsd_non_singularity", bsd_metrics.non_singularity);
                 set_reg("bsd_restoring_current", bsd_metrics.bsd_restoring_current);
                 set_reg("bsd_conviction_modulation", bsd_metrics.bsd_conviction_modulation);
+            }
+
+            // OLA Ω142: Teorema del Índice de Atiyah-Singer y Modos Cero del Operador de Dirac
+            if let Some(dirac_engine) = self.dirac_engines.get_mut(coin_id) {
+                let dirac_metrics = dirac_engine.observe_spinor_state(pos_dev, ofi_norm);
+                set_reg("dirac_a_roof_genus", dirac_metrics.a_roof_genus);
+                set_reg("dirac_chern_character", dirac_metrics.chern_character);
+                set_reg("dirac_atiyah_singer_index", dirac_metrics.atiyah_singer_index);
+                set_reg("dirac_chiral_asymmetry", dirac_metrics.chiral_zero_mode_asymmetry);
+                set_reg("dirac_chiral_current", dirac_metrics.chiral_anomaly_current);
+                set_reg("dirac_conviction_modulation", dirac_metrics.dirac_conviction_modulation);
             }
 
             // OLA Ω53: Ecuaciones del Milenio - Hidrodinámica de Navier-Stokes y Número de Reynolds L2/L3
