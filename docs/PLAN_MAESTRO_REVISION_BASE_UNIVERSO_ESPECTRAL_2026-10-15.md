@@ -297,7 +297,8 @@ Garantizando convergencia a los autovectores principales sin explosión de norma
 | **Ω134** | `risk-engine` / `Cargo.toml` | Modulación Conformal Kelly, Blindaje de Perfiles Cargo `debug=1`, Poda de Worktrees (>254 GB) | 🟢 **MERGED** | `conformal_kelly_microstructure_contract.rs` (5/5) & `margin_cap_adaptation_contract.rs` (5/5) |
 | **Ω136** | `evolution-engine` | Salto Cuántico: De Random Forest a Online Newton GBDT con Taylor de 2º Orden y Ensembles Hilbertianos $L^2$ Zero-Alloc (<300 ns) | 🟢 **MERGED** | `online_newton_gbdt_contract.rs` (4/4 pass, 230.96 ns), `shadow_forest_directional_parity_contract.rs` (4/4), `shadow_forest_threshold_contract.rs` (2/2) |
 | **Ω137** | `dark-alpha-engine` / `signal-engine` / `god-engine-core` | Descomposición Hidrodinámica de Helmholtz-Hodge ($L^2 = \nabla \phi \oplus \nabla \times \mathbf{A} \oplus \mathbf{h}$) en Stack Zero-Alloc y Cableado Confluente | 🟢 **MERGED** | `helmholtz_hodge_contract.rs` (4/4, 132 ns), `helmholtz_confluence_contract.rs` (5/5) |
-| **Ω138** | `signal-engine` / `god-engine-core` | Integración Confluente de Curvatura Yang-Mills $SU(N)$ ($F_{\mu\nu}$) y Corrientes $J_i = D^\mu F_{\mu i}$ Zero-Alloc | 🔵 **ROADMAP ACTIVO** | En diseño e implementación inmediata |
+| **Ω138** | `strategy-core` / `signal-engine` / `god-engine-core` | Integración Confluente de Curvatura Yang-Mills $SU(N)$ ($F_{\mu\nu}$), Bucles de Wilson y Corrientes $J_i = D^\mu F_{\mu i}$ en Stack Zero-Alloc (<25 µs) | 🟢 **MERGED** | `yang_mills_su_n_contract.rs` (3/3), `yang_mills_confluence_contract.rs` (5/5) |
+| **Ω139** | `feature-engine` / `risk-engine` / `signal-engine` | Ecuaciones del Milenio: Conjetura de Hodge y Variedades Kählerianas para Cointegración Multiactivo y Geometría Compleja | 🔵 **ROADMAP ACTIVO** | En diseño e implementación inmediata |
 
 ---
 

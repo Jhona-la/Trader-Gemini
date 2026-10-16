@@ -13,6 +13,7 @@ fn test_yang_mills_params_validation_and_defaults() {
     assert!((def.beta_min - 0.01).abs() < 1e-9);
     assert!((def.beta_max - 100.0).abs() < 1e-9);
     assert!((def.current_scale - 1.0).abs() < 1e-9);
+    assert!((def.gauge_coupling_g - 0.05).abs() < 1e-9);
 
     let mut invalid = def;
     invalid.adaptation_rate = -0.01;
@@ -26,6 +27,10 @@ fn test_yang_mills_params_validation_and_defaults() {
     let mut invalid_scale = def;
     invalid_scale.current_scale = 0.0;
     assert!(invalid_scale.validate().is_err());
+
+    let mut invalid_g = def;
+    invalid_g.gauge_coupling_g = -0.1;
+    assert!(invalid_g.validate().is_err());
 }
 
 #[test]
@@ -35,6 +40,7 @@ fn test_yang_mills_engine_with_params_and_update_params() {
         beta_min: 0.05,
         beta_max: 50.0,
         current_scale: 2.0,
+        gauge_coupling_g: 0.10,
     };
     let mut engine = YangMillsGaugeEngine::new(3).with_params(custom);
     assert_eq!(engine.params, custom);
@@ -45,6 +51,7 @@ fn test_yang_mills_engine_with_params_and_update_params() {
         beta_min: 0.02,
         beta_max: 80.0,
         current_scale: 0.5,
+        gauge_coupling_g: 0.02,
     };
     engine.update_params(updated);
     assert_eq!(engine.params, updated);

@@ -63,13 +63,14 @@ impl FlowExcitationConfluenceEngine {
     /// Observacional: el voto vivo queda bit a bit (T-1 cero).
     /// OLA Ω133 — VOTO ESPECTRAL CON MODULACIÓN DE LIQUIDEZ OCULTA (KYLE-HASBROUCK)
     /// OLA Ω137 — VOTO ESPECTRAL CON MODULACIÓN HELMHOLTZ-HODGE Y LIQUIDEZ OCULTA
-    /// Incorpora tanto la presión de absorción de iceberg como la pureza laminar
-    /// del campo de velocidades en el espacio de Hilbert L².
-    pub fn voto_espectral_con_helmholtz(
+    /// OLA Ω138 — VOTO ESPECTRAL CON MODULACIÓN GAUGE YANG-MILLS SU(N) Y HELMHOLTZ-HODGE
+    /// Incorpora absorción iceberg local, pureza laminar L² y corrientes restauradoras covariantes J_i.
+    pub fn voto_espectral_con_gauge_y_helmholtz(
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
         hidden_liq_pressure: f64,
         laminar_fraction: f64,
+        yang_mills_current: f64,
     ) -> crate::voto_espectral::VotoEspectral {
         let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
             ratio_lambda_mu,
@@ -86,20 +87,35 @@ impl FlowExcitationConfluenceEngine {
         } else {
             1.0
         };
+        let j_ym = if yang_mills_current.is_finite() {
+            yang_mills_current.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
         for k in 0..32 {
             let x = desplazamientos[k];
             if !x.is_finite() {
                 continue;
             }
-            // En micro-escalas (k < 12, τ < 1 s), la presión de iceberg modula el flujo;
-            // en macro-escalas decae suavemente hacia 0 para preservar el horizonte de tendencia.
+            // En micro-escalas (k < 12, τ < 1 s), la presión de iceberg modula el flujo local;
+            // en macro-escalas (k >= 12), la corriente covariante Yang-Mills modula el campo continuo multiactivo.
             let micro_factor = (1.0 - (k as f64 / 32.0)).max(0.0);
-            let flujo = (x + p_ice * 0.5 * micro_factor).clamp(-10.0, 10.0);
+            let macro_factor = (k as f64 / 32.0).clamp(0.0, 1.0);
+            let flujo = (x + p_ice * 0.5 * micro_factor + j_ym * 0.4 * macro_factor).clamp(-10.0, 10.0);
             let direccion = flujo.tanh();
             let coherencia = (flujo.abs().min(1.0) * excitacion * lam_scale).sqrt();
             por_escala[k] = (direccion * coherencia).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
+
+    pub fn voto_espectral_con_helmholtz(
+        desplazamientos: &[f64; 32],
+        ratio_lambda_mu: f64,
+        hidden_liq_pressure: f64,
+        laminar_fraction: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        Self::voto_espectral_con_gauge_y_helmholtz(desplazamientos, ratio_lambda_mu, hidden_liq_pressure, laminar_fraction, 0.0)
     }
 
     pub fn voto_espectral_con_liquidez(
@@ -408,7 +424,55 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             .filter(|v| v.is_finite() && *v >= 0.0)
             .unwrap_or(1.0);
 
-        (base_voto * w_hawkes * w_obi * mult_liq * helmholtz_conviction).clamp(-1.0, 1.0)
+        // OLA Ω138: MODULACIÓN POR CURVATURA GAUGE YANG-MILLS SU(N) Y CORRIENTES RESTAURADORAS J_i
+        // Leemos la corriente gauge covariante J_i calculada en tiempo real para este activo en la red multiactivo.
+        // Si el flujo local está alineado con la fuerza restauradora global del fibrado principal,
+        // recibe bonificación de confluencia (+hasta 20%); si colisiona contra una dislocación severa,
+        // se atenúa suavemente vía Hermite C¹ (smoothstep).
+        let ym_current_absent = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "yang_mills_current_absent",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .unwrap_or(0.0) > 0.5;
+
+        let ym_current = if !ym_current_absent {
+            r.get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "yang_mills_current",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite())
+            .unwrap_or(0.0)
+            .clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+
+        let mut mult_ym = 1.0;
+        if !ym_current_absent && base_voto.abs() > 1e-9 && ym_current.abs() > 1e-4 {
+            let intent_dir = base_voto.signum();
+            let ym_alignment = intent_dir * ym_current; // in [-1.0, 1.0]
+
+            if ym_alignment >= 0.0 {
+                // Flujo ALINEADO con la corriente restauradora gauge SU(N):
+                // La paridad global impulsa la reversión a favor de nuestra posición (+bonus hasta +20%)
+                mult_ym = 1.0 + 0.20 * rampa(ym_alignment, 0.40);
+            } else {
+                // Flujo OPUESTO a la corriente restauradora gauge SU(N) (ej. Long cuando el activo está sobrecomprado en la tríada):
+                // Atenuación suave C¹ (Hermite smoothstep): a partir de -0.15 atenúa, y si la oposición es fuerte (-0.75) atenúa al 20%
+                let x_opp = -ym_alignment;
+                let t_opp = ((x_opp - 0.15) / 0.60).clamp(0.0, 1.0);
+                mult_ym = 1.0 - 0.80 * t_opp * t_opp * (3.0 - 2.0 * t_opp);
+            }
+        }
+
+        (base_voto * w_hawkes * w_obi * mult_liq * helmholtz_conviction * mult_ym).clamp(-1.0, 1.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {

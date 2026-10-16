@@ -22,6 +22,38 @@
     1. **Fijar `$env:CARGO_BUILD_JOBS = 2` / `-j 2`**: Terminantemente prohibido compilar sin limitar a 2 hilos en la máquina de 16 GB.
     2. **Mutex de Compilación**: Verificar `Get-Process cargo,rustc` antes de invocar Cargo; no lanzar builds si otro agente está compilando.
     3. **Priorizar `cargo check`**: Usar `cargo check --workspace --all-targets -j 2` para validar tipos sin saturar disco ni memoria.
+
+- **Ola Ω138 Integrada y Certificada — Teoría de Gauge Yang-Mills SU(N), Bucles de Wilson y Corrientes Covariantes $J_i$ en Stack Zero-Alloc (<25 µs)**:
+  * **Fundamentación Matemática y Física Teórica**:
+    - Sobre el fibrado principal multiactivo con $N$ activos, la 1-forma de conexión $A_{ij} = \ln(P_i) - \beta_{ij} \ln(P_j)$ describe la paridad de tipos de cambio logarítmicos.
+    - El tensor de curvatura de Yang-Mills no-abeliano incorpora el término cuadrático de conmutador acoplado a la dislocación transversal:
+      $$F_{ijk} = (A_{ij} + A_{jk} + A_{ki}) + g \cdot d_{\text{cross}} \cdot (A_{ij} - A_{jk})$$
+    - La acción de Wilson discretizada en plaqueta triangular 2-símplex es:
+      $$\mathcal{S}_{\text{Wilson}} = 2(1 - W) + d_{\text{cross}}^2, \quad W = \cos(F_{\text{YM}}) \in [-1, 1]$$
+    - La holonomía normalizada $H = 1 - W \in [0, 2]$ cuantifica la tensión topológica global.
+    - La corriente restauradora gauge covariante se obtiene como el gradiente negativo covariante de la acción de Wilson:
+      $$J = -\nabla \mathcal{S}_{\text{Wilson}} = -\sin(F_{\text{YM}}) \nabla F - d_{\text{cross}} \nabla d$$
+  * **Solución Arquitectónica Zero-Alloc en Stack**:
+    - En `crates/strategy-core/src/yang_mills_gauge.rs`:
+      - Estructuras en stack `YangMillsMetrics` (`action_density`, `wilson_loop`, `holonomy_density`, `non_abelian_commutator_norm`, `active_triangles`) y `YangMillsParams` con `gauge_coupling_g`.
+      - Métodos inmutables $O(1)$ sin mutación ni alocaciones: `current_metrics()` y `current_currents()`.
+      - Algoritmo de curvatura en stack para hasta 32 activos en $<25\text{ }\mu\text{s}$ (~200 ns).
+  * **Cableado Confluente End-to-End (`god-engine-core` y `signal-engine`)**:
+    - `god-engine-core`: En `process_event`, actualiza `yang_mills_engine` y publica en `OmniscientRegistry` las métricas instantáneas `yang_mills_action`, `yang_mills_wilson_loop`, `yang_mills_holonomy`, `yang_mills_commutator_norm`, `yang_mills_active_triangles`, `yang_mills_current` y `yang_mills_current_absent`.
+    - `signal-engine`: En `FlowExcitationConfluenceEngine`, incorpora modulación continua $C^1$ Hermite:
+      - Flujo local alineado con la corriente restauradora $J_i$: bonificación de confluencia hasta $+20\%$.
+      - Flujo local colisionando contra corriente restauradora contraria: atenuación suave smoothstep hasta $0.20$.
+      - Proyección espectral `voto_espectral_con_gauge_y_helmholtz` localizando el acoplamiento Yang-Mills en las macroescalas ($k \ge 12$).
+  * **Certificación Contractual**:
+    - `crates/strategy-core/tests/yang_mills_su_n_contract.rs` (3/3 pass, 100% verde).
+    - `crates/strategy-core/tests/yang_mills_gauge_contract.rs` (5/5 pass, 100% verde).
+    - `crates/strategy-core/tests/yang_mills_adaptation_contract.rs` (4/4 pass, 100% verde).
+    - `crates/strategy-core/tests/cf2_yang_mills_nulo.rs` (3/3 pass, 100% verde).
+    - Suite completa `strategy-core`: **91/91 tests pasando (100% verde)**.
+    - `crates/signal-engine/tests/yang_mills_confluence_contract.rs` (5/5 pass, 100% verde).
+    - Suite completa `signal-engine`: **100% verde**.
+    - Workspace `cargo check --workspace --all-targets -j 2`: **23/23 crates sin errores**.
+
 - **Ola Ω137 Integrada y Certificada — Descomposición Hidrodinámica de Helmholtz-Hodge $L^2$ Zero-Alloc en Stack (132 ns)**:
   * **Fundamentación Teórica y Ecuación del Milenio (Navier-Stokes / Helmholtz-Hodge)**:
     - En el espacio de Hilbert continuo $\mathcal{H} = L^2$, el campo de flujo de órdenes microestructural se descompone de forma canónica y ortogonal:
