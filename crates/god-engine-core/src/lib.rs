@@ -1100,6 +1100,8 @@ pub struct GodEngineCore {
     pub hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine,
     /// OLA Ω36/Ω38: Motor de fibrado gauge y curvatura de Yang-Mills sobre el universo multiactivo
     pub yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine,
+    /// OLA Ω139: Motor cuántico de variedades de Kähler y conjetura de Hodge
+    pub kahler_hodge_engine: strategy_core::KahlerHodgeEngine,
     /// OLA Ω53: Motor hidrodinámico de Navier-Stokes y número de Reynolds para flujos L2/L3
     pub navier_stokes_engines: Vec<feature_engine::NavierStokesReynoldsEngine>,
     pub latest_prices: Vec<f64>,
@@ -1430,6 +1432,7 @@ impl GodEngineCore {
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
             hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine::new(n_coins),
             yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine::new(n_coins),
+            kahler_hodge_engine: strategy_core::KahlerHodgeEngine::new(n_coins),
             navier_stokes_engines: (0..n_coins)
                 .map(|_| feature_engine::NavierStokesReynoldsEngine::new())
                 .collect(),
@@ -6355,6 +6358,24 @@ impl GodEngineCore {
             set_reg("hodge_curl_share", hodge_curl_share);
             set_reg("hodge_gradient_energy", hodge_grad_energy);
             set_reg("hodge_curl_energy", hodge_curl_energy);
+
+            // OLA Ω139: Variedades de Kähler y Conjetura de Hodge (geometría compleja multiactivo)
+            let (kh_metrics, kh_currents) = self.kahler_hodge_engine.update_and_calculate_manifold(
+                &fresh_prices[..n_prices],
+                &fresh_ofis[..n_flows],
+            );
+            let (kh_coin_current, kh_current_absent) = if coin_id < kh_currents.len() {
+                (kh_currents[coin_id], 0.0)
+            } else {
+                (0.0, 1.0)
+            };
+            set_reg("kahler_ricci_scalar", kh_metrics.ricci_scalar);
+            set_reg("kahler_hodge_1_1_energy", kh_metrics.hodge_1_1_energy);
+            set_reg("kahler_potential", kh_metrics.kahler_potential);
+            set_reg("kahler_calabi_yau_flatness", kh_metrics.calabi_yau_flatness);
+            set_reg("kahler_calabi_yau_distance", kh_metrics.calabi_yau_distance);
+            set_reg("kahler_restoring_current", kh_coin_current);
+            set_reg("kahler_current_absent", kh_current_absent);
 
             // OLA Ω53: Ecuaciones del Milenio - Hidrodinámica de Navier-Stokes y Número de Reynolds L2/L3
             if let Some(ns_engine) = self.navier_stokes_engines.get_mut(coin_id) {

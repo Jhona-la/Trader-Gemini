@@ -1,3 +1,4 @@
+pub mod kahler_hodge;
 pub mod maker;
 pub mod momentum_booster;
 pub mod multivariate_coint;
@@ -8,6 +9,7 @@ pub mod types;
 pub mod vecm_arbitrage;
 pub mod yang_mills_gauge;
 
+pub use kahler_hodge::{KahlerHodgeEngine, KahlerHodgeMetrics, KahlerHodgeParams};
 pub use multivariate_coint::MultivariateCointegrationEngine;
 pub use vecm_arbitrage::{ContinuousOrnsteinUhlenbeckSde, JohansenVecmEngine, VecmArbitrageParams};
 pub use yang_mills_gauge::{YangMillsGaugeEngine, YangMillsParams};

@@ -64,13 +64,16 @@ impl FlowExcitationConfluenceEngine {
     /// OLA Ω133 — VOTO ESPECTRAL CON MODULACIÓN DE LIQUIDEZ OCULTA (KYLE-HASBROUCK)
     /// OLA Ω137 — VOTO ESPECTRAL CON MODULACIÓN HELMHOLTZ-HODGE Y LIQUIDEZ OCULTA
     /// OLA Ω138 — VOTO ESPECTRAL CON MODULACIÓN GAUGE YANG-MILLS SU(N) Y HELMHOLTZ-HODGE
-    /// Incorpora absorción iceberg local, pureza laminar L² y corrientes restauradoras covariantes J_i.
-    pub fn voto_espectral_con_gauge_y_helmholtz(
+    /// OLA Ω139 — VOTO ESPECTRAL CON MODULACIÓN KÄHLER-HODGE, GAUGE YANG-MILLS Y HELMHOLTZ
+    /// Incorpora absorción iceberg local, pureza laminar L², corrientes covariantes Yang-Mills
+    /// y corrientes holomorfas restauradoras de la variedad Kähleriana.
+    pub fn voto_espectral_con_kahler_gauge_y_helmholtz(
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
         hidden_liq_pressure: f64,
         laminar_fraction: f64,
         yang_mills_current: f64,
+        kahler_restoring_current: f64,
     ) -> crate::voto_espectral::VotoEspectral {
         let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
             ratio_lambda_mu,
@@ -92,21 +95,45 @@ impl FlowExcitationConfluenceEngine {
         } else {
             0.0
         };
+        let j_kh = if kahler_restoring_current.is_finite() {
+            kahler_restoring_current.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
         for k in 0..32 {
             let x = desplazamientos[k];
             if !x.is_finite() {
                 continue;
             }
-            // En micro-escalas (k < 12, τ < 1 s), la presión de iceberg modula el flujo local;
-            // en macro-escalas (k >= 12), la corriente covariante Yang-Mills modula el campo continuo multiactivo.
+            // En micro-escalas (k < 12), domina la absorción iceberg local;
+            // en meso-escalas (8 <= k < 24), la corriente holomorfa Kähleriana modula la paridad;
+            // en macro-escalas (k >= 16), la corriente Yang-Mills modula la geometría global.
             let micro_factor = (1.0 - (k as f64 / 32.0)).max(0.0);
+            let meso_factor = (1.0 - ((k as f64 - 16.0) / 16.0).abs()).max(0.0);
             let macro_factor = (k as f64 / 32.0).clamp(0.0, 1.0);
-            let flujo = (x + p_ice * 0.5 * micro_factor + j_ym * 0.4 * macro_factor).clamp(-10.0, 10.0);
+            let flujo = (x + p_ice * 0.5 * micro_factor + j_kh * 0.35 * meso_factor + j_ym * 0.35 * macro_factor).clamp(-10.0, 10.0);
             let direccion = flujo.tanh();
             let coherencia = (flujo.abs().min(1.0) * excitacion * lam_scale).sqrt();
             por_escala[k] = (direccion * coherencia).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
+
+    pub fn voto_espectral_con_gauge_y_helmholtz(
+        desplazamientos: &[f64; 32],
+        ratio_lambda_mu: f64,
+        hidden_liq_pressure: f64,
+        laminar_fraction: f64,
+        yang_mills_current: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        Self::voto_espectral_con_kahler_gauge_y_helmholtz(
+            desplazamientos,
+            ratio_lambda_mu,
+            hidden_liq_pressure,
+            laminar_fraction,
+            yang_mills_current,
+            0.0,
+        )
     }
 
     pub fn voto_espectral_con_helmholtz(
@@ -472,7 +499,53 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             }
         }
 
-        (base_voto * w_hawkes * w_obi * mult_liq * helmholtz_conviction * mult_ym).clamp(-1.0, 1.0)
+        // OLA Ω139: MODULACIÓN POR VARIEDADES KÄHLERIANAS Y FORMAS DE HODGE (1, 1)
+        // Leemos la corriente restauradora holomorfa J_Kahler desde el registro.
+        // Si el flujo local está alineado con la fuerza restauradora del potencial de Kähler K(z, \bar{z}),
+        // recibe bonificación de confluencia (+hasta 15%); si colisiona contra el gradiente de la variedad,
+        // se atenúa suavemente vía Hermite C¹ (smoothstep).
+        let kh_current_absent = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "kahler_current_absent",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .unwrap_or(0.0) > 0.5;
+
+        let kh_current = if !kh_current_absent {
+            r.get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "kahler_restoring_current",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite())
+            .unwrap_or(0.0)
+            .clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+
+        let mut mult_kh = 1.0;
+        if !kh_current_absent && base_voto.abs() > 1e-9 && kh_current.abs() > 1e-4 {
+            let intent_dir = base_voto.signum();
+            let kh_alignment = intent_dir * kh_current; // in [-1.0, 1.0]
+
+            if kh_alignment >= 0.0 {
+                // Flujo ALINEADO con la fuerza restauradora holomorfa Kähleriana:
+                mult_kh = 1.0 + 0.15 * rampa(kh_alignment, 0.40);
+            } else {
+                // Flujo OPUESTO al gradiente del potencial de Kähler:
+                let x_opp = -kh_alignment;
+                let t_opp = ((x_opp - 0.15) / 0.60).clamp(0.0, 1.0);
+                mult_kh = 1.0 - 0.75 * t_opp * t_opp * (3.0 - 2.0 * t_opp);
+            }
+        }
+
+        (base_voto * w_hawkes * w_obi * mult_liq * helmholtz_conviction * mult_ym * mult_kh).clamp(-1.0, 1.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
