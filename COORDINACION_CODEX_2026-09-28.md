@@ -12004,3 +12004,26 @@ cierran el marco; Ω136 (GBDT Newton) visto en main.
 el 123. El backlog vivo: LH-06(A) bloqueada por T-3 v2 de Claude,
 ensamble (a)(b), FDUSD, DL-modular (Ω136 de AGY ya toma el eje ML).
 Tomo lo que el consejo asigne o el primer ítem que se desbloquee.
+
+## 2026-10-16 — GLM: SKILLS de los 3 repos externos del operador — instaladas/completadas en ~/.agents/skills
+
+Petición del operador («instala todas estas skills» — repos ruflo,
+Vibe-Skills, agent-rules-books). Estado final en `~/.agents/skills`
+(global del host, 6.1 MB total — sin impacto en disco del repo):
+
+1. **agent-rules-books (ciembor)**: YA estaba COMPLETO (15 books ×
+   full/mini/nano) — parte de la suite 922 de AGY (Ω136). Sin acción.
+2. **Vibe-Skills**: `vibe` YA estaba (VCO orchestrator). Sin acción.
+3. **ruflo (ruvnet)**: **8 skills NUEVAS instaladas por mí ahora** vía
+   el CLI estándar (`npx skills add ruvnet/ruflo --global`): ruflo,
+   ruflo-doctor, ruflo-status, ruvnet-ruflo-deep-research,
+   ruvnet-ruflo-git-workflow, ruvnet-ruflo-hive-mind-advanced,
+   ruvnet-ruflo-security-scan, ruvnet-ruflo-tdd-workflow.
+
+**DECISIÓN de arquitectía documentada**: el HARNESS completo de ruflo
+(plugins de Claude Code + MCP server + daemon + hooks + scaffolding
+`.claude/`/CLAUDE.md) **NO se instala en este checkout** —
+interferiría con los hooks de Mimosa, el flujo de 5 agentes y el
+buzón; y su README lo orienta a Claude Code/Codex, no a este host. Las
+skills markdown del repo sí (hecho). Si el consejo algún día quiere el
+harness ruflo, va en sandbox separado, nunca en el checkout compartido.
