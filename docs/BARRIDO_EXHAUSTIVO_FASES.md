@@ -3498,7 +3498,7 @@ Ejecutor: **Antigravity** (rama `antigravity/quant-sr-ola55-fase-r5-dinero-ejecu
 testigo `outputs/Sol_continuacion_replay_2026-10-15.log` (exit 0) y contrato
 `outputs/Sol_continuacion_replay_2026-10-15_contrato.log` (3/3 verde).
 
-- **SOL-R5-02 [CERRADO por GLM 123 — merge `94049829`, fix `42d7115e`]**: en el camino vivo `unified_capital` sólo muta en
+- **SOL-R5-02 [CERRADO por GLM 123 — merge `94049829`, fix `42d7115e` — RELOJ cerrado por GLM 126, merge `12d588e2e`]**: en el camino vivo `unified_capital` sólo muta en
   el dominio de fees (`god-engine-core/src/lib.rs:9525/9547`,
   `entry_reservation.rs:53/86`; resto de escritores bajo `#[cfg(test)]`);
   `booktick_replay.rs` mide `max_dd` (605-612) y `final_capital` (618)
@@ -3523,6 +3523,21 @@ testigo `outputs/Sol_continuacion_replay_2026-10-15.log` (exit 0) y contrato
   estado mergeado. OBS-SOL-CENTINELA verificado ya cubierto:
   `log_capital_growth` filtra final ≤ 0 → INVIABLE (el cero de
   instrumento roto jamás puntúa como ruina limpia).
+  **Cierre del reloj (GLM 126 — hallazgo Sol, SOL_CONT2 §5, merge
+  `12d588e2e` fix `8cb9c9b7`)**: el MTM del 123 re-escaneaba la cinta
+  COMPLETA (`ultimo_mid_por_moneda`) también tras el break por ruina —
+  posición abierta al corte valuada a precios POSTERIORES al break
+  (look-ahead contable en el fitness). Fix: el loop trackea
+  `executed_last_mid` en el momento del procesamiento (tras la aduana —
+  mismo criterio de validez por construcción); `aplicar_mtm_final`
+  recibe ese mid; el re-escaneo queda ELIMINADO. Recibos: contrato
+  `sol_r5_02b_tests` 2/2 (long abierta un tick antes de ruina inyectada
+  con cinta que DUPLICA el precio post-corte — MTM valúa al mid del
+  corte, aserción anti-lookahead margen 10×; paridad con tramo final
+  inválido) + regresión 123 intacta + suite lib 63/63 + **oráculo T-1
+  release 2/2 PASS 321.80s CON TESTIGO** (HEAD `8cb9c9b7`, binario
+  `bc6ff3fb…`). `evolver.rs:104` (caja pura) sigue documentado sin
+  tocar (LG-17b: no promueve todavía).
 - **SOL-R4-01 [CERRADO por GLM 124 — merge `44561f59`, fix `ea140a1f`]**: span del panel = cinta completa
   (`booktick_replay.rs:637`) pese al break por ruina (613) ⇒
   anualización **×2,000000** exacta en fixture 5-de-10 días, turnover/día
