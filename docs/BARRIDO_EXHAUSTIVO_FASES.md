@@ -3492,7 +3492,7 @@ Ejecutor: **Antigravity** (rama `antigravity/quant-sr-ola55-fase-r5-dinero-ejecu
 
 ---
 
-## §SOL-CONT-2026-10-15 — Sol: marca de posiciones abiertas y span ejecutado (SOL-R5-02 CERRADO por GLM 123 / SOL-R4-01 ABIERTO)
+## §SOL-CONT-2026-10-15 — Sol: marca de posiciones abiertas y span ejecutado (SOL-R5-02 CERRADO por GLM 123 / SOL-R4-01 CERRADO por GLM 124)
 
 **Base**: `78647b12`. Detalle y recibos: `docs/audit/SOL_CONTABILIDAD_REPLAY_2026-10-15.md`,
 testigo `outputs/Sol_continuacion_replay_2026-10-15.log` (exit 0) y contrato
@@ -3523,12 +3523,35 @@ testigo `outputs/Sol_continuacion_replay_2026-10-15.log` (exit 0) y contrato
   estado mergeado. OBS-SOL-CENTINELA verificado ya cubierto:
   `log_capital_growth` filtra final ≤ 0 → INVIABLE (el cero de
   instrumento roto jamás puntúa como ruina limpia).
-- **SOL-R4-01 [ABIERTO]**: span del panel = cinta completa
+- **SOL-R4-01 [CERRADO por GLM 124 — merge `44561f59`, fix `ea140a1f`]**: span del panel = cinta completa
   (`booktick_replay.rs:637`) pese al break por ruina (613) ⇒
   anualización **×2,000000** exacta en fixture 5-de-10 días, turnover/día
   +100 %. Sin campos `executed_*`; `min(solicitado, disponible)` previo
   (`e47b2cb0`/`286a6a7a`) no registra solicitado/disponible/ejecutado ni
   causa de fin (corte 549 y agotamiento de cinta indistinguibles).
+  **Cierre (GLM 124, medición de Sol con crédito completo)**:
+  `ReplayCloseReason {NoReplay, TapeEnd, Ruin}` + `executed_ticks`/
+  `executed_last_ts` en `ReplayStats` (solo ticks ACEPTADOS por la
+  aduana F2.1 — acumulador, no índice); `ex_post_metrics` recibe
+  `executed_last_ts − ticks[0].ts_ms` (la ruina corta el span; sin
+  ruina ⇒ bit-paridad). Guard degenerado reporta `NoReplay`.
+  Recibos exigidos por esta fila: contrato 4/4 RED→GREEN en el MISMO
+  commit (`sol_r4_01_tests`: paridad sin ruina / ruina inyectada por
+  observer con relación ×2 exacta del fixture / NoReplay degenerado /
+  aduana excluye invalidados) + **oráculo T-1 release 2/2 PASS 769.61s
+  CON TESTIGO** (`outputs/oracle_witness_20261015_182222.log`: HEAD
+  `44561f59`, sha256 binario pre==post `045b75c1…`) + suites backtest
+  lib 61/61, contrato de caracterización de Sol 3/3, evolution-engine
+  12 targets, god-engine-core 203/203.
+  **Residual (ABIERTO, anotado)**: la recomendación 3 de Sol para
+  `continuous_evolution_backtest.rs` (registrar
+  solicitado/disponible/ejecutado + causa por día) NO está incluida —
+  es otro archivo/otro contrato; queda para el siguiente ciclo.
+  **Herramienta nueva del ciclo**: `scripts/oracle_witness.sh` — recibo
+  permanente de oráculos (HEAD + sha256 + guard CL-60b de frescura).
+  Nació de un incidente en vivo: con CARGO_TARGET_DIR compartido cargo
+  reutilizó el test exe VIEJO de otro árbol (detectado por el testigo
+  ANTES de correr — guard añadido en `1ddad995`).
 - Si alguien implementa la marca o el span ejecutado: contrato RED→GREEN
   en el mismo commit + oráculo T-1 si toca evolución/votos. No fichar como
   cerrado sin recibo de árbol.
