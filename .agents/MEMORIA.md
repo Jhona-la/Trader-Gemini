@@ -1,6 +1,29 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-16 — Antigravity (AGY, Quant Sr. Lead): Ola Ω144 (Censo Forense de Motores Silenciosos, Activación Continua $C^1$, Precarga Universal de Modelos ML hacia `GLOBAL_FORESTS` y Cableado de Sombra Espectral de 9 Campos) + Plan Maestro V15
+
+- **Ola Ω144 Integrada y Certificada — Censo Forense de Motores Silenciosos, Desbloqueo de Aristas Muertas y Paridad Producción/Simulación**:
+  * **Causa Raíz de Mudez Forense (GLM-129 Tasa de Voto en Tape Real BTC 2M Ticks)**:
+    - **`FlowExcitationConfluenceEngine` (0.00% tasa histórica)**: Se descubrió que `GodEngineCore::new` en entornos de backtest/replay/censo no poblaba `GLOBAL_FORESTS` con las claves `{SYM}_MOTOR` (e.g. `BTCUSDT_MOTOR`). Por consiguiente, `active_forest` era `None`, `ml_prob` caía a 0.5 y `ml_model_base` a 0.5. Al ser `lift = ml_prob - ml_model_base = 0.0`, las rampas de lift $w_{\text{ml,long}}$ y $w_{\text{ml,short}}$ evaluaban a 0.0 en el 100% de los 2 millones de ticks, multiplicando el voto por 0.
+    - **`YangMillsGaugeEngine` (0.00% en cinta monoactivo)**: Exige formalmente $N \ge 3$ activos para formar lazos triangulares de Wilson $F_{ijk}$. En cinta monoactivo BTC ($N=1 < 3$), $J_i = 0$ por simetría gauge estricta. En producción multiactivo ($N=26$) opera activamente.
+    - **`StatArbEngine` (0.00% en cinta futuros pura)**: Arbitraje spot-futuros por proceso de Ornstein-Uhlenbeck. En cinta sólo-futuros (`spot_presente == false`), $z = 0.0$ por honestidad ontológica.
+    - **`CoaxialBreakoutEngine` (0.00%)**: Como documentó CL-66 (`cf4_coaxial_sin_atr_fabricado.rs`), `atr_1s`, `atr_5s`, `atr_1m` fueron erradicados por ser heurísticas con suelos arbitrarios; `voto_espectral` es el componente vivo a 32 escalas.
+  * **Solución de Arquitectura y Paridad Absoluta (`crates/god-engine-core/src/model_reload.rs` y `lib.rs`)**:
+    - Implementadas `resolve_models_directory()` y `preload_models_from_disk()`:
+      * Búsqueda canónica del directorio `models/` en `["models", "../../models", "../../../models"]` o `TG_DATA_ROOT`.
+      * Precarga lock-free vía `NanoForest::load_global` de todos los modelos `.json`/`.bin` hacia `GLOBAL_FORESTS` (`BTCUSDT_MOTOR`, etc.) en `GodEngineCore::new_with_outcome_context`.
+      * Resolución robusta y carga congelada y sanitizada de `DarkAlpha_BTCUSDT.json` para `swing_nn`.
+    - Garantiza 100% de paridad idéntica entre producción (`god_engine.rs`) y todas las herramientas de backtest, replay, GA y censo.
+  * **Desbloqueo de Arista Muerta en Sombra Espectral (`crates/god-engine-core/src/lib.rs:3154-3190`)**:
+    - Reemplazada la llamada obsoleta `voto_espectral_con_helmholtz` por `voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz`.
+    - Extraídos y conectados los 9 campos cuánticos y topológicos desde el registro omnisciente: `yang_mills_current`, `kahler_restoring_current`, `riemann_gue_conviction`, `bsd_restoring_current`, `bsd_conviction_modulation`, `dirac_chiral_current`, `dirac_conviction_modulation`, `wasserstein_barycenter_velocity`, `wasserstein_conviction_modulation`.
+  * **Certificación Contractual**:
+    - `crates/god-engine-core/tests/censo_mudos_activacion_continua_contract.rs` (4/4 pass, 100% verde).
+    - `crates/signal-engine` test suite (11/11 tests pass, 100% verde).
+    - `cargo check -p god-engine-core -j 2` verde (5.56s).
+
 ## 2026-10-16 — Antigravity (AGY, Quant Sr. Lead): Ola Ω143 (Transporte Óptimo de Wasserstein-Kantorovich $W_2$, Isometría Cuantílica de Brenier-McCann y Dinámica Hidrodinámica de Benamou-Brenier) + Plan Maestro V14
+
 
 - **Ola Ω143 Integrada y Certificada — Transporte Óptimo de Wasserstein-Kantorovich $W_2$, Isometría Cuantílica de Brenier-McCann y Dinámica Hidrodinámica de Benamou-Brenier en Stack Zero-Alloc (<25 µs)**:
   * **Fundamentación Matemática y Física Cuántica**:

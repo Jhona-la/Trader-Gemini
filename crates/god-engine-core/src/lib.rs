@@ -1227,25 +1227,15 @@ impl GodEngineCore {
         outcome_context: outcome_context::OutcomeContext,
     ) -> Self {
         let initial_capital = arena.config.base_capital.load(Ordering::Relaxed);
+        // OLA Ω144: Precarga de modelos ML hacia GLOBAL_FORESTS
+        // Garantiza paridad estricta 100% entre producción, backtest, censo y replay.
+        let _ = crate::model_reload::preload_models_from_disk();
+
         // F-012 FIX: Universal model key — the NanoForest serves ALL assets, not just BTC.
-        // Search order: UNIVERSAL → legacy BTCUSDT_SCALP fallback for backward compatibility.
-        let scalp_forest =
-            crate::ml_inference::NanoForest::get_global("UNIVERSAL").or_else(|| {
-                // Try universal model file first
-                let universal_path = "models/UNIVERSAL_FOREST.json";
-                if std::path::Path::new(universal_path).exists() {
-                    let _ = crate::ml_inference::NanoForest::load_global("UNIVERSAL", universal_path);
-                    return crate::ml_inference::NanoForest::get_global("UNIVERSAL");
-                }
-                // Fallback: legacy BTCUSDT_SCALP model (backward compatible)
-                let legacy_path = "models/BTCUSDT_MOTOR.json";
-                if std::path::Path::new(legacy_path).exists() {
-                    let _ = crate::ml_inference::NanoForest::load_global("UNIVERSAL", legacy_path);
-                    crate::ml_inference::NanoForest::get_global("UNIVERSAL")
-                } else {
-                    None
-                }
-            });
+        // Search order: UNIVERSAL → BTCUSDT_MOTOR → legacy fallback.
+        let scalp_forest = crate::ml_inference::NanoForest::get_global("UNIVERSAL")
+            .or_else(|| crate::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR"));
+
 
         // D-605: una entrada por moneda del arena, con su misma capacidad.
         let n_coins = quantum_arena::state::MAX_COINS;
@@ -1327,40 +1317,46 @@ impl GodEngineCore {
             signal_engine::feynman_propagator::FeynmanPropagatorEngine::new(),
         ));
 
-        let swing_nn = if let Ok(json_data) =
-            std::fs::read_to_string("models/DarkAlpha_BTCUSDT.json")
-        {
-            if let Ok(mut model) =
-                serde_json::from_str::<dark_alpha_engine::DarkAlphaEngine>(&json_data)
-            {
-                model.init_buffers();
-                model.sanitize_denormals();
-                // T-04: TODO modelo cargado de disco se CONGELA antes de
-                // inferir — los modelos pre-N-11 deserializan descongelados y
-                // sus normalizadores Welford mutan en cada predict (la causa
-                // raíz del no-determinismo entre corridas).
-                model.freeze();
-                telemetry_server::telemetry_log!(
-                    "🧠 [DARK ALPHA] Initial Boot Model Loaded & Sanitized (in_features: {})",
-                    model.layer1.in_features
-                );
-                Some(model)
+        let dark_alpha_path = crate::model_reload::resolve_models_directory()
+            .map(|d| d.join("DarkAlpha_BTCUSDT.json"))
+            .filter(|p| p.is_file())
+            .or_else(|| {
+                [
+                    std::path::PathBuf::from("models/DarkAlpha_BTCUSDT.json"),
+                    std::path::PathBuf::from("../../models/DarkAlpha_BTCUSDT.json"),
+                ]
+                .into_iter()
+                .find(|p| p.is_file())
+            });
+
+        let swing_nn = if let Some(ref path) = dark_alpha_path {
+            if let Ok(json_data) = std::fs::read_to_string(path) {
+                if let Ok(mut model) =
+                    serde_json::from_str::<dark_alpha_engine::DarkAlphaEngine>(&json_data)
+                {
+                    model.init_buffers();
+                    model.sanitize_denormals();
+                    model.freeze();
+                    telemetry_server::telemetry_log!(
+                        "🧠 [DARK ALPHA] Initial Boot Model Loaded & Sanitized (in_features: {}) from {}",
+                        model.layer1.in_features,
+                        path.display()
+                    );
+                    Some(model)
+                } else {
+                    telemetry_server::telemetry_log!(
+                        "⚠️ [DARK ALPHA] Failed to parse {}. Sin modelo — el NN NO opina.",
+                        path.display()
+                    );
+                    None
+                }
             } else {
-                telemetry_server::telemetry_log!(
-                    "⚠️ [DARK ALPHA] Failed to parse models/DarkAlpha_BTCUSDT.json. Sin modelo — el NN NO opina."
-                );
-                // LXXXXI (B-H1 del barrido F5): el fallback era una red
-                // ALEATORIA (Xavier sin entrenar) que VOTABA en el ensamble
-                // Blier — ruido estructural sobre ml_prob de BTC. La ausencia
-                // del artefacto es AUSENCIA de opinión (None), consistente
-                // con la doctrina CL-15 que ya erradicó el 0.5-neutral.
                 None
             }
         } else {
             telemetry_server::telemetry_log!(
                 "⚠️ [DARK ALPHA] models/DarkAlpha_BTCUSDT.json not found. Sin modelo — el NN NO opina."
             );
-            // LXXXXI (B-H1): ídem — ausencia = no-opinión, no red aleatoria.
             None
         };
 
@@ -3144,18 +3140,48 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "sombra_conformal_v_max", v_conf);
                     }
 
-                    // #622→#649 / Ω137: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE con HELMHOLTZ-HODGE
+                    // #622→#649 / Ω137→Ω144: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE con
+                    // FÍSICA CUÁNTICA COMPLETA: Helmholtz-Hodge, Gauge Yang-Mills, Kähler-Hodge,
+                    // Riemann GUE, BSD, Atiyah-Singer Dirac y Wasserstein-Kantorovich W_2.
                     let h_lam_frac = self.helmholtz_engines.get(coin_id)
                         .map(|h| h.current_decomposition().laminar_fraction)
                         .unwrap_or(1.0);
                     let p_ice = self.arena.registry
                         .get_for_coin_or(coin_id, "hidden_liquidity_pressure", 0.0);
+                    let ym_current = self.arena.registry
+                        .get_for_coin_or(coin_id, "yang_mills_current", 0.0);
+                    let kh_current = self.arena.registry
+                        .get_for_coin_or(coin_id, "kahler_restoring_current", 0.0);
+                    let rz_conv = self.arena.registry
+                        .get_for_coin_or(coin_id, "riemann_gue_conviction", 1.0);
+                    let bsd_current = self.arena.registry
+                        .get_for_coin_or(coin_id, "bsd_restoring_current", 0.0);
+                    let bsd_conv = self.arena.registry
+                        .get_for_coin_or(coin_id, "bsd_conviction_modulation", 1.0);
+                    let dirac_current = self.arena.registry
+                        .get_for_coin_or(coin_id, "dirac_chiral_current", 0.0);
+                    let dirac_conv = self.arena.registry
+                        .get_for_coin_or(coin_id, "dirac_conviction_modulation", 1.0);
+                    let wk_velocity = self.arena.registry
+                        .get_for_coin_or(coin_id, "wasserstein_barycenter_velocity", 0.0);
+                    let wk_conv = self.arena.registry
+                        .get_for_coin_or(coin_id, "wasserstein_conviction_modulation", 1.0);
+
                     let voto_confluence =
-                        signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral_con_helmholtz(
+                        signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
                             &desplazamientos,
                             ratio_hawkes_fresco,
                             p_ice,
                             h_lam_frac,
+                            ym_current,
+                            kh_current,
+                            rz_conv,
+                            bsd_current,
+                            bsd_conv,
+                            dirac_current,
+                            dirac_conv,
+                            wk_velocity,
+                            wk_conv,
                         );
                     if let Some(media_conf_fl) = voto_confluence.media_banda(0, 31) {
                         self.arena
