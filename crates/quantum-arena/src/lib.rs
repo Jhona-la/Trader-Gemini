@@ -22,6 +22,7 @@ pub mod spectral_regime;
 pub mod spectral_tape;
 pub mod temporal_spectrum;
 pub mod tick_source;
+pub mod wasserstein_kantorovich;
 pub mod zero_alloc_pool;
 pub mod zero_copy_stream;
 
@@ -36,3 +37,7 @@ pub use position::{Position, PositionManager};
 pub use spectral_regime::{LegacyRegimeView, SpectralRegimeField, SpectralRegimeParams};
 pub use state::{GlobalArena, ScalpState};
 pub use tick_source::{TickEvent, TickSource};
+pub use wasserstein_kantorovich::{
+    exact_empirical_w2_distance_8, wasserstein_hermite_c1, WassersteinKantorovichEngine,
+    WassersteinKantorovichMetrics, WASSERSTEIN_HALF_CAP, WASSERSTEIN_WINDOW_CAP,
+};

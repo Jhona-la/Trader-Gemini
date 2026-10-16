@@ -245,22 +245,23 @@ Para garantizar que ningún sesgo heurístico, literal arbitrario, arista muerta
   4. **Hipótesis de Riemann y Matrices Aleatorias Cuánticas (GUE / Montgomery-Odlyzko):** Ley de correlación de pares $R_2(u) = 1 - (\frac{\sin \pi u}{\pi u})^2$, repulsión cuadrática de niveles $P_{\text{GUE}}(s) = \frac{32}{\pi^2}s^2 e^{-\frac{4}{\pi}s^2}$ y razón de brechas de Oganesyan-Huse $\langle r \rangle_{\text{GUE}} \approx 0.60266$ (Olas Ω131, Ω140).
   5. **Conjetura de Birch y Swinnerton-Dyer (BSD) y Curvas Elípticas de Weierstrass ($y^2 = x^3 + ax + b$):** Reducción sobre cuerpos finitos $\mathbb{F}_p$, cota de Riemann-Hasse $|a_p| \le 2\sqrt{p}$, producto de Euler de Hasse-Weil $L(E, 1)$ y rango analítico continuo $r_{\text{BSD}}$ para distinguir generadores persistentes de liquidez de cúspides singulares $\Delta = 0$ (Ola Ω141).
   6. **Teorema del Índice de Atiyah-Singer y Modos Cero del Operador de Dirac ($\dim\ker D_+ - \dim\ker D_- = \int_{\mathcal{M}} \text{ch}(\mathcal{E}) \wedge \hat{A}(\mathcal{M})$):** Género $\hat{A}$ de Hirzebruch $\hat{A}(x) = \frac{x/2}{\sinh(x/2)}$, carácter de Chern $\text{ch}(\mathcal{E})$ y corriente de anomalía quiral de Adler-Bell-Jackiw (Ola Ω142).
-  7. **Flujo de Ricci de Poincaré-Perelman & Propagador Cuántico de Feynman:** Regularización de singularidades de correlación e integral de caminos de mínima acción (Olas Ω122, Ω123).
-  8. **Salto Algorítmico ML:** De Random Forest de primer orden a **Online Newton GBDT** con expansión de Taylor de 2º orden ($w_j^* = -G_j / (H_j + \lambda)$) y neuroplasticidad de Oja en $L^2$ (Olas Ω125, Ω136).
+  7. **Transporte Óptimo de Wasserstein-Kantorovich $W_2$ y Dinámica Hidrodinámica de Benamou-Brenier ($W_2^2 = \int_0^1 |F_0^{-1}(q) - F_1^{-1}(q)|^2 dq$):** Acción cinética mínima $\mathcal{A}_{\text{BB}} = \frac{1}{2}W_2^2$ y razón de coherencia geodésica $\eta_{\text{OT}} = \frac{\Delta m^2}{W_2^2 + \epsilon}$ para separar deriva advectiva coherente de fracturas estructurales de régimen (Ola Ω143).
+  8. **Flujo de Ricci de Poincaré-Perelman & Propagador Cuántico de Feynman:** Regularización de singularidades de correlación e integral de caminos de mínima acción (Olas Ω122, Ω123).
+  9. **Salto Algorítmico ML:** De Random Forest de primer orden a **Online Newton GBDT** con expansión de Taylor de 2º orden ($w_j^* = -G_j / (H_j + \lambda)$) y neuroplasticidad de Oja en $L^2$ (Olas Ω125, Ω136).
 
 ### Fase 4: Recorrido Exhaustivo por los 23 Crates y Archivos Críticos
 
 | # | Crate | Archivos Clave Auditados / Evolucionados | Estado & Siguiente Paso Evolutivo |
 | :-: | :--- | :--- | :--- |
-| 1 | `quantum-arena` | `lib.rs`, `temporal_spectrum.rs`, `spectral_regime.rs`, `spectral_tape.rs`, `espectral_multiactivo.rs`, `epigenetic.rs`, `position.rs` | 🟢 **Auditado (Ω109/Ω126/Ω127)** — Siguiente: transporte óptimo Wasserstein $W_2$ continuo entre bandas. |
+| 1 | `quantum-arena` | `lib.rs`, `wasserstein_kantorovich.rs`, `temporal_spectrum.rs`, `spectral_regime.rs`, `spectral_tape.rs`, `espectral_multiactivo.rs`, `epigenetic.rs`, `position.rs` | 🟢 **Auditado (Ω109/Ω126/Ω127/Ω143)** — Transporte óptimo Wasserstein $W_2$ y Benamou-Brenier en stack zero-alloc. |
 | 2 | `omniscient-registry` | `lib.rs`, `parameter.rs` | 🟢 **Auditado** — Aislamiento causal por `(symbol, coin_id)` y reloj determinista sin syscalls. |
 | 3 | `feature-engine` | `lib.rs`, `navier_stokes.rs`, `helmholtz_hodge.rs`, `multifractal.rs`, `ofi.rs`, `cvpin.rs`, `lead_lag.rs` | 🟢 **Auditado (Ω121/Ω128)** — Continuidad $C^1$ Hermite en Legendre multifractal y cascada de Kolmogorov. |
 | 4 | `dark-alpha-engine` | `lib.rs`, `atiyah_singer_dirac.rs`, `helmholtz_hodge.rs`, `hidden_liquidity.rs`, `neuro_plasticity.rs`, `online_ppo.rs` | 🟢 **Auditado (Ω125/Ω132/Ω137/Ω142)** — Descomposición $L^2$, índice topológico Atiyah-Singer Dirac, Kyle-Hasbrouck y PPO con Oja. |
 | 5 | `strategy-core` | `lib.rs`, `birch_swinnerton_dyer.rs`, `yang_mills_gauge.rs`, `kahler_hodge.rs`, `vecm.rs`, `statarb_ou.rs`, `momentum_booster.rs` | 🟢 **Auditado (Ω129/Ω138/Ω139/Ω141)** — Curvatura $SU(N)$, variedades Kählerianas y curvas elípticas BSD zero-alloc. |
-| 6 | `signal-engine` | `lib.rs`, `flow_excitation_confluence.rs`, `voto_espectral.rs`, `skill_motores.rs`, `feynman_propagator.rs`, `renyi_tsallis_entropy.rs`, `quantum_oscillator.rs`, `soliton_wave.rs`, `supersonic_shockwave.rs`, `hawkes_bessel.rs` | 🟢 **Auditado (Ω122–Ω142)** — 13 motores con `voto_espectral()` en 32 escalas y confluencia unificada. |
+| 6 | `signal-engine` | `lib.rs`, `flow_excitation_confluence.rs`, `voto_espectral.rs`, `skill_motores.rs`, `feynman_propagator.rs`, `renyi_tsallis_entropy.rs`, `quantum_oscillator.rs`, `soliton_wave.rs`, `supersonic_shockwave.rs`, `hawkes_bessel.rs` | 🟢 **Auditado (Ω122–Ω143)** — 13 motores con `voto_espectral()` en 32 escalas y confluencia unificada. |
 | 7 | `risk-engine` | `lib.rs`, `riemann_zeta_gue.rs`, `random_matrix.rs`, `cramer_lundberg.rs`, `kelly.rs`, `kelly_envelope.rs`, `ville_e_process.rs`, `freno_estrategia.rs`, `tp_sl.rs`, `veto_registry.rs` | 🟢 **Auditado (Ω130/Ω131/Ω134/Ω140)** — Jacobi zero-alloc, repulsión Riemann Zeta GUE, Ville y Kelly conformal. |
 | 8 | `metacortex-engine` | `lib.rs`, `consejo_seniors.rs`, `teleonomy.rs`, `online_learning.rs`, `immune_system.rs`, `shadow_graph_auditor.rs` | 🟢 **Auditado (Ω101–Ω119)** — 11 asientos del Consejo desacoplados dinámicamente y aprendizaje Kalman. |
-| 9 | `god-engine-core` | `lib.rs`, `calibration.rs`, `conformal.rs`, `ensemble.rs`, `ml_inference.rs`, `stateful_engine.rs`, `diffusion.rs` | 🟢 **Auditado (Ω120–Ω142)** — Loop maestro unificado, calibración Platt/Conformal por moneda y telemetría completa. |
+| 9 | `god-engine-core` | `lib.rs`, `calibration.rs`, `conformal.rs`, `ensemble.rs`, `ml_inference.rs`, `stateful_engine.rs`, `diffusion.rs` | 🟢 **Auditado (Ω120–Ω143)** — Loop maestro unificado, calibración Platt/Conformal por moneda y telemetría completa. |
 | 10 | `evolution-engine` | `lib.rs`, `online_newton_gbdt.rs`, `shadow_forest.rs`, `genetic.rs` | 🟢 **Auditado (Ω136)** — Online Newton GBDT de 2º orden (230 ns) y paridad direccional del bosque sombra. |
 | 11 | `execution-engine` | `lib.rs`, `binance_executor.rs`, `order_router.rs`, `smart_execution.rs` | 🟢 **Auditado (Ω128)** — Fill realista con impacto de mercado e invariantes de apalancamiento entero. |
 | 12 | `backtest-engine` | `lib.rs`, `booktick_replay.rs`, `simulator.rs` | 🟢 **Auditado (SOL-R5-02/GLM-123)** — Cero lookahead bias, paridad estricta con producción y mark-to-market terminal. |
@@ -286,7 +287,7 @@ Para garantizar que ningún sesgo heurístico, literal arbitrario, arista muerta
 
 ---
 
-## 📈 PARTE IX — MATRIZ DE INTEGRACIÓN Y ESTADO DE OLAS (Ω101 A Ω142 Y ROADMAP Ω143+)
+## 📈 PARTE IX — MATRIZ DE INTEGRACIÓN Y ESTADO DE OLAS (Ω101 A Ω143 Y ROADMAP Ω144+)
 
 | Ola | Módulo / Crate | Foco Técnico / Físico | Estado | Certificación Contractual |
 | :---: | :--- | :--- | :---: | :--- |
@@ -298,9 +299,10 @@ Para garantizar que ningún sesgo heurístico, literal arbitrario, arista muerta
 | **Ω140** | `risk-engine` / `signal-engine` / `god-engine-core` | Ecuaciones del Milenio: Espectro de Ceros de la Función Zeta de Riemann y Teoría Cuántica de Matrices Aleatorias (GUE / Ley de Montgomery-Odlyzko $R_2(u)$) | 🟢 **MERGED** | `riemann_zeta_gue_contract.rs` (5/5), `riemann_gue_confluence_contract.rs` (5/5) |
 | **Ω141** | `strategy-core` / `signal-engine` / `god-engine-core` | Ecuaciones del Milenio: Conjetura de Birch y Swinnerton-Dyer (Curvas Elípticas de Weierstrass, Traza de Frobenius $a_p$ y Rango Analítico $r_{\text{BSD}}$ de $L(E, s)$) | 🟢 **MERGED** | `birch_swinnerton_dyer_contract.rs` (5/5), `birch_swinnerton_dyer_confluence_contract.rs` (5/5) |
 | **Ω142** | `dark-alpha-engine` / `signal-engine` / `god-engine-core` | Teorema del Índice de Atiyah-Singer y Modos Cero del Operador de Dirac ($\ker D_+ - \ker D_- = \int \text{ch}(\mathcal{E}) \wedge \hat{A}(\mathcal{M})$) para Anomalías Quirales L2/L3 | 🟢 **MERGED** | `atiyah_singer_dirac_contract.rs` (5/5), `atiyah_singer_dirac_confluence_contract.rs` (5/5) |
-| **Ω143** | `quantum-arena` / `risk-engine` / `signal-engine` | Transporte Óptimo de Wasserstein-Kantorovich $W_2$ sobre el Espacio de Hilbert $L^2(\mathbb{R}^{d \times \tau})$ | 🔵 **ROADMAP ACTIVO** | Siguiente ola cuántica programada |
+| **Ω143** | `quantum-arena` / `signal-engine` / `god-engine-core` | Transporte Óptimo de Wasserstein-Kantorovich $W_2$ y Dinámica Hidrodinámica de Benamou-Brenier sobre el Espacio de Hilbert $L^2(\mathbb{R}^{d \times \tau})$ | 🟢 **MERGED** | `wasserstein_kantorovich_contract.rs` (5/5), `wasserstein_kantorovich_confluence_contract.rs` (5/5) |
+| **Ω144** | `signal-engine` / `god-engine-core` | Rehabilitación de Motores Silenciosos en Tape Real (Censo de Mudos GLM-129: Activación Continua $C^1$ sin Fallbacks Sintéticos) | 🔵 **ROADMAP ACTIVO** | Siguiente ola cuántica programada |
 
 ---
 
-*Plan Maestro Canónico V13 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
+*Plan Maestro Canónico V14 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
 

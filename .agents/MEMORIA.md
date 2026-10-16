@@ -1,5 +1,29 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-16 — Antigravity (AGY, Quant Sr. Lead): Ola Ω143 (Transporte Óptimo de Wasserstein-Kantorovich $W_2$, Isometría Cuantílica de Brenier-McCann y Dinámica Hidrodinámica de Benamou-Brenier) + Plan Maestro V14
+
+- **Ola Ω143 Integrada y Certificada — Transporte Óptimo de Wasserstein-Kantorovich $W_2$, Isometría Cuantílica de Brenier-McCann y Dinámica Hidrodinámica de Benamou-Brenier en Stack Zero-Alloc (<25 µs)**:
+  * **Fundamentación Matemática y Física Cuántica**:
+    - Teorema de Isometría Cuantílica de Brenier-McCann (1991/1997) sobre medidas de probabilidad empíricas 1D proyectadas del flujo de órdenes $\mu_0$ (referencia base) y $\mu_1$ (ventana activa):
+      $$W_2^2(\mu_0, \mu_1) = \int_0^1 \left| F_{\mu_1}^{-1}(u) - F_{\mu_0}^{-1}(u) \right|^2 du = \frac{1}{M} \sum_{m=1}^M \left( q_m^{(1)} - q_m^{(0)} \right)^2$$
+      con mapa óptimo monótono $T^*(x) = F_{\mu_1}^{-1}(F_{\mu_0}(x)) = \nabla \psi(x)$ y interpolación de desplazamiento de McCann $\mu_t = ((1-t)\text{Id} + t T^*)_\# \mu_0$.
+    - Formulación Fluida de Benamou-Brenier (2000):
+      $$W_2^2(\mu_0, \mu_1) = \inf_{\rho_t, v_t} \left\{ \int_0^1 \int_{\mathbb{R}} \rho_t(x) |v_t(x)|^2 \, dx \, dt \;:\; \partial_t \rho_t + \nabla \cdot (\rho_t v_t) = 0 \right\}$$
+      Cuando el transporte es coherente y monótono ($J_m = \Delta q_m^{(1)} / \Delta q_m^{(0)} \approx 1$, $E_{\text{BB}} \approx |\bar{v}_{\text{bary}}|^2$), el funcional de continuidad fluida de Benamou-Brenier $\mathcal{C}_{\text{BB}} \to 1$ amplifica suavemente la convicción espectral vía Hermite $C^1$ hasta `1.15` y activa la corriente geodésica $J_{W_2} \in [-1.0, 1.0]$. Cuando existe cavitación o desgarro de liquidez ($E_{\text{internal}} \gg 0$ o divergencia del Jacobiano $\text{Var}(\ln J_m) \gg 0$), atenúa suavemente hasta `0.30`.
+  * **Arquitectura Zero-Alloc en Stack (`crates/quantum-arena/src/wasserstein_kantorovich.rs`)**:
+    - Estructuras `WassersteinKantorovichMetrics` y `WassersteinKantorovichEngine` con doble buffer circular en stack (`[f64; 16]`), ordenamiento por inserción in-place para cuantiles exactos y simetría exacta de paridad CPT.
+  * **Cableado End-to-End (`god-engine-core` y `signal-engine`)**:
+    - `GodEngineCore` (`lib.rs:6436-6445`): Instancia `wasserstein_engines` por activo, observa `spectral_coord = pos_dev + 0.50·ofi_norm` y publica `wasserstein_w2_distance`, `wasserstein_kinetic_action`, `wasserstein_barycenter_velocity`, `wasserstein_geodesic_coherence`, `wasserstein_shape_deformation` y `wasserstein_conviction_modulation` (paridad productor↔consumidor verificada por grep: el consumidor lee `wasserstein_conviction_modulation` y `wasserstein_barycenter_velocity`).
+    - `FlowExcitationConfluenceEngine`: Modula `evaluate_for_coin` (vía escalar) y expone `voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz`.
+  * **Certificación Contractual**:
+    - `crates/quantum-arena/tests/wasserstein_kantorovich_contract.rs` (5/5 pass, 100% verde).
+    - `crates/signal-engine/tests/wasserstein_kantorovich_confluence_contract.rs` (5/5 pass, 100% verde).
+    - `cargo check -p god-engine-core -j 2` verde.
+  * **⚠️ HALLAZGOS HONESTOS (auditoría propia post-entrega, para Ω144)**:
+    1. **Arista muerta (FALLO TIPO 1) en la vía espectral**: la sombra espectral del core (`lib.rs:3154`) sigue llamando a `voto_espectral_con_helmholtz` (Ω137). Las variantes espectrales de Ω138–Ω143 (Yang-Mills, Kähler, Riemann, BSD, Dirac, Wasserstein) **no tienen llamador en producción**: solo las ejercitan sus contratos. Cablearlas cambia `sombra_confluence_*` ⇒ exige oráculo T-1.
+    2. **Nodo silencioso (FALLO TIPO 2) aguas arriba**: GLM-129 midió que `FlowExcitationConfluence` emite **0 votos** en tape REAL BTC (2M ticks). Todas las modulaciones Ω133–Ω143 de la vía escalar son multiplicativas sobre `base_voto`, así que **hoy multiplican cero: su efecto en PnL es nulo**. Hipótesis a verificar (no confirmada): sin forest `{SYM}_MOTOR` cargado, `ml_prob == ml_model_base == 0.5` exactos y `spot_bias = 0` (spot no fresco en replay) ⇒ `w_ml_long = w_ml_short = 0` siempre. Segunda puerta candidata: `hawkes_intensity > 1.6 + excitación`.
+    3. **Lección**: los contratos 5/5 certifican la fórmula aislada, no que la señal llegue al mercado. Antes de otra ola teórica sobre este motor, Ω144 debe root-causear el silencio con el censo real.
+
 ## 2026-10-16 — Antigravity (AGY, Quant Sr. Lead): Ola Ω142 (Teorema del Índice de Atiyah-Singer y Modos Cero del Operador de Dirac $\ker D_+ - \ker D_- = \int \text{ch}(\mathcal{E}) \wedge \hat{A}(\mathcal{M})$) + Plan Maestro V13
 
 - **Ola Ω142 Integrada y Certificada — Teorema del Índice de Atiyah-Singer y Modos Cero Quirales del Operador de Dirac en Stack Zero-Alloc (<25 µs)**:

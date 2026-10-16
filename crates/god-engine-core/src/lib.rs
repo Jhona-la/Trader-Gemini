@@ -1108,6 +1108,8 @@ pub struct GodEngineCore {
     pub bsd_engines: Vec<strategy_core::BirchSwinnertonDyerEngine>,
     /// OLA Ω142: Motor cuántico-topológico del Teorema del Índice de Atiyah-Singer y Operador de Dirac
     pub dirac_engines: Vec<dark_alpha_engine::AtiyahSingerDiracEngine>,
+    /// OLA Ω143: Motor cuántico-hidrodinámico de Transporte Óptimo de Wasserstein-Kantorovich W_2 (Benamou-Brenier)
+    pub wasserstein_engines: Vec<quantum_arena::WassersteinKantorovichEngine>,
     /// OLA Ω53: Motor hidrodinámico de Navier-Stokes y número de Reynolds para flujos L2/L3
     pub navier_stokes_engines: Vec<feature_engine::NavierStokesReynoldsEngine>,
     pub latest_prices: Vec<f64>,
@@ -1447,6 +1449,9 @@ impl GodEngineCore {
                 .collect(),
             dirac_engines: (0..n_coins)
                 .map(|_| dark_alpha_engine::AtiyahSingerDiracEngine::new())
+                .collect(),
+            wasserstein_engines: (0..n_coins)
+                .map(|_| quantum_arena::WassersteinKantorovichEngine::new())
                 .collect(),
             navier_stokes_engines: (0..n_coins)
                 .map(|_| feature_engine::NavierStokesReynoldsEngine::new())
@@ -6425,6 +6430,18 @@ impl GodEngineCore {
                 set_reg("dirac_chiral_asymmetry", dirac_metrics.chiral_zero_mode_asymmetry);
                 set_reg("dirac_chiral_current", dirac_metrics.chiral_anomaly_current);
                 set_reg("dirac_conviction_modulation", dirac_metrics.dirac_conviction_modulation);
+            }
+
+            // OLA Ω143: Transporte Óptimo de Wasserstein-Kantorovich W_2 y Dinámica de Benamou-Brenier
+            if let Some(wk_engine) = self.wasserstein_engines.get_mut(coin_id) {
+                let spectral_coord = pos_dev + 0.50 * ofi_norm;
+                let wk_metrics = wk_engine.observe_spectral_measure(spectral_coord);
+                set_reg("wasserstein_w2_distance", wk_metrics.wasserstein_w2_distance);
+                set_reg("wasserstein_kinetic_action", wk_metrics.kantorovich_kinetic_action);
+                set_reg("wasserstein_barycenter_velocity", wk_metrics.barycenter_transport_velocity);
+                set_reg("wasserstein_geodesic_coherence", wk_metrics.geodesic_coherence_ratio);
+                set_reg("wasserstein_shape_deformation", wk_metrics.shape_deformation_energy);
+                set_reg("wasserstein_conviction_modulation", wk_metrics.wasserstein_conviction_modulation);
             }
 
             // OLA Ω53: Ecuaciones del Milenio - Hidrodinámica de Navier-Stokes y Número de Reynolds L2/L3

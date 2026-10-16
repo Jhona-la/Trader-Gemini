@@ -68,11 +68,9 @@ impl FlowExcitationConfluenceEngine {
     /// OLA Ω140 — VOTO ESPECTRAL CON MODULACIÓN RIEMANN ZETA GUE, KÄHLER-HODGE, GAUGE YANG-MILLS Y HELMHOLTZ
     /// OLA Ω141 — VOTO ESPECTRAL CON CONJETURA DE BIRCH Y SWINNERTON-DYER (BSD), RIEMANN ZETA GUE, KÄHLER-HODGE, YANG-MILLS Y HELMHOLTZ
     /// OLA Ω142 — VOTO ESPECTRAL CON TEOREMA DEL ÍNDICE DE ATIYAH-SINGER Y OPERADOR DE DIRAC, BSD, RIEMANN ZETA GUE, KÄHLER-HODGE, YANG-MILLS Y HELMHOLTZ
-    /// Incorpora absorción iceberg local, pureza laminar L², corrientes covariantes Yang-Mills,
-    /// corrientes holomorfas Kählerianas, repulsión cuántica Riemann Zeta / GUE, curvas elípticas BSD
-    /// y modos cero quirales del operador de Dirac (Atiyah-Singer).
+    /// OLA Ω143 — VOTO ESPECTRAL CON TRANSPORTE ÓPTIMO WASSERSTEIN-KANTOROVICH W_2 (BENAMOU-BRENIER), DIRAC, BSD, RIEMANN ZETA GUE, KÄHLER-HODGE, YANG-MILLS Y HELMHOLTZ
     #[allow(clippy::too_many_arguments)]
-    pub fn voto_espectral_con_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
+    pub fn voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
         hidden_liq_pressure: f64,
@@ -84,6 +82,8 @@ impl FlowExcitationConfluenceEngine {
         bsd_conviction_modulation: f64,
         dirac_chiral_current: f64,
         dirac_conviction_modulation: f64,
+        wasserstein_barycenter_velocity: f64,
+        wasserstein_conviction_modulation: f64,
     ) -> crate::voto_espectral::VotoEspectral {
         let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
             ratio_lambda_mu,
@@ -135,27 +135,68 @@ impl FlowExcitationConfluenceEngine {
         } else {
             1.0
         };
+        let v_wk = if wasserstein_barycenter_velocity.is_finite() {
+            wasserstein_barycenter_velocity.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        let wk_mod = if wasserstein_conviction_modulation.is_finite() && wasserstein_conviction_modulation > 0.0 {
+            wasserstein_conviction_modulation.clamp(0.30, 1.15)
+        } else {
+            1.0
+        };
         for k in 0..32 {
             let x = desplazamientos[k];
             if !x.is_finite() {
                 continue;
             }
             // En micro-escalas (k < 12), dominan la absorción iceberg local y la anomalía quiral de Dirac;
-            // en meso-escalas (8 <= k < 24), la corriente holomorfa Kähleriana y elíptica BSD modulan la paridad;
-            // en macro-escalas (k >= 16), la corriente Yang-Mills modula la geometría global.
+            // en meso-escalas (8 <= k < 24), la corriente holomorfa Kähleriana, elíptica BSD y geodésica Wasserstein modulan la paridad;
+            // en macro-escalas (k >= 16), la corriente Yang-Mills y velocidad advectiva Wasserstein modulan la geometría global.
             let micro_factor = (1.0 - (k as f64 / 32.0)).max(0.0);
             let meso_factor = (1.0 - ((k as f64 - 16.0) / 16.0).abs()).max(0.0);
             let macro_factor = (k as f64 / 32.0).clamp(0.0, 1.0);
             let flujo = (x
                 + (p_ice * 0.5 + j_dirac * 0.25) * micro_factor
-                + (j_kh * 0.35 + j_bsd * 0.25) * meso_factor
-                + j_ym * 0.35 * macro_factor)
+                + (j_kh * 0.35 + j_bsd * 0.25 + v_wk * 0.20) * meso_factor
+                + (j_ym * 0.35 + v_wk * 0.20) * macro_factor)
                 .clamp(-10.0, 10.0);
             let direccion = flujo.tanh();
             let coherencia = (flujo.abs().min(1.0) * excitacion * lam_scale).sqrt();
-            por_escala[k] = (direccion * coherencia * gue_mod * bsd_mod * dirac_mod).clamp(-1.0, 1.0);
+            por_escala[k] = (direccion * coherencia * gue_mod * bsd_mod * dirac_mod * wk_mod).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn voto_espectral_con_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
+        desplazamientos: &[f64; 32],
+        ratio_lambda_mu: f64,
+        hidden_liq_pressure: f64,
+        laminar_fraction: f64,
+        yang_mills_current: f64,
+        kahler_restoring_current: f64,
+        riemann_gue_conviction: f64,
+        bsd_restoring_current: f64,
+        bsd_conviction_modulation: f64,
+        dirac_chiral_current: f64,
+        dirac_conviction_modulation: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        Self::voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
+            desplazamientos,
+            ratio_lambda_mu,
+            hidden_liq_pressure,
+            laminar_fraction,
+            yang_mills_current,
+            kahler_restoring_current,
+            riemann_gue_conviction,
+            bsd_restoring_current,
+            bsd_conviction_modulation,
+            dirac_chiral_current,
+            dirac_conviction_modulation,
+            0.0,
+            1.0,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -748,6 +789,46 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             }
         }
 
+        // OLA Ω143: MODULACIÓN POR TRANSPORTE ÓPTIMO WASSERSTEIN-KANTOROVICH W_2 (BENAMOU-BRENIER)
+        // `wasserstein_conviction_modulation` regula la coherencia geodésica \eta_{OT} frente a fracturas de régimen.
+        // `wasserstein_barycenter_velocity` bonifica cuando el flujo está alineado con el desplazamiento advectivo del baricentro.
+        let wk_conviction = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "wasserstein_conviction_modulation",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .map(|v| v.clamp(0.30, 1.15))
+            .unwrap_or(1.0);
+
+        let wk_velocity = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "wasserstein_barycenter_velocity",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite())
+            .unwrap_or(0.0)
+            .clamp(-1.0, 1.0);
+
+        let mut mult_wk_dir = 1.0;
+        if base_voto.abs() > 1e-9 && wk_velocity.abs() > 1e-4 {
+            let intent_dir = base_voto.signum();
+            let wk_alignment = intent_dir * wk_velocity;
+            if wk_alignment >= 0.0 {
+                mult_wk_dir = 1.0 + 0.12 * rampa(wk_alignment, 0.40);
+            } else {
+                let x_opp = -wk_alignment;
+                let t_opp = ((x_opp - 0.15) / 0.60).clamp(0.0, 1.0);
+                mult_wk_dir = 1.0 - 0.65 * t_opp * t_opp * (3.0 - 2.0 * t_opp);
+            }
+        }
+
         (base_voto
             * w_hawkes
             * w_obi
@@ -759,7 +840,9 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             * bsd_conviction
             * mult_bsd_dir
             * dirac_conviction
-            * mult_dirac_dir)
+            * mult_dirac_dir
+            * wk_conviction
+            * mult_wk_dir)
             .clamp(-1.0, 1.0)
     }
 
