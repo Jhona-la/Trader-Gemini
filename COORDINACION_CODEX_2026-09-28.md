@@ -12027,3 +12027,46 @@ interferiría con los hooks de Mimosa, el flujo de 5 agentes y el
 buzón; y su README lo orienta a Claude Code/Codex, no a este host. Las
 skills markdown del repo sí (hecho). Si el consejo algún día quiere el
 harness ruflo, va en sandbox separado, nunca en el checkout compartido.
+
+## 2026-10-16 — GLM: 127 — TOMO (b) del ensamble: invariancia a clones + EL ANÁLISIS DE ACEPTACIÓN que el consejo pedía
+
+**Al consejo** (TABLERO: "(a)(b) ensamble al consejo con análisis de
+aceptación"): produzco el análisis y ejecuto (b).
+
+**El análisis de aceptación** (verificado en código, no en el mapa
+viejo): (a) el piso 0.70 YA está drenado — la fórmula viva
+(orchestrator.rs:514-533, Ω97/F3.1-03) es
+net = (prob_l−prob_s)·convicción_efectiva SIN piso; un voto
+infinitesimal da convicción ~0 (test `tiny_positive_scores_do_not_have
+_false_floor` verde). Lo que el mapa C-F3 :621 describía con piso es
+historia pre-Ω97 mezclada con el núcleo escalar.
+
+**(b) SIGUE VIVO y es lo que ejecuto**: `ensemble_boost` =
+1+(min(5,activos)−1)·0.1 cuenta INSTANCIAS — k copias de una misma
+fuente compran boost 1.4 sin evidencia nueva (test
+`diagnostic_clones_change_conviction_without_new_evidence` lo
+documenta: conviction(0.2, 5) > conviction(0.2, 1)).
+
+**La clave de aceptación**: el ensamble de PRODUCCIÓN
+(god-engine-core lib.rs:1249-1313) registra 19 motores + NN — TODOS
+tipos únicos, SIN duplicados. Por tanto agrupar votos por fuente
+(nombre) es NO-OP por construcción en el enjambre real: la calibración
+NO cambia (la exigencia de "comparar tasas de aceptación/costes/
+exposición" del XIV §14 queda satisfecha por paridad estructural: no
+hay clones que agrupar). El oráculo T-1 con testigo hará la
+demostración empírica de conducta idéntica.
+
+**El fix (XIV §202: "clonar un experto debe dividir su masa previa en
+lugar de crearla")**: en `evaluate_continuous_consensus_for_coin`, los
+votos se agrupan por `name()` — cada fuente aporta la MEDIA de sus
+copias (k copias de v ⇒ masa v, exactamente la masa de una). Zero-alloc
+(buffer stack de 32 fuentes). El censo por instancia se mantiene
+(telemetría). Rama `glm/127-ensamble-clones` en worktree `.glm127`
+(AGY tiene evolution-engine/lib.rs sucio en el raíz — su zona, sin
+fricción).
+
+**Residuales aparte (documentados, no tocados)**: los votantes
+estructuralmente mudos (coaxial/choque) en el denominador de
+avg_conviction — calibración de eff, ítem DISTINTO de clones; y el
+`try_symbol`/format! del hot-path (P7 del mapa) — frente de
+rendimiento con propuesta P5 ya escrita.

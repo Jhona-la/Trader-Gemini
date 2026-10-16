@@ -413,6 +413,17 @@ impl TensorVoteOrchestrator {
         let mut active_weight = 0.0;
         let mut max_volatility = 0.0f64;
         let mut active_voters: usize = 0;
+        // (b) ENSAMBLE — INVARIANCIA A CLONES (auditoría XIV §202: "clonar
+        // un experto debe DIVIDIR su masa previa en lugar de crearla"):
+        // los votos se agrupan por FUENTE (`name()`); k copias de una
+        // misma fuente aportan la MEDIA de sus votos — exactamente la masa
+        // de una copia. Sin esto, `ensemble_boost` (que premia concordancia)
+        // cuenta instancias y k clones compran boost 1.4 sin evidencia
+        // nueva. Zero-alloc (buffer stack, cap 32 fuentes — el enjambre
+        // real registra ~20 tipos únicos; sobre el cap, las fuentes extra
+        // degeneran a comportamiento por-instancia).
+        let mut fuentes: [(&str, f64, u32); 32] = [("", 0.0, 0); 32];
+        let mut n_fuentes: usize = 0;
         // #611 — censo empírico: por estrategia, total de evaluaciones y
         // las que produjeron voto no-cero. Telemetría pura: no toca la
         // decisión (los acumuladores de abajo son los de siempre).
@@ -430,21 +441,45 @@ impl TensorVoteOrchestrator {
                     a.fetch_add(1, Ordering::Relaxed);
                 }
             }
-            if no_cero != 0 {
-                active_voters += 1;
-            }
             if !output.is_finite() {
                 continue;
             }
-            let abs_w = output.abs();
-            if output > 0.0 {
-                long_votes += abs_w;
-            } else if output < 0.0 {
-                short_votes += abs_w;
+            // Agrupar por fuente: búsqueda lineal sobre ≤32 (sin alloc).
+            let nombre = s.name();
+            let mut slot = n_fuentes;
+            for (j, f) in fuentes.iter().enumerate().take(n_fuentes) {
+                if f.0 == nombre {
+                    slot = j;
+                    break;
+                }
             }
-            active_weight += abs_w;
-            if abs_w > max_volatility {
-                max_volatility = abs_w;
+            if slot < n_fuentes {
+                let f = &mut fuentes[slot];
+                f.1 += output;
+                f.2 += 1;
+            } else if n_fuentes < fuentes.len() {
+                fuentes[n_fuentes] = (nombre, output, 1);
+                n_fuentes += 1;
+            }
+        }
+        // Acumulación por FUENTE: una masa por fuente, voto = media del grupo.
+        for f in fuentes.iter().take(n_fuentes) {
+            let v = f.1 / f.2.max(1) as f64;
+            if !v.is_finite() {
+                continue;
+            }
+            let abs_v = v.abs();
+            if abs_v > 1e-9 {
+                active_voters += 1;
+            }
+            if v > 0.0 {
+                long_votes += abs_v;
+            } else if v < 0.0 {
+                short_votes += abs_v;
+            }
+            active_weight += abs_v;
+            if abs_v > max_volatility {
+                max_volatility = abs_v;
             }
         }
         // Publicación cadenciosa (en coin 0 — el censista global): cada
@@ -513,8 +548,15 @@ impl TensorVoteOrchestrator {
         // 0 y el veredicto es puramente espectral.
         let prob_long = long_votes / active_weight;
         let prob_short = short_votes / active_weight;
-        let avg_conviction = active_weight / all.len().max(1) as f64;
-        let ensemble_boost = compute_ensemble_boost(active_voters, all.len());
+        // (b) invariancia a clones (XIV §202): el denominador de la
+        // convicción y del boost son FUENTES únicas (n_fuentes), no
+        // instancias — con el numerador ya agrupado, k copias de una
+        // fuente dejan la convicción EXACTAMENTE igual que una. En el
+        // enjambre real (todas fuentes únicas) n_fuentes == all.len():
+        // bit-paridad con el régimen por-instancias.
+        let n_fuentes_eff = n_fuentes.max(1) as f64;
+        let avg_conviction = active_weight / n_fuentes_eff;
+        let ensemble_boost = compute_ensemble_boost(active_voters, n_fuentes);
         let effective_conviction = if avg_conviction.is_finite() {
             (avg_conviction * ensemble_boost).clamp(0.0, 1.0)
         } else {
