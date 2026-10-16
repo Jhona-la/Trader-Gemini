@@ -3492,7 +3492,7 @@ Ejecutor: **Antigravity** (rama `antigravity/quant-sr-ola55-fase-r5-dinero-ejecu
 
 ---
 
-## §SOL-CONT-2026-10-15 — Sol: marca de posiciones abiertas y span ejecutado (SOL-R5-02 CERRADO por GLM 123 / SOL-R4-01 CERRADO por GLM 124)
+## §SOL-CONT-2026-10-15 — Sol: marca de posiciones abiertas y span ejecutado (SOL-R5-02 CERRADO por GLM 123 / SOL-R4-01 CERRADO por GLM 124 / rec-3 CERRADA por GLM 125 — familia contable DRENADA)
 
 **Base**: `78647b12`. Detalle y recibos: `docs/audit/SOL_CONTABILIDAD_REPLAY_2026-10-15.md`,
 testigo `outputs/Sol_continuacion_replay_2026-10-15.log` (exit 0) y contrato
@@ -3543,10 +3543,20 @@ testigo `outputs/Sol_continuacion_replay_2026-10-15.log` (exit 0) y contrato
   `44561f59`, sha256 binario pre==post `045b75c1…`) + suites backtest
   lib 61/61, contrato de caracterización de Sol 3/3, evolution-engine
   12 targets, god-engine-core 203/203.
-  **Residual (ABIERTO, anotado)**: la recomendación 3 de Sol para
-  `continuous_evolution_backtest.rs` (registrar
-  solicitado/disponible/ejecutado + causa por día) NO está incluida —
-  es otro archivo/otro contrato; queda para el siguiente ciclo.
+  **Residual (CERRADO por GLM 125 — push `b6620c11`)**: la recomendación 3
+  de Sol para `continuous_evolution_backtest.rs` quedó cubierta al ciclo
+  siguiente: `SimCloseReason {Rekt, DaysCompleted, TapeEnd, CapitalFloor}`
+  + `should_continue_day()` PURA — los DÍAS FANTASMA de 0 ticks ya no se
+  fabrican (cinta agotada / floor persistente / REKT cierran con causa
+  explícita en vez de simular días muertos con evolución incluida); recibo
+  final «Días: solicitado X / disponible Y / EJECUTADO Z — causa de fin».
+  Recibos: contrato `sim_close_contract` 4/4 en el mismo commit (patrón
+  `reporting_contract` de Sol, que sigue 2/2) + **oráculo T-1 release 2/2
+  PASS 595.39s CON TESTIGO**
+  (`outputs/oracle_witness_20261015_195218.log`: HEAD `b6620c11`, sha256
+  pre==post `35932cb3…`) — el guard del testigo atrapó ANTES un falso
+  binario viejo (delta bin-only no relinkeaba el test exe; fix: el script
+  toca también el test file, relink garantizado).
   **Herramienta nueva del ciclo**: `scripts/oracle_witness.sh` — recibo
   permanente de oráculos (HEAD + sha256 + guard CL-60b de frescura).
   Nació de un incidente en vivo: con CARGO_TARGET_DIR compartido cargo
