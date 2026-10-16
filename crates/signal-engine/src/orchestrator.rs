@@ -1,4 +1,5 @@
 use crate::SignalType;
+use quantum_arena::atomic_float::AtomicF64;
 use std::sync::atomic::{AtomicU64, Ordering};
 use strategy_core::{QuantumStrategy, TradeHorizon};
 
@@ -77,6 +78,22 @@ pub struct TensorVoteOrchestrator {
     /// MEDIDA (observacional, sin tocar la decisión).
     vdom_evaluados: AtomicU64,
     vdom_sobre_corte: AtomicU64,
+    /// GLM 130 — HEDGE POR FUENTE (exponential-weights, Freund-Schapire):
+    /// el «preservar masa/prior por fuente» que XIV §202 dejó pendiente.
+    /// Cada fuente lleva un peso persistente w ∈ [0.05, 20] (arranque 1.0
+    /// ⇒ bit-paridad con el régimen uniforme); cuando el sistema observa
+    /// la dirección realizada, cada fuente QUE OPINÓ recibe
+    /// loss_i = −sign(voto_i)·dirección ∈ [−1,1] y w_i ← w_i·exp(−η·loss)
+    /// (acierta ⇒ peso sube; contradice ⇒ baja), con renormalización a
+    /// media 1.0 (sin explosión ni muerte eterna — piso 0.05). η sale del
+    /// registro (`hedge_eta`, default 0.05, bounds [0, 0.5]): la
+    /// evolución lo publica — nada hardcodeado. Sólo opinan-quizá
+    /// aprenden: un mudo no gana ni pierde (y su voto 0 ya no pesa).
+    ultimo_voto: Vec<AtomicF64>,
+    pesos_hedge: Vec<AtomicF64>,
+    /// Mid del símbolo censista (coin 0) en la última actualización del
+    /// hedge — para medir la dirección realizada entre cadencias.
+    hedge_ultimo_mid: AtomicF64,
 }
 
 impl TensorVoteOrchestrator {
@@ -89,6 +106,9 @@ impl TensorVoteOrchestrator {
             decisiones_espectrales: AtomicU64::new(0),
             vdom_evaluados: AtomicU64::new(0),
             vdom_sobre_corte: AtomicU64::new(0),
+            ultimo_voto: Vec::new(),
+            pesos_hedge: Vec::new(),
+            hedge_ultimo_mid: AtomicF64::new(0.0),
             strategies: Vec::new(),
             arena,
         }
@@ -114,6 +134,8 @@ impl TensorVoteOrchestrator {
         self.nombres.push(nombre);
         self.censo_total.push(AtomicU64::new(0));
         self.censo_no_cero.push(AtomicU64::new(0));
+        self.ultimo_voto.push(AtomicF64::new(0.0));
+        self.pesos_hedge.push(AtomicF64::new(1.0));
         self.strategies.push(strategy);
         Ok(())
     }
@@ -130,6 +152,72 @@ impl TensorVoteOrchestrator {
                 (*nombre, total.load(Ordering::Relaxed), nc.load(Ordering::Relaxed))
             })
             .collect()
+    }
+
+    /// GLM 130 — HEDGE: snapshot (nombre, peso) por fuente. w=1.0 al
+    /// arranque (bit-paridad con el régimen uniforme).
+    pub fn pesos_hedge_snapshot(&self) -> Vec<(&'static str, f64)> {
+        self.nombres
+            .iter()
+            .zip(self.pesos_hedge.iter())
+            .map(|(nombre, w)| (*nombre, w.load(Ordering::Relaxed)))
+            .collect()
+    }
+
+    /// GLM 130 — HEDGE: primitiva de actualización por realización.
+    /// `direccion_realizada ∈ [−1, 1]` (signo y magnitud acotada del
+    /// retorno del símbolo censista entre cadencias, escalado por ATR).
+    /// Cada fuente QUE OPINÓ en el último consenso recibe
+    /// loss_i = −sign(voto_i)·direccion y w_i ← w_i·exp(−η·loss_i),
+    /// clamped [0.05, 20], renormalizado a media 1.0. η del registro
+    /// (`hedge_eta`, default 0.05, bounds [0, 0.5]); η=0 desactiva.
+    /// La llama la cadencia de publicación (cada 1024 consensos del
+    /// censista) — pública para que los tests la ejerzan directo.
+    pub fn actualizar_hedge_con_realizacion(&self, direccion_realizada: f64) {
+        if !direccion_realizada.is_finite() || direccion_realizada == 0.0 {
+            return;
+        }
+        let eta = self
+            .arena
+            .registry
+            .get_value_or("hedge_eta", 0.05)
+            .clamp(0.0, 0.5);
+        if eta <= 0.0 {
+            return;
+        }
+        let n = self.pesos_hedge.len();
+        if n == 0 {
+            return;
+        }
+        let dir = direccion_realizada.clamp(-1.0, 1.0);
+        let mut suma = 0.0f64;
+        for idx in 0..n {
+            let w = self.pesos_hedge[idx].load(Ordering::Relaxed);
+            if w <= 0.0 {
+                continue;
+            }
+            let voto = self.ultimo_voto[idx].load(Ordering::Relaxed);
+            if voto.abs() > 1e-9 && voto.is_finite() {
+                // Sólo aprende quien opinó: loss = −sign(voto)·dirección.
+                let loss = -voto.signum() * dir;
+                let nuevo = (w * (-eta * loss).exp()).clamp(0.05, 20.0);
+                self.pesos_hedge[idx].store(nuevo, Ordering::Relaxed);
+                suma += nuevo;
+            } else {
+                suma += w; // el mudo no aprende ni olvida
+            }
+        }
+        // Renormalización suave a media 1.0: aciertos persistentes no
+        // explotan (techo 20), errores persistentes no mueren (piso 0.05).
+        let media = suma / n as f64;
+        if media > 1e-9 && (media - 1.0).abs() > 1e-9 {
+            for w in &self.pesos_hedge {
+                let v = w.load(Ordering::Relaxed);
+                if v > 0.0 {
+                    w.store(v / media, Ordering::Relaxed);
+                }
+            }
+        }
     }
 
     /// Legacy horizon entry point; Continuous is the only representable variant.
@@ -422,7 +510,9 @@ impl TensorVoteOrchestrator {
         // nueva. Zero-alloc (buffer stack, cap 32 fuentes — el enjambre
         // real registra ~20 tipos únicos; sobre el cap, las fuentes extra
         // degeneran a comportamiento por-instancia).
-        let mut fuentes: [(&str, f64, u32); 32] = [("", 0.0, 0); 32];
+        // GLM 130 — HEDGE: cada grupo lleva además el PESO por fuente
+        // (exponential-weights): masa_del_grupo = w_fuente · |voto medio|.
+        let mut fuentes: [(&str, f64, u32, f64); 32] = [("", 0.0, 0, 0.0); 32];
         let mut n_fuentes: usize = 0;
         // #611 — censo empírico: por estrategia, total de evaluaciones y
         // las que produjeron voto no-cero. Telemetría pura: no toca la
@@ -439,6 +529,13 @@ impl TensorVoteOrchestrator {
             if let Some(a) = self.censo_no_cero.get(idx) {
                 if no_cero != 0 {
                     a.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            // GLM 130 — HEDGE: voto con signo del censista para el update
+            // por realización (1 store Relaxed extra por estrategia).
+            if coin_id == 0 {
+                if let Some(a) = self.ultimo_voto.get(idx) {
+                    a.store(output, Ordering::Relaxed);
                 }
             }
             if !output.is_finite() {
@@ -458,18 +555,26 @@ impl TensorVoteOrchestrator {
                 f.1 += output;
                 f.2 += 1;
             } else if n_fuentes < fuentes.len() {
-                fuentes[n_fuentes] = (nombre, output, 1);
+                // Peso por FUENTE (nombre): el slot de ESTA instancia —
+                // clones idénticos evolucionan igual (mismo voto ⇒ mismo
+                // loss), así que el del primer encuentro representa al grupo.
+                let w = self
+                    .pesos_hedge
+                    .get(idx)
+                    .map(|a| a.load(Ordering::Relaxed))
+                    .unwrap_or(1.0);
+                fuentes[n_fuentes] = (nombre, output, 1, w);
                 n_fuentes += 1;
             }
         }
-        // Acumulación por FUENTE: una masa por fuente, voto = media del grupo.
+        // Acumulación por FUENTE: masa = w_hedge · |voto medio del grupo|.
         for f in fuentes.iter().take(n_fuentes) {
             let v = f.1 / f.2.max(1) as f64;
             if !v.is_finite() {
                 continue;
             }
-            let abs_v = v.abs();
-            if abs_v > 1e-9 {
+            let abs_v = v.abs() * f.3.max(0.0);
+            if v.abs() > 1e-9 {
                 active_voters += 1;
             }
             if v > 0.0 {
@@ -532,6 +637,28 @@ impl TensorVoteOrchestrator {
                     "qo_652_fraccion_sobre_corte",
                     sobre as f64 / evaluados.max(1) as f64,
                 );
+                // GLM 130 — HEDGE: actualización por realización en la
+                // cadencia del censista. Dirección realizada = retorno del
+                // mid de coin 0 entre cadencias, escalado por ATR% (o 10
+                // bps de fallback) y clampeado a [−1, 1].
+                let mid = self
+                    .arena
+                    .coins
+                    .first()
+                    .map(|c| c.current_price.load(Ordering::Relaxed))
+                    .unwrap_or(0.0);
+                let prev = self.hedge_ultimo_mid.swap(mid, Ordering::Relaxed);
+                if mid.is_finite() && mid > 0.0 && prev.is_finite() && prev > 0.0 {
+                    let atr = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(0, "atr_pct", f64::NAN);
+                    let escala = if atr.is_finite() && atr > 1e-9 { atr } else { 0.001 };
+                    let direccion = ((mid - prev) / escala).clamp(-1.0, 1.0);
+                    self.actualizar_hedge_con_realizacion(direccion);
+                } else if mid.is_finite() && mid > 0.0 {
+                    self.hedge_ultimo_mid.store(mid, Ordering::Relaxed);
+                }
             }
         }
         if active_weight == 0.0 && !espectral_activo {

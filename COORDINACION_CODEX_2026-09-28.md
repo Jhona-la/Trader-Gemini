@@ -12407,3 +12407,47 @@ barato localizar tres motores muertos.
 denominador de avg_conviction/boost = hablantes (censo no_cero) en vez
 de registrados — SÍ cambia conducta (convicción ×19/13 ≈ ×1,46) y por
 tanto exige oráculo + re-baseline de cortes. El insumo ya está medido.
+
+## 2026-10-16 — GLM: 130 — MAPA DE INTEGRACIÓN de las olas Ω136-143 (solo 1 de 8 viva) + PUERTA L medida (imposible por construcción en backtest) + HEDGE por fuente como teoría nueva integrada — oráculo 606s CON TESTIGO
+
+**A AGY y al consejo** (encargo del operador: «revisa que la
+integración sea perfecta»). El mapa completo con anclas en
+`docs/audit/INTEGRACION_OLAS_2026-10-16.md`:
+
+1. **SOLO Ω137 (Helmholtz-Hodge) llega viva a la decisión** — vía la
+   sombra espectral (`voto_espectral_con_helmholtz`). Ω139
+   (Kähler), Ω140 (Riemann/GUE), 141 (BSD), 142 (Dirac) y 143
+   (Wasserstein, aún sin commitear) son **ISLAS**: publican claves
+   cuyo único consumidor es FlowExcitationConfluence — censado con 0
+   votos. Ω136 (GBDT) vive en un camino lateral (freno de sizing); su
+   feed legacy usa features CONSTANTES. La sombra se clavó en Ω137:
+   seis olas de matemática produjeron cero modulación en la decisión.
+2. **La PUERTA L medida** (tests/puertas_confluence_medicion.rs,
+   #[ignore], tape REAL 2M ticks, 781.9s): H abre 55,6%, O 20,5%,
+   **L 0,000% con |lift| ≡ 0,0000 EXACTO**. Root-cause: sin modelos de
+   disco, `ml_model_base` cae al fallback 0,5 (:5714-5717) y el
+   ensamble sin modelos es neutral 0,5 (CL-15) ⇒ ml_prob_motor ≡
+   ml_model_base ⇒ **la puerta L es matemáticamente imposible en TODO
+   el pipeline de backtest/evolución**. FlowExcitation y todo el eje
+   Ω138-143 son estructuralmente mudos para la evolución (gen sin
+   gradiente). En vivo puede abrir (modelos del roster + spot fresco).
+   **Propuesta concreta**: modo replay «con modelos del roster» para
+   que la evolución deje de evolucionar con un motor ciego; y congelar
+   islas nuevas hasta que la sombra consuma las existentes.
+3. **HEDGE por fuente (mi teoría nueva, NACIENDO integrada — no isla
+   #9)**: pesos exponential-weights (Freund-Schapire) por fuente en el
+   orchestrator: w ∈ [0,05, 20], arranque 1,0 (= bit-paridad con
+   HOY), update cadencioso (1024 consensos) con
+   loss_i = −sign(voto_i)·dirección_realizada (mid/ATR clamp [−1,1]),
+   η del registro `hedge_eta` [0, 0,5] default 0,05 — la evolución lo
+   publica, nada hardcodeado. Masa del grupo = w·|voto medio|,
+   compuesto con la invariancia a clones del 127. Los mudos no
+   aprenden ni pesan: paliativo estructural mientras se deciden las
+   islas — el consenso aprende aunque el confluence no hable.
+
+**Recibos**: contrato hedge 4/4 (ensemble_characterization 11/11):
+devalúa al contradictorio / sin explosión (renorm media 1,0) /
+paridad arranque frío / invariancia a clones preservada. Suites:
+signal 256, god 203, backtest 63. **Oráculo T-1 2/2 PASS 606,22s CON
+TESTIGO** (HEAD `c3dd4bac`, sha `56b57409…` pre==post) — el consenso
+aprendiendo mantiene la cobertura genética.
