@@ -65,15 +65,17 @@ impl FlowExcitationConfluenceEngine {
     /// OLA Ω137 — VOTO ESPECTRAL CON MODULACIÓN HELMHOLTZ-HODGE Y LIQUIDEZ OCULTA
     /// OLA Ω138 — VOTO ESPECTRAL CON MODULACIÓN GAUGE YANG-MILLS SU(N) Y HELMHOLTZ-HODGE
     /// OLA Ω139 — VOTO ESPECTRAL CON MODULACIÓN KÄHLER-HODGE, GAUGE YANG-MILLS Y HELMHOLTZ
-    /// Incorpora absorción iceberg local, pureza laminar L², corrientes covariantes Yang-Mills
-    /// y corrientes holomorfas restauradoras de la variedad Kähleriana.
-    pub fn voto_espectral_con_kahler_gauge_y_helmholtz(
+    /// OLA Ω140 — VOTO ESPECTRAL CON MODULACIÓN RIEMANN ZETA GUE, KÄHLER-HODGE, GAUGE YANG-MILLS Y HELMHOLTZ
+    /// Incorpora absorción iceberg local, pureza laminar L², corrientes covariantes Yang-Mills,
+    /// corrientes holomorfas Kählerianas y repulsión cuántica de niveles Riemann Zeta / GUE.
+    pub fn voto_espectral_con_riemann_kahler_gauge_y_helmholtz(
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
         hidden_liq_pressure: f64,
         laminar_fraction: f64,
         yang_mills_current: f64,
         kahler_restoring_current: f64,
+        riemann_gue_conviction: f64,
     ) -> crate::voto_espectral::VotoEspectral {
         let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
             ratio_lambda_mu,
@@ -100,6 +102,11 @@ impl FlowExcitationConfluenceEngine {
         } else {
             0.0
         };
+        let gue_mod = if riemann_gue_conviction.is_finite() && riemann_gue_conviction > 0.0 {
+            riemann_gue_conviction.clamp(0.25, 1.15)
+        } else {
+            1.0
+        };
         for k in 0..32 {
             let x = desplazamientos[k];
             if !x.is_finite() {
@@ -114,9 +121,28 @@ impl FlowExcitationConfluenceEngine {
             let flujo = (x + p_ice * 0.5 * micro_factor + j_kh * 0.35 * meso_factor + j_ym * 0.35 * macro_factor).clamp(-10.0, 10.0);
             let direccion = flujo.tanh();
             let coherencia = (flujo.abs().min(1.0) * excitacion * lam_scale).sqrt();
-            por_escala[k] = (direccion * coherencia).clamp(-1.0, 1.0);
+            por_escala[k] = (direccion * coherencia * gue_mod).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
+
+    pub fn voto_espectral_con_kahler_gauge_y_helmholtz(
+        desplazamientos: &[f64; 32],
+        ratio_lambda_mu: f64,
+        hidden_liq_pressure: f64,
+        laminar_fraction: f64,
+        yang_mills_current: f64,
+        kahler_restoring_current: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        Self::voto_espectral_con_riemann_kahler_gauge_y_helmholtz(
+            desplazamientos,
+            ratio_lambda_mu,
+            hidden_liq_pressure,
+            laminar_fraction,
+            yang_mills_current,
+            kahler_restoring_current,
+            1.0,
+        )
     }
 
     pub fn voto_espectral_con_gauge_y_helmholtz(
@@ -545,7 +571,23 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             }
         }
 
-        (base_voto * w_hawkes * w_obi * mult_liq * helmholtz_conviction * mult_ym * mult_kh).clamp(-1.0, 1.0)
+        // OLA Ω140: MODULACIÓN POR REPULSIÓN DE NIVELES RIEMANN ZETA / GUE (MONTGOMERY-ODLYZKO)
+        // Cuando el espectro colapsa hacia degeneración de niveles (s_i -> 0, contagio sistémico),
+        // `riemann_gue_conviction` atenúa suavemente vía Hermite C¹ hasta 0.25. Cuando exhibe
+        // repulsión cuántica de niveles GUE en la línea crítica Re(s) = 1/2, amplifica hasta 1.15.
+        let riemann_gue_conviction = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "riemann_gue_conviction",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .map(|v| v.clamp(0.25, 1.15))
+            .unwrap_or(1.0);
+
+        (base_voto * w_hawkes * w_obi * mult_liq * helmholtz_conviction * mult_ym * mult_kh * riemann_gue_conviction).clamp(-1.0, 1.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {

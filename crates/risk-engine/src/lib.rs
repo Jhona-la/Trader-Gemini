@@ -12,6 +12,7 @@ pub mod leverage_matrix;
 pub mod orchestrator;
 pub mod random_matrix;
 pub mod regime;
+pub mod riemann_zeta_gue;
 pub mod drawdown;
 pub mod envio;
 pub mod ruin;
@@ -22,6 +23,11 @@ pub mod selection_stats;
 pub mod ville_e_process;
 
 pub use capital_regime::{resolve_micro_max_fee_pct, DEFAULT_MICRO_MAX_FEE_PCT};
+pub use riemann_zeta_gue::{
+    hermite_smoothstep_c1, montgomery_odlyzko_pair_correlation, wigner_gue_density,
+    RiemannZetaGueEngine, RiemannZetaGueState, GUE_RIEMANN_GAP_RATIO_MEAN,
+    MAX_RIEMANN_GUE_LEVELS, POISSON_GAP_RATIO_MEAN,
+};
 pub use evidence::{
     profit_factor_lcb, resolve_bayes_prior, win_rate_hierarchical_lcb, win_rate_lcb,
     DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,

@@ -1102,6 +1102,8 @@ pub struct GodEngineCore {
     pub yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine,
     /// OLA Ω139: Motor cuántico de variedades de Kähler y conjetura de Hodge
     pub kahler_hodge_engine: strategy_core::KahlerHodgeEngine,
+    /// OLA Ω140: Motor cuántico del espectro de ceros de Riemann Zeta y GUE (Montgomery-Odlyzko)
+    pub riemann_zeta_gue_engines: Vec<risk_engine::RiemannZetaGueEngine>,
     /// OLA Ω53: Motor hidrodinámico de Navier-Stokes y número de Reynolds para flujos L2/L3
     pub navier_stokes_engines: Vec<feature_engine::NavierStokesReynoldsEngine>,
     pub latest_prices: Vec<f64>,
@@ -1433,6 +1435,9 @@ impl GodEngineCore {
             hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine::new(n_coins),
             yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine::new(n_coins),
             kahler_hodge_engine: strategy_core::KahlerHodgeEngine::new(n_coins),
+            riemann_zeta_gue_engines: (0..n_coins)
+                .map(|_| risk_engine::RiemannZetaGueEngine::new())
+                .collect(),
             navier_stokes_engines: (0..n_coins)
                 .map(|_| feature_engine::NavierStokesReynoldsEngine::new())
                 .collect(),
@@ -6376,6 +6381,18 @@ impl GodEngineCore {
             set_reg("kahler_calabi_yau_distance", kh_metrics.calabi_yau_distance);
             set_reg("kahler_restoring_current", kh_coin_current);
             set_reg("kahler_current_absent", kh_current_absent);
+
+            // OLA Ω140: Espectro de Ceros de Riemann Zeta y Matrices Aleatorias Cuánticas GUE (Montgomery-Odlyzko)
+            if let Some(rz_engine) = self.riemann_zeta_gue_engines.get_mut(coin_id) {
+                let energy_obs = (mid_price * (1.0 + ofi_value * 0.01) + hawkes_ratio_real * spread_val).max(1e-9);
+                let gue_state = rz_engine.observe_energy_level(energy_obs);
+                set_reg("riemann_gue_gap_ratio", gue_state.mean_gap_ratio);
+                set_reg("riemann_gue_repulsion", gue_state.gue_level_repulsion);
+                set_reg("riemann_montgomery_corr", gue_state.montgomery_pair_correlation);
+                set_reg("riemann_dyson_rigidity", gue_state.dyson_mehta_rigidity);
+                set_reg("riemann_critical_stability", gue_state.critical_line_stability);
+                set_reg("riemann_gue_conviction", gue_state.gue_conviction_modulation);
+            }
 
             // OLA Ω53: Ecuaciones del Milenio - Hidrodinámica de Navier-Stokes y Número de Reynolds L2/L3
             if let Some(ns_engine) = self.navier_stokes_engines.get_mut(coin_id) {
