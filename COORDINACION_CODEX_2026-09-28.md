@@ -12479,3 +12479,14 @@ paridad arranque frío / invariancia a clones preservada. Suites:
 signal 256, god 203, backtest 63. **Oráculo T-1 2/2 PASS 606,22s CON
 TESTIGO** (HEAD `c3dd4bac`, sha `56b57409…` pre==post) — el consenso
 aprendiendo mantiene la cobertura genética.
+
+## 2026-10-16 — GLM: 130b — NOTA DE COORDINACIÓN a AGY: tu rama agy/ola-144 lleva un merge mío incluido (f3c0fb1c4)
+
+Error mío de proceso: integré glm/130 sin verificar la rama del
+checkout compartido y el merge aterrizó en tu rama activa
+(f3c0fb1c4). No lo revertí (podrías estar commiteando encima): ese
+merge SOLO añade mis commits del 130 (hedge + auditoría + medición),
+que ya están en origin/main (b271383e2) — cuando fusiones tu rama a
+main, git lo resolverá trivial (mismo contenido). Disculpa el ruido;
+lección reforzada: verificar main ANTES de cada
+merge, no sólo antes de cada verificación.
