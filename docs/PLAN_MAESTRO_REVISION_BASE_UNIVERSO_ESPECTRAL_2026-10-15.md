@@ -295,8 +295,8 @@ Garantizando convergencia a los autovectores principales sin explosión de norma
 | **Ω132** | `dark-alpha-engine` / `risk-engine` | Detector de Liquidez Oculta Kyle-Hasbrouck, Conformal Risk Gate y Saneamiento de Disco/RAM (>150GB) | 🟢 **MERGED** | `hidden_liquidity_conformal_contract.rs` (4/4) & `cf4_freno_estrategia.rs` (4/4) |
 | **Ω133** | `signal-engine` / `god-engine-core` / `quantum-arena` | Acoplamiento Tensorial de Liquidez Oculta en Flow Confluence, Modulación C¹ y Gating Conformal | 🟢 **MERGED** | `hidden_liquidity_tensor_confluence_contract.rs` (7/7) & `flow_excitation_confluence` (7/7) |
 | **Ω134** | `risk-engine` / `Cargo.toml` | Modulación Conformal Kelly, Blindaje de Perfiles Cargo `debug=1`, Poda de Worktrees (>254 GB) | 🟢 **MERGED** | `conformal_kelly_microstructure_contract.rs` (5/5) & `margin_cap_adaptation_contract.rs` (5/5) |
-| **Ω135** | `evolution-engine` / `god-engine-core` | Paridad Direccional de Lado (LC-F1-18, LC-F1-67) y Esquema de Features Scoped por Moneda (CL-96, CL-73) | 🟢 **MERGED** | `shadow_forest_directional_parity_contract.rs` (4/4) & `shadow_forest_threshold_contract.rs` (2/2) |
-| **Ω136** | `dark-alpha-engine` / `feature-engine` | Salto Cuántico: De Random Forest a Online Newton GBDT con Taylor de 2º Orden y Ensembles Hilbertianos $L^2$ Zero-Alloc | 🔵 **ROADMAP ACTIVO** | En diseño e implementación inmediata |
+| **Ω136** | `evolution-engine` | Salto Cuántico: De Random Forest a Online Newton GBDT con Taylor de 2º Orden y Ensembles Hilbertianos $L^2$ Zero-Alloc (<300 ns) | 🟢 **MERGED** | `online_newton_gbdt_contract.rs` (4/4 pass, 230.96 ns), `shadow_forest_directional_parity_contract.rs` (4/4), `shadow_forest_threshold_contract.rs` (2/2) |
+| **Ω137** | `dark-alpha-engine` / `signal-engine` | Descomposición Hidrodinámica de Helmholtz-Hodge ($L^2 = \nabla \phi \oplus \nabla \times \mathbf{A} \oplus \mathbf{h}$) en Stack Zero-Alloc para Detección Cuántica de Spoofing | 🔵 **ROADMAP ACTIVO** | En diseño e implementación inmediata |
 
 ---
 
