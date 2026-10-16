@@ -1,6 +1,12 @@
 # LG5, ceros y replay: integración sobre main — 2026-10-15
 
-Estado vigente: los cinco jobs de PR66 sobre `2da58` aprobaron. La integración local Ω129, commit `a3156b1`, pasó la comprobación all-targets, pero no tiene tests ejecutados de esa composición. Main avanzó a Ω130 y todavía debe componerse. Los cortes siguientes conservan su historia; la última adenda actualiza los estados anteriores dentro de su alcance. Responsable ROOT, rama `codex/root-lg5-main-2026-10-15`, worktree aislado `root-lg5-main-1015/Trader Gemini`.
+<!-- ROOT-LG5-V7-GLM-OMEGA135-20261016 -->
+## Estado operativo comprobado — ROOT, corte 2026-10-16T00:17:42.361443+00:00
+
+Main observado4ac73505/Ω135; la composición ROOT sigue pendiente. BASE conserva la ejecución pesada, Core en polars-ops y sin cesión. T1 histórico971 terminado; T1 del agregado no ejecutado. V7 preparado18selecciones,16hidden+2Core+2Kelly+4forest declarados y revisiones estáticas; no equivalen a resultados Rust. Replay/span y productor del bosque tienen hallazgos adicionales abiertos. La adenda «ROOT — sincronización V7» al final y `docs/audit/INTEGRACION_LG5_MAIN_2026-10-15.md` delimitan evidencia y próximos gates. Las afirmaciones de CI verde previas sólo conservan su alcance histórico.
+
+
+Estado vigente: consultar el corte operativo anterior y la adenda V7. Los cinco jobs de PR66/2da y all-targets006 de a315 son evidencia histórica de sus propios árboles; no certifican main4ac ni la futura composición. ROOT mantiene su rama y WT aislados.
 
 ## Fuente y evidencia que se conserva
 
@@ -294,3 +300,34 @@ Aclaración de perfiles preparada sólo en comentarios/prosa de Cargo.toml y AGE
 
 
 Revisión independiente de contrato16 y planV6 cerrada sin bloqueos estáticos: nota `HIDDEN_TEST16_PLAN_V6_RO_REVIEW-cc324141-9384-4d90-997d-4cf472834072.md`, SHA256 `24478f7bd0c0eb9bd81b6f6fcbc047a376dd24a23f0ee14185ff8f9a65e9f3aa`; evidencia `818ad11193b9e0ee52a6166a3b9e1fa63d82761b10e2a994cfd2c28835293666`. Oráculos y empate−1075 correctos por revisión; módulo V3 y prefijo15 intactos,16declarados/0Rust. No cambia el estado PREPARED ni cede la cadena BASE.
+
+<!-- ROOT-LG5-V7-GLM-OMEGA135-20261016 -->
+
+## ROOT — sincronización V7 y hallazgos de composición
+
+Corte UTC 2026-10-16T00:17:42.361443+00:00; main observado `4ac73505d231dbe11ecf9eba0ec2847681629fd3` (Ω135), padre `44561f596da5b69fcb14bfc45b598e33b4b5ae4b` (span GLM sobre503). Es una observación, no la fuente final del agregado. BASE mantiene la cadena, Core ha avanzado a polars-ops y no existe cesión explícita. ROOT continúa con cero Cargo/rustc. El T1 histórico971 terminó; el T1 de esta composición, su CI y su integración en main no han terminado.
+
+| Área | Evidencia disponible | Trabajo requerido antes del cierre |
+| --- | --- | --- |
+| Ceros y replay espectral | Fuentes ROOT previas preservadas; baseline arena/risk y suites seleccionadas | Ejecutar sobre el árbol final congelado, sin trasladar resultados históricos |
+| Hidden simétrico/números extremos | V3 fuente6fed84b1, contrato16d0a73e45 y Core2; RO independiente24478f7b | RED auténtico con módulo previo, nuevo freeze V3 y postfix16+2+legacy4; aún0Rust |
+| Banda hidden→Kelly | Variante LG5f70f6615; RO ROOTafa59bfd | Baseline con bonus1.25 y fixtures LG5, después max1.0 en nuevo freeze; dos contratos estrictos y cinco históricos adaptados |
+| Replay GLM+SI | Ambos RO4db009b6 y respuesta SI preservan span/causa GLM y marca/caja SI | Corregir discrepancia entre filas contabilizadas y admisión Core; controles de timestamp regresivo, primera fila inválida y sufijo no consumido. SI prepara suplemento externo |
+| Ω135 bosque | Cuatro contratos directos declarados, sin ejecución ROOT; ROdd98b1ef | Contrato del productor que vincule cierre, lado y retorno; PnL agregado por moneda y lado de posición superviviente no acreditan esa relación |
+| Publicación y refs | Censo20heads locales/11remotos/13WT,0merged desocupadas al corte23:58 | Verificar SHA/CI/ascendencia final y cesión de cada WT; no se eliminó ninguna ref |
+
+Plan V7 externo `C:/Users/jhona/.codex/tmp/root-aggregate-plan-v7-20261015/validation-plan.proposed.json`, SHA256 `9b7c5f4386ad81e5f2f4701780269ff725a081b6e29b3c2cdd693e9f8eaf4229`; requirements `3a7431c56c56dd6e2a0623b0fdda6f3a1c345938e8ab0ac9e212a87e3acd7767`. Sus18IDs cumplen máximo26; los15objetos/argv deV6 y los11iniciales quedan exactos. Añade kelly-policy-red, kelly-policy-postfix y shadow-forest-parity. Sigue PREPARED, sin HEAD/manifiesto/lease; optional no ejecuta ni sustituye selección explícita. Runner236/guardas12+8, target estándar, jobs1 futuro, hilos4 y mínimoT1 0.110 intactos.
+
+La matriz actual de unit-suites no ejecuta el target evolution-engine nuevo. Patch externo `21bebc0b0e83915b7df679fed3582bfd6c22788201715af45f39bd2ec47d0354` propone un paso explícito sólo en entrenador, conservando matriz/pasos anteriores; no instalado ni invocado. Los cuatro tests directos no cierran el hallazgo de atribución del daemon; el NaN predictor actual usa un bosque sin entrenar. oracle_witness.sh tampoco sustituye al launcher ROOT: el BIN elegido por glob no es el ejecutado después por Cargo, su variable TARGET_DIR no configura ese Cargo y el hash POST sólo se imprime. No se invocó.
+
+La revisión de archivos completos permanece en el único censo BASE: las adendas revisan hunks y contratos delimitados, no convierten cientos de rutas en auditadas. Orden vigente: metas medibles y límites de afirmación → conceptos/unidades/relojes → matemática/estadística y supuestos → algoritmos/productores/consumidores → código y pruebas de comportamiento → T1/CI/publicación. Nuevas teorías requieren un estimando, supuestos, coste y contrato falsable; su nombre no acredita eficacia ni la duplicación cada72h.
+
+### Kelly: aceptar la variante compuesta, sin reemplazar archivos de otros padres
+
+El fixture503 original y los cinco tests manuales carecían del payoff requerido por ROOT. La variante LG5 mantiene esa puerta: cohorte neta explícita por lado, relojes de muestra/as-of/decisión y n9 fuera de LH04. Antes de la aserción discriminante exige exposición positiva, LH04f0 y los mismos targets/leverage/fees, sin pisos ni rescates. Márgenes35/43.75/23.333 son expectativas del fixture, todavía no resultados Rust.
+
+Patch combinado `a3a2ef6328951fc1e598637b1d45d4dadaf9000b5e3dc249910e2242389d058b`; fixtures-only `3f37e378b7af13582fb6b335d12aed7e9f8d7367f743196c8141067c4ae4e155`; policy-only `2bf6e954c74c5fb96f0f04276460dba8b06369f5837adf593247d5356464afe5`. Son vistas alternativas: combinado O fixtures→policy. La política sólo elimina la bonificación no calibrada al limitar el factor superior a1.0; no traslada1.25 detrás de LH04 ni demuestra eficacia restrictiva en la rama madura.
+
+ROOT probó aplicación sólo en dos overlays externos del Risk de la composición parcial: check/apply0, misma salida real84d9aa84 y soporte intacto. Recibo `root-policy-lg5-review-b2d78f51-5fad-41c9-8d0f-f4e78d51a4ef/ROOT_POLICY_LG5_REVIEW.json`, SHA256 `afa59bfd0443183e1333a75519ae67dec6851abd0074a95a2c6de48ea7cb1469`. La frase outputs_byte_exact del recibo se refiere a fixtures/soporte y acuerdo entre ambas vistas: el Risk real conserva además los parámetros registry de main y difiere intencionalmente de la referencia manual del autor. Nunca copiar esa referencia completa encima del resultado compuesto. No se instaló nada en el WT y no hubo Rust RED/GREEN.
+
+Se preservan las revisiones Quant `RO_COMPOSICION_GLM_SPAN_SI_MARCA_20261015.md`/4db009b6 y `REVISION_RO_OMEGA135_4ac73505.md`/dd98b1ef en continuidad. Son hallazgos estáticos; no son incidentes medidos ni fallos Rust reproducidos. SI es único autor del suplemento de admisión/span; ROOT/Fresh revisa atribución del bosque. BASE no incorpora estos avances a mitad de su batería congelada. PR69 continúa fuera de este lote.

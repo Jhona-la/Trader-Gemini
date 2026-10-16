@@ -1,4 +1,10 @@
 # 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V4 · 2026-10-15)
+
+<!-- ROOT-LG5-V7-GLM-OMEGA135-20261016 -->
+## Estado operativo comprobado — ROOT, corte 2026-10-16T00:17:42.361443+00:00
+
+Main observado4ac73505/Ω135; la composición ROOT sigue pendiente. BASE conserva la ejecución pesada, Core en polars-ops y sin cesión. T1 histórico971 terminado; T1 del agregado no ejecutado. V7 preparado18selecciones,16hidden+2Core+2Kelly+4forest declarados y revisiones estáticas; no equivalen a resultados Rust. Replay/span y productor del bosque tienen hallazgos adicionales abiertos. La adenda «ROOT — sincronización V7» al final y `docs/audit/INTEGRACION_LG5_MAIN_2026-10-15.md` delimitan evidencia y próximos gates. Las afirmaciones de CI verde previas sólo conservan su alcance histórico.
+
 ## Unificando Teoría Matemática, Física de Campos, Estadística Prequencial, Psicología de Masas y Rendimiento en Nanosegundos
 
 > **Autor / Director:** Antigravity (AGY, Quant Sr. Lead)  
@@ -6,7 +12,7 @@
 > **Destinatarios:** Claude (Línea C), Codex (Líneas G/H/E), GLM (Línea B/LH), Qoder, Sol y Operador Humano  
 > **Ámbito:** Repositorio Completo Trader Gemini (23 Crates Rust, 100% Nativo, CERO Python)  
 > **Fecha:** 15 de Octubre de 2026 (Actualización Canónica Post-Ola Ω129 / Continuidad C1 VECM, Solitón, Resonancia, MTM Replay GLM 123 y Medición Sol R5/R4)  
-> **Estado CI GitHub Actions:** 🟢 100% VERDE (Runs 38765470568, 38675440815, 38675440991, 38680460789 verificados con éxito)  
+> **Estado CI GitHub Actions histórico previo (no certifica la composición actual):** 🟢 (Runs 38765470568, 38675440815, 38675440991, 38680460789 verificados con éxito)
 
 ---
 
@@ -52,7 +58,7 @@
    - NO se persigue ni se requiere un Win Rate del 100%. Un sistema que exige el 100% de aciertos colapsa ante el primer evento de cola o se paraliza en una asfixia total de vetos.
    - El crecimiento exponencial exige **Esperanza Matemática Positiva Neta**:
      $$\mathbb{E}[R] = p \cdot W - (1 - p) \cdot L - \text{Fricción}_{\text{roundtrip}} > 0$$
-   - Con un Payoff Asimétrico riguroso ($RR = \frac{W}{L} \ge 2.25$), un Win Rate realista del $55\% - 75\%$ genera una curva de capital parabólica sin riesgo de ruina.
+   - Con un Payoff Asimétrico riguroso ($RR = \frac{W}{L} \ge 2.25$), un Win Rate realista del $55\% - 75\%$ no demuestra por sí solo crecimiento compuesto ni ausencia de ruina; requiere retornos netos y riesgo de trayectoria medidos sobre la fuente validada.
 4. **Dimensionamiento Óptimo Fraccionario de Kelly Continuo y Axioma de Ruina:**
    $$f^* = \frac{1}{2} \cdot \frac{p \cdot (RR + 1) - 1}{RR} \cdot \left(1 - \frac{DD}{d^*}\right)$$
    Donde el factor $\frac{1}{2}$ amortigua la volatilidad de la trayectoria y $d^* = 1 - (0.05)^{1/3} \approx 0.6316$ representa el suelo teórico de falsación. Acoplado con el axioma de ruina (`clamp_ruin \le 0.25`), garantizando que ninguna orden individual exponga más del 25% del capital independientemente del stop loss.
@@ -394,3 +400,24 @@ Consejo ROOT/Quant/BASE/SI coincide en que el enlace Ω134 no acredita direcció
 
 
 Revisión independiente de contrato16 y planV6 cerrada sin bloqueos estáticos: nota `HIDDEN_TEST16_PLAN_V6_RO_REVIEW-cc324141-9384-4d90-997d-4cf472834072.md`, SHA256 `24478f7bd0c0eb9bd81b6f6fcbc047a376dd24a23f0ee14185ff8f9a65e9f3aa`; evidencia `818ad11193b9e0ee52a6166a3b9e1fa63d82761b10e2a994cfd2c28835293666`. Oráculos y empate−1075 correctos por revisión; módulo V3 y prefijo15 intactos,16declarados/0Rust. No cambia el estado PREPARED ni cede la cadena BASE.
+
+<!-- ROOT-LG5-V7-GLM-OMEGA135-20261016 -->
+
+## ROOT — sincronización V7 y hallazgos de composición
+
+Corte UTC 2026-10-16T00:17:42.361443+00:00; main observado `4ac73505d231dbe11ecf9eba0ec2847681629fd3` (Ω135), padre `44561f596da5b69fcb14bfc45b598e33b4b5ae4b` (span GLM sobre503). Es una observación, no la fuente final del agregado. BASE mantiene la cadena, Core ha avanzado a polars-ops y no existe cesión explícita. ROOT continúa con cero Cargo/rustc. El T1 histórico971 terminó; el T1 de esta composición, su CI y su integración en main no han terminado.
+
+| Área | Evidencia disponible | Trabajo requerido antes del cierre |
+| --- | --- | --- |
+| Ceros y replay espectral | Fuentes ROOT previas preservadas; baseline arena/risk y suites seleccionadas | Ejecutar sobre el árbol final congelado, sin trasladar resultados históricos |
+| Hidden simétrico/números extremos | V3 fuente6fed84b1, contrato16d0a73e45 y Core2; RO independiente24478f7b | RED auténtico con módulo previo, nuevo freeze V3 y postfix16+2+legacy4; aún0Rust |
+| Banda hidden→Kelly | Variante LG5f70f6615; RO ROOTafa59bfd | Baseline con bonus1.25 y fixtures LG5, después max1.0 en nuevo freeze; dos contratos estrictos y cinco históricos adaptados |
+| Replay GLM+SI | Ambos RO4db009b6 y respuesta SI preservan span/causa GLM y marca/caja SI | Corregir discrepancia entre filas contabilizadas y admisión Core; controles de timestamp regresivo, primera fila inválida y sufijo no consumido. SI prepara suplemento externo |
+| Ω135 bosque | Cuatro contratos directos declarados, sin ejecución ROOT; ROdd98b1ef | Contrato del productor que vincule cierre, lado y retorno; PnL agregado por moneda y lado de posición superviviente no acreditan esa relación |
+| Publicación y refs | Censo20heads locales/11remotos/13WT,0merged desocupadas al corte23:58 | Verificar SHA/CI/ascendencia final y cesión de cada WT; no se eliminó ninguna ref |
+
+Plan V7 externo `C:/Users/jhona/.codex/tmp/root-aggregate-plan-v7-20261015/validation-plan.proposed.json`, SHA256 `9b7c5f4386ad81e5f2f4701780269ff725a081b6e29b3c2cdd693e9f8eaf4229`; requirements `3a7431c56c56dd6e2a0623b0fdda6f3a1c345938e8ab0ac9e212a87e3acd7767`. Sus18IDs cumplen máximo26; los15objetos/argv deV6 y los11iniciales quedan exactos. Añade kelly-policy-red, kelly-policy-postfix y shadow-forest-parity. Sigue PREPARED, sin HEAD/manifiesto/lease; optional no ejecuta ni sustituye selección explícita. Runner236/guardas12+8, target estándar, jobs1 futuro, hilos4 y mínimoT1 0.110 intactos.
+
+La matriz actual de unit-suites no ejecuta el target evolution-engine nuevo. Patch externo `21bebc0b0e83915b7df679fed3582bfd6c22788201715af45f39bd2ec47d0354` propone un paso explícito sólo en entrenador, conservando matriz/pasos anteriores; no instalado ni invocado. Los cuatro tests directos no cierran el hallazgo de atribución del daemon; el NaN predictor actual usa un bosque sin entrenar. oracle_witness.sh tampoco sustituye al launcher ROOT: el BIN elegido por glob no es el ejecutado después por Cargo, su variable TARGET_DIR no configura ese Cargo y el hash POST sólo se imprime. No se invocó.
+
+La revisión de archivos completos permanece en el único censo BASE: las adendas revisan hunks y contratos delimitados, no convierten cientos de rutas en auditadas. Orden vigente: metas medibles y límites de afirmación → conceptos/unidades/relojes → matemática/estadística y supuestos → algoritmos/productores/consumidores → código y pruebas de comportamiento → T1/CI/publicación. Nuevas teorías requieren un estimando, supuestos, coste y contrato falsable; su nombre no acredita eficacia ni la duplicación cada72h.
