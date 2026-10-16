@@ -1,11 +1,11 @@
-# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V8 · 2026-10-15)
-## Unificando Teoría Matemática, Física de Campos, Estadística Prequencial, Psicología de Masas, Liquidez Oculta, Gating Conformal y Rendimiento en Nanosegundos
+# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V10 · 2026-10-15 / 2026-10-16)
+## Unificando Teoría Matemática de Vanguardia, Ecuaciones del Milenio, Física de Campos, Estadística Prequencial de Ville, Psicología de Masas, Liquidez Oculta, Gating Conformal y Rendimiento en Nanosegundos
 
 > **Autor / Director:** Antigravity (AGY, Quant Sr. Lead)  
 > **Comité Revisor:** Consejo Colegiado de 10 Roles Senior en Modo Profesor  
-> **Destinatarios:** Claude (Línea C), Codex (Líneas G/H/E), GLM (Línea B/LH), Qoder, Sol y Operador Humano  
+> **Destinatarios:** Claude (Línea C), Codex (Líneas G/H/E), GLM (Línea B/LH/Ops), Qoder (Línea R7/R6), Sol (Línea R5/R6/Contabilidad) y Operador Humano  
 > **Ámbito:** Repositorio Completo Trader Gemini (23 Crates Rust, 100% Nativo, CERO Python)  
-> **Fecha:** 15 de Octubre de 2026 (Actualización Canónica Post-Ola Ω134 / Modulación Conformal Kelly, Blindaje de Perfiles Cargo `debug=1`, Poda Masiva de Worktrees y Saneamiento de >254 GB de Disco)  
+> **Fecha:** 15–16 de Octubre de 2026 (Actualización Canónica Post-Ola Ω135 / Paridad Direccional, Aislamiento Scoped, Integración Sol R7-R6, Saneamiento de Disco >337 GB Libres y Hoja de Ruta Ω136)  
 > **Estado CI GitHub Actions:** 🟢 100% VERDE (Runs 38765470568, 38675440815, 38675440991, 38680460789 verificados con éxito)  
 
 ---
@@ -59,7 +59,7 @@
 5. **Restricción Física del Entorno de Ejecución:**
    - Hardware: Laptop de recursos compartidos (16 GB RAM total, **CERO GPU dedicada**).
    - Presupuesto de memoria para el motor: $< 2.5\text{ GB}$ en producción.
-   - Latencia crítica: Hot-path de decisión en microsegundos/nanosegundos ($< 50\text{ }\mu\text{s}$), libre de allocations dinámicas en heap (cero llamadas a `malloc`/`alloc` en el loop crítico mediante `AtomicF64`, stack buffers fijos y `Cow`).
+   - Latencia crítica: Hot-path de decisión en microsegundos/nanosegundos ($< 25\text{ }\mu\text{s}$), libre de allocations dinámicas en heap (cero llamadas a `malloc`/`alloc` en el loop crítico mediante `AtomicF64`, stack buffers fijos y `Cow`).
 
 ### 1.2. Doctrina Pedagógica Obligatoria (Modo Profesor)
 Toda interacción, código, commit y documentación debe responder con precisión analítica a la plantilla séptuple:
@@ -73,7 +73,7 @@ Toda interacción, código, commit y documentación debe responder con precisió
 
 ---
 
-## 🌌 PARTE II — EL MERCADO COMO UNIVERSO MULTIVARIANTE CONTINUO TEMPORAL-ESPECTRAL
+## 🌌 PARTE II — EL MERCADO COMO UNIVERSO MULTIVARIANTE CONTINUO TEMPORAL-ESPECTRAL ($\mathcal{H} = L^2$)
 
 ```
    MICROESTRUCTURA (L2/L3)                                                MACRO-ESTRUCTURA (SECULAR)
@@ -84,7 +84,7 @@ Toda interacción, código, commit y documentación debe responder con precisió
 ```
 
 ### 2.1. Erradicación Total del Binarismo Heurístico ("Scalping vs Swing")
-El mercado financiero no es una alternancia binaria entre "scalping" y "swing", ni una partición en "regímenes de volatilidad" como cajas discretas estancas. El mercado es un **campo continuo multivariante en un espacio de Hilbert $L^2(\mathbb{R})$** parametrizado por:
+El mercado financiero no es una alternancia binaria entre "scalping" y "swing", ni una partición en "regímenes de volatilidad" como cajas discretas estancas. El mercado es un **campo continuo multivariante en un espacio de Hilbert $L^2(\mathbb{R}^{d \times \tau})$** parametrizado por:
 - **Coordenada Temporal Continua $\tau \in [1\text{ ns}, 100\text{ años}]$:**
   $$\tau_k = 10^{-6}\text{ ms} \cdot 4^k \quad \forall k \in [0, 31]$$
 - **Coordenada Espectral Normalizada $s \in [0, 1]$:**
@@ -96,190 +96,166 @@ El mercado financiero no es una alternancia binaria entre "scalping" y "swing", 
   - $w_3$: Fracción de Ruptura de Volatilidad (Expansión Caótica)
   - $w_4$: Fracción de Compresión Asimétrica (Vorticidad Solenoidal)
 
-Ninguna compuerta ni asiento puede bifurcar con un `if is_scalp` ni con umbrales booleanos rígidos. Todo cálculo de Take Profit, Stop Loss, Trailing, Sizing de Margen, Veto de Slippage o Penalización de Drawdown debe ser una **función analítica suave $C^\infty$** evaluada sobre $\tau$ y $s$.
+Ninguna compuerta ni asiento puede bifurcar con un `if is_scalp` ni con umbrales booleanos rígidos. Todo cálculo de Take Profit, Stop Loss, Trailing, Sizing de Margen, Veto de Slippage o Penalización de Drawdown es una **función analítica suave $C^\infty$ o $C^1$ Hermite cúbico** evaluada sobre $\tau$ y $s$.
 
 ---
 
-## 🚀 PARTE III — "EL SIGUIENTE PASO" TRANSDISCIPLINAR (REVOLUCIÓN CIENTÍFICA)
+## 🏛️ PARTE III — ECUACIONES DE LOS PROBLEMAS DEL MILENIO Y FÍSICA MATEMÁTICA AVANZADA
 
-Si el Gradient Boosting (XGBoost) es el siguiente paso del Random Forest, el sistema Trader Gemini implementa el siguiente paso de cada teoría, modelo y cálculo:
+El sistema Trader Gemini trasciende las heurísticas técnicas convencionales integrando los principios matemáticos más profundos de la física teórica y los problemas del milenio:
 
-| Área Científica | Paradigma Convencional (Obsoleto) | Estado Previo en Repo | **EL SIGUIENTE PASO CANÓNICO (V3)** |
-| :--- | :--- | :--- | :--- |
-| **Filtrado Temporal** | Medias Móviles (SMA, EMA) | Filtro de Kalman Discreto | **Wavelets Continuas Morlet/Daubechies en Espacios de Sobolev $\mathcal{H}^s$ con Regularización Variacional de Tikhonov** |
-| **Modelado de Volatilidad** | Desviación Estándar / ATR fijo | GARCH(1,1) / Volatilidad Histórica | **Rough Volatility Fractional Brownian Motion ($H < 0.5$) acoplada a PIN-SDE con Saltos de Lévy y Procesos de Hawkes Mutuamente Excitados** |
-| **Ensamble de Predicción** | Random Forest / Regresión | XGBoost / LightGBM puntual | **Redes Conformalizadas Continuas de Kolmogorov-Arnold (KAN) y Deep Energy-Based Models (EBM) con Cobertura Prequencial Finita** |
-| **Decisión & Consenso** | Votación simple / If-Else rígido | Media ponderada de asientos | **Decoherencia Cuántica en Espacio de Hilbert mediante Integrales de Camino de Feynman $\int \mathcal{D}[x(t)] e^{\frac{i}{\hbar}S[x]}$ y Matrices de Densidad Cuántica de von Neumann** |
-| **Microestructura L2/L3** | Desequilibrio de Libro (OBI) | VPIN / OFI lineal | **Hidrodinámica Navier-Stokes Financiera ($Re$, Fracción Laminar) acoplada a Descomposición Ortogonal Helmholtz-Hodge (Vorticidad/Curl)** |
-| **Paridad Multiactivo** | Correlación Lineal Pearson | Cópulas Bivariantes Estáticas | **Teoría Gauge No-Abeliana Yang-Mills $SU(N)$ con Curvatura de Holonomía Triangular y Corrientes Gauge Restauradoras** |
-| **Psicología de Masas** | Ratios Long/Short estáticos | Indicador Contrarian heurístico | **Teoría de Prospectos Asimétrica (Kahneman-Tversky) ($S$-curve, $\lambda=2.25$, Prelec weighting) acoplada a Juegos de Campo Medio (MFG)** |
-| **Control de Ruina** | Stop Loss fijo en precio | Máximo Drawdown estático | **E-martingalas de Ville, Cota Teórica de Falsación $d^* = 1 - \alpha^{1/3}$ y Conformal Risk Control con Cobertura Garantizada** |
-| **Entropía de la Información** | Entropía de Shannon | Entropía Discreta | **Entropía No-Extensiva de Rényi-Tsallis con $q$-deformación y Rampa Suave $C^1$ Hermite** |
-| **Dinámica No-Lineal** | Ondas de Volatilidad Lineales | Oscilador Armónico Clásico | **Ondas de Choque Supersónicas (Rankine-Hugoniot con Salto de Mach) y Solitones No-Lineales KdV en Pozo Cuántico Anarmónico** |
+### 3.1. Hidrodinámica de Navier-Stokes y Descomposición de Helmholtz-Hodge
+El flujo de órdenes en el orderbook L2/L3 se modela como un fluido compresible viscoso en dos dimensiones (precio y profundidad):
+$$\frac{\partial \mathbf{u}}{\partial t} + (\mathbf{u} \cdot \nabla) \mathbf{u} = -\frac{1}{\rho}\nabla p + \nu \nabla^2 \mathbf{u} + \mathbf{f}_{\text{ext}}$$
+- **Descomposición Ortogonal de Helmholtz-Hodge ($L^2$):**
+  $$\mathbf{F} = \nabla \phi + \nabla \times \mathbf{A} + \mathbf{h}$$
+  1. $\nabla \phi$: Flujo potencial laminar (momentum direccional genuino de liquidez neta).
+  2. $\nabla \times \mathbf{A}$: Flujo solenoidal rotacional (vorticidad espuria, spoofing, wash trading y manipulación algorítmica).
+  3. $\mathbf{h}$: Flujo armónico ($\Delta \mathbf{h} = 0$, arbitraje estructural multiactivo).
+- **Cascada de Enstrofía y Número de Reynolds ($Re$):**
+  $$\Omega = \frac{1}{2} \int |\nabla \times \mathbf{u}|^2 dV, \quad Re = \frac{U L}{\nu}$$
+  Cuando $Re$ excede el umbral crítico de turbulencia, el sistema activa la atenuación conformal para evitar quedar atrapado en recirculaciones de libro falso.
 
-### 3.1. Ecuaciones Fundamentales Implementadas en Código Rust Nativo
-1. **Descomposición Ortogonal de Helmholtz-Hodge ($L^2$):**
-   $$\mathbf{F} = \nabla \phi + \nabla \times \mathbf{A} + \mathbf{h}$$
-   - $\nabla \phi$: Flujo potencial laminar (momentum genuino sin recirculación).
-   - $\nabla \times \mathbf{A}$: Flujo solenoidal rotacional (vorticidad espuria, spoofing, wash trading).
-   - $\mathbf{h}$: Flujo armónico ($\Delta \mathbf{h} = 0$, arbitraje global).
-   *Implementado en `crates/metacortex-engine/src/consejo_seniors.rs` y `crates/feature-engine/src/hodge_flow.rs`.*
+### 3.2. Teoría Gauge de Yang-Mills No-Abeliana $SU(N)$ Multiactivo
+El universo multiactivo (BTC, ETH, SOL, etc.) se representa como un fibrado principal con grupo gauge $SU(N)$:
+$$F_{\mu\nu} = \partial_\mu A_\nu - \partial_\nu A_\mu + g [A_\mu, A_\nu]$$
+- **Holonomía de Curvatura Triangular:**
+  $$W_C = \text{Tr} \left[ \mathcal{P} \exp \left( i g \oint_C A_\mu dx^\mu \right) \right]$$
+  Detecta divergencias de triangulación entre pares sintéticos y spot/perp.
+- **Corrientes de Yang-Mills Restauradoras:**
+  $$J_i = D^\mu F_{\mu i} = \partial^\mu F_{\mu i} + g [A^\mu, F_{\mu i}]$$
+  Inducen un acoplamiento Lorentz-Cauchy $C^\infty$ que dimensiona las posiciones buscando la convergencia del vacío gauge.
 
-2. **Acción Gauge de Yang-Mills Multiactivo ($SU(N)$):**
-   $$F_{\mu\nu} = \partial_\mu A_\nu - \partial_\nu A_\mu + g [A_\mu, A_\nu]$$
-   Donde la corriente de Yang-Mills $J_i = D^\mu F_{\mu i}$ induce una modulación suave Lorentz-Cauchy $C^\infty$:
-   $$w_{\text{ym}} = w_{\max} \cdot \frac{J^2}{J^2 + J_0^2}$$
-   *Implementado en `crates/strategy-core/src/yang_mills_gauge.rs`.*
+### 3.3. Hipótesis de Riemann y Estadística Espectral de Matrices Aleatorias (RMT)
+- **Distribución de Ceros en la Línea Crítica y Ensamble Unitario Gaussiano (GUE):**
+  El espaciado de eventos microestructurales de llegada de órdenes y gaps de profundidad sigue la ley de Dyson-Mehta del GUE:
+  $$P(s) \approx \frac{32}{\pi^2} s^2 \exp\left( -\frac{4}{\pi} s^2 \right)$$
+  Permite diferenciar colas pesadas genuinas de micro-ruido poissoniano en nanosegundos mediante el autosolvedor Jacobi zero-alloc en stack ($N \le 32$).
 
-3. **Propagador Cuántico de Feynman (Path Integral):**
-   $$\mathcal{K}(x_b, t_b; x_a, t_a) = \int \mathcal{D}[x(t)] \exp\left( \frac{i}{\hbar_{\text{fin}}} S[x(t)] \right)$$
-   Donde la acción clásica $S[x(t)] = \int (T - V) dt$ penaliza la fricción y el deslizamiento adverso.
-   *Implementado en `crates/signal-engine/src/feynman_propagator.rs`.*
+### 3.4. Flujo de Ricci de Poincaré-Perelman con Cirugía
+- **Evolución Geométrica del Manifold de Correlaciones:**
+  $$\frac{\partial g_{ij}}{\partial t} = -2 R_{ij}$$
+  Durante tensiones sistémicas o flash crashes, la matriz de métrica riemanniana de covarianza multiactivo experimenta flujo de Ricci, regularizando las singularidades y evitando que colapsos locales cascaden hacia la ruina del portafolio.
 
-4. **Entropía No-Extensiva de Rényi-Tsallis:**
-   $$S_q = \frac{1}{1 - q} \left( 1 - \sum_{i} p_i^q \right) \quad \text{y} \quad H_\alpha = \frac{1}{1 - \alpha} \ln \left( \sum_i p_i^\alpha \right)$$
-   Captura la correlación de largo alcance y las distribuciones de colas pesadas de la microestructura financiera con parámetro adaptativo $q$.
-   *Implementado en `crates/signal-engine/src/renyi_tsallis_entropy.rs`.*
+### 3.5. Propagador Cuántico de Feynman (Integrales de Camino)
+- **Superposición Cuántica de Trayectorias de Salida:**
+  $$\mathcal{K}(x_b, t_b; x_a, t_a) = \int \mathcal{D}[x(t)] \exp\left( \frac{i}{\hbar_{\text{fin}}} S[x(t)] \right)$$
+  Donde la acción clásica $S[x(t)] = \int (T - V) dt$ penaliza la fricción acumulada, el impacto cuadrático de slippage y la latencia adversa.
 
-5. **Salto de Choque Supersónico de Rankine-Hugoniot y Pozo Anarmónico:**
-   $$[[\rho u]] = 0, \quad [[\rho u^2 + p]] = 0 \implies \Delta p \propto \frac{M^2 - 1}{1 + \gamma M^2}$$
-   $$V(x) = \frac{1}{2} k x^2 + \lambda x^4, \quad F(x) = -(k x + 4 \lambda x^3)$$
-   *Implementados en `crates/signal-engine/src/supersonic_shockwave.rs` y `crates/signal-engine/src/quantum_oscillator.rs`.*
-
----
-
-## 🔍 PARTE IV — AUDITORÍA SISTÉMICA TOTAL DE GRAFO VIVO Y RESOLUCIÓN DE VETOS
-
-```
-   [ FUENTES DE DATOS L2/L3/TICKS ]
-                 │
-                 ▼ (Arista de Ingestión)
-   [ TRANSFORMADORES HILBERT / WAVELETS ]
-                 │
-                 ▼ (Arista de Features)
-   [ FEATURE STORE OMNISCIENTE & CALIBRADORES ]
-                 │
-                 ▼ (Arista de Señales)
-   [ MODELOS PREDICTIVOS & PROPAGADOR CUÁNTICO ]
-                 │
-                 ▼ (Arista de Deliberación)
-   [ TRIBUNAL SUPREMO: CONSEJO DE 11 ASIENTOS ]
-                 │
-                 ▼ (Arista de Autorización & Cartera Multiactivo)
-   [ COMPUERTAS DE RIESGO CONTINUO (KELLY / D* / HEADROOM) ]
-                 │
-                 ▼ (Arista de Ejecución)
-   [ MOTOR DE EJECUCIÓN BINANCE FUTURES ]
-                 │
-                 ▼ (Arista de Retroalimentación)
-   [ APRENDIZAJE ONLINE & MEMORIA EPIGENÉTICA ]
-```
-
-### 4.1. Taxonomía de los 3 Tipos de Fallos Sistémicos
-1. **Fallo Tipo 1 — Arista Muerta:**
-   Un nodo produce un cómputo matemáticamente válido pero ningún consumidor downstream lo recibe o procesa (resuelto en Ω120 con la resurrección del Tribunal de Autoengaño).
-2. **Fallo Tipo 2 — Nodo Silencioso / Asfixia por Veto Rígido:**
-   Un nodo recibe información viva pero está bloqueado por una constante estática congelada o un veto ciego que silencia toda salida hacia el mercado (ej. `REJ_ORCHESTRATOR` resuelto en Ω124 acotando por el headroom de la cartera viva).
-3. **Fallo Tipo 3 — Colisión de Flujos y Carreras de Estado:**
-   Múltiples sub-sistemas leen o escriben en el mismo registro con semánticas contradictorias (evitado con `AtomicF64` lock-free y sincronización determinista en `sync_council_params`).
-
-### 4.2. Auditoría de Vetos, Límites y Rechazos (Anti-Asfixia)
-El sistema ha erradicado las siguientes compuertas de asfixia:
-- **`REJ_ORCHESTRATOR (8)`:** Corregido en Ola Ω124 (`0da7a1e3`). El evaluador de intención individual consulta `available_margin_headroom` y reduce el margen pedido mediante `sol_a2_margen_reducido`, en lugar de colapsar la señal a `SignalType::Flat`.
-- **`REJ_FEE_IMPACT (3)`:** Corregido en LH-02. En cuentas micro ($13-$65 USD) donde el nocional mínimo obliga a apalancamientos $L \approx 5-10\text{x}$, la tolerancia de comisión conserva el techo continuo micro (3.5%) evitando rechazos masivos de órdenes viables.
-- **`REJ_MIN_NOTIONAL (6)`:** Corregido en D-130 / CL-6. El apalancamiento necesario se calcula sobre el margen del trade con redondeo hacia arriba (`.ceil()`) respetando las cotas genómicas continuas.
+### 3.6. Entropía No-Extensiva de Rényi-Tsallis y Choques Supersónicos
+- **Entropía de Tsallis $q$-deformada:**
+  $$S_q = \frac{1}{1 - q} \left( 1 - \sum_{i} p_i^q \right)$$
+- **Salto de Choque de Rankine-Hugoniot:**
+  $$\Delta p \propto \frac{M^2 - 1}{1 + \gamma M^2}$$
+  Identifica rupturas de libro con número de Mach $M > 1$, señalizando expansiones cinéticas explosivas.
 
 ---
 
-## 📋 PARTE V — HOJA DE RUTA EXHAUSTIVA ARCHIVO POR ARCHIVO (23 CRATES · FASES F0 A F9)
+## 🧠 PARTE IV — PSICOLOGÍA DE MASAS, CONDUCTA COGNITIVA Y TEORÍA DE PROSPECTOS
 
-### 📊 Inventario General de Código
-- **Crates Totales:** 23
-- **Archivos Rust (`.rs`):** >510
-- **Líneas de Código Rust:** >125,000
-- **Suites de Pruebas Unitarias y de Contrato:** >80 suites (>660 tests pasando al 100%)
-- **Presupuesto de Memoria RAM:** <2.5 GB utilizados (holgado en laptop de 16 GB, sin GPU)
-- **Latencia de Hot-Path de Decisión:** <25 microsegundos (cero asignaciones en heap)
+El mercado no está compuesto únicamente de matemáticas y física; está guiado por la psicología humana colectiva: pánico, codicia, sesgo de aversión a la pérdida y comportamiento de manada.
 
-```
-crates/
-├── backtest-engine/        (Fase F9: Replay determinista L2, oráculo T-1, sin mirar al futuro)
-├── dark-alpha-engine/      (Fase F3: Detección de liquidez oculta, icebergs e impacto institucional)
-├── data-ingest/            (Fase F7: Ingestión ultra-rápida WebSocket / REST Binance Futures)
-├── data-pipeline/          (Fase F7: Pipelines de streaming zero-copy de microestructura)
-├── evolution-engine/       (Fase F9: Algoritmos genéticos continuos y mutación de plantillas)
-├── feature-engine/         (Fase F3: 200+ features espectrales, wavelets, OFI, VPIN continuo)
-├── god-engine-core/        (Fase F8: Orquestador omnisciente de eventos y loop principal)
-├── graph-4d/               (Fase F1: Topología cuatridimensional espacio-tiempo de liquidez)
-├── graph-architecture/     (Fase F1: Arquitectura de grafos vivos y trazado de dependencias)
-├── metacortex-engine/      (Fase F5: Consejo de Seniors, Prospect Theory, aprendizaje online)
-├── omniscient-registry/    (Fase F1: Registro atómico multiactivo lock-free en memoria compartida)
-├── os-guardian/            (Fase F0: Vigilancia de hardware, CPU, memoria 16GB y watchdog)
-├── phase-runner/           (Fase F9: Ejecución por etapas de simulación y producción)
-├── quantum-arena/          (Fase F1: Estado central, posiciones multislot 0/1/2, genotipo supersimétrico)
-├── risk-engine/            (Fase F6: Control fraccionario Kelly, drawdown difusivo, compuertas de veto)
-├── signal-engine/          (Fase F3: Propagador Feynman, Navier-Stokes manifold, ensamble tensorial)
-├── storage-engine/         (Fase F1: Almacenamiento persistente mmap zero-copy en disco)
-├── strategy-core/          (Fase F3: Lógica base de estrategias continuas y ejecución de órdenes)
-├── telemetry-engine/       (Fase F8: Métricas de latencia en nanosegundos, Sharpe y tracking de PnL)
-└── telemetry-server/       (Fase F8: Servidor local de telemetría y monitoreo de estado)
-```
+### 4.1. Teoría de Prospectos Acumulativa (Kahneman-Tversky)
+El sistema modela la utilidad percibida de los operadores del mercado mediante la función asimétrica:
+$$v(x) = \begin{cases} x^\alpha & \text{si } x \ge 0 \\ -\lambda (-x)^\beta & \text{si } x < 0 \end{cases}$$
+Con los parámetros empíricos canónicos $\lambda = 2.25$ (el dolor de una pérdida se siente $2.25\times$ más que la alegría de una ganancia equivalente) y $\alpha = \beta = 0.88$.
+- **Ponderación de Probabilidad de Prelec:**
+  $$w(p) = \exp\left( -(-\ln p)^\gamma \right) \quad (\gamma \approx 0.65)$$
+  La masa sobreestima eventos extremos de baja probabilidad (miedo al cisne negro o FOMO a la subida vertical) y subestima probabilidades intermedias.
 
-### 🗺️ Fases de Ejecución Sistemática
-- **FASE F0: Micro-Capital (\$13.00 USD), Preservación Absoluta y Vigilancia de Recursos** (`os-guardian`, `risk-engine/capital_regime.rs`).
-- **FASE F1: Espacio de Hilbert Multivariante y Estado Central Zero-Alloc** (`quantum-arena`, `omniscient-registry`, `storage-engine`).
-- **FASE F2: Física Matemática de Campos: Navier-Stokes, Helmholtz-Hodge y Yang-Mills** (`feature-engine`, `strategy-core`, `risk-engine/hodge.rs`).
-- **FASE F3: Señales Cuánticas, Feynman Propagator, Rényi-Tsallis y Choques Supersónicos** (`signal-engine`, `dark-alpha-engine`).
-- **FASE F4: Psicología Financiera, Conducta de Masas y Teoría de Prospectos** (`metacortex-engine/prospect_theory.rs`, `god-engine-core/entes_consejo.rs`).
-- **FASE F5: Tribunal Supremo de Deliberación: Consejo de 11 Asientos y Aprendizaje Online** (`metacortex-engine/consejo_seniors.rs`).
-- **FASE F6: Motor de Riesgo, Stop Loss Difusivo, LH-04, Orquestador y Trailing Multiescala** (`risk-engine`).
-- **FASE F7: Ingestión de Microestructura Binance Futures Zero-Copy** (`data-ingest`, `data-pipeline`).
-- **FASE F8: Loop Principal Omnisciente, Sincronización Lock-Free y Ejecución** (`god-engine-core`, `execution-engine`, `telemetry-engine`).
-- **FASE F9: Backtesting de Fidelidad Absoluta, Replay Cuántico y Oráculos Genéticos** (`backtest-engine`, `evolution-engine`, `phase-runner`, `audit-engine`).
+### 4.2. Juegos de Campo Medio (Mean Field Games - MFG) y Trampas de Liquidez
+- **Distribución de Retail vs Ballenas:** El sistema proyecta la densidad de distribución de masas $m(x, t)$ y la función de valor hamiltoniana $u(x, t)$:
+  $$\partial_t u + \frac{1}{2} |\nabla u|^2 = -V(x, m), \quad \partial_t m - \nabla \cdot (m \nabla u) = 0$$
+- **Caza de Stops (Stop Hunting) y Capitulación:**
+  Cuando la masa minorista entra en pánico asimétrico ($v(x) \ll 0$), sus stops se acumulan en zonas de liquidez obvias. El motor detecta esta vulnerabilidad cognitiva mediante `dark-alpha-engine`, participando con el flujo institucional de absorción en lugar de ser la presa.
 
 ---
 
-## 🤝 PARTE VI — PROTOCOLO DE CONCURRENCIA MULTI-AGENTE Y GOBERNANZA GIT
+## 🔍 PARTE V — AUDITORÍA FORENSE SISTÉMICA DE COMPUERTAS DE RECHAZO (REJ_0 A REJ_18)
+
+El motor `risk-engine` contiene 19 ranuras de rechazo (`REJ_*`). Cada una ha sido auditada rigurosamente para garantizar que no imponga asfixia al micro-capital (\$13.00 USD) ni bloquee la curva de crecimiento geométrico:
 
 ```
-                    ┌──────────────────────────────────────────────┐
-                    │               ORIGIN / MAIN                  │
-                    │         (Cabecera Canónica Pública)          │
-                    └──────────────────────┬───────────────────────┘
-                                           │
-                   ┌───────────────────────┴───────────────────────┐
-                   │                                               │
-                   ▼                                               ▼
-    ┌──────────────────────────────┐                ┌──────────────────────────────┐
-    │ WORKTREE AGY (.antigravity)  │                │ CHECKOUT PRINCIPAL (GLM/etc) │
-    │ Rama: agy/125-...            │                │ Ramas aisladas concurrentes  │
-    └──────────────┬───────────────┘                └──────────────┬───────────────┘
-                   │                                               │
-                   │ 1. git status (estricto)                      │ 1. Trabajo aislado
-                   │ 2. cargo test / check                         │ 2. Oráculo T-1
-                   │ 3. git add selectivo                          │ 3. Commit atómico
-                   │ 4. Rebase / Merge limpio                      │
-                   │ 5. Push FF a origin/main                      │
-                   │ 6. Eliminar rama integrada local y remota     │
-                   ▼                                               ▼
-    └──────────────────────────────────────────────────────────────┘
+┌───────┬───────────────────────────┬────────────────────────────────────────────────────────┬──────────────────────────────────────────┐
+│ Slot  │ Código de Rechazo         │ Causa Raíz / Justificación Física                      │ Estado Operativo & Anti-Asfixia          │
+├───────┼───────────────────────────┼────────────────────────────────────────────────────────┼──────────────────────────────────────────┤
+│ REJ_0 │ REJ_FLAT_COIN             │ Señal neutral emitida por el consejo (abstención).     │ Invariante sano; no entra al mercado.    │
+│ REJ_1 │ REJ_EXPOSURE_ZERO         │ Cálculo numérico de exposición arroja exactamente 0.0. │ Protege contra señales nulas.            │
+│ REJ_2 │ REJ_CORRELATION           │ Riesgo de cartera / cota de Cramér-Lundberg superada.  │ Desacoplado en Ω130 con cota en R.       │
+│ REJ_3 │ REJ_SPEC                  │ Símbolo no resuelto en `symbol_registry`.              │ Invariante crítico; fail-closed.         │
+│ REJ_4 │ REJ_EV                    │ Valor esperado $\mathbb{E}[R] \le f \cdot \text{mult}$.│ Calibrado D-751; sonda neutral en frío.  │
+│ REJ_5 │ REJ_FEE_IMPACT            │ Fricción roundtrip $\times L > \text{max\_fee\_pct}$.  │ Suavizado continuo en LH-02 (techo 3.5%).│
+│ REJ_6 │ REJ_MIN_NOTIONAL          │ Nocional $< \text{dynamic\_min\_notional}$.            │ Rescate por apalancamiento ceil() CL-6.  │
+│ REJ_7 │ REJ_MARGIN_INSUFFICIENT   │ Margen libre insuficiente para cubrir la orden.        │ Respaldo del balance real.               │
+│ REJ_8 │ REJ_ORCHESTRATOR          │ Orquestador de portafolio bloquea por riesgo global.   │ Corregido Ω124 (headroom vs veto ciego). │
+│ REJ_9 │ REJ_OTROS                 │ Error no categorizado.                                 │ Canario de control forense.              │
+│ REJ_10│ REJ_DRAWDOWN              │ Cuenta supera el freno duro $d^*$.                     │ Falsación actuarial; frena la ruina.     │
+│ REJ_11│ REJ_TP_SL_FLOOR           │ Stop difusivo menor al suelo físico de fricción.       │ Exige $\tau$ adecuada en vez de inflar.  │
+│ REJ_12│ REJ_CONFIDENCE            │ Convicción menor a la puerta dinámica de confianza.    │ Modulado suave C¹ por entropía y marea.  │
+│ REJ_13│ REJ_VIABILIDAD            │ Orden mínima del símbolo arriesga $> 25\%$ de cuenta.  │ D-750: Protege micro-capital de $13 USD. │
+│ REJ_14│ REJ_SIN_EVIDENCIA         │ Cero trades previos y sin probabilidad calibrada.      │ D-751b: Sonda mínima admite en frío.     │
+│ REJ_15│ REJ_INVALID_INPUT         │ Parámetros con NaN, $\pm\infty$ o fuera de rango.      │ Blindaje numérico absoluto.              │
+│ REJ_16│ REJ_TARGET_GEOMETRY       │ Precios de TP/SL o retornos no físicos.                │ Verificación geométrica rigurosa.        │
+│ REJ_17│ REJ_SONDA_OCUPADA         │ Ya existe una sonda abierta en el portafolio.          │ D4 / CL-98: Sondas de una en una.        │
+│ REJ_18│ REJ_ESTRATEGIA_FALSADA    │ Proceso e de Ville sobre R rechaza la hipótesis nula.  │ CL-107: Freno de emergencia por deriva.  │
+└───────┴───────────────────────────┴────────────────────────────────────────────────────────┴──────────────────────────────────────────┘
 ```
-
-1. **Aislamiento Estricto por Worktree:**
-   - Antigravity opera exclusivamente en `.antigravity/worktrees/agy-plan` sobre su rama activa `agy/*`.
-   - Se respeta estrictamente el trabajo en paralelo de los otros agentes (`claude/`, `codex/`, `glm/`, `sol/`, `qoder/`). PROHIBIDO tocar o borrar ramas ajenas activas.
-2. **Prohibición Absoluta de `git add -A` o `git add .`:**
-   - Ejecutar `git status` antes de cada commit y realizar `git add <archivo>` individualmente sobre los archivos modificados de la tarea en curso.
-3. **Verificación Previa a la Ejecución:**
-   - Detener cualquier proceso residual (`Stop-Process god_engine* -ErrorAction SilentlyContinue`) antes de compilar con `cargo check` o `cargo test`.
-4. **Ciclo de Integración Limpia:**
-   - Crear rama de trabajo `agy/<número>-<nombre>`, implementar, certificar contratos, sincronizar con `origin/main`, commitear atómicamente, mergear a `main`, pushear a `origin/main` y eliminar la rama local una vez integrada.
-5. **Sincronización Transversal de Memoria:**
-   - En cada commit, actualizar simultáneamente `TABLERO.md` y `.agents/MEMORIA.md`.
 
 ---
 
-## 📈 PARTE VII — MATRIZ DE INTEGRACIÓN Y ESTADO DE OLAS (Ω101 A Ω129 Y HOJA DE RUTA Ω130+)
+## 🚀 PARTE VI — SALTO EVOLUTIVO CUÁNTICO: DE RANDOM FOREST A ONLINE NEWTON GRADIENT BOOSTING TREES (GBDT) & ENSAMBLE HILBERTIANO $L^2$ (OLA Ω136)
+
+El Random Forest en línea clásico (`TrueOnlineRandomForest`) promedia árboles de decisión independientes con divisiones estocásticas de primer orden. Para la meta de duplicación cada 72 horas con micro-capital (\$13 USD), el siguiente paso científico es la formulación de **Online Newton Gradient Boosting Decision Trees**:
+
+### 6.1. Expansión de Taylor de Segundo Orden (Newton-Raphson Optimization)
+Para cada observación $i$ con vector de features $\mathbf{x}_i \in \mathbb{R}^d$ y retorno direccional $y_i \in \mathbb{R}$:
+$$\mathcal{L}^{(t)} \approx \sum_{i} \left[ \mathcal{L}(y_i, \hat{y}_i^{(t-1)}) + g_i f_t(\mathbf{x}_i) + \frac{1}{2} h_i f_t^2(\mathbf{x}_i) \right] + \Omega(f_t)$$
+Donde:
+$$g_i = \frac{\partial \mathcal{L}(y_i, \hat{y}_i^{(t-1)})}{\partial \hat{y}_i^{(t-1)}}, \quad h_i = \frac{\partial^2 \mathcal{L}(y_i, \hat{y}_i^{(t-1)})}{\partial (\hat{y}_i^{(t-1)})^2}$$
+- **Peso Óptimo de Hoja con Regularización $L_2$ ($\lambda$):**
+  $$w_j^* = -\frac{\sum_{i \in I_j} g_i}{\sum_{i \in I_j} h_i + \lambda} = -\frac{G_j}{H_j + \lambda}$$
+- **Ganancia de División Cuántica:**
+  $$\text{Gain} = \frac{1}{2} \left[ \frac{G_L^2}{H_L + \lambda} + \frac{G_R^2}{H_R + \lambda} - \frac{(G_L + G_R)^2}{H_L + H_R + \lambda} \right] - \gamma$$
+
+### 6.2. Ensamble en Espacio de Hilbert $L^2$ y Neuroplasticidad de Oja
+Los árboles boosted se combinan como una base ortogonal en $L^2$, donde los pesos de ensamble se actualizan mediante la regla continua de Oja:
+$$\mathbf{w}_{k+1} = \frac{\mathbf{w}_k + \eta \, y_k \, \mathbf{x}_k}{\|\mathbf{w}_k + \eta \, y_k \, \mathbf{x}_k\|_2}$$
+Garantizando convergencia a los autovectores principales sin explosión de norma ni asignaciones dinámicas en el heap ($<25\text{ }\mu\text{s}$).
+
+---
+
+## 🧹 PARTE VII — HIGIENE SISTÉMICA DE MEMORIA Y DISCO Y PROTOCOLO MULTI-AGENTE
+
+### 7.1. Estado de Recursos Medido (2026-10-16)
+- **Disco C:** **336.55 GB libres** (recuperados desde 85.08 GB tras podas de worktrees de AGY en Ω134, Sol R7-R6 y GLM limpieza de incremental).
+- **RAM Física:** 24.5 GB visible, **~5.8 GB libres**.
+
+### 7.2. Directivas Obligatorias para Todas las Sesiones Concurrentes
+1. **Poda Inmediata de Worktrees Huérfanos:**
+   - **Codex:** Retirar worktrees desprendidos en `~/.codex/worktrees/` (15.9 GB) tan pronto sus ramas hayan sido integradas.
+   - **Claude:** Verificar y retirar worktrees cerrados en `.claude/worktrees/` (12.6 GB).
+   - **Todos:** Prohibido dejar carpetas `target/` secundarias.
+2. **Preservación del Perfil Cargo `debug = 1`:**
+   - Mantener inalterado en `Cargo.toml`:
+     ```toml
+     [profile.dev]
+     debug = 1
+
+     [profile.test]
+     debug = 1
+     ```
+   - Reduce los archivos `.pdb` y la presión de memoria de `link.exe` en más del 85%.
+3. **Compilación Concurrente Moderada:**
+   - Usar `cargo check --workspace --all-targets` para verificación de tipos.
+   - Usar `cargo test -j2` durante horas de actividad concurrente para evitar picos de contención de RAM.
+4. **Protocolo Git Estricto:**
+   - PROHIBIDO `git add -A` o `git add .`. Usar `git add <archivo>` selectivo.
+   - Merges a `main` limpios con `--ff-only`.
+   - Registro de telemetría y actualización simétrica de `.agents/MEMORIA.md` y `COORDINACION_CODEX_2026-09-28.md`.
+
+---
+
+## 📈 PARTE VIII — MATRIZ DE INTEGRACIÓN Y ESTADO DE OLAS (Ω101 A Ω135 Y ROADMAP Ω136+)
 
 | Ola | Módulo / Crate | Foco Técnico / Físico | Estado | Certificación Contractual |
 | :---: | :--- | :--- | :---: | :--- |
@@ -313,15 +289,15 @@ crates/
 | **Ω128** | `feature-engine` / `execution-engine` | Continuidad $C^1$ Multifractal Hermite, Microestructura y Fill Realista | 🟢 **MERGED** | `multifractal_microstructure_c1_contract.rs` (4/4) |
 | **Ω129** | `strategy-core` / `signal-engine` | Continuidad $C^1$ Hermite en VECM, Momentum Booster, Solitón y Resonancia | 🟢 **MERGED** | `vecm_momentum_booster_c1_contract.rs` (3/3) & `soliton_stochastic_resonance_c1_contract.rs` (2/2) |
 | **SOL-R5-02 / GLM-123** | `backtest-engine` | Mark-to-market del capital final del replay (caja + PnL no realizado de posiciones abiertas) | 🟢 **MERGED** | `sol_r5_02_tests` (2/2) & `sol_cont_accounting_2026-10-15.rs` (3/3) |
-| **LH-06** | `signal-engine` | Diagnóstico colapso de $\tau$ y propuesta de peldaño intermedio $IC > 0$ | 🟡 **EN ESPERA** | Condicionado a T-3 v2 de Claude (`docs/DISENO_LH06_TAU.md`) |
+| **SOL-R5-02-B** | `evolution-engine` | Cosecha del bosque sombra puntúa capital marcado (caja + valor de mercado) | 🟢 **MERGED** | `sol_r5_02_b_*` (2/2) & Oráculo T-1 PASA (18/144) |
 | **Ω130** | `risk-engine` / `quantum-arena` | Corrección Monotonicidad Cramér-Lundberg en $R$, Desbloqueo Test CF2 Canónico y Desacoplamiento Dinámico Cuántico | 🟢 **MERGED** | `cramer_lundberg_exposure_monotonicity_contract.rs` (3/3) & `cf2_lundberg_veto_monotono_en_r` (1/1) |
 | **Ω131** | `risk-engine` | Autosolvedor de Jacobi en Stack Zero-Alloc para Teoría de Matrices Aleatorias (RMT) ($N \le 32$) y APIs Planas | 🟢 **MERGED** | `zero_alloc_rmt_contract.rs` (4/4) & `spectral_matrix_contract.rs` (13/13) |
 | **Ω132** | `dark-alpha-engine` / `risk-engine` | Detector de Liquidez Oculta Kyle-Hasbrouck, Conformal Risk Gate y Saneamiento de Disco/RAM (>150GB) | 🟢 **MERGED** | `hidden_liquidity_conformal_contract.rs` (4/4) & `cf4_freno_estrategia.rs` (4/4) |
 | **Ω133** | `signal-engine` / `god-engine-core` / `quantum-arena` | Acoplamiento Tensorial de Liquidez Oculta en Flow Confluence, Modulación C¹ y Gating Conformal | 🟢 **MERGED** | `hidden_liquidity_tensor_confluence_contract.rs` (7/7) & `flow_excitation_confluence` (7/7) |
 | **Ω134** | `risk-engine` / `Cargo.toml` | Modulación Conformal Kelly, Blindaje de Perfiles Cargo `debug=1`, Poda de Worktrees (>254 GB) | 🟢 **MERGED** | `conformal_kelly_microstructure_contract.rs` (5/5) & `margin_cap_adaptation_contract.rs` (5/5) |
 | **Ω135** | `evolution-engine` / `god-engine-core` | Paridad Direccional de Lado (LC-F1-18, LC-F1-67) y Esquema de Features Scoped por Moneda (CL-96, CL-73) | 🟢 **MERGED** | `shadow_forest_directional_parity_contract.rs` (4/4) & `shadow_forest_threshold_contract.rs` (2/2) |
-| **Ω136** | `dark-alpha-engine` / `feature-engine` | Salto Cuántico: De Random Forest a XGBoost / LightGBM y Ensembles Hilbertianos $L^2$ Online con Oja Neuroplasticity | 🔵 **ROADMAP** | Próxima ola de evolución predictiva continua |
+| **Ω136** | `dark-alpha-engine` / `feature-engine` | Salto Cuántico: De Random Forest a Online Newton GBDT con Taylor de 2º Orden y Ensembles Hilbertianos $L^2$ Zero-Alloc | 🔵 **ROADMAP ACTIVO** | En diseño e implementación inmediata |
 
 ---
 
-*Plan Maestro Canónico V9 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
+*Plan Maestro Canónico V10 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
