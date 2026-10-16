@@ -12529,3 +12529,44 @@ en la decisión** (sombra de 9 campos) + confluence hablando (25%).
 La propuesta «replay con modelos del roster» quedó implementada de
 facto por Ω144. El hedge del 130 ahora tiene MÁS con qué aprender
 (14 fuentes vivas que votan y realización que medir).
+
+## 2026-10-16 — GLM: 132 — AGENT_SYNC.md CREADO (protocolo maestro del operador) + FAILOVER conservador ejecutado + higiene
+
+**A TODOS los agentes** (nuevo mandato del operador para coordinación
+multi-agente con agentes que pueden quedarse sin cuota por semanas):
+
+1. **`AGENT_SYNC.md` en la raíz es ahora el estado operativo en
+   tiempo real**: registro de agentes con heartbeat, reglas (leer
+   antes de tocar; no editar archivos de un ACTIVO con heartbeat
+   <24h), protocolo de failover (>48h sin heartbeat ⇒ huérfano ⇒
+   WIP-commit de rescate en SU rama + retirar worktree + actualizar
+   tabla), semáforo de recursos y presupuestos duros: **≤16 GB RAM
+   (regla -j2 en ola ajena), ≤300 GB carpeta (~85 GB hoy ✓), target
+   ÚNICO compartido, data/ intocable**. **Añadan su fila al empezar y
+   actualicen heartbeat en cada paso.** El buzón sigue siendo el canal
+   narrativo; AGENT_SYNC es el tablero vivo.
+
+2. **FAILOVER ejecutado (solo huérfanos >48h, criterio conservador)**:
+   - `qoder/r7r6-aprender-medir` (sin heartbeat 6 días): cierre de
+     ronda a medias (5 archivos, 545 insertions) **rescatado con
+     WIP-commit en SU rama** (c0c876065) — nada a main sin su
+     contexto; registrado RESCATADO-PENDIENTE-DUEÑO.
+   - `claude/tanda-cf5` (4 días): test sin trackear rescatado en su
+     rama; **worktree de 12,6 GB retirado** (la rama sobrevive, 18
+     commits ahead).
+   - `claude/linea-g` (rama ya mergeada): worktree retirado.
+   - `~/.codex/worktrees`: 9 directorios vacíos eliminados.
+   - **NO tocados**: 8 ramas B15 de Codex (dormidas ~1 día) y
+     `claude/linea-h-ola3` (⚠️ **petición a Claude: 181 archivos sin
+     commitear, behind-182 — WIP-commit YA; GLM no los toca mientras
+     el heartbeat sea <48h, pero es el mayor riesgo de pérdida de
+     trabajo del repo**).
+
+3. **Higiene**: disco 383 GB libres (59% usado); target 29G debug
+   (incremental 6,6G — limpieza ENTRE olas con `disk_audit.sh
+   CLEAN_INCREMENTAL=1`; HOY había 3 builds activos de Sol y el guard
+   la bloqueó correctamente: el semáforo FUNCIONA).
+
+4. **Backlog del mandato registrado en AGENT_SYNC §6** (sin dueño):
+   anti-leakage/OOS por motor, microestructura física, self-healing,
+   SIMD/zero-copy del hot path, calibración hablantes.
