@@ -92,6 +92,7 @@ pub struct HelmholtzHodgeEngine {
     history_len: usize,
     smoothed_enstrophy: f64,
     smoothed_laminar: f64,
+    last_decomposition: HelmholtzDecomposition,
 }
 
 impl HelmholtzHodgeEngine {
@@ -103,7 +104,14 @@ impl HelmholtzHodgeEngine {
             history_len: 0,
             smoothed_enstrophy: 0.0,
             smoothed_laminar: 0.0,
+            last_decomposition: HelmholtzDecomposition::default(),
         }
+    }
+
+    /// Retorna el estado instantáneo de la última descomposición en tiempo O(1) sin mutar
+    #[inline]
+    pub fn current_decomposition(&self) -> HelmholtzDecomposition {
+        self.last_decomposition
     }
 
     /// Registra una nueva observación de microestructura y calcula la descomposición ortogonal
@@ -129,7 +137,8 @@ impl HelmholtzHodgeEngine {
             self.history_len += 1;
         }
 
-        self.decompose()
+        self.last_decomposition = self.decompose();
+        self.last_decomposition
     }
 
     /// Ejecución analítica de la descomposición en stack con cero alocaciones (<100 ns)

@@ -62,12 +62,14 @@ impl FlowExcitationConfluenceEngine {
     /// antisimétrica y acotada por construcción.
     /// Observacional: el voto vivo queda bit a bit (T-1 cero).
     /// OLA Ω133 — VOTO ESPECTRAL CON MODULACIÓN DE LIQUIDEZ OCULTA (KYLE-HASBROUCK)
-    /// Modula la proyección espectral incorporando la presión neta de absorción
-    /// de bloques en las escalas rápidas del micro-flujo (k < 12, τ < 1 s).
-    pub fn voto_espectral_con_liquidez(
+    /// OLA Ω137 — VOTO ESPECTRAL CON MODULACIÓN HELMHOLTZ-HODGE Y LIQUIDEZ OCULTA
+    /// Incorpora tanto la presión de absorción de iceberg como la pureza laminar
+    /// del campo de velocidades en el espacio de Hilbert L².
+    pub fn voto_espectral_con_helmholtz(
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
         hidden_liq_pressure: f64,
+        laminar_fraction: f64,
     ) -> crate::voto_espectral::VotoEspectral {
         let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
             ratio_lambda_mu,
@@ -79,6 +81,11 @@ impl FlowExcitationConfluenceEngine {
         } else {
             0.0
         };
+        let lam_scale = if laminar_fraction.is_finite() {
+            laminar_fraction.clamp(0.10, 1.50)
+        } else {
+            1.0
+        };
         for k in 0..32 {
             let x = desplazamientos[k];
             if !x.is_finite() {
@@ -89,17 +96,25 @@ impl FlowExcitationConfluenceEngine {
             let micro_factor = (1.0 - (k as f64 / 32.0)).max(0.0);
             let flujo = (x + p_ice * 0.5 * micro_factor).clamp(-10.0, 10.0);
             let direccion = flujo.tanh();
-            let coherencia = (flujo.abs().min(1.0) * excitacion).sqrt();
+            let coherencia = (flujo.abs().min(1.0) * excitacion * lam_scale).sqrt();
             por_escala[k] = (direccion * coherencia).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
+
+    pub fn voto_espectral_con_liquidez(
+        desplazamientos: &[f64; 32],
+        ratio_lambda_mu: f64,
+        hidden_liq_pressure: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        Self::voto_espectral_con_helmholtz(desplazamientos, ratio_lambda_mu, hidden_liq_pressure, 1.0)
     }
 
     pub fn voto_espectral(
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
     ) -> crate::voto_espectral::VotoEspectral {
-        Self::voto_espectral_con_liquidez(desplazamientos, ratio_lambda_mu, 0.0)
+        Self::voto_espectral_con_helmholtz(desplazamientos, ratio_lambda_mu, 0.0, 1.0)
     }
 }
 
@@ -379,7 +394,21 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             }
         }
 
-        (base_voto * w_hawkes * w_obi * mult_liq).clamp(-1.0, 1.0)
+        // OLA Ω137: MODULACIÓN POR DESCOMPOSICIÓN DE HELMHOLTZ-HODGE (L² = ∇φ ⊕ ∇×A ⊕ h)
+        // La convicción modula la señal: flujos laminares genuinos (Λ > 0.35) reciben bonificación,
+        // mientras que alta enstrofía rotacional (spoofing / turbulencia) atenúa suavemente vía Hermite C¹.
+        let helmholtz_conviction = r
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "helmholtz_conviction",
+                "FlowExcitationConfluenceEngine",
+            )
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .unwrap_or(1.0);
+
+        (base_voto * w_hawkes * w_obi * mult_liq * helmholtz_conviction).clamp(-1.0, 1.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {

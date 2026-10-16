@@ -20,14 +20,21 @@
 
 2. **Arquitectura Zero-Alloc en Stack y Rendimiento en Nanosegundos**:
    - Creado [`crates/dark-alpha-engine/src/helmholtz_hodge.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/dark-alpha-engine/src/helmholtz_hodge.rs).
-   - Buffer circular contiguo en stack `flow_history: [[f64; 2]; MAX_FLOW_HISTORY]` con cero alocaciones en el heap.
+   - Buffer circular contiguo en stack `flow_history: [[f64; 2]; MAX_FLOW_HISTORY]` con cero alocaciones en el heap y lectura inmutable $O(1)$ vía `current_decomposition(&self)`.
    - **Métrica Medida de Latencia**: **132.13 nanosegundos por actualización** (holgadamente dentro del mandato <25 µs).
    - Modulación $C^1$ Hermite continua: bonificación de convicción hasta $+30\%$ ante flujos laminares limpios y penalización suave ante enstrofía turbulenta.
 
-3. **Certificación Contractual**:
+3. **Cableado Confluente End-to-End (`god-engine-core` y `signal-engine`)**:
+   - `GodEngineCore`: `helmholtz_engines: Vec<HelmholtzHodgeEngine>` instanciado por moneda ($N \le 32$), actualizado en `process_event` por cada tick con `price_delta_bps` y `ofi_value`.
+   - `OmniscientRegistry`: Publica en tiempo real `helmholtz_laminar_fraction`, `helmholtz_enstrophy`, `helmholtz_laminar_energy`, `helmholtz_harmonic_energy`, `helmholtz_potential_dir`, `helmholtz_is_safe` y `helmholtz_conviction`.
+   - `FlowExcitationConfluenceEngine`: Incorpora `helmholtz_conviction` modulando el voto continuo de confluencia y expone `voto_espectral_con_helmholtz` para la sombra espectral en `GodEngineCore`.
+
+4. **Certificación Contractual**:
    - Suite formal [`crates/dark-alpha-engine/tests/helmholtz_hodge_contract.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/dark-alpha-engine/tests/helmholtz_hodge_contract.rs) certificada 4/4 pass.
+   - Suite formal [`crates/signal-engine/tests/helmholtz_confluence_contract.rs`](file:///c:/Users/jhona/Documents/Proyectos/Trader%20Gemini/crates/signal-engine/tests/helmholtz_confluence_contract.rs) certificada 5/5 pass.
    - Suite completa `dark-alpha-engine`: **62/62 tests pasando (100% verde)**.
-   - Exportado formalmente en `crates/dark-alpha-engine/src/lib.rs`.
+   - Suite completa `signal-engine`: **100% verde**.
+   - Workspace `cargo check --workspace --all-targets -j 2`: **23/23 crates sin errores**.
 
 ---
 

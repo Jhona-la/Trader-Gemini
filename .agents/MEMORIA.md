@@ -31,13 +31,19 @@
     - La Enstrofía rotacional $\Omega = \frac{1}{2} \int |\nabla \times \mathbf{u}|^2 dV$ cuantifica la turbulencia y el spoofing/wash trading de alta frecuencia.
     - La fracción laminar $\Lambda = \frac{E_{\text{laminar}} + E_{\text{armonica}}}{E_{\text{total}} + \epsilon} \in [0, 1]$ mide la pureza direccional institucional libre de perturbaciones turbulentas.
   * **Solución Arquitectónica y Cero Alocaciones**:
-    - Implementado `crates/dark-alpha-engine/src/helmholtz_hodge.rs` con buffers circulares contiguos en stack (`[[f64; 2]; MAX_FLOW_HISTORY]`) para localidad L1 óptima.
+    - Implementado `crates/dark-alpha-engine/src/helmholtz_hodge.rs` con buffers circulares contiguos en stack (`[[f64; 2]; MAX_FLOW_HISTORY]`) para localidad L1 óptima y método `current_decomposition(&self)` $O(1)$ sin mutación.
     - Modulación continua $C^1$: bonificación de convicción hasta $+30\%$ ante flujos laminares limpios ($\Lambda > \Lambda_{\min}$), y atenuación suave Hermite cúbica ante vorticidad/spoofing ($\Omega > \Omega_{\max}$).
     - Latencia empírica medida: **132.13 nanosegundos por actualización** (superando holgadamente el presupuesto de <25 µs).
+  * **Cableado Confluente End-to-End (`god-engine-core` y `signal-engine`)**:
+    - `GodEngineCore`: `helmholtz_engines: Vec<HelmholtzHodgeEngine>` instanciado por moneda ($N \le 32$), actualizado en `process_event` por cada tick con `price_delta_bps` y `ofi_value`.
+    - `OmniscientRegistry`: Publica en tiempo real `helmholtz_laminar_fraction`, `helmholtz_enstrophy`, `helmholtz_laminar_energy`, `helmholtz_harmonic_energy`, `helmholtz_potential_dir`, `helmholtz_is_safe` y `helmholtz_conviction`.
+    - `FlowExcitationConfluenceEngine`: Incorpora `helmholtz_conviction` modulando el voto continuo de confluencia y expone `voto_espectral_con_helmholtz` para la sombra espectral en `GodEngineCore`.
   * **Certificación Contractual**:
     - `crates/dark-alpha-engine/tests/helmholtz_hodge_contract.rs` (4/4 pass, 100% verde).
+    - `crates/signal-engine/tests/helmholtz_confluence_contract.rs` (5/5 pass, 100% verde).
     - Suite completa `dark-alpha-engine`: **62/62 tests pasando (100% verde)**.
-    - Exportado formalmente en `crates/dark-alpha-engine/src/lib.rs`.
+    - Suite completa `signal-engine`: **100% verde**.
+    - Workspace `cargo check --workspace --all-targets -j 2`: **23/23 crates sin errores**.
 
 - **Ola Ω136 Integrada y Certificada — Online Newton GBDT Zero-Alloc en Stack (<300 ns)**:
   * **Diagnóstico y Causa Raíz**: El anterior `TrueOnlineRandomForest` dependía de `smartcore`, requiriendo alocaciones masivas de matrices en el heap en cada inferencia (`x_eval = DenseMatrix::from_2d_vec`), y su clasificador devolvía clases discretas (0/1) en vez de probabilidades continuas, provocando curvas planas de calibración de umbrales.

@@ -1019,6 +1019,7 @@ pub struct GodEngineCore {
     pub risk_engine: RiskEngine,
     pub maker_engines: Vec<MakerEngine>,
     pub feature_engines: Vec<StatefulEngine>,
+    pub helmholtz_engines: Vec<dark_alpha_engine::helmholtz_hodge::HelmholtzHodgeEngine>,
     /// CL-88 (atr-2): tick propio por moneda, para núcleos cuyos slots no son
     /// los símbolos del universo vivo (el examen del demonio). Si está, manda
     /// sobre `tick_size_de` como piso de resolución del ATR.
@@ -1240,10 +1241,14 @@ impl GodEngineCore {
         let n_coins = quantum_arena::state::MAX_COINS;
         let mut maker_engines = Vec::with_capacity(n_coins);
         let mut feature_engines = Vec::with_capacity(n_coins);
+        let mut helmholtz_engines = Vec::with_capacity(n_coins);
 
         for _ in 0..n_coins {
             maker_engines.push(MakerEngine::new(0.0005));
             feature_engines.push(StatefulEngine::new());
+            helmholtz_engines.push(dark_alpha_engine::helmholtz_hodge::HelmholtzHodgeEngine::new(
+                dark_alpha_engine::helmholtz_hodge::HelmholtzHodgeParams::default(),
+            ));
         }
 
         let mut tensor_orchestrator =
@@ -1380,6 +1385,7 @@ impl GodEngineCore {
             risk_engine: RiskEngine::new(initial_capital),
             maker_engines,
             feature_engines,
+            helmholtz_engines,
             tick_propio: vec![None; n_coins],
             piso_cache: vec![(0, 0.0); n_coins],
             base_z: (0..n_coins).map(|_| base_z::BaseZ::new()).collect(),
@@ -3115,11 +3121,18 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "sombra_conformal_v_max", v_conf);
                     }
 
-                    // #622→#649: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE
+                    // #622→#649 / Ω137: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE con HELMHOLTZ-HODGE
+                    let h_lam_frac = self.helmholtz_engines.get(coin_id)
+                        .map(|h| h.current_decomposition().laminar_fraction)
+                        .unwrap_or(1.0);
+                    let p_ice = self.arena.registry
+                        .get_for_coin_or(coin_id, "hidden_liquidity_pressure", 0.0);
                     let voto_confluence =
-                        signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral(
+                        signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral_con_helmholtz(
                             &desplazamientos,
                             ratio_hawkes_fresco,
+                            p_ice,
+                            h_lam_frac,
                         );
                     if let Some(media_conf_fl) = voto_confluence.media_banda(0, 31) {
                         self.arena
@@ -5562,6 +5575,25 @@ impl GodEngineCore {
             );
             set_reg("hidden_liquidity_ask_abs", abs_state.ask_absorption_ratio);
             set_reg("hidden_liquidity_bid_abs", abs_state.bid_absorption_ratio);
+
+            // OLA Ω137: Descomposición Hidrodinámica de Helmholtz-Hodge (L² = ∇φ ⊕ ∇×A ⊕ h)
+            // Desacoplamiento ortogonal continuo de flujo potencial, vorticidad/spoofing y deriva armónica
+            let price_delta_bps = if mid_price > 0.0 && dir_v.is_finite() {
+                (dir_v / mid_price) * 10_000.0
+            } else {
+                0.0
+            };
+            let h_decomp = self.helmholtz_engines[coin_id].update(price_delta_bps, ofi_value);
+            set_reg("helmholtz_laminar_fraction", h_decomp.laminar_fraction);
+            set_reg("helmholtz_enstrophy", h_decomp.enstrophy);
+            set_reg("helmholtz_laminar_energy", h_decomp.laminar_energy);
+            set_reg("helmholtz_harmonic_energy", h_decomp.harmonic_energy);
+            set_reg("helmholtz_potential_dir", h_decomp.potential_direction);
+            set_reg(
+                "helmholtz_is_safe",
+                if h_decomp.is_laminar_safe { 1.0 } else { 0.0 },
+            );
+            set_reg("helmholtz_conviction", h_decomp.conviction_factor);
 
             // #591 — PROYECCIÓN ESPECTRAL TEMPORAL al motor de señales. El
             // espectro (32 escalas) vivía confinado al núcleo: los motores
