@@ -274,21 +274,6 @@ impl ReplayStats {
     }
 }
 
-/// SOL-R5-02 (GLM 123): último mid válido por moneda, reconstruido de
-/// la cinta ya consumida (monoactiva — coin 0, mismo supuesto que el
-/// loop principal).
-fn ultimo_mid_por_moneda(ticks: &[ReplayTick]) -> [f64; 4] {
-    let mut mids = [0.0f64; 4];
-    for t in ticks.iter().rev() {
-        let m = t.mid();
-        if m.is_finite() && m > 0.0 {
-            mids[0] = m;
-            break;
-        }
-    }
-    mids
-}
-
 /// SOL-R5-02 (Sol, medición 2026-10-15 — fix GLM 123): mark-to-market
 /// del capital final del replay. Antes el final era SÓLO CAJA — las
 /// posiciones abiertas al cierre de la cinta no se valuaban y el
@@ -442,6 +427,11 @@ fn run_booktick_replay_observed(
     let mut executed_ticks: u64 = 0;
     let mut executed_last_ts: u64 = 0;
     let mut close_reason = ReplayCloseReason::TapeEnd;
+    // SOL-R5-02-B (Sol, SOL_CONT2 — fix GLM 126): mid del último tick
+    // EJECUTADO — el MTM post-ruina valúa con ESTE precio, nunca con
+    // datos de la cinta posteriores al break (principio: ningún dato
+    // futuro en el fitness).
+    let mut executed_last_mid: f64 = 0.0;
 
     // CX / XLIX-A integration: there is no preloaded prefix to skip here.
     // Observe each accepted row once; only entries wait for the declared W.
@@ -461,6 +451,10 @@ fn run_booktick_replay_observed(
         // acumulador, no índice: los inválidos intermedios no cuentan.
         executed_ticks += 1;
         executed_last_ts = t.ts_ms;
+        // SOL-R5-02-B (GLM 126): mid del último PROCESADO — mismo
+        // criterio de validez que la aduana, capturado en el momento
+        // (sin re-escaneo post-loop de la cinta completa).
+        executed_last_mid = mid;
 
         // F3.4-04 (Línea C / Ola Ω93): paridad de muros L2 con vivo y forense.
         core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);
@@ -741,7 +735,11 @@ fn run_booktick_replay_observed(
     stats.final_capital = arena.unified_capital.load(Ordering::Relaxed);
     // SOL-R5-02 (Sol, medición 2026-10-15 — fix GLM 123): la caja sola
     // no es el capital final — ver `aplicar_mtm_final`.
-    let mids = ultimo_mid_por_moneda(ticks);
+    // SOL-R5-02-B (Sol, SOL_CONT2 — fix GLM 126): el mid de valuación es
+    // el del último tick EJECUTADO — antes se re-escaneaba la cinta
+    // COMPLETA y una ruina a mitad quedaba valuada a precios posteriores
+    // al break (look-ahead contable en el fitness). Monoactiva (coin 0).
+    let mids = [executed_last_mid, 0.0, 0.0, 0.0];
     aplicar_mtm_final(&arena, &mids, &mut stats);
     if !pnl_list.is_empty() {
         let mean = stats.net_pnl / pnl_list.len() as f64;
@@ -1732,5 +1730,138 @@ mod sol_r4_01_tests {
             "solo los aceptados por la aduana cuentan"
         );
         assert_eq!(stats.executed_last_ts, ultimo_valido_ts);
+    }
+}
+
+// ── SOL-R5-02-B (GLM 126): el MTM post-ruina no mira el futuro ───────
+#[cfg(test)]
+mod sol_r5_02b_tests {
+    use super::*;
+
+    /// Cinta DETERMINISTA: plana ~60_000 hasta `ruptura` (incluido) y
+    /// rampa hasta ~120_000 después — el futuro halado que el MTM NO
+    /// debe usar si la simulación cortó en `ruptura`.
+    fn cinta_con_futuro_halado(n: usize, ruptura: usize) -> Vec<ReplayTick> {
+        (0..n)
+            .map(|i| {
+                let p = if i <= ruptura {
+                    60_000.0
+                } else {
+                    60_000.0 * (1.0 + (i - ruptura) as f64 / (n - ruptura) as f64)
+                };
+                ReplayTick {
+                    ts_ms: 1_700_000_000_000 + i as u64 * 100,
+                    bid: p - 0.5,
+                    ask: p + 0.5,
+                    bid_qty: 1.0,
+                    ask_qty: 1.0,
+                }
+            })
+            .collect()
+    }
+
+    fn cfg() -> ReplayConfig {
+        ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 200,
+            trade_only: false,
+            shift_atr_frac: 0.10,
+        }
+    }
+
+    /// CONTRATO CENTRAL (residual de Sol, SOL_CONT2 §5): posición long
+    /// abierta antes del corte, ruina inyectada en `ruptura`, y la cinta
+    /// DUPLICA el precio después. El MTM debe valuar al mid del tick de
+    /// ruina (60_000) — el futuro halado (~120_000) jamás entra al
+    /// fitness. Pre-fix (GLM 123): re-escaneo de la cinta completa ⇒
+    /// look-ahead contable.
+    #[test]
+    fn sol_r5_02b_mtm_post_ruina_no_mira_el_futuro() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        const RUPTURA: usize = 4_000;
+        // La posición abre UN tick antes del corte: vive lo mínimo en el
+        // motor (sin paths defensivos espurios) y entry == mid del corte.
+        const ABRE_EN: usize = RUPTURA - 1;
+        let ticks = cinta_con_futuro_halado(8_001, RUPTURA);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let stats = run_booktick_replay_with_observer(
+            &ticks,
+            &genome,
+            None,
+            &cfg(),
+            |i, core| {
+                if i == ABRE_EN {
+                    core.arena.coins[0].positions.slot_0.open(
+                        true,
+                        60_000.0,
+                        0.01,
+                        10.0,
+                        1_700_000_000_000 + i as u64 * 100,
+                        66_000.0,
+                        54_000.0,
+                    );
+                }
+                if i == RUPTURA {
+                    core.arena
+                        .unified_capital
+                        .store(0.0, std::sync::atomic::Ordering::Relaxed);
+                }
+            },
+        );
+        assert_eq!(stats.close_reason, ReplayCloseReason::Ruin);
+        assert!(stats.open_positions_end >= 1, "la posición sigue abierta al corte");
+        // Mid del tick de ruina: 60_000 (cinta plana hasta el corte).
+        // Mid del final de cinta: ~120_000. El MTM correcto usa el primero:
+        // bruto = 0 (entró y cortó al mismo precio), neto = −fricción.
+        // El PRE-fix (re-escaneo de cinta completa) daría ~+600 — la
+        // aserción < 50 lo detecta con margen 10x.
+        assert!(
+            stats.mtm_unrealized_pnl <= 0.0 && stats.mtm_unrealized_pnl > -10.0,
+            "mtm {} valúa al mid del CORTE (~60k con fricción), no al futuro (~120k daría +600)",
+            stats.mtm_unrealized_pnl
+        );
+        assert!(
+            stats.mtm_unrealized_pnl < 50.0,
+            "look-ahead detectado: mtm {} refleja precios post-break",
+            stats.mtm_unrealized_pnl
+        );
+    }
+
+    /// Paridad del caso TapeEnd con tramo final INVÁLIDO: el mid de
+    /// valuación es el del último tick ACEPTADO (la aduana y el tracking
+    /// comparten criterio — bit-paridad con el re-escaneo del 123, que
+    /// también saltaba inválidos).
+    #[test]
+    fn sol_r5_02b_paridad_con_tramo_final_invalido() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        let mut ticks = cinta_con_futuro_halado(8_001, 20_000); // toda plana 60_000
+        for t in ticks.iter_mut().rev().take(100) {
+            t.bid = 0.0; // aduana F2.1: inválidos
+        }
+        let ultimo_valido_mid = ticks[ticks.len() - 101].mid();
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let stats = run_booktick_replay_with_observer(&ticks, &genome, None, &cfg(), |i, core| {
+            if i == 7_000 {
+                core.arena.coins[0].positions.slot_0.open(
+                    true,
+                    60_000.0,
+                    0.01,
+                    10.0,
+                    1_700_000_000_000 + i as u64 * 100,
+                    66_000.0,
+                    54_000.0,
+                );
+            }
+        });
+        assert_eq!(stats.close_reason, ReplayCloseReason::TapeEnd);
+        assert!(stats.open_positions_end >= 1);
+        // Valuado al mid del último VÁLIDO (~60_000), no a 0 ni a un
+        // inválido: pnl bruto ≈ 0, neto = −fricción pequeña.
+        assert!(
+            stats.mtm_unrealized_pnl > -10.0 && stats.mtm_unrealized_pnl <= 0.0,
+            "paridad: mtm {} con último mid válido {}",
+            stats.mtm_unrealized_pnl,
+            ultimo_valido_mid
+        );
     }
 }

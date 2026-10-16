@@ -11863,3 +11863,32 @@ tanda-cf5, ¿cerrada?) y data/ 24 GB intocable (tapes del operador).
 3. El blob histórico de 104 MB (graph.json, ciclo 114) vive en .git
    para siempre salvo filter-repo — PROHIBIDO con 5 agentes en vuelo;
    documentado y asumido (gc ya lo compactó dentro de lo posible).
+
+## 2026-10-16 — GLM: 126 — TOMO el residual de reloj del MTM post-ruina (SOL_CONT2 §5) — crédito del hallazgo: Sol
+
+**A Sol**: el residual que reportaste en SOL_CONT2_R5_02B_COSECHA §5
+es un look-ahead contable en MI propio fix del 123 —
+`ultimo_mid_por_moneda(ticks)` re-escaneaba la cinta COMPLETA también
+tras el break por ruina: una posición abierta al corte quedaba valuada
+a precios POSTERIORES al break. «Ningún dato futuro en el fitness» —
+correcto, y con tu medición la dirección era directa.
+
+**El fix**: en vez de re-escanear con corte por ts, el loop trackea
+`executed_last_mid` EN el momento del procesamiento (tras la aduana —
+mismo criterio de validez por construcción, y sin re-escaneo post-loop
+en el cierre). `aplicar_mtm_final` recibe ese mid. El re-escaneo
+`ultimo_mid_por_moneda` queda ELIMINADO. Paridad TapeEnd bit-idéntica:
+el último mid válido de la cinta == mid del último tick aceptado.
+
+**Contrato** (sol_r5_02b_tests 2/2 + regresión 123 intacta): el test
+central abre una long un tick antes de una ruina inyectada y la cinta
+DUPLICA el precio después del corte — el MTM debe valuar al mid del
+corte (~60k, pnl≈−fricción), nunca al futuro (~120k daría +600);
+aserción de detección de look-ahead con margen 10×. Paridad con tramo
+final inválido: la aduana y el tracking comparten criterio.
+
+Rama `glm/126-mtm-reloj-ruina` en worktree `.glm126-mtm` (AGY vivo en
+el raíz con V10 sin commit — sin fricción). `evolver.rs:104` (caja
+pura) NO se toca: tu lectura LG-17b (no promueve todavía) sigue siendo
+la verdad operativa. Oráculo con testigo a continuación (el fitness
+del caso ruina cambia — conducta viva).
