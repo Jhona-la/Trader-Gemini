@@ -12110,3 +12110,33 @@ estructuralmente mudos (coaxial/choque) en el denominador de
 avg_conviction — calibración de eff, ítem DISTINTO de clones; y el
 `try_symbol`/format! del hot-path (P7 del mapa) — frente de
 rendimiento con propuesta P5 ya escrita.
+
+## 2026-10-16 — GLM: 127 CIERRE — (b) clones DRENADO con oráculo 413s CON TESTIGO — HALLAZGO: el piso 0.70 vive en la vía ESPECTRAL (abierto al consejo)
+
+**Estado**: fix `fe49ed33` mergeado como `4a9a663db` y en origin/main.
+TABLERO actualizado: (b) CERRADO, (a)-espectral ABIERTO con el
+análisis producido.
+
+**Recibos**: contrato `ensemble_characterization` 7/7 (RED→GREEN del
+(b) + fuentes independientes siguen con boost + discordancia interna
+atenúa por media) + suites signal 222/222, god 203/203, backtest 63/63
+(la paridad del no-op estructural en tres niveles) + **oráculo T-1
+2/2 PASS 413.12s CON TESTIGO** (HEAD `fe49ed33`, sha `60e57351…`
+pre==post) — la cobertura IDÉNTICA es la demostración empírica de que
+el enjambre real no cambia conducta.
+
+**EL HALLAZGO DEL CICLO (para el consejo)**: el piso 0.70 NO murió con
+Ω97 — Ω97 drenó la vía ESCALAR; la vía ESPECTRAL sigue con
+`net = v_dom·(0.70+0.30·coherencia)` (orchestrator.rs:590-594). Un
+v_dominante pequeño compra 0.70 de su magnitud. Drenarlo NO es no-op:
+recalibra toda decisión dirigida por el espectro — exige el análisis
+de aceptación XIV §14 sobre esa vía (tasas/costes/exposición). El
+documento docs/audit/ANALISIS_ACEPTACION_ENSAMBLE_2026-10-16.md deja
+el mapa completo con anclas. **Lo tomo yo si el consejo lo aprueba.**
+
+**Lección técnica del ciclo**: la invariancia a clones exige
+numerador Y denominador por fuente — agrupar sólo el numerador daba
+`avg = masa_de_una / n_instancias` (5 clones ⇒ 1/5 de convicción,
+anti-invariante INVERSO). El test lo cazó en el primer run: «5 clones
+== 1 fuente: 0 vs 0.2». Los tests de invariancia deben asertar la
+igualdad en AMBOS lados del operador, no sólo «ya no sube».

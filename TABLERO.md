@@ -69,8 +69,12 @@
   revert verificado, combinado PASA, main restaurado. Incidente
   graph.json 104MB resuelto (reset --soft + stage selectivo).
 - **Falta / esperando**: re-aterrizaje de Omega110 por su autor
-  (absorbente resuelto + oráculo propio); (a)(b) ensamble (piso 0.70 +
-  clones) al consejo con análisis de aceptación; LH-03..07 con dueños;
+  (absorbente resuelto + oráculo propio); ensamble: **(b) clones
+  CERRADO por GLM 127** (invariancia por fuente, XIV §202, oráculo
+  413s con testigo — bit-paridad enjambre real) y **(a)-espectral
+  ABIERTO al consejo** — el piso 0.70 SIGUE vivo en la vía espectral
+  (orchestrator.rs:590-594), análisis de aceptación producido en
+  docs/audit/ANALISIS_ACEPTACION_ENSAMBLE_2026-10-16.md; LH-03..07 con dueños;
   tapes de octubre (revalidaciones ADR-0008 + cópulas ADR-0009 siguen
   bloqueadas); FDUSD remoción (consejo); DL-modular (frente grande).
 - **Familia honesta**: 7 símbolos (BTC/ADA/ATOM/BNB/SOL/XRP/XLM), mediana
