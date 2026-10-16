@@ -79,7 +79,12 @@
   Recibo: ANALISIS_ACEPTACION_ENSAMBLE addendum + test #[ignore]
   espectral_piso_medicion; LH-03..07 con dueños;
   tapes de octubre (revalidaciones ADR-0008 + cópulas ADR-0009 siguen
-  bloqueadas); FDUSD remoción (consejo); DL-modular (frente grande).
+  bloqueadas); **FDUSD RESUELTO por GLM 129** (investigación: nada los
+  carga — ml_coverage consulta por roster 100% USDT, marca LXXIII de
+  inercia; remoción física = operación local `rm models/*FDUSD*`, sin
+  cambio de repo) + censo de mudos MEDIDO (test #[ignore]
+  censo_mudos_medicion — insumo para la calibración de eff);
+  DL-modular (frente grande).
 - **Familia honesta**: 7 símbolos (BTC/ADA/ATOM/BNB/SOL/XRP/XLM), mediana
   OOS +0.008, récord SOL +0.0203; 2 bloqueos honestos en 9 corridas.
 

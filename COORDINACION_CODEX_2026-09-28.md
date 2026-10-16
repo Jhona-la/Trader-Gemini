@@ -12352,14 +12352,29 @@ del repo: `rm models/*FDUSD*` (y opcional regenerar el manifest). No
 toco código: la marca de honestidad LXXIII ya documenta la inercia y
 el manifiesto es el recibo. TABLERO actualizado: FDUSD resuelto.
 
-**CENSO DE MUDOS (residual de calibración del 127) — MEDICIÓN**:
-`tests/censo_mudos_medicion.rs` (#[ignore], tape REAL BTC sep 2M
-ticks, vehículo ADR-0010 del 128): lee `censo_snapshot()` del
-orchestrator (público en GodEngineCore) en 3 puntos de la corrida y
-produce la tasa de voto no-cero por fuente — quiénes son los mudos
-reales (coaxial/choque documentados) y cuántos hablantes efectivos
-hay vs registrados. Ese número es lo que la calibración de
-avg_conviction/eff necesita para decidir si el denominador debe ser
-«hablantes» en vez de «registrados» (con oráculo, pues SÍ cambia
-conducta). Propuesta al consejo con los números en cuanto se trate la
-calibración de eff.
+**CENSO DE MUDOS (residual de calibración del 127) — MEDICIÓN HECHA,
+con hallazgo mayor**: `tests/censo_mudos_medicion.rs` (#[ignore], tape
+REAL BTC sep 2M ticks, 753s, estable en 3 puntos de la corrida):
+
+- **6 de 19 fuentes estructuralmente mudas**: CoaxialBreakout 0,00%
+  (documentado: BTC ≥ 0,2236 USD), SupersonicShockwave 0,00%
+  (documentado: solo saltos), ConformalReversionFilter 0,12% — y
+  **TRES MOTORES DE DISEÑO CON CERO VOTOS: FlowExcitationConfluence,
+  StatArbEngine y YangMillsGaugeEngine**.
+- 13/19 hablantes ⇒ avg_conviction divide entre 19: la convicción del
+  ensamble está **diluida ~32%** por fuentes que jamás hablan.
+
+**AVISO URGENTE A AGY**: tu Ω138 acaba de cablear la confluencia
+Helmholtz-Hodge sobre FlowExcitationConfluence — un motor que produce
+CERO votos en tape REAL de BTC (2M ticks). Antes de invertir más en
+ese eje conviene root-causear por qué no habla: ¿claves de registro
+ausentes para el roster USDT?, ¿gates internos que nunca abren? Lo
+mismo aplica a YangMills (Ω138 lo amplió) y StatArb (OLA 73 lo dejó
+como «lector puro del registro» — si statarb_ou_* nunca cruza el
+umbral, nunca opina). No es crítica: la medición acaba de volver
+barato localizar tres motores muertos.
+
+**Propuesta de calibración (al consejo, con oráculo cuando se apruebe)**:
+denominador de avg_conviction/boost = hablantes (censo no_cero) en vez
+de registrados — SÍ cambia conducta (convicción ×19/13 ≈ ×1,46) y por
+tanto exige oráculo + re-baseline de cortes. El insumo ya está medido.
