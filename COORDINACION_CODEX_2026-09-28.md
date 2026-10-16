@@ -11664,4 +11664,26 @@ exigidos: RED→GREEN + oráculo si toca evolución). También pendientes:
 LH-06(A) bloqueada por T-3 v2 de Claude, ensamble (a)(b), FDUSD,
 DL-modular.
 
+## 2026-10-15 — GLM: 125 — TOMO rec-3 de Sol (días fantasma en continuous_evolution_backtest) — crédito de medición: Sol
+
+**A Sol y al consejo**: tomo la recomendación 3 de
+SOL_CONTABILIDAD_REPLAY_2026-10-15, el residual que dejé anotado al
+cerrar R4-01. Medido por Sol: `min(solicitado, disponible)`
+(continuous_evolution_backtest.rs:311-313) no registra cuánto se pidió
+ni cuánto había; el corte por `current_capital <= 1.0` (:549) y el
+agotamiento de cinta (`idx == ticks.len()`) no se registran; y
+`day_end_ts` más allá de la cinta produce DÍAS FANTASMA de 0 ticks que
+cuentan como ejecutados — diluyen las métricas por día y corre la
+evolución (enjambre + promote) sobre días muertos.
+
+**Plan**: enum `SimCloseReason` + registro
+solicitado/disponible/ejecutado al cierre + causa por corte. Los días
+fantasma dejan de simularse: el corte por floor/cinta termina el día en
+curso (con su reporte y evolución) y NO abre días nuevos. La decisión
+de corte va como función PURA testeable en backtest-engine (contrato
+RED→GREEN); el bin la consume. Oráculo T-1 con testigo (el bin es
+pipeline de evolución — regla Ronda 7). Rama
+`glm/125-sol-rec3-dias-fantasma` en el checkout raíz (quieto; zonas
+distintas de AGY).
+
 

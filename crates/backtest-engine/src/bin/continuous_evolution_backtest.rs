@@ -363,6 +363,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut day_idx = 0;
     let mut idx = 0;
 
+    // SOL-rec-3 (GLM 125): contabilidad de días — solicitado (lo que
+    // pidió el operador), disponible (lo que la cinta alcanza) y
+    // ejecutado (los que corrieron de verdad). Antes `min(solicitado,
+    // disponible)` se calculaba (:313) y se perdía sin recibo.
+    let requested_days = sim_days;
+    let available_days = total_days_in_data;
+    let mut executed_days: u64 = 0;
+    let mut close_reason: Option<SimCloseReason> = None;
+
     // MOTOR MAESTRO CONTINUO (Paridad 1:1 Estricta con Producción Real):
     // La arena y el motor se instancian una sola vez para mantener vivos los filtros wavelets,
     // promedios exponenciales, modelos L2 y posiciones activas sin reseteos artificiales a medianoche.
@@ -379,6 +388,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     engine.reality.mode = god_engine_core::reality_physics::EngineMode::HyperRealistic;
 
     while day_idx < total_simulation_days {
+        // SOL-rec-3 (GLM 125): ¿abrir este día? Días FANTASMA no se
+        // fabrican — cinta agotada, floor de capital persistente o REKT
+        // cierran el walk-forward con causa explícita en vez de simular
+        // días de 0 ticks que contaban como ejecutados.
+        if let Some(reason) = should_continue_day(
+            day_idx,
+            total_simulation_days,
+            idx < ticks.len(),
+            current_capital,
+            1.0,
+        ) {
+            close_reason = Some(reason);
+            break;
+        }
         let day_start_ts = first_ts + (day_idx * ms_per_day);
         let day_end_ts = day_start_ts + ms_per_day;
 
@@ -802,6 +825,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if current_capital <= 0.0 {
             println!("💀 REKT (Liquidado) en Día {}", day_idx + 1);
+            close_reason = Some(SimCloseReason::Rekt);
             break;
         }
 
@@ -983,6 +1007,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         day_idx += 1;
+        executed_days += 1;
+    }
+
+    // SOL-rec-3 (GLM 125): el loop que agotó sus días sin gate-disparo
+    // completó el camino.
+    if close_reason.is_none() {
+        close_reason = Some(SimCloseReason::DaysCompleted);
     }
 
     // PROMOTE AL ENVELOPE GLOBAL
@@ -1006,6 +1037,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("============================================================");
     println!("🏆 FIN DE LA SIMULACIÓN CONTINUA");
+    // SOL-rec-3 (Sol, medición 2026-10-15 — fix GLM 125): recibo de días
+    // — solicitado/disponible/ejecutado + causa de fin. Antes el corte
+    // era indistinguible y los días fantasma contaban como ejecutados.
+    {
+        let causa = match close_reason {
+            Some(SimCloseReason::Rekt) => "REKT (capital <= 0)",
+            Some(SimCloseReason::DaysCompleted) => "camino completo",
+            Some(SimCloseReason::TapeEnd) => "cinta agotada",
+            Some(SimCloseReason::CapitalFloor) => "floor de capital ($1)",
+            None => "desconocida",
+        };
+        println!(
+            "📅 Días: solicitado {} / disponible {} / EJECUTADO {} — causa de fin: {}",
+            requested_days, available_days, executed_days, causa
+        );
+    }
     println!("💰 Capital Inicial: $13.00");
     println!("💰 Capital Final  : ${:.4}", current_capital);
     println!("💵 PnL Global     : ${:+.4}", global_pnl);
@@ -1020,6 +1067,104 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
 
     Ok(())
+}
+
+// ── SOL-rec-3 (Sol, medición 2026-10-15 — fix GLM 125): contabilidad ──
+// de días y causa de fin del walk-forward continuo. Antes: el corte por
+// `current_capital <= 1.0` y el agotamiento de cinta no se registraban, y
+// `day_end_ts` más allá de la cinta producía DÍAS FANTASMA de 0 ticks que
+// contaban como ejecutados — diluían las métricas por día y la evolución
+// (enjambre + promote) corría sobre días muertos.
+
+/// Causa de fin del walk-forward continuo. Severidad ordenada: Rekt >
+/// DaysCompleted > TapeEnd > CapitalFloor (ver `should_continue_day`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SimCloseReason {
+    /// REKT: capital <= 0 (liquidación contable).
+    Rekt,
+    /// Camino completo: los días planificados se ejecutaron todos.
+    DaysCompleted,
+    /// La cinta se agotó antes de completar los días solicitados.
+    TapeEnd,
+    /// El floor de capital ($1) cortó la simulación con cinta restante.
+    CapitalFloor,
+}
+
+/// Decide si el walk-forward debe ABRIR el día `day_idx`. Devuelve None
+/// si el día procede; Some(causa) si la simulación termina ANTES de
+/// fabricar un día fantasma. FUNCIÓN PURA — contrato en
+/// `mod sim_close_contract`.
+fn should_continue_day(
+    day_idx: u64,
+    total_days: u64,
+    tape_has_ticks: bool,
+    capital: f64,
+    capital_floor: f64,
+) -> Option<SimCloseReason> {
+    if capital <= 0.0 {
+        Some(SimCloseReason::Rekt)
+    } else if day_idx >= total_days {
+        Some(SimCloseReason::DaysCompleted)
+    } else if !tape_has_ticks {
+        Some(SimCloseReason::TapeEnd)
+    } else if capital <= capital_floor {
+        Some(SimCloseReason::CapitalFloor)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod sim_close_contract {
+    use super::*;
+
+    /// Día normal: capital sano, cinta viva, días restantes ⇒ None.
+    #[test]
+    fn sol_rec3_dia_normal_continua() {
+        assert_eq!(should_continue_day(0, 10, true, 13.0, 1.0), None);
+        assert_eq!(should_continue_day(5, 10, true, 20.0, 1.0), None);
+    }
+
+    /// Floor persistente: el día siguiente al corte por capital NO se
+    /// fabrica — la causa es CapitalFloor (antes: día fantasma de 0
+    /// ticks que contaba como ejecutado).
+    #[test]
+    fn sol_rec3_floor_persistente_no_fabica_dia_fantasma() {
+        assert_eq!(
+            should_continue_day(5, 10, true, 0.8, 1.0),
+            Some(SimCloseReason::CapitalFloor)
+        );
+        // El floor exacto también corta (<=).
+        assert_eq!(
+            should_continue_day(5, 10, true, 1.0, 1.0),
+            Some(SimCloseReason::CapitalFloor)
+        );
+    }
+
+    /// Cinta agotada: sin ticks disponibles no hay día que simular —
+    /// TapeEnd, NO un día de 0 ticks (la dilución de métricas por día
+    /// que midió Sol).
+    #[test]
+    fn sol_rec3_cinta_agotada_es_tapeend_no_dia_vacio() {
+        assert_eq!(
+            should_continue_day(5, 10, false, 13.0, 1.0),
+            Some(SimCloseReason::TapeEnd)
+        );
+    }
+
+    /// Severidad: Rekt gana a todo (capital 0 con día pendiente y cinta
+    /// viva); DaysCompleted gana a TapeEnd/Floor (el camino se cumplió).
+    #[test]
+    fn sol_rec3_severidad_rekt_y_camino_completo() {
+        assert_eq!(
+            should_continue_day(5, 10, true, 0.0, 1.0),
+            Some(SimCloseReason::Rekt)
+        );
+        assert_eq!(
+            should_continue_day(10, 10, false, 0.5, 1.0),
+            Some(SimCloseReason::DaysCompleted)
+        );
+    }
 }
 
 /// DIAGNÓSTICO SIGNAL-PATH (R4-diag): contadores por etapa del pipeline.
