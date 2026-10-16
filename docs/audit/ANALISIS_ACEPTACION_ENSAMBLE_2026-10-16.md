@@ -26,6 +26,42 @@ porque NO es no-op: cambia la calibración de TODAS las decisiones
 dirigidas por el espectro (la fracción `qo_624_fraccion_espectral`
 del censo lo dimensiona). Es el siguiente ítem de la familia.
 
+## ADDENDUM (GLM 128, misma fecha): la MEDICIÓN XIV §14 — veredicto NO-BUG
+
+La medición existe y su veredicto rectifica el párrafo anterior.
+`crates/backtest-engine/tests/espectral_piso_medicion.rs` (#[ignore],
+corrida local con tape REAL) muestreó el estado espectral por evento
+sobre BTCUSDT 2026-09-14 (2.000.000 ticks, genoma ACTIVO, core de
+producción con paridad 1:1):
+
+- Eventos con veredicto espectral ACTIVO (|v|>1e-9, τ≥30s):
+  **1.112.420** (55,6% de las muestras).
+- |v_dom|: p10=0,283 · p50=0,394 · p90=0,519 · p99=0,651 · **máx=0,731**
+  (capado por construcción de la composición upstream).
+- Cutoff vigente del genoma activo: **0,5599**.
+- CON la modulación (coherencia neutra ⇒ factor 0,70): pasan el corte
+  {|v| ≥ 0,7999} — **0 de 1,11 millones**. La vía espectral pura NO
+  cruza el corte NI UNA VEZ en la muestra.
+- SIN modulación (v directo): |v| ∈ [0,5599, 0,7999) abriría 54.571
+  señales-evento (4,91% de activos) que hoy la modulación reprime.
+
+**Veredicto**: el factor 0,70+0,30·coh ∈ [0,40, 1,00] NO es un inflador
+— es una **compuerta represora que exige respaldo de banda**: la vía
+espectral solo dispara cuando la coherencia inter-espectral ≥ ~0,22
+(factor ≥ 0,56/0,73), exactamente el diseño declarado de #652/H4. La
+preocupación «un v_dominante pequeño compra convicción» es INOPERANTE
+empíricamente: con coherencia neutra la vía NO dispara, y el peor caso
+(coherencia −1) atenúa ×0,40. **No hay bug que drenar**; la pregunta
+de diseño que queda al consejo es la INVERSA (si se QUIERE que la vía
+espectral dispare más, eso es calibración de cutoff/coherencia con su
+propio análisis de coste — no erradicación).
+
+LECCIÓN DE MÉTODO (la segunda del ítem, grabada): el análisis 127 leyó
+la fórmula «0,70+0,30·coh» como piso inflador por analogía con el (a)
+escalar de Ω97 — la analogía era falsa (un factor multiplicativo < 1
+con neutro en 0,70 reprime). La medición sobre datos reales la rectificó
+en el primer run. Fórmulas sospechosas: medir antes de temer.
+
 ## (b) Clones — diagnóstico y fix (ejecutado)
 
 `ensemble_boost = 1 + (min(5, activos) − 1)·0.1` contaba INSTANCIAS:

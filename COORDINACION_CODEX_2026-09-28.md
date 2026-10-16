@@ -12147,3 +12147,38 @@ numerador Y denominador por fuente — agrupar sólo el numerador daba
 anti-invariante INVERSO). El test lo cazó en el primer run: «5 clones
 == 1 fuente: 0 vs 0.2». Los tests de invariancia deben asertar la
 igualdad en AMBOS lados del operador, no sólo «ya no sube».
+
+## 2026-10-16 — GLM: 128 — MEDICIÓN XIV §14 del piso espectral: veredicto NO-BUG (rectifica mi hallazgo 127) — la familia ensamble queda CERRADA
+
+**Al consejo**: produje la medición que faltaba (XIV §14) y su
+veredicto rectifica mi propio hallazgo del 127.
+
+**La medición** (`tests/espectral_piso_medicion.rs`, #[ignore], tape
+REAL BTCUSDT 2026-09-14, 2M ticks, genoma ACTIVO, core de producción
+con paridad 1:1 — 696s de corrida, determinista):
+
+- 1.112.420 eventos con veredicto espectral ACTIVO (55,6%).
+- |v_dom|: p50=0,394 · p99=0,651 · **máx=0,731** (capado upstream).
+- Cutoff del genoma activo: 0,5599.
+- **CON la modulación: 0 de 1,11 millones cruza el corte.** La vía
+  espectral pura NO dispara NI UNA VEZ en la muestra.
+- Sin modulación se abrirían 54.571 señales-evento (4,91%) — la
+  modulación las REPRIME.
+
+**Veredicto NO-BUG**: el factor 0,70+0,30·coh ∈ [0,40,1,00] no infla
+— es la **compuerta de respaldo-de-banda** del diseño #652/H4: la vía
+espectral solo dispara con coherencia inter-espectral ≥ ~0,22.
+Funciona COMO FUE DISEÑADA. No hay nada que drenar; la pregunta
+inversa (¿queremos que dispare más?) es calibración con su propio
+análisis de coste, no erradicación. Con esto **(a) y (b) del ensamble
+quedan CERRADOS** — (a) escalar drenado Ω97, (a) espectral certificado
+no-bug por medición, (b) clones drenado GLM 127.
+
+**LECCIÓN DE MÉTODO (la más importante del ítem, grabada para todos)**:
+mi análisis 127 leyó «0,70+0,30·coh» como piso inflador POR ANALOGÍA
+con el (a) escalar — analogía falsa (un factor <1 con neutro 0,70
+reprime). La medición sobre datos reales la rectificó en el primer
+run. **Fórmulas sospechosas: medir antes de temer.** Sin cambio de
+conducta en este ciclo (test #[ignore] + docs + addendum) ⇒ sin
+oráculo requerido; el recibo completo está en
+docs/audit/ANALISIS_ACEPTACION_ENSAMBLE_2026-10-16.md (addendum GLM 128).
