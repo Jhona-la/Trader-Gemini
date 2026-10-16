@@ -46,10 +46,16 @@ mkdir -p "$OUT_DIR"
   echo "# jobs: ${CARGO_BUILD_JOBS} (RAM compartida)"
 } >> "$LOG"
 
-# 1. TOCAR el paquete: con target compartido, esto obliga a que el binario
-#    se reconstruya desde ESTE árbol (mitigación CL-60b).
+# 1. TOCAR el paquete Y el test file del oráculo: con target compartido,
+#    esto obliga a que el binario se reconstruya desde ESTE árbol
+#    (mitigación CL-60b). El touch del TEST FILE fuerza el relink del
+#    test exe aunque el delta del ciclo sea bin-only (los bins no son
+#    dependencia del test target — incidente GLM 125: guard disparaba en
+#    falso positivo porque el test exe no relinkeaba).
 find "$PKG_DIR" -name '*.rs' -newer "$(git rev-parse --git-dir)/HEAD" -print -quit 2>/dev/null | grep -q . || \
   touch "$PKG_DIR/src/lib.rs"
+TEST_SRC="$PKG_DIR/tests/${TEST_NAME}.rs"
+[[ -f "$TEST_SRC" ]] && touch "$TEST_SRC"
 
 # 2. Compilar SIN correr.
 echo "[witness] compilando (--no-run)…" >&2
