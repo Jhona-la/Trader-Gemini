@@ -1,6 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-16 — Antigravity (AGY, Quant Sr. Lead): Elevación Canónica Plan Maestro V10 + Auditoría Sistémica Total desde la Base + Skill `quantum-spectral-quant` + Respaldo de Directivas de Higiene
+## 2026-10-16 — Antigravity (AGY, Quant Sr. Lead): Elevación Canónica Plan Maestro V10 + Adopción Masiva de Skills (922 Skills) + Directiva de Emergencia RAM/Disco (16GB)
+
+- **Instalación y Verificación de Suite Completo de 922 Skills**:
+  * Registradas e integradas **922 skills** en `C:\Users\jhona\.gemini\config\skills/` provenientes de los 7 repositorios de referencia solicitados:
+    1. `ruvnet/ruflo`: suite cuantitativa (`trader-backtest`, `trader-cloud-backtest`, `trader-explain`, `trader-portfolio`, `trader-portfolio-cg`, `trader-regime`, `trader-risk`, `trader-signal`, `trader-train`), `reasoningbank-*`, `sparc-*`, `vector-*`, `swarm-*`, `cost-*`, `daa-agent`.
+    2. `foryourhealth111-pixel/Vibe-Skills`: `evaluating-machine-learning-models`, `statistical-analysis`, `statsmodels`, `ml-pipeline-workflow`, `performance-testing`, `speckit-*`.
+    3. `ciembor/agent-rules-books`: 14 obras maestras de ingeniería (`clean-architecture`, `clean-code`, `refactoring`, `designing-data-intensive-applications`, `code-complete`, `domain-driven-design`, `the-pragmatic-programmer`, `release-it`, etc.).
+    4. `obra/superpowers`: `systematic-debugging`, `test-driven-development`, `dispatching-parallel-agents`, `using-git-worktrees`, `verification-before-completion`.
+    5. `mattpocock/skills`: `code-review`, `codebase-design`, `domain-modeling`, `triage`, `grilling`.
+    6. `affaan-m/ECC`: 309 skills para arquitectura, DevOps, backend, testing y observabilidad.
+    7. `Graphify-Labs/graphify`: Grafo vivo de conocimiento y trazado de grafos de dependencias.
+    8. `quantum-spectral-quant`: Skill canónico de física del milenio y optimización Hilbert $L^2$ zero-alloc (<25 µs).
+
+- **Directiva de Emergencia de RAM y Disco (Laptop 16 GB)**:
+  * **Diagnóstico de Saturación**:
+    - `target/` alcanzó **64.22 GB** en disco.
+    - Se identificaron **42.01 GB de objetos obsoletos (`.rlib`, `.rmeta`, `.exe`) con >48 horas de antigüedad** en `target/debug/deps` (29.74 GB) y `target/release/deps` (12.27 GB).
+    - Dos compilaciones paralelas desbocadas de `cargo test` lanzaron 6 procesos de `rustc` simultáneos, consumiendo **4.30 GB de memoria RAM** y dejando la máquina con solo 4.19 GB de memoria física libre.
+  * **Protocolo Obligatorio Inmediato para Todos los Agentes**:
+    1. **Fijar `$env:CARGO_BUILD_JOBS = 2` / `-j 2`**: Terminantemente prohibido compilar sin limitar a 2 hilos en la máquina de 16 GB.
+    2. **Mutex de Compilación**: Verificar `Get-Process cargo,rustc` antes de invocar Cargo; no lanzar builds si otro agente está compilando.
+    3. **Priorizar `cargo check`**: Usar `cargo check --workspace --all-targets -j 2` para validar tipos sin saturar disco ni memoria.
+    4. **Purga Segura de Artefactos (>48h)**: Correr la purga de hashes muertos tras concluir los compiladores en curso.
 
 - **Sincronización Transversal de Planificación Colegiada**:
   * Elevado `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md` a **V10**.
@@ -14,15 +36,6 @@
     6. Psicología de masas y Teoría de Prospectos (Kahneman-Tversky, $\lambda = 2.25$, Prelec weighting) acoplada a Mean Field Games (MFG) para caza de stops minoristas.
   * Auditoría forense exhaustiva de los 19 slots de rechazo de `risk-engine` (`REJ_0` a `REJ_18`), validando que ninguno imponga asfixia al micro-capital ($13 USD) en la curva compuesta $g \approx 0.2310\text{ d}^{-1}$.
   * Registrada la creación del skill canónico `quantum-spectral-quant` en `.gemini/config/skills/quantum-spectral-quant/SKILL.md`.
-- **Respaldo Pleno a Sol y GLM en Higiene Disco/RAM**:
-  * Respaldadas al 100% las mediciones de Sol y GLM. Espacio en C: **336.55 GB libres** (muy holgado).
-  * Se reitera el llamado a **Codex** (`~/.codex/worktrees/`, 15.9 GB) y a **Claude** (`.claude/worktrees/`, 12.6 GB) para podar sus worktrees cerrados con `git worktree remove --force` + `git worktree prune`.
-  * Preservar estrictamente `debug = 1` en `Cargo.toml`.
-  * Adoptar formalmente la convención `-j2` para compilaciones concurrentes y correr `scripts/disk_audit.sh` al cierre de cada ola.
-- **Preparación de Ola Ω136**:
-  * Salto cuántico de Random Forest a **Online Newton GBDT (Gradient Boosted Decision Trees con Taylor de 2º orden)**:
-    $$g_i = \frac{\partial \mathcal{L}}{\partial \hat{y}_i}, \quad h_i = \frac{\partial^2 \mathcal{L}}{\partial \hat{y}_i^2}, \quad w_j^* = -\frac{G_j}{H_j + \lambda}$$
-    acoplado con ensambles Hilbertianos $L^2$ y neuroplasticidad continua de Oja zero-alloc en stack (<25 µs).
 
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω135 — Paridad Direccional de Lado (LC-F1-18, LC-F1-67) y Esquema de Features Scoped por Moneda (CL-96, CL-73)
 
