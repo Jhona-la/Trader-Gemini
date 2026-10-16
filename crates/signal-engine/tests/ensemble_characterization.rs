@@ -111,6 +111,94 @@ fn mixed_signs_in_one_source_attenuate_by_mean() {
     assert_eq!(split, 0.0, "media 0 ⇒ masa 0: {split}");
 }
 
+// ── GLM 130: HEDGE POR FUENTE (exponential-weights) ──────────────────
+
+fn hedge_engine(
+    fuentes: &[(&'static str, f64)],
+) -> TensorVoteOrchestrator {
+    let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+    let mut engine = TensorVoteOrchestrator::new(arena);
+    for (name, value) in fuentes {
+        engine.add_strategy(Box::new(NamedSource(name, *value)));
+    }
+    // Un consenso para poblar ultimo_voto (registro del voto con signo).
+    let _ = engine.evaluate_continuous_consensus();
+    engine
+}
+
+/// (i) La fuente que CONTRADICE la realización decae; la que acierta
+/// sube. La dirección positiva sostenida separa los pesos.
+#[test]
+fn hedge_devalua_al_contradictorio_y_premia_al_acertivo() {
+    let engine = hedge_engine(&[("adivino", 0.5), ("contrario", -0.5)]);
+    for _ in 0..50 {
+        engine.actualizar_hedge_con_realizacion(1.0);
+        // Re-poblar votos: el update consume ultimo_voto sin tocarlo.
+        let _ = engine.evaluate_continuous_consensus();
+    }
+    let pesos: std::collections::HashMap<_, _> =
+        engine.pesos_hedge_snapshot().into_iter().collect();
+    let w_adivino = *pesos.get("adivino").unwrap();
+    let w_contrario = *pesos.get("contrario").unwrap();
+    assert!(
+        w_adivino > w_contrario,
+        "acertivo > contradictorio: {w_adivino} > {w_contrario}"
+    );
+    assert!(w_contrario < 1.0, "el contradictorio decae: {w_contrario}");
+}
+
+/// (ii) Sin explosión ni muerte eterna: tras 500 aciertos seguidos el
+/// peso vive dentro de los bounds suaves (renormalización a media 1.0).
+#[test]
+fn hedge_aciertos_persistentes_no_explotan() {
+    let engine = hedge_engine(&[("siempre_long", 0.5), ("siempre_short", -0.5)]);
+    for _ in 0..500 {
+        engine.actualizar_hedge_con_realizacion(1.0);
+        let _ = engine.evaluate_continuous_consensus();
+    }
+    for (_n, w) in engine.pesos_hedge_snapshot() {
+        assert!(
+            w.is_finite() && (0.04..=21.0).contains(&w),
+            "peso fuera de bounds suaves: {w}"
+        );
+    }
+}
+
+/// (iii) Arranque frío = pesos uniformes 1.0 ⇒ el consenso es
+/// idéntico al régimen sin updates de hedge (paridad del primer estado).
+#[test]
+fn hedge_arranque_frio_es_paridad_uniforme() {
+    let fuentes = [("a", 0.4), ("b", 0.4), ("c", 0.4)];
+    let engine = hedge_engine(&fuentes);
+    for (_n, w) in engine.pesos_hedge_snapshot() {
+        assert_eq!(w, 1.0, "arranque: todos 1.0");
+    }
+    let con_hedge_sin_updates = engine.evaluate_continuous_consensus().net_confidence;
+    let plano = hedge_engine(&fuentes);
+    let sin_updates = plano.evaluate_continuous_consensus().net_confidence;
+    assert!(
+        (con_hedge_sin_updates - sin_updates).abs() < 1e-15,
+        "paridad arranque frío: {con_hedge_sin_updates} == {sin_updates}"
+    );
+}
+
+/// (iv) La invariancia a clones (127) SE PRESERVA con el hedge: k
+/// copias de una fuente pesan como una (el peso es por nombre/grupo).
+#[test]
+fn hedge_preserva_invariancia_a_clones() {
+    let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+    let mut engine = TensorVoteOrchestrator::new(arena);
+    for _ in 0..5 {
+        engine.add_strategy(Box::new(Constant(0.5)));
+    }
+    let cinco = engine.evaluate_continuous_consensus().net_confidence;
+    let una = conviction(0.5, 1);
+    assert!(
+        (cinco - una).abs() < 1e-15,
+        "5 clones == 1 fuente (con hedge): {cinco} vs {una}"
+    );
+}
+
 /// (c) DRENADO (GLM 109, CL-15): sin base medida el motor ML NO OPINA —
 /// el fallback 0.5 fabricaba lift (con ml_prob 0.36 y base inventada, un
 /// voto short ≈ −0.33 que no existiría con la base honesta).
