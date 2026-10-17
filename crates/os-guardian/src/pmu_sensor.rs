@@ -6,9 +6,15 @@
 /// - Cache Misses (L1/LLC)
 /// - Branch Mispredictions
 ///
-/// Actualmente expone una interfaz "Mock" para entornos no-Linux (ej. Windows)
-/// que simula la recolección de HW counters para el motor de anomalías sin bloquear
-/// el hot path.
+/// GLM 133 (política del operador: CERO código simulado en producción):
+/// este sensor devolvía CONSTANTES FICTICIAS en ambas plataformas (y en
+/// Windows «ruido» generado con `_rdtsc() % 1000`) que alimentaban el
+/// detector de anomalías con datos que no existen — telemetría fantasma
+/// que además fabricaba baseline EWMA (MOD6/8-026 ya lo marcaba).
+/// Doctrina CL-15 del repo: SIN contador real NO HAY muestra —
+/// `sample()` devuelve `None` hasta que exista un backend
+/// `perf_event_open` real. La ausencia es honesta; el número inventado
+/// no vuelve.
 
 #[derive(Debug, Clone, Copy)]
 pub struct PmuVector {
@@ -21,7 +27,6 @@ pub struct PmuVector {
 }
 
 pub struct PmuSensor {
-    #[allow(dead_code)]
     target_tid: u32,
 }
 
@@ -30,36 +35,16 @@ impl PmuSensor {
         Self { target_tid }
     }
 
-    /// Lee los contadores PMU del TID (Thread ID) objetivo.
-    /// Esta operación debe hacerse fuera de banda (Out-of-Band) en un núcleo dedicado.
-    #[cfg(target_os = "linux")]
-    pub fn sample(&self) -> PmuVector {
-        // TODO: Implementar syscall `perf_event_open` nativo para eBPF/perf
-        PmuVector {
-            ipc: 2.1,
-            l1_miss_rate: 0.02,
-            llc_miss_rate: 0.005,
-            branch_mispred: 0.01,
-            cycles: 50_000,
-            instructions: 105_000,
-        }
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    pub fn sample(&self) -> PmuVector {
-        // En Windows devolvemos un vector de simulación con ligero ruido estocástico
-        // para alimentar el Anomaly Engine
-        let base_cycles = 50_000;
-        let noise = (unsafe { std::arch::x86_64::_rdtsc() } % 1000) as u64;
-
-        PmuVector {
-            ipc: 1.8 + (noise as f64 / 10000.0),
-            l1_miss_rate: 0.03 + (noise as f64 / 50000.0),
-            llc_miss_rate: 0.01,
-            branch_mispred: 0.02,
-            cycles: base_cycles + noise,
-            instructions: (base_cycles as f64 * 1.8) as u64,
-        }
+    /// Lee los contadores PMU del TID objetivo. `None` = sin sensor real
+    /// disponible en esta plataforma/build — el consumidor NO debe
+    /// fabricar observación (ausencia honesta, CL-15). Cuando se
+    /// implemente `perf_event_open` nativo (Linux) este método pasará a
+    /// devolver `Some` con contadores reales; hasta entonces NO existe
+    /// medición PMU en el sistema y ningún componente debe comportarse
+    /// como si existiera.
+    pub fn sample(&self) -> Option<PmuVector> {
+        let _ = self.target_tid;
+        None
     }
 }
 
@@ -67,23 +52,33 @@ impl PmuSensor {
 mod tests {
     use super::*;
 
+    /// GLM 133: sin backend real NO HAY muestra — jamás constantes.
+    /// Este test es el contrato de la política anti-mock del operador
+    /// para este sensor: si algún día empieza a devolver Some, debe ser
+    /// porque existe un `perf_event_open` real cableado (y el test se
+    /// actualiza a la par con verificación de plausibilidad de medidas
+    /// reales, no de literales).
     #[test]
-    fn test_pmu_sensor_sample() {
+    fn sin_backend_real_el_sensor_no_opina() {
         let sensor = PmuSensor::new(1234);
-        let sample = sensor.sample();
-        assert!(sample.ipc.is_finite() && sample.ipc > 0.0);
-        assert!(sample.l1_miss_rate.is_finite() && sample.l1_miss_rate >= 0.0);
-        assert!(sample.cycles > 0);
+        assert!(
+            sensor.sample().is_none(),
+            "CL-15: sin contador real la muestra es AUSENCIA (None), no literales"
+        );
     }
 
+    /// El vector sigue siendo construible por backends reales (contrato
+    /// de forma para el futuro perf_event_open).
     #[test]
-    fn test_pmu_sensor_vector_finite_metrics() {
-        let sensor = PmuSensor::new(5678);
-        for _ in 0..5 {
-            let sample = sensor.sample();
-            assert!(sample.llc_miss_rate.is_finite());
-            assert!(sample.branch_mispred.is_finite());
-            assert!(sample.instructions > 0);
-        }
+    fn pmu_vector_construible_para_backend_real() {
+        let v = PmuVector {
+            ipc: 1.9,
+            l1_miss_rate: 0.01,
+            llc_miss_rate: 0.002,
+            branch_mispred: 0.01,
+            cycles: 1_000,
+            instructions: 1_900,
+        };
+        assert!(v.ipc.is_finite() && v.cycles > 0);
     }
 }

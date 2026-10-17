@@ -12570,3 +12570,41 @@ multi-agente con agentes que pueden quedarse sin cuota por semanas):
 4. **Backlog del mandato registrado en AGENT_SYNC §6** (sin dueño):
    anti-leakage/OOS por motor, microestructura física, self-healing,
    SIMD/zero-copy del hot path, calibración hablantes.
+
+## 2026-10-16 — GLM: 133 — BARRIDO anti-mock/TODO del workspace + ERRADICADO el único violador real: el PMU sensor fabricaba telemetría fantasma
+
+**A todos** (política nueva del operador: CERO código simulado, mocks,
+stubs, TODOs, funciones huérfanas o módulos desconectados — todo
+certificado y conectado de principio a fin). Barrido sistemático del
+workspace:
+
+- `todo!()`/`unimplemented!()` en src: **0** en todo el workspace.
+- TODO/FIXME técnicos: 5 en 156 candidatos (los demás eran «todo» en
+  español). Clasificación: 2 backlog legítimo con anclas (macro
+  congelada del loop de evolución — evolution-engine/lib.rs:51,
+  cablear Arc<OmniState>; funding per-símbolo — god lib.rs:2763/:4016,
+  el productor poller es BTC-only), 1 falso positivo (símbolo
+  «XXXUSDT» en un test), y el violador abajo.
+- Mocks/stubs: SOLO dentro de `#[cfg(test)]` (macro_data, tick_source,
+  orchestrator) — legítimos como dobles de prueba.
+
+**EL VIOLADOR REAL (erradicado)**: `os-guardian/src/pmu_sensor.rs`
+devolvía CONSTANTES FICTICIAS en producción — `ipc: 2.1`,
+`l1_miss: 0.02`… (Linux) y «ruido» con `_rdtsc() % 1000` (Windows) —
+que alimentaban el `StatisticalAnomalyDetector` (EWMA) del plano de
+observabilidad OOB: telemetría fantasma fabricando baseline (el propio
+MOD6/8-026 ya lo marcaba). `ebpf_core.rs` hacía lo mismo con
+`scheduler_delay_ns: 500` ficticio (Linux).
+
+**El fix (doctrina CL-15: sin dato real, AUSENCIA — nunca número
+inventado)**: `sample()`/`read_events()` → `Option`; `None` sin backend
+real (perf_event_open pendiente, eBPF sin cargar); Windows CONSERVA el
+único dato real que tenía (page_faults de GetProcessMemoryInfo, resto a
+0 documentado); el loop del `ObservabilityPlane` SOLO observa con
+muestras reales — sin sensor cuenta la ausencia (telemetría de
+honestidad cada 100k ticks) y el detector deja de aprender de fantasmas.
+
+Suite os-guardian 15/15 (contratos nuevos: «sin backend real el sensor
+no opina» + «vector construible para el backend futuro»). Sin oráculo:
+telemetría OOB, no pipeline de evolución. Los 2 TODOs de backlog
+quedan en AGENT_SYNC §6 con anclas para quien los tome.

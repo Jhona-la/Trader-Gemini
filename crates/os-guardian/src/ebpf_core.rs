@@ -33,19 +33,23 @@ impl EbpfSensor {
         Self { target_pid }
     }
 
+    /// GLM 133 (política anti-mock del operador): Linux SIN eBPF cargado
+    /// no tiene eventos — `None` (ausencia honesta CL-15), jamás ceros
+    /// con `scheduler_delay_ns: 500` ficticio que fabricaba baseline del
+    /// detector. Cuando exista el mapa BPF real, aquí irá `Some`.
     #[cfg(target_os = "linux")]
-    pub fn read_events(&self) -> KernelEvents {
-        // Mapear BPF map file descriptor en Linux
-        KernelEvents {
-            context_switches: 0,
-            page_faults: 0,
-            net_irqs: 0,
-            scheduler_delay_ns: 500,
-        }
+    pub fn read_events(&self) -> Option<KernelEvents> {
+        let _ = self.target_pid;
+        None
     }
 
+    /// Windows: `page_faults` es REAL (GetProcessMemoryInfo del proceso);
+    /// context_switches/net_irqs/scheduler_delay NO están instrumentados
+    /// en esta plataforma — van a 0 DOCUMENTADO (patrón del repo:
+    /// dex_severity), y el detector debe saber que sólo page_faults
+    /// proviene de medición real.
     #[cfg(windows)]
-    pub fn read_events(&self) -> KernelEvents {
+    pub fn read_events(&self) -> Option<KernelEvents> {
         let mut counters = PROCESS_MEMORY_COUNTERS::default();
         let mut page_faults = 0u64;
         unsafe {
@@ -61,21 +65,16 @@ impl EbpfSensor {
             }
         }
 
-        KernelEvents {
+        Some(KernelEvents {
             context_switches: 0,
             page_faults,
             net_irqs: 0,
-            scheduler_delay_ns: 120,
-        }
+            scheduler_delay_ns: 0,
+        })
     }
 
     #[cfg(not(any(target_os = "linux", windows)))]
-    pub fn read_events(&self) -> KernelEvents {
-        KernelEvents {
-            context_switches: 0,
-            page_faults: 0,
-            net_irqs: 0,
-            scheduler_delay_ns: 200,
-        }
+    pub fn read_events(&self) -> Option<KernelEvents> {
+        None
     }
 }

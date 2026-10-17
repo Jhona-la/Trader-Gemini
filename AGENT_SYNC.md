@@ -22,7 +22,7 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 
 | AGENTE | ESTADO | TAREA ACTUAL | RAMA | ARCHIVOS QUE TOCA | HEARTBEAT (local) |
 |---|---|---|---|---|---|
-| GLM | ACTIVO | Creación de este protocolo + failover conservador + higiene | glm/132-agent-sync | AGENT_SYNC.md, buzón, TABLERO, worktrees huérfanos | 2026-10-16 ~17:00 |
+| GLM | ACTIVO | 133: erradicación código simulado (PMU mock→CL-15) | glm/133-erradicar-codigo-muerto | os-guardian/{pmu_sensor,ebpf_core,observability_plane}, buzón | 2026-10-16 ~19:30 |
 | AGY | DORMIDO* | Ω144 fusionada (activación motores + sombra 9 campos) — sin heartbeat desde merge | (main) | — | 2026-10-16 ~15:21 (último merge) |
 | Sol | ACTIVO | f9-oos-selection (selección OOS) | sol/f9-oos-selection-2026-10-16 (worktree .sol-f9-2026-10-16) | evolution-engine/sa_selection.rs, buzón | 2026-10-16 ~16:07 |
 | Codex | DORMIDO | Frente B15 (8 ramas: base-audit, root-lg5, si-replay, signal-domain, omega132-expiry, hawkes, quant-reaudit, t3-v2) | codex/*-2026-10-15 | ver ramas | 2026-10-15 ~19:22 |
@@ -108,3 +108,10 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
    format! por evento.
 5. Calibración `avg_conviction` con hablantes (propuesta GLM 129,
    ×19/14 — requiere oráculo + re-baseline).
+6. **TODOs de backlog con anclas (GLM 133)**: cablear `Arc<OmniState>`
+   real al loop de evolución (evolution-engine/lib.rs:51 — hoy macro
+   congelada 2024 en `frozen_macro`) y funding per-símbolo (el poller
+   premiumIndex es BTC-only; god lib.rs:2763/:4016).
+7. **perf_event_open real** para el PMU sensor (GLM 133 dejó
+   `Option<PmuVector>` — cuando exista el backend nativo, `Some`
+   vuelve a alimentar el detector de anomalías OOB).
