@@ -3,8 +3,27 @@ name: Replay contracts
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      # F-H2 (Fable, 2026-10-17): un push de SOLO documentación (buzón,
+      # AGENT_SYNC, TABLERO, MEMORIA, planes, tablas de auditoría, grafo)
+      # no cambia ningún binario y no debe gastar un runner Windows durante
+      # hasta 90 min. Medido 2026-10-17: la mayoría de los 33 pushes a main
+      # eran de documentación. Si un commit mezcla docs y código, corre.
+      - '**/*.md'
+      - 'docs/**'
+      - '**/*.tsv'
+      - 'graphify-out/**'
+      - 'outputs/**'
+      - '.agents/**'
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '**/*.tsv'
+      - 'graphify-out/**'
+      - 'outputs/**'
+      - '.agents/**'
   workflow_dispatch:
 
 permissions:
