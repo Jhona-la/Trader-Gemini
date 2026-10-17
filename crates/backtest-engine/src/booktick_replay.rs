@@ -280,8 +280,8 @@ impl ReplayStats {
 /// evolver seleccionaba con ese número: el sistema de evolución
 /// aprendía a preferir genomas que dejan riesgo abierto (fitness real
 /// −0,73% donde el reporte decía +3069,92%). Cada posición abierta se
-/// valúa al último mid de su moneda descontando la fricción de salida
-/// (taker + slippage floor) — conservador: no fingir que cierra gratis.
+/// valúa al último mid admitido de su moneda descontando la fricción
+/// estimada de salida (taker + slippage floor), sin cota probada.
 /// Sin posiciones abiertas ⇒ bit-idéntico (paridad del caso cerrado).
 fn aplicar_mtm_final(arena: &GlobalArena, ultimo_mid: &[f64; 4], stats: &mut ReplayStats) {
     let taker = arena.config.live_taker_fee.load(Ordering::Relaxed);
@@ -420,6 +420,8 @@ fn run_booktick_replay_observed(
     let mut turnover_notional: f64 = 0.0;
     let mut peak = cfg.initial_capital;
     let warmup = cfg.warmup_ticks;
+    // B15-12: la marca terminal sólo puede proceder del prefijo admitido.
+    let mut ultimo_mid_admitido = [0.0f64; 4];
 
     // SOL-R4-01 (Sol, medición 2026-10-15 — fix GLM 124): cuánta cinta
     // se EJECUTÓ y por qué terminó. Solo cuentan ticks ACEPTADOS por la
@@ -427,11 +429,6 @@ fn run_booktick_replay_observed(
     let mut executed_ticks: u64 = 0;
     let mut executed_last_ts: u64 = 0;
     let mut close_reason = ReplayCloseReason::TapeEnd;
-    // SOL-R5-02-B (Sol, SOL_CONT2 — fix GLM 126): mid del último tick
-    // EJECUTADO — el MTM post-ruina valúa con ESTE precio, nunca con
-    // datos de la cinta posteriores al break (principio: ningún dato
-    // futuro en el fitness).
-    let mut executed_last_mid: f64 = 0.0;
 
     // CX / XLIX-A integration: there is no preloaded prefix to skip here.
     // Observe each accepted row once; only entries wait for the declared W.
@@ -451,10 +448,6 @@ fn run_booktick_replay_observed(
         // acumulador, no índice: los inválidos intermedios no cuentan.
         executed_ticks += 1;
         executed_last_ts = t.ts_ms;
-        // SOL-R5-02-B (GLM 126): mid del último PROCESADO — mismo
-        // criterio de validez que la aduana, capturado en el momento
-        // (sin re-escaneo post-loop de la cinta completa).
-        executed_last_mid = mid;
 
         // F3.4-04 (Línea C / Ola Ω93): paridad de muros L2 con vivo y forense.
         core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);
@@ -539,6 +532,7 @@ fn run_booktick_replay_observed(
         // cuyo reloj de calibración iba 1440 veces más lento que el de decisión.
         let is_minute_kline = i > 0 && (ticks[i - 1].ts_ms / 60_000) != (t.ts_ms / 60_000);
 
+        let accepted_ticks_before = core.feature_engines[0].tick_count;
         let (c1, c2): (Option<(bool, f64, f64)>, Option<(bool, f64, f64)>);
         if cfg.trade_only {
             // MODO TRADE-ONLY (para datos de trades/aggTrades sin libro real):
@@ -668,6 +662,14 @@ fn run_booktick_replay_observed(
             c2 = closed2;
         }
 
+        // El progreso de features acredita admisión, aunque no haya orden.
+        // Un timestamp igual es válido; conservar el mid crudo de la fila.
+        if core.feature_engines[0].tick_count > accepted_ticks_before
+            && core.feature_engines[0].current_ts == t.ts_ms
+        {
+            ultimo_mid_admitido[0] = mid;
+        }
+
         // F5.1 (paridad host): alimentar el posterior del edge con CADA
         // cierre — mismos EWMAs y mismo record_trade que god_engine. Las
         // entradas vetadas nunca llegan aquí (rollback ⇒ sin cierre, B3.14).
@@ -735,12 +737,12 @@ fn run_booktick_replay_observed(
     stats.final_capital = arena.unified_capital.load(Ordering::Relaxed);
     // SOL-R5-02 (Sol, medición 2026-10-15 — fix GLM 123): la caja sola
     // no es el capital final — ver `aplicar_mtm_final`.
-    // SOL-R5-02-B (Sol, SOL_CONT2 — fix GLM 126): el mid de valuación es
-    // el del último tick EJECUTADO — antes se re-escaneaba la cinta
-    // COMPLETA y una ruina a mitad quedaba valuada a precios posteriores
-    // al break (look-ahead contable en el fitness). Monoactiva (coin 0).
-    let mids = [executed_last_mid, 0.0, 0.0, 0.0];
-    aplicar_mtm_final(&arena, &mids, &mut stats);
+    // SOL-R5-02-B (Sol, fix GLM 126) + B15-12 (Codex), fusionados por la
+    // Línea G: el mid de valuación es el del último tick que el motor de
+    // features ADMITIÓ (no el último que pasó la aduana: una fila con reloj
+    // regresivo pasa la aduana pero el núcleo la rechaza). Ningún dato
+    // posterior a un corte por ruina entra en el fitness. Monoactiva (coin 0).
+    aplicar_mtm_final(&arena, &ultimo_mid_admitido, &mut stats);
     if !pnl_list.is_empty() {
         let mean = stats.net_pnl / pnl_list.len() as f64;
         let var = pnl_list
@@ -1474,37 +1476,63 @@ mod sol_r5_02_tests {
 
     /// (1) INTEGRACIÓN: la cinta sintética con el forest baseline no
     /// dispara entradas (predicciones 0.5 — el motor real necesita ML
-    /// entrenado), así que materializa el caso cerrado. El contrato se
-    /// verifica en CUALQUIERA de los dos casos posibles (no-vacuo por
-    /// construcción): sin posiciones ⇒ MTM exactamente 0 y final ==
-    /// caja (bit-idéntico al régimen pre-SOL-R5-02); con posiciones ⇒
-    /// el final se MOVIÓ (nunca un no-op silencioso con riesgo abierto).
+    /// entrenado), así que materializa el caso cerrado. La caja se lee
+    /// después del replay mediante el Arc retenido: capital = caja + MTM.
+    /// Sin posiciones, la paridad de caja es bit-exacta; con riesgo abierto,
+    /// el MTM neto puede ser exactamente cero y conservar el mismo capital.
     #[test]
     fn sol_r5_02_caso_cerrado_o_abierto_pero_nunca_ciego() {
         crate::asegurar_spec_nativo("BTCUSDT"); // sin spec: 0 trades, rechazo «spec»
         let ticks = synth_ticks(8_000);
         let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
-        let mut caja_final = 0.0f64;
+        let mut arena_final: Option<Arc<GlobalArena>> = None;
         let stats = run_booktick_replay_with_observer(&ticks, &genome, None, &cfg(), |_, core| {
-            caja_final = core.arena.unified_capital.load(std::sync::atomic::Ordering::Relaxed);
+            arena_final = Some(Arc::clone(&core.arena));
         });
+        let arena_final = arena_final.expect("la cinta no vacia debe visitar el observador");
+        let caja_final = arena_final.unified_capital.load(Ordering::Relaxed);
+        let posiciones_reales = arena_final
+            .coins
+            .iter()
+            .map(|coin| coin.positions.slots().iter().filter(|slot| slot.is_open()).count())
+            .sum::<usize>();
+        assert_eq!(stats.open_positions_end, posiciones_reales);
+        assert!(
+            (stats.final_capital - (caja_final + stats.mtm_unrealized_pnl)).abs() < 1e-9,
+            "capital {} == caja {} + MTM {}",
+            stats.final_capital,
+            caja_final,
+            stats.mtm_unrealized_pnl
+        );
         if stats.open_positions_end == 0 {
-            assert!(
-                (stats.final_capital - caja_final).abs() < 1e-6,
-                "caso cerrado: final {} == caja {}",
-                stats.final_capital,
-                caja_final
-            );
+            assert_eq!(stats.final_capital.to_bits(), caja_final.to_bits());
             assert_eq!(stats.mtm_unrealized_pnl, 0.0);
-        } else {
-            assert_ne!(
-                stats.final_capital.to_bits(),
-                caja_final.to_bits(),
-                "riesgo abierto sin valuar: final {} == caja {}",
-                stats.final_capital,
-                caja_final
-            );
         }
+    }
+
+    #[test]
+    fn mtm_open_position_can_equal_cash_when_net_mark_is_exactly_zero() {
+        let arena = GlobalArena::build_in_own_stack(1024.0);
+        // Binary-exact values: gross 128 - 127.875 = 0.125;
+        // estimated exit cost 128 * (1/2048 + 1/2048) = 0.125.
+        arena.config.live_taker_fee.store(1.0 / 2048.0, Ordering::Relaxed);
+        arena.config.base_slippage_floor.store(1.0 / 2048.0, Ordering::Relaxed);
+        arena.coins[0].positions.slot_0.open(
+            true, 127.875, 1.0, 128.0, 1_700_000_000_000, 256.0, 64.0,
+        );
+        let snap = arena.coins[0].positions.slot_0.snapshot().expect("open risk is mandatory");
+        assert!(snap.is_long);
+        assert_eq!(snap.entry_price, 127.875);
+        assert_eq!(snap.quantity, 1.0);
+        let cash = arena.unified_capital.load(Ordering::Relaxed);
+        assert_eq!(cash.to_bits(), 1024.0f64.to_bits());
+        let mut stats = ReplayStats { final_capital: cash, ..Default::default() };
+        aplicar_mtm_final(&arena, &[128.0, 0.0, 0.0, 0.0], &mut stats);
+        assert_eq!(stats.open_positions_end, 1);
+        assert!(arena.coins[0].positions.slot_0.is_open());
+        assert_eq!(stats.mtm_unrealized_pnl.to_bits(), 0.0f64.to_bits());
+        assert_eq!(stats.final_capital.to_bits(), cash.to_bits());
+        assert_eq!(arena.unified_capital.load(Ordering::Relaxed).to_bits(), cash.to_bits());
     }
 
     /// (2) UNITARIO del bloque MTM con posición INYECTADA por la API

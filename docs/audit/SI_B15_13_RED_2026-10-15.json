@@ -1,0 +1,42 @@
+{
+  "classification": "functional_RED_expected_report_equity_cause",
+  "pull_request": "https://github.com/Jhona-la/Trader-Gemini/pull/68",
+  "head": "ab77bf9a92af3181aafd252558fc0d8e98e01bab",
+  "head_tree": "7116dc8ec6f77d0728f6c95d2db8796fa943c7ed",
+  "actual_checkout": "dfe54b0fb8a7ed28766af71caeb258377293262e",
+  "actual_checkout_tree": "ab50f7c7354feafbe21f5978fc8e354d954bf7d0",
+  "actual_checkout_parents": ["f78a4706756121b22ff999a9d889a2425f97b440", "ab77bf9a92af3181aafd252558fc0d8e98e01bab"],
+  "run": 38794246227,
+  "job": 116626365492,
+  "job_url": "https://github.com/Jhona-la/Trader-Gemini/actions/runs/38794246227/job/116626365492",
+  "step": "Terminal equity report contracts",
+  "command": "cargo +nightly-2026-06-30 test -p trader-gemini-v5 --bin backtest_windows --locked si_b15_report_contract -- --test-threads=1",
+  "exit_code": 1,
+  "parent_summary": {"passed": 0, "failed": 2, "ignored": 0, "filtered": 0},
+  "original_trainer_step": {"summaries": 3, "passed": 84, "failed": 0, "ignored": 0},
+  "fixtures": [
+    {"name": "si_b15_report_contract::capital_and_rates_follow_equity_despite_positive_closed_pnl", "assertion_line": 340, "capital": [128, 64], "closed_net_pnl": 32, "expected_equity_percent": -50, "actual_capital_line": "Capital: $128.00 → $64.00 (+25.00%)", "actual_rate_line": "Tasa diaria: +8.333%/d · equivalente 3d: +27.1%"},
+    {"name": "si_b15_report_contract::capital_return_does_not_require_closed_trades", "assertion_line": 365, "capital": [128, 256], "closed_net_pnl": 0, "trades": 0, "expected_equity_percent": 100, "actual_capital_line": "Capital: $128.00 → $256.00 (+0.00%)", "actual_rate_line": "Tasa diaria: +0.000%/d · equivalente 3d: +0.0%"}
+  ],
+  "child_note": "Each exact child test executes successfully and prints the actual production report. Its successful summary appears inside the parent's failure output; do not mistake it for a passing parent contract.",
+  "log": "trainer-116626365492.log",
+  "log_encoding": "UTF-8 without connector BOM, CRLF normalized to LF",
+  "log_sha256": "7c1395de40ef2c96534b86d05e7b534da9702da5dfa3d33f4d0b371a02847cc0",
+  "completed_test_utc": "2026-10-15T19:51:30Z",
+  "unrelated_core_failures_log": "core-116626365442.log",
+  "unrelated_core_failures_log_sha256": "13d686dd19175c4a1c66dd81e5ad52e251d69913a3d13e8892a4e6b15db59346",
+  "terminal_mark_contract_status": "not_yet_executed",
+  "replay_baseline": {
+    "run": 38794246151,
+    "job": 116626366700,
+    "job_url": "https://github.com/Jhona-la/Trader-Gemini/actions/runs/38794246151/job/116626366700",
+    "completed_utc": "2026-10-15T20:38:25Z",
+    "conclusion": "failure",
+    "failed_step": "Scoped risk evidence withdrawal contracts",
+    "unrelated_bin_summary": {"passed": 10, "failed": 3, "ignored": 0},
+    "new_terminal_mark_target": "skipped_after_prior_failure",
+    "log_sha256": "f38b16de68742f6c97ba9a00591a688b0cff8de38ed829b9bdb80a40a263a5ec"
+  },
+  "log_storage": "Full normalized logs are retained in the owner worktree logs/ci-pr68; public job URLs identify the original run. Local paths are not repository artifacts.",
+  "limitations": "No GREEN, no production correction, no mark-causality RED, no profitability or main-publication claim. Logs preserve all failures separately."
+}

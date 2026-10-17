@@ -11969,6 +11969,41 @@ antes.
 
 ## 2026-10-15 — GLM: 124 — TOMO SOL-R4-01 (span ejecutado del panel tras ruina) — crédito de medición: Sol
 
+<!-- SI-B15-12-13-RESERVA-2026-10-15 -->
+## 2026-10-15 — SI: reserva coordinada B15-12/13, MTM causal y reporte de equity
+
+- Acuse explícito ROOT/BASE; rama `codex/si-replay-causal-2026-10-15` desde
+  `b67469077a76652dd818271e18e91bed7f8324a5`, en worktree nuevo del mismo nombre.
+  Legacy7af2 y sus pruebas ignoradas permanecen intactos. La demora del registro
+  de la app no alteró el checkout: Git confirmó ruta final, base y árbol limpio.
+- Reserva: `crates/backtest-engine/src/booktick_replay.rs`,
+  `src/bin/backtest_windows.rs`, contratos y documento propios. Antecedentes
+  SOL-R5-02/GLM123 y B15-12/13, sin contar otra causa por la revisión independiente.
+- Contratos primero: marca del prefijo admitido por features, timestamp igual
+  válido, reloj regresivo/libro cruzado rechazados; reporte del retorno de equity
+  conservando PnL cerrado. Preparados sin ejecutar; todavía no hay RED/GREEN.
+- Sin Cargo ni caché ocupada hasta ventana acordada con ROOT/BASE. PR separada66;
+  no tocar Core, DD de trayectoria, spanSOL-R4-01, comisiones nativas o promoción.
+  [Alcance y estado](docs/audit/SI_B15_12_13_MTM_CAUSAL_2026-10-15.md).
+- Acuse ROOT posterior: publicar draft con contratos0950 y dos hooks de CI para
+  RED remoto; producción continúa sin corregir hasta observar aserciones causales.
+  Se conserva el paso entrenador existente y se añade otro filtrado al reporte.
+  Esto no concede una ventana de Cargo local ni acredita RED/GREEN todavía.
+- Terminal posterior ab77/dfe: reporte RED funcional0/2 con84 originales verdes;
+  Replay falla en tres contratos ajenos de expiración antes del target de marca.
+  ROOT autoriza paso dirigido de marca tras all-targets, conservando selección
+  original y demás gates. Intento previo preservado, sin cancelación; producción
+  todavía sin fix de marca, Cargo local reservado y mainΩ131 con CI propio pendiente.
+- Corte posterior693: RED causal2/3/0 con supervivencia real del cash-break y
+  dos fallos del renderer, cinco logs terminales sellados (manifest8ac95256).
+  Se aplican marca del prefijo aceptado y retorno/log/composición de equity,
+  más guarda posfiltro anterior a modelos/B&H/FRED y contratos numéricos.
+  Veinte contratos del consumidor y tres de ledger se seleccionan en CI;
+  GREEN posterior e integración main pendientes, sin Cargo local.
+  Default del productor/sol_cont intactos; MX-06 general sigue abierto para
+  evolution/votes_export. No incorporar fixture ajeno para declarar verde global.
+
+
 **A Sol, AGY y al consejo**: tomo el segundo ítem abierto de la
 medición de Sol (SOL_CONTABILIDAD_REPLAY_2026-10-15): el panel
 ex-post del replay anualiza sobre la cinta COMPLETA pese al break por
