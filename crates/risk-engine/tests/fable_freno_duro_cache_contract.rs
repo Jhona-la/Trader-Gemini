@@ -19,7 +19,10 @@ use risk_engine::drawdown::{
     freno_duro_esperar_pendientes, ALFA_FALSACION, PASO_CACHE_FRENO_DURO,
     RADIO_VECINO_FRENO_DURO, VENTAJA_H0_FRENO_DURO_R,
 };
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+static SERIAL_TEST: Mutex<()> = Mutex::new(());
 
 fn exacto(w: f64, l: f64) -> Option<f64> {
     caida_alfa_en_stops(w, l, VENTAJA_H0_FRENO_DURO_R, ALFA_FALSACION)
@@ -32,6 +35,7 @@ fn espera() -> Duration {
 
 #[test]
 fn en_frio_sin_vecinos_el_umbral_es_el_exacto_y_no_queda_pendiente() {
+    let _g = SERIAL_TEST.lock().unwrap_or_else(|e| e.into_inner());
     // Región w ≈ 1,50 (sin vecinos previos en esta región).
     let k = caida_alfa_freno_duro(1.50, 1.10);
     assert_eq!(k, exacto(1.50, 1.10), "en frío la caché devuelve la función pura");
@@ -43,6 +47,7 @@ fn en_frio_sin_vecinos_el_umbral_es_el_exacto_y_no_queda_pendiente() {
 
 #[test]
 fn con_un_vecino_la_respuesta_es_inmediata_conservadora_y_luego_exacta() {
+    let _g = SERIAL_TEST.lock().unwrap_or_else(|e| e.into_inner());
     // Región w ≈ 3,00.
     let k_vecino = caida_alfa_freno_duro(3.00, 1.00).expect("umbral del vecino");
     assert!(freno_duro_esperar_pendientes(espera()));
@@ -71,6 +76,7 @@ fn con_un_vecino_la_respuesta_es_inmediata_conservadora_y_luego_exacta() {
 
 #[test]
 fn con_varios_vecinos_el_respaldo_es_el_minimo() {
+    let _g = SERIAL_TEST.lock().unwrap_or_else(|e| e.into_inner());
     // Región w ≈ 0,80: dos vecinos exactos a ambos lados de la consulta.
     let k_a = caida_alfa_freno_duro(0.80, 1.00).expect("K(0,80)");
     assert!(freno_duro_esperar_pendientes(espera()));
@@ -89,6 +95,8 @@ fn con_varios_vecinos_el_respaldo_es_el_minimo() {
 
 #[test]
 fn fuera_del_radio_no_hay_respaldo_y_se_calcula_sincrono() {
+    let _g = SERIAL_TEST.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(freno_duro_esperar_pendientes(espera()));
     // Región w ≈ 5,00; la consulta siguiente queda a RADIO + 1 pasos.
     let _ = caida_alfa_freno_duro(5.00, 1.00);
     assert!(freno_duro_esperar_pendientes(espera()));

@@ -13147,3 +13147,22 @@ usar R BAJO restrictivo para distinguir presente/ausente.
     T-3 (Línea H, que mide LH-04 hoy)**. Lo anunciaré en AGENT_SYNC antes de tocarlo.
 - **Regla operativa que propongo al consejo (y que ya cumple mi worktree)**: compilar sólo vía
   `cargo_semaforo.sh`; `bash scripts/higiene_recursos.sh` al cerrar cada ola; CI sólo para código.
+
+## 2026-10-17 — Antigravity (AGY, Quant Sr.): OLAS Ω148 Y Ω149 CERRADAS — Certificación Failover `F-A4` de Fable + Cierre de 14 Hallazgos Adicionales de Línea G Ola 8 (24/48 cerrados en total entre Ω147–Ω149)
+
+- **Ramas**: `agy/ola-148-helmholtz-gue-dirac-confluence-hedge` (`87f577521`) y `agy/ola-149-feynman-decoherence-fa4-confluence-norm` (fusionadas a `main` y borradas).
+- **1. Relevos de Failover de Fable (`AGENT_SYNC.md` §1/§3)**:
+  - Tomé el traspaso explícito de **Fable (`F-A4` = `F1-012` / `T1-08`)** en `crates/risk-engine/src/drawdown.rs` y `crates/risk-engine/tests/fable_freno_duro_cache_contract.rs`.
+  - **Diagnóstico al certificar el WIP de Fable (`0b1ffbf80`)**: (a) la distancia Chebyshev ($L^\infty \le 5$) trataba `sl = 1%` `(105, 57)` y `sl = 2%` `(109, 54)` como vecinos aunque ambos ejes saltaban ($|dw| + |dl| = 7 > 5$), devolviendo un vecino no conservador (`39.9` frente a `38.68`) que hacía fallar `cf4_freno_duro::cl106b_con_cualquier_tamano_el_freno_dispara_tras_k_stops`; (b) `CacheFrenoDuro::exactos` no tenía cota de tamaño; (c) los tests de `fable_freno_duro_cache_contract.rs` corrían en paralelo contaminando `freno_duro_calculos_pendientes() == 0`.
+  - **Remediación y certificación**: Cambiada la vecindad a distancia Manhattan ($L^1 \le 5$) con búsqueda en rombo $O(1)$, acotado `exactos` a `MAX_ENTRADAS_CACHE_FRENO_DURO = 4096` entradas y añadido `SERIAL_TEST: Mutex<()>` en el test. **Resultado**: `cf4_freno_duro` **6/6 verdes**, `fable_freno_duro_cache_contract` **5/5 verdes**, `drawdown_portfolio_contract` **1/1 verde**, `risk-engine --lib drawdown::` **9/9 verdes**.
+- **2. Cierre de Hallazgos Línea G Ola 8 en Ω148 (`87f577521`)**:
+  - `CSG-2` (HIGH): Ancla prequencial `voto_ancla_hedge` en `t_prev` + retorno relativo adimensional `((mid - prev)/prev)/atr_pct` en `orchestrator.rs`.
+  - `G8-OMEGA-07` (MED): Normalización RMS adimensional y spline Hermite $C^1$ en `helmholtz_hodge.rs`.
+  - `G8-OMEGA-08` (MED): Ventana unimodal GUE + filtro de dispersión $\sigma(s)$ anti-picket-fence en `riemann_zeta_gue.rs`.
+  - `G8-OMEGA-09` (MED), `G8-OMEGA-11` (LOW), `G8-OMEGA-15` (INFO), `LG8-145-04/05/06` (LOW/INFO).
+- **3. Cierre de Hallazgos Línea G Ola 8 en Ω149**:
+  - `LG8-146-01` / `F2.6-02` (MED — `feynman_propagator.rs` y `cf2_cuantico_solucion_conocida.rs`): Funcional de acción geodésica de Onsager-Machlup $\exp(-2.5 (V_{\text{osc}} / (\hbar_{\text{eff}} \bar{z}))^2)$ con $V_{\text{osc}} = \sum |\Delta z_k| - |z_{\text{last}} - z_{\text{first}}|$. Idénticamente 0 en trayectorias estacionarias o monótonas y par bajo $z \mapsto -z$. Des-ignorado `cf2_6_feynman_caminata_aleatoria_decohiere_como_dice_su_doc` → **4/4 verdes** ($P(C > 0.20) = 1.74\% \pm 0.61\%$ a $1\text{ ev/s}$ y $1.68\% \pm 0.56\%$ a $10\text{ ev/s}$, umbral $\le 5.0\%$).
+  - `LG8-146-02` (MED — `feynman_propagator.rs` y `navier_stokes_manifold.rs`): Abstención estricta (`0.0`) bajo decoherencia ($C \le 0.20$) con rampa Hermite $C^1$ en `[thresh, 2*thresh]` en Feynman, y derivada material hidrodinámica inter-escala (`u_eff = safe_z + 0.55 * cascade_advection + (0.35 / (1 + visc)) * scale_laplacian`) en Navier-Stokes, rompiendo la colinealidad $3\times$ con `sign(z_k)` (`navier_feynman_spectral_confluence_contract` **6/6 verdes**).
+  - `G8-OMEGA-10` (MED), `G8-OMEGA-18` (INFO) y `LG8-145-07` (INFO — `flow_excitation_confluence.rs` y `coaxial_breakout.rs`): Normalización log-euclídea por dimensión efectiva $\exp(\frac{1}{\sqrt{N_{\text{active}}}} \sum \ln \mu_m)$ acotada en $[0.15, 1.45]$, y cortocircuito $O(1)$ con `get_scoped_val_or` eliminando `Arc::clone` y hasta 19 lecturas de registro en ticks inactivos (`signal-engine --lib` **122/122 verdes**, `cf4_coaxial_abstencion` **3/3 verdes**, 7 suites `*_confluence_contract` **35/35 verdes**).
+- **Coordinación**: No toqué `crates/god-engine-core/src/lib.rs` respetando el lock activo de `claude/linea-g-ola9`. Todas las compilaciones y pruebas corrieron exclusivamente vía `scripts/cargo_semaforo.sh`.
+

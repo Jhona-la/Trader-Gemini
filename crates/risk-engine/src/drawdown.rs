@@ -415,6 +415,8 @@ pub const PASO_CACHE_FRENO_DURO: f64 = 0.02;
 /// respaldo conservador mientras llega el exacto (0,10 stops: el umbral de
 /// los vecinos difiere del exacto en pocos puntos porcentuales).
 pub const RADIO_VECINO_FRENO_DURO: i64 = 5;
+/// Capacidad máxima de `exactos` en la caché estática para acotar memoria en daemons largos.
+pub const MAX_ENTRADAS_CACHE_FRENO_DURO: usize = 4096;
 
 struct CacheFrenoDuro {
     exactos: std::collections::HashMap<(i64, i64), Option<f64>>,
@@ -454,6 +456,15 @@ fn insertar_k_exacto(clave: (i64, i64), k: Option<f64>) {
     let mut c = cache_freno_duro()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if c.exactos.len() >= MAX_ENTRADAS_CACHE_FRENO_DURO && !c.exactos.contains_key(&clave) {
+        if let Some(&lejana) = c
+            .exactos
+            .keys()
+            .max_by_key(|&&(kw, kl)| (kw - clave.0).saturating_abs().saturating_add((kl - clave.1).saturating_abs()))
+        {
+            c.exactos.remove(&lejana);
+        }
+    }
     c.exactos.insert(clave, k);
     c.pendientes.remove(&clave);
 }
@@ -497,13 +508,27 @@ pub fn caida_alfa_freno_duro(w: f64, l: f64) -> Option<f64> {
         }
         let mut hay_vecino = false;
         let mut minimo: Option<f64> = None;
-        for (ck, kv) in c.exactos.iter() {
-            if (ck.0 - clave.0).abs() <= RADIO_VECINO_FRENO_DURO
-                && (ck.1 - clave.1).abs() <= RADIO_VECINO_FRENO_DURO
-            {
-                hay_vecino = true;
-                if let Some(k) = kv {
-                    minimo = Some(minimo.map_or(*k, |m: f64| m.min(*k)));
+        let radio = RADIO_VECINO_FRENO_DURO;
+        let max_vecinos = (2 * radio * (radio + 1) + 1) as usize;
+        if c.exactos.len() <= max_vecinos {
+            for (ck, kv) in c.exactos.iter() {
+                if (ck.0 - clave.0).abs() + (ck.1 - clave.1).abs() <= radio {
+                    hay_vecino = true;
+                    if let Some(k) = kv {
+                        minimo = Some(minimo.map_or(*k, |m: f64| m.min(*k)));
+                    }
+                }
+            }
+        } else {
+            for dw in -radio..=radio {
+                let rem = radio - dw.abs();
+                for dl in -rem..=rem {
+                    if let Some(kv) = c.exactos.get(&(clave.0 + dw, clave.1 + dl)) {
+                        hay_vecino = true;
+                        if let Some(k) = kv {
+                            minimo = Some(minimo.map_or(*k, |m: f64| m.min(*k)));
+                        }
+                    }
                 }
             }
         }

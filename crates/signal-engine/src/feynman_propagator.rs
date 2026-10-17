@@ -120,6 +120,7 @@ impl FeynmanPropagatorEngine {
     pub const DEFAULT_MASS: f64 = 1.0;
     pub const DEFAULT_K_SPRING: f64 = 1.0;
     pub const DEFAULT_LAMBDA_QUARTIC: f64 = 0.10;
+    pub const DEFAULT_COHERENCE_THRESHOLD: f64 = 0.20;
 
     pub fn new() -> Self {
         Self {
@@ -270,20 +271,35 @@ impl FeynmanPropagatorEngine {
         let action_coupling = if params.action_coupling.is_finite() { params.action_coupling } else { 0.10 };
         let amp_scale = if params.amplitude_scale.is_finite() && params.amplitude_scale > 0.0 { params.amplitude_scale } else { 0.50 };
 
-        // 1. Calcular lagrangiano, acción y fase canónica en cada escala
+        // 1. Calcular lagrangiano, acción acumulada y fase canónica en cada escala
+        let mut active_count = 0usize;
+        let mut z_abs_sum = 0.0f64;
+        let mut v_tot = 0.0f64;
+        let mut first_active_z: Option<f64> = None;
+        let mut last_active_z: Option<f64> = None;
+        let mut cum_kinetic_action = 0.0f64;
+
         for k in 0..ESCALAS_VOTO {
             let z = desplazamientos[k];
-            if !z.is_finite() {
+            if !z.is_finite() || z.abs() <= 1e-12 {
                 continue;
             }
             let safe_z = z.clamp(-10.0, 10.0);
-            // REV-8: Velocidad efectiva dz entre escalas diádicas contiguas, filtrando NaN en vecino
-            let prev_z = if k > 0 && desplazamientos[k - 1].is_finite() {
+            // REV-8: Velocidad efectiva dz entre escalas diádicas contiguas activas, filtrando NaN/cero en vecino
+            let prev_z = if k > 0 && desplazamientos[k - 1].is_finite() && desplazamientos[k - 1].abs() > 1e-12 {
                 desplazamientos[k - 1].clamp(-10.0, 10.0)
             } else {
                 safe_z
             };
             let vel = safe_z - prev_z;
+
+            if first_active_z.is_none() {
+                first_active_z = Some(safe_z);
+            }
+            last_active_z = Some(safe_z);
+            active_count += 1;
+            z_abs_sum += safe_z.abs();
+            v_tot += vel.abs();
 
             // En el espacio de fases de Hilbert (z, vel), la fase cuántica modal se define por el ángulo de fase canónico:
             //   θ_k = atan2(vel · mass, safe_z · √k_spring)
@@ -292,33 +308,70 @@ impl FeynmanPropagatorEngine {
             let q_coord = safe_z * safe_k.max(1e-4).sqrt();
             let phase_angle = p_momentum.atan2(q_coord);
 
-            // REV-6: Modulación por acción cuántica lagrangiana S / ħ acotada sobre la superficie de energía
+            // REV-6 & OLA Ω149 (LG8-146-01 / F2.6-02):
+            // Modulación por acción cuántica lagrangiana S / ħ más fase de acción cinética acumulada
+            // a lo largo del camino inter-escala (cero exacto en trayectorias estacionarias Δz = 0,
+            // y par bajo espejo z -> -z para preservar C(z) == C(-z) y v(-z) == -v(z)).
             let lagrangian = Self::compute_lagrangian(safe_z, vel, safe_m, safe_k, safe_lambda);
-            let action_phase = (lagrangian / (safe_hbar * (1.0 + safe_z * safe_z + vel * vel))).tanh();
-            let total_theta = phase_angle + action_coupling * action_phase;
+            let energy_norm = safe_hbar * (1.0 + safe_z * safe_z + vel * vel);
+            let action_phase = (lagrangian / energy_norm).tanh();
+            cum_kinetic_action += ((0.5 * safe_m * vel * vel) / energy_norm).tanh();
+            let total_theta = phase_angle + action_coupling * action_phase + action_coupling * cum_kinetic_action;
 
             phases[k] = (total_theta.cos(), total_theta.sin());
             amplitudes[k] = (safe_z.abs() * amp_scale).tanh().clamp(0.0, 1.0);
         }
 
-        // 2. REV-7: Coherencia cuántica global normalizada por el número de escalas activas (no static 32)
-        let active_count = amplitudes.iter().filter(|&&a| a > 0.0).count().max(1);
+        // 2. REV-7 & OLA Ω149 (LG8-146-01 / F2.6-02):
+        // Coherencia cuántica global normalizada por escalas activas y modulada por el funcional
+        // de acción geodésica de Onsager-Machlup / Wiener:
+        //   V_osc = V_tot - |z_last - z_first| >= 0
+        // Toda trayectoria estacionaria (z constante) o monótona inter-escala es geodésica (V_osc == 0),
+        // por lo que su amortiguamiento de rugosidad es exactamente exp(0) = 1.0.
+        // En una caminata aleatoria browniana, las diferencias inter-escala oscilan y cambian de signo
+        // (V_osc > 0), induciendo decoherencia exponencial exp(-S_osc²) ante fases estocásticas.
+        let denom_count = active_count.max(1) as f64;
         let raw_coherence = Self::compute_coherence_factor(&phases, &amplitudes);
-        let normalized_coherence = (raw_coherence / (active_count as f64)).clamp(0.0, 1.0);
+        let base_coherence = (raw_coherence / denom_count).clamp(0.0, 1.0);
 
-        // 3. Modulación de señal por escala ponderada por coherencia de fase
+        let v_net = match (first_active_z, last_active_z) {
+            (Some(zf), Some(zl)) => (zl - zf).abs(),
+            _ => 0.0,
+        };
+        let v_osc = (v_tot - v_net).max(0.0);
+        let z_mean = (z_abs_sum / denom_count).max(0.25);
+        let osc_action = v_osc / (safe_hbar * z_mean);
+        let geodesic_damping = (-2.5 * osc_action * osc_action).exp();
+        let normalized_coherence = (base_coherence * geodesic_damping).clamp(0.0, 1.0);
+
+        // 3. Modulación de señal por escala ponderada por coherencia de fase:
+        // OLA Ω149 (LG8-146-01 / LG8-146-02): Si la coherencia cuántica C cae en o por debajo
+        // de `coherence_threshold` (default 0.20, decoherencia estocástica), el voto espectral
+        // se abstiene genuinamente (0.0) tal como promete su contrato, evitando inyectar un clon
+        // permanente de `sign(z_k)` en el consenso espectral y en los e-procesos de Ville.
+        // Entre `thresh` (0.20) y `2 * thresh` (0.40, interferencia fuertemente constructiva)
+        // transiciona suavemente C¹ hasta alcanzar 1.0.
+        let thresh: f64 = if params.coherence_threshold.is_finite() {
+            params.coherence_threshold.clamp(0.01, 0.90)
+        } else {
+            Self::DEFAULT_COHERENCE_THRESHOLD
+        };
         let mut por_escala = [0.0f64; ESCALAS_VOTO];
-        for k in 0..ESCALAS_VOTO {
-            let z = desplazamientos[k];
-            if !z.is_finite() {
-                continue;
+        if normalized_coherence > thresh {
+            let u = ((normalized_coherence - thresh) / thresh.max(0.01)).clamp(0.0, 1.0);
+            let gate = u * u * (3.0 - 2.0 * u);
+            let effective_coh = normalized_coherence * gate;
+            for k in 0..ESCALAS_VOTO {
+                let z = desplazamientos[k];
+                if !z.is_finite() || z.abs() <= 1e-12 {
+                    continue;
+                }
+                let safe_z = z.clamp(-10.0, 10.0);
+                let dir = safe_z.signum();
+                let amp = amplitudes[k];
+                let signal = dir * amp * effective_coh;
+                por_escala[k] = signal.clamp(-1.0, 1.0);
             }
-            let safe_z = z.clamp(-10.0, 10.0);
-            let dir = safe_z.signum();
-            let amp = amplitudes[k];
-            // La señal sólo florece si hay coherencia cuántica constructiva
-            let signal = dir * amp * normalized_coherence;
-            por_escala[k] = signal.clamp(-1.0, 1.0);
         }
 
         (VotoEspectral::desde_arr(&por_escala), normalized_coherence)

@@ -146,19 +146,21 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
             None => return 0.0,
         };
 
-        // CL-66 (LC-F3-02): sin respaldo. Antes, sin `atr_1s` se leía `atr_pct`
-        // (una fracción, no un ATR en precio), sin `atr_5s`/`atr_1m` se
-        // fabricaban ×√5/×√60 y los no finitos caían a literales en USD. Si
-        // falta cualquiera de las tres escalas, o no es un valor positivo y
-        // finito, el coaxial se abstiene.
+        // CL-66 (LC-F3-02) & LG8-145-07 (OLA Ω149): sin respaldo y con cortocircuito O(1)
+        // sin Arc::clone: si `atr_1s` no está publicado (> 0.0), retorna 0.0 de inmediato
+        // sin consultar `atr_5s`, `atr_1m` ni las 5 claves de dirección.
         let leer = |clave: &str| {
-            r.get_scoped_parameter(sym_opt, cid_opt, clave, "CoaxialBreakoutEngine")
-                .map(|p| p.get_value())
-                .filter(|v| v.is_finite() && *v > 0.0)
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, clave, 0.0);
+            (v.is_finite() && v > 0.0).then_some(v)
         };
-        let (safe_1s, safe_5s, safe_1m) = match (leer("atr_1s"), leer("atr_5s"), leer("atr_1m")) {
-            (Some(a), Some(b), Some(c)) => (a, b, c),
-            _ => return 0.0,
+        let Some(safe_1s) = leer("atr_1s") else {
+            return 0.0;
+        };
+        let Some(safe_5s) = leer("atr_5s") else {
+            return 0.0;
+        };
+        let Some(safe_1m) = leer("atr_1m") else {
+            return 0.0;
         };
 
         let norm_atr_1s = safe_1s;
@@ -229,11 +231,10 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
             None => return false,
         };
         let leer = |clave: &str| {
-            r.get_scoped_parameter(sym_opt, cid_opt, clave, "CoaxialBreakoutEngine")
-                .map(|p| p.get_value())
-                .filter(|v| v.is_finite() && *v > 0.0)
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, clave, 0.0);
+            v.is_finite() && v > 0.0
         };
-        leer("atr_1s").is_some() && leer("atr_5s").is_some() && leer("atr_1m").is_some()
+        leer("atr_1s") && leer("atr_5s") && leer("atr_1m")
     }
 }
 

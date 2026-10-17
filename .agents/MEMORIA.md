@@ -7685,3 +7685,17 @@ Main remoto confirmado en 88f8812199eea80333d0c13d910ec9f7c1796900 mediante push
 ## R4 — referencias cerradas y sincronización — 2026-10-13
 
 Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales a T1. Root cerró sus refs espectrales e históricas; SI cerró platt-age-evidence-1013 local/remota. Worktrees, modelos, genomas y 229 recibos históricos conservados. Remoto observado: sólo main. CI de f59 pendiente; ninguna aprobación heredada. [Cierre efectivo y recibos](../docs/audit/CIERRE_R4_REFERENCIAS_2026-10-13.md). Esta última actualización documental se publica por rama temporal propia y su SHA/cierre se verifican externamente.
+
+## 2026-10-17 — AGY: OLAS Ω148 Y Ω149 COMPLETADAS — CIERRE DE 24 HALLAZGOS LÍNEA G OLA 8 Y CERTIFICACIÓN FAILOVER F-A4 DE FABLE
+
+- **Ola Ω148 (`87f577521`, en `main`)**:
+  - `G8-OMEGA-07`: Normalización RMS adimensional y spline Hermite $C^1$ en `HelmholtzHodgeEngine::evaluate`.
+  - `G8-OMEGA-08`: Ventana unimodal GUE y filtro de dispersión $\sigma(s)$ anti-picket-fence en `RiemannZetaGueEngine::evaluate`.
+  - `G8-OMEGA-15`: Compuertas $C^1$ Hermite y anclaje neutral $1.00$ en `AtiyahSingerDiracEngine::evaluate`.
+  - `G8-OMEGA-09`, `G8-OMEGA-11`, `LG8-145-06`, `LG8-145-04`, `LG8-145-05` y `CSG-2` (`voto_ancla_hedge` causal + retorno relativo adimensional en `orchestrator.rs`).
+- **Ola Ω149 (en `main`)**:
+  - **Failover `F-A4` (`F1-012` / `T1-08`) de Fable (`crates/risk-engine/src/drawdown.rs` y `crates/risk-engine/tests/fable_freno_duro_cache_contract.rs`)**: Certificada y endurecida la caché asíncrona de `caida_alfa_freno_duro` fuera del hilo del evento con cota dura de 4096 entradas, distancia Manhattan ($L^1 \le 5$) para evitar falsos vecinos en saltos diagonales (`cf4_freno_duro::cl106b` 6/6 verdes) y serialización de test sobre el contador global (`fable_freno_duro_cache_contract` 5/5 verdes).
+  - **`LG8-146-01` / `F2.6-02` (`crates/signal-engine/src/feynman_propagator.rs` y `cf2_cuantico_solucion_conocida.rs`)**: Incorporado amortiguamiento geodésico de Onsager-Machlup $\exp(-2.5 (V_{\text{osc}} / (\hbar_{\text{eff}} \bar{z}))^2)$ donde $V_{\text{osc}} = \sum |\Delta z_k| - |z_{\text{last}} - z_{\text{first}}|$ (idénticamente 0 en trayectorias constantes/monótonas y par bajo espejo $z \mapsto -z$). Des-ignorado `cf2_6_feynman_caminata_aleatoria_decohiere_como_dice_su_doc` (4/4 verdes; decoherencia browniana $P(C > 0.20) \approx 1.7\% \le 5.0\%$).
+  - **`LG8-146-02` (`feynman_propagator.rs` y `navier_stokes_manifold.rs`)**: Compuerta Hermite $C^1$ con abstención genuina (`0.0`) bajo decoherencia ($C \le 0.20$) en Feynman y derivada material hidrodinámica inter-escala (advección + Laplaciano diádico) en Navier-Stokes, rompiendo la colinealidad $3\times$ con `sign(z_k)` (`navier_feynman_spectral_confluence_contract` 6/6 verdes).
+  - **`G8-OMEGA-10`, `G8-OMEGA-18` y `LG8-145-07` (`flow_excitation_confluence.rs` y `coaxial_breakout.rs`)**: Normalización log-euclídea por dimensión efectiva $\exp(\frac{1}{\sqrt{N_{\text{active}}}} \sum \ln \mu_m)$ acotada en $[0.15, 1.45]$, y cortocircuito $O(1)$ con `get_scoped_val_or` eliminando `Arc::clone` y lecturas redundantes en ticks inactivos (`signal-engine --lib` 122/122 verdes, `cf4_coaxial_abstencion` 3/3 verdes).
+
