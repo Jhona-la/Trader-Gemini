@@ -408,28 +408,147 @@ pub fn caida_alfa_en_stops(w: f64, l: f64, ventaja_r: f64, alfa: f64) -> Option<
     Some(*q)
 }
 
-/// [`caida_alfa_en_stops`] con H0 y α del freno duro, en caché por geometría
-/// redondeada a 0,02 stops (el umbral cambia menos de un 1 % en ese paso; el
-/// Monte Carlo sólo corre la primera vez que aparece cada geometría).
-pub fn caida_alfa_freno_duro(w: f64, l: f64) -> Option<f64> {
-    use std::sync::Mutex;
-    static CACHE: Mutex<Vec<((i64, i64), Option<f64>)>> = Mutex::new(Vec::new());
+/// Paso de la caché del freno duro: la geometría (w̄, l̄) se redondea a 0,02
+/// stops (el umbral cambia menos de un 1 % en ese paso).
+pub const PASO_CACHE_FRENO_DURO: f64 = 0.02;
+/// Radio, en pasos de la caché, dentro del cual un K ya calculado sirve de
+/// respaldo conservador mientras llega el exacto (0,10 stops: el umbral de
+/// los vecinos difiere del exacto en pocos puntos porcentuales).
+pub const RADIO_VECINO_FRENO_DURO: i64 = 5;
+
+struct CacheFrenoDuro {
+    exactos: std::collections::HashMap<(i64, i64), Option<f64>>,
+    pendientes: std::collections::HashSet<(i64, i64)>,
+}
+
+fn cache_freno_duro() -> &'static std::sync::Mutex<CacheFrenoDuro> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<CacheFrenoDuro>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| {
+        std::sync::Mutex::new(CacheFrenoDuro {
+            exactos: std::collections::HashMap::new(),
+            pendientes: std::collections::HashSet::new(),
+        })
+    })
+}
+
+fn clave_freno_duro(w: f64, l: f64) -> Option<(i64, i64)> {
     if !(w.is_finite() && l.is_finite()) {
         return None;
     }
-    let clave = ((w * 50.0).round() as i64, (l * 50.0).round() as i64);
-    let mut cache = CACHE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some((_, k)) = cache.iter().find(|(c, _)| *c == clave) {
-        return *k;
-    }
-    let k = caida_alfa_en_stops(
-        clave.0 as f64 / 50.0,
-        clave.1 as f64 / 50.0,
+    Some((
+        (w / PASO_CACHE_FRENO_DURO).round() as i64,
+        (l / PASO_CACHE_FRENO_DURO).round() as i64,
+    ))
+}
+
+fn k_exacto_de_clave(clave: (i64, i64)) -> Option<f64> {
+    caida_alfa_en_stops(
+        clave.0 as f64 * PASO_CACHE_FRENO_DURO,
+        clave.1 as f64 * PASO_CACHE_FRENO_DURO,
         VENTAJA_H0_FRENO_DURO_R,
         ALFA_FALSACION,
-    );
-    cache.push((clave, k));
-    k
+    )
+}
+
+fn insertar_k_exacto(clave: (i64, i64), k: Option<f64>) {
+    let mut c = cache_freno_duro()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    c.exactos.insert(clave, k);
+    c.pendientes.remove(&clave);
+}
+
+/// Lanza el Monte Carlo exacto de `clave` en un hilo de fondo. Si el sistema
+/// no concede el hilo, lo calcula aquí mismo (una vez; nunca queda pendiente).
+fn lanzar_calculo_fondo(clave: (i64, i64)) {
+    let lanzado = std::thread::Builder::new()
+        .name("freno-duro-mc".into())
+        .spawn(move || insertar_k_exacto(clave, k_exacto_de_clave(clave)));
+    if lanzado.is_err() {
+        insertar_k_exacto(clave, k_exacto_de_clave(clave));
+    }
+}
+
+/// [`caida_alfa_en_stops`] con H0 y α del freno duro, en caché por geometría
+/// redondeada a [`PASO_CACHE_FRENO_DURO`].
+///
+/// F-A4 (Fable, 2026-10-17; hallazgo F1-012). Hasta aquí el Monte Carlo
+/// (20 000 caminos × 200 pasos) corría SÍNCRONO en el hilo del evento —
+/// dentro de `evaluate_quantum_order`, en cada intención— la primera vez que
+/// aparecía cada geometría, y w̄/l̄ derivan con cada orden abierta: paradas de
+/// decenas de milisegundos en el camino caliente. Ahora:
+/// 1. acierto de caché ⇒ una búsqueda bajo un cerrojo breve;
+/// 2. fallo CON vecinos ya calculados a ≤ [`RADIO_VECINO_FRENO_DURO`] pasos ⇒
+///    devuelve el MÍNIMO K de esos vecinos (conservador: el freno dispara
+///    antes, nunca después) y lanza el exacto en un hilo de fondo; la
+///    siguiente consulta ya lo encuentra;
+/// 3. fallo SIN vecinos (arranque en frío) ⇒ cálculo síncrono, una vez.
+/// El umbral exacto es la MISMA función pura: no cambia ningún umbral, sólo
+/// cuándo se calcula. La asignación del hilo ocurre sólo en el caso 2, que es
+/// raro (una vez por cada 0,02 stops de deriva de la geometría).
+pub fn caida_alfa_freno_duro(w: f64, l: f64) -> Option<f64> {
+    let clave = clave_freno_duro(w, l)?;
+    let (respaldo, lanzar) = {
+        let mut c = cache_freno_duro()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(k) = c.exactos.get(&clave) {
+            return *k;
+        }
+        let mut hay_vecino = false;
+        let mut minimo: Option<f64> = None;
+        for (ck, kv) in c.exactos.iter() {
+            if (ck.0 - clave.0).abs() <= RADIO_VECINO_FRENO_DURO
+                && (ck.1 - clave.1).abs() <= RADIO_VECINO_FRENO_DURO
+            {
+                hay_vecino = true;
+                if let Some(k) = kv {
+                    minimo = Some(minimo.map_or(*k, |m: f64| m.min(*k)));
+                }
+            }
+        }
+        if hay_vecino {
+            (Some(minimo), c.pendientes.insert(clave))
+        } else {
+            (None, false)
+        }
+    };
+    match respaldo {
+        Some(k_vecino) => {
+            if lanzar {
+                lanzar_calculo_fondo(clave);
+            }
+            k_vecino
+        }
+        None => {
+            let k = k_exacto_de_clave(clave);
+            insertar_k_exacto(clave, k);
+            k
+        }
+    }
+}
+
+/// Número de geometrías cuyo K exacto se está calculando en segundo plano.
+pub fn freno_duro_calculos_pendientes() -> usize {
+    cache_freno_duro()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .pendientes
+        .len()
+}
+
+/// Espera, como mucho `limite`, a que no quede ningún cálculo pendiente.
+/// Devuelve `true` si la caché quedó al día. Para diagnósticos y pruebas; el
+/// camino caliente nunca espera.
+pub fn freno_duro_esperar_pendientes(limite: std::time::Duration) -> bool {
+    let inicio = std::time::Instant::now();
+    while freno_duro_calculos_pendientes() > 0 {
+        if inicio.elapsed() >= limite {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    true
 }
 
 /// CL-130 (R1 de la revisión del PR #62) — un cierre suma su resultado en
