@@ -317,6 +317,27 @@ impl QuantumStrategy for JohansenVecmEngine {
         }
     }
 
+    fn is_operable_for_coin(&self, coin_id: usize, symbol: &str) -> bool {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return false,
+        };
+        let leer = |k: &str| {
+            if sym_opt.is_some() {
+                r.get_scoped_parameter_strict(sym_opt, cid_opt, k, "JohansenVecmEngine")
+            } else {
+                r.get_scoped_parameter(sym_opt, cid_opt, k, "JohansenVecmEngine")
+            }
+        };
+        leer("vecm_zscore")
+            .or_else(|| leer("cointegration_zscore"))
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite())
+            .is_some()
+    }
+
     fn horizon(&self) -> TradeHorizon {
         TradeHorizon::Continuous
     }

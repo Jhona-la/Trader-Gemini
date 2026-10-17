@@ -45,6 +45,17 @@ pub trait QuantumStrategy: Send + Sync {
         }
     }
 
+    /// OLA Ω145: Declara si la estrategia es contextualmente elegible/operable para este activo en este tick.
+    /// Si una estrategia requiere condiciones de datos o dimensionales no cumplidas (e.g. universo
+    /// multiactivo N >= 3, feed spot síncrono, o inputs ausentes), devuelve `false`.
+    /// Estrategias inoperables se excluyen del denominador de fuentes del ensamble (no diluyen
+    /// artificialmente la convicción del consenso). Toda estrategia operable que decida abstenerse
+    /// (emitiendo 0.0) mantiene `is_operable_for_coin == true` y sí diluye la convicción como
+    /// abstención legítima de mercado.
+    fn is_operable_for_coin(&self, _coin_id: usize, _symbol: &str) -> bool {
+        true
+    }
+
     /// Target operational trading horizon (Universal Continuous Temporal Spectrum)
     fn horizon(&self) -> TradeHorizon {
         TradeHorizon::Continuous

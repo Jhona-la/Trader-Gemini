@@ -1,5 +1,35 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-16 — Antigravity (AGY, Quant Sr. Lead): Ola Ω145 (Calibración Dinámica de Denominador Efectivo $n_{\text{hablantes}} / n_{\text{elegibles}}$, Erradicación de Dilución por Fuentes Inoperables y Preservación Anti-Phantom-Boost) + Plan Maestro V16
+
+- **Ola Ω145 Integrada y Certificada — Calibración Dinámica de Denominador Efectivo y Erradicación de Dilución por Fuentes Inoperables**:
+  * **Problema Cuantitativo y de Arquitectura (GLM-127 / GLM-130)**:
+    - En `TensorVoteOrchestrator`, `n_fuentes` contaba estáticamente todas las fuentes registradas (19 en `GodEngineCore::new`).
+    - Al calcular `avg_conviction = active_weight / n_fuentes`, si fuentes como `YangMillsGaugeEngine` (en monoactivo $N=1$), `StatArbEngine` (en cinta sin feed de spot síncrono), o `CoaxialBreakoutEngine` (cuyos inputs `atr_1s/5s/1m` fueron retirados en CL-66 en favor de `voto_espectral`) no pueden operar por razones de diseño/contexto de datos, votaban 0.0 y diluían artificialmente el consenso en un ~25-40%, reduciendo severamente la convicción neta de las estrategias operables.
+  * **Solución Rigurosa en Teoría de Ensambles Hilbertianos**:
+    - **Ampliación del Contrato `QuantumStrategy` (`crates/strategy-core/src/lib.rs`)**:
+      * Añadido `fn is_operable_for_coin(&self, _coin_id: usize, _symbol: &str) -> bool { true }`.
+      * Implementación especializada en `YangMillsGaugeEngine` (inoperable si `yang_mills_current_absent == 1.0` o `num_assets < 3`).
+      * Implementación especializada en `StatArbEngine` (inoperable si carece de `statarb_ou_zscore` o si `statarb_half_life_ms` no es finito).
+      * Implementación especializada en `JohansenVecmEngine` (inoperable si carece de `vecm_zscore` / `cointegration_zscore`).
+      * Implementación especializada en `CoaxialBreakoutEngine` (inoperable si carece de `atr_1s/5s/1m`).
+    - **Orquestación en `TensorVoteOrchestrator` (`crates/signal-engine/src/orchestrator.rs`)**:
+      * `let is_active_vote = output.abs() > 1e-9;`
+      * `let is_operable = is_active_vote || s.is_operable_for_coin(coin_id, symbol);`
+      * Si emite voto activo (|output| > 1e-9), es inequívocamente operable y se admite.
+      * Si emite 0.0 y es operable (`is_operable == true`), es una *abstención real e informada de mercado*: SÍ entra a `fuentes` y SÍ diluye el promedio del ensamble.
+      * Si emite 0.0 y es inoperable (`is_operable == false`), se excluye del ensamble sin inflar `n_fuentes`.
+      * En `evaluate_horizon_consensus`, se aplica el mismo filtro estricto sobre `operable_strategies_count`.
+    - **Invariante Anti-Phantom-Boost (Ola Ω103) Estrictamente Preservado**:
+      * Un votante solitario entre fuentes elegibles NUNCA recibe boost de ensamble (`compute_ensemble_boost(1, N) == 1.0`).
+      * La invarianza a clones permanece matemáticamente idéntica.
+    - **Telemetría en Tiempo Real**:
+      * Añadidas métricas al registro en la cadencia de publicación: `qo_145_fuentes_operables` y `qo_145_votantes_activos`.
+  * **Certificación Contractual**:
+    - `crates/signal-engine/tests/ensemble_calibrated_denominator_contract.rs` (6/6 pass, 100% verde).
+    - `crates/signal-engine/tests/ensemble_effective_voters_contract.rs` (4/4 pass, 100% verde, cero regresiones).
+    - `crates/god-engine-core/tests/censo_mudos_activacion_continua_contract.rs` (4/4 pass, 100% verde).
+
 ## 2026-10-16 — Antigravity (AGY, Quant Sr. Lead): Ola Ω144 (Censo Forense de Motores Silenciosos, Activación Continua $C^1$, Precarga Universal de Modelos ML hacia `GLOBAL_FORESTS` y Cableado de Sombra Espectral de 9 Campos) + Plan Maestro V15
 
 - **Ola Ω144 Integrada y Certificada — Censo Forense de Motores Silenciosos, Desbloqueo de Aristas Muertas y Paridad Producción/Simulación**:

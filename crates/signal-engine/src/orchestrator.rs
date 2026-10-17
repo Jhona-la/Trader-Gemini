@@ -248,13 +248,20 @@ impl TensorVoteOrchestrator {
         let mut max_volatility = 0.0;
         let mut active_voters: usize = 0;
 
+        let mut operable_strategies_count = 0usize;
         for strategy in &horizon_strategies {
             let output = strategy.evaluate();
+            let is_active_vote = output.is_finite() && output.abs() > 1e-9;
+            let is_operable = is_active_vote || strategy.is_operable_for_coin(0, "");
+            if !is_operable {
+                continue;
+            }
+            operable_strategies_count += 1;
             if !output.is_finite() {
                 continue;
             }
             let abs_weight = output.abs();
-            if abs_weight > 1e-9 {
+            if is_active_vote {
                 active_voters += 1;
             }
 
@@ -284,8 +291,8 @@ impl TensorVoteOrchestrator {
         let prob_long = long_votes / active_weight;
         let prob_short = short_votes / active_weight;
 
-        let avg_conviction = active_weight / horizon_strategies.len().max(1) as f64;
-        let ensemble_boost = compute_ensemble_boost(active_voters, horizon_strategies.len());
+        let avg_conviction = active_weight / operable_strategies_count.max(1) as f64;
+        let ensemble_boost = compute_ensemble_boost(active_voters, operable_strategies_count);
         // FASE 2 (calibración): la convicción efectiva ya NO toma
         // `max_volatility` como término — mezclar volatilidad con convicción
         // inflaba la confianza de forma estructural (toda señal "sonaba" a
@@ -541,6 +548,17 @@ impl TensorVoteOrchestrator {
             if !output.is_finite() {
                 continue;
             }
+            // OLA Ω145: Calibración dinámica del denominador de fuentes elegibles.
+            // Si la estrategia emite un voto activo (|output| > 1e-9), es inequívocamente operable.
+            // Si emite 0.0, sólo se incluye en el ensamble si es contextualmente operable (abstención real de mercado).
+            // Si es contextualmente inoperable (e.g. carece de feed spot, opera en monoactivo cuando requiere N>=3,
+            // o sus inputs escalares fueron retirados), se excluye del ensamble para no diluir
+            // artificialmente la convicción de las estrategias operables.
+            let is_active_vote = output.abs() > 1e-9;
+            let is_operable = is_active_vote || s.is_operable_for_coin(coin_id, symbol);
+            if !is_operable {
+                continue;
+            }
             // Agrupar por fuente: búsqueda lineal sobre ≤32 (sin alloc).
             let nombre = s.name();
             let mut slot = n_fuentes;
@@ -637,6 +655,13 @@ impl TensorVoteOrchestrator {
                     "qo_652_fraccion_sobre_corte",
                     sobre as f64 / evaluados.max(1) as f64,
                 );
+                // OLA Ω145: Telemetría de ensamble de fuentes operables y votantes activos
+                self.arena
+                    .registry
+                    .set("qo_145_fuentes_operables", n_fuentes as f64);
+                self.arena
+                    .registry
+                    .set("qo_145_votantes_activos", active_voters as f64);
                 // GLM 130 — HEDGE: actualización por realización en la
                 // cadencia del censista. Dirección realizada = retorno del
                 // mid de coin 0 entre cadencias, escalado por ATR% (o 10

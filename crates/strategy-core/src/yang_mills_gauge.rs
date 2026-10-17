@@ -481,6 +481,35 @@ impl QuantumStrategy for YangMillsGaugeEngine {
         current.clamp(-1.0, 1.0)
     }
 
+    fn is_operable_for_coin(&self, coin_id: usize, symbol: &str) -> bool {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = Some(coin_id);
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return false,
+        };
+
+        let absent = r
+            .get_scoped_parameter(sym_opt, cid_opt, "yang_mills_current_absent", "YangMillsGaugeEngine")
+            .map(|p| p.get_value())
+            .unwrap_or(0.0) > 0.5;
+        if absent {
+            return false;
+        }
+
+        let active_triangles = r
+            .get_scoped_parameter(sym_opt, cid_opt, "yang_mills_active_triangles", "YangMillsGaugeEngine")
+            .map(|p| p.get_value())
+            .unwrap_or(0.0);
+        let has_current = r
+            .get_scoped_parameter(sym_opt, cid_opt, "yang_mills_current", "YangMillsGaugeEngine")
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite())
+            .is_some();
+
+        has_current && (active_triangles > 0.0 || self.num_assets >= 3)
+    }
+
     fn horizon(&self) -> TradeHorizon {
         TradeHorizon::Continuous
     }
