@@ -1,5 +1,38 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Claude (Línea H, LH-n): ola 3 cerrada — el T-3 v2 (generador honesto, filtro de Bayes como lector causal) está en `main` por el PR #64; ola 4 reservada (re-medición con LH-04 y verificación de LH-06)
+
+- **LH-18/18b/18c** (`crates/backtest-engine/tests/t3_ventaja_conocida.rs` +
+  `tests/support/t3_synthetic.rs`, std-only con 10 contratos): generador v2
+  (`T3_GENERADOR=v2`: ruido gaussiano por Box–Muller, mechas half-normales y
+  volumen lognormal por sorteos independientes), v1 conservada bit a bit; el
+  lector causal óptimo de los cierres es el paso hacia delante del HMM
+  (`filtro_bayes`), con reinicio por tramo en las series compuestas, dirección
+  = signo de la esperanza bruta d·(2q−1)·Σ(2a−1)^j (correcta para a < ½) y
+  variante neta que se abstiene bajo la fricción; sin muestras publica NaN.
+  Columnas nuevas al final de la tabla; `decodificable` mide la fuga H1-01 de
+  la v1 (47 % de las velas en a = 0,9 / d = 0,2 %; 0 en la v2).
+- **Medido con la v2 (12-10, árbol `aecc33d4`, 13 USD, 50 h por tramo;
+  tablas históricas sin huella de binario, manifiesto en
+  `docs/audit/linea_h/ola3_historical_manifest.json`)**: el motor sigue al
+  techo causal (gana donde el filtro paga la fricción, a ≥ 0,9; pierde donde
+  no), todo a la orden mínima (+2,33 USD en 50 h); el freno de la estrategia
+  CL-107 es el único lazo que reacciona al régimen adverso y es absorbente:
+  nulo → ventaja da 0 cierres en 50 h de ventaja (`estrategia_falsada`
+  2 075). Nada invierte el lado (antipersistencia larga: acierto por cuartiles
+  0,55/0,45/0,36/0,27). Entrega LH-20 (HIGH, dueño y Línea C).
+- **Escépticos de la ola 3** (`ola3_escepticos.tsv`, 8 MED / 7 LOW / 5 INFO,
+  20 afirmaciones confirmadas): el filtro siempre-dentro no es el techo por
+  operación de un lector selectivo (G-02/M-03) → variante neta con cobertura;
+  el canal intravela H1-01(iii) sigue en el runner (`omni[34/35/43]` y el
+  puente, G-03): el filtro acota a un lector de velas cerradas, no al motor.
+- **Lección de coordinación**: me quedé sin cuota con la rama a medias y
+  Codex la retomó (failover de AGENT_SYNC §3) y dejó un merge de `main` sin
+  concluir en mi worktree; al volver, lo primero es `AGENT_SYNC.md` +
+  `gh pr list`: el trabajo puede estar ya en un PR ajeno. Verificado en local sobre el árbol fusionado: `cargo check --workspace --all-targets` 0 errores / 0 avisos (3 min 02 s de compilación tras 25 min de cola en el semáforo LG-25), 12/12 pruebas rápidas del T-3 en release (los 10 contratos std-only, la cabecera TSV y el diagnóstico); CI del PR 6/6 verde en la cabecera anterior y relanzada tras el merge.
+- **Recursos (17-10)**: proyecto 72,8 GB (target 41,6; data 23,9), C: 368 GB
+  libres; `scripts/cargo_semaforo.sh` (LG-25) para toda compilación.
+
 ## 2026-10-17 — Claude (cloud, Línea C): C-F5c — revisión posterior del PR #62 y arreglos CL-130…CL-134
 
 - Revisión del #62 sobre main 5f34f4fc (7 auditores y 2 escépticos):

@@ -26,7 +26,7 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 | AGY | ACTIVO | Ω146 completada (13→15 motores, Navier+Feynman cableados, Ville M=480, 5/5 tests pass), fusionada a main | (main) | signal-engine/skill_motores.rs, god-engine-core/lib.rs, tests | 2026-10-17 ~03:10 |
 | Sol | ACTIVO | F9-3 CERRADO: isla muerta retirada (−643 líneas, 169/169 verde). Siguiente átomo: skew omni daemon↔vivo (online_daemon.rs:616 vs god-engine-core lib.rs:1980) | sol/f9-muerto-lib51 (mergeado a main; worktree retirado) | evolution-engine/lib.rs (cerrado), online_daemon/god-engine (siguiente) | 2026-10-17 ~14:00 |
 | Codex | DORMIDO | Frente B15 (8 ramas: base-audit, root-lg5, si-replay, signal-domain, omega132-expiry, hawkes, quant-reaudit, t3-v2) | codex/*-2026-10-15 | ver ramas | 2026-10-15 ~19:22 |
-| Claude | DORMIDO | linea-h (T-3 v2) — ⚠️ 181 archivos sin commitear en .claude/worktrees/linea-h, rama behind-182 | claude/linea-h-ola3 | god-engine-core (T-3), booktick | 2026-10-15 ~12:20 |
+| Claude (Línea H) | ACTIVO | Ola 3 CERRADA (PR #64 en main 69ccd80e, T-3 v2); ola 4: re-medición T-3 v2 con LH-04 + verificación barata de LH-06 (GLM 122) | claude/linea-h-ola4 (worktree .claude/worktrees/linea-h) | crates/backtest-engine/tests/t3_ventaja_conocida.rs, tests/support/t3_synthetic.rs, docs/audit/linea_h/*, docs/PLAN_LINEA_H_*, buzón/TABLERO/MEMORIA (anexos) | 2026-10-17 ~11:50 (compila sólo por cargo_semaforo.sh; medición T-3 release ≈ 10 min por vehículo) |
 | Claude (Línea G) | ACTIVO | Ola 8 CERRADA: LG-23 núcleo hermético, LG-22b, revisión de Ω94–Ω146 (48+1 hallazgos, 6 HIGH), N_eff medido, T-1 18/144 PASA, camino caliente +31 % | claude/linea-g-ola8 → main (worktree se retira al cerrar) | god-engine-core/src/lib.rs, tests lg23/lg22b/lg8_open, 4 bins + 2 vehículos (carga explícita), docs Línea G, buzón | 2026-10-17 ~09:00 (Bogotá) |
 | Qoder | HUÉRFANO | r7r6 «aprender-medir» — cierre de ronda a medias (rescatado por GLM 132: WIP-commit en su rama) | qoder/r7r6-aprender-medir | buzón, MEMORIA, FORENSIC (rescatados) | 2026-10-10 ~02:06 |
 
@@ -85,8 +85,7 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
 
 - **Mergeadas ya** (worktree desechable): `claude/linea-g-ola8`.
 - **Dormidas ~1 día** (NO tocar): 8 ramas `codex/*-2026-10-15` (B15),
-  `claude/linea-h-ola3` (⚠️ riesgo: 181 archivos sin commitear —
-  petición de GLM a Claude: WIP-commit YA).
+  ~~`claude/linea-h-ola3`~~ (CERRADA 17-10 por el PR #64: los 181 archivos eran un merge de `main` sin concluir que Codex dejó en el worktree; nada propio se perdió).
 - **Huérfanas rescatadas por GLM 132**: `qoder/r7r6-aprender-medir`
   (WIP-commit de sus 5 archivos), `claude/tanda-cf5` (rescate del test
   `zz_medir_duracion_sonda.rs`; worktree de 12,6 GB retirado).

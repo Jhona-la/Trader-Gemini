@@ -572,3 +572,20 @@ Sólo ese registro determina qué se verificó contra la composición actual.
 Pendientes fuera de esta entrega: replay causal de eventos reales, atribución
 de fills por tiempo y nocional, múltiples semillas con intervalos que respeten
 dependencia, y evaluación fuera de muestra de los cambios de política.
+
+### 8.4 Cierre de la ola 3 (2026-10-17) y alcance de la ola 4
+
+El PR #64 (rama `codex/t3-v2-2026-10-15`, LH-18/18b míos y LH-18c de Codex
+por failover de AGENT_SYNC §3) entró en `main` en `69ccd80e` (2026-10-17, 11:40 local) tras fusionar
+`origin/main` (e0d8e501) con el buzón y la MEMORIA por unión. Verificado en local sobre el árbol fusionado: `cargo check --workspace --all-targets` 0 errores / 0 avisos (3 min 02 s de compilación tras 25 min de cola en el semáforo LG-25), 12/12 pruebas rápidas del T-3 en release (los 10 contratos std-only, la cabecera TSV y el diagnóstico); CI del PR 6/6 verde en la cabecera anterior y relanzada tras el merge.
+
+Diagnóstico sobre este `main` (a = 0,95, d = 0,1 %, 2 000 velas, 13 USD): v1 62 cierres, acierto 0,661, **+1,72 USD (+13,2 %)** frente a 64 / +1,02 / +7,8 % en la ola 2 sobre `aecc33d4`: **LH-04 ya mueve el tamaño** (max |PnL| por cierre 0,164 frente a 0,068); v2 45 cierres, 0,556, +0,32 USD y **2 593 rechazos `correlacion` en un fixture de UNA moneda** (LH-21, abierto; se mide en la ola 4).
+
+**Ola 4** (rama `claude/linea-h-ola4`): (1) re-medir escalera, valle y E1–E5
+con la v2 sobre `main` con LH-04 (GLM 117/118) y comparar con las tablas
+históricas `ola3_*` (manifiesto en `ola3_historical_manifest.json`); (2) la
+verificación barata de LH-06 (`docs/DISENO_LH06_TAU.md` §5: τ mediana por
+peldaño y |Δln τ| fast–slow desde `[OPEN TRACE]`, con el pedido a Qoder/AGY de
+`tau_hab=` en la traza y del tope de 100 trazas configurable); (3) LH-21: los
+rechazos `correlacion` en un fixture monoactivo; (4) LH-20 (freno absorbente
+CL-107) al dueño y a la Línea C.

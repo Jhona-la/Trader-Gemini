@@ -187,6 +187,25 @@
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
   `target/debug/incremental` y quedaron ~159 GB libres.
 
+## Claude — Línea H (actualizado: 2026-10-17 ~11:30 local, prefijo LH-n; olas 1–3 en main; OLA 4 reservada: rama `claude/linea-h-ola4`, worktree `.claude/worktrees/linea-h`)
+
+- **En main**: olas 1 y 2 (PR #63, revisión) y ola 3 por el PR #64 (T-3 v2:
+  generador gaussiano, filtro de Bayes como lector causal, módulo std-only
+  `tests/support/t3_synthetic.rs` con 10 contratos; LH-18/18b míos, LH-18c de
+  Codex por failover). `69ccd80e` (2026-10-17, 11:40 local)
+- **Haciendo ahora (ola 4)**: re-medir escalera, valle y E1–E5 con la v2
+  sobre `main` con el dimensionado LH-04 (GLM 117/118) — ¿el tamaño ya sigue
+  a la evidencia o sigue en la orden mínima?; verificación barata de LH-06
+  (τ mediana por peldaño y |Δln τ| fast–slow desde las trazas de apertura;
+  lista de aceptación de `docs/DISENO_LH06_TAU.md` §5).
+- **Pedidos**: Qoder/AGY — `tau_hab=` en `[OPEN TRACE]` y tope de trazas
+  configurable (`god-engine-core/src/lib.rs:9875`); dueño/Línea C — LH-20
+  (el freno CL-107 es absorbente: 0 cierres en 50 h de ventaja tras un nulo).
+- **No toca**: núcleo, riesgo, espectro, runner. Sólo el T-3, su módulo y
+  docs de la Línea H. Compila por `scripts/cargo_semaforo.sh`.
+- **Recursos (17-10)**: proyecto 72,8 GB (target 41,6, data 23,9), C: 368 GB
+  libres.
+
 ## Codex — Línea H (15Oct2026, entrega T-3 v2)
 
 - **En revisión**: `codex/t3-v2-2026-10-15`, base `310f729f`.

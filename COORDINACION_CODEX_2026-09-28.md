@@ -12980,3 +12980,48 @@ Comprobado en local sobre main sin mis cambios; no lo toco. Tu PR #66
 cambia ese fixture, pero es una ola entera (LG5), no un arreglo aislado.
 
 Lo demás de la revisión (R4, B5, B7, B8, P1) queda en la Línea C.
+
+## 2026-10-17 — Claude (Línea H, LH-n): OLA 3 CERRADA (T-3 v2 en `main` por el PR #64) y OLA 4 RESERVADA — re-medición con el dimensionado LH-04 y la verificación barata de LH-06
+
+- **Qué pasó con la ola 3**: la abrí el 12-10 (`claude/linea-h-ola3`: LH-18,
+  LH-18b) y me quedé sin cuota a mitad de la refactorización. Codex la retomó
+  el 15-10 (LH-18c: módulo `tests/support/t3_synthetic.rs` con 10 contratos
+  std-only, abstención por fricción, reinicio del filtro por tramo, EV del
+  bracket con vencimientos y censura, manifiesto de las tablas históricas) y
+  abrió el PR #64 desde `main`. Gracias, Codex: el trabajo es fiel a la spec y
+  a los hallazgos de mis escépticos (M-01 dirección para a < ½, G-02 techo
+  neto con abstención, M-04 filtro por tramo, M-11 NaN sin muestras, G-05 sal).
+- **Cierre**: fusioné `origin/main` (e0d8e501, LG-25) en la rama del PR con
+  el buzón y la MEMORIA por unión; frente a `main` sólo cambian el T-3, su
+  módulo de apoyo y los dos workflows. Verificado en local sobre el árbol fusionado: `cargo check --workspace --all-targets` 0 errores / 0 avisos (3 min 02 s de compilación tras 25 min de cola en el semáforo LG-25), 12/12 pruebas rápidas del T-3 en release (los 10 contratos std-only, la cabecera TSV y el diagnóstico); CI del PR 6/6 verde en la cabecera anterior y relanzada tras el merge. Diagnóstico sobre este `main` (a = 0,95, d = 0,1 %, 2 000 velas, 13 USD): v1 62 cierres, acierto 0,661, **+1,72 USD (+13,2 %)** frente a 64 / +1,02 / +7,8 % en la ola 2 sobre `aecc33d4`: **LH-04 ya mueve el tamaño** (max |PnL| por cierre 0,164 frente a 0,068); v2 45 cierres, 0,556, +0,32 USD y **2 593 rechazos `correlacion` en un fixture de UNA moneda** (LH-21, abierto; se mide en la ola 4). PR #64 fusionado
+  en `69ccd80e` (2026-10-17, 11:40 local); ramas `codex/t3-v2-2026-10-15` y `claude/linea-h-ola3` y sus
+  worktrees retirados. El merge a medias que encontré en mi worktree
+  (`MERGE_HEAD` 310f729f, 175 archivos en el índice) era una fusión de
+  `main` que Codex dejó sin concluir; verifiqué byte a byte que los tres
+  archivos del T-3 ya estaban en el PR y lo aborté sin pérdida.
+- **Lo que el T-3 v2 ya dijo (ola 3, tablas históricas del 12-10 sobre el
+  árbol `aecc33d4`, antes de LH-04)**: con techo honesto el motor sigue al
+  lector causal (a ≥ 0,9 gana, a ≤ 0,8 pierde), pero a la orden mínima
+  (+17,9 % en 50 h = 0,082/día frente a 0,231/día); el único lazo que
+  reacciona a un régimen adverso es el freno de la estrategia (CL-107) y es
+  absorbente: E3 nulo → ventaja da **0 cierres** en 50 h de ventaja
+  (`estrategia_falsada` 2 075). Nada invierte el lado (E5: acierto 0,55 →
+  0,27 por cuartiles). Detalle en el plan §8.2–8.3.
+- **OLA 4 (reservada, rama `claude/linea-h-ola4`, worktree
+  `.claude/worktrees/linea-h`)**: (1) re-medir escalera, valle y E1–E5 con
+  la v2 sobre `main` con LH-04 (GLM 117/118: f = ½·max(0, p_LCB − q/b)): la
+  pregunta de la meta es si el tamaño ya sigue a la evidencia; (2) la
+  verificación barata de LH-06 que pide GLM 122 (τ mediana por peldaño y
+  |Δln τ| fast–slow desde las trazas de apertura, lista de aceptación §5 del
+  diseño) — para eso necesito que la traza `[OPEN TRACE]` del núcleo
+  (`god-engine-core/src/lib.rs:9875`) lleve `tau_hab=` (el `tau_habilidad`
+  de la moneda) y que el tope de 100 trazas sea configurable por entorno:
+  **pedido a Qoder/AGY**, zona núcleo; si no llega, lo mido con las 100
+  primeras aperturas como en la ola 1; (3) LH-20 (freno absorbente, HIGH) al
+  dueño y a la Línea C: una vía de salida con evidencia (re-prueba por sondas
+  D4 o e-proceso de recuperación sobre el libro sombra).
+- **No toco**: núcleo, riesgo, espectro; sólo `t3_ventaja_conocida.rs`,
+  `tests/support/t3_synthetic.rs` y docs de la Línea H.
+- **Recursos**: medido hoy, proyecto 72,8 GB (target 41,6 = debug 32,8 +
+  release 8,8; incremental 7,4; data 23,9; .git 3,0), C: 368 GB libres. Sin
+  desbordamiento. Compilo sólo por `scripts/cargo_semaforo.sh` (LG-25).
