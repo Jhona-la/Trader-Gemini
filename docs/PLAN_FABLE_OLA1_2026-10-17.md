@@ -94,9 +94,20 @@ cuota y se repiten en la tanda F1-b. Hallazgos destacados del mapa (a verificar 
   `telemetry-server` acumula 11 estructuras no acotadas candidatas.
 - `dark-alpha-engine`: 6/6 módulos vivos pero 21 símbolos sin consumidor y 7 estructuras no acotadas.
 
-**Hallazgos (F1-b, en curso)**: 16 áreas del núcleo de decisión (god-engine-core ×5, risk ×3,
-signal ×2, quantum-arena ×2, executor, demonio de evolución, replay, host) con una lente combinada
-y tope de 8 hallazgos por área, por cuota. Resultado en `f1_hallazgos.tsv` (estado «bruto») hasta F2.
+**Hallazgos (F1-b, cerrada 13:25)**: 16 áreas del núcleo de decisión (god-engine-core ×5, risk ×3,
+signal ×2, quantum-arena ×2, executor, demonio de evolución, replay, host), una lente combinada, tope
+de 8 por área. **125 hallazgos brutos: 18 HIGH, 82 MED, 25 LOW** en `docs/audit/fable/f1_hallazgos.tsv`
+(estado «bruto (sin verificar)» hasta F2). Los 24 mapas (ya con `god-engine-core` y la raíz) en
+`f1_mapa_crates.md`; 487 aristas muertas y 165 estructuras no acotadas candidatas en sus TSV.
+HIGH destacados (sin verificar): F1-011 freno duro «en stops» absorbente sin liberación; F1-012 Monte
+Carlo síncrono de 4 M pasos bajo `Mutex` en cada intención con geometría nueva; F1-013 LH-04 convierte
+f a nocional con `sl_at_tau` genómico y no con el stop real de la orden; F1-014/015 Cramér-Lundberg
+divide R por `max_exchange_leverage` en vez de por la exposición real (×50–320); F1-001 muros L2 falsos
+en el modo `trade_only` de la evolución; F1-002/003/004 examen del demonio con recta determinista
+hacia el cierre conocido, macro fabricado del retorno previo y rasgos post-resultado en el Shadow
+Forest; F1-007 ramas con puerta OBI nunca evaluadas en evolución; F1-008 el Consejo juzga las alts con
+la volatilidad de BTC; F1-016/017 sesgo de muestreo λ/μ̂ y `Mutex<VecDeque>` sin cota en el hot path;
+F1-018 escalas k≥23 (19,6 h–146 años) pueden dirigir el veredicto espectral.
 
 **Átomo F-A1 (funding per-símbolo, en certificación)** — hallazgo propio durante la lectura del
 backlog §6.6: el funding per-símbolo publicado por QO-U1c alimentaba una ARISTA MUERTA
