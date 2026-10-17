@@ -133,6 +133,12 @@ pub struct KahlerHodgeEngine {
     pub corr_matrix: [[f64; MAX_KAHLER_ASSETS]; MAX_KAHLER_ASSETS],
     /// Últimos log-precios observados
     pub last_ln_prices: [f64; MAX_KAHLER_ASSETS],
+    /// Último retorno no nulo observado por activo (G8-OMEGA-03: sincronizador Hayashi-Yoshida por evento)
+    pub last_nonzero_ret: [f64; MAX_KAHLER_ASSETS],
+    /// Secuencia monótona de innovaciones de precio no nulas por activo
+    pub ret_seq: [u64; MAX_KAHLER_ASSETS],
+    /// Secuencias consumidas por par (para i < j: [i][j] = seq_i consumido, [j][i] = seq_j consumido)
+    pub last_pair_seq: [[u64; MAX_KAHLER_ASSETS]; MAX_KAHLER_ASSETS],
     /// Conteo de observaciones válidas
     pub count: u64,
     /// Registro omnisciente
@@ -161,6 +167,9 @@ impl KahlerHodgeEngine {
             currents: [0.0; MAX_KAHLER_ASSETS],
             corr_matrix: corr,
             last_ln_prices: [0.0; MAX_KAHLER_ASSETS],
+            last_nonzero_ret: [0.0; MAX_KAHLER_ASSETS],
+            ret_seq: [0; MAX_KAHLER_ASSETS],
+            last_pair_seq: [[0; MAX_KAHLER_ASSETS]; MAX_KAHLER_ASSETS],
             count: 0,
             registry: None,
         }
@@ -226,12 +235,21 @@ impl KahlerHodgeEngine {
                 } else {
                     0.0
                 };
+                if ret.abs() > 1e-15 {
+                    self.last_nonzero_ret[i] = ret;
+                    self.ret_seq[i] = self.ret_seq[i].wrapping_add(1);
+                }
                 returns[i] = ret;
-                x[i] = ret; // Coordenada de flujo potencial centrada en innovación
+                x[i] = if ret.abs() > 1e-15 {
+                    ret
+                } else {
+                    self.last_nonzero_ret[i]
+                }; // Coordenada de flujo potencial centrada en innovación reciente
                 y[i] = ofi.clamp(-10.0, 10.0).tanh(); // Coordenada de momento conjugado
                 n_valid += 1;
             } else {
                 self.last_ln_prices[i] = 0.0;
+                self.last_nonzero_ret[i] = 0.0;
             }
         }
 
@@ -240,22 +258,29 @@ impl KahlerHodgeEngine {
         }
 
         // 1. Actualización adaptativa LMS de la métrica hermitiana (matriz de correlación cruzada)
+        // G8-OMEGA-03: Sincronización asíncrona por par (Hayashi-Yoshida). Un par (i, j) actualiza
+        // su co-movimiento cuando AMBOS activos han registrado una nueva innovación de precio desde
+        // su última actualización conjunta, funcionando idénticamente en modo síncrono y por-evento.
         if self.count > 0 {
             let gamma = self.params.adaptation_rate;
             for vi in 0..n_valid {
                 let i = valid_indices[vi];
-                let ri = returns[i];
                 for vj in (vi + 1)..n_valid {
                     let j = valid_indices[vj];
-                    let rj = returns[j];
-
-                    // Actualización LMS normalizada de co-movimiento
-                    let err = ri * rj - self.corr_matrix[i][j];
-                    if err.is_finite() {
-                        let step = gamma * err;
-                        let new_c = (self.corr_matrix[i][j] + step).clamp(-0.99, 0.99);
-                        self.corr_matrix[i][j] = new_c;
-                        self.corr_matrix[j][i] = new_c;
+                    let seq_i = self.ret_seq[i];
+                    let seq_j = self.ret_seq[j];
+                    if seq_i > self.last_pair_seq[i][j] && seq_j > self.last_pair_seq[j][i] {
+                        let ri = self.last_nonzero_ret[i];
+                        let rj = self.last_nonzero_ret[j];
+                        let err = ri * rj - self.corr_matrix[i][j];
+                        if err.is_finite() {
+                            let step = gamma * err;
+                            let new_c = (self.corr_matrix[i][j] + step).clamp(-0.99, 0.99);
+                            self.corr_matrix[i][j] = new_c;
+                            self.corr_matrix[j][i] = new_c;
+                        }
+                        self.last_pair_seq[i][j] = seq_i;
+                        self.last_pair_seq[j][i] = seq_j;
                     }
                 }
             }

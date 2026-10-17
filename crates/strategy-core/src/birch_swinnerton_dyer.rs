@@ -217,14 +217,17 @@ impl BirchSwinnertonDyerEngine {
             return self.last_metrics;
         }
 
-        // Ajuste lineal L2 regularizado de w_k = y_k^2 - x_k^3 = a * x_k + b en stack
+        // Ajuste lineal L2 regularizado con paridad CPT impar (G8-OMEGA-02):
+        // w_k = y_k * |y_k| - x_k^3 es estrictamente impar bajo el espejo (x, y) -> (-x, -y),
+        // garantizando que Cov(x, w) y Var(x) sean pares, a(-x, -y) = a(x, y) sea par y
+        // b(-x, -y) = -b(x, y) sea impar (con b^2 y el discriminante Delta estrictamente pares).
         let n = self.count as f64;
         let mut sum_x = 0.0_f64;
         let mut sum_w = 0.0_f64;
         for i in 0..self.count {
             let xk = self.x_ring[i];
             let yk = self.y_ring[i];
-            let wk = yk * yk - xk * xk * xk;
+            let wk = yk * yk.abs() - xk * xk * xk;
             sum_x += xk;
             sum_w += wk;
         }
@@ -236,7 +239,7 @@ impl BirchSwinnertonDyerEngine {
         for i in 0..self.count {
             let xk = self.x_ring[i];
             let yk = self.y_ring[i];
-            let wk = yk * yk - xk * xk * xk;
+            let wk = yk * yk.abs() - xk * xk * xk;
             let dx = xk - mean_x;
             var_x += dx * dx;
             cov_xw += dx * (wk - mean_w);
@@ -255,6 +258,44 @@ impl BirchSwinnertonDyerEngine {
         let metrics = Self::evaluate_weierstrass_curve(a, b, x_now, y_now);
         self.last_metrics = metrics;
         metrics
+    }
+
+    /// Evalúa en un vértice entero $(a_{\text{int}}, b_{\text{int}})$ del retículo modular
+    /// los observables $(L_K(E, 1), \text{traza normalizada}, \text{pendiente Birch-Mestre})$
+    /// simetrizados respecto a $\pm b_{\text{int}}$ en stack.
+    #[inline]
+    fn eval_modular_lattice_vertex(a_int: i64, b_int: i64) -> (f64, f64, f64) {
+        let mut l_prod_pos = 1.0_f64;
+        let mut l_prod_neg = 1.0_f64;
+        let mut sum_norm_trace = 0.0_f64;
+        let mut sum_birch_mestre = 0.0_f64;
+        let mut sum_ln_p = 0.0_f64;
+
+        for &p in BSD_ODD_PRIMES.iter() {
+            let (n_p_pos, a_p_pos) = frobenius_trace_mod_p(a_int, b_int, p);
+            let (n_p_neg, a_p_neg) = frobenius_trace_mod_p(a_int, -b_int, p);
+            let p_f = p as f64;
+            l_prod_pos *= p_f / (n_p_pos as f64).max(1.0);
+            l_prod_neg *= p_f / (n_p_neg as f64).max(1.0);
+
+            let hasse_bound = 2.0 * p_f.sqrt();
+            let norm_ap =
+                (0.5 * (a_p_pos + a_p_neg) as f64 / hasse_bound).clamp(-1.0, 1.0);
+            sum_norm_trace += norm_ap;
+
+            let ln_p = p_f.ln();
+            sum_birch_mestre += (-norm_ap) * ln_p;
+            sum_ln_p += ln_p;
+        }
+
+        let l_val = (0.5 * (l_prod_pos + l_prod_neg)).clamp(0.05, 20.0);
+        let trace_norm = (sum_norm_trace / (BSD_NUM_PRIMES as f64)).clamp(-1.0, 1.0);
+        let mestre_slope = if sum_ln_p > 0.0 {
+            sum_birch_mestre / sum_ln_p
+        } else {
+            0.0
+        };
+        (l_val, trace_norm, mestre_slope)
     }
 
     /// Evalúa directamente una curva elíptica $E: y^2 = x^3 + a x + b$ y el punto $(x, y)$
@@ -285,49 +326,43 @@ impl BirchSwinnertonDyerEngine {
         // Salud topológica de no-singularidad: Delta = 0 es una cúspide o nodo singular
         let non_singularity = bsd_hermite_c1(discriminant.abs(), 1e-3, 16.0);
 
-        // 2. Cuantización entera a cuerpo finito F_p y cálculo exacto de trazas de Frobenius a_p
-        let a_int = (a_safe * 5.0).round() as i64;
-        let b_int = (b_safe * 5.0).round() as i64;
+        // 2. Interpolación bilineal C^1 Hermite sobre el retículo modular 2x2 (G8-OMEGA-06):
+        // Elimina los escalones C^0 de redondeo entero `.round()` preservando suavidad C^1
+        // e invarianza par exacta bajo reflexión de espejo b -> -b.
+        let u = a_safe * 5.0;
+        let v = b_safe.abs() * 5.0;
+        let a0_f = u.floor();
+        let b0_f = v.floor();
+        let a0 = a0_f as i64;
+        let b0 = b0_f as i64;
+        let wa = bsd_hermite_c1(u - a0_f, 0.0, 1.0);
+        let wb = bsd_hermite_c1(v - b0_f, 0.0, 1.0);
 
-        let mut l_prod = 1.0_f64;
-        let mut sum_norm_trace = 0.0_f64;
-        let mut sum_birch_mestre = 0.0_f64;
-        let mut sum_ln_p = 0.0_f64;
+        let (l00, t00, m00) = Self::eval_modular_lattice_vertex(a0, b0);
+        let (l10, t10, m10) = Self::eval_modular_lattice_vertex(a0 + 1, b0);
+        let (l01, t01, m01) = Self::eval_modular_lattice_vertex(a0, b0 + 1);
+        let (l11, t11, m11) = Self::eval_modular_lattice_vertex(a0 + 1, b0 + 1);
 
-        for &p in BSD_ODD_PRIMES.iter() {
-            let (n_p, a_p) = frobenius_trace_mod_p(a_int, b_int, p);
-            let p_f = p as f64;
-            let n_p_safe = (n_p as f64).max(1.0);
-            // Factor local de Euler L_p(E, 1) = p / N_p
-            l_prod *= p_f / n_p_safe;
+        let w00 = (1.0 - wa) * (1.0 - wb);
+        let w10 = wa * (1.0 - wb);
+        let w01 = (1.0 - wa) * wb;
+        let w11 = wa * wb;
 
-            // Cota de Hasse: |a_p| <= 2 * sqrt(p)
-            let hasse_bound = 2.0 * p_f.sqrt();
-            let norm_ap = (a_p as f64 / hasse_bound).clamp(-1.0, 1.0);
-            sum_norm_trace += norm_ap;
-
-            // Suma de Birch-Goldfeld-Mestre: cuando N_p > p + 1 (a_p < 0), el rango analítico crece
-            let ln_p = p_f.ln();
-            sum_birch_mestre += (-norm_ap) * ln_p;
-            sum_ln_p += ln_p;
-        }
-
-        let l_value_at_one = l_prod.clamp(0.05, 20.0);
-        let frobenius_trace_norm = (sum_norm_trace / (BSD_NUM_PRIMES as f64)).clamp(-1.0, 1.0);
+        let l_value_at_one = (w00 * l00 + w10 * l10 + w01 * l01 + w11 * l11).clamp(0.05, 20.0);
+        let frobenius_trace_norm =
+            (w00 * t00 + w10 * t10 + w01 * t01 + w11 * t11).clamp(-1.0, 1.0);
+        let mestre_slope = w00 * m00 + w10 * m10 + w01 * m01 + w11 * m11;
 
         // 3. Proxy continuo del rango analítico de Birch y Swinnerton-Dyer r_BSD:
         // Combina la pendiente logarítmica de Birch-Mestre y el anulamiento de L_K(E, 1) -> 0
-        let mestre_slope = if sum_ln_p > 0.0 {
-            sum_birch_mestre / sum_ln_p
-        } else {
-            0.0
-        };
         let vanishing_order = (1.0 / (l_value_at_one + 0.25)).clamp(0.0, 2.5);
         let analytic_rank_proxy = (non_singularity
             * (0.60 * vanishing_order + 0.80 * (mestre_slope + 0.5).max(0.0)))
         .clamp(0.0, 2.5);
 
-        // 4. Corriente restauradora elíptica sobre la curva E: y^2 - x^3 - a x - b = 0
+        // 4. Corriente restauradora elíptica impar bajo el espejo (G8-OMEGA-02):
+        // Bajo (x, y) -> (-x, -y), el gradiente restaurador cúbico -x * (x^2 + 0.5 * |a|)
+        // y el impulso cinético +y cambian ambos de signo, garantizando J(-x, -y) = -J(x, y).
         let x_s = if x_phase.is_finite() {
             x_phase.clamp(-4.0, 4.0)
         } else {
@@ -338,7 +373,7 @@ impl BirchSwinnertonDyerEngine {
         } else {
             0.0
         };
-        let potential_grad = -(3.0 * x_s * x_s + a_safe) * 0.15 + y_s * 0.45;
+        let potential_grad = -x_s * (x_s * x_s + a_safe.abs() * 0.5) * 0.15 + y_s * 0.45;
         let bsd_restoring_current = (potential_grad.tanh() * non_singularity).clamp(-1.0, 1.0);
 
         // 5. Modulador continuo C^1 Hermite de convicción en [0.30, 1.15]:

@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Antigravity (AGY, Quant Sr.): Ola Ω147 CERRADA — Paridad CPT e Interpolación Hermite $C^1$ en Birch-Swinnerton-Dyer, Sincronización Asíncrona Hayashi-Yoshida en Kähler-Hodge y Yang-Mills, y Operabilidad Estricta por Moneda (10 hallazgos Línea G Ola 8 cerrados)
+
+- **Rama**: `agy/ola-147-bsd-kahler-yangmills-c1-paridad` (fusionada a `main` y retirada).
+- **Hallazgos Línea G Ola 8 Cerrados (10 en total)**: `G8-OMEGA-02` (HIGH), `G8-OMEGA-03` (HIGH), `G8-OMEGA-04` (MED), `G8-OMEGA-05` (MED), `G8-OMEGA-06` (MED), `LG8-145-01` (HIGH), `LG8-145-02` (HIGH), `LG8-145-03` (HIGH), `LG8-145-08` (MED), `LG8-146-06` (LOW).
+- **Cambios matemáticos y algorítmicos**:
+  1. **`crates/strategy-core/src/birch_swinnerton_dyer.rs` (`G8-OMEGA-02` y `G8-OMEGA-06`)**:
+     - Reemplazado el residuo de fase `yk * yk - xk * xk * xk` por el residuo impar bajo inversión de espejo CPT $w_k = y_k |y_k| - x_k^3$, garantizando $w_k(-x, -y) = -w_k(x, y)$, $\text{Cov}(x, w)$ par, $a(-x, -y) = a(x, y)$ par, y corriente restauradora `bsd_restoring_current` estrictamente impar ($J(-x, -y) = -J(x, y) \implies J_{\text{arriba}} + J_{\text{abajo}} = 0$).
+     - Erradicada la cuantización escalonada $C^0$ `.round() as i64` en `eval_modular_l_function`; reemplazada por interpolación bilineal Hermite $C^1$ ($3t^2 - 2t^3$) sobre la celda reticular $2 \times 2$ en `eval_modular_lattice_vertex` simetrizada en $\pm b_{\text{int}}$.
+  2. **`crates/strategy-core/src/kahler_hodge.rs` (`G8-OMEGA-03`)**:
+     - Añadida sincronización asíncrona por pares estilo Hayashi-Yoshida (`last_nonzero_ret`, `ret_seq`, `last_pair_seq`): el par $(i, j)$ actualiza `corr_matrix[i][j]` únicamente cuando ambos activos han registrado un nuevo retorno no nulo desde su último emparejamiento (`seq_i > last_pair_seq[i][j] && seq_j > last_pair_seq[j][i]`), permitiendo aprender comovimiento (`ricci_scalar != 0`) bajo el patrón de llamada por-evento de `GodEngineCore` sin contaminar con signos cruzados de pasos alternos.
+  3. **`crates/strategy-core/src/yang_mills_gauge.rs` (`G8-OMEGA-04`, `G8-OMEGA-05`, `LG8-145-01`)**:
+     - Incorporado el mismo sincronizador por-evento Hayashi-Yoshida en `beta_matrix[i][j]` preservando `R6-C6` (activos estacionarios jamás mutan `beta`), y uso de `last_nonzero_ret` en el lazo de holonomía de 3-ciclos cuando `returns[i] == 0.0`.
+     - `is_operable_for_coin` exige `self.num_assets >= 3 && has_current && active_triangles >= 1.0`, excluyendo del denominador de `SignalEngine` replays mono-activo (`active_triangles == 0.0`) aunque el motor se instancie con capacidad `new(30)`.
+  4. **`crates/strategy-core/src/stat_arb.rs` y `crates/strategy-core/src/vecm_arbitrage.rs` (`LG8-145-02`, `LG8-145-03`, `LG8-145-08`)**:
+     - `is_operable_for_coin` exige `v.is_finite() && v.abs() > 1e-12` sobre `statarb_ou_zscore` y `vecm_zscore`, tratando como inoperables los `0.0` que `GodEngineCore` publica cuando no hay spot fresco o `kline_ema_slow`, y como operables los z-scores no nulos dentro de la banda (`0 < |z| <= thresh`, abstención informada).
+     - Lectura estricta por moneda cuando `is_scoped = !symbol.is_empty() || coin_id > 0` (`LG8-145-08`), preservando el fallback global únicamente para llamadas sin ámbito (`evaluate()`).
+  5. **`crates/quantum-arena/src/evalues.rs` (`LG8-146-06`)**:
+     - Sincronizado `FAMILIA_MOTORES = 15 * 32 = 480` ($M/\alpha = 9\,600$) con el catálogo de `OnlineLearner::STRATEGY_KEYS` tras la incorporación de `yang_mills` en Ω146.
+- **Verificación (vía `scripts/cargo_semaforo.sh`)**:
+  - `crates/strategy-core/tests/lg8_open_bsd_kahler.rs`: des-ignorados los 2 tests abiertos de Línea G y añadidos 3 tests adicionales → **5/5 verdes (0 ignored)**.
+  - Contratos `strategy-core` (`birch_swinnerton_dyer_contract`, `kahler_hodge_contract`, `yang_mills_gauge_contract`, `yang_mills_su_n_contract`, `yang_mills_adaptation_contract`, `cf2_yang_mills_nulo`, `cf3_lectura_estricta`): **28/28 verdes**; `--lib`: **45/45 verdes**.
+  - Contratos `signal-engine` (`ensemble_calibrated_denominator_contract`, `navier_feynman_spectral_confluence_contract`): **11/11 verdes**; `quantum-arena` (`cf2_evalues_cuantiles_solucion_conocida`): **4/4 activos verdes**.
+
 ## 2026-10-17 — Claude (Línea H, LH-n): ola 3 cerrada — el T-3 v2 (generador honesto, filtro de Bayes como lector causal) está en `main` por el PR #64; ola 4 reservada (re-medición con LH-04 y verificación de LH-06)
 
 - **LH-18/18b/18c** (`crates/backtest-engine/tests/t3_ventaja_conocida.rs` +

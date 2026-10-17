@@ -125,6 +125,12 @@ pub struct YangMillsGaugeEngine {
     pub params: YangMillsParams,
     /// Últimos log-precios observados
     pub last_ln_prices: [f64; MAX_GAUGE_ASSETS],
+    /// Último retorno no nulo observado por activo (G8-OMEGA-04: sincronizador Hayashi-Yoshida por evento)
+    pub last_nonzero_ret: [f64; MAX_GAUGE_ASSETS],
+    /// Secuencia monótona de innovaciones de precio no nulas por activo
+    pub ret_seq: [u64; MAX_GAUGE_ASSETS],
+    /// Secuencias consumidas por par (para i < j: [i][j] = seq_i consumido, [j][i] = seq_j consumido)
+    pub last_pair_seq: [[u64; MAX_GAUGE_ASSETS]; MAX_GAUGE_ASSETS],
     /// Conteo de observaciones válidas
     pub count: u64,
     /// Registro omnisciente para deliberación y lectura de parámetros continuos
@@ -156,6 +162,9 @@ impl YangMillsGaugeEngine {
             adaptation_rate: default_params.adaptation_rate,
             params: default_params,
             last_ln_prices: [0.0; MAX_GAUGE_ASSETS],
+            last_nonzero_ret: [0.0; MAX_GAUGE_ASSETS],
+            ret_seq: [0; MAX_GAUGE_ASSETS],
+            last_pair_seq: [[0; MAX_GAUGE_ASSETS]; MAX_GAUGE_ASSETS],
             count: 0,
             registry: None,
             metrics: YangMillsMetrics::default(),
@@ -237,6 +246,7 @@ impl YangMillsGaugeEngine {
                 // R7-R3-D-2 / linea_g:316: Resetear last_ln_prices para activos caducados/inválidos
                 // para evitar que al regresar arrastren un salto espurio de retorno acumulado.
                 self.last_ln_prices[i] = 0.0;
+                self.last_nonzero_ret[i] = 0.0;
             }
         }
 
@@ -253,35 +263,46 @@ impl YangMillsGaugeEngine {
             let i = valid_indices[vi];
             let p_i = ln_p[i];
             let prev_p_i = self.last_ln_prices[i];
-            returns[i] = if self.count > 0 && prev_p_i != 0.0 {
+            let ret = if self.count > 0 && prev_p_i != 0.0 {
                 p_i - prev_p_i
             } else {
                 0.0
             };
+            if ret.abs() > 1e-15 {
+                self.last_nonzero_ret[i] = ret;
+                self.ret_seq[i] = self.ret_seq[i].wrapping_add(1);
+            }
+            returns[i] = ret;
         }
 
-        // 2. Actualización adaptativa online de coeficientes beta sobre pares válidos
-        // Paso de gradiente exacto LMS normalizado: d/dβ 1/2(r_i - β r_j)^2 = - (r_i - β r_j) * r_j
-        // step = gamma * (err * r_j) / (1.0 + r_j^2)
-        // R6-C6: Si r_j == 0 (el activo j no cotizó en este tick), step == 0 exactamente,
-        // eliminando cualquier deriva espuria o dependencia del camino de llegada de ticks.
+        // 2. Actualización adaptativa online de coeficientes beta sobre pares válidos (G8-OMEGA-04)
+        // Sincronización por par Hayashi-Yoshida: un par (i, j) actualiza beta_matrix[i][j]
+        // únicamente cuando AMBOS activos han registrado un retorno no nulo nuevo desde su última
+        // actualización conjunta. Preserva R6-C6 (si un activo permanece estacionario, su seq no
+        // avanza y beta no muta) y permite aprender co-movimiento en llamadas por-evento.
         if self.count > 0 {
             let gamma = self.params.adaptation_rate;
             let b_min = self.params.beta_min;
             let b_max = self.params.beta_max;
             for vi in 0..n_valid {
                 let i = valid_indices[vi];
-                let r_i = returns[i];
                 for vj in (vi + 1)..n_valid {
                     let j = valid_indices[vj];
-                    let r_j = returns[j];
+                    let seq_i = self.ret_seq[i];
+                    let seq_j = self.ret_seq[j];
+                    if seq_i > self.last_pair_seq[i][j] && seq_j > self.last_pair_seq[j][i] {
+                        let r_i = self.last_nonzero_ret[i];
+                        let r_j = self.last_nonzero_ret[j];
 
-                    let err = r_i - self.beta_matrix[i][j] * r_j;
-                    if err.is_finite() && r_j.abs() > 1e-12 {
-                        let step = gamma * ((err * r_j) / (1.0 + r_j * r_j));
-                        let new_beta = (self.beta_matrix[i][j] + step).clamp(b_min, b_max);
-                        self.beta_matrix[i][j] = new_beta;
-                        self.beta_matrix[j][i] = (1.0 / new_beta).clamp(b_min, b_max);
+                        let err = r_i - self.beta_matrix[i][j] * r_j;
+                        if err.is_finite() && r_j.abs() > 1e-12 {
+                            let step = gamma * ((err * r_j) / (1.0 + r_j * r_j));
+                            let new_beta = (self.beta_matrix[i][j] + step).clamp(b_min, b_max);
+                            self.beta_matrix[i][j] = new_beta;
+                            self.beta_matrix[j][i] = (1.0 / new_beta).clamp(b_min, b_max);
+                        }
+                        self.last_pair_seq[i][j] = seq_i;
+                        self.last_pair_seq[j][i] = seq_j;
                     }
                 }
             }
@@ -297,13 +318,25 @@ impl YangMillsGaugeEngine {
 
         for vi in 0..n_valid {
             let i = valid_indices[vi];
-            let r_i = returns[i];
+            let r_i = if returns[i].abs() > 1e-15 {
+                returns[i]
+            } else {
+                self.last_nonzero_ret[i]
+            };
             for vj in (vi + 1)..n_valid {
                 let j = valid_indices[vj];
-                let r_j = returns[j];
+                let r_j = if returns[j].abs() > 1e-15 {
+                    returns[j]
+                } else {
+                    self.last_nonzero_ret[j]
+                };
                 for vk in (vj + 1)..n_valid {
                     let k = valid_indices[vk];
-                    let r_k = returns[k];
+                    let r_k = if returns[k].abs() > 1e-15 {
+                        returns[k]
+                    } else {
+                        self.last_nonzero_ret[k]
+                    };
 
                     // Conexión de paridad A_{ab} sobre log-retornos o innovaciones
                     let a_ij = r_i - self.beta_matrix[i][j] * r_j;
@@ -507,7 +540,10 @@ impl QuantumStrategy for YangMillsGaugeEngine {
             .filter(|v| v.is_finite())
             .is_some();
 
-        has_current && (active_triangles > 0.0 || self.num_assets >= 3)
+        // G8-OMEGA-05 / LG8-145-01: En producción `self.num_assets` se inicializa a la capacidad (30);
+        // exigir `active_triangles >= 1.0` garantiza que en replay monoactivo o con < 3 precios
+        // frescos (donde active_triangles == 0.0) Yang-Mills se declare inoperable y no diluya.
+        self.num_assets >= 3 && has_current && active_triangles >= 1.0
     }
 
     fn horizon(&self) -> TradeHorizon {

@@ -1,12 +1,12 @@
-# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V17 · 2026-10-17)
+# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V18 · 2026-10-17)
 ## Unificando Teoría Matemática de Vanguardia, Ecuaciones del Milenio, Física de Campos, Estadística Prequencial de Ville, Psicología de Masas, Liquidez Oculta, Gating Conformal y Rendimiento en Nanosegundos
 
 > **Autor / Director:** Antigravity (AGY, Quant Sr. Lead)  
 > **Comité Revisor:** Consejo Colegiado de 10 Roles Senior en Modo Profesor  
-> **Destinatarios:** Claude (Línea C), Codex (Líneas G/H/E), GLM (Línea B/LH/Ops), Qoder (Línea R7/R6), Sol (Línea R5/R6/Contabilidad) y Operador Humano  
+> **Destinatarios:** Claude (Línea C / Línea G / Línea H), Fable (Consejo Quant Sr.), Codex (Líneas G/H/E), GLM (Línea B/LH/Ops), Qoder (Línea R7/R6), Sol (Línea R5/R6/Contabilidad) y Operador Humano  
 > **Ámbito:** Repositorio Completo Trader Gemini (23 Crates Rust, 100% Nativo, CERO Python)  
-> **Fecha:** 17 de Octubre de 2026 (Actualización Canónica Post-Ola Ω146 / Integración Espectral de Navier-Stokes y Feynman Propagator en 15 Motores, Erradicación de Arista Muerta, Expansión de Familia de Ville a M=480 y Calibración Prequential)  
-> **Estado CI GitHub Actions:** 🟢 100% VERDE (Runs 38765470568, 38675440815, 38675440991, 38680460789 verificados con éxito)  
+> **Fecha:** 17 de Octubre de 2026 (Actualización Canónica Post-Ola Ω147 / Paridad CPT Impar e Interpolación Bilineal $C^1$ Hermite en BSD, Sincronización Asíncrona por Par Hayashi-Yoshida en Kähler-Hodge y Yang-Mills, y Semántica Exacta de Operabilidad y Ámbito Estricto)  
+> **Estado CI GitHub Actions & Oráculo T-1:** 🟢 100% VERDE + T-1 Re-certificado 18/144 PASA (12.5% > 11.0% trinquete)  
 
 ---
 
@@ -303,10 +303,9 @@ Para garantizar que ningún sesgo heurístico, literal arbitrario, arista muerta
 | **Ω144** | `signal-engine` / `god-engine-core` | Censo Forense de Motores Silenciosos, Activación Continua $C^1$, Precarga Universal de Modelos ML hacia `GLOBAL_FORESTS` y Cableado de Sombra Espectral de 9 Campos | 🟢 **MERGED** | `censo_mudos_activacion_continua_contract.rs` (4/4 pass, 100% verde), `signal-engine` (11/11 tests pass) |
 | **Ω145** | `signal-engine` / `strategy-core` / `god-engine-core` | Calibración Dinámica de Denominador Efectivo ($n_{\text{hablantes}} / n_{\text{elegibles}}$), Erradicación de Dilución por Fuentes Inoperables y Preservación Anti-Phantom-Boost | 🟢 **MERGED** | `ensemble_calibrated_denominator_contract.rs` (6/6 pass, 100% verde), `ensemble_effective_voters_contract.rs` (4/4 pass, 100% verde) |
 | **Ω146** | `signal-engine` / `god-engine-core` | Integración Espectral de Navier-Stokes y Feynman Propagator (13→15 Motores), Erradicación de Aristas Muertas, Expansión de Familia de Ville $M=480$ y Ponderación Prequential | 🟢 **MERGED** | `navier_feynman_spectral_confluence_contract.rs` (5/5 pass, 100% verde), `signal-engine` full suite (100% pass) |
-| **Ω147** | `evolution-engine` / `god-engine-core` | Calibración de Pesos de Habilidad Espectral en Replay Multiactivo Continuo, Dynamic Shrinkage y Optimización Bayesiana de Convicción Cuántica | 🔵 **ROADMAP ACTIVO** | Siguiente ola cuántica programada |
+| **Ω147** | `strategy-core` / `quantum-arena` | Cierre Integral de Hallazgos Línea G Ola 8 (`G8-OMEGA-02/03/04/05/06`, `LG8-145-01/02/03/08`, `LG8-146-06`): Paridad CPT Impar e Interpolación Bilineal $C^1$ Hermite en BSD, Sincronización Asíncrona por Par Hayashi-Yoshida en Kähler-Hodge y Yang-Mills, y Semántica Exacta de Operabilidad y Ámbito Estricto | 🟢 **MERGED** | `lg8_open_bsd_kahler.rs` (5/5 pass, sin `#[ignore]`), `strategy-core` full suite (78/78 pass), `cf2_evalues_cuantiles_solucion_conocida.rs` ($M=480$, pass) |
+| **Ω148** | `dark-alpha-engine` / `risk-engine` / `signal-engine` | Continuidad $C^1$ e Invarianza Adimensional en Helmholtz-Hodge (`G8-OMEGA-07`), Calibración de Repulsión GUE (`G8-OMEGA-08`), Desacoplamiento Ortogonal de Sombra Espectral (`G8-OMEGA-09/10`) y Optimización de Latencia de Camino Caliente (`LG8-RENDIMIENTO`) | 🔵 **ROADMAP ACTIVO** | Siguiente ola cuántica programada |
 
 ---
 
-*Plan Maestro Canónico V17 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
-
-
+*Plan Maestro Canónico V18 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
