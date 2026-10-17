@@ -2643,8 +2643,7 @@ de CL-50…CL-53 encontró cuatro defectos propios (CL-50b…CL-53b):
   unit-suites 4/4 en verde. Merge de prueba con main 0000eb8d antes de
   fusionar: check y god-engine-core 465/0.
 - Main estuvo rojo dos veces en el ciclo: E0063 en `prospect_pressure`
-  (32289abf…558c7dcc) y un marcador `<<<<<<< HEAD` que #710 dejó en
-  docs/PLAN_MAESTRO_SINCRONIZACION.md (falla «Reject conflict markers»).
+  (32289abf…558c7dcc) y un marcador `  docs/PLAN_MAESTRO_SINCRONIZACION.md (falla «Reject conflict markers»).
   El segundo lo retira el merge de este PR.
 - Lección de build (sesiones cloud): `.cargo/config.toml` compila con
   `target-cpu=native`, y el contenedor puede reanudarse en otra CPU. Los
@@ -7594,3 +7593,36 @@ Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales 
   Nueva unidad va en PR separada; no hereda CI de PR67. Cargo/CI reales pendientes
   al escribir este corte. Cola Codex con turno explícito; externos continúan por
   decisión humana«Mantenerlos activos», sin nuevos kills ni promesa de unicidadglobal.
+
+<!-- B15-14-DOMAIN-AND-INVENTORY-2026-10-15 -->
+## 2026-10-15 — Codex B15-14: dominio VECM y vínculo de evidencia parcial
+
+Base Ω129 b6746907; código VECM 994e8602 y checker 33e468ec, rama
+`codex/quant-reaudit-20261015`. Se limita el peso efectivo del estimador a
+`[min(.001,alpha), min(alpha,1)]`, conservando el dominio público alpha<=10,
+defaults y ecuaciones OU. Se validan constructor y rutas de actualización
+antes de mutar; entrada .1 y overrides inválidos conservan la pareja de
+umbrales configurada. Es una corrección numérica/API, no prueba de Johansen,
+adaptación productiva ni efecto económico. El voto vivo consume `base_z`;
+no se localizaron llamadas productivas a los update* del wrapper. B15-03/04,
+refresco de configuración y genes sin consumidor decisorio siguen abiertos.
+
+El checker del inventario ahora exige evidencia estructurada y ligada al
+blob actual en los cuatro estados; conserva scope libre, alcance parcial e
+historial. RED: nueve subfallos esperados; GREEN Python: 10/0 en 583.553s.
+VECM: RED0/6, GREEN14/0 mediante fuente real con doubles de registry/trait;
+no sustituye Cargo. Revisión estática independiente sin bloqueantes. Checker
+corregido acepta las 1.863 rutas de BASE15; cero archivos completos se
+certifican por esta ola. Se conserva la cola existente con delta al código
+33e468ec, sin censo canónico competidor.
+
+[Adenda/plan y límites](../docs/audit/VECM_DOMINIO_B15_14_2026-10-15.md),
+[recibo local por SHA](../docs/audit/VALIDACION_B15_14_2026-10-15.json) y
+[delta](../docs/audit/DELTA_B15_14_2026-10-15.json). El recibo documenta el
+estado al commit documental: Cargo/composición/publicación se cierran en
+el PR y sus runs inmutables. No heredar CI de padres; antes del merge,
+comparar ambos padres y ejecutar all-targets sobre la composición. La
+ventana local sigue con BASE15 y luego Hawkes; sin targets compartidos ni
+procesos ajenos intervenidos. No se borraron ramas activas o con exclusivos.
+La meta de duplicación neta cada 72h y la revisión semántica total continúan
+pendientes de evidencia.

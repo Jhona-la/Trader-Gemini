@@ -148,7 +148,10 @@ def validate_structure(ledger):
         if row.get("status") == "verificado":
             if not row.get("review_owner") or not row.get("evidence"):
                 errors.append(f"{path}: verified status needs review_owner and evidence")
-            for proof in row.get("evidence", []):
+        # Partial findings also carry current-object evidence. Their status must
+        # not let a stale blob or malformed proof bypass the ledger check.
+        if isinstance(row.get("evidence"), list):
+            for proof in row["evidence"]:
                 if not isinstance(proof, dict) or proof.get("blob") != row.get("blob"):
                     errors.append(f"{path}: evidence does not bind current blob")
                 elif not all(isinstance(proof.get(key), str) and proof[key]
