@@ -20,44 +20,30 @@
 //! mínimos y volúmenes se sintetizan como en el T-2. La cuenta es la del
 //! dueño (13 USD, régimen micro) y el lote es fino como en el T-2 (CL-98b).
 //!
-//! # La ventaja «conocida»
+//! # Scope of the references
 //!
-//! Para cada peldaño el propio test calcula, SOBRE LA MISMA SERIE y sin el
-//! motor, lo que ganaría quien leyera el estado oculto (oráculo) y lo que
-//! ganaría quien sólo viera el signo de la vela anterior (el proxy que ven
-//! las features de flujo del núcleo): retorno medio a 1, 5 y 20 velas en la
-//! dirección de la lectura, y la probabilidad de que un bracket RR 2,25 con
-//! stop del 0,5 % toque el TP antes que el SL (resuelto con máximos y mínimos
-//! de vela; si ambos se tocan en la misma vela cuenta el SL). Eso convierte el
-//! resultado del motor en una fracción de un techo medido, no en un número
-//! suelto.
+//! V1 retains the historical uniform generator; V2 uses Gaussian close noise
+//! and separate wick/volume draws. Bayes estimates latent-state probabilities
+//! from CLOSED bars under known DGP parameters. It is a diagnostic reference,
+//! not a universal bound on selective net PnL or on the synthetic intrabar engine.
+//! The runner still bridges toward the current OHLC close (H1-01 iii).
 //!
-//! # Qué mide
+//! Legacy `filtro_*` columns use always-active directions; `filtro_neto_*`
+//! abstains unless expected log return pays the declared 10 bp fee, with
+//! coverage reported separately. Returns are missing (NaN) when no order is
+//! selected. Reference windows crossing a declared segment boundary are omitted.
+//! Legacy `ev_R_*` columns are conditional on barrier resolution. The appended
+//! `bracket_ev_R_*` includes expired brackets marked to the horizon close and
+//! excludes right-censored entries. These reference fills assume exact barriers.
+//! Gaussian wick scales and return tails differ from V1, so a V1/V2 comparison
+//! changes several inputs; it does not isolate the effect of removing leakage.
 //!
-//! Por peldaño: operaciones, acierto neto, PnL neto, capital final, drawdown
-//! máximo y el reparto de los rechazos del riesgo (`risk_engine::REJECT_*`)
-//! como diferencia de contadores antes y después de la corrida. No es un
-//! trinquete: publica la tabla para que cada línea compare su cadena contra
-//! la ventaja que la serie tenía.
+//! Run measurements in series: cargo test --release -p backtest-engine
+//! --test t3_ventaja_conocida -- --include-ignored --nocapture --test-threads=1
+//! T3_GENERADOR=v1|v2 selects the generator (v1 is the historical default).
+//! Standalone model tests: rustc --edition=2024 --test
+//! crates/backtest-engine/tests/support/t3_synthetic.rs -o model-tests.exe
 //!
-//! Uso: `cargo test --release -p backtest-engine --test t3_ventaja_conocida
-//! -- --include-ignored --nocapture --test-threads=1` (los contadores de
-//! rechazo son globales: las mediciones tienen que ir en serie; H1-08 de la
-//! revisión de la Línea G).
-//!
-//! # Límites conocidos del generador (revisión de la Línea G, ola 6)
-//!
-//! El ruido es uniforme acotado y las mechas y el volumen se construyen con
-//! el mismo |u| que el ruido: una vela con |r| > σ√3 − d revela el estado
-//! oculto con certeza y (r, volumen) o (r, high/close) lo decodifican en
-//! cada vela (H1-01). El «oráculo» es por tanto un lector del OHLCV que el
-//! motor también ve, no una cota superior inalcanzable; lo realizado en los
-//! peldaños a = 0,6–0,8 no puede atribuirse a la cadena. La versión 2 del
-//! generador (ola 3: ruido gaussiano, sorteos independientes para mechas y
-//! volumen, y el lector causal óptimo —filtro de Bayes sobre el OHLCV— como
-//! techo) sustituye a ésta; los números de las olas 1 y 2 son de esta
-//! versión y se conservan como tales.
-
 use backtest_engine::{STATS_LEN, run_backtest_native};
 use quantum_arena::genome::SuperGenotype;
 use risk_engine::{REJECT_COUNTERS, REJECT_NAMES, REJECT_SLOTS};
@@ -69,202 +55,9 @@ const CAPITAL_MICRO: f64 = 13.0;
 /// Tasa base del predictor sintético (la de un bosque real, como en el T-2).
 const BASE_PREDICTOR: f64 = 0.30;
 
-/// Fricción de ida y vuelta de referencia para los techos: dos piernas taker
-/// del spec del fixture (0,05 % cada una). El motor paga además la horquilla
-/// del genoma; el techo es por tanto optimista en ese término.
-const FRICCION_RT: f64 = 2.0 * 0.0005;
-
-/// Geometría de referencia del bracket de los techos (RR 2,25, stop 0,5 %).
-const SL_REF: f64 = 0.005;
-const RR_REF: f64 = 2.25;
-
-/// Un peldaño de la escalera.
-#[derive(Clone, Copy, Debug)]
-pub struct Peldano {
-    /// Persistencia del signo: P(s_t = s_{t−1}).
-    pub a: f64,
-    /// Deriva por vela en fracción (0,001 = 0,1 %).
-    pub d: f64,
-    /// Desviación del ruido por vela en fracción.
-    pub sigma: f64,
-    /// Velas de 1 min.
-    pub n: usize,
-}
-
-/// Serie sintética con su estado oculto.
-pub struct Serie {
-    pub closes: Vec<f64>,
-    pub highs: Vec<f64>,
-    pub lows: Vec<f64>,
-    pub vols: Vec<f64>,
-    /// Estado oculto por vela (+1/−1).
-    pub estado: Vec<i8>,
-}
-
-/// Generador determinista (LCG de 64 bits, misma familia que el T-2) con una
-/// sal por peldaño para que dos peldaños distintos no compartan el ruido.
-pub fn serie_persistente(p: Peldano) -> Serie {
-    let n = p.n;
-    let mut closes = Vec::with_capacity(n);
-    let mut highs = Vec::with_capacity(n);
-    let mut lows = Vec::with_capacity(n);
-    let mut vols = Vec::with_capacity(n);
-    let mut estado = Vec::with_capacity(n);
-    let sal = ((p.a * 1e6) as u64) ^ (((p.d * 1e8) as u64) << 20) ^ ((n as u64) << 44);
-    let mut seed = 0x2545F4914F6CDD1Du64 ^ sal.wrapping_mul(0x9E3779B97F4A7C15);
-    let mut uniforme = move || {
-        seed = seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        (seed >> 11) as f64 / (1u64 << 53) as f64
-    };
-    // Uniforme centrada en (−0,5, 0,5): σ = 1/√12.
-    let escala_ruido = p.sigma / (1.0 / 12f64.sqrt());
-    let mut ln_p = 60_000.0f64.ln();
-    let mut s: i8 = 1;
-    for _ in 0..n {
-        if uniforme() > p.a {
-            s = -s;
-        }
-        let u = uniforme() - 0.5;
-        let ruido = u * escala_ruido;
-        ln_p += f64::from(s) * p.d + ruido;
-        let px = ln_p.exp();
-        closes.push(px);
-        highs.push(px * (1.0 + 0.0015 + u.abs() * 0.0020));
-        lows.push(px * (1.0 - 0.0015 - u.abs() * 0.0020));
-        vols.push(900.0 + u.abs() * 2_000.0);
-        estado.push(s);
-    }
-    Serie {
-        closes,
-        highs,
-        lows,
-        vols,
-        estado,
-    }
-}
-
-/// Lo que la serie permitía ganar, medido sin el motor.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Techo {
-    /// Persistencia medida del estado oculto.
-    pub a_medida: f64,
-    /// P(signo del retorno de la vela = estado oculto): cuánto deja ver el ruido.
-    pub lectura: f64,
-    /// Retorno medio neto de fricción a 1, 5 y 20 velas siguiendo al oráculo.
-    pub oraculo: [f64; 3],
-    /// Lo mismo siguiendo al signo de la vela anterior (el proxy del flujo).
-    pub proxy: [f64; 3],
-    /// P(TP antes que SL) del bracket de referencia siguiendo al oráculo.
-    pub p_tp_oraculo: f64,
-    /// P(TP antes que SL) siguiendo al proxy.
-    pub p_tp_proxy: f64,
-    /// Fracción de brackets que vencen (ni TP ni SL en 60 velas), oráculo.
-    pub vencidos_oraculo: f64,
-}
-
-fn retorno_medio(serie: &Serie, direccion: impl Fn(usize) -> f64, k: usize) -> f64 {
-    let n = serie.closes.len();
-    if n <= k + 1 {
-        return 0.0;
-    }
-    let mut suma = 0.0;
-    let mut cuenta = 0usize;
-    for t in 1..(n - k) {
-        let dir = direccion(t);
-        if dir == 0.0 {
-            continue;
-        }
-        suma += dir * (serie.closes[t + k].ln() - serie.closes[t].ln());
-        cuenta += 1;
-    }
-    if cuenta == 0 {
-        0.0
-    } else {
-        suma / cuenta as f64 - FRICCION_RT
-    }
-}
-
-/// Primer toque del bracket (SL_REF, RR_REF·SL_REF) abierto al cierre de `t`
-/// en la dirección `dir`, resuelto con máximos y mínimos hasta `horizonte`
-/// velas; devuelve (tp, sl, vencido).
-fn primer_toque(serie: &Serie, t: usize, dir: f64, horizonte: usize) -> (bool, bool, bool) {
-    let entrada = serie.closes[t];
-    let tp = entrada * (1.0 + dir * RR_REF * SL_REF);
-    let sl = entrada * (1.0 - dir * SL_REF);
-    let n = serie.closes.len();
-    for j in (t + 1)..(t + 1 + horizonte).min(n) {
-        let (hi, lo) = (serie.highs[j], serie.lows[j]);
-        let toca_sl = if dir > 0.0 { lo <= sl } else { hi >= sl };
-        let toca_tp = if dir > 0.0 { hi >= tp } else { lo <= tp };
-        if toca_sl {
-            return (false, true, false);
-        }
-        if toca_tp {
-            return (true, false, false);
-        }
-    }
-    (false, false, true)
-}
-
-fn p_primer_toque(serie: &Serie, direccion: impl Fn(usize) -> f64) -> (f64, f64) {
-    let n = serie.closes.len();
-    let (mut tps, mut sls, mut vencidos, mut total) = (0usize, 0usize, 0usize, 0usize);
-    for t in 1..n.saturating_sub(1) {
-        let dir = direccion(t);
-        if dir == 0.0 {
-            continue;
-        }
-        let (tp, sl, v) = primer_toque(serie, t, dir, 60);
-        tps += tp as usize;
-        sls += sl as usize;
-        vencidos += v as usize;
-        total += 1;
-    }
-    if total == 0 {
-        return (0.0, 0.0);
-    }
-    let resueltos = (tps + sls).max(1);
-    (tps as f64 / resueltos as f64, vencidos as f64 / total as f64)
-}
-
-pub fn techo(serie: &Serie) -> Techo {
-    let n = serie.closes.len();
-    let mut iguales = 0usize;
-    let mut lecturas = 0usize;
-    for t in 1..n {
-        iguales += (serie.estado[t] == serie.estado[t - 1]) as usize;
-        let signo = (serie.closes[t] - serie.closes[t - 1]).signum();
-        lecturas += (signo == f64::from(serie.estado[t])) as usize;
-    }
-    let oraculo = |t: usize| f64::from(serie.estado[t]);
-    let proxy = |t: usize| (serie.closes[t] - serie.closes[t - 1]).signum();
-    let (p_tp_oraculo, vencidos_oraculo) = p_primer_toque(serie, oraculo);
-    let (p_tp_proxy, _) = p_primer_toque(serie, proxy);
-    Techo {
-        a_medida: iguales as f64 / (n - 1).max(1) as f64,
-        lectura: lecturas as f64 / (n - 1).max(1) as f64,
-        oraculo: [
-            retorno_medio(serie, oraculo, 1),
-            retorno_medio(serie, oraculo, 5),
-            retorno_medio(serie, oraculo, 20),
-        ],
-        proxy: [
-            retorno_medio(serie, proxy, 1),
-            retorno_medio(serie, proxy, 5),
-            retorno_medio(serie, proxy, 20),
-        ],
-        p_tp_oraculo,
-        p_tp_proxy,
-        vencidos_oraculo,
-    }
-}
-
-/// Esperanza en R del bracket de referencia con una p de TP: p·RR − (1 − p) − f/SL.
-fn ev_en_r(p_tp: f64) -> f64 {
-    p_tp * RR_REF - (1.0 - p_tp) - FRICCION_RT / SL_REF
-}
+#[path = "support/t3_synthetic.rs"]
+mod synthetic;
+pub use synthetic::*;
 
 /// Lote fino del símbolo del fixture (ver el T-2).
 fn registrar_lote_fino() {
@@ -336,6 +129,7 @@ pub struct Medida {
     pub peldano: Peldano,
     /// Capital inicial de la corrida (USD).
     pub capital: f64,
+    pub generador: Generador,
     pub techo: Techo,
     pub stats: [f64; STATS_LEN],
     pub rechazos: [u64; REJECT_SLOTS],
@@ -356,7 +150,7 @@ pub fn medir(p: Peldano) -> Medida {
 /// Como [`medir`], con el capital inicial dado: la meta es componer, así que
 /// lo que vale con 13 USD tiene que seguir valiendo al doblar.
 pub fn medir_con_capital(p: Peldano, capital: f64) -> Medida {
-    medir_serie(serie_persistente(p), p, capital)
+    medir_serie(serie_de(p, generador_env()), p, capital)
 }
 
 /// Como [`medir_con_capital`] sobre una serie ya construida (p. ej. una
@@ -367,6 +161,7 @@ pub fn medir_serie(serie: Serie, p: Peldano, capital: f64) -> Medida {
         ..p
     };
     let techo = techo(&serie);
+    let generador = serie.generador;
     let antes = rechazos_ahora();
     let inicio = std::time::Instant::now();
     let stats = std::thread::Builder::new()
@@ -430,6 +225,7 @@ pub fn medir_serie(serie: Serie, p: Peldano, capital: f64) -> Medida {
     Medida {
         peldano: p,
         capital,
+        generador,
         techo,
         stats,
         rechazos,
@@ -476,9 +272,21 @@ impl Pago {
             }
             p.max_abs = p.max_abs.max(x.abs());
         }
-        p.media_gana = if p.n_gana > 0 { sg / p.n_gana as f64 } else { 0.0 };
-        p.media_pierde = if p.n_pierde > 0 { sp / p.n_pierde as f64 } else { 0.0 };
-        p.b_real = if p.media_pierde > 0.0 { p.media_gana / p.media_pierde } else { f64::NAN };
+        p.media_gana = if p.n_gana > 0 {
+            sg / p.n_gana as f64
+        } else {
+            0.0
+        };
+        p.media_pierde = if p.n_pierde > 0 {
+            sp / p.n_pierde as f64
+        } else {
+            0.0
+        };
+        p.b_real = if p.media_pierde > 0.0 {
+            p.media_gana / p.media_pierde
+        } else {
+            f64::NAN
+        };
         p.p_estrella_real = if p.b_real.is_finite() && p.b_real > 0.0 {
             1.0 / (1.0 + p.b_real)
         } else {
@@ -525,22 +333,78 @@ fn linea_tsv(m: &Medida) -> String {
         m.pago.max_abs,
         m.segundos,
         rechazos_texto(&cero, &m.rechazos)
+    ) + &format!(
+        "\t{}\t{:.2}\t{:.2}\t{:.2}\t{:.3}\t{:+.2}\t{:.4}\t{:.3}\t{:.3}\t{:.3}",
+        m.generador.etiqueta(),
+        t.filtro[0] * 1e4,
+        t.filtro[1] * 1e4,
+        t.filtro[2] * 1e4,
+        t.p_tp_filtro,
+        ev_en_r(t.p_tp_filtro),
+        t.brier_filtro,
+        t.decision_filtro,
+        t.decodificable,
+        t.seguro
+    ) + &format!(
+        "\t{:.2}\t{:.2}\t{:.2}\t{:.4}\t{:.4}\t{:.4}",
+        t.filtro_neto[0] * 1e4,
+        t.filtro_neto[1] * 1e4,
+        t.filtro_neto[2] * 1e4,
+        t.cobertura_neta[0],
+        t.cobertura_neta[1],
+        t.cobertura_neta[2]
+    ) + &format!(
+        "\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
+        t.bracket_ev_r[0],
+        t.bracket_ev_r[1],
+        t.bracket_ev_r[2],
+        t.bracket_vencidos[0],
+        t.bracket_vencidos[1],
+        t.bracket_vencidos[2]
     )
 }
 
-const CABECERA_TSV: &str = "a\td_pct\tsigma_pct\tn\tcapital_inicial\ta_medida\tlectura\toraculo_1v_bps\toraculo_5v_bps\toraculo_20v_bps\tproxy_1v_bps\tproxy_5v_bps\tproxy_20v_bps\tp_tp_oraculo\tp_tp_proxy\tvencidos_oraculo\tev_R_oraculo\ttrades\twr_neto\tpnl_pct_capital\tcapital_final\tpnl_neto\tdd_max\tn_gana\tmedia_gana_usd\tmedia_pierde_usd\tb_real\tpstar_real\tmax_abs_pnl_usd\tsegundos\trechazos";
+const CABECERA_TSV: &str = "a\td_pct\tsigma_pct\tn\tcapital_inicial\ta_medida\tlectura\toraculo_1v_bps\toraculo_5v_bps\toraculo_20v_bps\tproxy_1v_bps\tproxy_5v_bps\tproxy_20v_bps\tp_tp_oraculo\tp_tp_proxy\tvencidos_oraculo\tev_R_oraculo\ttrades\twr_neto\tpnl_pct_capital\tcapital_final\tpnl_neto\tdd_max\tn_gana\tmedia_gana_usd\tmedia_pierde_usd\tb_real\tpstar_real\tmax_abs_pnl_usd\tsegundos\trechazos\tgenerador\tfiltro_1v_bps\tfiltro_5v_bps\tfiltro_20v_bps\tp_tp_filtro\tev_R_filtro\tbrier_filtro\tdecision_filtro\tdecodificable\tseguro\tfiltro_neto_1v_bps\tfiltro_neto_5v_bps\tfiltro_neto_20v_bps\tcobertura_neta_1v\tcobertura_neta_5v\tcobertura_neta_20v\tbracket_ev_R_oraculo\tbracket_ev_R_proxy\tbracket_ev_R_filtro\tbracket_vencidos_oraculo\tbracket_vencidos_proxy\tbracket_vencidos_filtro";
+
+#[test]
+fn t3_tsv_header_matches_row_with_abstention() {
+    let p = Peldano {
+        a: 0.5,
+        d: 0.0,
+        sigma: 0.0025,
+        n: 100,
+    };
+    let m = Medida {
+        peldano: p,
+        capital: CAPITAL_MICRO,
+        generador: Generador::V2Gauss,
+        techo: techo(&serie_persistente_v2(p)),
+        stats: [0.0; STATS_LEN],
+        rechazos: [0; REJECT_SLOTS],
+        pago: Pago::de_cierres(&[]),
+        pnl: vec![],
+        segundos: 0.0,
+    };
+    let row = linea_tsv(&m);
+    assert_eq!(CABECERA_TSV.split('\t').count(), row.split('\t').count());
+    let values: std::collections::HashMap<_, _> =
+        CABECERA_TSV.split('\t').zip(row.split('\t')).collect();
+    assert_eq!(values["filtro_neto_5v_bps"], "NaN");
+    assert_eq!(values["cobertura_neta_5v"], "0.0000");
+}
 
 fn imprimir(m: &Medida) {
     let t = &m.techo;
     let s = &m.stats;
     let cero = [0u64; REJECT_SLOTS];
     println!(
-        "[T3] a={:.2} d={:.2}% σ={:.2}% n={} C0={:.0} USD ({:.0} s) | serie: â={:.3} lectura={:.3} oráculo(1/5/20 velas)={:+.1}/{:+.1}/{:+.1} pb proxy={:+.1}/{:+.1}/{:+.1} pb p_tp(oráculo/proxy)={:.3}/{:.3} vencidos={:.2} EV_R(oráculo)={:+.2} | motor: trades={} wr={:.3} pnl={:+.4} USD ({:+.2} % del capital) capital={:.4} dd={:.3} | pago: gana {:.4}/pierde {:.4} USD b={:.2} p*={:.3} max|pnl|={:.4} | rechazos: {}",
+        "[T3] a={:.2} d={:.2}% σ={:.2}% n={} C0={:.0} USD gen={} ({:.0} s) | serie: â={:.3} lectura={:.3} oráculo(1/5/20 velas)={:+.1}/{:+.1}/{:+.1} pb proxy={:+.1}/{:+.1}/{:+.1} pb filtro={:+.1}/{:+.1}/{:+.1} pb p_tp(oráculo/proxy/filtro)={:.3}/{:.3}/{:.3} vencidos={:.2} EV_R(oráculo/filtro)={:+.2}/{:+.2} brier={:.4} decisión={:.3} decodificable={:.3} seguro={:.3} | motor: trades={} wr={:.3} pnl={:+.4} USD ({:+.2} % del capital) capital={:.4} dd={:.3} | pago: gana {:.4}/pierde {:.4} USD b={:.2} p*={:.3} max|pnl|={:.4} | rechazos: {}",
         m.peldano.a,
         m.peldano.d * 100.0,
         m.peldano.sigma * 100.0,
         m.peldano.n,
         m.capital,
+        m.generador.etiqueta(),
         m.segundos,
         t.a_medida,
         t.lectura,
@@ -550,10 +414,19 @@ fn imprimir(m: &Medida) {
         t.proxy[0] * 1e4,
         t.proxy[1] * 1e4,
         t.proxy[2] * 1e4,
+        t.filtro[0] * 1e4,
+        t.filtro[1] * 1e4,
+        t.filtro[2] * 1e4,
         t.p_tp_oraculo,
         t.p_tp_proxy,
+        t.p_tp_filtro,
         t.vencidos_oraculo,
         ev_en_r(t.p_tp_oraculo),
+        ev_en_r(t.p_tp_filtro),
+        t.brier_filtro,
+        t.decision_filtro,
+        t.decodificable,
+        t.seguro,
         s[1] as u64,
         s[0],
         s[6],
@@ -596,51 +469,6 @@ pub fn escalera(n: usize) -> Vec<Peldano> {
         });
     }
     v
-}
-
-/// El generador hace lo que dice: persistencia medida ≈ a, y la ventaja del
-/// oráculo crece con a. Es una propiedad de la serie, no del motor.
-#[test]
-fn t3_la_serie_tiene_la_ventaja_que_declara() {
-    let n = 20_000;
-    let nulo = techo(&serie_persistente(Peldano {
-        a: 0.5,
-        d: 0.0,
-        sigma: 0.0025,
-        n,
-    }));
-    assert!(
-        (nulo.a_medida - 0.5).abs() < 0.02,
-        "persistencia medida {:.3} lejos de 0,5",
-        nulo.a_medida
-    );
-    assert!(
-        nulo.oraculo[1].abs() < 0.0004 + FRICCION_RT && nulo.p_tp_oraculo < 0.45,
-        "sin deriva el oráculo no debería tener ventaja: 5v={:+.2e} p_tp={:.3}",
-        nulo.oraculo[1],
-        nulo.p_tp_oraculo
-    );
-    let mut anterior = f64::NEG_INFINITY;
-    for a in [0.6, 0.8, 0.95] {
-        let t = techo(&serie_persistente(Peldano {
-            a,
-            d: 0.0010,
-            sigma: 0.0025,
-            n,
-        }));
-        assert!(
-            (t.a_medida - a).abs() < 0.02,
-            "a={a}: persistencia medida {:.3}",
-            t.a_medida
-        );
-        assert!(
-            t.oraculo[1] > anterior,
-            "a={a}: la ventaja a 5 velas ({:+.2e}) no crece con la persistencia ({:+.2e})",
-            t.oraculo[1],
-            anterior
-        );
-        anterior = t.oraculo[1];
-    }
 }
 
 /// Un peldaño fuerte sin `--ignored`: si el motor no opera sobre una serie
@@ -705,13 +533,27 @@ fn t3_escalera_por_capital() {
         .unwrap_or(3_000);
     let capitales: Vec<f64> = std::env::var("T3_CAPITALES")
         .ok()
-        .map(|v| v.split(',').filter_map(|c| c.trim().parse::<f64>().ok()).collect())
+        .map(|v| {
+            v.split(',')
+                .filter_map(|c| c.trim().parse::<f64>().ok())
+                .collect()
+        })
         .filter(|v: &Vec<f64>| !v.is_empty())
         .unwrap_or_else(|| vec![100.0, 1_000.0]);
     let sigma = 0.0025;
     let peldanos = [
-        Peldano { a: 0.95, d: 0.0010, sigma, n },
-        Peldano { a: 0.90, d: 0.0020, sigma, n },
+        Peldano {
+            a: 0.95,
+            d: 0.0010,
+            sigma,
+            n,
+        },
+        Peldano {
+            a: 0.90,
+            d: 0.0020,
+            sigma,
+            n,
+        },
     ];
     let mut filas = Vec::new();
     for &capital in &capitales {
@@ -742,9 +584,17 @@ fn t3_valle_de_capital() {
         .unwrap_or(3_000);
     let capitales: Vec<f64> = std::env::var("T3_CAPITALES")
         .ok()
-        .map(|v| v.split(',').filter_map(|c| c.trim().parse::<f64>().ok()).collect())
+        .map(|v| {
+            v.split(',')
+                .filter_map(|c| c.trim().parse::<f64>().ok())
+                .collect()
+        })
         .filter(|v: &Vec<f64>| !v.is_empty())
-        .unwrap_or_else(|| vec![13.0, 20.0, 26.0, 35.0, 50.0, 65.0, 100.0, 215.0, 500.0, 1_000.0]);
+        .unwrap_or_else(|| {
+            vec![
+                13.0, 20.0, 26.0, 35.0, 50.0, 65.0, 100.0, 215.0, 500.0, 1_000.0,
+            ]
+        });
     let p = Peldano {
         a: 0.90,
         d: 0.0020,
@@ -786,8 +636,10 @@ fn t3_valle_de_capital() {
 /// (se reescala por el cociente entre el último cierre del primero y el
 /// precio base del generador, así conserva su primer retorno).
 pub fn serie_concatenada(p1: Peldano, p2: Peldano) -> Serie {
-    let mut a = serie_persistente(p1);
-    let b = serie_persistente(p2);
+    let g = generador_env();
+    let mut a = serie_de(p1, g);
+    let b = serie_de(p2, g);
+    a.tramos.push((a.closes.len(), p2));
     let ratio = a.closes.last().copied().unwrap_or(60_000.0) / 60_000.0;
     a.closes.extend(b.closes.iter().map(|x| x * ratio));
     a.highs.extend(b.highs.iter().map(|x| x * ratio));
@@ -835,10 +687,30 @@ fn t3_adaptacion_en_el_tiempo() {
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(3_000);
     let sigma = 0.0025;
-    let ventaja = Peldano { a: 0.90, d: 0.0020, sigma, n };
-    let nulo = Peldano { a: 0.50, d: 0.0, sigma, n };
-    let anti = Peldano { a: 0.10, d: 0.0020, sigma, n };
-    let larga = Peldano { a: 0.90, d: 0.0020, sigma, n: 2 * n };
+    let ventaja = Peldano {
+        a: 0.90,
+        d: 0.0020,
+        sigma,
+        n,
+    };
+    let nulo = Peldano {
+        a: 0.50,
+        d: 0.0,
+        sigma,
+        n,
+    };
+    let anti = Peldano {
+        a: 0.10,
+        d: 0.0020,
+        sigma,
+        n,
+    };
+    let larga = Peldano {
+        a: 0.90,
+        d: 0.0020,
+        sigma,
+        n: 2 * n,
+    };
 
     // Tramos en frío (referencia) y E1.
     let m_v = medir(ventaja);
@@ -859,26 +731,51 @@ fn t3_adaptacion_en_el_tiempo() {
         q[3]
     );
 
-    // Compuestos: E2, E3, E4.
+    // E5 (ola 3): antipersistencia larga por cuartiles, la prueba directa de
+    // inversión: los cuartiles son descriptivos; superar ½ no demuestra inversión ni aprendizaje.
+    let m_a = medir(Peldano {
+        a: 0.10,
+        d: 0.0020,
+        sigma,
+        n: 2 * n,
+    });
+    imprimir(&m_a);
+    let qa = cuartiles(&m_a.pnl);
+    println!(
+        "[T3-ADAPT] E5 antipersistencia larga ({} cierres): cuartiles por índice de cierre (cierres, acierto, PnL medio USD) = Q1 {:?} Q2 {:?} Q3 {:?} Q4 {:?}",
+        m_a.pnl.len(),
+        qa[0],
+        qa[1],
+        qa[2],
+        qa[3]
+    );
+
+    // Compuestos: E2, E3, E4 y E4' (anti → anti: separa calentamiento de
+    // herencia; A2/A3 de la ola 2). El pago del segundo tramo y del fresco
+    // va en la fila (A2-N4).
     let cero = [0u64; REJECT_SLOTS];
     println!(
-        "[T3-ADAPT-TSV] experimento\ttrades\twr\tpnl_usd\tb_real\tprimer_tramo_cierres_iguales\tsegundo_tramo_trades\tsegundo_tramo_pnl_usd\tsegundo_tramo_wr\tfresco_trades\tfresco_pnl_usd\tfresco_wr\trechazos_compuesto\trechazos_fresco"
+        "[T3-ADAPT-TSV] experimento\ttrades\twr\tpnl_usd\tb_real\tprimer_tramo_cierres_iguales\tsegundo_tramo_trades\tsegundo_tramo_pnl_usd\tsegundo_tramo_wr\tfresco_trades\tfresco_pnl_usd\tfresco_wr\trechazos_compuesto\trechazos_fresco\tsegundo_tramo_gana_usd\tsegundo_tramo_pierde_usd\tsegundo_tramo_b_real\tfresco_gana_usd\tfresco_pierde_usd\tfresco_b_real\tgenerador"
     );
-    let compuestos: [(&str, Peldano, Peldano, &Medida, &Medida); 3] = [
+    let compuestos: [(&str, Peldano, Peldano, &Medida, &Medida); 4] = [
         ("E2 ventaja→nulo", ventaja, nulo, &m_v, &m_n),
         ("E3 nulo→ventaja", nulo, ventaja, &m_n, &m_v),
         ("E4 ventaja→anti", ventaja, anti, &m_v, &m_k),
+        ("E4' anti→anti", anti, anti, &m_k, &m_k),
     ];
+    println!("[T3-REF-TSV] experimento\t{CABECERA_TSV}");
     for (nombre, p1, p2, primero, fresco) in compuestos {
         let m = medir_serie(serie_concatenada(p1, p2), p1, CAPITAL_MICRO);
         imprimir(&m);
+        println!("[T3-REF-TSV] {nombre}\t{}", linea_tsv(&m));
         let n1 = primero.pnl.len().min(m.pnl.len());
         let iguales = (0..n1)
             .filter(|&i| (m.pnl[i] - primero.pnl[i]).abs() < 1e-9)
             .count();
         let segundo = &m.pnl[n1..];
+        let pago2 = Pago::de_cierres(segundo);
         println!(
-            "[T3-ADAPT-TSV] {nombre}\t{}\t{:.4}\t{:.5}\t{:.3}\t{iguales}/{n1}\t{}\t{:.5}\t{:.4}\t{}\t{:.5}\t{:.4}\t{}\t{}",
+            "[T3-ADAPT-TSV] {nombre}\t{}\t{:.4}\t{:.5}\t{:.3}\t{iguales}/{n1}\t{}\t{:.5}\t{:.4}\t{}\t{:.5}\t{:.4}\t{}\t{}\t{:.5}\t{:.5}\t{:.3}\t{:.5}\t{:.5}\t{:.3}\t{}",
             m.stats[1] as u64,
             m.stats[0],
             m.stats[6],
@@ -890,7 +787,14 @@ fn t3_adaptacion_en_el_tiempo() {
             fresco.stats[6],
             fresco.stats[0],
             rechazos_texto(&cero, &m.rechazos),
-            rechazos_texto(&cero, &fresco.rechazos)
+            rechazos_texto(&cero, &fresco.rechazos),
+            pago2.media_gana,
+            pago2.media_pierde,
+            pago2.b_real,
+            fresco.pago.media_gana,
+            fresco.pago.media_pierde,
+            fresco.pago.b_real,
+            m.generador.etiqueta()
         );
     }
 }
@@ -915,9 +819,33 @@ fn t3_adaptacion_misma_serie_dos_veces() {
         "[T3-ADAPT2-TSV] serie\tprimera_pasada_trades\tprimera_pasada_pnl_usd\tprimera_pasada_wr\tsegunda_pasada_trades\tsegunda_pasada_pnl_usd\tsegunda_pasada_wr\tcierres_iguales_entre_pasadas\tfresco_trades\tfresco_pnl_usd\trechazos_compuesto\trechazos_fresco"
     );
     for (nombre, p) in [
-        ("ventaja a=0,9 d=0,2%", Peldano { a: 0.90, d: 0.0020, sigma, n }),
-        ("regimen medio a=0,9 d=0,1%", Peldano { a: 0.90, d: 0.0010, sigma, n }),
-        ("nulo a=0,5", Peldano { a: 0.50, d: 0.0, sigma, n }),
+        (
+            "ventaja a=0,9 d=0,2%",
+            Peldano {
+                a: 0.90,
+                d: 0.0020,
+                sigma,
+                n,
+            },
+        ),
+        (
+            "regimen medio a=0,9 d=0,1%",
+            Peldano {
+                a: 0.90,
+                d: 0.0010,
+                sigma,
+                n,
+            },
+        ),
+        (
+            "nulo a=0,5",
+            Peldano {
+                a: 0.50,
+                d: 0.0,
+                sigma,
+                n,
+            },
+        ),
     ] {
         let fresco = medir(p);
         imprimir(&fresco);

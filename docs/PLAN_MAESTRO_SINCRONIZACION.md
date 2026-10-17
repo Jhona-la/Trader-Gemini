@@ -2239,3 +2239,12 @@ Main remoto confirmado en 88f8812199eea80333d0c13d910ec9f7c1796900 mediante push
 ## R4 — referencias cerradas y sincronización — 2026-10-13
 
 Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales a T1. Root cerró sus refs espectrales e históricas; SI cerró platt-age-evidence-1013 local/remota. Worktrees, modelos, genomas y 229 recibos históricos conservados. Remoto observado: sólo main. CI de f59 pendiente; ninguna aprobación heredada. [Cierre efectivo y recibos](audit/CIERRE_R4_REFERENCIAS_2026-10-13.md). Esta última actualización documental se publica por rama temporal propia y su SHA/cierre se verifican externamente.
+
+## 15Oct2026 — Línea H: instrumento T-3 v2, validación separada
+
+Entrega en `codex/t3-v2-2026-10-15`, base `310f729f`; detalle y límites en
+`audit/LINEA_H_T3_V2_CIERRE_2026-10-15.md`. Diez contratos std-only pasan.
+El filtro HMM es referencia de cierres con DGP conocido, sin cota universal
+de PnL; las tablas recuperadas se preservan como históricas con hashes.
+Compilación all-targets e integración del motor pendientes. No modifica
+política viva, LH-06 ni acredita la meta de duplicación cada tres días.

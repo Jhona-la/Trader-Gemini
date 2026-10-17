@@ -1,0 +1,35 @@
+name: T3 synthetic model
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/backtest-engine/tests/support/t3_synthetic.rs'
+      - '.github/workflows/t3-model.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/backtest-engine/tests/support/t3_synthetic.rs'
+      - '.github/workflows/t3-model.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  model:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install pinned compiler
+        run: rustup toolchain install nightly-2026-06-30 --profile minimal
+      - name: Reference model contracts without the trading engine
+        shell: pwsh
+        run: |
+          rustc +nightly-2026-06-30 --edition=2024 --test crates/backtest-engine/tests/support/t3_synthetic.rs -o t3-model-tests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./t3-model-tests.exe --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

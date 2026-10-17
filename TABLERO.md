@@ -187,37 +187,14 @@
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
   `target/debug/incremental` y quedaron ~159 GB libres.
 
-## Claude — Línea H (actualizado: 2026-10-12 ~19:30 local, prefijo LH-n; olas 1 y 2 cerradas y fusionadas en main; rama borrada)
+## Codex — Línea H (15Oct2026, entrega T-3 v2)
 
-- **Qué es**: la cadena de la meta bajo una ventaja CONOCIDA. El T-3
-  (`crates/backtest-engine/tests/t3_ventaja_conocida.rs`): escalera de fixtures
-  sintéticos con persistencia y deriva controladas; techo sin el motor frente
-  a lo realizado, pago por cierre y rechazos por puerta; variantes por
-  capital, valle de capital, intervenciones sobre un gen y experimentos de
-  adaptación (series compuestas, cuartiles por experiencia, misma serie dos
-  veces). Plan y lectura: `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md` §6–7;
-  datos e índice: `docs/audit/linea_h/`.
-- **Ola 1 (medido)**: con ventaja el riesgo no rechaza nada y el motor gana
-  +10,8 % en 50 h, todo al nocional mínimo (0,049/día frente a 0,231/día de la
-  meta). La cuenta opera con 13–26 USD, NO opera con 35–65 USD (`fee_impact`,
-  LH-02 HIGH), 1 operación con 100, vuelve con 215. Con 1 000 USD la
-  envolvente es absorbente al cierre 30 (LH-03 HIGH). τ 64–128 s siempre;
-  ramas tendenciales nunca (LH-05/06).
-- **Ola 2 (medido)**: el sistema adapta la EXPOSICIÓN, no la SELECCIÓN: sin
-  curva de aprendizaje en el acierto (E1), la puerta EV no se cierra en 50 h
-  de nulo ni de antipersistencia tras un tramo ganador (E2/E4: 0 rechazos),
-  tras 50 h perdedoras captura la mitad de la ventaja (E3), ×3,75 exposición
-  en régimen adverso sin freno (E4), 0 cierres idénticos entre dos pasadas de
-  la misma serie (E1b). Causa: Platt sobre 512 cierres, olvido sólo entre
-  cierres; ningún lazo invierte el lado; τ en ley cerrada.
-- **Entregado**: LH-02…LH-09 (ola 1) y LH-12…LH-17 (ola 2) en el buzón con
-  el comando del T-3 que los reproduce; 46 lazos inventariados
-  (`ola2_lazos.tsv`).
-- **Siguiente (ola 3, si se reabre)**: pago del segundo tramo en la fila
-  ADAPT; E4' anti → anti y E5 antipersistencia larga por cuartiles; trazas
-  completas; peldaño con dos símbolos (D4 y co-despacho).
-- **No tocó**: ningún archivo fuera de `crates/backtest-engine/tests/` y
-  documentación.
+- **En revisión**: `codex/t3-v2-2026-10-15`, base `310f729f`.
+- **Validado**: 10 contratos std-only, cero fallos. Compilación completa e
+  integración pendientes de recursos/CI; los datos ola3 son históricos.
+- **Alcance**: instrumento y documentación; reserva LH-06 respetada.
+- **Registro**: `docs/audit/LINEA_H_T3_V2_CIERRE_2026-10-15.md`.
+
 
 ## Claude — sesión «elegant» (actualizado: 2026-10-11 ~03:05 UTC, prefijo QS-n, rama claude/elegant-euler-mmtht4)
 

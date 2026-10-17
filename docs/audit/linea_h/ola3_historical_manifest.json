@@ -1,0 +1,59 @@
+{
+  "status": "historical_unverified_binary",
+  "recorded_date": "2026-10-15",
+  "historical_branch_head": "2359ba1927d87c260affce2e2fe302db99fd9766",
+  "exact_run_source_and_binary": "unknown; do not attribute these results to current main",
+  "files": [
+    {
+      "path": "ola3_adaptacion_v2.tsv",
+      "sha256": "cc5a840ed6603e10449f1c00e8511971f7e721793fdc640b5b90df7f3ee05cdc",
+      "bytes": 1080
+    },
+    {
+      "path": "ola3_adaptacion_v2_lineas.txt",
+      "sha256": "638ff77af42ac884423965fb9186ccf0ad97beb687fde7ffe709fc0c90449e54",
+      "bytes": 6091
+    },
+    {
+      "path": "ola3_confirmaciones.tsv",
+      "sha256": "74a7361a9eed64ed2761e86e7c6706414de6ce547ef374aa9304b0f439eb1f3e",
+      "bytes": 7361
+    },
+    {
+      "path": "ola3_escalera_v1_vs_v2.tsv",
+      "sha256": "950e3e177269a6a20907e3b602fe05cffaddc01835f53c7b4a59fc1cb02841c2",
+      "bytes": 1748
+    },
+    {
+      "path": "ola3_escalera_v2_13usd.tsv",
+      "sha256": "02fbe31b3d6c39a3b85c4c09005d9e7fb5685dc089e6ec69dc0f07fa5dc58a32",
+      "bytes": 2551
+    },
+    {
+      "path": "ola3_escalera_v2_lineas.txt",
+      "sha256": "aba754a7ce92db71eb8a98bb3cd331a38da14ca73cd56f2586e395f6d0762840",
+      "bytes": 4738
+    },
+    {
+      "path": "ola3_escepticos.tsv",
+      "sha256": "2e79a6a1cea739698a42ab4e6333bafd73736a0075e6328bf3f3b9a5c4b651c7",
+      "bytes": 25743
+    },
+    {
+      "path": "ola3_escepticos_raw.json",
+      "sha256": "12daa42fc24289a4e6e711b971e17245ebf8e94996de43fefb9915c680d03c59",
+      "bytes": 39406
+    },
+    {
+      "path": "ola3_escepticos_sintesis.md",
+      "sha256": "a2e25e9ce7e9e5495036d1333db953957145a81df44f0943be27d6fd63a9fd72",
+      "bytes": 3648
+    },
+    {
+      "path": "ola3_valle_v2.tsv",
+      "sha256": "47ac4ea067b321fc98c201dfbe788fbfe3576f1cbc97325c48215d11df857086",
+      "bytes": 3040
+    }
+  ],
+  "normalization": "SHA256 of UTF-8 file bytes with CRLF normalized to LF (Git eol=lf)"
+}

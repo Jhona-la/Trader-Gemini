@@ -579,6 +579,16 @@
     - Suite completa `strategy-core` (45/45 pass, 100% verde).
     - Suite completa `signal-engine` (121/121 pass, 100% verde).
     - `cargo check --workspace --all-targets` (exit 0 en 2m 15s).
+## 2026-10-15 — Codex, Línea H: entrega T-3 v2 en revisión
+
+- Rama `codex/t3-v2-2026-10-15`, base `310f729f`; histórico H preservado.
+- Instrumento HMM/generador, abstención con cobertura, EV de brackets con
+  vencimientos y censura, causalidad de prefijo y NaN sin observaciones.
+- **10/0 contratos std-only**; Cargo all-targets e integración pendientes.
+  No se atribuyen resultados históricos a Ω128 ni se certifica rentabilidad.
+- Registro: `docs/audit/LINEA_H_T3_V2_CIERRE_2026-10-15.md`.
+- Reserva: sólo instrumento/documentación H y CI. LH-06, Core, riesgo y
+  ejecución permanecen con sus dueños. Target compartido sin tocar.
 
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω128 — Continuidad C1 en Espectro Multifractal, Microestructura de Flujo de Órdenes y Fill Realista en Simulador de Ejecución
 

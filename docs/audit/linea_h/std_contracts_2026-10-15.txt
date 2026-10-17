@@ -1,0 +1,16 @@
+
+running 10 tests
+test absent_followup_is_not_perfect_calibration_or_zero_participation ... ok
+test gaussian_extreme_evidence_does_not_fall_back_to_prior ... ok
+test gaussian_filter_matches_enumerated_hidden_paths ... ok
+test reference_bracket_counts_expirations_and_excludes_censoring ... ok
+test reference_direction_and_fee_boundary_are_exact ... ok
+test reject_degenerate_noise_instead_of_nan_posterior - should panic ... ok
+test segment_reset_and_prefix_causality ... ok
+test t3_la_serie_tiene_la_ventaja_que_declara ... ok
+test t3_v2_filtro_y_control_de_fuga_conjunta ... [T3-V2] a=0,9 d=0,2 %: v1 decodificable=0.470 seguro=0.470 filtro(5v)=+35.3 pb oráculo=+45.1 pb | v2 decodificable=0.000 seguro=0.006 filtro(1/5/20)=+1.2/+27.0/+44.4 pb proxy=-1.0/+19.6/+33.6 pb oráculo=+5.8/+42.8/+65.6 pb brier=0.1544 decisión=0.580 corr(mecha,estado)=-0.007 corr(vol,estado)=+0.002
+ok
+test t3_v2_la_serie_tiene_la_ventaja_que_declara ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.07s
+
