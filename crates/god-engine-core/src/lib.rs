@@ -4854,6 +4854,7 @@ impl GodEngineCore {
                     // Al alarmar: sembrar el bias (×0.5) — el tamaño se
                     // encoge vía LH-04/streak-118 y el OU lo relaja si la
                     // fuente recupera (no absorbente) — y reiniciar.
+                    let mut lg22_sembrar = false;
                     {
                         let riesgo_al_stop = (sl * entry * qty).max(1e-12);
                         let friccion_rt = live_fee * 2.0;
@@ -4885,20 +4886,24 @@ impl GodEngineCore {
                             "lg22_alarma",
                             if alarma_lg22 { 1.0 } else { 0.0 },
                         );
-                        if alarma_lg22 {
-                            // Sembrar el bias: la pausa de régimen reutiliza
-                            // el mecanismo OU que LH-04/streak-118 ya
-                            // consumen — encoge el tamaño, no mata la fuente.
-                            let bias_prev =
-                                self.arena.coins[coin_id].epigenetic_bias.load(Ordering::Relaxed);
-                            self.arena.coins[coin_id].epigenetic_bias.store(
-                                (bias_prev * 0.5).max(0.05),
-                                Ordering::Relaxed,
-                            );
-                        }
+                        lg22_sembrar = alarma_lg22;
                     }
 
                     coin.apply_spectral_epigenetic_feedback_with_time(pnl_epigenetico, position_age_ms, tau_trade_ms, event_time_ms);
+                    if lg22_sembrar {
+                        // Sembrar el bias: la pausa de régimen reutiliza el
+                        // mecanismo OU que LH-04/streak-118 ya consumen —
+                        // encoge el tamaño, no mata la fuente. LG-22b: se
+                        // siembra DESPUÉS de la realimentación del cierre,
+                        // sobre el sesgo ya avanzado a este instante; antes se
+                        // sembraba sobre el valor con la marca del cierre
+                        // anterior y la relajación OU lo devolvía hacia 1
+                        // durante el hueco (≈ 0,78 con cierres cada 60 min).
+                        // El suelo es el de los lectores (0,5).
+                        let bias = coin.epigenetic_bias.load(Ordering::Relaxed);
+                        coin.epigenetic_bias
+                            .store((bias * 0.5).clamp(0.50, 2.00), Ordering::Relaxed);
+                    }
 
                     // 2. Adaptacion continua tensorial de las 32 escalas espectrales en el espacio de Hilbert:
                     if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {

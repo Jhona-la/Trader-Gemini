@@ -143,3 +143,27 @@ fn lg22_fuente_sana_no_alarma() {
     let bias = arena.coins[0].epigenetic_bias.load(Ordering::Relaxed);
     assert!(bias >= 1.0, "sin alarma el bias no se siembra hacia abajo: {bias}");
 }
+
+/// (LG-22b, Línea G) La siembra de la alarma se aplica al sesgo YA
+/// avanzado al cierre, no al guardado con la marca del cierre anterior.
+/// Antes se sembraba ×0,5 sobre el valor viejo y la relajación OU del mismo
+/// cierre (τ = 30 min) lo devolvía hacia 1 durante todo el hueco: con
+/// cierres cada 60 min la alarma dejaba ≈ 0,78 en vez del suelo 0,5.
+#[test]
+fn lg22b_la_alarma_no_se_relaja_durante_el_hueco_entre_cierres() {
+    let _guard = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
+    let _dir = FixtureDirectory::new();
+    let (arena, mut core) = core(1.0); // ARL 1: el primer cierre perdedor alarma
+    let previo = 10_000_000u64;
+    let ahora = previo + 3_600_000; // 60 min después del cierre anterior
+    arena.coins[0].epigenetic_bias.store(1.0, Ordering::Relaxed);
+    arena.coins[0].last_close_ts.store(previo, Ordering::Relaxed);
+    abrir_y_cerrar(&arena, &mut core, 97.0, ahora);
+    let alarma = arena.registry.get_for_coin_or(0, "lg22_alarma", 0.0);
+    assert_eq!(alarma, 1.0, "con ARL 1 un cierre a −1 R alarma");
+    let sesgo = arena.coins[0].get_active_epigenetic_bias(ahora);
+    assert!(
+        sesgo <= 0.5 + 1e-9,
+        "tras la alarma el sesgo al cierre debe estar en su suelo 0,5: {sesgo}"
+    );
+}
