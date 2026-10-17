@@ -45,9 +45,9 @@ impl Lcg {
     }
 }
 
-/// Tamaño de la familia que consulta el consenso de motores (13 motores ×
-/// 32 escalas, skill_motores.rs): umbral de capital M/α = 8 320.
-const FAMILIA_MOTORES: usize = 13 * 32;
+/// Tamaño de la familia que consulta el consenso de motores (15 motores ×
+/// 32 escalas, skill_motores.rs, LG8-146-06): umbral de capital M/α = 9 600.
+const FAMILIA_MOTORES: usize = 15 * 32;
 
 // Valor verdadero: con factor 1 ± 0,1 y signo equiprobable el capital es una
 // martingala; Ville acota P(cruce de 20) ≤ α = 0,05. La enumeración exacta de

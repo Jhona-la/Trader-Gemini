@@ -251,18 +251,19 @@ impl QuantumStrategy for JohansenVecmEngine {
         } else {
             Some(symbol)
         };
-        let cid_opt = if symbol.is_empty() {
-            None
-        } else {
+        let is_scoped = !symbol.is_empty() || coin_id > 0;
+        let cid_opt = if is_scoped {
             Some(coin_id)
+        } else {
+            None
         };
-        // CL-80 (F3.7-04, LC-F1-07): con símbolo, lectura ESTRICTA (moneda o
-        // símbolo, nunca la global, que es la de la última moneda que
-        // escribió). Sin símbolo (`evaluate()`), la global.
+        // CL-80 (F3.7-04, LC-F1-07) & LG8-145-08: con símbolo o coin_id > 0, lectura ESTRICTA
+        // (moneda o símbolo, nunca la global, que es la de la última moneda que
+        // escribió). Sin símbolo y coin_id == 0 (`evaluate()`), la global.
         let z = match self.registry.as_ref() {
             Some(r) => {
                 let leer = |k: &str| {
-                    if sym_opt.is_some() {
+                    if is_scoped {
                         r.get_scoped_parameter_strict(sym_opt, cid_opt, k, "JohansenVecmEngine")
                     } else {
                         r.get_scoped_parameter(sym_opt, cid_opt, k, "JohansenVecmEngine")
@@ -319,22 +320,26 @@ impl QuantumStrategy for JohansenVecmEngine {
 
     fn is_operable_for_coin(&self, coin_id: usize, symbol: &str) -> bool {
         let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
-        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let is_scoped = !symbol.is_empty() || coin_id > 0;
+        let cid_opt = if is_scoped { Some(coin_id) } else { None };
         let r = match self.registry.as_ref() {
             Some(reg) => reg,
             None => return false,
         };
         let leer = |k: &str| {
-            if sym_opt.is_some() {
+            if is_scoped {
                 r.get_scoped_parameter_strict(sym_opt, cid_opt, k, "JohansenVecmEngine")
             } else {
                 r.get_scoped_parameter(sym_opt, cid_opt, k, "JohansenVecmEngine")
             }
         };
+        // LG8-145-03: En producción el núcleo publica `vecm_zscore = 0.0` cuando el spot
+        // caduca (> TTL) o cuando carece tanto de spot como de `kline_ema_slow`.
+        // Exigir `v.abs() > 1e-12` excluye la codificación 0.0 («sin dato»), mientras que
+        // un z-score no nulo dentro de `|z| <= z_entry` (abstención informada) sí es operable.
         leer("vecm_zscore")
-            .or_else(|| leer("cointegration_zscore"))
             .map(|p| p.get_value())
-            .filter(|v| v.is_finite())
+            .filter(|v| v.is_finite() && v.abs() > 1e-12)
             .is_some()
     }
 

@@ -13059,3 +13059,22 @@ tres cerradas, main debería estar VERDE — próximo merge lo confirma.
 Ω130 cambia la semántica del veto Lundberg de forma profunda (R alto
 protege en vez de alertar) — los fixtures que prueben el LECTOR deben
 usar R BAJO restrictivo para distinguir presente/ausente.
+
+## 2026-10-17 — Antigravity (AGY, Quant Sr.): OLA Ω147 CERRADA — Cierre de 10 Hallazgos Línea G Ola 8 (Paridad CPT e Interpolación Hermite $C^1$ en BSD, Sincronizador Hayashi-Yoshida por-evento en Kähler-Hodge y Yang-Mills, y Operabilidad Estricta por Moneda)
+
+- **Rama**: `agy/ola-147-bsd-kahler-yangmills-c1-paridad` (fusionada a `main` y borrada).
+- **Para Línea G (Claude) y el consejo**: he cerrado con código, pruebas de contrato y 0 regresiones los 10 hallazgos de `docs/audit/linea_g/ola8_revision.tsv` sobre los motores del milenio y el denominador de `SignalEngine`:
+  1. **`G8-OMEGA-02` (HIGH) y `G8-OMEGA-06` (MED) — `crates/strategy-core/src/birch_swinnerton_dyer.rs`**:
+     - El residuo de fase $(x_k, y_k)$ se definió como $w_k = y_k |y_k| - x_k^3$ (impar bajo inversión $(x, y) \mapsto (-x, -y)$), de modo que $\text{Cov}(x, w)$ y $a(-x, -y) = a(x, y)$ son pares, y la deriva restauradora `-x_s * (x_s * x_s + a_safe.abs() * 0.5) * 0.15 + y_s * 0.45` hace que `bsd_restoring_current` sea estrictamente impar ($J_{\text{arriba}} + J_{\text{abajo}} = 0$).
+     - Erradicada la cuantización `.round() as i64` ($C^0$) en `eval_modular_l_function`; reemplazada por interpolación bilineal Hermite $C^1$ ($3t^2 - 2t^3$) sobre la celda reticular $2 \times 2$ en `eval_modular_lattice_vertex` simetrizada en $\pm b_{\text{int}}$.
+  2. **`G8-OMEGA-03` (HIGH) — `crates/strategy-core/src/kahler_hodge.rs`**:
+     - Incorporado sincronizador asíncrono por pares estilo Hayashi-Yoshida (`last_nonzero_ret`, `ret_seq`, `last_pair_seq`): el par $(i, j)$ actualiza `corr_matrix[i][j]` cuando ambos activos han registrado un nuevo retorno no nulo desde su último emparejamiento (`seq_i > last_pair_seq[i][j] && seq_j > last_pair_seq[j][i]`). Así Kähler-Hodge aprende el comovimiento (`ricci_scalar != 0`) con el patrón de llamada por-evento de `GodEngineCore`.
+  3. **`G8-OMEGA-04` (MED), `G8-OMEGA-05` (MED) y `LG8-145-01` (HIGH) — `crates/strategy-core/src/yang_mills_gauge.rs`**:
+     - Mismo sincronizador Hayashi-Yoshida en `beta_matrix[i][j]` preservando `R6-C6` (activos estacionarios jamás mutan `beta`), y uso de `last_nonzero_ret` en el lazo de holonomía de 3-ciclos cuando `returns[i] == 0.0`.
+     - `is_operable_for_coin` exige `self.num_assets >= 3 && has_current && active_triangles >= 1.0`, excluyendo replays mono-activo (`active_triangles == 0.0`) aunque el motor se instancie con `new(30)`.
+  4. **`LG8-145-02` (HIGH), `LG8-145-03` (HIGH) y `LG8-145-08` (MED) — `crates/strategy-core/src/stat_arb.rs` y `crates/strategy-core/src/vecm_arbitrage.rs`**:
+     - `is_operable_for_coin` exige `v.is_finite() && v.abs() > 1e-12` sobre `statarb_ou_zscore` y `vecm_zscore`, tratando como inoperables los `0.0` que `GodEngineCore` publica cuando no hay spot fresco o `kline_ema_slow`, y como operables los z-scores no nulos dentro de la banda (`0 < |z| <= thresh`, abstención informada).
+     - Lectura estricta por moneda cuando `is_scoped = !symbol.is_empty() || coin_id > 0` (`LG8-145-08`), preservando fallback global sólo para `evaluate()`.
+  5. **`LG8-146-06` (LOW) — `crates/quantum-arena/src/evalues.rs`**:
+     - Sincronizado `FAMILIA_MOTORES = 15 * 32 = 480` ($M/\alpha = 9\,600$).
+- **Pruebas**: Des-ignorados los 2 tests abiertos en `crates/strategy-core/tests/lg8_open_bsd_kahler.rs` y añadidos 3 contratos adicionales → **5/5 verdes (0 ignored)**; `strategy-core` contratos **28/28 verdes** y `--lib` **45/45 verdes**; `signal-engine` contratos **11/11 verdes**; `quantum-arena` e-values **4/4 activos verdes**. Compilado exclusivamente vía `scripts/cargo_semaforo.sh`.
