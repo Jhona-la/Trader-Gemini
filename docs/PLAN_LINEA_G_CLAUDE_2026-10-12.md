@@ -732,7 +732,8 @@ alarma, simulados (RR 2,25, f = 0,27 R; 300–600 caminos):
   ventaja declarada de 0,55; eso da ≈ 40–110 velas (estimación con velas
   independientes). Si el cambio de estructura es común a las 13 monedas y se
   agrega la evidencia, la información por vela se multiplica por 13:
-  ≈ 3–9 velas.
+  ≈ 3–9 velas. **[Corregido en la ola 8, §16.1: se multiplica por N_eff
+  (≈ 2,5 con las 13 grandes, ≈ 4 con 38), no por 13: ≈ 10–44 velas.]**
 - **Regla que sale de aquí**: la escala rápida tiene que agregar información
   por hora, no reinterpretar los mismos cierres. Las fuentes son la predicción
   frente a lo realizado en cada vela, la agregación entre monedas y escalas, y
@@ -799,3 +800,195 @@ Shiryaev–Roberts, media de e-detectores, versión logarítmica equivalente
   `fuera_de_cota` y `fuera_de_garantia`.
 - **Filtración por orden de cierre con posiciones solapadas (INFO)**: queda
   documentada. En simulación, el ARL no cambia de forma material.
+
+## 16. Ola 8 (2026-10-17, base `5f34f4fc`): revisión desde la base de Ω94–Ω146, núcleo hermético y cuánta información dan N monedas
+
+### 16.1 Cuánta información independiente dan N monedas por vela (medido)
+
+En la ola 7 (§15.2) escribí que, si el cambio de régimen es común a las 13
+monedas, agregar su evidencia multiplica por 13 la información por vela
+(≈ 3–9 velas). **Es falso**: las monedas se mueven juntas y la información de
+un desplazamiento común no suma N, suma 1ᵀΣ⁻¹1 (GLS).
+
+Medido sobre 38 tapes reales de agosto de 2026 (`docs/audit/linea_g/ola8_neff.py`,
+resultado en `ola8_neff_2026-08.json`; precio del último trade en rejilla de
+60 s y 300 s; correlación de signos condicionada a que las dos monedas se
+muevan, robusta al 18 % de retornos cero a 60 s):
+
+| | 60 s | 300 s |
+|---|---|---|
+| ρ̄ de Pearson (38) | 0,435 | 0,484 |
+| ρ̄ de signo condicionada (38) | 0,326 | 0,337 |
+| ρ̄ de signo, las 5 del evolver | 0,545 | 0,538 |
+| N_eff, 5 del evolver (BTC, ETH, SOL, BNB, XRP) | 1,57 | 1,59 |
+| N_eff GLS, 5 del evolver | 1,59 | 1,60 |
+| N_eff equicorrelado, 13 grandes (Pearson) | 1,70 | 1,58 |
+| **N_eff GLS, 13 grandes** | **2,48** | **2,48** |
+| N_eff equicorrelado, 38 (ρ de signo) | 2,91 | 2,82 |
+| **N_eff GLS, 38 (cambio común)** | **4,07** | **3,83** |
+| Participación de autovalores (38) | 7,2 | 6,9 |
+| Techo 1/ρ̄ de signo | 3,07 | 2,97 |
+
+Las 13 grandes son BTC, ETH, BNB, SOL, XRP, DOGE, ADA, DOT, LINK, LTC, BCH,
+AVAX y TRX (las que tienen tape de agosto). La reserva de esta ola estimaba
+N_eff ≈ 2,3 con 13 monedas y techo ≈ 2,5: lo medido con GLS (2,48) cae ahí.
+
+**Consecuencias**:
+
+- **Detección del cambio de régimen.** La información de Fisher de un cambio
+  común se multiplica por N_eff, no por N. Con 40–110 velas para una sola
+  moneda (§15.2), el retardo agregado es ≈ 25–69 velas con las 5 del evolver,
+  ≈ 16–44 con las 13 grandes y ≈ 10–29 con las 38 y pesos GLS. La escala del
+  régimen (10–20 velas) sólo se alcanza en el extremo optimista: universo
+  amplio y pesos GLS (no la media simple), y sólo para cambios comunes. Un
+  cambio que afecta a una moneda no gana nada por agregar.
+- **«Multiplicidad de oportunidades» de la meta.** 13 monedas no son 13
+  apuestas independientes por instante: en dirección son ≈ 1,6–2,5 (las
+  grandes) y ≈ 3–4 (universo amplio). Toda cuenta que divida el número de
+  operaciones/día necesarias entre el número de monedas se queda corta por un
+  factor ≈ 3–5. La independencia que falta tiene que venir del tiempo
+  (operaciones no solapadas), no de sumar monedas.
+- **El evolver** juzga con 5 monedas que valen ≈ 1,6: su evidencia multiactivo
+  es casi la de una moneda.
+- Límites: un mes (agosto de 2026), correlación incondicional (en caídas la
+  correlación sube y N_eff baja), signo y no magnitud.
+
+### 16.2 LG-23: construir el núcleo no carga modelos del disco (núcleo)
+
+Ω144 metió `preload_models_from_disk()` en
+`GodEngineCore::new_with_outcome_context`. La clave de cada modelo es el nombre
+del archivo y `store_global` sustituye la entrada:
+
+- **Los oráculos dependían de la carpeta.** T-1, T-2 y T-3 registran un
+  `BTCUSDT_MOTOR` sintético y LUEGO construyen el núcleo. Desde el checkout
+  principal (`../../models` alcanzable desde el crate) medían con el modelo
+  real de BTC; desde un worktree o en CI, con el sintético. Prueba roja
+  `lg23_constructor_hermetico`: tras construir, la base del predictor
+  registrado pasaba de 0,881 a 0,119 (la del disco).
+- **El demonio y Darwin releían el disco por candidato.** Cada examen
+  (`nucleo_del_examen`, `evaluate_genotype`, el bosque sombra) construye un
+  núcleo: 53 archivos (4,2 MB) por candidato, republicando `GLOBAL_FORESTS`
+  dentro del proceso vivo.
+- **Producción no dependía de ello**: el host carga los modelos
+  (`refresh_ml_models`, `god_engine.rs` ≈ 1413) antes de construir el núcleo
+  (≈ 2991).
+
+Arreglo: el constructor ya no lee disco. Las herramientas offline que
+dependían de la carga implícita (`votes_export`, `continuous_evolution_backtest`,
+`latency_flow_audit`, `nano_benchmark`) la hacen explícita al empezar, así que
+su conducta no cambia; las que ya cargaban por su cuenta (`audit_forensic_backtest`,
+`backtest_windows`, `evolution`, `evolver`, `multi_coin_simulator`) no se
+tocan. Los dos vehículos de medición de GLM (`puertas_confluence_medicion`,
+`censo_mudos_medicion`) cargan explícitamente y miden como en GLM 131. Los
+vehículos anteriores a Ω144 (`bt_vivo_parity_audit`, `espectral_piso_medicion`,
+`cf3_tau_aprendizaje`) vuelven a su condición de diseño, sin modelos. Los
+contratos del censo de Ω144 siguen verdes (4/4) porque cargan explícitamente;
+el de recarga, 13/13. Nota para GLM: el test 2 del censo ya no certifica que
+el constructor cargue (CSG-5), porque desde LG-23 no debe hacerlo.
+
+**LG-23b (residual, MED, núcleo/Línea C):** el constructor sigue leyendo
+`DarkAlpha_BTCUSDT.json` para `swing_nn` (desde agosto, no de Ω144). El host
+lo carga por su cuenta (≈ 3092), así que también sobra en producción. Quitarlo
+exige cargarlo explícitamente en las herramientas offline que lo usan; hasta
+entonces, certificar T-1 desde un worktree o CI, no desde el checkout principal.
+
+### 16.3 Revisión desde la base de Ω94–Ω146, LH-12, Sol F9 y GLM 121–136
+
+Desde la reserva de esta ola (`a6146445`) entraron 196 commits y 183 `.rs`
+(+25 572 líneas). Tres revisores de solo lectura, uno por lente (Ω145–Ω146;
+Ω137–Ω144; Codex, Sol y GLM), y verificación propia de los HIGH contra el
+código. Tabla completa en `docs/audit/linea_g/ola8_revision.tsv`: **48
+hallazgos (6 HIGH, 16 MED, 13 LOW, 13 INFO)**; la columna «verificación» dice
+cuáles comprobé yo y cuáles son del revisor.
+
+**HIGH, todos verificados:**
+
+| id | qué | dueño | estado |
+|---|---|---|---|
+| CSG-1 = LG-23 | el constructor del núcleo cargaba modelos y pisaba los predictores de los oráculos | AGY (Ω144) | cerrado (§16.2) |
+| G8-OMEGA-01 | Ω144, Ω145 y Ω146 cambiaron la decisión viva sin re-certificar T-1/T-2 (AGY escribió en Ω143 que cablearlas «exige oráculo T-1») | AGY | §16.5 |
+| G8-OMEGA-02 | la corriente BSD `tanh(−0,15·(3x²+a)+0,45·y)` es par en x: lejos de la EMA empuja a corto por arriba y por abajo; recorta largos hasta ×0,35 | AGY | prueba OPEN |
+| G8-OMEGA-03 | Kähler degenerado: con una moneda por llamada `rᵢ·rⱼ ≡ 0`, métrica = identidad, corriente = −tanh(0,5·tanh(OFI)); en vivo atenúa hasta un 40 % los votos alineados con el OFI y en el replay monomoneda vale 0 | AGY | prueba OPEN |
+| CSG-2 | el hedge por fuente (GLM 130) puntúa cada voto contra el movimiento que el voto ya vio, con `(mid − prev)` en USD dividido por una fracción (satura siempre a ±1); sus pesos [0,05; 20] reponderan el consenso de todas las monedas | GLM | abierto |
+| CSG-3 | LH-04 calcula el pago `b = PF·(1−p)/p` con la tasa de acierto POSTERIOR (encogida) y PF = 5,0 literal sin pérdidas: con 9 ganancias y 1 pérdida del mismo tamaño usa b ≈ 2,21 en vez de 1 y dimensiona ≈ 3,8× | GLM | abierto |
+
+**MED destacados** (detalle y escenario de fallo en el TSV):
+
+- **LG-22b (CSG-4), cerrado:** el cableado de mi detector (GLM 121) sembraba
+  `bias × 0,5` sobre el valor con la marca del cierre anterior y la relajación
+  OU lo devolvía hacia 1 en el hueco: con cierres cada 60 min la alarma dejaba
+  0,78. Ahora se siembra tras la realimentación del cierre (prueba roja→verde).
+- **Ω145 casi no excluye nada:** Yang-Mills se construye con la capacidad
+  (30) y `num_assets ≥ 3` es tautológico; VECM publica `vecm_zscore = 0` como
+  «sin dato»; StatArb cuenta como operable el spot CADUCADO y como inoperable
+  la abstención informada. La «dilución del 25–40 %» declarada no la sostiene
+  el código.
+- **Ω146 no añade hipótesis:** Navier y Feynman son transformaciones impares
+  del mismo `z_k` que el solitón; sus e-procesos de Ville (sólo usan
+  `sign(v·r)`) son idénticos al del solitón. La familia sube de 416 a 480 sin
+  información nueva (menos potencia) y, en frío con pesos iguales, el mismo
+  rasgo pesa 3/15. La coherencia de Feynman entra en la decisión dominada por
+  escalas sub-resolución (reabre F2.6-02).
+- **El voto de FlowExcitationConfluence se multiplica por 13 factores**, 10
+  de ellos literales sin derivación, y seis funciones de la MISMA EMA del OFI:
+  el mismo rasgo cuenta varias veces y con signos opuestos. La sombra
+  espectral además SUMA las corrientes a x(τ_k): crea dirección donde el flujo
+  no la tiene.
+- **Yang-Mills es inerte también en vivo** (β no aprende con una moneda por
+  llamada; J ≈ −r_tick queda bajo la guarda de 1e-4): la afirmación «en vivo
+  multiactivo opera» de Ω144/GLM 131 no la sostiene el código.
+- **Escalones C0 presentados como «Hermite C¹»:** Helmholtz (×10 al cruzar
+  0,35) y BSD (conteos mod p de coeficientes redondeados a 0,2).
+- **Riemann-GUE** no distingue GUE de un peine regular: mide la monotonía de
+  la EMA del OFI en 16 eventos.
+- **SOL-R5-02 sólo parcialmente cerrado:** el replay marca a mercado el
+  capital final, pero el drawdown y el corte por ruina siguen sobre caja
+  realizada (Sol).
+
+**Veredicto por módulo de Ω137–Ω143** (revisor, con lectura propia de BSD y
+Kähler): Wasserstein y Dirac miden algo (momentum de una coordenada compuesta;
+persistencia del signo del OFI), con nombre decorativo y redundantes con x(τ) y
+el OFI. BSD es numerología con un sesgo direccional. Kähler y Yang-Mills están
+degenerados por el patrón de llamada. Riemann-GUE mide otra cosa. Helmholtz
+tiene unidades mezcladas (bps y OFI). Ninguno tiene evidencia de lift fuera de
+muestra (G-TEO §30.1). Propuesta al consejo: congelar sus multiplicadores a 1
+hasta medir lift OOS contra un nulo, igual que se hizo con los genes muertos
+(LG-18/LG-21).
+
+**Positivos verificados por los revisores:** LH-12 (Platt con edad por
+cierre) es correcto, con oráculos analíticos; las doce claves que lee el
+confluence tienen escritor; anti-phantom-boost preservado; Sol F3/F9-3
+correctos; el orden real de `votos_espectrales` coincide con los índices
+`MOTOR_*`; mis cuatro MED de la ola 5 quedaron cerrados por CL-106b y
+CL-108d/e/f (pruebas `cl108*` 5/5, ejecutadas).
+
+### 16.4 Las cifras del plan maestro V17 frente a lo medido
+
+- «Win rate del 55–75 % … sin riesgo de ruina»: una esperanza positiva no
+  elimina la ruina, y ningún tramo medido (T-3, forense, Línea H) muestra ese
+  acierto con ventaja neta.
+- «Ninguna orden expone más del 25 % del capital» es un techo, y alto frente
+  a Kelly en espacio de riesgo; no es una garantía de supervivencia.
+- «Hot path < 25 µs»: la última medida de la Línea C (CL-60) fue ≈ 127–238 µs
+  por evento; ver §16.5.
+- «Multiplicidad de oportunidades» entre monedas: ver §16.1, factor ≈ 1,6–4.
+
+### 16.5 Mediciones de la ola: camino caliente y re-certificación de T-1
+
+(se rellena al terminar)
+
+### 16.6 Siguiente paso (ola 9 de la Línea G, propuesto)
+
+1. **Antes de tocar motores, medir.** Con T-1/T-2 re-certificados sobre main
+   (§16.5), medir con el replay real de GLM (`censo_mudos_medicion`, desde el
+   raíz) qué cambia en la decisión si los multiplicadores de Ω137–Ω143 valen 1.
+   Si el consejo acepta congelarlos, el cambio entra con su T-1.
+2. **Agregar información por hora (ola 7) con el N_eff medido (§16.1):** la
+   serie de predicción frente a lo realizado por vela, agregada entre monedas
+   con pesos GLS, es la fuente de la escala rápida; el T-3 v2 de la Línea H
+   puede medirla con un cambio común multiactivo.
+3. **LG-23b** (DarkAlpha en el constructor), con la Línea C.
+4. **Recorrido por archivo:** seguir el ledger de Codex
+   (`docs/audit/REVISION_*`) por los crates que más cambiaron desde la ola 7:
+   signal-engine (36 archivos), risk-engine (27), god-engine-core (24),
+   metacortex-engine (17).

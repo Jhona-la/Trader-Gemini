@@ -23,6 +23,11 @@ use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_re
 #[test]
 #[ignore = "investigación local: requiere tape REAL de 239 MB en data/"]
 fn puertas_confluence_cual_gate_domina_btc_sep() {
+    // LG-23: el núcleo ya no carga modelos al construirse; este vehículo mide
+    // con los del roster, así que los carga explícitamente (misma conducta
+    // que con la precarga implícita de Ω144).
+    let modelos = god_engine_core::model_reload::preload_models_from_disk();
+    println!("[LG-23] modelos cargados de disco: {modelos}");
     let nombre = "BTCUSDT_2026-09-14_REAL.bin";
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let candidatos = [

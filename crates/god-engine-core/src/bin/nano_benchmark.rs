@@ -15,6 +15,9 @@ fn main() {
         "[NANO-PROFILER] Iniciando Profiling de Latencia Cuántica (Motor Universal Continuo)..."
     );
 
+    // LG-23: los modelos del disco se cargan aquí, no al construir el núcleo.
+    let modelos = god_engine_core::model_reload::preload_models_from_disk();
+    println!("[NANO-PROFILER] modelos cargados de disco: {modelos}");
     let arena = Arc::new(GlobalArena::new(13.0));
     let mut core = GodEngineCore::new(Arc::clone(&arena));
 
