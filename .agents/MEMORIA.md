@@ -9359,3 +9359,14 @@ PR88 c813 sobre28125 conserva28 GREEN locales, pero su CI F739421966227 falló16
 ## F7 — composición pública prospectiva y validación completa — 2026-10-20
 
 Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-075 preservados). Dependencia pública F1-072 explícita, no merge autorizado aún. Los2conflictos de memoria/buzón se resolvieron por unión: latest completo + anexosF7. Fuente74fb/helper6453/PS0592 y semáforo idénticos;29métodos locales completos GREEN, sin skips/Rust; regresión8.3 mismaharness REDrc2 enc813→GREENactual. CI propia8checks acontinuación, sinheredar c813; serial90→88→87 y cotejoárbolcheckout/composiciónantesmerge.
+
+---
+
+## F7 — CI detecta alias 8.3 y F1-072 — 2026-10-20
+
+PR88 c813 sobre28125 conserva28 GREEN locales, pero su CI F739421966227 falló16aserciones: alias RUNNER~1/runneradmin,15comparaciones del fixture y1rechazo real de target válido. Ajuste actual74fb/6453/0592: smoke3/3 (incluye alias8.3 real, sin skip) y PS10/10; suite completa29métodos pendiente, sin heredarGREEN. Unit39421965697/job118624893536 además falló F1-072 active7vs8, igual fuente/test de main: carrera de publicación concurrente, no fallo GitHub ni del Rust F7. ROOT asignó reparación a SI en átomo separado; esperar composición reparada y ocho checks actuales antes de merge. [Plan vigente](../docs/audit/PUERTO_F7_RECURSOS_2026-10-20.md).
+
+
+## F7 — composición pública prospectiva y validación completa — 2026-10-20
+
+Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-075 preservados). Dependencia pública F1-072 explícita, no merge autorizado aún. Los2conflictos de memoria/buzón se resolvieron por unión: latest completo + anexosF7. Fuente74fb/helper6453/PS0592 y semáforo idénticos;29métodos locales completos GREEN, sin skips/Rust; regresión8.3 mismaharness REDrc2 enc813→GREENactual. CI propia8checks acontinuación, sinheredar c813; serial90→88→87 y cotejoárbolcheckout/composiciónantesmerge.

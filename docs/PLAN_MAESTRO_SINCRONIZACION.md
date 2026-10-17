@@ -2248,3 +2248,33 @@ El filtro HMM es referencia de cierres con DGP conocido, sin cota universal
 de PnL; las tablas recuperadas se preservan como históricas con hashes.
 Compilación all-targets e integración del motor pendientes. No modifica
 política viva, LH-06 ni acredita la meta de duplicación cada tres días.
+
+## 62. Línea H — ola 4: el T-3 v2 sobre `main` con LH-04 — el tamaño sigue a la evidencia donde la hay; LH-20 cerrado en `main`; τ no sigue al régimen; LH-21 anatomizado (2026-10-17)
+
+Medido sobre `main` 09fe64db (binario release por el semáforo LG-25, 13 USD,
+50 h por tramo; tablas `docs/audit/linea_h/ola4_*`, detalle en
+`docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md` §9):
+
+- **LH-04 (GLM 117/118) hace lo que dice**: sin ventaja medible el motor es
+  bit a bit el de la ola 2 (dos peldaños v1 idénticos a
+  `ola2_post_pr62_escalera_13usd.tsv`); con ventaja fuerte abre con
+  nocional 6,7–7,1 USD (máx. 10–19) a 2×: +14,7 % y +31,9 % en 50 h, es
+  decir 0,066 y 0,133 de crecimiento log por día; E1 (100 h) 0,118/día. La
+  meta pide 0,231/día: la palanca del tamaño ya está, la del número de
+  oportunidades independientes por día (cartera) no se mide aquí.
+- **LH-20 CERRADO en `main`**: nulo → ventaja da 172 cierres y +3,48 USD en
+  el segundo tramo (ola 3: 0). Lo desabsorbieron C-F5c (PR #70), LG-22/22b,
+  GLM 117/118 y la reversión de Ω110; la ola no bisecta cuál.
+- **LH-22 (nuevo)**: el tamaño heredado de la ventaja se paga en el nulo
+  (E2: −0,69 USD, ×3,9 el nulo fresco): la contracción es más lenta que la
+  expansión. Para GLM.
+- **LH-06 (GLM 122)**: τ mediana 55–128 s en las 25 series y nodo moda 67 s;
+  no sigue al peldaño ni al régimen; co-despacho muerto (96–100 % en la
+  ranura 0). El punto 2 exige `regimen_velas` en el T-3 (ola 5) y
+  `tau_hab=` en `[OPEN TRACE]` (Qoder/AGY).
+- **LH-21**: en un fixture monoactivo los `correlacion` son la cota de
+  Cramér-Lundberg con R convertido por el L_máx del spec (#651): 8–25× más
+  estricta que con el apalancamiento usado. Para el dueño del riesgo.
+- **Valle**: **LH-02 y LH-03 cerrados en `main`, LH-04 compone**: la misma serie opera en los diez capitales de 13 a 1 000 USD (191 cierres en nueve de ellos; ola 3: 0 cierres en 35/50/65 USD y 5 en 100), el nocional mediano es ≈ 0,53 × C0 y el PnL en 50 h 28–41 % del capital en todo el rango (0,12–0,17 log/día); en 1 000 USD no hay envolvente absorbente (191 cierres). Mella residual en 35 USD: 522 `fee_impact` y 162 cierres (25,5 %) — LH-02b, LOW, al dueño del riesgo. Coste: DD máx 0,9–1,2 % (ola 3: 0,6–0,9 %) y la palanca cede de 3× a 2× por encima de 215 USD.
+- No se tocó crate alguno; `tau_por_peldano.py` y tablas nuevas. Sin
+  certificación de rentabilidad: el T-3 es sintético y monoactivo.

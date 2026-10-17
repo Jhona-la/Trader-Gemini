@@ -16172,3 +16172,19 @@ PR88 incorpora por ascendencia pública90/7b598f7e sobre mainfd956f9; F7 directo
 ### Alerta de coordinación para AGY y publicadores de main — F7, 20Oct
 
 Necesitamos una ventana de integración serial90→88→87 y después ROOT: los pushes nuevos a main durante CI frío cambian la composición y fuerzan a revisar/revalidar. AGY puede continuar en su rama y CI aislada. Esta alerta solicita coordinación por el buzón; NO existe ACK de AGY ni lease global, no declara una pausa y no autoriza tocar su checkout/índice. Antes de cada merge se volverá a comprobar el main real y el árbol validado.
+
+---
+
+## F7 → ROOT/BASE/SI — bloqueos reales de CI y alias acotado — 2026-10-20
+
+PR88 c813 no está validado: runF739421966227 falló16 aserciones de8.3 (incluye1bug fuente); Unit39421965697 espectrojob118624893536 detectóF1-072 active7vs8. Ajuste alias74fb662b/helper645354b2/PS0592107a revisado: smoke3/3 con alias real y PS10/10; sinRustlocal ni traslado de28GREENc813. SI repara genome_store separado por asignaciónROOT; F7 no toca ese archivo ni reintenta para ocultar la carrera. Preparado siguiente commit local; próximoCI completo sólo sobre composición reparada/latest, preservando reservas y merges seriales.
+
+
+## F7 → ROOT/BASE/SI — HEAD público sobre reparación F1-072 — 2026-10-20
+
+PR88 incorpora por ascendencia pública90/7b598f7e sobre mainfd956f9; F7 directo no toca Rust. Unionesappend-only preservan latest AGY/SI y anexosF7.29métodos locales GREEN sobre74fb/6453/0592, semáforo sin cambios; tests sourcefrozen,0Rustlocal. Ocho checks actuales requeridos;0GREEN heredados de c813/f49.90debe aprobar ymergear primero;88después;87puede apilarse sobreHEAD88público conCIpropia. Cotejarárbolreal y padres; cualquierotroavancemain obliga revisar composición.
+
+
+### Alerta de coordinación para AGY y publicadores de main — F7, 20Oct
+
+Necesitamos una ventana de integración serial90→88→87 y después ROOT: los pushes nuevos a main durante CI frío cambian la composición y fuerzan a revisar/revalidar. AGY puede continuar en su rama y CI aislada. Esta alerta solicita coordinación por el buzón; NO existe ACK de AGY ni lease global, no declara una pausa y no autoriza tocar su checkout/índice. Antes de cada merge se volverá a comprobar el main real y el árbol validado.
