@@ -123,16 +123,30 @@ el parámetro muerto (un funding NaN ya no veta el OBI de todas las monedas). Co
 `funding_rate_sensitivity` (átomo F-A2: o se cablea con lift OOS o se retira del genoma) y slot 48 del
 tensor 54D (BTC global para todas las monedas; paridad con el entrenamiento de la RED por verificar).
 
+**F2 (verificación adversarial de los 18 HIGH, cerrada 17:40)** — 2 escépticos independientes por hallazgo con
+mandato de REFUTAR; 27/36 veredictos (la cuota cortó 9). Tabla: `docs/audit/fable/f2_verificacion.tsv`; la
+columna `estado` de `f1_hallazgos.tsv` lleva el veredicto. **CONFIRMADOS HIGH**: F1-005 (política de
+rate-limit sólo en rutas de entrada, `executor.rs:1190`), F1-006 (veto del Auditor Interno alimentado por una
+`internal_discrepancy` degenerada, `lib.rs:5012`), F1-007 (ramas con puerta OBI nunca evaluadas en la evolución
+`trade_only`, `lib.rs:6569`), F1-008 (el Consejo juzga las alts con la volatilidad de BTC, `lib.rs:9023`;
+refuta el cierre Ω95/Ω97), F1-013 (LH-04, átomo F-A5). **Rebajados a MED**: F1-001/009/010/011 (el freno
+absorbente es decisión del dueño; K a 200 ops vs caída de por vida, documentado en el módulo). **Mixtos**:
+F1-002/003/004 (demonio de evolución; necesitan fixture) y F1-012 (= T1-08 de Línea G, cerrado por F-A4).
+**Refutado**: F1-014 (duplicado de LC-F4-01). **Sin veredicto por cuota**: F1-015..018. Dueños: AGY tomó
+F1-005/006/018 (Ω150); Fable F1-012 (F-A4) y F1-013 (F-A5); F1-007/008 propuestos al dueño de la evolución.
+
 ## 6. Átomos priorizados (se completa en F3; los ya identificados van aquí)
 
 | id | sev | qué | archivos | estado |
 |---|---|---|---|---|
-| F-A1 | HIGH | funding per-símbolo de principio a fin: atómico por moneda → coste de carry en la puerta de EV; arista muerta `fr_elasticity` retirada | quantum-arena/state.rs, risk-engine/lib.rs, god-engine-core/{lib,stateful_engine,math_kernels}.rs, src/bin/god_engine.rs | en certificación |
+| F-A1 | HIGH | funding per-símbolo de principio a fin: atómico por moneda → coste de carry en la puerta de EV; arista muerta `fr_elasticity` retirada | quantum-arena/state.rs, risk-engine/lib.rs, god-engine-core/{lib,stateful_engine,math_kernels}.rs, src/bin/god_engine.rs | CERTIFICADO, en main 5895fe178 (17 pruebas) |
 | F-A2 | HIGH | gen `funding_rate_sensitivity` (vec[6] de 144): en vivo NO tiene lector; en `backtest-engine/vectorized.rs:208` escala un funding SINTÉTICO (`clamp(0,5;2)·1e-4`), así que la evolución aprende a pagar menos funding ficticio sin efecto real: botón de sobreajuste (CSG-14 de la misma familia). Arreglo: el vectorizado debe cobrar el funding HISTÓRICO real (`{SYM}_FUNDING.parquet`, ya lo descarga `market_context`) y el gen debe retirarse del genoma (cambia DIMENSION=144 ⇒ coordinar con T-1 y con los genomas persistidos) o, mientras, congelarse a 1 | quantum-arena/genome.rs, backtest-engine/vectorized.rs | hallazgo; requiere consejo (DIMENSION) |
 | F-A3 | MED | slot 48 del tensor 54D (`combined[48] = omni[11]·1000`): funding de BTC servido a TODAS las monedas para la RED (`swing_nn`); verificar con qué funding se entrenó `DarkAlpha_BTCUSDT.json` y si la red se aplica a altcoins | god-engine-core/lib.rs:2057 | hallazgo |
-| F-H1 | MED | política de higiene (logs > 7 d comprimir, graphify dated conservar 3, exes de test > 3 d, worktrees al mergear) como script + regla AGENT_SYNC §4 | scripts/, AGENT_SYNC.md | pendiente |
-| F-H2 | MED | CI: cada push de SOLO documentación a main lanza «Replay contracts» (≤ 90 min) y «Unit and contract suites» en runners Windows (coste ×2); hoy la mayoría de los pushes son docs (buzón, AGENT_SYNC, TABLERO). `paths-ignore` para `**/*.md`, `docs/**`, `*.tsv`, `graphify-out/**`, `outputs/**` en ambos workflows | .github/workflows/*.yml | pendiente (verificar protección de rama) |
+| F-H1 | MED | política de higiene (logs > 7 d comprimir, graphify dated conservar 3, exes de test > 3 d, worktrees al mergear) como script + regla AGENT_SYNC §4 | scripts/, AGENT_SYNC.md | en main 0d2181347 (`scripts/higiene_recursos.sh`, −1,28 GB aplicados) |
+| F-H2 | MED | CI: cada push de SOLO documentación a main lanza «Replay contracts» (≤ 90 min) y «Unit and contract suites» en runners Windows (coste ×2); hoy la mayoría de los pushes son docs (buzón, AGENT_SYNC, TABLERO). `paths-ignore` para `**/*.md`, `docs/**`, `*.tsv`, `graphify-out/**`, `outputs/**` en ambos workflows | .github/workflows/*.yml | en main 4a5476038 (sin protección de rama en main: los pushes directos siguen pasando) |
 | F-P1 | HIGH | camino caliente 134 → 175 µs (+31 %): medir con CL-60 tras F-A1 (−1 lookup por string por evento depth), luego atacar las ~90 escrituras/evento de telemetría sin lector (G8-OMEGA-14) y las claves por `&str` | god-engine-core/lib.rs | pendiente (release build, máquina quieta) |
+| F-A4 | HIGH | F1-012 / T1-08: el Monte Carlo del umbral del freno duro (20 000 caminos) salía del hilo del evento cada vez que la geometría redondeada (0,02 stops) cambiaba. Caché exacta + vecino CONSERVADOR (mínimo K a radio ≤ 5 pasos) + hilo de fondo que calcula el exacto; mismos umbrales. | risk-engine/src/drawdown.rs, risk-engine/tests/fable_freno_duro_cache_contract.rs (5) | CERTIFICADO, en main 0f12af746 (AGY ola-149 integró el WIP 0b1ffbf80 con radio Manhattan y `max_vecinos`; `cf4_freno_duro` ajustado) |
+| F-A5 | HIGH | F1-013 (confirmado por 2 escépticos): LH-04 convertía f a nocional dividiendo por `sl_at_tau(τ)` (curva genómica) y no por `expected_loss` (el stop que la orden lleva, el de CL-2/CL-7/D-744): riesgo realizado f·C·(stop real/stop genómico), con ATR alto varias veces f. Arreglo: divisor = stop real (respaldo a la curva sólo si no hay stop utilizable); telemetría `lh04_f_realizado`, `lh04_capital_asignado`, `lh04_stop_real`; el contrato viejo medía `sl_target` (un PRECIO) como fracción ⇒ cota trivial: endurecido a banda bilateral ±5 % contra el realizado publicado y ≤ f·C. | risk-engine/src/lib.rs (bloque LH-04), risk-engine/tests/lh04_sizing_riesgo_contract.rs, risk-engine/tests/fable_lh04_stop_real_contract.rs (3) | en certificación (pruebas en cola del semáforo; T-1 antes del ff) |
 
 ## 7. Frentes teóricos que propongo al consejo (backlog §6 sin dueño)
 
@@ -158,3 +172,14 @@ tensor 54D (BTC global para todas las monedas; paridad con el entrenamiento de l
 - 2026-10-17 12:30 — límite de cuota: F1 cerró con 22/24 mapas y 0/76 auditores; cosecha en
   `docs/audit/fable/`. F-A1 editado (8 archivos + 2 contratos), en `cargo check`. F1-b relanzada
   (16 áreas, 1 lente).
+- 2026-10-17 13:25 — F1-b cerrada: 125 hallazgos brutos (18 HIGH) y 24/24 mapas (main 100a0a2a2).
+- 2026-10-17 14:10 — F-A1 certificada (17 pruebas) y en main 5895fe178; F-H1 (0d2181347) y F-H2 (4a5476038)
+  en main; buzón/MEMORIA/AGENT_SYNC actualizados (c5c3f49bc). Lección: nunca commitear desde la raíz
+  compartida (AGY cambió la rama de la raíz a mitad de operación); docs desde el worktree con `push HEAD:main`.
+- 2026-10-17 15:40 — F-A4 (F1-012) WIP 0b1ffbf80 publicado SIN certificar; sin cuota: traspaso en AGENT_SYNC.
+- 2026-10-17 17:00 — de vuelta. AGY integró y certificó F-A4 en ola-149 (0f12af746; radio Manhattan,
+  `max_vecinos`); mi WIP cae en el rebase. F2 cosechada (27/36) y publicada (45247044e).
+- 2026-10-17 18:20 — F-A5 (F1-013) editado: divisor = stop real + telemetría; contrato viejo endurecido (medía
+  `sl_target`, un PRECIO, como fracción) y contrato nuevo (3). En cola del semáforo: dos cargo AJENOS fuera del
+  semáforo (`test -p god-engine-core --lib` desde 16:09 y `check --release --workspace --all-targets --jobs 1`
+  desde 17:59), RAM libre 2,7 GB. T-1 (release, -j2, target compartido) antes del ff a main.
