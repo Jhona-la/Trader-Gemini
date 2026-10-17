@@ -2164,7 +2164,10 @@ LH-12…LH-17 en el buzón; 46 lazos inventariados en `docs/audit/linea_h/ola2_l
 
 **LG-22.** Un detector de pérdida de ventaja por fuente, sin cablear, en
 `resultado_orden.rs`. Es un e-CUSUM sobre la R neta con nivel: el tiempo medio
-hasta la falsa alarma es ≥ ARL cierres para toda fuente con E[R] ≥ μ, donde μ
+hasta la falsa alarma es ≥ ARL cierres para toda fuente que cumpla, cierre a
+cierre, E[R_t | cierres previos] ≥ μ (nulo condicional, con R acotada por la
+geometría y la apuesta fijada antes de cada cierre; corregido en la ola 8:
+la versión marginal «E[R] ≥ μ» no basta), donde μ
 es elegible (0 = paga su fricción; la ventaja declarada, como la +0,30 R de
 CL-107). Es la escala rápida que la ola 2 de la Línea H dice que falta.
 
@@ -2179,7 +2182,8 @@ la velocidad la fija la referencia:
 - La escala del régimen (10–20 velas) no cabe en los cierres, ni en la
   predicción por vela de una moneda (≈ 40–110 velas). Sólo cabe agregando
   información por hora: predicción frente a lo realizado en cada vela y entre
-  las monedas (si el cambio es común, ≈ 3–9 velas), y el libro sombra de las
+  las monedas (si el cambio es común, ≈ 3–9 velas; **corregido en §61: el
+  factor es N_eff ≈ 2,5–4, no N, ≈ 10–44 velas**), y el libro sombra de las
   intenciones vetadas.
 
 **Ω92.** F3.4-01 y F3.4-02 son correctos. El veto de caída del consejo
@@ -2188,6 +2192,27 @@ la velocidad la fija la referencia:
 
 
 <!-- R4-OCT13-TERMINAL-DOCUMENTATION-V1 -->
+## 61. Línea G — ola 8: núcleo hermético, revisión desde la base de Ω94–Ω146 y cuánta información dan N monedas (2026-10-17)
+
+> Detalle en [PLAN_LINEA_G_CLAUDE_2026-10-12.md §16](PLAN_LINEA_G_CLAUDE_2026-10-12.md); tabla en `docs/audit/linea_g/ola8_revision.tsv`.
+
+**LG-23.** Construir el núcleo ya no carga modelos del disco. Ω144 lo hacía y
+pisaba el predictor sintético de T-1/T-2/T-3 sólo desde el checkout raíz: el
+oráculo medía distinto según la carpeta. Producción no cambia (el host carga
+antes). **LG-22b.** La alarma de pérdida de ventaja ya no se relaja durante el
+hueco entre cierres.
+
+**N_eff entre monedas (medido, 38 tapes de agosto).** Para un cambio común,
+la información suma 1ᵀΣ⁻¹1, no N: ≈ 1,6 con las 5 del evolver, 2,48 con las 13
+grandes, ≈ 4 con 38. Corrige la ola 7 («×13») y la «multiplicidad de
+oportunidades» de la meta (factor ≈ 1,6–4).
+
+**Revisión: 48 hallazgos, 6 HIGH verificados.** Ω144–Ω146 sin T-1; corriente
+BSD par (sesgo corto en tendencia); Kähler degenerado (sólo actúa en vivo);
+hedge por fuente anticausal (GLM 130); LH-04 dimensiona con la p posterior
+(≈ 3,8× con 9/1). Propuesta: congelar a 1 los multiplicadores de Ω137–Ω143
+hasta medir lift fuera de muestra.
+
 ## R4 — recibos terminales y continuidad — 2026-10-13
 
 R4 13Oct: composición documental b661dcfaca00a1d46a26ebd7e44b2dc252e6348c; fuente ejecutada f62590e33a76a61a67320fed0e1ecc9ae0514ebd. Agregado terminal: 713 aprobadas / 0 fallidas / 7 ignoradas / 1 filtradas; son ejecuciones registradas, con repeticiones, no tests únicos. T1: 18/144 genes sensibles (12.5000%). Ledger: 1816 rutas pendientes, cero archivos completos auditados y sólo tres rutas con hunks ceros/replay verificados. evalues.rs sigue doc-only pendiente. SI final declarado: 927921160e87a425a793d6a23460ab7f2fbff033; no se transfiere CI de padres ni se certifica main remoto.
