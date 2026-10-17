@@ -81,8 +81,36 @@
 
 Tabla canónica: `docs/audit/fable/f1_hallazgos.tsv`. Resumen por severidad y por crate aquí.
 
-_(pendiente — la auditoría de 100 agentes está en curso; este bloque se rellena en el siguiente
-micro-commit)_
+**Mapa (F1-a, cerrado 12:30)**: 22 de 24 crates mapeados por agentes en solo lectura
+(`docs/audit/fable/f1_mapa_crates.md`). Cosecha bruta, SIN verificar por humano: 341 símbolos `pub`
+sin consumidor fuera de tests (`f1_aristas_muertas.tsv`) y 117 estructuras con crecimiento no acotado
+candidatas (`f1_estado_no_acotado.tsv`). Los mapas de `god-engine-core` y de la raíz `src/` cayeron por
+cuota y se repiten en la tanda F1-b. Hallazgos destacados del mapa (a verificar en F2):
+- `os-guardian`: todo el plano PMU/eBPF/anomaly_detector es inerte por construcción (PMU devuelve
+  `None` siempre ⇒ el brazo `(Some, Some)` es inalcanzable); el único canal vivo es
+  `panic_memory_dump` (veto de entradas, Relaxed, 5 s de retraso). Contradicción de límites: JobObject
+  5 888 MB vs working set recortado al literal 4 096 MB.
+- `flight-recorder`, `graph-architecture`, `telemetry-server`: 0 módulos alimentan la decisión viva;
+  `telemetry-server` acumula 11 estructuras no acotadas candidatas.
+- `dark-alpha-engine`: 6/6 módulos vivos pero 21 símbolos sin consumidor y 7 estructuras no acotadas.
+
+**Hallazgos (F1-b, en curso)**: 16 áreas del núcleo de decisión (god-engine-core ×5, risk ×3,
+signal ×2, quantum-arena ×2, executor, demonio de evolución, replay, host) con una lente combinada
+y tope de 8 hallazgos por área, por cuota. Resultado en `f1_hallazgos.tsv` (estado «bruto») hasta F2.
+
+**Átomo F-A1 (funding per-símbolo, en certificación)** — hallazgo propio durante la lectura del
+backlog §6.6: el funding per-símbolo publicado por QO-U1c alimentaba una ARISTA MUERTA
+(`fr_elasticity`: se actualizaba y nadie la leía; lo dejaba escrito el propio `train_forest.rs`) tras
+un lookup por string en el hot path, y el gen `funding_rate_sensitivity` no tiene lector vivo.
+Arreglo: atómico `funding_rate_next` + marca por moneda en `CoinArena` (TTL 360 s, fail-closed a «sin
+dato»), publicado por el poller; consumidor vivo = puerta de EV del risk-engine con el coste de carry
+esperado E[carry] = d·f·τ/T_F (exacto bajo fase uniforme, causal, sólo coste; T_F = 8 h), también en
+`fee_impact`; `FundingRateElasticity` y `update_macro_flow` retirados; `update_macro_features` pierde
+el parámetro muerto (un funding NaN ya no veta el OBI de todas las monedas). Contratos:
+`quantum-arena/tests/fable_funding_carry_contract.rs` (10) y
+`risk-engine/tests/fable_funding_carry_ev_gate_contract.rs` (7). Pendiente: gen muerto
+`funding_rate_sensitivity` (átomo F-A2: o se cablea con lift OOS o se retira del genoma) y slot 48 del
+tensor 54D (BTC global para todas las monedas; paridad con el entrenamiento de la RED por verificar).
 
 ## 6. Átomos priorizados (se completa en F3)
 
@@ -109,3 +137,6 @@ _(pendiente)_
 
 - 2026-10-17 11:55 — registro en AGENT_SYNC/buzón (main 6a6ded278); worktree y rama creados;
   F1 lanzada (100 agentes); higiene .r7r6/NUL.*.
+- 2026-10-17 12:30 — límite de cuota: F1 cerró con 22/24 mapas y 0/76 auditores; cosecha en
+  `docs/audit/fable/`. F-A1 editado (8 archivos + 2 contratos), en `cargo check`. F1-b relanzada
+  (16 áreas, 1 lente).
