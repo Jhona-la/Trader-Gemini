@@ -4697,6 +4697,9 @@ impl GodEngineCore {
                     // es la base del enfriamiento posterior. Se lee ANTES de
                     // cerrar, mientras el estado de la posicion sigue viva.
                     let tau_de_la_posicion = pos.entry_tau_ms.load(Ordering::Relaxed);
+                    // CL-130: el SL PROPIO de la posición (0 si se adoptó del
+                    // exchange sin él); `close_with_fee` lo borra.
+                    let sl_propio = pos.sl_price.load(Ordering::Relaxed);
                     let (closed_side, closed_entry, closed_qty, margin_used, entry_fee_paid) = pos.close_with_fee();
                     // CL-45b: lo cerrado manda (un llenado parcial confirmado
                     // en paralelo pudo reescalar la ranura tras la lectura).
@@ -5288,6 +5291,26 @@ impl GodEngineCore {
                         self.arena.perdida_en_stops.load(Ordering::Relaxed),
                     );
                     self.arena.registry.set("ville_estrategia_e", e_estrategia);
+                    // CL-130 (R1 de la revisión del PR #62): la caída del freno
+                    // duro se cuenta en stops DE ESTA POSICIÓN, PnL neto /
+                    // (cantidad × |entrada − SL propio|). Antes se medía en USD
+                    // y se dividía por la EWMA del riesgo de las últimas
+                    // órdenes, que encoge en una racha perdedora (LH-04). Una
+                    // posición sin SL propio no cuenta: su caída la cubre d*.
+                    let riesgo_al_stop_usd = qty * (entry - sl_propio).abs();
+                    let resultado_en_stops = if sl_propio > 0.0
+                        && riesgo_al_stop_usd.is_finite()
+                        && riesgo_al_stop_usd > 0.0
+                    {
+                        net_trade_pnl / riesgo_al_stop_usd
+                    } else {
+                        f64::NAN
+                    };
+                    let caida_en_stops = risk_engine::drawdown::registrar_resultado_en_stops(
+                        &self.arena,
+                        resultado_en_stops,
+                    );
+                    self.arena.registry.set("freno_duro_caida_en_stops", caida_en_stops);
                     signal_engine::perceptron_gate::PerceptronGateEngine::update_weight(
                         &mut cur_hebbian,
                         resultado_r,
@@ -9770,6 +9793,11 @@ impl GodEngineCore {
                                 }
                                 self.diag_opened += 1;
                                 self.diag_dir.record_open(is_long);
+                                // CL-131 (R2 de la revisión del PR #62): lo
+                                // medido de la orden (riesgo al stop y
+                                // geometría) entra en las medias de la cuenta
+                                // ahora que está abierta, una vez.
+                                self.risk_engine.registrar_orden_abierta(&self.arena, coin_id);
                                 // Fail closed for attribution if another transition
                                 // interleaved. This is not a transactional fill ledger.
                                 self.council_entry_evidence[coin_id][target_pos_slot] =

@@ -251,6 +251,21 @@ pub struct RiskEngine {
     /// CL-107 — freno de la estrategia (proceso e de Ville sobre la R de cada
     /// cierre, H0 = +0,30 R). Echado, no se admiten entradas nuevas.
     pub freno_estrategia: freno_estrategia::FrenoEstrategia,
+    /// CL-131 — lo medido de la última orden validada, hasta que el núcleo
+    /// confirme que la abrió (`registrar_orden_abierta`).
+    medida_pendiente: Option<MedidaOrden>,
+}
+
+/// CL-131 (R2 de la revisión del PR #62) — lo que una orden validada aporta
+/// a las medias de la cuenta: su riesgo al stop (en fracción del capital al
+/// dimensionar y en USD) y su geometría en stops, `w = (TP − f)/SL` y
+/// `l = (SL + f)/SL`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct MedidaOrden {
+    coin_id: usize,
+    riesgo: f64,
+    riesgo_usd: f64,
+    geometria: Option<(f64, f64)>,
 }
 
 impl RiskEngine {
@@ -258,11 +273,51 @@ impl RiskEngine {
         Self {
             peak_capital: initial_capital,
             freno_estrategia: freno_estrategia::FrenoEstrategia::new(),
+            medida_pendiente: None,
         }
     }
 
+    /// CL-134 — el motor empieza de cero con `initial_capital`: el pico, el
+    /// freno de la estrategia y la medida pendiente.
     pub fn reset(&mut self, initial_capital: f64) {
         self.peak_capital = initial_capital;
+        self.freno_estrategia = freno_estrategia::FrenoEstrategia::new();
+        self.medida_pendiente = None;
+    }
+
+    /// CL-131 (R2 de la revisión del PR #62) — el núcleo abrió la última
+    /// orden validada de `coin_id`: lo medido de esa orden entra en las medias
+    /// de la cuenta, una vez. Devuelve si había una medida pendiente de esa
+    /// moneda.
+    ///
+    /// Antes las medias se actualizaban al final de `evaluate_single_intent`,
+    /// antes de los vetos del núcleo (consejo, ML-GATE, margen, cantidad) y
+    /// sin enfriamiento: la misma intención vetada se medía en cada tick, y
+    /// la memoria de 20 órdenes eran unos 20 ticks de intenciones de
+    /// cualquier moneda, sobre todo de las que no tienen modelo.
+    pub fn registrar_orden_abierta(&mut self, arena: &GlobalArena, coin_id: usize) -> bool {
+        let Some(m) = self.medida_pendiente.filter(|m| m.coin_id == coin_id) else {
+            return false;
+        };
+        self.medida_pendiente = None;
+        let actualizar = |celda: &quantum_arena::AtomicF64, nuevo: f64| {
+            let previo = celda.load(Ordering::Relaxed);
+            celda.store(
+                crate::drawdown::actualizar_riesgo_ewma(
+                    previo,
+                    nuevo,
+                    crate::drawdown::TRADE_HORIZON / 10.0,
+                ),
+                Ordering::Relaxed,
+            );
+        };
+        actualizar(&arena.riesgo_por_operacion, m.riesgo);
+        actualizar(&arena.riesgo_por_operacion_usd, m.riesgo_usd);
+        if let Some((ganancia, perdida)) = m.geometria {
+            actualizar(&arena.ganancia_en_stops, ganancia);
+            actualizar(&arena.perdida_en_stops, perdida);
+        }
+        true
     }
 
     /// U-3 (MOTOR UNIVERSAL CONTINUO): la API dual `evaluate_order`
@@ -278,6 +333,8 @@ impl RiskEngine {
         arena: &GlobalArena,
     ) -> ValidatedOrder {
         set_reject_direction(intent.signal);
+        // CL-131: la medida pendiente es la de la última orden validada.
+        self.medida_pendiente = None;
         if coin_id >= arena.coins.len() || intent.signal == SignalType::Flat {
             return rej(REJ_FLAT_COIN);
         }
@@ -315,28 +372,37 @@ impl RiskEngine {
         // CL-99 (LC-F4-10): el pico es el del arena, compartido con el
         // sistema inmune del host y guardado por él entre reinicios.
         // `peak_capital` queda como su copia para los lectores de este motor.
+        // CL-132 (R3 de la revisión del PR #62): se registra y se mide con el
+        // MISMO capital que el host (`drawdown::capital_del_freno`, el más
+        // conservador entre el arena y el exchange). Antes el riesgo subía el
+        // pico con el arena: en papel sobre mainnet, ganar en papel se veía en
+        // el host como una caída del saldo real.
+        let capital_freno = crate::drawdown::capital_del_freno(arena);
         self.peak_capital = crate::drawdown::registrar_pico(
             &arena.pico_capital,
-            current_capital.max(self.peak_capital),
+            capital_freno.max(self.peak_capital),
         );
         // U-3: los picos espejo scalp/swing (sin lectores) extirpados.
 
-        // O-04 → CL-106 (LC-F4-10, decisión del dueño «Ambos», 2026-10-12):
-        // FRENO DURO DE LA CUENTA. No se abre posición nueva mientras la caída
-        // desde el pico (el del arena, compartido con el host y guardado entre
-        // reinicios, CL-99) supere un umbral de nivel α con el tamaño real de
-        // las órdenes: el cuantil 95 % de la caída máxima en 200 operaciones
-        // con H0 = +0,05 R, en unidades del riesgo medido al stop
-        // (`drawdown::umbral_freno_duro`), acotado por d* (ADR-0016 D3). Es la
-        // MISMA función del sistema inmune del host. Sustituye a la prueba de
-        // racha (`drawdown_compatible`), que con 8-12 R daba un 36-49 % de
-        // falsa alarma en 200 operaciones aun con +0,30 R de ventaja, y a la
-        // tolerancia micro (D-641), que en 13 USD dejaba el umbral en d*.
-        if self.peak_capital > 0.0 {
-            let dd = (self.peak_capital - current_capital) / self.peak_capital;
-            if dd >= crate::drawdown::umbral_freno_duro_de(arena, self.peak_capital) {
-                return rej(REJ_DRAWDOWN);
-            }
+        // CL-133 (B2): con el pico guardado ilegible no se sabe cuánto se ha
+        // caído; no entran posiciones nuevas (fail-closed, como CL-108f).
+        if arena.pico_ilegible.load(Ordering::Relaxed) {
+            return rej(REJ_DRAWDOWN);
+        }
+        // O-04 → CL-106 → CL-130 (LC-F4-10, decisión del dueño «Ambos»;
+        // R1 de la revisión del PR #62): FRENO DURO DE LA CUENTA, la MISMA
+        // función del sistema inmune del host. No se abre posición nueva
+        // mientras la caída de los cierres, contada en stops de SUS
+        // posiciones, llegue al cuantil 95 % de la caída máxima en 200
+        // operaciones con H0 = +0,05 R, o la caída del capital desde el pico
+        // llegue a d* (ADR-0016 D3). Sustituye a la prueba de racha
+        // (`drawdown_compatible`), que con 8-12 R daba un 36-49 % de falsa
+        // alarma en 200 operaciones aun con +0,30 R de ventaja, y a la
+        // tolerancia micro (D-641). Hasta CL-130 la caída se medía en USD y
+        // se dividía por la EWMA del riesgo de las últimas órdenes, que
+        // encoge en una racha perdedora (LH-04): disparaba tras 13 SL.
+        if crate::drawdown::freno_duro(arena, self.peak_capital, capital_freno).echado() {
+            return rej(REJ_DRAWDOWN);
         }
 
         let base_capital = arena.config.base_capital.load(Ordering::Relaxed);
@@ -451,7 +517,7 @@ impl RiskEngine {
     }
 
     fn evaluate_single_intent(
-        &self,
+        &mut self,
         coin_id: usize,
         intent: &SignalIntent,
         kelly_fraction: f64,
@@ -1660,57 +1726,31 @@ impl RiskEngine {
         // si su stop se toca, en fracción del capital— alimenta la media móvil
         // que convierte una caída observada en evidencia. Sin esta medida, el
         // cortacircuitos de drawdown es una opinión sobre un número inventado.
-        // D-744c (auditoría PR #5): se registra DESPUÉS del último rechazo de
+        // D-744c (auditoría PR #5): se mide DESPUÉS del último rechazo de
         // esta función; antes también entraban órdenes que aquí mismo se
         // rechazaban por geometría inválida.
         // CL-7: el stop es el QUE LA ORDEN LLEVA (`expected_loss`, ya con el
         // tope micro de 55 pb o el objetivo explícito de la intención), no el
         // difusivo sin acotar de `tpsl_gate`: éste registraba más riesgo del
         // que se tomaba y aflojaba el cortacircuitos en la misma proporción.
+        // CL-131 (R2 de la revisión del PR #62): la medida queda PENDIENTE y
+        // entra en las medias cuando el núcleo abre la orden
+        // (`registrar_orden_abierta`), una vez por operación.
         let sl_pct = expected_loss;
         if sl_pct > 0.0 && current_cap > 0.0 {
-            let riesgo = (safe_vol * safe_lev * sl_pct) / current_cap;
-            let previo = arena.riesgo_por_operacion.load(Ordering::Relaxed);
-            arena.riesgo_por_operacion.store(
-                crate::drawdown::actualizar_riesgo_ewma(
-                    previo,
-                    riesgo.clamp(0.0, 1.0),
-                    crate::drawdown::TRADE_HORIZON / 10.0,
-                ),
-                Ordering::Relaxed,
-            );
-            // CL-106b: el mismo riesgo en USD, que no depende del capital al
-            // dimensionar; el freno duro lo compara con la caída desde el pico.
+            // CL-106b: el riesgo también en USD, que no depende del capital
+            // al dimensionar. CL-106: la geometría de la orden en unidades de
+            // su stop, con la fricción, para el umbral del freno duro.
             let riesgo_usd = safe_vol * safe_lev * sl_pct;
-            let previo_usd = arena.riesgo_por_operacion_usd.load(Ordering::Relaxed);
-            arena.riesgo_por_operacion_usd.store(
-                crate::drawdown::actualizar_riesgo_ewma(
-                    previo_usd,
-                    riesgo_usd,
-                    crate::drawdown::TRADE_HORIZON / 10.0,
-                ),
-                Ordering::Relaxed,
-            );
-            // CL-106: la geometría de la orden en unidades de su stop, con
-            // la fricción, para el umbral del freno duro de drawdown.
             let ganancia = (expected_win - roundtrip_fee) / sl_pct;
             let perdida = (sl_pct + roundtrip_fee) / sl_pct;
-            if ganancia.is_finite() && perdida.is_finite() && perdida > 0.0 {
-                for (celda, nuevo) in [
-                    (&arena.ganancia_en_stops, ganancia),
-                    (&arena.perdida_en_stops, perdida),
-                ] {
-                    let previo = celda.load(Ordering::Relaxed);
-                    celda.store(
-                        crate::drawdown::actualizar_riesgo_ewma(
-                            previo,
-                            nuevo,
-                            crate::drawdown::TRADE_HORIZON / 10.0,
-                        ),
-                        Ordering::Relaxed,
-                    );
-                }
-            }
+            self.medida_pendiente = Some(MedidaOrden {
+                coin_id,
+                riesgo: (riesgo_usd / current_cap).clamp(0.0, 1.0),
+                riesgo_usd,
+                geometria: (ganancia.is_finite() && perdida.is_finite() && perdida > 0.0)
+                    .then_some((ganancia, perdida)),
+            });
         }
 
         ValidatedOrder {
