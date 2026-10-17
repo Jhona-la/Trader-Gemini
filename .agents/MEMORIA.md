@@ -1,5 +1,31 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Antigravity (AGY, Quant Sr. Lead): Ola Ω146 (Integración Espectral de Navier-Stokes y Feynman Propagator en 15 Motores, Erradicación de Aristas Muertas, Expansión de Familia de Ville M=480 y Calibración Prequential) + Plan Maestro V17
+
+- **Ola Ω146 Integrada y Certificada — 15 Motores Espectrales y Unificación de Cascada de Kolmogorov con Integrales de Camino Cuánticas**:
+  * **Problema Cuantitativo y de Arquitectura (Fallo Tipo 1 — Arista Muerta)**:
+    - En `crates/god-engine-core/src/lib.rs:3266` y `3300`, `voto_feynman` (Feynman Propagator / Hilbert Path Integral) y `voto_navier` (Navier-Stokes Manifold / Kolmogorov Cascade) se calculaban activamente y se publicaban sus sombras al registro.
+    - Sin embargo, en `lib.rs:3325`, `let votos_espectrales = [...]` contenía únicamente 13 motores (`MOTORES = 13` en `skill_motores.rs`), omitiendo por completo a Navier-Stokes y Feynman de la composición del consenso espectral multiescala (`VotoEspectral::consenso_por_escala`) y del aprendizaje causal de habilidad (`skill_motores.re_amar_con_votos`).
+  * **Solución Rigurosa de Arquitectura y Teoría Cuántica**:
+    - **Ampliación Canónica de Motores (`crates/signal-engine/src/skill_motores.rs`)**:
+      * `pub const MOTORES: usize = 15;` (incorporando `MOTOR_NAVIER_STOKES = 13` y `MOTOR_FEYNMAN = 14`).
+      * `pub const NUM_PARES_MOTOR_ESCALA: usize = 15 * 32 = 480;` (familia completa para el gate de Ville anytime-valid).
+      * Definidos `NOMBRES_MOTORES` y constantes canónicas `MOTOR_*` para eliminar índices mágicos.
+      * Umbral de familia de Ville Bonferroni ajustado a $M/\alpha = 480 / 0.05 = 9600$.
+    - **Cableado End-to-End en Núcleo (`crates/god-engine-core/src/lib.rs`)**:
+      * `votos_espectrales` ampliado a los 15 motores: `voto_navier` y `voto_feynman` integrados en el array pasado a `re_amar_con_votos` y `consenso_por_escala`.
+      * Ambos motores ahora participan plenamente en el consenso de 32 escalas y acumulan historial causal prequential $v_{\text{armado}} \cdot r$ en sus acumuladores IC y e-procesos de Ville.
+  * **Certificación Contractual**:
+    - `crates/signal-engine/tests/navier_feynman_spectral_confluence_contract.rs` (5/5 pass, 100% verde):
+      1. Constantes y multiplicidad de familia de 15 motores ($M=480$).
+      2. Equivalencia exacta en arranque en frío con pesos uniformes.
+      3. Influencia activa de Navier-Stokes y Feynman en el consenso multiescala.
+      4. Aprendizaje prequential y superación del umbral de Ville ($M/\alpha=9600$) ante evidencia consistente.
+      5. Resiliencia y retención en piso de exploración (`0.15`) ante señales anti-alineadas sin inversión destructiva.
+    - `signal-engine` full test suite (100% pass, cero regresiones).
+    - `god-engine-core` tests (100% pass, paridad verificada).
+    - Actualizado `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md` a **V17**.
+
 ## 2026-10-16 — Antigravity (AGY, Quant Sr. Lead): Ola Ω145 (Calibración Dinámica de Denominador Efectivo $n_{\text{hablantes}} / n_{\text{elegibles}}$, Erradicación de Dilución por Fuentes Inoperables y Preservación Anti-Phantom-Boost) + Plan Maestro V16
 
 - **Ola Ω145 Integrada y Certificada — Calibración Dinámica de Denominador Efectivo y Erradicación de Dilución por Fuentes Inoperables**:
