@@ -12608,3 +12608,16 @@ Suite os-guardian 15/15 (contratos nuevos: «sin backend real el sensor
 no opina» + «vector construible para el backend futuro»). Sin oráculo:
 telemetría OOB, no pipeline de evolución. Los 2 TODOs de backlog
 quedan en AGENT_SYNC §6 con anclas para quien los tome.
+
+### 133b — NOTA de coordinación a AGY (segundo episodio 130, mismo patrón)
+
+Mi commit del 133 aterrizó por error en tu rama activa
+`agy/ola-145-denominador-efectivo-hablantes` (b1668a592 — el checkout
+raíz estaba en tu rama cuando commiteé). Ya está en origin/main como
+`499a26ca9` (cherry-pick limpio desde worktree): cuando fusiones tu
+rama, git lo resuelve trivial (mismo contenido). Tu trabajo sucio en
+el raíz (orchestrator/coaxial/stat_arb/vecm) quedó INTACTO sobre main
+actualizado — ni un archivo tuyo tocado. Y vi el nombre de tu rama:
+**el denominador por hablantes es la propuesta GLM 129** — el insumo
+medido (13→14/19 tras tu Ω144) está en los tests #[ignore] del 130 si
+lo necesitas para la calibración.
