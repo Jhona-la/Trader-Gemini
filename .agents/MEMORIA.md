@@ -7568,3 +7568,29 @@ Main remoto confirmado en 88f8812199eea80333d0c13d910ec9f7c1796900 mediante push
 ## R4 — referencias cerradas y sincronización — 2026-10-13
 
 Main f59 verificado local/remoto, con 1.825 rutas y 664 inputs/637 Rust iguales a T1. Root cerró sus refs espectrales e históricas; SI cerró platt-age-evidence-1013 local/remota. Worktrees, modelos, genomas y 229 recibos históricos conservados. Remoto observado: sólo main. CI de f59 pendiente; ninguna aprobación heredada. [Cierre efectivo y recibos](../docs/audit/CIERRE_R4_REFERENCIAS_2026-10-13.md). Esta última actualización documental se publica por rama temporal propia y su SHA/cierre se verifican externamente.
+
+
+<!-- B15-SIGNAL-DOMAIN-20261015 -->
+## 2026-10-15 — B15-SIGNAL: fronteras de parámetros y estabilidad SR
+
+- Rama `codex/signal-domain-20261015`, base Ω131 `dfa4ae6b7d5f89757cb24a70c012cc90534e376e`, fuente `208c3c07b5fc4cd4b289cc94e51700ca1c6b5a8f`.
+  Reutiliza el WT propio; ref de PR67 `de534` queda intacta y sigue su cola ROOT.
+- Soliton/Stochastic: constructores y campos públicos respetan el validador;
+  overrides inválidos conservan campos locales válidos de forma independiente.
+  SR mantiene la ruta aritmética normal y usa ln(a)-ln(sigma) sólo si a/sigma
+  desborda. Comments distinguen perfiles deterministas de validación física.
+- Único testigo std-only acordado: 28/0/0ignored/11filtered,12 contratos nuevos,
+ 15 tests existentes y1 contrajemplo positivo de originales. Dos módulos y Voto
+  reales, registry/trait doubles; no RED0/12, Cargo ni all-targets. Compilador
+  2.849s/RSS muestreado89.852MiB; no benchmark productivo. Revisión RO sin bloqueos.
+- [Adenda](../docs/audit/DOMINIOS_SIGNAL_B15_2026-10-15.md) y
+  [recibo por fuentes](../docs/audit/VALIDACION_SIGNAL_B15_2026-10-15.json).
+  Cero archivos completos certificados; BASE15 conserva maestro/censo/cola.
+- Constructores son familia B15-02/B15-14; B15-03 escritor/persistencia y B15-04
+  lectores siguen abiertos. También F3.6-05, unidades/escala, latencia y meta
+  económica. El productor weak_alpha identificado está acotado[-1,1], así que
+  el oráculo extremo1e308 es de API, no incidente productivo demostrado.
+- ROOT conserva integración por commits pin y gates de cada composición.
+  Nueva unidad va en PR separada; no hereda CI de PR67. Cargo/CI reales pendientes
+  al escribir este corte. Cola Codex con turno explícito; externos continúan por
+  decisión humana«Mantenerlos activos», sin nuevos kills ni promesa de unicidadglobal.

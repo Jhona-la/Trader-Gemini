@@ -60,9 +60,10 @@ impl SolitonWaveParams {
     }
 }
 
-/// 🌊 ALGORITMO #86: MOTOR DE ONDAS SOLITÓN NO-LINEALES DE SCHRÖDINGER (SOLITON WAVE ENGINE)
-/// Modela los impulsos de precio como solitones no-dispersivos de la ecuación NLS (i \psi_t + 1/2 \psi_{xx} + |\psi|^2 \psi = 0),
-/// identificando paquetes de liquidez que atraviesan la profundidad del libro de órdenes sin perder amplitud.
+/// ALGORITMO #86: perfiles deterministas inspirados en ondas solitónicas.
+/// Evalúa un pulso sech y un voto espectral tanh. La correspondencia de sus
+/// variables con precios, velocidades y paquetes de liquidez requiere un
+/// contrato de unidades y validación empírica separados.
 #[derive(Clone)]
 #[repr(C, align(64))]
 pub struct SolitonWaveEngine {
@@ -93,10 +94,7 @@ impl SolitonWaveEngine {
     }
 
     pub fn new_with_params(params: SolitonWaveParams) -> Self {
-        Self {
-            params,
-            registry: None,
-        }
+        Self::default().with_params(params)
     }
 
     pub fn with_params(mut self, params: SolitonWaveParams) -> Self {
@@ -116,7 +114,7 @@ impl SolitonWaveEngine {
         &self.params
     }
 
-    /// Calcula la amplitud del perfil solitónico sech(x) en O(1) con protección numérica absoluta
+    /// Calcula la amplitud del perfil sech(x) en O(1), con sanitización y fase acotada.
     #[inline(always)]
     pub fn compute_soliton_amplitude(
         amplitude: f64,
@@ -216,6 +214,9 @@ impl QuantumStrategy for SolitonWaveEngine {
     }
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        if self.params.validate().is_err() {
+            return 0.0;
+        }
         let sym_opt = if symbol.is_empty() {
             None
         } else {
@@ -285,18 +286,21 @@ impl QuantumStrategy for SolitonWaveEngine {
             })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
-        let amp_scale = registry
+        let safe_amp_scale = registry
             .get_scoped_parameter(sym_opt, cid_opt, "soliton_amp_scale", "SolitonWaveEngine")
             .map(|p| p.get_value())
+            .filter(|&amplitude_scale| {
+                SolitonWaveParams {
+                    amplitude_scale,
+                    ..self.params
+                }
+                .validate()
+                .is_ok()
+            })
             .unwrap_or(self.params.amplitude_scale);
-        let safe_amp_scale = if amp_scale.is_finite() && amp_scale > 0.0 {
-            amp_scale
-        } else {
-            1.0
-        };
         let amp = amp * safe_amp_scale;
 
-        let vel_norm_scale = registry
+        let safe_vel_norm_scale = registry
             .get_scoped_parameter(
                 sym_opt,
                 cid_opt,
@@ -304,28 +308,41 @@ impl QuantumStrategy for SolitonWaveEngine {
                 "SolitonWaveEngine",
             )
             .map(|p| p.get_value())
+            .filter(|&velocity_norm_scale| {
+                SolitonWaveParams {
+                    velocity_norm_scale,
+                    ..self.params
+                }
+                .validate()
+                .is_ok()
+            })
             .unwrap_or(self.params.velocity_norm_scale);
-        let safe_vel_norm_scale = if vel_norm_scale.is_finite() && vel_norm_scale > 0.0 {
-            vel_norm_scale
-        } else {
-            10.0
-        };
 
-        let sat_momento = registry
+        let safe_sat_momento = registry
             .get_scoped_parameter(sym_opt, cid_opt, "soliton_sat_momento", "SolitonWaveEngine")
             .map(|p| p.get_value())
+            .filter(|&sat_momento| {
+                SolitonWaveParams {
+                    sat_momento,
+                    ..self.params
+                }
+                .validate()
+                .is_ok()
+            })
             .unwrap_or(self.params.sat_momento);
-        let safe_sat_momento = if sat_momento.is_finite() && sat_momento > 0.0 {
-            sat_momento
-        } else {
-            1e4
-        };
 
         let t_time = registry
             .get_scoped_parameter(sym_opt, cid_opt, "soliton_time", "SolitonWaveEngine")
             .map(|p| p.get_value())
-            .unwrap_or(self.params.default_t_time)
-            .clamp(0.001, 1.0);
+            .filter(|&default_t_time| {
+                SolitonWaveParams {
+                    default_t_time,
+                    ..self.params
+                }
+                .validate()
+                .is_ok()
+            })
+            .unwrap_or(self.params.default_t_time);
 
         let mid_price = registry
             .get_scoped_parameter(sym_opt, cid_opt, "mid_price", "SolitonWaveEngine")

@@ -47,9 +47,10 @@ impl StochasticResonanceParams {
     }
 }
 
-/// ⚡ ALGORITMO #98: FILTRO DE RESONANCIA ESTOCÁSTICA CUÁNTICA (STOCHASTIC RESONANCE ENGINE)
-/// Utiliza el ruido de fondo de microestructura para amplificar señales sub-umbral débiles de Alpha,
-/// mediante el fenómeno de resonancia estocástica no-lineal en pozos de potencial simétricos.
+/// ALGORITMO #98: ganancia determinista inspirada en resonancia estocástica.
+/// Evalúa un perfil sech del cociente señal/ruido estimado. Su interpretación
+/// como resonancia física y su utilidad predictiva requieren validación separada
+/// (F3.6-05); la forma del perfil por sí sola no demuestra esas propiedades.
 #[derive(Clone)]
 #[repr(C, align(64))]
 pub struct StochasticResonanceEngine {
@@ -80,10 +81,7 @@ impl StochasticResonanceEngine {
     }
 
     pub fn new_with_params(params: StochasticResonanceParams) -> Self {
-        Self {
-            params,
-            registry: None,
-        }
+        Self::default().with_params(params)
     }
 
     pub fn with_params(mut self, params: StochasticResonanceParams) -> Self {
@@ -110,6 +108,9 @@ impl StochasticResonanceEngine {
         noise_variance: f64,
         params: &StochasticResonanceParams,
     ) -> f64 {
+        if params.validate().is_err() {
+            return 0.0;
+        }
         let safe_signal = if weak_signal.is_finite() {
             weak_signal
         } else {
@@ -123,7 +124,17 @@ impl StochasticResonanceEngine {
         // σ = raíz de la varianza del ruido.
         let sigma = safe_noise.sqrt();
         // U-invertida en escala logarítmica con factor Q: pico exacto en |s| = σ.
-        let raw_ratio = (safe_signal.abs().max(1e-12) / sigma).ln() * params.q_sharpness;
+        let magnitude = safe_signal.abs().max(1e-12);
+        let quotient = magnitude / sigma;
+        // Preserve the existing floating-point path when the quotient fits.
+        // Overflow of a finite quotient means the signal is far from the peak;
+        // it must not be reinterpreted as log-ratio zero (maximum gain).
+        let log_ratio = if quotient.is_finite() {
+            quotient.ln()
+        } else {
+            magnitude.ln() - sigma.ln()
+        };
+        let raw_ratio = log_ratio * params.q_sharpness;
         let ratio = if raw_ratio.is_finite() {
             raw_ratio.clamp(-50.0, 50.0)
         } else {
@@ -141,13 +152,14 @@ impl StochasticResonanceEngine {
     }
 
     /// Amplifica una señal combinándola con la intensidad de ruido σ en O(1)
-    /// Simétrica para señales Long (> 0) y Short (< 0) mediante pozo de potencial bi-estable.
-    /// #650 (Ola 50) — RESONANCIA CANÓNICA en U-invertida: la ganancia
+    /// Simétrica para señales Long (> 0) y Short (< 0) mediante una ganancia par.
+    /// #650 (Ola 50) — PERFIL en U-invertida: la ganancia
     /// `1 + sech(ln(|s|/σ))` PICA en |s| = σ (el régimen de resonancia:
     /// señal al nivel del ruido, donde el ruido ayuda a cruzar el umbral),
     /// decae a ×1 cuando |s| ≫ σ (señal fuerte pasa SIN cambio) y ×1 cuando
     /// |s| ≪ σ (señal enterrada: no hay dirección que amplificar). C∞,
-    /// acotada (ganancia ∈ [1, 2]), antisimétrica.
+    /// acotada (ganancia ∈ [1, 2]), antisimétrica. La suavidad corresponde al
+    /// interior del dominio, fuera de los suelos y saturaciones numéricas.
     #[inline(always)]
     pub fn amplify_signal_with_noise(weak_signal: f64, noise_variance: f64) -> f64 {
         Self::amplify_signal_with_params(
@@ -158,7 +170,7 @@ impl StochasticResonanceEngine {
     }
 
     /// #614 (Ola 36) — VOTO ESPECTRAL de la resonancia estocástica: el
-    /// pozo bi-estable amplifica la señal SUB-UMBRAL de cada escala —
+    /// perfil de ganancia pondera la señal de cada escala —
     /// x(τ) débil relativo al ruido se POTENCIA (resonancia), x(τ) fuerte
     /// pasa sin cambio. La escala que opera en el régimen de resonancia
     /// (señal ≈ ruido) vota más fuerte que su amplitud cruda sugiere.
@@ -188,6 +200,9 @@ impl QuantumStrategy for StochasticResonanceEngine {
     }
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
+        if self.params.validate().is_err() {
+            return 0.0;
+        }
         let sym_opt = if symbol.is_empty() {
             None
         } else {
@@ -277,11 +292,19 @@ impl QuantumStrategy for StochasticResonanceEngine {
             .map(|p| p.get_value())
             .unwrap_or(self.params.q_sharpness);
         let mut active_params = self.params;
-        if peak_gain.is_finite() && peak_gain >= active_params.base_gain {
-            active_params.peak_gain = peak_gain;
+        let peak_candidate = StochasticResonanceParams {
+            peak_gain,
+            ..active_params
+        };
+        if peak_candidate.validate().is_ok() {
+            active_params = peak_candidate;
         }
-        if q_sharpness.is_finite() && q_sharpness > 0.05 {
-            active_params.q_sharpness = q_sharpness;
+        let q_candidate = StochasticResonanceParams {
+            q_sharpness,
+            ..active_params
+        };
+        if q_candidate.validate().is_ok() {
+            active_params = q_candidate;
         }
 
         Self::amplify_signal_with_params(weak_signal, noise_variance, &active_params).clamp(-1.0, 1.0)
