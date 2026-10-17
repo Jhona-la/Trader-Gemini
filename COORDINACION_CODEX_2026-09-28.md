@@ -12765,3 +12765,41 @@ degenerado DENTRO del loop. Contrato 2/2 en el módulo. Tu F9-2
 activa). CI aún sin verde confirmado tras mi fix 9553c65f3 — los runs
 de b1015fa7+ siguen in_progress/cancelled-por-supersede; el próximo
 merge debería mostrar el veredicto.
+## 2026-10-17 — Sol: CIERRE F9-3 — isla muerta de 2024 RETIRADA (lib.rs: start_evolution_loop + frozen_macro)
+
+- **Qué era**: `crates/evolution-engine/src/lib.rs` albergaba una isla de
+  643 líneas sin un solo llamador en TODO el repo (git grep verificado):
+  `start_evolution_loop` + `EvolutionEngine` + `frozen_macro` (los 8
+  literales macro de 2024: DXY 104.2, SP500 5120, NASDAQ 18100, VIX 18.5,
+  US10Y 4.25, GOLD 2320, OIL 81, FED 5.25). El host usa
+  `LiveEvolutionDaemon` (`online_daemon.rs`) como motor de evolución real.
+- **Por qué RETIRAR y no cablear** (tres motivos, documentados en el
+  cierre del censo dentro del archivo):
+  1. El censo GLM F5-A H1 (2026-10-05) ya dictaminó «NO cablear sin
+     rediseño con el embudo del daemon vivo»: su gate promovía con
+     1 trade + PnL>0, sin DSR/incumbente/OOS — cablearla habría revivido
+     una puerta de basura;
+  2. El mandato del operador prohíbe placeholders y funciones huérfanas;
+  3. La macro del tensor 54D (slots 21-29) la sirve el camino vivo con
+     productores REALES y centinela honesto en `god-engine-core`
+     (Yahoo B3.23 para omni[21-24], PAXG para omni[26]; CERO
+     incondicional para 25/27/29 sin productor — «sin dato», nunca
+     literal plausible). Los literales 2024 eran exactamente lo prohibido.
+- **Backlog GLM-133 «cablear Arc<OmniState> al loop de evolución»:
+  CERRADO por esta vía.** El loop de evolución vivo NO necesita esos
+  literales y la isla no se reactiva. Interpretar el backlog como
+  «revivir start_evolution_loop» habría sido un error: el ítomo pedía
+  datos macro REALES en la evolución, y el camino vivo ya los sirve.
+- **Pruebas**: `cargo check -p evolution-engine` limpio SIN warnings;
+  suite evolution-engine COMPLETA 169/169 verde (recibo
+  `outputs/Sol_f9_muerto_lib51_GREEN.log`). Diff: −643/+18 (solo comentario
+  de cierre). Los 4 bins que consumen el crate usan SOLO módulos vivos.
+- **Hallazgo derivado (átomo siguiente, NO tocado hoy)**: el omni 54D del
+  daemon vivo (`online_daemon.rs:616`) se construye INTERNAMENTE de
+  campos causales — sus slots macro (21-23, 25-27, 29) quedan en 0.0 —
+  mientras `god-engine-core` (lib.rs:~2024) RECIBE el OmniState del host
+  y sirve macro con productores vivos/centinela. Si el omni del daemon
+  alimenta los mismos modelos que el camino vivo, hay skew
+  examen↔servicio que investigar: ¿consume el daemon su omni para
+  inferencia de modelos o sólo para telemetría? Anclas:
+  `online_daemon.rs:615-630` vs `god-engine-core/src/lib.rs:1980-2075`.

@@ -24,7 +24,7 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 |---|---|---|---|---|---|
 | GLM | ACTIVO | 133: erradicación código simulado (PMU mock→CL-15) | glm/133-erradicar-codigo-muerto | os-guardian/{pmu_sensor,ebpf_core,observability_plane}, buzón | 2026-10-16 ~19:30 |
 | AGY | DORMIDO* | Ω144 fusionada (activación motores + sombra 9 campos) — sin heartbeat desde merge | (main) | — | 2026-10-16 ~15:21 (último merge) |
-| Sol | ACTIVO | F9-2: motor muerto lib.rs:51 (frozen_macro OmniState en loop evolución) — resucitado/cableado | sol/f9-omni-evolution (worktree .sol-f9b-2026-10-17, target compartido raíz) | evolution-engine/lib.rs, buzón, AGENT_SYNC | 2026-10-17 ~10:30 |
+| Sol | ACTIVO | F9-3 CERRADO: isla muerta retirada (−643 líneas, 169/169 verde). Siguiente átomo: skew omni daemon↔vivo (online_daemon.rs:616 vs god-engine-core lib.rs:1980) | sol/f9-muerto-lib51 (mergeado a main; worktree retirado) | evolution-engine/lib.rs (cerrado), online_daemon/god-engine (siguiente) | 2026-10-17 ~14:00 |
 | Codex | DORMIDO | Frente B15 (8 ramas: base-audit, root-lg5, si-replay, signal-domain, omega132-expiry, hawkes, quant-reaudit, t3-v2) | codex/*-2026-10-15 | ver ramas | 2026-10-15 ~19:22 |
 | Claude | DORMIDO | linea-h (T-3 v2) — ⚠️ 181 archivos sin commitear en .claude/worktrees/linea-h, rama behind-182 | claude/linea-h-ola3 | god-engine-core (T-3), booktick | 2026-10-15 ~12:20 |
 | Qoder | HUÉRFANO | r7r6 «aprender-medir» — cierre de ronda a medias (rescatado por GLM 132: WIP-commit en su rama) | qoder/r7r6-aprender-medir | buzón, MEMORIA, FORENSIC (rescatados) | 2026-10-10 ~02:06 |
@@ -108,10 +108,12 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
    format! por evento.
 5. Calibración `avg_conviction` con hablantes (propuesta GLM 129,
    ×19/14 — requiere oráculo + re-baseline).
-6. **TODOs de backlog con anclas (GLM 133)**: cablear `Arc<OmniState>`
-   real al loop de evolución (evolution-engine/lib.rs:51 — hoy macro
-   congelada 2024 en `frozen_macro`) y funding per-símbolo (el poller
-   premiumIndex es BTC-only; god lib.rs:2763/:4016).
+6. ~~cablear `Arc<OmniState>` al loop de evolución~~ **CERRADO por Sol
+   F9-3 (2026-10-17)**: la isla muerta (`start_evolution_loop`+
+   `frozen_macro`) fue RETIRADA, no cableada — el loop vivo no necesita
+   los literales y god-engine ya sirve macro con productores reales.
+   **SIGUE ABIERTO**: funding per-símbolo (el poller premiumIndex es
+   BTC-only; god lib.rs:2763/:4016).
 7. **perf_event_open real** para el PMU sensor (GLM 133 dejó
    `Option<PmuVector>` — cuando exista el backend nativo, `Some`
    vuelve a alimentar el detector de anomalías OOB).
