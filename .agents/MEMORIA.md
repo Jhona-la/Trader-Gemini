@@ -1,5 +1,43 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Claude (Línea G, LG-n): ola 8 — núcleo hermético (LG-23), LG-22b, revisión desde la base de Ω94–Ω146 (6 HIGH), N_eff entre monedas medido, camino caliente +31 %
+
+- **LG-23** (núcleo): `GodEngineCore::new` ya no carga modelos del disco. Ω144
+  lo hacía y pisaba el `BTCUSDT_MOTOR` sintético de T-1/T-2/T-3 sólo desde el
+  checkout raíz (`models/` no existe en worktrees ni en CI): el oráculo medía
+  distinto según la carpeta, y cada candidato del demonio/Darwin releía 53
+  archivos dentro del proceso vivo. El host ya cargaba antes del núcleo;
+  `votes_export`, `continuous_evolution_backtest`, `latency_flow_audit`,
+  `nano_benchmark` y los dos vehículos de GLM cargan explícitamente.
+  Residual LG-23b: el constructor sigue leyendo `DarkAlpha_BTCUSDT.json`.
+- **LG-22b**: la alarma de LG-22 (cableada por GLM 121) se siembra tras la
+  realimentación epigenética del cierre; antes la relajación OU la deshacía
+  en el hueco (0,78 en vez de 0,5 con cierres cada 60 min).
+- **N_eff medido** (38 tapes de agosto, `docs/audit/linea_g/ola8_neff*`): para
+  un cambio común la información suma 1ᵀΣ⁻¹1, no N: 1,6 (5 del evolver), 2,48
+  (13 grandes), ≈ 4 (38). Corrige mi «×13» de la ola 7 y la «multiplicidad de
+  oportunidades» de la meta (factor ≈ 1,6–4).
+- **Revisión** (`docs/audit/linea_g/ola8_revision.tsv`, 48 hallazgos + 1
+  medido): HIGH verificados — Ω144–Ω146 sin T-1; corriente BSD par (sesgo
+  corto en tendencia); Kähler degenerado con una moneda por llamada (sólo
+  actúa en vivo); hedge por fuente anticausal y con USD/fracción (GLM 130);
+  LH-04 dimensiona con la p posterior y PF = 5 literal (≈ 3,8× con 9/1).
+  Pruebas OPEN de BSD y Kähler en `strategy-core/tests/lg8_open_bsd_kahler.rs`.
+  Propuesta: congelar a 1 los multiplicadores de Ω137–Ω143 hasta lift OOS.
+- **Camino caliente**: mediana 134 → 175 µs por evento (+31 %) entre
+  `7ee9c025a` y main; la puerta CL-60 no pasa.
+- **T-1 sobre main + LG-23**: PASA, 18/144 genes sensibles (12,5 %) ≥ trinquete 11,0 % (842 s con 4 hilos,
+  `docs/audit/linea_g/ola8_t1.txt`). Frente a la lista canónica de 16 pierde el
+  gen 32 y gana 39, 142 y 143. T-1 es monomoneda: no ve Kähler ni Yang-Mills.
+- **Lección**: un constructor que hace E/S y escribe estado global hace que
+  las pruebas dependan de la carpeta; GLM vio el síntoma (verde local, rojo
+  CI) en sus propias pruebas del censo. Construir debe ser puro.
+- **Lección de build**: el medidor crea worktrees con rutas largas;
+  `graphify-out/cache` supera MAX_PATH bajo el scratchpad. Usar
+  `MEDIDOR_TRABAJO` corto (`%TEMP%\tgm`). `python3` es el atajo de la Store:
+  hace falta un `python3` que llame a `python`. `scripts/t1_oraculo.sh` usa por
+  defecto `target-portable` (prohibido): pasar `CARGO_TARGET_DIR` compartido.
+
 ## 2026-10-17 — Antigravity (AGY, Quant Sr. Lead): Ola Ω146 (Integración Espectral de Navier-Stokes y Feynman Propagator en 15 Motores, Erradicación de Aristas Muertas, Expansión de Familia de Ville M=480 y Calibración Prequential) + Plan Maestro V17
 
 - **Ola Ω146 Integrada y Certificada — 15 Motores Espectrales y Unificación de Cascada de Kolmogorov con Integrales de Camino Cuánticas**:
@@ -1458,7 +1496,9 @@
   - `DetectorPerdidaDeVentaja`: un e-CUSUM por fuente sobre la R neta, con
     `e_t = 1 − (φ/(r_max_t − μ))·(r_t − μ)` y la media de cuatro fracciones.
   - Es un e-detector (Shin–Ramdas–Rinaldo): tiempo medio hasta la falsa
-    alarma ≥ ARL cierres si E[R] ≥ μ. Se construye con `nuevo()` (μ = 0) o
+    alarma ≥ ARL cierres si, cierre a cierre, E[R_t | cierres previos] ≥ μ
+    (nulo condicional; la forma marginal «E[R] ≥ μ» no basta, corregido en
+    la ola 8). Se construye con `nuevo()` (μ = 0) o
     `con_referencia(μ)`.
   - `retardo_aproximado` da una cota pesimista del retardo.
   - Pruebas: 11, con mutaciones detectadas (sin suelo, referencia

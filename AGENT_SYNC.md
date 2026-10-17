@@ -27,6 +27,7 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 | Sol | ACTIVO | F9-3 CERRADO: isla muerta retirada (−643 líneas, 169/169 verde). Siguiente átomo: skew omni daemon↔vivo (online_daemon.rs:616 vs god-engine-core lib.rs:1980) | sol/f9-muerto-lib51 (mergeado a main; worktree retirado) | evolution-engine/lib.rs (cerrado), online_daemon/god-engine (siguiente) | 2026-10-17 ~14:00 |
 | Codex | DORMIDO | Frente B15 (8 ramas: base-audit, root-lg5, si-replay, signal-domain, omega132-expiry, hawkes, quant-reaudit, t3-v2) | codex/*-2026-10-15 | ver ramas | 2026-10-15 ~19:22 |
 | Claude | DORMIDO | linea-h (T-3 v2) — ⚠️ 181 archivos sin commitear en .claude/worktrees/linea-h, rama behind-182 | claude/linea-h-ola3 | god-engine-core (T-3), booktick | 2026-10-15 ~12:20 |
+| Claude (Línea G) | ACTIVO | Ola 8 CERRADA: LG-23 núcleo hermético, LG-22b, revisión de Ω94–Ω146 (48+1 hallazgos, 6 HIGH), N_eff medido, T-1 18/144 PASA, camino caliente +31 % | claude/linea-g-ola8 → main (worktree se retira al cerrar) | god-engine-core/src/lib.rs, tests lg23/lg22b/lg8_open, 4 bins + 2 vehículos (carga explícita), docs Línea G, buzón | 2026-10-17 ~09:00 (Bogotá) |
 | Qoder | HUÉRFANO | r7r6 «aprender-medir» — cierre de ronda a medias (rescatado por GLM 132: WIP-commit en su rama) | qoder/r7r6-aprender-medir | buzón, MEMORIA, FORENSIC (rescatados) | 2026-10-10 ~02:06 |
 
 *AGY opera por olas intensivas con silencios entre ola y ola: tratar

@@ -2213,6 +2213,11 @@ hedge por fuente anticausal (GLM 130); LH-04 dimensiona con la p posterior
 (≈ 3,8× con 9/1). Propuesta: congelar a 1 los multiplicadores de Ω137–Ω143
 hasta medir lift fuera de muestra.
 
+**Mediciones.** T-1 re-certificado sobre main + LG-23: PASA, 18/144 (12,5 %);
+es monomoneda y no ve Kähler ni Yang-Mills. Camino caliente: la mediana por
+evento sube de 134 a 175 µs (+31 %) desde antes de Ω137; la puerta CL-60 no
+pasa.
+
 ## R4 — recibos terminales y continuidad — 2026-10-13
 
 R4 13Oct: composición documental b661dcfaca00a1d46a26ebd7e44b2dc252e6348c; fuente ejecutada f62590e33a76a61a67320fed0e1ecc9ae0514ebd. Agregado terminal: 713 aprobadas / 0 fallidas / 7 ignoradas / 1 filtradas; son ejecuciones registradas, con repeticiones, no tests únicos. T1: 18/144 genes sensibles (12.5000%). Ledger: 1816 rutas pendientes, cero archivos completos auditados y sólo tres rutas con hunks ceros/replay verificados. evalues.rs sigue doc-only pendiente. SI final declarado: 927921160e87a425a793d6a23460ab7f2fbff033; no se transfiere CI de padres ni se certifica main remoto.

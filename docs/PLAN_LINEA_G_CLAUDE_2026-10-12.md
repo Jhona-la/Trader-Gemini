@@ -898,15 +898,16 @@ Desde la reserva de esta ola (`a6146445`) entraron 196 commits y 183 `.rs`
 (+25 572 líneas). Tres revisores de solo lectura, uno por lente (Ω145–Ω146;
 Ω137–Ω144; Codex, Sol y GLM), y verificación propia de los HIGH contra el
 código. Tabla completa en `docs/audit/linea_g/ola8_revision.tsv`: **48
-hallazgos (6 HIGH, 16 MED, 13 LOW, 13 INFO)**; la columna «verificación» dice
-cuáles comprobé yo y cuáles son del revisor.
+hallazgos de los revisores (6 HIGH, 16 MED, 13 LOW, 13 INFO) más uno medido
+(el camino caliente, §16.5)**; la columna «verificación» dice cuáles comprobé
+yo y cuáles son del revisor.
 
 **HIGH, todos verificados:**
 
 | id | qué | dueño | estado |
 |---|---|---|---|
 | CSG-1 = LG-23 | el constructor del núcleo cargaba modelos y pisaba los predictores de los oráculos | AGY (Ω144) | cerrado (§16.2) |
-| G8-OMEGA-01 | Ω144, Ω145 y Ω146 cambiaron la decisión viva sin re-certificar T-1/T-2 (AGY escribió en Ω143 que cablearlas «exige oráculo T-1») | AGY | §16.5 |
+| G8-OMEGA-01 | Ω144, Ω145 y Ω146 cambiaron la decisión viva sin re-certificar T-1/T-2 (AGY escribió en Ω143 que cablearlas «exige oráculo T-1») | AGY | re-certificado: T-1 18/144 PASA (§16.5) |
 | G8-OMEGA-02 | la corriente BSD `tanh(−0,15·(3x²+a)+0,45·y)` es par en x: lejos de la EMA empuja a corto por arriba y por abajo; recorta largos hasta ×0,35 | AGY | prueba OPEN |
 | G8-OMEGA-03 | Kähler degenerado: con una moneda por llamada `rᵢ·rⱼ ≡ 0`, métrica = identidad, corriente = −tanh(0,5·tanh(OFI)); en vivo atenúa hasta un 40 % los votos alineados con el OFI y en el replay monomoneda vale 0 | AGY | prueba OPEN |
 | CSG-2 | el hedge por fuente (GLM 130) puntúa cada voto contra el movimiento que el voto ya vio, con `(mid − prev)` en USD dividido por una fracción (satura siempre a ±1); sus pesos [0,05; 20] reponderan el consenso de todas las monedas | GLM | abierto |
@@ -975,7 +976,37 @@ CL-108d/e/f (pruebas `cl108*` 5/5, ejecutadas).
 
 ### 16.5 Mediciones de la ola: camino caliente y re-certificación de T-1
 
-(se rellena al terminar)
+**Camino caliente** (medidor CL-60 de la Línea C, `scripts/medir_camino_caliente.sh`;
+misma cinta sintética, mismo compilador y máquina; orden base, rama, base;
+release, 200 000 eventos medidos × 5 repeticiones, 4 monedas; líneas crudas
+en `docs/audit/linea_g/ola8_medidor.tsv`):
+
+| | mediana por evento | p99 | asignaciones por evento |
+|---|---|---|---|
+| base `7ee9c025a` (antes de Ω137) | ≈ 134 µs | ≈ 197–258 µs | 2,208 |
+| `6fa00921d` (main + LG-23) | ≈ 175 µs | ≈ 280–294 µs | 2,208 |
+
+La mediana sube **41 µs por evento (+31 %)**, frente a un ruido de la base de
+6,8 µs: la puerta de rendimiento de la Línea C **no pasa**. Las asignaciones no
+cambian. Entre las dos revisiones entraron también cambios de Sol, GLM y Codex,
+pero los añadidos al camino caliente son sobre todo los siete motores por
+evento y moneda de Ω137–Ω146 y la sombra de nueve campos. El «< 25 µs» del plan
+V17 no se cumple ni antes ni después (≈ 7×); ninguna de esas olas midió con
+este medidor.
+
+
+**T-1 re-certificado** sobre `6392ae094` (main + LG-23 + LG-22b),
+`scripts/t1_oraculo.sh 4` con el target compartido, desde este worktree (sin
+`models/`): **PASA, 18/144 genes sensibles (12,5 %)** frente al trinquete del
+11,0 %; 842 s de evaluación con 4 hilos (recibo en
+`docs/audit/linea_g/ola8_t1.txt`). Sensibles: 1, 10, 11, 17, 18, 20, 24, 27,
+33, 39, 68, 69, 129, 130, 131, 141, 142 y 143. Frente a la lista canónica de 16
+(Qoder, ola 73) pierde el 32 (`kelly_clamp_min`, que según CL-98 sólo
+dimensionaba sondas) y gana 39, 142 y 143. Coincide en número con las 18 de
+Codex R4 (13-oct), cuya lista no está publicada. Alcance: T-1 mide
+expresividad genética sobre una cinta sintética monomoneda; no ve Kähler ni
+Yang-Mills (necesitan varias monedas) ni dice nada de la rentabilidad. Ω144–
+Ω146 quedan re-certificados en ese alcance, no validados.
 
 ### 16.6 Siguiente paso (ola 9 de la Línea G, propuesto)
 
