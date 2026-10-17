@@ -14,9 +14,9 @@ pub struct VecmArbitrageParams {
     pub z_entry_threshold: f64,
     /// Umbral Z-score de saturación plena de señal (default: 3.0)
     pub z_saturation: f64,
-    /// Cota mínima de velocidad de reversión (default: 0.01)
+    /// Cota mínima del parámetro discreto del estimador de momentos (default: 0.01)
     pub speed_clamp_min: f64,
-    /// Cota máxima de velocidad de reversión (default: 1.0)
+    /// Cota máxima del parámetro discreto; su peso efectivo no supera 1 (default: 1.0)
     pub speed_clamp_max: f64,
     /// Ganancia adaptativa RLS para estimación de beta (default: 0.001)
     pub rls_gain: f64,
@@ -99,6 +99,11 @@ impl JohansenVecmEngine {
         beta_hedge_ratio: f64,
         params: VecmArbitrageParams,
     ) -> Self {
+        let params = if params.validate().is_ok() {
+            params
+        } else {
+            VecmArbitrageParams::default()
+        };
         Self {
             alpha_speed,
             beta_hedge_ratio,
@@ -128,13 +133,29 @@ impl JohansenVecmEngine {
         &self.params
     }
 
+    #[inline]
+    fn can_update_prices(&self, price_a: f64, price_b: f64) -> bool {
+        // Los campos son públicos: una mutación directa no puede saltarse
+        // el dominio validado ni mutar beta/SDE antes de rechazar la entrada.
+        price_a.is_finite()
+            && price_a > 0.0
+            && price_b.is_finite()
+            && price_b > 0.0
+            && self.alpha_speed.is_finite()
+            && self.beta_hedge_ratio.is_finite()
+            && self.params.validate().is_ok()
+    }
+
     /// Actualiza el spread con timestamp físico y alimenta el estimador de difusión continua SDE
     #[inline(always)]
     pub fn update_with_timestamp(&mut self, price_a: f64, price_b: f64, ts_ms: u64) -> f64 {
-        if price_a <= 0.0 || price_b <= 0.0 || !price_a.is_finite() || !price_b.is_finite() {
+        if !self.can_update_prices(price_a, price_b) {
             return 0.0;
         }
         let spread = price_a.ln() - self.beta_hedge_ratio * price_b.ln();
+        if !spread.is_finite() {
+            return 0.0;
+        }
         self.sde.update(spread, ts_ms);
         self.update_and_calculate_zscore(price_a, price_b)
     }
@@ -166,12 +187,15 @@ impl JohansenVecmEngine {
     #[inline(always)]
     pub fn update_and_calculate_zscore(&mut self, price_a: f64, price_b: f64) -> f64 {
         // FIX #663: Validación estricta de positividad y finitud para cálculo logarítmico
-        if price_a <= 0.0 || price_b <= 0.0 || !price_a.is_finite() || !price_b.is_finite() {
+        if !self.can_update_prices(price_a, price_b) {
             return 0.0;
         }
 
         // Spread cointegrado: S_t = ln(P_A) - beta * ln(P_B)
         let spread = price_a.ln() - self.beta_hedge_ratio * price_b.ln();
+        if !spread.is_finite() {
+            return 0.0;
+        }
 
         if self.window_count == 0.0 {
             self.spread_mean = spread;
@@ -181,7 +205,13 @@ impl JohansenVecmEngine {
 
         self.window_count += 1.0;
         let alpha = self.alpha_speed.clamp(self.params.speed_clamp_min, self.params.speed_clamp_max);
-        let weight = (alpha / self.window_count.max(1.0)).clamp(0.001, alpha);
+        // B15-14: m'=m+w*delta y v'=(1-w)*(v+w*delta^2).
+        // La varianza exige 0<w<=1, no sólo la estabilidad de la media w<2.
+        // La cota corresponde al peso, no a alpha ni al theta físico de OU.
+        // Para alpha<0.001 el suelo no puede superar a la ganancia admitida.
+        // Con los parámetros por defecto la recurrencia queda idéntica.
+        let weight = (alpha / self.window_count.max(1.0))
+            .clamp(0.001_f64.min(alpha), alpha.min(1.0));
 
         // FIX #604: Actualización Welford O(1) con varianza estrictamente no negativa
         let delta = spread - self.spread_mean;
@@ -213,7 +243,7 @@ impl JohansenVecmEngine {
     /// Actualiza adaptativamente el ratio beta de cointegración usando RLS recursivo (Punto #115)
     #[inline(always)]
     pub fn update_with_adaptive_beta(&mut self, price_a: f64, price_b: f64) -> f64 {
-        if price_a <= 0.0 || price_b <= 0.0 || !price_a.is_finite() || !price_b.is_finite() {
+        if !self.can_update_prices(price_a, price_b) {
             return 0.0;
         }
         let ln_a = price_a.ln();
@@ -276,7 +306,7 @@ impl QuantumStrategy for JohansenVecmEngine {
             None => 0.0,
         };
 
-        if !z.is_finite() {
+        if !z.is_finite() || self.params.validate().is_err() {
             return 0.0;
         }
 
@@ -294,19 +324,22 @@ impl QuantumStrategy for JohansenVecmEngine {
                 .unwrap_or(self.params.z_saturation),
             None => self.params.z_saturation,
         };
-        let safe_entry = if z_entry.is_finite() && z_entry > 0.1 {
-            z_entry
-        } else {
-            1.5
+        // Registry y parámetros locales comparten dominio, incluido entry=0.1.
+        // Un par inválido conserva ambos umbrales configurados; no mezcla
+        // una mitad del override con constantes de otra configuración.
+        let candidate_params = VecmArbitrageParams {
+            z_entry_threshold: z_entry,
+            z_saturation: z_sat,
+            ..self.params
         };
-        let safe_sat = if z_sat.is_finite() && z_sat > safe_entry {
-            z_sat
+        let (safe_entry, safe_sat) = if candidate_params.validate().is_ok() {
+            (z_entry, z_sat)
         } else {
-            (safe_entry + 1.5).max(3.0)
+            (self.params.z_entry_threshold, self.params.z_saturation)
         };
 
         // Activación continua C1 cúbica Hermite en el continuo temporal-espectral (Ola Ω129):
-        // Derivada suave idénticamente nula en |z| = z_entry y saturación asintótica a |z| = z_sat.
+        // Derivada suave idénticamente nula en |z| = z_entry y |z| = z_sat.
         let abs_z = z.abs();
         if abs_z > safe_entry {
             let u = ((abs_z - safe_entry) / (safe_sat - safe_entry)).clamp(0.0, 1.0);

@@ -1,0 +1,94 @@
+{
+  "schema": "b15-14-scoped-validation-v1",
+  "date": "2026-10-15",
+  "base_commit": "b67469077a76652dd818271e18e91bed7f8324a5",
+  "source_commit": "33e468ecca249ff321e91a7a2b30eb4559c4d5c3",
+  "scope": "VECM API/threshold contracts and audit metadata binding, not complete file reviews or economic evidence",
+  "whole_files_certified": 0,
+  "source_sha256": {
+    "crates/strategy-core/src/vecm_arbitrage.rs": "4e1055b8fa37658f445b2c7260bdfba7e6aca8841768ebee91411674fd3ce95e",
+    "crates/strategy-core/tests/b15_14_vecm_parameter_domain_contract.rs": "542d853d5f6c8ce8607aeaae5365e2169c287c38c618d358d13b1b471bdbe34c",
+    "scripts/audit_inventory.py": "2972af7ba5a13fceadc7b2dc4b1bd14e1f942abbbef65dab5d1b866cec07992e",
+    "scripts/tests/test_audit_inventory.py": "fa80a206a1a286ddd79d5e20587355967f8cf1089abb2af90cb4a5fc51df8d6f"
+  },
+  "independent_review": {
+    "agent": "git_integration",
+    "result": "No blocking findings in final static diffs; no Cargo runs by reviewer",
+    "weight_domain": "0<=w<=1 preserves convexity/variance; positive parameter floor makes w>0. alpha<=1 is not necessary."
+  },
+  "vecm_witness": {
+    "implementation": "Real vecm_arbitrage.rs included in temporary rustc harness; registry and trait are explicit test doubles",
+    "compiler_observed": "C:/Users/jhona/.cargo/bin/rustc.exe; --version not queried",
+    "compile_commands": [
+      "rustc --edition=2021 --test %TEMP%/trader-gemini-b15-14/witness-original.rs -o %TEMP%/trader-gemini-b15-14/witness-red-final.exe",
+      "rustc --edition=2021 --test %TEMP%/trader-gemini-b15-14/witness.rs -o %TEMP%/trader-gemini-b15-14/witness-green-final.exe"
+    ],
+    "run_commands": [
+      "witness-red-final.exe b15_contract:: --test-threads=1",
+      "witness-green-final.exe --test-threads=1"
+    ],
+    "red_base": "b67469077a76652dd818271e18e91bed7f8324a5",
+    "red": {
+      "passed": 0,
+      "failed": 6
+    },
+    "green": {
+      "passed": 14,
+      "failed": 0,
+      "ignored": 0,
+      "new_contracts": 6,
+      "existing_module_tests": 8
+    },
+    "limitation": "Does not certify Cargo dependency integration, production invocation, latency or returns",
+    "logs": {
+      "red-final.txt": {
+        "local_path": "C:\\Users\\jhona\\AppData\\Local\\Temp\\trader-gemini-b15-14\\red-final.txt",
+        "sha256": "0a094ae8329da39cf82fab3ad00402c86e015ac85aff9177ccf7ac8d36f5b091"
+      },
+      "green-final.txt": {
+        "local_path": "C:\\Users\\jhona\\AppData\\Local\\Temp\\trader-gemini-b15-14\\green-final.txt",
+        "sha256": "a4af3ad152922fbc0c6e358888c104944bad90489f4fbd5a5106907feb10b900"
+      }
+    }
+  },
+  "inventory": {
+    "command": "C:/Python314/python.exe -B -m unittest discover -s scripts/tests -p test_audit_inventory.py -v",
+    "python_version": "3.14.4",
+    "red": {
+      "tests": 10,
+      "expected_subfailures": 9,
+      "exit_code": 1,
+      "seconds": 540.414,
+      "log_capture": "Only a terminal-tail capture was retained; not a complete raw stdout record"
+    },
+    "green": {
+      "tests": 10,
+      "failed": 0,
+      "exit_code": 0,
+      "local_log": "C:\\Users\\jhona\\.codex\\tmp\\quant-reaudit-20261015\\audit-inventory-green.log",
+      "sha256": "23f6ad8236d546da1d328f18f25fda90dab1d5f3288672562ebad515576f502b"
+    },
+    "canonical_ledger_check": {
+      "snapshot": "b9cd773538fae9467751883eafdf3ee6ed5142f9",
+      "files": 1863,
+      "errors": []
+    },
+    "delta_file": "DELTA_B15_14_2026-10-15.json"
+  },
+  "cargo_at_document_commit": {
+    "status": "Not run locally; remote CI required before integration",
+    "real_tests_workflow": ".github/workflows/unit-suites.yml",
+    "all_targets_workflow": ".github/workflows/replay-contracts.yml",
+    "all_targets_command": "cargo +nightly-2026-06-30 check --workspace --all-targets --locked",
+    "final_status_location": "Pull request for branch codex/quant-reaudit-20261015 and its immutable Actions runs"
+  },
+  "integration_at_document_commit": {
+    "status": "Branch only; main not yet certified by this receipt",
+    "branches_deleted": [],
+    "other_branches": "Active/reserved or carrying exclusive commits; preserved"
+  },
+  "economic_target": {
+    "status": "Not demonstrated",
+    "target": "Double 13 USD every 72 hours net of all costs"
+  }
+}

@@ -1,0 +1,144 @@
+{
+  "from_commit": "b9cd773538fae9467751883eafdf3ee6ed5142f9",
+  "to_commit": "33e468ecca249ff321e91a7a2b30eb4559c4d5c3",
+  "added": [
+    "crates/backtest-engine/tests/sol_cont_accounting_2026-10-15.rs",
+    "crates/signal-engine/tests/soliton_stochastic_resonance_c1_contract.rs",
+    "crates/strategy-core/tests/b15_14_vecm_parameter_domain_contract.rs",
+    "crates/strategy-core/tests/vecm_momentum_booster_c1_contract.rs",
+    "docs/audit/SOL_CONTABILIDAD_REPLAY_2026-10-15.md",
+    "scripts/sol/testigo_contabilidad_replay_2026-10-15.rs"
+  ],
+  "removed": [],
+  "changed": [
+    {
+      "path": ".agents/MEMORIA.md",
+      "old_blob": "23a70b01838d2c1d98309026ea876df66d4f3275",
+      "new_blob": "ef097468f0eba6311ffc91db0c884d3f607ab645",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "COORDINACION_CODEX_2026-09-28.md",
+      "old_blob": "1a01e03ee9332590095299707c68fd49e7ccb58d",
+      "new_blob": "18958a5246ca91201cef973cfc75f81b86fa366e",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/backtest-engine/src/booktick_replay.rs",
+      "old_blob": "f934d3916d93b72fe1138285a3141c5c37e684f4",
+      "new_blob": "02dab0d852ccc4825e6cdfb9bff29be995c1029a",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/god-engine-core/src/lib.rs",
+      "old_blob": "0d92cc8b5fbbeca6212fe7e7e624ac119febbac9",
+      "new_blob": "8e53778a2585c78144d790bb95217e3eef528b81",
+      "mode_changed": false,
+      "previous_status": "hallazgo_abierto",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/quantum-arena/src/config.rs",
+      "old_blob": "e464b1707671b6f18c05edcc6b8e98b2f2549d8e",
+      "new_blob": "56f28ffdefc572e2c4b5dc598512ba4b479d6c28",
+      "mode_changed": false,
+      "previous_status": "hallazgo_abierto",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/lib.rs",
+      "old_blob": "a259f92f6e18e5a62c476be0506da10a84643416",
+      "new_blob": "e1917c111360591d077a6b2365aab5235babb4f2",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/soliton_wave.rs",
+      "old_blob": "ff72ced55dd5fbc37d0992c471269c0324b02c3d",
+      "new_blob": "8090ebc49571e265fe03acd0ef3ebd247a862a02",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/signal-engine/src/stochastic_resonance.rs",
+      "old_blob": "de7c8e436e415a415eac6b516dce844eb783b8d4",
+      "new_blob": "b50c8d4310a8b8238b5a4ed999ddba1fcce9e601",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/strategy-core/src/lib.rs",
+      "old_blob": "2b302c8c345e43ee9ffb695fd58141c6d6970719",
+      "new_blob": "3b5732579167752dfb89a1a220e4fa499b3813e0",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/strategy-core/src/momentum_booster.rs",
+      "old_blob": "d42c771ae451bfd30014fd15a85646b95ee3e010",
+      "new_blob": "310964cfa4e06a559b5f52315fd20aebac883a22",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "crates/strategy-core/src/vecm_arbitrage.rs",
+      "old_blob": "addf4e8c3a238d922c91907f4c6e4e57fafaac90",
+      "new_blob": "2aa70fd78e2d645e47f69b8ad019d92e91036bb9",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/BARRIDO_EXHAUSTIVO_FASES.md",
+      "old_blob": "9ce4527dbf69a1d6d26aa546072a5bad0df33d5c",
+      "new_blob": "eb3dc3b59870a60a31c06dde83327a73bf1fe29d",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-14.md",
+      "old_blob": "4fb43d6050cf988afb324fdc309083e3cac09478",
+      "new_blob": "427253e2f5a982ba2d9155661f562d6fc4945a96",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md",
+      "old_blob": "7d28c944e789fe674da1d7bb3ab8273e56f9b6bc",
+      "new_blob": "2df04690220f073888d39768296aedc131b4d6a7",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "scripts/audit_inventory.py",
+      "old_blob": "6297b725ec305c56980b0bbbd2453e24430495c7",
+      "new_blob": "4e3a011991ccb019b943d4cc22160389e0b81177",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    },
+    {
+      "path": "scripts/tests/test_audit_inventory.py",
+      "old_blob": "2e465d06a91ce256150369720497c4a95f57e690",
+      "new_blob": "0f20940b9e4665b37de6cbc7a7521dbb356e5202",
+      "mode_changed": false,
+      "previous_status": "inventariado",
+      "review_invalidated": true
+    }
+  ],
+  "unchanged_count": 1847
+}
