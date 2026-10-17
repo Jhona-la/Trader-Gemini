@@ -1,5 +1,33 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Fable (Claude Fable 5.1, consejo Quant Sr.): Ola F1 — auditoría desde la base (125 hallazgos), F-A1 funding de extremo a extremo, higiene y CI
+
+- **F-A1 (en main)**: funding per-símbolo vive en `CoinArena::funding_rate_next` (+ marca; NaN = sin dato;
+  TTL 360 s fail-closed) y lo consume la barrera de EV del risk-engine como coste de carry esperado
+  E[carry] = máx(0, d·f·τ/T_F), T_F = 8 h, también en `fee_impact`; la geometría TP/SL sigue sobre la
+  fricción de ejecución (paridad D-637). Retirados `FundingRateElasticity` (arista muerta) y
+  `update_macro_flow`; `update_macro_features(obi, dex, ts)`. Reloj del riesgo = `registry.get_event_time()`:
+  en replay no hay poller ⇒ sin dato ⇒ conducta idéntica a antes (sin T-1 por eso). Contratos
+  `fable_funding_carry_contract` (10) y `fable_funding_carry_ev_gate_contract` (7).
+- **Abiertos derivados**: F-A2 gen `funding_rate_sensitivity` (vec[6] de 144) sin lector vivo; sólo escala un
+  funding SINTÉTICO en `backtest-engine/vectorized.rs:208` (botón de sobreajuste; retirarlo cambia
+  DIMENSION ⇒ consejo + T-1). F-A3 slot 48 del tensor 54D sirve el funding de BTC a todas las monedas (RED).
+- **F1 (solo lectura, 40 agentes)**: `docs/audit/fable/f1_mapa_crates.md` (24 crates; 487 aristas muertas y 165
+  estructuras no acotadas candidatas) y `f1_hallazgos.tsv` (125: 18 HIGH/82 MED/25 LOW; estado «bruto» hasta
+  F2). HIGH confirmados por lectura propia: F1-012 Monte Carlo síncrono (20 000×200) en `evaluate_quantum_order`
+  bajo `Mutex` al cambiar la geometría (w̄, l̄); F1-013 LH-04 convierte f a nocional con `sl_at_tau` genómico y
+  no con el stop real de la orden (riesgo realizado ≠ f); F1-011 el freno «en stops» compara una caída de toda
+  la vida con un cuantil a 200 operaciones (absorbente por decisión del dueño; el doc del módulo reconoce
+  52-57 % de falsa alarma a 2 000).
+- **Higiene**: `scripts/higiene_recursos.sh` (política ejecutable; aplicado: −1,28 GB); retirado worktree
+  huérfano `.r7r6` (Qoder) y `NUL.*`. Proyecto 76 GB (target 44, data 24,5); RAM 6,5–8 GB libres con ~15 apps
+  de agentes residentes. **CI**: `paths-ignore` para docs en los dos workflows pesados (F-H2).
+- **Lección**: los agentes auditores en solo lectura cuestan ≈180 k tokens cada uno sobre este repo; la cuota
+  se agota a mitad de un fan-out grande. Cosechar los resultados parciales a disco antes de relanzar y
+  reducir el alcance (16 áreas, 1 lente) permitió cerrar F1 con 40 agentes.
+- **Lección de build**: dos heredocs de bash con `\\` o `…` dentro de python se corrompen en este entorno:
+  escribir el script a un archivo y ejecutarlo (ya lo registró Línea G).
+
 ## 2026-10-17 — Antigravity (AGY, Quant Sr.): Ola Ω147 CERRADA — Paridad CPT e Interpolación Hermite $C^1$ en Birch-Swinnerton-Dyer, Sincronización Asíncrona Hayashi-Yoshida en Kähler-Hodge y Yang-Mills, y Operabilidad Estricta por Moneda (10 hallazgos Línea G Ola 8 cerrados)
 
 - **Rama**: `agy/ola-147-bsd-kahler-yangmills-c1-paridad` (fusionada a `main` y retirada).

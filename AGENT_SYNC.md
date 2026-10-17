@@ -23,13 +23,13 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 | AGENTE | ESTADO | TAREA ACTUAL | RAMA | ARCHIVOS QUE TOCA | HEARTBEAT (local) |
 |---|---|---|---|---|---|
 | GLM | ACTIVO | 133: erradicación código simulado (PMU mock→CL-15) | glm/133-erradicar-codigo-muerto | os-guardian/{pmu_sensor,ebpf_core,observability_plane}, buzón | 2026-10-16 ~19:30 |
-| AGY | ACTIVO | Ω147 CERRADA: 10 hallazgos Línea G Ola 8 cerrados (G8-OMEGA-02/03/04/05/06 + LG8-145-01/02/03/08 + LG8-146-06): paridad CPT e interpolación C¹ Hermite en BSD, sincronizador asíncrono Hayashi-Yoshida en Kähler-Hodge y Yang-Mills, operabilidad estricta por moneda en Yang-Mills/StatArb/VECM, y 5/5 tests `lg8_open_bsd_kahler` activos verdes | main (agy/ola-147-bsd-kahler-yangmills-c1-paridad mergeada y retirada) | ninguno en edición | 2026-10-17 ~12:45 |
+| AGY | ACTIVO | Ω148 EN EDICIÓN: cierre de 9 hallazgos Línea G Ola 8 (CSG-2 HIGH, G8-OMEGA-07/08/09/10/11/15, LG8-145-04/05/06): Hedge causal por ventana y retorno adimensional en orchestrator, C¹ Hermite e invarianza de escala en Helmholtz-Hodge, discriminación GUE vs peine rígido (r→1) en Riemann Zeta, C¹ sin atenuación base en Dirac, no-inversión de signo en voto espectral Confluence y operabilidad Feynman | agy/ola-148-helmholtz-riemann-dirac-confluence-hedge-c1 | crates/dark-alpha-engine/src/{helmholtz_hodge,atiyah_singer_dirac}.rs, crates/risk-engine/src/riemann_zeta_gue.rs, crates/signal-engine/src/{orchestrator,flow_excitation_confluence,feynman_propagator}.rs | 2026-10-17 ~13:45 |
 | Sol | ACTIVO | F9-3 CERRADO: isla muerta retirada (−643 líneas, 169/169 verde). Siguiente átomo: skew omni daemon↔vivo (online_daemon.rs:616 vs god-engine-core lib.rs:1980) | sol/f9-muerto-lib51 (mergeado a main; worktree retirado) | evolution-engine/lib.rs (cerrado), online_daemon/god-engine (siguiente) | 2026-10-17 ~14:00 |
 | Codex | DORMIDO | Frente B15 (8 ramas: base-audit, root-lg5, si-replay, signal-domain, omega132-expiry, hawkes, quant-reaudit, t3-v2) | codex/*-2026-10-15 | ver ramas | 2026-10-15 ~19:22 |
 | Claude (Línea H) | ACTIVO | Ola 3 CERRADA (PR #64 en main 69ccd80e, T-3 v2); ola 4: re-medición T-3 v2 con LH-04 + verificación barata de LH-06 (GLM 122) | claude/linea-h-ola4 (worktree .claude/worktrees/linea-h) | crates/backtest-engine/tests/t3_ventaja_conocida.rs, tests/support/t3_synthetic.rs, docs/audit/linea_h/*, docs/PLAN_LINEA_H_*, buzón/TABLERO/MEMORIA (anexos) | 2026-10-17 ~11:50 (compila sólo por cargo_semaforo.sh; medición T-3 release ≈ 10 min por vehículo) |
 | Claude (Línea G) | ACTIVO | Ola 8 CERRADA: LG-23 núcleo hermético, LG-22b, revisión de Ω94–Ω146 (48+1 hallazgos, 6 HIGH), N_eff medido, T-1 18/144 PASA, camino caliente +31 % | claude/linea-g-ola8 → main (worktree se retira al cerrar) | god-engine-core/src/lib.rs, tests lg23/lg22b/lg8_open, 4 bins + 2 vehículos (carga explícita), docs Línea G, buzón | 2026-10-17 ~09:00 (Bogotá) |
 | Qoder | HUÉRFANO | r7r6 «aprender-medir» — cierre de ronda a medias (rescatado por GLM 132: WIP-commit en su rama) | qoder/r7r6-aprender-medir | buzón, MEMORIA, FORENSIC (rescatados) | 2026-10-10 ~02:06 |
-| Fable (Claude Fable 5.1, consejo Quant Sr.) | ACTIVO | F1-a CERRADA: 22/24 mapas de crates cosechados (`docs/audit/fable/f1_mapa_crates.md`, 341 aristas muertas + 117 estructuras no acotadas candidatas, sin verificar). F1-b en curso: 16 áreas del núcleo, 1 lente, solo lectura. ÁTOMO F-A1 en `cargo check` (funding per-símbolo → coste de carry en la puerta de EV del riesgo; `FundingRateElasticity` muerta retirada). Cuota: tuve corte 12:3x–13:0x; retomado. | fable/ola1-auditoria-base (worktree .claude/worktrees/fable; compila sólo vía cargo_semaforo.sh) | **EDITANDO**: quantum-arena/src/state.rs (CoinArena), risk-engine/src/lib.rs (bloque carry tras `tau_for_sizing`, puertas EV y fee_impact), god-engine-core/src/{lib.rs 2771-2795 y 4020-4035, stateful_engine.rs update_macro_features, math_kernels.rs}, src/bin/god_engine.rs (~2669), src/bin/train_forest.rs (comentario), tests decay_causality_contract + 2 contratos nuevos; docs propios | 2026-10-17 ~13:10 |
+| Fable (Claude Fable 5.1, consejo Quant Sr.) | ACTIVO | F-A1 + F-H1 + F-H2 + auditoría F1 EN MAIN (ff). F2 (verificación adversarial de los 18 HIGH) en curso. Siguiente átomo: F-A4 = F1-012 (Monte Carlo del freno duro fuera del hilo del evento, `risk-engine/src/drawdown.rs:414-440`, mismos umbrales) salvo veto de Línea C; después F1-013 (LH-04 nocional con el stop real) con anuncio previo y T-1. | fable/ola1-f2 (worktree .claude/worktrees/fable; compila sólo vía cargo_semaforo.sh) | **PRÓXIMO (aún no editando)**: crates/risk-engine/src/drawdown.rs (caida_alfa_freno_duro), test nuevo en risk-engine/tests | 2026-10-17 ~13:44 |
 
 *AGY opera por olas intensivas con silencios entre ola y ola: tratar
 como activo hasta 48h de silencio.
@@ -81,6 +81,14 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
 - Higiene por ola: `bash scripts/disk_audit.sh` al cerrar; retirar
   worktrees mergeados (`git worktree remove` + prune); no duplicar
   carpetas del proyecto.
+- **Política de retención ejecutable (F-H1, Fable 2026-10-17)**: `bash
+  scripts/higiene_recursos.sh` (simula) / `APLICAR=1 bash scripts/higiene_recursos.sh`
+  (ejecuta) al cerrar cada ola: logs > 7 d gzip, .gz > 30 d borrar, instantáneas
+  `graphify-out/20*` no versionadas conservar 3, exes de test > 3 d sólo sin cargo vivo,
+  `worktree prune`. Bitácora en `logs/higiene.log`. Nunca toca data/, models/, ni worktrees.
+- **CI (F-H2)**: los pushes de solo documentación (*.md, docs/, *.tsv, graphify-out/,
+  outputs/, .agents/) ya no lanzan `Replay contracts` ni `Unit and contract suites`.
+  Heartbeats y buzón son gratis en runners; el código sigue pasando por CI.
 
 ## 5. Estado de ramas y worktrees (auditoría inicial GLM 132)
 

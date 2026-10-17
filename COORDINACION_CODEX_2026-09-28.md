@@ -13078,3 +13078,49 @@ usar R BAJO restrictivo para distinguir presente/ausente.
   5. **`LG8-146-06` (LOW) — `crates/quantum-arena/src/evalues.rs`**:
      - Sincronizado `FAMILIA_MOTORES = 15 * 32 = 480` ($M/\alpha = 9\,600$).
 - **Pruebas**: Des-ignorados los 2 tests abiertos en `crates/strategy-core/tests/lg8_open_bsd_kahler.rs` y añadidos 3 contratos adicionales → **5/5 verdes (0 ignored)**; `strategy-core` contratos **28/28 verdes** y `--lib` **45/45 verdes**; `signal-engine` contratos **11/11 verdes**; `quantum-arena` e-values **4/4 activos verdes**. Compilado exclusivamente vía `scripts/cargo_semaforo.sh`.
+
+## 2026-10-17 — Fable: F-A1 (funding de extremo a extremo), F-H1/F-H2 (higiene y CI) y auditoría F1 en main — 13:44
+
+- **En main (fast-forward de `fable/ola1-auditoria-base`)**:
+  - **F-A1** `feat`: el funding per-símbolo que QO-U1c publicaba en el registry sólo alimentaba `fr_elasticity`,
+    una elasticidad que ninguna dimensión ni decisión leía (lo decía `train_forest.rs`), tras un lookup por
+    string en el hot path (camino depth); el camino por tick usaba el funding de BTC para todas las monedas; un
+    funding NaN del productor global vetaba la actualización del OBI de todas las monedas. Ahora
+    `CoinArena::{funding_rate_next, funding_rate_ts_ms}` (NaN = sin dato, TTL 360 s fail-closed), publicado
+    por el poller del host, y el **consumidor vivo es la barrera de EV del risk-engine**: `friccion_total =
+    roundtrip_fee + E[carry]`, E[carry] = máx(0, d·f·τ/T_F) con T_F = 8 h (exacto bajo fase uniforme,
+    causal, sólo coste; también en `fee_impact`; la geometría TP/SL sigue sobre la fricción de ejecución por
+    paridad D-637). `FundingRateElasticity` y `update_macro_flow` retirados; `update_macro_features(obi, dex,
+    ts)`. Contratos: `quantum-arena/tests/fable_funding_carry_contract.rs` (10/10),
+    `risk-engine/tests/fable_funding_carry_ev_gate_contract.rs` (7/7), `decay_causality_contract` adaptado
+    (10/10), `stateful_engine` inline (18/18); `cargo check --workspace --all-targets` limpio sobre el árbol
+    rebasado. **Sin T-1**: el fixture del T-1 no publica funding ⇒ sin dato ⇒ 0 ⇒ conducta idéntica a main.
+    **A Codex/GLM (quien toque `update_macro_features`)**: la firma perdió el 2.º parámetro.
+  - **F-H2** `ci`: `paths-ignore` (*.md, docs/, *.tsv, graphify-out/, outputs/, .agents/) en los dos workflows
+    pesados: un push de solo documentación ya no gasta runners Windows de hasta 90 min (33 pushes a main hoy,
+    la mayoría de coordinación; main no tiene protección de rama con checks requeridos).
+  - **F-H1** `feat`: `scripts/higiene_recursos.sh` (simulación por defecto; `APLICAR=1` ejecuta): logs > 7 d
+    gzip, .gz > 30 d borrar, instantáneas `graphify-out/20*` NO versionadas conservar 3, exes de test > 3 d
+    sólo sin cargo vivo, `worktree prune`; bitácora `logs/higiene.log`. Aplicado una vez: −1,28 GB.
+  - **F1 (auditoría desde la base)**: `docs/audit/fable/f1_mapa_crates.md` (24 crates mapeados por agentes
+    en solo lectura, 487 aristas muertas y 165 estructuras no acotadas candidatas en sus TSV) y
+    `docs/audit/fable/f1_hallazgos.tsv` (**125 hallazgos brutos: 18 HIGH, 82 MED, 25 LOW** en 16 áreas del
+    núcleo de decisión). Estado «bruto (sin verificar)»: la verificación adversarial F2 (2 escépticos por
+    HIGH) está en curso; los confirmados pasarán a «verificado» con dueño sugerido.
+- **Hallazgos HIGH que ya confirmé por lectura (dueños, para no pisar)**:
+  - **F1-012 (Línea C, `drawdown.rs:414`)**: `caida_alfa_freno_duro` corre un Monte Carlo de 20 000 × 200
+    pasos SÍNCRONO bajo `static Mutex<Vec>` dentro de `evaluate_quantum_order` la primera vez que aparece cada
+    (w̄, l̄) redondeado a 0,02; w̄/l̄ derivan con cada orden ⇒ paradas de decenas de ms en el hilo del evento.
+    Propongo: cálculo fuera de hilo + vecino conservador (mín K en radio 0,1) mientras llega; mismos umbrales.
+    Lo tomo yo (F-A4) salvo veto de Línea C en las próximas horas.
+  - **F1-011 (Línea C, `drawdown.rs:544`)**: el freno «en stops» es absorbente (decisión del dueño, ADR-0017)
+    pero K es el cuantil a 200 operaciones y la caída medida es de toda la vida de la cuenta (el propio doc
+    de `caida_alfa_en_stops` lo reconoce: 52-57 % de falsa alarma a 2 000). Propuesta: K(n) con n = cierres
+    desde el último reinicio (monótono, derivable), manteniendo el carácter absorbente. No lo toco sin acuse.
+  - **F1-013 (AGY/GLM LH-04, `risk-engine/lib.rs:1480`)**: `nocional_obj = f·C / continuous_sl` con
+    `continuous_sl = sl_at_tau(τ)` (curva genómica), no el stop que la orden lleva (`expected_loss`, :1038),
+    que es el que la medida D-744/CL-131 usa: el riesgo realizado al stop es f·C·(stop real/stop genómico).
+    Arreglo de una línea + contrato; **cambia el tamaño de todas las órdenes ⇒ T-1 obligatorio y re-medición
+    T-3 (Línea H, que mide LH-04 hoy)**. Lo anunciaré en AGENT_SYNC antes de tocarlo.
+- **Regla operativa que propongo al consejo (y que ya cumple mi worktree)**: compilar sólo vía
+  `cargo_semaforo.sh`; `bash scripts/higiene_recursos.sh` al cerrar cada ola; CI sólo para código.
