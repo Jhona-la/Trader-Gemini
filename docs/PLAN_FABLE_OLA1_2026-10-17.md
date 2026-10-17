@@ -112,9 +112,16 @@ el parámetro muerto (un funding NaN ya no veta el OBI de todas las monedas). Co
 `funding_rate_sensitivity` (átomo F-A2: o se cablea con lift OOS o se retira del genoma) y slot 48 del
 tensor 54D (BTC global para todas las monedas; paridad con el entrenamiento de la RED por verificar).
 
-## 6. Átomos priorizados (se completa en F3)
+## 6. Átomos priorizados (se completa en F3; los ya identificados van aquí)
 
-_(pendiente)_
+| id | sev | qué | archivos | estado |
+|---|---|---|---|---|
+| F-A1 | HIGH | funding per-símbolo de principio a fin: atómico por moneda → coste de carry en la puerta de EV; arista muerta `fr_elasticity` retirada | quantum-arena/state.rs, risk-engine/lib.rs, god-engine-core/{lib,stateful_engine,math_kernels}.rs, src/bin/god_engine.rs | en certificación |
+| F-A2 | HIGH | gen `funding_rate_sensitivity` (vec[6] de 144): en vivo NO tiene lector; en `backtest-engine/vectorized.rs:208` escala un funding SINTÉTICO (`clamp(0,5;2)·1e-4`), así que la evolución aprende a pagar menos funding ficticio sin efecto real: botón de sobreajuste (CSG-14 de la misma familia). Arreglo: el vectorizado debe cobrar el funding HISTÓRICO real (`{SYM}_FUNDING.parquet`, ya lo descarga `market_context`) y el gen debe retirarse del genoma (cambia DIMENSION=144 ⇒ coordinar con T-1 y con los genomas persistidos) o, mientras, congelarse a 1 | quantum-arena/genome.rs, backtest-engine/vectorized.rs | hallazgo; requiere consejo (DIMENSION) |
+| F-A3 | MED | slot 48 del tensor 54D (`combined[48] = omni[11]·1000`): funding de BTC servido a TODAS las monedas para la RED (`swing_nn`); verificar con qué funding se entrenó `DarkAlpha_BTCUSDT.json` y si la red se aplica a altcoins | god-engine-core/lib.rs:2057 | hallazgo |
+| F-H1 | MED | política de higiene (logs > 7 d comprimir, graphify dated conservar 3, exes de test > 3 d, worktrees al mergear) como script + regla AGENT_SYNC §4 | scripts/, AGENT_SYNC.md | pendiente |
+| F-H2 | MED | CI: cada push de SOLO documentación a main lanza «Replay contracts» (≤ 90 min) y «Unit and contract suites» en runners Windows (coste ×2); hoy la mayoría de los pushes son docs (buzón, AGENT_SYNC, TABLERO). `paths-ignore` para `**/*.md`, `docs/**`, `*.tsv`, `graphify-out/**`, `outputs/**` en ambos workflows | .github/workflows/*.yml | pendiente (verificar protección de rama) |
+| F-P1 | HIGH | camino caliente 134 → 175 µs (+31 %): medir con CL-60 tras F-A1 (−1 lookup por string por evento depth), luego atacar las ~90 escrituras/evento de telemetría sin lector (G8-OMEGA-14) y las claves por `&str` | god-engine-core/lib.rs | pendiente (release build, máquina quieta) |
 
 ## 7. Frentes teóricos que propongo al consejo (backlog §6 sin dueño)
 
