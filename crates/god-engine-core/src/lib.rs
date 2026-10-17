@@ -4869,7 +4869,14 @@ impl GodEngineCore {
                             .max(1.0);
                         let mut alarma_lg22 = false;
                         if let Some(det) = self.lg22_detectores.get_mut(coin_id) {
-                            det.observar(r_neta, r_max);
+                            // LG-27b: sólo cierres con la geometría FIJADA AL
+                            // ABRIR (SL propio). Una posición adoptada del
+                            // exchange llega con SL 0 y su (tp, sl) se rehace al
+                            // cerrar: λ dejaría de ser predecible. Mismo
+                            // criterio que CL-130.
+                            if sl_propio > 0.0 {
+                                det.observar(r_neta, r_max);
+                            }
                             alarma_lg22 = det.alarma(arl);
                             self.arena.registry.set_for_coin(
                                 coin_id,

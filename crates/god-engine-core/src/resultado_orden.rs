@@ -320,6 +320,95 @@ impl DetectorPerdidaDeVentaja {
         self.log_cusum = [f64::NEG_INFINITY; FRACCIONES.len()];
         self.cierres_desde_reinicio = 0;
     }
+
+    /// LG-27 — lo que hay que guardar para que un reinicio del host no ponga
+    /// el detector a cero antes de la alarma (B4 de la revisión del PR #62).
+    pub fn guardado(&self) -> DetectorGuardado {
+        DetectorGuardado {
+            // Sólo M = 0 (ln M = −∞) va como `None`. +∞ no se alcanza (la
+            // alarma reinicia antes) y NaN tampoco (`observar` descarta lo no
+            // finito); si llegaran, JSON los escribe como `null`.
+            log_cusum: self
+                .log_cusum
+                .iter()
+                .map(|w| if *w == f64::NEG_INFINITY { None } else { Some(*w) })
+                .collect(),
+            referencia: self.referencia,
+            cierres_desde_reinicio: self.cierres_desde_reinicio,
+            cierres_totales: self.cierres_totales,
+            fuera_de_cota: self.fuera_de_cota,
+            fuera_de_garantia: self.fuera_de_garantia,
+        }
+    }
+
+    /// LG-27 — el detector de un guardado, o `None` si el guardado no es un
+    /// estado al que `observar`/`reiniciar` puedan llegar:
+    /// - otro número de fracciones, o un ln M no finito;
+    /// - una referencia no finita, negativa o −0,0 (`con_referencia` da +0,0);
+    /// - más cierres desde el reinicio, o fuera de cota, que totales;
+    /// - más cierres fuera de garantía que fuera de cota (fuera de garantía
+    ///   implica `r > r_max`);
+    /// - algún M > 0 sin cierres desde el reinicio;
+    /// - con cierres, un M = 0 que no esté en un sufijo de las fracciones: el
+    ///   último cierre anula las fracciones de φ ≥ (r_max − μ)/(r − μ), que son
+    ///   las mayores.
+    pub fn desde_guardado(g: &DetectorGuardado) -> Option<Self> {
+        if g.log_cusum.len() != FRACCIONES.len()
+            || !(g.referencia.is_finite() && g.referencia >= 0.0)
+            || g.referencia.is_sign_negative()
+            || g.cierres_desde_reinicio > g.cierres_totales
+            || g.fuera_de_cota > g.cierres_totales
+            || g.fuera_de_garantia > g.fuera_de_cota
+        {
+            return None;
+        }
+        let mut log_cusum = [f64::NEG_INFINITY; FRACCIONES.len()];
+        for (w, guardado) in log_cusum.iter_mut().zip(g.log_cusum.iter()) {
+            match guardado {
+                Some(v) if v.is_finite() => *w = *v,
+                Some(_) => return None,
+                None => {}
+            }
+        }
+        if g.cierres_desde_reinicio == 0 && log_cusum.iter().any(|w| w.is_finite()) {
+            return None;
+        }
+        if g.cierres_desde_reinicio > 0 {
+            let primer_cero = log_cusum.iter().position(|w| !w.is_finite());
+            if primer_cero.is_some_and(|i| log_cusum[i..].iter().any(|w| w.is_finite())) {
+                return None;
+            }
+        }
+        Some(Self {
+            log_cusum,
+            referencia: g.referencia,
+            cierres_desde_reinicio: g.cierres_desde_reinicio,
+            cierres_totales: g.cierres_totales,
+            fuera_de_cota: g.fuera_de_cota,
+            fuera_de_garantia: g.fuera_de_garantia,
+        })
+    }
+}
+
+/// LG-27 — el detector tal como se guarda en el estado aprendido. `log_cusum`
+/// lleva `None` por cada fracción con M = 0 (ln M = −∞, que JSON no
+/// representa).
+///
+/// Continuar el mismo proceso tras el reinicio mantiene la garantía (el ARL
+/// bajo H0 se cuenta en cierres, no en sesiones) sobre la subsecuencia de
+/// cierres OBSERVADOS: los que se resuelven con el host caído no llegan, y
+/// eso es una selección por supervivencia. Con RR > 1 se pierden antes las
+/// pérdidas, lo que retrasa la alarma (el lado conservador para la falsa
+/// alarma). Empezar de cero en cada reinicio también conservaba el nivel,
+/// pero con reinicios más frecuentes que el retardo no alarmaba nunca.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DetectorGuardado {
+    pub log_cusum: Vec<Option<f64>>,
+    pub referencia: f64,
+    pub cierres_desde_reinicio: u64,
+    pub cierres_totales: u64,
+    pub fuera_de_cota: u64,
+    pub fuera_de_garantia: u64,
 }
 
 /// LG-22 — retardo aproximado del detector con referencia `referencia` (μ),

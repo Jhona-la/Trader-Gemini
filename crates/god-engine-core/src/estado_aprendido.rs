@@ -40,7 +40,12 @@
 //! queda echado y la sesión no lo sobrescribe ([`Arranque::Bloqueado`]).
 //!
 //! También, por moneda (CL-108e): el sesgo y el umbral epigenéticos con su
-//! ancla (el último cierre) y el anillo de siniestros de Cramér-Lundberg.
+//! ancla (el último cierre) y el anillo de siniestros de Cramér-Lundberg; y
+//! (LG-27) el detector e-CUSUM de pérdida de ventaja (LG-22). Límites del
+//! detector guardado: un binario anterior a LG-27 lee el archivo e ignora el
+//! campo, y su primer guardado lo borra; una moneda que sale del universo
+//! pierde su estado al primer guardado (como todo lo de CL-108); el host sólo
+//! guarda tras cierres con la operación permitida.
 //!
 //! No se guarda todavía: la evidencia por rama (`TasaAcierto`), los
 //! calibradores conformales, la ganancia epigenética de las 32 escalas del
@@ -103,6 +108,11 @@ pub struct MonedaGuardada {
     /// CL-108e — el anillo de siniestros de Cramér-Lundberg (retorno neto por
     /// nocional de cada cierre), del más viejo al más nuevo.
     pub siniestros: Vec<f64>,
+    /// LG-27 (B4 de la revisión del PR #62) — el detector e-CUSUM de pérdida
+    /// de ventaja de la moneda (LG-22). Estados anteriores sin este campo
+    /// arrancan el detector de cero, como antes.
+    #[serde(default)]
+    pub detector_lg22: Option<crate::resultado_orden::DetectorGuardado>,
 }
 
 /// El proceso e del freno de la estrategia y si ya rechazó.
@@ -259,6 +269,7 @@ impl GodEngineCore {
                     .get(coin_id)
                     .map(|e| e.observaciones())
                     .unwrap_or_default(),
+                detector_lg22: self.lg22_detectores.get(coin_id).map(|d| d.guardado()),
             });
         }
         let v = &self.risk_engine.freno_estrategia.ville;
@@ -335,6 +346,34 @@ impl GodEngineCore {
                     est.lundberg_lcb(LUNDBERG_Z),
                 );
             }
+            // LG-27: se continúa el mismo proceso sólo si el guardado es un
+            // estado alcanzable y mide contra la misma H0 (la referencia μ);
+            // si no, el detector de la moneda empieza de cero y queda constancia
+            // en `lg22_detector_descartado`. Un detector inservible no bloquea
+            // el resto del estado (no es un freno echado: tras una alarma el
+            // detector ya se reinicia, y su efecto —el sesgo ×0,5— se guarda
+            // aparte en la epigenética).
+            if let (Some(guardado), Some(det)) =
+                (&g.detector_lg22, self.lg22_detectores.get_mut(coin_id))
+            {
+                let mu = det.referencia();
+                let continuado = crate::resultado_orden::DetectorPerdidaDeVentaja::desde_guardado(
+                    guardado,
+                )
+                .filter(|r| (r.referencia() - mu).abs() <= 1e-12 * mu.abs().max(1.0));
+                let descartado = continuado.is_none();
+                *det = continuado.unwrap_or_else(|| {
+                    crate::resultado_orden::DetectorPerdidaDeVentaja::con_referencia(mu)
+                });
+                let registro = &self.arena.registry;
+                registro.set_for_coin(coin_id, "lg22_estadistico", det.estadistico());
+                registro.set_for_coin(coin_id, "lg22_cierres", det.cierres_totales as f64);
+                registro.set_for_coin(
+                    coin_id,
+                    "lg22_detector_descartado",
+                    if descartado { 1.0 } else { 0.0 },
+                );
+            }
             if let Some(c) = self.calibrator_by_coin.get_mut(coin_id) {
                 *c = PlattCalibrator::new();
                 let r = &mut self.registro_calibrador[coin_id];
@@ -391,6 +430,12 @@ impl GodEngineCore {
     pub fn reiniciar_frenos(&mut self, capital: f64) {
         risk_engine::drawdown::reiniciar_la_cuenta(&self.arena, capital);
         self.risk_engine.reset(capital);
+        // LG-27c: el detector de pérdida de ventaja (LG-22) también es un
+        // freno: la evidencia contra la hipótesis vieja no se acredita a la
+        // nueva. Conserva su referencia μ.
+        for det in &mut self.lg22_detectores {
+            *det = crate::resultado_orden::DetectorPerdidaDeVentaja::con_referencia(det.referencia());
+        }
     }
 }
 
@@ -435,6 +480,9 @@ pub fn validar(e: &EstadoAprendido) -> Result<(), String> {
         if g.siniestros.iter().any(|y| !y.is_finite()) {
             return Err(format!("{s}.siniestros con un valor no finito"));
         }
+        // LG-27: el detector no se valida aquí. Uno inservible se descarta al
+        // restaurar (la moneda empieza ese detector de cero) en vez de
+        // bloquear el estado entero.
     }
     if e.calibrador_global.iter().any(|o| !o.0.is_finite()) {
         return Err("calibrador_global con una puntuación no finita".into());
