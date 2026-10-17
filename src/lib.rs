@@ -10,6 +10,7 @@ pub mod orderbook;
 pub mod parsers;
 pub mod quantum_arena;
 pub mod symbol_manager;
+pub mod sa_params;
 pub mod trailing;
 pub use quantum_arena::{QuantumRingBuffer, QuantumStateArena, FEATURE_SIZE};
 pub use trailing::{evaluate_quantum_trailing, TrailingResult};
