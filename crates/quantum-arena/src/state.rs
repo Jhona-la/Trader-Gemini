@@ -239,6 +239,18 @@ pub struct CoinArena {
     /// moneda. Alimenta el asiento Ente del Mercado. Escrito por el poller
     /// REST (120s), leído en la deliberación — fuera del hot path.
     pub open_interest_norm: AtomicF64,
+    /// F-A1 (Fable, 2026-10-17) — FUNDING PREVISTO per-símbolo: tasa que el
+    /// exchange aplicará en el PRÓXIMO asentamiento (`lastFundingRate` de
+    /// `/fapi/v1/premiumIndex`, fracción del nocional; positiva = los largos
+    /// pagan a los cortos). La escribe el poller REST del host (120 s) con su
+    /// marca de tiempo; la lee el risk-engine como coste de carry esperado de
+    /// la orden sobre su horizonte τ (ver `expected_funding_cost`). NaN =
+    /// sin dato: el consumidor cae a 0 (sin carry), nunca propaga el NaN.
+    pub funding_rate_next: AtomicF64,
+    /// Marca (ms época) de la última publicación de `funding_rate_next`;
+    /// 0 = nunca. Con antigüedad > `FUNDING_TTL_MS` el dato cuenta como
+    /// AUSENTE (fail-closed a «sin dato», no a un valor viejo).
+    pub funding_rate_ts_ms: AtomicU64,
     /// Epigenetic Multipliers (Memory of past success/failure)
     pub epigenetic_bias: AtomicF64,
     pub epigenetic_threshold_modifier: AtomicF64,
@@ -297,6 +309,66 @@ pub struct CoinArena {
 }
 
 impl CoinArena {
+    /// F-A1 — intervalo canónico de asentamiento del funding en Binance
+    /// USDⓈ-M perpetuos: 8 h. Una posición abierta en fase uniforme respecto
+    /// al ciclo cruza en media τ/T_F asentamientos: E[N] = τ/T_F exactamente.
+    pub const FUNDING_INTERVAL_MS: f64 = 8.0 * 3_600_000.0;
+    /// F-A1 — TTL del dato de funding: tres ciclos del poller (120 s).
+    pub const FUNDING_TTL_MS: u64 = 360_000;
+
+    /// F-A1 — publica la tasa prevista del próximo asentamiento (poller del
+    /// host, fuera del hot path). Valores no finitos se ignoran; la tasa se
+    /// acota a [-1, 1] como en el multiplexer (FIX #1537).
+    #[inline]
+    pub fn publish_funding_next(&self, rate: f64, now_ms: u64) {
+        if rate.is_finite() && now_ms > 0 {
+            self.funding_rate_next
+                .store(rate.clamp(-1.0, 1.0), Ordering::Relaxed);
+            self.funding_rate_ts_ms.store(now_ms, Ordering::Release);
+        }
+    }
+
+    /// F-A1 — tasa prevista vigente en `now_ms`, o `None` si nunca se
+    /// publicó, caducó (TTL) o no es finita.
+    #[inline]
+    pub fn funding_next_at(&self, now_ms: u64) -> Option<f64> {
+        let ts = self.funding_rate_ts_ms.load(Ordering::Acquire);
+        if ts == 0 || now_ms < ts || now_ms - ts > Self::FUNDING_TTL_MS {
+            return None;
+        }
+        let f = self.funding_rate_next.load(Ordering::Relaxed);
+        if f.is_finite() {
+            Some(f)
+        } else {
+            None
+        }
+    }
+
+    /// F-A1 — coste de carry ESPERADO (fracción del nocional, ≥ 0) de una
+    /// posición con dirección `is_long` mantenida `tau_ms`:
+    /// E[carry] = d·f·τ/T_F, d = +1 largo, −1 corto.
+    /// Sólo se cobra el COSTE (d·f > 0). El ingreso esperado se acota
+    /// inferiormente en 0: `f` es un pronóstico del próximo asentamiento, y
+    /// un pronóstico de cobro no es evidencia para abrir una posición
+    /// (inmunidad a la ruina antes que EV nominal). Sin dato ⇒ 0.0, que es
+    /// exactamente el comportamiento anterior a F-A1.
+    #[inline]
+    pub fn expected_funding_cost(&self, is_long: bool, tau_ms: f64, now_ms: u64) -> f64 {
+        let Some(f) = self.funding_next_at(now_ms) else {
+            return 0.0;
+        };
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
+            return 0.0;
+        }
+        let d = if is_long { 1.0 } else { -1.0 };
+        let carry = d * f * (tau_ms / Self::FUNDING_INTERVAL_MS);
+        if carry.is_finite() {
+            carry.max(0.0)
+        } else {
+            0.0
+        }
+    }
+
     /// D-754 — σ PRONOSTICADA AL HORIZONTE τ, interpolada en log τ entre las
     /// anclas publicadas. Fuera del rango de anclas se toma la del extremo:
     /// extrapolar una ley de escala más allá de donde se ha medido es
@@ -527,6 +599,8 @@ impl CoinArena {
             spectral_intermittency: AtomicF64::new(0.0),
             spectral_fisher: AtomicF64::new(-1.0),
             open_interest_norm: AtomicF64::new(0.0),
+            funding_rate_next: AtomicF64::new(f64::NAN),
+            funding_rate_ts_ms: AtomicU64::new(0),
             epigenetic_bias: AtomicF64::new(1.0),
             epigenetic_threshold_modifier: AtomicF64::new(1.0),
             spot_bid: AtomicF64::new(0.0),

@@ -33,8 +33,8 @@ fn finite_impulse_overflow_does_not_publish_partial_state() {
 #[test]
 fn invalid_macro_flow_cannot_poison_dark_alpha() {
     let mut e = StatefulEngine::new();
-    e.update_macro_flow(0.001, 1.0, 1000);
-    e.update_macro_flow(0.001, f64::NAN, 2000);
+    e.update_macro_features(0.1, 1.0, 1000);
+    e.update_macro_features(0.1, f64::NAN, 2000);
     assert_eq!(
         (
             e.dark_alpha.last_timestamp_ms,
@@ -45,10 +45,10 @@ fn invalid_macro_flow_cannot_poison_dark_alpha() {
 }
 
 #[test]
-fn invalid_funding_cannot_advance_other_macro_evidence() {
+fn invalid_obi_cannot_advance_other_macro_evidence() {
     let mut e = StatefulEngine::new();
-    e.update_macro_flow(0.001, 1.0, 1000);
-    e.update_macro_flow(f64::NAN, 3.0, 2000);
+    e.update_macro_features(0.1, 1.0, 1000);
+    e.update_macro_features(f64::NAN, 3.0, 2000);
     assert_eq!(
         (
             e.dark_alpha.last_timestamp_ms,
@@ -111,25 +111,27 @@ fn equal_timestamp_impulses_are_additive_and_huge_age_converges_to_zero() {
 #[test]
 fn rejected_macro_transition_preserves_all_observed_macro_fields_and_counts_rejection() {
     let mut e = StatefulEngine::new();
-    e.update_macro_features(0.2, 0.001, 1.0, 2000);
+    // F-A1 (Fable): la firma perdió `funding_rate` junto con la
+    // `FundingRateElasticity` (arista muerta); el contrato de causalidad
+    // sigue siendo el mismo: una transición rechazada no toca ningún campo.
+    e.update_macro_features(0.2, 1.0, 2000);
     let prior = (
         e.obi_accel.prev_obi,
         e.obi_accel.prev_obi_velocity,
-        e.fr_elasticity.prev_funding_rate,
         e.dark_alpha.current_severity,
     );
-    e.update_macro_features(0.9, 0.5, 2.0, 1000);
+    e.update_macro_features(0.9, 2.0, 1000);
     assert_eq!(
         (
             e.obi_accel.prev_obi,
             e.obi_accel.prev_obi_velocity,
-            e.fr_elasticity.prev_funding_rate,
             e.dark_alpha.current_severity
         ),
         prior
     );
     assert_eq!(e.rejected_macro_updates, 1);
-    e.update_macro_flow(f64::NAN, 0.0, 3000);
+    // Un OBI no finito también es una transición rechazada (FIX #665).
+    e.update_macro_features(f64::NAN, 0.0, 3000);
     assert_eq!(e.rejected_macro_updates, 2);
     e.reset();
     assert_eq!(e.rejected_macro_updates, 0);

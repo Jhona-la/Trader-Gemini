@@ -57,11 +57,12 @@
 //!   0.0 EN AMBOS LADOS. Por eso el entrenador ya no las borra por su cuenta:
 //!   sólo VERIFICA (`dim_muerta_no_nula`) y aborta el día en que el contrato
 //!   deje de aplicarse.
-//! · FUNDING (`omni[11]`, o el poller de premiumIndex en vivo): entra en
-//!   `update_macro_features` y actualiza `fr_elasticity`… que NINGUNA de las
-//!   48 dimensiones lee. Se calcula y no se sirve. Que el entrenador lo pase
-//!   en 0 no abre divergencia alguna, y esto es comprobable: `fr_elasticity`
-//!   no aparece en `get_features()` ni en `omni.extract_features()`.
+//! · FUNDING: hasta F-A1 (Fable, 2026-10-17) entraba en
+//!   `update_macro_features` y actualizaba una `fr_elasticity` que NINGUNA
+//!   de las 48 dimensiones leía (arista muerta). F-A1 la retiró: el funding
+//!   ya no toca las features del bosque en ningún lado (paridad trivial) y
+//!   el per-símbolo vive en `CoinArena::funding_rate_next`, consumido por el
+//!   risk-engine como coste de carry esperado de la orden.
 //! · El resto del bloque `omni` que el tape no trae (fear&greed [14], oro
 //!   [26], us10y…) alimenta `build_54d_tensor[34..54]`, que es el tensor de
 //!   la RED, no el vector del BOSQUE. El bloque macro del bosque son cuatro

@@ -2759,30 +2759,18 @@ impl GodEngineCore {
             };
 
             if is_depth {
-                // MOD2/7-004 (INFORME DECIMOCUARTO): funding_rate REAL — el
-                // omni slot 11 (`agg_funding_rate`) lo produce el poller
-                // REST /fapi/v1/premiumIndex (clamp [-1,1], saneado a
-                // finito por OmniState::get_features). Antes este camino
-                // pasaba `depth_micro_div` como "funding" (semántica
-                // cruzada) y el camino por-tick pasaba 0.0 constante:
-                // columna muerta del vector. TODO: el productor es
-                // BTC-only (premiumIndex?symbol=BTCUSDT) — cablear funding
-                // per-símbolo cuando el poller lo publique.
+                // F-A1 (Fable, 2026-10-17): el funding YA NO entra por aquí.
+                // Historia: MOD2/7-004 pasaba omni[11] (BTC) y QO-U1c leía
+                // `funding_rate` per-símbolo del registry (un lookup por
+                // string en el hot path) para alimentar `fr_elasticity`…
+                // que ninguna dimensión ni decisión leía (arista muerta,
+                // documentada en train_forest.rs). La arista se extirpó. El
+                // funding per-símbolo vive ahora en
+                // `CoinArena::funding_rate_next` (atómico, lo publica el
+                // poller del host) y lo consume el risk-engine como coste
+                // de carry esperado de la orden (E[carry] = d·f·τ/T_F).
                 // dex_severity: SIN productor en vivo (feed MEV/DEX no
                 // existe) — se documenta el 0.0 en vez de falsificar señal.
-                // QO-U1c: funding PER-SÍMBOLO del registry (escrito por el
-                // poller cada 120s); fallback al global omni[11] (BTC).
-                let sym_funding = quantum_arena::symbol_registry::with_symbol(coin_id, |s| {
-                    self.arena
-                        .registry
-                        .get_scoped_value_or(s, "funding_rate", f64::NAN)
-                })
-                .unwrap_or(f64::NAN);
-                let funding_rate_live = if sym_funding.is_finite() {
-                    sym_funding
-                } else {
-                    omni_features[11]
-                };
                 // XXXIII: non-consuming, symbol-scoped as-of view. A level is not an impulse.
                 let liq_severity = self.liquidation_severity_at(coin_id, event_time_ms)
                     .ok().flatten().unwrap_or(0.0);
@@ -2790,7 +2778,6 @@ impl GodEngineCore {
                 self.feature_engines[coin_id].dark_alpha.last_timestamp_ms = event_time_ms;
                 self.feature_engines[coin_id].update_macro_features(
                     depth_obi,
-                    funding_rate_live,
                     0.0,
                     event_time_ms,
                 );
@@ -4017,21 +4004,19 @@ impl GodEngineCore {
             } else {
                 0.0
             };
-            // MOD2/7-004 (INFORME DECIMOCUARTO): funding_rate REAL del omni
-            // slot 11 (poller premiumIndex, ver camino is_depth arriba) —
-            // antes 0.0 constante: columna muerta del vector 34D/48D.
-            // TODO: funding per-símbolo (el productor hoy es BTC-only).
+            // F-A1 (Fable): el funding ya no pasa por las macro-features
+            // (la elasticidad que alimentaba era una arista muerta); el
+            // per-símbolo lo consume el risk-engine desde
+            // `CoinArena::funding_rate_next` como coste de carry.
             // dex_severity: sin productor en vivo — 0.0 documentado.
             // CERT-M2-H01: ANTES el camino per-tick llamaba
             // update_macro_features SIEMPRE, duplicando la llamada que el
-            // branch is_depth ya hizo arriba (~600) — obi_noise,
-            // obi_accel, fr_elasticity se actualizaban al DOBLE en
-            // eventos depth pero una vez en trades. Ahora: el per-tick
-            // SÓLO actualiza si el camino is_depth NO corrió (para trades
-            // y klines); los depth events ya fueron actualizados arriba
-            // con el funding per-símbolo (mejor dato).
+            // branch is_depth ya hizo arriba (~600) — obi_noise y
+            // obi_accel se actualizaban al DOBLE en eventos depth pero una
+            // vez en trades. Ahora: el per-tick SÓLO actualiza si el camino
+            // is_depth NO corrió (para trades y klines).
             if !_skip_macro_update {
-                feature_engine.update_macro_features(obi, omni_features[11], 0.0, event_time_ms);
+                feature_engine.update_macro_features(obi, 0.0, event_time_ms);
             }
             let raw_atr_pct = feature_engine.get_atr_pct();
             let hurst_val = feature_engine.hurst.current();
