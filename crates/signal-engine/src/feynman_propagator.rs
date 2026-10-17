@@ -426,4 +426,25 @@ impl QuantumStrategy for FeynmanPropagatorEngine {
     fn horizon(&self) -> TradeHorizon {
         TradeHorizon::Continuous
     }
+
+    fn is_operable_for_coin(&self, coin_id: usize, symbol: &str) -> bool {
+        // LG8-145-06 (OLA Ω148): En el régimen de fallback escalar (`tau_dom < TAU_ANCHOR_FAST_MS`
+        // o sin `consenso_espectral_dominante` activo), el adaptador escalar de Feynman se auto-silencia
+        // por diseño (#652/H2, CL-59) para no reinyectar una escala inoperable. Por tanto, en ese régimen
+        // es estructuralmente inoperable y no debe inflar `n_fuentes` en el denominador del ensamble escalar.
+        // Si existe dominante espectral en banda operable (`tau_dom >= TAU_ANCHOR_FAST_MS` y `|dominant_v| > 1e-9`),
+        // sí es operable (y si `coherence <= threshold` devuelve 0.0, cuenta como abstención genuina por decoherencia).
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return false,
+        };
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let tau_dom = r.get_scoped_val_or(sym_opt, cid_opt, "consenso_espectral_tau", 0.0);
+        let dominant_v = r.get_scoped_val_or(sym_opt, cid_opt, "consenso_espectral_dominante", 0.0);
+        tau_dom.is_finite()
+            && tau_dom >= quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
+            && dominant_v.is_finite()
+            && dominant_v.abs() > 1e-9
+    }
 }

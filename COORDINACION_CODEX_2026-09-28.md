@@ -1,5 +1,28 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω148: Cierre de 9 Hallazgos Línea G Ola 8 (`CSG-2` HIGH, `G8-OMEGA-07/08/09/11/15`, `LG8-145-04/05/06`) — Continuidad $C^1$ e Invarianza RMS en Helmholtz-Hodge, Ventana Unimodal GUE Anti-Picket-Fence, Proyección sin Inversión de Signo en Confluencia, Operabilidad de Feynman y Causalidad + Adimensionalidad en Hedge por Fuente + Plan Maestro V19 (2026-10-17)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+1. **Hallazgos Cerrados en `docs/audit/linea_g/ola8_revision.tsv` (9 en total)**:
+   - **`CSG-2` (`HIGH`, `crates/signal-engine/src/orchestrator.rs`)**:
+     * *Causa raíz*: En la cadencia de 1024 consensos, `ultimo_voto` ya había sido sobreescrito por el paso $t_{\text{now}} = 1024$ antes de ejecutar `actualizar_hedge_con_realizacion`, evaluando el voto de $t=1024$ contra el movimiento pasado $[0, 1024]$ (anticausal). Además, `direccion = ((mid - prev) / escala).clamp(-1.0, 1.0)` dividía una diferencia en USD por `atr_pct` adimensional ($\approx 0.001$), saturando a $\pm 1.0$.
+     * *Solución*: Añadido `voto_ancla_hedge: Vec<AtomicF64>` a `TensorVoteOrchestrator`. En cada cadencia `n % 1024 == 0`, se calcula el retorno relativo adimensional `ret_rel = (mid - prev) / prev; direccion = (ret_rel / escala).clamp(-1.0, 1.0)`, se puntúa `voto_ancla_hedge` (el voto emitido en $t_{\text{prev}}$ cuando se ancló `prev`) mediante `actualizar_hedge_desde_votos`, y acto seguido se copia `ultimo_voto` a `voto_ancla_hedge` para la siguiente ventana.
+   - **`G8-OMEGA-07` (`MED`, `crates/dark-alpha-engine/src/helmholtz_hodge.rs`)**:
+     * Normalizada $u_p$ por la escala RMS de ventana con regularización de $1.0\text{ bps}^2$, haciendo $\nabla \cdot \mathbf{u}$ y $\nabla \times \mathbf{u}$ adimensionales e invariantes de escala entre activos; reemplazado el salto $C^0$ (`1.0 -> 0.10`) en `min_laminar_fraction = 0.35` por un spline Hermite $C^1$ unificado.
+   - **`G8-OMEGA-08` (`MED`, `crates/risk-engine/src/riemann_zeta_gue.rs`)**:
+     * Incorporada ventana unimodal Hermite $C^1$ y desviación estándar empírica de espaciamientos desplegados $\sigma(s)$, de modo que rejillas regulares picket-fence y rampas EMA monótonas ($\langle r \rangle \to 1, \sigma(s) \to 0$) se atenúan (`< 0.45`) mientras los ceros de Riemann Zeta ($\langle r \rangle \approx 0.613, \sigma(s) \approx 0.37$) preservan `> 0.90`.
+   - **`G8-OMEGA-09` y `G8-OMEGA-11` (`MED`/`LOW`, `crates/signal-engine/src/flow_excitation_confluence.rs`)**:
+     * En `voto_espectral_*`, las escalas sin desplazamiento (`|x(τ_k)| <= 1e-12`) se omiten y el flujo proyecta `x.signum() * (x.abs() + x.signum() * current_sum).clamp(0.0, 10.0)`, garantizando que corrientes opuestas puedan atenuar hasta `0.0` pero jamás invertir el signo de $x(\tau_k)$. `ml_model_lift` soporta `ml_lift_dynamic` y escalamiento continuo por `atr_pct`.
+   - **`G8-OMEGA-15` (`INFO`, `crates/dark-alpha-engine/src/atiyah_singer_dirac.rs`)**:
+     * Compuertas Hermite $C^1$ en `dx * dx_prev` y `a_mid`, y anclaje de variedades suaves neutrales en `1.00` (erradicando la atenuación base espuria del `-12%`).
+   - **`LG8-145-06`, `LG8-145-04`, `LG8-145-05` (`crates/signal-engine/src/{feynman_propagator.rs, orchestrator.rs}`)**:
+     * `FeynmanPropagatorEngine::is_operable_for_coin` devuelve `false` en el régimen de fallback escalar (`tau_dom < TAU_ANCHOR_FAST_MS` o sin dominante activo), evitando diluir `n_fuentes`. Simplificado `evaluate_horizon_consensus` (-194 líneas muertas) y retiradas las escrituras sin consumidor `qo_145_*`.
+2. **Certificación Contractual (vía `scripts/cargo_semaforo.sh`)**:
+   - `helmholtz_hodge_contract` (5/5), `atiyah_singer_dirac_contract` (6/6), `riemann_zeta_gue_contract` (6/6), `ensemble_characterization` (14/14), `ensemble_calibrated_denominator_contract` (6/6), `navier_feynman_spectral_confluence_contract` (5/5) y `signal-engine --lib` (121/121) en verde.
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω146: Integración Espectral de Navier-Stokes y Feynman Propagator (13→15 Motores), Erradicación de Aristas Muertas, Expansión de Familia de Ville M=480 y Calibración Prequential + Plan Maestro V17 (2026-10-17)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F, Codex, Sol, Qoder y GLM:**

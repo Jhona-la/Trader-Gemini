@@ -90,6 +90,9 @@ pub struct TensorVoteOrchestrator {
     /// evolución lo publica — nada hardcodeado. Sólo opinan-quizá
     /// aprenden: un mudo no gana ni pierde (y su voto 0 ya no pesa).
     ultimo_voto: Vec<AtomicF64>,
+    /// CSG-2 (OLA Ω148): Voto anclado en el instante `t_prev` en que se capturó `hedge_ultimo_mid`.
+    /// Evita evaluar el retorno realizado en `[t_prev, t_now]` contra el voto recién emitido en `t_now`.
+    voto_ancla_hedge: Vec<AtomicF64>,
     pesos_hedge: Vec<AtomicF64>,
     /// Mid del símbolo censista (coin 0) en la última actualización del
     /// hedge — para medir la dirección realizada entre cadencias.
@@ -107,6 +110,7 @@ impl TensorVoteOrchestrator {
             vdom_evaluados: AtomicU64::new(0),
             vdom_sobre_corte: AtomicU64::new(0),
             ultimo_voto: Vec::new(),
+            voto_ancla_hedge: Vec::new(),
             pesos_hedge: Vec::new(),
             hedge_ultimo_mid: AtomicF64::new(0.0),
             strategies: Vec::new(),
@@ -135,6 +139,7 @@ impl TensorVoteOrchestrator {
         self.censo_total.push(AtomicU64::new(0));
         self.censo_no_cero.push(AtomicU64::new(0));
         self.ultimo_voto.push(AtomicF64::new(0.0));
+        self.voto_ancla_hedge.push(AtomicF64::new(0.0));
         self.pesos_hedge.push(AtomicF64::new(1.0));
         self.strategies.push(strategy);
         Ok(())
@@ -174,6 +179,14 @@ impl TensorVoteOrchestrator {
     /// La llama la cadencia de publicación (cada 1024 consensos del
     /// censista) — pública para que los tests la ejerzan directo.
     pub fn actualizar_hedge_con_realizacion(&self, direccion_realizada: f64) {
+        self.actualizar_hedge_desde_votos(&self.ultimo_voto, direccion_realizada);
+    }
+
+    fn actualizar_hedge_desde_votos(
+        &self,
+        votos_referencia: &[AtomicF64],
+        direccion_realizada: f64,
+    ) {
         if !direccion_realizada.is_finite() || direccion_realizada == 0.0 {
             return;
         }
@@ -186,7 +199,7 @@ impl TensorVoteOrchestrator {
             return;
         }
         let n = self.pesos_hedge.len();
-        if n == 0 {
+        if n == 0 || votos_referencia.len() < n {
             return;
         }
         let dir = direccion_realizada.clamp(-1.0, 1.0);
@@ -196,7 +209,7 @@ impl TensorVoteOrchestrator {
             if w <= 0.0 {
                 continue;
             }
-            let voto = self.ultimo_voto[idx].load(Ordering::Relaxed);
+            let voto = votos_referencia[idx].load(Ordering::Relaxed);
             if voto.abs() > 1e-9 && voto.is_finite() {
                 // Sólo aprende quien opinó: loss = −sign(voto)·dirección.
                 let loss = -voto.signum() * dir;
@@ -220,206 +233,10 @@ impl TensorVoteOrchestrator {
         }
     }
 
-    /// Legacy horizon entry point; Continuous is the only representable variant.
-    /// The vote score is a heuristic, not a calibrated Bayesian probability.
-    pub fn evaluate_horizon_consensus(&self, target_horizon: TradeHorizon) -> TensorDecision {
-        if target_horizon == TradeHorizon::Continuous {
-            return self.evaluate_continuous_consensus();
-        }
-        let horizon_strategies: Vec<&Box<dyn QuantumStrategy>> = self
-            .strategies
-            .iter()
-            .filter(|s| s.horizon() == target_horizon)
-            .collect();
-
-        if horizon_strategies.is_empty() {
-            return TensorDecision {
-                signal: SignalType::Flat,
-                net_confidence: 0.0,
-                expected_volatility: 0.0,
-                expected_lifetime_ms: 0,
-                horizon: target_horizon,
-            };
-        }
-
-        let mut long_votes = 0.0;
-        let mut short_votes = 0.0;
-        let mut active_weight = 0.0;
-        let mut max_volatility = 0.0;
-        let mut active_voters: usize = 0;
-
-        let mut operable_strategies_count = 0usize;
-        for strategy in &horizon_strategies {
-            let output = strategy.evaluate();
-            let is_active_vote = output.is_finite() && output.abs() > 1e-9;
-            let is_operable = is_active_vote || strategy.is_operable_for_coin(0, "");
-            if !is_operable {
-                continue;
-            }
-            operable_strategies_count += 1;
-            if !output.is_finite() {
-                continue;
-            }
-            let abs_weight = output.abs();
-            if is_active_vote {
-                active_voters += 1;
-            }
-
-            if output > 0.0 {
-                long_votes += abs_weight;
-            } else if output < 0.0 {
-                short_votes += abs_weight;
-            }
-
-            if abs_weight > max_volatility {
-                max_volatility = abs_weight;
-            }
-
-            active_weight += abs_weight;
-        }
-
-        if active_weight == 0.0 {
-            return TensorDecision {
-                signal: SignalType::Flat,
-                net_confidence: 0.0,
-                expected_volatility: 0.0,
-                expected_lifetime_ms: 0,
-                horizon: target_horizon,
-            };
-        }
-
-        let prob_long = long_votes / active_weight;
-        let prob_short = short_votes / active_weight;
-
-        let avg_conviction = active_weight / operable_strategies_count.max(1) as f64;
-        let ensemble_boost = compute_ensemble_boost(active_voters, operable_strategies_count);
-        // FASE 2 (calibración): la convicción efectiva ya NO toma
-        // `max_volatility` como término — mezclar volatilidad con convicción
-        // inflaba la confianza de forma estructural (toda señal "sonaba" a
-        // >0.9 sin relación con su frecuencia empírica de acierto). La
-        // convicción es acuerdo del ensamble, no ruido del mercado.
-        let effective_conviction = if avg_conviction.is_finite() {
-            (avg_conviction * ensemble_boost).clamp(0.0, 1.0)
-        } else {
-            0.5
-        };
-        // FIX #592: Blindaje de finitud numérica para evitar propagación de NaN
-        let raw_confidence = (prob_long - prob_short) * effective_conviction;
-        let net_confidence = if raw_confidence.is_finite() {
-            raw_confidence
-        } else {
-            0.0
-        };
-        // R1.6 — `expected_volatility` vuelve a ser lo que su nombre promete:
-        // VOLATILIDAD DE PRECIO ESPERADA (ATR% del feature engine), no el
-        // máximo |peso| de las salidas de estrategia (adimensional 0..1).
-        // El consumidor crítico es el gate breakout del router, que la compara
-        // contra scalp_sl_base/2 (una fracción de precio): con la versión
-        // anterior el gate era SIEMPRE verdadero y la defensa anti-slippage
-        // por volatilidad no existía. `max_volatility` queda como valor de
-        // colas (clamp acotado) solo si el ATR no está disponible.
-        let atr_pct = self.arena.registry.get_value_or("atr_pct", f64::NAN);
-        let expected_volatility = if atr_pct.is_finite() && atr_pct > 0.0 {
-            atr_pct
-        } else if max_volatility.is_finite() {
-            max_volatility.max(0.0).min(0.10)
-        } else {
-            0.0
-        };
-
-        let _confidence_cutoff = self
-            .arena
-            .config
-            .explosive_confidence_threshold
-            .load(std::sync::atomic::Ordering::Relaxed);
-        // FIX #1510: Sanitización de base_duration_ms antes del cálculo de lifetime
-        let raw_base = self
-            .arena
-            .config
-            .base_duration_ms
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let base_duration = if raw_base.is_finite() && raw_base > 0.0 {
-            raw_base as u64
-        } else {
-            30_000
-        };
-
-        let expected_lifetime_ms = {
-            // U-6 (MOTOR UNIVERSAL CONTINUO): la vida esperada de la posición
-            // se interpola por confianza entre el horizonte corto (1x base)
-            // y el extendido (10x base) — sin modos binarios de horizonte.
-            let conf = net_confidence.abs().clamp(0.0, 1.0);
-            let scale = 1.0 + 9.0 * conf;
-            ((base_duration as f64) * scale).max(30_000.0) as u64
-        };
-
-        let raw_long = self
-            .arena
-            .config
-            .ml_threshold_long
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let raw_short = self
-            .arena
-            .config
-            .ml_threshold_short
-            .load(std::sync::atomic::Ordering::Relaxed);
-
-        let long_dist = if raw_long >= 0.50 {
-            raw_long - 0.50
-        } else {
-            0.50 - raw_long
-        };
-        let short_dist = if raw_short >= 0.50 {
-            raw_short - 0.50
-        } else {
-            0.50 - raw_short
-        };
-
-        // FASE 2: el piso del cutoff ya no es el literal 0.08 (que dejaba
-        // pasar casi cualquier señal cuando el umbral del genoma rondaba
-        // 0.5). Se deriva del gen propio de confianza mínima
-        // (`min_confidence_btc`): el edge mínimo operable es coherente con la
-        // confianza mínima que el genoma exige en su gen más conservador.
-        // MOD2/7-012 (INFORME DECIMOCUARTO): el factor ×2 convertía el gen en
-        // SUPERMAYORÍA — con min_conf 0.70 exigía |net| > 0.40 entre 15
-        // estrategias heterogéneas (≈ 70-30) y el consenso era Flat casi
-        // siempre. Pendiente unitaria ×1.0 y techo 0.45: min_conf 0.70 ⇒
-        // cutoff 0.20 (mayoría simple ≈ 60-40). El ML (B3.18) ya gatea la
-        // entrada aguas abajo; el consenso no necesita repetir la supermayoría.
-        let min_conf_gene = self
-            .arena
-            .config
-            .min_confidence_btc
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let cutoff_floor = ((min_conf_gene - 0.50) * 1.0).clamp(0.0, 0.45);
-        let long_cutoff = (long_dist * 2.0).clamp(cutoff_floor, 0.95);
-        let short_cutoff = (short_dist * 2.0).clamp(cutoff_floor, 0.95);
-
-        if net_confidence > long_cutoff {
-            TensorDecision {
-                signal: SignalType::Long,
-                net_confidence,
-                expected_volatility,
-                expected_lifetime_ms,
-                horizon: target_horizon,
-            }
-        } else if net_confidence < -short_cutoff {
-            TensorDecision {
-                signal: SignalType::Short,
-                net_confidence: net_confidence.abs(),
-                expected_volatility,
-                expected_lifetime_ms,
-                horizon: target_horizon,
-            }
-        } else {
-            TensorDecision {
-                signal: SignalType::Flat,
-                net_confidence: net_confidence.abs(),
-                expected_volatility: 0.0,
-                expected_lifetime_ms: 0,
-                horizon: target_horizon,
-            }
-        }
+    /// LG8-145-04 (OLA Ω148): `TradeHorizon::Continuous` es la única variante representable;
+    /// delega directamente a `evaluate_continuous_consensus` eliminando el cuerpo inalcanzable.
+    pub fn evaluate_horizon_consensus(&self, _target_horizon: TradeHorizon) -> TensorDecision {
+        self.evaluate_continuous_consensus()
     }
 
     /// D-117: Consenso de Scalp escopado por activo real
@@ -655,17 +472,12 @@ impl TensorVoteOrchestrator {
                     "qo_652_fraccion_sobre_corte",
                     sobre as f64 / evaluados.max(1) as f64,
                 );
-                // OLA Ω145: Telemetría de ensamble de fuentes operables y votantes activos
-                self.arena
-                    .registry
-                    .set("qo_145_fuentes_operables", n_fuentes as f64);
-                self.arena
-                    .registry
-                    .set("qo_145_votantes_activos", active_voters as f64);
-                // GLM 130 — HEDGE: actualización por realización en la
-                // cadencia del censista. Dirección realizada = retorno del
-                // mid de coin 0 entre cadencias, escalado por ATR% (o 10
-                // bps de fallback) y clampeado a [−1, 1].
+                // GLM 130 / CSG-2 (OLA Ω148) — HEDGE: actualización por realización en la
+                // cadencia del censista.
+                // 1. Retorno relativo adimensional: `((mid - prev) / prev) / atr_pct` en [-1, 1].
+                // 2. Causalidad temporal: se evalúa el retorno de `[t_prev, t_now]` contra
+                //    `voto_ancla_hedge` (el voto emitido en `t_prev` cuando se fijó `prev`),
+                //    y DESPUÉS se anclan los votos actuales de `t_now` para la siguiente ventana.
                 let mid = self
                     .arena
                     .coins
@@ -679,10 +491,14 @@ impl TensorVoteOrchestrator {
                         .registry
                         .get_for_coin_or(0, "atr_pct", f64::NAN);
                     let escala = if atr.is_finite() && atr > 1e-9 { atr } else { 0.001 };
-                    let direccion = ((mid - prev) / escala).clamp(-1.0, 1.0);
-                    self.actualizar_hedge_con_realizacion(direccion);
+                    let ret_rel = (mid - prev) / prev;
+                    let direccion = (ret_rel / escala).clamp(-1.0, 1.0);
+                    self.actualizar_hedge_desde_votos(&self.voto_ancla_hedge, direccion);
                 } else if mid.is_finite() && mid > 0.0 {
                     self.hedge_ultimo_mid.store(mid, Ordering::Relaxed);
+                }
+                for (ancla, actual) in self.voto_ancla_hedge.iter().zip(self.ultimo_voto.iter()) {
+                    ancla.store(actual.load(Ordering::Relaxed), Ordering::Relaxed);
                 }
             }
         }

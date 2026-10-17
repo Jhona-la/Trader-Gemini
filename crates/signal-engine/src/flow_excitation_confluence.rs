@@ -147,20 +147,24 @@ impl FlowExcitationConfluenceEngine {
         };
         for k in 0..32 {
             let x = desplazamientos[k];
-            if !x.is_finite() {
+            if !x.is_finite() || x.abs() <= 1e-12 {
                 continue;
             }
-            // En micro-escalas (k < 12), dominan la absorción iceberg local y la anomalía quiral de Dirac;
-            // en meso-escalas (8 <= k < 24), la corriente holomorfa Kähleriana, elíptica BSD y geodésica Wasserstein modulan la paridad;
-            // en macro-escalas (k >= 16), la corriente Yang-Mills y velocidad advectiva Wasserstein modulan la geometría global.
+            // G8-OMEGA-10: Perfiles continuos de acoplamiento espectral sobre k ∈ [0, 31]:
+            // - micro_factor: rampa lineal decreciente desde 1.0 (k=0) hacia 0.0 (k=32) para absorción iceberg y anomalía quiral de Dirac.
+            // - meso_factor: perfil triangular centrado en k=16 para corrientes restauradoras Kähleriana, elíptica BSD y geodésica Wasserstein.
+            // - macro_factor: rampa lineal creciente desde 0.0 (k=0) hacia 31/32 (k=31) para curvatura gauge Yang-Mills y advección Wasserstein.
             let micro_factor = (1.0 - (k as f64 / 32.0)).max(0.0);
             let meso_factor = (1.0 - ((k as f64 - 16.0) / 16.0).abs()).max(0.0);
             let macro_factor = (k as f64 / 32.0).clamp(0.0, 1.0);
-            let flujo = (x
-                + (p_ice * 0.5 + j_dirac * 0.25) * micro_factor
+            let current_sum = (p_ice * 0.5 + j_dirac * 0.25) * micro_factor
                 + (j_kh * 0.35 + j_bsd * 0.25 + v_wk * 0.20) * meso_factor
-                + (j_ym * 0.35 + v_wk * 0.20) * macro_factor)
-                .clamp(-10.0, 10.0);
+                + (j_ym * 0.35 + v_wk * 0.20) * macro_factor;
+            // G8-OMEGA-09: Proyección direccional sin inversión de signo.
+            // Las corrientes físicas amplifican la magnitud cuando están alineadas con x(τ_k)
+            // y la atenúan suavemente hacia 0.0 cuando se oponen, pero NUNCA invierten el signo
+            // del desplazamiento espectral x(τ_k) ni fabrican señal cuando x(τ_k) == 0.
+            let flujo = x.signum() * (x.abs() + x.signum() * current_sum).clamp(0.0, 10.0);
             let direccion = flujo.tanh();
             let coherencia = (flujo.abs().min(1.0) * excitacion * lam_scale).sqrt();
             por_escala[k] = (direccion * coherencia * gue_mod * bsd_mod * dirac_mod * wk_mod).clamp(-1.0, 1.0);
@@ -419,6 +423,8 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             Some(v) => v,
             None => return 0.0, // CL-15: sin base medida, el lift no es medible — no opina
         };
+        // G8-OMEGA-11: `ml_model_lift` admite llave explícita (`ml_model_lift`), llave dinámica
+        // (`ml_lift_dynamic`) o escalamiento continuo por dispersión (`atr_pct`), con fallback seguro a 0.05.
         let ml_lift = r
             .get_scoped_parameter(
                 sym_opt,
@@ -426,9 +432,31 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
                 "ml_model_lift",
                 "FlowExcitationConfluenceEngine",
             )
+            .or_else(|| {
+                r.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "ml_lift_dynamic",
+                    "FlowExcitationConfluenceEngine",
+                )
+            })
             .map(|p| p.get_value())
             .filter(|v| v.is_finite() && *v > 0.0 && *v < 0.5)
-            .unwrap_or(0.05);
+            .unwrap_or_else(|| {
+                let atr = r
+                    .get_scoped_parameter(
+                        sym_opt,
+                        cid_opt,
+                        "atr_pct",
+                        "FlowExcitationConfluenceEngine",
+                    )
+                    .map(|p| p.get_value())
+                    .filter(|v| v.is_finite() && *v > 0.0);
+                match atr {
+                    Some(a) => (0.05 * (a / 0.002).sqrt()).clamp(0.02, 0.15),
+                    None => 0.05,
+                }
+            });
 
         // #535 (3ª iteración): el umbral de excitación vuelve a ser del
         // GEN, anclado al estado estacionario del proceso. El gen

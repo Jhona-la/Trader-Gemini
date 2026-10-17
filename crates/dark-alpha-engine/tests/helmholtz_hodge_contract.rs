@@ -99,3 +99,53 @@ fn test_helmholtz_nan_inf_immunity() {
     assert!(decomp_inf.total_energy.is_finite());
     assert!(decomp_inf.enstrophy.is_finite());
 }
+
+#[test]
+fn test_g8_omega_07_c1_continuity_and_scale_invariance() {
+    let mut engine_small = HelmholtzHodgeEngine::new(HelmholtzHodgeParams::default());
+    let mut engine_large = HelmholtzHodgeEngine::new(HelmholtzHodgeParams::default());
+
+    for i in 0..24 {
+        let base_vel = 2.0 + (i as f64) * 0.15;
+        let ofi = 0.80;
+        let d_small = engine_small.update(base_vel, ofi);
+        let d_large = engine_large.update(base_vel * 50.0, ofi);
+        if i >= 16 {
+            assert!(
+                (d_small.laminar_fraction - d_large.laminar_fraction).abs() < 0.08,
+                "La fracción laminar debe ser invariante de escala tras normalización RMS: small={} vs large={}",
+                d_small.laminar_fraction,
+                d_large.laminar_fraction
+            );
+            assert!(
+                d_small.conviction_factor >= 1.0 && d_large.conviction_factor >= 1.0,
+                "Ambos regímenes laminares deben preservar convicción >= 1.0: small={} vs large={}",
+                d_small.conviction_factor,
+                d_large.conviction_factor
+            );
+        }
+    }
+
+    // Verificar ausencia del acantilado C⁰ de magnitud 0.90 en min_laminar_fraction = 0.35
+    let mut e_below = HelmholtzHodgeEngine::new(HelmholtzHodgeParams {
+        min_laminar_fraction: 0.35,
+        ..Default::default()
+    });
+    let mut e_above = HelmholtzHodgeEngine::new(HelmholtzHodgeParams {
+        min_laminar_fraction: 0.3499,
+        ..Default::default()
+    });
+    for i in 0..16 {
+        let p = if i % 3 == 0 { 1.0 } else { 0.4 };
+        let o = if i % 2 == 0 { 0.6 } else { -0.2 };
+        let db = e_below.update(p, o);
+        let da = e_above.update(p, o);
+        assert!(
+            (db.conviction_factor - da.conviction_factor).abs() < 0.01,
+            "Proximidad de min_laminar_fraction no debe causar salto C⁰: {} vs {}",
+            db.conviction_factor,
+            da.conviction_factor
+        );
+    }
+}
+

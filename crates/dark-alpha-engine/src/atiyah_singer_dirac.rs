@@ -202,36 +202,35 @@ impl AtiyahSingerDiracEngine {
             total_flux += local_flux;
 
             if i >= 2 {
+                let dx_prev = xs[i - 1] - xs[i - 2];
                 let d2x = xs[i] - 2.0 * xs[i - 1] + xs[i - 2];
                 let d2a = as_gauge[i] - 2.0 * as_gauge[i - 1] + as_gauge[i - 2];
-                // Curvatura de segundo orden no amortiguada por tendencia monótona
-                let reversal_curv = if (xs[i] - xs[i - 1]) * (xs[i - 1] - xs[i - 2]) < 0.0 {
-                    d2x.abs() * 2.2 + d2a.abs() * 1.5
-                } else {
-                    d2x.abs() * 0.25 + d2a.abs() * 0.25
-                };
+                // G8-OMEGA-15 (Ola Ω148): Transición C¹ Hermite continua entre régimen de tendencia
+                // y régimen de inversión (whipsaw), erradicando el escalón C⁰ en `dx * dx_prev == 0`.
+                let turn_norm = -(dx * dx_prev) / (dx * dx + dx_prev * dx_prev + 1e-6);
+                let turn_gate = dirac_hermite_c1(turn_norm, 0.0, 0.35);
+                let w_x = 0.25 + 1.95 * turn_gate;
+                let w_a = 0.25 + 1.25 * turn_gate;
+                let reversal_curv = d2x.abs() * w_x + d2a.abs() * w_a;
                 total_roughness += reversal_curv;
             }
 
-            // 2. Operadores quirales adjuntos de Weyl-Dirac (simetría exacta de paridad CPT):
+            // 2. Operadores quirales adjuntos de Weyl-Dirac (simetría exacta de paridad CPT y continuidad C¹):
             // Un modo cero quiral derecho (\psi_+) emerge cuando A_t > 0 impulsa coherentemente dx > 0;
             // un modo cero quiral izquierdo (\psi_-) emerge cuando A_t < 0 impulsa coherentemente dx < 0.
             let chiral_soliton_mismatch = (dx - 0.5 * a_mid).abs();
             let kernel_width = 0.35_f64;
+            let gauss_kernel = (-chiral_soliton_mismatch * chiral_soliton_mismatch
+                / (2.0 * kernel_width * kernel_width))
+                .exp()
+                * a_mid.abs().min(2.0);
 
-            if a_mid > 0.05 && dx >= -0.05 {
-                let weight_plus = (-chiral_soliton_mismatch * chiral_soliton_mismatch
-                    / (2.0 * kernel_width * kernel_width))
-                    .exp()
-                    * a_mid.abs().min(2.0);
-                zero_plus += weight_plus;
-            } else if a_mid < -0.05 && dx <= 0.05 {
-                let weight_minus = (-chiral_soliton_mismatch * chiral_soliton_mismatch
-                    / (2.0 * kernel_width * kernel_width))
-                    .exp()
-                    * a_mid.abs().min(2.0);
-                zero_minus += weight_minus;
-            }
+            let gate_plus =
+                dirac_hermite_c1(a_mid, 0.0, 0.10) * dirac_hermite_c1(dx, -0.10, 0.02);
+            let gate_minus =
+                dirac_hermite_c1(-a_mid, 0.0, 0.10) * dirac_hermite_c1(-dx, -0.10, 0.02);
+            zero_plus += gauss_kernel * gate_plus;
+            zero_minus += gauss_kernel * gate_minus;
         }
 
         let inv_n = 1.0 / ((n - 1).max(1) as f64);
@@ -263,8 +262,10 @@ impl AtiyahSingerDiracEngine {
             (a_roof_genus * (atiyah_singer_index * 0.9 + chiral_zero_mode_asymmetry * 0.8).tanh())
                 .clamp(-1.0, 1.0);
 
-        // 7. Modulación continua C^1 Hermite de la convicción:
+        // 7. Modulación continua C^1 Hermite de la convicción (G8-OMEGA-15):
         // - Si la variedad sufre whipsaw violento sin protección topológica (\hat{A} -> 0), atenúa hacia 0.30.
+        // - En variedad suave sin anomalía topológica (\hat{A} -> 1, topological_strength = 0), vale 1.00
+        //   exacto (sin la atenuación base espuria del -12%).
         // - Si existe índice topológico no nulo |\mathcal{I}_{AS}| > 0 con variedad suave (\hat{A} alto),
         //   amplifica hasta 1.15.
         let smoothness_gate = dirac_hermite_c1(a_roof_genus, 0.25, 0.85);
@@ -274,7 +275,7 @@ impl AtiyahSingerDiracEngine {
             0.85,
         );
         let dirac_conviction_modulation =
-            (0.30 + smoothness_gate * (0.58 + 0.27 * topological_strength)).clamp(0.30, 1.15);
+            (0.30 + smoothness_gate * (0.70 + 0.15 * topological_strength)).clamp(0.30, 1.15);
 
         let metrics = AtiyahSingerDiracMetrics {
             a_roof_genus,

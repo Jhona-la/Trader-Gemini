@@ -153,3 +153,31 @@ fn c5_zero_alloc_stack_latency_under_25_microseconds() {
         elapsed_ns
     );
 }
+
+#[test]
+fn c6_g8_omega_08_picket_fence_and_monotone_ema_ramp_attenuated() {
+    // Rejilla picket-fence equiespaciada (s_k = 1.0 constante, <r> = 1.0, sigma(s) = 0.0)
+    // típica de un cristal rígido o rampa EMA monótona sin caos cuántico GUE:
+    let picket_fence = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0];
+    let pf_state = RiemannZetaGueEngine::evaluate_spectrum(&picket_fence);
+
+    // Espectro genuino de ceros de Riemann Zeta en Re(s) = 1/2 (<r> ~ 0.61, sigma(s) ~ 0.37)
+    let riemann_zeros = [
+        14.134725, 21.022040, 25.010858, 30.424876, 32.935062, 37.586178,
+        40.918719, 43.327073, 48.005151, 49.773832, 52.970321, 56.446248,
+    ];
+    let gue_state = RiemannZetaGueEngine::evaluate_spectrum(&riemann_zeros);
+
+    assert!(
+        pf_state.gue_conviction_modulation < 0.45,
+        "Una rejilla picket-fence equiespaciada (<r>=1, sigma=0) NO es GUE y debe atenuarse (<0.45), obtuvimos {}",
+        pf_state.gue_conviction_modulation
+    );
+    assert!(
+        gue_state.gue_conviction_modulation > pf_state.gue_conviction_modulation + 0.50,
+        "Los ceros genuinos de Riemann Zeta ({}) deben superar ampliamente a la rejilla picket-fence ({})",
+        gue_state.gue_conviction_modulation,
+        pf_state.gue_conviction_modulation
+    );
+}
+

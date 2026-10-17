@@ -270,3 +270,155 @@ fn negative_pnl_disables_momentum_extension_even_in_cascade() {
         "PnL negativo ni con cascada: la extensión exige ganancia"
     );
 }
+
+/// G8-OMEGA-09 (OLA Ω148): Las corrientes físicas opuestas (Iceberg, Dirac, Kähler,
+/// BSD, Yang-Mills, Wasserstein) pueden atenuar el voto de una escala hasta 0.0,
+/// pero NUNCA invierten el signo del desplazamiento espectral `x(τ_k)` ni fabrican
+/// un voto direccional cuando `x(τ_k) == 0.0`.
+#[test]
+fn g8_omega_09_opposing_currents_attenuate_without_sign_inversion() {
+    let mut x_pos = [0.0f64; 32];
+    for v in &mut x_pos {
+        *v = 0.05; // Desplazamiento positivo moderado en todas las escalas
+    }
+    // Corrientes físicas fuertemente negativas (-1.0) oponiéndose a x > 0
+    let voto_opuesto = FlowExcitationConfluenceEngine::voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
+        &x_pos,
+        3.5,  // excitación alta
+        -1.0, // p_ice opuesta
+        0.85, // laminar_fraction
+        -1.0, // j_ym opuesta
+        -1.0, // j_kh opuesta
+        1.0,  // riemann_gue_conviction
+        -1.0, // j_bsd opuesta
+        1.0,  // bsd_conviction_modulation
+        -1.0, // j_dirac opuesta
+        1.0,  // dirac_conviction_modulation
+        -1.0, // v_wk opuesta
+        1.0,  // wasserstein_conviction_modulation
+    );
+    for k in 0..32 {
+        let vk = voto_opuesto.en_escala(k);
+        assert!(
+            vk >= 0.0,
+            "G8-OMEGA-09: Corrientes opuestas jamás pueden invertir el signo de x(τ_{k}) > 0: vk={vk}"
+        );
+        assert_eq!(
+            vk, 0.0,
+            "Con oposición total mayor que |x|, el voto en escala {k} se atenúa a 0.0: vk={vk}"
+        );
+    }
+
+    // Y cuando x == 0.0, ninguna corriente física puede fabricar un voto direccional
+    let x_cero = [0.0f64; 32];
+    let voto_en_cero = FlowExcitationConfluenceEngine::voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
+        &x_cero, 3.5, 1.0, 0.85, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    );
+    for k in 0..32 {
+        assert_eq!(
+            voto_en_cero.en_escala(k),
+            0.0,
+            "Sin desplazamiento espectral (x=0), las corrientes no fabrican voto en escala {k}"
+        );
+    }
+}
+
+/// LG8-145-06 (OLA Ω148): En el régimen de fallback escalar (`tau_dom < 30_000 ms` o sin dominante),
+/// `FeynmanPropagatorEngine` es estructuralmente inoperable y no diluye `n_fuentes`.
+#[test]
+fn lg8_145_06_feynman_inoperable_in_scalar_fallback_does_not_dilute_ensemble() {
+    use signal_engine::feynman_propagator::FeynmanPropagatorEngine;
+
+    let arena_solo = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+    let mut orch_solo = TensorVoteOrchestrator::new(Arc::clone(&arena_solo));
+    orch_solo.add_strategy(Box::new(NamedSource("alpha_voter", 0.6)));
+    let conf_solo = orch_solo
+        .evaluate_continuous_consensus_for_coin(0, "BTCUSDT")
+        .net_confidence;
+
+    let arena_with_feynman = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+    let mut orch_with_feynman = TensorVoteOrchestrator::new(Arc::clone(&arena_with_feynman));
+    orch_with_feynman.add_strategy(Box::new(NamedSource("alpha_voter", 0.6)));
+    orch_with_feynman.add_strategy(Box::new(FeynmanPropagatorEngine::new()));
+    let conf_with_feynman = orch_with_feynman
+        .evaluate_continuous_consensus_for_coin(0, "BTCUSDT")
+        .net_confidence;
+
+    assert!(
+        (conf_solo - conf_with_feynman).abs() < 1e-12,
+        "FeynmanPropagatorEngine sin dominante espectral operable no debe diluir n_fuentes: solo={conf_solo} vs con_feynman={conf_with_feynman}"
+    );
+}
+
+/// CSG-2 (OLA Ω148): En la cadencia de 1024 consensos, Hedge evalúa el retorno relativo
+/// adimensional `((mid - prev) / prev) / atr_pct` contra el voto anclado en `t_prev`
+/// (`voto_ancla_hedge`), NO contra el voto recién emitido en `t_now`.
+#[test]
+fn csg_2_hedge_cadence_scores_anchored_t_prev_vote_with_dimensionless_return() {
+    use std::sync::atomic::AtomicI64;
+
+    struct FlippingVoter {
+        name: &'static str,
+        sign: Arc<AtomicI64>,
+    }
+    impl QuantumStrategy for FlippingVoter {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn init(&mut self, _: Arc<OmniscientRegistry>) -> Result<(), String> {
+            Ok(())
+        }
+        fn evaluate(&self) -> f64 {
+            (self.sign.load(Ordering::Relaxed) as f64) * 0.8
+        }
+    }
+
+    let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+    arena.registry.set_for_coin(0, "atr_pct", 0.001); // 10 bps
+    arena.coins[0]
+        .current_price
+        .store(60_000.0, Ordering::Relaxed);
+
+    let sign_flipper = Arc::new(AtomicI64::new(1)); // En t=0 vota Long (+0.8)
+    let sign_bear = Arc::new(AtomicI64::new(-1));   // En t=0 vota Short (-0.8)
+
+    let mut orch = TensorVoteOrchestrator::new(Arc::clone(&arena));
+    orch.add_strategy(Box::new(FlippingVoter {
+        name: "flipper_correct_at_t0",
+        sign: Arc::clone(&sign_flipper),
+    }));
+    orch.add_strategy(Box::new(FlippingVoter {
+        name: "bear_wrong_at_t0",
+        sign: Arc::clone(&sign_bear),
+    }));
+
+    // Paso n = 0: ancla prev_mid = 60_000.0 y voto_ancla_hedge = [+0.8, -0.8]
+    let _ = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+
+    // Pasos n = 1..1023
+    for _ in 1..1024 {
+        let _ = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+    }
+
+    // Justo en n = 1024: el precio subió +10 bps (de 60_000 a 60_060, retorno +0.001 == +1x ATR),
+    // lo que valida el voto Long (+0.8) emitido en t=0.
+    // PERO en n = 1024 `flipper_correct_at_t0` cambia su nuevo voto a Short (-0.8) para la SIGUIENTE ventana.
+    arena.coins[0]
+        .current_price
+        .store(60_060.0, Ordering::Relaxed);
+    sign_flipper.store(-1, Ordering::Relaxed);
+    sign_bear.store(1, Ordering::Relaxed);
+
+    let _ = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+
+    let pesos: std::collections::HashMap<_, _> =
+        orch.pesos_hedge_snapshot().into_iter().collect();
+    let w_flipper = *pesos.get("flipper_correct_at_t0").unwrap();
+    let w_bear = *pesos.get("bear_wrong_at_t0").unwrap();
+
+    assert!(
+        w_flipper > 1.0 && w_bear < 1.0 && w_flipper > w_bear,
+        "CSG-2: Hedge debe premiar el voto emitido en t=0 (ancla) frente al retorno [0, 1024], no el voto de t=1024: w_flipper={w_flipper}, w_bear={w_bear}"
+    );
+}
+

@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Antigravity (AGY, Quant Sr.): Ola Ω148 CERRADA — Continuidad $C^1$ e Invarianza Adimensional RMS en Helmholtz-Hodge (`G8-OMEGA-07`), Ventana Unimodal GUE Anti-Picket-Fence (`G8-OMEGA-08`), Anclaje Neutral y $C^1$ en Dirac (`G8-OMEGA-15`), Proyección sin Inversión de Signo en Confluencia Espectral (`G8-OMEGA-09/11`), Operabilidad de Feynman en Fallback Escalar (`LG8-145-06`) y Causalidad + Adimensionalidad en Hedge por Fuente (`CSG-2` HIGH, `LG8-145-04/05`)
+
+- **Rama**: `agy/ola-148-helmholtz-riemann-dirac-confluence-hedge-c1` (fusionada a `main` y retirada).
+- **Hallazgos Línea G Ola 8 Cerrados (9 en total)**: `CSG-2` (HIGH), `G8-OMEGA-07` (MED), `G8-OMEGA-08` (MED), `G8-OMEGA-09` (MED), `G8-OMEGA-11` (LOW), `G8-OMEGA-15` (INFO), `LG8-145-04` (LOW), `LG8-145-05` (LOW), `LG8-145-06` (INFO).
+- **Cambios matemáticos y algorítmicos**:
+  1. **`crates/dark-alpha-engine/src/helmholtz_hodge.rs` (`G8-OMEGA-07`)**:
+     - Normalizada la velocidad de precio $u_p$ por su escala RMS de ventana con regularización de $1.0\text{ bps}^2$ (`p_scale = (p_sq_sum / n + 1.0).sqrt()`), garantizando que $\nabla \cdot \mathbf{u}$ y $\nabla \times \mathbf{u}$ sean adimensionales e invariantes entre activos de distinto precio/tick.
+     - Reemplazado el escalón $C^0$ (`if is_laminar_safe ... else ...`) en `min_laminar_fraction = 0.35` (que saltaba de `1.0` a `0.10`) por un spline Hermite $C^1$ unificado (`(1.0 + 0.30 * h_lam * h_ens_gate - 0.90 * h_turb).clamp(0.10, 1.30)`) con valor `1.0` y derivada nula a ambos lados del umbral.
+  2. **`crates/risk-engine/src/riemann_zeta_gue.rs` (`G8-OMEGA-08`)**:
+     - Incorporada la desviación estándar empírica de espaciamientos desplegados $\sigma(s)$ y una ventana unimodal Hermite $C^1$ centrada en GUE (`picket_decay = 1.0 - hermite_smoothstep_c1(mean_gap_ratio, 0.72, 0.90)` y `anti_crystal_gate`), de modo que rejillas regulares picket-fence y rampas EMA monótonas ($\langle r \rangle \to 1, \sigma(s) \to 0$) se atenúan (`< 0.45`) en lugar de saturar el bono `1.15`, mientras los ceros de Riemann Zeta ($\langle r \rangle \approx 0.613, \sigma(s) \approx 0.37$) preservan `gue_conviction_modulation > 0.90`.
+  3. **`crates/dark-alpha-engine/src/atiyah_singer_dirac.rs` (`G8-OMEGA-15`)**:
+     - Reemplazados los escalones $C^0$ en `dx * dx_prev < 0.0` y `|a_mid| > 0.05` por compuertas Hermite $C^1$, y eliminado el castigo espurio del `-12%` (`0.88`) sobre variedades planas/neutrales (`a_roof == 1.0, topological_strength == 0.0` ahora produce `dirac_conviction_modulation == 1.00`).
+  4. **`crates/signal-engine/src/flow_excitation_confluence.rs` (`G8-OMEGA-09`, `G8-OMEGA-10`, `G8-OMEGA-11`)**:
+     - En `voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz`, si `|x(τ_k)| <= 1e-12` la escala se omite (las corrientes físicas jamás fabrican voto donde no hay flujo), y cuando `x(τ_k) != 0` el flujo proyecta `x.signum() * (x.abs() + x.signum() * current_sum).clamp(0.0, 10.0)`, impidiendo que corrientes opuestas inviertan el signo de `x(τ_k)`.
+     - `ml_model_lift` admite llave dinámica (`ml_lift_dynamic`) o escalamiento continuo por dispersión (`atr_pct`) antes del fallback `0.05`.
+  5. **`crates/signal-engine/src/feynman_propagator.rs` (`LG8-145-06`)**:
+     - Implementado `is_operable_for_coin` en `FeynmanPropagatorEngine`: devuelve `false` en el régimen de fallback escalar (`tau_dom < TAU_ANCHOR_FAST_MS` o `|dominant_v| <= 1e-9`), evitando diluir `n_fuentes` cuando Feynman se auto-silencia por diseño.
+  6. **`crates/signal-engine/src/orchestrator.rs` (`CSG-2` HIGH, `LG8-145-04`, `LG8-145-05`)**:
+     - Añadido `voto_ancla_hedge: Vec<AtomicF64>`: en cada cadencia de 1024 consensos, Hedge calcula el retorno relativo adimensional `((mid - prev) / prev) / escala` y evalúa los votos anclados en `t_prev` (`voto_ancla_hedge`) antes de capturar la nueva instantánea de `t_now`.
+     - Simplificado `evaluate_horizon_consensus` eliminando 194 líneas de código inalcanzable (`LG8-145-04`) y retiradas las escrituras sin lector `qo_145_*` (`LG8-145-05`).
+- **Verificación (vía `scripts/cargo_semaforo.sh`)**:
+  - `helmholtz_hodge_contract` (5/5), `atiyah_singer_dirac_contract` (6/6), `riemann_zeta_gue_contract` (6/6), `ensemble_characterization` (14/14), `ensemble_calibrated_denominator_contract` (6/6), `navier_feynman_spectral_confluence_contract` (5/5) y `signal-engine --lib` (121/121) 100% verdes.
+
 ## 2026-10-17 — Fable (Claude Fable 5.1, consejo Quant Sr.): Ola F1 — auditoría desde la base (125 hallazgos), F-A1 funding de extremo a extremo, higiene y CI
 
 - **F-A1 (en main)**: funding per-símbolo vive en `CoinArena::funding_rate_next` (+ marca; NaN = sin dato;
