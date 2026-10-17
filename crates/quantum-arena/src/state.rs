@@ -609,6 +609,15 @@ pub struct GlobalArena {
     /// `pico_en_stops − resultado_en_stops`.
     pub resultado_en_stops: AtomicF64,
     pub pico_en_stops: AtomicF64,
+    /// CL-132 (R3) — SALDO DEL EXCHANGE, que el host publica en cada ciclo de
+    /// su sistema inmune. Los frenos de drawdown registran el pico y miden la
+    /// caída con el mínimo entre éste y `unified_capital`
+    /// (`risk_engine::drawdown::capital_del_freno`). 0 = sin saldo del
+    /// exchange (backtest, o antes del primer ciclo del host).
+    pub capital_exchange: AtomicF64,
+    /// CL-133 (B2) — el pico guardado es ilegible: no entran posiciones
+    /// nuevas hasta que el operador repare o retire el archivo.
+    pub pico_ilegible: AtomicBool,
     pub tick_counter: AtomicU64,
     pub kill_switch_active: AtomicBool,
     pub last_ws_latency_ms: AtomicU64,
@@ -706,6 +715,8 @@ impl GlobalArena {
             perdida_en_stops: AtomicF64::new(0.0),
             resultado_en_stops: AtomicF64::new(0.0),
             pico_en_stops: AtomicF64::new(0.0),
+            capital_exchange: AtomicF64::new(0.0),
+            pico_ilegible: AtomicBool::new(false),
             tick_counter: AtomicU64::new(0),
             kill_switch_active: AtomicBool::new(false),
             last_ws_latency_ms: AtomicU64::new(0),

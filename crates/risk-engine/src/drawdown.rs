@@ -254,13 +254,83 @@ pub fn guardar_pico(ruta: &std::path::Path, pico: f64) -> std::io::Result<()> {
     std::fs::rename(&tmp, ruta)
 }
 
-/// CL-99 — lee el pico guardado. `None` si no hay archivo o no contiene un
-/// capital finito y positivo: el llamador sigue con el capital del arranque,
-/// como antes.
+/// CL-133 (B2 de la revisión del PR #62) — lo que se encontró al leer el
+/// pico guardado. Un archivo ilegible (coma decimal, BOM, error de E/S) no es
+/// un archivo ausente: tratarlo como ausente perdonaba la caída sin aviso, y
+/// el host lo sobrescribía a los 5 s. Mismo criterio que el estado aprendido
+/// (CL-108f).
+#[derive(Debug, Clone, PartialEq)]
+pub enum CargaPico {
+    /// No hay archivo: primer arranque, o el operador lo borró para empezar
+    /// de cero tras un retiro de fondos.
+    Ausente,
+    /// El archivo existe pero no se puede leer o no contiene un capital
+    /// finito y positivo.
+    Ilegible(String),
+    Leido(f64),
+}
+
+/// CL-99 / CL-133 — lee el pico guardado.
+pub fn leer_pico(ruta: &std::path::Path) -> CargaPico {
+    let texto = match std::fs::read_to_string(ruta) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return CargaPico::Ausente,
+        Err(e) => return CargaPico::Ilegible(format!("no se puede leer: {e}")),
+    };
+    match texto.trim().parse::<f64>() {
+        Ok(pico) if pico.is_finite() && pico > 0.0 => CargaPico::Leido(pico),
+        _ => CargaPico::Ilegible(format!(
+            "{:?} no es un capital finito y positivo",
+            texto.trim().chars().take(40).collect::<String>()
+        )),
+    }
+}
+
+/// CL-99 — el pico guardado, si se pudo leer. `None` si no hay archivo o es
+/// ilegible: para distinguir los dos casos, [`leer_pico`].
 pub fn cargar_pico(ruta: &std::path::Path) -> Option<f64> {
-    let texto = std::fs::read_to_string(ruta).ok()?;
-    let pico: f64 = texto.trim().parse().ok()?;
-    (pico.is_finite() && pico > 0.0).then_some(pico)
+    match leer_pico(ruta) {
+        CargaPico::Leido(pico) => Some(pico),
+        CargaPico::Ausente | CargaPico::Ilegible(_) => None,
+    }
+}
+
+/// CL-133 (R5 de la revisión del PR #62) — nombre del archivo del pico del
+/// VENUE de este proceso (`quantum_arena::paths::is_demo_env`: demo, testnet
+/// o shadow frente a mainnet). Testnet y papel de mainnet guardan en
+/// `data/demo` (CL-61): con un solo archivo, el pico de 5 000 USDT de una
+/// sesión de testnet bloqueaba la sesión de papel siguiente con 13 USD
+/// reales (caída del 99,7 % ≥ d*).
+pub fn archivo_pico() -> String {
+    let venue = if quantum_arena::paths::is_demo_env() {
+        "prueba"
+    } else {
+        "mainnet"
+    };
+    format!("pico_capital_{venue}.txt")
+}
+
+/// El archivo del pico de antes de CL-133, sin venue. El host lo adopta una
+/// vez, si el venue no tiene el suyo, y lo renombra.
+pub const ARCHIVO_PICO_SIN_VENUE: &str = "pico_capital.txt";
+
+/// CL-132 (R3 de la revisión del PR #62) — EL CAPITAL DE LOS FRENOS DE
+/// DRAWDOWN: el más conservador de los dos planos, el del arena y el saldo
+/// del exchange que publica el host (X-013). El host y el riesgo registran
+/// el pico y miden la caída con él. Antes el riesgo subía el pico con el
+/// capital del arena y el host medía con el mínimo: en papel sobre mainnet
+/// el exchange es el saldo real, que no se mueve, y ganar en papel se veía
+/// como una caída del saldo real. Sin saldo del exchange (backtest), el del
+/// arena.
+pub fn capital_del_freno(arena: &quantum_arena::GlobalArena) -> f64 {
+    use std::sync::atomic::Ordering::Relaxed;
+    let capital = arena.unified_capital.load(Relaxed);
+    let exchange = arena.capital_exchange.load(Relaxed);
+    if exchange.is_finite() && exchange > 0.0 {
+        capital.min(exchange)
+    } else {
+        capital
+    }
 }
 
 
@@ -445,7 +515,7 @@ impl std::fmt::Display for FrenoDuro {
 }
 
 /// CL-106 → CL-130 — el freno duro con lo medido en el arena, el pico y el
-/// capital desde los que se mide la caída.
+/// capital desde los que se mide la caída ([`capital_del_freno`]).
 ///
 /// Dispara cuando la caída de los cierres, en stops de sus posiciones
 /// ([`registrar_resultado_en_stops`]), llega a `K(w̄, l̄)`, o cuando la caída

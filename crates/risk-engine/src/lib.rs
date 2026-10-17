@@ -368,12 +368,23 @@ impl RiskEngine {
         // CL-99 (LC-F4-10): el pico es el del arena, compartido con el
         // sistema inmune del host y guardado por él entre reinicios.
         // `peak_capital` queda como su copia para los lectores de este motor.
+        // CL-132 (R3 de la revisión del PR #62): se registra y se mide con el
+        // MISMO capital que el host (`drawdown::capital_del_freno`, el más
+        // conservador entre el arena y el exchange). Antes el riesgo subía el
+        // pico con el arena: en papel sobre mainnet, ganar en papel se veía en
+        // el host como una caída del saldo real.
+        let capital_freno = crate::drawdown::capital_del_freno(arena);
         self.peak_capital = crate::drawdown::registrar_pico(
             &arena.pico_capital,
-            current_capital.max(self.peak_capital),
+            capital_freno.max(self.peak_capital),
         );
         // U-3: los picos espejo scalp/swing (sin lectores) extirpados.
 
+        // CL-133 (B2): con el pico guardado ilegible no se sabe cuánto se ha
+        // caído; no entran posiciones nuevas (fail-closed, como CL-108f).
+        if arena.pico_ilegible.load(Ordering::Relaxed) {
+            return rej(REJ_DRAWDOWN);
+        }
         // O-04 → CL-106 → CL-130 (LC-F4-10, decisión del dueño «Ambos»;
         // R1 de la revisión del PR #62): FRENO DURO DE LA CUENTA, la MISMA
         // función del sistema inmune del host. No se abre posición nueva
@@ -386,7 +397,7 @@ impl RiskEngine {
         // tolerancia micro (D-641). Hasta CL-130 la caída se medía en USD y
         // se dividía por la EWMA del riesgo de las últimas órdenes, que
         // encoge en una racha perdedora (LH-04): disparaba tras 13 SL.
-        if crate::drawdown::freno_duro(arena, self.peak_capital, current_capital).echado() {
+        if crate::drawdown::freno_duro(arena, self.peak_capital, capital_freno).echado() {
             return rej(REJ_DRAWDOWN);
         }
 

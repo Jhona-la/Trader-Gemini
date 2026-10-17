@@ -221,7 +221,7 @@ fn cl106_host_y_riesgo_usan_el_mismo_umbral() {
     assert!(host.contains("letfreno=risk_engine::drawdown::freno_duro(&arena_imm,peak_capital,cap);"));
     assert!(host.contains("letdd_breach=freno.echado();"));
     assert!(riesgo.contains(
-        "ifcrate::drawdown::freno_duro(arena,self.peak_capital,current_capital).echado(){returnrej(REJ_DRAWDOWN);}"
+        "ifcrate::drawdown::freno_duro(arena,self.peak_capital,capital_freno).echado(){returnrej(REJ_DRAWDOWN);}"
     ));
 }
 
