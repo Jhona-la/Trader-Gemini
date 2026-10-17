@@ -469,6 +469,25 @@ pub fn caida_en_stops(arena: &quantum_arena::GlobalArena) -> f64 {
     }
 }
 
+/// CL-134 (R6 de la revisión del PR #62) — la cuenta empieza de cero con
+/// `capital`: el pico, lo medido de las órdenes y la caída en stops. Es lo
+/// que hace falta para replantar un universo del bosque sombra, que es otra
+/// hipótesis.
+pub fn reiniciar_la_cuenta(arena: &quantum_arena::GlobalArena, capital: f64) {
+    use std::sync::atomic::Ordering::Relaxed;
+    arena.pico_capital.store(capital, Relaxed);
+    for celda in [
+        &arena.riesgo_por_operacion,
+        &arena.riesgo_por_operacion_usd,
+        &arena.ganancia_en_stops,
+        &arena.perdida_en_stops,
+        &arena.resultado_en_stops,
+        &arena.pico_en_stops,
+    ] {
+        celda.store(0.0, Relaxed);
+    }
+}
+
 /// CL-106 → CL-130 — el FRENO DURO de la cuenta, el MISMO para el veto de
 /// entradas del riesgo y el sistema inmune del host.
 #[derive(Debug, Clone, Copy, PartialEq)]

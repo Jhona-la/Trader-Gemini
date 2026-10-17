@@ -383,6 +383,15 @@ impl GodEngineCore {
         self.arena.pico_en_stops.store(e.pico_en_stops, Relaxed);
         restauradas
     }
+
+    /// CL-134 (R6 de la revisión del PR #62) — los frenos empiezan de cero
+    /// con `capital`: el pico del arena y del riesgo, lo medido de las
+    /// órdenes, la caída en stops y el freno de la estrategia. Lo usa el
+    /// bosque sombra al replantar un universo, que es otra hipótesis.
+    pub fn reiniciar_frenos(&mut self, capital: f64) {
+        risk_engine::drawdown::reiniciar_la_cuenta(&self.arena, capital);
+        self.risk_engine.reset(capital);
+    }
 }
 
 /// CL-108f (T2-1 de la Línea G) — comprueba que un estado se puede guardar

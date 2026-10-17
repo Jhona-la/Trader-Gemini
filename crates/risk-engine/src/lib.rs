@@ -277,8 +277,12 @@ impl RiskEngine {
         }
     }
 
+    /// CL-134 — el motor empieza de cero con `initial_capital`: el pico, el
+    /// freno de la estrategia y la medida pendiente.
     pub fn reset(&mut self, initial_capital: f64) {
         self.peak_capital = initial_capital;
+        self.freno_estrategia = freno_estrategia::FrenoEstrategia::new();
+        self.medida_pendiente = None;
     }
 
     /// CL-131 (R2 de la revisión del PR #62) — el núcleo abrió la última

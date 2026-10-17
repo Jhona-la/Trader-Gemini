@@ -352,6 +352,12 @@ impl ShadowForest {
                 .config
                 .base_capital
                 .store(self.initial_capital, Ordering::Relaxed);
+            // CL-134 (R6 de la revisión del PR #62): el universo replantado
+            // es otra hipótesis y su caída empieza aquí. Antes conservaba el
+            // pico del arena y del riesgo, lo medido de las órdenes, la caída
+            // en stops y el freno de la estrategia: un universo que había
+            // subido a 14,1 USD quedaba vetado por drawdown al volver a 13.
+            engine.reiniciar_frenos(self.initial_capital);
             // Cerramos todas las posiciones virtuales en todos los slots espectrales
             for coin in engine.arena.coins.iter() {
                 for slot in coin.positions.slots() {
