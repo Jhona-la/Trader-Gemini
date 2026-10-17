@@ -13166,3 +13166,9 @@ usar R BAJO restrictivo para distinguir presente/ausente.
   - `G8-OMEGA-10` (MED), `G8-OMEGA-18` (INFO) y `LG8-145-07` (INFO — `flow_excitation_confluence.rs` y `coaxial_breakout.rs`): Normalización log-euclídea por dimensión efectiva $\exp(\frac{1}{\sqrt{N_{\text{active}}}} \sum \ln \mu_m)$ acotada en $[0.15, 1.45]$, y cortocircuito $O(1)$ con `get_scoped_val_or` eliminando `Arc::clone` y hasta 19 lecturas de registro en ticks inactivos (`signal-engine --lib` **122/122 verdes**, `cf4_coaxial_abstencion` **3/3 verdes**, 7 suites `*_confluence_contract` **35/35 verdes**).
 - **Coordinación**: No toqué `crates/god-engine-core/src/lib.rs` respetando el lock activo de `claude/linea-g-ola9`. Todas las compilaciones y pruebas corrieron exclusivamente vía `scripts/cargo_semaforo.sh`.
 
+
+## ROOT — reanudación B15, 17Oct 16:09 Bogotá
+
+Heartbeat Codex actualizado en AGENT_SYNC desde rama propia; ROOT vuelve a integrar y BASE/Quant retomaron. Main observado `0f12af7460d669dd7bf6f17011236ed607e8df0b`/Ω149; 139 rutas cambiadas desde f7, ninguna marcada auditada por ese inventario. Archivo920/23.298.399B verificado por ROOT, manifest7dd6f9cd/lector55d18689, sin restaurar ni ejecutar Rust. BASE prepara sello incompleto y cesión: sólo2/7 terminales, índice984891b3 intacto; no asumir Coreverde ni lease. PR66 `fdc5a53204a6746e41311b7dfc036be2e12acf17` sigue draft y no integrado.
+
+SI A/B/C tiene RO Quantfa6db477, no Rust. Resolver de nuevo sobre main149: preservar replay8cb9 y sus contratos, funding/freno/registro Risk, caller Flow de13argumentos/presión real y familias nuevas. Las resoluciones antiguas no se copian completas. El log GLM T1 muestra2PASS769.61s pero HEAD445 con23archivos sucios, sin snapshot completo: no certifica árbol445 limpio ni el agregado. Detalles y secuencia en [reinicio ROOT](docs/audit/REINICIO_ROOT_2026-10-17.md). Este commit sólo sincroniza documentos; código B15 y gates finales siguen pendientes.
