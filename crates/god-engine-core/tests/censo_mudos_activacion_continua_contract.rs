@@ -19,8 +19,80 @@ use signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine;
 use std::sync::Arc;
 use strategy_core::QuantumStrategy;
 
+/// GLM 136 (fix CI): los tests 1-2 de Ω144 dependían de `models/` del
+/// checkout raíz — que está en `.gitignore` y NO EXISTE en CI (causa del
+/// rojo persistente de main desde Ω144). Este fixture crea un directorio
+/// temporal con un `BTCUSDT_MOTOR.json` sintético válido — el formato
+/// «bias-only legacy» que el validador de NanoForest acepta explícitamente
+/// para oráculos de medición (ml_inference.rs:96-100: `tree_offsets=[0,0]`,
+/// arrays vacíos, init_score finito) — y apunta `TG_DATA_ROOT` al tmp
+/// (canal que `resolve_models_directory()` ya lee). El contrato COMPLETO
+/// de Ω144 se verifica así en cualquier entorno, sin artefactos locales.
+struct ModelsFixture {
+    _guard: EnvGuard,
+}
+
+/// Restaura TG_DATA_ROOT al salir (los tests del target comparten proceso).
+struct EnvGuard(Option<std::ffi::OsString>);
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        // SAFETY: los tests de este target son los únicos escritores de
+        // TG_DATA_ROOT y Drop corre single-threaded dentro de cada test.
+        unsafe {
+            match self.0.take() {
+                Some(v) => std::env::set_var("TG_DATA_ROOT", v),
+                None => std::env::remove_var("TG_DATA_ROOT"),
+            }
+        }
+    }
+}
+
+impl ModelsFixture {
+    /// tmp/models/BTCUSDT_MOTOR.json — init_score −1.685 ⇒ base 0.156
+    /// (la base honesta HOST-010 del modelo real de BTC).
+    fn new() -> Self {
+        let prev = std::env::var_os("TG_DATA_ROOT");
+        let dir = std::env::temp_dir().join(format!(
+            "tg_censo_models_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        // Convención del resolver: TG_DATA_ROOT = <root>/data (un path de
+        // DATOS) y hace parent().join("models") ⇒ <root>/models. Crear
+        // ambos: data/ (vacío, ancla la raíz) y models/ con el sintético.
+        std::fs::create_dir_all(dir.join("data")).unwrap();
+        let models = dir.join("models");
+        std::fs::create_dir_all(&models).unwrap();
+        // Formato bias-only: sin árboles, sólo init_score — el validador
+        // lo acepta por diseño («used by measurement oracles»).
+        let synth = serde_json::json!({
+            "children_left": [],
+            "children_right": [],
+            "feature": [],
+            "threshold": [],
+            "value": [],
+            "tree_offsets": [0, 0],
+            "init_score": -1.6851217,
+        });
+        std::fs::write(
+            models.join("BTCUSDT_MOTOR.json"),
+            serde_json::to_vec(&synth).unwrap(),
+        )
+        .unwrap();
+        // TG_DATA_ROOT apunta al directorio de DATOS (convención: el
+        // resolver hace parent().join("models")).
+        // SAFETY: ver EnvGuard — único escritor, dentro del test single-threaded.
+        unsafe { std::env::set_var("TG_DATA_ROOT", dir.join("data")) };
+        Self { _guard: EnvGuard(prev) }
+    }
+}
+
 #[test]
 fn contract_model_directory_resolution_and_preload() {
+    let _fx = ModelsFixture::new();
     let dir_opt = resolve_models_directory();
     assert!(dir_opt.is_some(), "Debe resolver canónicamente el directorio models/");
     let dir = dir_opt.unwrap();
@@ -35,6 +107,8 @@ fn contract_model_directory_resolution_and_preload() {
 
 #[test]
 fn contract_god_engine_core_initialization_paridad_modelos() {
+    let _fx = ModelsFixture::new();
+    preload_models_from_disk(); // poblar GLOBAL_FORESTS con el sintético del fixture
     let arena = GlobalArena::build_in_own_stack(1000.0);
     let core = GodEngineCore::new(arena);
 
