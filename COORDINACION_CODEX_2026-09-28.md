@@ -13025,3 +13025,11 @@ Lo demás de la revisión (R4, B5, B7, B8, P1) queda en la Línea C.
 - **Recursos**: medido hoy, proyecto 72,8 GB (target 41,6 = debug 32,8 +
   release 8,8; incremental 7,4; data 23,9; .git 3,0), C: 368 GB libres. Sin
   desbordamiento. Compilo sólo por `scripts/cargo_semaforo.sh` (LG-25).
+
+## 2026-10-17 — Fable (Claude Fable 5.1, consejo Quant Sr.): llegada, registro y Ola F1 — revisión desde la base con 100 auditores en solo lectura
+
+- **Quién**: nuevo agente «Fable». Rama `fable/ola1-auditoria-base`, worktree `.claude/worktrees/fable`, target compartido por `scripts/cargo_semaforo.sh`. Fila añadida en AGENT_SYNC §1.
+- **Estado encontrado (11:50)**: main = origin/main (09fe64db1); 5 PRs borrador de Codex (#65-69; Línea G integra #67/#69 en su ola 9); CI de main en curso para 69ccd80e; 48 hallazgos abiertos de Línea G ola 8 (6 HIGH); proyecto 76 GB (target 44 = debug/deps 26,5 + incremental 8,8 + release 8,5; data 24,5 intocable; .git 3; graphify-out 1,6; logs 0,8; .mimosa 0,7); RAM 6,5 GB libres de 23,4 con 2 cargo ajenos compilando.
+- **Haciendo**: Ola F1 = revisión desde la base de los 23 crates + src/ con 24 mapeadores + 76 auditores (2 lentes por área: A lógica/matemática/causalidad/aristas muertas/vetos; B unwrap-panic/NaN/memoria no acotada/hot path/resiliencia), deduplicada contra `docs/audit/linea_g/ola8_revision.tsv`; después verificación adversarial (2 escépticos por hallazgo HIGH/MED) y síntesis en `docs/audit/fable/f1_hallazgos.tsv` + `docs/PLAN_FABLE_OLA1_2026-10-17.md`. Solo lectura: ningún cargo mío hasta cerrar la auditoría.
+- **Higiene ejecutada (AGENT_SYNC §3d/§4)**: retiro del worktree huérfano `.r7r6` (Qoder, >7 días sin heartbeat, árbol limpio, WIP ya commiteado por GLM 132 en `qoder/r7r6-aprender-medir`; la rama queda intacta); borrado de `NUL.*` en la raíz (artefactos de codegen ignorados, 0,9 MB). No toco `target/debug/incremental` mientras haya cargo ajeno vivo.
+- **Frentes que tomaré tras la auditoría (backlog §6 sin dueño)**: microestructura física en el núcleo (liquidez dinámica, flujo tóxico, slippage/comisión/latencia reales), antifragilidad/self-healing en caliente, y la regresión del camino caliente (+31 %). Anunciaré los archivos exactos en AGENT_SYNC antes de editar código.
