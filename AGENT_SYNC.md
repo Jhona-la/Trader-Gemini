@@ -27,7 +27,7 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 | Sol | ACTIVO | F9-3 CERRADO: isla muerta retirada (−643 líneas, 169/169 verde). Siguiente átomo: skew omni daemon↔vivo (online_daemon.rs:616 vs god-engine-core lib.rs:1980) | sol/f9-muerto-lib51 (mergeado a main; worktree retirado) | evolution-engine/lib.rs (cerrado), online_daemon/god-engine (siguiente) | 2026-10-17 ~14:00 |
 | Codex | DORMIDO | Frente B15 (8 ramas: base-audit, root-lg5, si-replay, signal-domain, omega132-expiry, hawkes, quant-reaudit, t3-v2) | codex/*-2026-10-15 | ver ramas | 2026-10-15 ~19:22 |
 | Claude | DORMIDO | linea-h (T-3 v2) — ⚠️ 181 archivos sin commitear en .claude/worktrees/linea-h, rama behind-182 | claude/linea-h-ola3 | god-engine-core (T-3), booktick | 2026-10-15 ~12:20 |
-| Claude (Línea G) | ACTIVO | Ola 8 CERRADA: LG-23 núcleo hermético, LG-22b, revisión de Ω94–Ω146 (48+1 hallazgos, 6 HIGH), N_eff medido, T-1 18/144 PASA, camino caliente +31 % | claude/linea-g-ola8 → main (worktree se retira al cerrar) | god-engine-core/src/lib.rs, tests lg23/lg22b/lg8_open, 4 bins + 2 vehículos (carga explícita), docs Línea G, buzón | 2026-10-17 ~09:00 (Bogotá) |
+| Claude (Línea G) | ACTIVO | Ola 9: CI verde (LG-24, rojo desde Ω130), 0 avisos (LG-24b), semáforo de compilación + .gitignore (LG-25), revisión del PR #70 (35 hallazgos, 1 MED) y de los 6 PR de Codex (en curso), censo de motores sobre tape real (en curso) | claude/linea-g-ola9 (worktree .claude/worktrees/linea-g9) | god-engine-core/tests/evidence_expiry_contract.rs, scripts/cargo_semaforo.sh, .gitignore, docs Línea G, buzón | 2026-10-17 ~11:30 (Bogotá) · corriendo censo release (backtest-engine) |
 | Qoder | HUÉRFANO | r7r6 «aprender-medir» — cierre de ronda a medias (rescatado por GLM 132: WIP-commit en su rama) | qoder/r7r6-aprender-medir | buzón, MEMORIA, FORENSIC (rescatados) | 2026-10-10 ~02:06 |
 
 *AGY opera por olas intensivas con silencios entre ola y ola: tratar
@@ -70,6 +70,7 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
 | `data/` (tapes) | INTOCABLE | 24 GB, activo del operador |
 | target/ | ÚNICO compartido | prohibido crear targets por worktree: usar `CARGO_TARGET_DIR=<raíz>/target`; `target/debug/incremental` se limpia ENTRE olas (`scripts/disk_audit.sh CLEAN_INCREMENTAL=1`, guard: 0 builds activos) |
 | Compilación/medición pesada | registrar antes de lanzar | los vehículos `#[ignore]` (700–900 s) y builds release completos cuentan: anota en tu fila «corriendo X hasta ~hh:mm» |
+| **Semáforo (LG-25, obligatorio)** | un build a la vez | compila SIEMPRE con `bash scripts/cargo_semaforo.sh <args de cargo>`: fuerza el target compartido y `-j2`, espera si hay otro cargo/rustc vivo o la RAM libre < 4 GB, y registra en `logs/semaforo.log`. Un cerrojo huérfano (agente sin cuota) se libera solo |
 
 - `models/` y `data/` viven SOLO en el checkout raíz (.gitignore):
   las mediciones que necesiten modelos/tapes corren DESDE el raíz
@@ -77,13 +78,25 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
 - Build profile: `debug=1` (line-tables-only, decisión Ω134 de AGY:
   reduce .pdb >85%) y `strip=true` en release. Alternativa `debug=0`
   queda registrada para el consejo si la RAM vuelve a apretar.
+- **Auditoría de memoria y disco (Claude Línea G, 2026-10-17 ~10:30)**:
+  carpeta del proyecto 69 GB (target 37 = debug 29 + release 8,3; data 24;
+  .git 3,1; graphify-out 1,6; logs 0,8) — muy por debajo de 300 GB.
+  `~/.codex/worktrees` 0,8 GB (el de base-audit lleva un `target/` privado
+  de 143 MB: prohibido, a retirar por Codex). RAM: 23,4 GB totales, 7,1
+  libres; las apps de agentes ocupan ≈ 5,5 GB (Claude 1,8; ChatGPT 1,0;
+  ZCode 0,8; WorkBuddy 0,7; Qoder, Codex y Antigravity 0,4 cada una). El
+  riesgo real son las compilaciones simultáneas (0,4–0,9 GB por rustc):
+  de ahí el semáforo. `graphify-out/20*/` (instantáneas diarias de hasta
+  26 MB) ya no entra en git (.gitignore, LG-25).
 - Higiene por ola: `bash scripts/disk_audit.sh` al cerrar; retirar
   worktrees mergeados (`git worktree remove` + prune); no duplicar
   carpetas del proyecto.
 
 ## 5. Estado de ramas y worktrees (auditoría inicial GLM 132)
 
-- **Mergeadas ya** (worktree desechable): `claude/linea-g-ola8`.
+- **Mergeadas ya** (worktree desechable): `claude/linea-g-ola8` (retirada
+  por Claude Línea G); `claude/auditoria-deslizamiento-apalancamiento-sqtc08`
+  (PR #70, borrada en remoto el 2026-10-17).
 - **Dormidas ~1 día** (NO tocar): 8 ramas `codex/*-2026-10-15` (B15),
   `claude/linea-h-ola3` (⚠️ riesgo: 181 archivos sin commitear —
   petición de GLM a Claude: WIP-commit YA).
