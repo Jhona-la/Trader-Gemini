@@ -12,10 +12,17 @@ use std::sync::{Arc, Once, atomic::Ordering::Relaxed};
 const A: usize = 19;
 const B: usize = 20;
 
+/// LG-24 (Línea G): ventaja DÉBIL (R ≈ 2). Desde Ω130 (F2.1-01) el veto de
+/// Cramér-Lundberg es monótono en R: tope = min(tope_streak, tope_streak/m),
+/// m = ln(1/ε)/R, así que sólo veta cuando R es pequeña (con este fixture,
+/// R < ln 20 · riesgo/tope ≈ 2,2). Antes el fixture usaba +1,5 %/−1 % (R ≈ 32),
+/// que sólo vetaba con la fórmula invertida: el contrato quedó rojo en CI desde
+/// Ω130 (15-oct). Lo que se prueba aquí no cambia: la evidencia caducada deja
+/// de usarse.
 fn est_maduro() -> EstimadorSiniestros {
     let mut est = EstimadorSiniestros::new();
     for i in 0..256 {
-        est.observar(if i % 2 == 0 { 0.015 } else { -0.01 });
+        est.observar(if i % 2 == 0 { 0.0102 } else { -0.01 });
     }
     assert!(est.lundberg().unwrap() > 0.0);
     est
@@ -66,7 +73,7 @@ fn mg02_some_none_clears_r_and_margin_on_first_loss_of_evidence_and_recovers() {
     }
     assert_eq!(est.lundberg(), None);
     for i in 0..256 {
-        est.observar(if i % 2 == 0 { 0.015 } else { -0.01 });
+        est.observar(if i % 2 == 0 { 0.0102 } else { -0.01 });
         publicar_lundberg(&registry, 0, est.lundberg());
     }
     assert_eq!(registry.get_for_coin_or(0, "lundberg_r_nocional", 0.0), r);
@@ -433,7 +440,8 @@ fn legacy_finite_scoped_values_and_global_fallback_still_reach_real_risk_reader(
         2.0
     );
     let (other, intent) = risk_fixture();
-    other.registry.set("lundberg_r_nocional", 32.0);
+    // R débil (LG-24): con la cota monótona de Ω130 sólo una R pequeña veta.
+    other.registry.set("lundberg_r_nocional", 1.5);
     assert_eq!(
         risk.evaluate_quantum_order(0, &intent, &other).signal,
         SignalType::Flat
@@ -444,7 +452,7 @@ fn legacy_finite_scoped_values_and_global_fallback_still_reach_real_risk_reader(
             .get_for_coin_or(0, "qo_602_veto_lundberg", 0.0),
         1.0
     );
-    other.registry.set_for_coin(0, "lundberg_r_nocional", 30.0);
+    other.registry.set_for_coin(0, "lundberg_r_nocional", 1.0);
     risk.evaluate_quantum_order(0, &intent, &other);
     assert_eq!(
         other
