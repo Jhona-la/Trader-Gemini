@@ -576,16 +576,17 @@ pub struct GlobalArena {
     pub used_margin: AtomicF64,
     /// D-744 — RIESGO POR OPERACIÓN REALMENTE TOMADO (fracción del capital
     /// que se pierde si el stop de la orden se toca), como media móvil
-    /// exponencial de las órdenes dimensionadas. Es la magnitud que convierte
+    /// exponencial de las órdenes ABIERTAS (CL-131: una vez por operación,
+    /// cuando el núcleo abre la orden validada). Es la magnitud que convierte
     /// una caída observada en evidencia: sin ella, un tope de drawdown es una
-    /// opinión. 0 = todavía no se ha dimensionado ninguna orden.
+    /// opinión. 0 = todavía no se ha abierto ninguna orden.
     pub riesgo_por_operacion: AtomicF64,
     /// CL-106b (T1-02 de la revisión de la Línea G) — RIESGO POR OPERACIÓN
     /// EN USD: lo que se pierde si el stop de la orden se toca (nocional ×
-    /// SL), media móvil con la misma memoria que `riesgo_por_operacion`. El
-    /// freno duro mide la caída desde el pico en estos stops: en fracción del
-    /// capital actual, con nocional fijo, el umbral se alejaba al caer.
-    /// 0 = todavía no se ha dimensionado ninguna orden.
+    /// SL), media móvil con la misma memoria que `riesgo_por_operacion`.
+    /// Desde CL-130 el freno duro ya no lo usa: cuenta la caída en stops de
+    /// cada posición (`resultado_en_stops`). Queda como medida de la cuenta.
+    /// 0 = todavía no se ha abierto ninguna orden.
     pub riesgo_por_operacion_usd: AtomicF64,
     /// CL-99 (LC-F4-10) — PICO DEL CAPITAL desde el que miden la caída los
     /// dos cortacircuitos de drawdown (veto de entradas del riesgo y sistema
@@ -596,10 +597,18 @@ pub struct GlobalArena {
     /// media móvil con la misma memoria que `riesgo_por_operacion`: lo que
     /// gana una orden que toca el TP, `(TP − f)/SL`, y lo que pierde la que
     /// toca el SL, `(SL + f)/SL`, con `f` la fricción de ida y vuelta. Con
-    /// ellas y el riesgo medido, el freno duro de drawdown deriva su umbral
-    /// (`risk_engine::drawdown::umbral_freno_duro`). 0 = sin órdenes aún.
+    /// ellas el freno duro de drawdown deriva su umbral en stops
+    /// (`risk_engine::drawdown::freno_duro`). 0 = sin órdenes aún.
     pub ganancia_en_stops: AtomicF64,
     pub perdida_en_stops: AtomicF64,
+    /// CL-130 (R1 de la revisión del PR #62) — CAÍDA DEL FRENO DURO EN STOPS
+    /// DE CADA POSICIÓN: la suma de los resultados de los cierres, cada uno
+    /// en stops de su propia posición (PnL neto / riesgo al stop de esa
+    /// posición), y su máximo, que empieza en 0
+    /// (`risk_engine::drawdown::registrar_resultado_en_stops`). La caída es
+    /// `pico_en_stops − resultado_en_stops`.
+    pub resultado_en_stops: AtomicF64,
+    pub pico_en_stops: AtomicF64,
     pub tick_counter: AtomicU64,
     pub kill_switch_active: AtomicBool,
     pub last_ws_latency_ms: AtomicU64,
@@ -695,6 +704,8 @@ impl GlobalArena {
             pico_capital: AtomicF64::new(initial_capital),
             ganancia_en_stops: AtomicF64::new(0.0),
             perdida_en_stops: AtomicF64::new(0.0),
+            resultado_en_stops: AtomicF64::new(0.0),
+            pico_en_stops: AtomicF64::new(0.0),
             tick_counter: AtomicU64::new(0),
             kill_switch_active: AtomicBool::new(false),
             last_ws_latency_ms: AtomicU64::new(0),

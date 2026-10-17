@@ -1844,27 +1844,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     {
                         pico_guardado = peak_capital;
                     }
-                    let dd = if peak_capital > 0.0 {
-                        (peak_capital - cap) / peak_capital
-                    } else {
-                        0.0
-                    };
-                    // CL-106 (LC-F4-10, decisión del dueño «Ambos»): el MISMO
-                    // umbral que el veto de entradas del riesgo, una prueba de
-                    // nivel α con el tamaño real de las órdenes (cuantil 95 % de
-                    // la caída máxima en 200 operaciones con H0 = +0,05 R, en
-                    // unidades del riesgo medido al stop), acotado por d*. Antes
-                    // era la prueba de racha (D-744/CL-9): con riesgo medido,
-                    // 2,2-3,8 % con 13 USD, que aplanaba y bloqueaba la cuenta en
-                    // el 36-49 % de las rachas de 200 operaciones aun con +0,30 R
-                    // de ventaja. Sin riesgo medido (arranque) rige d*.
-                    let max_dd = risk_engine::drawdown::umbral_freno_duro_de(&arena_imm, peak_capital);
+                    // CL-106 → CL-130 (R1 de la revisión del PR #62): el MISMO
+                    // freno duro que el veto de entradas del riesgo. Dispara
+                    // cuando la caída de los cierres, contada en stops de SUS
+                    // posiciones, llega al cuantil 95 % de la caída máxima en
+                    // 200 operaciones con H0 = +0,05 R, o cuando la caída del
+                    // capital desde el pico llega a d*. Antes la caída en USD
+                    // se dividía por la EWMA del riesgo de las últimas órdenes,
+                    // que encoge en una racha perdedora (LH-04): disparaba tras
+                    // 13 SL en vez de 31.
+                    let freno = risk_engine::drawdown::freno_duro(&arena_imm, peak_capital, cap);
                     // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
                     // inmune, no desarmarlo: el guard `cap > 0.0` anterior
                     // dejaba todos los frenos apagados exactamente en el único
                     // escenario donde son críticos.
                     let insolvent = cap <= 0.0;
-                    let dd_breach = max_dd > 0.0 && dd >= max_dd;
+                    let dd_breach = freno.echado();
 
                     // (3) Latencia: 3 muestras consecutivas por encima del umbral.
                     let lat = arena_imm.last_ws_latency_ms.load(Ordering::Relaxed);
@@ -1911,11 +1906,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 cap
                             )
                         } else if dd_breach {
-                            format!(
-                                "drawdown {:.1}% >= límite {:.1}%",
-                                dd * 100.0,
-                                max_dd * 100.0
-                            )
+                            format!("drawdown: {freno}")
                         } else {
                             format!("latencia {}ms > {}ms sostenida", lat, lat_thresh)
                         };

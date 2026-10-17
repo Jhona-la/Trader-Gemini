@@ -14,7 +14,8 @@
 //! - el freno de la estrategia (proceso e de Ville, CL-107): un reinicio
 //!   borraba la evidencia contra H0, o soltaba un freno ya echado;
 //! - el riesgo y la geometría medidos de las órdenes, de los que el freno
-//!   duro (CL-106) deriva su umbral.
+//!   duro (CL-106) deriva su umbral, y la caída del freno duro en stops de
+//!   sus posiciones (CL-130).
 //!
 //! Qué se guarda y cómo:
 //! - por moneda, por SÍMBOLO (el universo puede cambiar de orden entre
@@ -129,6 +130,13 @@ pub struct EstadoAprendido {
     pub riesgo_por_operacion_usd: f64,
     pub ganancia_en_stops: f64,
     pub perdida_en_stops: f64,
+    /// CL-130 — la caída del freno duro en stops de sus posiciones: la suma
+    /// de los resultados de los cierres y su máximo. Un estado anterior sin
+    /// ellos empieza con caída 0 en stops.
+    #[serde(default)]
+    pub resultado_en_stops: f64,
+    #[serde(default)]
+    pub pico_en_stops: f64,
 }
 
 /// Anota una observación en un registro acotado a la ventana del calibrador.
@@ -273,6 +281,8 @@ impl GodEngineCore {
             riesgo_por_operacion_usd: self.arena.riesgo_por_operacion_usd.load(Relaxed),
             ganancia_en_stops: self.arena.ganancia_en_stops.load(Relaxed),
             perdida_en_stops: self.arena.perdida_en_stops.load(Relaxed),
+            resultado_en_stops: self.arena.resultado_en_stops.load(Relaxed),
+            pico_en_stops: self.arena.pico_en_stops.load(Relaxed),
         }
     }
 
@@ -368,6 +378,9 @@ impl GodEngineCore {
                 celda.store(valor, Relaxed);
             }
         }
+        // `validar` ya exigió los dos finitos y pico ≥ máx(0, suma).
+        self.arena.resultado_en_stops.store(e.resultado_en_stops, Relaxed);
+        self.arena.pico_en_stops.store(e.pico_en_stops, Relaxed);
         restauradas
     }
 }
@@ -439,6 +452,8 @@ pub fn validar(e: &EstadoAprendido) -> Result<(), String> {
     ] {
         rango(n, v, 0.0, todo)?;
     }
+    rango("resultado_en_stops", e.resultado_en_stops, -todo, todo)?;
+    rango("pico_en_stops", e.pico_en_stops, e.resultado_en_stops.max(0.0), todo)?;
     Ok(())
 }
 

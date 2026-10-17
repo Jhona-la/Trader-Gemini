@@ -13,7 +13,7 @@
 //! Qué hace al rechazar: el riesgo deja de admitir entradas nuevas
 //! (`estrategia_falsada`). Las posiciones abiertas se siguen gestionando; no
 //! aplana ni dispara el kill-switch global, que son del freno duro de la
-//! cuenta ([`crate::drawdown::umbral_freno_duro`]). Se suelta sólo
+//! cuenta ([`crate::drawdown::freno_duro`]). Se suelta sólo
 //! restaurando un estado nuevo (otra estrategia es otra hipótesis).
 //!
 //! Escala: el proceso exige `X ∈ [−1, 1]`. Con la geometría medida de las
