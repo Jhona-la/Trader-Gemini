@@ -1227,9 +1227,14 @@ impl GodEngineCore {
         outcome_context: outcome_context::OutcomeContext,
     ) -> Self {
         let initial_capital = arena.config.base_capital.load(Ordering::Relaxed);
-        // OLA Ω144: Precarga de modelos ML hacia GLOBAL_FORESTS
-        // Garantiza paridad estricta 100% entre producción, backtest, censo y replay.
-        let _ = crate::model_reload::preload_models_from_disk();
+        // LG-23: construir el núcleo NO carga modelos del disco. Ω144 lo hacía
+        // aquí: la clave es el nombre del archivo y `store_global` sustituye la
+        // entrada, así que pisaba el predictor que un oráculo (T-1/T-2/T-3)
+        // acababa de registrar, sólo cuando `models/` era alcanzable desde la
+        // carpeta de ejecución; y cada candidato del demonio/Darwin releía el
+        // directorio. El host carga los suyos antes de construir el núcleo
+        // (`refresh_ml_models`); las herramientas que quieran los del disco
+        // llaman `model_reload::preload_models_from_disk()` explícitamente.
 
         // F-012 FIX: Universal model key — the NanoForest serves ALL assets, not just BTC.
         // Search order: UNIVERSAL → BTCUSDT_MOTOR → legacy fallback.

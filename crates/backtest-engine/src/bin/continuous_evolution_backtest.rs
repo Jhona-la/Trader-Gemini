@@ -384,6 +384,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .store(initial_capital, Ordering::Relaxed);
     current_genome.apply_to_arena(&arena);
 
+    // LG-23: los modelos del disco se cargan aquí, no al construir el núcleo
+    // (Ω144 lo hacía en el constructor y pisaba predictores ya registrados).
+    let modelos = god_engine_core::model_reload::preload_models_from_disk();
+    println!("Modelos cargados de disco: {modelos}");
     let mut engine = GodEngineCore::new(arena.clone());
     engine.reality.mode = god_engine_core::reality_physics::EngineMode::HyperRealistic;
 
