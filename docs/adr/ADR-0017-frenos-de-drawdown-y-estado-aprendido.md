@@ -1,6 +1,6 @@
 # ADR-0017 — Dos frenos (duro de la cuenta y de la estrategia) y estado aprendido persistente
 
-- **Estado**: Aceptado. Implementado en CL-99, CL-106, CL-107 y CL-108; corregido tras la revisión previa de la Línea G (`docs/audit/linea_g/ola5_tanda_cf4.tsv`) en CL-106b, CL-108d, CL-108e y CL-108f.
+- **Estado**: Aceptado. Implementado en CL-99, CL-106, CL-107 y CL-108; corregido tras la revisión previa de la Línea G (`docs/audit/linea_g/ola5_tanda_cf4.tsv`) en CL-106b, CL-108d, CL-108e y CL-108f, y tras la revisión posterior del PR #62 (`/mnt/project-files/auditoria/revision_pr62_2026-10-17.md`) en CL-130 a CL-134 (§2b).
 - **Fecha**: 2026-10-12
 - **Responsables**:
   - Decisiones del dueño en sus tarjetas del 2026-10-12: el freno de drawdown («Ambos») y la fase de sonda tras el reinicio («Guardar todo»).
@@ -27,7 +27,7 @@ El pico es del arena, sólo sube, lo comparten los dos frenos y el host lo guard
 
 ### 2. Freno duro de la cuenta (CL-106)
 
-**Umbral** = `K(w, l)·r`, acotado por d*. Es el mismo para el veto de entradas del riesgo y para el sistema inmune del host (`drawdown::umbral_freno_duro_de`).
+**Umbral** = `K(w, l)·r`, acotado por d*. Es el mismo para el veto de entradas del riesgo y para el sistema inmune del host (`drawdown::umbral_freno_duro_de`). Desde CL-130 la caída se cuenta en stops de cada posición y se compara con `K` directamente (§2b).
 - `K` es el cuantil 95 % de la caída máxima en 200 operaciones bajo H0 = +0,05 R, con R el riesgo al stop más la fricción. Se mide en stops con un Monte Carlo determinista.
 - `w = (TP − f)/SL` y `l = (SL + f)/SL` son la geometría medida de las órdenes (EWMA).
 - `r = s̄/pico`, con `s̄` el riesgo medido al stop en USD (nocional × SL, EWMA). Así la condición es `(pico − capital)/s̄ ≥ K`: la caída en stops, que es lo que mide el cuantil (CL-106b, T1-02 de la Línea G). Con el riesgo en fracción del capital al dimensionar, el umbral se alejaba al caer con nocional fijo: con stop del 2 % y 13 USD, nunca disparaba antes de d*.
@@ -39,6 +39,23 @@ El pico es del arena, sólo sube, lo comparten los dos frenos y el host lo guard
 - Detección: en ~520 operaciones si no hay ventaja, y en ~220 con −0,10 R.
 
 **Límite conocido:** una caída medida desde el pico móvil sólo tiene nivel con horizonte. En 2 000 operaciones la falsa alarma sube al 52-57 %. Por eso hay un segundo freno.
+
+### 2b. Revisión posterior del PR #62 (CL-130 a CL-134, 2026-10-17)
+
+**La caída se cuenta en stops de cada posición (CL-130, R1).** `K` mide la caída máxima en stops de operaciones que ganan `w` o pierden `l` stops de su propia posición. La condición `(pico − capital)/s̄ ≥ K` sólo es esa caída con tamaño fijo. Desde el dimensionado en espacio de riesgo (LH-04) y el factor de racha (GLM 118), el tamaño baja en una racha perdedora: `s̄` encoge y la misma caída en USD contaba como muchos más stops. Con L = 10 disparaba tras 13 SL en vez de 31, y con +0,30 R de ventaja la falsa alarma subía al 4,5-23 %.
+- Cada cierre del núcleo suma su resultado en stops de su posición: PnL neto / (cantidad × |entrada − SL|). La cuenta guarda la suma y su máximo (`resultado_en_stops`, `pico_en_stops`), que se persisten con el estado aprendido.
+- El freno duro (`drawdown::freno_duro`, el mismo para el host y el riesgo) dispara cuando `pico_en_stops − resultado_en_stops ≥ K(w̄, l̄)`, o cuando la caída del capital desde el pico llega a d*.
+- Una posición sin SL propio (adoptada del exchange) no suma: su caída la cubre d*. Tampoco suman los cierres por pierna del exchange que el núcleo no ve (T1-09 de la Línea G, abierto).
+- La parte en stops sólo cuenta lo cerrado; las pérdidas abiertas las acotan los stops de las posiciones y d* sobre el capital.
+- Sin geometría medida rige sólo d*. Al actualizar, un estado anterior sin la suma empieza con caída 0 en stops.
+
+**Lo medido sale de las órdenes abiertas (CL-131, R2).** El riesgo al stop y la geometría se medían al final de `evaluate_single_intent`, antes de los vetos del núcleo, y la misma intención vetada se medía en cada tick. Ahora el riesgo deja pendiente la medida de la orden validada y el núcleo la confirma al abrirla (`RiskEngine::registrar_orden_abierta`).
+
+**Un solo plano para el pico (CL-132, R3).** El host publica el saldo del exchange en el arena (`capital_exchange`). El host y el riesgo registran el pico y miden la caída con `drawdown::capital_del_freno`, el mínimo de los dos planos. Antes el riesgo subía el pico con el capital del arena, y en papel sobre mainnet una ganancia en papel se veía como una caída del saldo real.
+
+**Un pico por venue, y un pico ilegible no es un pico ausente (CL-133, R5 y B2).** Testnet y papel de mainnet comparten `data/demo`, así que cada venue guarda su pico en su archivo (`drawdown::archivo_pico`). El archivo sin venue de antes se adopta una vez y se renombra. Si el archivo es ilegible, no entran posiciones nuevas y no se sobrescribe.
+
+**Replantar el bosque sombra reinicia los frenos de cada universo (CL-134, R6):** el pico, lo medido, la caída en stops y el freno de la estrategia.
 
 ### 3. Freno de la estrategia (CL-107)
 
@@ -65,7 +82,8 @@ El PnL de las sesiones anteriores se guarda aparte. No entra en los acumuladores
 
 **Qué se guarda además, para toda la cuenta:**
 - el freno de la estrategia;
-- el riesgo (en fracción y en USD) y la geometría medidos.
+- el riesgo (en fracción y en USD) y la geometría medidos;
+- la caída del freno duro en stops (CL-130).
 
 El host restaura antes de operar y guarda en cada cierre (`estado_aprendido.json`, por entorno). La escritura se sincroniza con el disco antes de renombrar, y un estado que no se podría volver a leer no se escribe.
 

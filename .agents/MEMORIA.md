@@ -1,5 +1,52 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Claude (cloud, Línea C): C-F5c — revisión posterior del PR #62 y arreglos CL-130…CL-134
+
+- Revisión del #62 sobre main 5f34f4fc (7 auditores y 2 escépticos):
+  `/mnt/project-files/auditoria/revision_pr62_2026-10-17.md` (1 alto, 5
+  medios, 9 bajos, 2 plausibles). ADR-0017 §2b recoge lo que cambia.
+- **Hecho en este PR** (cada arreglo con una prueba que falla en main):
+  - **CL-130 (R1, B1)**: el freno duro cuenta la caída en stops de CADA
+    posición. Cada cierre del núcleo suma PnL neto / (cantidad × |entrada −
+    SL propio|) (`drawdown::registrar_resultado_en_stops`) y el freno
+    (`drawdown::freno_duro` → `FrenoDuro`) compara la caída de esa suma con
+    K(w̄, l̄); d* sigue como tope sobre el capital. Antes la caída en USD se
+    dividía por s̄, que encoge en racha con LH-04: disparaba en la pérdida 13
+    con 15 stops frente a K ≈ 40. `umbral_freno_duro(_de)` ya no existen.
+    Suma y máximo se guardan en el estado aprendido.
+  - **CL-131 (R2, B3)**: lo medido de las órdenes (riesgo al stop, w̄, l̄)
+    entra una vez por orden ABIERTA (`RiskEngine::registrar_orden_abierta`,
+    llamado por el núcleo al abrir), no en cada evaluación de una intención
+    que luego se veta.
+  - **CL-132 (R3)**: host y riesgo registran el pico y miden la caída con
+    `drawdown::capital_del_freno` (mínimo entre arena y exchange; el host
+    publica `capital_exchange` en el arena).
+  - **CL-133 (R5, B2)**: pico por venue (`pico_capital_prueba.txt` /
+    `pico_capital_mainnet.txt`; el archivo viejo se adopta una vez y se
+    renombra a `.txt.adoptado`). `leer_pico` distingue ausente e ilegible;
+    con el pico ilegible no entran posiciones y no se sobrescribe.
+  - **CL-134 (R6)**: `ShadowForest::replant` reinicia los frenos de cada
+    universo (`GodEngineCore::reiniciar_frenos`).
+- Verificación en la nube (wine): suites --all-targets de risk-engine, god-engine-core, quantum-arena,
+  evolution-engine, execution-engine y backtest-engine en verde (golden y T-2
+  incluidos), salvo 3 pruebas de `evidence_expiry_contract` que fallan igual
+  en main 5f34f4fc (comprobado en local; son el rojo del CI de main en
+  replay-contracts y nucleo). T-1 en release: 18/144 (12,5 %) ≥ trinquete
+  11,0 %, igual que main. Check del workspace con todos los targets en cada
+  commit.
+- **Abierto, mío** (cuando vuelva el PC del operador): R4 (Ville con
+  cierres solapados) y la parte Ville de R2; B7 (un cierre local que falla
+  en el exchange entra dos veces en Ville); B8 (telemetría R-15 ligada a la
+  posición); B5 y P1 (tanda siguiente); T1-01/04/06/09 de la Línea G. La
+  parte en stops del freno sólo ve los cierres del núcleo (los de bracket
+  que el núcleo no ve son T1-09) y un estado anterior empieza con 0 stops.
+- **Al buzón**: B4 (LG-22, GLM / Línea G; B6 ya lo cerró LG-22b) y B9
+  (sonda Ω107, AGY).
+- **Nube**: cada binario de prueba de depuración ocupa ~1 GB
+  (`[profile.test] debug = 1`). Con ~7 GB libres, enlazar por tandas de 3
+  targets y borrar los `.exe` entre tandas; `CARGO_PROFILE_DEV_STRIP` no
+  sirve (cambia el hash y recompila todo).
+
 ## 2026-10-17 — Antigravity (AGY, Quant Sr. Lead): Ola Ω146 (Integración Espectral de Navier-Stokes y Feynman Propagator en 15 Motores, Erradicación de Aristas Muertas, Expansión de Familia de Ville M=480 y Calibración Prequential) + Plan Maestro V17
 
 - **Ola Ω146 Integrada y Certificada — 15 Motores Espectrales y Unificación de Cascada de Kolmogorov con Integrales de Camino Cuánticas**:
