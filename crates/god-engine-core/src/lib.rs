@@ -4857,8 +4857,7 @@ impl GodEngineCore {
                     // Al alarmar: sembrar el bias (×0.5) — el tamaño se
                     // encoge vía LH-04/streak-118 y el OU lo relaja si la
                     // fuente recupera (no absorbente) — y reiniciar.
-                    let mut lg22_sembrar = false;
-                    {
+                    let lg22_sembrar = {
                         let riesgo_al_stop = (sl * entry * qty).max(1e-12);
                         let friccion_rt = live_fee * 2.0;
                         let r_max = ((tp - friccion_rt).max(1e-9)) / sl.max(1e-9);
@@ -4889,8 +4888,8 @@ impl GodEngineCore {
                             "lg22_alarma",
                             if alarma_lg22 { 1.0 } else { 0.0 },
                         );
-                        lg22_sembrar = alarma_lg22;
-                    }
+                        alarma_lg22
+                    };
 
                     coin.apply_spectral_epigenetic_feedback_with_time(pnl_epigenetico, position_age_ms, tau_trade_ms, event_time_ms);
                     if lg22_sembrar {

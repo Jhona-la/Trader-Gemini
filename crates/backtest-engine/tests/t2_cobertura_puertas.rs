@@ -46,6 +46,8 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[path = "support/t1_measurement.rs"]
+// El módulo es compartido con T-1; T-2 no usa su serie (`serie`).
+#[allow(dead_code)]
 mod measurement;
 use measurement::{changed_slots, diagnostic_stats_line, difiere, furthest_endpoint};
 
