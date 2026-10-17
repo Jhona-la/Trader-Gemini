@@ -63,6 +63,10 @@ fn cargar_tape(ruta: &str) -> Result<Vec<Tick>, String> {
 }
 
 fn main() {
+    // LG-23: los modelos del disco se cargan aquí, no al construir el núcleo
+    // (Ω144 lo hacía en el constructor y pisaba predictores ya registrados).
+    let modelos = god_engine_core::model_reload::preload_models_from_disk();
+    eprintln!("[votes_export] modelos cargados de disco: {modelos}");
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut simbolo = String::new();
     let mut input = String::new();

@@ -212,6 +212,29 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
         let dir_weight = safe_dir.tanh();
         dir_weight * squeeze
     }
+
+    fn is_operable_for_coin(&self, coin_id: usize, symbol: &str) -> bool {
+        let sym_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(symbol)
+        };
+        let cid_opt = if symbol.is_empty() {
+            None
+        } else {
+            Some(coin_id)
+        };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return false,
+        };
+        let leer = |clave: &str| {
+            r.get_scoped_parameter(sym_opt, cid_opt, clave, "CoaxialBreakoutEngine")
+                .map(|p| p.get_value())
+                .filter(|v| v.is_finite() && *v > 0.0)
+        };
+        leer("atr_1s").is_some() && leer("atr_5s").is_some() && leer("atr_1m").is_some()
+    }
 }
 
 #[cfg(test)]

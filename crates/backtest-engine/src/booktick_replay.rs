@@ -200,6 +200,24 @@ impl Default for ReplayConfig {
     }
 }
 
+/// SOL-R4-01 (Sol, medición 2026-10-15 — fix GLM 124): causa de fin del
+/// replay. Antes el corte por ruina y el agotamiento de cinta eran
+/// INDISTINGUIBLES y el panel anualizaba la cinta COMPLETA pese al break
+/// (fixture 5-de-10 días de Sol: anualización ×2.000000 exacta,
+/// turnover/día +100%).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReplayCloseReason {
+    /// Guard degenerado (cinta corta tras warmup): NO corrió replay —
+    /// centinela «sin replay» (final_capital=0.0 no es capital medido),
+    /// distinto de ruina.
+    NoReplay,
+    /// Agotamiento de la cinta — camino completo ejecutado.
+    #[default]
+    TapeEnd,
+    /// Break por ruina: unified_capital <= 0 a mitad de cinta.
+    Ruin,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ReplayStats {
     pub trades: u64,
@@ -217,6 +235,23 @@ pub struct ReplayStats {
     /// B3.19 — entradas VETADAS por la envolvente D-442/margin-guards
     /// (rollback inmediato, paridad con los aborts del host en vivo).
     pub envelope_vetoes: u64,
+    /// SOL-R5-02 (GLM 123): posiciones abiertas al cierre de la cinta
+    /// (conteo por moneda) — el MTM del capital final las valúa; este
+    /// campo lo hace auditable.
+    pub open_positions_end: usize,
+    /// SOL-R5-02 (GLM 123): PnL no realizado (neto de fricción de
+    /// salida estimada) añadido al capital final por el MTM.
+    pub mtm_unrealized_pnl: f64,
+    /// SOL-R4-01 (GLM 124): ticks de la cinta EJECUTADOS de verdad (el
+    /// break por ruina corta el loop antes del final). El primer tick
+    /// procesado siempre es ticks[0] — derivable, no se duplica.
+    pub executed_ticks: u64,
+    /// SOL-R4-01 (GLM 124): ts del ÚLTIMO tick procesado. El panel
+    /// anualiza `executed_last_ts − ticks[0].ts_ms`, no la cinta.
+    pub executed_last_ts: u64,
+    /// SOL-R4-01 (GLM 124): por qué terminó el replay (ruina vs cinta
+    /// vs guard degenerado — antes indistinguibles).
+    pub close_reason: ReplayCloseReason,
     /// XLVIII·A — panel ex-post de la meta re-encuadrada (CAGR, Sharpe/
     /// Sortino anualizados, Calmar, MaxDD, CVaR95, turnover, WR, PF).
     pub metrics: crate::metrics::ExPostMetrics,
@@ -237,6 +272,58 @@ impl ReplayStats {
             0.0
         }
     }
+}
+
+/// SOL-R5-02 (Sol, medición 2026-10-15 — fix GLM 123): mark-to-market
+/// del capital final del replay. Antes el final era SÓLO CAJA — las
+/// posiciones abiertas al cierre de la cinta no se valuaban y el
+/// evolver seleccionaba con ese número: el sistema de evolución
+/// aprendía a preferir genomas que dejan riesgo abierto (fitness real
+/// −0,73% donde el reporte decía +3069,92%). Cada posición abierta se
+/// valúa al último mid de su moneda descontando la fricción de salida
+/// (taker + slippage floor) — conservador: no fingir que cierra gratis.
+/// Sin posiciones abiertas ⇒ bit-idéntico (paridad del caso cerrado).
+fn aplicar_mtm_final(arena: &GlobalArena, ultimo_mid: &[f64; 4], stats: &mut ReplayStats) {
+    let taker = arena.config.live_taker_fee.load(Ordering::Relaxed);
+    let slip = arena
+        .config
+        .base_slippage_floor
+        .load(Ordering::Relaxed)
+        .max(0.0);
+    let friccion_salida = (taker + slip).max(0.0);
+    let mut mtm = 0.0f64;
+    for (cid, coin) in arena.coins.iter().enumerate() {
+        let mid = if cid < ultimo_mid.len() {
+            ultimo_mid[cid]
+        } else {
+            0.0
+        };
+        if mid <= 0.0 {
+            continue;
+        }
+        for slot in coin.positions.slots() {
+            if !slot.is_open() {
+                continue;
+            }
+            if let Some(snap) = slot.snapshot() {
+                let dir = if snap.is_long { 1.0 } else { -1.0 };
+                let pnl_bruto = (mid - snap.entry_price) * snap.quantity * dir;
+                // Fricción de salida estimada sobre el nocional actual.
+                let nocional = snap.quantity * mid;
+                let pnl_neto = pnl_bruto - nocional * friccion_salida;
+                mtm += pnl_neto;
+            }
+        }
+    }
+    if mtm.abs() > 1e-12 && stats.final_capital.is_finite() {
+        stats.final_capital += mtm;
+    }
+    stats.mtm_unrealized_pnl = mtm;
+    stats.open_positions_end = arena
+        .coins
+        .iter()
+        .map(|c| c.positions.slots().iter().filter(|s| s.is_open()).count())
+        .sum();
 }
 
 /// Evalúa un genoma contra ticks REALES con el core de producción.
@@ -279,6 +366,10 @@ fn run_booktick_replay_observed(
         || !cfg.initial_capital.is_finite()
         || cfg.initial_capital <= 0.0
     {
+        // SOL-R4-01: centinela «sin replay» — distinto de ruina y de
+        // cinta agotada (el consumidor puede distinguir el cero del
+        // final_capital como instrumento, no como resultado económico).
+        stats.close_reason = ReplayCloseReason::NoReplay;
         return stats;
     }
 
@@ -330,6 +421,18 @@ fn run_booktick_replay_observed(
     let mut peak = cfg.initial_capital;
     let warmup = cfg.warmup_ticks;
 
+    // SOL-R4-01 (Sol, medición 2026-10-15 — fix GLM 124): cuánta cinta
+    // se EJECUTÓ y por qué terminó. Solo cuentan ticks ACEPTADOS por la
+    // aduana (los invalidados con `continue` no se procesaron).
+    let mut executed_ticks: u64 = 0;
+    let mut executed_last_ts: u64 = 0;
+    let mut close_reason = ReplayCloseReason::TapeEnd;
+    // SOL-R5-02-B (Sol, SOL_CONT2 — fix GLM 126): mid del último tick
+    // EJECUTADO — el MTM post-ruina valúa con ESTE precio, nunca con
+    // datos de la cinta posteriores al break (principio: ningún dato
+    // futuro en el fitness).
+    let mut executed_last_mid: f64 = 0.0;
+
     // CX / XLIX-A integration: there is no preloaded prefix to skip here.
     // Observe each accepted row once; only entries wait for the declared W.
     // A max(W, 600) skip would discard history and impose an undeclared floor.
@@ -344,6 +447,14 @@ fn run_booktick_replay_observed(
         if !mid.is_finite() || mid <= 0.0 || t.bid <= 0.0 || t.ask <= 0.0 || t.bid > t.ask {
             continue; // aduana F2.1 (misma regla que producción)
         }
+        // SOL-R4-01: este tick se ejecutó de verdad (pasó la aduana) —
+        // acumulador, no índice: los inválidos intermedios no cuentan.
+        executed_ticks += 1;
+        executed_last_ts = t.ts_ms;
+        // SOL-R5-02-B (GLM 126): mid del último PROCESADO — mismo
+        // criterio de validez que la aduana, capturado en el momento
+        // (sin re-escaneo post-loop de la cinta completa).
+        executed_last_mid = mid;
 
         // F3.4-04 (Línea C / Ola Ω93): paridad de muros L2 con vivo y forense.
         core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);
@@ -611,11 +722,25 @@ fn run_booktick_replay_observed(
             stats.max_dd = dd;
         }
         if cap <= 0.0 {
+            // SOL-R4-01: la ruina CORTA la cinta — el span ejecutado
+            // termina en este tick, no al final de la cinta.
+            close_reason = ReplayCloseReason::Ruin;
             break;
         }
     }
 
+    stats.executed_ticks = executed_ticks;
+    stats.executed_last_ts = executed_last_ts;
+    stats.close_reason = close_reason;
     stats.final_capital = arena.unified_capital.load(Ordering::Relaxed);
+    // SOL-R5-02 (Sol, medición 2026-10-15 — fix GLM 123): la caja sola
+    // no es el capital final — ver `aplicar_mtm_final`.
+    // SOL-R5-02-B (Sol, SOL_CONT2 — fix GLM 126): el mid de valuación es
+    // el del último tick EJECUTADO — antes se re-escaneaba la cinta
+    // COMPLETA y una ruina a mitad quedaba valuada a precios posteriores
+    // al break (look-ahead contable en el fitness). Monoactiva (coin 0).
+    let mids = [executed_last_mid, 0.0, 0.0, 0.0];
+    aplicar_mtm_final(&arena, &mids, &mut stats);
     if !pnl_list.is_empty() {
         let mean = stats.net_pnl / pnl_list.len() as f64;
         let var = pnl_list
@@ -628,13 +753,17 @@ fn run_booktick_replay_observed(
     }
     // XLVIII·A — panel ex-post de la meta re-encuadrada (doctrina
     // 2026-09-29: crecimiento geométrico sujeto a restricciones, medido).
+    // SOL-R4-01 (GLM 124): anualiza el span EJECUTADO — la ruina corta la
+    // cinta y el día 5 de 10 no puede anualizarse como 10 días (×2.000000
+    // exacto, turnover/día +100% pre-fix). Sin ruina, executed_last_ts ==
+    // ticks.last().ts_ms ⇒ bit-paridad con el régimen anterior.
     stats.metrics = crate::metrics::ex_post_metrics(
         &pnl_list,
         turnover_notional,
         cfg.initial_capital,
         stats.final_capital,
         stats.max_dd,
-        ticks.last().map(|t| t.ts_ms).unwrap_or(0).saturating_sub(ticks[0].ts_ms),
+        executed_last_ts.saturating_sub(ticks[0].ts_ms),
     );
     stats.omni_neutral = omni.is_none();
     stats
@@ -1304,6 +1433,435 @@ mod tests {
             staleness_seen_valid <= 60_000.0,
             "Con macro válido en replay debe publicar staleness <= 60s (fresco), visto: {}",
             staleness_seen_valid
+        );
+    }
+}
+
+// ── SOL-R5-02 (GLM 123): mark-to-market del capital final ─────────────
+#[cfg(test)]
+mod sol_r5_02_tests {
+    use super::*;
+
+    /// Copia local del helper de `mod tests` (privado ahí): caminata
+    /// determinista suave + spread, SIN direccionalidad falsa.
+    fn synth_ticks(n: usize) -> Vec<ReplayTick> {
+        let mut seed: u64 = 7;
+        let mut p = 60_000.0f64;
+        (0..n)
+            .map(|i| {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let noise = ((seed >> 33) as f64 / u32::MAX as f64) - 0.5;
+                p *= 1.0 + noise * 0.0004;
+                ReplayTick {
+                    ts_ms: 1_700_000_000_000 + i as u64 * 100,
+                    bid: p - 0.5,
+                    ask: p + 0.5,
+                    bid_qty: 1.0 + noise.abs(),
+                    ask_qty: 1.0 + (1.0 - noise.abs()),
+                }
+            })
+            .collect()
+    }
+
+    fn cfg() -> ReplayConfig {
+        ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 200,
+            trade_only: false,
+            shift_atr_frac: 0.10,
+        }
+    }
+
+    /// (1) INTEGRACIÓN: la cinta sintética con el forest baseline no
+    /// dispara entradas (predicciones 0.5 — el motor real necesita ML
+    /// entrenado), así que materializa el caso cerrado. El contrato se
+    /// verifica en CUALQUIERA de los dos casos posibles (no-vacuo por
+    /// construcción): sin posiciones ⇒ MTM exactamente 0 y final ==
+    /// caja (bit-idéntico al régimen pre-SOL-R5-02); con posiciones ⇒
+    /// el final se MOVIÓ (nunca un no-op silencioso con riesgo abierto).
+    #[test]
+    fn sol_r5_02_caso_cerrado_o_abierto_pero_nunca_ciego() {
+        crate::asegurar_spec_nativo("BTCUSDT"); // sin spec: 0 trades, rechazo «spec»
+        let ticks = synth_ticks(8_000);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let mut caja_final = 0.0f64;
+        let stats = run_booktick_replay_with_observer(&ticks, &genome, None, &cfg(), |_, core| {
+            caja_final = core.arena.unified_capital.load(std::sync::atomic::Ordering::Relaxed);
+        });
+        if stats.open_positions_end == 0 {
+            assert!(
+                (stats.final_capital - caja_final).abs() < 1e-6,
+                "caso cerrado: final {} == caja {}",
+                stats.final_capital,
+                caja_final
+            );
+            assert_eq!(stats.mtm_unrealized_pnl, 0.0);
+        } else {
+            assert_ne!(
+                stats.final_capital.to_bits(),
+                caja_final.to_bits(),
+                "riesgo abierto sin valuar: final {} == caja {}",
+                stats.final_capital,
+                caja_final
+            );
+        }
+    }
+
+    /// (2) UNITARIO del bloque MTM con posición INYECTADA por la API
+    /// pública del PositionManager (el contrato es «dado riesgo abierto
+    /// al cierre, se valúa», no «el ML sintético dispara»): ganador
+    /// sube neto de fricción, perdedor baja, la fricción NO es gratis,
+    /// y sin posiciones la paridad es bit-exacta.
+    #[test]
+    fn sol_r5_02_mtm_unitario_ganador_perdedor_y_paridad() {
+        let arena = GlobalArena::build_in_own_stack(1000.0);
+
+        // (a) Paridad: sin posiciones el MTM es un no-op bit-exacto.
+        let mut stats = ReplayStats {
+            final_capital: 1000.0,
+            ..Default::default()
+        };
+        aplicar_mtm_final(&arena, &[0.0; 4], &mut stats);
+        assert_eq!(stats.final_capital.to_bits(), 1000.0f64.to_bits());
+        assert_eq!(stats.open_positions_end, 0);
+        assert_eq!(stats.mtm_unrealized_pnl, 0.0);
+
+        let taker = arena.config.live_taker_fee.load(Ordering::Relaxed);
+        let slip = arena
+            .config
+            .base_slippage_floor
+            .load(Ordering::Relaxed)
+            .max(0.0);
+        let fric = (taker + slip).max(0.0);
+
+        // (b) Long GANADOR: entry 60_000, mid final 66_000, qty 0.01.
+        // open_positions_end == 1 también es el assert de que abrió.
+        arena.coins[0].positions.slot_0.open(
+            true,
+            60_000.0,
+            0.01,
+            100.0,
+            1_700_000_000_000,
+            66_000.0,
+            54_000.0,
+        );
+        let mut stats = ReplayStats {
+            final_capital: 1000.0,
+            ..Default::default()
+        };
+        aplicar_mtm_final(&arena, &[66_000.0, 0.0, 0.0, 0.0], &mut stats);
+        assert_eq!(stats.open_positions_end, 1);
+        let bruto = (66_000.0 - 60_000.0) * 0.01; // 60.0
+        let esperado = bruto - 66_000.0 * 0.01 * fric;
+        assert!(
+            (stats.mtm_unrealized_pnl - esperado).abs() < 1e-9,
+            "mtm {} == esperado {} (fric={})",
+            stats.mtm_unrealized_pnl,
+            esperado,
+            fric
+        );
+        assert!((stats.final_capital - (1000.0 + esperado)).abs() < 1e-9);
+        assert!(stats.final_capital > 1000.0, "ganador neto de fricción");
+        assert!(esperado < bruto, "la fricción NO es gratis: {} < {}", esperado, bruto);
+
+        // (c) Short PERDEDOR en el mismo mid (entry 60_000, subió a
+        // 66_000): se refleja hacia abajo — final < caja.
+        arena.coins[0].positions.slot_1.open(
+            false,
+            60_000.0,
+            0.01,
+            100.0,
+            1_700_000_000_001,
+            54_000.0,
+            66_000.0,
+        );
+        let mut stats = ReplayStats {
+            final_capital: 1000.0,
+            ..Default::default()
+        };
+        aplicar_mtm_final(&arena, &[66_000.0, 0.0, 0.0, 0.0], &mut stats);
+        assert_eq!(stats.open_positions_end, 2);
+        let short_neto = -bruto - 66_000.0 * 0.01 * fric;
+        let total = esperado + short_neto;
+        assert!(
+            (stats.mtm_unrealized_pnl - total).abs() < 1e-9,
+            "mtm agregado {} == long {} + short {}",
+            stats.mtm_unrealized_pnl,
+            esperado,
+            short_neto
+        );
+        assert!(stats.final_capital < 1000.0, "el perdedor se refleja: {} < 1000", stats.final_capital);
+    }
+}
+
+// ── SOL-R4-01 (GLM 124): span EJECUTADO del panel y causa de fin ─────
+#[cfg(test)]
+mod sol_r4_01_tests {
+    use super::*;
+
+    fn synth_ticks(n: usize) -> Vec<ReplayTick> {
+        let mut seed: u64 = 7;
+        let mut p = 60_000.0f64;
+        (0..n)
+            .map(|i| {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let noise = ((seed >> 33) as f64 / u32::MAX as f64) - 0.5;
+                p *= 1.0 + noise * 0.0004;
+                ReplayTick {
+                    ts_ms: 1_700_000_000_000 + i as u64 * 100,
+                    bid: p - 0.5,
+                    ask: p + 0.5,
+                    bid_qty: 1.0 + noise.abs(),
+                    ask_qty: 1.0 + (1.0 - noise.abs()),
+                }
+            })
+            .collect()
+    }
+
+    fn cfg() -> ReplayConfig {
+        ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 200,
+            trade_only: false,
+            shift_atr_frac: 0.10,
+        }
+    }
+
+    /// (1) Sin ruina: el camino completo se ejecuta — span ejecutado ==
+    /// cinta (bit-paridad del panel con el régimen pre-fix: la cinta se
+    /// recorre entera y TapeEnd es la causa).
+    #[test]
+    fn sol_r4_01_sin_ruina_span_ejecutado_es_la_cinta_entera() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        let ticks = synth_ticks(8_000);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let stats = run_booktick_replay(&ticks, &genome, None, &cfg());
+        assert_eq!(stats.close_reason, ReplayCloseReason::TapeEnd);
+        assert_eq!(stats.executed_ticks, ticks.len() as u64);
+        assert_eq!(stats.executed_last_ts, ticks.last().unwrap().ts_ms);
+        let span_ms = ticks.last().unwrap().ts_ms - ticks[0].ts_ms;
+        let span_dias_esperado = span_ms as f64 / 86_400_000.0;
+        assert!(
+            (stats.metrics.span_days - span_dias_esperado).abs() < 1e-12,
+            "sin ruina el panel anualiza la cinta: {} == {}",
+            stats.metrics.span_days,
+            span_dias_esperado
+        );
+    }
+
+    /// (2) CONTRATO CENTRAL (fixture 5-de-10 de Sol, inyectado): ruina a
+    /// MITAD de cinta ⇒ el span ejecutado termina EN el tick de ruina, la
+    /// causa es distinguible y el panel anualiza sobre lo EJECUTADO (pre-
+    /// fix anualizaba la cinta completa: ×2.000000 exacto, turnover/día
+    /// +100%). La ruina se inyecta por la API pública del observer
+    /// (unified_capital.store(0.0) — el loop corta en su check de cap).
+    #[test]
+    fn sol_r4_01_ruina_a_mitad_anualiza_solo_lo_ejecutado() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        // 8001 ticks = 8000 intervalos: la ruina en el tick 4000 deja
+        // 4000 intervalos ejecutados — la cinta es EXACTAMENTE el doble
+        // (paridad del fixture 5-de-10 de Sol).
+        let ticks = synth_ticks(8_001);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        const RUINA_EN: usize = 4_000;
+        let stats = run_booktick_replay_with_observer(
+            &ticks,
+            &genome,
+            None,
+            &cfg(),
+            |i, core| {
+                if i == RUINA_EN {
+                    core.arena
+                        .unified_capital
+                        .store(0.0, std::sync::atomic::Ordering::Relaxed);
+                }
+            },
+        );
+        assert_eq!(stats.close_reason, ReplayCloseReason::Ruin, "causa distinguible");
+        assert_eq!(stats.executed_last_ts, ticks[RUINA_EN].ts_ms);
+        assert_eq!(stats.executed_ticks, (RUINA_EN + 1) as u64);
+        // El panel anualiza lo EJECUTADO: mitad de cinta exacta.
+        let span_ejecutado_ms = ticks[RUINA_EN].ts_ms - ticks[0].ts_ms;
+        let span_dias = span_ejecutado_ms as f64 / 86_400_000.0;
+        assert!(
+            (stats.metrics.span_days - span_dias).abs() < 1e-12,
+            "span_days {} == ejecutado {} (NO la cinta completa)",
+            stats.metrics.span_days,
+            span_dias
+        );
+        // La relación estructural del testigo de Sol: el span de cinta es
+        // EXACTAMENTE el doble del ejecutado (fixture 5-de-10) — anualizar
+        // la cinta duplicaría todo lo por-día.
+        let span_cinta_ms = ticks.last().unwrap().ts_ms - ticks[0].ts_ms;
+        assert_eq!(span_cinta_ms, 2 * span_ejecutado_ms);
+    }
+
+    /// (3) Guard degenerado: NO corrió replay — causa NoReplay, cero
+    /// ejecutado. Extiende la caracterización del centinela de Sol
+    /// (final_capital=0.0): ahora además es distinguible POR CAMPO.
+    #[test]
+    fn sol_r4_01_guard_degenerado_dice_noreplay() {
+        let ticks = synth_ticks(205); // 205 − warmup 200 = 5 ≤ 10
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let stats = run_booktick_replay(&ticks, &genome, None, &cfg());
+        assert_eq!(stats.close_reason, ReplayCloseReason::NoReplay);
+        assert_eq!(stats.executed_ticks, 0);
+        assert_eq!(stats.executed_last_ts, 0);
+        assert_eq!(stats.final_capital, 0.0, "centinela sin replay");
+    }
+
+    /// (4) Aduana: los ticks invalidados (bid<=0) NO cuentan como
+    /// ejecutados — executed_last_ts es el ts del último tick VÁLIDO.
+    #[test]
+    fn sol_r4_01_aduana_rechazados_no_cuentan_como_ejecutados() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        let mut ticks = synth_ticks(8_000);
+        // Invalidar el tramo final: los últimos 100 ticks violan la aduana.
+        for t in ticks.iter_mut().rev().take(100) {
+            t.bid = 0.0;
+        }
+        let ultimo_valido_ts = ticks[ticks.len() - 101].ts_ms;
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let stats = run_booktick_replay(&ticks, &genome, None, &cfg());
+        assert_eq!(stats.close_reason, ReplayCloseReason::TapeEnd);
+        assert_eq!(
+            stats.executed_ticks,
+            (ticks.len() - 100) as u64,
+            "solo los aceptados por la aduana cuentan"
+        );
+        assert_eq!(stats.executed_last_ts, ultimo_valido_ts);
+    }
+}
+
+// ── SOL-R5-02-B (GLM 126): el MTM post-ruina no mira el futuro ───────
+#[cfg(test)]
+mod sol_r5_02b_tests {
+    use super::*;
+
+    /// Cinta DETERMINISTA: plana ~60_000 hasta `ruptura` (incluido) y
+    /// rampa hasta ~120_000 después — el futuro halado que el MTM NO
+    /// debe usar si la simulación cortó en `ruptura`.
+    fn cinta_con_futuro_halado(n: usize, ruptura: usize) -> Vec<ReplayTick> {
+        (0..n)
+            .map(|i| {
+                let p = if i <= ruptura {
+                    60_000.0
+                } else {
+                    60_000.0 * (1.0 + (i - ruptura) as f64 / (n - ruptura) as f64)
+                };
+                ReplayTick {
+                    ts_ms: 1_700_000_000_000 + i as u64 * 100,
+                    bid: p - 0.5,
+                    ask: p + 0.5,
+                    bid_qty: 1.0,
+                    ask_qty: 1.0,
+                }
+            })
+            .collect()
+    }
+
+    fn cfg() -> ReplayConfig {
+        ReplayConfig {
+            initial_capital: 1000.0,
+            warmup_ticks: 200,
+            trade_only: false,
+            shift_atr_frac: 0.10,
+        }
+    }
+
+    /// CONTRATO CENTRAL (residual de Sol, SOL_CONT2 §5): posición long
+    /// abierta antes del corte, ruina inyectada en `ruptura`, y la cinta
+    /// DUPLICA el precio después. El MTM debe valuar al mid del tick de
+    /// ruina (60_000) — el futuro halado (~120_000) jamás entra al
+    /// fitness. Pre-fix (GLM 123): re-escaneo de la cinta completa ⇒
+    /// look-ahead contable.
+    #[test]
+    fn sol_r5_02b_mtm_post_ruina_no_mira_el_futuro() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        const RUPTURA: usize = 4_000;
+        // La posición abre UN tick antes del corte: vive lo mínimo en el
+        // motor (sin paths defensivos espurios) y entry == mid del corte.
+        const ABRE_EN: usize = RUPTURA - 1;
+        let ticks = cinta_con_futuro_halado(8_001, RUPTURA);
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let stats = run_booktick_replay_with_observer(
+            &ticks,
+            &genome,
+            None,
+            &cfg(),
+            |i, core| {
+                if i == ABRE_EN {
+                    core.arena.coins[0].positions.slot_0.open(
+                        true,
+                        60_000.0,
+                        0.01,
+                        10.0,
+                        1_700_000_000_000 + i as u64 * 100,
+                        66_000.0,
+                        54_000.0,
+                    );
+                }
+                if i == RUPTURA {
+                    core.arena
+                        .unified_capital
+                        .store(0.0, std::sync::atomic::Ordering::Relaxed);
+                }
+            },
+        );
+        assert_eq!(stats.close_reason, ReplayCloseReason::Ruin);
+        assert!(stats.open_positions_end >= 1, "la posición sigue abierta al corte");
+        // Mid del tick de ruina: 60_000 (cinta plana hasta el corte).
+        // Mid del final de cinta: ~120_000. El MTM correcto usa el primero:
+        // bruto = 0 (entró y cortó al mismo precio), neto = −fricción.
+        // El PRE-fix (re-escaneo de cinta completa) daría ~+600 — la
+        // aserción < 50 lo detecta con margen 10x.
+        assert!(
+            stats.mtm_unrealized_pnl <= 0.0 && stats.mtm_unrealized_pnl > -10.0,
+            "mtm {} valúa al mid del CORTE (~60k con fricción), no al futuro (~120k daría +600)",
+            stats.mtm_unrealized_pnl
+        );
+        assert!(
+            stats.mtm_unrealized_pnl < 50.0,
+            "look-ahead detectado: mtm {} refleja precios post-break",
+            stats.mtm_unrealized_pnl
+        );
+    }
+
+    /// Paridad del caso TapeEnd con tramo final INVÁLIDO: el mid de
+    /// valuación es el del último tick ACEPTADO (la aduana y el tracking
+    /// comparten criterio — bit-paridad con el re-escaneo del 123, que
+    /// también saltaba inválidos).
+    #[test]
+    fn sol_r5_02b_paridad_con_tramo_final_invalido() {
+        crate::asegurar_spec_nativo("BTCUSDT");
+        let mut ticks = cinta_con_futuro_halado(8_001, 20_000); // toda plana 60_000
+        for t in ticks.iter_mut().rev().take(100) {
+            t.bid = 0.0; // aduana F2.1: inválidos
+        }
+        let ultimo_valido_mid = ticks[ticks.len() - 101].mid();
+        let genome = SuperGenotype::new_baseline(0.0002, 0.0005);
+        let stats = run_booktick_replay_with_observer(&ticks, &genome, None, &cfg(), |i, core| {
+            if i == 7_000 {
+                core.arena.coins[0].positions.slot_0.open(
+                    true,
+                    60_000.0,
+                    0.01,
+                    10.0,
+                    1_700_000_000_000 + i as u64 * 100,
+                    66_000.0,
+                    54_000.0,
+                );
+            }
+        });
+        assert_eq!(stats.close_reason, ReplayCloseReason::TapeEnd);
+        assert!(stats.open_positions_end >= 1);
+        // Valuado al mid del último VÁLIDO (~60_000), no a 0 ni a un
+        // inválido: pnl bruto ≈ 0, neto = −fricción pequeña.
+        assert!(
+            stats.mtm_unrealized_pnl > -10.0 && stats.mtm_unrealized_pnl <= 0.0,
+            "paridad: mtm {} con último mid válido {}",
+            stats.mtm_unrealized_pnl,
+            ultimo_valido_mid
         );
     }
 }

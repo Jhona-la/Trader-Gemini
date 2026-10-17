@@ -8,7 +8,7 @@ use smartcore::linalg::basic::matrix::DenseMatrix;
 use smartcore::metrics::{accuracy, mean_squared_error};
 use std::sync::{Arc, RwLock};
 
-/// Estructura de observación individual (Data Point)
+/// Estructura de observación individual (Data Point) con paridad direccional de lado
 #[derive(Clone, Debug)]
 pub struct TradeObservation {
     pub obi: f64,
@@ -19,6 +19,8 @@ pub struct TradeObservation {
     pub macro_momentum: f64,
     pub actual_pnl_pct: f64,
     pub was_profitable: bool,
+    /// LC-F1-18 / LC-F1-67: Lado de la operación para proyectar la dirección real del mercado
+    pub is_long: bool,
 }
 
 pub struct TrueOnlineRandomForest {
@@ -39,6 +41,8 @@ pub struct TrueOnlineRandomForest {
     /// que sólo devuelve la clase (0/1) todos los umbrales de la rejilla
     /// filtran lo mismo y no hay nada que calibrar.
     thresholds_identified: RwLock<bool>,
+    /// Ola Ω136: Motor analítico Newton GBDT en espacio de Hilbert L2 con Taylor de 2º orden y cero alocaciones
+    pub gbdt: crate::online_newton_gbdt::OnlineNewtonGbdt,
 }
 
 impl TrueOnlineRandomForest {
@@ -52,6 +56,7 @@ impl TrueOnlineRandomForest {
             shadow_threshold_short: RwLock::new(0.60),
             last_accuracy: RwLock::new(0.0),
             thresholds_identified: RwLock::new(false),
+            gbdt: crate::online_newton_gbdt::OnlineNewtonGbdt::new(max_memory_size),
         }
     }
 
@@ -65,12 +70,28 @@ impl TrueOnlineRandomForest {
             macro_momentum: 0.0,
             actual_pnl_pct: net_pnl_pct as f64,
             was_profitable: net_pnl_pct > 0.0,
+            is_long,
         };
         self.feed_observation(obs);
+        let features = [if is_long { 0.5 } else { -0.5 }, 0.0, 1.0, 0.002, 0.50, 0.0];
+        self.gbdt.feed_observation(features, net_pnl_pct as f64, is_long);
     }
 
-    /// Alimenta la observación con las 6 características microestructurales y macro reales observadas
+    /// Alimenta la observación con las 6 características microestructurales y macro reales observadas.
+    /// Por compatibilidad con tests existentes, deduce el lado del signo del OBI (obi >= 0 => long).
     pub fn shadow_evaluate_with_features(&self, features: [f64; 6], net_pnl_pct: f64) {
+        let is_long = features[0] >= 0.0;
+        self.shadow_evaluate_with_features_dir(features, net_pnl_pct, is_long);
+    }
+
+    /// Alimenta la observación con las 6 características microestructurales e incorpora
+    /// paridad explícita de lado (is_long), resolviendo de raíz LC-F1-18 y LC-F1-67.
+    pub fn shadow_evaluate_with_features_dir(
+        &self,
+        features: [f64; 6],
+        net_pnl_pct: f64,
+        is_long: bool,
+    ) {
         let obs = TradeObservation {
             obi: features[0],
             vol_accel: features[1],
@@ -80,12 +101,14 @@ impl TrueOnlineRandomForest {
             macro_momentum: features[5],
             actual_pnl_pct: net_pnl_pct,
             was_profitable: net_pnl_pct > 0.0,
+            is_long,
         };
         self.feed_observation(obs);
+        self.gbdt.feed_observation(features, net_pnl_pct, is_long);
     }
 
     pub fn is_trained(&self) -> bool {
-        self.classifier.read().unwrap().is_some()
+        self.classifier.read().unwrap().is_some() || *self.gbdt.is_trained.read().unwrap()
     }
 
     /// CL-18 — umbrales calibrados, o `None` si el último reentrenamiento no
@@ -141,8 +164,17 @@ impl TrueOnlineRandomForest {
             x_features.push(obs.hurst_exp);
             x_features.push(obs.macro_momentum);
 
-            y_class.push(if obs.was_profitable { 1 } else { 0 });
-            y_reg.push(obs.actual_pnl_pct);
+            // LC-F1-18 / LC-F1-67: Paridad direccional del mercado
+            // Long: ganancia (>0) indica subida de precio; pérdida (<0) bajada.
+            // Short: ganancia (>0) indica bajada de precio; pérdida (<0) subida.
+            let directional_pnl = if obs.is_long {
+                obs.actual_pnl_pct
+            } else {
+                -obs.actual_pnl_pct
+            };
+            let price_went_up = directional_pnl > 0.0;
+            y_class.push(if price_went_up { 1 } else { 0 });
+            y_reg.push(directional_pnl);
         }
 
         // FIX #720: Verificar variabilidad de clases para evitar particiones degeneradas en árboles
@@ -233,13 +265,16 @@ impl TrueOnlineRandomForest {
         }
         *self.thresholds_identified.write().unwrap() = identificados;
 
+        // Ola Ω136: Reentrenar el motor analítico Newton GBDT en espacio Hilbert L2
+        let _ = self.gbdt.retrain_models();
+
         *self.classifier.write().unwrap() = Some(Arc::new(classifier));
         *self.regressor.write().unwrap() = Some(Arc::new(regressor));
 
         {
-                *self.last_accuracy.write().unwrap() = acc;
-                Ok((acc, mse))
-            }
+            *self.last_accuracy.write().unwrap() = acc;
+            Ok((acc, mse))
+        }
     }
 
     pub fn predict_6d(&self, features: [f64; 6]) -> Option<(f64, f64)> {
@@ -247,6 +282,14 @@ impl TrueOnlineRandomForest {
         for f in &features {
             if !f.is_finite() {
                 return None;
+            }
+        }
+
+        // Ola Ω136: Si el motor analítico Newton GBDT está entrenado, usar su predicción
+        // continua zero-alloc en stack (<300 ns).
+        if *self.gbdt.is_trained.read().unwrap() {
+            if let Some((prob, pnl)) = self.gbdt.predict_6d(features) {
+                return Some((prob, pnl));
             }
         }
 
@@ -269,10 +312,10 @@ impl TrueOnlineRandomForest {
                 .next()
                 .unwrap_or(0.0);
 
-            // FIX #867: Probabilidad continua suave derivada de sigmoid sobre el PnL esperado y clase
+            // FIX #867 & LC-F1-18: Probabilidad direccional continua suave de que el precio SUBA
             let prob_from_pnl = 1.0 / (1.0 + (-expected_pnl * 50.0).exp());
             let safe_prob = if expected_pnl.is_finite() && class_pred.is_finite() {
-                // Combinar probabilidad de regresión continua con clase discreta
+                // Combinar probabilidad de regresión continua con clase discreta (ambas orientadas a subida)
                 (0.6 * prob_from_pnl + 0.4 * class_pred).clamp(0.01, 0.99)
             } else if class_pred.is_finite() {
                 class_pred.clamp(0.0, 1.0)

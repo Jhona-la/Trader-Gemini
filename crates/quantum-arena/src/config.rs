@@ -285,6 +285,26 @@ pub struct QuantumConfig {
     pub multifractal_w_macro: AtomicF64,
     pub multifractal_tanh_scale: AtomicF64,
     pub burst_threshold_zscore: AtomicF64,
+
+    // --- VECM Cointegración, Ondas Solitónicas y Resonancia Estocástica (Ola Ω129) ---
+    pub vecm_z_entry: AtomicF64,
+    pub vecm_z_saturation: AtomicF64,
+    pub soliton_sat_momento: AtomicF64,
+    pub stochastic_res_peak_gain: AtomicF64,
+
+    // --- Dinámica de Micro-Apalancamiento y Coherencia Espectral (Ola Ω130) ---
+    pub micro_lev_base: AtomicF64,
+    pub micro_lev_bonus: AtomicF64,
+    pub micro_lev_conf_center: AtomicF64,
+    pub micro_lev_conf_width: AtomicF64,
+    pub macro_lev_cap: AtomicF64,
+    pub base_micro_ratio: AtomicF64,
+    pub spec_coh_scale: AtomicF64,
+    pub spec_ent_scale: AtomicF64,
+
+    // --- Liquidez Oculta y Compuerta Conformal de Microestructura (Ola Ω133) ---
+    pub hidden_liquidity_weight: AtomicF64,
+    pub conformal_gate_strictness: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -591,6 +611,20 @@ impl QuantumConfig {
             multifractal_w_macro: AtomicF64::new(0.30),
             multifractal_tanh_scale: AtomicF64::new(0.08),
             burst_threshold_zscore: AtomicF64::new(2.50),
+            vecm_z_entry: AtomicF64::new(1.50),
+            vecm_z_saturation: AtomicF64::new(3.00),
+            soliton_sat_momento: AtomicF64::new(10000.0),
+            stochastic_res_peak_gain: AtomicF64::new(2.00),
+            micro_lev_base: AtomicF64::new(5.0),
+            micro_lev_bonus: AtomicF64::new(1.5),
+            micro_lev_conf_center: AtomicF64::new(0.65),
+            micro_lev_conf_width: AtomicF64::new(0.10),
+            macro_lev_cap: AtomicF64::new(50.0),
+            base_micro_ratio: AtomicF64::new(0.66 / 0.62),
+            spec_coh_scale: AtomicF64::new(0.10),
+            spec_ent_scale: AtomicF64::new(0.30),
+            hidden_liquidity_weight: AtomicF64::new(0.30),
+            conformal_gate_strictness: AtomicF64::new(1.0),
         }
     }
 

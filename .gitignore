@@ -13,8 +13,10 @@
 # Environment files (secretos — JAMÁS al repo)
 .env
 *.env
+.env.*
 !template.env
 !*.env.example
+!.env.example
 
 # Logs y outputs de diagnóstico
 *.log
@@ -36,6 +38,9 @@ backups/
 # Cache y grafo de análisis graphify (los reportes markdown SÍ se trackean; graph.json >100MB supera límite de GitHub)
 graphify-out/cache/
 graphify-out/graph.json
+# LG-25: las instantáneas fechadas de graphify (graph.json de hasta 26 MB cada
+# una) inflan .git; las ya versionadas siguen versionadas, las nuevas no entran.
+graphify-out/20*/
 
 # Estado runtime / caches de la API (regenerables, linaje en F2.7)
 state*.json
@@ -94,3 +99,12 @@ config_dir/genomes/*/history/
 
 # XCVII: artefactos de codegen Rust en Windows que colisionan con el dispositivo NUL
 NUL.*
+
+# LG-25 (higiene, 2026-10-17): datos tabulares, volcados y matrices numpy no
+# van al repo (los .csv ya versionados siguen versionados; los nuevos no).
+# Las tablas de auditoría van en .tsv dentro de docs/.
+*.csv
+*.dmp
+*.mdmp
+*.npz
+*.npy

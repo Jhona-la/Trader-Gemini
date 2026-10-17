@@ -3492,13 +3492,13 @@ Ejecutor: **Antigravity** (rama `antigravity/quant-sr-ola55-fase-r5-dinero-ejecu
 
 ---
 
-## §SOL-CONT-2026-10-15 — Sol: marca de posiciones abiertas y span ejecutado (SOL-R5-02 / SOL-R4-01, ABIERTOS)
+## §SOL-CONT-2026-10-15 — Sol: marca de posiciones abiertas y span ejecutado (SOL-R5-02 CERRADO por GLM 123 / SOL-R4-01 CERRADO por GLM 124 / rec-3 CERRADA por GLM 125 — familia contable DRENADA)
 
 **Base**: `78647b12`. Detalle y recibos: `docs/audit/SOL_CONTABILIDAD_REPLAY_2026-10-15.md`,
 testigo `outputs/Sol_continuacion_replay_2026-10-15.log` (exit 0) y contrato
 `outputs/Sol_continuacion_replay_2026-10-15_contrato.log` (3/3 verde).
 
-- **SOL-R5-02 [ABIERTO]**: en el camino vivo `unified_capital` sólo muta en
+- **SOL-R5-02 [CERRADO por GLM 123 — merge `94049829`, fix `42d7115e` — RELOJ cerrado por GLM 126, merge `12d588e2e`]**: en el camino vivo `unified_capital` sólo muta en
   el dominio de fees (`god-engine-core/src/lib.rs:9525/9547`,
   `entry_reservation.rs:53/86`; resto de escritores bajo `#[cfg(test)]`);
   `booktick_replay.rs` mide `max_dd` (605-612) y `final_capital` (618)
@@ -3508,12 +3508,75 @@ testigo `outputs/Sol_continuacion_replay_2026-10-15.log` (exit 0) y contrato
   `backtest_windows.rs:270`. Mismo libro ⇒ fitness −0,7279 % CAGR vs
   reporte +3069,9231 % (brecha terminal +1,2929 USD, +9,95 %). Sesgo a
   dejar riesgo abierto; ruina por marca invisible.
-- **SOL-R4-01 [ABIERTO]**: span del panel = cinta completa
+  **Cierre (GLM 123, medición de Sol con crédito completo)**:
+  `aplicar_mtm_final()` en `booktick_replay.rs` — capital final = caja +
+  Σ posiciones abiertas al último mid con fricción de salida (taker+slip
+  sobre nocional actual); sin posiciones ⇒ bit-idéntico. Campos nuevos
+  `open_positions_end` + `mtm_unrealized_pnl` en `ReplayStats`.
+  Recibos exigidos por esta fila: contrato 2/2 en el MISMO commit
+  (`sol_r5_02_tests`: disyuntivo no-vacuo + unitario inyectado por API
+  pública con fórmula exacta neta de fricción) + **oráculo T-1 release
+  2/2 PASS 709.76s** (binario verificado con-MTM por mtime 12:16:45,
+  pre-checkout) + suites backtest lib 57/57, evolution-engine 13
+  targets, god-engine-core 203/203 + contrato de caracterización de Sol
+  (`sol_cont_accounting_2026-10-15`) re-verificado 3/3 VERDE sobre el
+  estado mergeado. OBS-SOL-CENTINELA verificado ya cubierto:
+  `log_capital_growth` filtra final ≤ 0 → INVIABLE (el cero de
+  instrumento roto jamás puntúa como ruina limpia).
+  **Cierre del reloj (GLM 126 — hallazgo Sol, SOL_CONT2 §5, merge
+  `12d588e2e` fix `8cb9c9b7`)**: el MTM del 123 re-escaneaba la cinta
+  COMPLETA (`ultimo_mid_por_moneda`) también tras el break por ruina —
+  posición abierta al corte valuada a precios POSTERIORES al break
+  (look-ahead contable en el fitness). Fix: el loop trackea
+  `executed_last_mid` en el momento del procesamiento (tras la aduana —
+  mismo criterio de validez por construcción); `aplicar_mtm_final`
+  recibe ese mid; el re-escaneo queda ELIMINADO. Recibos: contrato
+  `sol_r5_02b_tests` 2/2 (long abierta un tick antes de ruina inyectada
+  con cinta que DUPLICA el precio post-corte — MTM valúa al mid del
+  corte, aserción anti-lookahead margen 10×; paridad con tramo final
+  inválido) + regresión 123 intacta + suite lib 63/63 + **oráculo T-1
+  release 2/2 PASS 321.80s CON TESTIGO** (HEAD `8cb9c9b7`, binario
+  `bc6ff3fb…`). `evolver.rs:104` (caja pura) sigue documentado sin
+  tocar (LG-17b: no promueve todavía).
+- **SOL-R4-01 [CERRADO por GLM 124 — merge `44561f59`, fix `ea140a1f`]**: span del panel = cinta completa
   (`booktick_replay.rs:637`) pese al break por ruina (613) ⇒
   anualización **×2,000000** exacta en fixture 5-de-10 días, turnover/día
   +100 %. Sin campos `executed_*`; `min(solicitado, disponible)` previo
   (`e47b2cb0`/`286a6a7a`) no registra solicitado/disponible/ejecutado ni
   causa de fin (corte 549 y agotamiento de cinta indistinguibles).
+  **Cierre (GLM 124, medición de Sol con crédito completo)**:
+  `ReplayCloseReason {NoReplay, TapeEnd, Ruin}` + `executed_ticks`/
+  `executed_last_ts` en `ReplayStats` (solo ticks ACEPTADOS por la
+  aduana F2.1 — acumulador, no índice); `ex_post_metrics` recibe
+  `executed_last_ts − ticks[0].ts_ms` (la ruina corta el span; sin
+  ruina ⇒ bit-paridad). Guard degenerado reporta `NoReplay`.
+  Recibos exigidos por esta fila: contrato 4/4 RED→GREEN en el MISMO
+  commit (`sol_r4_01_tests`: paridad sin ruina / ruina inyectada por
+  observer con relación ×2 exacta del fixture / NoReplay degenerado /
+  aduana excluye invalidados) + **oráculo T-1 release 2/2 PASS 769.61s
+  CON TESTIGO** (`outputs/oracle_witness_20261015_182222.log`: HEAD
+  `44561f59`, sha256 binario pre==post `045b75c1…`) + suites backtest
+  lib 61/61, contrato de caracterización de Sol 3/3, evolution-engine
+  12 targets, god-engine-core 203/203.
+  **Residual (CERRADO por GLM 125 — push `b6620c11`)**: la recomendación 3
+  de Sol para `continuous_evolution_backtest.rs` quedó cubierta al ciclo
+  siguiente: `SimCloseReason {Rekt, DaysCompleted, TapeEnd, CapitalFloor}`
+  + `should_continue_day()` PURA — los DÍAS FANTASMA de 0 ticks ya no se
+  fabrican (cinta agotada / floor persistente / REKT cierran con causa
+  explícita en vez de simular días muertos con evolución incluida); recibo
+  final «Días: solicitado X / disponible Y / EJECUTADO Z — causa de fin».
+  Recibos: contrato `sim_close_contract` 4/4 en el mismo commit (patrón
+  `reporting_contract` de Sol, que sigue 2/2) + **oráculo T-1 release 2/2
+  PASS 595.39s CON TESTIGO**
+  (`outputs/oracle_witness_20261015_195218.log`: HEAD `b6620c11`, sha256
+  pre==post `35932cb3…`) — el guard del testigo atrapó ANTES un falso
+  binario viejo (delta bin-only no relinkeaba el test exe; fix: el script
+  toca también el test file, relink garantizado).
+  **Herramienta nueva del ciclo**: `scripts/oracle_witness.sh` — recibo
+  permanente de oráculos (HEAD + sha256 + guard CL-60b de frescura).
+  Nació de un incidente en vivo: con CARGO_TARGET_DIR compartido cargo
+  reutilizó el test exe VIEJO de otro árbol (detectado por el testigo
+  ANTES de correr — guard añadido en `1ddad995`).
 - Si alguien implementa la marca o el span ejecutado: contrato RED→GREEN
   en el mismo commit + oráculo T-1 si toca evolución/votos. No fichar como
   cerrado sin recibo de árbol.

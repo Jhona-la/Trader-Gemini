@@ -1,0 +1,8 @@
+# T-1 (oráculo de cobertura genética) sobre 6392ae094 (main 5f34f4fc1 + LG-23 + LG-22b), scripts/t1_oraculo.sh 4, CARGO_TARGET_DIR compartido, release, 2026-10-17
+[T-1] 144 evaluaciones en 4 hilos
+\n[T-1] COBERTURA GENÉTICA DEL ORÁCULO: 18/144 genes sensibles \
+         (12.5 %)\n[T-1] Sin cambio observado bajo esta perturbación/fixture: [0, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 19, 21, 22, 23, 25, 26, 28, 29, 30, 31, 32, 34, 35, 36, 37, 38, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 132, 133, 134, 135, 136, 137, 138, 139, 140]\n
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 842.07s
+real	43m33.160s
+# sensibles: 1, 10, 11, 17, 18, 20, 24, 27, 33, 39, 68, 69, 129, 130, 131, 141, 142, 143
+# frente a la canónica 16/144 [1,10,11,17,18,20,24,27,32,33,68,69,129,130,131,141]: pierde 32; gana 39, 142, 143

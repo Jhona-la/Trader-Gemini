@@ -2,24 +2,118 @@ use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
 use strategy_core::QuantumStrategy;
 
+/// ⚡ OLA Ω129: Parámetros desacoplados y configurables para el motor de ondas solitónicas
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SolitonWaveParams {
+    /// Escala de amplitud del solitón (default: 1.0)
+    pub amplitude_scale: f64,
+    /// Factor de escala para normalización adimensional de velocidad (default: 10.0)
+    pub velocity_norm_scale: f64,
+    /// Constante de saturación de momentum continuo en tanh (default: 1e4)
+    pub sat_momento: f64,
+    /// Tiempo característico por defecto del pulso solitónico (default: 0.05)
+    pub default_t_time: f64,
+    /// Factor de potencia de envolvente (default: 2.0)
+    pub envelope_power_factor: f64,
+}
+
+impl Default for SolitonWaveParams {
+    fn default() -> Self {
+        Self {
+            amplitude_scale: 1.0,
+            velocity_norm_scale: 10.0,
+            sat_momento: 1e4,
+            default_t_time: 0.05,
+            envelope_power_factor: 2.0,
+        }
+    }
+}
+
+impl SolitonWaveParams {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.amplitude_scale.is_finite() || !(0.01..=10.0).contains(&self.amplitude_scale) {
+            return Err(format!("Invalid amplitude_scale: {}", self.amplitude_scale));
+        }
+        if !self.velocity_norm_scale.is_finite()
+            || !(0.1..=100.0).contains(&self.velocity_norm_scale)
+        {
+            return Err(format!(
+                "Invalid velocity_norm_scale: {}",
+                self.velocity_norm_scale
+            ));
+        }
+        if !self.sat_momento.is_finite() || !(100.0..=1e6).contains(&self.sat_momento) {
+            return Err(format!("Invalid sat_momento: {}", self.sat_momento));
+        }
+        if !self.default_t_time.is_finite() || !(0.001..=1.0).contains(&self.default_t_time) {
+            return Err(format!("Invalid default_t_time: {}", self.default_t_time));
+        }
+        if !self.envelope_power_factor.is_finite()
+            || !(0.5..=10.0).contains(&self.envelope_power_factor)
+        {
+            return Err(format!(
+                "Invalid envelope_power_factor: {}",
+                self.envelope_power_factor
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// 🌊 ALGORITMO #86: MOTOR DE ONDAS SOLITÓN NO-LINEALES DE SCHRÖDINGER (SOLITON WAVE ENGINE)
 /// Modela los impulsos de precio como solitones no-dispersivos de la ecuación NLS (i \psi_t + 1/2 \psi_{xx} + |\psi|^2 \psi = 0),
 /// identificando paquetes de liquidez que atraviesan la profundidad del libro de órdenes sin perder amplitud.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 #[repr(C, align(64))]
 pub struct SolitonWaveEngine {
+    pub params: SolitonWaveParams,
     registry: Option<Arc<OmniscientRegistry>>,
+}
+
+impl Default for SolitonWaveEngine {
+    fn default() -> Self {
+        Self {
+            params: SolitonWaveParams::default(),
+            registry: None,
+        }
+    }
 }
 
 impl std::fmt::Debug for SolitonWaveEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SolitonWaveEngine").finish()
+        f.debug_struct("SolitonWaveEngine")
+            .field("params", &self.params)
+            .finish()
     }
 }
 
 impl SolitonWaveEngine {
     pub fn new() -> Self {
-        Self { registry: None }
+        Self::default()
+    }
+
+    pub fn new_with_params(params: SolitonWaveParams) -> Self {
+        Self {
+            params,
+            registry: None,
+        }
+    }
+
+    pub fn with_params(mut self, params: SolitonWaveParams) -> Self {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+        self
+    }
+
+    pub fn update_params(&mut self, params: SolitonWaveParams) {
+        if params.validate().is_ok() {
+            self.params = params;
+        }
+    }
+
+    pub fn params(&self) -> &SolitonWaveParams {
+        &self.params
     }
 
     /// Calcula la amplitud del perfil solitónico sech(x) en O(1) con protección numérica absoluta
@@ -55,14 +149,25 @@ impl SolitonWaveEngine {
         }
     }
 
-    /// Calcula la potencia de envolvente energética del paquete solitónico (Punto #265)
+    /// Calcula la potencia de envolvente energética del paquete solitónico con factor parametrizado
     #[inline(always)]
-    pub fn compute_soliton_envelope_power(amplitude: f64) -> f64 {
+    pub fn compute_soliton_envelope_power_with_factor(amplitude: f64, factor: f64) -> f64 {
         if !amplitude.is_finite() || amplitude <= 0.0 {
             0.0
         } else {
-            (2.0 * amplitude).clamp(0.0, 100.0)
+            let safe_factor = if factor.is_finite() && factor > 0.0 {
+                factor
+            } else {
+                2.0
+            };
+            (safe_factor * amplitude).clamp(0.0, 100.0)
         }
+    }
+
+    /// Calcula la potencia de envolvente energética del paquete solitónico (Punto #265)
+    #[inline(always)]
+    pub fn compute_soliton_envelope_power(amplitude: f64) -> f64 {
+        Self::compute_soliton_envelope_power_with_factor(amplitude, 2.0)
     }
 
     /// #650 (Ola 50) — VOTO ESPECTRAL del solitón, con el pulso del lado
@@ -180,10 +285,46 @@ impl QuantumStrategy for SolitonWaveEngine {
             })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
+        let amp_scale = registry
+            .get_scoped_parameter(sym_opt, cid_opt, "soliton_amp_scale", "SolitonWaveEngine")
+            .map(|p| p.get_value())
+            .unwrap_or(self.params.amplitude_scale);
+        let safe_amp_scale = if amp_scale.is_finite() && amp_scale > 0.0 {
+            amp_scale
+        } else {
+            1.0
+        };
+        let amp = amp * safe_amp_scale;
+
+        let vel_norm_scale = registry
+            .get_scoped_parameter(
+                sym_opt,
+                cid_opt,
+                "soliton_vel_norm_scale",
+                "SolitonWaveEngine",
+            )
+            .map(|p| p.get_value())
+            .unwrap_or(self.params.velocity_norm_scale);
+        let safe_vel_norm_scale = if vel_norm_scale.is_finite() && vel_norm_scale > 0.0 {
+            vel_norm_scale
+        } else {
+            10.0
+        };
+
+        let sat_momento = registry
+            .get_scoped_parameter(sym_opt, cid_opt, "soliton_sat_momento", "SolitonWaveEngine")
+            .map(|p| p.get_value())
+            .unwrap_or(self.params.sat_momento);
+        let safe_sat_momento = if sat_momento.is_finite() && sat_momento > 0.0 {
+            sat_momento
+        } else {
+            1e4
+        };
+
         let t_time = registry
             .get_scoped_parameter(sym_opt, cid_opt, "soliton_time", "SolitonWaveEngine")
             .map(|p| p.get_value())
-            .unwrap_or(0.05)
+            .unwrap_or(self.params.default_t_time)
             .clamp(0.001, 1.0);
 
         let mid_price = registry
@@ -202,7 +343,7 @@ impl QuantumStrategy for SolitonWaveEngine {
         // AGY-AUD-P12: Adimensionalizar velocidad respecto al precio nominal de forma
         // universal para cualquier activo (invarianza de escala en todo el universo continuo).
         let norm_vel = if mid_price > 1e-8 && vel.abs() > 1e-12 {
-            (vel / mid_price) * 10.0
+            (vel / mid_price) * safe_vel_norm_scale
         } else {
             vel
         };
@@ -214,8 +355,7 @@ impl QuantumStrategy for SolitonWaveEngine {
             // escalón de signum en vel=0). SAT_MOMENTO: 1 bp/s de
             // momentum adimensional ≈ tanh(1); el cosh sigue aportando la
             // amplitud (pico donde hay momentum).
-            const SAT_MOMENTO: f64 = 1e4;
-            (norm_vel * SAT_MOMENTO).tanh() * amp_val
+            (norm_vel * safe_sat_momento).tanh() * amp_val
         } else {
             0.0
         }

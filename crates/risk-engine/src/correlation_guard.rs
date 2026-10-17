@@ -546,8 +546,13 @@ pub fn veto_por_riesgo_real_medido(riesgos: &[f64], rho: Option<f64>, tope: f64)
 
 /// Veto de cartera que une la varianza de grupo equicorrelacionada con la cota
 /// actuarial de Cramér-Lundberg: si existe coeficiente de ajuste `r_lundberg > 0`
-/// para la tolerancia `epsilon` (p. ej. 0.05), el tope efectivo de margen de ruina
-/// es `min(tope_streak, ln(1/eps)/R)`.
+/// para la tolerancia `epsilon` (p. ej. 0.05), la cota sobre exposición de capital f
+/// exige f ≤ tope_streak / m donde m = ln(1/ε)/R es la caída acumulada requerida.
+///
+/// F2.1-01: Corrige la inversión histórica (donde un R mayor requería menos margen m,
+/// provocando erróneamente un veto sobre estrategias de alto edge). Al exigir
+/// tope_efectivo = min(tope_streak, tope_streak / m), el límite es monótono no-decreciente en R:
+/// más edge medido nunca veta lo que menos edge admite.
 #[inline]
 pub fn veto_por_riesgo_cramer_lundberg(
     riesgos: &[f64],
@@ -557,7 +562,10 @@ pub fn veto_por_riesgo_cramer_lundberg(
     epsilon: f64,
 ) -> bool {
     let tope_efectivo = match r_lundberg.and_then(|r| crate::cramer_lundberg::EstimadorSiniestros::margen_de_cota(r, epsilon)) {
-        Some(m) if m.is_finite() && m > 0.0 => tope_streak.min(m),
+        Some(m) if m.is_finite() && m > 0.0 => {
+            let cota_l = tope_streak / m;
+            tope_streak.min(cota_l)
+        }
         _ => tope_streak,
     };
     veto_por_riesgo_real_medido(riesgos, rho, tope_efectivo)
@@ -1283,15 +1291,17 @@ mod ola9_zero_alloc_and_lundberg_tests {
         // Riesgo grupo = 0.04 * sqrt(3 + 3*2*0.2) = 0.04 * sqrt(4.2) = 0.08197 < 0.10 => no veto
         assert!(!veto_por_riesgo_cramer_lundberg(&riesgos, rho, tope_streak, None, 0.05));
 
-        // Con R de Lundberg restrictivo (p. ej. R = 40.0 con eps = 0.05):
-        // Margen m = ln(1/0.05) / 40.0 = ln(20) / 40.0 = 2.9957 / 40.0 = 0.07489
-        // Como m (0.07489) < tope_streak (0.10), el tope efectivo baja a 0.07489
-        // Como riesgo_grupo (0.08197) > 0.07489 => VETO activado por cota de Cramér-Lundberg!
-        assert!(veto_por_riesgo_cramer_lundberg(&riesgos, rho, tope_streak, Some(40.0), 0.05));
+        // Con R de Lundberg bajo / restrictivo (p. ej. R = 1.0 con eps = 0.05):
+        // Margen m = ln(1/0.05) / 1.0 = ln(20) = 2.9957
+        // Cota de exposición: tope_streak / m = 0.10 / 2.9957 = 0.03338 < tope_streak (0.10)
+        // Como riesgo_grupo (0.08197) > 0.03338 => VETO activado por cota de Cramér-Lundberg!
+        assert!(veto_por_riesgo_cramer_lundberg(&riesgos, rho, tope_streak, Some(1.0), 0.05));
 
-        // Con R de Lundberg holgado (p. ej. R = 15.0 con eps = 0.05):
-        // Margen m = ln(20) / 15.0 = 0.1997 > tope_streak (0.10), el tope efectivo se mantiene en 0.10
-        // riesgo_grupo (0.08197) < 0.10 => no veto
-        assert!(!veto_por_riesgo_cramer_lundberg(&riesgos, rho, tope_streak, Some(15.0), 0.05));
+        // Con R de Lundberg alto / holgado (p. ej. R = 40.0 con eps = 0.05):
+        // Margen m = ln(20) / 40.0 = 0.07489
+        // Cota de exposición: tope_streak / m = 0.10 / 0.07489 = 1.335 > tope_streak (0.10)
+        // El tope efectivo se mantiene en tope_streak = 0.10
+        // Como riesgo_grupo (0.08197) < 0.10 => NO VETO (alto edge medido no se castiga nunca!)
+        assert!(!veto_por_riesgo_cramer_lundberg(&riesgos, rho, tope_streak, Some(40.0), 0.05));
     }
 }

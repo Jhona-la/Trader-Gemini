@@ -37,7 +37,7 @@ use std::sync::Arc;
 
 pub const MAX_GAUGE_ASSETS: usize = 32;
 
-/// ⚡ OLA Ω122: Parámetros desacoplados y configurables para la teoría de gauge Yang-Mills
+/// ⚡ OLA Ω122 / Ω138: Parámetros desacoplados y configurables para la teoría de gauge Yang-Mills SU(N)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct YangMillsParams {
     /// Tasa de adaptación estocástica LMS normalizada $\gamma$ (default: 0.005)
@@ -48,6 +48,8 @@ pub struct YangMillsParams {
     pub beta_max: f64,
     /// Factor de escala para corrientes restauradoras $\mathcal{J}_i$ en el argumento tanh (default: 1.0)
     pub current_scale: f64,
+    /// OLA Ω138: Constante de acoplamiento de gauge no-abeliano $g$ para el conmutador $[A_i, A_j]$ (default: 0.05)
+    pub gauge_coupling_g: f64,
 }
 
 impl Default for YangMillsParams {
@@ -57,6 +59,7 @@ impl Default for YangMillsParams {
             beta_min: 0.01,
             beta_max: 100.0,
             current_scale: 1.0,
+            gauge_coupling_g: 0.05,
         }
     }
 }
@@ -75,7 +78,37 @@ impl YangMillsParams {
         if !self.current_scale.is_finite() || !(0.01..=10.0).contains(&self.current_scale) {
             return Err(format!("Invalid current_scale: {}", self.current_scale));
         }
+        if !self.gauge_coupling_g.is_finite() || !(0.0..=1.0).contains(&self.gauge_coupling_g) {
+            return Err(format!("Invalid gauge_coupling_g: {}", self.gauge_coupling_g));
+        }
         Ok(())
+    }
+}
+
+/// OLA Ω138: Métricas de curvatura gauge Yang-Mills SU(N) y holonomía de bucles de Wilson
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct YangMillsMetrics {
+    /// Densidad media de acción de Wilson $\bar{\mathcal{S}}_{\text{YM}} \ge 0$
+    pub action_density: f64,
+    /// Traza media normalizada del bucle de Wilson $\bar{W} \in [-1.0, 1.0]$ (1.0 = equilibrio gauge perfecto)
+    pub wilson_loop: f64,
+    /// Densidad de holonomía $\bar{H} = 1.0 - \bar{W} \in [0.0, 2.0]$
+    pub holonomy_density: f64,
+    /// Norma media del conmutador no-abeliano $[A \wedge A]$
+    pub non_abelian_commutator_norm: f64,
+    /// Número de triángulos activos computados
+    pub active_triangles: usize,
+}
+
+impl Default for YangMillsMetrics {
+    fn default() -> Self {
+        Self {
+            action_density: 0.0,
+            wilson_loop: 1.0,
+            holonomy_density: 0.0,
+            non_abelian_commutator_norm: 0.0,
+            active_triangles: 0,
+        }
     }
 }
 
@@ -96,6 +129,10 @@ pub struct YangMillsGaugeEngine {
     pub count: u64,
     /// Registro omnisciente para deliberación y lectura de parámetros continuos
     pub registry: Option<Arc<OmniscientRegistry>>,
+    /// OLA Ω138: Métricas instantáneas de curvatura no-abeliana y bucles de Wilson
+    pub metrics: YangMillsMetrics,
+    /// OLA Ω138: Últimas corrientes restauradoras calculadas en stack
+    pub currents: [f64; MAX_GAUGE_ASSETS],
 }
 
 impl Default for YangMillsGaugeEngine {
@@ -121,7 +158,21 @@ impl YangMillsGaugeEngine {
             last_ln_prices: [0.0; MAX_GAUGE_ASSETS],
             count: 0,
             registry: None,
+            metrics: YangMillsMetrics::default(),
+            currents: [0.0; MAX_GAUGE_ASSETS],
         }
+    }
+
+    /// OLA Ω138: Acceso inmutable en tiempo O(1) a las métricas de curvatura y bucles de Wilson
+    #[inline]
+    pub fn current_metrics(&self) -> YangMillsMetrics {
+        self.metrics
+    }
+
+    /// OLA Ω138: Acceso inmutable en tiempo O(1) a las corrientes restauradoras J_i
+    #[inline]
+    pub fn current_currents(&self) -> [f64; MAX_GAUGE_ASSETS] {
+        self.currents
     }
 
     /// OLA Ω122: Constructor con parámetros desacoplados específicos
@@ -238,6 +289,8 @@ impl YangMillsGaugeEngine {
 
         // 3. Cómputo de la curvatura 2-forma F_{ijk} para todos los 3-ciclos válidos (vi < vj < vk)
         let mut total_action = 0.0_f64;
+        let mut total_wilson = 0.0_f64;
+        let mut total_commutator = 0.0_f64;
         let mut currents = [0.0_f64; MAX_GAUGE_ASSETS];
         let mut cycle_counts = [0.0_f64; MAX_GAUGE_ASSETS];
         let mut total_cycles = 0usize;
@@ -286,25 +339,39 @@ impl YangMillsGaugeEngine {
                         (d3, -b_ki, -b_kj, 1.0)
                     };
 
-                    // Densidad de acción Yang-Mills combinada (longitudinal + transversal):
-                    // S_plaqueta = 1/2 (F_loop^2 + d_cross^2)
-                    let f_sq = if f_loop.is_finite() && d_cross.is_finite() {
-                        f_loop * f_loop + d_cross * d_cross
-                    } else if f_loop.is_finite() {
-                        f_loop * f_loop
+                    // OLA Ω138: Curvatura gauge Yang-Mills no-abeliana F_{ijk} = F_loop + g · d_cross · (A_ij - A_jk)
+                    let g = self.params.gauge_coupling_g;
+                    let comm_term = if g > 0.0 && d_cross.is_finite() {
+                        g * d_cross * (a_ij - a_jk)
+                    } else {
+                        0.0
+                    };
+                    let f_ym = f_loop + comm_term;
+
+                    // Traza del bucle de Wilson: W = cos(F_ym)
+                    let w_loop = if f_ym.is_finite() { f_ym.cos() } else { 1.0 };
+                    // Densidad de acción Yang-Mills combinada de Wilson (longitudinal + transversal):
+                    // S_plaqueta = 2.0 * (1 - cos(F_ym)) + d_cross^2 (para |F| << 1, 2(1 - cos F) ≈ F^2)
+                    let action_plaqueta = if f_ym.is_finite() && d_cross.is_finite() {
+                        2.0 * (1.0 - w_loop) + d_cross * d_cross
+                    } else if f_ym.is_finite() {
+                        2.0 * (1.0 - w_loop)
                     } else {
                         0.0
                     };
 
-                    if f_sq.is_finite() {
-                        total_action += f_sq;
+                    if action_plaqueta.is_finite() {
+                        total_action += action_plaqueta;
+                        total_wilson += w_loop;
+                        total_commutator += (a_ij * a_jk + a_jk * a_ki + a_ki * a_ij).abs();
                         total_cycles += 1;
 
-                        // Corrientes restauradoras invariantes como gradiente negativo de la acción:
-                        // J = - ∇ S
-                        let j_i = -f_loop * (1.0 - b_ki) - d_cross * d_grad_i;
-                        let j_j = -f_loop * (1.0 - b_ij) - d_cross * d_grad_j;
-                        let j_k = -f_loop * (1.0 - b_jk) - d_cross * d_grad_k;
+                        // Corrientes restauradoras invariantes como gradiente negativo covariante de la acción de Wilson:
+                        // J = - ∇ S_Wilson = - sin(F_ym) · ∇ F - d_cross · ∇ d
+                        let sin_f = if f_ym.is_finite() { f_ym.sin() } else { 0.0 };
+                        let j_i = -sin_f * (1.0 - b_ki) - d_cross * d_grad_i;
+                        let j_j = -sin_f * (1.0 - b_ij) - d_cross * d_grad_j;
+                        let j_k = -sin_f * (1.0 - b_jk) - d_cross * d_grad_k;
 
                         currents[i] += j_i;
                         currents[j] += j_j;
@@ -339,11 +406,25 @@ impl YangMillsGaugeEngine {
         }
 
         // Densidad media de acción gauge por plaqueta triangular (magnitud intensiva e invariante a N)
-        let action_density = if total_cycles > 0 {
-            0.5 * (total_action / (total_cycles as f64))
+        let (action_density, wilson_loop, holonomy_density, commutator_norm) = if total_cycles > 0 {
+            let denom = total_cycles as f64;
+            let a_dens = 0.5 * (total_action / denom);
+            let w_loop = (total_wilson / denom).clamp(-1.0, 1.0);
+            let h_dens = (1.0 - w_loop).max(0.0);
+            let comm_norm = total_commutator / denom;
+            (a_dens, w_loop, h_dens, comm_norm)
         } else {
-            0.0
+            (0.0, 1.0, 0.0, 0.0)
         };
+
+        self.metrics = YangMillsMetrics {
+            action_density,
+            wilson_loop,
+            holonomy_density,
+            non_abelian_commutator_norm: commutator_norm,
+            active_triangles: total_cycles,
+        };
+        self.currents = currents;
 
         (action_density, currents)
     }
@@ -398,6 +479,35 @@ impl QuantumStrategy for YangMillsGaugeEngine {
         // Corriente gauge restauradora J_i:
         // Si J_i > 0, fuerza restauradora alcista; si J_i < 0, fuerza bajista.
         current.clamp(-1.0, 1.0)
+    }
+
+    fn is_operable_for_coin(&self, coin_id: usize, symbol: &str) -> bool {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = Some(coin_id);
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return false,
+        };
+
+        let absent = r
+            .get_scoped_parameter(sym_opt, cid_opt, "yang_mills_current_absent", "YangMillsGaugeEngine")
+            .map(|p| p.get_value())
+            .unwrap_or(0.0) > 0.5;
+        if absent {
+            return false;
+        }
+
+        let active_triangles = r
+            .get_scoped_parameter(sym_opt, cid_opt, "yang_mills_active_triangles", "YangMillsGaugeEngine")
+            .map(|p| p.get_value())
+            .unwrap_or(0.0);
+        let has_current = r
+            .get_scoped_parameter(sym_opt, cid_opt, "yang_mills_current", "YangMillsGaugeEngine")
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite())
+            .is_some();
+
+        has_current && (active_triangles > 0.0 || self.num_assets >= 3)
     }
 
     fn horizon(&self) -> TradeHorizon {

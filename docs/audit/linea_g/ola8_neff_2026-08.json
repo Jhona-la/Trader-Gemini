@@ -1,0 +1,37 @@
+{
+ "monedas": 38,
+ "desde_ms": 1785542410317,
+ "hasta_ms": 1788220739077,
+ "paso_60s": {
+  "barras": 44637,
+  "fraccion_retornos_cero": 0.183,
+  "rho_pearson_medio": 0.435,
+  "rho_signo_medio": 0.326,
+  "rho_signo_5_del_evolver": 0.545,
+  "N_eff_5_evolver": 1.57,
+  "N_eff_13_con_rho_de_las_38": 2.65,
+  "N_eff_38": 2.91,
+  "participacion_autovalores_signo": 7.2,
+  "N_eff_gls_38_cambio_comun": 4.07,
+  "N_eff_gls_13_cambio_comun": 2.48,
+  "N_eff_13_pearson": 1.7,
+  "N_eff_gls_5_evolver": 1.59,
+  "cota_1_sobre_rho": 3.07
+ },
+ "paso_300s": {
+  "barras": 8926,
+  "fraccion_retornos_cero": 0.079,
+  "rho_pearson_medio": 0.484,
+  "rho_signo_medio": 0.337,
+  "rho_signo_5_del_evolver": 0.538,
+  "N_eff_5_evolver": 1.59,
+  "N_eff_13_con_rho_de_las_38": 2.58,
+  "N_eff_38": 2.82,
+  "participacion_autovalores_signo": 6.89,
+  "N_eff_gls_38_cambio_comun": 3.83,
+  "N_eff_gls_13_cambio_comun": 2.48,
+  "N_eff_13_pearson": 1.58,
+  "N_eff_gls_5_evolver": 1.6,
+  "cota_1_sobre_rho": 2.97
+ }
+}

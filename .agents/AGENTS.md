@@ -34,3 +34,16 @@
   editado en un bloque que la otra rama movió a `puertas_del_continuo`)
   pasaron sin marcas de conflicto.
 </RULE[sesiones_concurrentes]>
+
+<RULE[higiene_disco_y_memoria]>
+- LIMITACIÓN FÍSICA CRÍTICA: Laptop de 16 GB RAM sin GPU dedicada. El espacio en disco C se satura con facilidad por compilaciones incrementales de Rust, archivos .pdb masivos y carpetas target/worktrees olvidados.
+- PROTOCOLO OBLIGATORIO DE DISCO:
+  1. PROHIBIDO crear carpetas target alternativas (`target-verify`, `target_build`, `target-cf2`, etc.). Usar únicamente `target/` estándar de Cargo.
+  2. WORKTREES TEMPORALES: Al fusionar una rama o cerrar una tarea, ELIMINAR el worktree con `git worktree remove --force <path>` y correr `git worktree prune`. PROHIBIDO dejar worktrees en detached HEAD abandonados consumiendo 5-15 GB cada uno (en Ola Ω134 se eliminaron 13 worktrees detached recuperando decenas de GB).
+  3. BUILD DE TESTS Y SÍMBOLOS (.PDB): El `Cargo.toml` raíz fija `[profile.dev] debug = 1` y `[profile.test] debug = 1` (line-tables-only). Esto preserva trazas de pánico completas (`RUST_BACKTRACE=1`) pero reduce los archivos `.pdb` y la memoria del enlazador en >85%. PROHIBIDO forzar `debug = 2` en Cargo.toml o flags locales.
+  4. Para comprobaciones rutinarias de tipos, usar `cargo check --workspace --all-targets` en vez de `cargo test` para evitar emitir ejecutables y PDBs innecesarios.
+  5. NUNCA crear dumps de logs o runs masivos dentro de `.claude/worktrees/` o la raíz del proyecto. Los logs efímeros deben ir a `logs/` (ignorado en git) y ser rotados.
+- PROTOCOLO OBLIGATORIO DE RAM:
+  1. No mantener múltiples procesos de ejecución en segundo plano (`god_engine`, replays infinitos, listeners zombis) compitiendo por memoria.
+  2. Al cerrar tareas, verificar con `Get-Process god_engine` que no haya instancias huérfanas bloqueando archivos o RAM.
+</RULE[higiene_disco_y_memoria]>

@@ -1019,6 +1019,7 @@ pub struct GodEngineCore {
     pub risk_engine: RiskEngine,
     pub maker_engines: Vec<MakerEngine>,
     pub feature_engines: Vec<StatefulEngine>,
+    pub helmholtz_engines: Vec<dark_alpha_engine::helmholtz_hodge::HelmholtzHodgeEngine>,
     /// CL-88 (atr-2): tick propio por moneda, para núcleos cuyos slots no son
     /// los símbolos del universo vivo (el examen del demonio). Si está, manda
     /// sobre `tick_size_de` como piso de resolución del ATR.
@@ -1099,6 +1100,16 @@ pub struct GodEngineCore {
     pub hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine,
     /// OLA Ω36/Ω38: Motor de fibrado gauge y curvatura de Yang-Mills sobre el universo multiactivo
     pub yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine,
+    /// OLA Ω139: Motor cuántico de variedades de Kähler y conjetura de Hodge
+    pub kahler_hodge_engine: strategy_core::KahlerHodgeEngine,
+    /// OLA Ω140: Motor cuántico del espectro de ceros de Riemann Zeta y GUE (Montgomery-Odlyzko)
+    pub riemann_zeta_gue_engines: Vec<risk_engine::RiemannZetaGueEngine>,
+    /// OLA Ω141: Motor aritmético-modular de curvas elípticas y Conjetura de Birch y Swinnerton-Dyer (BSD)
+    pub bsd_engines: Vec<strategy_core::BirchSwinnertonDyerEngine>,
+    /// OLA Ω142: Motor cuántico-topológico del Teorema del Índice de Atiyah-Singer y Operador de Dirac
+    pub dirac_engines: Vec<dark_alpha_engine::AtiyahSingerDiracEngine>,
+    /// OLA Ω143: Motor cuántico-hidrodinámico de Transporte Óptimo de Wasserstein-Kantorovich W_2 (Benamou-Brenier)
+    pub wasserstein_engines: Vec<quantum_arena::WassersteinKantorovichEngine>,
     /// OLA Ω53: Motor hidrodinámico de Navier-Stokes y número de Reynolds para flujos L2/L3
     pub navier_stokes_engines: Vec<feature_engine::NavierStokesReynoldsEngine>,
     pub latest_prices: Vec<f64>,
@@ -1216,34 +1227,33 @@ impl GodEngineCore {
         outcome_context: outcome_context::OutcomeContext,
     ) -> Self {
         let initial_capital = arena.config.base_capital.load(Ordering::Relaxed);
+        // LG-23: construir el núcleo NO carga modelos del disco. Ω144 lo hacía
+        // aquí: la clave es el nombre del archivo y `store_global` sustituye la
+        // entrada, así que pisaba el predictor que un oráculo (T-1/T-2/T-3)
+        // acababa de registrar, sólo cuando `models/` era alcanzable desde la
+        // carpeta de ejecución; y cada candidato del demonio/Darwin releía el
+        // directorio. El host carga los suyos antes de construir el núcleo
+        // (`refresh_ml_models`); las herramientas que quieran los del disco
+        // llaman `model_reload::preload_models_from_disk()` explícitamente.
+
         // F-012 FIX: Universal model key — the NanoForest serves ALL assets, not just BTC.
-        // Search order: UNIVERSAL → legacy BTCUSDT_SCALP fallback for backward compatibility.
-        let scalp_forest =
-            crate::ml_inference::NanoForest::get_global("UNIVERSAL").or_else(|| {
-                // Try universal model file first
-                let universal_path = "models/UNIVERSAL_FOREST.json";
-                if std::path::Path::new(universal_path).exists() {
-                    let _ = crate::ml_inference::NanoForest::load_global("UNIVERSAL", universal_path);
-                    return crate::ml_inference::NanoForest::get_global("UNIVERSAL");
-                }
-                // Fallback: legacy BTCUSDT_SCALP model (backward compatible)
-                let legacy_path = "models/BTCUSDT_MOTOR.json";
-                if std::path::Path::new(legacy_path).exists() {
-                    let _ = crate::ml_inference::NanoForest::load_global("UNIVERSAL", legacy_path);
-                    crate::ml_inference::NanoForest::get_global("UNIVERSAL")
-                } else {
-                    None
-                }
-            });
+        // Search order: UNIVERSAL → BTCUSDT_MOTOR → legacy fallback.
+        let scalp_forest = crate::ml_inference::NanoForest::get_global("UNIVERSAL")
+            .or_else(|| crate::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR"));
+
 
         // D-605: una entrada por moneda del arena, con su misma capacidad.
         let n_coins = quantum_arena::state::MAX_COINS;
         let mut maker_engines = Vec::with_capacity(n_coins);
         let mut feature_engines = Vec::with_capacity(n_coins);
+        let mut helmholtz_engines = Vec::with_capacity(n_coins);
 
         for _ in 0..n_coins {
             maker_engines.push(MakerEngine::new(0.0005));
             feature_engines.push(StatefulEngine::new());
+            helmholtz_engines.push(dark_alpha_engine::helmholtz_hodge::HelmholtzHodgeEngine::new(
+                dark_alpha_engine::helmholtz_hodge::HelmholtzHodgeParams::default(),
+            ));
         }
 
         let mut tensor_orchestrator =
@@ -1312,40 +1322,46 @@ impl GodEngineCore {
             signal_engine::feynman_propagator::FeynmanPropagatorEngine::new(),
         ));
 
-        let swing_nn = if let Ok(json_data) =
-            std::fs::read_to_string("models/DarkAlpha_BTCUSDT.json")
-        {
-            if let Ok(mut model) =
-                serde_json::from_str::<dark_alpha_engine::DarkAlphaEngine>(&json_data)
-            {
-                model.init_buffers();
-                model.sanitize_denormals();
-                // T-04: TODO modelo cargado de disco se CONGELA antes de
-                // inferir — los modelos pre-N-11 deserializan descongelados y
-                // sus normalizadores Welford mutan en cada predict (la causa
-                // raíz del no-determinismo entre corridas).
-                model.freeze();
-                telemetry_server::telemetry_log!(
-                    "🧠 [DARK ALPHA] Initial Boot Model Loaded & Sanitized (in_features: {})",
-                    model.layer1.in_features
-                );
-                Some(model)
+        let dark_alpha_path = crate::model_reload::resolve_models_directory()
+            .map(|d| d.join("DarkAlpha_BTCUSDT.json"))
+            .filter(|p| p.is_file())
+            .or_else(|| {
+                [
+                    std::path::PathBuf::from("models/DarkAlpha_BTCUSDT.json"),
+                    std::path::PathBuf::from("../../models/DarkAlpha_BTCUSDT.json"),
+                ]
+                .into_iter()
+                .find(|p| p.is_file())
+            });
+
+        let swing_nn = if let Some(ref path) = dark_alpha_path {
+            if let Ok(json_data) = std::fs::read_to_string(path) {
+                if let Ok(mut model) =
+                    serde_json::from_str::<dark_alpha_engine::DarkAlphaEngine>(&json_data)
+                {
+                    model.init_buffers();
+                    model.sanitize_denormals();
+                    model.freeze();
+                    telemetry_server::telemetry_log!(
+                        "🧠 [DARK ALPHA] Initial Boot Model Loaded & Sanitized (in_features: {}) from {}",
+                        model.layer1.in_features,
+                        path.display()
+                    );
+                    Some(model)
+                } else {
+                    telemetry_server::telemetry_log!(
+                        "⚠️ [DARK ALPHA] Failed to parse {}. Sin modelo — el NN NO opina.",
+                        path.display()
+                    );
+                    None
+                }
             } else {
-                telemetry_server::telemetry_log!(
-                    "⚠️ [DARK ALPHA] Failed to parse models/DarkAlpha_BTCUSDT.json. Sin modelo — el NN NO opina."
-                );
-                // LXXXXI (B-H1 del barrido F5): el fallback era una red
-                // ALEATORIA (Xavier sin entrenar) que VOTABA en el ensamble
-                // Blier — ruido estructural sobre ml_prob de BTC. La ausencia
-                // del artefacto es AUSENCIA de opinión (None), consistente
-                // con la doctrina CL-15 que ya erradicó el 0.5-neutral.
                 None
             }
         } else {
             telemetry_server::telemetry_log!(
                 "⚠️ [DARK ALPHA] models/DarkAlpha_BTCUSDT.json not found. Sin modelo — el NN NO opina."
             );
-            // LXXXXI (B-H1): ídem — ausencia = no-opinión, no red aleatoria.
             None
         };
 
@@ -1380,6 +1396,7 @@ impl GodEngineCore {
             risk_engine: RiskEngine::new(initial_capital),
             maker_engines,
             feature_engines,
+            helmholtz_engines,
             tick_propio: vec![None; n_coins],
             piso_cache: vec![(0, 0.0); n_coins],
             base_z: (0..n_coins).map(|_| base_z::BaseZ::new()).collect(),
@@ -1424,6 +1441,19 @@ impl GodEngineCore {
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
             hodge_flow_engine: feature_engine::HelmholtzHodgeFlowEngine::new(n_coins),
             yang_mills_engine: strategy_core::yang_mills_gauge::YangMillsGaugeEngine::new(n_coins),
+            kahler_hodge_engine: strategy_core::KahlerHodgeEngine::new(n_coins),
+            riemann_zeta_gue_engines: (0..n_coins)
+                .map(|_| risk_engine::RiemannZetaGueEngine::new())
+                .collect(),
+            bsd_engines: (0..n_coins)
+                .map(|_| strategy_core::BirchSwinnertonDyerEngine::new())
+                .collect(),
+            dirac_engines: (0..n_coins)
+                .map(|_| dark_alpha_engine::AtiyahSingerDiracEngine::new())
+                .collect(),
+            wasserstein_engines: (0..n_coins)
+                .map(|_| quantum_arena::WassersteinKantorovichEngine::new())
+                .collect(),
             navier_stokes_engines: (0..n_coins)
                 .map(|_| feature_engine::NavierStokesReynoldsEngine::new())
                 .collect(),
@@ -1786,6 +1816,42 @@ impl GodEngineCore {
         self.arena.registry.set("multifractal_w_macro", mf_mac);
         self.arena.registry.set("multifractal_tanh_scale", mf_scale);
         self.arena.registry.set("burst_threshold_zscore", burst_th);
+
+        // OLA Ω129: Sincronización de VECM Cointegración, Solitón y Resonancia Estocástica
+        let vecm_entry = self.arena.config.vecm_z_entry.load(Ordering::Relaxed);
+        let vecm_sat = self.arena.config.vecm_z_saturation.load(Ordering::Relaxed);
+        let sol_sat = self.arena.config.soliton_sat_momento.load(Ordering::Relaxed);
+        let stoch_gain = self.arena.config.stochastic_res_peak_gain.load(Ordering::Relaxed);
+
+        self.arena.registry.set("vecm_z_entry", vecm_entry);
+        self.arena.registry.set("vecm_z_saturation", vecm_sat);
+        self.arena.registry.set("soliton_sat_momento", sol_sat);
+        self.arena.registry.set("stochastic_res_peak_gain", stoch_gain);
+
+        // OLA Ω130: Sincronización de Parámetros Dinámicos de Micro-Apalancamiento y Coherencia Espectral
+        let m_base = self.arena.config.micro_lev_base.load(Ordering::Relaxed);
+        let m_bonus = self.arena.config.micro_lev_bonus.load(Ordering::Relaxed);
+        let m_center = self.arena.config.micro_lev_conf_center.load(Ordering::Relaxed);
+        let m_width = self.arena.config.micro_lev_conf_width.load(Ordering::Relaxed);
+        let macro_cap = self.arena.config.macro_lev_cap.load(Ordering::Relaxed);
+        let b_ratio = self.arena.config.base_micro_ratio.load(Ordering::Relaxed);
+        let coh_sc = self.arena.config.spec_coh_scale.load(Ordering::Relaxed);
+        let ent_sc = self.arena.config.spec_ent_scale.load(Ordering::Relaxed);
+
+        self.arena.registry.set("micro_lev_base", m_base);
+        self.arena.registry.set("micro_lev_bonus", m_bonus);
+        self.arena.registry.set("micro_lev_conf_center", m_center);
+        self.arena.registry.set("micro_lev_conf_width", m_width);
+        self.arena.registry.set("macro_lev_cap", macro_cap);
+        self.arena.registry.set("base_micro_ratio", b_ratio);
+        self.arena.registry.set("spec_coh_scale", coh_sc);
+        self.arena.registry.set("spec_ent_scale", ent_sc);
+
+        // OLA Ω133: Sincronización de Parámetros Dinámicos de Liquidez Oculta y Compuerta Conformal
+        let hid_liq_w = self.arena.config.hidden_liquidity_weight.load(Ordering::Relaxed);
+        let conf_strict = self.arena.config.conformal_gate_strictness.load(Ordering::Relaxed);
+        self.arena.registry.set("hidden_liquidity_weight", hid_liq_w);
+        self.arena.registry.set("conformal_gate_strictness", conf_strict);
     }
 
     #[inline]
@@ -3079,11 +3145,48 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "sombra_conformal_v_max", v_conf);
                     }
 
-                    // #622→#649: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE
+                    // #622→#649 / Ω137→Ω144: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE con
+                    // FÍSICA CUÁNTICA COMPLETA: Helmholtz-Hodge, Gauge Yang-Mills, Kähler-Hodge,
+                    // Riemann GUE, BSD, Atiyah-Singer Dirac y Wasserstein-Kantorovich W_2.
+                    let h_lam_frac = self.helmholtz_engines.get(coin_id)
+                        .map(|h| h.current_decomposition().laminar_fraction)
+                        .unwrap_or(1.0);
+                    let p_ice = self.arena.registry
+                        .get_for_coin_or(coin_id, "hidden_liquidity_pressure", 0.0);
+                    let ym_current = self.arena.registry
+                        .get_for_coin_or(coin_id, "yang_mills_current", 0.0);
+                    let kh_current = self.arena.registry
+                        .get_for_coin_or(coin_id, "kahler_restoring_current", 0.0);
+                    let rz_conv = self.arena.registry
+                        .get_for_coin_or(coin_id, "riemann_gue_conviction", 1.0);
+                    let bsd_current = self.arena.registry
+                        .get_for_coin_or(coin_id, "bsd_restoring_current", 0.0);
+                    let bsd_conv = self.arena.registry
+                        .get_for_coin_or(coin_id, "bsd_conviction_modulation", 1.0);
+                    let dirac_current = self.arena.registry
+                        .get_for_coin_or(coin_id, "dirac_chiral_current", 0.0);
+                    let dirac_conv = self.arena.registry
+                        .get_for_coin_or(coin_id, "dirac_conviction_modulation", 1.0);
+                    let wk_velocity = self.arena.registry
+                        .get_for_coin_or(coin_id, "wasserstein_barycenter_velocity", 0.0);
+                    let wk_conv = self.arena.registry
+                        .get_for_coin_or(coin_id, "wasserstein_conviction_modulation", 1.0);
+
                     let voto_confluence =
-                        signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral(
+                        signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
                             &desplazamientos,
                             ratio_hawkes_fresco,
+                            p_ice,
+                            h_lam_frac,
+                            ym_current,
+                            kh_current,
+                            rz_conv,
+                            bsd_current,
+                            bsd_conv,
+                            dirac_current,
+                            dirac_conv,
+                            wk_velocity,
+                            wk_conv,
                         );
                     if let Some(media_conf_fl) = voto_confluence.media_banda(0, 31) {
                         self.arena
@@ -3220,8 +3323,8 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "sombra_navier_v_max", v_nav);
                     }
 
-                    // #623 (Ola 44 & Antigravity): CONSENSO ESPECTRAL INTEGRAL (13 MOTORES):
-                    // Todos los 13 motores con voto_espectral() componen en el consenso espectral
+                    // #623 (Ola 44 & Antigravity) & Ola Ω146: CONSENSO ESPECTRAL INTEGRAL (15 MOTORES):
+                    // Todos los 15 motores con voto_espectral() componen en el consenso espectral
                     // (media ponderada por escala, normalizada) y se publica su escala dominante +
                     // media de banda. Es la síntesis temporal espectral multiescala sin sesgo discreto.
                     let votos_espectrales = [
@@ -3238,8 +3341,10 @@ impl GodEngineCore {
                         voto_confluence,
                         voto_tr,
                         voto_entropy,
+                        voto_navier,
+                        voto_feynman,
                     ];
-                    // #626 (Ola 47, reconciliado con AGY 13/13) — PESOS POR
+                    // #626 (Ola 47, reconciliado con AGY 13/13) & Ola Ω146 (15/15) — PESOS POR
                     // HABILIDAD: el score ocurre AL CIERRE en el camino
                     // general (#648/H6); aquí, con votos frescos, sólo se
                     // RE-ARMA el snapshot de los bloques que nacieron. En
@@ -3247,7 +3352,7 @@ impl GodEngineCore {
                     // pesos iguales; la ponderación SÓLO entra con evidencia
                     // madura. Es el cierre espectral de D-752: la convicción
                     // se GANA con historial propio, no se asume igual para
-                    // trece físicas.
+                    // quince físicas.
                     if coin_id < self.skill_motores.len() {
                         for escala in 0..32 {
                             self.skill_motores[coin_id]
@@ -4592,6 +4697,9 @@ impl GodEngineCore {
                     // es la base del enfriamiento posterior. Se lee ANTES de
                     // cerrar, mientras el estado de la posicion sigue viva.
                     let tau_de_la_posicion = pos.entry_tau_ms.load(Ordering::Relaxed);
+                    // CL-130: el SL PROPIO de la posición (0 si se adoptó del
+                    // exchange sin él); `close_with_fee` lo borra.
+                    let sl_propio = pos.sl_price.load(Ordering::Relaxed);
                     let (closed_side, closed_entry, closed_qty, margin_used, entry_fee_paid) = pos.close_with_fee();
                     // CL-45b: lo cerrado manda (un llenado parcial confirmado
                     // en paralelo pudo reescalar la ranura tras la lectura).
@@ -4749,7 +4857,7 @@ impl GodEngineCore {
                     // Al alarmar: sembrar el bias (×0.5) — el tamaño se
                     // encoge vía LH-04/streak-118 y el OU lo relaja si la
                     // fuente recupera (no absorbente) — y reiniciar.
-                    {
+                    let lg22_sembrar = {
                         let riesgo_al_stop = (sl * entry * qty).max(1e-12);
                         let friccion_rt = live_fee * 2.0;
                         let r_max = ((tp - friccion_rt).max(1e-9)) / sl.max(1e-9);
@@ -4780,20 +4888,24 @@ impl GodEngineCore {
                             "lg22_alarma",
                             if alarma_lg22 { 1.0 } else { 0.0 },
                         );
-                        if alarma_lg22 {
-                            // Sembrar el bias: la pausa de régimen reutiliza
-                            // el mecanismo OU que LH-04/streak-118 ya
-                            // consumen — encoge el tamaño, no mata la fuente.
-                            let bias_prev =
-                                self.arena.coins[coin_id].epigenetic_bias.load(Ordering::Relaxed);
-                            self.arena.coins[coin_id].epigenetic_bias.store(
-                                (bias_prev * 0.5).max(0.05),
-                                Ordering::Relaxed,
-                            );
-                        }
-                    }
+                        alarma_lg22
+                    };
 
                     coin.apply_spectral_epigenetic_feedback_with_time(pnl_epigenetico, position_age_ms, tau_trade_ms, event_time_ms);
+                    if lg22_sembrar {
+                        // Sembrar el bias: la pausa de régimen reutiliza el
+                        // mecanismo OU que LH-04/streak-118 ya consumen —
+                        // encoge el tamaño, no mata la fuente. LG-22b: se
+                        // siembra DESPUÉS de la realimentación del cierre,
+                        // sobre el sesgo ya avanzado a este instante; antes se
+                        // sembraba sobre el valor con la marca del cierre
+                        // anterior y la relajación OU lo devolvía hacia 1
+                        // durante el hueco (≈ 0,78 con cierres cada 60 min).
+                        // El suelo es el de los lectores (0,5).
+                        let bias = coin.epigenetic_bias.load(Ordering::Relaxed);
+                        coin.epigenetic_bias
+                            .store((bias * 0.5).clamp(0.50, 2.00), Ordering::Relaxed);
+                    }
 
                     // 2. Adaptacion continua tensorial de las 32 escalas espectrales en el espacio de Hilbert:
                     if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
@@ -5178,6 +5290,26 @@ impl GodEngineCore {
                         self.arena.perdida_en_stops.load(Ordering::Relaxed),
                     );
                     self.arena.registry.set("ville_estrategia_e", e_estrategia);
+                    // CL-130 (R1 de la revisión del PR #62): la caída del freno
+                    // duro se cuenta en stops DE ESTA POSICIÓN, PnL neto /
+                    // (cantidad × |entrada − SL propio|). Antes se medía en USD
+                    // y se dividía por la EWMA del riesgo de las últimas
+                    // órdenes, que encoge en una racha perdedora (LH-04). Una
+                    // posición sin SL propio no cuenta: su caída la cubre d*.
+                    let riesgo_al_stop_usd = qty * (entry - sl_propio).abs();
+                    let resultado_en_stops = if sl_propio > 0.0
+                        && riesgo_al_stop_usd.is_finite()
+                        && riesgo_al_stop_usd > 0.0
+                    {
+                        net_trade_pnl / riesgo_al_stop_usd
+                    } else {
+                        f64::NAN
+                    };
+                    let caida_en_stops = risk_engine::drawdown::registrar_resultado_en_stops(
+                        &self.arena,
+                        resultado_en_stops,
+                    );
+                    self.arena.registry.set("freno_duro_caida_en_stops", caida_en_stops);
                     signal_engine::perceptron_gate::PerceptronGateEngine::update_weight(
                         &mut cur_hebbian,
                         resultado_r,
@@ -5505,6 +5637,47 @@ impl GodEngineCore {
                 "obi_p80_medido",
                 self.cuantiles[coin_id].dynamic_obi_threshold(),
             );
+
+            // OLA Ω133: Detector de Absorción Institucional y Liquidez Oculta (Kyle-Hasbrouck)
+            let hidden_liq_engine = dark_alpha_engine::hidden_liquidity::HiddenLiquidityEngine::default();
+            let abs_state = hidden_liq_engine.compute_absorption(
+                self.feature_engines[coin_id].ultima_cantidad_trade,
+                bid_qty,
+                ask_qty,
+                dir_v,
+                v_t.abs().max(1e-6),
+            );
+            set_reg("hidden_liquidity_pressure", abs_state.net_iceberg_pressure);
+            set_reg(
+                "is_iceberg_active",
+                if abs_state.is_iceberg_active { 1.0 } else { 0.0 },
+            );
+            set_reg(
+                "hidden_liquidity_conformal_scale",
+                abs_state.conformal_band_scale,
+            );
+            set_reg("hidden_liquidity_ask_abs", abs_state.ask_absorption_ratio);
+            set_reg("hidden_liquidity_bid_abs", abs_state.bid_absorption_ratio);
+
+            // OLA Ω137: Descomposición Hidrodinámica de Helmholtz-Hodge (L² = ∇φ ⊕ ∇×A ⊕ h)
+            // Desacoplamiento ortogonal continuo de flujo potencial, vorticidad/spoofing y deriva armónica
+            let price_delta_bps = if mid_price > 0.0 && dir_v.is_finite() {
+                (dir_v / mid_price) * 10_000.0
+            } else {
+                0.0
+            };
+            let h_decomp = self.helmholtz_engines[coin_id].update(price_delta_bps, ofi_value);
+            set_reg("helmholtz_laminar_fraction", h_decomp.laminar_fraction);
+            set_reg("helmholtz_enstrophy", h_decomp.enstrophy);
+            set_reg("helmholtz_laminar_energy", h_decomp.laminar_energy);
+            set_reg("helmholtz_harmonic_energy", h_decomp.harmonic_energy);
+            set_reg("helmholtz_potential_dir", h_decomp.potential_direction);
+            set_reg(
+                "helmholtz_is_safe",
+                if h_decomp.is_laminar_safe { 1.0 } else { 0.0 },
+            );
+            set_reg("helmholtz_conviction", h_decomp.conviction_factor);
+
             // #591 — PROYECCIÓN ESPECTRAL TEMPORAL al motor de señales. El
             // espectro (32 escalas) vivía confinado al núcleo: los motores
             // votaban sobre micro-features sin NINGUNA lectura del estado
@@ -6223,6 +6396,7 @@ impl GodEngineCore {
                 }
             }
             let (ym_action, ym_currents) = self.yang_mills_engine.update_and_calculate_curvature(&fresh_prices[..n_prices]);
+            let ym_metrics = self.yang_mills_engine.current_metrics();
             // R6-A13: Semántica no ambigua para monedas fuera de la matriz gauge (clave explícita yang_mills_current_absent)
             let (ym_coin_current, ym_current_absent) = if coin_id < ym_currents.len() {
                 (ym_currents[coin_id], 0.0)
@@ -6230,6 +6404,10 @@ impl GodEngineCore {
                 (0.0, 1.0)
             };
             set_reg("yang_mills_action", ym_action);
+            set_reg("yang_mills_wilson_loop", ym_metrics.wilson_loop);
+            set_reg("yang_mills_holonomy", ym_metrics.holonomy_density);
+            set_reg("yang_mills_commutator_norm", ym_metrics.non_abelian_commutator_norm);
+            set_reg("yang_mills_active_triangles", ym_metrics.active_triangles as f64);
             set_reg("yang_mills_current", ym_coin_current);
             set_reg("yang_mills_current_absent", ym_current_absent);
 
@@ -6260,6 +6438,71 @@ impl GodEngineCore {
             set_reg("hodge_curl_share", hodge_curl_share);
             set_reg("hodge_gradient_energy", hodge_grad_energy);
             set_reg("hodge_curl_energy", hodge_curl_energy);
+
+            // OLA Ω139: Variedades de Kähler y Conjetura de Hodge (geometría compleja multiactivo)
+            let (kh_metrics, kh_currents) = self.kahler_hodge_engine.update_and_calculate_manifold(
+                &fresh_prices[..n_prices],
+                &fresh_ofis[..n_flows],
+            );
+            let (kh_coin_current, kh_current_absent) = if coin_id < kh_currents.len() {
+                (kh_currents[coin_id], 0.0)
+            } else {
+                (0.0, 1.0)
+            };
+            set_reg("kahler_ricci_scalar", kh_metrics.ricci_scalar);
+            set_reg("kahler_hodge_1_1_energy", kh_metrics.hodge_1_1_energy);
+            set_reg("kahler_potential", kh_metrics.kahler_potential);
+            set_reg("kahler_calabi_yau_flatness", kh_metrics.calabi_yau_flatness);
+            set_reg("kahler_calabi_yau_distance", kh_metrics.calabi_yau_distance);
+            set_reg("kahler_restoring_current", kh_coin_current);
+            set_reg("kahler_current_absent", kh_current_absent);
+
+            // OLA Ω140: Espectro de Ceros de Riemann Zeta y Matrices Aleatorias Cuánticas GUE (Montgomery-Odlyzko)
+            if let Some(rz_engine) = self.riemann_zeta_gue_engines.get_mut(coin_id) {
+                let energy_obs = (mid_price * (1.0 + ofi_value * 0.01) + hawkes_ratio_real * spread_val).max(1e-9);
+                let gue_state = rz_engine.observe_energy_level(energy_obs);
+                set_reg("riemann_gue_gap_ratio", gue_state.mean_gap_ratio);
+                set_reg("riemann_gue_repulsion", gue_state.gue_level_repulsion);
+                set_reg("riemann_montgomery_corr", gue_state.montgomery_pair_correlation);
+                set_reg("riemann_dyson_rigidity", gue_state.dyson_mehta_rigidity);
+                set_reg("riemann_critical_stability", gue_state.critical_line_stability);
+                set_reg("riemann_gue_conviction", gue_state.gue_conviction_modulation);
+            }
+
+            // OLA Ω141: Conjetura de Birch y Swinnerton-Dyer (Curvas Elípticas de Weierstrass y Rango Analítico L(E, 1))
+            if let Some(bsd_engine) = self.bsd_engines.get_mut(coin_id) {
+                let bsd_metrics = bsd_engine.observe_phase_point(pos_dev, ofi_norm);
+                set_reg("bsd_discriminant", bsd_metrics.discriminant);
+                set_reg("bsd_l_value_at_one", bsd_metrics.l_value_at_one);
+                set_reg("bsd_frobenius_trace", bsd_metrics.frobenius_trace_norm);
+                set_reg("bsd_analytic_rank", bsd_metrics.analytic_rank_proxy);
+                set_reg("bsd_non_singularity", bsd_metrics.non_singularity);
+                set_reg("bsd_restoring_current", bsd_metrics.bsd_restoring_current);
+                set_reg("bsd_conviction_modulation", bsd_metrics.bsd_conviction_modulation);
+            }
+
+            // OLA Ω142: Teorema del Índice de Atiyah-Singer y Modos Cero del Operador de Dirac
+            if let Some(dirac_engine) = self.dirac_engines.get_mut(coin_id) {
+                let dirac_metrics = dirac_engine.observe_spinor_state(pos_dev, ofi_norm);
+                set_reg("dirac_a_roof_genus", dirac_metrics.a_roof_genus);
+                set_reg("dirac_chern_character", dirac_metrics.chern_character);
+                set_reg("dirac_atiyah_singer_index", dirac_metrics.atiyah_singer_index);
+                set_reg("dirac_chiral_asymmetry", dirac_metrics.chiral_zero_mode_asymmetry);
+                set_reg("dirac_chiral_current", dirac_metrics.chiral_anomaly_current);
+                set_reg("dirac_conviction_modulation", dirac_metrics.dirac_conviction_modulation);
+            }
+
+            // OLA Ω143: Transporte Óptimo de Wasserstein-Kantorovich W_2 y Dinámica de Benamou-Brenier
+            if let Some(wk_engine) = self.wasserstein_engines.get_mut(coin_id) {
+                let spectral_coord = pos_dev + 0.50 * ofi_norm;
+                let wk_metrics = wk_engine.observe_spectral_measure(spectral_coord);
+                set_reg("wasserstein_w2_distance", wk_metrics.wasserstein_w2_distance);
+                set_reg("wasserstein_kinetic_action", wk_metrics.kantorovich_kinetic_action);
+                set_reg("wasserstein_barycenter_velocity", wk_metrics.barycenter_transport_velocity);
+                set_reg("wasserstein_geodesic_coherence", wk_metrics.geodesic_coherence_ratio);
+                set_reg("wasserstein_shape_deformation", wk_metrics.shape_deformation_energy);
+                set_reg("wasserstein_conviction_modulation", wk_metrics.wasserstein_conviction_modulation);
+            }
 
             // OLA Ω53: Ecuaciones del Milenio - Hidrodinámica de Navier-Stokes y Número de Reynolds L2/L3
             if let Some(ns_engine) = self.navier_stokes_engines.get_mut(coin_id) {
@@ -9549,6 +9792,11 @@ impl GodEngineCore {
                                 }
                                 self.diag_opened += 1;
                                 self.diag_dir.record_open(is_long);
+                                // CL-131 (R2 de la revisión del PR #62): lo
+                                // medido de la orden (riesgo al stop y
+                                // geometría) entra en las medias de la cuenta
+                                // ahora que está abierta, una vez.
+                                self.risk_engine.registrar_orden_abierta(&self.arena, coin_id);
                                 // Fail closed for attribution if another transition
                                 // interleaved. This is not a transactional fill ledger.
                                 self.council_entry_evidence[coin_id][target_pos_slot] =

@@ -1801,16 +1801,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // guarda por entorno para que un reinicio no borre la caída
             // acumulada (antes el pico nacía en el capital ya caído). Para
             // empezar de cero tras un retiro de fondos, se borra el archivo.
+            // CL-133 (R5 de la revisión del PR #62): un archivo por venue.
+            // Testnet y papel de mainnet comparten `data/demo` (CL-61), y el
+            // pico de 5 000 USDT de testnet bloqueaba la sesión de papel con
+            // 13 USD reales (caída del 99,7 % ≥ d*). El archivo sin venue
+            // de antes se adopta una vez, si este venue no tiene el suyo, y
+            // se renombra para que el otro venue no lo vuelva a adoptar.
+            // CL-133 (B2): un pico ilegible no es un pico ausente: no entran
+            // posiciones nuevas y no se sobrescribe, como el estado (CL-108f).
             let ruta_pico = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
-                "pico_capital.txt",
+                &risk_engine::drawdown::archivo_pico(),
             ));
-            if let Some(guardado) = risk_engine::drawdown::cargar_pico(&ruta_pico) {
-                let pico = risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, guardado);
-                telemetry_server::telemetry_log!(
-                    "🛡️ [IMMUNE] pico del capital restaurado: ${:.4} (guardado ${:.4})",
-                    pico,
-                    guardado
-                );
+            let ruta_pico_sin_venue = std::path::PathBuf::from(quantum_arena::paths::env_data_path(
+                risk_engine::drawdown::ARCHIVO_PICO_SIN_VENUE,
+            ));
+            let mut pico_ilegible = false;
+            let carga_pico = match risk_engine::drawdown::leer_pico(&ruta_pico) {
+                risk_engine::drawdown::CargaPico::Ausente => {
+                    let antigua = risk_engine::drawdown::leer_pico(&ruta_pico_sin_venue);
+                    if matches!(antigua, risk_engine::drawdown::CargaPico::Leido(_)) {
+                        let adoptado = ruta_pico_sin_venue.with_extension("txt.adoptado");
+                        if let Err(e) = std::fs::rename(&ruta_pico_sin_venue, &adoptado) {
+                            telemetry_server::telemetry_log!(
+                                "⚠️ [IMMUNE] no se pudo renombrar {}: {}",
+                                ruta_pico_sin_venue.display(),
+                                e
+                            );
+                        }
+                    }
+                    antigua
+                }
+                otra => otra,
+            };
+            match carga_pico {
+                risk_engine::drawdown::CargaPico::Leido(guardado) => {
+                    let pico =
+                        risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, guardado);
+                    telemetry_server::telemetry_log!(
+                        "🛡️ [IMMUNE] pico del capital restaurado: ${:.4} (guardado ${:.4})",
+                        pico,
+                        guardado
+                    );
+                }
+                risk_engine::drawdown::CargaPico::Ilegible(m) => {
+                    pico_ilegible = true;
+                    arena_imm.pico_ilegible.store(true, Ordering::Relaxed);
+                    telemetry_server::telemetry_log!(
+                        "🚨 [IMMUNE] pico del capital ILEGIBLE ({}): no entran posiciones nuevas y el archivo no se sobrescribe hasta que el operador lo repare o lo retire.",
+                        m
+                    );
+                }
+                risk_engine::drawdown::CargaPico::Ausente => {}
             }
             rt_handle.spawn(async move {
                 let mut latched = false;
@@ -1829,42 +1870,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // (2) Drawdown sobre pico observado (muestreo 5s).
                     // X-013: mínimo entre plano arena y plano exchange — el
                     // más conservador gobierna la defensa.
-                    let cap_arena = arena_imm.unified_capital.load(Ordering::Relaxed);
+                    // CL-132 (R3 de la revisión del PR #62): el host publica el
+                    // plano del exchange en el arena y el pico se registra y se
+                    // mide con el MISMO capital que usa el riesgo
+                    // (`drawdown::capital_del_freno`, el más conservador de los
+                    // dos planos). Antes el riesgo subía el pico con el arena y
+                    // el host medía con el mínimo: en papel sobre mainnet,
+                    // ganar en papel se veía como una caída del saldo real.
                     let cap_exchange =
                         f64::from_bits(exchange_capital_imm.load(Ordering::Relaxed));
-                    let cap = if cap_exchange > 0.0 {
-                        cap_arena.min(cap_exchange)
-                    } else {
-                        cap_arena
-                    };
+                    arena_imm.capital_exchange.store(
+                        if cap_exchange.is_finite() && cap_exchange > 0.0 {
+                            cap_exchange
+                        } else {
+                            0.0
+                        },
+                        Ordering::Relaxed,
+                    );
+                    let cap = risk_engine::drawdown::capital_del_freno(&arena_imm);
                     let peak_capital =
                         risk_engine::drawdown::registrar_pico(&arena_imm.pico_capital, cap);
-                    if peak_capital > pico_guardado
+                    if !pico_ilegible
+                        && peak_capital > pico_guardado
                         && risk_engine::drawdown::guardar_pico(&ruta_pico, peak_capital).is_ok()
                     {
                         pico_guardado = peak_capital;
                     }
-                    let dd = if peak_capital > 0.0 {
-                        (peak_capital - cap) / peak_capital
-                    } else {
-                        0.0
-                    };
-                    // CL-106 (LC-F4-10, decisión del dueño «Ambos»): el MISMO
-                    // umbral que el veto de entradas del riesgo, una prueba de
-                    // nivel α con el tamaño real de las órdenes (cuantil 95 % de
-                    // la caída máxima en 200 operaciones con H0 = +0,05 R, en
-                    // unidades del riesgo medido al stop), acotado por d*. Antes
-                    // era la prueba de racha (D-744/CL-9): con riesgo medido,
-                    // 2,2-3,8 % con 13 USD, que aplanaba y bloqueaba la cuenta en
-                    // el 36-49 % de las rachas de 200 operaciones aun con +0,30 R
-                    // de ventaja. Sin riesgo medido (arranque) rige d*.
-                    let max_dd = risk_engine::drawdown::umbral_freno_duro_de(&arena_imm, peak_capital);
+                    // CL-106 → CL-130 (R1 de la revisión del PR #62): el MISMO
+                    // freno duro que el veto de entradas del riesgo. Dispara
+                    // cuando la caída de los cierres, contada en stops de SUS
+                    // posiciones, llega al cuantil 95 % de la caída máxima en
+                    // 200 operaciones con H0 = +0,05 R, o cuando la caída del
+                    // capital desde el pico llega a d*. Antes la caída en USD
+                    // se dividía por la EWMA del riesgo de las últimas órdenes,
+                    // que encoge en una racha perdedora (LH-04): disparaba tras
+                    // 13 SL en vez de 31.
+                    let freno = risk_engine::drawdown::freno_duro(&arena_imm, peak_capital, cap);
                     // Una cuenta liquidada (cap <= 0) debe DISPARAR el sistema
                     // inmune, no desarmarlo: el guard `cap > 0.0` anterior
                     // dejaba todos los frenos apagados exactamente en el único
                     // escenario donde son críticos.
                     let insolvent = cap <= 0.0;
-                    let dd_breach = max_dd > 0.0 && dd >= max_dd;
+                    let dd_breach = freno.echado();
 
                     // (3) Latencia: 3 muestras consecutivas por encima del umbral.
                     let lat = arena_imm.last_ws_latency_ms.load(Ordering::Relaxed);
@@ -1911,11 +1958,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 cap
                             )
                         } else if dd_breach {
-                            format!(
-                                "drawdown {:.1}% >= límite {:.1}%",
-                                dd * 100.0,
-                                max_dd * 100.0
-                            )
+                            format!("drawdown: {freno}")
                         } else {
                             format!("latencia {}ms > {}ms sostenida", lat, lat_thresh)
                         };

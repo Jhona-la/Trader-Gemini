@@ -248,9 +248,15 @@ fn evolve_main() {
         len, train_len, test_len
     );
 
-    let iterations = 50;
-    let initial_temp = 100.0;
-    let cooling_rate = 0.90;
+    // GLM 135 (F1 de Sol): parámetros del SA RESUELTOS, no hardcodeados.
+    // Env del operador (TG_SA_*) > defaults históricos — bit-paridad de
+    // conducta si nadie configura nada. Guards: fuera-de-rango/NaN ⇒
+    // default con telemetría, jamás aborta. Ver src/sa_params.rs.
+    // (La lib del paquete raíz se llama `quantum_engine` — Cargo.toml:189.)
+    let sa = quantum_engine::sa_params::resolve_sa_params();
+    let iterations = sa.iterations;
+    let initial_temp = sa.initial_temp;
+    let cooling_rate = sa.cooling_rate;
 
     let mut current_config = Genotype::load_or_default();
 

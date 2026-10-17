@@ -254,13 +254,83 @@ pub fn guardar_pico(ruta: &std::path::Path, pico: f64) -> std::io::Result<()> {
     std::fs::rename(&tmp, ruta)
 }
 
-/// CL-99 — lee el pico guardado. `None` si no hay archivo o no contiene un
-/// capital finito y positivo: el llamador sigue con el capital del arranque,
-/// como antes.
+/// CL-133 (B2 de la revisión del PR #62) — lo que se encontró al leer el
+/// pico guardado. Un archivo ilegible (coma decimal, BOM, error de E/S) no es
+/// un archivo ausente: tratarlo como ausente perdonaba la caída sin aviso, y
+/// el host lo sobrescribía a los 5 s. Mismo criterio que el estado aprendido
+/// (CL-108f).
+#[derive(Debug, Clone, PartialEq)]
+pub enum CargaPico {
+    /// No hay archivo: primer arranque, o el operador lo borró para empezar
+    /// de cero tras un retiro de fondos.
+    Ausente,
+    /// El archivo existe pero no se puede leer o no contiene un capital
+    /// finito y positivo.
+    Ilegible(String),
+    Leido(f64),
+}
+
+/// CL-99 / CL-133 — lee el pico guardado.
+pub fn leer_pico(ruta: &std::path::Path) -> CargaPico {
+    let texto = match std::fs::read_to_string(ruta) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return CargaPico::Ausente,
+        Err(e) => return CargaPico::Ilegible(format!("no se puede leer: {e}")),
+    };
+    match texto.trim().parse::<f64>() {
+        Ok(pico) if pico.is_finite() && pico > 0.0 => CargaPico::Leido(pico),
+        _ => CargaPico::Ilegible(format!(
+            "{:?} no es un capital finito y positivo",
+            texto.trim().chars().take(40).collect::<String>()
+        )),
+    }
+}
+
+/// CL-99 — el pico guardado, si se pudo leer. `None` si no hay archivo o es
+/// ilegible: para distinguir los dos casos, [`leer_pico`].
 pub fn cargar_pico(ruta: &std::path::Path) -> Option<f64> {
-    let texto = std::fs::read_to_string(ruta).ok()?;
-    let pico: f64 = texto.trim().parse().ok()?;
-    (pico.is_finite() && pico > 0.0).then_some(pico)
+    match leer_pico(ruta) {
+        CargaPico::Leido(pico) => Some(pico),
+        CargaPico::Ausente | CargaPico::Ilegible(_) => None,
+    }
+}
+
+/// CL-133 (R5 de la revisión del PR #62) — nombre del archivo del pico del
+/// VENUE de este proceso (`quantum_arena::paths::is_demo_env`: demo, testnet
+/// o shadow frente a mainnet). Testnet y papel de mainnet guardan en
+/// `data/demo` (CL-61): con un solo archivo, el pico de 5 000 USDT de una
+/// sesión de testnet bloqueaba la sesión de papel siguiente con 13 USD
+/// reales (caída del 99,7 % ≥ d*).
+pub fn archivo_pico() -> String {
+    let venue = if quantum_arena::paths::is_demo_env() {
+        "prueba"
+    } else {
+        "mainnet"
+    };
+    format!("pico_capital_{venue}.txt")
+}
+
+/// El archivo del pico de antes de CL-133, sin venue. El host lo adopta una
+/// vez, si el venue no tiene el suyo, y lo renombra.
+pub const ARCHIVO_PICO_SIN_VENUE: &str = "pico_capital.txt";
+
+/// CL-132 (R3 de la revisión del PR #62) — EL CAPITAL DE LOS FRENOS DE
+/// DRAWDOWN: el más conservador de los dos planos, el del arena y el saldo
+/// del exchange que publica el host (X-013). El host y el riesgo registran
+/// el pico y miden la caída con él. Antes el riesgo subía el pico con el
+/// capital del arena y el host medía con el mínimo: en papel sobre mainnet
+/// el exchange es el saldo real, que no se mueve, y ganar en papel se veía
+/// como una caída del saldo real. Sin saldo del exchange (backtest), el del
+/// arena.
+pub fn capital_del_freno(arena: &quantum_arena::GlobalArena) -> f64 {
+    use std::sync::atomic::Ordering::Relaxed;
+    let capital = arena.unified_capital.load(Relaxed);
+    let exchange = arena.capital_exchange.load(Relaxed);
+    if exchange.is_finite() && exchange > 0.0 {
+        capital.min(exchange)
+    } else {
+        capital
+    }
 }
 
 
@@ -362,46 +432,135 @@ pub fn caida_alfa_freno_duro(w: f64, l: f64) -> Option<f64> {
     k
 }
 
-/// Umbral del freno duro (CL-106), el MISMO para el veto de entradas del
-/// riesgo y el sistema inmune del host: `K(w, l)·r`, acotado por d* (½ Kelly,
-/// α = 0,05), con `r` el riesgo medido por operación al stop en fracción del
-/// PICO desde el que se mide la caída (CL-106b) y `w`, `l` la geometría
-/// medida de las órdenes. Sin riesgo o geometría medidos (arranque), rige
-/// d*: no se inventa un umbral fino.
-pub fn umbral_freno_duro(riesgo: f64, ganancia_en_stops: f64, perdida_en_stops: f64) -> f64 {
-    let d_estrella = drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION);
-    if !(riesgo.is_finite() && riesgo > 0.0) {
-        return d_estrella;
+/// CL-130 (R1 de la revisión del PR #62) — un cierre suma su resultado en
+/// stops de SU posición (PnL neto / riesgo al stop de esa posición) a la
+/// cuenta de la caída del freno duro. Devuelve la caída en stops tras
+/// registrarlo. Un resultado no finito (una posición sin SL propio) no
+/// cuenta: su caída la cubre d* sobre el capital.
+///
+/// Antes la caída se medía en USD y se convertía en stops con `s̄`, la EWMA
+/// del riesgo al stop de las últimas órdenes (CL-106b). Sólo es la misma
+/// cuenta con tamaño fijo: desde el dimensionado en espacio de riesgo
+/// (LH-04) y el factor de racha (GLM 118) el tamaño baja en una racha
+/// perdedora, `s̄` encoge y la misma caída en USD contaba como muchos más
+/// stops. Con L = 10 disparaba tras 13 SL en vez de 31.
+pub fn registrar_resultado_en_stops(arena: &quantum_arena::GlobalArena, resultado: f64) -> f64 {
+    use std::sync::atomic::Ordering;
+    if resultado.is_finite() {
+        let suma = arena.resultado_en_stops.fetch_add(resultado, Ordering::AcqRel) + resultado;
+        let _ = arena
+            .pico_en_stops
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |pico| {
+                (pico.is_nan() || suma > pico).then_some(suma)
+            });
     }
-    match caida_alfa_freno_duro(ganancia_en_stops, perdida_en_stops) {
-        Some(k) if k.is_finite() && k > 0.0 => (k * riesgo).min(d_estrella),
-        _ => d_estrella,
+    caida_en_stops(arena)
+}
+
+/// CL-130 — caída de los cierres desde su máximo, en stops de sus
+/// posiciones (≥ 0).
+pub fn caida_en_stops(arena: &quantum_arena::GlobalArena) -> f64 {
+    use std::sync::atomic::Ordering::Relaxed;
+    let caida = arena.pico_en_stops.load(Relaxed) - arena.resultado_en_stops.load(Relaxed);
+    if caida.is_finite() {
+        caida.max(0.0)
+    } else {
+        0.0
     }
 }
 
-/// [`umbral_freno_duro`] con lo medido en el arena y el pico desde el que se
-/// mide la caída.
-///
-/// CL-106b (T1-02 de la revisión de la Línea G): el riesgo es el de la orden
-/// en USD (`riesgo_por_operacion_usd`, nocional × SL) sobre el PICO, así que
-/// `caída ≥ umbral` ⇔ `(pico − capital)/s̄ ≥ K`: la caída en stops, que es lo
-/// que mide el cuantil. Antes se usaba el riesgo en fracción del capital al
-/// dimensionar; con nocional fijo crece al caer el capital, y el freno
-/// disparaba tras `K·pico/capital` stops (con stop del 2 % y 13 USD, nunca
-/// antes de d*).
-pub fn umbral_freno_duro_de(arena: &quantum_arena::GlobalArena, pico: f64) -> f64 {
+/// CL-134 (R6 de la revisión del PR #62) — la cuenta empieza de cero con
+/// `capital`: el pico, lo medido de las órdenes y la caída en stops. Es lo
+/// que hace falta para replantar un universo del bosque sombra, que es otra
+/// hipótesis.
+pub fn reiniciar_la_cuenta(arena: &quantum_arena::GlobalArena, capital: f64) {
     use std::sync::atomic::Ordering::Relaxed;
-    let riesgo_usd = arena.riesgo_por_operacion_usd.load(Relaxed);
-    let riesgo = if pico.is_finite() && pico > 0.0 {
-        riesgo_usd / pico
+    arena.pico_capital.store(capital, Relaxed);
+    for celda in [
+        &arena.riesgo_por_operacion,
+        &arena.riesgo_por_operacion_usd,
+        &arena.ganancia_en_stops,
+        &arena.perdida_en_stops,
+        &arena.resultado_en_stops,
+        &arena.pico_en_stops,
+    ] {
+        celda.store(0.0, Relaxed);
+    }
+}
+
+/// CL-106 → CL-130 — el FRENO DURO de la cuenta, el MISMO para el veto de
+/// entradas del riesgo y el sistema inmune del host.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrenoDuro {
+    /// Caída de los cierres en stops de sus posiciones.
+    pub caida_en_stops: f64,
+    /// `K(w̄, l̄)`: cuantil 95 % de la caída máxima en 200 operaciones con
+    /// H0 = +0,05 R y la geometría medida de las órdenes. `None` sin
+    /// geometría medida: no se inventa un umbral.
+    pub umbral_en_stops: Option<f64>,
+    /// Caída del capital desde el pico, en fracción del pico.
+    pub caida_capital: f64,
+    /// d* (ADR-0016 D3), el tope de ruina.
+    pub tope_capital: f64,
+}
+
+impl FrenoDuro {
+    /// La caída en stops llegó a `K`.
+    pub fn por_stops(&self) -> bool {
+        self.umbral_en_stops.is_some_and(|k| self.caida_en_stops >= k)
+    }
+    /// La caída del capital llegó a d*.
+    pub fn por_capital(&self) -> bool {
+        self.caida_capital >= self.tope_capital
+    }
+    pub fn echado(&self) -> bool {
+        self.por_stops() || self.por_capital()
+    }
+}
+
+impl std::fmt::Display for FrenoDuro {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let k = self
+            .umbral_en_stops
+            .map_or_else(|| "sin medir".to_string(), |k| format!("{k:.1}"));
+        write!(
+            f,
+            "caída de {:.1} stops de sus posiciones (K = {k}) y del {:.1} % del capital (d* = {:.1} %)",
+            self.caida_en_stops,
+            self.caida_capital * 100.0,
+            self.tope_capital * 100.0
+        )
+    }
+}
+
+/// CL-106 → CL-130 — el freno duro con lo medido en el arena, el pico y el
+/// capital desde los que se mide la caída ([`capital_del_freno`]).
+///
+/// Dispara cuando la caída de los cierres, en stops de sus posiciones
+/// ([`registrar_resultado_en_stops`]), llega a `K(w̄, l̄)`, o cuando la caída
+/// del capital desde el pico llega a d*. La parte en stops sólo ve lo
+/// cerrado: las pérdidas abiertas las acotan los stops de las posiciones y
+/// d* sobre el capital, que incluye lo que el host mide del exchange.
+pub fn freno_duro(arena: &quantum_arena::GlobalArena, pico: f64, capital: f64) -> FrenoDuro {
+    use std::sync::atomic::Ordering::Relaxed;
+    let w = arena.ganancia_en_stops.load(Relaxed);
+    let l = arena.perdida_en_stops.load(Relaxed);
+    let umbral_en_stops = if w > 0.0 && l > 0.0 {
+        caida_alfa_freno_duro(w, l).filter(|k| k.is_finite() && *k > 0.0)
     } else {
-        f64::NAN
+        None
     };
-    umbral_freno_duro(
-        riesgo,
-        arena.ganancia_en_stops.load(Relaxed),
-        arena.perdida_en_stops.load(Relaxed),
-    )
+    let caida_capital = if pico.is_finite() && pico > 0.0 && capital.is_finite() {
+        (pico - capital) / pico
+    } else {
+        0.0
+    };
+    FrenoDuro {
+        caida_en_stops: caida_en_stops(arena),
+        umbral_en_stops,
+        caida_capital,
+        tope_capital: drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION),
+    }
 }
 
 #[cfg(test)]

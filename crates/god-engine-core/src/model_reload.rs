@@ -98,3 +98,54 @@ impl ModelReloadTracker {
         Ok(events)
     }
 }
+
+/// Resuelve la ruta canónica del directorio de modelos buscando en los
+/// directorios de ejecución habituales (raíz del workspace, subcrates o TG_DATA_ROOT).
+pub fn resolve_models_directory() -> Option<PathBuf> {
+    if let Ok(root) = std::env::var("TG_DATA_ROOT") {
+        let p = Path::new(&root).parent().map(|p| p.join("models"));
+        if let Some(ref path) = p {
+            if path.is_dir() {
+                return p;
+            }
+        }
+    }
+    for candidate in [
+        Path::new("models"),
+        Path::new("../../models"),
+        Path::new("../../../models"),
+    ] {
+        if candidate.is_dir() {
+            return Some(candidate.to_path_buf());
+        }
+    }
+    None
+}
+
+/// Precarga todos los modelos válidos encontrados en el directorio `models/`
+/// hacia el almacenamiento global lock-free `GLOBAL_FORESTS`.
+/// Garantiza paridad absoluta entre producción, replay, backtest y censo forense.
+pub fn preload_models_from_disk() -> usize {
+    let Some(models_dir) = resolve_models_directory() else {
+        return 0;
+    };
+    let mut tracker = ModelReloadTracker::default();
+    let scan = tracker.scan(&models_dir, |key, path| {
+        let source = path.to_str().ok_or_else(|| "model path is not UTF-8".to_string())?;
+        crate::ml_inference::NanoForest::load_global(key, source)
+            .map_err(|error| error.to_string())
+    });
+    match scan {
+        Ok(events) => {
+            let mut count = 0;
+            for event in events {
+                if event.result.is_ok() {
+                    count += 1;
+                }
+            }
+            count
+        }
+        Err(_) => 0,
+    }
+}
+

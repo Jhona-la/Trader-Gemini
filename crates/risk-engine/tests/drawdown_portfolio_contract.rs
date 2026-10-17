@@ -1,8 +1,8 @@
 //! CL-9 — el veto de drawdown juzga la caída de la CUENTA: su decisión no
-//! depende de qué moneda es la candidata. Desde CL-106 el umbral es el del
-//! freno duro (`drawdown::umbral_freno_duro`), que sólo lee lo medido de la
-//! cuenta (riesgo y geometría de las órdenes), ni siquiera la tasa de pérdida.
-//! Desde CL-106b el riesgo es el medido en USD, sobre el pico.
+//! depende de qué moneda es la candidata. Desde CL-106 es el freno duro
+//! (`drawdown::freno_duro`), que sólo lee lo medido de la cuenta (geometría
+//! de las órdenes y, desde CL-130, la caída de los cierres en stops de sus
+//! posiciones), ni siquiera la tasa de pérdida.
 use quantum_arena::GlobalArena;
 use risk_engine::{RiskEngine, REJECT_COUNTERS, REJ_DRAWDOWN};
 use signal_engine::{SignalIntent, SignalType};
@@ -10,7 +10,7 @@ use std::sync::atomic::Ordering::Relaxed;
 
 fn vetada_por_drawdown(a: &GlobalArena, coin_id: usize, intent: &SignalIntent) -> bool {
     let antes = REJECT_COUNTERS[REJ_DRAWDOWN].load(Relaxed);
-    // Pico 100, capital 70: caída del 30 % de la cuenta.
+    // Pico 100: la caída es la de los 50 SL de la cuenta.
     let _ = RiskEngine::new(100.0).evaluate_quantum_order(coin_id, intent, a);
     REJECT_COUNTERS[REJ_DRAWDOWN].load(Relaxed) > antes
 }
@@ -20,14 +20,14 @@ fn cl9_la_misma_caida_de_la_cuenta_se_juzga_igual_para_toda_moneda() {
     let a = GlobalArena::build_in_own_stack(70.0);
     a.unified_capital.store(70.0, Relaxed);
     a.config.global_max_drawdown.store(0.95, Relaxed);
-    a.riesgo_por_operacion.store(0.005, Relaxed);
-    // CL-106b: el freno lee el riesgo al stop en USD sobre el pico (0,5 % del
-    // pico de 100).
-    a.riesgo_por_operacion_usd.store(0.005 * 100.0, Relaxed);
     // Geometría de una orden con stop del 0,5 %, RR 2,25 y 14,5 pb de fricción.
     let (w, l) = ((2.25 * 0.005 - 0.00145) / 0.005, (0.005 + 0.00145) / 0.005);
     a.ganancia_en_stops.store(w, Relaxed);
     a.perdida_en_stops.store(l, Relaxed);
+    // 50 SL de la cuenta (≈ 65 stops de sus posiciones).
+    for _ in 0..50 {
+        risk_engine::drawdown::registrar_resultado_en_stops(&a, -l);
+    }
     // Moneda 0: 50 cierres con 70 % de acierto. Moneda 1: 2 cierres, 20 %.
     a.coins[0].metrics.trade_count.store(50, Relaxed);
     a.coins[0].metrics.win_rate.store(0.7, Relaxed);
@@ -40,8 +40,8 @@ fn cl9_la_misma_caida_de_la_cuenta_se_juzga_igual_para_toda_moneda() {
         expected_duration_ms: 60_000,
         ..Default::default()
     };
-    let umbral = risk_engine::drawdown::umbral_freno_duro(0.005, w, l);
-    assert!(umbral < 0.30, "el fixture debe caer por encima del umbral: {umbral}");
+    let k = risk_engine::drawdown::caida_alfa_freno_duro(w, l).unwrap();
+    assert!(50.0 * l > k, "el fixture debe caer por encima del umbral: K = {k}");
     assert!(vetada_por_drawdown(&a, 0, &intent), "moneda que gana a menudo");
     assert!(
         vetada_por_drawdown(&a, 1, &intent),

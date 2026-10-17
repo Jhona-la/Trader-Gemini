@@ -29,16 +29,51 @@ use crate::voto_espectral::{VotoEspectral, ESCALAS_VOTO};
 use quantum_arena::evalues::EProceso;
 use quantum_arena::temporal_spectrum::MUESTRAS_SKILL_MADURAS;
 
-/// Los 13 motores con `voto_espectral()` de la composición del consenso
-/// (11 originales de #623 + trend-runner y RenyiTsallis, AGY P29).
-pub const MOTORES: usize = 13;
-/// #663 (G1-1): tamaño de la FAMILIA de e-procesos consultada por la
-/// composición del consenso (13 motores × 32 escalas) — alimenta el
+/// Los 15 motores con `voto_espectral()` de la composición del consenso
+/// (11 originales de #623 + trend-runner y RenyiTsallis, AGY P29 +
+/// Navier-Stokes Manifold y Feynman Propagator, Ola Ω146).
+pub const MOTORES: usize = 15;
+/// #663 (G1-1) & Ω146: tamaño de la FAMILIA de e-procesos consultada por la
+/// composición del consenso (15 motores × 32 escalas = 480) — alimenta el
 /// umbral Bonferroni M/α del gate de Ville.
 pub const NUM_PARES_MOTOR_ESCALA: usize = MOTORES * 32;
 pub const PISO_EXPLORACION: f64 = 0.15;
 const OLVIDO: f64 = 1.0 / 64.0;
 const EPS_VOTO: f64 = 1e-9;
+
+pub const MOTOR_SOMBRA: usize = 0;
+pub const MOTOR_SOLITON: usize = 1;
+pub const MOTOR_SHOCK: usize = 2;
+pub const MOTOR_RESONANCIA: usize = 3;
+pub const MOTOR_COAXIAL: usize = 4;
+pub const MOTOR_HAWKES: usize = 5;
+pub const MOTOR_NASH: usize = 6;
+pub const MOTOR_FLOW: usize = 7;
+pub const MOTOR_PERCEPTRON: usize = 8;
+pub const MOTOR_CONFORMAL: usize = 9;
+pub const MOTOR_CONFLUENCIA: usize = 10;
+pub const MOTOR_TREND_RUNNER: usize = 11;
+pub const MOTOR_ENTROPIA: usize = 12;
+pub const MOTOR_NAVIER_STOKES: usize = 13;
+pub const MOTOR_FEYNMAN: usize = 14;
+
+pub const NOMBRES_MOTORES: [&str; MOTORES] = [
+    "sombra",
+    "soliton",
+    "shock",
+    "resonancia",
+    "coaxial",
+    "hawkes",
+    "nash",
+    "flow",
+    "perceptron",
+    "conformal",
+    "confluencia",
+    "trend_runner",
+    "entropia",
+    "navier_stokes",
+    "feynman",
+];
 
 /// Acumuladores EWMA del IC (forma exacta de #594).
 #[derive(Clone, Copy)]
@@ -51,9 +86,9 @@ struct AcumIc {
     /// significancia anytime-valid que sustituye al umbral fijo. El IC
     /// sigue midiendo la MAGNITUD (para el tamaño del peso); el
     /// e-proceso decide SI hay habilidad (inmune al optional stopping
-    /// de la composición por evento). #663 (G1-1): la multiplicidad de
-    /// los 13×32=416 pares motor×escala se corrige con el umbral de
-    /// familia M/α=8320 en `ic_significativo`.
+    /// de la composición por evento). #663 (G1-1) & Ω146: la multiplicidad de
+    /// los 15×32=480 pares motor×escala se corrige con el umbral de
+    /// familia M/α=9600 en `ic_significativo`.
     e_proceso: EProceso,
 }
 
@@ -92,10 +127,10 @@ impl AcumIc {
             return None;
         }
         // #661 — Ville REPLAZA el umbral fijo de Fisher: el e-proceso es
-        // anytime-valid (cualquier número de consultas). #663 (G1-1):
-        // la composición consulta 13 motores × 32 escalas = 416
-        // e-procesos — umbral de FAMILIA M/α = 8320 (Bonferroni), no
-        // el 20 por proceso: en ruido el máximo de 416 procesos con
+        // anytime-valid (cualquier número de consultas). #663 (G1-1) & Ω146:
+        // la composición consulta 15 motores × 32 escalas = 480
+        // e-procesos — umbral de FAMILIA M/α = 9600 (Bonferroni), no
+        // el 20 por proceso: en ruido el máximo de 480 procesos con
         // umbral 20 cruza casi seguro.
         if !self.e_proceso.significativo_familia(NUM_PARES_MOTOR_ESCALA) {
             return None;
@@ -324,6 +359,7 @@ mod tests {
         let w = sm.pesos();
         assert_eq!(w[0][0], PISO_EXPLORACION);
         assert_eq!(w[10][31], PISO_EXPLORACION);
+        assert_eq!(w[14][31], PISO_EXPLORACION);
 
         let votos = votos_constantes(0.6);
         let a = VotoEspectral::consenso(&votos, &[1.0; MOTORES]);
@@ -353,8 +389,8 @@ mod tests {
         // Aún inmaduro (n=2): piso.
         assert_eq!(w[0][19], PISO_EXPLORACION);
         // Maduramos bloques alineados: armado +1, retorno +0.05 constante.
-        // #663 (G1-1): el gate de Ville ahora es de FAMILIA M/α=8320
-        // (416 pares) — 1.1^95 ≈ 8540 cruza; el bucle acumula n=100.
+        // #663 (G1-1) & Ω146: el gate de Ville ahora es de FAMILIA M/α=9600
+        // (480 pares) — 1.1^97 ≈ 10334 cruza; el bucle acumula n=100.
         for i in 3..=100u64 {
             madurar(&mut sm, 19, i * 1_000, 0.05, 1.0);
         }

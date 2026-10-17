@@ -1,7 +1,11 @@
 //! Exercise the exact std-only policy module without starting the trading host.
-#[path = "../src/model_reload.rs"]
-mod model_reload;
-use model_reload::ModelReloadTracker;
+//! GLM 134 (fix CI E0433 de Ω144): el módulo se importa del CRATE en vez de
+//! la inclusión aislada `#[path]` — Ω144 añadió `preload_models_from_disk()`
+//! que referencia `crate::ml_inference::NanoForest` (resolvible sólo dentro
+//! de god-engine-core). El módulo es `pub` (lib.rs) y ningún test de este
+//! archivo necesita el aislamiento std-only: el fixture y el tracker son
+//! del propio módulo público.
+use god_engine_core::model_reload::ModelReloadTracker;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 

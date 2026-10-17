@@ -4,6 +4,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 fn main() {
+    // LG-23: los modelos del disco se cargan aquí, no al construir el núcleo
+    // (Ω144 lo hacía en el constructor y pisaba predictores ya registrados).
+    let modelos = god_engine_core::model_reload::preload_models_from_disk();
+    println!("Modelos cargados de disco: {modelos}");
     println!("🚀 GOD ENGINE - DEEP LATENCY FLOW AUDIT");
     println!("=======================================");
     println!("Initialize Isolated Execution Environment...");

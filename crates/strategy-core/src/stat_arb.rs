@@ -383,6 +383,30 @@ impl QuantumStrategy for StatArbEngine {
         }
     }
 
+    fn is_operable_for_coin(&self, coin_id: usize, symbol: &str) -> bool {
+        let sym_opt = if symbol.is_empty() { None } else { Some(symbol) };
+        let cid_opt = if symbol.is_empty() { None } else { Some(coin_id) };
+        let r = match self.registry.as_ref() {
+            Some(reg) => reg,
+            None => return false,
+        };
+        let leer = |k: &str| {
+            if sym_opt.is_some() {
+                r.get_scoped_parameter_strict(sym_opt, cid_opt, k, "StatArbEngine")
+            } else {
+                r.get_scoped_parameter(sym_opt, cid_opt, k, "StatArbEngine")
+            }
+        };
+        leer("statarb_ou_zscore")
+            .map(|p| p.get_value())
+            .filter(|v| v.is_finite())
+            .is_some()
+            && leer("statarb_half_life_ms")
+                .map(|p| p.get_value())
+                .filter(|v| v.is_finite() && *v > 0.0 && !v.is_infinite())
+                .is_some()
+    }
+
     fn horizon(&self) -> TradeHorizon {
         TradeHorizon::Continuous
     }

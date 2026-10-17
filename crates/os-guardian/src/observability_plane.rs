@@ -51,21 +51,40 @@ impl ObservabilityPlane {
                 #[cfg(not(target_os = "windows"))]
                 let poll_interval = Duration::from_millis(1);
 
-                // Polling loop inside the isolated core
+                // Polling loop inside the isolated core.
+                // GLM 133 (política anti-mock del operador + CL-15): el
+                // detector SOLO observa con muestras REALES. Sin sensor
+                // PMU (ninguna plataforma lo tiene hoy) o sin eventos
+                // eBPF (Linux sin mapa BPF), el tick se cuenta como
+                // ausencia y NO se fabrica score — el EWMA ya no aprende
+                // de constantes ficticias.
+                let mut ticks_sin_sensor: u64 = 0;
                 loop {
-                    let pmu_vec = self.pmu.sample();
-                    let kernel_ev = self.ebpf.read_events();
-
-                    let anomaly_score = self.detector.observe(&pmu_vec, &kernel_ev);
-
-                    if anomaly_score.is_anomaly {
-                        println!(
-                            "[OBSERVABILITY-ALERT] Riesgo en HFT Detectado! Score: {:.2}",
-                            anomaly_score.score
-                        );
-                        println!("[OBSERVABILITY-CAUSAL-HINT] {}", anomaly_score.causal_hint);
-
-                        // Aquí se inyectaría la mitigación en el genoma o se activaría un kill switch en el engine
+                    match (self.pmu.sample(), self.ebpf.read_events()) {
+                        (Some(pmu_vec), Some(kernel_ev)) => {
+                            let anomaly_score = self.detector.observe(&pmu_vec, &kernel_ev);
+                            if anomaly_score.is_anomaly {
+                                println!(
+                                    "[OBSERVABILITY-ALERT] Riesgo en HFT Detectado! Score: {:.2}",
+                                    anomaly_score.score
+                                );
+                                println!(
+                                    "[OBSERVABILITY-CAUSAL-HINT] {}",
+                                    anomaly_score.causal_hint
+                                );
+                            }
+                        }
+                        _ => {
+                            ticks_sin_sensor += 1;
+                            // Telemetría de ausencia cada 100k ticks: la
+                            // honestidad del plano es observable.
+                            if ticks_sin_sensor % 100_000 == 0 {
+                                println!(
+                                    "[OBSERVABILITY] {ticks_sin_sensor} ticks sin sensor real (PMU: ausente; eBPF: {:?}) — sin observación fabricada",
+                                    cfg!(target_os = "windows")
+                                );
+                            }
+                        }
                     }
 
                     thread::sleep(poll_interval);
@@ -79,10 +98,17 @@ impl ObservabilityPlane {
 mod tests {
     use super::*;
 
+    /// GLM 133: sin sensores reales, el plano NO fabrica observación.
+    /// El sample es ausencia (None) — contrato de la política anti-mock.
     #[test]
-    fn test_observability_plane_new() {
+    fn test_observability_plane_sin_sensor_no_opina() {
         let plane = ObservabilityPlane::new(100, 200);
-        let pmu = plane.pmu.sample();
-        assert!(pmu.ipc.is_finite());
+        assert!(
+            plane.pmu.sample().is_none(),
+            "PMU sin backend real ⇒ None (CL-15)"
+        );
+        // eBPF: en Windows hay eventos reales (page_faults); el contrato
+        // es Option — la ausencia nunca es KernelEvents fabricado.
+        let _ = plane.ebpf.read_events();
     }
 }

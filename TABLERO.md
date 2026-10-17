@@ -69,10 +69,26 @@
   revert verificado, combinado PASA, main restaurado. Incidente
   graph.json 104MB resuelto (reset --soft + stage selectivo).
 - **Falta / esperando**: re-aterrizaje de Omega110 por su autor
-  (absorbente resuelto + oráculo propio); (a)(b) ensamble (piso 0.70 +
-  clones) al consejo con análisis de aceptación; LH-03..07 con dueños;
+  (absorbente resuelto + oráculo propio); ensamble: **(b) clones
+  CERRADO por GLM 127** (invariancia por fuente, XIV §202, oráculo
+  413s con testigo — bit-paridad enjambre real) y **(a)-espectral
+  CERTIFICADO NO-BUG por GLM 128** — medición XIV §14 sobre tape REAL
+  (BTCUSDT sep, 2M ticks): 0 disparos en 1,11M eventos espectralmente
+  activos; la modulación 0,70+0,30·coh es compuerta represora de
+  respaldo-de-banda (#652/H4 operando como diseñado), no inflador.
+  Recibo: ANALISIS_ACEPTACION_ENSAMBLE addendum + test #[ignore]
+  espectral_piso_medicion; LH-03..07 con dueños;
   tapes de octubre (revalidaciones ADR-0008 + cópulas ADR-0009 siguen
-  bloqueadas); FDUSD remoción (consejo); DL-modular (frente grande).
+  bloqueadas); **FDUSD RESUELTO por GLM 129** (investigación: nada los
+  carga — ml_coverage consulta por roster 100% USDT, marca LXXIII de
+  inercia; remoción física = operación local `rm models/*FDUSD*`, sin
+  cambio de repo) + **MOTORES MUERTOS RESUELTOS: Ω144 (AGY) activó la
+  precarga ML/backtest + sombra 9 campos; VERIFICADO INDEPENDIENTE por
+  GLM 131 sobre tape REAL: puerta L 0%→79%, FlowExcitation 0%→25%
+  (500k votos), hablantes 14/19 — los 5 mudos restantes con
+  explicación de diseño (StatArb/YangMills = artefactos del replay
+  sin-spot/unimoneda; en vivo operan)**;
+  DL-modular (frente grande).
 - **Familia honesta**: 7 símbolos (BTC/ADA/ATOM/BNB/SOL/XRP/XLM), mediana
   OOS +0.008, récord SOL +0.0203; 2 bloqueos honestos en 9 corridas.
 
@@ -112,7 +128,7 @@
 - **Siguiente**: LF-F4 (vetos: alcanzabilidad, frontera y recuperación desde
   cero posiciones) y revisión de cada ola nueva que entre sin PR.
 
-## Claude — Línea G (actualizado: 2026-10-12, sesión local, prefijo LG-n; olas 1–7 cerradas y fusionadas en main; ramas borradas)
+## Claude — Línea G (actualizado: 2026-10-17, sesión local, prefijo LG-n; olas 1–8 cerradas y fusionadas en main; ramas borradas)
 
 - **Ola 1 cerrada**: revisión desde la base del HEAD 86218456
   (`docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md`, datos en `docs/audit/linea_g/`).
@@ -149,10 +165,23 @@
     información por hora (vela, monedas, libro sombra).
   - Revisión de Ω92: el veto de caída del consejo sólo decide sin riesgo
     medido.
-- **Siguiente**: el examen del demonio (C-F7) si la Línea C lo cede; replay
-  canónico multiactivo (Sol); medir con el T-3 v2 de la Línea H una serie
-  multiactivo con cambio común (la escala rápida agregada entre monedas);
-  revisar el cableado de LG-22 si sus dueños lo toman.
+- **Ola 8 cerrada** (plan §16, `docs/audit/linea_g/ola8_*`):
+  - LG-23: construir el núcleo no carga modelos del disco (Ω144 pisaba el
+    predictor sintético de T-1/T-2/T-3 desde el checkout raíz). LG-22b: la
+    alarma de LG-22 ya no se relaja en el hueco entre cierres.
+  - N_eff entre monedas medido: 1,6 (5 del evolver), 2,48 (13 grandes), ≈ 4
+    (38); corrige el «×13» de la ola 7.
+  - Revisión desde la base de Ω94–Ω146: 48 hallazgos + 1 medido, 6 HIGH
+    verificados (Ω144–Ω146 sin T-1, BSD par, Kähler degenerado, hedge
+    anticausal, LH-04 con p posterior). Pruebas OPEN de BSD y Kähler.
+  - Camino caliente: 134 → 175 µs por evento (+31 %); la puerta CL-60 no pasa.
+  - T-1 sobre main + LG-23: PASA, 18/144 genes sensibles (12,5 %) ≥ trinquete 11,0 % (842 s con 4 hilos,
+  `docs/audit/linea_g/ola8_t1.txt`). Frente a la lista canónica de 16 pierde el
+  gen 32 y gana 39, 142 y 143. T-1 es monomoneda: no ve Kähler ni Yang-Mills.
+- **Siguiente**: medir la decisión con los multiplicadores de Ω137–Ω143 en 1
+  (si el consejo acepta congelarlos); escala rápida agregada entre monedas
+  con pesos GLS (T-3 v2 de la Línea H); LG-23b con la Línea C; recorrido por
+  archivo de signal-engine, risk-engine, god-engine-core y metacortex.
 - **No toca**: ATR/σ̂60 (Línea C), orquestador/espectro (Qoder), registro
   (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol).
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
