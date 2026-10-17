@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# LG-25 (Línea G) — semáforo de compilación compartido por todos los agentes.
+#
+# Por qué: la máquina tiene 16 GB útiles para builds y varios agentes compilan
+# en paralelo (cada rustc ocupa 0,4–0,9 GB; AGY midió 6 rustc = 4,3 GB). La
+# regla de AGENT_SYNC §4 («-j2, un build a la vez, target compartido») no la
+# hacía cumplir nada. Este envoltorio la hace cumplir:
+#   1. target ÚNICO: CARGO_TARGET_DIR = <raíz del repo>/target, también desde
+#      cualquier worktree (lo deduce de `git rev-parse --git-common-dir`).
+#   2. CARGO_BUILD_JOBS=2 salvo que se pida otra cosa explícitamente.
+#   3. Espera mientras haya OTRO cargo/rustc vivo o la RAM libre esté por
+#      debajo de SEMAFORO_RAM_MIN_GB (4 por defecto).
+#   4. Cerrojo atómico (mkdir) en <raíz>/target/.semaforo.lock con su dueño.
+#      Un cerrojo es huérfano si supera SEMAFORO_TTL_MIN (240), o si pasada
+#      la gracia SEMAFORO_GRACIA_S (120 s) no hay ningún cargo/rustc vivo: un
+#      agente sin cuota no bloquea a nadie y dos agentes no se roban el turno.
+#   5. Una línea por adquisición y liberación en <raíz>/logs/semaforo.log
+#      (agente, comando, RAM libre, duración).
+#
+# Uso:   bash scripts/cargo_semaforo.sh <argumentos de cargo>
+#        p. ej. bash scripts/cargo_semaforo.sh check --workspace --all-targets
+# Entorno: SEMAFORO_AGENTE (quién eres), SEMAFORO_RAM_MIN_GB, SEMAFORO_TTL_MIN,
+#          SEMAFORO_ESPERA_MAX_MIN (60; al agotarla sale con 75 sin compilar),
+#          SEMAFORO_PAUSA_S (15), SEMAFORO_SOLO_DECIDIR=1 (imprime la decisión
+#          y el entorno y sale sin compilar).
+# Costuras de prueba (scripts/tests/test_cargo_semaforo.py): SEMAFORO_RAIZ,
+#          SEMAFORO_PROCESOS (fuerza el nº de cargo/rustc ajenos),
+#          SEMAFORO_RAM_GB (fuerza la RAM libre).
+set -uo pipefail
+
+raiz=${SEMAFORO_RAIZ:-}
+if [ -z "$raiz" ]; then
+  comun=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || {
+    echo "[semaforo] no estoy dentro del repositorio" >&2
+    exit 2
+  }
+  raiz=$(dirname "$comun")
+fi
+agente=${SEMAFORO_AGENTE:-${USER:-${USERNAME:-agente}}}
+ram_min=${SEMAFORO_RAM_MIN_GB:-4}
+ttl_min=${SEMAFORO_TTL_MIN:-240}
+gracia_s=${SEMAFORO_GRACIA_S:-120}
+espera_max_min=${SEMAFORO_ESPERA_MAX_MIN:-60}
+pausa_s=${SEMAFORO_PAUSA_S:-15}
+
+export CARGO_TARGET_DIR="$raiz/target"
+export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
+mkdir -p "$raiz/target" "$raiz/logs"
+cerrojo="$raiz/target/.semaforo.lock"
+bitacora="$raiz/logs/semaforo.log"
+
+procesos_ajenos() {
+  if [ -n "${SEMAFORO_PROCESOS:-}" ]; then
+    echo "$SEMAFORO_PROCESOS"
+    return
+  fi
+  if command -v powershell > /dev/null 2>&1; then
+    powershell -NoProfile -Command \
+      "(Get-Process cargo,rustc -ErrorAction SilentlyContinue | Measure-Object).Count" \
+      2> /dev/null | tr -d '\r '
+  else
+    pgrep -c -x 'cargo|rustc' 2> /dev/null || echo 0
+  fi
+}
+
+ram_libre_gb() {
+  if [ -n "${SEMAFORO_RAM_GB:-}" ]; then
+    echo "$SEMAFORO_RAM_GB"
+    return
+  fi
+  if command -v powershell > /dev/null 2>&1; then
+    powershell -NoProfile -Command \
+      "[math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB, 2)" \
+      2> /dev/null | tr -d '\r '
+  else
+    awk '/MemAvailable/ {printf "%.2f", $2/1048576}' /proc/meminfo
+  fi
+}
+
+menor_que() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a < b) }'; }
+ahora() { date +%s; }
+registrar() { printf '%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$agente" "$*" >> "$bitacora"; }
+
+cerrojo_huerfano() {
+  [ -d "$cerrojo" ] || return 1
+  local creado edad
+  creado=$(cat "$cerrojo/creado" 2> /dev/null || echo 0)
+  edad=$(( $(ahora) - creado ))
+  if [ "$edad" -ge $(( ttl_min * 60 )) ]; then
+    return 0
+  fi
+  # Gracia: quien acaba de tomar el turno aún no arrancó cargo (0 procesos);
+  # sin ella dos agentes que ven 0 a la vez se roban el cerrojo.
+  if [ "$edad" -lt "$gracia_s" ]; then
+    return 1
+  fi
+  # Pasada la gracia, sin ningún cargo/rustc vivo nadie compila con él.
+  [ "$(procesos_ajenos)" = "0" ]
+}
+
+inicio=$(ahora)
+limite=$(( inicio + espera_max_min * 60 ))
+while :; do
+  ajenos=$(procesos_ajenos)
+  ram=$(ram_libre_gb)
+  motivo=""
+  if [ "${ajenos:-0}" != "0" ]; then
+    motivo="$ajenos procesos cargo/rustc ajenos"
+  elif menor_que "${ram:-0}" "$ram_min"; then
+    motivo="RAM libre ${ram} GB < ${ram_min} GB"
+  else
+    if cerrojo_huerfano; then
+      registrar "cerrojo huérfano liberado (dueño: $(cat "$cerrojo/dueno" 2> /dev/null))"
+      rm -rf "$cerrojo"
+    fi
+    if mkdir "$cerrojo" 2> /dev/null; then
+      ahora > "$cerrojo/creado"
+      printf '%s pid=%s cargo %s\n' "$agente" "$$" "$*" > "$cerrojo/dueno"
+      break
+    fi
+    motivo="cerrojo de $(cat "$cerrojo/dueno" 2> /dev/null || echo '?')"
+  fi
+  if [ "$(ahora)" -ge "$limite" ]; then
+    echo "[semaforo] sin turno tras ${espera_max_min} min: $motivo; no compilo" >&2
+    registrar "SIN TURNO ($motivo): cargo $*"
+    exit 75
+  fi
+  echo "[semaforo] esperando: $motivo" >&2
+  sleep "$pausa_s"
+done
+
+liberar() { rm -rf "$cerrojo"; }
+trap liberar EXIT INT TERM
+registrar "ADQUIERE ram_libre=${ram}GB jobs=$CARGO_BUILD_JOBS: cargo $*"
+
+if [ "${SEMAFORO_SOLO_DECIDIR:-0}" = "1" ]; then
+  echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS"
+  registrar "LIBERA (solo decidir)"
+  exit 0
+fi
+
+cargo "$@"
+codigo=$?
+registrar "LIBERA codigo=$codigo duracion=$(( $(ahora) - inicio ))s: cargo $*"
+exit "$codigo"
