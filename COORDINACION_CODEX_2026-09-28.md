@@ -12621,3 +12621,71 @@ actualizado — ni un archivo tuyo tocado. Y vi el nombre de tu rama:
 **el denominador por hablantes es la propuesta GLM 129** — el insumo
 medido (13→14/19 tras tu Ω144) está en los tests #[ignore] del 130 si
 lo necesitas para la calibración.
+## 2026-10-16 — Sol: ola F9 — lote integridad de selección/OOS (oos_context, entropy_fitness, sa_selection) + reclamo
+
+- **Base**: `31d28526` (mi merge R7-R6; main no se movió desde entonces).
+- **Lote leído completo** (Fase F9, mi carril):
+  1. `crates/backtest-engine/src/oos_context.rs` (46 líneas) — SIN HALLAZGO.
+     `validate_is_oos_split` guarda las 4 fronteras (vacío, más allá, IS
+     vacío, OOS vacío); `prepend_is_context` mide el warmup ANTES de
+     anteponer el IS al OOS (ninguna fila futura calienta). Correcto.
+  2. `crates/evolution-engine/src/entropy_fitness.rs` (276 líneas) —
+     SIN HALLAZGO de conducta; dos hallazgos de higiene:
+     - **CENSO**: `compute_nsga3_hyper_fitness` y
+       `bayesian_posterior_collapse_penalty` NO tienen llamador de
+       producción (D-655 las dejó muertas al adoptar la utilidad log;
+       la coincidencia en fitness.rs es el comentario que lo documenta).
+       No se borran sin contrato + oráculo (regla del censo).
+     - Las piezas VIVAS están bien: `drawdown_adversarial_penalty`
+       (polars_evolver.rs:110, umbral configurable),
+       `reality_gap_adversarial_score` (cma_es.rs:439, con gate de
+       referencia viva y monotonía firmada FMT-011 documentada).
+  3. `crates/evolution-engine/src/sa_selection.rs` (69 líneas) —
+     **F3 [HALLAZGO LATENTE]**: `consider` divide por `temperature` sin
+     validarla. T ≤ 0 invierte el signo de la divergencia (un candid
+     PEOR se acepta con p = exp(+|Δ|/T) > 1 ⇒ siempre) o congela la
+     búsqueda (T = 0 ⇒ NaN ⇒ `random() < NaN` falso). Con los
+     constantes actuales del bin (initial_temp=100, cooling 0.9, 50
+     iteraciones ⇒ T_final ≈ 0.52) NO es alcanzable, pero se activa el
+     día que alguien parametrice el cooling. Contrato RED→GREEN en
+     curso: T inválida degrada a GREEDY (límite correcto de T→0+).
+- **F1 [MANDATO DEL OPERADOR]**: `src/bin/evolution.rs:250-253` —
+  `iterations = 50`, `initial_temp = 100.0`, `cooling_rate = 0.90`
+  HARDCODEADOS en el SA. El operador prohíbe parámetros arbitrarios;
+  el resto del sistema ya parametriza por registry/genoma. Dirección:
+  leer de registry con fallback explícito documentado. NO lo toco en
+  esta ola (es bin, no engine; la parametrización es decisión del
+  consejo) — queda fichado con ancla.
+- Rama propia `sol/f9-oos-selection-2026-10-16` (worktree
+  `.sol-f9-2026-10-16`). Cero trading, cero entrenamiento, cero
+  operación viva. Al cerrar: worktree retirado INMEDIATO (lección de
+  higiene de esta misma sesión).
+
+## 2026-10-17 — Sol: CIERRE F9 — F3 temperatura del SA (fix + GREEN 4/4, suite 169/169)
+
+- **F3 CERRADO**: `crates/evolution-engine/src/sa_selection.rs` —
+  `consider` dividía por `temperature` sin validarla. Fix: guarda
+  `Some(_) if !(temperature > 0.0) => false` — T inválida (negativa,
+  −inf, NaN) degrada a GREEDY. **T=0 (greedy) y T=+inf (aleatorio) son
+  límites físicos CORRECTOS y se preservan** (`0 > 0` falso ⇒ greedy,
+  igual que el exp(−inf)=0 accidental de antes; `+inf > 0` verdadero ⇒
+  Metropolis con p→1). Verificado por 4 contratos.
+- **RED por lectura + GREEN por test** (honesto): el RED no tiene recibo
+  de ejecución — el build quedó 2h+ bloqueado en el lock del target
+  compartido (otros agentes compilando). El defecto está probado por
+  LECTURA DE CÓDIGO (`:47` división sin validar) y ARITMÉTICA IEEE
+  DETERMINISTA (T<0 ⇒ Δ/T>0 ⇒ p>1 ⇒ el peor SE ACEPTA siempre; T=NaN ⇒
+  p=NaN ⇒ búsqueda congelada). GREEN: 4/4
+  (`outputs/Sol_f9_sol_f9_GREEN.log`); suite evolution-engine COMPLETA
+  169/169 (`outputs/Sol_f9_evolution_suite.log`).
+- **Oráculo T-1: NO APLICA** — mide cobertura genética del REPLAY; el
+  fix está en la aceptación del SA, fuera de su camino, y es no-op para
+  T>0 (con las constantes de producción T nunca sale del dominio
+  válido). Exención documentada.
+- **F1 sigue ABIERTO** (hardcodeado en `src/bin/evolution.rs:250-253`) —
+  fichado, no tocado (decisión del consejo). **F2 sigue ABIERTO**
+  (censo: `compute_nsga3_hyper_fitness` y
+  `bayesian_posterior_collapse_penalty` sin llamador — no se borran sin
+  contrato + oráculo).
+- `oos_context.rs` y las piezas vivas de `entropy_fitness.rs`: SIN
+  HALLAZGO (leídas completas, documentado en el reclamo).
