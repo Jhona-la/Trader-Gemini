@@ -3318,8 +3318,8 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "sombra_navier_v_max", v_nav);
                     }
 
-                    // #623 (Ola 44 & Antigravity): CONSENSO ESPECTRAL INTEGRAL (13 MOTORES):
-                    // Todos los 13 motores con voto_espectral() componen en el consenso espectral
+                    // #623 (Ola 44 & Antigravity) & Ola Ω146: CONSENSO ESPECTRAL INTEGRAL (15 MOTORES):
+                    // Todos los 15 motores con voto_espectral() componen en el consenso espectral
                     // (media ponderada por escala, normalizada) y se publica su escala dominante +
                     // media de banda. Es la síntesis temporal espectral multiescala sin sesgo discreto.
                     let votos_espectrales = [
@@ -3336,8 +3336,10 @@ impl GodEngineCore {
                         voto_confluence,
                         voto_tr,
                         voto_entropy,
+                        voto_navier,
+                        voto_feynman,
                     ];
-                    // #626 (Ola 47, reconciliado con AGY 13/13) — PESOS POR
+                    // #626 (Ola 47, reconciliado con AGY 13/13) & Ola Ω146 (15/15) — PESOS POR
                     // HABILIDAD: el score ocurre AL CIERRE en el camino
                     // general (#648/H6); aquí, con votos frescos, sólo se
                     // RE-ARMA el snapshot de los bloques que nacieron. En
@@ -3345,7 +3347,7 @@ impl GodEngineCore {
                     // pesos iguales; la ponderación SÓLO entra con evidencia
                     // madura. Es el cierre espectral de D-752: la convicción
                     // se GANA con historial propio, no se asume igual para
-                    // trece físicas.
+                    // quince físicas.
                     if coin_id < self.skill_motores.len() {
                         for escala in 0..32 {
                             self.skill_motores[coin_id]
