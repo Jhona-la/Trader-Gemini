@@ -99,6 +99,28 @@ pub struct TensorVoteOrchestrator {
     hedge_ultimo_mid: AtomicF64,
 }
 
+/// CL-145 (C-F6) — UN `&'static str` POR NOMBRE DE ESTRATEGIA.
+///
+/// QUÉ ESTABA MAL: `try_add_strategy` filtraba (`Box::leak`) una copia del
+/// nombre en cada registro. Cada núcleo nuevo registra sus 19 estrategias,
+/// y el proceso vivo construye núcleos sin parar (25 por ronda en el examen
+/// walk-forward del demonio): ≈ 0,5 KB que no se liberan por núcleo, sin tope
+/// en una corrida de días.
+///
+/// QUÉ GARANTIZA: la memoria filtrada queda acotada por el número de nombres
+/// distintos. El cerrojo sólo se toma al registrar, nunca en el camino
+/// caliente.
+fn nombre_internado(nombre: &str) -> &'static str {
+    static INTERNADOS: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
+    let mut internados = INTERNADOS.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(&n) = internados.iter().find(|&&n| n == nombre) {
+        return n;
+    }
+    let n: &'static str = Box::leak(nombre.to_owned().into_boxed_str());
+    internados.push(n);
+    n
+}
+
 impl TensorVoteOrchestrator {
     pub fn new(arena: std::sync::Arc<quantum_arena::GlobalArena>) -> Self {
         Self {
@@ -132,9 +154,9 @@ impl TensorVoteOrchestrator {
         mut strategy: Box<dyn QuantumStrategy>,
     ) -> Result<(), String> {
         strategy.init(std::sync::Arc::clone(&self.arena.registry))?;
-        // #611: el nombre debe vivir tanto como el censo (filtrado a
-        // &'static — fuga acotada: una vez por estrategia registrada).
-        let nombre: &'static str = Box::leak(strategy.name().to_string().into_boxed_str());
+        // #611: el nombre debe vivir tanto como el censo (&'static).
+        // CL-145: internado, uno por nombre distinto y no por registro.
+        let nombre = nombre_internado(strategy.name());
         self.nombres.push(nombre);
         self.censo_total.push(AtomicU64::new(0));
         self.censo_no_cero.push(AtomicU64::new(0));
@@ -720,6 +742,28 @@ mod tests {
             .min_confidence_btc
             .store(min_conf, std::sync::atomic::Ordering::Relaxed);
         arena
+    }
+
+    /// CL-145 — Esperado: dos orquestadores que registran la misma
+    /// estrategia comparten el nombre (la misma dirección), y el censo sigue
+    /// leyendo el nombre correcto. Antes cada registro filtraba una copia.
+    #[test]
+    fn cl145_el_nombre_de_una_estrategia_se_filtra_una_vez() {
+        let arena = arena_con_min_conf(0.51);
+        let mut nombres = Vec::new();
+        for _ in 0..50 {
+            let mut orch = TensorVoteOrchestrator::new(arena.clone());
+            orch.add_strategy(Box::new(MockStrategy { name: "cl145_internado", value: 0.1 }));
+            orch.add_strategy(Box::new(MockStrategy { name: "cl145_otro", value: 0.2 }));
+            let censo = orch.censo_snapshot();
+            assert_eq!(censo[0].0, "cl145_internado");
+            assert_eq!(censo[1].0, "cl145_otro");
+            nombres.push(censo[0].0);
+        }
+        assert!(
+            nombres.iter().all(|n| std::ptr::eq(*n, nombres[0])),
+            "50 núcleos, un solo nombre filtrado"
+        );
     }
 
     #[test]
