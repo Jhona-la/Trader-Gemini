@@ -90,7 +90,13 @@ done
 log=${T1_LOG:-$CARGO_TARGET_DIR/t1_oraculo.log}
 inicio=$(date +%s)
 set +e
-cargo test "${extra[@]}" --release -p backtest-engine --locked \
+# F-A5 (Fable): T1_CARGO permite pasar el cargo por el semáforo compartido
+# (LG-25) sin duplicar aquí la lógica del sello:
+#   T1_CARGO="bash scripts/cargo_semaforo.sh" CARGO_BUILD_JOBS=2 scripts/t1_oraculo.sh 4
+# Sin la variable, `cargo` directo como siempre. La expansión sin comillas es
+# deliberada: el valor puede llevar argumentos separados por espacios.
+# shellcheck disable=SC2086
+${T1_CARGO:-cargo} test "${extra[@]}" --release -p backtest-engine --locked \
   --test t1_cobertura_genetica -- --exact t1_cobertura_genetica_del_oraculo_de_aptitud \
   --nocapture --test-threads=1 >"$log" 2>&1
 rc=$?
