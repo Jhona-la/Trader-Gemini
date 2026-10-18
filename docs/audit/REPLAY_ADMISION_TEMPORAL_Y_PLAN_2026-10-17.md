@@ -1,5 +1,11 @@
 # Replay temporal, ceros y coordinación de integración — 17Oct2026
 
+## 2026-10-17 — ROOT: control8e835, main049 y T1 Fable activo
+
+Main049 incorpora PR67/69/SI por ascendencia; checkout principal sincronizado. Control ROOT8e835/2003 congelado9c con siete deltas sin aplicar y nuevo check pendiente. Fable11/11 ycheck0; T1 release desde04:53:49Z sin terminal. Adaptador ROOT V2/V3 comparte lock/target canónicos con12+8 intactos, sin lease por anuncio. Original0/86 sigue inválido.
+
+BASE confirmó P2 del diario4096/horizonte y prepara propuesta externa separada. Código ROOT, siete pares, fullT1 e integración final siguen pendientes. Corte 2026-10-17 23:58 America/Bogota / 2026-10-18 04:58 UTC.
+
 ## 2026-10-17 — ROOT: Ω150, saneamiento de coordinación y ventana solicitada
 
 Se retiró una línea técnica de conflicto en COORD sin perder textos. Control Ω150 en renovación; siete fixes aún sin RED/GREEN. Fable/GLM/LíneaG deben confirmar una ventana concreta; check anterior0/86 sigue inválido. Targetprincipal compartido por parámetro236, sin modificar12+8.
