@@ -1141,7 +1141,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // La semivida actual es una configuración heredada, no calibración genómica.
     streams.push_str("/!forceOrder@arr");
     let streams_str = streams.clone();
-    let initial_ws_host = if let Ok(ep) = env::var("BEST_WS_ENDPOINT") {
+    // LG-28 (auditoría de panics del camino vivo): un BEST_WS_ENDPOINT que no
+    // forma una URL válida abortaba el proceso en el hilo del WS
+    // (`Url::parse(..).expect`). Se valida aquí y, si no sirve, se ignora y
+    // decide la selección por latencia. Sólo un host (con puerto opcional):
+    // vacío, con esquema, ruta, consulta o credenciales no es un host.
+    let ws_env_valido = env::var("BEST_WS_ENDPOINT")
+        .ok()
+        .map(|ep| ep.trim().to_string())
+        .filter(|ep| {
+            let host = ep.split(':').next().unwrap_or("");
+            let valido = !host.is_empty()
+                && !ep.contains(['/', '?', '#', '@', ' ', '\\'])
+                && url::Url::parse(&format!("wss://{ep}/stream"))
+                    .map(|u| u.host_str() == Some(host))
+                    .unwrap_or(false);
+            if !valido {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [WS] BEST_WS_ENDPOINT «{}» no es un host válido; se ignora",
+                    ep
+                );
+            }
+            valido
+        });
+    let initial_ws_host = if let Some(ep) = ws_env_valido {
         ep
     } else {
         let is_env_testnet = env::var("USE_TESTNET")
@@ -2050,7 +2073,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let exec_restore = Arc::clone(&exec);
             for pos in &restored_positions {
                 telemetry_server::telemetry_log!("   👉 Símbolo activo en exchange: {} (Qty: {})", pos.symbol, pos.qty);
-                if let Some(&coin_idx) = symbol_to_id.get(&pos.symbol) {
+                // LG-28: el universo del bootloader puede tener más símbolos que
+                // ranuras del arena (MAX_COINS); un índice fuera de rango iba a
+                // `coins[coin_idx]` y abortaba la adopción.
+                if let Some(&coin_idx) = symbol_to_id
+                    .get(&pos.symbol)
+                    .filter(|&&i| i < arena_real.coins.len())
+                {
                     let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
                     // D-726 + HOST-013: EL MARGEN SALE DEL APALANCAMIENTO REAL Y
                     // SE RESERVA DE VERDAD.
@@ -2180,6 +2209,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         )
                         .await;
                     });
+                } else {
+                    // LG-28: una posición del exchange sin ranura (símbolo fuera
+                    // del universo o índice ≥ MAX_COINS) no se adopta; antes se
+                    // saltaba en silencio. Que quede dicho y que el vigilante
+                    // la audite. Su margen no entra en `used_margin`.
+                    telemetry_engine::telemetry_err!(
+                        "[FASE 5] posición en {} (qty {}) sin ranura en el arena: no adoptada; margen no reservado",
+                        pos.symbol,
+                        pos.qty
+                    );
+                    quantum_arena::protection_health::mark_dirty();
                 }
             }
         }
@@ -5256,7 +5296,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut conexiones = data_ingest::cola_ws::ConexionesWs::new();
         loop {
             let current_url = ws_url.load().to_string();
-            let url = url::Url::parse(&current_url).expect("Invalid WS URL");
+            // LG-28: sin `expect` en el hilo del WS (con panic = "abort" una URL
+            // inválida mataba el proceso con posiciones abiertas).
+            let url = match url::Url::parse(&current_url) {
+                Ok(url) => url,
+                Err(e) => {
+                    telemetry_server::telemetry_log!("❌ [WS] URL inválida «{}»: {}; reintento", current_url, e);
+                    tokio::time::sleep(std::time::Duration::from_millis(5_000)).await;
+                    continue;
+                }
+            };
             let host = url.host_str().unwrap_or("stream.binancefuture.com");
             let port = url.port_or_known_default().unwrap_or(443);
 
@@ -5311,7 +5360,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
 
-            let target_addr = tcp_stream.peer_addr().unwrap();
+            // LG-28: el par puede cortar entre el connect y getpeername
+            // (WSAENOTCONN); antes el `unwrap` abortaba el proceso.
+            let target_addr = match tcp_stream.peer_addr() {
+                Ok(addr) => addr,
+                Err(e) => {
+                    telemetry_server::telemetry_log!("⚠️ [WS] conexión cortada antes de usarla: {}; reconecto", e);
+                    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                    continue;
+                }
+            };
             telemetry_server::telemetry_log!("✅ [WS] Fast-Lane TCP Connection established to {}...", target_addr);
 
             // FASE 22: Conexión directa TCP con Zero-Nagle para latencia nula

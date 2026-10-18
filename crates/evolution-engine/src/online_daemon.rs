@@ -516,7 +516,10 @@ fn nucleo_del_examen(
     market: &WfMarketEnv,
     coin_ids: &[usize],
 ) -> (Arc<GlobalArena>, GodEngineCore) {
-    let arena = Arc::new(GlobalArena::new(initial_capital));
+    // LG-28 (D-714): construir el arena en la pila de un hilo de tokio
+    // (2 MiB) es lo que D-714 prohibió: con panic = "abort", desbordarla mata
+    // el proceso vivo. `build_in_own_stack` usa un hilo con pila propia.
+    let arena = GlobalArena::build_in_own_stack(initial_capital);
     candidate.apply_to_arena(&arena);
     let mut core = GodEngineCore::new(arena.clone());
     let tick = market.tick_del_examen();

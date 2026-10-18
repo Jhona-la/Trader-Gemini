@@ -3443,18 +3443,24 @@ impl GodEngineCore {
                     // bajo hurst_scalp_threshold (la banda rápida). El 0.5 de
                     // otras fórmulas es la frontera browniana TEÓRICA — física,
                     // no arbitrariedad — y se queda.
-                    let h_trend = self
-                        .arena
-                        .config
-                        .hurst_trend_threshold
-                        .load(Ordering::Relaxed)
-                        .clamp(0.50, 0.90);
-                    let h_chaos = self
-                        .arena
-                        .config
-                        .hurst_scalp_threshold
-                        .load(Ordering::Relaxed)
-                        .clamp(0.30, h_trend - 0.02);
+                    // LG-28: un gen NaN pasaba por `NaN.clamp(..)` (NaN) y luego
+                    // `clamp(0.30, NaN)` abortaba el proceso en el primer tick de
+                    // BTC; un umbral de caos NaN anulaba en silencio el peso del
+                    // caos. NaN cae al valor del genoma base
+                    // (`SuperGenotype::new_baseline`: φ − 1 y 0,7·(φ − 1)); ±∞
+                    // satura en el `clamp` como antes.
+                    let phi_menos_uno = (5.0_f64.sqrt() - 1.0) / 2.0;
+                    let sin_nan = |v: f64, base: f64| if v.is_nan() { base } else { v };
+                    let h_trend = sin_nan(
+                        self.arena.config.hurst_trend_threshold.load(Ordering::Relaxed),
+                        phi_menos_uno,
+                    )
+                    .clamp(0.50, 0.90);
+                    let h_chaos = sin_nan(
+                        self.arena.config.hurst_scalp_threshold.load(Ordering::Relaxed),
+                        phi_menos_uno * 0.7,
+                    )
+                    .clamp(0.30, h_trend - 0.02);
                     // D-758 — EL RÉGIMEN GLOBAL NO PUEDE DECIDIRSE CON 150
                     // PUNTOS BÁSICOS ESCRITOS A MANO.
                     //

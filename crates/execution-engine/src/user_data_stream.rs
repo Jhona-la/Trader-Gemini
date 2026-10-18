@@ -334,10 +334,22 @@ impl UserDataStreamer {
         let algo_status = pick(&["X", "algoStatus"]);
         if symbol.is_empty() && algo_status.is_empty() && client_algo_id.is_empty() {
             // Nada reconocible: registrar crudo para el forense del esquema.
-            println!(
-                "📮 [ALGO-UPDATE] payload no reconocido: {}",
-                &text[..text.len().min(240)]
-            );
+            // LG-28: cortar en frontera de carácter (un símbolo no ASCII en
+            // el byte 240 hacía `&text[..240]` entrar en pánico), y escribir sin
+            // `println!`, que aborta si stdout falla (disco lleno con la salida
+            // redirigida a un log).
+            let mut fin = text.len().min(240);
+            while !text.is_char_boundary(fin) {
+                fin -= 1;
+            }
+            {
+                use std::io::Write as _;
+                let _ = writeln!(
+                    std::io::stdout().lock(),
+                    "📮 [ALGO-UPDATE] payload no reconocido: {}",
+                    &text[..fin]
+                );
+            }
             return;
         }
         match algo_status.as_str() {
@@ -985,6 +997,21 @@ mod tests {
         );
 
         quantum_arena::protection_health::clear_dirty();
+    }
+
+    /// LG-28: un ALGO_UPDATE no reconocido de más de 240 bytes con un carácter
+    /// de varios bytes cruzando el byte 240 se registra sin entrar en pánico
+    /// (antes `&text[..240]`; con panic = "abort", el proceso moría).
+    #[test]
+    fn lg28_algo_update_no_reconocido_corta_en_frontera_de_caracter() {
+        let registry = Arc::new(OrderRegistry::new());
+        let streamer = UserDataStreamer::new(BinanceClient::new("key".into(), true), registry);
+        let prefijo = r#"{"e":"ALGO_UPDATE","E":1700000000000,"o":{"zz":""#;
+        let relleno = "a".repeat(239 - prefijo.len());
+        let texto = format!("{prefijo}{relleno}\u{5e01}\u{5e01}\u{5e01}\"}}}}");
+        assert!(texto.len() > 240 && !texto.is_char_boundary(240), "el corte cae dentro de un carácter");
+        assert!(serde_json::from_str::<serde_json::Value>(&texto).is_ok(), "JSON válido");
+        streamer.dispatch(texto.as_bytes());
     }
 
     /// B3.7 repro demo_v26 (orden testnet 2643726644): el fill que cerró el
