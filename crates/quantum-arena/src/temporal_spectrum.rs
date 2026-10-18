@@ -648,6 +648,19 @@ impl TemporalSpectrum {
         // el argmax de energía queda como respaldo (comportamiento C-05/P10).
         let mut best_skill = 0.0f64;
         let mut dominant_skill = 0.0f64;
+        // LH-06(A) (GLM 122 diseño / 138 ejecución, desbloqueada por el
+        // T-3 v2 de Claude): PELDAÑO INTERMEDIO entre Ville (P1) y el
+        // argmax de energía (P2). Medición de Claude H (línea-h d7d805c8,
+        // 2026-10-17): sin escala significativa, P2 gobierna el 100% del
+        // tiempo y su 1/vol favorece escalas nerviosas ⇒ τ colapsa a
+        // 55-128 s en TODAS las series. El peldaño P1.5: entre las
+        // escalas de la banda que NO pasaron Ville, tomar la de MAYOR
+        // IC prequential > 0 ESTRICTO (madurez ya exigida por
+        // `habilidad_medida` — None bajo MUESTRAS_SKILL_MADURAS). Cero
+        // estadísticos nuevos (reutiliza el IC ya computado); empate:
+        // mayor τ (escalas lentas — el sesgo anti-nervioso del diseño).
+        let mut best_ic_peldo = 0.0f64;
+        let mut dominant_ic_peldo = 0.0f64;
         for (i, s) in self.scales.iter().enumerate() {
             if s.tau_ms < TAU_ANCHOR_FAST_MS
                 || s.tau_ms > TAU_ANCHOR_SLOW_MS
@@ -666,10 +679,25 @@ impl TemporalSpectrum {
                     best_skill = ic;
                     dominant_skill = s.tau_ms;
                 }
+                // LH-06(A): candidato P1.5 — IC>0 estricto aunque no
+                // significativo (la madurez ya la filtró habilidad_medida;
+                // el empate >0 resuelve por mayor τ, recorriendo la malla
+                // en orden creciente con >= el ÚLTIMO gana).
+                if !significativo && ic >= best_ic_peldo && ic > 0.0 {
+                    best_ic_peldo = ic;
+                    dominant_ic_peldo = s.tau_ms;
+                }
             }
         }
         let resolved_dominant = if best_skill > 0.0 {
             dominant_skill
+        } else if best_ic_peldo > 0.0 {
+            // LH-06(A): la mejor evidencia NO significativa pero positiva
+            // derrota al argmax de energía — una escala que predijo algo
+            // (aunque sin significancia anytime) es mejor τ* que la más
+            // gritona. Si NINGUNA escaló IC>0, cae a P2/P3 como hoy
+            // (bit-paridad del caso de colapso total).
+            dominant_ic_peldo
         } else if best_operating_contrib.abs() > 1e-12 {
             dominant_operating
         } else {
@@ -1771,6 +1799,112 @@ mod tests {
         // (comportamiento C-05/AGY-AUD-P10 intacto).
         assert_eq!(spec.dominant_tau_ms, SPECTRUM_SCALES_MS[19]);
         assert_eq!(spec.habilidad_en(spec.dominant_tau_ms), None);
+    }
+
+    // ── LH-06(A) (GLM 138): peldaño IC>0 no significativo ────────────
+
+    /// Escala de banda con IC>0 NO significativo: constructor local —
+    /// madura para habilidad_medida (n ≥ 30) pero con capital de
+    /// e-proceso BAJO el umbral de familia (pocas observaciones del
+    /// e-proceso ⇒ no cruza M/α=100 de significativo_familia).
+    fn escala_ic_no_significativo(idx: usize, ic: f64) -> ScaleState {
+        let mut s = escala_con_habilidad(idx, MUESTRAS_SKILL_MADURAS, ic);
+        // Desplumar el e-proceso: capital bajo ⇒ no significativo.
+        s.skill_e = crate::evalues::EProceso::default();
+        s
+    }
+
+    /// (1) CONTRATO CENTRAL LH-06(A) — el caso medido por Claude H: sin
+    /// escalas Ville-significativas, una escala madura con IC>0 (aunque
+    /// no significativo) derrota al argmax de energía. ANTES: τ caía a
+    /// la escala más nerviosa (55-128 s en todas las series, medición
+    /// línea-h d7d805c8); AHORA: τ sigue a la mejor evidencia positiva.
+    #[test]
+    fn lh06a_ic_positivo_no_significativo_derrota_argmax_energia() {
+        let mut spec = TemporalSpectrum::new();
+        spec.first_ts_ms = 0;
+        spec.last_ts_ms = 86_400_000;
+        spec.updates = 10_000;
+        // Escala 18: energía GANADORA (0.9) pero IC negativo (anti-predice).
+        spec.scales[18] = escala_ic_no_significativo(18, -0.3);
+        spec.scales[18].signal = 0.9;
+        spec.scales[18].persistence = 0.6;
+        // Escala 21 (lenta, 4·τ₁₈): energía menor, IC>0 maduro NO
+        // significativo — el candidato P1.5.
+        spec.scales[21] = escala_ic_no_significativo(21, 0.2);
+        spec.scales[21].signal = 0.2;
+        spec.scales[21].persistence = 0.3;
+        spec.refresh_fusion();
+        assert_eq!(
+            spec.dominant_tau_ms, SPECTRUM_SCALES_MS[21],
+            "LH-06(A): IC>0 maduro (aunque no significativo) > argmax de energía"
+        );
+    }
+
+    /// (2) Paridad del colapso total: NINGUNA escala con IC>0 (todas
+    /// negativas o inmaduras) ⇒ cae al respaldo de energía de HOY
+    /// (bit-paridad con el régimen pre-LH-06 en este caso).
+    #[test]
+    fn lh06a_sin_ic_positivo_cae_al_respaldo_de_energia() {
+        let mut spec = TemporalSpectrum::new();
+        spec.first_ts_ms = 0;
+        spec.last_ts_ms = 86_400_000;
+        spec.updates = 10_000;
+        // Sólo evidencia negativa madura — IC>0 en ninguna.
+        spec.scales[19] = escala_ic_no_significativo(19, -0.4);
+        spec.scales[19].signal = 0.7;
+        spec.scales[19].persistence = 0.5;
+        spec.refresh_fusion();
+        // El respaldo de energía elige 19 (su contribución es la máxima
+        // en banda): conducta idéntica a la de hoy sin el peldaño.
+        assert_eq!(spec.dominant_tau_ms, SPECTRUM_SCALES_MS[19]);
+    }
+
+    /// (3) Ville manda: con UNA escala significativa presente, el
+    /// peldaño P1.5 no altera la selección (bit-paridad P1).
+    #[test]
+    fn lh06a_significativa_presente_el_peldano_no_interfiere() {
+        let mut spec = TemporalSpectrum::new();
+        spec.first_ts_ms = 0;
+        spec.last_ts_ms = 86_400_000;
+        spec.updates = 10_000;
+        // Significativa en 19 (capital de familia como el helper estándar).
+        spec.scales[19] = escala_con_habilidad(19, MUESTRAS_SKILL_MADURAS + 40, 0.4);
+        spec.scales[19].signal = 0.3;
+        spec.scales[19].persistence = 0.3;
+        // P1.5 candidata en 21 con IC MAYOR (0.6) pero no significativa:
+        // P1 debe ganar — la significancia anytime es el criterio fuerte.
+        spec.scales[21] = escala_ic_no_significativo(21, 0.6);
+        spec.scales[21].signal = 0.5;
+        spec.scales[21].persistence = 0.4;
+        spec.refresh_fusion();
+        assert_eq!(
+            spec.dominant_tau_ms, SPECTRUM_SCALES_MS[19],
+            "significativa > IC alto no significativo"
+        );
+    }
+
+    /// (4) Empates deterministas: dos escalas con el MISMO IC>0 no
+    /// significativo ⇒ mayor τ (sesgo anti-nervioso documentado del
+    /// diseño; la malla se recorre en orden creciente con >).
+    #[test]
+    fn lh06a_empate_ic_resuelve_por_mayor_tau() {
+        let mut spec = TemporalSpectrum::new();
+        spec.first_ts_ms = 0;
+        spec.last_ts_ms = 86_400_000;
+        spec.updates = 10_000;
+        // Mismo IC=0.25 en 18 y 21: gana 21 (τ mayor).
+        spec.scales[18] = escala_ic_no_significativo(18, 0.25);
+        spec.scales[18].signal = 0.6;
+        spec.scales[18].persistence = 0.5;
+        spec.scales[21] = escala_ic_no_significativo(21, 0.25);
+        spec.scales[21].signal = 0.1;
+        spec.scales[21].persistence = 0.2;
+        spec.refresh_fusion();
+        assert_eq!(
+            spec.dominant_tau_ms, SPECTRUM_SCALES_MS[21],
+            "empate IC ⇒ mayor τ (anti-nervioso)"
+        );
     }
 
     /// #601 — MEDICIÓN Monte Carlo del sesgo de selección que CL dejó

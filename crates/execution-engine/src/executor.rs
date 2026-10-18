@@ -668,12 +668,14 @@ impl OrderExecutor {
         buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
 
         match self.client.post_payload(buf.as_str()).await {
-            Ok(_) => {
+            Ok((limits, _)) => {
+                self.update_limits(&limits);
                 self.is_hedge_mode.store(true, Ordering::Relaxed);
                 println!("🔀 [POSITION-MODE] Cuenta migrada a HEDGE (dualSidePosition=true)");
                 Ok(true)
             }
             Err(e) => {
+                let e = self.handle_rate_limit_error(&e);
                 // N-05: Si falla activar hedge (ej. posiciones abiertas en one-way), reflejar la verdad local
                 self.is_hedge_mode.store(false, Ordering::Relaxed);
                 Err(format!(
@@ -747,8 +749,14 @@ impl OrderExecutor {
             sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
             buf.push_str("&signature=");
             buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-            if self.client.cancel_order_payload(buf.as_str()).await.is_ok() {
-                cancelled += 1;
+            match self.client.cancel_order_payload(buf.as_str()).await {
+                Ok(limits) => {
+                    self.update_limits(&limits);
+                    cancelled += 1;
+                }
+                Err(e) => {
+                    let _ = self.handle_rate_limit_error(&e);
+                }
             }
             // OCO-F5: los brackets TP/SL (algo orders) NO se tocan con
             // allOpenOrders — purgarlos también o el trigger dispara un
@@ -1164,9 +1172,10 @@ impl OrderExecutor {
 
     #[inline(always)]
     fn update_limits(&self, limits: &crate::client::BinanceRateLimits) {
+        let now_ms = self.get_synced_timestamp();
         if limits.weight_1m.is_some() || limits.orders_10s.is_some() || limits.orders_1m.is_some() {
             self.binance_limits_ts_ms
-                .store(self.get_synced_timestamp(), Ordering::Relaxed);
+                .store(now_ms, Ordering::Relaxed);
         }
         if let Some(w) = limits.weight_1m {
             self.binance_weight_1m.store(w, Ordering::Relaxed);
@@ -1177,8 +1186,12 @@ impl OrderExecutor {
         if let Some(o) = limits.orders_1m {
             self.binance_orders_1m.store(o, Ordering::Relaxed);
         }
-        // Respuesta exitosa = la ventana de rate limit está sana.
-        self.consecutive_429.store(0, Ordering::Relaxed);
+        // F1-005 (Ola Ω150): Solo reiniciar consecutive_429 cuando el cooldown activo ya expiró.
+        // Antes, cualquier 2xx concurrente durante una ráfaga reiniciaba consecutive_429 a 0
+        // en medio del cooldown, impidiendo alcanzar el umbral de 3+ 429 consecutivos.
+        if now_ms >= self.cooldown_until_ms.load(Ordering::Relaxed) {
+            self.consecutive_429.store(0, Ordering::Relaxed);
+        }
     }
 
     /// F1.8: política centralizada ante rate limits de Binance.
@@ -1573,14 +1586,16 @@ impl OrderExecutor {
             .client
             .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
             .await;
-        if res.is_err() {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            res = self
-                .client
-                .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
-                .await;
+        if let Err(ref e) = res {
+            if !e.starts_with("HTTP_429_RATE_LIMITED") && !e.starts_with("HTTP_418_IP_BANNED") {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                res = self
+                    .client
+                    .get_payload_with_timeout(url, Some(std::time::Duration::from_secs(5)))
+                    .await;
+            }
         }
-        res
+        res.map_err(|e| self.handle_rate_limit_error(&e))
     }
 
     pub async fn fetch_all_symbol_filters(
@@ -1599,12 +1614,14 @@ impl OrderExecutor {
             .client
             .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
             .await;
-        if res.is_err() {
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-            res = self
-                .client
-                .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
-                .await;
+        if let Err(ref e) = res {
+            if !e.starts_with("HTTP_429_RATE_LIMITED") && !e.starts_with("HTTP_418_IP_BANNED") {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                res = self
+                    .client
+                    .get_payload_with_timeout(buf.as_str(), Some(std::time::Duration::from_secs(10)))
+                    .await;
+            }
         }
         match res {
             Ok((limits, text)) => {
@@ -1662,7 +1679,7 @@ impl OrderExecutor {
                 }
                 Ok(map)
             }
-            Err(e) => Err(e),
+            Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
     }
 
@@ -1795,10 +1812,13 @@ impl OrderExecutor {
         buf.push_str(signature);
 
         let res = self.client.cancel_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res {
-            self.update_limits(limits);
+        match res {
+            Ok(limits) => {
+                self.update_limits(&limits);
+                Ok(())
+            }
+            Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
-        res.map(|_| ())
     }
 
     /// OCO-F5: purga TODAS las órdenes algo abiertas de un símbolo.
@@ -1833,10 +1853,13 @@ impl OrderExecutor {
         buf.push_str(signature);
 
         let res = self.client.cancel_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res {
-            self.update_limits(limits);
+        match res {
+            Ok(limits) => {
+                self.update_limits(&limits);
+                Ok(())
+            }
+            Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
-        res.map(|_| ())
     }
 
     /// OCO-F5: lista las órdenes algo (TP/SL/trailing) abiertas de un símbolo.
@@ -1989,10 +2012,13 @@ impl OrderExecutor {
         buf.push_str(signature);
 
         let res = self.client.execute_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res {
-            self.update_limits(limits);
+        match res {
+            Ok(limits) => {
+                self.update_limits(&limits);
+                Ok(())
+            }
+            Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
-        res.map(|_| ())
     }
 }
 
@@ -2833,10 +2859,13 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(signature);
 
         let res = self.client.execute_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res {
-            self.update_limits(limits);
+        match res {
+            Ok(limits) => {
+                self.update_limits(&limits);
+                Ok(())
+            }
+            Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
-        res.map(|_| ())
     }
 
     /// FASE 13: Reduce-Only Market. Guaranteed to only reduce position, never flip.
@@ -2902,10 +2931,13 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(signature);
 
         let res = self.client.execute_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res {
-            self.update_limits(limits);
+        match res {
+            Ok(limits) => {
+                self.update_limits(&limits);
+                Ok(())
+            }
+            Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
-        res.map(|_| ())
     }
 
     /// FASE 8: Native Exchange Trailing Stop Market
@@ -2993,10 +3025,13 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(signature);
 
         let res = self.client.execute_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res {
-            self.update_limits(limits);
+        match res {
+            Ok(limits) => {
+                self.update_limits(&limits);
+                Ok(())
+            }
+            Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
-        res.map(|_| ())
     }
 
     /// FASE 12: Parallel OCO Tensor Execution
@@ -3137,13 +3172,23 @@ impl ExecutionProvider for OrderExecutor {
             self.client.execute_order_payload(tp_buf.as_str())
         );
 
-        if let Ok(limits) = &sl_res {
-            self.update_limits(limits);
-            confirmed_sl_id = Some(format!("{}_SL", base_client_id));
+        match &sl_res {
+            Ok(limits) => {
+                self.update_limits(limits);
+                confirmed_sl_id = Some(format!("{}_SL", base_client_id));
+            }
+            Err(e) => {
+                let _ = self.handle_rate_limit_error(e);
+            }
         }
-        if let Ok(limits) = &tp_res {
-            self.update_limits(limits);
-            confirmed_tp_id = Some(format!("{}_TP", base_client_id));
+        match &tp_res {
+            Ok(limits) => {
+                self.update_limits(limits);
+                confirmed_tp_id = Some(format!("{}_TP", base_client_id));
+            }
+            Err(e) => {
+                let _ = self.handle_rate_limit_error(e);
+            }
         }
 
         // F1.9 — FIX OCO PARCIAL: antes, una pierna fallida devolvía Ok(())
@@ -3205,6 +3250,8 @@ impl ExecutionProvider for OrderExecutor {
                 if let Err(e) = &sl_res {
                     if pierna_ya_existe(e) {
                         sl_res = Ok(crate::client::BinanceRateLimits::default());
+                    } else {
+                        let _ = self.handle_rate_limit_error(e);
                     }
                 }
                 if let Ok(limits) = &sl_res {
@@ -3240,6 +3287,8 @@ impl ExecutionProvider for OrderExecutor {
                 if let Err(e) = &tp_res {
                     if pierna_ya_existe(e) {
                         tp_res = Ok(crate::client::BinanceRateLimits::default());
+                    } else {
+                        let _ = self.handle_rate_limit_error(e);
                     }
                 }
                 if let Ok(limits) = &tp_res {
@@ -3336,10 +3385,13 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(signature);
 
         let res = self.client.cancel_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res {
-            self.update_limits(limits);
+        match res {
+            Ok(limits) => {
+                self.update_limits(&limits);
+                Ok(())
+            }
+            Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
-        res.map(|_| ())
     }
 
     /// Cancela todas las órdenes activas en Binance para un símbolo específico
@@ -3378,10 +3430,14 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str(signature);
 
         let res = self.client.cancel_order_payload(buf.as_str()).await;
-        if let Ok(limits) = &res {
-            self.update_limits(limits);
+        match res {
+            Ok(limits) => {
+                self.update_limits(&limits);
+            }
+            Err(e) => {
+                return Err(self.handle_rate_limit_error(&e));
+            }
         }
-        res.map(|_| ())?;
         // OCO-F5: las órdenes TP/SL condicionales viven en el servicio de
         // Algo y SOBREVIVEN a /fapi/v1/allOpenOrders. Sin esta segunda purga,
         // todo cierre de posición dejaba triggers vivos que disparaban
@@ -3499,7 +3555,7 @@ impl ExecutionProvider for OrderExecutor {
                 self.update_limits(&limits);
                 crate::execution_evidence::parse_query_order_response(&body, symbol, client_order_id)
             }
-            Err(e) => Err(e),
+            Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
     }
 
@@ -3517,7 +3573,7 @@ impl ExecutionProvider for OrderExecutor {
                 }
                 Err(format!("serverTime not found in response. Text: {}", text))
             }
-            Err(e) => Err(e),
+            Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
     }
 
@@ -3633,7 +3689,7 @@ impl ExecutionProvider for OrderExecutor {
                 self.update_limits(&limits);
                 crate::binance_api::validate_leverage_confirmation(&text, symbol, leverage)
             }
-            Err(e) => Err(e),
+            Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
     }
 
@@ -4269,5 +4325,46 @@ mod tests_m4_c02 {
                 "{f} debe respetar el kill-switch"
             );
         }
+    }
+
+    /// F1-005 (Ola Ω150): un 2xx concurrente durante una ventana de cooldown
+    /// activa NO debe borrar `consecutive_429`. Solo cuando `now >= cooldown_until_ms`
+    /// se restablece el contador a 0.
+    #[test]
+    fn f1_005_concurrent_2xx_during_cooldown_preserves_consecutive_429() {
+        let ex = executor();
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        assert_eq!(ex.consecutive_429.load(Ordering::Relaxed), 2);
+
+        // Un 2xx concurrente llega mientras el cooldown de 30s sigue activo:
+        ex.update_limits(&crate::client::BinanceRateLimits {
+            weight_1m: Some(400),
+            orders_10s: Some(5),
+            orders_1m: Some(20),
+        });
+        assert_eq!(
+            ex.consecutive_429.load(Ordering::Relaxed),
+            2,
+            "un 2xx concurrente durante cooldown activo no debe borrar consecutive_429"
+        );
+
+        // Un tercer 429 en la misma ráfaga activa RATE_BRAKE temporal:
+        ex.handle_rate_limit_error("HTTP_429_RATE_LIMITED retry_after=30");
+        assert_eq!(ex.consecutive_429.load(Ordering::Relaxed), 3);
+        let now = current_synced_timestamp_ms(None);
+        assert!(
+            matches!(ex.check_rate_limits(now), Err(e) if e.starts_with("RATE_BRAKE")),
+            "el 3er 429 debe activar RATE_BRAKE pese al 2xx concurrente intermedio"
+        );
+
+        // Una vez expirado el cooldown, un 2xx sano sí restablece consecutive_429 a 0:
+        ex.cooldown_until_ms.store(0, Ordering::Relaxed);
+        ex.update_limits(&crate::client::BinanceRateLimits {
+            weight_1m: Some(100),
+            orders_10s: Some(1),
+            orders_1m: Some(5),
+        });
+        assert_eq!(ex.consecutive_429.load(Ordering::Relaxed), 0);
     }
 }

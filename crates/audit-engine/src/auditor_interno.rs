@@ -208,7 +208,10 @@ pub fn calculate_max_discrepancy(
     };
 
     let wr_disc = (safe_wr - independent.calculated_win_rate).abs();
-    let dd_disc = (safe_dd - independent.calculated_max_drawdown).abs();
+    // F1-006 (Ola Ω150): Solo penalizar subestimación de drawdown (cuando el sistema
+    // afirma tener MENOR drawdown que la realidad de los fills). Reportar un drawdown
+    // interno más conservador (mayor) no constituye autoengaño.
+    let dd_disc = (independent.calculated_max_drawdown - safe_dd).max(0.0);
 
     let max_disc = sharpe_disc.max(wr_disc).max(dd_disc);
     (max_disc, sharpe_disc, wr_disc, dd_disc)
@@ -231,6 +234,10 @@ pub struct DailyTribunalReport {
     pub justification: String,
 }
 
+/// F1-006 (Ola Ω150): Capacidad máxima acotada del diario de fills para evitar
+/// crecimiento ilimitado de RAM y degradación cuadrática en sesiones largas.
+pub const MAX_FILLS_JOURNAL: usize = 4096;
+
 /// Dual Result Verifier
 pub struct VerificadorResultados;
 
@@ -240,7 +247,8 @@ impl VerificadorResultados {
         Self::compute_metrics_with_capital(fills, 13.0)
     }
 
-    /// Computes independent metrics from raw exchange fill records anchored to explicit base capital
+    /// Computes independent metrics from raw exchange fill records anchored to explicit base capital.
+    /// F1-006 (Ola Ω150): Single-pass zero-allocation Welford online variance + equity curve reconstruction.
     pub fn compute_metrics_with_capital(
         fills: &[ExchangeFillRecord],
         base_capital: f64,
@@ -249,68 +257,51 @@ impl VerificadorResultados {
             return IndependentMetrics::default();
         }
 
-        let closed_fills: Vec<&ExchangeFillRecord> =
-            fills.iter().filter(|f| f.is_closed_position).collect();
-        if closed_fills.is_empty() {
-            return IndependentMetrics::default();
-        }
-
-        let total_trades = closed_fills.len() as f64;
-        let winning_trades = closed_fills.iter().filter(|f| f.realized_pnl > 0.0).count() as f64;
-        let win_rate = winning_trades / total_trades;
-
         let safe_capital = if base_capital.is_finite() && base_capital > 0.0 {
             base_capital
         } else {
             13.0
         };
-        let returns: Vec<f64> = closed_fills
-            .iter()
-            .map(|f| {
-                let pnl = if f.realized_pnl.is_finite() {
-                    f.realized_pnl
-                } else {
-                    0.0
-                };
-                let fee = if f.fee_usd.is_finite() {
-                    f.fee_usd
-                } else {
-                    0.0
-                };
-                (pnl - fee) / safe_capital
-            })
-            .collect();
-        let mean_ret: f64 = returns.iter().sum::<f64>() / total_trades;
-        let variance: f64 = if total_trades > 1.0 {
-            returns.iter().map(|r| (r - mean_ret).powi(2)).sum::<f64>() / (total_trades - 1.0)
-        } else {
-            0.0
-        };
-        let std_dev = variance.sqrt();
 
-        let time_span_days =
-            if let (Some(first), Some(last)) = (closed_fills.first(), closed_fills.last()) {
-                ((last.timestamp_ns.saturating_sub(first.timestamp_ns)) as f64 / (1e9 * 86400.0))
-                    .max(1.0 / 24.0)
-            } else {
-                1.0
-            };
-        let trades_per_year = (total_trades / time_span_days) * 365.0;
-
-        let sharpe = if std_dev > 1e-9 {
-            (mean_ret / std_dev) * trades_per_year.sqrt().min(500.0)
-        } else {
-            0.0
-        };
-
-        // Reconstruct peak-to-trough max drawdown anchored to account equity
-        let initial_equity = safe_capital;
-        let mut equity = initial_equity;
-        let mut peak = initial_equity;
+        let mut count: u64 = 0;
+        let mut winning_trades: u64 = 0;
+        let mut mean_ret: f64 = 0.0;
+        let mut m2: f64 = 0.0;
+        let mut first_ts: Option<u64> = None;
+        let mut last_ts: u64 = 0;
+        let mut equity = safe_capital;
+        let mut peak = safe_capital;
         let mut max_dd = 0.0;
+        let mut gross_pnl_sum = 0.0;
+        let mut total_fees_sum = 0.0;
 
-        for fill in &closed_fills {
-            equity += fill.realized_pnl - fill.fee_usd;
+        for f in fills.iter().filter(|f| f.is_closed_position) {
+            count += 1;
+            let pnl = if f.realized_pnl.is_finite() {
+                f.realized_pnl
+            } else {
+                0.0
+            };
+            let fee = if f.fee_usd.is_finite() {
+                f.fee_usd
+            } else {
+                0.0
+            };
+            if pnl > 0.0 {
+                winning_trades += 1;
+            }
+            if first_ts.is_none() {
+                first_ts = Some(f.timestamp_ns);
+            }
+            last_ts = f.timestamp_ns;
+
+            let ret = (pnl - fee) / safe_capital;
+            let delta = ret - mean_ret;
+            mean_ret += delta / (count as f64);
+            let delta2 = ret - mean_ret;
+            m2 += delta * delta2;
+
+            equity += pnl - fee;
             if equity > peak {
                 peak = equity;
             }
@@ -322,11 +313,39 @@ impl VerificadorResultados {
             if dd > max_dd {
                 max_dd = dd;
             }
+
+            gross_pnl_sum += pnl;
+            total_fees_sum += fee;
         }
 
-        let gross_pnl: f64 =
-            closed_fills.iter().map(|f| f.realized_pnl).sum::<f64>() / safe_capital;
-        let total_fees: f64 = closed_fills.iter().map(|f| f.fee_usd).sum::<f64>() / safe_capital;
+        if count == 0 {
+            return IndependentMetrics::default();
+        }
+
+        let total_trades = count as f64;
+        let win_rate = (winning_trades as f64) / total_trades;
+        let variance = if count > 1 {
+            (m2 / ((count - 1) as f64)).max(0.0)
+        } else {
+            0.0
+        };
+        let std_dev = variance.sqrt();
+
+        let time_span_days = if let Some(first) = first_ts {
+            ((last_ts.saturating_sub(first)) as f64 / (1e9 * 86400.0)).max(1.0 / 24.0)
+        } else {
+            1.0
+        };
+        let trades_per_year = (total_trades / time_span_days) * 365.0;
+
+        let sharpe = if std_dev > 1e-9 {
+            (mean_ret / std_dev) * trades_per_year.sqrt().min(500.0)
+        } else {
+            0.0
+        };
+
+        let gross_pnl = gross_pnl_sum / safe_capital;
+        let total_fees = total_fees_sum / safe_capital;
         let gross_alpha = gross_pnl / total_trades;
         let fee_drag = total_fees / total_trades;
 
@@ -391,6 +410,10 @@ impl AuditorInterno {
             || !fill.realized_pnl.is_finite()
         {
             return;
+        }
+        if self.fills_journal.len() >= MAX_FILLS_JOURNAL {
+            let overflow = self.fills_journal.len() + 1 - MAX_FILLS_JOURNAL;
+            self.fills_journal.drain(0..overflow);
         }
         self.fills_journal.push(fill);
     }
@@ -563,5 +586,37 @@ mod tests {
         assert!(metrics_nan_cap.calculated_sharpe.is_finite());
         assert!(metrics_nan_cap.calculated_max_drawdown.is_finite());
         assert!(metrics_nan_cap.calculated_win_rate.is_finite());
+    }
+
+    #[test]
+    fn f1_006_bounded_fills_journal_and_one_sided_drawdown_discrepancy() {
+        let mut auditor = AuditorInterno::with_capital(13.0);
+        for i in 0..(MAX_FILLS_JOURNAL + 128) {
+            auditor.record_fill(ExchangeFillRecord {
+                timestamp_ns: (i as u64 + 1) * 1_000_000_000,
+                symbol_id: 0,
+                is_buyer: i % 2 == 0,
+                price: 50_000.0,
+                qty: 0.001,
+                fee_usd: 0.002,
+                realized_pnl: if i % 2 == 0 { 0.05 } else { -0.02 },
+                is_closed_position: true,
+            });
+        }
+        assert_eq!(
+            auditor.fills_journal.len(),
+            MAX_FILLS_JOURNAL,
+            "fills_journal debe estar acotado en MAX_FILLS_JOURNAL"
+        );
+
+        let indep = auditor.compute_independent_metrics();
+        // Reportar un drawdown interno más conservador (mayor que el independiente) no debe producir discrepancia:
+        let (_, _, _, dd_disc_conservative) = calculate_max_discrepancy(
+            indep.calculated_sharpe,
+            indep.calculated_win_rate,
+            indep.calculated_max_drawdown + 0.05,
+            &indep,
+        );
+        assert_eq!(dd_disc_conservative, 0.0);
     }
 }
