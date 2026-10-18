@@ -25,7 +25,7 @@ pub use executor::OrderResolution;
 pub use hot_swap::HotSwapController;
 pub use ntp::start_ntp_synchronizer;
 pub use order_registry::{OrderRegistry, OrderStatus, TrackedOrder};
-pub use order_types::{Fill, OrderAck};
+pub use order_types::{Fill, FillReport, OrderAck};
 pub use quantum_multiplexer::QuantumMultiplexer;
 pub use quantum_socket::QuantumSocketPool;
 pub use reconciliation::{reconcile, PositionRiskEntry, ReconciliationReport};

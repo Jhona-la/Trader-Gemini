@@ -139,14 +139,14 @@ impl PerceptronGateEngine {
             if !x.is_finite() || x == 0.0 {
                 continue;
             }
-            // Peso espectral: campana en la banda operativa (8..23), decae
-            // linealmente hacia 0.5 en los extremos sub-ruido y macro.
-            let peso = if (8..=23).contains(&k) {
+            // F1-125: Perfil espectral continuo anclado a la banda física operativa [18..=22] ([30 s, 12 h]).
+            // Decae linealmente de forma C^0 hacia 0.5 en microestructura sub-30s (k < 18) y macroestructura secular (k > 22).
+            let peso = if (18..=22).contains(&k) {
                 1.0
-            } else if k < 8 {
-                0.5 + 0.5 * (k as f64 / 8.0)
+            } else if k < 18 {
+                0.5 + 0.5 * (k as f64 / 18.0)
             } else {
-                0.5 + 0.5 * ((31 - k) as f64 / 8.0).min(1.0)
+                0.5 + 0.5 * (((31 - k) as f64 / 9.0).clamp(0.0, 1.0))
             };
             por_escala[k] = Self::infer(x, peso);
         }

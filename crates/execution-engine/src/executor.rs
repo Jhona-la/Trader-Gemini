@@ -2,7 +2,7 @@ use crate::binance_api::{
     sign_payload_to_buffer, ORDER_TYPE_LIMIT, ORDER_TYPE_MARKET, SIDE_BUY, SIDE_SELL,
     TIME_IN_FORCE_IOC,
 };
-use crate::order_types::OrderAck;
+use crate::order_types::{FillReport, OrderAck};
 use crate::ExecutionPayload;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use risk_engine::ValidatedOrder;
@@ -687,8 +687,9 @@ impl OrderExecutor {
     }
 
     /// F1-027: Cancela órdenes normales y algo brackets de un símbolo específico.
-    async fn cancel_symbol_orders_and_brackets(&self, sym: &str, api_secret: &str) -> usize {
+    async fn cancel_symbol_orders_and_brackets(&self, sym: &str, api_secret: &str) -> (usize, bool) {
         let mut cancelled = 0usize;
+        let mut all_purged = true;
         let ts = self.get_synced_timestamp();
         let mut buf = ZeroAllocBuffer::new();
         buf.push_str(self.client.get_base_url());
@@ -709,12 +710,23 @@ impl OrderExecutor {
             }
             Err(e) => {
                 let _ = self.handle_rate_limit_error(&e);
+                // Si el error no es "no open orders" (-2011), la purga de órdenes falló
+                if !e.contains("-2011") && !e.contains("Unknown order") {
+                    all_purged = false;
+                }
             }
         }
-        if self.cancel_all_algo_open_orders(sym).await.is_ok() {
-            cancelled += 1;
+        match self.cancel_all_algo_open_orders(sym).await {
+            Ok(()) => {
+                cancelled += 1;
+            }
+            Err(e) => {
+                if !e.contains("no open algo orders") && !e.contains("-2011") {
+                    all_purged = false;
+                }
+            }
         }
-        cancelled
+        (cancelled, all_purged)
     }
 
     /// FASE 13: Emergency Flatten All.
@@ -766,6 +778,7 @@ impl OrderExecutor {
         let mut closed = 0usize;
         let mut cancelled = 0usize;
         let mut unclosed_symbols = Vec::new();
+        let mut unpurged_symbols = Vec::new();
 
         // 1) Cerrar PRIMERO cada posición abierta.
         for p in &open_positions {
@@ -979,7 +992,12 @@ impl OrderExecutor {
             if position_closed {
                 closed += 1;
                 // F1-027: Sólo purgar brackets de ESTE símbolo una vez que el cierre aterrizó
-                cancelled += self.cancel_symbol_orders_and_brackets(&p.symbol, &api_secret).await;
+                let (sym_canc, purged) = self.cancel_symbol_orders_and_brackets(&p.symbol, &api_secret).await;
+                cancelled += sym_canc;
+                if !purged {
+                    unpurged_symbols.push(p.symbol.clone());
+                    quantum_arena::protection_health::mark_dirty();
+                }
             } else {
                 // F1-027: Si el cierre falló, NO purgar protección (evitar posición desnuda)
                 unclosed_symbols.push(p.symbol.clone());
@@ -989,8 +1007,21 @@ impl OrderExecutor {
         // Purgar brackets de símbolos sin posiciones abiertas (órdenes huérfanas)
         for sym in &all_symbols {
             if !open_symbols.contains(sym) {
-                cancelled += self.cancel_symbol_orders_and_brackets(sym, &api_secret).await;
+                let (sym_canc, purged) = self.cancel_symbol_orders_and_brackets(sym, &api_secret).await;
+                cancelled += sym_canc;
+                if !purged {
+                    unpurged_symbols.push(sym.clone());
+                    quantum_arena::protection_health::mark_dirty();
+                }
             }
+        }
+
+        if !unpurged_symbols.is_empty() {
+            println!(
+                "⚠️ [FLATTEN] Purga incompleta en {} símbolos (se marcó protection_health dirty): {:?}",
+                unpurged_symbols.len(),
+                unpurged_symbols
+            );
         }
 
         if !unclosed_symbols.is_empty() {
@@ -1303,19 +1334,34 @@ impl OrderExecutor {
         if self.kill_switch.load(Ordering::Relaxed) {
             return Err("KILL SWITCH ACTIVE. Execution blocked.".to_string());
         }
-        self.check_exit_rate_limits(timestamp_ms)
+        self.check_exit_rate_limits(timestamp_ms)?;
+
+        // F1-030: Límite local de aceleración aplicado ÚNICAMENTE a la entrada
+        // de órdenes nuevas (riesgo creciente), derivado de la capacidad de órdenes
+        // del exchange (300 órdenes/10s ≈ 30 ops/s). Las cancelaciones, lecturas y
+        // cierres reduce-only nunca son vetadas por este literal local.
+        let current_sec = timestamp_ms / 1000;
+        let last_reset = self.last_reset_timestamp.load(Ordering::Relaxed);
+
+        if current_sec > last_reset {
+            self.last_reset_timestamp
+                .store(current_sec, Ordering::Relaxed);
+            self.rate_limit_counter.store(1, Ordering::Relaxed);
+        } else {
+            let ops = self.rate_limit_counter.fetch_add(1, Ordering::Relaxed);
+            if ops > 25 {
+                return Err("LOCAL RATE LIMIT EXCEEDED. Throttling execution.".to_string());
+            }
+        }
+        Ok(())
     }
 
     /// CL-3 — EL KILL-SWITCH BLOQUEA LO QUE AUMENTA EL RIESGO, NO LAS SALIDAS.
     ///
-    /// El sistema inmune y el apagado arman el kill-switch y DESPUÉS llaman a
-    /// `flatten_all_positions`, que empieza por `fetch_position_risk`. Con el
-    /// chequeo del kill-switch en todas las rutas, esa lectura devolvía
-    /// «KILL SWITCH ACTIVE» y el aplanado abortaba sin cancelar ni cerrar
-    /// nada; también quedaban bloqueados los cierres reduce-only del núcleo y
-    /// las cancelaciones. Las rutas de lectura, cancelación y cierre
-    /// reduce-only usan esta variante: respetan los frenos de rate-limit del
-    /// exchange (418/429, headroom, límite local) pero no el kill-switch.
+    /// F1-030: Presupuestos separados. Las cancelaciones, lecturas y cierres reduce-only
+    /// NUNCA se bloquean por un literal local de ops/s. Se rigen exclusivamente por
+    /// los frenos reales del exchange (RATE_BRAKE, 429 cooldown) y el headroom del 80%
+    /// en peso de requests (2400/min) y cuotas de órdenes vigentes reportadas por Binance.
     fn check_exit_rate_limits(&self, timestamp_ms: u64) -> Result<(), String> {
         // FIX M4-C02: freno TEMPORAL por rate-limit (3×429 escalado / HTTP 418).
         // A diferencia del kill_switch permanente (incidentes reales), este
@@ -1375,19 +1421,6 @@ impl OrderExecutor {
             ));
         }
 
-        let current_sec = timestamp_ms / 1000;
-        let last_reset = self.last_reset_timestamp.load(Ordering::Relaxed);
-
-        if current_sec > last_reset {
-            self.last_reset_timestamp
-                .store(current_sec, Ordering::Relaxed);
-            self.rate_limit_counter.store(1, Ordering::Relaxed);
-        } else {
-            let ops = self.rate_limit_counter.fetch_add(1, Ordering::Relaxed);
-            if ops > 20 {
-                return Err("LOCAL RATE LIMIT EXCEEDED. Throttling execution.".to_string());
-            }
-        }
         Ok(())
     }
 
@@ -2029,6 +2062,328 @@ impl OrderExecutor {
             Err(e) => Err(self.handle_rate_limit_error(&e)),
         }
     }
+
+    /// F1-031: Ejecución MARKET que retorna FillReport tipado con precios y comisiones reales.
+    pub async fn execute_raw_qty_with_report(
+        &self,
+        symbol: &str,
+        is_long: bool,
+        quantity: f64,
+        step_size: f64,
+        client_order_id_param: &str,
+    ) -> Result<FillReport, String> {
+        let timestamp = self.get_synced_timestamp();
+        self.check_rate_limits(timestamp)?;
+        self.execute_raw_qty_internal(
+            symbol,
+            is_long,
+            quantity,
+            step_size,
+            client_order_id_param,
+            timestamp,
+        )
+        .await
+    }
+
+    async fn execute_raw_qty_internal(
+        &self,
+        symbol: &str,
+        is_long: bool,
+        quantity: f64,
+        step_size: f64,
+        client_order_id_param: &str,
+        timestamp: u64,
+    ) -> Result<FillReport, String> {
+        if quantity.is_infinite() || quantity.is_nan() || quantity <= 0.0 {
+            return Err(
+                "SEGURIDAD: quantity inválido (infinito, NaN o <= 0.0). Orden abortada."
+                    .to_string(),
+            );
+        }
+        let final_quantity = Self::round_to_step_size(quantity, step_size);
+        if !final_quantity.is_finite() || final_quantity <= 0.0 {
+            return Err("Volumen 0 despues de round_to_step_size".to_string());
+        }
+
+        if self.is_paper_trading {
+            println!(
+                "📝 [PAPER TRADING LOCAL] Ejecutando raw_qty {} para {}. Cero latencia simulada.",
+                final_quantity, symbol
+            );
+            return Ok(FillReport {
+                client_order_id: client_order_id_param.to_string(),
+                symbol: symbol.to_string(),
+                executed_qty: final_quantity,
+                avg_price: 0.0,
+                commission: 0.0,
+                is_filled: true,
+                status: "FILLED".to_string(),
+            });
+        }
+
+        let side = if is_long { SIDE_BUY } else { SIDE_SELL };
+
+        // F1.2: toda orden market lleva newClientOrderId (idempotencia y trazabilidad).
+        let client_order_id = if client_order_id_param.is_empty() {
+            uuid::Uuid::now_v7().simple().to_string()
+        } else {
+            client_order_id_param.to_string()
+        };
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/order?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/order?"
+        });
+        let payload_start = buf.as_str().len();
+
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
+        buf.push_str("&side=");
+        buf.push_str(side);
+        if self.is_hedge_mode.load(Ordering::Relaxed) {
+            buf.push_str("&positionSide=");
+            buf.push_str(if is_long { "LONG" } else { "SHORT" });
+        }
+        buf.push_str("&type=");
+        buf.push_str(ORDER_TYPE_MARKET);
+        buf.push_str("&quantity=");
+        buf.push_f64(final_quantity);
+        buf.push_str("&newClientOrderId=");
+        buf.push_str(&client_order_id);
+        // F1-031: Exigir RESULT para conocer avgPrice, executedQty y comisiones reales
+        buf.push_str("&newOrderRespType=RESULT");
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
+
+        if buf.is_overflow() {
+            return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
+        }
+
+        // F1.5: registrar la intención antes del envío. CL-47: después de la
+        // última salida previa al envío, como la IOC (CL-39b): un buffer
+        // desbordado no deja una intención huérfana.
+        self.order_registry.register_intent(
+            &client_order_id,
+            symbol,
+            side,
+            if is_long { "LONG" } else { "SHORT" },
+            ORDER_TYPE_MARKET,
+            final_quantity,
+            timestamp,
+        );
+
+        let mut sig_buf = [0u8; 64];
+        let payload = &buf.as_str()[payload_start..];
+        let api_secret = self.api_secret.load();
+
+        // WS Execution Routing (Zero-TLS overhead)
+        if self.ws.is_connected() {
+            let api_key = self
+                .client
+                .api_key
+                .load()
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+            if let Err(e) = self.ws.send_order_payload(
+                &api_key,
+                &api_secret,
+                symbol,
+                side,
+                if self.is_hedge_mode.load(Ordering::Relaxed) {
+                    Some(if is_long { "LONG" } else { "SHORT" })
+                } else {
+                    None
+                },
+                ORDER_TYPE_MARKET,
+                final_quantity,
+                None,
+                None,
+                false,
+                &client_order_id,
+                timestamp,
+            ) {
+                println!(
+                    "⚠️ [WS-EXECUTOR] Failed to send raw qty order, falling back to REST: {}",
+                    e
+                );
+            } else {
+                // FIX M4-C01: confirmar con el exchange antes de retornar Ok —
+                // el write WS no es un ack (ver confirm_ws_dispatch).
+                self.confirm_ws_dispatch(symbol, &client_order_id).await?;
+                return self
+                    .order_registry
+                    .get_fill_report(&client_order_id)
+                    .ok_or_else(|| "FILL_REPORT_NOT_FOUND_AFTER_WS_CONFIRM".to_string());
+            }
+        }
+
+        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
+        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+        buf.push_str("&signature=");
+        buf.push_str(signature);
+
+        let res = self.client.execute_order_payload_typed(buf.as_str()).await;
+        match &res {
+            Ok((limits, ack)) => {
+                self.update_limits(limits);
+                self.order_registry.apply_ack(ack, timestamp);
+                Ok(FillReport::from_ack(ack))
+            }
+            Err(e) => {
+                // F4-H4: rechazo firme cierra la intención en el OrderRegistry
+                if crate::ioc_evidence::error_cierra_la_intencion(e) {
+                    self.order_registry.mark_local_reject(&client_order_id, timestamp);
+                }
+                if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
+                    return Err(self.handle_rate_limit_error(e));
+                }
+                Err(e.clone())
+            }
+        }
+    }
+
+    /// F1-031: Reduce-Only Market que retorna FillReport para retroalimentación de slippage y comisiones.
+    pub async fn execute_reduce_only_market_with_report(
+        &self,
+        symbol: &str,
+        is_long_close: bool,
+        quantity: f64,
+        step_size: f64,
+    ) -> Result<FillReport, String> {
+        let timestamp = self.get_synced_timestamp();
+        self.check_exit_rate_limits(timestamp)?;
+        self.execute_reduce_only_market_internal(
+            symbol,
+            is_long_close,
+            quantity,
+            step_size,
+            timestamp,
+        )
+        .await
+    }
+
+    async fn execute_reduce_only_market_internal(
+        &self,
+        symbol: &str,
+        is_long_close: bool,
+        quantity: f64,
+        step_size: f64,
+        timestamp: u64,
+    ) -> Result<FillReport, String> {
+        let final_quantity = Self::round_to_step_size(quantity, step_size);
+        if final_quantity <= 0.0 {
+            return Err("Volumen 0 despues de round_to_step_size".to_string());
+        }
+
+        if self.is_paper_trading {
+            println!("📝 [PAPER TRADING LOCAL] Reduciendo posicion de {} para {}. Cero latencia simulada.", final_quantity, symbol);
+            return Ok(FillReport {
+                client_order_id: String::new(),
+                symbol: symbol.to_string(),
+                executed_qty: final_quantity,
+                avg_price: 0.0,
+                commission: 0.0,
+                is_filled: true,
+                status: "FILLED".to_string(),
+            });
+        }
+
+        let side = if is_long_close { SIDE_SELL } else { SIDE_BUY };
+
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/order?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/order?"
+        });
+        let payload_start = buf.as_str().len();
+
+        let is_hedge = self.is_hedge_mode.load(Ordering::Relaxed);
+        let pos_side_str = if is_hedge {
+            if is_long_close { "LONG" } else { "SHORT" }
+        } else {
+            "BOTH"
+        };
+
+        buf.push_str("symbol=");
+        buf.push_str(symbol);
+        buf.push_str("&side=");
+        buf.push_str(side);
+        if is_hedge {
+            buf.push_str("&positionSide=");
+            buf.push_str(pos_side_str);
+            buf.push_str("&type=");
+            buf.push_str(ORDER_TYPE_MARKET);
+        } else {
+            buf.push_str("&type=");
+            buf.push_str(ORDER_TYPE_MARKET);
+            buf.push_str("&reduceOnly=true");
+        }
+        buf.push_str("&quantity=");
+        buf.push_f64(final_quantity);
+
+        let client_order_id = uuid::Uuid::now_v7().simple().to_string();
+
+        buf.push_str("&newClientOrderId=");
+        buf.push_str(&client_order_id);
+        // F1-028 / F1-031: Exigir RESULT para conocer executedQty y estado terminal
+        buf.push_str("&newOrderRespType=RESULT");
+        buf.push_str("&timestamp=");
+        buf.push_u64(timestamp);
+
+        if buf.is_overflow() {
+            return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
+        }
+
+        let mut sig_buf = [0u8; 64];
+        let payload = &buf.as_str()[payload_start..];
+        let api_secret = self.api_secret.load();
+        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
+        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+        buf.push_str("&signature=");
+        buf.push_str(signature);
+
+        // F1-028: Registrar intención antes del despacho
+        self.order_registry.register_intent(
+            &client_order_id,
+            symbol,
+            side,
+            pos_side_str,
+            ORDER_TYPE_MARKET,
+            final_quantity,
+            timestamp,
+        );
+
+        let res = self.client.execute_order_payload_typed(buf.as_str()).await;
+        match res {
+            Ok((limits, ack)) => {
+                self.update_limits(&limits);
+                let now = self.get_synced_timestamp();
+                self.order_registry.apply_ack(&ack, now);
+                let report = FillReport::from_ack(&ack);
+                if ack.executed_qty.is_finite() && ack.executed_qty > 0.0 {
+                    Ok(report)
+                } else if ack.is_filled()
+                    || ack.status.trim().eq_ignore_ascii_case("PARTIALLY_FILLED")
+                {
+                    Ok(report)
+                } else {
+                    Err(format!(
+                        "CLOSE_UNFILLED: status={}, executed_qty={}",
+                        ack.status, ack.executed_qty
+                    ))
+                }
+            }
+            Err(e) => {
+                if crate::ioc_evidence::error_cierra_la_intencion(&e) {
+                    self.order_registry.mark_local_reject(&client_order_id, timestamp);
+                }
+                Err(self.handle_rate_limit_error(&e))
+            }
+        }
+    }
 }
 
 impl ExecutionProvider for OrderExecutor {
@@ -2255,143 +2610,18 @@ impl ExecutionProvider for OrderExecutor {
         step_size: f64,
         client_order_id_param: &str,
     ) -> Result<(), String> {
-        if quantity.is_infinite() || quantity.is_nan() || quantity <= 0.0 {
-            return Err(
-                "SEGURIDAD: quantity inválido (infinito, NaN o <= 0.0). Orden abortada."
-                    .to_string(),
-            );
-        }
-        let final_quantity = Self::round_to_step_size(quantity, step_size);
-        if !final_quantity.is_finite() || final_quantity <= 0.0 {
-            return Err("Volumen 0 despues de round_to_step_size".to_string());
-        }
-
-        if self.is_paper_trading {
-            println!(
-                "📝 [PAPER TRADING LOCAL] Ejecutando raw_qty {} para {}. Cero latencia simulada.",
-                final_quantity, symbol
-            );
-            return Ok(());
-        }
-
-        let side = if is_long { SIDE_BUY } else { SIDE_SELL };
         let timestamp = self.get_synced_timestamp();
-
         self.check_rate_limits(timestamp)?;
-
-        // F1.2: toda orden market lleva newClientOrderId (idempotencia y trazabilidad).
-        let client_order_id = if client_order_id_param.is_empty() {
-            uuid::Uuid::now_v7().simple().to_string()
-        } else {
-            client_order_id_param.to_string()
-        };
-        let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/order?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/order?"
-        });
-        let payload_start = buf.as_str().len();
-
-        buf.push_str("symbol=");
-        buf.push_str(symbol);
-        buf.push_str("&side=");
-        buf.push_str(side);
-        if self.is_hedge_mode.load(Ordering::Relaxed) {
-            buf.push_str("&positionSide=");
-            buf.push_str(if is_long { "LONG" } else { "SHORT" });
-        }
-        buf.push_str("&type=");
-        buf.push_str(ORDER_TYPE_MARKET);
-        buf.push_str("&quantity=");
-        buf.push_f64(final_quantity);
-        buf.push_str("&newClientOrderId=");
-        buf.push_str(&client_order_id);
-        buf.push_str("&timestamp=");
-        buf.push_u64(timestamp);
-
-        if buf.is_overflow() {
-            return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
-        }
-
-        // F1.5: registrar la intención antes del envío. CL-47: después de la
-        // última salida previa al envío, como la IOC (CL-39b): un buffer
-        // desbordado no deja una intención huérfana.
-        self.order_registry.register_intent(
-            &client_order_id,
+        self.execute_raw_qty_internal(
             symbol,
-            side,
-            if is_long { "LONG" } else { "SHORT" },
-            ORDER_TYPE_MARKET,
-            final_quantity,
+            is_long,
+            quantity,
+            step_size,
+            client_order_id_param,
             timestamp,
-        );
-
-        let mut sig_buf = [0u8; 64];
-        let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load();
-
-        // WS Execution Routing (Zero-TLS overhead)
-        if self.ws.is_connected() {
-            let api_key = self
-                .client
-                .api_key
-                .load()
-                .to_str()
-                .unwrap_or("")
-                .to_string();
-            if let Err(e) = self.ws.send_order_payload(
-                &api_key,
-                &api_secret,
-                symbol,
-                side,
-                if self.is_hedge_mode.load(Ordering::Relaxed) {
-                    Some(if is_long { "LONG" } else { "SHORT" })
-                } else {
-                    None
-                },
-                ORDER_TYPE_MARKET,
-                final_quantity,
-                None,
-                None,
-                false,
-                &client_order_id,
-                timestamp,
-            ) {
-                println!(
-                    "⚠️ [WS-EXECUTOR] Failed to send raw qty order, falling back to REST: {}",
-                    e
-                );
-            } else {
-                // FIX M4-C01: confirmar con el exchange antes de retornar Ok —
-                // el write WS no es un ack (ver confirm_ws_dispatch).
-                return self.confirm_ws_dispatch(symbol, &client_order_id).await;
-            }
-        }
-
-        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
-        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
-        buf.push_str("&signature=");
-        buf.push_str(signature);
-
-        let res = self.client.execute_order_payload_typed(buf.as_str()).await;
-        match &res {
-            Ok((limits, ack)) => {
-                self.update_limits(limits);
-                self.order_registry.apply_ack(ack, timestamp);
-                Ok(())
-            }
-            Err(e) => {
-                // F4-H4: rechazo firme cierra la intención en el OrderRegistry
-                if crate::ioc_evidence::error_cierra_la_intencion(e) {
-                    self.order_registry.mark_local_reject(&client_order_id, timestamp);
-                }
-                if e.starts_with("HTTP_429") || e.starts_with("HTTP_418") {
-                    return Err(self.handle_rate_limit_error(e));
-                }
-                Err(e.clone())
-            }
-        }
+        )
+        .await
+        .map(|_| ())
     }
 
     /// Despacha una orden LIMIT para Market Making.
@@ -2888,110 +3118,17 @@ impl ExecutionProvider for OrderExecutor {
         quantity: f64,
         step_size: f64,
     ) -> Result<(), String> {
-        let final_quantity = Self::round_to_step_size(quantity, step_size);
-        if final_quantity <= 0.0 {
-            return Err("Volumen 0 despues de round_to_step_size".to_string());
-        }
-
-        if self.is_paper_trading {
-            println!("📝 [PAPER TRADING LOCAL] Reduciendo posicion de {} para {}. Cero latencia simulada.", final_quantity, symbol);
-            return Ok(());
-        }
-
-        let side = if is_long_close { SIDE_SELL } else { SIDE_BUY };
         let timestamp = self.get_synced_timestamp();
         self.check_exit_rate_limits(timestamp)?;
-
-        let mut buf = ZeroAllocBuffer::new();
-        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
-            "https://testnet.binancefuture.com/fapi/v1/order?"
-        } else {
-            "https://fapi.binance.com/fapi/v1/order?"
-        });
-        let payload_start = buf.as_str().len();
-
-        let is_hedge = self.is_hedge_mode.load(Ordering::Relaxed);
-        let pos_side_str = if is_hedge {
-            if is_long_close { "LONG" } else { "SHORT" }
-        } else {
-            "BOTH"
-        };
-
-        buf.push_str("symbol=");
-        buf.push_str(symbol);
-        buf.push_str("&side=");
-        buf.push_str(side);
-        if is_hedge {
-            buf.push_str("&positionSide=");
-            buf.push_str(pos_side_str);
-            buf.push_str("&type=");
-            buf.push_str(ORDER_TYPE_MARKET);
-        } else {
-            buf.push_str("&type=");
-            buf.push_str(ORDER_TYPE_MARKET);
-            buf.push_str("&reduceOnly=true");
-        }
-        buf.push_str("&quantity=");
-        buf.push_f64(final_quantity);
-
-        let client_order_id = uuid::Uuid::now_v7().simple().to_string();
-
-        buf.push_str("&newClientOrderId=");
-        buf.push_str(&client_order_id);
-        // F1-028: Exigir RESULT para conocer executedQty y estado terminal
-        buf.push_str("&newOrderRespType=RESULT");
-        buf.push_str("&timestamp=");
-        buf.push_u64(timestamp);
-
-        if buf.is_overflow() {
-            return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
-        }
-
-        let mut sig_buf = [0u8; 64];
-        let payload = &buf.as_str()[payload_start..];
-        let api_secret = self.api_secret.load();
-        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
-        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
-        buf.push_str("&signature=");
-        buf.push_str(signature);
-
-        // F1-028: Registrar intención antes del despacho
-        self.order_registry.register_intent(
-            &client_order_id,
+        self.execute_reduce_only_market_internal(
             symbol,
-            side,
-            pos_side_str,
-            ORDER_TYPE_MARKET,
-            final_quantity,
+            is_long_close,
+            quantity,
+            step_size,
             timestamp,
-        );
-
-        let res = self.client.execute_order_payload_typed(buf.as_str()).await;
-        match res {
-            Ok((limits, ack)) => {
-                self.update_limits(&limits);
-                let now = self.get_synced_timestamp();
-                self.order_registry.apply_ack(&ack, now);
-                if ack.executed_qty.is_finite() && ack.executed_qty > 0.0 {
-                    Ok(())
-                } else if ack.is_filled()
-                    || ack.status.trim().eq_ignore_ascii_case("PARTIALLY_FILLED")
-                {
-                    Ok(())
-                } else {
-                    Err(format!(
-                        "CLOSE_UNFILLED: status={}, executed_qty={}",
-                        ack.status, ack.executed_qty
-                    ))
-                }
-            }
-            Err(e) => {
-                if crate::ioc_evidence::error_cierra_la_intencion(&e) {
-                    self.order_registry.mark_local_reject(&client_order_id, timestamp);
-                }
-                Err(self.handle_rate_limit_error(&e))
-            }
-        }
+        )
+        .await
+        .map(|_| ())
     }
 
     /// FASE 8: Native Exchange Trailing Stop Market

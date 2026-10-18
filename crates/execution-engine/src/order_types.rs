@@ -153,6 +153,33 @@ impl OrderAck {
     }
 }
 
+/// F1-031: Informe estructurado de ejecución real para retroalimentación
+/// de slippage, comisiones y EV bayesiano.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub struct FillReport {
+    pub client_order_id: String,
+    pub symbol: String,
+    pub executed_qty: f64,
+    pub avg_price: f64,
+    pub commission: f64,
+    pub is_filled: bool,
+    pub status: String,
+}
+
+impl FillReport {
+    pub fn from_ack(ack: &OrderAck) -> Self {
+        Self {
+            client_order_id: ack.client_order_id.clone(),
+            symbol: ack.symbol.clone(),
+            executed_qty: ack.executed_qty,
+            avg_price: ack.avg_price,
+            commission: ack.total_commission(),
+            is_filled: ack.is_filled(),
+            status: ack.status.clone(),
+        }
+    }
+}
+
 /// Error estructurado de la API Binance ({ "code": -2010, "msg": "..." }).
 #[derive(Debug, Clone, Deserialize)]
 pub struct BinanceApiError {

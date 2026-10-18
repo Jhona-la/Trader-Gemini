@@ -9,7 +9,7 @@
 //! CONTENCIÓN: bloqueo corto por orden; NO está en el tick-path del motor de señales,
 //!          solo en el camino de ejecución (decenas de ops/seg máx).
 
-use crate::order_types::OrderAck;
+use crate::order_types::{FillReport, OrderAck};
 use std::collections::HashMap;
 use std::sync::RwLock;
 
@@ -124,6 +124,19 @@ impl TrackedOrder {
     fn recompute_total_commission(&mut self) {
         let by_id: f64 = self.fees_by_trade.values().sum();
         self.total_commission = by_id + self.ack_fee_no_id.max(self.ws_fee_no_id);
+    }
+
+    /// F1-031: Proyección de la orden a un informe estructurado de ejecución.
+    pub fn to_fill_report(&self) -> FillReport {
+        FillReport {
+            client_order_id: self.client_order_id.clone(),
+            symbol: self.symbol.clone(),
+            executed_qty: self.executed_qty,
+            avg_price: self.avg_price,
+            commission: self.total_commission,
+            is_filled: self.status == OrderStatus::Filled,
+            status: format!("{:?}", self.status),
+        }
     }
 }
 
@@ -449,6 +462,11 @@ impl OrderRegistry {
             .unwrap_or_else(|p| p.into_inner())
             .get(client_order_id)
             .cloned()
+    }
+
+    /// F1-031: Obtiene el informe de ejecución real de una orden conocida.
+    pub fn get_fill_report(&self, client_order_id: &str) -> Option<FillReport> {
+        self.get(client_order_id).map(|o| o.to_fill_report())
     }
 
     pub fn get_status(&self, client_order_id: &str) -> Option<OrderStatus> {

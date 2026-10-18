@@ -1383,11 +1383,6 @@ impl RiskEngine {
             current_price,
         )
         .unwrap_or(dynamic_min_notional + 0.1);
-        let _max_safe_leverage = if roundtrip_fee > 0.0 {
-            max_acceptable_fee_pct / roundtrip_fee
-        } else {
-            100.0
-        };
 
         // D-750 — PISO DE VIABILIDAD DERIVADO, Y RECHAZO SI NO CABE.
         //
@@ -1458,7 +1453,8 @@ impl RiskEngine {
         // OLA Ω127: Desacoplamiento de constantes estáticas hacia el registro omnisciente con fallbacks canónicos.
         let z_lcb_lh04 = arena.registry.get_value_or("lh04_z_lcb", 1.64);
         let half_kelly_lh04 = arena.registry.get_value_or("lh04_kelly_fraction", 0.5);
-        let muestras_min_lh04 = arena.registry.get_value_or("lh04_muestras_min", 10.0);
+        // F1-116: Muestras mínimas continuas (n >= 1.0) con decaimiento natural de Wilson LCB.
+        let muestras_min_lh04 = arena.registry.get_value_or("lh04_muestras_min", 1.0);
         let lh04_wr = arena.coins[coin_id]
             .metrics
             .win_rate
@@ -1557,14 +1553,11 @@ impl RiskEngine {
                 // cuando el stop ceñido lo haría inalcanzable, la orden
                 // se coloca al máximo que el axioma permite (no se
                 // rechaza) — riesgo realizado acotado por exposición.
-                let tope_margen_lh04 = if lh04_n >= muestras_min_lh04 {
-                    crate::ruin::clamp_ruin(
-                        1.0,
-                        crate::ruin::conservative_loss_q(lh04_wr, lh04_n),
-                    )
-                } else {
-                    0.25
-                };
+                // F1-116: Tope de margen continuo anclado directamente al axioma de ruina sin rama muerta.
+                let tope_margen_lh04 = crate::ruin::clamp_ruin(
+                    1.0,
+                    crate::ruin::conservative_loss_q(lh04_wr, lh04_n),
+                );
                 final_margin = margen_obj.min(allocated_capital * tope_margen_lh04);
                 // F-A5: riesgo al stop que ESTE dimensionado realiza, en
                 // fracción del capital asignado, tras el tope de ruina y
