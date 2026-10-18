@@ -1,5 +1,27 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 (tarde, 3) — Claude (cloud, Línea C): C-F5b, prueba de reversión de StatArb a la escala de decisión (PR #76)
+
+- **EST-3**: la prueba de reversión de la base sólo contrastaba a una celda
+  (Δ = τ_k/8). Con una base de dos escalas (OU rápido + componente lenta)
+  rechazaba el 10–21 % aunque lo votado no revirtiera en τ_k. Ahora el
+  veredicto es intersección-unión: la prueba corta Y una larga a τ_k
+  (L = 8 celdas, fila z = b_{t−L−1}, x = b_{t−L}, y = b_t − b_{t−L},
+  H0: c ≤ ½, HAC uniforme de retardo L con 18 sumas con olvido).
+- Calibración por Monte Carlo (192 configuraciones maduras):
+  `SESGO_LARGO` = 21 y `critico_largo(n_ef) = z95 + 100/n_ef`; tamaño
+  máximo 5,08 %. El exceso es de colas pesadas en muestra finita (a n_ef
+  266, sesgo +0,069 y sd de t 1,26; a 987, +0,008 y 1,07).
+- Resultados: caso del revisor ≤ 1,2 %; EST-2 (ruido fuerte) ≤ 1,3 %;
+  potencia a τ/5 95,5 % (3 memorias) y 99 % (4); lo votado revierte 0,69
+  de la desviación en τ_k (contrato ≥ ½).
+- `statarb_half_life_ms` publica τ_k cuando la prueba lo demuestra (antes,
+  una cota sin demostrar), ∞ si no.
+- La prueba larga madura a media memoria (~266 celdas, ~570 s de pares en
+  el nodo 17): un fixture con pocos pares ya no vota.
+- T-1 no aplica: el backtest nunca escribe `spot_bid` y StatArb queda inerte
+  en replay (sólo `data-pipeline/spot_feed.rs` escribe spot).
+
 ## 2026-10-18 (tarde, 2) — Claude (cloud, Línea C): C-F7a, censo de `clamp` con límites calculados
 
 - **Censo**: tras CL-146 (pánico de `f64::clamp` en el riesgo, de Ω152), se
