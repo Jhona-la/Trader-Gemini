@@ -50,6 +50,10 @@ pub struct ActiveTrajectoryTrack {
     pub max_favorable_price: f64,
     pub max_adverse_price: f64,
     pub last_update_ms: u64,
+    /// CL-140: motivos de divergencia ya avisados en esta traza, un bit por
+    /// `TrajectoryDivergenceReason`.
+    #[serde(default)]
+    pub motivos_avisados: u8,
 }
 
 impl ActiveTrajectoryTrack {
@@ -90,6 +94,7 @@ impl ActiveTrajectoryTrack {
             max_favorable_price: safe_entry,
             max_adverse_price: safe_entry,
             last_update_ms: entry_time_ms,
+            motivos_avisados: 0,
         }
     }
 }
@@ -265,6 +270,36 @@ impl TrajectoryAuditor {
         }
     }
 
+    /// CL-140 (C-F6) — UN AVISO POR MOTIVO Y POSICIÓN.
+    ///
+    /// `evaluate_tick` devuelve `Divergent` en CADA tick mientras dura la
+    /// condición y el host escribía una línea por tick: ≈ 75–310 MB/día por
+    /// moneda divergente a 7,7–31 ev/s. Devuelve `true` sólo la primera vez
+    /// que esta traza diverge por cada motivo, así que una posición avisa
+    /// como mucho tres veces, alterne el motivo o no.
+    pub fn divergencia_nueva(&mut self, symbol_id: usize, status: &TrajectoryStatus) -> bool {
+        let TrajectoryStatus::Divergent { reason, .. } = status else {
+            return false;
+        };
+        let Some(Some(track)) = self.tracks.get_mut(symbol_id) else {
+            return false;
+        };
+        let bit = 1u8 << (*reason as u8);
+        let nueva = track.motivos_avisados & bit == 0;
+        track.motivos_avisados |= bit;
+        nueva
+    }
+
+    /// CL-140: retira sin TCE la traza de una moneda que ya no tiene posición
+    /// abierta. La traza nace al abrir en el núcleo y sólo se cerraba en el
+    /// cierre del núcleo: una reserva que el host revierte o un cierre por
+    /// bracket la dejaban viva contra una entrada que no existe.
+    pub fn descartar(&mut self, symbol_id: usize) {
+        if let Some(t) = self.tracks.get_mut(symbol_id) {
+            *t = None;
+        }
+    }
+
     /// Limpia la traza al cerrar posición y devuelve el TCE (Trajectory Calibration Error)
     pub fn record_exit(
         &mut self,
@@ -400,6 +435,45 @@ mod tests {
             segundo.is_none(),
             "no existe una segunda ranura: el cierre ya consumió la traza"
         );
+    }
+
+    /// CL-140 — Esperado: 10 000 ticks a −0,7 % de la entrada dan UN aviso
+    /// de inversión de momentum; al agotarse el τ el motivo cambia y avisa
+    /// otra vez; volver a alternar no avisa más. Antes, un aviso por tick.
+    #[test]
+    fn cl140_cada_motivo_avisa_una_vez_por_posicion() {
+        let mut a = TrajectoryAuditor::new(2);
+        let t0 = 1_000_000u64;
+        // Magnitud alta: el umbral de inversión queda en −0,60 %.
+        a.record_entry(0, true, 100.0, t0, 0.05, 0.0, 30_000);
+        let mut avisos = 0;
+        for i in 0..10_000u64 {
+            let st = a.evaluate_tick(0, 99.3, 10.0, t0 + i);
+            assert!(matches!(st, TrajectoryStatus::Divergent { .. }));
+            avisos += a.divergencia_nueva(0, &st) as u32;
+        }
+        assert_eq!(avisos, 1, "una inversión sostenida avisa una vez");
+        for k in 0..1_000u64 {
+            // Alterna −0,4 % (agotamiento tras 4·τ) y −0,7 % (inversión).
+            let px = if k % 2 == 0 { 99.6 } else { 99.3 };
+            let st = a.evaluate_tick(0, px, 10.0, t0 + 200_000 + k);
+            avisos += a.divergencia_nueva(0, &st) as u32;
+        }
+        assert_eq!(avisos, 2, "el agotamiento es un motivo nuevo; alternar no repite");
+        let st = a.evaluate_tick(1, 99.3, 10.0, t0);
+        assert!(!a.divergencia_nueva(1, &st), "sin traza no hay aviso");
+    }
+
+    /// CL-140 — Esperado: una traza descartada no diverge ni da TCE.
+    #[test]
+    fn cl140_una_traza_descartada_no_diverge() {
+        let mut a = TrajectoryAuditor::new(1);
+        a.record_entry(0, true, 100.0, 1_000, 0.01, 0.0, 30_000);
+        a.descartar(0);
+        let st = a.evaluate_tick(0, 90.0, 10.0, 2_000);
+        assert!(matches!(st, TrajectoryStatus::Aligned { .. }));
+        assert!(a.record_exit(0, 90.0, 3_000).is_none());
+        a.descartar(7);
     }
 
     /// U-ERR-4 — EL AGOTAMIENTO TEMPORAL ES ALCANZABLE.
