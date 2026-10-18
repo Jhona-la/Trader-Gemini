@@ -1,5 +1,15 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 — Antigravity (Quant Sr.): Ola Ω151 CERRADA — F1-001 (aggTrades booktick_replay L2 walls), F1-008 (Council ATR identity & continuous spectral scale), F1-018 (Gate Espectral Bilateral en lib.rs), G8-OMEGA-12 (aislamiento multi-activo con get_for_coin_strict_or), LG8-146-04 (kinematic_viscosity) y LG8-146-05 (MOTOR_* constantes)
+
+- **F1-001 (HIGH, `booktick_replay.rs`):** En modo `trade_only` (aggTrades sintéticos), `core.arena.update_l2_depth` se desacopla incondicionalmente (`core.arena.update_l2_depth(0, 0.0, 0.0)`). La profundidad del libro permanece en 0.0, tornando la compuerta `muro_en_contra` inerte en backtest sin vetos falsos de pared causados por cantidades de trades agresores. Contrato: `f1_001_trade_only_wall_veto_contract.rs`.
+- **F1-008 (HIGH, `lib.rs` & `consejo_seniors.rs`):** Erradicada la identidad cancelatoria `raw_atr_pct / relative_vol == btc_atr_pct` y el escaneo lineal de string `get_coin_id("BTCUSDT")`. `MarketSnapshotPayload.atr_pct` recibe `raw_atr_pct` directamente. Se conectó `SeniorVolatilidad::evaluate` con `evaluate_volatility_regime_spectral` a través del espectro temporal continuo $s \in [0, 1]$ usando `payload.dominant_tau_ms`. Contrato: `multiactivo_volatilidad_council_contract.rs`.
+- **F1-018 (HIGH, `lib.rs`):** Cableado productivo de `signal_engine::skill_motores::aplicar_gate_observabilidad_banda` con `spec.resolucion_efectiva_ms()` y `TAU_ANCHOR_SLOW_MS` (12h), anulando los pesos de escalas inobservables $\tau_k < \text{res}$ y $\tau_k > 12\text{h}$.
+- **G8-OMEGA-12 (LOW, `lib.rs`):** Aislamiento multi-activo en arranque en frío sustituyendo `get_for_coin_or` por `get_for_coin_strict_or` en 10 campos físicos y cuánticos (`hidden_liquidity_pressure`, `yang_mills_current`, `kahler_restoring_current`, `riemann_gue_conviction`, `bsd_restoring_current`, `bsd_conviction_modulation`, `dirac_chiral_current`, `dirac_conviction_modulation`, `wasserstein_barycenter_velocity`, `wasserstein_conviction_modulation`).
+- **LG8-146-04 (LOW, `lib.rs`):** Registro de `kinematic_viscosity` desde `NavierStokesReynoldsEngine` vía `set_reg` y consumo seguro con `get_for_coin_strict_or`.
+- **LG8-146-05 (LOW, `lib.rs`):** Pinned mapeo de índices del array `votos_espectrales` usando constantes explícitas `MOTOR_*` de `signal_engine::skill_motores`. Contrato: `lg8_146_05_votos_espectrales_motor_constants_contract.rs`.
+- **Verificación:** `cargo_semaforo.sh check --workspace --all-targets` limpio (14/14 crates, exit code 0). Cierre en TSVs `docs/audit/linea_g/ola8_revision.tsv` y `docs/audit/fable/f1_hallazgos.tsv`.
+
 ## 2026-10-17 — ROOT: control8e835, main049 y T1 Fable activo
 
 Main049 incorpora PR67/69/SI por ascendencia; checkout principal sincronizado. Control ROOT8e835/2003 congelado9c con siete deltas sin aplicar y nuevo check pendiente. Fable11/11 ycheck0; T1 release desde04:53:49Z sin terminal. Adaptador ROOT V2/V3 comparte lock/target canónicos con12+8 intactos, sin lease por anuncio. Original0/86 sigue inválido.

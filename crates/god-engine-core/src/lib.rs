@@ -3154,26 +3154,28 @@ impl GodEngineCore {
                     let h_lam_frac = self.helmholtz_engines.get(coin_id)
                         .map(|h| h.current_decomposition().laminar_fraction)
                         .unwrap_or(1.0);
+                    // G8-OMEGA-12 (Línea G / Ola Ω151): Lectura estricta por moneda sin fallback global
+                    // para erradicar fuga causal cruzada entre activos en arranques en frío.
                     let p_ice = self.arena.registry
-                        .get_for_coin_or(coin_id, "hidden_liquidity_pressure", 0.0);
+                        .get_for_coin_strict_or(coin_id, "hidden_liquidity_pressure", 0.0);
                     let ym_current = self.arena.registry
-                        .get_for_coin_or(coin_id, "yang_mills_current", 0.0);
+                        .get_for_coin_strict_or(coin_id, "yang_mills_current", 0.0);
                     let kh_current = self.arena.registry
-                        .get_for_coin_or(coin_id, "kahler_restoring_current", 0.0);
+                        .get_for_coin_strict_or(coin_id, "kahler_restoring_current", 0.0);
                     let rz_conv = self.arena.registry
-                        .get_for_coin_or(coin_id, "riemann_gue_conviction", 1.0);
+                        .get_for_coin_strict_or(coin_id, "riemann_gue_conviction", 1.0);
                     let bsd_current = self.arena.registry
-                        .get_for_coin_or(coin_id, "bsd_restoring_current", 0.0);
+                        .get_for_coin_strict_or(coin_id, "bsd_restoring_current", 0.0);
                     let bsd_conv = self.arena.registry
-                        .get_for_coin_or(coin_id, "bsd_conviction_modulation", 1.0);
+                        .get_for_coin_strict_or(coin_id, "bsd_conviction_modulation", 1.0);
                     let dirac_current = self.arena.registry
-                        .get_for_coin_or(coin_id, "dirac_chiral_current", 0.0);
+                        .get_for_coin_strict_or(coin_id, "dirac_chiral_current", 0.0);
                     let dirac_conv = self.arena.registry
-                        .get_for_coin_or(coin_id, "dirac_conviction_modulation", 1.0);
+                        .get_for_coin_strict_or(coin_id, "dirac_conviction_modulation", 1.0);
                     let wk_velocity = self.arena.registry
-                        .get_for_coin_or(coin_id, "wasserstein_barycenter_velocity", 0.0);
+                        .get_for_coin_strict_or(coin_id, "wasserstein_barycenter_velocity", 0.0);
                     let wk_conv = self.arena.registry
-                        .get_for_coin_or(coin_id, "wasserstein_conviction_modulation", 1.0);
+                        .get_for_coin_strict_or(coin_id, "wasserstein_conviction_modulation", 1.0);
 
                     let voto_confluence =
                         signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
@@ -3296,14 +3298,15 @@ impl GodEngineCore {
                     }
 
                     // SOMBRA ESPECTRAL de NAVIER-STOKES MANIFOLD (Cascada de Kolmogorov L2/L3)
+                    // LG8-146-04 / G8-OMEGA-12: Lectura estricta sin fallback global
                     let visc_ns = self
                         .arena
                         .registry
-                        .get_for_coin_or(coin_id, "kinematic_viscosity", 1.0);
+                        .get_for_coin_strict_or(coin_id, "kinematic_viscosity", 1.0);
                     let lam_ns = self
                         .arena
                         .registry
-                        .get_for_coin_or(coin_id, "navier_laminar_share", 1.0);
+                        .get_for_coin_strict_or(coin_id, "navier_laminar_share", 1.0);
                     let voto_navier =
                         signal_engine::navier_stokes_manifold::NavierStokesManifoldEngine::voto_espectral(
                             &desplazamientos,
@@ -3326,27 +3329,26 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "sombra_navier_v_max", v_nav);
                     }
 
-                    // #623 (Ola 44 & Antigravity) & Ola Ω146: CONSENSO ESPECTRAL INTEGRAL (15 MOTORES):
+                    // #623 (Ola 44 & Antigravity) & Ola Ω146 / LG8-146-05: CONSENSO ESPECTRAL INTEGRAL (15 MOTORES):
                     // Todos los 15 motores con voto_espectral() componen en el consenso espectral
-                    // (media ponderada por escala, normalizada) y se publica su escala dominante +
-                    // media de banda. Es la síntesis temporal espectral multiescala sin sesgo discreto.
-                    let votos_espectrales = [
-                        voto_sombra,
-                        voto_soliton,
-                        voto_shock,
-                        voto_res,
-                        voto_coax,
-                        voto_hawkes,
-                        voto_nash,
-                        voto_flow,
-                        voto_perceptron,
-                        voto_conformal,
-                        voto_confluence,
-                        voto_tr,
-                        voto_entropy,
-                        voto_navier,
-                        voto_feynman,
-                    ];
+                    // (media ponderada por escala, normalizada) mapeados explícitamente a sus constantes MOTOR_*.
+                    let mut votos_espectrales = [signal_engine::voto_espectral::VotoEspectral::default(); signal_engine::skill_motores::MOTORES];
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_SOMBRA] = voto_sombra;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_SOLITON] = voto_soliton;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_SHOCK] = voto_shock;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_RESONANCIA] = voto_res;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_COAXIAL] = voto_coax;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_HAWKES] = voto_hawkes;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_NASH] = voto_nash;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_FLOW] = voto_flow;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_PERCEPTRON] = voto_perceptron;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_CONFORMAL] = voto_conformal;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_CONFLUENCIA] = voto_confluence;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_TREND_RUNNER] = voto_tr;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_ENTROPIA] = voto_entropy;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_NAVIER_STOKES] = voto_navier;
+                    votos_espectrales[signal_engine::skill_motores::MOTOR_FEYNMAN] = voto_feynman;
+
                     // #626 (Ola 47, reconciliado con AGY 13/13) & Ola Ω146 (15/15) — PESOS POR
                     // HABILIDAD: el score ocurre AL CIERRE en el camino
                     // general (#648/H6); aquí, con votos frescos, sólo se
@@ -3368,16 +3370,17 @@ impl GodEngineCore {
                         [[signal_engine::skill_motores::PISO_EXPLORACION; 32];
                             signal_engine::skill_motores::MOTORES]
                     };
-                    // #648/H1 (Ola 48) — GATE DE OBSERVABILIDAD (D-742/CL-32):
-                    // las escalas por debajo de la resolución efectiva (su
-                    // masa es copia del último evento) votan con peso 0 —
+                    // #648/H1 (Ola 48) + F1-018 (Ola Ω150/Ω151) — GATE DE OBSERVABILIDAD BANDA SIMÉTRICA (D-742/CL-32):
+                    // Las escalas por debajo de la resolución efectiva (su masa es copia del último evento)
+                    // Y las escalas seculares superiores a TAU_ANCHOR_SLOW_MS (12 h) votan con peso 0 —
                     // la composición vale 0 ahí y el dominante las salta.
-                    // El consenso deja de poder ser ruido de un tick a una
-                    // τ sin físico.
-                    let excluidas = signal_engine::skill_motores::aplicar_gate_observabilidad(
-                        &mut pesos,
-                        spec.resolucion_efectiva_ms(),
-                    );
+                    let (excluidas_inf, excluidas_sup) =
+                        signal_engine::skill_motores::aplicar_gate_observabilidad_banda(
+                            &mut pesos,
+                            spec.resolucion_efectiva_ms(),
+                            quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+                        );
+                    let excluidas = excluidas_inf + excluidas_sup;
                     self.arena
                         .registry
                         .set_for_coin(coin_id, "qo_648_esc_excluidas", excluidas as f64);
@@ -6542,6 +6545,7 @@ impl GodEngineCore {
                 set_reg("navier_reynolds_number", ns_engine.ewma_reynolds);
                 set_reg("navier_laminar_share", laminar_share);
                 set_reg("navier_energy_dissipation", dissipation);
+                set_reg("kinematic_viscosity", ns_engine.kinematic_viscosity);
             }
             // #625 (Ola 46) — EL SLOT HAWKES DEL PPO LLEVA LA EXCITACIÓN
             // REAL λ/μ̂. La decisión de consejo abierta desde #554 se
@@ -9029,25 +9033,11 @@ impl GodEngineCore {
                             )
                         })
                         .unwrap_or((0.0, 0.0));
+                    // F1-008 (Fable / Ola Ω151): Desacoplamiento de identidad council_atr_pct.
+                    // El Consejo y sus asientos (SeniorVolatilidad y SeniorEjecucion) reciben
+                    // el ATR propio de la moneda (raw_atr_pct) sin destruirlo mediante la identidad
+                    // cancelante raw/(raw/btc) == btc_atr_pct, erradicando barridos de cadena O(N).
                     let raw_atr_pct = self.feature_engines[coin_id].get_atr_pct().clamp(0.0, 1.0);
-                    let btc_slot = quantum_arena::symbols::get_coin_id("BTCUSDT").unwrap_or(0);
-                    let btc_atr_pct = if btc_slot < self.arena.coins.len() {
-                        let btc_price = self.arena.coins[btc_slot].current_price.load(Ordering::Relaxed).max(1e-8);
-                        let btc_atr = self.arena.coins[btc_slot].current_atr.load(Ordering::Relaxed);
-                        if btc_atr > 0.0 && btc_price > 1e-6 {
-                            (btc_atr / btc_price).clamp(0.0005, 0.50)
-                        } else {
-                            0.0015
-                        }
-                    } else {
-                        0.0015
-                    };
-                    let relative_vol = if coin_id == btc_slot {
-                        1.0
-                    } else {
-                        (raw_atr_pct / btc_atr_pct).clamp(0.5, 4.0)
-                    };
-                    let council_atr_pct = (raw_atr_pct / relative_vol).clamp(0.0, 1.0);
                     let council_loss_streak = self
                         .feature_engines[coin_id]
                         .get_active_directional_streak_ms(order.signal == SignalType::Long, enfriamiento_base_ms);
@@ -9069,7 +9059,7 @@ impl GodEngineCore {
                             ml_prob: ml_prob_pure.clamp(0.0, 1.0),
                             fused_score: council_fused,
                             persistence: council_persistence,
-                            atr_pct: council_atr_pct,
+                            atr_pct: raw_atr_pct,
                             loss_streak: council_loss_streak,
                             intended_direction: council_intended_dir,
                             do_calculus_risk: vpin_risk,
