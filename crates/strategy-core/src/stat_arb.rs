@@ -45,10 +45,13 @@ pub struct VeredictoStatArb {
     /// z del último par contra la media y la dispersión de la base en la
     /// memoria del nodo; 0 sin reversión demostrada.
     pub z: f64,
-    /// Cota superior de la vida media demostrada (2·τ_k del nodo), en ms;
-    /// ∞ sin demostración. Es lo que el núcleo publica como
-    /// `statarb_half_life_ms`: la guarda t½ ≤ 2τ* del lector pasa sólo con
-    /// reversión demostrada en un nodo τ_k ≤ τ*.
+    /// Cota superior de la vida media demostrada (τ_k del nodo), en ms; ∞
+    /// sin demostración. C-F5b: la prueba a la escala de decisión demuestra
+    /// que más de la mitad de la desviación revierte en τ_k, y eso acota la
+    /// vida media por τ_k (antes 2·τ_k, la cota de la prueba de retardos
+    /// cortos). Es lo que el núcleo publica como `statarb_half_life_ms`: la
+    /// guarda t½ ≤ 2τ* del lector pasa sólo con reversión demostrada en un
+    /// nodo τ_k ≤ τ*.
     pub t_media_cota_ms: f64,
     pub demostrada: bool,
     /// Detalle de la prueba.
@@ -188,7 +191,7 @@ impl StatArbEngine {
         let demostrada = v.demostrada && piso > 0.0 && sigma > 0.0 && z.is_finite();
         Some(VeredictoStatArb {
             z: if demostrada { z } else { 0.0 },
-            t_media_cota_ms: if demostrada { 2.0 * v.tau_nodo_ms } else { f64::INFINITY },
+            t_media_cota_ms: if demostrada { v.tau_nodo_ms } else { f64::INFINITY },
             demostrada,
             prueba: v,
         })
@@ -362,8 +365,8 @@ impl QuantumStrategy for StatArbEngine {
 
         let z = match own_z {
             Some(z) if z.is_finite() => {
-                // Guarda espectral: t½ publicada (CL-97: la cota 2·τ_k de la
-                // prueba, ∞ sin demostración) contra τ* dominante de la
+                // Guarda espectral: t½ publicada (CL-97 y C-F5b: la cota τ_k
+                // de la prueba, ∞ sin demostración) contra τ* dominante de la
                 // moneda. Si la reversión no está demostrada por debajo del
                 // doble del ciclo dominante, la base puede ser deriva: veto.
                 let t_half_ms = leer("statarb_half_life_ms")
@@ -599,7 +602,7 @@ mod tests {
 
     /// CL-97. Verdad: una base OU con vida media de τ_17/5 (3,4 s), con
     /// pares cada 500 ms durante cuatro memorias del nodo 17, demuestra la
-    /// reversión a τ* = 30 s (nodo 17): cota publicada 2·τ_17 y z del último
+    /// reversión a τ* = 30 s (nodo 17): cota publicada τ_17 y z del último
     /// par. Sin pares suficientes no hay demostración y la cota es ∞.
     #[test]
     fn cl97_una_reversion_rapida_se_demuestra() {
@@ -627,7 +630,7 @@ mod tests {
         }
         let v = e.veredicto(30_000.0, PISO).expect("hay pares");
         assert!(v.demostrada, "{v:?}");
-        assert_eq!(v.t_media_cota_ms, 2.0 * tau17);
+        assert_eq!(v.t_media_cota_ms, tau17);
         assert!(v.z.is_finite() && v.z != 0.0, "{v:?}");
         // La misma prueba a una τ bajo la malla no demuestra nada.
         assert!(!e.veredicto(10_000.0, PISO).unwrap().demostrada);
