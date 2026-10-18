@@ -275,12 +275,16 @@ pub fn leer_pico(ruta: &std::path::Path) -> CargaPico {
     let texto = match std::fs::read_to_string(ruta) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return CargaPico::Ausente,
-        Err(e) => return CargaPico::Ilegible(format!("no se puede leer: {e}")),
+        Err(e) => return CargaPico::Ilegible(format!("{}: no se puede leer: {e}", ruta.display())),
     };
+    // CL-137 (PR70-INT-08 de la Línea G): el motivo nombra el archivo; el
+    // bloqueo es fail-closed y el operador tiene que saber cuál reparar
+    // (puede ser el antiguo sin venue que se iba a adoptar).
     match texto.trim().parse::<f64>() {
         Ok(pico) if pico.is_finite() && pico > 0.0 => CargaPico::Leido(pico),
         _ => CargaPico::Ilegible(format!(
-            "{:?} no es un capital finito y positivo",
+            "{}: {:?} no es un capital finito y positivo",
+            ruta.display(),
             texto.trim().chars().take(40).collect::<String>()
         )),
     }
@@ -296,17 +300,22 @@ pub fn cargar_pico(ruta: &std::path::Path) -> Option<f64> {
 }
 
 /// CL-133 (R5 de la revisión del PR #62) — nombre del archivo del pico del
-/// VENUE de este proceso (`quantum_arena::paths::is_demo_env`: demo, testnet
-/// o shadow frente a mainnet). Testnet y papel de mainnet guardan en
-/// `data/demo` (CL-61): con un solo archivo, el pico de 5 000 USDT de una
-/// sesión de testnet bloqueaba la sesión de papel siguiente con 13 USD
-/// reales (caída del 99,7 % ≥ d*).
+/// VENUE de este proceso. Testnet y papel de mainnet guardan en `data/demo`
+/// (CL-61): con un solo archivo, el pico de 5 000 USDT de una sesión de
+/// testnet bloqueaba la sesión de papel siguiente con 13 USD reales (caída
+/// del 99,7 % ≥ d*).
+///
+/// CL-136 (PR70-INT-02 de la Línea G) — el venue es el del SALDO con que se
+/// mide la caída, y el saldo lo decide el endpoint: testnet sólo con
+/// `USE_TESTNET=true`, el mismo predicado que eligen el cliente REST, el WS y
+/// el bootloader. `SHADOW_MODE` y `BINANCE_USE_DEMO` operan papel contra los
+/// endpoints y el saldo de MAINNET: antes caían en el archivo de testnet por
+/// `is_demo_env` y el lanzador oficial de shadow volvía a R5. El archivo de
+/// testnet conserva su nombre («prueba») para no dejar huérfano el pico guardado.
 pub fn archivo_pico() -> String {
-    let venue = if quantum_arena::paths::is_demo_env() {
-        "prueba"
-    } else {
-        "mainnet"
-    };
+    let testnet = std::env::var("USE_TESTNET")
+        .is_ok_and(|s| s.trim().eq_ignore_ascii_case("true"));
+    let venue = if testnet { "prueba" } else { "mainnet" };
     format!("pico_capital_{venue}.txt")
 }
 
