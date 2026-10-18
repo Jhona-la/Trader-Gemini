@@ -274,14 +274,19 @@ impl OmniSynth {
         omni[14] = (50.0 + prev_ret * 500.0).clamp(10.0, 90.0); // fear&greed
         omni[18] = cvd_unit.clamp(-5.0, 5.0); // exchange inflows
         omni[19] = (-cvd_unit).clamp(-5.0, 5.0); // exchange outflows
-        omni[21] = 104.2; // dxy (ancla estática — paridad nativo)
-        omni[22] = 5120.0; // sp500
-        omni[23] = 18100.0; // nasdaq
-        omni[24] = (15.0 + prev_ret.abs() * 200.0).clamp(10.0, 80.0); // vix
-        omni[25] = 4.25; // us10y
-        omni[26] = 2320.0; // gold
-        omni[27] = 81.0; // oil_wti
-        omni[29] = 5.5; // fed funds
+        // SOL-F9-4 (2026-10-18): bloque macro 21-29 = SENTINELA 0.0, no
+        // literales 2024. El examen no tiene tape macro: servir 104.2/5120/
+        // 18100/18.5/4.25/2320/81/5.5 era un placeholder plausible que el
+        // camino vivo RECHAZA explícitamente (god-engine-core: «toda feature
+        // SIN PRODUCTOR se sirve 0.0, NUNCA un literal plausible»). El mapeo
+        // del core convierte el 0 en sus fallbacks calibrados (1.04/1.02/
+        // 1.00/0.75) — los MISMOS que usa el harness ML (test_ml.rs), que es
+        // la distribución con la que se evalúan los modelos. Con 0.0 el
+        // examen ve lo que ve el harness y el vivo sin feed; con los
+        // literales veía algo que ninguno de los dos ve.
+        // NOTA al consejo: si se quiere servir macro REAL en el examen hace
+        // falta un tape macro (hoy no existe en data/); hasta entonces el
+        // centinela honesto es la única opción sin fuga de futuro.
 
         // 30..54 — derivados y flujo
         omni[30] = cvd_unit.clamp(-10.0, 10.0); // spot_cvd (normalizado)
