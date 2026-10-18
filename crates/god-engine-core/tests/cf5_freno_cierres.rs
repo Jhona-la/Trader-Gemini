@@ -151,6 +151,10 @@ fn cl120_el_host_guarda_el_estado_en_un_hilo_aparte() {
         "let(tx_estado,rx_estado)=std::sync::mpsc::channel::<god_engine_core::estado_aprendido::EstadoAprendido>();"
     ));
     assert_eq!(host.matches("estado_aprendido::guardar(").count(), 1, "un solo sitio escribe el estado");
-    assert!(host.contains("guardar(&ruta,&foto)"), "y es el hilo escritor");
-    assert!(host.contains("drop(tx_estado);let_=escritor_estado.join();"), "al apagar se espera al escritor");
+    assert!(host.contains("escribir_estado_aprendido(&ruta,&foto);"), "y lo llama el hilo escritor");
+    assert!(!host.contains(".expect(\"hilo escritor"), "sin hilo escritor no se cae: se escribe en el bucle");
+    assert!(
+        host.contains("drop(tx_estado);ifletOk(escritor)=escritor_estado{let_=escritor.join();}"),
+        "al apagar se espera al escritor"
+    );
 }

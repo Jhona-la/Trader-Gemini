@@ -73,6 +73,33 @@ struct CierreAgregado {
     bruto: f64,
 }
 
+/// CL-120: escribe una foto del estado aprendido. Un fallo se registra y no
+/// detiene al motor (el siguiente cierre vuelve a intentarlo).
+fn escribir_estado_aprendido(
+    ruta: &std::path::Path,
+    foto: &god_engine_core::estado_aprendido::EstadoAprendido,
+) {
+    if let Err(e) = god_engine_core::estado_aprendido::guardar(ruta, foto) {
+        telemetry_server::telemetry_log!(
+            "⚠️ [ESTADO] no se pudo guardar {}: {}",
+            ruta.display(),
+            e
+        );
+    }
+}
+
+/// CL-120: entrega la foto al hilo escritor. Si ese hilo no existe (no se
+/// pudo crear al arrancar), el canal está cerrado y la foto se escribe aquí.
+fn enviar_estado_aprendido(
+    tx: &std::sync::mpsc::Sender<god_engine_core::estado_aprendido::EstadoAprendido>,
+    ruta: &std::path::Path,
+    foto: god_engine_core::estado_aprendido::EstadoAprendido,
+) {
+    if let Err(std::sync::mpsc::SendError(foto)) = tx.send(foto) {
+        escribir_estado_aprendido(ruta, &foto);
+    }
+}
+
 /// Agrupa registros (tiempo, PnL realizado) de UN símbolo en cierres: un
 /// registro a ≤ `separacion_ms` del anterior pertenece al mismo cierre.
 fn agrupar_cierres(mut registros: Vec<(u64, f64)>, separacion_ms: u64) -> Vec<CierreAgregado> {
@@ -3192,17 +3219,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         while let Ok(mas_reciente) = rx_estado.try_recv() {
                             foto = mas_reciente;
                         }
-                        if let Err(e) = god_engine_core::estado_aprendido::guardar(&ruta, &foto) {
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [ESTADO] no se pudo guardar {}: {}",
-                                ruta.display(),
-                                e
-                            );
-                        }
+                        escribir_estado_aprendido(&ruta, &foto);
                     }
                 })
-                .expect("hilo escritor del estado aprendido")
         };
+        if let Err(e) = &escritor_estado {
+            telemetry_server::telemetry_log!(
+                "⚠️ [ESTADO] sin hilo escritor ({}): el estado se escribe en el bucle",
+                e
+            );
+        }
         let mut firma_estado = engine_real.firma_estado_aprendido();
         let mut mensajes_desde_firma: u32 = 0;
         // B3.7 (auditoría) — DEDUP cierre-bracket vs cierre-core: el MISMO
@@ -3348,7 +3374,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let firma = engine_real.firma_estado_aprendido();
                 if firma != firma_estado {
                     firma_estado = firma;
-                    let _ = tx_estado.send(engine_real.estado_aprendido());
+                    enviar_estado_aprendido(&tx_estado, &ruta_estado, engine_real.estado_aprendido());
                 }
             }
             // CL-52: la reconexión llega en banda (centinela) o, si la cola
@@ -3998,7 +4024,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let firma = engine_real.firma_estado_aprendido();
                             if firma != firma_estado {
                                 firma_estado = firma;
-                                let _ = tx_estado.send(engine_real.estado_aprendido());
+                                enviar_estado_aprendido(&tx_estado, &ruta_estado, engine_real.estado_aprendido());
                             }
                         }
                         // B3.14 — sólo contabiliza lo que EXISTIÓ en el
@@ -5310,10 +5336,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // CL-120 (T2-4): la última foto del estado aprendido, y se espera
             // a que el escritor la deje en disco antes de salir.
             if guardar_estado {
-                let _ = tx_estado.send(engine_real.estado_aprendido());
+                enviar_estado_aprendido(&tx_estado, &ruta_estado, engine_real.estado_aprendido());
             }
             drop(tx_estado);
-            let _ = escritor_estado.join();
+            if let Ok(escritor) = escritor_estado {
+                let _ = escritor.join();
+            }
             telemetry_server::telemetry_log!(
                 "🛑 [SHUTDOWN] Estado persistido. Cierre limpio completo."
             );
