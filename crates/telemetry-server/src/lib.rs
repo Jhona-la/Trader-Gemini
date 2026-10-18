@@ -7,6 +7,7 @@ use axum::{
     response::{Html, IntoResponse, Json},
     routing::get,
 };
+pub mod estrangulador;
 pub mod flight_recorder;
 pub mod forensic_auditor;
 pub mod lock_free_logger;
