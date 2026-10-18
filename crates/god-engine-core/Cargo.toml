@@ -10,7 +10,6 @@ signal-engine = { path = "../signal-engine" }
 risk-engine = { path = "../risk-engine" }
 telemetry-server = { path = "../telemetry-server" }
 feature-engine = { path = "../feature-engine" }
-telemetry-engine = { path = "../telemetry-engine" }
 serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.10"
 bincode = "1.3"
@@ -23,11 +22,12 @@ rayon = "1.12.0"
 dark-alpha-engine = { path = "../dark-alpha-engine" }
 audit-engine = { version = "0.1.0", path = "../audit-engine" }
 reqwest = { version = "0.11", features = ["blocking", "json"] }
-data-pipeline = { path = "../data-pipeline" }
 strategy-core = { path = "../strategy-core" }
 storage-engine = { path = "../storage-engine" }
 metacortex-engine = { path = "../metacortex-engine" }
 chrono = { version = "0.4", features = ["serde"] }
 
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.9", features = ["memoryapi", "minwindef", "basetsd", "winnt", "processthreadsapi"] }
+[dev-dependencies]
+# Sólo statarb_live_physics_contract.rs (OmniState y apply_spot_tick); el
+# núcleo no la usa en src (censo C-F7b, R62).
+data-pipeline = { path = "../data-pipeline" }

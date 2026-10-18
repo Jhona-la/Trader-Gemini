@@ -1521,10 +1521,8 @@ dependencies = [
  "signal-engine",
  "storage-engine",
  "strategy-core",
- "telemetry-engine",
  "telemetry-server",
  "tokio",
- "winapi",
 ]
 
 [[package]]
