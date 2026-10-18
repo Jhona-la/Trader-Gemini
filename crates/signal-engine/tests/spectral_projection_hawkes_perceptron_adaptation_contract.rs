@@ -66,11 +66,17 @@ fn test_spectral_projection_engine_dynamic_registry_override() {
     let out_media = engine.evaluate_for_coin(0, "BTCUSDT");
     assert!((out_media - 0.56 * 0.5).abs() < 1e-6);
 
-    // Override dinámico vía registro omnisciente
-    registry.set("espectral_masa_minima", 0.30);
-    registry.set("espectral_masa_plena", 0.60);
+    // Override dinámico: F1-124 erradicó las sondas de masa_minima/plena del
+    // registro (claves sin escritor en producción); el canal sancionado son los
+    // parámetros del motor (el host los sobrescribe ANTES del arranque).
+    let params_alt = ProyeccionEspectralParams {
+        masa_minima: 0.30,
+        masa_plena: 0.60,
+    };
+    let mut engine_alt = ProyeccionEspectralEngine::with_params(params_alt);
+    assert!(engine_alt.init(registry.clone()).is_ok());
     // Ahora con masa 0.275 está por debajo del nuevo mínimo (0.30) -> debe abstenerse (0.0)
-    let out_vetada = engine.evaluate_for_coin(0, "BTCUSDT");
+    let out_vetada = engine_alt.evaluate_for_coin(0, "BTCUSDT");
     assert_eq!(out_vetada, 0.0);
 }
 
@@ -103,8 +109,9 @@ fn test_perceptron_gate_params_validation_and_dynamic_infer() {
     let mut engine = PerceptronGateEngine::new();
     assert!(engine.init(registry.clone()).is_ok());
 
-    registry.set("perceptron_candidate_signal", 0.5);
-    registry.set("perceptron_hebbian_weight", 1.0);
+    // F1-124/F1-098: canal vivo ('order_flow_imbalance' + 'hebbian_weight' estricto)
+    registry.set("order_flow_imbalance", 0.5);
+    registry.set("hebbian_weight", 1.0);
     let out_reg_default = engine.evaluate_for_coin(0, "BTCUSDT");
     assert!(out_reg_default > 0.0);
 
