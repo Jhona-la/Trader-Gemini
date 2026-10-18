@@ -130,6 +130,39 @@ fn cl108_un_freno_echado_sigue_echado() {
     assert!(con.risk_engine.freno_estrategia.rechazada());
 }
 
+/// PR70-T2 de la revisión de la Línea G — la caída del freno duro en stops
+/// (CL-130) se guarda con el estado aprendido y vuelve al reiniciar
+/// (ADR-0017 §2b). Ninguna prueba la cubría: borrar su captura o su
+/// restauración no ponía nada en rojo.
+#[test]
+fn cl130_la_caida_en_stops_sobrevive_al_reinicio() {
+    registrar_simbolos();
+    let viejo = nucleo();
+    for r in [2.4, -1.3, -1.3, 2.4, -1.3, -1.3, -1.3] {
+        risk_engine::drawdown::registrar_resultado_en_stops(&viejo.arena, r);
+    }
+    let caida = risk_engine::drawdown::caida_en_stops(&viejo.arena);
+    assert!((caida - 4.1).abs() < 1e-9, "precondición: 2,4 de pico menos -1,7: {caida}");
+    let ruta = std::env::temp_dir().join(format!("cl130_{}_estado.json", std::process::id()));
+    guardar(&ruta, &viejo.estado_aprendido()).expect("guardar");
+    let Carga::Leido(estado) = cargar(&ruta) else {
+        panic!("leer el estado guardado");
+    };
+    let _ = std::fs::remove_file(&ruta);
+    let sin = nucleo();
+    let mut con = nucleo();
+    con.restaurar_estado_aprendido(&estado);
+    println!(
+        "observado: caída en stops vieja {caida:.2}, sin restaurar {:.2}, restaurada {:.2}",
+        risk_engine::drawdown::caida_en_stops(&sin.arena),
+        risk_engine::drawdown::caida_en_stops(&con.arena)
+    );
+    assert_eq!(risk_engine::drawdown::caida_en_stops(&sin.arena), 0.0, "precondición");
+    assert_eq!(con.arena.resultado_en_stops.load(Relaxed), viejo.arena.resultado_en_stops.load(Relaxed));
+    assert_eq!(con.arena.pico_en_stops.load(Relaxed), viejo.arena.pico_en_stops.load(Relaxed));
+    assert_eq!(risk_engine::drawdown::caida_en_stops(&con.arena), caida);
+}
+
 /// CL-108f (T2-1 de la revisión de la Línea G) — un archivo ilegible no es
 /// un archivo ausente. Antes `cargar` devolvía `None` en los dos casos y el
 /// host arrancaba en cero: el freno de la estrategia suelto y, en el primer

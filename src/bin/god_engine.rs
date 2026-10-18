@@ -1823,7 +1823,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // arena, compartido con el veto de entradas del riesgo, y se
             // guarda por entorno para que un reinicio no borre la caída
             // acumulada (antes el pico nacía en el capital ya caído). Para
-            // empezar de cero tras un retiro de fondos, se borra el archivo.
+            // empezar de cero tras un retiro de fondos se borra el archivo del
+            // pico de ESTE venue; la pata en stops del freno duro (CL-130)
+            // vive en el estado aprendido (`resultado_en_stops` y
+            // `pico_en_stops`), y su caída no depende del capital, así que
+            // un retiro no la cambia (PR70-INT-12 de la Línea G).
             // CL-133 (R5 de la revisión del PR #62): un archivo por venue.
             // Testnet y papel de mainnet comparten `data/demo` (CL-61), y el
             // pico de 5 000 USDT de testnet bloqueaba la sesión de papel con

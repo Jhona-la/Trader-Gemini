@@ -78,6 +78,11 @@ fn mediana(mut v: Vec<usize>) -> usize {
 
 /// Esperado: el umbral en R es el del Monte Carlo del dueño, +0 % a +6 %
 /// (caída aditiva en R frente a caída relativa al pico; ver la cabecera).
+/// El porcentaje de la cuenta es la TRADUCCIÓN de K para la orden mínima
+/// (K stops × su riesgo al stop / 13 USD), el número que vio el dueño. Desde
+/// CL-130 el freno no usa ese porcentaje: compara la caída en stops con K
+/// directamente (PR70-T6 de la Línea G); lo que se comprueba es que K, que
+/// sale del Monte Carlo de la biblioteca, sigue diciendo lo mismo en cuenta.
 #[test]
 fn cl106_el_umbral_es_el_cuantil_de_la_caida_con_el_tamano_real() {
     for (sl, k_r, pct) in [(0.005, 30.7, 0.078), (0.010, 33.3, 0.150)] {
