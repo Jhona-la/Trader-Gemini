@@ -1925,7 +1925,7 @@ impl SuperGenotype {
             kelly_bootstrap_min_exposure: self.kelly_bootstrap_min_exposure, // LG-21
             ev_fee_multiplier: mutate_val(self.ev_fee_multiplier, 1.0, 5.0),
             margin_cushion_pct: mutate_val(self.margin_cushion_pct, 0.50, 0.98),
-            maker_only_capital_threshold: 50.0,
+            maker_only_capital_threshold: self.maker_only_capital_threshold, // Congelado (F1-117/LG-21) - política neutra, ruta maker inerte en host IOC
             hawkes_scalp_threshold: mutate_val(self.hawkes_scalp_threshold, 0.50, 0.95),
             obi_zscore_threshold: mutate_val(self.obi_zscore_threshold, 0.1, 3.0),
 

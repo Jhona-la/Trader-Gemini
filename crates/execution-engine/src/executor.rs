@@ -686,11 +686,41 @@ impl OrderExecutor {
         }
     }
 
-    /// F1.11/F5.2: APLANADO TOTAL — cancela todas las órdenes abiertas y cierra
-    /// todas las posiciones con MARKET reduceOnly (side opuesto, qty exacta).
-    /// Mode-aware: en one-way se OMITE positionSide (si no, -4061).
-    /// Usos: pre-flight de demo (limpiar huérfanas de sesiones previas) y
-    /// primitivo del kill-switch real. Devuelve (órdenes canceladas, posiciones cerradas).
+    /// F1-027: Cancela órdenes normales y algo brackets de un símbolo específico.
+    async fn cancel_symbol_orders_and_brackets(&self, sym: &str, api_secret: &str) -> usize {
+        let mut cancelled = 0usize;
+        let ts = self.get_synced_timestamp();
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(self.client.get_base_url());
+        buf.push_str("/fapi/v1/allOpenOrders?");
+        let payload_start = buf.as_str().len();
+        buf.push_str("symbol=");
+        buf.push_str(sym);
+        buf.push_str("&timestamp=");
+        buf.push_u64(ts);
+        let mut sig_buf = [0u8; 64];
+        sign_payload_to_buffer(&buf.as_str()[payload_start..], api_secret, &mut sig_buf);
+        buf.push_str("&signature=");
+        buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
+        match self.client.cancel_order_payload(buf.as_str()).await {
+            Ok(limits) => {
+                self.update_limits(&limits);
+                cancelled += 1;
+            }
+            Err(e) => {
+                let _ = self.handle_rate_limit_error(&e);
+            }
+        }
+        if self.cancel_all_algo_open_orders(sym).await.is_ok() {
+            cancelled += 1;
+        }
+        cancelled
+    }
+
+    /// FASE 13: Emergency Flatten All.
+    /// F1-027 (Protocolo X-009): Cierra PRIMERO cada posición abierta para que la protección
+    /// siga viva hasta el aterrizaje del cierre; sólo tras confirmación purga los brackets de ese símbolo.
+    /// F1-029: Sondeo WS ampliado a 200 ms y COID fresco en fallback REST para evitar -4116 falso.
     pub async fn flatten_all_positions(&self) -> Result<(usize, usize), String> {
         if self.is_paper_trading {
             return Ok((0, 0));
@@ -725,76 +755,24 @@ impl OrderExecutor {
                 None
             }
         };
-        let mut dual = dual_mode_opt.unwrap_or(true); // el motor ES hedge por diseño; failover a one-way si falla
+        let mut dual = dual_mode_opt.unwrap_or(self.is_hedge_mode.load(Ordering::Relaxed));
 
-        // 1) Cancelar TODAS las órdenes abiertas por símbolo con posiciones.
         let entries = self.fetch_position_risk().await?;
-        let symbols: Vec<String> = entries
-            .iter()
-            .filter(|p| p.is_open())
-            .map(|p| p.symbol.clone())
-            .collect();
-        let mut cancelled = 0usize;
-        for sym in &symbols {
-            let ts = self.get_synced_timestamp();
-            let mut buf = ZeroAllocBuffer::new();
-            buf.push_str(self.client.get_base_url());
-            buf.push_str("/fapi/v1/allOpenOrders?");
-            let payload_start = buf.as_str().len();
-            buf.push_str("symbol=");
-            buf.push_str(sym);
-            buf.push_str("&timestamp=");
-            buf.push_u64(ts);
-            let mut sig_buf = [0u8; 64];
-            sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
-            buf.push_str("&signature=");
-            buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
-            match self.client.cancel_order_payload(buf.as_str()).await {
-                Ok(limits) => {
-                    self.update_limits(&limits);
-                    cancelled += 1;
-                }
-                Err(e) => {
-                    let _ = self.handle_rate_limit_error(&e);
-                }
-            }
-            // OCO-F5: los brackets TP/SL (algo orders) NO se tocan con
-            // allOpenOrders — purgarlos también o el trigger dispara un
-            // close fantasma tras aplanar.
-            if self.cancel_all_algo_open_orders(sym).await.is_ok() {
-                cancelled += 1;
-            }
-        }
+        let open_positions: Vec<_> = entries.iter().filter(|p| p.is_open()).cloned().collect();
+        let open_symbols: std::collections::HashSet<String> =
+            open_positions.iter().map(|p| p.symbol.clone()).collect();
+        let all_symbols: Vec<String> = entries.iter().map(|p| p.symbol.clone()).collect();
 
-        // 2) Cerrar cada posición con MARKET reduceOnly del lado opuesto.
         let mut closed = 0usize;
-        for p in entries.iter().filter(|p| p.is_open()) {
-            let is_long = p.is_long();
-            let ts = self.get_synced_timestamp();
-            let coid = uuid::Uuid::now_v7().simple().to_string();
-            let mut buf = ZeroAllocBuffer::new();
-            buf.push_str(self.client.get_base_url());
-            buf.push_str("/fapi/v1/order?");
-            let payload_start = buf.as_str().len();
-            buf.push_str("symbol=");
-            buf.push_str(&p.symbol);
-            buf.push_str("&side=");
-            buf.push_str(if is_long { "SELL" } else { "BUY" });
-            if dual {
-                buf.push_str("&positionSide=");
-                buf.push_str(if is_long { "LONG" } else { "SHORT" });
-                buf.push_str("&type=MARKET&quantity=");
-            } else {
-                buf.push_str("&type=MARKET&reduceOnly=true&quantity=");
-            }
-            buf.push_f64(p.position_amt.abs());
-            buf.push_str("&newClientOrderId=");
-            buf.push_str(&coid);
-            buf.push_str("&timestamp=");
-            buf.push_u64(ts);
-            let mut sig_buf = [0u8; 64];
+        let mut cancelled = 0usize;
+        let mut unclosed_symbols = Vec::new();
 
-            // WS Execution Routing (Zero-TLS overhead)
+        // 1) Cerrar PRIMERO cada posición abierta.
+        for p in &open_positions {
+            let is_long = p.is_long();
+            let mut position_closed = false;
+
+            // WS Execution Routing (Zero-TLS overhead) si está conectado
             if self.ws.is_connected() {
                 let api_key = self
                     .client
@@ -803,6 +781,8 @@ impl OrderExecutor {
                     .to_str()
                     .unwrap_or("")
                     .to_string();
+                let coid_ws = uuid::Uuid::now_v7().simple().to_string();
+                let ts_ws = self.get_synced_timestamp();
                 if let Err(e) = self.ws.send_order_payload(
                     &api_key,
                     &api_secret,
@@ -817,182 +797,211 @@ impl OrderExecutor {
                     p.position_amt.abs(),
                     None,
                     None,
-                    !dual, // reduceOnly is true when NOT dual (One-Way Mode)
-                    &coid,
-                    ts,
+                    !dual,
+                    &coid_ws,
+                    ts_ws,
                 ) {
-                    println!("⚠️ [WS-EXECUTOR] Failed to send close position order, falling back to REST: {}", e);
+                    println!(
+                        "⚠️ [WS-EXECUTOR] Failed to send close position order, falling back to REST: {}",
+                        e
+                    );
                 } else {
-                    // D-697 (DÉCIMA OLA · auditoría integral): DESPACHAR NO ES CERRAR.
-                    //
-                    // `send_order_payload` sólo confirma que el payload salió por el
-                    // socket; el rechazo del exchange (-4061 por modo de posición,
-                    // -2022 porque un TP llenó entre el snapshot y el cierre) llega
-                    // después por el stream. Antes se contaba la posición como
-                    // cerrada y el `continue` saltaba los dos fail-safes de la ruta
-                    // REST: el kill-switch informaba «N cerradas» mientras las
-                    // posiciones seguían vivas y —si ya se habían purgado las algo
-                    // orders— SIN TP ni SL.
-                    //
-                    // Ahora se espera la confirmación con el mismo sondeo del
-                    // registro que usa `execute_maker_chase` (D-361) y sólo cuenta
-                    // como cerrada la orden que el exchange reconoce ejecutada. Sin
-                    // confirmación se cae a la ruta REST, que sí tiene los
-                    // fail-safes; si el cierre por WS sí había llenado, el
-                    // reduceOnly devuelve -2022 y la rama X-026 lo resuelve con un
-                    // snapshot fresco, de modo que no hay doble cierre.
-                    let mut ws_filled = false;
-                    for _ in 0..5 {
-                        tokio::time::sleep(std::time::Duration::from_millis(3)).await;
-                        if let Some(order) = self.order_registry.get(&coid) {
-                            if !order.status.is_active() {
-                                ws_filled = order.executed_qty > 0.0;
+                    // F1-029: Ventana de confirmación ampliada a 200ms (20×10ms) para acomodar RTT real
+                    for _ in 0..20 {
+                        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                        if let Some(order) = self.order_registry.get(&coid_ws) {
+                            if !order.status.is_active() && order.executed_qty > 0.0 {
+                                position_closed = true;
+                                println!(
+                                    "🧹 [FLATTEN] {} cerrada por WS (ejecución confirmada)",
+                                    p.symbol
+                                );
                                 break;
                             }
                         }
                     }
-                    if ws_filled {
-                        println!("🧹 [FLATTEN] {} cerrada por WS (ejecución confirmada)", p.symbol);
-                        closed += 1;
-                        continue;
+                    if !position_closed {
+                        println!(
+                            "⚠️ [FLATTEN] {} despachada por WS SIN confirmación de ejecución: se reintenta por REST con los fail-safes",
+                            p.symbol
+                        );
                     }
-                    println!(
-                        "⚠️ [FLATTEN] {} despachada por WS SIN confirmación de ejecución: se reintenta por REST con los fail-safes",
-                        p.symbol
-                    );
                 }
             }
 
-            sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
-            buf.push_str("&signature=");
-            buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
+            if !position_closed {
+                // Fallback a REST tipado con COID fresco independiente del WS (F1-029: evita duplicado -4116)
+                let ts = self.get_synced_timestamp();
+                let coid_rest = uuid::Uuid::now_v7().simple().to_string();
+                let mut buf = ZeroAllocBuffer::new();
+                buf.push_str(self.client.get_base_url());
+                buf.push_str("/fapi/v1/order?");
+                let payload_start = buf.as_str().len();
+                buf.push_str("symbol=");
+                buf.push_str(&p.symbol);
+                buf.push_str("&side=");
+                buf.push_str(if is_long { "SELL" } else { "BUY" });
+                if dual {
+                    buf.push_str("&positionSide=");
+                    buf.push_str(if is_long { "LONG" } else { "SHORT" });
+                    buf.push_str("&type=MARKET&newOrderRespType=RESULT&quantity=");
+                } else {
+                    buf.push_str("&type=MARKET&reduceOnly=true&newOrderRespType=RESULT&quantity=");
+                }
+                buf.push_f64(p.position_amt.abs());
+                buf.push_str("&newClientOrderId=");
+                buf.push_str(&coid_rest);
+                buf.push_str("&timestamp=");
+                buf.push_u64(ts);
+                let mut sig_buf = [0u8; 64];
 
-            let mut close_res = self.client.execute_order_payload_typed(buf.as_str()).await;
-            // R3.3 / K-16: Fail-safe retry si el exchange rechaza por discrepancia de modo (-4061)
-            if let Err(ref e) = close_res {
-                if e.contains("-4061") || e.contains("position side") || e.contains("reduceOnly") {
-                    println!("⚠️ [FLATTEN] Modo rechazado (-4061) para {}. Conmutando modo (dual={}) y reintentando cierre...", p.symbol, !dual);
-                    dual = !dual;
-                    self.is_hedge_mode.store(dual, Ordering::SeqCst);
-                    let ts_retry = self.get_synced_timestamp();
-                    let coid_retry = uuid::Uuid::now_v7().simple().to_string();
-                    let mut retry_buf = ZeroAllocBuffer::new();
-                    retry_buf.push_str(self.client.get_base_url());
-                    retry_buf.push_str("/fapi/v1/order?");
-                    let retry_payload_start = retry_buf.as_str().len();
-                    retry_buf.push_str("symbol=");
-                    retry_buf.push_str(&p.symbol);
-                    retry_buf.push_str("&side=");
-                    retry_buf.push_str(if is_long { "SELL" } else { "BUY" });
-                    if dual {
-                        retry_buf.push_str("&positionSide=");
-                        retry_buf.push_str(if is_long { "LONG" } else { "SHORT" });
-                        retry_buf.push_str("&type=MARKET&quantity=");
-                    } else {
-                        retry_buf.push_str("&type=MARKET&reduceOnly=true&quantity=");
+                sign_payload_to_buffer(&buf.as_str()[payload_start..], &api_secret, &mut sig_buf);
+                buf.push_str("&signature=");
+                buf.push_str(unsafe { std::str::from_utf8_unchecked(&sig_buf) });
+
+                let mut close_res = self.client.execute_order_payload_typed(buf.as_str()).await;
+                // R3.3 / K-16: Fail-safe retry si el exchange rechaza por discrepancia de modo (-4061)
+                if let Err(ref e) = close_res {
+                    if e.contains("-4061") || e.contains("position side") || e.contains("reduceOnly") {
+                        println!(
+                            "⚠️ [FLATTEN] Modo rechazado (-4061) para {}. Conmutando modo (dual={}) y reintentando cierre...",
+                            p.symbol, !dual
+                        );
+                        dual = !dual;
+                        self.is_hedge_mode.store(dual, Ordering::SeqCst);
+                        let ts_retry = self.get_synced_timestamp();
+                        let coid_retry = uuid::Uuid::now_v7().simple().to_string();
+                        let mut retry_buf = ZeroAllocBuffer::new();
+                        retry_buf.push_str(self.client.get_base_url());
+                        retry_buf.push_str("/fapi/v1/order?");
+                        let retry_payload_start = retry_buf.as_str().len();
+                        retry_buf.push_str("symbol=");
+                        retry_buf.push_str(&p.symbol);
+                        retry_buf.push_str("&side=");
+                        retry_buf.push_str(if is_long { "SELL" } else { "BUY" });
+                        if dual {
+                            retry_buf.push_str("&positionSide=");
+                            retry_buf.push_str(if is_long { "LONG" } else { "SHORT" });
+                            retry_buf.push_str("&type=MARKET&newOrderRespType=RESULT&quantity=");
+                        } else {
+                            retry_buf.push_str("&type=MARKET&reduceOnly=true&newOrderRespType=RESULT&quantity=");
+                        }
+                        retry_buf.push_f64(p.position_amt.abs());
+                        retry_buf.push_str("&newClientOrderId=");
+                        retry_buf.push_str(&coid_retry);
+                        retry_buf.push_str("&timestamp=");
+                        retry_buf.push_u64(ts_retry);
+                        let mut retry_sig_buf = [0u8; 64];
+                        sign_payload_to_buffer(
+                            &retry_buf.as_str()[retry_payload_start..],
+                            &api_secret,
+                            &mut retry_sig_buf,
+                        );
+                        retry_buf.push_str("&signature=");
+                        retry_buf.push_str(unsafe { std::str::from_utf8_unchecked(&retry_sig_buf) });
+
+                        close_res = self
+                            .client
+                            .execute_order_payload_typed(retry_buf.as_str())
+                            .await;
                     }
-                    retry_buf.push_f64(p.position_amt.abs());
-                    retry_buf.push_str("&newClientOrderId=");
-                    retry_buf.push_str(&coid_retry);
-                    retry_buf.push_str("&timestamp=");
-                    retry_buf.push_u64(ts_retry);
-                    let mut retry_sig_buf = [0u8; 64];
-                    sign_payload_to_buffer(
-                        &retry_buf.as_str()[retry_payload_start..],
-                        &api_secret,
-                        &mut retry_sig_buf,
-                    );
-                    retry_buf.push_str("&signature=");
-                    retry_buf.push_str(unsafe { std::str::from_utf8_unchecked(&retry_sig_buf) });
-
-                    close_res = self
-                        .client
-                        .execute_order_payload_typed(retry_buf.as_str())
-                        .await;
                 }
-            }
 
-            match close_res {
-                Ok((limits, ack)) => {
-                    self.update_limits(&limits);
-                    let now = self.get_synced_timestamp();
-                    self.order_registry.apply_ack(&ack, now);
-                    closed += 1;
-                    println!(
-                        "🧹 [FLATTEN] {} cerrada {} @ ~{} (status {})",
-                        p.symbol,
-                        p.position_amt.abs(),
-                        ack.avg_price,
-                        ack.status
-                    );
-                }
-                Err(e) if e.contains("-2022") || e.contains("-4061") => {
-                    // X-026 (REHAB-3): ReduceOnly rechazado — un TP llenó (o el
-                    // modo cambió) ENTRE el snapshot y el close. Antes: println
-                    // + Ok(...) ⇒ el inmune reportaba "Aplanado" con posición
-                    // viva. Ahora: RE-SNAPSHOT del símbolo y reintento con la
-                    // cantidad FRESCA; qty≈0 ⇒ ya plana (cuenta como cerrada).
-                    println!(
-                        "♻️ [X-026] {} -2022: re-snapshot fresco (TP pudo llenar entre snapshot y close)…",
-                        p.symbol
-                    );
-                    let fresh = self.fetch_position_risk().await.ok().and_then(|entries| {
-                        entries
-                            .into_iter()
-                            .find(|e2| e2.symbol == p.symbol && e2.is_open())
-                    });
-                    match fresh {
-                        Some(f) => {
-                            let fq = f.position_amt.abs();
-                            // MOD1/4-008 (INFORME-14): step REAL del símbolo.
-                            // El literal 0.001 es el paso de BTCUSDT: truncaba
-                            // la qty de emergencia en símbolos con paso mayor
-                            // (DOGE/SHIB step=1) y el exchange rechazaba el
-                            // cierre justamente cuando la posición ardía. Si
-                            // ni exchangeInfo ni el registro aportan filtro, se
-                            // cuantiza a 1e-9: preserva la qty TAL CUAL la
-                            // sirvió el exchange (ya múltiplo válido del paso
-                            // real) en vez de imponer el paso de otro activo.
-                            let step = match self.get_symbol_filter(&p.symbol).await {
-                                Ok(flt) => flt.step_size,
-                                Err(e) => {
-                                    println!(
-                                        "⚠️ [X-026] {} sin filtro de precisión ({}): qty fresca sin re-cuantizar (paso 1e-9)",
-                                        p.symbol, e
-                                    );
-                                    1e-9
+                match close_res {
+                    Ok((limits, ack)) => {
+                        self.update_limits(&limits);
+                        let now = self.get_synced_timestamp();
+                        self.order_registry.apply_ack(&ack, now);
+                        position_closed = true;
+                        println!(
+                            "🧹 [FLATTEN] {} cerrada {} @ ~{} (status {})",
+                            p.symbol,
+                            p.position_amt.abs(),
+                            ack.avg_price,
+                            ack.status
+                        );
+                    }
+                    Err(e) if e.contains("-2022") || e.contains("-4061") => {
+                        // X-026 (REHAB-3): ReduceOnly rechazado — un TP llenó (o el
+                        // modo cambió) ENTRE el snapshot y el close.
+                        println!(
+                            "♻️ [X-026] {} -2022: re-snapshot fresco (TP pudo llenar entre snapshot y close)…",
+                            p.symbol
+                        );
+                        let fresh = self.fetch_position_risk().await.ok().and_then(|entries| {
+                            entries
+                                .into_iter()
+                                .find(|e2| e2.symbol == p.symbol && e2.is_open())
+                        });
+                        match fresh {
+                            Some(f) => {
+                                let fq = f.position_amt.abs();
+                                let step = match self.get_symbol_filter(&p.symbol).await {
+                                    Ok(flt) => flt.step_size,
+                                    Err(e) => {
+                                        println!(
+                                            "⚠️ [X-026] {} sin filtro de precisión ({}): qty fresca sin re-cuantizar (paso 1e-9)",
+                                            p.symbol, e
+                                        );
+                                        1e-9
+                                    }
+                                };
+                                let retry = self
+                                    .execute_reduce_only_market(&p.symbol, f.is_long(), fq, step)
+                                    .await;
+                                match retry {
+                                    Ok(()) => {
+                                        position_closed = true;
+                                        println!("🧹 [X-026] {} cerrada con qty fresca {}", p.symbol, fq);
+                                    }
+                                    Err(e3) => println!(
+                                        "🚨 [X-026] {} sigue ABIERTA (qty {}) tras re-snapshot+retry: {} — INTERVENCIÓN MANUAL",
+                                        p.symbol, fq, e3
+                                    ),
                                 }
-                            };
-                            let retry = self
-                                .execute_reduce_only_market(&p.symbol, f.is_long(), fq, step)
-                                .await;
-                            match retry {
-                                Ok(()) => {
-                                    closed += 1;
-                                    println!("🧹 [X-026] {} cerrada con qty fresca {}", p.symbol, fq);
-                                }
-                                Err(e3) => println!(
-                                    "🚨 [X-026] {} sigue ABIERTA (qty {}) tras re-snapshot+retry: {} — INTERVENCIÓN MANUAL",
-                                    p.symbol, fq, e3
-                                ),
+                            }
+                            None => {
+                                position_closed = true; // ya no existe con qty>0: estaba plana
+                                println!(
+                                    "🧹 [X-026] {} ya plana en el exchange (snapshot fresco)",
+                                    p.symbol
+                                );
                             }
                         }
-                        None => {
-                            closed += 1; // ya no existe con qty>0: estaba plana
-                            println!(
-                                "🧹 [X-026] {} ya plana en el exchange (snapshot fresco)",
-                                p.symbol
-                            );
-                        }
                     }
+                    Err(e) => println!(
+                        "🚨 [FLATTEN] {} NO cerrada tras reintento: {} — INTERVENCIÓN MANUAL",
+                        p.symbol, e
+                    ),
                 }
-                Err(e) => println!(
-                    "🚨 [FLATTEN] {} NO cerrada tras reintento: {} — INTERVENCIÓN MANUAL",
-                    p.symbol, e
-                ),
+            }
+
+            if position_closed {
+                closed += 1;
+                // F1-027: Sólo purgar brackets de ESTE símbolo una vez que el cierre aterrizó
+                cancelled += self.cancel_symbol_orders_and_brackets(&p.symbol, &api_secret).await;
+            } else {
+                // F1-027: Si el cierre falló, NO purgar protección (evitar posición desnuda)
+                unclosed_symbols.push(p.symbol.clone());
             }
         }
-        Ok((cancelled, closed))
+
+        // Purgar brackets de símbolos sin posiciones abiertas (órdenes huérfanas)
+        for sym in &all_symbols {
+            if !open_symbols.contains(sym) {
+                cancelled += self.cancel_symbol_orders_and_brackets(sym, &api_secret).await;
+            }
+        }
+
+        if !unclosed_symbols.is_empty() {
+            Err(format!(
+                "FLATTEN_INCOMPLETE: {} posiciones no pudieron cerrarse: {:?}",
+                unclosed_symbols.len(),
+                unclosed_symbols
+            ))
+        } else {
+            Ok((cancelled, closed))
+        }
     }
 
     /// F3.5: one reported income page (PnL, commission, funding, other flows).
@@ -2869,6 +2878,8 @@ impl ExecutionProvider for OrderExecutor {
     }
 
     /// FASE 13: Reduce-Only Market. Guaranteed to only reduce position, never flip.
+    /// F1-028: Ejecución tipada con newOrderRespType=RESULT, register_intent y validación
+    /// estricta de executed_qty para prevenir cierres incompletos o ambiguos.
     #[inline(always)]
     async fn execute_reduce_only_market(
         &self,
@@ -2900,13 +2911,19 @@ impl ExecutionProvider for OrderExecutor {
         let payload_start = buf.as_str().len();
 
         let is_hedge = self.is_hedge_mode.load(Ordering::Relaxed);
+        let pos_side_str = if is_hedge {
+            if is_long_close { "LONG" } else { "SHORT" }
+        } else {
+            "BOTH"
+        };
+
         buf.push_str("symbol=");
         buf.push_str(symbol);
         buf.push_str("&side=");
         buf.push_str(side);
         if is_hedge {
             buf.push_str("&positionSide=");
-            buf.push_str(if is_long_close { "LONG" } else { "SHORT" });
+            buf.push_str(pos_side_str);
             buf.push_str("&type=");
             buf.push_str(ORDER_TYPE_MARKET);
         } else {
@@ -2916,11 +2933,19 @@ impl ExecutionProvider for OrderExecutor {
         }
         buf.push_str("&quantity=");
         buf.push_f64(final_quantity);
+
         let client_order_id = uuid::Uuid::now_v7().simple().to_string();
+
         buf.push_str("&newClientOrderId=");
         buf.push_str(&client_order_id);
+        // F1-028: Exigir RESULT para conocer executedQty y estado terminal
+        buf.push_str("&newOrderRespType=RESULT");
         buf.push_str("&timestamp=");
         buf.push_u64(timestamp);
+
+        if buf.is_overflow() {
+            return Err("SEGURIDAD: query de orden excede el buffer (orden abortada)".to_string());
+        }
 
         let mut sig_buf = [0u8; 64];
         let payload = &buf.as_str()[payload_start..];
@@ -2930,13 +2955,42 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&signature=");
         buf.push_str(signature);
 
-        let res = self.client.execute_order_payload(buf.as_str()).await;
+        // F1-028: Registrar intención antes del despacho
+        self.order_registry.register_intent(
+            &client_order_id,
+            symbol,
+            side,
+            pos_side_str,
+            ORDER_TYPE_MARKET,
+            final_quantity,
+            timestamp,
+        );
+
+        let res = self.client.execute_order_payload_typed(buf.as_str()).await;
         match res {
-            Ok(limits) => {
+            Ok((limits, ack)) => {
                 self.update_limits(&limits);
-                Ok(())
+                let now = self.get_synced_timestamp();
+                self.order_registry.apply_ack(&ack, now);
+                if ack.executed_qty.is_finite() && ack.executed_qty > 0.0 {
+                    Ok(())
+                } else if ack.is_filled()
+                    || ack.status.trim().eq_ignore_ascii_case("PARTIALLY_FILLED")
+                {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "CLOSE_UNFILLED: status={}, executed_qty={}",
+                        ack.status, ack.executed_qty
+                    ))
+                }
             }
-            Err(e) => Err(self.handle_rate_limit_error(&e)),
+            Err(e) => {
+                if crate::ioc_evidence::error_cierra_la_intencion(&e) {
+                    self.order_registry.mark_local_reject(&client_order_id, timestamp);
+                }
+                Err(self.handle_rate_limit_error(&e))
+            }
         }
     }
 

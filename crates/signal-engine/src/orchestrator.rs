@@ -402,7 +402,8 @@ impl TensorVoteOrchestrator {
             let nombre = s.name();
             let mut slot = n_fuentes;
             for (j, f) in fuentes.iter().enumerate().take(n_fuentes) {
-                if f.0 == nombre {
+                // F1-124: Comparación por puntero &'static str primero (1 ciclo de reloj) antes de memcmp
+                if std::ptr::eq(f.0, nombre) || f.0 == nombre {
                     slot = j;
                     break;
                 }

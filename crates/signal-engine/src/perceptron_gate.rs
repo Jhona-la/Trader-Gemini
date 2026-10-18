@@ -217,21 +217,15 @@ impl QuantumStrategy for PerceptronGateEngine {
             Some(r) => r,
             None => return 0.0,
         };
+        // F1-124: Erradicada lectura inerte de 'perceptron_candidate_signal' (sin escritor en producción),
+        // consultando directamente 'order_flow_imbalance' y fallback a 'alpha_signal'.
         let signal_score = registry
             .get_scoped_parameter(
                 sym_opt,
                 cid_opt,
-                "perceptron_candidate_signal",
+                "order_flow_imbalance",
                 "PerceptronGateEngine",
             )
-            .or_else(|| {
-                registry.get_scoped_parameter(
-                    sym_opt,
-                    cid_opt,
-                    "order_flow_imbalance",
-                    "PerceptronGateEngine",
-                )
-            })
             .or_else(|| {
                 registry.get_scoped_parameter(
                     sym_opt,
@@ -254,20 +248,16 @@ impl QuantumStrategy for PerceptronGateEngine {
             return 0.0;
         }
 
-        // Resolución dinámica de parámetros desde el registro omnisciente si existen
+        // F1-124: Resolución dinámica de ganancia si existe; min_exploration_floor proviene de self.params
+        // (erradicando la sonda inerte de 'perceptron_min_exploration_floor' sin escritor).
         let custom_ganancia = registry
             .get_scoped_parameter(sym_opt, cid_opt, "perceptron_ganancia", "PerceptronGateEngine")
             .map(|p| p.get_value())
             .unwrap_or(self.params.ganancia);
-        let custom_floor = registry
-            .get_scoped_parameter(sym_opt, cid_opt, "perceptron_min_exploration_floor", "PerceptronGateEngine")
-            .map(|p| p.get_value())
-            .unwrap_or(self.params.min_exploration_floor);
 
-        let effective_params = if custom_ganancia.is_finite() && custom_floor.is_finite() && custom_ganancia > 0.0 && custom_floor >= 0.0 && custom_floor < 1.0 {
+        let effective_params = if custom_ganancia.is_finite() && custom_ganancia > 0.0 {
             PerceptronGateParams {
                 ganancia: custom_ganancia,
-                min_exploration_floor: custom_floor,
                 ..self.params
             }
         } else {
