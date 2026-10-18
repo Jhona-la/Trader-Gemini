@@ -1141,7 +1141,24 @@ impl SeniorAgent for SeniorVolatilidad {
         SeniorRole::Volatilidad
     }
     fn evaluate(&self, payload: &MarketSnapshotPayload, _wr: f64) -> SeniorOpinion {
-        let regime_factor = evaluate_volatility_regime(payload.atr_pct);
+        // F1-008 (Ola Ω151): Escala continua espectral sobre el horizonte tau de la orden (s ∈ [0, 1]).
+        // A escalas rápidas (s -> 0) rigen las bandas base de microestructura (10..40 bps).
+        // A escalas continuas más lentas (s -> 1), las bandas de calma/peligro se expanden
+        // suavemente hasta 2.5x (25..100 bps), evaluando el ATR propio del activo sin rigidez discreta.
+        let s = if payload.dominant_tau_ms.is_finite() && payload.dominant_tau_ms >= 30_000.0 {
+            ((payload.dominant_tau_ms.ln() - 30_000.0f64.ln())
+                / (43_200_000.0f64.ln() - 30_000.0f64.ln()))
+                .clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let regime_factor = evaluate_volatility_regime_spectral(
+            payload.atr_pct,
+            s,
+            CALM_ATR_PCT,
+            DANGER_ATR_PCT,
+            2.5,
+        );
         let dir = safe_signum(payload.intended_direction);
         let safe_atr = if payload.atr_pct.is_finite() && payload.atr_pct >= 0.0 {
             payload.atr_pct
@@ -1155,8 +1172,8 @@ impl SeniorAgent for SeniorVolatilidad {
             weight: 0.9,
             is_veto: false,
             justification: format!(
-                "Volatilidad: ATR%={:.4} → convicción {:.2} (dir={:+.0})",
-                safe_atr, regime_factor, dir
+                "Volatilidad: ATR%={:.4} (s={:.2}) → convicción {:.2} (dir={:+.0})",
+                safe_atr, s, regime_factor, dir
             ),
         }
     }

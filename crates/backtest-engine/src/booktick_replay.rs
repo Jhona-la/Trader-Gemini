@@ -449,8 +449,15 @@ fn run_booktick_replay_observed(
         executed_ticks += 1;
         executed_last_ts = t.ts_ms;
 
-        // F3.4-04 (Línea C / Ola Ω93): paridad de muros L2 con vivo y forense.
-        core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);
+        // F3.4-04 (Línea C / Ola Ω93) + F1-001 (Fable / Ola Ω151):
+        // En modo trade_only (sin libro real) no alimentar muros con la
+        // codificación del agresor de aggTrades; mantener muros en 0.0
+        // para que muro_en_contra sea coherentemente inerte (sin libro ⇒ sin muro).
+        if !cfg.trade_only {
+            core.arena.update_l2_depth(0, t.bid_qty, t.ask_qty);
+        } else {
+            core.arena.update_l2_depth(0, 0.0, 0.0);
+        }
 
         // ATR real del stream (TR = rango efectivo del tick).
         // FIX AUDIT: la fórmula anterior `max(spread, mid - running_atr)` era

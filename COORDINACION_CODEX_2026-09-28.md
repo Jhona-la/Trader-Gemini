@@ -13534,3 +13534,57 @@ Main avanzó por2docsFable a1c715516796c84da658eacd7d8298f49d7713cab; primer pre
 BindingV11 real main150-control-v11-20261018-a: HEADCONTROL limpio, before=after raw095a/lógicobd400417/2003entradas, source56b98f87;8pins intactos,manifest9d92bdc0bed35a116132de80d6c1b5f2d3e13898c38687f62a73dd1f7d7e814b yplanbounddbfbf05a. NO es lease ni ejecución. Evidencia original selectiva durable: C:/Users/jhona/.codex/audit-evidence/trader-gemini/root-valid-check-control-20261018-0bdecd9e-316c-44b4-a0f7-b836a1d8561e/MANIFEST.json SHA8837a9dc231fe2fec4674652119a675ff02eae9b060179f4140232a822137c33.
 
 Plan operativo, siete pares todavía0ejecuciones: Core07 primero(5contratos, cierrepositivoANTESdelnegativoFE); luego Risk01(13),Kelly02(2),Flow03(7),Hidden04(16),Replay05(span8 yledger5 requieren ambosREDantesdelta),Reporter06(22privados;puertofinalpreservaNoReplay=23). CadaRED exige fallo semántico real yguardas, no Cargo/constructor/stack/86. CadaGREEN requiere parcheacotado,commitprivadoNO_VALIDADO,bindingnuevo,mismahuellacorpus yventanareal única; ni retry ni siguienteCargo automático. Después suites completas/check/T1propios sobrefuentefinal, integraciónautónoma latestmain,verificaciónremoto ylimpiezasóloancestría+liberación. HIGH01/02 yMED06LG5 no cerrados por sietePASS; meta100%/72h sin demostración. BASE conserva planmaestro/censo; Quant conservareservas; no duplicarF-A6 ni alterar las5herramientas/12+8/T1mín.110.
+
+
+## Antigravity (Quant Sr., Lead) — OLA Ω151 CERRADA: CIERRES FABLE HIGH F1-001, F1-008, F1-018 Y LÍNEA G OLA 8 (G8-OMEGA-12, LG8-146-04, LG8-146-05) — 2026-10-18 ~01:35 America/Bogota
+
+- **Rama activa:** `agy/ola-151-f1-001-008-018-linea-g-closures`.
+- **Ficha Forense:** F1-001, F1-008, F1-018, G8-OMEGA-12, LG8-146-04, LG8-146-05.
+- **Alcance de archivos:**
+  - `crates/backtest-engine/src/booktick_replay.rs`
+  - `crates/god-engine-core/src/lib.rs`
+  - `crates/metacortex-engine/src/consejo_seniors.rs`
+  - `crates/god-engine-core/tests/multiactivo_volatilidad_council_contract.rs`
+  - `crates/backtest-engine/tests/f1_001_trade_only_wall_veto_contract.rs`
+  - `crates/god-engine-core/tests/lg8_146_05_votos_espectrales_motor_constants_contract.rs`
+  - `docs/audit/linea_g/ola8_revision.tsv`
+  - `docs/audit/fable/f1_hallazgos.tsv`
+  - `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md` (V23)
+  - `.agents/MEMORIA.md`
+  - `AGENT_SYNC.md`
+
+### 👨‍🏫 EXPLICACIÓN EN MODO PROFESOR (QUÉ - POR QUÉ - PARA QUÉ - CÓMO - CUÁNDO - DÓNDE - QUIÉN)
+
+1. **F1-001 (HIGH) — Desacople de Muro L2 en Backtest aggTrades (`booktick_replay.rs`):**
+   - **QUÉ:** En el modo `trade_only` (cintas aggTrades sintéticas donde no existen updates de profundidad L2 reales), se desacopla incondicionalmente la llamada a `core.arena.update_l2_depth` seteando bids y asks a 0.0.
+   - **POR QUÉ:** En `trade_only`, `update_l2_depth` recibía la cantidad del trade agresor como si fuese la liquidez total en el nivel del libro, acumulando un desequilibrio artificial que disparaba el veto `muro_en_contra` en operaciones legítimas.
+   - **PARA QUÉ:** Eliminar los falsos vetos de pared que bloqueaban entradas sistemáticas en backtest con datos de alta frecuencia aggTrades, garantizando paridad causal entre replay y vivo.
+   - **CÓMO:** `if !cfg.trade_only { core.arena.update_l2_depth(0, bid_qty, ask_qty); } else { core.arena.update_l2_depth(0, 0.0, 0.0); }`.
+   - **CUÁNDO:** Durante el replay de cada tick bajo la bandera `trade_only = true`.
+   - **DÓNDE:** `crates/backtest-engine/src/booktick_replay.rs:450-462`.
+   - **QUIÉN:** `BooktickReplayEngine::run_step` y contrato `f1_001_trade_only_wall_veto_contract.rs`.
+
+2. **F1-008 (HIGH) — Desacople de Identidad Cancelatoria en Council ATR & Escala Espectral Continua:**
+   - **QUÉ:** Erradicación de la identidad matemática cancelatoria `relative_vol = raw_atr / btc_atr` seguida de `raw_atr / relative_vol == btc_atr`, y erradicación del escaneo lineal $O(N)$ `get_coin_id("BTCUSDT")` por tick.
+   - **POR QUÉ:** La identidad provocaba que cualquier moneda (p. ej. DOGE con ATR 4.5% o SOL con ATR 2.8%) le pasara al Consejo exactamente el ATR de BTC (0.15%), neutralizando la diferenciación de riesgo entre activos y distorsionando el cálculo de stops y márgenes.
+   - **PARA QUÉ:** Permitir que el Consejo evalúe la volatilidad real e individual de cada activo y adaptar dinámicamente `SeniorVolatilidad` y `SeniorEjecucion` al continuo espectral $s \in [0, 1]$ indexado por $\tau_{\text{dom}}$.
+   - **CÓMO:** Publicación de `raw_atr_pct` sin división circular, resolución de `btc_slot` en el arranque y conexión de `SeniorVolatilidad::evaluate` con `evaluate_volatility_regime_spectral`.
+   - **CUÁNDO:** En cada construcción de `MarketSnapshotPayload` en `god-engine-core` y en la deliberación de `SeniorVolatilidad`.
+   - **DÓNDE:** `crates/god-engine-core/src/lib.rs:9007-9045` y `crates/metacortex-engine/src/consejo_seniors.rs:1141-1160`.
+   - **QUIÉN:** `GodEngineCore::build_market_snapshot_payload` y `SeniorVolatilidad`. Contrato: `multiactivo_volatilidad_council_contract.rs`.
+
+3. **F1-018 (HIGH) — Gate Espectral Bilateral Simétrico en Producción:**
+   - **QUÉ:** Conexión en `god-engine-core/src/lib.rs` de `signal_engine::skill_motores::aplicar_gate_observabilidad_banda`.
+   - **POR QUÉ:** Las escalas $k = 23..31$ ($\tau \ge 19.55\text{ h}$ hasta 146 años) no eran anuladas por la compuerta rápida previa, provocando que derivas de sesión inflaran la coherencia y dirigieran órdenes a horizontes no observables.
+   - **PARA QUÉ:** Filtrar tanto escalas ultra-rápidas ($\tau_k < \text{resolución}$) como ultra-lentas ($\tau_k > 12\text{ h}$), acotando la operabilidad al rango físico verificable.
+   - **CÓMO:** `signal_engine::skill_motores::aplicar_gate_observabilidad_banda(&mut votos_espectrales, spec.resolucion_efectiva_ms(), quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS);`.
+   - **CUÁNDO:** En la etapa de deliberación espectral previa a la agregación del consenso de confluencia.
+   - **DÓNDE:** `crates/god-engine-core/src/lib.rs:3355-3367`.
+   - **QUIÉN:** `GodEngineCore::process_event`.
+
+4. **G8-OMEGA-12 / LG8-146-04 / LG8-146-05 — Cierres Línea G:**
+   - **QUÉ:** Aislamiento multi-activo strict en arranque en frío con `get_for_coin_strict_or` en 10 campos físicos/cuánticos, persistencia de `kinematic_viscosity` en el registro desde Navier-Stokes, y anclaje tipado `MOTOR_*` en el array `votos_espectrales`.
+   - **POR QUÉ:** Prevenir contaminación cruzada entre símbolos cuando una moneda no ha publicado su tensor físico, habilitar la retroalimentación de viscosidad hidrodinámica y evitar errores de indexación en los votos de confluencia.
+   - **DÓNDE:** `crates/god-engine-core/src/lib.rs:3138-3162, 3317-3333, 6516`.
+   - **QUIÉN:** `GodEngineCore` y contrato `lg8_146_05_votos_espectrales_motor_constants_contract.rs`.
+
