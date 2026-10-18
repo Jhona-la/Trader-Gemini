@@ -7,7 +7,24 @@ pub struct ForensicAuditor {
     /// LG-20: JSON del último genoma guardado. El host reenvía el genoma
     /// actual cada 5 000 mensajes aunque no cambie (~5 KB por fila).
     ultimo_genoma: Option<String>,
+    /// CL-143: reloj monótono del auditor y cadencia de `global_metrics`.
+    reloj: std::time::Instant,
+    cadencia_metricas: crate::estrangulador::Estrangulador,
+    retencion_metricas: i64,
 }
+
+/// CL-143 (C-F6) — LA BASE FORENSE NO CRECE CON EL FEED.
+///
+/// QUÉ ESTABA MAL: el host envía un `OmniUpdate` cada 100 mensajes y cada uno
+/// era una fila de `global_metrics`: 2–8 filas/s a 200–800 ev/s, 14–55 MB/día
+/// que se acumulan entre sesiones porque la base nunca se recorta.
+///
+/// QUÉ GARANTIZA: una fila por minuto como mucho y sólo las últimas
+/// `RETENCION_METRICAS` (7 días a una por minuto, el horizonte de una corrida
+/// larga). SQLite reutiliza las páginas que libera el borrado, así que el
+/// archivo deja de crecer sin necesidad de VACUUM.
+pub const CADENCIA_METRICAS_MS: u64 = 60_000;
+pub const RETENCION_METRICAS: i64 = 7 * 24 * 60;
 
 /// LG-20: un valor no finito es desconocido y se guarda como NULL, no como 0.
 fn finito(x: f64) -> Option<f64> {
@@ -95,7 +112,13 @@ impl ForensicAuditor {
         )
         .expect("Fallo al crear tabla trade_events");
 
-        Self { conn, ultimo_genoma: None }
+        Self {
+            conn,
+            ultimo_genoma: None,
+            reloj: std::time::Instant::now(),
+            cadencia_metricas: crate::estrangulador::Estrangulador::new(CADENCIA_METRICAS_MS),
+            retencion_metricas: RETENCION_METRICAS,
+        }
     }
 
     pub async fn start(mut self, mut rx: Receiver<TelemetryEvent>) {
@@ -115,81 +138,94 @@ impl ForensicAuditor {
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             };
-            match event {
-                TelemetryEvent::OmniUpdate {
-                    latency_ms,
-                    latency_panic,
-                    dark_alpha,
-                    unrealized_pnl,
-                    gross_pnl,
-                    net_pnl,
-                    win_rate,
-                    trade_duration_avg,
-                } => {
-                    let safe_dark = finito(dark_alpha);
-                    let safe_unrealized = finito(unrealized_pnl);
-                    let safe_gross = finito(gross_pnl);
-                    let safe_net = finito(net_pnl);
-                    let safe_wr = finito(win_rate);
-                    let safe_avg = finito(trade_duration_avg);
+            let ahora_ms = self.reloj.elapsed().as_millis() as u64;
+            self.procesar(event, ahora_ms);
+        }
+    }
 
-                    let _ = self.conn.execute(
-                        "INSERT INTO global_metrics (
-                            latency_ms, latency_panic, dark_alpha, unrealized_pnl,
-                            gross_pnl, net_pnl, win_rate, trade_duration_avg
-                        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                        params![
-                            latency_ms as i64,
-                            latency_panic,
-                            safe_dark,
-                            safe_unrealized,
-                            safe_gross,
-                            safe_net,
-                            safe_wr,
-                            safe_avg
-                        ],
-                    );
+    /// Guarda un evento; `ahora_ms` es el reloj monótono del auditor.
+    fn procesar(&mut self, event: TelemetryEvent, ahora_ms: u64) {
+        match event {
+            TelemetryEvent::OmniUpdate {
+                latency_ms,
+                latency_panic,
+                dark_alpha,
+                unrealized_pnl,
+                gross_pnl,
+                net_pnl,
+                win_rate,
+                trade_duration_avg,
+            } => {
+                if self.cadencia_metricas.admitir(ahora_ms).is_none() {
+                    return;
                 }
-                TelemetryEvent::GenomeUpdate(genome) => {
-                    if let Ok(json) = serde_json::to_string(&*genome) {
-                        if self.ultimo_genoma.as_deref() != Some(json.as_str()) {
-                            let escrito = self.conn.execute(
-                                "INSERT INTO genome_snapshots (genome_json) VALUES (?1)",
-                                params![json],
-                            );
-                            if escrito.is_ok() {
-                                self.ultimo_genoma = Some(json);
-                            }
+                let safe_dark = finito(dark_alpha);
+                let safe_unrealized = finito(unrealized_pnl);
+                let safe_gross = finito(gross_pnl);
+                let safe_net = finito(net_pnl);
+                let safe_wr = finito(win_rate);
+                let safe_avg = finito(trade_duration_avg);
+
+                let _ = self.conn.execute(
+                    "INSERT INTO global_metrics (
+                        latency_ms, latency_panic, dark_alpha, unrealized_pnl,
+                        gross_pnl, net_pnl, win_rate, trade_duration_avg
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![
+                        latency_ms as i64,
+                        latency_panic,
+                        safe_dark,
+                        safe_unrealized,
+                        safe_gross,
+                        safe_net,
+                        safe_wr,
+                        safe_avg
+                    ],
+                );
+                let _ = self.conn.execute(
+                    "DELETE FROM global_metrics WHERE id <= (SELECT MAX(id) FROM global_metrics) - ?1",
+                    params![self.retencion_metricas],
+                );
+            }
+            TelemetryEvent::GenomeUpdate(genome) => {
+                if let Ok(json) = serde_json::to_string(&*genome) {
+                    if self.ultimo_genoma.as_deref() != Some(json.as_str()) {
+                        let escrito = self.conn.execute(
+                            "INSERT INTO genome_snapshots (genome_json) VALUES (?1)",
+                            params![json],
+                        );
+                        if escrito.is_ok() {
+                            self.ultimo_genoma = Some(json);
                         }
                     }
                 }
-                TelemetryEvent::TradeClosed {
-                    coin_id,
-                    trade_type,
-                    pnl,
-                    roi_pct,
-                    duration_ms,
-                    ml_prob,
-                } => {
-                    let safe_pnl = finito(pnl);
-                    let safe_roi = finito(roi_pct);
-                    let safe_ml_prob = finito(ml_prob);
-
-                    let _ = self.conn.execute(
-                        "INSERT INTO trade_events (coin_id, trade_type, pnl, roi_pct, duration_ms, ml_prob) 
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                        params![
-                            coin_id as i64,
-                            trade_type,
-                            safe_pnl,
-                            safe_roi,
-                            duration_ms as i64,
-                            safe_ml_prob
-                        ],
-                    );
-                }
-                _ => {} // Otros eventos se ignoran en DB
             }
+            TelemetryEvent::TradeClosed {
+                coin_id,
+                trade_type,
+                pnl,
+                roi_pct,
+                duration_ms,
+                ml_prob,
+            } => {
+                let safe_pnl = finito(pnl);
+                let safe_roi = finito(roi_pct);
+                let safe_ml_prob = finito(ml_prob);
+
+                let _ = self.conn.execute(
+                    "INSERT INTO trade_events (coin_id, trade_type, pnl, roi_pct, duration_ms, ml_prob) 
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        coin_id as i64,
+                        trade_type,
+                        safe_pnl,
+                        safe_roi,
+                        duration_ms as i64,
+                        safe_ml_prob
+                    ],
+                );
+            }
+            _ => {} // Otros eventos se ignoran en DB
         }
     }
 }
@@ -424,6 +460,59 @@ mod tests_lg20 {
             .query_row("SELECT count(*) FROM genome_snapshots", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 3, "a, b, a: un snapshot por cambio");
+        let _ = std::fs::remove_file(ruta);
+    }
+
+    fn omni(latency_ms: u64) -> TelemetryEvent {
+        TelemetryEvent::OmniUpdate {
+            latency_ms,
+            latency_panic: false,
+            dark_alpha: 0.5,
+            unrealized_pnl: 0.0,
+            gross_pnl: 0.0,
+            net_pnl: 0.0,
+            win_rate: 0.5,
+            trade_duration_avg: 0.0,
+        }
+    }
+
+    /// CL-143 — Esperado: una hora de `OmniUpdate` a 8 por segundo deja 60
+    /// filas (una por minuto), no 28 800.
+    #[test]
+    fn cl143_una_fila_por_minuto_sea_cual_sea_el_feed() {
+        let ruta = base_temporal("cadencia");
+        let mut a = ForensicAuditor::new(&ruta);
+        for i in 0..28_800u64 {
+            a.procesar(omni(i), i * 125);
+        }
+        let n: i64 = a
+            .conn
+            .query_row("SELECT count(*) FROM global_metrics", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 60);
+        drop(a);
+        let _ = std::fs::remove_file(ruta);
+    }
+
+    /// CL-143 — Esperado: la tabla conserva sólo las últimas filas de la
+    /// retención y las más recientes son las que quedan.
+    #[test]
+    fn cl143_la_tabla_conserva_solo_la_retencion() {
+        let ruta = base_temporal("retencion");
+        let mut a = ForensicAuditor::new(&ruta);
+        a.retencion_metricas = 50;
+        for i in 0..400u64 {
+            a.procesar(omni(i), i * CADENCIA_METRICAS_MS);
+        }
+        let (n, min_lat): (i64, i64) = a
+            .conn
+            .query_row("SELECT count(*), min(latency_ms) FROM global_metrics", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(n, 50);
+        assert_eq!(min_lat, 350, "quedan las 50 más recientes");
+        drop(a);
         let _ = std::fs::remove_file(ruta);
     }
 
