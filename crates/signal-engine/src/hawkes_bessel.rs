@@ -1,5 +1,4 @@
 use omniscient_registry::OmniscientRegistry;
-use std::collections::VecDeque;
 use std::sync::Arc;
 use strategy_core::QuantumStrategy;
 
@@ -26,6 +25,11 @@ use strategy_core::QuantumStrategy;
 /// pasado: alta λ = cascada en curso (liquidaciones auto-excitándose);
 /// el decay hacia μ mide cuánto queda de la cascada.
 /// Parámetros adaptativos del proceso de Hawkes con excitación y decaimiento.
+///
+/// F-A6 (Fable, 2026-10-18; hallazgo F1-017): desaparece `max_events`. Sólo
+/// dimensionaba `with_capacity` de una deque que ya no existe: la historia
+/// del proceso vive en UN número (la excitación acumulada al último evento),
+/// así que no hay nada que acotar.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HawkesBesselParams {
     pub default_mu: f64,
@@ -33,7 +37,6 @@ pub struct HawkesBesselParams {
     pub beta: f64,
     pub mu_tau_s: f64,
     pub mu_floor: f64,
-    pub max_events: usize,
 }
 
 /// Parámetros por defecto calibrados a liquidaciones de crypto:
@@ -41,7 +44,6 @@ pub struct HawkesBesselParams {
 pub const DEFAULT_MU: f64 = 0.5; // evento exógeno cada ~2s (prior inicial de μ̂)
 pub const DEFAULT_ALPHA: f64 = 0.3; // cada evento suma 0.3 a λ
 pub const DEFAULT_BETA: f64 = 0.5; // decae con τ = 2s
-pub const MAX_EVENTS: usize = 128;
 
 /// #535 — Memoria del estimador de μ (EWMA de la tasa de llegada). τ = 60 s
 pub const MU_TAU_S: f64 = 60.0;
@@ -58,7 +60,6 @@ impl Default for HawkesBesselParams {
             beta: DEFAULT_BETA,
             mu_tau_s: MU_TAU_S,
             mu_floor: MU_FLOOR,
-            max_events: MAX_EVENTS,
         }
     }
 }
@@ -78,7 +79,6 @@ impl HawkesBesselParams {
             || self.beta <= 0.0
             || self.mu_tau_s <= 0.0
             || self.mu_floor <= 0.0
-            || self.max_events == 0
         {
             return Err("HawkesBesselParams: cotas inválidas");
         }
@@ -119,41 +119,44 @@ pub fn excitacion_hawkes_norm(ratio: f64) -> f64 {
     excitacion_hawkes_norm_with_ss(ratio, STEADY_STATE_RATIO)
 }
 
+/// F-A6 (Fable, 2026-10-18; hallazgo F1-017) — ESTADO EN O(1).
+///
+/// El kernel exponencial admite recursión exacta: con S(t) = Σᵢ α·e^{−β(t−tᵢ)}
+/// sobre los eventos tᵢ ≤ t,
+///
+///   S(t_k) = S(t_{k−1})·e^{−β(t_k − t_{k−1})} + α        (al registrar t_k)
+///   λ(t)   = μ̂ + S(t_last)·e^{−β(t − t_last)}            (para t ≥ t_last)
+///
+/// Es la MISMA función que la suma explícita, sin aproximación: la deque
+/// anterior (`Mutex<VecDeque<f64>>`) recorría toda la historia con un `exp()`
+/// por evento BAJO un cerrojo, cuatro veces por evento del núcleo
+/// (lib.rs: voto espectral, cierre, publicación, confluencia), y además
+/// purgaba los eventos con contribución < e^{−5} — un truncamiento que la
+/// recursión no necesita. Lo que cambia de semántica, y es deliberado: los
+/// parámetros (α, β) se aplican DESDE que cambian (`update_params`), no
+/// retroactivamente a toda la historia como hacía la suma re-evaluada; con
+/// parámetros fijos, idéntico bit a bit salvo el truncamiento.
+///
+/// Sin Mutex: `record_event` toma `&mut self` (el núcleo lo llama con
+/// `get_mut`) y `intensity` es una lectura pura de dos `f64`.
+#[derive(Clone)]
 pub struct HawkesBesselEngine {
     registry: Option<Arc<OmniscientRegistry>>,
-    /// CERT-M2-C02: historia con INTERIOR MUTABILITY — el trait da &self,
-    /// así que record_event necesita Mutex para funcionar a través del
-    /// orchestrator. Antes sin Mutex: record_event era INCALLABLE desde
-    /// el trait, y el QO-M2.2 entero era código muerto.
-    events: std::sync::Mutex<VecDeque<f64>>,
     params: HawkesBesselParams,
-    /// Intensidad base μ.
+    /// Intensidad base μ̂ (empírica desde el 2.º evento, #535).
     mu: f64,
     /// Auto-excitación α.
     alpha: f64,
     /// Decaimiento β (1/segundos).
     beta: f64,
-    /// Último timestamp (para compute_dt entre eventos).
+    /// Último timestamp registrado (segundos). Sólo tiene sentido con
+    /// `n_seen ≥ 1`.
     last_ts: f64,
     /// #535 — eventos observados (para el seeding de μ̂).
     n_seen: u64,
-}
-
-impl Clone for HawkesBesselEngine {
-    fn clone(&self) -> Self {
-        Self {
-            registry: self.registry.clone(),
-            events: std::sync::Mutex::new(
-                self.events.lock().map(|e| e.clone()).unwrap_or_default()
-            ),
-            params: self.params,
-            mu: self.mu,
-            alpha: self.alpha,
-            beta: self.beta,
-            last_ts: self.last_ts,
-            n_seen: self.n_seen,
-        }
-    }
+    /// F-A6 — excitación acumulada S(t_last) = Σ α·e^{−β(t_last − tᵢ)},
+    /// incluido el evento en t_last (que aporta α entero).
+    excitacion: f64,
 }
 
 impl Default for HawkesBesselEngine {
@@ -169,7 +172,9 @@ impl std::fmt::Debug for HawkesBesselEngine {
             .field("mu", &self.mu)
             .field("alpha", &self.alpha)
             .field("beta", &self.beta)
-            .field("n_events", &self.events.lock().map(|e| e.len()).unwrap_or(0))
+            .field("n_seen", &self.n_seen)
+            .field("last_ts", &self.last_ts)
+            .field("excitacion", &self.excitacion)
             .finish()
     }
 }
@@ -222,16 +227,15 @@ impl HawkesBesselEngine {
         } else {
             HawkesBesselParams::default()
         };
-        let cap = safe_params.max_events;
         Self {
             registry: None,
-            events: std::sync::Mutex::new(VecDeque::with_capacity(cap)),
             params: safe_params,
             mu: safe_params.default_mu,
             alpha: safe_params.alpha,
             beta: safe_params.beta,
             last_ts: 0.0,
             n_seen: 0,
+            excitacion: 0.0,
         }
     }
 
@@ -264,10 +268,25 @@ impl HawkesBesselEngine {
         self.mu
     }
 
+    /// F-A6 — excitación acumulada S(t_last) (diagnóstico y contratos): la
+    /// suma Σ α·e^{−β(t_last − tᵢ)} sobre toda la historia, exacta.
+    #[inline]
+    pub fn excitacion_acumulada(&self) -> f64 {
+        self.excitacion
+    }
+
+    /// Último timestamp registrado (segundos); `None` sin eventos.
+    #[inline]
+    pub fn ultimo_evento_s(&self) -> Option<f64> {
+        (self.n_seen >= 1).then_some(self.last_ts)
+    }
+
     /// Registra un evento (timestamp en segundos desde epoch o relativo).
-    /// Purga eventos más viejos que 5/β (la contribución es < e^-5 ≈ 0.7%).
+    /// Un evento retrógrado (ts < último) no excita ni mueve el reloj
+    /// (#660, F2-B6). F-A6: la historia se pliega en la recursión exacta
+    /// S ← S·e^{−β·Δt} + α; no hay deque ni purga.
     pub fn record_event(&mut self, ts: f64) {
-        if !ts.is_finite() || ts < self.last_ts {
+        if !ts.is_finite() || (self.n_seen >= 1 && ts < self.last_ts) {
             return; // monotonicidad estricta
         }
         if self.n_seen >= 1 && ts > self.last_ts {
@@ -284,37 +303,37 @@ impl HawkesBesselEngine {
                 }
             }
         }
+        // F-A6: la excitación previa decae hasta `ts` y el evento nuevo
+        // aporta α entero (dt = 0 ⇒ e^0 = 1), exactamente como la suma.
+        let decaida = if self.n_seen >= 1 {
+            let dt = ts - self.last_ts; // ≥ 0 por la guardia de arriba
+            self.excitacion * (-self.beta * dt).exp()
+        } else {
+            0.0
+        };
+        let nueva = decaida + self.alpha;
+        // Fail-closed numérico: un estado no finito no se propaga; se
+        // reinicia a la contribución del evento presente.
+        self.excitacion = if nueva.is_finite() { nueva } else { self.alpha };
         self.n_seen = self.n_seen.saturating_add(1);
-        if let Ok(mut e) = self.events.lock() { e.push_back(ts); }
-        self.last_ts = self.last_ts.max(ts);
-        // Purga: eventos con contribución < e^-5 son ruido computacional
-        let cutoff = ts - 5.0 / self.beta.max(0.01);
-        if let Ok(mut e) = self.events.lock() {
-            while let Some(&oldest) = e.front() {
-                if oldest < cutoff {
-                    e.pop_front();
-                } else {
-                    break;
-                }
-            }
-        }
+        self.last_ts = ts;
     }
 
-    /// λ(t) = μ + Σ α·e^(−β·(t − tᵢ)) — la intensidad REAL de Hawkes.
+    /// λ(t) = μ̂ + Σ α·e^(−β·(t − tᵢ)) — la intensidad REAL de Hawkes.
     /// Un evento EN t contribuye con α (dt=0 ⇒ e^0 = 1).
+    ///
+    /// F-A6: O(1) exacto desde S(t_last). Para t < t_last (consulta anterior
+    /// al último evento registrado, que el núcleo no hace: registra y lee en
+    /// el mismo ts o después) se devuelve el estado en t_last, el último
+    /// conocido; la deque antigua devolvía la suma parcial de los eventos
+    /// anteriores a t, una historia reescrita que ningún consumidor usaba.
     #[inline]
     pub fn intensity(&self, t: f64) -> f64 {
-        let mut lambda = self.mu;
-        // #535 (perf): iterar BAJO el lock — el clone del deque era una
-        // asignación por llamada en el hot path (una por trade).
-        if let Ok(events) = self.events.lock() {
-            for &ti in events.iter() {
-                let dt = t - ti;
-                if dt >= 0.0 {
-                    lambda += self.alpha * (-self.beta * dt).exp();
-                }
-            }
+        if self.n_seen == 0 || !t.is_finite() {
+            return self.mu;
         }
+        let dt = (t - self.last_ts).max(0.0);
+        let lambda = self.mu + self.excitacion * (-self.beta * dt).exp();
         if lambda.is_finite() {
             lambda
         } else {
@@ -600,13 +619,30 @@ mod tests {
     }
 
     #[test]
-    fn qo_m22_purga_de_eventos_viejos() {
+    fn qo_m22_memoria_o1_y_el_pasado_remoto_no_pesa() {
+        // F-A6: antes la deque purgaba los eventos > 5/β; ahora no hay
+        // nada que purgar — la historia es UN número y el evento remoto
+        // pesa exactamente lo que dice el kernel (α·e^{−50} ≈ 0).
         let mut h = HawkesBesselEngine::new();
         h.record_event(0.0);
-        h.record_event(100.0); // t=100 con β=0.5 ⇒ cutoff = 100-10 = 90
-        assert!(h.events.lock().unwrap().len() <= 2, "purga mantiene ≤ cutoff");
-        // El evento de t=0 fue purgado (contribución < e^-50)
+        h.record_event(100.0); // β = 0.5 ⇒ el evento de t=0 aporta α·e^{−50}
+        let s = h.excitacion_acumulada();
+        assert!(
+            (s - (DEFAULT_ALPHA + DEFAULT_ALPHA * (-50.0f64).exp())).abs() < 1e-15,
+            "S(100) = α + α·e^{{−50}}: {s}"
+        );
         assert!(h.intensity(100.0) < DEFAULT_MU + DEFAULT_ALPHA * 1.01);
+        assert_eq!(h.ultimo_evento_s(), Some(100.0));
+        // Una ráfaga densa no desborda: la excitación acumulada queda
+        // acotada por la serie geométrica α/(1 − e^{−β·Δt}).
+        let dt = 1e-4;
+        for k in 1..=10_000 {
+            h.record_event(100.0 + k as f64 * dt);
+        }
+        let cota = DEFAULT_ALPHA / (1.0 - (-DEFAULT_BETA * dt).exp());
+        let s = h.excitacion_acumulada();
+        assert!(s.is_finite() && s > DEFAULT_ALPHA && s <= cota + 1e-9, "S acotada: {s} ≤ {cota}");
+        assert!(h.intensity(101.0).is_finite());
     }
 
     #[test]
