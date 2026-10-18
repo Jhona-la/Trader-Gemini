@@ -33,6 +33,7 @@ pub use config::QuantumConfig;
 pub use espectral_multiactivo::{
     credibilidad_continua, EspectralMultiactivo, EspectralMultiactivoParams,
 };
+pub use genome::{GenomeError, SuperGenotype};
 pub use position::{Position, PositionManager};
 pub use spectral_regime::{LegacyRegimeView, SpectralRegimeField, SpectralRegimeParams};
 pub use state::{GlobalArena, ScalpState};
