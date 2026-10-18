@@ -447,6 +447,35 @@ pub fn trade_return_on_equity(pnl_net: f64, capital_after: f64) -> Option<f64> {
     if r.is_finite() { Some(r) } else { None }
 }
 
+/// F1-024: Resultado del cálculo de evaluación en hilo de trabajo desacoplado.
+#[derive(Debug, Clone)]
+pub struct ShadowEvalOutcome {
+    pub best_genome: SuperGenotype,
+    pub candidate_returns: Vec<f64>,
+    pub trials_ronda: usize,
+    pub current_shadow_sharpe: f64,
+    pub genoma_activo: SuperGenotype,
+    pub current_genome: SuperGenotype,
+}
+
+/// F1-026: Restaura los genes que no son observables en el examen walk-forward
+/// del online_daemon (obi = 0.0, examen secuencial por moneda sin correlación cross-asset,
+/// sin pase forward de red neuronal profunda en el examen).
+/// Previene la deriva espuria (hitchhiking) de parámetros críticos de riesgo en producción.
+pub fn restaurar_genes_no_observables_en_examen(
+    candidate: &mut SuperGenotype,
+    incumbent: &SuperGenotype,
+) {
+    candidate.weight_obi = incumbent.weight_obi;
+    candidate.maker_obi_threshold = incumbent.maker_obi_threshold;
+    candidate.maker_spread_pct = incumbent.maker_spread_pct;
+    candidate.global_correlation_threshold = incumbent.global_correlation_threshold;
+    candidate.topo_layer_1_activation = incumbent.topo_layer_1_activation;
+    candidate.topo_layer_2_activation = incumbent.topo_layer_2_activation;
+    candidate.tensor_dropout_rate = incumbent.tensor_dropout_rate;
+    candidate.quantum_entropy_seed = incumbent.quantum_entropy_seed;
+}
+
 /// Registra specs sintéticos WFD{i} (idempotente) y devuelve sus coin_ids.
 fn wf_real_coin_ids(n: usize) -> Vec<usize> {
     let mut ids = Vec::with_capacity(n);
@@ -950,6 +979,8 @@ pub struct LiveEvolutionDaemon {
     /// incumbente se convertía en una tendencia bajista limpia.
     pub market_returns_by_coin: std::collections::HashMap<usize, Vec<f64>>,
     market_last_bar: std::collections::HashMap<usize, (u64, f64)>,
+    /// F1-024: Tarea asíncrona de evaluación shadow desacoplada del loop de 500ms
+    pub eval_task: Option<tokio::task::JoinHandle<Option<ShadowEvalOutcome>>>,
 }
 
 impl LiveEvolutionDaemon {
@@ -992,6 +1023,7 @@ impl LiveEvolutionDaemon {
             cumulative_trials: 0,
             market_returns_by_coin: std::collections::HashMap::new(),
             market_last_bar: std::collections::HashMap::new(),
+            eval_task: None,
         }
     }
 
@@ -1043,6 +1075,10 @@ impl LiveEvolutionDaemon {
 
         loop {
             tokio::time::sleep(Duration::from_millis(500)).await;
+            let ahora_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
 
             // Ingest Telemetry into the Shadow Forest
             if let Some(reader) = telemetry_reader.as_mut() {
@@ -1117,13 +1153,24 @@ impl LiveEvolutionDaemon {
             };
             if let Some((opt_l, opt_s)) = calibrados {
                 self.arena
-                    .config
-                    .ml_threshold_long
-                    .store(opt_l as f64, Ordering::Relaxed);
+                    .registry
+                    .set("forest_calibrated_threshold_long", opt_l as f64);
                 self.arena
-                    .config
-                    .ml_threshold_short
-                    .store(opt_s as f64, Ordering::Relaxed);
+                    .registry
+                    .set("forest_calibrated_threshold_short", opt_s as f64);
+
+                // F1-025: Sólo almacenar en arena si NO hay un genoma recién promovido bajo vigilancia de watchdog activa.
+                // Sobrescribir umbrales durante la ventana de evaluación degrada artificialmente el nuevo genoma.
+                if self.promoted_generation.is_none() {
+                    self.arena
+                        .config
+                        .ml_threshold_long
+                        .store(opt_l as f64, Ordering::Relaxed);
+                    self.arena
+                        .config
+                        .ml_threshold_short
+                        .store(opt_s as f64, Ordering::Relaxed);
+                }
             }
 
             // QO-E2a — EL APRENDIZAJE QUE DECIDE: el forest entrenado
@@ -1161,6 +1208,7 @@ impl LiveEvolutionDaemon {
                         if let Some((prob, _pnl)) = self.forest.predict_6d(features) {
                             reg.set_for_coin(coin_id, "forest6_prob", prob);
                             reg.set_for_coin(coin_id, "forest6_acc", acc);
+                            reg.set_for_coin(coin_id, "forest6_ts_ms", ahora_ms as f64);
                         }
                     }
                 }
@@ -1189,10 +1237,6 @@ impl LiveEvolutionDaemon {
             // Muestrear retornos realizados en tiempo real tras cada tick de 500ms
             self.sample_realized_returns();
             // CL-27: y el precio de mercado por reloj, entrada del examen.
-            let ahora_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
             self.sample_market_bars_at(ahora_ms);
 
             // FASE 3: watchdog de rollback post-promoción
@@ -1200,11 +1244,22 @@ impl LiveEvolutionDaemon {
 
             self.iteration_count += 1;
 
+            // F1-024: Pollear tarea asíncrona de evaluación shadow desacoplada sin bloquear el loop de 500ms
+            if let Some(task) = &mut self.eval_task {
+                if task.is_finished() {
+                    if let Some(handle) = self.eval_task.take() {
+                        if let Ok(Some(outcome)) = handle.await {
+                            self.apply_eval_outcome(outcome);
+                        }
+                    }
+                }
+            }
+
             // Cada 3 minutos (o 60s en Demo) validamos si el entorno cambió
             let eval_interval = if self.is_demo { 60 } else { 180 };
-            if self.last_evolution.elapsed() > Duration::from_secs(eval_interval) {
-                self.evaluate_shadow_strategy().await;
+            if self.eval_task.is_none() && self.last_evolution.elapsed() > Duration::from_secs(eval_interval) {
                 self.last_evolution = Instant::now();
+                self.spawn_shadow_evaluation();
             }
         }
     }
@@ -1458,7 +1513,14 @@ impl LiveEvolutionDaemon {
         }
     }
 
-    async fn evaluate_shadow_strategy(&mut self) {
+    /// F1-024: Desacoplamiento asíncrono de la evaluación shadow.
+    /// Prepara el entorno y lanza la búsqueda evolutiva walk-forward en `tokio::task::spawn_blocking`
+    /// sin bloquear el event loop de 500 ms de `run_online_learning_loop`.
+    pub fn spawn_shadow_evaluation(&mut self) {
+        if self.eval_task.is_some() {
+            return;
+        }
+
         // FASE 3: Dynamic Batch Sizing adaptativo a la memoria del sistema
         let _batch_size = 5000;
 
@@ -1576,8 +1638,6 @@ impl LiveEvolutionDaemon {
             })
             .unwrap_or_else(quantum_arena::genome::SuperGenotype::default);
 
-        let _iteration = self.iteration_count;
-        let fallback_genome = current_genome.clone();
         // D-747 — copia del genoma ACTIVO para poder reconocer, tras la ronda,
         // si el «ganador» es el incumbente de siempre (ver el gate del
         // watchdog más abajo).
@@ -1669,7 +1729,7 @@ impl LiveEvolutionDaemon {
             wf_market.max_leverage
         );
 
-        let best_genome = tokio::task::spawn_blocking(move || {
+        let handle = tokio::task::spawn_blocking(move || -> Option<ShadowEvalOutcome> {
             // CERT-M8-H01: el momentum-sim es PRE-SCREEN (ventana corta,
             // prior grueso). El JUEZ es wf_evaluate_real (motor completo)
             // sobre el top-K + el incumbente — nunca más el mejor de un
@@ -1684,11 +1744,8 @@ impl LiveEvolutionDaemon {
                     "🧬 [WF-REAL] Sin series juzgables (mínimo {} observaciones): ronda omitida, 0 pruebas.",
                     wf_min_series_len()
                 );
-                return (current_genome.clone(), Vec::new(), 0);
+                return None;
             }
-            // FASE 2: roundtrip completo a taker (0.04% x 2 piernas),
-            // consistente con el simulador y con el costo real de una
-            // entrada de mercado + salida no-maker.
 
             // Mutation scales dynamically based on real-time market entropy
             let dynamic_mutation_rate = (volatility * 50.0).clamp(0.01, 0.25);
@@ -1697,115 +1754,68 @@ impl LiveEvolutionDaemon {
             // FIX BLOQUEO #2: Reducir de 10,000 a 2,000 candidatos para micro-capital
             // Con CPU limitada (16GB RAM, no GPU), 2K iteraciones son suficientes.
             // D-740 (DÉCIMA OLA · auditoría integral): EL INCUMBENTE COMPITE.
-            //
-            // `best_score` arrancaba en −999 y la aptitud de cualquier candidato
-            // es finita, así que el PRIMER mutante superaba siempre el arranque:
-            // el genoma en curso —cuya aptitud no se evaluaba nunca— era
-            // sustituido incondicionalmente, aunque los 2 000 mutantes fueran
-            // peores que él. Se promovía «el menos malo» y se instalaba en el
-            // motor vivo. Ahora la iteración 0 evalúa el genoma ACTIVO con la
-            // misma simulación walk-forward, de modo que su aptitud es la cota
-            // que un mutante debe superar para reemplazarlo.
             for _i in 0..=2_000 {
                 let es_incumbente = _i == 0;
                 let mut candidate = current_genome.clone();
                 use rand::RngExt;
                 if !es_incumbente {
+                    // Mutación Vectorial de Tensores (DL/RL Vivo)
+                    // FASE 9: Ajuste Adaptativo por Régimen de Mercado (Drift Recovery)
+                    // FASE 13: Topological Evolution
 
-                // Mutación Vectorial de Tensores (DL/RL Vivo)
-                // FASE 9: Ajuste Adaptativo por Régimen de Mercado (Drift Recovery)
-                // FASE 13: Topological Evolution
+                    candidate.scalp_kelly_fraction +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
+                    candidate.swing_kelly_fraction +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
 
-                candidate.scalp_kelly_fraction +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
-                candidate.swing_kelly_fraction +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
+                    // C-10 (INFORME 14) — MUTAR LAS CURVAS, NO LAS ANCLAS
+                    candidate.tp_horizon_curve.a +=
+                        (rng.random::<f64>() - 0.5) * 0.1_f64.ln_1p(); // ≈ ±ln(1.05)
+                    candidate.sl_horizon_curve.a +=
+                        (rng.random::<f64>() - 0.5) * 0.1_f64.ln_1p();
+                    candidate.tp_horizon_curve.b +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
+                    candidate.sl_horizon_curve.b +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
 
-                // C-10 (INFORME 14) — MUTAR LAS CURVAS, NO LAS ANCLAS: el
-                // roundtrip to_vector/from_vector re-deriva las anclas desde
-                // los coeficientes (X-004/X-005: `derive_anchors_from_curves`
-                // al final de from_vector) — mutar `scalp_tp_base`/`swing_*`
-                // se AUTODESTRUÍA ahí y la geometría TP/SL JAMÁS evolucionaba
-                // en vivo. Los coeficientes (a,b) de las curvas son la fuente
-                // de verdad (slots 140-143 del vector genético). Una
-                // perturbación aditiva en `a` (param(τ)=exp(a+b·lnτ)) equivale
-                // a la contracción/expansión ±5% multiplicativa que antes se
-                // intentaba sobre las anclas — pero en TODOS los horizontes a
-                // la vez; `enforce_curve_rr` del roundtrip mantiene el
-                // invariante RR y los bounds de (a,b) acotan la mutación.
-                candidate.tp_horizon_curve.a +=
-                    (rng.random::<f64>() - 0.5) * 0.1_f64.ln_1p(); // ≈ ±ln(1.05)
-                candidate.sl_horizon_curve.a +=
-                    (rng.random::<f64>() - 0.5) * 0.1_f64.ln_1p();
-                // La pendiente b — cómo escala TP/SL con el horizonte τ —
-                // también evoluciona (bandas TP_B/SL_B_BOUNDS del genoma).
-                candidate.tp_horizon_curve.b +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
-                candidate.sl_horizon_curve.b +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
+                    candidate.ml_threshold_long +=
+                        (rng.random::<f64>() - 0.5) * (dynamic_mutation_rate * 0.5);
+                    candidate.ml_threshold_short +=
+                        (rng.random::<f64>() - 0.5) * (dynamic_mutation_rate * 0.5);
 
-                candidate.ml_threshold_long +=
-                    (rng.random::<f64>() - 0.5) * (dynamic_mutation_rate * 0.5);
-                candidate.ml_threshold_short +=
-                    (rng.random::<f64>() - 0.5) * (dynamic_mutation_rate * 0.5);
+                    candidate.tech_threshold +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.001;
 
-                // E4c — ESPACIO DE MUTACIÓN UNIFICADO: antes el daemon
-                // solo mutaba 10 genes mientras el backtest evoluciona
-                // 139 vía nichos — los genes con los que el backtest gana
-                // (filtros, maker, explosividad, régimen) JAMÁS mutaban en
-                // producción. Se añaden los genes de nicho del backtest
-                // con la misma tasa dinámica; el clamp canónico via
-                // to_vector/from_vector al final del loop los mantiene en
-                // bounds (fuente única R1.1).
-                candidate.tech_threshold +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.001;
-                candidate.weight_obi += (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.1;
-                candidate.maker_spread_pct *=
-                    1.0 + (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
-                candidate.maker_obi_threshold +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.1;
-                candidate.explosive_confidence_threshold +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
-                candidate.explosive_leverage_multiplier +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
-                candidate.trend_threshold +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.1;
-                // (swing_tp_base/swing_sl_base: ya no se mutan — son VISTAS de
-                // las curvas mutadas arriba; ver C-10 arriba.)
-                candidate.sl_atr_multiplier +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.2;
-                candidate.tp_rr_ratio_btc +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.2;
-                candidate.target_volatility +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.01;
-                candidate.global_correlation_threshold +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
-                candidate.scalp_trail_act_atr +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
+                    // F1-026: weight_obi, maker_spread_pct, maker_obi_threshold NO se mutan
+                    // porque el examen walk-forward fija obi = 0.0 y usa spread del mercado (D-742, D-745).
+                    candidate.explosive_confidence_threshold +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
+                    candidate.explosive_leverage_multiplier +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
+                    candidate.trend_threshold +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.1;
+                    candidate.sl_atr_multiplier +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.2;
+                    candidate.tp_rr_ratio_btc +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.2;
+                    candidate.target_volatility +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.01;
 
-                // Evolución de genes Topológicos (Red Neuronal)
-                candidate.topo_layer_1_activation +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
-                candidate.topo_layer_2_activation +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
-                candidate.tensor_dropout_rate +=
-                    (rng.random::<f64>() - 0.5) * dynamic_mutation_rate;
+                    // F1-026: global_correlation_threshold NO se muta porque el examen evalúa
+                    // las series de cada moneda de forma aislada (sin correlación cross-asset).
+                    candidate.scalp_trail_act_atr +=
+                        (rng.random::<f64>() - 0.5) * dynamic_mutation_rate * 0.05;
 
-                // Random entropy jump for quantum seed
-                if rng.random::<f64>() < 0.1 {
-                    candidate.quantum_entropy_seed = rng.random::<f64>() * 1000.0;
+                    // F1-026: Genes topológicos (topo_layer_1/2_activation, tensor_dropout_rate, quantum_entropy_seed)
+                    // NO se mutan en este examen de walk-forward porque el motor de replay no ejecuta inferencia profunda de red.
                 }
 
-                }
                 // Clamping automático delegando a la estructura cuántica central (SuperGenotype)
                 let vec = candidate.to_vector();
                 candidate = SuperGenotype::from_vector(&vec);
+                // F1-026: Restauración defensiva de genes no observables
+                restaurar_genes_no_observables_en_examen(&mut candidate, &current_genome);
 
-                // FIX BLOQUEO #2: Función de Fitness basada en RETORNOS REALES observados
-                // ANTES: Usaba fórmula algebraica cerrada EV = WR_estimado * TP - (1-WR_estimado) * SL
-                //        donde WR_estimado = 0.50 + selectivity * 0.70 — PURAMENTE TEÓRICA.
-                // AHORA: Walk-forward sobre returns_history real. Simula las decisiones
-                //        del genoma candidato contra los retornos REALES observados.
                 // EVALUACIÓN ESPECTRAL CONTINUA (C-10 / FMT-134): se evalúan las CURVAS
                 // continuas al horizonte de la barra de examen (WF_BAR_MS = 16 000 ms),
                 // no anclas escalares estáticas aisladas del continuo.
@@ -1820,26 +1830,11 @@ impl LiveEvolutionDaemon {
                 let mut wf_wins = 0usize;
                 let mut wf_losses = 0usize;
                 let mut wf_pnl = 0.0f64;
-                let mut wf_capital = WF_INITIAL_CAPITAL; // Starting capital
-                // C-10: la aptitud única (fitness::compute) exige el drawdown
-                // máximo de la trayectoria — se mide pico-a-valle del capital
-                // walk-forward simulado.
+                let mut wf_capital = WF_INITIAL_CAPITAL;
                 let mut wf_peak = WF_INITIAL_CAPITAL;
                 let mut wf_dd = 0.0f64;
-                // CERT-M8-C03: colectar los retornos NETOS del CANDIDATO —
-                // el DSR gate debe evaluar ESTA serie (la del mutante que
-                // se promueve), no los returns del incumbente.
                 let mut candidate_net_returns: Vec<f64> = Vec::new();
 
-                // T-10 — WALK-FORWARD POR MONEDA: cada serie conserva su
-                // propio momentum (el retorno previo de LA MISMA moneda
-                // decide la entrada sobre su propio retorno siguiente).
-                // Antes: la serie global mezclaba monedas y el momentum
-                // de una decidía trades de otra. Se itera la porción OOS
-                // de cada serie por moneda; si no hay series suficientes
-                // (arranque frío) se cae a la serie global (compat).
-                // pre-screen: sólo los últimos 300 retornos por moneda. Sin
-                // series juzgables la ronda ya se omitió (CL-23).
                 let series: Vec<Vec<f64>> = per_coin_series
                     .iter()
                     .map(|sr| sr[sr.len().saturating_sub(300)..].to_vec())
@@ -1852,18 +1847,6 @@ impl LiveEvolutionDaemon {
                         let r = coin_ret[i];
                         let prev_r = if i > 0 { coin_ret[i - 1] } else { 0.0 };
 
-                        // FIX: Erradicación del Lookahead Bias.
-                        // Decisión: el genoma entra long/short basándose en el momentum previo (prev_r),
-                        // NO en el retorno actual (r). Se prohíbe leer el futuro.
-                        //
-                        // FASE 2 (unidades coherentes): ANTES se comparaba
-                        // `prev_r` (un retorno, ~1e-4) contra `thr - 0.5` (una
-                        // distancia de probabilidad, ~0.1-0.45) — desajuste
-                        // semántico que hacía el filtro degenerado. Ahora el
-                        // momentum se expresa en sigmas de la ventana real
-                        // (`volatility`, de las series de mercado, CL-27) y el
-                        // umbral del genoma (0.5..0.95) se mapea a 0..0.9
-                        // sigmas de momentum mínimo exigido.
                         let prev_sigma = if volatility > 1e-12 {
                             prev_r / volatility
                         } else {
@@ -1873,14 +1856,11 @@ impl LiveEvolutionDaemon {
                             prescreen_entry_bias(prev_sigma, ml_thr_long, ml_thr_short);
                         if entry_bias == 0.0 {
                             continue;
-                        } // Skip: no signal
+                        }
 
-                        let trade_ret = r * entry_bias; // positive = correct direction
+                        let trade_ret = r * entry_bias;
 
-                        // D-513: Modelo Estocástico de Barrera (Brownian Bridge First-Passage Time)
-                        // Previene que la evolución premie stops parásitos infinitesimales (sl << sigma)
-                        // que en trading real son ejecutados con 100% de probabilidad por el ruido microestructural.
-                        let eff_sigma = volatility.max(0.0005); // Piso de volatilidad de 5 bps
+                        let eff_sigma = volatility.max(0.0005);
                         let p_stop = if trade_ret <= -sl {
                             1.0
                         } else {
@@ -1890,10 +1870,8 @@ impl LiveEvolutionDaemon {
                         let effective_ret = (-sl) * p_stop + trade_ret.min(tp) * (1.0 - p_stop);
                         let net_ret = effective_ret - roundtrip_fee;
 
-                        wf_pnl +=
-                            net_ret * wf_capital * kelly;
-                        wf_capital +=
-                            net_ret * wf_capital * kelly;
+                        wf_pnl += net_ret * wf_capital * kelly;
+                        wf_capital += net_ret * wf_capital * kelly;
                         if wf_capital > wf_peak {
                             wf_peak = wf_capital;
                         }
@@ -1911,17 +1889,6 @@ impl LiveEvolutionDaemon {
 
                 let wf_trades = wf_wins + wf_losses;
 
-                // C-10 (INFORME 14): FUNCIÓN ÚNICA DE APTITUD (D-652/D-653/
-                // D-654/D-655). La fórmula anterior `wf_pnl × sqrt(trades) ×
-                // wf_wr` era de la familia ERRADICADA por D-652: crecía con el
-                // número de operaciones y con el tamaño de la apuesta sin
-                // penalizar drawdown ni ruina. Todo promotor de genomas debe
-                // llamar a `fitness::compute` — crecimiento logarítmico
-                // (utilidad de Kelly) penalizado por drawdown². La simulación
-                // corre SOLO sobre la partición OOS (train_end..n): no hay un
-                // par IS/OOS de capitales separado que reportar, de modo que
-                // oos_start == oos_end (factor 1.0, sin doble penalización).
-                // #22: trades < WF_MIN_TRADES usa regularización Bayesiana suave hacia el prior para no bloquear en frío
                 let fitness = if wf_trades > 0 && (wf_trades as u32) < WF_MIN_TRADES {
                     crate::fitness::compute_with_bayesian_prior(
                         &crate::fitness::FitnessInputs {
@@ -1946,8 +1913,8 @@ impl LiveEvolutionDaemon {
                         oos_end_capital: wf_capital,
                     })
                 };
-                let _ = wf_pnl; // conservado como telemetría futura del ciclo
-                let _ = candidate_net_returns; // pre-screen: no feeding DSR
+                let _ = wf_pnl;
+                let _ = candidate_net_returns;
 
                 prescreened.push((fitness, candidate));
             }
@@ -1955,41 +1922,14 @@ impl LiveEvolutionDaemon {
             // ── CERT-M8-H01: ETAPA REAL — el motor completo juzga al top-K ──
             prescreened.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-            // (Ola XLII·C3-wire) GATE DE IDENTIFICABILIDAD — Fisher de escala
-            // del campo VIVO: la masa espectral concentrada en escala (Fisher
-            // alta) declara un régimen identificable y el examen walk-forward
-            // miente menos. Con el campo difuso (la mayoría de las monedas CON
-            // masa por debajo del umbral), la ronda se aplazaba: evolucionar
-            // sobre un régimen no identificable memoriza ruido. Desde CL-28
-            // es telemetría (ver abajo por qué).
             {
                 let con_masa: Vec<f64> = wf_fisher_snapshot
                     .iter()
                     .copied()
                     .filter(|f| *f >= 0.0)
                     .collect();
-                // Ola XLIV: umbral derivado de la banda operativa (≈ 0,33:
-                // masa en ≤ media banda). El literal 1,0 anterior sólo lo
-                // alcanzaba un pico en UNA escala (F ≤ 1,04 por construcción)
-                // y abortaba toda ronda con ≥ 2 monedas vivas.
                 let umbral = quantum_arena::temporal_spectrum::umbral_fisher_identificable();
                 let identificados = con_masa.iter().filter(|f| **f > umbral).count();
-                // CL-28: sólo telemetría. Sobre un paseo aleatorio la mediana
-                // de la Fisher de escala era 0,03–0,16 (< umbral ≈ 0,33); con ≥ 2
-                // monedas aplazaba casi toda ronda (≤ 10 % pasaban con 2
-                // monedas, ≈ 0 con 10) y la evolución en vivo quedaba parada.
-                // Con la persistencia solapada una tendencia ni la subía; con
-                // la de bloques (CL-30) la subía ≈ 1,8×, pero seguía bajo el
-                // umbral. Desde CL-35 la masa sólo pesa lo observado y la
-                // relación se invierte: en ruido la mediana es 0,36–0,40
-                // (SOBRE el umbral) y una tendencia fuerte la BAJA a
-                // 0,21–0,35. La Fisher mide cuánto se concentra la masa entre
-                // escalas; en ruido la concentran persistencias espurias y
-                // una tendencia persiste en todas y la reparte. Sin un umbral
-                // calibrado contra el nulo (la misma Fisher sobre incrementos
-                // barajados) no es un test de identificabilidad;
-                // la selección la protegen el examen pareado con el incumbente
-                // (D-740) y el DSR con multiplicidad acumulada (D-746).
                 if con_masa.len() >= 2 {
                     println!(
                         "🌀 [WF-FISHER] identificables {}/{} (umbral {:.3}; telemetría, no aplaza la ronda)",
@@ -1999,15 +1939,12 @@ impl LiveEvolutionDaemon {
                     );
                 }
             }
-            // D-746 — genomas DISTINTOS puestos a prueba en esta ronda. El
-            // embudo tiene dos etapas (pre-screen sobre todos, motor real
-            // sobre el top-K), pero la selección del ganador se hace sobre el
-            // conjunto ENTERO: ésa es la multiplicidad que hay que corregir.
+
             let prescreen_count = prescreened.len();
             let mut best = current_genome.clone();
             let mut best_score = f64::NEG_INFINITY;
             let mut best_candidate_returns: Vec<f64> = Vec::new();
-            let mut evaluated = 1usize; // el incumbente siempre compite
+            let mut evaluated = 1usize;
             let inc = wf_evaluate_real(&current_genome, &real_series, wf_live_capital, &wf_market);
             if inc.fitness > best_score {
                 best_score = inc.fitness;
@@ -2027,38 +1964,37 @@ impl LiveEvolutionDaemon {
                 "🧬 [WF-REAL] {} candidatos evaluados con el MOTOR REAL (consejo+ML+fees+envelope) de {} probados en la ronda; mejor fitness {:.4}",
                 evaluated, trials_ronda, best_score
             );
-            (best, best_candidate_returns, trials_ronda)
-        })
-        .await
-        .unwrap_or((fallback_genome, Vec::new(), 0));
 
-        // CL-29: se retiró la puerta heurística heredada (FMT-055). Medía el
-        // t descriptivo del INCUMBENTE, no al candidato, y estaba invertida:
-        // un incumbente que gana (t = 2) la pasaba con N ≥ 2 deltas, y uno que
-        // pierde (t ≤ 0 ⇒ 0,1) necesitaba N ≥ 494 en demo y N ≥ 1 600 fuera
-        // de demo (inalcanzable con el tope de 1 000): la evolución se cerraba
-        // justo cuando el genoma vivo pierde. La selección la juzgan el
-        // examen sobre el mercado con el incumbente compitiendo en la misma
-        // cinta (D-740, CL-27) y el DSR con multiplicidad acumulada (D-746).
+            Some(ShadowEvalOutcome {
+                best_genome: best,
+                candidate_returns: best_candidate_returns,
+                trials_ronda,
+                current_shadow_sharpe,
+                genoma_activo,
+                current_genome,
+            })
+        });
 
-        // QO-M1.1 — DEFLATED SHARPE RATIO (Bailey & López de Prado 2014):
-        // con 2000 candidatos por ronda, el mejor por pura suerte supera
-        // cualquier umbral fijo. El DSR corrige por multiplicidad y
-        // curtosis: sólo un edge que SOBREVIVE es estadísticamente real.
-        // CERT-M8-C03: el DSR ANTERIOR evaluaba `self.returns_history` (los
-        // returns del INCUMBENTE), no los del CANDIDATO mutante que se
-        // promueve — cuando el incumbente estaba caliente, cualquier ruido
-        // pasaba. Ahora evalúa los returns SIMULADOS del candidato que el
-        // walk-forward produjo.
-        let (best_genome, candidate_returns, trials_ronda) = best_genome; // destructure tuple
+        self.eval_task = Some(handle);
+    }
 
-        // D-746 — MULTIPLICIDAD ACUMULADA. El literal `2_000` decía que cada
-        // ronda era el primer experimento del proceso: el daemon repite la
-        // búsqueda cada 3 minutos (60 s en demo) y, con la cuenta reiniciada,
-        // el listón del DSR no subía nunca por más genomas que se probaran.
-        // Ahora el contador arrastra las pruebas de TODAS las rondas desde el
-        // arranque y se usa el número REAL de candidatos de esta ronda, no un
-        // literal que ni siquiera coincidía con los 2 001 evaluados.
+    /// F1-024 / F1-026: Aplica el resultado de la evaluación shadow en el hilo principal del daemon.
+    /// Restaura defensivamente genes no observables en el examen, valida el gate DSR de Bailey-López de Prado
+    /// y promueve el nuevo genoma hacia el almacén versionado y la arena en RAM.
+    pub fn apply_eval_outcome(&mut self, outcome: ShadowEvalOutcome) {
+        let ShadowEvalOutcome {
+            mut best_genome,
+            candidate_returns,
+            trials_ronda,
+            current_shadow_sharpe,
+            genoma_activo,
+            current_genome,
+        } = outcome;
+
+        // F1-026: Restaurar defensivamente genes no observables desde el incumbente (current_genome)
+        restaurar_genes_no_observables_en_examen(&mut best_genome, &current_genome);
+
+        // D-746 — MULTIPLICIDAD ACUMULADA
         self.cumulative_trials = accumulated_trials(self.cumulative_trials, trials_ronda);
         let dsr_verdict = crate::selection_stats::edge_survives_multiplicity(
             &candidate_returns,
@@ -2077,10 +2013,6 @@ impl LiveEvolutionDaemon {
         }
 
         // 🔥 ACTUALIZACIÓN EN VIVO (HOT-SWAP) AL GOD ENGINE
-        // FASE 3: primero el EMBUDO (promote con gate de validación), y
-        // solo si el almacén acepta se aplica al arena. Antes el orden
-        // era inverso: un promote rechazado dejaba el arena mutado con
-        // un genoma que el disco nunca sancionó.
         match quantum_arena::genome_store::GenomeEnvelope::promote(
             best_genome.clone(),
             "online_daemon",
@@ -2096,20 +2028,7 @@ impl LiveEvolutionDaemon {
                 env.apply_to_arena(&self.arena);
                 self.state.active_genome_id.fetch_add(1, Ordering::SeqCst);
                 self.state.has_new_genome.store(true, Ordering::Release);
-                // D-747 (DÉCIMA OLA) — EL WATCHDOG QUE NUNCA VENCÍA.
-                //
-                // Qué estaba mal: toda promoción reiniciaba
-                // `post_promo_returns`. Cuando el ganador de la ronda era el
-                // PROPIO incumbente (caso frecuentísimo: el incumbente compite
-                // y suele ganar), el sistema «promovía» el mismo genoma, la
-                // ventana de vigilancia volvía a cero y el rollback —que exige
-                // 20 observaciones posteriores— no llegaba a reunirlas nunca.
-                // Un genoma degradado podía sobrevivir indefinidamente
-                // re-promoviéndose a sí mismo cada 3 minutos (60 s en demo).
-                //
-                // Qué garantiza el arreglo: la evidencia sólo se descarta
-                // cuando el genoma que opera CAMBIA. Si es el mismo, la
-                // ventana sigue corriendo y el watchdog acaba venciendo.
+
                 let es_mismo_genoma = same_genome(&best_genome, &genoma_activo);
                 let reiniciada = armar_vigilancia(
                     es_mismo_genoma,
@@ -2132,9 +2051,7 @@ impl LiveEvolutionDaemon {
                         self.post_promo_returns.len()
                     );
                 }
-                // QO-E2d — LEDGER: cada promoción queda en el WAL consultable
-                // (responde "qué aprendió el sistema esta semana"; antes el
-                // ledger se creaba y jamás se escribía).
+
                 self.ledger.save_weight(
                     0,
                     format!("gen_{}", env.generation),
@@ -2146,6 +2063,17 @@ impl LiveEvolutionDaemon {
                 "⚠️ [ONLINE] Promoción RECHAZADA por el gate del almacén (arena queda intacto): {}",
                 e
             ),
+        }
+    }
+
+    pub async fn evaluate_shadow_strategy(&mut self) {
+        if self.eval_task.is_none() {
+            self.spawn_shadow_evaluation();
+        }
+        if let Some(task) = self.eval_task.take() {
+            if let Ok(Some(outcome)) = task.await {
+                self.apply_eval_outcome(outcome);
+            }
         }
         let _ = &self.champion_path; // conservado para compat de la struct
     }

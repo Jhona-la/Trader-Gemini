@@ -8371,10 +8371,23 @@ impl GodEngineCore {
             // Con `c = 0,60` la regla reproduce EXACTAMENTE los tres literales
             // antiguos: eran el caso particular de un bosque con un 60 % de
             // acierto demostrado, escrito como si fuera universal.
-            let f6_prob_actual = self
+            // F1-024: Verificación de frescura temporal de forest6_prob.
+            // Si forest6_ts_ms es mayor a 15_000 ms respecto al evento (o ausente),
+            // la predicción está obsoleta (stale) y se asume neutra 0.5 (sin recorte de confianza).
+            let f6_ts = self
                 .arena
                 .registry
-                .get_for_coin_or(coin_id, "forest6_prob", 0.5);
+                .get_for_coin_or(coin_id, "forest6_ts_ms", 0.0);
+            let f6_stale = f6_ts <= 0.0
+                || (event_time_ms > 0
+                    && event_time_ms.saturating_sub(f6_ts as u64) > 15_000);
+            let f6_prob_actual = if f6_stale {
+                0.5
+            } else {
+                self.arena
+                    .registry
+                    .get_for_coin_or(coin_id, "forest6_prob", 0.5)
+            };
             // Voto direccional del bosque para esta moneda, o `None` si no
             // opina (el valor por defecto del registry es justo ½).
             let voto_bosque: Option<bool> = if (f6_prob_actual - 0.5).abs() > f64::EPSILON {
