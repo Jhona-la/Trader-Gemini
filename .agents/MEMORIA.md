@@ -7866,3 +7866,10 @@ SI A/B/C tiene RO Quantfa6db477, no Rust. Resolver de nuevo sobre main149: prese
     * Añadida coordenada espectral canónica normalizada por varianza $1/\sqrt{3} \approx 0.57735$ y fidelidad de isomorfismo de Brenier $\phi_{\text{Brenier}} = \exp(-\Delta_{\text{shape}}^2 / (2\sigma_{\text{pool}}^2))$.
     * Erradicado el suelo incondicional `0.35` de momentum crudo en `barycenter_transport_velocity` y `geodesic_bonus`, garantizando que $W_2$ mida transporte de distribución sin duplicar el momento de primer orden OFI durante saltos no geodésicos.
 
+
+
+## ROOT — semáforo failclosed y siete pares pendientes — 2026-10-18T05:14:49.726146+00:00
+
+Delta nativa separada revisada: desconocido no agota paciencia; PowerShell/tasklist/pgrep deben acreditar estado válido. RED23:18pass/5fail →GREEN23; RED29:26pass/3fail →GREEN29, mismos corpus y13tests previos intactos. Sólo Python/Bash con mocks, cero Cargo/lease real. [Detalle y pins](../docs/audit/SEMAFORO_CEROS_Y_ESTADOS_2026-10-18.md).
+
+Fable T1 sigue activo; no cesión GLM acreditada. ROOT source8e835 congelada, nuevoscheck/sieteRust/fullT1 pendientes; no heredar resultados. BASE audita LG5HIGH01/02/06 y P2journal4096 externo. Composición hipotética049+7 preparada, no aplicada; sietePASS no autorizan políticaLG5 incompleta. PR67/69/SI incorporados; PR67ref libre eliminada; ramas ocupadas/reservadas se conservan.

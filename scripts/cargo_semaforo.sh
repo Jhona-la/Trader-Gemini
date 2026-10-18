@@ -70,20 +70,33 @@ procesos_ajenos() {
     echo "$SEMAFORO_PROCESOS"
     return
   fi
-  local n="" ps
+  local n="" ps listado codigo
   for ps in powershell powershell.exe pwsh pwsh.exe; do
     if command -v "$ps" > /dev/null 2>&1; then
-      n=$("$ps" -NoProfile -Command \
+      if listado=$("$ps" -NoProfile -Command \
         "(Get-Process cargo,rustc -ErrorAction SilentlyContinue | Measure-Object).Count" \
-        2> /dev/null | tr -d '\r ')
+        2> /dev/null); then
+        n=$(printf '%s' "$listado" | tr -d '\r ')
+      else
+        n=""
+      fi
       break
     fi
   done
   if [ -z "$n" ] && command -v tasklist > /dev/null 2>&1; then
-    n=$(tasklist 2> /dev/null | grep -ciE '^(cargo|rustc)\.exe')
+    # Un fallo de tasklist no es una observación de cero procesos.
+    if listado=$(tasklist 2> /dev/null); then
+      n=$(printf '%s\n' "$listado" | grep -ciE '^(cargo|rustc)\.exe')
+    fi
   fi
   if [ -z "$n" ] && command -v pgrep > /dev/null 2>&1; then
     n=$(pgrep -c -x 'cargo|rustc' 2> /dev/null)
+    codigo=$?
+    # pgrep: 1 con cuenta 0 es «sin coincidencias»; 2/3 son errores.
+    case "$codigo:$n" in
+      0:* | 1:0) ;;
+      *) n="" ;;
+    esac
   fi
   case "$n" in
     '' | *[!0-9]*) echo "?" ;;
@@ -133,7 +146,9 @@ while :; do
   ram=$(ram_libre_gb)
   motivo=""
   paciencia_agotada=0
-  if [ $(( $(ahora) - inicio )) -ge $(( paciencia_min * 60 )) ] \
+  # LG-25b sólo puede ignorar una cuenta numérica conocida, nunca «?».
+  if [[ "$ajenos" =~ ^[0-9]+$ ]] \
+    && [ $(( $(ahora) - inicio )) -ge $(( paciencia_min * 60 )) ] \
     && ! menor_que "${ram:-0}" "$(awk -v a="$ram_min" -v b="$ram_extra" 'BEGIN { print a + b }')"; then
     paciencia_agotada=1
   fi

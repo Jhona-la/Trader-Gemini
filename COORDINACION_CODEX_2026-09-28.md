@@ -13448,3 +13448,10 @@ Adaptador ROOT V2(check)/V3(un JobId) opera el mismo lock/target canónicos con 
 P2 separado confirmado por BASE: el diario4096 de auditor_interno olvida historia y compara una ventana reanclada contra métricas acumuladas. BASE prepara candidato externo de acumuladores y oráculos4096/4097, sin Cargo/instalación ni mezclar con siete. No quitar vetos para forzar crecimiento.
 
 Secuencia: turno real → nuevo check → commitCONTROL sóloLOCAL → binding V11 → siete pares causales (core-clock-red primero; controlar positivos/errores reales) → composición corregida con último main/Fable → alltargets/suites/fullT1 → publicar y verificar. El control deliberadamente defectuoso no debe llegar a main ni por ascendencia: se preparará entrega final con padres originales, resguardo privado y validaciones propias, sin empujar controles intermedios. Ramas incorporadas ocupadas o reservadas se conservan hasta liberar worktree; limpiar sólo referencias libres incorporadas. Nada de esto acredita rentabilidad ni cobertura total.
+
+
+## ROOT — semáforo failclosed y siete pares pendientes — 2026-10-18T05:14:49.726146+00:00
+
+Delta nativa separada revisada: desconocido no agota paciencia; PowerShell/tasklist/pgrep deben acreditar estado válido. RED23:18pass/5fail →GREEN23; RED29:26pass/3fail →GREEN29, mismos corpus y13tests previos intactos. Sólo Python/Bash con mocks, cero Cargo/lease real. [Detalle y pins](docs/audit/SEMAFORO_CEROS_Y_ESTADOS_2026-10-18.md).
+
+Fable T1 sigue activo; no cesión GLM acreditada. ROOT source8e835 congelada, nuevoscheck/sieteRust/fullT1 pendientes; no heredar resultados. BASE audita LG5HIGH01/02/06 y P2journal4096 externo. Composición hipotética049+7 preparada, no aplicada; sietePASS no autorizan políticaLG5 incompleta. PR67/69/SI incorporados; PR67ref libre eliminada; ramas ocupadas/reservadas se conservan.
