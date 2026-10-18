@@ -14,7 +14,6 @@ pub mod normalizer;
 pub mod omni_strategies;
 pub mod path_signatures;
 pub mod transfer_entropy;
-pub mod quantum_tensor_store;
 pub mod shannon_entropy;
 pub mod simd_neural_network;
 pub mod spectral;
@@ -39,7 +38,6 @@ pub use multifractal::{
 pub use navier_stokes::{HydrodynamicRegime, NavierStokesParams, NavierStokesReynoldsEngine};
 pub use normalizer::{GarmanKlassVolatilityEstimator, StatisticalNormalizer};
 pub use omni_strategies::OmniStrategyEngine;
-pub use quantum_tensor_store::{QuantumTensorStore, NUM_FEATURES, NUM_TIMEFRAMES};
 pub use shannon_entropy::ShannonEntropyEngine;
 pub use simd_neural_network::SimdNeuralNet;
 pub use spectral::SpectralCycleEngine;

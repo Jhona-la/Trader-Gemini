@@ -502,12 +502,6 @@ impl MultiScaleHurstConfluence {
         self.espectro_cacheada().map(|e| e.ancho)
     }
 
-    /// #597 — capacidad del soporte D₀ (−τ(0)) del motor MACRO: 1 = sin
-    /// huecos, < 1 = racimado real. La magnitud falsable del espectro.
-    pub fn d0_f_alpha(&mut self) -> Option<f64> {
-        self.espectro_cacheada().map(|e| e.d0)
-    }
-
     /// #597 — espectro completo cacheado (ancho + D₀ + extremos) del motor
     /// MACRO, con cadencia interna 1/16 consultas. Observación, no política.
     pub fn espectro_cacheada(&mut self) -> Option<EspectroFAlpha> {

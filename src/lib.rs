@@ -8,11 +8,9 @@ pub mod model_manifest;
 pub mod multi_asset_orchestrator;
 pub mod orderbook;
 pub mod parsers;
-pub mod quantum_arena;
 pub mod symbol_manager;
 pub mod sa_params;
 pub mod trailing;
-pub use quantum_arena::{QuantumRingBuffer, QuantumStateArena, FEATURE_SIZE};
 pub use trailing::{evaluate_quantum_trailing, TrailingResult};
 
 // NOTA: Las funciones FFI extern "C" (quantum_ring_new, quantum_ring_free, quantum_ring_read_tick)

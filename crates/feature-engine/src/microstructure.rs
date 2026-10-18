@@ -617,53 +617,6 @@ impl AdaptiveResonanceClustering {
             (best_category, best_match)
         }
     }
-
-    /// Determina si un score de match cumple el criterio de vigilancia resonante
-    #[inline(always)]
-    pub fn is_resonant(&self, match_score: f64) -> bool {
-        match_score >= self.vigilance
-    }
-
-    pub fn save_to_disk<P: AsRef<std::path::Path>>(&self, path: P) -> std::io::Result<()> {
-        let mut content = format!(
-            "{}\n{}\n{}\n",
-            self.vigilance, self.learning_rate, self.active_categories
-        );
-        for i in 0..8 {
-            content.push_str(&format!(
-                "{},{},{},{}\n",
-                self.prototypes[i][0],
-                self.prototypes[i][1],
-                self.prototypes[i][2],
-                self.prototypes[i][3]
-            ));
-        }
-        std::fs::write(path, content)
-    }
-
-    pub fn load_from_disk<P: AsRef<std::path::Path>>(path: P) -> Option<Self> {
-        let content = std::fs::read_to_string(path).ok()?;
-        let mut lines = content.lines();
-        let vigilance = lines.next()?.parse::<f64>().ok()?;
-        let learning_rate = lines.next()?.parse::<f64>().ok()?;
-        let active_categories = lines.next()?.parse::<usize>().ok()?;
-        let mut prototypes = [[0.0; 4]; 8];
-        for row in prototypes.iter_mut() {
-            if let Some(l) = lines.next() {
-                let mut parts = l.split(',');
-                row[0] = parts.next()?.parse::<f64>().ok()?;
-                row[1] = parts.next()?.parse::<f64>().ok()?;
-                row[2] = parts.next()?.parse::<f64>().ok()?;
-                row[3] = parts.next()?.parse::<f64>().ok()?;
-            }
-        }
-        Some(Self {
-            vigilance,
-            prototypes,
-            active_categories,
-            learning_rate,
-        })
-    }
 }
 
 /// Libro de Órdenes L2 Normalizado por Nocional USD (Punto #018)
