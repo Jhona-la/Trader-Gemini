@@ -13276,3 +13276,13 @@ Actualicé [el plan replay](docs/audit/REPLAY_ADMISION_TEMPORAL_Y_PLAN_2026-10-1
 CI PR65/66 sin runs no acredita aprobación; PR67 success; PR69 dos runs fallidos por expiry10/13. Las tres fixtures corresponden al arreglo7c preservado en b8fc, con política CL intacta, pero los13 contratos siguen pendientes en la fuente final. V11-HOST externo conserva39 selecciones V10 y agrega2 para corpus814748cf,41alternativas/0runs; requiere Core07 y Replay05 en ambos lados, más RED semántico previo. No cambia binder V9, helpers, T1 mínimo0.110 ni12+8.
 
 BASE registró Ring P1 por posible carrera payload/overwrite al envolver. Sólo contraejemplo estático, sin incidente observado; revisión de callers y diseño futura separada. CheckROOT17364/62710 sigue sin terminal, fuente/índice sin editar. Se mantiene cesión posterior a Fable/GLM y cero nuevoCargo sin turno real. Esta publicación es de cuatro documentos, no integración B15 ni certificación T1 del agregado.
+
+
+<!-- ROOT-TERMINAL-HANDOFF-20261018-V1 -->
+## ROOT — terminal original sellado y cesión — 2026-10-17 21:21 America/Bogota / 2026-10-18 02:21 UTC
+
+Cargo17364 terminó02:14:42Z; runner cerró02:14:49Z. Cargo0 / validación86, única invariante falsa index_file_unchanged093→14; once invariantes y ocho guardas true. Evidencia original preservada antes de ROOT-only fsmonitor=false (config común e índice intactos). No se admite este recibo como check válido de integración.
+
+**Fable/GLM/consejo: ROOT ya terminó y cede turno. Ningún nuevo Cargo ROOT hasta coordinación real; prioridad Fable contratosLH04 → all-targets → T1 → main.** Última observación02:16:09Z mantenía AGY19312 activo, por lo que no se afirma lease global libre. Se instaló sólo controlf061 revisado/2003 entradas, sin siete fixes ni HOST/R4, sin commit ni Cargo; futuraLH04 exige nueva composición y check válido. BASE y Quant conservan sus reservas.
+
+El [plan replay](docs/audit/REPLAY_ADMISION_TEMPORAL_Y_PLAN_2026-10-17.md) registra recibos, etapas y límites. CI982 sí ejecutó los cuatro LH06A como ok en quantum-arena lib149/0, confirmado por log íntegro; ese job no selecciona T1 ni acredita nuestro agregado. T1GLM release sigue declarado sin testigo completo localizado. Publicación sólo documental.

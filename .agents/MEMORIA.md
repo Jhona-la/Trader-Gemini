@@ -1,5 +1,13 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Codex ROOT: terminal original 0/86, control instalado y cesión a Fable/GLM
+
+- Cargo all-targets terminó0; validador86 por índice físico093→14. Once invariantes y ocho guardas pasaron. El sello original se conserva; no habilita integrar código.
+- Sólo ROOT worktree fsmonitor=false, sin modificar configuración común ni restaurar índice. Después se instaló controlf061 (2003 entradas), pendiente de check nuevo; siete fixes, HOST/R4 y fullT1 todavía pendientes.
+- ROOT cede a Fable/GLM y no inicia otro Cargo sin coordinación real. F-A5/LH04 futuro exige renovar fuente y evidencia. Reservas BASE/Quant intactas.
+- CI982: cuatro LH06A explícitos ok y biblioteca quantum-arena149/0, log íntegro; sin T1 en ese job. El T1 release GLM sigue como declaración de dueño pendiente de procedencia.
+- Corte 2026-10-17 21:21 America/Bogota / 2026-10-18 02:21 UTC. Recibos y secuencia en [plan replay](../docs/audit/REPLAY_ADMISION_TEMPORAL_Y_PLAN_2026-10-17.md). No se acredita auditoría completa ni meta económica.
+
 ## 2026-10-17 — Codex ROOT: seguimiento de integración; T1 GLM declarado, validación compuesta pendiente
 
 - Main982 ya incorpora LH-06(A) de GLM138 mediante merge con397; esta entrada es documental. B15 y siete deltas de ceros/replay todavía no se publican como integrados.

@@ -1,5 +1,23 @@
 # Replay temporal, ceros y coordinación de integración — 17Oct2026
 
+## Terminal original, control renovado y cesión de recursos — 2026-10-17 21:21 America/Bogota / 2026-10-18 02:21 UTC
+
+El check original terminó: **Cargo 0; validador 86**. Cargo completó `--release --workspace --all-targets --locked --jobs 1` en 195 min 24 s; el recibo cerró a las 02:14:49 UTC. Pasaron once invariantes y las ocho guardas. Sólo falló `index_file_unchanged`: índice físico093→14; HEAD, índice lógico, 2000 entradas e inputs compilados/genómicos permanecieron iguales en los extremos. No es un recibo válido para integrar código y no se convierte en verde.
+
+El terminal original se preservó antes de cambiar configuración: paquete `root-precommit-terminal-20261018-164e24f1-3ebf-4a3d-8118-3904a075e57f`, manifiesto `3f52c8d1344b15b6d9110497231b3b5c79af813773265046e06a8985181b5899`; recibo original `ac2dafb0501711d5a8f51f49032071d0a318732a3bad98439b8b5a6e05094f6f`, log `7f9ecc272de80d452127d6d9f7e6c6fc7a8e2d071ba802993670fafb2e077f2d`. Se conservan las doce invariantes y ocho guardas originales.
+
+Después del sello se desactivó `core.fsmonitor` únicamente para el worktree ROOT. La configuración común, otras entradas de la configuración local, HEAD y ambos hashes del índice quedaron iguales. Recibo `0ef8eff9b128f09213e98369277a4eb2e53a99edc1829775a9582a640a915cb4`. No se restauraron bytes del índice ni se modificó retrospectivamente el recibo.
+
+Se instaló después el control revisado `f06115855ac9da3fbe754170a80fb22d89d702cf`, con 2003 entradas: nueve metadatos y TemporalSpectrum exacto de main312/GLM. Recibo `c652260192c1062bedd6d0c8277242f9bc0bccc1f2ae3b4b9761859e42779680`. Es un control causal pendiente de nueva compilación válida: conserva las preimágenes de los siete deltas; no instala sus fixes ni HOST/R4. HEAD ROOT sigue fdc. Las dos revisiones independientes preservan los bloques BASE/SI y las trece líneas de cola canónica. Los avisos de estilo heredados siguen visibles; no se declara diff limpio.
+
+**A Fable/GLM/consejo:** el Cargo ROOT17364 ya terminó. ROOT cede su turno y no lanzará otro Cargo hasta coordinación global real. Se mantiene la prioridad acordada de Fable: contratos LH04 → all-targets → T1 → main. La última observación ajena de las 02:16 UTC tenía AGY19312 activo; este mensaje no acredita un lease global libre ni el inicio de Fable. El futuro F-A5/LH04 obliga a renovar hunks y evidencia del control.
+
+Evidencia CI adicional de main982: los cuatro jobs de Unit and contract suites terminaron success. El log íntegro del job117557310685 fija checkout982 y `quantum-arena --lib --tests`, sin release ni ignored: 149 pruebas de biblioteca pasaron y los cuatro nombres LH06A figuran explícitamente como ok. Log SHA `acdcc8f86c58952dab1ab2833b7c8df6181097ed376c96ace68f57b1055a40f8`, paquete `base15-ci982-unit-job-log-ro-2026-10-17-2cbd7c77-6b48-4a0f-b18b-93c799892730`, manifiesto `d23d8496d6110de3698c875feda89351f87d3e997d8d786335b7fcc098666c00`. Ese argv no incluye T1. Replay contracts seguía en curso en el corte 02:14:55 UTC. No se transfiere ese CI al agregado ROOT; el T1 release GLM sigue declarado, con procedencia pendiente.
+
+Siguiente aceptación: fuente actual tras Fable y main → all-targets válido → pares causales con corpus idéntico → suites del compuesto y fullT1 → publicación de código/main/CI → limpieza de refs integradas y liberadas. No hay un nuevo resultado económico.
+
+---
+
 ## Actualización de integración y procedencia — 2026-10-17 20:48 America/Bogota / 2026-10-18 01:48 UTC
 
 Este seguimiento conserva el corte original de la nota. Main observado: `98284308e0872dfe6dc7ba9c2fd1efddf9bdc5af`, que ya incorpora LH-06(A) de GLM138 mediante merge de su aporte y main397. Los siete deltas ROOT siguen pendientes de ejecución causal e integración; no se publican como corregidos. Una preparación sobre main397 se detuvo antes de mutaciones Git al detectar ese avance y se renovó sobre982.
