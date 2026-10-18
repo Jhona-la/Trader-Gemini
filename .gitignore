@@ -20,6 +20,15 @@
 
 # Logs y outputs de diagnóstico
 *.log
+# CL-144: segmentos del log rotativo (TG_LOG_FILE puede apuntar fuera de logs/)
+*.log.[0-9][0-9][0-9][0-9][0-9][0-9]
+*.log.[0-9][0-9][0-9][0-9][0-9][0-9].gz
+*.log.[0-9][0-9][0-9][0-9][0-9][0-9].gz.tmp
+*.log.lock
+# Bases SQLite de runtime (forense, ledger) y su WAL
+*.db
+*.db-wal
+*.db-shm
 logs/
 output*.txt
 audit_output.log

@@ -1,5 +1,108 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 (tarde) — Claude (cloud, Línea C): C-F6, censo de estado sin cota del proceso vivo
+
+- **Censo**: 11 buscadores, uno por área del proceso `god_engine` (host,
+  núcleo en tres tramos, módulos del núcleo, arena, riesgo, señal y rasgos,
+  ejecución e ingesta, evolución/metacortex/dark-alpha, infraestructura y
+  globales), y 2 escépticos por candidato (alcance y cota). 539 estructuras
+  examinadas, 34 confirmadas y 1 refutada. Tabla:
+  `docs/audit/linea_c/estado_sin_cota_2026-10-18.tsv`.
+- **Resultado**: en RAM sólo crecía sin cota una fuga pequeña (los nombres
+  de estrategia, CL-145). Lo que crece sin tope es el LOG: avisos cuya tasa
+  escalaba con el feed o con los núcleos que el proceso construye. Huella
+  fija que conviene conocer: el anillo de ticks son 39 MB por arena y hay 11
+  arenas vivas (la real y 10 sombras), ≈ 433 MB.
+- **Arreglos (PR de C-F6)**:
+  - CL-139 `telemetry_server::estrangulador`: LATENCY_PANIC como mucho
+    cada 10 s y LIQUIDATION REJECT cada 60 s, con el conteo de suprimidos;
+    el espectro, una vez por minuto de reloj.
+  - CL-140 trayectoria: un aviso por motivo y posición. La traza de una
+    moneda sin ranura abierta se descarta (una reserva revertida o un cierre
+    por bracket la dejaban viva contra una entrada inexistente).
+  - CL-141 recarga de modelos: el rechazo repetido se sigue reintentando
+    cada 10 s, pero sólo se avisa si cambia la fuente o el error.
+  - CL-142 `GodEngineCore::new_auxiliar`: el examen walk-forward (25
+    núcleos por ronda) y los universos sombra no escriben trazas. Decide bit
+    a bit igual (prueba sobre la cinta T-1). `monitor_demo.ps1` contaba sus
+    OPEN/CLOSE TRACE como órdenes de la cuenta.
+  - CL-143 base forense: una fila de `global_metrics` por minuto, retención
+    de 7 días.
+  - CL-144 log del motor rotativo y comprimido con `TG_LOG_FILE` (64 MiB y
+    8 segmentos por defecto, `<ruta>.<n>.gz`; `TG_LOG_MAX_MB`,
+    `TG_LOG_KEEP`). Sin la variable, todo sigue en stdout. El GhostLogger ya
+    no usa `.expect`.
+  - CL-145 nombres del orquestador internados: uno por nombre, no por núcleo.
+- **Revisión adversarial del lote** (6 revisores, 2 escépticos por hallazgo;
+  30 hallazgos): arreglado en el mismo PR.
+  - CL-140b: el descarte de la traza mataba el TCE de los cierres del propio
+    núcleo; ya sólo se descarta si el núcleo no cerró en ese evento.
+  - CL-144b: la rotación renombra el activo a `<ruta>.<n>` (n creciente,
+    sigue tras reiniciar) y un hilo aparte lo comprime a `.gz` y recorta a
+    `conservar`. Un fallo al reabrir ya no rota en bucle (recomprimía el
+    mismo archivo y borraba el historial); si el activo no se deja renombrar
+    se archiva por copia comprimida; la cola sólo se publica con su hilo
+    vivo; los avisos del log no usan `eprintln!` (pánico con stderr roto);
+    el apagado vacía el búfer aunque la cola esté vacía.
+  - CL-143b: `ForensicAuditor::new` devuelve `Result` (cinco `.expect` con
+    `panic = "abort"`); recorte en lotes de 10 000 filas y WAL ≤ 64 MiB.
+  - CL-141b: `models/DarkAlpha_*.json` no es candidato a bosque (cada
+    reescritura del entrenador volvía a avisar el rechazo).
+  - CL-142b: LATENCY PANIC (10 s), ML-GATE, latido ML y ML-DIAG del núcleo
+    vivo con tope por tiempo de pared (`avisos.rs`), no por eventos;
+    VIABILIDAD calla en núcleos auxiliares; DarwinDaemon legacy también usa
+    `new_auxiliar`; examen y sombras construyen el arena desde su genoma
+    (antes leían y anunciaban el genoma del disco en cada núcleo). Prueba de
+    paridad bit a bit con un genoma mutado.
+  - CL-139b: KILL_SWITCH avisa como mucho una vez por minuto.
+- **Segunda revisión** (sobre la primera ronda de arreglos): arreglado igual.
+  - CL-144c: un cerrojo `<ruta>.lock` (`File::try_lock`) por ruta: un
+    segundo proceso con el mismo `TG_LOG_FILE` escribe a stdout y no rota
+    ni borra segmentos ajenos. En Windows el activo se abre sin compartir
+    escritura: si stdout se redirige AL MISMO archivo, la apertura falla y
+    el log sigue por stdout (antes se pisaban). Sólo cuentan los nombres
+    canónicos `<ruta>.NNNNNN[.gz]`; un `.gz` truncado no cuenta como hecho
+    (se comprueba ISIZE); `sync_all` antes de renombrar el `.gz`; la
+    compresión nunca corre en el hilo del log y el apagado espera el lote
+    que el hilo tiene a medias.
+  - CL-140c: la traza es por ranura y generación (tres ranuras por moneda),
+    no por moneda. Se crea al ENVIAR la orden (con `reservation.slot` y
+    `reservation.generation`), no al decidirla; tras cada evento se concilia
+    contra las ranuras abiertas antes y después: lo que el núcleo cerró emite
+    su TCE y lo demás se descarta.
+  - CL-141c: los rechazos de modelos se recuerdan por ruta (dos archivos de
+    la misma moneda ya no se pisan) y se olvidan al borrar el archivo.
+  - CL-142c: `avisos.rs` con reloj inyectado en las pruebas (no dependen del
+    reloj de la máquina); prueba en el sitio real de que el examen y cada
+    sombra ven el genoma del candidato.
+- **CL-146 (pánico del riesgo, de Ω152)**: la conversión de Cramér-Lundberg
+  acotaba la exposición con `f64::clamp(min_notional/capital, 0,25·min(L,20))`.
+  Con 13 $ y BTCUSDT (mínimo 100 $) el suelo (7,7) supera al techo (5) y el
+  clamp entra en pánico: con `panic = "abort"`, el proceso vivo muere. Manda
+  el suelo (es la orden más pequeña posible) y deciden las puertas de abajo
+  (rechaza `min_notional`). Lo destapó `cf4_tick_del_examen`, rojo en `main`
+  desde Ω152 (posterior a LG-28). Quedan ~250 `clamp` con límites no
+  literales en código de producción: censo pendiente (C-F7).
+- **T-1 de C-F6** (nube, wine, sobre main ab767f94 + C-F6): 17/144 (11,8 %)
+  ≥ trinquete 11,0 %, misma lista de inertes que main en eb3ffa87 (C-F6 no cambia la
+  sensibilidad de ningún gen). **Gen 142 (`sl_horizon_curve.a`)**: con el
+  MISMO código (3011c5bb y 354c25e9 no difieren en ningún .rs) Fable midió
+  18/144 en el PC y la nube 17/144. La huella base coincide bit a bit
+  (gen 0: 56e7c279cadbaa0d) y sólo la del gen 142 difiere (PC 7c0675297c3b4a4c,
+  nube = base). No lo causaron Ω151–153: la sensibilidad del gen 142 depende
+  de la plataforma (inferido: la matemática del CRT de wine frente a la de
+  Windows en su curva). El T-1 de referencia es el del PC; en la nube main
+  marca 17/144.
+  - Quedan (bajo): DIAG y VIABILIDAD del núcleo vivo cada 50 000 ticks (una
+    línea por minuto a 800 ev/s); el DarwinDaemon legacy (opt-in) sigue
+    leyendo el genoma del disco por réplica, porque su `Genotype` no es el
+    genoma completo y cambiarlo cambia lo que evalúa.
+- **Sin acción** (crecen con las operaciones, KB/día): diarios de posiciones
+  y de fills, traumas, dataset de DarkAlpha, ledger de genomas, OrderRegistry
+  y JOURNAL_CACHE. **Pendiente (bajo)**: historia de genomas (≤ 9,7 MB/día si
+  promueve en cada ronda); podarla exige conservar la cadena que recorre
+  `destino_de_rollback`.
+
 ## 2026-10-18 — Claude (cloud, Línea C): C-F5d (revisión de la Línea G al #70) y C-F5a rescatada
 
 - **Petición del dueño (06:15 UTC)**: el proyecto desborda la memoria. La

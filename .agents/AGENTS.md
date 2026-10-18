@@ -25,8 +25,16 @@
   (B3.7, F8, etc.) en el mensaje.
 - OPS build: `Stop-Process god_engine` ANTES de `cargo build` (exe bloqueado =
   link fallido y el binario VIEJO se relanza en silencio). Al relanzar con
-  PowerShell SIEMPRE `-RedirectStandardOutput logs/demo_vNN.log` — sin eso el
+  PowerShell SIEMPRE `-RedirectStandardOutput` a un archivo — sin eso el
   motor queda ciego de log (45 min de sesión perdidos el 2026-09-15).
+  Sin `TG_LOG_FILE`, a `logs/demo_vNN.log`. Para que el log rote y se
+  comprima solo (CL-144), define `$env:TG_LOG_FILE = "logs/demo_vNN.log"` y
+  redirige stdout a `logs/demo_vNN.stdout.log` (ahí sólo quedan los
+  `println!` directos), NUNCA al mismo archivo: el motor no lo abriría y el
+  log seguiría entero en stdout. Los segmentos viejos quedan como
+  `logs/demo_vNN.log.000001.gz`, `…000002.gz`; `logs/demo_vNN.log.lock` es
+  el cerrojo del motor dueño (un segundo motor con la misma ruta escribe en
+  su stdout).
 - MERGE ENTRE SESIONES: un auto-merge "limpio" NO es un merge correcto. Tras
   integrar ramas de sesiones paralelas, haz diff del resultado contra CADA
   padre y compila con `--all-targets` antes de commitear: el 2026-09-25 dos
