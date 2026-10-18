@@ -90,23 +90,195 @@ pub fn init_telemetry_logger_con_capacidad(capacidad: usize) -> bool {
     if LOG_QUEUE.set(queue.clone()).is_err() {
         return false;
     }
-    std::thread::Builder::new()
+    // CL-144: sin hilo la cola sigue acotada (force_push) y el apagado la
+    // vacía con `vaciar_telemetria`; no se aborta el proceso por el log.
+    if let Err(error) = std::thread::Builder::new()
         .name("GhostLogger".to_string())
         .spawn(move || loop {
             if vaciar_cola(&queue) == 0 {
                 std::thread::sleep(std::time::Duration::from_micros(200));
             }
         })
-        .expect("Fallo al crear hilo GhostLogger");
+    {
+        eprintln!("⚠️ [LOG] no se pudo crear el hilo GhostLogger: {error}");
+    }
     true
 }
 
-/// Escribe en stdout todo lo que hay en la cola, con un solo bloqueo.
-fn vaciar_cola(queue: &crossbeam::queue::ArrayQueue<FixedLogBuffer>) -> usize {
+/// CL-144 (C-F6) — LOG DEL MOTOR CON ROTACIÓN Y COMPRESIÓN.
+///
+/// QUÉ ESTABA MAL: todo `telemetry_log!`/`telemetry!` del proceso acaba en
+/// stdout, que el lanzador redirige a un único `logs/demo_vNN.log`. Con el
+/// handle abierto por el proceso, nada externo puede rotarlo, y el archivo
+/// crece mientras dure la sesión.
+///
+/// QUÉ GARANTIZA: con `TG_LOG_FILE` definido, el hilo GhostLogger escribe en
+/// ese archivo y, al pasar `tope_bytes`, lo comprime a `<ruta>.1.gz` y
+/// desplaza los anteriores hasta `<ruta>.<conservar>.gz`; el más viejo se
+/// borra. En disco hay como mucho el activo, `conservar` segmentos
+/// comprimidos y, si una compresión falla, un `<ruta>.1.sin_comprimir`. La
+/// rotación corre en el hilo del log, nunca en el camino caliente. Sin la
+/// variable, todo sigue yendo a stdout como antes. Los `println!` directos
+/// (fuera de las macros) siguen yendo a stdout.
+#[derive(Debug, Clone)]
+pub struct Rotacion {
+    pub ruta: std::path::PathBuf,
+    pub tope_bytes: u64,
+    pub conservar: usize,
+}
+
+impl Rotacion {
+    /// `TG_LOG_FILE` (ruta del log), `TG_LOG_MAX_MB` (tope del activo, 64 por
+    /// defecto) y `TG_LOG_KEEP` (segmentos comprimidos, 8 por defecto).
+    pub fn desde_entorno() -> Option<Self> {
+        let ruta = std::env::var("TG_LOG_FILE").ok().filter(|r| !r.trim().is_empty())?;
+        let entero = |clave: &str, defecto: u64| {
+            std::env::var(clave).ok().and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(defecto)
+        };
+        Some(Self {
+            ruta: ruta.trim().into(),
+            tope_bytes: entero("TG_LOG_MAX_MB", 64).clamp(1, 4_096) * 1024 * 1024,
+            conservar: entero("TG_LOG_KEEP", 8).clamp(1, 100) as usize,
+        })
+    }
+
+    fn segmento(&self, i: usize, sufijo: &str) -> std::path::PathBuf {
+        let mut s = self.ruta.clone().into_os_string();
+        s.push(format!(".{i}{sufijo}"));
+        s.into()
+    }
+}
+
+/// Archivo activo del log rotativo.
+struct Sumidero {
+    rot: Rotacion,
+    archivo: Option<std::io::BufWriter<std::fs::File>>,
+    escritos: u64,
+}
+
+impl Sumidero {
+    fn abrir(rot: Rotacion) -> std::io::Result<Self> {
+        if let Some(dir) = rot.ruta.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir)?;
+        }
+        let f = std::fs::OpenOptions::new().create(true).append(true).open(&rot.ruta)?;
+        let escritos = f.metadata().map(|m| m.len()).unwrap_or(0);
+        Ok(Self { rot, archivo: Some(std::io::BufWriter::new(f)), escritos })
+    }
+
+    fn escribir_lote(&mut self, queue: &crossbeam::queue::ArrayQueue<FixedLogBuffer>) -> usize {
+        use std::io::Write as _;
+        let mut n = 0;
+        while let Some(msg) = queue.pop() {
+            let linea = msg.as_str().as_bytes();
+            let largo = linea.len() as u64 + 1;
+            if self.escritos > 0 && self.escritos.saturating_add(largo) > self.rot.tope_bytes {
+                self.rotar();
+            }
+            match self.archivo.as_mut() {
+                Some(w) => {
+                    if w.write_all(linea).and_then(|_| w.write_all(b"\n")).is_ok() {
+                        self.escritos = self.escritos.saturating_add(largo);
+                    }
+                }
+                None => {
+                    let mut out = std::io::stdout().lock();
+                    let _ = out.write_all(linea);
+                    let _ = out.write_all(b"\n");
+                }
+            }
+            n += 1;
+        }
+        if let Some(w) = self.archivo.as_mut() {
+            let _ = w.flush();
+        }
+        n
+    }
+
+    fn rotar(&mut self) {
+        use std::io::Write as _;
+        if let Some(mut w) = self.archivo.take() {
+            let _ = w.flush();
+        }
+        if let Err(error) = comprimir_y_desplazar(&self.rot) {
+            eprintln!("⚠️ [LOG] no se pudo comprimir {}: {error}", self.rot.ruta.display());
+            let _ = std::fs::remove_file(self.rot.segmento(1, ".gz.tmp"));
+            let _ = std::fs::rename(&self.rot.ruta, self.rot.segmento(1, ".sin_comprimir"));
+        }
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&self.rot.ruta)
+        {
+            Ok(f) => {
+                self.archivo = Some(std::io::BufWriter::new(f));
+                self.escritos = 0;
+            }
+            Err(error) => {
+                eprintln!("⚠️ [LOG] no se pudo reabrir {}: {error}; sigo en stdout", self.rot.ruta.display());
+            }
+        }
+    }
+}
+
+/// Desplaza `<ruta>.i.gz` a `<ruta>.(i+1).gz`, borra el que sobra y comprime
+/// el activo a `<ruta>.1.gz` (vía `.gz.tmp`, para no dejar un .gz a medias).
+fn comprimir_y_desplazar(rot: &Rotacion) -> std::io::Result<()> {
     use std::io::Write as _;
+    let conservar = rot.conservar.max(1);
+    let tmp = rot.segmento(1, ".gz.tmp");
+    {
+        let mut entrada = std::fs::File::open(&rot.ruta)?;
+        let salida = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
+        let mut gz = flate2::write::GzEncoder::new(salida, flate2::Compression::fast());
+        std::io::copy(&mut entrada, &mut gz)?;
+        gz.finish()?.flush()?;
+    }
+    match std::fs::remove_file(rot.segmento(conservar, ".gz")) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
+    for i in (1..conservar).rev() {
+        let viejo = rot.segmento(i, ".gz");
+        if viejo.exists() {
+            std::fs::rename(&viejo, rot.segmento(i + 1, ".gz"))?;
+        }
+    }
+    std::fs::rename(&tmp, rot.segmento(1, ".gz"))?;
+    let _ = std::fs::remove_file(rot.segmento(1, ".sin_comprimir"));
+    Ok(())
+}
+
+static SUMIDERO: OnceLock<std::sync::Mutex<Sumidero>> = OnceLock::new();
+
+/// CL-144: como `init_telemetry_logger_con_capacidad`, pero el hilo escribe
+/// en el log rotativo. Si el archivo no se puede abrir, avisa por stderr y
+/// sigue en stdout.
+pub fn init_telemetry_logger_rotativo(capacidad: usize, rot: Rotacion) -> bool {
+    match Sumidero::abrir(rot.clone()) {
+        Ok(s) => {
+            let _ = SUMIDERO.set(std::sync::Mutex::new(s));
+        }
+        Err(error) => eprintln!("⚠️ [LOG] no se pudo abrir {}: {error}; sigo en stdout", rot.ruta.display()),
+    }
+    init_telemetry_logger_con_capacidad(capacidad)
+}
+
+/// Escribe todo lo que hay en la cola en el sumidero (log rotativo o stdout).
+fn vaciar_cola(queue: &crossbeam::queue::ArrayQueue<FixedLogBuffer>) -> usize {
     if queue.is_empty() {
         return 0;
     }
+    match SUMIDERO.get() {
+        Some(m) => m.lock().unwrap_or_else(|p| p.into_inner()).escribir_lote(queue),
+        None => vaciar_a_stdout(queue),
+    }
+}
+
+/// Escribe en stdout todo lo que hay en la cola, con un solo bloqueo.
+fn vaciar_a_stdout(queue: &crossbeam::queue::ArrayQueue<FixedLogBuffer>) -> usize {
+    use std::io::Write as _;
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     let mut n = 0;
@@ -179,6 +351,76 @@ macro_rules! telemetry_err {
     }};
 }
 
+
+#[cfg(test)]
+mod tests_cl144 {
+    use super::*;
+
+    fn dir_temporal(etiqueta: &str) -> std::path::PathBuf {
+        let id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let d = std::env::temp_dir().join(format!("cl144_{etiqueta}_{}_{id}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn lote(q: &crossbeam::queue::ArrayQueue<FixedLogBuffer>, desde: usize, n: usize) {
+        for i in desde..desde + n {
+            let mut b = FixedLogBuffer::new();
+            let _ = write!(&mut b, "linea {i:06} {}", "x".repeat(90));
+            let _ = q.force_push(b);
+        }
+    }
+
+    /// Esperado: 2 000 líneas de ~100 B con tope de 8 KiB y 3 segmentos dejan
+    /// el activo bajo el tope, exactamente 3 .gz y ninguno más; el .gz más
+    /// reciente acaba justo antes de la primera línea del activo. Antes, un
+    /// único archivo de ~200 KB que sólo crece.
+    #[test]
+    fn cl144_el_log_rota_comprime_y_conserva_los_ultimos() {
+        use std::io::Read as _;
+        let d = dir_temporal("rota");
+        let rot = Rotacion { ruta: d.join("motor.log"), tope_bytes: 8 * 1024, conservar: 3 };
+        let mut s = Sumidero::abrir(rot.clone()).unwrap();
+        let q = crossbeam::queue::ArrayQueue::new(64);
+        for k in 0..50 {
+            lote(&q, k * 40, 40);
+            assert_eq!(s.escribir_lote(&q), 40);
+        }
+        let activo = std::fs::read_to_string(&rot.ruta).unwrap();
+        assert!(activo.len() as u64 <= rot.tope_bytes, "activo {} B", activo.len());
+        for i in 1..=3 {
+            assert!(rot.segmento(i, ".gz").exists(), "falta el segmento {i}");
+        }
+        assert!(!rot.segmento(4, ".gz").exists(), "sólo se conservan 3");
+        let mut gz = String::new();
+        flate2::read::GzDecoder::new(std::fs::File::open(rot.segmento(1, ".gz")).unwrap())
+            .read_to_string(&mut gz)
+            .unwrap();
+        let ultima_gz: usize = gz.lines().last().unwrap()[6..12].parse().unwrap();
+        let primera_activo: usize = activo.lines().next().unwrap()[6..12].parse().unwrap();
+        assert_eq!(ultima_gz + 1, primera_activo, "sin huecos entre el .gz y el activo");
+        assert!(activo.lines().last().unwrap().starts_with("linea 001999"));
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Esperado: un archivo previo se continúa y su tamaño cuenta para el tope.
+    #[test]
+    fn cl144_un_log_previo_cuenta_para_el_tope() {
+        let d = dir_temporal("previo");
+        let rot = Rotacion { ruta: d.join("motor.log"), tope_bytes: 4 * 1024, conservar: 2 };
+        std::fs::write(&rot.ruta, vec![b'a'; 4_000]).unwrap();
+        let mut s = Sumidero::abrir(rot.clone()).unwrap();
+        let q = crossbeam::queue::ArrayQueue::new(8);
+        lote(&q, 0, 2);
+        s.escribir_lote(&q);
+        assert!(rot.segmento(1, ".gz").exists(), "4 000 B previos + 2 líneas pasan el tope");
+        assert!(std::fs::metadata(&rot.ruta).unwrap().len() < 4 * 1024);
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
 
 #[cfg(test)]
 mod tests_lg19 {
