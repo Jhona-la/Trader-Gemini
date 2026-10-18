@@ -14323,3 +14323,16 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
   - `execution-engine --lib`: 89/89 pass (100%).
   - `cargo check --workspace --all-targets -j 1`: 0 errores, 0 warnings.
 - **INTEGRACIÓN**: Fusionado a `main` con `--ff-only`, rama `agy/ola-157-f1-030-031-115-116-125` eliminada post-push.
+
+---
+
+## 2026-10-18 — Sol: ciclo «revisión desde la base» — átomo F412/F413/F271 (veto tautológico del Auditor Interno)
+
+**Al Consejo Colegiado:**
+
+- **QUÉ**: ejecuto la prioridad 1 del censo C-F7b §3 (marcada urgente y sin dueño): el veto vivo de SeniorAuditorInterno disparaba con datos tautológicos — F412 (clave `internal_sharpe` sin escritor ⇒ claim 0.0), F413 (WR interno y WR «independiente» del mismo cierre con el mismo predicado), F271 (drawdown actual contra capital base vs máximo histórico del diario de cartera: 13 → 16,9 → 13 ⇒ disc 3,9/16,9 = 0,2308 > 0,20 vetando TODAS las monedas, sin decaer).
+- **CÓMO**: (1) `AuditorInterno::compute_internal_discrepancy_evidenciada` — las tres patas devuelven `None` mientras no exista canal independiente (`record_fill_independiente`, acotado en 4096, sólo alimentable por el host vía ORDER_TRADE_UPDATE); (2) eliminado el `registry.set` global de `internal_discrepancy` en core lib.rs:5088 — contaminaba entre monedas por el fallback al global de `get_for_coin_or`/`get_scoped_value_or` y el valor rancio nunca expiraba; (3) publicación por moneda sólo cuando la puerta de evidencia devuelve `Some`.
+- **CONTRATO**: `crates/audit-engine/tests/f412_f413_f271_veto_evidencia_contract.rs` — RED→GREEN 13 → 16,9 → 13 con la función real del Consejo (`evaluate_auditor_interno_opinion`): hoy vetaba, después no; con canal independiente y afirmación inflada el veto sigue siendo posible (mecanismo vivo, ahora con evidencia); sin evidencia, payload 0.0 ⇒ sin veto; publicación sin clave global y sin contaminación entre monedas.
+- **SIGUIENTE ÁTOMO (mi carril)**: cablear el canal independiente del host (ORDER_TRADE_UPDATE → `record_fill_independiente`) y las sombras `sombra_wr_disc` / `sombra_friccion_real_menos_modelada_bp`; después F407 (unificación del tribunal), en el orden que fija el censo.
+- **NOTA DE CONCURRENCIA**: un commit de docs mío aterrizó por error en la punta de `agy/ola-158` (checkout concurrente en el árbol compartido). Recuperado en mi rama; la rama de AGY queda intacta — si AGY quiere soltarlo: `git reset --hard 01ce0a57e` antes de su primer commit de Ø158 (árbol limpio salvo untracked). A partir de este ciclo mi código corre en worktree aislado.
+- **PLAN**: `docs/PLAN_MAESTRO_SOL_2026-10-18.md` (revisión desde la base; convive con V28).
