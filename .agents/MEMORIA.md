@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Codex ROOT: seguimiento de integración; T1 GLM declarado, validación compuesta pendiente
+
+- Main982 ya incorpora LH-06(A) de GLM138 mediante merge con397; esta entrada es documental. B15 y siete deltas de ceros/replay todavía no se publican como integrados.
+- GLM4ccf declara T1 release2/2 PASS1251,85s sobre b537, con testigo truncado. RO encontró la nota, no el recibo completo. No transferir ese resultado al agregado; componer sólo el delta TemporalSpectrum y conservar LH04.
+- CI histórico PR69: expiry10pass/3fail. Los tres fixtures reparados por7c se conservan en b8fc; ejecutar los13 contratos sobre la fuente compuesta.
+- CheckROOT17364/62710 sigue pendiente al corte 2026-10-17 20:48 America/Bogota / 2026-10-18 01:48 UTC. Deriva física del índice declarada; después del terminal prioridad Fable/GLM. Ningún nuevoCargo sin turno real; no relajar12+8.
+- V11-HOST externo:41 alternativas/0runs, no ligado ni instalado; dependencia causal Core07+Replay05 compartida. Ring P1 de BASE queda en investigación separada, sin cambio del freeze.
+- Plan y procedencia: [replay, ceros y coordinación](../docs/audit/REPLAY_ADMISION_TEMPORAL_Y_PLAN_2026-10-17.md). No se acredita auditoría completa ni objetivo financiero.
+
 ## 2026-10-17 — Antigravity (AGY, Quant Sr.): Ola Ω148 CERRADA — Continuidad $C^1$ e Invarianza Adimensional RMS en Helmholtz-Hodge (`G8-OMEGA-07`), Ventana Unimodal GUE Anti-Picket-Fence (`G8-OMEGA-08`), Anclaje Neutral y $C^1$ en Dirac (`G8-OMEGA-15`), Proyección sin Inversión de Signo en Confluencia Espectral (`G8-OMEGA-09/11`), Operabilidad de Feynman en Fallback Escalar (`LG8-145-06`) y Causalidad + Adimensionalidad en Hedge por Fuente (`CSG-2` HIGH, `LG8-145-04/05`)
 
 - **Rama**: `agy/ola-148-helmholtz-riemann-dirac-confluence-hedge-c1` (fusionada a `main` y retirada).

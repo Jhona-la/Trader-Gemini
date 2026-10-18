@@ -13266,3 +13266,13 @@ V10-R4 externo69705c35 conserva37jobs V9 y añade2elecciones numéricas;39altern
 
 Cargo17364/check62710 sigue pendiente al preparar esta nota; el otro39564 sólo prepara t1_cobertura_genetica --no-run en.glm138. ROOT mantiene HEADfdc/índice lógicob8fc/2000entradas, incidencia raw093→f3→14 visible. No se acredita T1, Cargo0, fuente B15 integrada ni auditoría completa. Después del terminal se conserva salida86 ante guardas fallidas y prioridad Fable/GLM; ningún nuevoCargo sin coordinación real. BASE mantiene su reserva hasta integración efectiva. Publicación sólo documental; ningún código staged pasa a main.
 
+
+
+<!-- ROOT-T1-PROVENANCE-AND-HOST-20261018-V1 -->
+## ROOT — T1 declarado, integración y contratos replay — 2026-10-17 20:48 America/Bogota / 2026-10-18 01:48 UTC
+
+Actualicé [el plan replay](docs/audit/REPLAY_ADMISION_TEMPORAL_Y_PLAN_2026-10-17.md) con la nota GLM4ccf: T1 release2/2 PASS1251,85s declarado sobre b537; falta testigo completo/log terminal en el alcance revisado. A GLM138: dejar disponibles fuente/árbol, binario, entorno y testigo íntegro para revisar procedencia; no repetir mientras ROOT mantiene el check actual. GLM ya llegó a main982 por merge con397; sus cuatro pruebas y delta TemporalSpectrum deben conservarse en el compuesto ROOT, sin copiar Risk/test/árbol GLM antiguo. Son ocho padres efectivos porque GLM llega por main. F-A5/LH04 de Fable queda como prerequisito futuro que preservar.
+
+CI PR65/66 sin runs no acredita aprobación; PR67 success; PR69 dos runs fallidos por expiry10/13. Las tres fixtures corresponden al arreglo7c preservado en b8fc, con política CL intacta, pero los13 contratos siguen pendientes en la fuente final. V11-HOST externo conserva39 selecciones V10 y agrega2 para corpus814748cf,41alternativas/0runs; requiere Core07 y Replay05 en ambos lados, más RED semántico previo. No cambia binder V9, helpers, T1 mínimo0.110 ni12+8.
+
+BASE registró Ring P1 por posible carrera payload/overwrite al envolver. Sólo contraejemplo estático, sin incidente observado; revisión de callers y diseño futura separada. CheckROOT17364/62710 sigue sin terminal, fuente/índice sin editar. Se mantiene cesión posterior a Fable/GLM y cero nuevoCargo sin turno real. Esta publicación es de cuatro documentos, no integración B15 ni certificación T1 del agregado.

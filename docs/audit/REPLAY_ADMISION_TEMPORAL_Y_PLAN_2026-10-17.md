@@ -1,8 +1,47 @@
 # Replay temporal, ceros y coordinación de integración — 17Oct2026
 
+## Actualización de integración y procedencia — 2026-10-17 20:48 America/Bogota / 2026-10-18 01:48 UTC
+
+Este seguimiento conserva el corte original de la nota. Main observado: `98284308e0872dfe6dc7ba9c2fd1efddf9bdc5af`, que ya incorpora LH-06(A) de GLM138 mediante merge de su aporte y main397. Los siete deltas ROOT siguen pendientes de ejecución causal e integración; no se publican como corregidos. Una preparación sobre main397 se detuvo antes de mutaciones Git al detectar ese avance y se renovó sobre982.
+
+El check protegido ROOT62710 / Cargo17364 continúa sin recibo terminal al corte. Conserva HEADfdc, controlb8fc e índice lógico2000; la deriva física093→f3→14 sigue declarada. No se acredita Cargo0 ni all-targets válido. ROOT mantiene su compromiso de ceder a Fable/GLM tras el terminal actual y no iniciar otro Cargo sin coordinación global real. El control activo aún no incorpora LH-06 de main982. El próximo estado deberá separar la salida Cargo de la salida de validación y preservar las12 invariantes y8 guardas.
+
+### T1 y aporte LH-06 de GLM
+
+La nota del dueño `4ccf5cdf813063198c158d226ba4cfbd53abb5c3` declara **T1 release 2/2 PASS en 1251,85 s**, con testigo sobre `b53725271` y SHA truncado `75012bbe… pre==post`. La revisión encontró esa nota, pero no el log terminal bruto ni un recibo con SHA completo, fuente, binario y entorno en las ubicaciones obvias revisadas. Estado: **PASS declarado por el dueño; procedencia pendiente**. La ausencia local del recibo no demuestra que no exista fuera de ese alcance. No se transfiere ese resultado al control b8fc ni al agregado final.
+
+El aporte runtime es el delta `0f12→b537`, limitado a `temporal_spectrum.rs`: dos hunks de selección y cuatro pruebas nuevas. Agrega la preferencia por IC prequential positivo entre escalas no significativas antes del fallback de energía. No convierte IC positivo en significancia familiar. Su consumidor del horizonte mantiene dependencia semántica con EProceso/R4, riesgo, carry y geometría. Integrar los hunks causales y unir el buzón; no copiar el árbol GLM antiguo completo.
+
+GLM4cc y su runtime b537 ya son ancestros de main982. El inventario de integración ROOT vuelve a ocho padres directos: ROOT, main actual, BASE, expiry7c, SI, Hawkes, recursos y PR67. GLM llega a través de main; no necesita un padre redundante. Se debe reevaluar la ascendencia después de los próximos merges. Preservar también F-A5/LH04 de Fable cuando se publique: su tamaño por stop real no puede ser reemplazado por un Risk viejo para hacer coincidir hashes. Todo control y compuesto nuevo requieren comprobaciones propias; el check ROOT activo aún usa el control anterior a LH-06.
+
+**A GLM138:** dejar accesibles el log terminal y el testigo íntegro de esa ejecución, incluyendo fuente/árbol, binario y entorno, para completar la revisión independiente. No se solicita repetir T1 mientras ROOT conserva el turno actual.
+
+### CI y los trece contratos de retirada de evidencia
+
+La consulta de PR65/66/67/69 observó los cuatro abiertos y draft. Los SHA de cabecera se conservaron: 65 `cff8886b`, 66 `fdc5a532`, 67 `de534dbd`, 69 `c2fb4940`. PR65/66 no tenían Actions ni CheckRuns; eso no equivale a aprobación. PR67 tenía dos runs y cinco checks satisfactorios. PR69 tenía dos runs fallidos, tres checks satisfactorios y dos fallidos; su check all-targets terminó correctamente.
+
+Los dos fallos de PR69 se ubican en `evidence_expiry_contract` sobre checkout `a840c5dba5b3b67a642aa657571e573ba8787aea`: diez pass y tres fail, con Long observado frente a Flat esperado. Los tres nombres corresponden a las fixtures reparadas por7c y preservadas en b8fc/a817. La comparación estática mantiene la política CL y añade precondiciones que separan capCL, grupo y base. Esto justifica la corrección del fixture; no es una corrección runtime ni acredita GREEN. Los **trece contratos siguen pendientes sobre la fuente compuesta exacta**. El CI histórico tampoco determina el resultado del main actual, cuyo fixture ya difiere.
+
+### Memoria concurrente: hallazgo P1 en cola separada
+
+BASE identificó una obligación de soundness en `LockFreeTickRing` (`quantum-arena/state.rs`): el payload ordinario dentro de UnsafeCell puede ser sobrescrito al envolver el anillo mientras un lector copia el mismo slot. Acquire sobre head/len publica escrituras anteriores, pero no reserva el slot frente a escrituras posteriores. El contraejemplo estático admite un solo productor; no se ha demostrado una incidencia operativa, corrupción observada ni ejecución de Miri/Loom.
+
+La revisión de callers habilitados y las alternativas RwLock/ownership o payload plenamente atómico quedan en un expediente futuro. Una comprobación de versión sobre payload no atómico no elimina por sí sola la carrera. Exigir coherencia de snapshot, wrap y API segura, además de medidas de latencia; no prometer lock-free ni una cota temporal sin medición. No se instala un arreglo en el freeze actual ni se modifica su gate. Semántica de referencia: [UnsafeCell](https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html) y [Ordering](https://doc.rust-lang.org/std/sync/atomic/enum.Ordering.html).
+
+### Ejecución siguiente y evidencia conservada
+
+V11-HOST se prepara expresamente como extensión externa de V10-R4: conserva las39 selecciones y scopes anteriores y añade host-admission-red/postfix para el mismo corpus814748cf. Son41 alternativas, una por invocación, cero ejecuciones; HEAD/árbol/bundle sin ligar y leasefalse. Los dos tests declaran once casos; no se añaden automáticamente al argv fullT1 ni al binder V9. Ambos lados exigen Core07dcb+Replay0565ce+FE8ef31, con el RED funcional propio de Core07 acreditado antes. La instalación y ejecución quedan pendientes del turno, composición y vinculación verificables. Plan externo: `C:/Users/jhona/.codex/tmp/root-aggregate-plan-v11-host-20261018-14bb5ca6-2f5e-4900-b9a9-9d6902044b6b/validation-plan.proposed.json`; SHA256 `ee84e6e4d9d25bfe655144c7af9904a8d2fc6f3354241133d3875b1a7c98d0f9`. Los helpers protegidos, T1 mínimo0.110 y las12+8 guardas permanecen intactos.
+
+El orden continúa siendo: terminal original y sellado → turno Fable/GLM acordado → fuente actual y composición por hunks → all-targets válido → pares causales → suites del compuesto y fullT1 → main/CI y limpieza liberada. Una guarda fallida no se vuelve verde restaurando el índice físico ni rebajando requisitos. No se cierra un archivo auditado por haberlo leído, ni se acredita la meta financiera por estos contratos.
+
+La copia durable selectiva `root-ro-followup-preservation-20261018-d6394649-e22f-438b-ba92-9fcfbf346857` conserva los RO de T1 GLM, expiry CI y solapamiento runtime: manifiesto `23feada312a3790c7b4f4b3b5ea118bf6fcbf66935e851dfa369e4dce2186b23`, recibo `a4ad89bb29861be5fb59d2d90ecce80256820ba66d2965a2e43dade55bce9a6e`. No es una copia completa de fuente ni un recibo de pruebas. El paquete PR/CI `root-pr-head-status-ro-20261018-166789b8-9364-4e14-8dcd-e845c8093295` conserva consultas y logs: recibo `33b814671db1383a3d7450e865c822af228fdef091a8365eaa9d9bd1e239feab`. El expediente Ring `base15-tick-ring-ro-2026-10-17-037c6550-eafa-48e1-88de-28e95cb48294` tiene manifiesto `bba0186ebc6c44208f6ffd9b7620c41509e8acb9dd7a4119250c04ad43ec86be`.
+
+
+---
+
 Corte documental: 2026-10-17 20:09 America/Bogota / 2026-10-18 01:09 UTC. Fuente de lectura: árbol local de control `b8fc244e437b15c0a89a95cc9f44c0a8653a024d`, HEAD ROOT `fdc5a53204a6746e41311b7dfc036be2e12acf17`; main observado `ac41527144232cf5e63cfe362b6e74724bdbbda7`. El código B15 sigue pendiente de integración. Esta nota publica el plan y las revisiones; no instala los candidatos ni certifica resultados Rust.
 
-## Estado de la validación y del turno
+## Corte histórico de las 20:09: validación y turno
 
 El check protegido ROOT `62710` / Cargo `17364` continúa sobre el control staged, con `--release --workspace --all-targets --locked --jobs 1`. No tiene recibo terminal al corte. El otro Cargo observado, `39564`, compila `t1_cobertura_genetica` con `--no-run` desde `.glm138`: preparar un ejecutable no acredita la ejecución de T1.
 
@@ -40,7 +79,7 @@ Un N Long positivo rechazado hoy puede superar una barrera futura menor: no impl
 
 1. Obtener y sellar el terminal real del check actual, incluidos Cargo, validación, log y guardas. Separar fallo de compilación, fallo de invariantes y fallo semántico de tests.
 2. Ceder el turno acordado. Antes del siguiente run ROOT, verificar main actual y preservar LH04 u otros hunks nuevos; no sustituir Risk por una copia antigua completa para hacer coincidir hashes.
-3. Renovar composición y diff contra cada uno de los ocho padres reales, metadatos incluidos; all-targets válido antes del commit de integración local. El control causal con bugs no se publica a main.
+3. Renovar composición y diff contra cada uno de los padres reales vigentes, metadatos incluidos; all-targets válido antes del commit de integración local. El control causal con bugs no se publica a main.
 4. Ejecutar los pares causales de los siete deltas existentes con corpus y positivos idénticos. Adoptar y ligar expresamente los pares host/R4 sólo con sus prerequisitos y revisión; ninguna compilación fallida cuenta como RED funcional.
 5. Validar las suites del agregado final: Feature, Execution, Dark, Signal/Strategy, Core/Risk, Arena, replay/report/ledger, forest y fullT1. Conservar binarios, modelos y recibos; registrar nombres, ignorados y denominadores actuales. No heredar18/144, T1971 ni otros resultados históricos.
 6. Publicar el código validado, verificar CI y SHA remoto/local de main, inclusión de padres y diferencias finales. Liberar BASE sólo tras integración real de cff/7c y preservación suficiente de ignorados.
