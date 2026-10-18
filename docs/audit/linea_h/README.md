@@ -19,11 +19,30 @@ Plan y lectura de los resultados: `docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md` §6.
 | `ola2_verificacion.tsv`, `ola2_predicciones_veredicto.tsv`, `ola2_nuevos_escepticos.tsv`, `ola2_escepticos_sintesis.md`, `ola2_escepticos_raw.json`, `ola2_correcciones.md` | Ola 2: veredictos de los escépticos con la medición, predicciones contrastadas, hallazgos nuevos y correcciones al inventario de los lectores | workflow `linea-h-escepticos-ola2` |
 | `ola2_post_pr62_escalera_13usd.tsv`, `ola2_post_pr62_valle_de_capital.tsv`, `ola2_post_pr62_adaptacion.tsv`, `ola2_post_pr62_adaptacion_lineas.txt` | Re-medición sobre el árbol con el PR #62 de la Línea C (`fc2ba2ec`): idéntica salvo E4 (`estrategia_falsada` = 31) | los mismos comandos sobre ese árbol |
 
-El generador de la versión 1 (olas 1 y 2) tiene el límite H1-01 señalado por
-la Línea G (estado oculto decodificable del OHLCV); la versión 2 llega en la
-ola 3 y las tablas de la v1 se conservan como tales.
+| `ola3_escalera_v2_13usd.tsv`, `ola3_escalera_v1_vs_v2.tsv` | Ola 3: la escalera de 13 USD con el generador v2 (ruido gaussiano, mechas y volumen independientes) y el filtro de Bayes como referencia de cierres; y la comparación peldaño a peldaño con la v1 | `T3_GENERADOR=v2 … t3_escalera_de_ventaja_conocida` |
+| `ola3_valle_v2.tsv` | Ola 3: el valle de capital con la v2 | `T3_GENERADOR=v2 … t3_valle_de_capital` |
+| `ola3_adaptacion_v2.tsv`, `ola3_adaptacion_v2_lineas.txt` | Ola 3: E1–E4 con la v2, más E4' (anti → anti) y E5 (antipersistencia larga por cuartiles) y el pago del segundo tramo y del fresco en la fila | `T3_GENERADOR=v2 … t3_adaptacion_en_el_tiempo` |
+| `ola3_escepticos.tsv`, `ola3_confirmaciones.tsv`, `ola3_escepticos_sintesis.md`, `ola3_escepticos_raw.json` | Ola 3: dos escépticos (matemática del filtro; generador y reproducibilidad) sobre el T-3 v2 | workflow `linea-h-escepticos-ola3` |
 
-Todas las columnas con unidades: `*_bps` en puntos básicos, `d_pct`/`sigma_pct`
-en %, `pnl_neto`/`capital_final` en USD, `dd_max` en fracción, `rechazos` como
-`nombre=diferencia` de `risk_engine::REJECT_COUNTERS` (una evaluación de
-intención por tick, 30 ticks por vela).
+Generadores: V1 conserva la serie histórica y su fuga conjunta OHLCV. V2
+separa los sorteos y usa ruido gaussiano; el canal intravela H1-01(iii) del
+runner permanece. El filtro HMM de cierres no es un techo universal del motor.
+La serie V1 se preserva; sus tablas dependen además del motor y del esquema.
+
+Los archivos `ola3_*` recuperados son históricos: no hay huella verificable
+del binario exacto que los generó, y sus columnas de referencia anteceden las
+correcciones del 15Oct. No regenerarlos silenciosamente con el código actual.
+`ola3_historical_manifest.json` fija sus hashes; la validación actual se guarda
+por separado en `../LINEA_H_T3_V2_CIERRE_2026-10-15.md`.
+
+Esquema actual: `filtro_*` es el lector siempre activo; `filtro_neto_*`
+aplica abstención por fricción y `cobertura_neta_*` informa la participación.
+NaN significa sin observaciones, no retorno cero. `ev_R_*` legado es condicional
+a resolución; `bracket_ev_R_*` incluye vencidos y excluye censura. `b_real` usa
+PnL en USD, por lo que mezcla geometría y tamaño. Los lectores se evalúan sobre
+ventanas solapadas: sus retornos por señal no son una cartera realizable.
+
+Unidades: `*_bps` puntos básicos; `d_pct`/`sigma_pct` porcentajes;
+`pnl_neto`/`capital_final` USD; `dd_max` fracción; `rechazos` diferencia de
+contadores por evaluación. Las referencias descuentan 10 pb, mientras el motor
+puede cargar spread, slippage y otros costes.

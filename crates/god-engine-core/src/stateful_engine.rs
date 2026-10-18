@@ -1,5 +1,5 @@
 use crate::math_kernels::{
-    ContinuousVPIN, ExponentialDecayTensor, FundingRateElasticity, ObiAcceleration, RecursiveHurst,
+    ContinuousVPIN, ExponentialDecayTensor, ObiAcceleration, RecursiveHurst,
     ShannonEntropy,
 };
 use feature_engine::OrderFlowTracker;
@@ -98,7 +98,6 @@ pub struct StatefulEngine {
     pub obi_accel: ObiAcceleration,
     /// D-688: media y varianza exponenciales del OBI (ruido del libro).
     pub obi_noise: ObiNoise,
-    pub fr_elasticity: FundingRateElasticity,
     pub cvpin: ContinuousVPIN,
     pub entropy: ShannonEntropy,
     pub dark_alpha: ExponentialDecayTensor,
@@ -244,7 +243,6 @@ impl StatefulEngine {
             hurst: RecursiveHurst::new(),
             obi_accel: ObiAcceleration::new(),
             obi_noise: ObiNoise::new(),
-            fr_elasticity: FundingRateElasticity::new(),
             cvpin: ContinuousVPIN::new(10_000.0), // $10,000 USD rolling bucket size
             entropy: ShannonEntropy::new(),
             dark_alpha: ExponentialDecayTensor::new(10000.0), // 10s half-life
@@ -656,7 +654,6 @@ impl StatefulEngine {
         self.hurst = RecursiveHurst::new();
         self.obi_accel = ObiAcceleration::new();
         self.obi_noise = ObiNoise::new();
-        self.fr_elasticity = FundingRateElasticity::new();
         self.cvpin = ContinuousVPIN::new(10_000.0);
         self.entropy = ShannonEntropy::new();
         self.dark_alpha = ExponentialDecayTensor::new(10000.0);
@@ -1121,15 +1118,20 @@ impl StatefulEngine {
         Ok(())
     }
 
-    pub fn update_macro_features(
-        &mut self,
-        obi: f64,
-        funding_rate: f64,
-        dex_severity: f64,
-        ts_ms: u64,
-    ) {
+    /// Macro-features por evento: OBI (nivel/velocidad/aceleración y ruido)
+    /// y severidad MEV/DEX (sin productor en vivo: 0.0 documentado).
+    ///
+    /// F-A1 (Fable, 2026-10-17): se retiró el parámetro `funding_rate` y la
+    /// `FundingRateElasticity` que alimentaba. Era una arista muerta: ninguna
+    /// de las dimensiones del bosque ni del tensor 54D la leía (lo dejaba
+    /// escrito el propio entrenador), y un funding NaN del productor global
+    /// vetaba la actualización del OBI de TODAS las monedas. El funding
+    /// per-símbolo vive en `CoinArena::funding_rate_next` y lo consume el
+    /// risk-engine como coste de carry esperado. `update_macro_flow` (sin
+    /// llamadores de producción) se retiró con ella.
+    pub fn update_macro_features(&mut self, obi: f64, dex_severity: f64, ts_ms: u64) {
         // FIX #665: Sanitizar macro features
-        if !obi.is_finite() || !funding_rate.is_finite() || !dex_severity.is_finite() {
+        if !obi.is_finite() || !dex_severity.is_finite() {
             self.rejected_macro_updates += 1;
             return;
         }
@@ -1140,20 +1142,6 @@ impl StatefulEngine {
 
         self.obi_accel.update(obi);
         self.obi_noise.update(obi);
-        self.fr_elasticity.update(funding_rate, self.last_price);
-    }
-
-    pub fn update_macro_flow(
-        &mut self,
-        funding_rate: f64,
-        dex_severity: f64,
-        ts_ms: u64,
-    ) {
-        if !funding_rate.is_finite() || self.dark_alpha.try_apply_event(dex_severity, ts_ms).is_err() {
-            self.rejected_macro_updates += 1;
-            return;
-        }
-        self.fr_elasticity.update(funding_rate, self.last_price);
     }
 
     pub fn get_market_regime(&self) -> MarketRegime {
@@ -1662,12 +1650,12 @@ mod tests {
             let p = 100.0 + ((i % 37) as f64).sin();
             e.process_tick(p, 1.0, ts);
             let obi = 0.3 * (((i % 11) as f64) - 5.0) / 5.0;
-            e.update_macro_features(obi, 0.0, 0.0, ts);
+            e.update_macro_features(obi, 0.0, ts);
             ts += 100;
         }
         // Determinismo: dos obis distintos y no nulos al final.
-        e.update_macro_features(0.25, 0.0, 0.0, ts);
-        e.update_macro_features(0.35, 0.0, 0.0, ts + 100);
+        e.update_macro_features(0.25, 0.0, ts);
+        e.update_macro_features(0.35, 0.0, ts + 100);
         let f = e.get_universal_features();
         assert_eq!(f.len(), 34);
         // CERT-M2-H02: dims [4][5][9][10] AHORA zerificadas en AMBOS lados

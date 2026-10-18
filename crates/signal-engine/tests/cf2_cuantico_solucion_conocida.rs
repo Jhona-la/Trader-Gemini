@@ -222,7 +222,6 @@ fn fraccion_coherente(semilla: u64, media_ms: f64, n: usize, calentamiento: usiz
 /// devuelve el nivel prometido: las fases de escalas vecinas resueltas
 /// están correlacionadas en una caminata aleatoria (comparten historia).
 #[test]
-#[ignore = "OPEN F2.6-02 (AGY): en una caminata aleatoria C > 0,20 en ~59 % de los eventos (el corte no filtra el ruido); quitar las escalas no observables no lo arregla (~62 %)"]
 fn cf2_6_feynman_caminata_aleatoria_decohiere_como_dice_su_doc() {
     let ((f1, e1), (o1, eo1)) = fraccion_coherente(0x5EED_F260, 1_000.0, 20_000, 2_000);
     let ((f10, e10), (o10, eo10)) = fraccion_coherente(0x5EED_F260, 100.0, 20_000, 2_000);

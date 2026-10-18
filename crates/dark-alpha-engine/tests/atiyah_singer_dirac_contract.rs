@@ -149,3 +149,41 @@ fn contract_dirac_sub_microsecond_stack_latency() {
         ns_per_op
     );
 }
+
+#[test]
+fn contract_g8_omega_15_smooth_neutral_manifold_and_c1_continuity() {
+    // Una variedad suave y neutral (x = 0, a_flow = 0) tiene género A-techo = 1.0
+    // y NO debe sufrir la penalización espuria de -12% (0.88): debe anclarse en 1.00.
+    let mut engine_neutral = AtiyahSingerDiracEngine::new();
+    let mut m_neutral = Default::default();
+    for _ in 0..8 {
+        m_neutral = engine_neutral.observe_spinor_state(0.0, 0.0);
+    }
+    assert!(
+        (m_neutral.a_roof_genus - 1.0).abs() < 1e-12,
+        "Variedad plana debe tener género A-techo == 1.0, obtuvimos {}",
+        m_neutral.a_roof_genus
+    );
+    assert!(
+        (m_neutral.dirac_conviction_modulation - 1.0).abs() < 1e-12,
+        "Variedad suave neutral debe preservar convicción 1.00 sin penalización espuria de -12%, obtuvimos {}",
+        m_neutral.dirac_conviction_modulation
+    );
+
+    // Continuidad C¹ al cruzar dx * dx_prev = 0 y a_mid = 0
+    let mut e_pos = AtiyahSingerDiracEngine::new();
+    let mut e_neg = AtiyahSingerDiracEngine::new();
+    for _ in 0..6 {
+        let _ = e_pos.observe_spinor_state(0.10, 0.0);
+        let _ = e_neg.observe_spinor_state(0.10, 0.0);
+    }
+    let m_p = e_pos.observe_spinor_state(0.100001, 0.05001);
+    let m_n = e_neg.observe_spinor_state(0.099999, 0.04999);
+    assert!(
+        (m_p.dirac_conviction_modulation - m_n.dirac_conviction_modulation).abs() < 1e-3,
+        "El cruce de signo en dx*dx_prev y a_mid=0.05 debe ser C¹-continuo: {} vs {}",
+        m_p.dirac_conviction_modulation,
+        m_n.dirac_conviction_modulation
+    );
+}
+

@@ -269,6 +269,16 @@ impl RiemannZetaGueEngine {
         }
         let mean_gap_ratio = (sum_gap_ratio / (num_ratios as f64)).clamp(0.0, 1.0);
 
+        // 2.5 Varianza empírica de espaciamientos desplegados Var(s) = <(s_k - 1)^2>.
+        // En Wigner-Dyson GUE (beta=2), sigma_GUE(s) = sqrt(3*pi/8 - 1) ~ 0.4220, mientras que en un
+        // cristal rígido ("picket fence") o rampa monótona uniforme sigma(s) -> 0 y <r> -> 1.
+        let mut sum_sq_spacing_dev = 0.0_f64;
+        for &s_k in spacings.iter().take(num_gaps) {
+            let ds = s_k - 1.0;
+            sum_sq_spacing_dev += ds * ds;
+        }
+        let spacing_std = (sum_sq_spacing_dev / (num_gaps as f64)).sqrt();
+
         // 3. Rigidez espectral de Dyson-Mehta Delta_3 sobre las posiciones desplegadas u_k in [0, N-1]
         // Compara la posición desplegada u_k = (sorted[k] - sorted[0]) / mean_spacing con la recta ideal k.
         let mut sum_sq_dev = 0.0_f64;
@@ -279,13 +289,19 @@ impl RiemannZetaGueEngine {
         }
         let dyson_mehta_rigidity = sum_sq_dev / (n as f64);
 
-        // 4. Síntesis Continua C^1 de Estabilidad en la Línea Crítica de Riemann Re(s) = 1/2:
-        // - Componente A: Progreso del gap ratio <r> desde degeneración (0.12) hasta GUE (0.6027)
-        let gap_stability = hermite_smoothstep_c1(
+        // 4. Síntesis Continua C^1 de Estabilidad en la Línea Crítica de Riemann Re(s) = 1/2 (G8-OMEGA-08):
+        // Ventana unimodal C^1 alrededor de <r>_GUE = 0.6027:
+        // - Sube desde degeneración/Poisson (<r> in [0.12, 0.6027])
+        // - Cae suavemente ante peines regulares / rampas monótonas (<r> in [0.72, 0.90] -> r -> 1)
+        let gap_rise = hermite_smoothstep_c1(
             mean_gap_ratio,
             0.12,
             GUE_RIEMANN_GAP_RATIO_MEAN,
         );
+        let picket_decay = 1.0 - hermite_smoothstep_c1(mean_gap_ratio, 0.72, 0.90);
+        let crystal_rigidity = 1.0 - hermite_smoothstep_c1(spacing_std, 0.06, 0.24);
+        let gap_stability = gap_rise * picket_decay;
+
         // - Componente B: Densidad de repulsión de Wigner GUE P_GUE(s) (modo ~ 0.59 en s = sqrt(pi)/2)
         let gue_repulsion_stability = hermite_smoothstep_c1(gue_level_repulsion, 0.10, 0.48);
         // - Componente C: Repulsión de pares de Montgomery-Odlyzko R_2(s) (óptimo cuando R_2 >= 0.75)
@@ -293,11 +309,18 @@ impl RiemannZetaGueEngine {
         // - Componente D: Rigidez espectral de Dyson-Mehta acotada (si Delta_3 >> 1, hay concentración patológica)
         let rigidity_health = 1.0 - hermite_smoothstep_c1(dyson_mehta_rigidity, 0.15, 2.50);
 
-        let critical_line_stability = (0.30 * gap_stability
+        let raw_stability = (0.30 * gap_stability
             + 0.30 * gue_repulsion_stability
             + 0.25 * montgomery_stability
             + 0.15 * rigidity_health)
             .clamp(0.0, 1.0);
+
+        // El filtro anti-cristal C^1 evita que un peine equiespaciado (r -> 1, sigma(s) -> 0) o una
+        // EMA monótona reciba bonificación GUE: sólo el caos cuántico unitario (repulsión con fluctuación
+        // de Wigner) preserva `anti_crystal_gate = 1.0`.
+        let anti_crystal_gate =
+            (0.15 + 0.85 * picket_decay) * (1.0 - 0.65 * crystal_rigidity * (1.0 - picket_decay));
+        let critical_line_stability = (raw_stability * anti_crystal_gate).clamp(0.0, 1.0);
 
         // 5. Modulación continua C^1 de convicción:
         // Mapea critical_line_stability in [0.0, 1.0] -> [0.25, 1.15] usando Hermite C^1.

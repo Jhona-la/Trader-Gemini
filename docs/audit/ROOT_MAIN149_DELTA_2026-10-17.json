@@ -1,0 +1,850 @@
+{
+  "schema": "root.base-drift-snapshot.v1",
+  "kind": "DELTA_SNAPSHOT_NOT_A_SECOND_AUDIT_LEDGER",
+  "utc": "2026-10-17T21:09:14.797627+00:00",
+  "previous_observed_main": "f7d967f4a960b5dc30f40f73ccdb387424bc0f93",
+  "main149": "0f12af7460d669dd7bf6f17011236ed607e8df0b",
+  "changed_paths": 139,
+  "tracked_paths_at_main149": 1949,
+  "entries": [
+    {
+      "path": ".agents/MEMORIA.md",
+      "change": "M",
+      "blob_at_main149": "f1efcffc3ee92968c8369983cd525ea874d7b25a",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": ".github/workflows/replay-contracts.yml",
+      "change": "M",
+      "blob_at_main149": "4b51e9e09fe88e2ce9a3862ff8ddd2a46634a19e",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": ".github/workflows/t3-model.yml",
+      "change": "A",
+      "blob_at_main149": "6f8689644e90f2bf0b216c7dd2650d10d6645024",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": ".github/workflows/unit-suites.yml",
+      "change": "M",
+      "blob_at_main149": "5dc7404dd6cf64b25ed11c439f354748682062f7",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": ".gitignore",
+      "change": "M",
+      "blob_at_main149": "b89ac1918e2228d80047477212c85293a5c54b47",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "AGENT_SYNC.md",
+      "change": "A",
+      "blob_at_main149": "1b63e628ca29d63423cfce00303bf6293ec05db3",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "COORDINACION_CODEX_2026-09-28.md",
+      "change": "M",
+      "blob_at_main149": "fa151338b4de927b9e7951afc58b4ecaf848b539",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "TABLERO.md",
+      "change": "M",
+      "blob_at_main149": "08154e2e2dba6d4a9f0fb97337c2d1bc0746c990",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/backtest-engine/src/bin/continuous_evolution_backtest.rs",
+      "change": "M",
+      "blob_at_main149": "b4ef02d2ee85d8dd36b744ba6e865cd1d8ef0ca7",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/backtest-engine/src/booktick_replay.rs",
+      "change": "M",
+      "blob_at_main149": "8664255951b1f6656188f7f330f0e7c9dbd35f71",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/backtest-engine/tests/censo_mudos_medicion.rs",
+      "change": "A",
+      "blob_at_main149": "3e4d8327bc2b6c5d1a71360415a1b3b24cc5158c",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/backtest-engine/tests/espectral_piso_medicion.rs",
+      "change": "A",
+      "blob_at_main149": "1d83d921bf311c09dcd11dbc8f7ae4c738b8824f",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/backtest-engine/tests/puertas_confluence_medicion.rs",
+      "change": "A",
+      "blob_at_main149": "b1983506fccbd78a994d1c630f1a4972c43cd1cd",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/backtest-engine/tests/support/t3_synthetic.rs",
+      "change": "A",
+      "blob_at_main149": "1029d28c9e0b689e1796089a59beb2bde0a4f8b6",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/backtest-engine/tests/t2_cobertura_puertas.rs",
+      "change": "M",
+      "blob_at_main149": "d70c9b67f92685d6bdf07cae78c9bdd4bc1749f1",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+      "change": "M",
+      "blob_at_main149": "d828aafc6f08543efc61cf1b04d324e213bc95c5",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/dark-alpha-engine/src/atiyah_singer_dirac.rs",
+      "change": "A",
+      "blob_at_main149": "43c26d1b3837fc834fe83ea2ebde6c9476f539a9",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/dark-alpha-engine/src/helmholtz_hodge.rs",
+      "change": "A",
+      "blob_at_main149": "7e952919fd19bac1dfcf2e531da85aa23ce2f36c",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/dark-alpha-engine/src/lib.rs",
+      "change": "M",
+      "blob_at_main149": "a76a5202283a60b878e647744761fa6291902148",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/dark-alpha-engine/tests/atiyah_singer_dirac_contract.rs",
+      "change": "A",
+      "blob_at_main149": "fead4216ebe6d89eb34b2f8fc0414e1171710bbd",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/dark-alpha-engine/tests/helmholtz_hodge_contract.rs",
+      "change": "A",
+      "blob_at_main149": "44893380b6e715dcf795a9fd33feab4b98619eb7",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/evolution-engine/src/lib.rs",
+      "change": "M",
+      "blob_at_main149": "4de178adbf8d87ce1e029d17810b005d721bfafd",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/evolution-engine/src/online_newton_gbdt.rs",
+      "change": "A",
+      "blob_at_main149": "7cb11b6c42db3feca14263c3708113e238aad9ea",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/evolution-engine/src/online_random_forest.rs",
+      "change": "M",
+      "blob_at_main149": "47371faeb0e831ae848e74807c1a4f4e5c76b0eb",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/evolution-engine/src/random_forest.rs",
+      "change": "M",
+      "blob_at_main149": "408a1c0cabb96ff646132854199deb03efc35468",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/evolution-engine/src/sa_selection.rs",
+      "change": "M",
+      "blob_at_main149": "06812a2e05083ca9f66d5d66b3fe4c7050653867",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/evolution-engine/tests/cf5c_replantar_suelta_frenos.rs",
+      "change": "A",
+      "blob_at_main149": "8415ada791444552d250a6c1bf80cd9420ec5ac8",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/evolution-engine/tests/online_newton_gbdt_contract.rs",
+      "change": "A",
+      "blob_at_main149": "48c3cd740e7d88fd75e1f2735f51d2539bfddb89",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/src/bin/nano_benchmark.rs",
+      "change": "M",
+      "blob_at_main149": "06b7e8f7303a7b16feec5dd2f30d22f8f43bde62",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/src/estado_aprendido.rs",
+      "change": "M",
+      "blob_at_main149": "31af80a3f5ce6a8a0f1525bf965bd1cc53849918",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/src/lib.rs",
+      "change": "M",
+      "blob_at_main149": "019f05164ec9cb258d37b3013444b0257ed99324",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/src/math_kernels.rs",
+      "change": "M",
+      "blob_at_main149": "596e25d99bf1b708c0da1dfdb7be28c2ec1015f9",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/src/model_reload.rs",
+      "change": "M",
+      "blob_at_main149": "911861a268f9f1dc1ab6d840e6749b78c5c662b2",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/src/stateful_engine.rs",
+      "change": "M",
+      "blob_at_main149": "89d8d7108a3194f54fe4cc6195e63837b4f1a6b2",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/tests/censo_mudos_activacion_continua_contract.rs",
+      "change": "A",
+      "blob_at_main149": "c4827a730f37bc317463cde1f001bc898bda73dd",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/tests/cf5c_freno_duro_en_stops.rs",
+      "change": "A",
+      "blob_at_main149": "979ac1d878629d2e45e01d4d462bcf323f7b0ac2",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/tests/decay_causality_contract.rs",
+      "change": "M",
+      "blob_at_main149": "bd09579527bab80b8bc5527e955932e824e34c61",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/tests/evidence_expiry_contract.rs",
+      "change": "M",
+      "blob_at_main149": "233dd4d86117ebcc315871f381b936dd0901b19a",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/tests/lg22_cableado_contract.rs",
+      "change": "M",
+      "blob_at_main149": "018320c465a1f9c4b3f88731ec8a8f0b044e1ff1",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/tests/lg23_constructor_hermetico.rs",
+      "change": "A",
+      "blob_at_main149": "880504a2552f9f50a62347ba1ff470fb5cf33d2a",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/god-engine-core/tests/model_reload_contract.rs",
+      "change": "M",
+      "blob_at_main149": "700a2937c01c0ec36482407432fcc2aaa207b0ca",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/os-guardian/src/ebpf_core.rs",
+      "change": "M",
+      "blob_at_main149": "af2a0dcd4899198493b080c6be6c38607f62cae8",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/os-guardian/src/observability_plane.rs",
+      "change": "M",
+      "blob_at_main149": "53565bd5219018c0ed7a423016d778db2c749a3f",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/os-guardian/src/pmu_sensor.rs",
+      "change": "M",
+      "blob_at_main149": "acbbd82bef3643e3f6b2ff740568f168185ca62e",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/quantum-arena/src/evalues.rs",
+      "change": "M",
+      "blob_at_main149": "05e6c84bda16fe4687af2f7fd50ab3c5229077b9",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/quantum-arena/src/lib.rs",
+      "change": "M",
+      "blob_at_main149": "ff3eb555518bb3b42b5167aaa6770ee8f77bb620",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/quantum-arena/src/state.rs",
+      "change": "M",
+      "blob_at_main149": "eb98dc6d7ea6fa0cd1d6af6ba3cd5feb2fe9e136",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/quantum-arena/src/wasserstein_kantorovich.rs",
+      "change": "A",
+      "blob_at_main149": "468133ab1a3706394c6bc22f99cc227af6749761",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/quantum-arena/tests/cf2_evalues_cuantiles_solucion_conocida.rs",
+      "change": "M",
+      "blob_at_main149": "7252fe7939c618124c9d8a357bde3a1552e7fef9",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/quantum-arena/tests/fable_funding_carry_contract.rs",
+      "change": "A",
+      "blob_at_main149": "1c43348fe8cec56824109efc4f1a9bbd4a3d4a03",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/quantum-arena/tests/wasserstein_kantorovich_contract.rs",
+      "change": "A",
+      "blob_at_main149": "ed066e5fb47aa576c9e8d0ea7388b4cbeec4249f",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/src/drawdown.rs",
+      "change": "M",
+      "blob_at_main149": "852675c3c0f04166a074d33195615a260f8cddb2",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/src/freno_estrategia.rs",
+      "change": "M",
+      "blob_at_main149": "277777dfc0f8c4672287070c54f77a74a377a052",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/src/lib.rs",
+      "change": "M",
+      "blob_at_main149": "f48169407d87130b1330494957bcc898bde27098",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/src/riemann_zeta_gue.rs",
+      "change": "A",
+      "blob_at_main149": "0760ec33afdd377156691e98125790240c4a540f",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/src/veto_registry.rs",
+      "change": "M",
+      "blob_at_main149": "3b3f49d8f9da338e09f6ea61e6666951688c934b",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/tests/cf4_freno_duro.rs",
+      "change": "M",
+      "blob_at_main149": "457ebaf5e1bcdd20eec1b0e7fba8d37b2fbe3b4f",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/tests/cf5c_medida_de_ordenes_abiertas.rs",
+      "change": "A",
+      "blob_at_main149": "eff0c39cb0870627cb4193c4fdb5bfbe86a62c09",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/tests/cf5c_pico_plano_y_venue.rs",
+      "change": "A",
+      "blob_at_main149": "71c841fc64d2d845f9d23f956181a1c94f58a239",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/tests/drawdown_portfolio_contract.rs",
+      "change": "M",
+      "blob_at_main149": "87e291f113464c65cd3eb737bc53d0264ad3c23a",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/tests/fable_freno_duro_cache_contract.rs",
+      "change": "A",
+      "blob_at_main149": "cafd0171b51b6fe3b70bef31443523a385de42e4",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/tests/fable_funding_carry_ev_gate_contract.rs",
+      "change": "A",
+      "blob_at_main149": "a7847f5c764e9f2cf11fa0ee8709af7e40a642d2",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/tests/leverage_admission_contract.rs",
+      "change": "M",
+      "blob_at_main149": "1ec5d7db3746c04396f89579d8c1d1e1eed06141",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/risk-engine/tests/riemann_zeta_gue_contract.rs",
+      "change": "A",
+      "blob_at_main149": "d07540fe2df8be9388bbacb8b16a76f255155325",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/src/coaxial_breakout.rs",
+      "change": "M",
+      "blob_at_main149": "9c6e1dd0f3524d3aadb7f2a0cf572ef835e9b84a",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/src/feynman_propagator.rs",
+      "change": "M",
+      "blob_at_main149": "71a9743a10624f6f095db455992c48065eb0adc8",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/src/flow_excitation_confluence.rs",
+      "change": "M",
+      "blob_at_main149": "6e693de293a94529e2876451749a043cc8f2c8ff",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/src/navier_stokes_manifold.rs",
+      "change": "M",
+      "blob_at_main149": "267f30c7f7f6231d72ccb65d7bd30bffbf0b442e",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/src/orchestrator.rs",
+      "change": "M",
+      "blob_at_main149": "3ff9dbef58c75ca62ea56d13e70a2b1236a2dbce",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/src/skill_motores.rs",
+      "change": "M",
+      "blob_at_main149": "b2fd28cd80b91cc18feebbb0751560d45a26f374",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/tests/atiyah_singer_dirac_confluence_contract.rs",
+      "change": "A",
+      "blob_at_main149": "8f5bbf3f896e196c0223036971922e4999f5ac18",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/tests/birch_swinnerton_dyer_confluence_contract.rs",
+      "change": "A",
+      "blob_at_main149": "f8381d8f418f69754d3ebab60f6f0548cfcecf79",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/tests/cf2_cuantico_solucion_conocida.rs",
+      "change": "M",
+      "blob_at_main149": "92c69f60ebc7cbc63be6da695b41c71a9a0f71a7",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/tests/ensemble_calibrated_denominator_contract.rs",
+      "change": "A",
+      "blob_at_main149": "772e59a910c154f2dc14bc8c20e1fe1d05fd9464",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/tests/ensemble_characterization.rs",
+      "change": "M",
+      "blob_at_main149": "c3703ec4070adbaa5d58e47ce545d0636500268c",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/tests/helmholtz_confluence_contract.rs",
+      "change": "A",
+      "blob_at_main149": "d31c25ea46a5e323c303e99a2506090c89bc5845",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/tests/kahler_hodge_confluence_contract.rs",
+      "change": "A",
+      "blob_at_main149": "39762e113263448a5a630477dfed47d89067d16a",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/tests/navier_feynman_spectral_confluence_contract.rs",
+      "change": "A",
+      "blob_at_main149": "ac40cd82316788229f3a322592c2731b83d7cb70",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/tests/riemann_gue_confluence_contract.rs",
+      "change": "A",
+      "blob_at_main149": "0a5688c37cde271ae517ec09b5bebeb95af8f0d0",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/tests/wasserstein_kantorovich_confluence_contract.rs",
+      "change": "A",
+      "blob_at_main149": "956a5a868080227ab02ece618c973c599e9cf9f3",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/signal-engine/tests/yang_mills_confluence_contract.rs",
+      "change": "A",
+      "blob_at_main149": "26d8b9dd316264f258158a94fed4c4ee282ebd84",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/strategy-core/src/birch_swinnerton_dyer.rs",
+      "change": "A",
+      "blob_at_main149": "7b915a7d744ceb520c1b0ec2ca39580a192e7e55",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/strategy-core/src/kahler_hodge.rs",
+      "change": "A",
+      "blob_at_main149": "a479467abe3db1fcbe358fdbe249ccbca6830abe",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/strategy-core/src/lib.rs",
+      "change": "M",
+      "blob_at_main149": "85680038aabeddc6d7d131b4317245cb14f6afd0",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/strategy-core/src/stat_arb.rs",
+      "change": "M",
+      "blob_at_main149": "83420b145db31623795bdfb56022e646f08ed60e",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/strategy-core/src/vecm_arbitrage.rs",
+      "change": "M",
+      "blob_at_main149": "5e346728e1525f4e80e2d5c5240eb7dbe5688a0b",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/strategy-core/src/yang_mills_gauge.rs",
+      "change": "M",
+      "blob_at_main149": "46e482fd87d6cafd0b9cf8eb6da108ef6f06fdac",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/strategy-core/tests/birch_swinnerton_dyer_contract.rs",
+      "change": "A",
+      "blob_at_main149": "fbd4199a1ec8a129ecab1888f28e87df11b4dc49",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/strategy-core/tests/kahler_hodge_contract.rs",
+      "change": "A",
+      "blob_at_main149": "29aca0cfd1632918660775360b0d12f816413157",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/strategy-core/tests/lg8_open_bsd_kahler.rs",
+      "change": "A",
+      "blob_at_main149": "cc65940904d7f09477961cf16223f091de1cd825",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/strategy-core/tests/yang_mills_adaptation_contract.rs",
+      "change": "M",
+      "blob_at_main149": "43cf52938725b888487132d11b128ebf7138b37c",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "crates/strategy-core/tests/yang_mills_su_n_contract.rs",
+      "change": "A",
+      "blob_at_main149": "5ff7f4e83e407d4ebdedaaeef8b11d43e9468867",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/BARRIDO_EXHAUSTIVO_FASES.md",
+      "change": "M",
+      "blob_at_main149": "fc10bc92968601bc1ac69b9241899047395e37a2",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/PLAN_FABLE_OLA1_2026-10-17.md",
+      "change": "A",
+      "blob_at_main149": "e0a3ff88a85b1cda09cc3cf98f4cfc1f5a5ee289",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md",
+      "change": "M",
+      "blob_at_main149": "90e52cc9a3cdce65574a640f7a19c44b58d3a6de",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md",
+      "change": "M",
+      "blob_at_main149": "81b03fecf004df2eda08622d3db0982964272ac1",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md",
+      "change": "M",
+      "blob_at_main149": "1362c5a43be5d8803a1b3da314b68a389a2ad3f8",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/PLAN_MAESTRO_SINCRONIZACION.md",
+      "change": "M",
+      "blob_at_main149": "4786d70862e290ed77d71792e48ce05d472ff81a",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/adr/ADR-0017-frenos-de-drawdown-y-estado-aprendido.md",
+      "change": "M",
+      "blob_at_main149": "104d4d659096d4a383187ae6fb9781844bd1d092",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/ANALISIS_ACEPTACION_ENSAMBLE_2026-10-16.md",
+      "change": "A",
+      "blob_at_main149": "a803fbf4a82ce7c868c730c464df8654b32d5986",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/INTEGRACION_OLAS_2026-10-16.md",
+      "change": "A",
+      "blob_at_main149": "1ffc39dcc0db3bb61500bec2218bc835eed10853",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/LINEA_H_T3_V2_CIERRE_2026-10-15.md",
+      "change": "A",
+      "blob_at_main149": "8099cc01d183f99273f4d6660e279e0f82c19471",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/SOL_CONT2_R5_02B_COSECHA_2026-10-15.md",
+      "change": "A",
+      "blob_at_main149": "c7ff9a12a26d55052b39d6bace55d50a0c155842",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/fable/f1_aristas_muertas.tsv",
+      "change": "A",
+      "blob_at_main149": "44432313f3bc1c3bf645ccf811b14d33a2e94758",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/fable/f1_estado_no_acotado.tsv",
+      "change": "A",
+      "blob_at_main149": "0c935074e3301d31387d9e1731ecd2d8648cf4b4",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/fable/f1_hallazgos.json",
+      "change": "A",
+      "blob_at_main149": "9b7648a8b33da684e374cfb46de22e76b16898ae",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/fable/f1_hallazgos.tsv",
+      "change": "A",
+      "blob_at_main149": "a25e1c2f061a5c26efa6fb3e425d43accc491a3e",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/fable/f1_mapa_crates.md",
+      "change": "A",
+      "blob_at_main149": "ec0696ebd8d346bc783ca9973141a1ddab25ff84",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_g/ola8_medidor.tsv",
+      "change": "A",
+      "blob_at_main149": "0b578f530e0004522539351a61fa88d69b342e54",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_g/ola8_neff.py",
+      "change": "A",
+      "blob_at_main149": "ac73a85195e046011ff7dca1ebe9e60a31949c86",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_g/ola8_neff_2026-08.json",
+      "change": "A",
+      "blob_at_main149": "2f6743aef70f5c54c6b716c60e3248fa0a96d093",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_g/ola8_revision.tsv",
+      "change": "A",
+      "blob_at_main149": "bd8a26fc10afb77de7ec794cef3ba7f0718a45d4",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_g/ola8_t1.txt",
+      "change": "A",
+      "blob_at_main149": "f601f79e04accc30c9358edceba7366aaa6f73a3",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/README.md",
+      "change": "M",
+      "blob_at_main149": "c4b6b2e70f31e0ccbbfdebb1b2544aea5d61b411",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/ola3_adaptacion_v2.tsv",
+      "change": "A",
+      "blob_at_main149": "2dc4188975cab66d91ca14371de2b5f09b41da8b",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/ola3_adaptacion_v2_lineas.txt",
+      "change": "A",
+      "blob_at_main149": "a92e975da95ff9ad00753b449a666d55e1072f41",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/ola3_confirmaciones.tsv",
+      "change": "A",
+      "blob_at_main149": "dc1f290cae83ba490d0f62c0039a995786b29cd2",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/ola3_escalera_v1_vs_v2.tsv",
+      "change": "A",
+      "blob_at_main149": "4a57af938cd38e16a279f6cc74502bbf091d2753",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/ola3_escalera_v2_13usd.tsv",
+      "change": "A",
+      "blob_at_main149": "e7986ade7c561623b65603750425426a672a4c93",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/ola3_escalera_v2_lineas.txt",
+      "change": "A",
+      "blob_at_main149": "97ddca5e8b7f49d1e3054f2937439e465e681a98",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/ola3_escepticos.tsv",
+      "change": "A",
+      "blob_at_main149": "764902f33d52d5322ccd7ff335abefabe65066e7",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/ola3_escepticos_raw.json",
+      "change": "A",
+      "blob_at_main149": "41eac0bf020395bcd1750c948ddcce0e8965af41",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/ola3_escepticos_sintesis.md",
+      "change": "A",
+      "blob_at_main149": "3bfbd17e79ff92e598276f3659d17948dcf6d3cc",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/ola3_historical_manifest.json",
+      "change": "A",
+      "blob_at_main149": "dfdeabcc1edb94edb5274faae130c6dcd2e854a1",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/ola3_valle_v2.tsv",
+      "change": "A",
+      "blob_at_main149": "cd5abc96b5529dfda89a2e559451aceef8e642f7",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/std_contracts_2026-10-15.txt",
+      "change": "A",
+      "blob_at_main149": "049260bc8a434b2848fd696ddc32b3e04fcba1b8",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "docs/audit/linea_h/validation_2026-10-15.json",
+      "change": "A",
+      "blob_at_main149": "10a915a0a6cfad6070ffa8a172653dd6d4c1a60e",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "scripts/cargo_semaforo.sh",
+      "change": "A",
+      "blob_at_main149": "a1ce4186fdf33946711a7cf88808c317560cc719",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "scripts/disk_audit.sh",
+      "change": "A",
+      "blob_at_main149": "a10ebf48d7e37fcccef2097537c36f51537f5689",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "scripts/higiene_recursos.sh",
+      "change": "A",
+      "blob_at_main149": "9cb128142aa76bf70925c8ceea8312237a244b00",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "scripts/oracle_witness.sh",
+      "change": "M",
+      "blob_at_main149": "f37b435669005ad376436b7ef5b1d3f95b7e74a7",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "scripts/tests/test_cargo_semaforo.py",
+      "change": "A",
+      "blob_at_main149": "fcc3e7f8f252bed7556b70cae4ae2332d7968258",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "src/bin/evolution.rs",
+      "change": "M",
+      "blob_at_main149": "c5de9768f63a576a65ded89d4a434081da927591",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "src/bin/god_engine.rs",
+      "change": "M",
+      "blob_at_main149": "9953fd793e6772d2d4de252b760aa966e08e7802",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "src/bin/latency_flow_audit.rs",
+      "change": "M",
+      "blob_at_main149": "0d024606497c6568eb096be092c04779d11e078a",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "src/bin/train_forest.rs",
+      "change": "M",
+      "blob_at_main149": "522c7e07d9a959a8f2c6aca688a692b280d10e1c",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "src/bin/votes_export.rs",
+      "change": "M",
+      "blob_at_main149": "b0c0d5c22d3c5f8a8dcbdcdcba87ab1fe83923fe",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "src/lib.rs",
+      "change": "M",
+      "blob_at_main149": "5f726d3e1cb8da7066a33f315b22bd3a3af9dc8e",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    },
+    {
+      "path": "src/sa_params.rs",
+      "change": "A",
+      "blob_at_main149": "ea39a98e36b98d7ef61e79c81ef61f78828329a4",
+      "review_status": "PENDING_FULL_FILE_REVIEW"
+    }
+  ],
+  "limits": [
+    "No route marked fully audited by this snapshot.",
+    "Keep canonical BASE/Fable/owner ledgers and their identities; map evidence instead of silently closing rows.",
+    "Prior receipts do not certify the new source tree."
+  ]
+}

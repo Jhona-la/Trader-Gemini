@@ -948,6 +948,29 @@ impl RiskEngine {
         // Ahora ambos caminos llaman a la MISMA función pura con las MISMAS
         // entradas: la identidad es estructural, no disciplinaria.
         let tau_for_sizing = horizon_tau_ms_coin(intent, arena, coin_id);
+        // F-A1 (Fable, 2026-10-17) — COSTE DE CARRY ESPERADO del funding.
+        // Un perpetuo paga funding en cada asentamiento (T_F = 8 h): una
+        // posición mantenida τ cruza en media τ/T_F asentamientos y en cada
+        // uno paga d·f·nocional (d = +1 largo, −1 corto; f = tasa prevista
+        // del PRÓXIMO asentamiento, que el poller del host publica por
+        // símbolo en `CoinArena::funding_rate_next`). E[carry] = d·f·τ/T_F
+        // es exacto bajo fase uniforme, causal (f se conoce en t) y por
+        // símbolo. Sólo se cobra el COSTE; el ingreso esperado se acota en 0
+        // (un pronóstico de cobro no es evidencia para abrir). Sin dato o
+        // caducado (TTL) ⇒ 0: idéntico al comportamiento anterior. Entra en
+        // la barrera de EV (D-751) y en el impacto de comisión (LH-02); la
+        // geometría TP/SL (D-637) sigue sobre la fricción de ejecución, que
+        // es la que el host reproduce al construir los brackets.
+        let reloj_ms = arena.registry.get_event_time().max(0) as u64;
+        let carry_esperado = arena.coins[coin_id].expected_funding_cost(
+            intent.signal == SignalType::Long,
+            tau_for_sizing,
+            reloj_ms,
+        );
+        let friccion_total = roundtrip_fee + carry_esperado;
+        if !friccion_total.is_finite() || friccion_total < 0.0 {
+            return rej(REJ_INVALID_INPUT);
+        }
         // CL-26: la ley de escala del TP/SL usa el Hurst MUESTREADO POR RELOJ
         // (DFA al cierre de la vela de 1 minuto, D-615b), no
         // `hurst_scale_matched`. Ése (S-7) sale de ventanas de 10/25/50
@@ -1286,11 +1309,11 @@ impl RiskEngine {
         //
         // Fuera de la fase de sonda rige D-751 íntegro.
         if es_sonda {
-            if expected_win <= roundtrip_fee {
+            if expected_win <= friccion_total {
                 return rej(REJ_EV);
             }
         } else if p_ganar.is_some() {
-            let ev_minimo_requerido = roundtrip_fee * ev_fee_multiplier;
+            let ev_minimo_requerido = friccion_total * ev_fee_multiplier;
             if expected_value_pct <= ev_minimo_requerido {
                 return rej(REJ_EV);
             }
@@ -1651,7 +1674,7 @@ impl RiskEngine {
         {
             return rej(REJ_INVALID_INPUT);
         }
-        let final_fee_impact = roundtrip_fee * dynamic_leverage;
+        let final_fee_impact = friccion_total * dynamic_leverage;
         // LH-02 (Línea H / AGY): En el valle de capital ($35–$65 USD), allocated_capital
         // sitúa a la cuenta en régimen estándar (micro_w_alloc -> 0), haciendo que
         // max_fee_limit caiga al 1.0% de margen. Sin embargo, el dimensionamiento de

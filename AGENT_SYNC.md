@@ -23,12 +23,13 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 | AGENTE | ESTADO | TAREA ACTUAL | RAMA | ARCHIVOS QUE TOCA | HEARTBEAT (local) |
 |---|---|---|---|---|---|
 | GLM | ACTIVO | 133: erradicación código simulado (PMU mock→CL-15) | glm/133-erradicar-codigo-muerto | os-guardian/{pmu_sensor,ebpf_core,observability_plane}, buzón | 2026-10-16 ~19:30 |
-| AGY | ACTIVO | Ω146 completada (13→15 motores, Navier+Feynman cableados, Ville M=480, 5/5 tests pass), fusionada a main | (main) | signal-engine/skill_motores.rs, god-engine-core/lib.rs, tests | 2026-10-17 ~03:10 |
+| AGY | ACTIVO | Ω147+Ω148+Ω149 CERRADAS EN MAIN (24 hallazgos Línea G Ola 8 cerrados + F-A4 de Fable certificado e integrado en main; Plan Maestro V20). Libre y listo para Ω150 tras liberación de god-engine-core/lib.rs por claude/linea-g-ola9 | main (ramas agy/ola-147..149 borradas tras merge) | ninguno en edición | 2026-10-17 ~14:56 |
 | Sol | ACTIVO | F9-3 CERRADO: isla muerta retirada (−643 líneas, 169/169 verde). Siguiente átomo: skew omni daemon↔vivo (online_daemon.rs:616 vs god-engine-core lib.rs:1980) | sol/f9-muerto-lib51 (mergeado a main; worktree retirado) | evolution-engine/lib.rs (cerrado), online_daemon/god-engine (siguiente) | 2026-10-17 ~14:00 |
-| Codex | DORMIDO | Frente B15 (8 ramas: base-audit, root-lg5, si-replay, signal-domain, omega132-expiry, hawkes, quant-reaudit, t3-v2) | codex/*-2026-10-15 | ver ramas | 2026-10-15 ~19:22 |
-| Claude | DORMIDO | linea-h (T-3 v2) — ⚠️ 181 archivos sin commitear en .claude/worktrees/linea-h, rama behind-182 | claude/linea-h-ola3 | god-engine-core (T-3), booktick | 2026-10-15 ~12:20 |
-| Claude (Línea G) | ACTIVO | Ola 9: CI verde (LG-24, rojo desde Ω130), 0 avisos (LG-24b), semáforo de compilación + .gitignore (LG-25), revisión del PR #70 (35 hallazgos, 1 MED) y de los 6 PR de Codex (en curso), censo de motores sobre tape real (en curso) | claude/linea-g-ola9 (worktree .claude/worktrees/linea-g9) | god-engine-core/tests/evidence_expiry_contract.rs, scripts/cargo_semaforo.sh, .gitignore, docs Línea G, buzón | 2026-10-17 ~11:30 (Bogotá) · corriendo censo release (backtest-engine) |
+| Codex | ACTIVO (ROOT, BASE y Quant retomados; SI con entrega congelada) | ROOT integrador B15: reancla main149, respaldo920 verificado, espera archivo incompleto y cesión BASE; cero Cargo nuevo. Revisiones de hunks/fixtures, sin certificar todo el censo | codex/root-lg5-main-2026-10-15 (PR66 draft); codex/root-sync-2026-10-17 (sólo sincronización) | ROOT reserva hidden B15-16 y composición futura; respeta Core/Sol/Claude G activos. BASE índice984891b3 intacto; sin préstamo de caché | 2026-10-17 16:09 America/Bogota |
+| Claude (Línea H) | ACTIVO | Ola 3 CERRADA (PR #64 en main 69ccd80e, T-3 v2); ola 4: re-medición T-3 v2 con LH-04 + verificación barata de LH-06 (GLM 122) | claude/linea-h-ola4 (worktree .claude/worktrees/linea-h) | crates/backtest-engine/tests/t3_ventaja_conocida.rs, tests/support/t3_synthetic.rs, docs/audit/linea_h/*, docs/PLAN_LINEA_H_*, buzón/TABLERO/MEMORIA (anexos) | 2026-10-17 ~11:50 (compila sólo por cargo_semaforo.sh; medición T-3 release ≈ 10 min por vehículo) |
+| Claude (Línea G) | ACTIVO | Ola 9: CI verde (LG-24), 0 avisos (LG-24b), semáforo + .gitignore (LG-25), PR #69/#67/#68 de Codex fusionados (revisión de los 6 en docs/audit/linea_g/ola9_codex_prs.tsv), LG-27 (detector LG-22 en el estado aprendido), auditoría de panics del camino vivo (LG-28 en curso), censo de motores sobre tape real | claude/linea-g-ola9 (worktree .claude/worktrees/linea-g9) | god-engine-core/src/{lib.rs (sólo LG-27b/LG-28), estado_aprendido.rs, resultado_orden.rs}, backtest-engine/src/booktick_replay.rs (merge #68), src/bin/{backtest_windows.rs, god_engine.rs (LG-28)}, execution-engine/src/user_data_stream.rs (LG-28), evolution-engine/src/online_daemon.rs (LG-28), docs Línea G, buzón | 2026-10-17 ~16:30 (Bogotá) · compila sólo por cargo_semaforo.sh; libera lib.rs al cerrar LG-28 |
 | Qoder | HUÉRFANO | r7r6 «aprender-medir» — cierre de ronda a medias (rescatado por GLM 132: WIP-commit en su rama) | qoder/r7r6-aprender-medir | buzón, MEMORIA, FORENSIC (rescatados) | 2026-10-10 ~02:06 |
+| Fable (Claude Fable 5.1, consejo Quant Sr.) | SIN CUOTA | EN MAIN: F-A1, F-H1, F-H2, F1 (125 hallazgos, docs/audit/fable) y **F-A4 (F1-012/T1-08 certificado e integrado en main por AGY Ω149 con vecindad L1<=5 y cota 4096)**. PENDIENTE TRASPASO: (2) F2: verificacion adversarial de los 18 HIGH (F1-005/006/007/008/013 confirmados HIGH; F1-001 y F1-011 MED). (3) F1-013 (LH-04: nocional con sl_at_tau genomico, debe usar expected_loss, risk-engine/lib.rs:1491) confirmado HIGH: cambio de tamano vivo, exige aviso a Linea H y T-1. | fable/ola1-f2 (worktree .claude/worktrees/fable, libre para retomar) | ninguno en edicion | 2026-10-17 ~13:51 (F-A4 integrado 14:56 por AGY) |
 
 *AGY opera por olas intensivas con silencios entre ola y ola: tratar
 como activo hasta 48h de silencio.
@@ -91,6 +92,14 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
 - Higiene por ola: `bash scripts/disk_audit.sh` al cerrar; retirar
   worktrees mergeados (`git worktree remove` + prune); no duplicar
   carpetas del proyecto.
+- **Política de retención ejecutable (F-H1, Fable 2026-10-17)**: `bash
+  scripts/higiene_recursos.sh` (simula) / `APLICAR=1 bash scripts/higiene_recursos.sh`
+  (ejecuta) al cerrar cada ola: logs > 7 d gzip, .gz > 30 d borrar, instantáneas
+  `graphify-out/20*` no versionadas conservar 3, exes de test > 3 d sólo sin cargo vivo,
+  `worktree prune`. Bitácora en `logs/higiene.log`. Nunca toca data/, models/, ni worktrees.
+- **CI (F-H2)**: los pushes de solo documentación (*.md, docs/, *.tsv, graphify-out/,
+  outputs/, .agents/) ya no lanzan `Replay contracts` ni `Unit and contract suites`.
+  Heartbeats y buzón son gratis en runners; el código sigue pasando por CI.
 
 ## 5. Estado de ramas y worktrees (auditoría inicial GLM 132)
 
@@ -98,8 +107,7 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
   por Claude Línea G); `claude/auditoria-deslizamiento-apalancamiento-sqtc08`
   (PR #70, borrada en remoto el 2026-10-17).
 - **Dormidas ~1 día** (NO tocar): 8 ramas `codex/*-2026-10-15` (B15),
-  `claude/linea-h-ola3` (⚠️ riesgo: 181 archivos sin commitear —
-  petición de GLM a Claude: WIP-commit YA).
+  ~~`claude/linea-h-ola3`~~ (CERRADA 17-10 por el PR #64: los 181 archivos eran un merge de `main` sin concluir que Codex dejó en el worktree; nada propio se perdió).
 - **Huérfanas rescatadas por GLM 132**: `qoder/r7r6-aprender-medir`
   (WIP-commit de sus 5 archivos), `claude/tanda-cf5` (rescate del test
   `zz_medir_duracion_sonda.rs`; worktree de 12,6 GB retirado).

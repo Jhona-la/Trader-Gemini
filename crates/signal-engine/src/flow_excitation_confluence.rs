@@ -147,20 +147,24 @@ impl FlowExcitationConfluenceEngine {
         };
         for k in 0..32 {
             let x = desplazamientos[k];
-            if !x.is_finite() {
+            if !x.is_finite() || x.abs() <= 1e-12 {
                 continue;
             }
-            // En micro-escalas (k < 12), dominan la absorción iceberg local y la anomalía quiral de Dirac;
-            // en meso-escalas (8 <= k < 24), la corriente holomorfa Kähleriana, elíptica BSD y geodésica Wasserstein modulan la paridad;
-            // en macro-escalas (k >= 16), la corriente Yang-Mills y velocidad advectiva Wasserstein modulan la geometría global.
+            // G8-OMEGA-10: Perfiles continuos de acoplamiento espectral sobre k ∈ [0, 31]:
+            // - micro_factor: rampa lineal decreciente desde 1.0 (k=0) hacia 0.0 (k=32) para absorción iceberg y anomalía quiral de Dirac.
+            // - meso_factor: perfil triangular centrado en k=16 para corrientes restauradoras Kähleriana, elíptica BSD y geodésica Wasserstein.
+            // - macro_factor: rampa lineal creciente desde 0.0 (k=0) hacia 31/32 (k=31) para curvatura gauge Yang-Mills y advección Wasserstein.
             let micro_factor = (1.0 - (k as f64 / 32.0)).max(0.0);
             let meso_factor = (1.0 - ((k as f64 - 16.0) / 16.0).abs()).max(0.0);
             let macro_factor = (k as f64 / 32.0).clamp(0.0, 1.0);
-            let flujo = (x
-                + (p_ice * 0.5 + j_dirac * 0.25) * micro_factor
+            let current_sum = (p_ice * 0.5 + j_dirac * 0.25) * micro_factor
                 + (j_kh * 0.35 + j_bsd * 0.25 + v_wk * 0.20) * meso_factor
-                + (j_ym * 0.35 + v_wk * 0.20) * macro_factor)
-                .clamp(-10.0, 10.0);
+                + (j_ym * 0.35 + v_wk * 0.20) * macro_factor;
+            // G8-OMEGA-09: Proyección direccional sin inversión de signo.
+            // Las corrientes físicas amplifican la magnitud cuando están alineadas con x(τ_k)
+            // y la atenúan suavemente hacia 0.0 cuando se oponen, pero NUNCA invierten el signo
+            // del desplazamiento espectral x(τ_k) ni fabrican señal cuando x(τ_k) == 0.
+            let flujo = x.signum() * (x.abs() + x.signum() * current_sum).clamp(0.0, 10.0);
             let direccion = flujo.tanh();
             let coherencia = (flujo.abs().min(1.0) * excitacion * lam_scale).sqrt();
             por_escala[k] = (direccion * coherencia * gue_mod * bsd_mod * dirac_mod * wk_mod).clamp(-1.0, 1.0);
@@ -419,6 +423,8 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             Some(v) => v,
             None => return 0.0, // CL-15: sin base medida, el lift no es medible — no opina
         };
+        // G8-OMEGA-11: `ml_model_lift` admite llave explícita (`ml_model_lift`), llave dinámica
+        // (`ml_lift_dynamic`) o escalamiento continuo por dispersión (`atr_pct`), con fallback seguro a 0.05.
         let ml_lift = r
             .get_scoped_parameter(
                 sym_opt,
@@ -426,9 +432,31 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
                 "ml_model_lift",
                 "FlowExcitationConfluenceEngine",
             )
+            .or_else(|| {
+                r.get_scoped_parameter(
+                    sym_opt,
+                    cid_opt,
+                    "ml_lift_dynamic",
+                    "FlowExcitationConfluenceEngine",
+                )
+            })
             .map(|p| p.get_value())
             .filter(|v| v.is_finite() && *v > 0.0 && *v < 0.5)
-            .unwrap_or(0.05);
+            .unwrap_or_else(|| {
+                let atr = r
+                    .get_scoped_parameter(
+                        sym_opt,
+                        cid_opt,
+                        "atr_pct",
+                        "FlowExcitationConfluenceEngine",
+                    )
+                    .map(|p| p.get_value())
+                    .filter(|v| v.is_finite() && *v > 0.0);
+                match atr {
+                    Some(a) => (0.05 * (a / 0.002).sqrt()).clamp(0.02, 0.15),
+                    None => 0.05,
+                }
+            });
 
         // #535 (3ª iteración): el umbral de excitación vuelve a ser del
         // GEN, anclado al estado estacionario del proceso. El gen
@@ -438,18 +466,36 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         // del estado estacionario (≈1.6): el gate medía «hubo actividad»,
         // no «hubo ráfaga», y sin consumidor el gen era un muerto que la
         // evolución arrastraba sin gradiente.
-        let hawkes_gene = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "hawkes_excitation_gene",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && (0.50..=0.95).contains(v))
-            .unwrap_or(0.55);
+        let hawkes_gene = {
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, "hawkes_excitation_gene", 0.55);
+            if v.is_finite() && (0.50..=0.95).contains(&v) {
+                v
+            } else {
+                0.55
+            }
+        };
         let excitation = (hawkes_gene - 0.50).max(0.0) * 2.0;
         let effective_hawkes_thresh = crate::hawkes_bessel::STEADY_STATE_RATIO + excitation;
+
+        let rampa = |exceso: f64, ancho: f64| {
+            let t = (exceso / ancho.max(1e-9)).clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        let w_hawkes = rampa(
+            hawkes - effective_hawkes_thresh,
+            0.30 * effective_hawkes_thresh.max(0.01),
+        );
+        // LG8-RENDIMIENTO (OLA Ω149): Cortocircuito temprano O(1) cuando Hawkes o el lift ML
+        // anulan la señal base, evitando ~19 lecturas del registro por evento y moneda.
+        if w_hawkes <= 1e-12 {
+            return 0.0;
+        }
+
+        let w_ml_long = rampa(ml_prob - (ml_base + ml_lift), ml_lift.max(1e-4));
+        let w_ml_short = rampa((ml_base - ml_lift) - ml_prob, ml_lift.max(1e-4));
+        if w_ml_long <= 1e-12 && w_ml_short <= 1e-12 {
+            return 0.0;
+        }
 
         // #590 — el piso del OBI deja de ser la constante mágica 0.2 y pasa
         // a ser MEDIDO + GENÓMICO: percentil-80 del OBI del símbolo (su
@@ -457,63 +503,41 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         // [0.1, 3.0] — la rareza estadística que el gen anunciaba, empírica
         // y adaptativa por símbolo/régimen. Fallbacks: p80 0.15 (el propio
         // fallback del motor cuantílico), gen 1.0 (su default).
-        let obi_gene = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "obi_zscore_gene",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && (0.1..=3.0).contains(v))
-            .unwrap_or(1.0);
-        let obi_p80 = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "obi_p80_medido",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v >= 0.0)
-            .unwrap_or(0.15);
+        let obi_gene = {
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, "obi_zscore_gene", 1.0);
+            if v.is_finite() && (0.1..=3.0).contains(&v) {
+                v
+            } else {
+                1.0
+            }
+        };
+        let obi_p80 = {
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, "obi_p80_medido", 0.15);
+            if v.is_finite() && v >= 0.0 {
+                v
+            } else {
+                0.15
+            }
+        };
         let obi_floor = (obi_p80 * obi_gene).max(0.02);
 
         // OLA Ω133: ACOPLAMIENTO TENSORIAL DE LIQUIDEZ OCULTA (KYLE-HASBROUCK)
         // Leemos la presión neta de iceberg y el estado de absorción desde el registro.
         let hidden_liq_pressure = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "hidden_liquidity_pressure",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite())
-            .unwrap_or(0.0)
+            .get_scoped_val_or(sym_opt, cid_opt, "hidden_liquidity_pressure", 0.0)
             .clamp(-1.0, 1.0);
 
-        let is_iceberg_active = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "is_iceberg_active",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite())
-            .unwrap_or(0.0) > 0.5;
+        let is_iceberg_active =
+            r.get_scoped_val_or(sym_opt, cid_opt, "is_iceberg_active", 0.0) > 0.5;
 
-        let hidden_liq_weight = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "hidden_liquidity_weight",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v >= 0.0 && *v <= 1.0)
-            .unwrap_or(0.30);
+        let hidden_liq_weight = {
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, "hidden_liquidity_weight", 0.30);
+            if v.is_finite() && (0.0..=1.0).contains(&v) {
+                v
+            } else {
+                0.30
+            }
+        };
 
         // Modulación de OBI efectivo: el libro visible se complementa con la absorción oculta
         let obi_eff = (obi + hidden_liq_weight * hidden_liq_pressure).clamp(-1.0, 1.0);
@@ -523,14 +547,6 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         // saltaba de 0 a obi·lift·4·hawkes_scale al cruzar cualquiera
         // de los dos umbrales. Dentro de la región (exceso ≥ ancho)
         // el peso es 1: el comportamiento en región se conserva.
-        let rampa = |exceso: f64, ancho: f64| {
-            let t = (exceso / ancho.max(1e-9)).clamp(0.0, 1.0);
-            t * t * (3.0 - 2.0 * t)
-        };
-        let w_hawkes = rampa(
-            hawkes - effective_hawkes_thresh,
-            0.30 * effective_hawkes_thresh.max(0.01),
-        );
         let w_obi_raw = rampa(obi.abs() - obi_floor, 0.50 * obi_floor);
         let w_iceberg = if is_iceberg_active {
             rampa(hidden_liq_pressure.abs() - 0.25, 0.25)
@@ -544,8 +560,6 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         // obi·lift·4·scale al cruzar el umbral. Rampa smoothstep de ancho
         // lift: dentro (≥ 2·lift de exceso) peso 1, comportamiento en
         // región profunda conservado.
-        let w_ml_long = rampa(ml_prob - (ml_base + ml_lift), ml_lift.max(1e-4));
-        let w_ml_short = rampa((ml_base - ml_lift) - ml_prob, ml_lift.max(1e-4));
         let is_long = obi_eff > 0.0;
         let is_short = obi_eff < 0.0;
 
@@ -564,9 +578,14 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             0.0
         };
 
+        let pre_voto = base_voto * w_hawkes * w_obi;
+        if pre_voto.abs() <= 1e-12 {
+            return 0.0;
+        }
+
         // Modulación Direccional Tensorial por Liquidez Oculta:
         let mut mult_liq = 1.0;
-        if base_voto.abs() > 1e-9 && hidden_liq_pressure.abs() > 1e-4 {
+        if hidden_liq_pressure.abs() > 1e-4 {
             let intent_dir = base_voto.signum();
             let alignment = intent_dir * hidden_liq_pressure; // in [-1.0, 1.0]
 
@@ -584,63 +603,39 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
                 mult_liq = 1.0 - t_opp * t_opp * (3.0 - 2.0 * t_opp);
             }
         }
+        if mult_liq <= 1e-12 {
+            return 0.0;
+        }
 
         // OLA Ω137: MODULACIÓN POR DESCOMPOSICIÓN DE HELMHOLTZ-HODGE (L² = ∇φ ⊕ ∇×A ⊕ h)
-        // La convicción modula la señal: flujos laminares genuinos (Λ > 0.35) reciben bonificación,
-        // mientras que alta enstrofía rotacional (spoofing / turbulencia) atenúa suavemente vía Hermite C¹.
-        let helmholtz_conviction = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "helmholtz_conviction",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v >= 0.0)
-            .unwrap_or(1.0);
+        let helmholtz_conviction = {
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, "helmholtz_conviction", 1.0);
+            if v.is_finite() && v >= 0.0 {
+                v
+            } else {
+                1.0
+            }
+        };
 
         // OLA Ω138: MODULACIÓN POR CURVATURA GAUGE YANG-MILLS SU(N) Y CORRIENTES RESTAURADORAS J_i
-        // Leemos la corriente gauge covariante J_i calculada en tiempo real para este activo en la red multiactivo.
-        // Si el flujo local está alineado con la fuerza restauradora global del fibrado principal,
-        // recibe bonificación de confluencia (+hasta 20%); si colisiona contra una dislocación severa,
-        // se atenúa suavemente vía Hermite C¹ (smoothstep).
-        let ym_current_absent = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "yang_mills_current_absent",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .unwrap_or(0.0) > 0.5;
+        let ym_current_absent =
+            r.get_scoped_val_or(sym_opt, cid_opt, "yang_mills_current_absent", 0.0) > 0.5;
 
         let ym_current = if !ym_current_absent {
-            r.get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "yang_mills_current",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite())
-            .unwrap_or(0.0)
-            .clamp(-1.0, 1.0)
+            r.get_scoped_val_or(sym_opt, cid_opt, "yang_mills_current", 0.0)
+                .clamp(-1.0, 1.0)
         } else {
             0.0
         };
 
         let mut mult_ym = 1.0;
-        if !ym_current_absent && base_voto.abs() > 1e-9 && ym_current.abs() > 1e-4 {
+        if !ym_current_absent && ym_current.abs() > 1e-4 {
             let intent_dir = base_voto.signum();
             let ym_alignment = intent_dir * ym_current; // in [-1.0, 1.0]
 
             if ym_alignment >= 0.0 {
-                // Flujo ALINEADO con la corriente restauradora gauge SU(N):
-                // La paridad global impulsa la reversión a favor de nuestra posición (+bonus hasta +20%)
                 mult_ym = 1.0 + 0.20 * rampa(ym_alignment, 0.40);
             } else {
-                // Flujo OPUESTO a la corriente restauradora gauge SU(N) (ej. Long cuando el activo está sobrecomprado en la tríada):
-                // Atenuación suave C¹ (Hermite smoothstep): a partir de -0.15 atenúa, y si la oposición es fuerte (-0.75) atenúa al 20%
                 let x_opp = -ym_alignment;
                 let t_opp = ((x_opp - 0.15) / 0.60).clamp(0.0, 1.0);
                 mult_ym = 1.0 - 0.80 * t_opp * t_opp * (3.0 - 2.0 * t_opp);
@@ -648,45 +643,24 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         }
 
         // OLA Ω139: MODULACIÓN POR VARIEDADES KÄHLERIANAS Y FORMAS DE HODGE (1, 1)
-        // Leemos la corriente restauradora holomorfa J_Kahler desde el registro.
-        // Si el flujo local está alineado con la fuerza restauradora del potencial de Kähler K(z, \bar{z}),
-        // recibe bonificación de confluencia (+hasta 15%); si colisiona contra el gradiente de la variedad,
-        // se atenúa suavemente vía Hermite C¹ (smoothstep).
-        let kh_current_absent = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "kahler_current_absent",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .unwrap_or(0.0) > 0.5;
+        let kh_current_absent =
+            r.get_scoped_val_or(sym_opt, cid_opt, "kahler_current_absent", 0.0) > 0.5;
 
         let kh_current = if !kh_current_absent {
-            r.get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "kahler_restoring_current",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite())
-            .unwrap_or(0.0)
-            .clamp(-1.0, 1.0)
+            r.get_scoped_val_or(sym_opt, cid_opt, "kahler_restoring_current", 0.0)
+                .clamp(-1.0, 1.0)
         } else {
             0.0
         };
 
         let mut mult_kh = 1.0;
-        if !kh_current_absent && base_voto.abs() > 1e-9 && kh_current.abs() > 1e-4 {
+        if !kh_current_absent && kh_current.abs() > 1e-4 {
             let intent_dir = base_voto.signum();
             let kh_alignment = intent_dir * kh_current; // in [-1.0, 1.0]
 
             if kh_alignment >= 0.0 {
-                // Flujo ALINEADO con la fuerza restauradora holomorfa Kähleriana:
                 mult_kh = 1.0 + 0.15 * rampa(kh_alignment, 0.40);
             } else {
-                // Flujo OPUESTO al gradiente del potencial de Kähler:
                 let x_opp = -kh_alignment;
                 let t_opp = ((x_opp - 0.15) / 0.60).clamp(0.0, 1.0);
                 mult_kh = 1.0 - 0.75 * t_opp * t_opp * (3.0 - 2.0 * t_opp);
@@ -694,50 +668,31 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         }
 
         // OLA Ω140: MODULACIÓN POR REPULSIÓN DE NIVELES RIEMANN ZETA / GUE (MONTGOMERY-ODLYZKO)
-        // Cuando el espectro colapsa hacia degeneración de niveles (s_i -> 0, contagio sistémico),
-        // `riemann_gue_conviction` atenúa suavemente vía Hermite C¹ hasta 0.25. Cuando exhibe
-        // repulsión cuántica de niveles GUE en la línea crítica Re(s) = 1/2, amplifica hasta 1.15.
-        let riemann_gue_conviction = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "riemann_gue_conviction",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v > 0.0)
-            .map(|v| v.clamp(0.25, 1.15))
-            .unwrap_or(1.0);
+        let riemann_gue_conviction = {
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, "riemann_gue_conviction", 1.0);
+            if v.is_finite() && v > 0.0 {
+                v.clamp(0.25, 1.15)
+            } else {
+                1.0
+            }
+        };
 
         // OLA Ω141: MODULACIÓN POR CONJETURA DE BIRCH Y SWINNERTON-DYER (CURVAS ELÍPTICAS Y FUNCIÓN L DE HASSE-WEIL)
-        // `bsd_conviction_modulation` pondera la no-singularidad elíptica (\Delta != 0) y el rango analítico r_BSD.
-        // Además, `bsd_restoring_current` bonifica cuando el flujo está alineado con la corriente restauradora elíptica.
-        let bsd_conviction = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "bsd_conviction_modulation",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v > 0.0)
-            .map(|v| v.clamp(0.30, 1.15))
-            .unwrap_or(1.0);
+        let bsd_conviction = {
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, "bsd_conviction_modulation", 1.0);
+            if v.is_finite() && v > 0.0 {
+                v.clamp(0.30, 1.15)
+            } else {
+                1.0
+            }
+        };
 
         let bsd_current = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "bsd_restoring_current",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite())
-            .unwrap_or(0.0)
+            .get_scoped_val_or(sym_opt, cid_opt, "bsd_restoring_current", 0.0)
             .clamp(-1.0, 1.0);
 
         let mut mult_bsd_dir = 1.0;
-        if base_voto.abs() > 1e-9 && bsd_current.abs() > 1e-4 {
+        if bsd_current.abs() > 1e-4 {
             let intent_dir = base_voto.signum();
             let bsd_alignment = intent_dir * bsd_current;
             if bsd_alignment >= 0.0 {
@@ -750,34 +705,21 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         }
 
         // OLA Ω142: MODULACIÓN POR TEOREMA DEL ÍNDICE DE ATIYAH-SINGER Y MODOS CERO DE DIRAC
-        // `dirac_conviction_modulation` regula la variedad por el género \hat{A}(M) y el índice topológico \ker D_+ - \ker D_-.
-        // `dirac_chiral_current` bonifica cuando el flujo está alineado con la corriente de anomalía quiral de Adler-Bell-Jackiw.
-        let dirac_conviction = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "dirac_conviction_modulation",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v > 0.0)
-            .map(|v| v.clamp(0.30, 1.15))
-            .unwrap_or(1.0);
+        let dirac_conviction = {
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, "dirac_conviction_modulation", 1.0);
+            if v.is_finite() && v > 0.0 {
+                v.clamp(0.30, 1.15)
+            } else {
+                1.0
+            }
+        };
 
         let dirac_current = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "dirac_chiral_current",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite())
-            .unwrap_or(0.0)
+            .get_scoped_val_or(sym_opt, cid_opt, "dirac_chiral_current", 0.0)
             .clamp(-1.0, 1.0);
 
         let mut mult_dirac_dir = 1.0;
-        if base_voto.abs() > 1e-9 && dirac_current.abs() > 1e-4 {
+        if dirac_current.abs() > 1e-4 {
             let intent_dir = base_voto.signum();
             let dirac_alignment = intent_dir * dirac_current;
             if dirac_alignment >= 0.0 {
@@ -790,34 +732,21 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
         }
 
         // OLA Ω143: MODULACIÓN POR TRANSPORTE ÓPTIMO WASSERSTEIN-KANTOROVICH W_2 (BENAMOU-BRENIER)
-        // `wasserstein_conviction_modulation` regula la coherencia geodésica \eta_{OT} frente a fracturas de régimen.
-        // `wasserstein_barycenter_velocity` bonifica cuando el flujo está alineado con el desplazamiento advectivo del baricentro.
-        let wk_conviction = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "wasserstein_conviction_modulation",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v > 0.0)
-            .map(|v| v.clamp(0.30, 1.15))
-            .unwrap_or(1.0);
+        let wk_conviction = {
+            let v = r.get_scoped_val_or(sym_opt, cid_opt, "wasserstein_conviction_modulation", 1.0);
+            if v.is_finite() && v > 0.0 {
+                v.clamp(0.30, 1.15)
+            } else {
+                1.0
+            }
+        };
 
         let wk_velocity = r
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "wasserstein_barycenter_velocity",
-                "FlowExcitationConfluenceEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite())
-            .unwrap_or(0.0)
+            .get_scoped_val_or(sym_opt, cid_opt, "wasserstein_barycenter_velocity", 0.0)
             .clamp(-1.0, 1.0);
 
         let mut mult_wk_dir = 1.0;
-        if base_voto.abs() > 1e-9 && wk_velocity.abs() > 1e-4 {
+        if wk_velocity.abs() > 1e-4 {
             let intent_dir = base_voto.signum();
             let wk_alignment = intent_dir * wk_velocity;
             if wk_alignment >= 0.0 {
@@ -829,21 +758,39 @@ impl QuantumStrategy for FlowExcitationConfluenceEngine {
             }
         }
 
-        (base_voto
-            * w_hawkes
-            * w_obi
-            * mult_liq
-            * helmholtz_conviction
-            * mult_ym
-            * mult_kh
-            * riemann_gue_conviction
-            * bsd_conviction
-            * mult_bsd_dir
-            * dirac_conviction
-            * mult_dirac_dir
-            * wk_conviction
-            * mult_wk_dir)
-            .clamp(-1.0, 1.0)
+        // G8-OMEGA-10 & G8-OMEGA-18 (OLA Ω149): Normalización log-euclídea por dimensión efectiva
+        // contra la colinealidad de los 7 moduladores físicos derivados del flujo/OFI:
+        //   M_field = exp( (1 / √N_activos) * Σ_{m ∈ activos} ln(μ_m) )
+        // Cuando sólo 1 módulo está activo (N_activos = 1), √1 = 1 y devuelve μ_1 exacto bit a bit.
+        // Cuando múltiples módulos correlacionados del OFI se activan simultáneamente (N_activos >= 2),
+        // evita que el producto sin calibrar explote a ~5.3x o colapse a ~1e-6 por contar el mismo rasgo 7 veces.
+        let mod_factors = [
+            helmholtz_conviction,
+            mult_ym,
+            mult_kh,
+            riemann_gue_conviction,
+            bsd_conviction * mult_bsd_dir,
+            dirac_conviction * mult_dirac_dir,
+            wk_conviction * mult_wk_dir,
+        ];
+        let mut n_active_mods = 0usize;
+        let mut single_mod = 1.0f64;
+        let mut log_sum = 0.0f64;
+        for &m in &mod_factors {
+            if m.is_finite() && (m - 1.0).abs() > 1e-9 {
+                let m_safe = m.max(1e-6);
+                n_active_mods += 1;
+                single_mod = m;
+                log_sum += m_safe.ln();
+            }
+        }
+        let field_mult = match n_active_mods {
+            0 => 1.0,
+            1 => single_mod,
+            n => (log_sum / (n as f64).sqrt()).exp().clamp(0.15, 1.45),
+        };
+
+        (pre_voto * mult_liq * field_mult).clamp(-1.0, 1.0)
     }
 
     fn horizon(&self) -> strategy_core::TradeHorizon {
@@ -1110,4 +1057,49 @@ mod qo_663_tests {
         );
         assert!(max_cascada > 0.0, "cascada debe votar");
     }
+
+    #[test]
+    fn g8_omega_10_effective_dimension_log_euclidean_collinearity_bound() {
+        let registry = Arc::new(OmniscientRegistry::new());
+        registry.set("hawkes_intensity", 3.2);
+        registry.set("order_book_imbalance", 0.35);
+        registry.set("ml_prob_motor", 0.45);
+        registry.set("ml_model_base", 0.30);
+
+        let mut engine = FlowExcitationConfluenceEngine::new();
+        engine.init(Arc::clone(&registry)).unwrap();
+
+        let base = engine.evaluate();
+        assert!(base > 0.05 && base < 0.50, "base={base}");
+
+        // Activar 1 solo modulador (Helmholtz = 1.25): paridad exacta 1.25x
+        registry.set("helmholtz_conviction", 1.25);
+        let one_mod = engine.evaluate();
+        assert!(
+            ((one_mod / base) - 1.25).abs() < 1e-12,
+            "Con 1 modulador activo debe preservar factor exacto 1.25x: ratio={}",
+            one_mod / base
+        );
+
+        // Activar los 7 moduladores al máximo simultáneamente:
+        // Sin normalización por dimensión efectiva (1/√7), el producto bruto sería ~4.5x.
+        // Con normalización log-euclídea 1/√N_activos, el multiplicador efectivo queda acotado <= 1.45x.
+        registry.set("yang_mills_current", 0.80);
+        registry.set("kahler_restoring_current", 0.80);
+        registry.set("riemann_gue_conviction", 1.15);
+        registry.set("bsd_conviction_modulation", 1.15);
+        registry.set("bsd_restoring_current", 0.80);
+        registry.set("dirac_conviction_modulation", 1.15);
+        registry.set("dirac_chiral_current", 0.80);
+        registry.set("wasserstein_conviction_modulation", 1.15);
+        registry.set("wasserstein_barycenter_velocity", 0.80);
+
+        let all_seven_bull = engine.evaluate();
+        let ratio_bull = all_seven_bull / base;
+        assert!(
+            ratio_bull > 1.25 && ratio_bull <= 1.45 + 1e-9,
+            "G8-OMEGA-10: 7 moduladores colineales no deben explotar a 4.5x: ratio={ratio_bull}"
+        );
+    }
 }
+

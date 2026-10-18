@@ -224,11 +224,31 @@ impl NavierStokesManifoldEngine {
                 continue;
             }
             let safe_z = z.clamp(-10.0, 10.0);
-            let re_modal = Self::compute_modal_reynolds_with_scale(safe_z, k, safe_visc, params.scale_weight_factor);
+            // OLA Ω149 (LG8-146-02): Derivada material hidrodinámica en el colector de escalas:
+            // incorpora advección de cascada desde la escala macro adyacente (z_{k+1} - z_k)
+            // y difusión laplaciana viscosa (z_{k+1} - 2 z_k + z_{k-1}) / (1 + ν).
+            // En campos uniformes z_k = c ambos términos valen 0.0 exacto (retrocompatibilidad),
+            // bajo espejo z -> -z es estrictamente impar, y ante picos locales contra la cascada
+            // macro deja de ser un clon monótono de sign(z_k).
+            let z_prev = if k > 0 && desplazamientos[k - 1].is_finite() {
+                desplazamientos[k - 1].clamp(-10.0, 10.0)
+            } else {
+                safe_z
+            };
+            let z_next = if k + 1 < ESCALAS_VOTO && desplazamientos[k + 1].is_finite() {
+                desplazamientos[k + 1].clamp(-10.0, 10.0)
+            } else {
+                safe_z
+            };
+            let cascade_advection = z_next - safe_z;
+            let scale_laplacian = z_next - 2.0 * safe_z + z_prev;
+            let u_eff = safe_z + 0.55 * cascade_advection + (0.35 / (1.0 + safe_visc)) * scale_laplacian;
+
+            let re_modal = Self::compute_modal_reynolds_with_scale(u_eff, k, safe_visc, params.scale_weight_factor);
             let eta = Self::compute_kolmogorov_inertial_efficiency(re_modal);
 
-            // Dirección suave vía tanh(z * scale), ponderada por la eficiencia inercial eta y modulación laminar
-            let signal = (safe_z * params.signal_tanh_scale).tanh() * eta * global_modulation;
+            // Dirección suave vía tanh(u_eff * scale), ponderada por la eficiencia inercial eta y modulación laminar
+            let signal = (u_eff * params.signal_tanh_scale).tanh() * eta * global_modulation;
             por_escala[k] = signal.clamp(-1.0, 1.0);
         }
 

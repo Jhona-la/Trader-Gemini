@@ -1,5 +1,112 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Antigravity (AGY, Quant Sr.): Ola Ω148 CERRADA — Continuidad $C^1$ e Invarianza Adimensional RMS en Helmholtz-Hodge (`G8-OMEGA-07`), Ventana Unimodal GUE Anti-Picket-Fence (`G8-OMEGA-08`), Anclaje Neutral y $C^1$ en Dirac (`G8-OMEGA-15`), Proyección sin Inversión de Signo en Confluencia Espectral (`G8-OMEGA-09/11`), Operabilidad de Feynman en Fallback Escalar (`LG8-145-06`) y Causalidad + Adimensionalidad en Hedge por Fuente (`CSG-2` HIGH, `LG8-145-04/05`)
+
+- **Rama**: `agy/ola-148-helmholtz-riemann-dirac-confluence-hedge-c1` (fusionada a `main` y retirada).
+- **Hallazgos Línea G Ola 8 Cerrados (9 en total)**: `CSG-2` (HIGH), `G8-OMEGA-07` (MED), `G8-OMEGA-08` (MED), `G8-OMEGA-09` (MED), `G8-OMEGA-11` (LOW), `G8-OMEGA-15` (INFO), `LG8-145-04` (LOW), `LG8-145-05` (LOW), `LG8-145-06` (INFO).
+- **Cambios matemáticos y algorítmicos**:
+  1. **`crates/dark-alpha-engine/src/helmholtz_hodge.rs` (`G8-OMEGA-07`)**:
+     - Normalizada la velocidad de precio $u_p$ por su escala RMS de ventana con regularización de $1.0\text{ bps}^2$ (`p_scale = (p_sq_sum / n + 1.0).sqrt()`), garantizando que $\nabla \cdot \mathbf{u}$ y $\nabla \times \mathbf{u}$ sean adimensionales e invariantes entre activos de distinto precio/tick.
+     - Reemplazado el escalón $C^0$ (`if is_laminar_safe ... else ...`) en `min_laminar_fraction = 0.35` (que saltaba de `1.0` a `0.10`) por un spline Hermite $C^1$ unificado (`(1.0 + 0.30 * h_lam * h_ens_gate - 0.90 * h_turb).clamp(0.10, 1.30)`) con valor `1.0` y derivada nula a ambos lados del umbral.
+  2. **`crates/risk-engine/src/riemann_zeta_gue.rs` (`G8-OMEGA-08`)**:
+     - Incorporada la desviación estándar empírica de espaciamientos desplegados $\sigma(s)$ y una ventana unimodal Hermite $C^1$ centrada en GUE (`picket_decay = 1.0 - hermite_smoothstep_c1(mean_gap_ratio, 0.72, 0.90)` y `anti_crystal_gate`), de modo que rejillas regulares picket-fence y rampas EMA monótonas ($\langle r \rangle \to 1, \sigma(s) \to 0$) se atenúan (`< 0.45`) en lugar de saturar el bono `1.15`, mientras los ceros de Riemann Zeta ($\langle r \rangle \approx 0.613, \sigma(s) \approx 0.37$) preservan `gue_conviction_modulation > 0.90`.
+  3. **`crates/dark-alpha-engine/src/atiyah_singer_dirac.rs` (`G8-OMEGA-15`)**:
+     - Reemplazados los escalones $C^0$ en `dx * dx_prev < 0.0` y `|a_mid| > 0.05` por compuertas Hermite $C^1$, y eliminado el castigo espurio del `-12%` (`0.88`) sobre variedades planas/neutrales (`a_roof == 1.0, topological_strength == 0.0` ahora produce `dirac_conviction_modulation == 1.00`).
+  4. **`crates/signal-engine/src/flow_excitation_confluence.rs` (`G8-OMEGA-09`, `G8-OMEGA-10`, `G8-OMEGA-11`)**:
+     - En `voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz`, si `|x(τ_k)| <= 1e-12` la escala se omite (las corrientes físicas jamás fabrican voto donde no hay flujo), y cuando `x(τ_k) != 0` el flujo proyecta `x.signum() * (x.abs() + x.signum() * current_sum).clamp(0.0, 10.0)`, impidiendo que corrientes opuestas inviertan el signo de `x(τ_k)`.
+     - `ml_model_lift` admite llave dinámica (`ml_lift_dynamic`) o escalamiento continuo por dispersión (`atr_pct`) antes del fallback `0.05`.
+  5. **`crates/signal-engine/src/feynman_propagator.rs` (`LG8-145-06`)**:
+     - Implementado `is_operable_for_coin` en `FeynmanPropagatorEngine`: devuelve `false` en el régimen de fallback escalar (`tau_dom < TAU_ANCHOR_FAST_MS` o `|dominant_v| <= 1e-9`), evitando diluir `n_fuentes` cuando Feynman se auto-silencia por diseño.
+  6. **`crates/signal-engine/src/orchestrator.rs` (`CSG-2` HIGH, `LG8-145-04`, `LG8-145-05`)**:
+     - Añadido `voto_ancla_hedge: Vec<AtomicF64>`: en cada cadencia de 1024 consensos, Hedge calcula el retorno relativo adimensional `((mid - prev) / prev) / escala` y evalúa los votos anclados en `t_prev` (`voto_ancla_hedge`) antes de capturar la nueva instantánea de `t_now`.
+     - Simplificado `evaluate_horizon_consensus` eliminando 194 líneas de código inalcanzable (`LG8-145-04`) y retiradas las escrituras sin lector `qo_145_*` (`LG8-145-05`).
+- **Verificación (vía `scripts/cargo_semaforo.sh`)**:
+  - `helmholtz_hodge_contract` (5/5), `atiyah_singer_dirac_contract` (6/6), `riemann_zeta_gue_contract` (6/6), `ensemble_characterization` (14/14), `ensemble_calibrated_denominator_contract` (6/6), `navier_feynman_spectral_confluence_contract` (5/5) y `signal-engine --lib` (121/121) 100% verdes.
+
+## 2026-10-17 — Fable (Claude Fable 5.1, consejo Quant Sr.): Ola F1 — auditoría desde la base (125 hallazgos), F-A1 funding de extremo a extremo, higiene y CI
+
+- **F-A1 (en main)**: funding per-símbolo vive en `CoinArena::funding_rate_next` (+ marca; NaN = sin dato;
+  TTL 360 s fail-closed) y lo consume la barrera de EV del risk-engine como coste de carry esperado
+  E[carry] = máx(0, d·f·τ/T_F), T_F = 8 h, también en `fee_impact`; la geometría TP/SL sigue sobre la
+  fricción de ejecución (paridad D-637). Retirados `FundingRateElasticity` (arista muerta) y
+  `update_macro_flow`; `update_macro_features(obi, dex, ts)`. Reloj del riesgo = `registry.get_event_time()`:
+  en replay no hay poller ⇒ sin dato ⇒ conducta idéntica a antes (sin T-1 por eso). Contratos
+  `fable_funding_carry_contract` (10) y `fable_funding_carry_ev_gate_contract` (7).
+- **Abiertos derivados**: F-A2 gen `funding_rate_sensitivity` (vec[6] de 144) sin lector vivo; sólo escala un
+  funding SINTÉTICO en `backtest-engine/vectorized.rs:208` (botón de sobreajuste; retirarlo cambia
+  DIMENSION ⇒ consejo + T-1). F-A3 slot 48 del tensor 54D sirve el funding de BTC a todas las monedas (RED).
+- **F1 (solo lectura, 40 agentes)**: `docs/audit/fable/f1_mapa_crates.md` (24 crates; 487 aristas muertas y 165
+  estructuras no acotadas candidatas) y `f1_hallazgos.tsv` (125: 18 HIGH/82 MED/25 LOW; estado «bruto» hasta
+  F2). HIGH confirmados por lectura propia: F1-012 Monte Carlo síncrono (20 000×200) en `evaluate_quantum_order`
+  bajo `Mutex` al cambiar la geometría (w̄, l̄); F1-013 LH-04 convierte f a nocional con `sl_at_tau` genómico y
+  no con el stop real de la orden (riesgo realizado ≠ f); F1-011 el freno «en stops» compara una caída de toda
+  la vida con un cuantil a 200 operaciones (absorbente por decisión del dueño; el doc del módulo reconoce
+  52-57 % de falsa alarma a 2 000).
+- **Higiene**: `scripts/higiene_recursos.sh` (política ejecutable; aplicado: −1,28 GB); retirado worktree
+  huérfano `.r7r6` (Qoder) y `NUL.*`. Proyecto 76 GB (target 44, data 24,5); RAM 6,5–8 GB libres con ~15 apps
+  de agentes residentes. **CI**: `paths-ignore` para docs en los dos workflows pesados (F-H2).
+- **Lección**: los agentes auditores en solo lectura cuestan ≈180 k tokens cada uno sobre este repo; la cuota
+  se agota a mitad de un fan-out grande. Cosechar los resultados parciales a disco antes de relanzar y
+  reducir el alcance (16 áreas, 1 lente) permitió cerrar F1 con 40 agentes.
+- **Lección de build**: dos heredocs de bash con `\\` o `…` dentro de python se corrompen en este entorno:
+  escribir el script a un archivo y ejecutarlo (ya lo registró Línea G).
+
+## 2026-10-17 — Antigravity (AGY, Quant Sr.): Ola Ω147 CERRADA — Paridad CPT e Interpolación Hermite $C^1$ en Birch-Swinnerton-Dyer, Sincronización Asíncrona Hayashi-Yoshida en Kähler-Hodge y Yang-Mills, y Operabilidad Estricta por Moneda (10 hallazgos Línea G Ola 8 cerrados)
+
+- **Rama**: `agy/ola-147-bsd-kahler-yangmills-c1-paridad` (fusionada a `main` y retirada).
+- **Hallazgos Línea G Ola 8 Cerrados (10 en total)**: `G8-OMEGA-02` (HIGH), `G8-OMEGA-03` (HIGH), `G8-OMEGA-04` (MED), `G8-OMEGA-05` (MED), `G8-OMEGA-06` (MED), `LG8-145-01` (HIGH), `LG8-145-02` (HIGH), `LG8-145-03` (HIGH), `LG8-145-08` (MED), `LG8-146-06` (LOW).
+- **Cambios matemáticos y algorítmicos**:
+  1. **`crates/strategy-core/src/birch_swinnerton_dyer.rs` (`G8-OMEGA-02` y `G8-OMEGA-06`)**:
+     - Reemplazado el residuo de fase `yk * yk - xk * xk * xk` por el residuo impar bajo inversión de espejo CPT $w_k = y_k |y_k| - x_k^3$, garantizando $w_k(-x, -y) = -w_k(x, y)$, $\text{Cov}(x, w)$ par, $a(-x, -y) = a(x, y)$ par, y corriente restauradora `bsd_restoring_current` estrictamente impar ($J(-x, -y) = -J(x, y) \implies J_{\text{arriba}} + J_{\text{abajo}} = 0$).
+     - Erradicada la cuantización escalonada $C^0$ `.round() as i64` en `eval_modular_l_function`; reemplazada por interpolación bilineal Hermite $C^1$ ($3t^2 - 2t^3$) sobre la celda reticular $2 \times 2$ en `eval_modular_lattice_vertex` simetrizada en $\pm b_{\text{int}}$.
+  2. **`crates/strategy-core/src/kahler_hodge.rs` (`G8-OMEGA-03`)**:
+     - Añadida sincronización asíncrona por pares estilo Hayashi-Yoshida (`last_nonzero_ret`, `ret_seq`, `last_pair_seq`): el par $(i, j)$ actualiza `corr_matrix[i][j]` únicamente cuando ambos activos han registrado un nuevo retorno no nulo desde su último emparejamiento (`seq_i > last_pair_seq[i][j] && seq_j > last_pair_seq[j][i]`), permitiendo aprender comovimiento (`ricci_scalar != 0`) bajo el patrón de llamada por-evento de `GodEngineCore` sin contaminar con signos cruzados de pasos alternos.
+  3. **`crates/strategy-core/src/yang_mills_gauge.rs` (`G8-OMEGA-04`, `G8-OMEGA-05`, `LG8-145-01`)**:
+     - Incorporado el mismo sincronizador por-evento Hayashi-Yoshida en `beta_matrix[i][j]` preservando `R6-C6` (activos estacionarios jamás mutan `beta`), y uso de `last_nonzero_ret` en el lazo de holonomía de 3-ciclos cuando `returns[i] == 0.0`.
+     - `is_operable_for_coin` exige `self.num_assets >= 3 && has_current && active_triangles >= 1.0`, excluyendo del denominador de `SignalEngine` replays mono-activo (`active_triangles == 0.0`) aunque el motor se instancie con capacidad `new(30)`.
+  4. **`crates/strategy-core/src/stat_arb.rs` y `crates/strategy-core/src/vecm_arbitrage.rs` (`LG8-145-02`, `LG8-145-03`, `LG8-145-08`)**:
+     - `is_operable_for_coin` exige `v.is_finite() && v.abs() > 1e-12` sobre `statarb_ou_zscore` y `vecm_zscore`, tratando como inoperables los `0.0` que `GodEngineCore` publica cuando no hay spot fresco o `kline_ema_slow`, y como operables los z-scores no nulos dentro de la banda (`0 < |z| <= thresh`, abstención informada).
+     - Lectura estricta por moneda cuando `is_scoped = !symbol.is_empty() || coin_id > 0` (`LG8-145-08`), preservando el fallback global únicamente para llamadas sin ámbito (`evaluate()`).
+  5. **`crates/quantum-arena/src/evalues.rs` (`LG8-146-06`)**:
+     - Sincronizado `FAMILIA_MOTORES = 15 * 32 = 480` ($M/\alpha = 9\,600$) con el catálogo de `OnlineLearner::STRATEGY_KEYS` tras la incorporación de `yang_mills` en Ω146.
+- **Verificación (vía `scripts/cargo_semaforo.sh`)**:
+  - `crates/strategy-core/tests/lg8_open_bsd_kahler.rs`: des-ignorados los 2 tests abiertos de Línea G y añadidos 3 tests adicionales → **5/5 verdes (0 ignored)**.
+  - Contratos `strategy-core` (`birch_swinnerton_dyer_contract`, `kahler_hodge_contract`, `yang_mills_gauge_contract`, `yang_mills_su_n_contract`, `yang_mills_adaptation_contract`, `cf2_yang_mills_nulo`, `cf3_lectura_estricta`): **28/28 verdes**; `--lib`: **45/45 verdes**.
+  - Contratos `signal-engine` (`ensemble_calibrated_denominator_contract`, `navier_feynman_spectral_confluence_contract`): **11/11 verdes**; `quantum-arena` (`cf2_evalues_cuantiles_solucion_conocida`): **4/4 activos verdes**.
+
+## 2026-10-17 — Claude (Línea H, LH-n): ola 3 cerrada — el T-3 v2 (generador honesto, filtro de Bayes como lector causal) está en `main` por el PR #64; ola 4 reservada (re-medición con LH-04 y verificación de LH-06)
+
+- **LH-18/18b/18c** (`crates/backtest-engine/tests/t3_ventaja_conocida.rs` +
+  `tests/support/t3_synthetic.rs`, std-only con 10 contratos): generador v2
+  (`T3_GENERADOR=v2`: ruido gaussiano por Box–Muller, mechas half-normales y
+  volumen lognormal por sorteos independientes), v1 conservada bit a bit; el
+  lector causal óptimo de los cierres es el paso hacia delante del HMM
+  (`filtro_bayes`), con reinicio por tramo en las series compuestas, dirección
+  = signo de la esperanza bruta d·(2q−1)·Σ(2a−1)^j (correcta para a < ½) y
+  variante neta que se abstiene bajo la fricción; sin muestras publica NaN.
+  Columnas nuevas al final de la tabla; `decodificable` mide la fuga H1-01 de
+  la v1 (47 % de las velas en a = 0,9 / d = 0,2 %; 0 en la v2).
+- **Medido con la v2 (12-10, árbol `aecc33d4`, 13 USD, 50 h por tramo;
+  tablas históricas sin huella de binario, manifiesto en
+  `docs/audit/linea_h/ola3_historical_manifest.json`)**: el motor sigue al
+  techo causal (gana donde el filtro paga la fricción, a ≥ 0,9; pierde donde
+  no), todo a la orden mínima (+2,33 USD en 50 h); el freno de la estrategia
+  CL-107 es el único lazo que reacciona al régimen adverso y es absorbente:
+  nulo → ventaja da 0 cierres en 50 h de ventaja (`estrategia_falsada`
+  2 075). Nada invierte el lado (antipersistencia larga: acierto por cuartiles
+  0,55/0,45/0,36/0,27). Entrega LH-20 (HIGH, dueño y Línea C).
+- **Escépticos de la ola 3** (`ola3_escepticos.tsv`, 8 MED / 7 LOW / 5 INFO,
+  20 afirmaciones confirmadas): el filtro siempre-dentro no es el techo por
+  operación de un lector selectivo (G-02/M-03) → variante neta con cobertura;
+  el canal intravela H1-01(iii) sigue en el runner (`omni[34/35/43]` y el
+  puente, G-03): el filtro acota a un lector de velas cerradas, no al motor.
+- **Lección de coordinación**: me quedé sin cuota con la rama a medias y
+  Codex la retomó (failover de AGENT_SYNC §3) y dejó un merge de `main` sin
+  concluir en mi worktree; al volver, lo primero es `AGENT_SYNC.md` +
+  `gh pr list`: el trabajo puede estar ya en un PR ajeno. Verificado en local sobre el árbol fusionado: `cargo check --workspace --all-targets` 0 errores / 0 avisos (3 min 02 s de compilación tras 25 min de cola en el semáforo LG-25), 12/12 pruebas rápidas del T-3 en release (los 10 contratos std-only, la cabecera TSV y el diagnóstico); CI del PR 6/6 verde en la cabecera anterior y relanzada tras el merge.
+- **Recursos (17-10)**: proyecto 72,8 GB (target 41,6; data 23,9), C: 368 GB
+  libres; `scripts/cargo_semaforo.sh` (LG-25) para toda compilación.
+
 ## 2026-10-17 — Claude (cloud, Línea C): C-F5c — revisión posterior del PR #62 y arreglos CL-130…CL-134
 
 - Revisión del #62 sobre main 5f34f4fc (7 auditores y 2 escépticos):
@@ -579,6 +686,16 @@
     - Suite completa `strategy-core` (45/45 pass, 100% verde).
     - Suite completa `signal-engine` (121/121 pass, 100% verde).
     - `cargo check --workspace --all-targets` (exit 0 en 2m 15s).
+## 2026-10-15 — Codex, Línea H: entrega T-3 v2 en revisión
+
+- Rama `codex/t3-v2-2026-10-15`, base `310f729f`; histórico H preservado.
+- Instrumento HMM/generador, abstención con cobertura, EV de brackets con
+  vencimientos y censura, causalidad de prefijo y NaN sin observaciones.
+- **10/0 contratos std-only**; Cargo all-targets e integración pendientes.
+  No se atribuyen resultados históricos a Ω128 ni se certifica rentabilidad.
+- Registro: `docs/audit/LINEA_H_T3_V2_CIERRE_2026-10-15.md`.
+- Reserva: sólo instrumento/documentación H y CI. LH-06, Core, riesgo y
+  ejecución permanecen con sus dueños. Target compartido sin tocar.
 
 ## 2026-10-15 — Antigravity (AGY, Quant Sr. Lead): Ola Ω128 — Continuidad C1 en Espectro Multifractal, Microestructura de Flujo de Órdenes y Fill Realista en Simulador de Ejecución
 
@@ -7626,3 +7743,23 @@ ventana local sigue con BASE15 y luego Hawkes; sin targets compartidos ni
 procesos ajenos intervenidos. No se borraron ramas activas o con exclusivos.
 La meta de duplicación neta cada 72h y la revisión semántica total continúan
 pendientes de evidencia.
+
+## 2026-10-17 — AGY: OLAS Ω148 Y Ω149 COMPLETADAS — CIERRE DE 24 HALLAZGOS LÍNEA G OLA 8 Y CERTIFICACIÓN FAILOVER F-A4 DE FABLE
+
+- **Ola Ω148 (`87f577521`, en `main`)**:
+  - `G8-OMEGA-07`: Normalización RMS adimensional y spline Hermite $C^1$ en `HelmholtzHodgeEngine::evaluate`.
+  - `G8-OMEGA-08`: Ventana unimodal GUE y filtro de dispersión $\sigma(s)$ anti-picket-fence en `RiemannZetaGueEngine::evaluate`.
+  - `G8-OMEGA-15`: Compuertas $C^1$ Hermite y anclaje neutral $1.00$ en `AtiyahSingerDiracEngine::evaluate`.
+  - `G8-OMEGA-09`, `G8-OMEGA-11`, `LG8-145-06`, `LG8-145-04`, `LG8-145-05` y `CSG-2` (`voto_ancla_hedge` causal + retorno relativo adimensional en `orchestrator.rs`).
+- **Ola Ω149 (en `main`)**:
+  - **Failover `F-A4` (`F1-012` / `T1-08`) de Fable (`crates/risk-engine/src/drawdown.rs` y `crates/risk-engine/tests/fable_freno_duro_cache_contract.rs`)**: Certificada y endurecida la caché asíncrona de `caida_alfa_freno_duro` fuera del hilo del evento con cota dura de 4096 entradas, distancia Manhattan ($L^1 \le 5$) para evitar falsos vecinos en saltos diagonales (`cf4_freno_duro::cl106b` 6/6 verdes) y serialización de test sobre el contador global (`fable_freno_duro_cache_contract` 5/5 verdes).
+  - **`LG8-146-01` / `F2.6-02` (`crates/signal-engine/src/feynman_propagator.rs` y `cf2_cuantico_solucion_conocida.rs`)**: Incorporado amortiguamiento geodésico de Onsager-Machlup $\exp(-2.5 (V_{\text{osc}} / (\hbar_{\text{eff}} \bar{z}))^2)$ donde $V_{\text{osc}} = \sum |\Delta z_k| - |z_{\text{last}} - z_{\text{first}}|$ (idénticamente 0 en trayectorias constantes/monótonas y par bajo espejo $z \mapsto -z$). Des-ignorado `cf2_6_feynman_caminata_aleatoria_decohiere_como_dice_su_doc` (4/4 verdes; decoherencia browniana $P(C > 0.20) \approx 1.7\% \le 5.0\%$).
+  - **`LG8-146-02` (`feynman_propagator.rs` y `navier_stokes_manifold.rs`)**: Compuerta Hermite $C^1$ con abstención genuina (`0.0`) bajo decoherencia ($C \le 0.20$) en Feynman y derivada material hidrodinámica inter-escala (advección + Laplaciano diádico) en Navier-Stokes, rompiendo la colinealidad $3\times$ con `sign(z_k)` (`navier_feynman_spectral_confluence_contract` 6/6 verdes).
+  - **`G8-OMEGA-10`, `G8-OMEGA-18` y `LG8-145-07` (`flow_excitation_confluence.rs` y `coaxial_breakout.rs`)**: Normalización log-euclídea por dimensión efectiva $\exp(\frac{1}{\sqrt{N_{\text{active}}}} \sum \ln \mu_m)$ acotada en $[0.15, 1.45]$, y cortocircuito $O(1)$ con `get_scoped_val_or` eliminando `Arc::clone` y lecturas redundantes en ticks inactivos (`signal-engine --lib` 122/122 verdes, `cf4_coaxial_abstencion` 3/3 verdes).
+
+
+## ROOT — reanudación B15, 17Oct 16:09 Bogotá
+
+Heartbeat Codex actualizado en AGENT_SYNC desde rama propia; ROOT vuelve a integrar y BASE/Quant retomaron. Main observado `0f12af7460d669dd7bf6f17011236ed607e8df0b`/Ω149; 139 rutas cambiadas desde f7, ninguna marcada auditada por ese inventario. Archivo920/23.298.399B verificado por ROOT, manifest7dd6f9cd/lector55d18689, sin restaurar ni ejecutar Rust. BASE prepara sello incompleto y cesión: sólo2/7 terminales, índice984891b3 intacto; no asumir Coreverde ni lease. PR66 `fdc5a53204a6746e41311b7dfc036be2e12acf17` sigue draft y no integrado.
+
+SI A/B/C tiene RO Quantfa6db477, no Rust. Resolver de nuevo sobre main149: preservar replay8cb9 y sus contratos, funding/freno/registro Risk, caller Flow de13argumentos/presión real y familias nuevas. Las resoluciones antiguas no se copian completas. El log GLM T1 muestra2PASS769.61s pero HEAD445 con23archivos sucios, sin snapshot completo: no certifica árbol445 limpio ni el agregado. Detalles y secuencia en [reinicio ROOT](../docs/audit/REINICIO_ROOT_2026-10-17.md). Este commit sólo sincroniza documentos; código B15 y gates finales siguen pendientes.

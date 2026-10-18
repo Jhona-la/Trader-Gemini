@@ -512,3 +512,80 @@ Medido sobre el árbol con el #62
   (LH-07: el retroceso del enfriamiento es geométrico de razón √2, no
   k·base ni 2^k) y H2-08 (fricción en las dos ramas del dimensionado,
   `r* = p/(1 + f_R) − q/(RR − f_R)`).
+
+## 8. Ola 3 — revisión del instrumento y cierre del 15 de octubre
+
+Base histórica: `aecc33d4`; commits LH-18/LH-18b hasta `2359ba19`.
+La revisión y los datos `ola3_*` recuperados pertenecen a ese trabajo previo.
+Las tablas no incluyen una huella verificable del binario y del código exacto
+que las produjo. Se preservan como evidencia histórica; no certifican Ω128 ni
+el motor actual. El manifiesto `ola3_historical_manifest.json` fija sus bytes.
+
+### 8.1 Cambios del instrumento
+
+V2 usa ruido gaussiano con Box–Muller y sorteos separados para mechas y
+volumen. El filtro HMM usa los parámetros conocidos del generador y el calendario
+de tramos: es una referencia privilegiada para cierres observados. No constituye
+un techo universal de PnL por operación, ni comparte la información intravela
+del runner OHLC, cuyo puente conserva el canal H1-01(iii).
+
+La revisión corrige la dirección del lector latente en antipersistencia;
+reinicia el posterior en cada tramo; omite retornos y Brier que crucen la unión;
+usa log-odds para evitar perder evidencia por subdesbordamiento gaussiano;
+publica abstención por fricción junto a su cobertura; y representa ausencia de
+operaciones con NaN. El retorno esperado que decide la abstención es logarítmico
+y asume las comisiones de referencia; no es un modelo completo de ejecución.
+
+El bracket informa tanto el EV condicional legado como el promedio en R de
+entradas con seguimiento completo, con vencimientos al precio final. Excluye
+la censura al final de serie y las uniones de tramo; supone fills exactos en
+barreras y cuenta SL primero si ambas se tocan en una vela. No mide impacto,
+gaps ni fills reales. La correlación ruido-volumen detecta la fuga conocida con
+V1 como control positivo; no demuestra independencia frente a toda alternativa.
+
+### 8.2 Qué permiten concluir los datos históricos
+
+En la corrida guardada E3 (nulo→ventaja), el segundo tramo tuvo cero cierres
+y el contador total `estrategia_falsada` fue 2075; el tramo equivalente en frío
+registró 169 cierres y +2,33107 USD. Es un testigo de bloqueo en aquella
+composición, pendiente de repetirse con el motor actualizado. E4 guardó 119
+cierres y −0,20895 USD frente a 63 y −0,12671 en frío.
+
+Estas diferencias no aíslan aprendizaje: también cambian capital, precio,
+posiciones heredadas, geometría y estado de filtros. El corte por índice de
+cierre sólo atribuye temporalmente si se verifica el prefijo; una posición
+abierta al cambiar el tramo mezcla las dos poblaciones. Los cuartiles de una
+realización no demuestran ausencia de aprendizaje ni inversión. V1 y V2
+cambian colas, rango, mechas y volumen, por lo que su comparación no identifica
+causalmente el efecto de eliminar una fuga. El crecimiento observado en un
+fixture tampoco demuestra duplicación sostenida cada 72 horas.
+
+### 8.3 Validación y trabajo restante
+
+El modelo puro se comparte desde `tests/support/t3_synthetic.rs` y admite
+pruebas con `rustc --test` sin compilar Polars. Los contratos exactos cubren
+abstención, dirección, censura, vencimientos, evidencia extrema y causalidad
+de prefijo. La compilación del workspace, pruebas de integración y nuevas
+mediciones se registran en `docs/audit/LINEA_H_T3_V2_CIERRE_2026-10-15.md`.
+Sólo ese registro determina qué se verificó contra la composición actual.
+
+Pendientes fuera de esta entrega: replay causal de eventos reales, atribución
+de fills por tiempo y nocional, múltiples semillas con intervalos que respeten
+dependencia, y evaluación fuera de muestra de los cambios de política.
+
+### 8.4 Cierre de la ola 3 (2026-10-17) y alcance de la ola 4
+
+El PR #64 (rama `codex/t3-v2-2026-10-15`, LH-18/18b míos y LH-18c de Codex
+por failover de AGENT_SYNC §3) entró en `main` en `69ccd80e` (2026-10-17, 11:40 local) tras fusionar
+`origin/main` (e0d8e501) con el buzón y la MEMORIA por unión. Verificado en local sobre el árbol fusionado: `cargo check --workspace --all-targets` 0 errores / 0 avisos (3 min 02 s de compilación tras 25 min de cola en el semáforo LG-25), 12/12 pruebas rápidas del T-3 en release (los 10 contratos std-only, la cabecera TSV y el diagnóstico); CI del PR 6/6 verde en la cabecera anterior y relanzada tras el merge.
+
+Diagnóstico sobre este `main` (a = 0,95, d = 0,1 %, 2 000 velas, 13 USD): v1 62 cierres, acierto 0,661, **+1,72 USD (+13,2 %)** frente a 64 / +1,02 / +7,8 % en la ola 2 sobre `aecc33d4`: **LH-04 ya mueve el tamaño** (max |PnL| por cierre 0,164 frente a 0,068); v2 45 cierres, 0,556, +0,32 USD y **2 593 rechazos `correlacion` en un fixture de UNA moneda** (LH-21, abierto; se mide en la ola 4).
+
+**Ola 4** (rama `claude/linea-h-ola4`): (1) re-medir escalera, valle y E1–E5
+con la v2 sobre `main` con LH-04 (GLM 117/118) y comparar con las tablas
+históricas `ola3_*` (manifiesto en `ola3_historical_manifest.json`); (2) la
+verificación barata de LH-06 (`docs/DISENO_LH06_TAU.md` §5: τ mediana por
+peldaño y |Δln τ| fast–slow desde `[OPEN TRACE]`, con el pedido a Qoder/AGY de
+`tau_hab=` en la traza y del tope de 100 trazas configurable); (3) LH-21: los
+rechazos `correlacion` en un fixture monoactivo; (4) LH-20 (freno absorbente
+CL-107) al dueño y a la Línea C.

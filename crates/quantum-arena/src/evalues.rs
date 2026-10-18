@@ -24,9 +24,9 @@
 //! #663 (G1-1, mea culpa de #661): Ville NO cubre por sí sola la
 //! MULTIPLICIDAD de la selección del máximo — la cota es POR PROCESO.
 //! Con M e-procesos consultados en la misma decisión (32 escalas del
-//! banco de τ*; 13×32 = 416 pares motor×escala del consenso), bajo el
+//! banco de τ*; 15×32 = 480 pares motor×escala del consenso), bajo el
 //! nulo condicional el FWER queda acotado por min(1, M*alfa). Para
-//! M=416 y alfa=0.05, M*alfa=20.8: la cota es trivial (1),
+//! M=480 y alfa=0.05, M*alfa=24.0: la cota es trivial (1),
 //! no una estimación del FWER real. Los consumidores de SELECCIÓN usan
 //! `significativo_familia(M)` con umbral M/α (Bonferroni sobre la
 //! familia, misma anytime-validity).
@@ -124,8 +124,8 @@ impl EProceso {
     /// #663 (G1-1): significancia corregida por MULTIPLICIDAD de
     /// FAMILIA. Ville acota P(∃t: e ≥ 1/α) ≤ α POR PROCESO; con M
     /// procesos consultados en la misma selección, la unión da
-    /// P(alguno cruza) <= min(1, M*alfa). Con M=448, alfa=0.05,
-    /// M*alfa=22.4: cota trivial (1), no estimación del FWER real.
+    /// P(alguno cruza) <= min(1, M*alfa). Con M=480, alfa=0.05,
+    /// M*alfa=24.0: cota trivial (1), no estimación del FWER real.
     /// El umbral de
     /// familia M/α conserva la cota por unión si M cubre todos los procesos
     /// consultados y cada proceso satisface el nulo condicional declarado.

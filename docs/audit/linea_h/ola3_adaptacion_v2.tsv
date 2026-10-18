@@ -1,0 +1,5 @@
+experimento	trades	wr	pnl_usd	b_real	primer_tramo_cierres_iguales	segundo_tramo_trades	segundo_tramo_pnl_usd	segundo_tramo_wr	fresco_trades	fresco_pnl_usd	fresco_wr	rechazos_compuesto	rechazos_fresco	segundo_tramo_gana_usd	segundo_tramo_pierde_usd	segundo_tramo_b_real	fresco_gana_usd	fresco_pierde_usd	fresco_b_real	generador
+E2 ventaja→nulo	251	0.5618	2.03039	1.420	169/169	82	-0.30068	0.3537	43	-0.26157	0.3256	EV=2 sonda_ocupada=7 estrategia_falsada=649	EV=409 estrategia_falsada=687	0.02967	0.02191	1.354	0.03319	0.02504	1.325	v2
+E3 nulo→ventaja	43	0.3256	-0.26157	1.325	43/43	0	-0.00000	0.0000	169	2.33107	0.6627	EV=409 estrategia_falsada=2075	sonda_ocupada=7	0.00000	0.00000	NaN	0.03254	0.02303	1.413	v2
+E4 ventaja→anti	288	0.5625	2.12212	1.339	169/169	119	-0.20895	0.4202	63	-0.12671	0.3968	EV=3 sonda_ocupada=7	sonda_ocupada=6	0.02837	0.02358	1.203	0.02944	0.02270	1.297	v2
+E4' anti→anti	83	0.4217	-0.10917	1.234	63/63	20	0.01754	0.5000	63	-0.12671	0.3968	EV=5 sonda_ocupada=6 estrategia_falsada=209	sonda_ocupada=6	0.02411	0.02235	1.078	0.02944	0.02270	1.297	v2

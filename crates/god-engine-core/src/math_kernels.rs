@@ -1003,46 +1003,6 @@ impl ObiAcceleration {
     }
 }
 
-/// O(1) Funding Rate Elasticity (∂FundingRate / ∂Price)
-#[derive(Debug, Clone, Default)]
-pub struct FundingRateElasticity {
-    pub prev_funding_rate: f64,
-    pub prev_price: f64,
-}
-
-impl FundingRateElasticity {
-    #[inline(always)]
-    pub fn new() -> Self {
-        Self {
-            prev_funding_rate: 0.0,
-            prev_price: 0.0,
-        }
-    }
-
-    #[inline(always)]
-    pub fn update(&mut self, funding_rate: f64, price: f64) -> f64 {
-        // QO-M0.4 (auditoría matemática): prev_price se sobrescribía ANTES
-        // del guard — la primera llamada emitía basura (delta_p=0 ⇒ guard
-        // muerto) y la condición usaba el precio NUEVO como denominador.
-        // Orden correcto: capturar previos, actualizar, dividir por el
-        // precio ANTERIOR.
-        let delta_fr = funding_rate - self.prev_funding_rate;
-        let delta_p = price - self.prev_price;
-        let prev_price = self.prev_price;
-
-        self.prev_funding_rate = funding_rate;
-        self.prev_price = price;
-
-        if delta_p.abs() > f64::EPSILON && prev_price > 0.0 {
-            let pct_delta_p = delta_p / prev_price;
-            if pct_delta_p.abs() > f64::EPSILON {
-                return delta_fr / pct_delta_p;
-            }
-        }
-        0.0
-    }
-}
-
 /// O(1) nonnegative impulse accumulator with exponential elapsed-time decay.
 /// This scalar is not a probability, a tensor decomposition or calibrated risk.
 #[derive(Debug, Clone)]

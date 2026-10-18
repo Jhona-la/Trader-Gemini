@@ -2667,9 +2667,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // publica por símbolo, fuera del hot path). El core lee
                     // `funding_rate` scoped; sin valor cae al global omni[11].
                     if let Ok(fmap) = omni_for_funding.funding_by_symbol.read() {
-                        for (sym, _cid) in syms_oi.iter() {
+                        // F-A1 (Fable): además del registry (telemetría),
+                        // el atómico por moneda `funding_rate_next` con su
+                        // marca: lo lee el risk-engine como coste de carry
+                        // esperado de cada orden (E[carry] = d·f·τ/T_F),
+                        // sin lookup por string. Reloj del host en ms época;
+                        // 0 (reloj roto) no publica.
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+                        for (sym, cid) in syms_oi.iter() {
                             if let Some(f) = fmap.get(sym) {
                                 arena_oi.registry.set_scoped(sym, "funding_rate", *f);
+                                if let Some(coin) = arena_oi.coins.get(*cid) {
+                                    coin.publish_funding_next(*f, now_ms);
+                                }
                             }
                         }
                     }

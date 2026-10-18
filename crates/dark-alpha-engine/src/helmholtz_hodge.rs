@@ -154,6 +154,18 @@ impl HelmholtzHodgeEngine {
         let mut total_sq = 0.0f64;
         let mut net_flow_dir = 0.0f64;
 
+        // G8-OMEGA-07 (Ola Ω148): Normalización adimensional de la componente de velocidad de precio
+        // por su escala RMS en la ventana (con regularización base de 1.0 bps² para no amplificar
+        // micro-ruido estacionario en spoofing), haciendo que `div` y `curl` combinen magnitudes
+        // adimensionales conmensurables en [-1, 1] independientemente del tick/precio del activo.
+        let mut p_sq_sum = 0.0f64;
+        for k in 0..n {
+            let idx = (self.history_idx + MAX_FLOW_HISTORY - n + k) % MAX_FLOW_HISTORY;
+            let pk = self.flow_history[idx][0];
+            p_sq_sum += pk * pk;
+        }
+        let p_scale = (p_sq_sum / (n as f64) + 1.0).sqrt();
+
         // Recorrido en memoria contigua en stack para máxima localidad L1
         for i in 0..(n - 1) {
             let idx_curr = (self.history_idx + MAX_FLOW_HISTORY - n + i) % MAX_FLOW_HISTORY;
@@ -162,12 +174,16 @@ impl HelmholtzHodgeEngine {
             let u0 = self.flow_history[idx_curr];
             let u1 = self.flow_history[idx_next];
 
-            // Diferencias finitas para divergencia ∇·u y rotacional ∇×u
-            // Componente 0: precio (x), Componente 1: volumen (y)
-            let du_x = u1[0] - u0[0];
-            let du_y = u1[1] - u0[1];
+            let u0_x = u0[0] / p_scale;
+            let u1_x = u1[0] / p_scale;
+            let u0_y = u0[1];
+            let u1_y = u1[1];
 
-            // Divergencia: ∂u_x/∂x + ∂u_y/∂y (aproximada en espacio de fases de microestructura)
+            // Diferencias finitas adimensionales para divergencia ∇·u y rotacional ∇×u
+            let du_x = u1_x - u0_x;
+            let du_y = u1_y - u0_y;
+
+            // Divergencia: ∂u_x/∂x + ∂u_y/∂y (en espacio de fases adimensional)
             let divergence = du_x + du_y;
             // Rotacional en 2D (vorticidad escalar ω): ∂u_y/∂x - ∂u_x/∂y
             let curl = du_y - du_x;
@@ -175,9 +191,9 @@ impl HelmholtzHodgeEngine {
             div_sum += divergence * divergence;
             curl_sum += curl * curl;
 
-            let mag_sq = u1[0] * u1[0] + u1[1] * u1[1];
+            let mag_sq = u1_x * u1_x + u1_y * u1_y;
             total_sq += mag_sq;
-            net_flow_dir += u1[0];
+            net_flow_dir += u1_x;
         }
 
         let denom = (n - 1) as f64;
@@ -202,19 +218,26 @@ impl HelmholtzHodgeEngine {
 
         // Veredicto de seguridad: Flujo seguro si la fracción laminar supera el umbral
         // y la enstrofía relativa no satura el umbral de turbulencia de Navier-Stokes
+        let min_lf = self.params.min_laminar_fraction.clamp(0.05, 0.95);
+        let ens_th = self.params.enstrophy_threshold.clamp(0.05, 0.99);
         let rel_enstrophy = (enstrophy / e_sum).clamp(0.0, 1.0);
-        let is_laminar_safe = laminar_fraction >= self.params.min_laminar_fraction
-            && rel_enstrophy <= self.params.enstrophy_threshold;
+        let is_laminar_safe = laminar_fraction >= min_lf && rel_enstrophy <= ens_th;
 
-        // Modulación continua C¹: si laminar_fraction es alta, bonificación hasta +30%;
-        // si domina la vorticidad (spoofing), atenuación suave smoothstep
-        let conviction_factor = if is_laminar_safe {
-            1.0 + 0.30 * (laminar_fraction - self.params.min_laminar_fraction).max(0.0)
-        } else {
-            // Decaimiento Hermite cúbico suave ante turbulencia
-            let t = (rel_enstrophy / self.params.enstrophy_threshold).min(1.0);
-            (1.0 - t * t * (3.0 - 2.0 * t)).clamp(0.10, 1.0)
-        };
+        // G8-OMEGA-07 (Ola Ω148): Modulación estrictamente C¹ Hermite sin escalón C⁰ en `min_laminar_fraction`.
+        // Tanto la rama laminar (laminar_fraction > min_lf) como la rama turbulenta (laminar_fraction < min_lf
+        // o rel_enstrophy > ens_th) tienen valor 0 y derivada primera 0 en la frontera `min_lf`, uniéndose
+        // en `conviction_factor = 1.0` con continuidad C¹ exacta.
+        let t_lam = ((laminar_fraction - min_lf) / (1.0 - min_lf).max(1e-6)).clamp(0.0, 1.0);
+        let h_lam = t_lam * t_lam * (3.0 - 2.0 * t_lam);
+
+        let t_def = ((min_lf - laminar_fraction) / min_lf).clamp(0.0, 1.0);
+        let t_ens = ((rel_enstrophy - ens_th) / (1.0 - ens_th).max(0.05)).clamp(0.0, 1.0);
+        let t_turb = (1.0 - (1.0 - t_def) * (1.0 - t_ens)).clamp(0.0, 1.0);
+        let h_turb = t_turb * t_turb * (3.0 - 2.0 * t_turb);
+        let h_ens_gate = 1.0 - t_ens * t_ens * (3.0 - 2.0 * t_ens);
+
+        let conviction_factor =
+            (1.0 + 0.30 * h_lam * h_ens_gate - 0.90 * h_turb).clamp(0.10, 1.30);
 
         HelmholtzDecomposition {
             total_energy: raw_total,

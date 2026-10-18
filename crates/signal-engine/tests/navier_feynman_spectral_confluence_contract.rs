@@ -174,3 +174,55 @@ fn contract_anti_aligned_navier_feynman_retains_exploration_floor_without_invers
         "Anti-aligned Feynman must remain at exploration floor, never inverted"
     );
 }
+
+#[test]
+fn contract_lg8_146_02_feynman_abstains_under_decoherence_and_navier_stokes_breaks_sign_collinearity() {
+    use signal_engine::feynman_propagator::{FeynmanPropagatorEngine, FeynmanPropagatorParams};
+    use signal_engine::navier_stokes_manifold::{
+        NavierStokesManifoldEngine, NavierStokesManifoldParams,
+    };
+
+    // 1. Decoherent oscillatory scale field (all z_k > 0 so sign(z_k) = +1 everywhere,
+    //    but strong inter-scale ruggedness V_osc >> 0 induces quantum decoherence C <= 0.20).
+    let mut z_decoherent = [0.0f64; ESCALAS_VOTO];
+    for k in 0..ESCALAS_VOTO {
+        z_decoherent[k] = if k % 2 == 0 { 0.40 } else { 3.20 };
+    }
+    let (voto_feynman, coh) = FeynmanPropagatorEngine::voto_espectral_con_coherencia_with_params(
+        &z_decoherent,
+        &FeynmanPropagatorParams::default(),
+    );
+    assert!(
+        coh <= 0.20,
+        "Rugged oscillatory field must decohere below 0.20, got {coh}"
+    );
+    for k in 0..ESCALAS_VOTO {
+        assert_eq!(
+            voto_feynman.en_escala(k),
+            0.0,
+            "LG8-146-02: Feynman must genuinely abstain (0.0) when decoherent instead of cloning sign(z_k) at scale {k}"
+        );
+    }
+
+    // 2. Counter-cascade gradient field: at scale k = 10, z[10] = +0.20 > 0 (so sign(z_10) = +1),
+    //    but finer scale z[9] = +2.50 and coarser scale z[11] = -2.80 create a strong negative
+    //    advection/Laplacian flux across scales. Navier-Stokes must reflect the hydrodynamic
+    //    cascade derivative (< 0.0) rather than blindly returning +sign(z_10).
+    let mut z_cascade = [1.0f64; ESCALAS_VOTO];
+    z_cascade[9] = 2.50;
+    z_cascade[10] = 0.20;
+    z_cascade[11] = -2.80;
+
+    let voto_ns = NavierStokesManifoldEngine::voto_espectral_with_params(
+        &z_cascade,
+        0.05,
+        0.0,
+        &NavierStokesManifoldParams::default(),
+    );
+    assert!(
+        z_cascade[10].signum() > 0.0 && voto_ns.en_escala(10) < 0.0,
+        "LG8-146-02: Navier-Stokes must break sign(z_k) collinearity under counter-cascade advection, got {}",
+        voto_ns.en_escala(10)
+    );
+}
+
