@@ -14252,3 +14252,14 @@ conflicto-de-rebase detecta la duplicación y el protocolo la limpia).
   liberar el lock. Comandos: `CARGO_TARGET_DIR=<raíz>/target cargo check
   -p audit-engine --all-targets` + `cargo check --bin
   multi_coin_simulator` + `cargo test -p audit-engine`.
+
+### F9-6 — verificación de compilación COMPLETADA (mismo árbol, lock liberado)
+
+- El lock del target liberó tras ~15 min: `cargo check -p audit-engine
+  --all-targets` **Finished en 32,73 s SIN WARNINGS**;
+  `cargo check --bin multi_coin_simulator` **Finished en 1m43s**;
+  `cargo test -p audit-engine` **71/71 verde**. Recibo:
+  `outputs/Sol_f9_ret_phase_runner_GREEN.log`.
+- Estado final del clúster: `phase-runner` eliminado del workspace (23
+  paquetes), `Cargo.lock` consistente, 0 referencias repo-wide, y el
+  binario del simulador compila sin el bloque descartado.
