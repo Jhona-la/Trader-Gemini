@@ -13486,3 +13486,20 @@ anunciado en AGENT_SYNC antes de tocar `signal-engine/src/hawkes_bessel.rs`. F1-
 en el instante del evento) queda documentado en el plan §7 para decisión del consejo.
 
 **Higiene.** `.gitignore` +`*.bin` +`outputs/` (F-H3; 0 ficheros versionados afectados).
+
+
+## ROOT — check REAL activo y Fable incorporado — 2026-10-18T05:40:51.885390+00:00
+
+Main local/origin/remoto sincronizados a e5291ed4730ce783b3c965400fc1a6b93a5a040b (Fable44c y avisoF-A6), recibo PRIMARY_FABLE_E529_FF_RECEIPT SHA94a8b28141e155187977ef3aeade8a650e7079248154ad5f7da2c33f08333230. SóloFF, untracked preservados; outputs ahora ignorado por cambio de.gitignore. Ninguna ruta versionada data/models/outputs afectada. Fuente/índice ROOT no cambiaron.
+
+Fable liberó T1 a05:23:41Z: 1PASS/0fallos,18/144genes,1343.82s; check2devalltargets liberó0 a05:28:12Z. Es evidencia de su ejecución, sin freeze limpio/before-after completo ni herencia al agregado. F-A6 Hawkes O(1) está ENEDICIÓN de Fable; ROOT no copiará su WIP ni editará suWT.
+
+ROOT observó05:28:34Z ceroCargo/rustc,RAM5.201GiB,lockausente; V2 adquirió atómicamente el canónico, coordinadorPID27568/Start05:28:47.652593Z. CargoPID34660/Start05:29:13.807495Z ejecuta +nightly-2026-06-30 check --release --workspace --all-targets --locked --jobs1. Label1015-main150-precommit-b, sesión17499, todavía SINresultado. Nativecat lee dueño/creado y renovaciones15s; no prueba completa de contención/recuperación. No iniciar otrobuild mientras conserve lock/terminal. «Semáforo libre» de otro corte no describe este estado actual.
+
+Fuente8e835/2003 y stagebd400417 siguen iguales. Antes del check se observó rawdea→095a; comparación binaria independiente de ambas copias confirma2003entradas/TREE idénticos, sólo extensiónUNTR4152→5741B y checksum. No fueron timestamps deentradas y no se atribuye actor. Nuevo anchorREAL mainb5/raw095a a05:25:55Z, exp197eab4f/reciboa889e3e8. Losrecibos/guardas originales no se retocan; viejo0/86 sigue inválido. No ejecutar status sin GIT_OPTIONAL_LOCKS=0 sobre ROOT durante validación.
+
+Lineag9 incorporado f398 fue desregistrado por git worktree remove; el borrado final del directorio falló Permission denied, queda vacío0B sin reintento forzado ni kills. Referencia libre local claude/linea-g-ola9 eliminada porCAS; remota yaausente, prune sin huérfanos; recibo0267e311ca2bef2626fd0e20e5d90738386b2ffc37d2ed74e9f57043299e8c10. Primeros abortos se conservan. Jolly/SI/Quant ocupados/reservados y nointegradas siguen protegidas.
+
+Semáforo29/29 ya publicado en b5; selección62payloads289653B sellada durable root-native-semaphore-20261018-fdc7f005-4a69-4760-ae60-c84f78602578, manifest7eb4fe32. CIpropia b5 consultada05:20:57Z:2runs/4checks pendientes, ningúnGREEN heredado.
+
+Después del checkválido0/0+12+8: control sóloLOCAL →bindingV11 →core-clock-red primero →siete pares condicionales concontrolpositivo. Los7PASS futuros no autorizan todoLG5: HIGH01/02 adquisición/legacy y06transferenciapolítica siguen abiertos (BASE904d8f3c). RO independiente de alcance be2619fd: Hidden04/Replay05/Core07 separables; Kelly02 runtime separable/corpusLG5; Flow03 requiereB15-05; Risk01 talcomoentregado es privadoLG5. Cualquierpuerto final parte delmain vigente, preservaFable/LG27/28/NoReplay/native, y requiere check/suites/fullT1 propios. No crecimiento100%/72h demostrado.
