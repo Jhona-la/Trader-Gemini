@@ -13995,3 +13995,14 @@ El Consejo Colegiado de 10 Roles Senior en Modo Profesor formaliza el cierre y c
    - `cargo check --workspace --all-targets -j 1` ejecutado con éxito total. Cero errores de compilación en los 23 crates.
 3. **Coordinación y Merge:**
    - Rama activa `agy/ola-154-f1-024-025-026-120-121` lista para fast-forward a `main`, push y eliminación de rama local.
+
+
+## ROOT — cuatro pares privados y siguiente etapa — 2026-10-18 16:11 UTC
+
+Core07 3/2→5/0; Risk01 6/7→13/0; Kelly02 0/2→2/0; Flow03 1/6→7/0. Ocho recibos conservan 12+8; GREEN 0/0. [Cierre documental](docs/audit/CIERRE_CUATRO_PARES_PRIVADOS_2026-10-18.md). Fuente privada 25dbbd9a/tree5a02ac51; no publicar CONTROL ni heredar PASS a main. Originales/cortes históricos intactos.
+
+Dos RED Risk tienen helper positivo con llamada ambigua: no declararlos testigos finales observados. Kelly N9 sintético no prueba LH04 maduro/productor. Flow no ejecutó adaptive7 ni Hidden productor/Core E2E; peso0 conserva oposición legacy. La recuperación Risk RED no cambia el coordinador original retenido. Limpiezas VCTIP propias y endpoints no certifican aislamiento continuo.
+
+ROOT continúa Hidden04: RED 16 real 2/14 y 101/101+12/8; liberado 16:07:05Z tras limpieza VCTIP propia. RED publicación 2 activo sin resultado, mismo preimage y sin parche 04; después dos GREEN separados. Después Replay05(8+5), Reporter06(22), hallazgo adicional tiny-z y composición final con suites/check/T1 auténtico ≥110 propios. Puertos públicos preservan CL135/F-A6/C-F5b/CL148/Ω151–153/NoReplay. BASE maestro/censo, Quant/Fable reservas; no Cargo ajeno ni checkout principal intervenido. HIGH01/02 y MED06 LG5 abiertos; meta 100%/72h sin demostrar.
+
+Publicación prevista sólo cuatro Markdown por objetos Git sobre main remoto vigente, sin índice/worktree ni mover main local ocupado. Reservas/filas ajenas preservadas. Limpiar ramas exige censo actual/liberación. No declara turno libre ni lanza otro Cargo.
