@@ -14196,3 +14196,33 @@ sería una regresión invisible hasta producción.
 Mi rama glm/139 (fix duplicado de los tests hedge) fue DESCARTADA sin
 pushear — CL-148 llegó primero (patrón LG-24 del ciclo 137: el
 conflicto-de-rebase detecta la duplicación y el protocolo la limpia).
+## 2026-10-18 — Sol: F9-5 — F408 del censo C-F7b EJECUTADO: audit_biases/CognitiveBiasReport retirados
+
+- **Átomo del censo C-F7b (Línea C)**: F408, veredicto RETIRAR, coste S,
+  sin dueño reservado. Ejecutado por Sol en `audit-engine`.
+- **Qué se retiró** (−90/+1 líneas): `AuditorInterno::audit_biases`
+  (auditor_interno.rs:493-523), `CognitiveBiasReport` (:34-43), su
+  re-export (lib.rs:13), el test externo
+  `test_cognitive_bias_detection_adaptation` y las 2 líneas del test
+  interno que lo llamaban.
+- **Por qué (evidencia del censo, verificada en código)**: 3 de 5 flags
+  eran `false` LITERAL (`illusion_of_control`, `selective_confirmation`,
+  `unverified_mutation_claims`); `complexity_inflation` = n>64 nunca
+  dispara con el tensor 54D; los umbrales de overfitting eran literales
+  SIN PUBLICADOR; llamadores: SOLO tests. La pata overfitting real ya la
+  mide el examen WF+DSR del daemon (`online_daemon.rs`, zona AGY — NO
+  tocada). Era un mock parcial que aparentaba auditar sesgos.
+- **Certificación**: `cargo check -p audit-engine --all-targets` sin un
+  solo warning; suite audit-engine **71/71 verde** (recibo
+  `outputs/Sol_f9_f408_GREEN.log`). Cero referencias restantes a los
+  símbolos (grep 0/0/0).
+- **F409 (siguiente, NO ejecutado)**: los 3 campos huérfanos de
+  `TribunalThresholds` (`overfitting_recent_min`, `overfitting_oos_max`,
+  `max_features_nominal`), sus `DEFAULT_*`/`default_*` y los átomos de
+  `config.rs` (schema serializable cross-crate, sin `deny_unknown_fields`
+  ⇒ JSON viejo sigue cargando). Requiere decisión de schema — fichado.
+- **Censo C-F7b en mi carril**: 92 filas (audit-engine 41, backtest 22,
+  phase-runner 20, evolution 9); veredictos: RETIRAR 52,
+  RECONECTAR_SOMBRA 10, ZONA_AJENA 17, CONSERVAR 8. Los ítems de
+  `internal_sharpe`/`shadow_ledger` (F271/F272/F400/F412/F413) tienen
+  dueño activo (AGY/Línea C sobre core/lib.rs) — NO tocados.

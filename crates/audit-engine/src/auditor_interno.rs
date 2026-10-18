@@ -29,17 +29,6 @@ pub struct IndependentMetrics {
     pub benchmark_alpha: f64,
 }
 
-/// Cognitive bias detection report
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CognitiveBiasReport {
-    pub overfitting_recent_past: bool,
-    pub illusion_of_control: bool,
-    pub selective_confirmation: bool,
-    pub complexity_inflation: bool,
-    pub unverified_mutation_claims: bool,
-    pub bias_detected: bool,
-}
-
 /// OLA Ω120: Constantes canónicas por defecto para el Tribunal de Autoengaño y Auditor Interno
 pub const DEFAULT_AUTOENGANO_THRESHOLD: f64 = 0.20;
 pub const DEFAULT_CULPABLE_PELIGROSO_THRESHOLD: f64 = 0.10;
@@ -488,39 +477,6 @@ impl AuditorInterno {
         }
     }
 
-    /// Detects cognitive biases in current trading behavior (lookahead-free)
-    // FIX #722: Calibrar umbral de complejidad (> 64) para respetar los 54 features nominales y sanitizar retornos
-    pub fn audit_biases(
-        &self,
-        num_features: usize,
-        recent_7d_ret: f64,
-        out_of_sample_ret: f64,
-    ) -> CognitiveBiasReport {
-        let safe_7d = if recent_7d_ret.is_finite() {
-            recent_7d_ret
-        } else {
-            0.0
-        };
-        let safe_oos = if out_of_sample_ret.is_finite() {
-            out_of_sample_ret
-        } else {
-            0.0
-        };
-        let overfitting = (safe_7d > self.thresholds.overfitting_recent_min)
-            && (safe_oos < self.thresholds.overfitting_oos_max);
-        let complexity_inflation = num_features > self.thresholds.max_features_nominal;
-
-        let bias_detected = overfitting || complexity_inflation;
-
-        CognitiveBiasReport {
-            overfitting_recent_past: overfitting,
-            illusion_of_control: false,
-            selective_confirmation: false,
-            complexity_inflation,
-            unverified_mutation_claims: false,
-            bias_detected,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -554,8 +510,6 @@ mod tests {
         let tribunal = auditor.verify_internal_claims(2.0, 0.50, 0.05);
         assert_ne!(tribunal.justification, "");
 
-        let bias = auditor.audit_biases(34, 0.02, 0.01);
-        assert!(!bias.bias_detected);
     }
 
     #[test]

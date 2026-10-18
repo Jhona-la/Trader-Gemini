@@ -5,14 +5,12 @@
 //! 2. Adaptación dinámica de `TribunalThresholds` y validación de cotas de seguridad.
 //! 3. Robustez fail-closed ante entradas no finitas (NaN, Inf, negativos).
 //! 4. Cálculo exacto de discrepancia máxima (`calculate_max_discrepancy` / `compute_internal_discrepancy`) sobre fills reales.
-//! 5. Detección adaptativa de sesgos cognitivos (`audit_biases`) parametrizada por `TribunalThresholds`.
 //! 6. Integración de extremo a extremo: registro de fills -> discrepancia -> OmniscientRegistry.
 
 use audit_engine::{
     calculate_max_discrepancy, evaluate_tribunal_verdict, AuditorInterno, ExchangeFillRecord,
     TribunalThresholds, TribunalVerdict, DEFAULT_AUTOENGANO_THRESHOLD,
     DEFAULT_CULPABLE_PELIGROSO_THRESHOLD, DEFAULT_CULPABLE_RECUPERABLE_THRESHOLD,
-    DEFAULT_MAX_FEATURES_NOMINAL, DEFAULT_OVERFITTING_OOS_MAX, DEFAULT_OVERFITTING_RECENT_MIN,
 };
 use omniscient_registry::OmniscientRegistry;
 
@@ -211,47 +209,6 @@ fn test_max_discrepancy_and_auditor_fill_computation() {
     // Caso 3: Afirmación interna de Drawdown subestimada (afirma 0.01 cuando la realidad es mayor)
     let disc_dd = auditor.compute_internal_discrepancy(independent.calculated_sharpe, 0.60, 0.0);
     assert_eq!(disc_dd, independent.calculated_max_drawdown);
-}
-
-#[test]
-fn test_cognitive_bias_detection_adaptation() {
-    let mut auditor = AuditorInterno::new();
-
-    // Umbrales canónicos por defecto
-    assert_eq!(
-        auditor.thresholds.max_features_nominal,
-        DEFAULT_MAX_FEATURES_NOMINAL
-    );
-    assert_eq!(
-        auditor.thresholds.overfitting_recent_min,
-        DEFAULT_OVERFITTING_RECENT_MIN
-    );
-    assert_eq!(
-        auditor.thresholds.overfitting_oos_max,
-        DEFAULT_OVERFITTING_OOS_MAX
-    );
-
-    // Con 128 features activas (> 64 nominales), se detecta complexity inflation
-    let report_heavy = auditor.audit_biases(128, 0.01, 0.0);
-    assert!(report_heavy.complexity_inflation);
-    assert!(report_heavy.bias_detected);
-
-    // Con 32 features nominales, no hay complexity inflation
-    let report_light = auditor.audit_biases(32, 0.01, 0.0);
-    assert!(!report_light.complexity_inflation);
-
-    // Adaptación dinámica de max_features_nominal a 200
-    let mut adapted_thresholds = auditor.thresholds;
-    adapted_thresholds.max_features_nominal = 200;
-    auditor.update_thresholds(adapted_thresholds);
-
-    let report_adapted = auditor.audit_biases(128, 0.01, 0.0);
-    assert!(!report_adapted.complexity_inflation);
-
-    // Detección de overfitting reciente vs OOS adaptativo
-    let report_overfit = auditor.audit_biases(32, 0.06, -0.02);
-    assert!(report_overfit.overfitting_recent_past);
-    assert!(report_overfit.bias_detected);
 }
 
 #[test]
