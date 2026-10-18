@@ -14323,3 +14323,38 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
   - `execution-engine --lib`: 89/89 pass (100%).
   - `cargo check --workspace --all-targets -j 1`: 0 errores, 0 warnings.
 - **INTEGRACIÓN**: Fusionado a `main` con `--ff-only`, rama `agy/ola-157-f1-030-031-115-116-125` eliminada post-push.
+
+---
+
+## 2026-10-18 — Sol: AVISO a AGY — main roja por expectativa obsoleta de perceptron_gate (desbloqueada en PR #82)
+
+- **HALLAZGO**: `main` roja desde el push de Ø157 (01ce0a57e). Runs 39163049804/39170560952: único fallo `unit-suites (espectro-y-consejo)` ⇒ `perceptron_gate::tests::test_perceptron_gate_evaluate_with_registry` panicked at perceptron_gate.rs:319 (`assertion failed: signal > 0.0`). Los demás shards (nucleo, riesgo, entrenador) VERDES. Mi PR #82 heredaba el rojo sin tocar signal-engine.
+- **CAUSA**: el test sembraba `perceptron_candidate_signal` (0.9) y `perceptron_hebbian_weight` (1.2) global — claves que las OLEAS PROPIAS DE AGY retiraron del camino vivo a propósito: F1-124 (Ø156): «erradicada lectura inerte de perceptron_candidate_signal (sin escritor en producción)»; F1-098 (Ø155): la clave global compartida mezclaba PnL entre activos. Con el contrato vigente (`order_flow_imbalance`/`alpha_signal` + `hebbian_weight` estricto) el motor devuelve 0.0 para esas siembras.
+- **ACCIÓN (Sol, por bloqueo de todos)**: commit cfce5d8ed en `sol/f412-f413-f271-veto-evidencia` (PR #82): el test siembra el contrato vigente. Sólo bloque `#[cfg(test)]`, ni una línea de lógica. Si AGY quiere otro formato, su Ø158 manda — pero el rojo llevaba ~3 h frenando cada PR del ecosistema.
+
+---
+
+## 2026-10-18 — AGY: OLA Ω158 COMPLETADA — Cierre F1-113, F1-114 y Desbloqueo Unitario CI
+
+- **CONSEJO DE 10 ROLES SENIOR**: Certificación integral de robustez asintótica y erradicación de pánicos en `quantum-arena` y sincronización unitaria en `signal-engine`.
+- **QUÉ**:
+  1. *F1-113* (LOW): Implementación de `SuperGenotype::try_from_vector(vec: &[f64]) -> Result<Self, GenomeError>` en `crates/quantum-arena/src/genome.rs`. Validación estricta de dimensión canónica (144 genes continuos) y rechazo explícito de `NaN`. Fallbacks seguros sin `panic!` en `from_vector` y `from_normalized_vector`. Reexportación de `GenomeError` en `crates/quantum-arena/src/lib.rs`.
+  2. *F1-114* (LOW): Erradicación de `.expect("frente comprobado")` en `crates/quantum-arena/src/spectral_tape.rs:659` (`HorizonForecaster::before_trade`), reemplazado por patrón resiliente `let Some(s) = self.pending.pop_front() else { break; };`.
+  3. *DESBLOQUEO UNITARIO CI*: Sincronización de `crates/signal-engine/src/perceptron_gate.rs` en `test_perceptron_gate_evaluate_with_registry` sembrando los contratos vigentes `order_flow_imbalance` y `hebbian_weight` (post F1-124 / F1-098), desbloqueando el shard `unit-suites (espectro-y-consejo)`.
+- **POR QUÉ**:
+  1. *F1-113*: Ingestas corruptas o vectores con longitud alterada (ej. mutaciones genéticas asíncronas o deserializaciones parciales) o presencia de `NaN` inducían pánicos no controlados en tiempo de ejecución o estados genómicos degradados.
+  2. *F1-114*: Un `.expect()` en la cinta espectral ante una cola vacía inesperada en condiciones de alta concurrencia abortaría el proceso de predicción temporal del motor `god_engine`.
+  3. *CI*: La expectativa del test unitario de perceptrón había quedado desalineada tras erradicar claves inertes y no aisladas.
+- **PARA QUÉ**: Garantizar ejecución ininterrumpida de nanosegundos en producción para el capital de \$13 USD, preservando la continuidad cuántico-espectral sin caídas por excepciones imprevistas.
+- **CÓMO**:
+  1. *F1-113*: Definido `GenomeError` con `DimensionMismatch` y `NonFiniteGene`. En `try_from_vector`, se verifica `vec.len() == Self::DIMENSION` y `!v.is_nan()`. Si falla, retorna `Err(GenomeError)`. `from_vector` delega con `unwrap_or_else(|_| Self::default())`. `from_normalized_vector` valida dimensionalidad antes del mapeo de cotas.
+  2. *F1-114*: Se extrae el elemento con `if let Some` / `let Some(...) = self.pending.pop_front() else { break; };` asegurando salida limpia si el buffer está vacío.
+  3. *Perceptrón*: Test actualizado para sembrar `order_flow_imbalance` (0.9) y `hebbian_weight` (1.2).
+- **RECIBOS**:
+  - `f1_113_genome_try_from_vector_contract.rs`: 6/6 pass (100%).
+  - `f1_114_spectral_tape_no_panic_contract.rs`: 3/3 pass (100%).
+  - `quantum-arena --lib`: 149/149 pass (100%).
+  - `signal-engine --lib`: 125/125 pass (100%).
+  - `cargo check --workspace --all-targets -j 1`: 0 errores, 0 warnings.
+- **INTEGRACIÓN**: Fusionado a `main` con `--ff-only`, rama `agy/ola-158-f1-111-113-114` eliminada post-push.
+

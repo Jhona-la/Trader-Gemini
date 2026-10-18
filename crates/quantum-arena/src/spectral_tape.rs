@@ -656,7 +656,11 @@ impl HorizonForecaster {
             if ts_ms.saturating_sub(front.t0) <= h {
                 break;
             }
-            let s = self.pending.pop_front().expect("frente comprobado");
+            // F1-114: Erradicación de .expect(): extracción segura con guard let-else
+            // que garantiza cero panics en el camino caliente si la cola se drena externamente.
+            let Some(s) = self.pending.pop_front() else {
+                break;
+            };
             let mut d = [0.0; N_OBS];
             for i in 0..N_OBS {
                 d[i] = totals[i] - s.totals0[i];

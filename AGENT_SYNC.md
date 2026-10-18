@@ -23,8 +23,8 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 | AGENTE | ESTADO | TAREA ACTUAL | RAMA | ARCHIVOS QUE TOCA | HEARTBEAT (local) |
 |---|---|---|---|---|---|
 | GLM | ACTIVO | 133: erradicación código simulado (PMU mock→CL-15) | glm/133-erradicar-codigo-muerto | os-guardian/{pmu_sensor,ebpf_core,observability_plane}, buzón | 2026-10-16 ~19:30 |
-| AGY | ACTIVO | Ola Ω157 CERRADA Y CERTIFICADA: F1-030 (desacople rate limit cancel/exit, mark_dirty en brackets huérfanos), F1-031 (FillReport estructurado y RESULT en market), F1-115 (O(1) fast-path is_empty() en capital_regime), F1-116 (suavizado continuo C^0 de LH-04 con Wilson LCB n>=1.0 sin cliff n=10), F1-125 (perfil espectral continuo en perceptron_gate anclado a banda [18..=22]). Contratos verdes 9/9, workspace limpio. | agy/ola-157-f1-030-031-115-116-125 -> main | crates/{execution-engine,risk-engine,signal-engine,omniscient-registry}, tests, docs | 2026-10-18 ~15:05 |
-| Sol | ACTIVO | F9-6 CERRADO: clúster phase-runner retirado (crate+bin+bloque descartado), check 32.7s sin warnings, 71/71 verde. Siguiente: siguiente RET del censo en mi carril (backtest-engine) | (sin rama; main d18b37354) | crates/phase-runner (eliminado), audit-engine (limpio) | 2026-10-18 ~15:10 |
+| AGY | ACTIVO | Ola Ω158 CERRADA Y CERTIFICADA: F1-113 (try_from_vector con GenomeError anti-panic, from_vector y from_normalized_vector blindados ante vectores cortos/no finitos), F1-114 (erradicación de .expect() en spectral_tape.rs:659 de HorizonForecaster::before_trade vía pop_front seguro). Contratos verdes 9/9 (6 f1_113 + 3 f1_114), 149 pruebas verdes en quantum-arena, workspace limpio sin warnings ni errores. | agy/ola-158-f1-111-113-114 -> main | crates/quantum-arena/src/{genome.rs,spectral_tape.rs,lib.rs}, tests, docs | 2026-10-18 ~17:25 |
+| Sol | ACTIVO | CICLO REVISIÓN DESDE LA BASE (plan V29, docs/PLAN_MAESTRO_SOL_2026-10-18.md). ÁTOMO EN CURSO F412/F413/F271 (censo C-F7b §3 prioridad 1, marcado urgente y sin dueño): puerta de evidencia del veto del Auditor Interno — las tres patas devuelven None sin fuente independiente; fuera el `registry.set` global (lib.rs:5088, contaminaba entre monedas vía fallback de get_scoped_value_or y nunca decaía); RED→GREEN 13 → 16,9 → 13. Siguiente átomo: canal independiente host ORDER_TRADE_UPDATE → record_fill_independiente (sombra sombra_wr_disc / sombra_friccion_real_menos_modelada_bp), y después F407 (unificación tribunal). | sol/f412-f413-f271-veto-evidencia | crates/audit-engine/src/auditor_interno.rs, crates/audit-engine/tests/f412_f413_f271_veto_evidencia_contract.rs, crates/audit-engine/Cargo.toml, crates/god-engine-core/src/lib.rs (5084-5088), docs/PLAN_MAESTRO_SOL_2026-10-18.md | 2026-10-18 ~20:20 |
 | Codex | ACTIVO (ROOT; Risk01 RED real) | Core07 privado: RED 3/2 a GREEN 5/0, 12+8 válidas; lock liberado 14:29:47Z. Risk RED13: Cargo57388 desde 14:30:36Z; coordinador61604/Start14:30:20Z y token70dab8ca, sin resultado | codex/root-lg5-main-2026-10-15 (084dcaf4/tree25561b01; CONTROL no publicable por ancestría) | ROOT: 2 GiB/jobs1 por orden del usuario; mismos236/aa8/corpus. Otro Cargo apareció después de adquirir: sin aislamiento global certificado. BASE conserva maestro/censo y Quant/Fable sus reservas; seis pares, check/T1 y puerto sobre main pendientes | 2026-10-18 09:40 America/Bogota |
 | Codex BASE15 | ACTIVO (sincronización documental) | Publica plan y censo histórico b9 sin recenso; Core07 privado1/7, Risk01 RED13 sin resultado recibido; Flow03/F-A6 y CL135 pendientes, LG5 HIGH01/02 y MED06 abiertos | codex/base15-doc-sync-20261018 (sólo docs; PR65 reservado) | docs/audit/*BASE15*, .agents/MEMORIA.md y esta fila propia; sin Cargo ni índice ROOT | 2026-10-18 09:48 America/Bogota |
 | Claude (Línea H) | ACTIVO | Ola 3 CERRADA (PR #64 en main 69ccd80e, T-3 v2); ola 4: re-medición T-3 v2 con LH-04 + verificación barata de LH-06 (GLM 122) | claude/linea-h-ola4 (worktree .claude/worktrees/linea-h) | crates/backtest-engine/tests/t3_ventaja_conocida.rs, tests/support/t3_synthetic.rs, docs/audit/linea_h/*, docs/PLAN_LINEA_H_*, buzón/TABLERO/MEMORIA (anexos) | 2026-10-17 ~11:50 (compila sólo por cargo_semaforo.sh; medición T-3 release ≈ 10 min por vehículo) |
@@ -105,6 +105,13 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
 - **CI (F-H2)**: los pushes de solo documentación (*.md, docs/, *.tsv, graphify-out/,
   outputs/, .agents/) ya no lanzan `Replay contracts` ni `Unit and contract suites`.
   Heartbeats y buzón son gratis en runners; el código sigue pasando por CI.
+- **Semáforo verificado por Sol (2026-10-18 ~20:15)**: `cargo.exe` (PID 79208, 268 MB)
+  y `rustc.exe` (PID 35688, 45 MB) ACTIVOS de otro agente — los builds propios de
+  este ciclo corren SIEMPRE vía `bash scripts/cargo_semaforo.sh` (espera, -j2,
+  registro en `logs/semaforo.log`). `god_engine.exe` NO está corriendo. Disco:
+  logs 153 MB, .git 3,1 GB, .claude 393 MB, crates 65 MB (target no medible con
+  `du` durante build ajeno; usar `bash scripts/disk_audit.sh`). Recordatorio a
+  todos: cerrar ola con `bash scripts/higiene_recursos.sh` si los logs pesan.
 
 ## 5. Estado de ramas y worktrees (auditoría inicial GLM 132)
 
@@ -144,3 +151,4 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
 7. **perf_event_open real** para el PMU sensor (GLM 133 dejó
    `Option<PmuVector>` — cuando exista el backend nativo, `Some`
    vuelve a alimentar el detector de anomalías OOB).
+

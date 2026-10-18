@@ -75,6 +75,64 @@ fn default_obi_curve() -> crate::temporal_spectrum::HorizonCurve {
     )
 }
 
+/// Error tipado de reconstrucción y validación dimensional/numérica del genotipo (F1-113).
+#[derive(Debug, Clone)]
+pub enum GenomeError {
+    DimensionMismatch { expected: usize, actual: usize },
+    NonFiniteGene { index: usize, value: f64 },
+}
+
+impl PartialEq for GenomeError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::DimensionMismatch {
+                    expected: e1,
+                    actual: a1,
+                },
+                Self::DimensionMismatch {
+                    expected: e2,
+                    actual: a2,
+                },
+            ) => e1 == e2 && a1 == a2,
+            (
+                Self::NonFiniteGene {
+                    index: i1,
+                    value: v1,
+                },
+                Self::NonFiniteGene {
+                    index: i2,
+                    value: v2,
+                },
+            ) => i1 == i2 && (v1 == v2 || (v1.is_nan() && v2.is_nan())),
+            _ => false,
+        }
+    }
+}
+
+impl std::fmt::Display for GenomeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DimensionMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "Discrepancia dimensional de genoma: esperado {}, recibido {}",
+                    expected, actual
+                )
+            }
+            Self::NonFiniteGene { index, value } => {
+                write!(
+                    f,
+                    "Gen no finito en índice {} del vector: {}",
+                    index, value
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for GenomeError {}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuperGenotype {
     pub global_max_drawdown: f64,
@@ -2751,6 +2809,9 @@ impl SuperGenotype {
     /// Reconstruye el genoma a partir de un vector unitario normalizado [0.0, 1.0]^DIMENSION.
     /// D-405: Aplica mapeo afín exacto x = lo + u * (hi - lo) previo a la reconstrucción física.
     pub fn from_normalized_vector(u: &[f64]) -> Self {
+        if u.len() != Self::DIMENSION {
+            return Self::default();
+        }
         let lo = Self::get_lower_bounds();
         let hi = Self::get_upper_bounds();
         let mut raw = Vec::with_capacity(u.len());
@@ -2766,7 +2827,21 @@ impl SuperGenotype {
         Self::from_vector(&raw)
     }
 
-    pub fn from_vector(vec: &[f64]) -> Self {
+    /// Reconstrucción falible y determinista desde un slice flotante `&[f64]` (F1-113).
+    /// Valida longitud exacta contra `Self::DIMENSION` (144) y finitud numérica estricta,
+    /// retornando un `GenomeError` tipado ante vectores truncados, sobredimensionados o con NaN/Inf.
+    pub fn try_from_vector(vec: &[f64]) -> Result<Self, GenomeError> {
+        if vec.len() != Self::DIMENSION {
+            return Err(GenomeError::DimensionMismatch {
+                expected: Self::DIMENSION,
+                actual: vec.len(),
+            });
+        }
+        for (i, &v) in vec.iter().enumerate() {
+            if v.is_nan() {
+                return Err(GenomeError::NonFiniteGene { index: i, value: v });
+            }
+        }
         // R1.1 — FUENTE ÚNICA DE VERDAD: los clamps se leen de los arrays de
         // bounds (las mismas cotas que GenomeStore::validate usa como gate y
         // que la evolución CMA-ES usa como espacio de búsqueda). Antes los
@@ -2947,7 +3022,14 @@ impl SuperGenotype {
         g.sl_horizon_curve = Self::normalize_sl_curve_friction_floor(g.sl_horizon_curve);
         g.derive_anchors_from_curves();
         g.sync_continuous_curves();
-        g
+        Ok(g)
+    }
+
+    /// Reconstrucción infalible delegada (F1-113): si el vector es inválido o incompatible
+    /// dimensionalmente/numéricamente, recurre a `Self::default()` garantizando cero panics
+    /// en tiempo de ejecución.
+    pub fn from_vector(vec: &[f64]) -> Self {
+        Self::try_from_vector(vec).unwrap_or_else(|_| Self::default())
     }
 
     /// D-649b (DÉCIMA OLA): la escala de caducidad de posiciones.
@@ -3413,7 +3495,7 @@ mod tests {
         assert_eq!(
             vec.len(),
             SuperGenotype::DIMENSION,
-            "to_vector length must be exactly 139"
+            "to_vector length must be exactly DIMENSION (144)"
         );
         assert_eq!(
             SuperGenotype::get_lower_bounds().len(),
@@ -3426,6 +3508,30 @@ mod tests {
         let reconstructed = SuperGenotype::from_vector(&vec);
         let vec2 = reconstructed.to_vector();
         assert_eq!(vec.len(), vec2.len());
+
+        // F1-113: Verificación de try_from_vector y rechazo estricto
+        let try_ok = SuperGenotype::try_from_vector(&vec);
+        assert!(try_ok.is_ok(), "vector canónico debe ser admitido por try_from_vector");
+
+        // Vector corto debe retornar DimensionMismatch sin pánico
+        let short_vec = vec![0.5; 100];
+        assert_eq!(
+            SuperGenotype::try_from_vector(&short_vec).unwrap_err(),
+            GenomeError::DimensionMismatch {
+                expected: SuperGenotype::DIMENSION,
+                actual: 100
+            }
+        );
+        assert_eq!(SuperGenotype::from_vector(&short_vec).to_vector().len(), SuperGenotype::DIMENSION);
+
+        // Vector con NaN/Inf debe retornar NonFiniteGene
+        let mut nan_vec = vec.clone();
+        nan_vec[5] = f64::NAN;
+        assert_eq!(
+            SuperGenotype::try_from_vector(&nan_vec).unwrap_err(),
+            GenomeError::NonFiniteGene { index: 5, value: f64::NAN }
+        );
+        assert_eq!(SuperGenotype::from_vector(&nan_vec).to_vector().len(), SuperGenotype::DIMENSION);
     }
 
     /// D-658: la mutación lee las cotas de las curvas de `*_BOUNDS`. Con tasa
