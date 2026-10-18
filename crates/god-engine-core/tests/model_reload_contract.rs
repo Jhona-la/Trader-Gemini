@@ -309,3 +309,26 @@ fn cl141_el_error_de_escaneo_se_avisa_una_vez() {
     let e = tracker.scan(&falta, |_, _| Ok(())).unwrap_err().to_string();
     assert!(tracker.error_de_escaneo_nuevo(&e), "un escaneo correcto lo olvida");
 }
+
+/// CL-141b — Esperado: los pesos de DarkAlpha no son candidatos a bosque.
+/// Antes cada reescritura del entrenador automático era un rechazo «nuevo»
+/// y volvía a avisar.
+#[test]
+fn cl141b_los_pesos_de_dark_alpha_no_son_un_bosque() {
+    let f = Fixture::new();
+    f.file("DarkAlpha_BTCUSDT.json", b"{\"weights\": []}", 10_000);
+    f.file("BTCUSDT_MOTOR.json", b"bosque", 10_000);
+    let mut tracker = ModelReloadTracker::default();
+    for (i, mtime) in [10_000u64, 20_000, 30_000].into_iter().enumerate() {
+        f.file("DarkAlpha_BTCUSDT.json", format!("{{\"weights\": [{i}]}}").as_bytes(), mtime);
+        let mut claves = Vec::new();
+        let ev = tracker
+            .scan(&f.0, |k, _| {
+                claves.push(k.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert!(claves.iter().all(|k| !k.starts_with("DarkAlpha_")), "{claves:?}");
+        assert!(ev.iter().all(|e| !e.key.starts_with("DarkAlpha_")));
+    }
+}

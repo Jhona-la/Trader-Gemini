@@ -31,6 +31,14 @@ pub struct ModelReloadTracker {
     ultimo_error_de_escaneo: Option<String>,
 }
 
+/// CL-141b (C-F6): artefactos de `models/` que no son bosques y tienen su
+/// propio cargador. `DarkAlpha_{SÍMBOLO}.json` son los pesos de la red de
+/// DarkAlpha, que el host vigila aparte y que el entrenador automático
+/// reescribe en cada mejora. El escáner de bosques los intentaba cargar, el
+/// rechazo era seguro y cada reescritura traía una fuente nueva, así que el
+/// aviso volvía con cada promoción del entrenador.
+pub const PREFIJOS_AJENOS: &[&str] = &["DarkAlpha_"];
+
 // A change detector, NOT a content hash, generation or promotion certificate.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SourceStamp {
@@ -84,6 +92,9 @@ impl ModelReloadTracker {
             let Some(key) = path.file_stem().and_then(|s| s.to_str()) else {
                 continue;
             };
+            if PREFIJOS_AJENOS.iter().any(|prefijo| key.starts_with(prefijo)) {
+                continue;
+            }
             if ext == Some("bin") {
                 match path.with_extension("json").try_exists() {
                     Ok(true) => continue,
