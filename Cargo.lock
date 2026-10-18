@@ -4512,14 +4512,9 @@ dependencies = [
 name = "strategy-core"
 version = "0.1.0"
 dependencies = [
- "data-pipeline",
  "feature-engine",
  "omniscient-registry",
- "polars",
  "quantum-arena",
- "rand 0.10.1",
- "smartcore",
- "telemetry-server",
 ]
 
 [[package]]
