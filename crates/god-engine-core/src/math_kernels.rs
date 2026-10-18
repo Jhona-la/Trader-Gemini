@@ -1,5 +1,4 @@
 use std::f64;
-use std::simd::prelude::*;
 /// Welford's Online Algorithm for computing variance and standard deviation in O(1).
 /// Used for Z-Scores, Bollinger Bands, and running volatility.
 #[derive(Debug, Clone, Default)]
@@ -484,100 +483,6 @@ impl RecursiveHurst {
     #[inline(always)]
     pub fn samples(&self) -> usize {
         self.dfa.samples()
-    }
-}
-
-// =====================================================================
-// MACHINE LEARNING INFERENCE KERNELS (Nano-Latency)
-// =====================================================================
-
-pub fn fused_compute_step(
-    closes: &[f64],
-    volumes: &[f64],
-    portfolio_state: &[f64; 3], // [has_pos, pnl_norm, dur_norm]
-    gene_params: &[f64; 2],     // [sl_norm, tp_norm]
-    brain_weights: &[f64; 100], // 25 * 4 = 100 flattened
-    l2_state: &[f64; 2],        // [ofi, microprice_divergence]
-    window: usize,
-    out_scores: &mut [f64; 4],
-) {
-    let n = closes.len();
-    if n < 30 {
-        out_scores.fill(0.0);
-        return;
-    }
-
-    let mut state_tensor = [0.0f64; 25];
-
-    // 1A. Market Data (20 Features)
-    // Returns (5)
-    for i in 0..window {
-        let idx = n - window + i;
-        let val = (closes[idx] - closes[idx - 1]) / closes[idx - 1];
-        state_tensor[i] = val;
-    }
-
-    // Volatility (5)
-    let mut vol_sum = 0.0;
-    for i in (n - 20)..n {
-        vol_sum += volumes[i];
-    }
-    let mut mean_vol = vol_sum / 20.0;
-    if mean_vol < 1e-8 {
-        mean_vol = 1.0;
-    }
-
-    for i in 0..window {
-        let idx = n - window + i;
-        state_tensor[5 + i] = volumes[idx] / mean_vol;
-    }
-
-    // Momentum / Custom (5)
-    for i in 0..window {
-        let idx = n - window + i;
-        let mom = if idx >= 2 {
-            (closes[idx] / closes[idx - 2]) - 1.0
-        } else {
-            0.0
-        };
-        state_tensor[10 + i] = mom;
-        state_tensor[15 + i] = 0.0;
-    }
-
-    // Inject L2 Data
-    state_tensor[18] = l2_state[0];
-    state_tensor[19] = l2_state[1];
-
-    // 2. Add Portfolio & Gene (5 Features)
-    state_tensor[20] = portfolio_state[0];
-    state_tensor[21] = portfolio_state[1];
-    state_tensor[22] = portfolio_state[2];
-    state_tensor[23] = gene_params[0];
-    state_tensor[24] = gene_params[1];
-
-    // 3. Neural Inference Dot Product (SIMD AVX-512 / AVX2 optimized)
-    for act in 0..4 {
-        let base_idx = act * 25;
-
-        // 3 x 8 = 24 elements using SIMD
-        let st_0 = f64x8::from_slice(&state_tensor[0..8]);
-        let bw_0 = f64x8::from_slice(&brain_weights[base_idx..base_idx + 8]);
-        let mut sim_sum = st_0 * bw_0;
-
-        let st_1 = f64x8::from_slice(&state_tensor[8..16]);
-        let bw_1 = f64x8::from_slice(&brain_weights[base_idx + 8..base_idx + 16]);
-        sim_sum += st_1 * bw_1;
-
-        let st_2 = f64x8::from_slice(&state_tensor[16..24]);
-        let bw_2 = f64x8::from_slice(&brain_weights[base_idx + 16..base_idx + 24]);
-        sim_sum += st_2 * bw_2;
-
-        let mut score = sim_sum.reduce_sum();
-
-        // 1 remaining element
-        score += state_tensor[24] * brain_weights[base_idx + 24];
-
-        out_scores[act] = score;
     }
 }
 
