@@ -7,9 +7,9 @@
 //!
 //! 1. El núcleo publica en cada evento, por moneda, `statarb_ou_zscore` (z
 //!    de la base si la reversión está demostrada, 0 si no o con el spot
-//!    caducado), `statarb_half_life_ms` (la cota 2·τ_k demostrada en el nodo
-//!    τ_k ≤ τ*, ∞ sin demostración) y `statarb_beta` (1: la base es
-//!    ln F − ln S, sin estimar β).
+//!    caducado), `statarb_half_life_ms` (la cota τ_k demostrada en el nodo
+//!    τ_k ≤ τ*, ∞ sin demostración; antes de C-F5b, 2·τ_k) y `statarb_beta`
+//!    (1: la base es ln F − ln S, sin estimar β).
 //! 2. El lector sólo vota con reversión demostrada (t½ publicada ≤ 2τ*). Sin
 //!    prueba propia se abstiene: ya no cae a `vecm_zscore`.
 //! 3. TTL: con el spot caducado (> 30 s) la z publicada es 0, también con el
@@ -46,17 +46,18 @@ fn cl97_sin_spot_publica_abstencion_y_el_lector_no_vota() {
 }
 
 /// Verdad: con una base que revierte rápido (t½ = 14 s) y pares síncronos,
-/// la prueba demuestra la reversión: la t½ publicada es 2·τ_k de un nodo de
-/// la malla con τ_k ≤ τ*, β = 1 y la z es finita.
+/// la prueba demuestra la reversión: la t½ publicada es τ_k de un nodo de
+/// la malla con τ_k ≤ τ* (C-F5b: más de la mitad revierte en τ_k), β = 1 y
+/// la z es finita.
 #[test]
 fn cl97_con_base_que_revierte_publica_la_cota_de_un_nodo() {
     let _g = bloqueo();
     let (arena, _core, _m, _ts) = nucleo_demostrado(1);
     let th = leer(&arena, "statarb_half_life_ms").expect("t½ publicada");
     let tau = leer(&arena, "dominant_tau_ms").expect("τ* publicada");
-    let nodo = (17..=22).find(|&k| (2.0 * SPECTRUM_SCALES_MS[k]).to_bits() == th.to_bits());
+    let nodo = (17..=22).find(|&k| SPECTRUM_SCALES_MS[k].to_bits() == th.to_bits());
     println!("observado: t½ publicada = {th} ms, τ* = {tau} ms, nodo = {nodo:?}");
-    assert!(nodo.is_some(), "la t½ publicada es una cota 2·τ_k: {th}");
+    assert!(nodo.is_some(), "la t½ publicada es una cota τ_k: {th}");
     assert!(SPECTRUM_SCALES_MS[nodo.unwrap()] <= tau);
     assert_eq!(leer(&arena, "statarb_beta"), Some(1.0));
     let z = leer(&arena, "statarb_ou_zscore").expect("z publicada");

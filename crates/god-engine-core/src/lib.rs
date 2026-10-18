@@ -6473,7 +6473,7 @@ impl GodEngineCore {
 
             // CL-97 (F3.7-02 v2): ESCRITOR de StatArb. Veredicto de la prueba
             // de reversión de la base a la τ de decisión: z del último par y
-            // cota de vida media demostrada (2·τ_k del nodo τ_k ≤ τ*), o z = 0
+            // cota de vida media demostrada (τ_k del nodo τ_k ≤ τ*), o z = 0
             // y t½ = ∞ sin demostración. Con el spot caducado (> TTL, CL-79)
             // la z es 0. Se publica en cada evento que llega hasta aquí y para
             // toda moneda (no con las entradas bloqueadas, que salen antes; W-5
