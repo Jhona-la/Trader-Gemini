@@ -434,6 +434,23 @@ fn evolve_main() {
             score -= dd * 200000.0;
         } // Aniquilación inmediata (Penalización Absoluta)
 
+        // F1-021 (Ola Ω153): Conectar el panel ex-post (rep.metrics) a la función de aptitud del SA:
+        // 1. Penalizar CVaR95 que supere el presupuesto de ruina (> 10% del capital inicial).
+        // 2. Penalizar turnover excesivo (> 100x/día) que destruye el capital en comisiones/slippage.
+        // 3. Premiar ratio Calmar (retorno compuesto normalizado por Max Drawdown).
+        if rep.metrics.cvar_95.is_finite() && rep.metrics.cvar_95 > 0.0 && initial_cap_f64 > 0.0 {
+            let cvar_fraction = rep.metrics.cvar_95 / initial_cap_f64;
+            if cvar_fraction > 0.10 {
+                score -= (cvar_fraction - 0.10) * 50_000.0;
+            }
+        }
+        if rep.metrics.turnover_per_day.is_finite() && rep.metrics.turnover_per_day > 100.0 {
+            score -= (rep.metrics.turnover_per_day - 100.0) * 100.0;
+        }
+        if rep.metrics.calmar.is_finite() && rep.metrics.calmar > 0.0 {
+            score += rep.metrics.calmar.min(10.0) * 500.0;
+        }
+
         if i % 20 == 0 {
             println!("🔄 Iter {}: Curr Score = {:.2} (Best: {:.2}) | IS Cap: {:.2}, Trades: {}, WinRate: {:.2} | Temp: {:.2}", i, score, selection.best_score().unwrap_or(f64::NEG_INFINITY), capital, trades, out_stats[0], temp);
         }

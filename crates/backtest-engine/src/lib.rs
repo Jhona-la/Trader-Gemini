@@ -121,7 +121,8 @@ pub fn run_backtest_native(
     // sin fricción de riesgo = genomas sobre-apalancados que mueren al salir a
     // demo. Misma envolvente, mismo record_trade, mismo rollback.
     let mut risk_envelope = risk_engine::kelly_envelope::RiskEnvelope::new();
-    let mut pos_was_open = false;
+    let mut last_sim_buyer_maker = false;
+    let mut last_close_executed = closes.first().copied().unwrap_or(0.0);
     let mut envelope_vetoes: u64 = 0;
     let mut avg_win_abs = 0.0;
     let mut avg_loss_abs = 0.0;
@@ -134,6 +135,7 @@ pub fn run_backtest_native(
 
     for i in 0..len {
         let current_close = closes[i];
+        last_close_executed = current_close;
         let current_vol = volumes[i];
 
         let prev_close = if i > 0 { closes[i - 1] } else { current_close };
@@ -301,6 +303,7 @@ pub fn run_backtest_native(
             let volatility = prev_close
                 * cfg.base_slippage_floor.max(0.0001)
                 * ((num_ticks - 1 - t) as f64 / num_ticks as f64).sqrt();
+            let prev_sim_price = sim_price;
             sim_price = if is_kline {
                 current_close
             } else {
@@ -347,9 +350,25 @@ pub fn run_backtest_native(
             omni_sim[49] = tick_ret.abs() * 100.0;
             core.arena.registry.set("macro_staleness_ms", 0.0);
 
-            let sim_is_buyer_maker = tick_ret < 0.0;
+            // F1-023 (Ola Ω153): Regla del tick causal (Lee-Ready) sobre delta_tick = sim_price - prev_sim_price.
+            // Elimina la fuga de dirección del cierre de la vela actual en el último tercio del bar.
+            let delta_tick = sim_price - prev_sim_price;
+            let sim_is_buyer_maker = if delta_tick.abs() > 1e-12 {
+                delta_tick < 0.0 // Downtick = agresor vendedor = buyer maker
+            } else {
+                last_sim_buyer_maker // Zero-tick: mantiene estado causal anterior
+            };
+            last_sim_buyer_maker = sim_is_buyer_maker;
+
+            let safe_coin_idx = target_coin_id.min(arena.coins.len().saturating_sub(1));
+            let gen_before: [u64; 3] = if let Some(coin) = arena.coins.get(safe_coin_idx) {
+                std::array::from_fn(|idx| coin.positions.get_slot(idx).generation.load(Ordering::Acquire))
+            } else {
+                [0; 3]
+            };
+
             let event_ts_ms = (i as u64 * 60_000) + (t as u64 * (60_000 / num_ticks.max(1) as u64));
-            let (_new_order, closed_order) = core.process_event(
+            let (new_order, closed_order) = core.process_event(
                 target_coin_id,
                 true,
                 is_kline,
@@ -368,25 +387,32 @@ pub fn run_backtest_native(
                 sim_is_buyer_maker,
             );
 
-            // CERT-M8-C05: envolvente del host sobre CADA entrada abierta.
-            if target_coin_id < core.feature_engines.len() {
-                let atr_now = core.feature_engines[target_coin_id].get_atr_pct();
-                if !booktick_replay::live_envelope_gate(
-                    &arena,
-                    &mut risk_envelope,
-                    target_coin_id,
-                    sim_price,
-                    atr_now,
-                    pos_was_open,
-                    &mut envelope_vetoes,
-                ) {
-                    // LH-03: activar enfriamiento inmediato en el reloj del evento
-                    core.feature_engines[target_coin_id].last_exit_fastband_ms = event_ts_ms;
+            // F1-020 (Ola Ω153): Envolvente del host disparada POR ORDEN sobre la ranura
+            // resonante específica recién abierta (sustituye pos_was_open que silenciaba slots 1/2).
+            if new_order.is_some() {
+                if let Some(coin) = arena.coins.get(safe_coin_idx) {
+                    if let Some(slot_idx) = (0..3).find(|&s| {
+                        let p = coin.positions.get_slot(s);
+                        p.is_open() && p.generation.load(Ordering::Acquire) != gen_before[s]
+                    }) {
+                        if target_coin_id < core.feature_engines.len() {
+                            let atr_now = core.feature_engines[target_coin_id].get_atr_pct();
+                            if !booktick_replay::live_envelope_gate_for_slot(
+                                &arena,
+                                &mut risk_envelope,
+                                target_coin_id,
+                                slot_idx,
+                                sim_price,
+                                atr_now,
+                                &mut envelope_vetoes,
+                            ) {
+                                // LH-03: activar enfriamiento inmediato en el reloj del evento
+                                core.feature_engines[target_coin_id].last_exit_fastband_ms = event_ts_ms;
+                            }
+                        }
+                    }
                 }
             }
-            pos_was_open = arena.coins[target_coin_id.min(arena.coins.len().saturating_sub(1))]
-                .positions
-                .is_any_open();
 
             // F5.1 (paridad host): alimentar el posterior del edge con cada
             // cierre — mismos EWMAs y mismo record_trade que el replay/vivo.
@@ -434,12 +460,30 @@ pub fn run_backtest_native(
         // F3.2: el delta de ESTA vela queda disponible para la SIGUIENTE.
         prev_delta = delta;
 
+        // F1-022 (Ola Ω153): Medir Drawdown y corte de ruina sobre Total Equity (Caja + No Realizado)
+        // para erradicar el patrón CSG-7 y evitar pérdidas latentes ignoradas.
+        let safe_coin_idx = target_coin_id.min(core.arena.coins.len().saturating_sub(1));
+        let mut unrealized_sum = 0.0;
+        for pos in core.arena.coins[safe_coin_idx].positions.slots() {
+            if pos.is_open() {
+                let entry = pos.entry_price.load(Ordering::Relaxed);
+                let qty = pos.quantity.load(Ordering::Relaxed);
+                let is_long = pos.is_long.load(Ordering::Relaxed);
+                let exit_fee = qty * current_close * avg_fee_est;
+                let unrl = (current_close - entry) * qty * if is_long { 1.0 } else { -1.0 } - exit_fee;
+                if unrl.is_finite() {
+                    unrealized_sum += unrl;
+                }
+            }
+        }
+
         let current_cap = core.arena.unified_capital.load(Ordering::Relaxed);
-        if current_cap > peak_capital {
-            peak_capital = current_cap;
+        let total_equity = current_cap + unrealized_sum;
+        if total_equity > peak_capital {
+            peak_capital = total_equity;
         }
         let dd = if peak_capital > 0.0 {
-            (peak_capital - current_cap) / peak_capital
+            (peak_capital - total_equity) / peak_capital
         } else {
             0.0
         };
@@ -448,16 +492,16 @@ pub fn run_backtest_native(
             max_dd = dd;
         }
 
-        if current_cap <= 0.0 {
+        if total_equity <= 0.0 || current_cap <= 0.0 {
             break;
         }
     }
 
     let mut final_cap = core.arena.unified_capital.load(Ordering::Relaxed);
 
-    // Add unrealized PnL from open positions to prevent missing large drawdowns at end (deducting exit fees)
-    // FIX #1485 & #1517: Usar target_coin_id y proteger suma de unrealized PnL
-    let last_price = closes.last().copied().unwrap_or(0.0);
+    // F1-022 (Ola Ω153): Valuación MTM terminal sobre last_close_executed (barra donde ocurrió el corte),
+    // eliminando lookahead contable hacia closes.last() de la serie completa tras una ruina temprana.
+    let last_price = last_close_executed;
     let safe_coin_idx = target_coin_id.min(core.arena.coins.len().saturating_sub(1));
     for pos in core.arena.coins[safe_coin_idx].positions.slots() {
         if pos.is_open() {

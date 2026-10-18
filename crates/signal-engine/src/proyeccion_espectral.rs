@@ -139,6 +139,30 @@ impl QuantumStrategy for ProyeccionEspectralEngine {
         0.0
     }
 
+    /// F1-123 (Fable / Ola Ω153): Operabilidad explícita per-moneda.
+    /// Un espectro sin masa o con masa inferior a masa_minima no proyecta conocimiento
+    /// físico observable. Si falta la clave o el peso modulador es 0.0, el motor no es
+    /// operable y devuelve false, impidiendo que una abstención estructural entre a n_fuentes
+    /// y diluya artificialmente el promedio del ensamble (paridad con Ola Ω145).
+    fn is_operable_for_coin(&self, coin_id: usize, symbol: &str) -> bool {
+        let Some(masa) = self.lee(coin_id, symbol, "espectral_masa_resuelta") else {
+            return false;
+        };
+        let custom_min = self.lee(coin_id, symbol, "espectral_masa_minima")
+            .unwrap_or(self.params.masa_minima);
+        let custom_plena = self.lee(coin_id, symbol, "espectral_masa_plena")
+            .unwrap_or(self.params.masa_plena);
+        let effective_params = if custom_min.is_finite() && custom_plena.is_finite() && custom_min < custom_plena {
+            ProyeccionEspectralParams {
+                masa_minima: custom_min,
+                masa_plena: custom_plena,
+            }
+        } else {
+            self.params
+        };
+        effective_params.compute_weight(masa) > 0.0
+    }
+
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
         let Some(masa) = self.lee(coin_id, symbol, "espectral_masa_resuelta") else {
             return 0.0;
@@ -215,6 +239,20 @@ mod tests {
     fn sin_telemetria_espectral_abstiene() {
         let e = motor(Arc::new(OmniscientRegistry::new()));
         assert_eq!(e.evaluate_for_coin(0, "BTCUSDT"), 0.0);
+        assert!(!e.is_operable_for_coin(0, "BTCUSDT"), "sin datos no debe ser operable");
+    }
+
+    #[test]
+    fn operabilidad_espectral_segun_masa_resuelta() {
+        let r = Arc::new(OmniscientRegistry::new());
+        let e = motor(r.clone());
+        assert!(!e.is_operable_for_coin(0, "BTCUSDT"), "frío sin masa => inoperable");
+
+        r.set("espectral_masa_resuelta", 0.15);
+        assert!(!e.is_operable_for_coin(0, "BTCUSDT"), "masa 0.15 <= 0.25 => inoperable");
+
+        r.set("espectral_masa_resuelta", 0.50);
+        assert!(e.is_operable_for_coin(0, "BTCUSDT"), "masa 0.50 > 0.25 => operable");
     }
 
     #[test]
@@ -226,5 +264,6 @@ mod tests {
         let e = motor(r);
         let v = e.evaluate_for_coin(0, "BTCUSDT");
         assert!((v + 0.20).abs() < 1e-9, "-0.5·0.4 = -0.20, obtuve {v}");
+        assert!(e.is_operable_for_coin(0, "BTCUSDT"));
     }
 }

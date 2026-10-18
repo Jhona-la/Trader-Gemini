@@ -13646,3 +13646,75 @@ Plan operativo, siete pares todavía0ejecuciones: Core07 primero(5contratos, cie
    - **DÓNDE:** `crates/risk-engine/src/lib.rs:775-795` y `crates/risk-engine/src/veto_registry.rs:130`.
    - **QUIÉN:** `RiskEngine`, `VetoRegistry` y contratos `f1_014_cramer_lundberg_real_exposure_contract.rs` y `correlation_admission_contract.rs`.
 
+
+## Antigravity (Quant Sr.) — OLA Ω153 CERRADA (2026-10-18 ~03:15)
+- **Rama:** `agy/ola-153-f1-020-022-023-122-123`
+- **Alcance:**
+  - `crates/backtest-engine/src/booktick_replay.rs`
+  - `crates/backtest-engine/src/lib.rs`
+  - `crates/signal-engine/src/orchestrator.rs`
+  - `crates/signal-engine/src/proyeccion_espectral.rs`
+  - `src/bin/evolution.rs`
+  - `crates/backtest-engine/tests/f1_020_stacked_resonant_envelope_contract.rs`
+  - `crates/backtest-engine/tests/f1_022_023_run_backtest_native_causality_contract.rs`
+  - `crates/signal-engine/tests/f1_123_proyeccion_espectral_operability_contract.rs`
+- **Resolución de Hallazgos Fable F1 (MED & LOW):**
+
+### 👨‍🏫 INFORME MODO PROFESOR — OLA Ω153: CIERRE F1-020, F1-021, F1-022, F1-023, F1-122 Y F1-123
+
+1. **F1-020 (MED) — Gating de Envolvente por Orden y Ranura Específica en Backtest Replay y Nativo:**
+   - **QUÉ:** Sustitución del gating por estado global (`prev_open`) por `live_envelope_gate_for_slot`, disparado exclusivamente ante nuevas órdenes (`o1.is_some()` o `o2.is_some()`) y localizando la ranura resonante exacta mediante el incremento del número atómico de generación (`p.generation != gen_before[slot]`). Si la envolvente veta, `rollback_local_slot` revierte únicamente esa ranura sin perturbar las demás.
+   - **POR QUÉ:** En el diseño multi-escala, `find_resonant_slot` admite hasta 3 posiciones concurrentes por activo (diferenciadas por $\tau$). Bajo el bug previo, si slot 0 estaba abierto (`prev_open == true`), las órdenes posteriores que abrían slot 1 o slot 2 se saltaban la envolvente Kelly bayesiana, el apalancamiento bootstrap y el margin guard. Además, al inspeccionar el estado tomaba la primera posición abierta (slot 0) en vez de la posición recién creada.
+   - **PARA QUÉ:** Lograr paridad 1:1 estricta con el host en vivo (`god_engine.rs:4236`), donde cada orden entrante se valida individualmente, garantizando que el backtest no sobreestime el nocional ni admita apalancamientos apilados que en producción serían vetados.
+   - **CÓMO:** Se rastrea `gen_before: [u64; 3]` antes de `process_event`. Al generarse una orden, se encuentra la ranura cuyo `generation` aumentó y `live_envelope_gate_for_slot` evalúa Kelly, apalancamiento adaptativo y margen libre sin la propia orden. Ante veto, `rollback_local_slot` libera el margen y reembolsa la comisión de entrada de esa ranura específica.
+   - **CUÁNDO:** En cada micro-tick o trade que produce una orden nueva en `run_step` y en `run_backtest_native`.
+   - **DÓNDE:** `crates/backtest-engine/src/booktick_replay.rs:586-660, 860-975` y `crates/backtest-engine/src/lib.rs:370-395`.
+   - **QUIÉN:** `BooktickReplayEngine` y contrato `f1_020_stacked_resonant_envelope_contract.rs`.
+
+2. **F1-021 (MED) — Cableado del Panel Ex-Post (`rep.metrics`) a la Función de Aptitud del Simulated Annealing:**
+   - **QUÉ:** Conexión activa de los campos de `ExPostMetrics` (`cvar_95`, `turnover_per_day`, `calmar`) calculados en cada candidato del SA a la función de puntuación en `evolution.rs`.
+   - **POR QUÉ:** `ex_post_metrics` se calculaba en cada candidato (pagando clonaciones, ordenamiento de PnLs $O(N \log N)$ y múltiples pases estadísticos), pero ningún consumidor en producción leía sus campos. El score del SA dependía puramente de $\ln(\text{crecimiento}) \cdot 10\,000$ más un decaimiento heurístico de drawdown de caja, tratando por igual a un candidato con CVaR95 del 40% del capital y turnover de 50x/día que a uno con CVaR95 del 2% y turnover sostenible.
+   - **PARA QUÉ:** Convertir el cómputo del panel ex-post en una presión selectiva activa que guíe el algoritmo evolutivo hacia genomas inmunes a la ruina, penalizando el riesgo de cola y el desgaste en comisiones, y premiando el crecimiento eficiente ajustado por drawdown (Calmar).
+   - **CÓMO:**
+     - Si `cvar_95 / initial_capital > 0.10`: penalizar `score -= (cvar_frac - 0.10) * 50_000.0`.
+     - Si `turnover_per_day > 100.0`: penalizar `score -= (turnover - 100.0) * 100.0`.
+     - Si `calmar > 0.0`: bonificar `score += calmar.min(10.0) * 500.0`.
+   - **CUÁNDO:** Al evaluar la aptitud de cada candidato antes del criterio de aceptación Metropolis-Hastings.
+   - **DÓNDE:** `src/bin/evolution.rs:435-455`.
+   - **QUIÉN:** `SimulatedAnnealingEngine` en `evolution.rs`.
+
+3. **F1-022 (MED) — Medición de Drawdown/Ruina sobre Total Equity y Valuación MTM Terminal en `last_close_executed`:**
+   - **QUÉ:** En `run_backtest_native`, el cálculo de Drawdown y la detección de ruina se evalúan sobre `total_equity = current_cap + unrealized_sum` (caja + PnL no realizado con deducción de comisión de salida estimada). Al terminar o quebrar, el MTM final de posiciones abiertas se valúa al precio `last_close_executed` (el cierre de la barra donde se ejecutó el corte).
+   - **POR QUÉ:** Antes, el drawdown y el corte por ruina ignoraban las pérdidas abiertas flotantes (patrón CSG-7). Y tras cortar por ruina en una barra $k$, la valuación MTM final utilizaba `closes.last()`, que correspondía al final de la serie completa, permitiendo que una cartera quebrada se "recuperara" artificialmente con movimientos de mercado posteriores al evento de quiebra.
+   - **PARA QUÉ:** Erradicar el lookahead contable post-ruina y garantizar que los oráculos de certificación genética (T-1, T-2, T-3) midan la supervivencia real y no aprueben genomas basándose en ganancias ficticias posteriores a la quiebra.
+   - **CÓMO:** Se computa `unrealized_sum` iterando sobre los slots abiertos en cada barra; se actualiza `total_equity`; el corte temprano break se activa si `total_equity <= 0.0 || current_cap <= 0.0`; y el bucle registra `last_close_executed = current_close`, utilizado como `last_price` en el MTM final.
+   - **CUÁNDO:** En cada cierre de barra en `run_backtest_native`.
+   - **DÓNDE:** `crates/backtest-engine/src/lib.rs:136, 460-500`.
+   - **QUIÉN:** `run_backtest_native` y contrato `f1_022_023_run_backtest_native_causality_contract.rs`.
+
+4. **F1-023 (MED) — Regla del Tick Causal Lee-Ready en Simulación Intra-Vela:**
+   - **QUÉ:** Determinación de `sim_is_buyer_maker` mediante la regla del tick causal sobre `delta_tick = sim_price - prev_sim_price`: downtick (`delta_tick < 0.0`) $\implies$ buyer maker (`true`), uptick (`delta_tick > 0.0`) $\implies$ buyer taker (`false`), zero-tick $\implies$ mantenimiento del estado previo.
+   - **POR QUÉ:** Anteriormente, `sim_is_buyer_maker = tick_ret < 0.0` donde `tick_ret = (sim_price - prev_close)/prev_close`. Dado que en el último tercio de ticks la trayectoria sintética del puente Browniano converge monótonamente hacia `current_close`, el signo de `tick_ret` filtraba la dirección del cierre final de la vela antes de que cerrara, contaminando el CVD y los motores de acción del precio con información del futuro.
+   - **PARA QUÉ:** Garantizar estricta causalidad temporal intra-barra, impidiendo que el motor de señales o el CVD tomen decisiones basadas en la fuga del cierre futuro de la vela.
+   - **CÓMO:** Registro de `prev_sim_price = sim_price` antes de actualizar el precio del micro-tick y aplicación de la regla de Lee-Ready con tolerancia numérica $10^{-12}$.
+   - **CUÁNDO:** En cada micro-tick simulado dentro de la vela.
+   - **DÓNDE:** `crates/backtest-engine/src/lib.rs:305-365`.
+   - **QUIÉN:** `run_backtest_native` y contrato `f1_022_023_run_backtest_native_causality_contract.rs`.
+
+5. **F1-122 (LOW) — Default Neutral `hedge_eta = 0.0` en `SignalOrchestrator`:**
+   - **QUÉ:** Reemplazo del fallback `0.05` por `0.0` al consultar `hedge_eta` en el registro omnisciente (`get_value_or("hedge_eta", 0.0)`).
+   - **POR QUÉ:** El parámetro `hedge_eta` no tenía ningún escritor activo en producción ni en evolución, por lo que el default `0.05` activaba permanentemente un reponderador anticausal que movía los pesos de los motores sin evidencia empírica.
+   - **PARA QUÉ:** Desactivar de forma segura el reponderador anticausal hasta que sea debidamente calibrado y gobernado desde el genoma, manteniendo bit-paridad con el régimen de pesos uniforme.
+   - **CÓMO:** Cambiar el valor por defecto en `get_value_or` a `0.0`.
+   - **CUÁNDO:** Al calcular `eta` en `SignalOrchestrator::reponderar_pesos_online`.
+   - **DÓNDE:** `crates/signal-engine/src/orchestrator.rs:180-184`.
+   - **QUIÉN:** `SignalOrchestrator`.
+
+6. **F1-123 (LOW) — Operabilidad Estricta de `ProyeccionEspectralEngine` según Masa Resuelta:**
+   - **QUÉ:** Implementación de `is_operable_for_coin(&self, coin_id: usize, symbol: &str) -> bool` en `ProyeccionEspectralEngine`, retornando `effective_params.compute_weight(masa) > 0.0`.
+   - **POR QUÉ:** Cuando la masa resuelta del espectro era insuficiente ($\le 0.25$) o en arranque en frío (clave ausente), el motor emitía $0.0$, pero al no implementar `is_operable_for_coin` (que por defecto retorna `true` en el trait `QuantumStrategy`), el orquestador lo contaba dentro de `n_fuentes`, diluyendo la convicción del consenso escalar en un $\sim 6\%$ por una simple ausencia de datos.
+   - **PARA QUÉ:** Garantizar que las abstenciones estructurales por falta de masa queden excluidas del denominador del consenso escalar, permitiendo que la convicción refleje fielmente a las fuentes que poseen información observada.
+   - **CÓMO:** Lectura de `espectral_masa_resuelta` y evaluación de `compute_weight(masa) > 0.0`.
+   - **CUÁNDO:** En cada evaluación de operabilidad en el orquestador (`SignalOrchestrator::consenso_escalar`).
+   - **DÓNDE:** `crates/signal-engine/src/proyeccion_espectral.rs:140-165`.
+   - **QUIÉN:** `ProyeccionEspectralEngine` y contrato `f1_123_proyeccion_espectral_operability_contract.rs`.

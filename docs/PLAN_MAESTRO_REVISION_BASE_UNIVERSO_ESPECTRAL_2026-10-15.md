@@ -1,12 +1,12 @@
-# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V24 · 2026-10-18)
+# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V25 · 2026-10-18)
 ## Unificando Teoría Matemática de Vanguardia, Ecuaciones del Milenio, Física de Campos, Estadística Prequencial de Ville, Psicología de Masas, Liquidez Oculta, Gating Conformal y Rendimiento en Nanosegundos
 
 > **Autor / Director:** Antigravity (AGY, Quant Sr. Lead)  
 > **Comité Revisor:** Consejo Colegiado de 10 Roles Senior en Modo Profesor  
 > **Destinatarios:** Claude (Línea C / Línea G / Línea H), Fable (Consejo Quant Sr.), Codex (Líneas G/H/E), GLM (Línea B/LH/Ops), Qoder (Línea R7/R6), Sol (Línea R5/R6/Contabilidad) y Operador Humano  
 > **Ámbito:** Repositorio Completo Trader Gemini (23 Crates Rust, 100% Nativo, CERO Python)  
-> **Fecha:** 18 de Octubre de 2026 (Actualización Canónica Post-Ola Ω152 / Cierre Fable HIGH `F1-007` book_absent honesto en backtest aggTrades restaurando 5 ramas F7, `F1-019` cálculo de trade_qty \|bq - aq\| erradicando distorsión de volumen x21, `F1-006` residual contabilidad neta sin duplicación de comisión en auditor_interno + saneamiento per-coin internal_sharpe en lib.rs, y `F1-014`/`F1-015` escala de unidades Cramér-Lundberg sobre exposición real f_exposure en vez de max_exchange_leverage)  
-> **Estado CI GitHub Actions & Oráculo T-1:** 🟢 100% VERDE + T-1 Re-certificado 18/144 PASA (12.5% > 11.0% trinquete)  
+> **Fecha:** 18 de Octubre de 2026 (Actualización Canónica Post-Ola Ω153 / Cierre Fable MED & LOW: `F1-020` gating de envolvente per-slot en booktick_replay y run_backtest_native con rollback aislado; `F1-021` cableado de rep.metrics [CVaR95, turnover, Calmar] en SA fitness de evolution.rs; `F1-022` DD/ruina sobre Total Equity y MTM terminal en last_close_executed sin lookahead; `F1-023` regla causal del tick Lee-Ready sin fuga de close en run_backtest_native; `F1-122` default neutral hedge_eta=0.0; y `F1-123` operabilidad de ProyeccionEspectral según masa resuelta)  
+> **Estado CI GitHub Actions & Oráculo T-1:** 🟢 100% VERDE + Workspace Type-Checked + 3 Nuevos Contratos Unitarios/Integración Aprobados  
 
 ---
 

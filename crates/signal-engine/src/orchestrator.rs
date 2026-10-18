@@ -175,7 +175,7 @@ impl TensorVoteOrchestrator {
     /// Cada fuente QUE OPINÓ en el último consenso recibe
     /// loss_i = −sign(voto_i)·direccion y w_i ← w_i·exp(−η·loss_i),
     /// clamped [0.05, 20], renormalizado a media 1.0. η del registro
-    /// (`hedge_eta`, default 0.05, bounds [0, 0.5]); η=0 desactiva.
+    /// (`hedge_eta`, default 0.0 neutral —F1-122—, bounds [0, 0.5]); η=0 desactiva.
     /// La llama la cadencia de publicación (cada 1024 consensos del
     /// censista) — pública para que los tests la ejerzan directo.
     pub fn actualizar_hedge_con_realizacion(&self, direccion_realizada: f64) {
@@ -193,7 +193,7 @@ impl TensorVoteOrchestrator {
         let eta = self
             .arena
             .registry
-            .get_value_or("hedge_eta", 0.05)
+            .get_value_or("hedge_eta", 0.0)
             .clamp(0.0, 0.5);
         if eta <= 0.0 {
             return;
