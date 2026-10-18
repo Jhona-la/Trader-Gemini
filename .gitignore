@@ -108,3 +108,8 @@ NUL.*
 *.mdmp
 *.npz
 *.npy
+
+# F-H3 (Fable): protección general pedida por el operador — ningún binario de datos
+# ni los diagnósticos de agentes (outputs/, 19 MB de Sol sin versionar) suben al repo.
+*.bin
+outputs/
