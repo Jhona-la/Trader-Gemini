@@ -110,7 +110,6 @@ pub struct StatefulEngine {
     pub omni: feature_engine::OmniStrategyEngine,
     pub spectral: feature_engine::SpectralCycleEngine,
     pub multifractal: feature_engine::MultiScaleHurstConfluence,
-    pub lead_lag: feature_engine::LeadLagAlphaEngine,
     pub regime: MarketRegime,
     // Native Kline Aggregator
     pub kline_start_ms: u64,
@@ -146,7 +145,6 @@ pub struct StatefulEngine {
     pub fastband_short_loss_streak: u32,
     pub fastband_long_loss_streak: u32,
     pub spectral_loss_streaks: [u32; 3], // [0: Micro (<60s), 1: Meso (60s..30m), 2: Macro (>=30m)]
-    pub spectral_directional_loss_streaks: [[u32; 2]; 3], // [band][0: Short, 1: Long]
     pub spectral_exit_ts: [u64; 3],
     pub last_trade_is_sell: bool,
 
@@ -253,7 +251,6 @@ impl StatefulEngine {
             omni: feature_engine::OmniStrategyEngine::new(),
             spectral: feature_engine::SpectralCycleEngine::new(),
             multifractal: feature_engine::MultiScaleHurstConfluence::new(),
-            lead_lag: feature_engine::LeadLagAlphaEngine::new(50),
             regime: MarketRegime::Neutral,
             kline_start_ms: 0,
             kline_open: 0.0,
@@ -279,7 +276,6 @@ impl StatefulEngine {
             fastband_short_loss_streak: 0,
             fastband_long_loss_streak: 0,
             spectral_loss_streaks: [0; 3],
-            spectral_directional_loss_streaks: [[0; 2]; 3],
             spectral_exit_ts: [0; 3],
             last_trade_is_sell: false,
             kalman: feature_engine::KalmanFilter1D::new(0.0, 1.0, 1e-4, 0.1),
@@ -326,10 +322,8 @@ impl StatefulEngine {
         self.last_exit_fastband_ts = ts;
         self.last_exit_fastband_was_loss = is_directional_loss;
 
-        let dir_idx = if is_long { 1 } else { 0 };
         if is_directional_loss {
             self.spectral_loss_streaks[band] += 1;
-            self.spectral_directional_loss_streaks[band][dir_idx] += 1;
             self.fastband_loss_streak += 1;
             if is_long {
                 self.fastband_long_loss_streak += 1;
@@ -338,7 +332,6 @@ impl StatefulEngine {
             }
         } else {
             self.spectral_loss_streaks[band] = 0;
-            self.spectral_directional_loss_streaks[band][dir_idx] = 0;
             self.fastband_loss_streak = 0;
             if is_long {
                 self.fastband_long_loss_streak = 0;
@@ -433,64 +426,6 @@ impl StatefulEngine {
             _ => bounded(1_200_000.0 * scale_factor, min_cooldown_ms as f64 * 3.0, 2_400_000.0),
         }.max(min_cooldown_ms);
         elapsed_ms >= required_ms
-    }
-
-    /// Obtiene la racha total de pérdidas activa considerando el decaimiento temporal en milisegundos
-    #[inline(always)]
-    pub fn get_active_total_loss_streak(&self) -> u32 {
-        self.get_active_total_loss_streak_at_tau(30_000.0)
-    }
-
-    /// Obtiene la racha total de pérdidas activa desacoplada por banda espectral considerando el decaimiento temporal
-    #[inline(always)]
-    pub fn get_active_total_loss_streak_at_tau(&self, tau_ms: f64) -> u32 {
-        let band = Self::spectral_band_index(tau_ms);
-        let band_exit_ts = self.spectral_exit_ts[band];
-        let elapsed_ms = if self.current_ts > 0 && band_exit_ts > 0 {
-            self.current_ts.saturating_sub(band_exit_ts)
-        } else {
-            self.tick_count.saturating_sub(self.last_exit_fastband_tick).saturating_mul(100)
-        };
-        let raw = self.spectral_loss_streaks[band];
-        // Decaimiento analítico continuo proporcional a la escala física tau:
-        // Una perturbación a escala tau se disipa naturalmente en ~4 periodos de su frecuencia fundamental,
-        // acotada entre 60 segundos (piso físico micro) y 2 horas (techo macro).
-        let decay_window_ms = (4.0 * tau_ms.max(10.0)).clamp(60_000.0, 7_200_000.0) as u64;
-        if elapsed_ms > decay_window_ms {
-            0
-        } else if elapsed_ms > decay_window_ms / 2 {
-            raw.saturating_sub(1)
-        } else {
-            raw
-        }
-    }
-
-    /// Obtiene la racha de pérdidas activa para una dirección (long/short), considerando el decaimiento temporal en milisegundos
-    #[inline(always)]
-    pub fn get_active_directional_streak(&self, is_long: bool) -> u32 {
-        self.get_active_directional_streak_at_tau(is_long, 30_000.0)
-    }
-
-    /// Obtiene la racha direccional de pérdidas activa desacoplada por banda espectral considerando el decaimiento temporal
-    #[inline(always)]
-    pub fn get_active_directional_streak_at_tau(&self, is_long: bool, tau_ms: f64) -> u32 {
-        let band = Self::spectral_band_index(tau_ms);
-        let dir_idx = if is_long { 1 } else { 0 };
-        let band_exit_ts = self.spectral_exit_ts[band];
-        let elapsed_ms = if self.current_ts > 0 && band_exit_ts > 0 {
-            self.current_ts.saturating_sub(band_exit_ts)
-        } else {
-            self.tick_count.saturating_sub(self.last_exit_fastband_tick).saturating_mul(100)
-        };
-        let raw = self.spectral_directional_loss_streaks[band][dir_idx];
-        let decay_window_ms = (4.0 * tau_ms.max(10.0)).clamp(60_000.0, 7_200_000.0) as u64;
-        if elapsed_ms > decay_window_ms {
-            0
-        } else if elapsed_ms > decay_window_ms / 2 {
-            raw.saturating_sub(1)
-        } else {
-            raw
-        }
     }
 
     #[inline]
@@ -649,7 +584,6 @@ impl StatefulEngine {
         self.fastband_short_loss_streak = 0;
         self.fastband_long_loss_streak = 0;
         self.spectral_loss_streaks = [0; 3];
-        self.spectral_directional_loss_streaks = [[0; 2]; 3];
         self.spectral_exit_ts = [0; 3];
         self.hurst = RecursiveHurst::new();
         self.obi_accel = ObiAcceleration::new();
@@ -664,7 +598,6 @@ impl StatefulEngine {
         self.omni = feature_engine::OmniStrategyEngine::new();
         self.spectral = feature_engine::SpectralCycleEngine::new();
         self.multifractal = feature_engine::MultiScaleHurstConfluence::new();
-        self.lead_lag = feature_engine::LeadLagAlphaEngine::new(50);
         self.regime = MarketRegime::Neutral;
         self.kline_start_ms = 0;
         self.kline_open = 0.0;
