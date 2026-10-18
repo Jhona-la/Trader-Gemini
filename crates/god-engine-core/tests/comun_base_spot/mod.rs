@@ -106,21 +106,23 @@ impl Mercado {
 }
 
 /// Núcleo con una base OU rápida (t½ = 14 s ≈ τ_18/5) hasta que la guarda
-/// pasa, con al menos 30 min de pares (con menos, el estadístico apenas
-/// cruza el crítico). Devuelve el mercado y la marca siguiente. Falla si en
-/// 60 min no pasa.
+/// pasa, con al menos 40 min de pares. C-F5b: la prueba a la escala de
+/// decisión madura a media memoria larga, 33·τ_k (≈ 38 min en el nodo 18);
+/// antes de eso la guarda no pasa, y justo al madurar se cierra cada vez que
+/// τ* salta a τ_19, cuyo nodo aún no ha madurado. Devuelve el mercado y la
+/// marca siguiente. Falla si en 90 min no pasa.
 pub fn nucleo_demostrado(semilla: u64) -> (Arc<GlobalArena>, GodEngineCore, Mercado, u64) {
     let (arena, mut core) = nucleo();
     let mut m = Mercado::new(semilla, 14.0);
     let mut ts = 1_000u64;
-    for i in 0..3_600u64 {
+    for i in 0..5_400u64 {
         let (f, sp) = m.paso();
         evento(&arena, &mut core, ts, f, Some(sp));
         ts += 1_000;
-        if i >= 1_800 && guarda_pasa(&arena) {
+        if i >= 2_400 && guarda_pasa(&arena) {
             return (arena, core, m, ts);
         }
     }
-    panic!("precondición: la base OU rápida demuestra su reversión en 60 min");
+    panic!("precondición: la base OU rápida demuestra su reversión en 90 min");
 }
 
