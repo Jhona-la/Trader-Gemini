@@ -1,5 +1,3 @@
-#![feature(portable_simd)]
-
 /// CERT-M5-H01 — FUNCIÓN DE FITNESS UNIFICADA para Darwin (el core no puede
 /// importar evolution-engine::fitness sin ciclo de dependencias). Misma
 /// matemática que fitness::compute: crecimiento logarítmico (utilidad Kelly)
