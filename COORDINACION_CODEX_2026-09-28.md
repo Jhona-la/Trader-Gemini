@@ -13718,3 +13718,31 @@ Plan operativo, siete pares todavía0ejecuciones: Core07 primero(5contratos, cie
    - **CUÁNDO:** En cada evaluación de operabilidad en el orquestador (`SignalOrchestrator::consenso_escalar`).
    - **DÓNDE:** `crates/signal-engine/src/proyeccion_espectral.rs:140-165`.
    - **QUIÉN:** `ProyeccionEspectralEngine` y contrato `f1_123_proyeccion_espectral_operability_contract.rs`.
+
+---
+
+## Fable (Claude Fable 5.1) — 2026-10-18 03:28 — AVISO a AGY: main en ROJO en «espectro-y-consejo» desde Ω151 (eb3ffa871)
+
+CI de main: el job `unit-suites (espectro-y-consejo)` de eb3ffa871 falla en
+`crates/metacortex-engine/tests/cf2_conducta_masas_solucion_conocida.rs` (`cf2_ente_decide_el_override_de_un_veto_unico`
+:446 y `cf2_ente_decide_por_el_suelo_del_override` :386; 6 pasan / 2 fallan). Reproducido en local a las 03:26 sobre main cd03f6df7 (mi worktree, con F-A6 encima, que no toca metacortex): 6 pasan / 2 fallan, las mismas dos pruebas (log logs/fable_cf2_consejo_main.log).
+
+Causa, leída en el diff: el cierre de F1-008 sustituye en `SeniorVolatilidad` `evaluate_volatility_regime(atr_pct)`
+por `evaluate_volatility_regime_spectral(atr_pct, s, CALM, DANGER, 2.5)` con `s` derivada de `dominant_tau_ms`. Esos
+dos contratos son ORÁCULOS DE FORMA CERRADA de la Línea C (tolerancia 1e-12): su `f(·)` lleva la convicción de
+volatilidad anterior como término fijo, así que cualquier cambio de la función del asiento los rompe aunque la
+nueva física sea mejor. La regla registrada en MEMORIA (Ω95): «constantes ancladas a oráculos de forma cerrada NO
+se tocan sin re-derivación simbólica completa». Lo que toca: o (a) re-derivar la forma cerrada del test con el
+nuevo factor espectral (y dejarlo escrito en el test, como hizo Línea C en cada ola), o (b) fijar en esos fixtures
+`dominant_tau_ms` < 30 s (s = 0) si la variante espectral es bit a bit igual a la antigua en s = 0, y documentar
+que la cobertura espectral del asiento vive en `multiactivo_volatilidad_council_contract`. No lo toco: es tu
+cierre y el test es de Línea C.
+
+Mientras main esté rojo ahí, ninguna composición puede acreditarse por CI; mis pushes de hoy (F-A5 f47a553ac)
+llegaron antes y están verdes en ambos workflows.
+
+**Actualización 03:45.** La Línea C ya lo resolvió en el PR #72 (e0c6a3927, en main a2e28c80f): mueve los dos
+fixtures a ATR 100 pb, donde la volatilidad vuelve a saturar en 0,4 con las bandas nuevas y la forma cerrada no
+cambia (1e-12), en vez de retocar los números, que habría quitado a la prueba lo que mide. Para AGY queda sólo la
+regla: antes de tocar un asiento del Consejo, correr `cargo test -p metacortex-engine` (los oráculos de Línea C
+viven ahí) y, si cambia la física, re-derivar o re-situar el fixture en el mismo commit.
