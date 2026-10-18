@@ -60,7 +60,8 @@
 //! Madurez. La prueba corta sólo opina con Σw ≥ (1 − e^{−1/2})/(1 − λ), la
 //! masa de media memoria de celdas consecutivas (8·τ_k de pares); el
 //! veredicto, además, con la prueba a la escala de decisión madura (33·τ_k,
-//! ver abajo). Antes, abstención.
+//! ver abajo) en el nodo que contrasta: el más grande j ≤ k(τ*) con las dos
+//! maduras (C-F5e, `PruebaReversion::veredicto`). Antes, abstención.
 //!
 //! Lo que no hace: no estima la vida media (sólo la acota), no corrige la
 //! repetición de miradas en el tiempo (el nivel es por decisión: en cada
@@ -373,6 +374,11 @@ impl Nodo {
         self.largo.cerrar(self.valor, self.estado.map(|e| e.media));
     }
 
+    /// Las dos pruebas del nodo maduras (sólo masa).
+    fn maduro(&self) -> bool {
+        self.estado.is_some_and(|e| e.madura) && self.largo.estado.is_some_and(|l| l.madura)
+    }
+
     fn calcular(&self) -> Option<EstadoNodo> {
         let s = &self.s;
         let w = s.w;
@@ -659,7 +665,8 @@ impl Largo {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Veredicto {
     /// τ_k del nodo contrastado (NaN si la τ de decisión queda bajo la
-    /// malla).
+    /// malla): el más grande con τ_k ≤ τ* y las dos pruebas maduras, o el de
+    /// τ* si ninguno lo está (C-F5e).
     pub tau_nodo_ms: f64,
     /// Reversión demostrada: las dos pruebas del nodo maduras y sobre su
     /// crítico (t > `CRITICO` y t_largo > `CRITICO_LARGO`).
@@ -758,10 +765,23 @@ impl PruebaReversion {
 
     /// Veredicto a la τ de decisión `tau_decision_ms`. `None` si aún no hay
     /// ningún par.
+    ///
+    /// C-F5e (madurez, revisión de C-F5b): se contrasta el nodo más grande
+    /// j ≤ k(τ*) con las dos pruebas maduras, y la cota es τ_j. La prueba a
+    /// la escala de decisión madura a 33·τ_k (2,5 h en el nodo 19, 10 h en el
+    /// 20, 41 h en el 21) y antes el veredicto sólo miraba el nodo de τ*:
+    /// tras cada arranque StatArb quedaba mudo hasta madurar ese nodo. Es
+    /// válido para el lector: τ_j ≤ τ_k ≤ τ*, y con una mezcla de OU y una
+    /// caminata lo que revierte la desviación del nodo j no baja al alargar
+    /// el horizonte (cada OU aporta (1 − ρ^h)·Cov ≥ 0 y la caminata 0), así
+    /// que más de la mitad en τ_j implica más de la mitad en τ_k. La
+    /// elección depende sólo de la masa, no del estadístico: el nivel por
+    /// decisión no cambia. Elegir «el nodo que rechace» sería una unión de
+    /// hasta seis pruebas.
     pub fn veredicto(&self, tau_decision_ms: f64) -> Option<Veredicto> {
         let (_, b) = self.ultimo?;
         let o = self.origen.unwrap_or(0.0);
-        let Some(i) = Self::nodo_de(tau_decision_ms) else {
+        let Some(k) = Self::nodo_de(tau_decision_ms) else {
             return Some(Veredicto {
                 tau_nodo_ms: f64::NAN,
                 demostrada: false,
@@ -772,6 +792,7 @@ impl PruebaReversion {
                 sigma: f64::NAN,
             });
         };
+        let i = (0..=k).rev().find(|&j| self.nodos[j].maduro()).unwrap_or(k);
         let tau_nodo_ms = SPECTRUM_SCALES_MS[NODO_MIN + i];
         let (largo_ok, t_largo) = match self.nodos[i].largo.estado {
             Some(l) => (l.madura && l.t > CRITICO_LARGO, l.t),

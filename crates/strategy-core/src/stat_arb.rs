@@ -45,13 +45,15 @@ pub struct VeredictoStatArb {
     /// z del último par contra la media y la dispersión de la base en la
     /// memoria del nodo; 0 sin reversión demostrada.
     pub z: f64,
-    /// Cota superior de la vida media demostrada (τ_k del nodo), en ms; ∞
-    /// sin demostración. C-F5b: la prueba a la escala de decisión demuestra
-    /// que más de la mitad de la desviación revierte en τ_k, y eso acota la
-    /// vida media por τ_k (antes 2·τ_k, la cota de la prueba de retardos
-    /// cortos). Es lo que el núcleo publica como `statarb_half_life_ms`: la
-    /// guarda t½ ≤ 2τ* del lector pasa sólo con reversión demostrada en un
-    /// nodo τ_k ≤ τ*.
+    /// Cota superior de la vida media demostrada (τ_k del nodo contrastado),
+    /// en ms; ∞ sin demostración. C-F5b: la prueba a la escala de decisión
+    /// demuestra que más de la mitad de la desviación revierte en τ_k, y eso
+    /// acota la vida media por τ_k (antes 2·τ_k, la cota de la prueba de
+    /// retardos cortos). C-F5e: la desviación OBSERVADA, la que se vota con
+    /// su ruido de medida, y el nodo es el maduro más grande con τ_k ≤ τ*.
+    /// Es lo que el núcleo publica como `statarb_half_life_ms`: la guarda
+    /// t½ ≤ 2τ* del lector pasa sólo con reversión demostrada en un nodo
+    /// τ_k ≤ τ*.
     pub t_media_cota_ms: f64,
     pub demostrada: bool,
     /// Detalle de la prueba.
@@ -168,8 +170,9 @@ impl StatArbEngine {
     /// valer: el primer dato de B tras la reconexión no se empareja con un
     /// mid de antes. La prueba conserva sus sumas, porque el hueco ya las
     /// hace decaer y corta la cadena de retardos. Rehacerla desde cero en
-    /// cada reconexión dejaba sin madurar los nodos lentos: el 22 necesita
-    /// 41 h y Binance corta la conexión cada 24 h.
+    /// cada reconexión dejaba sin madurar los nodos lentos: la prueba corta
+    /// del 22 necesita 41 h, el veredicto (prueba a la escala de decisión,
+    /// 33·τ_k) 163 h, y Binance corta la conexión cada 24 h.
     pub fn cortar_emparejamiento(&mut self) {
         self.mid_a_previo = None;
         self.marca_b_previa = None;
