@@ -86,8 +86,8 @@ pub struct TensorVoteOrchestrator {
     /// loss_i = −sign(voto_i)·dirección ∈ [−1,1] y w_i ← w_i·exp(−η·loss)
     /// (acierta ⇒ peso sube; contradice ⇒ baja), con renormalización a
     /// media 1.0 (sin explosión ni muerte eterna — piso 0.05). η sale del
-    /// registro (`hedge_eta`, default 0.05, bounds [0, 0.5]): la
-    /// evolución lo publica — nada hardcodeado. Sólo opinan-quizá
+    /// registro (`hedge_eta`, bounds [0, 0.5]); F1-122: default 0 (η = 0
+    /// desactiva el hedge) mientras nadie lo publica. Sólo opinan-quizá
     /// aprenden: un mudo no gana ni pierde (y su voto 0 ya no pesa).
     ultimo_voto: Vec<AtomicF64>,
     /// CSG-2 (OLA Ω148): Voto anclado en el instante `t_prev` en que se capturó `hedge_ultimo_mid`.
