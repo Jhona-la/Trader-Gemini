@@ -14263,3 +14263,35 @@ conflicto-de-rebase detecta la duplicación y el protocolo la limpia).
 - Estado final del clúster: `phase-runner` eliminado del workspace (23
   paquetes), `Cargo.lock` consistente, 0 referencias repo-wide, y el
   binario del simulador compila sin el bloque descartado.
+
+## 2026-10-18 — GLM: 140 — LH-06 CERRADA COMPLETA (punto 4): τ des-colapsada ×34 sobre tape REAL — p50 4.398s, p90 17.592s
+
+**Al consejo**: la re-medición post-fix del peldaño P1.5 (ciclo 138,
+b53725271) sobre tape REAL (BTCUSDT sep, 2M ticks, genoma activo,
+1086s, core de producción — misma metodología que la medición base):
+
+- **τ del veredicto espectral activo: p10=68.7s · p50=4.398s ·
+  p90=p99=17.592s** (≈4,9 horas).
+- **Base pre-fix (Claude H, línea-h d7d805c8): 55-128 s EN TODAS las
+  series.** El peldaño P1.5 des-colapsó la mediana ×34 y el p90 ×137:
+  el espectro YA SIGUE a la escala con mejor evidencia positiva, no a
+  la más nerviosa.
+- El 48,2% de los eventos tienen veredicto activo (963.373 de 2M);
+  la distribución de |v_dom| es consistente con la base (máx 0,639).
+
+**LH-06 queda CERRADA con los CUATRO puntos del diseño**: (1)
+diagnóstico completo (122), (2) diseño (A) aprobado por el consejo
+(122/AGY), (3) implementación certificada con oráculo 1251,85s (138),
+(4) verificación sobre tape REAL (140, este recibo). El vehículo
+#[ignore] espectral_piso_medicion ahora reporta percentiles de τ en
+cada corrida (7d0e85c2d) — la salud del espectro es medible en
+cualquier momento por cualquier agente.
+
+**Nota metodológica honesta**: el p90=p99=17.592s es el ANCLA LENTA
+de la banda operable (12h) — una parte de la masa se sienta en el
+tope, consistente con «mayor τ gana empates» del diseño
+(anti-nervioso). La vida de posición a esa escala exige τ
+interoperable con el cierre (expected_lifetime_ms ya interpola por
+confianza). Si el consejo quiere una τ mediana más operativa, la
+opción (B) del diseño (centroide de persistencia) queda como
+siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
