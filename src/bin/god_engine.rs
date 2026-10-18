@@ -73,6 +73,33 @@ struct CierreAgregado {
     bruto: f64,
 }
 
+/// CL-120: escribe una foto del estado aprendido. Un fallo se registra y no
+/// detiene al motor (el siguiente cierre vuelve a intentarlo).
+fn escribir_estado_aprendido(
+    ruta: &std::path::Path,
+    foto: &god_engine_core::estado_aprendido::EstadoAprendido,
+) {
+    if let Err(e) = god_engine_core::estado_aprendido::guardar(ruta, foto) {
+        telemetry_server::telemetry_log!(
+            "⚠️ [ESTADO] no se pudo guardar {}: {}",
+            ruta.display(),
+            e
+        );
+    }
+}
+
+/// CL-120: entrega la foto al hilo escritor. Si ese hilo no existe (no se
+/// pudo crear al arrancar), el canal está cerrado y la foto se escribe aquí.
+fn enviar_estado_aprendido(
+    tx: &std::sync::mpsc::Sender<god_engine_core::estado_aprendido::EstadoAprendido>,
+    ruta: &std::path::Path,
+    foto: god_engine_core::estado_aprendido::EstadoAprendido,
+) {
+    if let Err(std::sync::mpsc::SendError(foto)) = tx.send(foto) {
+        escribir_estado_aprendido(ruta, &foto);
+    }
+}
+
 /// Agrupa registros (tiempo, PnL realizado) de UN símbolo en cierres: un
 /// registro a ≤ `separacion_ms` del anterior pertenece al mismo cierre.
 fn agrupar_cierres(mut registros: Vec<(u64, f64)>, separacion_ms: u64) -> Vec<CierreAgregado> {
@@ -1809,7 +1836,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // (2) drawdown vs límite del genoma sobre el pico observado,
         // (3) latencia obsoleta SOSTENIDA (3 strikes ≈ 15s).
         // Al disparar: kill-switch en arena + executor + FLATTEN de todo.
-        // LATCH: rearme solo reiniciando el proceso — decisión humana.
+        // LATCH: rearme sólo con decisión humana. Reiniciar el proceso basta
+        // para el disparo por STOP_TRADING.LOCK o por latencia. Para el de
+        // drawdown no (CL-99, CL-108): el pico y lo medido se guardan, y tras
+        // el reinicio la misma caída vuelve a disparar. Para rearmarlo hay que
+        // retirar `pico_capital.txt` del entorno, que es aceptar el capital
+        // actual como el nuevo pico (T1-07 de la Línea G).
         {
             let arena_imm = Arc::clone(&arena_real);
             let exec_imm = Arc::clone(&exec);
@@ -2009,7 +2041,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             esperar_auditoria_en_curso().await;
                             match executor.flatten_all_positions().await {
                                 Ok((syms, positions)) => telemetry_server::telemetry_log!(
-                                    "🧹 [SISTEMA INMUNE] Aplanado: {} símbolos con órdenes canceladas, {} posiciones cerradas, {} ranuras dejan de contar como reales. Reinicio manual para rearmar.",
+                                    "🧹 [SISTEMA INMUNE] Aplanado: {} símbolos con órdenes canceladas, {} posiciones cerradas, {} ranuras dejan de contar como reales. Rearme manual: si fue por drawdown, reiniciar no basta (el pico se guarda); hay que retirar pico_capital.txt del entorno, que acepta el capital actual como nuevo pico.",
                                     syms,
                                     positions,
                                     consumidas
@@ -3169,6 +3201,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 motivo
             ),
         }
+        // CL-120 (T2-4 y T2-6 de la Línea G): el estado se escribe en un hilo
+        // aparte, no en el del bucle de eventos (serializar y escribir unos
+        // 0,5 MB por cierre). El bucle envía una foto cuando cambia la firma
+        // del estado: con cada cierre aprendido (no con uno de papel) y, al
+        // comprobarla cada 4 096 mensajes, con los ajustes del recuento que
+        // hace la reconciliación. El escritor sólo escribe la foto más
+        // reciente. Al apagar se envía la última y se espera a que termine.
+        let (tx_estado, rx_estado) =
+            std::sync::mpsc::channel::<god_engine_core::estado_aprendido::EstadoAprendido>();
+        let escritor_estado = {
+            let ruta = ruta_estado.clone();
+            std::thread::Builder::new()
+                .name("estado-aprendido".into())
+                .spawn(move || {
+                    while let Ok(mut foto) = rx_estado.recv() {
+                        while let Ok(mas_reciente) = rx_estado.try_recv() {
+                            foto = mas_reciente;
+                        }
+                        escribir_estado_aprendido(&ruta, &foto);
+                    }
+                })
+        };
+        if let Err(e) = &escritor_estado {
+            telemetry_server::telemetry_log!(
+                "⚠️ [ESTADO] sin hilo escritor ({}): el estado se escribe en el bucle",
+                e
+            );
+        }
+        let mut firma_estado = engine_real.firma_estado_aprendido();
+        let mut mensajes_desde_firma: u32 = 0;
         // B3.7 (auditoría) — DEDUP cierre-bracket vs cierre-core: el MISMO
         // trade económico puede llegar por dos caminos (fill de la pierna en
         // el user-stream + condición de salida del core en el evento
@@ -3304,6 +3366,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // flag ordena el drenaje (el mensaje mismo se descarta).
             if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
                 break;
+            }
+            // CL-120 (T2-4): los ajustes de la reconciliación (otra tarea)
+            // cambian el recuento sin pasar por un cierre del núcleo.
+            mensajes_desde_firma = mensajes_desde_firma.wrapping_add(1);
+            if guardar_estado && mensajes_desde_firma % 4_096 == 0 {
+                let firma = engine_real.firma_estado_aprendido();
+                if firma != firma_estado {
+                    firma_estado = firma;
+                    enviar_estado_aprendido(&tx_estado, &ruta_estado, engine_real.estado_aprendido());
+                }
             }
             // CL-52: la reconexión llega en banda (centinela) o, si la cola
             // llena se llevó el centinela, por la marca de la cola; en ese
@@ -3944,19 +4016,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let unified_cap = f64::from_bits(unified_capital.load(Ordering::Relaxed));
 
                     if let Some((is_long, pnl, qty)) = closed_order {
-                        // CL-108: cada cierre cambia el estado aprendido
-                        // (salvo con el estado ilegible, CL-108f).
-                        if let Some(Err(e)) = guardar_estado.then(|| {
-                            god_engine_core::estado_aprendido::guardar(
-                                &ruta_estado,
-                                &engine_real.estado_aprendido(),
-                            )
-                        }) {
-                            telemetry_server::telemetry_log!(
-                                "⚠️ [ESTADO] no se pudo guardar {}: {}",
-                                ruta_estado.display(),
-                                e
-                            );
+                        // CL-108: un cierre aprendido cambia el estado (salvo
+                        // con el estado ilegible, CL-108f). CL-120: se envía la
+                        // foto al escritor sólo si cambió la firma (un cierre
+                        // de papel no enseña nada).
+                        if guardar_estado {
+                            let firma = engine_real.firma_estado_aprendido();
+                            if firma != firma_estado {
+                                firma_estado = firma;
+                                enviar_estado_aprendido(&tx_estado, &ruta_estado, engine_real.estado_aprendido());
+                            }
                         }
                         // B3.14 — sólo contabiliza lo que EXISTIÓ en el
                         // exchange. Cierres de entradas vetadas/rechazadas
@@ -5264,6 +5333,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rt_handle_for_thread.block_on(purge_orphan_legs(&executor, &positions));
             }
             persist_kelly_envelope(&risk_envelope);
+            // CL-120 (T2-4): la última foto del estado aprendido, y se espera
+            // a que el escritor la deje en disco antes de salir.
+            if guardar_estado {
+                enviar_estado_aprendido(&tx_estado, &ruta_estado, engine_real.estado_aprendido());
+            }
+            drop(tx_estado);
+            if let Ok(escritor) = escritor_estado {
+                let _ = escritor.join();
+            }
             telemetry_server::telemetry_log!(
                 "🛑 [SHUTDOWN] Estado persistido. Cierre limpio completo."
             );

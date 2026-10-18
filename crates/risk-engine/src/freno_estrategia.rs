@@ -16,11 +16,16 @@
 //! cuenta ([`crate::drawdown::freno_duro`]). Se suelta sólo
 //! restaurando un estado nuevo (otra estrategia es otra hipótesis).
 //!
-//! Escala: el proceso exige `X ∈ [−1, 1]`. Con la geometría medida de las
-//! órdenes, una pérdida al stop es −1 R y un TP es `w/l` R; la escala cubre
-//! ese rango con un margen de 1,5 para deslizamientos y fricciones mayores
-//! que las medidas. La escala de cada cierre se fija con lo medido ANTES de
-//! ese resultado, así que la apuesta sigue siendo predecible.
+//! Escala: el proceso exige `X ∈ [−1, 1]` y recorta lo que sale fuera. El
+//! recorte del lado de las ganancias (X < −1) es favorable a H0 y rompería la
+//! supermartingala, así que la escala tiene que cubrir la mayor ganancia
+//! posible. Por eso cada cierre se mide con la geometría de SU posición
+//! (CL-114, T1-01 de la Línea G): una pérdida al stop es −1 R y un TP es
+//! `w/l` R, y la salida no pasa de su TP. La escala cubre ese rango con un
+//! margen de 1,5 para deslizamientos. La geometría (TP, SL y la fricción de
+//! la configuración) se conoce antes del resultado, así que la apuesta sigue
+//! siendo predecible. Con la geometría media (EWMA de las órdenes) y RR
+//! distintas a la vez, la falsa alarma bajo H0 subía al 9,9 %.
 //!
 //! Con 13 USD, RR 2,25 y la orden mínima, el Monte Carlo del dueño (mezcla
 //! de apuestas fijas) daba: falsa alarma ≤ 5 % para todo t; detección de
@@ -86,8 +91,10 @@ impl FrenoEstrategia {
     }
 
     /// Registra un cierre: `resultado_en_stops` es el PnL neto entre el
-    /// riesgo al stop (`resultado_r` del núcleo) y `perdida_en_stops` = l
-    /// pasa a R. Devuelve el valor del proceso e.
+    /// riesgo al stop (`resultado_r` del núcleo); `ganancia_en_stops` = w y
+    /// `perdida_en_stops` = l son los de la posición que cierra (CL-114), y
+    /// l pasa el resultado a R. Un resultado no finito no cuenta. Devuelve el
+    /// valor del proceso e.
     pub fn registrar(
         &mut self,
         resultado_en_stops: f64,

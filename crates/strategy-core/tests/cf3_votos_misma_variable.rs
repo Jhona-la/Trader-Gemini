@@ -29,41 +29,14 @@
 
 use omniscient_registry::OmniscientRegistry;
 use std::sync::Arc;
-use strategy_core::{stat_arb::StatArbEngine, vecm_arbitrage::JohansenVecmEngine, QuantumStrategy};
+use strategy_core::{stat_arb::StatArbEngine, QuantumStrategy};
 
-/// Esperado: mismos < activos (no coinciden en signo en todos los casos en
-/// que alguno vota). Medido antes de CL-97: coincidían en 300/300.
-///
-/// Activada por CL-97 (F3.7-02 v2): StatArb sólo vota con su prueba de
-/// reversión propia y sin ella se abstiene (ya no cae a `vecm_zscore`).
-/// Queda abierto el resto de F3.7 (faltante 3): sin par spot, VECM,
-/// conformal y el oscilador votan sobre la misma expresión.
-#[test]
-fn cf3_dos_votos_del_consenso_no_son_la_misma_variable() {
-    let reg = Arc::new(OmniscientRegistry::new());
-    let mut sa = StatArbEngine::new(30, 1.5);
-    let mut ve = JohansenVecmEngine::default();
-    assert!(sa.init(reg.clone()).is_ok());
-    assert!(ve.init(reg.clone()).is_ok());
-    let (mut activos, mut mismos) = (0u32, 0u32);
-    for i in -300..=300 {
-        let z = i as f64 / 100.0;
-        reg.set("vecm_zscore", z);
-        let (a, b) = (sa.evaluate(), ve.evaluate());
-        if a != 0.0 || b != 0.0 {
-            activos += 1;
-            if a.signum() == b.signum() {
-                mismos += 1;
-            }
-        }
-    }
-    println!("observado: StatArb y VECM coinciden en signo en {mismos}/{activos} casos activos");
-    assert!(activos > 0, "precondición: hay votos activos");
-    assert!(
-        mismos < activos,
-        "StatArb y VECM coinciden en signo en {mismos}/{activos}: una variable contada dos veces"
-    );
-}
+// CL-113 (W-2 de la revisión del PR #60): la prueba que estaba aquí
+// (`cf3_dos_votos_del_consenso_no_son_la_misma_variable`) era vacua: StatArb
+// no vota sobre `vecm_zscore` desde CL-97, así que nunca votaba en su
+// escenario, y `0.0.signum()` es +1. La sustituye
+// `god-engine-core/tests/cf3_reversion_base.rs::cl113_statarb_y_vecm_con_spot_no_son_la_misma_variable`,
+// con spot y reversión demostrada (OPEN F3.7-05).
 
 /// CL-97. Verdad: sin claves propias StatArb no vota con ningún valor de
 /// `vecm_zscore`.

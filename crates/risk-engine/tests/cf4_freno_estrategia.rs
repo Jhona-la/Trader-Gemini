@@ -78,7 +78,7 @@ fn cl107_falsa_alarma_y_deteccion_del_freno_de_la_estrategia() {
         let d0 = det(&mut azar, 0.0);
         let dneg = det(&mut azar, -0.10);
         println!(
-            "observado: stop {} %: falsa alarma {:.1} % en 2 000 operaciones con +0,30 R; detección (mediana) {d005} con +0,05 R, {d0} con E[R] = 0 y {dneg} con −0,10 R",
+            "observado: stop {} %: falsa alarma {:.1} % en 2 000 operaciones con +{VENTAJA_H0_ESTRATEGIA_R} R; detección (mediana) {d005} con +0,05 R, {d0} con E[R] = 0 y {dneg} con −0,10 R",
             sl * 100.0,
             fa * 100.0
         );
@@ -91,6 +91,84 @@ fn cl107_falsa_alarma_y_deteccion_del_freno_de_la_estrategia() {
             );
         }
     }
+}
+
+/// CL-114 (T1-01 y T1-06 de la revisión de la Línea G). Con geometrías
+/// distintas a la vez (órdenes RR 2,25 y RR 5 con el mismo stop), medir cada
+/// cierre con la geometría MEDIA (la EWMA del arena) rompe la prueba bajo H0:
+/// la R de un TP de RR 5 se divide por la l media y su X sale por debajo de
+/// −1, y `VilleEProcess` la recorta. El recorte sólo toca el lado favorable a
+/// H0, así que E[X] > 0 y el freno acaba rechazando una estrategia que
+/// cumple H0. Con la geometría de la posición que cierra (la que el núcleo
+/// pasa desde CL-114), una salida no supera su TP y no hay recorte.
+///
+/// Escenario: 2 000 cierres, el 70 % de clase RR 2,25 y el 30 % de RR 5,
+/// cada clase con +0,30 R exactos de ventaja; 1 000 caminos (σ ≈ 0,7 % de
+/// una proporción del 5 %). Medido: 10,4 % con la geometría media y 6,0 %
+/// con la de cada posición (500 caminos).
+#[test]
+fn cl114_con_geometrias_mezcladas_el_freno_usa_la_de_cada_posicion() {
+    let sl = 0.005;
+    let clases = [(RR, 0.7), (5.0, 0.3)];
+    let geo = |rr: f64| ((rr * sl - FRICCION) / sl, (sl + FRICCION) / sl);
+    let (w_media, l_media) = clases.iter().fold((0.0, 0.0), |(w, l), &(rr, peso)| {
+        let (wc, lc) = geo(rr);
+        (w + peso * wc, l + peso * lc)
+    });
+    let caminos = 1_000;
+    let falsa_alarma = |por_posicion: bool, azar: &mut Lcg| {
+        (0..caminos)
+            .filter(|_| {
+                let mut f = FrenoEstrategia::new();
+                for _ in 0..2_000 {
+                    let rr = if azar.u() < clases[0].1 { clases[0].0 } else { clases[1].0 };
+                    let (w, l) = geo(rr);
+                    let r = cierre(azar, w, l, VENTAJA_H0_ESTRATEGIA_R);
+                    if por_posicion {
+                        f.registrar(r, w, l);
+                    } else {
+                        f.registrar(r, w_media, l_media);
+                    }
+                    if f.rechazada() {
+                        return true;
+                    }
+                }
+                false
+            })
+            .count() as f64
+            / caminos as f64
+    };
+    let mut azar = Lcg(1101);
+    let media = falsa_alarma(false, &mut azar);
+    let propia = falsa_alarma(true, &mut azar);
+    println!(
+        "observado: falsa alarma bajo H0 con la geometría media {:.1} %; con la de cada posición {:.1} %",
+        media * 100.0,
+        propia * 100.0
+    );
+    // Ville promete ≤ 5 % para todo t: más de 4σ por encima es el defecto.
+    assert!(media > 0.08, "precondición: con la geometría media se rompe la cota de Ville ({media})");
+    assert!(propia <= 0.07, "con la geometría de cada posición: {propia}");
+}
+
+/// Código sin comentarios de línea ni espacios: un contrato de fuente no
+/// debe pasar porque la línea esté comentada (T3-06 de la Línea G).
+fn codigo(fuente: &str) -> String {
+    fuente
+        .lines()
+        .map(|l| l.split("//").next().unwrap_or(""))
+        .collect::<String>()
+        .split_whitespace()
+        .collect()
+}
+
+/// CL-114: el núcleo alimenta el freno con la geometría de la posición que
+/// cierra, no con la media de las órdenes del arena.
+#[test]
+fn cl114_el_nucleo_pasa_la_geometria_de_la_posicion() {
+    let nucleo = codigo(include_str!("../../god-engine-core/src/lib.rs"));
+    assert!(nucleo.contains("freno_estrategia.registrar(r_freno,ganancia_pos,perdida_pos,)"));
+    assert!(!nucleo.contains("freno_estrategia.registrar(resultado_r,self.arena.ganancia_en_stops"));
 }
 
 fn larga() -> SignalIntent {
@@ -151,7 +229,7 @@ fn cl107_con_la_ventaja_de_h0_no_frena() {
         let gana = (n as f64 * p).fract() < p;
         f.registrar(if gana { w } else { -l }, w, l);
     }
-    println!("observado: con +0,30 R exacto, e = {:.4}", f.ville.e_value);
+    println!("observado: con +{VENTAJA_H0_ESTRATEGIA_R} R exactos, e = {:.4}", f.ville.e_value);
     assert!(!f.rechazada());
 }
 
@@ -160,8 +238,10 @@ fn cl107_con_la_ventaja_de_h0_no_frena() {
 /// estado restaurado, CL-108).
 #[test]
 fn cl107_el_host_no_aplana_por_el_freno_de_la_estrategia() {
-    let host = include_str!("../../../src/bin/god_engine.rs");
-    assert!(!host.contains("freno_estrategia.rechazada()"));
-    assert!(!host.contains("freno_estrategia.registrar"));
+    // T3-06 de la Línea G: sin comentarios, y cualquier uso del freno (antes
+    // se buscaba `rechazada()` con paréntesis y no se veía el acceso al
+    // campo). Desde CL-108f el host sólo nombra el resultado del arranque.
+    let host = codigo(include_str!("../../../src/bin/god_engine.rs"));
+    assert!(!host.contains("freno_estrategia"));
     assert!(!host.contains("REJ_ESTRATEGIA_FALSADA"));
 }

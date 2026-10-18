@@ -221,8 +221,17 @@ fn cl130_la_caida_en_stops_y_d_estrella() {
 /// El host y el riesgo usan la MISMA función.
 #[test]
 fn cl106_host_y_riesgo_usan_el_mismo_umbral() {
-    let host: String = include_str!("../../../src/bin/god_engine.rs").split_whitespace().collect();
-    let riesgo: String = include_str!("../src/lib.rs").split_whitespace().collect();
+    // T3-06 de la Línea G: sin comentarios (una línea comentada no cuenta).
+    let codigo = |fuente: &str| -> String {
+        fuente
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<String>()
+            .split_whitespace()
+            .collect()
+    };
+    let host = codigo(include_str!("../../../src/bin/god_engine.rs"));
+    let riesgo = codigo(include_str!("../src/lib.rs"));
     assert!(host.contains("letfreno=risk_engine::drawdown::freno_duro(&arena_imm,peak_capital,cap);"));
     assert!(host.contains("letdd_breach=freno.echado();"));
     assert!(riesgo.contains(

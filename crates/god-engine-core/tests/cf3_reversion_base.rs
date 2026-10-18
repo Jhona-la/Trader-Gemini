@@ -13,8 +13,10 @@
 //!   reversión: la guarda pasa con caminatas independientes;
 //! - el futuro se compara en cada evento con un spot que no se ha refrescado;
 //! - la β RLS deja un residuo paso-alto que revierte por construcción;
-//! - la reconexión (`reset_engines`) no reinicia la prueba, y tras un hueco
-//!   largo del spot la estimación vieja sigue valiendo.
+//! - tras un hueco largo del spot la estimación vieja sigue valiendo.
+//! La reconexión (`reset_engines`) reiniciaba la prueba; desde CL-109 (W-1
+//! de la revisión del PR #60) sólo corta el emparejamiento, porque los nodos
+//! lentos no maduraban nunca con el corte diario del WS.
 //!
 //! Configuración: núcleo vivo con BTCUSDT, un evento del futuro por segundo
 //! y el spot escrito justo antes de cada evento: llega entre dos eventos,
@@ -120,25 +122,35 @@ fn cl97_un_spot_sin_refrescar_no_forma_pares() {
     assert_eq!(alguna, 0);
 }
 
-/// Verdad: la reconexión reinicia la prueba. Tras `reset_engines`, la
-/// guarda no pasa hasta que la prueba vuelve a madurar (en el primer
-/// minuto, nunca). En `main` la SDE sigue con su estimación vieja.
+/// Verdad (CL-109, W-1 de la revisión del PR #60): una reconexión sin hueco
+/// no rehace la prueba. En el minuto siguiente la guarda pasa en los mismos
+/// eventos que en un control sin reconexión, salvo el par que se pierde al
+/// cortar el emparejamiento. Antes (CL-97) la reconexión la reiniciaba y la
+/// guarda no pasaba nunca en ese minuto; el hueco largo (siguiente prueba)
+/// es lo que debe hacerla madurar de nuevo.
 #[test]
-fn cl97_la_reconexion_reinicia_la_prueba() {
+fn cl109_la_reconexion_sin_hueco_conserva_la_prueba() {
     let _g = bloqueo();
-    let (arena, mut core, mut m, mut ts) = nucleo_demostrado(3);
-    core.reset_engines();
-    let mut pasa = 0u32;
-    for _ in 0..60 {
-        let (f, sp) = m.paso();
-        evento(&arena, &mut core, ts, f, Some(sp));
-        ts += 1_000;
-        if guarda_pasa(&arena) {
-            pasa += 1;
+    let minuto = |reconectar: bool| {
+        let (arena, mut core, mut m, mut ts) = nucleo_demostrado(3);
+        if reconectar {
+            core.reset_engines();
         }
-    }
-    println!("observado: eventos con la guarda abierta en el minuto tras la reconexión: {pasa}/60");
-    assert_eq!(pasa, 0);
+        let mut pasa = 0u32;
+        for _ in 0..60 {
+            let (f, sp) = m.paso();
+            evento(&arena, &mut core, ts, f, Some(sp));
+            ts += 1_000;
+            if guarda_pasa(&arena) {
+                pasa += 1;
+            }
+        }
+        pasa
+    };
+    let (control, tras) = (minuto(false), minuto(true));
+    println!("observado: eventos con la guarda abierta en el minuto siguiente: control {control}/60, tras la reconexión {tras}/60");
+    assert!(control >= 30, "precondición: la reversión está demostrada ({control}/60)");
+    assert!(tras + 2 >= control, "la reconexión no debe cerrar la guarda: {tras} frente a {control}");
 }
 
 /// Verdad: tras 40 min sin spot (el futuro sigue), la evidencia vieja decae
@@ -200,4 +212,64 @@ fn cl97_con_la_reversion_demostrada_el_lector_vota() {
         }
     }
     panic!("en 20 intentos la guarda no siguió abierta en el evento de la dislocación");
+}
+
+/// CL-113 (W-2 de la revisión del PR #60; F3.7-05). Con spot y la reversión
+/// demostrada, StatArb (`statarb_ou_zscore`) y VECM (`vecm_zscore`, el z de
+/// la base con spot) votan sobre la misma desviación de la base. La prueba
+/// de strategy-core era vacua: StatArb no votaba en su escenario y
+/// `0.0.signum()` es +1.
+///
+/// Medida: en los eventos en que votan los dos (|z| > 1,5 en ambos y la
+/// guarda abierta), la coincidencia de signo. Se informa también la
+/// correlación de los dos z con la guarda abierta. Medido (semilla 21):
+/// coinciden en 61 de 65 (94 %), con correlación 0,34; votan sobre la misma
+/// desviación de la base en los extremos, que es cuando votan. Convención de
+/// la prueba (no es un umbral de producción): coincidir en ≥ 90 % de los
+/// votos conjuntos es contar la misma evidencia dos veces. El arreglo
+/// (contarlos como un solo voto) es del consenso.
+#[test]
+#[ignore = "OPEN F3.7-05 (consenso, Qoder): con spot y reversión demostrada, StatArb y VECM coinciden en signo en el 94 % de los eventos en que votan los dos"]
+fn cl113_statarb_y_vecm_con_spot_no_son_la_misma_variable() {
+    let _g = bloqueo();
+    let (arena, mut core, mut m, mut ts) = nucleo_demostrado(21);
+    let (mut ambos, mut mismos) = (0u32, 0u32);
+    let mut pares: Vec<(f64, f64)> = Vec::new();
+    for _ in 0..3_000 {
+        let (f, sp) = m.paso();
+        evento(&arena, &mut core, ts, f, Some(sp));
+        ts += 1_000;
+        if !guarda_pasa(&arena) {
+            continue;
+        }
+        let (Some(zs), Some(zv)) = (leer(&arena, "statarb_ou_zscore"), leer(&arena, "vecm_zscore")) else {
+            continue;
+        };
+        pares.push((zs, zv));
+        if zs.abs() > 1.5 && zv.abs() > 1.5 {
+            ambos += 1;
+            if zs.signum() == zv.signum() {
+                mismos += 1;
+            }
+        }
+    }
+    let n = pares.len() as f64;
+    let (ma, mb) = (pares.iter().map(|p| p.0).sum::<f64>() / n, pares.iter().map(|p| p.1).sum::<f64>() / n);
+    let (mut sab, mut saa, mut sbb) = (0.0, 0.0, 0.0);
+    for &(a, b) in &pares {
+        sab += (a - ma) * (b - mb);
+        saa += (a - ma) * (a - ma);
+        sbb += (b - mb) * (b - mb);
+    }
+    let corr = sab / (saa * sbb).sqrt();
+    println!(
+        "observado: {} eventos con la guarda abierta; votan los dos en {ambos} y coinciden en signo en {mismos}; correlación de los z {corr:.3}",
+        pares.len()
+    );
+    assert!(ambos > 0, "precondición: votan los dos");
+    let coincidencia = mismos as f64 / ambos as f64;
+    assert!(
+        coincidencia < 0.9,
+        "StatArb y VECM votan la misma evidencia: coinciden en {mismos}/{ambos} (correlación {corr:.3})"
+    );
 }

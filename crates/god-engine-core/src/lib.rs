@@ -1174,6 +1174,10 @@ pub struct GodEngineCore {
     /// (los leen el demonio, la deriva frente al control y el validador de
     /// paridad); se suma al guardar.
     pub(crate) pnl_previo: Vec<(f64, f64)>,
+    /// CL-118 (T2-5 de la Línea G) — monedas del estado restaurado que no
+    /// están en el universo de este arranque: se vuelven a guardar tal cual,
+    /// para no perder su evidencia.
+    pub(crate) monedas_fuera_del_universo: Vec<estado_aprendido::MonedaGuardada>,
     /// CERT-M2-C02 — proceso de Hawkes POR SÍMBOLO. Cada TRADE real excita
     /// el proceso (record_event); λ/μ verdadero se publica al registry.
     /// Antes el slot 'hawkes_intensity' llevaba un proxy de aceleración/ATR
@@ -1500,6 +1504,7 @@ impl GodEngineCore {
                 .collect(),
             registro_calibrador_global: std::collections::VecDeque::new(),
             pnl_previo: vec![(0.0, 0.0); n_coins],
+            monedas_fuera_del_universo: Vec::new(),
             hawkes_by_coin: (0..n_coins)
                 .map(|_| signal_engine::hawkes_bessel::HawkesBesselEngine::new())
                 .collect(),
@@ -1951,9 +1956,12 @@ impl GodEngineCore {
         for z in self.base_z.iter_mut() {
             *z = base_z::BaseZ::new();
         }
-        // CL-97: y la prueba de reversión de StatArb vuelve a madurar.
+        // CL-109 (W-1 de la revisión del PR #60): StatArb sólo corta el
+        // emparejamiento. Su prueba de reversión conserva lo acumulado (el
+        // hueco ya decae las sumas); antes volvía a madurar desde cero en
+        // cada reconexión y los nodos lentos no maduraban nunca.
         for e in self.statarb_ou_engines.iter_mut() {
-            *e = strategy_core::stat_arb::StatArbEngine::new(30, 1.5).with_prueba_reversion();
+            e.cortar_emparejamiento();
         }
     }
 
@@ -4710,6 +4718,16 @@ impl GodEngineCore {
                     // CL-130: el SL PROPIO de la posición (0 si se adoptó del
                     // exchange sin él); `close_with_fee` lo borra.
                     let sl_propio = pos.sl_price.load(Ordering::Relaxed);
+                    // CL-115 (T1-04 y T1-05 de la Línea G): qué cierres son
+                    // evidencia del freno de la estrategia. Se lee ANTES de
+                    // cerrar (la ranura se limpia) y antes de que suba el
+                    // recuento: una posición sin TP ni SL propios (adoptada
+                    // del exchange) se gestiona con un stop de respaldo y su R
+                    // no es medible; una posición de una moneda en fase de
+                    // sonda es exploración (D4), no una decisión de la
+                    // estrategia.
+                    let stop_propio = sl_propio > 0.0 && pos.tp_price.load(Ordering::Relaxed) > 0.0;
+                    let era_sonda = risk_engine::sonda::en_fase_de_sonda(&self.arena, coin_id);
                     let (closed_side, closed_entry, closed_qty, margin_used, entry_fee_paid) = pos.close_with_fee();
                     // CL-45b: lo cerrado manda (un llenado parcial confirmado
                     // en paralelo pudo reescalar la ranura tras la lectura).
@@ -5312,16 +5330,42 @@ impl GodEngineCore {
                     // CL-135: lo medido de esta operación entra en las medias
                     // de la cuenta ahora, tras la puerta de aprendizaje (una
                     // entrada que nunca llegó al exchange no cuenta) y antes
-                    // de los dos frenos que leen su geometría.
+                    // del freno duro, cuyo umbral K lee esa geometría (el de
+                    // la estrategia usa la de cada posición, CL-114).
                     if let Some(m) = medida_de_entrada {
                         risk_engine::RiskEngine::registrar_medida(&self.arena, &m.medida);
                     }
                     // CL-107: la R de cada cierre alimenta el freno de la
                     // estrategia (proceso e de Ville, H0 = +0,30 R).
+                    // CL-114 (T1-01 y T1-06 de la Línea G): con la geometría
+                    // de ESTA posición, no la media de las órdenes (EWMA). La
+                    // salida no pasa de su TP, así que con su propia escala
+                    // una ganancia no se recorta a −1 (recortar sólo el lado
+                    // favorable a H0 rompía la supermartingala), y su R se
+                    // normaliza con su propia l. La fricción es la que se
+                    // conoce antes del resultado (comisión taker y
+                    // deslizamiento base de la configuración, sin el término
+                    // de latencia, que depende del ATR del cierre): la
+                    // apuesta del proceso e tiene que ser predecible.
+                    let friccion_previa = risk_engine::tp_sl::roundtrip_friction(
+                        self.arena.config.live_taker_fee.load(Ordering::Relaxed),
+                        self.arena.config.base_slippage_floor.load(Ordering::Relaxed).max(0.0),
+                        0.0,
+                        0.0,
+                    );
+                    let (ganancia_pos, perdida_pos) =
+                        if sl.is_finite() && sl > 0.0 && friccion_previa.is_finite() {
+                            ((tp - friccion_previa) / sl, (sl + friccion_previa) / sl)
+                        } else {
+                            (f64::NAN, f64::NAN)
+                        };
+                    // CL-115: sólo los cierres de la estrategia (con stop
+                    // propio y fuera de la fase de sonda) son evidencia.
+                    let r_freno = if stop_propio && !era_sonda { resultado_r } else { f64::NAN };
                     let e_estrategia = self.risk_engine.freno_estrategia.registrar(
-                        resultado_r,
-                        self.arena.ganancia_en_stops.load(Ordering::Relaxed),
-                        self.arena.perdida_en_stops.load(Ordering::Relaxed),
+                        r_freno,
+                        ganancia_pos,
+                        perdida_pos,
                     );
                     self.arena.registry.set("ville_estrategia_e", e_estrategia);
                     // CL-130 (R1 de la revisión del PR #62): la caída del freno
@@ -6400,9 +6444,12 @@ impl GodEngineCore {
             // de reversión de la base a la τ de decisión: z del último par y
             // cota de vida media demostrada (2·τ_k del nodo τ_k ≤ τ*), o z = 0
             // y t½ = ∞ sin demostración. Con el spot caducado (> TTL, CL-79)
-            // la z es 0. Se publica en cada evento y para toda moneda: así una
-            // clave nunca queda con un veredicto viejo (reconexión, nodo que
-            // deja de estar maduro, spot que desaparece). β = 1 fija.
+            // la z es 0. Se publica en cada evento que llega hasta aquí y para
+            // toda moneda (no con las entradas bloqueadas, que salen antes; W-5
+            // de la revisión del PR #60): así una clave no queda con un
+            // veredicto viejo (nodo que deja de estar maduro, spot que
+            // desaparece). β = 1 fija. Sin la resolución de la base (sin spec
+            // de tick) no hay voto (CL-111).
             {
                 let piso_base = self.feature_engines[coin_id].piso_resolucion / mid_price;
                 let eng_st = &self.statarb_ou_engines[coin_id];
@@ -9575,7 +9622,7 @@ impl GodEngineCore {
                     // exige — sin ella el motor jamás arrancaría (oráculo 0/144).
                     //
                     // Ola XLIV: UNA sonda a la vez. `trade_count` sólo sube al
-                    // CERRAR y no se persiste, así que sin este límite la
+                    // CERRAR (y entonces no se persistía), así que sin este límite la
                     // «sonda» podía llenar los 3 slots espectrales de la moneda
                     // antes del primer cierre, y tras cada reinicio las monedas
                     // sin modelo (27 de 30 hoy) abrían de nuevo saltándose el

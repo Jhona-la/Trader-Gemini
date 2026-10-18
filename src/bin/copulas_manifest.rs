@@ -11,9 +11,15 @@
 //! sólo orquesta la medición y escribe. Lector de tapes idéntico al de
 //! tests/copula_real.rs (mismo formato TGMTICK1; ver tick_replayer.rs).
 //!
-//! Uso: copulas_manifest [mes] [--sin-escribir]  (default 2026-08).
+//! Uso: copulas_manifest <mes AAAA-MM> [--sin-escribir] [--forzar-mes-anterior].
 //! Escribe config_dir/copulas_manifest.json salvo con --sin-escribir
 //! (medición sin mutar el insumo del veto — incidente LXXV).
+//!
+//! CL-124 (T3-04 de la Línea G): el mes es obligatorio. Antes el defecto era
+//! 2026-08, el mes al que sustituyó la renovación de septiembre: sin
+//! argumento se reescribía el manifiesto vivo con el mes viejo (el incidente
+//! LXXV otra vez). Tampoco se escribe un mes anterior al del manifiesto
+//! vigente salvo con --forzar-mes-anterior.
 
 use feature_engine::copulas::{lambda_cola_t, nu_mle, rho_desde_tau, tau_kendall};
 
@@ -86,14 +92,10 @@ fn scores_por_rango(x: &[f64], y: &[f64]) -> (Vec<f64>, Vec<f64>) {
     (ranks(x), ranks(y))
 }
 
-/// Roster vivo (bootloader.rs:301-328) con tape del mes dado. XMR está
-/// FUERA del roster (sólo existe en el simulador forense) — no se mide.
-const SIMBOLOS: &[&str] = &[
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "ADAUSDT",
-    "SHIBUSDT", "DOTUSDT", "LINKUSDT", "POLUSDT", "LTCUSDT", "BCHUSDT", "ATOMUSDT",
-    "UNIUSDT", "XLMUSDT", "NEARUSDT", "ICPUSDT", "FILUSDT", "VETUSDT", "AVAXUSDT",
-    "OPUSDT", "APTUSDT", "ARBUSDT", "RENDERUSDT", "LDOUSDT",
-];
+/// CL-123: el roster vivo, la MISMA lista del bootloader (antes una copia,
+/// que decía SHIBUSDT como el bootloader). XMR está FUERA del roster (sólo
+/// existe en el simulador forense) — no se mide.
+const SIMBOLOS: &[&str] = god_engine_core::bootloader::ROSTER;
 
 const HORIENTE_MS: u64 = 300_000; // 5 min: mediana λ̂ de LXXI y horizonte de trading
 const TOPE_N: usize = 4_000;
@@ -106,24 +108,64 @@ const LAMBDA_MIN: f64 = 0.05;
 /// - En 2026-08, BTC y ETH llevan el nombre histórico `{SYM}_AUG_REAL.bin`
 ///   (antes sólo BTC: ETH quedaba fuera del manifiesto de agosto).
 /// - SHIB cotiza en futuros USDⓈ-M como `1000SHIBUSDT` (mil unidades por
-///   contrato); su cinta lleva ese nombre. Los retornos logarítmicos no
-///   cambian con la escala, y el manifiesto conserva el nombre del roster.
+///   contrato), que es su nombre en el roster desde CL-123; su cinta lleva
+///   ese nombre. Los retornos logarítmicos no cambian con la escala.
 fn nombre_de_cinta(simbolo: &str, mes: &str) -> String {
     match (simbolo, mes) {
         ("BTCUSDT" | "ETHUSDT", "2026-08") => format!("{simbolo}_AUG_REAL.bin"),
-        ("SHIBUSDT", _) => format!("1000SHIBUSDT_{mes}_REAL.bin"),
         _ => format!("{simbolo}_{mes}_REAL.bin"),
     }
+}
+
+/// CL-124 — el mes a medir y escribir: obligatorio, con forma AAAA-MM, y no
+/// anterior al del manifiesto vigente (`mes_vigente`) salvo con
+/// `--forzar-mes-anterior`. Al medir sin escribir no se compara con el
+/// vigente.
+fn mes_a_escribir(args: &[String], mes_vigente: Option<&str>) -> Result<String, String> {
+    let mes = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .cloned()
+        .ok_or("falta el mes (AAAA-MM): sin él se reescribía el manifiesto con un mes viejo")?;
+    let forma = mes.len() == 7
+        && mes.as_bytes()[4] == b'-'
+        && mes[..4].bytes().all(|c| c.is_ascii_digit())
+        && mes[5..].bytes().all(|c| c.is_ascii_digit())
+        && (1..=12).contains(&mes[5..].parse::<u32>().unwrap_or(0));
+    if !forma {
+        return Err(format!("mes «{mes}» sin la forma AAAA-MM"));
+    }
+    let sin_escribir = args.iter().any(|a| a == "--sin-escribir");
+    let forzar = args.iter().any(|a| a == "--forzar-mes-anterior");
+    if let Some(vigente) = mes_vigente {
+        // AAAA-MM se ordena igual como texto que como fecha.
+        if !sin_escribir && !forzar && mes.as_str() < vigente {
+            return Err(format!(
+                "el manifiesto vigente es de {vigente}; {mes} es anterior (usa --forzar-mes-anterior si es a propósito)"
+            ));
+        }
+    }
+    Ok(mes)
+}
+
+/// Mes del manifiesto vigente, si se puede leer.
+fn mes_del_manifiesto(ruta: &std::path::Path) -> Option<String> {
+    let texto = std::fs::read_to_string(ruta).ok()?;
+    let i = texto.find("\"mes\": \"")? + "\"mes\": \"".len();
+    Some(texto[i..i + texto[i..].find('"')?].to_string())
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let sin_escribir = args.iter().any(|a| a == "--sin-escribir");
-    let mes = args
-        .iter()
-        .find(|a| !a.starts_with("--"))
-        .cloned()
-        .unwrap_or_else(|| "2026-08".into());
+    let ruta_vigente = std::path::Path::new("config_dir").join("copulas_manifest.json");
+    let mes = match mes_a_escribir(&args, mes_del_manifiesto(&ruta_vigente).as_deref()) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("❌ copulas_manifest: {e}");
+            std::process::exit(2);
+        }
+    };
     let base = std::path::Path::new("data");
     let mut tapes = Vec::new();
     for s in SIMBOLOS {
@@ -194,4 +236,40 @@ fn main() {
     println!(
         "✅ config_dir/copulas_manifest.json: {n_pares} pares con λ̂≥{LAMBDA_MIN} a 5m ({mes})"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn a(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// CL-124. Verdad: sin mes no hay manifiesto (antes, el defecto 2026-08).
+    #[test]
+    fn cl124_el_mes_es_obligatorio() {
+        assert!(mes_a_escribir(&a(&[]), Some("2026-09")).is_err());
+        assert!(mes_a_escribir(&a(&["--sin-escribir"]), None).is_err());
+        assert!(mes_a_escribir(&a(&["2026-13"]), None).is_err());
+        assert!(mes_a_escribir(&a(&["sept"]), None).is_err());
+        assert_eq!(mes_a_escribir(&a(&["2026-10"]), Some("2026-09")).unwrap(), "2026-10");
+    }
+
+    /// CL-124. Verdad: no se escribe un mes anterior al vigente, salvo a
+    /// propósito o sin escribir.
+    #[test]
+    fn cl124_no_se_escribe_un_mes_anterior_al_vigente() {
+        assert!(mes_a_escribir(&a(&["2026-08"]), Some("2026-09")).is_err());
+        assert!(mes_a_escribir(&a(&["2026-08", "--forzar-mes-anterior"]), Some("2026-09")).is_ok());
+        assert!(mes_a_escribir(&a(&["2026-08", "--sin-escribir"]), Some("2026-09")).is_ok());
+        assert!(mes_a_escribir(&a(&["2026-09"]), Some("2026-09")).is_ok(), "regenerar el mismo mes");
+    }
+
+    /// Verdad: el mes vigente se lee del manifiesto con su formato.
+    #[test]
+    fn el_mes_del_manifiesto_vivo() {
+        let ruta = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config_dir/copulas_manifest.json");
+        assert_eq!(mes_del_manifiesto(&ruta).as_deref(), Some("2026-09"));
+    }
 }

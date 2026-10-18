@@ -42,6 +42,12 @@ Relacionado: ADR-0008 (misma cadencia), TRIAGE_TEORICO §LXXI/LXXV.
   - ETH entra en agosto: su cinta tiene el nombre histórico `ETHUSDT_AUG_REAL.bin`, y antes sólo se reconocía ese nombre para BTC.
   - SHIB se lee de `1000SHIBUSDT`, su símbolo en futuros.
 - **Próximo vencimiento:** al empezar noviembre de 2026, con las cintas de octubre completo.
-- **Hallazgo para el roster (no corregido aquí):**
-  - El bootloader del host suscribe `shibusdt`, que no existe en futuros USDⓈ-M; el símbolo es `1000SHIBUSDT`.
-  - Esa moneda no recibe datos en vivo y sus pares del manifiesto no se usan hasta que el roster la nombre bien.
+- **Hallazgo para el roster (corregido después en CL-123):**
+  - El bootloader del host suscribía `shibusdt`, que no existe en futuros USDⓈ-M; el símbolo es `1000SHIBUSDT`. Esa moneda no recibía datos en vivo.
+  - Corrección al texto original (T3-03 de la revisión de la Línea G): no era cierto que sus pares del manifiesto «no se usan hasta que el roster la nombre bien». El generador escribía la clave del roster (`SHIBUSDT`), que resolvía contra el `SHIBUSDT` del roster. Lo que pasaba es que esa moneda no tenía datos.
+
+## Roster y manifiesto con el mismo nombre (CL-123, 2026-10-12)
+
+- El roster es una sola constante, `god_engine_core::bootloader::ROSTER`, con el nombre del exchange en futuros USDⓈ-M (`1000SHIBUSDT`). El generador de cópulas usa esa misma lista, así que las claves del manifiesto y las del roster no pueden separarse.
+- El manifiesto de septiembre se regeneró con el roster corregido. Sólo cambian las claves de SHIB (`SHIBUSDT` → `1000SHIBUSDT`): los pares, λ̂, ρ y ν son los mismos.
+- El cargador (`risk_engine::copulas_store`) sigue sin validar el manifiesto: no lee `mes` ni `horizonte_ms` y no distingue un manifiesto ausente de uno vacío (T3-01 y T3-02). Es zona de Codex y está anotado en el buzón.
