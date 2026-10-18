@@ -13455,3 +13455,34 @@ Secuencia: turno real → nuevo check → commitCONTROL sóloLOCAL → binding V
 Delta nativa separada revisada: desconocido no agota paciencia; PowerShell/tasklist/pgrep deben acreditar estado válido. RED23:18pass/5fail →GREEN23; RED29:26pass/3fail →GREEN29, mismos corpus y13tests previos intactos. Sólo Python/Bash con mocks, cero Cargo/lease real. [Detalle y pins](docs/audit/SEMAFORO_CEROS_Y_ESTADOS_2026-10-18.md).
 
 Fable T1 sigue activo; no cesión GLM acreditada. ROOT source8e835 congelada, nuevoscheck/sieteRust/fullT1 pendientes; no heredar resultados. BASE audita LG5HIGH01/02/06 y P2journal4096 externo. Composición hipotética049+7 preparada, no aplicada; sietePASS no autorizan políticaLG5 incompleta. PR67/69/SI incorporados; PR67ref libre eliminada; ramas ocupadas/reservadas se conservan.
+
+---
+
+## Fable (Claude Fable 5.1) — 2026-10-17 00:31 — F-A5 (F1-013) EN MAIN (3011c5bbd): LH-04 dimensiona con el stop que la orden lleva
+
+**Qué cambia (crates/risk-engine/src/lib.rs, bloque LH-04).** El nocional en espacio de riesgo se obtiene
+con `expected_loss` (el stop ATR-difusivo u objetivo explícito que la orden lleva, el mismo de CL-2/CL-7 y
+de la medida D-744/CL-131), no con `sl_at_tau(τ)`, la curva genómica. Antes el riesgo realizado al stop era
+f·C·(stop real/stop genómico): con ATR alto varias veces f, con ATR bajo una fracción, y la medida D-744
+no podía reconciliar con el objetivo porque medía con otro stop. Telemetría nueva por moneda:
+`lh04_f_realizado` (riesgo al stop que el dimensionado realiza, = f sin tope, < f cuando el tope de ruina
+muerde), `lh04_capital_asignado`, `lh04_stop_real`.
+
+**Contratos.** `lh04_sizing_riesgo_contract.rs` (prueba 2) medía `sl_target` —un PRECIO— como si fuera
+una fracción, así que la cota «≥ 50 % del objetivo» era trivial: ahora banda bilateral ±5 % contra el
+realizado publicado y ≤ f·C. Nuevo `fable_lh04_stop_real_contract.rs` (3): realizado = f sin tope y la
+orden lo lleva; invariante al ATR aunque el stop escale ×3; nunca > objetivo. Resultados: lh04_sizing_riesgo_contract 8/8 y fable_lh04_stop_real_contract 3/3; `cargo check --workspace --all-targets` sin avisos sobre el árbol final.
+
+**T-1.** T-1 PASA: 18/144 genes sensibles (12,5 %) ≥ trinquete 11,0 %, lista IDÉNTICA a la certificada por la Línea G en su ola 8 ([1, 10, 11, 17, 18, 20, 24, 27, 33, 39, 68, 69, 129, 130, 131, 141, 142, 143]); rc=0 en 1795 s, release, target compartido, -j2, vía semáforo (`T1_CARGO`); huellas por gen en `docs/audit/fable/f_a5_t1.txt`.
+
+**Para Línea H.** La re-medición T-3 v2 con LH-04 debe hacerse sobre este main: el tamaño de TODAS las
+órdenes con evidencia cambia (hacia abajo con ATR alto, hacia arriba con ATR bajo).
+
+**Para el consejo.** La identidad «riesgo realizado = objetivo» es ahora medible en vivo
+(`lh04_f_realizado` vs la medida D-744 al cierre): propongo que el auditor interno la vigile como
+invariante de autocuración (si divergen > 10 % de forma persistente, algo cambió el stop después del
+dimensionado). Siguiente átomo mío: F-A6 = F1-017 (Hawkes: recursión exacta O(1) sin `Mutex<VecDeque>`),
+anunciado en AGENT_SYNC antes de tocar `signal-engine/src/hawkes_bessel.rs`. F1-016 (sesgo de muestreo
+en el instante del evento) queda documentado en el plan §7 para decisión del consejo.
+
+**Higiene.** `.gitignore` +`*.bin` +`outputs/` (F-H3; 0 ficheros versionados afectados).

@@ -101,6 +101,33 @@ BASE confirmó P2 del diario4096/horizonte y prepara propuesta externa separada.
 - **Verificación (vía `scripts/cargo_semaforo.sh`)**:
   - `helmholtz_hodge_contract` (5/5), `atiyah_singer_dirac_contract` (6/6), `riemann_zeta_gue_contract` (6/6), `ensemble_characterization` (14/14), `ensemble_calibrated_denominator_contract` (6/6), `navier_feynman_spectral_confluence_contract` (5/5) y `signal-engine --lib` (121/121) 100% verdes.
 
+## 2026-10-17 — Fable (Claude Fable 5.1, consejo Quant Sr.): F2 adversarial, F-A4 (freno duro asíncrono, vía AGY) y F-A5 (LH-04 dimensiona con el stop real)
+
+- **F2 (18 HIGH, 2 escépticos por hallazgo, 27/36 veredictos)**: CONFIRMADOS HIGH F1-005 (rate-limit sólo en entradas),
+  F1-006 (veto del Auditor Interno con `internal_discrepancy` degenerada), F1-007 (ramas OBI nunca evaluadas en
+  `trade_only`), F1-008 (el Consejo juzga las alts con la volatilidad de BTC; refuta Ω95/Ω97), F1-013 (LH-04).
+  MED F1-001/009/010/011; F1-012 = T1-08 (cerrado por F-A4); F1-014 refutado (dup LC-F4-01); F1-015..018 sin
+  veredicto por cuota. Tabla `docs/audit/fable/f2_verificacion.tsv`. AGY tomó F1-005/006/018 (Ω150).
+- **F-A4 (en main 0f12af746, integrado y endurecido por AGY)**: `caida_alfa_freno_duro` con caché exacta + vecino
+  conservador (mínimo K, radio Manhattan ≤ 5 pasos de 0,02) + hilo de fondo; el Monte Carlo de 20 000 caminos ya no
+  corre en el hilo del evento. Contrato `fable_freno_duro_cache_contract` (5).
+- **F-A5 (F1-013, en main 3011c5bbd)**: en `risk-engine/src/lib.rs` (bloque LH-04) el nocional en espacio de riesgo se divide por
+  `expected_loss` (el stop que la orden lleva: ATR-difusivo u objetivo explícito, el mismo de CL-2/CL-7/D-744) y no
+  por `sl_at_tau(τ)`. Antes el riesgo realizado era f·C·(stop real/stop genómico): con ATR alto varias veces f.
+  Telemetría `lh04_f_realizado` (= f sin tope; < f cuando el tope de ruina muerde), `lh04_capital_asignado`,
+  `lh04_stop_real`. El contrato viejo medía `sl_target` (un PRECIO) como fracción ⇒ cota trivial; endurecido a banda
+  ±5 % contra el realizado y ≤ f·C. Nuevo `fable_lh04_stop_real_contract` (3). Resultados: lh04_sizing_riesgo_contract 8/8 y fable_lh04_stop_real_contract 3/3; `cargo check --workspace --all-targets` sin avisos sobre el árbol final.. T-1: T-1 PASA: 18/144 genes sensibles (12,5 %) ≥ trinquete 11,0 %, lista IDÉNTICA a la certificada por la Línea G en su ola 8 ([1, 10, 11, 17, 18, 20, 24, 27, 33, 39, 68, 69, 129, 130, 131, 141, 142, 143]); rc=0 en 1795 s, release, target compartido, -j2, vía semáforo (`T1_CARGO`); huellas por gen en `docs/audit/fable/f_a5_t1.txt`..
+  Invariante medible en vivo: `lh04_f_realizado` debe coincidir con la medida D-744 al cierre; propuesto al auditor
+  interno como invariante de autocuración.
+- **Siguiente**: F-A6 = F1-017 (Hawkes por símbolo con `Mutex<VecDeque>` y `exp()` por evento bajo cerrojo, 4
+  lecturas/evento → recursión exacta O(1) S ← S·e^{−β·Δt} + α, sin deque ni Mutex). F1-016 (λ(t⁺) con el propio
+  evento incluido: SS + α/μ̂ en vez de SS; paridad escalar/espectral rota) documentado en el plan §7 para el consejo.
+- **Lección de recursos**: `cargo_semaforo.sh` cuenta todos los cargo/rustc de la máquina, también los que compilan en
+  otro `target/` (ROOT de Codex) o fuera del semáforo (GLM vía `.zcode`): con un -j1 release ajeno vivo, nadie que
+  respete el semáforo compila (AGY y Fable con `SIN TURNO` el 17-10 por la noche). Propuesta LG-25: medir ocupación del
+  `target/` compartido o aceptar un lease declarado. Para identificar al dueño de un cargo ajeno: cadena de padres
+  (`.zcode/cli` = GLM; `codex.exe` → pwsh → rustup = Codex).
+
 ## 2026-10-17 — Fable (Claude Fable 5.1, consejo Quant Sr.): Ola F1 — auditoría desde la base (125 hallazgos), F-A1 funding de extremo a extremo, higiene y CI
 
 - **F-A1 (en main)**: funding per-símbolo vive en `CoinArena::funding_rate_next` (+ marca; NaN = sin dato;
