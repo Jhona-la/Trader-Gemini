@@ -157,8 +157,9 @@ const REINTENTO_APERTURA_MS: u64 = 30_000;
 /// hilo aparte lo comprime a `<ruta>.<n>.gz` y borra los segmentos más viejos
 /// hasta dejar `conservar`. En disco hay como mucho el activo y `conservar`
 /// segmentos, comprimidos o por comprimir, más un `.gz.tmp` mientras se
-/// comprime. Sin la variable, todo sigue yendo a stdout como antes. Los
-/// `println!` directos (fuera de las macros) siguen yendo a stdout.
+/// comprime y el cerrojo `<ruta>.lock`. Sin la variable, todo sigue yendo a
+/// stdout como antes. Los `println!` directos (fuera de las macros) siguen
+/// yendo a stdout, que por eso no debe redirigirse al mismo archivo.
 ///
 /// CL-144b: un fallo de E/S no pierde segmentos ni repite la rotación. Si el
 /// activo no se deja renombrar (otro proceso lo tiene abierto sin compartir
@@ -167,6 +168,16 @@ const REINTENTO_APERTURA_MS: u64 = 30_000;
 /// a llenarse. Si el activo no se puede abrir, las líneas van a stdout y la
 /// apertura se reintenta cada `REINTENTO_APERTURA_MS`. Un segmento que no se
 /// pudo comprimir se comprime en la pasada siguiente o tras un reinicio.
+///
+/// CL-144c: un solo escritor y nada se borra antes de ser durable.
+/// - El dueño de la ruta tiene el cerrojo exclusivo `<ruta>.lock` mientras
+///   vive; un segundo proceso con la misma ruta sigue en stdout sin tocar
+///   los segmentos y la toma cuando el primero termina. En Windows el activo
+///   se abre sin compartir la escritura, así que tampoco se abre si otro
+///   handle ya escribe en él (stdout redirigido al mismo archivo).
+/// - El `.gz` se sincroniza a disco antes de su renombre, y el crudo sólo se
+///   borra (o el activo se vacía) después. Un `.gz` que un corte de luz dejó
+///   vacío o truncado no cuenta como hecho: se vuelve a comprimir el crudo.
 #[derive(Debug, Clone)]
 pub struct Rotacion {
     pub ruta: std::path::PathBuf,
@@ -183,6 +194,13 @@ enum Pieza {
     Comprimido,
     /// `<ruta>.<n>.gz.tmp`: compresión en curso o cortada por una caída.
     Temporal,
+}
+
+/// Cómo se abre el activo: para añadir, o vaciado tras archivar una copia.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Apertura {
+    Anadir,
+    Vaciar,
 }
 
 impl Rotacion {
@@ -211,7 +229,15 @@ impl Rotacion {
         s.into()
     }
 
-    /// Los segmentos que hay en disco, en cualquier orden.
+    fn cerrojo(&self) -> std::path::PathBuf {
+        let mut s = self.ruta.clone().into_os_string();
+        s.push(".lock");
+        s.into()
+    }
+
+    /// Los segmentos que hay en disco, en cualquier orden. CL-144c: sólo los
+    /// nombres que `pieza` construye (`<ruta>.000007`, no `<ruta>.7`); otro
+    /// nombre no se comprime, no se borra ni cuenta para la numeración.
     fn piezas(&self) -> Vec<(u64, Pieza)> {
         let Some(nombre) = self.ruta.file_name().and_then(|n| n.to_str()) else {
             return Vec::new();
@@ -238,28 +264,72 @@ impl Rotacion {
                 if digitos.is_empty() || !digitos.bytes().all(|b| b.is_ascii_digit()) {
                     return None;
                 }
-                Some((digitos.parse().ok()?, pieza))
+                let n: u64 = digitos.parse().ok()?;
+                (format!("{n:06}") == digitos).then_some((n, pieza))
             })
             .collect()
     }
 }
 
+/// Abre el activo. CL-144c: en Windows sin compartir la escritura (lectura y
+/// borrado sí, para los visores y el renombre), así que falla si otro handle
+/// ya escribe en él.
+fn abrir_archivo(ruta: &std::path::Path, modo: Apertura) -> std::io::Result<std::fs::File> {
+    let mut opciones = std::fs::OpenOptions::new();
+    match modo {
+        Apertura::Anadir => opciones.create(true).append(true),
+        Apertura::Vaciar => opciones.write(true).truncate(true),
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        // FILE_SHARE_READ | FILE_SHARE_DELETE.
+        opciones.share_mode(0x1 | 0x4);
+    }
+    opciones.open(ruta)
+}
+
 /// Comprime `origen` en `destino` pasando por `tmp`, sin tocar `origen`. Un
 /// `.gz` sólo aparece completo; si algo falla, el temporal se borra.
+/// CL-144c: el `.gz` está en disco (`sync_all`) antes de su renombre, así que
+/// quien borre el crudo después no pierde nada ante un corte de luz.
 fn comprimir(origen: &std::path::Path, tmp: &std::path::Path, destino: &std::path::Path) -> std::io::Result<()> {
-    use std::io::Write as _;
     let resultado = (|| {
         let mut entrada = std::fs::File::open(origen)?;
         let salida = std::io::BufWriter::new(std::fs::File::create(tmp)?);
         let mut gz = flate2::write::GzEncoder::new(salida, flate2::Compression::fast());
         std::io::copy(&mut entrada, &mut gz)?;
-        gz.finish()?.flush()?;
-        std::fs::rename(tmp, destino)
+        let archivo = gz.finish()?.into_inner().map_err(|e| e.into_error())?;
+        archivo.sync_all()?;
+        drop(archivo);
+        std::fs::rename(tmp, destino)?;
+        #[cfg(unix)]
+        if let Some(dir) = destino.parent().filter(|d| !d.as_os_str().is_empty()) {
+            let _ = std::fs::File::open(dir).and_then(|d| d.sync_all());
+        }
+        Ok(())
     })();
     if resultado.is_err() {
         let _ = std::fs::remove_file(tmp);
     }
     resultado
+}
+
+/// CL-144c: `true` si `gz` es un gzip completo de `crudo`: empieza con la
+/// firma y su cola (ISIZE, el tamaño sin comprimir módulo 2³²) coincide con
+/// la longitud del crudo. Un `.gz` vacío o a ceros tras un corte no pasa.
+fn gz_completo_de(gz: &std::path::Path, crudo: &std::path::Path) -> bool {
+    use std::io::{Read as _, Seek as _, SeekFrom};
+    let (Ok(largo_crudo), Ok(mut f)) = (std::fs::metadata(crudo).map(|m| m.len()), std::fs::File::open(gz)) else {
+        return false;
+    };
+    let mut firma = [0u8; 2];
+    let mut cola = [0u8; 4];
+    let leido = f
+        .read_exact(&mut firma)
+        .and_then(|_| f.seek(SeekFrom::End(-4)))
+        .and_then(|_| f.read_exact(&mut cola));
+    leido.is_ok() && firma == [0x1f, 0x8b] && u64::from(u32::from_le_bytes(cola)) == largo_crudo & 0xffff_ffff
 }
 
 /// Comprime los segmentos pendientes y deja los `conservar` más nuevos. Corre
@@ -271,11 +341,12 @@ fn mantener_segmentos(rot: &Rotacion) {
     pendientes.sort_unstable();
     for n in pendientes {
         let crudo = rot.pieza(n, Pieza::Crudo);
+        let gz = rot.pieza(n, Pieza::Comprimido);
         // Con su .gz ya completo, el crudo es el resto de una caída entre el
         // renombre del .gz y el borrado del crudo.
-        let ya_comprimido = piezas.contains(&(n, Pieza::Comprimido));
+        let ya_comprimido = piezas.contains(&(n, Pieza::Comprimido)) && gz_completo_de(&gz, &crudo);
         let hecho = ya_comprimido
-            || match comprimir(&crudo, &rot.pieza(n, Pieza::Temporal), &rot.pieza(n, Pieza::Comprimido)) {
+            || match comprimir(&crudo, &rot.pieza(n, Pieza::Temporal), &gz) {
                 Ok(()) => true,
                 Err(error) => {
                     avisar(format_args!(
@@ -332,6 +403,16 @@ fn lanzar_compresor(rot: Rotacion) -> Option<std::sync::mpsc::SyncSender<()>> {
     }
 }
 
+/// CL-144c: qué tiene este proceso sobre la ruta del log.
+enum Posesion {
+    /// Cerrojo exclusivo de `<ruta>.lock`; se libera al cerrar el handle,
+    /// también si el proceso muere.
+    Exclusiva { _cerrojo: std::fs::File },
+    /// El sistema de archivos no admite cerrojos: se escribe sin garantía de
+    /// escritor único (se avisó una vez).
+    SinCerrojo,
+}
+
 /// Archivo activo del log rotativo.
 struct Sumidero {
     rot: Rotacion,
@@ -343,6 +424,14 @@ struct Sumidero {
     inicio: std::time::Instant,
     /// Aviso al hilo de compresión; sin él se comprime en el hilo del log.
     compresor: Option<std::sync::mpsc::SyncSender<()>>,
+    /// Si se quiere hilo de compresión cuando se tome la ruta.
+    con_hilo: bool,
+    /// `None` mientras otro proceso es el dueño de la ruta.
+    posesion: Option<Posesion>,
+    /// Apertura del activo (las pruebas inyectan fallos).
+    abrir: fn(&std::path::Path, Apertura) -> std::io::Result<std::fs::File>,
+    /// Último aviso emitido, para no repetirlo en cada reintento.
+    ultimo_aviso: Option<String>,
 }
 
 impl Sumidero {
@@ -355,25 +444,20 @@ impl Sumidero {
                 avisar(format_args!("⚠️ [LOG] no se pudo crear {}: {error}", dir.display()));
             }
         }
-        let piezas = rot.piezas();
-        for &(n, pieza) in &piezas {
-            if pieza == Pieza::Temporal {
-                let _ = std::fs::remove_file(rot.pieza(n, Pieza::Temporal));
-            }
-        }
-        let ultimo = piezas.iter().map(|p| p.0).max().unwrap_or(0);
-        let compresor = if hilo_de_compresion { lanzar_compresor(rot.clone()) } else { None };
         let mut s = Self {
             rot,
             archivo: None,
             escritos: 0,
-            ultimo,
+            ultimo: 0,
             reapertura: crate::estrangulador::Estrangulador::new(REINTENTO_APERTURA_MS),
             inicio: std::time::Instant::now(),
-            compresor,
+            compresor: None,
+            con_hilo: hilo_de_compresion,
+            posesion: None,
+            abrir: abrir_archivo,
+            ultimo_aviso: None,
         };
-        s.abrir_activo(0);
-        s.mantener();
+        s.reintentar(0);
         s
     }
 
@@ -381,20 +465,99 @@ impl Sumidero {
         u64::try_from(self.inicio.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
+    /// CL-144c: avisa por stderr salvo que sea el mismo aviso que el último.
+    fn avisar_una_vez(&mut self, aviso: String) {
+        if self.ultimo_aviso.as_deref() != Some(aviso.as_str()) {
+            avisar(format_args!("{aviso}"));
+            self.ultimo_aviso = Some(aviso);
+        }
+    }
+
+    /// Toma la ruta si no es suya y abre el activo. Cuenta la espera hasta el
+    /// próximo intento desde `ahora_ms` si algo falla.
+    fn reintentar(&mut self, ahora_ms: u64) {
+        if self.tomar_posesion(ahora_ms) {
+            self.abrir_activo(ahora_ms);
+        }
+    }
+
+    /// CL-144c: el cerrojo de la ruta. Al tomarla borra los temporales de una
+    /// compresión cortada, sigue la numeración de lo que hay en disco y pide
+    /// una pasada de compresión. Sin la ruta, nada de eso: los segmentos son
+    /// del otro proceso.
+    fn tomar_posesion(&mut self, ahora_ms: u64) -> bool {
+        if self.posesion.is_some() {
+            return true;
+        }
+        let ruta_cerrojo = self.rot.cerrojo();
+        let cerrojo = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&ruta_cerrojo);
+        let posesion = match cerrojo {
+            Ok(f) => match f.try_lock() {
+                Ok(()) => Posesion::Exclusiva { _cerrojo: f },
+                Err(std::fs::TryLockError::WouldBlock) => {
+                    let _ = self.reapertura.admitir(ahora_ms);
+                    self.avisar_una_vez(format!(
+                        "⚠️ [LOG] otro proceso escribe en {} (cerrojo {}); sigo en stdout y reintento cada {} s",
+                        self.rot.ruta.display(),
+                        ruta_cerrojo.display(),
+                        REINTENTO_APERTURA_MS / 1_000
+                    ));
+                    return false;
+                }
+                Err(std::fs::TryLockError::Error(error)) => {
+                    self.avisar_una_vez(format!(
+                        "⚠️ [LOG] sin cerrojo en {} ({error}); escribo sin garantía de escritor único",
+                        ruta_cerrojo.display()
+                    ));
+                    Posesion::SinCerrojo
+                }
+            },
+            Err(error) => {
+                let _ = self.reapertura.admitir(ahora_ms);
+                self.avisar_una_vez(format!(
+                    "⚠️ [LOG] no se pudo crear {}: {error}; sigo en stdout y reintento cada {} s",
+                    ruta_cerrojo.display(),
+                    REINTENTO_APERTURA_MS / 1_000
+                ));
+                return false;
+            }
+        };
+        self.posesion = Some(posesion);
+        let piezas = self.rot.piezas();
+        for &(n, pieza) in &piezas {
+            if pieza == Pieza::Temporal {
+                let _ = std::fs::remove_file(self.rot.pieza(n, Pieza::Temporal));
+            }
+        }
+        self.ultimo = piezas.iter().map(|p| p.0).max().unwrap_or(0);
+        if self.con_hilo && self.compresor.is_none() {
+            self.compresor = lanzar_compresor(self.rot.clone());
+        }
+        self.mantener();
+        true
+    }
+
     /// Abre el activo para añadir. Si falla, sigue en stdout y cuenta la
     /// espera hasta el próximo intento desde ahora.
     fn abrir_activo(&mut self, ahora_ms: u64) {
-        match std::fs::OpenOptions::new().create(true).append(true).open(&self.rot.ruta) {
+        match (self.abrir)(&self.rot.ruta, Apertura::Anadir) {
             Ok(f) => {
                 self.escritos = f.metadata().map(|m| m.len()).unwrap_or(0);
                 self.archivo = Some(std::io::BufWriter::new(f));
+                self.ultimo_aviso = None;
             }
             Err(error) => {
                 self.archivo = None;
                 self.escritos = 0;
                 let _ = self.reapertura.admitir(ahora_ms);
-                avisar(format_args!(
-                    "⚠️ [LOG] no se pudo abrir {}: {error}; sigo en stdout y reintento cada {} s",
+                // 32 = ERROR_SHARING_VIOLATION: otro handle escribe en él.
+                let causa = if cfg!(windows) && error.raw_os_error() == Some(32) {
+                    " (otro handle lo tiene abierto para escribir: ¿stdout redirigido al mismo archivo?)"
+                } else {
+                    ""
+                };
+                self.avisar_una_vez(format!(
+                    "⚠️ [LOG] no se pudo abrir {}: {error}{causa}; sigo en stdout y reintento cada {} s",
                     self.rot.ruta.display(),
                     REINTENTO_APERTURA_MS / 1_000
                 ));
@@ -422,7 +585,7 @@ impl Sumidero {
     fn escribir_lote(&mut self, queue: &ColaDeLog, ahora_ms: u64) -> usize {
         use std::io::Write as _;
         if self.archivo.is_none() && self.reapertura.admitir(ahora_ms).is_some() {
-            self.abrir_activo(ahora_ms);
+            self.reintentar(ahora_ms);
         }
         let mut n = 0;
         while let Some(msg) = queue.pop() {
@@ -457,10 +620,17 @@ impl Sumidero {
     /// Archiva el activo como segmento `ultimo + 1` y sigue en uno vacío.
     fn rotar(&mut self, ahora_ms: u64) {
         use std::io::Write as _;
+        let Some(n) = self.ultimo.checked_add(1) else {
+            self.avisar_una_vez(format!(
+                "⚠️ [LOG] numeración de segmentos agotada en {}; sigo escribiendo sin rotar",
+                self.rot.ruta.display()
+            ));
+            self.escritos = 0;
+            return;
+        };
         if let Some(mut w) = self.archivo.take() {
             let _ = w.flush();
         }
-        let n = self.ultimo + 1;
         let error_renombre = match std::fs::rename(&self.rot.ruta, self.rot.pieza(n, Pieza::Crudo)) {
             Ok(()) => {
                 self.ultimo = n;
@@ -480,7 +650,7 @@ impl Sumidero {
         match copia {
             Ok(()) => {
                 self.ultimo = n;
-                match std::fs::OpenOptions::new().write(true).truncate(true).open(&self.rot.ruta) {
+                match (self.abrir)(&self.rot.ruta, Apertura::Vaciar) {
                     Ok(f) => self.archivo = Some(std::io::BufWriter::new(f)),
                     // Sin vaciar: lo archivado se repite en el activo, no se pierde.
                     Err(_) => self.abrir_activo(ahora_ms),
@@ -488,7 +658,7 @@ impl Sumidero {
                 self.mantener();
             }
             Err(error) => {
-                avisar(format_args!(
+                self.avisar_una_vez(format!(
                     "⚠️ [LOG] no se pudo archivar {} (renombrar: {error_renombre}; comprimir: {error}); sigo escribiendo en él",
                     self.rot.ruta.display()
                 ));
@@ -550,7 +720,14 @@ fn vaciar_a_stdout(queue: &ColaDeLog) -> usize {
 /// LG-11: vacía la cola de logs de forma síncrona (apagado, pruebas).
 /// Devuelve cuántos mensajes escribió.
 pub fn vaciar_telemetria() -> usize {
-    LOG_QUEUE.get().map(|q| vaciar_en(SUMIDERO.get(), q)).unwrap_or(0)
+    vaciar_telemetria_en(LOG_QUEUE.get().map(|q| &**q), SUMIDERO.get())
+}
+
+/// CL-144c: `vaciar_telemetria` con la cola y el sumidero explícitos. Con
+/// sumidero no hay atajo por cola vacía: el apagado espera el lote que
+/// GhostLogger tenga a medias y deja en disco su búfer.
+fn vaciar_telemetria_en(queue: Option<&ColaDeLog>, sumidero: Option<&std::sync::Mutex<Sumidero>>) -> usize {
+    queue.map(|q| vaciar_en(sumidero, q)).unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -729,10 +906,9 @@ mod tests_cl144 {
         let _ = std::fs::remove_dir_all(d);
     }
 
-    /// Esperado: sin poder abrir el activo, las líneas van a stdout, no se
-    /// rota nada y la apertura se reintenta pasada la espera. Antes, un fallo
-    /// al reabrir tras rotar dejaba `escritos` sobre el tope: cada línea
-    /// volvía a rotar, recomprimía el mismo archivo y borraba el historial.
+    /// Esperado: si el activo no se puede abrir desde el arranque, las líneas
+    /// van a stdout sin contar para el tope, no se rota nada y la apertura se
+    /// reintenta pasada la espera.
     #[test]
     fn cl144b_sin_activo_se_sigue_en_stdout_y_se_reintenta() {
         let d = dir_temporal("sin_activo");
@@ -745,6 +921,7 @@ mod tests_cl144 {
             lote(&q, k * 2, 2);
             assert_eq!(s.escribir_lote(&q, ahora), 2);
             assert!(s.archivo.is_none(), "{ahora} ms: todavía no toca reintentar");
+            assert_eq!(s.escritos, 0, "lo que va a stdout no cuenta para el tope");
         }
         assert_eq!(rot.piezas(), Vec::new(), "sin activo no se rota");
         std::fs::remove_dir(&rot.ruta).unwrap();
@@ -754,6 +931,43 @@ mod tests_cl144 {
         let activo = std::fs::read_to_string(&rot.ruta).unwrap();
         assert_eq!(activo.lines().count(), 3);
         assert_eq!(numero(activo.lines().next().unwrap()), 150);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// CL-144c — Esperado: si el activo se renombra bien pero no se puede
+    /// reabrir, queda UN segmento archivado, el resto va a stdout sin rotar
+    /// otra vez, y pasada la espera se reabre. Antes de CL-144b, `escritos`
+    /// quedaba sobre el tope: cada línea volvía a rotar, recomprimía y
+    /// borraba el historial.
+    #[test]
+    fn cl144c_un_fallo_al_reabrir_tras_rotar_no_rota_en_bucle() {
+        let d = dir_temporal("reabrir");
+        let rot = Rotacion { ruta: d.join("motor.log"), tope_bytes: 2 * 1024, conservar: 4 };
+        let mut s = Sumidero::abrir(rot.clone(), false);
+        let q = ColaDeLog::new(64);
+        lote(&q, 0, 15);
+        s.escribir_lote(&q, 0);
+        s.abrir = |_, _| Err(std::io::Error::other("disco de prueba"));
+        lote(&q, 15, 45);
+        assert_eq!(s.escribir_lote(&q, 1_000), 45);
+        assert!(s.archivo.is_none());
+        assert_eq!((s.ultimo, s.escritos), (1, 0));
+        for k in 0..5 {
+            lote(&q, 60 + k * 40, 40);
+            s.escribir_lote(&q, 2_000 + k as u64);
+        }
+        assert_eq!(s.ultimo, 1, "sin activo no se vuelve a rotar");
+        assert_eq!(numeros(&rot, Pieza::Comprimido), vec![1]);
+        let archivado = leer_gz(&rot.pieza(1, Pieza::Comprimido));
+        assert_eq!(numero(archivado.lines().next().unwrap()), 0);
+        assert_eq!(archivado.lines().count(), 19, "lo escrito antes del tope");
+        s.abrir = abrir_archivo;
+        lote(&q, 500, 3);
+        s.escribir_lote(&q, 1_000 + REINTENTO_APERTURA_MS);
+        assert!(s.archivo.is_some(), "pasada la espera, se reabre");
+        let activo = std::fs::read_to_string(&rot.ruta).unwrap();
+        assert_eq!(activo.lines().count(), 3);
+        assert_eq!(numero(activo.lines().next().unwrap()), 500);
         let _ = std::fs::remove_dir_all(d);
     }
 
@@ -786,8 +1000,38 @@ mod tests_cl144 {
         let _ = std::fs::remove_dir_all(d);
     }
 
-    /// Esperado: con el hilo de compresión, la rotación sólo renombra y el
-    /// hilo deja `conservar` segmentos comprimidos.
+    /// CL-144c — Esperado: si tras archivar la copia el activo no se deja
+    /// vaciar, se sigue añadiendo en él: lo archivado se repite, nada se
+    /// pierde.
+    #[cfg(windows)]
+    #[test]
+    fn cl144c_si_no_se_puede_vaciar_se_sigue_sin_perder_nada() {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        let d = dir_temporal("sin_vaciar");
+        let rot = Rotacion { ruta: d.join("motor.log"), tope_bytes: 2 * 1024, conservar: 4 };
+        let mut s = Sumidero::abrir(rot.clone(), false);
+        let q = ColaDeLog::new(64);
+        lote(&q, 0, 15);
+        s.escribir_lote(&q, 0);
+        let lector = std::fs::OpenOptions::new().read(true).share_mode(0x1 | 0x2).open(&rot.ruta).unwrap();
+        s.abrir = |ruta, modo| match modo {
+            Apertura::Vaciar => Err(std::io::Error::other("sin vaciar")),
+            Apertura::Anadir => abrir_archivo(ruta, modo),
+        };
+        lote(&q, 15, 15);
+        s.escribir_lote(&q, 0);
+        assert_eq!(numeros(&rot, Pieza::Comprimido), vec![1]);
+        let archivado = leer_gz(&rot.pieza(1, Pieza::Comprimido));
+        assert_eq!(numero(archivado.lines().next().unwrap()), 0);
+        let activo = std::fs::read_to_string(&rot.ruta).unwrap();
+        assert_eq!(numero(activo.lines().next().unwrap()), 0, "no se vació");
+        assert_eq!(activo.lines().count(), 30, "todo sigue en el activo");
+        drop(lector);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Esperado: con el hilo de compresión, el hilo deja `conservar`
+    /// segmentos comprimidos.
     #[test]
     fn cl144b_el_hilo_de_compresion_archiva_fuera_del_hilo_del_log() {
         let d = dir_temporal("hilo");
@@ -812,9 +1056,127 @@ mod tests_cl144 {
         let _ = std::fs::remove_dir_all(d);
     }
 
-    /// Esperado: si el consumidor no se puede crear, la cola no se publica y
-    /// las macros siguen escribiendo de forma síncrona. Antes la cola quedaba
-    /// publicada sin nadie que la vaciara y el motor corría sin log.
+    /// CL-144c — Esperado: con un compresor que no consume, la rotación sólo
+    /// renombra y avisa: los segmentos quedan crudos hasta que ese hilo pase.
+    /// Si el hilo del log comprimiera, aparecería un `.gz`.
+    #[test]
+    fn cl144c_la_rotacion_no_comprime_en_el_hilo_del_log() {
+        let d = dir_temporal("sin_gzip_en_linea");
+        let rot = Rotacion { ruta: d.join("motor.log"), tope_bytes: 2 * 1024, conservar: 4 };
+        let mut s = Sumidero::abrir(rot.clone(), false);
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        s.compresor = Some(tx);
+        let q = ColaDeLog::new(64);
+        lote(&q, 0, 40);
+        s.escribir_lote(&q, 0);
+        assert_eq!(numeros(&rot, Pieza::Crudo), vec![1, 2]);
+        assert_eq!(numeros(&rot, Pieza::Comprimido), Vec::<u64>::new());
+        assert!(rx.try_recv().is_ok(), "se pidió una pasada");
+        mantener_segmentos(&rot);
+        assert_eq!(numeros(&rot, Pieza::Crudo), Vec::<u64>::new());
+        assert_eq!(numeros(&rot, Pieza::Comprimido), vec![1, 2]);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// CL-144c — Esperado: un `.gz` que un corte de luz dejó a ceros o
+    /// truncado no cuenta como hecho; el crudo se vuelve a comprimir. Antes
+    /// se borraba el crudo y se perdía el segmento.
+    #[test]
+    fn cl144c_un_gz_roto_no_cuenta_como_hecho() {
+        use std::io::Write as _;
+        let d = dir_temporal("gz_roto");
+        let rot = Rotacion { ruta: d.join("motor.log"), tope_bytes: 1 << 20, conservar: 4 };
+        std::fs::write(rot.pieza(1, Pieza::Crudo), "segmento 1\n").unwrap();
+        std::fs::write(rot.pieza(1, Pieza::Comprimido), [0u8; 64]).unwrap();
+        let mut bueno = Vec::new();
+        {
+            let mut e = flate2::write::GzEncoder::new(&mut bueno, flate2::Compression::fast());
+            e.write_all(b"segmento 2\n").unwrap();
+            e.finish().unwrap();
+        }
+        std::fs::write(rot.pieza(2, Pieza::Crudo), "segmento 2\n").unwrap();
+        std::fs::write(rot.pieza(2, Pieza::Comprimido), &bueno[..bueno.len() - 6]).unwrap();
+        let s = Sumidero::abrir(rot.clone(), false);
+        assert_eq!(numeros(&rot, Pieza::Crudo), Vec::<u64>::new());
+        assert_eq!(leer_gz(&rot.pieza(1, Pieza::Comprimido)), "segmento 1\n");
+        assert_eq!(leer_gz(&rot.pieza(2, Pieza::Comprimido)), "segmento 2\n");
+        drop(s);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// CL-144c — Esperado: un segundo escritor con la misma ruta no la toca
+    /// mientras viva el primero (ni sus temporales ni su numeración) y la
+    /// toma cuando el primero termina. Antes los dos rotaban con su propia
+    /// cuenta y uno borraba los segmentos del otro.
+    #[test]
+    fn cl144c_dos_procesos_no_comparten_la_ruta() {
+        let d = dir_temporal("dos");
+        let rot = Rotacion { ruta: d.join("motor.log"), tope_bytes: 2 * 1024, conservar: 4 };
+        let a = Sumidero::abrir(rot.clone(), false);
+        assert!(matches!(a.posesion, Some(Posesion::Exclusiva { .. })));
+        std::fs::write(rot.pieza(9, Pieza::Temporal), "compresión de A en curso").unwrap();
+        let mut b = Sumidero::abrir(rot.clone(), false);
+        assert!(b.posesion.is_none() && b.archivo.is_none());
+        assert!(rot.pieza(9, Pieza::Temporal).exists(), "B no toca lo de A");
+        let q = ColaDeLog::new(64);
+        lote(&q, 0, 40);
+        b.escribir_lote(&q, 1_000);
+        assert_eq!(numeros(&rot, Pieza::Crudo), Vec::<u64>::new(), "B no rota");
+        assert_eq!(std::fs::metadata(&rot.ruta).unwrap().len(), 0, "B no escribe en el activo de A");
+        drop(a);
+        lote(&q, 40, 2);
+        b.escribir_lote(&q, REINTENTO_APERTURA_MS);
+        assert!(matches!(b.posesion, Some(Posesion::Exclusiva { .. })), "B toma la ruta");
+        assert!(!rot.pieza(9, Pieza::Temporal).exists(), "el temporal huérfano se borra");
+        assert_eq!(std::fs::read_to_string(&rot.ruta).unwrap().lines().count(), 2);
+        drop(b);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// CL-144c — Esperado: si stdout ya está redirigido al mismo archivo
+    /// (otro handle que escribe), el sumidero no lo abre y sigue en stdout.
+    /// Antes los dos escribían con su propio desplazamiento y se pisaban.
+    #[cfg(windows)]
+    #[test]
+    fn cl144c_un_archivo_en_el_que_ya_escribe_otro_handle_no_se_abre() {
+        let d = dir_temporal("stdout");
+        let rot = Rotacion { ruta: d.join("motor.log"), tope_bytes: 2 * 1024, conservar: 4 };
+        let redirigido = std::fs::OpenOptions::new().create(true).append(true).open(&rot.ruta).unwrap();
+        let s = Sumidero::abrir(rot.clone(), false);
+        assert!(s.archivo.is_none());
+        drop(s);
+        drop(redirigido);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// CL-144c — Esperado: un archivo con nombre parecido que no es un
+    /// segmento (`motor.log.7`, `motor.log.1.gz`) no cuenta para la
+    /// numeración ni se comprime o borra. Antes `.7` fijaba `ultimo` = 7, se
+    /// intentaba comprimir `.000007` en cada pasada y nunca se borraba.
+    #[test]
+    fn cl144c_un_nombre_que_no_es_segmento_se_ignora() {
+        let d = dir_temporal("ajenos");
+        let rot = Rotacion { ruta: d.join("motor.log"), tope_bytes: 2 * 1024, conservar: 2 };
+        std::fs::write(d.join("motor.log.7"), "copia a mano\n").unwrap();
+        std::fs::write(d.join("motor.log.1.gz"), "no es mío").unwrap();
+        assert_eq!(rot.piezas(), Vec::new());
+        let mut s = Sumidero::abrir(rot.clone(), false);
+        assert_eq!(s.ultimo, 0);
+        let q = ColaDeLog::new(64);
+        for k in 0..2 {
+            lote(&q, k * 40, 40);
+            s.escribir_lote(&q, 0);
+        }
+        assert_eq!(numeros(&rot, Pieza::Comprimido), vec![3, 4]);
+        assert_eq!(std::fs::read_to_string(d.join("motor.log.7")).unwrap(), "copia a mano\n");
+        assert_eq!(std::fs::read_to_string(d.join("motor.log.1.gz")).unwrap(), "no es mío");
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Esperado: si la cola no se puede publicar porque su consumidor no se
+    /// puede crear, la cola no se publica y las macros siguen escribiendo de
+    /// forma síncrona. Antes la cola quedaba publicada sin nadie que la
+    /// vaciara y el motor corría sin log.
     #[test]
     fn cl144b_la_cola_solo_se_publica_con_su_consumidor() {
         let celda = OnceLock::new();
@@ -826,9 +1188,8 @@ mod tests_cl144 {
         assert!(!instalar_en(&celda, 16, |_| Ok(())), "idempotente");
     }
 
-    /// Esperado: vaciar al apagar escribe en disco lo que GhostLogger tenga en
-    /// su búfer aunque la cola ya esté vacía. Antes, con la cola vacía se
-    /// salía sin tocar el sumidero y `process::exit` perdía ese búfer.
+    /// Esperado: vaciar al apagar reintenta el búfer que un flush fallido
+    /// dejó lleno aunque la cola ya esté vacía.
     #[test]
     fn cl144b_vaciar_al_apagar_escribe_el_bufer_pendiente() {
         use std::io::Write as _;
@@ -838,8 +1199,37 @@ mod tests_cl144 {
         s.archivo.as_mut().unwrap().write_all(b"ultima linea del cierre\n").unwrap();
         let m = std::sync::Mutex::new(s);
         let q = ColaDeLog::new(8);
-        assert_eq!(vaciar_en(Some(&m), &q), 0);
+        assert_eq!(vaciar_telemetria_en(Some(&q), Some(&m)), 0);
         assert_eq!(std::fs::read_to_string(&rot.ruta).unwrap(), "ultima linea del cierre\n");
+        assert_eq!(vaciar_telemetria_en(None, Some(&m)), 0, "sin cola no hay nada que vaciar");
+        drop(m);
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// CL-144c — Esperado: el apagado espera al lote que GhostLogger tiene a
+    /// medias (cola ya vacía, búfer sin volcar, cerrojo tomado) y vuelve con
+    /// ese lote en disco. Con el atajo de la cola vacía volvía antes y
+    /// `process::exit` lo perdía.
+    #[test]
+    fn cl144c_el_apagado_espera_el_lote_a_medias() {
+        use std::io::Write as _;
+        let d = dir_temporal("apagado_espera");
+        let rot = Rotacion { ruta: d.join("motor.log"), tope_bytes: 1 << 20, conservar: 2 };
+        let m = std::sync::Arc::new(std::sync::Mutex::new(Sumidero::abrir(rot.clone(), false)));
+        let q = ColaDeLog::new(8);
+        let (listo_tx, listo_rx) = std::sync::mpsc::channel();
+        let del_logger = std::sync::Arc::clone(&m);
+        let logger = std::thread::spawn(move || {
+            let mut s = del_logger.lock().unwrap();
+            s.archivo.as_mut().unwrap().write_all(b"lote a medias\n").unwrap();
+            listo_tx.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            s.archivo.as_mut().unwrap().flush().unwrap();
+        });
+        listo_rx.recv().unwrap();
+        assert_eq!(vaciar_telemetria_en(Some(&q), Some(&*m)), 0);
+        assert_eq!(std::fs::read_to_string(&rot.ruta).unwrap(), "lote a medias\n");
+        logger.join().unwrap();
         drop(m);
         let _ = std::fs::remove_dir_all(d);
     }
