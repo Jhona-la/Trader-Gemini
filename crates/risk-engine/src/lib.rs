@@ -252,16 +252,17 @@ pub struct RiskEngine {
     /// cierre, H0 = +0,30 R). Echado, no se admiten entradas nuevas.
     pub freno_estrategia: freno_estrategia::FrenoEstrategia,
     /// CL-131 — lo medido de la última orden validada, hasta que el núcleo
-    /// confirme que la abrió (`registrar_orden_abierta`).
+    /// la tome al abrirla (`tomar_medida_validada`).
     medida_pendiente: Option<MedidaOrden>,
 }
 
 /// CL-131 (R2 de la revisión del PR #62) — lo que una orden validada aporta
 /// a las medias de la cuenta: su riesgo al stop (en fracción del capital al
 /// dimensionar y en USD) y su geometría en stops, `w = (TP − f)/SL` y
-/// `l = (SL + f)/SL`.
+/// `l = (SL + f)/SL`. CL-135: el núcleo la guarda con la posición y la
+/// registra al cerrarla (`registrar_medida`).
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct MedidaOrden {
+pub struct MedidaOrden {
     coin_id: usize,
     riesgo: f64,
     riesgo_usd: f64,
@@ -285,21 +286,26 @@ impl RiskEngine {
         self.medida_pendiente = None;
     }
 
-    /// CL-131 (R2 de la revisión del PR #62) — el núcleo abrió la última
-    /// orden validada de `coin_id`: lo medido de esa orden entra en las medias
-    /// de la cuenta, una vez. Devuelve si había una medida pendiente de esa
-    /// moneda.
+    /// CL-131/CL-135 — la medida de la última orden validada de `coin_id`,
+    /// que deja de estar pendiente. El núcleo la guarda con la posición que
+    /// abre y la registra al cerrarla (`registrar_medida`), sólo si ese
+    /// cierre puede enseñar.
     ///
-    /// Antes las medias se actualizaban al final de `evaluate_single_intent`,
-    /// antes de los vetos del núcleo (consejo, ML-GATE, margen, cantidad) y
-    /// sin enfriamiento: la misma intención vetada se medía en cada tick, y
-    /// la memoria de 20 órdenes eran unos 20 ticks de intenciones de
-    /// cualquier moneda, sobre todo de las que no tienen modelo.
-    pub fn registrar_orden_abierta(&mut self, arena: &GlobalArena, coin_id: usize) -> bool {
-        let Some(m) = self.medida_pendiente.filter(|m| m.coin_id == coin_id) else {
-            return false;
-        };
+    /// Antes de CL-131 las medias se actualizaban al final de
+    /// `evaluate_single_intent`, antes de los vetos del núcleo, y la misma
+    /// intención vetada se medía en cada tick. CL-131 las movió a la
+    /// apertura del núcleo, que es LOCAL y anterior a los vetos del host: una
+    /// intención que el host revierte y el núcleo reintenta en el evento
+    /// siguiente se seguía midiendo cada vez (PR70-INT-04 de la Línea G).
+    pub fn tomar_medida_validada(&mut self, coin_id: usize) -> Option<MedidaOrden> {
+        let m = self.medida_pendiente.filter(|m| m.coin_id == coin_id)?;
         self.medida_pendiente = None;
+        Some(m)
+    }
+
+    /// CL-135 — lo medido de una operación entra en las medias de la cuenta
+    /// (riesgo al stop en fracción y en USD, ganancia y pérdida en stops).
+    pub fn registrar_medida(arena: &GlobalArena, m: &MedidaOrden) {
         let actualizar = |celda: &quantum_arena::AtomicF64, nuevo: f64| {
             let previo = celda.load(Ordering::Relaxed);
             celda.store(
@@ -317,7 +323,6 @@ impl RiskEngine {
             actualizar(&arena.ganancia_en_stops, ganancia);
             actualizar(&arena.perdida_en_stops, perdida);
         }
-        true
     }
 
     /// U-3 (MOTOR UNIVERSAL CONTINUO): la API dual `evaluate_order`
@@ -1791,9 +1796,8 @@ impl RiskEngine {
         // tope micro de 55 pb o el objetivo explícito de la intención), no el
         // difusivo sin acotar de `tpsl_gate`: éste registraba más riesgo del
         // que se tomaba y aflojaba el cortacircuitos en la misma proporción.
-        // CL-131 (R2 de la revisión del PR #62): la medida queda PENDIENTE y
-        // entra en las medias cuando el núcleo abre la orden
-        // (`registrar_orden_abierta`), una vez por operación.
+        // CL-131/CL-135: la medida queda PENDIENTE; el núcleo la toma al
+        // abrir la orden y la registra al cerrarla, una vez por operación.
         let sl_pct = expected_loss;
         if sl_pct > 0.0 && current_cap > 0.0 {
             // CL-106b: el riesgo también en USD, que no depende del capital

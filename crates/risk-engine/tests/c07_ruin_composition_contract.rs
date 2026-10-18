@@ -91,14 +91,21 @@ fn c07_t02_nonfinite_micro_product_cannot_reopen_through_lerp() {
             let direction = if side == SignalType::Long { 0 } else { 1 };
             let before = REJECT_COUNTERS_DIR[direction][REJ_INVALID_INPUT].load(Relaxed);
             let risk_before = arena.riesgo_por_operacion.load(Relaxed).to_bits();
-            let order = RiskEngine::new(capital).evaluate_quantum_order(0, &intent, &arena);
+            let mut engine = RiskEngine::new(capital);
+            let order = engine.evaluate_quantum_order(0, &intent, &arena);
             if order.signal != SignalType::Flat || order.volume_usd.to_bits() != 0.0_f64.to_bits() {
                 admitted.push((capital, side, order.signal, order.volume_usd));
             }
             if REJECT_COUNTERS_DIR[direction][REJ_INVALID_INPUT].load(Relaxed) != before + 1 {
                 wrong_rejection.push((capital, side));
             }
-            if arena.riesgo_por_operacion.load(Relaxed).to_bits() != risk_before {
+            // PR70-T5 (Línea G): since CL-131 evaluation never writes the
+            // EWMA itself; it leaves a pending measure that the core takes on
+            // open and registers on close (CL-135). A rejected input must
+            // leave none, or a later open of this coin would measure it.
+            if arena.riesgo_por_operacion.load(Relaxed).to_bits() != risk_before
+                || engine.tomar_medida_validada(0).is_some()
+            {
                 changed_risk.push((capital, side));
             }
         }
@@ -119,9 +126,11 @@ fn c07_t03_nan_raw_kelly_cannot_be_rescued_by_minimum_notional() {
             let (arena, intent) = fixture(capital, side);
             arena.coins[0].metrics.kelly_fraction.store(f64::NAN, Relaxed);
             let risk_before = arena.riesgo_por_operacion.load(Relaxed).to_bits();
-            let order = RiskEngine::new(capital).evaluate_quantum_order(0, &intent, &arena);
+            let mut engine = RiskEngine::new(capital);
+            let order = engine.evaluate_quantum_order(0, &intent, &arena);
             assert_rejected(order, capital, side);
             assert_eq!(arena.riesgo_por_operacion.load(Relaxed).to_bits(), risk_before);
+            assert!(engine.tomar_medida_validada(0).is_none(), "a rejected order leaves no pending measure");
         }
     }
 }

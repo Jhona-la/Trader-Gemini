@@ -650,17 +650,18 @@ pub struct GlobalArena {
     pub used_margin: AtomicF64,
     /// D-744 — RIESGO POR OPERACIÓN REALMENTE TOMADO (fracción del capital
     /// que se pierde si el stop de la orden se toca), como media móvil
-    /// exponencial de las órdenes ABIERTAS (CL-131: una vez por operación,
-    /// cuando el núcleo abre la orden validada). Es la magnitud que convierte
-    /// una caída observada en evidencia: sin ella, un tope de drawdown es una
-    /// opinión. 0 = todavía no se ha abierto ninguna orden.
+    /// exponencial de las OPERACIONES (CL-131/CL-135: una vez por operación,
+    /// al cerrarla, si su entrada llegó al exchange o es simulación aislada).
+    /// Es la magnitud que convierte una caída observada en evidencia: sin
+    /// ella, un tope de drawdown es una opinión. 0 = todavía no se ha cerrado
+    /// ninguna operación.
     pub riesgo_por_operacion: AtomicF64,
     /// CL-106b (T1-02 de la revisión de la Línea G) — RIESGO POR OPERACIÓN
     /// EN USD: lo que se pierde si el stop de la orden se toca (nocional ×
     /// SL), media móvil con la misma memoria que `riesgo_por_operacion`.
     /// Desde CL-130 el freno duro ya no lo usa: cuenta la caída en stops de
     /// cada posición (`resultado_en_stops`). Queda como medida de la cuenta.
-    /// 0 = todavía no se ha abierto ninguna orden.
+    /// 0 = todavía no se ha cerrado ninguna operación.
     pub riesgo_por_operacion_usd: AtomicF64,
     /// CL-99 (LC-F4-10) — PICO DEL CAPITAL desde el que miden la caída los
     /// dos cortacircuitos de drawdown (veto de entradas del riesgo y sistema
@@ -672,7 +673,7 @@ pub struct GlobalArena {
     /// gana una orden que toca el TP, `(TP − f)/SL`, y lo que pierde la que
     /// toca el SL, `(SL + f)/SL`, con `f` la fricción de ida y vuelta. Con
     /// ellas el freno duro de drawdown deriva su umbral en stops
-    /// (`risk_engine::drawdown::freno_duro`). 0 = sin órdenes aún.
+    /// (`risk_engine::drawdown::freno_duro`). 0 = sin operaciones cerradas aún.
     pub ganancia_en_stops: AtomicF64,
     pub perdida_en_stops: AtomicF64,
     /// CL-130 (R1 de la revisión del PR #62) — CAÍDA DEL FRENO DURO EN STOPS

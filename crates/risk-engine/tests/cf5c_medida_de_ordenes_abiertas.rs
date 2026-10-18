@@ -12,9 +12,12 @@
 //! medir en cada tick, y la «memoria de 20 órdenes» eran unos 20 ticks de
 //! intenciones de cualquier moneda, sobre todo de las que no tienen modelo.
 //!
-//! Ahora el riesgo deja la medida de la orden validada pendiente, y sólo
-//! entra en las medias cuando el núcleo confirma que la abrió
-//! (`RiskEngine::registrar_orden_abierta`).
+//! Ahora el riesgo deja la medida de la orden validada pendiente; el núcleo
+//! la toma al abrir la orden (`RiskEngine::tomar_medida_validada`) y la
+//! registra al cerrarla (`RiskEngine::registrar_medida`, CL-135; el cableado
+//! del núcleo lo prueba `god-engine-core/tests/cf5d_medida_al_cerrar.rs`).
+//! Aquí `abrir` hace las dos cosas seguidas, como una operación que se abre
+//! y se cierra.
 //!
 //! Fixture: la cuenta sana del contrato C07 (13 USD, stop y TP explícitos de
 //! 1 y 2 USD a 100), con capital que baja de una orden a la siguiente.
@@ -25,6 +28,15 @@ use signal_engine::{SignalIntent, SignalType};
 use std::sync::{atomic::Ordering::Relaxed, Arc, Mutex, Once};
 
 static SERIE: Mutex<()> = Mutex::new(());
+
+/// La operación de la última orden validada de `coin_id` existió: su medida
+/// entra en las medias. Devuelve si había una medida pendiente de esa moneda.
+fn abrir(riesgo: &mut RiskEngine, arena: &GlobalArena, coin_id: usize) -> bool {
+    riesgo
+        .tomar_medida_validada(coin_id)
+        .map(|m| RiskEngine::registrar_medida(arena, &m))
+        .is_some()
+}
 
 fn cuenta(capital: f64) -> (Arc<GlobalArena>, SignalIntent) {
     static REGISTRO: Once = Once::new();
@@ -111,7 +123,7 @@ fn cl131_cada_orden_abierta_entra_una_vez_en_lo_medido() {
 
     let orden = riesgo.evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(orden.signal, SignalType::Long, "{}", risk_engine::reject_report());
-    assert!(riesgo.registrar_orden_abierta(&arena, 0), "la orden validada queda pendiente");
+    assert!(abrir(&mut riesgo, &arena, 0), "la orden validada queda pendiente");
     let nocional = orden.volume_usd * orden.leverage;
     let sl = (100.0 - orden.sl_target) / 100.0;
     let [r, r_usd, w, l] = medido(&arena);
@@ -122,19 +134,22 @@ fn cl131_cada_orden_abierta_entra_una_vez_en_lo_medido() {
     let f = (l - 1.0) * sl;
     assert!(((w * sl + f) - 0.02).abs() < 1e-12, "w·SL + f es la distancia al TP");
 
-    assert!(!riesgo.registrar_orden_abierta(&arena, 0), "la misma apertura no se cuenta dos veces");
+    assert!(!abrir(&mut riesgo, &arena, 0), "la misma apertura no se cuenta dos veces");
     assert_eq!(medido(&arena), [r, r_usd, w, l]);
 
-    // La medida pendiente es de la moneda 0: abrir la 1 no la consume.
+    // La medida pendiente es de la moneda 0: pedir la de la 1 no la consume
+    // (PR70-T8: se comprueba que sigue ahí) y tomarla no la registra.
     let _ = riesgo.evaluate_quantum_order(0, &intent, &arena);
-    assert!(!riesgo.registrar_orden_abierta(&arena, 1), "la pendiente es de la moneda 0");
-    assert_eq!(medido(&arena), [r, r_usd, w, l]);
+    assert!(riesgo.tomar_medida_validada(1).is_none(), "la pendiente es de la moneda 0");
+    assert!(riesgo.tomar_medida_validada(0).is_some(), "y sigue pendiente para la 0");
+    assert!(riesgo.tomar_medida_validada(0).is_none(), "tomarla la consume");
+    assert_eq!(medido(&arena), [r, r_usd, w, l], "tomar no registra");
 
     // El capital baja: la orden siguiente se mide con su capital.
     arena.unified_capital.store(11.0, Relaxed);
     let orden2 = riesgo.evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(orden2.signal, SignalType::Long, "{}", risk_engine::reject_report());
-    assert!(riesgo.registrar_orden_abierta(&arena, 0));
+    assert!(abrir(&mut riesgo, &arena, 0));
     let r2 = orden2.volume_usd * orden2.leverage * sl / 11.0;
     let esperado = r + (r2 - r) / (risk_engine::drawdown::TRADE_HORIZON / 10.0);
     let [r_b, ..] = medido(&arena);
