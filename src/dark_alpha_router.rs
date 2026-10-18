@@ -1,7 +1,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Sniffing de Mempool (RBF) y WebSockets de DEX
-/// Alimenta al QuantumStateArena con señales de presión de liquidez y pánico de red.
+/// Lo crea god_engine.rs y lo alimenta el sniffer del libro BTC de Hyperliquid;
+/// hoy sólo lo lee la telemetría forense (censo C-F7b, F473: RECONECTAR).
 /// Totalmente lock-free usando AtomicU64 bitcasting (f64 <-> u64) para Axioma V y VIII.
 #[repr(C, align(64))]
 pub struct DarkAlphaRouter {
