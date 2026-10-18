@@ -148,19 +148,8 @@ impl QuantumStrategy for ProyeccionEspectralEngine {
         let Some(masa) = self.lee(coin_id, symbol, "espectral_masa_resuelta") else {
             return false;
         };
-        let custom_min = self.lee(coin_id, symbol, "espectral_masa_minima")
-            .unwrap_or(self.params.masa_minima);
-        let custom_plena = self.lee(coin_id, symbol, "espectral_masa_plena")
-            .unwrap_or(self.params.masa_plena);
-        let effective_params = if custom_min.is_finite() && custom_plena.is_finite() && custom_min < custom_plena {
-            ProyeccionEspectralParams {
-                masa_minima: custom_min,
-                masa_plena: custom_plena,
-            }
-        } else {
-            self.params
-        };
-        effective_params.compute_weight(masa) > 0.0
+        // F1-124: Uso directo de self.params (erradicadas sondas inertes de masa_minima/plena sin escritor)
+        self.params.compute_weight(masa) > 0.0
     }
 
     fn evaluate_for_coin(&self, coin_id: usize, symbol: &str) -> f64 {
@@ -168,21 +157,8 @@ impl QuantumStrategy for ProyeccionEspectralEngine {
             return 0.0;
         };
 
-        // Resolución dinámica de parámetros desde el registro omnisciente si existen
-        let custom_min = self.lee(coin_id, symbol, "espectral_masa_minima")
-            .unwrap_or(self.params.masa_minima);
-        let custom_plena = self.lee(coin_id, symbol, "espectral_masa_plena")
-            .unwrap_or(self.params.masa_plena);
-        let effective_params = if custom_min.is_finite() && custom_plena.is_finite() && custom_min < custom_plena {
-            ProyeccionEspectralParams {
-                masa_minima: custom_min,
-                masa_plena: custom_plena,
-            }
-        } else {
-            self.params
-        };
-
-        let weight = effective_params.compute_weight(masa);
+        // F1-124: Uso directo de self.params (erradicadas sondas inertes de masa_minima/plena sin escritor)
+        let weight = self.params.compute_weight(masa);
         if weight <= 0.0 {
             return 0.0;
         }

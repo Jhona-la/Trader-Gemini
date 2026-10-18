@@ -166,6 +166,12 @@ pub struct SkillMotores {
     /// diferido (t_d) contenía información de la propia ventana del bloque
     /// nuevo e inflaba el IC.
     voto_ultimo_depth: [[f64; ESCALAS_VOTO]; MOTORES],
+    /// F1-124: Matriz de pesos [motor][escala] precomputada y cacheada.
+    /// Se actualiza únicamente cuando un bloque madura (`observar_maduracion*`),
+    /// eliminando 480 evaluaciones de IC (con mul, sqrt, div) por evento depth.
+    cached_pesos: [[f64; ESCALAS_VOTO]; MOTORES],
+    /// F1-124: Diagnóstico de banda precomputado (pares > piso, peso máximo).
+    cached_diagnostico: (usize, f64),
 }
 
 impl Default for SkillMotores {
@@ -182,7 +188,31 @@ impl SkillMotores {
             ts_procesado: [0; ESCALAS_VOTO],
             ts_rearmado: [0; ESCALAS_VOTO],
             voto_ultimo_depth: [[0.0; ESCALAS_VOTO]; MOTORES],
+            cached_pesos: [[PISO_EXPLORACION; ESCALAS_VOTO]; MOTORES],
+            cached_diagnostico: (0, PISO_EXPLORACION),
         }
+    }
+
+    #[inline]
+    fn actualizar_cache_escala(&mut self, escala: usize) {
+        if escala >= ESCALAS_VOTO {
+            return;
+        }
+        for m in 0..MOTORES {
+            self.cached_pesos[m][escala] = self.peso(m, escala);
+        }
+        let mut sobresalientes = 0usize;
+        let mut pmax = PISO_EXPLORACION;
+        for fila in &self.acum {
+            for a in fila {
+                if let Some(ic) = a.ic_significativo() {
+                    sobresalientes += 1;
+                    let p = PISO_EXPLORACION + (1.0 - PISO_EXPLORACION) * ic.clamp(0.0, 1.0);
+                    pmax = pmax.max(p);
+                }
+            }
+        }
+        self.cached_diagnostico = (sobresalientes, pmax);
     }
 
     /// Maduró el bloque de `escala` (cerró en `ts` con retorno `r`):
@@ -207,6 +237,7 @@ impl SkillMotores {
                 self.voto_armado[m][escala] = v.en_escala(escala);
             }
         }
+        self.actualizar_cache_escala(escala);
         // #659: el re-arme INLINE de este camino es causal (votos al ts
         // exacto del nacimiento) — marca el dedup para que el re-arme
         // diferido del siguiente depth NO lo pise con un snapshot viejo.
@@ -227,6 +258,7 @@ impl SkillMotores {
         for m in 0..MOTORES {
             self.acum[m][escala].observar(self.voto_armado[m][escala], r);
         }
+        self.actualizar_cache_escala(escala);
     }
 
     /// Ola 48/H6 — RE-ARME (camino depth): si un bloque cerró desde el
@@ -267,31 +299,19 @@ impl SkillMotores {
     }
 
     /// Matriz completa de pesos [motor][escala] para la composición.
+    /// F1-124: Retorno O(1) de matriz cacheada, eliminando 480 evaluaciones
+    /// de IC (con mul, sqrt, div) por evento depth.
+    #[inline]
     pub fn pesos(&self) -> [[f64; ESCALAS_VOTO]; MOTORES] {
-        let mut w = [[PISO_EXPLORACION; ESCALAS_VOTO]; MOTORES];
-        for (m, fila) in w.iter_mut().enumerate() {
-            for (k, wk) in fila.iter_mut().enumerate() {
-                *wk = self.peso(m, k);
-            }
-        }
-        w
+        self.cached_pesos
     }
 
     /// Diagnóstico de banda: (pares motor×escala por encima del piso,
     /// peso máximo observado). Telemetría de adopción para el forense.
+    /// F1-124: Retorno O(1) de tupla cacheada sin recorrer 480 pares en cada tick.
+    #[inline]
     pub fn diagnostico_banda(&self) -> (usize, f64) {
-        let mut sobresalientes = 0usize;
-        let mut pmax = PISO_EXPLORACION;
-        for fila in &self.acum {
-            for a in fila {
-                if let Some(ic) = a.ic_significativo() {
-                    sobresalientes += 1;
-                    let p = PISO_EXPLORACION + (1.0 - PISO_EXPLORACION) * ic.clamp(0.0, 1.0);
-                    pmax = pmax.max(p);
-                }
-            }
-        }
-        (sobresalientes, pmax)
+        self.cached_diagnostico
     }
 }
 
