@@ -92,6 +92,75 @@ class CargoSemaforoTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("agente-viejo", self.bitacora.read_text(encoding="utf-8"))
 
+    def test_tras_la_paciencia_los_builds_ajenos_no_bloquean_si_sobra_ram(self):
+        # LG-25b: con builds ajenos (fuera del semáforo) que no toman el
+        # cerrojo, pasada la paciencia y con RAM ≥ mínimo + margen, hay turno.
+        r = self.correr(
+            "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PROCESOS=2,
+            SEMAFORO_PACIENCIA_MIN=0, SEMAFORO_ESPERA_MAX_MIN=0,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        log = self.bitacora.read_text(encoding="utf-8")
+        self.assertIn("turno por paciencia: 2 procesos", log)
+        self.assertIn("ADQUIERE", log)
+
+    def test_la_paciencia_no_salta_la_ram(self):
+        # Con builds ajenos y sólo 5 GB libres (< 4 + 2), la paciencia no basta.
+        r = self.correr(
+            "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PROCESOS=2, SEMAFORO_RAM_GB="5",
+            SEMAFORO_PACIENCIA_MIN=0, SEMAFORO_ESPERA_MAX_MIN=0,
+        )
+        self.assertEqual(r.returncode, 75, r.stderr)
+        self.assertIn("procesos cargo/rustc ajenos", r.stderr)
+
+    def test_la_paciencia_no_salta_el_cerrojo_de_otro_usuario(self):
+        # Otro usuario del semáforo tiene el turno (cerrojo fresco) y su
+        # cargo corre: la paciencia sólo ignora a los que van por fuera.
+        self.cerrojo.mkdir(parents=True)
+        (self.cerrojo / "creado").write_text(str(int(time.time())))
+        (self.cerrojo / "dueno").write_text("agente-en-turno pid=5 cargo test" + chr(10))
+        r = self.correr(
+            "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PROCESOS=1,
+            SEMAFORO_PACIENCIA_MIN=0, SEMAFORO_ESPERA_MAX_MIN=0,
+        )
+        self.assertEqual(r.returncode, 75, r.stderr)
+        self.assertIn("cerrojo de agente-en-turno", r.stderr)
+
+    def test_sin_poder_contar_procesos_no_se_roba_un_cerrojo(self):
+        # LG-25c: si no se sabe cuántos cargo/rustc hay («?»), un cerrojo
+        # pasado de la gracia NO es huérfano (antes contaba como 0 procesos).
+        self.cerrojo.mkdir(parents=True)
+        (self.cerrojo / "creado").write_text(str(int(time.time()) - 600))
+        (self.cerrojo / "dueno").write_text("agente-compilando pid=3 cargo check" + chr(10))
+        r = self.correr("check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PROCESOS="?", SEMAFORO_ESPERA_MAX_MIN=0)
+        self.assertEqual(r.returncode, 75, r.stderr)
+        self.assertTrue(self.cerrojo.exists(), "el cerrojo ajeno sigue en pie")
+        self.assertNotIn("huérfano", self.bitacora.read_text(encoding="utf-8"))
+
+    def test_sin_powershell_en_el_path_no_se_roba_un_cerrojo(self):
+        # LG-25c, el caso real: un entorno sin powershell ni tasklist en el
+        # PATH (sólo las utilidades de bash). Antes `pgrep || echo 0` decía
+        # «0 procesos» y el cerrojo de un build en marcha se robaba como
+        # huérfano pasada la gracia.
+        self.cerrojo.mkdir(parents=True)
+        (self.cerrojo / "creado").write_text(str(int(time.time()) - 600))
+        (self.cerrojo / "dueno").write_text("agente-compilando pid=3 cargo check" + chr(10))
+        r = self.correr(
+            "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PROCESOS="", SEMAFORO_ESPERA_MAX_MIN=0,
+            PATH=os.path.dirname(BASH),
+        )
+        self.assertEqual(r.returncode, 75, r.stdout + r.stderr)
+        self.assertTrue(self.cerrojo.exists(), "el cerrojo ajeno sigue en pie")
+        self.assertNotIn("huérfano", self.bitacora.read_text(encoding="utf-8"))
+
+    def test_al_salir_no_se_borra_un_cerrojo_que_ya_es_de_otro(self):
+        # LG-25c: otro agente declaró huérfano nuestro cerrojo y lo tomó
+        # mientras compilábamos; al salir no se le suelta el turno.
+        r = self.correr("check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PRUEBA_ROBO="otro-agente pid=8 cargo test")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self.cerrojo.exists(), "el cerrojo del otro agente sigue en pie")
+        self.assertIn("otro-agente", (self.cerrojo / "dueno").read_text(encoding="utf-8"))
+
     def test_respeta_jobs_explicitos(self):
         r = self.correr("check", SEMAFORO_SOLO_DECIDIR=1, CARGO_BUILD_JOBS=1)
         self.assertEqual(r.returncode, 0, r.stderr)

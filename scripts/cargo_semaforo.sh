@@ -16,6 +16,11 @@
 #      agente sin cuota no bloquea a nadie y dos agentes no se roban el turno.
 #   5. Una línea por adquisición y liberación en <raíz>/logs/semaforo.log
 #      (agente, comando, RAM libre, duración).
+#   6. LG-25b — paciencia: pasados SEMAFORO_PACIENCIA_MIN (30) minutos de
+#      espera, los cargo/rustc AJENOS (de quien compila por fuera del
+#      semáforo) dejan de bloquear si la RAM libre llega a
+#      SEMAFORO_RAM_MIN_GB + SEMAFORO_RAM_EXTRA_GB (4 + 2). El cerrojo entre
+#      usuarios del semáforo no se salta nunca.
 #
 # Uso:   bash scripts/cargo_semaforo.sh <argumentos de cargo>
 #        p. ej. bash scripts/cargo_semaforo.sh check --workspace --all-targets
@@ -42,6 +47,13 @@ ttl_min=${SEMAFORO_TTL_MIN:-240}
 gracia_s=${SEMAFORO_GRACIA_S:-120}
 espera_max_min=${SEMAFORO_ESPERA_MAX_MIN:-60}
 pausa_s=${SEMAFORO_PAUSA_S:-15}
+# LG-25b: quien compila POR FUERA del semáforo no toma el cerrojo, así que
+# esperar a «cero procesos ajenos» deja sin turno a los que sí lo usan (el
+# 17-oct dos builds ajenos de dos horas dejaron sin turno a AGY, Fable y la
+# Línea G). Pasada la paciencia, los ajenos dejan de bloquear si la RAM libre
+# cubre el mínimo más un margen; el cerrojo entre usuarios sigue mandando.
+paciencia_min=${SEMAFORO_PACIENCIA_MIN:-30}
+ram_extra=${SEMAFORO_RAM_EXTRA_GB:-2}
 
 export CARGO_TARGET_DIR="$raiz/target"
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
@@ -49,18 +61,34 @@ mkdir -p "$raiz/target" "$raiz/logs"
 cerrojo="$raiz/target/.semaforo.lock"
 bitacora="$raiz/logs/semaforo.log"
 
+# Cuántos cargo/rustc hay vivos. «?» si no se puede saber, y «?» cuenta como
+# ocupado. LG-25c: antes, sin `powershell` en el PATH se caía a `pgrep`, que
+# no existe en Git Bash, y `|| echo 0` decía «0 procesos» siempre: una
+# instancia así robó como huérfano el cerrojo de un `cargo check` en marcha.
 procesos_ajenos() {
   if [ -n "${SEMAFORO_PROCESOS:-}" ]; then
     echo "$SEMAFORO_PROCESOS"
     return
   fi
-  if command -v powershell > /dev/null 2>&1; then
-    powershell -NoProfile -Command \
-      "(Get-Process cargo,rustc -ErrorAction SilentlyContinue | Measure-Object).Count" \
-      2> /dev/null | tr -d '\r '
-  else
-    pgrep -c -x 'cargo|rustc' 2> /dev/null || echo 0
+  local n="" ps
+  for ps in powershell powershell.exe pwsh pwsh.exe; do
+    if command -v "$ps" > /dev/null 2>&1; then
+      n=$("$ps" -NoProfile -Command \
+        "(Get-Process cargo,rustc -ErrorAction SilentlyContinue | Measure-Object).Count" \
+        2> /dev/null | tr -d '\r ')
+      break
+    fi
+  done
+  if [ -z "$n" ] && command -v tasklist > /dev/null 2>&1; then
+    n=$(tasklist 2> /dev/null | grep -ciE '^(cargo|rustc)\.exe')
   fi
+  if [ -z "$n" ] && command -v pgrep > /dev/null 2>&1; then
+    n=$(pgrep -c -x 'cargo|rustc' 2> /dev/null)
+  fi
+  case "$n" in
+    '' | *[!0-9]*) echo "?" ;;
+    *) echo "$n" ;;
+  esac
 }
 
 ram_libre_gb() {
@@ -104,7 +132,12 @@ while :; do
   ajenos=$(procesos_ajenos)
   ram=$(ram_libre_gb)
   motivo=""
-  if [ "${ajenos:-0}" != "0" ]; then
+  paciencia_agotada=0
+  if [ $(( $(ahora) - inicio )) -ge $(( paciencia_min * 60 )) ] \
+    && ! menor_que "${ram:-0}" "$(awk -v a="$ram_min" -v b="$ram_extra" 'BEGIN { print a + b }')"; then
+    paciencia_agotada=1
+  fi
+  if [ "${ajenos:-0}" != "0" ] && [ "$paciencia_agotada" = "0" ]; then
     motivo="$ajenos procesos cargo/rustc ajenos"
   elif menor_que "${ram:-0}" "$ram_min"; then
     motivo="RAM libre ${ram} GB < ${ram_min} GB"
@@ -115,7 +148,8 @@ while :; do
     fi
     if mkdir "$cerrojo" 2> /dev/null; then
       ahora > "$cerrojo/creado"
-      printf '%s pid=%s cargo %s\n' "$agente" "$$" "$*" > "$cerrojo/dueno"
+      ficha="$agente pid=$$ t=$(ahora) cargo $*"
+      printf '%s\n' "$ficha" > "$cerrojo/dueno"
       break
     fi
     motivo="cerrojo de $(cat "$cerrojo/dueno" 2> /dev/null || echo '?')"
@@ -129,8 +163,21 @@ while :; do
   sleep "$pausa_s"
 done
 
-liberar() { rm -rf "$cerrojo"; }
+# LG-25c: sólo se libera el cerrojo PROPIO. Si otro lo declaró huérfano y lo
+# tomó mientras este cargo corría, borrarlo al salir soltaría el turno ajeno.
+liberar() {
+  if [ "$(cat "$cerrojo/dueno" 2> /dev/null)" = "$ficha" ]; then
+    rm -rf "$cerrojo"
+  fi
+}
 trap liberar EXIT INT TERM
+if [ -n "${SEMAFORO_PRUEBA_ROBO:-}" ]; then
+  # Costura de prueba: otro agente toma el cerrojo mientras «compilamos».
+  printf '%s\n' "$SEMAFORO_PRUEBA_ROBO" > "$cerrojo/dueno"
+fi
+if [ "${ajenos:-0}" != "0" ]; then
+  registrar "turno por paciencia: ${ajenos} procesos cargo/rustc ajenos (fuera del semáforo), ram_libre=${ram}GB"
+fi
 registrar "ADQUIERE ram_libre=${ram}GB jobs=$CARGO_BUILD_JOBS: cargo $*"
 
 if [ "${SEMAFORO_SOLO_DECIDIR:-0}" = "1" ]; then
