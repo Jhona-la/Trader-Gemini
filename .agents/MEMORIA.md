@@ -1,5 +1,27 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 (noche) — Claude (cloud, Línea C): C-F5e, revisión de C-F5b
+
+- La revisión adversarial de C-F5b (#76) confirmó estos defectos de la prueba larga de StatArb:
+  - medía la reversión de la parte persistente, pero se vota la desviación observada con su ruido: con ruido ≥ 1σ votaba lo que revierte < ½ (44-52 % de los instantes con t½ = τ_k/5);
+  - su corrección por n_ef no cubría la volatilidad por rachas (tamaño 5,2-9,8 %);
+  - sus sumas de cuarto orden perdían precisión lejos del origen;
+  - la rejilla del tick fabricaba reversión con el precio quieto (13-18 %).
+  Además, tras cada arranque StatArb quedaba mudo hasta madurar el nodo de τ*, y el test de tamaño de caminatas de god-engine-core era vacío (a 30 min no maduraba ningún nodo).
+- **CL-149**: la prueba larga es una regresión por el origen sobre la desviación votada.
+  - x = d_{t−L} (base − media del nodo); y = b_t − (2b_{t−L−1} − b_{t−L−2}); R̂ = −Σwxy/Σwx² es una cota inferior de lo que revierte en τ_k.
+  - n = min(n_ef, 3(Σwx²)²/Σw²x⁴); `SESGO_LARGO` = 19 y crítico z95, sin exceso.
+  - Tamaño máximo 4,96 % en 47 configuraciones de H0 (frontera con ruido 0-½σ, rachas, ruido 1-10σ); el del veredicto, 4,4 %.
+  - Fronteras: t½ = 7,76 celdas sin ruido, 7,01 con ¼σ, 5,23 con ½σ; con ruido ≥ 0,8σ ningún OU único sale de H0.
+  - Potencia con t½ = τ_k/5: 70/89/97 % a 270/384/512 celdas (antes 95/99 % a 384/512).
+  - Un núcleo HAC de L+2 no mejora el tamaño y pierde potencia; se queda L.
+- **CL-150**: el veredicto contrasta el nodo maduro más grande j ≤ k(τ*) y publica τ_j.
+- **CL-151**: StatArb no vota si σ ≤ piso (la resolución del tick).
+- **CL-152**: el test de caminatas corre 45 min y exige que el nodo contrastado esté maduro.
+- Límite documentado (contrato condicional): con bases de dos escalas en la frontera, el veredicto vota hasta el 16 % de los instantes en edades jóvenes, y lo votado revierte 0,49-0,74. El tamaño sobre esas bases no está acotado al 5 %.
+- La prueba corta resta ≤ 6 puntos de potencia; se mantiene en el veredicto.
+- T-1 no aplica: StatArb no vota en el replay.
+
 ## 2026-10-18 (tarde) — Claude (cloud, Línea C): C-F7b, censo de motores desconectados
 
 - Sólo lectura, sin código. `docs/audit/linea_c/censo_motores_2026-10-18.tsv` (576 símbolos de 23 crates, una fila por símbolo, con veredicto, coste, dueño y plan) y `censo_motores_2026-10-18.md` (síntesis). Cada grupo pasó por un verificador y dos escépticos; un crítico revisó la síntesis.
