@@ -478,8 +478,16 @@ fn run_booktick_replay_observed(
         let slip = running_atr * cfg.shift_atr_frac.max(0.0);
         let sim_bid = t.bid - slip;
         let sim_ask = t.ask + slip;
-        let vol = t.bid_qty + t.ask_qty; // liquidez del libro (doc: no volumen operado)
-        let obi = if vol > 0.0 {
+        // F1-019 (Ola Ω152): En modo trade_only (aggTrades) la cantidad real del trade
+        // es |bq - aq| (D-747, binance_vision_sync codifica maker con base_depth).
+        // En bookTicker real (con libro) la liquidez visible del nivel es bq + aq.
+        let trade_qty = if cfg.trade_only {
+            (t.bid_qty - t.ask_qty).abs()
+        } else {
+            t.bid_qty + t.ask_qty
+        };
+        let vol = trade_qty;
+        let obi = if !cfg.trade_only && vol > 0.0 {
             (t.bid_qty - t.ask_qty) / vol
         } else {
             0.0
@@ -546,17 +554,21 @@ fn run_booktick_replay_observed(
             // UN solo evento de trade — el precio/volumen del trade alimenta
             // las features de precio (ATR, momentum, Hurst, espectral) sin
             // contaminar OBI/OFI con bid/ask sintético.
+            // F1-007 (Ola Ω152): Pasar bid_qty=0.0 y ask_qty=0.0 para que
+            // `god-engine-core` detecte `book_absent = true` de forma honesta,
+            // habilitando las ramas de respaldo F7 (ML recentrado, espectro directo,
+            // persistencia, reversión) que antes quedaban silenciadas.
             let (o2, closed) = core.process_event(
                 0,
                 true,          // is_trade
                 is_minute_kline,
                 false,         // is_depth
                 mid,           // precio del trade
-                vol,           // volumen
+                trade_qty,     // volumen honesto (F1-019: |bq - aq|)
                 mid * 0.9999,  // bid ~ precio (sin libro real)
                 mid * 1.0001,  // ask ~ precio
-                vol * 0.5,     // qty neutra (sin libro)
-                vol * 0.5,
+                0.0,           // bid_qty = 0.0 (F1-007: libro ausente real)
+                0.0,           // ask_qty = 0.0 (F1-007: libro ausente real)
                 0.0,           // OBI neutro
                 0.0,           // micro_div neutro
                 t.ts_ms,

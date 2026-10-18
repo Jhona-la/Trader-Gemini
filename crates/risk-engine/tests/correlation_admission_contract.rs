@@ -609,10 +609,10 @@ fn qo_602_el_veto_de_grupo_consume_la_cota_lundberg_del_registro() {
         "el R debe leerse del slot de moneda que publica el estimador"
     );
     // …con arranque frío honesto (ausente/≤0 ⇒ None ⇒ tope intacto) y,
-    // desde qo-651 (de5fcc9b), en unidades de capital: R_nocional / L máx.
+    // desde F1-014 (Ola Ω152), en unidades de capital de exposición real: R_nocional / f_exposure.
     assert!(
         src.contains(
-            "(r_raw.is_finite()&&r_raw>0.0).then(||r_raw/max_exchange_leverage.max(1.0))"
+            "(r_raw.is_finite()&&r_raw>0.0).then(||r_raw/f_exposure)"
         ),
         "sin R medido no hay apriete — bit a bit el veto anterior"
     );

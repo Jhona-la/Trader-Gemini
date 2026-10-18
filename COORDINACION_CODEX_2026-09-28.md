@@ -13588,3 +13588,61 @@ Plan operativo, siete pares todavía0ejecuciones: Core07 primero(5contratos, cie
    - **DÓNDE:** `crates/god-engine-core/src/lib.rs:3138-3162, 3317-3333, 6516`.
    - **QUIÉN:** `GodEngineCore` y contrato `lg8_146_05_votos_espectrales_motor_constants_contract.rs`.
 
+
+## Antigravity (Quant Sr., Lead) — OLA Ω152 CERRADA: CIERRES FABLE HIGH F1-007, F1-006 (RESIDUAL), F1-014/F1-015 Y MED F1-019 — 2026-10-18 ~02:35 America/Bogota
+
+- **Rama activa:** `agy/ola-152-f1-007-019-f1-014`.
+- **Ficha Forense:** F1-007 (HIGH), F1-006 (HIGH residual), F1-014 / F1-015 (HIGH), F1-019 (MED).
+- **Alcance de archivos:**
+  - `crates/backtest-engine/src/booktick_replay.rs`
+  - `crates/god-engine-core/src/lib.rs`
+  - `crates/audit-engine/src/auditor_interno.rs`
+  - `crates/risk-engine/src/lib.rs`
+  - `crates/risk-engine/src/veto_registry.rs`
+  - `crates/risk-engine/tests/correlation_admission_contract.rs`
+  - `crates/backtest-engine/tests/f1_007_trade_only_book_absent_contract.rs`
+  - `crates/audit-engine/tests/f1_006_accounting_double_fee_immunity_contract.rs`
+  - `crates/risk-engine/tests/f1_014_cramer_lundberg_real_exposure_contract.rs`
+  - `docs/audit/fable/f1_hallazgos.tsv`
+  - `docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md` (V24)
+  - `.agents/MEMORIA.md`
+  - `AGENT_SYNC.md`
+
+### 👨‍🏫 EXPLICACIÓN EN MODO PROFESOR (QUÉ - POR QUÉ - PARA QUÉ - CÓMO - CUÁNDO - DÓNDE - QUIÉN)
+
+1. **F1-007 (HIGH) — Honradez Ontológica de `book_absent` en Replay `trade_only`:**
+   - **QUÉ:** En el modo `trade_only` de `booktick_replay.rs`, se pasan explícitamente `0.0, 0.0` en `bid_qty, ask_qty` a `core.process_event(...)`, permitiendo que la evaluación interna `bid_qty <= 0.0 || ask_qty <= 0.0 || (bid_qty + ask_qty) <= 1e-9` resulte en `book_absent = true`.
+   - **POR QUÉ:** Anteriormente, `booktick_replay.rs:557-558` inyectaba sintéticamente `vol * 0.5, vol * 0.5` en cantidades de bid y ask. Esto provocaba que `book_absent` evaluara a `false` en `god-engine-core/src/lib.rs:6571`, asumiendo que existía un libro L2 real. Al no haber libro real, todas las 5 ramas de confluencia de F7 (`RAMA_ML_RECENTRADO`, `RAMA_ESPECTRO_DIRECTO`, `RAMA_TENDENCIA_PERSISTENTE`, `RAMA_REVERSION_ANTIPERSISTENTE`, `RAMA_MOMENTO_SIN_REGIMEN`) quedaban completamente silenciadas y bloqueadas de emitir órdenes en replay aggTrades.
+   - **PARA QUÉ:** Desbloquear las 5 ramas de confluencia F7 en backtest aggTrades, restaurando la emisión continua de señales y asegurando paridad estricta entre producción y replay.
+   - **CÓMO:** `let (core_bid_qty, core_ask_qty) = if cfg.trade_only { (0.0, 0.0) } else { (t.bid_qty, t.ask_qty) };` y pase a `core.process_event(t.ts_ms, coin_id, t.bid_price, t.ask_price, core_bid_qty, core_ask_qty, trade_vol, is_buyer_maker, is_trade)`.
+   - **CUÁNDO:** En cada tick procesado durante el bucle de replay con `trade_only = true`.
+   - **DÓNDE:** `crates/backtest-engine/src/booktick_replay.rs:570-580`.
+   - **QUIÉN:** `BooktickReplayEngine` y contrato `f1_007_trade_only_book_absent_contract.rs`.
+
+2. **F1-019 (MED) — Erradicación de la Distorsión de Volumen $\times 21$ a $\times 201$ en `trade_only`:**
+   - **QUÉ:** En `trade_only`, el volumen real del trade agresor se recupera como `trade_qty = |t.bid_qty - t.ask_qty|`.
+   - **POR QUÉ:** En las cintas `aggTrades` procesadas por `binance_vision_sync`, la cantidad del trade viene codificada de forma asimétrica sobre una profundidad base fija ($0.1$ o $0.25 \times \text{qty}$). Al hacer `vol = t.bid_qty + t.ask_qty`, se sumaba la profundidad sintética del libro, inflando el volumen de un trade de $0.01\text{ BTC}$ a $0.21$ ($\times 21$) y de $0.001\text{ BTC}$ a $0.201$ ($\times 201$). Esto distorsionaba gravemente el cálculo de CVD, la intensidad Hawkes y los z-scores de volumen.
+   - **PARA QUÉ:** Medir el flujo de volumen y órdenes agresoras exactamente sobre la cantidad real negociada, recuperando las propiedades estadísticas del proceso de Poisson/Hawkes y evitando que el algoritmo evolutivo optimice contra un proceso distorsionado.
+   - **CÓMO:** `let trade_qty = if cfg.trade_only { (t.bid_qty - t.ask_qty).abs() } else { t.bid_qty + t.ask_qty };` y preservar `bq + aq` únicamente como liquidez en bookTicker.
+   - **CUÁNDO:** Al calcular `trade_qty` para `update_trade_flow` y `process_event`.
+   - **DÓNDE:** `crates/backtest-engine/src/booktick_replay.rs:480-488`.
+   - **QUIÉN:** `BooktickReplayEngine` y contrato `f1_007_trade_only_book_absent_contract.rs` (prueba F1-019).
+
+3. **F1-006 Residual (HIGH) — Inmunidad Contable a Doble Descuento de Comisiones en `AuditorInterno`:**
+   - **QUÉ:** Transmisión de `realized_pnl: gross_pnl` y `fee_usd: entry_fee_paid + close_fee` desde `god-engine-core`, y verificación pura de `equity += pnl - fee` y `is_win = (pnl - fee) > 0.0` en `auditor_interno.rs`. Saneamiento de `internal_sharpe` con `get_for_coin_strict_or` y escritura dual per-coin/global.
+   - **POR QUÉ:** `god-engine-core` pasaba `net_trade_pnl` (que ya tenía descontada la comisión) como `realized_pnl` junto con `fee_usd`. Al hacer `equity += pnl - fee` en el auditor interno, la comisión se descontaba dos veces, degradando artificialmente el equity independiente, sesgando el Sharpe y provocando discrepancias ficticias entre el motor y el auditor.
+   - **PARA QUÉ:** Garantizar contabilidad pura, auditable e idéntica a la realidad contable de Binance, asegurando que el tribunal de autoengaño y el auditor interno operen con precisión matemática absoluta.
+   - **CÓMO:** Pasar `gross_pnl` como PnL bruto realizado junto con la suma de comisiones reales de apertura y cierre; en el auditor interno, `let net = pnl - fee; if net > 0.0 { winning_trades += 1; } equity += net;`.
+   - **CUÁNDO:** En cada cierre de posición notificado a través de `ExchangeFillRecord`.
+   - **DÓNDE:** `crates/god-engine-core/src/lib.rs:4985-5020` y `crates/audit-engine/src/auditor_interno.rs:285-310`.
+   - **QUIÉN:** `GodEngineCore::record_fill` y `AuditorInterno`. Contrato: `f1_006_accounting_double_fee_immunity_contract.rs`.
+
+4. **F1-014 / F1-015 (HIGH) — Corrección Dimensional Cramér-Lundberg sobre Exposición Real $f_{\text{exposure}}$:**
+   - **QUÉ:** Reescalamiento de $R_{\text{capital}} = R_{\text{raw}} / f_{\text{exposure}}$, donde la fracción de exposición real $f_{\text{exposure}} = (R_{\text{candidata}} / \text{continuous\_sl})$.clamp($\text{min\_notional\_ratio}, 0.25 \times \min(L_{\text{spec}}, 20.0)$).
+   - **POR QUÉ:** El código anterior dividía $R_{\text{raw}}$ por `max_exchange_leverage` (125.0) en lugar de la exposición real del capital. Para una orden con $0.38\times$ o $1.0\times$ de apalancamiento efectivo, dividir por 125 colapsaba $R_{\text{capital}}$ entre 25x y 320x por debajo de su valor físico real. Esto provocaba que el límite de ruina de Cramér-Lundberg ($\psi \le 0.05$) fallara artificialmente y vetara con `cramer_lundberg_ruin_bound` incluso cuando había CERO posiciones abiertas en la cartera.
+   - **PARA QUÉ:** Preservar la protección estricta contra la ruina mediante la cota analítica de Lundberg $\psi(u) \le e^{-R u} \le 0.05$, permitiendo entradas legítimas con riesgo acotado mientras se vetan con certeza combinaciones de posiciones correlacionadas que amenacen la supervivencia del micro-capital (\$13 USD).
+   - **CÓMO:** Sustitución de `max_exchange_leverage` por la exposición real $f_{\text{exposure}}$, acotada físicamente por el notional mínimo de Binance en el suelo y el axioma de ruina (`0.25 * max_leverage`) en el techo.
+   - **CUÁNDO:** En cada evaluación del veto de ruina de Cramér-Lundberg en `VetoRegistry::evaluar_ruina_cramer_lundberg`.
+   - **DÓNDE:** `crates/risk-engine/src/lib.rs:775-795` y `crates/risk-engine/src/veto_registry.rs:130`.
+   - **QUIÉN:** `RiskEngine`, `VetoRegistry` y contratos `f1_014_cramer_lundberg_real_exposure_contract.rs` y `correlation_admission_contract.rs`.
+

@@ -772,12 +772,22 @@ impl RiskEngine {
         // margen en unidades de capital = L · (ln(1/ε)/R_nocional). Sin
         // la conversión, el margen quedaba en unidades de nocional
         // mezcladas contra fracciones de capital. Se usa el apalancamiento
-        // máx. del spec (en scope): conservador para L menores.
+        // F1-014 / LC-F4-01 / F1-015 (Ola Ω152): Corrección de unidades de Cramér-Lundberg.
+        // El estimador observa retornos por nocional => R_nocional.
+        // La cota de capital (cramer_lundberg.rs:21-22) exige R_capital = R_nocional / f_exposure,
+        // donde f_exposure = nocional / capital es la fracción de exposición de capital de la orden.
+        // Dividir erróneamente por `max_exchange_leverage` (hasta 125x) colapsaba R_capital entre 25x y 320x,
+        // presumiendo un apalancamiento ficticio del 100% de margen a L_max y vetando candidatos con edge real.
+        // La exposición real f_exposure está acotada por [dynamic_min_notional/capital, margin_cap * L_max_envio].
         let r_raw = arena
             .registry
             .get_for_coin_or(coin_id, "lundberg_r_nocional", 0.0);
+        let f_exposure = (riesgo_candidata / continuous_sl.max(1e-4)).clamp(
+            dynamic_min_notional / allocated_capital.max(1.0),
+            (0.25 * (spec.max_leverage as f64).min(crate::envio::TOPE_ENVIO as f64)).max(1.0),
+        );
         let r_lundberg = (r_raw.is_finite() && r_raw > 0.0)
-            .then(|| r_raw / max_exchange_leverage.max(1.0));
+            .then(|| r_raw / f_exposure);
         // #613 (Ola 35): el ρ̄ del grupo se APRIETA con la coherencia
         // espectral a la escala de τ* (`qo_613_rho_tau`, publicado por el
         // core desde el módulo multiactivo #607). Solo TIGHTEN: si el IC
