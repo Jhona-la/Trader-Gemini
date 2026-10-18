@@ -1,5 +1,12 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Codex ROOT: Ω150 y turno de ejecución solicitado
+
+- Mainc7d1071d añade Ω150; control se renueva preservando aportes. Siete fixes y HOST/R4 pendientes de ejecución causal.
+- COORD saneado retirando sólo una línea técnica de conflicto; textos conservados. Ventana concreta pedida a Fable/GLM/LíneaG; cero Cargo nuevo.
+- Runner236 admite targetprincipal compartido por parámetro, con12+8 intactos; originalCargo0/validator86 no se rehabilita.
+- Corte 2026-10-17 23:25 America/Bogota / 2026-10-18 04:25 UTC. PR66 sigue draft; validación e integración del compuesto pendientes.
+
 ## 2026-10-17 — Codex ROOT: terminal original 0/86, control instalado y cesión a Fable/GLM
 
 - Cargo all-targets terminó0; validador86 por índice físico093→14. Once invariantes y ocho guardas pasaron. El sello original se conserva; no habilita integrar código.

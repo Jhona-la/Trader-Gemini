@@ -1,5 +1,11 @@
 # Replay temporal, ceros y coordinación de integración — 17Oct2026
 
+## 2026-10-17 — ROOT: Ω150, saneamiento de coordinación y ventana solicitada
+
+Se retiró una línea técnica de conflicto en COORD sin perder textos. Control Ω150 en renovación; siete fixes aún sin RED/GREEN. Fable/GLM/LíneaG deben confirmar una ventana concreta; check anterior0/86 sigue inválido. Targetprincipal compartido por parámetro236, sin modificar12+8.
+
+Corte 2026-10-17 23:25 America/Bogota / 2026-10-18 04:25 UTC. [Secuencia y solicitud](../../COORDINACION_CODEX_2026-09-28.md) en el buzón; PR66 draft actualizada. No nuevo resultado económico.
+
 ## Terminal original, control renovado y cesión de recursos — 2026-10-17 21:21 America/Bogota / 2026-10-18 02:21 UTC
 
 El check original terminó: **Cargo 0; validador 86**. Cargo completó `--release --workspace --all-targets --locked --jobs 1` en 195 min 24 s; el recibo cerró a las 02:14:49 UTC. Pasaron once invariantes y las ocho guardas. Sólo falló `index_file_unchanged`: índice físico093→14; HEAD, índice lógico, 2000 entradas e inputs compilados/genómicos permanecieron iguales en los extremos. No es un recibo válido para integrar código y no se convierte en verde.

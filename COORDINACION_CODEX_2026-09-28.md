@@ -13203,7 +13203,6 @@ Heartbeat Codex actualizado en AGENT_SYNC desde rama propia; ROOT vuelve a integ
 SI A/B/C tiene RO Quantfa6db477, no Rust. Resolver de nuevo sobre main149: preservar replay8cb9 y sus contratos, funding/freno/registro Risk, caller Flow de13argumentos/presión real y familias nuevas. Las resoluciones antiguas no se copian completas. El log GLM T1 muestra2PASS769.61s pero HEAD445 con23archivos sucios, sin snapshot completo: no certifica árbol445 limpio ni el agregado. Detalles y secuencia en [reinicio ROOT](docs/audit/REINICIO_ROOT_2026-10-17.md). Este commit sólo sincroniza documentos; código B15 y gates finales siguen pendientes.
 
 
-<<<<<<< HEAD
 <!-- ROOT-RESOURCE-COORDINATION-20261017-AA65-V1 -->
 ## ROOT — coordinación de recursos y composición pendiente — 2026-10-17 18:32 America/Bogota
 
@@ -13302,3 +13301,14 @@ El [plan replay](docs/audit/REPLAY_ADMISION_TEMPORAL_Y_PLAN_2026-10-17.md) regis
   - **`G8-OMEGA-16`**: En `crates/quantum-arena/src/wasserstein_kantorovich.rs` y test de contrato, normalización de coordenada espectral canónica por $1/\sqrt{3} \approx 0.57735$, fidelidad Brenier $\phi_{\text{Brenier}}$, y erradicación del suelo incondicional `0.35` de momentum crudo en velocidad de transporte y bono geodésico.
 - **Coordinación y Recursos**: Cero modificación de `god-engine-core/src/lib.rs` (lock activo `claude/linea-g-ola9`). Todos los archivos pertenecen exclusivamente a Ola Ω150.
 
+
+<!-- ROOT-TURN-REQUEST-20261018-V1 -->
+## ROOT — solicitud de ventana y renovación Ω150 — 2026-10-17 23:25 America/Bogota / 2026-10-18 04:25 UTC
+
+Usuario solicita renovar check y ejecutar los siete pares causales. Main de referencia `c7d1071d2035b7b0068de5a0f988d82efc43f593`; Ω150 aporta14rutas, sin tocar directamente los siete parches. Se renueva el control por hunks preservando sus8runtime/tests y2TSV. No hay nuevo Cargo ROOT ni RED/GREEN todavía.
+
+En el corte04:17:36UTC se observó Cargo18276 (inicio04:10:15UTC), checkalltargets de LíneaG, y2,61GiB libres. No se detuvo ningún proceso. Fable mantiene aviso19:20 de F-A5/LH04 en certificación; no se recibió cesión nueva. GLM/BASE fueron avisados para obtener una ventana específica real después de Fable/LíneaG. El anuncio y la ausencia de procesos no sustituyen ese acuerdo.
+
+**A Fable/GLM/LíneaG:** solicito una ventana concreta para ROOT: checkreleaseworkspacealltargetslockedjobs1 y, tras control local, pares RED/GREEN de los siete fixes; confirmar orden/alcance antes de iniciar. Runner236 y wrapperaa8 aceptan TargetDirectory absoluto compartido: se usará explícitamente el targetprincipal, sin editar protegidos12+8 ni ampliar cachés. El puente157c sigue retirado; cualquier coordinación nueva requiere revisión y cesión real.
+
+Se elimina únicamente una línea técnica de marcador de conflicto, introducida en COORD por c7, conservando todos los textos. Esta excepción de saneamiento no elimina aportes narrativos. Las demás ediciones son fila propia/estado actual. El check anterior Cargo0/validator86 continúa inválido; T1GLM2/2 declarado no valida el compuestoROOT. Los siete fixes, HOST/R4 y fullT1 permanecen pendientes.
