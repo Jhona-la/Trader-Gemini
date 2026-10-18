@@ -1,5 +1,13 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 (noche, 2) — Claude (cloud, Línea C): primeros lotes de retiro del censo C-F7b
+
+- Lotes del censo (`docs/audit/linea_c/censo_motores_2026-10-18.md` §4) que no dependen de los 4 temas del dueño, uno por commit, con las anclas vueltas a buscar:
+  - **#80 (en main)**: RET-24, 10 funciones muertas de `math_kernels`; RET-24b, `fused_compute_step` y `#![feature(portable_simd)]` (el núcleo ya no usa API inestable); CL-153, `ExponentialDecayTensor::new` sin `expect` (semivida inválida ⇒ acumulador inerte que no opina).
+  - **Siguiente PR**: RET-2 (5 dependencias sin uso de strategy-core), RET-5 (2 de signal-engine), RET-15 (código huérfano de la raíz: `src/risk`, `src/quantum_arena.rs`, `config::NanoForest`, 5 métodos de `EnvManager`) y RET-28a (`QuantumTensorStore`, cuyo «Lyapunov» era un RMS, y 4 métodos de feature-engine).
+- **RET-28b (Navier) queda aparte**: retirar `regime`/`is_laminar`/`is_turbulent` deja sin lector a `critical_reynolds_turbulent`, que viene de `QuantumConfig` (Ω121), y migra dos contratos. Hay que coordinarlo con el dueño de Ω121.
+- Quitar dependencias puede cambiar la unificación de features de polars en builds por paquete: comprobar `cargo check -p <cada dependiente>`, no sólo el workspace.
+
 ## 2026-10-18 (noche) — Claude (cloud, Línea C): C-F5e, revisión de C-F5b
 
 - La revisión adversarial de C-F5b (#76) confirmó estos defectos de la prueba larga de StatArb:
