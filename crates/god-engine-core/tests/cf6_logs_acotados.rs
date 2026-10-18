@@ -66,19 +66,27 @@ fn cl139_los_avisos_del_host_tienen_tope_por_tiempo() {
 #[test]
 fn cl140_cl141_trayectoria_y_recarga_avisan_lo_nuevo() {
     let host = codigo(HOST);
-    let descarte = host.find("trajectory_auditor.descartar(coin_id)").expect("descarte");
+    // CL-140c: una traza por ranura. El estado de las ranuras se toma antes
+    // del evento y la conciliación (TCE de lo que cerró el núcleo, descarte
+    // de lo demás) va antes de evaluar el tick.
+    let antes = host.find("let ranuras_antes = ranuras_abiertas(").expect("ranuras antes del evento");
+    let evento = host.find("engine_real.process_event(").expect("evento");
+    let conciliacion = host.find("trajectory_auditor.conciliar(").expect("conciliación");
     let evaluacion = host.find("trajectory_auditor.evaluate_tick(").expect("evaluación");
-    assert!(descarte < evaluacion, "se descarta antes de evaluar");
-    // CL-140b: no se descarta la traza que el núcleo cerró en este evento;
-    // la cierra `record_exit` con su TCE.
-    let s = contextos(&host, "trajectory_auditor.descartar(coin_id)", 3);
+    assert!(antes < evento && evento < conciliacion && conciliacion < evaluacion);
+    assert!(!host.contains("trajectory_auditor.record_exit("), "el cierre sale de conciliar");
+    assert!(!host.contains("trajectory_auditor.descartar("), "el descarte sale de conciliar");
+    // La traza nace con la ranura y la generación de la reserva y sólo si la
+    // entrada se envía.
+    let decision = host.find("let decision_envio: Option<u32>").expect("decisión de envío");
+    let entrada = host.find("trajectory_auditor.record_entry(").expect("entrada");
+    assert!(decision < entrada, "la traza nace tras decidir el envío");
+    assert_eq!(host.matches("trajectory_auditor.record_entry(").count(), 1);
+    let tras = host.get(entrada..entrada + 200).unwrap_or_default();
+    assert!(tras.contains("reservation.slot") && tras.contains("reservation.generation"), "{tras}");
+    let s = contextos(&host, "[TRAYECTORIA] {} ranura {} divergente", 3);
     assert_eq!(s.len(), 1);
-    assert!(s[0].contains("closed_order.is_none()"), "{}", s[0]);
-    let cierre = host.find("trajectory_auditor.record_exit(").expect("cierre de la traza");
-    assert!(evaluacion < cierre, "el cierre llega después, en el mismo evento");
-    let s = contextos(&host, "[TRAYECTORIA] {} divergente", 3);
-    assert_eq!(s.len(), 1);
-    assert!(s[0].contains("divergencia_nueva(coin_id, &status)"), "{}", s[0]);
+    assert!(s[0].contains("divergencia_nueva(coin_id, ranura, &status)"), "{}", s[0]);
     assert!(host.contains("Err(_) if event.repetido => {}"));
     assert!(host.contains("tracker.error_de_escaneo_nuevo(&error)"));
 }
