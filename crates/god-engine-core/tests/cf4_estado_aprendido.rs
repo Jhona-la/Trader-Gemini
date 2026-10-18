@@ -148,7 +148,7 @@ fn cl108_un_freno_echado_sigue_echado() {
 /// restauración no ponía nada en rojo.
 #[test]
 fn cl130_la_caida_en_stops_sobrevive_al_reinicio() {
-    registrar_simbolos();
+    let _g = registrar_simbolos();
     let viejo = nucleo();
     for r in [2.4, -1.3, -1.3, 2.4, -1.3, -1.3, -1.3] {
         risk_engine::drawdown::registrar_resultado_en_stops(&viejo.arena, r);

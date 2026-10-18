@@ -60,7 +60,7 @@ fn observaciones_del_freno(cierres_previos: usize, stop_propio: bool) -> usize {
     core.scalp_forest = None;
     arena.coins[0].metrics.trade_count.store(cierres_previos, Ordering::Relaxed);
     let (tp, sl) = if stop_propio { (101.0, 99.0) } else { (0.0, 0.0) };
-    let pos = &arena.coins[0].positions.position;
+    let pos = arena.coins[0].positions.slots()[0];
     assert!(pos.open_with_horizon(true, 100.0, 1.0, 10.0, 1_000, tp, sl, PositionHorizon::Continuous));
     arena.used_margin.store(10.0, Ordering::Relaxed);
     let antes = core.risk_engine.freno_estrategia.ville.count;
@@ -104,7 +104,7 @@ fn firma_tras_cierre(contexto: OutcomeContext, confirmada: bool) -> (u64, u64) {
     core.swing_nn = None;
     core.scalp_forest = None;
     arena.coins[0].metrics.trade_count.store(10, Ordering::Relaxed);
-    let pos = &arena.coins[0].positions.position;
+    let pos = arena.coins[0].positions.slots()[0];
     assert!(pos.open_with_horizon(true, 100.0, 1.0, 10.0, 1_000, 101.0, 99.0, PositionHorizon::Continuous));
     pos.exchange_confirmed.store(confirmada, Ordering::Relaxed);
     arena.used_margin.store(10.0, Ordering::Relaxed);
