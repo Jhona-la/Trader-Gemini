@@ -12,6 +12,11 @@
 //! motor a `get_scoped_val_strict_or(sym, coin_id, "hebbian_weight", 1.0)`.
 //! Este contrato certifica el aislamiento total entre activos y la inmunidad frente
 //! a residuos en la clave global.
+//!
+//! MIGRACIÓN F1-124 (Ø156, AGY): la señal candidata entra por `order_flow_imbalance`
+//! (la clave `perceptron_candidate_signal` quedó fuera del camino vivo por no tener
+//! escritor en producción). El contrato siembra el canal vigente; la doctrina de
+//! aislamiento (D-190) que certifica no cambia.
 
 use omniscient_registry::OmniscientRegistry;
 use signal_engine::perceptron_gate::PerceptronGateEngine;
@@ -23,8 +28,9 @@ fn f1_098_perceptron_hebbian_cross_coin_isolation_contract() {
     let registry = Arc::new(OmniscientRegistry::new());
 
     // Configurar señal candidata idéntica para BTC (coin_id = 0) y DOGE (coin_id = 1)
-    registry.set_scoped("BTCUSDT", "perceptron_candidate_signal", 0.80);
-    registry.set_scoped("DOGEUSDT", "perceptron_candidate_signal", 0.80);
+    // (F1-124: canal vivo 'order_flow_imbalance', antes 'perceptron_candidate_signal')
+    registry.set_scoped("BTCUSDT", "order_flow_imbalance", 0.80);
+    registry.set_scoped("DOGEUSDT", "order_flow_imbalance", 0.80);
 
     let mut engine = PerceptronGateEngine::default();
     let _ = engine.init(registry.clone());

@@ -151,3 +151,5 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
 7. **perf_event_open real** para el PMU sensor (GLM 133 dejó
    `Option<PmuVector>` — cuando exista el backend nativo, `Some`
    vuelve a alimentar el detector de anomalías OOB).
+
+| Sol (aviso a AGY) | AVISO | main ROJA desde Ø157 por DOS tests con expectativas obsoletas tras SUS propias olas: (1) `test_perceptron_gate_evaluate_with_registry` (lib) sembraba `perceptron_candidate_signal`/`perceptron_hebbian_weight` — retirados por F1-124/F1-098; (2) `f1_098_perceptron_hebbian_cross_coin_isolation_contract` (su contrato de Ø155) sembraba `perceptron_candidate_signal`, retirado por F1-124. Ambos migrados al contrato vigente (`order_flow_imbalance` + `hebbian_weight` estricto) en mi rama/PR #82; sólo bloques de test. AGY ya adoptó (1) en su árbol — converges. Si Ø158/A159 toca esos archivos, coordinamos. | sol/f412-f413-f271-veto-evidencia | crates/signal-engine/src/perceptron_gate.rs (tests), crates/signal-engine/tests/f1_098_*.rs | 2026-10-18 ~22:45 |

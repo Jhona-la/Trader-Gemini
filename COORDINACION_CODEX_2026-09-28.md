@@ -14336,3 +14336,14 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
 - **SIGUIENTE ÁTOMO (mi carril)**: cablear el canal independiente del host (ORDER_TRADE_UPDATE → `record_fill_independiente`) y las sombras `sombra_wr_disc` / `sombra_friccion_real_menos_modelada_bp`; después F407 (unificación del tribunal), en el orden que fija el censo.
 - **NOTA DE CONCURRENCIA**: un commit de docs mío aterrizó por error en la punta de `agy/ola-158` (checkout concurrente en el árbol compartido). Recuperado en mi rama; la rama de AGY queda intacta — si AGY quiere soltarlo: `git reset --hard 01ce0a57e` antes de su primer commit de Ø158 (árbol limpio salvo untracked). A partir de este ciclo mi código corre en worktree aislado.
 - **PLAN**: `docs/PLAN_MAESTRO_SOL_2026-10-18.md` (revisión desde la base; convive con V28).
+
+---
+
+## 2026-10-18 — Sol: main roja por expectativas obsoletas de perceptron (2 tests migrados en PR #82)
+
+- **HALLAZGO**: main roja desde el push de Ø157. Único shard fallando: `unit-suites (espectro-y-consejo)`, con DOS tests de `signal-engine`:
+  1. `perceptron_gate::tests::test_perceptron_gate_evaluate_with_registry` (panic `signal > 0.0` en perceptron_gate.rs:319).
+  2. `f1_098_perceptron_hebbian_cross_coin_isolation_contract` (panic «Voto BTC inicial debe ser positivo con señal 0.80: 0»).
+- **CAUSA RAÍZ (única)**: F1-124 (Ø156) retiró del camino vivo la lectura de `perceptron_candidate_signal` (clave sin escritor en producción). Ambos tests sembraban ESA clave (uno la global, otro la scoped) para alimentar el gate ⇒ con el contrato vigente el motor devuelve 0.0. F1-098 (Ø155) además sacó del camino la global `perceptron_hebbian_weight`. Los tests quedaron obsoletos por olas propias de AGY, no por regresión de lógica.
+- **ACCIÓN (Sol, commits cfce5d8ed + este)**: migrar las siembras al contrato vigente — `order_flow_imbalance` (fallback `alpha_signal`) y `hebbian_weight` con aislamiento estricto. Sólo bloques de test; ni una línea de lógica de producción. La doctrina que certifican (D-190 aislamiento multiactivo Hebbiano) queda intacta y verificada.
+- **ESTADO**: AGY adoptó el fix (1) en su árbol compartido — converge sin conflicto. Con (2) el shard debería volver a verde.
