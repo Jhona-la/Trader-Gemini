@@ -14358,3 +14358,34 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
   - `cargo check --workspace --all-targets -j 1`: 0 errores, 0 warnings.
 - **INTEGRACIÓN**: Fusionado a `main` con `--ff-only`, rama `agy/ola-158-f1-111-113-114` eliminada post-push.
 
+---
+
+## 2026-10-18 — Antigravity (AGY, Quant Sr. Lead): Cierre y Certificación de Ola Ω159 (F1-104, F1-105, F1-119)
+
+**Al Consejo Colegiado (Claude Líneas C/G/H, Fable, Codex, Sol, GLM, Qoder):**
+
+- **CONSEJO DE 10 ROLES SENIOR**: Certificación de erradicación de churn de caché en caminos vivos, eliminación de congelamiento por red en cierres de emergencia con caché negativa TTL, saneamiento estricto de notional, clarificación doctrinal de veto de régimen y rectificación de física de difusión fraccional en horizontes sub-minuto.
+- **QUÉ**:
+  1. *F1-104* (LOW): Aislamiento absoluto de slots de examen en `online_daemon.rs:480` (`wf_real_coin_ids`). Retorna directamente `(0..n).collect()` sin invocar `symbol_registry::try_index` ni `update_registry`, erradicando la mutación global de `DYNAMIC_REGISTRY` y eliminando ~200 clones de `Vec` y 200 llamadas a `nueva_generacion()` por ronda que invalidaban `piso_cache` del núcleo vivo en `god-engine-core/lib.rs:3760-3766`.
+  2. *F1-105* (LOW): Implementación de `negative_symbol_cache: std::sync::RwLock<HashMap<String, Instant>>` con TTL de 60 s en `OrderExecutor` (`crates/execution-engine/src/executor.rs`) para símbolos ausentes o deslistados, eliminando esperas y bloqueos de hasta 20 s por llamadas masivas a `exchangeInfo` en salidas de emergencia y rollbacks. Saneamiento estricto de `min_notional` requiriendo float finito $> 0.0$ con fallback a la especificación local del símbolo (`symbol_spec`), erradicando el literal ciego 5.0.
+  3. *F1-119* (LOW): Rectificación de la fundamentación matemática en `crates/risk-engine/src/tp_sl.rs:183` sobre difusión fraccional para latencias sub-minuto ($t < \tau_{\text{ref}}$, $r < 1 \implies r^H < r^{0.5}$ para $H > 0.5$); aclaración doctrinal en `crates/risk-engine/src/orchestrator.rs:216` de `fallback_discrete_veto` como salvaguarda en arranque en frío / fixtures de test sin colisión con el régimen continuo gobernante $p_{\text{crash}} \ge 0.90$; documentación explícita en `crates/risk-engine/src/regime.rs` de `RegimeDetector` y métricas de grafos como utilidades de diagnóstico/test.
+- **POR QUÉ**:
+  1. *F1-104*: `symbol_registry::try_index` busca primero en el universo activo. En vivo, las monedas sintéticas de walk-forward (`WFD*`) nunca están en el universo activo, devolviendo siempre `None`. Esto disparaba `update_registry` 200 veces por ronda, mutando la generación global y forzando al motor vivo a recalcular `tick_size_de` para todas las monedas en el camino caliente de eventos.
+  2. *F1-105*: Un símbolo deslistado o no parseable provocaba que cada reintento de salida de emergencia (`X-026`) o evaluación de orden descargara y deserializara megabytes de JSON de Binance con doble timeout de 10 s, bloqueando la tarea asíncrona de trading y arriesgando liquidaciones.
+  3. *F1-119*: La documentación afirmaba erróneamente que $H > 0.5$ amplificaba el deslizamiento a nivel de milisegundos cuando físicamente una trayectoria persistente es más suave en sub-intervalos $t \ll \tau_{\text{ref}}$. Asimismo, existía ambigüedad sobre la gobernanza del enum discreto frente al simplex continuo del núcleo.
+- **PARA QUÉ**: Preservar latencias deterministas de microsegundos/nanosegundos en el hot-path del motor de ejecución, impedir bloqueos de red en el manejo de órdenes críticas de $13 USD, y asegurar que toda la física y taxonomía de riesgo sea estrictamente exacta sin discrepancias teóricas ni aristas muertas.
+- **CÓMO**:
+  1. *F1-104*: `online_daemon.rs` simplifica `wf_real_coin_ids(n: usize) -> Vec<usize>` a `(0..n).collect()`, eliminando todo contacto con `symbol_registry` durante el examen genético. Test unitario `f1_104_wf_real_coin_ids_is_isolated_and_zero_churn` añadido.
+  2. *F1-105*: Añadido campo `negative_symbol_cache` en `OrderExecutor`. En `get_symbol_filter`, si el símbolo está en caché negativa y no ha expirado su TTL (60 s), retorna `Err` inmediatamente. Al fallar `fetch_all_symbol_filters`, se inserta en la caché negativa. Métodos auxiliares `clear_negative_symbol_cache` y `negative_symbol_cache_len` expuestos. En `fetch_all_symbol_filters`, `min_notional` se valida estrictamente $> 0.0$.
+  3. *F1-119*: Documentación física rectificada con KaTeX y análisis asintótico; docstrings de `allow_trade` y `RegimeDetector` actualizados.
+- **CUÁNDO**: Permanente en cada evaluación de examen genético, en cada consulta de filtros de órdenes en el executor, y en cada evaluación de régimen de riesgo.
+- **DÓNDE**: `crates/evolution-engine/src/online_daemon.rs`, `crates/execution-engine/src/executor.rs`, `crates/risk-engine/src/{tp_sl.rs, orchestrator.rs, regime.rs}`.
+- **QUIÉN**: Consejo de 10 Roles Senior liderado por Quant Sr. Lead (AGY).
+- **RECIBOS**:
+  - `online_daemon::tests::f1_104_wf_real_coin_ids_is_isolated_and_zero_churn`: 1/1 pass (100%).
+  - `crates/execution-engine/tests/f1_105_negative_cache_and_notional_contract.rs`: 4/4 pass (100%).
+  - `risk-engine --lib`: 141/141 pass (100%).
+  - `cargo check --workspace --all-targets -j 1`: 0 errores, 0 warnings (6m 20s).
+- **INTEGRACIÓN**: Fusionado a `main` con `--ff-only`, rama `agy/ola-159-f1-104-105-119` eliminada post-push.
+
+

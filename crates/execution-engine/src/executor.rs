@@ -349,6 +349,8 @@ pub struct OrderExecutor {
     rate_brake_until_ms: AtomicU64,
     /// Cache en RAM de filtros de símbolos (tickSize, stepSize, minNotional) O(1) < 5ns
     symbol_filters: ArcSwap<std::collections::HashMap<String, SymbolFilter>>,
+    /// F1-105: Caché negativa de símbolos desconocidos/no parseables con TTL (60s)
+    negative_symbol_cache: std::sync::RwLock<std::collections::HashMap<String, std::time::Instant>>,
     pub arena: ArcSwapOption<quantum_arena::GlobalArena>,
     pub ws: std::sync::Arc<crate::ws_executor::WsExecutor>,
     pub is_hedge_mode: AtomicBool,
@@ -395,6 +397,7 @@ impl OrderExecutor {
             consecutive_429: AtomicUsize::new(0),
             rate_brake_until_ms: AtomicU64::new(0),
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
+            negative_symbol_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
             arena: ArcSwapOption::empty(),
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
                 api_key, api_secret, is_testnet,
@@ -434,6 +437,7 @@ impl OrderExecutor {
             consecutive_429: AtomicUsize::new(0),
             rate_brake_until_ms: AtomicU64::new(0),
             symbol_filters: ArcSwap::from_pointee(std::collections::HashMap::new()),
+            negative_symbol_cache: std::sync::RwLock::new(std::collections::HashMap::new()),
             arena: ArcSwapOption::new(arena),
             ws: std::sync::Arc::new(crate::ws_executor::WsExecutor::new(
                 api_key, api_secret, is_testnet,
@@ -1704,8 +1708,11 @@ impl OrderExecutor {
                                             }
                                             Some("MIN_NOTIONAL") => {
                                                 if let Some(n) = f["notional"].as_str() {
-                                                    filter.min_notional =
-                                                        n.parse::<f64>().unwrap_or(5.0);
+                                                    if let Ok(v) = n.parse::<f64>() {
+                                                        if v.is_finite() && v > 0.0 {
+                                                            filter.min_notional = v;
+                                                        }
+                                                    }
                                                 }
                                             }
                                             _ => {}
@@ -1713,6 +1720,17 @@ impl OrderExecutor {
                                     }
                                 }
                                 if step_ok && tick_ok {
+                                    // F1-105: Si min_notional no vino o no parseó de exchangeInfo,
+                                    // consultar el registro de símbolos local si tiene spec válido
+                                    if filter.min_notional == 5.0 {
+                                        if let Some(cid) = quantum_arena::symbol_registry::try_index(sym) {
+                                            if let Some(spec) = quantum_arena::symbol_registry::try_spec(cid) {
+                                                if spec.min_notional.is_finite() && spec.min_notional > 0.0 {
+                                                    filter.min_notional = spec.min_notional;
+                                                }
+                                            }
+                                        }
+                                    }
                                     map.insert(sym.to_string(), filter);
                                 }
                             }
@@ -1735,12 +1753,44 @@ impl OrderExecutor {
     /// enviarse con la precisión de otro activo. Ahora un símbolo sin filtro real
     /// es un ERROR que el llamador debe manejar.
     pub async fn get_symbol_filter(&self, symbol: &str) -> Result<SymbolFilter, String> {
+        // 1. Caché positiva ArcSwap O(1) < 5ns
         {
             let cache = self.symbol_filters.load();
             if let Some(f) = cache.get(symbol) {
                 return Ok(*f);
             }
         }
+
+        // F1-105: 2. Caché negativa con TTL (60s) para evitar que símbolos ausentes o deslistados
+        // bloqueen el hilo ~20s re-descargando y re-parseando megabytes de exchangeInfo en cada intento.
+        let now = std::time::Instant::now();
+        if let Ok(neg_cache) = self.negative_symbol_cache.read() {
+            if let Some(ts) = neg_cache.get(symbol) {
+                if now.duration_since(*ts).as_secs() < 60 {
+                    // Fallback rápido al registro de símbolos local si fue añadido dinámicamente
+                    if let Some(coin_id) = quantum_arena::symbol_registry::try_index(symbol) {
+                        if let Some(spec) = quantum_arena::symbol_registry::try_spec(coin_id) {
+                            if spec.step_size.is_finite()
+                                && spec.step_size > 0.0
+                                && spec.tick_size.is_finite()
+                                && spec.tick_size > 0.0
+                            {
+                                return Ok(SymbolFilter {
+                                    step_size: spec.step_size,
+                                    tick_size: spec.tick_size,
+                                    min_notional: spec.min_notional,
+                                });
+                            }
+                        }
+                    }
+                    return Err(format!(
+                        "filtro de precisión desconocido para {symbol} (en caché negativa TTL 60s): ni exchangeInfo ni el registro de símbolos lo aportan; no se opera con los pasos de otro símbolo"
+                    ));
+                }
+            }
+        }
+
+        // 3. Descarga de exchangeInfo y actualización de caché positiva
         if let Ok(filters) = self.fetch_all_symbol_filters().await {
             let res = filters.get(symbol).copied();
             self.symbol_filters.store(Arc::new(filters));
@@ -1748,6 +1798,8 @@ impl OrderExecutor {
                 return Ok(f);
             }
         }
+
+        // 4. Fallback al registro local de símbolos
         if let Some(coin_id) = quantum_arena::symbol_registry::try_index(symbol) {
             if let Some(spec) = quantum_arena::symbol_registry::try_spec(coin_id) {
                 if spec.step_size.is_finite()
@@ -1763,10 +1815,28 @@ impl OrderExecutor {
                 }
             }
         }
+
+        // 5. Símbolo definitivamente ausente: almacenar en caché negativa con TTL 60s
+        if let Ok(mut neg_cache) = self.negative_symbol_cache.write() {
+            neg_cache.insert(symbol.to_string(), now);
+        }
+
         Err(format!(
             "filtro de precisión desconocido para {symbol}: ni exchangeInfo ni el \
              registro de símbolos lo aportan; no se opera con los pasos de otro símbolo"
         ))
+    }
+
+    /// F1-105: Limpia la caché negativa de filtros de símbolos.
+    pub fn clear_negative_symbol_cache(&self) {
+        if let Ok(mut neg_cache) = self.negative_symbol_cache.write() {
+            neg_cache.clear();
+        }
+    }
+
+    /// F1-105: Retorna el tamaño actual de la caché negativa de símbolos.
+    pub fn negative_symbol_cache_len(&self) -> usize {
+        self.negative_symbol_cache.read().map(|c| c.len()).unwrap_or(0)
     }
 
     #[inline(always)]
