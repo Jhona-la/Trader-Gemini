@@ -13890,3 +13890,16 @@ mueve los umbrales `hawkes_*` del genoma ⇒ T-1 y acuerdo con AGY (dueño del o
 - **Fable**: `run_backtest_native` indexa `volumes[i]` sin comprobar la
   longitud (highs/lows sí); su único llamador está muerto (F1-102) y ya lo
   comprueba. Sin cambio.
+
+
+## ROOT — instrucción de RAM disponible y primer RED real — 2026-10-18T13:54:19.333893+00:00
+
+El operador indicó directamente: «No, toca que trabajes así, están libres como 3 gigas». Se reemplaza para ROOT la espera de4GiB por admisión fija2.0GiB y --jobs1 en copia externa V3; originala7f7435c y5protegidos/236/aa8/12+8/corpus quedan intactos. Nuevohelper114cdfbd223f0e1063d8403cf2084c9cd4ef53a19669dd0e01fedd0cf5ae2f29, diff32e06bf6; revisiónSI sin bloqueos/AST0, kernelC# original byteidéntico. El recibo y Describe registran explícitamente minimum_free_physical_gib2/resource_policy. No se retocan recibos anteriores ni se reduce ninguna aserción para conseguir verde.
+
+Ventana REAL13:49:19.6759937Z:2.595516GiB, ceroCargo/rustc/cola observada, lockausente. WindowSHA291bb55bf73c17e5f4048b731a7c4d814fcad9e7112b673b51db8b82e3942d82, operatorDirective93d778ef2217fe2874ef5f7ee63dab957bd5a393cb18fa072c1cc8fa154d900e. Fable terminó T1 posterior con wrapper0 y checkfinalLIBERA0 08:43:28Z; no se hereda su resultado ni su fuente. BASE/Quant avisados antes y después de adquirir.
+
+Job core-clock-red, label1015-main150-core-red-b: V3 adquirió lock canónico con coordinadorPID58972/Start13:49:54.845334Z, token1ccaa6cd-8323-4de7-ad28-009d6c571af7; CargoPID20656/Start13:50:34.133475Z ejecuta +nightly-2026-06-30 test --jobs1 --release -p god-engine-core --test core_temporal_admission_contract --locked -- --nocapture --test-threads=1. Está compilando; SIN terminal/RED/GREEN aún. No iniciar otrobuild mientras conserve propietario. Nativeargv7e43803f43f9ef85b1cac784f270a05b913c59b982bfae717fbee93f6ce83602, spec0f3760f7feb49b33c500bb341ec25fba29fadf0e0da340787f7cf5962b9419fe. Inputs en C:/Users/jhona/.codex/tmp/root-core-clock-red-input-20261018-b; operación en root-core-clock-red-operation-20261018-b.
+
+CONTROL privado e4705ec93366e616f51d6f1ceaecde52b3ce7a58/tree8e835a5/raw095a/lógicobd400417/bundle9d92 permanecen sin modificaciones. Cinco contratos idénticos; negativos requieren cierrepositivo y rechazoFE real antes de evaluar invariantesCore. Compiler/setup/stack/control/guard86 no cuentan como RED. Ninguno de los7parches instalado; no publicarCONTROL ni por ancestría. Check original0/0+12+8 se conserva con HEADfdc y sus pins; viejoac2 sigue inválido.
+
+Main remoto observado f5144f11b4f1f90f5806725161c7e1c05c89858c incluye Ω151–153, F-A6 y Línea C/PR72–75; no sobrescribirlo con control viejo. RevisiónRO vigente identifica cambioCL135 de registrar_orden_abierta a tomar_medida_validada/registrar_medida al cierre, además de rutasreplay trade-only/envolvente por generación; se adaptarán sólo puertos autónomos con corpus público propio y checks finales. Flow/B15 no portará el oráculo retroactivo α/cutoff sobre F-A6 recurrente. Fable F-A2 en edición queda reservado. BASE conserva maestro/censo; adenda externa Flow/F-A6 SHA9b8ed106 pendiente de aplicar a esos documentos, no se declara ya integrada. HIGH01/02/MED06LG5 y meta100%/72h siguen pendientes.
