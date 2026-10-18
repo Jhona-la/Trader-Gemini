@@ -131,12 +131,19 @@ pub async fn start_telemetry_server(
 
     // Iniciar Auditor Forense (SQLite WAL). LG-20: por entorno (data/demo o
     // data/prod, CL-48): demo y prod no comparten la base.
-    let forensic_auditor =
-        ForensicAuditor::new(&quantum_arena::paths::env_data_path("forensic_audit.db"));
-    let auditor_rx = tx.subscribe();
-    tokio::spawn(async move {
-        forensic_auditor.start(auditor_rx).await;
-    });
+    // CL-143b: sin base forense el motor sigue; sólo se pierde ese registro.
+    let ruta_forense = quantum_arena::paths::env_data_path("forensic_audit.db");
+    match ForensicAuditor::new(&ruta_forense) {
+        Ok(forensic_auditor) => {
+            let auditor_rx = tx.subscribe();
+            tokio::spawn(async move {
+                forensic_auditor.start(auditor_rx).await;
+            });
+        }
+        Err(error) => {
+            telemetry_err!("[FORENSIC] no se pudo abrir {ruta_forense}: {error}; sigo sin base forense");
+        }
+    }
 
     // Iniciar el Bot de Telegram si las variables de entorno existen
     let telegram_bot = TelegramBot::new();

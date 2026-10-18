@@ -23,8 +23,14 @@ pub struct ForensicAuditor {
 /// `RETENCION_METRICAS` (7 días a una por minuto, el horizonte de una corrida
 /// larga). SQLite reutiliza las páginas que libera el borrado, así que el
 /// archivo deja de crecer sin necesidad de VACUUM.
+///
+/// CL-143b: el recorte borra como mucho `LOTE_DE_RECORTE` filas por inserción.
+/// Una base heredada de varios días (millones de filas) se recorta en unas
+/// horas sin una transacción gigante dentro de la tarea de tokio, y
+/// `journal_size_limit` devuelve el WAL a 64 MiB tras cada checkpoint.
 pub const CADENCIA_METRICAS_MS: u64 = 60_000;
 pub const RETENCION_METRICAS: i64 = 7 * 24 * 60;
+pub const LOTE_DE_RECORTE: i64 = 10_000;
 
 /// LG-20: un valor no finito es desconocido y se guarda como NULL, no como 0.
 fn finito(x: f64) -> Option<f64> {
@@ -32,13 +38,15 @@ fn finito(x: f64) -> Option<f64> {
 }
 
 impl ForensicAuditor {
-    pub fn new(db_path: &str) -> Self {
+    /// CL-143b: devuelve el error en vez de abortar. Con `panic = "abort"`, una
+    /// base corrupta o bloqueada tumbaba el motor entero al arrancar.
+    pub fn new(db_path: &str) -> rusqlite::Result<Self> {
         // Aseguramos que el directorio exista
         if let Some(parent) = std::path::Path::new(db_path).parent() {
             let _ = std::fs::create_dir_all(parent);
         }
 
-        let conn = Connection::open(db_path).expect("Error al abrir DB forense");
+        let conn = Connection::open(db_path)?;
 
         // FIX #1445: Habilitar modo WAL y optimizar pragmas de SQLite para concurrencia masiva
         conn.execute_batch(
@@ -47,9 +55,9 @@ impl ForensicAuditor {
              PRAGMA temp_store=MEMORY;
              PRAGMA mmap_size=67108864;
              PRAGMA cache_size=-32768;
-             PRAGMA busy_timeout=5000;",
-        )
-        .expect("Fallo al configurar PRAGMA de SQLite");
+             PRAGMA busy_timeout=5000;
+             PRAGMA journal_size_limit=67108864;",
+        )?;
 
         // Tabla de métricas globales (OmniUpdate)
         //
@@ -70,8 +78,7 @@ impl ForensicAuditor {
                 trade_duration_avg REAL
             )",
             [],
-        )
-        .expect("Fallo al crear tabla global_metrics");
+        )?;
 
         // COMPATIBILIDAD DE LECTURA: una base ya escrita conserva su esquema
         // antiguo (el CREATE IF NOT EXISTS no lo toca), así que la columna
@@ -93,8 +100,7 @@ impl ForensicAuditor {
                 genome_json TEXT
             )",
             [],
-        )
-        .expect("Fallo al crear tabla genome_snapshots");
+        )?;
 
         // FASE 18: Tabla de operaciones cerradas
         conn.execute(
@@ -109,16 +115,15 @@ impl ForensicAuditor {
                 ml_prob REAL
             )",
             [],
-        )
-        .expect("Fallo al crear tabla trade_events");
+        )?;
 
-        Self {
+        Ok(Self {
             conn,
             ultimo_genoma: None,
             reloj: std::time::Instant::now(),
             cadencia_metricas: crate::estrangulador::Estrangulador::new(CADENCIA_METRICAS_MS),
             retencion_metricas: RETENCION_METRICAS,
-        }
+        })
     }
 
     pub async fn start(mut self, mut rx: Receiver<TelemetryEvent>) {
@@ -183,8 +188,12 @@ impl ForensicAuditor {
                     ],
                 );
                 let _ = self.conn.execute(
-                    "DELETE FROM global_metrics WHERE id <= (SELECT MAX(id) FROM global_metrics) - ?1",
-                    params![self.retencion_metricas],
+                    "DELETE FROM global_metrics WHERE id IN (
+                        SELECT id FROM global_metrics
+                        WHERE id <= (SELECT MAX(id) FROM global_metrics) - ?1
+                        ORDER BY id LIMIT ?2
+                    )",
+                    params![self.retencion_metricas, LOTE_DE_RECORTE],
                 );
             }
             TelemetryEvent::GenomeUpdate(genome) => {
@@ -240,7 +249,7 @@ mod tests {
         let db_path = temp_dir.join("test_forensic_auditor.db");
         let db_path_str = db_path.to_string_lossy().to_string();
 
-        let auditor = ForensicAuditor::new(&db_path_str);
+        let auditor = ForensicAuditor::new(&db_path_str).expect("base forense");
         let _ = auditor;
 
         assert!(db_path.exists());
@@ -257,7 +266,7 @@ mod tests {
         let db_path = temp_dir.join(format!("test_forensic_{}.db", unique_id));
         let db_path_str = db_path.to_string_lossy().to_string();
 
-        let auditor = ForensicAuditor::new(&db_path_str);
+        let auditor = ForensicAuditor::new(&db_path_str).expect("base forense");
         let (tx, rx) = tokio::sync::broadcast::channel(16);
 
         tokio::spawn(async move {
@@ -349,7 +358,7 @@ mod tests {
             .expect("insertar fila histórica");
         }
 
-        let auditor = ForensicAuditor::new(&db_path_str);
+        let auditor = ForensicAuditor::new(&db_path_str).expect("base forense");
         let (tx, rx) = tokio::sync::broadcast::channel(16);
         tokio::spawn(async move {
             auditor.start(rx).await;
@@ -413,7 +422,7 @@ mod tests_lg20 {
     #[tokio::test]
     async fn lg20_lo_desconocido_se_guarda_como_null() {
         let ruta = base_temporal("null");
-        let auditor = ForensicAuditor::new(&ruta);
+        let auditor = ForensicAuditor::new(&ruta).expect("base forense");
         let (tx, rx) = tokio::sync::broadcast::channel(16);
         tokio::spawn(async move { auditor.start(rx).await });
         let _ = tx.send(TelemetryEvent::OmniUpdate {
@@ -445,7 +454,7 @@ mod tests_lg20 {
     #[tokio::test]
     async fn lg20_un_genoma_repetido_no_se_reescribe() {
         let ruta = base_temporal("genoma");
-        let auditor = ForensicAuditor::new(&ruta);
+        let auditor = ForensicAuditor::new(&ruta).expect("base forense");
         let (tx, rx) = tokio::sync::broadcast::channel(16);
         tokio::spawn(async move { auditor.start(rx).await });
         let a = quantum_arena::genome::SuperGenotype::default();
@@ -481,7 +490,7 @@ mod tests_lg20 {
     #[test]
     fn cl143_una_fila_por_minuto_sea_cual_sea_el_feed() {
         let ruta = base_temporal("cadencia");
-        let mut a = ForensicAuditor::new(&ruta);
+        let mut a = ForensicAuditor::new(&ruta).expect("base forense");
         for i in 0..28_800u64 {
             a.procesar(omni(i), i * 125);
         }
@@ -499,7 +508,7 @@ mod tests_lg20 {
     #[test]
     fn cl143_la_tabla_conserva_solo_la_retencion() {
         let ruta = base_temporal("retencion");
-        let mut a = ForensicAuditor::new(&ruta);
+        let mut a = ForensicAuditor::new(&ruta).expect("base forense");
         a.retencion_metricas = 50;
         for i in 0..400u64 {
             a.procesar(omni(i), i * CADENCIA_METRICAS_MS);
@@ -513,6 +522,46 @@ mod tests_lg20 {
         assert_eq!(n, 50);
         assert_eq!(min_lat, 350, "quedan las 50 más recientes");
         drop(a);
+        let _ = std::fs::remove_file(ruta);
+    }
+
+    /// CL-143b — Esperado: una base heredada con 25 050 filas se recorta en
+    /// lotes de `LOTE_DE_RECORTE` hasta la retención, y el WAL queda acotado.
+    /// Antes la primera inserción borraba casi toda la tabla de una vez dentro
+    /// de la tarea de tokio.
+    #[test]
+    fn cl143b_una_base_heredada_se_recorta_por_lotes() {
+        let ruta = base_temporal("lotes");
+        let mut a = ForensicAuditor::new(&ruta).expect("base forense");
+        a.retencion_metricas = 50;
+        a.conn
+            .execute_batch(
+                "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 25050)
+                 INSERT INTO global_metrics (latency_ms) SELECT x FROM c;",
+            )
+            .unwrap();
+        let filas = |a: &ForensicAuditor| -> i64 {
+            a.conn.query_row("SELECT count(*) FROM global_metrics", [], |r| r.get(0)).unwrap()
+        };
+        let mut despues = Vec::new();
+        for i in 0..3u64 {
+            a.procesar(omni(i), i * CADENCIA_METRICAS_MS);
+            despues.push(filas(&a));
+        }
+        assert_eq!(despues, vec![15_051, 5_052, 50]);
+        let limite: i64 = a.conn.query_row("PRAGMA journal_size_limit", [], |r| r.get(0)).unwrap();
+        assert_eq!(limite, 64 * 1024 * 1024);
+        drop(a);
+        let _ = std::fs::remove_file(ruta);
+    }
+
+    /// CL-143b — Esperado: una base que no es SQLite devuelve un error. Antes
+    /// era un `.expect` y, con `panic = "abort"`, el motor entero caía.
+    #[test]
+    fn cl143b_una_base_ilegible_no_tumba_el_motor() {
+        let ruta = base_temporal("ilegible");
+        std::fs::write(&ruta, "esto no es una base de datos ".repeat(40)).unwrap();
+        assert!(ForensicAuditor::new(&ruta).is_err());
         let _ = std::fs::remove_file(ruta);
     }
 
