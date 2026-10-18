@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 (tarde) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω154 (Cierre F1-024, F1-025, F1-026, F1-120, F1-121)
+
+- **Mandato**: Resolución rigurosa de 5 hallazgos de auditoría sistémica viva en `docs/audit/fable/f1_hallazgos.tsv` (3 MED de `evolution-engine` y 2 LOW de `signal-engine`/`quantum-arena`), garantizando paridad matemática causal, erradicación de cuellos de botella asíncronos y protección de umbrales bajo watchdog en la meta de crecimiento compuesto ($13.00 USD, duplicación cada 3 días, cero ruina).
+- **F1-120 (`crates/signal-engine/src/flow_impulse.rs:213`)**:
+  - *Problema*: `expected_duration_ms: base_duration.max(15_000)` imponía un suelo literal rígido de 15s al horizonte $\tau$ de la rama 12 de confluencia (`RAMA_IMPULSO_FLUJO`), mientras el gen `base_duration_ms` evoluciona en $[10\,000, 120\,000]$. En $[10\text{s}, 15\text{s})$ el literal aplastaba al gen eliminando su gradiente genético, y un fallback no-finito inventaba 15s.
+  - *Solución*: Eliminado `.max(15_000)`. Implementado fail-closed estricto devolviendo `None` si `raw_base <= 0.0` o no finito. El genoma recupera control continuo y gradiente biológico completo sobre $\tau$ y $p^*$ en $[10\text{s}, 15\text{s})$.
+- **F1-121 (`crates/signal-engine/src/coaxial_breakout.rs:93`, `crates/quantum-arena/src/genome.rs`)**:
+  - *Problema*: `evaluate_coaxial_breakout` carecía de llamadores vivos fuera de tests y era el único lector de `coaxial_squeeze_threshold`, mientras el motor genético seguía mutando el gen en $[0.1, 0.8]$ gastando entropía y dispersando varianza de fitness sin impacto fenotípico.
+  - *Solución*: Marcada `evaluate_coaxial_breakout` con `#[deprecated]` sin tocar su firma para backward compatibility, y congelada la mutación de `coaxial_squeeze_threshold` en `genome.rs:mutate()` fijándolo en `self.coaxial_squeeze_threshold` constante neutro.
+- **F1-024 (`crates/evolution-engine/src/online_daemon.rs:1190`, `crates/god-engine-core/src/lib.rs:8374`)**:
+  - *Problema*: `evaluate_shadow_strategy().await` corría dentro del hilo del bucle maestro de 500ms del demonio evolutivo. Cada evaluación bloqueaba el bucle durante 16 a 112 segundos, congelando el muestreo de barras de mercado, el reentrenamiento del bosque online y la publicación de telemetría viva.
+  - *Solución*: Desacoplada la evaluación mediante `spawn_shadow_evaluation` ejecutada asíncronamente en worker thread via `tokio::task::spawn_blocking` almacenando un `eval_task: Option<tokio::task::JoinHandle<Option<ShadowEvalOutcome>>>`. En cada tick de 500ms, si la tarea terminó (`is_finished()`), se cosechan los resultados con `apply_eval_outcome` sin pausar el hilo maestro. Publicado `forest6_ts_ms` con marca de tiempo monotónica al registro y verificado en `god-engine-core/lib.rs` con un TTL estricto de 15s: si el timestamp es obsoleto o ausente, la probabilidad del bosque se neutraliza a 0.50 previniendo decisiones con sesgos rancios.
+- **F1-025 (`crates/evolution-engine/src/online_daemon.rs:1098`)**:
+  - *Problema*: Los umbrales calibrados del bosque online se escribían en `arena.config.ml_threshold_long/short` cada 500ms sin verificar si un genoma recién promovido estaba bajo la ventana de observación del watchdog (`promoted_generation.is_some()`), sobreescribiendo los umbrales juzgados por el examen y rompiendo la atribución causal.
+  - *Solución*: Los umbrales calibrados se publican transparentemente en el registro omnisciente (`forest_calibrated_threshold_long/short`) y la escritura en `arena.config` se inhibe estrictamente mientras `self.promoted_generation.is_some()`.
+- **F1-026 (`crates/evolution-engine/src/online_daemon.rs:1747`)**:
+  - *Problema*: El examen walk-forward fija `obi = 0.0`, corre monedas en secuencia sin acoplamiento cross-asset y no ejecuta redes neuronales profundas. A pesar de ello, mutaba ciegamente 8 genes (`weight_obi`, `maker_obi_threshold`, `maker_spread_pct`, `global_correlation_threshold`, `topo_layer_1_activation`, `topo_layer_2_activation`, `tensor_dropout_rate`, `quantum_entropy_seed`), sufriendo autostop genético (*hitchhiking*) y desplazando vetos de riesgo vivos sin presión selectiva.
+  - *Solución*: Eliminada la perturbación aleatoria de estos 8 genes durante la generación de candidatos e implementada la función canónica `restaurar_genes_no_observables_en_examen` que copia exactamente los valores del incumbente antes de promover el genoma.
+- **Verificación Contractual**:
+  - `crates/signal-engine/tests/f1_120_121_flow_coaxial_hygiene_contract.rs` (2/2 pass, 100% verde).
+  - `crates/evolution-engine/tests/f1_024_025_026_daemon_hygiene_contract.rs` (3/3 pass, 100% verde).
+  - `cargo check --workspace --all-targets -j 1` pasa limpio (cero errores, cero advertencias nuevas).
+
 ## 2026-10-18 (tarde, 3) — Claude (cloud, Línea C): C-F5b, prueba de reversión de StatArb a la escala de decisión (PR #76)
 
 - **EST-3**: la prueba de reversión de la base sólo contrastaba a una celda

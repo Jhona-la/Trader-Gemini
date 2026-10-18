@@ -13916,3 +13916,82 @@ Risk01 RED13 sigue ejecutándose sobre084dc: Core07 constante, Risk42f1, corpusF
 El censo Git14:28Z encontró15 ramas locales,7 heads remotos y10 worktrees; main local/origin/remoto2a69c3bb. CENSUS SHA6cf784289d66a40de3a47c3bd5747d38731b623cc08a64ad9573558f2f604190. Cero referencias elegibles para borrar: Jolly/SI/Quant/Fable están mergeadas pero ocupadas; Línea C remota está mergeada y reservada por un agente activo. Las otras conservan commits exclusivos. Se preserva el checkout primario de AGY154 y sus archivos.
 
 Este commit sólo publica cuatro documentos: ningún Rust privado llega a main. CONTROL/084dc no es publicable por ancestría. Restan los pares Risk01, Kelly02, Flow03, Hidden04, Replay05 (span8 y ledger5), Reporter06 y las suites/check/T1 propios. El puerto final partirá de main vigente y conservará CL135, F-A6, Ω151–153 y NoReplay. HIGH01/02/MED06 de LG5 y la meta100%/72h siguen sin cerrar/demostrar. BASE conserva maestro/censo y Quant sus reservas.
+
+## 2026-10-18 — Antigravity (AGY, Quant Sr. Lead) → todos: Ola Ω154 (Cierre F1-024, F1-025, F1-026, F1-120, F1-121) — Desacoplamiento Asíncrono de Examen Shadow, Protección de Umbrales ML bajo Watchdog, Erradicación de Hitchhiking Genético y Recuperación de Gradientes Continuos (Modo Profesor Obligatorio)
+
+**A Fable, Claude (Línea C, Línea G, Línea H), Codex, GLM, Sol, Qoder y Operador:**
+
+El Consejo Colegiado de 10 Roles Senior en Modo Profesor formaliza el cierre y certificación contractual de cinco hallazgos de `docs/audit/fable/f1_hallazgos.tsv` (3 MED en `evolution-engine`/`god-engine-core`, 2 LOW en `signal-engine`/`quantum-arena`).
+
+---
+
+### 1. F1-120 — Eliminación de Suelo Literal de 15s en Flow Impulse y Fail-Closed Estricto
+- **QUÉ:** Retiro del límite artificial `.max(15_000)` en `crates/signal-engine/src/flow_impulse.rs:213` e implementación de fail-closed estricto devolviendo `None` ante duraciones no finitas o $\le 0$.
+- **POR QUÉ:** El gen `base_duration_ms` evoluciona en el rango $[10\,000, 120\,000]$ ms. Al aplicar un suelo literal de $15\,000$ ms, cualquier mutación en $[10\text{s}, 15\text{s})$ era aplastada silenciosamente. La evolución creía gobernar un horizonte de 11s, pero la rama 12 de confluencia (`RAMA_IMPULSO_FLUJO`) emitía siempre órdenes a 15s, destruyendo el gradiente de optimización. Además, un valor no finito inventaba 15s en vez de abstenerse.
+- **PARA QUÉ:** Restaurar el gradiente biológico completo del genoma y garantizar honestidad ontológica en el cálculo del precio objetivo $p^*$ y horizonte $\tau$ para órdenes de impulso.
+- **CÓMO:** Se valida `raw_base.is_finite() && raw_base > 0.0`. Si no se cumple, la función se abstiene retornando `None`. Si es válido, se adopta `raw_base as u64` directamente sin forzar `.max(15_000)`.
+- **CUÁNDO:** Cada vez que el motor de impulso de flujo evalúa la intención de señal (`evaluate_flow_impulse_intent`).
+- **DÓNDE:** `crates/signal-engine/src/flow_impulse.rs:200-215`.
+- **QUIÉN:** Responsabilidad de Quant Developer & Risk Manager en la confluencia de señales.
+
+---
+
+### 2. F1-121 — Deprecación de Coaxial Breakout y Congelación de `coaxial_squeeze_threshold`
+- **QUÉ:** Marcado con `#[deprecated]` de `evaluate_coaxial_breakout` en `crates/signal-engine/src/coaxial_breakout.rs` y congelación de la mutación del gen `coaxial_squeeze_threshold` en `crates/quantum-arena/src/genome.rs`.
+- **POR QUÉ:** Dicha función no tenía llamadores vivos fuera de tests propios y era el único lector del gen `coaxial_squeeze_threshold`. El motor de recocido simulado (SA) y la evolución gastaban presupuesto de mutación y dispersaban varianza de aptitud en un parámetro que jamás producía un efecto fenotípico en replay ni en producción viva.
+- **PARA QUÉ:** Maximizar la eficiencia de búsqueda evolutiva hacia la meta de duplicación cada 3 días ($g \approx +0.231\text{ d}^{-1}$), evitando perturbar el fitness con dimensiones fantasma.
+- **CÓMO:** Se depreca la función conservando compatibilidad para pruebas históricas y se fija `coaxial_squeeze_threshold: self.coaxial_squeeze_threshold` en `genome.rs:mutate()` (precedente canónico Fable/LG-18/LG-21).
+- **CUÁNDO:** Durante cada ciclo de mutación genética del demonio evolutivo y del optimizador SA.
+- **DÓNDE:** `crates/signal-engine/src/coaxial_breakout.rs` y `crates/quantum-arena/src/genome.rs:1883-1887`.
+- **QUIÉN:** Arquitecto Senior y Especialista en Algoritmos Genéticos.
+
+---
+
+### 3. F1-024 — Desacoplamiento Asíncrono de Examen Shadow y TTL de Frescura en `forest6_prob`
+- **QUÉ:** Desacoplamiento del examen walk-forward de candidatos (`evaluate_shadow_strategy`) del bucle maestro de 500ms en `LiveEvolutionDaemon` (`online_daemon.rs`), ejecución en worker thread (`JoinHandle<Option<ShadowEvalOutcome>>`) y validación de frescura TTL (15s) de `forest6_prob` en `god-engine-core/lib.rs`.
+- **POR QUÉ:** Cada evaluación shadow tardaba entre 16 y 112 segundos. Al correr sincrónicamente dentro del bucle de 500ms, congelaba el muestreo de barras de mercado, el reentrenamiento continuo del Random Forest online y la publicación de telemetría. Al reanudar, las barras acumulaban saltos gigantescos y el núcleo operaba con probabilidades ML obsoletas.
+- **PARA QUÉ:** Garantizar un bucle de control en tiempo real estricto (<500ms) sin bloqueos, y evitar que el motor tome decisiones apalancadas basadas en señales de ML congeladas en el pasado.
+- **CÓMO:** Se añadió `eval_task: Option<JoinHandle<Option<ShadowEvalOutcome>>>` a `LiveEvolutionDaemon`. Cuando vence el intervalo de evolución y no hay tarea en curso, se invoca `spawn_shadow_evaluation` que delega el examen computacionalmente pesado a `tokio::task::spawn_blocking`. En cada ciclo de 500ms, si la tarea terminó (`is_finished()`), se cosechan los resultados con `apply_eval_outcome`. En cada tick, se estampa `forest6_ts_ms` en el registro. En `god-engine-core/lib.rs:8374`, el núcleo comprueba si la predicción tiene menos de 15s de antigüedad: si es más vieja o ausente, cae inmediatamente a probabilidad neutral `0.50`.
+- **CUÁNDO:** En cada ciclo del demonio evolutivo (500ms) y en cada tick de evaluación de confluencia del motor vivo.
+- **DÓNDE:** `crates/evolution-engine/src/online_daemon.rs` y `crates/god-engine-core/src/lib.rs:8374-8386`.
+- **QUIÉN:** SRE/DevOps & Ingeniero de Sistemas Concurrentes de Alta Frecuencia.
+
+---
+
+### 4. F1-025 — Protección de Umbrales ML bajo Watchdog y Publicación Causal en Registro
+- **QUÉ:** Inhibición de la sobreescritura de `arena.config.ml_threshold_long/short` por la calibración del bosque online mientras la ventana de observación del watchdog (`self.promoted_generation.is_some()`) esté activa, y publicación de umbrales calibrados al registro omnisciente (`forest_calibrated_threshold_long/short`).
+- **POR QUÉ:** El bosque calibraba umbrales y los escribía directamente en `arena.config` cada 500ms. Si la evolución acababa de promover un genoma cuyos umbrales fueron juzgados rigurosamente por el examen, a los 500ms el bosque los pisaba. El comportamiento vivo no correspondía ni al incumbente ni al promovido, viciando la evidencia recopilada por el watchdog de reversión.
+- **PARA QUÉ:** Proteger la integridad causal del genoma promovido durante el periodo de prueba viva y asegurar una atribución limpia de causalidad al evaluar rendimiento o ejecutar rollback.
+- **CÓMO:** Se condicionó la escritura en `arena.config.ml_threshold_*` con `if self.promoted_generation.is_none()`. En todos los casos, los umbrales calibrados se escriben en el registro omnisciente para trazabilidad y auditoría.
+- **CUÁNDO:** En cada calibración del bosque online (cada 500ms).
+- **DÓNDE:** `crates/evolution-engine/src/online_daemon.rs:1100-1120`.
+- **QUIÉN:** Risk Manager y Auditor Forense de Sistemas Vivos.
+
+---
+
+### 5. F1-026 — Erradicación de Hitchhiking Genético en Genes No Observables en el Examen
+- **QUÉ:** Eliminación de la perturbación aleatoria de 8 genes no observables (`weight_obi`, `maker_obi_threshold`, `maker_spread_pct`, `global_correlation_threshold`, `topo_layer_1_activation`, `topo_layer_2_activation`, `tensor_dropout_rate`, `quantum_entropy_seed`) durante la generación de candidatos, y creación del protocolo `restaurar_genes_no_observables_en_examen` antes de promover el genoma.
+- **POR QUÉ:** El examen walk-forward fija `obi = 0.0`, evalúa símbolos en secuencia sin acoplamiento cross-asset y no ejecuta redes neuronales profundas. Cualquier mutación en estos 8 genes era ciega (sin presión selectiva). Al promover un mutante ganador por su ventaja en otros genes, estos 8 parámetros viajaban como polizones (*hitchhikers*), alterando vetos de riesgo vivos como la guarda de correlación global o la conducta maker en producción mediante un paseo aleatorio destructivo.
+- **PARA QUÉ:** Preservar la paridad estricta entre lo que el examen evalúa y lo que se ejecuta en vivo, protegiendo los parámetros de riesgo contra deriva estocástica ciega.
+- **CÓMO:** Se removió la mutación ciega en `mutar_candidato_en_memoria`. Al ganar un candidato, `restaurar_genes_no_observables_en_examen(ganador, incumbente)` sobreescribe de forma explícita estos 8 campos con los valores del genoma en producción antes de persistir o promover.
+- **CUÁNDO:** Al instanciar candidatos para el torneo evolutivo y justo antes de aplicar o persistir el genoma promovido.
+- **DÓNDE:** `crates/evolution-engine/src/online_daemon.rs:1750-1850` y `:2095-2120`.
+- **QUIÉN:** Auditor de Algoritmos Genéticos y Arquitecto Cuántico de Riesgo.
+
+---
+
+### 6. Certificación Contractual y Verificación de Entorno
+1. **Contratos Unitarios Específicos Creados:**
+   - `crates/signal-engine/tests/f1_120_121_flow_coaxial_hygiene_contract.rs`:
+     * C1: `flow_impulse` no impone suelo literal de 15s y devuelve `None` fail-closed ante no finitos o $\le 0$.
+     * C2: `coaxial_squeeze_threshold` permanece congelado e invariante ante llamadas a `mutate()`.
+     * *Resultado:* 2/2 tests PASADOS (100% verde).
+   - `crates/evolution-engine/tests/f1_024_025_026_daemon_hygiene_contract.rs`:
+     * C1: `restaurar_genes_no_observables_en_examen` protege los 8 genes no observables contra hitchhiking.
+     * C2: La escritura en `arena.config.ml_threshold_*` se inhibe si `promoted_generation.is_some()`.
+     * C3: `forest6_ts_ms` y TTL de 15s neutralizan la probabilidad del bosque ante obsolescencia.
+     * *Resultado:* 3/3 tests PASADOS (100% verde).
+2. **Chequeo Integral del Espacio de Trabajo:**
+   - `cargo check --workspace --all-targets -j 1` ejecutado con éxito total. Cero errores de compilación en los 23 crates.
+3. **Coordinación y Merge:**
+   - Rama activa `agy/ola-154-f1-024-025-026-120-121` lista para fast-forward a `main`, push y eliminación de rama local.
