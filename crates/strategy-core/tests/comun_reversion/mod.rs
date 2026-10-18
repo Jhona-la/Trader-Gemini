@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 use quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS;
-use strategy_core::prueba_reversion::{critico_largo, PruebaReversion, CRITICO};
+use strategy_core::prueba_reversion::{PruebaReversion, CRITICO, CRITICO_LARGO};
 
 pub struct Lcg(pub u64);
 impl Lcg {
@@ -60,7 +60,7 @@ pub fn barrido(k: usize, n: u64, theta: f64, r: f64, paso: f64, edades: &[f64], 
         sd: 1e-4,
         referencia_ms: paso,
     };
-    barrido_con(k, n, &[c], r, paso, edades, semilla, false)
+    barrido_con(k, n, &[c], r, paso, edades, semilla, false, None)
 }
 
 /// Como [`barrido`], con una base suma de componentes y la reversión de lo
@@ -75,7 +75,25 @@ pub fn barrido_mezcla(
     edades: &[f64],
     semilla: u64,
 ) -> Barrido {
-    barrido_con(k, n, comps, r, paso, edades, semilla, true)
+    barrido_con(k, n, comps, r, paso, edades, semilla, true, None)
+}
+
+/// C-F5e: como [`barrido_mezcla`], con volatilidad por rachas: las
+/// innovaciones y el ruido de medida se multiplican por v = e^{g − s²}, con
+/// g un OU de desviación típica `s` y vida media `semivida_celdas` celdas
+/// (E[v²] = 1).
+#[allow(clippy::too_many_arguments)]
+pub fn barrido_rachas(
+    k: usize,
+    n: u64,
+    comps: &[Componente],
+    r: f64,
+    paso: f64,
+    edades: &[f64],
+    semilla: u64,
+    (s, semivida_celdas): (f64, f64),
+) -> Barrido {
+    barrido_con(k, n, comps, r, paso, edades, semilla, true, Some((s, semivida_celdas)))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -88,8 +106,10 @@ fn barrido_con(
     edades: &[f64],
     semilla: u64,
     seguir_reversion: bool,
+    rachas: Option<(f64, f64)>,
 ) -> Barrido {
     let tau = SPECTRUM_SCALES_MS[k];
+    let theta_g = rachas.map_or(0.0, |(_, h)| std::f64::consts::LN_2 / (h * tau / 8.0));
     let memoria = 16.0 * tau;
     let s0 = {
         let v: f64 = comps.iter().filter(|c| c.theta > 0.0).map(|c| c.sd * c.sd).sum();
@@ -117,21 +137,30 @@ fn barrido_con(
             .collect();
         let mut t = 0.0f64;
         let mut e = 0usize;
+        let mut lv = rachas.map_or(0.0, |(sd, _)| sd * g.n());
         // Votos pendientes de medir: (edad, d, x en el voto, marca objetivo).
         let mut pendientes: Vec<(usize, f64, f64, f64)> = Vec::new();
         while e < ne || !pendientes.is_empty() {
             let h = paso * (0.5 + g.u());
             t += h;
+            let v = match rachas {
+                Some((sd, _)) => {
+                    let d = (-theta_g * h).exp();
+                    lv = lv * d + sd * (1.0 - d * d).sqrt() * g.n();
+                    (lv - sd * sd).exp()
+                }
+                None => 1.0,
+            };
             for (x, c) in xs.iter_mut().zip(comps) {
                 *x = if c.theta > 0.0 {
                     let d = (-c.theta * h).exp();
-                    *x * d + c.sd * (1.0 - d * d).sqrt() * g.n()
+                    *x * d + v * c.sd * (1.0 - d * d).sqrt() * g.n()
                 } else {
-                    *x + c.sd * (h / c.referencia_ms).sqrt() * g.n()
+                    *x + v * c.sd * (h / c.referencia_ms).sqrt() * g.n()
                 };
             }
             let x: f64 = xs.iter().sum();
-            p.observar(t as u64, x + r * s0 * g.n());
+            p.observar(t as u64, x + v * r * s0 * g.n());
             pendientes.retain(|&(i, d, x0, objetivo)| {
                 if t >= objetivo {
                     num[i] += d * (x - x0);
@@ -153,7 +182,7 @@ fn barrido_con(
                 let corta = p.estado_nodo(k).is_some_and(|s| s.madura && s.t > CRITICO);
                 let larga = p
                     .estado_largo(k)
-                    .is_some_and(|l| l.madura && l.t > critico_largo(l.n_ef));
+                    .is_some_and(|l| l.madura && l.t > CRITICO_LARGO);
                 rech_c[e] += u64::from(corta);
                 rech_l[e] += u64::from(larga);
                 ts_t[e].push(v.t);

@@ -31,26 +31,36 @@ use comun_base_spot::*;
 use strategy_core::{stat_arb::StatArbEngine, QuantumStrategy};
 
 /// Esperado: con dos caminatas independientes (base sin reversión), la
-/// guarda pasa en ≤ 4 de 40 semillas al final de 30 min. Con un contraste al
+/// guarda pasa en ≤ 4 de 40 semillas al final de 45 min. Con un contraste al
 /// 5 % por decisión, P(Binomial(40; 0,05) > 4) ≈ 0,05. Medido en `main`:
 /// pasa en 40/40 (la SDE estima t½ de pocos segundos).
+///
+/// C-F5e (revisión de C-F5b): desde C-F5b el veredicto exige la prueba a la
+/// escala de decisión madura (33·τ_k, 38 min en el nodo 18). A los 30 min de
+/// antes no maduraba en ningún nodo de decisión y «pasan 0/40» salía por
+/// construcción, valiera lo que valiera el estadístico. Ahora: 45 min, y la
+/// precondición de que el nodo contrastado esté maduro en todas las
+/// semillas.
 #[test]
 fn cl97_caminatas_independientes_no_pasan_la_guarda() {
     let _g = bloqueo();
     let semillas = 40u64;
     let mut pasan = 0u64;
+    let mut maduras = 0u64;
     for s in 0..semillas {
         let (arena, mut core) = nucleo();
         let mut m = Mercado::new(s + 1, f64::INFINITY);
-        for i in 0..1_800u64 {
+        for i in 0..2_700u64 {
             let (f, sp) = m.paso();
             evento(&arena, &mut core, 1_000 + i * 1_000, f, Some(sp));
         }
+        maduras += u64::from(nodo_contrastado_maduro(&arena, &core));
         if guarda_pasa(&arena) {
             pasan += 1;
         }
     }
-    println!("observado: caminatas independientes que pasan la guarda: {pasan}/{semillas}");
+    println!("observado: caminatas independientes que pasan la guarda: {pasan}/{semillas} (nodo maduro en {maduras})");
+    assert_eq!(maduras, semillas, "precondición: el nodo contrastado está maduro");
     assert!(pasan * 10 <= semillas, "pasan {pasan}/{semillas}");
 }
 

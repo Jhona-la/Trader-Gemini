@@ -2,9 +2,11 @@
 //! del WS no rehace la prueba de reversión de StatArb.
 //!
 //! `reset_engines` (cada conexión WS de futuros salvo la primera) recreaba la
-//! prueba. Madurar exige media memoria de pares seguidos (8·τ_k): 2,4 min en
-//! el nodo 17 y 41 h en el 22. Con el corte diario de Binance, el nodo 22 no
-//! maduraba nunca y el 21 sólo el 58 % del tiempo.
+//! prueba. La prueba corta madura con media memoria de pares seguidos
+//! (8·τ_k: 2,4 min en el nodo 17, 41 h en el 22) y, desde C-F5b, el veredicto
+//! con la prueba a la escala de decisión (33·τ_k: 9,5 min en el nodo 17,
+//! 41 h en el 21, 163 h en el 22). Con el corte diario de Binance, los nodos
+//! 21 y 22 no madurarían nunca.
 //!
 //! Ahora la reconexión corta sólo el EMPAREJAMIENTO (mid del futuro y marca
 //! del spot previos), y la prueba conserva sus sumas. Los huecos ya decaen

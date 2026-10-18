@@ -66,6 +66,23 @@ pub fn guarda_pasa(arena: &GlobalArena) -> bool {
     }
 }
 
+/// C-F5e: el nodo que contrasta el veredicto a la τ* publicada tiene las dos
+/// pruebas maduras. Sin eso la guarda no puede pasar por construcción y una
+/// prueba de tamaño sería vacía (revisión de C-F5b).
+pub fn nodo_contrastado_maduro(arena: &GlobalArena, core: &GodEngineCore) -> bool {
+    let (Some(tau), Some(p)) = (leer(arena, "dominant_tau_ms"), core.statarb_ou_engines[0].prueba.as_ref()) else {
+        return false;
+    };
+    let Some(v) = p.veredicto(tau) else {
+        return false;
+    };
+    (17..=22).any(|k| {
+        quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k].to_bits() == v.tau_nodo_ms.to_bits()
+            && p.estado_nodo(k).is_some_and(|e| e.madura)
+            && p.estado_largo(k).is_some_and(|l| l.madura)
+    })
+}
+
 /// Generador de la base y el futuro: futuro en caminata log-normal y base
 /// OU con vida media `t_media_s` (∞: caminata independiente del spot).
 pub struct Mercado {
@@ -106,20 +123,25 @@ impl Mercado {
 }
 
 /// Núcleo con una base OU rápida (t½ = 14 s ≈ τ_18/5) hasta que la guarda
-/// pasa, con al menos 40 min de pares. C-F5b: la prueba a la escala de
-/// decisión madura a media memoria larga, 33·τ_k (≈ 38 min en el nodo 18);
-/// antes de eso la guarda no pasa, y justo al madurar se cierra cada vez que
-/// τ* salta a τ_19, cuyo nodo aún no ha madurado. Devuelve el mercado y la
-/// marca siguiente. Falla si en 90 min no pasa.
+/// pasa un minuto seguido, con al menos 40 min de pares. C-F5b: la prueba a
+/// la escala de decisión madura a media memoria larga, 33·τ_k (≈ 38 min en
+/// el nodo 18); antes de eso la guarda no pasa. C-F5e: recién madura, el
+/// estadístico ronda su crítico unos minutos (en la semilla 3 la guarda
+/// pasa 11, 7 y 2 de 60 s entre los min 48 y 50, y no pasa un minuto entero
+/// hasta el 53), así que la primera pasada no basta para llamarla
+/// demostrada.
+/// Devuelve el mercado y la marca siguiente. Falla si en 90 min no pasa.
 pub fn nucleo_demostrado(semilla: u64) -> (Arc<GlobalArena>, GodEngineCore, Mercado, u64) {
     let (arena, mut core) = nucleo();
     let mut m = Mercado::new(semilla, 14.0);
     let mut ts = 1_000u64;
+    let mut seguidos = 0u32;
     for i in 0..5_400u64 {
         let (f, sp) = m.paso();
         evento(&arena, &mut core, ts, f, Some(sp));
         ts += 1_000;
-        if i >= 2_400 && guarda_pasa(&arena) {
+        seguidos = if guarda_pasa(&arena) { seguidos + 1 } else { 0 };
+        if i >= 2_400 && seguidos >= 60 {
             return (arena, core, m, ts);
         }
     }

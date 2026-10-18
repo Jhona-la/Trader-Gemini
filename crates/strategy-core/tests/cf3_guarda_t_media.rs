@@ -18,8 +18,11 @@
 //! τ_k ≤ τ* (aquí τ_19 = 274,9 s), β fija, instrumento b(t−2Δ), nivel 5 %.
 //! Una pareja «pasa la guarda» si el veredicto es reversión demostrada (lo
 //! que el núcleo publica como t½ ≤ 2τ* con z ≠ 0). En 20 min el nodo 19 no
-//! madura (necesita 8·τ_19 = 37 min) y se abstiene; las variantes largas
-//! (4 h, sin ruido y con ruido de medida) prueban la guarda ya madura.
+//! madura (la prueba corta necesita 8·τ_19 = 37 min y el veredicto, con la
+//! prueba a la escala de decisión, 33·τ_19 = 2,5 h); desde C-F5e se
+//! contrasta el nodo maduro más grande bajo τ*, aquí el 17 (9,5 min). Las
+//! variantes largas (4 h, sin ruido y con ruido de medida) prueban la guarda
+//! con el nodo 19 maduro.
 //!
 //! Generador: LCG de 64 bits con Box-Muller; 40 semillas; dos caminatas
 //! log-normales independientes con σ = 2e-5 por paso, 6 000 pasos de 200 ms

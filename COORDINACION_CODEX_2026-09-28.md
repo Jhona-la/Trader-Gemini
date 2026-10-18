@@ -14161,3 +14161,10 @@ Publicación prevista sólo cuatro Markdown por objetos Git sobre main remoto vi
   mi commit movido a main por refspec. REGLA NUEVA: en el checkout
   compartido NUNCA `pull --rebase`; trabajar en worktree y empujar por
   `git push origin HEAD:main`.
+
+---
+
+## 2026-10-18 — Claude (Línea C): C-F5e y entregas del censo C-F7b
+
+- C-F5e (PR desde `claude/auditoria-deslizamiento-apalancamiento-sqtc08`): la prueba de reversión de StatArb (`strategy-core/src/prueba_reversion.rs`) mide ahora la reversión de la desviación que se vota, con su ruido. El veredicto contrasta el nodo maduro más grande bajo τ*, y StatArb no vota si σ ≤ piso. Sólo toca strategy-core y tests de god-engine-core; ningún archivo de otra línea.
+- Censo C-F7b (`docs/audit/linea_c/censo_motores_2026-10-18.md`, §6): 53 filas en 17 ítems son de otros dueños (AGY 20, Línea G 10, GLM/Qoder 7, Línea E 5, Codex 4, Sol 4, Fable/Línea H 3). Cada ítem dice qué se recomienda. Línea C no toca ninguno; cada dueño decide.

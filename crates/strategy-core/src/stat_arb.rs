@@ -45,13 +45,15 @@ pub struct VeredictoStatArb {
     /// z del último par contra la media y la dispersión de la base en la
     /// memoria del nodo; 0 sin reversión demostrada.
     pub z: f64,
-    /// Cota superior de la vida media demostrada (τ_k del nodo), en ms; ∞
-    /// sin demostración. C-F5b: la prueba a la escala de decisión demuestra
-    /// que más de la mitad de la desviación revierte en τ_k, y eso acota la
-    /// vida media por τ_k (antes 2·τ_k, la cota de la prueba de retardos
-    /// cortos). Es lo que el núcleo publica como `statarb_half_life_ms`: la
-    /// guarda t½ ≤ 2τ* del lector pasa sólo con reversión demostrada en un
-    /// nodo τ_k ≤ τ*.
+    /// Cota superior de la vida media demostrada (τ_k del nodo contrastado),
+    /// en ms; ∞ sin demostración. C-F5b: la prueba a la escala de decisión
+    /// demuestra que más de la mitad de la desviación revierte en τ_k, y eso
+    /// acota la vida media por τ_k (antes 2·τ_k, la cota de la prueba de
+    /// retardos cortos). C-F5e: la desviación OBSERVADA, la que se vota con
+    /// su ruido de medida, y el nodo es el maduro más grande con τ_k ≤ τ*.
+    /// Es lo que el núcleo publica como `statarb_half_life_ms`: la guarda
+    /// t½ ≤ 2τ* del lector pasa sólo con reversión demostrada en un nodo
+    /// τ_k ≤ τ*.
     pub t_media_cota_ms: f64,
     pub demostrada: bool,
     /// Detalle de la prueba.
@@ -168,8 +170,9 @@ impl StatArbEngine {
     /// valer: el primer dato de B tras la reconexión no se empareja con un
     /// mid de antes. La prueba conserva sus sumas, porque el hueco ya las
     /// hace decaer y corta la cadena de retardos. Rehacerla desde cero en
-    /// cada reconexión dejaba sin madurar los nodos lentos: el 22 necesita
-    /// 41 h y Binance corta la conexión cada 24 h.
+    /// cada reconexión dejaba sin madurar los nodos lentos: la prueba corta
+    /// del 22 necesita 41 h, el veredicto (prueba a la escala de decisión,
+    /// 33·τ_k) 163 h, y Binance corta la conexión cada 24 h.
     pub fn cortar_emparejamiento(&mut self) {
         self.mid_a_previo = None;
         self.marca_b_previa = None;
@@ -183,12 +186,20 @@ impl StatArbEngine {
     /// (piso ≤ 0, sin spec de tick) no hay voto. Con los mids redondeados a un
     /// tick y la base lenta, el redondeo fabrica reversión, y sólo el piso de
     /// la σ (un tick) impedía votarla.
+    ///
+    /// C-F5e (cuantización, revisión de C-F5b): tampoco hay voto si la
+    /// dispersión de la base no supera su resolución (σ ≤ piso). Con los dos
+    /// mids en la rejilla del tick y el precio casi quieto, el error de
+    /// redondeo correlaciona entre celdas vecinas, el instrumento deja de
+    /// valer y la prueba demostraba reversión que no existe (la revisión
+    /// midió el veredicto en el 13-18 % de los instantes con σ de 0,6 tick).
+    /// El piso sólo desinflaba la z; la cota y la operabilidad se publicaban.
     pub fn veredicto(&self, tau_decision_ms: f64, piso: f64) -> Option<VeredictoStatArb> {
         let v = self.prueba.as_ref()?.veredicto(tau_decision_ms)?;
         let piso = if piso.is_finite() { piso.max(0.0) } else { 0.0 };
         let sigma = v.sigma.max(piso);
         let z = (v.base - v.media) / sigma;
-        let demostrada = v.demostrada && piso > 0.0 && sigma > 0.0 && z.is_finite();
+        let demostrada = v.demostrada && piso > 0.0 && v.sigma > piso && z.is_finite();
         Some(VeredictoStatArb {
             z: if demostrada { z } else { 0.0 },
             t_media_cota_ms: if demostrada { v.tau_nodo_ms } else { f64::INFINITY },
@@ -561,6 +572,29 @@ mod tests {
         assert!(con_piso.demostrada, "precondición: reversión demostrada");
         assert!(!sin_piso.demostrada && sin_piso.z == 0.0, "{sin_piso:?}");
         assert!(sin_piso.t_media_cota_ms.is_infinite());
+    }
+
+    /// C-F5e (cuantización, revisión de C-F5b). Verdad: con la dispersión de
+    /// la base por debajo de su resolución (σ ≤ piso) no hay voto, aunque la
+    /// prueba demuestre reversión; con σ por encima, el veredicto no cambia.
+    #[test]
+    fn cf5e_sin_dispersion_sobre_la_resolucion_no_vota() {
+        let mut e = StatArbEngine::new(30, 1.5).with_prueba_reversion();
+        let mut azar = Lcg(3);
+        let rho = (-std::f64::consts::LN_2 / 3.0).exp();
+        let mut x = 0.0f64;
+        for s in 1..=1_200u64 {
+            x = rho * x + (1.0 - rho * rho).sqrt() * 1e-4 * azar.n();
+            e.observar_par(100.0 * (1.0 + x), 100.0, s * 1_000);
+        }
+        let tau = quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[17];
+        let fino = e.veredicto(tau, 1e-6).expect("hay pares");
+        assert!(fino.demostrada, "precondición: reversión demostrada");
+        let sigma = fino.prueba.sigma;
+        let grueso = e.veredicto(tau, 1.01 * sigma).expect("hay pares");
+        assert!(!grueso.demostrada && grueso.z == 0.0, "{grueso:?}");
+        assert!(grueso.t_media_cota_ms.is_infinite());
+        assert!(e.veredicto(tau, 0.99 * sigma).expect("hay pares").demostrada);
     }
 
     /// CL-97. Verdad: un par nace sólo cuando cambia la marca de llegada de
