@@ -127,7 +127,6 @@ fn test_hawkes_bessel_params_validation_and_branching_ratio() {
         beta: 0.8,
         mu_tau_s: 30.0,
         mu_floor: 0.02,
-        max_events: 64,
     };
     assert!(custom_params.validate().is_ok());
     // 1 + 0.4 / 0.8 = 1.5
