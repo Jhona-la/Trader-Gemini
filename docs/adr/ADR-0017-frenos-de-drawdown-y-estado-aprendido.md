@@ -23,11 +23,11 @@ Los números salen del Monte Carlo de LC-F4-10: 13 USD, orden mínima de 5,10 US
 
 ### 1. Un solo pico (CL-99)
 
-El pico es del arena, sólo sube, lo comparten los dos frenos y el host lo guarda por entorno (`pico_capital.txt`).
+El pico es del arena, sólo sube, lo comparten los dos frenos y el host lo guarda por entorno y, desde CL-133, por venue (`drawdown::archivo_pico`, §2b y §2c).
 
 ### 2. Freno duro de la cuenta (CL-106)
 
-**Umbral** = `K(w, l)·r`, acotado por d*. Es el mismo para el veto de entradas del riesgo y para el sistema inmune del host (`drawdown::umbral_freno_duro_de`). Desde CL-130 la caída se cuenta en stops de cada posición y se compara con `K` directamente (§2b).
+**Umbral** = `K(w, l)·r`, acotado por d*. Era el mismo para el veto de entradas del riesgo y para el sistema inmune del host (`drawdown::umbral_freno_duro_de`, retirada). Desde CL-130 la caída se cuenta en stops de cada posición y se compara con `K` directamente, y el freno es el OR de dos pruebas separadas, la de stops y la de d* sobre el capital (`drawdown::freno_duro`, §2b).
 - `K` es el cuantil 95 % de la caída máxima en 200 operaciones bajo H0 = +0,05 R, con R el riesgo al stop más la fricción. Se mide en stops con un Monte Carlo determinista.
 - `w = (TP − f)/SL` y `l = (SL + f)/SL` son la geometría medida de las órdenes (EWMA).
 - `r = s̄/pico`, con `s̄` el riesgo medido al stop en USD (nocional × SL, EWMA). Así la condición es `(pico − capital)/s̄ ≥ K`: la caída en stops, que es lo que mide el cuantil (CL-106b, T1-02 de la Línea G). Con el riesgo en fracción del capital al dimensionar, el umbral se alejaba al caer con nocional fijo: con stop del 2 % y 13 USD, nunca disparaba antes de d*.
@@ -56,6 +56,20 @@ El pico es del arena, sólo sube, lo comparten los dos frenos y el host lo guard
 **Un pico por venue, y un pico ilegible no es un pico ausente (CL-133, R5 y B2).** Testnet y papel de mainnet comparten `data/demo`, así que cada venue guarda su pico en su archivo (`drawdown::archivo_pico`). El archivo sin venue de antes se adopta una vez y se renombra. Si el archivo es ilegible, no entran posiciones nuevas y no se sobrescribe.
 
 **Replantar el bosque sombra reinicia los frenos de cada universo (CL-134, R6):** el pico, lo medido, la caída en stops y el freno de la estrategia.
+
+### 2c. Revisión de la Línea G del PR #70 (CL-135 a CL-138, 2026-10-18)
+
+Fuente: `docs/audit/linea_g/ola9_pr70.tsv` (35 hallazgos, 1 medio).
+
+**Lo medido entra al cerrar la operación (CL-135, PR70-INT-04).** CL-131 registraba la medida cuando el núcleo abría la orden, pero esa apertura es LOCAL y anterior a los vetos del host (envolvente, breaker de fees, guardia de margen, filtro del símbolo, rechazo del exchange). El host la revierte y el núcleo la reabre en el evento siguiente: en la cinta T-1, 15 aperturas revertidas movían las cuatro medias. Ahora el núcleo toma la medida al abrir (`RiskEngine::tomar_medida_validada`), la guarda con la ranura atada a su generación (`GodEngineCore::medida_de_entrada`) y la registra al cerrar (`RiskEngine::registrar_medida`), tras la puerta de aprendizaje: en el contexto del exchange sólo si la entrada se confirmó. Una posición adoptada en una ranura revertida no hereda la medida de la anterior. Las medias reflejan así la misma población que la caída en stops (los cierres del núcleo) y quedan un periodo de tenencia por detrás. Prueba: `god-engine-core/tests/cf5d_medida_al_cerrar.rs`, roja en main.
+
+**El venue del pico es el del saldo (CL-136, PR70-INT-02).** `SHADOW_MODE` y `BINANCE_USE_DEMO` operan papel contra los endpoints y el saldo de mainnet, pero `is_demo_env` los juntaba con testnet en el mismo archivo y R5 volvía con el lanzador de shadow. Ahora el venue lo decide `USE_TESTNET`, el mismo predicado que elige los endpoints. El archivo de testnet conserva su nombre.
+
+**El pico ilegible dice qué archivo es (CL-137, PR70-INT-08).**
+
+**Replantar libera el margen (CL-138, PR70-INT-10).** `replant` cerraba las ranuras y tiraba el margen que devolvían; el universo replantado nacía con `used_margin` de la hipótesis vieja.
+
+**Siguen abiertos (bajos o de diseño):** el pico sin venue de antes de CL-133 lo adopta el primer venue que arranca (PR70-INT-01, una vez por actualización); la pata en stops se guarda por carpeta y el pico por venue (PR70-INT-03); el freno de la cuenta es ciego al tamaño entre K·s̄ y d* (F5C-M1); `min(arena, exchange)` no ve la caída del propio papel sobre mainnet (F5C-M3); la caída que delibera el consejo usa el capital del arena (PR70-INT-07, sin punto de observación para probarlo todavía); el freno de la estrategia y el duro tratan distinto las posiciones adoptadas (PR70-INT-06); la EWMA no pesa 1/n en sus primeras órdenes (F5C-L2).
 
 ### 3. Freno de la estrategia (CL-107)
 

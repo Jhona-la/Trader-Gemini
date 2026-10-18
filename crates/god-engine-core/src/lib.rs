@@ -813,6 +813,19 @@ pub struct EntryLearningEvidence {
     pub model_predictions: [Option<f64>; 2],
 }
 
+/// CL-135 (PR70-INT-04 de la revisión de la Línea G) — lo medido de la orden
+/// que abrió una ranura (riesgo al stop y geometría en stops), atado a su
+/// generación. Entra en las medias de la cuenta al CERRAR esa posición y sólo
+/// si el cierre puede enseñar (entrada confirmada por el exchange, o
+/// simulación aislada): una intención que el host vetó o el exchange rechazó
+/// nunca llega a medirse.
+#[derive(Debug, Clone, Copy)]
+pub struct MedidaDeEntrada {
+    pub generation: u64,
+    pub is_long: bool,
+    pub medida: risk_engine::MedidaOrden,
+}
+
 /// Axioma VII: God Engine Core
 /// Este componente contiene la lógica dura del ciclo HFT,
 /// unificando la Arena con los motores, y eliminando la duplicación
@@ -1093,6 +1106,8 @@ pub struct GodEngineCore {
     pub last_senior_signals: Vec<[[f64; 11]; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
     pub council_entry_evidence: Vec<[Option<CouncilEntryEvidence>; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
     pub entry_learning_evidence: Vec<[Option<EntryLearningEvidence>; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
+    /// CL-135 — la medida de la orden de cada ranura, hasta su cierre.
+    pub medida_de_entrada: Vec<[Option<MedidaDeEntrada>; quantum_arena::position::MAX_SPECTRAL_SLOTS]>,
     pub lakehouse: Option<Arc<storage_engine::LakehouseWarehouse>>,
     pub consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion,
     pub lead_lag_engine: feature_engine::LeadLagAlphaEngine,
@@ -1436,6 +1451,7 @@ impl GodEngineCore {
             last_senior_signals: vec![[[0.0; 11]; quantum_arena::position::MAX_SPECTRAL_SLOTS]; n_coins],
             council_entry_evidence: (0..n_coins).map(|_| std::array::from_fn(|_| None)).collect(),
             entry_learning_evidence: (0..n_coins).map(|_| std::array::from_fn(|_| None)).collect(),
+            medida_de_entrada: vec![[None; quantum_arena::position::MAX_SPECTRAL_SLOTS]; n_coins],
             lakehouse: None,
             consejo_deliberacion: metacortex_engine::consejo_seniors::ConsejoDeliberacion::new(),
             lead_lag_engine: feature_engine::LeadLagAlphaEngine::new(50),
@@ -4717,6 +4733,12 @@ impl GodEngineCore {
                             && e.decision_time_ms == entry_time && event_time_ms >= e.decision_time_ms
                             && closed_entry == entry && closed_qty == qty && closed_qty > 0.0
                             && pos.generation.load(Ordering::Acquire) == position_generation.wrapping_add(1));
+                    let medida_de_entrada = self.medida_de_entrada
+                        .get_mut(coin_id).and_then(|slots| slots.get_mut(slot_idx))
+                        .and_then(Option::take)
+                        .filter(|m| m.generation == position_generation
+                            && m.is_long == is_long && closed_side == is_long
+                            && pos.generation.load(Ordering::Acquire) == position_generation.wrapping_add(1));
 
 
                     // B3.14 — ¿la entrada EXISTIÓ en el exchange? La
@@ -5287,6 +5309,13 @@ impl GodEngineCore {
                     } else {
                         f64::NAN
                     };
+                    // CL-135: lo medido de esta operación entra en las medias
+                    // de la cuenta ahora, tras la puerta de aprendizaje (una
+                    // entrada que nunca llegó al exchange no cuenta) y antes
+                    // de los dos frenos que leen su geometría.
+                    if let Some(m) = medida_de_entrada {
+                        risk_engine::RiskEngine::registrar_medida(&self.arena, &m.medida);
+                    }
                     // CL-107: la R de cada cierre alimenta el freno de la
                     // estrategia (proceso e de Ville, H0 = +0,30 R).
                     let e_estrategia = self.risk_engine.freno_estrategia.registrar(
@@ -9784,11 +9813,18 @@ impl GodEngineCore {
                                 }
                                 self.diag_opened += 1;
                                 self.diag_dir.record_open(is_long);
-                                // CL-131 (R2 de la revisión del PR #62): lo
-                                // medido de la orden (riesgo al stop y
-                                // geometría) entra en las medias de la cuenta
-                                // ahora que está abierta, una vez.
-                                self.risk_engine.registrar_orden_abierta(&self.arena, coin_id);
+                                // CL-131/CL-135: lo medido de la orden
+                                // (riesgo al stop y geometría) viaja con la
+                                // posición y entra en las medias de la cuenta
+                                // al cerrarla. Aquí la apertura es LOCAL: el
+                                // host todavía puede vetarla y revertirla.
+                                let medida_validada = self.risk_engine.tomar_medida_validada(coin_id);
+                                self.medida_de_entrada[coin_id][target_pos_slot] = medida_validada
+                                    .filter(|_| target_pos.generation.load(Ordering::Acquire) == expected_generation
+                                        && target_pos.is_open())
+                                    .map(|medida| MedidaDeEntrada {
+                                        generation: expected_generation, is_long, medida,
+                                    });
                                 // Fail closed for attribution if another transition
                                 // interleaved. This is not a transactional fill ledger.
                                 self.council_entry_evidence[coin_id][target_pos_slot] =

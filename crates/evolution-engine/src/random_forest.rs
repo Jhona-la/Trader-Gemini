@@ -364,6 +364,11 @@ impl ShadowForest {
                     slot.close();
                 }
             }
+            // CL-138 (PR70-INT-10 de la Línea G): sin posiciones no hay margen
+            // retenido. `close` devuelve el margen de la ranura y aquí se
+            // tiraba: el universo replantado nacía con `used_margin` de las
+            // posiciones de la hipótesis vieja y menos margen libre.
+            engine.arena.used_margin.store(0.0, Ordering::Relaxed);
 
             let mutation = if i == 0 {
                 new_alpha.clone()

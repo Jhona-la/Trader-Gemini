@@ -70,19 +70,61 @@ fn cl132_ganar_en_papel_no_fabrica_una_caida() {
     assert_eq!(drawdown::capital_del_freno(&a), 14.04, "un saldo inválido no cuenta");
 }
 
+/// Fija las tres variables de entorno que deciden el entorno del proceso y
+/// las devuelve a su valor anterior al salir (PR70-T9 de la Línea G: antes
+/// sólo se fijaba `USE_TESTNET`, el resultado dependía de `SHADOW_MODE` y
+/// `BINANCE_USE_DEMO` del entorno, y un `USE_TESTNET` previo se perdía).
+fn con_entorno<T>(testnet: bool, shadow: bool, demo: bool, f: impl FnOnce() -> T) -> T {
+    let nombres = ["USE_TESTNET", "SHADOW_MODE", "BINANCE_USE_DEMO"];
+    let previos: Vec<Option<String>> = nombres.iter().map(|n| std::env::var(n).ok()).collect();
+    for (n, v) in nombres.iter().zip([testnet, shadow, demo]) {
+        if v {
+            std::env::set_var(n, "true");
+        } else {
+            std::env::remove_var(n);
+        }
+    }
+    let r = f();
+    for (n, previo) in nombres.iter().zip(previos) {
+        match previo {
+            Some(v) => std::env::set_var(n, v),
+            None => std::env::remove_var(n),
+        }
+    }
+    r
+}
+
 /// Esperado (R5): cada venue guarda su pico en su archivo.
 #[test]
 fn cl133_cada_venue_guarda_su_pico() {
     let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
-    std::env::set_var("USE_TESTNET", "true");
-    let prueba = drawdown::archivo_pico();
-    std::env::remove_var("USE_TESTNET");
-    let mainnet = drawdown::archivo_pico();
+    let prueba = con_entorno(true, false, false, drawdown::archivo_pico);
+    let mainnet = con_entorno(false, false, false, drawdown::archivo_pico);
     println!("observado: testnet {prueba}, mainnet {mainnet}");
     assert_ne!(prueba, mainnet);
     let host = sin_codigo(include_str!("../../../src/bin/god_engine.rs"));
     assert!(host.contains("env_data_path(&risk_engine::drawdown::archivo_pico()"));
     assert!(!host.contains("env_data_path(\"pico_capital.txt\""), "el archivo sin venue no se escribe");
+}
+
+/// Esperado (CL-136, PR70-INT-02 de la Línea G): el venue del pico es el del
+/// saldo con que se mide. Shadow y el modo demo operan papel contra los
+/// endpoints y el saldo de mainnet: guardan el pico de mainnet, no el de
+/// testnet (antes `is_demo_env` los juntaba con testnet y R5 volvía con el
+/// lanzador oficial de shadow).
+#[test]
+fn cl136_shadow_y_demo_guardan_el_pico_del_saldo_de_mainnet() {
+    let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
+    let testnet = con_entorno(true, false, false, drawdown::archivo_pico);
+    let mainnet = con_entorno(false, false, false, drawdown::archivo_pico);
+    let shadow = con_entorno(false, true, false, drawdown::archivo_pico);
+    let demo = con_entorno(false, false, true, drawdown::archivo_pico);
+    let shadow_testnet = con_entorno(true, true, false, drawdown::archivo_pico);
+    println!("observado: testnet {testnet}, mainnet {mainnet}, shadow {shadow}, demo {demo}");
+    assert_eq!(shadow, mainnet, "shadow mide contra el saldo de mainnet");
+    assert_eq!(demo, mainnet, "BINANCE_USE_DEMO no cambia de endpoint");
+    assert_eq!(shadow_testnet, testnet, "papel sobre testnet mide contra el saldo de testnet");
+    assert_eq!(testnet, "pico_capital_prueba.txt", "el archivo de testnet conserva su nombre");
 }
 
 /// Esperado (B2): ausente, ilegible y legible son tres casos distintos.
@@ -93,10 +135,12 @@ fn cl133_un_pico_ilegible_no_es_un_pico_ausente() {
     assert!(matches!(drawdown::leer_pico(&ruta), CargaPico::Ausente));
     drawdown::guardar_pico(&ruta, 13.25).unwrap();
     assert!(matches!(drawdown::leer_pico(&ruta), CargaPico::Leido(p) if p == 13.25));
+    let archivo = ruta.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_owned();
     for ilegible in ["", "abc", "13,25", "\u{feff}13.25", "NaN", "inf", "-5", "0"] {
         std::fs::write(&ruta, ilegible).unwrap();
+        // CL-137 (PR70-INT-08): el motivo nombra el archivo que hay que reparar.
         assert!(
-            matches!(drawdown::leer_pico(&ruta), CargaPico::Ilegible(_)),
+            matches!(drawdown::leer_pico(&ruta), CargaPico::Ilegible(ref m) if m.contains(&archivo)),
             "contenido {ilegible:?}"
         );
         assert_eq!(drawdown::cargar_pico(&ruta), None);

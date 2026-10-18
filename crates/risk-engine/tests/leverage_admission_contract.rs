@@ -162,8 +162,8 @@ fn cl6_ninguna_orden_validada_queda_bajo_el_nocional_minimo() {
 /// se tomaba y aflojaba el freno en la misma proporción. QS-D2 retiró ese
 /// tope (el stop es el del horizonte en todo capital); la propiedad sigue:
 /// lo registrado es exactamente lo que arriesga la orden. Desde CL-131 la
-/// orden se registra cuando el núcleo confirma que la abrió
-/// (`registrar_orden_abierta`), no al validarla.
+/// medida queda pendiente al validar la orden; el núcleo la toma al abrirla
+/// y, desde CL-135, la registra al cerrarla (`registrar_medida`).
 #[test]
 fn cl7_la_ewma_de_riesgo_mide_el_stop_de_la_orden() {
     let (a, intent) = fixture(13.0);
@@ -171,7 +171,8 @@ fn cl7_la_ewma_de_riesgo_mide_el_stop_de_la_orden() {
     let mut riesgo = RiskEngine::new(13.0);
     let out = riesgo.evaluate_quantum_order(0, &intent, &a);
     assert_eq!(out.signal, SignalType::Long, "{}", risk_engine::reject_report());
-    assert!(riesgo.registrar_orden_abierta(&a, 0), "la orden validada queda pendiente");
+    let medida = riesgo.tomar_medida_validada(0).expect("la orden validada queda pendiente");
+    RiskEngine::registrar_medida(&a, &medida);
     let entrada = a.coins[0].current_price.load(Relaxed);
     let stop = (entrada - out.sl_target).abs() / entrada;
     assert!(stop.is_finite() && stop > 0.0, "stop de la orden inválido: {stop}");

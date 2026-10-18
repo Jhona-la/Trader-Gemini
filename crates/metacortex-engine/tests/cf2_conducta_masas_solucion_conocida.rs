@@ -356,7 +356,11 @@ fn cf2_ente_decide_por_el_suelo_del_override() {
         ml_model_base: 0.30,
         fused_score: 0.05,
         persistence: 0.5,
-        atr_pct: 0.005,
+        // F1-008 (Ω151): a la τ por defecto (≈ 19 min, s ≈ 0,5) las bandas de
+        // la volatilidad se ensanchan ×2,25 (calma 22,5 pb, peligro 90 pb).
+        // Con 100 pb su convicción sigue saturada en 0,4, como la de 50 pb
+        // con las bandas base: es el 0,4·0,9 de la forma cerrada.
+        atr_pct: 0.010,
         loss_streak: 3,
         intended_direction: 1.0,
         do_calculus_risk: 0.80,
@@ -417,7 +421,11 @@ fn cf2_ente_decide_el_override_de_un_veto_unico() {
         book_imbalance: 0.05,
         ml_prob: 0.54,
         ml_model_base: 0.50,
-        atr_pct: 0.005,
+        // F1-008 (Ω151): a la τ por defecto (≈ 19 min, s ≈ 0,5) las bandas de
+        // la volatilidad se ensanchan ×2,25 (calma 22,5 pb, peligro 90 pb).
+        // Con 100 pb su convicción sigue saturada en 0,4, como la de 50 pb
+        // con las bandas base: es el 0,4·0,9 de la forma cerrada.
+        atr_pct: 0.010,
         loss_streak: 18,
         intended_direction: 1.0,
         do_calculus_risk: 0.80,

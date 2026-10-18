@@ -436,6 +436,11 @@ impl GodEngineCore {
         for det in &mut self.lg22_detectores {
             *det = crate::resultado_orden::DetectorPerdidaDeVentaja::con_referencia(det.referencia());
         }
+        // CL-135: lo medido de las órdenes abiertas por la hipótesis vieja no
+        // entra en las medias de la nueva.
+        for ranuras in &mut self.medida_de_entrada {
+            *ranuras = [None; quantum_arena::position::MAX_SPECTRAL_SLOTS];
+        }
     }
 }
 
