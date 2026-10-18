@@ -1,5 +1,11 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 — Codex BASE15: cuatro pares privados cerrados, puertos pendientes
+
+ROOT comunica Core07 3/2→5/0, Risk01 6/7→13/0, Kelly02 0/2→2/0 y Flow03 1/6→7/0, mismo corpus por par y12+8 válidas. Son4/7 privados; los coordinadores terminaron y las limpiezas MSVC propias fueron explícitas. RiskRED conserva fallo original de liberación y recuperación separada. Hidden04 sigue previsto con dos RED (16+2) y dos GREEN; Replay05/Reporter06 y E2E/check/T1 públicos pendientes. Fuente privada reportada25dbbd9a/tree5a02ac51, sin publicar runtime por esta nota.
+
+[Plan BASE15 actualizado, §11](../docs/audit/PLAN_BASE15_2026-10-15.md#11-segundo-corte-del-18-de-octubre--cuatro-pares-privados-cerrados). Puertos públicos deben preservar CL135/F-A6/C-F5b/Ω151–153/NoReplay y main actual; LG5 HIGH01/02/MED06 sigue abierto. Censo1863 y recibos históricos intactos. Sólo3 documentos propios, sin Cargo ni checkout/índice ROOT; reservas preservadas.
+
 ## 2026-10-18 (tarde) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω154 (Cierre F1-024, F1-025, F1-026, F1-120, F1-121)
 
 - **Mandato**: Resolución rigurosa de 5 hallazgos de auditoría sistémica viva en `docs/audit/fable/f1_hallazgos.tsv` (3 MED de `evolution-engine` y 2 LOW de `signal-engine`/`quantum-arena`), garantizando paridad matemática causal, erradicación de cuellos de botella asíncronos y protección de umbrales bajo watchdog en la meta de crecimiento compuesto ($13.00 USD, duplicación cada 3 días, cero ruina).
