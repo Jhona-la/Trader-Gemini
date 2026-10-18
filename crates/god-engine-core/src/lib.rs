@@ -5330,7 +5330,8 @@ impl GodEngineCore {
                     // CL-135: lo medido de esta operación entra en las medias
                     // de la cuenta ahora, tras la puerta de aprendizaje (una
                     // entrada que nunca llegó al exchange no cuenta) y antes
-                    // de los dos frenos que leen su geometría.
+                    // del freno duro, cuyo umbral K lee esa geometría (el de
+                    // la estrategia usa la de cada posición, CL-114).
                     if let Some(m) = medida_de_entrada {
                         risk_engine::RiskEngine::registrar_medida(&self.arena, &m.medida);
                     }
