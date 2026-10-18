@@ -195,6 +195,7 @@ version = "0.1.0"
 dependencies = [
  "crossbeam",
  "crossbeam-channel",
+ "metacortex-engine",
  "omniscient-registry",
  "once_cell",
  "quantum-arena",

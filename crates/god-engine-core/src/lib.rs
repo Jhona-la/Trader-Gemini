@@ -5081,9 +5081,26 @@ impl GodEngineCore {
                         0.0
                     };
 
-                    let disc = self.auditor_interno.compute_internal_discrepancy(internal_sharpe, internal_wr, dd_pct);
-                    self.arena.registry.set_for_coin(coin_id, "internal_discrepancy", disc);
-                    self.arena.registry.set("internal_discrepancy", disc);
+                    // F412/F413/F271 (censo C-F7b §3, prioridad 1, 2026-10-18):
+                    // PUERTA DE EVIDENCIA. Sin canal independiente (host
+                    // ORDER_TRADE_UPDATE → record_fill_independiente) NO se
+                    // publica `internal_discrepancy`: las tres patas eran
+                    // tautológicas (sharpe sin escritor ⇒ claim 0.0; wr del
+                    // mismo cierre con el mismo predicado; dd actual vs máximo
+                    // histórico del diario de cartera) y el veto del Auditor
+                    // Interno disparaba solo sin decaer (13 → 16,9 ⇒ 0,231 > 0,20
+                    // vetando todas las monedas). Clave ausente ⇒ payload 0.0 ⇒
+                    // sin veto. El `registry.set` global se retira: contaminaba
+                    // entre monedas vía el fallback al global de
+                    // get_for_coin_or / get_scoped_value_or y el valor rancio
+                    // nunca expiraba.
+                    if let Some(disc) = self.auditor_interno.compute_internal_discrepancy_evidenciada(
+                        internal_sharpe,
+                        internal_wr,
+                        dd_pct,
+                    ) {
+                        self.arena.registry.set_for_coin(coin_id, "internal_discrepancy", disc);
+                    }
 
                     if ml_at_entry > 0.0 {
                         // K-26 (Ola Ω76 / D-676): la posición guarda `ml_prob` crudo (P(subida)).

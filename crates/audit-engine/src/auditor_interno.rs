@@ -227,6 +227,11 @@ pub struct DailyTribunalReport {
 /// crecimiento ilimitado de RAM y degradación cuadrática en sesiones largas.
 pub const MAX_FILLS_JOURNAL: usize = 4096;
 
+/// F412/F413/F271 (censo C-F7b, 2026-10-18): capacidad máxima acotada del diario
+/// del canal INDEPENDIENTE (fills del host/exchange). Misma higiene de RAM que
+/// MAX_FILLS_JOURNAL: buffer circular acotado, sin crecimiento ilimitado.
+pub const MAX_FILLS_INDEPENDIENTES: usize = 4096;
+
 /// Dual Result Verifier
 pub struct VerificadorResultados;
 
@@ -352,6 +357,16 @@ impl VerificadorResultados {
 /// Auditor Interno Engine
 pub struct AuditorInterno {
     fills_journal: Vec<ExchangeFillRecord>,
+    /// F412/F413/F271 (censo C-F7b §3, prioridad 1): canal INDEPENDIENTE.
+    /// Sólo lo alimenta el host con fills del exchange (ORDER_TRADE_UPDATE del
+    /// user-data stream), nunca el cierre interno del núcleo. Mientras esté
+    /// vacío no existe fuente ajena contra la que verificar afirmaciones
+    /// internas: las tres patas de `calculate_max_discrepancy` serían
+    /// tautológicas (sharpe sin escritor de `internal_sharpe` ⇒ claim 0.0;
+    /// wr del mismo cierre con el mismo predicado net>0; dd actual contra el
+    /// máximo histórico del diario de cartera) y el veto dispararía solo,
+    /// sin decaer (13 → 16,9 ⇒ disc 0,231 > 0,20 vetando todas las monedas).
+    fills_independientes: Vec<ExchangeFillRecord>,
     base_capital: f64,
     pub thresholds: TribunalThresholds,
 }
@@ -360,6 +375,7 @@ impl Default for AuditorInterno {
     fn default() -> Self {
         Self {
             fills_journal: Vec::new(),
+            fills_independientes: Vec::new(),
             base_capital: 13.0,
             thresholds: TribunalThresholds::default(),
         }
@@ -374,6 +390,7 @@ impl AuditorInterno {
     pub fn with_capital(base_capital: f64) -> Self {
         Self {
             fills_journal: Vec::new(),
+            fills_independientes: Vec::new(),
             base_capital: base_capital.max(1.0),
             thresholds: TribunalThresholds::default(),
         }
@@ -410,6 +427,10 @@ impl AuditorInterno {
 
     /// OLA Ω120: Calcula la discrepancia máxima normalizada entre métricas internas y realidad
     /// para alimentar el registro omnisciente y el asiento SeniorAuditorInterno en el Consejo.
+    ///
+    /// F412/F413/F271 (censo C-F7b): esta ruta usa el diario interno (alimentado por el
+    /// propio cierre del núcleo), que NO es una fuente independiente. Queda para
+    /// telemetría/tribunal; el veto vivo usa `compute_internal_discrepancy_evidenciada`.
     pub fn compute_internal_discrepancy(
         &self,
         internal_sharpe: f64,
@@ -427,6 +448,79 @@ impl AuditorInterno {
             &independent,
         );
         max_disc
+    }
+
+    /// F412/F413/F271 (censo C-F7b §3, prioridad 1): registra un fill del canal
+    /// INDEPENDIENTE (host/exchange vía ORDER_TRADE_UPDATE). Rechaza flotantes no
+    /// finitos (misma guarda que `record_fill`) y acota el diario en
+    /// MAX_FILLS_INDEPENDIENTES con drenaje del excedente más antiguo.
+    pub fn record_fill_independiente(&mut self, fill: ExchangeFillRecord) {
+        if !fill.price.is_finite()
+            || !fill.qty.is_finite()
+            || !fill.fee_usd.is_finite()
+            || !fill.realized_pnl.is_finite()
+        {
+            return;
+        }
+        if self.fills_independientes.len() >= MAX_FILLS_INDEPENDIENTES {
+            let overflow = self.fills_independientes.len() + 1 - MAX_FILLS_INDEPENDIENTES;
+            self.fills_independientes.drain(0..overflow);
+        }
+        self.fills_independientes.push(fill);
+    }
+
+    /// F412/F413/F271: ¿existe fuente independiente con al menos un fill?
+    #[inline]
+    pub fn tiene_fuente_independiente(&self) -> bool {
+        !self.fills_independientes.is_empty()
+    }
+
+    /// F412/F413/F271 (censo C-F7b §3, prioridad 1): discrepancia con PUERTA DE
+    /// EVIDENCIA. `None` = sin fuente independiente ⇒ el asiento
+    /// SeniorAuditorInterno NO debe vetar (clave ausente en el registro ⇒
+    /// payload 0.0 ⇒ `disc > umbral` falso). Con fuente independiente, devuelve
+    /// la máxima discrepancia de las tres patas contra las métricas
+    /// reconstruidas de ese canal ajeno (sharpe, win rate y drawdown medidos
+    /// sobre fills que el núcleo no produjo).
+    ///
+    /// Contrato de recuperación: el veto deja de dispararse con datos
+    /// tautológicos y sólo vuelve a hacerlo cuando la evidencia independiente
+    /// sostiene la discrepancia — nunca por ausencia de dato.
+    pub fn compute_internal_discrepancy_evidenciada(
+        &self,
+        internal_sharpe: f64,
+        internal_win_rate: f64,
+        internal_drawdown: f64,
+    ) -> Option<f64> {
+        if !self.tiene_fuente_independiente() {
+            return None;
+        }
+        let independent = VerificadorResultados::compute_metrics_with_capital(
+            &self.fills_independientes,
+            self.base_capital,
+        );
+        let (max_disc, _, _, _) = calculate_max_discrepancy(
+            internal_sharpe,
+            internal_win_rate,
+            internal_drawdown,
+            &independent,
+        );
+        Some(max_disc)
+    }
+
+    /// F412/F413/F271: métricas reconstruidas del canal independiente (host).
+    /// Sólo telemetría/contratos: el veto usa `compute_internal_discrepancy_evidenciada`.
+    pub fn compute_independent_metrics_from_host(&self) -> IndependentMetrics {
+        VerificadorResultados::compute_metrics_with_capital(
+            &self.fills_independientes,
+            self.base_capital,
+        )
+    }
+
+    /// F412/F413/F271: tamaño del diario del canal independiente (higiene de RAM).
+    #[inline]
+    pub fn fills_independientes_len(&self) -> usize {
+        self.fills_independientes.len()
     }
 
     /// Computa directamente las métricas de rendimiento independientes calculadas desde los fills reales
