@@ -4727,6 +4727,7 @@ dependencies = [
  "arc-swap",
  "axum",
  "crossbeam",
+ "flate2",
  "lazy_static",
  "memmap2 0.9.11",
  "os-guardian",

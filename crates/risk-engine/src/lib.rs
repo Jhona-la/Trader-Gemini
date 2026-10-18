@@ -533,7 +533,12 @@ impl RiskEngine {
         arena: &GlobalArena,
     ) -> ValidatedOrder {
         set_reject_direction(intent.signal);
-        if intent.signal == SignalType::Flat || allocated_capital <= 0.0 {
+        // CL-146: un capital NaN pasaba esta puerta y llegaba como límite NaN
+        // a `f64::clamp` (pánico; con `panic = "abort"` el proceso vivo muere).
+        if intent.signal == SignalType::Flat
+            || allocated_capital.is_nan()
+            || allocated_capital <= 0.0
+        {
             return ValidatedOrder::rejected();
         }
         // D4 (ADR-0016, LC-F4-19, CL-98): una moneda con menos de
@@ -787,10 +792,18 @@ impl RiskEngine {
         let r_raw = arena
             .registry
             .get_for_coin_or(coin_id, "lundberg_r_nocional", 0.0);
-        let f_exposure = (riesgo_candidata / continuous_sl.max(1e-4)).clamp(
-            dynamic_min_notional / allocated_capital.max(1.0),
-            (0.25 * (spec.max_leverage as f64).min(crate::envio::TOPE_ENVIO as f64)).max(1.0),
-        );
+        // CL-146: con 13 $ y un símbolo de mínimo 100 $ (BTCUSDT), el suelo
+        // (7,7) supera al techo (0,25·20 = 5) y `f64::clamp` entra en pánico:
+        // con `panic = "abort"`, el proceso vivo muere. El suelo es la
+        // exposición REAL de la orden más pequeña que el exchange admite, así
+        // que manda él; si la orden cabe o no lo deciden las puertas de abajo
+        // (`orden_viable`), como antes. Con suelo ≤ techo es el mismo clamp.
+        let f_suelo = dynamic_min_notional / allocated_capital.max(1.0);
+        let f_techo =
+            (0.25 * (spec.max_leverage as f64).min(crate::envio::TOPE_ENVIO as f64)).max(1.0);
+        let f_exposure = (riesgo_candidata / continuous_sl.max(1e-4))
+            .min(f_techo)
+            .max(f_suelo);
         let r_lundberg = (r_raw.is_finite() && r_raw > 0.0)
             .then(|| r_raw / f_exposure);
         // #613 (Ola 35): el ρ̄ del grupo se APRIETA con la coherencia

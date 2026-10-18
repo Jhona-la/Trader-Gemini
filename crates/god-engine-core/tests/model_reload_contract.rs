@@ -257,3 +257,78 @@ fn mw_open_diagnostic_demoting_json_does_not_revoke_legacy_bin() {
     let events = tracker.scan(&f.0, |_, _| Ok(())).unwrap();
     assert!(events.iter().any(|e| e.key == "A_MOTOR" && e.path == bin));
 }
+
+/// CL-141 — Esperado: un modelo inválido se reintenta en cada escaneo, pero
+/// sólo el primer rechazo pide aviso; otro error o un archivo cambiado
+/// vuelven a pedirlo, y la carga correcta lo olvida. Antes, cada escaneo
+/// (cada 10 s) escribía la misma línea: 8 640 al día por archivo.
+#[test]
+fn cl141_un_rechazo_repetido_se_reintenta_sin_repetir_el_aviso() {
+    let f = Fixture::new();
+    f.file("A.json", b"bad", 10_000);
+    let mut tracker = ModelReloadTracker::default();
+    let mut intentos = 0;
+    let mut avisos = 0;
+    for _ in 0..100 {
+        let ev = tracker
+            .scan(&f.0, |_, _| {
+                intentos += 1;
+                Err("split has missing child".into())
+            })
+            .unwrap();
+        assert_eq!(ev.len(), 1);
+        avisos += !ev[0].repetido as u32;
+    }
+    assert_eq!(intentos, 100, "el reintento por si el fallo es transitorio no cambia");
+    assert_eq!(avisos, 1, "el mismo rechazo se avisa una vez");
+    let otro = tracker.scan(&f.0, |_, _| Err("otro error".into())).unwrap();
+    assert!(!otro[0].repetido, "otro error vuelve a avisar");
+    f.file("A.json", b"bad, other version", 20_000);
+    let cambiado = tracker.scan(&f.0, |_, _| Err("otro error".into())).unwrap();
+    assert!(!cambiado[0].repetido, "un archivo cambiado vuelve a avisar");
+    let ok = tracker.scan(&f.0, |_, _| Ok(())).unwrap();
+    assert!(ok[0].result.is_ok() && !ok[0].repetido);
+    f.file("A.json", b"bad", 30_000);
+    let de_nuevo = tracker.scan(&f.0, |_, _| Err("otro error".into())).unwrap();
+    assert!(!de_nuevo[0].repetido, "tras cargar bien, un rechazo es nuevo otra vez");
+}
+
+/// CL-141 — Esperado: un directorio ilegible avisa una vez por error.
+#[test]
+fn cl141_el_error_de_escaneo_se_avisa_una_vez() {
+    let mut tracker = ModelReloadTracker::default();
+    let falta = std::env::temp_dir().join("tg_cl141_no_existe_nunca");
+    let mut avisos = 0;
+    for _ in 0..10 {
+        let e = tracker.scan(&falta, |_, _| Ok(())).unwrap_err().to_string();
+        avisos += tracker.error_de_escaneo_nuevo(&e) as u32;
+    }
+    assert_eq!(avisos, 1);
+    let f = Fixture::new();
+    assert!(tracker.scan(&f.0, |_, _| Ok(())).unwrap().is_empty());
+    let e = tracker.scan(&falta, |_, _| Ok(())).unwrap_err().to_string();
+    assert!(tracker.error_de_escaneo_nuevo(&e), "un escaneo correcto lo olvida");
+}
+
+/// CL-141b — Esperado: los pesos de DarkAlpha no son candidatos a bosque.
+/// Antes cada reescritura del entrenador automático era un rechazo «nuevo»
+/// y volvía a avisar.
+#[test]
+fn cl141b_los_pesos_de_dark_alpha_no_son_un_bosque() {
+    let f = Fixture::new();
+    f.file("DarkAlpha_BTCUSDT.json", b"{\"weights\": []}", 10_000);
+    f.file("BTCUSDT_MOTOR.json", b"bosque", 10_000);
+    let mut tracker = ModelReloadTracker::default();
+    for (i, mtime) in [10_000u64, 20_000, 30_000].into_iter().enumerate() {
+        f.file("DarkAlpha_BTCUSDT.json", format!("{{\"weights\": [{i}]}}").as_bytes(), mtime);
+        let mut claves = Vec::new();
+        let ev = tracker
+            .scan(&f.0, |k, _| {
+                claves.push(k.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert!(claves.iter().all(|k| !k.starts_with("DarkAlpha_")), "{claves:?}");
+        assert!(ev.iter().all(|e| !e.key.starts_with("DarkAlpha_")));
+    }
+}

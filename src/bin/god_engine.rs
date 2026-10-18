@@ -35,13 +35,21 @@ fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTra
             match event.result {
                 Ok(()) => telemetry_server::telemetry_log!(
                     "🧠 [ML-RELOAD] Loaded {} (requested path: {})", event.key, event.path.display()),
+                // CL-141: el reintento sigue cada 10 s; el aviso sólo cuando
+                // el rechazo es nuevo (otra fuente u otro error).
+                Err(_) if event.repetido => {}
                 Err(error) => telemetry_server::telemetry_log!(
-                    "⚠️ [ML-RELOAD] Rejected {} (requested path: {}): {} (will retry)",
+                    "⚠️ [ML-RELOAD] Rejected {} (requested path: {}): {} (will retry; no se repite mientras no cambie)",
                     event.key, event.path.display(), error),
             }
         },
-        Err(error) => telemetry_server::telemetry_log!(
-            "⚠️ [ML-RELOAD] Cannot scan models: {} (will retry)", error),
+        Err(error) => {
+            let error = error.to_string();
+            if tracker.error_de_escaneo_nuevo(&error) {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [ML-RELOAD] Cannot scan models: {} (will retry; no se repite mientras no cambie)", error);
+            }
+        }
     }
 }
 
@@ -926,7 +934,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // LG-11 (Línea G): `telemetry_log!` encola en vez de imprimir en el hilo
     // del bucle vivo (≈8,5 MB de cola; el consumidor duerme si está vacía).
-    telemetry_server::macros::init_telemetry_logger_con_capacidad(16_384);
+    // CL-144: con TG_LOG_FILE el log del motor rota y se comprime solo
+    // (TG_LOG_MAX_MB, TG_LOG_KEEP); sin ella, stdout como antes.
+    match telemetry_server::macros::Rotacion::desde_entorno() {
+        Some(rot) => telemetry_server::macros::init_telemetry_logger_rotativo(16_384, rot),
+        None => telemetry_server::macros::init_telemetry_logger_con_capacidad(16_384),
+    };
 
     // CERT-M4-H02 — SHUTDOWN GRACEFUL: Registrar un atexit handler que
     // mata el trainer hijo. En Windows, Ctrl+C pasa por el console handler
@@ -3357,6 +3370,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // universo (misma indexación que `local_orderbooks`).
         let mut book_seq_guard = parsers::BookSequenceGuard::new(local_orderbooks.len());
         let mut consecutive_slow_ticks = 0;
+        // CL-139 (C-F6): avisos con tope por tiempo, no por evento. Sin él,
+        // LATENCY_PANIC escribía una línea por evento lento (≈ 3,7 GB/día a
+        // 500 ev/s), LIQUIDATION REJECT una por liquidación rechazada y el
+        // espectro, contado en mensajes, crecía con la tasa del feed. El
+        // reloj es el monótono del proceso (`instant_baseline`).
+        let mut aviso_latencia = telemetry_server::estrangulador::Estrangulador::new(10_000);
+        let mut aviso_liquidacion = telemetry_server::estrangulador::Estrangulador::new(60_000);
+        let mut cadencia_espectro = telemetry_server::estrangulador::Estrangulador::new(60_000);
+        // CL-139b: el kill switch avisa al entrar en pánico, no en cada racha.
+        let mut aviso_kill_switch = telemetry_server::estrangulador::Estrangulador::new(60_000);
 
         // FASE 6 (EVENT LOOP)
         god_engine_core::bootloader::SystemDiagnostics::execute_phase_6_hft();
@@ -3422,8 +3445,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if is_force_order && !is_trade && !is_kline && !is_depth {
                 match data_ingest::liquidation::decode_liquidation_snapshots(&msg_bytes) {
                     Ok(batch) => {
+                        let reloj_ms = instant_baseline.elapsed().as_millis() as u64;
                         for (index, reason) in batch.rejected {
-                            telemetry_server::telemetry_log!("[LIQUIDATION REJECT] record={} reason={:?}", index, reason);
+                            if let Some(n) = aviso_liquidacion.admitir(reloj_ms) {
+                                telemetry_server::telemetry_log!("[LIQUIDATION REJECT] record={} reason={:?} (+{} rechazos sin aviso desde el anterior)", index, reason, n);
+                            }
                         }
                         for snapshot in batch.snapshots {
                             let observation = god_engine_core::liquidation_feed::LiquidationObservation {
@@ -3434,12 +3460,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 reported_filled_notional: snapshot.reported_filled_notional,
                             };
                             if let Err(reason) = engine_real.observe_liquidation(observation) {
-                                telemetry_server::telemetry_log!("[LIQUIDATION REJECT] reason={}", reason);
+                                if let Some(n) = aviso_liquidacion.admitir(reloj_ms) {
+                                    telemetry_server::telemetry_log!("[LIQUIDATION REJECT] reason={} (+{} rechazos sin aviso desde el anterior)", reason, n);
+                                }
                             }
                         }
                     }
                     Err(reason) => {
-                        telemetry_server::telemetry_log!("[LIQUIDATION REJECT] frame reason={:?}", reason);
+                        if let Some(n) = aviso_liquidacion.admitir(instant_baseline.elapsed().as_millis() as u64) {
+                            telemetry_server::telemetry_log!("[LIQUIDATION REJECT] frame reason={:?} (+{} rechazos sin aviso desde el anterior)", reason, n);
+                        }
                     }
                 }
                 msg_count += 1;
@@ -3620,13 +3650,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if consecutive_slow_ticks >= 10 {
                 latency_panic = true;
                 if consecutive_slow_ticks == 10 {
-                    telemetry_server::telemetry_log!("🚨 [KILL_SWITCH] Latencia > {}ms detectada por 10 ticks. Volatilidad Sintética activada. SCALP DESACTIVADO.", panic_threshold);
+                    if let Some(n) = aviso_kill_switch.admitir(instant_baseline.elapsed().as_millis() as u64) {
+                        telemetry_server::telemetry_log!("🚨 [KILL_SWITCH] Latencia > {}ms detectada por 10 ticks. Volatilidad Sintética activada. SCALP DESACTIVADO. (+{} rachas sin aviso desde el anterior)", panic_threshold, n);
+                    }
                 }
             }
 
             if event_time > 0 && latency_ms > panic_threshold {
                 latency_panic = true;
-                telemetry_server::telemetry_log!("⚠️ [LATENCY_PANIC] Delta = {}ms (>{panic_threshold}ms limit). Skiping O(1) Scalp execution.", latency_ms);
+                if let Some(n) = aviso_latencia.admitir(instant_baseline.elapsed().as_millis() as u64) {
+                    telemetry_server::telemetry_log!("⚠️ [LATENCY_PANIC] Delta = {}ms (>{panic_threshold}ms limit). Skiping O(1) Scalp execution. (+{} eventos lentos sin aviso desde el anterior)", latency_ms, n);
+                }
             }
 
             if let Some(parsed_sym) = parsed_sym_opt {
@@ -3752,6 +3786,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         c.l2_ask_wall.load(std::sync::atomic::Ordering::Relaxed),
                     )
                 };
+                // CL-140c: generación de cada ranura abierta antes del evento;
+                // la traza de una ranura que el núcleo cierre en él da su TCE.
+                let ranuras_antes = ranuras_abiertas(&engine_real.arena, coin_id);
                 let (mut new_order, closed_order) = engine_real.process_event(
                     coin_id, is_trade, is_kline_closed, is_depth,
                     current_price, qty, dbp, dap, eff_dbq, eff_daq,
@@ -3791,20 +3828,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // dos ranuras por moneda y el host sólo escribía en la
                     // «scalp»: la mitad de la herramienta vivía vacía y la otra
                     // mitad se consultaba dos veces por tick.
+                    // CL-140c: una traza por ranura. La de una ranura que ya
+                    // no está abierta con su generación se cierra con TCE si
+                    // la cerró el núcleo en este evento (F4.8: el score final
+                    // resume cuán fiel fue la realidad a la tesis del entry) y
+                    // se descarta si se fue fuera del núcleo (reserva revertida
+                    // por el host, cierre por bracket).
                     let ts_traj = event_time as u64;
-                    let status = trajectory_auditor.evaluate_tick(
+                    let cerradas = trajectory_auditor.conciliar(
                         coin_id,
+                        ranuras_antes,
+                        ranuras_abiertas(&engine_real.arena, coin_id),
                         current_price,
-                        qty * current_price,
                         ts_traj,
                     );
-                    if let audit_engine::trajectory_auditor::TrajectoryStatus::Divergent { reason, score } = status {
-                        telemetry_engine::telemetry!(
-                            "📉 [TRAYECTORIA] {} divergente ({:?}, score {:.2}) — la tesis se está rompiendo EN VIVO",
-                            parsed_sym,
-                            reason,
-                            score
+                    for (ranura, score) in cerradas.into_iter().enumerate() {
+                        if let Some(s) = score {
+                            telemetry_engine::telemetry!(
+                                "🎯 [TRAYECTORIA CIERRE] {} ranura {} score fidelidad {:.2} (1.0 = la realidad siguió la tesis)",
+                                parsed_sym, ranura, s
+                            );
+                        }
+                    }
+                    for ranura in 0..audit_engine::trajectory_auditor::RANURAS {
+                        let status = trajectory_auditor.evaluate_tick(
+                            coin_id,
+                            ranura,
+                            current_price,
+                            qty * current_price,
+                            ts_traj,
                         );
+                        if let audit_engine::trajectory_auditor::TrajectoryStatus::Divergent { reason, score } = status {
+                            if trajectory_auditor.divergencia_nueva(coin_id, ranura, &status) {
+                                telemetry_engine::telemetry!(
+                                    "📉 [TRAYECTORIA] {} ranura {} divergente ({:?}, score {:.2}) — la tesis se está rompiendo EN VIVO",
+                                    parsed_sym,
+                                    ranura,
+                                    reason,
+                                    score
+                                );
+                            }
+                        }
                     }
                 }
 
@@ -4196,19 +4260,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
 
-                        // F4.8: cierra el track de trayectoria — el score final
-                        // resume cuán fiel fue la realidad a la tesis del entry.
-                        {
-                            let ts_exit = event_time as u64;
-                            if let Some(s) =
-                                trajectory_auditor.record_exit(coin_id, current_price, ts_exit)
-                            {
-                                telemetry_engine::telemetry!(
-                                    "🎯 [TRAYECTORIA CIERRE] {} score fidelidad {:.2} (1.0 = la realidad siguió la tesis)",
-                                    parsed_sym, s
-                                );
-                            }
-                        }
                         // B3.7 (auditoría) — DEDUP dirección inversa: si la
                         // pierna del bracket ya contabilizó este cierre (fill
                         // en el user-stream casi simultáneo a la condición de
@@ -4351,6 +4402,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut order_sl_price = 0.0;
                     let mut is_high_confidence = false;
                     let mut exec_leverage = 1;
+                    let mut tesis_de_trayectoria: Option<(bool, f64, f64, f64, u64)> = None;
 
                     // F5.1 & BUG-598: Margen libre real = equity - margen total retenido en posiciones vivas
                     let total_margin_used: f64 = engine_real.arena.coins.iter().map(|c| {
@@ -4569,27 +4621,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             order_sl_price = if is_long { entry_price * (1.0 - sl_frac) } else { entry_price * (1.0 + sl_frac) };
                         }
 
-                        // F4.8: nace el track de trayectoria — expectativas
+                        // F4.8: la tesis del track de trayectoria — expectativas
                         // REALES del genoma (magnitud=distancia al TP del core,
                         // volumen=notional, duración=base_duration_ms evolucionable).
-                        {
-                            let expected_mag = ((core_tp - entry_price) / entry_price).abs();
-                            let dur_ms = engine_real
-                                .arena
-                                .config
-                                .base_duration_ms
-                                .load(Ordering::Relaxed)
-                                .max(1.0) as u64;
-                            trajectory_auditor.record_entry(
-                                coin_id,
-                                is_long,
-                                entry_price,
-                                event_time as u64,
-                                expected_mag,
-                                _qty.abs() * entry_price,
-                                dur_ms,
-                            );
-                        }
+                        // CL-140c: nace más abajo, sólo si la entrada se envía.
+                        let dur_ms = engine_real
+                            .arena
+                            .config
+                            .base_duration_ms
+                            .load(Ordering::Relaxed)
+                            .max(1.0) as u64;
+                        tesis_de_trayectoria = Some((
+                            is_long,
+                            entry_price,
+                            ((core_tp - entry_price) / entry_price).abs(),
+                            _qty.abs() * entry_price,
+                            dur_ms,
+                        ));
                     }
 
                     if let Some((final_is_long, _entry_price, final_qty, _, _)) = new_order {
@@ -4751,6 +4799,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             Some(effective_leverage)
                         };
+                        // CL-140c: con la entrada vetada en el hilo del núcleo la
+                        // reserva ya se revirtió; su traza no llega a nacer. Las
+                        // reversiones del spawn las retira `conciliar`.
+                        if let (Some(_), Some((t_long, t_precio, t_magnitud, t_nocional, t_dur_ms))) =
+                            (decision_envio, tesis_de_trayectoria)
+                        {
+                            trajectory_auditor.record_entry(
+                                coin_id,
+                                reservation.slot,
+                                reservation.generation,
+                                t_long,
+                                t_precio,
+                                event_time as u64,
+                                t_magnitud,
+                                t_nocional,
+                                t_dur_ms,
+                            );
+                        }
 
                         rt_handle.spawn(async move {
                             // Vetada en el hilo del núcleo: la reserva ya se revirtió.
@@ -5150,7 +5216,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // continuo en operación (antes: cero consumidores visibles).
                 // X-044 (REHAB-5): y los PESOS del ensamble (Hedge/Brier) junto a
                 // él — la calibración viva deja de ser invisible.
-                for (ci, sym) in symbols_clone.iter().enumerate() {
+                // CL-139: una vez por minuto del reloj del proceso, no cada
+                // 100 mensajes (≤ 26·1 440 líneas/día sea cual sea el feed).
+                let toca_espectro =
+                    cadencia_espectro.admitir(instant_baseline.elapsed().as_millis() as u64).is_some();
+                for (ci, sym) in symbols_clone.iter().enumerate().filter(|_| toca_espectro) {
                     if let Some(spec) = engine_real.temporal_spectrum.get(ci) {
                         let ens_w = engine_real
                             .ensembles
@@ -5541,6 +5611,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// X-040 (REHAB-4): STOP_TRADING.LOCK por RUTA ABSOLUTA. Antes: relativo al
 /// CWD — lanzando el motor desde otro directorio, el bloqueo de emergencia
 /// del operador era INVISIBLE. Ahora: se busca en CWD y junto al ejecutable.
+/// CL-140c: generación de cada ranura abierta de la moneda (`None` si está
+/// cerrada o la lectura no es coherente).
+fn ranuras_abiertas(
+    arena: &quantum_arena::GlobalArena,
+    coin_id: usize,
+) -> [Option<u64>; audit_engine::trajectory_auditor::RANURAS] {
+    match arena.coins.get(coin_id) {
+        Some(coin) => coin.positions.slots().map(|p| p.snapshot().map(|s| s.generation)),
+        None => [None; audit_engine::trajectory_auditor::RANURAS],
+    }
+}
+
 fn operator_lock_exists() -> bool {
     if std::path::Path::new("STOP_TRADING.LOCK").exists() {
         return true;

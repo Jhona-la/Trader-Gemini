@@ -519,14 +519,26 @@ fn nucleo_del_examen(
     // LG-28 (D-714): construir el arena en la pila de un hilo de tokio
     // (2 MiB) es lo que D-714 prohibió: con panic = "abort", desbordarla mata
     // el proceso vivo. `build_in_own_stack` usa un hilo con pila propia.
-    let arena = GlobalArena::build_in_own_stack(initial_capital);
+    // CL-142b: el arena nace del genoma del candidato; `build_in_own_stack`
+    // leía el genoma activo del disco y lo anunciaba en el log en cada uno de
+    // los 25 núcleos por ronda, para pisarlo justo después.
+    let arena = GlobalArena::from_genome_in_own_stack(initial_capital, candidate);
     candidate.apply_to_arena(&arena);
-    let mut core = GodEngineCore::new(arena.clone());
+    // CL-142: núcleo auxiliar, sin trazas en el log del host (25 por ronda).
+    let mut core = GodEngineCore::new_auxiliar(arena.clone());
     let tick = market.tick_del_examen();
     for &c in coin_ids {
         core.fijar_tick_propio(c.min(quantum_arena::state::MAX_COINS - 1), tick);
     }
     (arena, core)
+}
+
+/// CL-142c: genoma que ve el núcleo del examen de `candidate`. Sólo lo usa la
+/// prueba `cf6_arena_del_candidato`: el examen debe puntuar al candidato.
+#[doc(hidden)]
+pub fn genoma_del_examen(candidate: &SuperGenotype, market: &WfMarketEnv) -> SuperGenotype {
+    let (arena, _core) = nucleo_del_examen(candidate, WF_INITIAL_CAPITAL, market, &[0]);
+    SuperGenotype::current_from_arena(&arena)
 }
 
 /// CL-88 (atr-2): ATR relativo de la primera moneda del examen tras

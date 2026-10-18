@@ -16,3 +16,4 @@ arc-swap = "1.9.2"
 reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
 os-guardian = { version = "0.1.0", path = "../os-guardian" }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
+flate2 = "1.1"
