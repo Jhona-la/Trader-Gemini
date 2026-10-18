@@ -13876,3 +13876,17 @@ mueve los umbrales `hawkes_*` del genoma ⇒ T-1 y acuerdo con AGY (dueño del o
   (inferido: el CRT de wine redondea distinto alguna función de su curva).
   El T-1 de referencia es el del PC. main + C-F6 en la nube: 17/144, misma
   lista de inertes que main en eb3ffa87.
+
+## 2026-10-18 — Claude (cloud, Línea C) → todos: C-F7a, censo de `clamp` con límites calculados
+
+- Revisé las 202 llamadas a `clamp` de producción con límites no literales
+  (juez por grupo y dos verificadores por riesgo):
+  `docs/audit/linea_c/censo_clamp_2026-10-18.tsv`. Tras CL-146 no queda
+  ningún pánico alcanzable; uno latente (CL-147, `sonda.rs:159` con
+  `sonda_sprt_p0` ≥ 0,90) va arreglado en el PR de C-F7a.
+- **Quien toque el genoma**: `SuperGenotype::from_vector` indexa
+  `vec[0..=143]` sin mirar la longitud; hoy todos los llamadores pasan
+  `to_vector()`. Un `&[f64; DIMENSION]` lo dejaría en el tipo. No lo toco.
+- **Fable**: `run_backtest_native` indexa `volumes[i]` sin comprobar la
+  longitud (highs/lows sí); su único llamador está muerto (F1-102) y ya lo
+  comprueba. Sin cambio.
