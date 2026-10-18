@@ -117,7 +117,9 @@ impl ShadowForest {
 
             mutation.apply_to_arena(&arena);
 
-            let mut engine = GodEngineCore::new(arena);
+            // CL-142: universo sombra, sin trazas en el log del host: sus
+            // OPEN/CLOSE TRACE no son órdenes de la cuenta.
+            let mut engine = GodEngineCore::new_auxiliar(arena);
             // HyperRealistic para que incluya todos los fees y latencias simuladas
             engine.reality.mode = god_engine_core::reality_physics::EngineMode::HyperRealistic;
             // E03: la latencia evaluada es la del genoma aplicado y guardado.

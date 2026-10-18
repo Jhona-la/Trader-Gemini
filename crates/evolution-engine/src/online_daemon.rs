@@ -521,7 +521,8 @@ fn nucleo_del_examen(
     // el proceso vivo. `build_in_own_stack` usa un hilo con pila propia.
     let arena = GlobalArena::build_in_own_stack(initial_capital);
     candidate.apply_to_arena(&arena);
-    let mut core = GodEngineCore::new(arena.clone());
+    // CL-142: núcleo auxiliar, sin trazas en el log del host (25 por ronda).
+    let mut core = GodEngineCore::new_auxiliar(arena.clone());
     let tick = market.tick_del_examen();
     for &c in coin_ids {
         core.fijar_tick_propio(c.min(quantum_arena::state::MAX_COINS - 1), tick);

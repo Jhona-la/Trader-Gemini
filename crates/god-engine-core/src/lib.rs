@@ -1203,6 +1203,10 @@ pub struct GodEngineCore {
     pub diag_pnl_sum: f64,
     /// Diagnóstico por dirección del embudo de entrada (sólo telemetría).
     pub diag_dir: direction_diag::DirectionDiag,
+    /// CL-142: escribe las trazas de diagnóstico (OPEN/CLOSE TRACE, ML-GATE,
+    /// ML-DIAG, ML-HEARTBEAT, DIAG, carga de DarkAlpha). `false` sólo en los
+    /// núcleos auxiliares (`new_auxiliar`); no cambia ninguna decisión.
+    pub trazas_diagnosticas: bool,
     /// D-752 — HISTORIAL DE ACIERTO POR RAMA Y POR MONEDA. Índice externo:
     /// `coin_id`; interno: la etiqueta de rama que viaja en
     /// `SignalIntent::volume_flow_rate`. Esto NO es telemetría: es la fuente
@@ -1244,6 +1248,24 @@ impl GodEngineCore {
     pub fn new_with_outcome_context(
         arena: Arc<GlobalArena>,
         outcome_context: outcome_context::OutcomeContext,
+    ) -> Self {
+        Self::construir(arena, outcome_context, true)
+    }
+
+    /// CL-142 (C-F6): núcleo auxiliar del proceso vivo (examen walk-forward
+    /// del demonio, universos sombra). Decide igual que `new`, pero no
+    /// escribe trazas de diagnóstico en el log del host: el examen construye
+    /// 25 núcleos por ronda y cada uno repetía la carga de DarkAlpha y sus
+    /// primeras 100 OPEN/CLOSE TRACE, que además se contaban como órdenes
+    /// reales en `scripts/monitor_demo.ps1`.
+    pub fn new_auxiliar(arena: Arc<GlobalArena>) -> Self {
+        Self::construir(arena, outcome_context::OutcomeContext::IsolatedSimulation, false)
+    }
+
+    fn construir(
+        arena: Arc<GlobalArena>,
+        outcome_context: outcome_context::OutcomeContext,
+        trazas_diagnosticas: bool,
     ) -> Self {
         let initial_capital = arena.config.base_capital.load(Ordering::Relaxed);
         // LG-23: construir el núcleo NO carga modelos del disco. Ω144 lo hacía
@@ -1361,26 +1383,32 @@ impl GodEngineCore {
                     model.init_buffers();
                     model.sanitize_denormals();
                     model.freeze();
-                    telemetry_server::telemetry_log!(
-                        "🧠 [DARK ALPHA] Initial Boot Model Loaded & Sanitized (in_features: {}) from {}",
-                        model.layer1.in_features,
-                        path.display()
-                    );
+                    if trazas_diagnosticas {
+                        telemetry_server::telemetry_log!(
+                            "🧠 [DARK ALPHA] Initial Boot Model Loaded & Sanitized (in_features: {}) from {}",
+                            model.layer1.in_features,
+                            path.display()
+                        );
+                    }
                     Some(model)
                 } else {
-                    telemetry_server::telemetry_log!(
-                        "⚠️ [DARK ALPHA] Failed to parse {}. Sin modelo — el NN NO opina.",
-                        path.display()
-                    );
+                    if trazas_diagnosticas {
+                        telemetry_server::telemetry_log!(
+                            "⚠️ [DARK ALPHA] Failed to parse {}. Sin modelo — el NN NO opina.",
+                            path.display()
+                        );
+                    }
                     None
                 }
             } else {
                 None
             }
         } else {
-            telemetry_server::telemetry_log!(
-                "⚠️ [DARK ALPHA] models/DarkAlpha_BTCUSDT.json not found. Sin modelo — el NN NO opina."
-            );
+            if trazas_diagnosticas {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [DARK ALPHA] models/DarkAlpha_BTCUSDT.json not found. Sin modelo — el NN NO opina."
+                );
+            }
             None
         };
 
@@ -1526,6 +1554,7 @@ impl GodEngineCore {
             diag_notional_max: 0.0,
             diag_pnl_sum: 0.0,
             diag_dir: direction_diag::DirectionDiag::default(),
+            trazas_diagnosticas,
             rama_registro: vec![[TasaAcierto::default(); N_RAMAS]; n_coins],
             rama_registro_ancla_ms: vec![0; n_coins],
             rama_abierta: vec![None; n_coins],
@@ -4683,7 +4712,7 @@ impl GodEngineCore {
                         (7u8, "ALPHA_DECAY")
                     };
 
-                    if self.diag_close_total < 100 {
+                    if self.trazas_diagnosticas && self.diag_close_total < 100 {
                         telemetry_server::telemetry_log!(
                             "🚪 [CLOSE TRACE] #{} reason={} pnl_pct={:.4}% peak={:.4}% age={}s gross_pnl=${:.4} exit={:.2} entry={:.2} trail_stop={:.2} mid={:.2} h={:?} ts={}",
                             self.diag_close_total,
@@ -5964,7 +5993,7 @@ impl GodEngineCore {
                 if let Some(p) = f.predict(&forest_input) {
                     diag_forest_p = Some(p as f64);
                     coin_ensemble.submit(crate::ensemble::ModelId::MotorForest, p as f64);
-                } else if tick % 100 == 0 {
+                } else if self.trazas_diagnosticas && tick % 100 == 0 {
                     // B2.5-aud: el input ya está saneado arriba (NaN ⇒ 0.0), así
                     // que predict()=None aquí SÓLO puede ser un modelo
                     // degenerado (tree_offsets ≤ 1: sin árboles usables). El
@@ -5975,7 +6004,7 @@ impl GodEngineCore {
                         sym, sym
                     );
                 }
-            } else if tick % 100_000 == 0 {
+            } else if self.trazas_diagnosticas && tick % 100_000 == 0 {
                 // D-748b: este diagnóstico se emitía cada 100 ticks. En una
                 // corrida forense de 17 M de ticks sobre un símbolo sin modelo
                 // son 170 000 líneas idénticas —37 807 en la primera media
@@ -6104,6 +6133,7 @@ impl GodEngineCore {
             // valores vivos pero ESPECTRO sigue en 0.5000, el defecto está
             // en el LECTOR; si imprime 0.5 vacío, está en el CAMINO.
             if matches!(sym.as_str(), "NEARUSDT" | "ATOMUSDT" | "BNBUSDT")
+                && self.trazas_diagnosticas
                 && self.arena.tick_counter.load(Ordering::Relaxed) % 5_000 < 26
             {
                 telemetry_server::telemetry_log!(
@@ -6992,7 +7022,7 @@ impl GodEngineCore {
 
                 // DIAGNÓSTICO (temporal — eliminar tras calibrar): ver por qué
                 // no se generan señales en backtest trade-only.
-                if self.arena.tick_counter.load(Ordering::Relaxed) % 50_000 == 0 {
+                if self.trazas_diagnosticas && self.arena.tick_counter.load(Ordering::Relaxed) % 50_000 == 0 {
                     telemetry_server::telemetry_log!(
                         "🔍 [DIAG] tick={} atr_pct={:.6} atr_min={:.6} spread_ok={} can_tau={} hurst={:.3} ema_s={:.2} mid={:.2} ml={:.3} book_absent={} obi={:.3} ofi={:.3} cvd={:.3}",
                         self.arena.tick_counter.load(Ordering::Relaxed),
@@ -9663,7 +9693,7 @@ impl GodEngineCore {
                         || (has_roster_model && ml_edge_now >= required_edge);
                     if aprobado_por_consejo && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;
-                        if self.diag_ml_vetoes % 50 == 1 {
+                        if self.trazas_diagnosticas && self.diag_ml_vetoes % 50 == 1 {
                             telemetry_server::telemetry_log!(
                                 "🧠 [ML-GATE] {} entradas vetadas por el ensamble (última: {} ml={:.3}) — la predicción decide",
                                 self.diag_ml_vetoes,
@@ -9945,7 +9975,7 @@ impl GodEngineCore {
                                     symbol: sym.clone(),
                                 });
 
-                                if self.diag_opened <= 100 {
+                                if self.trazas_diagnosticas && self.diag_opened <= 100 {
                                     telemetry_server::telemetry_log!(
                                         "🚀 [OPEN TRACE] #{} dir={} slot={} tau={}ms rama={:.0} h={:?} conf={:.4} lev={:.1}x margin=${:.2} notional=${:.2} sc={:.3} obi={:.3} ofi={:.3} cvd={:.3} ht={:.5} st={:.5} mac={:.5} mic={:.5} ts={}",
                                         self.diag_opened,
