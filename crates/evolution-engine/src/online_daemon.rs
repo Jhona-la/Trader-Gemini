@@ -1214,25 +1214,6 @@ impl LiveEvolutionDaemon {
                 }
             }
 
-            // FASE 3: AST Mutator checking
-            if std::path::Path::new(".forensic_violation").exists() {
-                println!("🧬 [DAEMON] Señal forense detectada! Invocando AST-Mutator en RAM...");
-                let mutator = crate::ast_mutator::ASTMutator::new();
-                // #24: Mutación atómica directa en RAM sobre QuantumConfig
-                let _ = mutator.mutate_atomic_config(&self.arena.config, "ml_threshold_long", 0.60);
-                let _ = mutator.mutate_atomic_config(&self.arena.config, "ml_threshold_short", 0.40);
-
-                let config_path = "dynamic_config.json";
-                if std::path::Path::new(config_path).exists() {
-                    let _ = mutator.mutate_json_config(
-                        config_path,
-                        "Risk.ML_LOOKAHEAD_PENALTY",
-                        serde_json::json!(2.0),
-                    );
-                }
-
-                let _ = std::fs::remove_file(".forensic_violation");
-            }
 
             // Muestrear retornos realizados en tiempo real tras cada tick de 500ms
             self.sample_realized_returns();

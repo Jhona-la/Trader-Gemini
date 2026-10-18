@@ -343,7 +343,10 @@ pub fn dispersion_al_horizonte(atr: f64, tau_ms: f64, hurst: f64) -> f64 {
 }
 
 pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
-    let atr = if input.atr_ratio.is_finite() && input.atr_ratio > 0.0 {
+    // F1-118: Validar ATR. Si es <= 0.0 o no finito, marcar below_tradeable_floor: true (fail-closed)
+    // para evitar que se abran órdenes con stops y TP inventados basados en un literal arbitrario.
+    let atr_valid = input.atr_ratio.is_finite() && input.atr_ratio > 0.0;
+    let atr = if atr_valid {
         input.atr_ratio
     } else {
         0.005
@@ -401,7 +404,7 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
     //    (D-636b). No se acota hacia arriba: se ELEVA el stop hasta el suelo
     //    y se informa de si el horizonte pedido caía por debajo.
     let sl_floor = SuperGenotype::min_viable_sl(fee);
-    let below_floor = sl_diffusive < sl_floor;
+    let below_floor = sl_diffusive < sl_floor || !atr_valid;
     let mut sl_pct = sl_diffusive.max(sl_floor);
 
     // 4) RR EXIGIDO POR LA FRICCIÓN AL NIVEL DE STOP RESULTANTE (D-636).
@@ -445,6 +448,19 @@ pub fn compute_tp_sl(input: TpSlInputs) -> TpSl {
         rr_required,
         below_tradeable_floor: below_floor,
     }
+}
+
+/// F1-118: Variante opcional fail-closed de `compute_tp_sl`.
+/// Devuelve `None` si `atr_ratio` no es finito o es <= 0.0, o si cae por debajo del suelo operable.
+pub fn try_compute_tp_sl(input: TpSlInputs) -> Option<TpSl> {
+    if !input.atr_ratio.is_finite() || input.atr_ratio <= 0.0 {
+        return None;
+    }
+    let res = compute_tp_sl(input);
+    if res.below_tradeable_floor {
+        return None;
+    }
+    Some(res)
 }
 
 /// El gen sólo puede ampliar el TP base: conserva SL, el piso y la misma

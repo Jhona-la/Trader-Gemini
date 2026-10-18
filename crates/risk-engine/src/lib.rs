@@ -35,7 +35,8 @@ pub use evidence::{
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
 pub use sonda::{en_fase_de_sonda, resolve_max_cierres_sonda, sprt_bernoulli, SprtDecision, CIERRES_DE_SONDA};
 pub use tp_sl::{
-    latency_slippage_pct, latency_slippage_pct_hurst, roundtrip_friction, roundtrip_friction_hurst,
+    compute_tp_sl, compute_tp_sl_with_target_rr, latency_slippage_pct, latency_slippage_pct_hurst,
+    roundtrip_friction, roundtrip_friction_hurst, try_compute_tp_sl, TpSl, TpSlInputs,
 };
 pub use ville_e_process::VilleEProcess;
 
@@ -864,10 +865,19 @@ impl RiskEngine {
 
         let current_atr = coin.current_atr.load(Ordering::Relaxed);
         let current_price = coin.current_price.load(Ordering::Relaxed);
-        if !current_price.is_finite() || current_price <= 0.0 {
+        // F1-118: Fail-closed ante precio o ATR no finito o <= 0.0.
+        // Evita geometrías ficticias y fricciones sin término de latencia.
+        if !current_price.is_finite()
+            || current_price <= 0.0
+            || !current_atr.is_finite()
+            || current_atr <= 0.0
+        {
             return rej(REJ_INVALID_INPUT);
         }
         let atr_pct = current_atr / current_price;
+        if !atr_pct.is_finite() || atr_pct <= 0.0 {
+            return rej(REJ_INVALID_INPUT);
+        }
 
         let hurst_exponent = coin.hurst_exponent.load(Ordering::Relaxed);
         // ADR-0011 / LC-F1-03: Multiplicador de volatilidad resuelto por IDENTIDAD de símbolo en el arena

@@ -5337,19 +5337,12 @@ impl GodEngineCore {
                         },
                     );
 
-                    // D-190: Evitar contaminación cruzada en Hebbian. Escopar por símbolo con fallback global.
+                    // F1-098 / D-190: Evitar contaminación cruzada en Hebbian. Escopar por símbolo con neutro 1.0 estricto sin fallback global.
                     let hebb_key = format!("{}_hebbian_weight", sym);
                     let mut cur_hebbian = self
                         .arena
                         .registry
-                        .get(&hebb_key, "GodEngineCore")
-                        .or_else(|| {
-                            self.arena
-                                .registry
-                                .get("perceptron_hebbian_weight", "GodEngineCore")
-                        })
-                        .map(|p| p.get_value())
-                        .unwrap_or(1.0);
+                        .get_scoped_val_strict_or(Some(&sym), Some(coin_id), "hebbian_weight", 1.0);
                     // CL-76 (F3.3-06): el peso aprende el resultado en R (PnL
                     // neto / riesgo al stop), no el signo del PnL en USD.
                     let resultado_r = if sl.is_finite() && sl > 0.0 {
@@ -5424,9 +5417,9 @@ impl GodEngineCore {
                         atr_pct,
                     );
                     self.arena.registry.set(&hebb_key, cur_hebbian);
-                    self.arena
-                        .registry
-                        .set("perceptron_hebbian_weight", cur_hebbian);
+                    self.arena.registry.set_for_coin(coin_id, "hebbian_weight", cur_hebbian);
+                    // F1-098: Se elimina la sobreescritura de la clave global "perceptron_hebbian_weight",
+                    // preservando el aislamiento estricto de aprendizaje causal por moneda sin contaminación cruzada.
 
                     // #625 — PARIDAD EVALUATE/UPDATE del slot Hawkes: el
                     // gradiente del PPO aprende de la MISMA variable que
@@ -5930,31 +5923,8 @@ impl GodEngineCore {
                     .unwrap_or((0.0, 0.0));
                 set_reg("vol_forecast_pct", vol_forecast);
                 set_reg("vol_forecast_base", vol_base);
-                // P-3c — delta de OI pronosticado ({SYM}_OI, regresión del
-                // histórico acumulativo). Hoy NINGÚN símbolo pasó el gate
-                // (21d de ventana horaria: sin edge medible) — el serving
-                // existe para que el predictor se ENCIENDA solo el día que
-                // el gate lo permita; sin modelo ⇒ 0.0.
-                let oi_delta = crate::ml_inference::NanoForest::get_global_suffixed(&sym, "_OI")
-                    .and_then(|m| {
-                        const VD: usize = crate::ml_inference::NanoForest::ML_VECTOR_DIM;
-                        let mut vin = [0f32; VD];
-                        vin[..34].copy_from_slice(&swing_feats);
-                        vin[34..44].copy_from_slice(
-                            &self.feature_engines[coin_id].get_spectral_ml_features(),
-                        );
-                        vin[44..]
-                            .copy_from_slice(&crate::ml_inference::macro_ml_features(omni_features));
-                        for v in vin.iter_mut() {
-                            if !v.is_finite() {
-                                *v = 0.0;
-                            }
-                        }
-                        let (raw, _) = m.predict_raw(&vin);
-                        raw.is_finite().then_some(raw as f64)
-                    })
-                    .unwrap_or(0.0);
-                set_reg("oi_delta_forecast_pct", oi_delta);
+                // F1-112: Se retira el cálculo y publicación de oi_delta_forecast_pct en el camino
+                // caliente. Búsqueda infructuosa por evento ({SYM}_OI) sin ningún consumidor en Rust.
             }
             let coin_ensemble = if coin_id < self.ensembles.len() {
                 &mut self.ensembles[coin_id]
@@ -9179,7 +9149,8 @@ impl GodEngineCore {
                                 .temporal_spectrum
                                 .get(coin_id)
                                 .map(|s| s.dominant_tau_ms)
-                                .unwrap_or(1_138_000.0),
+                                // F1-110: Respaldo unificado canónico (60s), erradicando el literal divergente 1_138_000.0.
+                                .unwrap_or(quantum_arena::temporal_spectrum::TAU_DEFAULT_DOMINANT_MS),
                             // P-5b / R7-R4-A-2: datos EXCLUSIVOS del asiento Ente del
                             // Mercado — lectura robusta bidireccional (coin_id y símbolo scoped).
                             // CL-49: escritura y lectura viven en `entes_consejo`.
@@ -9847,7 +9818,7 @@ impl GodEngineCore {
                                     .temporal_spectrum
                                     .get(coin_id)
                                     .map(|s| s.dominant_tau_ms)
-                                    .unwrap_or(60_000.0);
+                                    .unwrap_or(quantum_arena::temporal_spectrum::TAU_DEFAULT_DOMINANT_MS);
                                 let tau_respaldo = if calibrated_intent.expected_duration_ms > 0 {
                                     calibrated_intent.expected_duration_ms
                                 } else {
@@ -10121,7 +10092,9 @@ pub fn tau_hacia_el_centroide(tau_ms: u64, resonante_ms: f64) -> u64 {
     };
     let continuous_tau = (safe_base.ln() * 0.50 + safe_resonant.ln() * 0.50).exp();
     if continuous_tau.is_finite() {
-        continuous_tau.clamp(ancla, 43_200_000.0).round() as u64
+        continuous_tau
+            .clamp(ancla, quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS)
+            .round() as u64
     } else {
         ancla as u64
     }

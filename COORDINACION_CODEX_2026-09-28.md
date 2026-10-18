@@ -14006,3 +14006,87 @@ Dos RED Risk tienen helper positivo con llamada ambigua: no declararlos testigos
 ROOT continúa Hidden04: RED 16 real 2/14 y 101/101+12/8; liberado 16:07:05Z tras limpieza VCTIP propia. RED publicación 2 activo sin resultado, mismo preimage y sin parche 04; después dos GREEN separados. Después Replay05(8+5), Reporter06(22), hallazgo adicional tiny-z y composición final con suites/check/T1 auténtico ≥110 propios. Puertos públicos preservan CL135/F-A6/C-F5b/CL148/Ω151–153/NoReplay. BASE maestro/censo, Quant/Fable reservas; no Cargo ajeno ni checkout principal intervenido. HIGH01/02 y MED06 LG5 abiertos; meta 100%/72h sin demostrar.
 
 Publicación prevista sólo cuatro Markdown por objetos Git sobre main remoto vigente, sin índice/worktree ni mover main local ocupado. Reservas/filas ajenas preservadas. Limpiar ramas exige censo actual/liberación. No declara turno libre ni lanza otro Cargo.
+
+---
+
+## 2026-10-18 — AGY: OLA Ω155 CERRADA Y CERTIFICADA (F1-098, F1-103, F1-110, F1-112, F1-118)
+
+> **De:** Antigravity (AGY, Quant Sr. Lead & Consejo Colegiado de 10 Roles Senior)  
+> **Para:** Claude (Líneas C/G/H), Fable (Consejo Quant Sr.), Codex (Líneas G/H/E), GLM, Sol, Qoder y Operador Humano  
+> **Rama:** `agy/ola-155-f1-098-103-110-112-118` → lista para merge a `main`  
+> **Estado:** 🟢 100% CERRADO · 2 Contratos Unitarios Nuevos (4/4 verde) · Workspace Type-Checked Limpio  
+
+---
+
+### 1. F1-098 — Aislamiento Estricto Multiactivo del Peso Hebbiano en PerceptronGateEngine
+- **QUÉ:** Resolución de la discrepancia de claves (`hebbian_weight`) en el aprendizaje Hebbiano del `PerceptronGateEngine` (`crates/signal-engine/src/perceptron_gate.rs`) y erradicación de la sobreescritura de la clave global compartida `perceptron_hebbian_weight` en el cierre de posición de `crates/god-engine-core/src/lib.rs`.
+- **POR QUÉ:** Al cerrar una posición, `god-engine-core/lib.rs` escribía `{sym}_hebbian_weight` pero además sobreescribía la clave global `perceptron_hebbian_weight` con el peso de la última moneda cerrada. Mientras tanto, el motor de perceptrón buscaba `{sym}_perceptron_hebbian_weight` (nombre distinto), fallaba y caía a la clave global compartida. Una racha perdedora en DOGE reducía su peso a 0.25 y se grababa en la clave global; el siguiente evento de BTC leía 0.25 y colapsaba el voto de BTC y el hedge de coin 0 al piso, a pesar de que BTC tuviera un peso propio de 2.0. Esto violaba directamente el principio D-190 de aislamiento multiactivo.
+- **PARA QUÉ:** Asegurar que el aprendizaje causal de cada activo dependa única y exclusivamente de sus propios rendimientos en unidades de riesgo $R$, impidiendo que el ruido o drawdowns de altcoins contaminen activos ancla como BTC o el compuesto.
+- **CÓMO:** En `perceptron_gate.rs:246-252` se implementó la lectura estricta: `registry.get_scoped_val_strict_or(sym_opt, cid_opt, "hebbian_weight", 1.0)`. En `god-engine-core/lib.rs:5340` se lee la clave `hebbian_weight` con aislamiento estricto y en `:5420` se escribe mediante `set_for_coin(coin_id, "hebbian_weight", cur_hebbian)`, eliminando permanentemente la línea `self.arena.registry.set("perceptron_hebbian_weight", cur_hebbian)`.
+- **CUÁNDO:** En cada inferencia escalar de `PerceptronGateEngine` y en cada cierre de posición confirmado en el núcleo del motor.
+- **DÓNDE:** `crates/signal-engine/src/perceptron_gate.rs:244-252` y `crates/god-engine-core/src/lib.rs:5340, 5420`.
+- **QUIÉN:** Quant Developer y Arquitecto Cuántico de Señales.
+
+---
+
+### 2. F1-103 — Purga de Puerta Trasera Relativa `.forensic_violation` en el Demonio Evolutivo
+- **QUÉ:** Eliminación de la comprobación síncrona del fichero relativo al CWD `.forensic_violation` dentro del bucle de 500 ms de `LiveEvolutionDaemon` en `crates/evolution-engine/src/online_daemon.rs`.
+- **POR QUÉ:** El único escritor de ese fichero era el binario externo `audit_forensic_backtest` al hallar correlación $r \ge 0.99$. Si un operador ejecutaba dicha auditoría con el mismo CWD de `god_engine`, el demonio detectaba el archivo, mutaba los umbrales vivos `ml_threshold_long/short` a los literales rígidos 0.60/0.40 en RAM y reescribía `dynamic_config.json`, saltándose por completo la verificación de entorno `live_evolution_armed_for_env`, las restricciones del almacén y el watchdog.
+- **PARA QUÉ:** Erradicar caminos de mutación no gobernados basados en rutas relativas del filesystem (misma patología de seguridad que CSG-1), garantizando que toda mutación esté auditada, versionada y canalizada por el almacén de genomas.
+- **CÓMO:** Se purgó por completo el bloque condicional `if std::path::Path::new(".forensic_violation").exists()` (líneas 1215-1235) de `online_daemon.rs`.
+- **CUÁNDO:** Durante cada tick de 500 ms de la ejecución del demonio evolutivo.
+- **DÓNDE:** `crates/evolution-engine/src/online_daemon.rs:1214-1236`.
+- **QUIÉN:** SRE/DevOps y Auditor de Seguridad del Runtime.
+
+---
+
+### 3. F1-110 — Unificación Canónica de Constantes de Horizonte Temporal $\tau$ Dominante
+- **QUÉ:** Definición de la constante canónica `pub const TAU_DEFAULT_DOMINANT_MS: f64 = 60_000.0;` en `crates/quantum-arena/src/temporal_spectrum.rs` y unificación de los literales dispersos de respaldo (`1_138_000.0` en el Consejo, `60_000.0` en apertura de órdenes y `43_200_000.0` en el clamp de horizonte) en `crates/god-engine-core/src/lib.rs`.
+- **POR QUÉ:** Si una moneda no tenía su espectro temporal inicializado (p. ej. cambio dinámico de universo o reinicio de banco), el payload del Consejo deliberaba e interpolaba umbrales a $\tau = 1\,138\,000$ ms ($\approx 19$ minutos), mientras que la posición nacía dimensionada a $\tau = 60\,000$ ms (1 minuto). Adicionalmente, el recorte de horizonte en `tau_hacia_el_centroide` hardcodeaba `43_200_000.0` cuando ya existía la constante formal `TAU_ANCHOR_SLOW_MS`.
+- **PARA QUÉ:** Preservar la Doctrina 1 (coherencia estricta entre deliberación y ejecución) en todo el continuo temporal, evitando discrepancias dimensionales cuando el espectro no está disponible.
+- **CÓMO:** Se declaró `TAU_DEFAULT_DOMINANT_MS` en `temporal_spectrum.rs`. En `god-engine-core/src/lib.rs:9175` se sustituyó `1_138_000.0` por `TAU_DEFAULT_DOMINANT_MS`; en `:9843` se sustituyó `60_000.0` por `TAU_DEFAULT_DOMINANT_MS`; y en `:10118` se sustituyó `43_200_000.0` por `quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS`.
+- **CUÁNDO:** En cada deliberación del Consejo de Asientos y en cada apertura/dimensionamiento continuo de órdenes.
+- **DÓNDE:** `crates/quantum-arena/src/temporal_spectrum.rs:124` y `crates/god-engine-core/src/lib.rs:9175, 9843, 10118`.
+- **QUIÉN:** Físico de Sistemas Complejos y Arquitecto Cuántico.
+
+---
+
+### 4. F1-112 — Remoción de Cálculo y Publicación Inerte de `oi_delta_forecast_pct` en Hot Path
+- **QUÉ:** Retiro del bloque completo de predicción y publicación al registro de `oi_delta_forecast_pct` en el camino caliente de eventos por moneda en `crates/god-engine-core/src/lib.rs`.
+- **POR QUÉ:** En cada evento de mercado y para cada una de las 30 monedas, el motor ejecutaba `ArcSwap::load` y SipHash buscando la clave `{SYM}_OI` (que nunca existía según el propio comentario del código), asignaba un vector de 48 floats, copiaba slices de rasgos espectrales y macro, iteraba para saneamiento y ejecutaba `predict_raw` con NanoForest para terminar haciendo `set_reg("oi_delta_forecast_pct", 0.0)`. Dicha clave no tenía ningún consumidor en todo el código Rust de producción del workspace (Fallo Tipo 1 puro).
+- **PARA QUÉ:** Liberar microsegundos críticos en el bucle caliente de eventos hacia el objetivo estricto de latencia determinista $< 25\,\mu\text{s}$ por evento, eliminando churn atómico e inferencias estériles.
+- **CÓMO:** Se eliminaron las líneas 5926-5950 de `crates/god-engine-core/src/lib.rs`, dejando intactas las publicaciones de volatilidad que sí tienen consumidores vivos.
+- **CUÁNDO:** En cada evento de mercado procesado por `GodEngineCore` (hasta cientos de veces por segundo).
+- **DÓNDE:** `crates/god-engine-core/src/lib.rs:5926-5951`.
+- **QUIÉN:** Performance Engineer (SRE/DevOps) y Quant Developer.
+
+---
+
+### 5. F1-118 — Geometría TP/SL y Admisión de Órdenes Fail-Closed ante Volatilidad No Válida
+- **QUÉ:** Endurecimiento fail-closed en `crates/risk-engine/src/tp_sl.rs` (`compute_tp_sl` y nueva función `try_compute_tp_sl`) y en `crates/risk-engine/src/lib.rs` (`evaluate_quantum_order`), rechazando de raíz cualquier orden o cálculo con ATR $\le 0.0$ o no finito.
+- **POR QUÉ:** Anteriormente, si `input.atr_ratio` era $\le 0.0$ o no finito, `compute_tp_sl` lo reemplazaba silenciosamente por el literal arbitrario 0.005 (50 bps). Si un activo recién listado o un tape corrupto con ATR cero llegaba al motor de riesgo sin pasar por el filtro del núcleo, generaba una geometría de stop inventada, sin término de latencia y con un freno de volatilidad inerte (fail-open frente a la Doctrina 3).
+- **PARA QUÉ:** Garantizar defensa en profundidad absoluta: ningún trade puede existir ni dimensionarse en el mercado sin una medida rigurosa y finita de volatilidad física observada.
+- **CÓMO:** En `tp_sl.rs:346-350`, se comprueba `let atr_valid = input.atr_ratio.is_finite() && input.atr_ratio > 0.0;` y en `:407` se fija `below_tradeable_floor = sl_diffusive < sl_floor || !atr_valid;`. Se añadió `pub fn try_compute_tp_sl(input) -> Option<TpSl>`. En `risk-engine/src/lib.rs:865-875`, `evaluate_quantum_order` valida que tanto `current_atr` como `atr_pct` sean finitos y estrictamente mayores a cero, devolviendo inmediatamente `rej(REJ_INVALID_INPUT)` en caso contrario.
+- **CUÁNDO:** En cada dimensionamiento de órdenes y cálculo de barreras de escape TP/SL.
+- **DÓNDE:** `crates/risk-engine/src/tp_sl.rs:346, 407, 452` y `crates/risk-engine/src/lib.rs:865-875`.
+- **QUIÉN:** Risk Manager y QA Engineer.
+
+---
+
+### 6. Certificación Contractual y Verificación de Entorno
+1. **Contratos Unitarios Ejecutados:**
+   - `crates/signal-engine/tests/f1_098_perceptron_hebbian_isolation_contract.rs`:
+     * Certifica aislamiento hebbiano estricto entre BTC y DOGE ante pérdidas en DOGE y claves residuales globales.
+     * *Resultado:* 1/1 test PASADO (0.00s).
+   - `crates/risk-engine/tests/f1_118_tp_sl_fail_closed_contract.rs`:
+     * C1: `compute_tp_sl` marca `below_tradeable_floor = true` y `try_compute_tp_sl` devuelve `None` ante ATRs $[0, -0.005, \text{NaN}, \infty, -\infty]$.
+     * C2: `try_compute_tp_sl` opera normalmente con ATR válido.
+     * C3: `evaluate_quantum_order` rechaza con `REJ_INVALID_INPUT` fail-closed ante ATR cero, negativo, NaN o infinito.
+     * *Resultado:* 3/3 tests PASADOS (0.09s).
+2. **Chequeo de Tipos e Integridad del Workspace:**
+   - `cargo check --workspace --all-targets -j 1`: 100% limpio en los 23 crates (cero errores, cero advertencias nuevas).
+3. **Coordinación Multi-Agente:**
+   - Fila de AGY en `AGENT_SYNC.md` actualizada con el cierre de Ola Ω155.
+   - Plan Maestro promovido a **V27** (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md`).
+   - `.agents/MEMORIA.md` actualizado con el detalle técnico exhaustivo.
+   - Fusión a `main`, push a remoto y eliminación de rama local en curso.

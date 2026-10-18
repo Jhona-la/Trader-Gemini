@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 (tarde, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω155 (Cierre F1-098, F1-103, F1-110, F1-112, F1-118)
+
+- **Mandato**: Resolución exhaustiva de 5 hallazgos sistémicos vivos documentados en `docs/audit/fable/f1_hallazgos.tsv` (1 MED de `signal-engine`/`god-engine-core`, 1 LOW de `evolution-engine`, 1 LOW de `quantum-arena`/`god-engine-core`, 1 LOW de `god-engine-core` hot path y 1 LOW de `risk-engine`), garantizando aislamiento multiactivo, higiene de caminos calientes, consistencia temporal continua y defensa en profundidad fail-closed ante anomalías de volatilidad para el objetivo de duplicación exponencial del capital ($13.00 USD, cada 3 días, cero ruina).
+- **F1-098 (`crates/signal-engine/src/perceptron_gate.rs:245`, `crates/god-engine-core/src/lib.rs:5340,5420`)**:
+  - *Problema*: Desajuste de clave en el aprendizaje Hebbiano del PerceptronGateEngine. El cierre escribía `{sym}_hebbian_weight` y sobreescribía la clave global `perceptron_hebbian_weight` con el PnL de la última moneda cerrada, mientras que el motor buscaba `{sym}_perceptron_hebbian_weight` cayendo a la global compartida. Una racha perdedora en DOGE reducía el peso a 0.25, colapsando el voto de BTC y el hedge de coin 0 aunque BTC acumulara ganancias (rompiendo el aislamiento multiactivo D-190).
+  - *Solución*: Unificada la clave a `hebbian_weight` consumida en `perceptron_gate.rs` mediante `registry.get_scoped_val_strict_or(sym_opt, cid_opt, "hebbian_weight", 1.0)`. En `god-engine-core/lib.rs` se erradicó la sobreescritura de la clave global `perceptron_hebbian_weight`, garantizando estricta compartimentación de aprendizaje por moneda. Verificado con contrato `f1_098_perceptron_hebbian_isolation_contract.rs` (1/1 verde).
+- **F1-103 (`crates/evolution-engine/src/online_daemon.rs:1215`)**:
+  - *Problema*: Puerta trasera unmonitored relativa al CWD. Cada 500ms el demonio consultaba si existía `.forensic_violation`; si existía, inyectaba literales 0.60/0.40 a los umbrales vivos de ML y mutaba `dynamic_config.json`, saltándose el watchdog, la validación del almacén y el régimen de genoma.
+  - *Solución*: Purgada por completo la rama de chequeo de `.forensic_violation`. La evolución y calibración operan exclusivamente a través del almacén genómico y contratos gobernados sin rutas relativas al CWD.
+- **F1-110 (`crates/quantum-arena/src/temporal_spectrum.rs:124`, `crates/god-engine-core/src/lib.rs:9175, 9843, 10118`)**:
+  - *Problema*: Tres literales distintos para la misma magnitud ($\tau$ dominante de respaldo y techo): `1_138_000.0` ms en el payload del Consejo, `60_000.0` ms en la apertura de órdenes y `43_200_000.0` ms en el clamp de horizonte. Si una moneda no tenía espectro inicializado, el Consejo deliberaba a $\tau \approx 19$ min mientras la orden se abría a $\tau = 60$ s.
+  - *Solución*: Definida la constante canónica `pub const TAU_DEFAULT_DOMINANT_MS: f64 = 60_000.0;` en `temporal_spectrum.rs`. En `god-engine-core/lib.rs`, unificados ambos respaldos a `TAU_DEFAULT_DOMINANT_MS` y reemplazado el literal `43_200_000.0` por `TAU_ANCHOR_SLOW_MS`, asegurando coherencia temporal unívoca entre deliberación y ejecución.
+- **F1-112 (`crates/god-engine-core/src/lib.rs:5926-5950`)**:
+  - *Problema*: En el camino crítico de cada evento y moneda, `GodEngineCore` ejecutaba una búsqueda con ArcSwap y SipHash para `{SYM}_OI`, construía un vector de 48 floats, copiaba slices e infería con NanoForest para publicar `oi_delta_forecast_pct`. Dicho feature siempre daba 0.0 y no tenía ningún consumidor en todo el código Rust del workspace, desperdiciando microsegundos del presupuesto de latencia de 25 µs/evento.
+  - *Solución*: Retirado el bloque completo de cálculo y publicación de `oi_delta_forecast_pct`, erradicando trabajo estéril en el camino caliente y reduciendo latencia determinista.
+- **F1-118 (`crates/risk-engine/src/tp_sl.rs:346, 407`, `crates/risk-engine/src/lib.rs:865-875`)**:
+  - *Problema*: `compute_tp_sl` sustituía un ATR no finito o $\le 0.0$ por el literal 0.005 (50 bps) y `evaluate_quantum_order` calculaba `atr_pct = current_atr / current_price` sin validar ATR: un activo sin klines o con tape corrupto generaba una geometría ficticia con fricción sin término de latencia y freno de volatilidad inerte (fail-open frente a la Doctrina 3).
+  - *Solución*: En `compute_tp_sl`, se valida `atr_valid` y se marca estrictamente `below_tradeable_floor: below_floor || !atr_valid`. Creada la función `try_compute_tp_sl(input) -> Option<TpSl>`. En `risk-engine/src/lib.rs`, `evaluate_quantum_order` valida fail-closed que `current_atr` y `atr_pct` sean finitos y $> 0.0$, rechazando con `REJ_INVALID_INPUT` inmediatamente ante anomalías. Verificado con contrato `f1_118_tp_sl_fail_closed_contract.rs` (3/3 verde).
+- **Verificación Contractual y Compilación Workspace**:
+  - `crates/signal-engine/tests/f1_098_perceptron_hebbian_isolation_contract.rs` (1/1 pass, 100% verde).
+  - `crates/risk-engine/tests/f1_118_tp_sl_fail_closed_contract.rs` (3/3 pass, 100% verde).
+  - `cargo check --workspace --all-targets -j 1` pasa limpio (cero errores, cero advertencias).
+
 ## 2026-10-18 — Codex BASE15: cuatro pares privados cerrados, puertos pendientes
 
 ROOT comunica Core07 3/2→5/0, Risk01 6/7→13/0, Kelly02 0/2→2/0 y Flow03 1/6→7/0, mismo corpus por par y12+8 válidas. Son4/7 privados; los coordinadores terminaron y las limpiezas MSVC propias fueron explícitas. RiskRED conserva fallo original de liberación y recuperación separada. Hidden04 sigue previsto con dos RED (16+2) y dos GREEN; Replay05/Reporter06 y E2E/check/T1 públicos pendientes. Fuente privada reportada25dbbd9a/tree5a02ac51, sin publicar runtime por esta nota.

@@ -121,6 +121,9 @@ fn factor_de_resolucion(tau_ms: f64, resolucion_ms: f64) -> f64 {
     1.0 - (-tau_ms / resolucion_ms).exp()
 }
 pub const TAU_ANCHOR_SLOW_MS: f64 = 43_200_000.0;
+/// F1-110: Horizonte temporal dominante de respaldo canónico (60s, baseline operable dentro de la banda [30s, 12h]).
+/// Unifica los literales dispersos de respaldo entre la deliberación del Consejo y la apertura de órdenes.
+pub const TAU_DEFAULT_DOMINANT_MS: f64 = 60_000.0;
 
 /// Número exacto de escalas en la malla log-espaciada base 4 que caen dentro de
 /// la banda operable [TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS] (índices 18 a 22).

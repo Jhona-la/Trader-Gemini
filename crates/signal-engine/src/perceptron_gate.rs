@@ -242,15 +242,14 @@ impl QuantumStrategy for PerceptronGateEngine {
             })
             .map(|p| p.get_value())
             .unwrap_or(0.0);
-        let weight = registry
-            .get_scoped_parameter(
-                sym_opt,
-                cid_opt,
-                "perceptron_hebbian_weight",
-                "PerceptronGateEngine",
-            )
-            .map(|p| p.get_value())
-            .unwrap_or(1.0);
+        // F1-098: Leer peso Hebbiano con aislamiento estricto por moneda/símbolo (hebbian_weight),
+        // sin caer a la clave global compartida perceptron_hebbian_weight que mezclaba el PnL de activos ajenos.
+        let weight = registry.get_scoped_val_strict_or(
+            sym_opt,
+            cid_opt,
+            "hebbian_weight",
+            1.0,
+        );
         if !signal_score.is_finite() || !weight.is_finite() {
             return 0.0;
         }
