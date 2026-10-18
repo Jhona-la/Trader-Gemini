@@ -535,11 +535,18 @@ pub enum DecayError {
 }
 
 impl ExponentialDecayTensor {
-    /// Compatibility constructor. Panics on invalid configuration; use try_new
-    /// for untrusted/runtime parameters. Existing operational callers use constants.
+    /// Compatibility constructor, total (regla 6: sin pánico). Con una semivida
+    /// que no da una tasa finita y positiva devuelve un acumulador inerte: su
+    /// tasa es NaN, así que `try_apply_event` responde `InvalidRate` y el nivel
+    /// se queda en 0, es decir, no opina. Los llamadores operativos pasan
+    /// constantes; `try_new` conserva el motivo para parámetros de ejecución.
     #[inline(always)]
     pub fn new(half_life_ms: f64) -> Self {
-        Self::try_new(half_life_ms).expect("half-life must produce a finite positive decay rate")
+        Self::try_new(half_life_ms).unwrap_or(Self {
+            current_severity: 0.0,
+            decay_lambda: f64::NAN,
+            last_timestamp_ms: 0,
+        })
     }
 
     pub fn try_new(half_life_ms: f64) -> Result<Self, DecayError> {
@@ -678,6 +685,23 @@ mod tests {
         // Decay 1000ms (1 half life) -> severity should be ~50.0
         let decayed = tensor.decay_to(2000);
         assert!((decayed - 50.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn ret24_semivida_invalida_no_entra_en_panico_y_no_acumula() {
+        // Regla 6: `new` no puede abortar el proceso. Con una semivida que no
+        // da una tasa finita y positiva, el acumulador queda inerte: rechaza
+        // todo impulso con InvalidRate y su nivel se queda en 0.
+        for semivida in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e-320] {
+            let mut t = ExponentialDecayTensor::new(semivida);
+            assert!(ExponentialDecayTensor::try_new(semivida).is_err(), "semivida {semivida}");
+            assert_eq!(t.try_apply_event(1.0, 1000), Err(DecayError::InvalidRate), "semivida {semivida}");
+            t.apply_event(5.0, 2000);
+            assert_eq!(t.current_severity, 0.0, "semivida {semivida}");
+            assert_eq!(t.last_timestamp_ms, 0, "semivida {semivida}");
+            assert_eq!(t.decay_to(3000), 0.0, "semivida {semivida}");
+            assert_eq!(t.try_decay_to(3000), Err(DecayError::InvalidRate), "semivida {semivida}");
+        }
     }
 
     #[test]
