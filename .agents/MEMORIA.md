@@ -1,5 +1,27 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 (tarde, 2) — Claude (cloud, Línea C): C-F7a, censo de `clamp` con límites calculados
+
+- **Censo**: tras CL-146 (pánico de `f64::clamp` en el riesgo, de Ω152), se
+  revisaron las 202 llamadas a `clamp` del código de producción cuyos
+  límites no son literales ni constantes (un script descarta el resto). Un
+  juez por grupo de crates decide si los límites pueden cruzarse o ser NaN
+  y si un binario de producción llega; cada riesgo pasa por dos
+  verificadores, uno que construye el camino y otro que lo refuta. Tabla:
+  `docs/audit/linea_c/censo_clamp_2026-10-18.tsv` (59 filas; las 144 del
+  genoma van en una).
+- **Resultado**: ningún otro pánico alcanzable. 43 seguros con la guarda o
+  la definición citada, 13 sin camino de producción, y 1 latente:
+  - CL-147 `sonda.rs:159`: con la clave `sonda_sprt_p0` en 0,90 o más, el
+    suelo de p1 (0,90 + 0,05 = 0,9500000000000001) supera al techo 0,95.
+    Nadie escribe hoy esa clave; el arreglo es idéntico con p0 < 0,90.
+- Dos índices de slice sin comprobar, sin camino de producción y sin tocar:
+  `SuperGenotype::from_vector` (todos los llamadores pasan `to_vector()`,
+  144 valores) y `run_backtest_native` (`volumes[i]`; su único llamador,
+  `start_polars_evolver_daemon`, está muerto y ya lo comprueba).
+- Para todos: un `clamp` con límites calculados es un pánico escondido; usad
+  `.max(lo).min(hi)` en el orden que pida la semántica, o comprobad lo ≤ hi.
+
 ## 2026-10-18 (tarde) — Claude (cloud, Línea C): C-F6, censo de estado sin cota del proceso vivo
 
 - **Censo**: 11 buscadores, uno por área del proceso `god_engine` (host,

@@ -153,10 +153,14 @@ pub fn sprt_evalua_salida_sonda(arena: &GlobalArena, coin_id: usize) -> bool {
         .registry
         .get_value_or("sonda_sprt_p0", 0.50)
         .clamp(0.10, 0.90);
+    // CL-147: con p0 = 0,90 el suelo 0,90 + 0,05 vale 0,9500000000000001 en
+    // f64 y supera al techo: `f64::clamp` entraría en pánico (con
+    // `panic = "abort"`, el proceso vivo muere). Con p0 < 0,90 es el mismo
+    // clamp; con p0 = 0,90, p1 = 0,95 > p0, como exige `sprt_bernoulli`.
     let p1 = arena
         .registry
         .get_value_or("sonda_sprt_p1", 0.70)
-        .clamp(p0 + 0.05, 0.95);
+        .clamp((p0 + 0.05).min(0.95), 0.95);
     let alpha = arena
         .registry
         .get_value_or("sonda_sprt_alpha", 0.05)
