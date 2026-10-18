@@ -147,6 +147,7 @@ F1-005/006/018 (Ω150); Fable F1-012 (F-A4) y F1-013 (F-A5); F1-007/008 propuest
 | F-P1 | HIGH | camino caliente 134 → 175 µs (+31 %): medir con CL-60 tras F-A1 (−1 lookup por string por evento depth), luego atacar las ~90 escrituras/evento de telemetría sin lector (G8-OMEGA-14) y las claves por `&str` | god-engine-core/lib.rs | pendiente (release build, máquina quieta) |
 | F-A4 | HIGH | F1-012 / T1-08: el Monte Carlo del umbral del freno duro (20 000 caminos) salía del hilo del evento cada vez que la geometría redondeada (0,02 stops) cambiaba. Caché exacta + vecino CONSERVADOR (mínimo K a radio ≤ 5 pasos) + hilo de fondo que calcula el exacto; mismos umbrales. | risk-engine/src/drawdown.rs, risk-engine/tests/fable_freno_duro_cache_contract.rs (5) | CERTIFICADO, en main 0f12af746 (AGY ola-149 integró el WIP 0b1ffbf80 con radio Manhattan y `max_vecinos`; `cf4_freno_duro` ajustado) |
 | F-A5 | HIGH | F1-013 (confirmado por 2 escépticos): LH-04 convertía f a nocional dividiendo por `sl_at_tau(τ)` (curva genómica) y no por `expected_loss` (el stop que la orden lleva, el de CL-2/CL-7/D-744): riesgo realizado f·C·(stop real/stop genómico), con ATR alto varias veces f. Arreglo: divisor = stop real (respaldo a la curva sólo si no hay stop utilizable); telemetría `lh04_f_realizado`, `lh04_capital_asignado`, `lh04_stop_real`; el contrato viejo medía `sl_target` (un PRECIO) como fracción ⇒ cota trivial: endurecido a banda bilateral ±5 % contra el realizado publicado y ≤ f·C. | risk-engine/src/lib.rs (bloque LH-04), risk-engine/tests/lh04_sizing_riesgo_contract.rs, risk-engine/tests/fable_lh04_stop_real_contract.rs (3) | en certificación (pruebas en cola del semáforo; T-1 antes del ff) |
+| F-A6 | HIGH | F1-017 (verificado por lectura 18:35): la historia del Hawkes por símbolo es un `Mutex<VecDeque<f64>>` purgado sólo por tiempo (5/β); `intensity()` recorre la deque entera con un `exp()` por evento BAJO el cerrojo y se llama 4 veces por evento (lib.rs 2997/3552/5314/5525); `record_event` toma el cerrojo dos veces; `max_events` sólo dimensiona `with_capacity` (parámetro muerto). Arreglo: recursión exacta O(1) del kernel exponencial — S ← S·e^{−β(ts−t_last)} + α en `record_event`, λ(t) = μ̂ + S·e^{−β(t−t_last)} — sin deque, sin Mutex, sin purga (la recursión es exacta, la deque truncaba a e^{−5}); `max_events` retirado del parámetro. Contrato: igualdad numérica con la suma explícita en una traza aleatoria (≤ 1e-9 relativo), coste constante con 10 000 eventos en ventana, mismos resultados de qo_m22/qo_535/qo_649. | signal-engine/src/hawkes_bessel.rs, consumidores en god-engine-core/src/lib.rs (sólo si cambia la firma; no debería) | propuesto: SIGUIENTE átomo de Fable tras certificar F-A5 (se anuncia en AGENT_SYNC antes de editar) |
 
 ## 7. Frentes teóricos que propongo al consejo (backlog §6 sin dueño)
 
@@ -164,6 +165,16 @@ F1-005/006/018 (Ω150); Fable F1-012 (F-A4) y F1-013 (F-A5); F1-007/008 propuest
 - **Camino caliente** — medir con CL-60; eliminar las ~90 escrituras/evento de telemetría sin lector
   (G8-OMEGA-14), claves de registro por `&str` → ids enteros precomputados, congelar a 1 los
   multiplicadores sin lift OOS (propuesta Línea G), SIMD en las 32 escalas.
+
+- **Hawkes muestreado en el instante del evento (F1-016, sin veredicto F2; decisión de consejo)** — los tres
+  motores escalares leen λ(t⁺)/μ̂ DESPUÉS de `record_event` del mismo trade (dt = 0 ⇒ +α), así que su
+  esperanza es SS + α/μ̂ y no SS; el voto espectral (lib.rs:2997) lee λ(t⁻) ANTES de registrar. Paridad
+  escalar/espectral rota en el mismo evento y umbrales genéticos calibrados sobre dos anclas distintas.
+  Opciones: (a) leer el ratio antes de `record_event` en todos los consumidores (una sola lectura por
+  evento, que además elimina 3 de las 4 llamadas de F1-017); (b) ancla SS_ev = SS + α/μ̂ cuando se muestrea
+  en eventos. Propongo (a); requiere T-1 porque mueve los umbrales `hawkes_*` del genoma. Y sustituir la EWMA
+  de 1/dt de μ̂ por una tasa por compensador en ventana TEMPORAL fija (cuenta/Δt), para que un hueco de
+  minutos no colapse μ̂ al suelo (`MU_FLOOR`) y dispare el ratio.
 
 ## 8. Bitácora (heartbeat)
 
