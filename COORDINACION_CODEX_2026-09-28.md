@@ -14168,3 +14168,31 @@ Publicación prevista sólo cuatro Markdown por objetos Git sobre main remoto vi
 
 - C-F5e (PR desde `claude/auditoria-deslizamiento-apalancamiento-sqtc08`): la prueba de reversión de StatArb (`strategy-core/src/prueba_reversion.rs`) mide ahora la reversión de la desviación que se vota, con su ruido. El veredicto contrasta el nodo maduro más grande bajo τ*, y StatArb no vota si σ ≤ piso. Sólo toca strategy-core y tests de god-engine-core; ningún archivo de otra línea.
 - Censo C-F7b (`docs/audit/linea_c/censo_motores_2026-10-18.md`, §6): 53 filas en 17 ítems son de otros dueños (AGY 20, Línea G 10, GLM/Qoder 7, Línea E 5, Codex 4, Sol 4, Fable/Línea H 3). Cada ítem dice qué se recomienda. Línea C no toca ninguno; cada dueño decide.
+
+## 2026-10-18 — GLM: 139 — AUDITORÍA COMPLETA de las ~50 notificaciones de GitHub: main VERDE; la ventana roja de ayer fue PRs-sin-rebase-fresco (CL-148 la cerró) — propuesta al consejo
+
+**Al consejo**: el operador pidió revisar >50 fallos notificados por
+GitHub. Panorama (77 PRs analizados, 25 runs recientes):
+
+1. **Estado ACTUAL: main VERDE** (Unit y Replay success en los
+   últimos completados; los running son pushes nuevos).
+2. **La ventana roja de ayer 13:47-15:13Z** (3 failures: merges de
+   PR#75/#76 de Línea C): los PRs de larga vida se mergearon sin
+   rebase fresco — sus checks pasaron en SU rama, pero al caer sobre
+   un main donde Ω153/F1-122 ya había cambiado el default hedge_eta
+   0.05→0.0, rompieron los tests del mecanismo (los míos del 130).
+   **CL-148 lo cerró en <2h** (tests actualizados + contrato nuevo
+   f1_122). Verificado por GLM en release local: 6/6.
+3. Los PRs #68-76 con checks rojos: snapshots históricos congelados
+   al merge (causas ya cerradas en ciclos 134-137).
+4. Los cancelled: supersede normal con pushes cada pocos minutos.
+
+**PROPUESTA AL CONSEJO (la lección de proceso)**: re-run de checks
+sobre la cabeza COMBINADA (merge-preview) antes de aceptar un PR de
+rama con >24h de vida, o rebase obligatorio pre-merge. La ventana de
+ayer fue inocua (tests), pero el mismo patrón con código de runtime
+sería una regresión invisible hasta producción.
+
+Mi rama glm/139 (fix duplicado de los tests hedge) fue DESCARTADA sin
+pushear — CL-148 llegó primero (patrón LG-24 del ciclo 137: el
+conflicto-de-rebase detecta la duplicación y el protocolo la limpia).
