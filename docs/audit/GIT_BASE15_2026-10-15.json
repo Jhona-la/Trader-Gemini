@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-15T16:15:12.933718+00:00",
+  "main_reference": "b9cd773538fae9467751883eafdf3ee6ed5142f9",
+  "remote_heads": [
+    "fa5015145915b98825248a4bf1e447e0a4fea43b\trefs/heads/codex/lg5-payoff-evidence-1013",
+    "b9cd773538fae9467751883eafdf3ee6ed5142f9\trefs/heads/main",
+    "9939ad670fb7d9dc0893800d15200df2e9e719d4\trefs/heads/sol/replay-accounting-2026-10-09"
+  ],
+  "refs": [
+    {
+      "ref": "refs/heads/cf4-atr-local",
+      "oid": "797408336b3688d6815ae4ce076c6252f01471c7",
+      "behind_main": 330,
+      "exclusive_vs_main": 4,
+      "worktree": null,
+      "tracked_changes": [],
+      "decision": "preservar_exclusivos"
+    },
+    {
+      "ref": "refs/heads/claude/cl84-f3702-local",
+      "oid": "fed2a61566ef4c6e66917fd808d269972028ecf9",
+      "behind_main": 271,
+      "exclusive_vs_main": 2,
+      "worktree": null,
+      "tracked_changes": [],
+      "decision": "preservar_exclusivos"
+    },
+    {
+      "ref": "refs/heads/claude/linea-g-ola8",
+      "oid": "a6146445701ae7db6e939f4cf0175ef8affce6f3",
+      "behind_main": 128,
+      "exclusive_vs_main": 0,
+      "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-g",
+      "tracked_changes": [],
+      "decision": "preservar_worktree_reserva"
+    },
+    {
+      "ref": "refs/heads/claude/linea-h-ola3",
+      "oid": "2359ba1927d87c260affce2e2fe302db99fd9766",
+      "behind_main": 130,
+      "exclusive_vs_main": 3,
+      "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/linea-h",
+      "tracked_changes": [
+        "M crates/backtest-engine/tests/t3_ventaja_conocida.rs",
+        " M docs/PLAN_LINEA_H_CLAUDE_2026-10-12.md",
+        " M docs/audit/linea_h/README.md"
+      ],
+      "decision": "preservar_exclusivos"
+    },
+    {
+      "ref": "refs/heads/claude/tanda-cf5",
+      "oid": "90ac6cd567a9274afdb4cb825ae6aac38d9a24ec",
+      "behind_main": 130,
+      "exclusive_vs_main": 18,
+      "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.claude/worktrees/determined-tu-0d7126",
+      "tracked_changes": [],
+      "decision": "preservar_exclusivos"
+    },
+    {
+      "ref": "refs/heads/codex/base-audit-2026-10-15",
+      "oid": "b9cd773538fae9467751883eafdf3ee6ed5142f9",
+      "behind_main": 0,
+      "exclusive_vs_main": 0,
+      "worktree": "C:/Users/jhona/.codex/worktrees/base-audit-2026-10-15/Trader Gemini",
+      "tracked_changes": [
+        "M crates/feature-engine/src/multifractal.rs",
+        " M docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md"
+      ],
+      "decision": "rama_propia_ola_actual"
+    },
+    {
+      "ref": "refs/heads/codex/lg5-payoff-evidence-1013",
+      "oid": "971ec9ed212eabb888a3f306739d37e84be44e57",
+      "behind_main": 107,
+      "exclusive_vs_main": 6,
+      "worktree": "C:/Users/jhona/.codex/worktrees/spectral-evidence-1011/Trader Gemini",
+      "tracked_changes": [],
+      "decision": "preservar_exclusivos"
+    },
+    {
+      "ref": "refs/heads/codex/root-lg5-expiry-review-2026-10-13",
+      "oid": "3327300a24a6c65bac2971fce236140e4781260a",
+      "behind_main": 107,
+      "exclusive_vs_main": 0,
+      "worktree": "C:/Users/jhona/.codex/worktrees/root-spectral-zero-replay-1011/Trader Gemini",
+      "tracked_changes": [
+        "M graphify-out/cache/last_query_stamp"
+      ],
+      "decision": "preservar_worktree_reserva"
+    },
+    {
+      "ref": "refs/heads/main",
+      "oid": "b9cd773538fae9467751883eafdf3ee6ed5142f9",
+      "behind_main": 0,
+      "exclusive_vs_main": 0,
+      "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini",
+      "tracked_changes": [
+        "M graphify-out/.graphify_labels.json",
+        " M graphify-out/.graphify_labels.json.sig",
+        " M graphify-out/GRAPH_REPORT.md",
+        " M graphify-out/cache/stat-index.json",
+        " M graphify-out/manifest.json"
+      ],
+      "decision": "main"
+    },
+    {
+      "ref": "refs/heads/qoder/r7r6-aprender-medir",
+      "oid": "6376d089dd266ea87d1003b403d13e6498d375a0",
+      "behind_main": 491,
+      "exclusive_vs_main": 9,
+      "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.r7r6",
+      "tracked_changes": [
+        "M .agents/MEMORIA.md",
+        " M COORDINACION_CODEX_2026-09-28.md",
+        " M FORENSIC_INTELLIGENCE_AUDIT.md",
+        " M docs/BARRIDO_EXHAUSTIVO_FASES.md",
+        " M docs/PLAN_RONDA7_BARRIDO_BASE_2026-10-09.md"
+      ],
+      "decision": "preservar_exclusivos"
+    },
+    {
+      "ref": "refs/heads/sol/replay-accounting-2026-10-09",
+      "oid": "990e5f9c6ba49075cea3f6004de442f885b3530a",
+      "behind_main": 1,
+      "exclusive_vs_main": 1,
+      "worktree": "C:/Users/jhona/Documents/Proyectos/Trader Gemini/.sol-replay-2026-10-09",
+      "tracked_changes": [
+        "M COORDINACION_CODEX_2026-09-28.md",
+        " M docs/BARRIDO_EXHAUSTIVO_FASES.md",
+        " M docs/audit/SOL_CONTABILIDAD_REPLAY_2026-10-15.md"
+      ],
+      "decision": "preservar_exclusivos"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/lg5-payoff-evidence-1013",
+      "oid": "fa5015145915b98825248a4bf1e447e0a4fea43b",
+      "behind_main": 107,
+      "exclusive_vs_main": 1,
+      "worktree": null,
+      "tracked_changes": [],
+      "decision": "preservar_exclusivos"
+    },
+    {
+      "ref": "refs/remotes/origin/main",
+      "oid": "b9cd773538fae9467751883eafdf3ee6ed5142f9",
+      "behind_main": 0,
+      "exclusive_vs_main": 0,
+      "worktree": null,
+      "tracked_changes": [],
+      "decision": "main"
+    },
+    {
+      "ref": "refs/remotes/origin/sol/replay-accounting-2026-10-09",
+      "oid": "9939ad670fb7d9dc0893800d15200df2e9e719d4",
+      "behind_main": 2,
+      "exclusive_vs_main": 1,
+      "worktree": null,
+      "tracked_changes": [],
+      "decision": "preservar_exclusivos"
+    }
+  ],
+  "open_pull_requests": [],
+  "scope": "Snapshot of every local/origin branch; ancestry is not patch equivalence or behavioral validation. Active or exclusive branches preserved; no worktree removed.",
+  "deletions": []
+}

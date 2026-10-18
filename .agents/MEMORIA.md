@@ -1,5 +1,11 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 — Codex BASE15: plan e inventario sincronizados, runtime pendiente
+
+Se publica el plan BASE15 con su censo histórico b9 de1863 filas, sin cambiar blobs/estados ni certificar archivos completos. Core07 cerró sólo el par privado1/7 (RED3/2→GREEN5/0, mismo corpus y12+8); main recibe documentación, no ese runtime. Risk01 RED13 seguía sin resultado recibido; otros cinco pares y E2E GREEN pendientes. Flow03/F-A6 requiere nuevo oráculo de actualización y corpus público; Risk CL135 exige ligar medida validada de entrada al cierre elegible. LG5 HIGH01/02 y MED06 abiertos.
+
+[Sincronización BASE15](../docs/audit/SINCRONIZACION_BASE15_2026-10-18.md) y [adenda Flow03/F-A6](../docs/audit/ADENDA_FLOW03_FA6_BASE15_2026-10-18.md). Sólo documentación, sin Cargo ni índice ROOT; reservas y merge pendiente BASE preservados.
+
 ## 2026-10-18 (tarde, 2) — Claude (cloud, Línea C): C-F7a, censo de `clamp` con límites calculados
 
 - **Censo**: tras CL-146 (pánico de `f64::clamp` en el riesgo, de Ω152), se

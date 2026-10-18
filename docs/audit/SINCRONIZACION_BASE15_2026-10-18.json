@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "kind": "coordination_evidence_supplement_not_file_review_inventory",
+  "as_of_local": "2026-10-18 09:48 America/Bogota",
+  "reference_main": "0db937040b3616980bfdb500cdcda4e2d01d080a",
+  "historical_inventory_snapshot": "b9cd773538fae9467751883eafdf3ee6ed5142f9",
+  "inventory_scope_unchanged": true,
+  "inventory_rows": 1863,
+  "inventory_status_counts": {
+    "en_revision": 1,
+    "hallazgo_abierto": 13,
+    "inventariado": 1849
+  },
+  "whole_files_certified_by_this_wave": 0,
+  "historical_files": {
+    "docs/audit/INVENTARIO_BASE15_2026-10-15.json": {
+      "source_commit": "cff8886b5c50ff99e377b30082c2c3c814c91cf1",
+      "git_blob_sha1": "fc9023556b303e5ca90e8bdc0359cd831c521f33",
+      "sha256": "9014dc56b3ed390cd56662bfc64a3a5fbe8b27fcb4023c350c31585a7d814b33",
+      "bytes": 962965,
+      "byte_identical_to_source_blob": true
+    },
+    "docs/audit/COLA_BASE15_2026-10-15.tsv": {
+      "source_commit": "cff8886b5c50ff99e377b30082c2c3c814c91cf1",
+      "git_blob_sha1": "9ea93c14b68d9b49c4241d5de9a5247e7623d114",
+      "sha256": "6d536e758f2d20e01259d83fffb7f58fbff69318cbf5df252a854ebbafcb64b9",
+      "bytes": 290431,
+      "byte_identical_to_source_blob": true
+    },
+    "docs/audit/VALIDACION_BASE15_2026-10-15.json": {
+      "source_commit": "cff8886b5c50ff99e377b30082c2c3c814c91cf1",
+      "git_blob_sha1": "f052083ced126d37f9d6ac61cd19933164972249",
+      "sha256": "1fb0cbb443ca999d4a2d3375576860201c7917f0d98d8938a5431ffede3d9594",
+      "bytes": 17351,
+      "byte_identical_to_source_blob": true
+    },
+    "docs/audit/GIT_BASE15_2026-10-15.json": {
+      "source_commit": "cff8886b5c50ff99e377b30082c2c3c814c91cf1",
+      "git_blob_sha1": "23e02aab4389a47e8c169617e04ff90c9ac34d56",
+      "sha256": "aea5245b4c37e4fe7d195607fbad064bea1623f549a27d69e10e732701cdeeaf",
+      "bytes": 6038,
+      "byte_identical_to_source_blob": true
+    }
+  },
+  "core07": {
+    "scope": "private_causal_pair_1_of_7_not_public_runtime",
+    "red_commit": "e4705ec93366e616f51d6f1ceaecde52b3ce7a58",
+    "red_tree": "8e835a5878fb48a148fc8ef3c2d94820b4c24e31",
+    "green_commit": "084dcaf4fa88733bf62705dd8c2411215f039cea",
+    "green_tree": "25561b01ede699f7f3b29bbddd6fdcb643c19dd9",
+    "red_pass": 3,
+    "red_fail": 2,
+    "green_pass": 5,
+    "green_fail": 0,
+    "same_corpus_sha256": "17e599ed1b37d8051a8644ef698dcd45a28710c634a7051240c8b362e41c6d54",
+    "guards": "12 invariants and8 parameter guards true per original receipts reviewed in published audit",
+    "negative_trade_reached_in_red": false,
+    "published_audit": "docs/audit/CORE07_CEROS_REPLAY_RED_GREEN_2026-10-18.md",
+    "published_audit_git_blob_sha1": "b4bbc020a92ed9f96e709cbacb1cc0df00d962ee",
+    "published_audit_sha256": "31ae1bc9d9f41dd6480e569abc0d297c5b750648017ad2ef11ce329bb4c90906",
+    "original_archive_manifest_sha256": "15410d8e06efb2d750337769e9a7da5175279a812de8bd76f6e5e8bfc9692b55",
+    "this_wave_revalidated_binaries": false,
+    "inherits_pass_to_main_or_complete_file": false
+  },
+  "risk01": {
+    "reported_by": "ROOT coordination message",
+    "declared_corpus_tests": 13,
+    "status_at_last_report": "RED_real_started_result_not_received",
+    "declared_coordinator_pid": 61604,
+    "declared_coordinator_start_utc": "2026-10-18T14:30:20.1551800Z",
+    "declared_cargo_pid": 57388,
+    "new_process_probe_by_this_wave": false,
+    "public_port_requirement": "CL135 tomar_medida_validada at open; retain MedidaOrden with entry occupant; associated registrar_medida at eligible close",
+    "public_risk_blob_at_reference_main": "d912600cda69c6d5a0972ec703b76f637de14853"
+  },
+  "remaining_five_pairs": [
+    "Kelly02",
+    "Flow03",
+    "Hidden04",
+    "Replay05",
+    "Reporter06"
+  ],
+  "remaining_five_causal_results_received": false,
+  "e2e_integral_green_observed": false,
+  "root_composition_t1_pass_observed": false,
+  "flow03_fa6": {
+    "public_adendum": "docs/audit/ADENDA_FLOW03_FA6_BASE15_2026-10-18.md",
+    "source_external_addendum_sha256": "9b8ed106ab5dd6d98848639154d54790108e3d5271c023aa785b9074eb89ff4b",
+    "status": "normalization_port_and_new_public_composition_corpus_pending",
+    "historical_wip_is_not_final_source_freeze": true,
+    "sealed_private_corpus_modified": false
+  },
+  "lg5_open": [
+    "HIGH01 conditioned acquisition",
+    "HIGH02 conditioned cohort acquisition",
+    "MED06 policy identity and transfer",
+    "MED04 inferential limit, descriptive calculation intentional"
+  ],
+  "runtime_changes_in_this_wave": 0,
+  "cargo_rustc_rust_tests_models_process_queries_by_this_wave": 0,
+  "root_index_access": false,
+  "resource_policy": "ROOT2GiB/jobs1 by operator resource exception; target/lock/exclusion and12+8 preserved",
+  "not_a_census_regeneration": true,
+  "checker_scope": "Existing checker can validate the unchanged inventory metadata against b9; this supplement does not certify review truth or main coverage"
+}
