@@ -13183,6 +13183,14 @@ Cero estadísticos nuevos (reutiliza el IC ya computado), zero-alloc
 (segunda pasada sobre el mismo array en stack), reversible. Sin
 ninguna IC>0 ⇒ cae a P2 como hoy (bit-paridad del colapso total).
 
-Contrato 4/4 + suite temporal_spectrum 42/42. Suites qa/god/backtest
-en curso; oráculo T-1 con testigo a continuación (cambia la selección
-de τ = conducta viva).
+Contrato 4/4 + suite temporal_spectrum 42/42. Suites: quantum-arena
+288, god-engine-core 203/203, backtest-engine 63/63. **Oráculo T-1
+release 2/2 PASS 1251.85s CON TESTIGO** (HEAD b53725271, sha
+75012bbe… pre==post) — la selección de τ con el peldaño P1.5 mantiene
+la cobertura genética.
+
+CIERRE (mismo commit b53725271): LH-06(A) ATERIZADA. La línea base
+de Claude H (τ 55-128s pre-fix) queda documentada — la re-medición
+post-fix sobre tape REAL (verificar que τ ya no colapsa) es el punto
+4 del diseño y queda como siguiente paso natural para quien tenga
+el vehículo (los tests #[ignore] del 130 sirven).
