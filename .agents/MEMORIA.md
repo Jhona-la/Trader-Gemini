@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 (tarde) — Claude (cloud, Línea C): C-F7b, censo de motores desconectados
+
+- Sólo lectura, sin código. `docs/audit/linea_c/censo_motores_2026-10-18.tsv` (576 símbolos de 23 crates, una fila por símbolo, con veredicto, coste, dueño y plan) y `censo_motores_2026-10-18.md` (síntesis). Cada grupo pasó por un verificador y dos escépticos; un crítico revisó la síntesis.
+- Veredictos: 363 RETIRAR, 53 ZONA_AJENA, 51 UNIFICAR, 43 CONSERVAR, 28 RECONECTAR_SOMBRA, 20 ENSAMBLE_SOMBRA, 11 YA_RESUELTO, 7 DECISION_DUENO. Unas 21 500 líneas (≈ 14 % de `src`) están en módulos muertos enteros.
+- Plan de retiro en 55 lotes atómicos con su orden y sus riesgos de compilación (§4); 24 reconexiones en sombra por prioridad (§3), la primera el veto tautológico del Auditor Interno (F412/F413/F271).
+- Cuatro temas esperan al dueño (§5): telemetría sin lector, ejecución fuera de IOC, integridad del veto y teorías sin dato. Nada se retira ni se reconecta en esos temas sin su respuesta.
+- Zonas ajenas (§6): AGY 20 filas, Línea G 10, GLM/Qoder 7, Línea E 5, Codex 4, Sol 4, Fable 3.
+- Las anclas se verificaron en 5d98d5d5; Ω155 (c826b1f7) movió seis archivos: volver a buscar cada ancla antes de cada lote. El crítico no revisó los lotes 18–55 ni las islas (§8).
+
 ## 2026-10-18 (tarde, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω155 (Cierre F1-098, F1-103, F1-110, F1-112, F1-118)
 
 - **Mandato**: Resolución exhaustiva de 5 hallazgos sistémicos vivos documentados en `docs/audit/fable/f1_hallazgos.tsv` (1 MED de `signal-engine`/`god-engine-core`, 1 LOW de `evolution-engine`, 1 LOW de `quantum-arena`/`god-engine-core`, 1 LOW de `god-engine-core` hot path y 1 LOW de `risk-engine`), garantizando aislamiento multiactivo, higiene de caminos calientes, consistencia temporal continua y defensa en profundidad fail-closed ante anomalías de volatilidad para el objetivo de duplicación exponencial del capital ($13.00 USD, cada 3 días, cero ruina).
