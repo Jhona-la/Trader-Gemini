@@ -716,10 +716,11 @@ fn run_booktick_replay_observed(
             ultimo_mid_admitido[0] = mid;
         }
 
-        // F5.1 (paridad host): alimentar el posterior del edge con CADA
-        // cierre — mismos EWMAs y mismo record_trade que god_engine. Las
+        // F5.1 (paridad host) & F1-101 (Ω160): alimentar el posterior del edge con CADA
+        // cierre (c1 por evento depth y c2 por evento trade dentro del mismo tick)
+        // — mismos EWMAs y mismo record_trade que god_engine. Las
         // entradas vetadas nunca llegan aquí (rollback ⇒ sin cierre, B3.14).
-        if let Some((_, pnl_net, _)) = c1.or(c2) {
+        for (_, pnl_net, _) in [c1, c2].into_iter().flatten() {
             if pnl_net >= 0.0 {
                 avg_win_abs = if avg_win_abs == 0.0 {
                     pnl_net.abs()
@@ -741,7 +742,7 @@ fn run_booktick_replay_observed(
         }
 
         if i >= warmup {
-            if let Some((_, pnl_net, qty)) = c1.or(c2) {
+            for (_, pnl_net, qty) in [c1, c2].into_iter().flatten() {
                 let notional = qty * mid;
                 let fee = notional * roundtrip_fee;
                 stats.trades += 1;

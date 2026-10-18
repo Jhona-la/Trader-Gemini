@@ -476,28 +476,12 @@ pub fn restaurar_genes_no_observables_en_examen(
     candidate.quantum_entropy_seed = incumbent.quantum_entropy_seed;
 }
 
-/// Registra specs sintéticos WFD{i} (idempotente) y devuelve sus coin_ids.
+/// F1-104 (Ø159, AGY): Asigna directamente los slots locales `0..n` para el examen
+/// walk-forward sin mutar el `DYNAMIC_REGISTRY` global ni invocar `update_registry`.
+/// Esto previene ~200 clones de Vec y llamadas a `nueva_generacion()` por ronda que
+/// invalidaban la `piso_cache` del núcleo vivo en el hot-path (lib.rs:3760-3766).
 fn wf_real_coin_ids(n: usize) -> Vec<usize> {
-    let mut ids = Vec::with_capacity(n);
-    for i in 0..n {
-        let sym = format!("WFD{}", i);
-        if quantum_arena::symbol_registry::try_index(&sym).is_none() {
-            let spec = quantum_arena::symbol_registry::SymbolSpec {
-                symbol: sym.clone(),
-                step_size: 0.001,
-                tick_size: WF_SYNTH_TICK,
-                min_qty: 0.001,
-                min_notional: 5.0,
-                max_leverage: 50,
-                maker_fee: 0.0002,
-                taker_fee: 0.0005,
-                is_shadow: true,
-            };
-            quantum_arena::symbol_registry::update_registry(vec![spec]);
-        }
-        ids.push(quantum_arena::symbol_registry::try_index(&sym).unwrap_or(i));
-    }
-    ids
+    (0..n).collect()
 }
 
 use god_engine_core::GodEngineCore;
@@ -2593,5 +2577,16 @@ mod tests {
             .expect("ancla de la ronda");
         assert!(!ronda.contains("[HEURISTICGATE]"));
         assert!(!ronda.contains("heuristic_gate_score"));
+    }
+
+    /// F1-104: Aislamiento estricto de wf_real_coin_ids sin mutar generacion ni polucionar el registry.
+    #[test]
+    fn f1_104_wf_real_coin_ids_is_isolated_and_zero_churn() {
+        let g_before = quantum_arena::symbol_registry::generacion();
+        let ids = wf_real_coin_ids(8);
+        let g_after = quantum_arena::symbol_registry::generacion();
+        assert_eq!(ids, vec![0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(g_before, g_after, "wf_real_coin_ids no debe alterar la generacion del registry");
+        assert!(quantum_arena::symbol_registry::try_index("WFD0").is_none());
     }
 }

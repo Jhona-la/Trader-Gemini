@@ -4,12 +4,11 @@ pub mod metrics;
 pub mod network_jitter;
 pub mod oos_context;
 pub mod tick_replayer;
-pub mod vectorized;
 
+pub use metrics::compute_multi_coin_event_priority;
 pub use network_jitter::NetworkJitterSimulator;
 use quantum_arena::genome::SuperGenotype;
 pub use tick_replayer::*;
-pub use vectorized::{OrderBookL2DepthSlippageModel, run_vectorized_hybrid};
 
 /// F3.3: contrato de tamaño del buffer out_stats. El código anterior escribía
 /// 8 floats en buffers de 4 creados por los wrappers FFI → corrupción de heap

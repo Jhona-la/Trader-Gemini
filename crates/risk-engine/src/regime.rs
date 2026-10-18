@@ -179,6 +179,11 @@ impl SpectralMarketRegime {
     }
 }
 
+/// F1-119: Detector heurístico de regímenes discretos conservado exclusivamente
+/// para taxonomía y bancos de prueba (`regime_taxonomy_diagnostics.rs`).
+/// En el hot path de producción (`god-engine-core/lib.rs:3569`), el estado
+/// de mercado se evalúa y publica continuamente como `SpectralMarketRegime` en el símplex Δ³.
+#[derive(Debug, Clone)]
 pub struct RegimeDetector {
     correlation_threshold: f64,
     trend_threshold: f64,
