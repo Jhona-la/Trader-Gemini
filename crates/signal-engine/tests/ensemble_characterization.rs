@@ -148,6 +148,25 @@ fn hedge_devalua_al_contradictorio_y_premia_al_acertivo() {
     assert!(w_contrario < 1.0, "el contradictorio decae: {w_contrario}");
 }
 
+/// F1-122 (Ω153). Verdad: sin `hedge_eta` publicado el hedge no repondera;
+/// tras 50 realizaciones todos los pesos siguen en 1,0. Las pruebas del
+/// mecanismo de arriba y abajo publican η = 0,05.
+#[test]
+fn f1_122_sin_eta_publicado_el_hedge_no_repondera() {
+    let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+    let mut engine = TensorVoteOrchestrator::new(arena);
+    engine.add_strategy(Box::new(NamedSource("adivino", 0.5)));
+    engine.add_strategy(Box::new(NamedSource("contrario", -0.5)));
+    let _ = engine.evaluate_continuous_consensus();
+    for _ in 0..50 {
+        engine.actualizar_hedge_con_realizacion(1.0);
+        let _ = engine.evaluate_continuous_consensus();
+    }
+    for (n, w) in engine.pesos_hedge_snapshot() {
+        assert_eq!(w, 1.0, "{n}: sin η publicado el peso no se mueve");
+    }
+}
+
 /// (ii) Sin explosión ni muerte eterna: tras 500 aciertos seguidos el
 /// peso vive dentro de los bounds suaves (renormalización a media 1.0).
 #[test]
