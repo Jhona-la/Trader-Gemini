@@ -35,13 +35,21 @@ fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTra
             match event.result {
                 Ok(()) => telemetry_server::telemetry_log!(
                     "🧠 [ML-RELOAD] Loaded {} (requested path: {})", event.key, event.path.display()),
+                // CL-141: el reintento sigue cada 10 s; el aviso sólo cuando
+                // el rechazo es nuevo (otra fuente u otro error).
+                Err(_) if event.repetido => {}
                 Err(error) => telemetry_server::telemetry_log!(
-                    "⚠️ [ML-RELOAD] Rejected {} (requested path: {}): {} (will retry)",
+                    "⚠️ [ML-RELOAD] Rejected {} (requested path: {}): {} (will retry; no se repite mientras no cambie)",
                     event.key, event.path.display(), error),
             }
         },
-        Err(error) => telemetry_server::telemetry_log!(
-            "⚠️ [ML-RELOAD] Cannot scan models: {} (will retry)", error),
+        Err(error) => {
+            let error = error.to_string();
+            if tracker.error_de_escaneo_nuevo(&error) {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [ML-RELOAD] Cannot scan models: {} (will retry; no se repite mientras no cambie)", error);
+            }
+        }
     }
 }
 
@@ -926,7 +934,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // LG-11 (Línea G): `telemetry_log!` encola en vez de imprimir en el hilo
     // del bucle vivo (≈8,5 MB de cola; el consumidor duerme si está vacía).
-    telemetry_server::macros::init_telemetry_logger_con_capacidad(16_384);
+    // CL-144: con TG_LOG_FILE el log del motor rota y se comprime solo
+    // (TG_LOG_MAX_MB, TG_LOG_KEEP); sin ella, stdout como antes.
+    match telemetry_server::macros::Rotacion::desde_entorno() {
+        Some(rot) => telemetry_server::macros::init_telemetry_logger_rotativo(16_384, rot),
+        None => telemetry_server::macros::init_telemetry_logger_con_capacidad(16_384),
+    };
 
     // CERT-M4-H02 — SHUTDOWN GRACEFUL: Registrar un atexit handler que
     // mata el trainer hijo. En Windows, Ctrl+C pasa por el console handler
@@ -3357,6 +3370,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // universo (misma indexación que `local_orderbooks`).
         let mut book_seq_guard = parsers::BookSequenceGuard::new(local_orderbooks.len());
         let mut consecutive_slow_ticks = 0;
+        // CL-139 (C-F6): avisos con tope por tiempo, no por evento. Sin él,
+        // LATENCY_PANIC escribía una línea por evento lento (≈ 3,7 GB/día a
+        // 500 ev/s), LIQUIDATION REJECT una por liquidación rechazada y el
+        // espectro, contado en mensajes, crecía con la tasa del feed. El
+        // reloj es el monótono del proceso (`instant_baseline`).
+        let mut aviso_latencia = telemetry_server::estrangulador::Estrangulador::new(10_000);
+        let mut aviso_liquidacion = telemetry_server::estrangulador::Estrangulador::new(60_000);
+        let mut cadencia_espectro = telemetry_server::estrangulador::Estrangulador::new(60_000);
 
         // FASE 6 (EVENT LOOP)
         god_engine_core::bootloader::SystemDiagnostics::execute_phase_6_hft();
@@ -3422,8 +3443,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if is_force_order && !is_trade && !is_kline && !is_depth {
                 match data_ingest::liquidation::decode_liquidation_snapshots(&msg_bytes) {
                     Ok(batch) => {
+                        let reloj_ms = instant_baseline.elapsed().as_millis() as u64;
                         for (index, reason) in batch.rejected {
-                            telemetry_server::telemetry_log!("[LIQUIDATION REJECT] record={} reason={:?}", index, reason);
+                            if let Some(n) = aviso_liquidacion.admitir(reloj_ms) {
+                                telemetry_server::telemetry_log!("[LIQUIDATION REJECT] record={} reason={:?} (+{} rechazos sin aviso desde el anterior)", index, reason, n);
+                            }
                         }
                         for snapshot in batch.snapshots {
                             let observation = god_engine_core::liquidation_feed::LiquidationObservation {
@@ -3434,12 +3458,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 reported_filled_notional: snapshot.reported_filled_notional,
                             };
                             if let Err(reason) = engine_real.observe_liquidation(observation) {
-                                telemetry_server::telemetry_log!("[LIQUIDATION REJECT] reason={}", reason);
+                                if let Some(n) = aviso_liquidacion.admitir(reloj_ms) {
+                                    telemetry_server::telemetry_log!("[LIQUIDATION REJECT] reason={} (+{} rechazos sin aviso desde el anterior)", reason, n);
+                                }
                             }
                         }
                     }
                     Err(reason) => {
-                        telemetry_server::telemetry_log!("[LIQUIDATION REJECT] frame reason={:?}", reason);
+                        if let Some(n) = aviso_liquidacion.admitir(instant_baseline.elapsed().as_millis() as u64) {
+                            telemetry_server::telemetry_log!("[LIQUIDATION REJECT] frame reason={:?} (+{} rechazos sin aviso desde el anterior)", reason, n);
+                        }
                     }
                 }
                 msg_count += 1;
@@ -3626,7 +3654,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if event_time > 0 && latency_ms > panic_threshold {
                 latency_panic = true;
-                telemetry_server::telemetry_log!("⚠️ [LATENCY_PANIC] Delta = {}ms (>{panic_threshold}ms limit). Skiping O(1) Scalp execution.", latency_ms);
+                if let Some(n) = aviso_latencia.admitir(instant_baseline.elapsed().as_millis() as u64) {
+                    telemetry_server::telemetry_log!("⚠️ [LATENCY_PANIC] Delta = {}ms (>{panic_threshold}ms limit). Skiping O(1) Scalp execution. (+{} eventos lentos sin aviso desde el anterior)", latency_ms, n);
+                }
             }
 
             if let Some(parsed_sym) = parsed_sym_opt {
@@ -3791,6 +3821,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // dos ranuras por moneda y el host sólo escribía en la
                     // «scalp»: la mitad de la herramienta vivía vacía y la otra
                     // mitad se consultaba dos veces por tick.
+                    // CL-140: sin ninguna ranura abierta la traza ya no
+                    // describe una posición (reserva revertida por el host,
+                    // cierre por bracket): se descarta antes de evaluarla.
+                    if !engine_real.arena.coins[coin_id].positions.is_any_open() {
+                        trajectory_auditor.descartar(coin_id);
+                    }
                     let ts_traj = event_time as u64;
                     let status = trajectory_auditor.evaluate_tick(
                         coin_id,
@@ -3799,12 +3835,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ts_traj,
                     );
                     if let audit_engine::trajectory_auditor::TrajectoryStatus::Divergent { reason, score } = status {
-                        telemetry_engine::telemetry!(
-                            "📉 [TRAYECTORIA] {} divergente ({:?}, score {:.2}) — la tesis se está rompiendo EN VIVO",
-                            parsed_sym,
-                            reason,
-                            score
-                        );
+                        if trajectory_auditor.divergencia_nueva(coin_id, &status) {
+                            telemetry_engine::telemetry!(
+                                "📉 [TRAYECTORIA] {} divergente ({:?}, score {:.2}) — la tesis se está rompiendo EN VIVO",
+                                parsed_sym,
+                                reason,
+                                score
+                            );
+                        }
                     }
                 }
 
@@ -5150,7 +5188,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // continuo en operación (antes: cero consumidores visibles).
                 // X-044 (REHAB-5): y los PESOS del ensamble (Hedge/Brier) junto a
                 // él — la calibración viva deja de ser invisible.
-                for (ci, sym) in symbols_clone.iter().enumerate() {
+                // CL-139: una vez por minuto del reloj del proceso, no cada
+                // 100 mensajes (≤ 26·1 440 líneas/día sea cual sea el feed).
+                let toca_espectro =
+                    cadencia_espectro.admitir(instant_baseline.elapsed().as_millis() as u64).is_some();
+                for (ci, sym) in symbols_clone.iter().enumerate().filter(|_| toca_espectro) {
                     if let Some(spec) = engine_real.temporal_spectrum.get(ci) {
                         let ens_w = engine_real
                             .ensembles
