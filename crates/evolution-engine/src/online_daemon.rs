@@ -519,7 +519,10 @@ fn nucleo_del_examen(
     // LG-28 (D-714): construir el arena en la pila de un hilo de tokio
     // (2 MiB) es lo que D-714 prohibió: con panic = "abort", desbordarla mata
     // el proceso vivo. `build_in_own_stack` usa un hilo con pila propia.
-    let arena = GlobalArena::build_in_own_stack(initial_capital);
+    // CL-142b: el arena nace del genoma del candidato; `build_in_own_stack`
+    // leía el genoma activo del disco y lo anunciaba en el log en cada uno de
+    // los 25 núcleos por ronda, para pisarlo justo después.
+    let arena = GlobalArena::from_genome_in_own_stack(initial_capital, candidate);
     candidate.apply_to_arena(&arena);
     // CL-142: núcleo auxiliar, sin trazas en el log del host (25 por ronda).
     let mut core = GodEngineCore::new_auxiliar(arena.clone());

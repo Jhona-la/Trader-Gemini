@@ -100,20 +100,22 @@ impl ShadowForest {
         let mut genomes = Vec::with_capacity(num_trees);
 
         for i in 0..num_trees {
-            let arena = GlobalArena::build_in_own_stack(initial_capital);
-
-            // FASE 7: Lock parallel universe memory (Zero Swapping)
-            unsafe {
-                let _ = os_guardian::memory_compaction::lock_critical_memory(&*arena);
-                let _ = os_guardian::memory_compaction::lock_critical_memory_slice(&*arena.coins);
-            }
-
             // Tree 0 es el genoma base (control). Los demás son mutaciones puras.
             let mutation = if i == 0 {
                 base_genome.clone()
             } else {
                 base_genome.mutate_cmaes(0.15)
             };
+
+            // CL-142b: el arena nace de su genoma; `build_in_own_stack` leía
+            // el genoma activo del disco y lo anunciaba en el log por universo.
+            let arena = GlobalArena::from_genome_in_own_stack(initial_capital, &mutation);
+
+            // FASE 7: Lock parallel universe memory (Zero Swapping)
+            unsafe {
+                let _ = os_guardian::memory_compaction::lock_critical_memory(&*arena);
+                let _ = os_guardian::memory_compaction::lock_critical_memory_slice(&*arena.coins);
+            }
 
             mutation.apply_to_arena(&arena);
 

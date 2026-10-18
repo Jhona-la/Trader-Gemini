@@ -47,6 +47,7 @@ pub mod model_reload;
 pub mod orchestrator;
 pub mod order_flow_aggregator;
 pub mod outcome_context;
+pub mod avisos;
 pub mod base_z;
 pub mod reality_physics;
 pub mod recarga_genoma;
@@ -1207,6 +1208,8 @@ pub struct GodEngineCore {
     /// ML-DIAG, ML-HEARTBEAT, DIAG, carga de DarkAlpha). `false` sólo en los
     /// núcleos auxiliares (`new_auxiliar`); no cambia ninguna decisión.
     pub trazas_diagnosticas: bool,
+    /// CL-142b: tope por tiempo de los avisos que se contaban en eventos.
+    avisos: avisos::AvisosDelNucleo,
     /// D-752 — HISTORIAL DE ACIERTO POR RAMA Y POR MONEDA. Índice externo:
     /// `coin_id`; interno: la etiqueta de rama que viaja en
     /// `SignalIntent::volume_flow_rate`. Esto NO es telemetría: es la fuente
@@ -1555,6 +1558,7 @@ impl GodEngineCore {
             diag_pnl_sum: 0.0,
             diag_dir: direction_diag::DirectionDiag::default(),
             trazas_diagnosticas,
+            avisos: avisos::AvisosDelNucleo::new(n_coins),
             rama_registro: vec![[TasaAcierto::default(); N_RAMAS]; n_coins],
             rama_registro_ancla_ms: vec![0; n_coins],
             rama_abierta: vec![None; n_coins],
@@ -3974,18 +3978,15 @@ impl GodEngineCore {
                 || quantum_arena::feed_health::is_stalled()
                 || is_latency_panic
                 || liquidation_as_of_invalid;
-            if is_latency_panic
-                && self
-                    .arena
-                    .tick_counter
-                    .load(Ordering::Relaxed)
-                    .is_multiple_of(1000)
-            {
-                telemetry_server::telemetry_log!(
-                    "🚨 [LATENCY PANIC] Latencia {}ms > umbral {:.0}ms! ENTRADAS bloqueadas — salidas defensivas siguen activas.",
-                    latency_ms,
-                    latency_threshold_ms
-                );
+            if is_latency_panic {
+                if let Some(n) = self.avisos.latencia() {
+                    telemetry_server::telemetry_log!(
+                        "🚨 [LATENCY PANIC] Latencia {}ms > umbral {:.0}ms! ENTRADAS bloqueadas — salidas defensivas siguen activas. (+{} eventos sin aviso desde el anterior)",
+                        latency_ms,
+                        latency_threshold_ms,
+                        n
+                    );
+                }
             }
 
             self.arena.increment_tick();
@@ -5993,7 +5994,7 @@ impl GodEngineCore {
                 if let Some(p) = f.predict(&forest_input) {
                     diag_forest_p = Some(p as f64);
                     coin_ensemble.submit(crate::ensemble::ModelId::MotorForest, p as f64);
-                } else if self.trazas_diagnosticas && tick % 100 == 0 {
+                } else if self.trazas_diagnosticas && self.avisos.modelo_degenerado(coin_id).is_some() {
                     // B2.5-aud: el input ya está saneado arriba (NaN ⇒ 0.0), así
                     // que predict()=None aquí SÓLO puede ser un modelo
                     // degenerado (tree_offsets ≤ 1: sin árboles usables). El
@@ -6134,7 +6135,7 @@ impl GodEngineCore {
             // en el LECTOR; si imprime 0.5 vacío, está en el CAMINO.
             if matches!(sym.as_str(), "NEARUSDT" | "ATOMUSDT" | "BNBUSDT")
                 && self.trazas_diagnosticas
-                && self.arena.tick_counter.load(Ordering::Relaxed) % 5_000 < 26
+                && self.avisos.latido_ml(coin_id).is_some()
             {
                 telemetry_server::telemetry_log!(
                     "🫀 [ML-HEARTBEAT] {} forest={:?} base={:.4} combined={:.4} stored={:.4} roster={}",
@@ -6891,6 +6892,7 @@ impl GodEngineCore {
             // diagnóstico de abajo vive dentro del bloque viable, así que
             // guarda silencio justo en el caso que hay que explicar.
             if !viable_para_entrar
+                && self.trazas_diagnosticas
                 && self.arena.tick_counter.load(Ordering::Relaxed) % 50_000 == 0
             {
                 telemetry_server::telemetry_log!(
@@ -9693,7 +9695,7 @@ impl GodEngineCore {
                         || (has_roster_model && ml_edge_now >= required_edge);
                     if aprobado_por_consejo && !ml_gate_ok {
                         self.diag_ml_vetoes += 1;
-                        if self.trazas_diagnosticas && self.diag_ml_vetoes % 50 == 1 {
+                        if self.trazas_diagnosticas && self.avisos.veto_ml().is_some() {
                             telemetry_server::telemetry_log!(
                                 "🧠 [ML-GATE] {} entradas vetadas por el ensamble (última: {} ml={:.3}) — la predicción decide",
                                 self.diag_ml_vetoes,

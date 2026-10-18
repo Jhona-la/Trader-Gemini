@@ -341,7 +341,8 @@ fn evaluate_genotype(
         return (initial, f64::NEG_INFINITY, Vec::new());
     }
     let arena = replay_arena(genome, initial, max_drawdown_policy);
-    let mut engine = GodEngineCore::new(arena.clone());
+    // CL-142b: réplica auxiliar, sin trazas en el log del host.
+    let mut engine = GodEngineCore::new_auxiliar(arena.clone());
     let mut synth = OmniSynth::new(active_coins);
     let mut peak_capital = initial;
     let mut prev_cap = initial;
