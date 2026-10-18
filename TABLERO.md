@@ -128,7 +128,7 @@
 - **Siguiente**: LF-F4 (vetos: alcanzabilidad, frontera y recuperación desde
   cero posiciones) y revisión de cada ola nueva que entre sin PR.
 
-## Claude — Línea G (actualizado: 2026-10-17, sesión local, prefijo LG-n; olas 1–8 cerradas y fusionadas en main; ramas borradas)
+## Claude — Línea G (actualizado: 2026-10-17 noche, sesión local, prefijo LG-n; olas 1–9 cerradas y fusionadas en main; ramas borradas)
 
 - **Ola 1 cerrada**: revisión desde la base del HEAD 86218456
   (`docs/PLAN_LINEA_G_CLAUDE_2026-10-12.md`, datos en `docs/audit/linea_g/`).
@@ -178,12 +178,32 @@
   - T-1 sobre main + LG-23: PASA, 18/144 genes sensibles (12,5 %) ≥ trinquete 11,0 % (842 s con 4 hilos,
   `docs/audit/linea_g/ola8_t1.txt`). Frente a la lista canónica de 16 pierde el
   gen 32 y gana 39, 142 y 143. T-1 es monomoneda: no ve Kähler ni Yang-Mills.
-- **Siguiente**: medir la decisión con los multiplicadores de Ω137–Ω143 en 1
-  (si el consejo acepta congelarlos); escala rápida agregada entre monedas
-  con pesos GLS (T-3 v2 de la Línea H); LG-23b con la Línea C; recorrido por
-  archivo de signal-engine, risk-engine, god-engine-core y metacortex.
+- **Ola 9 cerrada** (plan §17, `docs/audit/linea_g/ola9_*`):
+  - LG-24: CI verde tras dos días en rojo (el contrato MG02/MG05 usa una
+    ventaja débil tras la cota monótona de Ω130; el fixture, no la cota).
+    LG-24b: cero avisos en el workspace.
+  - LG-25: `scripts/cargo_semaforo.sh` (target único, `-j2`, espera por
+    builds vivos o RAM < 4 GB, bitácora `logs/semaforo.log`); `.gitignore`
+    sin `.env.*`, `*.csv`, volcados ni instantáneas de graphify. LG-25b/c:
+    paciencia ante builds por fuera, conteo robusto sin powershell (una
+    instancia robaba cerrojos vivos) y sólo se libera el cerrojo propio.
+  - Revisiones: PR #70 de la Línea C (35 hallazgos, 1 MED); seis PR de Codex
+    (54 hallazgos): #69, #67 y #68 fusionados (el #68 con el choque de la
+    marca terminal resuelto y PR68-2/4/6 aplicados); #64 lo fusionó la Línea
+    H; #65 a la ola 10; #66 (LG-5) devuelto a Codex.
+  - LG-27: el detector LG-22 se guarda en el estado aprendido (B4 de la
+    Línea C), sólo aprende de cierres con SL propio y se reinicia con los
+    frenos de CL-134; alarma en los mismos cierres aunque el host reinicie.
+  - LG-28: siete panics alcanzables del camino vivo arreglados (ningún HIGH).
+  - Censo real: 14/19 fuentes hablan; mudos Coaxial, Choque, StatArb,
+    Yang-Mills y Conformal.
+- **Siguiente (ola 10)**: integrar #65; F1-013 de Fable (LH-04 dimensiona con
+  `sl_at_tau` y no con el stop real; HIGH, con T-1 y la Línea H) si nadie lo
+  toma; revivir Coaxial con σ(τ) real; los 29 cortos de la rama 15 con la
+  Línea C; T-1 sobre main tras Ω147–Ω149.
 - **No toca**: ATR/σ̂60 (Línea C), orquestador/espectro (Qoder), registro
-  (AGY), `spectral_tape` (Codex SI), `booktick_replay`/`metrics` (Sol).
+  (AGY), `spectral_tape` (Codex SI), `metrics` (Sol). `booktick_replay` sólo
+  en el merge del PR #68 (marca terminal).
 - **Recursos**: el disco C: llegó a 0 GB (target/debug 191 GB); se borró
   `target/debug/incremental` y quedaron ~159 GB libres.
 

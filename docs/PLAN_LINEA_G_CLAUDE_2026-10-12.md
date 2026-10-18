@@ -1023,3 +1023,270 @@ Yang-Mills (necesitan varias monedas) ni dice nada de la rentabilidad. Ω144–
    (`docs/audit/REVISION_*`) por los crates que más cambiaron desde la ola 7:
    signal-engine (36 archivos), risk-engine (27), god-engine-core (24),
    metacortex-engine (17).
+
+## 17. Ola 9 (2026-10-17, base `bd6fdd07`): CI verde, higiene de recursos y revisión de lo que subieron los demás
+
+### 17.1 LG-24: el rojo de CI de dos días era un fixture desfasado por Ω130
+
+Main llevaba rojo en `Unit and contract suites` (job `nucleo`) y en `Replay
+contracts` desde `f78a47067` (Ω130, 15-oct 19:12): unas 45 ejecuciones
+seguidas, también bajo mis pushes de la ola 8 y los de GLM, Sol y la Línea C.
+La última verde fue `b67469077`. Siempre fallaban las mismas tres pruebas de
+`evidence_expiry_contract` (MG02/MG05 de Codex).
+
+- **Causa:** Ω130 corrigió la cota de Cramér-Lundberg (F2.1-01): de
+  `min(tope, m)` a `min(tope, tope/m)`, con `m = ln(1/ε)/R`. Ahora más ventaja
+  medida no veta lo que menos ventaja admite, que es lo correcto. El contrato
+  usaba una R grande (≈ 32, retornos +1,5 %/−1 %), que sólo vetaba con la
+  fórmula invertida. AGY ejecutó las pruebas de `risk-engine` y este contrato
+  vive en `god-engine-core`.
+- **Arreglo (el fixture, no el código):** ventaja débil, +1,02 %/−1 %
+  (R ≈ 1,96; con este fixture el veto aparece para R < ln 20·riesgo/tope ≈
+  2,2), y R literales 1,5 y 1,0 en vez de 32 y 30. Lo que el contrato prueba no
+  cambia: la evidencia caducada deja de usarse.
+- **Verificado:** el contrato 13/13 y el job `nucleo` completo en local
+  (`god-engine-core --lib --tests --locked`, un hilo): 102 suites, 0 fallos.
+- **LG-24b:** cero avisos en `cargo check --workspace --all-targets` (uno era
+  mío, de LG-22b; el otro, del módulo compartido de T-1 incluido en T-2).
+- **En CI:** `e0d8e5019` (LG-24 + LG-25) verde en los dos workflows (Unit and
+  contract suites 4/4 y Replay contracts), el primero desde Ω130.
+
+### 17.2 LG-25: memoria, disco y el semáforo de compilación
+
+**Auditoría (2026-10-17 ~10:30):**
+
+| Recurso | Medido | Límite |
+|---|---|---|
+| Carpeta del proyecto | 69 GB (target 37 = debug 29 + release 8,3; data 24; .git 3,1; graphify-out 1,6; logs 0,8) | 300 GB |
+| `~/.codex/worktrees` | 0,8 GB (base-audit con un `target/` privado de 143 MB) | sin targets privados |
+| RAM | 23,4 GB totales, 7,1 libres; apps de agentes ≈ 5,5 GB | 16 GB para builds |
+
+El disco no está en riesgo. El riesgo real es la RAM cuando varios agentes
+compilan a la vez (0,4–0,9 GB por rustc). La regla «un build a la vez, -j2,
+target compartido» de AGENT_SYNC §4 no la hacía cumplir nada.
+
+- **`scripts/cargo_semaforo.sh`**: envoltorio de cargo que fuerza el target
+  único (lo deduce del repositorio común, también desde worktrees) y `-j2`,
+  espera mientras haya otro cargo/rustc vivo o la RAM libre esté bajo 4 GB,
+  toma un cerrojo atómico con dueño y registra en `logs/semaforo.log`. Un
+  cerrojo es huérfano si supera su TTL (240 min) o si, pasada una gracia de
+  120 s, no hay ningún build vivo: un agente sin cuota no bloquea, y dos
+  agentes que ven cero procesos a la vez no se roban el turno (prueba roja
+  antes de la gracia). Pruebas en `scripts/tests/test_cargo_semaforo.py`
+  (7/7); prueba de humo real: con un cargo vivo sale 75 sin compilar.
+- **`.gitignore`**: ya no pueden entrar `.env.*`, `*.csv`, `*.dmp`, `*.npz`,
+  `*.npy` ni las instantáneas fechadas `graphify-out/20*/` (graph.json de
+  hasta 26 MB cada una). Lo ya versionado sigue versionado.
+- **LG-25b/c (medido el mismo día):** dos builds por fuera del semáforo (un
+  `check --release` de Codex de tres horas y un T-1) dejaron sin turno
+  60-120 min a AGY, Fable y la Línea G. Y una instancia sin `powershell` en
+  el PATH robó como huérfano el cerrojo de un `cargo check` en marcha (su
+  conteo caía a `pgrep`, que no existe en Git Bash, y `|| echo 0`). Ahora:
+  paciencia (pasados 30 min, los ajenos no bloquean si hay RAM de sobra),
+  conteo robusto (powershell, tasklist, pgrep; «?» cuenta como ocupado) y al
+  salir sólo se borra el cerrojo propio. 13 contratos; el del robo falla con
+  el script de main.
+- **RAM a las 22:45:** 0,5 GB libres de 23,4. El mayor consumidor no es
+  cargo sino VS Code (17 procesos, 6,8 GB; uno de 5 GB).
+- **Nota:** `models/` sí existe en CI y en los worktrees, con 4 modelos
+  versionados (ATOM, BNB, NEAR motor y NEAR vol); el diagnóstico de GLM 136
+  («no existe en CI») era inexacto.
+
+### 17.3 Revisión del PR #70 de la Línea C (C-F5c, CL-130…CL-134)
+
+Tres revisores de solo lectura (matemática, integración y pruebas) y un
+escéptico por cada hallazgo HIGH/MED. Tabla en
+`docs/audit/linea_g/ola9_pr70.tsv`: **35 hallazgos, 1 MED, 21 LOW, 13 INFO;
+ningún HIGH**. Los escépticos bajaron a LOW la mayoría de los MED
+(por ejemplo, el contraejemplo de la racha W/L de F5C-M1 no se reproduce con
+el ±0,15 por cierre del sesgo epigenético).
+
+- **El MED (PR70-INT-04, verificado por mí):** `registrar_orden_abierta`
+  (CL-131) se llama en la apertura LOCAL del núcleo, antes de los vetos del
+  host. En vivo, una intención que el host deshace y el núcleo reintenta en
+  cada evento vuelve a alimentar la EWMA del riesgo y de la geometría que usa
+  el freno duro: la patología que CL-131 quería quitar.
+- **LOW destacados:** la adopción del `pico_capital.txt` sin venue (CL-133)
+  la hace el primer venue que arranca, así que R5 puede repetirse una vez tras
+  actualizar (tres revisores lo vieron); `SHADOW_MODE` cae en el grupo de
+  testnet al elegir el venue; el freno duro ya no acota la caída en USD por
+  debajo de d* (deliberado en el ADR §2b, falta decirlo); pruebas del host que
+  son búsquedas de texto; CL-131 dejó vacías aserciones de C07.
+
+### 17.4 Ramas, PR y cuota
+
+- Borrada en remoto `claude/auditoria-deslizamiento-apalancamiento-sqtc08`
+  (PR #70 fusionado, 0 commits exclusivos).
+- Seis PR abiertos de Codex (#64–#69, frente B15, +41 000 líneas), dormido
+  desde el 15-oct; su revisión en §17.5.
+- El resto de ramas locales y remotas tiene commits exclusivos o pertenece a
+  sesiones vivas (`claude/jolly-montalcini-cee407`, creada hoy).
+
+### 17.5 Revisión e integración de los seis PR de Codex (#64–#69)
+
+Codex estaba dormido desde el 15-oct (sin commits ni latido; retomó el 17-oct
+por la tarde). Por la regla de relevo de AGENT_SYNC, la Línea G revisó sus seis PR con un revisor de solo
+lectura por PR (diff, conflicto con main y CI). Tabla completa en
+`docs/audit/linea_g/ola9_codex_prs.tsv` (54 hallazgos).
+
+| PR | Bloque | Hallazgos | Veredicto | Estado |
+|---|---|---|---|---|
+| #69 | dominios de solitón y resonancia estocástica | 2 LOW, 5 INFO | integrar | **fusionado** (ee65b30b0) |
+| #67 | dominio del VECM (dos panics de `clamp`) y checker del inventario | 1 LOW, 6 INFO | integrar | **fusionado** (b4f312709) |
+| #68 | marca terminal causal del replay y reporte de equity | 1 MED, 2 LOW, 5 INFO | integrar resolviendo el choque | **fusionado** con arreglos (abajo) |
+| #64 | T-3 v2 (Línea H): generador gaussiano, filtro HMM | 1 MED, 2 LOW, 6 INFO | integrar con cuidado | fusionado por la Línea H (69ccd80e) |
+| #65 | BASE15: dos arreglos acotados + 32k líneas de artefactos | 3 MED, 3 LOW, 6 INFO | integrar con arreglos documentales | pendiente (ola 10) |
+| #66 | LG-5: `NetPayoffModel` y nueva puerta EV | 2 HIGH, 4 MED, 3 LOW, 2 INFO | **no integrable** | devuelto a Codex (retomó el 17-oct) |
+
+- **#68, choque semántico (PR68-1, MED):** main (SOL-R5-02-B) y el PR tenían
+  dos fuentes de la marca terminal. Me quedo con la del PR
+  (`ultimo_mid_admitido`, el último mid que el motor de features ADMITIÓ),
+  que además rechaza el reloj regresivo; la de main (`executed_last_mid`)
+  se asignaba a toda fila que pasara la aduana y rompía el contrato
+  `backward_terminal_timestamp_cannot_supply_the_mark`. Borradas su
+  declaración y su asignación; `executed_ticks`, `executed_last_ts` y
+  `close_reason` se conservan.
+- **#68, arreglos de la revisión aplicados en el merge:** PR68-2 (el reporte
+  no imprime «-100 %» si el replay devuelve el centinela `NoReplay`, con su
+  contrato), PR68-4 (el crecimiento log diario se divide por lo ejecutado, no
+  por la cinta; se imprime la causa de cierre) y PR68-6 (paso de CI
+  duplicado). De paso, un `unwrap` del cálculo de días de cada subventana.
+- **#66 no es integrable (LG5-01/02, HIGH):** un estado aprendido legado
+  (misma `VERSION_ESTADO`, sin `net_payoff`) congela todas las monedas
+  maduras en el primer reinicio; y fuera de sonda un lado sin filas queda en
+  `REJ_SIN_EVIDENCIA` para siempre, y uno con media ≤ (m−1)·fee en `REJ_EV`
+  para siempre (sin olvido ni re-sondeo). Además la decisión sale de una
+  media de n = 1..k sin encogimiento ni cota inferior (LG5-04), y no trae T-1
+  ni contrato de extremo a extremo. El defecto que ataca (LG-5: usar
+  P(neto>0) como P(TP primero)) sigue abierto; Codex retomó su latido el
+  17-oct y lo lleva.
+- **#65 (MED, documentales):** B15-04 es falso (`InstitutionalVolumeTracker`
+  sí se instancia en producción), B15-14 es un panic y no un P2 de dominio
+  (ya lo arregla #67), y el plan instruye «targets privados», contra la regla
+  de disco. Los dos arreglos de código son correctos pero sin efecto
+  productivo hoy.
+- **#64 (MED):** los contratos del nulo (V1/V2) ya no miden la serie: con
+  d = 0 `direccion_bruta` da 0 para cualquier q y las aserciones no pueden
+  fallar. Lo fusionó la Línea H, dueña del T-3; le paso el hallazgo.
+
+### 17.6 Censo de motores mudos sobre cinta real (2 M ticks, BTC septiembre)
+
+Con el binario de GLM (`censo_mudos_medicion`, release, desde el raíz por las
+rutas relativas de `models/`): de las 19 fuentes del orquestador, **14
+hablan** (tasa de voto ≥ 1 %) y `avg_conviction` divide entre 19.
+
+| Motor | Tasa de voto no nulo | Por qué calla |
+|---|---|---|
+| Nash, Perceptron, Resonancia, Navier, Solitón, Oscilador | ≈ 100 % | — |
+| Proyección espectral | 82,4 % | — |
+| Hawkes, FlowImpulse | 70,7 % | abstienen en régimen normal (#649) |
+| TrendRunner | 58,7 % | — |
+| VECM | 38,4 % | — |
+| Feynman | 31,8 % | — |
+| FlowExcitation | 25,0 % | Ω144 lo despertó (antes 0 %) |
+| Rényi-Tsallis | 9,6 % | casi mudo |
+| Conformal | 0,12 % | casi nunca cruza el umbral |
+| Coaxial | 0 % | sus entradas `atr_1s/5s/1m` se retiraron en CL-66 |
+| Choque supersónico | 0 % | sin `spread_speed_of_sound` en replay |
+| StatArb | 0 % | sin spot en la cinta |
+| Yang-Mills | 0 % | necesita ≥ 3 monedas (cinta monoactiva) |
+
+- Ω145 ya saca del denominador a StatArb, Yang-Mills y Coaxial cuando no
+  pueden operar (`is_operable_for_coin`); Conformal y Rényi sí cuentan como
+  abstención informada.
+- **Coaxial es revivible:** su lógica es un test de razón de varianzas
+  (Lo–MacKinlay) y `TemporalSpectrum::volatility_at(τ)` da σ(τ) real a 1 s,
+  5 s y 60 s. Va a la ola 10, con T-1 y fuera de muestra.
+- **Observaciones de la misma corrida (sin investigar todavía):** las 29
+  operaciones fueron cortos de la rama 15 en una cinta que acabó subiendo
+  (mid 77 909 → 79 931); PnL bruto −1,24 USD, 10/29 ganadoras. Corrió con el
+  genoma por defecto (no existe `config_dir/genomes/backtest/active.json`).
+  La viabilidad D-743 declaró INVIABLE 48 de 80 muestras porque
+  `min(TP(τ*), σ(τ*)) − fricción` queda por debajo del tick: en la escala
+  dominante el recorrido no paga la fricción. A la Línea C.
+- `confluencia_resonante` es simétrica, así que el sesgo a cortos viene de
+  sus entradas o de puertas posteriores. Hipótesis sin verificar: la
+  ML-GATE con el modelo de BTC, que en la corrida predice casi siempre bajo
+  su base (DIAG `ml` entre 0,05 y 0,6; «entradas vetadas por el ensamble»).
+
+### 17.7 LG-27: el detector LG-22 sobrevive al reinicio (B4 de la Línea C)
+
+El detector e-CUSUM de pérdida de ventaja (LG-22) no se guardaba en el
+estado aprendido: cada reinicio lo ponía a cero y, con reinicios más
+frecuentes que su retardo, no alarmaba nunca.
+
+- `MonedaGuardada.detector_lg22` con `serde(default)`. Se continúa el mismo
+  proceso sólo si el guardado es alcanzable y mide contra la misma μ. Si no,
+  ese detector empieza de cero y queda constancia en
+  `lg22_detector_descartado`; no bloquea el resto del estado (no es un freno
+  echado: tras una alarma el detector ya se reinicia, y su efecto se guarda
+  en la epigenética).
+- **LG-27b:** sólo aprende de cierres con SL propio. Una posición adoptada
+  llega con SL 0 y su (tp, sl) se rehace al cerrar, así que λ dejaría de
+  ser predecible (mismo criterio que CL-130).
+- **LG-27c:** `reiniciar_frenos` (CL-134, replantar un universo) también
+  reinicia el detector.
+- **Medido:** con E[R] ≈ −0,19 R y ARL 20, sin reinicios alarma en los
+  cierres 567 y 1031; reiniciando cada 60 cierres sin guardar, nunca; con
+  LG-27, en los mismos cierres. Tres mutaciones (sin restaurar, sin filtro
+  de SL propio, sin reinicio de frenos) hacen fallar su contrato.
+- **Revisión adversarial** de tres lentes (estadística, persistencia,
+  pruebas; 24 hallazgos, 5 MED, cada uno con escéptico). Incorporado lo de
+  diseño (detector inservible no bloquea, reinicio en CL-134, filtro de SL
+  propio, comparación con tolerancia tras JSON). Límites documentados: los
+  cierres con el host caído no llegan (selección por supervivencia, del lado
+  conservador), un binario anterior borra el campo al guardar y una moneda
+  que sale del universo pierde su estado (como todo CL-108).
+
+### 17.8 LG-28: panics alcanzables del camino vivo
+
+En release el perfil es `panic = "abort"`: un cerrojo no se envenena, así
+que `lock().unwrap()` es cosmético; lo peligroso es un panic ALCANZABLE en
+el proceso vivo. Tres lectores de solo lectura (host + ejecución, núcleo +
+riesgo, arena + señales + demonio) y un escéptico por hallazgo grave:
+**ningún HIGH**; el único MED (`peer_addr().unwrap()` del lector WS) bajó a
+LOW (la ventana es de microsegundos), y siete LOW más. Arreglados en LG-28:
+
+| Sitio | Disparo | Arreglo |
+|---|---|---|
+| `god_engine.rs`, lector WS | el par corta entre connect y getpeername | `match` y reconexión |
+| `god_engine.rs`, lector WS | `BEST_WS_ENDPOINT` inválido | se valida al arrancar (sólo un host: vacío, esquema, ruta o credenciales se ignoran); sin `expect` en el bucle |
+| `god_engine.rs`, adopción | universo > MAX_COINS | índice filtrado; la posición sin ranura se registra y marca `protection_dirty` (antes, en silencio) |
+| `user_data_stream.rs` | ALGO_UPDATE no reconocido con un carácter de varios bytes en el byte 240 | corte en frontera de carácter, y escritura que no aborta si stdout falla |
+| núcleo, régimen de BTC | gen de Hurst NaN ⇒ `clamp(min, NaN)` | NaN cae al genoma base exacto (φ − 1, 0,7·(φ − 1)); ±∞ satura como antes |
+| `online_daemon.rs`, examen | arena construido en la pila de tokio (D-714) | `build_in_own_stack` |
+
+El `clamp(min > max)` del consenso tensorial que señaló un lector es
+inalcanzable (la guarda previa exige |convicción| > suelo), así que no se
+toca. Revisión adversarial del parche antes de aplicarlo (2 lentes, 12
+hallazgos, ningún HIGH): incorporados la validación estricta del host, el
+`else` de la adopción, el respaldo exacto y sólo para NaN, y un contrato del
+régimen que sí puede fallar (con un gen NaN el núcleo entraba en pánico en
+`f64::clamp`; con el umbral de caos NaN el régimen salía distinto del de los
+genes base). Quedan documentados sin cambiar: `Database::create(..).expect`
+del arranque (otra instancia viva con el mismo redb aborta antes de operar),
+los dos `expect` de `build_in_own_stack` y que `println!` aborta en todo el
+proceso si stdout falla (disco lleno con la salida redirigida): el remedio es
+de todo el proceso (pasar por la cola de telemetría), no línea a línea.
+El censo estático de 238 `unwrap`/`expect` en producción no se reescribe a
+ciegas: se arregla lo alcanzable, con prueba.
+
+### 17.9 Integración con main149
+
+Main avanzó durante la ola: AGY cerró en Ω148–Ω149 hallazgos de mi ola 8
+(G8-OMEGA-07…18, LG8-145-04…07, CSG-2, LG8-146-01/02) y certificó el F-A4
+de Fable; la Línea H fusionó el PR #64; Codex retomó su latido. Fusión sin
+choques de código (sólo AGENT_SYNC y MEMORIA, por unión); comprobados a mano
+los auto-merges de `lib.rs` (LG-27b intacto) y `vecm_arbitrage.rs` (#67 y
+Ω148 en zonas distintas).
+
+### 17.10 Siguiente paso (ola 10)
+
+1. Integrar #65 con sus arreglos; #66 (LG-5) vuelve a Codex, que retomó,
+   con la lista de LG5-01…06.
+2. Revivir Coaxial con σ(τ) real y medir su aporte fuera de muestra.
+3. Explicar los 29 cortos de la rama 15 en una cinta alcista, con la Línea C.
+4. Agregar información por hora entre monedas con el N_eff medido (§16.1).
+5. Re-certificar T-1 sobre main tras Ω147–Ω149 y LG-27/28.
+6. F1-013 de Fable (LH-04 dimensiona con `sl_at_tau` y no con el stop real,
+   HIGH): lo retomó Fable el 17-oct; revisar su cambio antes del merge.

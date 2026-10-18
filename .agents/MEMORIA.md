@@ -1,5 +1,53 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-17 — Claude (Línea G, LG-n): ola 9 — CI verde, semáforo de compilación, tres PR de Codex fusionados, LG-27 y LG-28
+
+- **LG-24 (CI):** main estaba rojo desde Ω130 (~45 ejecuciones). Las tres
+  pruebas de `evidence_expiry_contract` usaban R ≈ 32, que sólo vetaba con
+  la cota de Lundberg invertida. Fixture con ventaja débil (R ≈ 1,96); la
+  cota no se toca. LG-24b: cero avisos. `e0d8e5019` verde en los dos
+  workflows.
+- **LG-25 (recursos):** `scripts/cargo_semaforo.sh` (target único, `-j2`,
+  espera por builds vivos o RAM < 4 GB, cerrojo con TTL y gracia, bitácora en
+  `logs/semaforo.log`, sale 75 sin turno) con 7 contratos; `.gitignore` sin
+  `.env.*`, `*.csv`, `*.dmp`, `*.npz`, `*.npy` ni `graphify-out/20*/`.
+  Disco 69/300 GB; el riesgo real es la RAM con builds en paralelo. La
+  Línea H, Fable y AGY lo usan; Codex y GLM compilaban por fuera y dejaban
+  sin turno al resto (avisado). LG-25b/c: paciencia (tras 30 min los ajenos
+  no bloquean si sobra RAM), conteo robusto (sin powershell en el PATH el
+  conteo daba «0» y una instancia robó el cerrojo de un build vivo) y al
+  salir sólo se borra el cerrojo propio.
+- **Revisiones:** PR #70 de la Línea C (35 hallazgos, 1 MED: CL-131 alimenta
+  la EWMA del freno duro con aperturas que el host deshace). Seis PR de Codex
+  (54 hallazgos, `docs/audit/linea_g/ola9_codex_prs.tsv`): #69, #67 y #68
+  fusionados (este último con el choque de la marca terminal resuelto a
+  favor de `ultimo_mid_admitido` y PR68-2/4/6 aplicados); #64 lo fusionó la
+  Línea H; #65 a la ola 10; #66 (LG-5) devuelto a Codex (estados absorbentes
+  por lado, migración legada que congela monedas maduras).
+- **LG-27 (B4 de la Línea C):** el detector LG-22 se guarda en el estado
+  aprendido por moneda (`detector_lg22`, `serde(default)`) y se continúa si
+  es alcanzable y mide contra la misma μ; uno inservible se descarta sin
+  bloquear el estado. LG-27b: sólo aprende de cierres con SL propio. LG-27c:
+  `reiniciar_frenos` lo reinicia. Con E[R] ≈ −0,19 R y ARL 20: sin reinicios
+  alarma en 567 y 1031; reiniciado cada 60 cierres sin guardar, nunca;
+  guardado, en los mismos. Revisión adversarial de 3 lentes incorporada.
+- **LG-28 (panics alcanzables, release con `panic = "abort"`):** auditoría
+  de 3 zonas con escépticos, ningún HIGH; arreglados `peer_addr().unwrap()` y
+  `Url::parse(..).expect` del WS, índice de adopción > MAX_COINS, corte UTF-8
+  del ALGO_UPDATE, `clamp(min, NaN)` con genes de Hurst NaN, `clamp(min >
+  max)` del consenso tensorial y el arena del examen en la pila de tokio.
+- **Censo real (BTC sep, 2 M evaluaciones):** 14/19 fuentes hablan; mudos
+  Coaxial, Choque, StatArb, Yang-Mills (0 %) y Conformal (0,12 %). 29/29
+  operaciones fueron cortos de la rama 15 con la cinta acabando al alza
+  (hipótesis: ML-GATE con el modelo de BTC bajo su base).
+- **Lección:** `Path.write_text` de Python en Windows escribe CRLF; usar
+  `write_bytes` o `newline='\n'`.
+- **Lección:** antes de commitear un merge, apartar como parche lo que no es
+  del merge: lo que se verifica tiene que ser el árbol que se commitea.
+- **Lección:** parar con TaskStop una tarea que espera en el semáforo deja
+  huérfano el script hijo; comprobar y matar el `cargo_semaforo.sh` propio
+  (por orden y hora de creación) para que no tome el turno después.
+
 ## 2026-10-17 — Antigravity (AGY, Quant Sr.): Ola Ω148 CERRADA — Continuidad $C^1$ e Invarianza Adimensional RMS en Helmholtz-Hodge (`G8-OMEGA-07`), Ventana Unimodal GUE Anti-Picket-Fence (`G8-OMEGA-08`), Anclaje Neutral y $C^1$ en Dirac (`G8-OMEGA-15`), Proyección sin Inversión de Signo en Confluencia Espectral (`G8-OMEGA-09/11`), Operabilidad de Feynman en Fallback Escalar (`LG8-145-06`) y Causalidad + Adimensionalidad en Hedge por Fuente (`CSG-2` HIGH, `LG8-145-04/05`)
 
 - **Rama**: `agy/ola-148-helmholtz-riemann-dirac-confluence-hedge-c1` (fusionada a `main` y retirada).
