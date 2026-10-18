@@ -8,15 +8,31 @@ pub struct ReloadEvent {
     pub key: String,
     pub path: PathBuf,
     pub result: Result<(), String>,
+    /// CL-141: el mismo rechazo (misma fuente y mismo error) ya se informó en
+    /// un escaneo anterior. El reintento sigue; el aviso se omite.
+    pub repetido: bool,
 }
 
+/// CL-141 (C-F6) — UN AVISO POR RECHAZO, NO UNO CADA 10 s.
+///
+/// QUÉ ESTABA MAL: un modelo inválido en `models/` se reintenta en cada
+/// escaneo (cada 10 s, por si el fallo era transitorio) y el host avisaba en
+/// cada uno: ≈ 1,5 MB/día por archivo, 8 640 líneas idénticas.
+///
+/// QUÉ GARANTIZA: el reintento no cambia (un fallo nunca avanza `applied`),
+/// pero un rechazo se marca `repetido` mientras su fuente y su error sean
+/// los del último aviso. Un cambio del archivo o del error vuelve a avisar.
 #[derive(Default)]
 pub struct ModelReloadTracker {
     applied: HashMap<String, SourceStamp>,
+    /// Último rechazo informado por clave: fuente (si se pudo observar) y
+    /// error. Acotado por los archivos de `models/`, como `applied`.
+    rechazos: HashMap<String, (Option<SourceStamp>, String)>,
+    ultimo_error_de_escaneo: Option<String>,
 }
 
 // A change detector, NOT a content hash, generation or promotion certificate.
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct SourceStamp {
     path: PathBuf,
     modified: SystemTime,
@@ -24,6 +40,26 @@ struct SourceStamp {
 }
 
 impl ModelReloadTracker {
+    /// CL-141: `true` si este rechazo de `key` no es el último informado.
+    fn rechazo_nuevo(&mut self, key: &str, fuente: Option<SourceStamp>, error: &str) -> bool {
+        let huella = (fuente, error.to_owned());
+        if self.rechazos.get(key) == Some(&huella) {
+            return false;
+        }
+        self.rechazos.insert(key.to_owned(), huella);
+        true
+    }
+
+    /// CL-141: `true` si el directorio no se puede leer por un error distinto
+    /// del último informado. Un escaneo que lee el directorio lo olvida.
+    pub fn error_de_escaneo_nuevo(&mut self, error: &str) -> bool {
+        if self.ultimo_error_de_escaneo.as_deref() == Some(error) {
+            return false;
+        }
+        self.ultimo_error_de_escaneo = Some(error.to_owned());
+        true
+    }
+
     /// One attempt per key per scan. A JSON takes precedence over its sibling
     /// BIN; standalone legacy BINs remain supported. Failed attempts never
     /// advance applied state, so transient failures retry on the next scan.
@@ -38,6 +74,7 @@ impl ModelReloadTracker {
         let mut paths = std::fs::read_dir(directory)?
             .map(|entry| entry.map(|e| e.path()))
             .collect::<std::io::Result<Vec<_>>>()?;
+        self.ultimo_error_de_escaneo = None;
         paths.sort();
         for path in paths {
             let ext = path.extension().and_then(|s| s.to_str());
@@ -52,10 +89,13 @@ impl ModelReloadTracker {
                     Ok(true) => continue,
                     Ok(false) => {}
                     Err(error) => {
+                        let error = format!("cannot establish source precedence: {error}");
+                        let repetido = !self.rechazo_nuevo(key, None, &error);
                         events.push(ReloadEvent {
                             key: key.to_owned(),
                             path,
-                            result: Err(format!("cannot establish source precedence: {error}")),
+                            result: Err(error),
+                            repetido,
                         });
                         continue;
                     }
@@ -74,10 +114,13 @@ impl ModelReloadTracker {
                 Ok(Some(stamp)) => stamp,
                 Ok(None) => continue,
                 Err(error) => {
+                    let error = format!("cannot observe model source: {error}");
+                    let repetido = !self.rechazo_nuevo(key, None, &error);
                     events.push(ReloadEvent {
                         key: key.to_owned(),
                         path,
-                        result: Err(format!("cannot observe model source: {error}")),
+                        result: Err(error),
+                        repetido,
                     });
                     continue;
                 }
@@ -86,13 +129,19 @@ impl ModelReloadTracker {
                 continue;
             }
             let result = load(key, &path);
-            if result.is_ok() {
-                self.applied.insert(key.to_owned(), stamp);
-            }
+            let repetido = match &result {
+                Ok(()) => {
+                    self.rechazos.remove(key);
+                    self.applied.insert(key.to_owned(), stamp);
+                    false
+                }
+                Err(error) => !self.rechazo_nuevo(key, Some(stamp), error),
+            };
             events.push(ReloadEvent {
                 key: key.to_owned(),
                 path,
                 result,
+                repetido,
             });
         }
         Ok(events)
