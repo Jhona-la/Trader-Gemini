@@ -94,17 +94,33 @@ fn lh04_con_evidencia_dimensiona_por_riesgo_calibrado() {
     // p_LCB < p̂ (la cota inferior es conservadora).
     assert!(p_lcb < 0.65, "LCB por debajo del estimador puntual: {p_lcb}");
 
-    // El riesgo al stop de la orden emitida ≈ f·C (si la orden pasó).
-    if out.signal != SignalType::Flat {
-        let riesgo_stop = out.volume_usd * out.leverage * out.sl_target.max(1e-9);
-        // SL_target es fracción del precio; tolerancia generosa por el
-        // rescate de nocional mínimo y la cuantización del apalancamiento.
-        let objetivo = f * 1000.0;
-        assert!(
-            riesgo_stop >= objetivo * 0.5,
-            "riesgo al stop {riesgo_stop} en el orden del objetivo {objetivo} (rescate min-notional puede subirlo, no bajarlo a <50%)"
-        );
-    }
+    // F-A5 (Fable, F1-013): el riesgo al stop de la orden emitida se mide con
+    // el stop QUE LA ORDEN LLEVA (`sl_target` es un PRECIO; la versión
+    // anterior lo multiplicaba como si fuera una fracción y la cota quedaba
+    // trivialmente satisfecha). Contrato bilateral: coincide con el riesgo
+    // realizado publicado (±5 % por la cuantización entera del
+    // apalancamiento y el redondeo al lote) y NUNCA supera el objetivo f·C.
+    // Con f ≈ 13 % y L ≤ 20 el tope de ruina (25 % del capital) muerde: el
+    // realizado queda por debajo de f, y así lo publica la telemetría.
+    assert_ne!(out.signal, SignalType::Flat, "{}", risk_engine::reject_report());
+    let capital = arena.registry.get_for_coin_or(0, "lh04_capital_asignado", f64::NAN);
+    let f_realizado = arena.registry.get_for_coin_or(0, "lh04_f_realizado", f64::NAN);
+    assert!(capital.is_finite() && capital > 0.0, "capital asignado publicado: {capital}");
+    assert!(f_realizado.is_finite() && f_realizado > 0.0, "riesgo realizado publicado: {f_realizado}");
+    assert!(f_realizado <= f + 1e-12, "el realizado nunca supera el objetivo: {f_realizado} > {f}");
+    let stop_orden = (100.0 - out.sl_target) / 100.0;
+    assert!(stop_orden > 0.0 && stop_orden < 0.2, "stop de la orden en fracción: {stop_orden}");
+    let riesgo_stop = out.volume_usd * out.leverage * stop_orden;
+    let realizado_usd = f_realizado * capital;
+    assert!(
+        (riesgo_stop - realizado_usd).abs() <= 0.05 * realizado_usd,
+        "riesgo al stop emitido {riesgo_stop} = realizado publicado {realizado_usd} ± 5 %"
+    );
+    assert!(
+        riesgo_stop <= f * capital * 1.05,
+        "riesgo al stop {riesgo_stop} no supera el objetivo f·C = {}",
+        f * capital
+    );
 }
 
 /// (3) Evidencia DÉBIL se autolimita: con n=12 y p̂=0.9, la Wilson-LCB

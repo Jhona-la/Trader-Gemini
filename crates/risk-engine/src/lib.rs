@@ -1487,8 +1487,24 @@ impl RiskEngine {
             1.0
         };
         let lh04_f_efectiva = lh04_f * lh04_bias_factor;
+        // F-A5 (Fable, 2026-10-17; hallazgo F1-013, confirmado por dos
+        // escépticos): el nocional en espacio de riesgo se obtiene con el
+        // stop QUE LA ORDEN LLEVA (`expected_loss`, el de CL-2/CL-7 y el que
+        // mide D-744/CL-131), no con `sl_at_tau(τ)`, la curva genómica. Con la
+        // curva, el riesgo realizado al stop era f·C·(stop real/stop genómico):
+        // con ATR alto se arriesgaba varias veces f y con ATR bajo una fracción,
+        // y la medida D-744 (que sí usa el stop real) no reconciliaba con el
+        // objetivo. `expected_loss` ya pasó la validación de geometría (finito
+        // y > 0, si no la intención fue rechazada arriba); el respaldo a la
+        // curva sólo cubre una reordenación futura de ese bloque.
+        let stop_real = if expected_loss.is_finite() && expected_loss > 0.0 {
+            expected_loss
+        } else {
+            continuous_sl
+        };
+        let mut lh04_f_realizado = 0.0_f64;
         if lh04_f_efectiva > 0.0 && dynamic_leverage >= 1.0 {
-            let nocional_obj = lh04_f_efectiva * allocated_capital / continuous_sl;
+            let nocional_obj = lh04_f_efectiva * allocated_capital / stop_real;
             let margen_obj = nocional_obj / dynamic_leverage;
             if margen_obj.is_finite() && margen_obj > 0.0 {
                 // P1 (GLM 120, mea culpa): con stop ceñido el nocional
@@ -1512,12 +1528,31 @@ impl RiskEngine {
                     0.25
                 };
                 final_margin = margen_obj.min(allocated_capital * tope_margen_lh04);
+                // F-A5: riesgo al stop que ESTE dimensionado realiza, en
+                // fracción del capital asignado, tras el tope de ruina y
+                // antes de los rescates de nocional mínimo. Igual a f cuando
+                // el tope no muerde; menor cuando muerde. Auditable junto a
+                // `lh04_f_riesgo` (el objetivo).
+                lh04_f_realizado = if allocated_capital > 0.0 {
+                    final_margin * dynamic_leverage * stop_real / allocated_capital
+                } else {
+                    0.0
+                };
             }
         }
         // Telemetría LH-04 (auditable por moneda): f EFECTIVA (post-racha).
         arena
             .registry
             .set_for_coin(coin_id, "lh04_f_riesgo", lh04_f_efectiva);
+        arena
+            .registry
+            .set_for_coin(coin_id, "lh04_f_realizado", lh04_f_realizado);
+        arena
+            .registry
+            .set_for_coin(coin_id, "lh04_capital_asignado", allocated_capital);
+        arena
+            .registry
+            .set_for_coin(coin_id, "lh04_stop_real", stop_real);
         arena
             .registry
             .set_for_coin(coin_id, "lh04_p_lcb", lh04_p_lcb);
