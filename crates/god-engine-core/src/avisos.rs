@@ -43,53 +43,72 @@ impl AvisosDelNucleo {
         u64::try_from(self.inicio.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
+    /// El estrangulador del aviso a `ahora_ms`; `None` con moneda fuera de rango.
+    fn admitir(&mut self, aviso: Aviso, ahora_ms: u64) -> Option<u64> {
+        match aviso {
+            Aviso::Latencia => self.latencia.admitir(ahora_ms),
+            Aviso::VetoMl => self.veto_ml.admitir(ahora_ms),
+            Aviso::LatidoMl(coin_id) => self.latido_ml.get_mut(coin_id)?.admitir(ahora_ms),
+            Aviso::ModeloDegenerado(coin_id) => self.modelo_degenerado.get_mut(coin_id)?.admitir(ahora_ms),
+        }
+    }
+
     /// `Some(suprimidos)` si toca avisar de la latencia.
     pub fn latencia(&mut self) -> Option<u64> {
-        let t = self.ahora_ms();
-        self.latencia.admitir(t)
+        self.admitir(Aviso::Latencia, self.ahora_ms())
     }
 
     /// `Some(suprimidos)` si toca avisar de los vetos del ensamble.
     pub fn veto_ml(&mut self) -> Option<u64> {
-        let t = self.ahora_ms();
-        self.veto_ml.admitir(t)
+        self.admitir(Aviso::VetoMl, self.ahora_ms())
     }
 
     /// `Some(suprimidos)` si toca el latido ML de `coin_id`; `None` fuera de rango.
     pub fn latido_ml(&mut self, coin_id: usize) -> Option<u64> {
-        let t = self.ahora_ms();
-        self.latido_ml.get_mut(coin_id)?.admitir(t)
+        self.admitir(Aviso::LatidoMl(coin_id), self.ahora_ms())
     }
 
     /// `Some(suprimidos)` si toca avisar del modelo degenerado de `coin_id`.
     pub fn modelo_degenerado(&mut self, coin_id: usize) -> Option<u64> {
-        let t = self.ahora_ms();
-        self.modelo_degenerado.get_mut(coin_id)?.admitir(t)
+        self.admitir(Aviso::ModeloDegenerado(coin_id), self.ahora_ms())
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Aviso {
+    Latencia,
+    VetoMl,
+    LatidoMl(usize),
+    ModeloDegenerado(usize),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Esperado: un millón de condiciones seguidas (mucho menos de una
-    /// ventana) dan un solo aviso de cada tipo; las monedas no se pisan y una
-    /// moneda fuera de rango no avisa ni falla. Antes, ML-GATE escribía uno
-    /// de cada 50 vetos: 20 000 líneas.
+    /// Esperado: con el reloj fijado, un millón de condiciones dentro de una
+    /// ventana dan un solo aviso de cada tipo; al abrirse la ventana el
+    /// siguiente trae el conteo de los suprimidos; las monedas no se pisan y
+    /// una moneda fuera de rango no avisa ni falla. Antes, ML-GATE escribía
+    /// uno de cada 50 vetos: 20 000 líneas.
     #[test]
     fn cl142b_un_aviso_por_ventana_sea_cual_sea_la_tasa() {
         let mut a = AvisosDelNucleo::new(3);
+        let tipos = [Aviso::Latencia, Aviso::VetoMl, Aviso::LatidoMl(0), Aviso::ModeloDegenerado(0)];
         let mut avisos = [0u32; 4];
-        for _ in 0..1_000_000 {
-            avisos[0] += a.latencia().is_some() as u32;
-            avisos[1] += a.veto_ml().is_some() as u32;
-            avisos[2] += a.latido_ml(0).is_some() as u32;
-            avisos[3] += a.modelo_degenerado(0).is_some() as u32;
+        for i in 0..1_000_000u64 {
+            let t = i % VENTANA_LATENCIA_MS;
+            for (k, tipo) in tipos.into_iter().enumerate() {
+                avisos[k] += a.admitir(tipo, t).is_some() as u32;
+            }
         }
         assert_eq!(avisos, [1, 1, 1, 1]);
-        assert!(a.latido_ml(1).is_some(), "otra moneda tiene su propia ventana");
-        assert!(a.modelo_degenerado(2).is_some());
-        assert_eq!(a.latido_ml(3), None);
-        assert_eq!(a.modelo_degenerado(usize::MAX), None);
+        assert_eq!(a.admitir(Aviso::Latencia, VENTANA_LATENCIA_MS), Some(999_999));
+        assert_eq!(a.admitir(Aviso::VetoMl, VENTANA_LATENCIA_MS), None, "su ventana es de 60 s");
+        assert_eq!(a.admitir(Aviso::VetoMl, VENTANA_MS), Some(1_000_000));
+        assert!(a.admitir(Aviso::LatidoMl(1), 0).is_some(), "otra moneda tiene su propia ventana");
+        assert!(a.admitir(Aviso::ModeloDegenerado(2), 0).is_some());
+        assert_eq!(a.admitir(Aviso::LatidoMl(3), 0), None);
+        assert_eq!(a.admitir(Aviso::ModeloDegenerado(usize::MAX), 0), None);
     }
 }

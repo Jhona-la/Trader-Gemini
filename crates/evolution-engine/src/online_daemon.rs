@@ -533,6 +533,14 @@ fn nucleo_del_examen(
     (arena, core)
 }
 
+/// CL-142c: genoma que ve el núcleo del examen de `candidate`. Sólo lo usa la
+/// prueba `cf6_arena_del_candidato`: el examen debe puntuar al candidato.
+#[doc(hidden)]
+pub fn genoma_del_examen(candidate: &SuperGenotype, market: &WfMarketEnv) -> SuperGenotype {
+    let (arena, _core) = nucleo_del_examen(candidate, WF_INITIAL_CAPITAL, market, &[0]);
+    SuperGenotype::current_from_arena(&arena)
+}
+
 /// CL-88 (atr-2): ATR relativo de la primera moneda del examen tras
 /// reproducir `serie` entera sin puntuar, con el genoma por defecto. Sólo lo
 /// usa la prueba `cf4_tick_del_examen`, que fija el universo vivo en su
