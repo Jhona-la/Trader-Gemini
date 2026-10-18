@@ -1,6 +1,6 @@
 # ADR-0017 — Dos frenos (duro de la cuenta y de la estrategia) y estado aprendido persistente
 
-- **Estado**: Aceptado. Implementado en CL-99, CL-106, CL-107 y CL-108; corregido tras la revisión previa de la Línea G (`docs/audit/linea_g/ola5_tanda_cf4.tsv`) en CL-106b, CL-108d, CL-108e y CL-108f, y tras la revisión posterior del PR #62 (`/mnt/project-files/auditoria/revision_pr62_2026-10-17.md`) en CL-130 a CL-134 (§2b).
+- **Estado**: Aceptado. Implementado en CL-99, CL-106, CL-107 y CL-108; corregido tras la revisión previa de la Línea G (`docs/audit/linea_g/ola5_tanda_cf4.tsv`) en CL-106b, CL-108d, CL-108e y CL-108f, y tras la revisión posterior del PR #62 (`/mnt/project-files/auditoria/revision_pr62_2026-10-17.md`) en CL-130 a CL-134 (§2b). Las correcciones de la tanda C-F5a (CL-114 a CL-124, revisión de la Línea G de la tanda C-F4, rescatadas de `claude/tanda-cf5`) están en §3 y §4.
 - **Fecha**: 2026-10-12
 - **Responsables**:
   - Decisiones del dueño en sus tarjetas del 2026-10-12: el freno de drawdown («Ambos») y la fase de sonda tras el reinicio («Guardar todo»).
@@ -69,12 +69,15 @@ Fuente: `docs/audit/linea_g/ola9_pr70.tsv` (35 hallazgos, 1 medio).
 
 **Replantar libera el margen (CL-138, PR70-INT-10).** `replant` cerraba las ranuras y tiraba el margen que devolvían; el universo replantado nacía con `used_margin` de la hipótesis vieja.
 
-**Siguen abiertos (bajos o de diseño):** el pico sin venue de antes de CL-133 lo adopta el primer venue que arranca (PR70-INT-01, una vez por actualización); la pata en stops se guarda por carpeta y el pico por venue (PR70-INT-03); el freno de la cuenta es ciego al tamaño entre K·s̄ y d* (F5C-M1); `min(arena, exchange)` no ve la caída del propio papel sobre mainnet (F5C-M3); la caída que delibera el consejo usa el capital del arena (PR70-INT-07, sin punto de observación para probarlo todavía); el freno de la estrategia y el duro tratan distinto las posiciones adoptadas (PR70-INT-06); la EWMA no pesa 1/n en sus primeras órdenes (F5C-L2).
+**Siguen abiertos (bajos o de diseño):** el pico sin venue de antes de CL-133 lo adopta el primer venue que arranca (PR70-INT-01, una vez por actualización); la pata en stops se guarda por carpeta y el pico por venue (PR70-INT-03); el freno de la cuenta es ciego al tamaño entre K·s̄ y d* (F5C-M1); `min(arena, exchange)` no ve la caída del propio papel sobre mainnet (F5C-M3); la caída que delibera el consejo usa el capital del arena (PR70-INT-07, sin punto de observación para probarlo todavía); la EWMA no pesa 1/n en sus primeras órdenes (F5C-L2). PR70-INT-06 (los dos frenos trataban distinto una posición adoptada sin SL propio) lo cierra CL-115 (§3).
 
 ### 3. Freno de la estrategia (CL-107)
 
-**Prueba:** un proceso e de Ville (`VilleEProcess`) sobre la R de cada cierre.
+**Prueba:** un proceso e de Ville (`VilleEProcess`) sobre la R de cada cierre de la estrategia.
 - H0 = +0,30 R por operación, la ventaja que pide la meta.
+- Cada cierre se mide con la geometría de SU posición: su TP, su SL y la fricción de la configuración (CL-114, T1-01/T1-06 de la Línea G). Con la geometría media de las órdenes y RR distintas a la vez, la escala recortaba las ganancias grandes, y la falsa alarma bajo H0 subía al 9,9 %.
+- No cuentan las sondas (exploración de D4) ni las posiciones adoptadas sin stop propio, cuya R no es medible (CL-115, T1-04/T1-05). Las pérdidas de las sondas siguen contando en el freno duro. Así los dos frenos excluyen las mismas posiciones adoptadas (PR70-INT-06).
+- Abierto (T1-09): los cierres que sólo ve el host (pierna de bracket o reconciliación) no llegan al freno.
 - Rechaza con M ≥ 20 (α = 0,05).
 - La falsa alarma queda ≤ α para cualquier momento en que se mire.
 - Detección: E[R] = 0 en ~117-136 operaciones; −0,10 R en ~63-79.
@@ -99,7 +102,15 @@ El PnL de las sesiones anteriores se guarda aparte. No entra en los acumuladores
 - el riesgo (en fracción y en USD) y la geometría medidos;
 - la caída del freno duro en stops (CL-130).
 
-El host restaura antes de operar y guarda en cada cierre (`estado_aprendido.json`, por entorno). La escritura se sincroniza con el disco antes de renombrar, y un estado que no se podría volver a leer no se escribe.
+El host restaura antes de operar (`estado_aprendido.json`, por entorno). La escritura se sincroniza con el disco antes de renombrar, y un estado que no se podría volver a leer no se escribe.
+
+**Cuándo se guarda (CL-120, T2-4/T2-6).**
+- La escritura la hace un hilo aparte, no el del bucle de eventos. Si el sistema no deja crear ese hilo, se escribe en el bucle (CL-120b).
+- Se envía una foto cuando cambia la firma del estado (cierres aprendidos y recuentos por moneda):
+  - con cada cierre que se aprende (no con uno de papel);
+  - con los ajustes de la reconciliación, que se miran cada 4 096 mensajes;
+  - al apagar, después de lo cual se espera al escritor.
+- Las monedas que no están en el universo del arranque se conservan en el archivo (CL-118).
 
 **Un archivo ilegible no es un archivo ausente (CL-108f, T2-1).** Si el archivo está corrupto, truncado, tiene un valor fuera de rango o es de otra versión:
 - el freno de la estrategia queda echado (no se sabe si lo estaba);

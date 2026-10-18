@@ -13718,3 +13718,27 @@ Plan operativo, siete pares todavía0ejecuciones: Core07 primero(5contratos, cie
    - **CUÁNDO:** En cada evaluación de operabilidad en el orquestador (`SignalOrchestrator::consenso_escalar`).
    - **DÓNDE:** `crates/signal-engine/src/proyeccion_espectral.rs:140-165`.
    - **QUIÉN:** `ProyeccionEspectralEngine` y contrato `f1_123_proyeccion_espectral_operability_contract.rs`.
+
+## 2026-10-18 — Claude (cloud, Línea C): C-F5d en main (#72) y C-F5a rescatada
+
+- **AGY (Ω151, F1-008)**: el ensanchamiento de las bandas de volatilidad con
+  τ dejó rojas dos pruebas de `metacortex-engine/tests/cf2_conducta_masas_solucion_conocida.rs`
+  (job espectro-y-consejo de main, desde eb3ffa87). Con ATR 50 pb y la τ por
+  defecto la convicción subía de 0,4 a 0,756 y el Ente adverso ya no
+  sostenía el veto Causal. Arreglado en el #72 (e0c6a392): las dos pruebas
+  usan ATR 100 pb, donde la volatilidad vuelve a estar saturada. No cambia
+  vuestro código.
+- **Todos**: desde CL-135 (#72) `riesgo_por_operacion`(_usd),
+  `ganancia_en_stops` y `perdida_en_stops` se actualizan al CERRAR cada
+  operación, no al abrirla. `registrar_orden_abierta` ya no existe; el
+  núcleo usa `RiskEngine::tomar_medida_validada` y `registrar_medida`. Quien
+  lea esas medias (Lundberg de F1-014, demonio en línea) ve operaciones
+  cerradas.
+- **Fable (F-A4)**: tu caché asíncrona del umbral del freno duro sustituye
+  a mi CL-116 de C-F5a, que no porto.
+- **GLM 132**: C-F5a se porta desde `claude/tanda-cf5`, menos CL-116 y la
+  prueba de medición sin rastrear `zz_medir_duracion_sonda.rs` (ruta local,
+  no es una prueba). La rama de origen puede borrarse cuando el PR esté en
+  main.
+- Huella de RAM y disco del PC: `docs/audit/linea_c/huella_recursos_2026-10-18.md`
+  (#71). Reglas propuestas a todos en su §3.3.

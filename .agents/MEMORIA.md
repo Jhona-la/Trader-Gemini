@@ -1,5 +1,51 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-18 — Claude (cloud, Línea C): C-F5d (revisión de la Línea G al #70) y C-F5a rescatada
+
+- **Petición del dueño (06:15 UTC)**: el proyecto desborda la memoria. La
+  sesión en su PC midió y dejó `docs/audit/linea_c/huella_recursos_2026-10-18.md`
+  (PR #71, en main): la RAM la consumen las apps (VS Code abierto sobre OTRO
+  proyecto, 7,8 GB privados; Edge 2,6 GB; ≈ 8,5 GB residentes de apps de
+  agentes), no las compilaciones. Carpeta ≈ 82/300 GB; ZCode guarda un jsonl
+  de 26,8 GB en `~/.zcode/cli/rollout`. Reglas propuestas en §3.3 (suelo de
+  RAM del semáforo ≥ 3 GB, una sesión viva por línea, RUSTFLAGS único, cada
+  agente rota sus rastros, ningún target privado).
+- **C-F5d = PR #72, en main (a2e28c80)** (hallazgos de `docs/audit/linea_g/ola9_pr70.tsv`):
+  - CL-135 (PR70-INT-04): lo medido de una orden (riesgo al stop y w, l)
+    entra en las EWMA al CERRARLA, tras la puerta de aprendizaje, atado a la
+    generación de la ranura (`MedidaDeEntrada`, `tomar_medida_validada`,
+    `registrar_medida`). Antes una apertura local que el host revertía se
+    medía en cada reapertura (15 veces en la cinta T-1).
+  - CL-136/CL-137: SHADOW y DEMO guardan el pico en el archivo de mainnet;
+    el error de un pico ilegible nombra la ruta.
+  - CL-138: `replant` deja `used_margin` en 0.
+  - Además: dos pruebas del Ente (`cf2_conducta_masas_solucion_conocida`)
+    a ATR 100 pb, porque F1-008 (Ω151) ensanchó las bandas de volatilidad
+    con τ y dejó rojo el job espectro-y-consejo de main.
+  - T-1 sobre main 012cdd3b + C-F5d: 17/144 (11,8 %) ≥ 11,0 %. Pierde el gen
+    142 (`sl_horizon_curve.a`) frente a C-F5c (18/144). Sin bisecar todavía:
+    entre medias entró Ω151 (consejo y ATR).
+- **C-F5a** (CL-109…CL-124, de la rama `claude/tanda-cf5` que rescató GLM
+  132): portada sobre main tras el #72, en el PR siguiente. Entra todo salvo:
+  - CL-116 (Monte Carlo del umbral fuera del cerrojo): lo sustituye la caché
+    asíncrona y acotada de Fable (F-A4, `fable_freno_duro_cache_contract`).
+  - La prueba sin rastrear `zz_medir_duracion_sonda.rs` (medición puntual
+    con ruta local y unwraps, «no se commitea»): sigue en la rama de origen.
+  - CL-120b: el hilo escritor del estado aprendido ya no usa `.expect`; si
+    no se puede crear, la foto se escribe en el bucle.
+  - CL-115 cierra PR70-INT-06: los dos frenos excluyen ya las mismas
+    posiciones adoptadas sin SL propio.
+- Verificación de C-F5a (nube, wine): strategy-core, data-pipeline,
+  risk-engine, god-engine-core y backtest-engine con todos sus targets, y
+  los binarios copulas_manifest y god_engine: 1 484 pruebas, 0 fallos.
+- **Lección (cloud)**: dos ejecuciones de cargo sobre el MISMO target y con
+  `rm deps/*.exe` entre lotes se borran los ejecutables una a otra («test
+  failed» sin pánico). Con target compartido, cada lote borra sólo los suyos.
+- **Abierto, mío**: T1-09 (cierres que sólo ve el host no llegan al freno de
+  la estrategia), R4, B5, B7, B8 y P1 del #62, PR70-INT-01/03/07, F5C-M1/M3
+  y F5C-L2; atribuir el gen 142; los 18 modelos; motores desconectados; y el
+  censo de estado sin cota del proceso vivo (en curso).
+
 ## 2026-10-18 — Antigravity (Quant Sr.): Ola Ω153 CERRADA — F1-020 (envolvente per-slot con generation tracking y rollback aislado), F1-021 (cableado de rep.metrics en fitness SA de evolution.rs), F1-022 (Total Equity en DD/ruina y MTM en last_close_executed sin lookahead), F1-023 (regla del tick causal Lee-Ready en run_backtest_native), F1-122 (hedge_eta default neutral 0.0) y F1-123 (ProyeccionEspectral operabilidad estricta según masa resuelta)
 
 - **F1-020 (MED, `booktick_replay.rs` & `lib.rs`):** `live_envelope_gate` se disparaba por estado global de la moneda (`prev_open == false`) en lugar de por orden nueva, silenciando por completo las ranuras resonantes secundarias (slots 1 y 2) cuando slot 0 ya estaba abierta. Además, la inspección tomaba la primera posición abierta en vez de la recién emitida. Se implementó `live_envelope_gate_for_slot` disparado por orden nueva mediante seguimiento atómico de `generation`, ejecutando `rollback_local_slot` únicamente sobre la ranura vetada y preservando intactas las posiciones concurrentes en otras escalas. Contrato: `crates/backtest-engine/tests/f1_020_stacked_resonant_envelope_contract.rs` (1/1 ok).
