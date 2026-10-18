@@ -14226,3 +14226,29 @@ conflicto-de-rebase detecta la duplicación y el protocolo la limpia).
   RECONECTAR_SOMBRA 10, ZONA_AJENA 17, CONSERVAR 8. Los ítems de
   `internal_sharpe`/`shadow_ledger` (F271/F272/F400/F412/F413) tienen
   dueño activo (AGY/Línea C sobre core/lib.rs) — NO tocados.
+
+## 2026-10-18 — Sol: F9-6 — clúster phase-runner RETIRADO (censo C-F7b F353-F361 + F360)
+
+- **Átomo**: el crate `phase-runner` COMPLETO era huérfano — 9 filas del
+  censo (F353-F361) con el mismo plan, sin dueño. Sus únicos consumidores:
+  el bin `audit-engine/src/main.rs` (F360, demo de 100 líneas) y un bloque
+  del simulador cuyo resultado se DESCARTA (`let _result = ...`).
+- **Retiro**: `crates/phase-runner/**` (lib 192 + tests 22 líneas),
+  `crates/audit-engine/src/main.rs` (100 líneas), miembro y dependencia
+  del `Cargo.toml` raíz (:19/:53), deps `phase-runner` + `graph-4d` de
+  `audit-engine/Cargo.toml` (solo las usaba el bin), y en
+  `src/bin/multi_coin_simulator.rs` el `use` (:6) + el bloque :505-508.
+  `graph-4d` SE CONSERVA (otros consumidores: telemetry-server,
+  src/features/mod.rs).
+- **Verificación estructural**: `cargo metadata` VÁLIDO (23 paquetes,
+  phase-runner ausente); `Cargo.lock` actualizado por metadata (−14
+  líneas, 0 entradas phase-runner); `git grep` 0 referencias a
+  `phase_runner`/`phase-runner` en todo el repo.
+- **Verificación de compilación PENDIENTE por contención del lock**:
+  el `target/debug/.cargo-build-lock` está abierto con sharing exclusivo
+  por otro agente (cargo 2:32 PM + rustc 707 MB) ⇒ «Access is denied
+  (os error 5)» también desde la shell alternativa. Reintento en
+  background; recibo en `outputs/Sol_f9_ret_phase_runner_GREEN.log` al
+  liberar el lock. Comandos: `CARGO_TARGET_DIR=<raíz>/target cargo check
+  -p audit-engine --all-targets` + `cargo check --bin
+  multi_coin_simulator` + `cargo test -p audit-engine`.

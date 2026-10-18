@@ -16,7 +16,6 @@ members = [
     "crates/god-engine-core",
     "crates/graph-architecture",
     "crates/omniscient-registry",
-    "crates/phase-runner",
     "crates/strategy-core",
     "crates/data-ingest",
     "crates/graph-4d",
@@ -50,7 +49,6 @@ dark-alpha-engine = { path = "crates/dark-alpha-engine" }
 telemetry-server = { path = "crates/telemetry-server" }
 graph-architecture = { version = "0.1.0", path = "crates/graph-architecture" }
 omniscient-registry = { path = "crates/omniscient-registry" }
-phase-runner = { path = "crates/phase-runner" }
 strategy-core = { path = "crates/strategy-core" }
 data-ingest = { path = "crates/data-ingest" }
 graph-4d = { path = "crates/graph-4d" }
