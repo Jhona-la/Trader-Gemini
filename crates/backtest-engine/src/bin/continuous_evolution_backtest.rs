@@ -608,14 +608,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             omni[4] = (live_ofi * 100.0).clamp(0.0, 200.0);
             omni[5] = 50.0; // Benchmark neutral RSI proxy
             omni[11] = 0.0001; // agg_funding_rate
-            omni[21] = 104.2; // dxy
-            omni[22] = 5120.0; // sp500
-            omni[23] = 18100.0; // nasdaq
-            omni[24] = 18.5; // vix
-            omni[25] = 4.25; // us10y
-            omni[26] = 2320.0; // gold
-            omni[27] = 81.0; // oil_wti
-            omni[29] = 5.25; // fed_interest_rate
+            // SOL-F9-4: bloque macro 21-29 = SENTINELA 0.0 (sin tape macro).
+            // Ver darwin.rs: los literales 2024 (y el VIX 18.5 fijo)
+            // divergían del harness ML y del servido vivo.
+            omni[21] = 0.0; // dxy
+            omni[22] = 0.0; // sp500
+            omni[23] = 0.0; // nasdaq
+            omni[24] = 0.0; // vix — sin tape; el core aplica su fallback
+            omni[25] = 0.0; // us10y
+            omni[26] = 0.0; // gold — PAXG vivo, sin tape en examen
+            omni[27] = 0.0; // oil_wti
+            omni[29] = 0.0; // fed_interest_rate
             omni[30] = tick.bid_qty - tick.ask_qty;
             omni[31] = (tick.bid_qty - tick.ask_qty) * 1.2;
             omni[39] = live_ofi;

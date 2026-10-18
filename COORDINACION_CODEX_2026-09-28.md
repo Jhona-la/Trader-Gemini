@@ -14090,3 +14090,45 @@ Publicación prevista sólo cuatro Markdown por objetos Git sobre main remoto vi
    - Plan Maestro promovido a **V27** (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md`).
    - `.agents/MEMORIA.md` actualizado con el detalle técnico exhaustivo.
    - Fusión a `main`, push a remoto y eliminación de rama local en curso.
+## 2026-10-18 — Sol: F9-4 — paridad macro examen↔vivo: literales 2024 erradicados de los 3 exámenes
+
+- **Hallazgo (familia de 3 caminos de examen, todos en mi carril)**:
+  1. `god-engine-core/src/darwin.rs:277-284` — `OmniSynth::tick` del
+     DarwinDaemon, que corre VIVO en `god_engine.rs:2336` (`evolve_online`
+     promueve genomas sobre ticks reales del arena): servía `omni[21]=104.2
+     (dxy)`, `[22]=5120 (sp500)`, `[23]=18100 (nasdaq)`, `[25]=4.25
+     (us10y)`, `[26]=2320 (gold)`, `[27]=81 (oil)`, `[29]=5.5 (fed)` — el
+     mercado de 2024 congelado, con el comentario «ancla estática —
+     paridad nativo» que era FALSO.
+  2. `backtest-engine/src/lib.rs:214-221` — `run_backtest_native::omni_sim`
+     (el backtest de referencia): los mismos literales + `dyn_vix` sintético.
+  3. `backtest-engine/src/bin/continuous_evolution_backtest.rs:611-618`:
+     los mismos literales + VIX fijo 18.5.
+- **Por qué es un defecto (no un ancla inocente)**: el camino VIVO
+  (`god-engine-core` lib.rs:1980-2075) dicta el contrato explícito: «toda
+  feature SIN PRODUCTOR se sirve 0.0 (centinela), NUNCA un literal
+  plausible». Y el harness ML (`god-engine-core/src/bin/test_ml.rs:155-167`)
+  construye el tensor con los FALLBACKS vivos (1.04/1.02/1.00/0.75/0…), no
+  con los literales. Es decir: los exámenes servían una distribución que
+  NI el vivo NI el harness ven ⇒ skew examen↔servicio en el camino que
+  PROMUEVE genomas. Familia de «dos caras», décima confirmación.
+- **Fix**: bloque macro 21-29 → sentinela 0.0 en los TRES caminos (el
+  mapeo del core aplica sus fallbacks calibrados, idénticos al harness);
+  `dyn_vix` retirado (sin consumidor). Comentarios con el contrato y la
+  nota al consejo: para servir macro REAL en examen hace falta un tape
+  macro (no existe en `data/`); hasta entonces el centinela es la única
+  opción sin fuga de futuro.
+- **Contrato RED→GREEN**: `crates/backtest-engine/tests/
+  sol_f9_macro_parity_contract.rs` — 2 tests: (1) ningún constructor de
+  omni del examen contiene literales 2024 en asignaciones macro;
+  (2) toda asignación a omni[21..29] es 0.0. **RED medido sobre el código
+  viejo**: «darwin.rs: omni[21] = 104.2 … asignación macro no-centinela»
+  (0/2); **GREEN 2/2** post-fix. Suites de backtest-engine y
+  god-engine-core: (recibo al cierre de la corrida).
+- **Lección de coordinación registrada**: el checkout compartido estaba
+  en la rama de AGY (`agy/ola-155-…`); un `git pull --rebase` mío aterrizó
+  un commit en SU rama. Recuperado al instante: rama de AGY restaurada a
+  su tip original (`e21ce07ad`, sin pérdidas — no tenía commits propios),
+  mi commit movido a main por refspec. REGLA NUEVA: en el checkout
+  compartido NUNCA `pull --rebase`; trabajar en worktree y empujar por
+  `git push origin HEAD:main`.

@@ -197,7 +197,8 @@ pub fn run_backtest_native(
         let dyn_funding = (rel_ret * 0.005).clamp(-0.001, 0.001);
         let dyn_fear_greed = (50.0 + rel_ret * 500.0).clamp(10.0, 90.0);
         let dyn_long_short = (1.0 + rel_ret * 5.0).clamp(0.5, 2.5);
-        let dyn_vix = (15.0 + rel_ret.abs() * 200.0).clamp(10.0, 80.0);
+        // SOL-F9-4: dyn_vix retirado — el examen sirve 0.0 y el core aplica
+        // su fallback 0.75, igual que el harness ML (test_ml.rs).
         let dyn_dvol = (50.0 + rel_ret.abs() * 300.0).clamp(20.0, 150.0);
         let dyn_put_call = (1.0 - rel_ret * 2.0).clamp(0.4, 2.0);
 
@@ -211,15 +212,19 @@ pub fn run_backtest_native(
         omni_sim[18] = current_vol * 0.2; // exchange_inflows
         omni_sim[19] = current_vol * 0.2; // exchange_outflows
         omni_sim[20] = 0.0; // whale_alert_proxy
-        omni_sim[21] = 104.2; // dxy
-        omni_sim[22] = 5120.0; // sp500
-        omni_sim[23] = 18100.0; // nasdaq
-        omni_sim[24] = dyn_vix; // vix
-        omni_sim[25] = 4.25; // us10y
-        omni_sim[26] = 2320.0; // gold
-        omni_sim[27] = 81.0; // oil_wti
+        // SOL-F9-4: bloque macro 21-29 = SENTINELA 0.0 (sin tape macro).
+        // Los literales 2024 y el dyn_vix sintético divergían del harness ML
+        // (test_ml.rs: 1.04/1.02/1.00/0.75) y del servido vivo (0.0 ⇒
+        // fallbacks calibrados). Ver darwin.rs para el contrato completo.
+        omni_sim[21] = 0.0; // dxy — sin productor en examen
+        omni_sim[22] = 0.0; // sp500 — idem
+        omni_sim[23] = 0.0; // nasdaq — idem
+        omni_sim[24] = 0.0; // vix — idem (el harness ML usa el fallback 0.75)
+        omni_sim[25] = 0.0; // us10y — sin productor vivo
+        omni_sim[26] = 0.0; // gold — productor vivo PAXG, sin tape en examen
+        omni_sim[27] = 0.0; // oil_wti — sin productor vivo
         omni_sim[28] = 0.0; // econ_calendar_impact
-        omni_sim[29] = 5.5; // fed_interest_rate
+        omni_sim[29] = 0.0; // fed_interest_rate — sin productor vivo
         omni_sim[30] = bid_qty - ask_qty; // spot_cvd
 
         // 3. Derivados, Clusters y Métricas de Flujo (31..54)
