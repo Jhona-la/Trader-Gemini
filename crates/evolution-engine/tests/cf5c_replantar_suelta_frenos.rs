@@ -88,3 +88,29 @@ fn cl134_replantar_reinicia_la_caida_en_stops() {
         assert_eq!(engine.arena.pico_en_stops.load(Relaxed), 0.0, "universo {i}");
     }
 }
+
+/// Esperado (CL-138, PR70-INT-10 de la Línea G): el universo replantado no
+/// conserva el margen de las posiciones que se cerraron al replantar.
+#[test]
+fn cl138_replantar_libera_el_margen_de_las_posiciones_cerradas() {
+    let mut forest = bosque_con_historia();
+    for engine in &forest.engines {
+        let pos = &engine.arena.coins[0].positions.slot_2;
+        assert!(pos.open_with_horizon(
+            true,
+            100.0,
+            0.05,
+            0.5,
+            1_000,
+            102.0,
+            99.0,
+            quantum_arena::position::PositionHorizon::Continuous,
+        ));
+        engine.arena.used_margin.fetch_add(0.5, Relaxed);
+    }
+    forest.replant(SuperGenotype::default());
+    for (i, engine) in forest.engines.iter().enumerate() {
+        assert!(!engine.arena.coins[0].positions.slot_2.is_open(), "universo {i}");
+        assert_eq!(engine.arena.used_margin.load(Relaxed), 0.0, "universo {i}: margen retenido");
+    }
+}
