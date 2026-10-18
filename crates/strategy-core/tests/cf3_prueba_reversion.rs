@@ -37,7 +37,7 @@ fn cl97_nivel_en_la_frontera_nodo_17() {
         let b = barrido(17, 1_000, theta0(17), r, 1_000.0, &edades, 17 + i as u64);
         informe(&format!("frontera nodo 17, ruido {r}"), &b);
         for j in 0..edades.len() {
-            assert!(b.rechazo[j] <= 0.08, "ruido {r}, edad {}: rechazo {}", edades[j], b.rechazo[j]);
+            assert!(b.rechazo_corta[j] <= 0.08, "ruido {r}, edad {}: rechazo {}", edades[j], b.rechazo_corta[j]);
             assert!(b.q95[j] <= CRITICO + 0.15, "ruido {r}, edad {}: q95 {}", edades[j], b.q95[j]);
         }
     }
@@ -51,7 +51,7 @@ fn cl97_nivel_en_la_frontera_nodo_18() {
     let b = barrido(18, 600, theta0(18), 0.5, 2_000.0, &edades, 18);
     informe("frontera nodo 18, ruido 0.5", &b);
     for j in 0..edades.len() {
-        assert!(b.rechazo[j] <= 0.08, "edad {}: rechazo {}", edades[j], b.rechazo[j]);
+        assert!(b.rechazo_corta[j] <= 0.08, "edad {}: rechazo {}", edades[j], b.rechazo_corta[j]);
     }
 }
 
@@ -65,7 +65,7 @@ fn cl97_caminata_dentro_de_h0() {
         let b = barrido(17, 1_000, 0.0, r, 1_000.0, &edades, 70 + i as u64);
         informe(&format!("caminata nodo 17, ruido {r}"), &b);
         for j in 0..edades.len() {
-            assert!(b.rechazo[j] <= 0.08, "ruido {r}, edad {}: rechazo {}", edades[j], b.rechazo[j]);
+            assert!(b.rechazo_corta[j] <= 0.08, "ruido {r}, edad {}: rechazo {}", edades[j], b.rechazo_corta[j]);
         }
     }
 }
@@ -77,8 +77,8 @@ fn cl97_potencia_con_reversion_rapida() {
     let edades = [2.0, 4.0];
     let b = barrido(17, 400, 10.0 * theta0(17), 0.0, 1_000.0, &edades, 99);
     informe("t½ = τ_17/5, nodo 17", &b);
-    assert!(b.rechazo[0] >= 0.60, "edad 2: rechazo {}", b.rechazo[0]);
-    assert!(b.rechazo[1] >= 0.80, "edad 4: rechazo {}", b.rechazo[1]);
+    assert!(b.rechazo_corta[0] >= 0.60, "edad 2: rechazo {}", b.rechazo_corta[0]);
+    assert!(b.rechazo_corta[1] >= 0.80, "edad 4: rechazo {}", b.rechazo_corta[1]);
 }
 
 /// Verdad: tras un hueco de dos memorias sin pares, la evidencia vieja ha

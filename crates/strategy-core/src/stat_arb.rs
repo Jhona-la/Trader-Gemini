@@ -539,14 +539,16 @@ mod tests {
     /// la base (piso 0, sin spec de tick) StatArb no vota, aunque la prueba
     /// demuestre reversión. Con mids redondeados a un tick y la base lenta,
     /// el redondeo fabrica reversión: la revisión midió votos en el 2-5 % de
-    /// los instantes sin piso. Con piso, el veredicto no cambia.
+    /// los instantes sin piso. Con piso, el veredicto no cambia. C-F5b: 1 200
+    /// pares (70 τ_17): la prueba a la escala de decisión madura a media
+    /// memoria larga (unos 600 pares) y con 600 pares aún no rechaza.
     #[test]
     fn cl111_sin_resolucion_de_la_base_no_vota() {
         let mut e = StatArbEngine::new(30, 1.5).with_prueba_reversion();
         let mut azar = Lcg(3);
         let rho = (-std::f64::consts::LN_2 / 3.0).exp();
         let mut x = 0.0f64;
-        for s in 1..=600u64 {
+        for s in 1..=1_200u64 {
             x = rho * x + (1.0 - rho * rho).sqrt() * 1e-4 * azar.n();
             e.observar_par(100.0 * (1.0 + x), 100.0, s * 1_000);
         }
