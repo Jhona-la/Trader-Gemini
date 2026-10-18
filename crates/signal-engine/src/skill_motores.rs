@@ -338,6 +338,34 @@ pub fn aplicar_gate_observabilidad(
     excluidas
 }
 
+/// F1-018 (Ola Ω150): Gate de observabilidad bilateral simétrico `[resolucion_efectiva_ms, tau_max_observable_ms]`.
+/// Excluye tanto las escalas sub-resolución (`τ_k < resolucion_efectiva_ms`) como las escalas
+/// ultra-lentas no observadas o fuera de la banda operativa (`τ_k > tau_max_observable_ms`),
+/// devolviendo `(excluidas_rapidas, excluidas_lentas)`.
+#[inline]
+pub fn aplicar_gate_observabilidad_banda(
+    pesos: &mut [[f64; ESCALAS_VOTO]; MOTORES],
+    resolucion_efectiva_ms: f64,
+    tau_max_observable_ms: f64,
+) -> (usize, usize) {
+    let excluidas_rapidas = aplicar_gate_observabilidad(pesos, resolucion_efectiva_ms);
+    if !tau_max_observable_ms.is_finite() || tau_max_observable_ms <= 0.0 {
+        return (excluidas_rapidas, 0);
+    }
+    let mut excluidas_lentas = 0usize;
+    for k in 0..ESCALAS_VOTO {
+        if (quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k] as f64)
+            > tau_max_observable_ms
+        {
+            excluidas_lentas += 1;
+            for fila in pesos.iter_mut() {
+                fila[k] = 0.0;
+            }
+        }
+    }
+    (excluidas_rapidas, excluidas_lentas)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -546,5 +574,29 @@ mod tests {
         let mut w2 = sm.pesos();
         assert_eq!(aplicar_gate_observabilidad(&mut w2, f64::NAN), 0);
         assert_eq!(w2[0][0], PISO_EXPLORACION);
+    }
+
+    #[test]
+    fn f1_018_gate_observabilidad_banda_simetrica() {
+        let sm = SkillMotores::new();
+        let mut w = sm.pesos();
+        let (excl_rapidas, excl_lentas) = aplicar_gate_observabilidad_banda(
+            &mut w,
+            quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS,
+            quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
+        );
+        assert_eq!(excl_rapidas, 18, "k=0..17 tienen τ_k < 30 s");
+        assert_eq!(excl_lentas, 9, "k=23..31 tienen τ_k > 12 h");
+        for fila in &w {
+            for k in 0..18 {
+                assert_eq!(fila[k], 0.0);
+            }
+            for k in 18..=22 {
+                assert!(fila[k] > 0.0, "escala operativa {k} conserva su peso");
+            }
+            for k in 23..ESCALAS_VOTO {
+                assert_eq!(fila[k], 0.0, "escala ultra-lenta {k} queda a 0");
+            }
+        }
     }
 }

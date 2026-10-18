@@ -79,6 +79,31 @@ pub struct PlattCalibrator {
 /// óptima estimada ni una garantía sobre la duración del régimen.
 pub const SEMIVIDA_EVIDENCIA_MS: f64 = quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS;
 
+/// Techo de época plausible en milisegundos (2100-01-01T00:00:00Z = 4_102_444_800_000 ms).
+/// CSG-10: Impide que una marca de tiempo corrupta en µs (~1,7e15) o ns (~1,7e18)
+/// envenene `ultimo_dato_ms` para siempre, lo cual anularía el olvido en `calibrate_at`
+/// y colapsaría a ~0 el peso de toda la evidencia histórica.
+pub const MAX_PLAUSIBLE_EPOCH_MS: u64 = 4_102_444_800_000;
+
+/// Salto máximo admisible hacia el futuro respecto a un reloj de época real ya anclado (365 días).
+pub const MAX_CLOCK_JUMP_MS: u64 = 365 * 86_400_000;
+
+/// Umbral mínimo para considerar que el reloj previo ya está en época Unix real (2000-01-01 UTC).
+const MIN_REAL_EPOCH_ANCHOR_MS: u64 = 946_684_800_000;
+
+#[inline]
+fn plausible_evidence_timestamp_ms(candidate_ms: u64, current_clock_ms: Option<u64>) -> bool {
+    if candidate_ms > MAX_PLAUSIBLE_EPOCH_MS {
+        return false;
+    }
+    if let Some(prev) = current_clock_ms {
+        if prev >= MIN_REAL_EPOCH_ANCHOR_MS && candidate_ms > prev.saturating_add(MAX_CLOCK_JUMP_MS) {
+            return false;
+        }
+    }
+    true
+}
+
 impl Default for PlattCalibrator {
     fn default() -> Self {
         Self::new()
@@ -105,8 +130,12 @@ impl PlattCalibrator {
     }
 
     /// Restaura el reloj guardado después de reproducir los datos retenidos.
-    /// No admite rebobinado. Reajusta fuera del camino caliente de consulta.
+    /// No admite rebobinado ni marcas de tiempo corruptas en el futuro (CSG-10).
+    /// Reajusta fuera del camino caliente de consulta.
     pub fn restore_evidence_clock_ms(&mut self, clock_ms: u64) {
+        if !plausible_evidence_timestamp_ms(clock_ms, self.ultimo_dato_ms) {
+            return;
+        }
         if self.ultimo_dato_ms.is_some_and(|t| clock_ms <= t) {
             return;
         }
@@ -174,7 +203,7 @@ impl PlattCalibrator {
         };
         if !score.is_finite() || now_ms <= ultimo {
             return ajustada;
-        }
+        };
         let dt = (now_ms - ultimo) as f64;
         let safe_tau = if tau_ms.is_finite() && tau_ms > 0.0 {
             tau_ms.clamp(
@@ -190,8 +219,15 @@ impl PlattCalibrator {
     }
 
     /// Añade un resultado con su instante de evento (Ola XLIV) y reajusta.
+    /// CSG-10: Si `now_ms` excede el techo de época plausible (ej. µs leídos como ms, ~1,7e15)
+    /// o salta más de `MAX_CLOCK_JUMP_MS` desde un reloj real ya anclado, no envenena
+    /// `ultimo_dato_ms` y ancla la observación al último reloj válido conocido.
     pub fn update_at(&mut self, score: f64, won: bool, now_ms: u64) {
         if !valid_training_score(score) {
+            return;
+        }
+        if !plausible_evidence_timestamp_ms(now_ms, self.ultimo_dato_ms) {
+            self.push_observation(score, won, self.ultimo_dato_ms);
             return;
         }
         // La API sin fechas no permite reconstruir edades. Al recibir el
@@ -888,4 +924,33 @@ mod tests_xliv_olvido {
         assert_eq!(p_win_directional(true, f64::NAN, f64::NAN), 0.50);
         assert_eq!(p_win_directional(false, f64::NAN, f64::NAN), 0.50);
     }
+
+    #[test]
+    fn csg_10_corrupted_future_timestamp_does_not_poison_evidence_clock() {
+        let t0 = 1_700_000_000_000_u64;
+        let mut c = calibrador_perdedor(t0);
+        assert_eq!(c.evidence_clock_ms(), Some(t0 + 39));
+
+        // Un evento corrupto con marca en microsegundos (~1,7e15) llega a update_at y restore_evidence_clock_ms
+        let corrupted_us = 1_700_000_000_000_000_u64;
+        c.update_at(0.80, false, corrupted_us);
+        c.restore_evidence_clock_ms(corrupted_us);
+
+        // El reloj de evidencia NO debe envenenarse con 1,7e15
+        assert_eq!(
+            c.evidence_clock_ms(),
+            Some(t0 + 39),
+            "Un timestamp corrupto en µs no debe envenenar el reloj de evidencia"
+        );
+
+        // El olvido temporal sigue operando normalmente tras una semivida
+        let hundida = c.calibrate(0.80);
+        let semivida = SEMIVIDA_EVIDENCIA_MS as u64;
+        let tras_semivida = c.calibrate_at(0.80, t0 + 39 + semivida);
+        assert!(
+            (tras_semivida - (0.5 * hundida + 0.5 * 0.80)).abs() < 1e-6,
+            "El olvido debe seguir funcionando tras rechazar el timestamp corrupto: {tras_semivida}"
+        );
+    }
 }
+

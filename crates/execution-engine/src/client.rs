@@ -113,6 +113,26 @@ fn extract_retry_after(headers: &HeaderMap) -> u64 {
         .unwrap_or(60)
 }
 
+/// F1-005 (Ola Ω150): Clasificador canónico de control de cuota HTTP (429 / 418)
+/// compartido por todas las rutas de transporte (`execute_order_payload`,
+/// `execute_order_payload_body`, `cancel_order_payload`, `get_payload_with_timeout`, `post_payload`).
+#[inline(always)]
+pub fn classify_rate_limit_or_ban(status_code: u16, headers: &HeaderMap) -> Option<String> {
+    if status_code == 429 {
+        let retry_after = extract_retry_after(headers);
+        Some(format!("HTTP_429_RATE_LIMITED retry_after={}", retry_after))
+    } else if status_code == 418 {
+        let retry_after = headers
+            .get("Retry-After")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .unwrap_or(300);
+        Some(format!("HTTP_418_IP_BANNED retry_after={}", retry_after))
+    } else {
+        None
+    }
+}
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone)]
@@ -285,11 +305,10 @@ impl BinanceClient {
                 if resp.status().is_success() {
                     let limits = extract_limits(resp.headers());
                     Ok(limits)
-                } else if resp.status().as_u16() == 429 {
-                    let retry_after = extract_retry_after(resp.headers());
-                    Err(format!("HTTP_429_RATE_LIMITED retry_after={}", retry_after))
-                } else if resp.status().as_u16() == 418 {
-                    Err("HTTP_418_IP_BANNED".to_string())
+                } else if let Some(rate_err) =
+                    classify_rate_limit_or_ban(resp.status().as_u16(), resp.headers())
+                {
+                    Err(rate_err)
                 } else {
                     let text = resp
                         .text()
@@ -344,15 +363,13 @@ impl BinanceClient {
         match response {
             Ok(resp) => {
                 let limits = extract_limits(resp.headers());
-                let retry_after = extract_retry_after(resp.headers());
                 let status = resp.status();
                 // These transport-level controls are known from the headers,
                 // even if reading the error body later would fail.
-                if status.as_u16() == 429 {
-                    return Err(format!("HTTP_429_RATE_LIMITED retry_after={}", retry_after));
-                }
-                if status.as_u16() == 418 {
-                    return Err("HTTP_418_IP_BANNED".to_string());
+                if let Some(rate_err) =
+                    classify_rate_limit_or_ban(status.as_u16(), resp.headers())
+                {
+                    return Err(rate_err);
                 }
                 let body = resp.text().await.map_err(|_| {
                     format!(
@@ -412,6 +429,10 @@ impl BinanceClient {
                 if resp.status().is_success() {
                     let limits = extract_limits(resp.headers());
                     Ok(limits)
+                } else if let Some(rate_err) =
+                    classify_rate_limit_or_ban(resp.status().as_u16(), resp.headers())
+                {
+                    Err(rate_err)
                 } else {
                     let text = resp
                         .text()
@@ -452,6 +473,11 @@ impl BinanceClient {
         match response {
             Ok(resp) => {
                 let status = resp.status();
+                if let Some(rate_err) =
+                    classify_rate_limit_or_ban(status.as_u16(), resp.headers())
+                {
+                    return Err(rate_err);
+                }
                 let limits = extract_limits(resp.headers());
                 let raw_text = resp
                     .text()
@@ -488,10 +514,14 @@ impl BinanceClient {
 
         match response {
             Ok(resp) => {
-                let limits = extract_limits(resp.headers());
                 if resp.status().is_success() {
+                    let limits = extract_limits(resp.headers());
                     let text = resp.text().await.unwrap_or_else(|_| "[]".to_string());
                     Ok((limits, text))
+                } else if let Some(rate_err) =
+                    classify_rate_limit_or_ban(resp.status().as_u16(), resp.headers())
+                {
+                    Err(rate_err)
                 } else {
                     let text = resp
                         .text()
@@ -556,6 +586,20 @@ mod tests {
         let empty_headers = HeaderMap::new();
         let default_retry = extract_retry_after(&empty_headers);
         assert_eq!(default_retry, 60);
+
+        assert_eq!(
+            classify_rate_limit_or_ban(429, &headers).as_deref(),
+            Some("HTTP_429_RATE_LIMITED retry_after=45")
+        );
+        assert_eq!(
+            classify_rate_limit_or_ban(418, &headers).as_deref(),
+            Some("HTTP_418_IP_BANNED retry_after=45")
+        );
+        assert_eq!(
+            classify_rate_limit_or_ban(418, &empty_headers).as_deref(),
+            Some("HTTP_418_IP_BANNED retry_after=300")
+        );
+        assert_eq!(classify_rate_limit_or_ban(200, &headers), None);
     }
 
     #[test]

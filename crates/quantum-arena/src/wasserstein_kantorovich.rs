@@ -128,6 +128,18 @@ pub fn exact_empirical_w2_distance_8(
     (w2, w2_sq, bary_shift)
 }
 
+/// Proyección isométrica canónica de la coordenada de fase $(x_{\text{pos}}, u_{\text{OFI}})$ (G8-OMEGA-16, Ola Ω150).
+/// Dado que `pos_dev` habita en $[-3, 3]$ ($\sigma_{\text{pos}} \approx 1$) y `ofi_norm` en $[-1, 1]$
+/// ($\sigma_{\text{ofi}} = 1/\sqrt{3} \approx 0.57735$), la combinación de mínima varianza ortogonal
+/// proyectada sobre la variedad 1D pondera `ofi_norm` por su escala intrínseca $1/\sqrt{3}$.
+#[inline]
+pub fn canonical_spectral_coordinate(pos_dev: f64, ofi_norm: f64) -> f64 {
+    let p = if pos_dev.is_finite() { pos_dev.clamp(-3.0, 3.0) } else { 0.0 };
+    let o = if ofi_norm.is_finite() { ofi_norm.clamp(-1.0, 1.0) } else { 0.0 };
+    // FRAC_1_SQRT_3 = 0.5773502691896257
+    p + 0.577_350_269_189_625_7 * o
+}
+
 /// Motor cuántico-hidrodinámico zero-alloc de Transporte Óptimo de Wasserstein-Kantorovich $W_2$.
 #[derive(Debug, Clone, Copy)]
 pub struct WassersteinKantorovichEngine {
@@ -213,19 +225,42 @@ impl WassersteinKantorovichEngine {
             (advective_sq / w2_sq).clamp(0.0, 1.0)
         };
 
-        // Velocidad advectiva de Benamou-Brenier ponderada por coherencia geodésica
+        // G8-OMEGA-16 (Ola Ω150): Fidelidad de isomorfismo cuantílico de Brenier-McCann.
+        // Elimina el piso incondicional de 0.35 que filtraba el desplazamiento crudo del primer
+        // momento (ya medido en x(τ) y OFI) cuando la distribución sufre deformación de forma
+        // o picos aislados (shape_deformation_energy >> 0). Solo un transporte cuantílico
+        // verdaderamente rígido (Δ_shape² -> 0, η_OT -> 1) propaga velocidad de Benamou-Brenier.
+        let inv_m = 1.0 / (WASSERSTEIN_HALF_CAP as f64);
+        let mean_0 = mu_0.iter().sum::<f64>() * inv_m;
+        let mean_1 = mu_1.iter().sum::<f64>() * inv_m;
+        let mut var_sum = 0.0_f64;
+        for i in 0..WASSERSTEIN_HALF_CAP {
+            let d0 = mu_0[i] - mean_0;
+            let d1 = mu_1[i] - mean_1;
+            var_sum += d0 * d0 + d1 * d1;
+        }
+        let pooled_var = (var_sum * 0.5 * inv_m).max(1e-4);
+        let brenier_quantile_fidelity = (-shape_deformation_energy / (2.0 * pooled_var)).exp().clamp(0.0, 1.0);
+
+        // Velocidad advectiva de Benamou-Brenier ortogonalizada al ruido de primer momento:
+        // vale 0 cuando el cambio de media proviene de una fractura o pico aislado (η_OT · φ_Brenier -> 0).
         let barycenter_transport_velocity =
-            (bary_shift * (0.35 + 0.65 * geodesic_coherence_ratio)).tanh().clamp(-1.0, 1.0);
+            (bary_shift * geodesic_coherence_ratio * brenier_quantile_fidelity)
+                .tanh()
+                .clamp(-1.0, 1.0);
 
         // Modulación continua C^1 Hermite de la convicción:
         // - Cuando hay una fractura de régimen caótica (shape_deformation_energy alto y geodesic_coherence_ratio -> 0),
         //   atenúa hacia 0.30.
-        // - Cuando hay transporte geodésico coherente (geodesic_coherence_ratio alto y velocidad advectiva clara),
+        // - Cuando hay transporte cuantílico geodésico genuino (geodesic_coherence_ratio * brenier_quantile_fidelity alto),
         //   amplifica hasta 1.15.
         let fracture_penalty = wasserstein_hermite_c1(shape_deformation_energy, 0.08, 0.85)
             * (1.0 - geodesic_coherence_ratio);
-        let geodesic_bonus = wasserstein_hermite_c1(geodesic_coherence_ratio, 0.45, 0.90)
-            * wasserstein_hermite_c1(bary_shift.abs(), 0.05, 0.65);
+        let geodesic_bonus = wasserstein_hermite_c1(
+            geodesic_coherence_ratio * brenier_quantile_fidelity,
+            0.45,
+            0.90,
+        ) * wasserstein_hermite_c1(bary_shift.abs(), 0.05, 0.65);
 
         let wasserstein_conviction_modulation =
             (1.0 - 0.70 * fracture_penalty + 0.15 * geodesic_bonus).clamp(0.30, 1.15);

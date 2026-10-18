@@ -157,3 +157,37 @@ fn contract_wasserstein_sub_microsecond_stack_latency() {
         ns_per_op
     );
 }
+
+#[test]
+fn contract_g8_omega_16_outlier_mean_shift_does_not_leak_raw_momentum() {
+    use quantum_arena::wasserstein_kantorovich::canonical_spectral_coordinate;
+
+    // 1. Canonical coordinate weight is 1/sqrt(3)
+    let c = canonical_spectral_coordinate(1.0, 1.0);
+    assert!((c - (1.0 + 1.0_f64 / 3.0_f64.sqrt())).abs() < 1e-12);
+
+    // 2. Compare pure geodesic translation (+0.80 across all 8 quantiles) vs
+    //    outlier-fractured shift with the exact same mean shift (+0.80 on average, but concentrated in 1 spike + dispersion)
+    let base = [-0.30, -0.20, -0.10, -0.05, 0.05, 0.10, 0.20, 0.30];
+    let mut eng_outlier = WassersteinKantorovichEngine::new();
+    for &x in &base {
+        let _ = eng_outlier.observe_spectral_measure(x);
+    }
+    // Construct 8 observations whose mean is +0.80 (sum = 6.40), but fractured across extremes:
+    let fractured = [-3.0, -2.5, -2.0, -1.5, 2.0, 3.0, 4.4, 6.0];
+    let mut m_out = Default::default();
+    for &x in &fractured {
+        m_out = eng_outlier.observe_spectral_measure(x);
+    }
+    assert!(
+        m_out.barycenter_transport_velocity < 0.05,
+        "G8-OMEGA-16: Fractured outlier shift with same mean (+0.80) must NOT leak raw momentum (got {})",
+        m_out.barycenter_transport_velocity
+    );
+    assert!(
+        m_out.wasserstein_conviction_modulation < 0.60,
+        "G8-OMEGA-16: Fractured outlier shift must attenuate conviction, got {}",
+        m_out.wasserstein_conviction_modulation
+    );
+}
+
