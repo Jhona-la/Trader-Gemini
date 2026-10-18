@@ -199,18 +199,19 @@ impl FlowImpulseEngine {
                 SignalType::Short
             };
 
-            // FIX #1509: Sanitización de la duración esperada de la señal.
+            // F1-120: Sanitización causal y fail-closed de la duración esperada de la señal.
+            // Eliminado el suelo literal arbitrario .max(15_000) que anulaba valores genómicos
+            // en [10_000, 15_000). Si raw_base no es finito o <= 0, fallar cerrado (None).
             let raw_base = arena.config.base_duration_ms.load(Ordering::Relaxed);
-            let base_duration = if raw_base.is_finite() && raw_base > 0.0 {
-                raw_base as u64
-            } else {
-                15_000
-            };
+            if !raw_base.is_finite() || raw_base <= 0.0 {
+                return None;
+            }
+            let base_duration = raw_base as u64;
 
             return Some(SignalIntent {
                 signal: signal_type,
                 confidence,
-                expected_duration_ms: base_duration.max(15_000),
+                expected_duration_ms: base_duration,
                 horizon: strategy_core::TradeHorizon::Continuous,
                 ..Default::default()
             });

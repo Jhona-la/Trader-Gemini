@@ -51,6 +51,9 @@ impl CoaxialBreakoutEngine {
     }
 
     /// Infiere la señal de ruptura coaxial multidimensional (O(1) Continuous Math)
+    /// F1-121 / LG8-145-07: Deprecada. En producción la señal coaxial se evalúa de forma
+    /// continua vía `voto_espectral` y `evaluate_for_coin`.
+    #[deprecated(note = "F1-121 / LG8-145-07: Sustituido en producción por voto_espectral y evaluate_for_coin continuo")]
     #[inline(always)]
     pub fn evaluate_coaxial_breakout(
         arena: &quantum_arena::GlobalArena,
@@ -239,6 +242,7 @@ impl QuantumStrategy for CoaxialBreakoutEngine {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use signal_engine::{
     coaxial_breakout::CoaxialBreakoutEngine, supersonic_shockwave::SupersonicShockwaveEngine,
 };

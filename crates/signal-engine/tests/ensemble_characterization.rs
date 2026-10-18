@@ -117,6 +117,7 @@ fn hedge_engine(
     fuentes: &[(&'static str, f64)],
 ) -> TensorVoteOrchestrator {
     let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+    arena.registry.set("hedge_eta", 0.05);
     let mut engine = TensorVoteOrchestrator::new(arena);
     for (name, value) in fuentes {
         engine.add_strategy(Box::new(NamedSource(name, *value)));
@@ -374,6 +375,7 @@ fn csg_2_hedge_cadence_scores_anchored_t_prev_vote_with_dimensionless_return() {
     }
 
     let arena = quantum_arena::GlobalArena::build_in_own_stack(13.0);
+    arena.registry.set("hedge_eta", 0.05);
     arena.registry.set_for_coin(0, "atr_pct", 0.001); // 10 bps
     arena.coins[0]
         .current_price

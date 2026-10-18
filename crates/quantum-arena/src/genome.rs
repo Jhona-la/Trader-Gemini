@@ -1900,7 +1900,7 @@ impl SuperGenotype {
             turbo_coherence_threshold: mutate_val(self.turbo_coherence_threshold, 0.1, 0.6),
             turbo_z_score_stdev: mutate_val(self.turbo_z_score_stdev, 0.1, 1.5),
             sl_atr_multiplier: mutate_val(self.sl_atr_multiplier, 0.2, 2.0),
-            coaxial_squeeze_threshold: mutate_val(self.coaxial_squeeze_threshold, 0.1, 0.8),
+            coaxial_squeeze_threshold: self.coaxial_squeeze_threshold, // F1-121 (congelado: evaluate_coaxial_breakout sin consumidor vivo)
             tensor_op_add_bias: self.tensor_op_add_bias, // LG-21
             tensor_op_mul_weight: self.tensor_op_mul_weight, // LG-21
             topo_layer_1_activation: mutate_val(self.topo_layer_1_activation, 0.1, 0.9),
