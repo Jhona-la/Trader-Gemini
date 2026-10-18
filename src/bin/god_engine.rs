@@ -3378,6 +3378,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut aviso_latencia = telemetry_server::estrangulador::Estrangulador::new(10_000);
         let mut aviso_liquidacion = telemetry_server::estrangulador::Estrangulador::new(60_000);
         let mut cadencia_espectro = telemetry_server::estrangulador::Estrangulador::new(60_000);
+        // CL-139b: el kill switch avisa al entrar en pánico, no en cada racha.
+        let mut aviso_kill_switch = telemetry_server::estrangulador::Estrangulador::new(60_000);
 
         // FASE 6 (EVENT LOOP)
         god_engine_core::bootloader::SystemDiagnostics::execute_phase_6_hft();
@@ -3648,7 +3650,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if consecutive_slow_ticks >= 10 {
                 latency_panic = true;
                 if consecutive_slow_ticks == 10 {
-                    telemetry_server::telemetry_log!("🚨 [KILL_SWITCH] Latencia > {}ms detectada por 10 ticks. Volatilidad Sintética activada. SCALP DESACTIVADO.", panic_threshold);
+                    if let Some(n) = aviso_kill_switch.admitir(instant_baseline.elapsed().as_millis() as u64) {
+                        telemetry_server::telemetry_log!("🚨 [KILL_SWITCH] Latencia > {}ms detectada por 10 ticks. Volatilidad Sintética activada. SCALP DESACTIVADO. (+{} rachas sin aviso desde el anterior)", panic_threshold, n);
+                    }
                 }
             }
 
@@ -3824,7 +3828,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // CL-140: sin ninguna ranura abierta la traza ya no
                     // describe una posición (reserva revertida por el host,
                     // cierre por bracket): se descarta antes de evaluarla.
-                    if !engine_real.arena.coins[coin_id].positions.is_any_open() {
+                    // CL-140b: salvo si el núcleo la cerró en este evento;
+                    // entonces la cierra `record_exit` más abajo con su TCE.
+                    if closed_order.is_none()
+                        && !engine_real.arena.coins[coin_id].positions.is_any_open()
+                    {
                         trajectory_auditor.descartar(coin_id);
                     }
                     let ts_traj = event_time as u64;

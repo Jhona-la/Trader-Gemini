@@ -17,6 +17,8 @@ static ENTORNO: Mutex<()> = Mutex::new(());
 const HOST: &str = include_str!("../../../src/bin/god_engine.rs");
 const DEMONIO: &str = include_str!("../../evolution-engine/src/online_daemon.rs");
 const SOMBRAS: &str = include_str!("../../evolution-engine/src/random_forest.rs");
+const DARWIN: &str = include_str!("../src/darwin.rs");
+const NUCLEO: &str = include_str!("../src/lib.rs");
 
 /// El código sin comentarios de línea, para no aceptar un comentario como uso.
 fn codigo(fuente: &str) -> String {
@@ -47,6 +49,7 @@ fn cl139_los_avisos_del_host_tienen_tope_por_tiempo() {
     for (marca, estrangulador) in [
         ("[LATENCY_PANIC]", "aviso_latencia.admitir("),
         ("[LIQUIDATION REJECT]", "aviso_liquidacion.admitir("),
+        ("[KILL_SWITCH]", "aviso_kill_switch.admitir("),
     ] {
         let sitios = contextos(&host, marca, 2);
         assert!(!sitios.is_empty(), "{marca} sigue existiendo");
@@ -66,6 +69,13 @@ fn cl140_cl141_trayectoria_y_recarga_avisan_lo_nuevo() {
     let descarte = host.find("trajectory_auditor.descartar(coin_id)").expect("descarte");
     let evaluacion = host.find("trajectory_auditor.evaluate_tick(").expect("evaluación");
     assert!(descarte < evaluacion, "se descarta antes de evaluar");
+    // CL-140b: no se descarta la traza que el núcleo cerró en este evento;
+    // la cierra `record_exit` con su TCE.
+    let s = contextos(&host, "trajectory_auditor.descartar(coin_id)", 3);
+    assert_eq!(s.len(), 1);
+    assert!(s[0].contains("closed_order.is_none()"), "{}", s[0]);
+    let cierre = host.find("trajectory_auditor.record_exit(").expect("cierre de la traza");
+    assert!(evaluacion < cierre, "el cierre llega después, en el mismo evento");
     let s = contextos(&host, "[TRAYECTORIA] {} divergente", 3);
     assert_eq!(s.len(), 1);
     assert!(s[0].contains("divergencia_nueva(coin_id, &status)"), "{}", s[0]);
@@ -87,11 +97,47 @@ fn cl144_el_host_usa_el_log_rotativo_si_hay_ruta() {
 /// contaba como órdenes de la cuenta.
 #[test]
 fn cl142_examen_y_sombras_son_nucleos_auxiliares() {
-    for (nombre, fuente) in [("online_daemon.rs", DEMONIO), ("random_forest.rs", SOMBRAS)] {
+    for (nombre, fuente) in [
+        ("online_daemon.rs", DEMONIO),
+        ("random_forest.rs", SOMBRAS),
+        ("darwin.rs", DARWIN),
+    ] {
         let c = codigo(fuente);
         assert!(c.contains("GodEngineCore::new_auxiliar("), "{nombre} no usa new_auxiliar");
         assert!(!c.contains("GodEngineCore::new(arena"), "{nombre} construye un núcleo con trazas");
     }
+    // CL-142b: el examen y las sombras construyen el arena desde su genoma,
+    // sin leer ni anunciar el genoma activo del disco en cada núcleo.
+    for (nombre, fuente) in [("online_daemon.rs", DEMONIO), ("random_forest.rs", SOMBRAS)] {
+        let c = codigo(fuente);
+        let produccion = c.split("#[cfg(test)]").next().unwrap_or("");
+        assert!(produccion.contains("GlobalArena::from_genome_in_own_stack("), "{nombre}");
+        assert!(!produccion.contains("GlobalArena::build_in_own_stack("), "{nombre}");
+    }
+}
+
+/// Esperado: los avisos del núcleo que se contaban en eventos tienen tope por
+/// tiempo (`avisos`), y VIABILIDAD calla en los núcleos auxiliares. Antes
+/// LATENCY PANIC salía cada 1 000 ticks, ML-GATE uno de cada 50 vetos, el
+/// latido en 26 de cada 5 000 ticks y ML-DIAG cada 100 ticks.
+#[test]
+fn cl142b_los_avisos_del_nucleo_tienen_tope_por_tiempo() {
+    let nucleo = codigo(NUCLEO);
+    for (marca, tope) in [
+        ("[LATENCY PANIC] Latencia", "self.avisos.latencia()"),
+        ("[ML-GATE]", "self.avisos.veto_ml()"),
+        ("[ML-HEARTBEAT]", "self.avisos.latido_ml(coin_id)"),
+        ("predict=None (modelo", "self.avisos.modelo_degenerado(coin_id)"),
+    ] {
+        let sitios = contextos(&nucleo, marca, 10);
+        assert_eq!(sitios.len(), 1, "{marca}");
+        assert!(sitios[0].contains(tope), "{marca} sin tope por tiempo:\n{}", sitios[0]);
+    }
+    assert!(!nucleo.contains("diag_ml_vetoes % 50"));
+    assert!(!nucleo.contains("% 5_000 < 26"));
+    let viabilidad = contextos(&nucleo, "[VIABILIDAD] tick=", 6);
+    assert_eq!(viabilidad.len(), 1);
+    assert!(viabilidad[0].contains("self.trazas_diagnosticas"), "{}", viabilidad[0]);
 }
 
 /// Cierres de la serie T-1, sin cambiar coeficientes (ver `cf3_una_sola_tau`).
@@ -111,6 +157,13 @@ fn serie_t1(n: usize) -> Vec<f64> {
 }
 
 fn nucleo(auxiliar: bool) -> (Arc<GlobalArena>, GodEngineCore) {
+    nucleo_con(auxiliar, GlobalArena::build_in_own_stack)
+}
+
+fn nucleo_con(
+    auxiliar: bool,
+    arena_de: impl FnOnce(f64) -> Arc<GlobalArena>,
+) -> (Arc<GlobalArena>, GodEngineCore) {
     symbols::update_dynamic_universe(vec!["BTCUSDT".into()]);
     symbol_registry::update_registry(vec![symbol_registry::get_official_binance_spec("BTCUSDT")]);
     let datos = god_engine_core::ml_inference::NanoForestData {
@@ -125,7 +178,7 @@ fn nucleo(auxiliar: bool) -> (Arc<GlobalArena>, GodEngineCore) {
     let bosque = god_engine_core::ml_inference::NanoForest::from_data(datos)
         .expect("bosque sintético fuera de contrato");
     god_engine_core::ml_inference::NanoForest::store_global("BTCUSDT_MOTOR", bosque);
-    let arena = GlobalArena::build_in_own_stack(1_000.0);
+    let arena = arena_de(1_000.0);
     let mut core = if auxiliar {
         GodEngineCore::new_auxiliar(arena.clone())
     } else {
@@ -136,9 +189,15 @@ fn nucleo(auxiliar: bool) -> (Arc<GlobalArena>, GodEngineCore) {
 }
 
 /// Huella de lo que decidió el núcleo: eventos con orden, capital y posiciones.
-fn recorrido(auxiliar: bool) -> (Vec<usize>, u64, Vec<(bool, u64, u64)>) {
-    let (arena, mut core) = nucleo(auxiliar);
+type Huella = (Vec<usize>, u64, Vec<(bool, u64, u64)>);
+
+fn recorrido(auxiliar: bool) -> Huella {
+    let (arena, core) = nucleo(auxiliar);
     assert_eq!(core.trazas_diagnosticas, !auxiliar);
+    recorrer(arena, core)
+}
+
+fn recorrer(arena: Arc<GlobalArena>, mut core: GodEngineCore) -> Huella {
     let cierres = serie_t1(2 * 24 * 60);
     let (mut t, mut previo, mut ordenes) = (1_700_000_000_000u64, cierres[0], Vec::new());
     let mut i = 0usize;
@@ -177,4 +236,30 @@ fn cl142_el_nucleo_auxiliar_decide_lo_mismo() {
     println!("observado: {} órdenes en la cinta", normal.0.len());
     assert!(normal.0.len() >= 2, "la cinta tiene que abrir órdenes: {:?}", normal.0);
     assert_eq!(normal, auxiliar);
+}
+
+/// Esperado: el arena auxiliar construido desde el genoma decide bit a bit lo
+/// mismo que el de antes (genoma del disco y luego el del candidato encima),
+/// con un genoma mutado que no es el de partida.
+#[test]
+fn cl142b_el_arena_desde_el_genoma_decide_lo_mismo() {
+    use quantum_arena::genome::SuperGenotype;
+    let _g = ENTORNO.lock().unwrap_or_else(|p| p.into_inner());
+    let genoma = SuperGenotype::new_baseline(0.0002, 0.0005).mutate_cmaes_seeded(0.15, 20261018);
+    let g1 = genoma.clone();
+    let (arena, core) = nucleo_con(true, move |capital| {
+        let arena = GlobalArena::build_in_own_stack(capital);
+        g1.apply_to_arena(&arena);
+        arena
+    });
+    let antes = recorrer(arena, core);
+    let (arena, core) = nucleo_con(true, move |capital| {
+        let arena = GlobalArena::from_genome_in_own_stack(capital, &genoma);
+        genoma.apply_to_arena(&arena);
+        arena
+    });
+    let ahora = recorrer(arena, core);
+    println!("observado: {} órdenes con el genoma mutado", antes.0.len());
+    assert!(antes.0.len() >= 2, "la cinta tiene que abrir órdenes: {:?}", antes.0);
+    assert_eq!(antes, ahora);
 }
