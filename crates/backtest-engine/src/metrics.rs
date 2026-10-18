@@ -250,6 +250,19 @@ fn compensated_sum(values: impl Iterator<Item = f64>) -> f64 {
     sum + correction
 }
 
+/// Cola de prioridad de eventos temporales multi-moneda (Puntos #301 y #305).
+/// Asigna mayor prioridad (menor valor numérico) a eventos de stop loss / liquidación
+/// preservando causalidad temporal estricta bit a bit.
+#[inline(always)]
+pub fn compute_multi_coin_event_priority(timestamp_ns: u64, is_liquidation_or_stop: bool) -> u64 {
+    let base = timestamp_ns << 1;
+    if is_liquidation_or_stop {
+        base // Mayor prioridad (menor valor)
+    } else {
+        base | 1
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,4 +354,31 @@ mod tests {
             assert!(line.contains(campo), "falta {campo} en {line}");
         }
     }
+
+    #[test]
+    fn test_multi_coin_event_priority() {
+        let t = 1700000000000000000;
+        let p_stop = compute_multi_coin_event_priority(t, true);
+        let p_normal = compute_multi_coin_event_priority(t, false);
+        assert!(
+            p_stop < p_normal,
+            "Stop loss/liquidación debe tener mayor prioridad (menor valor)"
+        );
+    }
+
+    #[test]
+    fn test_multi_coin_event_priority_ordering() {
+        let t1 = 1000;
+        let t2 = 2000;
+
+        let p_t1_normal = compute_multi_coin_event_priority(t1, false);
+        let p_t2_stop = compute_multi_coin_event_priority(t2, true);
+
+        // Eventos anteriores en el tiempo siempre preceden a eventos futuros sin importar el tipo
+        assert!(
+            p_t1_normal < p_t2_stop,
+            "Causalidad temporal estricta garantizada"
+        );
+    }
 }
+

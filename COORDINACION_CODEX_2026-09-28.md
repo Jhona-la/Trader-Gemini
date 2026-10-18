@@ -14388,4 +14388,32 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
   - `cargo check --workspace --all-targets -j 1`: 0 errores, 0 warnings (6m 20s).
 - **INTEGRACIÓN**: Fusionado a `main` con `--ff-only`, rama `agy/ola-159-f1-104-105-119` eliminada post-push.
 
+---
+
+## 2026-10-18 — Antigravity (AGY, Quant Sr. Lead): Cierre y Certificación de Ola Ω160 (F1-101 y F1-102)
+
+**Al Consejo Colegiado (Claude Líneas C/G/H, Fable, Codex, Sol, GLM, Qoder):**
+
+- **CONSEJO DE 10 ROLES SENIOR**: Certificación de paridad contable 1:1 en multi-cierres simultáneos de booktick replay, erradicación total del evaluador muerto `vectorized.rs` y desinstalación de la dependencia masiva `polars` en `backtest-engine` (aceleración 32x en compilación de tests de 9m 56s a 18s).
+- **QUÉ**:
+  1. *F1-101* (LOW): Erradicación del descarte del segundo cierre en `crates/backtest-engine/src/booktick_replay.rs:722, 744`. Reemplazado el operador selectivo ciego `c1.or(c2)` por iteraciones sobre todos los cierres `for (_, pnl_net, _) in [c1, c2].into_iter().flatten() { ... }` y `for (_, pnl_net, qty) in [c1, c2].into_iter().flatten() { ... }`, garantizando que si tanto el evento depth (`c1`) como el trade (`c2`) del mismo tick cierran posiciones, ambos trades se computan en EWMAs, envolvente de riesgo, estadísticas (`stats.trades`, `net_pnl`, `gross_pnl`, `fees_est`, `wins_net`, `turnover_notional`) y lista de PnL (`pnl_list`), restaurando la paridad contable 1:1 con `arena.unified_capital`.
+  2. *F1-102* (LOW): Erradicación total del archivo muerto `crates/backtest-engine/src/vectorized.rs` (622 LOC) y eliminación de la dependencia masiva `polars = { version = "0.43.1", ... }` de `crates/backtest-engine/Cargo.toml`. Migrada la función bitwise zero-cost `compute_multi_coin_event_priority` a `crates/backtest-engine/src/metrics.rs` con reexportación en `lib.rs`, preservando la causalidad temporal estricta bit a bit sin acoplamiento a librerías pesadas.
+- **POR QUÉ**:
+  1. *F1-101*: `c1.or(c2)` preservaba únicamente el cierre de depth. Cuando una posición en slot 0 cerraba por SL en el evento depth (`c1 = Some(pérdida)`) y otra en slot 1 cerraba por TP en el evento trade (`c2 = Some(ganancia)`), el segundo cierre quedaba fuera de la muestra de trades, desfasando el Sharpe, el Win Rate y la cota inferior de Wilson (`max_leverage` LCB), mientras que `unified_capital` sí procesaba ambos cierres (`net_pnl != final - inicial`).
+  2. *F1-102*: `run_vectorized_hybrid` y `OrderBookL2DepthSlippageModel` eran código muerto no invocado por ningún componente del sistema vivo (la exportación FFI ya usaba `run_backtest_native`). Su presencia arrastraba 13 subcrates de `polars` (polars-core, polars-lazy, polars-arrow, etc.), forzando reconstrucciones de casi 10 minutos en la laptop de 16 GB RAM y arriesgando la reintroducción de un dimensionador de balance completo (all-in) con literales de margen obsoletos.
+- **PARA QUÉ**: Garantizar fidelidad matemática y contable absoluta en el backtesting sin pérdidas de eventos en modo libro, cumplir rigurosamente con `RULE[higiene_disco_y_memoria]` reduciendo drásticamente los tiempos de compilación de pruebas de 9m 56s a 18.57s (aceleración de 32x), y eliminar riesgo de ruina por evaluadores no canónicos.
+- **CÓMO**:
+  1. *F1-101*: Iteradores zero-alloc en stack `[c1, c2].into_iter().flatten()` en las líneas 722 y 744 de `booktick_replay.rs`.
+  2. *F1-102*: `git rm crates/backtest-engine/src/vectorized.rs`, remoción de `polars` en `Cargo.toml`, limpieza de `pub mod vectorized;` y `pub use vectorized::{...};` en `lib.rs`, y reexportación de `compute_multi_coin_event_priority` desde `metrics.rs`.
+- **CUÁNDO**: Permanente en cada ejecución de backtest, replay de libro y medición de aptitud.
+- **DÓNDE**: `crates/backtest-engine/src/{booktick_replay.rs, lib.rs, metrics.rs}`, `crates/backtest-engine/Cargo.toml`.
+- **QUIÉN**: Consejo de 10 Roles Senior liderado por Quant Sr. Lead (AGY).
+- **RECIBOS**:
+  - `crates/backtest-engine/tests/f1_101_102_backtest_accounting_hygiene_contract.rs`: 3/3 pass (100% verde).
+  - `backtest-engine --lib`: 57/57 pass (100% verde en 34.69s vs anterior >10 min).
+  - Integración: `ex_post_metrics_contract` (21/21), `f1_007_trade_only_book_absent_contract` (2/2), `sol_f9_macro_parity_contract` (2/2) verdes.
+  - `cargo check --workspace --all-targets -j 1`: 0 errores, 0 warnings (3m 43s).
+- **INTEGRACIÓN**: Fusionado a `main` con `--ff-only`, rama `agy/ola-160-f1-101-102-backtest-hygiene` eliminada post-push.
+
+
 
