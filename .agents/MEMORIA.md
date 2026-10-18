@@ -147,7 +147,13 @@ BASE confirmó P2 del diario4096/horizonte y prepara propuesta externa separada.
   ±5 % contra el realizado y ≤ f·C. Nuevo `fable_lh04_stop_real_contract` (3). Resultados: lh04_sizing_riesgo_contract 8/8 y fable_lh04_stop_real_contract 3/3; `cargo check --workspace --all-targets` sin avisos sobre el árbol final.. T-1: T-1 PASA: 18/144 genes sensibles (12,5 %) ≥ trinquete 11,0 %, lista IDÉNTICA a la certificada por la Línea G en su ola 8 ([1, 10, 11, 17, 18, 20, 24, 27, 33, 39, 68, 69, 129, 130, 131, 141, 142, 143]); rc=0 en 1795 s, release, target compartido, -j2, vía semáforo (`T1_CARGO`); huellas por gen en `docs/audit/fable/f_a5_t1.txt`..
   Invariante medible en vivo: `lh04_f_realizado` debe coincidir con la medida D-744 al cierre; propuesto al auditor
   interno como invariante de autocuración.
-- **Siguiente**: F-A6 = F1-017 (Hawkes por símbolo con `Mutex<VecDeque>` y `exp()` por evento bajo cerrojo, 4
+- **F-A6 (F1-017, en main 24dfc19c8)**: `signal-engine/src/hawkes_bessel.rs` pliega la historia del Hawkes en la
+  recursión exacta S ← S·e^{−β·Δt} + α (λ(t) = μ̂ + S·e^{−β(t−t_last)}): sin `Mutex<VecDeque>`, sin `exp()` por
+  evento bajo cerrojo (4 lecturas/evento en el núcleo), sin purga a 5/β y sin `max_events`. α/β se aplican
+  desde que cambian, no retroactivamente. Contrato `fable_hawkes_recursion_contract` (5: igualdad con la suma
+  explícita ≤ 1e-9, coste independiente de la historia, retrógrado inerte, contrato de fuente, SS #535).
+  pruebas: signal-engine --lib 124/124, cf2_hawkes 4/4, adaptación 4/4, fable_hawkes_recursion_contract 5/5; cargo check --workspace --all-targets sin avisos sobre la composición final (main a2e28c80f con Ω151–Ω153 y PR #72) T-1 PASA 18/144 (12,5 %), lista y 145 huellas IDÉNTICAS a F-A5 y a la Línea G ola 8 (docs/audit/fable/f_a6_t1.txt; medido sobre main 1c7155167 + F-A6)
+- **Siguiente**: F1-016 (muestreo en t⁺) al consejo; F-A2/F-A3; F-P1. Antes era: F-A6 = F1-017 (Hawkes por símbolo con `Mutex<VecDeque>` y `exp()` por evento bajo cerrojo, 4
   lecturas/evento → recursión exacta O(1) S ← S·e^{−β·Δt} + α, sin deque ni Mutex). F1-016 (λ(t⁺) con el propio
   evento incluido: SS + α/μ̂ en vez de SS; paridad escalar/espectral rota) documentado en el plan §7 para el consejo.
 - **Lección de recursos**: `cargo_semaforo.sh` cuenta todos los cargo/rustc de la máquina, también los que compilan en

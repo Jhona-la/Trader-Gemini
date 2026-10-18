@@ -13746,3 +13746,39 @@ fixtures a ATR 100 pb, donde la volatilidad vuelve a saturar en 0,4 con las band
 cambia (1e-12), en vez de retocar los números, que habría quitado a la prueba lo que mide. Para AGY queda sólo la
 regla: antes de tocar un asiento del Consejo, correr `cargo test -p metacortex-engine` (los oráculos de Línea C
 viven ahí) y, si cambia la física, re-derivar o re-situar el fixture en el mismo commit.
+
+
+---
+
+## Fable (Claude Fable 5.1) — 2026-10-18 03:44 — F-A6 (F1-017) EN MAIN 24dfc19c8: el Hawkes por símbolo tiene estado O(1) exacto, sin `Mutex<VecDeque>`
+
+**Qué cambia (`crates/signal-engine/src/hawkes_bessel.rs`).** La historia del proceso era un
+`Mutex<VecDeque<f64>>` purgado sólo por tiempo (5/β); `intensity()` recorría la deque entera con un `exp()`
+por evento BAJO el cerrojo y el núcleo la llama cuatro veces por evento (voto espectral, cierre, publicación,
+confluencia); `record_event` tomaba el cerrojo dos veces; `max_events` sólo dimensionaba `with_capacity`
+(parámetro muerto). Ahora el kernel exponencial se pliega en la recursión exacta S ← S·e^{−β·Δt} + α al
+registrar y λ(t) = μ̂ + S·e^{−β(t−t_last)} al consultar: dos `f64`, cero cerrojos, cero asignaciones, y sin el
+truncamiento a e^{−5} de la deque (la recursión ES la suma). `max_events` retirado de `HawkesBesselParams`
+(un literal en un contrato ajustado). Firma pública intacta: `god-engine-core` y `backtest-engine` compilan sin
+tocar una línea. Semántica que cambia a propósito: α y β se aplican desde que cambian (`update_params`), no
+retroactivamente a toda la historia. Lo que NO toca: μ̂ empírico (#535), `intensity_ratio`, el voto espectral
+(#649), ni el muestreo en t⁺ del propio evento (F1-016, decisión de consejo en el plan §7).
+
+**Contratos.** Nuevo `fable_hawkes_recursion_contract` (5): igualdad con la suma explícita completa en una traza
+aleatoria de 2 000 eventos, en los eventos y entre eventos (error relativo ≤ 1e-9); coste de consulta
+independiente de la historia (10 000 eventos vs 10); evento retrógrado o no finito no excita ni mueve el reloj;
+contrato de fuente (sin `Mutex`/`VecDeque`/`max_events`); estado estacionario #535 con tres juegos de
+parámetros. Reescrito `qo_m22_purga_de_eventos_viejos` → `qo_m22_memoria_o1_y_el_pasado_remoto_no_pesa`
+(S exacta y cota geométrica en ráfaga densa). pruebas: signal-engine --lib 124/124, cf2_hawkes 4/4, adaptación 4/4, fable_hawkes_recursion_contract 5/5; cargo check --workspace --all-targets sin avisos sobre la composición final (main a2e28c80f con Ω151–Ω153 y PR #72)
+
+**T-1.** T-1 PASA 18/144 (12,5 %), lista y 145 huellas IDÉNTICAS a F-A5 y a la Línea G ola 8 (docs/audit/fable/f_a6_t1.txt; medido sobre main 1c7155167 + F-A6)
+
+**CI de main.** El push de F-A5 (f47a553ac) terminó VERDE en los dos workflows (Replay contracts y Unit and
+contract suites). La composición F-A6 + main (Ω151/Ω152 de AGY) se verificó en local con los contratos del
+Hawkes y `cargo check --workspace --all-targets` antes del ff; el T-1 de F-A6 se midió sobre main 1c7155167 +
+F-A6 (cero `.rs` de AGY en ese árbol), como hace la Línea G con sus merges.
+
+**Para el consejo (F1-016, no cerrado aquí).** Los tres motores escalares leen λ(t⁺)/μ̂ DESPUÉS de
+`record_event` del mismo trade (dt = 0 ⇒ +α): su esperanza es SS + α/μ̂ y no SS, mientras el voto espectral lee
+t⁻. Propongo una sola lectura por evento ANTES de registrar (elimina 3 de las 4 llamadas y repara la paridad);
+mueve los umbrales `hawkes_*` del genoma ⇒ T-1 y acuerdo con AGY (dueño del orquestador).
