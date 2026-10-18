@@ -5004,16 +5004,18 @@ impl GodEngineCore {
                     self.diag_notional_max = self.diag_notional_max.max(qty * exit_price);
                     self.diag_pnl_sum += net_trade_pnl;
 
-                    // OLA Ω120: Registrar fill en AuditorInterno independiente (El Anti-Sistema)
+                    // OLA Ω120 / Ω152: Registrar fill en AuditorInterno independiente (El Anti-Sistema)
                     // y calcular la discrepancia real vs interna para alimentar el registro omnisciente.
+                    // F1-006 (Ola Ω152): Pasar la comisión real `entry_fee_paid + close_fee` y `gross_pnl`
+                    // para evitar descontar las comisiones dos veces en el verificador de resultados.
                     let fill_record = audit_engine::auditor_interno::ExchangeFillRecord {
                         timestamp_ns: event_time_ms.saturating_mul(1_000_000),
                         symbol_id: coin_id as u16,
                         is_buyer: !is_long,
                         price: exit_price,
                         qty,
-                        fee_usd: (entry * qty + exit_price * qty) * 0.0004,
-                        realized_pnl: net_trade_pnl,
+                        fee_usd: entry_fee_paid + close_fee,
+                        realized_pnl: gross_pnl,
                         is_closed_position: true,
                     };
                     self.auditor_interno.record_fill(fill_record);
@@ -5023,7 +5025,8 @@ impl GodEngineCore {
                     } else {
                         0.0
                     };
-                    let internal_sharpe = self.arena.registry.get_value_or("internal_sharpe", 0.0);
+                    // F1-006 (Ola Ω152): Lectura estricta por moneda de internal_sharpe (0.0 si ausente).
+                    let internal_sharpe = self.arena.registry.get_for_coin_strict_or(coin_id, "internal_sharpe", 0.0);
                     let internal_dd = self.arena.unified_capital.load(Ordering::Relaxed);
                     let base_cap = self.arena.config.base_capital.load(Ordering::Relaxed);
                     let dd_pct = if base_cap > 0.0 && internal_dd < base_cap {
@@ -5033,6 +5036,7 @@ impl GodEngineCore {
                     };
 
                     let disc = self.auditor_interno.compute_internal_discrepancy(internal_sharpe, internal_wr, dd_pct);
+                    self.arena.registry.set_for_coin(coin_id, "internal_discrepancy", disc);
                     self.arena.registry.set("internal_discrepancy", disc);
 
                     if ml_at_entry > 0.0 {

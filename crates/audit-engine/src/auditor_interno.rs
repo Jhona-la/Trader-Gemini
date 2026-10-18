@@ -287,7 +287,8 @@ impl VerificadorResultados {
             } else {
                 0.0
             };
-            if pnl > 0.0 {
+            let net = pnl - fee;
+            if net > 0.0 {
                 winning_trades += 1;
             }
             if first_ts.is_none() {
@@ -295,13 +296,13 @@ impl VerificadorResultados {
             }
             last_ts = f.timestamp_ns;
 
-            let ret = (pnl - fee) / safe_capital;
+            let ret = net / safe_capital;
             let delta = ret - mean_ret;
             mean_ret += delta / (count as f64);
             let delta2 = ret - mean_ret;
             m2 += delta * delta2;
 
-            equity += pnl - fee;
+            equity += net;
             if equity > peak {
                 peak = equity;
             }

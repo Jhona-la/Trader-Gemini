@@ -413,7 +413,6 @@ fn run_booktick_replay_observed(
     let mut risk_envelope = RiskEnvelope::new();
     let mut avg_win_abs = 0.0f64;
     let mut avg_loss_abs = 0.0f64;
-    let mut pos_was_open = arena.coins[0].positions.is_any_open();
 
     let mut pnl_list: Vec<f64> = Vec::new();
     // XLVIII·A: nocional bruto operado (entrada+salida) para turnover.
@@ -478,8 +477,16 @@ fn run_booktick_replay_observed(
         let slip = running_atr * cfg.shift_atr_frac.max(0.0);
         let sim_bid = t.bid - slip;
         let sim_ask = t.ask + slip;
-        let vol = t.bid_qty + t.ask_qty; // liquidez del libro (doc: no volumen operado)
-        let obi = if vol > 0.0 {
+        // F1-019 (Ola Ω152): En modo trade_only (aggTrades) la cantidad real del trade
+        // es |bq - aq| (D-747, binance_vision_sync codifica maker con base_depth).
+        // En bookTicker real (con libro) la liquidez visible del nivel es bq + aq.
+        let trade_qty = if cfg.trade_only {
+            (t.bid_qty - t.ask_qty).abs()
+        } else {
+            t.bid_qty + t.ask_qty
+        };
+        let vol = trade_qty;
+        let obi = if !cfg.trade_only && vol > 0.0 {
             (t.bid_qty - t.ask_qty) / vol
         } else {
             0.0
@@ -546,17 +553,26 @@ fn run_booktick_replay_observed(
             // UN solo evento de trade — el precio/volumen del trade alimenta
             // las features de precio (ATR, momentum, Hurst, espectral) sin
             // contaminar OBI/OFI con bid/ask sintético.
+            // F1-007 (Ola Ω152): Pasar bid_qty=0.0 y ask_qty=0.0 para que
+            // `god-engine-core` detecte `book_absent = true` de forma honesta,
+            // habilitando las ramas de respaldo F7 (ML recentrado, espectro directo,
+            // persistencia, reversión) que antes quedaban silenciadas.
+            let gen_before: [u64; 3] = if let Some(coin) = arena.coins.get(0) {
+                std::array::from_fn(|i| coin.positions.get_slot(i).generation.load(Ordering::Acquire))
+            } else {
+                [0; 3]
+            };
             let (o2, closed) = core.process_event(
                 0,
                 true,          // is_trade
                 is_minute_kline,
                 false,         // is_depth
                 mid,           // precio del trade
-                vol,           // volumen
+                trade_qty,     // volumen honesto (F1-019: |bq - aq|)
                 mid * 0.9999,  // bid ~ precio (sin libro real)
                 mid * 1.0001,  // ask ~ precio
-                vol * 0.5,     // qty neutra (sin libro)
-                vol * 0.5,
+                0.0,           // bid_qty = 0.0 (F1-007: libro ausente real)
+                0.0,           // ask_qty = 0.0 (F1-007: libro ausente real)
                 0.0,           // OBI neutro
                 0.0,           // micro_div neutro
                 t.ts_ms,
@@ -572,28 +588,38 @@ fn run_booktick_replay_observed(
                 // calcula la aptitud de cada genoma que este binario PROMUEVE.
                 t.bid_qty < t.ask_qty,
             );
-            let _ = o2;
-            // B3.19: envolvente del host sobre la entrada recién abierta.
-            let atr_now = core.feature_engines[0].get_atr_pct();
-            if !live_envelope_gate(
-                &arena,
-                &mut risk_envelope,
-                0,
-                mid,
-                atr_now,
-                pos_was_open,
-                &mut stats.envelope_vetoes,
-            ) {
-                // LH-03: si la envolvente veta la entrada y ejecuta rollback,
-                // activar enfriamiento inmediato en el reloj de eventos para evitar
-                // bucle infinito de reapertura y reversión sin enfriar (n congelado en 30).
-                core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
+            // F1-020 (Ola Ω153): Envolvente disparada POR ORDEN nueva sobre la ranura
+            // resonante específica recién abierta (eliminando prev_open que silenciaba slots 1/2).
+            if o2.is_some() {
+                if let Some(coin) = arena.coins.get(0) {
+                    if let Some(slot_idx) = (0..3).find(|&i| {
+                        let p = coin.positions.get_slot(i);
+                        p.is_open() && p.generation.load(Ordering::Acquire) != gen_before[i]
+                    }) {
+                        let atr_now = core.feature_engines[0].get_atr_pct();
+                        if !live_envelope_gate_for_slot(
+                            &arena,
+                            &mut risk_envelope,
+                            0,
+                            slot_idx,
+                            mid,
+                            atr_now,
+                            &mut stats.envelope_vetoes,
+                        ) {
+                            core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
+                        }
+                    }
+                }
             }
-            pos_was_open = arena.coins[0].positions.is_any_open();
             c1 = None;
             c2 = closed;
         } else {
             // Doble evento — patrón del forense (depth + trade).
+            let gen_before1: [u64; 3] = if let Some(coin) = arena.coins.get(0) {
+                std::array::from_fn(|i| coin.positions.get_slot(i).generation.load(Ordering::Acquire))
+            } else {
+                [0; 3]
+            };
             let (o1, closed1) = core.process_event(
                 0,
                 false,
@@ -612,26 +638,33 @@ fn run_booktick_replay_observed(
                 &omni_features,
                 false,
             );
-            let _ = o1;
-            // B3.19: envolvente del host sobre la entrada recién abierta.
-            let atr_now = core.feature_engines[0].get_atr_pct();
-            if !live_envelope_gate(
-                &arena,
-                &mut risk_envelope,
-                0,
-                mid,
-                atr_now,
-                pos_was_open,
-                &mut stats.envelope_vetoes,
-            ) {
-                core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
+            if o1.is_some() {
+                if let Some(coin) = arena.coins.get(0) {
+                    if let Some(slot_idx) = (0..3).find(|&i| {
+                        let p = coin.positions.get_slot(i);
+                        p.is_open() && p.generation.load(Ordering::Acquire) != gen_before1[i]
+                    }) {
+                        let atr_now = core.feature_engines[0].get_atr_pct();
+                        if !live_envelope_gate_for_slot(
+                            &arena,
+                            &mut risk_envelope,
+                            0,
+                            slot_idx,
+                            mid,
+                            atr_now,
+                            &mut stats.envelope_vetoes,
+                        ) {
+                            core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
+                        }
+                    }
+                }
             }
-            pos_was_open = arena.coins[0].positions.is_any_open();
-            // D-717: en el modo con libro, `mid <= sim_bid` es una tautología
-            // falsa (el mid nunca baja del bid simulado), de modo que el CVD
-            // quedaba clavado en +1 y las dos ramas Short eran inalcanzables. El
-            // lado agresor es el del dato, igual que en el modo trade-only.
             let maker_flag = t.bid_qty < t.ask_qty;
+            let gen_before2: [u64; 3] = if let Some(coin) = arena.coins.get(0) {
+                std::array::from_fn(|i| coin.positions.get_slot(i).generation.load(Ordering::Acquire))
+            } else {
+                [0; 3]
+            };
             let (o2, closed2) = core.process_event(
                 0,
                 true,
@@ -650,21 +683,27 @@ fn run_booktick_replay_observed(
                 &omni_features,
                 maker_flag,
             );
-            let _ = o2;
-            // B3.19: el evento de trade también puede abrir — misma envolvente.
-            let atr_now = core.feature_engines[0].get_atr_pct();
-            if !live_envelope_gate(
-                &arena,
-                &mut risk_envelope,
-                0,
-                mid,
-                atr_now,
-                pos_was_open,
-                &mut stats.envelope_vetoes,
-            ) {
-                core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
+            if o2.is_some() {
+                if let Some(coin) = arena.coins.get(0) {
+                    if let Some(slot_idx) = (0..3).find(|&i| {
+                        let p = coin.positions.get_slot(i);
+                        p.is_open() && p.generation.load(Ordering::Acquire) != gen_before2[i]
+                    }) {
+                        let atr_now = core.feature_engines[0].get_atr_pct();
+                        if !live_envelope_gate_for_slot(
+                            &arena,
+                            &mut risk_envelope,
+                            0,
+                            slot_idx,
+                            mid,
+                            atr_now,
+                            &mut stats.envelope_vetoes,
+                        ) {
+                            core.feature_engines[0].last_exit_fastband_ms = t.ts_ms;
+                        }
+                    }
+                }
             }
-            pos_was_open = arena.coins[0].positions.is_any_open();
             c1 = closed1;
             c2 = closed2;
         }
@@ -819,29 +858,28 @@ impl ReplayTick {
 /// vivo nunca encoge qty); la paridad consiste en que las entradas que el
 /// vivo abortaría NO existan en el replay. Retorna false si la entrada fue
 /// vetada (rollback aplicado).
+/// F1-020 (Ola Ω153): Envolvente autoritativa disparada por orden nueva sobre una ranura específica.
+/// Evalúa el apalancamiento Kelly / riesgo y, si no es operable o falla el margen de envío,
+/// ejecuta rollback EXACTO sobre ESA ranura (rollback_local_slot), preservando las demás
+/// posiciones abiertas en las otras ranuras espectrales del símbolo.
 #[allow(clippy::too_many_arguments)]
-pub fn live_envelope_gate(
+pub fn live_envelope_gate_for_slot(
     arena: &Arc<GlobalArena>,
     envelope: &mut RiskEnvelope,
     coin_id: usize,
+    slot_idx: usize,
     mid: f64,
     atr_pct: f64,
-    prev_open: bool,
     veto_counter: &mut u64,
 ) -> bool {
-    // CERT-M8-C05: coin_id parametrizado — run_backtest_native opera sobre
-    // target_coin_id (registro dinámico), no sobre el asiento 0.
     let coin = match arena.coins.get(coin_id) {
         Some(c) => c,
         None => return true,
     };
-    let pos = match coin.positions.slots().into_iter().find(|p| p.is_open()) {
-        Some(p) => p,
-        None => return true,
+    let pos = match coin.positions.slots().get(slot_idx) {
+        Some(p) if p.is_open() => *p,
+        _ => return true,
     };
-    if prev_open {
-        return true; // nada nuevo que dictaminar
-    }
 
     // F5.1/BUG-598: margen libre real = equity − margen retenido en vivas.
     let total_margin_used: f64 = arena
@@ -857,9 +895,6 @@ pub fn live_envelope_gate(
     let pos_margin = pos.margin_used.load(Ordering::Relaxed);
 
     // D-442: stop real de la orden; fallback = scalp_sl_base ⊔ ATR×1.5, piso 15 bps.
-    // H0-8 (RONDA 3): scalp_sl_base es VISTA de sl_horizon_curve (fuente
-    // única REHAB-1) — el fallback de telemetría la lee como atajo; el
-    // motor en vivo decide por sl_at_tau(curva), no por esta ancla.
     let stop_pct = if core_sl > 0.0 && entry_price > 0.0 {
         ((entry_price - core_sl).abs() / entry_price).max(0.0015)
     } else {
@@ -872,7 +907,6 @@ pub fn live_envelope_gate(
     };
 
     // D-641: z/k continuos por régimen de capital (mismo mínimo que el vivo).
-    // CL-11: el mínimo del símbolo, no el literal 5,0.
     let env_min_notional = risk_engine::capital_regime::min_notional_del_simbolo(coin_id);
     let env_w = risk_engine::capital_regime::micro_weight(cap_now, env_min_notional);
     let env_z = risk_engine::capital_regime::lerp(1.64, 0.85, env_w);
@@ -883,7 +917,6 @@ pub fn live_envelope_gate(
     let envelope_n = envelope.posterior.n();
     let notional_ord = qty.abs() * entry_price;
     let exec_leverage: u32 = if envelope_n < 30.0 {
-        // F4-H2 (BOOTSTRAP MICRO): paridad con god_engine.rs
         let boot_lev = if pos_margin > 0.0 && notional_ord > 0.0 {
             (notional_ord / pos_margin).round().clamp(1.0, 10.0) as u32
         } else {
@@ -892,23 +925,12 @@ pub fn live_envelope_gate(
         boot_lev.clamp(1, 10)
     } else if operable {
         let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
-        // CERT-M8-C01 — PARIDAD SIZING BT↔VIVO: el host (god_engine.rs
-        // ~3857) computa `lev_from_risk = (0.05 · kelly_frac · vol_brake)
-        // / sl_at_tau(τ_entry)` y luego `.min(cap)`. El replay ANTES usaba
-        // `core_leverage.clamp(1,20).min(cap)` (pre-C-08) — sin kelly_frac
-        // scaling, sin stop-distance normalization: un genoma certificado
-        // a leverage L tradearía a OTRO L en demo. Ahora la MISMA fórmula,
-        // INCLUIDO el vol_brake (P-1b) que antes faltaba — ver abajo.
         let kelly_frac = envelope.risk_fraction(env_z, env_k);
         let tau_entry = pos.entry_tau_ms.load(Ordering::Relaxed) as f64;
         let sl_frac = arena
             .config
             .sl_at_tau(if tau_entry > 0.0 { tau_entry } else { 30_000.0 });
         let risk_budget = 0.05 * kelly_frac;
-        // P-1b — VOL-BRAKE (paridad con god_engine.rs:3838-3858): el predictor
-        // {SYM}_VOL encoge el presupuesto cuando la σ pronosticada supera ×1.25
-        // la base del régimen de entrenamiento. Sin modelo ⇒ brake = 1.0 (paridad
-        // trivial). MISMAS claves de registry y MISMA fórmula que el host vivo.
         let vol_fc = arena
             .registry
             .get_for_coin_or(coin_id, "vol_forecast_pct", 0.0);
@@ -922,10 +944,6 @@ pub fn live_envelope_gate(
         0
     };
 
-    // Veto de la envolvente (exec = 0) y D-382 — LEVERAGE-ADAPT +
-    // MARGIN-GUARD (nocional al precio de decisión) — con la MISMA función
-    // que el host (CL-41): el margen libre no descuenta la reserva de esta
-    // orden y el apalancamiento de envío nunca supera el validado.
     let notional_volume = qty.abs() * mid;
     let free_margin = risk_engine::envio::margen_libre_sin_la_propia(
         arena.unified_capital.load(Ordering::Relaxed),
@@ -940,9 +958,6 @@ pub fn live_envelope_gate(
         free_margin,
     ) {
         Ok(apalancamiento) => {
-            // CL-41b: como el host, la reserva retiene el margen que
-            // retendría el exchange a este apalancamiento (CL-41c: la
-            // diferencia entra en `used_margin` bajo el cerrojo de la ranura).
             let generacion = pos.generation.load(Ordering::Acquire);
             let _ = pos.reajustar_margen_generation(
                 generacion,
@@ -953,9 +968,34 @@ pub fn live_envelope_gate(
         }
         Err(_) => {
             *veto_counter += 1;
-            rollback_local_position(arena, coin_id);
+            rollback_local_slot(arena, coin_id, slot_idx);
             false
         }
+    }
+}
+
+/// Compatibilidad histórica: evalúa la primera posición abierta encontrada.
+#[allow(clippy::too_many_arguments)]
+pub fn live_envelope_gate(
+    arena: &Arc<GlobalArena>,
+    envelope: &mut RiskEnvelope,
+    coin_id: usize,
+    mid: f64,
+    atr_pct: f64,
+    prev_open: bool,
+    veto_counter: &mut u64,
+) -> bool {
+    if prev_open {
+        return true;
+    }
+    let coin = match arena.coins.get(coin_id) {
+        Some(c) => c,
+        None => return true,
+    };
+    if let Some((idx, _)) = coin.positions.slots().into_iter().enumerate().find(|(_, p)| p.is_open()) {
+        live_envelope_gate_for_slot(arena, envelope, coin_id, idx, mid, atr_pct, veto_counter)
+    } else {
+        true
     }
 }
 
@@ -974,17 +1014,15 @@ fn vol_brake_factor(vol_fc: f64, vol_base: f64) -> f64 {
     1.0
 }
 
-/// Rollback EXACTO de `rollback_positions` del host (god_engine.rs): cierra
-/// la posición local, devuelve el margen al pool y REEMBOLSA el entry_fee
-/// (nunca fue coste real). Sin PnL — la entrada vetada no contabiliza (B3.14).
-pub fn rollback_local_position(arena: &Arc<GlobalArena>, coin_id: usize) {
+/// F1-020 (Ola Ω153): Rollback acotado a una sola ranura espectral.
+/// Cierra SOLO la posición indicada por slot_idx, devuelve su margen al pool y reembolsa
+/// su entry_fee sin cerrar las demás ranuras concurrentes del símbolo.
+pub fn rollback_local_slot(arena: &Arc<GlobalArena>, coin_id: usize, slot_idx: usize) {
     if let Some(coin) = arena.coins.get(coin_id) {
-        for pos in coin.positions.slots() {
+        if let Some(pos) = coin.positions.slots().get(slot_idx) {
             if pos.is_open() {
                 let (_, _, _, margin_used, entry_fee) = pos.close_with_fee();
                 if margin_used > 0.0 {
-                    // MOD6/8-010: resta atómica — mismo criterio que el host:
-                    // el RMW load→store no es atómico.
                     arena
                         .used_margin
                         .fetch_sub(margin_used, Ordering::Relaxed);
@@ -995,6 +1033,15 @@ pub fn rollback_local_position(arena: &Arc<GlobalArena>, coin_id: usize) {
                         .fetch_add(entry_fee, Ordering::Relaxed);
                 }
             }
+        }
+    }
+}
+
+/// Rollback de todas las posiciones del símbolo (cierre de emergencia).
+pub fn rollback_local_position(arena: &Arc<GlobalArena>, coin_id: usize) {
+    if let Some(coin) = arena.coins.get(coin_id) {
+        for idx in 0..coin.positions.slots().len() {
+            rollback_local_slot(arena, coin_id, idx);
         }
     }
 }
