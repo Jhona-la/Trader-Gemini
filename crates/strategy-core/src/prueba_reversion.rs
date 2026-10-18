@@ -39,8 +39,9 @@
 //! tamaño en la frontera sube (EST-2 de la revisión del PR #60: 6,2-7,1 % con
 //! 2 σ, 7,3 % con 3 σ, 8,4-8,9 % con 10 σ y 8,8 % con ruido blanco puro).
 //! Desde C-F5b el veredicto exige además la prueba a la escala de decisión,
-//! y en esa frontera la desviación revierte un 29 % en τ_k: con ruido fuerte
-//! el veredicto no vota (≤ 1,3 % en el prototipo). Error típico HAC de
+//! y en esa frontera lo votado revierte como mucho 0,29/(1 + r²) en τ_k:
+//! con ruido fuerte la prueba larga lo deja en su H0 y el veredicto no vota.
+//! Error típico HAC de
 //! retardo 1: var(ĉ) = (γ0·Σw²z̃² + 2γ1·Σw_t w_{t−1} z̃_t z̃_{t−1})/S_zx².
 //! Corrección de sesgo del AR(1) (Kendall): ĉ_bc = ĉ − (1 + 3ρ̂)/n_ef, con
 //! ρ̂ = 1 − ĉ y n_ef = (Σw)²/Σw². En la frontera,
@@ -56,8 +57,10 @@
 //! En el prototipo, sin la corrección de sesgo el cuantil subía a 2,2 y
 //! dependía de la edad.
 //!
-//! Madurez. Un nodo sólo opina con Σw ≥ (1 − e^{−1/2})/(1 − λ), la masa de
-//! media memoria de celdas consecutivas (8·τ_k de pares). Antes, abstención.
+//! Madurez. La prueba corta sólo opina con Σw ≥ (1 − e^{−1/2})/(1 − λ), la
+//! masa de media memoria de celdas consecutivas (8·τ_k de pares); el
+//! veredicto, además, con la prueba a la escala de decisión madura (33·τ_k,
+//! ver abajo). Antes, abstención.
 //!
 //! Lo que no hace: no estima la vida media (sólo la acota), no corrige la
 //! repetición de miradas en el tiempo (el nivel es por decisión: en cada
@@ -67,45 +70,73 @@
 //! sólo es cierto con poco ruido de medida; con más de una desviación típica
 //! el tamaño de esta prueba sola sube al 7-10 % (ver arriba, EST-2).
 //!
-//! Prueba a la escala de decisión (C-F5b, EST-3 de la revisión del PR #60).
-//! La prueba de retardos cortos extrapola de Δ y 2Δ a τ_k suponiendo un OU
-//! único. Con una base de dos escalas (un OU rápido más otro lento o una
-//! caminata) demuestra «t½ < 2τ_k» por la escala rápida aunque la desviación
-//! que se vota apenas revierta en τ_k: en el caso del revisor (OU de 2
-//! celdas más OU de 1 676 celdas con 10,4 veces su desviación) votaba en el
-//! 10-21 % de los instantes con un 15-19 % de reversión en τ_k. La segunda
-//! prueba (`Largo`) mide en τ_k: fila z = b_{t−L−1}, x = b_{t−L},
-//! y = b_t − b_{t−L} con L = 8 celdas, y ĉ = −S̃zy/S̃zx es la fracción de la
-//! desviación que revierte en τ_k. H0: c ≤ ½. Error típico sándwich con
-//! núcleo uniforme de retardo L; memoria de 64·τ_k (512 celdas), madurez a
-//! media memoria (unas 266 celdas seguidas). Estadístico
-//! t = (ĉ − ½ − `SESGO_LARGO`/n_ef)/se; rechazo si
-//! t > z_{0,95} + `EXCESO_LARGO`/n_ef ([`critico_largo`]). El veredicto
-//! exige las dos pruebas: es una prueba de intersección-unión, y su nivel no
-//! pasa del de cada una.
+//! Prueba a la escala de decisión (C-F5b, EST-3 de la revisión del PR #60;
+//! estimador de C-F5e). La prueba de retardos cortos extrapola de Δ y 2Δ a
+//! τ_k suponiendo un OU único. Con una base de dos escalas (un OU rápido más
+//! otro lento o una caminata) demuestra «t½ < 2τ_k» por la escala rápida
+//! aunque la desviación que se vota apenas revierta en τ_k: en el caso del
+//! revisor (OU de 2 celdas más OU de 1 676 celdas con 10,4 veces su
+//! desviación) votaba en el 10-21 % de los instantes con un 15-19 % de
+//! reversión en τ_k. La segunda prueba (`Largo`) mide en τ_k lo que se vota:
+//! la desviación observada d = b − m respecto a la media del nodo (ruido de
+//! medida incluido). Fila x = d_{t−L}, y = b_t − (2b_{t−L−1} − b_{t−L−2}) con
+//! L = 8 celdas, y R̂ = −Σw·x·y/Σw·x² es la fracción de la desviación votada
+//! que revierte en τ_k (cota inferior; ver `Largo`). H0: R ≤ ½. Error típico
+//! sándwich con núcleo uniforme de retardo L; memoria de 64·τ_k (512
+//! celdas), madurez a media memoria (unas 266 celdas seguidas). Estadístico
+//! t = (R̂ − ½ − `SESGO_LARGO`/n)·Σw·x²/√V, con n = min(n_ef, n_x); rechazo
+//! si t > `CRITICO_LARGO` = z_{0,95}. El veredicto exige las dos pruebas: es
+//! una prueba de intersección-unión, y su nivel no pasa del de cada una.
 //!
-//! Calibración (prototipo numpy del 2026-10-18, 5 000 trayectorias por
-//! configuración): nodos 17 y 18, pares cada 0,25 a 4 s, ruido de medida de
-//! 0 a 10 desviaciones típicas, edades de 280 a 2 048 celdas (192
-//! configuraciones maduras). En la frontera (OU de vida media 8,25 celdas,
-//! ĉ ≈ ½) el sesgo de ĉ es +0,07 con 266 filas efectivas y +0,01 con 990;
-//! `SESGO_LARGO` = 21 lo centra en las edades jóvenes. Con pocas filas el
-//! estadístico tiene colas más pesadas que la normal (desviación típica 1,26
-//! con 266 filas, 1,08 con 990), y `EXCESO_LARGO` = 100 lo cubre: el tamaño
-//! máximo es 5,08 % (una configuración, ruido de 3 σ, error de muestreo
-//! 0,3 %) y ≤ 5 % en las demás. Con un crítico fijo de 2,0 el tamaño máximo
-//! es parecido (4,96 %) y la potencia menor con mucha memoria. Medición en
-//! Rust:
+//! Por qué cambió en C-F5e (revisión adversarial de C-F5b). El ĉ de C-F5b,
+//! por variables instrumentales, medía la reversión de la parte persistente
+//! de la base: el ruido de medida no lo movía, pero lo votado revierte
+//! (1 − ρ^L)/(1 + r²) con ruido de r desviaciones típicas, y con r ≥ 1 la
+//! prueba votaba (44-52 % de los instantes con t½ = τ_k/5) desviaciones que
+//! revertían menos de la mitad. Su corrección de muestra finita por n_ef
+//! tampoco cubría la volatilidad por rachas (5,2-9,8 % de tamaño), y sus
+//! sumas de cuarto orden respecto al origen perdían precisión al alejarse
+//! la base de él.
+//!
+//! Frontera. Para un OU de vida media t½ (celdas) con ruido r, el estimando
+//! estacionario vale ½ en t½ = 7,76 celdas sin ruido, 7,01 con r = ¼ y 5,23
+//! con r = ½; con r ≥ 0,8 ningún OU único llega a ½ (con r = 1 el máximo es
+//! 0,41) y todos están en H0. Hay una segunda raíz, por debajo de
+//! 0,57-0,75 celdas: la extrapolación de orden 2 falla con una reversión mucho más
+//! rápida que la rejilla y R̂ cae aunque lo votado revierta casi entero; es
+//! pérdida de potencia, no de nivel, y esas configuraciones no entran en la
+//! calibración del tamaño.
+//!
+//! Calibración (prototipo numpy del 2026-10-18, el mismo estimador fila a
+//! fila; 2 000 a 5 000 trayectorias por configuración): nodos 17 y 18, pares
+//! cada 0,25 a 4 s, edades de 270 a 2 048 celdas (n_ef satura en ≈ 1 023).
+//! H0: la frontera superior con r = 0, ¼ y ½ (15 configuraciones), la misma
+//! con volatilidad por rachas (log-volatilidad de desviación típica ½ y 1,
+//! vida media de 50 y 500 celdas, y dos estados de Markov con volatilidad
+//! ×4 y ×8 en el alto: 20) y t½ = τ_k/5 con ruido de 1 a 10 desviaciones típicas (12). Con
+//! `SESGO_LARGO` = 19 y el crítico asintótico el tamaño máximo de la prueba
+//! larga sola es 4,96 % (rachas de Markov ×4, 2 048 celdas; error de
+//! muestreo 0,3 %): 4,5 % en la frontera sin ruido, 2,5 % con r = ½ y
+//! ≤ 0,33 % con r ≥ 1. El del veredicto, 4,4 %. Un núcleo de retardo L + 2
+//! (g es una media móvil de orden L + 2) necesita además un exceso del
+//! crítico (45/n con el mismo sesgo) y tiene menos potencia. Medición en Rust:
 //! `tests/medicion_critico_reversion.rs`.
 //!
-//! Resultado (prototipo, N = 2 000, nodo 17): en la frontera larga el
-//! veredicto vota ≤ 3,0 %; en el caso del revisor, ≤ 1,1 %; con t½ = τ_k/5,
-//! el 95 % a 384 celdas y ≥ 99 % desde 512. Con bases de dos escalas en las
-//! que la desviación media revierte justo la mitad en τ_k, lo votado
-//! revierte de 0,5 a 0,85 (contrato de decisión: se vota lo que revierte al
-//! menos la mitad en τ_k). Coste: la prueba larga madura más tarde (unas
-//! 266 celdas, 33·τ_k) y recién madura tiene menos potencia (83 % a 280
-//! celdas con t½ = τ_k/5).
+//! Resultado (prototipo). Con t½ = τ_k/5 sin ruido el veredicto rechaza el
+//! 70 % de las trayectorias a 270 celdas, el 89 % a 384 y el 97 % a 512; con
+//! ruido de ½ σ, del 16 % al 81 % entre 270 y 2 048 celdas (lo votado
+//! revierte 0,79). En el caso del revisor vota ≤ 0,9 %. Con bases de dos
+//! escalas en la frontera (la desviación media revierte la mitad en τ_k)
+//! vota hasta el 16 % de los instantes en las edades jóvenes, y lo votado
+//! revierte de 0,49 a 0,74 (todas las edades juntas): la prueba mide lo que
+//! revierte la desviación en la ventana, y una ventana en la que la
+//! componente lenta está quieta sí revierte. Ese es el contrato de
+//! decisión: se vota lo que revierte al menos la mitad en τ_k; el tamaño
+//! sobre trayectorias de esas bases no está acotado al 5 %. La prueba corta
+//! añade poco: en un OU, rechazar la larga implica t½ < τ_k y por tanto la
+//! H1 de la corta; en lo medido le quita al veredicto ≤ 6 puntos de
+//! potencia. Coste: la prueba larga madura más tarde (unas 266 celdas,
+//! 33·τ_k).
 
 use quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS;
 
@@ -339,7 +370,7 @@ impl Nodo {
         self.b2 = self.b1;
         self.b1 = Some(self.valor);
         self.estado = self.calcular();
-        self.largo.cerrar(self.valor);
+        self.largo.cerrar(self.valor, self.estado.map(|e| e.media));
     }
 
     fn calcular(&self) -> Option<EstadoNodo> {
@@ -408,28 +439,19 @@ pub const HORIZONTE_CELDAS: usize = 8;
 pub const MEMORIA_LARGA_EN_TAU: f64 = 64.0;
 const MEMORIA_LARGA_CELDAS: f64 = CELDAS_POR_TAU * MEMORIA_LARGA_EN_TAU;
 /// Frontera de H0 de la prueba a la escala de decisión: la desviación
-/// revierte menos de la mitad en τ_k.
+/// votada revierte menos de la mitad en τ_k.
 pub const FRACCION_FRONTERA: f64 = 0.5;
-/// Sesgo de la fracción estimada en la frontera, por fila efectiva:
-/// E[ĉ] − ½ ≈ SESGO_LARGO/n_ef en las edades jóvenes (Monte Carlo, ver la
-/// cabecera).
-pub const SESGO_LARGO: f64 = 21.0;
-/// Crítico asintótico del estadístico t de la prueba a la escala de
-/// decisión (cola superior, nivel 5 %): z_{0,95}.
+/// Corrección de muestra finita del estadístico de la prueba a la escala de
+/// decisión, por unidad de tamaño efectivo: t se calcula con
+/// R̂ − ½ − SESGO_LARGO/n (n = `EstadoLargo::n`). Es la menor que deja el
+/// tamaño ≤ 5 % en las 47 configuraciones de H0 del Monte Carlo con el
+/// crítico asintótico (ver la cabecera).
+pub const SESGO_LARGO: f64 = 19.0;
+/// Crítico del estadístico t de la prueba a la escala de decisión (cola
+/// superior, nivel 5 %): z_{0,95}. C-F5e: con la corrección por n el
+/// tamaño ya queda ≤ 5 % y el exceso de muestra finita del crítico de
+/// C-F5b (100/n_ef) sobra.
 pub const CRITICO_LARGO: f64 = 1.644_853_626_951_472_2;
-/// Exceso de muestra finita del crítico, por fila efectiva: el menor que
-/// deja el tamaño ≤ 5 % en las 192 configuraciones del Monte Carlo (ver la
-/// cabecera).
-pub const EXCESO_LARGO: f64 = 100.0;
-
-/// Crítico de la prueba a la escala de decisión con n_ef filas efectivas.
-pub fn critico_largo(n_ef: f64) -> f64 {
-    if n_ef > 0.0 {
-        CRITICO_LARGO + EXCESO_LARGO / n_ef
-    } else {
-        f64::INFINITY
-    }
-}
 
 /// Masa mínima de la prueba a la escala de decisión: media memoria.
 fn masa_madura_larga() -> f64 {
@@ -437,71 +459,75 @@ fn masa_madura_larga() -> f64 {
     -(-0.5f64).exp_m1() / (1.0 - lambda)
 }
 
-/// Familias de pesos de las sumas de la varianza (ver `Largo`).
-const ZZ: usize = 0;
-const ZS: usize = 1;
-const UNO: usize = 2;
+/// Muestras que necesita una fila: las celdas t, t−L, t−L−1 y t−L−2.
+const VENTANA: usize = HORIZONTE_CELDAS + 3;
 
-/// C-F5b (EST-3 de la revisión del PR #60): prueba de reversión a la escala
-/// de decisión.
+/// C-F5b (EST-3 de la revisión del PR #60) y C-F5e: prueba de reversión a la
+/// escala de decisión.
 ///
-/// Fila de la celda t: z = b_{t−L−1}, x = b_{t−L}, y = b_t − b_{t−L}, con
-/// L = `HORIZONTE_CELDAS`. Sólo exige muestra en esas tres celdas; los
-/// huecos de en medio no cortan la fila. Modelo y = a − c·x + u, con
-/// instrumentos (1, z): ĉ = −S̃_zy/S̃_zx (sumas centradas y ponderadas) es
-/// la fracción de la desviación respecto a la media de la ventana que
-/// revierte en L celdas, 1 − γ(L+1)/γ(1). El instrumento es la celda
-/// anterior a x: el ruido de medida (iid por celda) no fabrica reversión.
+/// Estimando (C-F5e). Lo que vota el lector es la desviación OBSERVADA de
+/// la base respecto a la media del nodo, d = b − m (m es `EstadoNodo::media`,
+/// memoria de 16·τ_k), ruido de medida incluido. Lo que esa desviación
+/// revierte en τ_k es R = −E[d·Δ]/E[d²], con Δ el cambio de la base limpia
+/// en τ_k. La fila de la celda t es x = d_{t−L}, lo que se votó, e
+/// y = b_t − (2·b_{t−L−1} − b_{t−L−2}): el valor en τ_k menos la
+/// extrapolación lineal de b_{t−L} desde las dos celdas anteriores, con
+/// L = `HORIZONTE_CELDAS`. y no lleva el ruido de x, y
+/// R̂ = −Σw·x·y/Σw·x² (regresión por el origen) estima R menos lo que
+/// pierde la extrapolación: para una mezcla de OU, γ(0) se reconstruye como
+/// 2γ(1) − γ(2) = Σ v_i (1 − (1 − ρ_i)²) ≤ γ(0), así que R̂ es conservador
+/// y pierde (1 − ρ)² (0,007 en la frontera; 0,12 con t½ = τ_k/5). Sólo exige
+/// muestra en esas cuatro celdas y media en t − L; los huecos de en medio no
+/// cortan la fila.
+///
+/// Por el origen y sobre d, no centrado en la propia muestra: centrar x en
+/// su media de la memoria larga quitaba la parte de d que no revierte (la
+/// deriva lenta y la caminata), y con bases de dos escalas la prueba votaba
+/// en el 15-22 % de los instantes con la desviación media en la frontera.
+/// x y y son diferencias, así que las sumas no dependen del origen ni
+/// pierden precisión al alejarse la base de él.
+///
+/// Hasta C-F5b se contrastaba ĉ = −S̃zy/S̃zx (z = b_{t−L−1}, y = b_t − x),
+/// la reversión de la parte persistente: el ruido no la mueve, pero lo
+/// votado, con ruido de una desviación típica o más, revertía menos de la
+/// mitad aunque la prueba lo diera por demostrado. La alternativa de usar el
+/// instrumento sólo en el denominador, −S̃zy/S̃xx, también es conservadora
+/// pero pierde el factor ρ(Δ) entero: con t½ = τ_k/5 la potencia caía del
+/// 95 % al 21 %.
 ///
 /// Varianza. Sándwich con núcleo uniforme de retardo L sobre la influencia
-/// (z_t − z̄)·u_t, con u_t = y_t − â + ĉ·x_t y pesos w_t·w_s:
-/// V = Σ_t Σ_{|t−s| ≤ L} w_t w_s (z_t − z̄)(z_s − z̄) u_t u_s y
-/// var(ĉ) = V/S̃_zx². Desarrollando u_t u_s en â y ĉ, V sale de 18 sumas
-/// (tres familias de pesos, z_t z_s, z_t + z_s y 1, por seis productos,
-/// y_t y_s, y_t x_s + x_t y_s, x_t x_s, y_t + y_s, x_t + x_s y 1). Las filas
-/// de L celdas se solapan: u es una media móvil de orden L − 1 y el núcleo
-/// uniforme de retardo L la cubre entera (el de Bartlett la infraestima un
-/// 16 % en desviación típica). Con la media estimada en la ventana, los
-/// retardos más largos son negativos y alargar el núcleo encoge V.
-#[derive(Debug, Clone)]
+/// g_t = x_t·y_t + R̂·x_t², con pesos w_t·w_s:
+/// V = Σ_t Σ_{|t−s| ≤ L} w_t w_s g_t g_s y var(R̂) = V/(Σw·x²)². Con
+/// φ = [x·y, x²], g = αᵀφ con α = [1, R̂], y V = αᵀMα con
+/// M = Σ_t Σ_{|t−s| ≤ L} w_t w_s φ_t φ_sᵀ. g es una media móvil de orden
+/// L + 2 (las filas t y t − L − 2 comparten una celda); el núcleo de retardo
+/// L la cubre casi entera y la calibración absorbe el resto (con L + 2 el
+/// tamaño no mejora y la potencia baja; ver la cabecera).
+///
+/// Tamaño efectivo (C-F5e, heterocedasticidad). La corrección de muestra
+/// finita va por n = min(n_ef, n_x), con n_ef = (Σw)²/Σw² y
+/// n_x = 3·(Σw·x²)²/Σw²·x⁴: con volatilidad por rachas la energía de lo
+/// votado se concentra en las rachas altas, n_x baja y el estadístico tiene
+/// colas más pesadas de lo que n_ef supone. Con d gaussiana homocedástica
+/// n_x ≈ n_ef.
+#[derive(Debug, Clone, Default)]
 struct Largo {
-    /// Muestras de las últimas L + 2 celdas (0 = la última cerrada).
-    muestras: [Option<f64>; HORIZONTE_CELDAS + 2],
-    /// Filas de las L celdas anteriores (0 = la de la celda anterior).
-    filas: [Option<(f64, f64, f64)>; HORIZONTE_CELDAS],
+    /// Muestras de las últimas L + 3 celdas (0 = la última cerrada) y su
+    /// desviación respecto a la media del nodo al cerrarlas.
+    muestras: [Option<f64>; VENTANA],
+    desviaciones: [Option<f64>; VENTANA],
+    /// φ = [x·y, x²] de las filas de las L celdas anteriores (0 = la de la
+    /// anterior).
+    filas: [Option<[f64; 2]>; HORIZONTE_CELDAS],
     w: f64,
-    z: f64,
-    x: f64,
-    y: f64,
-    zx: f64,
-    zy: f64,
-    zz: f64,
     xx: f64,
+    xy: f64,
     w2: f64,
-    /// Sumas de la varianza: [familia][producto], con los productos en el
-    /// orden y_t y_s, y_t x_s + x_t y_s, x_t x_s, y_t + y_s, x_t + x_s, 1.
-    k: [[f64; 6]; 3],
+    /// Σ_t Σ_{|t−s| ≤ L} w_t w_s φ_t φ_sᵀ.
+    m: [[f64; 2]; 2],
+    /// Σ_t w_t² x_t⁴.
+    x4: f64,
     estado: Option<EstadoLargo>,
-}
-
-impl Default for Largo {
-    fn default() -> Self {
-        Self {
-            muestras: [None; HORIZONTE_CELDAS + 2],
-            filas: [None; HORIZONTE_CELDAS],
-            w: 0.0,
-            z: 0.0,
-            x: 0.0,
-            y: 0.0,
-            zx: 0.0,
-            zy: 0.0,
-            zz: 0.0,
-            xx: 0.0,
-            w2: 0.0,
-            k: [[0.0; 6]; 3],
-            estado: None,
-        }
-    }
 }
 
 /// Estado de la prueba a la escala de decisión en un nodo.
@@ -509,34 +535,31 @@ impl Default for Largo {
 pub struct EstadoLargo {
     /// Estadístico t; −∞ si no se puede calcular.
     pub t: f64,
-    /// Fracción de la desviación que revierte en τ_k (ĉ, sin corregir).
-    pub fraccion: f64,
+    /// C-F5e: R̂, lo que revierte en τ_k la desviación votada (cota
+    /// inferior; sin corregir).
+    pub reversion: f64,
     /// Masa Σw y si llega a la de madurez (media memoria larga).
     pub masa: f64,
     pub madura: bool,
     /// Filas efectivas (Σw)²/Σw².
     pub n_ef: f64,
+    /// C-F5e: tamaño efectivo de la corrección de muestra finita,
+    /// min(n_ef, n_x).
+    pub n: f64,
 }
 
 impl Largo {
     fn decaer(&mut self, n: f64) {
         let l1 = (-n / MEMORIA_LARGA_CELDAS).exp();
         let l2 = l1 * l1;
-        for v in [
-            &mut self.w,
-            &mut self.z,
-            &mut self.x,
-            &mut self.y,
-            &mut self.zx,
-            &mut self.zy,
-            &mut self.zz,
-            &mut self.xx,
-        ] {
+        for v in [&mut self.w, &mut self.xx, &mut self.xy] {
             *v *= l1;
         }
-        self.w2 *= l2;
-        for fam in self.k.iter_mut() {
-            for v in fam.iter_mut() {
+        for v in [&mut self.w2, &mut self.x4] {
+            *v *= l2;
+        }
+        for fila in self.m.iter_mut() {
+            for v in fila.iter_mut() {
                 *v *= l2;
             }
         }
@@ -544,11 +567,13 @@ impl Largo {
 
     /// Celdas vacías: sin muestra ni fila; sólo decaen las sumas.
     fn vaciar(&mut self, n: u64) {
-        let ventana = (HORIZONTE_CELDAS + 2) as u64;
+        let ventana = VENTANA as u64;
         for _ in 0..n.min(ventana) {
             self.decaer(1.0);
             self.muestras.rotate_right(1);
             self.muestras[0] = None;
+            self.desviaciones.rotate_right(1);
+            self.desviaciones[0] = None;
             self.filas.rotate_right(1);
             self.filas[0] = None;
         }
@@ -558,55 +583,46 @@ impl Largo {
         self.estado = self.calcular();
     }
 
-    /// Cierra una celda con muestra `b`.
-    fn cerrar(&mut self, b: f64) {
+    /// Cierra una celda con muestra `b` y media del nodo `media` (las dos
+    /// respecto al origen de la prueba).
+    fn cerrar(&mut self, b: f64, media: Option<f64>) {
         self.decaer(1.0);
         self.muestras.rotate_right(1);
         self.muestras[0] = Some(b);
+        self.desviaciones.rotate_right(1);
+        self.desviaciones[0] = media.map(|m| b - m).filter(|d| d.is_finite());
         let l = HORIZONTE_CELDAS;
-        let fila = match (self.muestras[l + 1], self.muestras[l]) {
-            (Some(z), Some(x)) => Some((z, x, b - x)),
+        let fila = match (self.desviaciones[l], self.muestras[l + 1], self.muestras[l + 2]) {
+            (Some(x), Some(z), Some(z2)) => Some((x, b - (2.0 * z - z2))),
             _ => None,
         };
-        if let Some((z, x, y)) = fila {
+        let phi = fila.map(|(x, y)| [x * y, x * x]);
+        if let (Some((x, y)), Some(p)) = (fila, phi) {
             self.w += 1.0;
-            self.z += z;
-            self.x += x;
-            self.y += y;
-            self.zx += z * x;
-            self.zy += z * y;
-            self.zz += z * z;
             self.xx += x * x;
+            self.xy += x * y;
             self.w2 += 1.0;
+            self.x4 += p[1] * p[1];
+            // Retardos 1..L: w_t·w_{t−j} = λ^j·w_t², el par (t, t−j) y su
+            // simétrico. a = Σ_j λ^j φ_{t−j}.
             let lambda = (-1.0 / MEMORIA_LARGA_CELDAS).exp();
-            // Retardo 0, con peso 1, y retardos 1..L, con peso 2·λ^j (el
-            // par (t, t−j) y su simétrico; w_t·w_{t−j} = λ^j·w_t²).
-            let mut sumar = |peso: f64, (zp, xp, yp): (f64, f64, f64)| {
-                let prod = [
-                    y * yp,
-                    y * xp + x * yp,
-                    x * xp,
-                    y + yp,
-                    x + xp,
-                    1.0,
-                ];
-                for (fam, wf) in [(ZZ, z * zp), (ZS, z + zp), (UNO, 1.0)] {
-                    for (v, p) in self.k[fam].iter_mut().zip(prod) {
-                        *v += peso * wf * p;
-                    }
-                }
-            };
-            sumar(1.0, (z, x, y));
+            let mut a = [0.0; 2];
             let mut lj = 1.0;
             for f in self.filas {
                 lj *= lambda;
-                if let Some(fp) = f {
-                    sumar(2.0 * lj, fp);
+                if let Some(q) = f {
+                    a[0] += lj * q[0];
+                    a[1] += lj * q[1];
+                }
+            }
+            for i in 0..2 {
+                for j in 0..2 {
+                    self.m[i][j] += p[i] * p[j] + p[i] * a[j] + a[i] * p[j];
                 }
             }
         }
         self.filas.rotate_right(1);
-        self.filas[0] = fila;
+        self.filas[0] = phi;
         self.estado = self.calcular();
     }
 
@@ -615,31 +631,26 @@ impl Largo {
         if !(w > 0.0) || !(self.w2 > 0.0) {
             return None;
         }
-        let (zb, xb, yb) = (self.z / w, self.x / w, self.y / w);
-        let szx = self.zx - w * zb * xb;
-        let szy = self.zy - w * zb * yb;
         let madura = w >= masa_madura_larga();
         let n_ef = w * w / self.w2;
-        let (t, fraccion) = if szx.abs() > 0.0 {
-            let c = -szy / szx;
-            let a = yb + c * xb;
-            let uu = |fam: usize| {
-                let k = &self.k[fam];
-                k[0] + c * k[1] + c * c * k[2] - a * k[3] - a * c * k[4] + a * a * k[5]
-            };
-            let v = uu(ZZ) - zb * uu(ZS) + zb * zb * uu(UNO);
-            let t = (c - FRACCION_FRONTERA - SESGO_LARGO / n_ef) * szx.abs() / v.sqrt();
+        let (t, reversion, n) = if self.xx > 0.0 {
+            let r = -self.xy / self.xx;
+            let v = self.m[0][0] + 2.0 * r * self.m[0][1] + r * r * self.m[1][1];
+            let n_x = 3.0 * self.xx * self.xx / self.x4;
+            let n = if n_x > 0.0 && n_x.is_finite() { n_ef.min(n_x) } else { n_ef };
+            let t = (r - FRACCION_FRONTERA - SESGO_LARGO / n) * self.xx / v.sqrt();
             let t = if v > 0.0 && t.is_finite() { t } else { f64::NEG_INFINITY };
-            (t, c)
+            (t, r, n)
         } else {
-            (f64::NEG_INFINITY, f64::NAN)
+            (f64::NEG_INFINITY, f64::NAN, n_ef)
         };
         Some(EstadoLargo {
             t,
-            fraccion,
+            reversion,
             masa: w,
             madura,
             n_ef,
+            n,
         })
     }
 }
@@ -651,7 +662,7 @@ pub struct Veredicto {
     /// malla).
     pub tau_nodo_ms: f64,
     /// Reversión demostrada: las dos pruebas del nodo maduras y sobre su
-    /// crítico (t > `CRITICO` y t_largo > [`critico_largo`]).
+    /// crítico (t > `CRITICO` y t_largo > `CRITICO_LARGO`).
     pub demostrada: bool,
     /// Estadístico t del nodo (−∞ sin estado).
     pub t: f64,
@@ -763,7 +774,7 @@ impl PruebaReversion {
         };
         let tau_nodo_ms = SPECTRUM_SCALES_MS[NODO_MIN + i];
         let (largo_ok, t_largo) = match self.nodos[i].largo.estado {
-            Some(l) => (l.madura && l.t > critico_largo(l.n_ef), l.t),
+            Some(l) => (l.madura && l.t > CRITICO_LARGO, l.t),
             None => (false, f64::NEG_INFINITY),
         };
         Some(match self.nodos[i].estado {
