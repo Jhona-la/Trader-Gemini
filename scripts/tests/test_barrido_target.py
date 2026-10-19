@@ -22,15 +22,24 @@ SEMAFORO = SCRIPTS / "cargo_semaforo.sh"
 
 def _bash():
     """bash de GNU. En Windows `bash` puede ser el lanzador de WSL
-    (WindowsApps), que sin WSL instalado no arranca: usar Git Bash."""
+    (WindowsApps), que sin WSL instalado no arranca. Entonces se usa el bash
+    MSYS REAL de Git (usr\\bin\\bash.exe): el lanzador Git\\bin\\bash.exe
+    antepone /mingw64/bin:/usr/bin al PATH y deja detrás los shims de las
+    pruebas (así fallaban los contratos de reloj virtual del semáforo)."""
     b = shutil.which("bash")
     if b and "windowsapps" in b.lower():
-        git_bash = r"C:\Program Files\Git\bin\bash.exe"
-        return git_bash if os.path.exists(git_bash) else None
+        for candidato in (r"C:\Program Files\Git\usr\bin\bash.exe", r"C:\Program Files\Git\bin\bash.exe"):
+            if os.path.exists(candidato):
+                return candidato
+        return None
     return b
 
 
 BASH = _bash()
+# El directorio del bash elegido va al PATH del subproceso: con el bash MSYS
+# real (Git\usr\bin) ahí viven date/sleep/mkdir/awk. Sin ellos el semáforo no
+# tiene reloj y su espera no termina (así se colgaron 6 contratos el 10-19).
+PATH_BASH = os.path.dirname(BASH) if BASH else ""
 H1, H2, H3, H4 = "0123456789abcdef", "fedcba9876543210", "00112233445566ff", "aaaaaaaaaaaaaaa1"
 KB = 1024
 
@@ -73,7 +82,8 @@ class BarridoTargetTests(unittest.TestCase):
         entorno = {k: v for k, v in os.environ.items()
                    if not k.upper().startswith(("BARRIDO_", "SEMAFORO_", "APLICAR"))}
         entorno.update(BARRIDO_RAIZ=str(self.raiz), BARRIDO_AGENTE="prueba",
-                       BARRIDO_INCREMENTAL_MAX_MB="0.1", BARRIDO_PROCESOS="0")
+                       BARRIDO_INCREMENTAL_MAX_MB="0.1", BARRIDO_PROCESOS="0",
+                       PATH=PATH_BASH + os.pathsep + os.environ.get("PATH", ""))
         entorno.update({k: str(v) for k, v in env.items()})
         return subprocess.run([BASH, str(BARRIDO)], env=entorno,
                               capture_output=True, text=True, timeout=120)
@@ -258,7 +268,7 @@ class SemaforoBarridoTests(unittest.TestCase):
         entorno = {k: v for k, v in os.environ.items()
                    if not k.upper().startswith(("BARRIDO_", "SEMAFORO_", "APLICAR", "CARGO_BUILD_JOBS"))}
         entorno.update(
-            PATH=str(self.bin) + os.pathsep + os.environ.get("PATH", ""),
+            PATH=str(self.bin) + os.pathsep + PATH_BASH + os.pathsep + os.environ.get("PATH", ""),
             SEMAFORO_RAIZ=str(self.raiz), SEMAFORO_AGENTE="prueba", SEMAFORO_PAUSA_S="0",
             SEMAFORO_PROCESOS="0", SEMAFORO_RAM_GB="10", SEMAFORO_ESPERA_MAX_MIN="0",
             PRUEBA_TESTIGO=self.vieja.as_posix(), PRUEBA_TRAZA=self.traza.as_posix(),
