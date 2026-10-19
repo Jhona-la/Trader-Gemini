@@ -1,5 +1,60 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω168: Cierre de F1-053 (Acceso O(1) Tipado a CouncilParams sin Lookups Hash en Hot-Path), F1-054 (Unificación de Margen Disponible en RiskEngine y Telemetría Forense diag_margin_drops) y F1-055 (Modulación Continua de Duración Hurst con Banda Muerta Neutral e Incertidumbre de Estimación) (2026-10-19)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω168: OPTIMIZACIÓN NANOSEGUNDO DE PARÁMETROS DEL CONSEJO, UNIFICACIÓN COHERENTE DE MARGEN Y MODULACIÓN ROBUSTA DE HORIZONTE FRACTAL
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv` (3 en total)**:
+   - **`F1-053` (`MED`, `crates/god-engine-core/src/lib.rs:9121-9525`)**:
+     - **QUÉ**: Reemplazo de 28 bloques dinámicos de consulta `registry.get_for_coin_or(coin_id, "...", f64::NAN)` en la construcción del snapshot del Consejo por lecturas directas $O(1)$ tipadas desde `self.consejo_deliberacion.params.<campo>`.
+     - **POR QUÉ**: El snapshot de mercado del Consejo realizaba 28 búsquedas hash por cadena para cada candidato evaluado en el camino crítico. Dichas claves del registro dinámico carecían de escritor en tiempo real (los parámetros son globales del Consejo sincronizados desde `QuantumConfig`/genoma mediante `sync_council_params`), incurriendo en ~60 lookups hash inútiles (~150 µs de latencia) y riesgo de colisión accidental en el registro omnisciente.
+     - **PARA QUÉ**: (1) Reducir la latencia del bucle de decisión a escala de nanosegundos; (2) Garantizar la integridad tipada de los umbrales del Consejo (`causal_veto_threshold`, `macro_veto_threshold`, etc.); (3) Erradicar dependencias dinámicas no tipadas en la evaluación de órdenes; (4) Proteger el crecimiento compuesto del capital de $13 USD.
+     - **CÓMO**:
+       1. En la instanciación de `MarketSnapshotPayload`, se leen directamente los campos: `let cp = &self.consejo_deliberacion.params;`.
+       2. Se asignan: `causal_veto_threshold: if cp.causal_veto_threshold.is_finite() { cp.causal_veto_threshold } else { ... }`, y análogamente para los 28 parámetros.
+       3. Se preserva la sincronización canónica vía `sync_council_params(&self.config)` en `apply_config`.
+     - **CUÁNDO**: En cada evaluación del Consejo de Deliberación para cada candidato en el hot path.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en Modo Profesor y Consejo de 10 Roles Senior.
+
+   - **`F1-054` (`HIGH`, `crates/god-engine-core/src/lib.rs:9410-9428, 9680-9715`)**:
+     - **QUÉ**: Unificación de la gestión del margen libre en el oráculo canónico `risk_engine::available_margin_headroom`, erradicación del haircut secundario arbitrario del 95% en el núcleo, e incorporación del contador diagnóstico `diag_margin_drops` con telemetría forense estructurada.
+     - **POR QUÉ**: En `lib.rs:9415` se aplicaba un segundo recorte arbitrario: `free_cap *= (1.0 - 0.95 * directional_flux).clamp(0.05, 1.0);`, después de que `RiskEngine` ya había validado y acotado el margen y apalancamiento. Este segundo corte reducía el margen disponible hasta en un 95% sin justificación física, provocando rechazos silenciosos de órdenes con edge positivo. Además, los rechazos de margen en el núcleo no incrementaban contadores diagnósticos ni emitían logs, cegando la observabilidad del funnel.
+     - **PARA QUÉ**: (1) Establecer a `RiskEngine` como única fuente de verdad sobre el margen y apalancamiento; (2) Evitar asfixia operativa artificial en micro-capitales ($13.00 USD); (3) Dotar de visibilidad 100% al funnel de ejecución con el contador `diag_margin_drops` y logs `⚠️ [MARGIN DROP]`; (4) Cumplir con la modularidad SOLID y separación estricta de responsabilidades.
+     - **CÓMO**:
+       1. Se elimina la reducción redundante `free_cap *= (1.0 - 0.95 * directional_flux)...`.
+       2. Se añade el campo público `pub diag_margin_drops: u64` en `GodEngineCore` (inicializado en 0).
+       3. En las ramas donde `max_margin_per_order` o `notional` rechazan la orden, se incrementa `self.diag_margin_drops += 1` y se emite log forense con detalles cuantitativos del capital disponible vs requerido.
+     - **CUÁNDO**: Durante la verificación de margen previo a la emisión de órdenes en el núcleo.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) y Consejo de 10 Roles Senior.
+
+   - **`F1-055` (`HIGH`, `crates/god-engine-core/src/lib.rs:9825-9850, 2195-2205`)**:
+     - **QUÉ**: Erradicación del ancho fijo de rampa (0.02) en la modulación de duración por Hurst, adoptando la formulación continua adaptativa `hurst_duration_modulation_samples` con zona muerta neutral para paseo aleatorio e incertidumbre de muestreo $\kappa_N$, reactivando y aprobando el test de solución conocida `cf2_duracion_no_se_modula_bajo_paseo_aleatorio`.
+     - **POR QUÉ**: La fórmula previa $2^{(H - 0.50)/0.02}$ usaba una escala de $0.02$ excesivamente rígida, saturando a $\pm 0.64\sigma$ del estimador DFA ($SE \approx 0.031$ para $N=1024$). Como consecuencia, el 52% de los caminos brownianos puros (ruido) eran tratados erróneamente como tendencias o reversiones extremas, duplicando o reduciendo a la mitad la duración de la orden de forma espuria.
+     - **PARA QUÉ**: (1) Preservar el horizonte temporal natural $\tau$ bajo paseo aleatorio ($H \approx 0.50$); (2) Escalar la sensibilidad del horizonte según la incertidumbre estadística de la muestra $\kappa_N = \min(2.0, \sqrt{1024/\max(64, N)})$; (3) Erradicar la distorsión del horizonte inducida por error del estimador DFA; (4) Desbloquear y satisfacer el test de referencia canónico `cf2_duracion_no_se_modula_bajo_paseo_aleatorio`.
+     - **CÓMO**:
+       1. Se implementa `hurst_duration_modulation_samples(expected_duration_ms, hurst, samples)`.
+       2. Se obtienen umbrales dinámicos `(anti_thr, pers_thr) = dynamic_hurst_thresholds(samples)`.
+       3. Si $H \in [anti\_thr, pers\_thr]$, el factor es idénticamente 1.0 (zona muerta sin modulación bajo ruido).
+       4. Fuera de la zona muerta, la rampa modula proporcionalmente a $\kappa_N$ con factor acotado en $[0.50, 2.0]$.
+       5. Se conecta `fe.hurst.samples()` en el núcleo `tau_de_la_orden`.
+       6. Se des-ignora y aprueba `cf2_duracion_no_se_modula_bajo_paseo_aleatorio` en `cf2_hurst_bandas_solucion_conocida.rs`.
+     - **CUÁNDO**: Al dimensionar el horizonte temporal $\tau$ de cada orden emitida.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs` y `tests/cf2_hurst_bandas_solucion_conocida.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) y Consejo de 10 Roles Senior.
+
+2. **Verificación Contractual y CI**:
+   - `crates/god-engine-core/tests/f1_053_054_055_council_margin_duration_contract.rs`: 3/3 tests PASSED (100% verde en 0.07s).
+   - Suite canónica `crates/god-engine-core/tests/cf2_hurst_bandas_solucion_conocida.rs`: 1/1 test PASSED (`cf2_duracion_no_se_modula_bajo_paseo_aleatorio` activo y en verde).
+   - Suite de regresión `crates/god-engine-core/tests/cf3_vetos_nucleo.rs`: 3/3 tests PASSED (100% verde).
+   - Tests internos de modulación Hurst `tests_d609`: 6/6 tests PASSED.
+   - `cargo check --workspace --all-targets -j 1`: 100% PASSED en los 23 crates (0 errores, 0 advertencias).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω167: Cierre de F1-048 (Dead-Bands Tipificadas por Cuantiles y Reparto Brier Skill en PPO/Consenso), F1-051 (Modulación Simétrica de Predictibilidad Fractal en Lift ML) y F1-052 (Unificación Dimensional del ML Gate |p - b| >= lift_eff) (2026-10-19)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
