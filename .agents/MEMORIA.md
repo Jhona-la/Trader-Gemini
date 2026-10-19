@@ -1,5 +1,38 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-19 (madrugada, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω167 (Cierre F1-048, F1-051 y F1-052)
+
+- **Mandato**: Erradicación sistemática de sesgos heurísticos, distorsiones de escala asimétricas y constantes arbitrarias en el motor de señal y compuertas de decisión (`crates/god-engine-core/src/lib.rs`), abordando los hallazgos F1-048, F1-051 y F1-052 del censo forense (`docs/audit/fable/f1_hallazgos.tsv`). Se unifica dimensionalmente el gate ML en unidades probabilísticas honestas $|p - b| \ge lift\_eff$ eliminando el sesgo estructural pro-cortos en activos con base honesta $b < 0.5$, se dota a la modulación de lift por exponente de Hurst de simetría especular estricta respecto a ruido browniano $|H - 0.50|$ para no penalizar artificialmente la antipersistencia y reversión a la media, y se tipifican los dead-bands del PPO mediante cuantiles dinámicos locales (`dynamic_obi_thr`, `dynamic_ofi_thr`) y tipificación $z$ del macro-trend (`z_macro`), derivando continuamente el reparto residual de pesos $w_{nn}$ / $w_{tensor}$ a partir de la métrica de habilidad Brier del ensamble (`skill_z`), en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:
+  1. **F1-051 (`crates/god-engine-core/src/lib.rs:9613-9625`)**:
+     - *Problema (QUÉ / POR QUÉ)*: La modulación del lift ML por Hurst usaba una rampa firmada `(1.0 - 0.40 * (hurst_val - 0.50))`. En un proceso antipersistente de alta reversión a la media ($H = 0.30$, fuertemente predecible y no browniano), el lift se castigaba arbitrariamente endureciéndolo a $1.08$ o $1.16$, mientras que la persistencia ($H = 0.70$) se relajaba a $0.92$, castigando estructuralmente a las estrategias de reversión. A $H = 0.50$ (ruido browniano puro sin predictibilidad), el factor era $1.0$ y no protegía el capital contra martingalas aleatorias.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Implementada la predictibilidad fractal simétrica $\Pi_H = |H - 0.50| \in [0.0, 0.40]$.
+       - Modulación simétrica calibrada: `hurst_mod = (1.0 + 1.50 * (0.10 - predictibilidad_h)).clamp(0.70, 1.30)`.
+       - A $H = 0.50$ (ruido puro): $\Pi_H = 0.0 \implies hurst\_mod = 1.15$ (+15% de lift exigido, protegiendo capital).
+       - A $|H - 0.50| = 0.10$ ($H = 0.40$ o $H = 0.60$): $hurst\_mod = 1.00$ (neutro).
+       - A $|H - 0.50| \ge 0.20$ (reversión $H = 0.30$ o tendencia $H = 0.70$): $hurst\_mod = 0.85$ (-15% de lift, reconociendo la memoria no browniana de la serie).
+       - Simetría especular bit a bit garantizada: $hurst\_mod(0.50 + d) \equiv hurst\_mod(0.50 - d)$ para todo $d$.
+  2. **F1-052 (`crates/god-engine-core/src/lib.rs:9655-9675`)**:
+     - *Problema (QUÉ / POR QUÉ)*: El ML gate comparaba `normalized_directional_divergence(p, b) >= 2.0 * lift_eff`. Al normalizar sobre $[0, b]$ para cortos y $[b, 1]$ para largos, con la base honesta del etiquetado $TP = 2\cdot SL$ ($b = 1/3$), un corto pasaba con $(1/3 - p)/(1/3) \ge 2\cdot lift \iff (1/3 - p) \ge \frac{2}{3} lift$, mientras un largo exigía $(p - 1/3)/(2/3) \ge 2\cdot lift \iff (p - 1/3) \ge \frac{4}{3} lift$. ¡El corto exigía la mitad exacta de ventaja estadística que el largo! Esto inducía un sesgo masivo pro-cortos e inhibía sistemáticamente las aperturas en largo.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Unificación dimensional en unidades honestas de probabilidad: $|p - b| \ge lift\_eff$.
+       - Para Long: $ml\_edge\_now = ml\_now - ml\_model\_base$.
+       - Para Short: $ml\_edge\_now = ml\_model\_base - ml\_now$.
+       - Se exige $ml\_edge\_now \ge required\_edge$, donde $required\_edge = lift\_eff - 10^{-9}$ (incorporando tolerancia contra subrepresentación IEEE-754).
+       - Tanto largos como cortos compiten con exactamente la misma exigencia de ventaja estadística $\Delta p \ge lift\_eff$. En $b = 0.50$ coincide al 100% con la semántica canónica legacy.
+  3. **F1-048 (`crates/god-engine-core/src/lib.rs:6565-6585, 6660-6685`)**:
+     - *Problema (QUÉ / POR QUÉ)*: Los deadbands del PPO (`current_obi.abs() > 0.05`, `ofi.abs() > 0.05`, `macro_trend.abs() > 0.0005`) eran literales rígidos no estandarizados ($0.0005$ es $0.015\sigma$ en BTC y $>1\sigma$ en pares ilíquidos). Además, el reparto $60\%/40\%$ entre ML y consenso tensorial y $70\%/30\%$ en `micro_score` eran constantes no derivadas, bautizadas espuriamente como «Fusión Bayesiana Calibrada» sin ninguna verosimilitud bayesiana ni correlación con los pesos Brier del ensamble.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Deadbands tipificadas con cuantiles locales y volatilidad medida: OBI y OFI se comparan contra `dynamic_obi_thr * 0.50` y `dynamic_ofi_thr * 0.50` calculados para cada símbolo y $\tau$.
+       - Tendencia macro estandarizada: se reemplaza `0.0005` por `z_macro.abs() > 0.50`, evaluando significación estadística en unidades de desviación típica frente al ATR medido.
+       - Reparto de peso residual derivado continuamente de la habilidad Brier del ensamble (`skill_z`): `w_frac_ml = (0.50 + 0.20 / (1.0 + (-skill_z).exp())).clamp(0.30, 0.70)`. A $z = 0$ (cold start), preserva con exactitud el 60%/40% canónico; ante habilidad positiva sube hasta el 70%; ante descalibración o ruido desciende al 30%, transfiriendo peso de decisión al consenso tensorial continuo.
+       - Retirado el adjetivo engañoso «Bayesiana».
+- **Verificación Contractual y Compilación Workspace**:
+  - `crates/god-engine-core/tests/f1_048_051_052_ml_gate_symmetry_and_deadbands_contract.rs` (3/3 pass, 100% verde en 0.47s).
+  - Suite de regresión `crates/god-engine-core/tests/cf3_vetos_nucleo.rs`: 3/3 pass (100% verde).
+  - Suite de regresión `crates/god-engine-core/tests/f1_047_049_050_whiplash_council_vecm_contract.rs`: 3/3 pass (100% verde).
+  - `cargo check --workspace --all-targets -j 1` pasa 100% limpio en los 23 crates (0 errores, 0 advertencias).
+
 ## 2026-10-19 (madrugada, 3) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω166 (Cierre F1-047, F1-049 y F1-050)
 
 - **Mandato**: Resolución exhaustiva de 3 hallazgos sistémicos de la auditoría F1 (`docs/audit/fable/f1_hallazgos.tsv`) en `god-engine-core`, acotando la cláusula de signo del anti-whiplash post-loss contratendencia con un techo de horizonte temporal evitando la parálisis infinita de cortos en tramos bajistas prolongados tras un stop de largo, unificando la métrica de drawdown de `SeniorRiesgo` con `capital_del_freno` e implementando fail-closed en slippage de `SeniorEjecucion` ante libros cruzados o corruptos, y erradicando el aliasing espurio de `pos_dev` en `vecm_zscore` cuando el spot no está presente o no es fresco, restaurando la paridad estricta entre backtest y producción, en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:

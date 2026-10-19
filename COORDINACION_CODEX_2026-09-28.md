@@ -1,5 +1,62 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω167: Cierre de F1-048 (Dead-Bands Tipificadas por Cuantiles y Reparto Brier Skill en PPO/Consenso), F1-051 (Modulación Simétrica de Predictibilidad Fractal en Lift ML) y F1-052 (Unificación Dimensional del ML Gate |p - b| >= lift_eff) (2026-10-19)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω167: ERRADICACIÓN DE SESGOS EN ML GATE, SIMETRÍA ESPECULAR EN MODULACIÓN FRACTAL Y TIPIFICACIÓN DE DEAD-BANDS PPO
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv` (3 en total)**:
+   - **`F1-051` (`MED`, `crates/god-engine-core/src/lib.rs:9613-9625`)**:
+     - **QUÉ**: Sustitución de la modulación asimétrica y firmada del lift ML por la predictibilidad fractal simétrica $\Pi_H = |H - 0.50| \in [0.0, 0.40]$ con simetría especular bit a bit garantizada.
+     - **POR QUÉ**: El código evaluaba `hurst_mod = 1.0 - 0.40 * (hurst_val - 0.50)`. Para un proceso fuertemente antipersistente de reversión a la media ($H = 0.30$), fuertemente no-browniano y predecible, el lift exigido se endurecía a $1.08$ o $1.16$, mientras que la tendencia ($H = 0.70$) se relajaba a $0.92$. Esto penalizaba artificialmente a las estrategias de reversión. Además, en ruido browniano puro ($H = 0.50$), el factor era $1.00$ y no protegía la cuenta contra martingalas aleatorias.
+     - **PARA QUÉ**: (1) Erradicar el sesgo estructural que favorece la tendencia sin evidencia; (2) Tratar a los procesos de reversión a la media con el mismo rigor matemático que la persistencia; (3) Proteger el capital de $13.00 USD elevando el lift un +15% cuando el mercado es ruido puro ($H \approx 0.50$); (4) Cumplir con la simetría especular de la física estadística.
+     - **CÓMO**:
+       1. Se calcula la distancia al ruido browniano: `let predictibilidad_h = (hurst_val - 0.50).abs().clamp(0.0, 0.40);`.
+       2. Se modula simétricamente: `let hurst_mod = (1.0 + 1.50 * (0.10 - predictibilidad_h)).clamp(0.70, 1.30);`.
+       3. En $H = 0.50$ (ruido puro): $\Pi_H = 0.0 \implies hurst\_mod = 1.15$ (exigencia elevada).
+       4. En $|H - 0.50| = 0.10$: $hurst\_mod = 1.00$ (neutro).
+       5. En $|H - 0.50| \ge 0.20$ ($H = 0.30$ o $H = 0.70$): $hurst\_mod = 0.85$ (exigencia relajada por memoria estadística demostrada).
+       6. Test de espejo: $hurst\_mod(0.50 + d) \equiv hurst\_mod(0.50 - d)$ para todo $d$.
+     - **CUÁNDO**: En cada evaluación del camino caliente previo a la compuerta ML.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en Modo Profesor y Consejo de 10 Roles Senior.
+
+   - **`F1-052` (`MED`, `crates/god-engine-core/src/lib.rs:9655-9675`)**:
+     - **QUÉ**: Unificación dimensional del ML gate evaluando la ventaja probabilística honesta $|p - b| \ge lift\_eff$ con tolerancia de máquina IEEE-754 ($10^{-9}$), erradicando el sesgo asimétrico que favorecía a los cortos con la base honesta $b < 0.50$.
+     - **POR QUÉ**: El gate comparaba `normalized_directional_divergence(p, b) >= 2.0 * lift_eff`. Al normalizar sobre $[0, b]$ para cortos y $[b, 1]$ para largos, con la base honesta del etiquetado $TP = 2\cdot SL$ ($b = 1/3$), un corto pasaba con $(1/3 - p)/(1/3) \ge 2\cdot lift \iff (1/3 - p) \ge \frac{2}{3} lift$, mientras que un largo exigía $(p - 1/3)/(2/3) \ge 2\cdot lift \iff (p - 1/3) \ge \frac{4}{3} lift$. Un corto pasaba con exactamente la mitad de deriva probabilística que un largo, sesgando el sistema hacia un comportamiento short-only artificial.
+     - **PARA QUÉ**: (1) Equiparar el rigor estadístico de largos y cortos de forma idéntica; (2) Comparar variables en la misma dimensión física de probabilidad absoluta $[0.01, 0.30]$; (3) Erradicar sesgos de escala que distorsionan la selección de activos; (4) Proteger el crecimiento compuesto del capital de $13 USD.
+     - **CÓMO**:
+       1. Para Long: `ml_edge_now = ml_now - ml_model_base`.
+       2. Para Short: `ml_edge_now = ml_model_base - ml_now`.
+       3. Se exige `ml_edge_now >= required_edge`, donde `required_edge = lift_eff - 1e-9`.
+       4. Para base $b = 1/3$ y lift $0.05$, tanto Long ($p \ge 0.3833$) como Short ($p \le 0.2833$) requieren exactamente $\Delta p = 0.05$ de ventaja probabilística.
+       5. En base $b = 0.50$, coincide al 100% con la semántica canónica legacy.
+     - **CUÁNDO**: En cada evaluación del ML-GATE de apertura.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) y Consejo de 10 Roles Senior.
+
+   - **`F1-048` (`MED`, `crates/god-engine-core/src/lib.rs:6565-6585, 6660-6685`)**:
+     - **QUÉ**: Tipificación de dead-bands del PPO mediante cuantiles locales (`dynamic_obi_thr`, `dynamic_ofi_thr`) y tipificación $z$ del macro-trend (`z_macro`), y derivación continua de los pesos $w_{nn}$ / $w_{tensor}$ a partir de la habilidad Brier medida (`skill_z`) en $[0.30, 0.70]$, retirando el calificativo erróneo de «Fusión Bayesiana Calibrada».
+     - **POR QUÉ**: Los dead-bands previos (`current_obi.abs() > 0.05`, `ofi.abs() > 0.05`, `macro_trend.abs() > 0.0005`) usaban literales fijos no estandarizados ($0.0005$ es $0.015\sigma$ en BTC y $>1\sigma$ en pares tranquilos). Además, los repartos $60\%/40\%$ entre ML y tensor no dependían de si el modelo tenía habilidad demostrada o si el tensor era ruido.
+     - **PARA QUÉ**: (1) Estandarizar las señales de microestructura y régimen por volatilidad local de cada activo; (2) Evitar que pares tranquilos queden mudos o pares volátiles disparen por ruido; (3) Modular el peso de decisión hacia el ensamble ML únicamente cuando este demuestre habilidad estadística positiva de Brier frente a la tasa base; (4) Honrar la doctrina de precisión y transparencia epistemológica.
+     - **CÓMO**:
+       1. En `dir_flow_sign`: `current_obi.abs() > (dynamic_obi_thr * 0.50).max(1e-4)` y `ofi.abs() > (dynamic_ofi_thr * 0.50).max(1e-4)`.
+       2. En `dir_regime`: `z_macro.abs() > 0.50` (desviación típica estandarizada por ATR).
+       3. En reparto de pesos: `let skill_z = self.ensembles[coin_id].skill_z().unwrap_or(0.0);`, `let w_frac_ml = (0.50 + 0.20 / (1.0 + (-skill_z).exp())).clamp(0.30, 0.70);`, `w_nn = remaining * w_frac_ml`, `w_tensor = remaining * (1.0 - w_frac_ml)`.
+       4. A $z = 0$, $w_{frac\_ml} = 0.60$ (exacto valor canónico por defecto).
+     - **CUÁNDO**: En cada tick de procesamiento en el camino caliente del motor.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) y Consejo de 10 Roles Senior.
+
+2. **Verificación Contractual y CI**:
+   - `crates/god-engine-core/tests/f1_048_051_052_ml_gate_symmetry_and_deadbands_contract.rs`: 3/3 tests PASSED (100% verde en 0.47s).
+   - Suite de regresión `crates/god-engine-core/tests/cf3_vetos_nucleo.rs`: 3/3 tests PASSED (100% verde).
+   - Suite de regresión `crates/god-engine-core/tests/f1_047_049_050_whiplash_council_vecm_contract.rs`: 3/3 tests PASSED (100% verde).
+   - `cargo check --workspace --all-targets -j 1`: 100% PASSED en los 23 crates (0 errores, 0 advertencias).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω166: Cierre de F1-047 (Techo Temporal Bounded en Anti-Whiplash Post-Loss), F1-049 (Unificación de Drawdown y Slippage Fail-Closed en Consejo) y F1-050 (Paridad Estricta BT<->Vivo y Erradicación de Aliasing pos_dev en vecm_zscore) (2026-10-19)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

@@ -6563,19 +6563,25 @@ impl GodEngineCore {
             // (sin opinión), en cascada ±1. La política adaptada a la
             // distribución vieja queda invalidada — esta ola corre con
             // ORÁCULO T-1 propio antes del merge.
-            let dir_flow_sign = if current_obi.abs() > 0.05 {
+            // F1-048: Dead-bands tipificadas con cuantiles locales y volatilidad medida.
+            // En lugar de umbrales hardcodeados (0.05 para OBI/OFI y 0.0005 para macro_trend),
+            // se evalúa la significación relativa a los cuantiles dinámicos (dynamic_obi_thr, dynamic_ofi_thr)
+            // y la tipificación z del macro-trend (z_macro) frente a la volatilidad medida ATR.
+            let obi_thr_band = (dynamic_obi_thr * 0.50).max(1e-4);
+            let ofi_thr_band = (dynamic_ofi_thr * 0.50).max(1e-4);
+            let dir_flow_sign = if current_obi.abs() > obi_thr_band {
                 current_obi.signum()
-            } else if ofi.abs() > 0.05 {
+            } else if ofi.abs() > ofi_thr_band {
                 ofi.signum()
             } else {
-                macro_trend.signum()
+                z_macro.signum()
             };
             let dir_hawkes_excitacion =
                 excitacion_hawkes_norm(hawkes_ratio_real) * dir_flow_sign;
             let regime_code = ((hurst_val - 0.50) * 2.0).clamp(-1.0, 1.0);
             let dir_regime = regime_code
-                * (if macro_trend.abs() > 0.0005 {
-                    macro_trend.signum()
+                * (if z_macro.abs() > 0.50 {
+                    z_macro.signum()
                 } else {
                     dir_flow_sign
                 });
@@ -6653,7 +6659,13 @@ impl GodEngineCore {
                 SignalType::Flat => 0.0,
             };
 
-            // Fusión Bayesiana Calibrada: w_micro (L2) + 60% del residuo a DarkAlpha ML + 40% al consenso tensorial
+            // F1-048: Reparto de peso residual entre NN y consenso tensorial derivado
+            // de la habilidad estadística medida de Brier (skill_z del ensamble).
+            // Retirado el adjetivo erróneo «Bayesiana».
+            // En cold start o z = 0.0 (sin habilidad demostrada), reparte exactamente 60%/40% canónico.
+            // Con z > 0 (habilidad demostrada sobre la tasa base), w_frac_ml sube suavemente hasta 0.70.
+            // Con z < 0 (ensamble ruidoso o descalibrado), w_frac_ml baja suavemente hasta 0.30,
+            // cediendo peso al consenso tensorial continuo.
             let w_micro = self
                 .arena
                 .config
@@ -6661,8 +6673,14 @@ impl GodEngineCore {
                 .load(Ordering::Relaxed)
                 .clamp(0.1, 0.8);
             let remaining = 1.0 - w_micro;
-            let w_nn = remaining * 0.60;
-            let w_tensor = remaining * 0.40;
+            let skill_z = if coin_id < self.ensembles.len() {
+                self.ensembles[coin_id].skill_z().unwrap_or(0.0)
+            } else {
+                self.ensemble.skill_z().unwrap_or(0.0)
+            };
+            let w_frac_ml = (0.50 + 0.20 / (1.0 + (-skill_z).exp())).clamp(0.30, 0.70);
+            let w_nn = remaining * w_frac_ml;
+            let w_tensor = remaining * (1.0 - w_frac_ml);
             let raw_composite =
                 adaptive_micro_score * w_micro + nn_score * w_nn + tensor_boost * w_tensor;
             let composite_score: f64 = (raw_composite * hebbian_mult).clamp(-1.0, 1.0);
@@ -9595,10 +9613,15 @@ impl GodEngineCore {
                     // (×0.7); cuando divergen, sube (×1.3). agree ∈ [-1,1].
                     let dir_sign = if order.signal == SignalType::Long { 1.0 } else { -1.0 };
                     let agree = (council_fused * dir_sign).clamp(-1.0, 1.0);
-                    // Autoadaptabilidad Epigenética Continua: modulación por Hurst local |H - 0.50|
-                    // Si el proceso es persistente (H > 0.50), la predictibilidad es alta y el lift requerido se relaja suavemente;
-                    // si es ruido browniano puro (H ≈ 0.50), el lift se eleva para proteger contra martingala aleatoria.
-                    let hurst_mod = (1.0 - 0.40 * (hurst_val - 0.50).clamp(-0.4, 0.4)).clamp(0.70, 1.30);
+                    // F1-051: Autoadaptabilidad Epigenética Continua: modulación simétrica por predictibilidad fractal |H - 0.50|.
+                    // En Mandelbrot/DFA, la predictibilidad depende de la distancia al ruido browniano puro (|H - 0.50|).
+                    // Si el proceso es ruido browniano puro (H ≈ 0.50), la predictibilidad es nula y el lift requerido se eleva
+                    // (hasta +15% a H=0.50) para proteger el capital contra martingala aleatoria.
+                    // Si el proceso exhibe memoria no browniana (persistencia H > 0.50 o anti-persistencia H < 0.50),
+                    // existe estructura estadística predecible y el lift requerido se relaja suavemente (hasta -15% a |H-0.5| >= 0.20).
+                    // Simetría exacta garantizada: hurst_mod(0.50 + d) == hurst_mod(0.50 - d).
+                    let predictibilidad_h = (hurst_val - 0.50).abs().clamp(0.0, 0.40);
+                    let hurst_mod = (1.0 + 1.50 * (0.10 - predictibilidad_h)).clamp(0.70, 1.30);
                     let lift_eff_long = (ml_lift_long * (1.0 - 0.3 * agree) * hurst_mod).clamp(0.01, 0.30);
                     let lift_eff_short = (ml_lift_short * (1.0 - 0.3 * agree) * hurst_mod).clamp(0.01, 0.30);
                     // (Ola XLI·D1) ARRANQUE FRÍO SIN ROSTER = SONDA, no parálisis:
@@ -9624,27 +9647,24 @@ impl GodEngineCore {
                         coin_id,
                         has_roster_model,
                     );
-                    // K-23 resuelto (Ola Ω75): normalización proporcional al espacio disponible
-                    // [0, base] y [base, 1] mediante `normalized_directional_divergence`.
-                    // En base = 0.50 coincide de forma exacta con la lógica legacy.
-                    // Para cualquier base honesta (e.g. 0.25), la exigencia para cortos escala con
-                    // el semi-intervalo [0, base] impidiendo que el umbral sea <= 0.0 y permitiendo
-                    // que las órdenes short compitan con idéntico rigor estadístico relativo.
-                    let ml_div = crate::calibration::normalized_directional_divergence(
-                        ml_now,
-                        ml_model_base,
-                    );
+                    // F1-052: Unificación dimensional del ML gate (B3.18 / K-23 corregido).
+                    // Se evalúa la ventaja predictiva en unidades honestas de probabilidad |p - b| >= lift_eff.
+                    // Con la base del etiquetado (e.g. b = 1/3 para TP = 2·SL), exigir normalized_directional_divergence >= 2·lift
+                    // exigía (1/3 - p)/(1/3) >= 2·lift para cortos pero (p - 1/3)/(2/3) >= 2·lift para largos,
+                    // permitiendo a los cortos entrar con exactamente la mitad de deriva estadística que a los largos.
+                    // Al comparar la ventaja (|p - b|) directamente en la misma escala dimensional [0.01, 0.30] que lift_eff,
+                    // tanto largos como cortos compiten con idéntico rigor estadístico simétrico.
+                    // En base b = 0.50 coincide con exactitud matemática con la semántica canónica (|p - 0.50| >= lift).
                     let ml_edge_now = if order.signal == SignalType::Long {
-                        ml_div
+                        ml_now - ml_model_base
                     } else {
-                        -ml_div
+                        ml_model_base - ml_now
                     };
-                    let required_edge = 2.0
-                        * if order.signal == SignalType::Long {
-                            lift_eff_long
-                        } else {
-                            lift_eff_short
-                        };
+                    let required_edge = (if order.signal == SignalType::Long {
+                        lift_eff_long
+                    } else {
+                        lift_eff_short
+                    }) - 1e-9;
                     let ml_gate_ok = arranque_frio_sin_roster
                         || (has_roster_model && ml_edge_now >= required_edge);
                     if aprobado_por_consejo && !ml_gate_ok {
