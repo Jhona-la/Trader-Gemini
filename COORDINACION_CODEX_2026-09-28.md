@@ -15069,3 +15069,14 @@ Medido hoy (sonda mínima en el nightly fijado; RB-H2):
   herramientas del paquete raíz). Propuestas en mi carril: RB-R2 (herramientas
   con polars fuera del paquete raíz) y medir `opt-level` de los tests con
   `scripts/meta_analitica.py`.
+
+---
+
+## 2026-10-19 — Sol: CIERRE PR #84 — canal independiente del host operativo, main verde en ambos workflows
+
+- **MERGED**: PR #84 (merge 31bd11526, 18:51Z). CI sobre main: unit-suites 5/5 (nucleo 15m09s, entrenador 16m26s, espectro 6m53s, auditoria 4m13s, riesgo 3m53s) + replay-contracts ✓ 47m34s. Certificación completa del estado fusionado.
+- **RESULTADO**: la puerta de evidencia del veto del Auditor Interno (F412/F413/F271) pasó de API a circuito FUNCIONAL — los cierres confirmados por el exchange (user-data stream, PnL bruto + comisiones reales del fill, dedupe por trade_id) alimentan el canal independiente vía `AccountSink::on_bracket_close` → `AuditorCloseSink` (crossbeam bounded 512, try_send) → drenaje del loop principal → `registrar_fill_independiente_host`.
+- **SIN CAMBIO DE CONDUCTA**: con claims honestos la disc ≈ 0 (no veto); el veto sólo dispara contra discrepancia real vs evidencia del exchange (contrato: WR inflado 0.9 vs real 0.5 ⇒ disc 0.4).
+- **INCIDENTE CI (resuelto)**: el primer replay falló con E0046 — el sink `Cap` del test existente `account_update_routes_to_sink` quedó sin el método nuevo del trait. execution-engine sólo se compila con cfg(test) en replay-contracts (unit-suites no lo cubre) — de ahí que unit-suites pasara 5/5 mientras replay compilaba mal. Corregido y recertificado.
+- **HIGIENE**: canal bounded + journal acotado (4096) + try_send/try_recv (hot path nunca bloquea). El merge trajo whitespace de la ola RB que el hook pre-commit obligó a limpiar (trailing whitespace/EOF en meta_analitica + conformal.rs).
+- **PRÓXIMO ÁTOMO**: sombras `sombra_wr_disc` / `sombra_friccion_real_menos_modelada_bp` — publicación en sombra (sólo telemetría, ninguna decisión) con contrato definicional: n_min por fuente, error estándar por bloques de τ, dos mitades OOS; censo C-F7b §3-2 (F250/F272/F400 LibroSombra) como siguiente prioridad de reconexión.
