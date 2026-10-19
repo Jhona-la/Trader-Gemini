@@ -7,6 +7,28 @@
   - **Siguiente PR**: RET-2 (5 dependencias sin uso de strategy-core), RET-5 (2 de signal-engine), RET-15 (código huérfano de la raíz: `src/risk`, `src/quantum_arena.rs`, `config::NanoForest`, 5 métodos de `EnvManager`) y RET-28a (`QuantumTensorStore`, cuyo «Lyapunov» era un RMS, y 4 métodos de feature-engine).
 - **RET-28b (Navier) queda aparte**: retirar `regime`/`is_laminar`/`is_turbulent` deja sin lector a `critical_reynolds_turbulent`, que viene de `QuantumConfig` (Ω121), y migra dos contratos. Hay que coordinarlo con el dueño de Ω121.
 - Quitar dependencias puede cambiar la unificación de features de polars en builds por paquete: comprobar `cargo check -p <cada dependiente>`, no sólo el workspace.
+## 2026-10-18 (noche, 6) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω163 (Cierre F1-108 y F1-109)
+
+- **Mandato**: Resolución exhaustiva de 2 hallazgos sistémicos de la auditoría F1 (`docs/audit/fable/f1_hallazgos.tsv`) en `god-engine-core`, erradicando la E/S síncrona a disco NTFS en el camino caliente de cierre de posiciones y podando el subsistema muerto `shadow_auditor` con dimensionalidad inconsistente, en estricto cumplimiento de la física continuo-espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización para el portátil de 16 GB RAM sin GPU:
+  1. **F1-108 (`crates/god-engine-core/src/dataset_recorder.rs`, `lib.rs:1280, 5170-5200`)**:
+     - *Problema (QUÉ / POR QUÉ)*: En cada cierre confirmado de posición, el camino caliente de `process_tick_dual` ejecutaba E/S síncrona a NTFS (`OpenOptions::open(append)` + ~56 `format!` de floats + `writeln!` a `data/dark_alpha_dataset_{sym}.csv` relativo al cwd, misma anomalía CSG-1) reteniendo el `Mutex` de `nn_entry_tensor`. En Windows con antivirus, esto disparaba la latencia de 25 µs a 2 ms (hasta 80× el presupuesto de tick), congelando el procesamiento de eventos de las demás monedas y ranuras.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Implementado `dataset_recorder.rs` con canal MPSC acotado (capacidad 1024 muestras) y despachador no bloqueante `record_training_sample` vía `try_send`.
+       - Copia directa en pila (`[f64; 54]`, 432 bytes) y liberación del mutex en < 150 ns.
+       - Hilo en segundo plano demonio que gestiona handles de archivo en búfer (`BufWriter<File>`) de 32 KB con flush periódico y resolución canónica centralizada mediante `quantum_arena::paths::data_join`, eliminando toda dependencia de cwd (CSG-1).
+       - Función `init_dataset_recorder()` invocada en `GodEngineCore::new` para arrancar el hilo demonio al inicio, eliminando la latencia de arranque de hilo en el primer cierre.
+       - Contadores atómicos diagnósticos `DATASET_RECORDED_SAMPLES` y `DATASET_DROPPED_SAMPLES` para monitorización de saturación sin contención.
+  2. **F1-109 (`crates/god-engine-core/src/lib.rs:1137, 1509, 1990, 5307-5322`)**:
+     - *Problema (QUÉ / POR QUÉ)*: `shadow_auditor.record_event` era una arista muerta (Fallo Tipo 1) ejecutada en cada cierre de posición. Su único consumidor declarado, `GodEngineCore::evaluate_system_drift`, era un wrapper sin ningún llamador en producción (el veto de deriva vivo lo procesa canónicamente `audit_engine::drift_auditor::DriftRecovery` y `DetectorPerdidaDeVentaja` LG-22). Además, `pnl_drift = realized_ret - (ml_at_entry - 0.5) * 2.0 * 0.01` mezclaba unidades restando a un retorno adimensional una probabilidad reescalada por un literal 0.01 sin sentido físico, y fijaba `latency_ms: 0` ciegamente. Instanciarlo en cada núcleo alocaba 16,384 eventos (~655 KB de heap en un anillo lock-free inútil).
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Erradicado el campo `pub shadow_auditor` en `GodEngineCore` (lib.rs:1137) y su instanciación en el constructor (:1509).
+       - Erradicado el wrapper muerto `evaluate_system_drift` (:1990) y el bloque de grabación `shadow_auditor.record_event` en el cierre (:5307-5322).
+       - Ahorro de ~655 KB de memoria heap por instancia del núcleo (crucial para evaluación de mutantes en Darwin/online_daemon en 16 GB de RAM) y supresión de contención atómica en cada cierre de posición.
+- **Verificación Contractual y Compilación Workspace**:
+  - `crates/god-engine-core/tests/f1_108_109_async_dataset_and_dead_shadow_drift_contract.rs` (2/2 pass, 100% verde en 0.10s).
+  - Suite completa `cargo test -p god-engine-core --lib -j 1` (208/208 pass, 100% verde en 0.50s).
+  - `cargo check --workspace --all-targets -j 1` pasa 100% limpio en los 23 crates (0 errores, 0 advertencias).
+
 ## 2026-10-18 (noche, 5) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω162 (Cierre F1-107 y F1-111)
 
 - **Mandato**: Resolución exhaustiva de 2 hallazgos sistémicos de la auditoría F1 (`docs/audit/fable/f1_hallazgos.tsv`) en `god-engine-core`, erradicando el campo huérfano muerto `scalp_forest` (Fallo Tipo 1 / Arista Muerta), eliminando la búsqueda espuria de la clave inexistente `"UNIVERSAL"` cada 1000 ticks en `refresh_models()`, purgando 45 asignaciones superfluas en suites de prueba y certificando el aislamiento causal multi-activo estricto por símbolo en `{SYM}_MOTOR` sin fallback cross-símbolo (B3.18b / LG-17), en estricto cumplimiento de la física continuo-espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización para el portátil de 16 GB RAM sin GPU:
