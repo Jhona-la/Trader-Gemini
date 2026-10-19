@@ -47,14 +47,21 @@ pub struct TensorDecision {
 ///
 /// Previene la distorsión donde la mera presencia de estrategias silentes/abstenidas
 /// inflaba artificialmente la convicción de un votante solitario en un 40%.
+///
+/// F1-099 (Ola Ω161): Extensión a grados de libertad efectivos continuos (Kish, 1965).
 #[inline(always)]
-pub fn compute_ensemble_boost(active_voters: usize, total_registered: usize) -> f64 {
-    let effective_count = active_voters.min(total_registered);
-    if effective_count <= 1 {
+pub fn compute_ensemble_boost_effective(n_eff: f64) -> f64 {
+    if !n_eff.is_finite() || n_eff <= 1.0 {
         1.0
     } else {
-        1.0 + (effective_count.min(5) as f64 - 1.0) * 0.1
+        1.0 + (n_eff.min(5.0) - 1.0) * 0.1
     }
+}
+
+#[inline(always)]
+pub fn compute_ensemble_boost(active_voters: usize, total_registered: usize) -> f64 {
+    let effective_count = active_voters.min(total_registered) as f64;
+    compute_ensemble_boost_effective(effective_count)
 }
 
 pub struct TensorVoteOrchestrator {
@@ -345,8 +352,8 @@ impl TensorVoteOrchestrator {
         let mut long_votes = 0.0;
         let mut short_votes = 0.0;
         let mut active_weight = 0.0;
+        let mut sum_sq_weight = 0.0;
         let mut max_volatility = 0.0f64;
-        let mut active_voters: usize = 0;
         // (b) ENSAMBLE — INVARIANCIA A CLONES (auditoría XIV §202: "clonar
         // un experto debe DIVIDIR su masa previa en lugar de crearla"):
         // los votos se agrupan por FUENTE (`name()`); k copias de una
@@ -432,15 +439,13 @@ impl TensorVoteOrchestrator {
                 continue;
             }
             let abs_v = v.abs() * f.3.max(0.0);
-            if v.abs() > 1e-9 {
-                active_voters += 1;
-            }
             if v > 0.0 {
                 long_votes += abs_v;
             } else if v < 0.0 {
                 short_votes += abs_v;
             }
             active_weight += abs_v;
+            sum_sq_weight += abs_v * abs_v;
             if abs_v > max_volatility {
                 max_volatility = abs_v;
             }
@@ -545,9 +550,17 @@ impl TensorVoteOrchestrator {
         // fuente dejan la convicción EXACTAMENTE igual que una. En el
         // enjambre real (todas fuentes únicas) n_fuentes == all.len():
         // bit-paridad con el régimen por-instancias.
+        // F1-099 (Ola Ω161): Grados de libertad efectivos de Kish:
+        // N_eff = (Σ w_i)² / Σ w_i². Erradica la sobre-convicción artificial cuando
+        // un voto solitario domina y el resto son residuales o colineales.
         let n_fuentes_eff = n_fuentes.max(1) as f64;
         let avg_conviction = active_weight / n_fuentes_eff;
-        let ensemble_boost = compute_ensemble_boost(active_voters, n_fuentes);
+        let n_eff = if sum_sq_weight > 1e-12 {
+            ((active_weight * active_weight) / sum_sq_weight).min(n_fuentes_eff)
+        } else {
+            0.0
+        };
+        let ensemble_boost = compute_ensemble_boost_effective(n_eff);
         let effective_conviction = if avg_conviction.is_finite() {
             (avg_conviction * ensemble_boost).clamp(0.0, 1.0)
         } else {
@@ -577,16 +590,24 @@ impl TensorVoteOrchestrator {
             "consenso_espectral_media",
             0.0,
         );
-        // F3.3-05 (Ola Ω93): Modulación monótona continua respecto a la evidencia:
-        // un espectro con media en contra (media/v_dom < 0) penaliza la convicción
-        // neta en lugar de recortar a 0 como si fuera neutro.
+        // F1-099 (Ola Ω161): Interferencia cuántica/espectral monótona derivable:
+        // factor = max(0.0, (1.0 + c) / 2.0) ∈ [0.0, 1.0] con c = media_espectral / v_dom ∈ [-1, 1].
+        // 1. Respaldo unánime (c = +1.0) ⇒ factor = 1.00 (convicción plena de v_dom).
+        // 2. Banda neutra/desconocida (c = 0.0) ⇒ factor = 0.50 (convicción proporcional no inflada).
+        // 3. Oposición unánime (c = -1.0) ⇒ factor = 0.00 ⇒ net_confidence = 0.0 (veto estricto
+        //    del resto del espectro sobre la escala dominante solitaria).
         let coherencia_inter = if espectral_activo && v_dom.abs() > 1e-9 {
             (media_espectral / v_dom).clamp(-1.0, 1.0)
         } else {
             0.0
         };
+        let factor_coherencia = if espectral_activo {
+            ((1.0 + coherencia_inter) * 0.5).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         let net_confidence = if espectral_activo {
-            v_dom * (0.70 + 0.30 * coherencia_inter)
+            v_dom * factor_coherencia
         } else {
             net_confidence
         };
@@ -868,11 +889,11 @@ mod tests {
         arena
             .registry
             .set_for_coin(0, "consenso_espectral_tau", 3_600_000.0);
-        // Sin media publicada ⇒ coherencia inter = 0 ⇒ conf = 0.8·0.70.
+        // Sin media publicada ⇒ coherencia inter = 0 ⇒ factor = 0.50 ⇒ conf = 0.8·0.50 = 0.40.
         let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert_eq!(d.signal, SignalType::Long);
         assert!(
-            (d.net_confidence - 0.56).abs() < 1e-9,
+            (d.net_confidence - 0.40).abs() < 1e-9,
             "confianza espectral sin respaldo de banda: {}",
             d.net_confidence
         );
@@ -924,8 +945,8 @@ mod tests {
         assert_eq!(d.signal, SignalType::Long);
         assert_eq!(d.expected_lifetime_ms, 600_000);
         // La modulación NO usa la convicción escalar del mismo ensamble
-        // (doble conteo H4): sin media ⇒ 0.8·0.70 = 0.56, NO 0.8·0.97.
-        assert!((d.net_confidence - 0.56).abs() < 1e-9);
+        // (doble conteo H4): sin media ⇒ 0.8·0.50 = 0.40, NO 0.8·0.97.
+        assert!((d.net_confidence - 0.40).abs() < 1e-9);
     }
 
     /// #624 — un ensamble escalar ABSTENIDO no calla al espectro: la
@@ -948,8 +969,8 @@ mod tests {
 
         let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
         assert_eq!(d.signal, SignalType::Long);
-        // Convicción del ensamble 0 y sin media ⇒ conf = 0.9·0.70.
-        assert!((d.net_confidence - 0.63).abs() < 1e-9);
+        // Convicción del ensamble 0 y sin media ⇒ factor = 0.50 ⇒ conf = 0.9·0.50 = 0.45.
+        assert!((d.net_confidence - 0.45).abs() < 1e-9);
     }
 
     /// #624 — arranque frío bit a bit: sin dominante publicado (ausente,
@@ -1019,5 +1040,34 @@ mod tests {
             alta.expected_lifetime_ms as f64,
             quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS
         );
+    }
+
+    /// F1-099 (Ola Ω161) — Oposición unánime del espectro (c = -1.0) anula
+    /// la convicción neta (factor = 0.0) y veta la señal dominante.
+    #[test]
+    fn f1_099_oposicion_espectral_unanime_veta_la_decision() {
+        let arena = arena_con_min_conf(0.51);
+        let mut orch = TensorVoteOrchestrator::new(std::sync::Arc::clone(&arena));
+        orch.add_strategy(Box::new(MockStrategy {
+            name: "M",
+            value: 0.9,
+        }));
+        // Escala dominante alcista
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_dominante", 0.8);
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_tau", 3_600_000.0);
+        // Media espectral en oposición total y unánime: -0.8 ⇒ c = -0.8 / 0.8 = -1.0
+        arena
+            .registry
+            .set_for_coin(0, "consenso_espectral_media", -0.8);
+
+        let d = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+        // Con c = -1.0, factor de interferencia = max(0, (1 + (-1)) / 2) = 0.0.
+        // net_confidence = 0.8 * 0.0 = 0.0 <= cutoff_floor ⇒ SignalType::Flat.
+        assert_eq!(d.signal, SignalType::Flat, "oposición espectral total debe vetar");
+        assert!(d.net_confidence.abs() < 1e-9);
     }
 }

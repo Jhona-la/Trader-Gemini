@@ -7552,7 +7552,10 @@ impl GodEngineCore {
 
                 // LG-1: una rama sin convicción no tapa la cascada.
                 self.diag_sin_conviccion += aplanar_sin_conviccion(&mut fast_intent) as u64;
-                let tensor_cutoff = tensor_min_conf.clamp(0.55, 0.85);
+                // F1-100 (Ola Ω161): Unificación semántica de umbral con orchestrator.rs (MOD2/7-012).
+                // El orquestador opera en espacio de exceso de convicción ΔP = P - 0.5 ∈ [0.0, 0.45].
+                // Requerir probabilidad cruda [0.55, 0.85] bloqueaba estructuralmente la rama 11.
+                let tensor_cutoff = ((tensor_min_conf - 0.50) * 1.0).clamp(0.0, 0.45);
                 if fast_intent.signal == SignalType::Flat
                     && tensor_cont.signal != SignalType::Flat
                     && !is_anti_persistent
@@ -7650,10 +7653,9 @@ impl GodEngineCore {
                         SignalType::Flat => false,
                     };
                     if tensor_allowed {
-                        let conf_base = tensor_cont
-                            .net_confidence
-                            .abs()
-                            .clamp(0.50, 0.95);
+                        // F1-100 (Ola Ω161): Mapeo continuo de exceso de convicción ΔP ∈ [0, 1]
+                        // al espacio de probabilidad P = 0.50 + 0.50 * |ΔP| ∈ [0.50, 0.95].
+                        let conf_base = (0.50 + 0.50 * tensor_cont.net_confidence.abs()).clamp(0.50, 0.95);
                         // CL-85 (F3.2-05). Decisión del dueño (tarjeta del
                         // 2026-10-12, «escala que habló»): con el veredicto
                         // espectral, la orden de la rama 11 vive a τ_k, la
@@ -8105,15 +8107,17 @@ impl GodEngineCore {
                     consensus_stretch_z >= 0.0 && consensus_stretch_z <= crate::diffusion::Z95;
 
                 // D-458 & D-462: Desbloquear consenso continuo evitando la persecución tardía (anti-chase guard)
+                // F1-100 (Ola Ω161): Unificación semántica de umbral para rama lenta 14.
+                // En exceso de convicción ΔP ∈ [0.0, 0.45], el umbral proporcional al gen min_conf
+                // es ((tensor_min_conf - 0.50) * 0.95).clamp(0.0, 0.45).
+                // La convicción base en espacio de probabilidad se mapea vía 0.50 + 0.50 * |ΔP|.
+                let slow_cutoff = ((tensor_min_conf - 0.50) * 0.95).clamp(0.0, 0.45);
                 if tensor_cont.signal == SignalType::Long
                     && is_bull
                     && not_chasing_long
-                    && tensor_cont.net_confidence.abs() > tensor_min_conf * 0.95
+                    && tensor_cont.net_confidence.abs() >= slow_cutoff
                 {
-                    let conf_base = tensor_cont
-                        .net_confidence
-                        .abs()
-                        .clamp(tensor_min_conf * 0.95, 1.0);
+                    let conf_base = (0.50 + 0.50 * tensor_cont.net_confidence.abs()).clamp(0.50, 0.95);
                     slow_intent = SignalIntent {
                         signal: tensor_cont.signal,
                         confidence: conviccion_de_rama_con(&registro_ramas[14], conf_base, || {
@@ -8133,12 +8137,9 @@ impl GodEngineCore {
                 } else if tensor_cont.signal == SignalType::Short
                     && is_bear
                     && not_chasing_short
-                    && tensor_cont.net_confidence.abs() > tensor_min_conf * 0.95
+                    && tensor_cont.net_confidence.abs() >= slow_cutoff
                 {
-                    let conf_base = tensor_cont
-                        .net_confidence
-                        .abs()
-                        .clamp(tensor_min_conf * 0.95, 1.0);
+                    let conf_base = (0.50 + 0.50 * tensor_cont.net_confidence.abs()).clamp(0.50, 0.95);
                     slow_intent = SignalIntent {
                         signal: tensor_cont.signal,
                         confidence: conviccion_de_rama_con(&registro_ramas[14], conf_base, || {

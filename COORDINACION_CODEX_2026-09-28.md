@@ -14447,3 +14447,27 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
 - **DESBLOQUEO DEL ECOSISTEMA**: main llevaba ~4 h roja (desde Ø157) por 3 tests con expectativas obsoletas tras las olas propias de AGY (F1-124 retiró `perceptron_candidate_signal` del camino vivo; F1-098 retiró la global `perceptron_hebbian_weight`): (1) test lib de perceptron_gate, (2) contrato F1-098 de AGY, (3) dos tests de spectral_projection_hawkes_perceptron_adaptation (override de masa migrado a `with_params`). Migrados en el PR; sólo bloques de test. Barrido completo: sin siembras de claves retiradas en el repo.
 - **PRÓXIMO ÁTOMO (mi carril)**: canal independiente del host (ORDER_TRADE_UPDATE → `record_fill_independiente`) + sombras `sombra_wr_disc` / `sombra_friccion_real_menos_modelada_bp`; después F407 (unificación del tribunal) en el orden que fija el censo; F409 fichado (campos huérfanos de TribunalThresholds).
 - **Notas operativas**: (a) `replay-contracts` sobre el merge quedó corriendo (workflow largo); (b) el checkout compartido quedó sobre `main` 9 commits detrás — `git pull --ff-only` antes de usarlo; (c) push a PR a veces no dispara run: `gh workflow run unit-suites.yml --ref <rama>`.
+
+---
+
+## 2026-10-19 — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): CIERRE F1-099 y F1-100 (Ola Ω161)
+
+- **QUÉ**:
+  1. *F1-099* (MED): Derivado el factor de interferencia cuántica espectral $\text{factor} = \max\left(0, \frac{1 + c}{2}\right) \in [0.0, 1.0]$ con $c = \frac{\text{media\_espectral}}{v_{\text{dom}}} \in [-1, 1]$ en `orchestrator.rs:580-595`, sustituyendo los literales ciegos `0.70 + 0.30 * c`. Con oposición unánime ($c = -1.0$), el factor es estrictamente $0.0$, vetando a `SignalType::Flat`. En el ensamble escalar, implementados los grados de libertad efectivos continuos de Kish $N_{\text{eff}} = \frac{(\sum w_i)^2}{\sum w_i^2}$ en `compute_ensemble_boost_effective` (`orchestrator.rs:50-58, 550-560`), erradicando la sobre-convicción del +40% en votantes solitarios desbalanceados.
+  2. *F1-100* (MED): Unificación semántica de umbrales entre el orquestador (`cutoff_floor = ((min_conf - 0.50) * 1.0).clamp(0.0, 0.45)`) y `god-engine-core/src/lib.rs:7538, 8094, 8119` en espacio de exceso de convicción $\Delta P \in [0.0, 0.45]$, eliminando la comparación inconmensurable contra probabilidades crudas $[0.55, 0.85]$ que bloqueaba permanentemente las ramas 11 y 14. Mapeo continuo al espacio de probabilidad $P = 0.50 + 0.50 \times |\Delta P| \in [0.50, 0.95]$ para `conf_base`.
+- **POR QUÉ**:
+  1. *F1-099*: `0.70 + 0.30 * c` permitía que ante oposición total del espectro ($c = -1.0$), una escala dominante solitaria conservara 40% de convicción y ejecutara órdenes contra la masa unánime del mercado. Además, el conteo entero de fuentes inflaba la convicción un +40% cuando 4 de 5 estrategias aportaban pesos infinitesimales (0.001).
+  2. *F1-100*: Con `min_conf = 0.70`, el orquestador emitía Long con $|\Delta P| > 0.20$, pero el núcleo exigía $|\Delta P| \ge 0.70$ (en rama 11) o $|\Delta P| > 0.665$ (en rama 14), haciendo imposible la ejecución por consenso escalar y creando una "zona muerta" artificial e infranqueable.
+- **PARA QUÉ**: Asegurar que las señales del ensamble y del espectro respeten las leyes de interferencia física ondulatoria, evitar exposición apalancada sin evidencia empírica real (protección de los $13.00 USD), y desbloquear las entradas genuinas de consenso continuo en el núcleo en plena sincronía dimensional.
+- **CÓMO**:
+  1. *F1-099*: `factor_coherencia = ((1.0 + coherencia_inter) * 0.5).clamp(0.0, 1.0)`, `sum_sq_weight += abs_v * abs_v`, $N_{\text{eff}} = (\text{active\_weight}^2) / \text{sum\_sq\_weight}$, y `compute_ensemble_boost_effective(n_eff)`.
+  2. *F1-100*: `let tensor_cutoff = ((tensor_min_conf - 0.50) * 1.0).clamp(0.0, 0.45);`, `let slow_cutoff = ((tensor_min_conf - 0.50) * 0.95).clamp(0.0, 0.45);`, y `let conf_base = (0.50 + 0.50 * tensor_cont.net_confidence.abs()).clamp(0.50, 0.95);`.
+- **CUÁNDO**: En cada evaluación continua de consenso, en cada tick y para cada activo del universo multivariante.
+- **DÓNDE**: `crates/signal-engine/src/{orchestrator.rs, lib.rs}`, `crates/god-engine-core/src/lib.rs`.
+- **QUIÉN**: Consejo de 10 Roles Senior liderado por Quant Sr. Lead (AGY).
+- **RECIBOS**:
+  - `crates/signal-engine/tests/f1_099_100_spectral_coherence_and_cutoff_contract.rs`: 4/4 pass (100% verde).
+  - `crates/signal-engine/tests/ensemble_effective_voters_contract.rs`: 4/4 pass (100% verde).
+  - `crates/signal-engine` lib suite: 126/126 pass (100% verde).
+- **INTEGRACIÓN**: Rama `agy/ola-161-f1-099-100-spectral-consensus` lista para integración limpia sobre `main`.
+
