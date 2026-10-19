@@ -1,4 +1,4 @@
-//! C-F3.7 (Línea C), F3.7-08: un evento de libro estacionario no debe
+﻿//! C-F3.7 (Línea C), F3.7-08: un evento de libro estacionario no debe
 //! asignar memoria de heap.
 //!
 //! Teoría que se prueba: en régimen estacionario (estado caliente, mismo
@@ -108,7 +108,6 @@ fn cf3_evento_de_libro_estacionario_no_asigna() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let mut ts = 1_000u64;
     for k in 0..2_000u64 {
         libro(&mut core, k, ts);

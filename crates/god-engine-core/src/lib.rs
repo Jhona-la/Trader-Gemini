@@ -1060,7 +1060,6 @@ pub struct GodEngineCore {
     /// crash_flux).
     pub regime_drift_prev:
         Vec<(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64)>,
-    pub scalp_forest: Option<Arc<crate::ml_inference::NanoForest>>,
     pub swing_nn: Option<dark_alpha_engine::DarkAlphaEngine>,
     /// F4.7: ensamble online — ambos modelos opinan y el peso emerge del
     /// Brier acumulado (Hedge). Antes: cadena if-else donde el segundo
@@ -1278,11 +1277,6 @@ impl GodEngineCore {
         // (`refresh_ml_models`); las herramientas que quieran los del disco
         // llaman `model_reload::preload_models_from_disk()` explícitamente.
 
-        // F-012 FIX: Universal model key — the NanoForest serves ALL assets, not just BTC.
-        // Search order: UNIVERSAL → BTCUSDT_MOTOR → legacy fallback.
-        let scalp_forest = crate::ml_inference::NanoForest::get_global("UNIVERSAL")
-            .or_else(|| crate::ml_inference::NanoForest::get_global("BTCUSDT_MOTOR"));
-
 
         // D-605: una entrada por moneda del arena, con su misma capacidad.
         let n_coins = quantum_arena::state::MAX_COINS;
@@ -1456,7 +1450,6 @@ impl GodEngineCore {
                 })
                 .collect(),
             tensor_orchestrator,
-            scalp_forest,
             swing_nn,
             ensemble: crate::ensemble::ModelEnsemble::new(),
             ensembles: (0..n_coins)
@@ -2152,7 +2145,6 @@ impl GodEngineCore {
     /// hacía fs::read + parse JSON del sobre en el hilo TIME_CRITICAL; ahora
     /// un stat() barato y parse solo si el archivo cambió.
     pub fn refresh_models(&mut self) {
-        self.scalp_forest = crate::ml_inference::NanoForest::get_global("UNIVERSAL");
         if !self
             .recarga_genoma
             .sigue_al_almacen(std::env::var_os("GOD_NO_HOT_RELOAD").is_some())

@@ -1,4 +1,4 @@
-//! C-F3 · F3.7-01 (Línea C): una base futuro-spot constante es equilibrio,
+﻿//! C-F3 · F3.7-01 (Línea C): una base futuro-spot constante es equilibrio,
 //! no dislocación.
 //!
 //! Teoría que se prueba: un z de reversión mide la desviación de la base
@@ -65,7 +65,6 @@ fn cf3_vecm_base_constante_no_vota_reversion() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let mut vecm = JohansenVecmEngine::default();
     assert!(vecm.init(arena.registry.clone()).is_ok());
     let mut rng = Lcg(0xCF3_7001);
@@ -130,7 +129,6 @@ fn recorrer(
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let mut vecm = JohansenVecmEngine::default();
     assert!(vecm.init(arena.registry.clone()).is_ok());
     let mut rng = Lcg(0xCF3_7001);

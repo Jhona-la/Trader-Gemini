@@ -1,4 +1,4 @@
-//! Synthetic LOCAL close-path tests: no exchange, model publication or live bus.
+﻿//! Synthetic LOCAL close-path tests: no exchange, model publication or live bus.
 use god_engine_core::{GodEngineCore, outcome_context::OutcomeContext};
 use quantum_arena::{GlobalArena, position::PositionHorizon, symbol_registry};
 use std::{
@@ -53,7 +53,6 @@ fn core(context: OutcomeContext, confirmed: bool) -> (Arc<GlobalArena>, GodEngin
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new_with_outcome_context(arena.clone(), context);
     core.swing_nn = None;
-    core.scalp_forest = None;
     let pos = &arena.coins[0].positions.slot_2;
     assert!(pos.open_with_horizon(
         true,
@@ -230,7 +229,6 @@ fn default_constructor_is_isolated_even_if_entry_flag_is_true() {
     let (arena, _) = core(OutcomeContext::IsolatedSimulation, true);
     let mut engine = GodEngineCore::new(arena.clone());
     engine.swing_nn = None;
-    engine.scalp_forest = None;
     *arena.coins[0]
         .positions
         .slot_2

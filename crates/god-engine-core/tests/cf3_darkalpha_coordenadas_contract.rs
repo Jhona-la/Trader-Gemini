@@ -1,4 +1,4 @@
-//! C-F3.5 (Línea C), hallazgo F3.5-03: DarkAlpha se entrena con la entrada
+﻿//! C-F3.5 (Línea C), hallazgo F3.5-03: DarkAlpha se entrena con la entrada
 //! cruda y se sirve en z-scores; el núcleo instala por la recarga en caliente
 //! una red sin sistema de coordenadas declarado.
 //!
@@ -44,7 +44,6 @@ fn cf3_nucleo_no_sirve_red_sin_sistema_de_coordenadas() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
 
     // Como la guarda el demonio: sin scaler, sin congelar, Welford poblados por la validación.
     let mut red = DarkAlphaEngine::new(54, 64, 32);

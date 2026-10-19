@@ -1,4 +1,4 @@
-//! C-F3 · F3.7-03 (Línea C): un spot congelado (no puesto a 0) debe
+﻿//! C-F3 · F3.7-03 (Línea C): un spot congelado (no puesto a 0) debe
 //! disparar el TTL anti-staleness de StatArb.
 //!
 //! Teoría que se prueba: el TTL de 30 s (R6-C4) existe para que la SDE OU de
@@ -101,7 +101,6 @@ fn nucleo_maduro() -> (std::sync::Arc<GlobalArena>, GodEngineCore, u64) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     arena.update_spot_data(0, 50_000.0, 50_000.2, 1.0, 1.0);
     let mut ts = 1_000u64;
     for i in 0..12 {

@@ -1,4 +1,4 @@
-//! CL-88 y CL-89 (atr-2, atr-3; revisión de los PR #43–#55): el piso de
+﻿//! CL-88 y CL-89 (atr-2, atr-3; revisión de los PR #43–#55): el piso de
 //! resolución del ATR de una moneda es su tick.
 //!
 //! - CL-89: el núcleo cachea el tick por moneda y lo vuelve a leer sólo
@@ -49,7 +49,6 @@ fn cl89_el_piso_sigue_al_registro_y_al_universo() {
     let arena = GlobalArena::build_in_own_stack(1_000.0);
     let mut core = GodEngineCore::new(arena);
     core.swing_nn = None;
-    core.scalp_forest = None;
     let mut ts = 1_000u64;
     let mut paso = |core: &mut GodEngineCore| {
         ts += 1_000;

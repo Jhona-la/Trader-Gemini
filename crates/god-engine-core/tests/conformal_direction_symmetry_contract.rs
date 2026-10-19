@@ -1,4 +1,4 @@
-//! K-26 / K-27 — CONTRATO DE INTEGRACIÓN: SIMETRÍA DIRECCIONAL CONFORMAL Y MICRO-TENDENCIA.
+﻿//! K-26 / K-27 — CONTRATO DE INTEGRACIÓN: SIMETRÍA DIRECCIONAL CONFORMAL Y MICRO-TENDENCIA.
 //!
 //! Verifica matemáticamente y a nivel de motor:
 //! 1. `p_win_directional` erradica el sesgo de base honesta: en neutralidad (p == base),
@@ -40,7 +40,6 @@ fn fixture() -> (Arc<GlobalArena>, GodEngineCore) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     (arena, core)
 }
 

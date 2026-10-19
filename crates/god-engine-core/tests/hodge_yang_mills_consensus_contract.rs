@@ -1,4 +1,4 @@
-//! CONTRATO FORMAL: Acoplamiento de Flujos de Consenso Helmholtz-Hodge, Yang-Mills y Staleness Macro (OLA Ω38)
+﻿//! CONTRATO FORMAL: Acoplamiento de Flujos de Consenso Helmholtz-Hodge, Yang-Mills y Staleness Macro (OLA Ω38)
 //!
 //! Verifica que:
 //! 1. Los buffers multiactivo `latest_prices` y `latest_ofis` se alimentan continuamente con cada tick.
@@ -28,7 +28,6 @@ fn setup_multi_coin_fixture() -> (Arc<GlobalArena>, GodEngineCore) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     (arena, core)
 }
 

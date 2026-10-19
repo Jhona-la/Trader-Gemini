@@ -1,4 +1,4 @@
-//! LF-1 (Línea F, revisión de composición de Ω84/#722) — cierra el respaldo a
+﻿//! LF-1 (Línea F, revisión de composición de Ω84/#722) — cierra el respaldo a
 //! BTC de LC-F1-32.
 //!
 //! Ω84 unificó las tres identidades del slot dentro de `process_tick_dual` en
@@ -44,7 +44,6 @@ fn lf1_slot_sin_identidad_no_se_convierte_en_btc() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let _ = core.process_tick_dual(1, 100.0, 100.01, 5.0, 5.0, 10_000, &[0.0; 54], true, false);
 
     // 1) No hereda el bosque de BTC: sin modelo propio, la base es la neutra.

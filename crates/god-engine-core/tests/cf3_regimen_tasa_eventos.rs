@@ -1,4 +1,4 @@
-//! C-F3 · F3.7-06 (Línea C): el régimen global no debe depender de la tasa
+﻿//! C-F3 · F3.7-06 (Línea C): el régimen global no debe depender de la tasa
 //! de eventos de libro.
 //!
 //! Teoría que se prueba: el régimen (símplex p_range, p_bull, p_crash,
@@ -46,7 +46,6 @@ fn correr(duplicar: bool) -> (f64, [f64; 4]) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let mut lcg = 12_345u64;
     let mut ln_p = 50_000f64.ln();
     let mut ts = 1_000u64;

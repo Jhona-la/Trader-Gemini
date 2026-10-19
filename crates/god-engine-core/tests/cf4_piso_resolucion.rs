@@ -1,4 +1,4 @@
-//! CL-69 (C-F4): el ATR de las decisiones nunca baja de un tick del símbolo.
+﻿//! CL-69 (C-F4): el ATR de las decisiones nunca baja de un tick del símbolo.
 //!
 //! Un ATR por debajo de la resolución del precio no es medible: el mid sólo
 //! se mueve de tick en tick. Hasta ahora el único piso era un literal en
@@ -41,7 +41,6 @@ fn mercado_plano(sym: &str, con_spec: bool) -> (f64, f64, f64) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     // Dos horas de libro quieto (bid 0,99 / ask 1,01) a un evento por segundo.
     for i in 0..7_200u64 {
         let _ = core.process_tick_dual(

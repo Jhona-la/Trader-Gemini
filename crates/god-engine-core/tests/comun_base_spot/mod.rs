@@ -1,4 +1,4 @@
-//! Fixtures compartidos de las pruebas de la base futuro-spot (CL-97):
+﻿//! Fixtures compartidos de las pruebas de la base futuro-spot (CL-97):
 //! núcleo con BTCUSDT, eventos del futuro con el spot llegando entre ellos,
 //! y un mercado con la base en OU o en caminata.
 #![allow(dead_code)]
@@ -37,7 +37,6 @@ pub fn nucleo() -> (Arc<GlobalArena>, GodEngineCore) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     (arena, core)
 }
 

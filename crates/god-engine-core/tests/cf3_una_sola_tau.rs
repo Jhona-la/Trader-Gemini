@@ -1,4 +1,4 @@
-//! C-F3 · F3.2 (Línea C): una sola τ de punta a punta, del juicio de las
+﻿//! C-F3 · F3.2 (Línea C): una sola τ de punta a punta, del juicio de las
 //! puertas a la ranura que se abre.
 //!
 //! Teoría que se prueba:
@@ -137,7 +137,6 @@ fn nucleo(con_bosque: bool) -> (Arc<GlobalArena>, GodEngineCore) {
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
     if !con_bosque {
-        core.scalp_forest = None;
     }
     (arena, core)
 }

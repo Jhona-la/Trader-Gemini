@@ -1,4 +1,4 @@
-//! LG-22 cableado (GLM 121): el detector e-CUSUM de pérdida de ventaja
+﻿//! LG-22 cableado (GLM 121): el detector e-CUSUM de pérdida de ventaja
 //! (Línea G, resultado_orden) conectado al close path — por MONEDA.
 //! (i) Cada cierre alimenta el detector; (ii) la alarma siembra el
 //! epigenetic_bias (×0.5, pausa de régimen vía LH-04/streak-118 — el OU
@@ -48,7 +48,6 @@ fn core(arl: f64) -> (Arc<GlobalArena>, GodEngineCore) {
         OutcomeContext::ExchangeLocalEstimate,
     );
     core.swing_nn = None;
-    core.scalp_forest = None;
     (arena, core)
 }
 

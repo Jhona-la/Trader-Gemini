@@ -1,4 +1,4 @@
-//! Local synthetic outcome contracts: no exchange or model promotion.
+﻿//! Local synthetic outcome contracts: no exchange or model promotion.
 use god_engine_core::{
     GodEngineCore,
     ensemble::{ModelEnsemble, ModelId, SKILL_SPAN_BARS, SkillTracker},
@@ -59,7 +59,6 @@ fn fixture_with_context(
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new_with_outcome_context(arena.clone(), context);
     core.swing_nn = None;
-    core.scalp_forest = None;
     open_slot(&arena, 0, 2);
     (arena, core)
 }

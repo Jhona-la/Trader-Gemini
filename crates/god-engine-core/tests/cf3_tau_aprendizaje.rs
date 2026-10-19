@@ -1,4 +1,4 @@
-//! C-F3 · F3.2 (Línea C): la τ con la que aprende el cierre.
+﻿//! C-F3 · F3.2 (Línea C): la τ con la que aprende el cierre.
 //!
 //! Teoría que se prueba:
 //! - El Kelly que el riesgo lee para la orden SIGUIENTE es un escalar por
@@ -76,7 +76,6 @@ fn core_con_posicion() -> (Arc<GlobalArena>, GodEngineCore) {
     let mut core =
         GodEngineCore::new_with_outcome_context(arena.clone(), OutcomeContext::IsolatedSimulation);
     core.swing_nn = None;
-    core.scalp_forest = None;
     let pos = &arena.coins[0].positions.slot_2;
     assert!(pos.open_with_horizon(
         true,

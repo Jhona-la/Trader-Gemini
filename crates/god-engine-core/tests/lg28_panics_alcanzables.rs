@@ -1,4 +1,4 @@
-//! LG-28 (Línea G; auditoría de panics del camino vivo, ola 9): con
+﻿//! LG-28 (Línea G; auditoría de panics del camino vivo, ola 9): con
 //! `panic = "abort"` en release, un panic alcanzable mata el proceso con
 //! posiciones abiertas.
 //!
@@ -27,7 +27,6 @@ fn regimen(tendencia: f64, caos: f64) -> [u64; 4] {
     arena.config.hurst_scalp_threshold.store(caos, Relaxed);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let mut ts = 1_000u64;
     let mut lcg = 7_919u64;
     let mut precio = 50_000.0_f64;

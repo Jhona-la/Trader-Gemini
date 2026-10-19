@@ -1,4 +1,4 @@
-//! C-F3.5 (Línea C), hallazgo F3.5-02: el bosque opina con el macro de
+﻿//! C-F3.5 (Línea C), hallazgo F3.5-02: el bosque opina con el macro de
 //! semilla, fuera de su soporte de entrenamiento; la caducidad del macro no
 //! se consulta en la inferencia.
 //!
@@ -65,7 +65,6 @@ fn ml_prob_con(sp500: f64, staleness_ms: f64) -> f64 {
     arena.registry.set("macro_staleness_ms", staleness_ms);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let mut omni = [0.0f64; 54];
     omni[21] = 104.0; // DXY (semilla)
     omni[22] = sp500;

@@ -1,5 +1,31 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω162: Cierre de F1-107 y F1-111 (Erradicación del Campo Muerto scalp_forest en GodEngineCore, Purgado de Búsqueda Espuria UNIVERSAL en refresh_models y Poda de 45 Asignaciones Superfluas de Test) (2026-10-18)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω162: ERRADICACIÓN DE ARISTAS MUERTAS, HIGIENE DE CAMINO CALIENTE Y AISLAMIENTO MULTI-ACTIVO ESTRICTO
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv` (2 en total)**:
+   - **`F1-107` / `F1-111` (`LOW`, `crates/god-engine-core/src/lib.rs:1063, 1280-1285, 1459, 2155` y 39 suites de prueba en `crates/god-engine-core/tests/`)**:
+     - **QUÉ**: Erradicación completa del campo público huérfano `pub scalp_forest: Option<Arc<crate::ml_inference::NanoForest>>` en `GodEngineCore`, retiro de la búsqueda inicial `UNIVERSAL -> BTCUSDT_MOTOR` y del comentario histórico obsoleto F-012 en el constructor, eliminación de la reasignación periódica `self.scalp_forest = crate::ml_inference::NanoForest::get_global("UNIVERSAL");` en `refresh_models()` (hilo crítico cada 1000 ticks), y purga sistemática de 45 líneas `core.scalp_forest = None;` / `engine.scalp_forest = None;` a lo largo de 39 archivos de prueba.
+     - **POR QUÉ**: Constituye un Fallo Tipo 1 (Arista Muerta) y Tipo 2 (Nodo Silencioso). El campo `scalp_forest` se escribía en el constructor y se sobrescribía cada 1000 eventos, pero NINGÚN código de producción en todo el repositorio lo leía jamás (la inferencia real en producción utiliza `NanoForest::get_global_suffixed(&sym, "_MOTOR")` escopada por símbolo). Además, la clave `"UNIVERSAL"` nunca tuvo escritor ni modelo en disco, por lo que cada 1000 ticks `refresh_models()` ejecutaba un hash SipHash y una lectura atómica infructuosa en `GLOBAL_FORESTS`, induciendo además a un posible fallo de política si un futuro desarrollador intentaba conectar un modelo genérico que rompiera la doctrina de aislamiento causal por símbolo B3.18b / LG-17.
+     - **PARA QUÉ**: (1) Optimizar el presupuesto de latencia de nanosegundos en el camino caliente y en la recarga periódica de modelos; (2) Evitar fugas de memoria o fallbacks espurios cross-símbolo; (3) Mantener la higiene arquitectónica del repositorio y el código 100% testeable sin campos fantasma.
+     - **CÓMO**:
+       1. Eliminado `pub scalp_forest: Option<Arc<crate::ml_inference::NanoForest>>,` de `GodEngineCore`.
+       2. Retiradas las líneas del constructor que resolvían `"UNIVERSAL"` y `"BTCUSDT_MOTOR"` para `scalp_forest`.
+       3. Purgada la asignación periódica en `refresh_models()`.
+       4. Purgadas las 45 asignaciones en los 39 archivos de tests de `god-engine-core`.
+       5. Certificado el aislamiento causal multi-activo mediante el contrato `f1_107_111_scalp_forest_dead_field_eradicated_contract.rs`.
+     - **CUÁNDO**: Permanente en tiempo de compilación y en cada tick de ejecución.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`, `crates/god-engine-core/tests/*`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en consenso colegiado con el Consejo de 10 Roles Senior.
+2. **Certificación Contractual**:
+   - `crates/god-engine-core/tests/f1_107_111_scalp_forest_dead_field_eradicated_contract.rs` (2/2 pass, 100% verde).
+   - Suite completa `cargo test -p god-engine-core --lib -j 1` (208/208 pass, 100% verde).
+   - `cargo check --workspace --all-targets -j 1` (23 crates verificados, 0 errores, 0 warnings).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω156: Cierre de F1-027, F1-028, F1-029 (Secuencia Causal X-009, Reduce-Only Tipado y Sondeo WS en Execution-Engine), F1-117 (Freeze maker_only en Genome) y F1-124 (Caché O(1) de Pesos en SkillMotores y Hot Path Hygiene) + Plan Maestro V28 (2026-10-18)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

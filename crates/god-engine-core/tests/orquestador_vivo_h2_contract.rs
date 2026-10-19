@@ -1,4 +1,4 @@
-//! #652/H2 en el orquestador VIVO, el que arma `GodEngineCore::new` con todas
+﻿//! #652/H2 en el orquestador VIVO, el que arma `GodEngineCore::new` con todas
 //! sus estrategias. Con la escala dominante inoperable (τ < 30 s) el veredicto
 //! espectral no se consume: el consenso escalar queda bit a bit igual que sin
 //! dominante (crates/signal-engine/src/orchestrator.rs, #652/H2). Los tests
@@ -13,7 +13,6 @@ fn decision_con_dominante(v_dom: f64) -> (String, u64, u64) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     // La sombra de Feynman publica la coherencia por moneda en cada evento de libro.
     arena.registry.set_for_coin(0, "feynman_coherence", 0.9);
     arena

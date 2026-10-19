@@ -1,4 +1,4 @@
-//! LG-27b (Línea G; LG27-STAT-01 de la revisión de LG-27): el detector de
+﻿//! LG-27b (Línea G; LG27-STAT-01 de la revisión de LG-27): el detector de
 //! pérdida de ventaja (LG-22) sólo aprende de cierres cuya geometría se fijó
 //! AL ABRIR.
 //!
@@ -34,7 +34,6 @@ fn nucleo() -> (Arc<GlobalArena>, GodEngineCore) {
         OutcomeContext::IsolatedSimulation,
     );
     core.swing_nn = None;
-    core.scalp_forest = None;
     (arena, core)
 }
 

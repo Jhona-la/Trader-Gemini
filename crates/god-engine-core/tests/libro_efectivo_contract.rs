@@ -1,4 +1,4 @@
-//! CL-33 — el libro con el que el núcleo decide un evento sin libro propio.
+﻿//! CL-33 — el libro con el que el núcleo decide un evento sin libro propio.
 //!
 //! El host sólo trae bid/ask en los eventos @depth5 y pasa 0 en trades y
 //! klines, que son los únicos eventos donde se permiten entradas. El núcleo
@@ -53,7 +53,6 @@ fn nucleo() -> GodEngineCore {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena);
     core.swing_nn = None;
-    core.scalp_forest = None;
     core
 }
 

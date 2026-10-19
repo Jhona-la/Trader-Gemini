@@ -1,4 +1,4 @@
-use metacortex_engine::consejo_seniors::{ConsejoDeliberacion, MarketSnapshotPayload, TradingHorizon};
+﻿use metacortex_engine::consejo_seniors::{ConsejoDeliberacion, MarketSnapshotPayload, TradingHorizon};
 use metacortex_engine::prospect_theory::ProspectTheoryEngine;
 use signal_engine::feynman_propagator::FeynmanPropagatorEngine;
 
@@ -216,7 +216,6 @@ fn test_rev10_prospect_pressure_through_god_engine_core() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
 
     // Inyectar sentimiento de masa asimétrico: masa alcista con euforia minorista
     arena.registry.set_scoped("PROSPTESTUSDT", "ls_account_ratio", 2.5);

@@ -1,4 +1,4 @@
-//! C-F2.3a (Línea C): campo de régimen espectral y BOCPD sobre el transporte
+﻿//! C-F2.3a (Línea C): campo de régimen espectral y BOCPD sobre el transporte
 //! W1, contra soluciones conocidas (sólo API pública).
 //!
 //! Teoría que se prueba:
@@ -147,7 +147,6 @@ fn cf2_rw_crash_flux_es_bajo_en_ruido_en_el_nucleo() {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     let mut g = Lcg(0xC0F2_0901);
     let mut x = 0.0f64;
     let (mut suma, mut f_largo, mut f_corto, mut n) = (0.0f64, 0.0f64, 0.0f64, 0usize);

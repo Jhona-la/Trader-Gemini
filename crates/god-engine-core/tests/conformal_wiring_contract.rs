@@ -1,4 +1,4 @@
-//! Conformal wiring/domain regression tests. Synthetic local events; no exchange.
+﻿//! Conformal wiring/domain regression tests. Synthetic local events; no exchange.
 use god_engine_core::{GodEngineCore, conformal::ConformalCalibrator};
 use quantum_arena::{GlobalArena, symbol_registry, symbols};
 use std::sync::{Arc, Mutex, atomic::Ordering::Relaxed};
@@ -14,7 +14,6 @@ fn fixture() -> (Arc<GlobalArena>, GodEngineCore) {
     let arena = GlobalArena::build_in_own_stack(100.0);
     let mut core = GodEngineCore::new(arena.clone());
     core.swing_nn = None;
-    core.scalp_forest = None;
     (arena, core)
 }
 
