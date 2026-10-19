@@ -50,19 +50,37 @@ echo.
 echo ===============================================================================
 echo [SYSTEM] Verificando Compilacion [Perfil: Release / LTO / -j 2 (16GB RAM Optimized)]
 echo ===============================================================================
-set RUSTFLAGS=-C target-cpu=native
-:: Compile using 2 concurrent threads to prevent RAM thrashing and OOM on 16GB
+:: RB-H1 (2026-10-19): SIN RUSTFLAGS de entorno. La variable reemplaza los
+:: rustflags de .cargo/config.toml (target-cpu=native) y obligaba a recompilar
+:: todo el arbol con una huella distinta a la de los agentes (variantes
+:: duplicadas en target\). Compile using 2 concurrent threads (16GB RAM).
 cargo build --release --bin god_engine --bin evolver -j 2
 if %ERRORLEVEL% neq 0 (
     color 0C
     echo.
     echo ❌ [CRITICAL ERROR] Fallo en la compilacion de los binarios Rust.
-    echo Verifique que no haya procesos bloqueando target_persistent/
+    echo Verifique que no haya procesos bloqueando target\
     pause
     exit /b %ERRORLEVEL%
 )
+:: RB-H1: UN SOLO target\ compartido. Se ejecuta una COPIA desde despliegue\:
+:: el .exe de target\release nunca queda bloqueado por la instancia viva
+:: (OS Error 32) y no se duplica el arbol de compilacion (>8 GB por cada
+:: target alternativo). Mismo nombre en todos los lanzadores: si ya hay un
+:: motor vivo la copia falla, y dos motores sobre la misma cuenta no arrancan.
+if not exist "despliegue" mkdir "despliegue"
+copy /Y "target\release\god_engine.exe" "despliegue\god_engine.exe" >nul || goto copia_fallida
+copy /Y "target\release\evolver.exe" "despliegue\evolver.exe" >nul || goto copia_fallida
 echo ✅ [OK] Compilacion completada con exito.
 exit /b 0
+
+:copia_fallida
+color 0C
+echo.
+echo ❌ [CRITICAL ERROR] No se pudo copiar el binario a despliegue\ ^(hay una instancia viva?^).
+echo Cierre god_engine.exe / evolver.exe ^(opcion 8^) y reintente.
+pause
+exit /b 1
 
 :sim_mode
 call :compile_check
@@ -89,13 +107,13 @@ start http://localhost:3000
 
 :: Start the Evolver Core (AI training engine) minimized and limited to 16GB resources
 echo [INFO] Despertando Cerebro Evolutivo en Segundo Plano...
-start "Cerebro Evolutivo - Trader Gemini" /MIN .\target_persistent\release\evolver.exe
+start "Cerebro Evolutivo - Trader Gemini" /MIN .\despliegue\evolver.exe
 
 :: Start God Engine in paper trading mode
 echo [INFO] Despertando God Engine (Paper Trading)...
 set BINANCE_API_KEY=shadow
 set BINANCE_SECRET_KEY=shadow
-.\target_persistent\release\god_engine.exe
+.\despliegue\god_engine.exe
 pause
 goto menu
 
@@ -120,7 +138,7 @@ if "%BINANCE_API_KEY%"=="" (
     goto menu
 )
 
-.\target_persistent\release\god_engine.exe
+.\despliegue\god_engine.exe
 pause
 goto menu
 
@@ -131,7 +149,7 @@ echo ===========================================================================
 echo ⚠️ ATENCION: MODULACION DE CAPITAL REAL ACTIVA (MAINNET DEPLOYMENT) ⚠️
 echo ===============================================================================
 echo El bot ejecutara operaciones reales en Binance Futures usando tus fondos.
-echo Asegurate de que el Risk Manager (risk_manager.py) tiene los limites apropiados.
+echo Asegurate de que el risk-engine (Rust) y el kill-switch estan armados.
 echo ===============================================================================
 echo.
 set /p CONFIRM="Escriba 'MAINNET' para autorizar la operacion con capital real: "
@@ -165,17 +183,19 @@ if "%BINANCE_API_KEY%"=="" (
 echo 💎 [INICIANDO SINGULARIDAD] Ejecutando God Engine en Mainnet...
 set PAPER_TRADING=false
 set USE_TESTNET=false
-.\target_persistent\release\god_engine.exe
+.\despliegue\god_engine.exe
 pause
 color 0F
 goto menu
 
 :evolver_only
 echo.
+call :compile_check
+if %ERRORLEVEL% neq 0 goto menu
 echo 🧠 Iniciando Evolver Core de Inteligencia Artificial (Low Resources)...
 set EVOLVER_LOW_RESOURCES=1
 :: Run evolver
-.\target_persistent\release\evolver.exe
+.\despliegue\evolver.exe
 pause
 goto menu
 
@@ -261,8 +281,9 @@ echo Deteniendo ejecutables de Rust del bot...
 taskkill /F /IM god_engine.exe /T >nul 2>&1
 taskkill /F /IM evolver.exe /T >nul 2>&1
 
-echo Deteniendo interpretes de Python del bot...
-taskkill /F /IM python.exe /T >nul 2>&1
+:: RB-H1 (2026-10-19): ya NO se mata python.exe. El bot es Rust; un
+:: taskkill global de python.exe derribaba procesos ajenos de la maquina
+:: (agentes, otros proyectos) sin detener nada del trading.
 
 echo Deteniendo servicios Docker (Loki / Prometheus / Grafana)...
 docker-compose down >nul 2>&1
@@ -287,8 +308,10 @@ echo 📖 GLOSARIO DE SISTEMA & ARQUITECTURA
 echo ===============================================================================
 echo.
 echo  * TRINIDAD EVOLUTIVA:
-echo    - Capa 1 (ADN): Evolucion NEAT en evolver.rs para encontrar pesos optimos.
-echo    - Capa 2 (Risk): Gestion de stop-loss dinamica en risk_manager.py.
+echo    - Capa 1 (ADN): CMA-ES + examen walk-forward con el motor real + DSR
+echo      con multiplicidad acumulada (evolution-engine, online_daemon.rs).
+echo    - Capa 2 (Risk): risk-engine en Rust (Kelly fraccional, vetos medidos,
+echo      cota de ruina de Cramer-Lundberg, colas de copula t).
 echo    - Capa 3 (Sniffer): Modulador en tiempo real tick-to-tick.
 echo.
 echo  * NANO-LATENCIA EN RUST:
@@ -299,8 +322,9 @@ echo    - Limitar los hilos de Cargo con "-j 2" permite compilar de manera estab
 echo      en portatiles de 16GB sin causar swap thrashing de disco SSD.
 echo.
 echo  * INTEGRIDAD EVOLUTIVA Y ADAPTATIVA:
-echo    - El sistema puede operar en Scalping y Swing de manera simultanea.
-echo    - Cada posicion mantiene metadatos de clasificacion de horizonte.
+echo    - Un universo multiactivo continuo temporal-espectral: 32 escalas tau
+echo      de 30 s a 12 h; scalping/swing son proyecciones, no categorias.
+echo    - Cada posicion nace con la tau con la que se dimensiono (D-745).
 echo.
 echo ===============================================================================
 pause

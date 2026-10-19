@@ -25,7 +25,7 @@ if not exist ".env" (
 )
 
 echo [1/3] Verificando compilacion de Maximo Rendimiento (Release)...
-cargo build --release --bin god_engine
+cargo build --release --bin god_engine -j 2
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] La compilacion ha fallado. Revisa los logs.
     echo TIP: Asegurate de no tener ningun IDE que bloquee el directorio target/.
@@ -47,8 +47,18 @@ echo red WS de Produccion para lecturas O(1).
 echo ========================================================
 echo.
 
-:: Forzamos el target dir epimero por si el entorno no cargo config.toml
-set CARGO_TARGET_DIR=target_persistent
-cargo run --release --bin god_engine
+:: RB-H1 (2026-10-19): antes se fijaba CARGO_TARGET_DIR=target_persistent y
+:: `cargo run` recompilaba TODO el arbol release por segunda vez en otra
+:: carpeta (>8 GB). Ahora se reutiliza el binario recien compilado en el
+:: target\ compartido y se ejecuta su COPIA (el .exe de target\ nunca queda
+:: bloqueado por la instancia viva; si ya hay un motor vivo la copia falla).
+if not exist "despliegue" mkdir "despliegue"
+copy /Y "target\release\god_engine.exe" "despliegue\god_engine.exe" >nul
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] No se pudo copiar a despliegue\ ^(hay un motor vivo?^). Cierralo y reintenta.
+    pause
+    exit /b 1
+)
+.\despliegue\god_engine.exe
 
 pause

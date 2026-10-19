@@ -33,14 +33,27 @@ echo.
 echo [1] Compilando Binario Rust [Perfil: Ultra-Release / LTO / Abort]
 echo.
 
-set CARGO_TARGET_DIR=target_release_god
-cargo build --release --bin god_engine -j 3
+:: RB-H1 (2026-10-19): UN SOLO target\ compartido (antes CARGO_TARGET_DIR=
+:: target_release_god duplicaba el arbol release completo, >8 GB). -j 2 por
+:: el presupuesto de 16 GB de RAM (AGENT_SYNC §4).
+cargo build --release --bin god_engine -j 2
 if %ERRORLEVEL% neq 0 (
     color 0C
     echo.
     echo [CRITICAL ERROR] Fallo en la compuerta de compilacion cuantica.
     pause
     exit /b %ERRORLEVEL%
+)
+:: Se ejecuta una COPIA desde despliegue\: el .exe de target\release nunca
+:: queda bloqueado (OS Error 32). Si ya hay un motor vivo la copia falla.
+if not exist "despliegue" mkdir "despliegue"
+copy /Y "target\release\god_engine.exe" "despliegue\god_engine.exe" >nul
+if %ERRORLEVEL% neq 0 (
+    color 0C
+    echo.
+    echo [CRITICAL ERROR] No se pudo copiar a despliegue\ ^(hay un motor vivo?^). Cierralo y reintenta.
+    pause
+    exit /b 1
 )
 
 echo.
@@ -60,7 +73,7 @@ echo ========================================================
 echo.
 
 :: Ejecuta el bot. En caso de crash el terminal quedara abierto.
-.\target_release_god\release\god_engine.exe
+.\despliegue\god_engine.exe
 
 if %ERRORLEVEL% neq 0 (
     color 0C
