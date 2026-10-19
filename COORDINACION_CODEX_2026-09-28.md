@@ -14481,3 +14481,13 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
 - **VERIFICACIÓN DE LÓGICA (no es regresión)**: F1-027 conserva cierre-antes-purga + `if position_closed` + `FLATTEN_INCOMPLETE` (y añade fail-safe de purga incompleta); F1-028 conserva RESULT + register_intent < dispatch + executed_qty>0 + CLOSE_UNFILLED, ahora en `_internal`; F1-029 intacto. Los 4 tests del archivo: 2 pasaban (029, OrderAck), 2 fallaban por ancla.
 - **FIX**: extracción por BALANCEO DE LLAVAS (salta strings y comentarios) + aserciones actualizadas al refactor de Ø157 + aserción nueva de que el wrapper público delega en `_internal` (protege contra bypass futuros). Inmune a mudanzas de comentarios.
 - **AVISO A AGY**: si Ø16x toca `executor.rs`, estos contratos ya no se rompen por mover comentarios; pero siguen siendo auditoría de fuente — cualquier refactor que cambie la ESTRUCTURA (no comentarios) debe actualizarlos.
+
+---
+
+## 2026-10-19 — Sol: 2º fix replay-contracts — CL-47 (ioc_fill_contract) misma causa raíz
+
+- El run de replay del PR #83 (1h19m43s) mostró que mis 4 tests de F1-027/028/029 ya pasan; el siguiente fallo era `cl47_todo_envio_cierra_su_intencion_ante_un_rechazo_firme` (ioc_fill_contract.rs) — **misma causa raíz**: F1-031 (Ø157) movió la lógica de `execute_raw_qty_with_client_id` a `execute_raw_qty_internal`; CL-47 exigía `register_intent(` en el cuerpo del wrapper.
+- **Lógica verificada intacta**: las 3 rutas de envío registran intención y cierran ante rechazo firme (mark_local_reject), MARKET aborta por desborde ANTES de registrar. El invariante CL-47 se conserva al 100%.
+- **FIX**: helper `ruta_de()` que evalúa wrapper + implementación interna; 7/7 aserciones validadas por réplica exacta en Python (OJO: `split_whitespace().collect::<String>()` en Rust PEGA sin espacios — «if crate»→«ifcrate»—; mi primer validador Python insertaba espacio y dio falsos negativos).
+- execution-engine en el run: 63 binarios ok + 1 fallo (ioc). Sin fallos ocultos.
+- Run local del test bloqueado por saturación del box (RAM 2,08 GB, semáforo sin turno); certificación definitiva por CI sobre el PR #83 (nuevo run tras push d33fbbbbc).
