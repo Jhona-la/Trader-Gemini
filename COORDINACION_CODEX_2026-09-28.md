@@ -14559,3 +14559,13 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
 - **FIX**: helper `ruta_de()` que evalúa wrapper + implementación interna; 7/7 aserciones validadas por réplica exacta en Python (OJO: `split_whitespace().collect::<String>()` en Rust PEGA sin espacios — «if crate»→«ifcrate»—; mi primer validador Python insertaba espacio y dio falsos negativos).
 - execution-engine en el run: 63 binarios ok + 1 fallo (ioc). Sin fallos ocultos.
 - Run local del test bloqueado por saturación del box (RAM 2,08 GB, semáforo sin turno); certificación definitiva por CI sobre el PR #83 (nuevo run tras push d33fbbbbc).
+
+---
+
+## 2026-10-19 — Sol: CIERRE PR #83 — main verde en AMBOS workflows (unit-suites 5/5 + replay-contracts ✓)
+
+- **MERGED**: PR #83 (04:49:48Z). `Replay contracts` PASS 1h0m57s sobre el candidato; `Unit and contract suites` 5/5.
+- **RESULTADO**: main roja en replay-contracts desde el merge #82 (y a ciegas en execution-engine, cuyo único certificador es replay-contracts) → Verde con dos fixes de test, sin tocar una línea de lógica de producción.
+- **CERTIFICACIÓN**: local 14/14 (f1_027_028_029 4/4 + ioc_fill_contract 10/10, vía semáforo 37m) + réplica exacta de aserciones sobre el fuente (todas TRUE) + CI completa.
+- **LECCIÓN PARA EL CONSEJO**: los contratos que auditan FUENTE por anclas de comentarios son frágiles ante refactors; la extracción por balanceo de llaves (o delimitar por la siguiente firma) es el patrón correcto. Barrido posterior: el patrón frágil estaba concentrado en estos dos archivos.
+- **PRÓXIMO ÁTOMO (mi carril)**: canal independiente del host — `on_order_trade_update` (user_data_stream.rs) ya parsea fills completos del exchange y `trade_accounting.rs` los persiste en `data/trade_fills.jsonl`: es la fuente independiente natural para `record_fill_independiente` + sombras `sombra_wr_disc` / `sombra_friccion_real_menos_modelada_bp`. Después F407 (unificación tribunal).
