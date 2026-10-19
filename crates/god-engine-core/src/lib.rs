@@ -1729,6 +1729,21 @@ impl GodEngineCore {
         auditor.update_thresholds(t);
     }
 
+    /// F412/F413/F271 (Sol, censo C-F7b §3): registra en el canal
+    /// INDEPENDIENTE del Auditor Interno un cierre confirmado por el
+    /// exchange (fills del user-data stream del host). Fuente ajena al
+    /// cierre interno del núcleo: sin ella, las tres patas de la
+    /// discrepancia son tautológicas y el veto no debe dispararse.
+    /// El journal del canal está acotado (MAX_FILLS_INDEPENDIENTES) y
+    /// rechaza flotantes no finitos — Higiene de RAM del box de 16 GB.
+    #[inline]
+    pub fn registrar_fill_independiente_host(
+        &mut self,
+        fill: audit_engine::auditor_interno::ExchangeFillRecord,
+    ) {
+        self.auditor_interno.record_fill_independiente(fill);
+    }
+
     #[inline]
     pub fn sync_navier_stokes_and_microstructure_params(&mut self) {
         let crit_lam = self.arena.config.navier_critical_laminar.load(Ordering::Relaxed);

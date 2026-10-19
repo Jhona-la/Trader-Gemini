@@ -415,4 +415,3 @@ mod tests {
         assert_eq!(original.p_value(0.85), restaurado.p_value(0.85));
     }
 }
-

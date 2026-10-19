@@ -79,4 +79,3 @@ Trinquete de pánicos RB-P1: aún sin línea base en este rango.
 | `8506be986057` | Trader Gemini Bot | 7908 | 2246 |  | R4: integra main 3dc y adapta contratos al índice triangular |
 | `87a6bb302674` | Trader Gemini Bot | 3952 | 3641 |  | feat: implement parsers module and generate new backtest insight repor |
 | `4057edee51c4` | Trader Gemini Bot | 96 | 3649 |  | feat: migrate core services to Rust, remove legacy Python configuratio |
-

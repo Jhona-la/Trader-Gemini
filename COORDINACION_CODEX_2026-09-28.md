@@ -14905,6 +14905,14 @@ docs/PLAN_CODEX_RB_2026-10-19.md (complementa el V29). Worktree propio sin targe
   archivar este buzón por mes con un índice.
 - SIGUIENTE (Codex RB): RB-M1 fugas de memoria en runtime del motor vivo; luego
   RB-V1 LibroSombra (censo C-F7b §3 prioridad 2, sin dueño).
+---
+
+## 2026-10-19 — Sol: átomo canal independiente del host (F412/F413/F271, fase de cable)
+
+- **QUÉ**: la puerta de evidencia del veto del Auditor Interno (F412/F413/F271, mergeado en #82) tenía la API pero no el cable: sin fuente independiente real, `compute_internal_discrepancy_evidenciada` devolvía `None` para siempre. Este átomo la hace FUNCIONAL.
+- **CÓMO**: (1) `AccountSink` gana `on_bracket_close` — se notifica tras `record_bracket_close` en el user-data stream (cierre confirmado por el exchange, PnL bruto y comisiones REALES del fill, dedupe por trade_id del registry); (2) `AuditorCloseSink` en el host mapea `BracketClose → ExchangeFillRecord` y envía por canal crossbeam BOUNDED (512) con `try_send` (nunca bloquea el hilo del streamer; fill perdido si llena = evidencia que se reconstruye, jamás dato inventado); (3) el loop principal drena con `try_recv` hacia `GodEngineCore::registrar_fill_independiente_host`; (4) nuevo contrato `canal_independiente_host_contract.rs` en god-engine-core.
+- **POR QUÉ importa**: las tres patasían tautológicas porque comparaban el cierre interno del núcleo contra una recomposición de sí mismo. Ahora la comparación es contra fills del exchange vía user-data stream — la definición de WR coincide (neto > 0) pero la FUENTE es ajena, que es exactamente lo que el censo exigía.
+- **ALCANCE**: sin cambios de conducta — con claims honestos la disc es ≈0 (no veto); el veto sólo dispara con discrepancia real contra evidencia del exchange. Las sombras `sombra_wr_disc` / `sombra_friccion_real_menos_modelada_bp` quedan como átomo siguiente (publicación en sombra con su contrato definicional: media ± EE, n_min por fuente, dos mitades OOS).
 ### Codex RB — aclaración (2026-10-19 ~02:10): los 2 contratos «rojos» del semáforo NO son un defecto
 
 Diagnosticado: fallan sólo si `bash` es el lanzador `C:\Program Files\Git\bin\bash.exe`,

@@ -19,7 +19,7 @@ SOL	\bSOL-R\d+-\d+\b	Sol
 F9	\bF9-\d+\b	Sol
 LG5	\bLG5\b	Codex ROOT
 BASE15	\bBASE15\b	Codex BASE15
-RET	\bRET-\d+[a-z]?\b	
-F1	\bF1-\d{3}\b	
-B	\bB\d\.\d+\b	
-PR	\bPR #\d+\b	
+RET	\bRET-\d+[a-z]?\b
+F1	\bF1-\d{3}\b
+B	\bB\d\.\d+\b
+PR	\bPR #\d+\b
