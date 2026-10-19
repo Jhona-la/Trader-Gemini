@@ -79,11 +79,15 @@
   mtime es de compilación, no de uso): deduplicar por variante; (2) la caché
   incremental crece por churn, no por edad: presupuesto LRU; (3) `RUSTFLAGS` de
   entorno reemplaza `.cargo/config.toml` (huella distinta = recompilación total);
-  (4) en PowerShell `bash` puede ser el stub de WSL: usar Git Bash;
-  (5) `WriteAllLines` de .NET escribe CRLF: los `.sh` deben quedar en LF.
+  (4) en PowerShell `bash` puede ser el stub de WSL: usar el bash MSYS real
+  `C:\Program Files\Git\usr\bin\bash.exe` — el lanzador `Git\bin\bash.exe`
+  antepone /usr/bin al PATH y deja detrás los shims de las pruebas (por eso 2
+  contratos de reloj virtual del semáforo «fallaban»; con el bash real pasan
+  las cuatro suites: 10/10, 6/6, 13/13, 21/21); (5) `WriteAllLines` de .NET
+  escribe CRLF: los `.sh` deben quedar en LF.
 - Abiertos: builds fuera del semáforo (detuvieron la primera aplicación sin
-  borrar nada), dos contratos locales del semáforo rojos también en main (la CI
-  no corre `scripts/tests`), `opt-level=3` global en config.toml por medir.
+  borrar nada), la CI no corre `scripts/tests`, `opt-level=3` global en
+  config.toml por medir.
 
 ## 2026-10-19 (madrugada, 2) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω165 (Cierre F1-095 y F1-096)
 

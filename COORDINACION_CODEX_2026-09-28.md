@@ -14794,3 +14794,11 @@ docs/PLAN_CODEX_RB_2026-10-19.md (complementa el V29). Worktree propio sin targe
   archivar este buzón por mes con un índice.
 - SIGUIENTE (Codex RB): RB-M1 fugas de memoria en runtime del motor vivo; luego
   RB-V1 LibroSombra (censo C-F7b §3 prioridad 2, sin dueño).
+### Codex RB — aclaración (2026-10-19 ~02:10): los 2 contratos «rojos» del semáforo NO son un defecto
+
+Diagnosticado: fallan sólo si `bash` es el lanzador `C:\Program Files\Git\bin\bash.exe`,
+que antepone `/mingw64/bin:/usr/bin` al PATH; el shim de `date` (reloj virtual) queda
+detrás del `date` real y la paciencia nunca llega. Con el bash MSYS real
+(`C:\Program Files\Git\usr\bin\bash.exe`) pasan las cuatro suites: fail_closed 10/10,
+enumerator 6/6, semáforo 13/13, barrido 21/21. Corrige el punto (3) de mi entrada
+anterior. Para `scripts/tests` en PowerShell: anteponer `C:\Program Files\Git\usr\bin` al PATH.

@@ -114,19 +114,52 @@ cierre: `HUELLA: <comando> · RSS pico <GB> · <min> · Δtarget <GB>`. RB-H1:
   `cargo test -p god-engine-core` (contrato `f1_048_051_052`) corrió por fuera
   del semáforo y detuvo dos veces el barrido (correctamente: sin borrar nada).
   Regla vigente: todo build por el semáforo.
-- **Contratos locales del semáforo rojos también en `main`** (no los causa
-  RB-H1): `test_cargo_semaforo_fail_closed::
+- **Contratos del semáforo sensibles al lanzador de bash (diagnosticado)**:
+  `test_cargo_semaforo_fail_closed::
   test_successful_tasklist_numeric_count_retains_lg25b_patience` y
   `test_cargo_semaforo_enumerator_exit_status::
-  test_pgrep_success_known_two_retains_numeric_patience`; misma causa (reloj
-  virtual de la ruta de paciencia numérica bajo Git Bash/Windows). La CI
-  (`windows-2022`) no ejecuta `scripts/tests`: propuesta de job barato.
+  test_pgrep_success_known_two_retains_numeric_patience` fallan SÓLO si `bash`
+  es el lanzador `C:\Program Files\Git\bin\bash.exe`: antepone
+  `/mingw64/bin:/usr/bin` al PATH, el shim de `date` (reloj virtual) queda
+  detrás del `date` real y la paciencia nunca llega. Con el bash MSYS real
+  (`Git\usr\bin\bash.exe`) pasan las cuatro suites: fail_closed 10/10,
+  enumerator 6/6, semáforo 13/13, barrido 21/21. No es un defecto del
+  semáforo. La CI (`windows-2022`) no ejecuta `scripts/tests`: propuesta de job
+  barato con el bash real.
 - **`opt-level=3` global**: `.cargo/config.toml` lo aplica a TODOS los
   perfiles (dev/test incluidos): cada rustc de debug compila en O3, con más
   RAM y tiempo. Medir RSS pico y duración de `cargo test -p god-engine-core`
   en O3 frente al perfil antes de decidir (consejo).
 - **`bash` en PowerShell** puede resolver al lanzador de WSL (WindowsApps), que
-  sin WSL no arranca: usar `"C:\Program Files\Git\bin\bash.exe"`.
+  sin WSL no arranca: usar el bash MSYS real `"C:\Program Files\Git\usr\bin\bash.exe"`.
+- **RB-P1, línea base heurística**: ≈149 sitios (102 `unwrap`, 42 `expect`,
+  5 `panic!`) en `src/` fuera de `mod tests`; sobrecuenta funciones `#[test]`
+  de nivel superior y módulos gateados por `cfg(test)` desde el padre (p. ej.
+  los 11 `expect` de `temporal_spectrum.rs` son todos de tests). El trinquete
+  necesita ese filtro antes de fijar la cifra.
 - **Buzón de 12.666 líneas** que cada agente vuelve a leer: propuesta de
   archivo mensual en `docs/archivo/` con índice (requiere acuerdo: los
   appends concurrentes chocan).
+- **Barrido aplicado (2026-10-19 02:23)**: tras tres detenciones limpias por
+  builds fuera del semáforo, 57,8 GB liberados — `target/` 77,4 → 21,2 GB,
+  disco C 333 → 383 GB libres.
+
+## 6. RB-M1 — censo de fugas de memoria en runtime (2026-10-19, sólo lectura)
+
+Escenario: 13 activos × ~10 eventos/s ≈ 11 M eventos/día. Bucle caliente:
+`process_event` (core `lib.rs:2488`) → `process_tick_dual` (`:3787`). Host:
+`src/bin/god_engine.rs` (no `crates/execution-engine/src/bin`).
+
+| Sev | Dónde | Qué crece | Por qué no hay cota | Arreglo (átomo) |
+|---|---|---|---|---|
+| ALTA | `src/bin/god_engine.rs:3349-3352`, `:3562-3565`; `src/orderbook.rs:29-30` | `local_orderbooks[*].bids/asks` (BTreeMap) | cada `@depth5` inserta el nivel 0; un snapshot nunca trae qty 0, así que `remove` jamás corre; sólo `clear()` al reconectar (≤ 24 h). **Nadie lo lee** | **RB-M1a**: retirarlo (conducta bit a bit idéntica; quita además un O(log n) por mensaje) |
+| MEDIA | `crates/execution-engine/src/order_registry.rs:235` | `orders` (HashMap) | `prune_terminated` sólo purga terminales; las que quedan en New/PartiallyFilled (timeouts, -2013, terminales perdidos al reconectar) no salen nunca; `cleanup_stale_orders` no tiene llamadores | **RB-M1b**: cablear `cleanup_stale_orders` + `resolve_via_rest` al bucle de 60 s, con caducidad para `New` con `order_id` 0 |
+| MEDIA | `crates/execution-engine/src/trade_accounting.rs:362-412` | `JOURNAL_CACHE` + `position_journal.jsonl` | la compactación sólo corre al arrancar; cada recarga relee el archivo entero | **RB-M1c**: mapa incremental `(símbolo, lado)` o compactar cada 60 s |
+| BAJA | core `lib.rs:4002`; `symbol_registry.rs:213`; risk `evidence.rs:196`/`sonda.rs:117`; `consejo_seniors.rs` | asignaciones por evento (String de símbolo, `to_uppercase`, `format!` de claves, copia de 512 ticks) | no crecen, pero cuestan en la ruta caliente | **RB-M1d** (latencia): símbolo internado, comparación sin asignar, buffers en pila reutilizados |
+| BAJA | `god_engine.rs:3224` (`tx_estado`), `trade_accounting.rs:229` (`FILLS_LINE_TX`) | canales `mpsc` sin cota | sólo crecen si el escritor de disco se cuelga | canal de capacidad 1 / acotado con contador de descartes |
+| ACOTADA | omniscient-registry (~262 nombres × moneda; meseta 5–10 k claves), calibradores (512/200), `spectral_tape` pending (~900), consejo (≤1000), lead_lag, demonio (400/1000/500/5000), freno (4096), colas (1024/5000) | — | ventanas o claves fijas | publicar `registry.len()` para vigilar la meseta |
+
+**Para medir fugas en vivo hay que mirar Private Bytes, no Working Set**: el
+host compacta el working set bajo presión (`god_engine.rs:2311-2323`). Los
+núcleos de examen del demonio (≈25 por ronda cada 3 min, ~39 MB cada uno) son
+churn de asignación, no fuga.
