@@ -1,3 +1,13 @@
+//! Funding histórico de Binance USDⓈ-M → `data/historical/{SYM}_FUNDING.parquet`.
+//!
+//! RB-R1 (Codex RB, 2026-10-19): vivía en `data-pipeline`, donde era (con el
+//! MacroFetcher retirado) el único usuario de `polars` y arrastraba la pila
+//! polars al grafo de `god-engine-core`, `backtest-engine` y
+//! `evolution-engine`. Su único llamador es esta herramienta, que ya depende
+//! de polars. Hoy ningún consumidor lee los `*_FUNDING.parquet`; se conserva
+//! porque es el insumo del funding histórico por símbolo que pide F-A2b
+//! (Fable) en lugar del funding sintético del genoma.
+
 use polars::prelude::*;
 use reqwest::Client;
 use serde::Deserialize;
