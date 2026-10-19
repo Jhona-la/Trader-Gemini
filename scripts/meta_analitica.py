@@ -9,6 +9,11 @@ de una rama (main) en un libro de impacto por commit y un resumen por agente:
   familias_atomo.tsv), agente inferido, líneas ± por clase (producción, tests,
   build, docs, scripts, CI, otros) y Δ de funciones de test (`#[test]`,
   `#[tokio::test]`, …) en el diff contra el primer padre;
+- atribución por área (Sol, 2026-10-19): `area_impacto.tsv` con producción y
+  tests por componente (crate, host, workspace, datos o clase transversal),
+  ratio tests/producción con guarda de división, share, commits que tocan el
+  área y primera/última fecha (orden por Instante: los offsets del repo
+  mezclan -05:00 y +00:00);
 - cómputo: clausura de dependencias de god-engine-core (núcleo) y del host
   (trader-gemini-v5) y paquetes del Cargo.lock de cada commit; coste de build
   por agente (espera y compilación) desde logs/semaforo.log;
@@ -20,14 +25,17 @@ Límites conocidos (deliberados): las pruebas unitarias dentro de src/ cuentan
 como producción en las líneas (no así en el Δ de tests, que mira los
 atributos); el T-1 sólo aparece si el commit lo declara; el coste de build es
 el del log local del semáforo (por agente y día: el log aún no registra el
-commit compilado; lo hará RB-A1b).
+commit compilado; lo hará RB-A1b); el desglose por área sólo cubre producción
+y tests (docs, scripts, CI y build son transversales y quedan en el libro por
+clase).
 
 Uso:
   python scripts/meta_analitica.py [--rama origin/main] [--desde AAAA-MM-DD]
       [--salida docs/audit/meta_analitica] [--semaforo <raíz>/logs/semaforo.log]
       [--familias docs/audit/meta_analitica/familias_atomo.tsv] [--repo .]
-Salida: libro_impacto.tsv y resumen.md, deterministas para una misma historia
-y un mismo log. Código de salida: 0 hecho; 2 repositorio o rama inválidos.
+Salida: libro_impacto.tsv, area_impacto.tsv y resumen.md, deterministas para
+una misma historia y un mismo log. Código de salida: 0 hecho; 2 repositorio o
+rama inválidos.
 """
 
 from __future__ import annotations
@@ -171,6 +179,94 @@ def clase(ruta: str) -> str:
         directorios = r.split("/")[:-1]
         return "tests" if ("tests" in directorios or "benches" in directorios) else "prod"
     return "otros"
+
+
+# ---------------------------------------------------------------- área (componente)
+
+def area(ruta: str) -> str:
+    """Componente dueño de una ruta: el crate de `crates/<nombre>/`, `host` para
+    el paquete raíz (`src/` y binarios), `workspace` para la configuración
+    común (Cargo.lock raíz, `.cargo/`, Cargo.toml raíz) y `datos` para `data/`.
+    El resto cae en su clase (docs, scripts, ci, otros: transversales).
+    Parte del mismo árbol que `clase()`: cada ruta cae en exactamente un área
+    y las áreas nacen del árbol real, no de una lista inventada."""
+    r = ruta.replace("\\", "/")
+    if r.startswith("crates/"):
+        partes = r.split("/")
+        if len(partes) >= 3 and partes[1]:
+            return partes[1]
+        return "crates"
+    if r.startswith("src/"):
+        return "host"
+    if r == "Cargo.toml" or r == "Cargo.lock" or r == "rust-toolchain.toml" or r.startswith(".cargo/"):
+        return "workspace"
+    if r.startswith("data/"):
+        return "datos"
+    k = clase(r)
+    if k in ("prod", "tests"):
+        return "host"  # .rs sueltos en la raíz: paquete raíz
+    return k
+
+
+# Columnas del desglose por área: sólo producción y tests (el impacto
+# matemático y lógico); docs/scripts/ci/build/otros son transversales y ya
+# están en el libro por clase. `ratio_tests` y `share_prod_mas` se calculan
+# con guardas de división (área sin producción => ratio 0, no NaN).
+COLUMNAS_AREA = (
+    ["area", "commits", "archivos", "prod_mas", "prod_menos", "tests_mas", "tests_menos",
+     "ratio_tests", "share_prod_mas", "primera_fecha", "ultima_fecha"]
+)
+
+
+def desglosar_areas(numstat: dict[str, list[tuple[int, int, str]]],
+                    fechas: dict[str, str] | None = None) -> list[dict]:
+    """Agrega el numstat por área en un solo pase. `commits`/`archivos` cuentan
+    cuántos commits tocan el área; primera/última fecha salen de `fechas`
+    (sha ISO) y se ordenan por Instante (los offsets del repo varían:
+    -05:00 y +00:00, ordenar el texto crudo mentiría)."""
+    acc: dict[str, dict] = {}
+    vistas: dict[str, set[str]] = {}
+    for sha, filas in numstat.items():
+        fecha = (fechas or {}).get(sha, "")
+        for mas, menos, ruta in filas:
+            k = clase(ruta)
+            if k not in ("prod", "tests"):
+                continue
+            a = area(ruta)
+            d = acc.get(a)
+            if d is None:
+                d = acc[a] = {"area": a, "commits": 0, "archivos": 0,
+                              "prod_mas": 0, "prod_menos": 0, "tests_mas": 0, "tests_menos": 0,
+                              "_fechas": []}
+                vistas[a] = set()
+            d["archivos"] += 1
+            if k == "prod":
+                d["prod_mas"] += mas
+                d["prod_menos"] += menos
+            else:
+                d["tests_mas"] += mas
+                d["tests_menos"] += menos
+            if fecha:
+                d["_fechas"].append(fecha)
+            vistas[a].add(sha)
+    total_prod = sum(d["prod_mas"] for d in acc.values())
+    for a, d in acc.items():
+        d["commits"] = len(vistas[a])
+        d["ratio_tests"] = (d["tests_mas"] / d["prod_mas"]) if d["prod_mas"] > 0 else 0.0
+        d["share_prod_mas"] = (d["prod_mas"] / total_prod) if total_prod > 0 else 0.0
+        fs = sorted(d.pop("_fechas"), key=_instante)
+        d["primera_fecha"] = fs[0][:10] if fs else ""
+        d["ultima_fecha"] = fs[-1][:10] if fs else ""
+    return sorted(acc.values(), key=lambda d: (-d["prod_mas"], d["area"]))
+
+
+def _instante(fecha: str) -> dt.datetime:
+    """Fecha ISO (con offset) como Instante consciente de zona horaria; los
+    offsets del repo mezclan -05:00 y +00:00, ordenar el texto crudo miente."""
+    try:
+        return dt.datetime.fromisoformat(fecha)
+    except ValueError:
+        return dt.datetime.min.replace(tzinfo=dt.timezone.utc)
 
 
 # ---------------------------------------------------------------- blobs por commit
@@ -345,10 +441,12 @@ def leer_semaforo(ruta: Path | None) -> tuple[list[dict], int]:
 
 # ---------------------------------------------------------------- libro
 
-def construir_libro(repo: Path, rama: str, desde: str | None, familias) -> list[dict]:
+def construir_libro(repo: Path, rama: str, desde: str | None, familias,
+                    numstat: dict[str, list[tuple[int, int, str]]] | None = None) -> list[dict]:
     commits = leer_commits(repo, rama, desde)
     shas = [c["sha"] for c in commits]
-    numstat = leer_numstat(repo, rama, desde)
+    if numstat is None:
+        numstat = leer_numstat(repo, rama, desde)
     delta_tests = leer_delta_tests(repo, rama, desde)
     blobs_lock = blob_por_commit(repo, shas, LOCK)
     blobs_trinquete = blob_por_commit(repo, shas, TRINQUETE)
@@ -386,10 +484,11 @@ def _celda(v) -> str:
     return "" if v is None else str(v)
 
 
-def escribir_tsv(filas: list[dict], ruta: Path) -> None:
-    lineas = ["\t".join(COLUMNAS)]
+def escribir_tsv(filas: list[dict], ruta: Path, columnas: tuple[str, ...] | None = None) -> None:
+    columnas = columnas or COLUMNAS
+    lineas = ["\t".join(columnas)]
     for f in filas:
-        lineas.append("\t".join(_celda(f[c]) for c in COLUMNAS))
+        lineas.append("\t".join(_celda(f[c]) for c in columnas))
     ruta.write_text("\n".join(lineas) + "\n", encoding="utf-8", newline="\n")
 
 
@@ -409,7 +508,8 @@ def _deltas(filas: list[dict], clave: str) -> list[tuple[int, dict]]:
     return out
 
 
-def resumen(filas: list[dict], builds: list[dict], sin_liberar: int, rama: str, punta: str) -> str:
+def resumen(filas: list[dict], builds: list[dict], sin_liberar: int, rama: str, punta: str,
+            areas: list[dict] | None = None) -> str:
     md: list[str] = []
     md.append("# Meta-analítica del impacto por cambio (RB-A1a)")
     md.append("")
@@ -499,7 +599,46 @@ def resumen(filas: list[dict], builds: list[dict], sin_liberar: int, rama: str, 
         md.append(f"| `{f['sha']}` | {f['agente']} | {f['prod_mas']} | {f['prod_menos']} | "
                   f"{f['atomos'][:40]} | {f['asunto'][:70]} |")
     md.append("")
+    md.extend(_seccion_areas(areas))
     return "\n".join(md) + "\n"
+
+
+# Umbral de cobertura: un área que añade producción con menos de un 5 % de
+# líneas de test por línea de producción está pidiendo tests, no es un juicio
+# de valor del código (las pruebas de comportamiento pueden vivir en otro
+# commit; el libro sólo ve el rango).
+COBERTURA_MIN = 0.05
+
+
+def _seccion_areas(areas: list[dict] | None) -> list[str]:
+    """§6: atribución por componente. Vacío si no se pasaron áreas (p. ej. el
+    libro sin numstat). Concentración = share acumulado del top 3."""
+    if not areas:
+        return []
+    md: list[str] = []
+    md.append("## 6. Atribución por área (componentes)")
+    md.append("")
+    md.append("Sólo producción y tests transversales a cada componente (`area()`: "
+              "crate, `host`, `workspace`, `datos` o la clase transversal). "
+              "Completo en `area_impacto.tsv`.")
+    md.append("")
+    md.append("| Área | Commits | Prod + | Prod − | Tests + | Tests − | Ratio T/P | Share prod + | Primera | Última |")
+    md.append("|---|---:|---:|---:|---:|---:|---:|---:|---|---|")
+    for a in areas[:15]:
+        md.append(f"| {a['area']} | {a['commits']} | {a['prod_mas']} | {a['prod_menos']} | "
+                  f"{a['tests_mas']} | {a['tests_menos']} | {a['ratio_tests']:.2f} | "
+                  f"{a['share_prod_mas'] * 100:.1f}% | {a['primera_fecha']} | {a['ultima_fecha']} |")
+    md.append("")
+    top3 = sum(a["share_prod_mas"] for a in areas[:3])
+    md.append(f"Concentración: el top 3 de áreas concentra el {top3 * 100:.1f}% de la producción añadida.")
+    deuda = [a for a in areas if a["prod_mas"] > 0 and a["ratio_tests"] < COBERTURA_MIN]
+    if deuda:
+        md.append(f"Áreas con producción añadida y ratio de tests < {COBERTURA_MIN:.2f} "
+                  f"(candidatas a deuda de pruebas): {', '.join(a['area'] for a in deuda)}.")
+    else:
+        md.append("Ningún área con producción añadida queda por debajo del umbral de cobertura.")
+    md.append("")
+    return md
 
 
 # ---------------------------------------------------------------- CLI
@@ -530,14 +669,18 @@ def main(argv: list[str] | None = None) -> int:
     familias = leer_familias(Path(a.familias) if a.familias else repo / FAMILIAS)
     salida = Path(a.salida) if a.salida else repo / "docs" / "audit" / "meta_analitica"
     semaforo = Path(a.semaforo) if a.semaforo else comun.parent / "logs" / "semaforo.log"
-    filas = construir_libro(repo, rama, a.desde, familias)
+    numstat = leer_numstat(repo, rama, a.desde)
+    filas = construir_libro(repo, rama, a.desde, familias, numstat)
     builds, sin_liberar = leer_semaforo(semaforo)
     salida.mkdir(parents=True, exist_ok=True)
     escribir_tsv(filas, salida / "libro_impacto.tsv")
-    (salida / "resumen.md").write_text(resumen(filas, builds, sin_liberar, rama, punta),
+    fechas = {c["sha"]: c["fecha"] for c in leer_commits(repo, rama, a.desde)} if numstat else {}
+    areas = desglosar_areas(numstat, fechas)
+    escribir_tsv(areas, salida / "area_impacto.tsv", COLUMNAS_AREA)
+    (salida / "resumen.md").write_text(resumen(filas, builds, sin_liberar, rama, punta, areas),
                                         encoding="utf-8", newline="\n")
-    print(f"[meta_analitica] {len(filas)} commits de {rama} ({punta}); {len(builds)} builds del semáforo "
-          f"→ {salida / 'libro_impacto.tsv'} y resumen.md")
+    print(f"[meta_analitica] {len(filas)} commits de {rama} ({punta}); {len(builds)} builds del semáforo; "
+          f"{len(areas)} áreas → {salida / 'libro_impacto.tsv'}, area_impacto.tsv y resumen.md")
     return 0
 
 
