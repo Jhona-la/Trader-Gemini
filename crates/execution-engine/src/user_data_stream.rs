@@ -913,6 +913,7 @@ mod tests {
                     .store((usdt * 100.0) as u64, std::sync::atomic::Ordering::Relaxed);
             }
             fn on_positions(&self, _p: &[RemotePosition]) {}
+            fn on_bracket_close(&self, _c: &crate::trade_accounting::BracketClose) {}
         }
         let sink = Arc::new(Cap(AtomicU64::new(0)));
         let streamer = UserDataStreamer::new(
