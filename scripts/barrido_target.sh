@@ -22,11 +22,19 @@
 #      MENOS recientemente modificadas hasta bajar a BARRIDO_HISTERESIS (0,75)
 #      del presupuesto (LRU): sobrevive la caché del crate que alguien está
 #      iterando y se van las variantes abandonadas. Caché regenerable.
-#   2. deps (debug y release): para cada artefacto <nombre>-<hash16><ext> con
-#      varias variantes se conserva la MÁS RECIENTE y se borran las demás que
-#      sean estrictamente más viejas y tengan más de BARRIDO_VARIANTES_H (24)
-#      horas. Si un build vuelve a pedir una variante borrada, cargo ve la
-#      salida ausente y recompila esa unidad.
+#   2. deps (debug y release), RB-H1d: sólo si su tamaño total supera
+#      BARRIDO_DEPS_MAX_MB (40960; medido el 19-10: deps entero pesaba 13,9 GB
+#      tras el primer barrido, y 37,6 GB sin barrer). Entonces, de cada
+#      artefacto <nombre>-<hash16><ext> con varias variantes se conserva la MÁS
+#      RECIENTE
+#      y, entre las demás que sean estrictamente más viejas y tengan más de
+#      BARRIDO_VARIANTES_H (24) horas, se borran de la más vieja a la más nueva
+#      hasta bajar a BARRIDO_HISTERESIS del presupuesto. Sin presión de disco no
+#      se toca nada: `check` y `test` compilan variantes distintas del mismo
+#      crate (otro perfil u otras features) y el mtime es de compilación, no de
+#      uso, así que borrarlas sin necesidad forzaría recompilaciones (medido el
+#      19-10: un `check` recompiló `syn` tras el barrido automático). Si un
+#      build vuelve a pedir una variante borrada, cargo la recompila.
 #   Orden de ejecución: primero deps (listado de segundos) y después la caché
 #   incremental (su listado recorre cada archivo: minutos con ~3.000
 #   carpetas), para aprovechar cada ventana sin builds ajenos.
@@ -41,7 +49,8 @@
 #
 # Uso:   bash scripts/barrido_target.sh            (simulación: mide y lista)
 #        APLICAR=1 bash scripts/barrido_target.sh  (ejecuta)
-# Entorno: BARRIDO_INCREMENTAL_MAX_MB, BARRIDO_HISTERESIS, BARRIDO_VARIANTES_H,
+# Entorno: BARRIDO_INCREMENTAL_MAX_MB, BARRIDO_DEPS_MAX_MB, BARRIDO_HISTERESIS,
+#          BARRIDO_VARIANTES_H,
 #          BARRIDO_LOTE (50 rutas por llamada a rm), BARRIDO_CHEQUEO_S (15),
 #          BARRIDO_AGENTE (quién eres; va a logs/higiene.log).
 # Costuras de prueba (scripts/tests/test_barrido_target.py): BARRIDO_RAIZ,
@@ -67,6 +76,7 @@ raiz=${raiz%/}
 
 aplicar=${APLICAR:-0}
 max_mb=${BARRIDO_INCREMENTAL_MAX_MB:-6144}
+deps_max_mb=${BARRIDO_DEPS_MAX_MB:-40960}
 histeresis=${BARRIDO_HISTERESIS:-0.75}
 variantes_h=${BARRIDO_VARIANTES_H:-24}
 lote=${BARRIDO_LOTE:-50}
@@ -79,9 +89,9 @@ bitacora="$raiz/logs/higiene.log"
 # ---------- validación: ante la duda, no se borra nada ----------
 es_decimal() { [[ "$1" =~ ^[0-9]+([.][0-9]+)?$ ]]; }
 es_entero_pos() { [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
-if ! es_decimal "$max_mb" || ! es_decimal "$variantes_h" || ! es_decimal "$histeresis" \
-  || ! es_entero_pos "$lote" || ! [[ "$chequeo_s" =~ ^[0-9]+$ ]]; then
-  echo "[barrido] parámetros inválidos (max_mb=$max_mb histeresis=$histeresis" \
+if ! es_decimal "$max_mb" || ! es_decimal "$deps_max_mb" || ! es_decimal "$variantes_h" \
+  || ! es_decimal "$histeresis" || ! es_entero_pos "$lote" || ! [[ "$chequeo_s" =~ ^[0-9]+$ ]]; then
+  echo "[barrido] parámetros inválidos (max_mb=$max_mb deps_max_mb=$deps_max_mb histeresis=$histeresis" \
     "variantes_h=$variantes_h lote=$lote chequeo_s=$chequeo_s): no barro" >&2
   exit 2
 fi
@@ -268,46 +278,71 @@ if [ "$aplicar" = "1" ]; then
   fi
 fi
 
-# ---------- 1. variantes superadas en deps (listado de segundos: va primero) ----------
+# ---------- 1. deps por presupuesto (listado de segundos: va primero) ----------
+# RB-H1d: sólo se barre por encima del presupuesto. Variantes «no más
+# recientes» de un mismo nombre pueden seguir en uso (otro perfil u otras
+# features: `cargo check` y `cargo test` compilan variantes distintas del mismo
+# crate) y su mtime es de compilación, no de uso: borrarlas sin presión de
+# disco obligaría a recompilarlas. Con presión, se van primero las MÁS VIEJAS
+# (lo más probable: restos de worktrees retirados y fuentes antiguas).
 echo ""
-echo "--- 1. deps: variantes no más recientes con más de ${variantes_h} h ---"
-var_borradas=0
-var_bytes=0
+echo "--- 1. deps: presupuesto ${deps_max_mb} MB; por encima, variantes no más recientes con más de ${variantes_h} h (de la más vieja a la más nueva) hasta ×${histeresis} ---"
 ahora_s=$(ahora)
+total_deps=0
+candidatas=()
 for deps in "$target/debug/deps" "$target/release/deps"; do
   [ -d "$deps" ] || continue
-  [ "$abortado" = "0" ] || break
-  lib0=$liberado
-  bor0=$borrados
-  while IFS=$'\t' read -r b nombre; do
-    [ -n "$nombre" ] || continue
-    encolar "$deps/$nombre" "$b"
-    [ "$abortado" = "0" ] || break
+  while IFS=$'\t' read -r tipo c2 c3 c4; do
+    case "$tipo" in
+      T) total_deps=$((total_deps + c2)) ;;
+      C) candidatas+=("$c2"$'\t'"$c3"$'\t'"$deps/$c4") ;;
+    esac
   done < <(
     find "$deps" -maxdepth 1 -type f -printf '%T@\t%s\t%f\n' 2> /dev/null \
       | awk -F'\t' -v ahora="$ahora_s" -v horas="$variantes_h" '
           BEGIN { limite = ahora - horas * 3600 }
           {
+            total += $2
             if (!match($3, /^(.*)-([0-9a-f]{16})(\..*)?$/, a)) next
             c = a[1] SUBSEP a[3]
             k = ++n[c]; mt[c, k] = $1 + 0; sz[c, k] = $2; nm[c, k] = $3
           }
           END {
+            printf "T\t%.0f\t-\t-\n", total
             for (c in n) {
               if (n[c] < 2) continue
               im = 1
               for (k = 2; k <= n[c]; k++) if (mt[c, k] > mt[c, im]) im = k
               for (k = 1; k <= n[c]; k++)
                 if (k != im && mt[c, k] < mt[c, im] && mt[c, k] < limite)
-                  printf "%.0f\t%s\n", sz[c, k], nm[c, k]
+                  printf "C\t%.0f\t%.0f\t%s\n", mt[c, k], sz[c, k], nm[c, k]
             }
           }'
   )
-  vaciar
-  var_borradas=$((var_borradas + borrados - bor0))
-  var_bytes=$((var_bytes + liberado - lib0))
-  echo "${deps#"$target"/}: $([ "$aplicar" = 1 ] && echo borradas || echo borraría) $((borrados - bor0)) variantes ($(mb $((liberado - lib0))) MB)"
 done
+max_deps_b=$(awk -v mb="$deps_max_mb" 'BEGIN { printf "%.0f", mb * 1048576 }')
+obj_deps_b=$(awk -v mb="$deps_max_mb" -v h="$histeresis" 'BEGIN { printf "%.0f", mb * 1048576 * h }')
+echo "tamaño: $(mb "$total_deps") MB  variantes superadas candidatas: ${#candidatas[@]}"
+lib0=$liberado
+bor0=$borrados
+if [ "$total_deps" -gt "$max_deps_b" ]; then
+  restante=$total_deps
+  while IFS=$'\t' read -r _ b ruta; do
+    [ -n "$ruta" ] || continue
+    [ "$restante" -gt "$obj_deps_b" ] || break
+    encolar "$ruta" "$b"
+    restante=$((restante - b))
+    [ "$abortado" = "0" ] || break
+  done < <(printf '%s\n' "${candidatas[@]}" | sort -t $'\t' -k1,1n)
+  vaciar
+fi
+var_borradas=$((borrados - bor0))
+var_bytes=$((liberado - lib0))
+if [ "$total_deps" -gt "$max_deps_b" ]; then
+  echo "$([ "$aplicar" = 1 ] && echo borradas || echo borraría) $var_borradas variantes ($(mb "$var_bytes") MB) → quedan $(mb $((total_deps - var_bytes))) MB"
+else
+  echo "dentro del presupuesto: nada que barrer"
+fi
 
 # ---------- 2. incremental por presupuesto (LRU) ----------
 # Su listado recorre todos los archivos de la caché (minutos con ~3.000
