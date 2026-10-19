@@ -14,6 +14,10 @@
 #   3. target/debug/deps/*.exe (binarios de prueba, ≈1 GB cada uno con
 #      debug=1) con más de EXES_DIAS (3) días → se borran, SÓLO si no hay
 #      ningún cargo/rustc vivo (mismo guard que disk_audit.sh).
+#   3b. RB-H1 (Codex RB, 2026-10-19): target/ por PRESUPUESTO vía
+#      scripts/barrido_target.sh — LRU de target/*/incremental por encima de
+#      BARRIDO_INCREMENTAL_MAX_MB y variantes superadas de deps/ con más de
+#      BARRIDO_VARIANTES_H horas (el semáforo lo aplica solo cada 6 h).
 #   4. `git worktree prune` (entradas de worktrees ya borrados del disco).
 #
 # NUNCA toca: data/, models/, .git/, worktrees con cambios, ficheros
@@ -129,6 +133,23 @@ if [ "${#exes[@]}" -gt 0 ]; then
     echo "  [omitido] hay ${builds} procesos cargo/rustc activos — no se toca target/"
     codigo=5
   fi
+fi
+
+# ---------- 3b. target/ por presupuesto (RB-H1, Codex RB 2026-10-19) ----------
+# La misma política que el semáforo aplica sola cada 6 h: LRU de la caché
+# incremental por presupuesto y variantes superadas de deps (ver la cabecera de
+# barrido_target.sh). Toma el cerrojo del semáforo; con builds vivos no borra.
+echo ""
+echo "--- 3b. target/: incremental por presupuesto + variantes superadas (barrido_target.sh) ---"
+fuente=${BASH_SOURCE[0]//\\//}
+dir_scripts=.
+case "$fuente" in */*) dir_scripts=${fuente%/*} ;; esac
+if [ -f "$dir_scripts/barrido_target.sh" ]; then
+  APLICAR="$aplicar" BARRIDO_AGENTE="$agente" "$BASH" "$dir_scripts/barrido_target.sh" 2>&1 | sed 's/^/  /'
+  codigo_barrido=${PIPESTATUS[0]}
+  [ "$codigo_barrido" = "5" ] && codigo=5
+else
+  echo "  [omitido] no encuentro $dir_scripts/barrido_target.sh"
 fi
 
 # ---------- 4. worktrees ----------

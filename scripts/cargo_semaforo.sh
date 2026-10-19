@@ -21,6 +21,11 @@
 #      semáforo) dejan de bloquear si la RAM libre llega a
 #      SEMAFORO_RAM_MIN_GB + SEMAFORO_RAM_EXTRA_GB (4 + 2). El cerrojo entre
 #      usuarios del semáforo no se salta nunca.
+#   7. RB-H1 — barrido automático del target/ compartido por PRESUPUESTO
+#      (scripts/barrido_target.sh: LRU de incremental + variantes superadas
+#      de deps) como mucho cada SEMAFORO_BARRIDO_H (6) horas, con el turno ya
+#      tomado y 0 cargo/rustc vivos. Nunca bloquea el build; sello en
+#      <raíz>/target/.barrido_ultimo; SEMAFORO_BARRIDO=0 lo apaga.
 #
 # Uso:   bash scripts/cargo_semaforo.sh <argumentos de cargo>
 #        p. ej. bash scripts/cargo_semaforo.sh check --workspace --all-targets
@@ -200,6 +205,41 @@ if [ "${SEMAFORO_SOLO_DECIDIR:-0}" = "1" ]; then
   registrar "LIBERA (solo decidir)"
   exit 0
 fi
+
+# RB-H1 (Codex RB, 2026-10-19) — barrido automático del target/ compartido.
+# target/ llegó a 77 GB (27,7 GB de incremental por churn de variantes y
+# 30,9 GB de variantes superadas en deps; ver scripts/barrido_target.sh) porque
+# la higiene dependía de que alguien la ejecutara a mano. Aquí corre sola: como
+# mucho cada SEMAFORO_BARRIDO_H horas (6), con el turno YA tomado (nadie más
+# compila por el semáforo) y sólo si la última cuenta de cargo/rustc fue 0 (con
+# turno por paciencia hay builds ajenos vivos: no se barre). Nunca bloquea ni
+# altera el build: cualquier fallo sólo se anota. Desactivable con
+# SEMAFORO_BARRIDO=0. No corre con SEMAFORO_SOLO_DECIDIR (decide, no actúa).
+barrido_si_toca() {
+  [ "${SEMAFORO_BARRIDO:-1}" = "1" ] || return 0
+  [ "${ajenos:-?}" = "0" ] || return 0
+  local sello="$raiz/target/.barrido_ultimo" ultimo=0 cada_h=${SEMAFORO_BARRIDO_H:-6}
+  local dir_scripts=. salida codigo_b fuente=${BASH_SOURCE[0]//\\//}
+  if [ -f "$sello" ]; then ultimo=$(cat "$sello" 2> /dev/null || echo 0); fi
+  case "$ultimo" in '' | *[!0-9]*) ultimo=0 ;; esac
+  case "$cada_h" in '' | *[!0-9]*) cada_h=6 ;; esac
+  [ $(( $(ahora) - ultimo )) -ge $(( cada_h * 3600 )) ] || return 0
+  # Lanzado desde PowerShell con ruta Windows (C:\…\scripts\cargo_semaforo.sh)
+  # BASH_SOURCE no trae «/»: se normalizan las barras antes de cortar.
+  case "$fuente" in */*) dir_scripts=${fuente%/*} ;; esac
+  if [ ! -f "$dir_scripts/barrido_target.sh" ]; then
+    registrar "barrido omitido: no encuentro $dir_scripts/barrido_target.sh"
+    return 0
+  fi
+  echo "[semaforo] barrido automático de target/ (RB-H1, cada ${cada_h} h)..." >&2
+  salida=$(APLICAR=1 BARRIDO_RAIZ="$raiz" BARRIDO_CERROJO_PROPIO=1 BARRIDO_FICHA="$ficha" \
+    BARRIDO_AGENTE="$agente" "$BASH" "$dir_scripts/barrido_target.sh" 2>&1)
+  codigo_b=$?
+  if [ "$codigo_b" = "0" ]; then ahora > "$sello"; fi
+  echo "[semaforo] ${salida##*$'\n'}" >&2
+  registrar "barrido automático codigo=$codigo_b: ${salida##*$'\n'}"
+}
+barrido_si_toca
 
 cargo "$@"
 codigo=$?
