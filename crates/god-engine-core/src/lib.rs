@@ -6362,20 +6362,25 @@ impl GodEngineCore {
             // `base_z`). Antes era el NIVEL de la
             // base entre el ATR del futuro: una prima constante votaba
             // reversión en cada evento. Sin una τ de historia, 0 (abstención).
+            // CL-78 (F3.7-01): con spot, `vecm_zscore` es el z de la base
+            // b = (F − S)/F contra SU media y SU dispersión (promedios
+            // temporales por nodo de la malla, leídos a la τ dominante, la
+            // misma con que StatArb elige el nodo de su prueba de reversión;
+            // piso de σ = un tick relativo; ver `base_z`).
             // CL-79: con el spot caducado (> TTL) también 0: no hay base.
-            let vecm_basis_z = if spot_presente && !spot_fresco {
-                0.0
-            } else if spot_presente && mid_price > 0.0 {
+            // F1-050: Sin spot (spot_presente = false o !spot_fresco), NO existe
+            // base futuro-spot. Se publica 0.0 («sin dato») para que
+            // JohansenVecmEngine::is_operable_for_coin se declare inoperable
+            // (LG8-145-03) y no aliase espuriamente pos_dev como cointegración.
+            // Erradica la divergencia BT<->vivo donde el backtest (sin spot) votaba
+            // reversión a la EMA mientras producción votaba la base F-S.
+            let vecm_basis_z = if spot_presente && spot_fresco && mid_price > 0.0 {
                 let spot_mid = (spot_bid + spot_ask) / 2.0;
                 let base = (mid_price - spot_mid) / mid_price;
                 let piso = self.feature_engines[coin_id].piso_resolucion / mid_price;
                 self.base_z[coin_id]
                     .observar(event_time_ms, base, tau_dom, piso)
                     .map_or(0.0, |z| z.clamp(-3.0, 3.0))
-            } else if self.feature_engines[coin_id].kline_ema_slow > 0.0 {
-                ((mid_price - self.feature_engines[coin_id].kline_ema_slow)
-                    / (mid_price * atr_pct.max(0.0005)))
-                .clamp(-3.0, 3.0)
             } else {
                 0.0
             };
@@ -8699,9 +8704,17 @@ impl GodEngineCore {
                         // comprar la euforia que saltó uno de corto, durante un
                         // horizonte; pasado éste, sólo mientras el precio siga
                         // extendido en esa misma dirección adversa.
+                        // F1-047: Acotado con techo temporal max_ventana_ms =
+                        // (ventana_base_ms * 2.0).min(TAU_ANCHOR_SLOW_MS).
+                        // Erradica la parálisis infinita donde un stop de largo
+                        // bloqueaba indefinidamente los cortos mientras el precio
+                        // permaneciera bajo la EMA en un tramo tendencial bajista.
+                        let ventana_max_ms = (ventana_base_ms * 2.0)
+                            .min(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS);
                         transcurrido_ms < ventana_base_ms
-                            || (unified_intent.signal == SignalType::Short && p_stretch < 0.0)
-                            || (unified_intent.signal == SignalType::Long && p_stretch > 0.0)
+                            || (transcurrido_ms < ventana_max_ms
+                                && ((unified_intent.signal == SignalType::Short && p_stretch < 0.0)
+                                    || (unified_intent.signal == SignalType::Long && p_stretch > 0.0)))
                     } else {
                         // POST-LOSS en la MISMA dirección: retroceso binario
                         // sobre el horizonte, idéntico al del enfriamiento.
@@ -9004,10 +9017,13 @@ impl GodEngineCore {
                     order.signal != SignalType::Flat,
                 );
                 if order.signal != SignalType::Flat {
-                    let drawdown = if self.risk_engine.peak_capital > 0.0 {
-                        ((self.risk_engine.peak_capital - current_cap)
-                            / self.risk_engine.peak_capital)
-                            .clamp(0.0, 1.0)
+                    // F1-049: Unificar definición de drawdown con risk_engine::drawdown::capital_del_freno
+                    // y arena.pico_capital. Erradica la discordancia donde SeniorRiesgo medía DD con
+                    // unified_capital contra peak_capital mientras el freno duro medía con capital_del_freno.
+                    let capital_freno = risk_engine::drawdown::capital_del_freno(&self.arena);
+                    let peak_cap = self.risk_engine.peak_capital.max(self.arena.pico_capital.load(Ordering::Relaxed));
+                    let drawdown = if peak_cap > 0.0 {
+                        ((peak_cap - capital_freno) / peak_cap).clamp(0.0, 1.0)
                     } else {
                         0.0
                     };
@@ -9016,12 +9032,16 @@ impl GodEngineCore {
                         .current_vpin()
                         .clamp(0.0, 1.0);
 
-                    let current_spread_bps = if mid_price > 1e-8 && ask >= bid {
-                        ((ask - bid) / mid_price) * 10_000.0
+                    // F1-049: Fail-closed estricto ante libro cruzado o corrupto (ask < bid o mid <= 0)
+                    // fijando 500.0 bps para vetar ejecución inmediatamente en SeniorEjecucion.
+                    // Honra el gen base_slippage_floor como suelo mínimo del coste modelado.
+                    let base_slip_floor = self.arena.config.base_slippage_floor.load(Ordering::Relaxed) * 10_000.0;
+                    let slip_bps = if mid_price <= 1e-8 || ask < bid {
+                        500.0
                     } else {
-                        0.5
+                        let current_spread_bps = ((ask - bid) / mid_price) * 10_000.0;
+                        ((current_spread_bps * 0.5) + 0.5).max(base_slip_floor).clamp(0.5, 500.0)
                     };
-                    let slip_bps = ((current_spread_bps * 0.5) + 0.5).clamp(0.5, 500.0);
 
                     let council_horizon =
                         metacortex_engine::consejo_seniors::TradingHorizon::Continuous;

@@ -1,5 +1,54 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω166: Cierre de F1-047 (Techo Temporal Bounded en Anti-Whiplash Post-Loss), F1-049 (Unificación de Drawdown y Slippage Fail-Closed en Consejo) y F1-050 (Paridad Estricta BT<->Vivo y Erradicación de Aliasing pos_dev en vecm_zscore) (2026-10-19)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω166: ERRADICACIÓN DE PARÁLISIS INDEFINIDA POST-LOSS, PARIDAD DE DRAWDOWN EN EL CONSEJO Y RECTIFICACIÓN DE INOPERABILIDAD VECM SIN SPOT
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv` (3 en total)**:
+   - **`F1-047` (`MED`, `crates/god-engine-core/src/lib.rs:8702-8715`)**:
+     - **QUÉ**: Acotamiento de la cláusula de prueba de signo en el anti-whiplash post-loss contratendencia (`!is_same_dir`) mediante un techo temporal estricto de horizonte: `ventana_max_ms = (ventana_base_ms * 2.0).min(TAU_ANCHOR_SLOW_MS)`.
+     - **POR QUÉ**: Tras un stop-loss de largo (`last_was_win = false`, `last_is_long = true`), si el mercado entraba en una tendencia bajista sostenida donde el precio permanecía por debajo de la media EMA (`p_stretch < 0.0`), la condición `transcurrido_ms < ventana_base_ms || (unified_intent.signal == Short && p_stretch < 0.0)` evaluaba a `true` indefinidamente sin límite temporal. Esto aplanaba todo intento de corto a `Flat` por horas o días completos, mientras que los largos eran vetados por el escudo macro. La moneda quedaba en parálisis total sin abrir posiciones ni actualizar `last_close_ts`, violando la doctrina D-757 ("más allá del horizonte más lento... esto deja de ser un veto y pasa a ser un apagado").
+     - **PARA QUÉ**: (1) Erradicar la parálisis indefinida de cortos tras un stop de largo en fases direccionales bajistas; (2) Permitir que tras 2 horizontes (`ventana_max_ms`) el motor capture los tramos tendenciales confirmados; (3) Garantizar asimetría controlada y simetría con la rama de misma dirección; (4) Desbloquear el crecimiento compuesto del micro-capital ($13 USD).
+     - **CÓMO**:
+       1. En `crates/god-engine-core/src/lib.rs:8702-8715`, se define `let ventana_max_ms = (ventana_base_ms * 2.0).min(quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS);`.
+       2. La evaluación pasa a ser: `transcurrido_ms < ventana_base_ms || (transcurrido_ms < ventana_max_ms && ((unified_intent.signal == Short && p_stretch < 0.0) || (unified_intent.signal == Long && p_stretch > 0.0)))`.
+       3. Cuando `transcurrido_ms >= ventana_max_ms`, la guarda anti-whiplash expira limpiamente, autorizando aperturas a favor de la tendencia.
+     - **CUÁNDO**: Activo continuamente tras cualquier cierre de posición con stop-loss.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en consenso colegiado con el Consejo de 10 Roles Senior.
+   - **`F1-049` (`MED`, `crates/god-engine-core/src/lib.rs:9020-9040`)**:
+     - **QUÉ**: Unificación del cálculo de drawdown provisto a `SeniorRiesgo` con la métrica unificada `risk_engine::drawdown::capital_del_freno` y `pico_capital`, e implementación de fail-closed estricto en el slippage modelado provisto a `SeniorEjecucion` (`500.0 pb`) ante libros de órdenes cruzados (`ask < bid`) o mid no positivo, honrando además el suelo genético `base_slippage_floor`.
+     - **POR QUÉ**: Anteriormente, el snapshot del Consejo medía el drawdown restando `unified_capital` del arena contra `peak_capital`, divergiendo del freno duro que mide con `capital_del_freno` (el mínimo entre arena y saldo real de exchange). En situaciones de trading en papel sobre mainnet o divergencia de balances, el Consejo no detectaba la caída real. Peor aún: ante libro cruzado (`ask < bid`), caía a un spread de `0.5 pb` (fail-open), estimando el costo de ejecución más optimista posible justo cuando la microestructura del libro estaba rota.
+     - **PARA QUÉ**: (1) Asegurar una única verdad matemática para el drawdown en todo el sistema inmune; (2) Evitar que `SeniorEjecucion` autorice entradas agresivas cuando el libro de órdenes presente cruce de puntas o precio degenerado; (3) Proteger la cuenta de 13 USD contra ejecuciones desastrosas en libros rotos; (4) Respetar el suelo genético `base_slippage_floor`.
+     - **CÓMO**:
+       1. Se calcula `let capital_freno = risk_engine::drawdown::capital_del_freno(&self.arena);` y `let peak_cap = self.risk_engine.peak_capital.max(self.arena.pico_capital.load(Ordering::Relaxed));`, computando `drawdown = ((peak_cap - capital_freno) / peak_cap).clamp(0.0, 1.0)`.
+       2. Ante `mid_price <= 1e-8 || ask < bid`, se asigna de forma fail-closed estricta `slip_bps = 500.0`, provocando el veto inmediato de `SeniorEjecucion`.
+       3. En libros sanos, `slip_bps = ((current_spread_bps * 0.5) + 0.5).max(base_slip_floor).clamp(0.5, 500.0)`.
+     - **CUÁNDO**: Permanente en cada deliberación del Consejo de Seniors ante órdenes candidatas.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en consenso colegiado con el Consejo de 10 Roles Senior.
+   - **`F1-050` (`MED`, `crates/god-engine-core/src/lib.rs:6362-6385`)**:
+     - **QUÉ**: Erradicación del aliasing espurio de `pos_dev` bajo la clave `vecm_zscore` cuando los datos de spot no están presentes o caducados (`!spot_presente` o `!spot_fresco`), publicando `0.0` («sin dato») para que `JohansenVecmEngine::is_operable_for_coin` sea formalmente inoperable.
+     - **POR QUÉ**: Cuando no había spot, el código caía a `((mid - kline_ema_slow) / (mid * atr)).clamp(-3.0, 3.0)`, exactamente el mismo cálculo que `quantum_position_deviation` (`pos_dev`). En los replays de `backtest-engine` (donde nunca se alimenta spot), VECM votaba reversión a la EMA bajo etiqueta de cointegración, sobreponderando `pos_dev` 4 veces en el consenso y distorsionando las métricas de aptitud de la evolución, creando una divergencia irreparable con producción donde VECM vota la base F-S.
+     - **PARA QUÉ**: (1) Garantizar paridad 100% estricta entre backtest y producción; (2) Cumplir el principio "una variable, un voto": no aliasar la desviación de la EMA como cointegración; (3) Excluir formalmente a VECM del denominador efectivo del consenso cuando no haya datos de spot; (4) Preservar la integridad de los e-procesos de Ville.
+     - **CÓMO**:
+       1. En `crates/god-engine-core/src/lib.rs:6362-6385`, se simplifica: si `spot_presente && spot_fresco && mid_price > 0.0`, se calcula el z-score de la base con `self.base_z[coin_id].observar(...)`; en cualquier otro caso, se publica estrictamente `0.0`.
+       2. Al publicar `0.0`, `JohansenVecmEngine::is_operable_for_coin` devuelve `false` (inoperable, gracias a la condición `|z| > 1e-12` de LG8-145-03), eliminando la duplicación en el consenso.
+     - **CUÁNDO**: Activo continuamente en cada evento de mercado de cada símbolo.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en consenso colegiado con el Consejo de 10 Roles Senior.
+2. **Certificación Contractual**:
+   - `crates/god-engine-core/tests/f1_047_049_050_whiplash_council_vecm_contract.rs` (3/3 pass, 100% verde en 0.02s):
+     * `test_f1_047_anti_whiplash_post_loss_bounded_by_temporal_ceiling`: Certifica que en $t < ventana\_base$ veta, en ventana intermedia veta si $p\_stretch < 0$, y pasado $ventana\_max$ NO veta, desbloqueando la operativa tendencial.
+     * `test_f1_049_council_drawdown_unified_and_fail_closed_slippage`: Certifica 500 pb ante libro cruzado o vacío, respeto de `base_slippage_floor`, y paridad de DD con `capital_del_freno`.
+     * `test_f1_050_vecm_basis_z_is_zero_without_spot_and_inoperable`: Certifica que sin spot `vecm_zscore = 0.0` y `is_operable_for_coin = false`.
+   - Suite de regresión `crates/god-engine-core/tests/cf3_vetos_nucleo.rs`: 3/3 pass (100% verde).
+   - `cargo check --workspace --all-targets -j 1` (23 crates verificados, 0 errores, 0 warnings).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω165: Cierre de F1-095 (Flujo Continuo sin Escalones Binarios en HawkesBessel y TrendRunner) y F1-096 (Incertidumbre Analítica de Hurst DFA y Puerta de Persistencia Adaptativa) (2026-10-19)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

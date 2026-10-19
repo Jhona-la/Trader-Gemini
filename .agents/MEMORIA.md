@@ -1,5 +1,32 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-19 (madrugada, 3) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω166 (Cierre F1-047, F1-049 y F1-050)
+
+- **Mandato**: Resolución exhaustiva de 3 hallazgos sistémicos de la auditoría F1 (`docs/audit/fable/f1_hallazgos.tsv`) en `god-engine-core`, acotando la cláusula de signo del anti-whiplash post-loss contratendencia con un techo de horizonte temporal evitando la parálisis infinita de cortos en tramos bajistas prolongados tras un stop de largo, unificando la métrica de drawdown de `SeniorRiesgo` con `capital_del_freno` e implementando fail-closed en slippage de `SeniorEjecucion` ante libros cruzados o corruptos, y erradicando el aliasing espurio de `pos_dev` en `vecm_zscore` cuando el spot no está presente o no es fresco, restaurando la paridad estricta entre backtest y producción, en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:
+  1. **F1-047 (`crates/god-engine-core/src/lib.rs:8702-8715`)**:
+     - *Problema (QUÉ / POR QUÉ)*: La cláusula post-loss contratendencia (`!is_same_dir`) vetaba la apertura mientras `p_stretch < 0.0` (precio por debajo de la EMA) SIN ningún límite temporal. Tras un stop-loss de largo al inicio de un tramo bajista, el precio permanecía bajo la EMA por horas o días. Como `p_stretch < 0.0` era permanentemente verdadero, cualquier intento de corto se aplanaba indefinidamente a Flat, mientras que los largos eran bloqueados por el escudo macro. La moneda quedaba totalmente paralizada y nunca se producía un nuevo cierre para actualizar `last_close_ts`.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Acotada la prueba de signo con un techo temporal de horizonte `ventana_max_ms = (ventana_base_ms * 2.0).min(TAU_ANCHOR_SLOW_MS)` honrando la doctrina canónica D-757 ("más allá del horizonte más lento... deja de ser un veto y pasa a ser un apagado").
+       - Entre $t < ventana\_base\_ms$: veto incondicional (enfriamiento).
+       - Entre $ventana\_base\_ms \le t < ventana\_max\_ms$: veto sólo si el precio sigue estirado adversamente en esa dirección ($p\_stretch < 0$ para Short o $p\_stretch > 0$ para Long).
+       - Superado $ventana\_max\_ms$: la guarda concluye y el motor recupera la libertad de abrir operaciones a favor de la tendencia bajista demostrada.
+  2. **F1-049 (`crates/god-engine-core/src/lib.rs:9020-9040`)**:
+     - *Problema (QUÉ / POR QUÉ)*: En la preparación del snapshot para el Consejo de Seniors, `drawdown` se calculaba como `(peak_capital - unified_capital) / peak_capital`, discordante con `risk_engine::drawdown::capital_del_freno` (el mínimo entre arena y balance real del exchange) usado por el freno duro. Además, ante libro cruzado (`ask < bid`) o mid inválido, `current_spread_bps` caía al literal 0.5 pb (fail-open), reportando el costo mínimo de slippage precisamente cuando el libro de órdenes estaba degradado o roto, e ignorando el gen `base_slippage_floor`.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Unificada la métrica de drawdown: se lee `risk_engine::drawdown::capital_del_freno(&self.arena)` y se compara contra `peak_cap = self.risk_engine.peak_capital.max(self.arena.pico_capital.load(Ordering::Relaxed))`.
+       - Implementado fail-closed estricto en `SeniorEjecucion`: ante `mid_price <= 1e-8` o `ask < bid`, se fija `slip_bps = 500.0 pb`, provocando el rechazo inmediato de la orden por impacto de ejecución.
+       - En condiciones normales de libro, se garantiza el respeto del suelo genético: `slip_bps = ((current_spread_bps * 0.5) + 0.5).max(base_slip_floor).clamp(0.5, 500.0)`.
+  3. **F1-050 (`crates/god-engine-core/src/lib.rs:6362-6385`)**:
+     - *Problema (QUÉ / POR QUÉ)*: En ausencia de datos de spot (`!spot_presente` o `!spot_fresco`), `vecm_basis_z` caía a `((mid - kline_ema_slow) / (mid * atr)).clamp(-3.0, 3.0)`, exactamente idéntico a `pos_dev` (`quantum_position_deviation`). En backtest-engine (donde nunca se alimentan datos de spot), `JohansenVecmEngine::is_operable_for_coin` evaluaba $|z| > 10^{-12}$ como verdadero y votaba reversión a la EMA bajo la etiqueta de spread, duplicando el peso de `pos_dev` en el consenso y creando una divergencia estructural irreversible contra producción donde VECM vota la base futuro-spot.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Cuando `!spot_presente` o `!spot_fresco`, `vecm_basis_z` se publica estrictamente como `0.0` («sin dato»).
+       - Al recibir `0.0`, `JohansenVecmEngine::is_operable_for_coin` devuelve `false` (inoperable), siendo excluido del denominador efectivo del consenso y erradicando cualquier voto falso sobre reversión a la EMA.
+       - Se preserva la publicación limpia de `quantum_position_deviation` sin contaminación cruzada de semánticas.
+- **Verificación Contractual y Compilación Workspace**:
+  - `crates/god-engine-core/tests/f1_047_049_050_whiplash_council_vecm_contract.rs` (3/3 pass, 100% verde en 0.02s).
+  - Suite de regresión `crates/god-engine-core/tests/cf3_vetos_nucleo.rs`: 3/3 pass (100% verde).
+  - `cargo check --workspace --all-targets -j 1` pasa 100% limpio en los 23 crates (0 errores, 0 advertencias).
+
 ## 2026-10-19 (madrugada, 2) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω165 (Cierre F1-095 y F1-096)
 
 - **Mandato**: Resolución exhaustiva de 2 hallazgos sistémicos de la auditoría F1 (`docs/audit/fable/f1_hallazgos.tsv`) en `feature-engine`, `signal-engine` y `god-engine-core`, erradicando escalones binarios $\{-1, 0, 1\}$ en los votantes escalares `hawkes_bessel.rs` y `trend_runner.rs` asegurando que las magnitudes de flujo y momentum tipificado codifiquen fuerza continua $O(1)$, e integrando el cálculo del error típico analítico $\sigma_H = \text{SE}(\hat{H}) = \sqrt{\frac{s_{yy}(1-r^2)}{(K-2)s_{xx}}}$ en `hurst_dfa.rs` para modular dinámicamente el ancho de la puerta de persistencia de tendencia en `trend_runner.rs` ($ancho = 2\sigma_H \ge 0.04$), suprimiendo la activación de momentum espurio sobre ruido browniano ($\mathbb{E}[|\text{voto}|] < 0.02$), en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:
