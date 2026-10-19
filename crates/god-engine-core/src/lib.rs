@@ -1261,6 +1261,20 @@ impl GodEngineCore {
         Self::construir(arena, outcome_context::OutcomeContext::IsolatedSimulation, false)
     }
 
+    /// F1-106 (Ola Ω164): Configura explícitamente el modelo DarkAlpha para inferencia (patrón builder).
+    pub fn with_swing_nn(mut self, nn: dark_alpha_engine::DarkAlphaEngine) -> Self {
+        self.swing_nn = Some(nn);
+        self
+    }
+
+    /// F1-106 (Ola Ω164): Carga explícitamente el modelo DarkAlpha para un símbolo desde models/ si existe.
+    /// Cumple estrictamente la doctrina LG-23 ("construir el núcleo NO carga modelos del disco").
+    pub fn load_dark_alpha_if_present(&mut self, symbol: &str) {
+        if let Some(nn) = crate::model_reload::load_dark_alpha_model(symbol) {
+            self.swing_nn = Some(nn);
+        }
+    }
+
     fn construir(
         arena: Arc<GlobalArena>,
         outcome_context: outcome_context::OutcomeContext,
@@ -1360,54 +1374,11 @@ impl GodEngineCore {
             signal_engine::feynman_propagator::FeynmanPropagatorEngine::new(),
         ));
 
-        let dark_alpha_path = crate::model_reload::resolve_models_directory()
-            .map(|d| d.join("DarkAlpha_BTCUSDT.json"))
-            .filter(|p| p.is_file())
-            .or_else(|| {
-                [
-                    std::path::PathBuf::from("models/DarkAlpha_BTCUSDT.json"),
-                    std::path::PathBuf::from("../../models/DarkAlpha_BTCUSDT.json"),
-                ]
-                .into_iter()
-                .find(|p| p.is_file())
-            });
-
-        let swing_nn = if let Some(ref path) = dark_alpha_path {
-            if let Ok(json_data) = std::fs::read_to_string(path) {
-                if let Ok(mut model) =
-                    serde_json::from_str::<dark_alpha_engine::DarkAlphaEngine>(&json_data)
-                {
-                    model.init_buffers();
-                    model.sanitize_denormals();
-                    model.freeze();
-                    if trazas_diagnosticas {
-                        telemetry_server::telemetry_log!(
-                            "🧠 [DARK ALPHA] Initial Boot Model Loaded & Sanitized (in_features: {}) from {}",
-                            model.layer1.in_features,
-                            path.display()
-                        );
-                    }
-                    Some(model)
-                } else {
-                    if trazas_diagnosticas {
-                        telemetry_server::telemetry_log!(
-                            "⚠️ [DARK ALPHA] Failed to parse {}. Sin modelo — el NN NO opina.",
-                            path.display()
-                        );
-                    }
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            if trazas_diagnosticas {
-                telemetry_server::telemetry_log!(
-                    "⚠️ [DARK ALPHA] models/DarkAlpha_BTCUSDT.json not found. Sin modelo — el NN NO opina."
-                );
-            }
-            None
-        };
+        // F1-106 (Ola Ω164): El constructor del núcleo NO carga modelos de disco (doctrina LG-23).
+        // Evita lecturas síncronas de disco, parseo de JSON y alocación transitoria repetitiva en
+        // cada candidato del demonio (nucleo_del_examen) y mutante de Darwin. El host vivo (god_engine.rs:3268)
+        // inyecta el modelo al arranque y las herramientas usan load_dark_alpha_if_present o with_swing_nn.
+        let swing_nn = None;
 
         let ppo_engine = dark_alpha_engine::online_ppo::OnlinePpoPolicyEngine::new([
             0.40, 0.40, 0.20, 0.15, 0.10,

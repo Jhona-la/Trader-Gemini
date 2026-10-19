@@ -140,9 +140,14 @@ fn contract_god_engine_core_initialization_paridad_modelos() {
         "La base honesta del bosque debe estar acotada entre 5% y 95%, valor: {base_p}"
     );
 
-    // Verificar que swing_nn (DarkAlpha) se cargó si el archivo está presente
+    // F1-106 (LG-23): El constructor NO carga swing_nn de disco automáticamente.
+    assert!(core.swing_nn.is_none(), "GodEngineCore::new no debe cargar modelos de disco (LG-23)");
+
+    // Verificar que load_dark_alpha_if_present carga el modelo explícitamente si el archivo está presente
+    let mut test_core = core;
     if resolve_models_directory().map(|d| d.join("DarkAlpha_BTCUSDT.json").is_file()).unwrap_or(false) {
-        assert!(core.swing_nn.is_some(), "DarkAlpha_BTCUSDT.json debe inicializar swing_nn congelado");
+        test_core.load_dark_alpha_if_present("BTCUSDT");
+        assert!(test_core.swing_nn.is_some(), "load_dark_alpha_if_present debe cargar swing_nn congelado bajo demanda");
     }
 }
 

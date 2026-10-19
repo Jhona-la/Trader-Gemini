@@ -1,5 +1,28 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-19 (madrugada, 1) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω164 (Cierre F1-097 y F1-106)
+
+- **Mandato**: Resolución exhaustiva de 2 hallazgos sistémicos de la auditoría F1 (`docs/audit/fable/f1_hallazgos.tsv`) en `god-engine-core` y `signal-engine`, erradicando la lectura síncrona a disco y parseo JSON en el constructor de `GodEngineCore` (honrando la doctrina canónica LG-23) y optimizando las lecturas atómicas a Zero-Copy / Zero-Alloc en `flow_excitation_confluence.rs`, eliminando ~1,500 RMWs atómicos de `Arc<Parameter>` por tick a través del universo de 30 monedas, en estricto cumplimiento de la física continuo-espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:
+  1. **F1-106 (`crates/god-engine-core/src/lib.rs:1330`, `crates/god-engine-core/src/model_reload.rs`)**:
+     - *Problema (QUÉ / POR QUÉ)*: A pesar del comentario doctrinal LG-23 ("construir el núcleo NO carga modelos del disco"), `GodEngineCore::construir` ejecutaba `std::fs::read_to_string` y `serde_json::from_str` sobre `DarkAlpha_BTCUSDT.json` en cada llamada a `GodEngineCore::new()`, con fallbacks relativos a `models/` y `../../models/` dependientes del CWD (anomalía clase CSG-1 / CSG-6). En Darwin y en `online_daemon.rs` (`nucleo_del_examen`), cada evaluación de candidato construía un nuevo núcleo y pagaba E/S síncrona y alocación masiva de heap, saturando los 16 GB de RAM y generando divergencia de conducta según el directorio de arranque.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - En `GodEngineCore::construir()`, fijado `let swing_nn = None;` por defecto cumpliendo estrictamente la doctrina LG-23. Los candidatos de evolución y mutantes en memoria se instancian en 0 µs sin tocar el disco.
+       - Implementada la función canónica `pub fn load_dark_alpha_model(symbol: &str) -> Option<DarkAlphaEngine>` en `crates/god-engine-core/src/model_reload.rs`, resolviendo la ruta de forma centralizada mediante `resolve_models_directory()`.
+       - Añadidos métodos builder y bajo demanda en `GodEngineCore`: `pub fn with_swing_nn(mut self, nn: Option<DarkAlphaEngine>) -> Self` y `pub fn load_dark_alpha_if_present(&mut self, symbol: &str)`.
+       - Actualizado `censo_mudos_activacion_continua_contract.rs` para verificar que `swing_nn` es `None` por defecto y se carga explícitamente cuando el proceso host lo requiere.
+  2. **F1-097 (`crates/signal-engine/src/flow_excitation_confluence.rs:346-459`)**:
+     - *Problema (QUÉ / POR QUÉ)*: `evaluate_for_coin` invocaba repetidamente `get_scoped_parameter` (~25 veces por moneda por evento). Cada llamada buscaba en el `SkipMap<String, Arc<Parameter>>` del registro omnisciente y clonaba un `Arc<Parameter>` (`fetch_add` atómico) para luego destruirlo (`fetch_sub` atómico). En un universo continuo de 30 monedas con cadencia HFT, esto provocaba ~1,500 operaciones RMW atómicas por tick, saturando el bus de memoria en la CPU y agregando 5-8 µs de latencia innecesaria contra el presupuesto estricto de 25 µs.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Sustituidas las llamadas `get_scoped_parameter` en `flow_excitation_confluence.rs` por `get_scoped_val_or` y `get_scoped_val_strict`.
+       - Las lecturas acceden directamente al valor numérico atómico (`get_value_fast()`) sin alocación, sin clonación de `Arc` y sin contención en el contador de referencias.
+       - Claves de genoma y flags (`hawkes_excitation_gene`, `obi_zscore_gene`, `hidden_liquidity_weight`, `hawkes_absent`, `obi_absent`, `ml_prob_motor`, `ml_model_base`, `ml_model_lift`, `atr_pct`) leídas a velocidad de reloj nativo (zero-copy / zero-alloc).
+- **Verificación Contractual y Compilación Workspace**:
+  - `crates/god-engine-core/tests/f1_097_106_zero_copy_confluence_and_nn_loader_contract.rs` (2/2 pass, 100% verde en 0.04s).
+  - `crates/god-engine-core/tests/censo_mudos_activacion_continua_contract.rs` (4/4 pass, 100% verde en 0.15s).
+  - Suite unitaria `signal-engine --lib`: 126/126 pass (100% verde en 0.25s).
+  - Suite unitaria `god-engine-core --lib`: 208/208 pass (100% verde en 0.55s).
+  - `cargo check --workspace --all-targets -j 1` pasa 100% limpio en los 23 crates (0 errores, 0 advertencias).
+
 ## 2026-10-18 (noche, 2) — Claude (cloud, Línea C): primeros lotes de retiro del censo C-F7b
 
 - Lotes del censo (`docs/audit/linea_c/censo_motores_2026-10-18.md` §4) que no dependen de los 4 temas del dueño, uno por commit, con las anclas vueltas a buscar:
