@@ -68,6 +68,10 @@ jobs:
             paquetes: -p god-engine-core --lib --tests
           - grupo: espectro-y-consejo
             paquetes: -p quantum-arena -p signal-engine -p feature-engine -p metacortex-engine -p strategy-core --lib --tests
+          - grupo: auditoria
+            # Sol (2026-10-18): audit-engine no tenía shard — sus ~73 pruebas
+            # (tribunal, auditor interno, F412/F413/F271) no corrían en CI.
+            paquetes: -p audit-engine --lib --tests
           - grupo: entrenador
             # Sintético: ni entrenamiento, ni promoción, ni modelos reales.
             # SI: ejecutar también el contrato de ingestión del benchmark.

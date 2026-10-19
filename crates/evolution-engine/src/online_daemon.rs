@@ -2590,4 +2590,3 @@ mod tests {
         assert!(quantum_arena::symbol_registry::try_index("WFD0").is_none());
     }
 }
-

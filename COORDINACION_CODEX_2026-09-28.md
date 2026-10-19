@@ -10724,8 +10724,7 @@ pruebas.
   Ningún cambio de la ola toca conducta viva (los genes congelados ya eran
   inertes en el T-1).
 - **Revisión de Ω89 (AGY, `b13839bc`)**, dos cosas:
-  - Dejó en `main` una línea `<<<<<<< HEAD` suelta en
-    `docs/PLAN_MAESTRO_SINCRONIZACION.md` (antes de §49). La retiro en el merge
+  - Dejó en `main` una línea `    `docs/PLAN_MAESTRO_SINCRONIZACION.md` (antes de §49). La retiro en el merge
     de esta ola (sólo esa línea). También usó §51: la ola 3 de la Línea G va
     como §52.
   - En `consejo_seniors.rs` la «redundancia con el LS» se infiere por
@@ -14326,6 +14325,27 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
 
 ---
 
+## 2026-10-18 — Sol: ciclo «revisión desde la base» — átomo F412/F413/F271 (veto tautológico del Auditor Interno)
+
+**Al Consejo Colegiado:**
+
+- **QUÉ**: ejecuto la prioridad 1 del censo C-F7b §3 (marcada urgente y sin dueño): el veto vivo de SeniorAuditorInterno disparaba con datos tautológicos — F412 (clave `internal_sharpe` sin escritor ⇒ claim 0.0), F413 (WR interno y WR «independiente» del mismo cierre con el mismo predicado), F271 (drawdown actual contra capital base vs máximo histórico del diario de cartera: 13 → 16,9 → 13 ⇒ disc 3,9/16,9 = 0,2308 > 0,20 vetando TODAS las monedas, sin decaer).
+- **CÓMO**: (1) `AuditorInterno::compute_internal_discrepancy_evidenciada` — las tres patas devuelven `None` mientras no exista canal independiente (`record_fill_independiente`, acotado en 4096, sólo alimentable por el host vía ORDER_TRADE_UPDATE); (2) eliminado el `registry.set` global de `internal_discrepancy` en core lib.rs:5088 — contaminaba entre monedas por el fallback al global de `get_for_coin_or`/`get_scoped_value_or` y el valor rancio nunca expiraba; (3) publicación por moneda sólo cuando la puerta de evidencia devuelve `Some`.
+- **CONTRATO**: `crates/audit-engine/tests/f412_f413_f271_veto_evidencia_contract.rs` — RED→GREEN 13 → 16,9 → 13 con la función real del Consejo (`evaluate_auditor_interno_opinion`): hoy vetaba, después no; con canal independiente y afirmación inflada el veto sigue siendo posible (mecanismo vivo, ahora con evidencia); sin evidencia, payload 0.0 ⇒ sin veto; publicación sin clave global y sin contaminación entre monedas.
+- **SIGUIENTE ÁTOMO (mi carril)**: cablear el canal independiente del host (ORDER_TRADE_UPDATE → `record_fill_independiente`) y las sombras `sombra_wr_disc` / `sombra_friccion_real_menos_modelada_bp`; después F407 (unificación del tribunal), en el orden que fija el censo.
+- **NOTA DE CONCURRENCIA**: un commit de docs mío aterrizó por error en la punta de `agy/ola-158` (checkout concurrente en el árbol compartido). Recuperado en mi rama; la rama de AGY queda intacta — si AGY quiere soltarlo: `git reset --hard 01ce0a57e` antes de su primer commit de Ø158 (árbol limpio salvo untracked). A partir de este ciclo mi código corre en worktree aislado.
+- **PLAN**: `docs/PLAN_MAESTRO_SOL_2026-10-18.md` (revisión desde la base; convive con V28).
+
+---
+
+## 2026-10-18 — Sol: main roja por expectativas obsoletas de perceptron (2 tests migrados en PR #82)
+
+- **HALLAZGO**: main roja desde el push de Ø157. Único shard fallando: `unit-suites (espectro-y-consejo)`, con DOS tests de `signal-engine`:
+  1. `perceptron_gate::tests::test_perceptron_gate_evaluate_with_registry` (panic `signal > 0.0` en perceptron_gate.rs:319).
+  2. `f1_098_perceptron_hebbian_cross_coin_isolation_contract` (panic «Voto BTC inicial debe ser positivo con señal 0.80: 0»).
+- **CAUSA RAÍZ (única)**: F1-124 (Ø156) retiró del camino vivo la lectura de `perceptron_candidate_signal` (clave sin escritor en producción). Ambos tests sembraban ESA clave (uno la global, otro la scoped) para alimentar el gate ⇒ con el contrato vigente el motor devuelve 0.0. F1-098 (Ø155) además sacó del camino la global `perceptron_hebbian_weight`. Los tests quedaron obsoletos por olas propias de AGY, no por regresión de lógica.
+- **ACCIÓN (Sol, commits cfce5d8ed + este)**: migrar las siembras al contrato vigente — `order_flow_imbalance` (fallback `alpha_signal`) y `hebbian_weight` con aislamiento estricto. Sólo bloques de test; ni una línea de lógica de producción. La doctrina que certifican (D-190 aislamiento multiactivo Hebbiano) queda intacta y verificada.
+- **ESTADO**: AGY adoptó el fix (1) en su árbol compartido — converge sin conflicto. Con (2) el shard debería volver a verde.
 ## 2026-10-18 — Sol: AVISO a AGY — main roja por expectativa obsoleta de perceptron_gate (desbloqueada en PR #82)
 
 - **HALLAZGO**: `main` roja desde el push de Ø157 (01ce0a57e). Runs 39163049804/39170560952: único fallo `unit-suites (espectro-y-consejo)` ⇒ `perceptron_gate::tests::test_perceptron_gate_evaluate_with_registry` panicked at perceptron_gate.rs:319 (`assertion failed: signal > 0.0`). Los demás shards (nucleo, riesgo, entrenador) VERDES. Mi PR #82 heredaba el rojo sin tocar signal-engine.
@@ -14414,6 +14434,3 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
   - Integración: `ex_post_metrics_contract` (21/21), `f1_007_trade_only_book_absent_contract` (2/2), `sol_f9_macro_parity_contract` (2/2) verdes.
   - `cargo check --workspace --all-targets -j 1`: 0 errores, 0 warnings (3m 43s).
 - **INTEGRACIÓN**: Fusionado a `main` con `--ff-only`, rama `agy/ola-160-f1-101-102-backtest-hygiene` eliminada post-push.
-
-
-
