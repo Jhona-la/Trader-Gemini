@@ -152,6 +152,18 @@ fn cuerpo_de<'a>(src: &'a str, f: &str) -> &'a str {
     &resto[..resto.find("asyncfn").unwrap_or(resto.len())]
 }
 
+/// Ruta completa de un envío: su cuerpo más, cuando delega, el de la
+/// implementación interna donde vive la lógica. F1-031 (Ø157) extrajo la
+/// lógica de `execute_raw_qty_with_client_id` a `execute_raw_qty_internal`
+/// y dejó el wrapper delegando; el invariante CL-47 se evalúa sobre la ruta
+/// completa (wrapper + implementación), no sobre el cuerpo del wrapper.
+fn ruta_de(src: &str, f: &str, interna: Option<&str>) -> String {
+    match interna {
+        Some(i) => format!("{}{}", cuerpo_de(src, f), cuerpo_de(src, i)),
+        None => cuerpo_de(src, f).to_string(),
+    }
+}
+
 /// CL-47: los envíos MARKET y genérico registraban la intención y, ante un
 /// rechazo firme (-2019 margen insuficiente, 429), la dejaban en `New` para
 /// siempre: nadie purga una orden activa y la reconciliación la reportaba
@@ -161,8 +173,12 @@ fn cuerpo_de<'a>(src: &'a str, f: &str) -> &'a str {
 #[test]
 fn cl47_todo_envio_cierra_su_intencion_ante_un_rechazo_firme() {
     let src: String = include_str!("../src/executor.rs").split_whitespace().collect();
-    for f in ["execute_order", "execute_raw_qty_with_client_id", "execute_ioc_order"] {
-        let c = cuerpo_de(&src, f);
+    for (f, interna) in [
+        ("execute_order", None),
+        ("execute_raw_qty_with_client_id", Some("execute_raw_qty_internal")),
+        ("execute_ioc_order", None),
+    ] {
+        let c = ruta_de(&src, f, interna);
         assert!(c.contains("register_intent("), "{f} registra su intención");
         assert!(
             ["(e)", "(&e)"].iter().any(|x| c.contains(&format!(
@@ -171,7 +187,7 @@ fn cl47_todo_envio_cierra_su_intencion_ante_un_rechazo_firme() {
             "{f}: un rechazo firme cierra la intención"
         );
     }
-    let market = cuerpo_de(&src, "execute_raw_qty_with_client_id");
+    let market = ruta_de(&src, "execute_raw_qty_with_client_id", Some("execute_raw_qty_internal"));
     assert!(
         market.find("is_overflow()").unwrap() < market.find("register_intent(").unwrap(),
         "MARKET registra la intención tras la última salida previa al envío"
