@@ -6,6 +6,14 @@
 //!   and validation of `executed_qty > 0.0`.
 //! - F1-029: WS confirmation polling expanded to 200 ms (20 × 10 ms), and fresh `clientOrderId`
 //!   issued for REST fallback to prevent duplicate `-4116` collisions.
+//!
+//! Sol (2026-10-19): estos contratos auditan el FUENTE de `executor.rs`. La versión
+//! original delimitaba las funciones por anclas de comentarios (`/// F3.5`,
+//! `/// FASE 8: ...`), que se rompieron cuando Ø157 (F1-031) extrajo la lógica
+//! tipada a `execute_reduce_only_market_internal` y dejó los wrares vacíos:
+//! `replay-contracts` quedó rojo en main con la lógica F1-027/F1-028 intacta.
+//! Ahora la extracción es por BALANCEO DE LLAVAS (saltando strings y comentarios),
+//! inmune a la mudanza de anclas textuales entre refactors.
 
 use execution_engine::order_types::OrderAck;
 
@@ -13,31 +21,102 @@ fn executor_source() -> &'static str {
     include_str!("../src/executor.rs")
 }
 
+/// Extrae el cuerpo completo (firma incluidа) de la primera función cuya firma
+/// contenga `signature`, por balanceo de llaves con salto de strings literales
+/// y comentarios de línea. No depende de comentarios/anclas textuales.
+fn fn_body_first(src: &str, signature: &str) -> String {
+    let start = src
+        .find(signature)
+        .unwrap_or_else(|| panic!("signature not found in executor.rs: {signature}"));
+    extract_balanced(src, start, signature)
+}
+
+/// Igual que `fn_body_first` pero desde la ÚLTIMA ocurrencia (para firmas que
+/// aparecen primero en un trait y después en la implementación real).
+fn fn_body_last(src: &str, signature: &str) -> String {
+    let start = src
+        .rfind(signature)
+        .unwrap_or_else(|| panic!("signature not found in executor.rs: {signature}"));
+    extract_balanced(src, start, signature)
+}
+
+fn extract_balanced(src: &str, start: usize, signature: &str) -> String {
+    let bytes = src.as_bytes();
+    let mut i = start;
+    let mut depth: i32 = 0;
+    let mut begun = false;
+    let mut in_str = false;
+    let mut in_line_comment = false;
+    let mut prev: u8 = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_line_comment {
+            if c == b'\n' {
+                in_line_comment = false;
+            }
+        } else if in_str {
+            if c == b'"' && prev != b'\\' {
+                in_str = false;
+            }
+        } else if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            in_line_comment = true;
+            i += 2;
+            prev = c;
+            continue;
+        } else if c == b'"' {
+            in_str = true;
+        } else if c == b'{' {
+            depth += 1;
+            begun = true;
+        } else if c == b'}' {
+            depth -= 1;
+            if begun && depth == 0 {
+                return src[start..=i].to_string();
+            }
+        }
+        prev = c;
+        i += 1;
+    }
+    panic!("unbalanced braces after signature in executor.rs: {signature}");
+}
+
 #[test]
 fn test_f1_027_flatten_causal_sequence_contract() {
     let src = executor_source();
 
-    let flatten_fn = src
-        .split("pub async fn flatten_all_positions(&self)")
-        .nth(1)
-        .expect("flatten_all_positions must exist in OrderExecutor");
+    let fn_body = fn_body_first(src, "pub async fn flatten_all_positions(&self)");
 
-    let fn_body = &flatten_fn[..flatten_fn.find("/// F3.5").expect("end of flatten_all_positions")];
-
-    // F1-027 Protocol X-009: Must close open positions first
-    let close_pos_idx = fn_body.find("for p in &open_positions").expect("loop over open positions");
-    let purge_sym_idx = fn_body.find("self.cancel_symbol_orders_and_brackets").expect("cancel_symbol_orders_and_brackets");
+    // F1-027 Protocol X-009: posiciones primero, purga de brackets después.
+    let close_pos_idx = fn_body
+        .find("for p in &open_positions")
+        .expect("loop over open positions");
+    let purge_sym_idx = fn_body
+        .find("self.cancel_symbol_orders_and_brackets")
+        .expect("cancel_symbol_orders_and_brackets");
 
     assert!(
         close_pos_idx < purge_sym_idx,
         "Causal sequence violation: positions must be closed BEFORE brackets are purged"
     );
 
-    // Protection brackets must only be cancelled if position was confirmed closed
+    // La purga debe estar condicionada al cierre confirmado. Ø157 (F1-030)
+    // refinó la llamada a tupla (n_cancelados, purgado) con `mark_dirty()`:
+    // la semántica fail-safe se conserva y fortalece.
+    let position_closed_idx = fn_body
+        .find("if position_closed {")
+        .expect("confirmed-close guard must exist");
     assert!(
-        fn_body.contains("if position_closed {")
-            && fn_body.contains("cancelled += self.cancel_symbol_orders_and_brackets(&p.symbol, &api_secret).await;"),
-        "Brackets must only be purged upon confirmed position close"
+        position_closed_idx < purge_sym_idx,
+        "Brackets must only be purged upon confirmed position close (guard precedes purge)"
+    );
+    assert!(
+        fn_body.contains("let (sym_canc, purged) = self.cancel_symbol_orders_and_brackets(&p.symbol, &api_secret).await;")
+            && fn_body.contains("cancelled += sym_canc;"),
+        "Purge must only run inside the confirmed-close branch (Ø157 tuple form)"
+    );
+    assert!(
+        fn_body.contains("unpurged_symbols.push") && fn_body.contains("protection_health::mark_dirty()"),
+        "Incomplete purge must be flagged (protection_health dirty) — fail-safe de Ø157"
     );
 
     // Fail-closed guarantee: if any position cannot be closed, return Err(FLATTEN_INCOMPLETE)
@@ -45,18 +124,25 @@ fn test_f1_027_flatten_causal_sequence_contract() {
         fn_body.contains("FLATTEN_INCOMPLETE:"),
         "Fail-closed contract: must return Err(FLATTEN_INCOMPLETE) if unclosed positions remain"
     );
+    assert!(
+        fn_body.contains("unclosed_symbols.push(p.symbol.clone());"),
+        "Unclosed positions must be tracked for the FLATTEN_INCOMPLETE error"
+    );
 }
 
 #[test]
 fn test_f1_028_typed_reduce_only_contract() {
     let src = executor_source();
 
-    let reduce_fn = src
-        .split("async fn execute_reduce_only_market(")
-        .nth(2)
-        .expect("execute_reduce_only_market implementation must exist");
+    // F1-031 (Ø157): la lógica tipada vive en `execute_reduce_only_market_internal`;
+    // el wrapper público `execute_reduce_only_market` delega en ella.
+    let fn_body = fn_body_first(src, "async fn execute_reduce_only_market_internal(");
+    let wrapper = fn_body_last(src, "async fn execute_reduce_only_market(");
 
-    let fn_body = &reduce_fn[..reduce_fn.find("/// FASE 8: Native Exchange Trailing Stop Market").expect("end of execute_reduce_only_market")];
+    assert!(
+        wrapper.contains("execute_reduce_only_market_internal("),
+        "public execute_reduce_only_market must delegate to the typed internal path"
+    );
 
     // F1-028: Must request RESULT to inspect executedQty
     assert!(
@@ -65,8 +151,12 @@ fn test_f1_028_typed_reduce_only_contract() {
     );
 
     // F1-028: Must register intent prior to dispatch
-    let intent_idx = fn_body.find("self.order_registry.register_intent").expect("register_intent call");
-    let dispatch_idx = fn_body.find("self.client.execute_order_payload_typed").expect("execute_order_payload_typed call");
+    let intent_idx = fn_body
+        .find("self.order_registry.register_intent")
+        .expect("register_intent call");
+    let dispatch_idx = fn_body
+        .find("self.client.execute_order_payload_typed")
+        .expect("execute_order_payload_typed call");
     assert!(
         intent_idx < dispatch_idx,
         "register_intent must occur strictly before execute_order_payload_typed dispatch"
@@ -87,16 +177,11 @@ fn test_f1_028_typed_reduce_only_contract() {
 fn test_f1_029_ws_timeout_and_fresh_coid_contract() {
     let src = executor_source();
 
-    let flatten_fn = src
-        .split("pub async fn flatten_all_positions(&self)")
-        .nth(1)
-        .expect("flatten_all_positions must exist");
-
-    let fn_body = &flatten_fn[..flatten_fn.find("/// F3.5").expect("end of flatten_all_positions")];
+    let fn_body = fn_body_first(src, "pub async fn flatten_all_positions(&self)");
 
     // F1-029: 20 iterations of 10 ms = 200 ms confirmation window
     assert!(
-        fn_body.contains("for _ in 0..20 {") && fn_body.contains("sleep(std::time::Duration::from_millis(10))"),
+        fn_body.contains("for _ in 0..20 {") && fn_body.contains("from_millis(10)"),
         "WS confirmation loop must be 20 × 10ms = 200ms"
     );
 

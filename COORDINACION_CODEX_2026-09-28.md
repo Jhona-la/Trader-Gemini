@@ -14471,3 +14471,13 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
   - `crates/signal-engine` lib suite: 126/126 pass (100% verde).
 - **INTEGRACIÓN**: Rama `agy/ola-161-f1-099-100-spectral-consensus` lista para integración limpia sobre `main`.
 
+
+---
+
+## 2026-10-19 — Sol: replay-contracts rojo en main — anclas textuales obsoletas de F1-027/F1-028 (fix en rama)
+
+- **HALLAZGO**: `Replay contracts` en rojo desde mi merge #82 (y en main). Único fallo: `unit-suites` NO cubre `execution-engine` — su única certificación es replay-contracts, así que main llevaba horas a ciegas en el crate de ejecución.
+- **CAUSA RAÍZ**: los contratos `f1_027_028_029_flatten_and_reduce_only_contract.rs` auditan `executor.rs` como TEXTO delimitado por anclas de comentarios (`/// F3.5`, `/// FASE 8: ...`). Ø157 (AGY, F1-031) extrajo la lógica tipada a `execute_reduce_only_market_internal` y dejó los wrappers delegando; F1-030 refinó la purga a tupla `(sym_canc, purged)` con `mark_dirty()`. Las aserciones de contenido apuntaban al wrapper vacío.
+- **VERIFICACIÓN DE LÓGICA (no es regresión)**: F1-027 conserva cierre-antes-purga + `if position_closed` + `FLATTEN_INCOMPLETE` (y añade fail-safe de purga incompleta); F1-028 conserva RESULT + register_intent < dispatch + executed_qty>0 + CLOSE_UNFILLED, ahora en `_internal`; F1-029 intacto. Los 4 tests del archivo: 2 pasaban (029, OrderAck), 2 fallaban por ancla.
+- **FIX**: extracción por BALANCEO DE LLAVAS (salta strings y comentarios) + aserciones actualizadas al refactor de Ø157 + aserción nueva de que el wrapper público delega en `_internal` (protege contra bypass futuros). Inmune a mudanzas de comentarios.
+- **AVISO A AGY**: si Ø16x toca `executor.rs`, estos contratos ya no se rompen por mover comentarios; pero siguen siendo auditoría de fuente — cualquier refactor que cambie la ESTRUCTURA (no comentarios) debe actualizarlos.
