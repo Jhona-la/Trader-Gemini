@@ -175,6 +175,17 @@ impl NanoForest {
     }
 
     pub fn load_model(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::load_model_with_options(path, false)
+    }
+
+    /// F1-058 (Ola Ω169): Carga el modelo directamente desde la fuente JSON ignorando
+    /// la caché .bin preexistente y actualizando el .bin atómicamente.
+    pub fn load_model_from_source(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::load_model_with_options(path, true)
+    }
+
+    /// Carga el modelo con opciones de precedencia de fuente y escritura atómica de caché.
+    pub fn load_model_with_options(path: &str, prefer_source: bool) -> Result<Self, Box<dyn std::error::Error>> {
         // B3.9-aud — PAREJA (json, bin) EXPLÍCITA. El host (god_engine.rs)
         // carga del directorio models/ TANTO el .json como el .bin (clave =
         // file stem). Si el caller pasa el .bin directamente, el
@@ -221,7 +232,7 @@ impl NanoForest {
                 Self::validate_dim_contract(&data, &json_path.to_string_lossy())?;
             Ok((data, required_features))
         };
-        let ((data, required_features), from_bin) = if !is_stale && bin_path.exists() {
+        let ((data, required_features), from_bin) = if !prefer_source && !is_stale && bin_path.exists() {
             match std::fs::read(&bin_path)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })
                 .and_then(|bin_data| {
@@ -257,9 +268,14 @@ impl NanoForest {
         // Aplica IGUAL al camino del .bin (caché) — y el .bin sólo se
         // escribe DESPUÉS de validar: un modelo rechazado no contamina la
         // caché para el próximo arranque.
+        // F1-058 (Ola Ω169): Escritura atómica vía temporal único + rename
+        // para prevenir lecturas parciales o corrupción por procesos concurrentes.
         if !from_bin {
             if let Ok(encoded) = bincode::serialize(&data) {
-                let _ = std::fs::write(&bin_path, encoded);
+                let tmp_path = format!("{}.{}.tmp", bin_path.display(), std::process::id());
+                if std::fs::write(&tmp_path, &encoded).is_ok() {
+                    let _ = std::fs::rename(&tmp_path, &bin_path);
+                }
             }
         }
         Ok(NanoForest {
@@ -271,6 +287,14 @@ impl NanoForest {
     /// Loads the forest into the global static cache under a specific key
     pub fn load_global(key: &str, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let forest = Self::load_model(path)?;
+        Self::store_global(key, forest);
+        Ok(())
+    }
+
+    /// F1-058 (Ola Ω169): Carga el modelo directamente desde la fuente JSON
+    /// hacia el caché estático global ignorando la caché .bin preexistente.
+    pub fn load_global_from_source(key: &str, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let forest = Self::load_model_from_source(path)?;
         Self::store_global(key, forest);
         Ok(())
     }

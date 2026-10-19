@@ -6046,10 +6046,8 @@ impl GodEngineCore {
             // Erradica el sesgo donde 1.0 - ml_prob en base ~0.25 inflaba la probabilidad corta neutral a 0.75.
             let p_win_long = crate::calibration::p_win_directional(true, ml_prob, ml_model_base);
             let p_win_short = crate::calibration::p_win_directional(false, ml_prob, ml_model_base);
-            let conformal_p = calibrator.p_value(p_win_long);
-            let conformal_p_short = calibrator.p_value(p_win_short);
-            let accept_long = calibrator.accepts(p_win_long);
-            let accept_short = calibrator.accepts(p_win_short);
+            let (conformal_p, accept_long) = calibrator.eval_prediction(p_win_long);
+            let (conformal_p_short, accept_short) = calibrator.eval_prediction(p_win_short);
             set_reg("conformal_p_value", conformal_p);
             set_reg("conformal_p_value_short", conformal_p_short);
             set_reg("conformal_alpha", conf_alpha);

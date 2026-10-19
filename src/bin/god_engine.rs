@@ -27,7 +27,7 @@ use telemetry_engine::telemetry;
 fn refresh_ml_models(tracker: &mut god_engine_core::model_reload::ModelReloadTracker) {
     let scan = tracker.scan(std::path::Path::new("models"), |key, path| {
         let source = path.to_str().ok_or_else(|| "model path is not UTF-8".to_string())?;
-        god_engine_core::ml_inference::NanoForest::load_global(key, source)
+        god_engine_core::ml_inference::NanoForest::load_global_from_source(key, source)
             .map_err(|error| error.to_string())
     });
     match scan {

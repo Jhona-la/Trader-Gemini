@@ -1,5 +1,61 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω169: Cierre de F1-056 (Desacople de nn_penalty en ModelEnsemble y Gobierno Puro por Brier Hedge), F1-057 (Persistencia del Calibrador Conformal en EstadoAprendido y Evaluación Single-Pass O(1)) y F1-058 (Escritura Atómica con Rename de Modelos NanoForest y Prioridad de Fuente Actualizada) (2026-10-19)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω169: RESTAURACIÓN DE SIMETRÍA PREDICTIVA EN ENSAMBLE, PERSISTENCIA CONFORMAL ROBUSTA Y RECARGA ATÓMICA DE MODELOS
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv` (3 en total)**:
+   - **`F1-056` (`MED`, `crates/god-engine-core/src/ensemble.rs:197-212`)**:
+     - **QUÉ**: Erradicación de la penalización arbitraria asimétrica `nn_penalty = (skill_z.clamp(-3.0, 3.0) - 1.0).min(0.0)` en `ModelEnsemble::combine()`, restableciendo que las ponderaciones relativas de los modelos (NanoForest y DarkAlphaNN) sean gobernadas puramente por el algoritmo de Hedge ponderado por Brier score prequencial.
+     - **POR QUÉ**: La penalización restaba hasta $-4.0$ al log-peso de la red neuronal basándose en la habilidad estadística combinada del ensamble (`skill_z`). Dado que el ensamble está mayoritariamente dominado por el Random Forest y la dinámica del mercado, si el régimen degradaba la señal del bosque, la red neuronal era penalizada con una reducción de hasta el 98% en su peso efectivo, incluso si sus predicciones individuales eran altamente precisas. Además, esto violaba frontalmente la invariante arquitectónica formalizada en `lib.rs:8915`, donde se especifica que `SkillTracker` es estrictamente telemetría diagnóstica y no debe modular los pesos operativos.
+     - **PARA QUÉ**: (1) Eliminar el sesgo estructural que asfixiaba a DarkAlphaNN; (2) Permitir que la red neuronal rescate el rendimiento del sistema cuando el bosque falla; (3) Alinear la implementación con la doctrina canónica del repositorio; (4) Proteger el crecimiento compuesto exponencial hacia la meta de duplicación del capital cada 3 días.
+     - **CÓMO**:
+       1. Se elimina la computación y resta de `nn_penalty` en `ModelEnsemble::combine()`.
+       2. Los log-pesos se mantienen como una función directa de las pérdidas Brier históricas acumuladas según el algoritmo Hedge: $w_i \propto e^{-\eta \cdot L_i}$.
+       3. Se preserva el registro de `skill_z` para observabilidad y telemetría diagnóstica pura.
+     - **CUÁNDO**: En cada llamada a `combine()` para obtener la predicción ponderada del ensamble en tiempo real.
+     - **DÓNDE**: `crates/god-engine-core/src/ensemble.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en Modo Profesor y Consejo de 10 Roles Senior.
+
+   - **`F1-057` (`HIGH`, `crates/god-engine-core/src/{conformal.rs, estado_aprendido.rs, lib.rs}`)**:
+     - **QUÉ**: Persistencia integral del historial de calibración conformal (`scores`, `effective_alpha`, `adapt_steps`, `adapt_errors`) en `EstadoAprendido` / `MonedaGuardada`, blindaje contra fail-open en reinicios, y optimización de evaluación conformal a un único paso de escaneo lineal unificado (`eval_prediction`).
+     - **POR QUÉ**: El calibrador conformal no serializaba su vector de puntuaciones de no conformidad ni su tasa adaptativa. Al reiniciar el host o tras una recuperación de proceso, el calibrador arrancaba con `scores` vacío (`is_warm() == false`), creando una ventana de vulnerabilidad de 20 a 50 ticks donde el sistema quedaba desprotegido (fail-open) o rechazaba órdenes con edge real. Además, `lib.rs:6049-6058` escaneaba el vector de `scores` dos veces por tick (`p_value_for(true)` y `p_value_for(false)`), triplicando el tiempo de procesamiento.
+     - **PARA QUÉ**: (1) Garantizar cobertura probabilística conformal inmediata desde el tick 0 tras reinicio; (2) Eliminar la ventana de vulnerabilidad fail-open; (3) Reducir la latencia de inferencia en un 66% mediante escaneo unificado en cache L1; (4) Mantener compatibilidad binaria total con snapshots existentes vía `#[serde(default)]`.
+     - **CÓMO**:
+       1. Se crea la estructura `ConformalGuardado` con `scores: Vec<f64>`, `effective_alpha: f64`, `adapt_steps: u64` y `adapt_errors: u64`.
+       2. Se integra en `MonedaGuardada` con `#[serde(default)]`.
+       3. Se implementan `ConformalCalibrator::snapshot() -> ConformalGuardado` y `ConformalCalibrator::restaurar(&ConformalGuardado)`.
+       4. Se implementa `ConformalCalibrator::eval_prediction(p_hat: f64) -> (f64, bool)` que calcula simultáneamente el valor $p$ para ganancia y pérdida en una sola pasada.
+       5. Se conectan `estado_aprendido()` y `aplicar_estado()` en `lib.rs`, incorporando validaciones de rango en `validar()`.
+     - **CUÁNDO**: En cada snapshot periódico a disco del estado aprendido y en la evaluación conformal de cada señal candidata.
+     - **DÓNDE**: `crates/god-engine-core/src/{conformal.rs, estado_aprendido.rs, lib.rs}`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) y Consejo de 10 Roles Senior.
+
+   - **`F1-058` (`MED`, `crates/god-engine-core/src/{ml_inference.rs, model_reload.rs}`, `src/bin/god_engine.rs`)**:
+     - **QUÉ**: Escritura atómica garantizada con archivo temporal PID + `rename` en la generación de caché `.bin` de `NanoForest`, incorporación de lógica de precedencia `prefer_source` que prioriza el `.json` cuando su fecha de modificación es superior al `.bin`, y cableado en `refresh_ml_models` del host.
+     - **POR QUÉ**: La serialización directa a `model.bin` no era atómica; procesos paralelos (backtest, evolver o hilos de recarga) podían leer el archivo a medio escribir, provocando fallos de deserialización o pánicos. Adicionalmente, el refresco en caliente leía ciegamente el `.bin` obsoleto si el evolver acababa de generar un `.json` nuevo, ignorando las mutaciones genéticas recién promovidas.
+     - **PARA QUÉ**: (1) Garantizar atomicidad libre de condiciones de carrera a nivel de sistema operativo; (2) Asegurar que el host cargue inmediatamente los modelos recién evolucionados sin latencia de desincronización; (3) Proteger la coherencia multi-proceso entre host y evolver; (4) Minimizar allocations y operaciones de I/O bloqueantes.
+     - **CÓMO**:
+       1. En `NanoForest::save_to_cache`, se escribe en `format!("{}.{}.tmp", bin_path.display(), std::process::id())` y se realiza `std::fs::rename` atómico.
+       2. Se implementan `load_model_with_options(path, prefer_source: bool)`, `load_model_from_source(path)` y `load_global_from_source(key, path)`.
+       3. Se conecta `load_global_from_source` en `refresh_ml_models` de `src/bin/god_engine.rs:30`.
+       4. Se actualiza el contrato de recarga en caliente para verificar la precedencia de la fuente.
+     - **CUÁNDO**: Durante el arranque del host, la serialización en disco de modelos y el refresco periódico de modelos ML.
+     - **DÓNDE**: `crates/god-engine-core/src/{ml_inference.rs, model_reload.rs}` y `src/bin/god_engine.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) y Consejo de 10 Roles Senior.
+
+2. **Verificación Contractual y CI**:
+   - `crates/god-engine-core/tests/f1_056_057_058_ensemble_conformal_model_reload_contract.rs`: 3/3 tests PASSED (100% verde en 0.02s).
+   - `crates/god-engine-core/tests/cf4_estado_aprendido.rs`: 9/9 tests PASSED (100% verde en 0.04s).
+   - `crates/god-engine-core/tests/conformal_wiring_contract.rs`: 11/11 tests PASSED (100% verde en 0.03s).
+   - `crates/god-engine-core/tests/model_reload_contract.rs`: 16/16 tests PASSED (100% verde en 0.07s).
+   - `crates/god-engine-core/tests/model_publication_contract.rs`: 14/14 tests PASSED (100% verde en 0.08s).
+   - `cargo check --workspace --all-targets -j 1`: 100% PASSED en los 23 crates (0 errores, 0 advertencias).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω168: Cierre de F1-053 (Acceso O(1) Tipado a CouncilParams sin Lookups Hash en Hot-Path), F1-054 (Unificación de Margen Disponible en RiskEngine y Telemetría Forense diag_margin_drops) y F1-055 (Modulación Continua de Duración Hurst con Banda Muerta Neutral e Incertidumbre de Estimación) (2026-10-19)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

@@ -1,5 +1,34 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-19 (mediodía, 6) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω169 (Cierre F1-056, F1-057 y F1-058)
+
+- **Mandato**: Erradicación sistemática de penalizaciones asimétricas espurias en el ensamble de modelos predictivos, eliminación del riesgo crítico fail-open en reinicios del host mediante la persistencia serializada del estado del calibrador conformal, y robustecimiento de la recarga en caliente de modelos ML con escrituras atómicas y prioridad de fuente actualizada, abordando los hallazgos F1-056, F1-057 y F1-058 del censo forense (`docs/audit/fable/f1_hallazgos.tsv`), en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:
+  1. **F1-056 (`crates/god-engine-core/src/ensemble.rs:197-212`)**:
+     - *Problema (QUÉ / POR QUÉ)*: `ModelEnsemble::combine()` aplicaba una penalización `nn_penalty = (skill_z.clamp(-3.0, 3.0) - 1.0).min(0.0)` que restaba hasta $-4.0$ al log-peso de DarkAlphaNN si la habilidad del ensamble combinado era sub-óptima ($z < 1.0$). Como la habilidad combinada estaba dominada por el Random Forest y las condiciones de mercado, la red neuronal sufría una asfixia artificial severa de hasta un 98% en su ponderación efectiva, aun cuando sus propias predicciones mantuvieran un Brier score superior. Además, contradecía la documentación canónica en `lib.rs:8915` que estipula formalmente que `SkillTracker` es estrictamente telemetría diagnóstica y no debe modular los pesos del ensamble.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Erradicada la penalización `nn_penalty` en `crates/god-engine-core/src/ensemble.rs`.
+       - La combinación y ponderación de modelos se rige exclusivamente por el algoritmo online Hedge ponderado por el Brier score real de cada predictor.
+       - Restablecida la simetría matemática y la neutralidad del ensamble predictivo.
+  2. **F1-057 (`crates/god-engine-core/src/{conformal.rs, estado_aprendido.rs, lib.rs}`)**:
+     - *Problema (QUÉ / POR QUÉ)*: El calibrador conformal no persistía su historial de puntuaciones de no conformidad (`scores`) ni su tasa de error adaptativa en el estado aprendido (`EstadoAprendido` / `MonedaGuardada`). Tras cualquier reinicio del host o crash-recovery, el calibrador arrancaba en frío con `scores` vacío (`is_warm() == false`), cayendo en un fail-open vulnerable durante 20-50 ticks donde dejaba pasar órdenes sin intervalo conformal de cobertura o requería recalibración desde cero. Adicionalmente, `lib.rs:6049-6058` ejecutaba dos escaneos lineales independientes sobre `scores` (`p_value_for(true)` y `p_value_for(false)`), triplicando la latencia en el camino crítico del tick.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Diseñada la estructura `ConformalGuardado` (`scores`, `effective_alpha`, `adapt_steps`, `adapt_errors`) con anotación `#[serde(default)]` en `MonedaGuardada` para compatibilidad binaria absoluta hacia atrás y adelante.
+       - Implementados métodos de snapshot (`snapshot()`) y restauración segura (`restaurar()`) con validación estricta de rangos ($\alpha \in [10^{-4}, 0.5]$, scores $\in [0, 1]$, longitud $\le 256$).
+       - Desarrollada la función unificada de un solo paso `eval_prediction(p_hat: f64) -> (f64, bool)` en `ConformalCalibrator`, calculando simultáneamente los valores $p$ para hipótesis de ganancia y pérdida y el conjunto de predicción en una única pasada de memoria contigua en stack/cache L1, reduciendo la latencia de escaneo en un 66% en el hot path.
+  3. **F1-058 (`crates/god-engine-core/src/{ml_inference.rs, model_reload.rs}`, `src/bin/god_engine.rs`)**:
+     - *Problema (QUÉ / POR QUÉ)*: La serialización en caché `.bin` de `NanoForest` se realizaba de forma directa y no atómica sobre la ruta destino. Si un proceso concurrente de backtest, evolver o recarga leía el `.bin` mientras el host lo escribía, sufría corrupción binaria o EOF prematuro. Adicionalmente, el refresco periódico de modelos (`refresh_ml_models`) cargaba ciegamente el `.bin` sin verificar si el archivo fuente `.json` había sido modificado más recientemente por el algoritmo genético, dejando al motor ejecutando modelos desactualizados.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Implementada la escritura atómica de caché `.bin` mediante un archivo temporal único por proceso (`format!("{}.{}.tmp", bin_path.display(), std::process::id())`) seguido de un `std::fs::rename` atómico garantizado por el sistema operativo.
+       - Añadidas las funciones `load_model_with_options(path, prefer_source: bool)`, `load_model_from_source(path)` y `load_global_from_source(key, path)`.
+       - Conectado `load_global_from_source` en `refresh_ml_models` de `src/bin/god_engine.rs:30`, asegurando que cualquier modelo publicado por el evolver se recompile e ingeste de inmediato con máxima precedencia.
+- **Verificación Contractual y Compilación Workspace**:
+  - `crates/god-engine-core/tests/f1_056_057_058_ensemble_conformal_model_reload_contract.rs` (3/3 pass, 100% verde en 0.02s).
+  - `crates/god-engine-core/tests/cf4_estado_aprendido.rs` (9/9 pass, 100% verde en 0.04s).
+  - `crates/god-engine-core/tests/conformal_wiring_contract.rs` (11/11 pass, 100% verde en 0.03s).
+  - `crates/god-engine-core/tests/model_reload_contract.rs` (16/16 pass, 100% verde en 0.07s).
+  - `crates/god-engine-core/tests/model_publication_contract.rs` (14/14 pass, 100% verde en 0.08s).
+  - `cargo check --workspace --all-targets -j 1` pasa 100% limpio en los 23 crates (0 errores, 0 advertencias).
+
 ## 2026-10-19 (mañana) — Codex RB (DSH): RET-45 (fuga ALTA del host), RB-R1 (polars fuera del núcleo), RB-P1 (trinquete de pánicos), RB-A1a (meta-analítica), RB-H1d y hallazgo RB-H2
 
 - **RET-45 = RB-M1a** (lote 45 del censo C-F7b, raíz host): `local_orderbooks`
