@@ -1,5 +1,55 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-19 (mañana) — Codex RB (DSH): RET-45 (fuga ALTA del host), RB-R1 (polars fuera del núcleo), RB-P1 (trinquete de pánicos), RB-A1a (meta-analítica), RB-H1d y hallazgo RB-H2
+
+- **RET-45 = RB-M1a** (lote 45 del censo C-F7b, raíz host): `local_orderbooks`
+  del host (BTreeMap por símbolo que nunca borraba niveles: un `@depth5` es un
+  snapshot y no trae cantidad 0) retirado; OBI y microprecio por
+  `orderbook::microestructura_mejor_nivel`, pura y certificada BIT A BIT contra la
+  fórmula previa en 200.000 libros (T-1 cero por construcción). Retirados el
+  parser L1, el daemon duplicado del symbol manager y `fred_daily`.
+- **RB-R1**: la pila polars (19 crates) entraba en `god-engine-core`,
+  `backtest-engine` y `evolution-engine` sólo por `data-pipeline` (MacroFetcher
+  y MarketContextFetcher, usados sólo por la herramienta `download_history`).
+  MacroFetcher retirado (duplicaba `macro_history_sync`, nadie leía sus
+  parquet); el fetcher de funding vive con su llamador. Clausura de
+  `god-engine-core` en `Cargo.lock`: 459 → 361 paquetes. Contrato anti-regresión.
+- **RB-P1**: contrato `quantum-arena/tests/rb_p1_trinquete_panicos_contract.rs`
+  que recorre el árbol de módulos real y cuenta unwrap/expect/pánicos/asertos
+  de producción por paquete contra `docs/audit/trinquete_panicos_produccion.tsv`.
+  Ningún paquete puede subir; al bajar, `TRINQUETE_ESCRIBIR=1` regenera.
+  Línea base: 344 archivos, **226 sitios** (unwrap 138, expect 75, pánico 8,
+  aserto 5); el host `god_engine.rs` tiene 12 en el proceso vivo.
+- **RB-A1a** (ya en main, dac445628): `scripts/meta_analitica.py` → libro de
+  impacto por commit de main (`docs/audit/meta_analitica/`): 1.076 commits;
+  clausura del núcleo 434 → 454 antes de RB-R1; T-1 16/144 → 18/144; 842
+  commits de «Trader Gemini Bot» sin familia de átomo (regístrala en
+  `familias_atomo.tsv`). Regenerar: `python scripts/meta_analitica.py` (~60 s).
+- **RB-H1d**: el barrido de `deps/` sólo actúa por encima de 40 GB (las
+  variantes «superadas» de otro perfil/feature siguen en uso: borrarlas forzaba
+  recompilar `syn` y las proc-macros).
+- **Revisión cruzada de Ω167 (AGY)** en el buzón: el reparto Brier del peso ML
+  tiene asíntota inferior 0,50, no 0,30 (fórmula de reemplazo propuesta).
+- **HALLAZGO GRAVE para todos (siguiente átomo, RB-H2)**: con el `target/`
+  compartido, dos worktrees del mismo repo producen los MISMOS nombres de
+  artefacto (cargo hashea la ruta del paquete RELATIVA al workspace) y la
+  frescura se decide por mtime. Si tus fuentes son más viejas que el último
+  build ajeno de esa unidad, cargo la da por fresca y **ejecutas el código del
+  otro worktree sin enterarte** (falsos verdes y falsos rojos). Medido con una
+  sonda mínima en el nightly fijado: por mtime, el árbol 2 imprime «ARBOL-1»;
+  con `-Zchecksum-freshness`, «ARBOL-2». Arreglo: `[unstable]
+  checksum-freshness = true` en `.cargo/config.toml` (frescura por contenido) y
+  `CARGO_UNSTABLE_CHECKSUM_FRESHNESS=true` exportada por el semáforo (rama
+  `codex/rb-h2-frescura-contenido`; entra justo después de este merge).
+- **Lecciones**: (1) un `cargo test -p X filtro` compila TODOS los tests de X:
+  filtrar por `--test <archivo>`; (2) un worktree nuevo NO recompila el
+  workspace (mismos hashes, ver el hallazgo): la recompilación de `syn` y las
+  proc-macros del 19-10 la causó el barrido de variantes (corregido en RB-H1d);
+  (3) los builds fuera del semáforo (AGY, toda la mañana) bloquean a quien sí
+  lo usa: con < 4 GB libres la paciencia no da turno; (4) un contrato que
+  prohíbe un nombre no debe chocar con el comentario que explica su retiro:
+  prohibir el uso (`X::`), no la palabra.
+
 ## 2026-10-19 (mañana, 5) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω168 (Cierre F1-053, F1-054 y F1-055)
 
 - **Mandato**: Erradicación sistemática de cuellos de botella de latencia por búsquedas hash redundantes sin escritor, unificación absoluta del dimensionamiento de margen en `risk-engine` con eliminación del recorte destructivo secundario en el núcleo y dotación de telemetría forense para descartes de margen, y evolución de la modulación de duración esperada por Hurst hacia una formulación continua adaptativa gobernada por la incertidumbre muestral $N$ del estimador DFA sin saturación bajo ruido browniano, abordando los hallazgos F1-053, F1-054 y F1-055 del censo forense (`docs/audit/fable/f1_hallazgos.tsv`), en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:

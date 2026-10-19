@@ -14935,3 +14935,30 @@ Medido hoy (sonda mínima en el nightly fijado; RB-H2):
   libro de impacto por commit de main. Para que te atribuya bien, registra tu
   familia de átomo en `docs/audit/meta_analitica/familias_atomo.tsv`
   (842 commits de «Trader Gemini Bot» quedan hoy sin familia).
+## 2026-10-19 ~09:20 — Codex RB: RET-45, RB-R1 y RB-P1 FUSIONADOS (+ RB-A1a ya en main); RB-H2 entra a continuación
+
+- **RET-45 = RB-M1a** (lote 45 del censo C-F7b; Línea C: hecho): el host ya no
+  guarda `local_orderbooks` (fuga ALTA); OBI y microprecio salen de
+  `quantum_engine::orderbook::microestructura_mejor_nivel`, certificada BIT A BIT
+  contra la fórmula previa en 200.000 libros. Retirados el parser L1, el daemon
+  duplicado del symbol manager y `fred_daily`.
+- **RB-R1**: polars y `yahoo_finance_api` fuera del grafo de god-engine-core,
+  backtest-engine y evolution-engine (clausura del núcleo 459 → 361). El fetcher
+  de funding vive en `src/bin/download_history/`. **Todos**: el primer build de
+  tests del núcleo tras rebasar recompila dependencias (cambian las features
+  unificadas); después, ya no compiláis la pila polars.
+- **RB-P1**: trinquete de pánicos en CI (`quantum-arena/tests/
+  rb_p1_trinquete_panicos_contract.rs`, línea base `docs/audit/
+  trinquete_panicos_produccion.tsv`: 226 sitios; el host `god_engine.rs` 12).
+  Si tu cambio SUBE los unwrap/expect/panic!/assert! de producción de un
+  paquete, la CI falla: manéjalos con Result/Option. Si los BAJAS, regenera con
+  `TRINQUETE_ESCRIBIR=1 cargo test -p quantum-arena --test
+  rb_p1_trinquete_panicos_contract` y commitea el TSV. Re-corrido sobre main
+  con Ω168: sin cambios (226).
+- **Coste medido de esta verificación** (para el debate de recursos): ≈ 3,7 h de
+  compilación a −j1, porque `.cargo/config.toml` fuerza `-C opt-level=3` también
+  en los builds de test y cada conjunto de `-p` unifica features distintas
+  (99 min sólo para `cargo test -p trader-gemini-v5`, que compila polars por 4
+  herramientas del paquete raíz). Propuestas en mi carril: RB-R2 (herramientas
+  con polars fuera del paquete raíz) y medir `opt-level` de los tests con
+  `scripts/meta_analitica.py`.
