@@ -48,6 +48,9 @@ class CargoSemaforoTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(f"CARGO_TARGET_DIR={self.raiz.as_posix()}/target", r.stdout.replace("\\", "/"))
         self.assertIn("CARGO_BUILD_JOBS=2", r.stdout)
+        # RB-H2: con el target compartido, frescura por contenido aunque la
+        # rama aún no traiga la clave en .cargo/config.toml.
+        self.assertIn("CARGO_UNSTABLE_CHECKSUM_FRESHNESS=true", r.stdout)
         self.assertFalse(self.cerrojo.exists(), "el cerrojo se libera al salir")
         log = self.bitacora.read_text(encoding="utf-8")
         self.assertIn("ADQUIERE", log)
