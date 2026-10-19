@@ -625,6 +625,42 @@ impl StatefulEngine {
         s.clamp(-1.0, 1.0)
     }
 
+    /// CL-xxx (F1-063, Ola Ω171): Reinicio por reconexión del feed: limpia únicamente
+    /// buffers dependientes de la secuencia de micro-ticks continuos y libros inmediatos
+    /// (order flow, aceleración OBI, micro-precio intra-tick, kline intra-minuto en formación,
+    /// Hawkes y derivadas cinemáticas instantáneas), pero PRESERVA la calibración de volatilidad
+    /// multiescala (v_t, vt_rasgo_ml, piso_resolucion, sigma60), las EMAs de velas históricas
+    /// (kline_ema_fast, kline_ema_slow, kline_ema_trend, kline_ema_macro), el exponente de Hurst,
+    /// el espectro multifractal, ciclos espectrales (spectral, omni, lead_lag) y calibradores adaptativos.
+    /// Antes, `reset_engines` llamaba a `StatefulEngine::new()`, borrando el calentamiento
+    /// REST de 1000 velas inyectado en el arranque y provocando que las posiciones abiertas
+    /// se gestionaran con ATR = 0 tras reconexiones del WS (watchdog o corte de 24h de Binance).
+    pub fn reset_on_reconnect(&mut self) {
+        self.order_flow = OrderFlowTracker::new();
+        self.ofi_model = feature_engine::OFIModel::new();
+        self.obi_accel = ObiAcceleration::new();
+        self.obi_noise = ObiNoise::new();
+        self.a_t = 0.0;
+        self.last_inst_v = 0.0;
+        self.dir_velocity = 0.0;
+        self.price_ring = feature_engine::TensorRing::new();
+        self.jerk_t = 0.0;
+        self.hawkes = feature_engine::HawkesProcessEngine::new(0.05, 0.35, 1.5);
+        self.last_hawkes_ratio = 0.0;
+        self.kline_start_ms = 0;
+        self.kline_open = 0.0;
+        self.kline_high = 0.0;
+        self.kline_low = 0.0;
+        self.kline_volume = 0.0;
+        self.ultima_cantidad_trade = 0.0;
+        self.last_event_ms = 0;
+        self.ruido_retorno_tick = ObiNoise::new();
+        // Preserva: v_t, vt_rasgo_ml, piso_resolucion, sigma60, hurst,
+        // spectral, multifractal, omni, lead_lag, regime, kline_ema_*,
+        // spectral_bin, spectral_power, spectral_centroid, hurst_micro,
+        // hurst_meso, hurst_macro, kalman, quantiles, rsi_rs, etc.
+    }
+
     /// Flushes all internal buffers. Used to auto-heal time-series glitches after network disconnects.
     pub fn reset(&mut self) {
         self.order_flow = OrderFlowTracker::new();

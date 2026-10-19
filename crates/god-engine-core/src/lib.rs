@@ -1960,9 +1960,13 @@ impl GodEngineCore {
     /// Reinicio por reconexión del feed: estado de MERCADO (estimadores y
     /// último libro). CL-51: el riesgo es de la cuenta y no se toca; antes
     /// el pico del drawdown volvía a `base_capital` en cada reconexión.
+    /// CL-xxx (F1-063, Ola Ω171): limpia buffers de micro-secuencia inmediata
+    /// (order flow, OBI aceleración, micro-precio y kline en formación) pero PRESERVA
+    /// el calentamiento de 1000 velas K-lines REST y la volatilidad calibrada
+    /// de feature_engines (v_t, sigma60, hurst, EMAs de kline).
     pub fn reset_engines(&mut self) {
         for i in 0..quantum_arena::state::MAX_COINS {
-            self.feature_engines[i] = StatefulEngine::new();
+            self.feature_engines[i].reset_on_reconnect();
         }
         self.ultimo_libro.fill(None);
         // CL-87 (spot_z-1): la serie de la base se corta en la reconexión.
@@ -1973,6 +1977,20 @@ impl GodEngineCore {
         // emparejamiento. Su prueba de reversión conserva lo acumulado (el
         // hueco ya decae las sumas); antes volvía a madurar desde cero en
         // cada reconexión y los nodos lentos no maduraban nunca.
+        for e in self.statarb_ou_engines.iter_mut() {
+            e.cortar_emparejamiento();
+        }
+    }
+
+    /// Reinicio en frío total de todos los motores de mercado (StatefulEngine::new()).
+    pub fn reset_engines_cold(&mut self) {
+        for i in 0..quantum_arena::state::MAX_COINS {
+            self.feature_engines[i] = StatefulEngine::new();
+        }
+        self.ultimo_libro.fill(None);
+        for z in self.base_z.iter_mut() {
+            *z = base_z::BaseZ::new();
+        }
         for e in self.statarb_ou_engines.iter_mut() {
             e.cortar_emparejamiento();
         }

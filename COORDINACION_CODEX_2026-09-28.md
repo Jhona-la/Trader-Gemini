@@ -1,5 +1,38 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω171: Cierre de F1-062 (Zero-Alloc centinela_contable O(1) con Paridad Bit a Bit, Auditoría de Divergencia Real y try_idle_recovery sin Estado Absorbente en DriftRecovery) y F1-063 (reset_on_reconnect Preservando Calentamiento Multi-Escala K-line/ATR/Hurst en Reconexiones WebSocket) (2026-10-19)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω171: AUDITORÍA DE DERIVA ZERO-ALLOC EN O(1), DESBLOQUEO DE ESTADO ABSORBENTE Y PRESERVACIÓN DE CALENTAMIENTO MULTI-ESCALA EN RECONEXIONES WS
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv` (2 en total)**:
+   - **`F1-062` (`MED`, `src/bin/god_engine.rs:4310-4375`, `crates/audit-engine/src/drift_auditor.rs:135-210`)**:
+     - **QUÉ**: Erradicación de asignaciones heap sintéticas en `TradeResult` dentro del hilo crítico de cierre de trades mediante la implementación de `DriftAuditor::centinela_contable(real_pnl_pct)` con cero asignaciones en $O(1)$ y paridad bit a bit exacta frente a la fórmula de shadow previa; implementación de `DriftRecovery::try_idle_recovery` con cooldown de 60 segundos cuando no existen posiciones abiertas (`open_positions == 0`); y adición de `DriftAuditor::audit_control_divergence` para contrastar en vivo la deriva real vs control.
+     - **POR QUÉ**: El mecanismo anterior instanciaba en el heap dos estructuras `TradeResult` en cada cierre para evaluar `drift = shadow.pnl_pct - real.pnl_pct` con `shadow = real * 0.95`. Para superar el umbral de 0.05, se requería $|real\_pnl\_pct| > 1.0$ (retorno no apalancado > 100%), lo cual era matemáticamente inalcanzable para operaciones normales (delimitadas por TP/SL $\le 5\%$). El único error alcanzable era `NonfinitePnl` (contabilidad corrupta). Además, `DriftRecovery` contenía un estado trampa absorbente: requería 10 trades consecutivos limpios para desbloquear el veto de entrada, pero como vetaba todas las entradas (`is_blocked() == true`), si las posiciones abiertas llegaban a 0, el motor quedaba permanentemente bloqueado para siempre.
+     - **PARA QUÉ**: (1) Eliminar asignaciones en heap en el path TIME_CRITICAL de cierre de órdenes; (2) Evitar parálisis definitiva de la operativa en vivo; (3) Proporcionar un centinela contable riguroso y una auditoría de divergencia real contrastando la cartera real con el bosque de control.
+     - **CÓMO**: `centinela_contable` valida que $pnl$ sea finito y $|pnl| \le 1.0$, computando el drift exacto `real_pnl_pct * 0.95 - real_pnl_pct` en registros de CPU; `try_idle_recovery` registra `blocked_since_ms` y resetea la bandera de bloqueo de `DriftRecovery` si han pasado más de 60s sin posiciones abiertas; en `god_engine.rs` se reemplazaron las instancias dummy de `TradeResult` por llamadas directas a `centinela_contable` y `observe_at`, agregando chequeo periódico de reposo en el loop principal.
+     - **CUÁNDO**: Al procesar cierres de órdenes y en cada ciclo periódico de 4096 eventos.
+     - **DÓNDE**: `crates/audit-engine/src/drift_auditor.rs` y `src/bin/god_engine.rs`.
+     - **QUIÉN**: Quant Developer, Risk Manager y Arquitecto Senior.
+
+   - **`F1-063` (`MED`, `crates/god-engine-core/src/stateful_engine.rs:628-663`, `crates/god-engine-core/src/lib.rs:1960-1985`, `src/bin/god_engine.rs:3530-3545`)**:
+     - **QUÉ**: Implementación de `StatefulEngine::reset_on_reconnect(&mut self)` y actualización de `GodEngineCore::reset_engines(&mut self)` para preservar los estimadores continuos y multi-escala ($v_t$, $\sigma_{60}$, $v_t^{\text{ml}}$, ciclos espectrales, exponente de Hurst, histórico de velas y EMAs) tras reconexiones del WebSocket (watchdogs de 15s o desconexión forzada de 24h de Binance), proveyendo `reset_engines_cold()` para reinicios en frío explícitos.
+     - **POR QUÉ**: Ante cualquier interrupción de red o reconexión periódica, el centinela del host ejecutaba `engine_real.reset_engines()`, el cual reconstruía todas las instancias con `StatefulEngine::new()`. Esto borraba las 1000 velas de 1 minuto inyectadas en el calentamiento de Fase 3 vía REST al arrancar. Como consecuencia, si había posiciones vivas abiertas durante la reconexión, el núcleo las gestionaba con $ATR = 0$ y estimadores en estado transitorio frío durante decenas de minutos, descalibrando los trailing stops dinámicos y arriesgando el capital de la cuenta ($13 USD).
+     - **PARA QUÉ**: Preservar la invariante del universo continuo temporal espectral a través de reconexiones de red, garantizando que los modelos predictivos y dimensionadores de riesgo dispongan ininterrumpidamente de estimadores de volatilidad calibrados.
+     - **CÓMO**: `reset_on_reconnect` vacía únicamente los buffers microestructurales de ticks dependientes del feed (`order_flow`, `ofi_model`, `obi_accel`, `obi_noise`, `a_t`, `last_inst_v`, `dir_velocity`, `price_ring`, `jerk_t`, `hawkes`, `kline_start_ms`), mientras mantiene intactos los campos de volatilidad multi-escala, ciclo espectral, memoria fractal y EMAs de klines.
+     - **CUÁNDO**: Al dispararse una reconexión por latencia o watchdog del feed de datos.
+     - **DÓNDE**: `crates/god-engine-core/src/stateful_engine.rs`, `crates/god-engine-core/src/lib.rs` y `src/bin/god_engine.rs`.
+     - **QUIÉN**: SRE/DevOps, Quant Developer y Físico de Sistemas Complejos.
+
+2. **Verificación Formal y Pruebas de Certificación**:
+   - `cargo test -p god-engine-core --test f1_062_063_drift_accounting_reconnect_contract -j 1` (3/3 pass, 100% verde en 0.03s).
+   - `cargo test -p audit-engine -j 1` (78/78 pass, 100% verde en 0.35s across 10 suites).
+   - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+   - `cargo check --workspace --all-targets -j 1` (100% verde en los 23 crates).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω170: Cierre de F1-059 (Persistencia Asíncrona de Kelly, Debounce de Estado y VecDeque Zero-Alloc), F1-060 (Reseteo Neutral Causal de ModelEnsemble en Cada Barra) y F1-061 (Unificación de Autoridad de Dimensionamiento en RiskEngine con Supervisor de Envolvente y Paridad 1:1) (2026-10-19)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

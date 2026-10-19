@@ -3518,6 +3518,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            // F1-062 (Ola Ω171): Prevención de estado absorbente en DriftRecovery.
+            // Si el veto de deriva está activo con 0 posiciones abiertas y 60s sin incidentes,
+            // se auto-libera para que el motor pueda reanudar operaciones sin reinicio de proceso.
+            if drift_recovery.is_blocked() && mensajes_desde_firma % 256 == 0 {
+                let ahora_ms = instant_baseline.elapsed().as_millis() as u64;
+                let hay_abiertas = engine_real.arena.coins.iter().any(|c| c.positions.open_positions_count() > 0);
+                if !hay_abiertas && drift_recovery.try_idle_recovery(ahora_ms, 60_000, 0) {
+                    engine_real.set_drift_entry_veto(false);
+                    telemetry_engine::telemetry!(
+                        "✅ [DRIFT-PROXY] Auto-recuperación: 0 posiciones abiertas y 60s sin fallos contables (liberación de estado absorbente F1-062)"
+                    );
+                }
+            }
             // CL-52: la reconexión llega en banda (centinela) o, si la cola
             // llena se llevó el centinela, por la marca de la cola; en ese
             // caso el mensaje en la mano ya es posterior y se procesa tras
@@ -3528,14 +3541,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let es_centinela = msg_bytes == data_ingest::cola_ws::CENTINELA_RECONEXION;
             let centinela_perdido = estado_cola.tomar_reconexion_perdida();
             if es_centinela || centinela_perdido {
-                telemetry_server::telemetry_log!("🧹 [AUTO-HEALING] Reconnect signal received. Purging Quantum Engine state to prevent time-glitches...");
+                telemetry_server::telemetry_log!("🧹 [AUTO-HEALING] Reconnect signal received. Resetting feed sequence state (preserving warm multi-scale K-line/ATR estimators)...");
                 engine_real.reset_engines();
                 // CERT-M1-H02: resetear el guard de secuencia del libro —
                 // sin esto, cada símbolo descartaba hasta 50 mensajes depth
                 // consecutivos tras la reconexión (>1300 actualizaciones de
                 // libro perdidas por reconnect con 26+ símbolos).
                 book_seq_guard = parsers::BookSequenceGuard::new(n_slots_libro);
-                telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed + book sequence guard reset. Entering Warmup Phase (50 ticks).");
+                telemetry_server::telemetry_log!("✅ [AUTO-HEALING] Book sequence guard and micro buffers reset. Multi-scale feature calibration preserved.");
 
                 let rx_rest = Arc::clone(&exec);
                 rt_handle.spawn(async move {
@@ -4299,47 +4312,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_millis() as u64;
-                            let real_tr = audit_engine::drift_auditor::TradeResult {
-                                symbol_id: coin_id,
-                                is_long,
-                                entry_price: 0.0, // no disponible en este scope
-                                exit_price: current_price,
-                                pnl_pct: real_pnl_pct,
-                                timestamp_ms: ts_now,
-                            };
-                            // D-704 + C-11 (UNIÓN): UN SHADOW CONSTANTE NO ES
-                            // UNA COMPARACIÓN. El shadow original fijado en 0
-                            // hacía drift = −real: un cierre GANADOR grande
-                            // armaba el kill-switch por haber ganado dinero.
-                            // C-11 lo sustituyó por shadow = 0,95·real —
-                            // sólo cruza el umbral si |real| > 100% del
-                            // nocional (contabilidad podrida, p. ej. adoptada
-                            // con entry roto): un CENTINELA útil, pero NO una
-                            // expectativa — el modo de fallo que este auditor
-                            // existe para cazar (bt predice +0,4% y el vivo
-                            // entrega −0,4%) sigue invisible hasta que exista
-                            // contraparte real (PnL del universo de control
-                            // del ShadowForest, o ml_prediction con la
-                            // geometría TP/SL comprometida — siguiente paso).
-                            // XXXVI: it vetoes new entries; local defensive close
-                            // proposals remain possible. Ten valid observations
-                            // release ONLY this veto, never another risk cause.
-                            let shadow_tr = audit_engine::drift_auditor::TradeResult {
-                                symbol_id: coin_id,
-                                is_long,
-                                entry_price: 0.0,
-                                exit_price: current_price,
-                                pnl_pct: real_pnl_pct * 0.95,
-                                timestamp_ms: ts_now,
-                            };
-                            let audit = drift_auditor.audit_execution_checked(&real_tr, &shadow_tr);
-                            // XCIV (F7-A-H2, fase medición): publicar la
-                            // divergencia REAL contra el universo de control
-                            // del ShadowForest (genoma sancionado, mismos
-                            // ticks). Doctrina D-751: el veto NO se toca —
-                            // primero observamos la distribución de esta
-                            // señal en vivo, el cableado del veto con
-                            // calibración es la ola subsiguiente.
+                            // F1-062 (Ola Ω171): Centinela contable directo en O(1) con cero asignaciones.
+                            // Erradica la sombra sintética real·0.95 que requería |real| > 100% y
+                            // evita la creación de dos TradeResult ficticios en el camino crítico.
+                            let audit = drift_auditor.centinela_contable(real_pnl_pct);
+                            // XCIV (F7-A-H2): registrar y telemetrar la divergencia REAL contra el
+                            // universo de control del ShadowForest (genoma sancionado, mismos ticks).
                             if let Some(control_pct) = shadow_forest.control_realized_pnl_pct() {
                                     let cap = shadow_forest.initial_capital;
                                     if cap.is_finite() && cap > 0.0 {
@@ -4360,10 +4338,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             "drift_control_pnl_pct",
                                             control_pct,
                                         );
+                                        if divergencia.abs() > 0.03 {
+                                            telemetry_engine::telemetry!(
+                                                "📊 [DRIFT-CONTROL] Divergencia vivo vs control ShadowForest: {:.2}% (control: {:.2}%, real: {:.2}%)",
+                                                divergencia * 100.0,
+                                                control_pct * 100.0,
+                                                real_pct * 100.0
+                                            );
+                                        }
                                     }
                             }
                             let was_blocked = drift_recovery.is_blocked();
-                            drift_recovery.observe(&audit);
+                            drift_recovery.observe_at(&audit, ts_now);
                             engine_real.set_drift_entry_veto(drift_recovery.is_blocked());
                             if let Err(reason) = audit {
                                 telemetry_engine::telemetry!(

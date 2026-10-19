@@ -1,5 +1,30 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-19 (tarde, 2) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω171 (Cierre F1-062 y F1-063)
+
+- **Mandato**: Erradicación de la asignación fantasma e inalcanzable de drift proxy (`real_pnl_pct * 0.95`) en el hilo de cierre y desbloqueo del estado absorbente de `DriftRecovery` ante 0 posiciones abiertas, junto con la preservación estricta del calentamiento multi-escala (K-lines REST Phase 3, volatilidad continua $v_t$, $\sigma_{60}$, $v_t^{\text{ml}}$, ciclos espectrales y exponente de Hurst) a través de reconexiones del feed WebSocket de Binance, cerrando formalmente los hallazgos `F1-062` y `F1-063` de `docs/audit/fable/f1_hallazgos.tsv`:
+  1. **F1-062 (`src/bin/god_engine.rs:4310-4375`, `crates/audit-engine/src/drift_auditor.rs:135-210`)**:
+     - *QUÉ*: Implementación de `DriftAuditor::centinela_contable(real_pnl_pct)` con cero asignaciones en $O(1)$ y paridad bit a bit exacta frente a la fórmula de shadow previa; incorporación de `DriftRecovery::try_idle_recovery` con cooldown de 60 segundos cuando no existen posiciones abiertas (`open_positions == 0`), y eliminación de las construcciones redundantes de `TradeResult` en el hot path.
+     - *POR QUÉ*: El mecanismo previo construía dos `TradeResult` en heap en cada cierre para computar `drift = shadow.pnl_pct - real.pnl_pct` con `shadow = real * 0.95`. Dicho umbral de 0.05 exigía $|real\_pnl\_pct| > 1.0$ (retorno no apalancado > 100%), siendo matemáticamente inalcanzable para detectar deriva real del modelo y disparándose únicamente ante contabilidad corrupta (precios o cantidades no finitas). Además, una vez disparado el bloqueo en `DriftRecovery`, se exigían 10 operaciones consecutivas sanas para desbloquear, pero como el bloqueo vetaba nuevas entradas (`is_blocked() == true`), si el número de posiciones abiertas llegaba a 0 el sistema entraba en un estado absorbente permanentemente muerto.
+     - *PARA QUÉ*: Evitar parálisis operativa irreversible del motor en producción, erradicar asignaciones innecesarias en el hilo `TIME_CRITICAL` al cerrar posiciones, y proveer una auditoría contable rigurosa y verificable en $O(1)$.
+     - *CÓMO*: `centinela_contable` valida finitud de $pnl \in [-1.0, 1.0]$ y computa el drift exacto en registro sin allocar. `DriftRecovery::try_idle_recovery` comprueba si han transcurrido $\ge 60\,000\text{ ms}$ en reposo sin posiciones abiertas, reseteando la bandera de bloqueo de forma segura. Se cableó la auditoría de control real y la verificación periódica de reposo en el loop principal.
+     - *CUÁNDO*: Al registrar el cierre de cualquier orden y en cada evaluación periódica de eventos del host.
+     - *DÓNDE*: `crates/audit-engine/src/drift_auditor.rs` y `src/bin/god_engine.rs`.
+     - *QUIÉN*: `Quant Developer`, `Risk Manager` y `Arquitecto Senior`.
+  2. **F1-063 (`crates/god-engine-core/src/stateful_engine.rs:628-663`, `crates/god-engine-core/src/lib.rs:1960-1985`, `src/bin/god_engine.rs:3530-3545`)**:
+     - *QUÉ*: Implementación de `StatefulEngine::reset_on_reconnect(&mut self)` y actualización de `GodEngineCore::reset_engines(&mut self)` para preservar el estado calibrado de estimadores continuos y multi-escala (`v_t`, `vt_rasgo_ml`, `piso_resolucion`, `sigma60`, Hurst, ciclos espectrales, klines acumuladas y EMAs de velas) ante reconexiones de WebSocket (watchdogs de red o rotación forzada de 24h de Binance), agregando `GodEngineCore::reset_engines_cold()` para reinicios en frío explícitos.
+     - *POR QUÉ*: Ante caídas de red o la desconexión diaria de Binance, el host invocaba `reset_engines()`, el cual reconstruía desde cero todas las instancias con `StatefulEngine::new()`. Esto destruía las 1000 velas de 1 minuto inyectadas en el calentamiento de Fase 3 vía REST, dejando los estimadores de volatilidad continua (`v_t`), ATR y rasgos ML en 0. Si había posiciones vivas abiertas durante la reconexión, el núcleo las gestionaba con $ATR = 0$ y rasgos en régimen transitorio descalibrado, arriesgando stops mal dimensionados y ruina de capital.
+     - *PARA QUÉ*: Garantizar la continuidad física y matemática de los estimadores del universo espectral continuo a través de reconexiones de red, protegiendo posiciones abiertas y evitando sesgo de datos transitorios.
+     - *CÓMO*: `reset_on_reconnect` vacía únicamente los buffers microestructurales de ticks (`order_flow`, `ofi_model`, `obi_accel`, `obi_noise`, `a_t`, `last_inst_v`, `dir_velocity`, `price_ring`, `jerk_t`, `hawkes`, `kline_start_ms`), mientras mantiene intactos los campos de volatilidad multi-escala y memoria macro.
+     - *CUÁNDO*: Al activarse el centinela de reconexión por pérdida de latencia o watchdog del feed WebSocket.
+     - *DÓNDE*: `crates/god-engine-core/src/stateful_engine.rs`, `crates/god-engine-core/src/lib.rs` y `src/bin/god_engine.rs`.
+     - *QUIÉN*: `SRE/DevOps`, `Quant Developer` y `Físico de Sistemas Complejos`.
+- **Verificación Contractual y Compilación Workspace**:
+  - `crates/god-engine-core/tests/f1_062_063_drift_accounting_reconnect_contract.rs` (3/3 pass, 100% verde en 0.03s).
+  - `crates/audit-engine` test suite (78/78 pass, 100% verde en 0.35s).
+  - `crates/quantum-arena/tests/rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 incrementos de pánicos).
+  - `cargo check --workspace --all-targets -j 1` pasa 100% limpio en los 23 crates (0 errores, 0 advertencias).
+
 ## 2026-10-19 (tarde, 1) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω170 (Cierre F1-059, F1-060 y F1-061)
 
 - **Mandato**: Erradicación de la latencia I/O síncrona en el bucle de eventos del host (persistencia no bloqueante de Kelly y debounce de estado aprendido), eliminación de la desalineación temporal en el ensamble predictivo mediante reseteo explícito de opiniones en barras neutras, y unificación rigurosa de la autoridad de dimensionamiento en `RiskEngine` con el supervisor bayesiano de admisibilidad y techo `RiskEnvelope`, cerrando los hallazgos `F1-059`, `F1-060` y `F1-061` de `docs/audit/fable/f1_hallazgos.tsv`:
