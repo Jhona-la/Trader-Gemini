@@ -153,6 +153,9 @@ class LibroDeImpacto(unittest.TestCase):
         cls.cabecera = lineas[0].split("\t")
         cls.filas = [dict(zip(cls.cabecera, l.split("\t"))) for l in lineas[1:]]
         cls.resumen = (cls.salida / "resumen.md").read_text(encoding="utf-8")
+        cls.areas_lineas = (cls.salida / "area_impacto.tsv").read_text(encoding="utf-8").splitlines()
+        cls.areas_cabecera = cls.areas_lineas[0].split("\t")
+        cls.areas = [dict(zip(cls.areas_cabecera, l.split("\t"))) for l in cls.areas_lineas[1:]]
 
     @classmethod
     def tearDownClass(cls):
@@ -214,8 +217,30 @@ class LibroDeImpacto(unittest.TestCase):
         otra = Path(self.tmp.name) / "salida2"
         self.assertEqual(m.main(["--repo", str(self.raiz), "--salida", str(otra), "--semaforo",
                                  str(self.semaforo), "--familias", str(FAMILIAS_REALES)]), 0)
-        for nombre in ("libro_impacto.tsv", "resumen.md"):
+        for nombre in ("libro_impacto.tsv", "area_impacto.tsv", "resumen.md"):
             self.assertEqual((otra / nombre).read_bytes(), (self.salida / nombre).read_bytes(), nombre)
+
+    def test_desglose_area_conserva_los_totales_del_libro(self):
+        self.assertEqual(self.areas_cabecera, list(m.COLUMNAS_AREA))
+        suma = lambda col: sum(int(f[col]) for f in self.filas)
+        for clave in ("prod_mas", "prod_menos", "tests_mas", "tests_menos"):
+            self.assertEqual(sum(int(a[clave]) for a in self.areas), suma(clave), clave)
+        # Los archivos del desglose son un subconjunto: docs, build, ci y otros
+        # quedan fuera (transversales por clase, ya en el libro).
+        self.assertLessEqual(sum(int(a["archivos"]) for a in self.areas),
+                             sum(int(f["archivos"]) for f in self.filas))
+
+    def test_area_x_con_sus_valores_y_la_seccion_del_resumen(self):
+        (x,) = [a for a in self.areas if a["area"] == "x"]
+        self.assertEqual((x["commits"], x["archivos"], x["prod_mas"], x["prod_menos"],
+                          x["tests_mas"], x["tests_menos"]), ("3", "4", "3", "0", "6", "2"))
+        self.assertEqual((x["ratio_tests"], x["share_prod_mas"]), ("2.0", "1.0"))
+        self.assertEqual((x["primera_fecha"], x["ultima_fecha"]), ("2026-10-01", "2026-10-04"))
+        r = self.resumen
+        self.assertIn("## 6. Atribución por área (componentes)", r)
+        self.assertIn("| x | 3 | 3 | 0 | 6 | 2 | 2.00 | 100.0% | 2026-10-01 | 2026-10-04 |", r)
+        self.assertIn("Concentración: el top 3 de áreas concentra el 100.0%", r)
+        self.assertIn("Ningún área con producción añadida queda por debajo del umbral", r)
 
 
 class Piezas(unittest.TestCase):
@@ -228,6 +253,33 @@ class Piezas(unittest.TestCase):
         for ruta, esperado in casos.items():
             self.assertEqual(m.clase(ruta), esperado, ruta)
 
+    def test_area_de_cada_ruta(self):
+        casos = {"crates/a/src/lib.rs": "a", "crates/b/tests/t.rs": "b", "crates/a/benches/b.rs": "a",
+                 "crates/": "crates", "crates": "otros", "src/main.rs": "host", "src/bin/x.rs": "host",
+                 "x.rs": "host",
+                 "Cargo.lock": "workspace", "Cargo.toml": "workspace", ".cargo/config.toml": "workspace",
+                 "data/f.db": "datos", "docs/x.tsv": "docs", "AGENT_SYNC.md": "docs",
+                 "scripts/x.py": "scripts", ".github/workflows/w.yml": "ci", "models/m.json": "otros"}
+        for ruta, esperado in casos.items():
+            self.assertEqual(m.area(ruta), esperado, ruta)
+
+    def test_area_nunca_vacia_y_derivada_del_arbol(self):
+        """Toda ruta cae en exactamente un área no vacía; las áreas de prod/tests
+        bajo crates/ o src/ son componentes concretos del árbol (crate o host)."""
+        rutas = ("crates/a/src/lib.rs", "crates/b/tests/t.rs", "crates/benches/b.rs",
+                 "src/main.rs", "src/bin/x.rs", "Cargo.lock", "Cargo.toml",
+                 ".cargo/config.toml", "data/x.bin", "docs/x.md", "AGENT_SYNC.md",
+                 "scripts/x.py", ".github/workflows/w.yml", "models/m.json", "x.rs", "a/b/c.txt")
+        for ruta in rutas:
+            k, a = m.clase(ruta), m.area(ruta)
+            self.assertTrue(a, ruta)
+            if k in ("prod", "tests") and ruta.startswith("crates/"):
+                self.assertEqual(a, ruta.split("/")[1], ruta)
+            elif k in ("prod", "tests") and ruta.startswith("src/"):
+                self.assertEqual(a, "host", ruta)
+            elif k in ("prod", "tests"):
+                self.assertIn(a, ("otros", "host", "datos", "workspace"), ruta)
+
     def test_t1_declarado_en_sus_variantes(self):
         for texto, k in (("T-1 18/144", 18), ("veredicto del oraculo T-1 de re-certificacion (PASA 16/144)", 16),
                          ("LG-docs: T-1 re-certificado (18/144)", 18), ("T-10 3/144", None),
@@ -238,6 +290,54 @@ class Piezas(unittest.TestCase):
         for etiqueta, esperado in (("Claude-LineaG-lg27", "Claude-LineaG"), ("Claude-LineaG-merge150", "Claude-LineaG"),
                                    ("Codex RB", "Codex RB"), ("AGY", "AGY"), ("claude-lineaH", "claude-lineaH")):
             self.assertEqual(m.agente_semaforo(etiqueta), esperado, etiqueta)
+
+
+class AreasDeuda(unittest.TestCase):
+    """Repositorio propio y mínimo: un componente (host) con producción y sin
+    tests, y otro (crates/y) con ambos. Verifica la alerta de deuda, la guarda
+    de división (ratio 0.0, jamás NaN) y los shares."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory(prefix="rb_area_")
+        raiz = Path(cls.tmp.name) / "repo"
+        raiz.mkdir()
+        r = RepoTemporal(raiz)
+        r.commit({"crates/y/src/lib.rs": "pub fn f() {}\n" * 3,
+                  "src/bin/app.rs": "fn main() {}\n"},
+                 "RB-Y1: dos componentes", "2026-10-03T10:00:00+00:00")
+        r.commit({"crates/y/tests/t.rs": "#[test]\nfn a() {}\n"},
+                 "RB-Y2: pruebas de y", "2026-10-04T10:00:00+00:00")
+        cls.raiz = raiz
+        cls.salida = Path(cls.tmp.name) / "salida"
+        cls.semaforo = Path(cls.tmp.name) / "inexistente.log"
+        codigo = m.main(["--repo", str(raiz), "--salida", str(cls.salida), "--semaforo",
+                         str(cls.semaforo), "--familias", str(FAMILIAS_REALES)])
+        assert codigo == 0, codigo
+        lineas = (cls.salida / "area_impacto.tsv").read_text(encoding="utf-8").splitlines()
+        filas = [dict(zip(lineas[0].split("\t"), l.split("\t"))) for l in lineas[1:]]
+        cls.areas = {f["area"]: f for f in filas}
+        cls.resumen = (cls.salida / "resumen.md").read_text(encoding="utf-8")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_orden_por_produccion_y_shares(self):
+        self.assertEqual(list(self.areas), ["y", "host"], "orden por producción añadida")
+        self.assertAlmostEqual(float(self.areas["y"]["share_prod_mas"]), 0.75)
+        self.assertAlmostEqual(float(self.areas["host"]["share_prod_mas"]), 0.25)
+
+    def test_guarda_de_division_y_alerta_de_deuda(self):
+        self.assertEqual(float(self.areas["host"]["ratio_tests"]), 0.0, "0/1, no NaN")
+        self.assertAlmostEqual(float(self.areas["y"]["ratio_tests"]), 2 / 3)
+        self.assertIn("Áreas con producción añadida y ratio de tests < 0.05 "
+                      "(candidatas a deuda de pruebas): host.", self.resumen)
+
+    def test_commits_y_archivos_por_area(self):
+        self.assertEqual((self.areas["y"]["commits"], self.areas["y"]["archivos"]), ("2", "2"))
+        self.assertEqual((self.areas["host"]["commits"], self.areas["host"]["archivos"]), ("1", "1"))
+        self.assertIn("Concentración: el top 3 de áreas concentra el 100.0%", self.resumen)
 
 
 if __name__ == "__main__":

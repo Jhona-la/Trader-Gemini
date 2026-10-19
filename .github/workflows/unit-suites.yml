@@ -103,3 +103,23 @@ jobs:
         if: matrix.grupo == 'entrenador'
         # Exercise the production report with synthetic equity, without loading tapes.
         run: cargo +nightly-2026-06-30 test -p trader-gemini-v5 --bin backtest_windows --locked si_b15_report_contract -- --test-threads=1
+
+  meta-analitica:
+    # Sol (2026-10-19): los contratos de la meta-analítica del impacto
+    # (RB-A1a + atribución por área) construyen repositorios git REALES en
+    # carpetas temporales y verifican el libro de impacto, su determinismo y
+    # el desglose por componente — pero NO corrían en ningún workflow: el
+    # libro quedaba sin certificador en CI. Job aparte y barato: Python puro,
+    # sin cargo, sin compilación (ubuntu, ~1 min).
+    name: meta-analítica (contratos Python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout candidate merge
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # verified v4
+        with:
+          persist-credentials: false
+      - name: Contratos de la meta-analítica (libro + áreas)
+        # Se ejecuta el archivo directamente (tiene unittest.main()): evita
+        # los problemas de discover sin __init__.py en scripts/tests.
+        run: python3 scripts/tests/test_meta_analitica.py -v
