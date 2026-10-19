@@ -34,12 +34,19 @@ pub struct RemotePosition {
 pub trait AccountSink: Send + Sync {
     fn on_capital(&self, usdt_total_equity: f64);
     fn on_positions(&self, positions: &[RemotePosition]);
+    /// F412/F413/F271 (Sol, censo C-F7b §3): cierre confirmado por el
+    /// exchange, con PnL bruto y comisiones reales del fill. Es la fuente
+    /// INDEPENDIENTE del Auditor Interno: a diferencia del cierre interno
+    /// del núcleo (mismo bloque, mismo predicado), este registro nace del
+    /// user-data stream con dedupe por trade_id en el OrderRegistry.
+    fn on_bracket_close(&self, close: &crate::trade_accounting::BracketClose);
 }
 
 struct NoopSink;
 impl AccountSink for NoopSink {
     fn on_capital(&self, _usdt: f64) {}
     fn on_positions(&self, _p: &[RemotePosition]) {}
+    fn on_bracket_close(&self, _c: &crate::trade_accounting::BracketClose) {}
 }
 
 use std::collections::HashMap;
@@ -580,21 +587,26 @@ impl UserDataStreamer {
                 } else {
                     0.0
                 };
-            crate::trade_accounting::record_bracket_close(
-                crate::trade_accounting::BracketClose {
-                    ts_ms: update.trade_time_ms,
-                    symbol: update.symbol.clone(),
-                    was_long,
-                    qty,
-                    entry_price,
-                    exit_price: update.last_filled_price,
-                    stop_price: o.stop_price,
-                    pnl_gross,
-                    fees,
-                    trigger,
-                    slippage_bps,
-                },
-            );
+            let cierre = crate::trade_accounting::BracketClose {
+                ts_ms: update.trade_time_ms,
+                symbol: update.symbol.clone(),
+                was_long,
+                qty,
+                entry_price,
+                exit_price: update.last_filled_price,
+                stop_price: o.stop_price,
+                pnl_gross,
+                fees,
+                trigger,
+                slippage_bps,
+            };
+            crate::trade_accounting::record_bracket_close(cierre.clone());
+            // F412/F413/F271 (Sol, censo C-F7b §3): el cierre confirmado por
+            // el exchange alimenta el canal independiente del Auditor
+            // Interno vía el sink del host. Se notifica DESPUÉS del diario
+            // (mismo evento, una sola vez por trade_id gracias al dedupe
+            // del registry en apply_trade_update).
+            self.sink.on_bracket_close(&cierre);
         } else if update.last_filled_qty > 0.0
             && (update.client_order_id.starts_with("cL_")
                 || update.client_order_id.starts_with("cS_")
@@ -1048,5 +1060,37 @@ mod tests {
             .expect("la pierna convertida a MARKET debe encolar BracketClose vía clientOrderId");
         assert_eq!(hit.trigger, "TP");
         assert!(!hit.was_long, "BUY cierra SHORT");
+    }
+
+    /// F412/F413/F271 (Sol, censo C-F7b §3): el cierre confirmado por el
+    /// exchange se notifica al sink del host — fuente independiente del
+    /// Auditor Interno (canal host → core).
+    #[test]
+    fn test_bracket_close_routes_to_sink() {
+        let _guard = crate::trade_accounting::TEST_QUEUE_LOCK.lock();
+        use std::sync::Mutex;
+        struct Captura(Mutex<Vec<crate::trade_accounting::BracketClose>>);
+        impl AccountSink for Captura {
+            fn on_capital(&self, _u: f64) {}
+            fn on_positions(&self, _p: &[RemotePosition]) {}
+            fn on_bracket_close(&self, c: &crate::trade_accounting::BracketClose) {
+                self.0.lock().unwrap_or_else(|e| e.into_inner()).push(c.clone());
+            }
+        }
+        let sink = Arc::new(Captura(Mutex::new(Vec::new())));
+        let registry = Arc::new(OrderRegistry::new());
+        let streamer =
+            UserDataStreamer::new(BinanceClient::new("key".into(), true), registry)
+                .with_sink(sink.clone());
+        let ev = r#"{"e":"ORDER_TRADE_UPDATE","E":1789544472795,"o":{"s":"BTCUSDT","c":"wdTP_1789544472_0","S":"SELL","ps":"LONG","o":"TAKE_PROFIT_MARKET","f":"GTC","q":"0.5","p":"0","ap":"61000","sp":"60000","X":"FILLED","i":99,"l":"0.5","z":"0.5","L":"61000","n":"0.02","N":"USDT","T":1789544472795,"t":42,"m":false}}"#;
+        streamer.dispatch(ev.as_bytes());
+        let capturados = sink.0.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(capturados.len(), 1, "el cierre por bracket debe notificarse al sink una vez");
+        let c = &capturados[0];
+        assert_eq!(c.symbol, "BTCUSDT");
+        assert!(c.was_long, "SELL cierra LONG");
+        assert!((c.exit_price - 61000.0).abs() < 1e-9, "precio de salida del fill");
+        assert!((c.fees - 0.02).abs() < 1e-9, "comisión real del fill");
+        assert_eq!(c.trigger, "TP");
     }
 }

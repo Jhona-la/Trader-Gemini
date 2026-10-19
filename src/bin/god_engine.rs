@@ -1559,6 +1559,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Axiom V: Unified Cross-Margin Pool
     let unified_capital = Arc::new(AtomicU64::new(initial_capital.to_bits()));
 
+    // F412/F413/F271 (Sol, censo C-F7b §3): canal INDEPENDIENTE del Auditor
+    // Interno. El productor es el hilo del user-data stream (fills del
+    // exchange, dedupe por trade_id); el consumidor es el loop principal,
+    // que drena hacia GodEngineCore::registrar_fill_independiente_host.
+    // Bounded (512) = buffer circular acotado: sin crecimiento de RAM ante
+    // ráfagas; try_send en el productor = jamás bloquea el streamer.
+    //Fill perdido si el canal llena: el journal del auditor también está
+    // acotado (MAX_FILLS_INDEPENDIENTES) — la evidencia se reconstruye con
+    // los cierres siguientes, nunca con datos inventados.
+    let (fills_indep_tx, fills_indep_rx) =
+        crossbeam::channel::bounded::<audit_engine::auditor_interno::ExchangeFillRecord>(512);
+
     // Non-blocking Zero-Copy persistence channel
     let (db_tx, mut db_rx) = mpsc::channel::<(f64, f64)>(5000);
     let db_clone = Arc::clone(&db);
@@ -1699,6 +1711,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
         }
+        fn on_bracket_close(&self, _c: &execution_engine::trade_accounting::BracketClose) {}
+    }
+
+    /// F412/F413/F271 (Sol, censo C-F7b §3): puente del cierre confirmado por
+    /// el exchange hacia el canal independiente del Auditor Interno. El
+    /// BracketClose del streamer trae PnL bruto y comisiones REALES del fill
+    /// (fuente única `gross_pnl` + comisión proporcional de entrada) — es la
+    /// evidencia ajena al cierre interno del núcleo que la puerta de
+    /// discrepancia necesita para no ser tautológica.
+    struct AuditorCloseSink {
+        fills_tx: crossbeam::channel::Sender<audit_engine::auditor_interno::ExchangeFillRecord>,
+    }
+    impl execution_engine::user_data_stream::AccountSink for AuditorCloseSink {
+        fn on_capital(&self, _usdt: f64) {}
+        fn on_positions(&self, _p: &[execution_engine::user_data_stream::RemotePosition]) {}
+        fn on_bracket_close(&self, c: &execution_engine::trade_accounting::BracketClose) {
+            // Guarda de estabilidad numérica: sin PnL o comisiones finitos no
+            // hay evidencia — el auditor rechazaría el fill de todos modos.
+            if !c.pnl_gross.is_finite() || !c.fees.is_finite() || !c.exit_price.is_finite() {
+                return;
+            }
+            let fill = audit_engine::auditor_interno::ExchangeFillRecord {
+                timestamp_ns: c.ts_ms.saturating_mul(1_000_000),
+                // Métricas del auditor de portafolio; el id por símbolo Via
+                // symbol_registry cuando existe (higiene: el registro lleva
+                // el símbolo real aunque el veredicto no lo use).
+                symbol_id: quantum_arena::symbol_registry::try_index(&c.symbol)
+                    .map(|i| i as u16)
+                    .unwrap_or(0),
+                is_buyer: !c.was_long, // SELL cierra long
+                price: c.exit_price,
+                qty: c.qty,
+                fee_usd: c.fees,
+                realized_pnl: c.pnl_gross,
+                is_closed_position: true,
+            };
+            // try_send: nunca bloquea el hilo del streamer. Canal lleno ⇒
+            // este cierre se reconstruye con los siguientes.
+            let _ = self.fills_tx.try_send(fill);
+        }
+    }
+
+    /// Sink compuesto: capital (CapitalBridgeSink) + auditor (AuditorCloseSink).
+    /// Un streamer acepta un sink; este wrapper enruta cada evento a su puente
+    /// sin que ninguno conozca al otro.
+    struct SinkHost {
+        capital: CapitalBridgeSink,
+        auditor: AuditorCloseSink,
+    }
+    impl execution_engine::user_data_stream::AccountSink for SinkHost {
+        fn on_capital(&self, usdt: f64) {
+            self.capital.on_capital(usdt);
+        }
+        fn on_positions(&self, positions: &[execution_engine::user_data_stream::RemotePosition]) {
+            self.capital.on_positions(positions);
+        }
+        fn on_bracket_close(&self, c: &execution_engine::trade_accounting::BracketClose) {
+            self.auditor.on_bracket_close(c);
+        }
     }
     // X-011 (REHAB-4): bandera de apagado del streamer de la era inicial —
     // la transición demo→mainnet la activará antes de spawnear el nuevo
@@ -1708,8 +1779,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         exec.load().client().clone(),
         exec.load().registry(),
     )
-    .with_sink(std::sync::Arc::new(CapitalBridgeSink {
-        unified_capital: Arc::clone(&unified_capital),
+    .with_sink(std::sync::Arc::new(SinkHost {
+        capital: CapitalBridgeSink {
+            unified_capital: Arc::clone(&unified_capital),
+        },
+        // F412/F413/F271: canal independiente del Auditor Interno.
+        auditor: AuditorCloseSink {
+            fills_tx: fills_indep_tx.clone(),
+        },
     }))
     // D-702 (DÉCIMA OLA · auditoría integral): este streamer nace ANTES que el
     // arena (que se construye dentro del hilo del núcleo, con pila de 32 MiB por
@@ -3390,6 +3467,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
                 break;
             }
+            // F412/F413/F271 (Sol, censo C-F7b §3): drenaje del canal
+            // independiente — cierres confirmados por el exchange hacia el
+            // Auditor Interno del núcleo. try_recv: O(1), nunca bloquea el
+            // loop de mercado; el journal del auditor está acotado.
+            while let Ok(fill) = fills_indep_rx.try_recv() {
+                engine_real.registrar_fill_independiente_host(fill);
+            }
             // CL-120 (T2-4): los ajustes de la reconciliación (otra tarea)
             // cambian el recuento sin pasar por un cierre del núcleo.
             mensajes_desde_firma = mensajes_desde_firma.wrapping_add(1);
@@ -4020,8 +4104,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             new_exec_arc.client().clone(),
                             new_exec_arc.registry(),
                         )
-                        .with_sink(std::sync::Arc::new(CapitalBridgeSink {
-                            unified_capital: Arc::clone(&unified_capital),
+                        .with_sink(std::sync::Arc::new(SinkHost {
+                            capital: CapitalBridgeSink {
+                                unified_capital: Arc::clone(&unified_capital),
+                            },
+                            // F412/F413/F271: mismo canal independiente — la
+                            // era mainnet es la que tiene cierres reales.
+                            auditor: AuditorCloseSink {
+                                fills_tx: fills_indep_tx.clone(),
+                            },
                         }))
                         // D-702: el streamer de mainnet también necesita el arena
                         // para atribuir el PnL de los cierres por bracket.
