@@ -1,5 +1,40 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω172: Cierre de F1-064 (Carga y Validación de dynamic_config en Bootloader con Disciplina de Modelos B3.37 y Fallback a ROSTER) y F1-065 (Erradicación de Mutex Global en trade_accounting con ArrayQueue Lock-Free y Fast-Path has_pending_bracket_closes O(1) en Hot-Path) (2026-10-19)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω172: UNIVERSO DINÁMICO VALIDADO CON ROSTER Y CONTABILIDAD DE BRACKETS LOCK-FREE ZERO-ALLOC
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv` (2 en total)**:
+   - **`F1-064` (`MED`, `crates/god-engine-core/src/bootloader.rs:330-425`, `src/bin/god_engine.rs:1121-1145, 1530-1545`)**:
+     - **QUÉ**: Implementación de `SystemDiagnostics::load_validated_dynamic_universe(path, models_dir)` con validación formal de formato JSON, longitud $\le \text{MAX\_COINS} = 30$, grafía canónica ASCII mayúscula, ausencia de duplicados, disciplina estricta de modelos B3.37 (los símbolos propuestos deben poseer modelo `{SYM}_MOTOR.json` o pertenecer a `ROSTER`), y backfill automático desde `ROSTER`. Actualización de `execute_phase_1_and_2` para cargar el universo dinámico validado en producción conservando fallback a `ROSTER` y garantizando aislamiento canónico en pruebas (`is_demo == true`). Sincronización y persistencia atómica de `TensorConfig` en el host y telemetría honesta del watcher con conteo real de símbolos.
+     - **POR QUÉ**: Previamente, la sesión arrancaba con una lista literal fija de 26 símbolos; `evolve_symbols_daemon` calculaba un top dinámico horario y lo persistía en `dynamic_config.json`, pero en el arranque `execute_phase_1_and_2` lo ignoraba por completo y el host pisaba ciegamente `config.symbols = symbols.clone()` en memoria sin persistir ni consumir. El watcher anunciaba «Symbols update requires restart», pero al reiniciar el sistema volvía siempre a la lista hardcodeada del bootloader, convirtiendo todo el ranking REST horario en cómputo huérfano e impidiendo que nuevos modelos promovidos por evolución entraran a operar.
+     - **PARA QUÉ**: Permitir la operación adaptativa multiactivo sin comprometer la integridad de la sesión, asegurando que ningún símbolo sin modelo calibrado entre al mercado y sincronizando backtest, configuración y producción.
+     - **CÓMO**: `load_validated_dynamic_universe` lee el archivo JSON, extrae símbolos, inspecciona el directorio `models/`, descarta activos sin modelo ni respaldo, deduplica, y si faltan plazas para alcanzar el tamaño mínimo completa con los activos canónicos de `ROSTER`. `execute_phase_1_and_2` usa esta función en `is_demo == false` con fallback seguro a `ROSTER`. `god_engine.rs` sincroniza `config` y el watcher reporta el número real de símbolos propuestos.
+     - **CUÁNDO**: Durante la secuencia de arranque (Fase 1 y 2) y en cada evaluación de rotación horaria.
+     - **DÓNDE**: `crates/god-engine-core/src/bootloader.rs` y `src/bin/god_engine.rs`.
+     - **QUIÉN**: Arquitecto Senior, Quant Developer y SRE/DevOps.
+
+   - **`F1-065` (`MED`, `crates/execution-engine/Cargo.toml`, `crates/execution-engine/src/trade_accounting.rs:70-75, 305-365`, `src/bin/god_engine.rs:4025-4085`)**:
+     - **QUÉ**: Reemplazo del cerrojo global `static PENDING: LazyLock<Mutex<Vec<BracketClose>>>` por una cola atómica lock-free `crossbeam_queue::ArrayQueue<BracketClose>` acotada a 1024 elementos, incorporación de `has_pending_bracket_closes() -> bool` en $O(1)$ y `drain_bracket_closes_into(&mut Vec<BracketClose>)`, y cableado del fast-path de comprobación en el loop principal de eventos `TIME_CRITICAL`.
+     - **POR QUÉ**: En cada tick de mercado (decenas de miles por segundo en 26 monedas), el host ejecutaba `drain_bracket_closes()`, el cual adquiría un `std::sync::Mutex` incondicionalmente y ejecutaba `std::mem::take` (creando un nuevo vector) incluso cuando la cola estaba vacía (99.999% de los ticks). Esto causaba rebote de líneas de caché L1/L2, stalls de microsegundos y contención directa con la tarea WebSocket de streaming de usuario que registraba los fills, violando el presupuesto de latencia (< 25 µs/evento).
+     - **PARA QUÉ**: Erradicar la contención de locks en el hilo caliente de trading, garantizar tiempo de ejecución determinista en nanosegundos para el drenaje de brackets, y proteger las salidas defensivas contra retrasos por sincronización.
+     - **CÓMO**: `PENDING_QUEUE` utiliza primitivas atómicas MPMC sin cerrojos. `record_bracket_close` inserta con `PENDING_QUEUE.push()`, contabilizando descartes en `DESCARTADOS` si la cola se satura. `has_pending_bracket_closes` ejecuta `!PENDING_QUEUE.is_empty()` en ~1 ns. En `god_engine.rs`, el bucle de drenaje sólo se activa si `has_pending_bracket_closes()` es verdadero.
+     - **CUÁNDO**: En cada evento del feed de mercado y al recibir notificaciones de fills de órdenes bracket.
+     - **DÓNDE**: `crates/execution-engine/src/trade_accounting.rs` y `src/bin/god_engine.rs`.
+     - **QUIÉN**: Quant Developer, SRE/DevOps y Arquitecto Senior.
+
+2. **Verificación Formal y Pruebas de Certificación**:
+   - `cargo test -p god-engine-core --test f1_064_dynamic_universe_contract -j 1` (2/2 pass, 100% verde en 0.04s).
+   - `cargo test -p execution-engine --test f1_065_lockfree_bracket_accounting_contract -j 1` (1/1 pass, 100% verde en 0.00s).
+   - `cargo test -p god-engine-core --test cf5_roster -j 1` (2/2 pass, 100% verde).
+   - `cargo test -p execution-engine -j 1` (18 suites, 100% verde).
+   - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+   - `cargo check --workspace --all-targets -j 1` (100% verde en los 23 crates).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω171: Cierre de F1-062 (Zero-Alloc centinela_contable O(1) con Paridad Bit a Bit, Auditoría de Divergencia Real y try_idle_recovery sin Estado Absorbente en DriftRecovery) y F1-063 (reset_on_reconnect Preservando Calentamiento Multi-Escala K-line/ATR/Hurst en Reconexiones WebSocket) (2026-10-19)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

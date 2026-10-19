@@ -1153,6 +1153,7 @@ name = "execution-engine"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
+ "crossbeam-queue",
  "futures-util",
  "hex",
  "hmac 0.12.1",

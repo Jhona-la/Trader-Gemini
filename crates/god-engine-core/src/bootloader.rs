@@ -330,9 +330,102 @@ pub const ROSTER: &[&str] = &[
 pub struct SystemDiagnostics;
 
 impl SystemDiagnostics {
+    /// F1-064 (Ola Ω172): Carga y valida el universo dinámico persistido por `symbol_manager`.
+    ///
+    /// Valida rigurosamente:
+    /// 1. Existencia y formato JSON de `dynamic_config.json`.
+    /// 2. Capacidad estricta: `0 < symbols.len() <= quantum_arena::state::MAX_COINS`.
+    /// 3. Grafía canónica ASCII mayúscula y sin duplicados.
+    /// 4. Disciplina de Roster B3.37: Cada símbolo propuesto debe poseer un modelo activo
+    ///    en `models/{SYM}_MOTOR.json` o pertenecer al `ROSTER` canónico fundacional.
+    /// 5. Backfill seguro: Si el filtro de modelos reduce la lista por debajo del tamaño de `ROSTER`,
+    ///    se completan las plazas con los incumbentes canónicos de `ROSTER` para evitar huecos en la sesión.
+    pub fn load_validated_dynamic_universe(
+        dynamic_config_path: &std::path::Path,
+        models_dir: &std::path::Path,
+    ) -> Option<Vec<String>> {
+        if !dynamic_config_path.exists() {
+            return None;
+        }
+
+        let content = std::fs::read_to_string(dynamic_config_path).ok()?;
+        let parsed: serde_json::Value = serde_json::from_str(&content).ok()?;
+        let raw_symbols = parsed.get("symbols")?.as_array()?;
+
+        if raw_symbols.is_empty() {
+            return None;
+        }
+
+        // 1. Cargar conjunto de modelos disponibles en models/{SYM}_MOTOR.json
+        let mut model_roster = std::collections::HashSet::new();
+        if let Ok(entries) = std::fs::read_dir(models_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name.ends_with("_MOTOR.json") && !name.contains("_CANDIDATE") {
+                    let sym = name.trim_end_matches("_MOTOR.json").to_string();
+                    if !sym.is_empty() {
+                        model_roster.insert(sym.to_ascii_uppercase());
+                    }
+                }
+            }
+        }
+
+        let roster_set: std::collections::HashSet<&str> = ROSTER.iter().copied().collect();
+
+        // 2. Filtrar y deduplicar respetando mayúsculas y disciplina de modelos
+        let mut validated = Vec::with_capacity(quantum_arena::state::MAX_COINS);
+        let mut seen = std::collections::HashSet::new();
+
+        for item in raw_symbols {
+            if validated.len() >= quantum_arena::state::MAX_COINS {
+                break;
+            }
+            if let Some(s) = item.as_str() {
+                let sym_upper = s.trim().to_ascii_uppercase();
+                if !sym_upper.is_empty()
+                    && sym_upper.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+                    && seen.insert(sym_upper.clone())
+                {
+                    // Aceptar si tiene modelo validado O si está en ROSTER canónico
+                    if model_roster.contains(&sym_upper) || roster_set.contains(sym_upper.as_str()) {
+                        validated.push(sym_upper);
+                    }
+                }
+            }
+        }
+
+        if validated.is_empty() {
+            return None;
+        }
+
+        // 3. Backfill desde ROSTER si faltan plazas para mantener continuidad
+        if validated.len() < ROSTER.len() {
+            for &r in ROSTER {
+                if validated.len() >= ROSTER.len() || validated.len() >= quantum_arena::state::MAX_COINS {
+                    break;
+                }
+                let sym = r.to_string();
+                if seen.insert(sym.clone()) {
+                    validated.push(sym);
+                }
+            }
+        }
+
+        Some(validated)
+    }
+
     pub async fn execute_phase_1_and_2(
-        _is_demo: bool,
+        is_demo: bool,
     ) -> Result<(i64, Vec<String>), Box<dyn std::error::Error>> {
+        // En tests o modo demo con intención de aislamiento, si no hay dynamic config validado, o is_demo,
+        // devolvemos el ROSTER canónico intacto (garantiza compatibilidad 100% con cf5_roster).
+        if !is_demo {
+            let dynamic_path = std::path::Path::new("data/dynamic_config.json");
+            let models_dir = std::path::Path::new("models");
+            if let Some(syms) = Self::load_validated_dynamic_universe(dynamic_path, models_dir) {
+                return Ok((0, syms));
+            }
+        }
         Ok((0, ROSTER.iter().map(|s| s.to_string()).collect()))
     }
 

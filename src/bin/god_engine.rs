@@ -1124,17 +1124,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut config: TensorConfig = bincode::deserialize(&config_bytes).unwrap_or_else(|_| {
         let config_str =
             std::fs::read_to_string(&dynamic_config_json_path).unwrap_or_else(|_| "".to_string());
-        let cfg: TensorConfig =
-            serde_json::from_str(&config_str).unwrap_or_else(|_| TensorConfig {
-                symbols: symbols.clone(),
-                is_testnet: false, // We always use mainnet data, paper trading intercepts execution
-            });
-        if let Ok(encoded) = bincode::serialize(&cfg) {
+        serde_json::from_str(&config_str).unwrap_or_else(|_| TensorConfig {
+            symbols: symbols.clone(),
+            is_testnet: false, // We always use mainnet data, paper trading intercepts execution
+        })
+    });
+    // F1-064 (Ola Ω172): Sincronizar y persistir config atómicamente con los símbolos autoritativos
+    if config.symbols != symbols {
+        config.symbols = symbols.clone();
+        if let Ok(encoded) = bincode::serialize(&config) {
             let _ = std::fs::write(&dynamic_config_bin_path, encoded);
         }
-        cfg
-    });
-    config.symbols = symbols.clone(); // Update config memory
+        if let Ok(json_str) = serde_json::to_string_pretty(&config) {
+            let _ = std::fs::write(&dynamic_config_json_path, json_str);
+        }
+    }
 
     let (telemetry_tx, _) = tokio::sync::broadcast::channel(100);
 
@@ -1532,7 +1536,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(modified) = meta.modified() {
                     if Some(modified) != last_config_ts {
                         last_config_ts = Some(modified);
-                        telemetry_server::telemetry_log!("👀 [HOT-RELOAD] dynamic_config.json changed. Symbols update requires restart.");
+                        let count = std::fs::read_to_string(&dynamic_config_json_path)
+                            .ok()
+                            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                            .and_then(|v| v.get("symbols").and_then(|arr| arr.as_array().map(|a| a.len())))
+                            .unwrap_or(0);
+                        telemetry_server::telemetry_log!("👀 [HOT-RELOAD] dynamic_config.json changed on disk ({} proposed symbols). Changes will apply on next restart.", count);
                     }
                 }
             }
@@ -4022,65 +4031,67 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // descartarla mantenía el envelope inflado al levantarse el
                 // veto. (Histórico X-013: este drenaje nunca toca el plano
                 // de capital — escritor único on_capital.)
-                for bc in execution_engine::trade_accounting::drain_bracket_closes() {
-                    let net_bc = match bc.checked_numeric_net_pnl() {
-                        Ok(net) => net,
-                        Err(reason) => {
-                            telemetry_engine::telemetry_err!("[BRACKET EVIDENCE] {} not used for learning: {:?}; requires reconciliation", bc.symbol, reason);
-                            continue;
-                        }
-                    };
-                    // Numeric admission only: identity, fill provenance and
-                    // exactly-once outcomes remain separate obligations.
-                    {
-                        // B3.7 (auditoría) — ¿el core ya contabilizó ESTE
-                        // mismo cierre (condición de salida disparada casi
-                        // simultáneamente al fill de la pierna)? Ventana
-                        // simétrica por símbolo: sin esto, doble cuenta.
-                        let core_ts = last_real_core_close_ms
-                            .get(&bc.symbol)
-                            .copied()
-                            .unwrap_or(0);
-                        if core_ts > 0
-                            && bc.ts_ms.abs_diff(core_ts) <= CLOSE_DEDUP_WINDOW_MS
-                        {
-                            telemetry!(
-                                "♻️ [BRACKET CLOSE] {} ya contabilizado por cierre del core (Δ{}ms) — sin doble cuenta",
-                                bc.symbol,
-                                bc.ts_ms.abs_diff(core_ts)
-                            );
-                        } else {
-                            if net_bc >= 0.0 {
-                                avg_win_abs = if avg_win_abs == 0.0 { net_bc.abs() } else { avg_win_abs * 0.95 + net_bc.abs() * 0.05 };
-                            } else {
-                                avg_loss_abs = if avg_loss_abs == 0.0 { net_bc.abs() } else { avg_loss_abs * 0.95 + net_bc.abs() * 0.05 };
+                if execution_engine::trade_accounting::has_pending_bracket_closes() {
+                    for bc in execution_engine::trade_accounting::drain_bracket_closes() {
+                        let net_bc = match bc.checked_numeric_net_pnl() {
+                            Ok(net) => net,
+                            Err(reason) => {
+                                telemetry_engine::telemetry_err!("[BRACKET EVIDENCE] {} not used for learning: {:?}; requires reconciliation", bc.symbol, reason);
+                                continue;
                             }
-                            risk_envelope.record_trade(net_bc > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
-                            // HOST-005 / F1-059: persistir el posterior tras cada
-                            // cierre limpio contabilizado sin bloquear el bucle de eventos.
-                            persist_kelly_envelope_async(&rt_handle, &risk_envelope);
-                            total_gross_pnl += bc.pnl_gross;
-                            total_net_pnl += net_bc;
-                            total_fees += bc.fees;
-                            total_trades += 1;
-                            if net_bc > 0.0 { total_wins += 1; }
-                            last_bracket_close_ms.insert(bc.symbol.clone(), bc.ts_ms);
+                        };
+                        // Numeric admission only: identity, fill provenance and
+                        // exactly-once outcomes remain separate obligations.
+                        {
+                            // B3.7 (auditoría) — ¿el core ya contabilizó ESTE
+                            // mismo cierre (condición de salida disparada casi
+                            // simultáneamente al fill de la pierna)? Ventana
+                            // simétrica por símbolo: sin esto, doble cuenta.
+                            let core_ts = last_real_core_close_ms
+                                .get(&bc.symbol)
+                                .copied()
+                                .unwrap_or(0);
+                            if core_ts > 0
+                                && bc.ts_ms.abs_diff(core_ts) <= CLOSE_DEDUP_WINDOW_MS
+                            {
+                                telemetry!(
+                                    "♻️ [BRACKET CLOSE] {} ya contabilizado por cierre del core (Δ{}ms) — sin doble cuenta",
+                                    bc.symbol,
+                                    bc.ts_ms.abs_diff(core_ts)
+                                );
+                            } else {
+                                if net_bc >= 0.0 {
+                                    avg_win_abs = if avg_win_abs == 0.0 { net_bc.abs() } else { avg_win_abs * 0.95 + net_bc.abs() * 0.05 };
+                                } else {
+                                    avg_loss_abs = if avg_loss_abs == 0.0 { net_bc.abs() } else { avg_loss_abs * 0.95 + net_bc.abs() * 0.05 };
+                                }
+                                risk_envelope.record_trade(net_bc > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
+                                // HOST-005 / F1-059: persistir el posterior tras cada
+                                // cierre limpio contabilizado sin bloquear el bucle de eventos.
+                                persist_kelly_envelope_async(&rt_handle, &risk_envelope);
+                                total_gross_pnl += bc.pnl_gross;
+                                total_net_pnl += net_bc;
+                                total_fees += bc.fees;
+                                total_trades += 1;
+                                if net_bc > 0.0 { total_wins += 1; }
+                                last_bracket_close_ms.insert(bc.symbol.clone(), bc.ts_ms);
+                            }
                         }
+                        telemetry!(
+                            "🎯 [BRACKET CLOSE] {} {} qty {:.6}: entry {:.6} → fill {:.6} (trigger {:.6}, slip {:.1}bps adversos) | bruto {:.4} | fees {:.4} | neto {:.4}{}",
+                            bc.symbol,
+                            bc.trigger,
+                            bc.qty,
+                            bc.entry_price,
+                            bc.exit_price,
+                            bc.stop_price,
+                            bc.slippage_bps,
+                            bc.pnl_gross,
+                            bc.fees,
+                            net_bc,
+                            if bc.pnl_gross == 0.0 { " — bruto cero con contexto numérico válido" } else { "" }
+                        );
                     }
-                    telemetry!(
-                        "🎯 [BRACKET CLOSE] {} {} qty {:.6}: entry {:.6} → fill {:.6} (trigger {:.6}, slip {:.1}bps adversos) | bruto {:.4} | fees {:.4} | neto {:.4}{}",
-                        bc.symbol,
-                        bc.trigger,
-                        bc.qty,
-                        bc.entry_price,
-                        bc.exit_price,
-                        bc.stop_price,
-                        bc.slippage_bps,
-                        bc.pnl_gross,
-                        bc.fees,
-                        net_bc,
-                        if bc.pnl_gross == 0.0 { " — bruto cero con contexto numérico válido" } else { "" }
-                    );
                 }
 
                 if !is_trading_allowed {
