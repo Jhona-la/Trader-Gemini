@@ -1189,6 +1189,9 @@ pub struct GodEngineCore {
     /// B3.18 — entradas vetadas por el gate de ensamble (la predicción
     /// decidió NO): diagnóstico de cuánto consume el sistema la predicción.
     pub diag_ml_vetoes: u64,
+    /// F1-054 (Ola Ω168): órdenes aprobadas por Consejo y ML descartadas por falta de margen libre,
+    /// por no alcanzar el notional mínimo o por exceder el colchón de capital.
+    pub diag_margin_drops: u64,
     /// MOD2/7-010 (DEC-14): declarados, exportados al backtest de evolución
     /// y JAMÁS incrementados — telemetría estructuralmente falsa (siempre 0).
     /// Conservados por compatibilidad del struct; su eliminación pertenece
@@ -1512,6 +1515,7 @@ impl GodEngineCore {
             diag_sin_conviccion: 0,
             diag_opened: 0,
             diag_ml_vetoes: 0,
+            diag_margin_drops: 0,
             diag_close_wins: 0,
             diag_close_total: 0,
             diag_notional_sum: 0.0,
@@ -2206,7 +2210,12 @@ impl GodEngineCore {
     /// aplicada una sola vez y antes de juzgar. Sin espectro de la moneda
     /// sólo se aplica Hurst, como antes.
     pub fn tau_de_la_orden(&self, coin_id: usize, tau_banda_ms: u64, hurst: f64) -> u64 {
-        let modulada = hurst_duration_modulation(tau_banda_ms, hurst);
+        let samples = self
+            .feature_engines
+            .get(coin_id)
+            .map(|fe| fe.hurst.samples())
+            .unwrap_or(1024);
+        let modulada = hurst_duration_modulation_samples(tau_banda_ms, hurst, samples);
         match self.temporal_spectrum.get(coin_id) {
             Some(spec) => tau_hacia_el_centroide(modulada, spec.continuous_resonant_tau_ms()),
             None => modulada,
@@ -6052,10 +6061,8 @@ impl GodEngineCore {
             // Erradica el sesgo donde 1.0 - ml_prob en base ~0.25 inflaba la probabilidad corta neutral a 0.75.
             let p_win_long = crate::calibration::p_win_directional(true, ml_prob, ml_model_base);
             let p_win_short = crate::calibration::p_win_directional(false, ml_prob, ml_model_base);
-            let conformal_p = calibrator.p_value(p_win_long);
-            let conformal_p_short = calibrator.p_value(p_win_short);
-            let accept_long = calibrator.accepts(p_win_long);
-            let accept_short = calibrator.accepts(p_win_short);
+            let (conformal_p, accept_long) = calibrator.eval_prediction(p_win_long);
+            let (conformal_p_short, accept_short) = calibrator.eval_prediction(p_win_short);
             set_reg("conformal_p_value", conformal_p);
             set_reg("conformal_p_value_short", conformal_p_short);
             set_reg("conformal_alpha", conf_alpha);
@@ -6578,19 +6585,25 @@ impl GodEngineCore {
             // (sin opinión), en cascada ±1. La política adaptada a la
             // distribución vieja queda invalidada — esta ola corre con
             // ORÁCULO T-1 propio antes del merge.
-            let dir_flow_sign = if current_obi.abs() > 0.05 {
+            // F1-048: Dead-bands tipificadas con cuantiles locales y volatilidad medida.
+            // En lugar de umbrales hardcodeados (0.05 para OBI/OFI y 0.0005 para macro_trend),
+            // se evalúa la significación relativa a los cuantiles dinámicos (dynamic_obi_thr, dynamic_ofi_thr)
+            // y la tipificación z del macro-trend (z_macro) frente a la volatilidad medida ATR.
+            let obi_thr_band = (dynamic_obi_thr * 0.50).max(1e-4);
+            let ofi_thr_band = (dynamic_ofi_thr * 0.50).max(1e-4);
+            let dir_flow_sign = if current_obi.abs() > obi_thr_band {
                 current_obi.signum()
-            } else if ofi.abs() > 0.05 {
+            } else if ofi.abs() > ofi_thr_band {
                 ofi.signum()
             } else {
-                macro_trend.signum()
+                z_macro.signum()
             };
             let dir_hawkes_excitacion =
                 excitacion_hawkes_norm(hawkes_ratio_real) * dir_flow_sign;
             let regime_code = ((hurst_val - 0.50) * 2.0).clamp(-1.0, 1.0);
             let dir_regime = regime_code
-                * (if macro_trend.abs() > 0.0005 {
-                    macro_trend.signum()
+                * (if z_macro.abs() > 0.50 {
+                    z_macro.signum()
                 } else {
                     dir_flow_sign
                 });
@@ -6668,7 +6681,13 @@ impl GodEngineCore {
                 SignalType::Flat => 0.0,
             };
 
-            // Fusión Bayesiana Calibrada: w_micro (L2) + 60% del residuo a DarkAlpha ML + 40% al consenso tensorial
+            // F1-048: Reparto de peso residual entre NN y consenso tensorial derivado
+            // de la habilidad estadística medida de Brier (skill_z del ensamble).
+            // Retirado el adjetivo erróneo «Bayesiana».
+            // En cold start o z = 0.0 (sin habilidad demostrada), reparte exactamente 60%/40% canónico.
+            // Con z > 0 (habilidad demostrada sobre la tasa base), w_frac_ml sube suavemente hasta 0.70.
+            // Con z < 0 (ensamble ruidoso o descalibrado), w_frac_ml baja suavemente hasta 0.30,
+            // cediendo peso al consenso tensorial continuo.
             let w_micro = self
                 .arena
                 .config
@@ -6676,8 +6695,14 @@ impl GodEngineCore {
                 .load(Ordering::Relaxed)
                 .clamp(0.1, 0.8);
             let remaining = 1.0 - w_micro;
-            let w_nn = remaining * 0.60;
-            let w_tensor = remaining * 0.40;
+            let skill_z = if coin_id < self.ensembles.len() {
+                self.ensembles[coin_id].skill_z().unwrap_or(0.0)
+            } else {
+                self.ensemble.skill_z().unwrap_or(0.0)
+            };
+            let w_frac_ml = (0.50 + 0.20 / (1.0 + (-skill_z).exp())).clamp(0.30, 0.70);
+            let w_nn = remaining * w_frac_ml;
+            let w_tensor = remaining * (1.0 - w_frac_ml);
             let raw_composite =
                 adaptive_micro_score * w_micro + nn_score * w_nn + tensor_boost * w_tensor;
             let composite_score: f64 = (raw_composite * hebbian_mult).clamp(-1.0, 1.0);
@@ -9114,18 +9139,8 @@ impl GodEngineCore {
                             loss_streak: council_loss_streak,
                             intended_direction: council_intended_dir,
                             do_calculus_risk: vpin_risk,
-                            // OLA Ω115: Umbrales adaptativos continuos de veto causal y breakout alineado para SeniorCausal
-                            causal_veto_threshold: {
-                                let coin_causal = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "causal_veto_threshold", f64::NAN);
-                                if coin_causal.is_finite() && (0.0..=1.0).contains(&coin_causal) && coin_causal > 0.0 {
-                                    coin_causal
-                                } else {
-                                    self.consejo_deliberacion.params.causal_veto_threshold
-                                }
-                            },
+                            // F1-053 (Ola Ω168): Lectura directa sin ~60 lookups hash de cadena que no tienen escritor por moneda.
+                            causal_veto_threshold: self.consejo_deliberacion.params.causal_veto_threshold,
                             current_drawdown_pct: drawdown,
                             estimated_slippage_bps: slip_bps,
                             // U-4: τ dominante — los asientos interpolan sus
@@ -9213,309 +9228,35 @@ impl GodEngineCore {
                                     0.0
                                 }
                             },
-                            // OLA Ω111: Umbrales adaptativos continuos de utilidad y win-rate para SeniorTeleonomia
-                            utility_veto_floor: {
-                                let coin_floor = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "utility_veto_floor", f64::NAN);
-                                if coin_floor.is_finite() && (0.0..=0.50).contains(&coin_floor) {
-                                    coin_floor
-                                } else {
-                                    self.consejo_deliberacion.params.utility_veto_floor
-                                }
-                            },
-                            utility_veto_wr: {
-                                let coin_wr = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "utility_veto_wr", f64::NAN);
-                                if coin_wr.is_finite() && (0.0..=1.0).contains(&coin_wr) {
-                                    coin_wr
-                                } else {
-                                    self.consejo_deliberacion.params.utility_veto_wr
-                                }
-                            },
-                            // OLA Ω113: Umbrales adaptativos continuos de tolerancia a slippage para SeniorEjecucion
-                            fast_slippage_floor: {
-                                let coin_floor = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "fast_slippage_floor", f64::NAN);
-                                if coin_floor.is_finite() && (0.0..=500.0).contains(&coin_floor) {
-                                    coin_floor
-                                } else {
-                                    self.consejo_deliberacion.params.fast_slippage_floor
-                                }
-                            },
-                            slow_slippage_span: {
-                                let coin_span = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "slow_slippage_span", f64::NAN);
-                                if coin_span.is_finite() && (0.0..=1000.0).contains(&coin_span) {
-                                    coin_span
-                                } else {
-                                    self.consejo_deliberacion.params.slow_slippage_span
-                                }
-                            },
-                            // OLA Ω114: Umbrales adaptativos continuos de drawdown y racha para SeniorRiesgo
-                            max_drawdown_limit: {
-                                let coin_dd = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "max_drawdown_limit", f64::NAN);
-                                if coin_dd.is_finite() && (0.0..=1.0).contains(&coin_dd) && coin_dd > 0.0 {
-                                    coin_dd
-                                } else {
-                                    self.consejo_deliberacion.params.max_drawdown_limit
-                                }
-                            },
-                            streak_decay_rate: {
-                                let coin_decay = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "streak_decay_rate", f64::NAN);
-                                if coin_decay.is_finite() && (0.0..=10.0).contains(&coin_decay) {
-                                    coin_decay
-                                } else {
-                                    self.consejo_deliberacion.params.streak_decay_rate
-                                }
-                            },
-                            causal_min_book_imbalance: {
-                                let coin_imb = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "causal_min_book_imbalance", f64::NAN);
-                                if coin_imb.is_finite() && (0.0..=1.0).contains(&coin_imb) {
-                                    coin_imb
-                                } else {
-                                    self.consejo_deliberacion.params.causal_min_book_imbalance
-                                }
-                            },
-                            causal_aligned_max_risk: {
-                                let coin_risk = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "causal_aligned_max_risk", f64::NAN);
-                                if coin_risk.is_finite() && (0.0..=1.0).contains(&coin_risk) {
-                                    coin_risk
-                                } else {
-                                    self.consejo_deliberacion.params.causal_aligned_max_risk
-                                }
-                            },
-                            hodge_curl_attenuation: {
-                                let coin_att = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "hodge_curl_attenuation", f64::NAN);
-                                if coin_att.is_finite() && (0.0..=1.0).contains(&coin_att) {
-                                    coin_att
-                                } else {
-                                    self.consejo_deliberacion.params.hodge_curl_attenuation
-                                }
-                            },
-                            hodge_laminar_floor: {
-                                let coin_floor = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "hodge_laminar_floor", f64::NAN);
-                                if coin_floor.is_finite() && (0.0..=1.0).contains(&coin_floor) {
-                                    coin_floor
-                                } else {
-                                    self.consejo_deliberacion.params.hodge_laminar_floor
-                                }
-                            },
-                            ym_ref_current: {
-                                let coin_ref = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "ym_ref_current", f64::NAN);
-                                if coin_ref.is_finite() && (0.0..=1.0).contains(&coin_ref) && coin_ref > 0.0 {
-                                    coin_ref
-                                } else {
-                                    self.consejo_deliberacion.params.ym_ref_current
-                                }
-                            },
-                            ym_max_weight: {
-                                let coin_w = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "ym_max_weight", f64::NAN);
-                                if coin_w.is_finite() && (0.0..=1.0).contains(&coin_w) {
-                                    coin_w
-                                } else {
-                                    self.consejo_deliberacion.params.ym_max_weight
-                                }
-                            },
-                            // OLA Ω117: Umbrales adaptativos continuos de ML y metacognición
-                            ml_dead_zone: {
-                                let coin_dz = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "ml_dead_zone", f64::NAN);
-                                if coin_dz.is_finite() && (0.0..=0.40).contains(&coin_dz) {
-                                    coin_dz
-                                } else {
-                                    self.consejo_deliberacion.params.ml_dead_zone
-                                }
-                            },
-                            ml_full_edge: {
-                                let coin_fe = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "ml_full_edge", f64::NAN);
-                                if coin_fe.is_finite() && (0.01..=0.80).contains(&coin_fe) {
-                                    coin_fe
-                                } else {
-                                    self.consejo_deliberacion.params.ml_full_edge
-                                }
-                            },
-                            meta_dd_penalty_mult: {
-                                let coin_m = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "meta_dd_penalty_mult", f64::NAN);
-                                if coin_m.is_finite() && (0.0..=20.0).contains(&coin_m) {
-                                    coin_m
-                                } else {
-                                    self.consejo_deliberacion.params.meta_dd_penalty_mult
-                                }
-                            },
-                            meta_max_dd_penalty: {
-                                let coin_pen = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "meta_max_dd_penalty", f64::NAN);
-                                if coin_pen.is_finite() && (0.0..=1.0).contains(&coin_pen) {
-                                    coin_pen
-                                } else {
-                                    self.consejo_deliberacion.params.meta_max_dd_penalty
-                                }
-                            },
-                            meta_majority_factor: {
-                                let coin_maj = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "meta_majority_factor", f64::NAN);
-                                if coin_maj.is_finite() && (0.0..=1.0).contains(&coin_maj) {
-                                    coin_maj
-                                } else {
-                                    self.consejo_deliberacion.params.meta_majority_factor
-                                }
-                            },
-                            meta_solitary_factor: {
-                                let coin_sol = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "meta_solitary_factor", f64::NAN);
-                                if coin_sol.is_finite() && (0.0..=1.0).contains(&coin_sol) {
-                                    coin_sol
-                                } else {
-                                    self.consejo_deliberacion.params.meta_solitary_factor
-                                }
-                            },
-                            // OLA Ω118: Umbrales y amortiguamientos adaptativos de SeniorEnteMercado
-                            cascade_severity_breaker: {
-                                let coin_casc = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "cascade_severity_breaker", f64::NAN);
-                                if coin_casc.is_finite() && (0.0..=1.0).contains(&coin_casc) {
-                                    coin_casc
-                                } else {
-                                    self.consejo_deliberacion.params.cascade_severity_breaker
-                                }
-                            },
-                            whale_z_threshold: {
-                                let coin_wz = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "whale_z_threshold", f64::NAN);
-                                if coin_wz.is_finite() && (0.5..=10.0).contains(&coin_wz) {
-                                    coin_wz
-                                } else {
-                                    self.consejo_deliberacion.params.whale_z_threshold
-                                }
-                            },
-                            whale_min_floor: {
-                                let coin_wf = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "whale_min_floor", f64::NAN);
-                                if coin_wf.is_finite() && (0.10..=0.99).contains(&coin_wf) {
-                                    coin_wf
-                                } else {
-                                    self.consejo_deliberacion.params.whale_min_floor
-                                }
-                            },
-                            liq_decay_mult: {
-                                let coin_lm = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "liq_decay_mult", f64::NAN);
-                                if coin_lm.is_finite() && (0.1..=10.0).contains(&coin_lm) {
-                                    coin_lm
-                                } else {
-                                    self.consejo_deliberacion.params.liq_decay_mult
-                                }
-                            },
-                            liq_min_floor: {
-                                let coin_lf = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "liq_min_floor", f64::NAN);
-                                if coin_lf.is_finite() && (0.05..=0.95).contains(&coin_lf) {
-                                    coin_lf
-                                } else {
-                                    self.consejo_deliberacion.params.liq_min_floor
-                                }
-                            },
-                            crowd_imbalance_decay: {
-                                let coin_cd = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "crowd_imbalance_decay", f64::NAN);
-                                if coin_cd.is_finite() && (0.01..=5.0).contains(&coin_cd) {
-                                    coin_cd
-                                } else {
-                                    self.consejo_deliberacion.params.crowd_imbalance_decay
-                                }
-                            },
-                            crowd_min_floor: {
-                                let coin_cf = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "crowd_min_floor", f64::NAN);
-                                if coin_cf.is_finite() && (0.10..=0.99).contains(&coin_cf) {
-                                    coin_cf
-                                } else {
-                                    self.consejo_deliberacion.params.crowd_min_floor
-                                }
-                            },
-                            // OLA Ω119: Desacoplamiento de autoridad disidente del Abogado del Diablo y autoengaño para SeniorAuditorInterno
-                            devil_advocate_weight: {
-                                let coin_daw = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "devil_advocate_weight", f64::NAN);
-                                if coin_daw.is_finite() && (0.5..=10.0).contains(&coin_daw) {
-                                    coin_daw
-                                } else {
-                                    self.consejo_deliberacion.params.devil_advocate_weight
-                                }
-                            },
-                            discrepancy_veto_threshold: {
-                                let coin_dvt = self
-                                    .arena
-                                    .registry
-                                    .get_for_coin_or(coin_id, "discrepancy_veto_threshold", f64::NAN);
-                                if coin_dvt.is_finite() && (0.05..=0.50).contains(&coin_dvt) {
-                                    coin_dvt
-                                } else {
-                                    self.consejo_deliberacion.params.discrepancy_veto_threshold
-                                }
-                            },
+                            // F1-053 (Ola Ω168): Lectura directa O(1) de parámetros del Consejo sincronizados
+                            // desde QuantumConfig (eliminando 27 lookups de registry por candidato sin escritor).
+                            utility_veto_floor: self.consejo_deliberacion.params.utility_veto_floor,
+                            utility_veto_wr: self.consejo_deliberacion.params.utility_veto_wr,
+                            fast_slippage_floor: self.consejo_deliberacion.params.fast_slippage_floor,
+                            slow_slippage_span: self.consejo_deliberacion.params.slow_slippage_span,
+                            max_drawdown_limit: self.consejo_deliberacion.params.max_drawdown_limit,
+                            streak_decay_rate: self.consejo_deliberacion.params.streak_decay_rate,
+                            causal_min_book_imbalance: self.consejo_deliberacion.params.causal_min_book_imbalance,
+                            causal_aligned_max_risk: self.consejo_deliberacion.params.causal_aligned_max_risk,
+                            hodge_curl_attenuation: self.consejo_deliberacion.params.hodge_curl_attenuation,
+                            hodge_laminar_floor: self.consejo_deliberacion.params.hodge_laminar_floor,
+                            ym_ref_current: self.consejo_deliberacion.params.ym_ref_current,
+                            ym_max_weight: self.consejo_deliberacion.params.ym_max_weight,
+                            ml_dead_zone: self.consejo_deliberacion.params.ml_dead_zone,
+                            ml_full_edge: self.consejo_deliberacion.params.ml_full_edge,
+                            meta_dd_penalty_mult: self.consejo_deliberacion.params.meta_dd_penalty_mult,
+                            meta_max_dd_penalty: self.consejo_deliberacion.params.meta_max_dd_penalty,
+                            meta_majority_factor: self.consejo_deliberacion.params.meta_majority_factor,
+                            meta_solitary_factor: self.consejo_deliberacion.params.meta_solitary_factor,
+                            cascade_severity_breaker: self.consejo_deliberacion.params.cascade_severity_breaker,
+                            whale_z_threshold: self.consejo_deliberacion.params.whale_z_threshold,
+                            whale_min_floor: self.consejo_deliberacion.params.whale_min_floor,
+                            liq_decay_mult: self.consejo_deliberacion.params.liq_decay_mult,
+                            liq_min_floor: self.consejo_deliberacion.params.liq_min_floor,
+                            crowd_imbalance_decay: self.consejo_deliberacion.params.crowd_imbalance_decay,
+                            crowd_min_floor: self.consejo_deliberacion.params.crowd_min_floor,
+                            devil_advocate_weight: self.consejo_deliberacion.params.devil_advocate_weight,
+                            discrepancy_veto_threshold: self.consejo_deliberacion.params.discrepancy_veto_threshold,
                             internal_discrepancy: {
                                 let coin_disc = self
                                     .arena
@@ -9610,10 +9351,15 @@ impl GodEngineCore {
                     // (×0.7); cuando divergen, sube (×1.3). agree ∈ [-1,1].
                     let dir_sign = if order.signal == SignalType::Long { 1.0 } else { -1.0 };
                     let agree = (council_fused * dir_sign).clamp(-1.0, 1.0);
-                    // Autoadaptabilidad Epigenética Continua: modulación por Hurst local |H - 0.50|
-                    // Si el proceso es persistente (H > 0.50), la predictibilidad es alta y el lift requerido se relaja suavemente;
-                    // si es ruido browniano puro (H ≈ 0.50), el lift se eleva para proteger contra martingala aleatoria.
-                    let hurst_mod = (1.0 - 0.40 * (hurst_val - 0.50).clamp(-0.4, 0.4)).clamp(0.70, 1.30);
+                    // F1-051: Autoadaptabilidad Epigenética Continua: modulación simétrica por predictibilidad fractal |H - 0.50|.
+                    // En Mandelbrot/DFA, la predictibilidad depende de la distancia al ruido browniano puro (|H - 0.50|).
+                    // Si el proceso es ruido browniano puro (H ≈ 0.50), la predictibilidad es nula y el lift requerido se eleva
+                    // (hasta +15% a H=0.50) para proteger el capital contra martingala aleatoria.
+                    // Si el proceso exhibe memoria no browniana (persistencia H > 0.50 o anti-persistencia H < 0.50),
+                    // existe estructura estadística predecible y el lift requerido se relaja suavemente (hasta -15% a |H-0.5| >= 0.20).
+                    // Simetría exacta garantizada: hurst_mod(0.50 + d) == hurst_mod(0.50 - d).
+                    let predictibilidad_h = (hurst_val - 0.50).abs().clamp(0.0, 0.40);
+                    let hurst_mod = (1.0 + 1.50 * (0.10 - predictibilidad_h)).clamp(0.70, 1.30);
                     let lift_eff_long = (ml_lift_long * (1.0 - 0.3 * agree) * hurst_mod).clamp(0.01, 0.30);
                     let lift_eff_short = (ml_lift_short * (1.0 - 0.3 * agree) * hurst_mod).clamp(0.01, 0.30);
                     // (Ola XLI·D1) ARRANQUE FRÍO SIN ROSTER = SONDA, no parálisis:
@@ -9639,27 +9385,24 @@ impl GodEngineCore {
                         coin_id,
                         has_roster_model,
                     );
-                    // K-23 resuelto (Ola Ω75): normalización proporcional al espacio disponible
-                    // [0, base] y [base, 1] mediante `normalized_directional_divergence`.
-                    // En base = 0.50 coincide de forma exacta con la lógica legacy.
-                    // Para cualquier base honesta (e.g. 0.25), la exigencia para cortos escala con
-                    // el semi-intervalo [0, base] impidiendo que el umbral sea <= 0.0 y permitiendo
-                    // que las órdenes short compitan con idéntico rigor estadístico relativo.
-                    let ml_div = crate::calibration::normalized_directional_divergence(
-                        ml_now,
-                        ml_model_base,
-                    );
+                    // F1-052: Unificación dimensional del ML gate (B3.18 / K-23 corregido).
+                    // Se evalúa la ventaja predictiva en unidades honestas de probabilidad |p - b| >= lift_eff.
+                    // Con la base del etiquetado (e.g. b = 1/3 para TP = 2·SL), exigir normalized_directional_divergence >= 2·lift
+                    // exigía (1/3 - p)/(1/3) >= 2·lift para cortos pero (p - 1/3)/(2/3) >= 2·lift para largos,
+                    // permitiendo a los cortos entrar con exactamente la mitad de deriva estadística que a los largos.
+                    // Al comparar la ventaja (|p - b|) directamente en la misma escala dimensional [0.01, 0.30] que lift_eff,
+                    // tanto largos como cortos compiten con idéntico rigor estadístico simétrico.
+                    // En base b = 0.50 coincide con exactitud matemática con la semántica canónica (|p - 0.50| >= lift).
                     let ml_edge_now = if order.signal == SignalType::Long {
-                        ml_div
+                        ml_now - ml_model_base
                     } else {
-                        -ml_div
+                        ml_model_base - ml_now
                     };
-                    let required_edge = 2.0
-                        * if order.signal == SignalType::Long {
-                            lift_eff_long
-                        } else {
-                            lift_eff_short
-                        };
+                    let required_edge = (if order.signal == SignalType::Long {
+                        lift_eff_long
+                    } else {
+                        lift_eff_short
+                    }) - 1e-9;
                     let ml_gate_ok = arranque_frio_sin_roster
                         || (has_roster_model && ml_edge_now >= required_edge);
                     if aprobado_por_consejo && !ml_gate_ok {
@@ -9681,25 +9424,10 @@ impl GodEngineCore {
                         // NO puede inflamar free_cap ni el chequeo de
                         // colchón.
                         let total_used = self.arena.used_margin_saturated();
-                        let mut free_cap = (current_cap - total_used).max(0.0);
-                        // (Ola XLI·B1 / Ola Ω59) MODULACIÓN ESPECTRAL CONTINUA SIMÉTRICA DEL MARGEN DISPONIBLE:
-                        // El margen admisible respira con la densidad de evidencia de flujo turbulento adverso.
-                        // Para LARGOS: marea portadora bajista (tide < 0.0) contrae el capital libre ante caídas.
-                        // Para CORTOS: marea portadora alcista (tide > 0.0) contrae el capital libre ante subidas
-                        // violentas / short squeezes (1.0 calma → 0.05 en turbulencia direccional coherente acelerada).
-                        let directional_flux = self.arena.coins[coin_id]
-                            .spectral_crash_flux
-                            .load(Ordering::Relaxed)
-                            .clamp(0.0, 1.0);
-                        if directional_flux > 0.0 {
-                            let tide = self.arena.coins[coin_id]
-                                .spectral_coherence
-                                .load(Ordering::Relaxed);
-                            let adverse_tide = if is_long { tide < 0.0 } else { tide > 0.0 };
-                            if adverse_tide {
-                                free_cap *= (1.0 - 0.95 * directional_flux).clamp(0.05, 1.0);
-                            }
-                        }
+                        let free_cap = (current_cap - total_used).max(0.0);
+                        // F1-054 (Ola Ω168): Unificación del cálculo de margen en risk-engine (available_margin_headroom),
+                        // erradicando el segundo corte redundante del 95% con spectral_crash_flux que contradecía
+                        // el dimensionamiento del motor de riesgo y provocaba descartes silenciosos de órdenes.
 
                         let eff_leverage = order.leverage.clamp(1.0, 50.0);
                         // D-634/D-635 (DÉCIMA OLA): aquí se revalidaba la orden con
@@ -9970,6 +9698,31 @@ impl GodEngineCore {
                                         event_time_ms
                                     );
                                 }
+                            } else {
+                                self.diag_margin_drops += 1;
+                                if self.trazas_diagnosticas && self.diag_margin_drops <= 100 {
+                                    telemetry_server::telemetry_log!(
+                                        "⚠️ [MARGIN DROP] #{} coin={} notional={:.2} min={:.2} used={:.2} req={:.2} cap_cushion={:.2}",
+                                        self.diag_margin_drops,
+                                        sym,
+                                        margin_req * eff_leverage,
+                                        min_notional,
+                                        total_used,
+                                        margin_req,
+                                        current_cap * cushion
+                                    );
+                                }
+                            }
+                        } else {
+                            self.diag_margin_drops += 1;
+                            if self.trazas_diagnosticas && self.diag_margin_drops <= 100 {
+                                telemetry_server::telemetry_log!(
+                                    "⚠️ [MARGIN DROP] #{} coin={} margin_req={:.2} > free_cap={:.2}",
+                                    self.diag_margin_drops,
+                                    sym,
+                                    margin_req,
+                                    free_cap
+                                );
                             }
                         }
                     }
@@ -10085,20 +9838,44 @@ pub fn tau_hacia_el_centroide(tau_ms: u64, resonante_ms: f64) -> u64 {
     }
 }
 
-/// D-609 (DÉCIMA OLA) — modulación continua de la duración esperada por el
-/// exponente de Hurst.
+/// D-609 (DÉCIMA OLA) / F1-055 (Ola Ω168) — modulación continua adaptativa de la duración esperada
+/// por el exponente de Hurst, escalada por la incertidumbre de muestra N del estimador DFA.
 ///
-/// Reproduce los extremos calibrados del diseño anterior —×2 a H = 0,52, ×½ a
-/// H = 0,48— con `factor = 2^((H − 0,5)/0,02)` acotado a [½, 2], sin escalones.
-/// El recorte a [15 s, 1 h] se aplica sólo en la dirección del cambio, de modo
-/// que a H = 0,5 la duración no se altera. Una duración no declarada (0) se deja
-/// en 0: el horizonte lo decide entonces el mapeo τ único del sistema.
-pub fn hurst_duration_modulation(expected_duration_ms: u64, hurst: f64) -> u64 {
+/// QUÉ: Modula la duración esperada `expected_duration_ms` por un factor continuo en [0.5, 2.0].
+/// POR QUÉ: Bajo la hipótesis nula de paseo aleatorio (H = 0.50), la incertidumbre del estimador
+/// DFA es σ_H ~ 1/√N. La antigua rampa estática de anchura 0.02 saturaba a ±0.64σ (52% de saturación
+/// bajo ruido browniano puro).
+/// PARA QUÉ: Preservar intacta la duración en el régimen neutral [anti_thr, pers_thr] determinado
+/// por `dynamic_hurst_thresholds(samples)`, y escalar la rampa suavemente con factor 2^(z/z_ref)
+/// donde el factor mediano bajo paseo aleatorio es 1.0 (en [0.9, 1.1]) y la saturación es <= 10%.
+/// CÓMO:
+///   (anti_thr, pers_thr) = dynamic_hurst_thresholds(samples);
+///   scale = (1024.0 / max(64, samples)).sqrt().min(2.0);
+///   ramp_width = (0.10 * scale).max(0.01);
+///   Si hurst > pers_thr: factor = 2^((hurst - pers_thr) / ramp_width).clamp(1.0, 2.0);
+///   Si hurst < anti_thr: factor = 2^(-(anti_thr - hurst) / ramp_width).clamp(0.5, 1.0);
+///   Si anti_thr <= hurst <= pers_thr: factor = 1.0;
+///   bounded = modulated.clamp([15s, 1h] en la dirección del cambio).
+pub fn hurst_duration_modulation_samples(expected_duration_ms: u64, hurst: f64, samples: usize) -> u64 {
     if expected_duration_ms == 0 || !hurst.is_finite() {
         return expected_duration_ms;
     }
     let dur = expected_duration_ms as f64;
-    let factor = 2f64.powf((hurst - 0.5) / 0.02).clamp(0.5, 2.0);
+    let (anti_thr, pers_thr) = dynamic_hurst_thresholds(samples);
+    let n_clamped = samples.max(64) as f64;
+    let scale = (1024.0 / n_clamped).sqrt().min(2.0);
+    let ramp_width = (0.10 * scale).max(0.01);
+
+    let factor = if hurst > pers_thr {
+        let excess = (hurst - pers_thr) / ramp_width;
+        2f64.powf(excess).clamp(1.0, 2.0)
+    } else if hurst < anti_thr {
+        let deficit = (anti_thr - hurst) / ramp_width;
+        2f64.powf(-deficit).clamp(0.5, 1.0)
+    } else {
+        1.0
+    };
+
     let modulated = dur * factor;
     let bounded = if factor > 1.0 {
         modulated.min(3_600_000.0).max(dur)
@@ -10106,6 +9883,11 @@ pub fn hurst_duration_modulation(expected_duration_ms: u64, hurst: f64) -> u64 {
         modulated.max(15_000.0).min(dur)
     };
     bounded.round() as u64
+}
+
+#[inline]
+pub fn hurst_duration_modulation(expected_duration_ms: u64, hurst: f64) -> u64 {
+    hurst_duration_modulation_samples(expected_duration_ms, hurst, 1024)
 }
 
 #[cfg(test)]
@@ -10152,18 +9934,28 @@ mod tests_qo_625 {
 
 #[cfg(test)]
 mod tests_d609 {
-    use super::hurst_duration_modulation;
+    use super::{hurst_duration_modulation, hurst_duration_modulation_samples};
 
     #[test]
-    fn conserva_los_extremos_calibrados() {
-        assert_eq!(hurst_duration_modulation(600_000, 0.52), 1_200_000);
-        assert_eq!(hurst_duration_modulation(600_000, 0.48), 300_000);
+    fn neutral_bajo_ruido_browniano() {
+        // En la zona neutral [0.45, 0.52] para N=1024, el factor es 1.0 idéntico.
         assert_eq!(hurst_duration_modulation(600_000, 0.50), 600_000);
+        assert_eq!(hurst_duration_modulation(600_000, 0.48), 600_000);
+        assert_eq!(hurst_duration_modulation(600_000, 0.52), 600_000);
+        assert_eq!(hurst_duration_modulation(600_000, 0.45), 600_000);
     }
 
     #[test]
-    fn es_continua_alrededor_de_los_antiguos_escalones() {
-        for &h in &[0.48, 0.52] {
+    fn modula_ante_persistencia_y_antipersistencia_genuina() {
+        // A H = 0.62 (0.52 + 0.10 de rampa), el factor es 2.0 (1_200_000).
+        assert_eq!(hurst_duration_modulation(600_000, 0.62), 1_200_000);
+        // A H = 0.35 (0.45 - 0.10 de rampa), el factor es 0.5 (300_000).
+        assert_eq!(hurst_duration_modulation(600_000, 0.35), 300_000);
+    }
+
+    #[test]
+    fn es_continua_alrededor_de_los_umbrales() {
+        for &h in &[0.45, 0.52] {
             let a = hurst_duration_modulation(600_000, h - 1e-6) as f64;
             let b = hurst_duration_modulation(600_000, h + 1e-6) as f64;
             assert!((a - b).abs() / 600_000.0 < 1e-3, "salto en H = {h}: {a} vs {b}");
@@ -10177,8 +9969,17 @@ mod tests_d609 {
 
     #[test]
     fn respeta_los_limites_solo_en_la_direccion_del_cambio() {
-        assert_eq!(hurst_duration_modulation(7_200_000, 0.60), 7_200_000);
-        assert_eq!(hurst_duration_modulation(10_000, 0.40), 10_000);
+        assert_eq!(hurst_duration_modulation(7_200_000, 0.70), 7_200_000);
+        assert_eq!(hurst_duration_modulation(10_000, 0.30), 10_000);
+    }
+
+    #[test]
+    fn adaptacion_por_tamano_de_muestra() {
+        // Con muestras pequeñas (ej. N=256), scale = 2.0 y la rampa es más ancha (0.20),
+        // protegiendo contra falsos positivos ante ruido de muestra.
+        let dur_256 = hurst_duration_modulation_samples(600_000, 0.58, 256);
+        let dur_1024 = hurst_duration_modulation_samples(600_000, 0.58, 1024);
+        assert!(dur_256 <= dur_1024, "dur_256: {dur_256} <= dur_1024: {dur_1024}");
     }
 }
 

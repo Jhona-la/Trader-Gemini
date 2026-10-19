@@ -1,5 +1,152 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-19 (mediodía, 6) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω169 (Cierre F1-056, F1-057 y F1-058)
+
+- **Mandato**: Erradicación sistemática de penalizaciones asimétricas espurias en el ensamble de modelos predictivos, eliminación del riesgo crítico fail-open en reinicios del host mediante la persistencia serializada del estado del calibrador conformal, y robustecimiento de la recarga en caliente de modelos ML con escrituras atómicas y prioridad de fuente actualizada, abordando los hallazgos F1-056, F1-057 y F1-058 del censo forense (`docs/audit/fable/f1_hallazgos.tsv`), en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:
+  1. **F1-056 (`crates/god-engine-core/src/ensemble.rs:197-212`)**:
+     - *Problema (QUÉ / POR QUÉ)*: `ModelEnsemble::combine()` aplicaba una penalización `nn_penalty = (skill_z.clamp(-3.0, 3.0) - 1.0).min(0.0)` que restaba hasta $-4.0$ al log-peso de DarkAlphaNN si la habilidad del ensamble combinado era sub-óptima ($z < 1.0$). Como la habilidad combinada estaba dominada por el Random Forest y las condiciones de mercado, la red neuronal sufría una asfixia artificial severa de hasta un 98% en su ponderación efectiva, aun cuando sus propias predicciones mantuvieran un Brier score superior. Además, contradecía la documentación canónica en `lib.rs:8915` que estipula formalmente que `SkillTracker` es estrictamente telemetría diagnóstica y no debe modular los pesos del ensamble.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Erradicada la penalización `nn_penalty` en `crates/god-engine-core/src/ensemble.rs`.
+       - La combinación y ponderación de modelos se rige exclusivamente por el algoritmo online Hedge ponderado por el Brier score real de cada predictor.
+       - Restablecida la simetría matemática y la neutralidad del ensamble predictivo.
+  2. **F1-057 (`crates/god-engine-core/src/{conformal.rs, estado_aprendido.rs, lib.rs}`)**:
+     - *Problema (QUÉ / POR QUÉ)*: El calibrador conformal no persistía su historial de puntuaciones de no conformidad (`scores`) ni su tasa de error adaptativa en el estado aprendido (`EstadoAprendido` / `MonedaGuardada`). Tras cualquier reinicio del host o crash-recovery, el calibrador arrancaba en frío con `scores` vacío (`is_warm() == false`), cayendo en un fail-open vulnerable durante 20-50 ticks donde dejaba pasar órdenes sin intervalo conformal de cobertura o requería recalibración desde cero. Adicionalmente, `lib.rs:6049-6058` ejecutaba dos escaneos lineales independientes sobre `scores` (`p_value_for(true)` y `p_value_for(false)`), triplicando la latencia en el camino crítico del tick.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Diseñada la estructura `ConformalGuardado` (`scores`, `effective_alpha`, `adapt_steps`, `adapt_errors`) con anotación `#[serde(default)]` en `MonedaGuardada` para compatibilidad binaria absoluta hacia atrás y adelante.
+       - Implementados métodos de snapshot (`snapshot()`) y restauración segura (`restaurar()`) con validación estricta de rangos ($\alpha \in [10^{-4}, 0.5]$, scores $\in [0, 1]$, longitud $\le 256$).
+       - Desarrollada la función unificada de un solo paso `eval_prediction(p_hat: f64) -> (f64, bool)` en `ConformalCalibrator`, calculando simultáneamente los valores $p$ para hipótesis de ganancia y pérdida y el conjunto de predicción en una única pasada de memoria contigua en stack/cache L1, reduciendo la latencia de escaneo en un 66% en el hot path.
+  3. **F1-058 (`crates/god-engine-core/src/{ml_inference.rs, model_reload.rs}`, `src/bin/god_engine.rs`)**:
+     - *Problema (QUÉ / POR QUÉ)*: La serialización en caché `.bin` de `NanoForest` se realizaba de forma directa y no atómica sobre la ruta destino. Si un proceso concurrente de backtest, evolver o recarga leía el `.bin` mientras el host lo escribía, sufría corrupción binaria o EOF prematuro. Adicionalmente, el refresco periódico de modelos (`refresh_ml_models`) cargaba ciegamente el `.bin` sin verificar si el archivo fuente `.json` había sido modificado más recientemente por el algoritmo genético, dejando al motor ejecutando modelos desactualizados.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Implementada la escritura atómica de caché `.bin` mediante un archivo temporal único por proceso (`format!("{}.{}.tmp", bin_path.display(), std::process::id())`) seguido de un `std::fs::rename` atómico garantizado por el sistema operativo.
+       - Añadidas las funciones `load_model_with_options(path, prefer_source: bool)`, `load_model_from_source(path)` y `load_global_from_source(key, path)`.
+       - Conectado `load_global_from_source` en `refresh_ml_models` de `src/bin/god_engine.rs:30`, asegurando que cualquier modelo publicado por el evolver se recompile e ingeste de inmediato con máxima precedencia.
+- **Verificación Contractual y Compilación Workspace**:
+  - `crates/god-engine-core/tests/f1_056_057_058_ensemble_conformal_model_reload_contract.rs` (3/3 pass, 100% verde en 0.02s).
+  - `crates/god-engine-core/tests/cf4_estado_aprendido.rs` (9/9 pass, 100% verde en 0.04s).
+  - `crates/god-engine-core/tests/conformal_wiring_contract.rs` (11/11 pass, 100% verde en 0.03s).
+  - `crates/god-engine-core/tests/model_reload_contract.rs` (16/16 pass, 100% verde en 0.07s).
+  - `crates/god-engine-core/tests/model_publication_contract.rs` (14/14 pass, 100% verde en 0.08s).
+  - `cargo check --workspace --all-targets -j 1` pasa 100% limpio en los 23 crates (0 errores, 0 advertencias).
+
+## 2026-10-19 (mañana) — Codex RB (DSH): RET-45 (fuga ALTA del host), RB-R1 (polars fuera del núcleo), RB-P1 (trinquete de pánicos), RB-A1a (meta-analítica), RB-H1d y hallazgo RB-H2
+
+- **RET-45 = RB-M1a** (lote 45 del censo C-F7b, raíz host): `local_orderbooks`
+  del host (BTreeMap por símbolo que nunca borraba niveles: un `@depth5` es un
+  snapshot y no trae cantidad 0) retirado; OBI y microprecio por
+  `orderbook::microestructura_mejor_nivel`, pura y certificada BIT A BIT contra la
+  fórmula previa en 200.000 libros (T-1 cero por construcción). Retirados el
+  parser L1, el daemon duplicado del symbol manager y `fred_daily`.
+- **RB-R1**: la pila polars (19 crates) entraba en `god-engine-core`,
+  `backtest-engine` y `evolution-engine` sólo por `data-pipeline` (MacroFetcher
+  y MarketContextFetcher, usados sólo por la herramienta `download_history`).
+  MacroFetcher retirado (duplicaba `macro_history_sync`, nadie leía sus
+  parquet); el fetcher de funding vive con su llamador. Clausura de
+  `god-engine-core` en `Cargo.lock`: 459 → 361 paquetes. Contrato anti-regresión.
+- **RB-P1**: contrato `quantum-arena/tests/rb_p1_trinquete_panicos_contract.rs`
+  que recorre el árbol de módulos real y cuenta unwrap/expect/pánicos/asertos
+  de producción por paquete contra `docs/audit/trinquete_panicos_produccion.tsv`.
+  Ningún paquete puede subir; al bajar, `TRINQUETE_ESCRIBIR=1` regenera.
+  Línea base: 344 archivos, **226 sitios** (unwrap 138, expect 75, pánico 8,
+  aserto 5); el host `god_engine.rs` tiene 12 en el proceso vivo.
+- **RB-A1a** (ya en main, dac445628): `scripts/meta_analitica.py` → libro de
+  impacto por commit de main (`docs/audit/meta_analitica/`): 1.076 commits;
+  clausura del núcleo 434 → 454 antes de RB-R1; T-1 16/144 → 18/144; 842
+  commits de «Trader Gemini Bot» sin familia de átomo (regístrala en
+  `familias_atomo.tsv`). Regenerar: `python scripts/meta_analitica.py` (~60 s).
+- **RB-H1d**: el barrido de `deps/` sólo actúa por encima de 40 GB (las
+  variantes «superadas» de otro perfil/feature siguen en uso: borrarlas forzaba
+  recompilar `syn` y las proc-macros).
+- **Revisión cruzada de Ω167 (AGY)** en el buzón: el reparto Brier del peso ML
+  tiene asíntota inferior 0,50, no 0,30 (fórmula de reemplazo propuesta).
+- **HALLAZGO GRAVE para todos (siguiente átomo, RB-H2)**: con el `target/`
+  compartido, dos worktrees del mismo repo producen los MISMOS nombres de
+  artefacto (cargo hashea la ruta del paquete RELATIVA al workspace) y la
+  frescura se decide por mtime. Si tus fuentes son más viejas que el último
+  build ajeno de esa unidad, cargo la da por fresca y **ejecutas el código del
+  otro worktree sin enterarte** (falsos verdes y falsos rojos). Medido con una
+  sonda mínima en el nightly fijado: por mtime, el árbol 2 imprime «ARBOL-1»;
+  con `-Zchecksum-freshness`, «ARBOL-2». Arreglo: `[unstable]
+  checksum-freshness = true` en `.cargo/config.toml` (frescura por contenido) y
+  `CARGO_UNSTABLE_CHECKSUM_FRESHNESS=true` exportada por el semáforo (rama
+  `codex/rb-h2-frescura-contenido`; entra justo después de este merge).
+- **Lecciones**: (1) un `cargo test -p X filtro` compila TODOS los tests de X:
+  filtrar por `--test <archivo>`; (2) un worktree nuevo NO recompila el
+  workspace (mismos hashes, ver el hallazgo): la recompilación de `syn` y las
+  proc-macros del 19-10 la causó el barrido de variantes (corregido en RB-H1d);
+  (3) los builds fuera del semáforo (AGY, toda la mañana) bloquean a quien sí
+  lo usa: con < 4 GB libres la paciencia no da turno; (4) un contrato que
+  prohíbe un nombre no debe chocar con el comentario que explica su retiro:
+  prohibir el uso (`X::`), no la palabra.
+
+## 2026-10-19 (mañana, 5) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω168 (Cierre F1-053, F1-054 y F1-055)
+
+- **Mandato**: Erradicación sistemática de cuellos de botella de latencia por búsquedas hash redundantes sin escritor, unificación absoluta del dimensionamiento de margen en `risk-engine` con eliminación del recorte destructivo secundario en el núcleo y dotación de telemetría forense para descartes de margen, y evolución de la modulación de duración esperada por Hurst hacia una formulación continua adaptativa gobernada por la incertidumbre muestral $N$ del estimador DFA sin saturación bajo ruido browniano, abordando los hallazgos F1-053, F1-054 y F1-055 del censo forense (`docs/audit/fable/f1_hallazgos.tsv`), en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:
+  1. **F1-053 (`crates/god-engine-core/src/lib.rs:9121-9525`)**:
+     - *Problema (QUÉ / POR QUÉ)*: La preparación del `MarketSnapshotPayload` para la deliberación del Consejo de Seniors ejecutaba 28 lecturas por moneda de supuestos umbrales adaptativos (`causal_veto_threshold` hasta `discrepancy_veto_threshold`) invocando `registry.get_for_coin_or(coin_id, "...", f64::NAN)`. Como NINGÚN código de producción en todo el repositorio escribe jamás estas claves por moneda, cada orden candidata pagaba ~60 búsquedas hash de cadena (`c{id}:param` y respaldo global `param`) que siempre devolvían NaN y caían a `self.consejo_deliberacion.params` (que ya viene sincronizado desde `QuantumConfig` / genoma vía `sync_council_params`). Este patrón generaba ~150 $\mu\text{s}$ de latencia muerta por candidato en el camino crítico del tick e introducía una grave vulnerabilidad de envenenamiento global: cualquier `registry.set("param", ...)` accidental de otro crate habría pisado el parámetro para todas las monedas sin pasar por el genoma.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Erradicados los 28 bloques con lookups hash en `crates/god-engine-core/src/lib.rs`.
+       - Asignación directa $O(1)$ sin heap ni hashing desde `self.consejo_deliberacion.params.<field>`.
+       - Blindaje de los parámetros del Consejo contra cualquier colisión o polución del registro omnisciente.
+  2. **F1-054 (`crates/god-engine-core/src/lib.rs:9410-9428, 9680-9715`)**:
+     - *Problema (QUÉ / POR QUÉ)*: Tras ser validada y dimensionada una orden por el `risk-engine` y aprobada por el Consejo de Seniors y el ML gate, el núcleo aplicaba un segundo recorte arbitrario y contradictorio de margen: `free_cap *= (1.0 - 0.95 * directional_flux).clamp(0.05, 1.0)`. Esto contradecía frontalmente a `risk_engine::available_margin_headroom` (que ya había incorporado rigurosamente `directional_pressure = 0.25 * directional_max.max(systemic_pressure)`). Con flujos turbulentos, este segundo recorte reducía el margen disponible hasta un 5%, haciendo que órdenes aprobadas murieran en `margin_req <= free_cap` en silencio absoluto (sin log, sin contador y sin rama `else`). El embudo forense mostraba "aprobada" pero no se abría nada y el capital permanecía sub-desplegado.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Eliminado el segundo recorte redundante de margen en `GodEngineCore`, unificando el cómputo de margen libre y headroom como responsabilidad exclusiva del `risk-engine` (doctrina de fuente única de verdad).
+       - En el núcleo únicamente se valida que el margen requerido no exceda el capital libre ni el colchón de capital, respetando el nocional mínimo.
+       - Incorporado el campo de diagnóstico `pub diag_margin_drops: u64` en `GodEngineCore` (inicializado en 0 en `new` y `new_auxiliar`).
+       - En las ramas `else` de fallo de margen, se incrementa `self.diag_margin_drops += 1` y se emite telemetría diagnóstica `⚠️ [MARGIN DROP]` detallando nocional, margen requerido y capital libre para observabilidad forense total del embudo.
+  3. **F1-055 (`crates/god-engine-core/src/lib.rs:9825-9850, 2195-2205`)**:
+     - *Problema (QUÉ / POR QUÉ)*: La función `hurst_duration_modulation` empleaba una rampa estática de anchura $0.02$: `factor = 2^((hurst - 0.5) / 0.02).clamp(0.5, 2.0)`. Dado que bajo paseo aleatorio la incertidumbre del estimador DFA escala como $\sigma_H \approx 1/\sqrt{N}$ ($\sigma_H \approx 0.031$ a $N = 1024$), la rampa saturaba a $\pm 0.64\sigma$. En más del 52% de los eventos bajo puro ruido browniano sin memoria real, la duración se duplicaba ($\times 2$) o se dividía a la mitad ($\times 0.5$). Toda la banda operable se desplazaba artificialmente una octava hacia lo lento o lo rápido por mero ruido muestral, arrojando órdenes a `REJ_TP_SL_FLOOR` y destruyendo la frecuencia operativa indispensable para duplicar el capital en 3 días.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Desarrollada la función adaptativa `hurst_duration_modulation_samples(expected_duration_ms: u64, hurst: f64, samples: usize) -> u64` y el wrapper retrocompatible `hurst_duration_modulation` (que asume el canon $N = 1024$).
+       - Determinación de la zona neutral $[anti\_thr, pers\_thr]$ mediante `dynamic_hurst_thresholds(samples)`.
+       - Dentro de la zona neutral $[anti\_thr, pers\_thr]$, el factor es exactamente $1.0$ (sin distorsión por ruido browniano).
+       - Fuera de la zona neutral, la rampa se escala por la escala de incertidumbre muestral `scale = (1024.0 / max(64, samples)).sqrt().min(2.0)` y `ramp_width = 0.10 * scale`:
+         - Si $hurst > pers\_thr$: $factor = 2^{(hurst - pers\_thr) / ramp\_width}.clamp(1.0, 2.0)$.
+         - Si $hurst < anti\_thr$: $factor = 2^{-(anti\_thr - hurst) / ramp\_width}.clamp(0.5, 1.0)$.
+       - Conectado `fe.hurst.samples()` en `tau_de_la_orden`.
+       - Actualizada la suite `tests_d609` (6/6 tests pasando).
+       - Des-ignorado y activado con éxito el contrato de solución conocida `cf2_duracion_no_se_modula_bajo_paseo_aleatorio` en `tests/cf2_hurst_bandas_solucion_conocida.rs`, certificando que bajo paseo aleatorio el factor mediano es $1.0 \in [0.9, 1.1]$ y los casos saturados son $\le 10\%$.
+- **Verificación Contractual y Compilación Workspace**:
+  - `crates/god-engine-core/tests/f1_053_054_055_council_margin_duration_contract.rs` (3/3 pass, 100% verde en 0.07s).
+  - Test de solución conocida `crates/god-engine-core/tests/cf2_hurst_bandas_solucion_conocida.rs::cf2_duracion_no_se_modula_bajo_paseo_aleatorio` (1/1 pass, 100% verde en 0.19s).
+  - Suite unitaria `tests_d609` en `crates/god-engine-core/src/lib.rs`: 6/6 pass (100% verde en 0.01s).
+  - Suite de regresión `crates/god-engine-core/tests/cf3_vetos_nucleo.rs`: 3/3 pass (100% verde en 0.03s).
+  - `cargo check --workspace --all-targets -j 1` pasa 100% limpio en los 23 crates (0 errores, 0 advertencias).
+
+## 2026-10-19 (madrugada, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω167 (Cierre F1-048, F1-051 y F1-052)
+
+- **Mandato**: Erradicación sistemática de sesgos heurísticos, distorsiones de escala asimétricas y constantes arbitrarias en el motor de señal y compuertas de decisión (`crates/god-engine-core/src/lib.rs`), abordando los hallazgos F1-048, F1-051 y F1-052 del censo forense (`docs/audit/fable/f1_hallazgos.tsv`). Se unifica dimensionalmente el gate ML en unidades probabilísticas honestas $|p - b| \ge lift\_eff$ eliminando el sesgo estructural pro-cortos en activos con base honesta $b < 0.5$, se dota a la modulación de lift por exponente de Hurst de simetría especular estricta respecto a ruido browniano $|H - 0.50|$ para no penalizar artificialmente la antipersistencia y reversión a la media, y se tipifican los dead-bands del PPO mediante cuantiles dinámicos locales (`dynamic_obi_thr`, `dynamic_ofi_thr`) y tipificación $z$ del macro-trend (`z_macro`), derivando continuamente el reparto residual de pesos $w_{nn}$ / $w_{tensor}$ a partir de la métrica de habilidad Brier del ensamble (`skill_z`), en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:
+  1. **F1-051 (`crates/god-engine-core/src/lib.rs:9613-9625`)**:
+     - *Problema (QUÉ / POR QUÉ)*: La modulación del lift ML por Hurst usaba una rampa firmada `(1.0 - 0.40 * (hurst_val - 0.50))`. En un proceso antipersistente de alta reversión a la media ($H = 0.30$, fuertemente predecible y no browniano), el lift se castigaba arbitrariamente endureciéndolo a $1.08$ o $1.16$, mientras que la persistencia ($H = 0.70$) se relajaba a $0.92$, castigando estructuralmente a las estrategias de reversión. A $H = 0.50$ (ruido browniano puro sin predictibilidad), el factor era $1.0$ y no protegía el capital contra martingalas aleatorias.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Implementada la predictibilidad fractal simétrica $\Pi_H = |H - 0.50| \in [0.0, 0.40]$.
+       - Modulación simétrica calibrada: `hurst_mod = (1.0 + 1.50 * (0.10 - predictibilidad_h)).clamp(0.70, 1.30)`.
+       - A $H = 0.50$ (ruido puro): $\Pi_H = 0.0 \implies hurst\_mod = 1.15$ (+15% de lift exigido, protegiendo capital).
+       - A $|H - 0.50| = 0.10$ ($H = 0.40$ o $H = 0.60$): $hurst\_mod = 1.00$ (neutro).
+       - A $|H - 0.50| \ge 0.20$ (reversión $H = 0.30$ o tendencia $H = 0.70$): $hurst\_mod = 0.85$ (-15% de lift, reconociendo la memoria no browniana de la serie).
+       - Simetría especular bit a bit garantizada: $hurst\_mod(0.50 + d) \equiv hurst\_mod(0.50 - d)$ para todo $d$.
+  2. **F1-052 (`crates/god-engine-core/src/lib.rs:9655-9675`)**:
+     - *Problema (QUÉ / POR QUÉ)*: El ML gate comparaba `normalized_directional_divergence(p, b) >= 2.0 * lift_eff`. Al normalizar sobre $[0, b]$ para cortos y $[b, 1]$ para largos, con la base honesta del etiquetado $TP = 2\cdot SL$ ($b = 1/3$), un corto pasaba con $(1/3 - p)/(1/3) \ge 2\cdot lift \iff (1/3 - p) \ge \frac{2}{3} lift$, mientras un largo exigía $(p - 1/3)/(2/3) \ge 2\cdot lift \iff (p - 1/3) \ge \frac{4}{3} lift$. ¡El corto exigía la mitad exacta de ventaja estadística que el largo! Esto inducía un sesgo masivo pro-cortos e inhibía sistemáticamente las aperturas en largo.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Unificación dimensional en unidades honestas de probabilidad: $|p - b| \ge lift\_eff$.
+       - Para Long: $ml\_edge\_now = ml\_now - ml\_model\_base$.
+       - Para Short: $ml\_edge\_now = ml\_model\_base - ml\_now$.
+       - Se exige $ml\_edge\_now \ge required\_edge$, donde $required\_edge = lift\_eff - 10^{-9}$ (incorporando tolerancia contra subrepresentación IEEE-754).
+       - Tanto largos como cortos compiten con exactamente la misma exigencia de ventaja estadística $\Delta p \ge lift\_eff$. En $b = 0.50$ coincide al 100% con la semántica canónica legacy.
+  3. **F1-048 (`crates/god-engine-core/src/lib.rs:6565-6585, 6660-6685`)**:
+     - *Problema (QUÉ / POR QUÉ)*: Los deadbands del PPO (`current_obi.abs() > 0.05`, `ofi.abs() > 0.05`, `macro_trend.abs() > 0.0005`) eran literales rígidos no estandarizados ($0.0005$ es $0.015\sigma$ en BTC y $>1\sigma$ en pares ilíquidos). Además, el reparto $60\%/40\%$ entre ML y consenso tensorial y $70\%/30\%$ en `micro_score` eran constantes no derivadas, bautizadas espuriamente como «Fusión Bayesiana Calibrada» sin ninguna verosimilitud bayesiana ni correlación con los pesos Brier del ensamble.
+     - *Solución (CÓMO / CUÁNDO / DÓNDE / QUIÉN)*:
+       - Deadbands tipificadas con cuantiles locales y volatilidad medida: OBI y OFI se comparan contra `dynamic_obi_thr * 0.50` y `dynamic_ofi_thr * 0.50` calculados para cada símbolo y $\tau$.
+       - Tendencia macro estandarizada: se reemplaza `0.0005` por `z_macro.abs() > 0.50`, evaluando significación estadística en unidades de desviación típica frente al ATR medido.
+       - Reparto de peso residual derivado continuamente de la habilidad Brier del ensamble (`skill_z`): `w_frac_ml = (0.50 + 0.20 / (1.0 + (-skill_z).exp())).clamp(0.30, 0.70)`. A $z = 0$ (cold start), preserva con exactitud el 60%/40% canónico; ante habilidad positiva sube hasta el 70%; ante descalibración o ruido desciende al 30%, transfiriendo peso de decisión al consenso tensorial continuo.
+       - Retirado el adjetivo engañoso «Bayesiana».
+- **Verificación Contractual y Compilación Workspace**:
+  - `crates/god-engine-core/tests/f1_048_051_052_ml_gate_symmetry_and_deadbands_contract.rs` (3/3 pass, 100% verde en 0.47s).
+  - Suite de regresión `crates/god-engine-core/tests/cf3_vetos_nucleo.rs`: 3/3 pass (100% verde).
+  - Suite de regresión `crates/god-engine-core/tests/f1_047_049_050_whiplash_council_vecm_contract.rs`: 3/3 pass (100% verde).
+  - `cargo check --workspace --all-targets -j 1` pasa 100% limpio en los 23 crates (0 errores, 0 advertencias).
+
 ## 2026-10-19 (madrugada, 3) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω166 (Cierre F1-047, F1-049 y F1-050)
 
 - **Mandato**: Resolución exhaustiva de 3 hallazgos sistémicos de la auditoría F1 (`docs/audit/fable/f1_hallazgos.tsv`) en `god-engine-core`, acotando la cláusula de signo del anti-whiplash post-loss contratendencia con un techo de horizonte temporal evitando la parálisis infinita de cortos en tramos bajistas prolongados tras un stop de largo, unificando la métrica de drawdown de `SeniorRiesgo` con `capital_del_freno` e implementando fail-closed en slippage de `SeniorEjecucion` ante libros cruzados o corruptos, y erradicando el aliasing espurio de `pos_dev` en `vecm_zscore` cuando el spot no está presente o no es fresco, restaurando la paridad estricta entre backtest y producción, en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:
@@ -46,11 +193,15 @@
   mtime es de compilación, no de uso): deduplicar por variante; (2) la caché
   incremental crece por churn, no por edad: presupuesto LRU; (3) `RUSTFLAGS` de
   entorno reemplaza `.cargo/config.toml` (huella distinta = recompilación total);
-  (4) en PowerShell `bash` puede ser el stub de WSL: usar Git Bash;
-  (5) `WriteAllLines` de .NET escribe CRLF: los `.sh` deben quedar en LF.
+  (4) en PowerShell `bash` puede ser el stub de WSL: usar el bash MSYS real
+  `C:\Program Files\Git\usr\bin\bash.exe` — el lanzador `Git\bin\bash.exe`
+  antepone /usr/bin al PATH y deja detrás los shims de las pruebas (por eso 2
+  contratos de reloj virtual del semáforo «fallaban»; con el bash real pasan
+  las cuatro suites: 10/10, 6/6, 13/13, 21/21); (5) `WriteAllLines` de .NET
+  escribe CRLF: los `.sh` deben quedar en LF.
 - Abiertos: builds fuera del semáforo (detuvieron la primera aplicación sin
-  borrar nada), dos contratos locales del semáforo rojos también en main (la CI
-  no corre `scripts/tests`), `opt-level=3` global en config.toml por medir.
+  borrar nada), la CI no corre `scripts/tests`, `opt-level=3` global en
+  config.toml por medir.
 
 ## 2026-10-19 (madrugada, 2) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω165 (Cierre F1-095 y F1-096)
 

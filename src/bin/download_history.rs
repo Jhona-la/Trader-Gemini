@@ -1,11 +1,15 @@
 use data_pipeline::historical::Kline;
-use data_pipeline::macro_data::MacroFetcher;
-use data_pipeline::market_context::MarketContextFetcher;
 use polars::prelude::*;
 use reqwest::Client;
 use std::fs::File;
 use std::io::{Cursor, Read};
 use std::path::Path;
+
+// RB-R1: el fetcher de funding vive con su único llamador (antes en
+// data-pipeline, donde arrastraba polars al grafo del núcleo).
+#[path = "download_history/market_context.rs"]
+mod market_context;
+use market_context::MarketContextFetcher;
 
 const SYMBOLS: [&str; 40] = [
     "BTCUSDT",
@@ -58,14 +62,13 @@ const MONTHS: [&str; 6] = [
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("============================================================");
-    println!("🌊 TRADER GEMINI V5 - DATA LAKE DOWNLOADER (BINANCE VISION + MACRO)");
+    println!("🌊 TRADER GEMINI V5 - DATA LAKE DOWNLOADER (BINANCE VISION + FUNDING)");
     println!("============================================================");
 
-    // 1. Fetch Macro Data (SP500, DXY, VIX)
-    println!("📊 Descargando Contexto Macroeconómico...");
-    if let Err(e) = MacroFetcher::fetch_and_save_macro_data().await {
-        println!("⚠️ Error descargando Macro Data: {}", e);
-    }
+    // 1. Contexto macro: RB-R1 retiró el MacroFetcher (Yahoo → MACRO_*.parquet),
+    // que nadie leía y duplicaba `macro_history_sync` (VIX, SP500, NASDAQ y DXY
+    // → data/macro/*.csv, el insumo real de train_forest).
+    println!("📊 Contexto macro: ejecuta `macro_history_sync` (data/macro/*.csv).");
 
     let client = Client::new();
     let market_fetcher = MarketContextFetcher::new();

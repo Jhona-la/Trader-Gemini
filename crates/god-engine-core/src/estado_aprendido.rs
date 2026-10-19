@@ -113,6 +113,9 @@ pub struct MonedaGuardada {
     /// arrancan el detector de cero, como antes.
     #[serde(default)]
     pub detector_lg22: Option<crate::resultado_orden::DetectorGuardado>,
+    /// F1-057 (Ola Ω169): Calibrador conformal de la moneda para evitar fail-open tras reinicio.
+    #[serde(default)]
+    pub conformal: Option<crate::conformal::ConformalGuardado>,
 }
 
 /// El proceso e del freno de la estrategia y si ya rechazó.
@@ -147,6 +150,9 @@ pub struct EstadoAprendido {
     pub resultado_en_stops: f64,
     #[serde(default)]
     pub pico_en_stops: f64,
+    /// F1-057 (Ola Ω169): Calibrador conformal global.
+    #[serde(default)]
+    pub conformal_global: Option<crate::conformal::ConformalGuardado>,
 }
 
 /// Anota una observación en un registro acotado a la ventana del calibrador.
@@ -286,6 +292,7 @@ impl GodEngineCore {
                     .map(|e| e.observaciones())
                     .unwrap_or_default(),
                 detector_lg22: self.lg22_detectores.get(coin_id).map(|d| d.guardado()),
+                conformal: self.conformal_by_coin.get(coin_id).map(|c| c.snapshot()),
             });
         }
         // CL-118: y las que se restauraron sin estar en este universo.
@@ -296,6 +303,7 @@ impl GodEngineCore {
             monedas,
             calibrador_global: self.registro_calibrador_global.iter().copied().collect(),
             calibrador_global_reloj_ms: self.confidence_calibrator.evidence_clock_ms(),
+            conformal_global: Some(self.conformal.snapshot()),
             freno_estrategia: FrenoGuardado {
                 e_value: v.e_value,
                 log_wealth: v.log_wealth,
@@ -408,6 +416,11 @@ impl GodEngineCore {
                     c.restore_evidence_clock_ms(clock);
                 }
             }
+            if let Some(guardado_conf) = &g.conformal {
+                if let Some(conf) = self.conformal_by_coin.get_mut(coin_id) {
+                    conf.restaurar(guardado_conf);
+                }
+            }
             restauradas += 1;
         }
         self.confidence_calibrator = PlattCalibrator::new();
@@ -418,6 +431,9 @@ impl GodEngineCore {
         }
         if let Some(clock) = e.calibrador_global_reloj_ms {
             self.confidence_calibrator.restore_evidence_clock_ms(clock);
+        }
+        if let Some(guardado_conf) = &e.conformal_global {
+            self.conformal.restaurar(guardado_conf);
         }
         let f = &e.freno_estrategia;
         let freno = &mut self.risk_engine.freno_estrategia;
@@ -507,6 +523,15 @@ pub fn validar(e: &EstadoAprendido) -> Result<(), String> {
         if g.siniestros.iter().any(|y| !y.is_finite()) {
             return Err(format!("{s}.siniestros con un valor no finito"));
         }
+        if let Some(c) = &g.conformal {
+            rango(&format!("{s}.conformal.effective_alpha"), c.effective_alpha, 1e-4, 0.5)?;
+            if c.scores.len() > 256 {
+                return Err(format!("{s}.conformal.scores excede 256 elementos"));
+            }
+            if c.scores.iter().any(|&score| !score.is_finite() || score < 0.0 || score > 1.0) {
+                return Err(format!("{s}.conformal.scores contiene un valor fuera de [0, 1]"));
+            }
+        }
         // LG-27: el detector no se valida aquí. Uno inservible se descarta al
         // restaurar (la moneda empieza ese detector de cero) en vez de
         // bloquear el estado entero.
@@ -516,6 +541,15 @@ pub fn validar(e: &EstadoAprendido) -> Result<(), String> {
     }
     if e.calibrador_global_reloj_ms.is_some_and(|t| e.calibrador_global.iter().any(|o| o.2 > t)) {
         return Err("calibrador_global_reloj_ms anterior a una observación".into());
+    }
+    if let Some(c) = &e.conformal_global {
+        rango("conformal_global.effective_alpha", c.effective_alpha, 1e-4, 0.5)?;
+        if c.scores.len() > 256 {
+            return Err("conformal_global.scores excede 256 elementos".into());
+        }
+        if c.scores.iter().any(|&score| !score.is_finite() || score < 0.0 || score > 1.0) {
+            return Err("conformal_global.scores contiene un valor fuera de [0, 1]".into());
+        }
     }
     let f = &e.freno_estrategia;
     rango("freno.e_value", f.e_value, 0.0, todo)?;

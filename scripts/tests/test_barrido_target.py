@@ -22,15 +22,24 @@ SEMAFORO = SCRIPTS / "cargo_semaforo.sh"
 
 def _bash():
     """bash de GNU. En Windows `bash` puede ser el lanzador de WSL
-    (WindowsApps), que sin WSL instalado no arranca: usar Git Bash."""
+    (WindowsApps), que sin WSL instalado no arranca. Entonces se usa el bash
+    MSYS REAL de Git (usr\\bin\\bash.exe): el lanzador Git\\bin\\bash.exe
+    antepone /mingw64/bin:/usr/bin al PATH y deja detrás los shims de las
+    pruebas (así fallaban los contratos de reloj virtual del semáforo)."""
     b = shutil.which("bash")
     if b and "windowsapps" in b.lower():
-        git_bash = r"C:\Program Files\Git\bin\bash.exe"
-        return git_bash if os.path.exists(git_bash) else None
+        for candidato in (r"C:\Program Files\Git\usr\bin\bash.exe", r"C:\Program Files\Git\bin\bash.exe"):
+            if os.path.exists(candidato):
+                return candidato
+        return None
     return b
 
 
 BASH = _bash()
+# El directorio del bash elegido va al PATH del subproceso: con el bash MSYS
+# real (Git\usr\bin) ahí viven date/sleep/mkdir/awk. Sin ellos el semáforo no
+# tiene reloj y su espera no termina (así se colgaron 6 contratos el 10-19).
+PATH_BASH = os.path.dirname(BASH) if BASH else ""
 H1, H2, H3, H4 = "0123456789abcdef", "fedcba9876543210", "00112233445566ff", "aaaaaaaaaaaaaaa1"
 KB = 1024
 
@@ -72,8 +81,12 @@ class BarridoTargetTests(unittest.TestCase):
     def correr(self, **env):
         entorno = {k: v for k, v in os.environ.items()
                    if not k.upper().startswith(("BARRIDO_", "SEMAFORO_", "APLICAR"))}
+        # Presupuestos diminutos por defecto: los árboles de prueba pesan KB y
+        # cada contrato fija el suyo cuando prueba el «dentro del presupuesto».
         entorno.update(BARRIDO_RAIZ=str(self.raiz), BARRIDO_AGENTE="prueba",
-                       BARRIDO_INCREMENTAL_MAX_MB="0.1", BARRIDO_PROCESOS="0")
+                       BARRIDO_INCREMENTAL_MAX_MB="0.1", BARRIDO_DEPS_MAX_MB="0.001",
+                       BARRIDO_PROCESOS="0",
+                       PATH=PATH_BASH + os.pathsep + os.environ.get("PATH", ""))
         entorno.update({k: str(v) for k, v in env.items()})
         return subprocess.run([BASH, str(BARRIDO)], env=entorno,
                               capture_output=True, text=True, timeout=120)
@@ -136,6 +149,31 @@ class BarridoTargetTests(unittest.TestCase):
             self.assertFalse(borrada.exists(), f"variante superada no barrida: {borrada.name}")
         for viva in (self.foo3, unica_vieja, baz_joven1, baz_joven2, dll_nueva, lib_nueva, sin_hash, rel_nueva):
             self.assertTrue(viva.exists(), f"se borró algo que debía quedar: {viva.name}")
+
+    def test_deps_dentro_del_presupuesto_no_toca_ninguna_variante(self):
+        # RB-H1d: sin presión de disco, las variantes «superadas» pueden ser de
+        # otro perfil u otras features (check frente a test) y seguir en uso.
+        self.arbol_estandar()
+        r = self.correr(APLICAR=1, BARRIDO_DEPS_MAX_MB=1, BARRIDO_INCREMENTAL_MAX_MB=100)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for p in (self.foo1, self.foo2, self.foo3):
+            self.assertTrue(p.exists(), f"se borró {p.name} dentro del presupuesto")
+        self.assertIn("variantes superadas candidatas: 2", r.stdout)
+        self.assertIn("dentro del presupuesto", r.stdout)
+
+    def test_deps_por_encima_borra_primero_la_mas_vieja_y_para_en_la_histeresis(self):
+        # 3 variantes de 40 KB = 120 KB > 0,11 MB (112,6 KB); objetivo
+        # 0,75 × 0,11 MB ≈ 84,5 KB: basta borrar la MÁS VIEJA (100 h, 80 KB
+        # quedan). La candidata más joven (50 h) y la vigente (1 h) se quedan.
+        vieja = archivo(self.deps / f"libbar-{H1}.rlib", 40 * KB, 100)
+        joven = archivo(self.deps / f"libbar-{H2}.rlib", 40 * KB, 50)
+        vigente = archivo(self.deps / f"libbar-{H3}.rlib", 40 * KB, 1)
+        r = self.correr(APLICAR=1, BARRIDO_DEPS_MAX_MB=0.11, BARRIDO_INCREMENTAL_MAX_MB=100)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertFalse(vieja.exists(), "la variante más vieja se va primero")
+        self.assertTrue(joven.exists(), "bajo la histéresis no se borra de más")
+        self.assertTrue(vigente.exists(), "la variante más reciente nunca se borra")
+        self.assertIn("borradas 1 variantes", r.stdout)
 
     def test_empate_de_mtime_no_borra_ninguna(self):
         a = archivo(self.deps / f"libtie-{H1}.rlib", 10 * KB, 48)
@@ -258,10 +296,12 @@ class SemaforoBarridoTests(unittest.TestCase):
         entorno = {k: v for k, v in os.environ.items()
                    if not k.upper().startswith(("BARRIDO_", "SEMAFORO_", "APLICAR", "CARGO_BUILD_JOBS"))}
         entorno.update(
-            PATH=str(self.bin) + os.pathsep + os.environ.get("PATH", ""),
+            PATH=str(self.bin) + os.pathsep + PATH_BASH + os.pathsep + os.environ.get("PATH", ""),
             SEMAFORO_RAIZ=str(self.raiz), SEMAFORO_AGENTE="prueba", SEMAFORO_PAUSA_S="0",
             SEMAFORO_PROCESOS="0", SEMAFORO_RAM_GB="10", SEMAFORO_ESPERA_MAX_MIN="0",
             PRUEBA_TESTIGO=self.vieja.as_posix(), PRUEBA_TRAZA=self.traza.as_posix(),
+            # Presupuesto de deps diminuto: el semáforo lo hereda al barrido.
+            BARRIDO_DEPS_MAX_MB="0.001",
         )
         entorno.update({k: str(v) for k, v in env.items()})
         return subprocess.run([BASH, str(SEMAFORO), "check"], env=entorno,
