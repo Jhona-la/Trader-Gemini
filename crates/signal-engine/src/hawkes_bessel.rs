@@ -416,58 +416,42 @@ impl QuantumStrategy for HawkesBesselEngine {
             None => return 0.0,
         };
 
-        let direction = r
-            .get_scoped_parameter(
-                sym_opt,
-                if symbol.is_empty() { None } else { Some(_coin_id) },
-                "order_flow_direction",
-                "HawkesBesselEngine",
-            )
-            .map(|p| p.get_value())
-            .unwrap_or(0.0);
+        let cid_opt = if symbol.is_empty() { None } else { Some(_coin_id) };
+
+        // F1-095: Leer flujo normalizado continuo O(1) en lugar del escritor binario
+        // order_flow_direction {-1, 0, 1} que fijaba tanh(±1.0) = ±0.7616 constante.
+        // Jerarquía Zero-Copy: order_book_imbalance ([-1, 1] continuo de L1) ->
+        // order_flow_imbalance (OFI continuo) -> order_flow_direction (compatibilidad legacy).
+        let direction = {
+            let obi = r.get_scoped_val_or(sym_opt, cid_opt, "order_book_imbalance", f64::NAN);
+            if obi.is_finite() && obi.abs() > 1e-6 {
+                obi
+            } else {
+                let ofi = r.get_scoped_val_or(sym_opt, cid_opt, "order_flow_imbalance", f64::NAN);
+                if ofi.is_finite() && ofi.abs() > 1e-6 {
+                    ofi
+                } else {
+                    r.get_scoped_val_or(sym_opt, cid_opt, "order_flow_direction", 0.0)
+                }
+            }
+        };
 
         if direction.abs() <= 1e-6 || !direction.is_finite() {
             return 0.0;
         }
 
-        // M2-C02 — CERRADO (R9, 2026-09-19; verificado H2-8 RONDA 3,
-        // 2026-10-07): el core excita el proceso real por SÍMBOLO
-        // (`hawkes_by_coin`, record_event por trade) y publica λ/μ
-        // VERDADERO al registry como 'hawkes_intensity'
-        // (god-engine-core/src/lib.rs:~4180,
-        // `hawkes_ratio_real.clamp(0.1, 10)`).
-        //
-        // HISTORIA CERRADA (no re-parar — era el riesgo de este bloque
-        // viejo, hallazgo H2-8): antes de M2-C02 el slot 'hawkes_intensity'
-        // llevaba un PROXY de aceleración 1+|a_t|/ATR (mislabel de la
-        // auditoría décima). Aquel texto advertía "FIX REAL pendiente, NO
-        // hecho" — PENDIENTE YA CUMPLIDO: la matemática Σα·e^(−βΔt) de
-        // este engine está VIVA en producción vía el proceso por símbolo
-        // del core. Los consumidores del slot
-        // (flow_excitation_confluence, flow_impulse) leen intensidad real
-        // desde entonces.
-        let core_intensity = r
-            .get_scoped_parameter(
-                sym_opt,
-                if symbol.is_empty() { None } else { Some(_coin_id) },
-                "hawkes_intensity",
-                "HawkesBesselEngine",
-            )
-            .map(|p| p.get_value())
-            .filter(|v| v.is_finite() && *v > 0.0)
-            .unwrap_or(1.0);
+        // M2-C02: lectura Zero-Copy de hawkes_intensity sin clonar Arc<Parameter>
+        let core_intensity = {
+            let val = r.get_scoped_val_or(sym_opt, cid_opt, "hawkes_intensity", 1.0);
+            if val.is_finite() && val > 0.0 {
+                val
+            } else {
+                1.0
+            }
+        };
 
-        // #657 (F2-A1) — ERRADICACIÓN sombra/vivo: el evaluate VIVO usa la
-        // MISMA moneda de la casa que el voto espectral #649 — exceso
-        // λ/μ̂ sobre STEADY_STATE_RATIO (0 en régimen normal = ABSTENCIÓN),
-        // firmado por el momentum CONTINUO (no signum: salto en dir=0).
-        // Antes: signum·tanh(λ/μ̂) votaba ±0.92 constante en régimen
-        // normal — el fallback escalar D-754 heredaba la física rota.
-        // #659 (F2-A4): la CALMA se abstiene (excit ≥ 0, paridad con
-        // flow_impulse #657) — antes la excitación negativa INVERTÍA el
-        // sentido del momentum: calma + flujo alcista votaba bajista.
-        // #666 (H2-2): divisor O(1) — direction es un flujo normalizado
-        // O(1); /1e-3 saturaba a signum encubierto.
+        // #657/#666: direction es un flujo normalizado continuo O(1); su tanh() modula
+        // la magnitud proporcional a la fuerza real del desbalance de órdenes.
         direction.tanh() * excitacion_hawkes_norm(core_intensity).max(0.0)
     }
 

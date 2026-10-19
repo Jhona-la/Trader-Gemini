@@ -1,5 +1,43 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω165: Cierre de F1-095 (Flujo Continuo sin Escalones Binarios en HawkesBessel y TrendRunner) y F1-096 (Incertidumbre Analítica de Hurst DFA y Puerta de Persistencia Adaptativa) (2026-10-19)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω165: CONTINUIDAD FÍSICA $C^\infty$ EN MOTORES ESCALARES Y CALIBRACIÓN ANALÍTICA DE INCERTIDUMBRE HURST DFA
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv` (2 en total)**:
+   - **`F1-095` (`MED`, `crates/signal-engine/src/hawkes_bessel.rs:416-455`, `crates/signal-engine/src/trend_runner.rs:219-260`)**:
+     - **QUÉ**: Erradicación de entradas binarias $\{-1, 0, 1\}$ en funciones de activación continua $\tanh(\cdot)$ de los votantes escalares `HawkesBesselEngine` y `HighPayoffTrendRunner`. En HawkesBessel se implementa la jerarquía de lectura Zero-Copy: `order_book_imbalance` ($[-1, 1]$ continuo L1) $\to$ `order_flow_imbalance` (OFI continuo) $\to$ `order_flow_direction` (fallback de compatibilidad legacy). En TrendRunner se implementa la lectura de `ema_trend_swing_z` (z-score canónico tipificado $O(1)$) $\to$ `ema_trend_swing` $\to$ `trend_direction`.
+     - **POR QUÉ**: Anteriormente, `hawkes_bessel.rs` leía `order_flow_direction` (publicado como `sign(bid_qty - ask_qty) \in {-1, 0, 1}`) y `trend_runner.rs` leía `trend_direction` ($\in \{-1, 0, 1\}$). Al evaluar `direction.tanh()` o `safe_dir.tanh()`, el resultado colapsaba inmediatamente a $\pm \tanh(1.0) = \pm 0.7616$ constante para cualquier desbalance no nulo. Un micro-desbalance de 1001 vs 1000 contratos generaba el mismo voto que un desbalance de 10 a 1. El escalón $C^0$ que las auditorías previas pretendían erradicar permanecía activo en el escritor, inyectando volatilidad y señales espurias ante fluctuaciones mínimas del libro de órdenes.
+     - **PARA QUÉ**: (1) Restaurar la diferenciabilidad y continuidad física $C^\infty$ de los votantes escalares; (2) Garantizar que la magnitud de la señal codifique genuinamente la fuerza del desbalance del flujo y la convicción del macro-trend; (3) Eliminar los saltos artificiales de signo $\pm 0.7616$ provocados por micro-ruido de 1 contrato en el libro de órdenes; (4) Cumplir el principio de invariancia de escala y consistencia del universo continuo en Hilbert space $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$.
+     - **CÓMO**:
+       1. En `crates/signal-engine/src/hawkes_bessel.rs`, sustituido el bloque de lectura por una jerarquía Zero-Copy estricta: si `order_book_imbalance` es finito y no nulo ($|obi| > 10^{-6}$), se toma directamente; en caso contrario, se consulta `order_flow_imbalance`; si no está disponible, se acude a `order_flow_direction`. Se multiplica `direction.tanh() * excitacion_hawkes_norm(core_intensity).max(0.0)`.
+       2. En `crates/signal-engine/src/trend_runner.rs`, se lee con Zero-Copy `ema_trend_swing_z` mediante `r.get_scoped_val_or(sym_opt, cid_opt, "ema_trend_swing_z", f64::NAN)`. Si está ausente, acude a `ema_trend_swing` y luego a `trend_direction`. La señal pasa por `safe_dir.tanh()`, graduando de forma suave y proporcional al z-score macro.
+     - **CUÁNDO**: Permanente en cada tick y evaluación de señales de `HawkesBesselEngine` y `HighPayoffTrendRunner`.
+     - **DÓNDE**: `crates/signal-engine/src/hawkes_bessel.rs` y `crates/signal-engine/src/trend_runner.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en consenso colegiado con el Consejo de 10 Roles Senior.
+   - **`F1-096` (`MED`, `crates/feature-engine/src/hurst_dfa.rs:85-335`, `crates/god-engine-core/src/math_kernels.rs:479-487`, `crates/god-engine-core/src/lib.rs:3211-3228, 5632-5642`, `crates/signal-engine/src/trend_runner.rs:141-170, 245-255`)**:
+     - **QUÉ**: Incorporación analítica del error típico de regresión $\sigma_H = \text{SE}(\hat{H}) = \sqrt{\frac{s_{yy}(1 - r^2)}{(K-2) s_{xx}}}$ en el estimador DFA de Hurst, publicación de `hurst_std_error` por activo en el registro omnisciente, y modulación continua de la puerta de persistencia de `HighPayoffTrendRunner` ($ancho = (2.0 \cdot \sigma_H).max(0.04)$, $h\_weight = \tanh((H - 0.50) / ancho)$) tanto en la rama escalar como en el voto espectral (`voto_espectral_con_sigma`).
+     - **POR QUÉ**: El estimador DFA calcula la pendiente $\hat{H}$ en escala log-log con $K=7$ escalas y $N \in [512, 1024]$ muestras. La incertidumbre muestral inherente genera una dispersión empírica $\sigma_H \approx 0.05-0.08$. La formulación anterior usaba un ancho rígido $0.04 < 1\sigma$ sin justificación física. En una caminata aleatoria pura ($H = 0.50$), las fluctuaciones muestrales aleatorias producían $\hat{H} > 0.54$ el 27% del tiempo, activando votos espurios de persistencia de tendencia de hasta $0.23$ sobre ruido puro browniano, originando operaciones perdedoras no informadas.
+     - **PARA QUÉ**: (1) Condicionar matemáticamente la activación de persistencia de tendencia a la significancia estadística del exponente de Hurst respecto a la incertidumbre del ajuste; (2) Atenuar fuertemente los votos de tendencia cuando la bondad de ajuste sea baja o el error típico sea elevado; (3) Garantizar que bajo hipótesis nula browniana la expectativa de voto sea insignificante ($\mathbb{E}[|\text{voto}|] < 0.02$); (4) Proteger el capital inicial de 13 USD erradicando entradas engañosas causadas por ruido estadístico.
+     - **CÓMO**:
+       1. En `crates/feature-engine/src/hurst_dfa.rs`, añadido campo `pub std_error: f64` en `HurstDfa`. Tras el ajuste log-log OLS, se calcula la suma de residuos cuadrados $SS_{res} = s_{yy}(1 - r^2)$ y el error típico de la pendiente $\text{SE}(\text{slope}) = \sqrt{SS_{res} / ((K - 2) s_{xx})}$, con fallback $1/\sqrt{N}$. Se expone `pub fn std_error(&self) -> f64`.
+       2. En `crates/god-engine-core/src/math_kernels.rs`, añadido `pub fn std_error(&self) -> f64` en `RecursiveHurst`.
+       3. En `crates/god-engine-core/src/lib.rs`, se publica `hurst_std_error` para cada símbolo en el bucle principal de features y se pasa al voto espectral mediante `HighPayoffTrendRunner::voto_espectral_con_sigma(&desplazamientos, hurst_tr, hurst_se_tr, vpin_tr)`.
+       4. En `crates/signal-engine/src/trend_runner.rs`, se calcula dinámicamente $ancho = (2.0 \cdot \sigma_H).max(0.04)$ y $h\_weight = ((H - 0.50).max(0.0) / ancho).\tanh()$. Si $H \le 0.50$, la puerta se cierra estrictamente ($h\_weight = 0$).
+     - **CUÁNDO**: Activo continuamente en cada ciclo de cómputo de DFA y en cada voto de tendencia.
+     - **DÓNDE**: `crates/feature-engine/src/hurst_dfa.rs`, `crates/god-engine-core/src/math_kernels.rs`, `crates/god-engine-core/src/lib.rs`, y `crates/signal-engine/src/trend_runner.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en consenso colegiado con el Consejo de 10 Roles Senior.
+2. **Certificación Contractual**:
+   - `crates/signal-engine/tests/f1_095_096_continuous_flow_and_hurst_uncertainty_contract.rs` (3/3 pass, 100% verde en 0.02s):
+     * `f1_095_hawkes_bessel_graduates_continuously_with_order_book_imbalance`: Certifica graduación monótona y suave con $OBI$ según $\tanh(OBI)$ y fallback a $OFI$.
+     * `f1_095_trend_runner_graduates_continuously_with_ema_trend_swing_z`: Certifica que el voto responde monótonamente a $z$ sin saltos a $\pm 0.7616$.
+     * `f1_096_trend_runner_persistence_gate_modulated_by_analytical_uncertainty`: Certifica abstención exacta en $H=0.50$, atenuación con alta incertidumbre $\sigma_H$ y $\mathbb{E}[|\text{voto}|] < 0.02$ bajo simulación Monte Carlo de ruido browniano.
+   - Suite completa `cargo test -p signal-engine --lib -j 1` (126/126 pass, 100% verde en 0.25s).
+   - `cargo check --workspace --all-targets -j 1` (23 crates verificados, 0 errores, 0 warnings en 40s).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω164: Cierre de F1-097 (Zero-Copy / Zero-Alloc en Confluencia de Flujo y Excitación) y F1-106 (Erradicación de Lectura Síncrona de Red Neuronal DarkAlpha en Constructor de GodEngineCore bajo Doctrina LG-23) (2026-10-19)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

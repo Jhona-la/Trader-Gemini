@@ -3211,15 +3211,20 @@ impl GodEngineCore {
                         .arena
                         .registry
                         .get_for_coin_or(coin_id, "hurst_exponent", 0.50);
+                    let hurst_se_tr = self
+                        .arena
+                        .registry
+                        .get_for_coin_or(coin_id, "hurst_std_error", 0.05);
                     let vpin_tr = self
                         .arena
                         .registry
                         .get_for_coin_or(coin_id, "cvpin", 0.50);
-                    // CL-77 (F3.6-08): el voto de tendencia ya no lee el ATR.
+                    // CL-77 (F3.6-08) & F1-096: voto con incertidumbre analítica de persistencia
                     let voto_tr =
-                        signal_engine::trend_runner::HighPayoffTrendRunner::voto_espectral(
+                        signal_engine::trend_runner::HighPayoffTrendRunner::voto_espectral_con_sigma(
                             &desplazamientos,
                             hurst_tr,
+                            hurst_se_tr,
                             vpin_tr,
                         );
                     if let Some(media_tr) = voto_tr.media_banda(0, 31) {
@@ -5632,6 +5637,8 @@ impl GodEngineCore {
             set_reg("tsallis_q_entropy", tsallis_ent);
             set_reg("hurst_exponent", hurst_val);
             set_reg("global_hurst", hurst_val);
+            let hurst_se = self.feature_engines[coin_id].hurst.std_error();
+            set_reg("hurst_std_error", hurst_se);
             set_reg("atr_pct", atr_pct);
             set_reg("relative_atr_pct", atr_pct);
             set_reg("vpin", vpin_val);

@@ -142,11 +142,25 @@ impl HighPayoffTrendRunner {
         hurst: f64,
         vpin: f64,
     ) -> crate::voto_espectral::VotoEspectral {
+        Self::voto_espectral_con_sigma(desplazamientos, hurst, 0.05, vpin)
+    }
+
+    /// F1-096: Voto espectral con incertidumbre analítica \sigma_H del estimador DFA.
+    pub fn voto_espectral_con_sigma(
+        desplazamientos: &[f64; crate::voto_espectral::ESCALAS_VOTO],
+        hurst: f64,
+        sigma_h: f64,
+        vpin: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
         let safe_hurst = if hurst.is_finite() { hurst } else { 0.50 };
+        let safe_sigma = if sigma_h.is_finite() && sigma_h > 1e-4 { sigma_h } else { 0.05 };
         let safe_vpin = if vpin.is_finite() { vpin } else { 0.50 };
 
+        // F1-096: La rampa continua de persistencia modula con la incertidumbre real \sigma_H:
+        // ancho = 2.0 * \sigma_H (>= 0.04). Si H <= 0.50, se abstiene (todo 0).
         let h_excess = (safe_hurst - 0.50).max(0.0);
-        let h_weight = (h_excess / 0.04).tanh();
+        let ancho = (2.0 * safe_sigma).max(0.04);
+        let h_weight = (h_excess / ancho).tanh();
         if h_weight <= 1e-4 {
             return crate::voto_espectral::VotoEspectral::default();
         }
@@ -201,40 +215,30 @@ impl QuantumStrategy for HighPayoffTrendRunner {
             None => return 0.0,
         };
 
-        let hurst = r
-            .get_scoped_parameter(sym_opt, cid_opt, "hurst_exponent", "HighPayoffTrendRunner")
-            .or_else(|| {
-                r.get_scoped_parameter(sym_opt, cid_opt, "global_hurst", "HighPayoffTrendRunner")
-            })
-            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "hurst", "HighPayoffTrendRunner"))
-            .map(|p| p.get_value())
-            .unwrap_or(0.50);
+        // F1-097: Lecturas directas Zero-Copy sin alocación ni clonación de Arc<Parameter>
+        let hurst = r.get_scoped_val_or(sym_opt, cid_opt, "hurst_exponent", 0.50);
+        let hurst_se = r.get_scoped_val_or(sym_opt, cid_opt, "hurst_std_error", 0.05);
+        let vpin = r.get_scoped_val_or(sym_opt, cid_opt, "cvpin", 0.50);
 
-        let vpin = r
-            .get_scoped_parameter(sym_opt, cid_opt, "cvpin", "HighPayoffTrendRunner")
-            .or_else(|| {
-                r.get_scoped_parameter(sym_opt, cid_opt, "order_flow_vpin", "HighPayoffTrendRunner")
-            })
-            .or_else(|| r.get_scoped_parameter(sym_opt, cid_opt, "vpin", "HighPayoffTrendRunner"))
-            .map(|p| p.get_value())
-            .unwrap_or(0.50);
-
-        let trend_direction = r
-            .get_scoped_parameter(sym_opt, cid_opt, "trend_direction", "HighPayoffTrendRunner")
-            .or_else(|| {
-                r.get_scoped_parameter(sym_opt, cid_opt, "ema_trend_swing", "HighPayoffTrendRunner")
-            })
-            .or_else(|| {
-                r.get_scoped_parameter(sym_opt, cid_opt, "ema_trend", "HighPayoffTrendRunner")
-            })
-            .or_else(|| {
-                r.get_scoped_parameter(sym_opt, cid_opt, "price_velocity", "HighPayoffTrendRunner")
-            })
-            .map(|p| p.get_value())
-            .unwrap_or(0.0);
+        // F1-095: Leer ema_trend_swing_z (z CANÓNICA del macro-trend tipificada O(1))
+        // en lugar de trend_direction (escritor binario {-1, 0, 1} que producía tanh = ±0.7616 constante).
+        let trend_direction = {
+            let z = r.get_scoped_val_or(sym_opt, cid_opt, "ema_trend_swing_z", f64::NAN);
+            if z.is_finite() && z.abs() > 1e-6 {
+                z
+            } else {
+                let swing = r.get_scoped_val_or(sym_opt, cid_opt, "ema_trend_swing", f64::NAN);
+                if swing.is_finite() && swing.abs() > 1e-6 {
+                    swing
+                } else {
+                    r.get_scoped_val_or(sym_opt, cid_opt, "trend_direction", 0.0)
+                }
+            }
+        };
 
         // FIX #684: Sanitizar lecturas de registros
         let safe_hurst = if hurst.is_finite() { hurst } else { 0.50 };
+        let safe_sigma = if hurst_se.is_finite() && hurst_se > 1e-4 { hurst_se } else { 0.05 };
         let safe_vpin = if vpin.is_finite() { vpin } else { 0.50 };
         let safe_dir = if trend_direction.is_finite() {
             trend_direction
@@ -242,15 +246,16 @@ impl QuantumStrategy for HighPayoffTrendRunner {
             0.0
         };
 
-        // Modulación C^∞ continua para persistencia de tendencia (Hurst > 0.50):
-        // Erradica el salto escalón del ~20% que ocurría al cruzar el umbral rígido H = 0.52.
+        // F1-096: Modulación continua para persistencia de tendencia (Hurst > 0.50)
+        // calibrada con la incertidumbre \sigma_H (ancho = 2 * \sigma_H >= 0.04).
         let h_excess = (safe_hurst - 0.50).max(0.0);
-        let h_weight = (h_excess / 0.04).tanh();
+        let ancho = (2.0 * safe_sigma).max(0.04);
+        let h_weight = (h_excess / ancho).tanh();
         if h_weight <= 1e-4 || safe_dir.abs() < 1e-6 {
             return 0.0;
         }
 
-        // #664 (G2-7): escala O(1) para momentum_z (ídem voto_espectral).
+        // F1-095: safe_dir es un z-score continuo O(1); dir_weight refleja la fuerza real
         let dir_weight = safe_dir.tanh();
         // CL-77 (F3.6-08): la convicción no lee el ATR.
         dir_weight * h_weight * Self::conviccion_de_expansion(safe_hurst, safe_vpin)
