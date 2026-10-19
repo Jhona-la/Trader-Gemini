@@ -1,0 +1,25 @@
+# RB-A1a (Codex RB, 2026-10-19) — familias de ids de átomo para la meta-analítica
+# (scripts/meta_analitica.py). Una fila por familia: nombre, expresión regular
+# (sintaxis de Python, se busca en el asunto y, si no hay, en el cuerpo del
+# commit) y agente que la usa. El agente de un commit es el de la PRIMERA fila,
+# en este orden, cuyo patrón aparece en el asunto (si ninguna, en el cuerpo);
+# agente vacío = la familia se lista como átomo pero no atribuye agente (p. ej.
+# los hallazgos F1 de Fable los cierran otros). Amplíala si tu agente usa otra.
+familia	patron	agente
+RB	\bRB-[A-Z]\d+[a-z]?\b	Codex RB
+Ω	Ω\s?\d+	AGY
+LG	\bLG-\d+[a-z]?\b	Claude Línea G
+C-F	\bC-F\d+[a-z]?\b	Claude Línea C
+CL	\bCL-\d+[a-z]?\b	Claude Línea C
+LH	\bLH-\d+[a-z]?\b	Claude Línea H
+F-A	\bF-A\d+[a-z]?\b	Fable
+QS	\bQS-[A-Z]\d+[a-z]?\b	Qoder
+GLM	\bGLM[ -]?\d+\b	GLM
+SOL	\bSOL-R\d+-\d+\b	Sol
+F9	\bF9-\d+\b	Sol
+LG5	\bLG5\b	Codex ROOT
+BASE15	\bBASE15\b	Codex BASE15
+RET	\bRET-\d+[a-z]?\b	
+F1	\bF1-\d{3}\b	
+B	\bB\d\.\d+\b	
+PR	\bPR #\d+\b	
