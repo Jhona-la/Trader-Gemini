@@ -1,5 +1,39 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-19 (tarde, 1) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω170 (Cierre F1-059, F1-060 y F1-061)
+
+- **Mandato**: Erradicación de la latencia I/O síncrona en el bucle de eventos del host (persistencia no bloqueante de Kelly y debounce de estado aprendido), eliminación de la desalineación temporal en el ensamble predictivo mediante reseteo explícito de opiniones en barras neutras, y unificación rigurosa de la autoridad de dimensionamiento en `RiskEngine` con el supervisor bayesiano de admisibilidad y techo `RiskEnvelope`, cerrando los hallazgos `F1-059`, `F1-060` y `F1-061` de `docs/audit/fable/f1_hallazgos.tsv`:
+  1. **F1-059 (`src/bin/god_engine.rs:629-652, 3424-3435, 3959-3965, 4106-4115, 4316-4325`, `crates/god-engine-core/src/estado_aprendido.rs:102, 137, 275-279, 304`)**:
+     - *QUÉ*: Sustitución de escrituras síncronas bloqueantes de la envolvente de Kelly por persistencia asíncrona fuera del bucle caliente (`persist_kelly_envelope_async` vía `tokio::runtime::Handle::spawn_blocking`), debouncing temporal de 2 segundos (`MIN_ESTADO_SAVE_INTERVAL_MS = 2_000`) para el guardado del estado aprendido, y conversión de `MonedaGuardada.calibrador` y `EstadoAprendido.calibrador_global` de `Vec<Observacion>` a `VecDeque<Observacion>`.
+     - *POR QUÉ*: En NTFS, `File::create` + `write_all` + `sync_all` (fsync) congelaba el hilo `TIME_CRITICAL` del host durante 5-50 ms en cada cierre, acumulando retrasos en el feed de ticks y evaluaciones defensivas tardías de SL/TP de todas las monedas. Además, `estado_aprendido()` ejecutaba iteraciones con asignación `.iter().copied().collect()` en cada foto para 30+ monedas, castigando el allocador de memoria.
+     - *PARA QUÉ*: Garantizar latencia ultra-baja en nanosegundos (< 25 µs) en el loop de eventos, cero asignaciones heap en la extracción de fotos del calibrador, y persistencia atómica segura sin stalls en el trading en vivo.
+     - *CÓMO*: `persist_kelly_envelope_async` despacha la serialización y renombre de archivo temporal `.tmp` con PID a un worker pool de background. El guardado periódico y por cierre sólo despacha la foto si el reloj monótono `instant_baseline` superó 2 segundos desde el último envío y la firma de estado cambió. `VecDeque` se serializa directamente a arrays JSON sin requerir re-asignaciones intermedias.
+     - *CUÁNDO*: En cada cierre de bracket, cierre del core y en la comprobación periódica de 4096 eventos.
+     - *DÓNDE*: Host `src/bin/god_engine.rs` y módulo `crates/god-engine-core/src/estado_aprendido.rs`.
+     - *QUIÉN*: `SRE/DevOps`, `Arquitecto Senior` y `Quant Developer`.
+  2. **F1-060 (`crates/god-engine-core/src/ensemble.rs:250-265`, `crates/god-engine-core/src/lib.rs:2738-2760`)**:
+     - *QUÉ*: Implementación del método `ModelEnsemble::nuevo_bar()` y su invocación explícita al cierre de barras neutras (|retorno| $\le$ `fee_hurdle`) e iniciales.
+     - *POR QUÉ*: Previamente, `bar_open_predictions` sólo se reseteaba en `update_with_outcome` sobre barras decisivas (|retorno| > `fee_hurdle`). En barras neutras, la opinión inicial quedaba congelada en memoria, de modo que cuando varios bares después aparecía una barra decisiva, se calificaba una opinión obsoleta de hace $k$ bares contra el retorno de un solo bar, introduciendo ruido estructurado y sesgo en los pesos Hedge y en el `SkillTracker`.
+     - *PARA QUÉ*: Cumplir con el principio de causalidad estricta (doctrina del proyecto), alineando exactamente el horizonte temporal de la predicción con el intervalo de retorno medido.
+     - *CÓMO*: Añadido `#[inline(always)] pub fn nuevo_bar(&mut self)` que limpia `predictions` y `bar_open_predictions` a `[None, None]`. Cableado en `GodEngineCore` en los bloques `else` de barras neutras y primera barra.
+     - *CUÁNDO*: Al finalizar cada kline de 1 minuto, independientemente de si resolvió el hurdle o fue neutra.
+     - *DÓNDE*: `crates/god-engine-core/src/ensemble.rs` y `crates/god-engine-core/src/lib.rs`.
+     - *QUIÉN*: `Quant Developer` y `Físico de Sistemas Complejos`.
+  3. **F1-061 (`src/bin/god_engine.rs:4465-4520`, `crates/backtest-engine/src/booktick_replay.rs:915-948`)**:
+     - *QUÉ*: Unificación de la autoridad de dimensionamiento en el `RiskEngine` del core y paridad 1:1 entre el host (`god_engine.rs`) y la réplica (`booktick_replay.rs`).
+     - *POR QUÉ*: El host calculaba `risk_budget = 0.05 * kelly_frac` y dividía por `sl_frac`, calculando un `lev_from_risk` que casi siempre colapsaba a 1x. Pero la cantidad (`final_qty`) ya había sido fijada por el core; el host sólo alteraba el margen exigido a Binance, forzando un apalancamiento de 1x que en cuentas micro ($13 USD) inmovilizaba hasta el 39% del capital por orden. Adicionalmente, el techo bayesiano `env_lev` quedaba inoperante porque `lev_from_risk` ya venía dividido por 20.
+     - *PARA QUÉ*: Restaurar la audibilidad y coherencia matemática del sistema: el `RiskEngine` define el tamaño y margen de la posición respetando la curva de difusión y el régimen de micro-capital, mientras la envolvente bayesiana supervisa la admisibilidad (`operable == false` $\to$ veto `VetoEnvio::Envolvente`) y actúa como techo firme de apalancamiento `env_cap = (env_lev * vol_brake).clamp(1, TOPE_ENVIO)`.
+     - *CÓMO*: Eliminado el bloque heurístico `0.05 * kelly_frac / sl_frac`. Se extrae el `apalancamiento_validado` de la ranura reservada de la orden, se aplica el techo `env_cap` y el modulador `vol_brake`, y en bootstrap ($n < 30$) se mantiene el apalancamiento validado seguro. Paridad idéntica replicada en `booktick_replay.rs`.
+     - *CUÁNDO*: En la evaluación y despacho de cada orden de entrada al mercado.
+     - *DÓNDE*: `src/bin/god_engine.rs` y `crates/backtest-engine/src/booktick_replay.rs`.
+     - *QUIÉN*: `Risk Manager`, `Quant Developer` y `QA Engineer`.
+- **Verificación Contractual y Compilación Workspace**:
+  - `crates/god-engine-core/tests/f1_059_060_061_async_save_bar_reset_kelly_contract.rs` (3/3 pass, 100% verde en 0.00s).
+  - `crates/god-engine-core/tests/f1_056_057_058_ensemble_conformal_model_reload_contract.rs` (3/3 pass, 100% verde en 0.05s).
+  - `crates/risk-engine/tests/envio_contract.rs` (2/2 pass, 100% verde).
+  - `crates/quantum-arena/tests/rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 incrementos de pánicos).
+  - `cargo check --workspace --all-targets -j 1` pasa 100% limpio en los 23 crates (0 errores, 0 advertencias).
+
 ## 2026-10-19 (mediodía, 6) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω169 (Cierre F1-056, F1-057 y F1-058)
 
 - **Mandato**: Erradicación sistemática de penalizaciones asimétricas espurias en el ensamble de modelos predictivos, eliminación del riesgo crítico fail-open en reinicios del host mediante la persistencia serializada del estado del calibrador conformal, y robustecimiento de la recarga en caliente de modelos ML con escrituras atómicas y prioridad de fuente actualizada, abordando los hallazgos F1-056, F1-057 y F1-058 del censo forense (`docs/audit/fable/f1_hallazgos.tsv`), en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:

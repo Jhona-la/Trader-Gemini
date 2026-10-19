@@ -105,7 +105,7 @@ fn f1_057_conformal_persistence_in_moneda_guardada_prevents_fail_open_on_restart
             roi_post_fee: 0.12,
             zombie_promotions: 0,
         },
-        calibrador: vec![],
+        calibrador: Default::default(),
         calibrador_reloj_ms: None,
         epigenetica: EpigeneticaGuardada {
             sesgo: 1.0,
@@ -122,7 +122,7 @@ fn f1_057_conformal_persistence_in_moneda_guardada_prevents_fail_open_on_restart
     let estado = EstadoAprendido {
         version: estado_aprendido::VERSION_ESTADO,
         monedas: vec![moneda],
-        calibrador_global: vec![],
+        calibrador_global: Default::default(),
         calibrador_global_reloj_ms: None,
         conformal_global: Some(snapshot),
         freno_estrategia: estado_aprendido::FrenoGuardado {

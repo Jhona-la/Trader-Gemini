@@ -194,6 +194,11 @@ impl ModelEnsemble {
         self.predictions
     }
 
+    /// X-023: Opiniones congeladas al arranque del bar actual.
+    pub fn bar_open_prediction_snapshot(&self) -> [Option<f64>; 2] {
+        self.bar_open_predictions
+    }
+
     /// Combinación ponderada de un juego de opiniones con los pesos actuales.
     /// F1-056 (Ola Ω169): Erradicación de `nn_penalty`. El `SkillTracker` mide la
     /// habilidad del ensamble combinado como telemetría pura (lib.rs:8915). Los pesos
@@ -250,6 +255,15 @@ impl ModelEnsemble {
             }
         }
         // Reset: nuevo bar — nueva primera opinión por aprender.
+        self.nuevo_bar();
+    }
+
+    /// X-023 / F1-060 (Ola Ω170): Reinicia las opiniones del bar (`predictions` y `bar_open_predictions`)
+    /// al cierre de cada kline (sea decisivo o neutro).
+    /// Garantiza que en bares neutros la opinión previa no quede congelada para calificar
+    /// indebidamente un bar futuro con un retorno de intervalo desalineado.
+    #[inline(always)]
+    pub fn nuevo_bar(&mut self) {
         self.predictions = [None, None];
         self.bar_open_predictions = [None, None];
     }

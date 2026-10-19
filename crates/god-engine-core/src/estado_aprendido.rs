@@ -99,7 +99,7 @@ pub struct EpigeneticaGuardada {
 pub struct MonedaGuardada {
     pub simbolo: String,
     pub metricas: MetricasGuardadas,
-    pub calibrador: Vec<Observacion>,
+    pub calibrador: VecDeque<Observacion>,
     /// LH-12: máximo conocido, no necesariamente presente en la ventana.
     /// Estados anteriores sin este campo infieren sólo el máximo retenido.
     #[serde(default)]
@@ -135,7 +135,7 @@ pub struct FrenoGuardado {
 pub struct EstadoAprendido {
     pub version: u32,
     pub monedas: Vec<MonedaGuardada>,
-    pub calibrador_global: Vec<Observacion>,
+    pub calibrador_global: VecDeque<Observacion>,
     #[serde(default)]
     pub calibrador_global_reloj_ms: Option<u64>,
     pub freno_estrategia: FrenoGuardado,
@@ -275,7 +275,7 @@ impl GodEngineCore {
                 calibrador: self
                     .registro_calibrador
                     .get(coin_id)
-                    .map(|r| r.iter().copied().collect())
+                    .cloned()
                     .unwrap_or_default(),
                 calibrador_reloj_ms: self.calibrator_by_coin.get(coin_id)
                     .and_then(PlattCalibrator::evidence_clock_ms),
@@ -301,7 +301,7 @@ impl GodEngineCore {
         EstadoAprendido {
             version: VERSION_ESTADO,
             monedas,
-            calibrador_global: self.registro_calibrador_global.iter().copied().collect(),
+            calibrador_global: self.registro_calibrador_global.clone(),
             calibrador_global_reloj_ms: self.confidence_calibrator.evidence_clock_ms(),
             conformal_global: Some(self.conformal.snapshot()),
             freno_estrategia: FrenoGuardado {

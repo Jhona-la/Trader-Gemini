@@ -620,10 +620,35 @@ fn persist_kelly_envelope(env: &risk_engine::kelly_envelope::RiskEnvelope) {
     // CL-48: por entorno. Antes `data/kelly_envelope.json` era común a demo
     // y producción: los cierres de testnet sembraban el posterior real.
     let path = quantum_arena::paths::env_data_path("kelly_envelope.json");
-    let tmp = format!("{path}.tmp");
+    let tmp = format!("{path}.{}.tmp", std::process::id());
     if std::fs::write(&tmp, body.to_string()).is_ok() {
         let _ = std::fs::rename(&tmp, &path);
     }
+}
+
+/// F1-059 (Ola Ω170): Persistencia asíncrona no bloqueante de la envolvente de Kelly.
+/// Evita llamadas síncronas a `std::fs::write` + `fsync` en el bucle caliente de eventos del host.
+fn persist_kelly_envelope_async(
+    rt_handle: &tokio::runtime::Handle,
+    env: &risk_engine::kelly_envelope::RiskEnvelope,
+) {
+    let alpha = env.posterior.alpha;
+    let beta = env.posterior.beta;
+    let avg_win = env.avg_win;
+    let avg_loss = env.avg_loss;
+    rt_handle.spawn_blocking(move || {
+        let body = serde_json::json!({
+            "alpha": alpha,
+            "beta": beta,
+            "avg_win": avg_win,
+            "avg_loss": avg_loss,
+        });
+        let path = quantum_arena::paths::env_data_path("kelly_envelope.json");
+        let tmp = format!("{path}.{}.tmp", std::process::id());
+        if std::fs::write(&tmp, body.to_string()).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    });
 }
 
 /// HOST-005 — restaura la envolvente desde el kelly_envelope.json del
@@ -3321,6 +3346,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let mut firma_estado = engine_real.firma_estado_aprendido();
         let mut mensajes_desde_firma: u32 = 0;
+        let mut ultimo_envio_estado_ms: u64 = 0;
+        const MIN_ESTADO_SAVE_INTERVAL_MS: u64 = 2_000;
         // B3.7 (auditoría) — DEDUP cierre-bracket vs cierre-core: el MISMO
         // trade económico puede llegar por dos caminos (fill de la pierna en
         // el user-stream + condición de salida del core en el evento
@@ -3481,10 +3508,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // cambian el recuento sin pasar por un cierre del núcleo.
             mensajes_desde_firma = mensajes_desde_firma.wrapping_add(1);
             if guardar_estado && mensajes_desde_firma % 4_096 == 0 {
-                let firma = engine_real.firma_estado_aprendido();
-                if firma != firma_estado {
-                    firma_estado = firma;
-                    enviar_estado_aprendido(&tx_estado, &ruta_estado, engine_real.estado_aprendido());
+                let ahora_ms = instant_baseline.elapsed().as_millis() as u64;
+                if ahora_ms.saturating_sub(ultimo_envio_estado_ms) >= MIN_ESTADO_SAVE_INTERVAL_MS {
+                    let firma = engine_real.firma_estado_aprendido();
+                    if firma != firma_estado {
+                        firma_estado = firma;
+                        ultimo_envio_estado_ms = ahora_ms;
+                        enviar_estado_aprendido(&tx_estado, &ruta_estado, engine_real.estado_aprendido());
+                    }
                 }
             }
             // CL-52: la reconexión llega en banda (centinela) o, si la cola
@@ -4012,10 +4043,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 avg_loss_abs = if avg_loss_abs == 0.0 { net_bc.abs() } else { avg_loss_abs * 0.95 + net_bc.abs() * 0.05 };
                             }
                             risk_envelope.record_trade(net_bc > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
-                            // HOST-005 — persistir el posterior tras cada
-                            // cierre limpio contabilizado: el próximo
-                            // reinicio arranca con esta evidencia.
-                            persist_kelly_envelope(&risk_envelope);
+                            // HOST-005 / F1-059: persistir el posterior tras cada
+                            // cierre limpio contabilizado sin bloquear el bucle de eventos.
+                            persist_kelly_envelope_async(&rt_handle, &risk_envelope);
                             total_gross_pnl += bc.pnl_gross;
                             total_net_pnl += net_bc;
                             total_fees += bc.fees;
@@ -4167,10 +4197,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // foto al escritor sólo si cambió la firma (un cierre
                         // de papel no enseña nada).
                         if guardar_estado {
-                            let firma = engine_real.firma_estado_aprendido();
-                            if firma != firma_estado {
-                                firma_estado = firma;
-                                enviar_estado_aprendido(&tx_estado, &ruta_estado, engine_real.estado_aprendido());
+                            let ahora_ms = instant_baseline.elapsed().as_millis() as u64;
+                            if ahora_ms.saturating_sub(ultimo_envio_estado_ms) >= MIN_ESTADO_SAVE_INTERVAL_MS {
+                                let firma = engine_real.firma_estado_aprendido();
+                                if firma != firma_estado {
+                                    firma_estado = firma;
+                                    ultimo_envio_estado_ms = ahora_ms;
+                                    enviar_estado_aprendido(&tx_estado, &ruta_estado, engine_real.estado_aprendido());
+                                }
                             }
                         }
                         // B3.14 — sólo contabiliza lo que EXISTIÓ en el
@@ -4373,9 +4407,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             avg_loss_abs = if avg_loss_abs == 0.0 { net.abs() } else { avg_loss_abs * 0.95 + net.abs() * 0.05 };
                         }
                         risk_envelope.record_trade(net > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
-                        // HOST-005 — persistir el posterior tras cada cierre
-                        // limpio contabilizado (sin doble cuenta del dedup).
-                        persist_kelly_envelope(&risk_envelope);
+                        // HOST-005 / F1-059: persistir el posterior tras cada cierre
+                        // limpio contabilizado sin bloquear el bucle de eventos.
+                        persist_kelly_envelope_async(&rt_handle, &risk_envelope);
                         total_gross_pnl += gross;
                         total_net_pnl += net;
                         total_fees += fee;
@@ -4529,97 +4563,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Sin esto: deadlock (0 trades → 0 evidencia → 0 trades).
                         // Es epsilon-greedy estándar: exploración forzada inicial.
                         let envelope_n = risk_envelope.posterior.n();
-                        let notional_ord = _qty.abs() * entry_price;
-                        let pos_margin = engine_real.arena.coins[coin_id].positions.slots().into_iter().find(|p| p.is_open()).map(|p| p.margin_used.load(Ordering::Relaxed)).unwrap_or(0.0);
-                        let _core_leverage = if pos_margin > 0.0 && notional_ord > 0.0 {
-                            (notional_ord / pos_margin).round().clamp(1.0, 50.0) as u32
-                        } else if cap_now <= 50.0 {
-                            // R5-H3 (MICRO-CAPITAL APALANCAMIENTO CANÓNICO):
-                            // Para cuentas micro (cap_now <= 50.0), el apalancamiento canónico
-                            // necesario para que el nocional mínimo de Binance ($5.10 USDT)
-                            // requiera exactamente $1.02 de margen (7.85% de $13 USDT) es 5x.
-                            // La fórmula previa (5.05 / 1.30 = 3.88 -> ceil = 4) arrojaba 4x,
-                            // requiriendo $1.275 USD de margen y consumiendo 25% más del presupuesto.
-                            5
+                        let (tau_entry, apalancamiento_validado) = if let Some(r) = &entry_reservation {
+                            let ranura = engine_real.arena.coins[coin_id].positions.get_slot(r.slot);
+                            let margen = ranura.margin_used.load(Ordering::Relaxed);
+                            let nocional = ranura.quantity.load(Ordering::Relaxed).abs()
+                                * ranura.entry_price.load(Ordering::Relaxed);
+                            (
+                                ranura.entry_tau_ms.load(Ordering::Relaxed) as f64,
+                                risk_engine::envio::apalancamiento_validado(nocional, margen),
+                            )
                         } else {
-                            (5.05 / (cap_now * 0.10).max(1.0)).ceil().clamp(1.0, 10.0) as u32
+                            (0.0, None)
                         };
-                        let tau_entry = entry_reservation
-                            .as_ref()
-                            .map(|r| {
-                                engine_real.arena.coins[coin_id]
-                                    .positions
-                                    .get_slot(r.slot)
-                                    .entry_tau_ms
-                                    .load(Ordering::Relaxed)
-                            })
-                            .unwrap_or(0)
-                            as f64;
+
                         if envelope_n < 30.0 {
                             // F4-H2 / R5-H3 (BOOTSTRAP MICRO): acumular evidencia con el apalancamiento
                             // validado por el core/arena, garantizando que el nocional mínimo de Binance
                             // ($5 USDT) no consuma más del margen presupuestado en una cuenta micro ($13 USDT).
-                            // A apalancamiento 1x, $5.05 de nocional consume 38.8% del capital en margen,
-                            // estrangulando el margen libre y provocando vetos de margen prematuros.
-                            let boot_lev = if pos_margin > 0.0 && notional_ord > 0.0 {
-                                (notional_ord / pos_margin).round().clamp(1.0, 10.0) as u32
-                            } else if cap_now <= 50.0 {
-                                5
-                            } else {
-                                _core_leverage.clamp(1, 10)
-                            };
-                            exec_leverage = boot_lev.clamp(1, 10);
+                            exec_leverage = apalancamiento_validado.unwrap_or(5).clamp(1, 10);
                         } else if operable {
-                            // C-08 (INFORME 14): la envolvente bayesiana
-                            // (LCB + shrinkage + guard de ruina) es ahora
-                            // AUTORITATIVA en vivo — paridad C-08 con
-                            // booktick_replay. Antes era un veto binario: el
-                            // sizing real salía del core_leverage clampeado y
-                            // la envolvente sólo lo tapaba con el techo env_lev
-                            // — los tamaños que la evolución midió no eran los
-                            // que producción ejecutaba. Ahora la fracción de
-                            // Kelly bayesiana ESCALA el sizing del core
-                            // (×20·f: f=5% de riesgo por trade lo deja intacto;
-                            // evidencia débil lo contrae) y la envolvente sigue
-                            // siendo el TECHO (min con env_lev). (z, k) son los
-                            // MISMOS del régimen de capital que alimentaron
-                            // max_leverage arriba — una sola cadena de decisión.
-                            let kelly_frac = risk_envelope.risk_fraction(env_z, env_k);
-                            let cap = env_lev.floor().clamp(1.0, 20.0) as u32;
-                            // S-4 (ESPECTRALIZACIÓN): el ×20 codificaba "5% del
-                            // margen en riesgo" INDEPENDIENTE del stop — un
-                            // trade de banda lenta con SL de 1.5% arriesgaba
-                            // 30% del margen. Ahora el presupuesto de riesgo
-                            // (5% · kelly_frac) se divide por la DISTANCIA REAL
-                            // del stop a τ de entrada: leverage = riesgo/SL.
-                            // SL 0.25% (banda rápida) ⇒ ×20 como antes; SL
-                            // 1.5% (banda lenta) ⇒ ×6.7 — misma $ en riesgo.
-                            // CL-4: la τ es la de la RANURA RESERVADA para esta
-                            // orden, no la de `positions.position` (ranura 2):
-                            // el núcleo abre en la primera ranura libre.
-                            // D-745b: el apalancamiento se divide por el stop
-                            // REAL DE ESTA ORDEN, no por la curva genómica
-                            // evaluada en τ. `compute_tp_sl` fija el stop por
-                            // difusión σ(τ) —no por la curva—, así que el host
-                            // estaba dimensionando contra una distancia que la
-                            // orden no tiene: con un stop real más ancho que el
-                            // de la curva, el riesgo por operación sale mayor
-                            // que el presupuestado, y al revés. La curva queda
-                            // como respaldo sólo si la orden no trae stop.
-                            let sl_frac = if core_sl > 0.0 && entry_price > 0.0 {
-                                ((entry_price - core_sl).abs() / entry_price).max(1e-4)
-                            } else {
-                                engine_real.arena.config.sl_at_tau(
-                                    if tau_entry > 0.0 { tau_entry } else { 30_000.0 },
-                                )
-                            };
-                            let risk_budget = 0.05 * kelly_frac; // fracción del margen por trade
-                            // P-1b — VOL-BRAKE: el predictor {SYM}_VOL encoge el
-                            // presupuesto cuando la σ pronosticada supera ×1.25
-                            // la del régimen en que el modelo se entrenó (base =
-                            // init del modelo, unidades exactas). UNILATERAL:
-                            // sólo encoge (piso ×0.4), nunca amplifica — primer
-                            // despliegue del predictor, la calle es una sola.
+                            // F1-061 (Ola Ω170): Unificación de autoridad de dimensionamiento.
+                            // La cantidad (notional / qty) y margen son autoritativos del RiskEngine del core.
+                            // La envolvente bayesiana (LCB + shrinkage + guard de ruina) actúa como supervisor
+                            // de admisibilidad (operable) y techo de apalancamiento (env_cap = env_lev * vol_brake).
                             let vol_fc = engine_real
                                 .arena
                                 .registry
@@ -4639,12 +4605,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     );
                                 }
                             }
-                            let lev_from_risk =
-                                (risk_budget * vol_brake / sl_frac.max(1e-4)).clamp(1.0, 20.0);
-                            exec_leverage =
-                                (lev_from_risk as u32).min(cap).max(1);
+                            let env_cap = ((env_lev.floor() * vol_brake) as u32).clamp(1, risk_engine::envio::TOPE_ENVIO);
+                            exec_leverage = apalancamiento_validado.unwrap_or(1).min(env_cap).max(1);
                         } else {
-                            exec_leverage = 0; // SIN ORDEN: la matemática dijo NO
+                            exec_leverage = 0; // SIN ORDEN: la matemática dijo NO (veto de la envolvente)
                         }
                         let _ = tx_log_worker.try_send((tau_entry as u64, is_long, coin_id));
 

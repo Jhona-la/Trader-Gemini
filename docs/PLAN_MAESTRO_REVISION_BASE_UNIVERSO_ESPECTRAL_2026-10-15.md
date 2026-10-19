@@ -1,11 +1,11 @@
-# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V38 · 2026-10-19)
+# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V39 · 2026-10-19)
 ## Unificando Teoría Matemática de Vanguardia, Ecuaciones del Milenio, Física de Campos, Estadística Prequencial de Ville, Psicología de Masas, Liquidez Oculta, Gating Conformal y Rendimiento en Nanosegundos
 
 > **Autor / Director:** Antigravity (AGY, Quant Sr. Lead)
 > **Comité Revisor:** Consejo Colegiado de 10 Roles Senior en Modo Profesor
 > **Destinatarios:** Claude (Línea C / Línea G / Línea H), Fable (Consejo Quant Sr.), Codex (Líneas G/H/E), GLM (Línea B/LH/Ops), Qoder (Línea R7/R6), Sol (Línea R5/R6/Contabilidad) y Operador Humano
 > **Ámbito:** Repositorio Completo Trader Gemini (23 Crates Rust, 100% Nativo, CERO Python)
-> **Fecha:** 19 de Octubre de 2026 (Actualización Canónica Post-Ola Ω169 / Cierre F1: `F1-056` desacople de `nn_penalty` en `ModelEnsemble` unificando `SkillTracker` como telemetría pura según `lib.rs:8915` y gobernando modelos por Brier score Hedge; `F1-057` persistencia completa del calibrador conformal `scores`/`alpha`/`steps`/`errors` en `EstadoAprendido` con `#[serde(default)]` blindando contra fail-open en reinicio y evaluación single-pass $O(1)$; `F1-058` escritura atómica con rename de `.bin` en `NanoForest` y carga con precedencia de fuente en `refresh_ml_models`)
+> **Fecha:** 19 de Octubre de 2026 (Actualización Canónica Post-Ola Ω170 / Cierre F1: `F1-059` persistencia asíncrona no bloqueante de envolvente de Kelly `persist_kelly_envelope_async`, debounce de 2s en guardado de estado aprendido, y `VecDeque<Observacion>` zero-alloc en calibradores de `MonedaGuardada`/`EstadoAprendido` erradicando asignaciones heap por moneda; `F1-060` método `ModelEnsemble::nuevo_bar()` cableado en barras neutras e iniciales erradicando desalineación temporal y scoring de opiniones obsoletas contra retornos unitarios; `F1-061` unificación estricta de autoridad de dimensionamiento en `RiskEngine` con `RiskEnvelope` actuando como supervisor de admisibilidad (`operable`) y techo de apalancamiento `env_cap`, erradicando el divisor heurístico `0.05 * kelly_frac / sl_frac` y garantizando paridad 1:1 entre `god_engine.rs` y `booktick_replay.rs`)
 > **Estado CI GitHub Actions & Oráculo T-1:** 🟢 100% VERDE + Workspace Type-Checked + Contratos Unitarios/Integración Aprobados
 
 ---

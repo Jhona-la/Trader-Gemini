@@ -2744,10 +2744,6 @@ impl GodEngineCore {
                     } else {
                         // R7-R4-B-1 & R7-R4-D-1: dentro del rango de fricción: neutro, DESCARTAR.
                         // El ensemble no aprende de samples sin resolución de fee.
-                        // Retornar NaN explícito como centinela inmutable de abstención;
-                        // erradicado 0.5.signum() * 0.0 que evaluaba a 0.0 y entrenaba pérdidas falsas.
-                        // Retirado lock muerto a temporal_spectrum.
-                        self.kline_close_memory[coin_id] = current_price;
                         f64::NAN
                     };
                     // Sólo calibrar con samples DECISIVOS (y ∈ {0.0, 1.0})
@@ -2757,6 +2753,22 @@ impl GodEngineCore {
                         } else {
                             self.ensemble.update_with_outcome(y);
                         }
+                    } else {
+                        // F1-060 (Ola Ω170): Bar neutro (|bar_ret| <= fee_hurdle).
+                        // Reiniciar bar_open_predictions para que el próximo bar no califique
+                        // una opinión obsoleta de k bares atrás con el retorno de un solo bar.
+                        if coin_id < self.ensembles.len() {
+                            self.ensembles[coin_id].nuevo_bar();
+                        } else {
+                            self.ensemble.nuevo_bar();
+                        }
+                    }
+                } else {
+                    // Primer bar observado: inicializar bar para el siguiente
+                    if coin_id < self.ensembles.len() {
+                        self.ensembles[coin_id].nuevo_bar();
+                    } else {
+                        self.ensemble.nuevo_bar();
                     }
                 }
                 self.kline_close_memory[coin_id] = current_price;
