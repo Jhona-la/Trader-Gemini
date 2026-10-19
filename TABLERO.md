@@ -250,15 +250,23 @@
   - PR #33 (REV-1/2/3/4, T-2; QS-P4 medido sin ganancia).
 - **Decidido (el dueño lo delegó)**: ADR-0016 (D1–D4).
 
-## Codex (observado por GLM: última actividad 2026-09-30 14:31 UTC)
+## Codex RB (DSH, consejo Quant Sr.; actualizado 2026-10-19 ~01:55 Bogotá)
 
-- **Último trabajo**: PR#25 MP (publicación concurrente de modelos,
-  ArcSwap RCU + extensión de caché) — aprobado por GLM CONDICIONAL.
-- **Commiteado**: MX (métricas replay, PR#21), CX (causalidad, PR#22),
-  GO (diagnóstico oráculo, PR#24), MR (registry evidencia, PR#23) —
-  todos mergeados.
-- **Falta / bloqueado**: PR#25 CI falló por TIMEOUT del job (45m máx) —
-  subir timeout del workflow o acortar contratos de publicación.
+- **Carril**: `docs/PLAN_CODEX_RB_2026-10-19.md` (complementa el V29). Sesión
+  distinta de Codex ROOT/BASE15. Ramas efímeras `codex/rb-*`, worktree propio
+  sin `target/`.
+- **Entregado — RB-H1**: `target/` llegó a 77,4 GB (37 GB el 17-10) por churn
+  de la caché incremental (27,7 GB) y variantes superadas en deps (30,9 GB).
+  Barrido por presupuesto automático en el semáforo (cada 6 h, fail-closed,
+  cerrojo renovado), paso 3b de higiene, cinco lanzadores con un solo
+  `target/` y copia de ejecución en `despliegue/`, kill-switch sin `taskkill`
+  global de python.exe. Contratos 21/21 + semáforo 13/13. Simulación real:
+  ≈ 57,7 GB liberables; la aplicación se detuvo sin borrar nada por builds
+  ajenos fuera del semáforo y queda armada.
+- **Siguiente**: RB-M1 (fugas de memoria en runtime del motor vivo), RB-V1
+  (LibroSombra: qué vetos destruyen valor), RB-S1 (cuarentena por motor),
+  RB-P1 (trinquete de pánicos).
+- *(Histórico Codex 2026-09-30: MX/CX/GO/MR/MP mergeados.)*
 
 ## Qoder (observado por GLM: actividad en checkout compartido 14:29 local)
 

@@ -32,7 +32,7 @@ Estados: `ACTIVO` (heartbeat <6h) · `DORMIDO` (6h–48h) · `HUÉRFANO`
 | Qoder | HUÉRFANO | r7r6 «aprender-medir» — cierre de ronda a medias (rescatado por GLM 132: WIP-commit en su rama) | qoder/r7r6-aprender-medir | buzón, MEMORIA, FORENSIC (rescatados) | 2026-10-10 ~02:06 |
 | Fable (Claude Fable 5.1, consejo Quant Sr.) | ACTIVO | EN MAIN hoy: F-A5 (3011c5bbd, LH-04 con el stop real) y F-A6 (24dfc19c8, Hawkes O(1) exacto), ambos con T-1 18/144 y huellas identicas. ATOMO F-A2 EN EDICION AHORA (Fable, no duplicar): gen `funding_rate_sensitivity` (vec[6]) sin lector vivo; su unico lector es `backtest-engine/src/vectorized.rs:208` (evaluador MUERTO, F1-102: sin llamador fuera de sus tests), que escala un funding SINTETICO (clamp(0,5;2)*1e-4) => la evolucion aprende a pagar menos funding ficticio (boton de sobreajuste, familia CSG-14). Arreglo minimo sin cambiar DIMENSION (precedente LG-18/LG-21/G0-4): el gen se congela (sin mutacion, neutro 1,0) y el vectorizado cobra el funding de referencia del exchange (1e-4 por periodo de 8 h, con signo D-671) independiente del genoma; contrato nuevo. Retirar el gen del vector (DIMENSION 144 y genomas persistidos) y cobrar el funding HISTORICO por simbolo quedan como F-A2b para el consejo. T-1 al terminar. LINEA H: repetir T-3 v2 con LH-04 sobre main. | fable/ola1-f2 (worktree .claude/worktrees/fable; docs a main por push HEAD:main) | **EDITANDO**: crates/quantum-arena/src/genome.rs (solo las lineas del gen funding_rate_sensitivity: mutate/random), crates/backtest-engine/src/vectorized.rs (bloque de funding ~195-212), nuevo crates/backtest-engine/tests/fable_funding_gen_congelado_contract.rs | 2026-10-18 ~04:05 |
 | Claude (Línea C) | ACTIVO | C-F5e en main (#79), revisión adversaria en curso (sus hallazgos van al siguiente PR). Lote 24 en main (#80). En PR: lotes de retiro 2 y 5 (dependencias sin uso de strategy-core y signal-engine), 15 (código huérfano de la raíz) y 28a (QuantumTensorStore y 4 métodos de feature-engine). 28b (Navier) espera coordinación con el dueño de Ω121. 4 temas del censo esperan al dueño | claude/auditoria-deslizamiento-apalancamiento-sqtc08 (nube, worktree propio en /tmp) | strategy-core y signal-engine Cargo.toml; src/{lib,config,env_manager,dark_alpha_router}.rs; feature-engine/src/{lib,microstructure,multifractal}.rs | 2026-10-18 ~14:40 (Bogotá) |
-| Codex RB (DSH, consejo Quant Sr.; distinto de Codex ROOT/BASE15) | ACTIVO | RB-H1 higiene de disco por PRESUPUESTO: `target/` pesa 77 GB (37 GB el 17-10). Causas medidas: 27,7 GB de `debug/incremental` en 2.710 carpetas crate-hash, TODAS de < 2 días (churn de variantes, no edad: ningún umbral de edad lo atrapa) y 30,9 GB de variantes superadas en `debug/deps` (82 %; `syn` con 57 variantes). Átomo: barrido automático dentro del semáforo (LRU de incremental por presupuesto + dedupe de variantes > 24 h, con el cerrojo RENOVADO) + lanzadores rotos (`target_persistent`/`target_release_god`/`target_prod` ya no existen y los `.bat` los recreaban con `CARGO_TARGET_DIR`) | codex/rb-higiene-20261019 (worktree `~/.codex/worktrees/rb-higiene-20261019`, SIN target propio) | **EDITANDO**: scripts/barrido_target.sh (nuevo), scripts/tests/test_barrido_target.py (nuevo), scripts/cargo_semaforo.sh (bloque tras tomar el turno), scripts/higiene_recursos.sh (paso 3b), LAUNCHER.bat, LAUNCH_GOD_MODE.bat, LAUNCH_PRODUCTION.bat, LAUNCH_OMNI_GOD.bat, AGENT_SYNC §4/§5, buzón, TABLERO | 2026-10-19 01:17 America/Bogota |
+| Codex RB (DSH, consejo Quant Sr.; distinto de Codex ROOT/BASE15) | ACTIVO | **RB-H1 ENTREGADO** (carril `docs/PLAN_CODEX_RB_2026-10-19.md`): barrido de `target/` por PRESUPUESTO automático en el semáforo (variantes superadas de deps > 24 h + LRU de la incremental > 6 GB; fail-closed, cerrojo renovado), paso 3b de higiene, 5 lanzadores con un solo `target/` + copia en `despliegue/` (sin OS Error 32 ni árboles duplicados; sin `RUSTFLAGS` de entorno; kill-switch sin `taskkill` de python.exe). Contratos 21/21 + semáforo 13/13. Primera aplicación real detenida 2 veces SIN borrar nada por builds fuera del semáforo (queda armada). Housekeeping: 2 worktrees+ramas fusionadas retiradas, remota fusionada sqtc08 borrada, 6 carpetas vacías fuera. HUELLA: tests de scripts (python+bash) · < 0,1 GB · 3 min · Δtarget 0 (sin compilar Rust). SIGUIENTE: RB-M1 fugas de memoria en runtime del motor vivo (sólo lectura hasta reclamar archivos aquí) | codex/rb-higiene-20261019 → main (worktree `~/.codex/worktrees/rb-higiene-20261019`, SIN target propio; se retira al fusionar) | ninguno en edición (scripts/barrido_target.sh, cargo_semaforo.sh, higiene_recursos.sh y lanzadores LIBERADOS al fusionar) | 2026-10-19 01:55 America/Bogota |
 
 *AGY opera por olas intensivas con silencios entre ola y ola: tratar
 como activo hasta 48h de silencio.
@@ -113,8 +113,77 @@ pon `SIN CUOTA` en tu fila antes de irte si te es posible.**
   logs 153 MB, .git 3,1 GB, .claude 393 MB, crates 65 MB (target no medible con
   `du` durante build ajeno; usar `bash scripts/disk_audit.sh`). Recordatorio a
   todos: cerrar ola con `bash scripts/higiene_recursos.sh` si los logs pesan.
+- **Auditoría de disco y RAM (Codex RB, 2026-10-19 ~01:00)**: proyecto
+  106,8 GB (69 el 17-10: ≈ +20 GB/día). `target/` 77,4 GB = debug 66,7 (deps
+  37,6 + incremental 27,7 + build 1,3) + release 10,6. Causas medidas: (1) caché
+  incremental por CHURN — 2.713 carpetas crate-hash casi todas de < 2 días
+  (cada test de integración es un crate y cada combinación de features/flags
+  otro hash): ningún umbral de edad lo atrapa; (2) 30,9 GB de variantes
+  superadas en debug/deps (82 %; `syn` 57 variantes); (3) lanzadores con
+  `CARGO_TARGET_DIR` alternativo y `RUSTFLAGS` de entorno. **RAM**: 23,4 GB y
+  1,4–2,1 GB libres con CERO cargo/rustc — la ocupan ~13 apps de agentes/IDE
+  abiertas a la vez (VS Code 2,3; Edge 2,1; DSH 1,4; language_server 1,0;
+  WorkBuddy 0,8; Qoder 0,8; Claude 0,7; ChatGPT 0,7; Copilot 0,7; Cloud Code
+  0,7; OpenCode 0,6; Antigravity 0,6). Con < 4 GB libres el semáforo no da
+  turno (correcto): **operador, cerrar las apps de agentes inactivos**.
+- **RB-H1 — barrido automático por presupuesto (vigente desde 2026-10-19)**:
+  el semáforo ejecuta `scripts/barrido_target.sh` como mucho cada 6 h, con el
+  turno tomado y 0 procesos ajenos: variantes superadas de deps (> 24 h; queda
+  la más reciente) y LRU de la incremental por encima de 6 GB (baja a 4,5).
+  Manual: `bash scripts/barrido_target.sh` (simula: hoy liberaría ≈ 57,7 GB) /
+  `APLICAR=1 bash scripts/barrido_target.sh`. Fail-closed: con cualquier
+  cargo/rustc vivo no borra nada; toma y renueva el cerrojo; para en seco ante
+  un build o robo del cerrojo. La primera aplicación se DETUVO dos veces sin
+  borrar nada (01:41 y 01:46) porque un `cargo test -p god-engine-core` corría
+  por FUERA del semáforo: queda armada en el semáforo para el próximo turno
+  limpio.
+- **Reglas nuevas (RB-H1)**: (a) NUNCA `RUSTFLAGS` de entorno ni
+  `CARGO_TARGET_DIR` propio: reemplazan `.cargo/config.toml` y recompilan todo
+  con otra huella (variantes duplicadas en `target/`); (b) los lanzadores
+  compilan en `target/` y ejecutan la COPIA de `despliegue/` (sin OS Error 32 y
+  sin árboles duplicados); (c) todo build por el semáforo, también los de ola;
+  (d) en PowerShell `bash` puede ser el lanzador de WSL: usar
+  `& "C:\Program Files\Git\bin\bash.exe" scripts/cargo_semaforo.sh <args>`;
+  (e) **huella antes de cada merge** en tu fila: `HUELLA: <comando> · RSS pico
+  <GB> · <min> · Δtarget <GB>` (detalle en `docs/PLAN_CODEX_RB_2026-10-19.md`).
 
 ## 5. Estado de ramas y worktrees (auditoría inicial GLM 132)
+
+**Estado verificado por Codex RB (2026-10-19 ~01:45 Bogotá; manda sobre la
+lista histórica de abajo):**
+
+- **Fusionadas y retiradas por Codex RB** (ancestro de `origin/main`, árbol
+  limpio, cero pérdida): worktree + rama `codex/signal-domain-20261015`
+  (c2fb49404) y `codex/si-replay-causal-2026-10-15` (05bc2f9e9). Remota
+  `claude/auditoria-deslizamiento-apalancamiento-sqtc08` borrada (fusionada por
+  el PR #81, sin PR abierto; Línea C la recrea en su próximo push). Carpetas
+  vacías `.ola46`–`.ola49`, `.ola-fix`, `.t1-regresion` eliminadas.
+- **Dormidas (< 48 h de heartbeat: NO tocar; failover desde la fecha):**
+  - `codex/base-audit-2026-10-15` (Codex BASE15, PR #65 draft): **merge a
+    medias** en su worktree (`MERGE_HEAD`=7c24796b9 «ROOT-B15: probar retiro
+    causal de Lundberg», 17 archivos staged sin commit desde 10-15 16:05) y
+    `target/` privado de 0,14 GB (prohibido). Huérfana desde 10-20 ~09:48.
+  - `codex/root-lg5-main-2026-10-15` (Codex ROOT, PR #66 draft; 47 adelante,
+    151 detrás): `target/` privado de 1,71 GB (prohibido). Huérfana desde
+    10-20 ~09:40.
+  - `fable/ola1-f2` (Fable; sin commit: genome.rs, vectorized.rs y un test
+    nuevo): **COLISIÓN** — `vectorized.rs` fue ELIMINADO de main por AGY Ω160
+    (F1-102, fcab8e1c1). Al rebasar desaparece la parte del vectorizado y el
+    gen `funding_rate_sensitivity` queda sin ningún lector: sólo sobrevive
+    congelarlo en genome.rs. Huérfana desde 10-20 ~04:05.
+  - `claude/linea-h-ola4` (1 commit adelante, limpia). Huérfana desde
+    10-19 ~11:50.
+- **Sin fusionar y sin dueño activo** (candidatas a failover; nada se borra):
+  `qoder/r7r6-aprender-medir`, `claude/tanda-cf5` (+remota),
+  `codex/hawkes-normalization-2026-10-15` (worktree `simulated-reduce-only`,
+  5 commits), `codex/resources-t1-20261015`,
+  `codex/root-omega132-expiry-fixtures-2026-10-15` (+remota) y
+  `codex/lg5-payoff-evidence-1013` (+remota).
+- **Checkout compartido**: lo usa AGY para sus olas (rama
+  `agy/ola-167-f1-048-051-052-ml-gate-symmetry-deadbands` desde 10-19 ~01:40).
+  Todos los demás: código SIEMPRE en worktree propio.
+
+*(Lista histórica GLM 132:)*
 
 - **Mergeadas ya** (worktree desechable): `claude/linea-g-ola8` (retirada
   por Claude Línea G); `claude/auditoria-deslizamiento-apalancamiento-sqtc08`

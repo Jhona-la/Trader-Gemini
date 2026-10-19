@@ -27,6 +27,31 @@
   - Suite de regresión `crates/god-engine-core/tests/cf3_vetos_nucleo.rs`: 3/3 pass (100% verde).
   - `cargo check --workspace --all-targets -j 1` pasa 100% limpio en los 23 crates (0 errores, 0 advertencias).
 
+## 2026-10-19 (madrugada) — Codex RB (DSH): RB-H1 higiene de target/ por presupuesto + lanzadores
+
+- Carril `docs/PLAN_CODEX_RB_2026-10-19.md` (complementa el V29); identidad
+  «Codex RB (DSH)», distinta de Codex ROOT/BASE15.
+- Medido: proyecto 106,8 GB (69 el 17-10); `target/` 77,4 GB = 27,7 GB de
+  incremental por CHURN (2.713 carpetas crate-hash casi todas < 2 d: cada test
+  de integración es un crate y cada combinación de features/flags otro hash)
+  + 30,9 GB de variantes superadas en debug/deps (82 %). RAM 23,4 GB con
+  1,4–2,1 libres y CERO cargo/rustc: la consumen ~13 apps de agentes/IDE.
+- Vigente desde hoy: el semáforo barre `target/` solo (cada 6 h, turno tomado,
+  0 procesos ajenos; `scripts/barrido_target.sh`: variantes > 24 h no más
+  recientes + LRU de la incremental > 6 GB; fail-closed; cerrojo renovado).
+  Lanzadores: un solo `target/`, sin `RUSTFLAGS` de entorno, se ejecuta la copia
+  de `despliegue/` (OS Error 32 sin árboles duplicados). Contratos
+  `scripts/tests/test_barrido_target.py` 21/21.
+- Lecciones: (1) un barrido por edad de `deps/` borraría rlib vigentes (el
+  mtime es de compilación, no de uso): deduplicar por variante; (2) la caché
+  incremental crece por churn, no por edad: presupuesto LRU; (3) `RUSTFLAGS` de
+  entorno reemplaza `.cargo/config.toml` (huella distinta = recompilación total);
+  (4) en PowerShell `bash` puede ser el stub de WSL: usar Git Bash;
+  (5) `WriteAllLines` de .NET escribe CRLF: los `.sh` deben quedar en LF.
+- Abiertos: builds fuera del semáforo (detuvieron la primera aplicación sin
+  borrar nada), dos contratos locales del semáforo rojos también en main (la CI
+  no corre `scripts/tests`), `opt-level=3` global en config.toml por medir.
+
 ## 2026-10-19 (madrugada, 2) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω165 (Cierre F1-095 y F1-096)
 
 - **Mandato**: Resolución exhaustiva de 2 hallazgos sistémicos de la auditoría F1 (`docs/audit/fable/f1_hallazgos.tsv`) en `feature-engine`, `signal-engine` y `god-engine-core`, erradicando escalones binarios $\{-1, 0, 1\}$ en los votantes escalares `hawkes_bessel.rs` y `trend_runner.rs` asegurando que las magnitudes de flujo y momentum tipificado codifiquen fuerza continua $O(1)$, e integrando el cálculo del error típico analítico $\sigma_H = \text{SE}(\hat{H}) = \sqrt{\frac{s_{yy}(1-r^2)}{(K-2)s_{xx}}}$ en `hurst_dfa.rs` para modular dinámicamente el ancho de la puerta de persistencia de tendencia en `trend_runner.rs` ($ancho = 2\sigma_H \ge 0.04$), suprimiendo la activación de momentum espurio sobre ruido browniano ($\mathbb{E}[|\text{voto}|] < 0.02$), en estricto cumplimiento del universo continuo espectral en el espacio de Hilbert $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, protección del micro-capital ($13.00 USD, duplicación exponencial cada 3 días, cero ruina) y optimización extrema para el portátil de 16 GB RAM sin GPU:
