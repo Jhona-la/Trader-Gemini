@@ -2,61 +2,9 @@ use simd_json::prelude::ValueAsScalar;
 use simd_json::prelude::ValueObjectAccess;
 use simd_json::prelude::*;
 
-/// Parses a Binance DepthUpdate (Orderbook) JSON string instantly.
-/// Returns (Event_time, symbol, last_update_id, best_bid_price, best_bid_qty, best_ask_price, best_ask_qty)
-pub fn parse_binance_depth<'a>(
-    json_str: &'a mut str,
-) -> Option<(i64, &'a str, i64, f64, f64, f64, f64)> {
-    let bytes: &'a mut [u8] = unsafe { json_str.as_bytes_mut() };
-    let parsed = simd_json::to_borrowed_value(bytes).ok()?;
-
-    // Depth stream structure can be {"stream": "...", "data": { ... }}
-    // Or just the raw object if not combined stream
-    let data = if let Some(d) = parsed.get("data") {
-        d
-    } else {
-        &parsed
-    };
-
-    let e = data.get("E")?.as_i64()?;
-    let s_temp = data.get("s")?.as_str()?;
-    let s: &'a str = unsafe { std::mem::transmute(s_temp) };
-    let last_update_id = data.get("u")?.as_i64()?;
-
-    let bids = data.get("b")?.as_array()?;
-    let asks = data.get("a")?.as_array()?;
-
-    if bids.is_empty() || asks.is_empty() {
-        return None;
-    }
-
-    let best_bid = bids[0].as_array()?;
-    let best_ask = asks[0].as_array()?;
-
-    let bp = best_bid[0].as_str()?.parse::<f64>().ok()?;
-    let bq = best_bid[1].as_str()?.parse::<f64>().ok()?;
-
-    let ap = best_ask[0].as_str()?.parse::<f64>().ok()?;
-    let aq = best_ask[1].as_str()?.parse::<f64>().ok()?;
-
-    // FIX #1417 / #1472: Data Integrity & Normalization Validation (Descartar precios inválidos, NaNs y libros cruzados bp >= ap)
-    if bp <= 0.0
-        || ap <= 0.0
-        || bq < 0.0
-        || aq < 0.0
-        || bp >= ap
-        || !bp.is_finite()
-        || !ap.is_finite()
-        || !bq.is_finite()
-        || !aq.is_finite()
-    {
-        return None;
-    }
-
-    Some((e, s, last_update_id, bp, bq, ap, aq))
-}
-
 /// P-6 — Parser de TODOS los niveles del stream @depth5 (hasta 5 por lado).
+/// Es el ÚNICO parser de libro del host (RET-45: el L1 `parse_binance_depth`
+/// sólo vivía en tests; su mejor nivel es el nivel 0 de éste).
 /// Rellena arrays del caller (zero-alloc) y devuelve
 /// (event_time, symbol, last_update_id, n_levels_válidos).
 /// Prerrequisito del SpoofingDetector: los muros viven más allá del best.
@@ -204,8 +152,8 @@ pub enum SeqVerdict {
 
 /// D-610 (DÉCIMA OLA) — GUARDIA DE SECUENCIA DEL LIBRO POR SÍMBOLO.
 ///
-/// `parse_binance_depth` extraía el `u` (final update id) de cada mensaje y el
-/// despacho del motor lo descartaba. Sin comprobar su monotonía el motor no
+/// `parse_binance_depth` (el parser L1, retirado en RET-45) extraía el `u`
+/// (final update id) de cada mensaje y el despacho del motor lo descartaba. Sin comprobar su monotonía el motor no
 /// podía detectar tres fallos silenciosos: libro rancio tras una reconexión,
 /// mensajes reordenados por la multiplexación —el precio «retrocede» y OBI,
 /// OFI y microprecio se calculan sobre un estado viejo— y mensajes duplicados.
@@ -265,8 +213,7 @@ mod tests {
     use super::*;
 
     /// P-6 — el parser multi-nivel extrae TODOS los niveles del @depth5 en
-    /// orden, con el best en [0] idéntico al parser L1, y rechaza libros
-    /// cruzados.
+    /// orden, con el mejor nivel en [0], y rechaza libros cruzados.
     #[test]
     fn p6_parse_depth5_levels_extrae_los_cinco_niveles() {
         let mut msg = String::from(
@@ -282,7 +229,7 @@ mod tests {
         assert_eq!(sym, "NEARUSDT");
         assert_eq!(uid, 42);
         assert_eq!(n, 5);
-        // Best idéntico al camino L1.
+        // El mejor nivel es el [0].
         assert_eq!(bids[0], (3.10, 100.0));
         assert_eq!(asks[0], (3.11, 80.0));
         // El muro máximo del bid vive en el nivel 4 (90000 × 3.06): SOLO
@@ -342,23 +289,26 @@ mod tests {
         assert_eq!(g.check(7, 1), SeqVerdict::Accept);
     }
 
+    /// RET-45 — migración del contrato del parser L1 retirado al nivel 0 de
+    /// depth5: un mensaje de UN nivel por lado da n = 1 y el mejor nivel
+    /// intacto; un libro cruzado (bid ≥ ask) se rechaza.
     #[test]
-    fn test_parse_binance_depth_valid_and_crossed_book_rejection() {
+    fn ret45_depth5_un_nivel_por_lado_y_rechazo_de_libro_cruzado() {
         let mut valid_depth = r#"{"e":"depthUpdate","E":1672531200000,"s":"BTCUSDT","u":12345,"b":[["60000.0","1.5"]],"a":[["60001.0","2.0"]]}"#.to_string();
-        let res = parse_binance_depth(&mut valid_depth);
-        assert!(res.is_some());
-        let (e, s, u, bp, bq, ap, aq) = res.unwrap();
+        let mut bids = [(0.0f64, 0.0f64); 5];
+        let mut asks = [(0.0f64, 0.0f64); 5];
+        let (e, s, u, n) = parse_binance_depth5_levels(&mut valid_depth, &mut bids, &mut asks)
+            .expect("payload de un nivel válido");
         assert_eq!(e, 1672531200000);
         assert_eq!(s, "BTCUSDT");
         assert_eq!(u, 12345);
-        assert_eq!(bp, 60000.0);
-        assert_eq!(bq, 1.5);
-        assert_eq!(ap, 60001.0);
-        assert_eq!(aq, 2.0);
+        assert_eq!(n, 1);
+        assert_eq!(bids[0], (60000.0, 1.5));
+        assert_eq!(asks[0], (60001.0, 2.0));
 
         // Crossed book rejection (bid >= ask)
         let mut crossed_depth = r#"{"e":"depthUpdate","E":1672531200000,"s":"BTCUSDT","u":12345,"b":[["60005.0","1.5"]],"a":[["60001.0","2.0"]]}"#.to_string();
-        assert!(parse_binance_depth(&mut crossed_depth).is_none());
+        assert!(parse_binance_depth5_levels(&mut crossed_depth, &mut bids, &mut asks).is_none());
     }
 
     #[test]

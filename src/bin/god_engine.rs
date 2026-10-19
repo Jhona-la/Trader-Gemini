@@ -3346,10 +3346,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let local_ms_now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
         let epoch_baseline_ms = local_ms_now + ntp_offset_ms;
 
-        let mut local_orderbooks: Vec<quantum_engine::orderbook::OrderBook> = symbols_clone
-            .iter()
-            .map(|s| quantum_engine::orderbook::OrderBook::new(s.clone()))
-            .collect();
+        // RET-45 / F472 (RB-M1a, 2026-10-19): ya no hay un libro con BTreeMap
+        // por símbolo. Se alimentaba con el nivel 0 de cada @depth5, nunca
+        // borraba un nivel (un snapshot no trae cantidad 0) y nadie lo leía:
+        // crecía hasta la reconexión. El OBI y el microprecio salen de
+        // `orderbook::microestructura_mejor_nivel` sobre el snapshot del
+        // mensaje. Slots del universo de arranque (indexación de `symbol_to_id`):
+        let n_slots_libro = symbols_clone.len();
         // P-5 (PREDICTORES / ENTES): tracker de volumen institucional por
         // símbolo — z-score de burst sobre el flujo @trade REAL (la clase
         // estaba exportada con CERO call sites). `whale_burst_z` al registry.
@@ -3367,8 +3370,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut salto_pendiente: Vec<f64> = vec![0.0; quantum_arena::state::MAX_COINS];
         let mut msg_count: u64 = 0;
         // D-610: guardia de secuencia del libro, un estado por símbolo del
-        // universo (misma indexación que `local_orderbooks`).
-        let mut book_seq_guard = parsers::BookSequenceGuard::new(local_orderbooks.len());
+        // universo (misma indexación que `symbol_to_id`).
+        let mut book_seq_guard = parsers::BookSequenceGuard::new(n_slots_libro);
         let mut consecutive_slow_ticks = 0;
         // CL-139 (C-F6): avisos con tope por tiempo, no por evento. Sin él,
         // LATENCY_PANIC escribía una línea por evento lento (≈ 3,7 GB/día a
@@ -3412,14 +3415,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if es_centinela || centinela_perdido {
                 telemetry_server::telemetry_log!("🧹 [AUTO-HEALING] Reconnect signal received. Purging Quantum Engine state to prevent time-glitches...");
                 engine_real.reset_engines();
-                for ob in local_orderbooks.iter_mut() {
-                    ob.clear();
-                }
                 // CERT-M1-H02: resetear el guard de secuencia del libro —
                 // sin esto, cada símbolo descartaba hasta 50 mensajes depth
                 // consecutivos tras la reconexión (>1300 actualizaciones de
                 // libro perdidas por reconnect con 26+ símbolos).
-                book_seq_guard = parsers::BookSequenceGuard::new(local_orderbooks.len());
+                book_seq_guard = parsers::BookSequenceGuard::new(n_slots_libro);
                 telemetry_server::telemetry_log!("✅ [AUTO-HEALING] All AI Engines flushed + book sequence guard reset. Entering Warmup Phase (50 ticks).");
 
                 let rx_rest = Arc::clone(&exec);
@@ -3558,19 +3558,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     dbp = bp; dap = ap; dbq = bq; daq = aq;
                     current_price = (bp + ap) * 0.5;
                     qty = (bq + aq) * 0.5;
-                    if let Some(sym_id) = symbol_to_id.get(sym).copied() {
-                        if let Some(ob) = local_orderbooks.get_mut(sym_id) {
-                            ob.update_bid(bp, bq);
-                            ob.update_ask(ap, aq);
-                        }
-                    }
-                    let total_q = bq + aq;
-                    if total_q > 0.0 {
-                        depth_obi = (bq - aq) / total_q;
-                        let microprice = (bp * aq + ap * bq) / total_q;
-                        let midprice = (bp + ap) / 2.0;
-                        depth_micro_div = if midprice > 0.0 { (microprice - midprice) / midprice } else { 0.0 };
-                    }
+                    // RET-45 (UNIFICAR): una sola fórmula, certificada bit a
+                    // bit contra el cálculo en línea que había aquí.
+                    (depth_obi, depth_micro_div) =
+                        quantum_engine::orderbook::microestructura_mejor_nivel(bp, bq, ap, aq);
                     // P-6 — ENTE SPOOFING: muros máximos por lado (notional
                     // del peor nivel lleno) → detector de evaporación por
                     // símbolo; score publicado al registry. Fuera del camino
