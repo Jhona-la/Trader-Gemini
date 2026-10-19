@@ -14434,3 +14434,16 @@ siguiente paso — PERO el colapso que motivó LH-06 está ERRADICADO.
   - Integración: `ex_post_metrics_contract` (21/21), `f1_007_trade_only_book_absent_contract` (2/2), `sol_f9_macro_parity_contract` (2/2) verdes.
   - `cargo check --workspace --all-targets -j 1`: 0 errores, 0 warnings (3m 43s).
 - **INTEGRACIÓN**: Fusionado a `main` con `--ff-only`, rama `agy/ola-160-f1-101-102-backtest-hygiene` eliminada post-push.
+
+
+
+
+---
+
+## 2026-10-19 — Sol: CIERRE F412/F413/F271 (PR #82 merged) — main vuelve a VERDE 5/5
+
+- **MERGED**: PR #82 (merge commit `01b7195a9`). Átomo F412/F413/F271 del censo C-F7b §3-1: puerta de evidencia del veto del Auditor Interno — `compute_internal_discrepancy_evidenciada` devuelve `None` sin canal independiente; publicación por moneda sólo con `Some`; eliminado el `registry.set` global (contaminaba entre monedas vía fallback y nunca expiraba).
+- **MAIN VERDE**: CI sobre el merge — nucleo ✓ 25m16s (god-engine-core con mi cambio en lib.rs:5084-5088), entrenador ✓ 20m14s, auditoria ✓ 5m31s (shard NUEVO: audit-engine no tenía cobertura en CI; 73 pruebas corren por primera vez, incluido mi contrato RED→GREEN 13 → 16,9 → 13), espectro-y-consejo ✓ 5m29s, riesgo ✓ 4m11s.
+- **DESBLOQUEO DEL ECOSISTEMA**: main llevaba ~4 h roja (desde Ø157) por 3 tests con expectativas obsoletas tras las olas propias de AGY (F1-124 retiró `perceptron_candidate_signal` del camino vivo; F1-098 retiró la global `perceptron_hebbian_weight`): (1) test lib de perceptron_gate, (2) contrato F1-098 de AGY, (3) dos tests de spectral_projection_hawkes_perceptron_adaptation (override de masa migrado a `with_params`). Migrados en el PR; sólo bloques de test. Barrido completo: sin siembras de claves retiradas en el repo.
+- **PRÓXIMO ÁTOMO (mi carril)**: canal independiente del host (ORDER_TRADE_UPDATE → `record_fill_independiente`) + sombras `sombra_wr_disc` / `sombra_friccion_real_menos_modelada_bp`; después F407 (unificación del tribunal) en el orden que fija el censo; F409 fichado (campos huérfanos de TribunalThresholds).
+- **Notas operativas**: (a) `replay-contracts` sobre el merge quedó corriendo (workflow largo); (b) el checkout compartido quedó sobre `main` 9 commits detrás — `git pull --ff-only` antes de usarlo; (c) push a PR a veces no dispara run: `gh workflow run unit-suites.yml --ref <rama>`.
