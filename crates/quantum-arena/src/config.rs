@@ -281,6 +281,7 @@ pub struct QuantumConfig {
     pub regime_w_adverse_tide: AtomicF64,
     pub regime_w_coherence_collapse: AtomicF64,
     pub regime_w_micro_anti: AtomicF64,
+    pub regime_cadence_regime_ms: AtomicF64,
     pub regime_min_margin_floor: AtomicF64,
 
     // --- Multifractal Multiescala y Microestructura Continua (Ola Ω128) ---
@@ -610,6 +611,7 @@ impl QuantumConfig {
             regime_w_adverse_tide: AtomicF64::new(0.30),
             regime_w_coherence_collapse: AtomicF64::new(0.20),
             regime_w_micro_anti: AtomicF64::new(0.15),
+            regime_cadence_regime_ms: AtomicF64::new(60_000.0),
             regime_min_margin_floor: AtomicF64::new(0.05),
             multifractal_w_micro: AtomicF64::new(0.40),
             multifractal_w_meso: AtomicF64::new(0.30),

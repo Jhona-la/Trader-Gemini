@@ -1852,6 +1852,7 @@ impl GodEngineCore {
         let reg_tide = self.arena.config.regime_w_adverse_tide.load(Ordering::Relaxed);
         let reg_col = self.arena.config.regime_w_coherence_collapse.load(Ordering::Relaxed);
         let reg_anti = self.arena.config.regime_w_micro_anti.load(Ordering::Relaxed);
+        let reg_cad = self.arena.config.regime_cadence_regime_ms.load(Ordering::Relaxed);
         let reg_floor = self.arena.config.regime_min_margin_floor.load(Ordering::Relaxed);
 
         self.regime_params = quantum_arena::spectral_regime::SpectralRegimeParams {
@@ -1859,6 +1860,7 @@ impl GodEngineCore {
             w_adverse_tide: reg_tide,
             w_coherence_collapse: reg_col,
             w_micro_anti: reg_anti,
+            cadence_regime_ms: if reg_cad.is_finite() && reg_cad > 0.0 { reg_cad } else { 60_000.0 },
             min_margin_floor: reg_floor,
             ..Default::default()
         };
@@ -1867,6 +1869,7 @@ impl GodEngineCore {
         self.arena.registry.set("regime_w_adverse_tide", reg_tide);
         self.arena.registry.set("regime_w_coherence_collapse", reg_col);
         self.arena.registry.set("regime_w_micro_anti", reg_anti);
+        self.arena.registry.set("regime_cadence_regime_ms", if reg_cad.is_finite() && reg_cad > 0.0 { reg_cad } else { 60_000.0 });
         self.arena.registry.set("regime_min_margin_floor", reg_floor);
 
         // OLA Ω128: Sincronización de Multifractal y Ráfagas Institucionales desde QuantumConfig

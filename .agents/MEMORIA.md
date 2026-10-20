@@ -8930,7 +8930,6 @@ Risk RED conserva cinco fallos localizados y dos helpers positivos ambiguos; GRE
 
 Hidden04 RED 16 real 2 PASS/14 FAIL y 101/101+12/8; coordinador liberado 16:07:05Z tras limpiar VCTIP propio. RED publicación 2 activo en el mismo preimage, sin resultado comunicado ni parche 04 instalado. Replay05 span 8+ledger 5 y Reporter06 privados 22 pendientes; luego revisión adicional tiny-z, suites/check/T1 auténtico y puertos autónomos desde main preservando CL135/F-A6/C-F5b/CL148/Ω151–153/NoReplay. LG5 HIGH01/02/MED06 y meta 100%/72h sin cerrar/demostrar. BASE maestro/censo y Quant reservas. Sólo documental; no mueve main local ocupado e21ce, su índice ni archivos.
 
-
 ## ROOT — reanudación de ceros y replay sobre main vigente — 2026-10-20
 
 Se preserva el CONTROL privado e2a2fb72/tree6ec292db y sus recibos; no es publicable por ancestría. Los cuatro pares privados Core07, Risk01, Kelly02 y Flow03 mantienen su evidencia histórica, sin integración ni PASS transferido a main. Hidden04 conserva GREEN 16 numérico real con driver/validator 0/0 y 12 invariantes + 8 guardas verdaderas, pero falta COORDINATOR_RECEIPT: el owner, hijo y VCTIP antiguos ya no aparecen, la sesión desapareció y el lock actual está ausente. Esto no acredita liberación natural ni cierre recuperado. El boot observado es del 13 Oct; no se atribuye un reinicio a esta interrupción. Core publicación GREEN 2 no se ejecutó; Hidden no eleva el total a 5/7. Los pendientes privados quedan INCOMPLETE.
@@ -8942,3 +8941,20 @@ El main cambió en dos días. ROOT continúa las correcciones con puertos autón
 La memoria física libre observada a las 11:27Z fue 0,415 GiB y el margen de commit 2,636 GiB, sin Cargo/rustc/VCTIP en ese corte. Se respeta la orden de trabajar con lo disponible: no se pide cerrar aplicaciones. F7 toma la entrega independiente de scripts y primera CI cloud autorizada; ROOT no compite por Cargo ni CI. Después, el candidato público requiere compilación workspace/all-targets, contratos y regresiones propios y backtest completo --lib --tests con al menos 110 PASS reales agregados y cero FAIL. Los dos tests genéticos T1 y la cobertura de genes son métricas distintas. CI no se presentará como las 12+8 guardas de Windows local.
 
 BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actual de 2053 rutas y delta 424 pendiente está preparado sobre 597de4af, aún no publicado; no se presenta como canon ya actualizado. No se abre otro censo ni se certifican archivos completos. SI mantiene revisión EV de sólo lectura sin tocar las siete rutas. El censo Git reciente es 12 locales/6 remotas/7 WT, sin ramas borrables; main local d7094c67 está cinco commits detrás del servidor 597de4af y sigue sin FF en este corte. Sólo se actualizará la fila ROOT; BASE y las otras filas se preservan. Ninguno de los siete puertos tiene una nueva ejecución Rust ni certificación de rentabilidad. La meta de 100% compuesto cada 72h sigue sin demostración. [Plan, límites y secuencia](../docs/audit/REANUDACION_CEROS_REPLAY_2026-10-20.md).
+
+---
+
+## AGY — Ola Ω178: Cierre F1-074 (Calibración física de dominant_drift y estabilización de crash_flux) — 2026-10-20
+- **Hallazgo F1-074 cerrado**:
+  - `dominant_drift` en `crates/quantum-arena/src/spectral_regime.rs`: Erradicada la extrapolación heurística "por hora" (`* 3_600_000.0 / eff_elapsed`) que amplificaba artificialmente las variaciones de $\ln\tau^*$ entre $\times 60$ y $\times 720$, saturando `accel_fast` a 0 ó 1 en micro-oscilaciones de $0.14\% - 1.7\%$ y provocando que el 35% de `crash_flux` (`w_accel_fast / \Sigma w`) oscilara erráticamente como una moneda al aire tick a tick, drenando espuriamente el ~33% del margen libre (`free_cap`).
+  - Deriva re-calibrada en unidades naturales de la malla espectral geométrica base 4 ($\ln 4 \approx 1.38629$ = un nodo completo de salto) normalizada por la cadencia macro de referencia (`cadence_regime_ms` = 60s, `CADENCIA_REGIMEN_MS`):
+    `drift_cadence = ((cur_ln - prev_ln) / LN_GRID_NODE) * (cadence_ms / eff_elapsed)`.
+  - Campo `cadence_regime_ms: f64` desacoplado dinámicamente en `SpectralRegimeParams` (con lectura en registro omnisciente `regime_cadence_regime_ms`) y expuesto como `regime_cadence_regime_ms: AtomicF64` en `QuantumConfig`.
+  - Sincronizado en `GodEngineCore::sync_navier_stokes_and_microstructure_params` (`crates/god-engine-core/src/lib.rs`).
+  - Contrato de certificación `crates/quantum-arena/tests/f1_074_spectral_drift_cadence_contract.rs` (5/5 tests PASSED):
+    1. `f1_074_contrato_1_deriva_gradual_en_ruido_realista`: a 10s..60s con salto de 5% ($\Delta\ln = -0.05$), `accel_fast` y su contribución a `crash_flux` no superan 0.05 a 30s ni 0.10 a 10s, erradicando el salto espurio del 35%.
+    2. `f1_074_contrato_2_salto_unitario_de_nodo_espectral`: salto de 1 nodo ($\Delta\ln = \pm \ln 4$) a 60s da exactamente $\text{drift} = \pm 1.0$, y 2 nodos se acotan limpiamente a $-1.0$.
+    3. `f1_074_contrato_3_regularizacion_c1_en_origen`: regularización continua Hermite cúbica $C^1$ en $\Delta t \le 5\text{s}$ con amortiguamiento a cero en 1ms.
+    4. `f1_074_contrato_4_estabilidad_crash_flux_monte_carlo`: 500 ticks estocásticos con jitter de $\pm 2\%$ resultan en 0 derivas saturadas y salto tick a tick de `crash_flux` $< 0.05$.
+    5. `f1_074_contrato_5_inmunidad_ieee754_y_parametros_desacoplados`: NaN, $\pm\infty$ y cadencias personalizadas (30s) verificadas sin pánicos.
+  - Verificaciones globales: `quantum-arena` lib 152/152 pass, `espectral_multiactivo_regime_adaptation_contract` 4/4 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).

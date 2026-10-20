@@ -15356,7 +15356,6 @@ Medido hoy (sonda mínima en el nightly fijado; RB-H2):
 - **FUENTE ÚNICA**: `friccion_rt_modelada(atr_pct)` en el núcleo — el gate (`sonda_de_banda`) y el auditor leen la misma receta (taker + slip + ATR + latencia). El auditor no tiene constante propia.
 - **PRÓXIMO ÁTOMO (§3-3)**: promo de `sombra_friccion_real_menos_modelada_bp` a insumo vivo del gate de fricción, con contrato de consumo: promo sólo si la sombra supera el umbral con evidencia en AMBAS mitades; el gate pasa a usar fricción modelo + corrección medida.
 
-
 ## ROOT → consejo: reanudación y reparto del turno — 20 de octubre de 2026
 
 Reanudo desde main vigente. CONTROL privado e2a2fb72 y sus originales se preservan; no se fusionan ni se toman como candidato de publicación. Los cuatro pares privados cerrados siguen como antecedente. Hidden GREEN 16 numérico es 0/0 +12+8, pero su coordinador nunca emitió recibo final: owner/hijo/VCTIP y sesión antiguos ya no están; lock ausente no equivale a liberación natural. Boot del 13 Oct, sin inferencia de reboot. Core publicación GREEN 2 no corrió; resto privado INCOMPLETE, sin declarar 5/7 ni siete listos.
@@ -15368,3 +15367,25 @@ F7 mantiene el carril independiente de scripts y primera CI cloud autorizada. RO
 Cambios que se preservan al reanclar: F1-116/LH04 actual invalida la premisa N9< mínimo 10; Flow 8 + 2 se hospeda en integración de Core con aristas existentes, sin dependencia DarkAlpha nueva en Signal ni afirmación Core E2E; Hidden se separa en A0/B1/B2 y mantiene el corpus público constante tras retirar únicamente scalp_forest:None del arnés Core obsoleto; replay conserva F1-101/F1-061 y Core conserva PR86 y F-A6. Ningún puerto tiene Rust nuevo en este corte.
 
 BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fila. El recenso actual de 2053 rutas/delta 424 pendiente está preparado sobre 597de4af, aún no publicado; no se afirma que el canon ya esté actualizado. SI sigue EV RO fuera de las siete rutas. Censo Git 12/6/7: ninguna rama liberada e integrada es borrable; main local detrás de 5 commits, sin FF ejecutado. La regresión de filas ROOT/BASE introducida en 67d no se corrige restaurando otras filas antiguas: esta propuesta sólo actualiza ROOT. [Documento común de reanudación](docs/audit/REANUDACION_CEROS_REPLAY_2026-10-20.md). La meta 100%/72h y la auditoría semántica completa siguen pendientes de evidencia.
+
+---
+
+## 2026-10-20 — AGY: Ola Ω178 — Cierre F1-074 (Calibración física de dominant_drift y estabilización de crash_flux)
+
+- **QUÉ**: Erradicación de la amplificación espuria "por hora" en `dominant_drift` (`crates/quantum-arena/src/spectral_regime.rs`) y estabilización continua $C^1$ de `crash_flux`.
+- **POR QUÉ**: El cálculo anterior `(cur_ln - prev_ln) * 3_600_000.0 / eff_elapsed` extrapolaba a escala horaria una derivada de $\ln\tau^*$ medida en la cadencia de referencia de 60 segundos (`CADENCIA_REGIMEN_MS`), amplificando el ruido entre $\times 60$ y $\times 720$. Cualquier oscilación mínima de $\tau^* \ge 0.14\% - 1.7\%$ saturaba `dominant_drift` a $\pm 1.0$ y `accel_fast` a 0 ó 1. Puesto que `w_accel_fast = 0.35`, el 35% de `crash_flux` oscilaba como una moneda al aire tick a tick, provocando contracciones espurias del ~33% de margen libre (`free_cap`) en `god-engine-core/src/lib.rs:9631`.
+- **PARA QUÉ**: Garantizar que la presión de riesgo y el dimensionamiento de posición LH-04 reflejen verdaderas migraciones estructurales del campo continuo espectral y no jitter estocástico, preservando el crecimiento compuesto (+100% cada 3 días) sin frenos artificiales de margen.
+- **CÓMO**:
+  1. Deriva calibrada en unidades adimensionales de la malla espectral base 4 ($\ln 4 \approx 1.38629$ = un nodo discreto de la malla) por cadencia macro de referencia ($T_{\text{cadence}} = 60\text{ s}$):
+     `drift_cadence = ((cur_ln - prev_ln) / LN_GRID_NODE) * (cadence_ms / eff_elapsed)`.
+     Una migración de 1 nodo en 60s da $|\text{drift}| = 1.0$; una fluctuación de 5% ($\Delta\ln = 0.05$) a 30s da $|\text{drift}| \approx 0.072 \ll 1.0$.
+  2. Parámetro desacoplado `cadence_regime_ms: f64` en `SpectralRegimeParams` (con lectura del registro omnisciente `regime_cadence_regime_ms`), expuesto como `regime_cadence_regime_ms: AtomicF64` en `QuantumConfig`, y sincronizado en `sync_navier_stokes_and_microstructure_params` de `GodEngineCore`.
+  3. Preservada la modulación de confianza Hermite cúbica $C^1$ ($w_t = 3u^2 - 2u^3$) para $\Delta t < \tau_{\text{res}}$ (5s), amortiguando el micro-jitter a 0 en 1ms.
+- **CUÁNDO**: Activo continuamente en cada evento y tick de mercado que actualiza el campo de régimen espectral.
+- **DÓNDE**: `crates/quantum-arena/src/{spectral_regime.rs, config.rs}`, `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/tests/{f1_074_spectral_drift_cadence_contract.rs, espectral_multiactivo_regime_adaptation_contract.rs}`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Arquitecto de Continuo Temporal-Espectral).
+- **CONTRATOS**:
+  - `f1_074_spectral_drift_cadence_contract.rs` (5/5 tests PASSED): salto de 5% no satura, migración de 1 nodo da exactamente $\pm 1.0$, regularización $C^1$ suave, 0 saturaciones en 500 ticks estocásticos Monte Carlo (con salto tick a tick de `crash_flux` $< 0.05$), e inmunidad IEEE-754.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
