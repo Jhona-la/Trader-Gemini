@@ -163,6 +163,8 @@ fn f1_075_contrato_4_estabilidad_continua_sin_saltos_discretos_en_ruido() {
     spec.scales[19].persistence = 0.4;
     spec.scales[19].ewma_dev_vol = 0.01;
 
+    spec.refresh_fusion();
+
     let mut prev_tau = spec.tau_operativa_unificada();
     let mut rng_state = 0x1234_5678_u64;
 

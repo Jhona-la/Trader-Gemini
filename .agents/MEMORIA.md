@@ -9055,3 +9055,31 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     4. `f1_079_nan_inf_immunity`: inmunidad a envenenamiento por NaN / $\pm\infty$.
     5. `f1_079_zero_hardcoded_floor_in_micro_volatility`: verificación de adaptabilidad por debajo de 0.02 en baja volatilidad.
   - Verificaciones globales: `quantum-arena` lib 152/152 pass, `cf2_evalues_cuantiles_solucion_conocida.rs` 5/5 pass (1 open de IC), `quantile_numeric_contract.rs` 9/9 pass, `rb_p1_trinquete_panicos_contract.rs` 5/5 pass (0 pánicos agregados), `stateful_transition_contract.rs` 25/25 pass, `cargo check --workspace --all-targets` 100% verde (0 errores, 0 warnings).
+
+---
+
+## AGY — Ola Ω184: Cierre F1-080 / F3.2-06 (Ganancia Epigenética Espectral: Gradiente Exponenciado Simétrico, Conservación de EV, Homeostasis por Escala y Corrección CI F1-075) — 2026-10-20
+- **Hallazgos cerrados**:
+  - `F1-080` (MED): `apply_epigenetic_outcome` y `homeo_decay` en `crates/quantum-arena/src/temporal_spectrum.rs`.
+  - `F3.2-06` (Línea C): protección contra aprendizaje espectral de posiciones adoptadas o sin horizonte de decisión (`entry_tau_ms == 0`) en `crates/god-engine-core/src/lib.rs`.
+  - Corrección de fixture en `crates/quantum-arena/tests/f1_075_tau_unificada_ville_gating_contract.rs` (restaura CI GitHub Actions a 100% verde).
+- **Detalle de la solución**:
+  - **Gradiente Exponenciado Multiplicativo Simétrico**:
+    - Sustituida la asimetría arbitraria de literales (+0.06 boost si win vs -0.10 penalty si loss, ratio 1.67x) que forzaba un equilibrio espurio del 62.5% de Win Rate para no colapsar la ganancia al suelo 0.20, penalizando injustamente a estrategias rentables de alto beneficio/riesgo ($RR \ge 2.25$, WR 35%-50%).
+    - Fórmula implementada: $\Delta \ln g = \eta \cdot k_i \cdot \text{clamp}(pnl\_pct / 0.0100, -3.0, 3.0)$ con $\eta = 0.040$.
+    - Actualización: $g_{new} = \text{clamp}(g_{old} \cdot \exp(\Delta \ln g), 0.20, 3.00)$.
+    - Propiedad de martingala exacta: ante secuencias simétricas (+x, -x), la ganancia preserva el valor original sin deriva descendente espuria.
+    - Alineación matemática con el Valor Esperado (EV): si $\mathbb{E}[R] > 0$, la ganancia espectral se amplifica independientemente del Win Rate.
+  - **Núcleo de Hilbert Diádico**: $\sigma = \ln(4) \approx 1.386294$, acoplado al espaciado logarítmico exacto entre nodos de escala.
+  - **Homeostasis Espectral Adaptativa**: $\tau_{\text{homeo}, i} = \max(16 \cdot \tau_i, 1\ 800\ 000.0\text{ ms})$ con `PERSISTENCIA_BLOQUES = 16.0`. Erradica la amnesia espuria de escalas macro (4 horas) que antes se borraban a los 30 min sin concluir un trade, preservando la memoria temporal armónica de cada escala.
+  - **Blindaje en Cierre de Posiciones (`GodEngineCore`)**: `spec.apply_epigenetic_outcome` se condiciona estrictamente a `tau_de_la_posicion > 0`. Des-ignorado y verificado exitosamente `cf3_posicion_sin_tau_de_decision_no_entrena_el_espectro` en `crates/god-engine-core/tests/cf3_tau_aprendizaje.rs`.
+  - **Solución al CI Rojo de GitHub Actions**: Inserción de `spec.refresh_fusion()` en Contrato 4 de `f1_075_tau_unificada_ville_gating_contract.rs`, erradicando el salto inicial espurio y garantizando que el shard `espectro-y-consejo` pase 5/5.
+- **Contratos y Verificaciones**:
+  - `f1_080_epigenetic_gain_symmetry_contract.rs` (5/5 pass).
+  - `cf3_tau_aprendizaje.rs` (1/1 pass, 1 open de Kelly LC-F1-36).
+  - `f1_075_tau_unificada_ville_gating_contract.rs` (5/5 pass).
+  - `f1_076_spectral_weights_cache_contract.rs` (5/5 pass).
+  - `f1_077_spectral_coherence_unification_contract.rs` (5/5 pass).
+  - `rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 pánicos agregados).
+  - `temporal_spectrum.rs` unit tests (42/42 pass).
+  - `cargo check --workspace --all-targets -j 1` 100% verde (16/16 crates).

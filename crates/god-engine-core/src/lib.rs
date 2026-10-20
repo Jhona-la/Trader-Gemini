@@ -5177,15 +5177,19 @@ impl GodEngineCore {
 
                     // 2. Adaptacion continua tensorial de las 32 escalas espectrales en el espacio de Hilbert:
                     if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
-                        spec.apply_epigenetic_outcome(tau_trade_ms, is_win, pnl_pct);
-                        // MG05: el feedback recalcula la dominante; retirar
-                        // el IC anterior antes de una posible nueva admisión.
-                        evidence_publication::publicar_coherencia(
-                            &self.arena.registry,
-                            &self.espectral_ma,
-                            coin_id,
-                            spec.dominant_tau_ms,
-                        );
+                        // F3.2-06 / F1-080: Solo aprender si la posición nació con un horizonte de decisión válido.
+                        // Posiciones adoptadas sin tau o con entry_tau_ms = 0 no contaminan la ganancia de escalas.
+                        if tau_de_la_posicion > 0 {
+                            spec.apply_epigenetic_outcome(tau_trade_ms, is_win, pnl_pct);
+                            // MG05: el feedback recalcula la dominante; retirar
+                            // el IC anterior antes de una posible nueva admisión.
+                            evidence_publication::publicar_coherencia(
+                                &self.arena.registry,
+                                &self.espectral_ma,
+                                coin_id,
+                                spec.dominant_tau_ms,
+                            );
+                        }
                     }
 
                     // 3. Grade only opinions frozen at this position's opening.

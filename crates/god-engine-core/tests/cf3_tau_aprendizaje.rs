@@ -1,4 +1,4 @@
-﻿//! C-F3 · F3.2 (Línea C): la τ con la que aprende el cierre.
+//! C-F3 · F3.2 (Línea C): la τ con la que aprende el cierre.
 //!
 //! Teoría que se prueba:
 //! - El Kelly que el riesgo lee para la orden SIGUIENTE es un escalar por
@@ -173,7 +173,6 @@ fn cf3_kelly_de_la_moneda_no_depende_de_la_tau_de_la_operacion_cerrada() {
 /// `epigenetic_gain` del espectro (igualdad exacta). Precondición: el cierre
 /// aprende (trade_count = 1).
 #[test]
-#[ignore = "OPEN F3.2-06 (Línea C, camino de cierre): con entry_tau_ms = 0, tau_trade_ms cae al nodo crudo dominant_tau_ms o al gen temporal_scale y apply_epigenetic_outcome castiga las escalas de alrededor sin evidencia de apertura"]
 fn cf3_posicion_sin_tau_de_decision_no_entrena_el_espectro() {
     let _g = ENVIRONMENT.lock().unwrap_or_else(|p| p.into_inner());
     let _d = FixtureDirectory::new();

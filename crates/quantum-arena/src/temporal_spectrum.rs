@@ -542,12 +542,15 @@ impl TemporalSpectrum {
         let elapsed = (ts_ms - self.first_ts_ms) as f64;
         self.updates += 1;
 
-        // Relajación homeostática continua de las 32 escalas epigenéticas hacia 1.0 (tau_homeo = 30 min):
-        // Erradica la histeresis no-ergódica donde ganancias infladas o penalizadas se petrificaban sin disipación.
-        let homeo_decay = (-dt / 1_800_000.0).exp();
+        // F1-080: Relajación homeostática adaptativa continua de las 32 escalas epigenéticas hacia 1.0.
+        // La escala temporal de disipación es proporcional al horizonte físico tau de cada escala
+        // (tau_homeo = max(16 * tau, 30 min)), erradicando tanto la petrificación de escalas rápidas
+        // como la amnesia espuria de escalas lentas (que antes se disipaban a los 30 min sin completar un trade).
         let ln_p = price.ln();
 
         for s in self.scales.iter_mut() {
+            let tau_homeo_ms = (PERSISTENCIA_BLOQUES * s.tau_ms).max(1_800_000.0);
+            let homeo_decay = (-dt / tau_homeo_ms).exp();
             s.epigenetic_gain = 1.0 + (s.epigenetic_gain - 1.0) * homeo_decay;
             // CL-30: persistencia sobre bloques no solapados de duración ≥ τ.
             // La versión previa comparaba el signo de dos desviaciones
@@ -899,26 +902,35 @@ impl TemporalSpectrum {
     /// Modula continuamente la ganancia informacional (`epigenetic_gain`) de las 32 escalas
     /// basándose en los resultados reales de trading en la longitud de onda `tau_trade_ms`.
     ///
-    /// - Escalas en resonancia con un trade exitoso reciben amplificación epigenética.
-    /// - Escalas en resonancia con un trade perdedor son amortiguadas defensivamente.
-    pub fn apply_epigenetic_outcome(&mut self, tau_trade_ms: f64, is_win: bool, pnl_pct: f64) {
+    /// F1-080: Actualización por gradiente multiplicativo / exponenciado simétrico y conservador de EV.
+    /// Erradica el sesgo anti-hot-hand y la asimetría arbitraria (0.06 vs 0.10, equilibrio espurio 62.5% WR)
+    /// que castigaba a estrategias de alto beneficio/riesgo (RR >= 2.25) reduciendo su ganancia al suelo 0.20
+    /// aun siendo altamente rentables.
+    ///
+    /// El núcleo de resonancia espectral gaussiano tiene ancho sigma = ln(4), coincidente con el espaciado
+    /// inter-nodo de la malla diádica en el espacio de Hilbert.
+    pub fn apply_epigenetic_outcome(&mut self, tau_trade_ms: f64, _is_win: bool, pnl_pct: f64) {
         if !tau_trade_ms.is_finite() || tau_trade_ms <= 0.0 || !pnl_pct.is_finite() {
             return;
         }
         let ln_trade = tau_trade_ms.max(1e-6).ln();
+        let sigma = 4.0f64.ln(); // Espaciado inter-escala de la malla diádica de Hilbert
+        let two_sigma_sq = 2.0 * sigma * sigma;
+
+        // Normalización simétrica del retorno: escala de referencia 100 bps (0.0100), acotado a [-3.0, 3.0]
+        let r_norm = (pnl_pct / 0.0100).clamp(-3.0, 3.0);
+        // Tasa de aprendizaje adaptativa acotada para estabilidad espectral (eta = 0.04)
+        let eta = 0.040;
+
         for s in self.scales.iter_mut() {
             let ln_scale = s.tau_ms.max(1e-6).ln();
-            let delta_ln = (ln_scale - ln_trade).abs();
-            // Núcleo de resonancia espectral gaussiano con ancho sigma = 0.8
-            let kernel = (-0.5 * (delta_ln / 0.8).powi(2)).exp();
-            if kernel > 0.05 {
-                if is_win {
-                    let boost = 0.06 * kernel * (1.0 + (pnl_pct.max(0.0) * 20.0).min(2.0));
-                    s.epigenetic_gain = (s.epigenetic_gain + boost).clamp(0.20, 3.00);
-                } else {
-                    let penalty = 0.10 * kernel * (1.0 + ((-pnl_pct).max(0.0) * 15.0).min(2.0));
-                    s.epigenetic_gain = (s.epigenetic_gain - penalty).clamp(0.20, 3.00);
-                }
+            let delta_ln = ln_scale - ln_trade;
+            let kernel = (-delta_ln * delta_ln / two_sigma_sq).exp();
+            if kernel > 0.01 {
+                // Gradiente exponenciado simétrico: g_new = g_old * exp(eta * kernel * r_norm)
+                // Preserva martingala exacta: retorno +x seguido de -x devuelve g exactamente a su valor previo.
+                let delta_ln_gain = eta * kernel * r_norm;
+                s.epigenetic_gain = (s.epigenetic_gain * delta_ln_gain.exp()).clamp(0.20, 3.00);
             }
         }
         self.refresh_fusion();
