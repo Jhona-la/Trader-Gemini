@@ -25,6 +25,14 @@ fn nucleo_con_precio() -> GodEngineCore {
     let mut core = GodEngineCore::new(arena);
     core.arena.coins[0].current_price.store(100.0, Ordering::Relaxed);
     core.arena.coins[0].current_atr.store(0.5, Ordering::Relaxed);
+    // Geometría SANA: sin Hurst ni pronóstico de sigma el TP/SL degenera y
+    // p* deja de ser sensible a la fricción (verificado en CI: p* cambiaba
+    // 1 ULP). Con hurst 0,5 y sigma 0,5 % el probe tiene escala real y la
+    // fricción entra en p* como debe.
+    core.arena.coins[0].hurst_exponent.store(0.5, Ordering::Relaxed);
+    for ancla in core.arena.coins[0].sigma_forecast.iter() {
+        ancla.store(0.005, Ordering::Relaxed);
+    }
     core
 }
 
