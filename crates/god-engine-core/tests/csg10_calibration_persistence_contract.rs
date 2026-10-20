@@ -306,3 +306,150 @@ fn csg10_evicted_maximum_clock_survives_disk_roundtrip() {
     assert_eq!(global_timestamps(&state), vec![late; WINDOW]);
     assert_disk_roundtrip(&live, maximum);
 }
+
+// Legacy snapshots are constructed explicitly. Feeding a future runtime event
+// across a >365-day gap would legitimately trigger CSG-10's ingestion policy
+// and would not represent the historical state being migrated here.
+fn legacy_snapshot(rows: &[(f64, bool, u64)]) -> EstadoAprendido {
+    let empty = core();
+    let mut state = empty.estado_aprendido();
+    let btc = state.monedas.iter_mut().find(|row| row.simbolo == "BTCUSDT").unwrap();
+    btc.calibrador = rows.iter().copied().collect();
+    btc.calibrador_reloj_ms = None;
+    state.calibrador_global = rows.iter().copied().collect();
+    state.calibrador_global_reloj_ms = None;
+    state
+}
+
+fn restore_legacy_from_disk(state: &EstadoAprendido) -> GodEngineCore {
+    estado_aprendido::validar(state).expect("legacy fixture must enter through the real loader");
+    let directory = StateDir::new();
+    let path = directory.file();
+    estado_aprendido::guardar(&path, state).expect("write explicit legacy fixture");
+    let original_bytes = std::fs::read(&path).unwrap();
+    let loaded = match estado_aprendido::cargar(&path) {
+        Carga::Leido(state) => state,
+        other => panic!("load explicit legacy fixture: {other:?}"),
+    };
+    assert_eq!(loaded.calibrador_global, state.calibrador_global);
+    assert_eq!(loaded.calibrador_global_reloj_ms, None);
+    assert_eq!(coin(&loaded, "BTCUSDT").calibrador, coin(state, "BTCUSDT").calibrador);
+    assert_eq!(coin(&loaded, "BTCUSDT").calibrador_reloj_ms, None);
+    let mut restored = core();
+    assert_eq!(restored.restaurar_estado_aprendido(&loaded), 2);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        original_bytes,
+        "migration must not silently overwrite its legacy source file"
+    );
+    // The caller saves the migrated result through assert_disk_roundtrip,
+    // which allocates a distinct directory and file from the legacy fixture.
+    restored
+}
+
+#[test]
+fn csg10_legacy_without_clock_infers_maximum_before_replay() {
+    let _guard = symbol_guard();
+    let maximum = 1_700_000_000_000_u64;
+    let late = maximum - MAX_CLOCK_JUMP_MS - 1;
+    let legacy = legacy_snapshot(&[(0.8, false, late), (0.8, true, maximum)]);
+    let restored = restore_legacy_from_disk(&legacy);
+    assert_eq!(
+        restored.calibrator_by_coin[0].evidence_clock_ms(),
+        Some(maximum),
+        "legacy maximum must be inferred before replay across the annual jump"
+    );
+    assert_eq!(restored.confidence_calibrator.evidence_clock_ms(), Some(maximum));
+    assert_eq!(restored.calibrator_by_coin[0].observations(), 2);
+    assert_eq!(restored.confidence_calibrator.observations(), 2);
+    let migrated = restored.estado_aprendido();
+    assert_eq!(timestamps(&migrated, "BTCUSDT"), vec![late, maximum]);
+    assert_eq!(global_timestamps(&migrated), vec![late, maximum]);
+    assert_eq!(coin(&migrated, "BTCUSDT").calibrador, coin(&legacy, "BTCUSDT").calibrador);
+
+    // The reverse arrival order is legitimate runtime ingestion. It carries
+    // the same dated likelihood without submitting a forbidden future jump.
+    let mut reference = core();
+    reference.alimentar_calibradores(0, 0.8, true, maximum);
+    reference.alimentar_calibradores(0, 0.8, false, late);
+    assert_same_calibrator(
+        &reference.calibrator_by_coin[0],
+        &restored.calibrator_by_coin[0],
+        maximum,
+    );
+    assert_same_calibrator(
+        &reference.confidence_calibrator,
+        &restored.confidence_calibrator,
+        maximum,
+    );
+    assert_disk_roundtrip(&restored, maximum);
+}
+
+#[test]
+fn csg10_legacy_without_clock_discards_only_corrupt_dates() {
+    let _guard = symbol_guard();
+    let corrupt = 1_700_000_000_000_000_u64;
+    assert!(corrupt > MAX_PLAUSIBLE_EPOCH_MS);
+    let legacy = legacy_snapshot(&[(0.8, false, corrupt)]);
+    let restored = restore_legacy_from_disk(&legacy);
+    assert_eq!(
+        restored.calibrator_by_coin[0].observations(),
+        0,
+        "legacy impossible date must not become undated learned evidence"
+    );
+    assert_eq!(restored.confidence_calibrator.observations(), 0);
+    for calibrator in [&restored.calibrator_by_coin[0], &restored.confidence_calibrator] {
+        assert_eq!(calibrator.evidence_clock_ms(), None);
+        assert_eq!(calibrator.coefficients(), (1.0, 0.0));
+    }
+    let migrated = restored.estado_aprendido();
+    assert!(coin(&migrated, "BTCUSDT").calibrador.is_empty());
+    assert!(migrated.calibrador_global.is_empty());
+    assert_eq!(coin(&migrated, "BTCUSDT").calibrador_reloj_ms, None);
+    assert_eq!(migrated.calibrador_global_reloj_ms, None);
+    let reference = core();
+    assert_same_calibrator(
+        &reference.calibrator_by_coin[0],
+        &restored.calibrator_by_coin[0],
+        T,
+    );
+    assert_same_calibrator(&reference.confidence_calibrator, &restored.confidence_calibrator, T);
+    assert_disk_roundtrip(&restored, T);
+}
+
+#[test]
+fn csg10_legacy_without_clock_keeps_valid_row_and_discards_corrupt_row() {
+    let _guard = symbol_guard();
+    let maximum = 1_700_000_000_000_u64;
+    let corrupt = maximum * 1000;
+    let legacy = legacy_snapshot(&[(0.8, true, maximum), (0.8, false, corrupt)]);
+    let restored = restore_legacy_from_disk(&legacy);
+    assert_eq!(
+        restored.calibrator_by_coin[0].observations(),
+        1,
+        "an existing anchor must not rehabilitate an impossible legacy date"
+    );
+    assert_eq!(restored.confidence_calibrator.observations(), 1);
+    assert_eq!(restored.calibrator_by_coin[0].evidence_clock_ms(), Some(maximum));
+    assert_eq!(restored.confidence_calibrator.evidence_clock_ms(), Some(maximum));
+    let migrated = restored.estado_aprendido();
+    assert_eq!(timestamps(&migrated, "BTCUSDT"), vec![maximum]);
+    assert_eq!(global_timestamps(&migrated), vec![maximum]);
+    assert_eq!(
+        coin(&migrated, "BTCUSDT").calibrador.iter().copied().collect::<Vec<_>>(),
+        vec![(0.8, true, maximum)]
+    );
+    let mut reference = core();
+    reference.alimentar_calibradores(0, 0.8, true, maximum);
+    assert_same_calibrator(
+        &reference.calibrator_by_coin[0],
+        &restored.calibrator_by_coin[0],
+        maximum,
+    );
+    assert_same_calibrator(
+        &reference.confidence_calibrator,
+        &restored.confidence_calibrator,
+        maximum,
+    );
+    assert_disk_roundtrip(&restored, maximum);
+}

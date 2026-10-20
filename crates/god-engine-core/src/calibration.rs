@@ -92,7 +92,10 @@ pub const MAX_CLOCK_JUMP_MS: u64 = 365 * 86_400_000;
 const MIN_REAL_EPOCH_ANCHOR_MS: u64 = 946_684_800_000;
 
 #[inline]
-fn plausible_evidence_timestamp_ms(candidate_ms: u64, current_clock_ms: Option<u64>) -> bool {
+pub(crate) fn plausible_evidence_timestamp_ms(
+    candidate_ms: u64,
+    current_clock_ms: Option<u64>,
+) -> bool {
     if candidate_ms > MAX_PLAUSIBLE_EPOCH_MS {
         return false;
     }

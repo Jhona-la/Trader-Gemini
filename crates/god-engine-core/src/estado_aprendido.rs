@@ -53,7 +53,7 @@
 //! Tampoco cambia el ML-GATE: una moneda sin `_MOTOR` sigue necesitando un
 //! modelo después de su primera sonda.
 
-use crate::calibration::{PlattCalibrator, WINDOW};
+use crate::calibration::{plausible_evidence_timestamp_ms, PlattCalibrator, WINDOW};
 use crate::GodEngineCore;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -187,6 +187,39 @@ fn alimentar_calibrador(
     calibrador.update_at(score, won, timestamp_ms);
     if let Some(registro) = registro {
         anotar(registro, (score, won, timestamp_ms));
+    }
+}
+
+fn observacion_restaurable(obs: &Observacion) -> bool {
+    puntuacion_valida(obs.0) && plausible_evidence_timestamp_ms(obs.2, None)
+}
+
+/// Una fila histórica no es un evento futuro nuevo. Sin un reloj guardado
+/// utilizable se infiere el máximo retenido, antes de reproducir las filas.
+/// Una fecha imposible ya persistida se descarta: no se puede reconstruir
+/// retrospectivamente su fecha efectiva ni imputarla a otra observación.
+fn restaurar_calibrador(
+    calibrador: &mut PlattCalibrator,
+    registro: &mut VecDeque<Observacion>,
+    observaciones: &VecDeque<Observacion>,
+    reloj_guardado_ms: Option<u64>,
+) {
+    *calibrador = PlattCalibrator::new();
+    registro.clear();
+    let reloj = reloj_guardado_ms
+        .filter(|&t| plausible_evidence_timestamp_ms(t, None))
+        .or_else(|| {
+            observaciones
+                .iter()
+                .filter(|obs| observacion_restaurable(obs))
+                .map(|obs| obs.2)
+                .max()
+        });
+    if let Some(reloj) = reloj {
+        calibrador.restore_evidence_clock_ms(reloj);
+    }
+    for &obs in observaciones.iter().filter(|obs| observacion_restaurable(obs)) {
+        alimentar_calibrador(calibrador, Some(&mut *registro), obs);
     }
 }
 
@@ -422,18 +455,12 @@ impl GodEngineCore {
                 );
             }
             if let Some(c) = self.calibrator_by_coin.get_mut(coin_id) {
-                *c = PlattCalibrator::new();
-                let r = &mut self.registro_calibrador[coin_id];
-                r.clear();
-                // El máximo guardado puede haber salido de la ventana. Se
-                // restaura antes de sus filas tardías: no es un salto nuevo
-                // hacia el futuro desde la primera fila retenida (LH-12).
-                if let Some(clock) = g.calibrador_reloj_ms {
-                    c.restore_evidence_clock_ms(clock);
-                }
-                for &(score, won, ts) in g.calibrador.iter().filter(|o| puntuacion_valida(o.0)) {
-                    alimentar_calibrador(c, Some(&mut *r), (score, won, ts));
-                }
+                restaurar_calibrador(
+                    c,
+                    &mut self.registro_calibrador[coin_id],
+                    &g.calibrador,
+                    g.calibrador_reloj_ms,
+                );
             }
             if let Some(guardado_conf) = &g.conformal {
                 if let Some(conf) = self.conformal_by_coin.get_mut(coin_id) {
@@ -442,18 +469,12 @@ impl GodEngineCore {
             }
             restauradas += 1;
         }
-        self.confidence_calibrator = PlattCalibrator::new();
-        self.registro_calibrador_global.clear();
-        if let Some(clock) = e.calibrador_global_reloj_ms {
-            self.confidence_calibrator.restore_evidence_clock_ms(clock);
-        }
-        for &(score, won, ts) in e.calibrador_global.iter().filter(|o| puntuacion_valida(o.0)) {
-            alimentar_calibrador(
-                &mut self.confidence_calibrator,
-                Some(&mut self.registro_calibrador_global),
-                (score, won, ts),
-            );
-        }
+        restaurar_calibrador(
+            &mut self.confidence_calibrator,
+            &mut self.registro_calibrador_global,
+            &e.calibrador_global,
+            e.calibrador_global_reloj_ms,
+        );
         if let Some(guardado_conf) = &e.conformal_global {
             self.conformal.restaurar(guardado_conf);
         }

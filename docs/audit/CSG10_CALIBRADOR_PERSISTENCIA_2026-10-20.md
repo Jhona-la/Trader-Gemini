@@ -31,6 +31,14 @@ de una fila tardía; recuperarlo no equivale a recibir un evento futuro nuevo.
 Las guardas públicas contra fechas corruptas permanecen activas. La reproducción
 usa la misma función de ingesta que el productor.
 
+Para snapshots legacy sin reloj guardado utilizable, se infiere primero el
+máximo de las fechas retenidas válidas. Sus diferencias de más de 365 días no
+se interpretan como eventos futuros recién recibidos. Las filas ya persistidas
+con fechas inverosímiles se omiten del modelo y del registro durante la
+restauración: su fecha efectiva original no se puede reconstruir. Esta migración
+no imputa esas filas a la fecha de otra operación. El productor en ejecución
+conserva su política de anclar una fecha corrupta al último reloj válido.
+
 ## Verificación y límites
 
 El candidato añade contratos sobre el Core real, snapshot, `validar`, escritura,
