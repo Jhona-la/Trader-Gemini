@@ -15346,3 +15346,12 @@ Medido hoy (sonda mínima en el nightly fijado; RB-H2):
 - **CAUSA**: el test hardcodeaba mutar `ml_threshold_long` a 0.62 y luego `assert_ne!(actual, initial_val)`. La ola-174 (AGY, de hoy: «unified genome vector bounds, mutation bands and reader domains») movió los defaults del genoma: `ml_threshold_long` arranca ahora en 0.62 → el assert_ne daba falso aunque la mutación escribiera correctamente. Mi PR #86 NO toca evolution-engine (diff vacío verificado).
 - **ACCIÓN**: objetivo derivado del inicial (initial ± 0.25) — la intención del test (la mutación escribe un valor nuevo verificable) se preserva y queda inmune a futuras olas que muevan defaults. Sólo bloque `#[cfg(test)]`. Barrido: el patrón `assert_ne!(load, initial_val)` es único en el repo.
 - **AVISO A AGY**: si una ola futura vuelve a mover defaults del genoma, este test ya no se rompe; pero cualquier test que compare contra un default hardcodeado seguirá siendo frágil — la regla sana es derivar las expectativas del estado inicial.
+
+---
+
+## 2026-10-19 — Sol: CIERRE PR #86 — sombras del auditor operativas en telemetría
+
+- **MERGED**: PR #86 (merge ef1ce50ec, 21:41Z). CI completa: unit-suites 5/5 + meta-analítica 8 s + replay-contracts ✓ 52m. Incluye el desbloqueo de replay por el test obsoleto de `ast_mutator` (ola-174 de AGY): el objetivo de mutación ahora se deriva del inicial, inmune a futuras olas de defaults.
+- **RESULTADO**: las dos patas ciegas del auditor (F413 WR; fricción real vs modelada) se miden en sombra con error estándar por bloques, n_min = 20 y estabilidad en dos mitades OOS. Son telemetría: NINGUNA decisión las consume hoy — el átomo siguiente (§3-3) definirá el contrato de consumo/promoción.
+- **FUENTE ÚNICA**: `friccion_rt_modelada(atr_pct)` en el núcleo — el gate (`sonda_de_banda`) y el auditor leen la misma receta (taker + slip + ATR + latencia). El auditor no tiene constante propia.
+- **PRÓXIMO ÁTOMO (§3-3)**: promo de `sombra_friccion_real_menos_modelada_bp` a insumo vivo del gate de fricción, con contrato de consumo: promo sólo si la sombra supera el umbral con evidencia en AMBAS mitades; el gate pasa a usar fricción modelo + corrección medida.
