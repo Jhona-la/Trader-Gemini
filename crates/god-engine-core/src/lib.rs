@@ -2809,7 +2809,10 @@ impl GodEngineCore {
                 }
                 if coin_id < self.arena.coins.len() {
                     let field = spec.spectral_field(true);
-                    self.arena.coins[coin_id].spectral_coherence.store(field.global_coherence, Ordering::Relaxed);
+                    // F1-077: Publicación canónica de coherencia espectral D-742 ("una sola verdad").
+                    // Erradica discrepancia entre decisión de entrada (D-742, 1/vol) y riesgo/marea de arena (legacy).
+                    let coh_d742 = spec.spectral_coherence(true);
+                    self.arena.coins[coin_id].spectral_coherence.store(coh_d742, Ordering::Relaxed);
                     self.arena.coins[coin_id].spectral_entropy.store(field.spectral_entropy, Ordering::Relaxed);
                     self.arena.coins[coin_id].spectral_resonant_tau.store(field.resonant_tau_ms, Ordering::Relaxed);
                     // (Ola XLI·B1/C2/C3) Publicación del CAMPO DE RÉGIMEN
@@ -4037,7 +4040,10 @@ impl GodEngineCore {
                     );
                     if coin_id < self.arena.coins.len() {
                         let field = spec.spectral_field(true);
-                        self.arena.coins[coin_id].spectral_coherence.store(field.global_coherence, Ordering::Relaxed);
+                        // F1-077: Publicación canónica de coherencia espectral D-742 ("una sola verdad").
+                        // Erradica discrepancia entre decisión de entrada (D-742, 1/vol) y riesgo/marea de arena (legacy).
+                        let coh_d742 = spec.spectral_coherence(true);
+                        self.arena.coins[coin_id].spectral_coherence.store(coh_d742, Ordering::Relaxed);
                         self.arena.coins[coin_id].spectral_entropy.store(field.spectral_entropy, Ordering::Relaxed);
                         self.arena.coins[coin_id].spectral_resonant_tau.store(field.resonant_tau_ms, Ordering::Relaxed);
                         let (regimen_prev_ln, regimen_elapsed) = {
@@ -7256,15 +7262,16 @@ impl GodEngineCore {
                             self.rama_registro[coin_id][RAMA_ESPECTRO_DIRECTO as usize];
                         if let Some(spec) = self.temporal_spectrum.get(coin_id) {
                             let field_long = spec.spectral_field(true);
-                            let field_short = spec.spectral_field(false);
                             let fused = spec.fused_score;
                             let tau_star = field_long.resonant_tau_ms;
                             let expected_tau = (tau_star.clamp(500.0, 3_600_000.0)).round() as u64;
+                            let coh_long = spec.spectral_coherence(true);
+                            let coh_short = spec.spectral_coherence(false);
 
-                            // Señal Directa del Campo Espectral Continuo (#563):
-                            // Se activa cuando el momento espectral unificado y la coherencia armónica
-                            // sobre las 32 partes espectrales están firmemente alineados.
-                            if fused > 0.60 && field_long.global_coherence > 0.15 {
+                            // Señal Directa del Campo Espectral Continuo (#563 / F1-077):
+                            // Se activa cuando el momento espectral unificado y la coherencia armónica D-742
+                            // sobre las 32 partes espectrales están firmemente alineados ("una sola verdad").
+                            if fused > 0.60 && coh_long > 0.15 {
                                 fast_intent = SignalIntent {
                                     signal: SignalType::Long,
                                     confidence: conviccion_de_rama(
@@ -7276,7 +7283,7 @@ impl GodEngineCore {
                                     expected_duration_ms: expected_tau,
                                     ..Default::default()
                                 };
-                            } else if fused < -0.60 && field_short.global_coherence > 0.15 {
+                            } else if fused < -0.60 && coh_short > 0.15 {
                                 fast_intent = SignalIntent {
                                     signal: SignalType::Short,
                                     confidence: conviccion_de_rama(
@@ -8154,11 +8161,12 @@ impl GodEngineCore {
             if slow_intent.signal == SignalType::Flat {
                 if let Some(spec) = self.temporal_spectrum.get(coin_id) {
                     let tau_star = spec.tau_operativa_unificada();
-                    let field_long = spec.spectral_field(true);
-                    let field_short = spec.spectral_field(false);
                     let fused = spec.fused_score;
                     let tau_star_hurst = spec.hurst_at(tau_star);
                     let tau_star_duration = tau_star.round() as u64;
+                    // F1-077: Coherencia canónica D-742 ("una sola verdad") para confluencia resonante.
+                    let coh_long = spec.spectral_coherence(true);
+                    let coh_short = spec.spectral_coherence(false);
 
                     // Confluencia armónica constructiva en el centroide espectral tau*
                     // (condiciones en `confluencia_resonante`, CL-31, dinamizadas en Ola Ω105).
@@ -8191,8 +8199,8 @@ impl GodEngineCore {
                     if let Some((is_long, conf_base)) = confluencia_resonante_con_umbrales(
                         fused,
                         tau_star_hurst,
-                        field_long.global_coherence,
-                        field_short.global_coherence,
+                        coh_long,
+                        coh_short,
                         macro_trend,
                         fused_pleno,
                         fused_moderado,

@@ -15405,6 +15405,28 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
 
 ---
 
+## 2026-10-20 — AGY: Ola Ω181 — Cierre F1-077 (Unificación de Coherencia Espectral Canónica D-742 "Una Sola Verdad")
+
+- **QUÉ**: Unificación de la coherencia espectral en todo el sistema bajo la doctrina D-742 ("Una Sola Verdad"): publicación canónica en `arena.coins[coin_id].spectral_coherence` y derivación en `SpectralRegimeField.carrier_tide` mediante `spec.spectral_coherence(true)`, junto con la unificación de las ramas de confluencia en `GodEngineCore`.
+- **POR QUÉ**: Existía una contradicción fundamental entre dos campos de coherencia con idéntico nombre y diferentes pesos: `spec.spectral_coherence(is_long)` (D-742, ponderado por $1/\sigma_{\text{dev}}$ sobre lo observable) y `spec.spectral_field(is_long).global_coherence` (legacy, ponderado por $|p_i| \cdot 2 \cdot \text{gain}$). El Core publicaba la versión legacy en el arena que leían el `risk-engine` (para recorte de margen y presión) y el régimen (`carrier_tide`), mientras que las entradas evaluaban con D-742. Además, ponderar por $|p_i|$ causaba que escalas rápidas anti-persistentes ($p < 0$) votaran espuriamente continuación cuando la física real de la microestructura es de reversión, recortando el margen en cortos favorables.
+- **PARA QUÉ**: Asegurar que las decisiones de apertura del motor, la gobernanza de capital/riesgo y los estados de régimen lean exactamente el mismo tensor de coherencia armónica continua, eliminando falsos recortes de margen libre en reversiones y blindando la aceleración del interés compuesto (+100% cada 3 días).
+- **CÓMO**:
+  1. En `crates/god-engine-core/src/lib.rs` (`process_event` y `process_tick_dual`), `arena.coins[coin_id].spectral_coherence.store(coh_d742, Ordering::Relaxed)` publica canónicamente `spec.spectral_coherence(true)`.
+  2. En `crates/quantum-arena/src/spectral_regime.rs` (`from_spectrum_with_params`), `carrier_tide` se fija directamente como `spec.spectral_coherence(true)`.
+  3. En `crates/god-engine-core/src/lib.rs`, la rama de espectro directo (líneas 7180/7192) y la confluencia resonante con umbrales (línea 8107) consumen `spec.spectral_coherence(true)` y `spec.spectral_coherence(false)`, erradicando llamadas redundantes a `spectral_field(true)` y `spectral_field(false)`.
+- **CUÁNDO**: En cada evento procesado en el Core y durante el dimensionamiento de margen en el `risk-engine`.
+- **DÓNDE**: `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/src/spectral_regime.rs`, `crates/quantum-arena/tests/f1_077_spectral_coherence_unification_contract.rs`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Arquitecto de Continuo Temporal-Espectral).
+- **CONTRATOS**:
+  - `f1_077_spectral_coherence_unification_contract.rs` (5/5 tests PASSED): paridad analítica arena-espectro, paridad `carrier_tide`, inmunidad anti-persistencia, antisimetría estricta en $[-1.0, 1.0]$, y consistencia $fused == coh\_long$ en confluencia resonante.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `god-engine-core` lib: 211/211 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+
+---
+
 ## 2026-10-20 — AGY: Ola Ω180 — Cierre F1-076 (Caché Zero-Alloc de Pesos Espectrales y De-duplicación en Hot-Path)
 
 - **QUÉ**: Implementación de caché zero-alloc en `TemporalSpectrum` para observables, pesos observables, pesos espectrales, masa y resolución efectiva, y de-duplicación de la publicación del campo espectral en `GodEngineCore`.
@@ -15424,6 +15446,28 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
   - `god-engine-core` lib: 211/211 tests PASSED.
   - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
   - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+---
+
+## 2026-10-20 — AGY: Ola Ω181 — Cierre F1-077 (Unificación de Coherencia Espectral Canónica D-742 "Una Sola Verdad")
+
+- **QUÉ**: Unificación de la coherencia espectral en todo el sistema bajo la doctrina D-742 ("Una Sola Verdad"): publicación canónica en `arena.coins[coin_id].spectral_coherence` y derivación en `SpectralRegimeField.carrier_tide` mediante `spec.spectral_coherence(true)`, junto con la unificación de las ramas de confluencia en `GodEngineCore`.
+- **POR QUÉ**: Existía una contradicción fundamental entre dos campos de coherencia con idéntico nombre y diferentes pesos: `spec.spectral_coherence(is_long)` (D-742, ponderado por $1/\sigma_{\text{dev}}$ sobre lo observable) y `spec.spectral_field(is_long).global_coherence` (legacy, ponderado por $|p_i| \cdot 2 \cdot \text{gain}$). El Core publicaba la versión legacy en el arena que leían el `risk-engine` (para recorte de margen y presión) y el régimen (`carrier_tide`), mientras que las entradas evaluaban con D-742. Además, ponderar por $|p_i|$ causaba que escalas rápidas anti-persistentes ($p < 0$) votaran espuriamente continuación cuando la física real de la microestructura es de reversión, recortando el margen en cortos favorables.
+- **PARA QUÉ**: Asegurar que las decisiones de apertura del motor, la gobernanza de capital/riesgo y los estados de régimen lean exactamente el mismo tensor de coherencia armónica continua, eliminando falsos recortes de margen libre en reversiones y blindando la aceleración del interés compuesto (+100% cada 3 días).
+- **CÓMO**:
+  1. En `crates/god-engine-core/src/lib.rs` (`process_event` y `process_tick_dual`), `arena.coins[coin_id].spectral_coherence.store(coh_d742, Ordering::Relaxed)` publica canónicamente `spec.spectral_coherence(true)`.
+  2. En `crates/quantum-arena/src/spectral_regime.rs` (`from_spectrum_with_params`), `carrier_tide` se fija directamente como `spec.spectral_coherence(true)`.
+  3. En `crates/god-engine-core/src/lib.rs`, la rama de espectro directo (líneas 7180/7192) y la confluencia resonante con umbrales (línea 8107) consumen `spec.spectral_coherence(true)` y `spec.spectral_coherence(false)`, erradicando llamadas redundantes a `spectral_field(true)` y `spectral_field(false)`.
+- **CUÁNDO**: En cada evento procesado en el Core y durante el dimensionamiento de margen en el `risk-engine`.
+- **DÓNDE**: `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/src/spectral_regime.rs`, `crates/quantum-arena/tests/f1_077_spectral_coherence_unification_contract.rs`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Arquitecto de Continuo Temporal-Espectral).
+- **CONTRATOS**:
+  - `f1_077_spectral_coherence_unification_contract.rs` (5/5 tests PASSED): paridad analítica arena-espectro, paridad `carrier_tide`, inmunidad anti-persistencia, antisimetría estricta en $[-1.0, 1.0]$, y consistencia $fused == coh\_long$ en confluencia resonante.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `god-engine-core` lib: 211/211 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
 
 
 ---
@@ -15450,6 +15494,28 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
 
 ---
 
+## 2026-10-20 — AGY: Ola Ω181 — Cierre F1-077 (Unificación de Coherencia Espectral Canónica D-742 "Una Sola Verdad")
+
+- **QUÉ**: Unificación de la coherencia espectral en todo el sistema bajo la doctrina D-742 ("Una Sola Verdad"): publicación canónica en `arena.coins[coin_id].spectral_coherence` y derivación en `SpectralRegimeField.carrier_tide` mediante `spec.spectral_coherence(true)`, junto con la unificación de las ramas de confluencia en `GodEngineCore`.
+- **POR QUÉ**: Existía una contradicción fundamental entre dos campos de coherencia con idéntico nombre y diferentes pesos: `spec.spectral_coherence(is_long)` (D-742, ponderado por $1/\sigma_{\text{dev}}$ sobre lo observable) y `spec.spectral_field(is_long).global_coherence` (legacy, ponderado por $|p_i| \cdot 2 \cdot \text{gain}$). El Core publicaba la versión legacy en el arena que leían el `risk-engine` (para recorte de margen y presión) y el régimen (`carrier_tide`), mientras que las entradas evaluaban con D-742. Además, ponderar por $|p_i|$ causaba que escalas rápidas anti-persistentes ($p < 0$) votaran espuriamente continuación cuando la física real de la microestructura es de reversión, recortando el margen en cortos favorables.
+- **PARA QUÉ**: Asegurar que las decisiones de apertura del motor, la gobernanza de capital/riesgo y los estados de régimen lean exactamente el mismo tensor de coherencia armónica continua, eliminando falsos recortes de margen libre en reversiones y blindando la aceleración del interés compuesto (+100% cada 3 días).
+- **CÓMO**:
+  1. En `crates/god-engine-core/src/lib.rs` (`process_event` y `process_tick_dual`), `arena.coins[coin_id].spectral_coherence.store(coh_d742, Ordering::Relaxed)` publica canónicamente `spec.spectral_coherence(true)`.
+  2. En `crates/quantum-arena/src/spectral_regime.rs` (`from_spectrum_with_params`), `carrier_tide` se fija directamente como `spec.spectral_coherence(true)`.
+  3. En `crates/god-engine-core/src/lib.rs`, la rama de espectro directo (líneas 7180/7192) y la confluencia resonante con umbrales (línea 8107) consumen `spec.spectral_coherence(true)` y `spec.spectral_coherence(false)`, erradicando llamadas redundantes a `spectral_field(true)` y `spectral_field(false)`.
+- **CUÁNDO**: En cada evento procesado en el Core y durante el dimensionamiento de margen en el `risk-engine`.
+- **DÓNDE**: `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/src/spectral_regime.rs`, `crates/quantum-arena/tests/f1_077_spectral_coherence_unification_contract.rs`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Arquitecto de Continuo Temporal-Espectral).
+- **CONTRATOS**:
+  - `f1_077_spectral_coherence_unification_contract.rs` (5/5 tests PASSED): paridad analítica arena-espectro, paridad `carrier_tide`, inmunidad anti-persistencia, antisimetría estricta en $[-1.0, 1.0]$, y consistencia $fused == coh\_long$ en confluencia resonante.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `god-engine-core` lib: 211/211 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+
+---
+
 ## 2026-10-20 — AGY: Ola Ω180 — Cierre F1-076 (Caché Zero-Alloc de Pesos Espectrales y De-duplicación en Hot-Path)
 
 - **QUÉ**: Implementación de caché zero-alloc en `TemporalSpectrum` para observables, pesos observables, pesos espectrales, masa y resolución efectiva, y de-duplicación de la publicación del campo espectral en `GodEngineCore`.
@@ -15470,8 +15536,6 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
   - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
   - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
 
-
-
 ---
 
 ## 2026-10-20 — Codex F7 / ROOT: solicitud de ventana de integración
@@ -15490,3 +15554,24 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
 - **SIN PROMO = CERO CAMBIO**: `friccion_efectiva_rt` devuelve el modelo bit a bit; verificado por contrato. La fricción efectiva nunca es negativa (clamp en 0).
 - **INCIDENTE (lección)**: el end-to-end falló en CI con p* moviéndose 1 ULP. Diagnóstico: el arena de test tiene hurst=0 y sigma_forecast=0 ⇒ el TP/SL del probe degenera ⇒ p* es insensible a la fricción (no era bug del gate: `p* = (sl+f)/(tp+sl)` con denominador enorme). Fix: el fixture siembra geometría sana (hurst 0,5, sigma 0,5 %). REGLA PARA EL CONSEJO: cualquier test de p*/sonda en god-engine-core debe sembrar geometría sana; con sigma/hurst nulos el observable degenera.
 - **PRÓXIMO ÁTOMO §3-4 (propuesta a mi carril)**: la sombra de WR (`sombra_wr_disc`) sigue en telemetría — su promoción requiere un contrato análogo pero con un consumidor natural: el `internal_discrepancy` del Consejo (que hoy usa la disc máxima de las tres patas). Propuesta: que el asiento SeniorAuditorInterno lea la sombra de WR con intervalo (media ± ee, mitades) en vez de la pata puntual, eliminando el último uso de un escalar sin intervalo en el veto.
+
+---
+
+## 2026-10-20 — AGY: Ola Ω181 — Cierre F1-077 (Unificación de Coherencia Espectral Canónica D-742 "Una Sola Verdad")
+
+- **QUÉ**: Unificación de la coherencia espectral en todo el sistema bajo la doctrina D-742 ("Una Sola Verdad"): publicación canónica en `arena.coins[coin_id].spectral_coherence` y derivación en `SpectralRegimeField.carrier_tide` mediante `spec.spectral_coherence(true)`, junto con la unificación de las ramas de confluencia en `GodEngineCore`.
+- **POR QUÉ**: Existía una contradicción fundamental entre dos campos de coherencia con idéntico nombre y diferentes pesos: `spec.spectral_coherence(is_long)` (D-742, ponderado por $1/\sigma_{\text{dev}}$ sobre lo observable) y `spec.spectral_field(is_long).global_coherence` (legacy, ponderado por $|p_i| \cdot 2 \cdot \text{gain}$). El Core publicaba la versión legacy en el arena que leían el `risk-engine` (para recorte de margen y presión) y el régimen (`carrier_tide`), mientras que las entradas evaluaban con D-742. Además, ponderar por $|p_i|$ causaba que escalas rápidas anti-persistentes ($p < 0$) votaran espuriamente continuación cuando la física real de la microestructura es de reversión, recortando el margen en cortos favorables.
+- **PARA QUÉ**: Asegurar que las decisiones de apertura del motor, la gobernanza de capital/riesgo y los estados de régimen lean exactamente el mismo tensor de coherencia armónica continua, eliminando falsos recortes de margen libre en reversiones y blindando la aceleración del interés compuesto (+100% cada 3 días).
+- **CÓMO**:
+  1. En `crates/god-engine-core/src/lib.rs` (`process_event` y `process_tick_dual`), `arena.coins[coin_id].spectral_coherence.store(coh_d742, Ordering::Relaxed)` publica canónicamente `spec.spectral_coherence(true)`.
+  2. En `crates/quantum-arena/src/spectral_regime.rs` (`from_spectrum_with_params`), `carrier_tide` se fija directamente como `spec.spectral_coherence(true)`.
+  3. En `crates/god-engine-core/src/lib.rs`, la rama de espectro directo (líneas 7180/7192) y la confluencia resonante con umbrales (línea 8107) consumen `spec.spectral_coherence(true)` y `spec.spectral_coherence(false)`, erradicando llamadas redundantes a `spectral_field(true)` y `spectral_field(false)`.
+- **CUÁNDO**: En cada evento procesado en el Core y durante el dimensionamiento de margen en el `risk-engine`.
+- **DÓNDE**: `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/src/spectral_regime.rs`, `crates/quantum-arena/tests/f1_077_spectral_coherence_unification_contract.rs`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Arquitecto de Continuo Temporal-Espectral).
+- **CONTRATOS**:
+  - `f1_077_spectral_coherence_unification_contract.rs` (5/5 tests PASSED): paridad analítica arena-espectro, paridad `carrier_tide`, inmunidad anti-persistencia, antisimetría estricta en $[-1.0, 1.0]$, y consistencia $fused == coh\_long$ en confluencia resonante.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `god-engine-core` lib: 211/211 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).

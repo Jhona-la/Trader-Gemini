@@ -154,7 +154,9 @@ impl SpectralRegimeField {
             dominant_tau_ms: field.resonant_tau_ms,
             dominant_drift: 0.0,
             mass_entropy: field.spectral_entropy,
-            carrier_tide: field.global_coherence,
+            // F1-077: Marea macro derivada de la coherencia canónica D-742 ("una sola verdad").
+            // Erradica discrepancia entre decisión de entrada (D-742, 1/vol) y carrier_tide (legacy persistencia).
+            carrier_tide: spec.spectral_coherence(true),
             crash_flux: 0.0,
         };
         if let (Some(prev_ln), Some(cur_ln)) = (prev_dominant_ln_tau, nonzero_ln(field.resonant_tau_ms))

@@ -8996,3 +8996,21 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     4. `f1_076_contrato_4_structure_functions_usa_masa_en_cache_y_conserva_valores`: las funciones de estructura $\zeta(q)$ consumen la masa en caché con cero llamadas redundantes a `exp()`.
     5. `f1_076_contrato_5_inmunidad_ieee754_y_estado_en_frio`: inmunidad ante estado en frío con 0 actualizaciones y ausencia de NaNs.
   - Verificaciones globales: `quantum-arena` lib 152/152 pass, `god-engine-core` lib 211/211 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
+
+---
+
+## AGY — Ola Ω181: Cierre F1-077 (Unificación de Coherencia Espectral Canónica D-742 "Una Sola Verdad") — 2026-10-20
+- **Hallazgo F1-077 cerrado**:
+  - `spectral_coherence` y `field.global_coherence` en `crates/quantum-arena` y `crates/god-engine-core`: Erradicada la discrepancia semántica y numérica entre dos vectores de pesos distintos bajo el mismo concepto de coherencia. Anteriormente, `spectral_coherence(is_long)` empleaba la ponderación D-742 por paridad de riesgo sobre lo observable ($w_i = \text{observable}_i / \sigma_i$), mientras que `field.global_coherence` ponderaba con masa legacy ($w_i = |p_i| \cdot 2 \cdot \text{gain} \times \text{observable}_i$).
+  - El Core publicaba `field.global_coherence` en el slot de arena `arena.coins[coin_id].spectral_coherence` que leía el `risk-engine` (para recorte de margen libre `free_cap`, presión direccional y modelo R-15), mientras que la puerta de entrada evaluaba `spec.spectral_coherence(is_long)`. Además, ponderar por $|p_i|$ causaba que escalas rápidas anti-persistentes ($p < 0$) votaran espuriamente continuación cuando la física real de la microestructura es de reversión, recortando el margen en cortos favorables.
+  - Implementada la unificación de "Una Sola Verdad":
+    - En `crates/god-engine-core/src/lib.rs`: en `process_event` y `process_tick_dual`, `arena.coins[coin_id].spectral_coherence.store(coh_d742, Ordering::Relaxed)` publica canónicamente `spec.spectral_coherence(true)`.
+    - En `crates/quantum-arena/src/spectral_regime.rs`: en `from_spectrum_with_params`, `carrier_tide` se deriva directamente de `spec.spectral_coherence(true)`.
+    - En `crates/god-engine-core/src/lib.rs`: la rama de intención de espectro directo (líneas 7180/7192) y la confluencia resonante con umbrales (línea 8107) consumen directamente `spec.spectral_coherence(true)` y `spec.spectral_coherence(false)`. Se evita la llamada redundante y pesada a `spectral_field(true)` y `spectral_field(false)`.
+  - Contrato de certificación `crates/quantum-arena/tests/f1_077_spectral_coherence_unification_contract.rs` (5/5 tests PASSED):
+    1. `f1_077_contrato_1_paridad_arena_y_spectral_coherence`: paridad bit a bit exacta entre el slot arena publicado y `spec.spectral_coherence(true)` (y coincidencia con `spec.fused_score`).
+    2. `f1_077_contrato_2_paridad_carrier_tide_con_spectral_coherence`: `SpectralRegimeField.carrier_tide` idéntico a `spec.spectral_coherence(true)`.
+    3. `f1_077_contrato_3_inmunidad_anti_persistencia_reversion_favorable`: confirmación de que una micro-escala anti-persistente con up-tick no contamina la marea bajista macro favorable.
+    4. `f1_077_contrato_4_antisimetria_estricta_y_rango_acotado`: antisimetría $c(\text{false}) == -c(\text{true})$ ($< 10^{-12}$) y rango estrictamente bounded en $[-1.0, 1.0]$.
+    5. `f1_077_contrato_5_confluencia_resonante_consistencia_fused`: paridad $fused == coh\_long$, eliminando falsos rechazos en `confluencia_resonante_con_umbrales`.
+  - Verificaciones globales: `quantum-arena` lib 152/152 pass, `god-engine-core` lib 211/211 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
