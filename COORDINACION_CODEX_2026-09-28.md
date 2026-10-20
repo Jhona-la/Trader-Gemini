@@ -15252,3 +15252,25 @@ Medido hoy (sonda mínima en el nightly fijado; RB-H2):
 - **RESULTADO**: el libro de impacto de RB-A1a ahora tiene desglose por componente (`area_impacto.tsv`, 25 áreas) y sus 11 contratos — que NO corrían en ningún workflow— quedaron certificados en CI vía el job nuevo `meta-analitica` (ubuntu, python puro).
 - **DATOS**: host 21,3% de la producción añadida del historial (49.615 líneas, ratio tests/producción 0,00), god-engine-core 16,9% (39.312, 0,51), quantum-arena 8,7%; concentración top-3 46,9%. Bajo el umbral <0,05: host, data-pipeline, telemetry-server, state-engine, os-guardian, graph-architecture, telemetry-engine, flight-recorder, phase-runner (retirado el 18-10: el libro ve el rango histórico), graph-4d.
 - **PRÓXIMO ÁTOMO (mi carril)**: sombras `sombra_wr_disc` / `sombra_friccion_real_menos_modelada_bp` — publicación en sombra (sólo telemetría) con contrato definicional: n_min por fuente, error estándar por bloques de τ, dos mitades OOS.
+
+---
+
+## 2026-10-19 — Sol: sombras del auditor (censo C-F7b §3-2) — PR #86
+
+- **QUÉ**: las dos patas que el censo marcó ciegas pasan a medirse con intervalo y estabilidad, EN SOMBRA (telemetría pura; ninguna decisión las lee hoy):
+  1. `sombra_wr_disc`: |WR interno − WR real| sobre el canal independiente del host (PR #84), con error estándar por BLOQUES (los fills son serie correlacionada: sd muestral entre 4 bloques / √B — no binomial iid), n_min = 20 cierres y disc en cada mitad temporal (OOS expuesta, no promediada).
+  2. `sombra_friccion_real_menos_modelada_bp`: (fee real en bp − fricción MODELADA en bp) por fill. Positiva = se paga más de lo que el gate cree ⇒ el edge real es menor que el creído. Misma técnica de intervalo y mitades.
+- **PUERTAS DE EVIDENCIA**: sin canal suficiente o sin claim/modelo finitos ⇒ `None` (clave ausente, jamás cero inventado). Fills con nocional 0 o fee no finito/negativo se ignoran sin contaminar la media. Nada de NaN/Inf dentro del motor.
+- **REFACTOR (fuente única)**: la fricción de ida y vuelta del gate se extrajo a `friccion_rt_modelada(atr_pct)` — `sonda_de_banda` y la sombra leen la MISMA receta (taker + suelo de slippage + ATR + latencia), no una constante. El auditor lee lo mismo que el gate.
+- **CONTRATOS (cifras exactas, verificables a mano)**: 24 cierres alternados ⇒ WR real 0,5; interno 0,9 ⇒ disc 0,4 exacto en global y en cada mitad; serie agrupada ⇒ bloques [1,1,0,0] ⇒ EE = √(1/12); fee 5 bp vs modelo 4 bp ⇒ media +1 bp; mitades divergentes +2/−2 bp con EE > 1; 19 cierres ⇒ `None`; claims NaN/∞ ⇒ `None`; fills insalvables (precio 0, fee NaN, fee negativa) ignorados sin contaminar. Publicación por moneda con el modelo REAL del config (el test verifica la relación, no una constante), ausencia sin evidencia y aislamiento entre monedas.
+- **CERTIFICACIÓN**: réplica Python de la estadística de bloques (todos los valores coinciden) + CI completa despachada sobre la rama (unit-suites 5 shards —el refactor de `sonda_de_banda` queda cubierto por los suites de gate/riesgo— + replay).
+- **LÍMITE DECLARADO**: las sombras NO alimentan decisiones todavía. Su promoción a insumo vivo requiere el átomo siguiente (contrato de consumo: umbral de promo con evidencia OOS de dos mitades), que quedará para el censo §3-3.
+
+---
+
+## 2026-10-19 — Sol: desbloqueo replay en PR #86 — test de ast_mutador obsoleto tras ola-174
+
+- **HALLAZGO**: `replay-contracts` falló en mi PR #86 (y main lleva varias corridas canceladas sin veredicto). Único fallo: `ast_mutator::tests::test_ast_mutator_mutate_atomic_config` (evolution-engine, panicked at ast_mutator.rs:196: `assertion left != right failed`, 0.62 == 0.62).
+- **CAUSA**: el test hardcodeaba mutar `ml_threshold_long` a 0.62 y luego `assert_ne!(actual, initial_val)`. La ola-174 (AGY, de hoy: «unified genome vector bounds, mutation bands and reader domains») movió los defaults del genoma: `ml_threshold_long` arranca ahora en 0.62 → el assert_ne daba falso aunque la mutación escribiera correctamente. Mi PR #86 NO toca evolution-engine (diff vacío verificado).
+- **ACCIÓN**: objetivo derivado del inicial (initial ± 0.25) — la intención del test (la mutación escribe un valor nuevo verificable) se preserva y queda inmune a futuras olas que muevan defaults. Sólo bloque `#[cfg(test)]`. Barrido: el patrón `assert_ne!(load, initial_val)` es único en el repo.
+- **AVISO A AGY**: si una ola futura vuelve a mover defaults del genoma, este test ya no se rompe; pero cualquier test que compare contra un default hardcodeado seguirá siendo frágil — la regla sana es derivar las expectativas del estado inicial.
