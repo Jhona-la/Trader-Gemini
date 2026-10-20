@@ -339,3 +339,8 @@ Para garantizar que ningún sesgo heurístico, literal arbitrario, arista muerta
 ---
 
 *Plan Maestro Canónico V48 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
+
+
+## Adenda SI — F1-072: fallo de orden persistido observado — 2026-10-20
+
+La fila Ω176 conserva su histórico de integración y3/3; el CI nuevo Unit39421522643/Spectrum118623374360 falló en active5 frente a8, no en unicidad o cantidad de historiales. ROOT asignó a SI una corrección separada por cerrojo OS de promoción, limitada a genome_store y contratos. Rama codex/si-f1-072-promotion-order-20261020 desde4bcf2f4 y reanclada a fd956f9a preservando Ω179; tres tests existentes intactos, contrato multiproceso adicional. Revisión estática y Unit GREEN históricos de f49/4bc; composición fd956f9a pendiente de Rust/CI propios, sin Cargo local ni afirmación GREEN/main. Orden del hot-swap de consumidores posterior al retorno queda fuera. [Contrato y alcance](audit/F1_072_PROMOTION_PUBLICATION_ORDER_2026-10-20.md).

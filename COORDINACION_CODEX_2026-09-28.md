@@ -15411,3 +15411,8 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
   - `quantum-arena` lib: 152/152 tests PASSED.
   - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
   - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+
+## SI — F1-072: reapertura parcial del orden de publicación — 2026-10-20
+
+ROOT asignó a SI genome_store.rs y contratos F1-072 en rama codex/si-f1-072-promotion-order-20261020, base inicial4bcf2f4, reanclada a fd956f9a/Ω179; sin tocar config/espectro/Core AGY. CI Unit39421522643/Spectrum118623374360 falla en assert95 active5!=8 después de pasar unicidad e historia8. Se conserva F1-072/Ω176 como histórico y se reabre únicamente el orden del activo persistido. Fix: File::lock OS por entorno antes de parent y hasta después del espejo; tests3 anteriores byteidénticos y contrato multiproceso aislado. Estado: f49/4bc obtuvo Unit39425087681 SUCCESS y check all-targets de Replay; nueva composición fd956f9a pendiente de Rust/CI propios, cero Cargo local; publicación no equivale a GREEN ni main. No se hereda lease ni se certifica hot-swap posterior. Detalle: [F1-072 publicación](docs/audit/F1_072_PROMOTION_PUBLICATION_ORDER_2026-10-20.md).

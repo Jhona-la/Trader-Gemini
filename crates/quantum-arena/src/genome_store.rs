@@ -352,6 +352,18 @@ impl GenomeEnvelope {
         }
         std::fs::create_dir_all(history_dir())?;
 
+        // F1-072: Serialize the complete promotion for this environment.
+        // O_EXCL claims unique history names; it does not order active.json
+        // replacements. Keep this sibling lock file persistent: removing it
+        // could let another process lock a different file at the same path.
+        let promotion_lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(format!("{}.promote.lock", active_path()))?;
+        promotion_lock.lock()?;
+
         let parent = if let Ok(data) = std::fs::read_to_string(active_path()) {
             serde_json::from_str::<GenomeEnvelope>(&data)
                 .map(|e| e.generation)
@@ -432,6 +444,7 @@ impl GenomeEnvelope {
             }
         }
 
+        drop(promotion_lock);
         Ok(envelope)
     }
 

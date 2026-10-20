@@ -1,5 +1,9 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-20 — SI: F1-072, orden de publicación reabierto por CI
+
+Unit39421522643/Spectrum118623374360 falló en el contrato existente: active5 frente a8, tras pasar ocho retornos únicos e historia completa. Ese log no observa el intercalado; el código permitía publicar una generación anterior después de otra nueva. La entrega SI inicial desde main4bcf2f4 se reancla a fd956f9a y conserva Ω178/F1-074 y Ω179/F1-075 y añade sólo File::lock OS por entorno alrededor de parent→historia→active→espejo, manteniendo O_EXCL/fsync/rename. Los tres tests originales quedan byteidénticos; contrato adicional con ocho procesos, configuración temporal aislada y genomas válidos distinguibles exige linaje1..8, active8 y espejo coherente. Revisión estática y diff-check realizados; Unit39425087681 y el paso all-targets de Replay son GREEN históricos de f49/4bc. La composición fd956f9a requiere Rust/CI propios, cero Cargo local. Publicación no equivale a GREEN/main. El hot-swap posterior al retorno y LG5/G022 económico siguen abiertos. [Alcance y evidencia](../docs/audit/F1_072_PROMOTION_PUBLICATION_ORDER_2026-10-20.md).
+
 ## 2026-10-20 — Codex BASE15: reanudación, fila reparada y delta de cobertura
 
 La fila BASE había regresado a 1/7 en 67dae, aunque el plan y memoria conservaban el corte 4/7. Se repone sólo la fila propia sobre el main documental vigente, preservando ROOT/AGY/Sol y sus apéndices. Snapshot de evidencia597de4af:2053 rutas (781 Rust), frente a 1863/672 de b9; delta de 424 = 201 añadidas + 212 modificadas + 11 retiradas, con 1640 sin cambio. Son entradas mecánicas pendientes de revisión, no nuevos archivos completos auditados. Inventario/cola/recibos históricos conservan sus bytes y estados.
