@@ -1,0 +1,230 @@
+{
+  "observed_at_utc": "2026-10-15T22:14:16.268Z",
+  "scope": "Read-only GitHub triage; no branch/index/worktree mutations; no reruns, pushes or merges; no Rust/Cargo execution",
+  "main": "cd9feaa0aaa89e6b45d6363a23a4fbf365ea41d5",
+  "matrix": [
+    {
+      "pr": 64,
+      "head": "dcd36d3978d0940f2dc7c68150f713bd1c578e9b",
+      "checks": "6 successful historical checks; does not certify cd9",
+      "conflicts": [
+        ".agents/MEMORIA.md",
+        "COORDINACION_CODEX_2026-09-28.md"
+      ],
+      "owner": "ROOT / Linea H",
+      "next": "Resolve documentation conflicts and validate current composed candidate; do not inherit old GREEN"
+    },
+    {
+      "pr": 65,
+      "head": "c3abca5cf287b2c55403062eabe77fc89bc80070",
+      "checks": "none",
+      "conflicts": [
+        "COORDINACION_CODEX_2026-09-28.md",
+        "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md"
+      ],
+      "owner": "BASE",
+      "next": "Publish validated/reconciled BASE head; remote PR currently does not include later local HEAD"
+    },
+    {
+      "pr": 66,
+      "head": "794715f08fe9a742e6cea12b07f1ab4bef9e2115",
+      "checks": "none",
+      "conflicts": [
+        "docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-15.md",
+        "docs/audit/INTEGRACION_LG5_MAIN_2026-10-15.md",
+        "docs/audit/LG5_PROBABILIDADES_PAGOS_EV_2026-10-13.md"
+      ],
+      "owner": "ROOT",
+      "next": "Reconcile documented receipt conflicts in scheduled integration"
+    },
+    {
+      "pr": 67,
+      "head": "de534dbd94391ab18b13c81c64d0d03275e118b9",
+      "checks": "5 successful historical checks",
+      "conflicts": [],
+      "owner": "ROOT / QUANT",
+      "next": "Keep PR67-before-PR69 integration order; validate current composed candidate; historical GREEN does not transfer"
+    },
+    {
+      "pr": 68,
+      "head": "05bc2f9e9af48813b5242f34a10b548e961c67d5",
+      "candidate_checkout": "c52983ac2bc9b67341d1993eb085fcb401c06685",
+      "checkout_base": "ba445df79fa5f82402cd675af4b150f8a0398dea",
+      "checks": "Unit nucleo fails; riesgo/espectro/entrenador success; replay in progress at observation",
+      "conflicts": [],
+      "owner": "SI for branch; ROOT/BASE for expiry fixture",
+      "failure": {
+        "suite": "crates/god-engine-core/tests/evidence_expiry_contract.rs",
+        "tests": [
+          {
+            "name": "mg02_real_risk_reader_stops_using_expired_r_even_with_positive_global",
+            "line": 284
+          },
+          {
+            "name": "expiring_one_arena_does_not_expire_another_arena_with_the_same_coin_id",
+            "line": 353
+          },
+          {
+            "name": "legacy_finite_scoped_values_and_global_fallback_still_reach_real_risk_reader",
+            "line": 437
+          }
+        ],
+        "actual": "Long",
+        "expected": "Flat",
+        "suite_passed": 10,
+        "suite_failed": 3,
+        "type": "logical fixture-policy mismatch after Omega130; not compiler/resources/auth",
+        "candidate_fix": "7c24796b9b5eaf57509ba528272060cc7a837e8f (ROOT fixture-only; requires serial aggregate validation)"
+      },
+      "run": 38810297928,
+      "job": 116681547269,
+      "next": "Retain expiry gate; validate ROOT fixture fix on new aggregate candidate; trainer failures of older head are stale"
+    },
+    {
+      "pr": 69,
+      "head": "c2fb494047495186c79d48e5799506c8b7b5eaf5",
+      "candidate_checkout": "a840c5dba5b3b67a642aa657571e573ba8787aea",
+      "checkout_base": "dfa4ae6b7d5f89757cb24a70c012cc90534e376e",
+      "checks": "Unit nucleo and Replay fail same 3 expiry fixtures; other 3 Unit jobs pass",
+      "conflicts": [],
+      "owner": "Signal for branch; ROOT/BASE for expiry fixture",
+      "failure": {
+        "suite": "crates/god-engine-core/tests/evidence_expiry_contract.rs",
+        "tests": [
+          {
+            "name": "mg02_real_risk_reader_stops_using_expired_r_even_with_positive_global",
+            "line": 284
+          },
+          {
+            "name": "expiring_one_arena_does_not_expire_another_arena_with_the_same_coin_id",
+            "line": 353
+          },
+          {
+            "name": "legacy_finite_scoped_values_and_global_fallback_still_reach_real_risk_reader",
+            "line": 437
+          }
+        ],
+        "actual": "Long",
+        "expected": "Flat",
+        "suite_passed": 10,
+        "suite_failed": 3,
+        "type": "logical fixture-policy mismatch after Omega130; not compiler/resources/auth",
+        "candidate_fix": "7c24796b9b5eaf57509ba528272060cc7a837e8f (ROOT fixture-only; requires serial aggregate validation)"
+      },
+      "runs": [
+        {
+          "run": 38803826924,
+          "job": 116659412779
+        },
+        {
+          "run": 38803825309,
+          "job": 116659407452
+        }
+      ],
+      "next": "Integrate after PR67 and validated ROOT expiry fix; no Signal attribution from common baseline failure"
+    },
+    {
+      "pr": null,
+      "branch": "main",
+      "head": "cd9feaa0aaa89e6b45d6363a23a4fbf365ea41d5",
+      "candidate_checkout": "cd9feaa0aaa89e6b45d6363a23a4fbf365ea41d5",
+      "checks": "Unit nucleo failure, other 3 success; Replay pending with no jobs",
+      "failure": {
+        "suite": "crates/god-engine-core/tests/evidence_expiry_contract.rs",
+        "tests": [
+          {
+            "name": "mg02_real_risk_reader_stops_using_expired_r_even_with_positive_global",
+            "line": 284
+          },
+          {
+            "name": "expiring_one_arena_does_not_expire_another_arena_with_the_same_coin_id",
+            "line": 353
+          },
+          {
+            "name": "legacy_finite_scoped_values_and_global_fallback_still_reach_real_risk_reader",
+            "line": 437
+          }
+        ],
+        "actual": "Long",
+        "expected": "Flat",
+        "suite_passed": 10,
+        "suite_failed": 3,
+        "type": "logical fixture-policy mismatch after Omega130; not compiler/resources/auth",
+        "candidate_fix": "7c24796b9b5eaf57509ba528272060cc7a837e8f (ROOT fixture-only; requires serial aggregate validation)"
+      },
+      "run": 38811562463,
+      "job": 116685791405,
+      "replay_run": 38811562795,
+      "owner": "ROOT/BASE",
+      "next": "Validate expiry fix on current candidate; replay main waits behind active ba445 run by workflow concurrency"
+    }
+  ],
+  "conflict_method": "git merge-tree --trivial-merge against fixed cd9 and each merge-base; read-only legacy analysis, not full ort semantic/compile validation",
+  "workflows": {
+    "runner": "windows-2022",
+    "toolchain": "nightly-2026-06-30",
+    "unit_jobs": 4,
+    "replay_jobs": 2,
+    "debug_env": 0,
+    "incremental_env": 0,
+    "test_threads": 1,
+    "permissions": "contents: read; persist-credentials false; intentional CI sandbox, no proof of CLI write scope",
+    "main_concurrency": "cancel-in-progress only for PR; cd9 replay pending behind ba445 active replay"
+  },
+  "network": {
+    "gh_cli": "One actions/runs query timed out in TLS handshake; other CLI queries and one log download succeeded",
+    "connector": "Read-only workflow log endpoints succeeded",
+    "finding": "No evidence of global GitHub outage or token permission denial in examined failures"
+  },
+  "resource_findings": {
+    "current_failure": "No OOM, linker, permissions or timeout error in analyzed failed jobs; tests reached assertions",
+    "dirty_AGY_profile": "debug=1 in local Cargo.toml is uncommitted; workflow env debug=0 overrides it; cannot explain historical failures"
+  },
+  "invariants": [
+    "Preserve unknown-actor disappeared worktrees evidence; no cleaning",
+    "New hidden-liquidity model bias on Omega133 is a separate product defect under ROOT, not explained by observed CI expiry failures",
+    "Only store downloaded logs under logs/ci-triage-20261015"
+  ],
+  "files": [
+    "pr68-05bc2f9-run38810297928-job116681547269.log",
+    "pr68-05bc2f9-run38810297928-job116681547269-failed.log",
+    "pr69-c2fb494-run38803826924-job116659412779.log",
+    "pr69-c2fb494-run38803825309-job116659407452.log",
+    "main-cd9feaa-run38811562463-job116685791405.log"
+  ],
+  "followup_cli_environment": {
+    "observed_later": true,
+    "executable_same": true,
+    "executable": "C:/Program Files/GitHub CLI/gh.exe",
+    "node_child_appdata": null,
+    "powershell_child_appdata": "C:/Users/jhona/AppData/Roaming",
+    "node_cli_exit": 4,
+    "powershell_api_exit": 0,
+    "config_contents_read": false,
+    "global_environment_changed": false,
+    "finding": "Node child does not resolve the authenticated PowerShell config directory; no account-wide authentication failure established",
+    "main_branch_observation": {
+      "sha": "cd9feaa0aaa89e6b45d6363a23a4fbf365ea41d5",
+      "protected": false,
+      "rulesets": {
+        "source": "GitHub connector",
+        "observed_at_utc": "2026-10-15T22:30:32Z",
+        "endpoint": "repos/Jhona-la/Trader-Gemini/rulesets?includes_parents=true",
+        "reported": []
+      }
+    },
+    "governance": {
+      "cli_additional_gets": "two timeout after 18 seconds each",
+      "connector_permissions": {
+        "admin": true,
+        "maintain": true,
+        "push": true,
+        "pull": true,
+        "triage": true
+      },
+      "permissions_scope": "connector only; not transferred to CLI",
+      "merge_method_flags": "unknown: omitted from returned fields",
+      "policy_mutations": false
+    }
+  }
+}

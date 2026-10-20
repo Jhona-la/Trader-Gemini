@@ -9337,3 +9337,15 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     - `fable_lh04_stop_real_contract.rs` (3/3 pass).
     - `rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 pánicos agregados).
     - `cargo check --workspace --all-targets -j 1` 100% verde en los 23 crates con 0 errores y 0 warnings.
+
+---
+
+## 2026-10-20 — SI: F1-072, orden de publicación reabierto por CI
+
+Unit39421522643/Spectrum118623374360 falló en el contrato existente: active5 frente a8, tras pasar ocho retornos únicos e historia completa. Ese log no observa el intercalado; el código permitía publicar una generación anterior después de otra nueva. La entrega SI inicial desde main4bcf2f4 se reancla a fd956f9a y conserva Ω178/F1-074 y Ω179/F1-075 y añade sólo File::lock OS por entorno alrededor de parent→historia→active→espejo, manteniendo O_EXCL/fsync/rename. Los tres tests originales quedan byteidénticos; contrato adicional con ocho procesos, configuración temporal aislada y genomas válidos distinguibles exige linaje1..8, active8 y espejo coherente. Revisión estática y diff-check realizados; Unit39425087681 y el paso all-targets de Replay son GREEN históricos de f49/4bc. La composición fd956f9a requiere Rust/CI propios, cero Cargo local. Publicación no equivale a GREEN/main. El hot-swap posterior al retorno y LG5/G022 económico siguen abiertos. [Alcance y evidencia](../docs/audit/F1_072_PROMOTION_PUBLICATION_ORDER_2026-10-20.md).
+
+## F7 — lanzadores y diagnóstico GitHub — 2026-10-20
+
+Puerto autónomo sobre main28125 autorizado por ROOT: tres lanzadores con target primario compartido, semáforo único, jobs/hilos independientes y sin reintento del simulador. GREEN local28 métodos (T1 17, formatos1, PowerShell10); RED finales T1 33FAIL/0ERROR y PS22FAIL/0ERROR con el mismo harness de cada par. Bash/PowerShell reales y Cargo capturador; sin Rust local ni target alternativo. Fallos iniciales del fixture y de alias MSYS conservados, no relabelados. [Plan y límites](../docs/audit/PUERTO_F7_RECURSOS_2026-10-20.md), [recibos](../docs/audit/RECIBO_PUERTO_F7_2026-10-20.json).
+
+CI del candidato todavía pendiente: exigir sus ocho checks y all-targets antes de main. ROOT mantiene A0/Hidden separado; PR65/66 draft y CONTROL privados se preservan. Los fallos históricos GitHub revisados no prueban caída global; auth PowerShell funciona, exit4Node por APPDATA y timeouts de transporte se distinguen de assertions/compilación. ROOT permite runners hospedados separados y conserva merges seriales; no tocar checkout primario AGY ni índices ajenos.
