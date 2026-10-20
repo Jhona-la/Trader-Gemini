@@ -1744,6 +1744,37 @@ impl GodEngineCore {
         self.auditor_interno.record_fill_independiente(fill);
     }
 
+    /// SOL (2026-10-19, censo C-F7b §3-2): publica las SOMBRAS del auditor
+    /// para `coin_id` — sólo telemetría por moneda, NINGUNA decisión las lee
+    /// hoy. Existen para medir con intervalo y estabilidad OOS las dos patas
+    /// que el censo marcó ciegas: la discrepancia de win rate (F413, hoy
+    /// calculada y descartada dentro de `calculate_max_discrepancy`) y la
+    /// fricción real menos la modelada por el gate.
+    ///
+    /// Puertas de evidencia (igual que `internal_discrepancy`): sin canal
+    /// independiente suficiente (MIN_FILLS_SOMBRA) no se publica nada, y sin
+    /// fricción modelo sana (precio/ATR vivos) no se publica la de fricción.
+    /// Clave ausente ⇒ ausencia de dato, jamás cero inventado.
+    pub fn publicar_sombras_auditor(&self, coin_id: usize, internal_wr: f64) {
+        if let Some(s) = self.auditor_interno.sombra_wr_disc(internal_wr) {
+            self.arena.registry.set_for_coin(coin_id, "sombra_wr_disc", s.disc);
+            self.arena.registry.set_for_coin(coin_id, "sombra_wr_disc_ee", s.ee_real);
+            self.arena
+                .registry
+                .set_for_coin(coin_id, "sombra_wr_disc_n", s.n as f64);
+        }
+        if let Some(friccion_bp) = self.friccion_modelada_rt_bp(coin_id) {
+            if let Some(f) = self.auditor_interno.sombra_friccion_bp(friccion_bp) {
+                self.arena
+                    .registry
+                    .set_for_coin(coin_id, "sombra_friccion_real_menos_modelada_bp", f.media_bp);
+                self.arena
+                    .registry
+                    .set_for_coin(coin_id, "sombra_friccion_ee_bp", f.ee_bp);
+            }
+        }
+    }
+
     #[inline]
     pub fn sync_navier_stokes_and_microstructure_params(&mut self) {
         let crit_lam = self.arena.config.navier_critical_laminar.load(Ordering::Relaxed);
@@ -2327,23 +2358,16 @@ impl GodEngineCore {
         self.p_equilibrio_de_banda(coin_id, self.tau_de_la_orden(coin_id, tau_banda_ms, hurst) as f64)
     }
 
-    /// QO-586 / CL-75: geometría TP/SL y fricción de ida y vuelta con las que
-    /// el gate juzgará una orden a esa τ. `None` si no hay precio o ATR.
-    fn sonda_de_banda(
-        &self,
-        coin_id: usize,
-        tau_ms: f64,
-    ) -> Option<(risk_engine::tp_sl::TpSl, f64)> {
-        if coin_id >= self.arena.coins.len() || !tau_ms.is_finite() || tau_ms <= 0.0 {
+    /// SOL (2026-10-19, censo C-F7b §3-2): fricción de ida y vuelta MODELADA
+    /// por el gate (taker + suelo de slippage + ATR + latencia), en
+    /// fracción. Fuente única: la usa `sonda_de_banda` y la sombra
+    /// `sombra_friccion_real_menos_modelada_bp` — el gate y su auditor
+    /// leen la MISMA receta, nunca dos.
+    #[inline]
+    fn friccion_rt_modelada(&self, atr_pct: f64) -> Option<f64> {
+        if !atr_pct.is_finite() || atr_pct < 0.0 {
             return None;
         }
-        let coin = &self.arena.coins[coin_id];
-        let price = coin.current_price.load(Ordering::Relaxed);
-        let atr = coin.current_atr.load(Ordering::Relaxed);
-        if !price.is_finite() || price <= 0.0 || !atr.is_finite() || atr <= 0.0 {
-            return None;
-        }
-        let atr_pct = atr / price;
         let taker_fee = self.arena.config.live_taker_fee.load(Ordering::Relaxed);
         let slip_floor = self
             .arena
@@ -2362,6 +2386,42 @@ impl GodEngineCore {
         if !roundtrip_fee.is_finite() || roundtrip_fee < 0.0 {
             return None;
         }
+        Some(roundtrip_fee)
+    }
+
+    /// SOL (2026-10-19): misma fricción modelo en basis points, tomando
+    /// precio y ATR vivos de la moneda. `None` si no hay precio/ATR sanos.
+    pub fn friccion_modelada_rt_bp(&self, coin_id: usize) -> Option<f64> {
+        if coin_id >= self.arena.coins.len() {
+            return None;
+        }
+        let coin = &self.arena.coins[coin_id];
+        let price = coin.current_price.load(Ordering::Relaxed);
+        let atr = coin.current_atr.load(Ordering::Relaxed);
+        if !price.is_finite() || price <= 0.0 || !atr.is_finite() || atr <= 0.0 {
+            return None;
+        }
+        self.friccion_rt_modelada(atr / price).map(|f| f * 1e4)
+    }
+
+    /// QO-586 / CL-75: geometría TP/SL y fricción de ida y vuelta con las que
+    /// el gate juzgará una orden a esa τ. `None` si no hay precio o ATR.
+    fn sonda_de_banda(
+        &self,
+        coin_id: usize,
+        tau_ms: f64,
+    ) -> Option<(risk_engine::tp_sl::TpSl, f64)> {
+        if coin_id >= self.arena.coins.len() || !tau_ms.is_finite() || tau_ms <= 0.0 {
+            return None;
+        }
+        let coin = &self.arena.coins[coin_id];
+        let price = coin.current_price.load(Ordering::Relaxed);
+        let atr = coin.current_atr.load(Ordering::Relaxed);
+        if !price.is_finite() || price <= 0.0 || !atr.is_finite() || atr <= 0.0 {
+            return None;
+        }
+        let atr_pct = atr / price;
+        let roundtrip_fee = self.friccion_rt_modelada(atr_pct)?;
         // CL-62: el mismo multiplicador que el gate de riesgo (por símbolo).
         let sl_mult = self.arena.sl_atr_multiplier_for(coin_id);
         let probe = risk_engine::tp_sl::compute_tp_sl_with_target_rr(
@@ -5118,6 +5178,13 @@ impl GodEngineCore {
                     ) {
                         self.arena.registry.set_for_coin(coin_id, "internal_discrepancy", disc);
                     }
+
+                    // SOL (2026-10-19, censo C-F7b §3-2): SOMBRAS del auditor.
+                    // Telemetría pura (ninguna decisión las lee hoy): la pata
+                    // de win rate con su error estándar por bloques y la
+                    // fricción real menos modelada, ambas sólo con evidencia
+                    // independiente suficiente y estabilidad en dos mitades.
+                    self.publicar_sombras_auditor(coin_id, internal_wr);
 
                     if ml_at_entry > 0.0 {
                         // K-26 (Ola Ω76 / D-676): la posición guarda `ml_prob` crudo (P(subida)).

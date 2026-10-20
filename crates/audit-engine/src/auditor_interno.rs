@@ -232,6 +232,119 @@ pub const MAX_FILLS_JOURNAL: usize = 4096;
 /// MAX_FILLS_JOURNAL: buffer circular acotado, sin crecimiento ilimitado.
 pub const MAX_FILLS_INDEPENDIENTES: usize = 4096;
 
+/// SOL (2026-10-19, censo C-F7b §3-2): evidencia mínima para que una sombra
+/// del auditor se publique. Con menos fills la sombra es `None`: publicar
+/// ruido sería peor que no publicar — la ausencia de dato nunca es señal.
+pub const MIN_FILLS_SOMBRA: usize = 20;
+
+/// SOL (2026-10-19): bloques contiguos para el error estándar de las sombras.
+/// Los fills son una serie correlacionada (mismo régimen, misma sesión): la
+/// media por bloque y el desvío ENTRE bloques / sqrt(B) miden la precisión
+/// real sin asumir independencia que no existe.
+const BLOQUES_SOMBRA: usize = 4;
+
+/// SOL (2026-10-19, §3-2): sombra de la pata de win rate (F413) con intervalo
+/// y estabilidad. Sólo telemetría: ninguna decisión la consume hoy.
+#[derive(Debug, Clone, Copy)]
+pub struct SombraWr {
+    /// WR que afirma el núcleo (saneado a [0,1]).
+    pub wr_interno: f64,
+    /// WR reconstruido de los cierres del canal independiente (neto > 0).
+    pub wr_real: f64,
+    /// |interno − real|.
+    pub disc: f64,
+    /// Error estándar del WR real por bloques.
+    pub ee_real: f64,
+    /// Cierres usados (>= MIN_FILLS_SOMBRA).
+    pub n: usize,
+    /// |interno − WR real| en la primera mitad temporal (estabilidad OOS).
+    pub disc_mitad_a: f64,
+    /// |interno − WR real| en la segunda mitad temporal.
+    pub disc_mitad_b: f64,
+}
+
+/// SOL (2026-10-19, §3-2): sombra de fricción real menos modelada (bp).
+/// Positiva = se paga más de lo modelado. Sólo telemetría.
+#[derive(Debug, Clone, Copy)]
+pub struct SombraFriccion {
+    /// Media de (fee real en bp − fricción modelada en bp) por fill.
+    pub media_bp: f64,
+    /// Error estándar de esa media por bloques.
+    pub ee_bp: f64,
+    /// Fills usados (>= MIN_FILLS_SOMBRA).
+    pub n: usize,
+    /// Media en la primera mitad temporal (estabilidad OOS).
+    pub media_mitad_a_bp: f64,
+    /// Media en la segunda mitad temporal.
+    pub media_mitad_b_bp: f64,
+}
+
+/// SOL (2026-10-19): error estándar de una proporción por bloques contiguos +
+/// proporción de cada mitad. `(ee, prop_mitad_a, prop_mitad_b)`.
+/// Con menos elementos que bloques, `ee = 0` (no hay varianza medible: se
+/// dice 0, nunca NaN).
+fn ee_proporcion_bloques<T, F: Fn(&&T) -> bool>(items: &[&T], pred: F) -> (f64, f64, f64) {
+    let n = items.len();
+    if n == 0 {
+        return (0.0, 0.0, 0.0);
+    }
+    let proporcion = |ini: usize, fin: usize| -> f64 {
+        let total = fin - ini;
+        if total == 0 {
+            return 0.0;
+        }
+        items[ini..fin].iter().filter(|x| pred(x)).count() as f64 / total as f64
+    };
+    let (ee, _) = bloques_media_ee(items, |ini, fin| proporcion(ini, fin));
+    let mitad = n / 2;
+    (ee, proporcion(0, mitad), proporcion(mitad, n))
+}
+
+/// SOL (2026-10-19): `(media_global, ee_por_bloques, media_mitad_a,
+/// media_mitad_b)` de una serie ya saneada (todos finitos).
+fn media_ee_bloques(vals: &[f64]) -> (f64, f64, f64, f64) {
+    let n = vals.len();
+    if n == 0 {
+        return (0.0, 0.0, 0.0, 0.0);
+    }
+    let media = vals.iter().sum::<f64>() / n as f64;
+    let (ee, _) = bloques_media_ee(vals, |ini, fin| {
+        vals[ini..fin].iter().sum::<f64>() / (fin - ini) as f64
+    });
+    let mitad = n / 2;
+    let a = vals[..mitad].iter().sum::<f64>() / mitad.max(1) as f64;
+    let b = vals[mitad..].iter().sum::<f64>() / (n - mitad).max(1) as f64;
+    (media, ee, a, b)
+}
+
+/// SOL (2026-10-19): núcleo común de los errores estándar por bloques.
+/// `media_bloque` devuelve la media del bloque [ini, fin). Devuelve
+/// `(ee, nº de bloques)`; con < BLOQUES_SOMBRA elementos por bloque, ee = 0.
+/// sd muestral entre bloques / sqrt(B).
+fn bloques_media_ee<T, F: Fn(usize, usize) -> f64>(items: &[T], media_bloque: F) -> (f64, usize) {
+    let n = items.len();
+    let b = BLOQUES_SOMBRA;
+    if n < b {
+        return (0.0, 0);
+    }
+    let tam = n / b;
+    if tam == 0 {
+        return (0.0, 0);
+    }
+    let mut sum = 0.0;
+    let mut sum2 = 0.0;
+    for i in 0..b {
+        let ini = i * tam;
+        let fin = if i == b - 1 { n } else { ini + tam };
+        let m = media_bloque(ini, fin);
+        sum += m;
+        sum2 += m * m;
+    }
+    let media = sum / b as f64;
+    let var = ((sum2 - b as f64 * media * media) / (b - 1) as f64).max(0.0);
+    ((var / b as f64).sqrt(), b)
+}
+
 /// Dual Result Verifier
 pub struct VerificadorResultados;
 
@@ -529,6 +642,87 @@ impl AuditorInterno {
             &self.fills_journal,
             self.base_capital,
         )
+    }
+
+    // ------------------------------------------------------- sombras (fase 2)
+
+    /// SOL (2026-10-19, censo C-F7b §3-2): SOMBRA de la pata de win rate.
+    /// Publica `|WR interno − WR real|` contra el canal independiente con su
+    /// error estándar y su estabilidad en dos mitades OOS. Sólo telemetría:
+    /// ninguna decisión la lee hoy — mide, con intervalo, la pata que el
+    /// censo marcó como tautológica (F413).
+    ///
+    /// `None` (no se publica) si: el claim interno no es finito, o no hay
+    /// `MIN_FILLS_SOMBRA` cierres en el canal independiente.
+    pub fn sombra_wr_disc(&self, internal_wr: f64) -> Option<SombraWr> {
+        let wr_interno = if internal_wr.is_finite() {
+            internal_wr.clamp(0.0, 1.0)
+        } else {
+            return None;
+        };
+        let cierres: Vec<&ExchangeFillRecord> = self
+            .fills_independientes
+            .iter()
+            .filter(|f| f.is_closed_position)
+            .collect();
+        let n = cierres.len();
+        if n < MIN_FILLS_SOMBRA {
+            return None;
+        }
+        let neto_positivo = |f: &&ExchangeFillRecord| (f.realized_pnl - f.fee_usd) > 0.0;
+        let wr_real = cierres.iter().filter(|f| neto_positivo(f)).count() as f64 / n as f64;
+        let disc = (wr_interno - wr_real).abs();
+        let (ee_real, wr_a, wr_b) = ee_proporcion_bloques(&cierres, neto_positivo);
+        Some(SombraWr {
+            wr_interno,
+            wr_real,
+            disc,
+            ee_real,
+            n,
+            disc_mitad_a: (wr_interno - wr_a).abs(),
+            disc_mitad_b: (wr_interno - wr_b).abs(),
+        })
+    }
+
+    /// SOL (2026-10-19, censo C-F7b §3-2): SOMBRA de fricción REAL menos
+    /// MODELADA, en basis points, sobre el canal independiente. Positiva = el
+    /// sistema paga más de lo que su gate modela ⇒ el edge real es menor que
+    /// el creído. La fricción modelada la pasa quien conoce la receta del
+    /// gate (misma fuente que `sonda_de_banda`), nunca se hardcodea aquí.
+    ///
+    /// `None` si: la fricción modelada no es finita o es negativa, o hay
+    /// menos de `MIN_FILLS_SOMBRA` fills con nocional finito > 0 y fee finito.
+    pub fn sombra_friccion_bp(&self, friccion_modelada_bp: f64) -> Option<SombraFriccion> {
+        if !(friccion_modelada_bp.is_finite() && friccion_modelada_bp >= 0.0) {
+            return None;
+        }
+        let mut deltas: Vec<f64> = Vec::with_capacity(self.fills_independientes.len());
+        for f in &self.fills_independientes {
+            let nocional = f.price * f.qty;
+            if !(nocional.is_finite() && nocional > 0.0) {
+                continue;
+            }
+            if !(f.fee_usd.is_finite() && f.fee_usd >= 0.0) {
+                continue;
+            }
+            let fee_bp = f.fee_usd / nocional * 1e4;
+            if !fee_bp.is_finite() {
+                continue;
+            }
+            deltas.push(fee_bp - friccion_modelada_bp);
+        }
+        let n = deltas.len();
+        if n < MIN_FILLS_SOMBRA {
+            return None;
+        }
+        let (media_bp, ee_bp, a, b) = media_ee_bloques(&deltas);
+        Some(SombraFriccion {
+            media_bp,
+            ee_bp,
+            n,
+            media_mitad_a_bp: a,
+            media_mitad_b_bp: b,
+        })
     }
 
     /// Evaluates internal claims against independent exchange fill verification
