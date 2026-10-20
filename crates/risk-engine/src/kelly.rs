@@ -1,3 +1,62 @@
+/// Escala de capital continua C^1 en log(capital_ratio) sobre ventana diádica (F1-082 / LC-F1-16 / D-641).
+///
+/// Modula la fracción de Kelly de forma suave según el capital acumulado relativo a la base,
+/// eliminando el salto discontinuo histórico de factor ~2x que existía al cruzar el umbral
+/// `capital_ratio == kelly_survival_cap_ratio`.
+///
+/// # Fundamento Matemático
+/// - Régimen de supervivencia: $f_{\text{surv}}(r) = \text{clamp}(c_{\text{base}} \cdot W \cdot \sqrt{r}, \text{lo}_{\text{surv}}, \text{hi}_{\text{surv}})$
+/// - Régimen de expansión: $f_{\text{exp}}(r) = \text{clamp}(0.50 \cdot (\log_{10}(r) \cdot m_{\text{exp}} + 0.6), \text{lo}_{\text{exp}}, \text{hi}_{\text{exp}})$
+/// - Transición C^1 Hermite: sobre la ventana diádica de 1 octava $[\rho / \sqrt{2}, \rho \sqrt{2}]$:
+///   $$t = \text{clamp}\left(\frac{\ln(r/\rho) + \frac{1}{2}\ln 2}{\ln 2}, 0, 1\right)$$
+///   $$w(t) = 3t^2 - 2t^3$$
+///   $$\text{scale}(r) = (1 - w(t)) \cdot f_{\text{surv}}(r) + w(t) \cdot f_{\text{exp}}(r)$$
+#[inline]
+pub fn continuous_capital_scale(
+    capital_ratio: f64,
+    kelly_survival_cap_ratio: f64,
+    kelly_expansion_mult: f64,
+    strategy_base_fraction: f64,
+    win_rate: f64,
+    spectral_conf: f64,
+) -> f64 {
+    if !capital_ratio.is_finite()
+        || !kelly_survival_cap_ratio.is_finite()
+        || !kelly_expansion_mult.is_finite()
+        || !strategy_base_fraction.is_finite()
+        || !win_rate.is_finite()
+    {
+        return 0.0;
+    }
+
+    let s = if spectral_conf.is_finite() {
+        spectral_conf.clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    let lerp = |a: f64, b: f64| a + (b - a) * s;
+
+    let r = capital_ratio.max(0.01);
+    let rho = kelly_survival_cap_ratio.max(0.01);
+    let survival_coeff = strategy_base_fraction.clamp(0.20, 0.75);
+
+    // Escala del régimen de supervivencia adaptativa
+    let scale_surv = (survival_coeff * win_rate * r.sqrt()).clamp(lerp(0.15, 0.25), lerp(0.50, 0.65));
+
+    // Escala del régimen de expansión parabólica (interés compuesto)
+    let expansion = (r.log10() * kelly_expansion_mult + 0.6).clamp(0.6, 2.0);
+    let scale_exp = (0.50 * expansion).clamp(lerp(0.40, 0.55), lerp(0.80, 0.95));
+
+    // Variedad continua C^1 en log-ratio: ventana diádica de 1 octava centrada en rho
+    const HALF_OCTAVE_LN: f64 = core::f64::consts::LN_2 * 0.5;
+    const OCTAVE_LN: f64 = core::f64::consts::LN_2;
+    let ln_dist = r.ln() - rho.ln();
+    let t = ((ln_dist + HALF_OCTAVE_LN) / OCTAVE_LN).clamp(0.0, 1.0);
+    let w = t * t * (3.0 - 2.0 * t);
+
+    (1.0 - w) * scale_surv + w * scale_exp
+}
+
 /// Fórmula Dinámica de Kelly para Supervivencia y Crecimiento Exponencial
 /// Con Profit Factor PF: Edge > 0 si y sólo si PF > 1.0.
 /// f* = W * (1 - 1 / PF) = W - (1 - W) / R donde R = PF * (1 - W) / W (Payoff Ratio)
@@ -44,7 +103,6 @@ pub fn calculate_kelly_fraction(
     } else {
         0.5
     };
-    let lerp = |a: f64, b: f64| a + (b - a) * s;
 
     // R1.4 — criterios SEPARADOS, no mezclados con `||`:
     //  (a) PF <= 1.0: rampa de exploración (el PF es una estadística con
@@ -75,24 +133,21 @@ pub fn calculate_kelly_fraction(
     // (kelly_survival_cap_ratio / kelly_expansion_mult), sin la antigua rama
     // de micro-cuenta `base_capital × 2.30`: ese umbral fijo creaba una
     // meseta donde el capital quedaba atrapado en media-Kelly hasta superar
-    // 2.3× la base (~$30-40 con base de $13) — el "techo de $40". El modo
-    // supervivencia (clamp 0.20-0.60 modulado por win rate y raíz del ratio
-    // de capital) ya protege cuentas pequeñas de forma continua.
+    // 2.3× la base (~$30-40 con base de $13) — el "techo de $40".
+    //
+    // F1-082 (LC-F1-16 / D-641): Se reemplaza la bifurcación rígida if/else que
+    // producía un acantilado de ~2x en kelly_survival_cap_ratio por la variedad
+    // continua C^1 `continuous_capital_scale` vía interpolación Hermite cúbica
+    // sobre una ventana diádica logarítmica de 1 octava centrada en rho.
     let capital_ratio = (current_capital / base_capital.max(1.0)).max(0.01);
-    // R1.4 — el coeficiente de supervivencia ya no es el literal 0.35: es el
-    // gen kelly_at_tau(τ de la posición), revivido de su condición de gen
-    // muerto. El clamp [0.20, 0.75] es el riel de seguridad del modo.
-    let survival_coeff = strategy_base_fraction.clamp(0.20, 0.75);
-    let capital_scale = if capital_ratio < kelly_survival_cap_ratio {
-        // Modo Supervivencia Adaptativa — S-1: banda espectral
-        // (anti-persistente [0.15,0.50] ↔ persistente [0.25,0.65]).
-        (survival_coeff * win_rate * capital_ratio.sqrt()).clamp(lerp(0.15, 0.25), lerp(0.50, 0.65))
-    } else {
-        // Modo Expansión Parabólica (Interés Compuesto) — S-1: banda espectral
-        // (anti-persistente [0.40,0.80] ↔ persistente [0.55,0.95]).
-        let expansion = (capital_ratio.log10() * kelly_expansion_mult + 0.6).clamp(0.6, 2.0);
-        (0.50 * expansion).clamp(lerp(0.40, 0.55), lerp(0.80, 0.95))
-    };
+    let capital_scale = continuous_capital_scale(
+        capital_ratio,
+        kelly_survival_cap_ratio,
+        kelly_expansion_mult,
+        strategy_base_fraction,
+        win_rate,
+        s,
+    );
 
     // R1.4 — guard de clamp: `f64::clamp` con min > max es pánico; un genoma
     // legacy cargado del espejo (sin pasar por el gate) puede traer cualquier par.
@@ -217,5 +272,47 @@ mod tests {
         let s_anti =
             calculate_kelly_fraction(0.55, 1.3, 13.0, base, surv, exp, cmin, cmax, sbase, 0.0);
         assert!(s_persist >= s_anti);
+    }
+
+    /// F1-082 / LC-F1-16 / D-641: Verificación de continuidad C^0 en el umbral de supervivencia.
+    /// Antes: la fracción saltaba en φ de 0.06869 a 0.14250 (factor 2.07x) por la bifurcación rígida if/else.
+    /// Ahora: la transición Hermite C^1 garantiza |a - b| < 1e-3 (de hecho < 1e-6) entre 13·φ - 1e-6 y 13·φ + 1e-6.
+    #[test]
+    fn test_f1_082_kelly_es_continuo_en_el_umbral_de_supervivencia() {
+        let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+        let base = 13.0;
+        let a = calculate_kelly_fraction(
+            0.6,
+            2.0,
+            base * phi - 1e-6,
+            base,
+            phi,
+            phi,
+            0.01,
+            1.0,
+            0.30,
+            0.5,
+        );
+        let b = calculate_kelly_fraction(
+            0.6,
+            2.0,
+            base * phi + 1e-6,
+            base,
+            phi,
+            phi,
+            0.01,
+            1.0,
+            0.30,
+            0.5,
+        );
+        let diff = (a - b).abs();
+        assert!(
+            diff < 1e-3,
+            "F1-082 violado: discontinuidad en umbral de supervivencia a={a}, b={b}, diff={diff}"
+        );
+        assert!(
+            diff < 1e-5,
+            "F1-082 violado: transición C^1 debe ser suave a nivel infinitesimal diff={diff}"
+        );
     }
 }

@@ -9101,3 +9101,22 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     4. `f1_081_contrato_4_proteccion_ante_deterioro_de_payoff` ($f \to 0$ ante $b < 0.8$)
     5. `f1_081_contrato_5_inmunidad_ieee754` (NaN/$\pm\infty$ neutral)
   - Verificaciones globales: `risk-engine --lib kelly_envelope` 9/9 pass, `spectral_risk_contract` 21/21 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass, `cargo check --workspace --all-targets -j 1` 100% verde con 0 errores y 0 warnings.
+
+---
+
+## AGY — Ola Ω186: Cierre F1-082 (Erradicación del Acantilado Discontinuo en `capital_scale` de Kelly / Transición C^1 Hermite) — 2026-10-20
+- **Hallazgo F1-082 cerrado (MED)**:
+  - `crates/risk-engine/src/kelly.rs` (`calculate_kelly_fraction`, `continuous_capital_scale`):
+    - Erradicado el acantilado discontinuo de factor ~2x (salto de hasta $+107\%$) que ocurría al cruzar el umbral `capital_ratio == kelly_survival_cap_ratio` ($\rho$, default $\phi \approx 1.618$, equivalente a $\$21.03$ con base $\$13$).
+    - La bifurcación rígida `if capital_ratio < kelly_survival_cap_ratio { ... } else { ... }` producía una discontinuidad $C^{-1}$: a $\$21.02$ la escala era $0.245$, mientras que a $\$21.04$ saltaba a $0.475$ ($1.94\times$ a $2.07\times$). Al caer por un solo centavo, el tamaño de posición se dividía abruptamente por dos, violando la doctrina D-641 ("ningún centavo produce un salto") e introduciendo riesgo procíclico no modelado en la zona de arranque de la cuenta pequeña.
+    - Implementada la función pura `continuous_capital_scale`: variedad continua $C^1$ en $\ln(\text{capital\_ratio})$ mediante interpolación cúbica de Hermite (smoothstep $H(t) = 3t^2 - 2t^3$) sobre una ventana diádica espectral de 1 octava centrada en $\rho$: $[\rho / \sqrt{2}, \rho \sqrt{2}]$.
+    - Para $r \le \rho / \sqrt{2}$: $w = 0$ (100% régimen de supervivencia adaptativa, preservando cuentas de $\$13$ como diseñado).
+    - Para $r \ge \rho \sqrt{2}$: $w = 1$ (100% régimen de expansión parabólica, habilitando crecimiento compuesto exponencial).
+    - Para $r \in (\rho / \sqrt{2}, \rho \sqrt{2})$: transición suave monótona estrictamente $C^1$ con derivadas nulas en los extremos, eliminando cualquier salto de escalón ($|\Delta f| < 10^{-6}$ para $\Delta C = 10^{-6}$).
+  - Suite de contratos formales `crates/risk-engine/tests/f1_082_kelly_capital_scale_continuity_contract.rs` (5/5 tests PASSED):
+    1. `contrato_1_continuidad_infinitesimal_en_frontera_rho` ($|\Delta f| < 10^{-4}$ y $|\Delta \text{scale}| < 10^{-5}$ a través de $\rho \in \{1.0, 1.345, \phi, 2.0, 2.5, 3.0\}$)
+    2. `contrato_2_barrido_denso_sin_discontinuidades_de_escalon` (2.000 puntos desde $\$5.00$ hasta $\$100.00$, $\max |\Delta f / \Delta C|$ finito sin escalones)
+    3. `contrato_3_monotonia_y_coherencia_asintotica` (supervivencia $\le$ transición $\le$ expansión)
+    4. `contrato_4_modulacion_espectral_global` (persistencia espectral $s=1.0 \ge s=0.5 \ge s=0.0$ en toda la curva de capital)
+    5. `contrato_5_resiliencia_a_entradas_degeneradas_o_no_finitas` (inmunidad IEEE-754 a $\text{NaN}$, $\pm\infty$ y capital ratio negativo)
+  - Verificaciones globales: `risk-engine --lib kelly` 17/17 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets -j 1` 100% verde con 0 errores y 0 warnings.
