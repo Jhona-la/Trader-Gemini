@@ -93,13 +93,14 @@ fn el_ruido_de_muestreo_ya_no_veta() {
         "cota inferior = 0,4 − √(1/12) ≈ {esperado}, obtuvo {disc}"
     );
     assert!(disc < 0.20, "0,1113 < 0,20 ⇒ el ruido no dispara autoengaño");
-    // 0,1113 cae entre recuperable (0,05) y autoengaño (0,20): queda
-    // clasificado como recuperable, pero NO como autoengaño.
+    // Umbrales del tribunal: recuperable 0,05 · peligroso 0,10 · autoengaño 0,20.
+    // 0,1113 cae en la banda de «peligroso», pero NUNCA en autoengaño: el
+    // ruido de muestreo no puede sostener la acusación máxima.
     let v = evaluate_tribunal_verdict(disc, &TribunalThresholds::default());
     assert_eq!(
         v,
-        TribunalVerdict::CulpableRecuperable,
-        "ruido de muestreo ⇒ recuperable, jamás autoengaño"
+        TribunalVerdict::CulpablePeligroso,
+        "0,1113 > 0,10 ⇒ banda peligroso (calibración del tribunal, no de este átomo)"
     );
     assert_ne!(v, TribunalVerdict::AutoengañoDetectado);
 }
