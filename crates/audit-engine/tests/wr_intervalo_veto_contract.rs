@@ -55,12 +55,28 @@ fn agrupados() -> AuditorInterno {
 
 const EE_AGRUPADO: f64 = 0.288_675_134_594_812_9; // √(1/12)
 
+/// Discrepancia con la pata de DRAWDOWN honesta (el DD real del canal): así
+/// se aísla la pata de WR. Con dd interno 0 la pata DD (≈0,126 por el equity
+/// del fixture) dominaba el máximo y ocultaba lo que el test mide.
+fn disc_aislando_wr(a: &AuditorInterno, claim_wr: f64) -> f64 {
+    disc_con_sharpe(a, 0.0, claim_wr)
+}
+
+/// Igual, con un claim de sharpe explícito (para probar la dominancia).
+fn disc_con_sharpe(a: &AuditorInterno, claim_sharpe: f64, claim_wr: f64) -> f64 {
+    let indep = a.compute_independent_metrics_from_host();
+    a.compute_internal_discrepancy_evidenciada(
+        claim_sharpe,
+        claim_wr,
+        indep.calculated_max_drawdown,
+    )
+    .expect("canal con evidencia")
+}
+
 #[test]
 fn ee_cero_no_cambia_la_pata_puntual() {
     let a = alternados();
-    let disc = a
-        .compute_internal_discrepancy_evidenciada(0.0, 0.9, 0.0)
-        .expect("canal con evidencia");
+    let disc = disc_aislando_wr(&a, 0.9);
     assert!(
         (disc - 0.4).abs() < 1e-12,
         "con ee 0 la pata es puntual: 0,4 exacto, obtuvo {disc}"
@@ -70,9 +86,7 @@ fn ee_cero_no_cambia_la_pata_puntual() {
 #[test]
 fn el_ruido_de_muestreo_ya_no_veta() {
     let a = agrupados();
-    let disc = a
-        .compute_internal_discrepancy_evidenciada(0.0, 0.9, 0.0)
-        .expect("canal con evidencia");
+    let disc = disc_aislando_wr(&a, 0.9);
     let esperado = 0.4 - EE_AGRUPADO;
     assert!(
         (disc - esperado).abs() < 1e-9,
@@ -93,9 +107,7 @@ fn el_ruido_de_muestreo_ya_no_veta() {
 #[test]
 fn la_discrepancia_real_sobrevive_a_su_ruido_y_veta() {
     let a = agrupados();
-    let disc = a
-        .compute_internal_discrepancy_evidenciada(0.0, 1.0, 0.0)
-        .expect("canal con evidencia");
+    let disc = disc_aislando_wr(&a, 1.0);
     let esperado = 0.5 - EE_AGRUPADO;
     assert!(
         (disc - esperado).abs() < 1e-9,
@@ -114,9 +126,7 @@ fn con_menos_de_n_min_la_pata_queda_puntual() {
         a.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl));
     }
     assert!(a.sombra_wr_disc(0.9).is_none(), "19 < MIN_FILLS_SOMBRA ⇒ sin sombra");
-    let disc = a
-        .compute_internal_discrepancy_evidenciada(0.0, 0.9, 0.0)
-        .expect("canal con fills");
+    let disc = disc_aislando_wr(&a, 0.9);
     // WR real 10/19 ≈ 0,5263 ⇒ pata |0,9 − 0,5263| ≈ 0,3737 SIN ajuste.
     let esperado: f64 = (0.9_f64 - 10.0_f64 / 19.0).abs();
     assert!(
@@ -131,9 +141,7 @@ fn las_otras_patas_siguen_dominando_cuando_son_mayores() {
     let a = agrupados();
     // Sharpe interno 10 contra un sharpe real de pocos céntimos ⇒
     // sharpe_disc ≈ 1,0 domina a la cota de WR (0,1113).
-    let disc = a
-        .compute_internal_discrepancy_evidenciada(10.0, 0.9, 0.0)
-        .expect("canal con evidencia");
+    let disc = disc_con_sharpe(&a, 10.0, 0.9);
     assert!(
         disc > 0.5,
         "la pata de sharpe domina a la cota de WR (0,1113): {disc}"
@@ -143,9 +151,7 @@ fn las_otras_patas_siguen_dominando_cuando_son_mayores() {
 #[test]
 fn claim_honesto_no_veta_ni_con_ruido() {
     let a = agrupados();
-    let disc = a
-        .compute_internal_discrepancy_evidenciada(0.0, 0.5, 0.0)
-        .expect("canal con evidencia");
+    let disc = disc_aislando_wr(&a, 0.5);
     assert_eq!(disc, 0.0, "pata 0, cota max(0 − ee, 0) = 0");
 }
 
@@ -153,9 +159,7 @@ fn claim_honesto_no_veta_ni_con_ruido() {
 fn la_cota_nunca_es_negativa() {
     let a = agrupados();
     // Claim 0,2 contra real 0,5: pata 0,3; cota 0,3 − 0,2887 = 0,0113 ≥ 0.
-    let disc = a
-        .compute_internal_discrepancy_evidenciada(0.0, 0.2, 0.0)
-        .expect("canal con evidencia");
+    let disc = disc_aislando_wr(&a, 0.2);
     assert!(
         (disc - (0.3 - EE_AGRUPADO)).abs() < 1e-9 && disc >= 0.0,
         "cota = 0,3 − ee, obtuvo {disc}"
