@@ -9014,3 +9014,22 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     4. `f1_077_contrato_4_antisimetria_estricta_y_rango_acotado`: antisimetría $c(\text{false}) == -c(\text{true})$ ($< 10^{-12}$) y rango estrictamente bounded en $[-1.0, 1.0]$.
     5. `f1_077_contrato_5_confluencia_resonante_consistencia_fused`: paridad $fused == coh\_long$, eliminando falsos rechazos en `confluencia_resonante_con_umbrales`.
   - Verificaciones globales: `quantum-arena` lib 152/152 pass, `god-engine-core` lib 211/211 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
+
+---
+
+## AGY — Ola Ω182: Cierre F1-078 (Sizing Dinámico de Familia de Ville Multiactivo, Aceleración GRAPA y Warm-Start) — 2026-10-20
+- **Hallazgo F1-078 cerrado**:
+  - `FAMILIA_VETO_GRUPO`, `EProceso` y `EspectralMultiactivo` en `crates/quantum-arena`, `crates/god-engine-core` y `crates/risk-engine`:
+    - Erradicado el sesgo de familia fija sobredimensionada a 30 activos ($C(30, 2) \cdot 5 = 2\ 175$ hipótesis, umbral Ville $M/\alpha = 43\ 500$ a $\alpha = 0.05$). En cuentas micro de $13 USD operando rosters de 6 u 8 activos, un umbral de $43\ 500$ con $\lambda = 0.10$ fija exigía $\approx 240$ bloques contemporáneos ($\approx 18$ horas en escala 19 y $>72$ horas en escalas macro), dejando el veto espectral multiactivo completamente inerte e inalcanzable durante la sesión de arranque.
+    - Implementado `familia_honesta(n)`: calcula $C(n, 2) \cdot 5$ honesto según el roster vivo ($n=6 \implies 75$ hipótesis, umbral $1\ 500$; $n=8 \implies 140$ hipótesis, umbral $2\ 800$; $n=16 \implies 600$ hipótesis, umbral $12\ 000$).
+    - Implementada apuesta adaptativa GRAPA (Growth Rate Adaptive with Predictable Averaging, Waudby-Smith & Ramdas 2023) en `EProceso::observar_adaptativo`: estima causalmente el edge previsible $\hat{\mu}_{t-1} = 2\hat{p}_{t-1} - 1$ a partir de la filtración previa $\mathcal{F}_{t-1}$, adaptando $\lambda_t \in [0.05, 0.40]$. Preserva estrictamente la propiedad de supermartingala bajo $H_0$ ($E[1 + \lambda_t \text{apuesta}_t | \mathcal{F}_{t-1}] \le 1$) y acelera el cruce de Ville ante fuerte co-movimiento real ($\rho \approx 0.70$) en $\approx 2.6\times$ (de 143 bloques a 73 bloques).
+    - Implementada persistencia y warm-start: estructura serializable `SnapshotParEscala`, métodos `exportar_snapshots`, `importar_snapshots`, `warm_start_par`, `guardar_checkpoint`, `cargar_checkpoint` y campo `espectral_snapshots` en `ArenaCheckpoint`. Elimina el retraso de arranque en frío tras reinicio del proceso (de 18 horas a 0 horas).
+    - Implementada telemetría de diagnóstico: `pares_cerrados_por_capital(moneda, escala)` y `estado_gate_ville(a, b, escala)` en `EspectralMultiactivo`, y publicación de `qo_613_gate_cerrado_capital` en `evidence_publication::publicar_coherencia`.
+    - `QuantumConfig::espectral_familia_veto` default fijado a `0.0` (modo dinámico automático según roster activo) y nueva variable `espectral_lambda_adaptativa` activada por defecto.
+  - Contrato de certificación `crates/quantum-arena/tests/f1_078_multi_asset_ville_family_contract.rs` (5/5 tests PASSED):
+    1. `f1_078_dimensionado_honesto_de_familia_segun_roster`: verificación de cotas exactas para $n=0, 1, 6, 8, 16, 26, 30$ y comportamiento dinámico de `dimensionar_por_roster`.
+    2. `f1_078_aceleracion_grapa_frente_a_lambda_fija`: demostración empírica de cruce en 73 bloques con GRAPA vs 143 bloques con $\lambda = 0.10$ fija bajo $\rho = 0.70$.
+    3. `f1_078_persistencia_warm_start_roundtrip`: ciclo completo de exportación a JSON, creación de nueva instancia y restauración en caliente con gate abierto inmediatamente (0 bloques).
+    4. `f1_078_telemetria_gate_cerrado_por_capital`: verificación de reporte de pares maduros con capital inferior al umbral, y transición atómica tras superación del umbral.
+    5. `f1_078_robustez_sin_panicos_limites_arbitrarios`: cero pánicos ante índices inválidos, escalas fuera de rango y snapshots vacíos/corruptos (`RB-P1`).
+  - Verificaciones globales: `quantum-arena` lib 152/152 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass, `checkpoint_characterization` pass, `espectral_multiactivo_regime_adaptation_contract` 4/4 pass, `cargo check --workspace --all-targets` 100% verde (0 errores, 0 warnings).

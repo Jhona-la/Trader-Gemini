@@ -1859,16 +1859,28 @@ impl GodEngineCore {
         self.arena.registry.set("espectral_masa_minima", esp_masa_min);
         self.arena.registry.set("espectral_masa_plena", esp_masa_plena);
 
-        // OLA Ω127: Sincronización de Espectral Multiactivo y Régimen Continuo desde QuantumConfig
+        // OLA Ω127 / OLA Ω182 (F1-078): Sincronización de Espectral Multiactivo y Régimen Continuo desde QuantumConfig
         let esp_rec_x = self.arena.config.espectral_recencia_x.load(Ordering::Relaxed);
         let esp_olv = self.arena.config.espectral_olvido.load(Ordering::Relaxed);
         let esp_mm = self.arena.config.espectral_muestras_maduras.load(Ordering::Relaxed);
         let esp_fam = self.arena.config.espectral_familia_veto.load(Ordering::Relaxed);
+        let esp_adp = self.arena.config.espectral_lambda_adaptativa.load(Ordering::Relaxed);
+        let active_universe_size = quantum_arena::symbols::get_active_universe_size();
+        let honest_family = if active_universe_size > 1 {
+            Some(quantum_arena::espectral_multiactivo::familia_honesta(active_universe_size))
+        } else {
+            None
+        };
         let ma_params = quantum_arena::espectral_multiactivo::EspectralMultiactivoParams {
             recencia_x: esp_rec_x,
             olvido: esp_olv,
             muestras_maduras: esp_mm as u64,
-            familia_veto_override: if esp_fam > 0.0 { Some(esp_fam as usize) } else { None },
+            familia_veto_override: if esp_fam > 0.0 {
+                Some(esp_fam as usize)
+            } else {
+                honest_family
+            },
+            lambda_adaptativa: esp_adp > 0.0,
         };
         self.espectral_ma.update_params(ma_params);
 
@@ -1876,6 +1888,7 @@ impl GodEngineCore {
         self.arena.registry.set("espectral_olvido", esp_olv);
         self.arena.registry.set("espectral_muestras_maduras", esp_mm);
         self.arena.registry.set("espectral_familia_veto", esp_fam);
+        self.arena.registry.set("espectral_lambda_adaptativa", esp_adp);
 
         let reg_accel = self.arena.config.regime_w_accel_fast.load(Ordering::Relaxed);
         let reg_tide = self.arena.config.regime_w_adverse_tide.load(Ordering::Relaxed);

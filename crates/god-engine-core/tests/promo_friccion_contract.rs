@@ -22,7 +22,7 @@ use std::sync::atomic::Ordering;
 
 fn nucleo_con_precio() -> GodEngineCore {
     let arena = GlobalArena::build_in_own_stack(13.0);
-    let mut core = GodEngineCore::new(arena);
+    let core = GodEngineCore::new(arena);
     core.arena.coins[0].current_price.store(100.0, Ordering::Relaxed);
     core.arena.coins[0].current_atr.store(0.5, Ordering::Relaxed);
     // Geometría SANA: sin Hurst ni pronóstico de sigma el TP/SL degenera y

@@ -22,6 +22,7 @@ fn contrato_espectral_multiactivo_adaptacion_dinamica() {
         olvido: 0.05,
         muestras_maduras: 15,
         familia_veto_override: Some(50),
+        lambda_adaptativa: false,
     };
     let mut ma = EspectralMultiactivo::with_params(4, initial_params);
     assert_eq!(ma.params().muestras_maduras, 15);
