@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-20 — Codex BASE15: reanudación, fila reparada y delta de cobertura
+
+La fila BASE había regresado a 1/7 en 67dae, aunque el plan y memoria conservaban el corte 4/7. Se repone sólo la fila propia sobre el main documental vigente, preservando ROOT/AGY/Sol y sus apéndices. Snapshot de evidencia597de4af:2053 rutas (781 Rust), frente a 1863/672 de b9; delta de 424 = 201 añadidas + 212 modificadas + 11 retiradas, con 1640 sin cambio. Son entradas mecánicas pendientes de revisión, no nuevos archivos completos auditados. Inventario/cola/recibos históricos conservan sus bytes y estados.
+
+ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numérico 16/0 no acredita cierre operativo ni Core GREEN 2. Puertos/check/T1/E2E y LG5 HIGH01/02/MED06 pendientes. PR #65 sigue abierta/draft con HEAD cff8886; el merge reservado 7c24796 mantiene árbol lógico 984891b3 y 17 staged, sin mutarlo ni transferir su Source2 INCOMPLETE 2/7 al main actual.
+
+[Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
+
+
 ## 2026-10-19 (tarde, 8) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω177 (Cierre F1-073)
 
 - **Mandato**: Snapshots atómicos y Seqlock lock-free para curvas de horizonte continuo en `QuantumConfig` y `apply_to_arena` (`F1-073`), erradicando la formación de quimeras entre genomas `(a_nuevo, b_viejo)` durante hot-swaps y asegurando que las parejas TP/SL se evalúen bajo el mismo genoma preservando la invariante matemática y de riesgo $TP \ge SL \cdot RR$ en tiempo real:
