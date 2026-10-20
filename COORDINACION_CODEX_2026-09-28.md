@@ -15600,3 +15600,20 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
   - `checkpoint_characterization`: 2/2 tests PASSED.
   - `espectral_multiactivo_regime_adaptation_contract`: 4/4 tests PASSED.
   - `cargo check --workspace --all-targets`: 16 crates 100% verde (0 errores, 0 warnings).
+
+
+---
+
+## AGY — Ola Ω183: Cierre F1-079 (Cuantiles Adaptativos en Ventana Acotada con Olvido Temporal Estricto y Erradicación de Nodos Muertos) — 2026-10-20
+- **Hallazgo F1-079 cerrado (Línea C C-F2.2 / F2.2-08)**:
+  - `AdaptiveQuantileEngine`, `RingQuantile` y `StatefulEngine` en `crates/quantum-arena` y `crates/god-engine-core`:
+    - Erradicado el congelamiento por edad de sesión que sufría el estimador P² acumulativo sin olvido temporal.
+    - Implementado `RingQuantile<const N: usize = CAPACIDAD_VENTANA_CUANTIL>` ($N = 256$): ventana deslizante acotada con olvido temporal estricto en stack inline sin heap allocation (zero-alloc).
+    - Ordenamiento parcial e introselect con `select_nth_unstable_by` perezoso y lock-free (`AtomicU64` / `AtomicBool`), garantizando `Send + Sync` y evaluación en nanosegundos.
+    - Compuerta de madurez estadística estricta (`MUESTRAS_MADURAS_CUANTIL = 30`).
+    - Fallbacks fríos derivados de la curva del genoma `obi_threshold_at_tau(tau)` y `tech_threshold`, erradicando literales hardcodeados 0.15 y 0.40.
+    - Erradicación de suelos rígidos 0.02 y 0.10.
+    - Extirpación de nodos muertos `atr_p50` y `StatefulEngine::quantiles`.
+    - Des-ignorado y aprobado el test canónico `cf2_p2_tras_cambio_de_regimen_vuelve_al_nominal` en `cf2_evalues_cuantiles_solucion_conocida.rs` (tasa nominal 0.20 exacta).
+  - Contrato de certificación `crates/quantum-arena/tests/f1_079_adaptive_quantiles_forgetting_contract.rs` (5/5 tests PASSED).
+  - Verificaciones globales: `quantum-arena` lib 152/152 pass, `cf2_evalues_cuantiles_solucion_conocida.rs` 5/5 pass, `quantile_numeric_contract.rs` 9/9 pass, `rb_p1_trinquete_panicos_contract.rs` 5/5 pass, `stateful_transition_contract.rs` 25/25 pass, `cargo check --workspace --all-targets` 100% verde (0 errores, 0 warnings).

@@ -9033,3 +9033,25 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     4. `f1_078_telemetria_gate_cerrado_por_capital`: verificación de reporte de pares maduros con capital inferior al umbral, y transición atómica tras superación del umbral.
     5. `f1_078_robustez_sin_panicos_limites_arbitrarios`: cero pánicos ante índices inválidos, escalas fuera de rango y snapshots vacíos/corruptos (`RB-P1`).
   - Verificaciones globales: `quantum-arena` lib 152/152 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass, `checkpoint_characterization` pass, `espectral_multiactivo_regime_adaptation_contract` 4/4 pass, `cargo check --workspace --all-targets` 100% verde (0 errores, 0 warnings).
+
+
+---
+
+## AGY — Ola Ω183: Cierre F1-079 (Cuantiles Adaptativos en Ventana Acotada con Olvido Temporal Estricto y Erradicación de Nodos Muertos) — 2026-10-20
+- **Hallazgo F1-079 cerrado (Línea C C-F2.2 / F2.2-08)**:
+  - `AdaptiveQuantileEngine`, `RingQuantile` y `StatefulEngine` en `crates/quantum-arena` y `crates/god-engine-core`:
+    - Erradicado el congelamiento por edad de sesión que sufría el estimador P² acumulativo sin olvido temporal (tras horas de operación con $N \approx 288\ 000$, la influencia de cada muestra caía como $1/N$, impidiendo la adaptación ante cambios bruscos de régimen de volatilidad o calmados prolongados).
+    - Implementado `RingQuantile<const N: usize = CAPACIDAD_VENTANA_CUANTIL>` ($N = 256$, `CAPACIDAD_VENTANA_CUANTIL = 256`): ventana deslizante acotada que consume exactamente 2 048 bytes (2 KiB) en stack inline (cero heap allocation). Descarta al 100% cualquier dato del régimen anterior en exactamente $N=256$ pasos, recuperando adaptabilidad instantánea ante cambios de régimen.
+    - Selección rápida sin heap alloc: ordenamiento parcial e introselect con `select_nth_unstable_by` en buffer scratch en stack, amortizado de forma perezosa y lock-free (`AtomicU64` / `AtomicBool`) que garantiza `Send + Sync` y evaluación en nanosegundos.
+    - Compuerta de madurez estadística estricta (`MUESTRAS_MADURAS_CUANTIL = 30`): bajo 30 observaciones, el estimador no declara `initialized`, previniendo que muestras ruidosas iniciales fijen umbrales vivos prematuros.
+    - Fallbacks fríos derivados de la curva del genoma y configuración (`obi_threshold_at_tau(tau)` y `tech_threshold` / `dynamic_ofi_threshold`): erradicados los literales hardcodeados 0.15 y 0.40 en decisiones de trading vivas. Cuando el estimador no está maduro, el piso medido desciende suavemente al valor contextual de la curva del genoma.
+    - Erradicación de suelos arbitrarios rígidos (0.02 y 0.10): permitiendo que activos con baja volatilidad de flujo o libros finos operen con cuantiles empíricos fieles sin recortes artificiales.
+    - Poda de nodos muertos (Fallo Tipo 2): extirpado `atr_p50` de `AdaptiveQuantileEngine` (nadie lo leía) y extirpado el campo huérfano `quantiles` en `StatefulEngine` (se actualizaba en hot path pero nadie lo leía, ahorrando CPU y memoria por tick).
+    - Des-ignorado y aprobado el test canónico `cf2_p2_tras_cambio_de_regimen_vuelve_al_nominal` en `cf2_evalues_cuantiles_solucion_conocida.rs`: tras duplicar $\sigma$, la tasa nominal de disparo regresa a 0.20 exacto ($\pm 0.02$) en lugar de quedar congelada en 0.49.
+  - Contrato de certificación `crates/quantum-arena/tests/f1_079_adaptive_quantiles_forgetting_contract.rs` (5/5 tests PASSED):
+    1. `f1_079_thread_safety_send_sync`: certificación de `Send + Sync` estático para `RingQuantile` y `AdaptiveQuantileEngine`.
+    2. `f1_079_regime_shift_complete_forgetting_within_256_samples`: adaptación veloz $\sigma = 1.0 \to \sigma = 5.0 \to \sigma = 0.5$ con olvido total en $\le 256$ muestras.
+    3. `f1_079_maturity_gate_and_genome_fallback`: respeto estricto de compuerta $N < 30$ y fallback contextual del genoma.
+    4. `f1_079_nan_inf_immunity`: inmunidad a envenenamiento por NaN / $\pm\infty$.
+    5. `f1_079_zero_hardcoded_floor_in_micro_volatility`: verificación de adaptabilidad por debajo de 0.02 en baja volatilidad.
+  - Verificaciones globales: `quantum-arena` lib 152/152 pass, `cf2_evalues_cuantiles_solucion_conocida.rs` 5/5 pass (1 open de IC), `quantile_numeric_contract.rs` 9/9 pass, `rb_p1_trinquete_panicos_contract.rs` 5/5 pass (0 pánicos agregados), `stateful_transition_contract.rs` 25/25 pass, `cargo check --workspace --all-targets` 100% verde (0 errores, 0 warnings).

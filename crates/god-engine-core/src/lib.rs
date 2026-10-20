@@ -1392,6 +1392,10 @@ impl GodEngineCore {
         let online_learner =
             metacortex_engine::online_learning::OnlineLearningModule::new(0.001, 0.9);
 
+        let fb_ofi = arena.config.dynamic_ofi_threshold.load(Ordering::Relaxed);
+        let fb_obi = arena.config.obi_threshold_at_tau(60_000.0);
+        let fb_score = arena.config.tech_threshold.load(Ordering::Relaxed);
+
         let mut core = Self {
             arena,
             outcome_context,
@@ -1533,7 +1537,11 @@ impl GodEngineCore {
             bosque_registro: vec![TasaAcierto::default(); n_coins],
             bosque_voto_abierto: vec![None; n_coins],
             cuantiles: (0..n_coins)
-                .map(|_| quantum_arena::adaptive_quantiles::AdaptiveQuantileEngine::new())
+                .map(|_| {
+                    quantum_arena::adaptive_quantiles::AdaptiveQuantileEngine::with_fallbacks(
+                        fb_ofi, fb_obi, fb_score,
+                    )
+                })
                 .collect(),
             spectral_published_in_current_event: false,
         };
@@ -1813,6 +1821,14 @@ impl GodEngineCore {
         let ofi_alpha = self.arena.config.ofi_ewma_alpha.load(Ordering::Relaxed);
         for fe in self.feature_engines.iter_mut() {
             fe.ofi_model.set_alpha(ofi_alpha);
+        }
+
+        // F1-079 (Ola Ω183): Sincronización de respaldos fríos de cuantiles adaptativos desde QuantumConfig
+        let fb_ofi = self.arena.config.dynamic_ofi_threshold.load(Ordering::Relaxed);
+        let fb_obi = self.arena.config.obi_threshold_at_tau(60_000.0);
+        let fb_score = self.arena.config.tech_threshold.load(Ordering::Relaxed);
+        for q in self.cuantiles.iter_mut() {
+            q.configurar_fallbacks(fb_ofi, fb_obi, fb_score);
         }
 
         // OLA Ω122: Sincronización de Yang-Mills y Helmholtz-Hodge desde QuantumConfig
@@ -3951,22 +3967,23 @@ impl GodEngineCore {
     }
 
     fn umbral_obi_dinamico(&self, coin_id: usize, tau_ms: f64) -> f64 {
-        let piso = self.cuantiles[coin_id].dynamic_obi_threshold()
+        let genome_val = self.arena.config.obi_threshold_at_tau(tau_ms);
+        let piso = self.cuantiles[coin_id].dynamic_obi_threshold_con_fallback(genome_val)
             * self.intermittency_mult_de(coin_id);
-        self.arena
-            .config
-            .obi_threshold_at_tau(tau_ms)
+        genome_val
             .max(piso)
             .clamp(0.0, 1.0)
     }
 
     fn umbral_ofi_dinamico(&self, coin_id: usize) -> f64 {
-        let piso = self.cuantiles[coin_id].dynamic_ofi_threshold()
-            * self.intermittency_mult_de(coin_id);
-        self.arena
+        let genome_val = self
+            .arena
             .config
             .dynamic_ofi_threshold
-            .load(Ordering::Relaxed)
+            .load(Ordering::Relaxed);
+        let piso = self.cuantiles[coin_id].dynamic_ofi_threshold_con_fallback(genome_val)
+            * self.intermittency_mult_de(coin_id);
+        genome_val
             .max(piso)
             .max(f64::MIN_POSITIVE)
     }
@@ -6338,14 +6355,16 @@ impl GodEngineCore {
                     .spectral_intermittency
                     .load(Ordering::Relaxed)
                     .clamp(0.0, 1.0);
-            let piso_obi_medido = self.cuantiles[coin_id].dynamic_obi_threshold() * intermittency_mult;
+            let fb_obi = self.arena.config.obi_threshold_at_tau(tau_dom);
+            let piso_obi_medido = self.cuantiles[coin_id].dynamic_obi_threshold_con_fallback(fb_obi) * intermittency_mult;
             // D-756: el suelo del score analítico, por el mismo camino. Es el
             // percentil 85 MEDIDO de |composite_score| en este símbolo: por
             // debajo de él, «convicción analítica» describe lo que el score
             // hace el 85 % del tiempo, no un evento. Se lee aquí, junto a los
             // otros dos, para que TODAS las puertas de abajo usen el mismo
             // estado del estimador dentro del mismo tick.
-            let piso_score_medido = self.cuantiles[coin_id].dynamic_holistic_threshold()
+            let fb_score = self.arena.config.tech_threshold.load(Ordering::Relaxed);
+            let piso_score_medido = self.cuantiles[coin_id].dynamic_holistic_threshold_con_fallback(fb_score)
                 * intermittency_mult;
             // D-752 (cierre del hueco) — EL HISTORIAL DE TODAS LAS RAMAS, NO
             // SÓLO EL DE LAS DE RESPALDO.

@@ -217,12 +217,10 @@ fn cf2_umbral_obi_con_intermitencia_sigue_la_cola_analitica() {
 // Hoy: P² acumulativo ⇒ el p80 de la mezcla sigue en ≈ 1,38 y
 // P(|N(0,2²)| > 1,38) ≈ 0,49.
 //
-// Revisión cruzada (CL-65): medir en [10 000, 20 000] impone una memoria del
-// estimador ≲ 2 000-3 000 observaciones que nadie ha derivado. Quien arregle
-// F2.2-08 fija la memoria M (constante pública) y cambia la ventana de
-// medida a ≥ 5·M observaciones tras el cambio, en el mismo commit.
+// F1-079 / F2.2-08 (Ola Ω183): RingQuantile con capacidad acotada N=256 (CAPACIDAD_VENTANA_CUANTIL)
+// descarta 100 % del régimen anterior en N pasos. Tras 10 000 observaciones (>> 5·M) la adaptación
+// es exacta: la tasa nominal vuelve a 0,20 ± 0,02.
 #[test]
-#[ignore = "OPEN F2.2-08 (Línea C, C-F2.2): P² acumulativo no olvida; tras σ×2 el «p80 medido» dispara ≈ 49 %"]
 fn cf2_p2_tras_cambio_de_regimen_vuelve_al_nominal() {
     let t = tasa_de_disparo(1.0, 2.0);
     assert!(

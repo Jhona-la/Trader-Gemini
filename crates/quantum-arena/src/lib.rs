@@ -27,7 +27,10 @@ pub mod zero_alloc_pool;
 pub mod zero_copy_stream;
 
 // Re-exportamos los componentes principales
-pub use adaptive_quantiles::{AdaptiveQuantileEngine, P2Quantile};
+pub use adaptive_quantiles::{
+    AdaptiveQuantileEngine, P2Quantile, RingQuantile, CAPACIDAD_VENTANA_CUANTIL,
+    MUESTRAS_MADURAS_CUANTIL,
+};
 pub use atomic_float::AtomicF64;
 pub use config::QuantumConfig;
 pub use espectral_multiactivo::{

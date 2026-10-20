@@ -153,8 +153,6 @@ pub struct StatefulEngine {
     /// #18: Filtro de Kalman 1D para estimar el micro-precio justo en O(1)
     pub kalman: feature_engine::KalmanFilter1D,
     pub fair_price: f64,
-    /// #21: Motor de cuantiles adaptativos P^2 para estimación de percentiles sin alocar
-    pub quantiles: quantum_arena::AdaptiveQuantileEngine,
     /// #19: Anillo tensorial de precios para cálculo O(1) de derivadas cinemáticas multiescala
     pub price_ring: feature_engine::TensorRing<16>,
     /// #19: Jerk cinemático instantáneo (3ra derivada del precio: d(a_t)/dt)
@@ -284,7 +282,6 @@ impl StatefulEngine {
             last_trade_is_sell: false,
             kalman: feature_engine::KalmanFilter1D::new(0.0, 1.0, 1e-4, 0.1),
             fair_price: 0.0,
-            quantiles: quantum_arena::AdaptiveQuantileEngine::new(),
             price_ring: feature_engine::TensorRing::new(),
             jerk_t: 0.0,
             simd_nn: feature_engine::SimdNeuralNet::default(),
@@ -724,7 +721,6 @@ impl StatefulEngine {
 
         self.kalman = feature_engine::KalmanFilter1D::new(0.0, 1.0, 1e-4, 0.1);
         self.fair_price = 0.0;
-        self.quantiles = quantum_arena::AdaptiveQuantileEngine::new();
         self.price_ring = feature_engine::TensorRing::new();
         self.jerk_t = 0.0;
         self.simd_nn = feature_engine::SimdNeuralNet::default();
@@ -871,8 +867,6 @@ impl StatefulEngine {
             // #19: Actualización del anillo tensorial de precios y extracción de derivadas cinemáticas
             self.price_ring.push(self.fair_price);
             self.jerk_t = self.price_ring.jerk();
-            // #21: Actualización de cuantiles adaptativos P^2 en O(1)
-            self.quantiles.update(self.ofi_model.ema_ofi, self.obi_accel.prev_obi, self.a_t, self.v_t / price.max(1e-6));
         }
 
         // D-615b: el Hurst YA NO se alimenta por evento (ver el cierre de la
