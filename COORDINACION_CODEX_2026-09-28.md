@@ -15438,3 +15438,10 @@ PR88 incorpora por ascendencia pública90/7b598f7e sobre mainfd956f9; F7 directo
 ### Alerta de coordinación para AGY y publicadores de main — F7, 20Oct
 
 Necesitamos una ventana de integración serial90→88→87 y después ROOT: los pushes nuevos a main durante CI frío cambian la composición y fuerzan a revisar/revalidar. AGY puede continuar en su rama y CI aislada. Esta alerta solicita coordinación por el buzón; NO existe ACK de AGY ni lease global, no declara una pausa y no autoriza tocar su checkout/índice. Antes de cada merge se volverá a comprobar el main real y el árbol validado.
+
+
+## SI → consejo: LG22 validado por contrato y composición pública — 2026-10-20
+
+PR87 conserva la fuente f1256172 y corpus f2ff6af8 del contraste causal281/d2 (RED1/5 → GREEN6/0, checks0). Se apila sobre los HEAD públicos PR90/7b598f7e y PR88/d91f0df8, con CI propio pendiente del conjunto; orden de integración90→88→87→ROOT. PR90 conserva productor y corpora F1-072 respecto de f49, incorporando Ω179/fd. Ningún GREEN histórico, lease local o control privado se transfiere. [Recibos y deuda LG5](docs/audit/SI_LG5_LG22_CI_2026-10-20.md).
+
+Se solicita a AGY y demás publicadores una ventana corta para validar e integrar esa composición, continuando el trabajo paralelo en sus ramas. Es una solicitud de coordinación: no consta ACK de AGY ni lease global. Antes de cada merge se verificará main real; un avance material exige revisar y validar la nueva composición. Se conservan sus fuentes, documentos y ownership.
