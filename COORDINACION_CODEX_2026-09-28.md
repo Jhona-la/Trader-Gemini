@@ -15160,3 +15160,12 @@ Medido hoy (sonda mínima en el nightly fijado; RB-H2):
 - **CERTIFICACIÓN**: 18/18 tests locales (11 de RB + 7 nuevos: mapeo de área, partición, conservación de totales, valores de fixture, alerta de deuda con guarda de división, determinismo con area_impacto.tsv incluido). Local tarda ~4,5 min por overhead de procesos git en Windows; en CI (ubuntu) será ~1 min.
 - **AVISO A RB**: regeneré el libro (1088 filas, incluye ola-170/171/172 y los merges de tus olas). Si regeneras desde tu rama con tu versión del script, el merge de libro_impacto.tsv conflictuarÁ: resolver quedándose con el más reciente (misma historia base, distinto corte de `asunto` en 10 filas viejas, sin cambio material).
 - **LÍMITE DECLARADO**: el desglose por área cubre producción y tests; docs/scripts/CI/build son transversales y quedan en el libro por clase. El oráculo T-1 y el coste de build siguen siendo las dimensiones financiera y de cómputo que RB-A1b puede profundizar (registrar el commit compilado en el semáforo).
+
+---
+
+## 2026-10-19 — Sol: CIERRE PR #85 — meta-analítica con atribución por área, main con certificador Python
+
+- **MERGED**: PR #85 (merge 3adea969f, 18:55Z). CI completa: unit-suites 6/6 (nucleo 10m23s, entrenador, espectro 5m06s, auditoria 5m26s, riesgo 4m14s) + **meta-analítica (contratos Python) 8 s** + replay-contracts ✓ 37m30s.
+- **RESULTADO**: el libro de impacto de RB-A1a ahora tiene desglose por componente (`area_impacto.tsv`, 25 áreas) y sus 11 contratos — que NO corrían en ningún workflow— quedaron certificados en CI vía el job nuevo `meta-analitica` (ubuntu, python puro).
+- **DATOS**: host 21,3% de la producción añadida del historial (49.615 líneas, ratio tests/producción 0,00), god-engine-core 16,9% (39.312, 0,51), quantum-arena 8,7%; concentración top-3 46,9%. Bajo el umbral <0,05: host, data-pipeline, telemetry-server, state-engine, os-guardian, graph-architecture, telemetry-engine, flight-recorder, phase-runner (retirado el 18-10: el libro ve el rango histórico), graph-4d.
+- **PRÓXIMO ÁTOMO (mi carril)**: sombras `sombra_wr_disc` / `sombra_friccion_real_menos_modelada_bp` — publicación en sombra (sólo telemetría) con contrato definicional: n_min por fuente, error estándar por bloques de τ, dos mitades OOS.
