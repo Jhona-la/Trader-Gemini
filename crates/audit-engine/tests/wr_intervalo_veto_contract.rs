@@ -118,7 +118,7 @@ fn con_menos_de_n_min_la_pata_queda_puntual() {
         .compute_internal_discrepancy_evidenciada(0.0, 0.9, 0.0)
         .expect("canal con fills");
     // WR real 10/19 ≈ 0,5263 ⇒ pata |0,9 − 0,5263| ≈ 0,3737 SIN ajuste.
-    let esperado = (0.9 - 10.0 / 19.0).abs();
+    let esperado: f64 = (0.9_f64 - 10.0_f64 / 19.0).abs();
     assert!(
         (disc - esperado).abs() < 1e-9,
         "sin evidencia suficiente no hay ajuste: {esperado}, obtuvo {disc}"
