@@ -278,6 +278,48 @@ impl DetectorPerdidaDeVentaja {
         self.referencia
     }
 
+    // ln(max(0, 1 - phi * (r - mu) / escala)): evita desbordes intermedios
+    // de escala y conserva el residuo próximo al recorte a cero.
+    fn log_factor(r: f64, mu: f64, escala: f64, phi: f64) -> f64 {
+        let x = r - mu;
+        let cociente = x / escala;
+        let ajuste = if cociente.is_finite() {
+            phi * cociente
+        } else if x.is_finite() {
+            // El cociente puede desbordar aunque phi * cociente quepa.
+            (phi * x) / escala
+        } else {
+            // r y mu son finitos: sólo la resta negativa puede desbordar.
+            // mu grande y r_max > mu imponen una escala de al menos una ULP.
+            (phi * r) / escala - (phi * mu) / escala
+        };
+        if ajuste >= 0.5 && ajuste <= 2.0 {
+            // Cerca de cero, 1 - phi * (x / escala) puede perder un factor
+            // positivo. Normalizar por una potencia binaria permite obtener
+            // el residuo con FMA, incluso cuando escala es subnormal.
+            let exponente = escala.to_bits() & 0x7ff0_0000_0000_0000;
+            let unidad = if exponente == 0 { f64::MIN_POSITIVE } else { f64::from_bits(exponente) };
+            let s = escala / unidad;
+            let (r_s, mu_s) = (r / unidad, mu / unidad);
+            let alto = r_s - mu_s;
+            let b = r_s - alto;
+            // TwoDiff conserva también lo perdido al redondear r - mu.
+            let bajo = (r_s - (alto + b)) + (b - mu_s);
+            let residuo = (-phi).mul_add(bajo, (-phi).mul_add(alto, s));
+            return if residuo > 0.0 { (residuo / s).ln() } else { f64::NEG_INFINITY };
+        }
+        if ajuste >= 1.0 {
+            f64::NEG_INFINITY
+        } else if ajuste == f64::NEG_INFINITY {
+            // El propio factor no cabe, pero su logaritmo sí. En este caso
+            // x es finito y negativo y L > 0: ln(1 + exp(L)) sin exp(L).
+            let l = phi.ln() + (-x).ln() - escala.ln();
+            l + (-l).exp().ln_1p()
+        } else {
+            (-ajuste).ln_1p()
+        }
+    }
+
     /// Observa la R neta de un cierre y la R máxima de su orden,
     /// `(TP − f)/SL`. Lo no finito se ignora, y también una orden con
     /// `r_max ≤ μ` (no puede ganar la ventaja que supone la H0).
@@ -294,9 +336,8 @@ impl DetectorPerdidaDeVentaja {
             self.fuera_de_garantia += 1;
         }
         for (w, phi) in self.log_cusum.iter_mut().zip(FRACCIONES.iter()) {
-            let e = (1.0 - phi / escala * x).max(0.0);
             // W_t = max(W_{t−1}, 0) + ln e_t  ⇔  M_t = e_t · max(1, M_{t−1}).
-            *w = w.max(0.0) + e.ln();
+            *w = w.max(0.0) + Self::log_factor(r, self.referencia, escala, *phi);
         }
         self.cierres_desde_reinicio += 1;
         self.cierres_totales += 1;
@@ -820,5 +861,113 @@ mod tests_lg22 {
         assert_eq!(alto.cierres_totales, 0, "r_max ≤ μ: la orden no puede ganar la referencia");
         assert!(retardo_aproximado(2.25, 0.27, 2.0, -0.2, 500.0).is_none());
         assert!(retardo_aproximado(2.25, 0.27, 0.0, 0.1, 500.0).is_none(), "con ventaja no hay retardo");
+    }
+}
+
+#[cfg(test)]
+mod tests_lg22_numeric {
+    use super::{DetectorPerdidaDeVentaja, FRACCIONES};
+
+    #[test]
+    fn lg22_numeric_factores_invariantes_hasta_escalas_subnormales() {
+        for escala in [1.0, 1e-311, f64::from_bits(2)] {
+            for signo in [-1.0, 0.0, 1.0] {
+                let mut detector = DetectorPerdidaDeVentaja::nuevo();
+                detector.observar(signo * escala, escala);
+                let estado = detector.guardado();
+                for (log_m, phi) in estado.log_cusum.iter().zip(FRACCIONES) {
+                    let esperado = (1.0 - phi * signo).ln();
+                    let observado = log_m.expect("factor positivo y log finito");
+                    assert!((observado - esperado).abs() < 1e-14);
+                }
+                assert_eq!((estado.cierres_desde_reinicio, estado.cierres_totales), (1, 1));
+                assert_eq!((estado.fuera_de_cota, estado.fuera_de_garantia), (0, 0));
+                assert!(!detector.alarma(200.0), "un cierre acotado no crea una alarma infinita");
+                assert_eq!(
+                    DetectorPerdidaDeVentaja::desde_guardado(&estado).unwrap().guardado(),
+                    estado,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lg22_numeric_recursion_y_reinicio_conservan_la_escala() {
+        let mut normal = DetectorPerdidaDeVentaja::nuevo();
+        let mut pequeno = DetectorPerdidaDeVentaja::nuevo();
+        let escala = 1e-311;
+        for signo in [1.0, -1.0, 0.0, -1.0, -1.0, 1.0, 0.0, -1.0] {
+            normal.observar(signo, 1.0);
+            pequeno.observar(signo * escala, escala);
+            assert!((normal.estadistico() - pequeno.estadistico()).abs() < 1e-13);
+            assert_eq!(normal.alarma(200.0), pequeno.alarma(200.0));
+            assert_eq!(normal.guardado(), pequeno.guardado());
+        }
+        normal.reiniciar();
+        pequeno.reiniciar();
+        assert_eq!(normal.guardado(), pequeno.guardado());
+        assert_eq!(pequeno.estadistico(), 0.0);
+        pequeno.observar(-escala, escala);
+        normal.observar(-1.0, 1.0);
+        assert_eq!(normal.guardado(), pequeno.guardado());
+    }
+
+    #[test]
+    fn lg22_numeric_cociente_intermedio_y_factor_enorme_guardan_log_finito() {
+        let mut detector = DetectorPerdidaDeVentaja::nuevo();
+        detector.observar(-1e308, 0.1);
+        let estado = detector.guardado();
+        for (log_m, phi) in estado.log_cusum.iter().zip(FRACCIONES) {
+            // e = 1 + phi * 10^309. La unidad no cambia su log a precisión f64.
+            let esperado = phi.ln() + 309.0 * 10.0_f64.ln();
+            let observado = log_m.expect("no convertir un log representable en infinito");
+            assert!(observado.is_finite());
+            assert!((observado - esperado).abs() < 2e-12);
+        }
+        assert_eq!((estado.fuera_de_cota, estado.fuera_de_garantia), (0, 0));
+        assert_eq!(DetectorPerdidaDeVentaja::desde_guardado(&estado).unwrap().guardado(), estado);
+    }
+
+    #[test]
+    fn lg22_numeric_resta_desbordada_conserva_factor_representable() {
+        let mut detector = DetectorPerdidaDeVentaja::con_referencia(5e307);
+        detector.observar(-1.5e308, 1e308);
+        let estado = detector.guardado();
+        for (log_m, factor) in estado.log_cusum.iter().zip([1.2_f64, 1.4, 1.8, 2.6]) {
+            assert!((log_m.unwrap() - factor.ln()).abs() < 1e-14);
+        }
+        assert!((detector.estadistico() - 1.75).abs() < 1e-14);
+        assert_eq!((estado.fuera_de_cota, estado.fuera_de_garantia), (0, 0));
+    }
+
+    #[test]
+    fn lg22_numeric_preserva_recorte_y_flags_fuera_de_garantia() {
+        let mut detector = DetectorPerdidaDeVentaja::nuevo();
+        detector.observar(6.0, 1.0);
+        let estado = detector.guardado();
+        assert_eq!((estado.fuera_de_cota, estado.fuera_de_garantia), (1, 1));
+        assert_eq!((estado.cierres_desde_reinicio, estado.cierres_totales), (1, 1));
+        assert!(estado.log_cusum[2..].iter().all(|w| w.is_none()));
+        assert!((detector.estadistico() - 0.275).abs() < 1e-14);
+    }
+
+    #[test]
+    fn lg22_numeric_factor_positivo_junto_al_recorte_no_se_anula() {
+        // Referencias calculadas con los doubles de entrada como racionales
+        // exactos. Incluyen la corrección perdida al restar una mu no nula.
+        for (mu, r_max, r, esperado) in [
+            (0.0, 1.8679209050099101, 4.669802262524775, -38.68573687297356),
+            (0.3, 1.407071854439383, 3.067679636098457, -37.64491547645727),
+            (2.0_f64.powi(-54), 1.9218647885983864, 4.804661971495966, -40.63255818251225),
+        ] {
+            let mut detector = DetectorPerdidaDeVentaja::con_referencia(mu);
+            detector.observar(r, r_max);
+            let estado = detector.guardado();
+            let log_m = estado.log_cusum[FRACCIONES.len() - 1].unwrap();
+            assert!(log_m.is_finite());
+            assert!((log_m - esperado).abs() < 2e-13);
+            assert_eq!((estado.fuera_de_cota, estado.fuera_de_garantia), (1, 0));
+            assert_eq!(DetectorPerdidaDeVentaja::desde_guardado(&estado).unwrap().guardado(), estado);
+        }
     }
 }
