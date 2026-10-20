@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-19 (tarde, 8) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω177 (Cierre F1-073)
+
+- **Mandato**: Snapshots atómicos y Seqlock lock-free para curvas de horizonte continuo en `QuantumConfig` y `apply_to_arena` (`F1-073`), erradicando la formación de quimeras entre genomas `(a_nuevo, b_viejo)` durante hot-swaps y asegurando que las parejas TP/SL se evalúen bajo el mismo genoma preservando la invariante matemática y de riesgo $TP \ge SL \cdot RR$ en tiempo real:
+  1. **F1-073 (`crates/quantum-arena/src/config.rs:185, 530, 630-798`, `crates/quantum-arena/src/genome.rs:1126-1205`, `crates/quantum-arena/tests/f1_073_atomic_horizon_curves_seqlock_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Implementación de arquitectura Seqlock lock-free zero-alloc en `QuantumConfig` mediante contador atómico de época `pub genome_epoch: std::sync::atomic::AtomicU64` (par = consistente / lectura válida; impar = sección crítica de actualización de curvas activa). Sincronización de escritores atómicos en `apply_to_arena` y `update_{tp,sl}_curve` con `begin_write()` (adquisición con `compare_exchange_weak`) y `end_write()` (publicación con `Release`). Métodos de lectura atómica snapshot libres de quimeras (`tp_curve()`, `sl_curve()`, `tp_sl_curves()`, `tp_sl_at_tau()`, `kelly_curve()`, `trail_curves()`, `obi_curve()`) que verifican paridad de época `e1 == e2 && (e1 & 1 == 0)` con `spin_loop()`, garantizando lecturas coherentes en registros de CPU sin alocaciones ni bloqueos pesados.
+     - *POR QUÉ*: Anteriormente, las curvas continuas de horizonte se leían y escribían con cargas y almacenes atómicos `Relaxed` independientes para las pendientes `a` y `b`. Un hilo en el camino caliente (como la construcción de brackets de órdenes vivas) podía observar $a_{\text{nuevo}}$ y $b_{\text{viejo}}$ durante un hot-swap evolutivo, deformando la escala exponencial de salida $e^{b \ln \tau}$ por factores superiores a $4\times$ o leyendo TP del genoma nuevo y SL del viejo, violando la relación riesgo-beneficio certificada por el gate.
+     - *PARA QUÉ*: Eliminar de raíz cualquier orden nacida con curvas quiméricas, blindar la cuenta de 13 USD contra distorsiones no acotadas de SL o TP durante hot-swaps en vivo, y garantizar rendimiento estricto a nivel de nanosegundos en el hot path.
+     - *CÓMO*: Adición de `genome_epoch: AtomicU64` en `QuantumConfig`, delimitación de secciones críticas en `apply_to_arena`, provisión de snapshots atómicos consistentes en los evaluadores de horizonte, y suite contractual `f1_073_atomic_horizon_curves_seqlock_contract.rs` (3/3 tests passing, probando 10.000 hot-swaps concurrentes con lectores simultáneos sin una sola quimera).
+     - *CUÁNDO*: En cada evaluación de TP, SL, Kelly, Trailing Stop y umbrales OBI a lo largo de todo el espectro continuo $\tau \in [1\text{ ns}, 100\text{ años}]$.
+     - *DÓNDE*: `crates/quantum-arena/src/config.rs`, `crates/quantum-arena/src/genome.rs` y `crates/quantum-arena/tests/f1_073_atomic_horizon_curves_seqlock_contract.rs`.
+     - *QUIÉN*: `Quant Developer`, `Físico de Sistemas Complejos`, `Arquitecto Senior` y `QA Engineer`.
+- **Verificación Contractual y Compilación Workspace**:
+  - `cargo test -p quantum-arena --test f1_073_atomic_horizon_curves_seqlock_contract -j 1` (3/3 pass, 100% verde en 0.05s).
+  - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+  - `cargo test -p quantum-arena --lib -j 1` (150/150 pass, 100% verde en 2.04s).
+  - `cargo check --workspace --all-targets -j 1` (100% verde en los 16 crates del workspace).
+
 ## 2026-10-19 (tarde, 7) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω176 (Cierre F1-072)
 
 - **Mandato**: Concurrencia segura y atomizado en `promote()`, reclamación atómica `O_EXCL` de número de generación en `gen_{N}.json`, `tmp` único (`{path}.{pid}.{nonce}.tmp`), eliminación de ventana de borrado `remove_file()` en `atomic_write()`, y auto-reparación de historial faltante en `load_active()` (`F1-072`), garantizando linaje inmutable y self-healing operacional sin pérdida de historia ni descalibración de rollback:

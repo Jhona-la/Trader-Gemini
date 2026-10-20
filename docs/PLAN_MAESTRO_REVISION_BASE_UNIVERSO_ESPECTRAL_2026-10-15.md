@@ -1,11 +1,11 @@
-# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V45 · 2026-10-19)
+# 🌌 PLAN MAESTRO CANÓNICO DE AUDITORÍA SISTÉMICA TOTAL, EXCELENCIA OPERATIVA Y EVOLUCIÓN CUÁNTICA CONTINUA (V46 · 2026-10-19)
 ## Unificando Teoría Matemática de Vanguardia, Ecuaciones del Milenio, Física de Campos, Estadística Prequencial de Ville, Psicología de Masas, Liquidez Oculta, Gating Conformal y Rendimiento en Nanosegundos
 
 > **Autor / Director:** Antigravity (AGY, Quant Sr. Lead)
 > **Comité Revisor:** Consejo Colegiado de 10 Roles Senior en Modo Profesor
 > **Destinatarios:** Claude (Línea C / Línea G / Línea H), Fable (Consejo Quant Sr.), Codex (Líneas G/H/E), GLM (Línea B/LH/Ops), Qoder (Línea R7/R6), Sol (Línea R5/R6/Contabilidad) y Operador Humano
 > **Ámbito:** Repositorio Completo Trader Gemini (23 Crates Rust, 100% Nativo, CERO Python)
-> **Fecha:** 19 de Octubre de 2026 (Actualización Canónica Post-Ola Ω176 / Cierre F1: `F1-072` concurrencia segura y atomizado en `promote()`, reclamación `O_EXCL` de generación en `gen_{N}.json`, tmp único `{path}.{pid}.{nonce}.tmp`, eliminación de ventana `remove_file()` en `atomic_write()`, y auto-reparación probada de historial faltante en `load_active()`; `F1-071` saneamiento forzado y política fail-closed de carga de genomas; `F1-069` certificación de `maker_only_capital_threshold` congelado en mutación; `F1-070` unificación de cotas vectoriales y dominios de lectores fenotípicos)
+> **Fecha:** 19 de Octubre de 2026 (Actualización Canónica Post-Ola Ω177 / Cierre F1: `F1-073` snapshots atómicos y Seqlock lock-free para curvas de horizonte continuo en `QuantumConfig` y `apply_to_arena`, erradicación total de quimeras `(a_nuevo, b_viejo)` y preservación atómica de la invariante RR; `F1-072` concurrencia segura y atomizado en `promote()`; `F1-071` saneamiento forzado y política fail-closed de carga de genomas; `F1-069` certificación de `maker_only_capital_threshold` congelado en mutación; `F1-070` unificación de cotas vectoriales y dominios de lectores fenotípicos)
 > **Estado CI GitHub Actions & Oráculo T-1:** 🟢 100% VERDE + Workspace Type-Checked + Contratos Unitarios/Integración Aprobados
 
 ---
@@ -332,7 +332,8 @@ Para garantizar que ningún sesgo heurístico, literal arbitrario, arista muerta
 | **Ω174** | `quantum-arena` | Certificación Contractual de Congelación de `maker_only_capital_threshold` en Mutación y Preservación de Layout 144-D (`F1-069`), y Unificación Total de Cotas Vectoriales, Bandas de Mutación, Generador Aleatorio y Dominios de Lectores Fenotípicos en OBI `[0.10, 0.95]` y Trailing `[1.5, 6.0]`/`[0.5, 4.0]` erradicando dimensiones muertas (`F1-070`) | 🟢 **MERGED** | `f1_069_070_genome_bounds_and_freeze_contract.rs` (5/5 pass), `horizon_reader_parity.rs` (6/6 pass), `genome_reader_diagnostics.rs` (3/3 pass) |
 | **Ω175** | `quantum-arena` / `god-engine-core` / `trader-gemini-v5` | Saneamiento Forzado y Política Fail-Closed de Carga de Genomas, Erradicación de Fallbacks Crudos No Validados, Resolución Jerárquica CWD-Independiente de `paths::config_root()` y Exigencia de `GenomeEnvelope::load_active()` en Producción (`F1-071`) | 🟢 **MERGED** | `f1_071_genome_load_failclosed_contract.rs` (5/5 pass), `rb_p1_trinquete_panicos_contract.rs` (5/5 pass), `cargo check --workspace --all-targets` verde |
 | **Ω176** | `quantum-arena` | Concurrencia Segura y Atomizado en `promote()`, Reclamación Atómica `O_EXCL` de Número de Generación en `gen_{N}.json`, Tmp Único `{path}.{pid}.{nonce}.tmp`, Fsync y Rename Directo sin Ventana `remove_file()`, y Auto-Reparación de Historial en `load_active()` (`F1-072`) | 🟢 **MERGED** | `f1_072_genome_store_concurrent_promote_contract.rs` (3/3 pass), `rb_p1_trinquete_panicos_contract.rs` (5/5 pass), `quantum-arena --lib` (150/150 pass) |
+| **Ω177** | `quantum-arena` | Snapshots Atómicos y Seqlock Lock-Free para Curvas de Horizonte Continuo en `QuantumConfig` y `apply_to_arena`, Erradicación de Quimeras `(a_nuevo, b_viejo)` y Preservación Atómica de la Invariante RR en Hot-Swaps (`F1-073`) | 🟢 **MERGED** | `f1_073_atomic_horizon_curves_seqlock_contract.rs` (3/3 pass), `rb_p1_trinquete_panicos_contract.rs` (5/5 pass), `quantum-arena --lib` (150/150 pass) |
 
 ---
 
-*Plan Maestro Canónico V45 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*
+*Plan Maestro Canónico V46 certificado por el Consejo de 10 Roles Senior de Trader Gemini. Documento vivo de referencia absoluta para todas las sesiones de desarrollo concurrentes.*

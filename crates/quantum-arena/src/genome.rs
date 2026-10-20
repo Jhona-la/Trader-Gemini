@@ -1126,6 +1126,10 @@ impl SuperGenotype {
         let slow_sl = self
             .sl_horizon_curve
             .eval(crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS);
+
+        // F1-073: Iniciar sección crítica de Seqlock para actualización atómica de curvas de horizonte.
+        arena.config.begin_write();
+
         arena.config.scalp_tp_base.store(fast_tp, Ordering::Relaxed);
         arena.config.swing_tp_base.store(slow_tp, Ordering::Relaxed);
         arena.config.scalp_sl_base.store(fast_sl, Ordering::Relaxed);
@@ -1198,6 +1202,9 @@ impl SuperGenotype {
             .config
             .obi_curve_b
             .store(curvas.obi_horizon_curve.b, Ordering::Relaxed);
+
+        // F1-073: Finalizar sección crítica de Seqlock (incrementa genome_epoch a par con Release).
+        arena.config.end_write();
 
         arena
             .config

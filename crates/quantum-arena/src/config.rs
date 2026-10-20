@@ -182,6 +182,10 @@ pub struct QuantumConfig {
     pub obi_curve_a: AtomicF64,
     pub obi_curve_b: AtomicF64,
 
+    /// F1-073: Época del Seqlock para snapshots atómicos de curvas de horizonte.
+    /// Par = consistente/inactivo; Impar = escritor actualizando curvas.
+    pub genome_epoch: std::sync::atomic::AtomicU64,
+
     // --- Meta-Consejo Deliberativo (Ola Ω95 / Ω111) ---
     pub council_approval_threshold: AtomicF64,
     pub council_supermajority_override: AtomicF64,
@@ -523,6 +527,7 @@ impl QuantumConfig {
             trail_step_curve_b: AtomicF64::new(curvas.trail_step_horizon_curve.b),
             obi_curve_a: AtomicF64::new(curvas.obi_horizon_curve.a),
             obi_curve_b: AtomicF64::new(curvas.obi_horizon_curve.b),
+            genome_epoch: std::sync::atomic::AtomicU64::new(0),
 
             // --- Meta-Consejo Deliberativo (Ola Ω95 / Ω111) ---
             council_approval_threshold: AtomicF64::new(0.35),
@@ -628,68 +633,222 @@ impl QuantumConfig {
         }
     }
 
-    /// TP bajo la política compartida runtime-v1, no autorización de operación.
+    /// F1-073: Inicia una sección crítica de escritura de Seqlock para actualizar curvas.
+    /// Incrementa `genome_epoch` a un número impar con barrera Acquire-Release.
     #[inline(always)]
-    pub fn tp_at_tau(&self, tau_ms: f64) -> f64 {
+    pub fn begin_write(&self) {
         use std::sync::atomic::Ordering;
-        let a = self.tp_curve_a.load(Ordering::Relaxed);
-        let b = self.tp_curve_b.load(Ordering::Relaxed);
-        HorizonParameter::TakeProfit.evaluate(HorizonCurve { a, b }, tau_ms)
+        loop {
+            let e = self.genome_epoch.load(Ordering::Relaxed);
+            if e & 1 != 0 {
+                // Otro escritor está activo, girar brevemente
+                std::hint::spin_loop();
+                continue;
+            }
+            if self
+                .genome_epoch
+                .compare_exchange_weak(e, e.wrapping_add(1), Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
+            std::hint::spin_loop();
+        }
     }
 
-    /// SL bajo runtime-v1. La lectura de a/b separados no es un snapshot atómico.
+    /// F1-073: Finaliza una sección crítica de escritura de Seqlock.
+    /// Incrementa `genome_epoch` a un número par con barrera Release.
+    #[inline(always)]
+    pub fn end_write(&self) {
+        use std::sync::atomic::Ordering;
+        let e = self.genome_epoch.load(Ordering::Relaxed);
+        if e & 1 != 0 {
+            self.genome_epoch.store(e.wrapping_add(1), Ordering::Release);
+        } else {
+            self.genome_epoch.fetch_add(2, Ordering::Release);
+        }
+    }
+
+    /// F1-073: Snapshot atómico libre de quimeras para la curva de TP.
+    #[inline(always)]
+    pub fn tp_curve(&self) -> HorizonCurve {
+        use std::sync::atomic::Ordering;
+        loop {
+            let e1 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 & 1 != 0 {
+                std::hint::spin_loop();
+                continue;
+            }
+            let a = self.tp_curve_a.load(Ordering::Relaxed);
+            let b = self.tp_curve_b.load(Ordering::Relaxed);
+            let e2 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 == e2 {
+                return HorizonCurve { a, b };
+            }
+            std::hint::spin_loop();
+        }
+    }
+
+    /// F1-073: Snapshot atómico libre de quimeras para la curva de SL.
+    #[inline(always)]
+    pub fn sl_curve(&self) -> HorizonCurve {
+        use std::sync::atomic::Ordering;
+        loop {
+            let e1 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 & 1 != 0 {
+                std::hint::spin_loop();
+                continue;
+            }
+            let a = self.sl_curve_a.load(Ordering::Relaxed);
+            let b = self.sl_curve_b.load(Ordering::Relaxed);
+            let e2 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 == e2 {
+                return HorizonCurve { a, b };
+            }
+            std::hint::spin_loop();
+        }
+    }
+
+    /// F1-073: Snapshot atómico conjunto de TP y SL. Garantiza que TP y SL
+    /// pertenezcan exactamente al mismo genoma y preserven la invariante RR.
+    #[inline(always)]
+    pub fn tp_sl_curves(&self) -> (HorizonCurve, HorizonCurve) {
+        use std::sync::atomic::Ordering;
+        loop {
+            let e1 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 & 1 != 0 {
+                std::hint::spin_loop();
+                continue;
+            }
+            let tp_a = self.tp_curve_a.load(Ordering::Relaxed);
+            let tp_b = self.tp_curve_b.load(Ordering::Relaxed);
+            let sl_a = self.sl_curve_a.load(Ordering::Relaxed);
+            let sl_b = self.sl_curve_b.load(Ordering::Relaxed);
+            let e2 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 == e2 {
+                return (HorizonCurve { a: tp_a, b: tp_b }, HorizonCurve { a: sl_a, b: sl_b });
+            }
+            std::hint::spin_loop();
+        }
+    }
+
+    /// F1-073: Snapshot atómico de la curva continua de Kelly.
+    #[inline(always)]
+    pub fn kelly_curve(&self) -> HorizonCurve {
+        use std::sync::atomic::Ordering;
+        loop {
+            let e1 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 & 1 != 0 {
+                std::hint::spin_loop();
+                continue;
+            }
+            let a = self.kelly_curve_a.load(Ordering::Relaxed);
+            let b = self.kelly_curve_b.load(Ordering::Relaxed);
+            let e2 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 == e2 {
+                return HorizonCurve { a, b };
+            }
+            std::hint::spin_loop();
+        }
+    }
+
+    /// F1-073: Snapshot atómico conjunto de las curvas de Trailing Stop continuo:
+    /// `(mult_curve, act_curve, step_curve)`.
+    #[inline(always)]
+    pub fn trail_curves(&self) -> (HorizonCurve, HorizonCurve, HorizonCurve) {
+        use std::sync::atomic::Ordering;
+        loop {
+            let e1 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 & 1 != 0 {
+                std::hint::spin_loop();
+                continue;
+            }
+            let mult_a = self.trail_mult_curve_a.load(Ordering::Relaxed);
+            let mult_b = self.trail_mult_curve_b.load(Ordering::Relaxed);
+            let act_a = self.trail_act_curve_a.load(Ordering::Relaxed);
+            let act_b = self.trail_act_curve_b.load(Ordering::Relaxed);
+            let step_a = self.trail_step_curve_a.load(Ordering::Relaxed);
+            let step_b = self.trail_step_curve_b.load(Ordering::Relaxed);
+            let e2 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 == e2 {
+                return (
+                    HorizonCurve { a: mult_a, b: mult_b },
+                    HorizonCurve { a: act_a, b: act_b },
+                    HorizonCurve { a: step_a, b: step_b },
+                );
+            }
+            std::hint::spin_loop();
+        }
+    }
+
+    /// F1-073: Snapshot atómico de la curva continua de OBI.
+    #[inline(always)]
+    pub fn obi_curve(&self) -> HorizonCurve {
+        use std::sync::atomic::Ordering;
+        loop {
+            let e1 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 & 1 != 0 {
+                std::hint::spin_loop();
+                continue;
+            }
+            let a = self.obi_curve_a.load(Ordering::Relaxed);
+            let b = self.obi_curve_b.load(Ordering::Relaxed);
+            let e2 = self.genome_epoch.load(Ordering::Acquire);
+            if e1 == e2 {
+                return HorizonCurve { a, b };
+            }
+            std::hint::spin_loop();
+        }
+    }
+
+    /// TP bajo la política compartida runtime-v1 (evaluado con snapshot atómico).
+    #[inline(always)]
+    pub fn tp_at_tau(&self, tau_ms: f64) -> f64 {
+        let curve = self.tp_curve();
+        HorizonParameter::TakeProfit.evaluate(curve, tau_ms)
+    }
+
+    /// SL bajo runtime-v1 (evaluado con snapshot atómico libre de quimeras).
     #[inline(always)]
     pub fn sl_at_tau(&self, tau_ms: f64) -> f64 {
-        use std::sync::atomic::Ordering;
-        let a = self.sl_curve_a.load(Ordering::Relaxed);
-        let b = self.sl_curve_b.load(Ordering::Relaxed);
-        HorizonParameter::StopLoss.evaluate(HorizonCurve { a, b }, tau_ms)
+        let curve = self.sl_curve();
+        HorizonParameter::StopLoss.evaluate(curve, tau_ms)
+    }
+
+    /// F1-073: Evalúa TP y SL simultáneamente en τ (ms) garantizando paridad RR
+    /// del mismo genoma bajo snapshot atómico único.
+    #[inline(always)]
+    pub fn tp_sl_at_tau(&self, tau_ms: f64) -> (f64, f64) {
+        let (tp_curve, sl_curve) = self.tp_sl_curves();
+        (
+            HorizonParameter::TakeProfit.evaluate(tp_curve, tau_ms),
+            HorizonParameter::StopLoss.evaluate(sl_curve, tau_ms),
+        )
     }
 
     /// Evalúa la fracción Kelly continua en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
     #[inline(always)]
     pub fn kelly_at_tau(&self, tau_ms: f64) -> f64 {
-        use std::sync::atomic::Ordering;
-        let a = self.kelly_curve_a.load(Ordering::Relaxed);
-        let b = self.kelly_curve_b.load(Ordering::Relaxed);
-        HorizonParameter::Kelly.evaluate(HorizonCurve { a, b }, tau_ms)
+        let curve = self.kelly_curve();
+        HorizonParameter::Kelly.evaluate(curve, tau_ms)
     }
 
     /// Evalúa los parámetros del Trailing Stop continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años]:
     /// Retorna `(trail_mult, trail_act_atr, trail_step_atr, trail_max_atr)`.
     #[inline(always)]
     pub fn trail_params_at_tau(&self, tau_ms: f64) -> (f64, f64, f64, f64) {
-        use std::sync::atomic::Ordering;
-        let mult_a = self.trail_mult_curve_a.load(Ordering::Relaxed);
-        let mult_b = self.trail_mult_curve_b.load(Ordering::Relaxed);
-        let act_a = self.trail_act_curve_a.load(Ordering::Relaxed);
-        let act_b = self.trail_act_curve_b.load(Ordering::Relaxed);
-        let step_a = self.trail_step_curve_a.load(Ordering::Relaxed);
-        let step_b = self.trail_step_curve_b.load(Ordering::Relaxed);
-
-        trailing_at_tau(
-            HorizonCurve { a: mult_a, b: mult_b },
-            HorizonCurve { a: act_a, b: act_b },
-            HorizonCurve { a: step_a, b: step_b },
-            tau_ms,
-        )
+        let (mult_curve, act_curve, step_curve) = self.trail_curves();
+        trailing_at_tau(mult_curve, act_curve, step_curve, tau_ms)
     }
 
     /// Evalúa el umbral OBI continuo en cualquier horizonte temporal τ (ms) ∈ [1 ns, 100 años].
     #[inline(always)]
     pub fn obi_threshold_at_tau(&self, tau_ms: f64) -> f64 {
-        use std::sync::atomic::Ordering;
-        let a = self.obi_curve_a.load(Ordering::Relaxed);
-        let b = self.obi_curve_b.load(Ordering::Relaxed);
-        // MOD3/5-005 (INFORME 14, C-09): techo 0.95, igual que la banda
-        // evolutiva del gen (0.05..1.0). El techo anterior de 0.60 hacía
-        // invisible el 25% superior de la banda: el campeón con OBI 0.797
-        // llegaba al gate leído como 0.60 — el genoma evaluado no era el
-        // operado.
-        HorizonParameter::ObiThreshold.evaluate(HorizonCurve { a, b }, tau_ms)
+        let curve = self.obi_curve();
+        HorizonParameter::ObiThreshold.evaluate(curve, tau_ms)
     }
 
-    /// Actualiza la curva continua de TP a partir de anclas rápida y lenta
+    /// Actualiza la curva continua de TP a partir de anclas rápida y lenta bajo Seqlock
     #[inline(always)]
     pub fn update_tp_curve(&self, fast_val: f64, slow_val: f64) {
         use std::sync::atomic::Ordering;
@@ -701,11 +860,13 @@ impl QuantumConfig {
             crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
             slow_val,
         );
+        self.begin_write();
         self.tp_curve_a.store(curve.a, Ordering::Relaxed);
         self.tp_curve_b.store(curve.b, Ordering::Relaxed);
+        self.end_write();
     }
 
-    /// Actualiza la curva continua de SL a partir de anclas rápida y lenta
+    /// Actualiza la curva continua de SL a partir de anclas rápida y lenta bajo Seqlock
     #[inline(always)]
     pub fn update_sl_curve(&self, fast_val: f64, slow_val: f64) {
         use std::sync::atomic::Ordering;
@@ -717,7 +878,9 @@ impl QuantumConfig {
             crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
             slow_val,
         );
+        self.begin_write();
         self.sl_curve_a.store(curve.a, Ordering::Relaxed);
         self.sl_curve_b.store(curve.b, Ordering::Relaxed);
+        self.end_write();
     }
 }
