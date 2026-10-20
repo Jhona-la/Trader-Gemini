@@ -1471,10 +1471,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         panic!("⚠️ [CRITICAL] No symbols defined. Cannot extract fees.");
     };
 
-    let initial_genome =
-        quantum_arena::genome::SuperGenotype::load_or_baseline(live_maker, live_taker);
+    // F1-071: Política fail-closed de carga de genomas.
+    // En producción (is_demo_mode == false), es estrictamente obligatorio contar con un
+    // GenomeEnvelope activo y certificado en config_dir/genomes/prod/active.json.
+    // Se prohíbe operar dinero real con genomas huérfanos o fallbacks crudos sin envelope.
+    let initial_genome = if !is_demo_mode {
+        match quantum_arena::genome_store::GenomeEnvelope::load_active() {
+            Some(envelope) => {
+                telemetry_server::telemetry_log!(
+                    "🧬 [INIT] Verified Active Genome Envelope Loaded for 'prod': gen {} (source: {}, parent: {}) — {}",
+                    envelope.generation,
+                    envelope.source,
+                    envelope.parent_generation,
+                    envelope.promotion_reason
+                );
+                envelope.genome
+            }
+            None => {
+                telemetry_server::telemetry_log!(
+                    "🛑 [FATAL] MODO PRODUCCION FAIL-CLOSED: No existe GenomeEnvelope activo para el entorno 'prod'. Se prohíbe operar con capital real sin linaje certificado en config_dir/genomes/prod/active.json."
+                );
+                eprintln!("🛑 [FATAL] Producción fail-closed: config_dir/genomes/prod/active.json no encontrado o inválido.");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match quantum_arena::genome_store::GenomeEnvelope::load_active() {
+            Some(envelope) => {
+                telemetry_server::telemetry_log!(
+                    "🧬 [INIT] Active Genome Envelope Loaded for 'demo': gen {} (source: {}, parent: {}) — {}",
+                    envelope.generation,
+                    envelope.source,
+                    envelope.parent_generation,
+                    envelope.promotion_reason
+                );
+                envelope.genome
+            }
+            None => {
+                telemetry_server::telemetry_log!(
+                    "⚠️ [INIT] No active GenomeEnvelope for 'demo'; falling back to sanitized baseline/champion."
+                );
+                quantum_arena::genome::SuperGenotype::load_or_baseline(live_maker, live_taker)
+            }
+        }
+    };
     telemetry_server::telemetry_log!(
-        "🧬 [INIT] Genesis Genome Loaded. DarwinDaemon is ready to evolve."
+        "🧬 [INIT] Genome Initialized Successfully. DarwinDaemon is ready to evolve."
     );
 
     let historical_klines = god_engine_core::bootloader::SystemDiagnostics::execute_phase_3_warmup(

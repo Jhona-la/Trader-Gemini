@@ -634,32 +634,36 @@ impl SuperGenotype {
             );
             return envelope.genome;
         }
-        // D-507 / CERT-F-14: fallback de emergencia al ESPEJO DEL PROPIO
-        // ENTORNO si el envelope no resolvió. Antes leía la ruta compartida
-        // `active_genome.json`: un boot de prod con prod/active.json
-        // ausente cargaba silenciosamente lo que demo escribió en el
-        // espejo — herencia cross-env que D-651 prohibió para el linaje
-        // principal. quantum_champion.json (artefacto deliberado del
-        // config_compiler) sigue siendo válido como última instancia.
+        // D-507 / CERT-F-14 / F1-071: fallback de emergencia al ESPEJO DEL PROPIO
+        // ENTORNO si el envelope no resolvió. Antes leía la ruta relativa directa
+        // `config_dir/genotypes/quantum_champion.json` (dependiente de CWD) y
+        // devolvía el genoma crudo de serde SIN pasar por from_vector/enforce_curve_rr,
+        // permitiendo que genomas con Drawdown o SL fuera de bounds operaran capital.
+        // SANEAMIENTO OBLIGATORIO: Todo genoma de fallback DEBE pasar por
+        // `from_vector(&g.to_vector())`, garantizando cotas, gate RR y piso de fricción.
+        let champion_path = crate::paths::config_join("genotypes/quantum_champion.json");
         let legacy_data = crate::genome_store::legacy_mirror()
             .and_then(|mirror| std::fs::read_to_string(mirror).ok())
-            .or_else(|| std::fs::read_to_string("config_dir/genotypes/quantum_champion.json").ok());
+            .or_else(|| std::fs::read_to_string(&champion_path).ok());
         if let Some(data) = legacy_data {
             if let Ok(genome) = serde_json::from_str::<Self>(&data) {
-                telemetry_engine::telemetry!("🧬 [GENOMA] Loaded evolved SuperGenotype from config_dir/genotypes/active_genome.json (Emergency Fallback)");
-                return genome;
+                let sanitized = Self::from_vector(&genome.to_vector());
+                telemetry_engine::telemetry!("🧬 [GENOMA] Loaded evolved SuperGenotype from fallback (Emergency Fallback, sanitized via from_vector)");
+                return sanitized;
             }
         }
         if let Ok(data) = std::fs::read_to_string(crate::paths::data_join("genesis_genome.json")) {
             if let Ok(genome) = serde_json::from_str::<Self>(&data) {
+                let sanitized = Self::from_vector(&genome.to_vector());
                 telemetry_engine::telemetry!(
-                    "🧬 [GENOMA] Loaded surviving SuperGenotype from genesis_genome.json"
+                    "🧬 [GENOMA] Loaded surviving SuperGenotype from genesis_genome.json (sanitized via from_vector)"
                 );
-                return genome;
+                return sanitized;
             }
         }
         // telemetry_engine::telemetry!("🧬 [GENOMA] No valid SuperGenotype found, initializing mathematical baseline with live fees (Maker: {:.4}%, Taker: {:.4}%).", maker_base * 100.0, taker_base * 100.0);
-        Self::new_baseline(maker_base, taker_base)
+        let baseline = Self::new_baseline(maker_base, taker_base);
+        Self::from_vector(&baseline.to_vector())
     }
 
     pub fn save(&self) {

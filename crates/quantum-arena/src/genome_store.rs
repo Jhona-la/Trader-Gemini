@@ -56,10 +56,10 @@ pub fn current_env() -> Result<String, String> {
 
 fn env_root() -> String {
     match current_env() {
-        Ok(env) => format!("config_dir/genomes/{}", env),
+        Ok(env) => format!("{}/genomes/{}", crate::paths::config_root(), env),
         // Un caller que ignore el error de entorno no debe poder escribir en
         // NINGÚN silo real: se le da una ruta inválida que falla al abrir.
-        Err(_) => "config_dir/genomes/__UNSET__".to_string(),
+        Err(_) => format!("{}/genomes/__UNSET__", crate::paths::config_root()),
     }
 }
 
@@ -88,7 +88,7 @@ fn history_dir() -> String {
 pub fn legacy_mirror() -> Option<String> {
     current_env()
         .ok()
-        .map(|env| format!("config_dir/genotypes/active_genome.{}.json", env))
+        .map(|env| format!("{}/genotypes/active_genome.{}.json", crate::paths::config_root(), env))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,7 +223,7 @@ impl GenomeEnvelope {
                     .to_string()
             })?;
 
-        let src = format!("config_dir/genomes/{from}/active.json");
+        let src = format!("{}/genomes/{from}/active.json", crate::paths::config_root());
         let data =
             std::fs::read_to_string(&src).map_err(|e| format!("no se puede leer {src}: {e}"))?;
         let src_env: GenomeEnvelope =
@@ -245,7 +245,7 @@ impl GenomeEnvelope {
     /// bounds evolutivos, o invariantes de riesgo violados (TP/SL asimétrico).
     /// Es un filtro de sanidad, no de desempeño: la promoción destruye el
     /// genoma activo en disco y ningún caller debe poder escribir basura.
-    fn validate(genome: &SuperGenotype) -> Result<(), String> {
+    pub fn validate(genome: &SuperGenotype) -> Result<(), String> {
         let vec = genome.to_vector();
         if vec.len() != SuperGenotype::DIMENSION {
             return Err(format!(

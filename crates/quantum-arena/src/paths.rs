@@ -14,6 +14,32 @@ pub fn data_join(sub: &str) -> String {
     format!("{}/{}", data_root(), sub)
 }
 
+/// F1-071: RAÍZ DE CONFIGURACIÓN centralizada para crates que no dependen del binario.
+/// Resuelve TGM_CONFIG_DIR o TG_CONFIG_ROOT o "config_dir" (default). Elimina CWD-dependency.
+#[inline(always)]
+pub fn config_root() -> String {
+    if let Ok(dir) = std::env::var("TGM_CONFIG_DIR").or_else(|_| std::env::var("TG_CONFIG_ROOT")) {
+        if !dir.trim().is_empty() {
+            return dir;
+        }
+    }
+    if std::path::Path::new("config_dir").is_dir() {
+        return "config_dir".to_string();
+    }
+    if std::path::Path::new("../../config_dir").is_dir() {
+        return "../../config_dir".to_string();
+    }
+    if std::path::Path::new("../config_dir").is_dir() {
+        return "../config_dir".to_string();
+    }
+    "config_dir".to_string()
+}
+
+#[inline(always)]
+pub fn config_join(sub: &str) -> String {
+    format!("{}/{}", config_root(), sub)
+}
+
 /// CL-48: el VENUE es de prueba: demo, testnet o shadow (`SHADOW_MODE`,
 /// `USE_TESTNET` o `BINANCE_USE_DEMO` = "true"). Elige el exchange al que se
 /// conecta el proceso (src/symbol_manager.rs, src/bin/god_engine.rs); el
@@ -79,5 +105,14 @@ mod tests {
         assert!(!estado_de_produccion(Some("demo"), false));
         assert!(!estado_de_produccion(Some("backtest"), false));
         assert!(!estado_de_produccion(None, false));
+    }
+
+    #[test]
+    fn f1_071_config_root_y_join_resuelven_correctamente() {
+        let root = config_root();
+        assert!(root.ends_with("config_dir"));
+        let joined = config_join("genotypes/quantum_champion.json");
+        assert!(joined.ends_with("config_dir/genotypes/quantum_champion.json"));
+        assert!(std::path::Path::new(&joined).exists(), "{joined} debe existir físicamente");
     }
 }
