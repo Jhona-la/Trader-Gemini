@@ -596,9 +596,16 @@ impl AuditorInterno {
     /// reconstruidas de ese canal ajeno (sharpe, win rate y drawdown medidos
     /// sobre fills que el núcleo no produjo).
     ///
+    /// SOL (2026-10-20, censo C-F7b §3-4): la pata de WIN RATE se evalúa por su
+    /// COTA INFERIOR (`|disc| − ee` por bloques) cuando hay evidencia
+    /// suficiente (n ≥ MIN_FILLS_SOMBRA). El ruido de muestreo de un WR de
+    /// pocos cierres ya no veta: sólo veta la discrepancia que sobrevive a su
+    /// propio intervalo. Con menos de MIN_FILLS_SOMBRA la pata queda como
+    /// estaba (puntual) — el ajuste no inventa precisión que no existe.
+    ///
     /// Contrato de recuperación: el veto deja de dispararse con datos
     /// tautológicos y sólo vuelve a hacerlo cuando la evidencia independiente
-    /// sostiene la discrepancia — nunca por ausencia de dato.
+    /// sostiene la discrepancia — nunca por ausencia de dato ni por ruido.
     pub fn compute_internal_discrepancy_evidenciada(
         &self,
         internal_sharpe: f64,
@@ -612,13 +619,20 @@ impl AuditorInterno {
             &self.fills_independientes,
             self.base_capital,
         );
-        let (max_disc, _, _, _) = calculate_max_discrepancy(
+        let (_, sharpe_disc, wr_disc, dd_disc) = calculate_max_discrepancy(
             internal_sharpe,
             internal_win_rate,
             internal_drawdown,
             &independent,
         );
-        Some(max_disc)
+        // §3-4: cota inferior del intervalo de la pata WR. `sombra_wr_disc`
+        // devuelve `None` con < MIN_FILLS_SOMBRA cierres ⇒ comportamiento
+        // previo intacto (pata puntual).
+        let wr_ajustada = match self.sombra_wr_disc(internal_win_rate) {
+            Some(s) => (wr_disc - s.ee_real).max(0.0),
+            None => wr_disc,
+        };
+        Some(sharpe_disc.max(wr_ajustada).max(dd_disc))
     }
 
     /// F412/F413/F271: métricas reconstruidas del canal independiente (host).

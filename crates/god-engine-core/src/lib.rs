@@ -1774,6 +1774,15 @@ impl GodEngineCore {
             self.arena
                 .registry
                 .set_for_coin(coin_id, "sombra_wr_disc_n", s.n as f64);
+            // SOL (2026-10-20, §3-4): estabilidad OOS de la pata de WR — el
+            // veto ya la consume vía su cota inferior (disc − ee); las mitades
+            // quedan publicadas para observabilidad y consumidores futuros.
+            self.arena
+                .registry
+                .set_for_coin(coin_id, "sombra_wr_disc_mitad_a", s.disc_mitad_a);
+            self.arena
+                .registry
+                .set_for_coin(coin_id, "sombra_wr_disc_mitad_b", s.disc_mitad_b);
         }
         if let Some(friccion_bp) = self.friccion_modelada_rt_bp(coin_id) {
             if let Some(f) = self.auditor_interno.sombra_friccion_bp(friccion_bp) {
