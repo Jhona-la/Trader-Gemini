@@ -15389,3 +15389,25 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
   - `quantum-arena` lib: 152/152 tests PASSED.
   - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
   - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+---
+
+## 2026-10-20 — AGY: Ola Ω179 — Cierre F1-075 (Gating de Ville para τ Operativa Unificada y Estabilidad del Centroide de Hilbert)
+
+- **QUÉ**: Erradicación de la oscilación discontinua $\times 8$ de `tau_operativa_unificada` (`crates/quantum-arena/src/temporal_spectrum.rs`) entre el nodo discreto dominante (`dominant_tau_ms`) y el centroide continuo de Hilbert (`continuous_resonant_tau_ms`).
+- **POR QUÉ**: Anteriormente, `tau_operativa_unificada` aceptaba `dominant_tau_ms` con únicamente `habilidad_en(...) > 0` (un IC de muestra ruidoso con $N \ge 30$, sin significancia estadística anytime-valid). Cuando ninguna escala era significativa bajo Ville ($E_t < M/\alpha = 100$), `dominant_tau_ms` provenía del argmax de energía o del peldaño LH-06(A). En una sesión fresca o en regímenes de bajo drift, una oscilación de ruido en el signo del IC muestral (e.g. $+0.02 \to -0.01$) provocaba que el horizonte temporal operativo $\tau_{\text{op}}$ saltara bruscamente $\times 8$ (e.g. de 68.7 s al centroide de 540 s), desestabilizando el dimensionamiento de posición, el escalado de stop-loss / take-profit y el cálculo de Hurst.
+- **PARA QUÉ**: Garantizar que el horizonte operativo del sistema pertenezca estrictamente al universo temporal continuo de Hilbert $L^2(\mathbb{R})$, adoptando un nodo discreto únicamente cuando exista ventaja estadística demostrada y validada fuera de muestra bajo la desigualdad de Ville para la familia de escalas operativas ($M=5$).
+- **CÓMO**:
+  1. Implementación de `habilidad_significativa(&self) -> Option<f64>` en `ScaleState` y `habilidad_significativa_en(&self, tau_ms: f64) -> Option<f64>` en `TemporalSpectrum`, evaluando `skill_e.significativo_familia(ESCALAS_OPERATIVAS_BANDA)` con $M=5$ escalas operativas ($[30\text{s}, 12\text{h}]$, umbral de familia de Ville $M/\alpha = 5 / 0.05 = 100$).
+  2. Modificación de `tau_operativa_unificada` para condicionar el uso de `dominant_tau_ms` a `habilidad_significativa_en(dominant_tau_ms) > 0`. Si no existe significancia estadística bajo Ville, devuelve el centroide continuo de Hilbert `continuous_resonant_tau_ms()`.
+  3. Implementación del helper `TemporalSpectrum::set_test_time_window(first_ms, last_ms, updates)` y apertura de `pub fn refresh_fusion(&mut self)` para pruebas y calibración analítica.
+  4. Activación exitosa de la prueba de solución conocida en paseo aleatorio `crates/quantum-arena/tests/cf2_espectro_solucion_conocida.rs`: `cf2_rw_sin_habilidad_validada_la_tau_unificada_es_el_centroide` (retirado `#[ignore]`, 4 passed, 0 failed, 3 ignored).
+- **CUÁNDO**: Evaluado en cada tick de mercado en `process_event` y durante la apertura y ajuste dinámico de órdenes en el Core.
+- **DÓNDE**: `crates/quantum-arena/src/temporal_spectrum.rs`, `crates/quantum-arena/tests/{f1_075_tau_unificada_ville_gating_contract.rs, cf2_espectro_solucion_conocida.rs}`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Arquitecto de Continuo Temporal-Espectral).
+- **CONTRATOS**:
+  - `f1_075_tau_unificada_ville_gating_contract.rs` (5/5 tests PASSED): centroide con IC inmaduro, nodo discreto con Ville $E_t \ge 100$, retorno a centroide con IC $\le 0$, 0 saltos $\ge 10\%$ en 100 ticks Monte Carlo, e inmunidad IEEE-754.
+  - `cf2_espectro_solucion_conocida.rs`: 4 passed, 0 failed, 3 ignored.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).

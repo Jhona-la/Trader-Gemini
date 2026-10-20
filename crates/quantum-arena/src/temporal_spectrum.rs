@@ -279,6 +279,18 @@ impl ScaleState {
             None
         }
     }
+
+    /// F1-075: Habilidad direccional MEDIDA con significancia demostrada por el e-proceso de Ville
+    /// bajo corrección de familia Bonferroni (M = ESCALAS_OPERATIVAS_BANDA = 5).
+    /// Devuelve `Some(ic)` si y sólo si la escala es madura y su e-proceso cruza el umbral
+    /// de familia de Ville (M/α = 100 con α=0.05). En caso contrario, devuelve `None`.
+    #[inline]
+    pub fn habilidad_significativa(&self) -> Option<f64> {
+        if !self.skill_e.significativo_familia(ESCALAS_OPERATIVAS_BANDA) {
+            return None;
+        }
+        self.habilidad_medida()
+    }
 }
 
 /// CL-30: memoria de la persistencia, en bloques de τ. Peso 1/16 por bloque
@@ -403,6 +415,59 @@ impl TemporalSpectrum {
             }
         }
         self.scales.get(best)?.habilidad_medida()
+    }
+
+    /// F1-075: IC medido de la escala de la malla MÁS CERCANA a `tau_ms`,
+    /// condicionado a que haya superado el test de significancia
+    /// anytime-valid de Ville para la familia de escalas operativas
+    /// (`ESCALAS_OPERATIVAS_BANDA = 5`).
+    /// Si la escala no es estadísticamente significativa según Ville, devuelve `None`.
+    pub fn habilidad_significativa_en(&self, tau_ms: f64) -> Option<f64> {
+        if !tau_ms.is_finite() || tau_ms <= 0.0 {
+            return None;
+        }
+        let target_ln = tau_ms.ln();
+        let mut best = usize::MAX;
+        let mut best_d = f64::INFINITY;
+        for (i, s) in self.scales.iter().enumerate() {
+            let d = (s.tau_ms.ln() - target_ln).abs();
+            if d < best_d {
+                best_d = d;
+                best = i;
+            }
+        }
+        self.scales.get(best)?.habilidad_significativa()
+    }
+
+    /// F1-075: Inyección de habilidad e información del e-proceso para contratos de verificación y testing.
+    pub fn set_habilidad_para_test(&mut self, escala: usize, n: u64, ic: f64, cruzar_ville: bool) {
+        if escala >= 32 {
+            return;
+        }
+        let s = &mut self.scales[escala];
+        s.skill_n = n;
+        s.skill_ws = 1.0;
+        s.skill_wr = 1.0;
+        s.skill_wsr = ic;
+        if cruzar_ville {
+            let n_e = if n >= MUESTRAS_SKILL_MADURAS && ic != 0.0 {
+                n.max(70)
+            } else {
+                n
+            };
+            for _ in 0..n_e {
+                s.skill_e.observar(1.0, ic.signum() * 0.01);
+            }
+        } else {
+            s.skill_e = crate::evalues::EProceso::default();
+        }
+    }
+
+    /// F1-075: Calibración de ventana temporal y conteo de actualizaciones para tests de integración.
+    pub fn set_test_time_window(&mut self, first_ts_ms: u64, last_ts_ms: u64, updates: u64) {
+        self.first_ts_ms = first_ts_ms;
+        self.last_ts_ms = last_ts_ms;
+        self.updates = updates;
     }
 
     /// #607 — el ÚLTIMO bloque maduro de `escala`: (ts de cierre, retorno
@@ -597,7 +662,7 @@ impl TemporalSpectrum {
     /// impide que escalas sin datos pesen. Lo no observado no opina. (El
     /// valor DIRECCIONAL del `fused_score` no está establecido: su IC es
     /// positivo en BTC y negativo en SOL; eso lo decide quien lo consuma.)
-    fn refresh_fusion(&mut self) {
+    pub fn refresh_fusion(&mut self) {
         let mut w_sum = 0.0;
         let mut w_sig_sum = 0.0;
         let mut best_contrib = 0.0f64;
@@ -1221,16 +1286,18 @@ impl TemporalSpectrum {
         }
     }
 
-    /// C-2 (R7-R2-C-2): Horizonte temporal unificado para el tick en curso.
+    /// C-2 (R7-R2-C-2) / F1-075: Horizonte temporal unificado para el tick en curso.
     /// Reconcilia la escala autoritativa de habilidad demostrada por Ville
     /// (`dominant_tau_ms`) con el centroide continuo de Hilbert (`continuous_resonant_tau_ms`).
-    /// Si existe habilidad medida positiva (IC > 0 validado), manda la escala con ventaja estadística.
-    /// Si aún no hay evidencia madura, opera con el centroide continuo resonante.
+    /// Si existe habilidad demostrada y estadísticamente significativa por Ville (IC > 0 validado),
+    /// manda la escala discreta con ventaja estadística demostrada fuera de muestra.
+    /// Si aún no hay evidencia con significancia demostrada por Ville (e.g. escala respaldada sólo
+    /// por energía o peldaño no significativo), opera con el centroide continuo resonante de Hilbert.
     /// Garantiza que el veto de grupo, el dimensionador de TP/SL y las ramas de señal hablen
-    /// exactamente del MISMO horizonte temporal sin disparidades.
+    /// exactamente del MISMO horizonte temporal sin disparidades ni saltos espurios por ruido estocástico.
     #[inline]
     pub fn tau_operativa_unificada(&self) -> f64 {
-        if let Some(h) = self.habilidad_en(self.dominant_tau_ms) {
+        if let Some(h) = self.habilidad_significativa_en(self.dominant_tau_ms) {
             if h > 0.0 {
                 return self.dominant_tau_ms.clamp(TAU_ANCHOR_FAST_MS, TAU_ANCHOR_SLOW_MS);
             }

@@ -8958,3 +8958,20 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     4. `f1_074_contrato_4_estabilidad_crash_flux_monte_carlo`: 500 ticks estocásticos con jitter de $\pm 2\%$ resultan en 0 derivas saturadas y salto tick a tick de `crash_flux` $< 0.05$.
     5. `f1_074_contrato_5_inmunidad_ieee754_y_parametros_desacoplados`: NaN, $\pm\infty$ y cadencias personalizadas (30s) verificadas sin pánicos.
   - Verificaciones globales: `quantum-arena` lib 152/152 pass, `espectral_multiactivo_regime_adaptation_contract` 4/4 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
+
+---
+
+## AGY — Ola Ω179: Cierre F1-075 (Gating de Ville para τ Operativa Unificada y Estabilidad del Centroide de Hilbert) — 2026-10-20
+- **Hallazgo F1-075 cerrado**:
+  - `tau_operativa_unificada` en `crates/quantum-arena/src/temporal_spectrum.rs`: Erradicada la oscilación discontinua $\times 8$ del horizonte operativo $\tau_{\text{op}}$ que saltaba entre el nodo discreto dominante (`dominant_tau_ms`) y el centroide continuo de Hilbert (`continuous_resonant_tau_ms`) debido a fluctuaciones estocásticas de ruido en un IC muestral inmaduro sin significancia estadística ($h > 0.0$ con $N \ge 30$).
+  - Implementados métodos de evaluación estricta: `ScaleState::habilidad_significativa(&self) -> Option<f64>` y `TemporalSpectrum::habilidad_significativa_en(&self, tau_ms: f64) -> Option<f64>`, evaluando `skill_e.significativo_familia(ESCALAS_OPERATIVAS_BANDA)` con $M=5$ escalas operativas ($[30\text{s}, 12\text{h}]$, umbral de familia de Ville $M/\alpha = 5 / 0.05 = 100$).
+  - `tau_operativa_unificada` adopta `dominant_tau_ms` si y sólo si `habilidad_significativa_en(dominant_tau_ms) > 0`. Si ninguna escala ha demostrado significancia anytime-valid bajo Ville (e.g. escala respaldada por energía o peldaño no significativo), el horizonte operativo permanece en el centroide continuo resonante de Hilbert, blindando el dimensionamiento de posición, los stops y el Hurst contra jitter estocástico.
+  - Implementado helper `TemporalSpectrum::set_test_time_window(first_ms, last_ms, updates)` y hecho público `refresh_fusion(&mut self)` para calibración analítica y tests de integración.
+  - Activada y pasada exitosamente la prueba de solución conocida en paseo aleatorio `crates/quantum-arena/tests/cf2_espectro_solucion_conocida.rs`: `cf2_rw_sin_habilidad_validada_la_tau_unificada_es_el_centroide` (retirado `#[ignore]`, 4 passed, 0 failed, 3 ignored).
+  - Contrato de certificación `crates/quantum-arena/tests/f1_075_tau_unificada_ville_gating_contract.rs` (5/5 tests PASSED):
+    1. `f1_075_contrato_1_espectro_con_dominante_por_energia_e_ic_inmaduro_devuelve_centroide`: escala coronada por energía con IC $+0.18$ no significativo conserva telemetría pero devuelve centroide; y al fluctuar a $-0.18$ no salta.
+    2. `f1_075_contrato_2_escala_con_habilidad_ville_significativa_adopta_nodo_discreto`: escala con Ville $E_t \ge 100$ e IC $+0.35$ adopta nodo discreto con ventaja comprobada.
+    3. `f1_075_contrato_3_escala_con_habilidad_ville_pero_ic_negativo_devuelve_centroide`: escala con e-proceso pero IC $\le 0$ no es tomada como dirección positiva.
+    4. `f1_075_contrato_4_estabilidad_continua_sin_saltos_discretos_en_ruido`: 100 ticks Monte Carlo con ruido de IC en $[-0.15, +0.15]$ producen 0 saltos $\ge 10\%$.
+    5. `f1_075_contrato_5_inmunidad_ieee754_y_cotas_operativas`: inmunidad ante NaN, $\pm\infty$ y estados en frío, acotado en $[30\text{s}, 12\text{h}]$.
+  - Verificaciones globales: `quantum-arena` lib 152/152 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
