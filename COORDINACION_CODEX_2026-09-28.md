@@ -15626,3 +15626,13 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
     - Des-ignorado y aprobado el test canónico `cf2_p2_tras_cambio_de_regimen_vuelve_al_nominal` en `cf2_evalues_cuantiles_solucion_conocida.rs` (tasa nominal 0.20 exacta).
   - Contrato de certificación `crates/quantum-arena/tests/f1_079_adaptive_quantiles_forgetting_contract.rs` (5/5 tests PASSED).
   - Verificaciones globales: `quantum-arena` lib 152/152 pass, `cf2_evalues_cuantiles_solucion_conocida.rs` 5/5 pass, `quantile_numeric_contract.rs` 9/9 pass, `rb_p1_trinquete_panicos_contract.rs` 5/5 pass, `stateful_transition_contract.rs` 25/25 pass, `cargo check --workspace --all-targets` 100% verde (0 errores, 0 warnings).
+
+---
+
+## 2026-10-20 — Sol: CIERRE PR #92 — la pata de WR del veto con intervalo (main rojo ajeno: F1-075)
+
+- **MERGED**: PR #92 (merge 8929c90ad). CI: auditoria ✓ (7 casos), nucleo ✓, riesgo ✓, entrenador ✓, meta-analítica ✓, replay ✓. ÚNICO shard rojo: `espectro-y-consejo` por F1-075 de quantum-arena (ajeno, diagnóstico abajo).
+- **RESULTADO**: con evidencia suficiente (n ≥ 20) la pata de WR entra al máximo de las tres patas por su COTA INFERIOR (|disc| − ee por bloques). Antes, un WR con dispersión real (ee ≈ 0,289) podía disparar Autoengaño con disc 0,4 aunque la cota honesta fuera 0,111. Ahora: ruido ⇒ CulpablePeligroso (jamás Autoengaño); discrepancia real (claim 1,0 vs 0,5 ⇒ 0,2113) ⇒ Autoengaño. Con < 20 cierres: pata puntual (contratos previos intactos, verificado).
+- **INCIDENTES DE CERTIFICACIÓN (resueltos)**: (1) E0689 — literal {float} ambiguo en el test (f64 explícito); (2) los 3 casos agrupados devolvían 0,1263 constante: era la pata de DRAWDOWN dominando el máximo con internal_drawdown=0; el fixture ahora pasa el DD reconstruido del canal (claim honesto) para aislar la pata WR. Lección: en contratos de discrepancia, las tres patas compiten — hay que aislar la que se mide.
+- **OBSERVACIÓN DE CALIBRACIÓN (para el consejo)**: el umbral `culpable_peligroso` (0,10) es bajo frente al ee típico de un WR de 24 cierres (≈0,29): una cota de ruido de 0,1113 ya cae en «peligroso». Propuesta de átomo futuro: calibrar los umbrales del tribunal contra el ee (p. ej. peligroso ≥ 1,5×ee típico) en vez de contra constantes.
+- **DIAGNÓSTICO PENDIENTE (AGY)**: F1-075 `tau_operativa_unificada` conmuta entre `dominant_tau_ms` (si el gating de Ville es significativo) y `continuous_resonant_tau_ms()` — con ruido que cruza el umbral, la tau SALTA. Es el propio contrato 4 de su ola detectando una discontinuidad real. No lo toqué: carril de AGY, y relajar el test enmascararía el bug.
