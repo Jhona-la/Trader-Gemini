@@ -1775,6 +1775,22 @@ impl GodEngineCore {
                 self.arena
                     .registry
                     .set_for_coin(coin_id, "sombra_friccion_ee_bp", f.ee_bp);
+                // SOL (2026-10-20, §3-3): las mitades y el n que el contrato
+                // de consumo necesita para promover (o no) la corrección.
+                self.arena
+                    .registry
+                    .set_for_coin(coin_id, "sombra_friccion_mitad_a_bp", f.media_mitad_a_bp);
+                self.arena
+                    .registry
+                    .set_for_coin(coin_id, "sombra_friccion_mitad_b_bp", f.media_mitad_b_bp);
+                self.arena
+                    .registry
+                    .set_for_coin(coin_id, "sombra_friccion_n", f.n as f64);
+                // Observabilidad de la promo: cuánto se promovió al gate.
+                let promo = self.correccion_friccion_promovida_bp(coin_id, friccion_bp);
+                self.arena
+                    .registry
+                    .set_for_coin(coin_id, "friccion_promovida_bp", promo);
             }
         }
     }
@@ -2411,6 +2427,73 @@ impl GodEngineCore {
         self.friccion_rt_modelada(atr / price).map(|f| f * 1e4)
     }
 
+    /// SOL (2026-10-20, censo C-F7b §3-3): CONTRATO DE CONSUMO de la sombra
+    /// de fricción — cuántos bp de corrección se promueven al gate. Devuelve
+    /// 0.0 (sin promo) salvo que la corrección medida sostenga las cuatro
+    /// condiciones, todas calculadas sobre información ya disponible:
+    /// 1. EVIDENCIA: la sombra está publicada (n ≥ MIN_FILLS_SOMBRA, implícito
+    ///    en su publicación) y todos sus valores son finitos.
+    /// 2. SIGNIFICANCIA: |media| > ee — la corrección supera su propio ruido.
+    /// 3. CONSISTENCIA OOS: ambas mitades temporales tienen el mismo signo que
+    ///    la media (no es un artefacto de una mitad).
+    /// 4. FAIL-SAFE: |media| ≤ modelo — un error mayor al 100 % del modelo
+    ///    significa que el modelo no es corregible, no que la corrección sea
+    ///    gigante; promoverla amplificaría el error en vez de corregirlo.
+    pub fn correccion_friccion_promovida_bp(&self, coin_id: usize, modelo_bp: f64) -> f64 {
+        if !(modelo_bp.is_finite() && modelo_bp > 0.0) {
+            return 0.0;
+        }
+        let nan = f64::NAN;
+        let media = self
+            .arena
+            .registry
+            .get_for_coin_strict_or(coin_id, "sombra_friccion_real_menos_modelada_bp", nan);
+        let ee = self
+            .arena
+            .registry
+            .get_for_coin_strict_or(coin_id, "sombra_friccion_ee_bp", nan);
+        let mitad_a = self
+            .arena
+            .registry
+            .get_for_coin_strict_or(coin_id, "sombra_friccion_mitad_a_bp", nan);
+        let mitad_b = self
+            .arena
+            .registry
+            .get_for_coin_strict_or(coin_id, "sombra_friccion_mitad_b_bp", nan);
+        let n = self
+            .arena
+            .registry
+            .get_for_coin_strict_or(coin_id, "sombra_friccion_n", nan);
+        if !(media.is_finite() && ee.is_finite() && mitad_a.is_finite() && mitad_b.is_finite()
+            && n.is_finite() && n > 0.0)
+        {
+            return 0.0;
+        }
+        // 2. significancia.
+        if media.abs() <= ee {
+            return 0.0;
+        }
+        // 3. consistencia OOS (cero estricto: una mitad neutra no sostiene).
+        if !(mitad_a * media > 0.0 && mitad_b * media > 0.0) {
+            return 0.0;
+        }
+        // 4. fail-safe de cordura.
+        if media.abs() > modelo_bp {
+            return 0.0;
+        }
+        media
+    }
+
+    /// SOL (2026-10-20, §3-3): fricción EFECTIVA de ida y vuelta (fracción) =
+    /// modelo del gate + corrección promovida de la sombra, nunca negativa.
+    /// Sin promo devuelve exactamente el modelo: el gate no cambia de
+    /// comportamiento mientras la evidencia no sostenga la corrección.
+    pub fn friccion_efectiva_rt(&self, coin_id: usize, atr_pct: f64) -> Option<f64> {
+        let modelo = self.friccion_rt_modelada(atr_pct)?;
+        let correccion_bp = self.correccion_friccion_promovida_bp(coin_id, modelo * 1e4);
+        Some(((modelo * 1e4 + correccion_bp) / 1e4).max(0.0))
+    }
+
     /// QO-586 / CL-75: geometría TP/SL y fricción de ida y vuelta con las que
     /// el gate juzgará una orden a esa τ. `None` si no hay precio o ATR.
     fn sonda_de_banda(
@@ -2428,7 +2511,11 @@ impl GodEngineCore {
             return None;
         }
         let atr_pct = atr / price;
-        let roundtrip_fee = self.friccion_rt_modelada(atr_pct)?;
+        // SOL (2026-10-20, §3-3): el gate consume la fricción EFECTIVA
+        // (modelo + corrección promovida de la sombra). Sin promo es
+        // exactamente el modelo de siempre: `friccion_efectiva_rt` sólo
+        // añade corrección cuando el contrato de consumo la sostiene.
+        let roundtrip_fee = self.friccion_efectiva_rt(coin_id, atr_pct)?;
         // CL-62: el mismo multiplicador que el gate de riesgo (por símbolo).
         let sl_mult = self.arena.sl_atr_multiplier_for(coin_id);
         let probe = risk_engine::tp_sl::compute_tp_sl_with_target_rr(

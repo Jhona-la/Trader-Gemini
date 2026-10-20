@@ -8996,4 +8996,3 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     4. `f1_076_contrato_4_structure_functions_usa_masa_en_cache_y_conserva_valores`: las funciones de estructura $\zeta(q)$ consumen la masa en caché con cero llamadas redundantes a `exp()`.
     5. `f1_076_contrato_5_inmunidad_ieee754_y_estado_en_frio`: inmunidad ante estado en frío con 0 actualizaciones y ausencia de NaNs.
   - Verificaciones globales: `quantum-arena` lib 152/152 pass, `god-engine-core` lib 211/211 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
-
