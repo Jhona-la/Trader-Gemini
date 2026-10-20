@@ -169,6 +169,27 @@ fn puntuacion_valida(score: f64) -> bool {
     score.is_finite() && (0.0..=1.0).contains(&score)
 }
 
+/// El modelo y su registro deben consumir la misma fecha efectiva (CSG-10).
+/// Sin un ancla válida, una fecha corrupta no cabe en `Observacion`: se
+/// omite ese destino completo en vez de aprender una fila que no se pueda
+/// restaurar. Un cierre tardío válido conserva su propia fecha.
+fn alimentar_calibrador(
+    calibrador: &mut PlattCalibrator,
+    registro: Option<&mut VecDeque<Observacion>>,
+    (score, won, ts_ms): Observacion,
+) {
+    if !puntuacion_valida(score) {
+        return;
+    }
+    let Some(timestamp_ms) = calibrador.effective_observation_timestamp_ms(ts_ms) else {
+        return;
+    };
+    calibrador.update_at(score, won, timestamp_ms);
+    if let Some(registro) = registro {
+        anotar(registro, (score, won, timestamp_ms));
+    }
+}
+
 /// Cota inferior de R de Lundberg que se publica: z = 1,645 (95 %
 /// unilateral, R7-R2-A-3), para que una muestra corta con racha ganadora no
 /// infle R ni afloje el margen de ruina del grupo.
@@ -200,13 +221,9 @@ pub(crate) fn alimentar(
         return;
     }
     if let Some(c) = por_moneda.get_mut(coin_id) {
-        c.update_at(score, won, ts_ms);
-        if let Some(r) = registro.get_mut(coin_id) {
-            anotar(r, (score, won, ts_ms));
-        }
+        alimentar_calibrador(c, registro.get_mut(coin_id), (score, won, ts_ms));
     }
-    global.update_at(score, won, ts_ms);
-    anotar(registro_global, (score, won, ts_ms));
+    alimentar_calibrador(global, Some(registro_global), (score, won, ts_ms));
 }
 
 impl GodEngineCore {
@@ -408,12 +425,14 @@ impl GodEngineCore {
                 *c = PlattCalibrator::new();
                 let r = &mut self.registro_calibrador[coin_id];
                 r.clear();
-                for &(score, won, ts) in g.calibrador.iter().filter(|o| puntuacion_valida(o.0)) {
-                    c.update_at(score, won, ts);
-                    anotar(r, (score, won, ts));
-                }
+                // El máximo guardado puede haber salido de la ventana. Se
+                // restaura antes de sus filas tardías: no es un salto nuevo
+                // hacia el futuro desde la primera fila retenida (LH-12).
                 if let Some(clock) = g.calibrador_reloj_ms {
                     c.restore_evidence_clock_ms(clock);
+                }
+                for &(score, won, ts) in g.calibrador.iter().filter(|o| puntuacion_valida(o.0)) {
+                    alimentar_calibrador(c, Some(&mut *r), (score, won, ts));
                 }
             }
             if let Some(guardado_conf) = &g.conformal {
@@ -425,12 +444,15 @@ impl GodEngineCore {
         }
         self.confidence_calibrator = PlattCalibrator::new();
         self.registro_calibrador_global.clear();
-        for &(score, won, ts) in e.calibrador_global.iter().filter(|o| puntuacion_valida(o.0)) {
-            self.confidence_calibrator.update_at(score, won, ts);
-            anotar(&mut self.registro_calibrador_global, (score, won, ts));
-        }
         if let Some(clock) = e.calibrador_global_reloj_ms {
             self.confidence_calibrator.restore_evidence_clock_ms(clock);
+        }
+        for &(score, won, ts) in e.calibrador_global.iter().filter(|o| puntuacion_valida(o.0)) {
+            alimentar_calibrador(
+                &mut self.confidence_calibrator,
+                Some(&mut self.registro_calibrador_global),
+                (score, won, ts),
+            );
         }
         if let Some(guardado_conf) = &e.conformal_global {
             self.conformal.restaurar(guardado_conf);
