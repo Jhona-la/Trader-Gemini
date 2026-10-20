@@ -1098,6 +1098,9 @@ pub struct GodEngineCore {
     pub model_rx: Option<std::sync::mpsc::Receiver<dark_alpha_engine::DarkAlphaEngine>>,
     pub last_ml_prob: f32,
     pub flight_recorder: Option<Arc<telemetry_server::FlightRecorder>>,
+    /// F1-076: Bandera que evita la duplicación de publicaciones del campo espectral
+    /// cuando `process_event` llama inmediatamente a `process_tick_dual` en el mismo tick.
+    pub spectral_published_in_current_event: bool,
     pub reality: reality_physics::RealityPhysics,
     pub last_fast_intent: Vec<SignalIntent>,
     pub last_slow_intent: Vec<SignalIntent>,
@@ -1532,6 +1535,7 @@ impl GodEngineCore {
             cuantiles: (0..n_coins)
                 .map(|_| quantum_arena::adaptive_quantiles::AdaptiveQuantileEngine::new())
                 .collect(),
+            spectral_published_in_current_event: false,
         };
         core.sync_council_params_from_arena();
         core
@@ -1868,6 +1872,7 @@ impl GodEngineCore {
         let reg_tide = self.arena.config.regime_w_adverse_tide.load(Ordering::Relaxed);
         let reg_col = self.arena.config.regime_w_coherence_collapse.load(Ordering::Relaxed);
         let reg_anti = self.arena.config.regime_w_micro_anti.load(Ordering::Relaxed);
+        let reg_cad = self.arena.config.regime_cadence_regime_ms.load(Ordering::Relaxed);
         let reg_floor = self.arena.config.regime_min_margin_floor.load(Ordering::Relaxed);
 
         self.regime_params = quantum_arena::spectral_regime::SpectralRegimeParams {
@@ -1875,6 +1880,7 @@ impl GodEngineCore {
             w_adverse_tide: reg_tide,
             w_coherence_collapse: reg_col,
             w_micro_anti: reg_anti,
+            cadence_regime_ms: if reg_cad.is_finite() && reg_cad > 0.0 { reg_cad } else { 60_000.0 },
             min_margin_floor: reg_floor,
             ..Default::default()
         };
@@ -1883,6 +1889,7 @@ impl GodEngineCore {
         self.arena.registry.set("regime_w_adverse_tide", reg_tide);
         self.arena.registry.set("regime_w_coherence_collapse", reg_col);
         self.arena.registry.set("regime_w_micro_anti", reg_anti);
+        self.arena.registry.set("regime_cadence_regime_ms", if reg_cad.is_finite() && reg_cad > 0.0 { reg_cad } else { 60_000.0 });
         self.arena.registry.set("regime_min_margin_floor", reg_floor);
 
         // OLA Ω128: Sincronización de Multifractal y Ráfagas Institucionales desde QuantumConfig
@@ -2872,6 +2879,8 @@ impl GodEngineCore {
                             .registry
                             .set_for_coin(coin_id, "spectral_p_transition", p_t);
                     }
+                    // F1-076: Marca de publicación completa del espectro para este evento
+                    self.spectral_published_in_current_event = true;
                 }
             }
 
@@ -4013,95 +4022,76 @@ impl GodEngineCore {
             // callers directos de dual (backtests) congelaban el espectro al
             // no pasar por process_event. Idempotente para producción (process_
             // event ya actualizó con el mismo tick: dt=0 ⇒ α=0, sin doble peso).
-            if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
-                let mid = (bid + ask) * 0.5;
-                spec.update(mid, event_time_ms);
-                // MG05: también los callers directos deben retirar evidencia
-                // de la escala anterior. En process_event -> dual, dt=0 no
-                // modifica el espectro ni duplica maduraciones del IC.
-                // LF-2 (Línea F): la MISMA τ que publica process_event (C-2,
-                // τ operativa unificada). Con el nodo crudo, esta publicación
-                // —la última del evento— deshacía el arreglo C-2 en cada tick.
-                evidence_publication::publicar_coherencia(
-                    &self.arena.registry,
-                    &self.espectral_ma,
-                    coin_id,
-                    spec.tau_operativa_unificada(),
-                );
-                if coin_id < self.arena.coins.len() {
-                    let field = spec.spectral_field(true);
-                    self.arena.coins[coin_id].spectral_coherence.store(field.global_coherence, Ordering::Relaxed);
-                    self.arena.coins[coin_id].spectral_entropy.store(field.spectral_entropy, Ordering::Relaxed);
-                    self.arena.coins[coin_id].spectral_resonant_tau.store(field.resonant_tau_ms, Ordering::Relaxed);
-                    // (Ola XLI·B1/C2/C3) Publicación del CAMPO DE RÉGIMEN
-                    // continuo y los observables de teoría nueva: crash-ness
-                    // (modula margen de largos), intermitencia de Kolmogorov
-                    // (endurece pisos) y Fisher de escala (identificabilidad).
-                    // #592 — la deriva de τ* se mide contra el ANCLA de
-                    // régimen (cadencia 60 s): por evento, per-hora satura
-                    // con saltos de τ* en ms (ruido del feed). La ancla se
-                    // renueva cada vela de referencia; entre anclas, el
-                    // estimador es continuo y normalizado por tiempo real.
-                    let (regimen_prev_ln, regimen_elapsed) = {
-                        let ancla = &self.regime_drift_prev[coin_id];
-                        let cur_ln = if field.resonant_tau_ms.is_finite()
-                            && field.resonant_tau_ms > 0.0
-                        {
-                            field.resonant_tau_ms.ln()
-                        } else {
-                            0.0
-                        };
-                        let (prev, elapsed, actualizar) = referencia_de_regimen(
-                            ancla.0.load(Ordering::Relaxed),
-                            ancla.1.load(Ordering::Relaxed),
-                            event_time_ms,
-                        );
-                        if actualizar && cur_ln > 0.0 {
-                            ancla.0.store(cur_ln.to_bits(), Ordering::Relaxed);
-                            ancla.1.store(event_time_ms, Ordering::Relaxed);
-                        }
-                        (prev, elapsed)
-                    };
-                    let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum_with_params(
-                        spec,
-                        regimen_prev_ln,
-                        regimen_elapsed,
-                        &self.regime_params,
-                    );
-                    self.arena.coins[coin_id].spectral_crash_flux.store(regime_field.crash_flux, Ordering::Relaxed);
-                    let intermittency = spec
-                        .structure_functions()
-                        .map(|sf| sf.intermittency)
-                        .unwrap_or(0.0);
-                    self.arena.coins[coin_id].spectral_intermittency.store(intermittency, Ordering::Relaxed);
-                    let fisher = spec.fisher_scale_information().unwrap_or(-1.0);
-                    self.arena.coins[coin_id].spectral_fisher.store(fisher, Ordering::Relaxed);
-                    // (Ola XLII·D / #662 F2-B3) Transporte W1 a 60 s de
-                    // RELOJ FÍSICO del exchange (antes 64 updates: 0,64 s
-                    // a 100 ev/s): reestructuración del régimen. Publicada
-                    // al registry para telemetría; consumo de gates =
-                    // próxima ola (frenar aperturas en τ en tránsito).
-                    let w1_medido = spec.spectral_transport_w1_fisico(
-                        quantum_arena::temporal_spectrum::W1_LAG_FISICO_MS,
-                    );
-                    self.arena.registry.set_for_coin(
+            // F1-076: Si process_event ya actualizó el espectro y publicó el campo para este
+            // evento, evitamos la re-ejecución idéntica redundante (~1,900 exp() y escrituras atómicas).
+            // Para callers directos (backtests o tests unitarios), la bandera es false y corre normalmente.
+            if !self.spectral_published_in_current_event {
+                if let Some(spec) = self.temporal_spectrum.get_mut(coin_id) {
+                    let mid = (bid + ask) * 0.5;
+                    spec.update(mid, event_time_ms);
+                    evidence_publication::publicar_coherencia(
+                        &self.arena.registry,
+                        &self.espectral_ma,
                         coin_id,
-                        "spectral_w1_transport",
-                        w1_medido.unwrap_or(0.0),
+                        spec.tau_operativa_unificada(),
                     );
-                    // (Ola XLIII·A) Observador bayesiano del transporte:
-                    // p_transition alta = la masa espectral se está moviendo
-                    // (cambio de régimen en curso). Publicada para gates.
-                    // Ola XLIV: sólo con un W₁ MEDIDO (antes un None entraba
-                    // como 0,0 inventado) y una vez por evento (`observe_at`).
-                    if let (Some(obs), Some(w1)) = (self.w1_bocpd.get_mut(coin_id), w1_medido) {
-                        let p_t = obs.observe_at(event_time_ms, w1).unwrap_or(0.0);
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "spectral_p_transition", p_t);
+                    if coin_id < self.arena.coins.len() {
+                        let field = spec.spectral_field(true);
+                        self.arena.coins[coin_id].spectral_coherence.store(field.global_coherence, Ordering::Relaxed);
+                        self.arena.coins[coin_id].spectral_entropy.store(field.spectral_entropy, Ordering::Relaxed);
+                        self.arena.coins[coin_id].spectral_resonant_tau.store(field.resonant_tau_ms, Ordering::Relaxed);
+                        let (regimen_prev_ln, regimen_elapsed) = {
+                            let ancla = &self.regime_drift_prev[coin_id];
+                            let cur_ln = if field.resonant_tau_ms.is_finite()
+                                && field.resonant_tau_ms > 0.0
+                            {
+                                field.resonant_tau_ms.ln()
+                            } else {
+                                0.0
+                            };
+                            let (prev, elapsed, actualizar) = referencia_de_regimen(
+                                ancla.0.load(Ordering::Relaxed),
+                                ancla.1.load(Ordering::Relaxed),
+                                event_time_ms,
+                            );
+                            if actualizar && cur_ln > 0.0 {
+                                ancla.0.store(cur_ln.to_bits(), Ordering::Relaxed);
+                                ancla.1.store(event_time_ms, Ordering::Relaxed);
+                            }
+                            (prev, elapsed)
+                        };
+                        let regime_field = quantum_arena::spectral_regime::SpectralRegimeField::from_spectrum_with_params(
+                            spec,
+                            regimen_prev_ln,
+                            regimen_elapsed,
+                            &self.regime_params,
+                        );
+                        self.arena.coins[coin_id].spectral_crash_flux.store(regime_field.crash_flux, Ordering::Relaxed);
+                        let intermittency = spec
+                            .structure_functions()
+                            .map(|sf| sf.intermittency)
+                            .unwrap_or(0.0);
+                        self.arena.coins[coin_id].spectral_intermittency.store(intermittency, Ordering::Relaxed);
+                        let fisher = spec.fisher_scale_information().unwrap_or(-1.0);
+                        self.arena.coins[coin_id].spectral_fisher.store(fisher, Ordering::Relaxed);
+                        let w1_medido = spec.spectral_transport_w1_fisico(
+                            quantum_arena::temporal_spectrum::W1_LAG_FISICO_MS,
+                        );
+                        self.arena.registry.set_for_coin(
+                            coin_id,
+                            "spectral_w1_transport",
+                            w1_medido.unwrap_or(0.0),
+                        );
+                        if let (Some(obs), Some(w1)) = (self.w1_bocpd.get_mut(coin_id), w1_medido) {
+                            let p_t = obs.observe_at(event_time_ms, w1).unwrap_or(0.0);
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "spectral_p_transition", p_t);
+                        }
                     }
                 }
             }
+            self.spectral_published_in_current_event = false;
 
             // 1. Quantum Kill-Switch Check
             // CL-43 (FMT-232, ADR-0015): el latch bloquea lo que AUMENTA el

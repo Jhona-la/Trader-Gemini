@@ -318,8 +318,9 @@ fn cf2_contrato_peso_unico_fila1() {
 // habilidad validada la dominante es el respaldo argmax |w·s| en la banda
 // [30 s, 12 h], normalmente la escala 18 (68,7 s) y a veces la 19, con IC
 // maduro de signo aleatorio en 4 h: X ≈ Binomial(20; ≈ 0,5).
+// C-F3 / F1-075: la τ unificada sólo abandona el centroide continuo si una escala
+// demuestra habilidad estadísticamente significativa bajo el e-proceso de Ville (M=5).
 #[test]
-#[ignore = "OPEN F2.3-01 (Línea C, C-F3 τ dominante): la τ unificada sale del centroide con el signo de un IC sin validar"]
 fn cf2_rw_sin_habilidad_validada_la_tau_unificada_es_el_centroide() {
     let mut discrepancias = 0usize;
     let mut detalle = Vec::new();

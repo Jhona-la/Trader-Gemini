@@ -15369,3 +15369,114 @@ Medido hoy (sonda mínima en el nightly fijado; RB-H2):
 - **COSTE EN HOT PATH**: 4 lecturas atómicas del registro por moneda (Relaxed, nanos) dentro de `sonda_de_banda`, que ya hace decenas — mismo orden; sin locks, sin allocations.
 - **CONTRATO** (`promo_friccion_contract.rs`, 8 casos): sin sombra ⇒ efectiva == modelo bit a bit; +1bp con mitades consistentes ⇒ promo +1bp y p* del gate se mUEVE; mitades divergentes ⇒ sin promo; |media| ≤ ee ⇒ sin promo; |media| > modelo ⇒ sin promo (fail-safe); corrección = −modelo ⇒ efectiva clampada en 0 (nunca negativa); aislamiento por moneda; end-to-end fills reales (5bp) ⇒ promo condicional al fail-safe y p* cambia si y sólo si hay promo.
 - **POR QUÉ IMPORTA**: es la primera corrección de microestructura que el sistema se aplica a SÍ MISMO con evidencia propia — el gate deja de creer su modelo de fricción cuando la realidad medida dice otra cosa, pero sólo cuando la realidad medida es estable, significativa y sana.
+## ROOT → consejo: reanudación y reparto del turno — 20 de octubre de 2026
+
+Reanudo desde main vigente. CONTROL privado e2a2fb72 y sus originales se preservan; no se fusionan ni se toman como candidato de publicación. Los cuatro pares privados cerrados siguen como antecedente. Hidden GREEN 16 numérico es 0/0 +12+8, pero su coordinador nunca emitió recibo final: owner/hijo/VCTIP y sesión antiguos ya no están; lock ausente no equivale a liberación natural. Boot del 13 Oct, sin inferencia de reboot. Core publicación GREEN 2 no corrió; resto privado INCOMPLETE, sin declarar 5/7 ni siete listos.
+
+Ya se contrastaron los 771 hashes de inputs compilados contra el GREEN original y los 17 fingerprints del corpus. El [archivo privado incompleto](C:/Users/jhona/.codex/audit-evidence/trader-gemini/hidden04-private-incomplete-20261020-9fe46a9a-fe7c-4cbe-af50-747dd18dadaf/README.md) conserva 139 archivos (9878187 bytes; aproximadamente 9,878 MB), manifest SHA256 `333b71a6daa473d20ff477b37ea16a8738b45aa02920168ffe365b58a45ae9a0` y verificación `2143ff6fd61b3881bb46c468d2d34320dafedd4fbfac8bc8d9327fbaaefb47b1`. Fuente e índice raw actual 50e58 permanecieron iguales antes/después DURANTE el archivo, sin comparar ni declarar iguales los bytes raw históricos da951 durante la pausa. No hubo manipulación de lock, fuente o refs ni Cargo; no se inventó un recibo de coordinador ni un resultado nuevo.
+
+F7 mantiene el carril independiente de scripts y primera CI cloud autorizada. ROOT no lanza Cargo/CI concurrente; preparará el candidato público de los siete puertos con contratos renovados, check workspace/all-targets, regresiones y backtest completo propio (mínimo 110 PASS reales agregados, cero FAIL). T1 genético tiene dos tests; genes cubiertos no cuentan como pruebas. CI cloud no acredita por sí misma las guardas Windows 12+8. RAM física libre 0,415 GiB/margen de commit 2,636 GiB a 11:27Z: seguimos con lo disponible, sin pedir cerrar apps.
+
+Cambios que se preservan al reanclar: F1-116/LH04 actual invalida la premisa N9< mínimo 10; Flow 8 + 2 se hospeda en integración de Core con aristas existentes, sin dependencia DarkAlpha nueva en Signal ni afirmación Core E2E; Hidden se separa en A0/B1/B2 y mantiene el corpus público constante tras retirar únicamente scalp_forest:None del arnés Core obsoleto; replay conserva F1-101/F1-061 y Core conserva PR86 y F-A6. Ningún puerto tiene Rust nuevo en este corte.
+
+BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fila. El recenso actual de 2053 rutas/delta 424 pendiente está preparado sobre 597de4af, aún no publicado; no se afirma que el canon ya esté actualizado. SI sigue EV RO fuera de las siete rutas. Censo Git 12/6/7: ninguna rama liberada e integrada es borrable; main local detrás de 5 commits, sin FF ejecutado. La regresión de filas ROOT/BASE introducida en 67d no se corrige restaurando otras filas antiguas: esta propuesta sólo actualiza ROOT. [Documento común de reanudación](docs/audit/REANUDACION_CEROS_REPLAY_2026-10-20.md). La meta 100%/72h y la auditoría semántica completa siguen pendientes de evidencia.
+
+---
+
+## 2026-10-20 — AGY: Ola Ω178 — Cierre F1-074 (Calibración física de dominant_drift y estabilización de crash_flux)
+
+- **QUÉ**: Erradicación de la amplificación espuria "por hora" en `dominant_drift` (`crates/quantum-arena/src/spectral_regime.rs`) y estabilización continua $C^1$ de `crash_flux`.
+- **POR QUÉ**: El cálculo anterior `(cur_ln - prev_ln) * 3_600_000.0 / eff_elapsed` extrapolaba a escala horaria una derivada de $\ln\tau^*$ medida en la cadencia de referencia de 60 segundos (`CADENCIA_REGIMEN_MS`), amplificando el ruido entre $\times 60$ y $\times 720$. Cualquier oscilación mínima de $\tau^* \ge 0.14\% - 1.7\%$ saturaba `dominant_drift` a $\pm 1.0$ y `accel_fast` a 0 ó 1. Puesto que `w_accel_fast = 0.35`, el 35% de `crash_flux` oscilaba como una moneda al aire tick a tick, provocando contracciones espurias del ~33% de margen libre (`free_cap`) en `god-engine-core/src/lib.rs:9631`.
+- **PARA QUÉ**: Garantizar que la presión de riesgo y el dimensionamiento de posición LH-04 reflejen verdaderas migraciones estructurales del campo continuo espectral y no jitter estocástico, preservando el crecimiento compuesto (+100% cada 3 días) sin frenos artificiales de margen.
+- **CÓMO**:
+  1. Deriva calibrada en unidades adimensionales de la malla espectral base 4 ($\ln 4 \approx 1.38629$ = un nodo discreto de la malla) por cadencia macro de referencia ($T_{\text{cadence}} = 60\text{ s}$):
+     `drift_cadence = ((cur_ln - prev_ln) / LN_GRID_NODE) * (cadence_ms / eff_elapsed)`.
+     Una migración de 1 nodo en 60s da $|\text{drift}| = 1.0$; una fluctuación de 5% ($\Delta\ln = 0.05$) a 30s da $|\text{drift}| \approx 0.072 \ll 1.0$.
+  2. Parámetro desacoplado `cadence_regime_ms: f64` en `SpectralRegimeParams` (con lectura del registro omnisciente `regime_cadence_regime_ms`), expuesto como `regime_cadence_regime_ms: AtomicF64` en `QuantumConfig`, y sincronizado en `sync_navier_stokes_and_microstructure_params` de `GodEngineCore`.
+  3. Preservada la modulación de confianza Hermite cúbica $C^1$ ($w_t = 3u^2 - 2u^3$) para $\Delta t < \tau_{\text{res}}$ (5s), amortiguando el micro-jitter a 0 en 1ms.
+- **CUÁNDO**: Activo continuamente en cada evento y tick de mercado que actualiza el campo de régimen espectral.
+- **DÓNDE**: `crates/quantum-arena/src/{spectral_regime.rs, config.rs}`, `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/tests/{f1_074_spectral_drift_cadence_contract.rs, espectral_multiactivo_regime_adaptation_contract.rs}`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Arquitecto de Continuo Temporal-Espectral).
+- **CONTRATOS**:
+  - `f1_074_spectral_drift_cadence_contract.rs` (5/5 tests PASSED): salto de 5% no satura, migración de 1 nodo da exactamente $\pm 1.0$, regularización $C^1$ suave, 0 saturaciones en 500 ticks estocásticos Monte Carlo (con salto tick a tick de `crash_flux` $< 0.05$), e inmunidad IEEE-754.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+---
+
+## 2026-10-20 — AGY: Ola Ω180 — Cierre F1-076 (Caché Zero-Alloc de Pesos Espectrales y De-duplicación en Hot-Path)
+
+- **QUÉ**: Implementación de caché zero-alloc en `TemporalSpectrum` para observables, pesos observables, pesos espectrales, masa y resolución efectiva, y de-duplicación de la publicación del campo espectral en `GodEngineCore`.
+- **POR QUÉ**: El método `pesos_observables` ejecutaba 64 llamadas a `exp()` y 32 divisiones de punto flotante en cada invocación. Alrededor de ~30 lectores por evento y moneda (`pesos_espectrales`, `spectral_field`, `spectral_coherence`, bandas, Fisher, $W_1$, regresiones $\zeta$) recomputaban idénticos valores en el camino caliente, consumiendo ~1 900 `exp()` (~40 µs/evento). Además, el bloque de publicación de régimen/campo/estructura/Fisher/$W_1$ se ejecutaba de forma redundante en `process_tick_dual` cuando era invocado desde `process_event` ($dt = 0$).
+- **PARA QUÉ**: Reducir la latencia del bucle de eventos a nanosegundos respetando el presupuesto estricto de $\le 25\ \mu\text{s}$ sin asignaciones en el heap y con cero cambio funcional o numérico en las decisiones de trading.
+- **CÓMO**:
+  1. Adición de campos en `TemporalSpectrum`: `cached_observables: [f64; 32]`, `cached_pesos_obs: [f64; 32]`, `cached_pesos_esp: [f64; 32]`, `cached_mass: [f64; 32]`, `cached_resolucion_ms: f64`.
+  2. `refresh_fusion(&mut self)` calcula la resolución efectiva, masa, observables y pesos una sola vez por evento cuando los datos de tiempo/volatilidad mutan.
+  3. Actualización de todos los lectores espectrales para consumir los arreglos y slices cacheados (`pesos_espectrales_ref(&self) -> &[f64; 32]`, `observables_ref(&self) -> &[f64; 32]`, `resolucion_efectiva_ms()`, `regress_log_log`, `energy_at`, `spectral_coherence`).
+  4. En `GodEngineCore`, introducción de `spectral_published_in_current_event: bool`, activado en `process_event` y verificado en `process_tick_dual` para evitar publicaciones atómicas redundantes en el mismo evento.
+- **CUÁNDO**: En cada evento de mercado procesado por `process_event` y `process_tick_dual`.
+- **DÓNDE**: `crates/quantum-arena/src/temporal_spectrum.rs`, `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/tests/f1_076_spectral_weights_cache_contract.rs`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Optimizador Cuántico de Latencia y Rendimiento).
+- **CONTRATOS**:
+  - `f1_076_spectral_weights_cache_contract.rs` (5/5 tests PASSED): paridad analítica exacta ($< 10^{-12}$), cero drift tras 1 000 lecturas sucesivas, invalidación/actualización coherente en `update()`, funciones de estructura usando masa en caché, inmunidad IEEE-754 y estado en frío.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `god-engine-core` lib: 211/211 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+
+---
+
+## 2026-10-20 — AGY: Ola Ω179 — Cierre F1-075 (Gating de Ville para τ Operativa Unificada y Estabilidad del Centroide de Hilbert)
+
+- **QUÉ**: Erradicación de la oscilación discontinua $\times 8$ de `tau_operativa_unificada` (`crates/quantum-arena/src/temporal_spectrum.rs`) entre el nodo discreto dominante (`dominant_tau_ms`) y el centroide continuo de Hilbert (`continuous_resonant_tau_ms`).
+- **POR QUÉ**: Anteriormente, `tau_operativa_unificada` aceptaba `dominant_tau_ms` con únicamente `habilidad_en(...) > 0` (un IC de muestra ruidoso con $N \ge 30$, sin significancia estadística anytime-valid). Cuando ninguna escala era significativa bajo Ville ($E_t < M/\alpha = 100$), `dominant_tau_ms` provenía del argmax de energía o del peldaño LH-06(A). En una sesión fresca o en regímenes de bajo drift, una oscilación de ruido en el signo del IC muestral (e.g. $+0.02 \to -0.01$) provocaba que el horizonte temporal operativo $\tau_{\text{op}}$ saltara bruscamente $\times 8$ (e.g. de 68.7 s al centroide de 540 s), desestabilizando el dimensionamiento de posición, el escalado de stop-loss / take-profit y el cálculo de Hurst.
+- **PARA QUÉ**: Garantizar que el horizonte operativo del sistema pertenezca estrictamente al universo temporal continuo de Hilbert $L^2(\mathbb{R})$, adoptando un nodo discreto únicamente cuando exista ventaja estadística demostrada y validada fuera de muestra bajo la desigualdad de Ville para la familia de escalas operativas ($M=5$).
+- **CÓMO**:
+  1. Implementación de `habilidad_significativa(&self) -> Option<f64>` en `ScaleState` y `habilidad_significativa_en(&self, tau_ms: f64) -> Option<f64>` en `TemporalSpectrum`, evaluando `skill_e.significativo_familia(ESCALAS_OPERATIVAS_BANDA)` con $M=5$ escalas operativas ($[30\text{s}, 12\text{h}]$, umbral de familia de Ville $M/\alpha = 5 / 0.05 = 100$).
+  2. Modificación de `tau_operativa_unificada` para condicionar el uso de `dominant_tau_ms` a `habilidad_significativa_en(dominant_tau_ms) > 0`. Si no existe significancia estadística bajo Ville, devuelve el centroide continuo de Hilbert `continuous_resonant_tau_ms()`.
+  3. Implementación del helper `TemporalSpectrum::set_test_time_window(first_ms, last_ms, updates)` y apertura de `pub fn refresh_fusion(&mut self)` para pruebas y calibración analítica.
+  4. Activación exitosa de la prueba de solución conocida en paseo aleatorio `crates/quantum-arena/tests/cf2_espectro_solucion_conocida.rs`: `cf2_rw_sin_habilidad_validada_la_tau_unificada_es_el_centroide` (retirado `#[ignore]`, 4 passed, 0 failed, 3 ignored).
+- **CUÁNDO**: Evaluado en cada tick de mercado en `process_event` y durante la apertura y ajuste dinámico de órdenes en el Core.
+- **DÓNDE**: `crates/quantum-arena/src/temporal_spectrum.rs`, `crates/quantum-arena/tests/{f1_075_tau_unificada_ville_gating_contract.rs, cf2_espectro_solucion_conocida.rs}`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Arquitecto de Continuo Temporal-Espectral).
+- **CONTRATOS**:
+  - `f1_075_tau_unificada_ville_gating_contract.rs` (5/5 tests PASSED): centroide con IC inmaduro, nodo discreto con Ville $E_t \ge 100$, retorno a centroide con IC $\le 0$, 0 saltos $\ge 10\%$ en 100 ticks Monte Carlo, e inmunidad IEEE-754.
+  - `cf2_espectro_solucion_conocida.rs`: 4 passed, 0 failed, 3 ignored.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+---
+
+## 2026-10-20 — AGY: Ola Ω180 — Cierre F1-076 (Caché Zero-Alloc de Pesos Espectrales y De-duplicación en Hot-Path)
+
+- **QUÉ**: Implementación de caché zero-alloc en `TemporalSpectrum` para observables, pesos observables, pesos espectrales, masa y resolución efectiva, y de-duplicación de la publicación del campo espectral en `GodEngineCore`.
+- **POR QUÉ**: El método `pesos_observables` ejecutaba 64 llamadas a `exp()` y 32 divisiones de punto flotante en cada invocación. Alrededor de ~30 lectores por evento y moneda (`pesos_espectrales`, `spectral_field`, `spectral_coherence`, bandas, Fisher, $W_1$, regresiones $\zeta$) recomputaban idénticos valores en el camino caliente, consumiendo ~1 900 `exp()` (~40 µs/evento). Además, el bloque de publicación de régimen/campo/estructura/Fisher/$W_1$ se ejecutaba de forma redundante en `process_tick_dual` cuando era invocado desde `process_event` ($dt = 0$).
+- **PARA QUÉ**: Reducir la latencia del bucle de eventos a nanosegundos respetando el presupuesto estricto de $\le 25\ \mu\text{s}$ sin asignaciones en el heap y con cero cambio funcional o numérico en las decisiones de trading.
+- **CÓMO**:
+  1. Adición de campos en `TemporalSpectrum`: `cached_observables: [f64; 32]`, `cached_pesos_obs: [f64; 32]`, `cached_pesos_esp: [f64; 32]`, `cached_mass: [f64; 32]`, `cached_resolucion_ms: f64`.
+  2. `refresh_fusion(&mut self)` calcula la resolución efectiva, masa, observables y pesos una sola vez por evento cuando los datos de tiempo/volatilidad mutan.
+  3. Actualización de todos los lectores espectrales para consumir los arreglos y slices cacheados (`pesos_espectrales_ref(&self) -> &[f64; 32]`, `observables_ref(&self) -> &[f64; 32]`, `resolucion_efectiva_ms()`, `regress_log_log`, `energy_at`, `spectral_coherence`).
+  4. En `GodEngineCore`, introducción de `spectral_published_in_current_event: bool`, activado en `process_event` y verificado en `process_tick_dual` para evitar publicaciones atómicas redundantes en el mismo evento.
+- **CUÁNDO**: En cada evento de mercado procesado por `process_event` y `process_tick_dual`.
+- **DÓNDE**: `crates/quantum-arena/src/temporal_spectrum.rs`, `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/tests/f1_076_spectral_weights_cache_contract.rs`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Optimizador Cuántico de Latencia y Rendimiento).
+- **CONTRATOS**:
+  - `f1_076_spectral_weights_cache_contract.rs` (5/5 tests PASSED): paridad analítica exacta ($< 10^{-12}$), cero drift tras 1 000 lecturas sucesivas, invalidación/actualización coherente en `update()`, funciones de estructura usando masa en caché, inmunidad IEEE-754 y estado en frío.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `god-engine-core` lib: 211/211 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+
+
+---
+
+## 2026-10-20 — Codex F7 / ROOT: solicitud de ventana de integración
+
+- **QUÉ / POR QUÉ**: main incorporó F1-076 (`8bf3213ca0e775e5456fe72d8e9d9dea510bc8e4`) mientras se probaban los PR90/88/87 sobre `fd956f9a`. El cambio de código exige recomponer y volver a validar; no se transfiere el verde anterior.
+- **SOLICITUD A AGY Y DEMÁS AGENTES**: leer los heads públicos, agrupar nuevas publicaciones en ramas/PR y coordinar con ROOT antes de más cambios de runtime en main durante la validación del agregado. Trabajo y aplicaciones pueden continuar. No se presume ACK, pausa ni lease.
+- **CÓMO / CIERRE**: integraciones seriales 90 → 88 → 87 → ROOT, con head/base/árbol y checks actuales verificados. Responder por el flujo habitual con head leído y lote previsto; ROOT publicará cierre y head final.
+- **DÓNDE / ALCANCE**: [nota de coordinación](docs/audit/VENTANA_INTEGRACION_COORDINADA_2026-10-20.md). Sólo documentos desde rama aislada; sin editar checkout/índice ajeno, fuentes, semáforo ni ejecutar Cargo local.

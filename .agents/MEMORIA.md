@@ -1,5 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-20 — Codex BASE15: reanudación, fila reparada y delta de cobertura
+
+La fila BASE había regresado a 1/7 en 67dae, aunque el plan y memoria conservaban el corte 4/7. Se repone sólo la fila propia sobre el main documental vigente, preservando ROOT/AGY/Sol y sus apéndices. Snapshot de evidencia597de4af:2053 rutas (781 Rust), frente a 1863/672 de b9; delta de 424 = 201 añadidas + 212 modificadas + 11 retiradas, con 1640 sin cambio. Son entradas mecánicas pendientes de revisión, no nuevos archivos completos auditados. Inventario/cola/recibos históricos conservan sus bytes y estados.
+
+ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numérico 16/0 no acredita cierre operativo ni Core GREEN 2. Puertos/check/T1/E2E y LG5 HIGH01/02/MED06 pendientes. PR #65 sigue abierta/draft con HEAD cff8886; el merge reservado 7c24796 mantiene árbol lógico 984891b3 y 17 staged, sin mutarlo ni transferir su Source2 INCOMPLETE 2/7 al main actual.
+
+[Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
+
+
 ## 2026-10-19 (tarde, 8) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω177 (Cierre F1-073)
 
 - **Mandato**: Snapshots atómicos y Seqlock lock-free para curvas de horizonte continuo en `QuantumConfig` y `apply_to_arena` (`F1-073`), erradicando la formación de quimeras entre genomas `(a_nuevo, b_viejo)` durante hot-swaps y asegurando que las parejas TP/SL se evalúen bajo el mismo genoma preservando la invariante matemática y de riesgo $TP \ge SL \cdot RR$ en tiempo real:
@@ -8920,3 +8929,70 @@ Core07 RED 3/2→GREEN 5/0, Risk01 6/7→13/0, Kelly02 0/2→2/0 y Flow03 1/6→
 Risk RED conserva cinco fallos localizados y dos helpers positivos ambiguos; GREEN no añade stack retroactivo. Kelly usa nueve retornos sintéticos sin LH04 maduro ni validación Hidden productor. Flow prueba composición por valores publicados, no productor/Core E2E ni adaptive7 separado. GREEN liberó tras limpiar sólo VCTIP propio acreditado. Risk RED original retuvo lock; recuperación con postcondición fallida y verificación posterior quedan separadas, sin falsear liberación. Endpoints 12+8 no certifican aislamiento continuo/cache/modelos.
 
 Hidden04 RED 16 real 2 PASS/14 FAIL y 101/101+12/8; coordinador liberado 16:07:05Z tras limpiar VCTIP propio. RED publicación 2 activo en el mismo preimage, sin resultado comunicado ni parche 04 instalado. Replay05 span 8+ledger 5 y Reporter06 privados 22 pendientes; luego revisión adicional tiny-z, suites/check/T1 auténtico y puertos autónomos desde main preservando CL135/F-A6/C-F5b/CL148/Ω151–153/NoReplay. LG5 HIGH01/02/MED06 y meta 100%/72h sin cerrar/demostrar. BASE maestro/censo y Quant reservas. Sólo documental; no mueve main local ocupado e21ce, su índice ni archivos.
+
+## ROOT — reanudación de ceros y replay sobre main vigente — 2026-10-20
+
+Se preserva el CONTROL privado e2a2fb72/tree6ec292db y sus recibos; no es publicable por ancestría. Los cuatro pares privados Core07, Risk01, Kelly02 y Flow03 mantienen su evidencia histórica, sin integración ni PASS transferido a main. Hidden04 conserva GREEN 16 numérico real con driver/validator 0/0 y 12 invariantes + 8 guardas verdaderas, pero falta COORDINATOR_RECEIPT: el owner, hijo y VCTIP antiguos ya no aparecen, la sesión desapareció y el lock actual está ausente. Esto no acredita liberación natural ni cierre recuperado. El boot observado es del 13 Oct; no se atribuye un reinicio a esta interrupción. Core publicación GREEN 2 no se ejecutó; Hidden no eleva el total a 5/7. Los pendientes privados quedan INCOMPLETE.
+
+El snapshot fresco comunicado por ROOT conserva HEAD, árbol, rama, índice lógico y estado limpio, pero el índice raw actual es 50e58bd4d5096504d0ac3c4987d27fae22f9b23e078fb84e1feb1b8ffca57e47, distinto del histórico da951cef. No se atribuye la causa ni se afirma que sea sólo metadata: falta contrastar la copia antigua. El intento de archivo con el pin viejo abortó antes de crear carpeta y sin escritura Git/fuente; sus recibos no se reparan. Ya se contrastaron los 771 hashes de inputs compilados contra el GREEN original y los 17 fingerprints del corpus. El [archivo privado incompleto](C:/Users/jhona/.codex/audit-evidence/trader-gemini/hidden04-private-incomplete-20261020-9fe46a9a-fe7c-4cbe-af50-747dd18dadaf/README.md) conserva 139 archivos (9878187 bytes; aproximadamente 9,878 MB), manifest SHA256 `333b71a6daa473d20ff477b37ea16a8738b45aa02920168ffe365b58a45ae9a0` y verificación `2143ff6fd61b3881bb46c468d2d34320dafedd4fbfac8bc8d9327fbaaefb47b1`. Fuente e índice raw actual 50e58 permanecieron iguales antes/después DURANTE el archivo, sin comparar ni declarar iguales los bytes raw históricos da951 durante la pausa. No hubo manipulación de lock, fuente o refs ni Cargo; no se inventó un recibo de coordinador ni un resultado nuevo.
+
+El main cambió en dos días. ROOT continúa las correcciones con puertos autónomos desde main vigente, preservando el check privado como antecedente y sin consumir el turno revalidando CONTROL antiguo. Se conservan F-A6, CL135, F1-101/F1-061 del replay y PR86 del Core. Kelly se reespecifica porque F1-116 cambió el mínimo LH04 default de 10 a 1; N9 no acredita estar bajo un mínimo 10. Flow aloja los mismos contratos 8 + 2 en integración de Core usando sus dependencias existentes, sin reintroducir DarkAlpha en Signal y sin llamarlo Core E2E. Hidden tendrá tres mundos con corpus público constante: A0 main + tests; B1 sólo fix04; B2 sólo fix tiny-z adicional. El arnés público Core retira únicamente el None del campo scalp_forest ya inexistente, con nueva huella idéntica en los tres mundos; el original privado queda intacto.
+
+La memoria física libre observada a las 11:27Z fue 0,415 GiB y el margen de commit 2,636 GiB, sin Cargo/rustc/VCTIP en ese corte. Se respeta la orden de trabajar con lo disponible: no se pide cerrar aplicaciones. F7 toma la entrega independiente de scripts y primera CI cloud autorizada; ROOT no compite por Cargo ni CI. Después, el candidato público requiere compilación workspace/all-targets, contratos y regresiones propios y backtest completo --lib --tests con al menos 110 PASS reales agregados y cero FAIL. Los dos tests genéticos T1 y la cobertura de genes son métricas distintas. CI no se presentará como las 12+8 guardas de Windows local.
+
+BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actual de 2053 rutas y delta 424 pendiente está preparado sobre 597de4af, aún no publicado; no se presenta como canon ya actualizado. No se abre otro censo ni se certifican archivos completos. SI mantiene revisión EV de sólo lectura sin tocar las siete rutas. El censo Git reciente es 12 locales/6 remotas/7 WT, sin ramas borrables; main local d7094c67 está cinco commits detrás del servidor 597de4af y sigue sin FF en este corte. Sólo se actualizará la fila ROOT; BASE y las otras filas se preservan. Ninguno de los siete puertos tiene una nueva ejecución Rust ni certificación de rentabilidad. La meta de 100% compuesto cada 72h sigue sin demostración. [Plan, límites y secuencia](../docs/audit/REANUDACION_CEROS_REPLAY_2026-10-20.md).
+
+---
+
+## AGY — Ola Ω178: Cierre F1-074 (Calibración física de dominant_drift y estabilización de crash_flux) — 2026-10-20
+- **Hallazgo F1-074 cerrado**:
+  - `dominant_drift` en `crates/quantum-arena/src/spectral_regime.rs`: Erradicada la extrapolación heurística "por hora" (`* 3_600_000.0 / eff_elapsed`) que amplificaba artificialmente las variaciones de $\ln\tau^*$ entre $\times 60$ y $\times 720$, saturando `accel_fast` a 0 ó 1 en micro-oscilaciones de $0.14\% - 1.7\%$ y provocando que el 35% de `crash_flux` (`w_accel_fast / \Sigma w`) oscilara erráticamente como una moneda al aire tick a tick, drenando espuriamente el ~33% del margen libre (`free_cap`).
+  - Deriva re-calibrada en unidades naturales de la malla espectral geométrica base 4 ($\ln 4 \approx 1.38629$ = un nodo completo de salto) normalizada por la cadencia macro de referencia (`cadence_regime_ms` = 60s, `CADENCIA_REGIMEN_MS`):
+    `drift_cadence = ((cur_ln - prev_ln) / LN_GRID_NODE) * (cadence_ms / eff_elapsed)`.
+  - Campo `cadence_regime_ms: f64` desacoplado dinámicamente en `SpectralRegimeParams` (con lectura en registro omnisciente `regime_cadence_regime_ms`) y expuesto como `regime_cadence_regime_ms: AtomicF64` en `QuantumConfig`.
+  - Sincronizado en `GodEngineCore::sync_navier_stokes_and_microstructure_params` (`crates/god-engine-core/src/lib.rs`).
+  - Contrato de certificación `crates/quantum-arena/tests/f1_074_spectral_drift_cadence_contract.rs` (5/5 tests PASSED):
+    1. `f1_074_contrato_1_deriva_gradual_en_ruido_realista`: a 10s..60s con salto de 5% ($\Delta\ln = -0.05$), `accel_fast` y su contribución a `crash_flux` no superan 0.05 a 30s ni 0.10 a 10s, erradicando el salto espurio del 35%.
+    2. `f1_074_contrato_2_salto_unitario_de_nodo_espectral`: salto de 1 nodo ($\Delta\ln = \pm \ln 4$) a 60s da exactamente $\text{drift} = \pm 1.0$, y 2 nodos se acotan limpiamente a $-1.0$.
+    3. `f1_074_contrato_3_regularizacion_c1_en_origen`: regularización continua Hermite cúbica $C^1$ en $\Delta t \le 5\text{s}$ con amortiguamiento a cero en 1ms.
+    4. `f1_074_contrato_4_estabilidad_crash_flux_monte_carlo`: 500 ticks estocásticos con jitter de $\pm 2\%$ resultan en 0 derivas saturadas y salto tick a tick de `crash_flux` $< 0.05$.
+    5. `f1_074_contrato_5_inmunidad_ieee754_y_parametros_desacoplados`: NaN, $\pm\infty$ y cadencias personalizadas (30s) verificadas sin pánicos.
+  - Verificaciones globales: `quantum-arena` lib 152/152 pass, `espectral_multiactivo_regime_adaptation_contract` 4/4 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
+
+---
+
+## AGY — Ola Ω179: Cierre F1-075 (Gating de Ville para τ Operativa Unificada y Estabilidad del Centroide de Hilbert) — 2026-10-20
+- **Hallazgo F1-075 cerrado**:
+  - `tau_operativa_unificada` en `crates/quantum-arena/src/temporal_spectrum.rs`: Erradicada la oscilación discontinua $\times 8$ del horizonte operativo $\tau_{\text{op}}$ que saltaba entre el nodo discreto dominante (`dominant_tau_ms`) y el centroide continuo de Hilbert (`continuous_resonant_tau_ms`) debido a fluctuaciones estocásticas de ruido en un IC muestral inmaduro sin significancia estadística ($h > 0.0$ con $N \ge 30$).
+  - Implementados métodos de evaluación estricta: `ScaleState::habilidad_significativa(&self) -> Option<f64>` y `TemporalSpectrum::habilidad_significativa_en(&self, tau_ms: f64) -> Option<f64>`, evaluando `skill_e.significativo_familia(ESCALAS_OPERATIVAS_BANDA)` con $M=5$ escalas operativas ($[30\text{s}, 12\text{h}]$, umbral de familia de Ville $M/\alpha = 5 / 0.05 = 100$).
+  - `tau_operativa_unificada` adopta `dominant_tau_ms` si y sólo si `habilidad_significativa_en(dominant_tau_ms) > 0`. Si ninguna escala ha demostrado significancia anytime-valid bajo Ville (e.g. escala respaldada por energía o peldaño no significativo), el horizonte operativo permanece en el centroide continuo resonante de Hilbert, blindando el dimensionamiento de posición, los stops y el Hurst contra jitter estocástico.
+  - Implementado helper `TemporalSpectrum::set_test_time_window(first_ms, last_ms, updates)` y hecho público `refresh_fusion(&mut self)` para calibración analítica y tests de integración.
+  - Activada y pasada exitosamente la prueba de solución conocida en paseo aleatorio `crates/quantum-arena/tests/cf2_espectro_solucion_conocida.rs`: `cf2_rw_sin_habilidad_validada_la_tau_unificada_es_el_centroide` (retirado `#[ignore]`, 4 passed, 0 failed, 3 ignored).
+  - Contrato de certificación `crates/quantum-arena/tests/f1_075_tau_unificada_ville_gating_contract.rs` (5/5 tests PASSED):
+    1. `f1_075_contrato_1_espectro_con_dominante_por_energia_e_ic_inmaduro_devuelve_centroide`: escala coronada por energía con IC $+0.18$ no significativo conserva telemetría pero devuelve centroide; y al fluctuar a $-0.18$ no salta.
+    2. `f1_075_contrato_2_escala_con_habilidad_ville_significativa_adopta_nodo_discreto`: escala con Ville $E_t \ge 100$ e IC $+0.35$ adopta nodo discreto con ventaja comprobada.
+    3. `f1_075_contrato_3_escala_con_habilidad_ville_pero_ic_negativo_devuelve_centroide`: escala con e-proceso pero IC $\le 0$ no es tomada como dirección positiva.
+    4. `f1_075_contrato_4_estabilidad_continua_sin_saltos_discretos_en_ruido`: 100 ticks Monte Carlo con ruido de IC en $[-0.15, +0.15]$ producen 0 saltos $\ge 10\%$.
+    5. `f1_075_contrato_5_inmunidad_ieee754_y_cotas_operativas`: inmunidad ante NaN, $\pm\infty$ y estados en frío, acotado en $[30\text{s}, 12\text{h}]$.
+  - Verificaciones globales: `quantum-arena` lib 152/152 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
+
+---
+
+## AGY — Ola Ω180: Cierre F1-076 (Caché Zero-Alloc de Pesos Espectrales y De-duplicación en Hot-Path) — 2026-10-20
+- **Hallazgo F1-076 cerrado**:
+  - `pesos_observables` en `crates/quantum-arena/src/temporal_spectrum.rs`: Erradicado el recómputo redundante de 64 `exp()` y 32 divisiones en cada lector (`pesos_espectrales`, `spectral_field`, `spectral_coherence`, bandas, Fisher, $W_1$, regresiones $\zeta$). En el bucle de eventos, ~30 lectores por evento y moneda recomputaban idénticos valores punto flotante, gastando ~1 900 `exp()` (~40 µs/evento).
+  - Implementada caché zero-alloc en `TemporalSpectrum`:
+    - Campos agregados: `cached_observables: [f64; 32]`, `cached_pesos_obs: [f64; 32]`, `cached_pesos_esp: [f64; 32]`, `cached_mass: [f64; 32]`, `cached_resolucion_ms: f64`.
+    - `refresh_fusion(&mut self)` calcula la resolución efectiva, masa, observables y pesos una sola vez por evento cuando los datos de tiempo/volatilidad mutan.
+    - Lectores actualizados para consumir los slices y arreglos en caché: `pesos_espectrales()` devuelve `self.cached_pesos_esp`, expuestos `pesos_espectrales_ref(&self) -> &[f64; 32]` y `observables_ref(&self) -> &[f64; 32]`, `resolucion_efectiva_ms()` lee `self.cached_resolucion_ms`, `regress_log_log` usa `self.cached_mass` (0 llamadas a `exp()`), `energy_at` y `spectral_coherence` consumen directamente la caché.
+  - De-duplicación de publicación en `crates/god-engine-core/src/lib.rs`:
+    - Añadido flag `pub spectral_published_in_current_event: bool` en `GodEngineCore`.
+    - `process_event` marca `self.spectral_published_in_current_event = true;` tras publicar campo, régimen, $\zeta$, Fisher y $W_1$.
+    - `process_tick_dual` comprueba `if !self.spectral_published_in_current_event` antes de re-ejecutar el bloque de publicación y reinicia el flag, evitando ~8 stores atómicos y evaluaciones redundantes en llamadas desde `process_event` con $dt = 0$.
+  - Contrato de certificación `crates/quantum-arena/tests/f1_076_spectral_weights_cache_contract.rs` (5/5 tests PASSED):
+    1. `f1_076_contrato_1_pesos_espectrales_y_observables_identicos_a_formula_analitica`: validación exacta de masa, factor de resolución, observable, peso observable y peso espectral contra fórmulas analíticas ($< 10^{-12}$).
+    2. `f1_076_contrato_2_cero_drift_tras_multiples_lecturas_consecutivas`: cero mutación o deriva tras 1 000 lecturas sucesivas en caliente.
+    3. `f1_076_contrato_3_invalidez_y_actualizacion_automatica_en_update`: `update()` refresca coherentemente la caché ante nuevos ticks.
+    4. `f1_076_contrato_4_structure_functions_usa_masa_en_cache_y_conserva_valores`: las funciones de estructura $\zeta(q)$ consumen la masa en caché con cero llamadas redundantes a `exp()`.
+    5. `f1_076_contrato_5_inmunidad_ieee754_y_estado_en_frio`: inmunidad ante estado en frío con 0 actualizaciones y ausencia de NaNs.
+  - Verificaciones globales: `quantum-arena` lib 152/152 pass, `god-engine-core` lib 211/211 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
