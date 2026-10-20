@@ -1,5 +1,39 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-19 (tarde, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω173 (Cierre F1-066, F1-067 y F1-068)
+
+- **Mandato**: Auditoría de cierre y certificación contractual de la eliminación definitiva de `local_orderbooks` en el host (F1-066, completado por Codex RET-45/RB-M1a con cálculo de OBI y microprecio puro zero-alloc), desacoplamiento total del sniffer y router WebSocket de Hyperliquid de `god_engine.rs` con reconexión honesta de la telemetría `dark_alpha` al feed causal de liquidaciones de Binance (`engine_real.liquidation_severity_at(0, liq_as_of)`) (F1-067), y verificación formal del bucle de reconexión WebSocket libre de `unwrap/expect` en `peer_addr()` y `Url::parse()` (F1-068, completado por LG-28 con match y backoff), cerrando formalmente los hallazgos `F1-066`, `F1-067` y `F1-068` de `docs/audit/fable/f1_hallazgos.tsv`:
+  1. **F1-066 (`src/bin/god_engine.rs:3403`, `src/orderbook.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Verificación formal y certificación contractual del cierre definitivo de `F1-066`. El host no almacena mapas de órdenes `OrderBook` ni `BTreeMap<OrderedFloat>` en memoria.
+     - *POR QUÉ*: Anteriormente, `local_orderbooks` crecía sin tope en cada evento `@depth5` acumulando niveles históricos no leídos, alocando memoria en heap continuamente en el hilo `TIME_CRITICAL` y amenazando la estabilidad de 16 GB RAM.
+     - *PARA QUÉ*: Garantizar memoria acotada y cero alocaciones en hot path (Doctrina 6).
+     - *CÓMO*: Certificado mediante la suite `cargo test --lib ret45 -j 1` (7/7 tests pasan en 0.04s, incluyendo `ret45_el_host_usa_la_funcion_y_no_acumula_libros`).
+     - *CUÁNDO*: Permanente en producción.
+     - *DÓNDE*: `src/bin/god_engine.rs` y `src/orderbook.rs`.
+     - *QUIÉN*: Codex (RET-45 / RB-M1a) y Antigravity (Auditoría Forense y Certificación).
+  2. **F1-067 (`src/bin/god_engine.rs:1367-1375, 4390-4405, 5085-5095`, `src/dark_alpha_sniffer.rs:97-125`, `crates/god-engine-core/tests/f1_067_binance_liquidation_telemetry_contract.rs`)**:
+     - *QUÉ*: Desacoplamiento total del sniffer WebSocket de Hyperliquid y `DarkAlphaRouter` del proceso de producción `god_engine.rs`. Retiro de la llamada `spawn_hyperliquid_sniffer` y conexión causal del campo `dark_alpha` en `OmniUpdate` al feed real de liquidaciones de Binance mediante `engine_real.liquidation_severity_at(0, liq_as_of)`. Creación de test unitario estático en `src/dark_alpha_sniffer.rs` y test contractual de integración `f1_067_binance_liquidation_telemetry_contract.rs`.
+     - *POR QUÉ*: El sniffer abría un WebSocket perpetuo no esencial a Hyperliquid en el runtime de Tokio compartido, generando reintentos ruidosos ante fallos de red y alimentando un router cuya métrica sólo se usaba como visualización cosmética en dashboard sin impacto decisorio.
+     - *PARA QUÉ*: Erradicar aristas muertas (Fallo Tipo 1), prevenir saturación de Tokio y sockets de red, y reflejar telemetría de liquidación honesta proveniente de Binance (`!forceOrder@arr`).
+     - *CÓMO*: Eliminación de dependencias de Hyperliquid en `god_engine.rs`, lectura causal de `liquidation_severity_at` en `engine_real`, y verificación de invariantes matemáticas (decaimiento exponencial $e^{-\lambda \Delta t}$, acotamiento $[0.0, 1.0]$).
+     - *CUÁNDO*: Al bootloader y en cada ciclo de publicación de telemetría.
+     - *DÓNDE*: `src/bin/god_engine.rs`, `src/dark_alpha_sniffer.rs` y `crates/god-engine-core/tests/f1_067_binance_liquidation_telemetry_contract.rs`.
+     - *QUIÉN*: `Quant Developer`, `Arquitecto Senior` y `SRE/DevOps`.
+  3. **F1-068 (`src/bin/god_engine.rs:5496-5505, 5560-5570`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Verificación formal y certificación del cierre de `F1-068`. Manejo seguro de `tcp_stream.peer_addr()` y `Url::parse()` en el bucle de reconexión WebSocket sin `unwrap()` ni `expect()`.
+     - *POR QUÉ*: En release con `panic = "abort"`, un error transitorio de red provocaba aborto fulminante de todo el proceso con posiciones vivas abiertas sin protección.
+     - *PARA QUÉ*: Blindar la resiliencia operativa y erradicar vectores de parada total por eventos de red.
+     - *CÓMO*: Verificación de la implementación con `match` y backoff exponencial de LG-28.
+     - *CUÁNDO*: En reconexiones del feed WebSocket de Binance.
+     - *DÓNDE*: `src/bin/god_engine.rs`.
+     - *QUIÉN*: Línea G (LG-28) y Antigravity (Auditoría Forense y Certificación).
+- **Verificación Contractual y Compilación Workspace**:
+  - `cargo test --lib f1_067 -j 1` (1/1 pass, 100% verde en 0.00s, 0 warnings).
+  - `cargo test -p god-engine-core --test f1_067_binance_liquidation_telemetry_contract -j 1` (1/1 pass, 100% verde en 0.03s).
+  - `cargo test --lib ret45 -j 1` (7/7 pass, 100% verde en 0.04s).
+  - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+  - `cargo check --workspace --all-targets -j 1` (100% verde en los 23 crates).
+
 ## 2026-10-19 (tarde, 3) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω172 (Cierre F1-064 y F1-065)
 
 - **Mandato**: Validación y saneamiento del universo dinámico propuesto en el bootloader respetando la disciplina de modelos promovidos B3.37 y fallback al ROSTER canónico, erradicación de sobreescrituras ciegas en configuración de memoria y telemetría honesta del watcher de rotación, junto con la eliminación definitiva de la contención por `Mutex` global en cada evento del bucle principal mediante una cola `ArrayQueue` lock-free acotada y fast-path $O(1)$ en nanosegundos en `trade_accounting`, cerrando formalmente los hallazgos `F1-064` y `F1-065` de `docs/audit/fable/f1_hallazgos.tsv`:

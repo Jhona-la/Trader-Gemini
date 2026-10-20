@@ -93,3 +93,30 @@ pub fn spawn_hyperliquid_sniffer(router: Arc<DarkAlphaRouter>) {
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    /// F1-067 (Ω173): El host god_engine.rs no debe instanciar ni invocar el sniffer
+    /// de Hyperliquid (arista muerta sin consumidor decisorio). La telemetría dark_alpha
+    /// debe estar conectada directamente a `liquidation_severity_at` del feed real de Binance.
+    #[test]
+    fn f1_067_hyperliquid_sniffer_decoupled_from_god_engine() {
+        let host: String = include_str!("bin/god_engine.rs")
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        assert!(
+            !host.contains("spawn_hyperliquid_sniffer"),
+            "god_engine.rs no debe invocar spawn_hyperliquid_sniffer (F1-067 arista muerta erradicada)"
+        );
+        assert!(
+            !host.contains("DarkAlphaRouter::new()"),
+            "god_engine.rs no debe instanciar DarkAlphaRouter huérfano (F1-067)"
+        );
+        assert!(
+            host.contains("engine_real.liquidation_severity_at(0,liq_as_of)"),
+            "god_engine.rs debe alimentar dark_alpha honestamente desde el feed causal Binance"
+        );
+    }
+}
+
