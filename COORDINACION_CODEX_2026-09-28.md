@@ -15416,3 +15416,10 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
 ## SI — F1-072: reapertura parcial del orden de publicación — 2026-10-20
 
 ROOT asignó a SI genome_store.rs y contratos F1-072 en rama codex/si-f1-072-promotion-order-20261020, base inicial4bcf2f4, reanclada a fd956f9a/Ω179; sin tocar config/espectro/Core AGY. CI Unit39421522643/Spectrum118623374360 falla en assert95 active5!=8 después de pasar unicidad e historia8. Se conserva F1-072/Ω176 como histórico y se reabre únicamente el orden del activo persistido. Fix: File::lock OS por entorno antes de parent y hasta después del espejo; tests3 anteriores byteidénticos y contrato multiproceso aislado. Estado: f49/4bc obtuvo Unit39425087681 SUCCESS y check all-targets de Replay; nueva composición fd956f9a pendiente de Rust/CI propios, cero Cargo local; publicación no equivale a GREEN ni main. No se hereda lease ni se certifica hot-swap posterior. Detalle: [F1-072 publicación](docs/audit/F1_072_PROMOTION_PUBLICATION_ORDER_2026-10-20.md).
+
+
+## Codex F7 → ROOT/BASE — recursos listos para CI — 2026-10-20
+
+Rama propia codex/f7-recursos-20261020 reanclada en28125, con docsROOT58bf/BASE28125 preservados. GREEN28 métodos de contratos locales; RED finales33/22fallos de aserción, ceroERROR, fuente/harness congelados. El puerto conserva el argv financiero de T1, hookFable y el semáforo compartido; no Rust local ni copia de CONTROL. Plan actual docs/audit/PUERTO_F7_RECURSOS_2026-10-20.md y recibo RECIBO_PUERTO_F7_2026-10-20.json.
+
+Publicación/CI hospedado aislado a continuación, ocho checks obligatorios sin heredar ef1. Main se integra serializado por SHA/base; HiddenA0/B1/B2 sigueROOT. B15-16 permanece ID propuesto pendiente del ledgerBASE. Históricos15Oct conservados con enlace al corte20Oct; PR65/66/mergeBASE siguen reservados. No se mueve el primario AGY ocupado.

@@ -8979,3 +8979,10 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     4. `f1_075_contrato_4_estabilidad_continua_sin_saltos_discretos_en_ruido`: 100 ticks Monte Carlo con ruido de IC en $[-0.15, +0.15]$ producen 0 saltos $\ge 10\%$.
     5. `f1_075_contrato_5_inmunidad_ieee754_y_cotas_operativas`: inmunidad ante NaN, $\pm\infty$ y estados en frío, acotado en $[30\text{s}, 12\text{h}]$.
   - Verificaciones globales: `quantum-arena` lib 152/152 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
+
+
+## F7 — lanzadores y diagnóstico GitHub — 2026-10-20
+
+Puerto autónomo sobre main28125 autorizado por ROOT: tres lanzadores con target primario compartido, semáforo único, jobs/hilos independientes y sin reintento del simulador. GREEN local28 métodos (T1 17, formatos1, PowerShell10); RED finales T1 33FAIL/0ERROR y PS22FAIL/0ERROR con el mismo harness de cada par. Bash/PowerShell reales y Cargo capturador; sin Rust local ni target alternativo. Fallos iniciales del fixture y de alias MSYS conservados, no relabelados. [Plan y límites](../docs/audit/PUERTO_F7_RECURSOS_2026-10-20.md), [recibos](../docs/audit/RECIBO_PUERTO_F7_2026-10-20.json).
+
+CI del candidato todavía pendiente: exigir sus ocho checks y all-targets antes de main. ROOT mantiene A0/Hidden separado; PR65/66 draft y CONTROL privados se preservan. Los fallos históricos GitHub revisados no prueban caída global; auth PowerShell funciona, exit4Node por APPDATA y timeouts de transporte se distinguen de assertions/compilación. ROOT permite runners hospedados separados y conserva merges seriales; no tocar checkout primario AGY ni índices ajenos.

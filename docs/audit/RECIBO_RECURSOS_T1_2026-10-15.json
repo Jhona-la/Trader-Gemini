@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "date_local": "2026-10-15",
+  "timezone": "America/Bogota",
+  "scope": "F7-T1 launcher resource defaults; no Rust runtime or economic criterion changes",
+  "baseline_commit": "ba445df79fa5f82402cd675af4b150f8a0398dea",
+  "code_commit": "314962fe1d481b3689ce3b64fcb5af74bda96447",
+  "branch": "codex/resources-t1-20261015",
+  "integration": {
+    "state": "local_delivery_to_ROOT_after_BASE",
+    "published_branch": false,
+    "pull_request_created": false,
+    "main_merged": false,
+    "coordinator_thread": "01a116f0-2d58-7c72-a7a4-284816828e77",
+    "reason": "Coordinator requested a bounded commit handoff without another cold CI chain; no active checkout, Cargo cache or profile was changed."
+  },
+  "coverage": {
+    "base15_snapshot": "b9cd773538fae9467751883eafdf3ee6ed5142f9",
+    "base15_routes": 1863,
+    "base15_ledger_sha256": "0062a874d4649bd12d879fd06fd16c7b0b92a1d012433ec5a88d071f26831f5e",
+    "delta_to": "ba445df79fa5f82402cd675af4b150f8a0398dea",
+    "added": 9,
+    "removed": 0,
+    "changed": 21,
+    "unchanged": 1842,
+    "destination_routes": 1872,
+    "fully_audited_files_claimed": 0
+  },
+  "resources": {
+    "sample_local_interval": "2026-10-15 approximately 16:13-16:16 America/Bogota",
+    "method": "Delegated read-only streaming scan; excludes .git/reparse points, logical file lengths rather than physical allocated bytes. Main target scan capped at 50 seconds.",
+    "disk_free_gib": 225.08,
+    "disk_capacity_gib": 929.69,
+    "ram_visible_gib": 23.38,
+    "ram_free_gib": 4.4,
+    "main_target_lower_bound_gib": 131.107,
+    "main_target_files_scanned": 136643,
+    "worktree_count_during_scan": [
+      27,
+      28
+    ],
+    "detached_at_last_scan": 14,
+    "stopped_processes": [],
+    "deleted_foreign_files": [],
+    "freed_bytes_claimed": 0,
+    "god_engine_observed": false
+  },
+  "tests": {
+    "framework": "Python stdlib unittest + real Git Bash + Python Cargo stub, disposable repositories",
+    "methods": 11,
+    "scenarios": 25,
+    "harness_sha256": "2c3e093cbc52ce5943e8d6846ab3f4e9335a4dc8c3e765090664a4c2bf7ced03",
+    "launcher_sha256": "4c68f22bafdfae633dc888e6d8e3d39df18637415deec252ff7845a267902f03",
+    "green": {
+      "command": "python -B -m unittest scripts.tests.test_t1_oraculo -v",
+      "exit_code": 0,
+      "methods": 11,
+      "seconds": 121.937,
+      "failures": 0,
+      "errors": 0,
+      "log": "logs/t1-recursos-green-final.log",
+      "log_sha256": "5d6258bf72f1f638bca9ddf2751635bfb8ee720429c6706acdf0abba77a553bf"
+    },
+    "red_final": {
+      "command": "C:/Python314/python.exe -u logs/t1-red-final-runner.py",
+      "source_baseline_commit": "ba445df79fa5f82402cd675af4b150f8a0398dea",
+      "source_baseline_sha256": "cad4bca3a097b2e50cd578c12f5767f4516e30f35f13bb447a5d0a8b3d1d199e",
+      "source_selection": "runpy import of the frozen final harness; only SCRIPT in setUp.__globals__ rebound to a byte-identical baseline with original basename.",
+      "exit_code": 1,
+      "methods": 11,
+      "scenarios": 25,
+      "failures": 21,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 235.853,
+      "log": "logs/t1-recursos-red-final.log",
+      "log_sha256": "63bf84152f41a8483a373ee09663ca34d6bff1fbe0972656bc6e2cd92e6e8069",
+      "runner_sha256": "1507fbbf32a1acb05761425e1091fd2dd0185fad86f0285df4a5cd92a970107a",
+      "hashes_unchanged_pre_post": true
+    },
+    "history": {
+      "v1": "9 methods, 20 failure reports; superseded harness incorrectly treated negative Cargo jobs as invalid.",
+      "v1_green": "9 methods passed before review additions; not the final verification.",
+      "v2_red": "2 new methods / 4 scenarios failed against proposal V1: dash-prefixed log and legal Cargo jobs -2/default/+02."
+    },
+    "cargo_real_invocations": 0,
+    "rust_compiled": false,
+    "all_targets_local": "not run: no Rust changed; BASE owns current Cargo turn and ROOT owns composition validation",
+    "bash_syntax_exit_code": 0,
+    "diff_check_exit_code": 0,
+    "envargv_artifact": "logs/t1-recursos-envargv-final.json",
+    "envargv_sha256": "aa471eaba641296a4fdc2156f4b63ae0ac2241835aa1b4db8a4db7bf85be3d22"
+  },
+  "preserved": {
+    "argv": [
+      "test",
+      "--release",
+      "-p",
+      "backtest-engine",
+      "--locked",
+      "--test",
+      "t1_cobertura_genetica",
+      "--",
+      "--exact",
+      "t1_cobertura_genetica_del_oraculo_de_aptitud",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "linux_adds_target": "x86_64-pc-windows-gnu",
+    "incremental": "0",
+    "release_debug": "0",
+    "seal": "v2 tree-id, only after Running tests/t1_cobertura_genetica marker",
+    "exit_status": "propagated unchanged",
+    "financial_thresholds": "unchanged"
+  },
+  "known_limits": [
+    "No global build exclusion or RAM preflight added.",
+    "Explicit target overrides remain accepted and do not authorize creation of prohibited alternative targets.",
+    "No proof of selective seal reuse across real builds in this delivery.",
+    "Hidden-liquidity symmetry issue is confirmation of an existing BASE finding, not a new defect or runtime fix.",
+    "No demonstrated 100 percent growth per 72 hours or latency certification."
+  ],
+  "local_evidence_archive": "logs/recursos-t1-entrega-20261015",
+  "reviewers": [
+    "resource_audit: read-only metrics and documentation review; all three corrections applied.",
+    "git_audit: independent shell review, Cargo grammar and dash-log corrections; final RED oracle.",
+    "quant_foundations: independent test harness and GREEN run."
+  ],
+  "artifacts": [
+    {
+      "path": "scripts/t1_oraculo.sh",
+      "sha256": "4c68f22bafdfae633dc888e6d8e3d39df18637415deec252ff7845a267902f03"
+    },
+    {
+      "path": "scripts/tests/test_t1_oraculo.py",
+      "sha256": "2c3e093cbc52ce5943e8d6846ab3f4e9335a4dc8c3e765090664a4c2bf7ced03"
+    },
+    {
+      "path": "docs/audit/ADENDA_RECURSOS_T1_2026-10-15.md",
+      "sha256": "88d8d0acadc026838357d4c3f9fba0615b7b389481a095261ecdfac92659291a"
+    },
+    {
+      "path": "docs/audit/DELTA_RECURSOS_BASE15_2026-10-15.json",
+      "sha256": "833ecdf6e2703ace691f5149ad24db5bdaa49450e912a9e49fbadddf1644ae66"
+    }
+  ],
+  "code_blobs": {
+    "scripts/t1_oraculo.sh": "06fdf0e45e0fb4122ac7a6a3ad7ba8d42fce461f",
+    "scripts/tests/test_t1_oraculo.py": "52233d4b21d1909250b8e9da0778b2c45208713f"
+  },
+  "generated_at_utc": "2026-10-15T21:31:14.286Z"
+}
