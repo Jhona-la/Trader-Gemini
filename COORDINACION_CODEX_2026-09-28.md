@@ -15355,3 +15355,17 @@ Medido hoy (sonda mínima en el nightly fijado; RB-H2):
 - **RESULTADO**: las dos patas ciegas del auditor (F413 WR; fricción real vs modelada) se miden en sombra con error estándar por bloques, n_min = 20 y estabilidad en dos mitades OOS. Son telemetría: NINGUNA decisión las consume hoy — el átomo siguiente (§3-3) definirá el contrato de consumo/promoción.
 - **FUENTE ÚNICA**: `friccion_rt_modelada(atr_pct)` en el núcleo — el gate (`sonda_de_banda`) y el auditor leen la misma receta (taker + slip + ATR + latencia). El auditor no tiene constante propia.
 - **PRÓXIMO ÁTOMO (§3-3)**: promo de `sombra_friccion_real_menos_modelada_bp` a insumo vivo del gate de fricción, con contrato de consumo: promo sólo si la sombra supera el umbral con evidencia en AMBAS mitades; el gate pasa a usar fricción modelo + corrección medida.
+
+---
+
+## 2026-10-20 — Sol: átomo §3-3 — la sombra de fricción alimenta el gate (contrato de consumo)
+
+- **QUÉ**: `sombra_friccion_real_menos_modelada_bp` (PR #86, telemetría) pasa a ser insumo VIVO del gate de fricción, pero sólo mediante un CONTRATO DE CONSUMO de cuatro condiciones, todas sobre información ya disponible en t (los fills son cierres confirmados del canal independiente; no hay look-ahead):
+  1. EVIDENCIA: sombra publicada (n ≥ MIN_FILLS_SOMBRA implícito en su publicación) y todos sus valores finitos.
+  2. SIGNIFICANCIA: |media| > ee — la corrección supera su propio ruido por bloques.
+  3. CONSISTENCIA OOS: ambas mitades temporales del mismo signo que la media (una corrección que sólo existe en una mitad es artefacto de régimen, no corrección).
+  4. FAIL-SAFE: |media| ≤ modelo — un error mayor al 100 % del modelo significa que el modelo no es corregible; promoverlo amplificaría el error.
+- **CÓMO**: `friccion_efectiva_rt(coin_id, atr_pct)` = modelo del gate + corrección promovida (nunca negativa); `sonda_de_banda` la consume en lugar del modelo puro. Sin promo devuelve el modelo EXACTO: el gate no cambia de comportamiento mientras la evidencia no sostenga la corrección. Se publican además `sombra_friccion_mitad_a_bp` / `sombra_friccion_mitad_b_bp` / `sombra_friccion_n` / `friccion_promovida_bp` (observabilidad de la promo).
+- **COSTE EN HOT PATH**: 4 lecturas atómicas del registro por moneda (Relaxed, nanos) dentro de `sonda_de_banda`, que ya hace decenas — mismo orden; sin locks, sin allocations.
+- **CONTRATO** (`promo_friccion_contract.rs`, 8 casos): sin sombra ⇒ efectiva == modelo bit a bit; +1bp con mitades consistentes ⇒ promo +1bp y p* del gate se mUEVE; mitades divergentes ⇒ sin promo; |media| ≤ ee ⇒ sin promo; |media| > modelo ⇒ sin promo (fail-safe); corrección = −modelo ⇒ efectiva clampada en 0 (nunca negativa); aislamiento por moneda; end-to-end fills reales (5bp) ⇒ promo condicional al fail-safe y p* cambia si y sólo si hay promo.
+- **POR QUÉ IMPORTA**: es la primera corrección de microestructura que el sistema se aplica a SÍ MISMO con evidencia propia — el gate deja de creer su modelo de fricción cuando la realidad medida dice otra cosa, pero sólo cuando la realidad medida es estable, significativa y sana.
