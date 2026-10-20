@@ -15392,6 +15392,29 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
 
 ---
 
+## 2026-10-20 — AGY: Ola Ω180 — Cierre F1-076 (Caché Zero-Alloc de Pesos Espectrales y De-duplicación en Hot-Path)
+
+- **QUÉ**: Implementación de caché zero-alloc en `TemporalSpectrum` para observables, pesos observables, pesos espectrales, masa y resolución efectiva, y de-duplicación de la publicación del campo espectral en `GodEngineCore`.
+- **POR QUÉ**: El método `pesos_observables` ejecutaba 64 llamadas a `exp()` y 32 divisiones de punto flotante en cada invocación. Alrededor de ~30 lectores por evento y moneda (`pesos_espectrales`, `spectral_field`, `spectral_coherence`, bandas, Fisher, $W_1$, regresiones $\zeta$) recomputaban idénticos valores en el camino caliente, consumiendo ~1 900 `exp()` (~40 µs/evento). Además, el bloque de publicación de régimen/campo/estructura/Fisher/$W_1$ se ejecutaba de forma redundante en `process_tick_dual` cuando era invocado desde `process_event` ($dt = 0$).
+- **PARA QUÉ**: Reducir la latencia del bucle de eventos a nanosegundos respetando el presupuesto estricto de $\le 25\ \mu\text{s}$ sin asignaciones en el heap y con cero cambio funcional o numérico en las decisiones de trading.
+- **CÓMO**:
+  1. Adición de campos en `TemporalSpectrum`: `cached_observables: [f64; 32]`, `cached_pesos_obs: [f64; 32]`, `cached_pesos_esp: [f64; 32]`, `cached_mass: [f64; 32]`, `cached_resolucion_ms: f64`.
+  2. `refresh_fusion(&mut self)` calcula la resolución efectiva, masa, observables y pesos una sola vez por evento cuando los datos de tiempo/volatilidad mutan.
+  3. Actualización de todos los lectores espectrales para consumir los arreglos y slices cacheados (`pesos_espectrales_ref(&self) -> &[f64; 32]`, `observables_ref(&self) -> &[f64; 32]`, `resolucion_efectiva_ms()`, `regress_log_log`, `energy_at`, `spectral_coherence`).
+  4. En `GodEngineCore`, introducción de `spectral_published_in_current_event: bool`, activado en `process_event` y verificado en `process_tick_dual` para evitar publicaciones atómicas redundantes en el mismo evento.
+- **CUÁNDO**: En cada evento de mercado procesado por `process_event` y `process_tick_dual`.
+- **DÓNDE**: `crates/quantum-arena/src/temporal_spectrum.rs`, `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/tests/f1_076_spectral_weights_cache_contract.rs`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Optimizador Cuántico de Latencia y Rendimiento).
+- **CONTRATOS**:
+  - `f1_076_spectral_weights_cache_contract.rs` (5/5 tests PASSED): paridad analítica exacta ($< 10^{-12}$), cero drift tras 1 000 lecturas sucesivas, invalidación/actualización coherente en `update()`, funciones de estructura usando masa en caché, inmunidad IEEE-754 y estado en frío.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `god-engine-core` lib: 211/211 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+
+---
+
 ## 2026-10-20 — AGY: Ola Ω179 — Cierre F1-075 (Gating de Ville para τ Operativa Unificada y Estabilidad del Centroide de Hilbert)
 
 - **QUÉ**: Erradicación de la oscilación discontinua $\times 8$ de `tau_operativa_unificada` (`crates/quantum-arena/src/temporal_spectrum.rs`) entre el nodo discreto dominante (`dominant_tau_ms`) y el centroide continuo de Hilbert (`continuous_resonant_tau_ms`).
@@ -15411,3 +15434,26 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
   - `quantum-arena` lib: 152/152 tests PASSED.
   - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
   - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+---
+
+## 2026-10-20 — AGY: Ola Ω180 — Cierre F1-076 (Caché Zero-Alloc de Pesos Espectrales y De-duplicación en Hot-Path)
+
+- **QUÉ**: Implementación de caché zero-alloc en `TemporalSpectrum` para observables, pesos observables, pesos espectrales, masa y resolución efectiva, y de-duplicación de la publicación del campo espectral en `GodEngineCore`.
+- **POR QUÉ**: El método `pesos_observables` ejecutaba 64 llamadas a `exp()` y 32 divisiones de punto flotante en cada invocación. Alrededor de ~30 lectores por evento y moneda (`pesos_espectrales`, `spectral_field`, `spectral_coherence`, bandas, Fisher, $W_1$, regresiones $\zeta$) recomputaban idénticos valores en el camino caliente, consumiendo ~1 900 `exp()` (~40 µs/evento). Además, el bloque de publicación de régimen/campo/estructura/Fisher/$W_1$ se ejecutaba de forma redundante en `process_tick_dual` cuando era invocado desde `process_event` ($dt = 0$).
+- **PARA QUÉ**: Reducir la latencia del bucle de eventos a nanosegundos respetando el presupuesto estricto de $\le 25\ \mu\text{s}$ sin asignaciones en el heap y con cero cambio funcional o numérico en las decisiones de trading.
+- **CÓMO**:
+  1. Adición de campos en `TemporalSpectrum`: `cached_observables: [f64; 32]`, `cached_pesos_obs: [f64; 32]`, `cached_pesos_esp: [f64; 32]`, `cached_mass: [f64; 32]`, `cached_resolucion_ms: f64`.
+  2. `refresh_fusion(&mut self)` calcula la resolución efectiva, masa, observables y pesos una sola vez por evento cuando los datos de tiempo/volatilidad mutan.
+  3. Actualización de todos los lectores espectrales para consumir los arreglos y slices cacheados (`pesos_espectrales_ref(&self) -> &[f64; 32]`, `observables_ref(&self) -> &[f64; 32]`, `resolucion_efectiva_ms()`, `regress_log_log`, `energy_at`, `spectral_coherence`).
+  4. En `GodEngineCore`, introducción de `spectral_published_in_current_event: bool`, activado en `process_event` y verificado en `process_tick_dual` para evitar publicaciones atómicas redundantes en el mismo evento.
+- **CUÁNDO**: En cada evento de mercado procesado por `process_event` y `process_tick_dual`.
+- **DÓNDE**: `crates/quantum-arena/src/temporal_spectrum.rs`, `crates/god-engine-core/src/lib.rs`, `crates/quantum-arena/tests/f1_076_spectral_weights_cache_contract.rs`.
+- **QUIÉN**: AGY (Consejo Quant Sr. / Optimizador Cuántico de Latencia y Rendimiento).
+- **CONTRATOS**:
+  - `f1_076_spectral_weights_cache_contract.rs` (5/5 tests PASSED): paridad analítica exacta ($< 10^{-12}$), cero drift tras 1 000 lecturas sucesivas, invalidación/actualización coherente en `update()`, funciones de estructura usando masa en caché, inmunidad IEEE-754 y estado en frío.
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `god-engine-core` lib: 211/211 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+

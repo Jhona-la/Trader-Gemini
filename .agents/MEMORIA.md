@@ -8975,3 +8975,25 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     4. `f1_075_contrato_4_estabilidad_continua_sin_saltos_discretos_en_ruido`: 100 ticks Monte Carlo con ruido de IC en $[-0.15, +0.15]$ producen 0 saltos $\ge 10\%$.
     5. `f1_075_contrato_5_inmunidad_ieee754_y_cotas_operativas`: inmunidad ante NaN, $\pm\infty$ y estados en frío, acotado en $[30\text{s}, 12\text{h}]$.
   - Verificaciones globales: `quantum-arena` lib 152/152 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
+
+---
+
+## AGY — Ola Ω180: Cierre F1-076 (Caché Zero-Alloc de Pesos Espectrales y De-duplicación en Hot-Path) — 2026-10-20
+- **Hallazgo F1-076 cerrado**:
+  - `pesos_observables` en `crates/quantum-arena/src/temporal_spectrum.rs`: Erradicado el recómputo redundante de 64 `exp()` y 32 divisiones en cada lector (`pesos_espectrales`, `spectral_field`, `spectral_coherence`, bandas, Fisher, $W_1$, regresiones $\zeta$). En el bucle de eventos, ~30 lectores por evento y moneda recomputaban idénticos valores punto flotante, gastando ~1 900 `exp()` (~40 µs/evento).
+  - Implementada caché zero-alloc en `TemporalSpectrum`:
+    - Campos agregados: `cached_observables: [f64; 32]`, `cached_pesos_obs: [f64; 32]`, `cached_pesos_esp: [f64; 32]`, `cached_mass: [f64; 32]`, `cached_resolucion_ms: f64`.
+    - `refresh_fusion(&mut self)` calcula la resolución efectiva, masa, observables y pesos una sola vez por evento cuando los datos de tiempo/volatilidad mutan.
+    - Lectores actualizados para consumir los slices y arreglos en caché: `pesos_espectrales()` devuelve `self.cached_pesos_esp`, expuestos `pesos_espectrales_ref(&self) -> &[f64; 32]` y `observables_ref(&self) -> &[f64; 32]`, `resolucion_efectiva_ms()` lee `self.cached_resolucion_ms`, `regress_log_log` usa `self.cached_mass` (0 llamadas a `exp()`), `energy_at` y `spectral_coherence` consumen directamente la caché.
+  - De-duplicación de publicación en `crates/god-engine-core/src/lib.rs`:
+    - Añadido flag `pub spectral_published_in_current_event: bool` en `GodEngineCore`.
+    - `process_event` marca `self.spectral_published_in_current_event = true;` tras publicar campo, régimen, $\zeta$, Fisher y $W_1$.
+    - `process_tick_dual` comprueba `if !self.spectral_published_in_current_event` antes de re-ejecutar el bloque de publicación y reinicia el flag, evitando ~8 stores atómicos y evaluaciones redundantes en llamadas desde `process_event` con $dt = 0$.
+  - Contrato de certificación `crates/quantum-arena/tests/f1_076_spectral_weights_cache_contract.rs` (5/5 tests PASSED):
+    1. `f1_076_contrato_1_pesos_espectrales_y_observables_identicos_a_formula_analitica`: validación exacta de masa, factor de resolución, observable, peso observable y peso espectral contra fórmulas analíticas ($< 10^{-12}$).
+    2. `f1_076_contrato_2_cero_drift_tras_multiples_lecturas_consecutivas`: cero mutación o deriva tras 1 000 lecturas sucesivas en caliente.
+    3. `f1_076_contrato_3_invalidez_y_actualizacion_automatica_en_update`: `update()` refresca coherentemente la caché ante nuevos ticks.
+    4. `f1_076_contrato_4_structure_functions_usa_masa_en_cache_y_conserva_valores`: las funciones de estructura $\zeta(q)$ consumen la masa en caché con cero llamadas redundantes a `exp()`.
+    5. `f1_076_contrato_5_inmunidad_ieee754_y_estado_en_frio`: inmunidad ante estado en frío con 0 actualizaciones y ausencia de NaNs.
+  - Verificaciones globales: `quantum-arena` lib 152/152 pass, `god-engine-core` lib 211/211 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets` 100% verde (exit 0).
+

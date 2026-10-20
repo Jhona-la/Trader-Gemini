@@ -362,6 +362,12 @@ pub struct TemporalSpectrum {
     /// prequential > 0, madura, observable, banda operativa); sin evidencia,
     /// el argmax de energía |w·s| dentro de la banda (C-05/AGY-AUD-P10).
     pub dominant_tau_ms: f64,
+    /// F1-076: Caché de observables y pesos espectrales calculados una sola vez por evento en refresh_fusion()
+    cached_observables: [f64; 32],
+    cached_pesos_obs: [f64; 32],
+    cached_pesos_esp: [f64; 32],
+    cached_mass: [f64; 32],
+    cached_resolucion_ms: f64,
 }
 
 impl Default for TemporalSpectrum {
@@ -388,6 +394,11 @@ impl TemporalSpectrum {
             updates: 0,
             fused_score: 0.0,
             dominant_tau_ms: 0.0,
+            cached_observables: [0.0; 32],
+            cached_pesos_obs: [0.0; 32],
+            cached_pesos_esp: [0.0; 32],
+            cached_mass: [0.0; 32],
+            cached_resolucion_ms: FEED_CLOCK_RESOLUTION_MS,
         }
     }
 
@@ -468,6 +479,7 @@ impl TemporalSpectrum {
         self.first_ts_ms = first_ts_ms;
         self.last_ts_ms = last_ts_ms;
         self.updates = updates;
+        self.refresh_fusion();
     }
 
     /// #607 — el ÚLTIMO bloque maduro de `escala`: (ts de cierre, retorno
@@ -630,6 +642,9 @@ impl TemporalSpectrum {
             s.momentum_z = z;
             s.signal = z.clamp(-5.0, 5.0).tanh();
         }
+        // F1-076: refresh_fusion actualiza primero los pesos y observables en caché
+        self.refresh_fusion();
+
         // (Ola XLII·D) Snapshot de masa para el transporte de Wasserstein:
         // energía cruda w·|señal| por escala, anillo de MASS_RING.
         // #662 (F2-B3): el anillo indexa TIEMPO FÍSICO, no updates —
@@ -639,10 +654,9 @@ impl TemporalSpectrum {
         if self.mass_ring_len == 0
             || ts_ms.saturating_sub(self.last_snap_ts) >= W1_SNAP_CADENCIA_MS
         {
-            let pesos = self.pesos_espectrales();
             let mut snap = [0.0f64; 32];
             for (i, sc) in self.scales.iter().enumerate() {
-                snap[i] = (pesos[i] * sc.signal.abs()).max(0.0);
+                snap[i] = (self.cached_pesos_esp[i] * sc.signal.abs()).max(0.0);
             }
             let idx = self.mass_ring_len % MASS_RING;
             self.mass_ring[idx] = snap;
@@ -650,7 +664,6 @@ impl TemporalSpectrum {
             self.mass_ring_len = self.mass_ring_len.wrapping_add(1);
             self.last_snap_ts = ts_ms;
         }
-        self.refresh_fusion();
     }
 
     /// Actualiza el agregado también cuando cambia el aprendizaje sin tick
@@ -663,6 +676,30 @@ impl TemporalSpectrum {
     /// valor DIRECCIONAL del `fused_score` no está establecido: su IC es
     /// positivo en BTC y negativo en SOL; eso lo decide quien lo consuma.)
     pub fn refresh_fusion(&mut self) {
+        // F1-076: Cálculo único canónico de resolución temporal, masa y pesos de observabilidad.
+        // Elimina ~1,900 exp() y divisiones redundantes por evento entre los lectores del espectro.
+        let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
+        let dt_medio = if self.updates > 1 {
+            elapsed / (self.updates - 1) as f64
+        } else {
+            0.0
+        };
+        let resolucion = FEED_CLOCK_RESOLUTION_MS.max(dt_medio);
+        self.cached_resolucion_ms = resolucion;
+
+        for (i, s) in self.scales.iter().enumerate() {
+            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
+            let observable = mass * factor_de_resolucion(s.tau_ms, resolucion);
+            self.cached_mass[i] = mass;
+            self.cached_observables[i] = observable;
+            self.cached_pesos_obs[i] = if s.ewma_dev_vol > 1e-12 {
+                observable / s.ewma_dev_vol
+            } else {
+                0.0
+            };
+            self.cached_pesos_esp[i] = s.fusion_weight() * observable;
+        }
+
         let mut w_sum = 0.0;
         let mut w_sig_sum = 0.0;
         let mut best_contrib = 0.0f64;
@@ -673,10 +710,9 @@ impl TemporalSpectrum {
         // escala puede observar.
         let mut obs_sum = 0.0;
         let mut obs_sig_sum = 0.0;
-        let (observables, pesos) = self.pesos_observables();
         for (i, s) in self.scales.iter().enumerate() {
-            let observable = observables[i];
-            let w = pesos[i];
+            let observable = self.cached_observables[i];
+            let w = self.cached_pesos_obs[i];
             obs_sum += observable;
             obs_sig_sum += observable * s.signal;
             w_sum += w;
@@ -732,7 +768,7 @@ impl TemporalSpectrum {
         for (i, s) in self.scales.iter().enumerate() {
             if s.tau_ms < TAU_ANCHOR_FAST_MS
                 || s.tau_ms > TAU_ANCHOR_SLOW_MS
-                || observables[i] <= 0.0
+                || self.cached_observables[i] <= 0.0
             {
                 continue;
             }
@@ -986,15 +1022,11 @@ impl TemporalSpectrum {
         let i0 = idx.floor().clamp(0.0, 30.0) as usize;
         let i1 = i0 + 1;
         let frac = (idx - i0 as f64).clamp(0.0, 1.0);
-        let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
-        let resolucion = self.resolucion_efectiva_ms();
+        // F1-076: Uso directo de pesos espectrales cacheados sin re-evaluar exp()
         let energy_at_node = |i: usize| {
-            let s = &self.scales[i];
-            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
-            let observable = mass * factor_de_resolucion(s.tau_ms, resolucion);
-            let w = s.fusion_weight() * observable;
+            let w = self.cached_pesos_esp[i];
             if w > 0.0 {
-                w * s.signal.abs()
+                w * self.scales[i].signal.abs()
             } else {
                 0.0
             }
@@ -1181,7 +1213,7 @@ impl TemporalSpectrum {
         let sign = if is_long { 1.0 } else { -1.0 };
         let mut total_w = 0.0;
         let mut coherent_sig = 0.0;
-        let (_, pesos) = self.pesos_observables();
+        let pesos = &self.cached_pesos_obs;
         for (i, s) in self.scales.iter().enumerate() {
             let w = pesos[i];
             if w == 0.0 {
@@ -1484,80 +1516,56 @@ impl TemporalSpectrum {
     /// escala de 12 h con cuatro segundos de datos pesaba igual que una de
     /// dos segundos: su persistencia arranca en 0 (suelo 0,02 del peso, el
     /// mismo para todas) y su |señal| es tanh(1) con una sola desviación.
+    /// CL-32 / F1-076: pesos de la masa espectral (entropía, Fisher, W₁, τ*, bandas):
+    /// el peso heredado de la persistencia por lo OBSERVABLE de cada escala.
+    /// Recuperación O(1) de la caché precomputada en refresh_fusion().
+    #[inline]
     pub fn pesos_espectrales(&self) -> [f64; 32] {
-        let (observables, _) = self.pesos_observables();
-        let mut w = [0.0f64; 32];
-        for (i, s) in self.scales.iter().enumerate() {
-            w[i] = s.fusion_weight() * observables[i];
-        }
-        w
+        self.cached_pesos_esp
     }
 
-    /// Pesos observables de la fusión D-742 (`fused_score`, τ dominante y
-    /// `spectral_coherence`): masa del núcleo llenada × fracción resuelta,
-    /// y ese observable dividido por la vol de desviación. Devuelve
-    /// `(observables, pesos)`.
-    ///
-    /// CL-32: la fracción resuelta usaba el reloj del exchange (1 ms), no la
-    /// resolución efectiva. Con eventos cada segundo las escalas de 4 ms a
-    /// 268 ms repetían el último evento con la vol más pequeña del espectro
-    /// —el mayor 1/vol— y gobernaban la fusión: el mismo defecto que XLIV-6
-    /// corrigió en las funciones de estructura.
-    fn pesos_observables(&self) -> ([f64; 32], [f64; 32]) {
-        let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
-        let resolucion = self.resolucion_efectiva_ms();
-        let mut observables = [0.0f64; 32];
-        let mut pesos = [0.0f64; 32];
-        for (i, s) in self.scales.iter().enumerate() {
-            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
-            let observable = mass * factor_de_resolucion(s.tau_ms, resolucion);
-            observables[i] = observable;
-            pesos[i] = if s.ewma_dev_vol > 1e-12 {
-                observable / s.ewma_dev_vol
-            } else {
-                0.0
-            };
-        }
-        (observables, pesos)
+    /// F1-076: Referencia directa zero-alloc a los pesos espectrales precomputados.
+    #[inline]
+    pub fn pesos_espectrales_ref(&self) -> &[f64; 32] {
+        &self.cached_pesos_esp
     }
 
-    /// Resolución temporal EFECTIVA del espectro (Ola XLIV): el mayor entre el
-    /// reloj del exchange y el intervalo medio entre eventos. Una escala con
-    /// τ por debajo de ella no está resuelta —su EWMA sólo repite el último
-    /// tick— y el momento que publica es el mismo en todas esas escalas.
+    /// Pesos observables de la fusión D-742 / F1-076:
+    /// Recuperación O(1) de observables y pesos normalizados precomputados en refresh_fusion().
+    #[inline]
+    pub fn pesos_observables(&self) -> ([f64; 32], [f64; 32]) {
+        (self.cached_observables, self.cached_pesos_obs)
+    }
+
+    /// F1-076: Referencia directa a los observables precomputados.
+    #[inline]
+    pub fn observables_ref(&self) -> &[f64; 32] {
+        &self.cached_observables
+    }
+
+    /// Resolución temporal EFECTIVA del espectro (Ola XLIV / F1-076):
+    /// Recuperación O(1) de la resolución efectiva precomputada en refresh_fusion().
+    #[inline]
     pub fn resolucion_efectiva_ms(&self) -> f64 {
-        let dt_medio = if self.updates > 1 {
-            (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64 / (self.updates - 1) as f64
-        } else {
-            0.0
-        };
-        FEED_CLOCK_RESOLUTION_MS.max(dt_medio)
+        self.cached_resolucion_ms
     }
 
-    /// Regresión OLS ponderada de ln S_p contra ln τ. #662 (F2-B4): la
-    /// pertenencia de cada escala es un peso CONTINUO de su masa (rampa
-    /// C¹ centrada en el corte viejo de 0,10) — con pertenencia DURA,
-    /// ζ(p)/χ saltaban cada vez que una escala maduraba cruzando el umbral
-    /// (y χ modula pisos vivos).
+    /// Regresión OLS ponderada de ln S_p contra ln τ. #662 (F2-B4) / F1-076:
+    /// la pertenencia de cada escala es un peso CONTINUO de su masa precomputada en refresh_fusion().
+    /// Erradica 64 exp() por consulta de structure_functions().
     fn regress_log_log(&self, p: u32) -> Option<(f64, usize)> {
-        let elapsed = (self.last_ts_ms.saturating_sub(self.first_ts_ms)) as f64;
-        // Ola XLIV: las escalas por debajo de la resolución efectiva publican
-        // el mismo momento (el del último tick) y formaban un bloque plano que
-        // arrastraba la pendiente: ζ₃ ≈ 0,56 en un precio browniano cuyo
-        // valor sobre las escalas reales es 1,5.
-        let resolucion = self.resolucion_efectiva_ms();
+        let resolucion = self.cached_resolucion_ms;
         let mut n_eff = 0.0f64;
         let mut sx = 0.0;
         let mut sy = 0.0;
         let mut sxx = 0.0;
         let mut sxy = 0.0;
-        for s in self.scales.iter() {
+        for (i, s) in self.scales.iter().enumerate() {
             if s.tau_ms < resolucion {
                 continue;
             }
-            // Sólo escalas con algo de masa en el núcleo: lo aún semilla no
-            // representa la escala, pero madura CONTINUAMENTE (sin salto).
-            let mass = 1.0 - (-elapsed / s.tau_ms).exp();
+            // F1-076: Uso directo de la masa precomputada sin recomputar exp()
+            let mass = self.cached_mass[i];
             let w = peso_masa_continuo(mass);
             if w <= 1e-9 {
                 continue;
