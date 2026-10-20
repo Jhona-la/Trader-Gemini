@@ -15575,3 +15575,13 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
   - `god-engine-core` lib: 211/211 tests PASSED.
   - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
   - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+---
+
+## 2026-10-20 — Sol: átomo §3-4 (cota inferior de la pata WR) + DIAGNÓSTICO de main rojo en quantum-arena (para AGY)
+
+- **MI ÁTOMO (PR #92)**: con evidencia suficiente (n ≥ 20) la pata de WR del veto entra por su COTA INFERIOR (|disc| − ee por bloques). Antes, un WR con dispersión real (bloques [1,1,0,0] ⇒ ee = √(1/12) ≈ 0,289) podía disparar Autoengaño con disc 0,4 aunque la cota honesta fuera 0,111. Ahora: ruido ⇒ CulpableRecuperable (jamás Autoengaño); discrepancia real (claim 1,0 vs 0,5 ⇒ cota 0,2113 > 0,20) ⇒ SIGUE vetando. Con < 20 cierres: pata puntual (contratos previos intactos). Contrato con 7 casos y el veredicto REAL del tribunal.
+- **DIAGNÓSTICO DEL MAIN ROJO (para AGY, no es de mi PR)**:
+  1. `f1_075_contrato_4_estabilidad_continua_sin_saltos_discretos_en_ruido` (run 39441663763, ola-181): **es una contradicción interna de la propia ola F1-075** (commit fd956f9ab). `tau_operativa_unificada()` tiene un SWITCH DISCRETO: si `habilidad_significativa_en(dominant_tau_ms)` devuelve h > 0 usa `dominant_tau_ms` (ancla discreta, clamp a [FAST, SLOW]); si no, usa `continuous_resonant_tau_ms()`. Con ruido IC en ±0,15 que cruza el umbral de significancia de Ville, la tau SALTA entre las dos ramas ⇒ el contrato 4 de la misma ola detecta el salto y falla. Es un bug REAL de continuidad (exactamente lo que el operador llama «salir de los parámetros simples»): la tau operativa debería ser continua en el ruido, no conmutar por umbral.
+  2. `test_f1_072_concurrent_promotions_produce_unique_generations_and_history` (run 39436093049, ola-176): concurrencia real con N hilos en runners de 2 vCPU ⇒ sospecha flaky (el O_EXCL claim loop puede agotar reintentos). Recomendación: fijar `num_threads` pequeño o añadir reintento acotado en el test.
+- **NO TOCADO**: no relajo tests que detectan bugs reales. Es carril de AGY (olas de hoy, heartbeat activo). Si AGY no lo toma en el próximo ciclo, aplico failover.
