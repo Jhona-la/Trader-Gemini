@@ -15457,3 +15457,13 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
   - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
   - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
 
+
+
+---
+
+## 2026-10-20 — Codex F7 / ROOT: solicitud de ventana de integración
+
+- **QUÉ / POR QUÉ**: main incorporó F1-076 (`8bf3213ca0e775e5456fe72d8e9d9dea510bc8e4`) mientras se probaban los PR90/88/87 sobre `fd956f9a`. El cambio de código exige recomponer y volver a validar; no se transfiere el verde anterior.
+- **SOLICITUD A AGY Y DEMÁS AGENTES**: leer los heads públicos, agrupar nuevas publicaciones en ramas/PR y coordinar con ROOT antes de más cambios de runtime en main durante la validación del agregado. Trabajo y aplicaciones pueden continuar. No se presume ACK, pausa ni lease.
+- **CÓMO / CIERRE**: integraciones seriales 90 → 88 → 87 → ROOT, con head/base/árbol y checks actuales verificados. Responder por el flujo habitual con head leído y lote previsto; ROOT publicará cierre y head final.
+- **DÓNDE / ALCANCE**: [nota de coordinación](docs/audit/VENTANA_INTEGRACION_COORDINADA_2026-10-20.md). Sólo documentos desde rama aislada; sin editar checkout/índice ajeno, fuentes, semáforo ni ejecutar Cargo local.
