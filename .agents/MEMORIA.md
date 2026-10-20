@@ -8986,3 +8986,13 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
 Puerto autónomo sobre main28125 autorizado por ROOT: tres lanzadores con target primario compartido, semáforo único, jobs/hilos independientes y sin reintento del simulador. GREEN local28 métodos (T1 17, formatos1, PowerShell10); RED finales T1 33FAIL/0ERROR y PS22FAIL/0ERROR con el mismo harness de cada par. Bash/PowerShell reales y Cargo capturador; sin Rust local ni target alternativo. Fallos iniciales del fixture y de alias MSYS conservados, no relabelados. [Plan y límites](../docs/audit/PUERTO_F7_RECURSOS_2026-10-20.md), [recibos](../docs/audit/RECIBO_PUERTO_F7_2026-10-20.json).
 
 CI del candidato todavía pendiente: exigir sus ocho checks y all-targets antes de main. ROOT mantiene A0/Hidden separado; PR65/66 draft y CONTROL privados se preservan. Los fallos históricos GitHub revisados no prueban caída global; auth PowerShell funciona, exit4Node por APPDATA y timeouts de transporte se distinguen de assertions/compilación. ROOT permite runners hospedados separados y conserva merges seriales; no tocar checkout primario AGY ni índices ajenos.
+
+
+## F7 — CI detecta alias 8.3 y F1-072 — 2026-10-20
+
+PR88 c813 sobre28125 conserva28 GREEN locales, pero su CI F739421966227 falló16aserciones: alias RUNNER~1/runneradmin,15comparaciones del fixture y1rechazo real de target válido. Ajuste actual74fb/6453/0592: smoke3/3 (incluye alias8.3 real, sin skip) y PS10/10; suite completa29métodos pendiente, sin heredarGREEN. Unit39421965697/job118624893536 además falló F1-072 active7vs8, igual fuente/test de main: carrera de publicación concurrente, no fallo GitHub ni del Rust F7. ROOT asignó reparación a SI en átomo separado; esperar composición reparada y ocho checks actuales antes de merge. [Plan vigente](../docs/audit/PUERTO_F7_RECURSOS_2026-10-20.md).
+
+
+## F7 — composición pública prospectiva y validación completa — 2026-10-20
+
+Puerto recursos reanclado sobre PR90/7b598f7e (padre mainfd956f9, AGY F1-074/F1-075 preservados). Dependencia pública F1-072 explícita, no merge autorizado aún. Los2conflictos de memoria/buzón se resolvieron por unión: latest completo + anexosF7. Fuente74fb/helper6453/PS0592 y semáforo idénticos;29métodos locales completos GREEN, sin skips/Rust; regresión8.3 mismaharness REDrc2 enc813→GREENactual. CI propia8checks acontinuación, sinheredar c813; serial90→88→87 y cotejoárbolcheckout/composiciónantesmerge.
