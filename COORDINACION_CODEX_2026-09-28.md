@@ -15575,3 +15575,28 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
   - `god-engine-core` lib: 211/211 tests PASSED.
   - `rb_p1_trinquete_panicos_contract`: 5/5 PASSED (0 pánicos agregados).
   - `cargo check --workspace --all-targets`: 16 crates 100% verde (código de salida 0).
+
+
+---
+
+## 2026-10-20 — AGY: Ola Ω182 — Cierre F1-078 (Sizing Dinámico de Familia de Ville Multiactivo, Aceleración GRAPA y Warm-Start)
+
+- **QUÉ**: Dimensionamiento honesto de la familia de hipótesis de Ville en el universo espectral multiactivo según el roster vivo $C(n, 2) \cdot 5$, algoritmo GRAPA de $\lambda$ adaptativa causal en `EProceso`, persistencia/warm-start con `SnapshotParEscala`, y telemetría de diagnóstico `qo_613_gate_cerrado_capital` y `estado_gate_ville`.
+- **POR QUÉ**: El gate de veto multiactivo utilizaba la constante fija `FAMILIA_VETO_GRUPO = 2 175` (asumiendo 30 monedas: $C(30, 2) \cdot 5$) con umbral de Ville $M/\alpha = 43\ 500$ a $\alpha = 0.05$ y $\lambda = 0.10$ fija sin persistencia. En cuentas micro de $\$13\text{ USD}$ operando 6 u 8 monedas correlacionadas ($\rho \approx 0.70$), cruzar $43\ 500$ requería $\approx 240$ bloques contemporáneos ($\approx 18\text{ h}$ en $\tau_{19}$ y $>72\text{ h}$ en $\tau \ge 18\text{ min}$), dejando el veto espectral multiactivo inerte durante el arranque más vulnerable de la cuenta. Cualquier reinicio reseteaba el capital a cero.
+- **PARA QUÉ**: Permitir que el veto multiactivo de grupo proteja la cuenta micro desde las primeras horas de vida mediante un umbral honesto al número real de activos ($n=8 \implies M=140$, umbral $2\ 800$; $n=6 \implies M=75$, umbral $1\ 500$), acelerar la convergencia $\approx 2.6\times$ con GRAPA ($73$ bloques en vez de $143$), y arrancar en $0$ horas tras reinicio gracias al warm-start de capital.
+- **CÓMO**:
+  1. En `crates/quantum-arena/src/espectral_multiactivo.rs`: función pura `familia_honesta(n_activos)` ($C(n, 2) \cdot 5$), métodos `dimensionar_por_roster`, `sincronizar_con_universo_activo`, `familia_efectiva`, y soporte dinámico en `EspectralMultiactivoParams`.
+  2. En `crates/quantum-arena/src/evalues.rs`: implementación de `observar_adaptativo` en `EProceso` siguiendo el algoritmo GRAPA (Growth Rate Adaptive with Predictable Averaging, Waudby-Smith & Ramdas 2023) estimando causalmente $\hat{\mu}_{t-1} = 2\hat{p}_{t-1} - 1$ de $\mathcal{F}_{t-1}$ con $\lambda_t \in [0.05, 0.40]$. Preserva estrictamente la supermartingala bajo $H_0$.
+  3. En `crates/quantum-arena/src/espectral_multiactivo.rs` y `crates/quantum-arena/src/state_continuity.rs`: estructura `SnapshotParEscala`, métodos `exportar_snapshots`, `importar_snapshots`, `warm_start_par`, `guardar_checkpoint`, `cargar_checkpoint` e integración en `ArenaCheckpoint`.
+  4. En `crates/quantum-arena/src/espectral_multiactivo.rs` y `crates/god-engine-core/src/evidence_publication.rs`: métodos `pares_cerrados_por_capital`, `estado_gate_ville` y publicación de `qo_613_gate_cerrado_capital` en el registro omnisciente.
+  5. En `crates/quantum-arena/src/config.rs`: `espectral_familia_veto` default en `0.0` (modo dinámico automático) y flag `espectral_lambda_adaptativa` activo por defecto.
+- **CUÁNDO**: En cada observación de bloque maduro cruzado y en cada evento de publicación espectral.
+- **DÓNDE**: `crates/quantum-arena/src/espectral_multiactivo.rs`, `crates/quantum-arena/src/evalues.rs`, `crates/quantum-arena/src/state_continuity.rs`, `crates/quantum-arena/src/config.rs`, `crates/god-engine-core/src/lib.rs`, `crates/god-engine-core/src/evidence_publication.rs`.
+- **QUIÉN**: AGY (Consejo Colegiado de 10 Roles Senior en Modo Profesor).
+- **CONTRATOS**:
+  - `f1_078_multi_asset_ville_family_contract.rs` (5/5 tests PASSED): dimensionado honesto $n=0,1,6,8,16,26,30$, aceleración GRAPA empírica (73 vs 143 bloques), persistencia warm-start roundtrip (0 bloques al restaurar), telemetría de gate cerrado por capital, y robustez sin pánicos (`RB-P1`).
+  - `quantum-arena` lib: 152/152 tests PASSED.
+  - `rb_p1_trinquete_panicos_contract`: 5/5 tests PASSED.
+  - `checkpoint_characterization`: 2/2 tests PASSED.
+  - `espectral_multiactivo_regime_adaptation_contract`: 4/4 tests PASSED.
+  - `cargo check --workspace --all-targets`: 16 crates 100% verde (0 errores, 0 warnings).

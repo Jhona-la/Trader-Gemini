@@ -53,9 +53,34 @@
 //! precio, no Pearson. Su media incluye activos con evidencia, sin filtrar
 //! posiciones ni lados; no demuestra equivalencia con la dependencia de
 //! PnL del grupo same-bet. Nulo, familia y vigencia requieren contratos.
+//!
+//! ## Tiempo hasta apertura del Gate de Ville por escala (F1-078)
+//!
+//! Bajo co-movimiento real con correlación ρ y retornos gaussianos bivariados, la
+//! probabilidad de acierto de signo prequential es:
+//!   p = 0.5 + arcsin(ρ) / π
+//! Para ρ ≈ 0.70, p ≈ 0.747.
+//! Con λ fija = 0.10, la deriva logarítmica por bloque es:
+//!   D(0.10) = p·ln(1.10) + (1-p)·ln(0.90) ≈ 0.0445
+//! Con λ adaptativa (GRAPA, Waudby-Smith & Ramdas 2023), λ_t ≈ 0.35 para p ≈ 0.747:
+//!   D(0.35) = p·ln(1.35) + (1-p)·ln(0.65) ≈ 0.117 (aceleración 2.6×)
+//!
+//! Bloques requeridos hasta cruce (N = ln(Umbral) / D) y tiempo real en horas:
+//! | Roster (n) | Familia (M) | Umbral M/α | Bloques (λ=0.10) | Bloques (GRAPA) | τ_18 (68.7s) GRAPA | τ_19 (4.58m) GRAPA | τ_20 (18.3m) GRAPA |
+//! |------------|-------------|------------|------------------|-----------------|--------------------|--------------------|--------------------|
+//! | n = 6      | 75          | 1 500      | 164              | 62              | 1.18 h             | 4.73 h             | 18.9 h             |
+//! | n = 8      | 140         | 2 800      | 178              | 68              | 1.30 h             | 5.19 h             | 20.8 h             |
+//! | n = 16     | 600         | 12 000     | 211              | 80              | 1.53 h             | 6.11 h             | 24.4 h             |
+//! | n = 30     | 2 175       | 43 500     | 240              | 91              | 1.74 h             | 6.95 h             | 27.8 h             |
+//!
+//! Con persistencia / warm-start (SnapshotParEscala), el tiempo de arranque tras reinicio es 0 h.
 
 use crate::evalues::EProceso;
 use crate::temporal_spectrum::SPECTRUM_SCALES_MS;
+use serde::{Deserialize, Serialize};
+use std::fs::{self, File};
+use std::io::{Read, Write};
+use std::path::Path;
 
 const ESCALAS: usize = 32;
 
@@ -66,7 +91,7 @@ const ESCALAS: usize = 32;
 /// hay siete nodos potenciales (17..23), incluidos exteriores a la banda.
 /// La familia real queda abierta; se conserva M histórico sin certificar
 /// que cubra todo lo consultado por la política.
-const ESCALAS_BANDA_PAR: usize = 5;
+pub const ESCALAS_BANDA_PAR: usize = 5;
 
 /// #665 (F2-B8): tamaño histórico configurado de la FAMILIA de
 /// e-procesos: C(MAX_COINS,2) pares × ESCALAS_BANDA_PAR.
@@ -75,6 +100,18 @@ const ESCALAS_BANDA_PAR: usize = 5;
 /// (`coherencia_media_con_todas` → qo_613_rho_tau).
 pub const FAMILIA_VETO_GRUPO: usize =
     (crate::state::MAX_COINS * (crate::state::MAX_COINS - 1) / 2) * ESCALAS_BANDA_PAR;
+
+/// F1-078: Calcula el tamaño de la familia honesta de hipótesis de veto de grupo
+/// para `n_activos`: C(n_activos, 2) × ESCALAS_BANDA_PAR. Si n <= 1, devuelve 1.
+#[inline]
+pub const fn familia_honesta(n_activos: usize) -> usize {
+    if n_activos <= 1 {
+        1
+    } else {
+        (n_activos * (n_activos - 1) / 2) * ESCALAS_BANDA_PAR
+    }
+}
+
 /// Guardia de recencia del emparejamiento: los bloques de ambos deben
 /// cerrar dentro de 0.5·τ el uno del otro (contemporáneos) (bloques de τ no solapados y
 /// aproximadamente contemporáneos — sino el par mezcla regímenes).
@@ -84,7 +121,7 @@ pub const RECENCIA_X: f64 = 0.5;
 pub const OLVIDO: f64 = 1.0 / 64.0;
 pub const MUESTRAS_MADURAS: u64 = 30;
 
-/// Parámetros dinámicos desacoplados y adaptables para el Universo Espectral Multiactivo (Ola Ω127).
+/// Parámetros dinámicos desacoplados y adaptables para el Universo Espectral Multiactivo (Ola Ω127, Ola Ω182).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EspectralMultiactivoParams {
     /// Multiplicador de recencia para el emparejamiento contemporáneo (|Δts| ≤ recencia_x · τ).
@@ -94,8 +131,11 @@ pub struct EspectralMultiactivoParams {
     /// Número mínimo de muestras acumuladas para considerar madura la escala-par.
     pub muestras_maduras: u64,
     /// Override opcional de la familia de hipótesis para el gate Ville de veto de grupo.
-    /// Si es `None`, se utiliza el estándar `FAMILIA_VETO_GRUPO`.
+    /// Si es `None`, se evalúa honestamente según el roster activo o `FAMILIA_VETO_GRUPO`.
     pub familia_veto_override: Option<usize>,
+    /// F1-078: Apuesta adaptativa causal/previsible (algoritmo GRAPA de Ville) para
+    /// acelerar exponencialmente el cruce del umbral ante evidencia de co-movimiento real.
+    pub lambda_adaptativa: bool,
 }
 
 impl Default for EspectralMultiactivoParams {
@@ -105,6 +145,7 @@ impl Default for EspectralMultiactivoParams {
             olvido: OLVIDO,
             muestras_maduras: MUESTRAS_MADURAS,
             familia_veto_override: None,
+            lambda_adaptativa: false,
         }
     }
 }
@@ -127,9 +168,33 @@ impl EspectralMultiactivoParams {
         let fam = registry.get_value_or("espectral_familia_veto", 0.0);
         if fam.is_finite() && fam >= 1.0 {
             p.familia_veto_override = Some(fam as usize);
+        } else {
+            let active_n = crate::symbols::get_active_universe_size();
+            if active_n > 1 {
+                p.familia_veto_override = Some(familia_honesta(active_n));
+            }
+        }
+        let adp = registry.get_value_or("espectral_lambda_adaptativa", 0.0);
+        if adp.is_finite() && adp > 0.0 {
+            p.lambda_adaptativa = true;
         }
         p
     }
+}
+
+/// F1-078: Snapshot serializable para persistencia y arranque en caliente de la evidencia par-escala.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SnapshotParEscala {
+    pub coin_a: usize,
+    pub coin_b: usize,
+    pub escala: usize,
+    pub n_muestras: u64,
+    pub ea2: f64,
+    pub eb2: f64,
+    pub eab: f64,
+    pub capital_ville: f64,
+    pub aciertos: u64,
+    pub fallos: u64,
 }
 
 /// Función suave C^1 de Hermite cúbico (smoothstep) para la credibilidad continua de la
@@ -163,19 +228,46 @@ impl IcEscala {
     #[inline]
     #[allow(dead_code)]
     fn acumular(&mut self, ra: f64, rb: f64) {
-        self.acumular_con_olvido(ra, rb, OLVIDO);
+        self.acumular_con_olvido(ra, rb, OLVIDO, false);
     }
 
-    fn acumular_con_olvido(&mut self, ra: f64, rb: f64, olvido: f64) {
+    fn acumular_con_olvido(&mut self, ra: f64, rb: f64, olvido: f64, lambda_adaptativa: bool) {
         // Causal: la señal es el signo del IC VIGENTE (pre-observación).
         let senal = if self.eab >= 0.0 { 1.0 } else { -1.0 };
         // EProceso clasifica el signo y preserva cero/no-finito como abstención.
         let retorno = ra * rb;
-        self.e.observar(senal, retorno);
+        if lambda_adaptativa {
+            self.e.observar_adaptativo(senal, retorno);
+        } else {
+            self.e.observar(senal, retorno);
+        }
         self.ea2 += (ra * ra - self.ea2) * olvido;
         self.eb2 += (rb * rb - self.eb2) * olvido;
         self.eab += (ra * rb - self.eab) * olvido;
         self.n = self.n.saturating_add(1);
+    }
+
+    fn warm_start(
+        &mut self,
+        ea2: f64,
+        eb2: f64,
+        eab: f64,
+        n: u64,
+        capital: f64,
+        aciertos: u64,
+        fallos: u64,
+    ) {
+        if ea2.is_finite() && ea2 >= 0.0 {
+            self.ea2 = ea2;
+        }
+        if eb2.is_finite() && eb2 >= 0.0 {
+            self.eb2 = eb2;
+        }
+        if eab.is_finite() {
+            self.eab = eab;
+        }
+        self.n = n;
+        self.e.warm_start(capital, n, aciertos, fallos);
     }
 
     #[inline]
@@ -350,7 +442,12 @@ impl EspectralMultiactivo {
                 continue;
             }
             enlace.consumido[escala] = (ts_a, ts_b);
-            enlace.escalas[escala].acumular_con_olvido(ra, rb, self.params.olvido);
+            enlace.escalas[escala].acumular_con_olvido(
+                ra,
+                rb,
+                self.params.olvido,
+                self.params.lambda_adaptativa,
+            );
         }
     }
 
@@ -398,8 +495,8 @@ impl EspectralMultiactivo {
         Some(self.enlaces.get(idx)?.escalas[escala].n)
     }
 
-    /// #665 (F2-B8): versión de VETO — el IC sólo cuenta si su e-proceso
-    /// cruza el umbral de FAMILIA (C(N,2)·banda o configurable). Telemetría pura sigue
+    /// #665 (F2-B8) / F1-078: versión de VETO — el IC sólo cuenta si su e-proceso
+    /// cruza el umbral de FAMILIA (C(N_activo, 2)·banda o configurable). Telemetría pura sigue
     /// usando `coherencia_par`.
     pub fn coherencia_par_veto(&self, a: usize, b: usize, escala: usize) -> Option<f64> {
         if a >= self.max_coins || b >= self.max_coins || a == b || escala >= ESCALAS {
@@ -407,7 +504,7 @@ impl EspectralMultiactivo {
         }
         let (min_c, max_c) = if a < b { (a, b) } else { (b, a) };
         let idx = pair_idx(min_c, max_c, self.max_coins);
-        let familia = self.params.familia_veto_override.unwrap_or(FAMILIA_VETO_GRUPO);
+        let familia = self.familia_efectiva();
         self.enlaces.get(idx)?.escalas[escala].ic_veto_con_params(familia, self.params.muestras_maduras)
     }
 
@@ -495,6 +592,182 @@ impl EspectralMultiactivo {
         } else {
             Some(suma / cuenta as f64)
         }
+    }
+
+    /// Sincroniza la familia de Ville con el tamaño del roster de monedas activas (F1-078).
+    /// Si n_activos > 1, fija familia_veto_override a C(n_activos, 2) × 5.
+    pub fn dimensionar_por_roster(&mut self, n_activos: usize) {
+        if n_activos > 1 {
+            self.params.familia_veto_override = Some(familia_honesta(n_activos));
+        }
+    }
+
+    /// Sincroniza automáticamente la familia con el número de monedas activas en `crate::symbols`.
+    pub fn sincronizar_con_universo_activo(&mut self) {
+        let n = crate::symbols::get_active_universe_size();
+        if n > 1 {
+            self.dimensionar_por_roster(n.min(self.max_coins));
+        }
+    }
+
+    /// Retorna el tamaño efectivo de la familia de Ville utilizado para el veto de grupo.
+    #[inline]
+    pub fn familia_efectiva(&self) -> usize {
+        self.params.familia_veto_override.unwrap_or(FAMILIA_VETO_GRUPO)
+    }
+
+    /// Exporta snapshots de todos los pares-escala con observaciones o capital acumulado (F1-078).
+    pub fn exportar_snapshots(&self) -> Vec<SnapshotParEscala> {
+        let mut res = Vec::new();
+        for a in 0..self.max_coins {
+            for b in (a + 1)..self.max_coins {
+                let idx = pair_idx(a, b, self.max_coins);
+                if let Some(enlace) = self.enlaces.get(idx) {
+                    for escala in 0..ESCALAS {
+                        let item = &enlace.escalas[escala];
+                        if item.n > 0 || item.e.capital() > 1.0 {
+                            res.push(SnapshotParEscala {
+                                coin_a: a,
+                                coin_b: b,
+                                escala,
+                                n_muestras: item.n,
+                                ea2: item.ea2,
+                                eb2: item.eb2,
+                                eab: item.eab,
+                                capital_ville: item.e.capital(),
+                                aciertos: item.e.aciertos(),
+                                fallos: item.e.fallos(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        res
+    }
+
+    /// Importa y restaura en caliente el estado acumulado de pares-escala (F1-078).
+    pub fn importar_snapshots(&mut self, snapshots: &[SnapshotParEscala]) {
+        for s in snapshots {
+            if s.coin_a >= self.max_coins
+                || s.coin_b >= self.max_coins
+                || s.coin_a == s.coin_b
+                || s.escala >= ESCALAS
+            {
+                continue;
+            }
+            let (min_c, max_c) = if s.coin_a < s.coin_b { (s.coin_a, s.coin_b) } else { (s.coin_b, s.coin_a) };
+            let idx = pair_idx(min_c, max_c, self.max_coins);
+            if let Some(enlace) = self.enlaces.get_mut(idx) {
+                enlace.escalas[s.escala].warm_start(
+                    s.ea2,
+                    s.eb2,
+                    s.eab,
+                    s.n_muestras,
+                    s.capital_ville,
+                    s.aciertos,
+                    s.fallos,
+                );
+            }
+        }
+    }
+
+    /// Warm start granular para un par-escala individual (F1-078).
+    pub fn warm_start_par(
+        &mut self,
+        a: usize,
+        b: usize,
+        escala: usize,
+        n_muestras: u64,
+        ea2: f64,
+        eb2: f64,
+        eab: f64,
+        capital_ville: f64,
+    ) {
+        if a >= self.max_coins || b >= self.max_coins || a == b || escala >= ESCALAS {
+            return;
+        }
+        let (min_c, max_c) = if a < b { (a, b) } else { (b, a) };
+        let idx = pair_idx(min_c, max_c, self.max_coins);
+        if let Some(enlace) = self.enlaces.get_mut(idx) {
+            let aciertos = (n_muestras * 3) / 4;
+            let fallos = n_muestras.saturating_sub(aciertos);
+            enlace.escalas[escala].warm_start(
+                ea2,
+                eb2,
+                eab,
+                n_muestras,
+                capital_ville,
+                aciertos,
+                fallos,
+            );
+        }
+    }
+
+    /// Persistencia atómica de snapshots a disco con rename seguro (F1-078).
+    pub fn guardar_checkpoint(&self, path: &Path) -> Result<(), String> {
+        let snaps = self.exportar_snapshots();
+        let json = serde_json::to_vec_pretty(&snaps).map_err(|e| e.to_string())?;
+        let temp_path = path.with_extension("tmp");
+        let mut file = File::create(&temp_path).map_err(|e| e.to_string())?;
+        file.write_all(&json).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        fs::rename(temp_path, path).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Carga y restaura snapshots desde un archivo de checkpoint si existe (F1-078).
+    pub fn cargar_checkpoint(&mut self, path: &Path) -> Result<usize, String> {
+        if !path.exists() {
+            return Ok(0);
+        }
+        let mut file = File::open(path).map_err(|e| e.to_string())?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).map_err(|e| e.to_string())?;
+        let snaps: Vec<SnapshotParEscala> = serde_json::from_slice(&data).map_err(|e| e.to_string())?;
+        let len = snaps.len();
+        self.importar_snapshots(&snaps);
+        Ok(len)
+    }
+
+    /// Diagnóstico de estado del gate de Ville para el par (a, b) en `escala`:
+    /// Retorna `Some((capital, umbral, abierto))` o `None` si los parámetros son inválidos.
+    pub fn estado_gate_ville(&self, a: usize, b: usize, escala: usize) -> Option<(f64, f64, bool)> {
+        if a >= self.max_coins || b >= self.max_coins || a == b || escala >= ESCALAS {
+            return None;
+        }
+        let (min_c, max_c) = if a < b { (a, b) } else { (b, a) };
+        let idx = pair_idx(min_c, max_c, self.max_coins);
+        let enlace = self.enlaces.get(idx)?;
+        let item = &enlace.escalas[escala];
+        let familia = self.familia_efectiva();
+        let umbral = EProceso::umbral_familia(familia);
+        let abierto = item.e.significativo_familia(familia) && item.n >= self.params.muestras_maduras;
+        Some((item.e.capital(), umbral, abierto))
+    }
+
+    /// F1-078: Cuenta cuántos pares de `moneda` en `escala` tienen madurez estadística (n >= min_muestras)
+    /// pero permanecen CERRADOS en el gate de veto por no haber alcanzado aún el capital de Ville exigido.
+    pub fn pares_cerrados_por_capital(&self, moneda: usize, escala: usize) -> usize {
+        if moneda >= self.max_coins || escala >= ESCALAS {
+            return 0;
+        }
+        let familia = self.familia_efectiva();
+        let mut cerrados = 0;
+        for otra in 0..self.max_coins {
+            if otra == moneda {
+                continue;
+            }
+            let (min_c, max_c) = if moneda < otra { (moneda, otra) } else { (otra, moneda) };
+            let idx = pair_idx(min_c, max_c, self.max_coins);
+            if let Some(enlace) = self.enlaces.get(idx) {
+                let item = &enlace.escalas[escala];
+                if item.n >= self.params.muestras_maduras && !item.e.significativo_familia(familia) {
+                    cerrados += 1;
+                }
+            }
+        }
+        cerrados
     }
 }
 

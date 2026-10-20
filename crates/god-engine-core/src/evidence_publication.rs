@@ -60,9 +60,17 @@ pub fn publicar_coherencia(
     coin_id: usize,
     tau_dom: f64,
 ) {
-    let ic = escala_espectral_mas_cercana(tau_dom)
+    let escala_opt = escala_espectral_mas_cercana(tau_dom);
+    let ic = escala_opt
         .and_then(|escala_dom| multiactivo.coherencia_media_con_todas(coin_id, escala_dom));
     publicar_finito(registry, coin_id, "qo_613_rho_tau", ic, -1.0);
+
+    // F1-078: Telemetría de diagnóstico — número de pares con madurez estadística (n >= 30)
+    // bloqueados en el gate de veto por no haber alcanzado aún el umbral de capital de Ville.
+    if let Some(escala_dom) = escala_opt {
+        let cerrados = multiactivo.pares_cerrados_por_capital(coin_id, escala_dom);
+        registry.set_for_coin(coin_id, "qo_613_gate_cerrado_capital", cerrados as f64);
+    }
 }
 
 /// Nodo de `SPECTRUM_SCALES_MS` más cercano a `tau_ms` en ln τ; `None` si τ

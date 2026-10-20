@@ -277,6 +277,8 @@ pub struct QuantumConfig {
     pub espectral_olvido: AtomicF64,
     pub espectral_muestras_maduras: AtomicF64,
     pub espectral_familia_veto: AtomicF64,
+    /// F1-078: Flag 1.0 (activo) / 0.0 (inactivo) para GRAPA adaptive lambda en martingalas de Ville.
+    pub espectral_lambda_adaptativa: AtomicF64,
     pub regime_w_accel_fast: AtomicF64,
     pub regime_w_adverse_tide: AtomicF64,
     pub regime_w_coherence_collapse: AtomicF64,
@@ -606,7 +608,8 @@ impl QuantumConfig {
             espectral_recencia_x: AtomicF64::new(0.5),
             espectral_olvido: AtomicF64::new(1.0 / 64.0),
             espectral_muestras_maduras: AtomicF64::new(30.0),
-            espectral_familia_veto: AtomicF64::new(2175.0),
+            espectral_familia_veto: AtomicF64::new(0.0), // 0.0 = auto-dimensionado honesto según roster vivo C(n,2)·5
+            espectral_lambda_adaptativa: AtomicF64::new(1.0), // F1-078: Activo por defecto para acelerar convergencia bajo evidencia
             regime_w_accel_fast: AtomicF64::new(0.35),
             regime_w_adverse_tide: AtomicF64::new(0.30),
             regime_w_coherence_collapse: AtomicF64::new(0.20),

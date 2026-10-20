@@ -31,7 +31,8 @@ pub use adaptive_quantiles::{AdaptiveQuantileEngine, P2Quantile};
 pub use atomic_float::AtomicF64;
 pub use config::QuantumConfig;
 pub use espectral_multiactivo::{
-    credibilidad_continua, EspectralMultiactivo, EspectralMultiactivoParams,
+    credibilidad_continua, familia_honesta, EspectralMultiactivo, EspectralMultiactivoParams,
+    SnapshotParEscala,
 };
 pub use genome::{GenomeError, SuperGenotype};
 pub use position::{Position, PositionManager};
