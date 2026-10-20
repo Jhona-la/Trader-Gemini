@@ -27,6 +27,11 @@ WRAPPERS = ("build_loop.ps1", "run_sim_5.ps1")
 EXPECTED_ARGV = ["run", "--bin", "multi_coin_simulator", "-j", "1"]
 
 
+def canonical_path(value):
+    """Compare filesystem identity across Windows long and 8.3 path aliases."""
+    return os.path.normcase(os.path.realpath(value))
+
+
 @unittest.skipUnless(sys.platform == "win32" and PWSH.is_file() and MSYS_BASH.is_file(),
                      "These contracts require Windows PowerShell 7 and real Git MSYS Bash")
 class SimLauncherTests(unittest.TestCase):
@@ -175,8 +180,8 @@ class SimLauncherTests(unittest.TestCase):
         diagnostics = result.process.stdout + result.process.stderr
         self.assertIsNotNone(result.state, diagnostics)
         self.assertTrue(result.state["returned"], diagnostics)
-        self.assertEqual(os.path.normcase(str(result.caller)),
-                         os.path.normcase(result.state["caller_location"]), diagnostics)
+        self.assertEqual(canonical_path(result.caller),
+                         canonical_path(result.state["caller_location"]), diagnostics)
         self.assertEqual(result.original_path, result.state["path"], diagnostics)
         self.assertEqual(result.target is not None, result.state["cargo_target_exists"], diagnostics)
         self.assertEqual(result.target, result.state["cargo_target"], diagnostics)
@@ -199,10 +204,10 @@ class SimLauncherTests(unittest.TestCase):
         self.assertEqual(1, len(result.calls), diagnostics)
         call = result.calls[0]
         self.assertEqual(EXPECTED_ARGV, call["argv"], diagnostics)
-        self.assertEqual(os.path.normcase(str(result.wrapper_root)),
-                         os.path.normcase(call["cwd"]), diagnostics)
-        self.assertEqual(os.path.normcase(str(result.shared_primary / "target")),
-                         os.path.normcase(os.path.normpath(call["env"]["CARGO_TARGET_DIR"])),
+        self.assertEqual(canonical_path(result.wrapper_root),
+                         canonical_path(call["cwd"]), diagnostics)
+        self.assertEqual(canonical_path(result.shared_primary / "target"),
+                         canonical_path(call["env"]["CARGO_TARGET_DIR"]),
                          diagnostics)
         self.assertEqual("1", call["env"]["CARGO_BUILD_JOBS"], diagnostics)
         self.assertIsNone(call["env"]["RUSTFLAGS"], diagnostics)

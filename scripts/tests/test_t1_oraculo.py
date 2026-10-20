@@ -28,10 +28,10 @@ RESOURCE_ENV = ("CARGO_TARGET_DIR", "CARGO_BUILD_JOBS", "T1_THREADS", "T1_LOG",
 
 
 def canonical_path(value):
-    """Compare Git Bash /c/... and native Windows paths without changing argv."""
+    """Compare path identity, including existing Windows 8.3 ancestors."""
     if sys.platform == "win32":
         value = re.sub(r"^/([A-Za-z])(?=/)", r"\1:", value)
-    return os.path.normcase(os.path.abspath(value))
+    return os.path.normcase(os.path.realpath(value))
 
 
 @unittest.skipUnless(BASH and Path(BASH).is_file(), "Bash is required")
@@ -202,6 +202,32 @@ class T1OraculoShellTests(unittest.TestCase):
         self.assertEqual(canonical_path(str(target)), canonical_path(env["CARGO_TARGET_DIR"]))
         self.assertTrue((target / ".t1-sello").is_file())
         self.assertTrue((self.repo / "logs" / "t1_oraculo.log").is_file())
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows 8.3 aliases are required")
+    def test_short_path_alias_is_canonical_before_target_exists(self):
+        import ctypes
+
+        get_short = ctypes.WinDLL("kernel32", use_last_error=True).GetShortPathNameW
+        get_short.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint]
+        get_short.restype = ctypes.c_uint
+        buffer = ctypes.create_unicode_buffer(32768)
+        length = get_short(str(self.primary_repo), buffer, len(buffer))
+        self.assertGreater(length, 0, f"GetShortPathNameW failed: {ctypes.get_last_error()}")
+        self.assertLess(length, len(buffer))
+        short_root = buffer.value
+        long_root = os.path.realpath(self.primary_repo)
+        if os.path.normcase(short_root) == os.path.normcase(long_root):
+            self.skipTest("fixture volume does not expose a distinct 8.3 alias")
+        self.assertTrue(os.path.samefile(short_root, long_root), "observed alias must be real")
+        target = Path(short_root) / "target"
+        self.assertFalse(target.exists(), "the alias must resolve before target is created")
+        result = self.run_script(overrides={"CARGO_TARGET_DIR": str(target)})
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        env = self.assert_cargo_invocation(result)
+        self.assertEqual(canonical_path(str(self.primary_repo / "target")),
+                         canonical_path(env["CARGO_TARGET_DIR"]))
+        self.assertTrue((target / ".t1-sello").is_file())
+        self.assertFalse((self.repo / "target-portable").exists())
 
     def test_worktree_uses_primary_target_without_creating_local_target(self):
         linked = self.root / "linked worktree with spaces"

@@ -65,7 +65,29 @@ normalizar_ruta() {
         echo "[t1_oraculo] necesito cygpath para comparar el target compartido" >&2
         return 2
       fi
-      cygpath -am -- "$1"
+      # -l sólo expande nombres 8.3 si existe la ruta completa. El target
+      # puede no existir: expandir el ancestro existente y reponer el sufijo.
+      local ancestro cola="" nombre expandida
+      ancestro=$(cygpath -au -- "$1") || return 2
+      while [[ "$ancestro" != / && "$ancestro" == */ ]]; do
+        ancestro=${ancestro%/}
+      done
+      while [[ ! -e "$ancestro" ]]; do
+        if [[ "$ancestro" == / ]]; then
+          echo "[t1_oraculo] no encuentro un ancestro existente de: $1" >&2
+          return 2
+        fi
+        nombre=${ancestro##*/}
+        cola="/$nombre$cola"
+        ancestro=${ancestro%/*}
+        ancestro=${ancestro:-/}
+      done
+      expandida=$(cygpath -aml -- "$ancestro") || return 2
+      if [[ -n "$cola" ]]; then
+        printf '%s%s\n' "${expandida%/}" "$cola"
+      else
+        printf '%s\n' "$expandida"
+      fi
       ;;
     *)
       if ! command -v realpath >/dev/null 2>&1; then
