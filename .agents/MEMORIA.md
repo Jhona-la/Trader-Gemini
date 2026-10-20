@@ -9083,3 +9083,21 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
   - `rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 pánicos agregados).
   - `temporal_spectrum.rs` unit tests (42/42 pass).
   - `cargo check --workspace --all-targets -j 1` 100% verde (16/16 crates).
+
+---
+
+## AGY — Ola Ω185: Cierre F1-081 (Erradicación de la Doble EMA en Payoff Ratio de Kelly y Cota de Memoria Muestral Efectiva) — 2026-10-20
+- **Hallazgo F1-081 cerrado (MED)**:
+  - `RiskEnvelope`, `god_engine.rs`, `booktick_replay.rs`, `backtest-engine/src/lib.rs` y `online_daemon.rs`:
+    - Erradicada la composición espuria $\text{EMA} \circ \text{EMA}$ en el payoff ratio de Kelly: los llamadores mantenían variables locales `avg_win_abs` y `avg_loss_abs` con $\text{EMA}(0.05)$, y luego las pasaban a `RiskEnvelope::record_trade`, que les aplicaba OTRA $\text{EMA}(0.05)$.
+    - Esto provocaba un retardo medio de 40 cierres en lugar de 20 y una respuesta al escalón de sólo el 26.4% (frente al 64.15% analítico de una EMA simple) tras 20 cierres, retrasando la reducción de apalancamiento ante aumentos de spread o deslizamiento y apostando hasta $\approx 1.6\times$ más cuando la ventaja real ya era negativa.
+    - Implementado `record_net_pnl(net_pnl)`: alimenta directamente la envolvente con el PnL neto individual sin doble filtrado.
+    - Eliminadas las variables y escrituras redundantes `avg_win_abs` y `avg_loss_abs` en `src/bin/god_engine.rs`, `crates/backtest-engine/src/booktick_replay.rs` y `crates/backtest-engine/src/lib.rs` (0 advertencias de compilador).
+    - Acotada la incertidumbre de muestra en `conservative_payoff_ratio`: $N_{\text{eff}} = \min(n, \text{EMA\_EFFECTIVE\_N}) = \min(n, 39.0)$ (con $2/\alpha - 1 = 39.0$). Evita que el descuento por incertidumbre se anule tras cientos de trades desconociendo la varianza de la ventana de 39 trades.
+  - Suite de contratos formales `crates/risk-engine/tests/f1_081_payoff_single_ema_and_sample_memory_contract.rs` (5/5 tests PASSED):
+    1. `f1_081_contrato_1_respuesta_al_escalon_ema_simple_vs_doble` (64.15% exacto)
+    2. `f1_081_contrato_2_paridad_record_net_pnl` (bit a bit)
+    3. `f1_081_contrato_3_memoria_muestral_efectiva_acotada` ($N_{\text{eff}} \le 39.0$)
+    4. `f1_081_contrato_4_proteccion_ante_deterioro_de_payoff` ($f \to 0$ ante $b < 0.8$)
+    5. `f1_081_contrato_5_inmunidad_ieee754` (NaN/$\pm\infty$ neutral)
+  - Verificaciones globales: `risk-engine --lib kelly_envelope` 9/9 pass, `spectral_risk_contract` 21/21 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass, `cargo check --workspace --all-targets -j 1` 100% verde con 0 errores y 0 warnings.

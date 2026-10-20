@@ -190,6 +190,9 @@ impl Default for RiskEnvelope {
 }
 
 impl RiskEnvelope {
+    pub const EMA_ALPHA: f64 = 0.05;
+    pub const EMA_EFFECTIVE_N: f64 = 39.0; // 2.0 / 0.05 - 1.0 = 39.0
+
     pub fn new() -> Self {
         Self {
             posterior: EdgePosterior::jeffreys(),
@@ -199,6 +202,9 @@ impl RiskEnvelope {
         }
     }
 
+    /// F1-081: Registrar el resultado de una operación individual.
+    /// Recibe directamente el PnL neto o magnitudes de trade individual, aplicando una única EMA(0.05).
+    /// Erradica la doble composición EMA∘EMA provocada por pre-filtrar el trade en los llamadores.
     pub fn record_trade(&mut self, won: bool, win_pnl: f64, loss_pnl: f64) {
         // FIX #637: Sanitizar finitud de PnLs para proteger las métricas del payoff ratio
         if !win_pnl.is_finite() || !loss_pnl.is_finite() {
@@ -211,14 +217,14 @@ impl RiskEnvelope {
             self.avg_win = if self.avg_win == 0.0 {
                 win_abs
             } else {
-                self.avg_win * 0.95 + win_abs * 0.05
+                self.avg_win * (1.0 - Self::EMA_ALPHA) + win_abs * Self::EMA_ALPHA
             };
         } else {
             let loss_abs = loss_pnl.abs().max(1e-6);
             self.avg_loss = if self.avg_loss == 0.0 {
                 loss_abs
             } else {
-                self.avg_loss * 0.95 + loss_abs * 0.05
+                self.avg_loss * (1.0 - Self::EMA_ALPHA) + loss_abs * Self::EMA_ALPHA
             };
         }
 
@@ -226,24 +232,40 @@ impl RiskEnvelope {
         self.payoff_ratio = (self.avg_win + eps) / (self.avg_loss + eps);
     }
 
+    /// F1-081: Conveniencia canónica para registrar un cierre directamente por su PnL neto individual.
+    #[inline]
+    pub fn record_net_pnl(&mut self, net_pnl: f64) {
+        let won = net_pnl > 0.0;
+        let abs_pnl = net_pnl.abs();
+        self.record_trade(won, abs_pnl, abs_pnl);
+    }
+
     /// Cota inferior conservadora (LCB) del payoff ratio b = win/loss.
-    /// Resuelve R7-R2-A-5: como d f*/d b = q/b² > 0, usar el b puntual
+    /// Resuelve R7-R2-A-5 y F1-081: como d f*/d b = q/b² > 0, usar el b puntual
     /// introducía un sesgo de optimismo en muestras pequeñas (n < 30).
     /// Descuenta la estimación muestral por incertidumbre asintótica:
-    /// b_lcb = b · exp(-z / sqrt(n)), garantizando simetría conservadora
+    /// b_lcb = b · exp(-z / sqrt(n_eff)), garantizando simetría conservadora
     /// en ambos parámetros de la fórmula de Kelly (p y b).
+    ///
+    /// F1-081: Dado que el payoff ratio se estima con una EMA(alpha = 0.05), su tamaño de muestra
+    /// efectivo está acotado por la memoria de la ventana (N_eff = min(n, 2/alpha - 1) = min(n, 39.0)).
+    /// Usar el n acumulativo de Bernoulli sin cota eliminaba el descuento por incertidumbre tras
+    /// cientos de trades, impidiendo que el dimensionamiento reaccionara a deterioros de spread/fricción.
     pub fn conservative_payoff_ratio(&self, z: f64) -> f64 {
         let n = self.posterior.n();
         if !self.payoff_ratio.is_finite() || self.payoff_ratio <= 0.0 || !n.is_finite() || n < 1.0 {
             return 1.0;
         }
         let z_eff = if z.is_finite() && z >= 0.0 { z } else { 1.0 };
+        // F1-081: Tamaño efectivo de muestra acotado por la memoria de la EMA (N_eff <= 39)
+        let n_eff = n.min(Self::EMA_EFFECTIVE_N);
+
         // R7-R2-A-5: Descontar el exceso de payoff (b - 1.0) hacia la paridad neutra 1.0
-        // bajo incertidumbre muestral: b_lcb = 1.0 + (b - 1.0) * exp(-z / sqrt(n)).
+        // bajo incertidumbre muestral: b_lcb = 1.0 + (b - 1.0) * exp(-z / sqrt(n_eff)).
         // Si b <= 1.0, el ratio ya es adverso de por sí.
         if self.payoff_ratio > 1.0 {
             let excess = self.payoff_ratio - 1.0;
-            let discount = (-z_eff / n.sqrt()).exp();
+            let discount = (-z_eff / n_eff.sqrt()).exp();
             1.0 + excess * discount
         } else {
             self.payoff_ratio

@@ -678,21 +678,11 @@ fn wf_replay_segment(
             );
             st.pos_open_flags[coin_id] = arena.coins[coin_id].positions.is_any_open();
 
+            // F1-081: Registrar PnL neto individual directamente, erradicando la doble EMA.
             if let Some((_, pnl_net, _)) = closed {
-                if pnl_net >= 0.0 {
-                    st.avg_win = if st.avg_win == 0.0 {
-                        pnl_net.abs()
-                    } else {
-                        st.avg_win * 0.95 + pnl_net.abs() * 0.05
-                    };
-                } else {
-                    st.avg_loss = if st.avg_loss == 0.0 {
-                        pnl_net.abs()
-                    } else {
-                        st.avg_loss * 0.95 + pnl_net.abs() * 0.05
-                    };
-                }
-                envelope.record_trade(pnl_net > 0.0, st.avg_win.max(1e-9), -st.avg_loss.max(1e-9));
+                envelope.record_net_pnl(pnl_net);
+                st.avg_win = envelope.avg_win;
+                st.avg_loss = envelope.avg_loss;
                 // D-744: normalizado por el capital del MOMENTO (el que estaba
                 // en riesgo), no por el capital inicial de la simulación.
                 if puntua {

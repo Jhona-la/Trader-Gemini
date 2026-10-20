@@ -411,8 +411,6 @@ fn run_booktick_replay_observed(
     // B3.19 — envolvente del host replicada (D-442/D-116/D-382): misma
     // maquinaria que god_engine mantiene vivo entre eventos.
     let mut risk_envelope = RiskEnvelope::new();
-    let mut avg_win_abs = 0.0f64;
-    let mut avg_loss_abs = 0.0f64;
 
     let mut pnl_list: Vec<f64> = Vec::new();
     // XLVIII·A: nocional bruto operado (entrada+salida) para turnover.
@@ -717,28 +715,11 @@ fn run_booktick_replay_observed(
         }
 
         // F5.1 (paridad host) & F1-101 (Ω160): alimentar el posterior del edge con CADA
-        // cierre (c1 por evento depth y c2 por evento trade dentro del mismo tick)
-        // — mismos EWMAs y mismo record_trade que god_engine. Las
-        // entradas vetadas nunca llegan aquí (rollback ⇒ sin cierre, B3.14).
+        // F1-081 (paridad host): alimentar el posterior del edge con cada
+        // cierre — pasando el trade neto individual para erradicar la doble EMA.
+        // Las entradas vetadas nunca llegan aquí (rollback ⇒ sin cierre, B3.14).
         for (_, pnl_net, _) in [c1, c2].into_iter().flatten() {
-            if pnl_net >= 0.0 {
-                avg_win_abs = if avg_win_abs == 0.0 {
-                    pnl_net.abs()
-                } else {
-                    avg_win_abs * 0.95 + pnl_net.abs() * 0.05
-                };
-            } else {
-                avg_loss_abs = if avg_loss_abs == 0.0 {
-                    pnl_net.abs()
-                } else {
-                    avg_loss_abs * 0.95 + pnl_net.abs() * 0.05
-                };
-            }
-            risk_envelope.record_trade(
-                pnl_net > 0.0,
-                avg_win_abs.max(1e-9),
-                -avg_loss_abs.max(1e-9),
-            );
+            risk_envelope.record_net_pnl(pnl_net);
         }
 
         if i >= warmup {

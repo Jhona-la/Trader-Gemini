@@ -123,8 +123,6 @@ pub fn run_backtest_native(
     let mut last_sim_buyer_maker = false;
     let mut last_close_executed = closes.first().copied().unwrap_or(0.0);
     let mut envelope_vetoes: u64 = 0;
-    let mut avg_win_abs = 0.0;
-    let mut avg_loss_abs = 0.0;
 
     // F3.2 — FIX LOOK-AHEAD: el OFI sintético se deriva ahora del delta de la
     // vela ANTERIOR (información disponible al abrir la vela actual). Antes:
@@ -418,28 +416,11 @@ pub fn run_backtest_native(
                 }
             }
 
-            // F5.1 (paridad host): alimentar el posterior del edge con cada
-            // cierre — mismos EWMAs y mismo record_trade que el replay/vivo.
+            // F1-081 (paridad host): alimentar el posterior del edge con cada
+            // cierre individual, erradicando la doble EMA∘EMA.
             if let Some((_, pnl_net, _)) = &closed_order {
                 let pnl_net = *pnl_net;
-                if pnl_net >= 0.0 {
-                    avg_win_abs = if avg_win_abs == 0.0 {
-                        pnl_net.abs()
-                    } else {
-                        avg_win_abs * 0.95 + pnl_net.abs() * 0.05
-                    };
-                } else {
-                    avg_loss_abs = if avg_loss_abs == 0.0 {
-                        pnl_net.abs()
-                    } else {
-                        avg_loss_abs * 0.95 + pnl_net.abs() * 0.05
-                    };
-                }
-                risk_envelope.record_trade(
-                    pnl_net > 0.0,
-                    avg_win_abs.max(1e-9),
-                    -avg_loss_abs.max(1e-9),
-                );
+                risk_envelope.record_net_pnl(pnl_net);
             }
 
             if let Some((_is_long, net_pnl, qty)) = closed_order {

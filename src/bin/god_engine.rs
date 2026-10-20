@@ -3294,8 +3294,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // edge con guard de ruina. Sin evidencia ⇒ f=0 ⇒ NO se opera hasta
         // acumular historial (directriz: la matemática decide, no constantes).
         let mut risk_envelope = risk_engine::kelly_envelope::RiskEnvelope::new();
-        let mut avg_win_abs: f64 = 0.0;
-        let mut avg_loss_abs: f64 = 0.0;
         // CL-48: el estado aprendido de antes vivía en `data/` común a demo y
         // producción. No se migra (su procedencia no se puede atribuir): se
         // avisa y cada entorno arranca con el suyo.
@@ -3314,12 +3312,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         // HOST-005 — RESTAURAR la envolvente persistida: sin esto cada
-        // reinicio borraba el posterior del edge (bootstrap perpetuo). Las
-        // EMAs locales de payoff arrancan desde la memoria restaurada, no
-        // desde 0 — continuidad de aprendizaje entre sesiones.
+        // reinicio borraba el posterior del edge (bootstrap perpetuo).
         if restore_kelly_envelope(&mut risk_envelope) {
-            avg_win_abs = risk_envelope.avg_win;
-            avg_loss_abs = risk_envelope.avg_loss;
             telemetry_server::telemetry_log!(
                 "🧬 [KELLY] Envolvente restaurada de disco: n={:.0} trades (α={:.1}/β={:.1}), avg_win=${:.4}, avg_loss=${:.4} — sin bootstrap (HOST-005)",
                 risk_envelope.posterior.n(),
@@ -4100,12 +4094,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     bc.ts_ms.abs_diff(core_ts)
                                 );
                             } else {
-                                if net_bc >= 0.0 {
-                                    avg_win_abs = if avg_win_abs == 0.0 { net_bc.abs() } else { avg_win_abs * 0.95 + net_bc.abs() * 0.05 };
-                                } else {
-                                    avg_loss_abs = if avg_loss_abs == 0.0 { net_bc.abs() } else { avg_loss_abs * 0.95 + net_bc.abs() * 0.05 };
-                                }
-                                risk_envelope.record_trade(net_bc > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
+                                // F1-081: Pasar el trade neto crudo a la envolvente, erradicando la doble EMA(0.95/0.05).
+                                risk_envelope.record_net_pnl(net_bc);
                                 // HOST-005 / F1-059: persistir el posterior tras cada
                                 // cierre limpio contabilizado sin bloquear el bucle de eventos.
                                 persist_kelly_envelope_async(&rt_handle, &risk_envelope);
@@ -4437,13 +4427,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let fee = (qty * current_price) * (live_maker_fee + live_taker_fee);
                         let net = pnl; // pnl devuelto por el core ya es neto de comisiones
                         let gross = pnl + fee;
-                        // F5.1: alimentar el posterior del edge con CADA cierre real.
-                        if net >= 0.0 {
-                            avg_win_abs = if avg_win_abs == 0.0 { net.abs() } else { avg_win_abs * 0.95 + net.abs() * 0.05 };
-                        } else {
-                            avg_loss_abs = if avg_loss_abs == 0.0 { net.abs() } else { avg_loss_abs * 0.95 + net.abs() * 0.05 };
-                        }
-                        risk_envelope.record_trade(net > 0.0, avg_win_abs.max(1e-9), -avg_loss_abs.max(1e-9));
+                        // F1-081: Pasar el trade neto crudo a la envolvente, erradicando la doble EMA(0.95/0.05).
+                        risk_envelope.record_net_pnl(net);
                         // HOST-005 / F1-059: persistir el posterior tras cada cierre
                         // limpio contabilizado sin bloquear el bucle de eventos.
                         persist_kelly_envelope_async(&rt_handle, &risk_envelope);
