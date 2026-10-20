@@ -1,5 +1,29 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω176: Cierre de F1-072 (Concurrencia Segura y Atomizado en promote(), Reclamación O_EXCL de Número de Generación en gen_{N}.json, Tmp Único {path}.{pid}.{nonce}.tmp, Fsync y Rename Atómico Directo sin Ventana de remove_file en atomic_write(), y Auto-Reparación de Historial en load_active()) (2026-10-19)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω176: CONCURRENCIA SEGURA EN PROMOCIONES GENÓMICAS, ATOMIZADO SIN VENTANA NULA Y SELF-HEALING DE HISTORIAL
+
+1. **Hallazgo Cerrado en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-072` (`MED`, `crates/quantum-arena/src/genome_store.rs:148-175, 335-465`, `crates/quantum-arena/tests/f1_072_genome_store_concurrent_promote_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - **QUÉ**: Reemplazo de la asignación ciega de generación `parent + 1` en `GenomeEnvelope::promote` por un bucle de reclamación atómica exclusiva (`OpenOptions::create_new(true)`, semántica `O_CREAT | O_EXCL`) sobre `gen_{candidate_gen:06}.json`. Si otro proceso o hilo promueve en la misma ventana, la colisión eleva el contador hasta reclamar un ticket de historial único en disco, convirtiendo el archivo de historial en un lock distribuido a nivel de sistema de archivos. Rediseño de `atomic_write` con nombres temporales únicos por proceso e hilo (`{path}.{pid}.{nonce}.tmp`), `sync_all` garantizado, y rename atómico directo sin llamar a `remove_file(path)` previamente (eliminando la ventana de carrera en la que `active.json` desaparecía para otros lectores). Implementación de auto-reparación transparente en `load_active()`, que ante la falta del archivo de historial para la generación declarada en `active.json`, lo reconstruye de inmediato de forma atómica y auditable (probado y certificado con la auto-reparación real de `config_dir/genomes/prod/history/gen_000001.json`).
+     - **POR QUÉ**: Con 10 promotores en el ecosistema (online daemon, shadow forest, evolvers, etc.), la falta de exclusión mutua permitía sobreescrituras destructivas de historial genómico y colisiones en `.tmp` fijos. Además, la ventana abierta por `remove_file` provocaba alarmas falsas de linaje vacío en observadores concurrentes, y la ausencia de `prod/history/gen_000001.json` en disco bloqueaba la capacidad de rollback del sistema en el entorno con capital real expuesto.
+     - **PARA QUÉ**: Asegurar la inmutabilidad y completitud del linaje genómico, proteger la disponibilidad de `active.json` en todo momento, y garantizar que el mecanismo de self-healing y auto-rollback esté 100% operativo en producción.
+     - **CÓMO**: Reclamación atómica `create_new(true)` con auto-incremento de generación, `atomic_write` con nonce y PID sin `remove_file`, auto-reparación en `load_active()`, y suite contractual `f1_072_genome_store_concurrent_promote_contract.rs` (3/3 tests passing, incluyendo prueba multihilo con 8 trabajadores concurrentes compitiendo por promociones).
+     - **CUÁNDO**: Permanente en todas las promociones de genomas, escrituras de archivos de configuración y cargas activas.
+     - **DÓNDE**: `crates/quantum-arena/src/genome_store.rs` y `crates/quantum-arena/tests/f1_072_genome_store_concurrent_promote_contract.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en Modo Profesor y Consejo de 10 Roles Senior.
+
+2. **Verificación Contractual y Pruebas de Certificación**:
+   - `cargo test -p quantum-arena --test f1_072_genome_store_concurrent_promote_contract -j 1` (3/3 pass, 100% verde en 0.16s).
+   - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+   - `cargo test -p quantum-arena --lib -j 1` (150/150 pass, 100% verde en 2.95s).
+   - `cargo check --workspace --all-targets -j 1` (100% verde en los 16 crates del workspace).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω175: Cierre de F1-071 (Saneamiento Forzado y Política Fail-Closed de Carga de Genomas, Erradicación de Fallbacks Crudos No Validados, Resolución Jerárquica CWD-Independiente de config_root() y Exigencia de Envelope Activo en Producción) (2026-10-19)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

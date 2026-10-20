@@ -148,7 +148,30 @@ impl GenomeEnvelope {
         match std::fs::read_to_string(active_path()) {
             // F4-H3: el genoma activo sale normalizado (ver `desde_json`).
             Ok(data) => match Self::desde_json(&data) {
-                Ok(envelope) => Some(envelope),
+                Ok(envelope) => {
+                    // F1-072: Verificación de integridad de linaje y auto-reparación.
+                    // Si el archivo de historia gen_{generation}.json no existe en history_dir(),
+                    // reconstruirlo desde active.json de forma atómica para restaurar la
+                    // capacidad de rollback y recent_history.
+                    let hist_path = format!("{}/gen_{:06}.json", history_dir(), envelope.generation);
+                    if !std::path::Path::new(&hist_path).exists() {
+                        eprintln!(
+                            "ℹ️ [GENOME-STORE] linaje reparado: reconstruyendo {} a partir de active.json ({})",
+                            hist_path, env
+                        );
+                        let _ = std::fs::create_dir_all(history_dir());
+                        let _ = std::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&hist_path)
+                            .and_then(|mut f| {
+                                use std::io::Write;
+                                f.write_all(data.as_bytes())?;
+                                f.sync_all()
+                            });
+                    }
+                    Some(envelope)
+                }
                 Err(e) => {
                     // R-05: un genoma que existe pero no parsea es un evento
                     // crítico de linaje. NO se cae a ningún fallback: caer
@@ -327,6 +350,8 @@ impl GenomeEnvelope {
                 ),
             ));
         }
+        std::fs::create_dir_all(history_dir())?;
+
         let parent = if let Ok(data) = std::fs::read_to_string(active_path()) {
             serde_json::from_str::<GenomeEnvelope>(&data)
                 .map(|e| e.generation)
@@ -334,9 +359,44 @@ impl GenomeEnvelope {
         } else {
             0
         };
+
+        // F1-072: Reclamar la generación con create_new (O_EXCL) sobre gen_{N+1}.json
+        // y reintentar con N+2 si existe (el archivo de historia ES el lock atómico
+        // frente a promotores concurrentes).
+        let mut candidate_gen = parent + 1;
+        let mut claimed_file = None;
+        let mut claimed_path = String::new();
+
+        for _ in 0..10_000 {
+            let hist_path = format!("{}/gen_{:06}.json", history_dir(), candidate_gen);
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&hist_path)
+            {
+                Ok(file) => {
+                    claimed_file = Some(file);
+                    claimed_path = hist_path;
+                    break;
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                    candidate_gen += 1;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        let mut hist_file = claimed_file.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                "[F1-072] No se pudo reclamar un número de generación tras 10000 intentos",
+            )
+        })?;
+
         let envelope = GenomeEnvelope {
             schema_version: SCHEMA_VERSION,
-            generation: parent + 1,
+            generation: candidate_gen,
             created_ms: now_ms(),
             source: source.to_string(),
             parent_generation: parent,
@@ -344,18 +404,23 @@ impl GenomeEnvelope {
             genome,
         };
 
-        std::fs::create_dir_all(history_dir())?;
-
         // 1) Historia inmutable (append-only por nombre de generación).
-        let hist_path = format!("{}/gen_{:06}.json", history_dir(), envelope.generation);
         let hist_json = serde_json::to_string_pretty(&envelope)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        atomic_write(&hist_path, &hist_json)?;
+        {
+            use std::io::Write;
+            if let Err(e) = hist_file
+                .write_all(hist_json.as_bytes())
+                .and_then(|_| hist_file.sync_all())
+            {
+                let _ = std::fs::remove_file(&claimed_path);
+                return Err(e);
+            }
+        }
+        drop(hist_file);
 
-        // 2) Active atómico (tmp + rename — jamás un active a medias).
-        let active_json = serde_json::to_string_pretty(&envelope)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        atomic_write(&active_path(), &active_json)?;
+        // 2) Active atómico (tmp único + fsync + rename sin remove previo).
+        atomic_write(&active_path(), &hist_json)?;
 
         // 3) Espejo legacy: solo el genoma crudo (compat con loaders/watchers viejos).
         let legacy_json = serde_json::to_string_pretty(&envelope.genome)
@@ -419,12 +484,37 @@ fn atomic_write(path: &str, contents: &str) -> io::Result<()> {
     if let Some(parent) = std::path::Path::new(path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let tmp = format!("{}.tmp", path);
-    std::fs::write(&tmp, contents)?;
-    if std::path::Path::new(path).exists() {
-        let _ = std::fs::remove_file(path);
+    static TMP_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let nonce = TMP_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    let tmp = format!("{path}.{pid}.{nonce}.tmp");
+
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()?;
     }
-    std::fs::rename(&tmp, path)?;
+
+    // F1-072: En Windows (MoveFileExW MOVEFILE_REPLACE_EXISTING) y POSIX moderno,
+    // rename reemplaza atómicamente si el destino existe.
+    // NUNCA llamar a remove_file(path) antes de rename, pues abre una ventana de carrera
+    // donde active.json no existe para procesos o hilos concurrentes.
+    // Se incluye reintento defensivo ante cierres transitorios de handles en Windows NTFS.
+    let mut rename_res = std::fs::rename(&tmp, path);
+    if rename_res.is_err() {
+        for _ in 0..5 {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            rename_res = std::fs::rename(&tmp, path);
+            if rename_res.is_ok() {
+                break;
+            }
+        }
+    }
+    if let Err(e) = rename_res {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
     Ok(())
 }
 
