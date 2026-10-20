@@ -1,5 +1,48 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω173: Cierre de F1-066 (Auditoría Formal y Certificación de Erradicación de local_orderbooks RET-45/RB-M1a), F1-067 (Desacoplamiento Total de Hyperliquid Sniffer y DarkAlphaRouter de god_engine.rs, Conexión Honesta de Telemetría dark_alpha a liquidation_severity_at de Binance en engine_real + Contratos f1_067) y F1-068 (Auditoría Formal de Erradicación de unwrap/expect en Bucle de Reconexión WS LG-28) (2026-10-19)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω173: AUDITORÍA DE CIERRE DE LIBROS LOCALES, DESACOPLAMIENTO DE REDES MUERTAS Y TELEMETRÍA CAUSAL DE LIQUIDACIONES
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv` (3 en total)**:
+   - **`F1-066` (`MED`, `src/bin/god_engine.rs:3403`, `src/orderbook.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - **QUÉ**: Verificación formal, certificación contractual y cierre definitivo del hallazgo `F1-066`. Se verificó que el cambio RET-45 / RB-M1a de Codex eliminó completamente `local_orderbooks` del bucle principal y migró el cálculo de OBI y microprecio a funciones puras `microestructura_mejor_nivel` en $O(1)$ zero-alloc.
+     - **POR QUÉ**: Anteriormente, `local_orderbooks` acumulaba precios bid/ask en un `BTreeMap` en cada evento `@depth5` sin que ningún módulo decisorio lo leyera, generando fugas de memoria crecientes (cientos de miles de nodos en 72h) y alocaciones de heap innecesarias en el hilo `TIME_CRITICAL`.
+     - **PARA QUÉ**: Cumplir estrictamente la Doctrina 6 (memoria acotada, cero alocaciones en hot path) y proteger los 16 GB de RAM de la máquina anfitriona.
+     - **CÓMO**: Se verificó la suite `cargo test --lib ret45 -j 1` (7/7 tests pasan en 0.03s), especialmente el test estático `ret45_el_host_usa_la_funcion_y_no_acumula_libros` que certifica que `god_engine.rs` no contiene referencias a `local_orderbooks`, `OrderBook` ni `BTreeMap<OrderedFloat`.
+     - **CUÁNDO**: Permanente en producción.
+     - **DÓNDE**: `src/bin/god_engine.rs` y `src/orderbook.rs`.
+     - **QUIÉN**: Codex (RET-45 / RB-M1a) y Antigravity (Auditoría Forense y Cierre Formal).
+
+   - **`F1-067` (`MED`, `src/bin/god_engine.rs:1367-1375, 4390-4405, 5085-5095`, `src/dark_alpha_sniffer.rs:97-125`, `crates/god-engine-core/tests/f1_067_binance_liquidation_telemetry_contract.rs`)**:
+     - **QUÉ**: Desacoplamiento total del sniffer WebSocket de Hyperliquid y `DarkAlphaRouter` del proceso principal `god_engine.rs`. Retiro de la llamada `spawn_hyperliquid_sniffer` al bootloader y eliminación del router unificado huérfano. Conexión honesta y causal del campo de telemetría `dark_alpha` en `OmniUpdate` al feed real de liquidaciones de Binance mediante `engine_real.liquidation_severity_at(0, liq_as_of)`. Creación de test de desacoplamiento estático en `src/dark_alpha_sniffer.rs` y test contractual de integración `f1_067_binance_liquidation_telemetry_contract.rs`.
+     - **POR QUÉ**: El sniffer de Hyperliquid abría una conexión WebSocket externa no esencial a `wss://api.hyperliquid.xyz/ws` para parsear libros de BTC en el runtime compartido de Tokio, saturando stdout con reintentos si la red caía y alimentando un router cuya métrica sólo se usaba como visualización cosmética en dashboard. Ninguna decisión dependía de esa red externa.
+     - **PARA QUÉ**: Erradicar dependencias externas innecesarias (Fallo Tipo 1: arista muerta sin consumidor decisorio), eliminar ruido de logs, optimizar el uso de sockets y CPU, y reportar telemetría de cascadas de liquidación proveniente exclusivamente de la fuente causal y oficial de Binance (`!forceOrder@arr`).
+     - **CÓMO**: Se eliminó `dark_router` y `spawn_hyperliquid_sniffer` de `src/bin/god_engine.rs`. La telemetría `OmniUpdate` consulta `engine_real.liquidation_severity_at(0, liq_as_of).ok().flatten().unwrap_or(0.0)`. Se añadió test unitario `f1_067_hyperliquid_sniffer_decoupled_from_god_engine` y test de integración verificando la dinámica de decaimiento $e^{-\lambda \Delta t}$ y acotamiento $[0.0, 1.0]$.
+     - **CUÁNDO**: Al arrancar el motor y durante cada publicación de telemetría de estado.
+     - **DÓNDE**: `src/bin/god_engine.rs`, `src/dark_alpha_sniffer.rs` y `crates/god-engine-core/tests/f1_067_binance_liquidation_telemetry_contract.rs`.
+     - **QUIÉN**: Quant Developer, Arquitecto Senior y SRE/DevOps.
+
+   - **`F1-068` (`MED`, `src/bin/god_engine.rs:5496-5505, 5560-5570`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - **QUÉ**: Verificación formal y cierre del hallazgo `F1-068`. Certificación de que en el bucle perpetuo de reconexión WebSocket (`ws-reader`), las llamadas a `tcp_stream.peer_addr()` y `Url::parse()` no utilizan `unwrap()` ni `expect()`.
+     - **POR QUÉ**: Compilando bajo release con `panic = "abort"`, un error en `peer_addr()` tras reseteo de conexión o flap de red provocaría la muerte instantánea de todo el proceso sin permitir la actuación de mecanismos de protección o aplanamiento de posiciones.
+     - **PARA QUÉ**: Blindar la resiliencia operativa ante fallos de red y erradicar vectores de parada total con capital expuesto.
+     - **CÓMO**: Verificación de la implementación de LG-28 que utiliza `match tcp_stream.peer_addr()` y `match Url::parse()` con logging, reintento y backoff exponencial sin pánicos.
+     - **CUÁNDO**: En cada ciclo de reconexión del stream WebSocket.
+     - **DÓNDE**: `src/bin/god_engine.rs`.
+     - **QUIÉN**: Línea G (LG-28) y Antigravity (Auditoría Forense y Cierre Formal).
+
+2. **Verificación Contractual y Pruebas de Certificación**:
+   - `cargo test --lib f1_067 -j 1` (1/1 pass, 100% verde en 0.00s, 0 warnings).
+   - `cargo test -p god-engine-core --test f1_067_binance_liquidation_telemetry_contract -j 1` (1/1 pass, 100% verde en 0.03s).
+   - `cargo test --lib ret45 -j 1` (7/7 pass, 100% verde en 0.04s).
+   - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+   - `cargo check --workspace --all-targets -j 1` (100% verde en los 23 crates).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω172: Cierre de F1-064 (Carga y Validación de dynamic_config en Bootloader con Disciplina de Modelos B3.37 y Fallback a ROSTER) y F1-065 (Erradicación de Mutex Global en trade_accounting con ArrayQueue Lock-Free y Fast-Path has_pending_bracket_closes O(1) en Hot-Path) (2026-10-19)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

@@ -1494,10 +1494,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await;
 
-    let dark_router = Arc::new(quantum_engine::dark_alpha_router::DarkAlphaRouter::new());
-
-    // Spawn Hyperliquid DEX cascade sniffer
-    quantum_engine::dark_alpha_sniffer::spawn_hyperliquid_sniffer(Arc::clone(&dark_router));
+    // F1-067 (Ω173): El sniffer perpetuo a Hyperliquid DEX WS operaba como arista muerta
+    // sin consumidor decisorio y generaba reconexiones espurias en runtime Tokio.
+    // La telemetría de liquidaciones se deriva causalmente del feed de Binance (!forceOrder@arr).
 
     // El genoma inicial fue validado. Aprobamos la transición al Orchestrator.
     darwin_approved.store(true, Ordering::Relaxed);
@@ -1622,7 +1621,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let exec = Arc::clone(&exec);
     let loop_telemetry_tx = telemetry_tx.clone();
-    let dark_router_unified = Arc::clone(&dark_router);
 
     let symbols_clone = symbols.clone();
     let mut symbol_to_id: std::collections::HashMap<String, usize> =
@@ -5326,7 +5324,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = loop_telemetry_tx.send(telemetry_server::TelemetryEvent::OmniUpdate {
                     latency_ms: if event_time > 0 { latency_ms as u64 } else { 0 },
                     latency_panic,
-                    dark_alpha: dark_router_unified.get_liquidation_cascade_risk(),
+                    dark_alpha: {
+                        let liq_as_of = if event_time > 0 { event_time as u64 } else { now_ms.max(0) as u64 };
+                        engine_real.liquidation_severity_at(0, liq_as_of).ok().flatten().unwrap_or(0.0)
+                    },
                     unrealized_pnl: total_unrealized_pnl,
                     gross_pnl: total_gross_pnl,
                     net_pnl: total_net_pnl,
