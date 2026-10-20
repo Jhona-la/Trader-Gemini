@@ -1,5 +1,37 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-19 (tarde, 5) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω174 (Cierre F1-069 y F1-070)
+
+- **Mandato**: Unificación y paridad total de cotas vectoriales del genoma, bandas de mutación, `new_random`, `new_baseline` y dominios de evaluación de lectores (F1-070: OBI `[0.10, 0.95]`, trailing act/mult `[1.5, 6.0]`, step `[0.5, 4.0]`, erradicación total de dimensiones muertas y paridad evaluado<->operado 1:1; contratos `f1_069_070` pasando 5/5) y certificación contractual de congelación e inmunidad a literales hardcodeados en `maker_only_capital_threshold` (F1-069, layout 144-D intacto), cerrando formalmente los hallazgos `F1-069` y `F1-070` de `docs/audit/fable/f1_hallazgos.tsv`:
+  1. **F1-069 (`crates/quantum-arena/src/genome.rs:1986, 2750, 2962, 3733`, `crates/quantum-arena/tests/f1_069_070_genome_bounds_and_freeze_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Verificación formal, inclusión en el arnés de genes congelados (`tests_lg21`) y certificación contractual de la congelación de `maker_only_capital_threshold` en `mutate_with_rng` (`self.maker_only_capital_threshold`). Blindaje absoluto contra la sobreescritura ciega con el literal `50.0`, preservación exacta de valores arbitrarios del padre (`child == parent`), e invariancia bit a bit con `rate = 0.0`. Preservación estricta del layout genómico de 144 dimensiones (slot 108 con cotas `[10.0, 5000.0]`).
+     - *POR QUÉ*: Anteriormente, `mutate_with_rng` sobreescribía `maker_only_capital_threshold` con el literal `50.0` en cada mutación, ignorando el valor del padre y las cotas evolutivas. Con una cuenta de 13 USD, la asignación de capital por orden nunca alcanzaba 50 USD, forzando la ruta taker perpetuamente y encareciendo el piso de stop loss y el balance de fricción.
+     - *PARA QUÉ*: Evitar mutaciones o sesgos heurísticos hardcodeados sobre un gen inerte en el host IOC, garantizar que la evolución no distorsione el linaje ni introduzca regresiones de valor constante, y preservar la compatibilidad con el genoma de 144 dimensiones.
+     - *CÓMO*: Integración en la lista `congelados` de `tests_lg21` (64 semillas de mutación máxima no alteran el gen) y creación de la suite contractual `test_f1_069_maker_threshold_freeze_arbitrary_values` y `test_f1_069_layout_slot_108_preserved`.
+     - *CUÁNDO*: En cada ciclo de mutación evolutiva (`mutate_with_rng`, `mutate_cmaes`, `mutate_cmaes_seeded`).
+     - *DÓNDE*: `crates/quantum-arena/src/genome.rs` y `crates/quantum-arena/tests/f1_069_070_genome_bounds_and_freeze_contract.rs`.
+     - *QUIÉN*: `Quant Developer`, `Arquitecto Senior` y `QA Engineer`.
+  2. **F1-070 (`crates/quantum-arena/src/genome.rs:715, 762-767, 795-804, 924, 998-1007, 1095, 1869, 1921-1931, 2028, 3093, 3128-3137, 3221, 3247, 3282-3291, 3375`, `crates/quantum-arena/tests/f1_069_070_genome_bounds_and_freeze_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Unificación y paridad total entre cotas vectoriales (`get_lower_bounds` / `get_upper_bounds`), bandas de mutación (`mutate_with_rng`), generador aleatorio (`new_random`), valores de referencia (`new_baseline`) y dominios de evaluación de los lectores fenotípicos (`output_bounds` en `horizon_policy.rs`):
+       - `ObiThreshold`: `[0.10, 0.95]` para `scalp_obi_threshold` (slot 12) y `swing_obi_threshold` (slot 137).
+       - `TrailActivation`: `[1.5, 6.0]` para `scalp_trail_act_atr` (slot 44) y `swing_trail_act_atr` (slot 49).
+       - `TrailMultiplier`: `[1.5, 6.0]` para `scalp_trail_atr_mult_base` (slot 48) y `swing_trail_atr_mult_base` (slot 53).
+       - `TrailStep`: `[0.5, 4.0]` para `scalp_trail_step_atr` (slot 45) y `swing_trail_step_atr` (slot 50).
+       - `new_baseline`: Alineación de anclas y escalares con las cotas reales (0.15 para OBI scalp, 2.0 para act scalp, 1.2 para step scalp, 2.5 para mult scalp, 3.0 para act swing, 1.8 para step swing, 3.5 para mult swing).
+     - *POR QUÉ*: Existían tres bandas distintas para los mismos genes (p. ej. bounds `[0.001, 20.0]` vs reader `[1.5, 6.0]`; scalp OBI `[0.01, 1.0]` vs reader `[0.10, 0.95]`), provocando que la evolución explorara paisajes de aptitud planos (dimensiones muertas) donde mutaciones por debajo o por encima de las cotas eran recortadas silenciosamente por el lector, rompiendo la paridad genotipo-fenotipo y distorsionando el registro de linaje.
+     - *PARA QUÉ*: Garantizar que lo que evalúa la función de aptitud coincida bit a bit con lo que opera el motor en el mercado continuo, erradicar el desperdicio de muestras en dimensiones muertas (DSR), y prevenir sorpresas operativas en el trailing y las puertas de entrada OBI.
+     - *CÓMO*: Ajuste de cotas en `get_lower_bounds`, `get_upper_bounds`, `new_random`, `mutate_with_rng`, `new_baseline`, y verificación contractual en `test_f1_070_vector_bounds_parity_with_reader_domains`, `test_f1_070_new_baseline_operates_without_reader_clipping` y `test_f1_070_random_and_mutated_genomes_stay_within_bounds`.
+     - *CUÁNDO*: En la generación de genomas, deserialización vectorial, mutaciones y lecturas de horizonte a lo largo de todo el espectro temporal continuo.
+     - *DÓNDE*: `crates/quantum-arena/src/genome.rs`, `crates/quantum-arena/src/horizon_policy.rs` y `crates/quantum-arena/tests/f1_069_070_genome_bounds_and_freeze_contract.rs`.
+     - *QUIÉN*: `Quant Developer`, `Arquitecto Senior` y `QA Engineer`.
+- **Verificación Contractual y Compilación Workspace**:
+  - `cargo test -p quantum-arena --test f1_069_070_genome_bounds_and_freeze_contract -j 1` (5/5 pass, 100% verde en 0.00s).
+  - `cargo test -p quantum-arena --test horizon_reader_parity -j 1` (6/6 pass, 100% verde en 0.00s).
+  - `cargo test -p quantum-arena --test genome_reader_diagnostics -j 1` (3/3 pass, 100% verde en 0.00s).
+  - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+  - `cargo test -p quantum-arena --lib -j 1` (149/149 pass, 100% verde en 1.93s).
+  - `cargo check --workspace --all-targets -j 1` (100% verde en los 16 crates del workspace).
+
 ## 2026-10-19 (tarde, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω173 (Cierre F1-066, F1-067 y F1-068)
 
 - **Mandato**: Auditoría de cierre y certificación contractual de la eliminación definitiva de `local_orderbooks` en el host (F1-066, completado por Codex RET-45/RB-M1a con cálculo de OBI y microprecio puro zero-alloc), desacoplamiento total del sniffer y router WebSocket de Hyperliquid de `god_engine.rs` con reconexión honesta de la telemetría `dark_alpha` al feed causal de liquidaciones de Binance (`engine_real.liquidation_severity_at(0, liq_as_of)`) (F1-067), y verificación formal del bucle de reconexión WebSocket libre de `unwrap/expect` en `peer_addr()` y `Url::parse()` (F1-068, completado por LG-28 con match y backoff), cerrando formalmente los hallazgos `F1-066`, `F1-067` y `F1-068` de `docs/audit/fable/f1_hallazgos.tsv`:

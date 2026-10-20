@@ -712,7 +712,7 @@ impl SuperGenotype {
             range_threshold: e_const / 6.0, // ~0.453
             scalp_kelly_fraction: k_scalp,
             swing_kelly_fraction: k_swing,
-            scalp_obi_threshold: taker_base * 50.0,
+            scalp_obi_threshold: 0.15, // F1-070: dentro de la banda unificada [0.10, 0.95]
             scalp_tp_base: scalp_tp_math,
             scalp_sl_base: scalp_sl_math,
             swing_tp_base: swing_tp_math,
@@ -761,9 +761,9 @@ impl SuperGenotype {
             ),
             obi_horizon_curve: crate::temporal_spectrum::HorizonCurve::through_two_points(
                 crate::temporal_spectrum::TAU_ANCHOR_FAST_MS,
-                taker_base * 50.0,
+                0.15,
                 crate::temporal_spectrum::TAU_ANCHOR_SLOW_MS,
-                taker_base * 100.0,
+                0.50,
             ),
             sl_atr_mult_btc: 1.0,
             tp_rr_ratio_btc: r_scalp,
@@ -792,16 +792,16 @@ impl SuperGenotype {
             weight_vpin: w_base * 0.35,
             regime_duration_ms: (1.0 / taker_base) * 60.0,
             regime_atr_multiplier: golden_ratio,
-            scalp_trail_act_atr: taker_base * 10.0,
-            scalp_trail_step_atr: pi,
+            scalp_trail_act_atr: 2.0, // F1-070: coincide con trail_act_horizon_curve fast anchor [1.5, 6.0]
+            scalp_trail_step_atr: 1.2, // F1-070: coincide con trail_step_horizon_curve fast anchor [0.5, 4.0]
             scalp_trail_max_atr: e_const * 2.0,
             scalp_trail_min_pnl: taker_base * 10000.0, // Dinámico según taker
-            scalp_trail_atr_mult_base: pi,
-            swing_trail_act_atr: taker_base * 20.0,
-            swing_trail_step_atr: pi * golden_ratio,
+            scalp_trail_atr_mult_base: 2.5, // F1-070: coincide con trail_mult_horizon_curve fast anchor [1.5, 6.0]
+            swing_trail_act_atr: 3.0, // F1-070: coincide con trail_act_horizon_curve slow anchor [1.5, 6.0]
+            swing_trail_step_atr: 1.8, // F1-070: coincide con trail_step_horizon_curve slow anchor [0.5, 4.0]
             swing_trail_max_atr: e_const * 2.5,
             swing_trail_min_pnl: taker_base * 15000.0,
-            swing_trail_atr_mult_base: pi * 1.5,
+            swing_trail_atr_mult_base: 3.5, // F1-070: coincide con trail_mult_horizon_curve slow anchor [1.5, 6.0]
             zombie_timeout_ms: 14_400_000.0, // D-649b: suelo de la banda (4 h)
             hurst_trend_threshold: golden_ratio - 1.0, // ~0.618
             cvd_veto_threshold: w_base * golden_ratio,
@@ -921,7 +921,7 @@ impl SuperGenotype {
             range_threshold: rand::rng().random_range(0.1..0.9),
             scalp_kelly_fraction: rand::rng().random_range(0.1..2.0),
             swing_kelly_fraction: rand::rng().random_range(0.01..1.0),
-            scalp_obi_threshold: rand::rng().random_range(0.05..1.0),
+            scalp_obi_threshold: rand::rng().random_range(0.10..0.95),
             scalp_tp_base: rand::rng().random_range(0.0060..0.0250),
             scalp_sl_base: rand::rng().random_range(0.0025..0.0080),
             swing_tp_base: rand::rng().random_range(0.0300..0.1200),
@@ -995,16 +995,16 @@ impl SuperGenotype {
             weight_vpin: rand::rng().random_range(0.1..1.0),
             regime_duration_ms: rand::rng().random_range(30000.0..600000.0),
             regime_atr_multiplier: rand::rng().random_range(0.5..5.0),
-            scalp_trail_act_atr: rand::rng().random_range(0.001..20.0),
-            scalp_trail_step_atr: rand::rng().random_range(0.001..20.0),
+            scalp_trail_act_atr: rand::rng().random_range(1.5..6.0),
+            scalp_trail_step_atr: rand::rng().random_range(0.5..4.0),
             scalp_trail_max_atr: rand::rng().random_range(0.001..20.0),
             scalp_trail_min_pnl: rand::rng().random_range(0.001..20.0),
-            scalp_trail_atr_mult_base: rand::rng().random_range(0.001..20.0),
-            swing_trail_act_atr: rand::rng().random_range(0.001..20.0),
-            swing_trail_step_atr: rand::rng().random_range(0.001..20.0),
+            scalp_trail_atr_mult_base: rand::rng().random_range(1.5..6.0),
+            swing_trail_act_atr: rand::rng().random_range(1.5..6.0),
+            swing_trail_step_atr: rand::rng().random_range(0.5..4.0),
             swing_trail_max_atr: rand::rng().random_range(0.001..20.0),
             swing_trail_min_pnl: rand::rng().random_range(0.001..20.0),
-            swing_trail_atr_mult_base: rand::rng().random_range(0.001..20.0),
+            swing_trail_atr_mult_base: rand::rng().random_range(1.5..6.0),
             zombie_timeout_ms: rand::rng().random_range(14_400_000.0..28_800_000.0),
             hurst_trend_threshold: rand::rng().random_range(0.4..0.8),
             cvd_veto_threshold: rand::rng().random_range(0.1..1.5),
@@ -1092,7 +1092,7 @@ impl SuperGenotype {
             executor_max_weight_1m: rand::rng().random_range(1000.0..5000.0),
             iceberg_volume_threshold: rand::rng().random_range(100.0..2000.0),
             iceberg_slice_count: rand::rng().random_range(3.0..10.0),
-            swing_obi_threshold: rand::rng().random_range(0.05..1.0),
+            swing_obi_threshold: rand::rng().random_range(0.10..0.95),
             swing_accel_min_samples: rand::rng().random_range(10.0..50.0),
             temporal_scale: rand::rng().random_range(0.05..0.95),
         };
@@ -1866,7 +1866,7 @@ impl SuperGenotype {
             range_threshold: mutate_val(self.range_threshold, 0.1, 0.9),
             scalp_kelly_fraction: mutate_val(self.scalp_kelly_fraction, 0.1, 2.0),
             swing_kelly_fraction: mutate_val(self.swing_kelly_fraction, 0.01, 1.0),
-            scalp_obi_threshold: mutate_val(self.scalp_obi_threshold, 0.05, 1.0),
+            scalp_obi_threshold: mutate_val(self.scalp_obi_threshold, 0.10, 0.95),
             scalp_tp_base: self.scalp_tp_base, // X-005: vista — re-derivada de curvas post-literal
             scalp_sl_base: self.scalp_sl_base, // X-005: vista
             // F8: el GA evoluciona los COEFICIENTES de las curvas (a,b) — la
@@ -1918,17 +1918,17 @@ impl SuperGenotype {
             weight_vpin: mutate_val(self.weight_vpin, 0.1, 1.0),
             regime_duration_ms: self.regime_duration_ms, // LG-21
             regime_atr_multiplier: self.regime_atr_multiplier, // LG-21
-            scalp_trail_act_atr: mutate_val(self.scalp_trail_act_atr, 0.001, 20.0),
-            scalp_trail_step_atr: mutate_val(self.scalp_trail_step_atr, 0.001, 20.0),
+            scalp_trail_act_atr: mutate_val(self.scalp_trail_act_atr, 1.5, 6.0),
+            scalp_trail_step_atr: mutate_val(self.scalp_trail_step_atr, 0.5, 4.0),
             // LG-18: genes sin lector (R7-R1-2, inertes en el T-1): congelados.
             scalp_trail_max_atr: self.scalp_trail_max_atr,
             scalp_trail_min_pnl: self.scalp_trail_min_pnl, // LG-18
-            scalp_trail_atr_mult_base: mutate_val(self.scalp_trail_atr_mult_base, 0.001, 20.0),
-            swing_trail_act_atr: mutate_val(self.swing_trail_act_atr, 0.001, 20.0),
-            swing_trail_step_atr: mutate_val(self.swing_trail_step_atr, 0.001, 20.0),
+            scalp_trail_atr_mult_base: mutate_val(self.scalp_trail_atr_mult_base, 1.5, 6.0),
+            swing_trail_act_atr: mutate_val(self.swing_trail_act_atr, 1.5, 6.0),
+            swing_trail_step_atr: mutate_val(self.swing_trail_step_atr, 0.5, 4.0),
             swing_trail_max_atr: self.swing_trail_max_atr, // LG-18
             swing_trail_min_pnl: self.swing_trail_min_pnl, // LG-18
-            swing_trail_atr_mult_base: mutate_val(self.swing_trail_atr_mult_base, 0.001, 20.0),
+            swing_trail_atr_mult_base: mutate_val(self.swing_trail_atr_mult_base, 1.5, 6.0),
             zombie_timeout_ms: mutate_val(self.zombie_timeout_ms, 14_400_000.0, 28_800_000.0),
             hurst_trend_threshold: mutate_val(self.hurst_trend_threshold, 0.4, 0.8),
             cvd_veto_threshold: mutate_val(self.cvd_veto_threshold, 0.1, 2.0),
@@ -2025,7 +2025,7 @@ impl SuperGenotype {
                 100_000.0,
             ),
             iceberg_slice_count: mutate_val(self.iceberg_slice_count, 2.0, 10.0),
-            swing_obi_threshold: mutate_val(self.swing_obi_threshold, 0.05, 1.0),
+            swing_obi_threshold: mutate_val(self.swing_obi_threshold, 0.10, 0.95),
             swing_accel_min_samples: self.swing_accel_min_samples, // LG-18
             temporal_scale: mutate_val(self.temporal_scale, 0.05, 0.95),
         };
@@ -3090,7 +3090,7 @@ impl SuperGenotype {
             0.1,
             0.1,
             0.01,
-            0.01,
+            0.10, // Slot 12: scalp_obi_threshold (F1-070: unificado con ObiThreshold [0.10, 0.95])
             // X-004: anclas tp/sl (13-16) son VISTAS de las curvas — sus bounds
             // cubren el sobre alcanzable por (a,b) evolucionables, no cotas
             // evolutivas por sí mismas (las cotas reales viven en 140-143).
@@ -3125,16 +3125,16 @@ impl SuperGenotype {
             0.1,
             30000.0,
             0.5,
+            1.5, // Slot 44: scalp_trail_act_atr (F1-070: unificado con TrailActivation [1.5, 6.0])
+            0.5, // Slot 45: scalp_trail_step_atr (F1-070: unificado con TrailStep [0.5, 4.0])
             0.001,
             0.001,
+            1.5, // Slot 48: scalp_trail_atr_mult_base (F1-070: unificado con TrailMultiplier [1.5, 6.0])
+            1.5, // Slot 49: swing_trail_act_atr (F1-070: unificado con TrailActivation [1.5, 6.0])
+            0.5, // Slot 50: swing_trail_step_atr (F1-070: unificado con TrailStep [0.5, 4.0])
             0.001,
             0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
-            0.001,
+            1.5, // Slot 53: swing_trail_atr_mult_base (F1-070: unificado con TrailMultiplier [1.5, 6.0])
             14_400_000.0, // D-649b: 4 h — reproduce el debounce previo
             0.4,
             0.1,
@@ -3218,7 +3218,7 @@ impl SuperGenotype {
             1000.0,
             100.0,
             2.0,
-            0.05,
+            0.10, // Slot 137: swing_obi_threshold (F1-070: unificado con ObiThreshold [0.10, 0.95])
             10.0,
             0.05,
             // X-004: bounds de coeficientes de curvas (tp_a, tp_b, sl_a, sl_b)
@@ -3244,7 +3244,7 @@ impl SuperGenotype {
             0.9,
             2.0,
             1.0,
-            1.0,
+            0.95, // Slot 12: scalp_obi_threshold (F1-070: unificado con ObiThreshold [0.10, 0.95])
             // X-004: techos de VISTAS — sobre máximo alcanzable por las curvas
             // en el ancla LENTA (exp(a_hi + b_hi·ln τ_slow): tp≈63.7, sl≈23.3),
             // con holgura. Las cotas evolutivas reales viven en 140-143.
@@ -3279,16 +3279,16 @@ impl SuperGenotype {
             1.0,
             600000.0,
             5.0,
+            6.0,  // Slot 44: scalp_trail_act_atr (F1-070: unificado con TrailActivation [1.5, 6.0])
+            4.0,  // Slot 45: scalp_trail_step_atr (F1-070: unificado con TrailStep [0.5, 4.0])
             20.0,
             20.0,
+            6.0,  // Slot 48: scalp_trail_atr_mult_base (F1-070: unificado con TrailMultiplier [1.5, 6.0])
+            6.0,  // Slot 49: swing_trail_act_atr (F1-070: unificado con TrailActivation [1.5, 6.0])
+            4.0,  // Slot 50: swing_trail_step_atr (F1-070: unificado con TrailStep [0.5, 4.0])
             20.0,
             20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
-            20.0,
+            6.0,  // Slot 53: swing_trail_atr_mult_base (F1-070: unificado con TrailMultiplier [1.5, 6.0])
             28_800_000.0, // D-649b: 8 h
             0.8,
             2.0,
@@ -3372,7 +3372,7 @@ impl SuperGenotype {
             5000.0,
             100_000.0,
             10.0,
-            1.0,
+            0.95, // Slot 137: swing_obi_threshold (F1-070: unificado con ObiThreshold [0.10, 0.95])
             50.0,
             0.95,
             // X-004: techo de coeficientes de curvas.
@@ -3731,6 +3731,7 @@ mod tests_lg21 {
                 g.hard_stop_base_limit,
                 g.kelly_bootstrap_ratio_threshold,
                 g.kelly_bootstrap_min_exposure,
+                g.maker_only_capital_threshold, // F1-069 / F1-117: congelado en host IOC
                 g.hawkes_volume_norm,
                 g.macro_hurst_confidence_offset,
                 g.macro_hurst_confidence_scale,
