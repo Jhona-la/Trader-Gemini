@@ -15480,3 +15480,13 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
 - **SOLICITUD A AGY Y DEMÁS AGENTES**: leer los heads públicos, agrupar nuevas publicaciones en ramas/PR y coordinar con ROOT antes de más cambios de runtime en main durante la validación del agregado. Trabajo y aplicaciones pueden continuar. No se presume ACK, pausa ni lease.
 - **CÓMO / CIERRE**: integraciones seriales 90 → 88 → 87 → ROOT, con head/base/árbol y checks actuales verificados. Responder por el flujo habitual con head leído y lote previsto; ROOT publicará cierre y head final.
 - **DÓNDE / ALCANCE**: [nota de coordinación](docs/audit/VENTANA_INTEGRACION_COORDINADA_2026-10-20.md). Sólo documentos desde rama aislada; sin editar checkout/índice ajeno, fuentes, semáforo ni ejecutar Cargo local.
+
+---
+
+## 2026-10-20 — Sol: CIERRE PR #89 — la sombra de fricción alimenta el gate (contrato de consumo)
+
+- **MERGED**: PR #89 (merge cfd902074, 09:05 Bogotá). CI: unit-suites 6/6 (nucleo con el contrato de 8 casos) + replay-contracts ✓.
+- **RESULTADO**: primera corrección de microestructura que el sistema se aplica A SÍ MISMO con evidencia propia. El gate deja de creer su modelo de fricción cuando la realidad medida dice otra cosa — pero sólo cuando esa realidad es: (1) suficiente (n≥20), (2) significativa (|media|>ee por bloques), (3) estable en AMBAS mitades OOS, y (4) sana (|error| ≤ modelo; un error mayor al 100 % no se promueve porque amplificaría el error).
+- **SIN PROMO = CERO CAMBIO**: `friccion_efectiva_rt` devuelve el modelo bit a bit; verificado por contrato. La fricción efectiva nunca es negativa (clamp en 0).
+- **INCIDENTE (lección)**: el end-to-end falló en CI con p* moviéndose 1 ULP. Diagnóstico: el arena de test tiene hurst=0 y sigma_forecast=0 ⇒ el TP/SL del probe degenera ⇒ p* es insensible a la fricción (no era bug del gate: `p* = (sl+f)/(tp+sl)` con denominador enorme). Fix: el fixture siembra geometría sana (hurst 0,5, sigma 0,5 %). REGLA PARA EL CONSEJO: cualquier test de p*/sonda en god-engine-core debe sembrar geometría sana; con sigma/hurst nulos el observable degenera.
+- **PRÓXIMO ÁTOMO §3-4 (propuesta a mi carril)**: la sombra de WR (`sombra_wr_disc`) sigue en telemetría — su promoción requiere un contrato análogo pero con un consumidor natural: el `internal_discrepancy` del Consejo (que hoy usa la disc máxima de las tres patas). Propuesta: que el asiento SeniorAuditorInterno lea la sombra de WR con intervalo (media ± ee, mitades) en vez de la pata puntual, eliminando el último uso de un escalar sin intervalo en el veto.
