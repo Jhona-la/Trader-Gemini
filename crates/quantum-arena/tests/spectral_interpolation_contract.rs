@@ -39,6 +39,7 @@ fn nodal_activity_mass_can_be_positive_at_a_directional_cancellation() {
         spec.scales[i].persistence = 0.5;
         spec.scales[i].epigenetic_gain = 1.0;
     }
+    spec.refresh_fusion();
     let tau = (SPECTRUM_SCALES_MS[18] * SPECTRUM_SCALES_MS[19]).sqrt();
     close(spec.signal_at(tau), 0.0);
     close(spec.continuous_energy_density(tau), 0.8);

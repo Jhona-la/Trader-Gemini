@@ -458,6 +458,9 @@ impl RiskEngine {
             .metrics
             .kelly_fraction
             .load(Ordering::Relaxed);
+        if !raw_kelly.is_finite() {
+            return rej(REJ_INVALID_INPUT);
+        }
 
         // CERT-M5-C01: el bootstrap anterior clampeaba a [0.05, 0.35] con
         // baseline 0.5 → 0.35. Con PF ≤ 1 (probado SIN edge), una moneda
