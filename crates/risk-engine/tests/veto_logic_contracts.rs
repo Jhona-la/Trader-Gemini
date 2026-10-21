@@ -6,8 +6,9 @@
 
 use quantum_arena::GlobalArena;
 use risk_engine::{
-    evidence::win_rate_hierarchical_lcb, ultimo_rechazo, RiskEngine, REJ_CONFIDENCE, REJ_FEE_IMPACT,
-    REJ_FLAT_COIN, REJ_INVALID_INPUT, REJ_ORCHESTRATOR, REJ_SPEC, REJ_TP_SL_FLOOR,
+    evidence::win_rate_hierarchical_lcb, ultimo_rechazo, RiskEngine, REJ_CONFIDENCE, REJ_EV,
+    REJ_FEE_IMPACT, REJ_FLAT_COIN, REJ_INVALID_INPUT, REJ_MARGIN_INSUFFICIENT, REJ_ORCHESTRATOR,
+    REJ_SPEC, REJ_TP_SL_FLOOR, REJ_VIABILIDAD, REJECT_NAMES,
 };
 use signal_engine::{SignalIntent, SignalType};
 use std::sync::atomic::Ordering::Relaxed;
@@ -346,6 +347,106 @@ pub fn ola100_epigenetic_bias_full_range_expression() {
         out_old_floor.volume_usd
     );
 }
+
+#[test]
+pub fn margen_insuf_contract_rejects_excessive_notional_and_admits_viable() {
+    use risk_engine::envio::{apalancamiento_de_envio, VetoEnvio};
+
+    // 1. Caso FN (Rechazo): el nocional pedido supera el 95% del margen libre disponible
+    // incluso con apalancamiento adaptado al máximo permitido.
+    // Capital libre = 10.0 USD, nocional = 200.0 USD con apalancamiento validado máximo = 10x.
+    // 200.0 / 10 = 20.0 USD > 0.95 * 10.0 = 9.50 USD => VetoEnvio::Margen.
+    let res_fn = apalancamiento_de_envio(1, Some(10), 200.0, 10.0);
+    assert_eq!(
+        res_fn,
+        Err(VetoEnvio::Margen),
+        "Nocional que supera el margen libre debe ser vetado por margen_insuf"
+    );
+
+    // 2. Caso FP (Admisión): el nocional cabe holgadamente en el margen libre.
+    // Capital libre = 13.0 USD, nocional = 15.0 USD con apalancamiento validado = 5x.
+    // 15.0 / 5 = 3.0 USD <= 0.95 * 13.0 = 12.35 USD => Ok(apalancamiento).
+    let res_fp = apalancamiento_de_envio(1, Some(5), 15.0, 13.0);
+    assert!(res_fp.is_ok(), "Orden con margen disponible debe admitirse: {:?}", res_fp);
+    let lev = res_fp.unwrap();
+    assert!(15.0 / lev as f64 <= 0.95 * 13.0);
+
+    // 3. Verificación de constante y diagnóstico en RiskEngine
+    assert_eq!(REJECT_NAMES[REJ_MARGIN_INSUFFICIENT], "margen_insuf");
+}
+
+#[test]
+pub fn viabilidad_contract_rejects_unviable_geometry_and_admits_viable() {
+    let (arena, mut intent) = fixture();
+
+    // 1. Caso FN (Rechazo): Geometría inviable donde la orden mínima del símbolo
+    // no cabe dentro del tope de riesgo por evento (capital_regime::orden_viable).
+    // Con capital = 13.0 USD, precio = 100 y sl_price_target = 30.0, el stop es del 70% (expected_loss = 0.70).
+    // Con nocional mínimo = 5.0 USD sobre capital = 13.0 USD:
+    // riesgo mínimo = 5.0 * 0.70 / 13.0 = 0.2692 > tope_riesgo (0.25).
+    intent.tp_price_target = 300.0;
+    intent.sl_price_target = 30.0;
+    let out_inviable = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_inviable.signal, SignalType::Flat, "Geometría con pérdida mínima > tope de ruina debe vetarse por viabilidad");
+    assert_eq!(ultimo_rechazo(), Some(REJ_VIABILIDAD));
+
+    // 2. Caso FP (Admisión): Geometría viable estándar del fixture (capital = 13.0 USD, stop al 1%, nocional cabe en riesgo).
+    let (arena_ok, intent_ok) = fixture();
+    let out_viable = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent_ok, &arena_ok);
+    assert_eq!(out_viable.signal, SignalType::Long, "Geometría viable debe admitirse: {}", risk_engine::reject_report());
+    assert!(out_viable.volume_usd > 0.0);
+    assert_eq!(ultimo_rechazo(), None);
+}
+
+#[test]
+pub fn suelo_tp_sl_contract_rejects_sub_friction_brackets_and_admits_viable() {
+    let (arena, mut intent) = fixture();
+
+    // 1. Caso FN (Rechazo): Dispersión difusiva σ(τ) colapsada (ATR extremadamente ínfimo),
+    // por debajo del suelo mínimo viable de fricción roundtrip (sl_diffusive < sl_floor).
+    // Con targets dinámicos (0.0), compute_tp_sl marca below_tradeable_floor: true.
+    intent.tp_price_target = 0.0;
+    intent.sl_price_target = 0.0;
+    arena.coins[0].current_atr.store(0.000001, Relaxed);
+    let out_sub_floor = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_sub_floor.signal, SignalType::Flat, "Dispersión bajo el suelo de fricción debe vetarse por suelo_tp_sl");
+    assert_eq!(ultimo_rechazo(), Some(REJ_TP_SL_FLOOR));
+
+    // 2. Caso FP (Admisión): ATR normal (1.0 USD en precio 100 => 1% de volatilidad),
+    // la dispersión difusiva supera holgadamente el suelo de fricción.
+    arena.coins[0].current_atr.store(1.0, Relaxed);
+    let out_viable = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_viable.signal, SignalType::Long, "Dispersión viable debe admitirse: {}", risk_engine::reject_report());
+    assert!(out_viable.volume_usd > 0.0);
+    assert_eq!(ultimo_rechazo(), None);
+}
+
+#[test]
+pub fn ev_contract_rejects_negative_expectancy_and_admits_viable() {
+    let (arena, mut intent) = fixture();
+
+    // 1. Caso FN (Rechazo): Esperanza matemática negativa o menor a la barrera de fricción.
+    // Con targets explícitos asimétricos desfavorables (ganancia ínfima vs pérdida grande)
+    // o probabilidad de acierto baja (win_probability = 0.15):
+    // expected_value_pct = (0.15 * 0.02) - (0.85 * 0.01) = 0.003 - 0.0085 = -0.0055 <= ev_minimo.
+    intent.win_probability = 0.15;
+    intent.tp_price_target = 102.0;
+    intent.sl_price_target = 99.0;
+    let out_neg_ev = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_neg_ev.signal, SignalType::Flat, "Orden con EV negativo debe vetarse por EV");
+    assert_eq!(ultimo_rechazo(), Some(REJ_EV));
+
+    // 2. Caso FP (Admisión): Alta probabilidad de acierto (win_probability = 0.85, RR favorable)
+    // con EV positivo que supera holgadamente la fricción × multiplicador.
+    intent.win_probability = 0.85;
+    intent.tp_price_target = 104.0;
+    intent.sl_price_target = 99.0;
+    let out_pos_ev = RiskEngine::new(13.0).evaluate_quantum_order(0, &intent, &arena);
+    assert_eq!(out_pos_ev.signal, SignalType::Long, "Orden con EV robusto debe admitirse: {}", risk_engine::reject_report());
+    assert!(out_pos_ev.volume_usd > 0.0);
+    assert_eq!(ultimo_rechazo(), None);
+}
+
 
 
 

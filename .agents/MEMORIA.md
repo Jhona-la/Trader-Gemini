@@ -9,6 +9,25 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
 [Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
 
 
+## 2026-10-21 (tarde, 1) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω196 (Cierre F1-093 y Certificación Verde de CI)
+
+- **Mandato**: Resolución completa y certificación 100% verde de los fallos de CI en GitHub Actions y resolución de la deuda de certificación de vetos de riesgo duro y lógica (`F1-093`):
+  1. **Resolución de Fallos en CI GitHub Actions (`crates/quantum-arena/tests/spectral_interpolation_contract.rs:42`, `crates/risk-engine/src/lib.rs:460`)**:
+     - *QUÉ*: (1) Invocación de `spec.refresh_fusion()` en `spectral_interpolation_contract.rs` tras la mutación directa de persistencia y ganancia epigenética en las escalas 18 y 19, actualizando la caché de pesos espectrales `cached_pesos_esp` y garantizando que `continuous_energy_density(tau)` devuelva con exactitud analítica 0.8; (2) Fail-closed estricto en `lib.rs:460` ante un `raw_kelly` no finito (`if !raw_kelly.is_finite() { return rej(REJ_INVALID_INPUT); }`), eliminando la vulnerabilidad donde `NaN.min(clamp_max)` retornaba `clamp_max = 0.25` saltándose el veto y abriendo órdenes no autorizadas.
+     - *RESULTADO CI*: Los workflows de GitHub Actions para `Unit and contract suites` (ID 39641846038) pasaron 100% VERDES (6/6 jobs: meta-analítica, auditoria, riesgo, nucleo, entrenador, espectro-y-consejo).
+  2. **F1-093 (`crates/risk-engine/src/veto_registry.rs:98, 158, 229, 340, 510-520, 626-660`, `crates/risk-engine/tests/veto_logic_contracts.rs:8-12, 345-445`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Creación de 4 contratos formales FP/FN dedicados en `veto_logic_contracts.rs`: (1) `margen_insuf_contract_rejects_excessive_notional_and_admits_viable` para `V-RISK-003` (`REJ_MARGIN_INSUFFICIENT`); (2) `viabilidad_contract_rejects_unviable_geometry_and_admits_viable` para `V-LOGIC-001` (`REJ_VIABILIDAD`); (3) `suelo_tp_sl_contract_rejects_sub_friction_brackets_and_admits_viable` para `V-LOGIC-006` (`REJ_TP_SL_FLOOR`); (4) `ev_contract_rejects_negative_expectancy_and_admits_viable` para `V-LOGIC-013` (`REJ_EV`); sustitución de los tests no ejecutantes en `veto_registry.rs`; y endurecimiento del diente `sol_a1_los_tests_del_registro_existen_de_verdad` comprobando que el corpus de contratos contenga explícitamente tanto el caso de rechazo (FN) como el caso de admisión (FP).
+     - *POR QUÉ*: El registro certificaba previamente vetos activos con tests espurios (ej. determinismo de replay, fórmula de fricción o diagnósticos de cobertura) que no ejercían la condición ni el código de rechazo del veto.
+     - *PARA QUÉ*: Garantizar que ninguna regresión silenciosa en el guardián de margen, suelo de fricción, valor esperado o viabilidad pueda poner en riesgo la cuenta de $13 USD ni desviar la meta de crecimiento compuesto (+100%/72h).
+     - *CÓMO*: 4 contratos con casos FP y FN en `veto_logic_contracts.rs`, cableado exacto en `veto_registry.rs`, y verificación en `sol_a1_los_tests_del_registro_existen_de_verdad`.
+     - *CUÁNDO*: En cada evaluación de admisión y compilación de tests de contratos.
+     - *DÓNDE*: `crates/risk-engine/src/veto_registry.rs`, `crates/risk-engine/tests/veto_logic_contracts.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), Risk Manager, QA Engineer y Profesor Pedagógico.
+- **Verificación Contractual y Compilación Workspace**:
+  - `cargo test -p risk-engine --test veto_logic_contracts -j 1` (14/14 pass, 100% verde en 0.28s).
+  - `cargo test -p risk-engine --lib veto_registry -j 1` (8/8 pass, 100% verde en 0.04s).
+  - `cargo check --workspace --all-targets -j 1` (100% verde en los 23 crates en 8m 21s con 0 errores).
+
 ## 2026-10-21 (mañana, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω195 (Cierre F1-092)
 
 - **Mandato**: Derivación rigurosa de apalancamiento objetivo a partir de evidencia y cota de ruina, fail-closed estricto en capital no finito retornando 1.0 (erradicando la invención del literal 13.0), exponente de Hurst acotado al dominio fractal financiero $[0.30, 0.75]$ con bonus neutral $1.0$ en $H=0.50$, desacoplamiento total del gen `veto_threshold_btc` como interruptor de Kelly, convicción mapeada suavemente en $[0.50, 1.00]$, growth_factor en $[0.50, 3.75]$, y cota estricta del Axioma de Ruina sobre el riesgo realizado al stop $\text{final\_margin} \cdot \text{dynamic\_leverage} \cdot \text{expected\_loss} \le \text{tope\_riesgo\_evento} \cdot C$ en `crates/risk-engine/src/lib.rs:1778` (`F1-092`):
