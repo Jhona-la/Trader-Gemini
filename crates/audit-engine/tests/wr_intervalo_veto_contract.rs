@@ -35,7 +35,7 @@ fn cierre(ts_ns: u64, pnl: f64) -> ExchangeFillRecord {
 
 /// 24 cierres alternados: bloques homogéneos ⇒ ee = 0.
 fn alternados() -> AuditorInterno {
-    let mut a = AuditorInterno::new();
+    let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..24u64 {
         let pnl = if i % 2 == 0 { 0.5 } else { -0.2 };
         a.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl));
@@ -45,7 +45,7 @@ fn alternados() -> AuditorInterno {
 
 /// 24 cierres agrupados (12 wins, luego 12 loses): bloques [1,1,0,0] ⇒ ee = √(1/12).
 fn agrupados() -> AuditorInterno {
-    let mut a = AuditorInterno::new();
+    let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..24u64 {
         let pnl = if i < 12 { 0.5 } else { -0.2 };
         a.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl));
@@ -121,7 +121,7 @@ fn la_discrepancia_real_sobrevive_a_su_ruido_y_veta() {
 
 #[test]
 fn con_menos_de_n_min_la_pata_queda_puntual() {
-    let mut a = AuditorInterno::new();
+    let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..19u64 {
         let pnl = if i < 10 { 0.5 } else { -0.2 };
         a.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl));

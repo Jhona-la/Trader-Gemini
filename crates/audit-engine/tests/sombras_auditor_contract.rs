@@ -59,7 +59,7 @@ fn apertura(ts_ns: u64, fee: f64) -> ExchangeFillRecord {
 
 /// 24 cierres alternados ganar/perder: WR real 0,5 y bloques homogéneos.
 fn auditor_alternado() -> AuditorInterno {
-    let mut a = AuditorInterno::new();
+    let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..24u64 {
         let (pnl, fee) = if i % 2 == 0 { (0.5, 0.0) } else { (-0.2, 0.0) };
         a.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl, fee));
@@ -69,7 +69,7 @@ fn auditor_alternado() -> AuditorInterno {
 
 #[test]
 fn sin_canal_las_sombras_no_se_publican() {
-    let a = AuditorInterno::new();
+    let a = AuditorInterno::with_capital(13.0);
     assert!(a.sombra_wr_disc(0.9).is_none(), "sin cierres no hay sombra WR");
     assert!(
         a.sombra_friccion_bp(4.0).is_none(),
@@ -102,7 +102,7 @@ fn wr_disc_honesto_y_ee_no_cero_con_series_agrupadas() {
 
     // 12 wins seguidos de 12 loses: bloques [1,1,0,0] ⇒ var muestral 1/3 ⇒
     // EE = √((1/3)/4) = √(1/12). El EE mide la correlación, no la proporción.
-    let mut b = AuditorInterno::new();
+    let mut b = AuditorInterno::with_capital(13.0);
     for i in 0..24u64 {
         let pnl = if i < 12 { 0.5 } else { -0.2 };
         b.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl, 0.0));
@@ -121,7 +121,7 @@ fn wr_disc_honesto_y_ee_no_cero_con_series_agrupadas() {
 #[test]
 fn n_min_y_guardas_de_estabilidad_numerica() {
     // 19 cierres (< 20) ⇒ None aunque el claim sea inflado.
-    let mut a = AuditorInterno::new();
+    let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..19u64 {
         let pnl = if i % 2 == 0 { 0.5 } else { -0.2 };
         a.record_fill_independiente(cierre(1_700_000_000_000_000_000 + i * 1_000_000_000, pnl, 0.0));
@@ -147,7 +147,7 @@ fn n_min_y_guardas_de_estabilidad_numerica() {
 #[test]
 fn friccion_real_menos_modelada_exacta() {
     // 24 fills de 5 bp reales vs 4 bp modelo ⇒ media +1 bp, EE 0 (homogéneo).
-    let mut a = AuditorInterno::new();
+    let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..24u64 {
         a.record_fill_independiente(apertura(1_700_000_000_000_000_000 + i * 1_000_000_000, 0.025));
     }
@@ -163,7 +163,7 @@ fn friccion_real_menos_modelada_exacta() {
 fn friccion_descarta_fills_insalvables_sin_contaminar() {
     // 22 válidos de 5 bp + precio 0 (nocional 0) + fee NaN + fee negativa:
     // los insalvables se ignoran; los 22 válidos sostienen la sombra.
-    let mut a = AuditorInterno::new();
+    let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..22u64 {
         a.record_fill_independiente(apertura(1_700_000_000_000_000_000 + i * 1_000_000_000, 0.025));
     }
@@ -187,7 +187,7 @@ fn friccion_descarta_fills_insalvables_sin_contaminar() {
 fn friccion_mitades_divergentes_se_ven_en_la_sombra() {
     // 12 fills de 6 bp + 12 de 2 bp vs modelo 4 ⇒ media 0 pero mitades +2/−2:
     // la divergencia OOS queda expuesta en lugar de promediarse.
-    let mut a = AuditorInterno::new();
+    let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..24u64 {
         let fee = if i < 12 { 0.03 } else { 0.01 }; // 6 bp y 2 bp
         a.record_fill_independiente(apertura(1_700_000_000_000_000_000 + i * 1_000_000_000, fee));
@@ -203,7 +203,7 @@ fn friccion_mitades_divergentes_se_ven_en_la_sombra() {
 fn wr_solo_mira_cierres_no_aperturas() {
     // 24 aperturas con PnL positivo (NO cierran) + 0 cierres ⇒ la sombra WR
     // es None: una apertura no es evidencia de resultado.
-    let mut a = AuditorInterno::new();
+    let mut a = AuditorInterno::with_capital(13.0);
     for i in 0..24u64 {
         a.record_fill_independiente(apertura(1_700_000_000_000_000_000 + i * 1_000_000_000, 0.0));
     }
