@@ -112,8 +112,23 @@ fn every_representable_finite_first_score_has_an_evaluated_champion() {
 fn cli_rejection_does_not_skip_cooling_and_requires_a_champion() {
     // Structural callsite guard, not an execution of the evolution CLI.
     let source = include_str!("../../../src/bin/evolution.rs");
-    let loop_start = source.find("// RA-SA-F01:").unwrap();
-    let loop_end = source.find("let _best_out_pnl").unwrap();
+    // F1-089: el ancla es el MARCADOR, no el comentario entero. F1-085 le
+    // añadió un sufijo («RA-SA-F01 / F1-085: …») y el `find("// RA-SA-F01:")`
+    // dejó de encontrarlo: el contrato moría con `unwrap` sobre `None` sin
+    // que nada hubiera cambiado en el orden rechazo→enfriamiento que audita.
+    // Se busca el identificador estable y se falla con diagnóstico explícito.
+    assert!(
+        source.contains("RA-SA-F01"),
+        "el bloque de selección del SA perdió su marcador RA-SA-F01: el contrato \
+         no puede verificar el orden rechazo→enfriamiento"
+    );
+    assert!(
+        source.contains("let _best_out_pnl"),
+        "desapareció el cierre del bucle de selección (`let _best_out_pnl`)"
+    );
+    let loop_start = source.find("RA-SA-F01").unwrap_or(0);
+    let loop_end = source.find("let _best_out_pnl").unwrap_or(source.len());
+    assert!(loop_start < loop_end, "anclas del bucle en orden invertido");
     let selection_block = &source[loop_start..loop_end];
     assert!(
         !selection_block.contains("continue;"),
