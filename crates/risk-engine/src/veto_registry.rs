@@ -95,7 +95,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         responsable: "B3.19/D-382 (heredado), 2026-09-24",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
-        test: Some("replay_con_envolvente_sigue_determinista"),
+        test: Some("margen_insuf_contract_rejects_excessive_notional_and_admits_viable"),
         deuda: None,
     },
     EntradaVeto {
@@ -155,7 +155,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         responsable: "XLI·A1 (GLM), 2026-09-26",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: Some("t1_diag_camino_nativo_una_evaluacion"),
+        test: Some("viabilidad_contract_rejects_unviable_geometry_and_admits_viable"),
         deuda: None,
     },
     EntradaVeto {
@@ -226,7 +226,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         responsable: "XLIV-8/XLVI·B (Claude+GLM), 2026-09-29",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
-        test: Some("xliv_friccion_de_ida_y_vuelta_usa_la_ley_difusiva"),
+        test: Some("suelo_tp_sl_contract_rejects_sub_friction_brackets_and_admits_viable"),
         deuda: None,
     },
     EntradaVeto {
@@ -337,7 +337,7 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
         responsable: "heredado (D-747 unificación), puesto al día GLM/LXVII, 2026-10-01",
         clase: ClaseVeto::Logica,
         estado: EstadoVeto::Activo,
-        test: Some("xliv_friccion_de_ida_y_vuelta_usa_la_ley_difusiva"),
+        test: Some("ev_contract_rejects_negative_expectancy_and_admits_viable"),
         deuda: None,
     },
     EntradaVeto {
@@ -509,6 +509,10 @@ pub const TESTS_EXISTENTES_RIESGO: &[&str] = &[
     "spec_rejection_contract_handles_unregistered_coin",
     "invalid_input_contract_rejects_nan_and_infinities",
     "flat_coin_contract_rejects_flat_intent",
+    "margen_insuf_contract_rejects_excessive_notional_and_admits_viable",
+    "viabilidad_contract_rejects_unviable_geometry_and_admits_viable",
+    "suelo_tp_sl_contract_rejects_sub_friction_brackets_and_admits_viable",
+    "ev_contract_rejects_negative_expectancy_and_admits_viable",
 ];
 
 /// Fuentes cruzadas (mismo workspace) donde pueden vivir los contratos de
@@ -620,6 +624,37 @@ mod tests {
                 "TESTS_EXISTENTES_RIESGO incluye \"{}\" pero no existe como fn en \
                  risk-engine — la lista es una afirmación verificable, no un adorno.",
                 t
+            );
+        }
+
+        // F1-093 (Ola Ω196): Endurecer el diente del registro. Los contratos formales
+        // para margen_insuf, viabilidad, suelo_tp_sl y EV deben ejercer activamente
+        // tanto el caso de rechazo (FN / veto disparado) como el caso de admisión (FP / orden viable).
+        let contratos_criticos = [
+            ("margen_insuf_contract_rejects_excessive_notional_and_admits_viable", "V-RISK-003"),
+            ("viabilidad_contract_rejects_unviable_geometry_and_admits_viable", "V-LOGIC-001"),
+            ("suelo_tp_sl_contract_rejects_sub_friction_brackets_and_admits_viable", "V-LOGIC-006"),
+            ("ev_contract_rejects_negative_expectancy_and_admits_viable", "V-LOGIC-013"),
+        ];
+        for (test_name, veto_id) in contratos_criticos {
+            let fn_anchor = format!("fn {}(", test_name);
+            let test_pos = corpus.find(&fn_anchor).unwrap_or_else(|| {
+                panic!("{}: test '{}' no encontrado en el corpus de contratos", veto_id, test_name);
+            });
+            let snippet = &corpus[test_pos..test_pos + 2500.min(corpus.len() - test_pos)];
+            let tiene_rechazo = snippet.contains("ultimo_rechazo()")
+                || snippet.contains("SignalType::Flat")
+                || snippet.contains("VetoEnvio::Margen")
+                || snippet.contains("REJ_");
+            let tiene_admision = snippet.contains("SignalType::Long")
+                || snippet.contains("SignalType::Short")
+                || snippet.contains("is_ok()")
+                || snippet.contains("volume_usd > 0.0");
+            assert!(
+                tiene_rechazo && tiene_admision,
+                "{}: el contrato '{}' debe contener tanto caso de rechazo (FN) como de admisión (FP)",
+                veto_id,
+                test_name
             );
         }
     }

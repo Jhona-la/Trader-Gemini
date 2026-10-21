@@ -1,5 +1,40 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω196: Cierre de F1-093 (Contratos FP/FN para Vetos de Riesgo Duro y Lógica, Endurecimiento del Registro y Certificación Verde de CI) (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω196: ERRADICACIÓN DE TESTS FANTASMA EN EL REGISTRO DE VETOS, CONTRATOS FP/FN Y CI 100% VERDE
+
+1. **Hallazgo Cerrado en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-093` (`MED`, `crates/risk-engine/src/veto_registry.rs`, `crates/risk-engine/tests/veto_logic_contracts.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - **QUÉ**: Erradicación de la certificación espuria de vetos y establecimiento de contratos formales de cobertura positiva y negativa:
+       1. Creación de 4 contratos formales FP/FN dedicados en `crates/risk-engine/tests/veto_logic_contracts.rs`:
+          - `margen_insuf_contract_rejects_excessive_notional_and_admits_viable`: para `V-RISK-003` (`REJ_MARGIN_INSUFFICIENT` / `VetoEnvio::Margen`). Ejercita caso de rechazo cuando el nocional excede el 95% del margen libre disponible, y caso de admisión cuando el nocional cabe holgadamente.
+          - `viabilidad_contract_rejects_unviable_geometry_and_admits_viable`: para `V-LOGIC-001` (`REJ_VIABILIDAD`). Ejercita caso de rechazo cuando la pérdida mínima de la orden mínima supera el tope de ruina (`capital_regime::orden_viable`), y caso de admisión para geometría viable estándar.
+          - `suelo_tp_sl_contract_rejects_sub_friction_brackets_and_admits_viable`: para `V-LOGIC-006` (`REJ_TP_SL_FLOOR`). Ejercita caso de rechazo cuando la dispersión difusiva $\sigma(\tau)$ colapsa bajo el suelo mínimo viable de fricción roundtrip (`below_tradeable_floor`), y admisión con ATR normal.
+          - `ev_contract_rejects_negative_expectancy_and_admits_viable`: para `V-LOGIC-013` (`REJ_EV`). Ejercita caso de rechazo ante esperanza matemática negativa o insuficiente frente a la fricción roundtrip $\times$ multiplicador, y admisión con EV robusto.
+       2. Reemplazo en `crates/risk-engine/src/veto_registry.rs` de los tests anteriores no ejecutantes (`replay_con_envolvente_sigue_determinista`, `t1_diag_camino_nativo_una_evaluacion`, `xliv_friccion_de_ida_y_vuelta_usa_la_ley_difusiva`) por los nuevos contratos dedicados.
+       3. Endurecimiento del diente en `sol_a1_los_tests_del_registro_existen_de_verdad` en `veto_registry.rs`: comprueba activamente que el corpus de contratos contenga explícitamente tanto el caso de rechazo (FN) como el caso de admisión (FP) para los vetos críticos.
+     - **POR QUÉ**: El registro certificaba previamente vetos de riesgo duro y lógica mediante tests que no ejercían la condición ni el código de rechazo del veto. Cualquier regresión silenciosa en el guardián de margen, suelo de fricción, valor esperado o viabilidad dejaba las pruebas en verde mientras el riesgo real quedaba desprotegido.
+     - **PARA QUÉ**: Garantizar fidelidad matemática y operativa absoluta entre el registro y el comportamiento vivo, protegiendo el capital de $13\text{ USD}$ y la meta compuesta de duplicación cada 72 horas.
+     - **CÓMO**: 4 contratos FP/FN, vinculación estricta en el registro y test estático del corpus.
+     - **CUÁNDO**: Permanente en cada build y evaluación de riesgo.
+     - **DÓNDE**: `crates/risk-engine/src/veto_registry.rs`, `crates/risk-engine/tests/veto_logic_contracts.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en Modo Profesor y Consejo de 10 Roles Senior.
+
+2. **Resolución de Fallos en CI GitHub Actions**:
+   - `spectral_interpolation_contract.rs:42`: Añadida llamada a `spec.refresh_fusion()` tras fijar parámetros epigenéticos en escalas 18/19, actualizando la caché de pesos espectrales `cached_pesos_esp`.
+   - `crates/risk-engine/src/lib.rs:460`: Fail-closed inmediato ante `raw_kelly` no finito (`if !raw_kelly.is_finite() { return rej(REJ_INVALID_INPUT); }`), eliminando la fuga donde `NaN.min(clamp_max)` retornaba 0.25 y abría órdenes en lugar de rechazarlas.
+   - **Resultado en GitHub Actions**: Workflow `Unit and contract suites` (run ID `39641846038`) completado 100% verde (6/6 jobs: meta-analítica, auditoria, riesgo, nucleo, entrenador, espectro-y-consejo).
+
+3. **Verificación Contractual y Pruebas de Certificación**:
+   - `cargo test -p risk-engine --test veto_logic_contracts -j 1` (14/14 pass, 100% verde en 0.28s).
+   - `cargo test -p risk-engine --lib veto_registry -j 1` (8/8 pass, 100% verde en 0.04s).
+   - `cargo check --workspace --all-targets -j 1` (100% verde en los 23 crates en 8m 21s con 0 errores y 0 warnings).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω195: Cierre de F1-092 (Derivación Rigurosa de Apalancamiento Objetivo, Fail-Closed en Capital, Física Fractal de Hurst, Desacoplamiento de Veto Threshold BTC y Cota Estricta del Axioma de Ruina sobre Riesgo Realizado) (2026-10-21)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
