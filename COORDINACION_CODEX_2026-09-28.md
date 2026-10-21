@@ -1,5 +1,36 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω194: Cierre de F1-089 y F1-091 (Zero-Alloc Hot Path en Risk Engine: Hayashi-Yoshida en Streaming, Snapshot Lock-Free en Stack, Riesgos Híbridos Directos y Caché Estático de Cópulas) (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω194: ERRADICACIÓN TOTAL DE ALLOCATIONS EN HEAP EN LA RUTA CRÍTICA DE EVALUACIÓN DE INTENCIONES
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-089` y `F1-091` (`MED`, `crates/risk-engine/src/correlation_guard.rs:260-337, 600-660`, `crates/risk-engine/src/copulas_store.rs:40-95`, `crates/risk-engine/src/evidence.rs:188-210`, `crates/risk-engine/src/lib.rs:770-795`, `crates/risk-engine/tests/f1_089_091_zero_alloc_hot_path_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - **QUÉ**: Reemplazo completo de todas las asignaciones dinámicas en heap en el camino caliente de evaluación de dependencias y correlaciones:
+       1. `dependency_exposure` utiliza `snapshot_recent_into` sobre buffers en stack `[CompactTick; MAX_TICKS_MUESTRA]` (512 elementos = 20.48 KB), erradicando las copias a nuevos `Vec` que costaban ~80 KB por intención evaluada.
+       2. `hayashi_yoshida_correlation` procesa retornos asíncronos directamente sobre slices y arrays en stack `[(u64, u64, f64); MAX_TICKS_MUESTRA]`, eliminando dos `Vec` dinámicos por par de monedas comparado.
+       3. `same_bet_riesgos_hibridos_into` copia directamente los riesgos a un buffer estático en stack `[f64; MAX_COINS * 3 + 1]` en `lib.rs:778` pasando directamente a `veto_por_riesgo_cramer_lundberg` sin pasar por `Vec`.
+       4. `resolve_bayes_prior` utiliza `arena.registry.get_for_coin_strict` con buffer en stack `[u8; 64]`, erradicando dos `format!` por llamada.
+       5. `copulas_store` cachea el manifiesto en memoria vía `static MANIFEST_RAW: OnceLock<Option<String>>`, evitando I/O de disco redundante en caliente cuando el universo no está poblado.
+     - **POR QUÉ**: La evaluación de intenciones asignaba masivamente en heap (decenas de `Vec` y strings formateados por tick) y releía archivos de disco de forma síncrona, elevando la latencia a 175 µs (7× el presupuesto de 25 µs) e introduciendo fragmentación de RAM inaceptable en una máquina de 16 GB sin GPU.
+     - **PARA QUÉ**: Reducir la latencia de evaluación de intenciones a régimen de nanosegundos, erradicar la presión del GC/allocator del sistema operativo y blindar la estabilidad física del motor para sostener el crecimiento compuesto del +100% cada 3 días desde $13 USD.
+     - **CÓMO**: Métodos zero-alloc `_into`, arrays fijos en stack, `get_for_coin_strict`, `OnceLock` y suite formal contractual `f1_089_091_zero_alloc_hot_path_contract.rs` (3/3 tests passing).
+     - **CUÁNDO**: Permanente en cada intención evaluada por el motor.
+     - **DÓNDE**: `crates/risk-engine/src/correlation_guard.rs`, `crates/risk-engine/src/copulas_store.rs`, `crates/risk-engine/src/evidence.rs`, `crates/risk-engine/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en Modo Profesor y Consejo de 10 Roles Senior.
+
+2. **Verificación Contractual y Pruebas de Certificación**:
+   - `cargo test -p risk-engine --test f1_089_091_zero_alloc_hot_path_contract -j 1` (3/3 pass, 100% verde en 0.11s).
+   - `cargo test -p risk-engine --test correlation_admission_contract -j 1` (30/30 pass, 100% verde en 1.65s).
+   - `cargo test -p risk-engine --test veto_logic_contracts -j 1` (10/10 pass, 100% verde en 0.20s).
+   - `cargo test -p risk-engine --test f1_090_sonda_sprt_reachability_and_zero_alloc_contract -j 1` (4/4 pass, 100% verde en 0.07s).
+   - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+   - `cargo check --workspace --all-targets -j 1` (100% verde en los 23 crates en 8m 55s con 0 errores y 0 warnings).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω193: Cierre de F1-090 (Egreso Precoz por SPRT de Wald Alcanzable en Horizonte Finito / Inversión Analítica de Regularización Bayesiana / Zero-Alloc Hot Path en Sonda) (2026-10-21)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

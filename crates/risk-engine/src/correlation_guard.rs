@@ -264,9 +264,14 @@ pub fn hayashi_yoshida_correlation(
         return None;
     }
     // Retornos logarítmicos con sus intervalos: (inicio, fin, r).
-    let build = |s: &[quantum_arena::state::CompactTick]| -> Vec<(u64, u64, f64)> {
-        let mut out = Vec::with_capacity(s.len() - 1);
+    // OLA Ω194 (Zero-Alloc Hot Path / F1-091): Buffer en stack [_; MAX_TICKS_MUESTRA]
+    // erradicando asignaciones heap por Vec en cada llamada.
+    let build_into = |s: &[quantum_arena::state::CompactTick], out: &mut [(u64, u64, f64)]| -> usize {
+        let mut count = 0;
         for w in s.windows(2) {
+            if count >= out.len() {
+                break;
+            }
             if w[1].timestamp <= start || w[0].timestamp >= end {
                 continue;
             }
@@ -280,15 +285,20 @@ pub fn hayashi_yoshida_correlation(
             } else {
                 p1.ln() - p0.ln()
             };
-            out.push((w[0].timestamp, w[1].timestamp, r));
+            out[count] = (w[0].timestamp, w[1].timestamp, r);
+            count += 1;
         }
-        out
+        count
     };
-    let ra = build(a);
-    let rb = build(b);
-    if ra.len() < 2 || rb.len() < 2 {
+    let mut buf_a = [(0u64, 0u64, 0.0f64); MAX_TICKS_MUESTRA];
+    let mut buf_b = [(0u64, 0u64, 0.0f64); MAX_TICKS_MUESTRA];
+    let na = build_into(a, &mut buf_a);
+    let nb = build_into(b, &mut buf_b);
+    if na < 2 || nb < 2 {
         return None;
     }
+    let ra = &buf_a[..na];
+    let rb = &buf_b[..nb];
     // R_HY simétrico con dos punteros: cada retorno de A se cruza con los
     // de B cuyo intervalo lo solapa (overlap estricto > 0).
     let mut cross = 0.0f64;
@@ -296,14 +306,14 @@ pub fn hayashi_yoshida_correlation(
     let mut var_b = 0.0f64;
     // Variaciones cuadráticas del MISMO soporte usado por la covariación:
     // excluir aquí también los intervalos enteramente fuera de ventana.
-    for (_, _, r) in &ra {
+    for (_, _, r) in ra {
         var_a += r * r;
     }
-    for (_, _, r) in &rb {
+    for (_, _, r) in rb {
         var_b += r * r;
     }
     let mut j = 0usize;
-    for &(a0, a1, r) in &ra {
+    for &(a0, a1, r) in ra {
         // avanzar j hasta el primer intervalo de B que termina tras a0
         while j < rb.len() && rb[j].1 <= a0 {
             j += 1;
@@ -479,6 +489,44 @@ impl DependencyExposure {
             })
             .collect()
     }
+
+    /// OLA Ω194 (Zero-Alloc Hot Path / F1-089): Copia los riesgos híbridos y el de la candidata
+    /// directamente a un buffer en stack, devolviendo el número exacto de elementos sin asignaciones en heap.
+    pub fn same_bet_riesgos_hibridos_into(
+        &self,
+        fallback: f64,
+        candidata: f64,
+        out: &mut [f64],
+    ) -> usize {
+        let fb = if fallback.is_finite() && fallback > 0.0 {
+            fallback
+        } else {
+            1.0
+        };
+        let mut count = 0;
+        for &b in &self.same_bet_riesgos_bits {
+            if count >= out.len().saturating_sub(1) {
+                break;
+            }
+            let r = if b == 0 {
+                fb
+            } else {
+                let val = f64::from_bits(b);
+                if val.is_finite() && val > 0.0 {
+                    val
+                } else {
+                    fb
+                }
+            };
+            out[count] = r;
+            count += 1;
+        }
+        if count < out.len() {
+            out[count] = candidata;
+            count += 1;
+        }
+        count
+    }
 }
 
 /// XLVI·E (SPECTRAL-010) — VETO POR RIESGO REAL MEDIDO AL STOP.
@@ -598,15 +646,27 @@ pub fn dependency_exposure(
     threshold: f64,
 ) -> Option<DependencyExposure> {
     let candidate = arena.coins.get(candidate_id)?;
-    let candidate_ticks = candidate.tick_ring.snapshot_recent(MAX_TICKS_MUESTRA);
+    // OLA Ω194 (Zero-Alloc Hot Path / F1-091): Stack buffers para ticks
+    let mut candidate_ticks = [quantum_arena::state::CompactTick::default(); MAX_TICKS_MUESTRA];
+    let candidate_n = candidate
+        .tick_ring
+        .snapshot_recent_into(MAX_TICKS_MUESTRA, &mut candidate_ticks);
+    let candidate_slice = &candidate_ticks[..candidate_n];
+
+    let mut other_ticks = [quantum_arena::state::CompactTick::default(); MAX_TICKS_MUESTRA];
+
     let mut result = DependencyExposure::default();
     // XLVI·D: correlación PnL de cada miembro del grupo same-bet contra la
     // candidata (None = no medida) — para la ρ efectiva del grupo.
-    let mut rhos_same_bet: Vec<Option<f64>> = Vec::with_capacity(arena.coins.len() * 3);
+    const MAX_SAME_BET_SLOTS: usize = quantum_arena::state::MAX_COINS * 3;
+    let mut rhos_same_bet = [None; MAX_SAME_BET_SLOTS];
+    let mut num_rhos_same_bet = 0;
+
     // LXXII: coin_ids de los miembros misma-apuesta (para el λ̂ de cópulas
     // por par contra la candidata).
-    let mut same_bet_assets: Vec<usize> = Vec::with_capacity(arena.coins.len());
-    result.same_bet_riesgos_bits.reserve(arena.coins.len() * 3);
+    let mut same_bet_assets = [0usize; quantum_arena::state::MAX_COINS];
+    let mut num_same_bet_assets = 0;
+
     // XLVI·E (SPECTRAL-010): riesgo REAL al stop de cada miembro, como
     // fracción del capital unificado — el veto agregará estos, no una
     // escala única supuesta.
@@ -629,9 +689,12 @@ pub fn dependency_exposure(
         let price_rho = if asset_id == candidate_id {
             Some(1.0)
         } else {
-            let other_ticks = coin.tick_ring.snapshot_recent(MAX_TICKS_MUESTRA);
-            let raw_rho = hayashi_yoshida_correlation(&candidate_ticks, &other_ticks).or_else(|| {
-                correlacion_de_retornos(&candidate_ticks, &other_ticks, threshold)
+            let other_n = coin
+                .tick_ring
+                .snapshot_recent_into(MAX_TICKS_MUESTRA, &mut other_ticks);
+            let other_slice = &other_ticks[..other_n];
+            let raw_rho = hayashi_yoshida_correlation(candidate_slice, other_slice).or_else(|| {
+                correlacion_de_retornos(candidate_slice, other_slice, threshold)
             });
             // AGY-AUD-P06: Excitación de contagio Hawkes cruzado:
             // Si el activo es un seguidor neto recibiendo contagio fuerte (net_role < -3.0):
@@ -657,8 +720,14 @@ pub fn dependency_exposure(
             }
             if CorrelationGuardEngine::es_la_misma_apuesta(pnl_rho, threshold) {
                 result.same_bet_positions += 1;
-                rhos_same_bet.push(pnl_rho);
-                same_bet_assets.push(asset_id);
+                if num_rhos_same_bet < MAX_SAME_BET_SLOTS {
+                    rhos_same_bet[num_rhos_same_bet] = pnl_rho;
+                    num_rhos_same_bet += 1;
+                }
+                if num_same_bet_assets < quantum_arena::state::MAX_COINS {
+                    same_bet_assets[num_same_bet_assets] = asset_id;
+                    num_same_bet_assets += 1;
+                }
                 // XLVI·E: riesgo real al stop si el snapshot lo sostiene.
                 // Bits 0 = no medido (sin stop utilizable, lado del stop
                 // inconsistente con la dirección, o capital inválido).
@@ -698,7 +767,7 @@ pub fn dependency_exposure(
         .filter(|c| c.is_finite() && *c >= 0.0)
         .unwrap_or(0.0)
         .clamp(0.0, 1.0);
-    let base_rho = rho_efectivo_grupo(&rhos_same_bet);
+    let base_rho = rho_efectivo_grupo(&rhos_same_bet[..num_rhos_same_bet]);
     let systemic_rho = (base_rho + (1.0 - base_rho) * (curl_share * curl_share)).clamp(-1.0, 1.0);
     // LXXII (copulas t): TERCERA etapa de inflado hacia 1 — la
     // dependencia de COLA medida (λ̂ por par, manifest de cópulas). Las
@@ -710,7 +779,7 @@ pub fn dependency_exposure(
     // systemic_rho legado — disciplina D-754, como V-RISK-006 sin R.
     // LXXIII (nota qo-606): λ̂_grupo = máx sobre TODOS los pares del
     // grupo — candidato-miembro Y miembro-miembro (ver lambda_grupo_max).
-    let lambda_grupo = lambda_grupo_max(candidate_id, &same_bet_assets);
+    let lambda_grupo = lambda_grupo_max(candidate_id, &same_bet_assets[..num_same_bet_assets]);
     let final_rho = inflar_cola(systemic_rho, lambda_grupo);
     if let Some(l) = lambda_grupo {
         // Contable del consejo: el veto operó con inflado de cola medido.

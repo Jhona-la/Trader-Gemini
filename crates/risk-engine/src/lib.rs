@@ -775,8 +775,14 @@ impl RiskEngine {
         } else {
             tope / 8.0 // arranque frío: mismo proxy que el veto legado
         };
-        let mut riesgos = dependence.same_bet_riesgos_hibridos(tope / 8.0);
-        riesgos.push(riesgo_candidata);
+        // OLA Ω194 (Zero-Alloc Hot Path / F1-089): Copia de riesgos híbridos en buffer de stack
+        let mut riesgos_buf = [0.0f64; quantum_arena::state::MAX_COINS * 3 + 1];
+        let num_riesgos = dependence.same_bet_riesgos_hibridos_into(
+            tope / 8.0,
+            riesgo_candidata,
+            &mut riesgos_buf,
+        );
+        let riesgos = &riesgos_buf[..num_riesgos];
         // #602 (Ola 24): el tope del grupo se APRIETA con la cota actuarial
         // de Cramér-Lundberg cuando existe R medido para esta moneda
         // (`c{id}:lundberg_r_nocional`, publicado por el estimador #600 en
@@ -848,7 +854,7 @@ impl RiskEngine {
             None => rho_escalar,
         };
         if correlation_guard::veto_por_riesgo_cramer_lundberg(
-            &riesgos,
+            riesgos,
             rho_final,
             tope,
             r_lundberg,
