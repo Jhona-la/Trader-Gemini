@@ -1,5 +1,32 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω192: Cierre de F1-088 (Techo Físico de Liquidación L*(SL+f+mmr)<1 en Rescates de Nocional Mínimo / Invariante Fail-Closed REJ_TARGET_GEOMETRY) (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω192: INVARIANTE FÍSICA DE LIQUIDACIÓN Y BLINDAJE DE APALANCAMIENTO EN RESCATES DE MICRO-CUENTAS
+
+1. **Hallazgo Cerrado en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-088` (`MED`, `crates/risk-engine/src/lib.rs:1175-1193, 1640-1658, 1740-1745, 1775-1785`, `crates/risk-engine/tests/f1_088_liquidation_invariant_and_vol_brake_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - **QUÉ**: Derivación analítica del apalancamiento máximo admisible $L_{\text{safe\_liq}} = \left\lfloor \frac{1.0 - 10^{-4}}{\text{expected\_loss} + \text{friccion\_total} + \text{mmr}} \right\rfloor \ge 1.0$; acotamiento de `dynamic_leverage`, `candidate_leverage` (Rescate 1) y `needed_leverage` (Rescate 2) por `max_safe_lev_liq`; e imposición de la invariante terminal `if dynamic_leverage * dist_stop_full >= 1.0 { return rej(REJ_TARGET_GEOMETRY); }`.
+     - **POR QUÉ**: Los rescates de nocional mínimo para micro-cuentas ($13\text{ USD}$) sustituían o inflaban el apalancamiento hasta 50x sin comprobar la distancia al stop loss ni el MMR. Si el stop era holgado (e.g. 4%–8%), el apalancamiento resultante ubicaba el precio de liquidación antes del stop loss, permitiendo que Binance liquidara forzosamente la posición con comisiones de clearance antes de que el motor pudiera cortar la pérdida en stop.
+     - **PARA QUÉ**: Asegurar que toda orden emitida por el motor garantice matemáticamente que el stop loss se alcanza y ejecuta antes de la liquidación forzosa, blindando las micro-cuentas contra quiebras repentinas y protegiendo la meta de crecimiento compuesto (+100%/72h).
+     - **CÓMO**: Cálculo de `dist_stop_full = expected_loss + friccion_total + mmr_spec`, rechazo de geometrías imposibles con `REJ_TARGET_GEOMETRY`, techo `max_safe_lev_liq` en los dos rescates de nocional y verificación final. Suite contractual `f1_088_liquidation_invariant_and_vol_brake_contract.rs` (4/4 pass).
+     - **CUÁNDO**: Permanente en cada evaluación de tamaño y apalancamiento.
+     - **DÓNDE**: `crates/risk-engine/src/lib.rs` y `crates/risk-engine/tests/f1_088_liquidation_invariant_and_vol_brake_contract.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en Modo Profesor y Consejo de 10 Roles Senior.
+
+2. **Verificación Contractual y Pruebas de Certificación**:
+   - `cargo test -p risk-engine --test f1_088_liquidation_invariant_and_vol_brake_contract -j 1` (4/4 pass, 100% verde en 0.08s).
+   - `cargo test -p risk-engine --test veto_logic_contracts -j 1` (10/10 pass, 100% verde en 0.23s).
+   - `cargo test -p risk-engine --test leverage_admission_contract -j 1` (7/7 pass, 100% verde en 0.12s).
+   - `cargo test -p risk-engine --test f1_086_lh04_p1_margin_vs_risk_cap_contract -j 1` (3/3 pass, 100% verde en 0.06s).
+   - `cargo test -p risk-engine --test f1_087_exploration_hot_hand_failclosed_contract -j 1` (3/3 pass, 100% verde en 0.08s).
+   - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+   - `cargo check --workspace --all-targets -j 1` (100% verde en los 23 crates con 0 errores y 0 warnings).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω191: Cierre de F1-087 (Preservación de Exploración Sub-Kelly / Erradicación de Inflación Hot-Hand en Legado / Cierre Fail-Closed en LH-04 sin Edge) (2026-10-21)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

@@ -1173,10 +1173,25 @@ impl RiskEngine {
         // cadena razone con el mismo entero que verá el exchange. La
         // discretización no es una constante arbitraria: la impone el contrato del
         // endpoint.
+        // F1-088 (Ola Ω192): Tasa de margen de mantenimiento del símbolo (MMR)
+        // y distancia física total al stop con fricción y colchón de liquidación.
+        let mmr_spec = arena
+            .registry
+            .get_for_coin_or(coin_id, "maintenance_margin_rate", 0.01)
+            .clamp(0.001, 0.05);
+        let dist_stop_full = expected_loss + friccion_total + mmr_spec;
+        if dist_stop_full >= 1.0 {
+            return rej(REJ_TARGET_GEOMETRY);
+        }
+        let max_safe_lev_liq = ((1.0 - 1e-4) / dist_stop_full).floor().max(1.0);
+
         if !dynamic_leverage.is_finite() || dynamic_leverage < 1.0 {
             return rej(REJ_INVALID_INPUT);
         }
-        dynamic_leverage = dynamic_leverage.min(genome_max_leverage).floor();
+        dynamic_leverage = dynamic_leverage
+            .min(genome_max_leverage)
+            .min(max_safe_lev_liq)
+            .floor();
 
 
         // D-642 (DÉCIMA OLA): la confianza entra tal cual. El suelo `.max(0.51)`
@@ -1645,11 +1660,16 @@ impl RiskEngine {
             // check de abajo sigue limitando el costo.
             // CL-6 / AGY-AUD: usar .ceil() antes del cap para que el apalancamiento
             // alcance el mínimo sin forzar margen adicional innecesario.
+            // F1-088 (Ola Ω192): El apalancamiento candidato queda estrictamente
+            // acotado por el techo físico de liquidación `max_safe_lev_liq`
+            // (`L · (SL + f + mmr) < 1.0`), garantizando que el stop loss ejecute
+            // antes del precio de liquidación del exchange en futuros perpetuos.
             let candidate_leverage = (dynamic_min_notional / final_margin.max(0.01)) * 1.02;
             dynamic_leverage = candidate_leverage
                 .ceil()
                 .min(genome_max_leverage)
                 .min(max_lev_cap)
+                .min(max_safe_lev_liq)
                 .floor();
         }
 
@@ -1734,15 +1754,14 @@ impl RiskEngine {
             );
             final_margin = safe_limit;
             if final_margin > 0.0 && final_margin * dynamic_leverage < safe_min_notional {
-                // CL-6: el apalancamiento ENTERO que alcanza el mínimo es el
-                // techo del cociente, no su suelo (`floor(1,98) = 1` dejaba la
-                // orden a la mitad del mínimo), acotado por los MISMOS techos
-                // que el primer rescate. Si no cabe, el invariante terminal de
-                // abajo rechaza; el coste lo juzga el presupuesto de comisiones.
+                // CL-6 / F1-088: el apalancamiento ENTERO que alcanza el mínimo es el
+                // techo del cociente, no su suelo, acotado por los MISMOS techos
+                // que el primer rescate incluyendo max_safe_lev_liq.
                 let needed_leverage = (safe_min_notional / final_margin).ceil();
                 dynamic_leverage = needed_leverage
                     .min(genome_max_leverage)
                     .min(max_lev_cap)
+                    .min(max_safe_lev_liq)
                     .floor()
                     .max(dynamic_leverage);
             }
@@ -1755,6 +1774,15 @@ impl RiskEngine {
             || dynamic_leverage > genome_max_leverage
         {
             return rej(REJ_INVALID_INPUT);
+        }
+
+        // F1-088: Invariante terminal de liquidación física en futuros:
+        // L · (expected_loss + friccion_total + mmr_spec) < 1.0.
+        // Si el stop loss más la fricción queda a o más allá de la distancia de liquidación,
+        // el exchange liquida la posición antes de ejecutar el SL, causando pérdida del 100%
+        // de colateral más comisión de liquidación mientras el registro modelaría un SL ficticio.
+        if dynamic_leverage * dist_stop_full >= 1.0 {
+            return rej(REJ_TARGET_GEOMETRY);
         }
         let final_fee_impact = friccion_total * dynamic_leverage;
         // LH-02 (Línea H / AGY): En el valle de capital ($35–$65 USD), allocated_capital

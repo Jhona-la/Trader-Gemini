@@ -9,6 +9,26 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
 [Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
 
 
+## 2026-10-21 (mañana) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω192 (Cierre F1-088)
+
+- **Mandato**: Techo físico de liquidación $L \cdot (SL + f + \text{mmr}) < 1.0$ en apalancamiento inicial y rescates de nocional mínimo (`candidate_leverage` y `needed_leverage`) en `crates/risk-engine/src/lib.rs` (`F1-088`), erradicando la desconexión entre el freno de volatilidad y la barrera de liquidación forzosa en micro-cuentas ($13\text{ USD}$), con invariante terminal fail-closed `REJ_TARGET_GEOMETRY`:
+  1. **F1-088 (`crates/risk-engine/src/lib.rs:1175-1193, 1640-1658, 1740-1745, 1775-1785`, `crates/risk-engine/tests/f1_088_liquidation_invariant_and_vol_brake_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Derivación analítica del apalancamiento máximo físicamente seguro ante liquidación aislada en Binance Futures USDT-M $L_{\text{safe\_liq}} = \left\lfloor \frac{1.0 - 10^{-4}}{\text{expected\_loss} + \text{friccion\_total} + \text{mmr}} \right\rfloor \ge 1.0$; clamping estricto del apalancamiento inicial (`dynamic_leverage`) y de los dos rescates de nocional mínimo (`candidate_leverage` en Rescate 1 y `needed_leverage` en Rescate 2) por `max_safe_lev_liq`; e invariante terminal fail-closed `if dynamic_leverage * dist_stop_full >= 1.0 { return rej(REJ_TARGET_GEOMETRY); }`.
+     - *POR QUÉ*: Anteriormente, los rescates de nocional mínimo para micro-cuentas ($13\text{ USD}$) sustituían o inflaban el apalancamiento hasta 50x sin verificar la distancia real al stop loss ni la tasa de margen de mantenimiento ($\text{mmr}$). Con stops amplios (4%–8%), un apalancamiento elevado (15x–26x) colocaba el precio de liquidación del exchange ANTES del stop loss. Binance liquidaba la posición, cobraba comisiones de liquidación del 1.5% y destruía el capital antes de que el motor pudiera cortar la pérdida, rompiendo la paridad de riesgo y arriesgando la ruina matemática.
+     - *PARA QUÉ*: Garantizar con certeza física que cualquier orden emitida ejecute su stop loss antes de alcanzar la liquidación forzosa, respetando el capital de $13\text{ USD}$ y preservando el camino de compound growth (+100%/72h) con cero eventos de liquidación inesperada.
+     - *CÓMO*: Cálculo de `dist_stop_full = expected_loss + friccion_total + mmr_spec`; rechazo inmediato `REJ_TARGET_GEOMETRY` si `dist_stop_full >= 1.0`; derivación de `max_safe_lev_liq`; clamping de `candidate_leverage` y `needed_leverage`; verificación terminal de la invariante; y suite de pruebas contractuales `f1_088_liquidation_invariant_and_vol_brake_contract.rs` (4/4 tests passing).
+     - *CUÁNDO*: En cada evaluación y rescate de nocional mínimo de órdenes cuánticas de riesgo.
+     - *DÓNDE*: `crates/risk-engine/src/lib.rs` y `crates/risk-engine/tests/f1_088_liquidation_invariant_and_vol_brake_contract.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), Risk Manager, Quant Developer y QA Engineer.
+- **Verificación Contractual y Compilación Workspace**:
+  - `cargo test -p risk-engine --test f1_088_liquidation_invariant_and_vol_brake_contract -j 1` (4/4 pass, 100% verde en 0.08s).
+  - `cargo test -p risk-engine --test veto_logic_contracts -j 1` (10/10 pass, 100% verde en 0.23s).
+  - `cargo test -p risk-engine --test leverage_admission_contract -j 1` (7/7 pass, 100% verde en 0.12s).
+  - `cargo test -p risk-engine --test f1_086_lh04_p1_margin_vs_risk_cap_contract -j 1` (3/3 pass, 100% verde en 0.06s).
+  - `cargo test -p risk-engine --test f1_087_exploration_hot_hand_failclosed_contract -j 1` (3/3 pass, 100% verde en 0.08s).
+  - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+  - `cargo check --workspace --all-targets -j 1` (100% verde en los 23 crates con 0 errores y 0 warnings).
+
 ## 2026-10-19 (tarde, 8) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω177 (Cierre F1-073)
 
 - **Mandato**: Snapshots atómicos y Seqlock lock-free para curvas de horizonte continuo en `QuantumConfig` y `apply_to_arena` (`F1-073`), erradicando la formación de quimeras entre genomas `(a_nuevo, b_viejo)` durante hot-swaps y asegurando que las parejas TP/SL se evalúen bajo el mismo genoma preservando la invariante matemática y de riesgo $TP \ge SL \cdot RR$ en tiempo real:
