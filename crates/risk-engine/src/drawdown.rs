@@ -24,6 +24,11 @@
 //! las órdenes, acotado por d* ([`drawdown_de_falsacion`]). CL-121 (T3-09 de
 //! la Línea G) retiró las funciones de la prueba de racha, que se habían
 //! quedado sin consumidores.
+//!
+//! F1-085 (Ola Ω189): El gen `global_max_drawdown` se conserva congelado en el genotipo
+//! (slot vec[0]) para preservar la dimensión contractual canónica 144 sin generar ruido
+//! evolutivo. La protección de capital y el cortacircuitos de cuenta se ejecutan
+//! exclusivamente a través de [`freno_duro`] y [`drawdown_de_falsacion`].
 
 /// Horizonte de operaciones sobre el que se exige supervivencia. Es el MISMO
 /// que usa el tope de ruina del dimensionado (`ruin::TRADE_HORIZON`): si el

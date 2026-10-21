@@ -912,7 +912,9 @@ impl SuperGenotype {
 
     pub fn new_random() -> Self {
         let mut g = Self {
-            global_max_drawdown: rand::rng().random_range(0.5..0.99),
+            // F1-085: gen congelado a default canónico neutral (1 - taker*100) en [0.50, 0.99];
+            // el cortacircuitos de producción corre a través de freno_duro y d*=0.632 (ADR-0016).
+            global_max_drawdown: 0.96,
             // D-644: misma banda que la mutación y los bounds.
             global_leverage: rand::rng().random_range(1.0..50.0),
             btc_volatility_multiplier: rand::rng().random_range(0.5..3.0),
@@ -1860,7 +1862,9 @@ impl SuperGenotype {
         };
 
         let mut mutated = Self {
-            global_max_drawdown: mutate_val(self.global_max_drawdown, 0.5, 0.99),
+            // F1-085: gen congelado sin mutación (cortacircuitos vivo gobernado por freno_duro
+            // [CL-106 / ADR-0017] y d*=0.632 [ADR-0016]; sin consumidor vivo en live hot path).
+            global_max_drawdown: self.global_max_drawdown,
             // D-644 (DÉCIMA OLA): la banda era [25, 35] en inicialización,
             // mutación y validación. La evolución NO PODÍA bajar de 25×: un
             // genoma prudente con 5× era empujado a 25× en su primera mutación,

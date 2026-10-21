@@ -264,6 +264,9 @@ fn evolve_main() {
     // No numerical sentinel may outrank an evaluated finite loss.
     let mut selection = evolution_engine::sa_selection::SaScoreState::new();
     let mut temp = initial_temp;
+    // F1-085: Umbral de tolerancia de drawdown del Simulated Annealing (desacoplado de
+    // SuperGenotype.global_max_drawdown, que vive congelado en [0.50, 0.99] y está gobernado en vivo por freno_duro).
+    let mut sa_dd_limit = 0.20_f64;
 
     println!(
         "🚀 Starting Simulated Annealing: {} Iterations (Quantum Tunneling)",
@@ -290,7 +293,9 @@ fn evolve_main() {
         test_cfg.dynamic_atr_min += random_f64(-0.0002, 0.0002) * temp / initial_temp;
 
         // Genome Limit Mutations (Eradicating hardcoded biases)
-        test_cfg.global_max_drawdown += random_f64(-0.02, 0.02) * temp / initial_temp;
+        // F1-085: Mutación de tolerancia SA en variable local; el gen global_max_drawdown no se corrompe
+        let test_sa_dd_limit =
+            (sa_dd_limit + random_f64(-0.02, 0.02) * temp / initial_temp).clamp(0.05, 0.30);
         test_cfg.min_trades_per_day += random_f64(-1.0, 1.0) * temp / initial_temp;
         test_cfg.survival_capital_threshold += random_f64(-0.05, 0.05) * temp / initial_temp;
 
@@ -312,7 +317,6 @@ fn evolve_main() {
         test_cfg.scalp_sl_base = test_cfg.scalp_sl_base.clamp(0.001, 0.050);
         test_cfg.scalp_tp_base = test_cfg.scalp_tp_base.clamp(0.001, 0.100);
 
-        test_cfg.global_max_drawdown = test_cfg.global_max_drawdown.clamp(0.05, 0.30);
         test_cfg.survival_capital_threshold = test_cfg.survival_capital_threshold.clamp(0.50, 0.95);
         test_cfg.min_trades_per_day = test_cfg.min_trades_per_day.clamp(1.0, 50.0);
 
@@ -401,9 +405,9 @@ fn evolve_main() {
         };
         let mut score = total_growth.ln().max(-20.0) * 10_000.0; // 1.0x = 0 pts; e^x crece lineal en log
 
-        // RA-SA-F01: retención heurística de drawdown, no un posterior bayesiano.
-        // Un score mayor gana: atenuar una pérdida hacia cero la premiaría.
-        let dd_threshold = test_cfg.global_max_drawdown / 3.0; // Deseable is 1/3 of max drawdown
+        // RA-SA-F01 / F1-085: retención heurística de drawdown con umbral local del SA
+        // (desacoplado de SuperGenotype.global_max_drawdown congelado).
+        let dd_threshold = test_sa_dd_limit / 3.0; // Deseable is 1/3 of max drawdown
         if dd > dd_threshold {
             let decay = f64::exp(-(dd - dd_threshold) * 20.0).clamp(0.01, 1.0);
             score = match evolution_engine::score_retention::penalize_signed_score(score, decay) {
@@ -430,7 +434,7 @@ fn evolve_main() {
             score -= 10000.0 * (initial_capital - capital); // Linear penalty instead of flat wall
         }
 
-        if dd > test_cfg.global_max_drawdown {
+        if dd > test_sa_dd_limit {
             score -= dd * 200000.0;
         } // Aniquilación inmediata (Penalización Absoluta)
 
@@ -459,6 +463,7 @@ fn evolve_main() {
         let decision = selection.consider(score, temp, || random_f64(0.0, 1.0));
         if decision.accepted {
             current_config = test_cfg.clone();
+            sa_dd_limit = test_sa_dd_limit;
         }
         if decision.improved_best {
             best_config = test_cfg.clone();

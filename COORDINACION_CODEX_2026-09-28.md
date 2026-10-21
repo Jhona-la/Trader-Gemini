@@ -1,5 +1,32 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω189: Cierre de F1-085 (Congelación de global_max_drawdown [slot vec[0]] en SuperGenotype, Desacoplamiento de Tolerancia SA sa_dd_limit en evolution.rs y Alineación Documental con freno_duro y d*=0.632) (2026-10-20)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω189: CONGELACIÓN DE GEN DE DRAWDOWN GLOBAL Y PREVENCIÓN DE CORRUPCIÓN EN CAMPEONES PROMOVIDOS POR SA
+
+1. **Hallazgo Cerrado en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-085` (`MED`, `crates/quantum-arena/src/genome.rs:915, 1865`, `src/bin/evolution.rs:267, 295, 410, 465`, `crates/risk-engine/src/guard.rs:4-15`, `crates/risk-engine/src/drawdown.rs:24-30`, `crates/quantum-arena/tests/f1_085_genome_global_max_drawdown_freeze_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - **QUÉ**: Congelación de `global_max_drawdown` (slot `vec[0]`) en `SuperGenotype::mutate_with_rng` fijándolo al valor de su progenitor `self.global_max_drawdown` e inicializándolo en `new_random` a su default canónico neutral 0.96 ($1 - \text{taker}\cdot 100$ con taker=0.0004). Desacoplamiento del umbral de tolerancia a caídas en `src/bin/evolution.rs` a una variable local `sa_dd_limit` en $[0.05, 0.30]$, evitando que el optimizador SA mutara y corrompiera el genoma de los candidatos con valores fuera de la cota inferior unificada `lo[0] = 0.50`. Documentación arquitectónica de `guard::check_drawdown_limit` y `drawdown.rs` explicitando que la defensa activa de la cuenta vive exclusivamente en `freno_duro` (CL-106 / ADR-0017) y la cota teórica $d^*(c, \alpha) = 0.632$ (ADR-0016 / D3).
+     - **POR QUÉ**: En producción viva, `RiskEngine` y `PortfolioOrchestrator` solo comprobaban finitud en $[0.0, 1.0]$ sin consumir el valor de `global_max_drawdown` para calcular márgenes ni stops (el corte real lo ejecuta `freno_duro` de Ville con Monte Carlo sobre el pico compartido). El gen mutaba ciegamente en $[0.50, 0.99]$ en el espacio evolutivo sin gradiente real de fitness. Además, `evolution.rs` pisaba el genoma con valores en $[0.05, 0.30]$ que violaban los bounds del almacén genómico al intentar validarse.
+     - **PARA QUÉ**: Erradicar el ruido estocástico del espacio genómico, asegurar que los genomas promovidos por `evolution.rs` sean estrictamente válidos sin requerir saneamientos de emergencia, y alinear la documentación con la realidad operativa del cortacircuitos de cuenta.
+     - **CÓMO**: Congelación en `mutate_with_rng`, default neutral en `new_random`, variable local `sa_dd_limit` en `evolution.rs`, y suite contractual `f1_085_genome_global_max_drawdown_freeze_contract.rs` (3/3 tests passing).
+     - **CUÁNDO**: Permanente en la generación y mutación de genomas y en el ciclo de optimización Simulated Annealing.
+     - **DÓNDE**: `crates/quantum-arena/src/genome.rs`, `src/bin/evolution.rs`, `crates/risk-engine/src/guard.rs`, `crates/risk-engine/src/drawdown.rs` y `crates/quantum-arena/tests/f1_085_genome_global_max_drawdown_freeze_contract.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en Modo Profesor y Consejo de 10 Roles Senior.
+
+2. **Verificación Contractual y Pruebas de Certificación**:
+   - `cargo test -p quantum-arena --test f1_085_genome_global_max_drawdown_freeze_contract -j 1` (3/3 pass, 100% verde en 0.00s).
+   - `cargo test -p quantum-arena --test f1_084_genome_portfolio_perf_freeze_contract -j 1` (3/3 pass, 100% verde en 0.00s).
+   - `cargo test -p quantum-arena --test f1_071_genome_load_failclosed_contract -j 1` (5/5 pass, 100% verde en 0.00s).
+   - `cargo test -p risk-engine --test veto_open_diagnostics -j 1` (6/6 pass, 100% verde en 0.03s).
+   - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+   - `cargo check --bin evolution -j 1` (0 errores, 0 warnings).
+   - `cargo check --workspace --all-targets -j 1` (100% verde en los 23 crates con 0 errores y 0 warnings).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω188: Cierre de F1-084 (Congelación de 5 Genes Neutros de Fase 8 en SuperGenotype, Erradicación de Ruido Evolutivo en Fitness Plano y Preservación de Dimensión 144) (2026-10-20)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

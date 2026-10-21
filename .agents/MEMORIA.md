@@ -9165,3 +9165,28 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     - `crates/quantum-arena/tests/f1_113_genome_try_from_vector_contract.rs` (6/6 pass).
     - `crates/quantum-arena/tests/rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 pánicos agregados).
     - `cargo check --workspace --all-targets -j 1` 100% verde en los 23 crates con 0 errores y 0 warnings.
+
+---
+
+## AGY — Ola Ω189: Cierre F1-085 (Congelación de `global_max_drawdown` [slot vec[0]] en `SuperGenotype` / Desacoplamiento de Tolerancia SA en `evolution.rs`) — 2026-10-20
+- **Hallazgo F1-085 cerrado (MED)**:
+  - `crates/quantum-arena/src/genome.rs` (`SuperGenotype::new_random`, `SuperGenotype::mutate_with_rng`), `src/bin/evolution.rs` (`sa_dd_limit`), `crates/risk-engine/src/guard.rs` (`check_drawdown_limit`), `crates/risk-engine/src/drawdown.rs`:
+    - En el motor vivo, el cortacircuitos de cuenta está gobernado íntegramente por `freno_duro` (CL-106 / ADR-0017) bajo prueba de hipótesis con Monte Carlo y la cota teórica $d^*(c, \alpha) = 0.632$ (ADR-0016 / D3), mientras que `RiskEngine` y `PortfolioOrchestrator` únicamente leían `global_max_drawdown` para verificar que cayera en $[0.0, 1.0]$.
+    - En `SuperGenotype::mutate_with_rng`, el gen mutaba aleatoriamente en $[0.50, 0.99]$ sin consumidor vivo en el hot path, gastando una dimensión en deriva estocástica ciega con fitness plano.
+    - Peor aún, en `src/bin/evolution.rs`, el bucle de Simulated Annealing mutaba `test_cfg.global_max_drawdown` clampándolo en $[0.05, 0.30]$ para usarlo como umbral de penalización local, corrompiendo los genomas promovidos que al guardarse en disco quedaban por debajo de `lo[0] = 0.50`.
+    - Se aplicó la resolución integral canónica:
+      1. En `SuperGenotype::mutate_with_rng`: se congeló `global_max_drawdown: self.global_max_drawdown`, eliminando el ruido evolutivo.
+      2. En `SuperGenotype::new_random`: se fijó `global_max_drawdown: 0.96` (default neutral canónico $1 - \text{taker}\cdot 100$).
+      3. En `src/bin/evolution.rs`: se desacopló el umbral de penalización del SA en una variable local `sa_dd_limit` / `test_sa_dd_limit` en $[0.05, 0.30]$, dejando el genoma de los candidatos y del campeón promovido intacto y válido dentro de las cotas vectoriales canónicas.
+      4. En `crates/risk-engine/src/guard.rs` y `crates/risk-engine/src/drawdown.rs`: se documentó la precedencia de `freno_duro` y $d^*=0.632$ como única fuente de verdad viva del cortacircuitos de cuenta.
+  - Suite de contratos formales `crates/quantum-arena/tests/f1_085_genome_global_max_drawdown_freeze_contract.rs` (3/3 tests PASSED):
+    1. `test_f1_085_global_max_drawdown_remains_frozen_across_mutations` (invarianza exacta bit a bit ante mutación CMA-ES y múltiples semillas).
+    2. `test_f1_085_new_random_initializes_canonical_neutral_default` (inicialización determinista en 0.96 dentro de $[0.50, 0.99]$).
+    3. `test_f1_085_layout_dimension_and_vector_slot_0_preserved` (preservación de `DIMENSION == 144`, slot vec[0] y deserialización con `try_from_vector`).
+  - Verificaciones globales:
+    - `f1_084_genome_portfolio_perf_freeze_contract.rs` (3/3 pass).
+    - `f1_071_genome_load_failclosed_contract.rs` (5/5 pass).
+    - `veto_open_diagnostics.rs` (6/6 pass).
+    - `rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 pánicos agregados).
+    - `cargo check --bin evolution -j 1` (0 errores, 0 warnings).
+    - `cargo check --workspace --all-targets -j 1` 100% verde en los 23 crates con 0 errores y 0 warnings.
