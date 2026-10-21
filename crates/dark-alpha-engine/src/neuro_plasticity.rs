@@ -97,7 +97,8 @@ impl NeuroPlasticityEngine {
     /// su plasticidad hasta max_multiplier para adaptarse velozmente.
     /// Si el mercado es altamente predecible (baja entropía), reduce suavemente la tasa de mutación
     /// hacia min_multiplier para explotar el régimen estacionario sin sobreajuste.
-    /// Modulación suave para micro-cuentas ($13 USD) usando ponderación monótona de capital.
+    /// Modulación suave para micro-cuentas usando ponderación monótona del
+    /// capital REAL declarado; capital ausente (NaN/≤0) abstiene la modulación.
     #[inline(always)]
     pub fn compute_plasticity_multiplier_with_params(
         params: &NeuroPlasticityParams,
@@ -116,10 +117,16 @@ impl NeuroPlasticityEngine {
         } else {
             safe_params.center_entropy
         };
-        let safe_capital = if capital.is_finite() && capital > 0.0 {
-            capital
+        // CL-15 (GLM 144): capital inválido ⇒ ABSTENCIÓN de la modulación por
+        // capital (micro_factor neutro 1.0). Inventar 13.0 asumiría una
+        // micro-cuenta inexistente y aplicaría el micro_boost caprichosamente.
+        let micro_factor = if capital.is_finite() && capital > 0.0 {
+            let micro_ratio = ((safe_params.micro_capital_ref - capital)
+                / safe_params.micro_capital_ref)
+                .clamp(0.0, 1.0);
+            1.0 + micro_ratio * safe_params.micro_boost_cap
         } else {
-            13.0
+            1.0
         };
 
         // Rampa continua C^1 vía sigmoide logística suave (sin escalones discretos heurísticos)
@@ -127,12 +134,6 @@ impl NeuroPlasticityEngine {
         let t = 1.0 / (1.0 + (-safe_params.steepness * delta).exp());
         let base_mult = safe_params.min_multiplier
             + (safe_params.max_multiplier - safe_params.min_multiplier) * t;
-
-        // Modulación continua para micro-cuentas: transición cuadrática Hermite suave
-        let micro_ratio = ((safe_params.micro_capital_ref - safe_capital)
-            / safe_params.micro_capital_ref)
-            .clamp(0.0, 1.0);
-        let micro_factor = 1.0 + micro_ratio * safe_params.micro_boost_cap;
 
         let raw = base_mult * micro_factor;
         if raw.is_finite() {
@@ -223,6 +224,40 @@ mod tests {
 
         let mult_nan = NeuroPlasticityEngine::compute_plasticity_multiplier(f64::NAN, f64::NAN);
         assert!(mult_nan.is_finite());
+    }
+
+    /// CL-15 (GLM 144): capital inválido ⇒ ABSTENCIÓN de la modulación por
+    /// capital (idéntico a un capital grande); NO se asume una micro-cuenta
+    /// de 13 USD inexistente.
+    #[test]
+    fn cl15_capital_invalido_abstiene_la_modulacion_por_micro_cuenta() {
+        let p = NeuroPlasticityParams::default();
+        let m_nan = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
+            &p, 0.9, f64::NAN,
+        );
+        let m_neg = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
+            &p, 0.9, -5.0,
+        );
+        let m_grande = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
+            &p,
+            0.9,
+            p.micro_capital_ref * 10.0,
+        );
+        assert!(
+            (m_nan - m_grande).abs() < 1e-12,
+            "capital NaN ⇒ modulación OFF (neutro), no micro-cuenta"
+        );
+        assert!(
+            (m_neg - m_grande).abs() < 1e-12,
+            "capital negativo ⇒ modulación OFF (neutro)"
+        );
+        let m_micro = NeuroPlasticityEngine::compute_plasticity_multiplier_with_params(
+            &p, 0.9, 1.0,
+        );
+        assert!(
+            m_micro > m_grande,
+            "el micro_boost sólo con capital REAL pequeño declarado"
+        );
     }
 
     #[test]

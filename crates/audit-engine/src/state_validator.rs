@@ -14,12 +14,20 @@ impl StateValidator {
     /// (ej. el PnL no cuadra con el Capital Unificado), lanza una alerta de paridad.
     #[inline(always)]
     pub fn validate_parity(arena: &GlobalArena, initial_capital: f64) {
-        // FIX #680: Sanitizar capital inicial
-        let safe_initial = if initial_capital.is_finite() && initial_capital > 0.0 {
-            initial_capital
-        } else {
-            13.0
-        };
+        // CL-15 (GLM 144): capital inicial inválido ⇒ la paridad NO se puede
+        // calcular. Se declara la ausencia con alerta explícita; inventar un
+        // 13.0 fabricaría expected_capital y produciría falsas alertas (o
+        // falsos silencios) de fuga de capital.
+        if !initial_capital.is_finite() || initial_capital <= 0.0 {
+            crate::telemetry::send_parity_alert(
+                "VALIDACIÓN DE PARIDAD IMPOSIBLE: capital inicial inválido (NaN/≤0)",
+                initial_capital,
+                arena.unified_capital.load(Ordering::Relaxed),
+                f64::NAN,
+            );
+            return;
+        }
+        let safe_initial = initial_capital;
 
         let mut total_realized_pnl = 0.0;
         let mut active_positions = 0;
@@ -90,6 +98,16 @@ mod tests {
         // D-714: pila suficiente para construir el arena.
         let arena = GlobalArena::build_in_own_stack(13.0);
         StateValidator::validate_parity(&arena, f64::NAN);
+    }
+
+    /// CL-15 (GLM 144): capital ≤0/NaN declara la imposibilidad de validar
+    /// (alerta explícita); jamás fabrica expected_capital con un 13.0.
+    #[test]
+    fn test_state_validator_capital_degenerado_no_inventa_expected() {
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        StateValidator::validate_parity(&arena, 0.0);
+        StateValidator::validate_parity(&arena, -100.0);
+        StateValidator::validate_parity(&arena, f64::INFINITY * -1.0);
     }
 
     #[test]

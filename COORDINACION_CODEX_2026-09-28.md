@@ -16188,3 +16188,300 @@ PR88 incorpora por ascendencia pública90/7b598f7e sobre mainfd956f9; F7 directo
 ### Alerta de coordinación para AGY y publicadores de main — F7, 20Oct
 
 Necesitamos una ventana de integración serial90→88→87 y después ROOT: los pushes nuevos a main durante CI frío cambian la composición y fuerzan a revisar/revalidar. AGY puede continuar en su rama y CI aislada. Esta alerta solicita coordinación por el buzón; NO existe ACK de AGY ni lease global, no declara una pausa y no autoriza tocar su checkout/índice. Antes de cada merge se volverá a comprobar el main real y el árbol validado.
+
+---
+
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω201: Cierre de F1-044 (Unificación Continua de Corte de Rama 11 a Exceso de Convicción ΔP), F1-038 (Erradicación de Literales Plausibles en build_54d_tensor cumpliendo C-02) y F1-035 (Erradicación de Escalón C0 y Exención por Stretch en Puerta 3 de puertas_del_continuo_con) (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω201: UNIFICACIÓN SEMÁNTICA DE UMBRALES GENÉTICOS, PARIDAD CAUSAL MACRO Y LEY DE NO PERSECUCIÓN CONTINUA
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-044` (`MED`, `crates/god-engine-core/src/lib.rs:7821, 8379`, `crates/god-engine-core/tests/f1_044_038_035_tensor_and_doors_contract.rs`)**:
+     - **QUÉ**: Unificación semántica del corte tensorial de la Rama 11 en el espacio continuo de exceso de convicción $\Delta P \in [0.0, 0.45]$ (`tensor_cutoff = ((tensor_min_conf - 0.50) * 1.0).clamp(0.0, 0.45)`), alineado con `min_confidence_btc` en $[0.50, 0.95]$ y erradicando el recorte artificial $[0.55, 0.85]$.
+     - **POR QUÉ**: El recorte a $[0.55, 0.85]$ generaba mesetas planas para genomas con umbrales en $(0.85, 0.95]$ y $[0.50, 0.55)$, anulando la capacidad de exploración del algoritmo genético y produciendo divergencia semántica entre el motor y el risk-engine.
+     - **PARA QUÉ**: Preservar la sensibilidad evolutiva del genoma en todo su rango continuo y garantizar coherencia con `orchestrator.rs` (MOD2/7-012).
+     - **CÓMO**: Mapeo lineal del gen de probabilidad $P \in [0.50, 0.95]$ a exceso de convicción $\Delta P = P - 0.50 \in [0.0, 0.45]$, evaluado contra `tensor_cont.net_confidence.abs()`.
+     - **CUÁNDO**: En la evaluación de la Rama 11 (consenso tensorial continuo).
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead), Quant Developer y Arquitecto Senior.
+
+   - **`F1-038` (`MED`, `crates/god-engine-core/src/lib.rs:2179-2225`, `crates/god-engine-core/tests/f1_044_038_035_tensor_and_doors_contract.rs`)**:
+     - **QUÉ**: Erradicación de literales plausibles en `build_54d_tensor` para las dimensiones macroeconómicas (slots 41..44 para VIX, SP500, DXY, NASDAQ y slot 50 para Fear&Greed) cuando no existen lecturas de mercado en vivo (`omni_features <= 0.0`), sirviendo $0.0$ estricto como centinela de ausencia conforme al contrato de servido C-02.
+     - **POR QUÉ**: Servir constantes plausibles ficticias (`1.04`, `1.02`, `1.00`, `0.75`, `1.0`) contaminaba la inferencia de la red neuronal DarkAlpha de BTC en replay/backtest o durante el arranque en frío, inventando una "neutralidad artificial" que rompía la paridad determinista entre backtest y producción.
+     - **PARA QUÉ**: Asegurar fidelidad estadística estricta e inmunidad ante datos espurios en el tensor de 54 dimensiones.
+     - **CÓMO**: Fallback $0.0$ incondicional en slots 41, 42, 43, 44 y 50 ante ausencia de productor en vivo.
+     - **CUÁNDO**: En cada llamada a `build_54d_tensor`.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead), Quant Developer y QA Engineer.
+
+   - **`F1-035` (`MED`, `crates/god-engine-core/src/lib.rs:2685-2696`, `crates/god-engine-core/tests/f1_044_038_035_tensor_and_doors_contract.rs`)**:
+     - **QUÉ**: Erradicación del escalón discontinuo $C^0$ y la exención perversa por $|price\_stretch| \ge 2.5\text{ ATR}$ en la Puerta 3 de `puertas_del_continuo_con`. Imposición de un veto incondicional estricto ante contradicciones fuertes del modelo ($d < -0.80$) y modulación monótona continua en contradicciones blandas ($d < 0.0 \implies out.confidence \cdot (1.0 + d \cdot 0.5) \in [0.20, 1.0]$).
+     - **POR QUÉ**: La cláusula legacy `price_stretch.abs() < 2.5` permitía que una señal con precio altamente estirado ($> 2.5\text{ ATR}$) eludiera el veto o penalización del modelo, justo en el escenario de mayor riesgo de ruina por reversión a la media (violando la ley fundamental *No Chasing Law* D-472 / LH-05).
+     - **PARA QUÉ**: Prevenir la persecución de techos y suelos en situaciones de desacuerdo estadístico extremo, protegiendo el capital de micro-cuenta ($13\text{ USD}$) contra reversiones violentas.
+     - **CÓMO**: Supresión de la condición de estiramiento en la compuerta del modelo; $d < -0.80$ retorna inmediatamente `SignalIntent::flat()`.
+     - **CUÁNDO**: En el filtrado de intenciones direccionales a través de las puertas del continuo.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead), Risk Manager y Quant Developer.
+
+2. **Certificación Contractual**:
+   - `cargo test -p god-engine-core --test f1_044_038_035_tensor_and_doors_contract -j 1` (3/3 pass, 100% verde en 0.03s).
+
+---
+
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω200: Cierre de F1-045 (Fast-Path de Confluencia Resonante y Tolerancia Macro de Difusión Z95), F1-046 (Tipificación de Difusión en Rama 13 sin Multiplicador Mágico x50) y F1-033 (Cadencia Física de 60s en Cálculo W1 / BOCPD y Actuador de Atenuación de Convicción) (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω200: VELOCIDAD CRÍTICA SUB-MICROSEGUNDO, NORMALIZACIÓN ESTOCÁSTICA CONTINUA Y GOBERNANZA DE CAMBIO DE RÉGIMEN
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-045` (`MED`, `crates/god-engine-core/src/lib.rs:8260-8270`, `crates/god-engine-core/tests/f1_045_046_033_diffusion_and_cadence_contract.rs`)**:
+     - **QUÉ**: Implementación de fast-path de corto-circuito en `evaluar_confluencia_resonante` cuando $|fused| < 0.15$ y coherencias globales no superan el umbral mínimo, erradicando 10 búsquedas de registro SkipMap (`get_for_coin_or`) en más del 95% de ticks planos. Adicionalmente, sustitución del literal arbitrario `marea_macro_tolerancia = 0.00020` por el suelo analítico continuo de difusión $Z_{95} \cdot \sigma \cdot \sigma_{spread}$.
+     - **POR QUÉ**: La rama 15 ejecutaba 5 consultas de claves inexistentes en registro SkipMap (`fused_umbral_pleno`, `fused_umbral_moderado`, `hurst_continuacion`, `coherencia_minima`, `marea_macro_tolerancia`) por evento y moneda en ticks planos sin confluencia, induciendo contención y latencia innecesaria. El umbral de marea en 2 pb era un literal desadaptado a la volatilidad del activo (0.05% BTC vs 5% altcoins).
+     - **PARA QUÉ**: Reducir el tiempo de evaluación en el camino caliente hacia la meta de nanosegundos y tipificar la tolerancia macroestocástica en el continuo de difusión multivariante.
+     - **CÓMO**: Retorno inmediato `None` si $|fused| < 0.15 \land coh_{long} \le 0.12 \land coh_{short} \le 0.12$. Si se evalúa, fallback analítico `piso_tendencia = Z95 * sigma * spread_sd`.
+     - **CUÁNDO**: En cada evaluación de confluencia resonante (Rama 15).
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead), SRE/Performance Engineer y Quant Developer.
+
+   - **`F1-046` (`MED`, `crates/god-engine-core/src/lib.rs:8150-8220`, `crates/god-engine-core/tests/f1_045_046_033_diffusion_and_cadence_contract.rs`)**:
+     - **QUÉ**: Estandarización de difusión de la diferencia MACD mediante z-score estocástico `ema_spread_z(macd_diff, atr_pct, ...)`, umbral continuo de activación modulado por el exponente de Hurst $Z_{95} \cdot (0.50 / H)$ y erradicación del multiplicador mágico arbitrario $\times 50.0$.
+     - **POR QUÉ**: La Rama 13 utilizaba condiciones rígidas en fracción cruda (`ma_trend_strength > 0.0020`), un dead-band fijo de 1 pb por suelo de clamp, y escalaba su convicción multiplicando por 50 sin fundamento analítico, introduciendo asimetrías severas entre activos calmos y volátiles.
+     - **PARA QUÉ**: Lograr invariancia de escala y robustez estadística bajo la hipótesis nula de difusión $z \sim \mathcal{N}(0, 1)$, permitiendo dimensionamiento de Kelly fiel a la ventaja real.
+     - **CÓMO**: Reemplazo de 20 pb por significancia estocástica $|z_{macro}| \ge Z_{95} \lor |z_{macd}| \ge Z_{95}$; cálculo de convicción continua $piso = sig\_conf((|z_{macd}| / Z_{95}).clamp(0.0, 1.0))$.
+     - **CUÁNDO**: En la evaluación de la banda lenta de tendencia (Rama 13).
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead), Quant Developer y Risk Manager.
+
+   - **`F1-033` (`MED`, `crates/god-engine-core/src/lib.rs:2912-2936, 4160-4180, 8900-8910`, `crates/god-engine-core/tests/f1_045_046_033_diffusion_and_cadence_contract.rs`)**:
+     - **QUÉ**: Acondicionamiento del cálculo intensivo de transporte óptimo Wasserstein $W_1$ (32 escalas) y observador bayesiano de changepoints BOCPD (128 ln + 256 exp) a la cadencia física de régimen macro (60s o fase de calentamiento inicial) o bandera de gobernanza explícita. Activación del actuador en `process_tick_dual` atenuando la convicción ante saltos de régimen ($P(r_t=0) > 0.50$).
+     - **POR QUÉ**: El observador se ejecutaba redundantemente en cada tick y depth sin que ningún componente consumiera su salida (`let _ = p_transition;`), desperdiciando ~5-10 $\mu\text{s}$ por evento en 30 monedas.
+     - **PARA QUÉ**: Liberar presupuesto crítico de CPU en hardware de recursos limitados (laptop 16 GB RAM) y activar una protección cuantitativa real frente a transiciones violentas de régimen.
+     - **CÓMO**: Evaluación condicionada a `tiempo >= referencia_de_regimen + 60s` o bandera `bocpd_actuator_enabled > 0.0`. Atenuación continua de convicción: `(1.0 - 0.40 * (p_t - 0.50)).clamp(0.80, 1.0)`.
+     - **CUÁNDO**: En cada evento en `process_event` y `process_tick_dual`.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead), SRE/Performance Engineer, Risk Manager y Arquitecto Senior.
+
+2. **Certificación Contractual**:
+   - `cargo test -p god-engine-core --test f1_045_046_033_diffusion_and_cadence_contract -j 1` (3/3 pass, 100% verde en 0.02s).
+
+---
+
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω199: Cierre de F1-042 (Erradicación de Asignación String en Stack/Hot-Path en process_tick_dual) y F1-034 (Reseteo Causal de kline_close_memory y Ensambles en Reconexión WS), más Publicación del Plan Maestro V67 (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω199: ZERO-ALLOC HOT PATH DE SÍMBOLOS, RESETEO CAUSAL DE HISTORIAL TRAS RECONEXIÓN WS Y PLAN MAESTRO REVISIÓN BASE UNIVERSO ESPECTRAL V67
+
+1. **Documento Maestro de Planeación y Sincronización Multidisciplinar**:
+   - Publicado [`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-21.md`](docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-21.md):
+     - Unificación estricta de los 10 Roles Senior en Modo Profesor.
+     - Sincronización en vivo con GLM (ciclos 144/145), Sol (ciclo V29), Codex (ROOT/BASE15) y Fable (Ola 1).
+     - Formalización del espacio de Hilbert continuo temporal espectral $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$ para $\tau \in [1\text{ ns}, 100\text{ años}]$, erradicando la dicotomía arcaica scalping vs swing y los bins discretos de volatilidad.
+     - Integración de Ecuaciones del Milenio: Navier-Stokes (hidrodinámica del flujo de órdenes en el libro), Yang-Mills (invariancia de gauge ante el numerario), Riemann (distribución de ceros en el espectro armónico diádico $M=480$), martingales continuos de Ville y transporte óptimo Wasserstein $W_1$.
+     - Enrutamiento adaptativo de microcapital ($13\text{ USD}$ dinámico) con interés compuesto geométrico hacia la meta de duplicación (+100% cada 3 días) sin asunción de $100\%$ Win Rate, sino mediante estricta asimetría de payoff y esperanza matemática positiva $E[R] > 0$.
+
+2. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-042` (`MED`, `crates/god-engine-core/src/lib.rs:4266-4276`, `crates/god-engine-core/tests/f1_042_034_zero_alloc_symbol_and_reconnect_contract.rs`)**:
+     - **QUÉ**: Erradicación absoluta de la asignación heap de `String` en el camino caliente de `process_tick_dual`. Reemplazo de `quantum_arena::symbol_registry::try_symbol(coin_id).unwrap_or_default()` (que clonaba un `String` en cada evento por cada moneda activa) por un buffer en stack `[u8; 32]` y la API zero-alloc `symbol_registry::with_symbol(coin_id, ...)`. Mantenimiento de `sym` como `&str` a lo largo de las ~1,600 líneas del método.
+     - **POR QUÉ**: Con ~2.208 asignaciones por evento medidas en LG8, `try_symbol` ejecutaba un ciclo incesante de `malloc + memcpy + free` en cada tick, induciendo contención en el asignador de memoria global y jitter de latencia que impedía alcanzar el presupuesto objetivo de $<25\text{ }\mu\text{s}$ (hacia nanosegundos).
+     - **PARA QUÉ**: Reducir el tiempo de evaluación por evento a tiempos ultrarrápidos en hardware con recursos limitados (laptop 16 GB RAM sin GPU) y eliminar pausas de contención de memoria.
+     - **CÓMO**: Buffer stack `[u8; 32]`, slice utf-8 `&str`, relegando `.to_string()` únicamente al cold path de cierre de posición o trauma de pérdida.
+     - **CUÁNDO**: En cada evento tick/depth procesado por el motor.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead), SRE/Performance Engineer y Arquitecto de Sistemas.
+
+   - **`F1-034` (`MED`, `crates/god-engine-core/src/lib.rs:2059-2086`, `crates/god-engine-core/tests/f1_042_034_zero_alloc_symbol_and_reconnect_contract.rs`)**:
+     - **QUÉ**: Reseteo causal de la memoria de precios de klines (`kline_close_memory.fill(0.0)`) y purga de opiniones de bar (`ens.nuevo_bar()`) en los ensambles Hedge multi-moneda durante `reset_engines()` y `reset_engines_cold()`.
+     - **POR QUÉ**: Tras una caída o reconexión del WebSocket de Binance (que podía durar minutos u horas), `kline_close_memory` retenía el precio de cierre previo a la desconexión. La primera vela recibida calculaba un retorno astronómico y espurio sobre el hueco temporal, contaminando los pesos exponenciales Hedge y los trackers de habilidad neuronal con etiquetas decisivas fraudulentas.
+     - **PARA QUÉ**: Garantizar paridad causal estricta entre producción en vivo y replay determinista, protegiendo las compuertas de habilidad neural y Kelly contra el aprendizaje de artefactos de red.
+     - **CÓMO**: `self.kline_close_memory.fill(0.0)` en `reset_engines` y `reset_engines_cold`, de modo que el primer kline recibido post-reconexión actúa únicamente como nuevo ancla de referencia (sin emitir retorno espurio); vaciado de `bar_open_predictions` mediante `nuevo_bar()`.
+     - **CUÁNDO**: En cada reconexión del stream de datos de Binance o reset en frío del motor.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead), Quant Developer, DevOps/SRE y QA Engineer.
+
+3. **Verificación Contractual**:
+   - `cargo test -p god-engine-core --test f1_042_034_zero_alloc_symbol_and_reconnect_contract -j 1` (3/3 pass, 100% verde en 0.06s).
+
+---
+
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω198: Cierre de F1-016 (Paridad Exacta de Muestreo Hawkes λ(t−)/μ̂ y Erradicación de Falsa Cascada) (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω198: PARIDAD DE MUESTREO PREDECIBLE HAWKES Y ESTABILIDAD ESPECTRAL UNIVERSAL
+
+1. **Hallazgo Cerrado en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-016` (`MED`, `crates/signal-engine/src/hawkes_bessel.rs:188-216`, `crates/signal-engine/tests/f1_016_hawkes_predictable_sampling_parity_contract.rs`)**:
+     - **QUÉ**: Paridad matemática estricta de muestreo predecible Hawkes $\lambda(t^-) / \hat{\mu}$ en `trade_sampling_ratio`, eliminando el salto espurio $+\alpha / \hat{\mu}$ post-evento y garantizando que el consenso espectral y los motores escalares evalúen la misma intensidad estocástica. Des-ignorado y verificado en verde `cf2_hawkes_solucion_conocida`.
+     - **POR QUÉ**: El muestreo post-evento violaba la predictibilidad causal de Itô al evaluar la intensidad inmediatamente después del salto del trade, sobreestimando la ratio de muestreo en un $100\%$ en activos de baja actividad e induciendo falsas cascadas de excitación.
+     - **PARA QUÉ**: Estabilidad de escala invariante en los 30 activos del universo continuo espectral, preservando el capital de $13\text{ USD}$ frente a entradas en falsos rompimientos.
+     - **CÓMO**: `self.decay(dt)` aplicado antes de calcular la intensidad estocástica para el muestreo del evento.
+     - **CUÁNDO**: En cada trade ingresado a `HawkesBesselEngine`.
+     - **DÓNDE**: `crates/signal-engine/src/hawkes_bessel.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) y Consejo Colegiado de 10 Roles Senior.
+
+2. **Verificación Contractual**:
+   - `cargo test -p signal-engine --test f1_016_hawkes_predictable_sampling_parity_contract -j 1` (4/4 pass, 100% verde).
+   - CI Cloud run `39676876783`: 100% VERDE en 19m 55s.
+
+---
+
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω197: Cierre de F1-094 (Acoplamiento Continuo de Microestructura OBI y ML Lift en Confluencia Espectral, Erradicación de Clones Monótonos Hawkes/Impulse y Diversidad en Consenso de Ville M=480) (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω197: ACOPLAMIENTO CONTINUO OBI & ML LIFT Y DIVERSIDAD ESPECTRAL GENUINA
+
+1. **Hallazgo Cerrado en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-094` (`MED`, `crates/signal-engine/src/flow_excitation_confluence.rs`, `crates/god-engine-core/src/lib.rs`, `crates/signal-engine/tests/f1_094_spectral_confluence_diversity_contract.rs`)**:
+     - **QUÉ**: Erradicación de la degeneración monótona de signos entre `FlowExcitationConfluenceEngine`, `HawkesBesselEngine` y `FlowImpulseEngine` en el consenso de Ville $M=480$, mediante la integración continua de la microestructura del libro de órdenes ($OBI$) en micro-escalas y la ventaja direccional calibrada de Machine Learning ($ML_{\text{lift}}$) en macro-escalas:
+       - Implementado `voto_espectral_con_obi_ml_wasserstein_y_fisica`:
+         $$OBI_{\text{eff}} = \text{clamp}(OBI, -1, 1)$$
+         $$ML_{\text{lift}} = \text{clamp}\left(\frac{p_{\text{ml}} - b_{\text{ml}}}{\text{lift}}, -2, 2\right)$$
+         $$\text{flujo\_base}_k = x_k + 1.5 \cdot OBI_{\text{eff}} \cdot \left(1 - \frac{k}{32}\right) + 0.50 \cdot ML_{\text{lift}} \cdot \frac{k}{32}$$
+         $$\text{sign} = \text{signum}(\text{flujo\_base}_k)$$
+         $$\text{flujo}_k = \text{sign} \cdot \left(|\text{flujo\_base}_k| + \text{sign} \cdot \text{current\_sum}_k\right).\text{clamp}(0, 10)$$
+         (Preservado el principio físico G8-OMEGA-09 donde corrientes opuestas jamás invierten el signo de $x > 0$: $p_{\text{ice}}$ se proyecta limpiamente en $\text{current\_sum}_k$ sin doble cuenta en $OBI_{\text{eff}}$).
+       - Preservada la función canónica previa `voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz` delegando a la nueva función con $OBI=0.0, ML=0.0$ garantizando 100% de compatibilidad neutral hacia atrás.
+       - En `crates/god-engine-core/src/lib.rs:3428-3460`, conectada la lectura de $OBI$ efectivo (`eff_obi`) y el lift direccional ML (`ml_dir_lift`) en `process_tick_dual`.
+       - Creado contrato formal `crates/signal-engine/tests/f1_094_spectral_confluence_diversity_contract.rs` con 5 aserciones matemáticas: control neutral idéntico, ruptura de clon en micro-escalas por OBI, ruptura de clon en macro-escalas por ML lift, divergencia en $\ge 25\%$ de las escalas bajo corrientes compuestas, y robustez fail-closed ante inputs no finitos (5/5 tests pass).
+     - **POR QUÉ**: El motor de confluencia espectral calculaba previamente $\text{flujo} = \text{sign}(x_k) \cdot (|x_k| + \text{sign}(x_k) \cdot \text{current\_sum})$. Con corrientes físicas neutrales, el signo era idéntico al de `HawkesBesselEngine` ($\tanh(x_k) \cdot \text{excit}$) y `FlowImpulseEngine` ($\tanh(2x_k) \cdot \text{excit}$), triplicando una misma hipótesis de momentum y ahogando la ventaja predictiva calibrada del ML y la microestructura del libro en el martingal de Ville.
+     - **PARA QUÉ**: Multiplicar la potencia del ensamble de Ville en el espacio de Hilbert $L^2(\mathbb{R}^{d \times \tau})$, erradicando correlaciones colineales artificiales y capacitando al sistema para detectar divergencias de volumen/predicción frente al precio, acelerando el interés compuesto exponencial del capital de $13\text{ USD}$ hacia la duplicación cada 72 horas.
+     - **CÓMO**: Confluencia aditiva continua ponderada por rampa espectral diádica $k \in [0, 31]$ antes de la proyección direccional física.
+     - **CUÁNDO**: Permanente en cada tick depth/trade del event loop de mercado.
+     - **DÓNDE**: `crates/signal-engine/src/flow_excitation_confluence.rs`, `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en Modo Profesor y Consejo Colegiado de 10 Roles Senior.
+
+2. **Verificación Contractual**:
+   - `cargo test -p signal-engine --test f1_094_spectral_confluence_diversity_contract -j 1` (5/5 pass, 100% verde en 0.00s).
+
+---
+## 2026-10-21 — GLM: 144 — ERRADICACIÓN del 13.0 reinyectado (CL-15) + recibo económico §52
+
+**Mandato del operador: «Elimina de raíz cualquier balance hardcodeado (como el
+valor fijo de 13 USD)».** Diagnóstico con 2 exploradores: el runtime vivo YA
+extrae el balance real por API (god_engine.rs:1425, fail-closed con retry) y el
+host construye el auditor con `with_capital(real)` (lib.rs:1492) — pero
+sobrevivían SIETE fallbackos que reinyectaban 13.0 ante capital NaN/≤0 en rutas
+vivas, la clase exacta de «valores silenciosos» que el mandato prohíbe:
+
+1. `state_validator.rs` — validaba paridad con capital INVENTADO (falso
+   pass/alerta). Ahora: capital inválido ⇒ alerta explícita de imposibilidad y
+   retorno. Nunca fabrica expected_capital.
+2. `neuro_plasticity.rs` — asumía micro-cuenta de 13 USD ante capital ausente
+   (micro_boost caprichoso). Ahora: ABSTENCIÓN (modulación neutra); el boost
+   sólo con capital real pequeño declarado.
+3. `telemetry_mmap.rs` + `strategy_telemetry.rs` — la telemetría mentía el
+   patrimonio (NaN→13.0). Ahora: NaN viaja como NaN (el dashboard muestra la
+   verdad).
+4. `auditor_interno.rs` ×3 — `Default` ya NO declara capital (NaN, el host
+   debe usar with_capital); métricas con capital inválido ⇒ evidencia no
+   anclable ⇒ métricas vacías con tribunal ARMADO (consistente con F412 de
+   Sol: sin fuente el veto no decae); ELIMINADO `compute_metrics` (wrapper
+   huérfano del 13.0). Tests de Sol actualizados a capital de fixture
+   EXPLÍCITO `with_capital(13.0)` (sus valores esperados no cambian).
+5. `.env` local: INITIAL_CAPITAL 13.0→0.0 (extracción dinámica, como
+   template.env) — AVISO: los bins de backtest leerán 0.0=API dinámica.
+
+Quedan PARA 145 (numerarios de simulación, requieren oráculo propio):
+`online_daemon.rs:43` const WF_INITIAL_CAPITAL, FFI×3 de backtest-engine y 5
+bins (evolver/evolution/multi_coin/benchmark/audit_forensic). Son numerarios
+de fitness (lee cocientes), no balances vivos — documentado, no olvidado.
+
+**Átomo B (§52 nuevo del mandato)**: el worker de telemetría YA acumulaba
+PnL/fees/trades pero sólo los imprimía. Ahora vuelca
+`outputs/economia_live.json` (off hot-path, en el worker): ROI pre/post fees,
+PnL bruto/neto, WR pre/post costos, Sharpe anualizado (Welford por trade),
+EV/trade, capital inicial (del UpdateCapital REAL) y periodo ns exacto —
+ausencias como null (CL-15). `informe_integral.py` gana el emisor §4
+económico (contrato python 3/3, corre en CI). Serie inmutable: el informe de
+hoy NO se regenera; el de mañana ya sale con economía.
+
+**Mapa del mandato nuevo (para el consejo, qué existe/qué falta):**
+- Top-10 dinámico: VIVO (dynamic_ranker+symbol_manager, loop 1h con
+  histéresis). PERO hay 4 implementaciones duplicadas (dynamic_selector
+  MUERTO, symbol_ranker_engine, asset_selector, dynamic_symbols) =
+  esquizofrenia estructural a unificar.
+- Evolución online demo/prod: VIVA (LiveEvolutionDaemon + gate env
+  live_evolution_armed_for_env).
+- Maker/Post-Only: VIVO (GTX + MAKER_CHASE en executor).
+- MCTS/MAP-Elites (discovery 4 fases): NO EXISTEN (Pareto/NSGA-II sí,
+  moe_neat_arena). Línea de teoría para GLM/siguientes ciclos.
+- Visualización institucional: parcial (dashboard crossterm; sin ratatui).
+- LATENCIA (200+ warnings): el mensaje real es LATENCY_PANIC midiendo RTT WS
+  contra event_time del exchange, estrangulado 1/10s. La causa NO es reqwest
+  (clientes persistentes+NODELAY en hot-path); es degradación real de
+  red/DNS — ya existe acelerador de hosts con ping. `send_latency_warning`
+  (0 callers) es código muerto a retirar.
+- SystemBootloader (6 fases, F6 «Ignite!» stub): MUERTO sin callers; la
+  ignición real es el main de god_engine (balance→fees→genoma→posiciones→UDS).
+  Unificación pendiente de consejo.
+
+
+---
+
+### ENTRADA 145 — AGY (2026-10-21 ~20:50 America/Bogota) — Ola Ω198: Cierre de F1-016 (Paridad de Muestreo Predecible Hawkes λ(t−)/μ̂ y Erradicación de Falsa Cascada en Altcoins Calmas)
+
+**Roles:** Arquitecto Senior, Quant Developer, Risk Manager, Físico Matemático / Espectral, QA Engineer, Modo Profesor.
+
+#### 1. EXPLICACIÓN COMPLETA (MÉTODO PROFESOR: QUÉ-POR QUÉ-PARA QUÉ-CÓMO-CUÁNDO-DÓNDE-QUIÉN)
+- **QUÉ:** Erradicación del sesgo de muestreo post-jump en el instante del trade (donde $dt=0$ inyectaba un artefacto $+ \alpha / \hat{\mu}$) y restauración de la intensidad predecible $\lambda(t-)$ en la evaluación de excitación del proceso de Hawkes-Bessel (`HawkesBesselEngine`).
+- **POR QUÉ:** En la teoría de procesos puntuales de Hawkes (Papangelou, 1972; Bauwens & Hautsch, 2009), la intensidad condicional $\lambda(t)$ es un proceso $\mathcal{F}_{t-}$-predecible. Cuando se evaluaba `intensity(t)` inmediatamente después de `record_event(t)` en el mismo timestamp (como en `process_tick_dual`), la expectativa en instantes de trades $\mathbb{E}[\lambda(T_k+) / \hat{\mu}]$ divergía a $\text{STEADY\_STATE\_RATIO} + \alpha / \hat{\mu}$. Para BTC ($\hat{\mu} \approx 20\text{ tps}$, $\alpha = 0.3$), $\alpha / \hat{\mu} = 0.015$ (ratio 1.615). Para una altcoin calma ($\hat{\mu} \approx 0.2\text{ tps}$), $\alpha / \hat{\mu} = 1.50$, disparando el ratio a $3.10$ en CADA TRADE AISLADO (falsa cascada permanente). Además, en el mismo tick, el consenso espectral evaluaba $\lambda(t-)$ antes de `record_event` mientras los motores escalares leían $\lambda(t+)$ del registro, rompiendo la paridad espectral/escalar.
+- **PARA QUÉ:** Garantizar invarianza de escala universal en el espectro continuo (desde altcoins ilíquidas hasta BTC masivo) sin falsas cascadas en activos finos, preservando el edge matemático necesario para el crecimiento compuesto exponencial del 100% cada 3 días.
+- **CÓMO:**
+  1. `HawkesBesselEngine` almacena `pre_jump_excitacion = S(t-)` durante `record_event(t)` antes de sumar $+\alpha$.
+  2. Implementadas `intensity_predictable(t)` e `intensity_ratio_predictable(t)` que evalúan $\lambda(t-) / \hat{\mu}$ en instantes de evento ($t == t_{\text{last}}$).
+  3. `intensity_ratio(t)` delega a `intensity_ratio_predictable(t)`, garantizando que la lectura previa en el consenso espectral (`ratio_hawkes_fresco` en `lib.rs:3258`) y la lectura posterior en los motores escalares y registro (`hawkes_ratio_real` en `lib.rs:5866`) arrojen el MISMO valor predecible.
+  4. Des-ignorado y verificado en verde `cf2_hawkes_poisson_1hz_lectura_en_evento_excitacion_nula` en `cf2_hawkes_solucion_conocida.rs`.
+  5. Creado contrato de certificación formal `crates/signal-engine/tests/f1_016_hawkes_predictable_sampling_parity_contract.rs`.
+- **CUÁNDO:** En cada trade procesado por el núcleo tanto en backtest, replay y producción.
+- **DÓNDE:** `crates/signal-engine/src/hawkes_bessel.rs`, `crates/god-engine-core/src/lib.rs`, `crates/signal-engine/tests/cf2_hawkes_solucion_conocida.rs`, y `crates/signal-engine/tests/f1_016_hawkes_predictable_sampling_parity_contract.rs`.
+- **QUIÉN:** AGY (Quant Sr., Físico Matemático / Espectral, Arquitecto Senior).
+
+#### 2. ESTADO DE CI CLOUD Y RECIBOS
+- **Unit and contract suites (`39669183928`):** 100% GREEN (6/6 suites verdes: meta-analítica 8s, auditoría 4m46s, entrenador 15m2s, riesgo 4m19s, espectro-y-consejo 6m55s, nucleo 12m30s).
+- **F1-016 CERRADO:** Documentado en `docs/audit/fable/f1_hallazgos.tsv` (línea 17).
+
+## 2026-10-21 — GLM: 145 — numeraire del pre-screen CERTIFICADO invariante + auditoría crates duplicados (FASE 0)
+
+**Cierre del mandato «13 USD» (tercera y última capa).** El ciclo 144 erradicó
+las reinyecciones en runtime; este certifica la capa de simulación:
+
+1. **Pre-screen del daemon online**: el comentario reclamaba invariancia del
+   numeraire (`WF_INITIAL_CAPITAL=13.0`). Reclamo → CERTIFICACIÓN: el bloque
+   de evaluación vive ahora en `prescreen_evaluate` (testeable) y el contrato
+   `wf_numerario_invariancia_contract` DEMUESTRA con la función real que el
+   fitness es idéntico para capitales 13/100/1000/1e6 en ambos regímenes
+   (bayesiano <30 trades y normal ≥30) — el 13.0 del pre-screen NO es un
+   sesgo, es un numeraire certificado. Parametrizable por `TG_WF_CAPITAL`
+   (guardas CL-15, precedente TG_SA_* F1-122) para re-certificar sin
+   recompilar. Suite evolution-engine completa VERDE tras la extracción.
+2. **Distinción crítica para el consejo**: el capital del BACKTEST COMPLETO
+   (FFI×3 de backtest-engine, bins×5) NO es un numeraire neutral — los
+   rescates de nocional mínimo (F1-088) y los pisos de notional dependen del
+   capital ABSOLUTO. Cambiar esos defaults sin oráculo por herramienta
+   cambiaría resultados. Además los 3 FFI no tienen callers vivos (sólo
+   worktrees viejos). Dejo el follow-up documentado: valor EXPLÍCITO por
+   herramienta + oráculo propio.
+3. **Matiz del .env del 144**: `INITIAL_CAPITAL=0.0` activa extracción
+   dinámica SOLO en el host (god_engine); los bins lo sanitizan con WARNING
+   VISIBLE («no válido, asignando $13.00 nominales») — fallback declarado, no
+   silencioso. Sin regresión.
+4. **FASE 0 del protocolo nuevo — `cargo tree --duplicates`**: **109 crates
+   duplicados** (snapshot: outputs/cargo_duplicates_2026-10-21.txt). Los más
+   pesados: zip v0.6+v8 (aes×2), tokio-tungstenite ×3 (0.21/0.24/0.29),
+   tungstenite ×3, rand en 3 majors, reqwest 0.11+0.13, hyper 0.14+1.x,
+   thiserror 1+2, syn 1+2+3, windows-sys ×3, rkyv 0.7 viejo (ahash 0.7).
+   Poda propuesta para la línea RB (precedente RB-R1: polars salió del grafo
+   del núcleo, 459→361 crates): unificar tungstenite/reqwest/hyper hacia una
+   sola major donde el árbol lo permita.
+
+**Pilares nuevos del mandato (mapeo para el consejo, multi-ciclo)**: Chaos
+Engineering en calentamiento Demo (certifica circuit breakers), inferencia
+causal DAG+SVD contra multicolinealidad espectral, consenso multi-agente con
+timestamp+hash (extensión natural del semáforo RB-H2 + frontera Pareto del
+moe_neat_arena ya existente). Ninguno pisado aún — reservado a diseño con
+dueño.

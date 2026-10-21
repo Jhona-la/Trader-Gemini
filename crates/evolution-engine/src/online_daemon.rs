@@ -40,7 +40,118 @@ use quantum_arena::genome::SuperGenotype;
 /// con él `fitness::compute`, que sólo lee ese cociente en logaritmo— es
 /// INVARIANTE frente a este valor. Cambiarlo no reordena a ningún candidato.
 /// El JUEZ (`wf_evaluate_real`) no lo usa: arranca del capital VIVO del arena.
-const WF_INITIAL_CAPITAL: f64 = 13.0;
+/// GLM 145: la invariancia ya no es un reclamo del comentario — está
+/// CERTIFICADA por `tests/wf_numerario_invariancia_contract.rs`, y el valor
+/// es parametrizable por `TG_WF_CAPITAL` (precedente TG_SA_* de F1-122) para
+/// re-certificarla sin recompilar.
+const WF_INITIAL_CAPITAL_DEFAULT: f64 = 13.0;
+
+/// Numeraire del pre-screen con override por entorno (TG_WF_CAPITAL).
+/// Guardas CL-15: valor ausente/NaN/≤0 ⇒ default documentado, jamás pánico.
+#[doc(hidden)]
+pub fn wf_initial_capital() -> f64 {
+    match std::env::var("TG_WF_CAPITAL") {
+        Ok(txt) => match txt.trim().parse::<f64>() {
+            Ok(v) if v.is_finite() && v > 0.0 => v,
+            _ => WF_INITIAL_CAPITAL_DEFAULT,
+        },
+        Err(_) => WF_INITIAL_CAPITAL_DEFAULT,
+    }
+}
+
+/// GLM 145 — evaluación de pre-screen EXTRAÍDA del bucle de mutación para
+/// poder CERTIFICAR la invariancia del numeraire con un contrato real (el
+/// test llama ESTA función, no una copia de la fórmula). Semántica idéntica
+/// al bloque que sustituye: puramente multiplicativa en `capital`.
+#[doc(hidden)]
+pub fn prescreen_evaluate(
+    tp: f64,
+    sl: f64,
+    kelly: f64,
+    ml_thr_long: f64,
+    ml_thr_short: f64,
+    series: &[Vec<f64>],
+    volatility: f64,
+    roundtrip_fee: f64,
+    capital: f64,
+) -> f64 {
+    let mut wf_wins = 0usize;
+    let mut wf_losses = 0usize;
+    let mut wf_capital = capital;
+    let mut wf_peak = capital;
+    let mut wf_dd = 0.0f64;
+
+    for coin_ret in series {
+        let n_returns = coin_ret.len();
+        let train_end = (n_returns * 6) / 10;
+        for i in train_end..n_returns {
+            let r = coin_ret[i];
+            let prev_r = if i > 0 { coin_ret[i - 1] } else { 0.0 };
+
+            let prev_sigma = if volatility > 1e-12 {
+                prev_r / volatility
+            } else {
+                0.0
+            };
+            let entry_bias = prescreen_entry_bias(prev_sigma, ml_thr_long, ml_thr_short);
+            if entry_bias == 0.0 {
+                continue;
+            }
+
+            let trade_ret = r * entry_bias;
+
+            let eff_sigma = volatility.max(0.0005);
+            let p_stop = if trade_ret <= -sl {
+                1.0
+            } else {
+                let arg = (2.0 * sl * (sl + trade_ret)) / (eff_sigma * eff_sigma);
+                (-arg.clamp(0.0, 50.0)).exp().clamp(0.0, 1.0)
+            };
+            let effective_ret = (-sl) * p_stop + trade_ret.min(tp) * (1.0 - p_stop);
+            let net_ret = effective_ret - roundtrip_fee;
+
+            wf_capital += net_ret * wf_capital * kelly;
+            if wf_capital > wf_peak {
+                wf_peak = wf_capital;
+            }
+            if wf_peak > 0.0 {
+                wf_dd = wf_dd.max((wf_peak - wf_capital) / wf_peak);
+            }
+            if net_ret > 0.0 {
+                wf_wins += 1;
+            } else {
+                wf_losses += 1;
+            }
+        }
+    }
+
+    let wf_trades = wf_wins + wf_losses;
+
+    if wf_trades > 0 && (wf_trades as u32) < WF_MIN_TRADES {
+        crate::fitness::compute_with_bayesian_prior(
+            &crate::fitness::FitnessInputs {
+                initial_capital: capital,
+                final_capital: wf_capital,
+                max_drawdown_pct: wf_dd,
+                total_trades: wf_trades as u32,
+                min_trades_required: WF_MIN_TRADES,
+                oos_start_capital: wf_capital,
+                oos_end_capital: wf_capital,
+            },
+            -0.05,
+        )
+    } else {
+        crate::fitness::compute(&crate::fitness::FitnessInputs {
+            initial_capital: capital,
+            final_capital: wf_capital,
+            max_drawdown_pct: wf_dd,
+            total_trades: wf_trades as u32,
+            min_trades_required: WF_MIN_TRADES,
+            oos_start_capital: wf_capital,
+            oos_end_capital: wf_capital,
+        })
+    }
+}
 
 /// C-10 / MOD3/5-012 (INFORME 14): mínimo estadístico de operaciones en la
 /// ventana OOS del daemon. 3 trades en la partición fuera de muestra es el
@@ -550,7 +661,7 @@ fn nucleo_del_examen(
 /// prueba `cf6_arena_del_candidato`: el examen debe puntuar al candidato.
 #[doc(hidden)]
 pub fn genoma_del_examen(candidate: &SuperGenotype, market: &WfMarketEnv) -> SuperGenotype {
-    let (arena, _core) = nucleo_del_examen(candidate, WF_INITIAL_CAPITAL, market, &[0]);
+    let (arena, _core) = nucleo_del_examen(candidate, wf_initial_capital(), market, &[0]);
     SuperGenotype::current_from_arena(&arena)
 }
 
@@ -562,14 +673,15 @@ pub fn genoma_del_examen(candidate: &SuperGenotype, market: &WfMarketEnv) -> Sup
 pub fn atr_pct_del_examen(serie: &[f64], market: &WfMarketEnv) -> f64 {
     let coin_ids = wf_real_coin_ids(1);
     let coin_id = coin_ids[0].min(quantum_arena::state::MAX_COINS - 1);
+    let capital = wf_initial_capital();
     let (arena, mut core) =
-        nucleo_del_examen(&SuperGenotype::default(), WF_INITIAL_CAPITAL, market, &coin_ids);
+        nucleo_del_examen(&SuperGenotype::default(), capital, market, &coin_ids);
     let mut envelope = RiskEnvelope::new();
-    let mut st = WfReplayState::new(WF_INITIAL_CAPITAL);
+    let mut st = WfReplayState::new(capital);
     let mut precio = WF_SYNTH_PRICE_BASE;
     wf_replay_segment(
         &mut core, &arena, &mut envelope, &mut st, &mut precio, coin_id,
-        serie, 0, serie.len(), market, WF_INITIAL_CAPITAL, false,
+        serie, 0, serie.len(), market, capital, false,
     );
     core.feature_engines[coin_id].get_atr_pct()
 }
@@ -1774,6 +1886,8 @@ impl LiveEvolutionDaemon {
                 // EVALUACIÓN ESPECTRAL CONTINUA (C-10 / FMT-134): se evalúan las CURVAS
                 // continuas al horizonte de la barra de examen (WF_BAR_MS = 16 000 ms),
                 // no anclas escalares estáticas aisladas del continuo.
+                // GLM 145: el bloque vive en `prescreen_evaluate` — testeable y con
+                // numeraire CERTIFICADO invariante (contrato del test suite).
                 let tau_bar = WF_BAR_MS as f64;
                 let tp = candidate.tp_at_tau(tau_bar).max(0.0001);
                 let sl = candidate.sl_at_tau(tau_bar).max(0.0001);
@@ -1781,96 +1895,22 @@ impl LiveEvolutionDaemon {
                 let ml_thr_long = candidate.ml_threshold_long;
                 let ml_thr_short = candidate.ml_threshold_short;
 
-                // Simulación walk-forward sobre retornos reales
-                let mut wf_wins = 0usize;
-                let mut wf_losses = 0usize;
-                let mut wf_pnl = 0.0f64;
-                let mut wf_capital = WF_INITIAL_CAPITAL;
-                let mut wf_peak = WF_INITIAL_CAPITAL;
-                let mut wf_dd = 0.0f64;
-                let mut candidate_net_returns: Vec<f64> = Vec::new();
-
                 let series: Vec<Vec<f64>> = per_coin_series
                     .iter()
                     .map(|sr| sr[sr.len().saturating_sub(300)..].to_vec())
                     .collect();
 
-                for coin_ret in &series {
-                    let n_returns = coin_ret.len();
-                    let train_end = (n_returns * 6) / 10;
-                    for i in train_end..n_returns {
-                        let r = coin_ret[i];
-                        let prev_r = if i > 0 { coin_ret[i - 1] } else { 0.0 };
-
-                        let prev_sigma = if volatility > 1e-12 {
-                            prev_r / volatility
-                        } else {
-                            0.0
-                        };
-                        let entry_bias =
-                            prescreen_entry_bias(prev_sigma, ml_thr_long, ml_thr_short);
-                        if entry_bias == 0.0 {
-                            continue;
-                        }
-
-                        let trade_ret = r * entry_bias;
-
-                        let eff_sigma = volatility.max(0.0005);
-                        let p_stop = if trade_ret <= -sl {
-                            1.0
-                        } else {
-                            let arg = (2.0 * sl * (sl + trade_ret)) / (eff_sigma * eff_sigma);
-                            (-arg.clamp(0.0, 50.0)).exp().clamp(0.0, 1.0)
-                        };
-                        let effective_ret = (-sl) * p_stop + trade_ret.min(tp) * (1.0 - p_stop);
-                        let net_ret = effective_ret - roundtrip_fee;
-
-                        wf_pnl += net_ret * wf_capital * kelly;
-                        wf_capital += net_ret * wf_capital * kelly;
-                        if wf_capital > wf_peak {
-                            wf_peak = wf_capital;
-                        }
-                        if wf_peak > 0.0 {
-                            wf_dd = wf_dd.max((wf_peak - wf_capital) / wf_peak);
-                        }
-                        if net_ret > 0.0 {
-                            wf_wins += 1;
-                        } else {
-                            wf_losses += 1;
-                        }
-                        candidate_net_returns.push(net_ret);
-                    }
-                }
-
-                let wf_trades = wf_wins + wf_losses;
-
-                let fitness = if wf_trades > 0 && (wf_trades as u32) < WF_MIN_TRADES {
-                    crate::fitness::compute_with_bayesian_prior(
-                        &crate::fitness::FitnessInputs {
-                            initial_capital: WF_INITIAL_CAPITAL,
-                            final_capital: wf_capital,
-                            max_drawdown_pct: wf_dd,
-                            total_trades: wf_trades as u32,
-                            min_trades_required: WF_MIN_TRADES,
-                            oos_start_capital: wf_capital,
-                            oos_end_capital: wf_capital,
-                        },
-                        -0.05,
-                    )
-                } else {
-                    crate::fitness::compute(&crate::fitness::FitnessInputs {
-                        initial_capital: WF_INITIAL_CAPITAL,
-                        final_capital: wf_capital,
-                        max_drawdown_pct: wf_dd,
-                        total_trades: wf_trades as u32,
-                        min_trades_required: WF_MIN_TRADES,
-                        oos_start_capital: wf_capital,
-                        oos_end_capital: wf_capital,
-                    })
-                };
-                let _ = wf_pnl;
-                let _ = candidate_net_returns;
-
+                let fitness = prescreen_evaluate(
+                    tp,
+                    sl,
+                    kelly,
+                    ml_thr_long,
+                    ml_thr_short,
+                    &series,
+                    volatility,
+                    roundtrip_fee,
+                    wf_initial_capital(),
+                );
                 prescreened.push((fitness, candidate));
             }
 

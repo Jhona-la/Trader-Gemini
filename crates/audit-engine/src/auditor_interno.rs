@@ -349,26 +349,23 @@ fn bloques_media_ee<T, F: Fn(usize, usize) -> f64>(items: &[T], media_bloque: F)
 pub struct VerificadorResultados;
 
 impl VerificadorResultados {
-    /// Computes independent metrics from raw exchange fill records with default base capital
-    pub fn compute_metrics(fills: &[ExchangeFillRecord]) -> IndependentMetrics {
-        Self::compute_metrics_with_capital(fills, 13.0)
-    }
-
     /// Computes independent metrics from raw exchange fill records anchored to explicit base capital.
     /// F1-006 (Ola Ω150): Single-pass zero-allocation Welford online variance + equity curve reconstruction.
+    /// CL-15 (GLM 144): capital inválido (NaN/≤0) ⇒ evidencia NO anclable ⇒
+    /// métricas vacías (igual que fills vacíos): el tribunal queda armado,
+    /// consistente con F412 («sin fuente independiente el veto no decae»).
+    /// Inventar 13.0 fabricaría retornos/drawdowns de una cuenta inexistente.
     pub fn compute_metrics_with_capital(
         fills: &[ExchangeFillRecord],
         base_capital: f64,
     ) -> IndependentMetrics {
-        if fills.is_empty() {
+        if fills.is_empty()
+            || !base_capital.is_finite()
+            || base_capital <= 0.0
+        {
             return IndependentMetrics::default();
         }
-
-        let safe_capital = if base_capital.is_finite() && base_capital > 0.0 {
-            base_capital
-        } else {
-            13.0
-        };
+        let safe_capital = base_capital;
 
         let mut count: u64 = 0;
         let mut winning_trades: u64 = 0;
@@ -489,7 +486,11 @@ impl Default for AuditorInterno {
         Self {
             fills_journal: Vec::new(),
             fills_independientes: Vec::new(),
-            base_capital: 13.0,
+            // CL-15 (GLM 144): el Default NO declara capital — inventar 13.0
+            // anclaría las métricas a una cuenta inexistente. Sin with_capital
+            // explícito la evidencia queda sin anclar (métricas vacías,
+            // tribunal armado). El host vivo usa with_capital(capital_real).
+            base_capital: f64::NAN,
             thresholds: TribunalThresholds::default(),
         }
     }
@@ -787,7 +788,7 @@ mod tests {
 
     #[test]
     fn test_auditor_interno_verification_and_bias() {
-        let mut auditor = AuditorInterno::new();
+        let mut auditor = AuditorInterno::with_capital(13.0);
         auditor.record_fill(ExchangeFillRecord {
             timestamp_ns: 1_000_000,
             symbol_id: 0,

@@ -117,8 +117,10 @@ impl MmapTelemetry {
             0.0
         };
 
-        // FIX #727: Sanitizar flotantes de snapshot mmap contra NaNs
-        let safe_uni = if uni.is_finite() { uni } else { 13.0 };
+        // FIX #727 + CL-15 (GLM 144): los flotantes de snapshot se sanean por
+        // campo; el capital NO tiene valor neutral — NaN viaja por mmap y el
+        // dashboard muestra la verdad. Inventar 13.0 mentiría el patrimonio.
+        let safe_uni = if uni.is_finite() { uni } else { f64::NAN };
         let safe_pnl = if pnl_realized.is_finite() {
             pnl_realized
         } else {
@@ -220,6 +222,36 @@ mod tests {
         assert!((snap.global_roi - 100.0).abs() < 1e-4);
         // WR ponderado sobre la métrica unificada: 11/15 ≈ 0.7333
         assert!((snap.win_rate - (11.0 / 15.0)).abs() < 1e-4);
+
+        drop(telemetry);
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// CL-15 (GLM 144): capital NaN ⇒ el snapshot muestra la verdad (NaN),
+    /// jamás un 13.0 inventado que mentiría el patrimonio del dashboard.
+    #[test]
+    fn test_mmap_capital_nan_se_muestra_como_nan() {
+        let temp_dir = std::env::temp_dir();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = temp_dir.join(format!("test_mmap_nan_{}.bin", unique_id));
+        let path_str = path.to_string_lossy().to_string();
+
+        let arena = GlobalArena::build_in_own_stack(13.0);
+        arena.unified_capital.store(f64::NAN, Ordering::Relaxed);
+
+        let mut telemetry = MmapTelemetry::new(arena, &path_str).unwrap();
+        telemetry.snapshot_to_ram();
+
+        let data = std::fs::read(&path).expect("read mmap file");
+        let snap: TelemetrySnapshot =
+            unsafe { std::ptr::read(data.as_ptr() as *const TelemetrySnapshot) };
+        assert!(
+            snap.unified_capital.is_nan(),
+            "capital inválido viaja como NaN (ausencia honesta), no como 13.0"
+        );
 
         drop(telemetry);
         let _ = std::fs::remove_file(path);

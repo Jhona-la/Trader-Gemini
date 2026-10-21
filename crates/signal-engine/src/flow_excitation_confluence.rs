@@ -69,8 +69,9 @@ impl FlowExcitationConfluenceEngine {
     /// OLA Ω141 — VOTO ESPECTRAL CON CONJETURA DE BIRCH Y SWINNERTON-DYER (BSD), RIEMANN ZETA GUE, KÄHLER-HODGE, YANG-MILLS Y HELMHOLTZ
     /// OLA Ω142 — VOTO ESPECTRAL CON TEOREMA DEL ÍNDICE DE ATIYAH-SINGER Y OPERADOR DE DIRAC, BSD, RIEMANN ZETA GUE, KÄHLER-HODGE, YANG-MILLS Y HELMHOLTZ
     /// OLA Ω143 — VOTO ESPECTRAL CON TRANSPORTE ÓPTIMO WASSERSTEIN-KANTOROVICH W_2 (BENAMOU-BRENIER), DIRAC, BSD, RIEMANN ZETA GUE, KÄHLER-HODGE, YANG-MILLS Y HELMHOLTZ
+    /// OLA Ω197 (F1-094) — VOTO ESPECTRAL CON ORDER BOOK IMBALANCE (OBI) Y LIFT DIRECCIONAL ML
     #[allow(clippy::too_many_arguments)]
-    pub fn voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
+    pub fn voto_espectral_con_obi_ml_wasserstein_y_fisica(
         desplazamientos: &[f64; 32],
         ratio_lambda_mu: f64,
         hidden_liq_pressure: f64,
@@ -84,6 +85,8 @@ impl FlowExcitationConfluenceEngine {
         dirac_conviction_modulation: f64,
         wasserstein_barycenter_velocity: f64,
         wasserstein_conviction_modulation: f64,
+        obi: f64,
+        ml_directional_lift: f64,
     ) -> crate::voto_espectral::VotoEspectral {
         let excitacion = crate::hawkes_bessel::excitacion_hawkes_norm(
             ratio_lambda_mu,
@@ -145,31 +148,91 @@ impl FlowExcitationConfluenceEngine {
         } else {
             1.0
         };
+
+        // F1-094 (Ola Ω197): Acoplamiento espectral continuo de OBI y ML Lift
+        // G8-OMEGA-09: obi_eff proviene estrictamente del desequilibrio de libro medido;
+        // no absorbe p_ice aquí para evitar doble cuenta con current_sum y preservar
+        // la ley física de atenuación sin inversión de signo ante corrientes opuestas.
+        let obi_eff = if obi.is_finite() {
+            obi.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        let ml_lift = if ml_directional_lift.is_finite() {
+            ml_directional_lift.clamp(-2.0, 2.0)
+        } else {
+            0.0
+        };
+
         for k in 0..32 {
             let x = desplazamientos[k];
-            if !x.is_finite() || x.abs() <= 1e-12 {
-                continue;
-            }
+            let x_val = if x.is_finite() { x } else { 0.0 };
+
             // G8-OMEGA-10: Perfiles continuos de acoplamiento espectral sobre k ∈ [0, 31]:
-            // - micro_factor: rampa lineal decreciente desde 1.0 (k=0) hacia 0.0 (k=32) para absorción iceberg y anomalía quiral de Dirac.
+            // - micro_factor: rampa lineal decreciente desde 1.0 (k=0) hacia 0.0 (k=32) para microestructura (OBI) y absorción iceberg.
             // - meso_factor: perfil triangular centrado en k=16 para corrientes restauradoras Kähleriana, elíptica BSD y geodésica Wasserstein.
-            // - macro_factor: rampa lineal creciente desde 0.0 (k=0) hacia 31/32 (k=31) para curvatura gauge Yang-Mills y advección Wasserstein.
+            // - macro_factor: rampa lineal creciente desde 0.0 (k=0) hacia 31/32 (k=31) para ML lift, curvatura gauge Yang-Mills y advección Wasserstein.
             let micro_factor = (1.0 - (k as f64 / 32.0)).max(0.0);
             let meso_factor = (1.0 - ((k as f64 - 16.0) / 16.0).abs()).max(0.0);
             let macro_factor = (k as f64 / 32.0).clamp(0.0, 1.0);
             let current_sum = (p_ice * 0.5 + j_dirac * 0.25) * micro_factor
                 + (j_kh * 0.35 + j_bsd * 0.25 + v_wk * 0.20) * meso_factor
                 + (j_ym * 0.35 + v_wk * 0.20) * macro_factor;
-            // G8-OMEGA-09: Proyección direccional sin inversión de signo.
-            // Las corrientes físicas amplifican la magnitud cuando están alineadas con x(τ_k)
-            // y la atenúan suavemente hacia 0.0 cuando se oponen, pero NUNCA invierten el signo
-            // del desplazamiento espectral x(τ_k) ni fabrican señal cuando x(τ_k) == 0.
-            let flujo = x.signum() * (x.abs() + x.signum() * current_sum).clamp(0.0, 10.0);
+
+            // F1-094: Confluencia genuina del flujo espectral base con microestructura OBI y predicción ML Lift.
+            let obi_contrib = obi_eff * micro_factor * 1.5;
+            let ml_contrib = ml_lift * macro_factor * 0.50;
+            let flujo_base = x_val + obi_contrib + ml_contrib;
+
+            if flujo_base.abs() <= 1e-12 {
+                continue;
+            }
+
+            // G8-OMEGA-09 & F1-094: Proyección direccional sobre el flujo base confluente.
+            // Las corrientes físicas amplifican la magnitud cuando están alineadas con flujo_base
+            // y la atenúan suavemente hacia 0.0 cuando se oponen.
+            let sign = flujo_base.signum();
+            let flujo = sign * (flujo_base.abs() + sign * current_sum).clamp(0.0, 10.0);
             let direccion = flujo.tanh();
             let coherencia = (flujo.abs().min(1.0) * excitacion * lam_scale).sqrt();
             por_escala[k] = (direccion * coherencia * gue_mod * bsd_mod * dirac_mod * wk_mod).clamp(-1.0, 1.0);
         }
         crate::voto_espectral::VotoEspectral::desde_arr(&por_escala)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
+        desplazamientos: &[f64; 32],
+        ratio_lambda_mu: f64,
+        hidden_liq_pressure: f64,
+        laminar_fraction: f64,
+        yang_mills_current: f64,
+        kahler_restoring_current: f64,
+        riemann_gue_conviction: f64,
+        bsd_restoring_current: f64,
+        bsd_conviction_modulation: f64,
+        dirac_chiral_current: f64,
+        dirac_conviction_modulation: f64,
+        wasserstein_barycenter_velocity: f64,
+        wasserstein_conviction_modulation: f64,
+    ) -> crate::voto_espectral::VotoEspectral {
+        Self::voto_espectral_con_obi_ml_wasserstein_y_fisica(
+            desplazamientos,
+            ratio_lambda_mu,
+            hidden_liq_pressure,
+            laminar_fraction,
+            yang_mills_current,
+            kahler_restoring_current,
+            riemann_gue_conviction,
+            bsd_restoring_current,
+            bsd_conviction_modulation,
+            dirac_chiral_current,
+            dirac_conviction_modulation,
+            wasserstein_barycenter_velocity,
+            wasserstein_conviction_modulation,
+            0.0,
+            0.0,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]

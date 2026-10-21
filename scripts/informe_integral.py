@@ -5,10 +5,13 @@
 Teje las fuentes de métricas existentes en UN informe periódico con
 serie histórica comparable. Diseño: docs/DISENO_META_ANALITICA_INTEGRAL.md.
 
-Emisores iniciales (este átomo):
+Emisores:
   1. meta-analítica de código  — docs/audit/meta_analitica/*.tsv (por agente/área)
   2. oráculos con testigo      — outputs/oracle_witness_*.log (gate de conducta)
   3. censo de voces            — recibo del test #[ignore] censo_mudos (si existe output)
+  4. económico (GLM 144, §52)  — outputs/economia_*.json volcado por el worker de
+     telemetría del audit-engine: ROI pre/post fees, PnL bruto/neto, WR pre/post
+     costos, Sharpe (Welford por trade), EV/trade y periodo exacto.
 
 Uso: python scripts/informe_integral.py [--out docs/audit/informe_integral/]
 Determinista: sólo lee archivos existentes; no ejecuta suites.
@@ -101,6 +104,20 @@ def emisor_censo(recibo_ruta=None):
     return None, "sin recibo de censo (correr tests #[ignore] con --nocapture)"
 
 
+def emisor_economico():
+    """(4) Económico (§52 del mandato): lee el recibo outputs/economia_live.json
+    que vuelca el worker de telemetría del audit-engine (ROI pre/post fees,
+    PnL bruto/neto, WR pre/post costos, Sharpe, EV/trade, periodo exacto)."""
+    candidatos = sorted(glob.glob(os.path.join(ROOT, "outputs", "economia_*.json")))
+    if not candidatos:
+        return None, "sin outputs/economia_*.json (worker de telemetría sin trades aún)"
+    try:
+        with open(candidatos[-1], encoding="utf-8") as f:
+            return json.load(f), None
+    except (OSError, json.JSONDecodeError) as e:
+        return None, f"recibo ilegible: {e}"
+
+
 def generar(fecha, previo_ruta):
     lineas = []
     w = lineas.append
@@ -145,8 +162,29 @@ def generar(fecha, previo_ruta):
         w(f"- (sin datos: {err3})")
     w("")
 
-    # 4. Comparativa con el informe anterior (la serie histórica)
-    w("## 4. Comparativa con el informe anterior")
+    econ, err4 = emisor_economico()
+    w("## 4. Económico (ROI/PnL/WR/Sharpe/EV con fees — §52 del mandato)")
+    if econ:
+        fmt = lambda v, suf="": "—" if v is None else f"{v}{suf}"
+        w(f"- Trades del periodo: **{econ.get('trades', 0)}** · "
+          f"periodo_ns: {econ.get('periodo_ns')}.")
+        w(f"- PnL bruto: **{fmt(econ.get('pnl_bruto'))} USD** · fees: "
+          f"{fmt(econ.get('fees'))} USD · **PnL neto: {fmt(econ.get('pnl_neto'))} USD**.")
+        w(f"- ROI pre-fees: **{fmt(econ.get('roi_pre_fees_pct'), '%')}** · "
+          f"ROI post-fees: **{fmt(econ.get('roi_post_fees_pct'), '%')}** · "
+          f"capital inicial: {fmt(econ.get('capital_inicial'))} USD.")
+        w(f"- WR pre-costos: **{fmt(econ.get('wr_pre_costos'))}** · "
+          f"WR post-costos: **{fmt(econ.get('wr_post_costos'))}** · "
+          f"EV/trade: {fmt(econ.get('ev_por_trade'))} USD.")
+        w(f"- Sharpe post-fees (anualizado, Welford por trade): "
+          f"**{fmt(econ.get('sharpe_post_fees'))}**.")
+        w("- Ausencias serializadas como null (CL-15): lo no medible no se inventa.")
+    else:
+        w(f"- (sin datos: {err4})")
+    w("")
+
+    # 5. Comparativa con el informe anterior (la serie histórica)
+    w("## 5. Comparativa con el informe anterior")
     if previo_ruta and os.path.exists(previo_ruta):
         try:
             previo = open(previo_ruta, encoding="utf-8").read()
