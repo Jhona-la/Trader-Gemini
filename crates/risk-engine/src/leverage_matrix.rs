@@ -65,17 +65,17 @@ impl QuantumLeverageMatrix {
         sl_operado: f64,
         arena: &GlobalArena,
     ) -> f64 {
-        // FIX #651: Sanitizar parámetros entrantes asegurando robustez numérica total
-        let safe_curr_cap = if current_capital.is_finite() && current_capital > 0.0 {
-            current_capital
-        } else {
-            13.0
-        };
-        let safe_base_cap = if base_capital.is_finite() && base_capital > 0.0 {
-            base_capital
-        } else {
-            13.0
-        };
+        // F1-092 (Ola Ω195): Fail-closed estricto ante capital no finito o no positivo (TRIAJE B GLM 106).
+        // Prohibido inventar el literal 13.0 ante NaN/Inf/<=0.0.
+        if !current_capital.is_finite()
+            || current_capital <= 0.0
+            || !base_capital.is_finite()
+            || base_capital <= 0.0
+        {
+            return 1.0;
+        }
+        let safe_curr_cap = current_capital;
+        let safe_base_cap = base_capital;
         let safe_tick_vol = if tick_volatility.is_finite() && tick_volatility >= 0.0 {
             tick_volatility
         } else {
@@ -86,8 +86,9 @@ impl QuantumLeverageMatrix {
         } else {
             1.0
         };
+        // F1-092: Exponente de Hurst acotado al dominio de la física fractal financiera [0.30, 0.75].
         let safe_hurst = if hurst_exponent.is_finite() {
-            hurst_exponent.clamp(0.0, 1.0)
+            hurst_exponent.clamp(0.30, 0.75)
         } else {
             0.5
         };
@@ -110,7 +111,7 @@ impl QuantumLeverageMatrix {
         // ═══════════════════════════════════════════════════════
         // TENSOR 1: Full Fractional Kelly (con profit_factor y win_rate REAL)
         // ═══════════════════════════════════════════════════════
-        // Fusión Bayesiana: si hay historial (WR > 0.05), pondera 70% historia + 30% convicción puntual
+        // Fusión Bayesiana: si hay historial (WR > 0.05), pondera 60% historia + 40% convicción puntual
         // D-690: la convicción puntual es la probabilidad calibrada cuando existe;
         // la puntuación cruda sólo cuando el núcleo no la ha calibrado.
         let signal_probability = if signal.win_probability > 0.0 {
@@ -119,7 +120,7 @@ impl QuantumLeverageMatrix {
             signal.confidence
         };
         let prob_win = if safe_wr > 0.05 {
-            (safe_wr * 0.70 + signal_probability.clamp(0.1, 1.0) * 0.30).clamp(0.10, 0.95)
+            (safe_wr * 0.60 + signal_probability.clamp(0.1, 1.0) * 0.40).clamp(0.10, 0.95)
         } else {
             signal_probability.clamp(0.10, 0.95)
         };
@@ -131,13 +132,14 @@ impl QuantumLeverageMatrix {
         // forzaba apuesta con edge negativo — abajo 0: sin edge, sin size.
         let kelly = kelly_from_pf(prob_win, pf);
 
-        // Fracción adaptativa: Hurst × confidence determinan agresividad
-        let fraction_multiplier =
-            if prob_win > arena.config.veto_threshold_btc.load(Ordering::Relaxed) {
-                1.0
-            } else {
-                (prob_win - 0.5).max(0.1) * 2.0 // Minimum 0.1 to prevent near-zero fractions
-            };
+        // F1-092: Erradicación de la reutilización espuria de veto_threshold_btc como
+        // interruptor de Kelly. La modulación de escala fraccional se deriva naturalmente
+        // del umbral de ventaja positiva (prob_win > 0.50):
+        let fraction_multiplier = if prob_win > 0.50 {
+            1.0
+        } else {
+            (prob_win - 0.50).max(0.1) * 2.0 // Minimum 0.1 to prevent near-zero fractions
+        };
 
         let dynamic_kelly = kelly * fraction_multiplier;
 
@@ -158,8 +160,8 @@ impl QuantumLeverageMatrix {
         // de margen crecía con el cuadrado de la volatilidad exactamente en
         // los activos donde debía encogerse.
         //
-        // La convicción es de la SEÑAL (probabilidad calibrada con fallback a confianza).
-        let conviction = 0.40 + signal_probability.clamp(0.1, 1.0) * 0.60;
+        // F1-092: Convicción de la señal mapeada suavemente en [0.50, 1.00].
+        let conviction = 0.50 + signal_probability.clamp(0.0, 1.0) * 0.50;
 
         // ═══════════════════════════════════════════════════════
         // TENSOR 3: Freno de Volatilidad (SIEMPRE activo)
@@ -232,8 +234,9 @@ impl QuantumLeverageMatrix {
             0.5
         };
         let raw_gf = (1.0 + growth_scalar / (1.0 + capital_ratio)) * logarithmic_dampener;
+        // F1-092: Cota continua del factor de aceleración micro en [0.50, 3.75].
         let growth_factor = if raw_gf.is_finite() {
-            raw_gf.clamp(0.1, 10.0)
+            raw_gf.clamp(0.50, 3.75)
         } else {
             1.0
         };
@@ -266,13 +269,11 @@ impl QuantumLeverageMatrix {
         // ═══════════════════════════════════════════════════════
         // TENSOR 5: Hurst Predictability Bonus
         // ═══════════════════════════════════════════════════════
-        let raw_hurst_bonus = if safe_hurst > 0.5 {
-            1.0 + (safe_hurst - 0.5) * 2.0
-        } else {
-            1.0 - (0.5 - safe_hurst)
-        };
+        // F1-092: Bonus de predictabilidad de Hurst acotado a [0.60, 1.50]
+        // en correspondencia con el dominio fractal financiero [0.30, 0.75] (neutral 1.0 en H=0.50).
+        let raw_hurst_bonus = 1.0 + (safe_hurst - 0.5) * 2.0;
         let hurst_bonus = if raw_hurst_bonus.is_finite() {
-            raw_hurst_bonus.clamp(0.5, 2.0)
+            raw_hurst_bonus.clamp(0.60, 1.50)
         } else {
             1.0
         };

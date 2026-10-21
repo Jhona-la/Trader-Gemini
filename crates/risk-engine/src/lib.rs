@@ -1775,6 +1775,26 @@ impl RiskEngine {
                     .max(dynamic_leverage);
             }
         }
+
+        // F1-092 (Ola Ω195): Axioma de Ruina sobre el Riesgo Realizado al Stop.
+        // En cualquier camino (LH-04, camino legado o tras rescates de nocional mínimo),
+        // el riesgo total realizado en dólares al tocar el stop:
+        //   riesgo_usd = final_margin * dynamic_leverage * expected_loss
+        // NUNCA debe exceder el tope actuarial de ruina `tope_riesgo_evento` (<= 0.25 * capital).
+        // Si el riesgo excede este límite, se recorta `final_margin` a la cota máxima segura:
+        //   margin_cap_ruin = (tope_riesgo_evento * allocated_capital) / (dynamic_leverage * expected_loss)
+        // Y si el margen recortado no satisface el nocional mínimo de Binance, la comprobación
+        // terminal de REJ_MIN_NOTIONAL rechaza la orden de forma fail-closed.
+        if dynamic_leverage > 0.0 && expected_loss > 0.0 && allocated_capital > 0.0 {
+            let max_riesgo_usd = tope_riesgo_evento * allocated_capital;
+            let riesgo_propuesto_usd = final_margin * dynamic_leverage * expected_loss;
+            if riesgo_propuesto_usd > max_riesgo_usd {
+                let margin_cap = max_riesgo_usd / (dynamic_leverage * expected_loss);
+                if margin_cap < final_margin {
+                    final_margin = margin_cap;
+                }
+            }
+        }
         // Terminal invariants after every size/leverage adjustment. No
         // fallback to 1x can silently change the validated action here.
         if !dynamic_leverage.is_finite()
