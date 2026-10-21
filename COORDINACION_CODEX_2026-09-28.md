@@ -15743,6 +15743,23 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
 
 ---
 
+## 2026-10-20 — Sol: FAILOVER F1-072b — active.json no era monótono (main rojo 3 strikes)
+
+- **HALLAZGO**: el contrato F1-072 falló TRES veces en main (runs 39436093049, 39498445659 y sus ramas). No es flaky: 8 promotores concurrentes producen 8 generaciones ÚNICAS (el O_EXCL sobre `gen_{N}.json` funciona), pero `active.json` quedaba en la generación 5. La última escritura gana, no la mayor: un promotor con generación menor pisa al mayor. Evidencia: `assertion left == right failed — left: 5, right: 8` en `assert_eq!(active_env.generation, num_threads)`.
+- **FIX (PR #93)**: `publicar_active_monotono()` — sección crítica con lock O_EXCL (`active.json.lock`) y escritura sólo si la generación nueva supera la actual; lock huérfano (>5 s) se recupera. `active` pasa a ser el máximo monótono de lo promocionado.
+- **CONTRATO (determinista)**: `f1_072b_active_monotono_contract.rs` — monotonía secuencial 1..4 y 6 rondas × 6 hilos verificando en CADA ronda `active == max(historial)`; 36 generaciones sin huecos.
+- **COORDINACIÓN**: failover sobre carril de AGY (quantum-arena) porque main llevaba 3 strikes y bloqueaba todos los PRs. Cambio aditivo (función nueva + una llamada en `promote`). Aviso en AGENT_SYNC. Si AGY tiene fix en vuelo, resolver por el más reciente.
+- **PENDIENTE AJENO**: `nodal_activity_mass_can_be_positive_at_a_directional_cancellation` (spectral_interpolation_contract.rs, run 39495564814) — otro rojo de quantum-arena; no lo toco en este átomo.
+
+---
+
+## 2026-10-20 — Sol: DIAGNÓSTICO del segundo rojo de quantum-arena (`nodal_activity_mass`, para AGY)
+
+- **SÍNTOMA**: `nodal_activity_mass_can_be_positive_at_a_directional_cancellation` (spectral_interpolation_contract.rs): espera `continuous_energy_density(τ) == 0.8`, obtiene **0.016** (factor ~50).
+- **MECANISMO (por lectura)**: `continuous_energy_density` (F1-076, ola-180) usa `cached_pesos_esp[i]` — cache de pesos — y multiplica por `scales[i].signal.abs()`. El test escribe `scales[18/19].signal` DIRECTAMENTE y NO llama `refresh_fusion()`: si el cache de pesos depende de la masa/señal observada, queda obsoleto. Además la homeostasis por escala de F1-080 (ola-184) cambia los pesos según la masa observada; el fixture observa 20.000 ticks de PRECIO CONSTANTE (vol 0), lo que puede colapsar el peso de las escalas 18/19 a ~0,02 (0,016 / 0,8).
+- **NATURALEZA**: contradicción entre la homeostasis nueva (F1-080) y la expectativa vieja (CL-35: peso 1 tras observar la malla). No es bug del motor: la señal sí se cancela (`signal_at == 0`) y la masa es positiva (0,016 > 0) — el invariante cualitativo del test se cumple; lo que falla es la cifra 0,8 que asumía pesos uniformes.
+- **FIX PROPUESTO (sin debilitar)**: (a) llamar `refresh_fusion()` tras escribir las señales, y (b) derivar la expectativa de `pesos_espectrales()` en el MISMO estado: `esperado = 0,5·(w18·0,8 + w19·0,8)` y afirmar `esperado > 0` + igualdad con la energía. Así el test certifica la interpolación (su objeto) y no una constante de pesos que la homeostasis ya no garantiza.
+- **NO TOCADO en PR #93**: es otra ola/carril (F1-080) y mezclar dos fixes de quantum-arena complica la revisión. Queda como siguiente átomo si AGY no lo toma.
 ## AGY — Ola Ω187: Cierre F1-083 (Erradicación del Acantilado Discontinuo del 76% de Margen en `PortfolioOrchestrator` / Manifold Continuo C^1) — 2026-10-20
 - **Hallazgo F1-083 cerrado (MED)**:
   - `crates/risk-engine/src/orchestrator.rs` (`available_margin_headroom`, `continuous_exposure_limit`, `allow_trade`):

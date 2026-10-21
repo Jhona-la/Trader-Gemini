@@ -419,8 +419,10 @@ impl GenomeEnvelope {
         }
         drop(hist_file);
 
-        // 2) Active atómico (tmp único + fsync + rename sin remove previo).
-        atomic_write(&active_path(), &hist_json)?;
+        // 2) Active atómico (tmp único + fsync + rename sin remove previo) y
+        // MONÓTONO (F1-072b, Sol): un promotor con generación menor no puede
+        // sobrescribir a uno mayor. Ver `publicar_active_monotono`.
+        publicar_active_monotono(&envelope, &hist_json)?;
 
         // 3) Espejo legacy: solo el genoma crudo (compat con loaders/watchers viejos).
         let legacy_json = serde_json::to_string_pretty(&envelope.genome)
@@ -477,6 +479,81 @@ impl GenomeEnvelope {
             g -= 1;
         }
         out
+    }
+}
+
+/// F1-072b (Sol, 2026-10-20): PUBLICACIÓN MONÓTONA de `active.json`.
+///
+/// Reclamar generaciones con O_EXCL ya garantiza unicidad, pero escribir
+/// `active.json` sin orden permitía que un hilo con generación MENOR
+/// sobrescribiera a uno mayor: con 8 promotores concurrentes el contrato
+/// veía `active.generation = 5` con 8 generaciones en el historial (carrera
+/// real detectada 3 veces en CI, no flaky).
+///
+/// Sección crítica con lock O_EXCL (`active.json.lock`) + escritura SÓLO si
+/// la generación nueva es mayor: `active` pasa a ser el máximo monótono de
+/// lo promocionado. Un lock obsoleto (>5 s, proceso muerto) se recupera para
+/// no bloquear nunca la promoción. `promote` no está en el hot path: el
+/// coste de un lock de archivo es aceptable y sólo ocurre al promocionar.
+fn publicar_active_monotono(envelope: &GenomeEnvelope, hist_json: &str) -> io::Result<()> {
+    static TOKEN_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let active = active_path();
+    let lock = format!("{active}.lock");
+    let token = format!(
+        "{}.{}",
+        std::process::id(),
+        TOKEN_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let inicio = std::time::Instant::now();
+    loop {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock)
+        {
+            Ok(mut guard) => {
+                // Confirmación por token: si otro hilo borró el lock entre
+                // nuestro create y nuestra escritura, el contenido no es el
+                // nuestro y NO tenemos la sección crítica.
+                {
+                    use std::io::Write;
+                    let _ = guard.write_all(token.as_bytes());
+                }
+                let leido = std::fs::read_to_string(&lock).unwrap_or_default();
+                if leido != token {
+                    drop(guard);
+                    continue;
+                }
+                let resultado = (|| -> io::Result<()> {
+                    let actual = std::fs::read_to_string(&active)
+                        .ok()
+                        .and_then(|d| serde_json::from_str::<GenomeEnvelope>(&d).ok())
+                        .map(|e| e.generation)
+                        .unwrap_or(0);
+                    if envelope.generation > actual {
+                        atomic_write(&active, hist_json)?;
+                    }
+                    Ok(())
+                })();
+                drop(guard);
+                let _ = std::fs::remove_file(&lock);
+                return resultado;
+            }
+            Err(e)
+                if e.kind() == io::ErrorKind::AlreadyExists
+                    || e.kind() == io::ErrorKind::PermissionDenied =>
+            {
+                // En Windows, create_new sobre un lock ABIERTO devuelve
+                // PermissionDenied (5), no AlreadyExists: es contención, no
+                // fallo. Un lock huérfano (proceso muerto) se recupera a los 5 s.
+                if inicio.elapsed() > std::time::Duration::from_secs(5) {
+                    let _ = std::fs::remove_file(&lock);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
     }
 }
 
