@@ -195,9 +195,19 @@ fn observacion_restaurable(obs: &Observacion) -> bool {
 }
 
 /// Una fila histórica no es un evento futuro nuevo. Sin un reloj guardado
-/// utilizable se infiere el máximo retenido, antes de reproducir las filas.
-/// Una fecha imposible ya persistida se descarta: no se puede reconstruir
-/// retrospectivamente su fecha efectiva ni imputarla a otra observación.
+/// utilizable se infiere el máximo retenido. Una fecha imposible ya persistida
+/// se descarta: no se puede reconstruir retrospectivamente su fecha efectiva ni
+/// imputarla a otra observación.
+///
+/// ORDEN (LH-12, certificado por `platt_evidence_restore_contract`): las filas
+/// se reproducen PRIMERO y el reloj se restaura DESPUÉS. El ajuste por Newton
+/// arranca en caliente desde el `(a, b)` de la fila anterior, así que la
+/// trayectoria de arranque determina el punto de parada dentro de la tolerancia
+/// del optimizador. Restaurar el reloj antes de reproducir (como hacía CSG-10)
+/// cambia esa trayectoria y deja `a` a ~1,2e-7 del calibrador vivo —medido
+/// 5,0e-8 en `calibrate_at`, por encima de la tolerancia 1e-8 del contrato— sin
+/// que difieran ni las filas ni el reloj. Con este orden el snapshot restaurado
+/// reproduce el calibrador vivo BIT A BIT.
 fn restaurar_calibrador(
     calibrador: &mut PlattCalibrator,
     registro: &mut VecDeque<Observacion>,
@@ -215,11 +225,11 @@ fn restaurar_calibrador(
                 .map(|obs| obs.2)
                 .max()
         });
-    if let Some(reloj) = reloj {
-        calibrador.restore_evidence_clock_ms(reloj);
-    }
     for &obs in observaciones.iter().filter(|obs| observacion_restaurable(obs)) {
         alimentar_calibrador(calibrador, Some(&mut *registro), obs);
+    }
+    if let Some(reloj) = reloj {
+        calibrador.restore_evidence_clock_ms(reloj);
     }
 }
 
