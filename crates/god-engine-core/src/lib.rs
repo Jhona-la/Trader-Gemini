@@ -3425,8 +3425,37 @@ impl GodEngineCore {
                     let wk_conv = self.arena.registry
                         .get_for_coin_strict_or(coin_id, "wasserstein_conviction_modulation", 1.0);
 
+                    // F1-094 (Ola Ω197): Lectura de OBI y Lift Direccional ML para erradicar clonado de Hawkes/Impulse
+                    let eff_obi = {
+                        let obi_reg = self.arena.registry
+                            .get_for_coin_strict_or(coin_id, "order_book_imbalance", f64::NAN);
+                        if obi_reg.is_finite() {
+                            obi_reg
+                        } else {
+                            let (b_q, a_q) = (eff_bid_qty, eff_ask_qty);
+                            let denom = b_q + a_q;
+                            if denom > 1e-9 {
+                                (b_q - a_q) / denom
+                            } else {
+                                0.0
+                            }
+                        }
+                    };
+                    let ml_dir_lift = {
+                        let ml_p = self.arena.coins[coin_id].ml_prob.load(Ordering::Relaxed);
+                        let ml_b = self.arena.registry
+                            .get_for_coin_strict_or(coin_id, "ml_model_base", 0.50);
+                        let ml_l = self.arena.registry
+                            .get_for_coin_strict_or(coin_id, "ml_model_lift", 0.05);
+                        if ml_p.is_finite() && ml_b.is_finite() && ml_l.is_finite() && ml_l > 1e-4 {
+                            ((ml_p - ml_b) / ml_l).clamp(-2.0, 2.0)
+                        } else {
+                            0.0
+                        }
+                    };
+
                     let voto_confluence =
-                        signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz(
+                        signal_engine::flow_excitation_confluence::FlowExcitationConfluenceEngine::voto_espectral_con_obi_ml_wasserstein_y_fisica(
                             &desplazamientos,
                             ratio_hawkes_fresco,
                             p_ice,
@@ -3440,6 +3469,8 @@ impl GodEngineCore {
                             dirac_conv,
                             wk_velocity,
                             wk_conv,
+                            eff_obi,
+                            ml_dir_lift,
                         );
                     if let Some(media_conf_fl) = voto_confluence.media_banda(0, 31) {
                         self.arena

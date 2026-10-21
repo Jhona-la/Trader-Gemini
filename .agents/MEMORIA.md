@@ -9,6 +9,27 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
 [Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
 
 
+## 2026-10-21 (tarde, 2) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω197 (Cierre F1-094 y Diversidad Espectral Anti-Clones)
+
+- **Mandato**: Erradicación de la degeneración monótona de clones entre `FlowExcitationConfluenceEngine`, `HawkesBesselEngine` y `FlowImpulseEngine` en el consenso de Ville $M=480$, mediante la integración continua de la microestructura del libro de órdenes ($OBI$) en micro-escalas y la ventaja direccional calibrada de Machine Learning ($ML_{\text{lift}}$) en macro-escalas (`F1-094`):
+  1. **F1-094 (`crates/signal-engine/src/flow_excitation_confluence.rs:69-232`, `crates/god-engine-core/src/lib.rs:3428-3460`, `crates/signal-engine/tests/f1_094_spectral_confluence_diversity_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Implementación de `FlowExcitationConfluenceEngine::voto_espectral_con_obi_ml_wasserstein_y_fisica`:
+       - $OBI_{\text{eff}} = \text{clamp}(OBI + 0.30 \cdot p_{\text{ice}}, -1, 1)$, modulado por la rampa microestructural $1 - k/32$ para $k \in [0, 31]$.
+       - $ML_{\text{lift}} = \text{clamp}((p_{\text{ml}} - b_{\text{ml}}) / \text{lift}, -2, 2)$, modulado por la rampa macroestructural $k/32$ para $k \in [0, 31]$.
+       - Flujo confluente base $\text{flujo\_base}_k = x_k + 1.5 \cdot OBI_{\text{eff}} \cdot (1 - k/32) + 0.50 \cdot ML_{\text{lift}} \cdot (k/32)$.
+       - Proyección direccional física: $\text{sign} = \text{signum}(\text{flujo\_base}_k)$, $\text{flujo}_k = \text{sign} \cdot (|\text{flujo\_base}_k| + \text{sign} \cdot \text{current\_sum}_k).\text{clamp}(0, 10)$, preservando la doctrina física G8-OMEGA-09 sobre el flujo acoplado genuino.
+       - Enrutador de compatibilidad neutral hacia atrás bit a bit: `voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz` invoca a la nueva función con $0.0, 0.0$.
+       - Cableado en el event loop de producción `god-engine-core/src/lib.rs:3428-3460` leyendo $OBI$ efectivo (`eff_obi`) y lift direccional ML (`ml_dir_lift`).
+       - Creación del contrato formal `f1_094_spectral_confluence_diversity_contract.rs` con 5 tests verificados: control neutral (<1e-12 diff), dominación de OBI en micro-escalas ($k=0$ opuesto a Hawkes), dominación de ML lift en macro-escalas ($k=30$ opuesto a Hawkes), fracción de anti-clones $\ge 25\%$ de las escalas, y robustez fail-closed ante inputs corruptos NaN/inf.
+     - *POR QUÉ*: Previamente, con corrientes físicas neutrales, Confluence era una transformación impar monótona $\tanh(x_k)$ idéntica en signo a HawkesBessel y FlowImpulse, triplicando la misma hipótesis de momentum y silenciando el OBI y el ML lift en las 480 escalas del martingal de Ville.
+     - *PARA QUÉ*: Diversidad genuina de hipótesis en el espacio de Hilbert $L^2(\mathbb{R}^{d \times \tau})$, erradicación del falso consenso y aceleración geométrica del capital (\$13 USD) con interés compuesto hacia +100%/72h.
+     - *CÓMO*: Acoplamiento continuo en stack y evaluación espectral diádica sin alocaciones.
+     - *CUÁNDO*: En cada tick de mercado en tiempo real.
+     - *DÓNDE*: `crates/signal-engine/src/flow_excitation_confluence.rs`, `crates/god-engine-core/src/lib.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), Quant Developer, Físico de Sistemas Complejos y Profesor Pedagógico.
+- **Verificación Contractual**:
+  - `cargo test -p signal-engine --test f1_094_spectral_confluence_diversity_contract -j 1` (5/5 pass, 100% verde en 0.00s).
+
 ## 2026-10-21 (tarde, 1) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω196 (Cierre F1-093 y Certificación Verde de CI)
 
 - **Mandato**: Resolución completa y certificación 100% verde de los fallos de CI en GitHub Actions y resolución de la deuda de certificación de vetos de riesgo duro y lógica (`F1-093`):
