@@ -496,8 +496,14 @@ impl GenomeEnvelope {
 /// no bloquear nunca la promoción. `promote` no está en el hot path: el
 /// coste de un lock de archivo es aceptable y sólo ocurre al promocionar.
 fn publicar_active_monotono(envelope: &GenomeEnvelope, hist_json: &str) -> io::Result<()> {
+    static TOKEN_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let active = active_path();
     let lock = format!("{active}.lock");
+    let token = format!(
+        "{}.{}",
+        std::process::id(),
+        TOKEN_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
     let inicio = std::time::Instant::now();
     loop {
         match std::fs::OpenOptions::new()
@@ -505,7 +511,19 @@ fn publicar_active_monotono(envelope: &GenomeEnvelope, hist_json: &str) -> io::R
             .create_new(true)
             .open(&lock)
         {
-            Ok(guard) => {
+            Ok(mut guard) => {
+                // Confirmación por token: si otro hilo borró el lock entre
+                // nuestro create y nuestra escritura, el contenido no es el
+                // nuestro y NO tenemos la sección crítica.
+                {
+                    use std::io::Write;
+                    let _ = guard.write_all(token.as_bytes());
+                }
+                let leido = std::fs::read_to_string(&lock).unwrap_or_default();
+                if leido != token {
+                    drop(guard);
+                    continue;
+                }
                 let resultado = (|| -> io::Result<()> {
                     let actual = std::fs::read_to_string(&active)
                         .ok()
@@ -521,12 +539,17 @@ fn publicar_active_monotono(envelope: &GenomeEnvelope, hist_json: &str) -> io::R
                 let _ = std::fs::remove_file(&lock);
                 return resultado;
             }
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                // Lock huérfano de un proceso muerto: recuperar tras 5 s.
+            Err(e)
+                if e.kind() == io::ErrorKind::AlreadyExists
+                    || e.kind() == io::ErrorKind::PermissionDenied =>
+            {
+                // En Windows, create_new sobre un lock ABIERTO devuelve
+                // PermissionDenied (5), no AlreadyExists: es contención, no
+                // fallo. Un lock huérfano (proceso muerto) se recupera a los 5 s.
                 if inicio.elapsed() > std::time::Duration::from_secs(5) {
                     let _ = std::fs::remove_file(&lock);
                 }
-                std::thread::sleep(std::time::Duration::from_millis(2));
+                std::thread::sleep(std::time::Duration::from_millis(1));
                 continue;
             }
             Err(e) => return Err(e),
