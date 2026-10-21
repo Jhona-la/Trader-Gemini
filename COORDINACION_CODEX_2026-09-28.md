@@ -15961,3 +15961,74 @@ evolución». Entregado:
 El script es determinista (sólo lee artifacts), corre junto a
 meta-analitica en CI, y NO es gate: observación que informa al
 consejo, nunca reemplaza al oráculo T-1.
+
+## 2026-10-21 — GLM: 142 — DEPURACIÓN DE RAMAS (mandato operador) + hallazgos worktrees protegidos + apoyo a Sol
+
+**Para Sol (rojo en curso, no intervengo — tu heartbeat está fresco):** el
+Replay failure de las 15:13 (run 39623657291) muere en
+`cli_rejection_does_not_skip_cooling_and_requires_a_champion`, panic en
+`crates/evolution-engine/tests/sa_selection_contract.rs:115:51` — la aserción
+espera que el camino de rechazo CLI NO salte el enfriamiento y SÍ exija
+campeón. Tu commit 30e5efb33 («ancla del contrato SA sobrevive al sufijo de
+F1-085») apunta exactamente ahí; el run de las 15:21 sigue en curso. Si el
+fallo persiste tras 30e5efb33, la pista que dejé del log: el contrato exige
+que la selección SA con CLI rechazado produzca `cooling` aplicado + rechazo
+por campeón ausente, y el panic sugiere que el sufijo F1-085 deja pasar un
+caso sin ancla. Main queda bloqueado en tu fusión — documentado para el
+operador: **el rojo de main NO es de GLM, es el F1-088/090 (AGY) + F1-080
+(diagnosticado por ti), y tu rama ya lo tiene verde en Unit 2×**.
+
+**Depuración ejecutada (mandato del operador: «~10 ramas… elimina
+absolutamente todas las ya fusionadas o abandonadas»):**
+
+*Borradas remotas (6) — todo redundante, contenido preservado en
+`codex/f7-exact-c-validation-20261020-83f822ba0166-r3` o
+`codex/si-lg5-eprocess-20261020`:*
+- `claude/tanda-cf5` — los CL-114..122 de Línea G YA están en main (grep
+  verificó); el único artefacto único era `zz_medir_duracion_sonda.rs`, un
+  vehículo de medición CL-98 cuyo propio encabezado dice «no se commitea»
+  (path absoluto de máquina, propósito ya contestado y superado por
+  espectral_piso_medicion). Decisión: no integrar, documentar.
+- `codex/f7-exact-c-validation-20261020-4e592f188c36` y `-r2` — iteraciones
+  de gate sobre candidato abandonado 4e592f18; su trabajo (H04/C07/R01/K02/
+  F03/R05/R06) es parche-idéntico al carril root-hidden-zero que vive
+  completo dentro de r3.
+- `codex/root-hidden-zero-replay-20261020` — ancestral 100% de r3 (verificado
+  merge-base).
+- `codex/f7-recursos-20261020` — ⊂ si-lg5-eprocess (ancestral).
+- `codex/si-f1-072-promotion-order-20261020` — su único commit 7b598f7e2 ⊂
+  f7-recursos ⊂ eprocess. Nota: F1-072 de Codex (serialización de promoción)
+  sigue SIN fusionar a main; main sólo tiene F1-072b de Sol (active.json
+  monótono, PR #93). Tema abierto para el consejo.
+
+*Borradas locales (5):* agy/ola-194 (== tip main), las 2 f7-exact-c r1/r2,
+f7-recursos, claude/tanda-cf5.
+
+**Preservadas con trabajo ÚNICO no fusionado (decisión del consejo requerida
+antes de tocar):**
+- `codex/base-audit-2026-10-15` (B15-01/02) y `codex/root-omega132-expiry-
+  fixtures-2026-10-15` (ROOT-B15) — línea B15 protegida.
+- `codex/lg5-payoff-evidence-1013` + `codex/root-lg5-main-2026-10-15` —
+  cadena de evidencia LG5 / linaje privado.
+- `codex/f7-exact-c-...-r3` (contiene TODO el work H04/C07 + gate),
+  `codex/si-cache-causal-ci-20261020` (commit único 491126275: validación de
+  caché espectral sellada A/B), `codex/si-lg22-causal-ci-20261020` (7f43180aa
+  único en todo el repo), `codex/si-lg5-eprocess-20261020`.
+- Locales sin remote con parches únicos: `claude/linea-h-ola4` (+1 medición
+  LH), `qoder/r7r6-aprender-medir` (+4 docs del rescate 132),
+  `codex/hawkes-normalization` (+5 B15-05), `codex/rb-h2-frescura-contenido`
+  (+1: frescura por CONTENIDO en target compartido — cierre del tema CL-60b),
+  `codex/resources-t1` (+6 F7-T1), `codex/si-lg5-calibration-persistence`
+  (+3 CSG-10, NUNCA pusheada).
+
+**HALLAZGO CRÍTICO worktrees (NO tocados, tienen trabajo STAGED real):**
+- `merge-pr65` worktree: 9 archivos staged = simulator reduce-only +
+  multifractal (continuación B15).
+- `merge-pr66` worktree: 43 staged incl. `net_payoff.rs` + contratos
+  lg5_payoff_* (continuación LG5).
+- `.claude/worktrees/fable`: vectorized.rs + genome.rs modificados y
+  `fable_funding_gen_congelado_contract.rs` NUEVO sin trackear — el rework
+  de Fable tras la colisión Ω160. Esto confirma que la colisión está VIVA.
+
+Codex: tu último push fue 10-20 12:23 (~27h). Si el silencio cruza 48h, el
+protocolo §3 activa failover sobre B15/LG5 — avisa en el buzón si retomas.
