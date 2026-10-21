@@ -16321,3 +16321,44 @@ hoy NO se regenera; el de mañana ya sale con economía.
 #### 2. ESTADO DE CI CLOUD Y RECIBOS
 - **Unit and contract suites (`39669183928`):** 100% GREEN (6/6 suites verdes: meta-analítica 8s, auditoría 4m46s, entrenador 15m2s, riesgo 4m19s, espectro-y-consejo 6m55s, nucleo 12m30s).
 - **F1-016 CERRADO:** Documentado en `docs/audit/fable/f1_hallazgos.tsv` (línea 17).
+
+## 2026-10-21 — GLM: 145 — numeraire del pre-screen CERTIFICADO invariante + auditoría crates duplicados (FASE 0)
+
+**Cierre del mandato «13 USD» (tercera y última capa).** El ciclo 144 erradicó
+las reinyecciones en runtime; este certifica la capa de simulación:
+
+1. **Pre-screen del daemon online**: el comentario reclamaba invariancia del
+   numeraire (`WF_INITIAL_CAPITAL=13.0`). Reclamo → CERTIFICACIÓN: el bloque
+   de evaluación vive ahora en `prescreen_evaluate` (testeable) y el contrato
+   `wf_numerario_invariancia_contract` DEMUESTRA con la función real que el
+   fitness es idéntico para capitales 13/100/1000/1e6 en ambos regímenes
+   (bayesiano <30 trades y normal ≥30) — el 13.0 del pre-screen NO es un
+   sesgo, es un numeraire certificado. Parametrizable por `TG_WF_CAPITAL`
+   (guardas CL-15, precedente TG_SA_* F1-122) para re-certificar sin
+   recompilar. Suite evolution-engine completa VERDE tras la extracción.
+2. **Distinción crítica para el consejo**: el capital del BACKTEST COMPLETO
+   (FFI×3 de backtest-engine, bins×5) NO es un numeraire neutral — los
+   rescates de nocional mínimo (F1-088) y los pisos de notional dependen del
+   capital ABSOLUTO. Cambiar esos defaults sin oráculo por herramienta
+   cambiaría resultados. Además los 3 FFI no tienen callers vivos (sólo
+   worktrees viejos). Dejo el follow-up documentado: valor EXPLÍCITO por
+   herramienta + oráculo propio.
+3. **Matiz del .env del 144**: `INITIAL_CAPITAL=0.0` activa extracción
+   dinámica SOLO en el host (god_engine); los bins lo sanitizan con WARNING
+   VISIBLE («no válido, asignando $13.00 nominales») — fallback declarado, no
+   silencioso. Sin regresión.
+4. **FASE 0 del protocolo nuevo — `cargo tree --duplicates`**: **109 crates
+   duplicados** (snapshot: outputs/cargo_duplicates_2026-10-21.txt). Los más
+   pesados: zip v0.6+v8 (aes×2), tokio-tungstenite ×3 (0.21/0.24/0.29),
+   tungstenite ×3, rand en 3 majors, reqwest 0.11+0.13, hyper 0.14+1.x,
+   thiserror 1+2, syn 1+2+3, windows-sys ×3, rkyv 0.7 viejo (ahash 0.7).
+   Poda propuesta para la línea RB (precedente RB-R1: polars salió del grafo
+   del núcleo, 459→361 crates): unificar tungstenite/reqwest/hyper hacia una
+   sola major donde el árbol lo permita.
+
+**Pilares nuevos del mandato (mapeo para el consejo, multi-ciclo)**: Chaos
+Engineering en calentamiento Demo (certifica circuit breakers), inferencia
+causal DAG+SVD contra multicolinealidad espectral, consenso multi-agente con
+timestamp+hash (extensión natural del semáforo RB-H2 + frontera Pareto del
+moe_neat_arena ya existente). Ninguno pisado aún — reservado a diseño con
+dueño.
