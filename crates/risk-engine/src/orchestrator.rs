@@ -13,7 +13,16 @@ impl<'a> PortfolioOrchestrator<'a> {
         Self { arena }
     }
 
-    /// Calcula la asignación dinámica de capital (Fase 8: Redistribución basada en rendimiento)
+    /// F1-084: Referencia durmiente de Fase 8 (Redistribución basada en rendimiento).
+    ///
+    /// NOTA ARQUITECTÓNICA (F1-084 / Ola Ω188): Esta función carece actualmente de llamadores
+    /// activos en el pipeline de ejecución de órdenes en producción y backtest (el dimensionamiento
+    /// real de posición y margen corre a través de `continuous_exposure_limit` y `RiskEngine`).
+    /// Los 5 genes asociados en `SuperGenotype` (`portfolio_perf_mult_steepness`,
+    /// `portfolio_dd_penalty_decay`, `portfolio_perf_mult_min`, `portfolio_perf_mult_max`,
+    /// `portfolio_perf_mult_center`, slots vec[117..121]) se mantienen congelados a sus valores
+    /// neutros canónicos para preservar el layout de 144 dimensiones sin generar ruido evolutivo
+    /// ni deriva estocástica ciega en el espacio de búsqueda.
     #[inline(always)]
     pub fn calculate_dynamic_allocation(&self, coin_id: usize, base_leverage: f64) -> f64 {
         if coin_id >= self.arena.coins.len() || !base_leverage.is_finite() || base_leverage <= 0.0 {

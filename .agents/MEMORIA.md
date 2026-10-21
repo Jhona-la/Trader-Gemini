@@ -9143,3 +9143,25 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     5. `test_f1_083_directional_symmetry_long_vs_short` (simetría bit a bit entre long y short en todo el espectro de régimen)
     6. `test_f1_083_zero_dead_literals_headroom_genuine_zero` (headroom alcanza $0.0$ genuino a $P \ge 0.90$ sin piso muerto de 0.05)
   - Verificaciones globales: `portfolio_admission_contract` 7/7 pass, `nonfinite_admission_contract` 8/8 pass, `veto_logic_contracts` 10/10 pass, `r7_r2_ruin_chaos_contract` 4/4 pass, `risk-engine --lib` 142/142 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets -j 1` 100% verde con 0 errores y 0 warnings.
+
+---
+
+## AGY — Ola Ω188: Cierre F1-084 (Congelación de 5 Genes Neutros de Fase 8 en `SuperGenotype` / Erradicación de Ruido Evolutivo) — 2026-10-20
+- **Hallazgo F1-084 cerrado (MED)**:
+  - `crates/quantum-arena/src/genome.rs` (`SuperGenotype::new_random`, `SuperGenotype::mutate_with_rng`), `crates/risk-engine/src/orchestrator.rs` (`calculate_dynamic_allocation`):
+    - La función `calculate_dynamic_allocation` en `crates/risk-engine/src/orchestrator.rs:18` ("Fase 8: Redistribución basada en rendimiento") carecía de llamadores en todo el workspace de producción y backtesting (Fallo Tipo 1: arista durmiente).
+    - Cinco genes asociados en `SuperGenotype` (`portfolio_perf_mult_steepness`, `portfolio_dd_penalty_decay`, `portfolio_perf_mult_min`, `portfolio_perf_mult_max`, `portfolio_perf_mult_center`, slots vec[117..121]) se inicializaban aleatoriamente, mutaban y evolucionaban en algoritmos genéticos y Simulated Annealing con una función de fitness 100% plana respecto a ellos, desperdiciando ~4% del presupuesto de búsqueda del espacio dimensional.
+    - Se aplicó el protocolo de congelación canónico (precedentes LG-18, LG-21, F-A2, F1-117):
+      - En `SuperGenotype::mutate_with_rng`: los 5 genes se congelan a `self.<field>` (`portfolio_perf_mult_steepness = self.portfolio_perf_mult_steepness`, etc.), anulando la mutación estocástica.
+      - En `SuperGenotype::new_random`: los 5 genes se inicializan estrictamente a sus valores neutrales canónicos (`E * 3.0`, `PI * 5.0`, `0.55 * 0.5`, `0.55 * 3.0`, `0.55`), dentro de las cotas válidas [lo, hi].
+      - Se preserva estrictamente `SuperGenotype::DIMENSION == 144` y la posición de los slots vec[117..121], garantizando 100% de retrocompatibilidad binaria con genomas serializados y en disco.
+    - En `crates/risk-engine/src/orchestrator.rs`: documentada arquitectónicamente la función `calculate_dynamic_allocation` como referencia inactiva de Fase 8, explicitando el congelamiento genómico.
+  - Suite de contratos formales `crates/quantum-arena/tests/f1_084_genome_portfolio_perf_freeze_contract.rs` (3/3 tests PASSED):
+    1. `test_f1_084_portfolio_perf_genes_remain_frozen_across_mutations` (congelación exacta bit a bit a través de múltiples mutaciones con CMA-ES y semillas pseudoaleatorias diversas).
+    2. `test_f1_084_new_random_initializes_canonical_neutral_defaults` (inicialización determinista de defaults canónicos neutrales en `new_random`).
+    3. `test_f1_084_layout_dimension_and_vector_slots_117_to_121_preserved` (preservación de `DIMENSION == 144`, paridad de slots vec[117..121], cotas en `get_lower_bounds` / `get_upper_bounds`, y roundtrip con `try_from_vector`).
+  - Verificaciones globales:
+    - `crates/quantum-arena/tests/f1_069_070_genome_bounds_and_freeze_contract.rs` (5/5 pass).
+    - `crates/quantum-arena/tests/f1_113_genome_try_from_vector_contract.rs` (6/6 pass).
+    - `crates/quantum-arena/tests/rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 pánicos agregados).
+    - `cargo check --workspace --all-targets -j 1` 100% verde en los 23 crates con 0 errores y 0 warnings.

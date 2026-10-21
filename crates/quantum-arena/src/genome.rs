@@ -1069,11 +1069,12 @@ impl SuperGenotype {
             kelly_expansion_mult: rand::rng().random_range(1.0..3.0),
             guard_dd_sigmoid_steepness: rand::rng().random_range(1.0..5.0),
             guard_dd_sigmoid_center: rand::rng().random_range(1.0..5.0),
-            portfolio_perf_mult_steepness: rand::rng().random_range(3.0..15.0),
-            portfolio_dd_penalty_decay: rand::rng().random_range(5.0..25.0),
-            portfolio_perf_mult_min: rand::rng().random_range(0.1..0.5),
-            portfolio_perf_mult_max: rand::rng().random_range(1.5..3.0),
-            portfolio_perf_mult_center: rand::rng().random_range(0.3..0.8),
+            // F1-084: genes de Fase 8 congelados a defaults canónicos neutrales (sin caller en producción)
+            portfolio_perf_mult_steepness: std::f64::consts::E * 3.0,
+            portfolio_dd_penalty_decay: std::f64::consts::PI * 5.0,
+            portfolio_perf_mult_min: 0.55 * 0.5,
+            portfolio_perf_mult_max: 0.55 * 3.0,
+            portfolio_perf_mult_center: 0.55,
 
             macro_hurst_confidence_offset: rand::rng().random_range(0.35..0.55),
             macro_hurst_confidence_scale: rand::rng().random_range(1.0..20.0),
@@ -2005,15 +2006,13 @@ impl SuperGenotype {
             kelly_expansion_mult: mutate_val(self.kelly_expansion_mult, 1.0, 3.0),
             guard_dd_sigmoid_steepness: mutate_val(self.guard_dd_sigmoid_steepness, 1.0, 5.0),
             guard_dd_sigmoid_center: mutate_val(self.guard_dd_sigmoid_center, 1.0, 5.0),
-            portfolio_perf_mult_steepness: mutate_val(
-                self.portfolio_perf_mult_steepness,
-                3.0,
-                15.0,
-            ),
-            portfolio_dd_penalty_decay: mutate_val(self.portfolio_dd_penalty_decay, 5.0, 25.0),
-            portfolio_perf_mult_min: mutate_val(self.portfolio_perf_mult_min, 0.1, 0.5),
-            portfolio_perf_mult_max: mutate_val(self.portfolio_perf_mult_max, 1.1, 3.0),
-            portfolio_perf_mult_center: mutate_val(self.portfolio_perf_mult_center, 0.4, 0.6),
+            // F1-084: 5 genes de redistribución de rendimiento Fase 8 congelados sin mutación
+            // (PortfolioOrchestrator::calculate_dynamic_allocation inactiva/sin consumidor en el host).
+            portfolio_perf_mult_steepness: self.portfolio_perf_mult_steepness,
+            portfolio_dd_penalty_decay: self.portfolio_dd_penalty_decay,
+            portfolio_perf_mult_min: self.portfolio_perf_mult_min,
+            portfolio_perf_mult_max: self.portfolio_perf_mult_max,
+            portfolio_perf_mult_center: self.portfolio_perf_mult_center,
 
             macro_hurst_confidence_offset: self.macro_hurst_confidence_offset, // LG-21
             macro_hurst_confidence_scale: self.macro_hurst_confidence_scale, // LG-21
