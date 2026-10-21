@@ -1,5 +1,44 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω201: Cierre de F1-044 (Unificación Continua de Corte de Rama 11 a Exceso de Convicción ΔP), F1-038 (Erradicación de Literales Plausibles en build_54d_tensor cumpliendo C-02) y F1-035 (Erradicación de Escalón C0 y Exención por Stretch en Puerta 3 de puertas_del_continuo_con) (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω201: UNIFICACIÓN SEMÁNTICA DE UMBRALES GENÉTICOS, PARIDAD CAUSAL MACRO Y LEY DE NO PERSECUCIÓN CONTINUA
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-044` (`MED`, `crates/god-engine-core/src/lib.rs:7821, 8379`, `crates/god-engine-core/tests/f1_044_038_035_tensor_and_doors_contract.rs`)**:
+     - **QUÉ**: Unificación semántica del corte tensorial de la Rama 11 en el espacio continuo de exceso de convicción $\Delta P \in [0.0, 0.45]$ (`tensor_cutoff = ((tensor_min_conf - 0.50) * 1.0).clamp(0.0, 0.45)`), alineado con `min_confidence_btc` en $[0.50, 0.95]$ y erradicando el recorte artificial $[0.55, 0.85]$.
+     - **POR QUÉ**: El recorte a $[0.55, 0.85]$ generaba mesetas planas para genomas con umbrales en $(0.85, 0.95]$ y $[0.50, 0.55)$, anulando la capacidad de exploración del algoritmo genético y produciendo divergencia semántica entre el motor y el risk-engine.
+     - **PARA QUÉ**: Preservar la sensibilidad evolutiva del genoma en todo su rango continuo y garantizar coherencia con `orchestrator.rs` (MOD2/7-012).
+     - **CÓMO**: Mapeo lineal del gen de probabilidad $P \in [0.50, 0.95]$ a exceso de convicción $\Delta P = P - 0.50 \in [0.0, 0.45]$, evaluado contra `tensor_cont.net_confidence.abs()`.
+     - **CUÁNDO**: En la evaluación de la Rama 11 (consenso tensorial continuo).
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead), Quant Developer y Arquitecto Senior.
+
+   - **`F1-038` (`MED`, `crates/god-engine-core/src/lib.rs:2179-2225`, `crates/god-engine-core/tests/f1_044_038_035_tensor_and_doors_contract.rs`)**:
+     - **QUÉ**: Erradicación de literales plausibles en `build_54d_tensor` para las dimensiones macroeconómicas (slots 41..44 para VIX, SP500, DXY, NASDAQ y slot 50 para Fear&Greed) cuando no existen lecturas de mercado en vivo (`omni_features <= 0.0`), sirviendo $0.0$ estricto como centinela de ausencia conforme al contrato de servido C-02.
+     - **POR QUÉ**: Servir constantes plausibles ficticias (`1.04`, `1.02`, `1.00`, `0.75`, `1.0`) contaminaba la inferencia de la red neuronal DarkAlpha de BTC en replay/backtest o durante el arranque en frío, inventando una "neutralidad artificial" que rompía la paridad determinista entre backtest y producción.
+     - **PARA QUÉ**: Asegurar fidelidad estadística estricta e inmunidad ante datos espurios en el tensor de 54 dimensiones.
+     - **CÓMO**: Fallback $0.0$ incondicional en slots 41, 42, 43, 44 y 50 ante ausencia de productor en vivo.
+     - **CUÁNDO**: En cada llamada a `build_54d_tensor`.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead), Quant Developer y QA Engineer.
+
+   - **`F1-035` (`MED`, `crates/god-engine-core/src/lib.rs:2685-2696`, `crates/god-engine-core/tests/f1_044_038_035_tensor_and_doors_contract.rs`)**:
+     - **QUÉ**: Erradicación del escalón discontinuo $C^0$ y la exención perversa por $|price\_stretch| \ge 2.5\text{ ATR}$ en la Puerta 3 de `puertas_del_continuo_con`. Imposición de un veto incondicional estricto ante contradicciones fuertes del modelo ($d < -0.80$) y modulación monótona continua en contradicciones blandas ($d < 0.0 \implies out.confidence \cdot (1.0 + d \cdot 0.5) \in [0.20, 1.0]$).
+     - **POR QUÉ**: La cláusula legacy `price_stretch.abs() < 2.5` permitía que una señal con precio altamente estirado ($> 2.5\text{ ATR}$) eludiera el veto o penalización del modelo, justo en el escenario de mayor riesgo de ruina por reversión a la media (violando la ley fundamental *No Chasing Law* D-472 / LH-05).
+     - **PARA QUÉ**: Prevenir la persecución de techos y suelos en situaciones de desacuerdo estadístico extremo, protegiendo el capital de micro-cuenta ($13\text{ USD}$) contra reversiones violentas.
+     - **CÓMO**: Supresión de la condición de estiramiento en la compuerta del modelo; $d < -0.80$ retorna inmediatamente `SignalIntent::flat()`.
+     - **CUÁNDO**: En el filtrado de intenciones direccionales a través de las puertas del continuo.
+     - **DÓNDE**: `crates/god-engine-core/src/lib.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead), Risk Manager y Quant Developer.
+
+2. **Certificación Contractual**:
+   - `cargo test -p god-engine-core --test f1_044_038_035_tensor_and_doors_contract -j 1` (3/3 pass, 100% verde en 0.03s).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω200: Cierre de F1-045 (Fast-Path de Confluencia Resonante y Tolerancia Macro de Difusión Z95), F1-046 (Tipificación de Difusión en Rama 13 sin Multiplicador Mágico x50) y F1-033 (Cadencia Física de 60s en Cálculo W1 / BOCPD y Actuador de Atenuación de Convicción) (2026-10-21)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

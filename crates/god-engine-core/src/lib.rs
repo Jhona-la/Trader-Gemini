@@ -2176,25 +2176,27 @@ impl GodEngineCore {
         // [40] MUERTA (segunda slot fear_greed sin productor) — era el
         // literal 0.50: servía "neutralidad" inventada al NN.
         combined[40] = 0.0;
+        // F1-038 (Ola Ω201): Erradicadas constantes plausibles de fallback (1.04, 1.02, 1.00, 0.75, 1.0);
+        // se sirve 0.0 estricto (ausencia de dato) cumpliendo C-02 en lugar de inventar neutralidad macro.
         combined[41] = if omni_features.len() > 21 && omni_features[21] > 0.0 {
             (omni_features[21] / 100.0).clamp(0.5, 2.0)
         } else {
-            1.04
+            0.0
         };
         combined[42] = if omni_features.len() > 22 && omni_features[22] > 0.0 {
             (omni_features[22] / 5000.0).clamp(0.5, 2.0)
         } else {
-            1.02
+            0.0
         };
         combined[43] = if omni_features.len() > 23 && omni_features[23] > 0.0 {
             (omni_features[23] / 18000.0).clamp(0.5, 2.0)
         } else {
-            1.00
+            0.0
         };
         combined[44] = if omni_features.len() > 24 && omni_features[24] > 0.0 {
             (omni_features[24] / 20.0).clamp(0.1, 5.0)
         } else {
-            0.75
+            0.0
         };
         // [45] MUERTA (us10Y): omni[25] no tiene productor — el slot carga
         // el literal 4.2 del constructor y el guard `> 0.0` lo servía como
@@ -2221,7 +2223,7 @@ impl GodEngineCore {
         combined[50] = if omni_features.len() > 14 && omni_features[14] > 0.0 {
             (omni_features[14] / 50.0).clamp(0.0, 2.0)
         } else {
-            1.0
+            0.0
         };
         // [51]/[52]/[53] MUERTAS (CVD spot/futuros y basis premium: sin
         // productor). Los slots por defecto valen 0.0 en el multiplexer y
@@ -2589,7 +2591,7 @@ impl GodEngineCore {
     /// fuente leen el código de producción hasta el primero de esos
     /// atributos, y éste cortaba el núcleo por la mitad.
     #[cfg_attr(not(test), allow(dead_code))]
-    fn puertas_del_continuo(
+    pub fn puertas_del_continuo(
         &self,
         coin_id: usize,
         intent: SignalIntent,
@@ -2622,7 +2624,7 @@ impl GodEngineCore {
         composite_score: f64,
         ml_prob: f64,
         ml_model_base: f64,
-        price_stretch: f64,
+        _price_stretch: f64,
         orden: Option<OrdenDeBanda>,
     ) -> SignalIntent {
         if intent.signal == SignalType::Flat {
@@ -2684,9 +2686,13 @@ impl GodEngineCore {
             SignalType::Short => -ml_div,
             _ => 0.0,
         };
-        if ml_directional < -0.80 && price_stretch.abs() < 2.5 {
+        // F1-035 (Ola Ω201): Erradicado escalón C0 y exención perversa por price_stretch >= 2.5 ATR.
+        // Contradicción fuerte del modelo (d < -0.80) veta incondicionalmente sin importar
+        // el estiramiento del precio (preservando 'No Chasing Law' D-472/LH-05).
+        // Contradicción blanda (d < 0.0) modula la confianza monótonamente en [0.20, 1.0] sin salto artificial.
+        if ml_directional < -0.80 {
             return SignalIntent::flat();
-        } else if ml_directional < 0.0 && price_stretch.abs() < 2.5 {
+        } else if ml_directional < 0.0 {
             out.confidence *= (1.0 + ml_directional * 0.5).clamp(0.20, 1.0);
         } else if ml_directional > 0.0 {
             out.confidence = (out.confidence * (1.0 + ml_directional * 0.5)).min(0.99);
@@ -10757,16 +10763,16 @@ mod tests_d743_puertas_del_continuo {
             core.puertas_del_continuo(0, i, true, -0.20, 0.60, 0.5, 0.0).signal,
             SignalType::Flat
         );
-        // 3. El modelo la contradice con fuerza (< −0,80 bajo su base) y no
-        //    hay acción de precio extrema.
+        // 3. El modelo la contradice con fuerza (< −0,80 bajo su base):
+        //    F1-035 (Ola Ω201): Veto incondicional estricto por contradicción fuerte,
+        //    incluso con estiramiento extremo del precio (eliminado bypass perverso de persecución).
         assert_eq!(
             core.puertas_del_continuo(0, i, true, 0.50, 0.05, 0.5, 0.0).signal,
             SignalType::Flat
         );
-        // Con acción de precio extrema, el veto del modelo cede (F-009).
         assert_eq!(
             core.puertas_del_continuo(0, i, true, 0.50, 0.05, 0.5, 3.0).signal,
-            SignalType::Long
+            SignalType::Flat
         );
         // 4. Flujo agregado en contra: veto duro.
         arena.coins[0].agg_buy_vol.store(1.0, Ordering::Relaxed);

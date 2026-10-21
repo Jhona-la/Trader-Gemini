@@ -1,5 +1,35 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-21 (tarde, 6) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω201 (Cierre F1-044 Umbral Tensorial Rama 11 ΔP, F1-038 Zero-Fill Macro C-02 en build_54d_tensor, F1-035 Puertas del Continuo sin Salto C0 ni Persecución por Stretch)
+
+- **Mandato**: Unificación rigurosa del espacio continuo de exceso de convicción para la Rama 11 (`F1-044`), erradicación de literales plausibles en `build_54d_tensor` sirviendo $0.0$ estricto ante ausencia de macro-datos bajo el contrato C-02 (`F1-038`), y supresión del escalón discontinuo $C^0$ y exención perversa por stretch en Puerta 3 de `puertas_del_continuo_con` (`F1-035`):
+  1. **F1-044 (`crates/god-engine-core/src/lib.rs:7821, 8379`, `crates/god-engine-core/tests/f1_044_038_035_tensor_and_doors_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Mapeo del gen `min_confidence_btc` en $[0.50, 0.95]$ al espacio de exceso de convicción $\Delta P = P - 0.50 \in [0.0, 0.45]$ (`tensor_cutoff`), eliminando el recorte artificial $[0.55, 0.85]$.
+     - *POR QUÉ*: El recorte previo bloqueaba la exploración genética en los extremos de la banda evolutiva y creaba incoherencia con `orchestrator.rs`.
+     - *PARA QUÉ*: Preservar la sensibilidad evolutiva y alineación continua en todo el espectro de convicción.
+     - *CÓMO*: `let tensor_cutoff = ((tensor_min_conf - 0.50) * 1.0).clamp(0.0, 0.45);`.
+     - *CUÁNDO*: En la evaluación del consenso tensorial continuo de la Rama 11.
+     - *DÓNDE*: `crates/god-engine-core/src/lib.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), Quant Developer y Arquitecto Senior.
+  2. **F1-038 (`crates/god-engine-core/src/lib.rs:2179-2225`, `crates/god-engine-core/tests/f1_044_038_035_tensor_and_doors_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Erradicación de constantes plausibles (`1.04`, `1.02`, `1.00`, `0.75`, `1.0`) en slots 41..44 y 50 de `build_54d_tensor`, sirviendo $0.0$ estricto como centinela de ausencia según C-02.
+     - *POR QUÉ*: El servido de números plausibles inventaba una "neutralidad artificial" que contaminaba la inferencia de la red neuronal DarkAlpha y rompía la paridad backtest↔vivo.
+     - *PARA QUÉ*: Garantizar causalidad e integridad estricta en el espacio tensorial de entrada.
+     - *CÓMO*: Fallback $0.0$ ante ausencia de lecturas positivas de Yahoo/alternative.me.
+     - *CUÁNDO*: En cada construcción del tensor de 54 dimensiones.
+     - *DÓNDE*: `crates/god-engine-core/src/lib.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), QA Engineer y Quant Developer.
+  3. **F1-035 (`crates/god-engine-core/src/lib.rs:2685-2696`, `crates/god-engine-core/tests/f1_044_038_035_tensor_and_doors_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Erradicación del escalón $C^0$ y el bypass perverso de contradicción del modelo cuando $|stretch| \ge 2.5\text{ ATR}$ en la Puerta 3 de `puertas_del_continuo_con`. Veto incondicional estricto para $d < -0.80$ y penalización monótona continua en contradicciones moderadas.
+     - *POR QUÉ*: La cláusula legacy perdonaba la contradicción del modelo cuando el precio estaba altamente estirado, incentivando la persecución de techos y suelos (violando la *No Chasing Law* D-472 / LH-05).
+     - *PARA QUÉ*: Proteger la micro-cuenta ($13\text{ USD}$) contra reversiones destructivas en breakouts falsos.
+     - *CÓMO*: Supresión de la exención por stretch; veto inmediato ante $d < -0.80$.
+     - *CUÁNDO*: En la evaluación de compuertas de filtrado de órdenes.
+     - *DÓNDE*: `crates/god-engine-core/src/lib.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), Risk Manager y Quant Developer.
+- **Certificación Contractual**:
+  - `cargo test -p god-engine-core --test f1_044_038_035_tensor_and_doors_contract -j 1` (3/3 pass, 100% verde en 0.03s).
+
 ## 2026-10-21 (tarde, 5) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω200 (Cierre F1-045 Fast-Path Confluencia y Difusión Macro, F1-046 Difusión Rama 13 sin Mágico x50, F1-033 Cadencia BOCPD 60s y Actuador)
 
 - **Mandato**: Resolución matemática y de latencia crítica para confluencia espectral (`F1-045`), tipificación analítica de difusión en Rama 13 (`F1-046`), y optimización de camino caliente condicionando transporte W1 / observador BOCPD a la cadencia física de 60s con conexión de actuador gobernado de atenuación de convicción (`F1-033`):
