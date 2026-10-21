@@ -2072,6 +2072,14 @@ impl GodEngineCore {
         for e in self.statarb_ou_engines.iter_mut() {
             e.cortar_emparejamiento();
         }
+        // F1-034 (Ola Ω199): Erradicación de retornos ficticios tras reconexión en calibración Hedge.
+        // Se resetea el histórico de cierre kline y se limpian las opiniones de apertura
+        // para que la primera vela post-reconexión no califique contra precios o barras de horas atrás.
+        self.kline_close_memory.fill(0.0);
+        for ens in self.ensembles.iter_mut() {
+            ens.nuevo_bar();
+        }
+        self.ensemble.nuevo_bar();
     }
 
     /// Reinicio en frío total de todos los motores de mercado (StatefulEngine::new()).
@@ -2086,6 +2094,11 @@ impl GodEngineCore {
         for e in self.statarb_ou_engines.iter_mut() {
             e.cortar_emparejamiento();
         }
+        self.kline_close_memory.fill(0.0);
+        for ens in self.ensembles.iter_mut() {
+            ens.nuevo_bar();
+        }
+        self.ensemble.nuevo_bar();
     }
 
 
@@ -4263,7 +4276,18 @@ impl GodEngineCore {
             // registra identidades a propósito) no hereda el bosque, las claves
             // `BTCUSDT_*` ni el papel de líder del lead-lag: con `""` la guarda
             // de `set_reg` salta las claves por símbolo y no hay bosque propio.
-            let sym = quantum_arena::symbol_registry::try_symbol(coin_id).unwrap_or_default();
+            // LF-1 (Línea F) & F1-042 (Ola Ω199): UNA identidad cero-copia para todo el tick.
+            // Erradicación de la asignación String en heap en CADA evento (P5 camino caliente).
+            // Uso de buffer en stack [u8; 32] y with_symbol: cero malloc/free en el loop crítico.
+            let mut sym_buf = [0u8; 32];
+            let sym_len = quantum_arena::symbol_registry::with_symbol(coin_id, |s| {
+                let bytes = s.as_bytes();
+                let len = bytes.len().min(32);
+                sym_buf[..len].copy_from_slice(&bytes[..len]);
+                len
+            })
+            .unwrap_or(0);
+            let sym = std::str::from_utf8(&sym_buf[..sym_len]).unwrap_or("");
             let is_btc = sym.starts_with("BTC");
             let is_eth = sym.starts_with("ETH");
             if is_btc {
@@ -5439,7 +5463,7 @@ impl GodEngineCore {
                                     let mut feats = [0.0f64; 54];
                                     feats.copy_from_slice(&guard[0..54]);
                                     crate::dataset_recorder::record_training_sample(
-                                        sym.clone(),
+                                        sym.to_string(),
                                         target_ret,
                                         feats,
                                     );
@@ -5544,7 +5568,7 @@ impl GodEngineCore {
                         let record = metacortex_engine::immune_system::TraumaRecord {
                             id: format!("trauma_{}_{}", sym, event_time_ms),
                             timestamp: chrono::Utc::now(),
-                            symbol: sym.clone(),
+                            symbol: sym.to_string(),
                             regime: format!("{:?}", self.feature_engines[coin_id].regime),
                             expected_pnl_pct: 0.01,
                             actual_pnl_pct: realized_ret,
@@ -6324,7 +6348,7 @@ impl GodEngineCore {
             // con modelo: forest→ensamble→store. Si este línea imprime
             // valores vivos pero ESPECTRO sigue en 0.5000, el defecto está
             // en el LECTOR; si imprime 0.5 vacío, está en el CAMINO.
-            if matches!(sym.as_str(), "NEARUSDT" | "ATOMUSDT" | "BNBUSDT")
+            if matches!(sym, "NEARUSDT" | "ATOMUSDT" | "BNBUSDT")
                 && self.trazas_diagnosticas
                 && self.avisos.latido_ml(coin_id).is_some()
             {
@@ -9862,7 +9886,7 @@ impl GodEngineCore {
                                         && target_pos.is_open()
                                     {
                                         self.last_senior_signals[coin_id][target_pos_slot] = council_decision.signals;
-                                        Some(CouncilEntryEvidence { symbol: sym.clone(),
+                                        Some(CouncilEntryEvidence { symbol: sym.to_string(),
                                             generation: expected_generation, is_long,
                                             signals: council_decision.signals })
                                     } else { None };
@@ -9887,7 +9911,7 @@ impl GodEngineCore {
                                         && target_pos.is_open()
                                     {
                                         Some(EntryLearningEvidence {
-                                            symbol: sym.clone(), generation: expected_generation,
+                                            symbol: sym.to_string(), generation: expected_generation,
                                             is_long, decision_time_ms: event_time_ms,
                                             branch: self.rama_abierta[coin_id], forest_vote: voto_bosque,
                                             model_predictions: self.ensembles.get(coin_id)
@@ -9925,7 +9949,7 @@ impl GodEngineCore {
                                 ));
                                 self.entry_reservations[coin_id] = Some(entry_reservation::EntryReservation {
                                     coin_id, slot: target_pos_slot, generation: expected_generation,
-                                    symbol: sym.clone(),
+                                    symbol: sym.to_string(),
                                 });
 
                                 if self.trazas_diagnosticas && self.diag_opened <= 100 {

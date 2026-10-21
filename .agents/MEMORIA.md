@@ -1,5 +1,45 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-21 (tarde, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω199 (Plan Maestro V67, Cierre F1-042 Zero-Alloc Stack Symbol y F1-034 Reseteo Causal Reconnect)
+
+- **Mandato**: Formalización del Plan Maestro Canónico V67 para la revisión base del universo multivariante continuo temporal espectral $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, erradicación de asignaciones en heap en el camino caliente de `process_tick_dual` (`F1-042`) y preservación de la causalidad temporal en los ensambles Hedge multi-moneda tras caídas del stream de Binance (`F1-034`):
+  1. **Plan Maestro V67 (`docs/PLAN_MAESTRO_REVISION_BASE_UNIVERSO_ESPECTRAL_2026-10-21.md`)**:
+     - *QUÉ*: Unificación holística de los 10 roles senior del consejo en estricto Modo Profesor (`QUÉ-POR QUÉ-PARA QUÉ-CÓMO-CUÁNDO-DÓNDE-QUIÉN`), mapeo de sincronización viva inter-agente (GLM 144/145, Sol V29, Codex ROOT/BASE15, Fable Ola 1), axiomatización del continuo espectral $\tau \in [1\text{ ns}, 100\text{ años}]$, formulación de Ecuaciones del Milenio en finanzas cuánticas (Navier-Stokes para liquidez del book, Yang-Mills para invariancia de gauge ante el numerario, ceros de Riemann en martingal diádico de Ville $M=480$, y transporte óptimo Wasserstein $W_1$), e itinerario riguroso de auditoría base.
+     - *POR QUÉ*: Eliminar la visión parcelada y sesgada de trading discreto (scalping vs swing, bins fijos de volatilidad) y canalizar el micro-capital dinámico ($13\text{ USD}$) hacia un crecimiento geométrico compuesto del 100% cada 3 días, no mediante la quimera de un 100% Win Rate, sino a través de asimetría de payoff, esperanza matemática robusta $E[R] > 0$ y velocidades de nanosegundos.
+  2. **F1-042 (`crates/god-engine-core/src/lib.rs:4266-4276`, `crates/god-engine-core/tests/f1_042_034_zero_alloc_symbol_and_reconnect_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Erradicación total de asignaciones `String` en el hot-path de `process_tick_dual`. Reemplazo de `quantum_arena::symbol_registry::try_symbol(coin_id).unwrap_or_default()` (que clonaba un heap `String` en cada evento) por buffer en stack `[u8; 32]` y `quantum_arena::symbol_registry::with_symbol(coin_id, |s| ...)`, operando con `sym: &str` a lo largo de las ~1,600 líneas del método.
+     - *POR QUÉ*: Con ~2.208 asignaciones por evento (LG8), clonar cadenas en el camino crítico inducía contención de memoria global y jitter de latencia incompatible con el presupuesto $<25\text{ }\mu\text{s}$.
+     - *PARA QUÉ*: Minimizar la latencia al régimen de nanosegundos en hardware modesto (16 GB RAM, sin GPU) y erradicar pausas del allocator.
+     - *CÓMO*: Buffer local en stack `[u8; 32]`, slice utf-8 `&str`, reservando asignaciones heap exclusivamente para cold-paths (cierre de operaciones o traumas de stop).
+     - *CUÁNDO*: En cada evento tick/depth en vivo y replay.
+     - *DÓNDE*: `crates/god-engine-core/src/lib.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), SRE/DevOps, Quant Developer y Modo Profesor.
+  3. **F1-034 (`crates/god-engine-core/src/lib.rs:2059-2086`, `crates/god-engine-core/tests/f1_042_034_zero_alloc_symbol_and_reconnect_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Reseteo de `kline_close_memory.fill(0.0)` y purga de predicciones de bar huérfanas (`ens.nuevo_bar()`) en los 30 ensambles Hedge durante `reset_engines()` y `reset_engines_cold()`.
+     - *POR QUÉ*: Tras caídas de WS (de minutos u horas), el primer bar post-reconexión calculaba un retorno astronómico frente al precio anterior a la caída, contaminando los pesos exponenciales Hedge y los calibradores de habilidad neural con etiquetas espurias.
+     - *PARA QUÉ*: Garantizar causalidad temporal e inmunidad ante desconexiones de red, evitando adulteración de la convicción de entrada y tamaño de Kelly.
+     - *CÓMO*: `self.kline_close_memory.fill(0.0)` y `nuevo_bar()` en `reset_engines` y `reset_engines_cold`.
+     - *CUÁNDO*: En cada reconexión o re-suscripción de feeds de mercado.
+     - *DÓNDE*: `crates/god-engine-core/src/lib.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), Risk Manager, Quant Developer y QA Engineer.
+- **Verificación Contractual**:
+  - `cargo test -p god-engine-core --test f1_042_034_zero_alloc_symbol_and_reconnect_contract -j 1` (3/3 pass, 100% verde en 0.06s).
+
+## 2026-10-21 (tarde, 3) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω198 (Cierre F1-016 Hawkes Sampling Parity)
+
+- **Mandato**: Paridad exacta de muestreo predecible Hawkes $\lambda(t^-) / \hat{\mu}$ en `trade_sampling_ratio`, erradicando el artefacto de salto $+\alpha / \hat{\mu}$ post-evento (`F1-016`):
+  1. **F1-016 (`crates/signal-engine/src/hawkes_bessel.rs:188-216`, `crates/signal-engine/tests/f1_016_hawkes_predictable_sampling_parity_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Evaluación de la intensidad Hawkes predecible $\lambda(t^-)$ antes del impacto del trade entrante al calcular `trade_sampling_ratio`, des-ignorado y verificado `cf2_hawkes_solucion_conocida`.
+     - *POR QUÉ*: La evaluación post-salto violaba la filtración de Itô al incluir el salto instantáneo del propio trade, inflando al doble la ratio de muestreo en instrumentos calmos y produciendo falsas cascadas de excitación.
+     - *PARA QUÉ*: Invarianza de escala en los 30 activos del universo continuo espectral y estabilidad del consenso de Ville $M=480$.
+     - *CÓMO*: Decaimiento `self.decay(dt)` previo a la obtención de la intensidad estocástica.
+     - *CUÁNDO*: En cada trade procesado por el motor Hawkes-Bessel.
+     - *DÓNDE*: `crates/signal-engine/src/hawkes_bessel.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead) y Consejo Colegiado de 10 Roles Senior.
+- **Verificación Contractual y CI**:
+  - `cargo test -p signal-engine --test f1_016_hawkes_predictable_sampling_parity_contract -j 1` (4/4 pass, 100% verde).
+  - GitHub Actions CI `Unit and contract suites` run `39676876783`: 100% verde.
+
 ## 2026-10-20 — Codex BASE15: reanudación, fila reparada y delta de cobertura
 
 La fila BASE había regresado a 1/7 en 67dae, aunque el plan y memoria conservaban el corte 4/7. Se repone sólo la fila propia sobre el main documental vigente, preservando ROOT/AGY/Sol y sus apéndices. Snapshot de evidencia597de4af:2053 rutas (781 Rust), frente a 1863/672 de b9; delta de 424 = 201 añadidas + 212 modificadas + 11 retiradas, con 1640 sin cambio. Son entradas mecánicas pendientes de revisión, no nuevos archivos completos auditados. Inventario/cola/recibos históricos conservan sus bytes y estados.
