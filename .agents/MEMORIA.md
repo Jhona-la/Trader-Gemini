@@ -17,7 +17,7 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
        - $OBI_{\text{eff}} = \text{clamp}(OBI + 0.30 \cdot p_{\text{ice}}, -1, 1)$, modulado por la rampa microestructural $1 - k/32$ para $k \in [0, 31]$.
        - $ML_{\text{lift}} = \text{clamp}((p_{\text{ml}} - b_{\text{ml}}) / \text{lift}, -2, 2)$, modulado por la rampa macroestructural $k/32$ para $k \in [0, 31]$.
        - Flujo confluente base $\text{flujo\_base}_k = x_k + 1.5 \cdot OBI_{\text{eff}} \cdot (1 - k/32) + 0.50 \cdot ML_{\text{lift}} \cdot (k/32)$.
-       - Proyección direccional física: $\text{sign} = \text{signum}(\text{flujo\_base}_k)$, $\text{flujo}_k = \text{sign} \cdot (|\text{flujo\_base}_k| + \text{sign} \cdot \text{current\_sum}_k).\text{clamp}(0, 10)$, preservando la doctrina física G8-OMEGA-09 sobre el flujo acoplado genuino.
+       - Proyección direccional física: $\text{sign} = \text{signum}(\text{flujo\_base}_k)$, $\text{flujo}_k = \text{sign} \cdot (|\text{flujo\_base}_k| + \text{sign} \cdot \text{current\_sum}_k).\text{clamp}(0, 10)$, preservando la doctrina física G8-OMEGA-09 sobre el flujo acoplado genuino: $p_{\text{ice}}$ se proyecta en $\text{current\_sum}_k$ sin doble cuenta en $OBI_{\text{eff}} = \text{clamp}(OBI, -1, 1)$, garantizando atenuación sin inversión de signo ante corrientes opuestas.
        - Enrutador de compatibilidad neutral hacia atrás bit a bit: `voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz` invoca a la nueva función con $0.0, 0.0$.
        - Cableado en el event loop de producción `god-engine-core/src/lib.rs:3428-3460` leyendo $OBI$ efectivo (`eff_obi`) y lift direccional ML (`ml_dir_lift`).
        - Creación del contrato formal `f1_094_spectral_confluence_diversity_contract.rs` con 5 tests verificados: control neutral (<1e-12 diff), dominación de OBI en micro-escalas ($k=0$ opuesto a Hawkes), dominación de ML lift en macro-escalas ($k=30$ opuesto a Hawkes), fracción de anti-clones $\ge 25\%$ de las escalas, y robustez fail-closed ante inputs corruptos NaN/inf.
@@ -29,6 +29,7 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
      - *QUIÉN*: Antigravity (Quant Sr. Lead), Quant Developer, Físico de Sistemas Complejos y Profesor Pedagógico.
 - **Verificación Contractual**:
   - `cargo test -p signal-engine --test f1_094_spectral_confluence_diversity_contract -j 1` (5/5 pass, 100% verde en 0.00s).
+  - `cargo test -p signal-engine --test ensemble_characterization -j 1` (15/15 pass, 100% verde en 0.22s, validando G8-OMEGA-09).
 
 ## 2026-10-21 (tarde, 1) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω196 (Cierre F1-093 y Certificación Verde de CI)
 

@@ -10,11 +10,12 @@
    - **`F1-094` (`MED`, `crates/signal-engine/src/flow_excitation_confluence.rs`, `crates/god-engine-core/src/lib.rs`, `crates/signal-engine/tests/f1_094_spectral_confluence_diversity_contract.rs`)**:
      - **QUÉ**: Erradicación de la degeneración monótona de signos entre `FlowExcitationConfluenceEngine`, `HawkesBesselEngine` y `FlowImpulseEngine` en el consenso de Ville $M=480$, mediante la integración continua de la microestructura del libro de órdenes ($OBI$) en micro-escalas y la ventaja direccional calibrada de Machine Learning ($ML_{\text{lift}}$) en macro-escalas:
        - Implementado `voto_espectral_con_obi_ml_wasserstein_y_fisica`:
-         $$OBI_{\text{eff}} = \text{clamp}(OBI + 0.30 \cdot p_{\text{ice}}, -1, 1)$$
+         $$OBI_{\text{eff}} = \text{clamp}(OBI, -1, 1)$$
          $$ML_{\text{lift}} = \text{clamp}\left(\frac{p_{\text{ml}} - b_{\text{ml}}}{\text{lift}}, -2, 2\right)$$
          $$\text{flujo\_base}_k = x_k + 1.5 \cdot OBI_{\text{eff}} \cdot \left(1 - \frac{k}{32}\right) + 0.50 \cdot ML_{\text{lift}} \cdot \frac{k}{32}$$
          $$\text{sign} = \text{signum}(\text{flujo\_base}_k)$$
          $$\text{flujo}_k = \text{sign} \cdot \left(|\text{flujo\_base}_k| + \text{sign} \cdot \text{current\_sum}_k\right).\text{clamp}(0, 10)$$
+         (Preservado el principio físico G8-OMEGA-09 donde corrientes opuestas jamás invierten el signo de $x > 0$: $p_{\text{ice}}$ se proyecta limpiamente en $\text{current\_sum}_k$ sin doble cuenta en $OBI_{\text{eff}}$).
        - Preservada la función canónica previa `voto_espectral_con_wasserstein_dirac_bsd_riemann_kahler_gauge_y_helmholtz` delegando a la nueva función con $OBI=0.0, ML=0.0$ garantizando 100% de compatibilidad neutral hacia atrás.
        - En `crates/god-engine-core/src/lib.rs:3428-3460`, conectada la lectura de $OBI$ efectivo (`eff_obi`) y el lift direccional ML (`ml_dir_lift`) en `process_tick_dual`.
        - Creado contrato formal `crates/signal-engine/tests/f1_094_spectral_confluence_diversity_contract.rs` con 5 aserciones matemáticas: control neutral idéntico, ruptura de clon en micro-escalas por OBI, ruptura de clon en macro-escalas por ML lift, divergencia en $\ge 25\%$ de las escalas bajo corrientes compuestas, y robustez fail-closed ante inputs no finitos (5/5 tests pass).

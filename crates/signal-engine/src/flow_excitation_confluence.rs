@@ -150,8 +150,11 @@ impl FlowExcitationConfluenceEngine {
         };
 
         // F1-094 (Ola Ω197): Acoplamiento espectral continuo de OBI y ML Lift
+        // G8-OMEGA-09: obi_eff proviene estrictamente del desequilibrio de libro medido;
+        // no absorbe p_ice aquí para evitar doble cuenta con current_sum y preservar
+        // la ley física de atenuación sin inversión de signo ante corrientes opuestas.
         let obi_eff = if obi.is_finite() {
-            (obi + 0.30 * p_ice).clamp(-1.0, 1.0)
+            obi.clamp(-1.0, 1.0)
         } else {
             0.0
         };
