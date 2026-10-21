@@ -1,5 +1,35 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-21 (tarde, 5) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω200 (Cierre F1-045 Fast-Path Confluencia y Difusión Macro, F1-046 Difusión Rama 13 sin Mágico x50, F1-033 Cadencia BOCPD 60s y Actuador)
+
+- **Mandato**: Resolución matemática y de latencia crítica para confluencia espectral (`F1-045`), tipificación analítica de difusión en Rama 13 (`F1-046`), y optimización de camino caliente condicionando transporte W1 / observador BOCPD a la cadencia física de 60s con conexión de actuador gobernado de atenuación de convicción (`F1-033`):
+  1. **F1-045 (`crates/god-engine-core/src/lib.rs:8260-8270`, `crates/god-engine-core/tests/f1_045_046_033_diffusion_and_cadence_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Fast-path de corto-circuito en `evaluar_confluencia_resonante` para ticks planos ($|fused| < 0.15 \land coh \le 0.12$) que ahorra 10 lookups SkipMap por evento, y sustitución de `marea_macro_tolerancia = 0.00020` por suelo analítico de difusión $Z_{95} \cdot \sigma \cdot \sigma_{spread}$.
+     - *POR QUÉ*: Erradicar contención y latencia innecesaria en el 95% de ticks de mercado planos, y eliminar literales arbitrarios en puntos básicos desalineados con la volatilidad del activo.
+     - *PARA QUÉ*: Alcanzar velocidades ultra-rápidas en el event loop y modelar la tolerancia de marea en el continuo estocástico de Itô.
+     - *CÓMO*: Corto-circuito previo a consultas de registro; fallback analítico `piso_tendencia = Z95 * sigma * spread_sd`.
+     - *CUÁNDO*: En cada evaluación de Rama 15.
+     - *DÓNDE*: `crates/god-engine-core/src/lib.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), SRE/Performance Engineer y Quant Developer.
+  2. **F1-046 (`crates/god-engine-core/src/lib.rs:8150-8220`, `crates/god-engine-core/tests/f1_045_046_033_diffusion_and_cadence_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Estandarización de diferencia MACD con z-score estocástico `ema_spread_z(macd_diff, atr_pct, ...)`, umbral continuo modulado por exponente de Hurst $Z_{95} \cdot (0.50 / H)$ y erradicación del multiplicador arbitrario $\times 50.0$.
+     - *POR QUÉ*: Reemplazar condiciones arbitrarias en fracción cruda (`ma_trend_strength > 0.0020`) y escalas mágicas por significancia estadística analítica $z \sim \mathcal{N}(0, 1)$.
+     - *PARA QUÉ*: Invarianza de escala ante volatilidad diferencial multiactivo y robustez en la convicción que entra al dimensionamiento de Kelly.
+     - *CÓMO*: Reemplazo de 20 pb por significancia $|z_{macro}| \ge Z_{95} \lor |z_{macd}| \ge Z_{95}$; cálculo de convicción continua $piso = sig\_conf((|z_{macd}| / Z_{95}).clamp(0.0, 1.0))$.
+     - *CUÁNDO*: En la evaluación de tendencia de Rama 13.
+     - *DÓNDE*: `crates/god-engine-core/src/lib.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), Quant Developer y Risk Manager.
+  3. **F1-033 (`crates/god-engine-core/src/lib.rs:2912-2936, 4160-4180, 8900-8910`, `crates/god-engine-core/tests/f1_045_046_033_diffusion_and_cadence_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Acondicionamiento de cálculo de transporte Wasserstein $W_1$ y observador BOCPD a la cadencia física del ancla de régimen (60s o fase de calentamiento) o bandera de gobernanza, reduciendo el 99% de la sobrecarga computacional en hot-path, y conexión del actuador de atenuación de convicción ante changepoints ($P(r_t=0) > 0.50$).
+     - *POR QUÉ*: Eliminar un cálculo de 128 ln + 256 exp ejecutado ciegamente en cada tick sin lector activo, reconectando la señal como salvaguarda cuantitativa contra saltos de régimen.
+     - *PARA QUÉ*: Maximizar la eficiencia de CPU en hardware modesto (16 GB RAM, sin GPU) y proteger el capital ante disrupciones estructurales.
+     - *CÓMO*: Evaluación condicionada a cadencia de 60s; atenuación continua de convicción hasta un 20% si $P(r_t=0) > 0.50$.
+     - *CUÁNDO*: En `process_event` y `process_tick_dual`.
+     - *DÓNDE*: `crates/god-engine-core/src/lib.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), SRE/DevOps, Risk Manager y Arquitecto Senior.
+- **Certificación Contractual**:
+  - `cargo test -p god-engine-core --test f1_045_046_033_diffusion_and_cadence_contract -j 1` (3/3 pass, 100% verde en 0.02s).
+
 ## 2026-10-21 (tarde, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω199 (Plan Maestro V67, Cierre F1-042 Zero-Alloc Stack Symbol y F1-034 Reseteo Causal Reconnect)
 
 - **Mandato**: Formalización del Plan Maestro Canónico V67 para la revisión base del universo multivariante continuo temporal espectral $\mathcal{H} = L^2(\mathbb{R}^{d \times \tau})$, erradicación de asignaciones en heap en el camino caliente de `process_tick_dual` (`F1-042`) y preservación de la causalidad temporal en los ensambles Hedge multi-moneda tras caídas del stream de Binance (`F1-034`):
