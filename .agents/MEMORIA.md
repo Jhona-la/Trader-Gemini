@@ -9190,3 +9190,25 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     - `rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 pánicos agregados).
     - `cargo check --bin evolution -j 1` (0 errores, 0 warnings).
     - `cargo check --workspace --all-targets -j 1` 100% verde en los 23 crates con 0 errores y 0 warnings.
+
+---
+
+## AGY — Ola Ω190: Cierre F1-086 (Desacoplamiento del Recorte Erróneo de Margen P1 en LH-04 / Sincronización Causal de `lh04_f_realizado`) — 2026-10-20
+- **Hallazgo F1-086 cerrado (MED)**:
+  - `crates/risk-engine/src/lib.rs` (`evaluate_single_intent`, dimensionamiento en espacio de riesgo LH-04):
+    - *Diagnóstico y causa raíz*: En LH-04, la fracción de riesgo objetivo $f$ calculada por medio-Kelly con cota inferior de Wilson ($p_{\text{LCB}}$) ya está acotada por el axioma de ruina de un solo evento vía `clamp_ruin(1.0, q) <= 0.25` en `:1491`.
+    - El recorte P1 previo (`final_margin = margen_obj.min(allocated_capital * tope_margen_lh04)`) imponía un tope que es fracción de capital en *riesgo* (25%) directamente sobre el *margen* (colateral). Esto sólo equivalía a riesgo $\le$ tope si $L \cdot SL = 1$.
+    - En trading normal apalancado con stops ceñidos ($L \cdot SL < 1$, e.g. $L=5, SL=1\% \implies L \cdot SL = 0.05$), este recorte asfixiaba el riesgo efectivo a $f \le 0.25 \cdot L \cdot SL = 1.25\%$, haciendo inalcanzable cualquier riesgo mayor aunque la evidencia estadística (e.g. $WR=75\%, PF=2.6$) lo justificara plenamente, imposibilitando el compound growth (+100%/72h). Además, la telemetría publicaba `lh04_f_riesgo = 0.10` mientras se ejecutaba apenas `0.0125`.
+    - *Solución F1-086 implementada*:
+      1. Se eliminó el recorte P1 en `:1561`: `final_margin = margen_obj` directamente. El riesgo de la orden ($f \cdot C$) queda acotado por `clamp_ruin` en espacio de riesgo.
+      2. El colateral queda acotado por capacidad y liquidez real downstream vía `safe_limit = single_asset_cap.min(portfolio_headroom)` (Sol A2).
+      3. Se sincronizó causalmente `lh04_f_realizado` en `:1811` con el riesgo efectivamente emitido por la orden validada (`safe_vol * safe_lev * stop_real / allocated_capital`), eliminando discrepancias entre telemetría y ejecución en el exchange.
+  - Suite de contratos formales `crates/risk-engine/tests/f1_086_lh04_p1_margin_vs_risk_cap_contract.rs` (3/3 tests PASSED):
+    1. `test_f1_086_riesgo_no_es_asfixiado_por_tope_arbitrario_de_margen` (el riesgo emitido coincide con el publicado por `lh04_f_realizado` y no es asfixiado por un cuarto de capital).
+    2. `test_f1_086_margen_supera_cuarto_de_capital_si_capacidad_permite` (el margen respeta el techo de exposición del portfolio `safe_limit` sin falso bloqueo en 0.25·C).
+    3. `test_f1_086_invariante_axioma_ruina_estricto` (aún con evidencia extrema, $f_{\text{realizado}}$ y el riesgo al stop jamás superan el axioma de ruina $\le 0.25$).
+  - Verificaciones globales:
+    - `lh04_sizing_riesgo_contract.rs` (8/8 pass).
+    - `fable_lh04_stop_real_contract.rs` (3/3 pass).
+    - `rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 pánicos agregados).
+    - `cargo check --workspace --all-targets -j 1` 100% verde en los 23 crates con 0 errores y 0 warnings.

@@ -1541,29 +1541,23 @@ impl RiskEngine {
             let nocional_obj = lh04_f_efectiva * allocated_capital / stop_real;
             let margen_obj = nocional_obj / dynamic_leverage;
             if margen_obj.is_finite() && margen_obj > 0.0 {
-                // P1 (GLM 120, mea culpa): con stop ceñido el nocional
-                // objetivo (f·C/SL) puede exigir un margen mayor que todo
-                // el capital — el clamps a allocated_capital COMPLETO
-                // hacía que el orquestador (colchón de exposición +
-                // posiciones abiertas) rechazara sistemáticamente
-                // (REJ_ORCHESTRATOR ×7 corridas CI: contrato
-                // flat_producer de god-engine-core). El margen se acota
-                // por el MISMO tope del axioma de ruina que acota f
-                // (≤25%): el riesgo-al-stop OBJETIVO sigue siendo f·C;
-                // cuando el stop ceñido lo haría inalcanzable, la orden
-                // se coloca al máximo que el axioma permite (no se
-                // rechaza) — riesgo realizado acotado por exposición.
-                // F1-116: Tope de margen continuo anclado directamente al axioma de ruina sin rama muerta.
-                let tope_margen_lh04 = crate::ruin::clamp_ruin(
-                    1.0,
-                    crate::ruin::conservative_loss_q(lh04_wr, lh04_n),
-                );
-                final_margin = margen_obj.min(allocated_capital * tope_margen_lh04);
-                // F-A5: riesgo al stop que ESTE dimensionado realiza, en
-                // fracción del capital asignado, tras el tope de ruina y
-                // antes de los rescates de nocional mínimo. Igual a f cuando
-                // el tope no muerde; menor cuando muerde. Auditable junto a
-                // `lh04_f_riesgo` (el objetivo).
+                // F1-086 (Ola Ω190): Desacoplamiento del recorte erróneo de margen P1.
+                // En LH-04, el riesgo al stop objetivo (f·C) YA está acotado por el axioma
+                // de ruina (clamp_ruin <= 0.25 sobre f_raw en :1491).
+                // El recorte P1 anterior imponía `final_margin = margen_obj.min(C · tope_ruina)`
+                // aplicando un tope de RIESGO (25%) directamente a MARGEN (colateral).
+                // Esto equivalía a riesgo <= tope sólo si L·SL == 1; con L·SL < 1 (el caso
+                // normal de trading apalancado) restringía el riesgo efectivo a
+                // f <= 0.25·L·SL (apenas ~1% para stops ceñidos), impidiendo que una orden
+                // con evidencia estadística sólida tomara el riesgo calibrado por Kelly
+                // e imposibilitando el crecimiento exponencial (+100%/72h).
+                // Se asigna `final_margin = margen_obj` directamente: el colateral queda
+                // acotado por capacidad y liquidez real downstream vía `resolve_margin_cap_limits`
+                // y `available_margin_headroom` (Sol A2).
+                final_margin = margen_obj;
+                // F-A5 / F1-086: riesgo al stop que este dimensionado realiza, en
+                // fracción del capital asignado, antes de rescates de nocional mínimo y
+                // de techos de liquidez downstream.
                 lh04_f_realizado = if allocated_capital > 0.0 {
                     final_margin * dynamic_leverage * stop_real / allocated_capital
                 } else {
@@ -1812,6 +1806,20 @@ impl RiskEngine {
             || (intent.signal != SignalType::Flat && (safe_tp <= 0.0 || safe_sl <= 0.0))
         {
             return rej(REJ_INVALID_INPUT);
+        }
+
+        // F1-086 (Ola Ω190): Publicar el riesgo realmente realizado por la orden
+        // emitida (`safe_vol · safe_lev · stop_real / allocated_capital`) en el
+        // registro omnisciente `lh04_f_realizado`. Si la orden fue recortada
+        // downstream por límite de margen o colchón del portfolio (Sol A2),
+        // `lh04_f_realizado` refleja la fracción real de capital que se arriesga al
+        // stop, sin mentir publicando f_objetivo cuando el colateral ejecutado fue menor.
+        if lh04_f_efectiva > 0.0 && allocated_capital > 0.0 {
+            let f_realizado_final = (safe_vol * safe_lev * stop_real / allocated_capital)
+                .min(lh04_f_efectiva);
+            arena
+                .registry
+                .set_for_coin(coin_id, "lh04_f_realizado", f_realizado_final);
         }
 
         // D-744: el RIESGO REALMENTE TOMADO por esta orden —lo que se pierde
