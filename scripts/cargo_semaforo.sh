@@ -7,6 +7,10 @@
 # hacía cumplir nada. Este envoltorio la hace cumplir:
 #   1. target ÚNICO: CARGO_TARGET_DIR = <raíz del repo>/target, también desde
 #      cualquier worktree (lo deduce de `git rev-parse --git-common-dir`).
+#      RB-H2: es seguro entre worktrees SÓLO con la frescura por contenido de
+#      `.cargo/config.toml` ([unstable] checksum-freshness = true): dos
+#      worktrees escriben los mismos artefactos y, por mtime, uno puede
+#      ejecutar el código del otro (scripts/tests/test_frescura_target.py).
 #   2. CARGO_BUILD_JOBS=2 salvo que se pida otra cosa explícitamente.
 #   3. Espera mientras haya OTRO cargo/rustc vivo o la RAM libre esté por
 #      debajo de SEMAFORO_RAM_MIN_GB (4 por defecto).
@@ -62,6 +66,9 @@ ram_extra=${SEMAFORO_RAM_EXTRA_GB:-2}
 
 export CARGO_TARGET_DIR="$raiz/target"
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
+# RB-H2: frescura por contenido también para las ramas cuya .cargo/config.toml
+# aún no trae la clave (el target es compartido entre worktrees; ver punto 1).
+export CARGO_UNSTABLE_CHECKSUM_FRESHNESS=true
 mkdir -p "$raiz/target" "$raiz/logs"
 cerrojo="$raiz/target/.semaforo.lock"
 bitacora="$raiz/logs/semaforo.log"
@@ -201,7 +208,7 @@ fi
 registrar "ADQUIERE ram_libre=${ram}GB jobs=$CARGO_BUILD_JOBS: cargo $*"
 
 if [ "${SEMAFORO_SOLO_DECIDIR:-0}" = "1" ]; then
-  echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS"
+  echo "[semaforo] turno concedido; CARGO_TARGET_DIR=$CARGO_TARGET_DIR CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS CARGO_UNSTABLE_CHECKSUM_FRESHNESS=$CARGO_UNSTABLE_CHECKSUM_FRESHNESS"
   registrar "LIBERA (solo decidir)"
   exit 0
 fi

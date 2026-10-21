@@ -1,2 +1,17 @@
 [build]
 rustflags = ["-C", "target-cpu=native", "-C", "opt-level=3"]
+
+# RB-H2 (Codex RB, 2026-10-19): frescura por CONTENIDO en el target/ compartido.
+# Cargo nombra los artefactos de los paquetes del workspace con un hash de su
+# ruta RELATIVA al workspace, así que dos worktrees del mismo repo escriben los
+# mismos archivos en el target único de scripts/cargo_semaforo.sh. Con la
+# frescura por mtime (la de serie), si las fuentes de un worktree son más viejas
+# que el último build ajeno de esa unidad, cargo la da por fresca y se ejecuta
+# el código del OTRO worktree sin aviso: falsos verdes y falsos rojos. Sonda en
+# el nightly fijado (scripts/tests/test_frescura_target.py): por mtime, el árbol
+# 2 imprime «ARBOL-1»; con esta clave, «ARBOL-2». Con checksum-freshness cargo
+# compara el hash del contenido: cada worktree compila lo suyo y sólo se
+# recompila lo que de verdad difiere. Lo exige el contrato
+# crates/quantum-arena/tests/rb_h2_frescura_por_contenido_contract.rs.
+[unstable]
+checksum-freshness = true
