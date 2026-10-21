@@ -478,7 +478,11 @@ impl RiskEngine {
         let kelly_frac = if trades_n == 0 || raw_kelly <= 0.0 {
             kelly_cold
         } else {
-            raw_kelly.clamp(clamp_min, clamp_max)
+            // F1-087 (Ola Ω191): No re-clampear a clamp_min. Si PF <= 1.0, calculate_kelly_fraction
+            // produce exploración en [0, 0.25·clamp_min]. Re-clampear a clamp_min destruía
+            // la exploración fraccional de kelly.rs (CERT-M5-C01) inflando el riesgo 4x-15x
+            // en monedas sin edge probado. Si PF > 1.0, kelly.rs ya aplicó clamp_min internamente.
+            raw_kelly.min(clamp_max)
         };
         // CERT-M5-H03: el camino bootstrap/micro YA NO bypassa el tope de
         // ruina — mismo streak-bound + axioma 25% que kelly/envelope. q del
@@ -696,10 +700,12 @@ impl RiskEngine {
             1.0
         };
         // Ola Ω100 / Ola Ω109 (F3.4-07): Relajación continua Ornstein-Uhlenbeck del sesgo
-        // epigenético en [0.50, 2.00] evaluada al reloj causal `now_ts`. Erradica la
-        // petrificación estática no-ergódica de rachas históricas.
+        // epigenético evaluada al reloj causal `now_ts`. Erradica la petrificación no-ergódica.
+        // F1-087 (Ola Ω191): Asimetría anti-hot-hand unificada con la doctrina canónica de LH-04 (:1503-1505).
+        // Racha perdedora (bias < 1.0) encoge confianza y tamaño (información honesta de quiebre de régimen).
+        // Racha ganadora (bias > 1.0) NO infla (techo 1.00): la cota de vida ya es el techo honesto (anti-hot-hand).
         let effective_confidence =
-            (signal_prob * epi_bias.clamp(0.50, 2.00)).clamp(0.05, 0.98);
+            (signal_prob * epi_bias.clamp(0.50, 1.00)).clamp(0.05, 0.98);
         let raw_exposure = dir * effective_confidence * kelly_for_scale * allocated_capital;
         if !raw_exposure.is_finite() {
             return rej(REJ_INVALID_INPUT);
@@ -1493,6 +1499,19 @@ impl RiskEngine {
             lh04_p_lcb = p_lcb;
             lh04_b = b;
         }
+
+        // F1-087 (Ola Ω191): Detección de ausencia de edge con evidencia madura.
+        // Si la moneda tiene muestras suficientes (lh04_n >= muestras_min_lh04) y la cota inferior
+        // de Wilson demuestra que no hay ventaja (lh04_f == 0.0), o sus métricas son degradadas
+        // (PF <= 1.0 o WR <= 0.0), se activa `lh04_sin_edge`. Esto cierra el fail-open impidiendo
+        // que una moneda sin edge reciba una apuesta de Kelly legado completo, dimensionándola
+        // estrictamente a la orden mínima de exploración (sonda).
+        let lh04_tiene_evidencia = lh04_wr.is_finite()
+            && (0.0..=1.0).contains(&lh04_wr)
+            && lh04_n >= muestras_min_lh04
+            && lh04_pf.is_finite();
+        let lh04_sin_edge = lh04_tiene_evidencia
+            && (lh04_f == 0.0 || lh04_pf <= 1.0 || lh04_wr <= 0.0);
         // Streak-adaptación (GLM 118): la síntesis bias×LH-04. El bias
         // epigenético (racha, OU-relajado Ω109, rango [0.5, 2.0], leído
         // al RELOJ CAUSAL del último tick — mismo acceso que el camino de
@@ -1650,10 +1669,10 @@ impl RiskEngine {
             // relativo de 5 bps de margen cierra la frontera.
             final_margin = required_margin_for_min_notional * 1.0005;
         }
-        // D4 (ADR-0016, CL-98): la sonda es la orden mínima del símbolo, con
-        // el apalancamiento ya decidido. Es información, no alfa: su tamaño no
-        // sale del Kelly de arranque en frío.
-        if es_sonda {
+        // D4 (ADR-0016, CL-98, F1-087): la sonda o la orden en moneda sin edge demostrado
+        // es la orden mínima del símbolo, con el apalancamiento ya decidido.
+        // Es información para adquirir muestras, no alfa: su tamaño se acota al nocional mínimo viable.
+        if es_sonda || lh04_sin_edge {
             final_margin = final_margin.min(required_margin_for_min_notional * 1.0005);
         }
 

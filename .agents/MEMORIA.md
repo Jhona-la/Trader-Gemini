@@ -9212,3 +9212,29 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     - `fable_lh04_stop_real_contract.rs` (3/3 pass).
     - `rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 pánicos agregados).
     - `cargo check --workspace --all-targets -j 1` 100% verde en los 23 crates con 0 errores y 0 warnings.
+
+---
+
+## AGY — Ola Ω191: Cierre F1-087 (Preservación de Exploración Sub-Kelly / Erradicación de Inflación Hot-Hand en Legado / Cierre Fail-Closed en LH-04 sin Edge) — 2026-10-21
+- **Hallazgo F1-087 cerrado (MED)**:
+  - `crates/risk-engine/src/lib.rs` (`evaluate_single_intent`, `evaluate_quantum_order`), `crates/risk-engine/tests/veto_logic_contracts.rs`:
+    - *Diagnóstico y causa raíz*:
+      1. En `:478-482`, `raw_kelly.clamp(clamp_min, clamp_max)` re-elevaba artificialmente al piso del genoma (`clamp_min = 0.01`) la fracción de exploración ultra-conservadora ($\le \frac{1}{4}\cdot\text{clamp\_min}$) calculada por `calculate_kelly_fraction` en `kelly.rs:118-124` cuando $PF \le 1.0$. Esto contradecía directamente el comentario y contrato `CERT-M5-C01`, inflando el riesgo entre 4x y 15x en activos sin ventaja demostrada.
+      2. En `:702`, el sesgo epigenético se clampeaba en `[0.50, 2.00]`. En rachas ganadoras (`epi_bias > 1.0`), multiplicaba la confianza efectiva y la exposición hasta por $2.0\times$ (falacia del hot-hand), violando la doctrina canónica de LH-04 (:1522-1524), donde las rachas ganadoras NO inflan (`min(bias, 1.0)`) porque la cota inferior de Wilson ya representa el techo honesto de vida.
+      3. En LH-04 (:1500-1681), cuando una moneda contaba con evidencia madura ($n \ge \text{muestras\_min\_lh04}$) pero la cota de Wilson arrojaba ausencia de edge ($lh04\_f == 0.0$, o $PF \le 1.0$ o $WR \le 0.0$), el bloque `if lh04_f_efectiva > 0.0` se saltaba silenciosamente. El dimensionamiento caía en fail-open al camino Kelly legado completo con potencial exposición de 10% a 25% del capital en un activo perdedor probado, en vez de acotarlo a la orden mínima de exploración (sonda).
+    - *Solución F1-087 implementada*:
+      1. En `lib.rs:482`: cambiado a `raw_kelly.min(clamp_max)`. Si $PF \le 1.0$, preserva la exploración fraccional en $[0, 0.25\cdot\text{clamp\_min}]$; si $PF > 1.0$, `kelly.rs` ya aplicó internamente `clamp_min`.
+      2. En `lib.rs:706`: cambiado a `effective_confidence = (signal_prob * epi_bias.clamp(0.50, 1.00)).clamp(0.05, 0.98)`, erradicando la inflación hot-hand en rachas ganadoras y manteniendo la contracción ágil ante quiebres de régimen.
+      3. En `lib.rs:1500-1681`: añadido detector `lh04_sin_edge = lh04_tiene_evidencia && (lh04_f == 0.0 || lh04_pf <= 1.0 || lh04_wr <= 0.0)`, y unificado el probe clamp downstream `if es_sonda || lh04_sin_edge { final_margin = final_margin.min(required_margin_for_min_notional * 1.0005); }`, acotando la orden en activos sin edge estrictamente al mínimo necesario para muestreo de mercado sin fail-open.
+      4. En `veto_logic_contracts.rs:320-327`: armonizado el contrato formal con la doctrina canónica anti-hot-hand (verificando que `epi_bias = 1.80` y `1.40` no inflen el volumen).
+  - Suite de contratos formales `crates/risk-engine/tests/f1_087_exploration_hot_hand_failclosed_contract.rs` (3/3 tests PASSED):
+    1. `test_f1_087_exploracion_sub_kelly_preservada_sin_reinflar_a_clamp_min` (preservación de exploración fraccional en sub-Kelly sin inflación a `clamp_min`).
+    2. `test_f1_087_asimetria_anti_hot_hand_racha_ganadora_no_infla_legado` (confirmación de que una racha ganadora con bias 2.0 no infla la exposición respecto a bias 1.0).
+    3. `test_f1_087_lh04_sin_edge_fail_closed_a_sonda_minima` (confirmación de que un activo con evidencia madura pero $f=0$ se acota a la sonda mínima viable de ~$5.10 USD en vez de tomar exposición plena).
+  - Verificaciones globales:
+    - `veto_logic_contracts.rs` (10/10 pass).
+    - `lh04_sizing_riesgo_contract.rs` (8/8 pass).
+    - `f1_086_lh04_p1_margin_vs_risk_cap_contract.rs` (3/3 pass).
+    - `fable_lh04_stop_real_contract.rs` (3/3 pass).
+    - `rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 pánicos agregados).
+    - `cargo check --workspace --all-targets -j 1` 100% verde en los 23 crates con 0 errores y 0 warnings.

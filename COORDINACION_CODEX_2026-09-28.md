@@ -1,5 +1,31 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω191: Cierre de F1-087 (Preservación de Exploración Sub-Kelly / Erradicación de Inflación Hot-Hand en Legado / Cierre Fail-Closed en LH-04 sin Edge) (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω191: PRESERVACIÓN DE EXPLORACIÓN DE KELLY, ANTI-HOT-HAND Y CIERRE FAIL-CLOSED EN LH-04 SIN EDGE
+
+1. **Hallazgo Cerrado en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-087` (`MED`, `crates/risk-engine/src/lib.rs:478-482, 706, 1500-1681`, `crates/risk-engine/tests/f1_087_exploration_hot_hand_failclosed_contract.rs`, `crates/risk-engine/tests/veto_logic_contracts.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - **QUÉ**: Preservación de la fracción de exploración ultra-conservadora de Kelly ($\le \frac{1}{4}\cdot\text{clamp\_min}$) sin forzar el piso `clamp_min` vía `raw_kelly.min(clamp_max)`; erradicación de la inflación ficticia por hot-hand en rachas ganadoras del camino legado vía `epi_bias.clamp(0.50, 1.00)` armonizando con la doctrina canónica de LH-04; y cierre fail-closed estricto a orden mínima de información (sonda) en activos con evidencia madura ($n \ge \text{muestras\_min\_lh04}$) pero sin edge demostrado ($lh04\_f == 0.0$ o $PF \le 1.0$) mediante `es_sonda || lh04_sin_edge`.
+     - **POR QUÉ**: Anteriormente, `raw_kelly.clamp(clamp_min, clamp_max)` elevaba al 1% del capital la exploración que `kelly.rs` dimensionaba a $\le 0.25\%$, multiplicando el riesgo por hasta 15x en activos sin edge. En rachas ganadoras, el camino legado duplicaba la exposición ($2.0\times$), cayendo en la falacia del hot-hand prohibida por LH-04. Y cuando LH-04 demostraba ausencia de edge ($f=0$), caía en fail-open al camino legado apostando capital completo en activos perdedores.
+     - **PARA QUÉ**: Cumplir con la cota de preservación de capital para la meta de interés compuesto de $13 USD (+100%/72h), eliminar asimetrías doctrinales entre el camino legado y LH-04, y asegurar que ningún activo sin edge probado tome más capital que el mínimo técnico indispensable para adquirir muestras.
+     - **CÓMO**: Reemplazo de `.clamp(clamp_min, clamp_max)` por `.min(clamp_max)` en `:482`; techo de bias a `1.00` en `:706`; detector de evidencia madura sin edge `lh04_sin_edge`; y probe clamp `final_margin.min(required_margin_for_min_notional * 1.0005)` cuando `es_sonda || lh04_sin_edge`.
+     - **CUÁNDO**: Permanente en cada evaluación de órdenes cuánticas de riesgo.
+     - **DÓNDE**: `crates/risk-engine/src/lib.rs`, `crates/risk-engine/tests/f1_087_exploration_hot_hand_failclosed_contract.rs` y `crates/risk-engine/tests/veto_logic_contracts.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en Modo Profesor y Consejo de 10 Roles Senior.
+
+2. **Verificación Contractual y Pruebas de Certificación**:
+   - `cargo test -p risk-engine --test f1_087_exploration_hot_hand_failclosed_contract -j 1` (3/3 pass, 100% verde en 0.08s).
+   - `cargo test -p risk-engine --test veto_logic_contracts -j 1` (10/10 pass, 100% verde en 0.23s).
+   - `cargo test -p risk-engine --test lh04_sizing_riesgo_contract -j 1` (8/8 pass, 100% verde en 0.14s).
+   - `cargo test -p risk-engine --test f1_086_lh04_p1_margin_vs_risk_cap_contract -j 1` (3/3 pass, 100% verde en 0.06s).
+   - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+   - `cargo check --workspace --all-targets -j 1` (100% verde en los 23 crates con 0 errores y 0 warnings).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω190: Cierre de F1-086 (Desacoplamiento del Recorte Erróneo de Margen P1 en LH-04 / Sincronización Causal de lh04_f_realizado con la Orden Emitida) (2026-10-20)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

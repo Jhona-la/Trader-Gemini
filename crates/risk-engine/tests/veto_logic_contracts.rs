@@ -317,10 +317,12 @@ pub fn ola100_epigenetic_bias_full_range_expression() {
     let out_mid = engine_mid.evaluate_quantum_order(0, &intent, &arena);
     assert_eq!(out_mid.signal, SignalType::Long, "Error: {}", risk_engine::reject_report());
 
-    // El volumen con sesgo 1.80 debe ser superior al volumen con sesgo 1.40
-    assert!(
-        out_high.volume_usd > out_mid.volume_usd,
-        "Ola Ω100: epigenetic_bias=1.80 ({}) debe generar mayor exposición que 1.40 ({})",
+    // F1-087 (Ola Ω191): Doctrina canónica anti-hot-hand unificada con LH-04 (:1503-1505).
+    // Las rachas ganadoras (bias > 1.0) NO inflan (techo en 1.00): 1.80 y 1.40 producen el mismo
+    // volumen máximo honesto sin sobreapalancarse en suerte.
+    assert_eq!(
+        out_high.volume_usd, out_mid.volume_usd,
+        "F1-087 anti-hot-hand: epigenetic_bias=1.80 ({}) no debe inflar sobre 1.40 ({})",
         out_high.volume_usd,
         out_mid.volume_usd
     );
