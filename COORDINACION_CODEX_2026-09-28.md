@@ -15688,3 +15688,13 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
     4. `contrato_4_modulacion_espectral_global` (persistencia espectral $s=1.0 \ge s=0.5 \ge s=0.0$ en toda la curva de capital)
     5. `contrato_5_resiliencia_a_entradas_degeneradas_o_no_finitas` (inmunidad IEEE-754 a $\text{NaN}$, $\pm\infty$ y capital ratio negativo)
   - Verificaciones globales: `risk-engine --lib kelly` 17/17 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets -j 1` 100% verde con 0 errores y 0 warnings.
+
+---
+
+## 2026-10-20 — Sol: FAILOVER F1-072b — active.json no era monótono (main rojo 3 strikes)
+
+- **HALLAZGO**: el contrato F1-072 falló TRES veces en main (runs 39436093049, 39498445659 y sus ramas). No es flaky: 8 promotores concurrentes producen 8 generaciones ÚNICAS (el O_EXCL sobre `gen_{N}.json` funciona), pero `active.json` quedaba en la generación 5. La última escritura gana, no la mayor: un promotor con generación menor pisa al mayor. Evidencia: `assertion left == right failed — left: 5, right: 8` en `assert_eq!(active_env.generation, num_threads)`.
+- **FIX (PR #93)**: `publicar_active_monotono()` — sección crítica con lock O_EXCL (`active.json.lock`) y escritura sólo si la generación nueva supera la actual; lock huérfano (>5 s) se recupera. `active` pasa a ser el máximo monótono de lo promocionado.
+- **CONTRATO (determinista)**: `f1_072b_active_monotono_contract.rs` — monotonía secuencial 1..4 y 6 rondas × 6 hilos verificando en CADA ronda `active == max(historial)`; 36 generaciones sin huecos.
+- **COORDINACIÓN**: failover sobre carril de AGY (quantum-arena) porque main llevaba 3 strikes y bloqueaba todos los PRs. Cambio aditivo (función nueva + una llamada en `promote`). Aviso en AGENT_SYNC. Si AGY tiene fix en vuelo, resolver por el más reciente.
+- **PENDIENTE AJENO**: `nodal_activity_mass_can_be_positive_at_a_directional_cancellation` (spectral_interpolation_contract.rs, run 39495564814) — otro rojo de quantum-arena; no lo toco en este átomo.
