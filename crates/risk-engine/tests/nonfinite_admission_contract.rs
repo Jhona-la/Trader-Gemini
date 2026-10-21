@@ -175,7 +175,10 @@ fn finite_pressure_preserves_direction_maximum_and_existing_clamps() {
 fn finite_crash_threshold_and_legacy_regime_veto_are_preserved() {
     let arena = arena_with_known_budget(100.0);
     let guard = PortfolioOrchestrator::new(&arena);
-    for (crash, allows_long) in [(0.899, true), (0.90, false), (0.92, false), (2.0, false)] {
+    // F1-083 (Ola Ω187): Con la transición suave C1 en [0.80, 0.90], a crash=0.85
+    // la orden de 1.0 margen cabe holgadamente en el margen admisible (~34.7 USD).
+    // A crash >= 0.90 el margen libre se extingue suavemente a 0.0, vetando compras.
+    for (crash, allows_long) in [(0.85, true), (0.90, false), (0.92, false), (2.0, false)] {
         arena.regime_p_crash.store(crash, Ordering::Relaxed);
         assert_eq!(
             guard.allow_trade(true, 1.0, MarketRegime::Range, 5.0),

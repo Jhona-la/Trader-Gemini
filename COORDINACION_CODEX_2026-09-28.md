@@ -15688,3 +15688,26 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
     4. `contrato_4_modulacion_espectral_global` (persistencia espectral $s=1.0 \ge s=0.5 \ge s=0.0$ en toda la curva de capital)
     5. `contrato_5_resiliencia_a_entradas_degeneradas_o_no_finitas` (inmunidad IEEE-754 a $\text{NaN}$, $\pm\infty$ y capital ratio negativo)
   - Verificaciones globales: `risk-engine --lib kelly` 17/17 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets -j 1` 100% verde con 0 errores y 0 warnings.
+
+---
+
+## AGY — Ola Ω187: Cierre F1-083 (Erradicación del Acantilado Discontinuo del 76% de Margen en `PortfolioOrchestrator` / Manifold Continuo C^1) — 2026-10-20
+- **Hallazgo F1-083 cerrado (MED)**:
+  - `crates/risk-engine/src/orchestrator.rs` (`available_margin_headroom`, `continuous_exposure_limit`, `allow_trade`):
+    - Erradicado el acantilado discontinuo de ~76% de margen y la orden suicida de ~$9.85 USD sobre cuentas micro de $13 USD a $p_{\text{crash}} = 0.89$.
+    - Anteriormente, `directional_pressure` estaba rígidamente acotada a $0.25 \times \text{pressure}$, impidiendo que el límite de exposición bajara del 73% del capital en micro ($0.98 - 0.25 = 0.73$). A $p_{\text{crash}} = 0.899$, el orquestador autorizaba comprometer el 75.75% del capital en largos ($9.85 USD sobre $13), y un tick después a $0.90$ saltaba un veto discreto absoluto `let systemic_crash_veto = p_crash >= 0.90;` que reducía el margen permitido a cero, creando un salto discontinuo no monótono de 76 pp de capital.
+    - Implementado el manifold continuo $C^1$ en `continuous_exposure_limit(cushion, p_coin, p_sys)`:
+      - Para $P_{\text{sys}} \in [0.0, 0.80]$: contracción lineal canónica $E(P) = C - 0.25 \max(P_{\text{coin}}, P_{\text{sys}})$, preservando con paridad 100% todas las cotas contractuales auditadas ($P=0 \to C$, $P=0.40 \to C-0.10$, $P=0.60 \to C-0.15$, $P=0.80 \to C-0.20$, coin flux $2.0 \to C-0.25$).
+      - Para $P_{\text{sys}} \in (0.80, 0.90)$: polinomio cúbico de Hermite $C^1$ suave conectando $(0.80, C - 0.20)$ con derivada $-0.25$ y aterrizaje horizontal en $(0.90, 0.0)$ con derivada nula, extinguiendo el margen disponible sin escalones ni oscilaciones de flapping.
+      - Para $P_{\text{sys}} \ge 0.90$: $E(P) = 0.0$, de modo que el headroom disponible se extingue naturalmente y `allow_trade` rechaza compras sin depender de umbrales discontinuos.
+    - Eliminado el literal muerto `.max(0.05)`, el cual era matemáticamente inalcanzable al estar el piso anterior acotado en $0.25$.
+    - En `crates/risk-engine/src/lib.rs:1688`, si `portfolio_headroom <= 0.0`, la orden se rechaza de inmediato con `REJ_ORCHESTRATOR`, evitando que caiga espuriamente en `REJ_MIN_NOTIONAL` tras intentar un rescate con margen nulo.
+    - Preservada simetría direccional especular exacta entre largos ($p_{\text{crash}}$) y cortos ($p_{\text{bull}}$).
+  - Suite de contratos formales `crates/risk-engine/tests/f1_083_orchestrator_continuous_pressure_contract.rs` (6/6 tests PASSED):
+    1. `test_f1_083_c1_continuity_across_linear_hermite_boundary` ($C^0$ y $C^1$ en $P=0.80$, derivada $-0.25$)
+    2. `test_f1_083_c1_horizontal_landing_at_veto_point` (aterrizaje horizontal en $P=0.90$ con $E=0.0$ y derivada nula, $E(0.899) < 0.001$)
+    3. `test_f1_083_strict_monotonicity_across_entire_domain` (1.000 puntos continuos monótonamente decrecientes en $[0, 1]$)
+    4. `test_f1_083_micro_account_eradication_of_9_85_usd_suicide_order` (en cuenta de $\$13.00$, a $P=0.89$ el headroom es de $\$0.28$, rechazando órdenes de Binance de $\$1.00$ de margen sin esperar al 0.90)
+    5. `test_f1_083_directional_symmetry_long_vs_short` (simetría bit a bit entre long y short en todo el espectro de régimen)
+    6. `test_f1_083_zero_dead_literals_headroom_genuine_zero` (headroom alcanza $0.0$ genuino a $P \ge 0.90$ sin piso muerto de 0.05)
+  - Verificaciones globales: `portfolio_admission_contract` 7/7 pass, `nonfinite_admission_contract` 8/8 pass, `veto_logic_contracts` 10/10 pass, `r7_r2_ruin_chaos_contract` 4/4 pass, `risk-engine --lib` 142/142 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets -j 1` 100% verde con 0 errores y 0 warnings.
