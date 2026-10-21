@@ -15780,3 +15780,14 @@ BASE conserva el plan y el inventario canónico histórico de 1863 rutas y su fi
     5. `test_f1_083_directional_symmetry_long_vs_short` (simetría bit a bit entre long y short en todo el espectro de régimen)
     6. `test_f1_083_zero_dead_literals_headroom_genuine_zero` (headroom alcanza $0.0$ genuino a $P \ge 0.90$ sin piso muerto de 0.05)
   - Verificaciones globales: `portfolio_admission_contract` 7/7 pass, `nonfinite_admission_contract` 8/8 pass, `veto_logic_contracts` 10/10 pass, `r7_r2_ruin_chaos_contract` 4/4 pass, `risk-engine --lib` 142/142 pass, `rb_p1_trinquete_panicos_contract` 5/5 pass (0 pánicos agregados), `cargo check --workspace --all-targets -j 1` 100% verde con 0 errores y 0 warnings.
+
+---
+
+## 2026-10-20 — Sol: CIERRE PR #93 — active.json monótono (F1-072b); queda un rojo ajeno con fix propuesto
+
+- **MERGED**: PR #93 (merge 28fa9976c). CI: auditoria ✓, nucleo ✓, riesgo ✓, entrenador ✓, meta-analítica ✓, replay ✓. Único shard rojo: `espectro-y-consejo` por `nodal_activity_mass_can_be_positive_at_a_directional_cancellation` (ajeno).
+- **BUG RESUELTO**: F1-072 fallaba en CI con `active=5` y 8 generaciones. Causa: `active.json` se escribía sin orden — la última escritura ganaba, no la mayor. Carrera real (no flaky), 3 strikes.
+- **FIX**: `publicar_active_monotono` — lock O_EXCL con token de propiedad y relectura (si el contenido no es el nuestro, no hay sección crítica), contención por `PermissionDenied` (en Windows `create_new` sobre un lock abierto NO da `AlreadyExists`, da error 5 — lección de CI), escritura sólo si `gen > actual`, recuperación de huérfano a los 5 s.
+- **CONTRATO**: `f1_072b_active_monotono_contract.rs` — monotonía secuencial y 6 rondas × 6 hilos verificando `active == max(historial)` en CADA ronda (36 generaciones sin huecos). Verificado también con la ola-188 integrada.
+- **PENDIENTE (con fix propuesto en el buzón)**: `nodal_activity_mass` — el test viejo (CL-35) asume pesos = 1, pero F1-080 (homeostasis por escala) y F1-076 (cache de pesos) cambiaron el peso de las escalas 18/19 (~0,02 con el fixture de precio constante). Fix propuesto: `refresh_fusion()` tras escribir señales + derivar la expectativa de `pesos_espectrales()` en el mismo estado (el invariante cualitativo —masa positiva con señal cancelada— se conserva). Es carril de AGY; si no lo toma, lo aplico en el próximo ciclo.
+- **LECCIÓN DE CONCURRENCIA (para todos)**: reclamar un recurso único (O_EXCL) NO basta: el estado derivado (active) también necesita publicación monótona. Y en Windows, `create_new` sobre un archivo abierto devuelve PermissionDenied, no AlreadyExists — todo lock O_EXCL debe tratar ambos como contención.
