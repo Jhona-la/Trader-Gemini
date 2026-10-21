@@ -16175,3 +16175,64 @@ y el núcleo ⇒ coordinar con AGY antes).
 **PRs DRAFT vivos** (#65 B15, #66 LG5, #87 LG22-eprocess): confirman que las
 ramas preservadas en la depuración 142 tienen trabajo en curso — no son
 abandonadas, nadie las borre.
+
+## 2026-10-21 — GLM: 144 — ERRADICACIÓN del 13.0 reinyectado (CL-15) + recibo económico §52
+
+**Mandato del operador: «Elimina de raíz cualquier balance hardcodeado (como el
+valor fijo de 13 USD)».** Diagnóstico con 2 exploradores: el runtime vivo YA
+extrae el balance real por API (god_engine.rs:1425, fail-closed con retry) y el
+host construye el auditor con `with_capital(real)` (lib.rs:1492) — pero
+sobrevivían SIETE fallbackos que reinyectaban 13.0 ante capital NaN/≤0 en rutas
+vivas, la clase exacta de «valores silenciosos» que el mandato prohíbe:
+
+1. `state_validator.rs` — validaba paridad con capital INVENTADO (falso
+   pass/alerta). Ahora: capital inválido ⇒ alerta explícita de imposibilidad y
+   retorno. Nunca fabrica expected_capital.
+2. `neuro_plasticity.rs` — asumía micro-cuenta de 13 USD ante capital ausente
+   (micro_boost caprichoso). Ahora: ABSTENCIÓN (modulación neutra); el boost
+   sólo con capital real pequeño declarado.
+3. `telemetry_mmap.rs` + `strategy_telemetry.rs` — la telemetría mentía el
+   patrimonio (NaN→13.0). Ahora: NaN viaja como NaN (el dashboard muestra la
+   verdad).
+4. `auditor_interno.rs` ×3 — `Default` ya NO declara capital (NaN, el host
+   debe usar with_capital); métricas con capital inválido ⇒ evidencia no
+   anclable ⇒ métricas vacías con tribunal ARMADO (consistente con F412 de
+   Sol: sin fuente el veto no decae); ELIMINADO `compute_metrics` (wrapper
+   huérfano del 13.0). Tests de Sol actualizados a capital de fixture
+   EXPLÍCITO `with_capital(13.0)` (sus valores esperados no cambian).
+5. `.env` local: INITIAL_CAPITAL 13.0→0.0 (extracción dinámica, como
+   template.env) — AVISO: los bins de backtest leerán 0.0=API dinámica.
+
+Quedan PARA 145 (numerarios de simulación, requieren oráculo propio):
+`online_daemon.rs:43` const WF_INITIAL_CAPITAL, FFI×3 de backtest-engine y 5
+bins (evolver/evolution/multi_coin/benchmark/audit_forensic). Son numerarios
+de fitness (lee cocientes), no balances vivos — documentado, no olvidado.
+
+**Átomo B (§52 nuevo del mandato)**: el worker de telemetría YA acumulaba
+PnL/fees/trades pero sólo los imprimía. Ahora vuelca
+`outputs/economia_live.json` (off hot-path, en el worker): ROI pre/post fees,
+PnL bruto/neto, WR pre/post costos, Sharpe anualizado (Welford por trade),
+EV/trade, capital inicial (del UpdateCapital REAL) y periodo ns exacto —
+ausencias como null (CL-15). `informe_integral.py` gana el emisor §4
+económico (contrato python 3/3, corre en CI). Serie inmutable: el informe de
+hoy NO se regenera; el de mañana ya sale con economía.
+
+**Mapa del mandato nuevo (para el consejo, qué existe/qué falta):**
+- Top-10 dinámico: VIVO (dynamic_ranker+symbol_manager, loop 1h con
+  histéresis). PERO hay 4 implementaciones duplicadas (dynamic_selector
+  MUERTO, symbol_ranker_engine, asset_selector, dynamic_symbols) =
+  esquizofrenia estructural a unificar.
+- Evolución online demo/prod: VIVA (LiveEvolutionDaemon + gate env
+  live_evolution_armed_for_env).
+- Maker/Post-Only: VIVO (GTX + MAKER_CHASE en executor).
+- MCTS/MAP-Elites (discovery 4 fases): NO EXISTEN (Pareto/NSGA-II sí,
+  moe_neat_arena). Línea de teoría para GLM/siguientes ciclos.
+- Visualización institucional: parcial (dashboard crossterm; sin ratatui).
+- LATENCIA (200+ warnings): el mensaje real es LATENCY_PANIC midiendo RTT WS
+  contra event_time del exchange, estrangulado 1/10s. La causa NO es reqwest
+  (clientes persistentes+NODELAY en hot-path); es degradación real de
+  red/DNS — ya existe acelerador de hosts con ping. `send_latency_warning`
+  (0 callers) es código muerto a retirar.
+- SystemBootloader (6 fases, F6 «Ignite!» stub): MUERTO sin callers; la
+  ignición real es el main de god_engine (balance→fees→genoma→posiciones→UDS).
+  Unificación pendiente de consejo.
