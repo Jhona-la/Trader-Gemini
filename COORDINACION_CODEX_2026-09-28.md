@@ -1,5 +1,32 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω193: Cierre de F1-090 (Egreso Precoz por SPRT de Wald Alcanzable en Horizonte Finito / Inversión Analítica de Regularización Bayesiana / Zero-Alloc Hot Path en Sonda) (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω193: ALCANZABILIDAD ESTADÍSTICA DE SPRT Y OPTIMIZACIÓN ZERO-ALLOC EN SONDA
+
+1. **Hallazgo Cerrado en `docs/audit/fable/f1_hallazgos.tsv`**:
+   - **`F1-090` (`MED`, `crates/risk-engine/src/sonda.rs:108-175, 238-245`, `crates/risk-engine/src/lib.rs:36-40, 560-565`, `crates/risk-engine/src/veto_registry.rs:137-148`, `crates/risk-engine/tests/f1_090_sonda_sprt_reachability_and_zero_alloc_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - **QUÉ**: Derivación analítica de los parámetros de la prueba secuencial de Wald en `sprt_evalua_salida_sonda` ($p_0=0.50, p_1=0.85, \alpha=0.10, \beta=0.20$), garantizando que la frontera $B = \ln((1-\beta)/\alpha) = \ln(8) \approx 2.0794$ sea alcanzable dentro del cupo finito $n_{\max}=5$ cierres ante 4 victorias consecutivas ($4 \cdot \ln(1.70) \approx 2.1225 \ge 2.0794$); inversión analítica de la contracción Bayesiana de `SuperGenotype::posterior_win_rate` para recuperar los aciertos reales $k = wr \cdot (n + 3.84) - 2.112$; fast-path $O(1)$ sin lecturas de registro para $n<2$; resolución zero-alloc de `resolve_max_cierres_sonda` con `arena.registry.get_for_coin_strict` usando buffer en stack `[u8; 64]`; e introducción de `admite_sonda_con_fase(arena, es_sonda)` en `lib.rs` erradicando la doble evaluación redundante de `en_fase_de_sonda` en la ruta crítica.
+     - **POR QUÉ**: Anteriormente, los defaults vivos ($p_0=0.50, p_1=0.70, \alpha=0.05, \beta=0.10$) exigían $B = 2.89$, requiriendo $\ge 9$ victorias sucesivas. Como `en_fase_de_sonda` egresa a los 5 cierres por conteo rígido, el egreso precoz por SPRT era matemáticamente imposible en producción. Además, $k$ se calculaba de un win rate ya posteriorizado hacia 0.55, subestimando aciertos (un 4/4 se calculaba como $k=3$); `resolve_max_cierres_sonda` asignaba `String` en heap en cada llamada; y `admite_sonda` corría `en_fase_de_sonda` dos veces por intención.
+     - **PARA QUÉ**: Habilitar el egreso anticipado de la sonda al 4to trade para monedas con edge real demostrado, acelerando la transición al dimensionado proporcional con evidencia (LH-04 / Kelly) para maximizar el compound growth (+100%/72h de $13\text{ USD}$), al tiempo que se reducen decenas de nanosegundos en la ruta crítica de evaluación de intenciones.
+     - **CÓMO**: Defaults calibrados $p_1=0.85, \alpha=0.10, \beta=0.20$ con cota presupuestaria; inversión Bayesiana `k_raw_bayes`; `get_for_coin_strict`; `admite_sonda_con_fase`; y suite formal contractual `f1_090_sonda_sprt_reachability_and_zero_alloc_contract.rs` (4/4 tests passing).
+     - **CUÁNDO**: Permanente en cada evaluación de admisión de sonda y cierre de órdenes exploratorias.
+     - **DÓNDE**: `crates/risk-engine/src/sonda.rs`, `crates/risk-engine/src/lib.rs`, `crates/risk-engine/src/veto_registry.rs`.
+     - **QUIÉN**: Antigravity (Quant Sr. Lead) en Modo Profesor y Consejo de 10 Roles Senior.
+
+2. **Verificación Contractual y Pruebas de Certificación**:
+   - `cargo test -p risk-engine --test f1_090_sonda_sprt_reachability_and_zero_alloc_contract -j 1` (4/4 pass, 100% verde en 0.07s).
+   - `cargo test -p risk-engine --test sonda_sprt_adaptation_contract -j 1` (5/5 pass, 100% verde en 0.19s).
+   - `cargo test -p risk-engine --test cf7_sonda_p0_alto -j 1` (2/2 pass, 100% verde en 0.13s).
+   - `cargo test -p risk-engine --test cf4_sonda_unica -j 1` (7/7 pass, 100% verde en 0.15s).
+   - `cargo test -p risk-engine --test veto_logic_contracts -j 1` (10/10 pass, 100% verde en 0.23s).
+   - `cargo test -p risk-engine --test f1_088_liquidation_invariant_and_vol_brake_contract -j 1` (4/4 pass, 100% verde en 0.07s).
+   - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω192: Cierre de F1-088 (Techo Físico de Liquidación L*(SL+f+mmr)<1 en Rescates de Nocional Mínimo / Invariante Fail-Closed REJ_TARGET_GEOMETRY) (2026-10-21)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

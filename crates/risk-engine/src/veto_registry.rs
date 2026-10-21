@@ -137,14 +137,14 @@ pub const REGISTRO_VETOS: &[EntradaVeto] = &[
     EntradaVeto {
         id: "V-RISK-007",
         nombre: "sonda_ocupada",
-        causa: "D4 (ADR-0016, LC-F4-19, Ola Ω107): una moneda en fase de sonda sólo abre SONDAS, y la cartera tiene una sola sonda abierta a la vez. Egresa de la sonda al alcanzar resolve_max_cierres_sonda o prematuramente si el test secuencial SPRT de Wald demuestra ventaja estadística (H1: p >= p1) con significancia alpha=0.05. Una sonda es información, no alfa: abrir varias multiplica un riesgo sin medir.",
-        fuente_umbral: "dinámica / SPRT de Wald (ADR-0016 D4, Ola Ω107): resolve_max_cierres_sonda (default 5, configurable en registry por moneda o global) y egreso precoz por prueba secuencial SPRT de razón de verosimilitudes",
+        causa: "D4 (ADR-0016, LC-F4-19, Ola Ω107, Ola Ω193 F1-090): una moneda en fase de sonda sólo abre SONDAS, y la cartera tiene una sola sonda abierta a la vez. Egresa de la sonda al alcanzar resolve_max_cierres_sonda o prematuramente si el test secuencial SPRT de Wald demuestra ventaja estadística (H1: p >= p1, default p1=0.85 vs p0=0.50) con significancia alpha=0.10 y potencia 1-beta=0.80 calibradas al horizonte de 5 cierres. Una sonda es información, no alfa: abrir varias multiplica un riesgo sin medir.",
+        fuente_umbral: "dinámica / SPRT de Wald (ADR-0016 D4, Ola Ω107, Ola Ω193): resolve_max_cierres_sonda (default 5, configurable en registry por moneda o global con get_for_coin_or zero-alloc) y egreso precoz por prueba secuencial SPRT de razón de verosimilitudes con parámetros calibrados y alcanzables",
         datos: "metrics.trade_count y win_rate de cada moneda + positions.is_any_open() de cada moneda (sonda::hay_sonda_abierta)",
-        responsable: "CL-98 (Claude, Línea C), 2026-10-12; Antigravity Ola Ω107, 2026-10-14",
+        responsable: "CL-98 (Claude, Línea C), 2026-10-12; Antigravity Ola Ω107 / Ola Ω193, 2026-10-21",
         clase: ClaseVeto::RiesgoDuro,
         estado: EstadoVeto::Activo,
         test: Some("cl98_una_sola_sonda_abierta_en_la_cartera"),
-        deuda: Some("CL-108 guarda el recuento de cierres y la evidencia por moneda entre reinicios (estado_aprendido.json). Ola Ω107 resuelve la rigidez del 5 fijo introduciendo parada secuencial por SPRT de Wald y parametrización omnisciente en registry"),
+        deuda: Some("CL-108 guarda el recuento de cierres y la evidencia por moneda entre reinicios (estado_aprendido.json). Ola Ω193 erradica la inalcanzabilidad del SPRT, invierte la regularización Bayesiana en k y elimina allocs en resolve_max_cierres_sonda"),
     },
     EntradaVeto {
         id: "V-LOGIC-001",

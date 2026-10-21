@@ -9,6 +9,26 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
 [Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
 
 
+## 2026-10-21 (mañana, 2) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω193 (Cierre F1-090)
+
+- **Mandato**: Egreso precoz por SPRT de Wald alcanzable en el horizonte de sonda ($n_{\max} = 5$), inversión analítica de la regularización Bayesiana de win rate para conteo de aciertos $k$ sin sesgo, fast-path $O(1)$ sin lecturas de registro para $n < 2$, resolución zero-alloc de `resolve_max_cierres_sonda` vía `get_for_coin_strict`, `admite_sonda_con_fase` erradicando doble evaluación de `en_fase_de_sonda` en la ruta caliente, y actualización de la ficha de veto `V-RISK-007` (`F1-090`):
+  1. **F1-090 (`crates/risk-engine/src/sonda.rs:108-175, 238-245`, `crates/risk-engine/src/lib.rs:36-40, 560-565`, `crates/risk-engine/src/veto_registry.rs:137-148`, `crates/risk-engine/tests/f1_090_sonda_sprt_reachability_and_zero_alloc_contract.rs`, `docs/audit/fable/f1_hallazgos.tsv`)**:
+     - *QUÉ*: Derivación analítica de los parámetros por defecto de la prueba secuencial de Wald en `sprt_evalua_salida_sonda` ($p_0=0.50, p_1=0.85, \alpha=0.10, \beta=0.20$), asegurando que la frontera $B = \ln((1-\beta)/\alpha) = \ln(8) \approx 2.0794$ sea alcanzable por 4 aciertos consecutivos ($4 \cdot \ln(1.70) \approx 2.1225 \ge 2.0794$); inversión de la contracción Bayesiana de `SuperGenotype::posterior_win_rate` ($k_{\text{prior}}=3.84, w_0=0.55$) para reconstruir $k = wr \cdot (n + 3.84) - 2.112$; fast-path $n < 2$ sin tocar el registro; reemplazo de `format!("c{}:sonda_max_cierres", coin_id)` por `arena.registry.get_for_coin_strict` con buffer en stack `[u8; 64]` zero-alloc; e introducción de `admite_sonda_con_fase(arena, es_sonda)` en `lib.rs` eliminando la re-evaluación redundante de `en_fase_de_sonda`.
+     - *POR QUÉ*: Anteriormente, los defaults vivos ($p_0=0.50, p_1=0.70, \alpha=0.05, \beta=0.10$) fijaban $B = 2.89$, requiriendo $\ge 9$ victorias sucesivas. Como `en_fase_de_sonda` egresa a los 5 cierres por conteo rígido, el egreso precoz por SPRT era matemáticamente imposible en producción. Además, $k$ se calculaba de un win rate ya posteriorizado hacia 0.55, subestimando aciertos (un 4/4 se calculaba como $k=3$); `resolve_max_cierres_sonda` asignaba `String` en heap en cada llamada; y `admite_sonda` corría `en_fase_de_sonda` dos veces por intención.
+     - *PARA QUÉ*: Habilitar el egreso anticipado de la sonda al 4to trade para monedas con edge real demostrado, acelerando la transición al dimensionado proporcional con evidencia (LH-04 / Kelly) para maximizar el compound growth (+100%/72h de $13\text{ USD}$), al tiempo que se reducen decenas de nanosegundos en la ruta crítica de evaluación de intenciones.
+     - *CÓMO*: Defaults $p_1=0.85, \alpha=0.10, \beta=0.20$ con cota presupuestaria; inversión Bayesiana `k_raw_bayes`; `get_for_coin_strict`; `admite_sonda_con_fase`; y suite formal contractual `f1_090_sonda_sprt_reachability_and_zero_alloc_contract.rs` (4/4 tests passing).
+     - *CUÁNDO*: Permanente en cada evaluación de admisión de sonda y cierre de órdenes exploratorias.
+     - *DÓNDE*: `crates/risk-engine/src/sonda.rs`, `crates/risk-engine/src/lib.rs`, `crates/risk-engine/src/veto_registry.rs`.
+     - *QUIÉN*: Antigravity (Quant Sr. Lead), Risk Manager, Quant Developer y QA Engineer.
+- **Verificación Contractual y Compilación Workspace**:
+  - `cargo test -p risk-engine --test f1_090_sonda_sprt_reachability_and_zero_alloc_contract -j 1` (4/4 pass, 100% verde en 0.07s).
+  - `cargo test -p risk-engine --test sonda_sprt_adaptation_contract -j 1` (5/5 pass, 100% verde en 0.19s).
+  - `cargo test -p risk-engine --test cf7_sonda_p0_alto -j 1` (2/2 pass, 100% verde en 0.13s).
+  - `cargo test -p risk-engine --test cf4_sonda_unica -j 1` (7/7 pass, 100% verde en 0.15s).
+  - `cargo test -p risk-engine --test veto_logic_contracts -j 1` (10/10 pass, 100% verde en 0.23s).
+  - `cargo test -p risk-engine --test f1_088_liquidation_invariant_and_vol_brake_contract -j 1` (4/4 pass, 100% verde en 0.07s).
+  - `cargo test -p quantum-arena --test rb_p1_trinquete_panicos_contract -j 1` (5/5 pass, 0 incrementos de pánicos).
+
 ## 2026-10-21 (mañana) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω192 (Cierre F1-088)
 
 - **Mandato**: Techo físico de liquidación $L \cdot (SL + f + \text{mmr}) < 1.0$ en apalancamiento inicial y rescates de nocional mínimo (`candidate_leverage` y `needed_leverage`) en `crates/risk-engine/src/lib.rs` (`F1-088`), erradicando la desconexión entre el freno de volatilidad y la barrera de liquidación forzosa en micro-cuentas ($13\text{ USD}$), con invariante terminal fail-closed `REJ_TARGET_GEOMETRY`:

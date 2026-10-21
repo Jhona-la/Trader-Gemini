@@ -33,7 +33,10 @@ pub use evidence::{
     DEFAULT_BAYES_PRIOR_MASS, DEFAULT_BAYES_PRIOR_WIN_RATE,
 };
 pub use kelly_envelope::{EdgePosterior, RiskEnvelope, SURVIVAL_FLOOR, TRADE_HORIZON};
-pub use sonda::{en_fase_de_sonda, resolve_max_cierres_sonda, sprt_bernoulli, SprtDecision, CIERRES_DE_SONDA};
+pub use sonda::{
+    admite_sonda, admite_sonda_con_fase, en_fase_de_sonda, resolve_max_cierres_sonda,
+    sprt_bernoulli, SprtDecision, CIERRES_DE_SONDA,
+};
 pub use tp_sl::{
     compute_tp_sl, compute_tp_sl_with_target_rr, latency_slippage_pct, latency_slippage_pct_hurst,
     roundtrip_friction, roundtrip_friction_hurst, try_compute_tp_sl, TpSl, TpSlInputs,
@@ -556,7 +559,7 @@ impl RiskEngine {
             return rej(REJ_ESTRATEGIA_FALSADA);
         }
         let es_sonda = crate::sonda::en_fase_de_sonda(arena, coin_id);
-        if !crate::sonda::admite_sonda(arena, coin_id) {
+        if !crate::sonda::admite_sonda_con_fase(arena, es_sonda) {
             return rej(REJ_SONDA_OCUPADA);
         }
         // D-750 — EL NOCIONAL MÍNIMO ES EL DEL SÍMBOLO, NO UN LITERAL DE
