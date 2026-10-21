@@ -95,6 +95,54 @@ impl<'a> PortfolioOrchestrator<'a> {
         }
     }
 
+    /// F1-083: Límite de exposición continuo C1 sobre el régimen adverso (D-641 / P2).
+    ///
+    /// Para p_sys in [0.0, 0.80]:
+    ///   E(P) = cushion - 0.25 * max(p_coin, p_sys) (contracción lineal canónica,
+    ///   preserva exactamente las cotas contractuales auditadas: coin_flux=1.0 -> C-0.25,
+    ///   p_sys=0.40 -> C-0.10, p_sys=0.60 -> C-0.15, p_sys=0.80 -> C-0.20).
+    ///
+    /// Para p_sys in (0.80, 0.90):
+    ///   Hermite cúbico C1 suave en p_sys: conecta el valor y_0 = cushion - 0.25 * max(p_coin, 0.80)
+    ///   con derivada dE/d(p_sys) = -0.25 hasta aterrizar suavemente en (0.90, 0.0) con derivada 0.0.
+    ///   Erradica por completo el acantilado discontinuo de ~76% de capital (F1-083) y
+    ///   previene órdenes suicidas de ~$9.85 USD sobre cuentas micro de $13 USD a p=0.899.
+    ///
+    /// Para p_sys >= 0.90:
+    ///   E(P) = 0.0 (extinción natural y suave del margen direccional ante riesgo macro extremo).
+    #[inline(always)]
+    pub fn continuous_exposure_limit(cushion: f64, p_coin: f64, p_sys: f64) -> f64 {
+        if !cushion.is_finite() || cushion <= 0.0 {
+            return 0.0;
+        }
+        let coin = if p_coin.is_finite() {
+            p_coin.clamp(0.0, 1.0)
+        } else {
+            return 0.0;
+        };
+        let sys = if p_sys.is_finite() {
+            p_sys.max(0.0)
+        } else {
+            return 0.0;
+        };
+
+        if sys <= 0.80 {
+            let adverse = coin.max(sys);
+            (cushion - 0.25 * adverse).max(0.0)
+        } else if sys < 0.90 {
+            let u = (sys - 0.80) / 0.10;
+            let y0 = (cushion - 0.25 * coin.max(0.80)).max(0.0);
+            let s0 = -0.025; // dE/du = (dE/dp_sys) * 0.10 = -0.25 * 0.10
+            let u2 = u * u;
+            let u3 = u2 * u;
+            let h00 = 2.0 * u3 - 3.0 * u2 + 1.0;
+            let h10 = u3 - 2.0 * u2 + u;
+            (h00 * y0 + h10 * s0).max(0.0)
+        } else {
+            0.0
+        }
+    }
+
     /// Calcula el margen máximo admisible que la cartera puede alojar para una nueva posición,
     /// respetando tanto el límite de exposición bruta como el direccional y las presiones sistémicas.
     #[inline]
@@ -126,20 +174,17 @@ impl<'a> PortfolioOrchestrator<'a> {
         }
         let directional_adverse = if intent_is_long { p_crash } else { p_bull };
         let systemic_pressure = directional_adverse.max(0.50 * p_chaos.clamp(0.0, 1.0));
-        let directional_pressure = 0.25
-            * directional_max
-                .clamp(0.0, 1.0)
-                .max(systemic_pressure.clamp(0.0, 1.0));
 
         let escasez = crate::capital_regime::micro_weight(
             capital,
             crate::capital_regime::effective_min_notional(min_notional_simbolo),
         );
-        let exposure_limit = (crate::capital_regime::margin_cushion(
+        let cushion = crate::capital_regime::margin_cushion(
             self.arena.config.margin_cushion_pct.load(Ordering::Relaxed),
             escasez,
-        ) - directional_pressure)
-            .max(0.05);
+        );
+        // F1-083: manifold continuo C1 sin acantilado ni piso muerto .max(0.05)
+        let exposure_limit = Self::continuous_exposure_limit(cushion, directional_max, systemic_pressure);
 
         let max_capital = capital * exposure_limit;
 

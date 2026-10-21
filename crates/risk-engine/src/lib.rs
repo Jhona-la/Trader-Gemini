@@ -1685,6 +1685,9 @@ impl RiskEngine {
         let orchestrator = orchestrator::PortfolioOrchestrator::new(arena);
         let portfolio_headroom = orchestrator
             .available_margin_headroom(bounded_exposure > 0.0, dynamic_min_notional);
+        if !portfolio_headroom.is_finite() || portfolio_headroom <= 0.0 {
+            return rej(REJ_ORCHESTRATOR);
+        }
         let single_asset_cap = crate::capital_regime::resolve_margin_cap_limits(
             arena,
             coin_id,
