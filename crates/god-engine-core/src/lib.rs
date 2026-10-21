@@ -3251,13 +3251,10 @@ impl GodEngineCore {
                             .set_for_coin(coin_id, "sombra_coax_v_max", v_coax);
                     }
 
-                    // #649 (Ola 49) — RATIO λ/μ̂ REAL y FRESCO de esta
-                    // moneda: la única cantidad Hawkes que los tres motores
-                    // con excitación consumen (semántica de la moneda de la
-                    // casa: exceso sobre SS). Los knobs del registro
-                    // (`hawkes_excitation_base` 2.5, `flow_impulse_alpha`
-                    // 2.0, `flow_confluence_threshold` 2.5) eran literales
-                    // sin escritor — el proceso medido los reemplaza.
+                    // #649 (Ola 49) / F1-016 (Ola Ω198) — RATIO λ/μ̂ REAL, FRESCO y PREDECIBLE:
+                    // La intensidad se evalúa como proceso predecible λ(t−)/μ̂, garantizando
+                    // paridad matemática exacta con la lectura posterior en process_tick_dual
+                    // y erradicando el sesgo de muestreo post-jump en activos de baja liquidez.
                     let ratio_hawkes_fresco = match self.hawkes_by_coin.get(coin_id) {
                         Some(hk) => hk.intensity_ratio(event_time_ms as f64 / 1000.0),
                         None => 1.0,
@@ -5858,10 +5855,9 @@ impl GodEngineCore {
             let tsallis_raw = (1.0 - (p_bid.powf(1.5) + p_ask.powf(1.5))) / 0.5;
             let tsallis_ent = (tsallis_raw / TSALLIS_Q15_BINARY_MAX).clamp(0.0, 1.0);
 
-            // CERT-M2-C02 — λ/μ verdadero del proceso excitado por TRADES
-            // (la excitación ocurre en process_event::is_trade, que llama a
-            // este dual en el MISMO evento — la lectura es fresca; los
-            // callers directos de dual sin trades previos leen ratio 1.0).
+            // CERT-M2-C02 / F1-016 (Ola Ω198) — λ/μ verdadero y PREDECIBLE del proceso excitado por TRADES
+            // (evaluado con intensidad predecible λ(t−)/μ̂, en exacta paridad matemática con ratio_hawkes_fresco
+            // del consenso espectral, eliminando el artefacto +α/μ̂ post-salto).
             let hawkes_ev_s = event_time_ms as f64 / 1000.0;
             let (hawkes_ratio_real, hawkes_eta_real) = match self.hawkes_by_coin.get(coin_id) {
                 Some(hk) => (hk.intensity_ratio(hawkes_ev_s), hk.branching_ratio()),

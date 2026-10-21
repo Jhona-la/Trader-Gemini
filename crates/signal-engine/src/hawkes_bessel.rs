@@ -157,6 +157,9 @@ pub struct HawkesBesselEngine {
     /// F-A6 — excitación acumulada S(t_last) = Σ α·e^{−β(t_last − tᵢ)},
     /// incluido el evento en t_last (que aporta α entero).
     excitacion: f64,
+    /// F1-016 (Ola Ω198) — excitación predecible S(t_last−) = decaida previa
+    /// antes de sumar α del evento actual.
+    pre_jump_excitacion: f64,
 }
 
 impl Default for HawkesBesselEngine {
@@ -175,6 +178,7 @@ impl std::fmt::Debug for HawkesBesselEngine {
             .field("n_seen", &self.n_seen)
             .field("last_ts", &self.last_ts)
             .field("excitacion", &self.excitacion)
+            .field("pre_jump_excitacion", &self.pre_jump_excitacion)
             .finish()
     }
 }
@@ -236,6 +240,7 @@ impl HawkesBesselEngine {
             last_ts: 0.0,
             n_seen: 0,
             excitacion: 0.0,
+            pre_jump_excitacion: 0.0,
         }
     }
 
@@ -275,6 +280,13 @@ impl HawkesBesselEngine {
         self.excitacion
     }
 
+    /// F1-016 (Ola Ω198) — Excitación predecible S(t_last−): la excitación previa decaída
+    /// hasta el instante del salto t_last, inmediatamente antes de sumar +α.
+    #[inline]
+    pub fn pre_jump_excitacion(&self) -> f64 {
+        self.pre_jump_excitacion
+    }
+
     /// Último timestamp registrado (segundos); `None` sin eventos.
     #[inline]
     pub fn ultimo_evento_s(&self) -> Option<f64> {
@@ -306,11 +318,13 @@ impl HawkesBesselEngine {
         // F-A6: la excitación previa decae hasta `ts` y el evento nuevo
         // aporta α entero (dt = 0 ⇒ e^0 = 1), exactamente como la suma.
         let decaida = if self.n_seen >= 1 {
-            let dt = ts - self.last_ts; // ≥ 0 por la guardia de arriba
+            let dt = (ts - self.last_ts).max(0.0); // ≥ 0 por la guardia de arriba
             self.excitacion * (-self.beta * dt).exp()
         } else {
             0.0
         };
+        // F1-016: almacenar la excitación predecible S(ts−) antes del salto +α
+        self.pre_jump_excitacion = if decaida.is_finite() { decaida } else { 0.0 };
         let nueva = decaida + self.alpha;
         // Fail-closed numérico: un estado no finito no se propaga; se
         // reinicia a la contribución del evento presente.
@@ -341,6 +355,30 @@ impl HawkesBesselEngine {
         }
     }
 
+    /// F1-016 (Ola Ω198) — Intensidad PREDECIBLE λ(t−):
+    /// En el instante del evento (t == t_last), evalúa el límite por la izquierda
+    /// excluyendo el +α del salto actual. Entre eventos (t > t_last), evalúa el
+    /// decaimiento continuo desde S(t_last).
+    #[inline]
+    pub fn intensity_predictable(&self, t: f64) -> f64 {
+        if self.n_seen == 0 || !t.is_finite() {
+            return self.mu;
+        }
+        let lambda = if (t - self.last_ts).abs() <= 1e-12 {
+            self.mu + self.pre_jump_excitacion
+        } else if t > self.last_ts {
+            let dt = t - self.last_ts;
+            self.mu + self.excitacion * (-self.beta * dt).exp()
+        } else {
+            self.mu + self.pre_jump_excitacion
+        };
+        if lambda.is_finite() {
+            lambda
+        } else {
+            self.mu
+        }
+    }
+
     /// Ratio de ramificación n = α/β. n < 1 = estacionario.
     #[inline]
     pub fn branching_ratio(&self) -> f64 {
@@ -357,18 +395,39 @@ impl HawkesBesselEngine {
         self.branching_ratio() < 1.0
     }
 
-    /// Intensidad NORMALIZADA contra μ̂: λ/μ > STEADY_STATE_RATIO = cascada
-    /// activa sobre el ritmo normal DEL SÍMBOLO. Un valor de 3.0 significa
-    /// "3× el ritmo base observado". Con μ̂ empírico (#535) la cantidad es
-    /// escala-libre: 1.6 ≈ régimen normal tanto a 30 tps como a 0.3 tps.
+    /// F1-016 (Ola Ω198) — Ratio predecible λ(t−)/μ̂ sin el sesgo de muestreo +α/μ̂
+    /// del evento presente.
     #[inline]
-    pub fn intensity_ratio(&self, t: f64) -> f64 {
+    pub fn intensity_ratio_predictable(&self, t: f64) -> f64 {
+        let lambda = self.intensity_predictable(t);
+        if self.mu > 1e-9 {
+            (lambda / self.mu).max(0.0)
+        } else {
+            1.0
+        }
+    }
+
+    /// Intensidad post-jump normalizada contra μ̂: λ(t+)/μ̂ (incluye +α del evento actual).
+    #[inline]
+    pub fn intensity_ratio_post_jump(&self, t: f64) -> f64 {
         let lambda = self.intensity(t);
         if self.mu > 1e-9 {
             (lambda / self.mu).max(0.0)
         } else {
             1.0
         }
+    }
+
+    /// Intensidad NORMALIZADA contra μ̂: λ/μ > STEADY_STATE_RATIO = cascada
+    /// activa sobre el ritmo normal DEL SÍMBOLO.
+    ///
+    /// F1-016 (Ola Ω198): Evalúa la intensidad PREDECIBLE λ(t−)/μ̂ en instantes
+    /// de evento (t == t_last), eliminando el artefacto de muestreo +α/μ̂ que sesgaba
+    /// la excitación en símbolos poco líquidos (altcoins) y garantizando paridad
+    /// matemática exacta entre el consenso espectral y los motores escalares.
+    #[inline]
+    pub fn intensity_ratio(&self, t: f64) -> f64 {
+        self.intensity_ratio_predictable(t)
     }
 
     /// API legacy: computar intensidad para un dt dado (sin historia).

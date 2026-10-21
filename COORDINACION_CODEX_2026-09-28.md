@@ -16236,3 +16236,28 @@ hoy NO se regenera; el de mañana ya sale con economía.
 - SystemBootloader (6 fases, F6 «Ignite!» stub): MUERTO sin callers; la
   ignición real es el main de god_engine (balance→fees→genoma→posiciones→UDS).
   Unificación pendiente de consejo.
+
+
+---
+
+### ENTRADA 145 — AGY (2026-10-21 ~20:50 America/Bogota) — Ola Ω198: Cierre de F1-016 (Paridad de Muestreo Predecible Hawkes λ(t−)/μ̂ y Erradicación de Falsa Cascada en Altcoins Calmas)
+
+**Roles:** Arquitecto Senior, Quant Developer, Risk Manager, Físico Matemático / Espectral, QA Engineer, Modo Profesor.
+
+#### 1. EXPLICACIÓN COMPLETA (MÉTODO PROFESOR: QUÉ-POR QUÉ-PARA QUÉ-CÓMO-CUÁNDO-DÓNDE-QUIÉN)
+- **QUÉ:** Erradicación del sesgo de muestreo post-jump en el instante del trade (donde $dt=0$ inyectaba un artefacto $+ \alpha / \hat{\mu}$) y restauración de la intensidad predecible $\lambda(t-)$ en la evaluación de excitación del proceso de Hawkes-Bessel (`HawkesBesselEngine`).
+- **POR QUÉ:** En la teoría de procesos puntuales de Hawkes (Papangelou, 1972; Bauwens & Hautsch, 2009), la intensidad condicional $\lambda(t)$ es un proceso $\mathcal{F}_{t-}$-predecible. Cuando se evaluaba `intensity(t)` inmediatamente después de `record_event(t)` en el mismo timestamp (como en `process_tick_dual`), la expectativa en instantes de trades $\mathbb{E}[\lambda(T_k+) / \hat{\mu}]$ divergía a $\text{STEADY\_STATE\_RATIO} + \alpha / \hat{\mu}$. Para BTC ($\hat{\mu} \approx 20\text{ tps}$, $\alpha = 0.3$), $\alpha / \hat{\mu} = 0.015$ (ratio 1.615). Para una altcoin calma ($\hat{\mu} \approx 0.2\text{ tps}$), $\alpha / \hat{\mu} = 1.50$, disparando el ratio a $3.10$ en CADA TRADE AISLADO (falsa cascada permanente). Además, en el mismo tick, el consenso espectral evaluaba $\lambda(t-)$ antes de `record_event` mientras los motores escalares leían $\lambda(t+)$ del registro, rompiendo la paridad espectral/escalar.
+- **PARA QUÉ:** Garantizar invarianza de escala universal en el espectro continuo (desde altcoins ilíquidas hasta BTC masivo) sin falsas cascadas en activos finos, preservando el edge matemático necesario para el crecimiento compuesto exponencial del 100% cada 3 días.
+- **CÓMO:**
+  1. `HawkesBesselEngine` almacena `pre_jump_excitacion = S(t-)` durante `record_event(t)` antes de sumar $+\alpha$.
+  2. Implementadas `intensity_predictable(t)` e `intensity_ratio_predictable(t)` que evalúan $\lambda(t-) / \hat{\mu}$ en instantes de evento ($t == t_{\text{last}}$).
+  3. `intensity_ratio(t)` delega a `intensity_ratio_predictable(t)`, garantizando que la lectura previa en el consenso espectral (`ratio_hawkes_fresco` en `lib.rs:3258`) y la lectura posterior en los motores escalares y registro (`hawkes_ratio_real` en `lib.rs:5866`) arrojen el MISMO valor predecible.
+  4. Des-ignorado y verificado en verde `cf2_hawkes_poisson_1hz_lectura_en_evento_excitacion_nula` en `cf2_hawkes_solucion_conocida.rs`.
+  5. Creado contrato de certificación formal `crates/signal-engine/tests/f1_016_hawkes_predictable_sampling_parity_contract.rs`.
+- **CUÁNDO:** En cada trade procesado por el núcleo tanto en backtest, replay y producción.
+- **DÓNDE:** `crates/signal-engine/src/hawkes_bessel.rs`, `crates/god-engine-core/src/lib.rs`, `crates/signal-engine/tests/cf2_hawkes_solucion_conocida.rs`, y `crates/signal-engine/tests/f1_016_hawkes_predictable_sampling_parity_contract.rs`.
+- **QUIÉN:** AGY (Quant Sr., Físico Matemático / Espectral, Arquitecto Senior).
+
+#### 2. ESTADO DE CI CLOUD Y RECIBOS
+- **Unit and contract suites (`39669183928`):** 100% GREEN (6/6 suites verdes: meta-analítica 8s, auditoría 4m46s, entrenador 15m2s, riesgo 4m19s, espectro-y-consejo 6m55s, nucleo 12m30s).
+- **F1-016 CERRADO:** Documentado en `docs/audit/fable/f1_hallazgos.tsv` (línea 17).

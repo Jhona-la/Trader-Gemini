@@ -9359,3 +9359,26 @@ BASE conserva el inventario canónico histórico de 1863 rutas. El recenso actua
     - `fable_lh04_stop_real_contract.rs` (3/3 pass).
     - `rb_p1_trinquete_panicos_contract.rs` (5/5 pass, 0 pánicos agregados).
     - `cargo check --workspace --all-targets -j 1` 100% verde en los 23 crates con 0 errores y 0 warnings.
+
+
+---
+
+## AGY — Ola Ω198: Cierre F1-016 (Paridad Exacta de Muestreo Predecible Hawkes λ(t−)/μ̂ y Erradicación de Falsa Cascada en Altcoins Calmas) — 2026-10-21
+- **Hallazgo F1-016 cerrado (HIGH)**:
+  - `crates/signal-engine/src/hawkes_bessel.rs` (`HawkesBesselEngine`), `crates/god-engine-core/src/lib.rs` (`process_event`, `process_tick_dual`), `crates/signal-engine/tests/cf2_hawkes_solucion_conocida.rs`:
+    - *Diagnóstico y causa raíz*:
+      1. En la teoría clásica de procesos puntuales autoxcitados de Hawkes, la intensidad condicional $\lambda(t)$ es un proceso $\mathcal{F}_{t-}$-predecible (Papangelou, 1972). Al muestrear en instantes de trades $T_k$, el límite por la derecha $\lambda(T_k+) = \lambda(T_k-) + \alpha$ contiene el salto entero del propio evento presente.
+      2. Cuando $\lambda(T_k+) / \hat{\mu}$ se consumía por los motores escalares en `process_tick_dual` (tras `record_event`), la expectativa en instantes de eventos arrojaba $\mathbb{E}[\lambda(T_k+) / \hat{\mu}] = \text{STEADY\_STATE\_RATIO} + \alpha / \hat{\mu}$.
+      3. En activos líquidos como BTC ($\hat{\mu} \approx 20\text{ tps}$, $\alpha = 0.3$), $\alpha / \hat{\mu} = 0.015$ (ratio 1.615). Pero en altcoins calmas de baja liquidez ($\hat{\mu} \approx 0.2\text{ tps}$), $\alpha / \hat{\mu} = 1.50$, disparando el ratio normalizado a $3.10$ en CADA TRADE AISLADO, emitiendo falsas cascadas de excitación constantes e invirtiendo la puerta de liquidez.
+      4. Además, en el mismo tick, el consenso espectral (`ratio_hawkes_fresco` en `lib.rs:3258`) evaluaba $\lambda(t-)$ antes de `record_event`, mientras los motores escalares y el registro leían $\lambda(t+)$ después de `record_event`, rompiendo la paridad matemática en el mismo evento.
+    - *Solución F1-016 implementada*:
+      1. `HawkesBesselEngine` almacena `pre_jump_excitacion = S(t-)` en `record_event(t)` antes de absorber $+\alpha$.
+      2. Implementadas `intensity_predictable(t)` e `intensity_ratio_predictable(t)` que evalúan la intensidad predecible $\lambda(t-) / \hat{\mu}$ en instantes de salto ($t == t_{\text{last}}$).
+      3. `intensity_ratio(t)` evalúa la intensidad predecible $\lambda(t-) / \hat{\mu}$, garantizando que la excitación calculada antes de `record_event` y después de `record_event` sea idéntica bit a bit en su componente de salto ($S(t-)$ error $< 10^{-12}$).
+      4. Se des-ignoró y verificó en verde el test histórico `cf2_hawkes_poisson_1hz_lectura_en_evento_excitacion_nula` en `cf2_hawkes_solucion_conocida.rs`.
+  - Suite de contratos formales `crates/signal-engine/tests/f1_016_hawkes_predictable_sampling_parity_contract.rs` (5/5 tests PASSED):
+    1. `test_f1_016_hawkes_intensity_predictable_jump_difference`: demuestra analíticamente que $\lambda(T_k+) - \lambda(T_k-) = \alpha$ con error $< 10^{-12}$, y que entre eventos $\lambda_{\text{pred}}(t) == \lambda(t)$.
+    2. `test_f1_016_hawkes_spectral_scalar_parity_at_event`: certifica paridad exacta bit a bit ($< 10^{-12}$) entre el consenso espectral y los motores escalares en el componente de excitación predecible $S(t-)$.
+    3. `test_f1_016_hawkes_scale_free_asset_invariance_calm_vs_liquid`: certifica invarianza de escala universal entre altcoin calma (0.2 tps) y BTC masivo (20.0 tps), anclando ambos a $\text{STEADY\_STATE\_RATIO} = 1.60 \pm 0.08$ con excitación nula ($|e| < 0.055$) bajo Poisson.
+    4. `test_f1_016_hawkes_genuine_burst_responsiveness`: certifica que ante ráfagas reales (5x-10x ritmo normal), el ratio predecible escala contundentemente a $> 2.0$ y $e > 0.2$.
+    5. `test_f1_016_hawkes_numerical_finite_guards`: certifica inmunidad a NaN/Inf y ejecución $O(1)$ estricta sin allocations.
