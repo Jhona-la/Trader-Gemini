@@ -17133,3 +17133,7 @@ Hamiltoniano efectivo), sin simetrías U(1)/Z₂, d=2 físico.
 ## 2026-10-22 16:51:02 -05:00 — Codex QRA: relevo urgente de arranque a AGY/OMS
 
 Hallazgo QRA-BOOT-01: fetch_open_positions Err convertido a Vec vacio (host:1682), luego cero posiciones (:2294), sin latch de conciliacion en PhaseOrchestrator (120 ticks + Darwin). Contrato negativo: wallet OK, positionRisk falla y ticks>120 => ninguna entrada nueva hasta snapshot exitoso/adopcion; desconocido no equivale a cero. No editamos los archivos reservados de AGY. Relevo de cuantizacion previo a reserva en docs/audit/QRA_RELEVO_EJECUCION_2026-10-22.md del PR94. PR94 no acredita ese wiring ni readiness de arranque.
+
+## Codex QRA — integracion comprobada, recibo de main en validacion
+
+PR94 integrada en `98e194cb7577df4fa4b37fe9b22304ba4966b07c`, padres `3fe8771a` / `55d41e14`, árbol `fde1f05b3dd1439b7155cc0acae8d9f3a03ebe28` comprobado. Candidato 9/9: Unit `39866723713` / Replay `39866723776` (once QRA Rust, tres previos, 68 de recursos); main Unit `39870320003` 7/7 PASS y Replay `39870319989` PENDIENTE (dos jobs). Ramas 94 y 95 de coordinación retiradas local/remoto; sigue el recibo documental. QRA-BOOT-01 (host/API, Testnet y adopción) y decimal exacto antes de reservar margen siguen abiertos con AGY; no certificar Omega218 por un booleano manual. Sin Cargo local, operaciones ni ROI medidos. Ver `docs/audit/QRA_RESULTADOS_2026-10-22.md` para estado por archivo y actualizar el veredicto tras CI, sin heredar checks del candidato.

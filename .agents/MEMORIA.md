@@ -1,5 +1,48 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 — Codex QRA: cuantización y recursos integrados; recibo main en validación
+
+- **Integración**: [PR94](https://github.com/Jhona-la/Trader-Gemini/pull/94),
+  main `98e194cb7577df4fa4b37fe9b22304ba4966b07c`, padres `3fe8771a` / `55d41e14`,
+  árbol `fde1f05b3dd1439b7155cc0acae8d9f3a03ebe28` comprobado.
+  Candidato **9/9**: Unit `39866723713` y Replay `39866723776`. Main:
+  Unit `39870320003` **7/7 PASS**; Replay `39870319989` **PENDIENTE**
+  (dos jobs). No adelantar el veredicto agregado.
+- **QRA-01**: fixed_filter elimina tolerancia que elevaba cantidad, pérdida
+  de fracciones de pasos >= 1 y clamp que ocultaba rango inválido. Proyección
+  IEEE754 exacta a unidades u128, dominio acotado y configuración inválida
+  rechazada. Rust remoto: once contratos QRA y tres previos aprobados,
+  incluido el ensayo de 10.000 órdenes sintéticas.
+  **Sigue sin consumidor vivo**. API f64 conservadora: 0.3 puede bajar a 0.2
+  con paso 0.1; nocional sigue f64. No acredita rechazos reales reducidos,
+  latencia E2E ni punto fijo integral. Relevo: decimal exacto de exchangeInfo,
+  orden preparada antes de reservar margen y mismos bytes hasta socket.
+- **QRA-02**: disco/higiene/barrido fallan cerrado ante medición, enumeración,
+  Git y rm; preservan logs versionados y eliminan las rutas de borrado de
+  target que carecían de cerrojo.
+  CLEAN_INCREMENTAL=1 se rechaza; usar barrido protegido. **68 contratos**
+  de scripts aprobados: 16 + 23 + 13 + 10 + 6. Fixture Linux hermético; semáforo de
+  producción intacto. Target/modelos/datos de builds ajenos preservados.
+- **QRA-03**: cinco suites pasan a job paralelo dentro de Replay, con mismo
+  comando, Windows/nightly/env, jobs=2, timeout=90 min y doctests. Equivalencia
+  comprobada estructuralmente. Exigir **nueve** checks; Replay aislado no
+  certifica ejecución. Candidato: execution 19m29s / Replay 29m22s; posible mayor
+  cómputo total, sin atribuir ahorro causal ni latencia de órdenes.
+- **Recursos/política**: snapshot 67,96 GiB (target 38,26 / data 23,93); retirados
+  38 gzip no versionados >30 días, 14.900.376 bytes. Sin Cargo propio: no obtuvo turno
+  con RAM <4 GiB. Dev/test **debug=0, strip=symbols** sustituye pauta histórica
+  debug=1 por mandato explícito actual; trazas pierden símbolos/líneas. Un
+  target canónico compartido y semáforo, sin RUSTFLAGS paralelos.
+- **Continuidad**: plan `docs/audit/QRA_2026-10-22.md`, inventario 2.155 rutas /
+  836 Rust por blob base (censo no es auditoría), ledger `QRA_REVISIONES_2026-10-22.tsv`
+  con once rutas verificadas en alcance, relevo de ejecución,
+  coordinación en main y recibo por archivo. QRA-BOOT-01 con AGY sigue
+  abierto: posiciones desconocidas, Testnet, adopción completa y generación
+  de ejecutor requieren prueba del host/API. El borrador Omega218 no se
+  incorpora ni certifica por este PR. Sin operaciones/promoción de fondos;
+  ROI/PnL/WR y meta +100 %/72 h no medidos. Ramas QRA de código/coordinación ya
+  retiradas; recibo/worktree pendientes de cierre tras los checks de main.
+
 ## 2026-10-22 (tarde, 3) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω217 (Átomo 2.6 Reconciliador OMS en Vivo + Acoplamiento Espectral Koopman/DMD en Kelly y Erradicación Fail-Closed de Cero-Dato)
 
 - **Mandato & Entregables**:

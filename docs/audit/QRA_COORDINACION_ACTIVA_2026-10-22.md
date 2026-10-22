@@ -54,3 +54,9 @@ requería corregir y probar:
 Rebuscar anclas: es revisión estática de un borrador cambiante, no un juicio
 sobre una versión futura ni una certificación de su corrección. PR94 no
 modifica esas rutas ni acredita operación Demo/Producción o beneficio OOS.
+
+Actualización RO 18:32: el fallback ya usa f64 y `executor::ActivePosition`;
+los errores de tipos anteriores no siguen abiertos. El signo de qty se
+normaliza en los consumidores observados y el deserializador rechaza NaN/Inf.
+Persisten Testnet, confirmación antes de openOrders/adopción y generación del
+ejecutor: requieren un contrato del host, no una bandera alternada a mano.
