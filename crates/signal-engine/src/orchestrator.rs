@@ -589,7 +589,22 @@ impl TensorVoteOrchestrator {
         } else {
             0.0
         };
-        let ensemble_boost = compute_ensemble_boost_effective(n_eff);
+        // OLA Ω209 / GLM 147: Calibración RMT (Marchenko-Pastur) de grados de libertad efectivos.
+        // Kish (1965) asume fuentes mutuamente incorrelacionadas. Cuando los votantes pertenecen al
+        // clúster central colineal (e.g. Renyi x StochRes rho=0.975), Kish sobreestima las apuestas
+        // efectivas hasta en un 3.2x (6 nominales -> 1.886 efectivas medidas en tape real).
+        // Se modula n_eff con la tasa de apuestas efectivas del registro rmt_effective_bets_ratio (default 1.0).
+        let rmt_ratio = self
+            .arena
+            .registry
+            .get_for_coin_or(coin_id, "rmt_effective_bets_ratio", 1.0)
+            .clamp(0.10, 1.0);
+        let n_eff_rmt = if n_eff > 1.0 {
+            (n_eff * rmt_ratio).max(1.0)
+        } else {
+            n_eff
+        };
+        let ensemble_boost = compute_ensemble_boost_effective(n_eff_rmt);
         let effective_conviction = if avg_conviction.is_finite() {
             (avg_conviction * ensemble_boost).clamp(0.0, 1.0)
         } else {

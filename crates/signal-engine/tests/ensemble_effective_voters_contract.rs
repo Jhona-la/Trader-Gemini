@@ -137,3 +137,44 @@ fn test_horizon_consensus_effective_voters() {
         decision.net_confidence
     );
 }
+
+#[test]
+fn test_rmt_calibrated_effective_bets_dampens_collinear_clones() {
+    let arena = GlobalArena::build_in_own_stack(13.0);
+    arena
+        .config
+        .min_confidence_btc
+        .store(0.50, std::sync::atomic::Ordering::Relaxed);
+
+    // GLM 147 measurement: central cluster of 6 collinear sources has only 1.886 effective bets
+    // ratio = 1.886 / 6.0 = 0.31433
+    arena.registry.set_for_coin(0, "rmt_effective_bets_ratio", 1.886 / 6.0);
+
+    let mut orch = TensorVoteOrchestrator::new(arena);
+
+    // 6 estrategias activas unánimes en 0.50
+    for i in 0..6 {
+        orch.add_strategy(Box::new(MockStrategy {
+            name: Box::leak(format!("Collinear_{i}").into_boxed_str()),
+            val: 0.50,
+        }));
+    }
+
+    let decision = orch.evaluate_continuous_consensus_for_coin(0, "BTCUSDT");
+
+    // Con Kish estándar sin RMT: n_eff = 6.0 -> boost = 1.40 -> effective_conviction = 0.50 * 1.40 = 0.70.
+    // Con RMT calibrado: n_eff_rmt = (6.0 * 0.31433).max(1.0) = 1.886.
+    // boost = 1.0 + (1.886 - 1.0) * 0.10 = 1.0886.
+    // effective_conviction = 0.50 * 1.0886 = 0.5443.
+    // net_confidence = 1.0 * 0.5443 = 0.5443.
+    assert!(
+        decision.net_confidence < 0.60,
+        "La confianza no fue atenuada por RMT: {}",
+        decision.net_confidence
+    );
+    assert!(
+        (decision.net_confidence - 0.5443).abs() < 1e-3,
+        "La confianza esperada RMT-calibrada es ~0.5443, pero fue {}",
+        decision.net_confidence
+    );
+}
