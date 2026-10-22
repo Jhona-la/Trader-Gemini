@@ -6,9 +6,8 @@
 //! - **POR QUÉ:** La aritmética IEEE-754 de coma flotante `f64` produce residuos espurios
 //!   (ej. `0.007000000000000001` o `62450.100000000006`) que causan el error `-1111`
 //!   (`Precision is over the maximum defined for this asset`) o rechazos de `LOT_SIZE`/`PRICE_FILTER`.
-//! - **PARA QUÉ:** Eliminar el 100% de los rechazos de órdenes en Binance Futures por discrepancia
-//!   de redondeo o nocional insuficiente, garantizando que cada orden aprobada por el riesgo sea
-//!   admitida por el motor de casamiento sin pagar latencia adicional (< 25 ns en stack).
+//! - **PARA QUÉ:** Validar localmente la red decimal y conservar el límite de cantidad aprobado.
+//!   Este módulo no acredita aceptación del exchange, latencia ni integración del ejecutor vivo.
 //! - **CÓMO:** Proyección euclidiana discreta sobre la red de ticks $\mathbb{Z} \cdot \Delta_{\text{tick}}$
 //!   y pasos de lote $\mathbb{Z} \cdot \Delta_{\text{step}}$, formateando los dígitos ASCII directamente
 //!   en buffers de memoria contigua en la pila con `itoa`.
@@ -19,8 +18,14 @@
 use std::fmt;
 use std::ops::Deref;
 
-/// Tolerancia relativa para considerar que un valor escalado ya es múltiplo exacto del paso.
-const SNAP_REL_TOL: f64 = 1e-9;
+// La API histórica recibe f64: los decimales originales ya pueden haberse perdido.
+// Se soportan hasta diez decimales y unidades enteras representables exactamente en f64.
+// No se interpreta una tolerancia relativa creciente como autorización para aumentar cantidad.
+// La dirección se aplica al valor binario exacto: por ejemplo raw=0.3 (f64) queda
+// debajo del decimal 0.3; con step=0.1, floor emite 0.2. Recuperar la intención
+// decimal original exige una futura API que reciba los decimales sin convertirlos a f64.
+const MAX_DECIMALS: u8 = 10;
+const MAX_EXACT_UNITS: u64 = (1_u64 << 53) - 1;
 
 /// Representación en stack de una cadena ASCII de longitud fija sin asignación en heap.
 #[derive(Clone, Copy)]
@@ -128,6 +133,8 @@ pub enum FilterRejectReason {
     NotionalBelowMin { current: f64, min: f64 },
     /// Parámetros del filtro inválidos o corruptos.
     InvalidFilterConfig,
+    /// El valor excede la precisión decimal/entera soportada por esta API f64.
+    Unrepresentable,
 }
 
 impl fmt::Display for FilterRejectReason {
@@ -151,6 +158,7 @@ impl fmt::Display for FilterRejectReason {
                 write!(f, "Notional {} below minNotional {}", current, min)
             }
             Self::InvalidFilterConfig => write!(f, "Invalid filter configuration"),
+            Self::Unrepresentable => write!(f, "Value outside supported decimal representation"),
         }
     }
 }
@@ -187,7 +195,8 @@ pub struct BinanceFixedFilter {
 }
 
 impl BinanceFixedFilter {
-    /// Construye las reglas del filtro deduciendo la precisión decimal exacta.
+    /// Constructor de compatibilidad para escenarios locales con límites de diez millones.
+    /// Los límites reales del exchange deben suministrarse mediante `with_limits`.
     pub fn new(tick_size: f64, step_size: f64, min_notional: f64) -> Self {
         Self::with_limits(
             tick_size,
@@ -210,19 +219,19 @@ impl BinanceFixedFilter {
         max_qty: f64,
         min_notional: f64,
     ) -> Self {
-        let price_decimals = count_decimals(tick_size);
-        let qty_decimals = count_decimals(step_size);
+        let price_decimals = count_decimals(tick_size).max(count_decimals(min_price));
+        let qty_decimals = count_decimals(step_size).max(count_decimals(min_qty));
         let inv_tick = exact_inverse(tick_size);
         let inv_step = exact_inverse(step_size);
 
         Self {
             tick_size,
             step_size,
-            min_price: if min_price > 0.0 { min_price } else { tick_size },
-            max_price: if max_price > 0.0 { max_price } else { 10_000_000.0 },
-            min_qty: if min_qty > 0.0 { min_qty } else { step_size },
-            max_qty: if max_qty > 0.0 { max_qty } else { 10_000_000.0 },
-            min_notional: if min_notional > 0.0 { min_notional } else { 5.0 },
+            min_price,
+            max_price,
+            min_qty,
+            max_qty,
+            min_notional,
             price_decimals,
             qty_decimals,
             inv_tick,
@@ -243,7 +252,8 @@ impl BinanceFixedFilter {
         )
     }
 
-    /// Valida que la configuración del filtro sea físicamente coherente.
+    /// Valida la configuración sin reparar silenciosamente datos del exchange.
+    /// Las reglas PRICE_FILTER deshabilitadas con cero no están soportadas por esta API.
     #[inline(always)]
     pub fn is_valid_config(&self) -> bool {
         self.tick_size.is_finite()
@@ -260,6 +270,12 @@ impl BinanceFixedFilter {
             && self.max_qty >= self.min_qty
             && self.min_notional.is_finite()
             && self.min_notional >= 0.0
+            && self.inv_tick.is_finite()
+            && self.inv_tick == exact_inverse(self.tick_size)
+            && self.inv_step.is_finite()
+            && self.inv_step == exact_inverse(self.step_size)
+            && grid_units(self.tick_size, self.min_price, self.price_decimals).is_some()
+            && grid_units(self.step_size, self.min_qty, self.qty_decimals).is_some()
     }
 
     /// Redondea el precio al tick exacto de Binance.
@@ -270,16 +286,16 @@ impl BinanceFixedFilter {
         if !raw_price.is_finite() || raw_price <= 0.0 || !self.is_valid_config() {
             return 0.0;
         }
-        let scaled = raw_price * self.inv_tick;
-        let r = scaled.round();
-        let ticks = if (scaled - r).abs() <= SNAP_REL_TOL * r.abs().max(1.0) {
-            r
-        } else if round_up {
-            scaled.ceil()
-        } else {
-            scaled.floor()
-        };
-        (ticks / self.inv_tick).clamp(self.min_price, self.max_price)
+        match project_decimal_grid(
+            raw_price,
+            self.tick_size,
+            self.min_price,
+            self.price_decimals,
+            round_up,
+        ) {
+            Some((value, _)) => value,
+            None => 0.0, // Centinela de la API histórica; validate_and_quantize devuelve la causa.
+        }
     }
 
     /// Redondea la cantidad al paso de lote (`stepSize`) exacto de Binance.
@@ -292,66 +308,30 @@ impl BinanceFixedFilter {
         if raw_qty < self.min_qty {
             return 0.0;
         }
-        let scaled = (raw_qty - self.min_qty) * self.inv_step;
-        let r = scaled.round();
-        let steps = if (scaled - r).abs() <= SNAP_REL_TOL * r.abs().max(1.0) {
-            r
-        } else {
-            scaled.floor()
-        };
-        (self.min_qty + steps / self.inv_step).clamp(self.min_qty, self.max_qty)
+        match project_decimal_grid(
+            raw_qty,
+            self.step_size,
+            self.min_qty,
+            self.qty_decimals,
+            false,
+        ) {
+            Some((value, _)) => value,
+            None => 0.0,
+        }
     }
 
     /// Formatea el precio a una cadena ASCII en stack con exactamente `price_decimals` dígitos.
     /// Garantiza cero asignaciones en heap y cero residuos binarios (`.000000000000004`).
     #[inline(always)]
     pub fn format_price(&self, price: f64) -> StackAsciiString {
-        if !price.is_finite() || price <= 0.0 {
-            return StackAsciiString::empty();
-        }
-        let mut out = [0u8; 32];
-        if self.price_decimals == 0 {
-            let units = price.round() as u64;
-            let mut itoa_buf = itoa::Buffer::new();
-            let s = itoa_buf.format(units);
-            let bytes = s.as_bytes();
-            let len = bytes.len().min(32);
-            out[..len].copy_from_slice(&bytes[..len]);
-            StackAsciiString { bytes: out, len }
-        } else {
-            let multiplier = 10_u64.pow(self.price_decimals as u32);
-            let total_units = (price * (multiplier as f64)).round() as u64;
-            let int_part = total_units / multiplier;
-            let frac_part = total_units % multiplier;
-            let len = format_fixed_ascii(int_part, frac_part, self.price_decimals, &mut out);
-            StackAsciiString { bytes: out, len }
-        }
+        format_decimal(price, self.price_decimals)
     }
 
     /// Formatea la cantidad a una cadena ASCII en stack con exactamente `qty_decimals` dígitos.
-    /// Si `step_size >= 1.0` (ej. DOGEUSDT con step=1), formatea como entero sin punto decimal.
+    /// Un paso entero se formatea sin punto; un paso fraccionario (también >= 1) conserva decimales.
     #[inline(always)]
     pub fn format_qty(&self, qty: f64) -> StackAsciiString {
-        if !qty.is_finite() || qty <= 0.0 {
-            return StackAsciiString::empty();
-        }
-        let mut out = [0u8; 32];
-        if self.qty_decimals == 0 {
-            let units = qty.round() as u64;
-            let mut itoa_buf = itoa::Buffer::new();
-            let s = itoa_buf.format(units);
-            let bytes = s.as_bytes();
-            let len = bytes.len().min(32);
-            out[..len].copy_from_slice(&bytes[..len]);
-            StackAsciiString { bytes: out, len }
-        } else {
-            let multiplier = 10_u64.pow(self.qty_decimals as u32);
-            let total_units = (qty * (multiplier as f64)).round() as u64;
-            let int_part = total_units / multiplier;
-            let frac_part = total_units % multiplier;
-            let len = format_fixed_ascii(int_part, frac_part, self.qty_decimals, &mut out);
-            StackAsciiString { bytes: out, len }
-        }
+        format_decimal(qty, self.qty_decimals)
     }
 
     /// Cuantiza y valida una orden completa en un solo paso $O(1)$ sin asignaciones.
@@ -372,8 +352,40 @@ impl BinanceFixedFilter {
         if raw_price <= 0.0 || raw_qty <= 0.0 {
             return Err(FilterRejectReason::ZeroOrNegative);
         }
+        // Nunca convertir una orden fuera de límites en otra orden mediante clamp.
+        if raw_price < self.min_price {
+            return Err(FilterRejectReason::PriceBelowMin {
+                current: raw_price,
+                min: self.min_price,
+            });
+        }
+        if raw_price > self.max_price {
+            return Err(FilterRejectReason::PriceAboveMax {
+                current: raw_price,
+                max: self.max_price,
+            });
+        }
+        if raw_qty < self.min_qty {
+            return Err(FilterRejectReason::QtyBelowMin {
+                current: 0.0,
+                min: self.min_qty,
+            });
+        }
+        if raw_qty > self.max_qty {
+            return Err(FilterRejectReason::QtyAboveMax {
+                current: raw_qty,
+                max: self.max_qty,
+            });
+        }
 
-        let rounded_price = self.round_price(raw_price, is_sell);
+        let (rounded_price, price_units) = project_decimal_grid(
+            raw_price,
+            self.tick_size,
+            self.min_price,
+            self.price_decimals,
+            is_sell,
+        )
+        .ok_or(FilterRejectReason::Unrepresentable)?;
         if rounded_price < self.min_price {
             return Err(FilterRejectReason::PriceBelowMin {
                 current: rounded_price,
@@ -387,7 +399,14 @@ impl BinanceFixedFilter {
             });
         }
 
-        let rounded_qty = self.round_qty(raw_qty);
+        let (rounded_qty, qty_units) = project_decimal_grid(
+            raw_qty,
+            self.step_size,
+            self.min_qty,
+            self.qty_decimals,
+            false,
+        )
+        .ok_or(FilterRejectReason::Unrepresentable)?;
         if rounded_qty < self.min_qty {
             return Err(FilterRejectReason::QtyBelowMin {
                 current: rounded_qty,
@@ -402,6 +421,9 @@ impl BinanceFixedFilter {
         }
 
         let notional = rounded_price * rounded_qty;
+        if !notional.is_finite() {
+            return Err(FilterRejectReason::NonFinite);
+        }
         if notional < self.min_notional {
             return Err(FilterRejectReason::NotionalBelowMin {
                 current: notional,
@@ -409,8 +431,23 @@ impl BinanceFixedFilter {
             });
         }
 
-        let price_str = self.format_price(rounded_price);
-        let qty_str = self.format_qty(rounded_qty);
+        let price_str = format_decimal_units(price_units, self.price_decimals);
+        let qty_str = format_decimal_units(qty_units, self.qty_decimals);
+        if price_str.is_empty() || qty_str.is_empty() {
+            return Err(FilterRejectReason::Unrepresentable);
+        }
+        // Comparar el valor que realmente se serializa, no sólo el float intermedio.
+        let wire_price = price_str
+            .as_str()
+            .parse::<f64>()
+            .map_err(|_| FilterRejectReason::Unrepresentable)?;
+        let wire_qty = qty_str
+            .as_str()
+            .parse::<f64>()
+            .map_err(|_| FilterRejectReason::Unrepresentable)?;
+        if wire_price != rounded_price || wire_qty != rounded_qty || wire_qty > raw_qty {
+            return Err(FilterRejectReason::Unrepresentable);
+        }
 
         Ok(QuantizedOrder {
             price: rounded_price,
@@ -426,50 +463,164 @@ impl BinanceFixedFilter {
 #[inline(always)]
 fn exact_inverse(step: f64) -> f64 {
     if !step.is_finite() || step <= 0.0 {
-        return 1.0;
+        return f64::NAN;
     }
-    let inv = 1.0 / step;
-    let r = inv.round();
-    if r >= 1.0 && (inv - r).abs() <= 1e-6 * r {
-        r
-    } else {
-        inv
-    }
+    1.0 / step
 }
 
 /// Deduce el número de cifras decimales a partir del tamaño del paso / tick.
+/// Devuelve cero para una precisión no soportada; is_valid_config la rechaza.
 pub fn count_decimals(step: f64) -> u8 {
-    if !step.is_finite() || step <= 0.0 || step >= 1.0 {
-        return 0;
-    }
-    let log = -step.log10();
-    let rounded = log.round();
-    if (log - rounded).abs() < 1e-4 {
-        rounded.clamp(0.0, 10.0) as u8
-    } else {
-        // Para pasos fraccionarios no potencias de 10 (ej. 0.05, 0.25, 0.2, 0.02)
-        let mut k = 1u8;
-        let mut mult = 10.0;
-        while k <= 8 {
-            let val = step * mult;
-            if (val - val.round()).abs() < 1e-5 {
-                return k;
+    if step.is_finite() && step > 0.0 {
+        for decimals in 0..=MAX_DECIMALS {
+            if let Some(units) = decimal_units(step, decimals) {
+                if units > 0 {
+                    return decimals;
+                }
             }
-            mult *= 10.0;
-            k += 1;
         }
-        8
     }
+    0
+}
+
+fn decimal_units(value: f64, decimals: u8) -> Option<u64> {
+    if !value.is_finite() || value <= 0.0 || decimals > MAX_DECIMALS {
+        return None;
+    }
+    let multiplier = 10_u64.pow(u32::from(decimals)) as f64;
+    let scaled = value * multiplier;
+    let rounded = scaled.round();
+    if !scaled.is_finite()
+        || rounded < 1.0
+        || rounded > MAX_EXACT_UNITS as f64
+        || rounded / multiplier != value
+    {
+        return None;
+    }
+    Some(rounded as u64)
+}
+
+fn grid_units(step: f64, base: f64, decimals: u8) -> Option<(u64, u64)> {
+    Some((
+        decimal_units(step, decimals)?,
+        decimal_units(base, decimals)?,
+    ))
+}
+
+/// Obtiene floor/ceil(raw * 10^decimals) sin redondear la multiplicación a f64.
+/// El significando tiene 53 bits y 10^10 necesita 34: el producto cabe en u128.
+fn raw_decimal_bound(raw: f64, decimals: u8, up: bool) -> Option<u64> {
+    if !raw.is_finite() || raw <= 0.0 || decimals > MAX_DECIMALS {
+        return None;
+    }
+    let bits = raw.to_bits();
+    let encoded_exponent = ((bits >> 52) & 0x7ff) as i32;
+    let fraction = bits & ((1_u64 << 52) - 1);
+    let (significand, exponent) = if encoded_exponent == 0 {
+        (u128::from(fraction), -1074)
+    } else {
+        (
+            u128::from(fraction | (1_u64 << 52)),
+            encoded_exponent - 1023 - 52,
+        )
+    };
+    let numerator = significand.checked_mul(u128::from(10_u64.pow(u32::from(decimals))))?;
+    let bound = if exponent >= 0 {
+        let shift = exponent as u32;
+        if shift >= 128 {
+            return None;
+        }
+        numerator.checked_mul(1_u128 << shift)?
+    } else {
+        let shift = (-exponent) as u32;
+        if shift >= 128 {
+            u128::from(up && numerator > 0)
+        } else {
+            let quotient = numerator >> shift;
+            let remainder = numerator & ((1_u128 << shift) - 1);
+            quotient.checked_add(u128::from(up && remainder != 0))?
+        }
+    };
+    if bound > u128::from(MAX_EXACT_UNITS) {
+        None
+    } else {
+        Some(bound as u64)
+    }
+}
+
+/// Proyecta en base + n*step mediante divisiones enteras sobre el límite exacto
+/// del f64 recibido. El decimal serializado, además de su parseo f64, respeta raw.
+fn project_decimal_grid(
+    raw: f64,
+    step: f64,
+    base: f64,
+    decimals: u8,
+    up: bool,
+) -> Option<(f64, u64)> {
+    let (step_units, base_units) = grid_units(step, base, decimals)?;
+    if raw < base {
+        return None;
+    }
+    let bound = raw_decimal_bound(raw, decimals, up)?;
+    let distance = bound.checked_sub(base_units)?;
+    let steps = if up {
+        distance.checked_add(step_units - 1)? / step_units
+    } else {
+        distance / step_units
+    };
+    let units = base_units.checked_add(steps.checked_mul(step_units)?)?;
+    if units > MAX_EXACT_UNITS {
+        return None;
+    }
+    let multiplier = 10_u64.pow(u32::from(decimals)) as f64;
+    let projected = units as f64 / multiplier;
+    if projected.is_finite()
+        && projected > 0.0
+        && (if up {
+            projected >= raw
+        } else {
+            projected <= raw
+        })
+    {
+        Some((projected, units))
+    } else {
+        None
+    }
+}
+
+fn format_decimal(value: f64, decimals: u8) -> StackAsciiString {
+    if !value.is_finite() || value <= 0.0 || decimals > MAX_DECIMALS {
+        return StackAsciiString::empty();
+    }
+    // El formateador público conserva su redondeo histórico de floats arbitrarios.
+    // La validación de órdenes serializa directamente las unidades del grid, sin
+    // pasar por este redondeo de presentación.
+    let scaled = value * 10_u64.pow(u32::from(decimals)) as f64;
+    let rounded = scaled.round();
+    if !scaled.is_finite() || rounded < 1.0 || rounded > MAX_EXACT_UNITS as f64 {
+        return StackAsciiString::empty();
+    }
+    format_decimal_units(rounded as u64, decimals)
+}
+
+fn format_decimal_units(total_units: u64, decimals: u8) -> StackAsciiString {
+    if decimals > MAX_DECIMALS || total_units == 0 || total_units > MAX_EXACT_UNITS {
+        return StackAsciiString::empty();
+    }
+    let multiplier = 10_u64.pow(u32::from(decimals));
+    let mut out = [0u8; 32];
+    let len = format_fixed_ascii(
+        total_units / multiplier,
+        total_units % multiplier,
+        decimals,
+        &mut out,
+    );
+    StackAsciiString { bytes: out, len }
 }
 
 /// Serializa entero y fracción a ASCII en stack con relleno exacto de ceros a la izquierda.
 #[inline(always)]
-fn format_fixed_ascii(
-    int_part: u64,
-    frac_part: u64,
-    decimals: u8,
-    out: &mut [u8; 32],
-) -> usize {
+fn format_fixed_ascii(int_part: u64, frac_part: u64, decimals: u8, out: &mut [u8; 32]) -> usize {
     let mut cursor = 0;
     let mut itoa_buf = itoa::Buffer::new();
     let int_str = itoa_buf.format(int_part);
@@ -552,7 +703,9 @@ mod tests {
     fn test_round_and_validate_btcusdt() {
         let filter = BinanceFixedFilter::new(0.1, 0.001, 5.0);
         // BUY: floor de precio
-        let res = filter.validate_and_quantize(65432.18, 0.0054, false).unwrap();
+        let res = filter
+            .validate_and_quantize(65432.18, 0.0054, false)
+            .unwrap();
         assert_eq!(res.price, 65432.1);
         assert_eq!(res.qty, 0.005);
         assert_eq!(res.price_str.as_str(), "65432.1");
@@ -560,7 +713,9 @@ mod tests {
         assert!(res.notional >= 5.0);
 
         // SELL: ceil de precio
-        let res_sell = filter.validate_and_quantize(65432.11, 0.0054, true).unwrap();
+        let res_sell = filter
+            .validate_and_quantize(65432.11, 0.0054, true)
+            .unwrap();
         assert_eq!(res_sell.price, 65432.2);
         assert_eq!(res_sell.qty, 0.005);
         assert_eq!(res_sell.price_str.as_str(), "65432.2");
@@ -571,7 +726,9 @@ mod tests {
     fn test_min_notional_rejection() {
         let filter = BinanceFixedFilter::new(0.1, 0.001, 5.0);
         // notional = 100.0 * 0.001 = 0.1 < 5.0
-        let err = filter.validate_and_quantize(100.0, 0.001, false).unwrap_err();
+        let err = filter
+            .validate_and_quantize(100.0, 0.001, false)
+            .unwrap_err();
         match err {
             FilterRejectReason::NotionalBelowMin { current, min } => {
                 assert!((current - 0.1).abs() < 1e-6);
