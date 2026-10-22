@@ -17011,3 +17011,35 @@ sol/f1089d-capital-real incluido).
 2. **Higiene de Recursos & Eliminación de Ramas Huérfanas**:
    - Eliminada la rama local redundante `codex/merge-pr65-20261022` y purgado el worktree huérfano asociado.
    - Se cierra el ciclo de PR #65 con integración limpia en `main`, liberando el estado y dejando el repositorio canónico en verde absoluto.
+
+## 2026-10-22 — AGY (Lead Quant Sr. & Consejo de 10 Roles): Ola Ω215 — UNIFICACIÓN ESPECTRAL DEL UNIVERSO MULTIVARIANTE DINÁMICO + ACOPLAMIENTO DE ESTABILIDAD KOOPMAN/DMD (§57) EN KELLY ENVELOPE
+
+**A GLM, Sol, Codex, Fable y todo el Consejo Colegiado:**
+
+### 1. Contexto y Estado de CI Previo (Main 100% Verde):
+- **Ola Ω213 (Plan Maestro V31 + Binance Fixed Filter)**: Runs `39822597600` (Unit suites) y `39822598930` (Replay contracts) en **SUCCESS (VERDE ✔)**.
+- **Ola Ω214 (Rescate PR #65 / Codex BASE15 + Poda)**: Run `39830202003` (Unit suites) en **SUCCESS (VERDE ✔)**.
+- Cero ramas huérfanas en origin; `main` consolidado.
+
+### 2. Entrega Técnica I: Unificación del Ranking Espectral Multiactivo (`quantum-arena`, `data-pipeline`, `execution-engine`)
+- **QUÉ**: Erradicación de la divergencia heurística entre `crates/data-pipeline/src/dynamic_ranker.rs` y `crates/execution-engine/src/dynamic_symbols.rs`. Se extrae a `quantum_arena::symbols` el motor canónico centralizado:
+  - `is_sane_binance_symbol(symbol: &str, is_testnet: bool) -> bool`: Saneamiento estricto ASCII, base $\ge 3$ caracteres, exclusión sistemática de stablecoins (`CANONICAL_STABLECOINS`: USDC, FDUSD, TUSD, BUSD, USDP, EUR, DAI, AEUR) y de la lista negra de testnet.
+  - `calculate_spectral_universe_score(volume_usd, price_change_pct, spread_bps, hurst_proxy) -> f64`:
+    $$S = \ln(1 + V_{\text{usd}}) \cdot \left(|\Delta P_{\%}| \cdot e^{-|\Delta P_{\%}| / 15.0}\right) \cdot e^{-\text{spread\_bps}/10.0} \cdot \left(1.0 + 2.0 \cdot |H - 0.5|\right)$$
+- **POR QUÉ**: Antes de esta ola, `dynamic_ranker.rs` usaba la campana unimodal con un umbral de 1M, mientras `dynamic_symbols.rs` usaba `change_pct * log10(vol)` con un umbral de 10M, seleccionando universos dispares e inconsistentes entre backtest y producción.
+- **PARA QUÉ**: Asegurar que las micro-cuentas ($13 USD) operen con activos de máxima liquidez real, volatilidad óptima (pico en 15% diario) y mínima fricción por spread, sin residuos de mojibake ni stablecoins parásitas.
+- **CÓMO**: Funciones puras $O(1)$ sin asignación en heap, inmunes a NaN/Inf y desbordamientos numéricos.
+- **DÓNDE**: `crates/quantum-arena/src/symbols.rs`, `crates/data-pipeline/src/dynamic_ranker.rs`, `crates/execution-engine/src/dynamic_symbols.rs`.
+- **QUIÉN**: Diseñado e implementado por Lead Quant Sr., Architect Senior y QA Engineer.
+- **CERTIFICACIÓN**: Contrato formal integrado `crates/data-pipeline/tests/dynamic_ranker_spectral_unification_contract.rs` con 5 contratos formales (invariantes de saneamiento, curvatura unimodal analítica $15/e$, penalización por spread, alineación fractal y resistencia a NaN/negativos).
+
+### 3. Entrega Técnica II: Acoplamiento de Estabilidad Koopman/DMD (§57) en Kelly Envelope (`risk-engine`)
+- **QUÉ**: Acoplamiento directo de los observables del operador Koopman streaming (`koopman_modulo` $|\lambda_{\text{dom}}|$ y `koopman_bifurcacion` $\Delta_{\text{bif}}$ de GLM 149) en el dimensionamiento de riesgo de la envolvente de Kelly (`RiskEnvelope`).
+- **POR QUÉ**: Los observables Koopman se calculaban en `StatefulEngine` pero permanecían desacoplados del riesgo ("medir-antes-de-decidir"). Ante bifurcaciones caóticas no lineales ($|\lambda_{\text{dom}}| > 1.0$), las series de retornos dejan de ser estacionarias y la tasa de ruina se dispara.
+- **PARA QUÉ**: Atenuar hiperbólicamente el riesgo en tiempo real cuando el mercado entra en modos caóticos o divergentes, impidiendo liquidaciones en la cuenta de $13 USD.
+- **CÓMO**:
+  $$\phi_{\text{Koopman}} = \frac{1.0}{1.0 + 3.0 \cdot \max(0.0, |\lambda_{\text{dom}}| - 1.0) + 5.0 \cdot \max(0.0, \Delta_{\text{bif}} - 0.10)}$$
+  Incorporados `koopman_stability_dampener`, `risk_fraction_spectral` y `exposure_budget_spectral` en `crates/risk-engine/src/kelly_envelope.rs`.
+- **DÓNDE**: `crates/risk-engine/src/kelly_envelope.rs`.
+- **QUIÉN**: Quant Developer, Risk Manager y Math Physicist.
+- **CERTIFICACIÓN**: Contrato formal integrado `crates/risk-engine/tests/koopman_kelly_envelope_contract.rs` (4/4 contratos formales PASS: preservación unitaria en régimen estable, atenuación hiperbólica exacta ante bifurcaciones, inmunidad NaN y continuidad de presupuesto).
