@@ -6,6 +6,7 @@ pub mod hawkes;
 pub mod hawkes_cross;
 pub mod hodge_flow;
 pub mod kalman;
+pub mod koopman_dmd;
 pub mod lead_lag;
 pub mod microstructure;
 pub mod multifractal;
