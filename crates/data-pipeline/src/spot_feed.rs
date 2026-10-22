@@ -10,7 +10,6 @@
 //! por nodo, madura tras 8·τ_k de pares; C-F5b: la prueba a la escala de decisión, tras
 //! 33·τ_k), y que publique `statarb_ou_zscore`, `statarb_half_life_ms` y `statarb_beta`.
 
-use fast_float::parse;
 use futures_util::StreamExt;
 use quantum_arena::GlobalArena;
 use serde_json::Value;
@@ -51,27 +50,30 @@ pub fn parse_rest_book_tickers(json_str: &str) -> Vec<(String, f64, f64, f64, f6
 }
 
 fn extract_ticker_entry(item: &Value) -> Option<(String, f64, f64, f64, f64)> {
+    use crate::cero_dato::cantidad;
     let sym = item.get("symbol")?.as_str()?.to_ascii_uppercase();
     let b_str = item.get("bidPrice")?.as_str()?;
     let a_str = item.get("askPrice")?.as_str()?;
     let bq_str = item.get("bidQty")?.as_str()?;
     let aq_str = item.get("askQty")?.as_str()?;
 
-    let bid = parse::<f64, _>(b_str).ok()?;
-    let ask = parse::<f64, _>(a_str).ok()?;
-    let bid_qty = parse::<f64, _>(bq_str).ok().unwrap_or(0.0);
-    let ask_qty = parse::<f64, _>(aq_str).ok().unwrap_or(0.0);
+    let bid = cantidad(b_str)?;
+    let ask = cantidad(a_str)?;
+    // F1-091 — una cantidad ilegible es DESCONOCIDA, no cero. Antes
+    // `.unwrap_or(0.0)` conservaba el tick con un lado del libro en 0: el
+    // spread, la profundidad y cualquier medida de liquidez posterior leían
+    // «libro vacío» cuando la verdad era «no pude leer el tamaño». Un tick que
+    // no se puede leer completo se descarta entero.
+    let bid_qty = cantidad(bq_str)?;
+    let ask_qty = cantidad(aq_str)?;
 
-    if bid > 0.0 && ask > 0.0 && bid.is_finite() && ask.is_finite() {
-        Some((sym, bid, ask, bid_qty, ask_qty))
-    } else {
-        None
-    }
+    Some((sym, bid, ask, bid_qty, ask_qty))
 }
 
 /// Parsea el payload de WebSocket de Binance Spot `@bookTicker`.
 /// Admite tanto stream directo como combined stream (`{"stream":"...","data":{...}}`).
 pub fn parse_ws_book_ticker(json_str: &str) -> Option<(String, f64, f64, f64, f64)> {
+    use crate::cero_dato::cantidad;
     let val: Value = serde_json::from_str(json_str).ok()?;
     let data = if let Some(d) = val.get("data") {
         d
@@ -85,16 +87,14 @@ pub fn parse_ws_book_ticker(json_str: &str) -> Option<(String, f64, f64, f64, f6
     let bq_str = data.get("B")?.as_str()?;
     let aq_str = data.get("A")?.as_str()?;
 
-    let bid = parse::<f64, _>(b_str).ok()?;
-    let ask = parse::<f64, _>(a_str).ok()?;
-    let bid_qty = parse::<f64, _>(bq_str).ok().unwrap_or(0.0);
-    let ask_qty = parse::<f64, _>(aq_str).ok().unwrap_or(0.0);
+    let bid = cantidad(b_str)?;
+    let ask = cantidad(a_str)?;
+    // F1-091 — igual que en el ticker REST: un tamaño ilegible descarta el
+    // frame completo en lugar de fabricar un lado del libro en cero.
+    let bid_qty = cantidad(bq_str)?;
+    let ask_qty = cantidad(aq_str)?;
 
-    if bid > 0.0 && ask > 0.0 && bid.is_finite() && ask.is_finite() {
-        Some((sym, bid, ask, bid_qty, ask_qty))
-    } else {
-        None
-    }
+    Some((sym, bid, ask, bid_qty, ask_qty))
 }
 
 /// Aplica una actualización de precio spot al Arena, Registry y OmniState.
@@ -250,7 +250,11 @@ async fn run_spot_rest_poller(
 
     // Construir la URL con parámetros si son pocos símbolos para reducir carga
     let syms_json = serde_json::to_string(&*symbols).unwrap_or_default();
-    let query_url = format!("{}/api/v3/ticker/bookTicker?symbols={}", BINANCE_SPOT_REST_BASE, urlencoding_simple(&syms_json));
+    let query_url = format!(
+        "{}/api/v3/ticker/bookTicker?symbols={}",
+        BINANCE_SPOT_REST_BASE,
+        urlencoding_simple(&syms_json)
+    );
 
     let mut tick_timer = interval(Duration::from_millis(SPOT_REST_POLL_INTERVAL_MS));
     tick_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -264,7 +268,15 @@ async fn run_spot_rest_poller(
                     let entries = parse_rest_book_tickers(&body);
                     for (sym, bid, ask, bid_qty, ask_qty) in entries {
                         if let Some(destino) = symbol_map.get(&sym) {
-                            aplicar_tick_de_spot(&arena, &omni_state, destino, bid, ask, bid_qty, ask_qty);
+                            aplicar_tick_de_spot(
+                                &arena,
+                                &omni_state,
+                                destino,
+                                bid,
+                                ask,
+                                bid_qty,
+                                ask_qty,
+                            );
                         }
                     }
                 }
@@ -272,14 +284,25 @@ async fn run_spot_rest_poller(
             Ok(_) | Err(_) => {
                 // Si la consulta agrupada falla (ej. algún símbolo no es par spot), intentar individualmente
                 for sym in symbols.iter() {
-                    let single_url = format!("{}/api/v3/ticker/bookTicker?symbol={}", BINANCE_SPOT_REST_BASE, sym);
+                    let single_url = format!(
+                        "{}/api/v3/ticker/bookTicker?symbol={}",
+                        BINANCE_SPOT_REST_BASE, sym
+                    );
                     if let Ok(resp) = client.get(&single_url).send().await {
                         if resp.status().is_success() {
                             if let Ok(body) = resp.text().await {
                                 let entries = parse_rest_book_tickers(&body);
                                 for (s, bid, ask, bid_qty, ask_qty) in entries {
                                     if let Some(destino) = symbol_map.get(&s) {
-                                        aplicar_tick_de_spot(&arena, &omni_state, destino, bid, ask, bid_qty, ask_qty);
+                                        aplicar_tick_de_spot(
+                                            &arena,
+                                            &omni_state,
+                                            destino,
+                                            bid,
+                                            ask,
+                                            bid_qty,
+                                            ask_qty,
+                                        );
                                     }
                                 }
                             }
@@ -321,15 +344,27 @@ async fn run_spot_ws_streamer(
                 while let Some(msg_result) = ws_stream.next().await {
                     match msg_result {
                         Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
-                            if let Some((sym, bid, ask, bid_qty, ask_qty)) = parse_ws_book_ticker(&text) {
+                            if let Some((sym, bid, ask, bid_qty, ask_qty)) =
+                                parse_ws_book_ticker(&text)
+                            {
                                 if let Some(destino) = symbol_map.get(&sym) {
-                                    aplicar_tick_de_spot(&arena, &omni_state, destino, bid, ask, bid_qty, ask_qty);
+                                    aplicar_tick_de_spot(
+                                        &arena,
+                                        &omni_state,
+                                        destino,
+                                        bid,
+                                        ask,
+                                        bid_qty,
+                                        ask_qty,
+                                    );
                                 }
                             }
                         }
                         Ok(tokio_tungstenite::tungstenite::Message::Ping(payload)) => {
                             use futures_util::SinkExt;
-                            let _ = ws_stream.send(tokio_tungstenite::tungstenite::Message::Pong(payload)).await;
+                            let _ = ws_stream
+                                .send(tokio_tungstenite::tungstenite::Message::Pong(payload))
+                                .await;
                         }
                         Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
                         Err(_) => break,
@@ -420,7 +455,11 @@ mod tests {
         assert_eq!(arena.coins[0].spot_bid_qty.load(Ordering::Relaxed), 1.5);
         assert_eq!(arena.coins[0].spot_ask_qty.load(Ordering::Relaxed), 2.5);
 
-        let reg_mid = arena.registry.get_scoped_parameter(Some("BTCUSDT"), Some(0), "spot_mid", "test").unwrap().get_value();
+        let reg_mid = arena
+            .registry
+            .get_scoped_parameter(Some("BTCUSDT"), Some(0), "spot_mid", "test")
+            .unwrap()
+            .get_value();
         assert!((reg_mid - 50_001.0).abs() < 1e-6);
 
         let omni_spot = f64::from_bits(omni.binance_spot.load(Ordering::Relaxed));

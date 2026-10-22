@@ -131,28 +131,49 @@ pub async fn get_real_wallet_balance() -> Result<f64, String> {
 
     let json: serde_json::Value = res.json().await.map_err(|e| format!("JSON Error: {}", e))?;
 
-    let mut usdt_balance = 0.0;
+    // F1-091 — el saldo NUNCA se inventa. Antes, un `balance` ilegible caía en
+    // `unwrap_or(0.0)` y la función devolvía `Ok(0.0)`: el operador leía «la
+    // wallet tiene 0 USDT» cuando la verdad era «no pude leer el saldo». Con
+    // capital 0 el dimensionamiento divide por cero o produce tamaño 0, y el
+    // reinicio fail-closed de `god_engine.rs` (que itera cada 5 s hasta obtener
+    // `Ok`) nunca se disparaba. Ahora un saldo ilegible, no finito,
+    // negativo o AUSENTE es un `Err`: el camino de dinero falla en cerrojo y
+    // el consumo decide reintentar, que es lo que ya hace.
+    let Some(array) = json.as_array() else {
+        return Err(format!(
+            "Respuesta de /fapi/v2/balance no es un array: {}",
+            json
+        ));
+    };
 
-    if let Some(array) = json.as_array() {
-        for asset in array {
-            if let Some(asset_name) = asset.get("asset").and_then(|a| a.as_str()) {
-                if asset_name == "USDT" {
-                    if let Some(balance_str) = asset.get("balance").and_then(|b| b.as_str()) {
-                        let parsed = balance_str.parse::<f64>().unwrap_or(0.0);
-                        // FIX #674: Validar no-negatividad y finitud
-                        usdt_balance = if parsed.is_finite() && parsed >= 0.0 {
-                            parsed
-                        } else {
-                            0.0
-                        };
-                    }
-                    break;
-                }
-            }
+    let mut usdt_entry = None;
+    for asset in array {
+        if asset.get("asset").and_then(|a| a.as_str()) == Some("USDT") {
+            usdt_entry = Some(asset);
+            break;
         }
     }
 
-    Ok(usdt_balance)
+    let Some(asset) = usdt_entry else {
+        return Err(
+            "La respuesta de /fapi/v2/balance no contiene el activo USDT: no se puede \
+             afirmar cuál es el capital real"
+                .to_string(),
+        );
+    };
+
+    let Some(balance_field) = asset.get("balance") else {
+        return Err("El activo USDT no trae campo `balance`".to_string());
+    };
+
+    match crate::cero_dato::monto_de_json(balance_field) {
+        Some(v) => Ok(v),
+        None => Err(format!(
+            "Saldo USDT ilegible ({:?}): no es un monto finito y no negativo. \
+             Se rechaza en cerrojo en vez de inventar un capital",
+            balance_field
+        )),
+    }
 }
 
 /// Extrae las comisiones exactas de tu cuenta para un símbolo particular en Futures.
