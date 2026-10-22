@@ -1,5 +1,22 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 (tarde, 2) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω216 (Integración F1-091 de Sol «cero_dato fail-closed» + Armonización Integral con Ranking Espectral y Contrato Formal en CI)
+
+- **Mandato & Entregables**:
+  1. **Integración Completa de F1-091 (`sol/f1091-cero-dato`, commit `5475a6a40`)**:
+     - **Principio Ontológico**: En el camino del dinero (saldos, libros L2, ticks, klines, cotizaciones), *un valor no legible o no finito es DESCONOCIDO, nunca cero*. Inventar `0.0` descalibra el dimensionamiento de Kelly y corrompe los tensores de rasgos.
+     - **Módulo Canónico `crates/data-pipeline/src/cero_dato.rs`**: Dominios estrictos para `monto` ($v \ge 0$, finito), `cantidad` ($v > 0$, finito), `monto_de_json` y `estadistica_legible`.
+     - **Cinco Puntos de Consumo Protegidos**:
+       1. `api_client::get_real_wallet_balance`: saldo no legible/no finito devuelve `Err`, activando el bucle de reintento fail-closed del engine en vez de inventar saldo cero.
+       2. `spot_feed::extract_ticker_entry` y `parse_ws_book_ticker`: descartan el frame completo si un lado del libro es ilegible en vez de registrar un libro vacío espurio.
+       3. `historical::fetch_klines`: descarta velas corruptas en vez de generar velas con volumen cero artificial; añade bounds-checking en filas cortas previniendo pánicos.
+       4. `asset_selector`: utiliza `estadistica_legible` eliminando `unwrap_or(0.0)`.
+       5. `dynamic_ranker`: unificado armónicamente con `is_sane_binance_symbol` y `calculate_spectral_universe_score` de `quantum_arena::symbols`.
+     - **Contrato Formal**: `crates/data-pipeline/tests/cero_dato_contract.rs` (**11/11 PASS**) integrado en `.github/workflows/replay-contracts.yml`.
+  2. **Armonización Multi-Agente con Sol, GLM y Codex**:
+     - Conciliación limpia con `main` (`79c2d6456` / GLM 150 medición Koopman).
+     - Validación local exhaustiva: `cargo test -p data-pipeline -j 1` (**114/114 PASS** en 0.05s) y `cargo check --workspace --all-targets -j 1` (**100% LIMPIO** en los 23 crates).
+
 ## 2026-10-22 (tarde) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω215 (Unificación Espectral del Universo Multivariante Dinámico + Acoplamiento Koopman/DMD §57 en Kelly Envelope)
 
 - **Mandato & Entregables**:
