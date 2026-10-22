@@ -198,6 +198,35 @@ impl TensorVoteOrchestrator {
             .collect()
     }
 
+    /// GLM 146 — ORTOGONALIDAD: voto medio CON SIGNO por FUENTE en el último
+    /// consenso del censista (media de las instancias de la misma fuente,
+    /// orden de primera aparición). Alimento de la medición SVD de
+    /// multicolinealidad espectral: el censo dice QUIÉN habla; esto dice QUÉ
+    /// dice (signo y magnitud). Las fuentes mudas del instante llegan como
+    /// 0.0 — el vehículo de medición las excluye por pares (nunca imputa).
+    pub fn votos_por_fuente_snapshot(&self) -> Vec<(&'static str, f64)> {
+        let mut orden: Vec<&'static str> = Vec::with_capacity(self.nombres.len());
+        let mut acum: Vec<(f64, u32)> = Vec::with_capacity(self.nombres.len());
+        for (nombre, voto) in self.nombres.iter().zip(self.ultimo_voto.iter()) {
+            let v = voto.load(Ordering::Relaxed);
+            match orden.iter().position(|n| std::ptr::eq(*n, *nombre) || *n == *nombre) {
+                Some(ix) => {
+                    acum[ix].0 += v;
+                    acum[ix].1 += 1;
+                }
+                None => {
+                    orden.push(*nombre);
+                    acum.push((v, 1));
+                }
+            }
+        }
+        orden
+            .into_iter()
+            .zip(acum)
+            .map(|(nombre, (suma, instancias))| (nombre, suma / instancias.max(1) as f64))
+            .collect()
+    }
+
     /// GLM 130 — HEDGE: primitiva de actualización por realización.
     /// `direccion_realizada ∈ [−1, 1]` (signo y magnitud acotada del
     /// retorno del símbolo censista entre cadencias, escalado por ATR).
