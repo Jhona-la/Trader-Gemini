@@ -146,3 +146,32 @@ fn ra_depth_rejects_nonfinite_aggregate_from_finite_levels() {
         assert!(DepthEvent::parse_from_json(wire).is_none());
     }
 }
+
+#[test]
+fn ra_aggressor_rejects_unreadable_price_or_quantity() {
+    // F1-092 — la ruta VIVA de ingesta (`AggTradeEvent::parse_from_json`, la que
+    // consume `ws_client.rs`) debe ser fail-closed también en precio y
+    // cantidad. El contrato cubría el token `m` pero no `p`/`q`: un campo
+    // ilegible podría haber entrado como cero. `extract_f64_from` usa
+    // `fast_float::parse(...).ok()?` (estricto) y el gate `price <= 0` remata
+    // ceros y negativos, así que el tick se descarta entero.
+    for price in ["", "abc", "NaN", "inf", "0", "-1", "1e400"] {
+        let wire = format!("{{\"p\":\"{price}\",\"q\":\"1\",\"m\":true}}");
+        assert!(
+            AggTradeEvent::parse_from_json(wire.as_bytes()).is_none(),
+            "precio ilegible {price:?} debe descartar el tick: {wire}"
+        );
+    }
+    for qty in ["", "abc", "NaN", "0", "-1"] {
+        let wire = format!("{{\"p\":\"10\",\"q\":\"{qty}\",\"m\":false}}");
+        assert!(
+            AggTradeEvent::parse_from_json(wire.as_bytes()).is_none(),
+            "cantidad ilegible {qty:?} debe descartar el tick: {wire}"
+        );
+    }
+    // Y el tick sano sigue pasando con las cifras exactas.
+    let wire = br#"{"p":"60050.25","q":"1.500","m":true}"#;
+    let event = AggTradeEvent::parse_from_json(wire).expect("tick sano");
+    assert_eq!(event.price, 60050.25);
+    assert_eq!(event.qty, 1.500);
+}

@@ -2,16 +2,65 @@
 /// Decodificador ultrarrápido para Websockets que asume posiciones fijas o busca
 /// patrones de bytes en C. Evita deserializar objetos JSON completos (Serde),
 /// extrayendo puramente la semántica matemática de los Ticks (Precio/Volumen).
-
+///
+/// # ESTADO ESTRUCTURAL (censo F1-092, 2026-10-22) — LÉELO ANTES DE USAR
+///
+/// Este módulo es una **API de compatibilidad SIN productor operativo**: sus
+/// funciones sólo las consumen sus propios tests y
+/// `tests/liquidation_contract.rs` (que ya lo dice: *"retained but removed from
+/// the operational producer"*). La ruta VIVA de ingesta de trades es
+/// `data_pipeline::parser::AggTradeEvent::parse_from_json`, que usa
+/// `ws_client.rs` y que **sí es fail-closed** (exige `price > 0`, `qty >= 0`,
+/// finitos, y devuelve `None` ante cualquier campo ilegible).
+///
+/// Es decir: hay dos implementaciones del mismo trabajo y sólo una está
+/// conectada. Queda aquí como deuda declarada con su condición de reactivación
+/// —conectar esta ruta exigiría demostrar que alimenta una decisión real, no
+/// duplicar `parser.rs`— y, entretanto, **se corrige para que no pueda fabricar
+/// un trade a precio 0**: un huérfano que devuelve ceros silenciosos es una
+/// trampa armada para el día que alguien lo revive.
 pub struct TensorParser;
 
 impl TensorParser {
     /// Extrae un f64 desde un arreglo de bytes crudo (ASCII numérico).
     /// Peligro: Asume que la entrada es un número válido. `unsafe` es intencional por HFT.
+    ///
+    /// F1-092 — ATENCIÓN: el `0.0` de esta función es **AMBIGUO**. Vale tanto
+    /// para `"0"` (un cero real) como para `""`, `"abc"` o `"1e400"` (ilegible
+    /// o no finito). En el camino de dinero eso es inaceptable: quien necesite
+    /// distinguir «es cero» de «no pude leer» debe usar [`Self::parse_estricto`],
+    /// que devuelve `Option`. Se conserva la firma rápida porque
+    /// `liquidation_contract` la ejercita, pero ninguna decisión debe tomarse
+    /// sobre su resultado sin esa distinción.
     #[inline(always)]
     pub fn fast_parse_f64(bytes: &[u8]) -> f64 {
+        Self::escanear(bytes).0
+    }
+
+    /// Parse ESTRICTO (F1-092): `Some(v)` sólo si se consumió **al menos un
+    /// dígito de mantisa** y el resultado es finito. `None` significa ilegible:
+    /// vacío, sin dígitos (`"abc"`, `"-"`, `".e5"`) o no finito (`"1e400"`).
+    ///
+    /// Es la misma exploración de bytes que [`Self::fast_parse_f64`] —no hay
+    /// dos parsers que puedan divergir—, con la bandera de validez que la ruta
+    /// rápida no puede expresar por su tipo de retorno.
+    #[inline(always)]
+    fn parse_estricto(bytes: &[u8]) -> Option<f64> {
+        let (valor, digitos) = Self::escanear(bytes);
+        if digitos && valor.is_finite() {
+            Some(valor)
+        } else {
+            None
+        }
+    }
+
+    /// Exploración única de bytes numéricos ASCII. Devuelve `(valor, digitos)`
+    /// donde `digitos` indica si vio al menos un dígito de la mantisa: es lo
+    /// que separa un cero legitimo de una entrada ilegible.
+    #[inline(always)]
+    fn escanear(bytes: &[u8]) -> (f64, bool) {
         if bytes.is_empty() {
-            return 0.0;
+            return (0.0, false);
         }
         let mut i = 0;
         let mut sign = 1.0;
@@ -22,9 +71,11 @@ impl TensorParser {
             i += 1;
         }
 
+        let mut digitos = false;
         let mut int_part = 0.0;
         while i < bytes.len() && bytes[i] >= b'0' && bytes[i] <= b'9' {
             int_part = int_part * 10.0 + (bytes[i] - b'0') as f64;
+            digitos = true;
             i += 1;
         }
 
@@ -37,8 +88,9 @@ impl TensorParser {
                 if frac_digits < 18 {
                     frac_part = frac_part * 10.0 + (bytes[i] - b'0') as f64;
                     frac_scale *= 10.0;
-                    frac_digits += 1;
                 }
+                frac_digits += 1;
+                digitos = true;
                 i += 1;
             }
         }
@@ -70,17 +122,23 @@ impl TensorParser {
             base
         };
 
-        // FIX #636: Retorno estrictamente finito
+        // FIX #636: Retorno estrictamente finito. La banda de validez la
+        // consume `parse_estricto`; aquí sólo se garantiza el invariante.
         if res.is_finite() {
-            res
+            (res, digitos)
         } else {
-            0.0
+            (0.0, false)
         }
     }
 
     /// Busca la llave `"p":` (Precio) o `"q":` (Cantidad) en un flujo crudo de Binance
     /// sin instanciar un objeto JSON en memoria (Zero-allocation string matching).
     /// FIX #820: Soporta tanto valores con comillas ("123.45") como sin comillas (123.45)
+    ///
+    /// F1-092 — `Some(v)` significa AHORA «leí un número real». Antes el valor
+    /// pasaba por `fast_parse_f64`, que devuelve `0.0` también para basura, así
+    /// que un campo presente pero ilegible entregaba `Some(0.0)`: el cero
+    /// silencioso que el mandato prohíbe.
     #[inline]
     pub fn extract_tensor_feature(payload: &[u8], key: &[u8]) -> Option<f64> {
         let mut i = 0;
@@ -96,7 +154,7 @@ impl TensorParser {
                     while i < len && payload[i] != b'"' {
                         i += 1;
                     }
-                    return Some(Self::fast_parse_f64(&payload[val_start..i]));
+                    return Self::parse_estricto(&payload[val_start..i]);
                 } else {
                     let val_start = i;
                     while i < len
@@ -107,7 +165,7 @@ impl TensorParser {
                     {
                         i += 1;
                     }
-                    return Some(Self::fast_parse_f64(&payload[val_start..i]));
+                    return Self::parse_estricto(&payload[val_start..i]);
                 }
             }
             i += 1;
@@ -115,13 +173,24 @@ impl TensorParser {
         None
     }
 
-    /// Analiza un Tick crudo de Binance L1 y extrae Precio y Cantidad directamente a un Tensor
+    /// Analiza un Tick crudo de Binance L1 y extrae Precio y Cantidad directamente a un Tensor.
+    ///
+    /// F1-092 — devuelve `None` cuando el tick no se puede leer COMPLETO, o
+    /// cuando el precio o la cantidad no son estrictamente positivos. Antes
+    /// devolvía `[0.0, 0.0]`: un **trade a precio cero** entrando al tensor, que
+    /// cualquier media, retorno o volatilidad corriente abajo convierte en
+    /// basura. El criterio es el mismo que ya aplica `parse_force_orders` más
+    /// abajo y la ruta viva `AggTradeEvent::parse_from_json`: quien reciba
+    /// `None` descarta el tick, no lo adivina.
     #[inline]
-    pub fn decode_binance_trade_to_tensor(payload: &[u8]) -> [f64; 2] {
-        let price = Self::extract_tensor_feature(payload, b"\"p\":").unwrap_or(0.0);
-        let qty = Self::extract_tensor_feature(payload, b"\"q\":").unwrap_or(0.0);
-
-        [price, qty]
+    pub fn decode_binance_trade_to_tensor(payload: &[u8]) -> Option<[f64; 2]> {
+        let price = Self::extract_tensor_feature(payload, b"\"p\":")?;
+        let qty = Self::extract_tensor_feature(payload, b"\"q\":")?;
+        if price > 0.0 && qty > 0.0 {
+            Some([price, qty])
+        } else {
+            None
+        }
     }
     /// Decodifica de forma zero-allocation todas las liquidaciones (p, q) en un payload crudo de Binance
     /// sin instanciar objetos JSON en el heap (Zero-allocation Byte-Scanner).
@@ -180,8 +249,60 @@ mod tests {
     fn test_extract_tensor_feature_and_decode_binance_trade() {
         let payload = br#"{"e":"trade","E":1672531199000,"s":"BTCUSDT","t":12345,"p":"60050.25","q":"1.500","b":88,"a":89,"T":1672531199000,"m":true}"#;
         let tensor = TensorParser::decode_binance_trade_to_tensor(payload);
-        assert_eq!(tensor[0], 60050.25);
-        assert_eq!(tensor[1], 1.500);
+        assert_eq!(tensor, Some([60050.25, 1.500]));
+    }
+
+    #[test]
+    fn test_f1_092_ningun_cero_fabricado_en_el_camino_del_tick() {
+        // F1-092: un tick ilegible se DESCARTA, no se convierte en [0.0, 0.0].
+        let base = br#"{"e":"trade","s":"BTCUSDT","p":"60050.25","q":"1.500"}"#;
+        assert_eq!(
+            TensorParser::decode_binance_trade_to_tensor(base),
+            Some([60050.25, 1.500])
+        );
+
+        // Precio ausente, cantidad ausente, ambos ausentes.
+        assert_eq!(
+            TensorParser::decode_binance_trade_to_tensor(br#"{"e":"trade","q":"1.5"}"#),
+            None
+        );
+        assert_eq!(
+            TensorParser::decode_binance_trade_to_tensor(br#"{"e":"trade","p":"100.0"}"#),
+            None
+        );
+        assert_eq!(TensorParser::decode_binance_trade_to_tensor(br#"{"e":"trade"}"#), None);
+
+        // Valor PRESENTE pero ilegible: antes entregaba Some(0.0).
+        for payload in [
+            &br#"{"p":"","q":"1.5"}"#[..],
+            &br#"{"p":"abc","q":"1.5"}"#[..],
+            &br#"{"p":"NaN","q":"1.5"}"#[..],
+            &br#"{"p":"inf","q":"1.5"}"#[..],
+            &br#"{"p":"1e400","q":"1.5"}"#[..],
+        ] {
+            assert_eq!(
+                TensorParser::decode_binance_trade_to_tensor(payload),
+                None,
+                "precio ilegible en {}",
+                String::from_utf8_lossy(payload)
+            );
+        }
+
+        // Cero y negativos: un trade a precio 0 o cantidad 0 no es un trade.
+        assert_eq!(
+            TensorParser::decode_binance_trade_to_tensor(br#"{"p":"0","q":"1.5"}"#),
+            None
+        );
+        assert_eq!(
+            TensorParser::decode_binance_trade_to_tensor(br#"{"p":"-100.0","q":"1.5"}"#),
+            None
+        );
+        assert_eq!(
+            TensorParser::decode_binance_trade_to_tensor(br#"{"p":"100.0","q":"0"}"#),
+            None
+        );
+        // El cero REAL sigue siendo un cero: la bandera de validez distingue.
+        assert_eq!(TensorParser::fast_parse_f64(b"0"), 0.0);
     }
 
     #[test]
@@ -197,8 +318,16 @@ mod tests {
         let missing = TensorParser::extract_tensor_feature(br#"{"x":100}"#, b"\"p\":");
         assert_eq!(missing, None);
 
+        // F1-092: `fast_parse_f64` sigue devolviendo 0.0 (firma rapida, contrato
+        // historico), pero ese cero es AMBIGUO. Lo que cambia es que
+        // `extract_tensor_feature` ya NO lo propaga como dato.
         let malformed_f64 = TensorParser::fast_parse_f64(b"abc.def");
-        assert_eq!(malformed_f64, 0.0);
+        assert_eq!(malformed_f64, 0.0, "la ruta rapida conserva su contrato historico");
+        assert_eq!(
+            TensorParser::extract_tensor_feature(br#"{"p":"abc.def"}"#, b"\"p\":"),
+            None,
+            "pero el extractor ya no entrega el cero como si fuera un dato"
+        );
     }
 
     #[test]
