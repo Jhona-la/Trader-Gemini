@@ -133,7 +133,16 @@ impl AggTradeEvent {
         let (price, _) = BookTickerEvent::extract_f64_from(bytes, 0, b"\"p\":\"")?;
         let (qty, _) = BookTickerEvent::extract_f64_from(bytes, 0, b"\"q\":\"")?;
 
-        if !price.is_finite() || !qty.is_finite() || price <= 0.0 || qty < 0.0 {
+        // F1-092 — la cantidad debe ser ESTRICTAMENTE positiva, como el precio.
+        // La puerta era `qty < 0.0`, así que un trade con cantidad CERO entraba
+        // al flujo vivo: no es un trade (no hay volumen ni información de
+        // precio que agregar) y sin embargo alimentaba VWAP, OFI y los tensores.
+        // Detectado por el contrato `ra_aggressor_rejects_unreadable_price_or_quantity`
+        // al exigir aquí lo que sus tres hermanos ya exigían:
+        // `DepthEvent` línea 209 (`qty > 0.0`), `data-ingest/liquidation.rs:100`
+        // (`q > 0`) y el propio `tensor_parser` (`q > 0.0`). Esta puerta era la
+        // excepción inconsistente.
+        if !price.is_finite() || !qty.is_finite() || price <= 0.0 || qty <= 0.0 {
             return None;
         }
 
