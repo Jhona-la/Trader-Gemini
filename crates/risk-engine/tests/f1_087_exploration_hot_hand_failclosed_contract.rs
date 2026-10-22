@@ -35,7 +35,7 @@ use risk_engine::RiskEngine;
 use signal_engine::{SignalIntent, SignalType};
 use std::sync::atomic::Ordering::Relaxed;
 
-fn fixture_mercado(max_leverage: u32) -> (std::sync::Arc<GlobalArena>, SignalIntent) {
+fn fixture_mercado(max_leverage: u32, capital: f64) -> (std::sync::Arc<GlobalArena>, SignalIntent) {
     update_registry(vec![SymbolSpec {
         symbol: "BTCUSDT".into(),
         step_size: 0.001,
@@ -47,7 +47,10 @@ fn fixture_mercado(max_leverage: u32) -> (std::sync::Arc<GlobalArena>, SignalInt
         taker_fee: 0.0004,
         is_shadow: false,
     }]);
-    let arena = GlobalArena::build_in_own_stack(1000.0);
+    // F1-089e: el arena y el motor deben compartir el capital. Antes el arena se
+    // construia con 1000 y dos tests creaban el motor con 2000: el freno duro de
+    // Ω204 leia una caida del 50 % inexistente y vetaba toda orden nueva.
+    let arena = GlobalArena::build_in_own_stack(capital);
     arena.coins[0].current_price.store(100.0, Relaxed);
     arena.coins[0].current_atr.store(1.0, Relaxed);
     arena.coins[0].hurst_exponent.store(0.5, Relaxed);
@@ -71,7 +74,7 @@ fn fixture_mercado(max_leverage: u32) -> (std::sync::Arc<GlobalArena>, SignalInt
 /// y NO ser inflado artificialmente a `clamp_min`.
 #[test]
 fn test_f1_087_exploracion_sub_kelly_preservada_sin_reinflar_a_clamp_min() {
-    let (arena, intent) = fixture_mercado(5);
+    let (arena, intent) = fixture_mercado(5, 2000.0);
     // Pocos trades (n = 10 < 30 min para LH-04), PF <= 1.0 (0.80) y WR = 0.40.
     // kelly.rs calcula: pf_ramp = (0.8 - 0.5)/0.5 = 0.60; wr_ramp = (0.4/0.05).min(1.0) = 1.0.
     // exploration = clamp_min(0.01) * 0.25 * 0.60 * 1.0 = 0.0015.
@@ -104,7 +107,7 @@ fn test_f1_087_exploracion_sub_kelly_preservada_sin_reinflar_a_clamp_min() {
 /// no debe inflar la confianza ni duplicar el tamaño de posición (techo 1.00).
 #[test]
 fn test_f1_087_asimetria_anti_hot_hand_racha_ganadora_no_infla_legado() {
-    let (arena, intent) = fixture_mercado(5);
+    let (arena, intent) = fixture_mercado(5, 1000.0);
     // Establecer racha ganadora extrema: sesgo epigenético = 2.0
     arena.coins[0].epigenetic_bias.store(2.0, Relaxed);
     arena.coins[0].last_close_ts.store(0, Relaxed);
@@ -139,7 +142,7 @@ fn test_f1_087_asimetria_anti_hot_hand_racha_ganadora_no_infla_legado() {
 /// al nocional mínimo de sonda para adquisición de información de mercado.
 #[test]
 fn test_f1_087_lh04_sin_edge_fail_closed_a_sonda_minima() {
-    let (arena, intent) = fixture_mercado(5);
+    let (arena, intent) = fixture_mercado(5, 2000.0);
     // Evidencia madura: 100 operaciones, pero sin edge (WR = 0.35, PF = 0.85)
     arena.coins[0].metrics.win_rate.store(0.35, Relaxed);
     arena.coins[0].metrics.trade_count.store(100, Relaxed);
