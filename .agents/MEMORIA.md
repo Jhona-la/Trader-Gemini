@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 (tarde) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω215 (Unificación Espectral del Universo Multivariante Dinámico + Acoplamiento Koopman/DMD §57 en Kelly Envelope)
+
+- **Mandato & Entregables**:
+  1. **Unificación Canónica del Selector y Ranking Espectral del Universo (`quantum-arena`, `data-pipeline`, `execution-engine`)**:
+     - **Erradicación de Divergencia Heurística**: Centralizado en `crates/quantum-arena/src/symbols.rs` el motor canónico de saneamiento y puntuación multivariante:
+       - `is_sane_binance_symbol(symbol: &str, is_testnet: bool) -> bool`: Saneamiento ASCII estricto (filtra mojibake UTF-8), longitud base $\ge 3$ caracteres, exclusión sistemática de stablecoins canónicas (`CANONICAL_STABLECOINS`: USDC, FDUSD, TUSD, BUSD, USDP, EUR, DAI, AEUR) y de la lista negra de testnet.
+       - `calculate_spectral_universe_score(volume_usd, price_change_pct, spread_bps, hurst_proxy) -> f64`:
+         $$S = \ln(1 + V_{\text{usd}}) \cdot \left(|\Delta P_{\%}| \cdot e^{-|\Delta P_{\%}| / 15.0}\right) \cdot e^{-\text{spread\_bps}/10.0} \cdot \left(1.0 + 2.0 \cdot |H - 0.5|\right)$$
+     - **Refactorización Limpia**: `crates/data-pipeline/src/dynamic_ranker.rs` y `crates/execution-engine/src/dynamic_symbols.rs` invocan la misma función matemática unimodal y comparten el mismo umbral de volumen (\$1,000,000 en prod, \$0 en testnet).
+     - **Certificación Formal**: `crates/data-pipeline/tests/dynamic_ranker_spectral_unification_contract.rs` (**5/5 PASS**).
+  2. **Acoplamiento de Estabilidad Koopman/DMD (§57) en Kelly Envelope (`risk-engine`)**:
+     - **Atenuador Hiperbólico de Bifurcación**: Acoplados los observables streaming de Koopman (`koopman_modulo` $|\lambda_{\text{dom}}|$ y `koopman_bifurcacion` $\Delta_{\text{bif}}$ de GLM 149) en `RiskEnvelope`:
+       $$\phi_{\text{Koopman}} = \frac{1.0}{1.0 + 3.0 \cdot \max(0.0, |\lambda_{\text{dom}}| - 1.0) + 5.0 \cdot \max(0.0, \Delta_{\text{bif}} - 0.10)}$$
+     - Incorporados `koopman_stability_dampener`, `risk_fraction_spectral` y `exposure_budget_spectral` en `crates/risk-engine/src/kelly_envelope.rs`. En modos contractivos/estables ($|\lambda| \le 1.0$), el factor es $1.0$; ante bifurcaciones no lineales ($|\lambda| > 1.0$), atenúa suavemente hacia 0 para blindar el capital micro (\$13 USD).
+     - **Certificación Formal**: `crates/risk-engine/tests/koopman_kelly_envelope_contract.rs` (**4/4 PASS**).
+  3. **Higiene Git & CI Verde**:
+     - Runs CI en `main`: `39822597600` (Unit suites) y `39822598930` (Replay contracts) en **VERDE ✔**. Run `39830202003` (Unit suites de Ola Ω214) en **VERDE ✔**.
+     - Cero bifurcaciones ni conflictos en GitHub.
+
 ## 2026-10-22 (mediodía, 2) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω214 (Rescate e Integración Total de PR #65 / Codex BASE15, Cierres Reduce-Only Parciales en Simulator, Validación Multifractal y Poda de Ramas)
 
 - **Mandato**:

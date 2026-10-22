@@ -1,3 +1,4 @@
+use quantum_arena::symbols::{calculate_spectral_universe_score, is_sane_binance_symbol};
 use reqwest::Client;
 use serde_json::Value;
 use std::cmp::Ordering;
@@ -123,22 +124,22 @@ impl DynamicSymbolSelector {
                 item.get("priceChangePercent").and_then(|v| v.as_str()),
                 item.get("lastPrice").and_then(|v| v.as_str()), // We just ensure it has a price
             ) {
-                // Must be a USDT pair
-                if !symbol.ends_with("USDT") {
+                // Saneamiento canónico unificado con data-pipeline (QO-U1a / Ola Ω215)
+                if !is_sane_binance_symbol(symbol, is_testnet) {
                     continue;
                 }
 
                 let vol: f64 = volume_str.parse().unwrap_or(0.0);
                 let change_pct: f64 = price_change_str.parse::<f64>().unwrap_or(0.0).abs();
-                // FIX #1498: Umbral adaptativo para Testnet vs Producción
-                let min_vol = if is_testnet { 10_000.0 } else { 10_000_000.0 };
+                // Umbral canónico unificado para Testnet vs Producción
+                let min_vol = if is_testnet { 0.0 } else { 1_000_000.0 };
                 if vol < min_vol {
                     continue;
                 }
 
-                // Ecuación Cuántica (Volatilidad * Log(Volumen))
-                let score = change_pct * vol.max(10.0).log10();
-                if score.is_finite() && score > 0.0 {
+                // Ecuación Espectral Canónica Unificada (Ola Ω215)
+                let score = calculate_spectral_universe_score(vol, change_pct, None, None);
+                if score > 0.0 {
                     heap.push(SymbolScore {
                         symbol: symbol.to_string(),
                         volume_usd: vol,

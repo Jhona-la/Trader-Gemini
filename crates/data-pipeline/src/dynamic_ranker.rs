@@ -1,4 +1,5 @@
 use quantum_arena::symbol_registry::SymbolSpec;
+use quantum_arena::symbols::{calculate_spectral_universe_score, is_sane_binance_symbol};
 use reqwest::Client;
 use serde::Deserialize;
 use std::time::Duration;
@@ -92,46 +93,10 @@ pub async fn fetch_dynamic_universe(
     let tickers: Vec<Ticker24h> = ticker_res.json().await.map_err(|e| e.to_string())?;
 
     let min_vol = if is_testnet { 0.0 } else { 1_000_000.0 };
-    let stablecoins = [
-        "USDCUSDT",
-        "FDUSDUSDT",
-        "TUSDUSDT",
-        "BUSDUSDT",
-        "USDPUSDT",
-        "EURUSDT",
-        "DAIUSDT",
-        "AEURUSDT",
-    ];
-
-    // QO-U1a (auditoría de universo): el escáner dejaba pasar BASURA de
-    // testnet — mojibake (牛来USDT), símbolos triviales (4USDT, AUSDT,
-    // MUSDT, CUSDT) e índices sintéticos. Reglas de saneamiento:
-    //  1. ASCII estricto A-Z0-9 (el mojibake UTF-8 jamás pasa);
-    //  2. la BASE sin sufijo debe tener ≥3 caracteres (mata 4USDT/AUSDT);
-    //  3. lista negra de bases conocidas-triviales de testnet.
-    let testnet_blacklist = [
-        "CUSDT", "MUSDT", "AUSDT", "4USDT", "USELESSUSDT", "ZENUSDT", "IDOLUSDT",
-        "SKYUSDT", "SUPERUSDT", "DRIFTUSDT", "CROSSUSDT", "FARTCOINUSDT", "FLUIDUSDT",
-        "VVVUSDT", "ALCHUSDT", "SENTUSDT", "RAYSOLUSDT", "METUSDT", "AZTECUSDT",
-        "ONEUSDT", "JUPUSDT", "TIAUSDT", "PENDLEUSDT", "LPTUSDT", "EIGENUSDT",
-        "ZKUSDT", "INJUSDT", "ACHUSDT", "OPUSDT",
-    ];
-    let is_sane_symbol = |s: &str| -> bool {
-        if s.len() < 7 || !s.ends_with("USDT") {
-            return false;
-        }
-        let base = &s[..s.len() - 4];
-        base.len() >= 3
-            && base
-                .chars()
-                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
-            && !stablecoins.contains(&s)
-            && !testnet_blacklist.contains(&s)
-    };
 
     let mut valid_assets: Vec<SelectedAsset> = tickers
         .into_iter()
-        .filter(|t| is_sane_symbol(&t.symbol))
+        .filter(|t| is_sane_binance_symbol(&t.symbol, is_testnet))
         .filter_map(|t| {
             let vol = t.quote_volume.parse::<f64>().unwrap_or(0.0);
             let pct = t.price_change_percent.parse::<f64>().unwrap_or(0.0).abs();
@@ -147,35 +112,14 @@ pub async fn fetch_dynamic_universe(
         })
         .collect();
 
-    // F4.6 — RANKING RAZONADO (antes: volumen×(1+vol%) — favorece exóticos
-    // manipulados con vol inflado). Métrica documentada:
-    //   score = ln(1 + quote_volume) × banda_de_volatilidad(pct)
-    // - ln(volumen): liquidez es de cola pesada; log da escala comparable.
-    // - banda = pct × e^(-pct/15): premia volatilidad MODERADA (oportunidad
-    //   real para scalp/swing) y castiga la extrema (casino/manipulación) —
-    //   máximo en 15% diario, decae exponencialmente después.
-    let score = |a: &SelectedAsset| -> f64 {
-        // FIX #676: Sanitizar volatilidad y volumen para ranking
-        let pct = if a.volatility.is_finite() && a.volatility >= 0.0 {
-            a.volatility
-        } else {
-            0.0
-        };
-        let vol = if a.volume.is_finite() && a.volume >= 0.0 {
-            a.volume
-        } else {
-            0.0
-        };
-        let s = (1.0 + vol).ln() * pct * (-pct / 15.0_f64).exp();
-        if s.is_finite() {
-            s
-        } else {
-            0.0
-        }
-    };
+    // F4.6 / Ola Ω215 — RANKING ESPECTRAL CANÓNICO UNIFICADO:
+    // score = calculate_spectral_universe_score(volume, volatility, None, None)
+    // Combina ln(1+vol) con la campana unimodal pct*exp(-pct/15) sin duplicidad de fórmulas.
     valid_assets.sort_by(|a, b| {
-        score(b)
-            .partial_cmp(&score(a))
+        let score_b = calculate_spectral_universe_score(b.volume, b.volatility, None, None);
+        let score_a = calculate_spectral_universe_score(a.volume, a.volatility, None, None);
+        score_b
+            .partial_cmp(&score_a)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     valid_assets.truncate(limit);
@@ -260,70 +204,28 @@ pub async fn fetch_dynamic_universe(
 mod tests {
     use super::*;
 
-    /// QO-U1a — el saneamiento mata la basura de testnet medida en vivo:
-    /// mojibake (牛来USDT), triviales (4USDT/AUSDT) y blacklist.
+    /// QO-U1a / Ola Ω215 — el saneamiento canónico mata la basura de testnet:
+    /// mojibake (牛来USDT), triviales (4USDT/AUSDT), stablecoins y blacklist.
     #[test]
     fn qo_u1a_sanitizer_rechaza_basura_testnet() {
-        // El closure vive dentro de fetch_dynamic_universe: replicamos las
-        // reglas aquí como regresión del contrato.
-        let stablecoins = [
-            "USDCUSDT", "FDUSDUSDT", "TUSDUSDT", "BUSDUSDT", "USDPUSDT", "EURUSDT",
-            "DAIUSDT", "AEURUSDT",
-        ];
-        let sane = |s: &str| -> bool {
-            if s.len() < 7 || !s.ends_with("USDT") {
-                return false;
-            }
-            let base = &s[..s.len() - 4];
-            base.len() >= 3
-                && base.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
-                && !stablecoins.contains(&s)
-        };
-        // Basura REAL vista en dynamic_config.json del testnet:
-        assert!(!sane("牛来USDT"), "mojibake debe morir");
-        assert!(!sane("4USDT"), "base trivial de 1 carácter");
-        assert!(!sane("AUSDT"), "base trivial de 1 carácter");
-        assert!(!sane("USDCUSDT"), "stablecoin");
+        // Basura REAL rechazada mediante predicado canónico:
+        assert!(!is_sane_binance_symbol("牛来USDT", false), "mojibake debe morir");
+        assert!(!is_sane_binance_symbol("4USDT", false), "base trivial de 1 carácter");
+        assert!(!is_sane_binance_symbol("AUSDT", false), "base trivial de 1 carácter");
+        assert!(!is_sane_binance_symbol("USDCUSDT", false), "stablecoin");
+        assert!(!is_sane_binance_symbol("FDUSDUSDT", false), "stablecoin");
+        assert!(!is_sane_binance_symbol("USELESSUSDT", true), "blacklist testnet");
+
         // Legítimos sobreviven:
-        assert!(sane("BTCUSDT"));
-        assert!(sane("NEARUSDT"));
-        assert!(sane("1000PEPEUSDT"), "bases con dígitos son legítimas");
+        assert!(is_sane_binance_symbol("BTCUSDT", false));
+        assert!(is_sane_binance_symbol("NEARUSDT", false));
+        assert!(is_sane_binance_symbol("1000PEPEUSDT", false), "bases con dígitos son legítimas");
     }
 
     #[test]
     fn test_dynamic_ranker_scoring_function() {
-        let asset15 = SelectedAsset {
-            symbol: "SOLUSDT".to_string(),
-            volume: 10_000_000.0,
-            volatility: 15.0,
-        };
-        let asset50 = SelectedAsset {
-            symbol: "MEMEUSDT".to_string(),
-            volume: 10_000_000.0,
-            volatility: 50.0,
-        };
-
-        let score_fn = |a: &SelectedAsset| -> f64 {
-            let pct = if a.volatility.is_finite() && a.volatility >= 0.0 {
-                a.volatility
-            } else {
-                0.0
-            };
-            let vol = if a.volume.is_finite() && a.volume >= 0.0 {
-                a.volume
-            } else {
-                0.0
-            };
-            let s = (1.0 + vol).ln() * pct * (-pct / 15.0_f64).exp();
-            if s.is_finite() {
-                s
-            } else {
-                0.0
-            }
-        };
-
-        let score_15 = score_fn(&asset15);
-        let score_50 = score_fn(&asset50);
+        let score_15 = calculate_spectral_universe_score(10_000_000.0, 15.0, None, None);
+        let score_50 = calculate_spectral_universe_score(10_000_000.0, 50.0, None, None);
 
         // Volatilidad moderada (15%) debe tener mayor puntaje que extrema (50%)
         assert!(
@@ -334,27 +236,8 @@ mod tests {
 
     #[test]
     fn test_dynamic_ranker_nan_immunity() {
-        let score_fn = |vol: f64, pct: f64| -> f64 {
-            let pct = if pct.is_finite() && pct >= 0.0 {
-                pct
-            } else {
-                0.0
-            };
-            let vol = if vol.is_finite() && vol >= 0.0 {
-                vol
-            } else {
-                0.0
-            };
-            let s = (1.0 + vol).ln() * pct * (-pct / 15.0_f64).exp();
-            if s.is_finite() {
-                s
-            } else {
-                0.0
-            }
-        };
-
-        assert_eq!(score_fn(f64::NAN, 15.0), 0.0);
-        assert_eq!(score_fn(1000.0, f64::NAN), 0.0);
-        assert_eq!(score_fn(f64::NAN, f64::NAN), 0.0);
+        assert_eq!(calculate_spectral_universe_score(f64::NAN, 15.0, None, None), 0.0);
+        assert_eq!(calculate_spectral_universe_score(1000.0, f64::NAN, None, None), 0.0);
+        assert_eq!(calculate_spectral_universe_score(f64::NAN, f64::NAN, None, None), 0.0);
     }
 }

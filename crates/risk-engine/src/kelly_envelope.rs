@@ -314,6 +314,86 @@ impl RiskEnvelope {
         shrunk.min(crate::ruin::streak_ruin_cap(q_lcb)).min(0.25) // axioma 25%
     }
 
+    /// Atenuador de estabilidad espectral Koopman/DMD (§57 / Ola Ω215).
+    ///
+    /// Modula la fracción de riesgo de Kelly según el módulo dominante (|λ|)
+    /// y la métrica de bifurcación espectral del operador Koopman streaming:
+    ///
+    /// - Régimen Asintóticamente Estable (|λ| <= 1.0 y bifurcacion <= 0.10):
+    ///   El flujo en el espacio de Hilbert es contractivo o unitario; el factor es 1.0.
+    /// - Régimen Divergente / Bifurcación Caótica (|λ| > 1.0 o bifurcacion > 0.10):
+    ///   Atenuación hiperbólica suave:
+    ///   \phi = 1.0 / (1.0 + 3.0 * (|λ| - 1.0).max(0.0) + 5.0 * (bifurcacion - 0.10).max(0.0))
+    ///
+    /// Protege matemáticamente las micro-cuentas ($13 USD) de entrar con tamaño pleno
+    /// durante bifurcaciones no lineales o regímenes explosivos.
+    #[inline]
+    pub fn koopman_stability_dampener(
+        koopman_modulo: f64,
+        koopman_bifurcacion: f64,
+    ) -> f64 {
+        if !koopman_modulo.is_finite() || !koopman_bifurcacion.is_finite() {
+            return 1.0; // Fallback neutral si aún no hay lecturas maduras de Koopman
+        }
+        let excess_modulo = (koopman_modulo - 1.0).max(0.0);
+        let excess_bif = (koopman_bifurcacion - 0.10).max(0.0);
+        let dampener = 1.0 / (1.0 + 3.0 * excess_modulo + 5.0 * excess_bif);
+        dampener.clamp(0.05, 1.0)
+    }
+
+    /// Fracción de riesgo final modulada espectralmente por Koopman/DMD (§57 / Ola Ω215).
+    pub fn risk_fraction_spectral(
+        &self,
+        z: f64,
+        shrinkage_k: f64,
+        koopman_modulo: f64,
+        koopman_bifurcacion: f64,
+    ) -> f64 {
+        let base_f = self.risk_fraction(z, shrinkage_k);
+        if base_f <= 0.0 {
+            return 0.0;
+        }
+        let dampener = Self::koopman_stability_dampener(koopman_modulo, koopman_bifurcacion);
+        base_f * dampener
+    }
+
+    /// Presupuesto de exposición con modulación espectral Koopman (§57 / Ola Ω215).
+    pub fn exposure_budget_spectral(
+        &self,
+        capital: f64,
+        stop_distance_pct: f64,
+        roundtrip_cost_pct: f64,
+        z: f64,
+        shrinkage_k: f64,
+        koopman_modulo: f64,
+        koopman_bifurcacion: f64,
+    ) -> Option<ExposureBudget> {
+        if !capital.is_finite()
+            || capital <= 0.0
+            || !stop_distance_pct.is_finite()
+            || stop_distance_pct <= 0.0
+            || !roundtrip_cost_pct.is_finite()
+            || roundtrip_cost_pct < 0.0
+        {
+            return None;
+        }
+        let f = self.risk_fraction_spectral(z, shrinkage_k, koopman_modulo, koopman_bifurcacion);
+        let risk_budget_usd = capital * f;
+        let loss_per_notional = stop_distance_pct + roundtrip_cost_pct;
+        let max_notional = risk_budget_usd / loss_per_notional;
+        if [risk_budget_usd, loss_per_notional, max_notional]
+            .iter()
+            .any(|v| !v.is_finite() || *v <= 0.0)
+        {
+            return None;
+        }
+        Some(ExposureBudget {
+            risk_budget_usd,
+            loss_per_notional,
+            max_notional,
+        })
+    }
+
     /// B=C*f y N_max=B/(distancia+coste). No usa pisos de posición ni bootstrap.
     /// El coste debe incluir la reserva de ida/vuelta elegida por el caller.
     /// Valida representabilidad; no reemplaza inputs corruptos por un trade.
@@ -658,5 +738,41 @@ mod tests {
         // Fracción con z > 0 debe ser menor o igual que sin descuento de payoff
         let f_conservadora = env.risk_fraction(1.64, 10.0);
         assert!(f_conservadora >= 0.0);
+    }
+
+    #[test]
+    fn test_koopman_stability_dampener_and_spectral_risk_fraction() {
+        // 1. Modos asintóticamente estables (|λ| <= 1.0, bif <= 0.10) => factor 1.0
+        assert_eq!(RiskEnvelope::koopman_stability_dampener(0.95, 0.05), 1.0);
+        assert_eq!(RiskEnvelope::koopman_stability_dampener(1.00, 0.10), 1.0);
+
+        // 2. Modos inestables / divergentes atenúan el riesgo
+        let damp_mild = RiskEnvelope::koopman_stability_dampener(1.10, 0.10);
+        assert!(damp_mild < 1.0 && damp_mild > 0.5, "1.10 |λ| debe atenuar suavemente");
+
+        let damp_severe = RiskEnvelope::koopman_stability_dampener(1.30, 0.25);
+        assert!(damp_severe < damp_mild, "Mayor inestabilidad debe atenuar más");
+
+        // 3. Inmunidad a NaN / Inf => fallback 1.0
+        assert_eq!(RiskEnvelope::koopman_stability_dampener(f64::NAN, 0.10), 1.0);
+        assert_eq!(RiskEnvelope::koopman_stability_dampener(1.0, f64::NAN), 1.0);
+
+        // 4. Piso de supervivencia (mínimo 0.05)
+        let damp_extreme = RiskEnvelope::koopman_stability_dampener(100.0, 100.0);
+        assert_eq!(damp_extreme, 0.05, "Piso de atenuación debe ser 0.05");
+
+        // 5. Acoplamiento en risk_fraction_spectral
+        let mut env = RiskEnvelope::new();
+        for i in 0..100 {
+            env.record_trade(i % 10 < 6, 20.0, -10.0); // Edge claro
+        }
+        let base_f = env.risk_fraction(1.64, 10.0);
+        assert!(base_f > 0.0);
+
+        let f_stable = env.risk_fraction_spectral(1.64, 10.0, 0.95, 0.05);
+        assert_eq!(f_stable, base_f);
+
+        let f_chaotic = env.risk_fraction_spectral(1.64, 10.0, 1.25, 0.20);
+        assert!(f_chaotic < base_f && f_chaotic > 0.0);
     }
 }
