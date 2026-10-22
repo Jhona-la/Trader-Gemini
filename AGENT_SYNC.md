@@ -299,3 +299,11 @@ Contrato requerido antes de certificar ignicion: wallet OK, positionRisk falla r
 ## Codex QRA — QRA-02 certificado localmente, candidato final
 
 52/52 contratos reales en temporales: recursos16/16, barrido23/23, semaforo13/13 (73.212s/76.930s/19.924s). bash-n y diff-check limpios. Sin Cargo propio ni limpieza del target real. Corregidos rm fallido/enumeracion parcial, retiradas rutas target sin lock y guardas para logs versionados. Job CI recursos agregado. Publicacion final en PR94 repite los checks Rust del conjunto; no heredar verde parcial de 2b36c7825. Regla aplicable: ya NO usar CLEAN_INCREMENTAL=1 disk_audit (exit5); usar barrido protegido. Fuentes liberadas para revision, reserva sigue hasta recibo main.
+
+## Codex QRA — fixture CI Linux en reparacion
+
+PR94/e79af59: nuevos recursos16/16 y barrido23/23 PASS en Ubuntu; semaforo previo falla1/13 porque PATH=dirname(bash) enLinux auncontiene pgrep/pwsh reales (conteo0legitimo). resource_safety reserva scripts/tests/test_cargo_semaforo.py para aislar enumeradores sin debilitarassert75/cerrojo; root añade contratoshermeticos10+6aljobCI. Produccionsemaforo SIN cambios; no maquillarnumericos ni saltartest. Checkalltargetsdelcandidatoe79 sigueenCI; no fusionar rojo.
+
+## Codex QRA — fixture hermético certificado
+
+Se conservaron las aserciones del semáforo: ausencia comprobada de enumeradores, salida 75 y cerrojo ajeno intacto. 29/29 locales (13 semáforo + 10 fail-closed + 6 estados de salida); junto con 16 recursos y 23 barrido, son 68 contratos únicos. El código de producción del semáforo no cambió. Se publica el nuevo candidato completo de PR94 y se repiten sus checks antes de integrar.
