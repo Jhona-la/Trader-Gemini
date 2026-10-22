@@ -88,8 +88,8 @@ fn override_entorno_tg_wf_capital_con_guardas() {
         }
     }
 
-    let base = wf_initial_capital(); // sin env ⇒ default 13.0
-    assert!((base - 13.0).abs() < 1e-12, "sin env ⇒ default documentado");
+    let base = wf_initial_capital(); // sin env ⇒ default 1.0 (unidad neutra)
+    assert!((base - 1.0).abs() < 1e-12, "sin env ⇒ default documentado");
 
     {
         let _g = EnvGuard::set("TG_WF_CAPITAL", "500.0");
@@ -97,11 +97,11 @@ fn override_entorno_tg_wf_capital_con_guardas() {
     }
     {
         let _g = EnvGuard::set("TG_WF_CAPITAL", "-5");
-        assert!((wf_initial_capital() - 13.0).abs() < 1e-12, "≤0 ⇒ default");
+        assert!((wf_initial_capital() - 1.0).abs() < 1e-12, "≤0 ⇒ default");
     }
     {
         let _g = EnvGuard::set("TG_WF_CAPITAL", "no-un-numero");
-        assert!((wf_initial_capital() - 13.0).abs() < 1e-12, "NaN ⇒ default");
+        assert!((wf_initial_capital() - 1.0).abs() < 1e-12, "NaN ⇒ default");
     }
-    assert!((wf_initial_capital() - 13.0).abs() < 1e-12, "limpio ⇒ default");
+    assert!((wf_initial_capital() - 1.0).abs() < 1e-12, "limpio ⇒ default");
 }

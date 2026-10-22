@@ -193,6 +193,29 @@ fn acotar_continuo(valor: f64, piso: f64, techo: f64) -> f64 {
     }
 }
 
+/// F1-089e (Sol) — ARL del detector LG-22 sin suelo arbitrario.
+///
+/// ARL es la longitud media de racha bajo H0: cuántos cierres se esperan entre
+/// falsas alarmas. Es una POLÍTICA del genoma (gobernanza `lg22_arl`, default
+/// 200) y cualquier valor ≥ 1 es válido: ARL = 1 significa «alarma en el primer
+/// cierre perdedor» y es el caso extremo con el que
+/// `lg22_cableado_contract::lg22b_la_alarma_no_se_relaja_durante_el_hueco_entre_cierres`
+/// certifica el cableado del detector.
+///
+/// Ω203 impuso `.max(10.0)`, un SUELO ARBITRARIO que pisaba la configuración y
+/// rompió ese contrato (run 39710390608: con ARL 1 la alarma no disparaba).
+/// Un límite artificial no puede sustituir a una política declarada. Sólo los
+/// valores degenerados —0, negativos o no finitos, donde `1/ARL` y `log(ARL)`
+/// no existen— caen al default documentado de la gobernanza.
+#[inline]
+fn lg22_arl_valido(arl: f64) -> f64 {
+    if arl.is_finite() && arl >= 1.0 {
+        arl
+    } else {
+        200.0
+    }
+}
+
 ///     recibía 16/30 (0,75).
 ///   · el intervalo contiene p* ⇒ todavía no hay evidencia; decide la
 ///     magnitud MEDIDA del disparo.
@@ -2028,8 +2051,9 @@ impl GodEngineCore {
         self.arena.registry.set("conformal_gate_strictness", conf_strict);
 
         // OLA Ω203 (F1-040): Sincronización de Gobernanza del Detector LG-22 e-CUSUM
-        let lg22_arl = self.arena.config.lg22_arl.load(Ordering::Relaxed).max(10.0);
-        self.arena.registry.set("lg22_arl", lg22_arl);
+        self.arena
+            .registry
+            .set("lg22_arl", lg22_arl_valido(self.arena.config.lg22_arl.load(Ordering::Relaxed)));
     }
 
     #[inline]
@@ -5311,12 +5335,7 @@ impl GodEngineCore {
                         let friccion_rt = roundtrip_friction;
                         let r_max = ((tp - friccion_rt).max(1e-9)) / sl.max(1e-9);
                         let r_neta = net_trade_pnl / riesgo_al_stop;
-                        let arl = self
-                            .arena
-                            .config
-                            .lg22_arl
-                            .load(Ordering::Relaxed)
-                            .max(10.0);
+                        let arl = lg22_arl_valido(self.arena.config.lg22_arl.load(Ordering::Relaxed));
                         let mut alarma_lg22 = false;
                         if let Some(det) = self.lg22_detectores.get_mut(coin_id) {
                             // LG-27b: sólo cierres con la geometría FIJADA AL

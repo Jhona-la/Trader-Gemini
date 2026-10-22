@@ -42,6 +42,11 @@ fn core(arl: f64) -> (Arc<GlobalArena>, GodEngineCore) {
         "LG22USDT",
     )]);
     let arena = GlobalArena::build_in_own_stack(1000.0);
+    // F1-089e: la gobernanza `lg22_arl` vive en el ÁTOMO DE CONFIG (Ω203); el
+    // registro es la vista publicada por el Core. Este fixture fijaba sólo el
+    // registro, así que el detector leía el default 200 y el caso ARL = 1
+    // —«alarma al primer cierre perdedor»— dejaba de alarmar (run 39710390608).
+    arena.config.lg22_arl.store(arl, Ordering::Relaxed);
     arena.registry.set("lg22_arl", arl);
     let mut core = GodEngineCore::new_with_outcome_context(
         arena.clone(),
