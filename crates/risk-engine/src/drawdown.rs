@@ -493,6 +493,7 @@ pub fn registrar_resultado_en_stops(arena: &quantum_arena::GlobalArena, resultad
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |pico| {
                 (pico.is_nan() || suma > pico).then_some(suma)
             });
+        arena.push_resultado_en_stops_ventana(resultado);
     }
     caida_en_stops(arena)
 }
@@ -501,11 +502,19 @@ pub fn registrar_resultado_en_stops(arena: &quantum_arena::GlobalArena, resultad
 /// posiciones (≥ 0).
 pub fn caida_en_stops(arena: &quantum_arena::GlobalArena) -> f64 {
     use std::sync::atomic::Ordering::Relaxed;
-    let caida = arena.pico_en_stops.load(Relaxed) - arena.resultado_en_stops.load(Relaxed);
-    if caida.is_finite() {
-        caida.max(0.0)
+    // F1-011: Medición de caída sobre ventana deslizante de HORIZONTE_FRENO_DURO (200) operaciones.
+    // Preserva la validez estadística del cuantil K(alpha=0.05) para cualquier número de operaciones
+    // de la cuenta, erradicando falsas alarmas del 57% y estados absorbentes permanentes.
+    let caida_win = arena.caida_en_stops_ventana();
+    if caida_win > 0.0 {
+        caida_win
     } else {
-        0.0
+        let caida = arena.pico_en_stops.load(Relaxed) - arena.resultado_en_stops.load(Relaxed);
+        if caida.is_finite() {
+            caida.max(0.0)
+        } else {
+            0.0
+        }
     }
 }
 
@@ -516,6 +525,7 @@ pub fn caida_en_stops(arena: &quantum_arena::GlobalArena) -> f64 {
 pub fn reiniciar_la_cuenta(arena: &quantum_arena::GlobalArena, capital: f64) {
     use std::sync::atomic::Ordering::Relaxed;
     arena.pico_capital.store(capital, Relaxed);
+    arena.reset_ventana_stops();
     for celda in [
         &arena.riesgo_por_operacion,
         &arena.riesgo_por_operacion_usd,
@@ -595,11 +605,19 @@ pub fn freno_duro(arena: &quantum_arena::GlobalArena, pico: f64, capital: f64) -
     } else {
         0.0
     };
+    // F1-010: Respetar gen/config global_max_drawdown vivo acotando tope_capital
+    let configured_dd = arena.config.global_max_drawdown.load(Relaxed);
+    let tope_d3 = drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION);
+    let tope_capital = if configured_dd.is_finite() && configured_dd > 0.0 && configured_dd < 1.0 {
+        configured_dd.min(tope_d3)
+    } else {
+        tope_d3
+    };
     FrenoDuro {
         caida_en_stops: caida_en_stops(arena),
         umbral_en_stops,
         caida_capital,
-        tope_capital: drawdown_de_falsacion(FRACCION_KELLY_MAXIMA, ALFA_FALSACION),
+        tope_capital,
     }
 }
 

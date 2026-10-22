@@ -2074,7 +2074,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         m
                     );
                 }
-                risk_engine::drawdown::CargaPico::Ausente => {}
+                risk_engine::drawdown::CargaPico::Ausente => {
+                    // F1-011: Pico ausente o retirado por el operador -> rearme limpio de contadores
+                    // en stops sin destruir el estado aprendido de los modelos.
+                    arena_imm.resultado_en_stops.store(0.0, Ordering::Relaxed);
+                    arena_imm.pico_en_stops.store(0.0, Ordering::Relaxed);
+                    arena_imm.reset_ventana_stops();
+                    telemetry_server::telemetry_log!(
+                        "🛡️ [IMMUNE] Archivo de pico ausente: freno duro de stops rearmado a 0.0"
+                    );
+                }
             }
             rt_handle.spawn(async move {
                 let mut latched = false;
@@ -2083,6 +2092,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut latency_strikes: u32 = 0;
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+                    // F1-011: Comando de rearme explícito por archivo: rearme_frenos.txt
+                    let ruta_rearme = std::path::PathBuf::from(quantum_arena::paths::env_data_path("rearme_frenos.txt"));
+                    if ruta_rearme.exists() {
+                        let _ = std::fs::remove_file(&ruta_rearme);
+                        arena_imm.resultado_en_stops.store(0.0, Ordering::Relaxed);
+                        arena_imm.pico_en_stops.store(0.0, Ordering::Relaxed);
+                        arena_imm.reset_ventana_stops();
+                        latched = false;
+                        telemetry_server::telemetry_log!(
+                            "🛡️ [IMMUNE] Archivo rearme_frenos.txt consumido: frenos en stops rearmados y latch liberado."
+                        );
+                    }
+
                     if latched {
                         continue;
                     }

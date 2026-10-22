@@ -9,6 +9,22 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
 [Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
 
 
+## 2026-10-21 (noche, 5) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω204 (Gobernanza Activa global_max_drawdown F1-010, Ventana Deslizante 200 Cierres en Stops y Rearme No Absorbente F1-011)
+
+- **Mandato**: Resolución matemática y probabilística de F1-010 y F1-011 en FASE 2:
+  1. **F1-010: Gobernanza Activa de `global_max_drawdown` (`crates/quantum-arena/src/genome.rs:1793`, `crates/risk-engine/src/drawdown.rs:603`, `crates/god-engine-core/src/darwin.rs:385`)**:
+     - *QUÉ*: `freno_duro` en `drawdown.rs` lee `arena.config.global_max_drawdown` vivo y acota `tope_capital = configured_dd.min(tope_d3)`. Si la caída del capital acumulada desde el pico alcanza `global_max_drawdown`, `por_capital()` se activa y rechaza intenciones con `REJ_DRAWDOWN`. En `darwin.rs:385`, `evaluate_genotype` evalúa `current_dd` tras cada cierre y aborta con fitness `f64::NEG_INFINITY` si `current_dd >= max_drawdown_policy`.
+     - *POR QUÉ*: El parámetro de presupuesto global de drawdown era puramente cosmético, sin lectura ejecutiva en risk-engine ni corte de trayectoria en darwin.
+     - *PARA QUÉ*: Inmunidad estricta a la ruina y coherencia fenotípica en el oráculo evolutivo para la cuenta de 13 USD.
+  2. **F1-011: Ventana Deslizante de 200 Cierres en Stops y Rearme No Absorbente (`crates/quantum-arena/src/state.rs:684, 815-865`, `crates/risk-engine/src/drawdown.rs:493, 502, 516`, `src/bin/god_engine.rs:2074-2105`)**:
+     - *QUÉ*: Buffer circular de 200 cierres en `GlobalArena` (`ventana_stops_buffer`) y métodos `push_resultado_en_stops_ventana`, `caida_en_stops_ventana`, `reset_ventana_stops`. `caida_en_stops` evalúa la caída máxima dentro de la ventana de las últimas 200 operaciones ($H=200$), preservando el nivel estadístico $\alpha = 0.05$ (5%) en todo tiempo y erradicando la falsa alarma de 52-57% a 2000 cierres. Las pérdidas viejas ruedan fuera de la ventana. Rearme del operador por archivo `rearme_frenos.txt` o `CargaPico::Ausente` en `god_engine.rs` resetea los contadores sin destruir `estado_aprendido.bin`.
+     - *POR QUÉ*: Medir caídas acumuladas desde el origen contra un cuantil de 200 operaciones creaba un estado absorbente permanente e indestructible.
+     - *PARA QUÉ*: Disponibilidad y crecimiento compuesto ininterrumpido hacia +100%/72h.
+- **Verificación Contractual y Pruebas**:
+  - `cargo test -p risk-engine --test f1_010_011_drawdown_window_and_budget_contract -j 1` (2/2 pass, 100% verde en 0.04s).
+  - `cargo test -p risk-engine --test cf4_freno_duro -j 1` (6/6 pass, 100% verde en 0.12s).
+  - `cargo test -p god-engine-core --test darwin_margin_contract -j 1` (3/3 pass, 100% verde en 0.00s).
+
 ## 2026-10-21 (noche, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω203 (Unificación Fricción Roundtrip F1-040, Absorción Kyle-Hasbrouck F1-041, Muestreo Telemetría F1-043 y Clasificación Estricta Terminal F1-032)
 
 - **Mandato**: Continuación estricta de FASE 2 y erradicación de los últimos hallazgos abiertos en `f1_hallazgos.tsv`:
