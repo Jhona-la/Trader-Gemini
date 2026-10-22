@@ -160,6 +160,39 @@ pub fn p_equilibrio(tp: f64, sl: f64, friccion: f64) -> Option<f64> {
 ///     máx(cota inferior, piso por magnitud): la evidencia a favor nunca deja
 ///     a la rama por debajo de una rama sin historial (F3.3-01). Antes
 ///     devolvía la cota inferior, y 21/30 (0,521) quedaba bajo el piso que
+/// F1-089c (Sol) — acotado continuo que NO puede panizar.
+///
+/// `f64::clamp` PANICA cuando `min > max`, y con `panic = "abort"` ese pánico
+/// mata el proceso vivo. Los temporizadores continuos de F1-039 tomaban como
+/// piso el `tau` propio del trade y como techo un día (86_400_000 ms): con un
+/// horizonte superior a un día el piso superaba el techo y el CIERRE de la
+/// posición abortaba el motor —contrato
+/// `close_kelly_retains_the_trade_horizon_instead_of_using_cleared_slot`, run
+/// 39698060256—. La política escrita es «como mínimo el tau del trade, como
+/// mucho un día»: cuando el tau ya excede el techo, manda el techo.
+///
+/// Un valor no finito NO se convierte en cero silencioso: cae al piso, que es
+/// el comportamiento sin dato. El techo no finito o no positivo se sustituye
+/// por `f64::MAX` para no degradar el temporizador a 0.
+#[inline]
+fn acotar_continuo(valor: f64, piso: f64, techo: f64) -> f64 {
+    let techo = if techo.is_finite() && techo > 0.0 {
+        techo
+    } else {
+        f64::MAX
+    };
+    let piso = if piso.is_finite() && piso > 0.0 {
+        piso.min(techo)
+    } else {
+        0.0
+    };
+    if valor.is_finite() {
+        valor.clamp(piso, techo)
+    } else {
+        piso
+    }
+}
+
 ///     recibía 16/30 (0,75).
 ///   · el intervalo contiene p* ⇒ todavía no hay evidencia; decide la
 ///     magnitud MEDIDA del disparo.
@@ -4814,14 +4847,27 @@ impl GodEngineCore {
                 // F1-039 / #548, #556 & #560: Alpha Decay y Peak Harvest Continuo Multivariante
                 // Temporizadores estrictamente continuos y homogéneos en tau_trade_ms, erradicando los
                 // suelos artificiales (12m/8m/30m/1h/2h) que congelaban la banda rápida (tau = 30s) en trades rotos.
-                let harvest_age_ms = (tau_trade_ms * 8.0).clamp(tau_trade_ms, 86_400_000.0) as u64;
+                let harvest_age_ms =
+                    acotar_continuo(tau_trade_ms * 8.0, tau_trade_ms, 86_400_000.0) as u64;
                 let roundtrip_taker_friction = live_fee.max(0.0007) + 2.0 * slip_floor;
                 // Garantía de ganancia neta sustancial en cosechas: al menos 70% del SL o 2.5x la fricción total
                 let net_profit_min = (sl * 0.70).max(roundtrip_taker_friction * 2.5).max(0.00280);
                 let peak_harvest_thresh = (net_profit_min * 1.15).max(tp * 0.40);
-                let min_stagnant_ms = (tau_trade_ms * (5.0 + 3.0 * temporal_s)).clamp(tau_trade_ms * 2.0, 86_400_000.0) as u64;
-                let hard_stagnant_ms = (tau_trade_ms * (10.0 + 6.0 * temporal_s)).clamp(tau_trade_ms * 4.0, 86_400_000.0) as u64;
-                let absolute_trade_life_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(tau_trade_ms * 8.0, 86_400_000.0) as u64;
+                let min_stagnant_ms = acotar_continuo(
+                    tau_trade_ms * (5.0 + 3.0 * temporal_s),
+                    tau_trade_ms * 2.0,
+                    86_400_000.0,
+                ) as u64;
+                let hard_stagnant_ms = acotar_continuo(
+                    tau_trade_ms * (10.0 + 6.0 * temporal_s),
+                    tau_trade_ms * 4.0,
+                    86_400_000.0,
+                ) as u64;
+                let absolute_trade_life_ms = acotar_continuo(
+                    tau_trade_ms * (20.0 + 10.0 * temporal_s),
+                    tau_trade_ms * 8.0,
+                    86_400_000.0,
+                ) as u64;
 
                 let spec_alive = self.temporal_spectrum.get(coin_id).map(|spec| {
                     let sig = spec.signal_at(tau_trade_ms);
@@ -4861,9 +4907,21 @@ impl GodEngineCore {
                 };
 
                 // F1-039 / D-649, #548 & #560: Timeout y Zombi adaptativo continuo proporcional a tau_trade_ms
-                let dynamic_zombie_debounce_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(tau_trade_ms * 6.0, 86_400_000.0) as u64;
-                let dynamic_hard_timeout_ms = (tau_trade_ms * (40.0 + 20.0 * temporal_s)).clamp(tau_trade_ms * 12.0, 86_400_000.0) as u64;
-                let absolute_expiry_ms = (tau_trade_ms * (60.0 + 30.0 * temporal_s)).clamp(tau_trade_ms * 18.0, 86_400_000.0) as u64;
+                let dynamic_zombie_debounce_ms = acotar_continuo(
+                    tau_trade_ms * (20.0 + 10.0 * temporal_s),
+                    tau_trade_ms * 6.0,
+                    86_400_000.0,
+                ) as u64;
+                let dynamic_hard_timeout_ms = acotar_continuo(
+                    tau_trade_ms * (40.0 + 20.0 * temporal_s),
+                    tau_trade_ms * 12.0,
+                    86_400_000.0,
+                ) as u64;
+                let absolute_expiry_ms = acotar_continuo(
+                    tau_trade_ms * (60.0 + 30.0 * temporal_s),
+                    tau_trade_ms * 18.0,
+                    86_400_000.0,
+                ) as u64;
                 let z_loss_hard = (sl * 0.90).max(live_fee * 3.0);
                 let z_loss_trend = (sl * 0.80).max(live_fee * 3.0);
 
@@ -10155,8 +10213,7 @@ pub fn tau_hacia_el_centroide(tau_ms: u64, resonante_ms: f64) -> u64 {
     };
     let continuous_tau = (safe_base.ln() * 0.50 + safe_resonant.ln() * 0.50).exp();
     if continuous_tau.is_finite() {
-        continuous_tau
-            .clamp(ancla, quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS)
+        acotar_continuo(continuous_tau, ancla, quantum_arena::temporal_spectrum::TAU_ANCHOR_SLOW_MS)
             .round() as u64
     } else {
         ancla as u64
