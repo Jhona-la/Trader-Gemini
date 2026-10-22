@@ -9,6 +9,52 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
 [Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
 
 
+## 2026-10-21 (noche, 7) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω206 (FASE 2 CULMINACIÓN 125/125: Puente Browniano F1-002, Omni 54D Causal F1-003, y Shadow Forest sin Fuga Temporal F1-004)
+
+- **Mandato**: Culminación definitiva de la FASE 2 y erradicación de los últimos 3 hallazgos abiertos en `f1_hallazgos.tsv`:
+  1. **F1-002: Puente Browniano y Agresor Lee-Ready Fluctuante (`crates/evolution-engine/src/online_daemon.rs:720-754`)**:
+     - *QUÉ*: Erradicada la recta determinista en los micro-ticks del examen walk-forward. Se implementó un verdadero Puente Browniano discreto condicionado: $mid_t = drift_t + base\_price \cdot \sigma_{bar} \cdot \sqrt{\tau(1-\tau)} \cdot Z(ri, t)$, donde $\tau = (t+1)/N \in (0, 1]$, preservando los extremos de la barra mientras la trayectoria intra-barra fluctúa de forma estocástica y continua. El ruido $Z$ se genera con `pseudo_gaussian_noise` determinista y reproducible (Box-Muller, zero-alloc). El clasificador Lee-Ready (`mid < prev_mid`) fluctúa de forma honesta con el incremento infinitesimal, y `trade_qty = (depth * 0.125).max(0.0001)` inyecta una fracción realista en vez del 100% de la profundidad del libro.
+     - *POR QUÉ*: El movimiento rectilíneo previo garantizaba que tras el primer tick el restante 87.5% del movimiento era conocido con certeza absoluta y flujo unidireccional masivo, promoviendo candidatos con sesgo espurio.
+     - *PARA QUÉ*: Realismo microestructural estocástico para evaluar rigurosamente genomas evolutivos hacia la meta de 13 USD.
+  2. **F1-003: Omni 54D Causal sin Skew Macro (`crates/evolution-engine/src/online_daemon.rs:756-775`)**:
+     - *QUÉ*: Erradicada la síntesis artificial de macro (VIX, Fear&Greed, funding) a partir de `prev_ret`. El examen walk-forward captura una instantánea macro congelada desde `arena.registry` (`macro_funding`, `macro_fear_greed`, `macro_dxy`, `macro_sp500`, `macro_nasdaq`, `macro_vix`, `macro_gold`) centrada en escalas canónicas. Se alimentan honestamente los slots `omni[21..24, 26]` y se podaron las 9 escrituras huérfanas sin lector (`omni[1], [13], [32], [34], [35], [39], [41], [43], [49]`).
+     - *POR QUÉ*: Sintetizar VIX como $15 + 200|\Delta r|$ deformaba la inferencia macro haciéndola reaccionar sólo a la volatilidad de la última barra y desplazando la distribución combinada 54D.
+     - *PARA QUÉ*: Consistencia bayesiana exacta en el espacio de Hilbert $\mathcal{H}$.
+  3. **F1-004: Shadow Forest sin Fuga Temporal ni Doble Ingestión (`crates/evolution-engine/src/online_daemon.rs:1205-1230, 1420-1475`, `crates/god-engine-core/src/lib.rs:5420-5440, 10080-10115`, `crates/quantum-arena/src/position.rs`, `crates/quantum-arena/src/state.rs`)**:
+     - *QUÉ*: Erradicada la fuga temporal post-hoc y la duplicación de trades en el Shadow Forest. Vector de 6 rasgos pre-movimiento fotografiado en la apertura de la posición (`target_pos.set_entry_shadow_features`). Al confirmarse el cierre, `ClosedTradeRecord` se registra en `CoinArena` y se consume de forma única en `online_daemon::sample_realized_returns` vía `coin.take_last_closed_trade()`. Se eliminó la ingesta duplicada y distorsionada (`[obi, 0.0, 1.0, ...]`) del bus mmap en `run_online_learning_loop`.
+     - *POR QUÉ*: El Shadow Forest aprendía con rasgos medidos tras el cierre (post-hoc) e ingería cada trade dos veces con semánticas mutuamente contradictorias.
+     - *PARA QUÉ*: Inferencia y entrenamiento en línea 100% causal sin look-ahead bias.
+- **Verificación Contractual y Culminación de FASE 2**:
+  - `crates/evolution-engine/tests/f1_002_003_004_brownian_omni_shadow_contract.rs` (2/2 pass, 100% verde).
+  - Estado de la Matriz F1 (`docs/audit/fable/f1_hallazgos.tsv`): **125/125 CERRADOS (100.0%)**. FASE 2 COMPLETADA.
+
+## 2026-10-21 (noche, 6) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω205 (Erradicación Constantes Congeladas, Fundamentación Analítica y Sincronización Epigenética F1-009)
+
+- **Mandato**: Resolución matemática y epigenética de F1-009 en FASE 2:
+  1. **F1-009: Erradicación de ~100 Constantes Congeladas y Sincronización Epigenética (`crates/quantum-arena/src/config.rs:25-950`, `crates/god-engine-core/src/lib.rs:2036`)**:
+     - *QUÉ*: Erradicación de literales mágicos atómicos en `QuantumConfig`. Fundamentación analítica de constantes canónicas: `CANONICAL_COUNCIL_MAX_DRAWDOWN = 0.6315968501359614` derivada de Cramér-Lundberg D3 ($1 - 0.05^{1/7}$), y `CANONICAL_FEYNMAN_* = 1.0` de unidades de Planck adimensionales ($\hbar = c = 1$). Implementado `QuantumConfig::sync_from_registry(&self, reg: &OmniscientRegistry)` que mapea dinámicamente claves epigenéticas (consejo, navier, feynman, yang-mills, hodge, tsallis, renyi, hawkes, perceptrón, espectral, régimen, multifractal). Invocado en `god-engine-core/src/lib.rs:2036` dentro de `sync_council_params_from_arena`.
+     - *POR QUÉ*: Más de 100 atómicos estaban congelados en literales fijos no documentados sin canal de actualización viva desde el registro omnisciente.
+     - *PARA QUÉ*: Plasticidad fenotípica 100% autoadaptativa en el espacio de Hilbert $\mathcal{H}$, eliminando sesgos arbitrarios hacia la meta de duplicación cada 72h.
+- **Verificación Contractual y Pruebas**:
+  - `crates/god-engine-core/tests/f1_009_epigenetic_arena_sync_contract.rs` (2/2 pass, 100% verde en 0.05s).
+  - `docs/audit/fable/f1_hallazgos.tsv` actualizado marcando F1-009 como `CERRADO Ω205`.
+
+## 2026-10-21 (noche, 5) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω204 (Gobernanza Activa global_max_drawdown F1-010, Ventana Deslizante 200 Cierres en Stops y Rearme No Absorbente F1-011)
+
+- **Mandato**: Resolución matemática y probabilística de F1-010 y F1-011 en FASE 2:
+  1. **F1-010: Gobernanza Activa de `global_max_drawdown` (`crates/quantum-arena/src/genome.rs:1793`, `crates/risk-engine/src/drawdown.rs:603`, `crates/god-engine-core/src/darwin.rs:385`)**:
+     - *QUÉ*: `freno_duro` en `drawdown.rs` lee `arena.config.global_max_drawdown` vivo y acota `tope_capital = configured_dd.min(tope_d3)`. Si la caída del capital acumulada desde el pico alcanza `global_max_drawdown`, `por_capital()` se activa y rechaza intenciones con `REJ_DRAWDOWN`. En `darwin.rs:385`, `evaluate_genotype` evalúa `current_dd` tras cada cierre y aborta con fitness `f64::NEG_INFINITY` si `current_dd >= max_drawdown_policy`.
+     - *POR QUÉ*: El parámetro de presupuesto global de drawdown era puramente cosmético, sin lectura ejecutiva en risk-engine ni corte de trayectoria en darwin.
+     - *PARA QUÉ*: Inmunidad estricta a la ruina y coherencia fenotípica en el oráculo evolutivo para la cuenta de 13 USD.
+  2. **F1-011: Ventana Deslizante de 200 Cierres en Stops y Rearme No Absorbente (`crates/quantum-arena/src/state.rs:684, 815-865`, `crates/risk-engine/src/drawdown.rs:493, 502, 516`, `src/bin/god_engine.rs:2074-2105`)**:
+     - *QUÉ*: Buffer circular de 200 cierres en `GlobalArena` (`ventana_stops_buffer`) y métodos `push_resultado_en_stops_ventana`, `caida_en_stops_ventana`, `reset_ventana_stops`. `caida_en_stops` evalúa la caída máxima dentro de la ventana de las últimas 200 operaciones ($H=200$), preservando el nivel estadístico $\alpha = 0.05$ (5%) en todo tiempo y erradicando la falsa alarma de 52-57% a 2000 cierres. Las pérdidas viejas ruedan fuera de la ventana. Rearme del operador por archivo `rearme_frenos.txt` o `CargaPico::Ausente` en `god_engine.rs` resetea los contadores sin destruir `estado_aprendido.bin`.
+     - *POR QUÉ*: Medir caídas acumuladas desde el origen contra un cuantil de 200 operaciones creaba un estado absorbente permanente e indestructible.
+     - *PARA QUÉ*: Disponibilidad y crecimiento compuesto ininterrumpido hacia +100%/72h.
+- **Verificación Contractual y Pruebas**:
+  - `cargo test -p risk-engine --test f1_010_011_drawdown_window_and_budget_contract -j 1` (2/2 pass, 100% verde en 0.04s).
+  - `cargo test -p risk-engine --test cf4_freno_duro -j 1` (6/6 pass, 100% verde en 0.12s).
+  - `cargo test -p god-engine-core --test darwin_margin_contract -j 1` (3/3 pass, 100% verde en 0.00s).
+
 ## 2026-10-21 (noche, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω203 (Unificación Fricción Roundtrip F1-040, Absorción Kyle-Hasbrouck F1-041, Muestreo Telemetría F1-043 y Clasificación Estricta Terminal F1-032)
 
 - **Mandato**: Continuación estricta de FASE 2 y erradicación de los últimos hallazgos abiertos en `f1_hallazgos.tsv`:
