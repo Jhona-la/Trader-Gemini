@@ -322,6 +322,155 @@ fn ortogonalidad_voces_rango_efectivo_btc_sep() {
         for (maxr, nombre) in filas {
             w(format!("  {nombre:<30} max|corr| {maxr:.4}"));
         }
+
+        // ── GLM 147: DENDROGRAMA de co-disparo (union-find a umbrales del
+        // máximo de co-observaciones) + espectro POR CLÚSTER. La matriz
+        // global por pares no es PSD (146), pero cada clúster temporal tiene
+        // casos-completos abundantes ⇒ espectro limpio y effective_bets por
+        // clúster: las apuestas efectivas del corazón del ensamble.
+        let max_co = pares.iter().map(|(_, a)| a.0).max().unwrap_or(0);
+        if max_co >= MIN_CO_OBS {
+            let hablantes_idx: Vec<usize> = (0..k)
+                .filter(|&f| (0..k).any(|g| g != f && tiene_par_fuerte(f, g)))
+                .collect();
+            fn buscar(p: &mut Vec<usize>, x: usize) -> usize {
+                let mut r = x;
+                while p[r] != r {
+                    r = p[r];
+                }
+                let mut c = x;
+                while p[c] != r {
+                    let nx = p[c];
+                    p[c] = r;
+                    c = nx;
+                }
+                r
+            }
+            // Análisis espectral por clúster (casos-completos del conjunto).
+            let espectro_de = |conjunto: &[usize], w: &mut dyn FnMut(String)| {
+                let cm = conjunto.len();
+                if cm < 2 {
+                    return;
+                }
+                let completos: Vec<&[f64; SLOTS]> = buffer
+                    .iter()
+                    .filter(|inst| {
+                        conjunto
+                            .iter()
+                            .all(|&c| inst[c].is_finite() && inst[c].abs() > 1e-9)
+                    })
+                    .collect();
+                let t = completos.len();
+                w(format!(
+                    "  clúster [{}] casos completos: {t}",
+                    conjunto.iter().map(|&c| nombres[c]).collect::<Vec<_>>().join(",")
+                ));
+                if t <= cm {
+                    w("    ⚠️ casos completos insuficientes".into());
+                    return;
+                }
+                let mut suma = vec![0.0f64; cm];
+                let mut suma2 = vec![0.0f64; cm];
+                let mut sxy = vec![vec![0.0f64; cm]; cm];
+                for inst in &completos {
+                    for (a, &ca) in conjunto.iter().enumerate() {
+                        let x = inst[ca];
+                        suma[a] += x;
+                        suma2[a] += x * x;
+                        for (b, &cb) in conjunto.iter().enumerate().skip(a + 1) {
+                            sxy[a][b] += x * inst[cb];
+                        }
+                    }
+                }
+                let tf = t as f64;
+                let mut corr = vec![vec![0.0f64; cm]; cm];
+                for (a, _) in conjunto.iter().enumerate() {
+                    corr[a][a] = 1.0;
+                    let vx = (suma2[a] - suma[a] * suma[a] / tf) / (tf - 1.0);
+                    for (b, _) in conjunto.iter().enumerate().skip(a + 1) {
+                        let vy = (suma2[b] - suma[b] * suma[b] / tf) / (tf - 1.0);
+                        let cov = (sxy[a][b] - suma[a] * suma[b] / tf) / (tf - 1.0);
+                        let r = if vx > 1e-18 && vy > 1e-18 {
+                            (cov / (vx.sqrt() * vy.sqrt())).clamp(-1.0, 1.0)
+                        } else {
+                            f64::NAN
+                        };
+                        corr[a][b] = r;
+                        corr[b][a] = r;
+                    }
+                }
+                if corr.iter().any(|f| f.iter().any(|v| !v.is_finite())) {
+                    w("    ⚠️ fuente sin varianza en casos completos".into());
+                    return;
+                }
+                let mut flat: Vec<f64> = Vec::with_capacity(cm * cm);
+                for fila in &corr {
+                    flat.extend_from_slice(fila);
+                }
+                let mut espec = vec![0.0f64; cm];
+                if let Some(nm) =
+                    risk_engine::random_matrix::full_spectrum_flat_zero_alloc(&flat, cm, &mut espec)
+                {
+                    let lambdas: Vec<f64> = espec.iter().take(nm).copied().collect();
+                    if let Some(edge) = risk_engine::random_matrix::mp_upper_edge(cm, t) {
+                        let sobre = lambdas.iter().filter(|&&l| l > edge).count();
+                        w(format!(
+                            "    espectro: [{}] · borde MP {edge:.4} ⇒ {sobre} modo(s) de señal",
+                            lambdas
+                                .iter()
+                                .map(|l| format!("{l:.3}"))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        ));
+                    }
+                    match risk_engine::random_matrix::effective_bets(&corr, t) {
+                        Some(bets) => {
+                            w(format!("    ★ APUESTAS EFECTIVAS: {bets:.3} de {cm} fuentes"))
+                        }
+                        None => w("    ★ sin modos > borde MP (ruido muestral)".into()),
+                    }
+                } else {
+                    w("    ⚠️ eigensolver rechazó la matriz".into());
+                }
+            };
+
+            for frac in [0.9f64, 0.5, 0.1] {
+                let umbral = (max_co as f64 * frac) as u64;
+                let mut padre: Vec<usize> = (0..k).collect();
+                for ((i, j), acc) in &pares {
+                    if acc.0 >= umbral {
+                        let (ri, rj) = (buscar(&mut padre, *i), buscar(&mut padre, *j));
+                        if ri != rj {
+                            padre[ri] = rj;
+                        }
+                    }
+                }
+                let mut comps: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+                for &f in &hablantes_idx {
+                    comps.entry(buscar(&mut padre, f)).or_default().push(f);
+                }
+                let clusters: Vec<&Vec<usize>> =
+                    comps.values().filter(|c| c.len() >= 2).collect();
+                w(format!(
+                    "--- dendrograma co-disparo ≥{:.0}% del máx (n≥{umbral}): {} clúster(es) ---",
+                    frac * 100.0,
+                    clusters.len()
+                ));
+                for c in &clusters {
+                    w(format!(
+                        "  [{}] {}",
+                        c.len(),
+                        c.iter().map(|&f| nombres[f]).collect::<Vec<_>>().join(", ")
+                    ));
+                }
+                if (frac - 0.9f64).abs() < 1e-9 {
+                    w("— espectro por clúster (nivel estricto 90%) —".into());
+                    for c in &clusters {
+                        espectro_de(c, &mut w);
+                    }
+                }
+            }
+        }
     } else {
         w("⚠️ core bien-observado < 2 fuentes".into());
     }
