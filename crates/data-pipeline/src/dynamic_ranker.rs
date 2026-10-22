@@ -98,8 +98,10 @@ pub async fn fetch_dynamic_universe(
         .into_iter()
         .filter(|t| is_sane_binance_symbol(&t.symbol, is_testnet))
         .filter_map(|t| {
-            let vol = t.quote_volume.parse::<f64>().unwrap_or(0.0);
-            let pct = t.price_change_percent.parse::<f64>().unwrap_or(0.0).abs();
+            // F1-091 — misma fuente única que `asset_selector`: estadística
+            // ilegible ⇒ símbolo excluido, nunca volumen inventado.
+            let (vol, pct) =
+                crate::cero_dato::estadistica_legible(&t.quote_volume, &t.price_change_percent)?;
             if vol >= min_vol {
                 Some(SelectedAsset {
                     symbol: t.symbol,

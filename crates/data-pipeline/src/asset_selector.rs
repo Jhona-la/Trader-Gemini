@@ -66,8 +66,13 @@ pub async fn fetch_top_dynamic_assets(
         .into_iter()
         .filter(|t| t.symbol.ends_with("USDT") && !stablecoins.contains(&t.symbol.as_str()))
         .filter_map(|t| {
-            let vol = t.quote_volume.parse::<f64>().unwrap_or(0.0);
-            let pct = t.price_change_percent.parse::<f64>().unwrap_or(0.0).abs();
+            // F1-091 — fuente única (`cero_dato::estadistica_legible`): un
+            // símbolo cuya estadística no se puede leer se EXCLUYE del universo
+            // operable. Antes `unwrap_or(0.0)` le inventaba un volumen de 0 y
+            // el símbolo se caía en silencio en el filtro `vol >= min_vol`,
+            // sin dejar rastro de por qué desapareció del Top.
+            let (vol, pct) =
+                crate::cero_dato::estadistica_legible(&t.quote_volume, &t.price_change_percent)?;
             // F-003: Deterministic production-grade filtering across all environments
             if vol >= min_vol && pct >= min_pct {
                 Some(SelectedAsset {
