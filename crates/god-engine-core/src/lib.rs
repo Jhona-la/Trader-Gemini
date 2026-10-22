@@ -2034,6 +2034,8 @@ impl GodEngineCore {
 
     #[inline]
     pub fn sync_council_params_from_arena(&mut self) {
+        // F1-009: Sincronización bidireccional y continua de atómicos de QuantumConfig desde el registro omnisciente
+        self.arena.config.sync_from_registry(&self.arena.registry);
         Self::sync_council_params(&mut self.consejo_deliberacion.params, &self.arena.config);
         Self::sync_online_learning_params(&mut self.online_learner, &self.arena.config);
         Self::sync_auditor_interno_params(&mut self.auditor_interno, &self.arena.config);
