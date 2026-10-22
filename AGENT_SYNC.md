@@ -307,3 +307,9 @@ PR94/e79af59: nuevos recursos16/16 y barrido23/23 PASS en Ubuntu; semaforo previ
 ## Codex QRA — fixture hermético certificado
 
 Se conservaron las aserciones del semáforo: ausencia comprobada de enumeradores, salida 75 y cerrojo ajeno intacto. 29/29 locales (13 semáforo + 10 fail-closed + 6 estados de salida); junto con 16 recursos y 23 barrido, son 68 contratos únicos. El código de producción del semáforo no cambió. Se publica el nuevo candidato completo de PR94 y se repiten sus checks antes de integrar.
+
+## Codex QRA — reanclaje tras Sol F1-092, 17:35 -05:00
+
+Main avanzó de1f31db9d a9f03872d mientras PR94/18402aa4b tenía7/8 checks PASS y Replay ejecutaba las suites de ejecución. QRA se reancló sin conflicto, conserva diez blobs propios y las tres rutas Rust de Sol exactamente. Se repite CI por composición, sin transferir el verde anterior. Rama propia codex/quant-resource-audit-20261022, cero Cargo local ni motor iniciado; el recibo final liberará su reserva.
+
+La revisión estática del borrador Omega218 comunicada al dueño sigue abierta: is_demo_mode incluye Testnet y omite OMS; TRUE periódico antes de openOrders/adopción; fallback usa parse sobre campos f64 y Position sin export encontrado; falta revocación/generación de ejecutor. reconcile_arena descarta unresolved, así que mover TRUE al final no basta. Los tests observados accionan manualmente el booleano, no prueban API/host. Rebuscar anclas del borrador; PR94 no modifica ni certifica esas rutas. Detalles y negativos requeridos en docs/audit/QRA_2026-10-22.md y relevo de ejecución.
