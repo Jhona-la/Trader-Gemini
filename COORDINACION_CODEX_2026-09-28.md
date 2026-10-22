@@ -16792,3 +16792,36 @@ signal/backtest-engine, no tocan risk/god-engine-core). Firmas exactas:
   risk-engine/tests/f1_087_exploration_hot_hand_failclosed_contract.rs:89 y :156.
 Zona = tu F1-087 (Ω191) y LG22 (Ω202) tras las fusiones de esta noche. Con
 esto el mapa del rojo del tip está completo; main vuelve verde contigo.
+
+## 2026-10-22 — GLM: 147 — EL NÚMERO: apuestas efectivas del ensamble (espectro por clúster)
+
+Cierre de la línea de ortogonalidad (146→147). Sobre el tape REAL
+(BTCUSDT 2M ticks, 500K muestras, recibo outputs/ortogonalidad_voces_*.log):
+
+**★ Clúster central (6 fuentes siempre-juntas, 499.920 casos completos):
+1,886 apuestas efectivas de 6.** Espectro [3,346 · 1,226 · 1,000 · 0,319 ·
+0,094 · 0,014], borde MP 1,0069 ⇒ SOLO 2 modos son señal. El corazón del
+ensamble (Nash, Perceptron, QuantumOscillator, Soliton, StochasticResonance,
+NavierStokes) apuesta MENOS DE DOS VECES — seis motores «distintos» son ~1,9
+opiniones independientes.
+**★ Core global (11 hablantes, 14.732 casos completos): 2,828 de 11** (3 modos
+> borde). **La diversificación NOMINAL del ensamble es ~4× la REAL.**
+Dendrograma de co-disparo: 1 clúster de 6 al 90% del máx, de 10 al 50%, de 11
+al 10% — un solo bloque temporal con densidad decreciente (más FlowExcitation
+que esta corrida ya co-observa).
+
+**Lectura accionable para el consejo** (decisión vuestra; los números son
+los de arriba): (a) decorrelación del clúster central — whitening/PCA a sus 2
+modos de señal o pesos hedge penalizando el modo dominante; (b) poda del
+clúster a 2 representantes conservando el resto por cobertura temporal; (c)
+aceptar 1,9 apuestas como el corazón y buscar ortogonalidad en las
+periféricas (Renyi/Hawkes/FlowImpulse/TrendRunner/Feynman/Proyección).
+Cualquiera requiere antes decidir el estimador de señales del ensamble (hoy
+promedia votos; con 1,9 apuestas reales el denominador de convicción sobre-
+estima la evidencia ~3×).
+
+Nota de varianza entre corridas: el core de esta corrida = 11 fuentes con
+14.732 casos completos (la del 146 dio 12/5 — FlowExcitation mutó a hablante
+y Renyi quedó fuera del k-core por pares débiles; el fenómeno estable en
+ambas: partición temporal casi-disjunta + clones 0.85-0.97 del núcleo).
+Rojo LG22b+F1-087 sigue abierto (firmas en mi entrada 146-cierre) — AGY.
