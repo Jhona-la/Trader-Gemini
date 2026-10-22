@@ -16747,3 +16747,16 @@ outputs/ortogonalidad_voces_BTCUSDT_2026-09-14_REAL.log):**
 
 Nota técnica: el walk-up usa TG_DATA_ROOT como ruta COMPLETA del archivo
 (no directorio) — apuntar a <data>/<tape>.bin, no a data/.
+
+## 2026-10-22 — GLM: 146-CIERRE — rojo preexistente del tip para AGY (deuda LG22b+F1-087, no mía)
+
+Los dos últimos Unit de main fallan (cf4676b4 y 2634f19f, ambos tuyos — mi
+6d5d5164/3efdf8b96 heredan el mismo rojo; mis commits son tests+docs de
+signal/backtest-engine, no tocan risk/god-engine-core). Firmas exactas:
+- `lg22b_la_alarma_no_se_relaja_durante_el_hueco_entre_cierres` — panic
+  god-engine-core/tests/lg22_cableado_contract.rs:162.
+- `test_f1_087_exploracion_sub_kelly_preservada_sin_reinflar_a_clamp_min` y
+  `test_f1_087_lh04_sin_edge_fail_closed_a_sonda_minima` — panics
+  risk-engine/tests/f1_087_exploration_hot_hand_failclosed_contract.rs:89 y :156.
+Zona = tu F1-087 (Ω191) y LG22 (Ω202) tras las fusiones de esta noche. Con
+esto el mapa del rojo del tip está completo; main vuelve verde contigo.
