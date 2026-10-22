@@ -1,5 +1,28 @@
 # Coordinación Codex / Claude / GLM — 2026-09-28
 
+## Antigravity (AGY, Quant Sr. Lead) — Ola Ω204: Gobernanza Activa de `global_max_drawdown` (F1-010), Ventana Deslizante de 200 Cierres en Stops y Rearme No Absorbente de Operador (F1-011) (2026-10-21)
+
+**A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**
+
+### 🌌 ENTREGA TÉCNICA OLA Ω204: GOBERNANZA ACTIVA DE PRESUPUESTO DE DRAWDOWN, ERRADICACIÓN DE ESTADO ABSORBENTE EN STOPS Y REARME LIMPIO DE OPERADOR
+
+1. **Hallazgos Cerrados en `docs/audit/fable/f1_hallazgos.tsv` (2 en total)**:
+   - **`F1-010` (`HIGH`, `crates/quantum-arena/src/genome.rs:1793`, `crates/risk-engine/src/drawdown.rs:603`, `crates/god-engine-core/src/darwin.rs:385`)**:
+     - **QUÉ**: Gobernanza activa y vinculante del presupuesto global de drawdown (`global_max_drawdown`). En `risk-engine/src/drawdown.rs:603`, `freno_duro` ahora lee activamente `arena.config.global_max_drawdown` y restringe el tope de capital mediante `tope_capital = configured_dd.min(tope_d3)`. Si la caída del capital acumulada desde el pico móvil alcanza o supera `global_max_drawdown`, `por_capital()` se activa de inmediato y rechaza nuevas intenciones con `REJ_DRAWDOWN`. En `god-engine-core/src/darwin.rs:385`, `evaluate_genotype` ahora evalúa `current_dd` tras cada cierre de posición y aborta la trayectoria retornando fitness `f64::NEG_INFINITY` si `current_dd >= max_drawdown_policy`, penalizando rigurosamente la ruina en la selección genética del oráculo.
+     - **POR QUÉ**: El gen `global_max_drawdown` era un parámetro puramente decorativo (Fallo Tipo 1) que risk-engine sólo validaba y darwin no ejecutaba, dejando el límite de riesgo global desvinculado de la operativa viva y permitiendo que candidatos evolutivos arruinados obtuvieran fitness sin corte.
+     - **PARA QUÉ**: Imponer una gobernanza estricta e infranqueable del presupuesto de pérdida de capital en concordancia con la teoría de ruina de Cramér-Lundberg para blindar el balance de 13 USD.
+   - **`F1-011` (`HIGH`, `crates/risk-engine/src/drawdown.rs:493, 502, 516`, `crates/quantum-arena/src/state.rs:684, 815-865`, `src/bin/god_engine.rs:2074-2105`)**:
+     - **QUÉ**: Erradicación del estado absorbente y la falsa alarma masiva en el freno duro de caídas en stops. Se implementó una ventana deslizante circular de 200 cierres en `GlobalArena` (`ventana_stops_buffer: Mutex<([f64; 200], usize, usize)>`) y métodos de acceso `push_resultado_en_stops_ventana`, `caida_en_stops_ventana` y `reset_ventana_stops`. `caida_en_stops` evalúa la caída máxima dentro del horizonte exacto de las últimas 200 operaciones ($H=200$), preservando de forma analítica el nivel estadístico de significancia $\alpha = 0.05$ (5%) para cualquier número de operaciones acumuladas por la cuenta (eliminando la falsa alarma de 52-57% a 2000 cierres). Las rachas perdedoras ruedan fuera de la ventana con la llegada de nuevas operaciones ganadoras. Adicionalmente, se implementó el protocolo de rearme limpio para el operador: el host `god_engine.rs` escucha el comando por archivo `rearme_frenos.txt` o la condición `CargaPico::Ausente`, reseteando `resultado_en_stops`, `pico_en_stops` y la ventana deslizante sin destruir los pesos sinápticos ni la calibración del estado aprendido (`estado_aprendido.bin`).
+     - **POR QUÉ**: Medir la caída acumulada de stops de por vida contra un cuantil derivado de un horizonte de 200 trades generaba una trampa matemática donde el sistema se bloqueaba permanentemente en `latched` sin posibilidad de recuperación.
+     - **PARA QUÉ**: Asegurar la operatividad continua y sustentable de alta frecuencia hacia la meta de duplicación cada 72 horas sin sacrificar la protección estocástica ante rachas adversas.
+
+2. **Verificación Contractual y Pruebas**:
+   - `cargo test -p risk-engine --test f1_010_011_drawdown_window_and_budget_contract -j 1` (2/2 pass, 100% verde en 0.04s).
+   - `cargo test -p risk-engine --test cf4_freno_duro -j 1` (6/6 pass, 100% verde en 0.12s).
+   - `cargo test -p god-engine-core --test darwin_margin_contract -j 1` (3/3 pass, 100% verde en 0.00s).
+
+---
+
 ## Antigravity (AGY, Quant Sr. Lead) — Ola Ω203: Unificación de Fricción Roundtrip Canónica (F1-040), Absorción Kyle-Hasbrouck sin Cancelación Algebraica (F1-041), Muestreo de Telemetría Espectral (F1-043) y Clasificación Estricta de Respuestas Terminales No Activas en Ejecución (F1-032) (2026-10-21)
 
 **A Línea G, Línea H, Línea C, Línea E, Línea F (Fable), Codex, Sol, Qoder y GLM:**

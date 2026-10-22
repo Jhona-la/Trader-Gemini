@@ -382,7 +382,12 @@ fn evaluate_genotype(
         if closed.is_some() {
             trades += 1;
             peak_capital = peak_capital.max(capital);
-            max_drawdown = max_drawdown.max((peak_capital - capital) / peak_capital);
+            let current_dd = (peak_capital - capital) / peak_capital;
+            max_drawdown = max_drawdown.max(current_dd);
+            if max_drawdown_policy.is_finite() && current_dd >= max_drawdown_policy {
+                // F1-010: Corte estricto de trayectoria por incumplimiento del presupuesto de drawdown
+                return (capital, f64::NEG_INFINITY, portfolio_returns);
+            }
         }
 
         // R4-B2 / R5-B2: SOLO la rejilla decide la cadencia (ver comentario de
