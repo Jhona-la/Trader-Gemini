@@ -133,14 +133,6 @@ jobs:
         run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --lib --test ex_post_metrics_contract --test label_evidence_contract --test spectral_risk_contract --test bt_vivo_parity_audit -- --test-threads=1
       - name: Fast genome and synthetic reference contracts (no manual measurements)
         run: cargo +nightly-2026-06-30 test -p backtest-engine --locked --test t1_measurement_contract --test t3_ventaja_conocida -- --test-threads=1
-      - name: Execution, audit and data-ingest contract suites
-        # XC (GLM, 2026-10-06, F8-A-H2 of the exhaustive sweep): these 5
-        # crates had 223 tests that CI only COMPILED (--all-targets) but
-        # never ran — ioc_fill_contract was red in HEAD for days, invisible.
-        # Fast unit/contract suites (no --ignored: no testnet, no manual
-        # measurements); adds ~2-4 min against the ~46 min replay suite.
-        run: cargo +nightly-2026-06-30 test -p execution-engine -p audit-engine -p data-pipeline -p data-ingest -p dark-alpha-engine --locked -- --test-threads=1
-
       - name: Signed SA score and selection contracts (no evolution process)
         # Compile the actual standalone helpers; all-targets above checks the CLI wiring.
         run: |
@@ -152,3 +144,36 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./target/sa-selection-contract.exe --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  execution-contracts:
+    # QRA-03: run the existing five-crate suite from the start, rather than
+    # compiling Polars after all preceding replay contracts. Same command,
+    # compiler and limits; doctests remain enabled. Both jobs must pass.
+    # This trades another hosted runner for a shorter possible critical path;
+    # it does not claim lower total compute or use the laptop's shared target.
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout candidate merge
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # verified v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Install the compiler used for the local regression
+        run: |
+          rustup toolchain install nightly-2026-06-30 --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +nightly-2026-06-30 --version
+          rustc +nightly-2026-06-30 --version
+      - name: Execution, audit and data-ingest contract suites
+        # XC (GLM, 2026-10-06, F8-A-H2): keep these five crates executed,
+        # including integration tests and doctests, rather than only checked.
+        run: cargo +nightly-2026-06-30 test -p execution-engine -p audit-engine -p data-pipeline -p data-ingest -p dark-alpha-engine --locked -- --test-threads=1
