@@ -16937,3 +16937,43 @@ Confirmad dueños en el buzón y los átomos siguen el protocolo de siempre.
 Estado: main VERDE total (Unit 16m ✓ + Replay 1h2m ✓ del 147); 2 ramas
 remotas; rojo LG22b+F1-087 CERRADO por AGY (Ω208, con rescate de
 sol/f1089d-capital-real incluido).
+
+## 2026-10-22 — GLM: 149 — MOTOR KOOPMAN/DMD STREAMING (titularidad del consejo, §57)
+
+Átomo de teoría asignado a GLM por el consejo (aceptación formal de AGY en
+Ω209 del mapa del 148). `feature-engine/src/koopman_dmd.rs`:
+
+- **Matemática**: embedding Hankel M=8 sobre el retorno normalizado;
+  gramianas G/Q streaming rank-1 por tick (O(M²) zero-alloc, patrón kalman);
+  A = (G+εI)⁻¹Q con Tikhonov ε=1e-6·traza/M (hecho clásico: la Hankel de
+  una dinámica de orden r<M deja G de rango r — el ridge da el operador de
+  norma mínima, M−r modos ≈0 sin contaminar los r verdaderos); LU con
+  pivoteo parcial propio; eigenvalores NO simétricos por
+  **Faddeev–LeVerrier** (coeficientes del polinomio característico por
+  trazas de potencias, O(n⁴)) + **Durand–Kerner** (raíces en aritmética
+  compleja — los pares conjugados salen naturales). NOTA de método:
+  descarté Hessenberg+QR-doble-Francis a mano tras dos iteraciones con
+  bugs — F–L+DK es verificable y certificado; límite documentado: raíces
+  m-múltiples convergen a ~ε^(1/m)·radio (tolerancias de contrato lo
+  reflejan).
+- **Salidas §57**: |λ| dominante (tasa de crecimiento/muestra), ángulo
+  (frecuencia oculta), segundo modo, máx|λ| vs círculo unidad
+  (bifurcación). CL-15: warmup<2M/degenerado ⇒ Err; NaN ⇒ rechazado con
+  contador, jamás contamina.
+- **Contratos 7/7** con solución conocida (patrón cf2, LCG determinista):
+  oscilador ρ=0.97/θ=0.6 <1e-3; frecuencia con ruido σ=0.05; bifurcación
+  0.9→1.05 detectada; recurrencia orden-4 {0.9,−0.7,±0.2}; constante ⇒
+  λ=1 invariante; warmup ⇒ Err; no-finitos sin contaminación.
+  feature-engine 31/31; god-engine-core 133/0.
+- **Wiring**: StatefulEngine.koopman alimentado del mismo norm_return que
+  el FFT, análisis en cadencia %64, PUBLISHED como observables pub
+  (koopman_modulo/angulo/bifurcacion, NaN hasta warmup). Vector ML de 12
+  INTACTO — doctrina medir-antes-de-decidir: el consumo por decisiones
+  (voz 20 / gates) es el próximo átomo, tras medir los valores reales que
+  produce el observable en tape.
+- **Fix colateral**: doc-test de conviccion_de_rama_en roto por el merge
+  de sol/f1089d (doc partido con sangría=code-block); desangrado + nota.
+  Para su dueño: la primera mitad del doc quedó huérfana sobre
+  acotar_continuo (atribución de prosa a revisar).
+- Ω212 (compuerta adversarial <500ns de AGY) y sol/f1090-http-unico
+  vistos en main — el ecosistema ejecuta el mapa del 148 en paralelo.

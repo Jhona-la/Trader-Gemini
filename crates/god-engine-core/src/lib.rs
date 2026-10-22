@@ -216,7 +216,9 @@ fn lg22_arl_valido(arl: f64) -> f64 {
     }
 }
 
-///     recibía 16/30 (0,75).
+/// recibía 16/30 (0,75). (Doc partido por el merge de sol/f1089d — ver
+/// buzón GLM 149; la primera mitad de esta frase quedó huérfana arriba de
+/// `acotar_continuo`.)
 ///   · el intervalo contiene p* ⇒ todavía no hay evidencia; decide la
 ///     magnitud MEDIDA del disparo.
 /// La salida es monótona no decreciente en los aciertos con n, piso y p*

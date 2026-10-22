@@ -109,6 +109,12 @@ pub struct StatefulEngine {
     pub ema_slow: f64,
     pub omni: feature_engine::OmniStrategyEngine,
     pub spectral: feature_engine::SpectralCycleEngine,
+    /// GLM 149 (Koopman/DMD, titularidad del consejo Ω209): operador de
+    /// Koopman streaming del retorno normalizado — modo de crecimiento
+    /// |λ| dominante, frecuencia oculta y proximidad de bifurcación.
+    /// Observable PUB de medición (doctrina medir-antes-de-decidir): aún
+    /// NO alimenta decisiones ni el vector ML de 12 (que queda INTACTO).
+    pub koopman: feature_engine::koopman_dmd::StreamingDmd,
     pub multifractal: feature_engine::MultiScaleHurstConfluence,
     pub lead_lag: feature_engine::LeadLagAlphaEngine,
     pub regime: MarketRegime,
@@ -130,6 +136,12 @@ pub struct StatefulEngine {
     pub spectral_bin: f32,
     pub spectral_power: f32,
     pub spectral_centroid: f32,
+    /// GLM 149 — bloque Koopman publicado: tasa de crecimiento del modo
+    /// dominante, su frecuencia (rad/muestra) y máx|λ| (≥1 = bifurcación).
+    /// NaN hasta el primer análisis con warmup suficiente (ausencia honesta).
+    pub koopman_modulo: f32,
+    pub koopman_angulo: f32,
+    pub koopman_bifurcacion: f32,
     pub hurst_micro: f32,
     pub hurst_meso: f32,
     pub hurst_macro: f32,
@@ -250,6 +262,10 @@ impl StatefulEngine {
             ema_slow: 0.0,
             omni: feature_engine::OmniStrategyEngine::new(),
             spectral: feature_engine::SpectralCycleEngine::new(),
+            koopman: feature_engine::koopman_dmd::StreamingDmd::new(),
+            koopman_modulo: f32::NAN,
+            koopman_angulo: f32::NAN,
+            koopman_bifurcacion: f32::NAN,
             multifractal: feature_engine::MultiScaleHurstConfluence::new(),
             lead_lag: feature_engine::LeadLagAlphaEngine::new(50),
             regime: MarketRegime::Neutral,
@@ -830,6 +846,19 @@ impl StatefulEngine {
             // (bin/potencia/centroide FFT + Hurst micro/meso/macro) viven
             // por esta vía — no dependen de klines cerrados.
             self.spectral.push(norm_return);
+            // GLM 149 — Koopman/DMD streaming: mismo alimento que el FFT
+            // (retorno normalizado por tick), análisis en la MISMA cadencia
+            // de 64 para repartir el coste O(M³) del eig (sub-microsegundo).
+            self.koopman.push(norm_return);
+            if self.koopman.validas() >= 16 && self.tick_count % 64 == 0 {
+                if let Ok(e) = self.koopman.analizar() {
+                    self.koopman_modulo = e.modulo_dominante as f32;
+                    self.koopman_angulo = e.angulo_rad as f32;
+                    self.koopman_bifurcacion = e.bifurcacion_max as f32;
+                }
+                // Err (warmup/ridge degenerado) ⇒ los campos quedan con su
+                // último valor válido o NaN inicial — ausencia honesta.
+            }
             // D-434: Invocar análisis espectral FFT Radix-2 periódicamente cada 64 ticks
             if self.tick_count % 64 == 0 {
                 let (dominant_bin, max_power, centroid) = self.spectral.analyze_spectrum();
