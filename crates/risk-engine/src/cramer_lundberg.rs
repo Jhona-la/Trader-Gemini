@@ -222,6 +222,128 @@ impl EstimadorSiniestros {
         }
         Some((1.0 / epsilon).ln() / r)
     }
+
+    /// Tasa de crecimiento logarítmico temporal continua g_time(f) de Ole Peters (Economía No-Ergódica):
+    /// g_time(f) = (1/n) Σ ln(1 + f · y_i)
+    ///
+    /// Donde y_i es el retorno neto por nocional (después de comisiones y slippage).
+    /// Si para cualquier siniestro 1 + f · y_i <= 0, el capital colapsa a la absorción
+    /// y g_time(f) devuelve f64::NEG_INFINITY (ruina absoluta).
+    pub fn time_average_growth_rate(&self, f: f64) -> f64 {
+        if !f.is_finite() || f <= 0.0 || self.count == 0 {
+            return 0.0;
+        }
+        let n = self.count as f64;
+        let mut sum_log = 0.0;
+        for i in 0..self.count {
+            let y = self.anillo[i];
+            let multiplier = 1.0 + f * y;
+            if multiplier <= 0.0 {
+                return f64::NEG_INFINITY;
+            }
+            sum_log += multiplier.ln();
+        }
+        sum_log / n
+    }
+
+    /// Resuelve la fracción de dimensionamiento óptimo no-ergódico f*_ergodic ∈ [0.001, 0.25]:
+    /// f* = argmax_{f ∈ [0.001, 0.25]} g_time(f)
+    ///
+    /// Mediante optimización unimodal por sección áurea (Golden Section Search), garantizando
+    /// O(1) puro, latencia en nanosegundos y cero asignaciones dinámicas en heap.
+    pub fn optimal_ergodic_fraction(&self) -> Option<f64> {
+        const MIN_MUESTRAS: usize = 30;
+        if self.count < MIN_MUESTRAS {
+            return None;
+        }
+        // Verificar que haya deriva neta positiva en la muestra
+        let mut media = 0.0;
+        for i in 0..self.count {
+            media += self.anillo[i];
+        }
+        media /= self.count as f64;
+        if !(media.is_finite() && media > 0.0) {
+            return None; // Sin esperanza positiva, no hay asignación de capital
+        }
+
+        // Búsqueda de sección áurea sobre [0.001, 0.25] (Axioma I: f <= 25%)
+        const PHI_INV: f64 = 0.618033988749895; // (sqrt(5) - 1) / 2
+        let mut a = 0.001;
+        let mut b = 0.250;
+        let mut c = b - PHI_INV * (b - a);
+        let mut d = a + PHI_INV * (b - a);
+
+        let mut fc = self.time_average_growth_rate(c);
+        let mut fd = self.time_average_growth_rate(d);
+
+        for _ in 0..30 {
+            if (b - a) < 1e-5 {
+                break;
+            }
+            if fc > fd {
+                b = d;
+                d = c;
+                fd = fc;
+                c = b - PHI_INV * (b - a);
+                fc = self.time_average_growth_rate(c);
+            } else {
+                a = c;
+                c = d;
+                fc = fd;
+                d = a + PHI_INV * (b - a);
+                fd = self.time_average_growth_rate(d);
+            }
+        }
+
+        let best_f = 0.5 * (a + b);
+        let best_g = self.time_average_growth_rate(best_f);
+        if best_g.is_finite() && best_g > 0.0 {
+            Some(best_f.clamp(0.001, 0.25))
+        } else {
+            None
+        }
+    }
+
+    /// Fracción segura de Cramér-Lundberg D3 acoplada a cota de ruina P(ruina) <= epsilon (e.g. 1e-6).
+    ///
+    /// Combina la cota actuarial de Lundberg m = ln(1/ε) / R con el presupuesto admisible
+    /// de pérdida acumulada max_drawdown_fraction m_admissible:
+    ///
+    /// f_lundberg = (m_admissible * R) / ln(1/ε)
+    pub fn cramer_lundberg_safe_fraction(&self, epsilon: f64, max_drawdown_fraction: f64) -> Option<f64> {
+        let r = self.lundberg_lcb(1.645)?; // LCB conservador a 95%
+        if !(r.is_finite() && r > 0.0) {
+            return None;
+        }
+        let eps = if epsilon.is_finite() && epsilon > 0.0 && epsilon < 1.0 {
+            epsilon
+        } else {
+            1e-6
+        };
+        let m_adm = if max_drawdown_fraction.is_finite() && max_drawdown_fraction > 0.0 {
+            max_drawdown_fraction.clamp(0.01, 0.35)
+        } else {
+            0.15 // 15% max drawdown por defecto
+        };
+        let ln_inv_eps = (1.0 / eps).ln();
+        let f_safe = (m_adm * r / ln_inv_eps).clamp(0.001, 0.25);
+        Some(f_safe)
+    }
+
+    /// Sizing Cuántico Ergódico Integral:
+    /// Sincroniza la tasa de crecimiento temporal máxima de Ole Peters g_time(f)
+    /// con la cota de ruina de Cramér-Lundberg P(ruina) < 10^-6 y el techo Axioma I (25%).
+    ///
+    /// Retorna: Some(min(f*_ergodic, f_lundberg, 0.25))
+    pub fn ergodic_sizing(&self, epsilon: f64, max_drawdown_fraction: f64) -> Option<f64> {
+        let f_ergodic = self.optimal_ergodic_fraction()?;
+        let f_safe = if let Some(f_lund) = self.cramer_lundberg_safe_fraction(epsilon, max_drawdown_fraction) {
+            f_ergodic.min(f_lund)
+        } else {
+            f_ergodic.min(0.05) // Fallback conservador sin cota de Lundberg madura
+        };
+        Some(f_safe.clamp(0.001, 0.25))
+    }
 }
 
 #[cfg(test)]
@@ -363,5 +485,39 @@ mod tests {
             // Un z muy conservador (ej. 50.0) debe rechazar la cota (r_lcb <= 0 -> None)
             assert_eq!(marginal.lundberg_lcb(50.0), None);
         }
+    }
+
+    #[test]
+    fn test_ole_peters_non_ergodic_growth_and_cramer_lundberg_sizing() {
+        let mut est = EstimadorSiniestros::new();
+        // Muestra positiva: +3% (55%), -2% (45%)
+        for i in 0..100 {
+            est.observar(if i % 10 < 6 { 0.03 } else { -0.02 });
+        }
+
+        // 1. Tasa de crecimiento temporal g_time(f)
+        let g_zero = est.time_average_growth_rate(0.0);
+        assert_eq!(g_zero, 0.0);
+
+        let g_small = est.time_average_growth_rate(0.05);
+        assert!(g_small > 0.0, "g_time(0.05) debe ser positivo: {g_small}");
+
+        // 2. Sobre-apuesta no-ergódica: f demasiado grande debe colapsar a absorción si 1 + f*y <= 0
+        let g_extreme = est.time_average_growth_rate(60.0); // 1 + 60 * (-0.02) = -0.20 <= 0
+        assert_eq!(g_extreme, f64::NEG_INFINITY, "Debe detectar absorción en ruina");
+
+        // 3. Fracción óptima de Ole Peters
+        let f_opt = est.optimal_ergodic_fraction().expect("Debe encontrar f* ergódico");
+        assert!(f_opt > 0.001 && f_opt <= 0.25, "f_opt={f_opt} dentro de rango Axioma I");
+
+        // 4. Fracción segura de Cramér-Lundberg D3 (P(ruina) <= 1e-6)
+        let f_lund = est.cramer_lundberg_safe_fraction(1e-6, 0.15).expect("Debe calcular f seguro Lundberg");
+        assert!(f_lund > 0.001 && f_lund <= 0.25, "f_lund={f_lund} acotado");
+
+        // 5. Sizing integral
+        let f_final = est.ergodic_sizing(1e-6, 0.15).expect("Sizing integral");
+        assert!(f_final <= f_opt);
+        assert!(f_final <= f_lund);
+        assert!(f_final <= 0.25);
     }
 }

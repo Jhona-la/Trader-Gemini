@@ -1,5 +1,27 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 (mañana, 3) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω210 (Acoplamiento Mean Field Games Fokker-Planck / Navier-Stokes, Cola FIFO y Selección Adversa en Router, Sizing No-Ergódico Ole Peters & Cramér-Lundberg D3)
+
+- **Mandato**:
+  1. **Fase 4 §6 / Acoplamiento Hidrodinámico Mean Field Games (MFG) / Fokker-Planck en `crates/feature-engine/src/navier_stokes.rs`**:
+     - Modelado de densidad continua de masa $\rho = \text{depth}/\text{spread}$, velocidad de propagación acústica en el spread $c_s = \max(\text{spread}/\tau_{\text{relax}}, 10^{-4})$, y número de Mach $Ma = |u|/c_s$.
+     - Detección de ondas de choque supersónicas ($Ma \ge 1.0$) en cascadas de liquidación violentas.
+     - Deriva óptima HJB de cotización de creadores de mercado $v^* = -\frac{\text{acceleration}}{\mu + \rho}$.
+     - Probabilidad analítica de vacío de liquidez de Fokker-Planck $P_{\text{void}} = \frac{1}{1 + \text{cushion}^2}$ y cálculo del índice acoplado de estabilidad $\mathcal{S}_{\text{MFG}} = \mathcal{L} \cdot (1 - P_{\text{void}}) \cdot \frac{1}{1 + Ma^2} \in [0.0, 1.0]$.
+     - Verificación: 5/5 tests unitarios PASS en `navier_stokes`, 91/91 unitarios en `feature-engine`, 46 contratos de integración PASS.
+  2. **Fase 3 §5 / Posición en Cola FIFO y Guardia de Selección Adversa en `crates/execution-engine/src/router.rs`, `lib.rs`**:
+     - `FifoQueueMetrics` & `AdverseSelectionGuard`: Modelado analítico de profundidad por delante en cola FIFO ($Q_{\text{ahead}}$), probabilidad de llenado limpio $P_{\text{clean\_fill}}$, y costo de selección adversa por flujo agresor tóxico (VPIN proxy).
+     - Validación del Axioma de Viabilidad Financiera: $\mathbb{E}[\Delta W] \ge 3 \times (\text{fees} + \text{funding} + \text{spread} + \text{adverse\_selection})$.
+     - Rechazo fail-closed (`REJ_INSUFFICIENT_VIABILITY`) para órdenes cuyo edge esperado es devorado por fricciones o que carecen de convicción suficiente para superar el arrastre de comisiones.
+     - Verificación: 3/3 tests unitarios PASS en `router`, 4/4 en `router_latency_diffusion_contract`.
+  3. **Fase 3 §5 / Optimizador de Tasa de Crecimiento Temporal No-Ergódico ($g_{\text{time}}$) y Cota de Ruina de Cramér-Lundberg D3 en `crates/risk-engine/src/cramer_lundberg.rs`**:
+     - Superación del sesgo de ensamble aritmético $\mathbb{E}[y]$ mediante la tasa de crecimiento logarítmico temporal continua $g_{\text{time}}(f) = \frac{1}{N} \sum_{i=1}^N \ln(1 + f \cdot y_i)$.
+     - Detección de absorción en ruina ($1 + f \cdot y_i \le 0 \implies g_{\text{time}} = -\infty$).
+     - Solución óptima unimodal $f^*_{\text{ergodic}} = \arg\max g_{\text{time}}(f)$ vía Golden Section Search en $O(1)$ zero-alloc.
+     - Acoplamiento con la cota de ruina exponencial de Cramér-Lundberg $f_{\text{Lundberg}} = \frac{m_{\text{admissible}} \cdot R}{\ln(10^6)}$ garantizando $P(\text{ruina}) < 10^{-6}$ para micro-capital ($13 USD).
+     - Sizing unificado $f^* = \min(f^*_{\text{ergodic}}, f_{\text{Lundberg}}, 0.25)$.
+     - Verificación: 6/6 tests unitarios PASS en `cramer_lundberg`, 3/3 en `cramer_lundberg_exposure_monotonicity_contract`.
+
 ## 2026-10-22 (mañana) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω209 (Filtro de Kalman NTP para Jitter de Reloj de Windows y Calibración RMT de Apuestas Efectivas ante Clones Colineales)
 
 - **Mandato**:

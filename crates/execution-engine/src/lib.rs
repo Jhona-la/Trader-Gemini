@@ -29,7 +29,7 @@ pub use order_types::{Fill, FillReport, OrderAck};
 pub use quantum_multiplexer::QuantumMultiplexer;
 pub use quantum_socket::QuantumSocketPool;
 pub use reconciliation::{reconcile, PositionRiskEntry, ReconciliationReport};
-pub use router::QuantumOrderRouter;
+pub use router::{AdverseSelectionGuard, FifoQueueMetrics, OrderViability, QuantumOrderRouter};
 pub use shadow::ShadowExecutor;
 pub use user_data_stream::{AccountSink, RemotePosition, UserDataStreamer};
 
