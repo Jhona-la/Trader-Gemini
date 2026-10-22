@@ -110,6 +110,14 @@ jobs:
         # local real (socket TCP) y exige instancia única + reutilización.
         run: cargo +nightly-2026-06-30 test -p data-pipeline --locked --test http_cliente_compartido_contract -- --test-threads=1
 
+      - name: No-silent-zero data contract (F1-091)
+        # F1-091: un valor ilegible en el camino de dinero (saldo, libro,
+        # velas, estadística de símbolo) se DESCARTA, no se convierte en 0.
+        # Contrato con payloads reales de Binance y servidor HTTP local para
+        # las velas. Sin él, la regla viviría sólo en la máquina de quien la
+        # escribió — el error que este workflow ya corrigió dos veces.
+        run: cargo +nightly-2026-06-30 test -p data-pipeline --locked --test cero_dato_contract -- --test-threads=1
+
       - name: Accepted feature clock transition contracts
         # Synthetic rejected/accepted ticks; no live trading, models or training.
         run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test stateful_transition_contract -- --test-threads=1

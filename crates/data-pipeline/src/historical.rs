@@ -3,10 +3,9 @@
 //! sin marcar origen — NO participa del contrato TGMTICK1/TGMSYNT1 (D-691).
 //! Muerto en prod: si se reviven los métodos de HistoricalLoader, exigir
 //! magic TGMSYNT1 y trazabilidad de origen.
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::time::Duration;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Kline {
@@ -20,7 +19,10 @@ pub struct Kline {
 }
 
 pub struct HistoricalLoader {
-    client: Client,
+    /// F1-090/F1-091 — pool COMPARTIDO (`None` si el backend TLS no se pudo
+    /// construir: entonces cada método falla en cerrojo en vez de panicker con
+    /// `.unwrap()` como hacía `new()` ni de crear un pool privado en silencio).
+    client: Option<Arc<reqwest::Client>>,
     base_url: String,
 }
 
@@ -42,13 +44,25 @@ impl HistoricalLoader {
         } else {
             "https://fapi.binance.com/fapi/v1/klines"
         };
+        Self::con_base_url(base_url)
+    }
+
+    /// Punto de enrutado EXPLÍCITO (espejo, proxy o servidor local de los
+    /// contratos). No es un atajo de test: es la costura por donde el
+    /// benchmark de endpoints puede conmutar de ruta sin recompilar, y por
+    /// donde un contrato habla con un socket real en vez de con un mock.
+    pub fn con_base_url(base_url: impl Into<String>) -> Self {
         Self {
-            client: Client::builder()
-                .timeout(Duration::from_secs(10))
-                .build()
-                .unwrap(),
-            base_url: base_url.to_string(),
+            client: crate::http_cliente::cliente_compartido(),
+            base_url: base_url.into(),
         }
+    }
+
+    /// Transporte disponible, o error fail-closed con el motivo.
+    fn cliente(&self) -> Result<&reqwest::Client, String> {
+        self.client.as_deref().ok_or_else(|| {
+            "Sin transporte HTTP: el cliente compartido no se pudo construir".to_string()
+        })
     }
 
     /// Fetch Klines from Binance REST API asíncronamente
@@ -60,6 +74,8 @@ impl HistoricalLoader {
         end_time: Option<u64>,
         limit: u32,
     ) -> Result<Vec<Kline>, String> {
+        // Fail-closed antes de tocar la red: sin transporte no hay velas.
+        let _ = self.cliente()?;
         let mut url = format!(
             "{}?symbol={}&interval={}&limit={}",
             self.base_url,
@@ -76,7 +92,7 @@ impl HistoricalLoader {
         }
 
         let resp = self
-            .client
+            .cliente()?
             .get(&url)
             .send()
             .await
@@ -90,38 +106,61 @@ impl HistoricalLoader {
 
         let mut klines = Vec::with_capacity(data.len());
         for row in data {
-            if let Some(arr) = row.as_array() {
-                let open_time = arr[0].as_u64().unwrap_or(0);
-                let open: f64 = arr[1].as_str().unwrap_or("0").parse().unwrap_or(0.0);
-                let high: f64 = arr[2].as_str().unwrap_or("0").parse().unwrap_or(0.0);
-                let low: f64 = arr[3].as_str().unwrap_or("0").parse().unwrap_or(0.0);
-                let close: f64 = arr[4].as_str().unwrap_or("0").parse().unwrap_or(0.0);
-                let volume: f64 = arr[5].as_str().unwrap_or("0").parse().unwrap_or(0.0);
-                let close_time = arr[6].as_u64().unwrap_or(0);
+            // F1-091 — una vela que no se puede leer COMPLETA se descarta.
+            //
+            // Antes los precios caían en `unwrap_or(0.0)` y la guarda `> 0.0`
+            // los rechazaba (seguro por accidente), pero el VOLUMEN caía en
+            // `unwrap_or(0.0)` y pasaba la guarda `>= 0.0`: una vela con
+            // volumen ilegible entraba al histórico como vela de volumen CERO,
+            // es decir, como si el mercado no hubiera negociado. Además
+            // `arr[0]`/`arr[6]` indexaban directo: una fila corta de una
+            // respuesta corrupta PANICABA en runtime (prohibido por el
+            // mandato). Ahora todo el campo se lee con `.get()` y con las
+            // reglas de `cero_dato` (precio y tamaño > 0, volumen >= 0).
+            let Some(arr) = row.as_array() else {
+                continue;
+            };
+            let (
+                Some(open_time),
+                Some(open),
+                Some(high),
+                Some(low),
+                Some(close),
+                Some(volume),
+                Some(close_time),
+            ) = (
+                arr.get(0).and_then(|v| v.as_u64()),
+                arr.get(1)
+                    .and_then(|v| v.as_str())
+                    .and_then(crate::cero_dato::cantidad),
+                arr.get(2)
+                    .and_then(|v| v.as_str())
+                    .and_then(crate::cero_dato::cantidad),
+                arr.get(3)
+                    .and_then(|v| v.as_str())
+                    .and_then(crate::cero_dato::cantidad),
+                arr.get(4)
+                    .and_then(|v| v.as_str())
+                    .and_then(crate::cero_dato::cantidad),
+                arr.get(5)
+                    .and_then(|v| v.as_str())
+                    .and_then(crate::cero_dato::monto),
+                arr.get(6).and_then(|v| v.as_u64()),
+            )
+            else {
+                continue;
+            };
 
-                if open > 0.0
-                    && high > 0.0
-                    && low > 0.0
-                    && close > 0.0
-                    && open.is_finite()
-                    && high.is_finite()
-                    && low.is_finite()
-                    && close.is_finite()
-                    && volume.is_finite()
-                    && volume >= 0.0
-                {
-                    let kline = Kline {
-                        open_time,
-                        open,
-                        high,
-                        low,
-                        close,
-                        volume,
-                        close_time,
-                    };
-                    klines.push(kline);
-                }
-            }
+            let kline = Kline {
+                open_time,
+                open,
+                high,
+                low,
+                close,
+                volume,
+                close_time,
+            };
+            klines.push(kline);
         }
 
         Ok(klines)
@@ -176,7 +215,7 @@ impl HistoricalLoader {
 
             let mut retries = 0;
             let data: Vec<Value> = loop {
-                let resp_res = self.client.get(&url).send().await;
+                let resp_res = self.cliente()?.get(&url).send().await;
                 match resp_res {
                     Ok(resp) => {
                         let status = resp.status();

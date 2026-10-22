@@ -1,6 +1,7 @@
 pub mod api_client;
 pub mod asset_selector;
 pub mod bypass;
+pub mod cero_dato;
 pub mod chaos_monkey;
 pub mod dynamic_ranker;
 pub mod feature_vm;
@@ -33,4 +34,3 @@ pub mod ws_client;
 pub use resilient_stream::ResilientStreamManager;
 pub use spot_feed::start_spot_feed_sync;
 pub use ws_client::BinanceStreamer;
-
