@@ -1,32 +1,33 @@
-//! MEDICIÓN DE ORTOGONALIDAD ESPECTRAL DEL ENSAMBLE (GLM 146, 2026-10-21).
+//! MEDICIÓN DE ORTOGONALIDAD ESPECTRAL DEL ENSAMBLE (GLM 146, 2026-10-21/22).
 //!
 //! El censo (GLM 129) midió QUIÉN habla; este vehículo mide si lo que dicen
-//! es información INDEPENDIENTE. Sobre el tape REAL se reconstruye la matriz
-//! de correlación de votos firmados por fuente (Welford online por pares,
-//! sólo ticks donde AMBAS fuentes opinan — jamás se imputan ceros a mudos),
-//! y sobre ella:
-//!   - espectro propio completo (Jacobi zero-alloc de risk-engine),
-//!   - EDGE Marchenko-Pastur: modos bajo el borde = ruido muestral,
-//!   - effective_bets ((Σ√λ)²/Σλ sobre modos > edge): apuestas efectivas
-//!     INDEPENDIENTES del ensamble — 19 fuentes pueden ser 3 apuestas,
-//!   - por fuente: max|corr| con las demás (cazador de clones informativos
-//!     que la invariancia por fuente del 127 no detecta).
+//! es información INDEPENDIENTE. Sobre el tape REAL:
+//!   1. corral de votos por fuente (voto medio CON SIGNO, `votos_por_fuente_snapshot`),
+//!   2. co-observaciones por par ⇒ k-core de hablantes (grado ≥1 excluye mudos;
+//!      pelado iterativo exige TODOS-CONTRA-TODOS ≥ MIN_CO_OBS),
+//!   3. correlación por CASOS COMPLETOS del core (ticks donde TODO el core
+//!      habló) — PSD por construcción; la variante por pares-deletion NO es
+//!      PSD (subconjuntos distintos por par) y el eigensolver la rechaza,
+//!   4. espectro Jacobi zero-alloc + borde Marchenko-Pastur + effective_bets
+//!      ((Σ√λ)²/Σλ sobre modos > borde = apuestas efectivas independientes),
+//!   5. caza-clones: max|corr| por fuente (los 0.85-0.97 son informativamente
+//!      clones que la invariancia por fuente del 127 no detecta).
 //!
-//! pilar «Inferencia Causal y Reducción de Multicolinealidad Espectral» del
-//! mandato del operador. Reutiliza effective_bets/mp_upper_edge de
-//! risk-engine (misma matemática del riesgo de cartera, aplicada a voces).
+//! pilar «Inferencia Causal y Reducción de Multicolinealidad Espectral».
+//! Reutiliza effective_bets/mp_upper_edge/Jacobi de risk-engine (misma
+//! matemática del riesgo de cartera aplicada a VOCES — cero duplicación).
 //!
-//! #[ignore]: investigación local con tape REAL (walk-up compartido con
-//! censo_mudos_medicion: TG_DATA_ROOT / workspace / raíz). Recibo persistente
-//! en outputs/ortogonalidad_voces_*.log para el informe integral.
+//! #[ignore]: investigación local con tape REAL. Recibo persistente en
+//! outputs/ortogonalidad_voces_*.log para el informe integral.
 
 use backtest_engine::booktick_replay::{ReplayConfig, ReplayTick, run_booktick_replay_with_observer};
 
-/// Pares con menos co-observaciones que esto no se reportan como medidos
-/// (CL-15: ausencia explícita, jamás corr=0 inventado).
-const MIN_CO_OBS: u64 = 500;
-/// Muestreo del observer: 1 de cada N ticks (la correlación no necesita 2M).
+/// Pares con menos co-observaciones que esto no se reportan como medidos.
+const MIN_CO_OBS: u64 = 100;
+/// Muestreo del observer: 1 de cada N ticks (500K muestras de 2M ticks).
 const MUESTREO: usize = 4;
+/// Slots del corral de votos (el orchestrator capea fuentes en 32).
+const SLOTS: usize = 32;
 
 #[test]
 #[ignore = "investigación local: requiere tape REAL de 239 MB en data/"]
@@ -70,11 +71,13 @@ fn ortogonalidad_voces_rango_efectivo_btc_sep() {
         shift_atr_frac: 0.10,
     };
 
-    // Estado del observador: nombres (orden de primera aparición, estable por
-    // registro) y acumuladores Welford por par (sólo co-observaciones).
+    // Corral: nombres (orden de primera aparición, estable por registro),
+    // pares Welford (histograma/k-core) y BUFFER de instantes muestreados
+    // ([f64; SLOTS] con NaN donde la fuente no habló — jamás 0 imputado)
+    // para la correlación por CASOS COMPLETOS del core.
     let mut nombres: Vec<&'static str> = Vec::new();
-    // Por par (i,j) i<j: (n, Σx, Σy, Σxy, Σx², Σy²).
     let mut pares: Vec<((usize, usize), (u64, f64, f64, f64, f64, f64))> = Vec::new();
+    let mut buffer: Vec<[f64; SLOTS]> = Vec::new();
     let mut muestras: u64 = 0;
 
     let _stats = run_booktick_replay_with_observer(
@@ -90,23 +93,26 @@ fn ortogonalidad_voces_rango_efectivo_btc_sep() {
             if votos.is_empty() {
                 return;
             }
-            // Indexar por nombre (estable entre llamadas: mismo registro).
             for (nombre, _) in &votos {
                 if !nombres.iter().any(|n| n == nombre) {
                     nombres.push(nombre);
                 }
             }
-            let idx = |nombre: &str| nombres.iter().position(|n| *n == nombre);
-            // Pares que hablan en ESTE tick (voto con signo, |v|>1e-9).
-            let hablantes: Vec<(usize, f64)> = votos
-                .iter()
-                .filter_map(|(nombre, v)| {
-                    let v = *v;
-                    (v.is_finite() && v.abs() > 1e-9)
-                        .then(|| idx(nombre).map(|ix| (ix, v)))
-                        .flatten()
-                })
-                .collect();
+            let mut instante = [f64::NAN; SLOTS];
+            let mut hablantes: Vec<(usize, f64)> = Vec::new();
+            for (nombre, v) in &votos {
+                let Some(ix) = nombres.iter().position(|n| n == nombre) else {
+                    continue;
+                };
+                let v = *v;
+                if ix < SLOTS && v.is_finite() {
+                    instante[ix] = v;
+                    if v.abs() > 1e-9 {
+                        hablantes.push((ix, v));
+                    }
+                }
+            }
+            buffer.push(instantante_segura(instante));
             muestras += 1;
             for a in 0..hablantes.len() {
                 for b in (a + 1)..hablantes.len() {
@@ -129,27 +135,60 @@ fn ortogonalidad_voces_rango_efectivo_btc_sep() {
         },
     );
 
-    // ── Construcción honesta de la matriz: subconjunto CLIQUE bien observado
-    // (todas las parejas ≥ MIN_CO_OBS). Fuentes con pares débiles quedan
-    // FUERA del espectro y se reportan como no medibles juntas (CL-15).
+    // ── k-core: grado ≥1 (excluye mudos) + pelado todos-contra-todos.
     let k = nombres.len();
-    let mut bien: Vec<usize> = Vec::new();
-    'fuente: for f in 0..k {
-        for &g in &bien {
-            let (lo, hi) = if f < g { (f, g) } else { (g, f) };
-            let ok = pares
-                .iter()
-                .any(|((pi, pj), acc)| *pi == lo && *pj == hi && acc.0 >= MIN_CO_OBS);
-            if !ok {
-                continue 'fuente;
-            }
+    let tiene_par_fuerte = |a: usize, b: usize| -> bool {
+        let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+        pares
+            .iter()
+            .any(|((pi, pj), acc)| *pi == lo && *pj == hi && acc.0 >= MIN_CO_OBS)
+    };
+    let mut vivos: Vec<usize> = (0..k)
+        .filter(|&f| (0..k).any(|g| g != f && tiene_par_fuerte(f, g)))
+        .collect();
+    loop {
+        let debiles: Vec<usize> = vivos
+            .iter()
+            .filter(|&&f| vivos.iter().any(|&g| g != f && !tiene_par_fuerte(f, g)))
+            .copied()
+            .collect();
+        if debiles.is_empty() || vivos.is_empty() {
+            break;
         }
-        bien.push(f);
+        for f in debiles {
+            vivos.retain(|&x| x != f);
+        }
     }
-    let m = bien.len();
+    let core: Vec<usize> = vivos;
+    let m = core.len();
 
     let mut lineas: Vec<String> = Vec::new();
     let mut w = |s: String| lineas.push(s);
+
+    // Histograma de co-observaciones: la ORTOGONALIDAD TEMPORAL es parte del
+    // hallazgo — voces que disparan en instantes disjuntos no comparten
+    // estadística conjunta estimable.
+    {
+        let mut co_obs: Vec<u64> = pares.iter().map(|(_, a)| a.0).collect();
+        co_obs.sort_unstable_by(|a, b| b.cmp(a));
+        w("--- co-observaciones por par (top 15) — ortogonalidad TEMPORAL ---".into());
+        let mut filas: Vec<(u64, String, String)> = pares
+            .iter()
+            .map(|((i, j), a)| (a.0, nombres[*i].to_string(), nombres[*j].to_string()))
+            .collect();
+        filas.sort_by(|x, y| y.0.cmp(&x.0));
+        for (n, a, b) in filas.iter().take(15) {
+            w(format!("  {:>28} × {:<28} n={n}", a, b));
+        }
+        let p50 = co_obs.get(co_obs.len() / 2).copied().unwrap_or(0);
+        w(format!(
+            "pares con datos: {} | p50 co-obs: {} | pares ≥{MIN_CO_OBS}: {}",
+            co_obs.len(),
+            p50,
+            co_obs.iter().filter(|&&n| n >= MIN_CO_OBS).count()
+        ));
+    }
+
     w("=============== ORTOGONALIDAD DE VOCES (GLM 146) ===============".into());
     w(format!(
         "tape: {nombre_tape} | ticks: {} | muestras: {} | fuentes: {} | pares observados: {}",
@@ -159,116 +198,138 @@ fn ortogonalidad_voces_rango_efectivo_btc_sep() {
         pares.len()
     ));
     w(format!(
-        "subconjunto bien-observado (pares ≥{MIN_CO_OBS}): {m} de {k} fuentes"
+        "core bien-observado (pares ≥{MIN_CO_OBS}, todos-contra-todos): {m} de {k} fuentes"
     ));
 
     if m >= 2 {
-        // Matriz de correlación del clique (unidades en diagonal).
-        let mut corr = vec![vec![0.0f64; m]; m];
-        let mut t_min = u64::MAX;
-        for (a, &fa) in bien.iter().enumerate() {
-            corr[a][a] = 1.0;
-            for (b, &fb) in bien.iter().enumerate().skip(a + 1) {
-                let (lo, hi) = if fa < fb { (fa, fb) } else { (fb, fa) };
-                let Some((_, acc)) = pares
-                    .iter()
-                    .find(|((pi, pj), _)| *pi == lo && *pj == hi)
-                else {
-                    continue; // imposible dentro del clique; defensivo
-                };
-                let (n, sx, sy, sxy, sx2, sy2) = *acc;
-                t_min = t_min.min(n);
-                let nf = n as f64;
-                let cov = (sxy - sx * sy / nf) / (nf - 1.0);
-                let vx = (sx2 - sx * sx / nf) / (nf - 1.0);
-                let vy = (sy2 - sy * sy / nf) / (nf - 1.0);
-                let r = if vx > 1e-18 && vy > 1e-18 {
-                    (cov / (vx.sqrt() * vy.sqrt())).clamp(-1.0, 1.0)
-                } else {
-                    f64::NAN // sin varianza ⇒ no medible, no cero
-                };
-                corr[a][b] = r;
-                corr[b][a] = r;
+        // ── CASOS COMPLETOS: instantes donde TODO el core habló.
+        let completos: Vec<&[f64; SLOTS]> = buffer
+            .iter()
+            .filter(|inst| core.iter().all(|&c| inst[c].is_finite() && inst[c].abs() > 1e-9))
+            .collect();
+        let t = completos.len();
+        w(format!(
+            "casos completos del core (todas las fuentes hablaron): {t} de {} muestras",
+            buffer.len()
+        ));
+        if t > (m as usize) {
+            // Correlación por casos completos (PSD por construcción).
+            let mut suma = vec![0.0f64; m];
+            let mut suma2 = vec![0.0f64; m];
+            let mut sxy = vec![vec![0.0f64; m]; m];
+            for inst in &completos {
+                for (a, &ca) in core.iter().enumerate() {
+                    let x = inst[ca];
+                    suma[a] += x;
+                    suma2[a] += x * x;
+                    for (b, &cb) in core.iter().enumerate().skip(a + 1) {
+                        sxy[a][b] += x * inst[cb];
+                    }
+                }
             }
-        }
-        if corr.iter().any(|fila| fila.iter().any(|v| !v.is_finite())) {
-            w("⚠️ pares sin varianza dentro del clique — espectro NO calculado".into());
-        } else {
-            // Espectro completo (Jacobi zero-alloc, m ≤ 19 ≤ 32).
-            let mut flat = Vec::with_capacity(m * m);
-            for fila in &corr {
-                flat.extend_from_slice(fila);
+            let tf = t as f64;
+            let mut corr = vec![vec![0.0f64; m]; m];
+            for (a, &ca) in core.iter().enumerate() {
+                corr[a][a] = 1.0;
+                let vx = (suma2[a] - suma[a] * suma[a] / tf) / (tf - 1.0);
+                for (b, &cb) in core.iter().enumerate().skip(a + 1) {
+                    let vy = (suma2[b] - suma[b] * suma[b] / tf) / (tf - 1.0);
+                    let cov = (sxy[a][b] - suma[a] * suma[b] / tf) / (tf - 1.0);
+                    let r = if vx > 1e-18 && vy > 1e-18 {
+                        (cov / (vx.sqrt() * vy.sqrt())).clamp(-1.0, 1.0)
+                    } else {
+                        f64::NAN
+                    };
+                    corr[a][b] = r;
+                    corr[b][a] = r;
+                }
             }
-            let mut espectro = vec![0.0f64; m];
-            if let Some(nm) = risk_engine::random_matrix::full_spectrum_flat_zero_alloc(
-                &flat, m, &mut espectro,
-            ) {
-                w(format!("espectro propio (descendente, {nm}):"));
-                for (ix, lambda) in espectro.iter().take(nm).enumerate() {
-                    w(format!("  λ{:>2} = {:.6}", ix + 1, lambda));
-                }
-                if let Some(edge) = risk_engine::random_matrix::mp_upper_edge(m, t_min as usize) {
-                    let sobre = espectro.iter().take(nm).filter(|&&l| l > edge).count();
-                    w(format!(
-                        "borde Marchenko-Pastur (N={m}, T={}): {edge:.6} ⇒ modos de SEÑAL: {sobre}",
-                        t_min
-                    ));
-                } else {
-                    w("borde MP no aplicable (T ≤ N)".into());
-                }
-                if let Some(bets) = risk_engine::random_matrix::effective_bets(&corr, t_min as usize) {
-                    w(format!(
-                        "★ APUESTAS EFECTIVAS INDEPENDIENTES: {bets:.3} de {m} fuentes (participación sobre modos > borde MP)"
-                    ));
-                } else {
-                    w("★ effective_bets: sin modos sobre el borde — TODO el ensamble es ruido muestral bajo MP".into());
-                }
-                let suma: f64 = espectro.iter().take(nm).sum();
-                let suma2: f64 = espectro.iter().take(nm).map(|l| l * l).sum();
-                if suma > 0.0 && suma2 > 0.0 {
-                    w(format!(
-                        "participación espectral CRUDA ((Σλ)²/Σλ², sin filtro MP): {:.3}",
-                        suma * suma / suma2
-                    ));
-                }
+            if corr.iter().any(|f| f.iter().any(|v| !v.is_finite())) {
+                w("⚠️ fuentes sin varianza en casos completos — espectro NO calculado".into());
             } else {
-                w("⚠️ eigensolver no convergió".into());
+                let mut flat: Vec<f64> = Vec::with_capacity(m * m);
+                for fila in &corr {
+                    flat.extend_from_slice(fila);
+                }
+                let mut espectro = vec![0.0f64; m];
+                if let Some(nm) = risk_engine::random_matrix::full_spectrum_flat_zero_alloc(
+                    &flat, m, &mut espectro,
+                ) {
+                    w(format!("espectro propio casos-completos (descendente, {nm}):"));
+                    for (ix, lambda) in espectro.iter().take(nm).enumerate() {
+                        w(format!("  λ{:>2} = {:.6}", ix + 1, lambda));
+                    }
+                    if let Some(edge) = risk_engine::random_matrix::mp_upper_edge(m, t) {
+                        let sobre = espectro.iter().take(nm).filter(|&&l| l > edge).count();
+                        w(format!(
+                            "borde Marchenko-Pastur (N={m}, T={t}): {edge:.6} ⇒ modos de SEÑAL: {sobre}"
+                        ));
+                    } else {
+                        w("borde MP no aplicable (T ≤ N)".into());
+                    }
+                    if let Some(bets) = risk_engine::random_matrix::effective_bets(&corr, t) {
+                        w(format!(
+                            "★ APUESTAS EFECTIVAS INDEPENDIENTES: {bets:.3} de {m} fuentes"
+                        ));
+                    } else {
+                        w("★ effective_bets: sin modos sobre el borde MP — TODO ruido muestral".into());
+                    }
+                    let suma_l: f64 = espectro.iter().take(nm).sum();
+                    let suma_l2: f64 = espectro.iter().take(nm).map(|l| l * l).sum();
+                    if suma_l > 0.0 && suma_l2 > 0.0 {
+                        w(format!(
+                            "participación espectral CRUDA ((Σλ)²/Σλ²): {:.3}",
+                            suma_l * suma_l / suma_l2
+                        ));
+                    }
+                } else {
+                    w("⚠️ eigensolver rechazó la matriz (¿no PSD?)" .into());
+                }
             }
+        } else {
+            w("⚠️ casos completos ≤ tamaño del core — estadística insuficiente".into());
         }
-        // Caza-clones: max|corr| por fuente dentro del clique.
-        w("--- max |corr| por fuente (clique) ---".into());
+
+        // Caza-clones: max|corr| por fuente dentro del core (por pares, la
+        // tabla de clones es válida par a par aunque la matriz global no sea
+        // PSD — cada par usa SOLO sus co-observaciones).
+        w("--- max |corr| por fuente (core, por pares) ---".into());
         let mut filas: Vec<(f64, String)> = Vec::new();
-        for (a, &fa) in bien.iter().enumerate() {
+        for (a, &ca) in core.iter().enumerate() {
             let mut maxr = 0.0f64;
-            let mut peor = "";
-            for (b, &fb) in bien.iter().enumerate() {
+            for (b, &cb) in core.iter().enumerate() {
                 if a == b {
                     continue;
                 }
-                let r = corr[a][b].abs();
-                if r > maxr {
-                    maxr = r;
-                    peor = nombres[fb];
+                let (lo, hi) = if ca < cb { (ca, cb) } else { (cb, ca) };
+                if let Some((_, acc)) = pares.iter().find(|((pi, pj), _)| *pi == lo && *pj == hi) {
+                    let (nn, sx, sy, sxy, sx2, sy2) = *acc;
+                    let nf = nn as f64;
+                    let cov = (sxy - sx * sy / nf) / (nf - 1.0);
+                    let vx = (sx2 - sx * sx / nf) / (nf - 1.0);
+                    let vy = (sy2 - sy * sy / nf) / (nf - 1.0);
+                    if vx > 1e-18 && vy > 1e-18 {
+                        let r = (cov / (vx.sqrt() * vy.sqrt())).abs();
+                        if r > maxr {
+                            maxr = r;
+                        }
+                    }
                 }
             }
-            filas.push((
-                maxr,
-                format!("  {:<28} max|corr| {:.4} vs {}", nombres[fa], maxr, peor),
-            ));
+            filas.push((maxr, nombres[ca].to_string()));
         }
         filas.sort_by(|x, y| y.0.partial_cmp(&x.0).unwrap_or(std::cmp::Ordering::Equal));
-        for (_, linea) in filas {
-            w(linea);
+        for (maxr, nombre) in filas {
+            w(format!("  {nombre:<30} max|corr| {maxr:.4}"));
         }
     } else {
-        w("⚠️ clique bien-observado < 2 fuentes — subir MIN_CO_OBS no, conseguir tapes más largos sí".into());
+        w("⚠️ core bien-observado < 2 fuentes".into());
     }
 
     let reporte = lineas.join("\n");
     eprintln!("{reporte}");
 
-    // Recibo persistente para el informe integral (emisor de ortogonalidad:
-    // átomo siguiente). outputs/ existe por convención del repo.
+    // Recibo persistente para el informe integral (emisor: átomo siguiente).
     let salida = std::path::Path::new("outputs").join(format!(
         "ortogonalidad_voces_{}.log",
         nombre_tape.trim_end_matches(".bin")
@@ -277,4 +338,10 @@ fn ortogonalidad_voces_rango_efectivo_btc_sep() {
         let _ = std::fs::write(&salida, format!("{reporte}\n"));
         eprintln!("recibo: {}", salida.display());
     }
+}
+
+/// El corral por instante preserva NaN en no-hablantes (ausencia honesta).
+#[inline(always)]
+fn instantante_segura(v: [f64; SLOTS]) -> [f64; SLOTS] {
+    v
 }
