@@ -123,3 +123,25 @@ jobs:
         # Se ejecuta el archivo directamente (tiene unittest.main()): evita
         # los problemas de discover sin __init__.py en scripts/tests.
         run: python3 scripts/tests/test_meta_analitica.py -v
+
+  resource-safety:
+    # QRA-02: los scripts reales operan sólo sobre árboles temporales de prueba.
+    # Este job no compila Rust ni ejecuta higiene sobre el target del checkout.
+    name: recursos (contratos Python y bash)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout candidate merge
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # verified v4
+        with:
+          persist-credentials: false
+      - name: GNU awk required by shared-target variant grouping
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gawk
+      - name: Resource cleanup fail-closed contracts
+        run: python3 scripts/tests/test_qra_resource_safety.py -v
+      - name: Shared target cleanup regressions
+        run: python3 scripts/tests/test_barrido_target.py -v
+      - name: Build semaphore regressions
+        run: python3 scripts/tests/test_cargo_semaforo.py -v
