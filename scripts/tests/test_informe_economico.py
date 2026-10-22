@@ -91,5 +91,60 @@ class EmisorEconomicoContract(unittest.TestCase):
         self.assertIn("**—**", texto2, "null se muestra como ausencia, no como 0")
 
 
+
+
+RECIBO_ORTOGONALIDAD = """=============== ORTOGONALIDAD DE VOCES (GLM 146) ===============
+tape: BTCUSDT_TEST.bin | ticks: 2000000 | muestras: 500000 | fuentes: 19 | pares observados: 78
+core bien-observado (pares >=100, todos-contra-todos): 11 de 19 fuentes
+casos completos del core (todas las fuentes hablaron): 14732 de 500000 muestras
+espectro propio casos-completos (descendente, 11):
+borde Marchenko-Pastur (N=11, T=14732): 1.055397
+★ APUESTAS EFECTIVAS INDEPENDIENTES: 2.828 de 11 fuentes
+--- dendrograma co-disparo >=90% del máx (n>=449954): 1 clúster(es) ---
+  clúster [...] casos completos: 499920
+    espectro: [3.346 1.226 1.000 0.319 0.094 0.014] · borde MP 1.0069
+    ★ APUESTAS EFECTIVAS: 1.886 de 6 fuentes
+--- max |corr| por fuente (core, por pares) ---
+  RenyiTsallisEntropyEngine      max|corr| 0.9748
+  StochasticResonanceEngine      max|corr| 0.9748
+"""
+
+
+class EmisorOrtogonalidadContract(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="informe_orto_")
+        self.original_root = informe.ROOT
+        informe.ROOT = self.tmp.name
+        self.dir_out = Path(self.tmp.name) / "outputs"
+        self.dir_out.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        informe.ROOT = self.original_root
+        self.tmp.cleanup()
+
+    def _recibo(self) -> Path:
+        ruta = (self.dir_out / "ortogonalidad_voces_X.log").resolve()
+        if self.dir_out.resolve() not in ruta.parents:
+            raise ValueError("fuera del sandbox")
+        return ruta
+
+    def test_parsea_apuestas_por_cluster_y_global(self):
+        self._recibo().write_text(RECIBO_ORTOGONALIDAD, encoding="utf-8")
+        dato, err = informe.emisor_ortogonalidad()
+        self.assertIsNone(err)
+        self.assertEqual(dato["tape"], "BTCUSDT_TEST.bin")
+        self.assertEqual(dato["fuentes"], 19)
+        self.assertEqual(dato["core_completos"], 14732)
+        self.assertAlmostEqual(dato["bets_global"], 2.828)
+        self.assertAlmostEqual(dato["bets_cluster"], 1.886)
+        self.assertEqual(dato["bets_cluster_de"], 6)
+        self.assertEqual(dato["clones_top"][0][1], 0.9748)
+        self.assertEqual(len(dato["espectro_cluster"]), 6)
+
+    def test_ausencia_honesta_sin_recibo(self):
+        dato, err = informe.emisor_ortogonalidad()
+        self.assertIsNone(dato)
+        self.assertIn("correr el veh", err)
+
 if __name__ == "__main__":
     unittest.main()

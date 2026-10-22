@@ -12,6 +12,9 @@ Emisores:
   4. económico (GLM 144, §52)  — outputs/economia_*.json volcado por el worker de
      telemetría del audit-engine: ROI pre/post fees, PnL bruto/neto, WR pre/post
      costos, Sharpe (Welford por trade), EV/trade y periodo exacto.
+  5. ortogonalidad (GLM 148)   — outputs/ortogonalidad_voces_*.log del vehículo
+     #[ignore] (146/147): apuestas efectivas por clúster de co-disparo, clones
+     informativos y casos completos del core.
 
 Uso: python scripts/informe_integral.py [--out docs/audit/informe_integral/]
 Determinista: sólo lee archivos existentes; no ejecuta suites.
@@ -118,6 +121,43 @@ def emisor_economico():
         return None, f"recibo ilegible: {e}"
 
 
+def emisor_ortogonalidad():
+    """(5, GLM 146/147) Ortogonalidad del ensamble: parsea el recibo
+    outputs/ortogonalidad_voces_*.log del vehículo #[ignore] (correlaciones
+    por pares, espectro por clúster de co-disparo y APUESTAS EFECTIVAS —
+    la diversificación real del ensamble vs la nominal)."""
+    candidatos = sorted(glob.glob(os.path.join(ROOT, "outputs", "ortogonalidad_voces_*.log")))
+    if not candidatos:
+        return None, "sin outputs/ortogonalidad_voces_*.log (correr el vehículo --ignored)"
+    try:
+        with open(candidatos[-1], encoding="utf-8", errors="replace") as f:
+            texto = f.read()
+    except OSError as e:
+        return None, f"recibo ilegible: {e}"
+    dato = {"archivo": os.path.basename(candidatos[-1])}
+    m = re.search(r"tape: (\S+).*?ticks: (\d+) \| muestras: (\d+) \| fuentes: (\d+)", texto)
+    if m:
+        dato["tape"], dato["ticks"], dato["muestras"], dato["fuentes"] = (
+            m.group(1), int(m.group(2)), int(m.group(3)), int(m.group(4)))
+    m = re.search(r"casos completos del core.*?: (\d+) de (\d+)", texto)
+    if m:
+        dato["core_completos"], dato["core_muestras"] = int(m.group(1)), int(m.group(2))
+    # Global (primera aparición) y por clúster (última, la del 90%).
+    apuestas = re.findall(r"APUESTAS EFECTIVAS(?: INDEPENDIENTES)?: ([\d.]+) de (\d+)", texto)
+    if apuestas:
+        dato["bets_global"], dato["bets_global_de"] = float(apuestas[0][0]), int(apuestas[0][1])
+    if len(apuestas) > 1:
+        dato["bets_cluster"], dato["bets_cluster_de"] = (
+            float(apuestas[-1][0]), int(apuestas[-1][1]))
+    clones = re.findall(r"^\s+(\S+)\s+max\|corr\| ([\d.]+)\s*$", texto, re.M)
+    if clones:
+        dato["clones_top"] = [(n, float(v)) for n, v in clones[:3]]
+    m = re.search(r"espectro: \[([^\]]+)\]", texto)
+    if m:
+        dato["espectro_cluster"] = [float(x) for x in m.group(1).split()]
+    return dato, None
+
+
 def generar(fecha, previo_ruta):
     lineas = []
     w = lineas.append
@@ -183,8 +223,32 @@ def generar(fecha, previo_ruta):
         w(f"- (sin datos: {err4})")
     w("")
 
-    # 5. Comparativa con el informe anterior (la serie histórica)
-    w("## 5. Comparativa con el informe anterior")
+    orto, err5 = emisor_ortogonalidad()
+    w("## 5. Ortogonalidad del ensamble (apuestas efectivas — GLM 146/147)")
+    if orto:
+        w(f"- Recibo: {orto['archivo']}"
+          + (f" · tape {orto.get('tape','?')} ({orto.get('ticks','?')} ticks,"
+             f" {orto.get('muestras','?')} muestras, {orto.get('fuentes','?')} fuentes)."))
+        if "core_completos" in orto:
+            w(f"- Casos completos del core: **{orto['core_completos']}/{orto['core_muestras']}**"
+              " — las voces disparan en particiones temporales casi disjuntas.")
+        if "bets_cluster" in orto:
+            w(f"- ★ Apuestas efectivas del CLÚSTER central: **{orto['bets_cluster']} de"
+              f" {orto['bets_cluster_de']} fuentes**"
+              + (f" · espectro {orto.get('espectro_cluster')}" if "espectro_cluster" in orto else ""))
+        if "bets_global" in orto:
+            w(f"- ★ Apuestas efectivas del core global: **{orto['bets_global']} de"
+              f" {orto['bets_global_de']} fuentes** ⇒ diversificación nominal ~"
+              f"{round(orto['bets_global_de'] / max(orto['bets_global'], 0.001)):.1f}× la real.")
+        if "clones_top" in orto:
+            w("- Clones informativos top: " + ", ".join(
+                f"{n} ({v})" for n, v in orto["clones_top"]))
+    else:
+        w(f"- (sin datos: {err5})")
+    w("")
+
+    # 6. Comparativa con el informe anterior (la serie histórica)
+    w("## 6. Comparativa con el informe anterior")
     if previo_ruta and os.path.exists(previo_ruta):
         try:
             previo = open(previo_ruta, encoding="utf-8").read()
