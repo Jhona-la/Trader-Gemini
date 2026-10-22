@@ -5,6 +5,7 @@ pub mod chaos_monkey;
 pub mod dynamic_ranker;
 pub mod feature_vm;
 pub mod historical;
+pub mod http_cliente;
 pub mod lakehouse_mmap;
 // RB-R1 (Codex RB, 2026-10-19): `macro_data` (MacroFetcher) y
 // `market_context` (MarketContextFetcher) ya no viven aquí. Eran los únicos

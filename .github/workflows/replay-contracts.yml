@@ -104,6 +104,12 @@ jobs:
         # la máquina de quien la escribió. Aquí se ejecuta de verdad.
         run: cargo +nightly-2026-06-30 test -p evolution-engine --locked --test wf_numerario_invariancia_contract -- --test-threads=1
 
+      - name: Shared HTTP client contract (F1-090)
+        # F1-090: un solo `reqwest::Client` por proceso con tcp_nodelay, pool
+        # acotado y timeouts explícitos. El contrato levanta un servidor HTTP
+        # local real (socket TCP) y exige instancia única + reutilización.
+        run: cargo +nightly-2026-06-30 test -p data-pipeline --locked --test http_cliente_compartido_contract -- --test-threads=1
+
       - name: Accepted feature clock transition contracts
         # Synthetic rejected/accepted ticks; no live trading, models or training.
         run: cargo +nightly-2026-06-30 test -p god-engine-core --locked --test stateful_transition_contract -- --test-threads=1
