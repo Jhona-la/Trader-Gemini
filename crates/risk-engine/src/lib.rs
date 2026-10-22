@@ -398,6 +398,13 @@ impl RiskEngine {
         if arena.pico_ilegible.load(Ordering::Relaxed) {
             return rej(REJ_DRAWDOWN);
         }
+        // FASE 3 DEFENSE-IN-DEPTH: Si el kill-switch del sistema inmune está armado
+        // (por latencia sostenida, insolvencia, o cerrojo STOP_TRADING.LOCK),
+        // vetar de inmediato cualquier intento de orden nueva en la puerta de entrada
+        // del motor de riesgo (fail-closed, CL-43/ADR-0015).
+        if arena.kill_switch_active.load(Ordering::Acquire) {
+            return rej(REJ_DRAWDOWN);
+        }
         // O-04 → CL-106 → CL-130 (LC-F4-10, decisión del dueño «Ambos»;
         // R1 de la revisión del PR #62): FRENO DURO DE LA CUENTA, la MISMA
         // función del sistema inmune del host. No se abre posición nueva
