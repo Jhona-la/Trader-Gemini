@@ -20,9 +20,15 @@ sus blobs base/revisado, alcance parcial, límites y evidencia por SHA.
 - Integración PR94: main `98e194cb7577df4fa4b37fe9b22304ba4966b07c`,
   padres `3fe8771a` y `55d41e14`, árbol `fde1f05b3dd1439b7155cc0acae8d9f3a03ebe28`.
   Se comprobaron ambos ancestros y el árbol esperado después del merge.
-- Main: Unit `39870320003` **7/7 aprobado**; Replay `39870319989`
-  **pendiente** al preparar este recibo. La rama de código local/remota ya se retiró; sigue sólo la
-  rama documental de recibo hasta registrar ese resultado.
+- Main: **9/9 checks aprobados** sobre `98e194cb`, evento push:
+  [Unit `39870320003`](https://github.com/Jhona-la/Trader-Gemini/actions/runs/39870320003)
+  7/7 y [Replay `39870319989`](https://github.com/Jhona-la/Trader-Gemini/actions/runs/39870319989)
+  2/2. Todos los jobs completed/success, sin heredar el resultado del PR.
+- Cierre documental: [PR96](https://github.com/Jhona-la/Trader-Gemini/pull/96),
+  ocho documentos Markdown/TSV, `git diff --check` aprobado, once blobs del
+  ledger iguales al candidato/main y nueve blobs base + dos archivos nuevos
+  comprobados. La política paths-ignore omite CI documental; no hay una nueva
+  corrida atribuida a esos SHA. Las fuentes siguen iguales a `98e194cb`.
 
 Duraciones observadas del candidato: execution 19m29s, Replay 29m22s,
 entrenador 17m14s. El job trasladado ya ejecutó sus contratos desde el inicio;
@@ -34,6 +40,13 @@ aprobó los once `qra_*` del binario `qra_fixed_filter_contract`: 11 passed,
 0 failed, 0 ignored, 0 filtered, a las 23:01:34Z. También aprobó los tres
 contratos existentes de `fixed_filter_contract`, incluido el ensayo de
 10.000 órdenes sintéticas. No son órdenes reales ni pruebas del wiring.
+
+El job propio de [ejecución de main](https://github.com/Jhona-la/Trader-Gemini/actions/runs/39870319989/job/120145900869)
+repitió los once QRA a las 23:39:50Z: once nombres `qra_*` aprobados,
+0 failed / 0 ignored / 0 filtered out, más los tres contratos originales.
+El job de [recursos de main](https://github.com/Jhona-la/Trader-Gemini/actions/runs/39870320003/job/120142824016)
+registró 16 + 23 + 13 + 10 + 6 = 68 pruebas aprobadas. Ambos logs son de
+`98e194cb`; el resultado del candidato se mantiene separado.
 
 La coordinación se publicó mediante [PR #95](https://github.com/Jhona-la/Trader-Gemini/pull/95),
 main `3fe8771a6940188f455d80a5c440d4c6f439af39`. Sólo añade una fila en
@@ -106,13 +119,18 @@ vivo p/q; elimina el wrapper tensorial que fabricaba ceros. Se integró en
 main y se conservan exactamente sus tres rutas Rust en el candidato QRA.
 Su cierre documental `9b24655f` se incorporó en main `cfc5ddda`; frente a
 `98e194cb` sólo añade dos líneas en AGENT_SYNC. Fuentes idénticas verificadas.
-Sol retiró su rama local/remota y worktree: el censo posterior sólo conserva
-main en el servidor, además de nuestra rama de recibo cuando se publique.
+Sol retiró su rama local/remota y worktree. La rama propia de recibo PR96
+se retira después de su merge.
 `codex/verify-pr65-20261022` mantiene cerrojo explícito del dueño; no se declara
 abandonada por antigüedad. Reflog actualizado 17:36:23 y recibos modificados
 18:04:47: check aprobado, suites WAIT/exit75 por recursos, proceso terminado
 pero continuación pendiente y sin liberación explícita. No se retiraron
 ramas/worktrees con trabajo activo.
+
+Al corte 18:52 apareció `tg-dmrg`, detached y `locked initializing`; se
+preserva como activo. El checkout primario avanzó localmente a `b0cb3c0c`
+mientras el servidor seguía en `cfc5ddda`. Este recibo no certifica cambios
+concurrentes posteriores a las fuentes de `98e194cb`.
 
 ## Recursos y alcance financiero
 

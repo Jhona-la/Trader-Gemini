@@ -1,13 +1,14 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
-## 2026-10-22 — Codex QRA: cuantización y recursos integrados; recibo main en validación
+## 2026-10-22 — Codex QRA: cuantización y recursos integrados; CI de main 9/9
 
 - **Integración**: [PR94](https://github.com/Jhona-la/Trader-Gemini/pull/94),
   main `98e194cb7577df4fa4b37fe9b22304ba4966b07c`, padres `3fe8771a` / `55d41e14`,
   árbol `fde1f05b3dd1439b7155cc0acae8d9f3a03ebe28` comprobado.
-  Candidato **9/9**: Unit `39866723713` y Replay `39866723776`. Main:
-  Unit `39870320003` **7/7 PASS**; Replay `39870319989` **PENDIENTE**
-  (dos jobs). No adelantar el veredicto agregado.
+  Candidato **9/9**: Unit `39866723713` y Replay `39866723776`. Main
+  **9/9 PASS** sobre `98e194cb`: Unit `39870320003` (7/7) y Replay
+  `39870319989` (2/2). Los once QRA Rust y 68 casos de recursos se repitieron
+  en main. Cierre documental: [PR96](https://github.com/Jhona-la/Trader-Gemini/pull/96).
 - **QRA-01**: fixed_filter elimina tolerancia que elevaba cantidad, pérdida
   de fracciones de pasos >= 1 y clamp que ocultaba rango inválido. Proyección
   IEEE754 exacta a unidades u128, dominio acotado y configuración inválida
@@ -41,7 +42,11 @@
   de ejecutor requieren prueba del host/API. El borrador Omega218 no se
   incorpora ni certifica por este PR. Sin operaciones/promoción de fondos;
   ROI/PnL/WR y meta +100 %/72 h no medidos. Ramas QRA de código/coordinación ya
-  retiradas; recibo/worktree pendientes de cierre tras los checks de main.
+  retiradas; PR96 registra el cierre. Retirar la rama/worktree propios tras
+  fusionar el recibo; verify PR65 conserva su reserva ACTIVE. Reglas AGENTS
+  actualizadas: wallet real, presupuesto de 16 GB frente a snapshot visible,
+  semáforo obligatorio y sin sensores falseados. Son instrucciones de trabajo,
+  no una certificación del wiring vivo de balances.
 
 ## 2026-10-22 (tarde, 3) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω217 (Átomo 2.6 Reconciliador OMS en Vivo + Acoplamiento Espectral Koopman/DMD en Kelly y Erradicación Fail-Closed de Cero-Dato)
 
