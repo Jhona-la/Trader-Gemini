@@ -70,19 +70,17 @@ impl Profiler {
         let safe_gross = if gross.is_finite() { gross } else { 0.0 };
         let safe_net = if net.is_finite() { net } else { 0.0 };
         let safe_win_rate = if win_rate.is_finite() { win_rate } else { 0.0 };
-        let safe_capital = if capital.is_finite() && capital > 0.0 {
-            capital
-        } else {
-            13.0
-        };
-
         self.total_gross_pnl = safe_gross;
         self.total_fees = safe_gross - safe_net;
         self.win_rate = safe_win_rate;
-        // FIX #1530: Clamping de ROI a límites numéricos razonables [-1000.0, 100000.0]
-        let raw_roi = (safe_net / safe_capital) * 100.0;
-        self.roi_net = if raw_roi.is_finite() {
-            raw_roi.clamp(-1000.0, 100000.0)
+        // FIX #1530 / FASE 2: Erradicación del 13.0 inventado (CL-15); ROI 0.0 ante capital no positivo o no finito
+        self.roi_net = if capital.is_finite() && capital > 0.0 {
+            let raw_roi = (safe_net / capital) * 100.0;
+            if raw_roi.is_finite() {
+                raw_roi.clamp(-1000.0, 100000.0)
+            } else {
+                0.0
+            }
         } else {
             0.0
         };
@@ -94,19 +92,17 @@ pub fn update_financials_atomic(gross: f64, net: f64, win_rate: f64, capital: f6
     let safe_gross = if gross.is_finite() { gross } else { 0.0 };
     let safe_net = if net.is_finite() { net } else { 0.0 };
     let safe_win_rate = if win_rate.is_finite() { win_rate } else { 0.0 };
-    let safe_capital = if capital.is_finite() && capital > 0.0 {
-        capital
-    } else {
-        13.0
-    };
-
     TOTAL_GROSS_PNL.store(safe_gross.to_bits(), Ordering::Relaxed);
     TOTAL_FEES.store((safe_gross - safe_net).to_bits(), Ordering::Relaxed);
     WIN_RATE.store(safe_win_rate.to_bits(), Ordering::Relaxed);
-    // FIX #1530: Clamping de ROI a límites numéricos razonables [-1000.0, 100000.0]
-    let raw_roi = (safe_net / safe_capital) * 100.0;
-    let safe_roi = if raw_roi.is_finite() {
-        raw_roi.clamp(-1000.0, 100000.0)
+    // FIX #1530 / FASE 2: Erradicación del 13.0 inventado (CL-15); ROI 0.0 ante capital no positivo o no finito
+    let safe_roi = if capital.is_finite() && capital > 0.0 {
+        let raw_roi = (safe_net / capital) * 100.0;
+        if raw_roi.is_finite() {
+            raw_roi.clamp(-1000.0, 100000.0)
+        } else {
+            0.0
+        }
     } else {
         0.0
     };

@@ -318,10 +318,12 @@ struct OrdenDeBanda {
     sonda: Option<(risk_engine::tp_sl::TpSl, f64)>,
 }
 
-/// D-105: Mapeo de convicción Bayesiana calibrada para Kelly sizing realista
+/// D-105 / F1-036: Mapeo de convicción Bayesiana calibrada para Kelly sizing realista.
+/// El piso por magnitud pura (sin historial Wilson) vive en [0.50, 0.90] sin un suelo
+/// artificial > 0.50 cuando score == 0.0 (erradicando la fabricación de ventaja espuria > 0.50).
 #[inline]
 pub fn sig_conf(score: f64) -> f64 {
-    (0.50 + 0.40 * score.abs().clamp(0.0, 1.0)).clamp(0.51, 0.90)
+    (0.50 + 0.40 * score.abs().clamp(0.0, 1.0)).clamp(0.50, 0.90)
 }
 
 /// XLIV-9 — DIRECCIÓN QUE EL MERCADO TOMÓ DURANTE UNA POSICIÓN.
@@ -467,16 +469,29 @@ pub fn referencia_de_regimen(
 /// umbral epigenético rebajado. Y el término `+0,10·min` convertía dos
 /// convicciones de 0,49 en 0,54: dos pruebas de NO ventaja sumaban ventaja.
 ///
-/// Ahora el refuerzo sólo existe si AMBAS bandas superan ½ (evidencia de
-/// ventaja en las dos); si no, la fusión es la mayor de las dos. Se conserva
-/// el techo 0,96. Sin suelo.
+/// XLIV-10 / F1-036 — Superposición constructiva armónica con evidencia causal.
+/// El refuerzo `+ 0.10 * lo` exige que AMBAS bandas superen 0.50 Y que ambas
+/// hayan demostrado ventaja estadística genuina (evidencia Wilson `lo > p*`).
+/// Si alguna carece de historial comprobado o no supera 0.50, la fusión honesta
+/// adopta `hi.min(0.96)` sin fabricar convicción espuria.
 #[inline]
-pub fn confianza_superpuesta(a: f64, b: f64) -> f64 {    let (hi, lo) = (a.max(b), a.min(b));
-    if lo > 0.5 {
+pub fn confianza_superpuesta_con_evidencia(
+    a: f64,
+    b: f64,
+    a_evidencia: bool,
+    b_evidencia: bool,
+) -> f64 {
+    let (hi, lo) = (a.max(b), a.min(b));
+    if lo > 0.5 && a_evidencia && b_evidencia {
         (hi + 0.10 * lo).min(0.96)
     } else {
         hi.min(0.96)
     }
+}
+
+#[inline]
+pub fn confianza_superpuesta(a: f64, b: f64) -> f64 {
+    confianza_superpuesta_con_evidencia(a, b, true, true)
 }
 
 /// XLIV-10 — LA MODULACIÓN ESPECTRAL NO DESHACE LOS FRENOS.
@@ -2282,6 +2297,8 @@ impl GodEngineCore {
                     self.applied_generation
                         .store(env.generation + 1, Ordering::SeqCst);
                     env.genome.apply_to_arena(&self.arena);
+                    self.sync_navier_stokes_and_microstructure_params();
+                    self.sync_council_params_from_arena();
                     self.applied_generation
                         .store(env.generation, Ordering::SeqCst);
                 }
@@ -4788,22 +4805,23 @@ impl GodEngineCore {
                 let trend_adverse = (is_long && micro_t < -0.00045)
                     || (!is_long && micro_t > 0.00045);
 
-                // D-492 / #548: toxic_cut_sl relativo al SL de la posición (75% del SL, o min 3.0x live fee)
-                // Corta pérdidas tempranamente ante toxicidad de libro confirmada (VPIN > 0.85 y OFI adverso).
+                // D-492 / #548 / F1-039: toxic_cut_sl relativo al SL de la posición (75% del SL, o min 3.0x live fee)
+                // Corta pérdidas tempranamente ante toxicidad de libro confirmada (VPIN > 0.70 p80 y OFI adverso).
                 let toxic_cut_sl = (sl * 0.75).max(live_fee * 3.0);
-                let toxic_flow_exit = pnl_pct <= -toxic_cut_sl && cur_vpin > 0.85 && ofi_adverse;
+                let vpin_toxic = 0.70;
+                let toxic_flow_exit = pnl_pct <= -toxic_cut_sl && cur_vpin > vpin_toxic && ofi_adverse;
 
-                // #548, #556 & #560: Alpha Decay y Peak Harvest Continuo Multivariante
-                // Cosecha ganancias significativas cuando el pico superó el 60% del TP (min 28 bps)
-                // permitiendo que los trades ganadores corran hacia el TP completo y capturen beneficios netos reales.
-                let harvest_age_ms = (tau_trade_ms * 8.0).clamp(720_000.0, 3_600_000.0) as u64;
+                // F1-039 / #548, #556 & #560: Alpha Decay y Peak Harvest Continuo Multivariante
+                // Temporizadores estrictamente continuos y homogéneos en tau_trade_ms, erradicando los
+                // suelos artificiales (12m/8m/30m/1h/2h) que congelaban la banda rápida (tau = 30s) en trades rotos.
+                let harvest_age_ms = (tau_trade_ms * 8.0).clamp(tau_trade_ms, 86_400_000.0) as u64;
                 let roundtrip_taker_friction = live_fee.max(0.0007) + 2.0 * slip_floor;
                 // Garantía de ganancia neta sustancial en cosechas: al menos 70% del SL o 2.5x la fricción total
                 let net_profit_min = (sl * 0.70).max(roundtrip_taker_friction * 2.5).max(0.00280);
                 let peak_harvest_thresh = (net_profit_min * 1.15).max(tp * 0.40);
-                let min_stagnant_ms = (tau_trade_ms * (5.0 + 3.0 * temporal_s)).clamp(480_000.0, 14_400_000.0) as u64;
-                let hard_stagnant_ms = (tau_trade_ms * (10.0 + 6.0 * temporal_s)).clamp(1_200_000.0, 28_800_000.0) as u64;
-                let absolute_trade_life_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(3_000_000.0, 86_400_000.0) as u64;
+                let min_stagnant_ms = (tau_trade_ms * (5.0 + 3.0 * temporal_s)).clamp(tau_trade_ms * 2.0, 86_400_000.0) as u64;
+                let hard_stagnant_ms = (tau_trade_ms * (10.0 + 6.0 * temporal_s)).clamp(tau_trade_ms * 4.0, 86_400_000.0) as u64;
+                let absolute_trade_life_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(tau_trade_ms * 8.0, 86_400_000.0) as u64;
 
                 let spec_alive = self.temporal_spectrum.get(coin_id).map(|spec| {
                     let sig = spec.signal_at(tau_trade_ms);
@@ -4842,11 +4860,10 @@ impl GodEngineCore {
                     false
                 };
 
-                // D-649 (DÉCIMA OLA), #548 & #560: Timeout y Zombi adaptativo continuo por escala espectral
-                // Una onda de mercado completa (30-60 min) requiere respirar sin ser estrangulada a los 15 minutos:
-                let dynamic_zombie_debounce_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(1_800_000.0, 28_800_000.0) as u64;
-                let dynamic_hard_timeout_ms = (tau_trade_ms * (40.0 + 20.0 * temporal_s)).clamp(3_600_000.0, 57_600_000.0) as u64;
-                let absolute_expiry_ms = (tau_trade_ms * (60.0 + 30.0 * temporal_s)).clamp(7_200_000.0, 86_400_000.0) as u64;
+                // F1-039 / D-649, #548 & #560: Timeout y Zombi adaptativo continuo proporcional a tau_trade_ms
+                let dynamic_zombie_debounce_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(tau_trade_ms * 6.0, 86_400_000.0) as u64;
+                let dynamic_hard_timeout_ms = (tau_trade_ms * (40.0 + 20.0 * temporal_s)).clamp(tau_trade_ms * 12.0, 86_400_000.0) as u64;
+                let absolute_expiry_ms = (tau_trade_ms * (60.0 + 30.0 * temporal_s)).clamp(tau_trade_ms * 18.0, 86_400_000.0) as u64;
                 let z_loss_hard = (sl * 0.90).max(live_fee * 3.0);
                 let z_loss_trend = (sl * 0.80).max(live_fee * 3.0);
 
@@ -8514,10 +8531,19 @@ impl GodEngineCore {
                 } else {
                     // Mismo armónico: colisión de frecuencias. Arbitrar por coherencia y energía.
                     if fast_intent.signal == slow_intent.signal {
-                        // Superposición constructiva armónica continua:
-                        // XLIV-10: sin suelo 0,55 y sin refuerzo desde bandas ≤ ½.
-                        let boosted_conf =
-                            confianza_superpuesta(fast_intent.confidence, slow_intent.confidence);
+                        // XLIV-10 / F1-036: sin suelo 0,55 y refuerzo constructivo condicionado a evidencia Wilson genuina en ambas ramas.
+                        let fast_rama_idx = (fast_intent.volume_flow_rate.round() as usize).min(N_RAMAS - 1);
+                        let slow_rama_idx = (slow_intent.volume_flow_rate.round() as usize).min(N_RAMAS - 1);
+                        let fast_has_ev = coin_id < self.rama_registro.len()
+                            && self.rama_registro[coin_id][fast_rama_idx].mejor_que_el_azar(crate::diffusion::Z95);
+                        let slow_has_ev = coin_id < self.rama_registro.len()
+                            && self.rama_registro[coin_id][slow_rama_idx].mejor_que_el_azar(crate::diffusion::Z95);
+                        let boosted_conf = confianza_superpuesta_con_evidencia(
+                            fast_intent.confidence,
+                            slow_intent.confidence,
+                            fast_has_ev,
+                            slow_has_ev,
+                        );
                         let (fast_energy, slow_energy) = self
                             .temporal_spectrum
                             .get(coin_id)
@@ -11065,9 +11091,9 @@ mod tests_d752_d756 {
         assert!(hi_pierde < 0.50, "Rama perdedora debe descender por debajo de 0.50 (dio {hi_pierde})");
         assert_eq!(conviccion_de_rama(&reg_perdedor, conf_base), 0.0);
 
-        // 4. sig_conf
-        assert_eq!(sig_conf(0.0), 0.51);
-        assert!(sig_conf(0.50) > 0.51);
+        // 4. sig_conf (F1-036: piso en 0.50 exacto ante score 0.0)
+        assert_eq!(sig_conf(0.0), 0.50);
+        assert!(sig_conf(0.50) > 0.50);
         assert!(sig_conf(1.0) <= 0.90);
     }
 
