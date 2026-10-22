@@ -686,6 +686,29 @@ pub fn atr_pct_del_examen(serie: &[f64], market: &WfMarketEnv) -> f64 {
     core.feature_engines[coin_id].get_atr_pct()
 }
 
+/// F1-002: Generador pseudo-aleatorio determinista y reproducible sin heap allocations
+/// para la perturbación browniana condicionada en el examen walk-forward.
+#[inline]
+pub fn pseudo_gaussian_noise(seed1: u64, seed2: u64, seed3: u64) -> f64 {
+    let mut h = seed1
+        .wrapping_mul(0x517cc1b727220a95)
+        ^ seed2.wrapping_mul(0x4b7e1933)
+        ^ seed3.wrapping_mul(0x9e3779b97f4a7c15);
+    h ^= h >> 30;
+    h = h.wrapping_mul(0xbf58476d1ce4e5b9);
+    h ^= h >> 27;
+    h = h.wrapping_mul(0x94d049bb133111eb);
+    h ^= h >> 31;
+    let u1 = ((h as i64) as f64) / (i64::MAX as f64);
+    h = h.wrapping_add(0x9e3779b97f4a7c15);
+    h ^= h >> 30;
+    h = h.wrapping_mul(0xbf58476d1ce4e5b9);
+    let u2 = (((h as i64) as f64) / (i64::MAX as f64)).abs().max(1e-7);
+    let r_bm = (-2.0 * u2.ln()).sqrt();
+    let theta = 2.0 * std::f64::consts::PI * u1;
+    (r_bm * theta.cos()).clamp(-3.0, 3.0)
+}
+
 /// Reproduce el tramo `[from, to)` de una serie contra el MOTOR REAL.
 ///
 /// `puntua` separa las dos pasadas del walk-forward (D-743): en la de
@@ -712,70 +735,75 @@ fn wf_replay_segment(
     // CL-88 (atr-2): es la del examen, no la del símbolo vivo del slot.
     let tick_size = market.tick_del_examen();
     let to = to.min(rets.len());
+
+    // F1-003: Captura causal de la instantánea macro congelada del registro
+    let reg = &arena.registry;
+    let macro_funding = reg.get_value_or("macro_funding", 0.0001).clamp(-0.01, 0.01);
+    let macro_fear_greed = reg.get_value_or("macro_fear_greed", 50.0).clamp(0.0, 100.0);
+    let macro_dxy = reg.get_value_or("macro_dxy", 100.0).clamp(50.0, 200.0);
+    let macro_sp500 = reg.get_value_or("macro_sp500", 5000.0).clamp(1000.0, 10000.0);
+    let macro_nasdaq = reg.get_value_or("macro_nasdaq", 18000.0).clamp(5000.0, 30000.0);
+    let macro_vix = reg.get_value_or("macro_vix", 20.0).clamp(5.0, 100.0);
+    let macro_gold = reg.get_value_or("macro_gold", 2500.0).clamp(500.0, 5000.0);
+
     for ri in from..to {
         let r = rets[ri];
         let next_price = (*price * (1.0 + r)).max(1e-6);
-        let prev_ret = if ri > 0 { rets[ri - 1] } else { 0.0 };
         let base_price = *price;
+        let mut prev_mid = base_price;
+        // F1-002: Puente Browniano discreto. Volatilidad estimada de la barra
+        let bar_sigma = (r.abs() * 0.5).max(0.001);
+
         for t in 0..WF_REAL_MICRO_TICKS {
             st.ts += 2_000;
             let frac = (t + 1) as f64 / WF_REAL_MICRO_TICKS as f64;
-            let frac_prev = t as f64 / WF_REAL_MICRO_TICKS as f64;
-            let mid = base_price + (next_price - base_price) * frac;
-            let prev_mid = base_price + (next_price - base_price) * frac_prev;
+            let drift_mid = base_price + (next_price - base_price) * frac;
+            // Perturbación estocástica de puente browniano condicionado B(t) con B(0)=0 y B(1)=0:
+            let bridge_sd = (frac * (1.0 - frac)).max(0.0).sqrt();
+            let z = pseudo_gaussian_noise(ri as u64, t as u64, coin_id as u64);
+            let mid = if t == WF_REAL_MICRO_TICKS - 1 {
+                next_price
+            } else {
+                (drift_mid + base_price * bar_sigma * bridge_sd * z).max(1e-6)
+            };
 
-            // D-742 — SPREAD DEL MERCADO, NO DEL EXAMINADO. Antes:
-            // `candidate.maker_spread_pct` — el candidato se fabricaba el
-            // mercado en el que lo examinaban.
+            // D-742 — SPREAD DEL MERCADO, NO DEL EXAMINADO.
             let exam_tick_pct = if mid > 0.0 { tick_size / mid } else { 0.0 };
             let half_spread = market.half_spread(exam_tick_pct);
             let bid = mid * (1.0 - half_spread);
             let ask = mid * (1.0 + half_spread);
 
-            // D-745 — LIBRO SIMÉTRICO, OBI NEUTRO. Antes:
-            // `noise_qty = 0.5 + ((ts % 7)/7)` producía un ciclo DETERMINISTA
-            // de periodo 7 con bid_qty medio 7,5 contra ask_qty medio 12,5 —
-            // un sesgo vendedor permanente y aprendible. Las series del examen
-            // sólo contienen RETORNOS: no hay ni un dato de flujo de órdenes,
-            // de modo que cualquier OBI sería inventado. El examen declara el
-            // libro equilibrado (OBI = 0) y NO PUEDE JUZGAR las ramas de
-            // microestructura: un genoma que dependa del desequilibrio del
-            // libro no operará aquí y, por tanto, no será promovido por este
-            // camino. Es la única postura honesta con los datos disponibles.
+            // D-745 — LIBRO SIMÉTRICO, OBI NEUTRO.
             let depth = market.depth_qty(mid, capital_examen);
             let bid_qty = depth;
             let ask_qty = depth;
             let obi = 0.0f64;
-            // Clasificación del agresor por la REGLA DEL TICK (Lee & Ready):
-            // una impresión a precio superior la origina un comprador
-            // (is_buyer_maker = false) y una a precio inferior, un vendedor.
-            // Deriva del movimiento ya recorrido, no de un contador.
-            let is_buyer_maker = mid < prev_mid;
 
-            // omni 54D causal — mismos campos clave que el nativo
+            // F1-002: Clasificación del agresor por la REGLA DEL TICK (Lee & Ready):
+            // fluctúa honestamente con el incremento local mid - prev_mid
+            let is_buyer_maker = mid < prev_mid;
+            prev_mid = mid;
+
+            // F1-002: Fracción realista de volumen de trade en vez del 100% de la profundidad del libro
+            let trade_qty = (depth * 0.125).max(0.0001);
+
+            // F1-003: omni 54D causal — instantánea macro congelada sin síntesis espuria
+            // y podadas las 9 escrituras huérfanas sin lector (omni[1],[13],[32],[34],[35],[39],[41],[43],[49])
             let mut omni = [0.0f64; 54];
-            omni[1] = (2.0 * half_spread * 10.0).clamp(-5.0, 5.0);
-            omni[11] = (prev_ret * 0.005).clamp(-0.001, 0.001);
-            omni[13] = (1.0 + prev_ret * 5.0).clamp(0.5, 2.5);
-            omni[14] = (50.0 + prev_ret * 500.0).clamp(10.0, 90.0);
-            omni[24] = (15.0 + prev_ret.abs() * 200.0).clamp(10.0, 80.0);
+            omni[11] = macro_funding;
+            omni[14] = macro_fear_greed;
+            omni[21] = macro_dxy;
+            omni[22] = macro_sp500;
+            omni[23] = macro_nasdaq;
+            omni[24] = macro_vix;
+            omni[26] = macro_gold;
             omni[30] = obi * 5.0;
             omni[31] = obi * 6.0;
-            omni[32] = if ask_qty > 0.0 {
-                (bid_qty / ask_qty).clamp(0.1, 10.0)
-            } else {
-                1.0
-            };
-            omni[34] = mid * 1.01;
-            omni[35] = mid * 0.99;
-            omni[39] = obi;
-            omni[41] = (-prev_ret * 2.0).clamp(-0.25, 0.25);
-            omni[43] = mid;
-            omni[49] = prev_ret.abs() * 100.0;
+            omni[33] = 0.0;
 
             let is_kline = t == WF_REAL_MICRO_TICKS - 1;
             let (_, closed) = core.process_event(
-                coin_id, true, is_kline, true, mid, bid_qty.min(ask_qty),
+                coin_id, true, is_kline, true, mid, trade_qty,
                 bid, ask, bid_qty, ask_qty, obi, 0.0, st.ts, false, &omni, is_buyer_maker,
             );
             // Envelope del host sobre cada entrada recién abierta
@@ -1177,24 +1205,10 @@ impl LiveEvolutionDaemon {
                         for f in frames {
                             // SUBSYSTEM_TENSOR_PREDICTOR = 12, FRAME_PREDICTION_VS_REALITY = 30
                             if f.subsystem_id == 12 && f.frame_type == 30 {
-                                // E-02 / #23: Inyectar variables reales leídas del bus mmap
-                                // payload[0]=ml_prob, [1]=is_long, [2]=obi, [3]=net_pnl_pct, [4]=atr_pct, [5]=hurst
-                                let ml_prob = f.payload[0];
-                                let is_long = f.payload[1] > 0.5;
-                                let obi = f.payload[2];
-                                let net_pnl_pct = f.payload[3];
-                                let atr_pct = f.payload[4];
-                                let hurst = if f.payload[5] > 0.0 { f.payload[5] } else { 0.50 };
-
-                                let features = [
-                                    obi,
-                                    0.0,
-                                    1.0,
-                                    atr_pct,
-                                    hurst,
-                                    if is_long { ml_prob - 0.50 } else { 0.50 - ml_prob },
-                                ];
-                                self.forest.shadow_evaluate_with_features_dir(features, net_pnl_pct, is_long);
+                                // F1-004: Telemetría de diagnóstico / logging solamente.
+                                // La ingesta causal al Shadow Forest se realiza de forma única y libre de fuga temporal
+                                // en sample_realized_returns a través de take_last_closed_trade, eliminando
+                                // la doble contabilización y la divergencia semántica de rasgos.
                                 pending_new_obs += 1;
                             }
                         }
@@ -1405,44 +1419,52 @@ impl LiveEvolutionDaemon {
                             }
                         }
 
-                        // E4a & Ω135: FEATURES REALES para el Shadow Forest con PARIDAD TOTAL (CL-96 y CL-73 resueltos).
-                        // Se leen las claves escopadas por moneda (get_for_coin_or) garantizando paridad exacta
-                        // con la inferencia de predict_6d y eliminando la contaminación cruzada entre activos.
-                        // Se incorpora además la dirección de la posición viva (is_long) para paridad direccional (LC-F1-18).
-                        let reg = &self.arena.registry;
-                        let spot_bid = coin.spot_bid.load(std::sync::atomic::Ordering::Relaxed);
-                        let spot_ask = coin.spot_ask.load(std::sync::atomic::Ordering::Relaxed);
-                        let spread_bps = if spot_bid > 0.0 && spot_ask > spot_bid {
-                            ((spot_ask - spot_bid) / spot_bid * 10_000.0).clamp(0.0, 500.0)
+                        // F1-004: Ingesta causal con rasgos fotografiados en la APERTURA.
+                        // Erradica la fuga temporal post-hoc donde el bosque aprendía con microestructura
+                        // post-movimiento leída del registro tras el cierre.
+                        if let Some(record) = coin.take_last_closed_trade() {
+                            self.forest.shadow_evaluate_with_features_dir(
+                                record.entry_shadow_features,
+                                record.net_pnl_pct,
+                                record.is_long,
+                            );
                         } else {
-                            1.0
-                        };
-                        let is_long = coin
-                            .positions
-                            .slots()
-                            .iter()
-                            .find(|p| p.is_open())
-                            .map(|p| p.is_long.load(std::sync::atomic::Ordering::Relaxed))
-                            .unwrap_or_else(|| {
-                                coin.positions
-                                    .slot_0
-                                    .is_long
+                            // Fallback causal pre-movimiento para eventos sintéticos/reconciliados sin snapshot previo
+                            let reg = &self.arena.registry;
+                            let spot_bid = coin.spot_bid.load(std::sync::atomic::Ordering::Relaxed);
+                            let spot_ask = coin.spot_ask.load(std::sync::atomic::Ordering::Relaxed);
+                            let spread_bps = if spot_bid > 0.0 && spot_ask > spot_bid {
+                                ((spot_ask - spot_bid) / spot_bid * 10_000.0).clamp(0.0, 500.0)
+                            } else {
+                                1.0
+                            };
+                            let is_long = coin
+                                .positions
+                                .slots()
+                                .iter()
+                                .find(|p| p.is_open())
+                                .map(|p| p.is_long.load(std::sync::atomic::Ordering::Relaxed))
+                                .unwrap_or_else(|| {
+                                    coin.positions
+                                        .slot_0
+                                        .is_long
+                                        .load(std::sync::atomic::Ordering::Relaxed)
+                                });
+                            let features = [
+                                reg.get_for_coin_or(coin_id, "orderbook_imbalance", 0.0)
+                                    .clamp(-1.0, 1.0),
+                                reg.get_for_coin_or(coin_id, "price_acceleration", 0.0)
+                                    .clamp(-10.0, 10.0),
+                                spread_bps,
+                                reg.get_for_coin_or(coin_id, "atr_pct", 0.002).clamp(0.0, 1.0),
+                                coin.hurst_exponent
                                     .load(std::sync::atomic::Ordering::Relaxed)
-                            });
-                        let features = [
-                            reg.get_for_coin_or(coin_id, "orderbook_imbalance", 0.0)
-                                .clamp(-1.0, 1.0),
-                            reg.get_for_coin_or(coin_id, "price_acceleration", 0.0)
-                                .clamp(-10.0, 10.0),
-                            spread_bps,
-                            reg.get_for_coin_or(coin_id, "atr_pct", 0.002).clamp(0.0, 1.0),
-                            coin.hurst_exponent
-                                .load(std::sync::atomic::Ordering::Relaxed)
-                                .clamp(0.0, 1.0),
-                            reg.get_for_coin_or(coin_id, "price_velocity", 0.0)
-                                .clamp(-10.0, 10.0),
-                        ];
-                        self.forest.shadow_evaluate_with_features_dir(features, ret, is_long);
+                                    .clamp(0.0, 1.0),
+                                reg.get_for_coin_or(coin_id, "price_velocity", 0.0)
+                                    .clamp(-10.0, 10.0),
+                            ];
+                            self.forest.shadow_evaluate_with_features_dir(features, ret, is_long);
+                        }
                     }
                 }
             }
