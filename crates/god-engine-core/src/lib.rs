@@ -5435,6 +5435,19 @@ impl GodEngineCore {
                             obi_val,
                             hurst_val,
                         );
+
+                        // F1-004: Extraer rasgos causales fotografiados en la APERTURA y registrar el trade cerrado
+                        // en CoinArena para el aprendizaje sin fuga temporal del Shadow Forest.
+                        if let Some(entry_feats) = pos.take_entry_shadow_features() {
+                            let record = quantum_arena::state::ClosedTradeRecord {
+                                is_long,
+                                net_pnl_pct: cap_pct,
+                                entry_shadow_features: entry_feats,
+                                close_ts_ms: event_time_ms,
+                                generation: pos.generation.load(Ordering::Acquire),
+                            };
+                            self.arena.coins[coin_id].record_closed_trade(record);
+                        }
                     }
                     self.diag_close_wins += is_win as u64;
                     self.diag_close_total += 1;
@@ -10098,6 +10111,33 @@ impl GodEngineCore {
                                     {
                                         *t = tensor_snapshot.to_vec();
                                     }
+                                }
+
+                                // F1-004: Fotografiar rasgos 6D en la APERTURA de la posición para el Shadow Forest
+                                {
+                                    let reg = &self.arena.registry;
+                                    let obi_val = reg.get_for_coin_or(
+                                        coin_id,
+                                        "orderbook_imbalance",
+                                        self.feature_engines[coin_id].obi_accel.prev_obi,
+                                    );
+                                    let accel = reg.get_for_coin_or(coin_id, "price_acceleration", 0.0);
+                                    let vel = reg.get_for_coin_or(coin_id, "price_velocity", 0.0);
+                                    let spread_bps = if bid > 0.0 && ask > bid {
+                                        ((ask - bid) / bid * 10_000.0).clamp(0.0, 500.0)
+                                    } else {
+                                        1.0
+                                    };
+                                    let hurst_val = self.feature_engines[coin_id].hurst_macro as f64;
+                                    let shadow_feats = [
+                                        obi_val.clamp(-1.0, 1.0),
+                                        accel.clamp(-10.0, 10.0),
+                                        spread_bps,
+                                        atr_pct.clamp(0.0, 1.0),
+                                        hurst_val.clamp(0.0, 1.0),
+                                        vel.clamp(-10.0, 10.0),
+                                    ];
+                                    target_pos.set_entry_shadow_features(shadow_feats);
                                 }
                                 new_order = Some((
                                     is_long,

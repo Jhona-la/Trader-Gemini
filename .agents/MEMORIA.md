@@ -9,6 +9,25 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
 [Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
 
 
+## 2026-10-21 (noche, 7) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω206 (FASE 2 CULMINACIÓN 125/125: Puente Browniano F1-002, Omni 54D Causal F1-003, y Shadow Forest sin Fuga Temporal F1-004)
+
+- **Mandato**: Culminación definitiva de la FASE 2 y erradicación de los últimos 3 hallazgos abiertos en `f1_hallazgos.tsv`:
+  1. **F1-002: Puente Browniano y Agresor Lee-Ready Fluctuante (`crates/evolution-engine/src/online_daemon.rs:720-754`)**:
+     - *QUÉ*: Erradicada la recta determinista en los micro-ticks del examen walk-forward. Se implementó un verdadero Puente Browniano discreto condicionado: $mid_t = drift_t + base\_price \cdot \sigma_{bar} \cdot \sqrt{\tau(1-\tau)} \cdot Z(ri, t)$, donde $\tau = (t+1)/N \in (0, 1]$, preservando los extremos de la barra mientras la trayectoria intra-barra fluctúa de forma estocástica y continua. El ruido $Z$ se genera con `pseudo_gaussian_noise` determinista y reproducible (Box-Muller, zero-alloc). El clasificador Lee-Ready (`mid < prev_mid`) fluctúa de forma honesta con el incremento infinitesimal, y `trade_qty = (depth * 0.125).max(0.0001)` inyecta una fracción realista en vez del 100% de la profundidad del libro.
+     - *POR QUÉ*: El movimiento rectilíneo previo garantizaba que tras el primer tick el restante 87.5% del movimiento era conocido con certeza absoluta y flujo unidireccional masivo, promoviendo candidatos con sesgo espurio.
+     - *PARA QUÉ*: Realismo microestructural estocástico para evaluar rigurosamente genomas evolutivos hacia la meta de 13 USD.
+  2. **F1-003: Omni 54D Causal sin Skew Macro (`crates/evolution-engine/src/online_daemon.rs:756-775`)**:
+     - *QUÉ*: Erradicada la síntesis artificial de macro (VIX, Fear&Greed, funding) a partir de `prev_ret`. El examen walk-forward captura una instantánea macro congelada desde `arena.registry` (`macro_funding`, `macro_fear_greed`, `macro_dxy`, `macro_sp500`, `macro_nasdaq`, `macro_vix`, `macro_gold`) centrada en escalas canónicas. Se alimentan honestamente los slots `omni[21..24, 26]` y se podaron las 9 escrituras huérfanas sin lector (`omni[1], [13], [32], [34], [35], [39], [41], [43], [49]`).
+     - *POR QUÉ*: Sintetizar VIX como $15 + 200|\Delta r|$ deformaba la inferencia macro haciéndola reaccionar sólo a la volatilidad de la última barra y desplazando la distribución combinada 54D.
+     - *PARA QUÉ*: Consistencia bayesiana exacta en el espacio de Hilbert $\mathcal{H}$.
+  3. **F1-004: Shadow Forest sin Fuga Temporal ni Doble Ingestión (`crates/evolution-engine/src/online_daemon.rs:1205-1230, 1420-1475`, `crates/god-engine-core/src/lib.rs:5420-5440, 10080-10115`, `crates/quantum-arena/src/position.rs`, `crates/quantum-arena/src/state.rs`)**:
+     - *QUÉ*: Erradicada la fuga temporal post-hoc y la duplicación de trades en el Shadow Forest. Vector de 6 rasgos pre-movimiento fotografiado en la apertura de la posición (`target_pos.set_entry_shadow_features`). Al confirmarse el cierre, `ClosedTradeRecord` se registra en `CoinArena` y se consume de forma única en `online_daemon::sample_realized_returns` vía `coin.take_last_closed_trade()`. Se eliminó la ingesta duplicada y distorsionada (`[obi, 0.0, 1.0, ...]`) del bus mmap en `run_online_learning_loop`.
+     - *POR QUÉ*: El Shadow Forest aprendía con rasgos medidos tras el cierre (post-hoc) e ingería cada trade dos veces con semánticas mutuamente contradictorias.
+     - *PARA QUÉ*: Inferencia y entrenamiento en línea 100% causal sin look-ahead bias.
+- **Verificación Contractual y Culminación de FASE 2**:
+  - `crates/evolution-engine/tests/f1_002_003_004_brownian_omni_shadow_contract.rs` (2/2 pass, 100% verde).
+  - Estado de la Matriz F1 (`docs/audit/fable/f1_hallazgos.tsv`): **125/125 CERRADOS (100.0%)**. FASE 2 COMPLETADA.
+
 ## 2026-10-21 (noche, 6) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω205 (Erradicación Constantes Congeladas, Fundamentación Analítica y Sincronización Epigenética F1-009)
 
 - **Mandato**: Resolución matemática y epigenética de F1-009 en FASE 2:

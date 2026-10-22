@@ -306,6 +306,32 @@ pub struct CoinArena {
     pub last_close_reason: AtomicU8,
     pub last_close_exit_price: AtomicF64,
     pub last_tick_timestamp_ms: AtomicU64,
+    /// F1-004: Registro del último trade cerrado en esta moneda con los rasgos
+    /// causales medidos en la apertura [obi, accel, spread_bps, atr_pct, hurst, velocity].
+    /// Consumido por el online_daemon para el aprendizaje del Shadow Forest sin fuga temporal.
+    pub last_closed_trade: std::sync::Mutex<Option<ClosedTradeRecord>>,
+}
+
+/// F1-004: Registro de trade cerrado con rasgos fotografiados en la apertura.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClosedTradeRecord {
+    pub is_long: bool,
+    pub net_pnl_pct: f64,
+    pub entry_shadow_features: [f64; 6],
+    pub close_ts_ms: u64,
+    pub generation: u64,
+}
+
+impl Default for ClosedTradeRecord {
+    fn default() -> Self {
+        Self {
+            is_long: true,
+            net_pnl_pct: 0.0,
+            entry_shadow_features: [0.0; 6],
+            close_ts_ms: 0,
+            generation: 0,
+        }
+    }
 }
 
 impl CoinArena {
@@ -632,7 +658,22 @@ impl CoinArena {
             last_close_reason: AtomicU8::new(0),
             last_close_exit_price: AtomicF64::new(0.0),
             last_tick_timestamp_ms: AtomicU64::new(0),
+            last_closed_trade: std::sync::Mutex::new(None),
         }
+    }
+
+    /// F1-004: Registra el último trade cerrado con sus rasgos causales de entrada.
+    #[inline]
+    pub fn record_closed_trade(&self, record: ClosedTradeRecord) {
+        if let Ok(mut g) = self.last_closed_trade.lock() {
+            *g = Some(record);
+        }
+    }
+
+    /// F1-004: Extrae el último trade cerrado consumiéndolo para el Shadow Forest.
+    #[inline]
+    pub fn take_last_closed_trade(&self) -> Option<ClosedTradeRecord> {
+        self.last_closed_trade.lock().ok().and_then(|mut g| g.take())
     }
 }
 
