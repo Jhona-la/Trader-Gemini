@@ -1,5 +1,24 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 (mañana, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω212 (Compuerta Adversarial Pre-Trade < 500 ns Zero-Alloc en Execution-Engine, Integración F1-090 y Resonancia Espectral Koopman/DMD)
+
+- **Mandato**:
+  1. **Fase 4 §6.8 / Compuerta Adversarial Pre-Trade (< 500 ns Zero-Alloc) en `crates/execution-engine/src/adversarial_gate.rs`, `lib.rs`**:
+     - Validación microestructural hostil pre-trade con modelado explícito de tres trampas:
+       - Trampa de barredura de stops ($\mathcal{T}_{\text{sweep}}$): OBI adverso colosal con colapso de profundidad pasiva ($D_{\text{same}} / D_{\text{median}} < 0.35$).
+       - Trampa de spoofing / orden fantasma ($\mathcal{T}_{\text{spoof}}$): tasa de cancelación $> 85\%$ y ratio de concentración desmedida en BBO vs L2-L5.
+       - Choque de spread dinámico ($\mathcal{T}_{\text{spread}}$): relación spread / volatilidad local $> 3.5$.
+     - Veredicto fail-closed compuesto: $\mathcal{R}_{\text{comp}} \ge 0.65 \implies$ veto pre-trade inmediato.
+     - Latencia ultra-baja garantizada: $< 500\text{ ns}$ en el stack, $O(1)$, zero heap allocations.
+     - Verificación: 6/6 unit tests PASS en `adversarial_gate::tests`, 4/4 integración en `crates/execution-engine/tests/red_team_pre_trade_contract.rs`.
+  2. **Fase 2 §4.2-2.2 / Integración F1-090 Cliente HTTP Único en Main (`05533727e`)**:
+     - Fusión completa de `sol/f1090-http-unico` con `tcp_nodelay(true)`, pool acotado de 8 idle, keep-alive 90s, timeouts 5s/20s.
+     - CI en GitHub Actions: `Unit and contract suites` run `39802581607` **VERDE ✔**.
+  3. **Sincronización Matemática con GLM (Koopman / Streaming DMD)**:
+     - Auditoría forense del operador de Hankel: solución fila a fila $G a_i = q_i \implies A = Q G^{-1}$ (matriz compañera exacta con error $< 10^{-10}$ en predicción de un paso) vs error de columnas $G^{-1} Q$.
+
+
+
 ## 2026-10-22 (mañana, 3) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω210 (Acoplamiento Mean Field Games Fokker-Planck / Navier-Stokes, Cola FIFO y Selección Adversa en Router, Sizing No-Ergódico Ole Peters & Cramér-Lundberg D3)
 
 - **Mandato**:

@@ -1,3 +1,4 @@
+pub mod adversarial_gate;
 pub mod binance_api;
 pub mod client;
 pub mod dynamic_symbols;
@@ -20,6 +21,9 @@ pub mod trade_accounting;
 pub mod user_data_stream;
 pub mod ws_executor;
 
+pub use adversarial_gate::{
+    AdversarialClearance, AdversarialTrapReason, RedTeamPreTradeGate, DEFAULT_HOSTILE_THRESHOLD,
+};
 pub use dynamic_symbols::DynamicSymbolSelector;
 pub use executor::OrderResolution;
 pub use hot_swap::HotSwapController;
