@@ -5686,6 +5686,16 @@ impl GodEngineCore {
                         total_losses,
                         n_prev + 1.0,
                     );
+                    // Modulación espectral Koopman/DMD (§57 / Ola Ω217)
+                    let (koop_mod, koop_bif) = self
+                        .feature_engines
+                        .get(coin_id)
+                        .map(|fe| (fe.koopman_modulo as f64, fe.koopman_bifurcacion as f64))
+                        .unwrap_or((f64::NAN, f64::NAN));
+                    let koopman_dampener = risk_engine::kelly_envelope::RiskEnvelope::koopman_stability_dampener(
+                        koop_mod,
+                        koop_bif,
+                    );
                     let kelly_f = risk_engine::kelly::calculate_kelly_fraction(
                         new_wr,
                         pf_para_kelly,
@@ -5697,7 +5707,7 @@ impl GodEngineCore {
                         clamp_max,
                         strategy_base,
                         spectral_conf,
-                    );
+                    ) * koopman_dampener;
                     coin.metrics
                         .kelly_fraction
                         .store(kelly_f, Ordering::Relaxed);

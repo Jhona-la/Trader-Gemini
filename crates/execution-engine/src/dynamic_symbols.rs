@@ -129,8 +129,17 @@ impl DynamicSymbolSelector {
                     continue;
                 }
 
-                let vol: f64 = volume_str.parse().unwrap_or(0.0);
-                let change_pct: f64 = price_change_str.parse::<f64>().unwrap_or(0.0).abs();
+                // F1-091 extensión (Ola Ω217): un valor que no se puede leer es DESCONOCIDO,
+                // jamás cero. Si el volumen o cambio porcentual no es finito o parseable,
+                // el frame se DESCARTA por completo en vez de inyectar 0.0 silencioso.
+                let vol: f64 = match volume_str.parse::<f64>() {
+                    Ok(v) if v.is_finite() && v >= 0.0 => v,
+                    _ => continue,
+                };
+                let change_pct: f64 = match price_change_str.parse::<f64>() {
+                    Ok(c) if c.is_finite() => c.abs(),
+                    _ => continue,
+                };
                 // Umbral canónico unificado para Testnet vs Producción
                 let min_vol = if is_testnet { 0.0 } else { 1_000_000.0 };
                 if vol < min_vol {
@@ -283,5 +292,22 @@ mod tests {
         // In testnet (>10K), 25K is accepted
         let (_, top_10_testnet) = DynamicSymbolSelector::parse_and_rank_json_tickers(&items, true);
         assert!(top_10_testnet.contains(&"AVAXUSDT".to_string()));
+    }
+
+    #[test]
+    fn test_dynamic_symbol_selector_cero_dato_fail_closed() {
+        // F1-091 extensión (Ola Ω217): datos no numéricos, NaN o no finitos son descartados fail-closed
+        let items: Vec<Value> = serde_json::from_str(r#"[
+            {"symbol": "CORRUPT1USDT", "quoteVolume": "NaN", "priceChangePercent": "5.0", "lastPrice": "100.0"},
+            {"symbol": "CORRUPT2USDT", "quoteVolume": "25000000.0", "priceChangePercent": "inf", "lastPrice": "100.0"},
+            {"symbol": "CORRUPT3USDT", "quoteVolume": "invalid_num", "priceChangePercent": "2.0", "lastPrice": "100.0"},
+            {"symbol": "VALIDUSDT", "quoteVolume": "25000000.0", "priceChangePercent": "3.5", "lastPrice": "100.0"}
+        ]"#).unwrap();
+
+        let (top_64, top_10) = DynamicSymbolSelector::parse_and_rank_json_tickers(&items, false);
+        assert!(top_10.contains(&"VALIDUSDT".to_string()));
+        assert!(!top_64.contains(&"CORRUPT1USDT".to_string()));
+        assert!(!top_64.contains(&"CORRUPT2USDT".to_string()));
+        assert!(!top_64.contains(&"CORRUPT3USDT".to_string()));
     }
 }

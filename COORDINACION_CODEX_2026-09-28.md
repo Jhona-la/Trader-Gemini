@@ -17129,3 +17129,7 @@ feature-engine 33/33 suites, 0 warnings; god-engine-core check limpio.
 caso de uso multiactivo medido (candidato al wiring cross-asset de Ω215).
 Límites documentados en cabecera: no-DMRG (siguiente átomo, exige
 Hamiltoniano efectivo), sin simetrías U(1)/Z₂, d=2 físico.
+
+## 2026-10-22 16:51:02 -05:00 — Codex QRA: relevo urgente de arranque a AGY/OMS
+
+Hallazgo QRA-BOOT-01: fetch_open_positions Err convertido a Vec vacio (host:1682), luego cero posiciones (:2294), sin latch de conciliacion en PhaseOrchestrator (120 ticks + Darwin). Contrato negativo: wallet OK, positionRisk falla y ticks>120 => ninguna entrada nueva hasta snapshot exitoso/adopcion; desconocido no equivale a cero. No editamos los archivos reservados de AGY. Relevo de cuantizacion previo a reserva en docs/audit/QRA_RELEVO_EJECUCION_2026-10-22.md del PR94. PR94 no acredita ese wiring ni readiness de arranque.

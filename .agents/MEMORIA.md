@@ -1,5 +1,26 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 (tarde, 3) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω217 (Átomo 2.6 Reconciliador OMS en Vivo + Acoplamiento Espectral Koopman/DMD en Kelly y Erradicación Fail-Closed de Cero-Dato)
+
+- **Mandato & Entregables**:
+  1. **Fase 2 §4.2 / Átomo 2.6 Reconciliador OMS Bidireccional en Vivo (`crates/execution-engine/src/{executor,reconciliation}.rs`, `src/bin/god_engine.rs`)**:
+     - **Problema Crítico Resuelto**: Si Binance desincronizaba órdenes o posiciones (p. ej., desconexión de WebSocket, fill no reportado por latencia de red, o reinicio del proceso), el estado local quedaba ciego o retenía órdenes fantasma que impedían nuevo dimensionamiento de capital.
+     - **Mecanismo Implementado**:
+       - `fetch_all_open_orders` y `fetch_open_orders` en `BinanceExecutor` consultando `GET /fapi/v1/openOrders`.
+       - `reconciliation.purge_suspicious_active_orders`: detecta órdenes locales activas en `OrderRegistry` cuando la posición del exchange es cero y las purga atómicamente evitando contabilidad fantasma.
+       - Bucle de reconciliación omnisciente cada 60s en `god_engine.rs`: consulta `fetch_position_risk` y `fetch_all_open_orders`, adopta posiciones huérfanas en `OrderRegistry` y `GlobalArena`, purga órdenes fantasma e imputa tarifas conservadoras.
+     - **Certificación Contractual**: Nuevo contrato formal `crates/execution-engine/tests/atomo_2_6_oms_reconciliation_contract.rs` (**3/3 PASS** en 0.04s): adopción de posición remota huérfana, purga de órdenes fantasma locales, y detección de órdenes huérfanas remotas.
+  2. **Acoplamiento Espectral Koopman/DMD (§57) en Kelly Envelope y God Engine (`crates/risk-engine/src/kelly_envelope.rs`, `crates/god-engine-core/src/lib.rs`, `src/bin/god_engine.rs`)**:
+     - **Atenuación Cuántica Directa en Ruta Crítica**: Implementado `max_leverage_spectral(&self, capital, stop_loss_distance_pct, min_notional, z, shrinkage_k, koopman_modulo, koopman_bifurcacion) -> (f64, bool)`.
+     - Cuando $|\lambda_{\text{dom}}| \le 1.0$ (variedad contractiva estable), el atenuador $\phi_{\text{Koopman}} = 1.0$ (100% compounding no-ergódico). Ante divergencia o bifurcación caótica ($|\lambda_{\text{dom}}| > 1.0$ o $\Delta_{\text{bif}} > 0.10$), atenúa suavemente el apalancamiento y veta fail-closed si el tamaño de posición cae por debajo del lote mínimo de Binance.
+     - Cableado en vivo en `god_engine.rs` (línea 4601) y en `god-engine-core/src/lib.rs` modulando la fracción $f^*_{\text{Kelly}}$ de cada tick.
+     - Unit test `test_max_leverage_spectral_koopman_coupling` en `risk-engine` (**PASS**).
+  3. **Erradicación Forense de `unwrap_or(0.0)` Silenciosos (Doctrina Fail-Closed Cero-Dato)**:
+     - `crates/execution-engine/src/dynamic_symbols.rs`: Deserialización de tickers 24h valida finitud y positividad (`v.is_finite() && v >= 0.0` y `c.is_finite()`), descartando frames ilegibles en vez de admitirlos con volumen $0.0$. Test `test_dynamic_symbol_selector_cero_dato_fail_closed` (**PASS**).
+     - `crates/evolution-engine/src/online_random_forest.rs`: `predict_6d` devuelve `None` fail-closed si la predicción no es finita, eliminando la invención de probabilidades $0.5$ o retorno $0.0$.
+     - `crates/data-ingest/src/tensor_parser.rs`: `decode_binance_trade_to_tensor_checked` valida finitud de precio y cantidad. Frames corruptos devuelven `None`. Test `test_decode_binance_trade_to_tensor_checked_fail_closed` (**PASS**).
+     - `crates/backtest-engine/src/lib.rs`: Aborta fail-closed si el precio de cierre inicial es no finito o $\le 0.0$.
+
 ## 2026-10-22 (tarde, 2) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω216 (Integración F1-091 de Sol «cero_dato fail-closed» + Armonización Integral con Ranking Espectral y Contrato Formal en CI)
 
 - **Mandato & Entregables**:

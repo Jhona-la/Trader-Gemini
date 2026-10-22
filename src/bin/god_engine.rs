@@ -2670,7 +2670,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match executor.fetch_position_risk().await {
                         Ok(positions) => {
                             let registry = executor.registry();
-                            let report = execution_engine::reconciliation::reconcile(&positions, &registry);
+                            // Átomo 2.6 (Ola Ω217): reconciliación omnisciente de posiciones y órdenes resting abiertas
+                            let remote_orders = match executor.fetch_all_open_orders().await {
+                                Ok(ords) => ords,
+                                Err(e) => {
+                                    telemetry_server::telemetry_log!("⚠️ [RECONCILIATION] Fallo al consultar openOrders: {}", e);
+                                    Vec::new()
+                                }
+                            };
+                            let report = execution_engine::reconciliation::reconcile_with_orders(
+                                &positions,
+                                &remote_orders,
+                                &registry,
+                            );
                             let adopted = report.apply_to_registry(
                                 &registry,
                                 arena_reconcile
@@ -2682,13 +2694,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_millis() as u64;
+                            let purged_ghosts = report.purge_suspicious_active_orders(&registry, now_ms);
                             let arena_adj = execution_engine::reconciliation::reconcile_arena(&positions, &arena_reconcile, now_ms);
                             let pruned = registry.prune_terminated(now_ms.saturating_sub(600_000));
-                            if !report.suspicious_active_orders.is_empty() || adopted > 0 || arena_adj > 0 {
+                            if !report.suspicious_active_orders.is_empty() || adopted > 0 || arena_adj > 0 || purged_ghosts > 0 || !report.orphan_remote_orders.is_empty() {
                                 telemetry_server::telemetry_log!(
-                                    "🔄 [RECONCILIATION] {} | Adopted Reg: {}, Adj Arena: {}, Pruned Reg: {}",
+                                    "🔄 [RECONCILIATION] {} | Adopted Reg: {}, Purged Ghosts: {}, Adj Arena: {}, Pruned Reg: {}",
                                     report.summary,
                                     adopted,
+                                    purged_ghosts,
                                     arena_adj,
                                     pruned
                                 );
@@ -4598,8 +4612,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             risk_engine::capital_regime::micro_weight(cap_now, env_min_notional);
                         let env_z = risk_engine::capital_regime::lerp(1.64, 0.85, env_w);
                         let env_k = risk_engine::capital_regime::log_lerp(50.0, 10.0, env_w);
-                        let (env_lev, operable) = risk_envelope
-                            .max_leverage(cap_now, stop_pct, env_min_notional, env_z, env_k);
+                        let (koop_mod, koop_bif) = engine_real
+                            .feature_engines
+                            .get(coin_id)
+                            .map(|fe| (fe.koopman_modulo as f64, fe.koopman_bifurcacion as f64))
+                            .unwrap_or((f64::NAN, f64::NAN));
+                        let (env_lev, operable) = risk_envelope.max_leverage_spectral(
+                            cap_now,
+                            stop_pct,
+                            env_min_notional,
+                            env_z,
+                            env_k,
+                            koop_mod,
+                            koop_bif,
+                        );
                         // D-116 (evolucionado por X-022/REHAB-4): la ENVOLVENTE
                         // es AUTORITATIVA — PERO con BOOTSTRAP EXPLORATORIO:
                         // sin evidencia (posterior.n() < 30), el sistema DEBE
