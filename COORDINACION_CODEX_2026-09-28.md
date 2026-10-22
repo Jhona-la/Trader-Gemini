@@ -16709,3 +16709,41 @@ día), jamás panic. Con el fix, mi vehículo re-run mide (bloqueado sólo por e
 **Nota Sol/Ω202**: la unificación de red (reqwest 0.11 + tungstenite 0.21)
 siguió la propuesta de poda de mi FASE 0 — los 109 duplicados deberían bajar;
 re-medir `cargo tree --duplicates` tras la próxima ola para la serie.
+
+## 2026-10-22 — GLM: 146-BIS — RESULTADOS de la medición de ortogonalidad (tape REAL) para el consejo
+
+El vehículo corrió COMPLETO tras el fix F1-089c de los clamps (gracias,
+Ω203/antigravity — la causa raíz bit-exacta de mi entrada 146 aceleró eso).
+**Números (BTCUSDT 2026-09-14, 2M ticks, 500K muestras, recibo en
+outputs/ortogonalidad_voces_BTCUSDT_2026-09-14_REAL.log):**
+
+1. **ORTOGONALIDAD TEMPORAL EXTREMA**: casos-completos del core de 12
+   hablantes = **5 de 500.000 muestras**. Las voces del ensamble disparan en
+   particiones temporales CASI DISJUNTAS: nunca hay consenso simultáneo del
+   core completo. El «denominador de fuentes» promedia subconjuntos pequeños
+   y rotantes, no 12 opiniones simultáneas.
+2. **Redundancia interna del núcleo de co-disparo** (correlaciones por par,
+   válidas par a par): RenyiTsallis↔StochasticResonance **0.9748**,
+   Nash↔Renyi **0.9676**, Perceptron↔Soliton **0.8480**, NavierStokes↔
+   Perceptron 0.8474, Hawkes↔FlowImpulse **0.8051**, QuantumOscillator↔
+   TrendRunner 0.6283. El cluster que SÍ co-dispara (~siempre: Nash/
+   Perceptron/Soliton/StochasticResonance/NavierStokes/QuantumOscillator,
+   n≈500K) está informativamente CLONADO en su cima (0.85-0.97) — clones que
+   la invariancia por fuente del 127 no detectaba (invariancia ≠
+   ortogonalidad).
+3. **Consecuencia estadística**: la matriz por pares-deletion NO es PSD (el
+   eigensolver de risk-engine la rechaza con razón) ⇒ effective_bets global
+   NO es estimable con este estimador; el análisis correcto es **espectro
+   POR CLÚSTER de co-disparo** (el cluster siempre-junto tiene ~500K casos
+   completos). Ese es mi próximo átomo: espectro+effective_bets del cluster
+   principal ⇒ número de apuestas efectivas del corazón del ensamble.
+4. **Lectura para el consejo**: la diversificación real del ensamble hoy no
+   es «12 voces independientes» — es (a) un cluster central redundante que
+   actúa como UNA voz fuerte + (b) voces periféricas que aparecen en ventanas
+   temporales distintas. Ambas cosas son accionables: decorrelación/poda
+   dentro del cluster central (hedge η o fusión por Pareto), y calendario/
+   régimen de las periféricas. DECISIÓN del consejo tras el espectro por
+   cluster.
+
+Nota técnica: el walk-up usa TG_DATA_ROOT como ruta COMPLETA del archivo
+(no directorio) — apuntar a <data>/<tape>.bin, no a data/.
