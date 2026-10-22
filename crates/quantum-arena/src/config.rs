@@ -2,6 +2,17 @@ use crate::atomic_float::AtomicF64;
 use crate::horizon_policy::{trailing_at_tau, HorizonParameter};
 use crate::temporal_spectrum::HorizonCurve;
 
+/// F1-009: Límite actuarial canónico de drawdown del Consejo Deliberativo.
+/// Derivado de la cota de falsación de Cramér-Lundberg: d* = 1 - alpha^(c / (2 - c))
+/// para fracción de Kelly máxima c = 0.25 y nivel alpha = 0.05:
+/// 1 - 0.05^(0.25 / 1.75) = 1 - 0.05^(1/7) ≈ 0.6315968501359614.
+pub const CANONICAL_COUNCIL_MAX_DRAWDOWN: f64 = 0.6315968501359614;
+
+/// F1-009: Constantes físicas y cuánticas canónicas (adimensionales en unidades de Planck de la red discreta).
+pub const CANONICAL_FEYNMAN_HBAR: f64 = 1.0;
+pub const CANONICAL_FEYNMAN_MASS: f64 = 1.0;
+pub const CANONICAL_FEYNMAN_K_SPRING: f64 = 1.0;
+
 /// Axioma V: El Config Omnisciente (5 Capas Adaptativas)
 /// Todo expuesto como atómicos para mutación lock-free (O(1)) desde el Evolver.
 /// Alineado a 64-bytes para evitar False Sharing entre núcleos.
@@ -546,7 +557,7 @@ impl QuantumConfig {
             council_utility_veto_wr: AtomicF64::new(0.35),
             council_fast_slippage_floor: AtomicF64::new(35.0),
             council_slow_slippage_span: AtomicF64::new(65.0),
-            council_max_drawdown_limit: AtomicF64::new(0.6315968501359614),
+            council_max_drawdown_limit: AtomicF64::new(CANONICAL_COUNCIL_MAX_DRAWDOWN),
             council_streak_decay_rate: AtomicF64::new(0.50),
             council_causal_veto_threshold: AtomicF64::new(0.75),
             council_causal_min_book_imbalance: AtomicF64::new(0.25),
@@ -585,9 +596,9 @@ impl QuantumConfig {
             navier_critical_turbulent: AtomicF64::new(5.0),
             navier_relaxation_time_s: AtomicF64::new(0.200),
             ofi_ewma_alpha: AtomicF64::new(0.10),
-            feynman_hbar: AtomicF64::new(1.0),
-            feynman_mass: AtomicF64::new(1.0),
-            feynman_k_spring: AtomicF64::new(1.0),
+            feynman_hbar: AtomicF64::new(CANONICAL_FEYNMAN_HBAR),
+            feynman_mass: AtomicF64::new(CANONICAL_FEYNMAN_MASS),
+            feynman_k_spring: AtomicF64::new(CANONICAL_FEYNMAN_K_SPRING),
             feynman_coherence_threshold: AtomicF64::new(0.20),
             yang_mills_adaptation_rate: AtomicF64::new(0.005),
             hodge_return_sensitivity: AtomicF64::new(100.0),
@@ -891,5 +902,211 @@ impl QuantumConfig {
         self.sl_curve_a.store(curve.a, Ordering::Relaxed);
         self.sl_curve_b.store(curve.b, Ordering::Relaxed);
         self.end_write();
+    }
+
+    /// F1-009: Sincronización continua de parámetros adaptativos, deliberativos y físicos
+    /// desde el `OmniscientRegistry` hacia los atómicos de `QuantumConfig`.
+    /// Permite que los motores de optimización online, de aprendizaje por refuerzo,
+    /// análisis cuántico espectral y detección de régimen modulen dinámicamente estos
+    /// umbrales en tiempo real sin estados congelados ni literales estáticos.
+    pub fn sync_from_registry(&self, reg: &omniscient_registry::OmniscientRegistry) {
+        use std::sync::atomic::Ordering::Relaxed;
+
+        // --- 1. Consejo Deliberativo ---
+        if let Some(v) = reg.get_value_fast("council_approval_threshold") {
+            if (0.0..=1.0).contains(&v) { self.council_approval_threshold.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_supermajority_override") {
+            if (0.0..=1.0).contains(&v) { self.council_supermajority_override.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_override_signal_floor") {
+            if (0.0..=1.0).contains(&v) { self.council_override_signal_floor.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_override_penalty") {
+            if (0.0..=1.0).contains(&v) { self.council_override_penalty.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_shrinkage_k") {
+            if v.is_finite() && v > 0.0 { self.council_shrinkage_k.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_cascade_severity_breaker") {
+            if (0.0..=1.0).contains(&v) { self.council_cascade_severity_breaker.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_utility_veto_floor") {
+            if (0.0..=0.50).contains(&v) { self.council_utility_veto_floor.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_utility_veto_wr") {
+            if (0.0..=1.0).contains(&v) { self.council_utility_veto_wr.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_fast_slippage_floor") {
+            if v.is_finite() && v > 0.0 { self.council_fast_slippage_floor.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_slow_slippage_span") {
+            if v.is_finite() && v > 0.0 { self.council_slow_slippage_span.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_max_drawdown_limit") {
+            if (0.0..=1.0).contains(&v) { self.council_max_drawdown_limit.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_streak_decay_rate") {
+            if (0.0..=1.0).contains(&v) { self.council_streak_decay_rate.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_causal_veto_threshold") {
+            if (0.0..=1.0).contains(&v) { self.council_causal_veto_threshold.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_causal_min_book_imbalance") {
+            if (0.0..=1.0).contains(&v) { self.council_causal_min_book_imbalance.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_causal_aligned_max_risk") {
+            if (0.0..=1.0).contains(&v) { self.council_causal_aligned_max_risk.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_hodge_curl_attenuation") {
+            if (0.0..=1.0).contains(&v) { self.council_hodge_curl_attenuation.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_hodge_laminar_floor") {
+            if (0.0..=1.0).contains(&v) { self.council_hodge_laminar_floor.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_ym_ref_current") {
+            if v.is_finite() && v > 0.0 { self.council_ym_ref_current.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_ym_max_weight") {
+            if (0.0..=1.0).contains(&v) { self.council_ym_max_weight.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_ml_dead_zone") {
+            if (0.0..=1.0).contains(&v) { self.council_ml_dead_zone.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_ml_full_edge") {
+            if (0.0..=1.0).contains(&v) { self.council_ml_full_edge.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_meta_dd_penalty_mult") {
+            if v.is_finite() && v >= 0.0 { self.council_meta_dd_penalty_mult.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_meta_max_dd_penalty") {
+            if (0.0..=1.0).contains(&v) { self.council_meta_max_dd_penalty.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_meta_majority_factor") {
+            if (0.0..=1.0).contains(&v) { self.council_meta_majority_factor.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_meta_solitary_factor") {
+            if (0.0..=1.0).contains(&v) { self.council_meta_solitary_factor.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_whale_z_threshold") {
+            if v.is_finite() && v > 0.0 { self.council_whale_z_threshold.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_whale_min_floor") {
+            if (0.0..=1.0).contains(&v) { self.council_whale_min_floor.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_liq_decay_mult") {
+            if v.is_finite() && v > 0.0 { self.council_liq_decay_mult.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_liq_min_floor") {
+            if (0.0..=1.0).contains(&v) { self.council_liq_min_floor.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_crowd_imbalance_decay") {
+            if (0.0..=1.0).contains(&v) { self.council_crowd_imbalance_decay.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_crowd_min_floor") {
+            if (0.0..=1.0).contains(&v) { self.council_crowd_min_floor.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_devil_advocate_weight") {
+            if v.is_finite() && v >= 0.0 { self.council_devil_advocate_weight.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_discrepancy_veto_threshold") {
+            if (0.0..=1.0).contains(&v) { self.council_discrepancy_veto_threshold.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_tracker_weight_floor") {
+            if v.is_finite() && v > 0.0 { self.council_tracker_weight_floor.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("council_tracker_weight_cap") {
+            if v.is_finite() && v >= 1.0 { self.council_tracker_weight_cap.store(v, Relaxed); }
+        }
+
+        // --- 2. Física de Navier-Stokes, Feynman, Tsallis, Renyi, Yang-Mills ---
+        if let Some(v) = reg.get_value_fast("navier_critical_laminar") {
+            if v.is_finite() && v > 0.0 { self.navier_critical_laminar.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("navier_critical_turbulent") {
+            if v.is_finite() && v > 0.0 { self.navier_critical_turbulent.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("navier_relaxation_time_s") {
+            if v.is_finite() && v > 0.0 { self.navier_relaxation_time_s.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("ofi_ewma_alpha") {
+            if (0.0..=1.0).contains(&v) { self.ofi_ewma_alpha.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("feynman_hbar") {
+            if v.is_finite() && v > 0.0 { self.feynman_hbar.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("feynman_mass") {
+            if v.is_finite() && v > 0.0 { self.feynman_mass.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("feynman_k_spring") {
+            if v.is_finite() && v > 0.0 { self.feynman_k_spring.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("feynman_coherence_threshold") {
+            if (0.0..=1.0).contains(&v) { self.feynman_coherence_threshold.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("yang_mills_adaptation_rate") {
+            if v.is_finite() && v > 0.0 { self.yang_mills_adaptation_rate.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("hodge_return_sensitivity") {
+            if v.is_finite() && v > 0.0 { self.hodge_return_sensitivity.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("tsallis_q") {
+            if v.is_finite() && v > 0.0 { self.tsallis_q.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("renyi_alpha") {
+            if v.is_finite() && v > 0.0 { self.renyi_alpha.store(v, Relaxed); }
+        }
+
+        // --- 3. Hawkes, PPO, Plasticidad y Perceptrón ---
+        if let Some(v) = reg.get_value_fast("hawkes_alpha") {
+            if v.is_finite() && v >= 0.0 { self.hawkes_alpha.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("hawkes_beta") {
+            if v.is_finite() && v > 0.0 { self.hawkes_beta.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("perceptron_ganancia") {
+            if v.is_finite() && v > 0.0 { self.perceptron_ganancia.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("ppo_alpha_ema") {
+            if (0.0..=1.0).contains(&v) { self.ppo_alpha_ema.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("plasticity_min_mult") {
+            if (0.0..=1.0).contains(&v) { self.plasticity_min_mult.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("plasticity_max_mult") {
+            if v.is_finite() && v >= 1.0 { self.plasticity_max_mult.store(v, Relaxed); }
+        }
+
+        // --- 4. Espectral y Régimen ---
+        if let Some(v) = reg.get_value_fast("espectral_recencia_x") {
+            if (0.0..=1.0).contains(&v) { self.espectral_recencia_x.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("espectral_olvido") {
+            if (0.0..=1.0).contains(&v) { self.espectral_olvido.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("espectral_muestras_maduras") {
+            if v.is_finite() && v >= 5.0 { self.espectral_muestras_maduras.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("regime_w_accel_fast") {
+            if (0.0..=1.0).contains(&v) { self.regime_w_accel_fast.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("regime_w_adverse_tide") {
+            if (0.0..=1.0).contains(&v) { self.regime_w_adverse_tide.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("multifractal_tanh_scale") {
+            if v.is_finite() && v > 0.0 { self.multifractal_tanh_scale.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("burst_threshold_zscore") {
+            if v.is_finite() && v > 0.0 { self.burst_threshold_zscore.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("hidden_liquidity_weight") {
+            if (0.0..=1.0).contains(&v) { self.hidden_liquidity_weight.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("conformal_gate_strictness") {
+            if v.is_finite() && v > 0.0 { self.conformal_gate_strictness.store(v, Relaxed); }
+        }
+        if let Some(v) = reg.get_value_fast("lg22_arl") {
+            if v.is_finite() && v >= 10.0 { self.lg22_arl.store(v, Relaxed); }
+        }
     }
 }

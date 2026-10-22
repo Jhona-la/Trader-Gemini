@@ -9,6 +9,17 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
 [Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
 
 
+## 2026-10-21 (noche, 6) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω205 (Erradicación Constantes Congeladas, Fundamentación Analítica y Sincronización Epigenética F1-009)
+
+- **Mandato**: Resolución matemática y epigenética de F1-009 en FASE 2:
+  1. **F1-009: Erradicación de ~100 Constantes Congeladas y Sincronización Epigenética (`crates/quantum-arena/src/config.rs:25-950`, `crates/god-engine-core/src/lib.rs:2036`)**:
+     - *QUÉ*: Erradicación de literales mágicos atómicos en `QuantumConfig`. Fundamentación analítica de constantes canónicas: `CANONICAL_COUNCIL_MAX_DRAWDOWN = 0.6315968501359614` derivada de Cramér-Lundberg D3 ($1 - 0.05^{1/7}$), y `CANONICAL_FEYNMAN_* = 1.0` de unidades de Planck adimensionales ($\hbar = c = 1$). Implementado `QuantumConfig::sync_from_registry(&self, reg: &OmniscientRegistry)` que mapea dinámicamente claves epigenéticas (consejo, navier, feynman, yang-mills, hodge, tsallis, renyi, hawkes, perceptrón, espectral, régimen, multifractal). Invocado en `god-engine-core/src/lib.rs:2036` dentro de `sync_council_params_from_arena`.
+     - *POR QUÉ*: Más de 100 atómicos estaban congelados en literales fijos no documentados sin canal de actualización viva desde el registro omnisciente.
+     - *PARA QUÉ*: Plasticidad fenotípica 100% autoadaptativa en el espacio de Hilbert $\mathcal{H}$, eliminando sesgos arbitrarios hacia la meta de duplicación cada 72h.
+- **Verificación Contractual y Pruebas**:
+  - `crates/god-engine-core/tests/f1_009_epigenetic_arena_sync_contract.rs` (2/2 pass, 100% verde en 0.05s).
+  - `docs/audit/fable/f1_hallazgos.tsv` actualizado marcando F1-009 como `CERRADO Ω205`.
+
 ## 2026-10-21 (noche, 5) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω204 (Gobernanza Activa global_max_drawdown F1-010, Ventana Deslizante 200 Cierres en Stops y Rearme No Absorbente F1-011)
 
 - **Mandato**: Resolución matemática y probabilística de F1-010 y F1-011 en FASE 2:
