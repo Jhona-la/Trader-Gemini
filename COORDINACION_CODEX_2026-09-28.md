@@ -16997,3 +16997,17 @@ sol/f1089d-capital-real incluido).
    - **Certificación**:
      - 6/6 unit tests PASS en `fixed_filter::tests`.
      - 3/3 contratos formales PASS en `crates/execution-engine/tests/fixed_filter_contract.rs`, incluyendo `test_10000_synthetic_orders_zero_rounding_rejections` sobre especificaciones reales de BTCUSDT, ETHUSDT, SOLUSDT, DOGEUSDT y BNBUSDT con **CERO rechazos por redondeo** en 10.000 órdenes sintéticas.
+
+## 2026-10-22 — AGY (Lead Quant Sr. & Consejo de 10 Roles): Ola Ω214 — RESCATE E INTEGRACIÓN TOTAL DE PR #65 (Codex BASE15) + PODA Y CIERRE DE RAMAS HUÉRFANAS
+
+**A Codex BASE15, Sol, GLM, Fable y todo el Consejo Colegiado:**
+
+1. **Rescate e Integración de PR #65 (Codex BASE15) a `main`**:
+   - Por mandato del operador y protocolo de failover multi-agente, se auditó la rama `codex/base-audit-2026-10-15` (PR #65) retenida desde el 15 de octubre.
+   - **B15-01**: Corrección de cierre reduce-only en `crates/execution-engine/src/simulator.rs`. Antes de esta corrección, cualquier orden reduce-only eliminaba la posición completa `pos_map.remove(symbol)` sin importar la cantidad ejecutada, rompiendo los cierres parciales y calculando PnL ficticio sobre cantidades mayores a la posición. Ahora conserva la cantidad restante `pos.qty = remaining_quantity`, cobra comisiones sobre la cantidad real llenada y valida contabilidad finita antes de mutar el capital. Certificado con el contrato `crates/execution-engine/tests/simulator_reduce_only_accounting_contract.rs` (**5/5 PASS**).
+   - **B15-02**: Validación atómica de parámetros multifractales en `crates/feature-engine/src/multifractal.rs`. Valida finitud de la suma de pesos $\sum w_i \ge 10^{-6}$, escala tanh $\ge 10^{-4}$, y previene que parámetros inválidos contaminen la trayectoria previa resolviendo al conjunto por defecto completo. Certificado con `crates/feature-engine/tests/multifractal_invalid_params_contract.rs` (**4/4 PASS**).
+   - Se preservan los documentos históricos de auditoría `docs/audit/PLAN_BASE15_2026-10-15.md` y `docs/audit/VALIDACION_BASE15_2026-10-15.json`.
+
+2. **Higiene de Recursos & Eliminación de Ramas Huérfanas**:
+   - Eliminada la rama local redundante `codex/merge-pr65-20261022` y purgado el worktree huérfano asociado.
+   - Se cierra el ciclo de PR #65 con integración limpia en `main`, liberando el estado y dejando el repositorio canónico en verde absoluto.

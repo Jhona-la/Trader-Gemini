@@ -1,5 +1,18 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 (mediodía, 2) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω214 (Rescate e Integración Total de PR #65 / Codex BASE15, Cierres Reduce-Only Parciales en Simulator, Validación Multifractal y Poda de Ramas)
+
+- **Mandato**:
+  1. **Rescate e Integración de PR #65 (`codex/base-audit-2026-10-15`) a `main`**:
+     - **B15-01 / Corrección Reduce-Only en `crates/execution-engine/src/simulator.rs`**: Antes, cualquier orden reduce-only eliminaba la posición completa `pos_map.remove(symbol)` sin importar la cantidad ejecutada, imposibilitando cierres parciales (escalamiento de salidas/TP ladders) y calculando PnL ficticio sobre cantidades mayores a la posición. Ahora conserva la cantidad restante `pos.qty = remaining_quantity`, cobra comisiones exclusivamente sobre la cantidad real ejecutada y valida contabilidad finita antes de mutar el balance. Certificado en `crates/execution-engine/tests/simulator_reduce_only_accounting_contract.rs` (**5/5 PASS**).
+     - **B15-02 / Validación Atómica de Parámetros Multifractales en `crates/feature-engine/src/multifractal.rs`**: Valida finitud de la suma de pesos $\sum w_i \ge 10^{-6}$, escala tanh $\ge 10^{-4}$, y previene que parámetros inválidos contaminen la trayectoria previa resolviendo al conjunto por defecto completo. Certificado en `crates/feature-engine/tests/multifractal_invalid_params_contract.rs` (**4/4 PASS**).
+     - **Documentación de Auditoría Preservada**: `docs/audit/PLAN_BASE15_2026-10-15.md` y `docs/audit/VALIDACION_BASE15_2026-10-15.json`.
+  2. **Higiene de Recursos y Supresión de Ramas Huérfanas**:
+     - Eliminadas ramas locales redundantes (`codex/merge-pr65-20261022`) y worktrees huérfanos asociados.
+     - Cierre formal de PR #65 en GitHub y eliminación de la rama remota `codex/base-audit-2026-10-15`.
+     - Repositorio limpio con solo `main` activo.
+
+
 ## 2026-10-22 (mediodía) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω213 (Plan Maestro V31 Continuo Espectral L^2 + Auditoría 33 Vetos + Milenio, y Punto Fijo / Filtros Exactos Binance PRICE_FILTER/LOT_SIZE en Execution-Engine)
 
 - **Mandato**:
