@@ -119,8 +119,8 @@ fn test_f1_046_rama_13_standardized_diffusion_z_and_no_magic_multiplier() {
     let magnitud_norm = (z_macd.abs() / god_engine_core::diffusion::Z95).clamp(0.0, 1.0);
     let piso_magnitud = sig_conf(magnitud_norm);
     assert!(
-        piso_magnitud >= 0.51 && piso_magnitud <= 0.90,
-        "Piso de magnitud estandarizado debe estar estrictamente en [0.51, 0.90]: {piso_magnitud}"
+        piso_magnitud >= 0.50 && piso_magnitud <= 0.90,
+        "Piso de magnitud estandarizado debe estar estrictamente en [0.50, 0.90]: {piso_magnitud}"
     );
 
     // Si macd_diff es muy débil (ruido z < 0.1):
@@ -128,7 +128,7 @@ fn test_f1_046_rama_13_standardized_diffusion_z_and_no_magic_multiplier() {
     let mag_debil = (z_debil / god_engine_core::diffusion::Z95).clamp(0.0, 1.0);
     let piso_debil = sig_conf(mag_debil);
     assert!(
-        (piso_debil - 0.51).abs() < 0.02,
+        (piso_debil - 0.50).abs() < 0.02,
         "Señal débil produce convicción mínima pegada al suelo neutro: {piso_debil}"
     );
 }

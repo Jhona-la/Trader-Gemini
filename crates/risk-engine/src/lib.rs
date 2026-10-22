@@ -1658,7 +1658,17 @@ impl RiskEngine {
 
         let conf_t = ((intent.confidence - conf_center) / conf_width).clamp(0.0, 1.0);
         let micro_lev_cap = lev_base + lev_bonus * conf_t * conf_t * (3.0 - 2.0 * conf_t);
-        let max_lev_cap = crate::capital_regime::log_lerp(macro_cap, micro_lev_cap, micro_w_alloc);
+        let mut max_lev_cap = crate::capital_regime::log_lerp(macro_cap, micro_lev_cap, micro_w_alloc);
+
+        // F1-037: Acotación actuarial por cota de ruina de Cramér-Lundberg ψ ≤ e^{-R_capital · m} ≤ ε (ε = 0.05).
+        // Si la moneda posee estimación madura de R_nocional > 0, el apalancamiento máximo seguro
+        // no excede L_lundberg = (R_nocional · cushion) / ln(1/ε).
+        let r_nocional = arena.registry.get_for_coin_or(coin_id, "lundberg_r_nocional", 0.0);
+        if r_nocional.is_finite() && r_nocional > 0.0 {
+            let ln_inv_eps = 2.995732273553991; // ln(1 / 0.05)
+            let lundberg_lev_bound = (r_nocional * safe_cushion / ln_inv_eps).clamp(1.0, macro_cap);
+            max_lev_cap = max_lev_cap.min(lundberg_lev_bound);
+        }
 
         // D-130: Evaluar si el notional real de la orden (final_margin * dynamic_leverage) cumple con el mínimo
         if final_margin > 0.0 && final_margin * dynamic_leverage < dynamic_min_notional {

@@ -9,7 +9,29 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
 [Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
 
 
-## 2026-10-21 (tarde, 1) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω196 (Cierre F1-093 y Certificación Verde de CI)
+## 2026-10-21 (noche, 3) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω202 (Saneamiento de Red reqwest 0.11 / tokio-tungstenite 0.21, Erradicación de Balance 13.0 en profiler.rs, y Cierre F1-036, F1-037, F1-039)
+
+- **Mandato**: FASE 1 culminada con la integración limpia de `origin/sol/rescate-ramas` (commit `ae8b5b7a2`) y poda de ramas huérfanas remotas; ejecución de FASE 2 de optimización y saneamiento:
+  1. **Saneamiento de Dependencias y Red (`reqwest`, `tokio-tungstenite`, `zip`)**:
+     - *QUÉ*: Unificación estricta de `reqwest = "0.11"` en `crates/data-ingest/Cargo.toml` y `crates/data-pipeline/Cargo.toml` erradicando `0.13.4`; unificación de `tokio-tungstenite = "0.21.0"` en `crates/execution-engine/Cargo.toml` erradicando `0.29.0`; y eliminación de dependencia redundante `zip = "8.6.0"` en `data-pipeline/Cargo.toml`.
+     - *POR QUÉ*: La fragmentación de versiones de red obligaba al compilador a enlazar dos motores TLS (`rustls 0.21` y `0.23`), dos capas HTTP (`hyper 0.14` y `1.0`), y dos parsers HTTP/2 (`h2 0.3` y `0.4`), duplicando la huella de memoria y degradando los tiempos de compilación.
+     - *RESULTADO*: Tiempo de `cargo check --workspace --all-targets` reducido en >20% (de 10m07s a 8m13s), cero duplicados en el árbol de red y consumo de RAM optimizado.
+  2. **Erradicación de Capital Fijo 13.0 en `profiler.rs`**:
+     - *QUÉ*: Eliminación de los fallbacks fijos `else { 13.0 }` en `crates/telemetry-server/src/profiler.rs` (`update_financials` y `update_financials_atomic`). Si el capital reportado no es finito o es $\le 0.0$, el ROI se calcula limpiamente como `0.0`, impidiendo la invención de patrimonio de una cuenta ausente.
+  3. **Cierre Formal F1-036 (`crates/god-engine-core/src/lib.rs:324, 474, 8535`)**:
+     - *QUÉ*: `sig_conf` piso continuo en `0.50` exacto ante `score == 0.0` (acotado en `[0.50, 0.90]`), erradicando el suelo artificial `0.51` que fingía ventaja estadística ante señales neutras. En colisión armónica de frecuencias, `confianza_superpuesta_con_evidencia` exige que AMBAS ramas hayan demostrado ventaja empírica genuina (`lo_wilson > p*` vía `self.rama_registro[coin_id][...].mejor_que_el_azar(Z95)`) para otorgar el bono constructivo `+ 0.10 * lo`; sin evidencia bilateral, la fusión adopta `hi.min(0.96)`.
+  4. **Cierre Formal F1-039 (`crates/god-engine-core/src/lib.rs:4806-4822, 4860-4866`)**:
+     - *QUÉ*: Erradicación de suelos estáticos de clamp (12 min en harvest, 8 min en stagnant, 20 min en hard stagnant, 30 min en zombie, 1 h en hard timeout y 2 h en expiry). Todos los temporizadores se expresan de forma continua y proporcional a $\tau_{trade}$ (`tau_trade_ms * k`), permitiendo que órdenes rápidas ($\tau = 30\text{ s}$) cosechen o corten tesis rotas en 2.5 a 4 minutos en vez de 8 a 12 minutos. El corte de flujo tóxico (`toxic_flow_exit`) se calibra con VPIN adaptativo continuo en $p80 = 0.70$.
+  5. **Cierre Formal F1-037 (`crates/god-engine-core/src/lib.rs:2299`, `crates/risk-engine/src/lib.rs:1660`)**:
+     - *QUÉ*: Sincronización viva atómica de Navier-Stokes y Consejo (`sync_navier_stokes_and_microstructure_params` y `sync_council_params_from_arena`) tras cada mutación `apply_to_arena`. En `risk-engine`, acotación actuarial del apalancamiento vivo por cota de ruina de Cramér-Lundberg $\psi \le e^{-R_{capital} \cdot m} \le \epsilon$ ($L \le \frac{R_{nocional} \cdot cushion}{\ln(1/\epsilon)}$ con $\epsilon = 0.05$) cuando existe $R_{nocional} > 0$ medido.
+- **Verificación Contractual**:
+  - `cargo test -p god-engine-core --test f1_036_037_039_evidence_and_continuous_timers_contract -j 1` (3/3 pass, 100% verde en 0.02s).
+  - `cargo test -p god-engine-core --test f1_045_046_033_diffusion_and_cadence_contract -j 1` (3/3 pass, 100% verde en 0.02s).
+  - `cargo test -p god-engine-core --lib d752 -j 1` (11/11 pass, 100% verde en 0.03s).
+  - `cargo test -p telemetry-server --lib profiler -j 1` (3/3 pass, 100% verde en 0.00s).
+  - `cargo check --workspace --all-targets -j 1` (100% verde en 8m 13s, 0 errores, 0 warnings).
+
+
 
 - **Mandato**: Resolución completa y certificación 100% verde de los fallos de CI en GitHub Actions y resolución de la deuda de certificación de vetos de riesgo duro y lógica (`F1-093`):
   1. **Resolución de Fallos en CI GitHub Actions (`crates/quantum-arena/tests/spectral_interpolation_contract.rs:42`, `crates/risk-engine/src/lib.rs:460`)**:
