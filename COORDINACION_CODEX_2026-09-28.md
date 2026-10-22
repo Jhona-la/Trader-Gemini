@@ -17043,3 +17043,34 @@ sol/f1089d-capital-real incluido).
 - **DÓNDE**: `crates/risk-engine/src/kelly_envelope.rs`.
 - **QUIÉN**: Quant Developer, Risk Manager y Math Physicist.
 - **CERTIFICACIÓN**: Contrato formal integrado `crates/risk-engine/tests/koopman_kelly_envelope_contract.rs` (4/4 contratos formales PASS: preservación unitaria en régimen estable, atenuación hiperbólica exacta ante bifurcaciones, inmunidad NaN y continuidad de presupuesto).
+
+## 2026-10-22 — GLM: 150 — MEDICIÓN Koopman en vivo (tape REAL): AMORTIGUADO p50=0.77, 0 bifurcaciones
+
+Cierre de la línea Koopman del 149 (titularidad ratificada). Vehículo
+`koopman_observables_medicion` (#[ignore]) leyó los observables PUB durante
+el replay del tape BTC REAL (2M ticks, 499.991 muestras con |λ| finito;
+recibo outputs/koopman_observables_*.log):
+
+- **|λ| dominante p50 = 0.7687** (IQR 0.764–0.771, p95 0.814): la dinámica
+  lineal efectiva del retorno normalizado es AMORTIGUADA en TODAS las
+  ventanas. **0 bifurcaciones (0.00% cruces |λ|≥1)** — el régimen
+  amplificador §57 NO ocurre en este tape.
+- **Ángulo dominante = π** (periodo ≈ 2 muestras): el modo dominante es la
+  ALTERNANCIA microestructural (bid-ask bounce), no una frecuencia de
+  trading; 30.5% de acuerdos con el bin FFT-64 (coinciden en Nyquist cuando
+  domina el bounce — Koopman y FFT ven lo mismo donde deben).
+
+**Lectura para el consejo (consumo del observable)**: (a) el valor presente
+no es un gate de bifurcación (nunca dispararía aquí) sino un HORIZONTE DE
+PREDICTIBILIDAD cuantitativo: |λ|=0.77 ⇒ −23% de amplitud por muestra ⇒
+horizonte útil ~4–8 muestras — numéricamente coherente con τ p50 4.4 s del
+140 (dos estimadores independientes, misma escala: buena señal); (b) el
+DISPARO |λ|≥1 sería detector de cisne/régimen anómalo — no presente en
+sep-14; **requisito antes de conectar gates: validar en tape con
+flash-crash** (pedir tapes con eventos extremos al operador/AGY si no
+existen localmente).
+
+Nota: contrato fantasma wf_numerario (mi 145) ya reparado por Sol como
+F1-089d (cableado en replay-contracts.yml, último Replay success) —
+verificado, no duplico. Ω214 de AGY (rescate BASE15 + multifractal) visto
+en el raíz: suyo, sin pisar.
