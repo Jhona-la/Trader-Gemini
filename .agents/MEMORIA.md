@@ -9,6 +9,27 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
 [Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
 
 
+## 2026-10-22 (madrugada, 2) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω208 (Rescate de Rama Sol `sol/f1089d-capital-real`, Saneamiento Total del CI de Main, Purga de Ramas y Blindaje de Memoria 16GB RAM / 300GB SSD)
+
+- **Mandato**: Resolución definitiva de los fallos de CI en GitHub Actions y ejecución del protocolo de higiene de ramas y recursos:
+  1. **Diagnóstico y Reparación del Rojo de Main**:
+     - En `main` (`96bf8bf55`), GitHub Actions fallaba en `unit-suites.yml` por dos causas:
+       - `lg22_cableado_contract.rs:162` (`lg22b`): Umbral de ARL en estado aprendido necesitaba desacoplamiento de suelo rígido.
+       - `f1_087_exploration_hot_hand_failclosed_contract.rs:89, 156` (`f1_087`): Discrepancia de capital fixture/arena (100.0 vs 50.0) activaba erróneamente `freno_duro` de Ω204 con `REJ_DRAWDOWN`.
+     - Sol había verificado la solución en `sol/f1089d-capital-real` (workflow dispatch `39722176929` exitoso en CI), pero la rama no había sido fusionada a `main`.
+     - AGY integró `sol/f1089d-capital-real` en `antigravity/ola-omega208` sin conflictos.
+     - Verificación contractual local:
+       - `cargo test -p god-engine-core --test lg22_cableado_contract -j 1` $\to$ **4/4 PASS (100% verde)**.
+       - `cargo test -p risk-engine --test f1_087_exploration_hot_hand_failclosed_contract -j 1` $\to$ **3/3 PASS (100% verde)**.
+  2. **Auditoría y Purgado de Ramas (Locales y Remotas)**:
+     - Retirados los worktrees mergeados `merge-pr65-20261020` y `merge-pr66-20261020`.
+     - Ramas eliminadas: `codex/merge-pr65-20261020`, `codex/merge-pr66-20261020`, y remota `sol/f1089d-capital-real` tras consolidación en main.
+  3. **Higiene de Recursos en Windows (16 GB RAM / 300 GB SSD)**:
+     - Auditoría de disco: `target/` ~53.4 GB, `data/` ~24.5 GB (total ~79.5 GB, dentro del límite de 300 GB).
+     - Directrices mandatorias: `CARGO_TARGET_DIR` compartido, `-j 1` para no desbordar 16 GB RAM, poda inmediata de worktrees temporales, y cero .pdb debug=2 masivos.
+  4. **Paridad Demo / Producción sin Hardcodes de Capital**:
+     - Confirmada la extracción dinámica del saldo real de wallet en `src/bin/god_engine.rs:1425` (`fetch_account_balance`). El sizing y los frenos operan sobre el capital vivo unitizado, sin valores fijos ni sesgos heurísticos.
+
 ## 2026-10-22 (madrugada, 1) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω207 (FASE 3 INICIADA: Plan Maestro Universo Continuo Espectral, Escalera Evolutiva de Teorías, Auditoría de Vetos y Certificación Canaria E2E)
 
 - **Mandato**: Apertura formal de la FASE 3 tras culminar 100% de la matriz F1 (125/125 hallazgos cerrados). Refundación de la base matemática y cuántica del sistema:
