@@ -57,7 +57,7 @@
 #          BARRIDO_PROCESOS (si no, SEMAFORO_PROCESOS), BARRIDO_PRUEBA_ROBO.
 # Salida: 0 hecho o simulado; 5 omitido o detenido (builds vivos, cuenta
 #         desconocida, cerrojo ajeno o robado); 2 fuera del repositorio,
-#         parámetros inválidos o herramientas GNU ausentes. La última línea
+#         parámetros inválidos, fallo de enumeración/borrado o GNU ausente. La última línea
 #         impresa es el resumen (el semáforo la anota en su bitácora).
 set -uo pipefail
 
@@ -97,7 +97,13 @@ if ! es_decimal "$max_mb" || ! es_decimal "$deps_max_mb" || ! es_decimal "$varia
 fi
 # Windows trae FIND.EXE y SORT.EXE homónimos en System32: en MSYS, las de GNU
 # viven en /usr/bin y deben ganar.
-if [ -d /usr/bin ]; then PATH="/usr/bin:$PATH"; fi
+for herramienta in find awk sort; do
+  version=$("$herramienta" --version 2> /dev/null)
+  if [[ "$version" != *GNU* ]] && [ -d /usr/bin ]; then
+    PATH="/usr/bin:/bin:$PATH"
+    break
+  fi
+done
 for herramienta in find awk sort; do
   # Capturar antes de comparar: con pipefail, `| grep -q` puede dar un falso
   # negativo por SIGPIPE cuando grep sale antes que el productor.
@@ -213,6 +219,7 @@ chequeo_seguro() {
 
 # ---------- cola de borrado por lotes ----------
 abortado=0
+error_operacion=0
 pendientes=()
 pend_bytes=0
 liberado=0
@@ -231,7 +238,14 @@ vaciar() {
       pend_bytes=0
       return 1
     fi
-    rm -rf -- "${pendientes[@]}" 2> /dev/null
+    if ! rm -rf -- "${pendientes[@]}"; then
+      echo "[barrido] falló el borrado: paro; el lote fallido no se contabiliza" >&2
+      abortado=1
+      error_operacion=1
+      pendientes=()
+      pend_bytes=0
+      return 1
+    fi
   fi
   liberado=$((liberado + pend_bytes))
   borrados=$((borrados + ${#pendientes[@]}))
@@ -292,12 +306,7 @@ total_deps=0
 candidatas=()
 for deps in "$target/debug/deps" "$target/release/deps"; do
   [ -d "$deps" ] || continue
-  while IFS=$'\t' read -r tipo c2 c3 c4; do
-    case "$tipo" in
-      T) total_deps=$((total_deps + c2)) ;;
-      C) candidatas+=("$c2"$'\t'"$c3"$'\t'"$deps/$c4") ;;
-    esac
-  done < <(
+  if ! inventario=$(
     find "$deps" -maxdepth 1 -type f -printf '%T@\t%s\t%f\n' 2> /dev/null \
       | awk -F'\t' -v ahora="$ahora_s" -v horas="$variantes_h" '
           BEGIN { limite = ahora - horas * 3600 }
@@ -318,7 +327,17 @@ for deps in "$target/debug/deps" "$target/release/deps"; do
                   printf "C\t%.0f\t%.0f\t%s\n", mt[c, k], sz[c, k], nm[c, k]
             }
           }'
-  )
+  ); then
+    echo "[barrido] falló la enumeración de $deps: no barro" >&2
+    registrar "BARRIDO ERROR enumeracion=$deps codigo=2"
+    exit 2
+  fi
+  while IFS=$'\t' read -r tipo c2 c3 c4; do
+    case "$tipo" in
+      T) total_deps=$((total_deps + c2)) ;;
+      C) candidatas+=("$c2"$'\t'"$c3"$'\t'"$deps/$c4") ;;
+    esac
+  done <<< "$inventario"
 done
 max_deps_b=$(awk -v mb="$deps_max_mb" 'BEGIN { printf "%.0f", mb * 1048576 }')
 obj_deps_b=$(awk -v mb="$deps_max_mb" -v h="$histeresis" 'BEGIN { printf "%.0f", mb * 1048576 * h }')
@@ -327,13 +346,18 @@ lib0=$liberado
 bor0=$borrados
 if [ "$total_deps" -gt "$max_deps_b" ]; then
   restante=$total_deps
+  if ! ordenadas=$(printf '%s\n' "${candidatas[@]}" | sort -t $'\t' -k1,1n); then
+    echo "[barrido] falló ordenar deps: no barro" >&2
+    registrar "BARRIDO ERROR ordenar=deps codigo=2"
+    exit 2
+  fi
   while IFS=$'\t' read -r _ b ruta; do
     [ -n "$ruta" ] || continue
     [ "$restante" -gt "$obj_deps_b" ] || break
     encolar "$ruta" "$b"
     restante=$((restante - b))
     [ "$abortado" = "0" ] || break
-  done < <(printf '%s\n' "${candidatas[@]}" | sort -t $'\t' -k1,1n)
+  done <<< "$ordenadas"
   vaciar
 fi
 var_borradas=$((borrados - bor0))
@@ -357,14 +381,19 @@ else
   filas=()
   for base in "$target/debug/incremental" "$target/release/incremental"; do
     [ -d "$base" ] || continue
-    while IFS=$'\t' read -r m b nombre; do
-      [ -n "$nombre" ] || continue
-      filas+=("$m"$'\t'"$b"$'\t'"$base/$nombre")
-    done < <(
+    if ! inventario=$(
       find "$base" -mindepth 2 -type f -printf '%T@\t%s\t%P\n' 2> /dev/null \
         | awk -F'\t' '{ split($3, c, "/"); d = c[1]; b[d] += $2; if ($1 + 0 > m[d]) m[d] = $1 + 0 }
             END { for (d in b) printf "%.0f\t%.0f\t%s\n", m[d], b[d], d }'
-    )
+    ); then
+      echo "[barrido] falló la enumeración de $base: no barro incremental" >&2
+      registrar "BARRIDO ERROR enumeracion=$base codigo=2"
+      exit 2
+    fi
+    while IFS=$'\t' read -r m b nombre; do
+      [ -n "$nombre" ] || continue
+      filas+=("$m"$'\t'"$b"$'\t'"$base/$nombre")
+    done <<< "$inventario"
   done
   total_inc=0
   for fila in "${filas[@]}"; do
@@ -379,12 +408,17 @@ else
   bor0=$borrados
   if [ "$total_inc" -gt "$max_b" ]; then
     restante=$total_inc
+    if ! ordenadas=$(printf '%s\n' "${filas[@]}" | sort -t $'\t' -k1,1n); then
+      echo "[barrido] falló ordenar incremental: no barro incremental" >&2
+      registrar "BARRIDO ERROR ordenar=incremental codigo=2"
+      exit 2
+    fi
     while IFS=$'\t' read -r _ b ruta; do
       [ "$restante" -gt "$obj_b" ] || break
       encolar "$ruta" "$b"
       restante=$((restante - b))
       [ "$abortado" = "0" ] || break
-    done < <(printf '%s\n' "${filas[@]}" | sort -t $'\t' -k1,1n)
+    done <<< "$ordenadas"
     vaciar
   fi
   # Cifras de lo efectivamente procesado (un barrido detenido no cuenta de más).
@@ -399,6 +433,7 @@ fi
 
 codigo=0
 [ "$abortado" = "0" ] || codigo=5
+[ "$error_operacion" = "0" ] || codigo=2
 modo=$([ "$aplicar" = 1 ] && echo APLICADO || echo SIMULADO)
 [ "$abortado" = "0" ] || modo="DETENIDO"
 registrar "BARRIDO $modo inc_carpetas=$inc_borradas inc_mb=$(mb "$inc_bytes") variantes=$var_borradas var_mb=$(mb "$var_bytes") liberado_mb=$(mb "$liberado") codigo=$codigo"

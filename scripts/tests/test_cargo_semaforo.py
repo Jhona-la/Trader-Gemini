@@ -142,15 +142,36 @@ class CargoSemaforoTests(unittest.TestCase):
 
     def test_sin_powershell_en_el_path_no_se_roba_un_cerrojo(self):
         # LG-25c, el caso real: un entorno sin powershell ni tasklist en el
-        # PATH (sólo las utilidades de bash). Antes `pgrep || echo 0` decía
+        # PATH, tampoco pgrep/pwsh aunque estén instalados en el host.
+        # Antes `pgrep || echo 0` decía
         # «0 procesos» y el cerrojo de un build en marcha se robaba como
         # huérfano pasada la gracia.
         self.cerrojo.mkdir(parents=True)
         (self.cerrojo / "creado").write_text(str(int(time.time()) - 600))
         (self.cerrojo / "dueno").write_text("agente-compilando pid=3 cargo check" + chr(10))
-        r = self.correr(
-            "check", SEMAFORO_SOLO_DECIDIR=1, SEMAFORO_PROCESOS="", SEMAFORO_ESPERA_MAX_MIN=0,
-            PATH=os.path.dirname(BASH),
+        bin_prueba = self.raiz / "bin"
+        bin_prueba.mkdir()
+        for nombre in ("mkdir", "cat", "awk", "grep", "tr", "rm", "sleep", "date"):
+            shim = bin_prueba / nombre
+            shim.write_text(f'#!/bin/bash\nexec "/usr/bin/{nombre}" "$@"\n', encoding="utf-8")
+            shim.chmod(0o700)
+        entorno = {k: v for k, v in os.environ.items()
+                   if not k.upper().startswith(("SEMAFORO_", "BASH_FUNC_"))
+                   and k not in ("BASH_ENV", "ENV", "CARGO_BUILD_JOBS")}
+        entorno.update(PATH=str(bin_prueba), SEMAFORO_RAIZ=str(self.raiz),
+                       SEMAFORO_AGENTE="prueba", SEMAFORO_SOLO_DECIDIR="1",
+                       SEMAFORO_PROCESOS="", SEMAFORO_RAM_GB="10",
+                       SEMAFORO_ESPERA_MAX_MIN="0", SEMAFORO_PAUSA_S="0")
+        probe = subprocess.run(
+            [BASH, "--noprofile", "--norc", "-c",
+             'for c in powershell powershell.exe pwsh pwsh.exe tasklist pgrep; do '
+             'if command -v "$c" >/dev/null 2>&1; then exit 91; fi; done'],
+            cwd=self.raiz, env=entorno, capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
+        r = subprocess.run(
+            [BASH, "--noprofile", "--norc", str(SCRIPT), "check"],
+            cwd=self.raiz, env=entorno, capture_output=True, text=True, timeout=20,
         )
         self.assertEqual(r.returncode, 75, r.stdout + r.stderr)
         self.assertTrue(self.cerrojo.exists(), "el cerrojo ajeno sigue en pie")

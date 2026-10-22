@@ -296,3 +296,25 @@ PR94/e79af59: nuevos recursos16/16 y barrido23/23 PASS en Ubuntu; semaforo previ
 PRIORIDAD ALTA, lectura sin editar archivos reservados: en god_engine.rs:1682 un Err de fetch_open_positions pasa a Vec vacio; :2294 interpreta vacio como cero posiciones y la arena queda sin margen adoptado. Otras lecturas positionRisk (:1697-1755) tampoco arman readiness. PhaseOrchestrator admite tras 120 ticks + darwin_approved sin evidencia de conciliacion. El OMS periodico posterior no elimina la ventana inicial.
 
 Contrato requerido antes de certificar ignicion: wallet OK, positionRisk falla repetidamente, mas de 120 ticks y Darwin aprobado => cero entradas nuevas; exposicion/margen siguen DESCONOCIDOS hasta snapshot exitoso y adopcion atomica. No fabricar lista vacia como ausencia de posiciones. AGY conserva la titularidad de host/OMS; QRA no pisa su diff. Revisor quant_scope; volver a buscar anclas antes de editar. El PR94 NO corrige este hallazgo y no certifica arranque ni Demo/Produccion.
+
+## Codex QRA — QRA-02 certificado localmente, candidato final
+
+52/52 contratos reales en temporales: recursos16/16, barrido23/23, semaforo13/13 (73.212s/76.930s/19.924s). bash-n y diff-check limpios. Sin Cargo propio ni limpieza del target real. Corregidos rm fallido/enumeracion parcial, retiradas rutas target sin lock y guardas para logs versionados. Job CI recursos agregado. Publicacion final en PR94 repite los checks Rust del conjunto; no heredar verde parcial de 2b36c7825. Regla aplicable: ya NO usar CLEAN_INCREMENTAL=1 disk_audit (exit5); usar barrido protegido. Fuentes liberadas para revision, reserva sigue hasta recibo main.
+
+## Codex QRA — fixture CI Linux en reparacion
+
+PR94/e79af59: nuevos recursos16/16 y barrido23/23 PASS en Ubuntu; semaforo previo falla1/13 porque PATH=dirname(bash) enLinux auncontiene pgrep/pwsh reales (conteo0legitimo). resource_safety reserva scripts/tests/test_cargo_semaforo.py para aislar enumeradores sin debilitarassert75/cerrojo; root añade contratoshermeticos10+6aljobCI. Produccionsemaforo SIN cambios; no maquillarnumericos ni saltartest. Checkalltargetsdelcandidatoe79 sigueenCI; no fusionar rojo.
+
+## Codex QRA — fixture hermético certificado
+
+Se conservaron las aserciones del semáforo: ausencia comprobada de enumeradores, salida 75 y cerrojo ajeno intacto. 29/29 locales (13 semáforo + 10 fail-closed + 6 estados de salida); junto con 16 recursos y 23 barrido, son 68 contratos únicos. El código de producción del semáforo no cambió. Se publica el nuevo candidato completo de PR94 y se repiten sus checks antes de integrar.
+
+## Codex QRA — reanclaje tras Sol F1-092, 17:35 -05:00
+
+Main avanzó de1f31db9d a9f03872d mientras PR94/18402aa4b tenía7/8 checks PASS y Replay ejecutaba las suites de ejecución. QRA se reancló sin conflicto, conserva diez blobs propios y las tres rutas Rust de Sol exactamente. Se repite CI por composición, sin transferir el verde anterior. Rama propia codex/quant-resource-audit-20261022, cero Cargo local ni motor iniciado; el recibo final liberará su reserva.
+
+La revisión estática del borrador Omega218 comunicada al dueño sigue abierta: is_demo_mode incluye Testnet y omite OMS; TRUE periódico antes de openOrders/adopción; fallback usa parse sobre campos f64 y Position sin export encontrado; falta revocación/generación de ejecutor. reconcile_arena descarta unresolved, así que mover TRUE al final no basta. Los tests observados accionan manualmente el booleano, no prueban API/host. Rebuscar anclas del borrador; PR94 no modifica ni certifica esas rutas. Detalles y negativos requeridos en docs/audit/QRA_2026-10-22.md y relevo de ejecución.
+
+## Codex QRA — QRA-03: cinco suites en job paralelo
+
+Se mueve solamente la invocación completa Execution/audit/data-ingest de Replay al nuevo job execution-contracts del mismo workflow, conservando Windows2022/nightly/env/jobs2/locked/threads1/timeout90/doctests. Alltargets y todos los otros pasos se mantienen. Verificación estructural de igualdad y revisor resource_safety; exige NUEVE checks del candidato, no certificar Replay solo. Posible menor espera al empezar Polars antes, con más runner-minutos potenciales; no afirmar ahorro total ni usar RAM del portátil. Ningún cambio Rust ni nueva compilación local.
