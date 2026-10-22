@@ -312,6 +312,9 @@ pub struct QuantumConfig {
     // --- Liquidez Oculta y Compuerta Conformal de Microestructura (Ola Ω133) ---
     pub hidden_liquidity_weight: AtomicF64,
     pub conformal_gate_strictness: AtomicF64,
+
+    // --- Gobernanza de Detector LG-22 e-CUSUM (F1-040, Ola Ω203) ---
+    pub lg22_arl: AtomicF64,
 }
 
 impl QuantumConfig {
@@ -635,6 +638,7 @@ impl QuantumConfig {
             spec_ent_scale: AtomicF64::new(0.30),
             hidden_liquidity_weight: AtomicF64::new(0.30),
             conformal_gate_strictness: AtomicF64::new(1.0),
+            lg22_arl: AtomicF64::new(200.0),
         }
     }
 

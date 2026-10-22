@@ -9,6 +9,25 @@ ROOT del 20 de octubre conserva 4/7 pares privados históricos; Hidden04 numéri
 [Plan BASE15, §12](../docs/audit/PLAN_BASE15_2026-10-15.md#12-reanudación-del-20-de-octubre--cobertura-y-coordinación-vigentes), [delta legible](../docs/audit/DELTA_COBERTURA_BASE15_2026-10-20.tsv) y [nota F1-024](../docs/audit/F1_024_TIEMPO_FOREST6_BASE15_2026-10-20.md). Filtro NaN/Inf, reloj SystemTime y predicado forest6 siguen idénticos en los bloques contrastados; futuro finito/evento 0 quedan para contrato AGY y prueba funcional. Sólo documentos; sin Cargo/rustc/replay, procesos, checkout o índice ROOT.
 
 
+## 2026-10-21 (noche, 4) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω203 (Unificación Fricción Roundtrip F1-040, Absorción Kyle-Hasbrouck F1-041, Muestreo Telemetría F1-043 y Clasificación Estricta Terminal F1-032)
+
+- **Mandato**: Continuación estricta de FASE 2 y erradicación de los últimos hallazgos abiertos en `f1_hallazgos.tsv`:
+  1. **F1-040: Unificación de Fricción Roundtrip Canónica (`crates/god-engine-core/src/lib.rs:4686, 4772, 4851, 4859, 4892, 4908-4909, 5247`, `crates/quantum-arena/src/config.rs:619, 729`)**:
+     - *QUÉ*: Erradicada la coexistencia de tres fórmulas divergentes de fricción roundtrip en la gestión de ranura de posición. Breakeven buffer, trailing, toxic cut, harvest por alpha decay, stagnant, zombie y detector LG-22 se unifican a la ley canónica `tp_sl::roundtrip_friction(live_taker_fee, slip_floor, atr_pct_live, 0.0)`. Erradicada la duplicación a 4 piernas, el fee por pierna tratado como roundtrip y el literal 0.0008 de LG-22. Parametrizado el umbral ARL de LG-22 como atómico `lg22_arl` en `QuantumConfig` y sincronizado al registro.
+  2. **F1-041: Absorción Kyle-Hasbrouck sin Cancelación Algebraica (`crates/dark-alpha-engine/src/hidden_liquidity.rs:18-72`, `crates/god-engine-core/src/lib.rs:2660-2670`)**:
+     - *QUÉ*: Corregida la cancelación algebraica en `compute_absorption`. Volumen negociado y spread ya no se cancelan en el cociente. La presión neta normaliza la diferencia direccional respecto al umbral físico de absorción mediante tangente hiperbólica: $\Pi = \tanh((\text{eff\_ask\_abs} - \text{eff\_bid\_abs}) / \text{threshold})$. Micro-trades colapsan honestamente a $\approx 0.0$ y absorciones verdaderas saturan suavemente hacia $\pm 1.0$. Además, `hidden_liquidity_pressure` en `god-engine-core` se computa exclusivamente ante trades reales (`ultima_cantidad_trade > 0.0`), impidiendo que updates de depth sin trades reseteen la absorción a cero creando ondas cuadradas espurias en el consenso espectral `p_ice`.
+  3. **F1-043: Muestreo de Telemetría Espectral (`crates/god-engine-core/src/lib.rs:8574-8620`)**:
+     - *QUÉ*: Muestreo eficiente de las 45 escrituras DashMap per-coin (`sombra_*`) de telemetría espectral en el hot path. El cómputo en stack de `votos_espectrales: [VotoEspectral; 15]` se ejecuta de forma continua e ininterrumpida cada evento de profundidad de libro a velocidad nanosegundo; mientras que las 45 inserciones en memoria compartida DashMap se muestrean cada 64 ticks (`current_tick < 64 || current_tick.is_multiple_of(64) || telemetria_sombras_forzada > 0.0`), ahorrando hasta $40\ \mu\text{s}$ de contención por tick en el camino caliente.
+  4. **F1-032: Clasificación Estricta de Respuestas Terminales No Activas (`crates/execution-engine/src/executor.rs:2619-2632`)**:
+     - *QUÉ*: En `execute_order` de `execution-engine`, ante respuestas HTTP 200 de Binance donde el ACK indica un estado terminal no activo (`!ack.is_filled() && !ack.is_active()`, como `EXPIRED`, `CANCELED`, `REJECTED`), el ejecutor retorna inmediatamente `Err(format!("ORDER_{}: status={}, executed_qty={}", status_tag, status_tag, ack.executed_qty))` en lugar de imprimir un warning y retornar `Ok(())`, erradicando posiciones fantasma por órdenes post-only (GTX) cruzadas.
+- **Verificación Contractual y Pruebas**:
+  - `cargo test -p god-engine-core --test f1_040_041_043_friction_and_telemetry_hygiene_contract -j 1` (3/3 pass, 100% verde en 0.04s).
+  - `cargo test -p execution-engine --test f1_032_terminal_ack_contract -j 1` (2/2 pass, 100% verde en 0.00s).
+  - `cargo test -p god-engine-core --test sombras_espectrales_telemetria_contract -j 1` (2/2 pass, 100% verde en 0.04s).
+  - `cargo test -p dark-alpha-engine -j 1` (70/70 pass, 100% verde).
+  - `cargo test -p execution-engine -j 1` (90/90 pass, 100% verde).
+  - `cargo check --workspace --all-targets -j 1` (100% verde, 0 errores en todos los crates).
+
 ## 2026-10-21 (noche, 3) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω202 (Saneamiento de Red reqwest 0.11 / tokio-tungstenite 0.21, Erradicación de Balance 13.0 en profiler.rs, y Cierre F1-036, F1-037, F1-039)
 
 - **Mandato**: FASE 1 culminada con la integración limpia de `origin/sol/rescate-ramas` (commit `ae8b5b7a2`) y poda de ramas huérfanas remotas; ejecución de FASE 2 de optimización y saneamiento:

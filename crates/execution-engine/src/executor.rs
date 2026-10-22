@@ -2616,11 +2616,20 @@ impl ExecutionProvider for OrderExecutor {
                 Ok((limits, ack)) => {
                     self.update_limits(limits);
                     self.order_registry.apply_ack(ack, payload.timestamp);
-                    if !ack.is_filled() && !ack.is_active() && !ack.status.is_empty() {
+                    if !ack.is_filled() && !ack.is_active() {
+                        let status_tag = if ack.status.is_empty() {
+                            "UNEXPECTED_TERMINAL"
+                        } else {
+                            &ack.status
+                        };
                         println!(
-                            "⚠️ [EXECUTION] Orden {} estado final inesperado: {} (executed={})",
-                            payload.client_order_id, ack.status, ack.executed_qty
+                            "⚠️ [EXECUTION] Orden {} estado final no ejecutable: {} (executed={})",
+                            payload.client_order_id, status_tag, ack.executed_qty
                         );
+                        return Err(format!(
+                            "ORDER_{}: status={}, executed_qty={}",
+                            status_tag, status_tag, ack.executed_qty
+                        ));
                     }
                     Ok(())
                 }

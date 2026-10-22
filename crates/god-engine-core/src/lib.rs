@@ -1993,6 +1993,10 @@ impl GodEngineCore {
         let conf_strict = self.arena.config.conformal_gate_strictness.load(Ordering::Relaxed);
         self.arena.registry.set("hidden_liquidity_weight", hid_liq_w);
         self.arena.registry.set("conformal_gate_strictness", conf_strict);
+
+        // OLA Ω203 (F1-040): Sincronización de Gobernanza del Detector LG-22 e-CUSUM
+        let lg22_arl = self.arena.config.lg22_arl.load(Ordering::Relaxed).max(10.0);
+        self.arena.registry.set("lg22_arl", lg22_arl);
     }
 
     #[inline]
@@ -3153,25 +3157,36 @@ impl GodEngineCore {
                         lambda_anharmonic: self.arena.registry.get_value_or("quantum_lambda_anharmonic", l_osc),
                         alpha_confinement: self.arena.registry.get_value_or("quantum_alpha", a_osc).clamp(0.01, 10.0),
                     };
+                    // F1-043 (Ola Ω203): Muestreo de telemetría de sombras espectrales.
+                    // Erradicación de ~45 escrituras DashMap per-coin en cada evento de depth sin consumidor vivo.
+                    // Los votos en array de stack `votos_espectrales` se computan siempre para alimentar el consenso;
+                    // las 45 claves `sombra_*` se publican en calentamiento (< 64 ticks), bajo muestreo (cada 64 ticks) o forzadas.
+                    let current_tick = self.arena.tick_counter.load(Ordering::Relaxed);
+                    let muestreo_sombras = current_tick < 64
+                        || current_tick.is_multiple_of(64)
+                        || self.arena.registry.get_value_or("telemetria_sombras_forzada", 0.0) > 0.0;
+
                     let voto_sombra =
                         signal_engine::quantum_oscillator::QuantumOscillatorEngine::voto_espectral_with_params(
                             &desplazamientos,
                             &osc_params,
                         );
-                    if let Some((k_dom, v_dom)) = voto_sombra.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_osc_dominante_tau",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_dom],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_osc_dominante_v", v_dom);
-                    }
-                    if let Some(media) = voto_sombra.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_osc_consenso", media);
+                    if muestreo_sombras {
+                        if let Some((k_dom, v_dom)) = voto_sombra.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_osc_dominante_tau",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_dom],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_osc_dominante_v", v_dom);
+                        }
+                        if let Some(media) = voto_sombra.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_osc_consenso", media);
+                        }
                     }
                     // #610 (Ola 32): sombras del SOLITÓN (perfil sech firmado)
                     // y del CHOQUE supersónico (salto Rankine-Hugoniot
@@ -3201,15 +3216,17 @@ impl GodEngineCore {
                             &desplazamientos,
                             amp_soliton,
                         );
-                    if let Some((k_sol, v_sol)) = voto_soliton.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_soliton_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_sol],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_soliton_amplitud_max", v_sol.abs());
+                    if muestreo_sombras {
+                        if let Some((k_sol, v_sol)) = voto_soliton.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_soliton_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_sol],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_soliton_amplitud_max", v_sol.abs());
+                        }
                     }
                     let sonic_z = self.arena.config.shockwave_sonic_speed_z.load(Ordering::Relaxed);
                     let mach_th = self.arena.config.shockwave_mach_threshold.load(Ordering::Relaxed);
@@ -3223,20 +3240,22 @@ impl GodEngineCore {
                             &desplazamientos,
                             &shock_params,
                         );
-                    if let Some(media_shock) = voto_shock.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_shock_salto_banda", media_shock);
-                    }
-                    if let Some((k_shock, v_shock)) = voto_shock.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_shock_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_shock],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_shock_salto_max", v_shock.abs());
+                    if muestreo_sombras {
+                        if let Some(media_shock) = voto_shock.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_shock_salto_banda", media_shock);
+                        }
+                        if let Some((k_shock, v_shock)) = voto_shock.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_shock_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_shock],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_shock_salto_max", v_shock.abs());
+                        }
                     }
                     // #614: SOMBRA de RESONANCIA ESTOCÁSTICA
                     // #660 (F3-A3): lee la clave que el core SÍ escribe
@@ -3255,20 +3274,22 @@ impl GodEngineCore {
                             &desplazamientos,
                             var_ruido,
                         );
-                    if let Some(media_res) = voto_res.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_res_consenso", media_res);
-                    }
-                    if let Some((k_res, v_res)) = voto_res.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_res_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_res],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_res_v_max", v_res);
+                    if muestreo_sombras {
+                        if let Some(media_res) = voto_res.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_res_consenso", media_res);
+                        }
+                        if let Some((k_res, v_res)) = voto_res.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_res_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_res],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_res_v_max", v_res);
+                        }
                     }
 
                     // #616: SOMBRA ESPECTRAL de COAXIAL BREAKOUT
@@ -3276,20 +3297,22 @@ impl GodEngineCore {
                         signal_engine::coaxial_breakout::CoaxialBreakoutEngine::voto_espectral(
                             &desplazamientos,
                         );
-                    if let Some(media_coax) = voto_coax.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_coax_consenso", media_coax);
-                    }
-                    if let Some((k_coax, v_coax)) = voto_coax.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_coax_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_coax],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_coax_v_max", v_coax);
+                    if muestreo_sombras {
+                        if let Some(media_coax) = voto_coax.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_coax_consenso", media_coax);
+                        }
+                        if let Some((k_coax, v_coax)) = voto_coax.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_coax_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_coax],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_coax_v_max", v_coax);
+                        }
                     }
 
                     // #649 (Ola 49) / F1-016 (Ola Ω198) — RATIO λ/μ̂ REAL, FRESCO y PREDECIBLE:
@@ -3306,20 +3329,22 @@ impl GodEngineCore {
                             &desplazamientos,
                             ratio_hawkes_fresco,
                         );
-                    if let Some(media_hk) = voto_hawkes.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_hawkes_consenso", media_hk);
-                    }
-                    if let Some((k_hk, v_hk)) = voto_hawkes.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_hawkes_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_hk],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_hawkes_v_max", v_hk);
+                    if muestreo_sombras {
+                        if let Some(media_hk) = voto_hawkes.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_hawkes_consenso", media_hk);
+                        }
+                        if let Some((k_hk, v_hk)) = voto_hawkes.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_hawkes_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_hk],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_hawkes_v_max", v_hk);
+                        }
                     }
 
                     // #618 / R5-A4: SOMBRA ESPECTRAL de GAME-THEORETIC NASH
@@ -3345,20 +3370,22 @@ impl GodEngineCore {
                             &desplazamientos,
                             nash_presion_adv,
                         );
-                    if let Some(media_nash) = voto_nash.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_nash_consenso", media_nash);
-                    }
-                    if let Some((k_nash, v_nash)) = voto_nash.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_nash_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_nash],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_nash_v_max", v_nash);
+                    if muestreo_sombras {
+                        if let Some(media_nash) = voto_nash.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_nash_consenso", media_nash);
+                        }
+                        if let Some((k_nash, v_nash)) = voto_nash.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_nash_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_nash],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_nash_v_max", v_nash);
+                        }
                     }
 
                     // #619→#649: SOMBRA ESPECTRAL de FLOW IMPULSE
@@ -3367,20 +3394,22 @@ impl GodEngineCore {
                             &desplazamientos,
                             ratio_hawkes_fresco,
                         );
-                    if let Some(media_flow) = voto_flow.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_flow_consenso", media_flow);
-                    }
-                    if let Some((k_flow, v_flow)) = voto_flow.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_flow_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_flow],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_flow_v_max", v_flow);
+                    if muestreo_sombras {
+                        if let Some(media_flow) = voto_flow.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_flow_consenso", media_flow);
+                        }
+                        if let Some((k_flow, v_flow)) = voto_flow.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_flow_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_flow],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_flow_v_max", v_flow);
+                        }
                     }
 
                     // #620: SOMBRA ESPECTRAL de PERCEPTRON GATE
@@ -3388,20 +3417,22 @@ impl GodEngineCore {
                         signal_engine::perceptron_gate::PerceptronGateEngine::voto_espectral(
                             &desplazamientos,
                         );
-                    if let Some(media_perc) = voto_perceptron.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_perceptron_consenso", media_perc);
-                    }
-                    if let Some((k_perc, v_perc)) = voto_perceptron.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_perceptron_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_perc],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_perceptron_v_max", v_perc);
+                    if muestreo_sombras {
+                        if let Some(media_perc) = voto_perceptron.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_perceptron_consenso", media_perc);
+                        }
+                        if let Some((k_perc, v_perc)) = voto_perceptron.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_perceptron_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_perc],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_perceptron_v_max", v_perc);
+                        }
                     }
 
                     // #621: SOMBRA ESPECTRAL de CONFORMAL REVERSION FILTER
@@ -3418,20 +3449,22 @@ impl GodEngineCore {
                             &desplazamientos,
                             conf_eps,
                         );
-                    if let Some(media_conf) = voto_conformal.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_conformal_consenso", media_conf);
-                    }
-                    if let Some((k_conf, v_conf)) = voto_conformal.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_conformal_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_conf],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_conformal_v_max", v_conf);
+                    if muestreo_sombras {
+                        if let Some(media_conf) = voto_conformal.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_conformal_consenso", media_conf);
+                        }
+                        if let Some((k_conf, v_conf)) = voto_conformal.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_conformal_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_conf],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_conformal_v_max", v_conf);
+                        }
                     }
 
                     // #622→#649 / Ω137→Ω144: SOMBRA ESPECTRAL de FLOW EXCITATION CONFLUENCE con
@@ -3510,20 +3543,22 @@ impl GodEngineCore {
                             eff_obi,
                             ml_dir_lift,
                         );
-                    if let Some(media_conf_fl) = voto_confluence.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_confluence_consenso", media_conf_fl);
-                    }
-                    if let Some((k_conf_fl, v_conf_fl)) = voto_confluence.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_confluence_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_conf_fl],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_confluence_v_max", v_conf_fl);
+                    if muestreo_sombras {
+                        if let Some(media_conf_fl) = voto_confluence.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_confluence_consenso", media_conf_fl);
+                        }
+                        if let Some((k_conf_fl, v_conf_fl)) = voto_confluence.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_confluence_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_conf_fl],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_confluence_v_max", v_conf_fl);
+                        }
                     }
 
                     // SOMBRA ESPECTRAL de TREND-RUNNER (persistencia multiescala)
@@ -3547,20 +3582,22 @@ impl GodEngineCore {
                             hurst_se_tr,
                             vpin_tr,
                         );
-                    if let Some(media_tr) = voto_tr.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_trend_consenso", media_tr);
-                    }
-                    if let Some((k_tr, v_tr)) = voto_tr.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_trend_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_tr],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_trend_v_max", v_tr);
+                    if muestreo_sombras {
+                        if let Some(media_tr) = voto_tr.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_trend_consenso", media_tr);
+                        }
+                        if let Some((k_tr, v_tr)) = voto_tr.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_trend_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_tr],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_trend_v_max", v_tr);
+                        }
                     }
 
                     // #615: SOMBRA ESPECTRAL de RENYI-TSALLIS ENTROPY
@@ -3569,20 +3606,22 @@ impl GodEngineCore {
                     let voto_entropy =
                         signal_engine::renyi_tsallis_entropy::RenyiTsallisEntropyEngine::new(q_tsallis, alpha_renyi)
                             .voto_espectral(&desplazamientos);
-                    if let Some(media_ent) = voto_entropy.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_entropia_consenso", media_ent);
-                    }
-                    if let Some((k_ent, v_ent)) = voto_entropy.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_entropia_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_ent],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_entropia_v_max", v_ent);
+                    if muestreo_sombras {
+                        if let Some(media_ent) = voto_entropy.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_entropia_consenso", media_ent);
+                        }
+                        if let Some((k_ent, v_ent)) = voto_entropy.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_entropia_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_ent],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_entropia_v_max", v_ent);
+                        }
                     }
 
                     // REV-5: SOMBRA ESPECTRAL de FEYNMAN PROPAGATOR (Integral de Camino de Hilbert)
@@ -3603,20 +3642,22 @@ impl GodEngineCore {
                     self.arena
                         .registry
                         .set_for_coin(coin_id, "feynman_coherence", fey_coherence);
-                    if let Some(media_fey) = voto_feynman.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_feynman_consenso", media_fey);
-                    }
-                    if let Some((k_fey, v_fey)) = voto_feynman.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_feynman_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_fey],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_feynman_v_max", v_fey);
+                    if muestreo_sombras {
+                        if let Some(media_fey) = voto_feynman.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_feynman_consenso", media_fey);
+                        }
+                        if let Some((k_fey, v_fey)) = voto_feynman.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_feynman_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_fey],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_feynman_v_max", v_fey);
+                        }
                     }
 
                     // SOMBRA ESPECTRAL de NAVIER-STOKES MANIFOLD (Cascada de Kolmogorov L2/L3)
@@ -3635,20 +3676,22 @@ impl GodEngineCore {
                             visc_ns,
                             lam_ns,
                         );
-                    if let Some(media_nav) = voto_navier.media_banda(0, 31) {
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_navier_consenso", media_nav);
-                    }
-                    if let Some((k_nav, v_nav)) = voto_navier.dominante() {
-                        self.arena.registry.set_for_coin(
-                            coin_id,
-                            "sombra_navier_tau_max",
-                            quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_nav],
-                        );
-                        self.arena
-                            .registry
-                            .set_for_coin(coin_id, "sombra_navier_v_max", v_nav);
+                    if muestreo_sombras {
+                        if let Some(media_nav) = voto_navier.media_banda(0, 31) {
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_navier_consenso", media_nav);
+                        }
+                        if let Some((k_nav, v_nav)) = voto_navier.dominante() {
+                            self.arena.registry.set_for_coin(
+                                coin_id,
+                                "sombra_navier_tau_max",
+                                quantum_arena::temporal_spectrum::SPECTRUM_SCALES_MS[k_nav],
+                            );
+                            self.arena
+                                .registry
+                                .set_for_coin(coin_id, "sombra_navier_v_max", v_nav);
+                        }
                     }
 
                     // #623 (Ola 44 & Antigravity) & Ola Ω146 / LG8-146-05: CONSENSO ESPECTRAL INTEGRAL (15 MOTORES):
@@ -4587,8 +4630,8 @@ impl GodEngineCore {
                 }
                 let peak_pnl = pos.max_pnl_pct.load(Ordering::Relaxed);
 
-                let live_fee = self.arena.config.live_maker_fee.load(Ordering::Relaxed)
-                    + self.arena.config.live_taker_fee.load(Ordering::Relaxed);
+                let live_taker_fee = self.arena.config.live_taker_fee.load(Ordering::Relaxed);
+                let _live_maker_fee = self.arena.config.live_maker_fee.load(Ordering::Relaxed);
 
                 // D-465, D-472, D-474, D-475 & D-495: Escudo Breakeven Progresivo Calibrado Antiasfixia.
                 // Activa cuando el recorrido ya cubre la fricción de ida y
@@ -4642,8 +4685,10 @@ impl GodEngineCore {
                 // función pura del gate, con el fee vivo y latencia 0 en el
                 // contexto de gestión (XLIV-8b: ATR/latencia no finitos ⇒
                 // latencia 0). El piso 0.00145 se conserva.
+                // F1-040 (Ola Ω203): UNA SOLA definición de fricción roundtrip en la gestión de ranura.
+                // Invocada con live_taker_fee puro por pierna (no maker+taker sumado) idéntica a la fórmula canónica del gate.
                 let roundtrip_friction =
-                    risk_engine::tp_sl::roundtrip_friction(live_fee, slip_floor, atr_pct_live, 0.0)
+                    risk_engine::tp_sl::roundtrip_friction(live_taker_fee, slip_floor, atr_pct_live, 0.0)
                         .max(0.00145);
                 let buf_fast = (roundtrip_friction + 0.00035).clamp(0.00180, 0.00250);
                 // El espacio de respiración (breathing room) debe ser proporcional a la volatilidad real ATR(tau):
@@ -4726,7 +4771,7 @@ impl GodEngineCore {
                         trail_step,
                         trail_max,
                         trail_atr_mult,
-                        live_fee,
+                        live_taker_fee,
                         tp, // B3.27 — escalera relativa al TP
                         // S-2 / #560: persistencia continua de la longitud de onda tau_trade_ms
                         self.temporal_spectrum
@@ -4805,17 +4850,17 @@ impl GodEngineCore {
                 let trend_adverse = (is_long && micro_t < -0.00045)
                     || (!is_long && micro_t > 0.00045);
 
-                // D-492 / #548 / F1-039: toxic_cut_sl relativo al SL de la posición (75% del SL, o min 3.0x live fee)
+                // D-492 / #548 / F1-039 / F1-040: toxic_cut_sl relativo al SL y a la fricción roundtrip canónica
                 // Corta pérdidas tempranamente ante toxicidad de libro confirmada (VPIN > 0.70 p80 y OFI adverso).
-                let toxic_cut_sl = (sl * 0.75).max(live_fee * 3.0);
+                let toxic_cut_sl = (sl * 0.75).max(roundtrip_friction * 1.5);
                 let vpin_toxic = 0.70;
                 let toxic_flow_exit = pnl_pct <= -toxic_cut_sl && cur_vpin > vpin_toxic && ofi_adverse;
 
-                // F1-039 / #548, #556 & #560: Alpha Decay y Peak Harvest Continuo Multivariante
+                // F1-039 & F1-040: Alpha Decay y Peak Harvest Continuo Multivariante
                 // Temporizadores estrictamente continuos y homogéneos en tau_trade_ms, erradicando los
                 // suelos artificiales (12m/8m/30m/1h/2h) que congelaban la banda rápida (tau = 30s) en trades rotos.
                 let harvest_age_ms = (tau_trade_ms * 8.0).clamp(tau_trade_ms, 86_400_000.0) as u64;
-                let roundtrip_taker_friction = live_fee.max(0.0007) + 2.0 * slip_floor;
+                let roundtrip_taker_friction = roundtrip_friction;
                 // Garantía de ganancia neta sustancial en cosechas: al menos 70% del SL o 2.5x la fricción total
                 let net_profit_min = (sl * 0.70).max(roundtrip_taker_friction * 2.5).max(0.00280);
                 let peak_harvest_thresh = (net_profit_min * 1.15).max(tp * 0.40);
@@ -4848,7 +4893,7 @@ impl GodEngineCore {
                         let ema_ofi_adverse = (is_long && ema_ofi < -0.20) || (!is_long && ema_ofi > 0.20);
                         let thesis_broken = pnl_pct < -sl * 0.85 && ema_ofi_adverse && trend_adverse;
                         let time_expired = position_age_ms > hard_stagnant_ms && pnl_pct < -sl * 0.75 && !spec_alive;
-                        let absolute_expired = position_age_ms > absolute_trade_life_ms && pnl_pct < -live_fee * 2.0 && !spec_alive;
+                        let absolute_expired = position_age_ms > absolute_trade_life_ms && pnl_pct < -roundtrip_friction && !spec_alive;
 
                         thesis_broken || time_expired || absolute_expired
                     } else {
@@ -4864,8 +4909,8 @@ impl GodEngineCore {
                 let dynamic_zombie_debounce_ms = (tau_trade_ms * (20.0 + 10.0 * temporal_s)).clamp(tau_trade_ms * 6.0, 86_400_000.0) as u64;
                 let dynamic_hard_timeout_ms = (tau_trade_ms * (40.0 + 20.0 * temporal_s)).clamp(tau_trade_ms * 12.0, 86_400_000.0) as u64;
                 let absolute_expiry_ms = (tau_trade_ms * (60.0 + 30.0 * temporal_s)).clamp(tau_trade_ms * 18.0, 86_400_000.0) as u64;
-                let z_loss_hard = (sl * 0.90).max(live_fee * 3.0);
-                let z_loss_trend = (sl * 0.80).max(live_fee * 3.0);
+                let z_loss_hard = (sl * 0.90).max(roundtrip_friction * 1.5);
+                let z_loss_trend = (sl * 0.80).max(roundtrip_friction * 1.5);
 
                 let expired_by_age =
                     event_time_ms > 0 && position_age_ms > absolute_expiry_ms && pnl_pct <= -z_loss_hard && !spec_alive;
@@ -5202,14 +5247,16 @@ impl GodEngineCore {
                     // fuente recupera (no absorbente) — y reiniciar.
                     let lg22_sembrar = {
                         let riesgo_al_stop = (sl * entry * qty).max(1e-12);
-                        let friccion_rt = live_fee * 2.0;
+                        // F1-040 (Ola Ω203): Unificación a la fricción roundtrip canónica para r_max del e-CUSUM
+                        let friccion_rt = roundtrip_friction;
                         let r_max = ((tp - friccion_rt).max(1e-9)) / sl.max(1e-9);
                         let r_neta = net_trade_pnl / riesgo_al_stop;
                         let arl = self
                             .arena
-                            .registry
-                            .get_value_or("lg22_arl", 200.0)
-                            .max(1.0);
+                            .config
+                            .lg22_arl
+                            .load(Ordering::Relaxed)
+                            .max(10.0);
                         let mut alarma_lg22 = false;
                         if let Some(det) = self.lg22_detectores.get_mut(coin_id) {
                             // LG-27b: sólo cierres con la geometría FIJADA AL
@@ -6016,26 +6063,31 @@ impl GodEngineCore {
                 self.cuantiles[coin_id].dynamic_obi_threshold(),
             );
 
-            // OLA Ω133: Detector de Absorción Institucional y Liquidez Oculta (Kyle-Hasbrouck)
-            let hidden_liq_engine = dark_alpha_engine::hidden_liquidity::HiddenLiquidityEngine::default();
-            let abs_state = hidden_liq_engine.compute_absorption(
-                self.feature_engines[coin_id].ultima_cantidad_trade,
-                bid_qty,
-                ask_qty,
-                dir_v,
-                v_t.abs().max(1e-6),
-            );
-            set_reg("hidden_liquidity_pressure", abs_state.net_iceberg_pressure);
-            set_reg(
-                "is_iceberg_active",
-                if abs_state.is_iceberg_active { 1.0 } else { 0.0 },
-            );
-            set_reg(
-                "hidden_liquidity_conformal_scale",
-                abs_state.conformal_band_scale,
-            );
-            set_reg("hidden_liquidity_ask_abs", abs_state.ask_absorption_ratio);
-            set_reg("hidden_liquidity_bid_abs", abs_state.bid_absorption_ratio);
+            // OLA Ω133 & F1-041 (Ola Ω203): Detector de Absorción Institucional y Liquidez Oculta (Kyle-Hasbrouck)
+            // Solo computar y actualizar ante trades reales con volumen > 0.
+            // En eventos de solo profundidad (depth sin trade), NO pisar a 0 la presión detectada por el último trade.
+            let tick_trade_vol = self.feature_engines[coin_id].ultima_cantidad_trade;
+            if tick_trade_vol > 0.0 {
+                let hidden_liq_engine = dark_alpha_engine::hidden_liquidity::HiddenLiquidityEngine::default();
+                let abs_state = hidden_liq_engine.compute_absorption(
+                    tick_trade_vol,
+                    bid_qty,
+                    ask_qty,
+                    dir_v,
+                    v_t.abs().max(1e-6),
+                );
+                set_reg("hidden_liquidity_pressure", abs_state.net_iceberg_pressure);
+                set_reg(
+                    "is_iceberg_active",
+                    if abs_state.is_iceberg_active { 1.0 } else { 0.0 },
+                );
+                set_reg(
+                    "hidden_liquidity_conformal_scale",
+                    abs_state.conformal_band_scale,
+                );
+                set_reg("hidden_liquidity_ask_abs", abs_state.ask_absorption_ratio);
+                set_reg("hidden_liquidity_bid_abs", abs_state.bid_absorption_ratio);
+            }
 
             // OLA Ω137: Descomposición Hidrodinámica de Helmholtz-Hodge (L² = ∇φ ⊕ ∇×A ⊕ h)
             // Desacoplamiento ortogonal continuo de flujo potencial, vorticidad/spoofing y deriva armónica
