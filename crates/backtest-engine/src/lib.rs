@@ -121,7 +121,10 @@ pub fn run_backtest_native(
     // demo. Misma envolvente, mismo record_trade, mismo rollback.
     let mut risk_envelope = risk_engine::kelly_envelope::RiskEnvelope::new();
     let mut last_sim_buyer_maker = false;
-    let mut last_close_executed = closes.first().copied().unwrap_or(0.0);
+    let mut last_close_executed = match closes.first().copied() {
+        Some(c) if c.is_finite() && c > 0.0 => c,
+        _ => return 0, // Serie con precio inicial degenerado/no finito => abortar evaluación fail-closed
+    };
     let mut envelope_vetoes: u64 = 0;
 
     // F3.2 — FIX LOOK-AHEAD: el OFI sintético se deriva ahora del delta de la

@@ -274,6 +274,42 @@ impl ReconciliationReport {
         }
         adopted
     }
+
+    /// Átomo 2.6 (Ola Ω217): purga de órdenes locales sospechosas (órdenes que quedaron
+    /// registradas como activas pero cuya posición remota está plana en el exchange).
+    pub fn purge_suspicious_active_orders(&self, registry: &OrderRegistry, now_ms: u64) -> usize {
+        let mut purged = 0;
+        let remote_map: std::collections::HashMap<&str, &PositionRiskEntry> = self
+            .open_positions
+            .iter()
+            .map(|p| (p.symbol.as_str(), p))
+            .collect();
+
+        for o in registry.active_orders() {
+            let is_remote_open = remote_map.get(o.symbol.as_str()).map(|p| p.is_open()).unwrap_or(false);
+            if !is_remote_open {
+                // Posición remota plana: la orden local activa es un fantasma.
+                let ack = crate::order_types::OrderAck {
+                    order_id: o.order_id,
+                    symbol: o.symbol.clone(),
+                    status: "CANCELED".to_string(),
+                    client_order_id: o.client_order_id.clone(),
+                    orig_qty: o.orig_qty,
+                    executed_qty: o.executed_qty,
+                    cum_quote: o.cum_quote,
+                    avg_price: o.avg_price,
+                    price: o.avg_price,
+                    side: o.side.clone(),
+                    order_type: o.order_type.clone(),
+                    update_time: now_ms,
+                    fills: Vec::new(),
+                };
+                registry.apply_ack(&ack, now_ms);
+                purged += 1;
+            }
+        }
+        purged
+    }
 }
 
 impl PositionRiskEntry {

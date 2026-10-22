@@ -2042,6 +2042,70 @@ impl OrderExecutor {
         }
     }
 
+    /// Átomo 2.6 (Ola Ω217): consulta órdenes abiertas regulares (GET /fapi/v1/openOrders).
+    /// Permite al reconciliador OMS detectar órdenes huérfanas en Binance tras reinicio.
+    pub async fn fetch_all_open_orders(
+        &self,
+    ) -> Result<Vec<crate::order_types::OrderAck>, String> {
+        self.fetch_open_orders_inner(None).await
+    }
+
+    pub async fn fetch_open_orders(
+        &self,
+        symbol: &str,
+    ) -> Result<Vec<crate::order_types::OrderAck>, String> {
+        self.fetch_open_orders_inner(Some(symbol)).await
+    }
+
+    async fn fetch_open_orders_inner(
+        &self,
+        symbol: Option<&str>,
+    ) -> Result<Vec<crate::order_types::OrderAck>, String> {
+        if self.is_paper_trading {
+            return Ok(Vec::new());
+        }
+        let timestamp = self.get_synced_timestamp();
+        self.check_exit_rate_limits(timestamp)?;
+
+        let mut buf = ZeroAllocBuffer::new();
+        buf.push_str(if self.client.is_testnet.load(Ordering::Relaxed) {
+            "https://testnet.binancefuture.com/fapi/v1/openOrders?"
+        } else {
+            "https://fapi.binance.com/fapi/v1/openOrders?"
+        });
+        let payload_start = buf.as_str().len();
+        if let Some(s) = symbol {
+            buf.push_str("symbol=");
+            buf.push_str(s);
+            buf.push_str("&");
+        }
+        buf.push_str("timestamp=");
+        buf.push_u64(timestamp);
+
+        let mut sig_buf = [0u8; 64];
+        let payload = &buf.as_str()[payload_start..];
+        let api_secret = self.api_secret.load();
+        sign_payload_to_buffer(payload, &api_secret, &mut sig_buf);
+        let signature = unsafe { std::str::from_utf8_unchecked(&sig_buf) };
+        buf.push_str("&signature=");
+        buf.push_str(signature);
+
+        let res = self.get_payload_account(buf.as_str()).await;
+        match res {
+            Ok((limits, body)) => {
+                self.update_limits(&limits);
+                serde_json::from_str(&body).map_err(|e| {
+                    format!(
+                        "OPEN_ORDERS_PARSE: {} body={}",
+                        e,
+                        crate::order_types::truncate(&body, 200)
+                    )
+                })
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// B1.3: pierna ALGO individual (TP o SL) con el esquema validado OCO-F5.
     /// Para top-ups quirúrgicos del watchdog de protección: colocar SOLO el
     /// lado con shortfall — un OCO completo sobre-protegería el lado sano y

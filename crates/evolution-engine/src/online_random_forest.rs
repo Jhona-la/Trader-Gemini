@@ -299,36 +299,26 @@ impl TrueOnlineRandomForest {
         if let (Some(clf), Some(reg)) = (clf_guard.as_ref(), reg_guard.as_ref()) {
             let x_eval = DenseMatrix::from_2d_vec(&vec![features.to_vec()]);
 
-            let class_pred = clf
-                .predict(&x_eval)
-                .unwrap_or_default()
-                .into_iter()
-                .next()
-                .unwrap_or(0) as f64;
-            let expected_pnl = reg
-                .predict(&x_eval)
-                .unwrap_or_default()
-                .into_iter()
-                .next()
-                .unwrap_or(0.0);
+            let class_pred = match clf.predict(&x_eval) {
+                Ok(preds) => preds.into_iter().next()? as f64,
+                Err(_) => return None,
+            };
+            let expected_pnl = match reg.predict(&x_eval) {
+                Ok(preds) => preds.into_iter().next()?,
+                Err(_) => return None,
+            };
+
+            // F1-091 extensión (Ola Ω217): finitud estricta fail-closed.
+            // Si el modelo no puede predecir o emite no-finitos, no se fabrican ceros ni probabilidades 0.5 sintéticas.
+            if !class_pred.is_finite() || !expected_pnl.is_finite() {
+                return None;
+            }
 
             // FIX #867 & LC-F1-18: Probabilidad direccional continua suave de que el precio SUBA
             let prob_from_pnl = 1.0 / (1.0 + (-expected_pnl * 50.0).exp());
-            let safe_prob = if expected_pnl.is_finite() && class_pred.is_finite() {
-                // Combinar probabilidad de regresión continua con clase discreta (ambas orientadas a subida)
-                (0.6 * prob_from_pnl + 0.4 * class_pred).clamp(0.01, 0.99)
-            } else if class_pred.is_finite() {
-                class_pred.clamp(0.0, 1.0)
-            } else {
-                0.5
-            };
-            let safe_pnl = if expected_pnl.is_finite() {
-                expected_pnl
-            } else {
-                0.0
-            };
+            let safe_prob = (0.6 * prob_from_pnl + 0.4 * class_pred).clamp(0.01, 0.99);
 
-            Some((safe_prob, safe_pnl))
+            Some((safe_prob, expected_pnl))
         } else {
             None
         }

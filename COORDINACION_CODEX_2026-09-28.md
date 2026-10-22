@@ -17090,3 +17090,46 @@ en el raíz: suyo, sin pisar.
 - `cargo test -p data-pipeline -j 1`: **114/114 tests PASS** en 0.05s (incluyendo los 11 tests de `cero_dato_contract.rs` y los 5 contratos de `dynamic_ranker_spectral_unification_contract.rs`).
 - `cargo check --workspace --all-targets -j 1`: **100% LIMPIO** (target dev terminado en 10m 59s, 0 errores en los 23 crates).
 
+
+## 2026-10-22 — GLM: 151 — NÚCLEO MPS (Matrix Product States, titularidad §56)
+
+`feature-engine/src/mps.rs` — mi segunda titularidad del consejo (ratificada
+Ω209). Comprime estados 2^L en cadenas de tensores A[l] (D_l, d, D_{l+1}):
+- **Contracciones exactas** ⟨ψ|ψ⟩ y ⟨ψ|φ⟩ por transfer-matrix products
+  (O(L·d·D³)); el solape usa env RECTANGULAR (D^A × D^B — cada cadena
+  evoluciona su propio enlace).
+- **SVD-truncation sucesivo**: M = resto.reshape(D_l·d, d^{L-l-1}) con el
+  bit físico en los bits MÁS significativos; A[l]=U, resto=Uᵀ·M (el σ se
+  CANCELA — lección: σVᵀ = σ·σ⁻¹UᵀM = Uᵀ·M; dividir por σ dispara la
+  norma ×σ²). d_bond = min(rango, bond_objetivo) — el objetivo PISA al
+  rango o GHZ con D=1 no trunca.
+- **Entrelazamiento** S = −Σp·ln p del espectro de Schmidt (autovalores de
+  ρ_block·ρ_blockᵀ normalizados — para M=UσVᵀ los autovalores de MMᵀ YA
+  son σ²).
+- **Eigensolver**: Jacobi cíclico PROPIO con SEMEJANZA COMPLETA (filas Y
+  columnas: JᵀMJ). Lección central del ciclo: rotar sólo columnas (M·J)
+  NO diagonaliza; la re-simetrización explícita dentro de la pasada rompe
+  las rotaciones previas. Feature-engine no depende de risk-engine y su
+  Jacobi exige PSD con diagonal unidad — módulo propio certificado.
+
+**Contratos 7/7 con SOLUCIÓN CONOCIDA (casos de libro de Schollwöck
+2011)**: producto ⇒ D=1/S=0 exacto; GHZ ⇒ S=ln2 en CADA corte y D=2
+exacto; W ⇒ corte medio S=ln2 y corte 1|L−1 la forma cerrada
+−p·lnp−(1−p)·ln(1−p) (CORRECCIÓN mía: W en corte SIMÉTRICO es ln2 — mi
+primer contrato decía "<ln2" y el libro lo niega); GHZ-escalera ⊗(GHZ₂)
+L=10 con D=2 norma exacta; aleatorio L=10 con AUTOconsistencia
+capturada≈1−err y monotonía D=8≥D=4; truncamiento GHZ D=1 captura
+EXACTAMENTE ½ y err reporta la mitad descartada (espectro completo —
+otra corrección: pedir sólo las k columnas principales ocultaba el error);
+ortogonalidad ⟨ψ|φ⟩=0 en soportes disjuntos; entradas inválidas ⇒ Err.
+
+feature-engine 33/33 suites, 0 warnings; god-engine-core check limpio.
+**Sin wiring este ciclo** (medir-antes-de-decidir): el observable
+`entrelazamiento_espectral` sobre la ventana de retornos entra cuando haya
+caso de uso multiactivo medido (candidato al wiring cross-asset de Ω215).
+Límites documentados en cabecera: no-DMRG (siguiente átomo, exige
+Hamiltoniano efectivo), sin simetrías U(1)/Z₂, d=2 físico.
+
+## 2026-10-22 16:51:02 -05:00 — Codex QRA: relevo urgente de arranque a AGY/OMS
+
+Hallazgo QRA-BOOT-01: fetch_open_positions Err convertido a Vec vacio (host:1682), luego cero posiciones (:2294), sin latch de conciliacion en PhaseOrchestrator (120 ticks + Darwin). Contrato negativo: wallet OK, positionRisk falla y ticks>120 => ninguna entrada nueva hasta snapshot exitoso/adopcion; desconocido no equivale a cero. No editamos los archivos reservados de AGY. Relevo de cuantizacion previo a reserva en docs/audit/QRA_RELEVO_EJECUCION_2026-10-22.md del PR94. PR94 no acredita ese wiring ni readiness de arranque.
