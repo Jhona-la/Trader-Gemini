@@ -116,13 +116,26 @@ async fn run_forensic_backtest() {
         Err(_) => quantum_arena::genome::SuperGenotype::load_or_default(),
     };
 
-    // Extracción y control del capital base ($13.00 USD) para validación forense
-    let initial_capital = std::env::var("INITIAL_CAPITAL")
+    // F1-089d: el capital de un backtest forense NO es el balance real —el real
+    // sólo entra por la wallet en `god_engine`, que lo pide por API con
+    // reintento fail-closed—, así que un valor por defecto no puede ser
+    // silencioso: se anuncia su origen junto al número y se validan las
+    // guardas (finito y positivo) en vez de aceptar cualquier parseo.
+    let (initial_capital, origen_capital) = match std::env::var("INITIAL_CAPITAL")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(13.0);
+    {
+        Some(v) if v.is_finite() && v > 0.0 => (v, "INITIAL_CAPITAL"),
+        _ => (
+            13.0,
+            "ESCENARIO FORENSE por defecto (NO es el balance real de la wallet)",
+        ),
+    };
 
-    println!("🧬 [GENOMA] Capital Base: ${:.4}", initial_capital);
+    println!(
+        "🧬 [GENOMA] Capital Base: ${:.4} [{}]",
+        initial_capital, origen_capital
+    );
     println!("🧬 [GENOMA] Scalp TP Base: {:.6}", genome.scalp_tp_base);
     println!("🧬 [GENOMA] Scalp SL Base: {:.6}", genome.scalp_sl_base);
     println!("🧬 [GENOMA] Swing TP Base: {:.6}", genome.swing_tp_base);

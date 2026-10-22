@@ -34,17 +34,26 @@ impl Default for QuantumHotSwapState {
 use quantum_arena::GlobalArena;
 use quantum_arena::genome::SuperGenotype;
 
-/// Numerario de capital del PRE-SCREEN. No es una constante de decisión: la
-/// simulación del pre-screen es puramente multiplicativa
-/// (`cap += net_ret · cap · kelly`), de modo que `cap_final/cap_inicial` —y
-/// con él `fitness::compute`, que sólo lee ese cociente en logaritmo— es
-/// INVARIANTE frente a este valor. Cambiarlo no reordena a ningún candidato.
-/// El JUEZ (`wf_evaluate_real`) no lo usa: arranca del capital VIVO del arena.
-/// GLM 145: la invariancia ya no es un reclamo del comentario — está
-/// CERTIFICADA por `tests/wf_numerario_invariancia_contract.rs`, y el valor
-/// es parametrizable por `TG_WF_CAPITAL` (precedente TG_SA_* de F1-122) para
-/// re-certificarla sin recompilar.
-const WF_INITIAL_CAPITAL_DEFAULT: f64 = 13.0;
+/// Numerario de capital del PRE-SCREEN. No es una constante de decisión ni un
+/// saldo: la simulación del pre-screen es puramente multiplicativa
+/// (`cap += net_ret · cap · kelly`), de modo que `cap_final/cap_inicial` —y con
+/// él `fitness::compute`, que sólo lee ese cociente en logaritmo— es INVARIANTE
+/// frente a este valor. Cambiarlo no reordena a ningún candidato.
+/// El JUEZ (`wf_evaluate_real`) no lo usa: arranca del capital VIVO del arena,
+/// que `god_engine` extrae del balance real de la wallet por API (Demo y
+/// Producción) con reintento fail-closed.
+/// GLM 145: la invariancia está CERTIFICADA por
+/// `tests/wf_numerario_invariancia_contract.rs` (13,0 / 100 / 1 000 / 1e6 dan
+/// el mismo fitness), y el valor es parametrizable por `TG_WF_CAPITAL`
+/// (precedente TG_SA_* de F1-122) para re-certificarla sin recompilar.
+///
+/// F1-089d (Sol): el valor por defecto es **1,0**, la unidad multiplicativa.
+/// Antes era 13,0 —el «capital microscópico» del operador— y aunque era
+/// numéricamente inocuo (invariante certificada), un 13,0 en el motor que
+/// evoluciona estrategias se lee como un saldo ficticio y contradice la regla
+/// de paridad: el capital REAL sólo entra por la wallet. La unidad neutra dice
+/// la verdad: aquí no hay dólares, hay una escala.
+const WF_INITIAL_CAPITAL_DEFAULT: f64 = 1.0;
 
 /// Numeraire del pre-screen con override por entorno (TG_WF_CAPITAL).
 /// Guardas CL-15: valor ausente/NaN/≤0 ⇒ default documentado, jamás pánico.
