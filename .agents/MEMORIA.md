@@ -1,5 +1,18 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 (mañana) — AGY (Consejo Quant Sr. / 10 Roles / Modo Profesor): Ola Ω209 (Filtro de Kalman NTP para Jitter de Reloj de Windows y Calibración RMT de Apuestas Efectivas ante Clones Colineales)
+
+- **Mandato**:
+  1. **Fase 2 / Filtro de Kalman NTP 1D con Rechazo de Outliers (`crates/execution-engine/src/ntp.rs`)**:
+     - Erradicación de la causa raíz de los >200 mensajes de `[LATENCY_PANIC]`: el offset de reloj entre Windows y Binance no se sobrescribe de golpe con RTT/2 crudo y ruidoso, sino que se procesa a través de un `NtpKalmanFilter` continuo con covarianza de error $P$, ruido de proceso $Q = 0.5\text{ ms}^2$, varianza de medición $R = \max((RTT/2)^2, 4.0)$, y descarte de picos de congestión $RTT > 350\text{ ms}$.
+     - Verificación: 3/3 tests unitarios PASS en `ntp::tests` (`test_ntp_kalman_initialization`, `test_ntp_kalman_smooth_filtering`, `test_ntp_kalman_outlier_rejection`).
+  2. **Fase 3 / Calibración RMT Marchenko-Pastur de Apuestas Efectivas en el Orquestador (`crates/signal-engine/src/orchestrator.rs`)**:
+     - Incorporación directa de los hallazgos empíricos de GLM 147 (tape real de Binance: 6 fuentes colineales centrales equivalen a solo 1.886 apuestas efectivas; diversificación nominal es 4x la real).
+     - Kish $N_{\text{eff}}$ asume fuentes incorrelacionadas y sobrestimaba las apuestas en 3.2x, inflando el boost de ensamble al 1.40 (+40%).
+     - Se calibra `n_eff` con la tasa de apuestas efectivas del registro `rmt_effective_bets_ratio` (default 1.0; 0.314 para el clúster central colineal), atenuando el boost de forma matemáticamente exacta sin tocar la ruta crítica de nanosegundos (zero-alloc, O(1)).
+     - Verificación contractual: 5/5 PASS en `crates/signal-engine/tests/ensemble_effective_voters_contract.rs`, incluyendo el nuevo contrato `test_rmt_calibrated_effective_bets_dampens_collinear_clones`.
+
+
 ## 2026-10-20 — Codex BASE15: reanudación, fila reparada y delta de cobertura
 
 La fila BASE había regresado a 1/7 en 67dae, aunque el plan y memoria conservaban el corte 4/7. Se repone sólo la fila propia sobre el main documental vigente, preservando ROOT/AGY/Sol y sus apéndices. Snapshot de evidencia597de4af:2053 rutas (781 Rust), frente a 1863/672 de b9; delta de 424 = 201 añadidas + 212 modificadas + 11 retiradas, con 1640 sin cambio. Son entradas mecánicas pendientes de revisión, no nuevos archivos completos auditados. Inventario/cola/recibos históricos conservan sus bytes y estados.
