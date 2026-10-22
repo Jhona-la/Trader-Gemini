@@ -1065,10 +1065,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let darwin_approved = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let orchestrator = Arc::new(std::sync::RwLock::new(PhaseOrchestrator::new(
+    let oms_reconciled = Arc::new(std::sync::atomic::AtomicBool::new(is_demo_mode));
+    let orchestrator = Arc::new(std::sync::RwLock::new(PhaseOrchestrator::new_with_oms(
         120,
         is_demo_mode,
         Arc::clone(&darwin_approved),
+        Arc::clone(&oms_reconciled),
     )));
 
     if is_demo_mode {
@@ -1674,15 +1676,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 🔍 FETCH FORENSE DE POSICIONES ACTIVAS CON BINANCE API
-    // B1.2-fix: el discriminador es el MODO PAPEL del executor, NO
-    // is_demo_mode del orquestador (que agrupa papel-local y testnet-live).
-    // En testnet las posiciones son exposición REAL con brackets reales:
-    // ignorarlas al arrancar dejaba el arena ciego → riesgo de exposición
-    // duplicada y estado divergente (hallazgo del relanzamiento v7).
-    let mut restored_positions = exec.load().fetch_open_positions().await.unwrap_or_default();
+    // B1.2-fix + QRA-BOOT-01: El estado de exposición remoto es DESCONOCIDO
+    // si la consulta falla. Nunca fabricar un Vec vacío como ausencia de posiciones.
+    let mut positions_snapshot_ok = false;
+    let mut restored_positions = Vec::new();
+
     if exec.load().is_paper_trading() {
         telemetry_server::telemetry_log!("⚠️ [PAPER LOCAL] Ignorando posiciones REST — no hay cuenta viva que reconciliar.");
-        restored_positions.clear();
+        positions_snapshot_ok = true;
+    } else {
+        match exec.load().fetch_open_positions().await {
+            Ok(pos) => {
+                restored_positions = pos;
+                positions_snapshot_ok = true;
+                telemetry_server::telemetry_log!("🔍 [BOOT_OMS] fetch_open_positions exitoso: {} posiciones recibidas.", restored_positions.len());
+            }
+            Err(e) => {
+                telemetry_server::telemetry_log!(
+                    "🚨 [BOOT_OMS] Error consultando fetch_open_positions en Binance API: {}. Exposición es DESCONOCIDA (fail-closed). Intentando vía positionRisk...",
+                    e
+                );
+            }
+        }
     }
 
     // HOST-013 (informe decimocuarto) — LEVERAGE REAL para el margen de
@@ -1747,6 +1762,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 for s in &report.suspicious_active_orders {
                     telemetry_server::telemetry_log!("   ⚠️ ORDEN SOSPECHOSA: {}", s);
+                }
+                if !positions_snapshot_ok {
+                    for entry in &entries {
+                        let amt = entry.position_amt;
+                        if amt.abs() > 1e-8 {
+                            let entry_px = entry.entry_price;
+                            let lev = entry.leverage;
+                            restored_positions.push(execution_engine::executor::ActivePosition {
+                                symbol: entry.symbol.clone(),
+                                qty: amt,
+                                entry_price: entry_px,
+                                is_long: amt > 0.0,
+                                leverage: lev,
+                                update_time: entry.update_time,
+                            });
+                        }
+                    }
+                    positions_snapshot_ok = true;
+                    telemetry_server::telemetry_log!("🧾 [RECONCILIACIÓN ARRANQUE] Exposición reconstruida exitosamente vía positionRisk.");
                 }
             }
             Err(e) => {
@@ -2289,10 +2323,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // sólo necesita el ÚLTIMO registro por (símbolo, lado); sin compactar
         // el diario crece sin cota y cada reconexión lo re-lee entero.
         compact_position_journal();
-        if restored_positions.is_empty() {
-            telemetry_server::telemetry_log!("🔍 [RECONCILIATION] Cero posiciones abiertas en Binance. Arena inicializada limpia.");
+        if !positions_snapshot_ok && !exec.load().is_paper_trading() {
+            telemetry_server::telemetry_log!("🚨 [RECONCILIATION] Fallaron ambas consultas de posiciones iniciales. Exposición remota es DESCONOCIDA (fail-closed). oms_reconciled=FALSE. Trading BLOQUEADO hasta snapshot exitoso en segundo plano.");
+        } else if restored_positions.is_empty() {
+            telemetry_server::telemetry_log!("🔍 [RECONCILIATION] Confirmado: Cero posiciones abiertas en Binance. Arena inicializada limpia.");
+            oms_reconciled.store(true, Ordering::Release);
         } else {
             telemetry_server::telemetry_log!("🔍 [RECONCILIATION] Detectadas {} posiciones abiertas en Binance API:", restored_positions.len());
+            let mut all_positions_adopted = true;
             let exec_restore = Arc::clone(&exec);
             for pos in &restored_positions {
                 telemetry_server::telemetry_log!("   👉 Símbolo activo en exchange: {} (Qty: {})", pos.symbol, pos.qty);
@@ -2362,6 +2400,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .fetch_add(calculated_margin, Ordering::Relaxed);
                         telemetry_server::telemetry_log!("   ✅ Posición reconciliada en Arena para {} (ranura {}, margen: ${:.2} a {:.0}x — reservado en used_margin)", pos.symbol, slot, calculated_margin, lev_real);
                     } else {
+                        all_positions_adopted = false;
                         quantum_arena::protection_health::mark_dirty();
                         telemetry_engine::telemetry_err!(
                             "🚨 [FASE 5] {} {}: sin ranura libre o entrada no adoptable (px {}, qty {}) — no se reserva margen; la protección remota se re-arma igual",
@@ -2437,6 +2476,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // del universo o índice ≥ MAX_COINS) no se adopta; antes se
                     // saltaba en silencio. Que quede dicho y que el vigilante
                     // la audite. Su margen no entra en `used_margin`.
+                    all_positions_adopted = false;
                     telemetry_engine::telemetry_err!(
                         "[FASE 5] posición en {} (qty {}) sin ranura en el arena: no adoptada; margen no reservado",
                         pos.symbol,
@@ -2444,6 +2484,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                     quantum_arena::protection_health::mark_dirty();
                 }
+            }
+            if all_positions_adopted {
+                oms_reconciled.store(true, Ordering::Release);
+                telemetry_server::telemetry_log!("✅ [FASE 5] Adopción completa y limpia de posiciones activas. oms_reconciled=TRUE.");
+            } else {
+                telemetry_engine::telemetry_err!(
+                    "🚨 [FASE 5] ADVERTENCIA CRÍTICA: Hay posiciones remotas no adoptadas en la arena. oms_reconciled permanece en FALSE (fail-closed) para prevenir sobremargen."
+                );
             }
         }
 
@@ -2660,6 +2708,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let exec_reconcile = Arc::clone(&exec);
             let arena_reconcile = Arc::clone(&arena_real);
+            let oms_reconcile = Arc::clone(&oms_reconciled);
             rt_handle.spawn(async move {
                 telemetry_server::telemetry_log!("🔄 [RECONCILIATION-LOOP] Iniciando bucle periódico de reconciliación (60s)...");
                 let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
@@ -2667,17 +2716,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 loop {
                     interval.tick().await;
                     let executor = exec_reconcile.load_full();
-                    match executor.fetch_position_risk().await {
-                        Ok(positions) => {
+                    let positions_res = executor.fetch_position_risk().await;
+                    let orders_res = executor.fetch_all_open_orders().await;
+                    match (positions_res, orders_res) {
+                        (Ok(positions), Ok(remote_orders)) => {
                             let registry = executor.registry();
-                            // Átomo 2.6 (Ola Ω217): reconciliación omnisciente de posiciones y órdenes resting abiertas
-                            let remote_orders = match executor.fetch_all_open_orders().await {
-                                Ok(ords) => ords,
-                                Err(e) => {
-                                    telemetry_server::telemetry_log!("⚠️ [RECONCILIATION] Fallo al consultar openOrders: {}", e);
-                                    Vec::new()
-                                }
-                            };
                             let report = execution_engine::reconciliation::reconcile_with_orders(
                                 &positions,
                                 &remote_orders,
@@ -2695,21 +2738,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .unwrap_or_default()
                                 .as_millis() as u64;
                             let purged_ghosts = report.purge_suspicious_active_orders(&registry, now_ms);
-                            let arena_adj = execution_engine::reconciliation::reconcile_arena(&positions, &arena_reconcile, now_ms);
+                            let arena_report = execution_engine::reconciliation::reconcile_arena_checked(&positions, &arena_reconcile, now_ms);
                             let pruned = registry.prune_terminated(now_ms.saturating_sub(600_000));
-                            if !report.suspicious_active_orders.is_empty() || adopted > 0 || arena_adj > 0 || purged_ghosts > 0 || !report.orphan_remote_orders.is_empty() {
+
+                            // Solo publicar TRUE tras completar exitosamente la conciliación sin problemas no resueltos
+                            if arena_report.unresolved.is_empty() {
+                                if !oms_reconcile.load(std::sync::atomic::Ordering::Acquire) {
+                                    oms_reconcile.store(true, std::sync::atomic::Ordering::Release);
+                                    telemetry_server::telemetry_log!("✅ [RECONCILIATION] Reconciliación completa de fondo exitosa (posiciones + openOrders sin conflictos). oms_reconciled=TRUE. Trading desbloqueado.");
+                                }
+                            } else {
+                                for issue in &arena_report.unresolved {
+                                    telemetry_server::telemetry_log!("⚠️ [RECONCILIATION_UNRESOLVED] {} {:?}: estado local preservado", issue.symbol, issue.kind);
+                                }
+                            }
+
+                            if !report.suspicious_active_orders.is_empty() || adopted > 0 || arena_report.adjustments > 0 || purged_ghosts > 0 || !report.orphan_remote_orders.is_empty() {
                                 telemetry_server::telemetry_log!(
                                     "🔄 [RECONCILIATION] {} | Adopted Reg: {}, Purged Ghosts: {}, Adj Arena: {}, Pruned Reg: {}",
                                     report.summary,
                                     adopted,
                                     purged_ghosts,
-                                    arena_adj,
+                                    arena_report.adjustments,
                                     pruned
                                 );
                             }
                         }
-                        Err(e) => {
-                            telemetry_server::telemetry_log!("⚠️ [RECONCILIATION] Error consultando positionRisk: {}", e);
+                        (Err(e_pos), _) => {
+                            telemetry_server::telemetry_log!("⚠️ [RECONCILIATION] Error consultando positionRisk en segundo plano: {}", e_pos);
+                        }
+                        (_, Err(e_ord)) => {
+                            telemetry_server::telemetry_log!("⚠️ [RECONCILIATION] Error consultando openOrders en segundo plano: {}", e_ord);
                         }
                     }
                 }
