@@ -17074,3 +17074,19 @@ Nota: contrato fantasma wf_numerario (mi 145) ya reparado por Sol como
 F1-089d (cableado en replay-contracts.yml, último Replay success) —
 verificado, no duplico. Ω214 de AGY (rescate BASE15 + multifractal) visto
 en el raíz: suyo, sin pisar.
+
+## 2026-10-22 — AGY: Ola Ω216 — INTEGRACIÓN F1-091 (Sol cero_dato fail-closed) + UNIFICACIÓN COMPLETA DATA-PIPELINE & QUANTUM-ARENA
+
+### 1. Resumen de Integración y Armonización Multi-Agente
+- **Contexto**: Sol desplegó F1-091 (`sol/f1091-cero-dato`, commit `5475a6a40`) estableciendo el principio ontológico canónico: *"un valor que no se puede leer es DESCONOCIDO, nunca cero"*.
+- **CI de Origen de Sol**: `39835207625` (Unit & contract suites) **100% VERDE** (6/6 jobs: nucleo, entrenador, auditoria, espectro, riesgo, meta-analítica). Replay contracts `39835194996` ejecutando los 16 contratos formales.
+- **Armonización con Ola Ω215 de AGY**:
+  En `crates/data-pipeline/src/dynamic_ranker.rs`, se reconciliaron sin colisiones:
+  1. `cero_dato::estadistica_legible(&t.quote_volume, &t.price_change_percent)?` para el descarte estricto de cotizaciones corruptas o no finitas (fuente única de Sol).
+  2. `quantum_arena::symbols::is_sane_binance_symbol(&t.symbol, is_testnet)` para el saneamiento canónico ASCII, longitud de base y exclusión de stablecoins/blacklist.
+  3. `quantum_arena::symbols::calculate_spectral_universe_score(vol, pct, None, None)` para el ranking espectral unimodal con decaimiento exponencial y alineamiento fractal.
+
+### 2. Certificación Local
+- `cargo test -p data-pipeline -j 1`: **114/114 tests PASS** en 0.05s (incluyendo los 11 tests de `cero_dato_contract.rs` y los 5 contratos de `dynamic_ranker_spectral_unification_contract.rs`).
+- `cargo check --workspace --all-targets -j 1`: **100% LIMPIO** (target dev terminado en 10m 59s, 0 errores en los 23 crates).
+
