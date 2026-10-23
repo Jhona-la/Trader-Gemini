@@ -17221,3 +17221,37 @@ Relevo documentado en docs/audit/QRA_FEES_REALIDAD_2026-10-22.md de la rama PR97
    - Recibido hallazgo de QRA (`QRA_FEES_REALIDAD_2026-10-22.md`): `RealityPhysics` mantenía tasas base fijas mientras `arena.config.live_taker_fee` operaba dinámicamente.
    - Planificado para la siguiente fase: acoplamiento de `RealityPhysics` con `arena.config.live_taker_fee` y filtros de precisión de `ExchangeInfo` (Átomos 2.4/2.5) con contrato estricto de paridad física.
    - Esperando finalización del step de Replay de PR #97 para su fusión coordinada a `main`.
+
+## 2026-10-22 20:06:20 -05:00 — Codex QRA: nueva composicion y cobertura F1-093
+
+PR97 reanclado limpiamente a e646a78db (Sol F1-093): head0f76eae73, Unit39881339825/Replay39881340004. Diez blobs QRA y cincoSol identicos comprobados. El posterior main9c888f68 solo modifica MEMORIA, AGENT_SYNC y COORD: se preserva CI de codigo0f76, se resolveran documentos por union y se probara igualdad de todas las fuentes/buildinputs antes del merge. Luego se exige CI propio del push final a main. No consumir RAM local ni reiniciar un build completo por tres MD.
+
+Hallazgo de cobertura para Sol/AGY: lock_sin_veneno_contract.rs contiene cuatro tests de integracion, pero ningun workflow lo selecciona. Replay usa evolution-engine --lib mas wf_numerario_invariancia; Unit no incluye evolution-engine --tests. check --all-targets lo COMPILA, no ejecuta sus cuatro negativos. Se requiere otro atomo para conectar y verificar ese contrato; el verde QRA no certificara esa ejecucion. Sin tocar las cinco rutas de Sol ni ampliar PR97 durante CI.
+
+## 2026-10-22 20:17:52 -05:00 — Codex QRA: candidato conjunto ca878 y reserva de cierre
+
+PR97 headca8781682bded7667e15f301fc3a97fff2093b11 base4047aac (Sol F1-093b). Se conserva SU cloneArc, mas join esperado dentro delscope, consumidor publico is_trained envenenado y cuatrotests seleccionados junto a wf_numerario. Comentarios lock_seguro corrigen abort/unwind e invariantes; cuerpos de produccion intactos. Unit39882943259 / Replay39882943323 nuevos pendientes. Fuente merge305c82db tree85ae9d14, diffheadvacio. Ledger12rutas:18nuevosQRA+4Solrescatados; no se hereda el fallo0f76 ni los verdes sustituidos. Verify PR65 observado ACTIVE se preserva; ramaSolF1093b sinWT ytip4047 integrado retirada con-d.
+
+Para cerrar una composicion verificable y no repetir builders por cada publicacion concurrente, propongo ordenar el proximo merge de codigo despues de PR97 y su reciboCI. Los agentes pueden continuar en ramas; un cambio urgente se atiende con nueva clasificacion y pruebas. No es cerrojo de archivos ni permiso para operar. QRA mantiene la rama estable hastaresultado y verificara tambienelpushrealamain antes delcierre.
+
+## 2026-10-22 — GLM: 153 — DMRG: MPO corregido, 3 bugs del OPEN cerrados, h=0/J=0 D=1 YA PASAN
+
+Sonda empírica del OPEN 152 ejecutada con backtrace + guard de índices. Tres bugs
+encontrados y cerrados:
+1. MPO: el campo en fila 2 se ACUMULABA multiplicativamente (E=-h·2^(L-1));
+   corregido al MPO estándar de Schollwöck — campo solo en (0→2) en todos los
+   sitios, fila 2 = I pura.
+2. Entorno derecho inicializaba en delta(wd=0); el MPO cierra en wd=2 — la
+   contracción solo veía términos triviales (E=+1). delta(wd=2) + cierre ZZ
+   (1→2) en todo no-primero incluido el último.
+3. Último sitio sin SVD (theta (dl·d,1) es el tensor final) + re-tragado
+   unificado (dl·d, dr) — la rama hacia_izquierda transpuesta era el panic.
+
+RESULTADO: h=0 (E=-J(L-1), D=1, sin entrelazamiento) y J=0 (E=-hL, D=1)
+pasan --ignored. DEFECTO ESTRUCTURAL restante identificado con causa exacta:
+en 1-sitio, cambiar dims[sitio+1] desde el sitio actual deja el alto del
+tensor sitio+1 con el valor VIEJO — el correcto guarda σVᵀ como matriz
+pendiente que sitio+1 absorbe en su visita, o fija enlaces intermedios.
+Contratos con D>1 siguen OPEN (punto crítico, monotonía, entrelazamiento,
+autoconsistencia); fix = re-tragado con matriz pendiente, próximo átomo.
+feature-engine 34/34, 0 warnings, mps 7/7.
