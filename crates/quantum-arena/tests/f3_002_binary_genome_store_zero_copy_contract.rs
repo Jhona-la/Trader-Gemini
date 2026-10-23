@@ -46,6 +46,7 @@ fn test_binary_genome_roundtrip_fidelity() {
         a: -5.719394858308684,
         b: 0.08643759946713066,
     };
+    let g = SuperGenotype::from_vector(&g.to_vector());
 
     let envelope = GenomeEnvelope {
         schema_version: SCHEMA_VERSION,
@@ -129,14 +130,27 @@ fn test_binary_genome_magic_corruption_rejected() {
     assert!(err.to_string().contains("Magic number binario inválido"));
 }
 
+static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn test_binary_genome_store_atomic_promote_and_load() {
-    let temp_dir = std::env::temp_dir().join(format!("tg_test_bin_genome_{}", std::process::id()));
+    let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    let temp_dir = std::env::temp_dir().join(format!(
+        "tg_test_bin_genome_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     let _ = std::fs::remove_dir_all(&temp_dir);
     std::fs::create_dir_all(&temp_dir).unwrap();
 
-    std::env::set_var("TG_CONFIG_DIR", temp_dir.to_str().unwrap());
-    std::env::set_var("TG_GENOME_ENV", "backtest");
+    let temp_root_str = temp_dir.to_str().unwrap().to_string();
+    unsafe {
+        std::env::set_var("TG_CONFIG_ROOT", &temp_root_str);
+        std::env::set_var("TG_GENOME_ENV", "test_bin_atomo32");
+    }
 
     let mut g = SuperGenotype::new_baseline(0.0002, 0.0005);
     g.tp_horizon_curve = quantum_arena::temporal_spectrum::HorizonCurve {
@@ -152,9 +166,9 @@ fn test_binary_genome_store_atomic_promote_and_load() {
     assert_eq!(promoted.generation, 1);
 
     // Verificamos que se escribieron AMBOS formatos para el genoma activo y el histórico json
-    let active_json = temp_dir.join("genomes/backtest/active.json");
-    let active_bin = temp_dir.join("genomes/backtest/active.bin");
-    let hist_json = temp_dir.join("genomes/backtest/history/gen_000001.json");
+    let active_json = temp_dir.join("genomes/test_bin_atomo32/active.json");
+    let active_bin = temp_dir.join("genomes/test_bin_atomo32/active.bin");
+    let hist_json = temp_dir.join("genomes/test_bin_atomo32/history/gen_000001.json");
 
     assert!(active_json.exists(), "active.json debe existir");
     assert!(active_bin.exists(), "active.bin debe existir");
@@ -171,5 +185,9 @@ fn test_binary_genome_store_atomic_promote_and_load() {
     assert!(elapsed.as_millis() < 50, "Carga binaria debe ser ultra-rápida");
 
     // Limpieza
+    unsafe {
+        std::env::remove_var("TG_CONFIG_ROOT");
+        std::env::remove_var("TG_GENOME_ENV");
+    }
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
