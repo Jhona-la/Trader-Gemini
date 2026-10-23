@@ -58,8 +58,12 @@ fn observed_zero_exchange_capital_governs_and_triggers_freno_duro() {
 
     let freno = freno_duro(&arena, 100.0, cap);
     assert!(
-        freno.disparado,
+        freno.echado(),
         "Freno duro debe dispararse inmediatamente cuando cap <= 0.0"
+    );
+    assert!(
+        freno.por_capital(),
+        "Freno duro debe activarse por capital cuando cap <= 0.0"
     );
 }
 
@@ -75,7 +79,11 @@ fn observed_negative_exchange_capital_governs_and_triggers_freno_duro() {
 
     let freno = freno_duro(&arena, 100.0, cap);
     assert!(
-        freno.disparado,
+        freno.echado(),
         "Freno duro debe dispararse inmediatamente cuando cap < 0.0"
+    );
+    assert!(
+        freno.por_capital(),
+        "Freno duro debe activarse por capital cuando cap < 0.0"
     );
 }
