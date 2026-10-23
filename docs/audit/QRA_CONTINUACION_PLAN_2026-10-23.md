@@ -6,7 +6,7 @@ Corte 2026-10-23T01:35:52-05:00. Base 75be5d6751b0075bbf061ce9f5b2ee09a36b427f; 
 
 | Fase | Trabajo | Estado y condición de cierre |
 |---|---|---|
-| 0 | Recursos, semáforo, perfiles, dependencias, higiene | Auditoría en curso. RAM libre observada 1.53 y después0.46GiB; Cargo/rustc ajenos activos. No Cargo ni borrado de artefactos durante uso ajeno. Sólo target canónico y debug0/strip symbols. Medir root/target/volumen por separado; cargo tree --duplicates pendiente de capacidad segura o CI. No asumir dual-channel completo de 23.38GiB visibles. |
+| 0 | Recursos, semáforo, perfiles, dependencias, higiene | Auditoría y corrección concreta en curso: quality_gate.ps1, medir_camino_caliente.sh y oracle_witness.sh eluden el semáforo; el medidor puede crear target local en sus worktrees. Integrar admisión real, target canónico, códigos de salida y contratos de rechazo antes de F2. RAM libre observada 1.53 y después0.46GiB; Cargo/rustc ajenos activos. No Cargo ni borrado de artefactos durante uso ajeno. Sólo target canónico y debug0/strip symbols. Medir root/target/volumen por separado; cargo tree --duplicates pendiente de capacidad segura o CI. No asumir dual-channel completo de 23.38GiB visibles. |
 | 1 | Ramas locales/remotas, rescate, integración y CI | Remoto main75be sólo añade ocho documentos al código e2869/9. AGY PR103 f174 tiene10/10 sobre d64, no sobre composición con e286. Sol f1095 activa y GLM154 con cambios; Verify locked ACTIVE. Ninguna ajena acreditada abandonada. No borrar avances activos. Coordinar cobertura y renovar composición antes de integrar. |
 | 2 | Capital/config/API, fees, OMS, red y precisión | Siguiente átomo candidato: tres exports FFI de backtest fabrican13USD ante INITIAL_CAPITAL ausente/inválido. Pointer export omite null de volumes; mmap calcula len*32 sin checked_mul. Confirmar preflight y compatibilidad, implementar fallo explícito y probar el export real, sin convertir datos inválidos en capital. Fuera de este átomo: cambios de transporte, MXCSR/parsers AGY, workflows Sol, DMRG GLM. |
 | 3 | Evolución online, Top10, persistencia y costo total | Pendiente: grafo productor-consumidor por motor, causalidad temporal, estado duradero y ahorro de recursos medido. Ingreso de wallet real ya existe en el host; escenario FFI debe declarar su capital. No introducir red dentro de un replay reproducible sin snapshot de cuenta fechado. |
@@ -17,9 +17,9 @@ La implementación de cada átomo sigue hipótesis → ruta de datos → contrat
 
 ## Reservas y coordinación
 
-Root: plan/ledger y análisis de FFI en crates/backtest-engine/src/lib.rs. omega220_review: revisión adversaria RO de contrato/ABI. git_audit: ramas/CI RO. resource_safety: mediciones RO. AGY mantiene parsers/MXCSR/shard; Sol su cobertura CI; GLM DMRG. El primary compartido no recibe checkout/pull, fuentes ni cambios de índice. No se eliminan archivos o procesos ajenos.
+Root: plan/ledger y análisis RO de FFI en crates/backtest-engine/src/lib.rs. resource_safety implementa sólo los tres lanzadores F0 y amplía test_qra_resource_safety.py (ya en CI); sin modificar el semáforo compartido. omega220_review: revisión adversaria RO de contrato/ABI. git_audit: ramas/CI RO. resource_safety: mediciones RO. AGY mantiene parsers/MXCSR/shard; Sol su cobertura CI; GLM DMRG. El primary compartido no recibe checkout/pull, fuentes ni cambios de índice. No se eliminan archivos o procesos ajenos.
 
-[Coordinación AGY](https://github.com/Jhona-la/Trader-Gemini/pull/103#issuecomment-6359000192): su shard ya ejecutó112 casos (51 de los seis crates que Sol añade y61 de telemetry-server). Resolver el solapamiento conservando cobertura; una suma mecánica duplicaría jobs. Este aviso no toma posesión de sus ramas.
+[Coordinación AGY](https://github.com/Jhona-la/Trader-Gemini/pull/103#issuecomment-6359000192): su shard ejecutó112 casos (50 comunes con Sol, uno nuevo MXCSR y61 de telemetry-server). Resolver el solapamiento conservando cobertura; una suma mecánica duplicaría jobs. Este aviso no toma posesión de sus ramas.
 
 ## Hipótesis FFI y prueba propuesta
 
@@ -30,3 +30,17 @@ Probar ausencia, vacío, texto, cero, negativos, NaN/Inf; positivos de diferente
 ## Deuda científica y operativa
 
 Verificar en documentación primaria los contratos reales de Binance antes de STP/GTX/reduceOnly, batchOrders, modify, cuotas, SBE y firma; ninguna instrucción genérica se aplica indiscriminadamente a Hedge/One-Way. Investigar FTZ/FMA frente a la reproducción IEEE, y postselección de estados futuros frente a leakage. Criterios para promover modelos y pasar a Producción requieren evidencia OOS, costos observados y control de posiciones vivas; este átomo no ejecuta fondos ni promueve entorno.
+
+## Límites del átomo F0
+
+No se atribuye el Cargo ajeno a estos lanzadores sin prueba. No se fuerza la terminación de procesos activos ni se barre target durante su uso. Corregir admisión no mide ahorro de RAM ni certifica ejecución nanosegundo. Oracle conserva por ahora una observación de hashes: no se acreditará identidad entre un glob y el ejecutable de una invocación Cargo posterior. La certificación de ese linaje requerirá otro contrato; no inventar un PASS a partir de esa observación.
+
+## 2026-10-23T08:35:09-05:00 — F0 preparado y base renovada
+
+Los tres lanzadores usan el semáforo real. quality_gate drena sin buffer ilimitado, no duplica Clippy y propaga fallos75/101 incluso en el paso informativo; fmt con warning+exit0 no falla. Ambos Bash fuerzan target canónico/jobs2 y rechazan overrides CLI; el medidor retira sólo altas propias no modificadas al fallar, sin --force. Doce contratos nuevos,28métodos totales PASS en272.35s con Cargo sentinel y repos externos, PowerShell7.6.7 y WindowsPowerShell5.1.26100.9549 reales, cero omisiones y cero Cargo real local. CI propio candidato y push de main todavía PENDIENTES.
+
+Main75e17d4635c3c12eaf377119fb2518df18b10ba1 integra Sol1095 y GLM154 y tiene9/9 propios (Unit39918514517/Replay39918514488); DMRG6/MPS7 medidos. La base original75be del inventario se conserva como snapshot, no se reetiquetan blobs como actuales. Reanclar el átomo sobre75e y rescatar PR103 si sigue sin respuesta/avances; sólo en rama propia, jamás editando el primary AGY.
+
+Censo de almacenamiento20s:110071 archivos y44,359,003,062bytes lógicos contados,8099directorios pendientes. Target contado44,345,299,482bytes, NO su total. Volumen libre362,375,606,272bytes. Método metadata streaming sin seguir reparse; no ahorro físico ni presupuesto300GB certificado. RAM13:34Z0.75GiB<4; no Cargo local. cargo tree --duplicates permanece sin ejecutar por presión de recursos; no podar semver a ciegas.
+
+F2 adicional prioritario demostrado RO: ACCOUNT_UPDATE con wb0 pierde publicación en stream/puente y capital_del_freno usa el arena positivo cuando exchange<=0. Distinguir cero observado de ausencia ligada a sesión, sin aceptar wb ausente que serde(default) convierte a0. Requiere su propio átomo y contratos reales; no está corregido por F0. Fuentes primarias: https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/account y https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/user-data-streams .

@@ -38,10 +38,42 @@ if [ $# -ne 2 ]; then
   exit 2
 fi
 repo=$(git rev-parse --show-toplevel)
+comun=$(git rev-parse --path-format=absolute --git-common-dir)
+raiz_principal=$(cd -- "$(dirname -- "$comun")" && pwd -P)
+semaforo="$repo/scripts/cargo_semaforo.sh"
+if [[ ! -f "$semaforo" || ${RUSTFLAGS+x} ]]; then
+  echo 'necesito el semáforo del checkout y RUSTFLAGS de la configuración compartida' >&2
+  exit 2
+fi
+export SEMAFORO_RAIZ="$raiz_principal" CARGO_TARGET_DIR="$raiz_principal/target"
+export CARGO_BUILD_JOBS=2
 medidor=crates/god-engine-core/tests/medidor_camino_caliente.rs
 trabajo=${MEDIDOR_TRABAJO:-${TMPDIR:-/tmp}/medidor_camino_caliente}
 read -r -a cargo_args <<< "${MEDIDOR_CARGO_ARGS:-}"
+for argumento in "${cargo_args[@]}"; do
+  case "$argumento" in
+    --target-dir | --target-dir=* | --config | --config=* | -j* | --jobs | --jobs=*)
+      echo 'MEDIDOR_CARGO_ARGS no puede cambiar el target/config ni los jobs compartidos' >&2
+      exit 2 ;;
+  esac
+done
 mkdir -p "$trabajo"
+trabajo=$(cd -- "$trabajo" && pwd -P)
+creados=()
+pid_invocacion=$BASHPID
+limpiar_si_fallo() {
+  local codigo=$1 dir
+  [[ "$BASHPID" = "$pid_invocacion" && "$codigo" != 0 ]] || return 0
+  for dir in "${creados[@]}"; do
+    # Allowlist: sólo altas exitosas de ESTA invocación bajo su carpeta.
+    # Sin --force: archivos nuevos/modificados ajenos impiden la retirada.
+    if [[ "$dir" = "$trabajo/"* ]]; then
+      git -C "$repo" worktree remove -- "$dir" || \
+        echo "conservo worktree modificado o en uso: $dir" >&2
+    fi
+  done
+}
+trap 'limpiar_si_fallo "$?"' EXIT
 
 # Mismo compilador a los dos lados: el que fija este checkout, aunque la base
 # sea anterior a rust-toolchain.toml.
@@ -56,16 +88,17 @@ arbol() {
   dir="$trabajo/$sha"
   if [ ! -d "$dir" ]; then
     git -C "$repo" worktree add --detach "$dir" "$sha" > /dev/null
+    creados+=("$dir")
   fi
   # Sólo si difiere: copiar renueva la fecha y obliga a reenlazar.
   cmp -s "$repo/$medidor" "$dir/$medidor" || cp "$repo/$medidor" "$dir/$medidor"
-  echo "$dir"
+  arbol_dir=$dir
 }
 
 cargo_medidor() {
   local dir=$1
   shift
-  (cd "$dir" && cargo test --release --locked "${cargo_args[@]}" \
+  (cd "$dir" && "$BASH" "$semaforo" test --release --locked "${cargo_args[@]}" \
     -p god-engine-core --test medidor_camino_caliente "$@")
 }
 
@@ -84,7 +117,7 @@ huella=$( { cat "$repo/$medidor"; echo "${RUSTUP_TOOLCHAIN:-} ${RUSTFLAGS:-} ${c
   | sha256sum | cut -c1-12)
 
 compilar() {
-  local dir=$1 sha=$2 exe destino
+  local dir=$1 sha=$2 exe destino codigo
   for destino in "$trabajo/medidor-$sha-$huella" "$trabajo/medidor-$sha-$huella.exe"; do
     if [ -f "$destino" ]; then
       echo "reutilizo $destino" >&2
@@ -96,7 +129,7 @@ compilar() {
     git -C "$dir" ls-files -z -- '*.rs' | (cd "$dir" && xargs -0 touch)
     touch "$dir/$medidor"
   fi
-  exe=$(cargo_medidor "$dir" --no-run --message-format=json-render-diagnostics | python3 -c '
+  if exe=$(cargo_medidor "$dir" --no-run --message-format=json-render-diagnostics | python3 -c '
 import json, sys
 for linea in sys.stdin:
     try:
@@ -105,7 +138,12 @@ for linea in sys.stdin:
         continue
     if m.get("reason") == "compiler-artifact" and m.get("executable") \
             and m["target"]["name"] == "medidor_camino_caliente":
-        print(m["executable"])')
+        print(m["executable"])'); then
+    :
+  else
+    codigo=$?
+    return "$codigo"
+  fi
   [ -n "$exe" ] || { echo "no encontré el ejecutable del medidor en $dir" >&2; exit 2; }
   destino="$trabajo/medidor-$sha-$huella"
   case "$exe" in *.exe) destino="$destino.exe" ;; esac
@@ -115,8 +153,10 @@ for linea in sys.stdin:
 
 base_sha=$(git -C "$repo" rev-parse --verify "$1^{commit}")
 rama_sha=$(git -C "$repo" rev-parse --verify "$2^{commit}")
-base=$(arbol "$1")
-rama=$(arbol "$2")
+arbol "$1"
+base=$arbol_dir
+arbol "$2"
+rama=$arbol_dir
 echo "base $1 en $base; rama $2 en $rama; compilador ${RUSTUP_TOOLCHAIN:-por defecto}" >&2
 exe_base=$(compilar "$base" "$base_sha")
 exe_rama=$exe_base

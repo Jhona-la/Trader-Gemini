@@ -1,4 +1,10 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+
+## 2026-10-23T01:39:53-05:00 — QRA continuación F0: lanzadores sin admisión común
+
+Base main75be (sólo documentos sobre código e2869/9). Rama propia codex/qra-capital-20261023 y WT qra-continuacion-20261023 locked ACTIVE; plan e inventario2193rutas en docs/audit/QRA_CONTINUACION_*. Pendiente de revisión por archivo, no auditoría total. F0 prioritario: quality_gate.ps1, medir_camino_caliente.sh y oracle_witness.sh llaman Cargo directamente; medidor admite target independiente en WT. resource_safety corrige esas rutas y test_qra_resource_safety.py ya cableado; root integra/docs. Ningún Cargo local propio: RAM libre0.46GiB con compilaciones ajenas activas; no matar ni barrer artefactos en uso.
+
+AGY PR10310/10 probó d64+f174, todavía no la composición con PR102; Sol1095 añade cobertura solapada (50 comunes, más1 MXCSR de AGY y61 telemetry-server), coordinar sin eliminar tests. Ramas ajenas activas y Verify locked preservados. Hallazgo F2 para siguiente átomo:3exports FFI fabrican13USD si capital falta/invalid, volumen nulo y len*32unchecked; aún sólo RO y sin caller interno demostrado. quant_scope revisa wallet/API RO. No fondos/modelos/promoción ni crecimiento acreditado.
 ## Omega220 E2E — PR102 en main con CI propio 9/9
 
 Código integrado en main e2867598a97699b3148657578187685ab087bfad, padres d64+7715, árbol41cd5cb0 idéntico al candidato probado. PR102 conserva AGY PR99 y Sol F1094. Fees por símbolo/sesión sobre nocional efectivo, rebates, recibo local y adopciones estimadas; OMS cerrado hasta reconciliación completa, con protección de sesiones, reservas y tareas hasta protección/rollback. Resolver registry-only compatible sin mutar globales.

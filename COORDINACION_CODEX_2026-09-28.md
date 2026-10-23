@@ -17419,3 +17419,13 @@ Recibo: docs/audit/OMEGA220_E2E_RESULTADOS_2026-10-23.md; expediente JSON por SH
 ## 2026-10-23T01:35:52-05:00 — QRA continuación F0/F1 desde main75be
 
 Plan docs/audit/QRA_CONTINUACION_PLAN_2026-10-23.md y censo de 2193 rutas porblob; revisión masiva no acreditada. Ramas activas preservadas, PR103 AGY pendiente de composición con PR102 y cobertura solapada con Sol1095, comunicado en su PR. RAM0.46GiB y compilaciones ajenas activas: cero Cargo propio o limpieza del target en uso. Reserva propia de análisis FFI backtest: tres fallback13, volumes nulo y len*32unchecked confirmados RO. No toca fuentes ajenas, MXCSR/parsers/workflows/DMRG; siguiente átomo sólo tras investigación y contratos. Sin fondos, modelos o promoción de entorno.
+
+
+## 2026-10-23T01:39:53-05:00 — QRA prioriza átomo F0: tres bypass de Cargo
+
+Antes del capital FFI se corrigen scripts/quality_gate.ps1, medir_camino_caliente.sh y oracle_witness.sh; resource_safety posee sólo esas tres rutas y test_qra_resource_safety.py ya cableado. Root mantiene plan/heartbeat/integración. Semáforo y perfiles no cambian; tests herméticos sobre repos temporales sin Cargo real. El build ajeno no está atribuido a esos scripts y no se interviene. Linaje exacto del binario de oracle sigue deuda explícita, sin falso certificado por glob. Capital FFI y API quedan RO para siguiente fase.
+
+
+## 2026-10-23T08:35:09-05:00 — QRA reanuda cierre F0/F1
+
+La ejecución principal se interrumpió por capacidad del modelo; subagentes conservaron diff. F0treslaunchers+12contratos nuevos:28/28 métodos locales, ambos PowerShell reales, sin Cargo real. Main75e nuevo integra Sol/GLM9/9 propios; reanclar antes deCI. AGY103 sigueDIRTY/sinrespuesta desde aviso01:32:rescate únicamente en rama propia, no tocar primary. Sol incluye50casos comunes; AGY añade1MXCSR+61telemetry-server, preservar ydeduplicar cobertura. RAM0.75GiB, sin builds locales ni limpieza de target en uso. FFI13y capital observado0 quedanF2pendientes.
