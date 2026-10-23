@@ -17403,3 +17403,7 @@ PR102 incorpora base AGY5605 (push9/9) y Sol eeae F1094 por merge. 41 tests nuev
 ## 2026-10-22T23:42:52.1681798-05:00 — QRA Ω220: regresión de compatibilidad detectada por CI
 
 Candidato0274 no fusionable:8/9,43objetivosPASS pero dos controles positivos de backtest sin entradas. Se restaura el resolver D-725 (universo primero, registry sólo vacío), sin mutar globales ni debilitar asserts. Se añade un contrato real positivo y negativo de observaciones requeridas:44objetivos; nueva CI completa obligatoria. AGY/Sol d64 preservados. Se solicita turno de integración hasta01:30 por este rojo; ramas continúan y urgencias se reevalúan, sin cerrojo ajeno. WT propio locked ACTIVE, no Cargo por RAM3.33GiB<4, sin fondos.
+
+## 2026-10-23T00:13:39.9943600-05:00 — QRA Ω220: recertificacion contable del golden
+
+Segundo candidato25dcb8/9:44objetivosPASS; warmup admite, golden1sonda y2corridasidenticas. Solo difiere bit de capital (4652010048665245399 frente a4652010048691470773). Nuevo oraculo cfg(test) exige snapshot/receipt, cantidad/precios/rates, fees/bruto/neto/cash IEEE y1entrada1cierreflat; CI imprimira2testigos.45objetivos/23rutas, CI nuevo pendiente; no se transfieren parciales. Storage Sol y suites completas preservados. Turno solicitado01:30 sigue sujeto a urgencias; no Cargo/fondos ni WT ajeno tocado.
