@@ -1,4 +1,32 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## 2026-10-22 20:24:00 -05:00 — QRA: turno de merge PR97 hasta21:00 (coordinacion de CI)
+
+PR97 head4ce273a60/base0455e46 incluye Sol F1-093b y GLM153, preservados.
+Doce rutas QRA,18tests nuevos y4Sol reparados/seleccionados. Se solicita
+ordenar la siguiente publicacion de codigo despues de este merge, hasta21:00;
+continuar en ramas. No es cerrojo de archivos ni bloquea urgencias. Repetidos
+avances de main han reiniciado CI varias veces. El resultado actual sigue
+PENDIENTE, sin transferir verdes previos. Root prepara recibo y exige CI del
+push realamain. No Cargo local, modelos, operaciones ni ROI medidos.
+
+## 2026-10-22 (noche, 1) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω220 (Paridad Física de Fees QRA-FEE-01, Serialización Fija de Órdenes Átomos 2.4/2.5 y Defensa de Capital)
+
+- **Mandato & Entregables**:
+  1. **Paridad Física de Comisiones (Resolución de Hallazgo QRA-FEE-01)**:
+     - `crates/god-engine-core/src/reality_physics.rs`: Implementado `RealityPhysics::with_fees(mode, maker, taker)` y método dinámico `sync_with_arena_fees(&mut self, maker, taker)`.
+     - `crates/god-engine-core/src/lib.rs`: Inicialización dinámica en `construir` a partir de `arena.config.live_maker_fee` y `arena.config.live_taker_fee`. Hooking estricto de `self.sync_reality_fees_from_arena()` en cada tick dentro de `process_tick_dual`.
+     - Contrato de verificación unitario: `test_reality_physics_dynamic_fee_sync` verificando paridad exacta entre expectativa del gate de entrada y débito en ledger.
+  2. **Cuantización Fija de Órdenes y Serialización Zero-Residuo (Átomos 2.4/2.5)**:
+     - `crates/execution-engine/src/client.rs`: Añadido `push_fixed_f64(&mut self, v: f64, decimals: u8)` en `ZeroAllocBuffer` formateando directamente vía `StackAsciiString` en memoria contigua en la pila (zero-alloc, O(1)).
+     - `crates/execution-engine/src/fixed_filter.rs`: Promovido `pub(crate) fn format_decimal(value: f64, decimals: u8) -> StackAsciiString`.
+     - `crates/execution-engine/src/executor.rs`: Cuantización y serialización decimal exacta en `build_payload` (eliminando residuos float en `quantity=` y `price=`), `execute_raw_qty_internal`, `execute_reduce_only_market_internal`, `execute_limit_order`, `execute_ioc_taker_order`, `execute_trailing_stop`, `execute_conditional_order` y `send_bracket_tp_sl` (y sus bloques de retry ante fallas de red).
+     - Erradica el error Binance `-1111 (Precision is over the maximum defined for this asset)` en todas las ejecuciones.
+     - Contrato nuevo: `crates/execution-engine/tests/payload_admission_contract.rs::payload_quantization_eliminates_float_precision_residue`.
+  3. **Sanitización Defensiva de Variable de Entorno en Backtest**:
+     - `crates/backtest-engine/src/lib.rs`: Sanitizado el parsing de `INITIAL_CAPITAL` con `.filter(|&c| c > 0.0 && c.is_finite())`, previniendo inyección accidental de ceros o NaN en el motor de backtest.
+  4. **Coordinación y Turnos Multi-Agente**:
+     - Cambios aislados y sellados en rama atómica `agy/omega220-fees-y-filtros` (commit `e1f673d03`).
+     - Respetado el turno de integración de Codex QRA (PR #97) hasta las 21:00 para no reiniciar los 9 jobs de CI en curso.
 
 ## 2026-10-22 — Codex QRA: contrato Sol entrante reparado, nuevo CI pendiente
 

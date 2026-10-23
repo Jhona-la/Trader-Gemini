@@ -17283,3 +17283,21 @@ cerrojo de archivos ni impide urgencias: si hay codigo urgente se reclasifica.
 Despues del merge QRA verificara tambien nueve jobs del push real a main y
 retirara sus ramas/worktree. Fuente vigente y resultado se registran en PR97
 y QRA_FASE2_RESULTADOS, sin certificar ROI ni promover Demo/Produccion.
+
+## 2026-10-22 20:30:00 -05:00 — AGY (Lead Quant Sr. / Consejo 10 Roles): Ola Ω220 (Paridad Física de Fees QRA-FEE-01 y Cuantización Fija de Órdenes Átomos 2.4/2.5)
+
+### EXPLICACIÓN MODO PROFESOR (QUÉ-POR QUÉ-PARA QUÉ-CÓMO-CUÁNDO-DÓNDE-QUIÉN):
+- **QUÉ:** Resolución integral de paridad física de comisiones en admisión (`RealityPhysics::sync_with_arena_fees`) y cuantización/serialización estricta de punto fijo en stack (`ZeroAllocBuffer::push_fixed_f64`, `format_decimal`) eliminando residuos float y error Binance `-1111` en todas las órdenes y legs algorítmicas (MARKET, LIMIT, IOC, ALGO, SL/TP, trailing).
+- **POR QUÉ:** (1) `RealityPhysics` mantenía hardcodeadas comisiones taker/maker 5/2 bps mientras `arena.config.live_taker_fee` operaba dinámicamente con tasas del exchange (discrepancia QRA-FEE-01); (2) El formateo float con `push_f64`/`ryu` generaba residuos espurios (ej. `0.007000000000000001`) provocando rechazos del exchange `-1111 (Precision is over the maximum defined for this asset)`.
+- **PARA QUÉ:** Garantizar 100% de paridad matemática entre la expectativa del gate y el débito real del ledger de órdenes, evitando cancelaciones o desalineaciones en ejecución real con micro-capital.
+- **CÓMO:**
+  1. En `crates/god-engine-core/src/reality_physics.rs`: constructores `with_fees`, método `sync_with_arena_fees` y suite de contratos de sincronización dinámica.
+  2. En `crates/god-engine-core/src/lib.rs`: inicialización dinámica de `reality` en `construir` y llamada en cada tick dentro de `process_tick_dual`.
+  3. En `crates/execution-engine/src/client.rs`: `push_fixed_f64` en `ZeroAllocBuffer` formateando exactamente `decimals` vía `StackAsciiString` sin heap ni residuos.
+  4. En `crates/execution-engine/src/executor.rs`: cuantización de `price` y `quantity` en `build_payload`, `execute_raw_qty_internal`, `execute_reduce_only_market_internal`, `execute_limit_order`, `execute_ioc_taker_order`, `execute_trailing_stop`, `execute_conditional_order` y `send_bracket_tp_sl` (y sus bloques de retry).
+  5. En `crates/execution-engine/tests/payload_admission_contract.rs`: contrato `payload_quantization_eliminates_float_precision_residue`.
+  6. En `crates/backtest-engine/src/lib.rs`: sanitización defensiva de variable de entorno `INITIAL_CAPITAL` con filtro `c > 0.0 && c.is_finite()`.
+- **CUÁNDO:** En cada generación de payload de orden y en cada tick de mercado.
+- **DÓNDE:** `crates/god-engine-core`, `crates/execution-engine`, `crates/backtest-engine`.
+- **QUIÉN:** AGY (Lead Quant Sr. & Consejo Colegiado de 10 Roles).
+- **COORDINACIÓN:** Trabajo preservado y sellado en rama propia `agy/omega220-fees-y-filtros` (commit `e1f673d03`). En acatamiento estricto a la solicitud de QRA, se respeta el turno de integración de PR #97 hasta las 21:10 sin generar pushes que invaliden los 9 builders en vuelo.
