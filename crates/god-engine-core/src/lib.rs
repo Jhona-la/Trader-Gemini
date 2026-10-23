@@ -1363,12 +1363,20 @@ impl GodEngineCore {
         self.reality.sync_with_arena_fees(maker, taker);
     }
 
+    /// Devuelve las tasas (maker, taker) actualmente activas en la física de ejecución interna.
+    #[inline(always)]
+    pub fn reality_fees(&self) -> (f64, f64) {
+        (self.reality.maker_fee(), self.reality.taker_fee())
+    }
+
     fn construir(
         arena: Arc<GlobalArena>,
         outcome_context: outcome_context::OutcomeContext,
         trazas_diagnosticas: bool,
     ) -> Self {
         let initial_capital = arena.config.base_capital.load(Ordering::Relaxed);
+        let initial_maker_fee = arena.config.live_maker_fee.load(Ordering::Relaxed);
+        let initial_taker_fee = arena.config.live_taker_fee.load(Ordering::Relaxed);
         // LG-23: construir el núcleo NO carga modelos del disco. Ω144 lo hacía
         // aquí: la clave es el nombre del archivo y `store_global` sustituye la
         // entrada, así que pisaba el predictor que un oráculo (T-1/T-2/T-3)
@@ -1538,8 +1546,8 @@ impl GodEngineCore {
             flight_recorder: None,
             reality: reality_physics::RealityPhysics::with_fees(
                 reality_physics::EngineMode::HyperRealistic,
-                arena.config.live_maker_fee.load(std::sync::atomic::Ordering::Relaxed),
-                arena.config.live_taker_fee.load(std::sync::atomic::Ordering::Relaxed),
+                initial_maker_fee,
+                initial_taker_fee,
             ),
             last_fast_intent: vec![SignalIntent::flat(); n_coins],
             last_slow_intent: vec![SignalIntent::flat(); n_coins],

@@ -196,6 +196,27 @@ fn payload_quantization_eliminates_float_precision_residue() {
     // Crucial: query must contain exact quantity=0.007& without trailing float residues
     assert!(p.signed_query.contains("quantity=0.007&"));
 
+    // Case with trailing zeros in decimal representation: 0.4 on step 0.001 must emit 0.4, not 0.400
+    let mut o_btc = order();
+    o_btc.volume_usd = 10.0;
+    o_btc.leverage = 4.0;
+    let p_btc = executor
+        .build_payload(&o_btc, "BTCUSDT", 100.0, 0.001, 0.01)
+        .unwrap();
+    assert_eq!(p_btc.quantity, 0.4);
+    assert!(p_btc.signed_query.contains("quantity=0.4&"));
+
+    // Case with non-representable extreme step (e.g. 1e-11): try_count_decimals returns None,
+    // falls back to string formatting without rounding 0.6 into integer 1
+    let mut o_nano = order();
+    o_nano.volume_usd = 60.0;
+    o_nano.leverage = 1.0;
+    let p_nano = executor
+        .build_payload(&o_nano, "NANOUSDT", 100.0, 1e-11, 0.01)
+        .unwrap();
+    assert_eq!(p_nano.quantity, 0.6);
+    assert!(p_nano.signed_query.contains("quantity=0.6&"));
+
     // Maker order price formatting
     o.maker_only = true;
     let p_maker = executor

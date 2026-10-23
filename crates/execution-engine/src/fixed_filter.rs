@@ -468,19 +468,25 @@ fn exact_inverse(step: f64) -> f64 {
     1.0 / step
 }
 
-/// Deduce el número de cifras decimales a partir del tamaño del paso / tick.
-/// Devuelve cero para una precisión no soportada; is_valid_config la rechaza.
-pub fn count_decimals(step: f64) -> u8 {
+/// Deduce de forma estricta el número de cifras decimales a partir del tamaño del paso / tick.
+/// Devuelve None si el paso no es finito, es menor o igual a cero, o no tiene representación exacta <= MAX_DECIMALS.
+pub fn try_count_decimals(step: f64) -> Option<u8> {
     if step.is_finite() && step > 0.0 {
         for decimals in 0..=MAX_DECIMALS {
             if let Some(units) = decimal_units(step, decimals) {
                 if units > 0 {
-                    return decimals;
+                    return Some(decimals);
                 }
             }
         }
     }
-    0
+    None
+}
+
+/// Deduce el número de cifras decimales a partir del tamaño del paso / tick.
+/// Devuelve cero para una precisión no soportada o pasos enteros; is_valid_config la rechaza si excede límites.
+pub fn count_decimals(step: f64) -> u8 {
+    try_count_decimals(step).unwrap_or(0)
 }
 
 fn decimal_units(value: f64, decimals: u8) -> Option<u64> {
@@ -630,6 +636,7 @@ fn format_fixed_ascii(int_part: u64, frac_part: u64, decimals: u8, out: &mut [u8
     cursor += int_len;
 
     if decimals > 0 && cursor < 31 {
+        let dot_pos = cursor;
         out[cursor] = b'.';
         cursor += 1;
 
@@ -648,6 +655,16 @@ fn format_fixed_ascii(int_part: u64, frac_part: u64, decimals: u8, out: &mut [u8
         let copy_len = frac_bytes.len().min(32 - cursor);
         out[cursor..cursor + copy_len].copy_from_slice(&frac_bytes[..copy_len]);
         cursor += copy_len;
+
+        // Eliminar ceros no significativos a la derecha para no alterar representaciones mínimas
+        // y evitar discrepancias de longitud o assert en contratos de admisión (ej: "0.4" vs "0.400").
+        while cursor > dot_pos + 1 && out[cursor - 1] == b'0' {
+            cursor -= 1;
+        }
+        if cursor == dot_pos + 1 {
+            // Toda la fracción era ceros; quitamos también el punto
+            cursor = dot_pos;
+        }
     }
     cursor
 }

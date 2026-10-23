@@ -1550,10 +1550,13 @@ impl OrderExecutor {
             {
                 return None;
             }
-            let price_dec = crate::fixed_filter::count_decimals(tick_size);
-            let price_str = crate::fixed_filter::format_decimal(final_price, price_dec);
-            let price_param = if !price_str.is_empty() {
-                format!("&timeInForce=GTX&price={}", price_str.as_str())
+            let price_dec = crate::fixed_filter::try_count_decimals(tick_size);
+            let price_str = price_dec.and_then(|dec| {
+                let s = crate::fixed_filter::format_decimal(final_price, dec);
+                if !s.is_empty() { Some(s) } else { None }
+            });
+            let price_param = if let Some(ref s) = price_str {
+                format!("&timeInForce=GTX&price={}", s.as_str())
             } else {
                 format!("&timeInForce=GTX&price={}", final_price)
             };
@@ -1579,10 +1582,13 @@ impl OrderExecutor {
         };
 
         // Cuantización de cantidad exacta en stack ASCII sin residuos float (-1111)
-        let qty_dec = crate::fixed_filter::count_decimals(step_size);
-        let qty_str = crate::fixed_filter::format_decimal(final_quantity, qty_dec);
-        let qty_param = if !qty_str.is_empty() {
-            qty_str.as_str().to_string()
+        let qty_dec = crate::fixed_filter::try_count_decimals(step_size);
+        let qty_str = qty_dec.and_then(|dec| {
+            let s = crate::fixed_filter::format_decimal(final_quantity, dec);
+            if !s.is_empty() { Some(s) } else { None }
+        });
+        let qty_param = if let Some(ref s) = qty_str {
+            s.as_str().to_string()
         } else {
             final_quantity.to_string()
         };
@@ -2184,8 +2190,8 @@ impl OrderExecutor {
         } else {
             buf.push_str("&reduceOnly=true");
         }
-        let qty_dec = crate::fixed_filter::count_decimals(step_size);
-        let tick_dec = crate::fixed_filter::count_decimals(tick_size);
+        let qty_dec = crate::fixed_filter::try_count_decimals(step_size);
+        let tick_dec = crate::fixed_filter::try_count_decimals(tick_size);
         buf.push_str("&algoType=CONDITIONAL");
         buf.push_str("&type=");
         buf.push_str(order_type);
@@ -2301,7 +2307,7 @@ impl OrderExecutor {
         buf.push_str("&type=");
         buf.push_str(ORDER_TYPE_MARKET);
         buf.push_str("&quantity=");
-        let qty_dec = crate::fixed_filter::count_decimals(step_size);
+        let qty_dec = crate::fixed_filter::try_count_decimals(step_size);
         buf.push_fixed_f64(final_quantity, qty_dec);
         buf.push_str("&newClientOrderId=");
         buf.push_str(&client_order_id);
@@ -2476,7 +2482,7 @@ impl OrderExecutor {
             buf.push_str("&reduceOnly=true");
         }
         buf.push_str("&quantity=");
-        let qty_dec = crate::fixed_filter::count_decimals(step_size);
+        let qty_dec = crate::fixed_filter::try_count_decimals(step_size);
         buf.push_fixed_f64(final_quantity, qty_dec);
 
         let client_order_id = uuid::Uuid::now_v7().simple().to_string();
@@ -2839,10 +2845,10 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&timeInForce=");
         buf.push_str(crate::binance_api::TIME_IN_FORCE_GTX);
         buf.push_str("&quantity=");
-        let qty_dec = crate::fixed_filter::count_decimals(step_size);
+        let qty_dec = crate::fixed_filter::try_count_decimals(step_size);
         buf.push_fixed_f64(final_quantity, qty_dec);
         buf.push_str("&price=");
-        let tick_dec = crate::fixed_filter::count_decimals(tick_size);
+        let tick_dec = crate::fixed_filter::try_count_decimals(tick_size);
         buf.push_fixed_f64(final_price, tick_dec);
         buf.push_str("&newClientOrderId=");
         buf.push_str(client_order_id);
@@ -3111,10 +3117,10 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&timeInForce=");
         buf.push_str(TIME_IN_FORCE_IOC);
         buf.push_str("&quantity=");
-        let qty_dec = crate::fixed_filter::count_decimals(step_size);
+        let qty_dec = crate::fixed_filter::try_count_decimals(step_size);
         buf.push_fixed_f64(final_quantity, qty_dec);
         buf.push_str("&price=");
-        let tick_dec = crate::fixed_filter::count_decimals(tick_size);
+        let tick_dec = crate::fixed_filter::try_count_decimals(tick_size);
         buf.push_fixed_f64(final_price, tick_dec);
         buf.push_str("&newClientOrderId=");
         buf.push_str(client_order_id);
@@ -3247,12 +3253,12 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&timeInForce=");
         buf.push_str(crate::binance_api::TIME_IN_FORCE_GTC); // Iceberg requiere GTC
         buf.push_str("&quantity=");
-        let qty_dec = crate::fixed_filter::count_decimals(step_size);
+        let qty_dec = crate::fixed_filter::try_count_decimals(step_size);
         buf.push_fixed_f64(final_quantity, qty_dec);
         buf.push_str("&icebergQty=");
         buf.push_fixed_f64(final_iceberg_qty, qty_dec);
         buf.push_str("&price=");
-        let tick_dec = crate::fixed_filter::count_decimals(tick_size);
+        let tick_dec = crate::fixed_filter::try_count_decimals(tick_size);
         buf.push_fixed_f64(final_price, tick_dec);
         buf.push_str("&newClientOrderId=");
         buf.push_str(client_order_id);
@@ -3367,10 +3373,10 @@ impl ExecutionProvider for OrderExecutor {
         buf.push_str("&algoType=CONDITIONAL");
         buf.push_str("&type=TRAILING_STOP_MARKET");
         buf.push_str("&quantity=");
-        let qty_dec = crate::fixed_filter::count_decimals(step_size);
+        let qty_dec = crate::fixed_filter::try_count_decimals(step_size);
         buf.push_fixed_f64(final_quantity, qty_dec);
         buf.push_str("&activationPrice=");
-        let tick_dec = crate::fixed_filter::count_decimals(tick_size);
+        let tick_dec = crate::fixed_filter::try_count_decimals(tick_size);
         buf.push_fixed_f64(final_price, tick_dec);
         buf.push_str("&callbackRate=");
         buf.push_f64(safe_callback);
@@ -3482,8 +3488,8 @@ impl ExecutionProvider for OrderExecutor {
         sl_buf.push_str(&reduce_only_q);
         sl_buf.push_str("&algoType=CONDITIONAL");
         sl_buf.push_str("&type=STOP_MARKET");
-        let qty_dec = crate::fixed_filter::count_decimals(step_size);
-        let tick_dec = crate::fixed_filter::count_decimals(tick_size);
+        let qty_dec = crate::fixed_filter::try_count_decimals(step_size);
+        let tick_dec = crate::fixed_filter::try_count_decimals(tick_size);
         sl_buf.push_str("&quantity=");
         sl_buf.push_fixed_f64(final_quantity, qty_dec);
         sl_buf.push_str("&triggerPrice=");
@@ -3597,8 +3603,8 @@ impl ExecutionProvider for OrderExecutor {
                 rb.push_str(side);
                 rb.push_str(&position_side_q);
                 rb.push_str(&reduce_only_q);
-                let qty_dec = crate::fixed_filter::count_decimals(step_size);
-                let tick_dec = crate::fixed_filter::count_decimals(tick_size);
+                let qty_dec = crate::fixed_filter::try_count_decimals(step_size);
+                let tick_dec = crate::fixed_filter::try_count_decimals(tick_size);
                 rb.push_str("&algoType=CONDITIONAL");
                 rb.push_str("&type=STOP_MARKET");
                 rb.push_str("&quantity=");
@@ -3636,8 +3642,8 @@ impl ExecutionProvider for OrderExecutor {
                 rb.push_str(side);
                 rb.push_str(&position_side_q);
                 rb.push_str(&reduce_only_q);
-                let qty_dec = crate::fixed_filter::count_decimals(step_size);
-                let tick_dec = crate::fixed_filter::count_decimals(tick_size);
+                let qty_dec = crate::fixed_filter::try_count_decimals(step_size);
+                let tick_dec = crate::fixed_filter::try_count_decimals(tick_size);
                 rb.push_str("&algoType=CONDITIONAL");
                 rb.push_str("&type=TAKE_PROFIT_MARKET");
                 rb.push_str("&quantity=");

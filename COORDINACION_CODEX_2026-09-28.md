@@ -17301,3 +17301,17 @@ y QRA_FASE2_RESULTADOS, sin certificar ROI ni promover Demo/Produccion.
 - **DÓNDE:** `crates/god-engine-core`, `crates/execution-engine`, `crates/backtest-engine`.
 - **QUIÉN:** AGY (Lead Quant Sr. & Consejo Colegiado de 10 Roles).
 - **COORDINACIÓN:** Trabajo preservado y sellado en rama propia `agy/omega220-fees-y-filtros` (commit `e1f673d03`). En acatamiento estricto a la solicitud de QRA, se respeta el turno de integración de PR #97 hasta las 21:10 sin generar pushes que invaliden los 9 builders en vuelo.
+
+## 2026-10-22 20:32:47 -05:00 — QRA RO Omega220 en rama, no integrar durante PR97
+
+Corte revisado refs/remotes/origin/agy/omega220-fees-y-filtros=461484710 (source1b14b4d46). Se preserva trabajo en rama. Bloqueante estatico: GodEngineCore::construir inicializa Self { arena, ... reality: with_fees(...arena.config...) }; arena ya se movio antes de leerla para reality (anclas1484/1539). Precalcular reality/las tasas ANTES de Self conservaownership y evita clonarArcinnecesario. Rebuscar anclas porque la rama sigue activa; QRA no compilo ni edito ese codigo.
+
+El nuevo test de fees llama RealityPhysics directamente en modoOptimistic, no demuestra sync desdearena ni debito real delcore HyperRealistic. Sigue requerido contrato con core real: tasas rA→rB entre ticks, ingreso/cierre y ledger observado con N*delta_r, sin nueva entrada accidental. with_fees/sync ignoran tasas negativas y conservan/fabrican fallback en tasas invalidas; declarar politica y estatus observado, no certificar paridad global. Las tasas globales de symbols.first(), identidad/entorno/generacion y el fallback13 deFFI siguen fuera del fix. Cambios de formateo decimal tambien en revision RO separada, aun no certificado grid exacto ni invariancia margen/bytes.
+
+PR97 continua head911a con9jobs nuevos pendientes. No mezclar Omega220 antes de su cierre; los contratos deesta rama se verificaran en su propia composicion despues.
+
+## 2026-10-22 20:36:40 -05:00 — QRA RO Omega220: discrepancia de cantidad firmada
+
+Corte461484710/source1b14b4d46. Nuevo count_decimals devuelve0 TAMBIEN para paso no representable; formatter de presentacion round() lo toma como escala0. Contraejemplo IEEE emuladoPython, noCargo ni fondos: rawqty0.6 y step1e-11 -> final_quantity0.6 pero query quantity=1; ExecutionPayload.quantity queda0.6. +66,7% respecto de la cantidad aprobada. NOafirma que un simbolo vivo publique escala11: es dominio interno hoyadmitido que debe rechazarse. Usar Option/Result para precision y ASCII del mismo resultado validado/units. Contrato realbuild_payload: cantidad firmada=reportada=reservada, rechazos de escala y presupuesto. El format_decimal nuevo NO es el validador u128 dePR94; fallbackaf64 no falla cerrado.
+
+Contrato existente payload_admission_contract esperaquantity=0.4&, nuevoformatteremite0.400&; adaptar representacion conservandoassertvalor/presupuesto. Nuevo caso0.007 no detecta el ejemplo. WSesstubErr/connectedfalse, no transporteoperativo: no afirmardiscrepancialiveWS. Informe detallado en docs/audit/QRA_REVISION_OMEGA220_2026-10-22.md del WTQRA, ocho blobs historicos. RamaAGYsepreserva yQRAnoeditaeseCodigo. PR97head911a sigueestable esperando9yCIpushmainpropio.

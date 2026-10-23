@@ -70,6 +70,16 @@ impl RealityPhysics {
         }
     }
 
+    #[inline(always)]
+    pub fn maker_fee(&self) -> f64 {
+        self.base_maker_fee
+    }
+
+    #[inline(always)]
+    pub fn taker_fee(&self) -> f64 {
+        self.base_taker_fee
+    }
+
     /// Estima precio/coste taker con la heurística local; no confirma una ejecución.
     /// Devuelve: (precio_ejecutado, fee_total_usd)
     pub fn calculate_market_entry(
