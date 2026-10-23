@@ -161,3 +161,117 @@ fn longitud_invalida_y_serie_corta_son_error() {
         Err(EntrelazamientoError::RetornosInsuficientes { recibidos: 2, necesarios: 9 })
     );
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// GLM 156 — CURVA DE FASES S↔g DEL ISING (calibración física del ΔS).
+// Grid grueso (12 puntos, D=4, 4 sweeps) para que CI sea rápido; el
+// vehículo de tape usa el grid fino D=8. Solución conocida: campana con
+// máximo en la región crítica g≈1, producto (S≈0) en ambos extremos.
+// ══════════════════════════════════════════════════════════════════════
+
+fn curva_prueba() -> feature_engine::entrelazamiento::CurvaFases {
+    // 8 sweeps: con menos, el flanco desordenado (ground state |→…⟩ lejano
+    // del init |↑…↑⟩) queda subconvergido y desplaza el máximo de g_max≈1
+    // hacia la rama ordenada (hallazgo del propio contrato, 156).
+    feature_engine::entrelazamiento::CurvaFases::construir(L, 4, 8, 0.05, 20.0, 10)
+        .expect("curva construible")
+}
+
+/// Los contratos de la curva comparten UNA construcción (el DMRG es el
+/// costo). Física de cadena FINITA: g→0 es el estado GATO (S→ln2, NO el
+/// producto — el propio contrato corrigió la campana asumida), g→∞ es el
+/// producto paramagnético (S→0); la curva es decreciente con el crítico
+/// g_c=1 como hombro. Esto lo enseñó el 156.
+#[test]
+fn curva_fases_gato_critico_y_paramagnetico() {
+    let c = curva_prueba();
+    let s_en = |g0: f64| -> f64 {
+        c.puntos
+            .iter()
+            .min_by(|a, b| {
+                (a.g - g0).abs().partial_cmp(&(b.g - g0).abs()).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|p| p.s)
+            .unwrap_or(f64::NAN)
+    };
+    // — Extremo ordenado: GATO coherente, S ≈ ln2 (NO producto).
+    assert!(
+        (s_en(0.05) - std::f64::consts::LN_2).abs() < 0.02,
+        "g→0 es el gato: S={s0} ≈ ln2",
+        s0 = s_en(0.05)
+    );
+    // — Extremo desordenado: producto paramagnético, S ≈ 0.
+    assert!(s_en(20.0) < 0.02, "g→∞ producto: {s1}", s1 = s_en(20.0));
+    // — Decreciente con hombro crítico: gato > crítico > paramagnético.
+    let s_critico = s_en(1.0);
+    assert!(s_en(0.05) > s_critico, "gato > crítico");
+    assert!(s_critico > s_en(5.0), "crítico > paramagnético");
+    assert!(s_critico > 0.3 && s_critico < 0.69, "crítico L=8 D=4 ≈ 0.42: {s_critico}");
+    assert!((c.g_max - 0.05).abs() < 1e-9 || c.s_max < 0.71, "s_max en el borde ordenado");
+
+    // — Roundtrip: S(g de cada lado del crítico) → invertir → algúm cruce
+    // cerca de ese g (cruces = TODOS los que haya; basta el más cercano).
+    for g_prueba in [0.4f64, 2.5] {
+        let s_prueba = c
+            .puntos
+            .iter()
+            .min_by(|a, b| {
+                (a.g - g_prueba)
+                    .abs()
+                    .partial_cmp(&(b.g - g_prueba).abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|p| p.s)
+            .expect("punto cercano");
+        let inv = c.invertir(s_prueba).expect("invertible dentro de la curva");
+        let mejor = inv
+            .cruces
+            .iter()
+            .fold(f64::INFINITY, |m, g| m.min((g.ln() - g_prueba.ln()).abs()));
+        assert!(
+            mejor < 0.5,
+            "g={g_prueba}: S={s_prueba:.4} ⇒ cruces {:?} (mejor log-dist {mejor})",
+            inv.cruces
+        );
+    }
+
+    // — Sobre el techo (más coherente que el gato del Ising L=8) ⇒
+    // ausencia honesta con el límite real; jamás cruce inventado.
+    let s_obj = c.s_max + 0.05;
+    match c.invertir(s_obj) {
+        Err(EntrelazamientoError::FueraDeCurva { s, s_max, .. }) => {
+            assert_eq!(s, s_obj);
+            assert_eq!(s_max, c.s_max);
+        }
+        otro => panic!("sobre el techo ⇒ FueraDeCurva, llegó {otro:?}"),
+    }
+    // Sub-borde (serie casi-iid, por debajo del S mínimo del grid): igual.
+    match c.invertir(1e-6) {
+        Err(EntrelazamientoError::FueraDeCurva { .. }) => {}
+        otro => panic!("sub-borde ⇒ FueraDeCurva, llegó {otro:?}"),
+    }
+}
+
+#[test]
+fn curva_fases_es_determinista_y_valida_parametros() {
+    // Dos construcciones ⇒ idénticas bit a bit (init fijo, Jacobi propio,
+    // sin azar en ninguna etapa). Grid L=6 para que sea barato.
+    let a = feature_engine::entrelazamiento::CurvaFases::construir(6, 4, 3, 0.05, 20.0, 8)
+        .expect("curva 6 construible");
+    let b = feature_engine::entrelazamiento::CurvaFases::construir(6, 4, 3, 0.05, 20.0, 8)
+        .expect("curva 6 construible");
+    assert_eq!(a, b, "determinismo bit a bit");
+    // Parámetros degenerados ⇒ error honesto.
+    assert_eq!(
+        feature_engine::entrelazamiento::CurvaFases::construir(L, 4, 3, -1.0, 2.0, 10),
+        Err(EntrelazamientoError::CurvaDegenerada)
+    );
+    assert_eq!(
+        feature_engine::entrelazamiento::CurvaFases::construir(1, 4, 3, 0.05, 2.0, 10),
+        Err(EntrelazamientoError::LongitudInvalida { l: 1 })
+    );
+    assert_eq!(
+        feature_engine::entrelazamiento::CurvaFases::construir(L, 4, 3, 0.05, 2.0, 3),
+        Err(EntrelazamientoError::CurvaDegenerada)
+    );
+}

@@ -17579,3 +17579,49 @@ PR105 integrado en 68839f9683afdec64e4c992fdc6ce7e9d7c5441c, padres B75e/Hebe y 
 Launchers protegidos por semáforo/target/jobs2; flags/cleanup propios/75/101. Rescate AGY103 sólo cobertura servidor, desarrollo excluido preservado en historia. Censo completo76.31GB lógicos y RAM<4GiB; sin Cargo real local, borrado para censo o ahorro atribuido. Reserva de código QRA liberada.
 
 F2 capital/sesión/cache y rutaUDS quedan como propuestas sin implementar. Revisión de AGY PR106 fijada a235807dfc, comentarios6367417134/6367454945/6367483813; su CI no se hereda y QRA no edita sus fuentes. Primary AGY, Verify locked ACTIVE, Sol1097 y GLM155 se preservan. Retirar sólo rama/WT propios después del merge documental con HEAD integrado/árbol limpio; confirmación final en PR105 para no crear otro ciclo de commits. Sin motores, fondos, API autenticada, promoción ni métricas de rentabilidad.
+
+## 2026-10-23 — GLM: 156 — MAPA DE FASES S↔g DEL ISING SOBRE EL MERCADO: BTC único en el lado ORDENADO (ḡ=0.85); BNB roza la criticidad; el resto paramagnético
+
+Titularidad §56. El átomo declarado en el 155, aterrizado: la curva S(g)
+del ground state del Ising transverso (DMRG del 154, MISMO funcional que
+el ΔS del mercado — corte medio de ψ sobre 2^8 vía la nueva primitiva
+pública `Mps::estado_denso`) convierte cada ΔS medido en posición del
+diagrama de fases. `CurvaFases::construir/invertir` en entrelazamiento.rs.
+
+**FÍSICA NUEVA que el propio contrato enseñó (lección del ciclo)**: en
+cadena FINITA el extremo ordenado NO es el producto — es el estado GATO
+(|↑…↑⟩+|↓…↓⟩)/√2 con S→ln2 (el campo acopla los degenerados). La curva es
+DECRECIENTE ln2→0 con el crítico g_c=1 como hombro (S_crítico≈0.42 < ln2),
+no la campana que asumí en el diseño: mi primer contrato falló con
+S(0.05)=0.69 y obligó a re-aprender la física antes de re-escribirla. La
+inversión quedó LIBRE de supuestos de forma (reporta TODOS los cruces,
+distancia |log g − log g_c| con g_c=1 teórico); ΔS sobre el techo ln2
+sería «más coherente que el gato» ⇒ FueraDeCurva honesto (0 bloques lo
+tocaron). Sub-convergencia del DMRG también la cazó el contrato: con 3
+sweeps el flanco desordenado (init |↑…↑⟩ lejos del suelo |→…⟩) desplazaba
+el máximo — 8 sweeps en el contrato, 6 en el vehículo D=8.
+
+**NÚMEROS** (curva D=8 40 puntos g∈[0.03,33], 10 tapes 2026-09-01→14,
+100/100 bloques invertibles, 0 sobre-techo; recibo
+`outputs/fases_ising_2026-09-14.log`):
+- **BTC ḡ=0.850 [ORDENADO — el ÚNICO del lado coherente]**, log-dist a
+  criticidad 0.164 (bloque más profundo: g=0.766, ΔS=0.569).
+- BNB 1.157 (d=0.146, el más cerca de la transición), XLM 1.391, XMR
+  1.526, SOL 1.547, ADA 1.869, XRP 2.013, NEAR 2.145, ATOM 2.322,
+  **ICP 4.095 (d=1.379, paramagnético profundo; oscila g∈[2.2, 6.2])**.
+- Lectura: ΔS alto = estructura coherente de tendencia (g<1); ΔS bajo =
+  ruido microestructural dominante (g≫1).
+
+**PROPUESTA AL CONSEJO** (en el recibo; consumo NO implementado):
+1. g(ΔS) por símbolo como feature de RÉGIMEN (voz/gate del confluence;
+   precedente de adopción: calibración RMT de AGY).
+2. El CRUCE de g_c=1 entre bloques = cambio de régimen (re-pricing
+   estructural) — candidato a veto/atenúa.
+3. Consumo real sólo con visto bueno del consejo sobre este recibo.
+
+Contratos: entrelazamiento 9/9 (gato/crítico/paramagnético, roundtrip
+ambos lados, sobre-techo honesto, determinismo bit a bit, parámetros) +
+mps 8/8 (estado_denso ida-y-vuelta exacta en producto/GHZ/W). 0 warnings.
+Próximo átomo de la línea: según el consejo — consumo del observable o
+extensión del modelo (campos por sitio para los sobre-techo). NO tocar
+tick_reparser (Codex). CI del push: Unit + Replay verificados post-push.

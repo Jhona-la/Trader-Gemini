@@ -123,6 +123,45 @@ impl Mps {
         }
         Ok(env[0])
     }
+
+    /// Estado denso 2^L del MPS (contracción sitio a sitio; sitio 0 = bit MÁS
+    /// significativo, el convenio de `entrelazamiento_corte` y del
+    /// `estado_empirico` del 155). Consumido por la curva de fases S↔g del
+    /// 156: S del ground state del DMRG y S del mercado pasan por EL MISMO
+    /// funcional — comparación limpia por construcción.
+    ///
+    /// env[(D_l, configuración)] evoluciona: nueva[D_{l+1}, cfg·2 + σ] =
+    /// Σ env[D_l, cfg]·A[l][(D_l·2+σ)·D_{l+1}]. El resultado final vive en
+    /// la fila D_L = 0.
+    pub fn estado_denso(&self) -> Result<Vec<f64>, MpsError> {
+        if self.largo == 0 || self.largo > MPS_MAX_L {
+            return Err(MpsError::LongitudInvalida { l: self.largo });
+        }
+        // (D_actual, coefs sobre configs de sitios ya contraídos)
+        let mut fila: Vec<(usize, Vec<f64>)> = vec![(1usize, vec![1.0])];
+        for l in 0..self.largo {
+            let dnext = self.dims[l + 1];
+            let a = &self.tensores[l];
+            let nconf = fila[0].1.len();
+            let mut nueva: Vec<(usize, Vec<f64>)> =
+                (0..dnext).map(|_| (dnext, vec![0.0; nconf * 2])).collect();
+            for (aix, (_, coefs)) in fila.iter().enumerate() {
+                for fs in 0..MPS_D_FIS {
+                    for aj in 0..dnext {
+                        let v = a[((aix * MPS_D_FIS + fs) * dnext) + aj];
+                        if v == 0.0 {
+                            continue;
+                        }
+                        for (c, coef) in coefs.iter().enumerate() {
+                            nueva[aj].1[c * 2 + fs] += v * coef;
+                        }
+                    }
+                }
+            }
+            fila = nueva;
+        }
+        Ok(fila[0].1.clone())
+    }
 }
 
 /// Jacobi cíclico simétrico (n ≤ 256), devuelve el espectro o None.
