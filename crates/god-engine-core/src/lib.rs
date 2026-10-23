@@ -30,6 +30,7 @@ pub mod evidence_publication;
 pub mod contagion_publisher;
 pub mod bootloader;
 pub mod calibration;
+pub mod close_accounting;
 pub mod conformal;
 pub mod darwin;
 pub mod dataset_recorder;
@@ -1175,6 +1176,9 @@ pub struct GodEngineCore {
     /// cuando `process_event` llama inmediatamente a `process_tick_dual` en el mismo tick.
     pub spectral_published_in_current_event: bool,
     pub reality: reality_physics::RealityPhysics,
+    /// Last finite estimate by symbol; a different asset must never inherit it.
+    reality_fee_history: Vec<Option<(String, f64, f64)>>,
+    local_close_accounting: Vec<Option<close_accounting::LocalCloseAccounting>>,
     pub last_fast_intent: Vec<SignalIntent>,
     pub last_slow_intent: Vec<SignalIntent>,
     /// Compatibility/diagnostic mirror only. Learning requires a generation binding.
@@ -1355,18 +1359,57 @@ impl GodEngineCore {
     }
 
     /// Sincroniza dinámicamente las comisiones de la física de ejecución con las observadas en el arena.
-    /// Garantiza la paridad física de comisiones (QRA-FEE-01) entre la admisión y el ledger.
+    /// Devuelve si ambas observaciones son finitas para admitir nuevas entradas.
+    /// La última estimación finita puede conservarse para cierres defensivos.
     #[inline(always)]
-    pub fn sync_reality_fees_from_arena(&mut self) {
+    pub fn sync_reality_fees_from_arena(&mut self) -> bool {
         let maker = self.arena.config.live_maker_fee.load(std::sync::atomic::Ordering::Relaxed);
         let taker = self.arena.config.live_taker_fee.load(std::sync::atomic::Ordering::Relaxed);
         self.reality.sync_with_arena_fees(maker, taker);
+        maker.is_finite() && taker.is_finite()
     }
 
     /// Devuelve las tasas (maker, taker) actualmente activas en la física de ejecución interna.
     #[inline(always)]
     pub fn reality_fees(&self) -> (f64, f64) {
         (self.reality.maker_fee(), self.reality.taker_fee())
+    }
+
+    fn sync_reality_fees_for_coin(&mut self, coin_id: usize) -> bool {
+        // D-725: replay/forensic callers may register specs without publishing
+        // a live universe. Resolve the same slot identity as the fee book and
+        // the order/spec readers, without mutating either global registry.
+        let rates = self.arena.config.fee_rates_for(coin_id);
+        let Some(history) = self.reality_fee_history.get_mut(coin_id) else { return false; };
+        let reality = &mut self.reality;
+        let resolved = quantum_arena::symbol_registry::with_symbol(coin_id, |symbol| {
+            if let Some((maker, taker)) = rates {
+                reality.sync_with_arena_fees(maker, taker);
+                match history {
+                    Some((previous, m, t)) if previous.eq_ignore_ascii_case(symbol) => { *m = maker; *t = taker; }
+                    _ => *history = Some((symbol.to_owned(), maker, taker)),
+                }
+                true
+            } else {
+                if let Some((_, maker, taker)) = history.as_ref().filter(|(s, _, _)| s.eq_ignore_ascii_case(symbol)) {
+                    reality.sync_with_arena_fees(*maker, *taker);
+                } else {
+                    // Explicit scenario for an unknown asset's defensive close only.
+                    *reality = reality_physics::RealityPhysics::new(reality.mode);
+                }
+                false
+            }
+        });
+        resolved.unwrap_or_else(|| {
+            // An unidentified slot must not inherit another asset's last rates.
+            *reality = reality_physics::RealityPhysics::new(reality.mode);
+            false
+        })
+    }
+
+    /// Consume this tick's local accounting without reconstructing fees at current rates.
+    pub fn take_local_close_accounting(&mut self, coin_id: usize) -> Option<close_accounting::LocalCloseAccounting> {
+        self.local_close_accounting.get_mut(coin_id).and_then(Option::take)
     }
 
     fn construir(
@@ -1549,6 +1592,8 @@ impl GodEngineCore {
                 initial_maker_fee,
                 initial_taker_fee,
             ),
+            reality_fee_history: vec![None; n_coins],
+            local_close_accounting: vec![None; n_coins],
             last_fast_intent: vec![SignalIntent::flat(); n_coins],
             last_slow_intent: vec![SignalIntent::flat(); n_coins],
             last_senior_signals: vec![[[0.0; 11]; quantum_arena::position::MAX_SPECTRAL_SLOTS]; n_coins],
@@ -2543,11 +2588,11 @@ impl GodEngineCore {
     /// `sombra_friccion_real_menos_modelada_bp` — el gate y su auditor
     /// leen la MISMA receta, nunca dos.
     #[inline]
-    fn friccion_rt_modelada(&self, atr_pct: f64) -> Option<f64> {
+    fn friccion_rt_modelada(&self, coin_id: usize, atr_pct: f64) -> Option<f64> {
         if !atr_pct.is_finite() || atr_pct < 0.0 {
             return None;
         }
-        let taker_fee = self.arena.config.live_taker_fee.load(Ordering::Relaxed);
+        let (_, taker_fee) = self.arena.config.fee_rates_for(coin_id)?;
         let slip_floor = self
             .arena
             .config
@@ -2580,7 +2625,7 @@ impl GodEngineCore {
         if !price.is_finite() || price <= 0.0 || !atr.is_finite() || atr <= 0.0 {
             return None;
         }
-        self.friccion_rt_modelada(atr / price).map(|f| f * 1e4)
+        self.friccion_rt_modelada(coin_id, atr / price).map(|f| f * 1e4)
     }
 
     /// SOL (2026-10-20, censo C-F7b §3-3): CONTRATO DE CONSUMO de la sombra
@@ -2645,7 +2690,7 @@ impl GodEngineCore {
     /// Sin promo devuelve exactamente el modelo: el gate no cambia de
     /// comportamiento mientras la evidencia no sostenga la corrección.
     pub fn friccion_efectiva_rt(&self, coin_id: usize, atr_pct: f64) -> Option<f64> {
-        let modelo = self.friccion_rt_modelada(atr_pct)?;
+        let modelo = self.friccion_rt_modelada(coin_id, atr_pct)?;
         let correccion_bp = self.correccion_friccion_promovida_bp(coin_id, modelo * 1e4);
         Some(((modelo * 1e4 + correccion_bp) / 1e4).max(0.0))
     }
@@ -4247,8 +4292,14 @@ impl GodEngineCore {
         Option<MakerQuote>,
     ) {
         telemetry_server::profile_node!("GodEngineCore::process_tick_dual", {
-            // Paridad física viva de comisiones (QRA-FEE-01)
-            self.sync_reality_fees_from_arena();
+            // Unknown fees veto new exposure. Retained finite estimates still
+            // allow defensive closes; they are not fresh exchange observations.
+            let observed_fees_valid = self.sync_reality_fees_for_coin(coin_id);
+            let allow_entries = allow_entries && observed_fees_valid;
+            let entry_fee_book = self.arena.config.live_fee_schedule.load_full();
+            if let Some(accounting) = self.local_close_accounting.get_mut(coin_id) {
+                *accounting = None;
+            }
             // P1: Actualizar reloj causal del registro omnisciente sin syscalls repetidas
             self.arena.registry.update_event_time(event_time_ms as i64);
             self.fijar_piso_resolucion(coin_id);
@@ -4674,7 +4725,7 @@ impl GodEngineCore {
                     // XLIV-8 dejó este quinto sitio con la ley lineal
                     // `atr·lat/umbral_de_pánico`; ahora la MISMA función.
                     let fee_rt_mgmt = risk_engine::tp_sl::roundtrip_friction(
-                        self.arena.config.live_taker_fee.load(Ordering::Relaxed),
+                        self.reality.taker_fee(),
                         self.arena
                             .config
                             .base_slippage_floor
@@ -4714,8 +4765,7 @@ impl GodEngineCore {
                 }
                 let peak_pnl = pos.max_pnl_pct.load(Ordering::Relaxed);
 
-                let live_taker_fee = self.arena.config.live_taker_fee.load(Ordering::Relaxed);
-                let _live_maker_fee = self.arena.config.live_maker_fee.load(Ordering::Relaxed);
+                let live_taker_fee = self.reality.taker_fee();
 
                 // D-465, D-472, D-474, D-475 & D-495: Escudo Breakeven Progresivo Calibrado Antiasfixia.
                 // Activa cuando el recorrido ya cubre la fricción de ida y
@@ -5088,7 +5138,7 @@ impl GodEngineCore {
                     // el edge de scalps con TP estrecho.
                     let exit_is_maker = pnl_pct >= tp;
                     let exit_nominal = qty * exit_price;
-                    let (phys_exit_price, phys_exit_fee) = self.reality.calculate_exit(
+                    let (phys_exit_price, _) = self.reality.calculate_exit(
                         exit_price,
                         is_long,
                         exit_nominal,
@@ -5164,11 +5214,12 @@ impl GodEngineCore {
                         );
                     }
 
-                    // H-4: fee de la FÍSICA (calculate_exit ya diferenció
-                    // maker/taker según exit_is_maker) — las variables
-                    // live_taker/live_maker quedaron muertas tras la
-                    // consolidación y se eliminan.
-                    let close_fee = phys_exit_fee;
+                    // Use the physics maker/taker rate on the final recorded
+                    // notional, including its adverse exit-price movement.
+                    let Some(close_fee) = self.reality
+                        .commission_for_notional(qty * exit_price, exit_is_maker) else {
+                            continue;
+                        };
 
                     let ml_at_entry = pos.ml_prediction.load(Ordering::Relaxed);
                     // D-619: puntuación cruda con la que se abrió (se lee antes de
@@ -5236,6 +5287,10 @@ impl GodEngineCore {
 
                     let net_realized_pnl = gross_pnl - close_fee;
                     let net_trade_pnl = net_realized_pnl - entry_fee_paid;
+                    self.local_close_accounting[coin_id] = Some(close_accounting::LocalCloseAccounting {
+                        event_time_ms, quantity: qty, entry_price: closed_entry,
+                        exit_price, gross_pnl, entry_fee: entry_fee_paid, exit_fee: close_fee,
+                    });
 
                     // D-731: la rama `else` ponía el acumulador GLOBAL a cero
                     // —borrando el margen de las demás monedas— cuando el
@@ -5821,7 +5876,7 @@ impl GodEngineCore {
                     // de latencia, que depende del ATR del cierre): la
                     // apuesta del proceso e tiene que ser predecible.
                     let friccion_previa = risk_engine::tp_sl::roundtrip_friction(
-                        self.arena.config.live_taker_fee.load(Ordering::Relaxed),
+                        self.reality.taker_fee(),
                         self.arena.config.base_slippage_floor.load(Ordering::Relaxed).max(0.0),
                         0.0,
                         0.0,
@@ -9990,7 +10045,7 @@ impl GodEngineCore {
                                         .max(0.0),
                                     risk_engine::tp_sl::latency_seed(event_time_ms, coin_id),
                                 );
-                                let (real_entry_price, phys_entry_fee) =
+                                let (real_entry_price, _) =
                                     self.reality.calculate_market_entry(
                                         base_price,
                                         is_long,
@@ -10005,8 +10060,6 @@ impl GodEngineCore {
                                     real_entry_price
                                 };
 
-                                // H-4: usar el fee de la FÍSICA — antes se recalculaba aparte
-                                let fee_paid = phys_entry_fee;
                                 // Revisión del PR #61 (F1): la cantidad nunca baja
                                 // de la orden mínima ejecutable al precio de entrada
                                 // (el ejecutor redondea hacia abajo al paso; ver
@@ -10063,6 +10116,28 @@ impl GodEngineCore {
                                 // Invalid local prices/quantities cannot charge capital.
                                 if !real_entry_price.is_finite() || real_entry_price <= 0.0
                                     || !qty.is_finite() || qty <= 0.0 {
+                                    continue;
+                                }
+                                // The grid may reduce quantity. Charge the same
+                                // notional stored in this position, not its budget.
+                                let Some(fee_paid) = self.reality
+                                    .commission_for_notional(qty * real_entry_price, false) else {
+                                        continue;
+                                    };
+                                // OMS must not scan an empty slot and then erase
+                                // a newly published reservation as a phantom.
+                                let publication_arena = Arc::clone(&self.arena);
+                                let _publication = publication_arena.config.entry_publication_gate
+                                    .lock().unwrap_or_else(|e| e.into_inner());
+                                let current_book = publication_arena.config.live_fee_schedule.load_full();
+                                let same_book = match (&entry_fee_book, &current_book) {
+                                    (Some(before), Some(now)) => Arc::ptr_eq(before, now),
+                                    (None, None) => true,
+                                    _ => false,
+                                };
+                                if publication_arena.config.entry_publication_paused.load(Ordering::Acquire)
+                                    || !same_book
+                                    || publication_arena.config.fee_rates_for(coin_id) != Some(self.reality_fees()) {
                                     continue;
                                 }
                                 self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);

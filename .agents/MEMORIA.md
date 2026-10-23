@@ -1,4 +1,12 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## Omega220 E2E — PR102 en main con CI propio 9/9
+
+Código integrado en main e2867598a97699b3148657578187685ab087bfad, padres d64+7715, árbol41cd5cb0 idéntico al candidato probado. PR102 conserva AGY PR99 y Sol F1094. Fees por símbolo/sesión sobre nocional efectivo, rebates, recibo local y adopciones estimadas; OMS cerrado hasta reconciliación completa, con protección de sesiones, reservas y tareas hasta protección/rollback. Resolver registry-only compatible sin mutar globales.
+
+Candidato7715:9/9 en Unit39904967784/Replay39904967770. Push real e286:9/9 por separado en Unit39907724231/Replay39907724237. Cada revisión pasó45 objetivos Rust únicos (42 nuevos+3 corregidos),68 recursos,7 Sol y workspace --all-targets. Dos testigos GOLDEN/Python independiente por revisión PASS; los cuatro coinciden. El golden mantiene una sonda y dos corridas bitidénticas, con cash1000.3114819328429/bits4652010048665245399. Cobrar salida sobre mid recupera el bit anterior. Fallos0274/25dcb y superseded a416 quedan separados; no se heredan verdes.
+
+Recibo docs/audit/OMEGA220_E2E_RESULTADOS_2026-10-23.md, expediente CI por SHA, ledger23blobs y verificador Python reproducible. No auditoría integral ni liquidación del exchange; fees_est, fills sinID/FX, adopciones históricas y migración de IDs mantienen límites explícitos. No Cargo local (RAM2.56/2.69/3.33GiB<4), motor operativo, fondos o modelos reales. Reserva de código liberada; retirar sólo rama/WT propios después del merge del recibo y confirmar allí. Sin intervención sobre worktrees ajenos; Verify PR65 locked ACTIVE y GLM154 observados.
+
 ## 2026-10-22 20:24:00 -05:00 — QRA: turno de merge PR97 hasta21:00 (coordinacion de CI)
 
 PR97 head4ce273a60/base0455e46 incluye Sol F1-093b y GLM153, preservados.

@@ -581,7 +581,7 @@ impl UserDataStreamer {
             } else {
                 0.0
             };
-            let fees = update.commission.abs()
+            let fees = update.commission
                 + if entry_qty > 0.0 {
                     entry_fee * (qty / entry_qty)
                 } else {
@@ -624,7 +624,7 @@ impl UserDataStreamer {
                 update.last_filled_qty,
                 update.last_filled_price,
                 o.is_maker,
-                update.commission.abs(),
+                update.commission,
             );
         }
 
@@ -1093,5 +1093,39 @@ mod tests {
         assert!((c.exit_price - 61000.0).abs() < 1e-9, "precio de salida del fill");
         assert!((c.fees - 0.02).abs() < 1e-9, "comisión real del fill");
         assert_eq!(c.trigger, "TP");
+    }
+
+    #[test]
+    fn qra_private_fill_preserves_zero_and_rebate_in_registry_and_sink() {
+        let _guard = crate::trade_accounting::TEST_QUEUE_LOCK.lock();
+        struct Capture(std::sync::Mutex<Vec<crate::trade_accounting::BracketClose>>);
+        impl AccountSink for Capture {
+            fn on_capital(&self, _: f64) {}
+            fn on_positions(&self, _: &[RemotePosition]) {}
+            fn on_bracket_close(&self, close: &crate::trade_accounting::BracketClose) {
+                self.0.lock().unwrap_or_else(|e| e.into_inner()).push(close.clone());
+            }
+        }
+        for commission in [0.0, -0.02, 0.02] {
+            let sink = Arc::new(Capture(std::sync::Mutex::new(Vec::new())));
+            let registry = Arc::new(OrderRegistry::new());
+            let streamer = UserDataStreamer::new(
+                BinanceClient::new("offline-contract".into(), true), registry.clone(),
+            ).with_sink(sink.clone());
+            let event = serde_json::json!({
+                "e":"ORDER_TRADE_UPDATE", "E":1789544472795_u64,
+                "o":{"s":"QRAREBATEUSDT","c":"qra_signed_TP","S":"SELL","ps":"LONG",
+                    "o":"TAKE_PROFIT_MARKET","f":"GTC","q":"0.5","p":"0","ap":"100",
+                    "sp":"100","X":"FILLED","i":99,"l":"0.5","z":"0.5","L":"100",
+                    "n":commission.to_string(),"N":"USDT","T":1789544472795_u64,"t":42,"m":true}
+            });
+            streamer.dispatch(event.to_string().as_bytes());
+            let order = registry.get("qra_signed_TP").expect("private event enters registry");
+            assert_eq!(order.total_commission, commission);
+            let closes = sink.0.lock().unwrap_or_else(|e| e.into_inner());
+            assert_eq!(closes.len(), 1);
+            assert_eq!(closes[0].fees, commission);
+            assert!(closes[0].fees.is_finite());
+        }
     }
 }

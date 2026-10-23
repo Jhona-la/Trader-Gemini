@@ -1,6 +1,9 @@
 use crate::atomic_float::AtomicF64;
+use crate::fee_schedule::FeeSchedule;
 use crate::horizon_policy::{trailing_at_tau, HorizonParameter};
 use crate::temporal_spectrum::HorizonCurve;
+use arc_swap::ArcSwapOption;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// F1-009: Límite actuarial canónico de drawdown del Consejo Deliberativo.
 /// Derivado de la cota de falsación de Cramér-Lundberg: d* = 1 - alpha^(c / (2 - c))
@@ -63,6 +66,15 @@ pub struct QuantumConfig {
     pub live_maker_fee: AtomicF64,
     /// Fracción de precio de la comisión taker (ej. 0.0005 = 5 bps = 0.05%).
     pub live_taker_fee: AtomicF64,
+    /// Session-owned observed rates, indexed in active-universe order.
+    pub live_fee_schedule: ArcSwapOption<FeeSchedule>,
+    /// Live admission requires symbol-specific evidence. False permits an
+    /// explicit scenario to use the finite legacy scalar rates.
+    pub observed_fees_required: AtomicBool,
+    /// Serializes local entry publication with OMS snapshot application.
+    /// The tick's analytics do not acquire this lock.
+    pub entry_publication_gate: std::sync::Mutex<()>,
+    pub entry_publication_paused: AtomicBool,
     pub weight_obi: AtomicF64,
     pub weight_ofi: AtomicF64,
     pub weight_vpin: AtomicF64,
@@ -329,6 +341,27 @@ pub struct QuantumConfig {
 }
 
 impl QuantumConfig {
+    /// Observed symbol rates take precedence in either mode. With required
+    /// evidence, a missing book/slot or reordered symbol never falls back to
+    /// another symbol's rates or the legacy scenario scalars.
+    #[inline]
+    pub fn fee_rates_for(&self, coin_id: usize) -> Option<(f64, f64)> {
+        if let Some(rates) = self
+            .live_fee_schedule
+            .load()
+            .as_ref()
+            .and_then(|schedule| schedule.rates_for(coin_id))
+        {
+            return Some(rates);
+        }
+        if self.observed_fees_required.load(Ordering::Acquire) {
+            return None;
+        }
+        let maker = self.live_maker_fee.load(Ordering::Acquire);
+        let taker = self.live_taker_fee.load(Ordering::Acquire);
+        (maker.is_finite() && taker.is_finite()).then_some((maker, taker))
+    }
+
     pub fn new(initial_capital: f64) -> Self {
         let genome = crate::genome::SuperGenotype::load_or_default();
         Self::from_genome(initial_capital, &genome)
@@ -353,6 +386,10 @@ impl QuantumConfig {
             min_notional: AtomicF64::new(5.0),
             live_maker_fee: AtomicF64::new(0.0002), // Fracción (VIP0 Maker: 2 bps = 0.02%)
             live_taker_fee: AtomicF64::new(0.0005), // Fracción (VIP0 Taker: 5 bps = 0.05%)
+            live_fee_schedule: ArcSwapOption::empty(),
+            observed_fees_required: AtomicBool::new(false),
+            entry_publication_gate: std::sync::Mutex::new(()),
+            entry_publication_paused: AtomicBool::new(false),
             global_max_drawdown: AtomicF64::new(genome.global_max_drawdown),
             global_leverage: AtomicF64::new(genome.global_leverage),
             btc_volatility_multiplier: AtomicF64::new(genome.btc_volatility_multiplier),
