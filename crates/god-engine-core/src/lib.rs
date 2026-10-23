@@ -1376,25 +1376,35 @@ impl GodEngineCore {
     }
 
     fn sync_reality_fees_for_coin(&mut self, coin_id: usize) -> bool {
-        let universe = quantum_arena::symbols::get_active_universe_ref();
-        let Some(symbol) = universe.get(coin_id) else { return false; };
+        // D-725: replay/forensic callers may register specs without publishing
+        // a live universe. Resolve the same slot identity as the fee book and
+        // the order/spec readers, without mutating either global registry.
+        let rates = self.arena.config.fee_rates_for(coin_id);
         let Some(history) = self.reality_fee_history.get_mut(coin_id) else { return false; };
-        if let Some((maker, taker)) = self.arena.config.fee_rates_for(coin_id) {
-            self.reality.sync_with_arena_fees(maker, taker);
-            match history {
-                Some((previous, m, t)) if previous.eq_ignore_ascii_case(symbol) => { *m = maker; *t = taker; }
-                _ => *history = Some((symbol.clone(), maker, taker)),
-            }
-            true
-        } else {
-            if let Some((_, maker, taker)) = history.as_ref().filter(|(s, _, _)| s == symbol) {
-                self.reality.sync_with_arena_fees(*maker, *taker);
+        let reality = &mut self.reality;
+        let resolved = quantum_arena::symbol_registry::with_symbol(coin_id, |symbol| {
+            if let Some((maker, taker)) = rates {
+                reality.sync_with_arena_fees(maker, taker);
+                match history {
+                    Some((previous, m, t)) if previous.eq_ignore_ascii_case(symbol) => { *m = maker; *t = taker; }
+                    _ => *history = Some((symbol.to_owned(), maker, taker)),
+                }
+                true
             } else {
-                // Explicit scenario for an unknown asset's defensive close only.
-                self.reality = reality_physics::RealityPhysics::new(self.reality.mode);
+                if let Some((_, maker, taker)) = history.as_ref().filter(|(s, _, _)| s.eq_ignore_ascii_case(symbol)) {
+                    reality.sync_with_arena_fees(*maker, *taker);
+                } else {
+                    // Explicit scenario for an unknown asset's defensive close only.
+                    *reality = reality_physics::RealityPhysics::new(reality.mode);
+                }
+                false
             }
+        });
+        resolved.unwrap_or_else(|| {
+            // An unidentified slot must not inherit another asset's last rates.
+            *reality = reality_physics::RealityPhysics::new(reality.mode);
             false
-        }
+        })
     }
 
     /// Consume this tick's local accounting without reconstructing fees at current rates.

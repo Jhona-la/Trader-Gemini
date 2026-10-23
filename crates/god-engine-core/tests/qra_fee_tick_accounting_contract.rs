@@ -1,6 +1,7 @@
 //! QRA fees through the production event/position/capital paths.
 //! Synthetic in-memory model and bounded T-1 tape; no training or exchange I/O.
-//! Only the first test admits an entry through process_event -> process_tick_dual.
+//! Two tests admit entries through process_event -> process_tick_dual, including
+//! the registry-only scenario with no active universe.
 //! The shorter close/reservation cases declare their manually seeded preconditions.
 //! Accounting is local simulation in quote units, not host/exchange settlement.
 use god_engine_core::{
@@ -103,6 +104,10 @@ fn fresh_core_for_symbols(universe: &[&str], rates: (f64, f64)) -> TestResult<Go
             .map(|symbol| symbol_registry::get_official_binance_spec(symbol))
             .collect(),
     );
+    fresh_core_in_current_symbol_context(rates)
+}
+
+fn fresh_core_in_current_symbol_context(rates: (f64, f64)) -> TestResult<GodEngineCore> {
     quantum_arena::feed_health::clear();
     install_synthetic_model()?;
     let baseline = SuperGenotype::new_baseline(0.0002, 0.0005);
@@ -435,6 +440,96 @@ fn real_entry_refresh_close_and_unknown_admission_use_actual_notional() -> TestR
             "last finite values are close estimates only"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn registry_only_scenario_admits_real_entry_but_required_observations_do_not_default() -> TestResult
+{
+    let _serial = ENVIRONMENT.lock().map_err(|_| "fixture mutex poisoned")?;
+    let _directory = FixtureDirectory::new()?;
+    let registry_only = || -> TestResult<GodEngineCore> {
+        // Native and booktick replays may resolve symbols from the registry
+        // without publishing a process-global active universe. Start the core
+        // in that context; do not clear the universe only after construction.
+        symbols::update_dynamic_universe(Vec::new());
+        symbol_registry::update_registry(vec![symbol_registry::get_official_binance_spec(SYMBOL)]);
+        assert_eq!(symbol_registry::try_symbol(0).as_deref(), Some(SYMBOL));
+        fresh_core_in_current_symbol_context(ENTRY_RATES)
+    };
+    let prices = t1_prices();
+    let mut control = registry_only()?;
+    assert!(symbols::get_active_universe_ref().is_empty());
+    assert!(!control.arena.config.observed_fees_required.load(Relaxed));
+    assert!(control.arena.config.live_fee_schedule.load().is_none());
+    assert_eq!(control.arena.config.fee_rates_for(0), Some(ENTRY_RATES));
+    let mut admitted = None;
+    for index in 0..prices.len() {
+        if market_event(&mut control, &prices, index) {
+            admitted = Some(index);
+            break;
+        }
+    }
+    let index = admitted.ok_or("registry-only scenario must admit its real positive control")?;
+    let token = control
+        .entry_reservation(0)
+        .ok_or("real registry-only entry reservation")?;
+    let position = open_snapshot(&control, token.slot)?;
+    assert_eq!(control.diag_opened, 1);
+    assert_eq!(position.generation, token.generation);
+    assert_eq!(control.reality_fees(), ENTRY_RATES);
+    close_enough(
+        position.entry_fee,
+        position.quantity * position.entry_price * ENTRY_RATES.1,
+        "registry-only scenario charges its explicit actual-notional fee",
+    );
+    close_enough(
+        control.arena.unified_capital.load(Relaxed),
+        CAPITAL - position.entry_fee,
+        "registry-only admission cash",
+    );
+    close_enough(
+        control.arena.used_margin.load(Relaxed),
+        position.margin_used,
+        "registry-only admission margin",
+    );
+    drop(control);
+
+    // Reproduce precisely the admitted prefix, changing only the evidence
+    // requirement at its final tick. Registry identity is not observed fees.
+    let mut rejected = registry_only()?;
+    for event in 0..=index {
+        if event == index {
+            rejected
+                .arena
+                .config
+                .observed_fees_required
+                .store(true, Relaxed);
+            assert!(rejected.arena.config.live_fee_schedule.load().is_none());
+            assert_eq!(rejected.arena.config.fee_rates_for(0), None);
+        }
+        assert!(
+            !market_event(&mut rejected, &prices, event),
+            "required fee observation cannot fall back to the registry-only scenario"
+        );
+    }
+    assert!(symbols::get_active_universe_ref().is_empty());
+    assert_eq!(rejected.diag_opened, 0);
+    assert!(rejected.arena.coins[0]
+        .positions
+        .slots()
+        .iter()
+        .all(|p| !p.is_open()));
+    close_enough(
+        rejected.arena.unified_capital.load(Relaxed),
+        CAPITAL,
+        "missing observed book cannot debit registry-only scenario cash",
+    );
+    close_enough(
+        rejected.arena.used_margin.load(Relaxed),
+        0.0,
+        "missing observed book cannot reserve registry-only scenario margin",
+    );
     Ok(())
 }
 
