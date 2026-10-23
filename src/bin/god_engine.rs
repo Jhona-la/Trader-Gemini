@@ -1812,7 +1812,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     impl execution_engine::user_data_stream::AccountSink for CapitalBridgeSink {
         fn on_capital(&self, usdt: f64) {
             audit_engine::telemetry::update_dynamic_capital(usdt);
-            if usdt > 0.0 && usdt.is_finite() {
+            // F2: permite propagar 0.0 observado de la cuenta real al puente de capital
+            if usdt >= 0.0 && usdt.is_finite() {
                 self.unified_capital
                     .store(usdt.to_bits(), Ordering::Relaxed);
             }
@@ -2171,10 +2172,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let cap_exchange =
                         f64::from_bits(exchange_capital_imm.load(Ordering::Relaxed));
                     arena_imm.capital_exchange.store(
-                        if cap_exchange.is_finite() && cap_exchange > 0.0 {
+                        if cap_exchange.is_finite() {
                             cap_exchange
                         } else {
-                            0.0
+                            f64::NAN
                         },
                         Ordering::Relaxed,
                     );

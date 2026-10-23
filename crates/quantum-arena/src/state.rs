@@ -834,7 +834,9 @@ impl GlobalArena {
             resultado_en_stops: AtomicF64::new(0.0),
             pico_en_stops: AtomicF64::new(0.0),
             ventana_stops_buffer: std::sync::Mutex::new(([0.0; 200], 0, 0)),
-            capital_exchange: AtomicF64::new(0.0),
+            // F2: capital_exchange nace en NAN (no observado). Permite distinguir
+            // ausencia de saldo exchange (backtest/offline) de un cero real observado (0.0).
+            capital_exchange: AtomicF64::new(f64::NAN),
             pico_ilegible: AtomicBool::new(false),
             tick_counter: AtomicU64::new(0),
             kill_switch_active: AtomicBool::new(false),

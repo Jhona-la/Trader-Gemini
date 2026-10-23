@@ -39,6 +39,45 @@ where
     }
 }
 
+/// Deserializa números opcionales finitos como `Option<f64>` a partir de string o número JSON.
+/// Si el campo está ausente o es null o string vacía, produce `Ok(None)`.
+/// Si el campo contiene un número válido ("0.0", 0.0, 105.25), produce `Ok(Some(f64))`.
+/// Evita que campos ausentes se deserialicen silenciosamente como 0.0 cuando se usa serde(default).
+pub fn string_or_f64_opt<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Val {
+        S(String),
+        F(f64),
+        N(serde_json::Number),
+    }
+    let opt = Option::<Val>::deserialize(deserializer)?;
+    let val = match opt {
+        None => return Ok(None),
+        Some(Val::F(f)) => f,
+        Some(Val::N(n)) => n
+            .as_f64()
+            .ok_or_else(|| serde::de::Error::custom("número fuera de rango f64"))?,
+        Some(Val::S(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            trimmed
+                .parse::<f64>()
+                .map_err(|_| serde::de::Error::custom(format!("string no numérica: {}", s)))?
+        }
+    };
+    if val.is_finite() {
+        Ok(Some(val))
+    } else {
+        Err(serde::de::Error::custom("número no finito"))
+    }
+}
+
 /// Fill individual dentro de una orden ejecutada.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Fill {

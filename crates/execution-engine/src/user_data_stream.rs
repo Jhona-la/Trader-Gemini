@@ -738,8 +738,8 @@ impl UserDataStreamer {
             #[serde(rename = "a")]
             asset: String,
             #[serde(rename = "wb")]
-            #[serde(deserialize_with = "crate::order_types::string_or_f64", default)]
-            wallet_balance: f64,
+            #[serde(deserialize_with = "crate::order_types::string_or_f64_opt", default)]
+            wallet_balance: Option<f64>,
         }
         #[derive(Deserialize)]
         struct Position {
@@ -806,13 +806,17 @@ impl UserDataStreamer {
         };
 
         for b in &ev.a.balances {
-            if b.asset == "USDT" && b.wallet_balance > 0.0 && b.wallet_balance.is_finite() {
-                let total_equity = if (b.wallet_balance + total_unrealized_pnl).is_finite() {
-                    (b.wallet_balance + total_unrealized_pnl).max(0.0)
-                } else {
-                    b.wallet_balance
-                };
-                self.sink.on_capital(total_equity);
+            if b.asset == "USDT" {
+                if let Some(wb) = b.wallet_balance {
+                    if wb >= 0.0 && wb.is_finite() {
+                        let total_equity = if (wb + total_unrealized_pnl).is_finite() {
+                            (wb + total_unrealized_pnl).max(0.0)
+                        } else {
+                            wb
+                        };
+                        self.sink.on_capital(total_equity);
+                    }
+                }
             }
         }
 
@@ -923,6 +927,61 @@ mod tests {
         .with_sink(sink.clone());
         streamer.dispatch(raw.as_bytes());
         assert_eq!(sink.0.load(std::sync::atomic::Ordering::Relaxed), 10675);
+    }
+
+    #[test]
+    fn account_update_with_zero_balance_routes_to_sink_and_does_not_invent_missing_field() {
+        use std::sync::atomic::{AtomicBool, AtomicU64};
+
+        struct CapTrack {
+            called: AtomicBool,
+            val_bits: AtomicU64,
+        }
+        impl AccountSink for CapTrack {
+            fn on_capital(&self, usdt: f64) {
+                self.called.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.val_bits
+                    .store(usdt.to_bits(), std::sync::atomic::Ordering::Relaxed);
+            }
+            fn on_positions(&self, _p: &[RemotePosition]) {}
+            fn on_bracket_close(&self, _c: &crate::trade_accounting::BracketClose) {}
+        }
+
+        // 1. Cero observado explícito: "wb": "0.0" debe emitir on_capital(0.0)
+        let sink_zero = Arc::new(CapTrack {
+            called: AtomicBool::new(false),
+            val_bits: AtomicU64::new(f64::NAN.to_bits()),
+        });
+        let streamer_zero = UserDataStreamer::new(
+            BinanceClient::new("k".into(), true),
+            Arc::new(OrderRegistry::new()),
+        )
+        .with_sink(sink_zero.clone());
+        let raw_zero = r#"{"e":"ACCOUNT_UPDATE","a":{"B":[{"a":"USDT","wb":"0.0"}],"P":[]}}"#;
+        streamer_zero.dispatch(raw_zero.as_bytes());
+        assert!(
+            sink_zero.called.load(std::sync::atomic::Ordering::Relaxed),
+            "on_capital DEBE llamarse cuando Binance reporta wb=0.0"
+        );
+        let val_zero = f64::from_bits(sink_zero.val_bits.load(std::sync::atomic::Ordering::Relaxed));
+        assert_eq!(val_zero, 0.0);
+
+        // 2. Campo "wb" ausente: NO debe inventar un 0.0 silencioso ni emitir on_capital
+        let sink_missing = Arc::new(CapTrack {
+            called: AtomicBool::new(false),
+            val_bits: AtomicU64::new(f64::NAN.to_bits()),
+        });
+        let streamer_missing = UserDataStreamer::new(
+            BinanceClient::new("k".into(), true),
+            Arc::new(OrderRegistry::new()),
+        )
+        .with_sink(sink_missing.clone());
+        let raw_missing = r#"{"e":"ACCOUNT_UPDATE","a":{"B":[{"a":"USDT"}],"P":[]}}"#;
+        streamer_missing.dispatch(raw_missing.as_bytes());
+        assert!(
+            !sink_missing.called.load(std::sync::atomic::Ordering::Relaxed),
+            "on_capital NO debe llamarse si el campo 'wb' está ausente (sin fabricación de cero)"
+        );
     }
 
     #[test]
