@@ -3048,6 +3048,7 @@ version = "0.1.0"
 dependencies = [
  "arc-swap",
  "bincode",
+ "feature-engine",
  "lazy_static",
  "omniscient-registry",
  "rand 0.9.4",
