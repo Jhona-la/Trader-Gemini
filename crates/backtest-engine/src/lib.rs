@@ -987,10 +987,12 @@ pub unsafe extern "C" fn ffi_run_unified_backtest(
     if closes_ptr.is_null()
         || highs_ptr.is_null()
         || lows_ptr.is_null()
+        || volumes_ptr.is_null()
         || config.is_null()
         || out_pnl_ptr.is_null()
         || out_stats_ptr.is_null()
         || symbol_ptr.is_null()
+        || len == 0
     {
         return 0;
     }
@@ -1006,11 +1008,18 @@ pub unsafe extern "C" fn ffi_run_unified_backtest(
     let sym_c = unsafe { std::ffi::CStr::from_ptr(symbol_ptr) };
     let sym_str = sym_c.to_str().unwrap_or("BTCUSDT");
 
-    let initial_capital = std::env::var("INITIAL_CAPITAL")
+    // F2: rechazo explícito fail-closed si INITIAL_CAPITAL es ausente o inválido (cero fabricación de 13 USD)
+    let initial_capital = match std::env::var("INITIAL_CAPITAL")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .filter(|&c| c > 0.0 && c.is_finite())
-        .unwrap_or(13.0);
+    {
+        Some(c) => c,
+        None => {
+            eprintln!("⚠️ [FFI BACKTEST ERROR] INITIAL_CAPITAL ausente, <= 0.0 o inválido; rechazo explícito sin fabricar capital");
+            return 0;
+        }
+    };
     run_backtest_native(
         closes,
         highs,
@@ -1070,7 +1079,16 @@ pub unsafe extern "C" fn ffi_run_unified_backtest_mmap(
         }
     };
 
-    let expected_bytes = len * 4 * 8;
+    let expected_bytes = match len.checked_mul(4 * 8) {
+        Some(b) => b,
+        None => {
+            eprintln!(
+                "⚠️ [BACKTEST MMAP ERROR] Desbordamiento aritmético en len {}",
+                len
+            );
+            return 0;
+        }
+    };
     if mmap.len() < expected_bytes {
         eprintln!(
             "⚠️ [BACKTEST MMAP ERROR] File '{}' too short: got {} bytes, expected {}",
@@ -1094,11 +1112,18 @@ pub unsafe extern "C" fn ffi_run_unified_backtest_mmap(
     let sym_c = unsafe { std::ffi::CStr::from_ptr(symbol_ptr) };
     let sym_str = sym_c.to_str().unwrap_or("BTCUSDT");
 
-    let initial_capital = std::env::var("INITIAL_CAPITAL")
+    // F2: rechazo explícito fail-closed si INITIAL_CAPITAL es ausente o inválido (cero fabricación de 13 USD)
+    let initial_capital = match std::env::var("INITIAL_CAPITAL")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .filter(|&c| c > 0.0 && c.is_finite())
-        .unwrap_or(13.0);
+    {
+        Some(c) => c,
+        None => {
+            eprintln!("⚠️ [BACKTEST MMAP ERROR] INITIAL_CAPITAL ausente, <= 0.0 o inválido; rechazo explícito sin fabricar capital");
+            return 0;
+        }
+    };
     run_backtest_native(
         closes,
         highs,
@@ -1151,7 +1176,16 @@ pub unsafe extern "C" fn ffi_run_polars_backtest_mmap(
         }
     };
 
-    let expected_bytes = len * 4 * 8;
+    let expected_bytes = match len.checked_mul(4 * 8) {
+        Some(b) => b,
+        None => {
+            eprintln!(
+                "⚠️ [POLARS MMAP ERROR] Desbordamiento aritmético en len {}",
+                len
+            );
+            return 0;
+        }
+    };
     if mmap.len() < expected_bytes {
         eprintln!(
             "⚠️ [POLARS MMAP ERROR] File '{}' too short: got {} bytes, expected {}",
@@ -1176,13 +1210,19 @@ pub unsafe extern "C" fn ffi_run_polars_backtest_mmap(
     // genoma y dimensiona cada operación con todo el capital. Nada en el
     // repositorio la invoca, pero cualquier consumidor externo obtenía métricas
     // de un sistema distinto al que se despliega. Ahora usa el mismo motor que
-    // producción y que los promotores de genomas, con el mismo capital por
-    // defecto que las otras dos exportaciones.
-    let initial_capital = std::env::var("INITIAL_CAPITAL")
+    // producción y que los promotores de genomas.
+    // F2: rechazo explícito fail-closed si INITIAL_CAPITAL es ausente o inválido (cero fabricación de 13 USD)
+    let initial_capital = match std::env::var("INITIAL_CAPITAL")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .filter(|&c| c > 0.0 && c.is_finite())
-        .unwrap_or(13.0);
+    {
+        Some(c) => c,
+        None => {
+            eprintln!("⚠️ [POLARS MMAP ERROR] INITIAL_CAPITAL ausente, <= 0.0 o inválido; rechazo explícito sin fabricar capital");
+            return 0;
+        }
+    };
     let mut out_pnl = vec![0.0f64; len];
     run_backtest_native(
         closes,

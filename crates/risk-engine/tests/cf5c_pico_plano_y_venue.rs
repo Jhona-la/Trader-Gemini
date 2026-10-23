@@ -65,9 +65,9 @@ fn cl132_ganar_en_papel_no_fabrica_una_caida() {
     let _ = RiskEngine::new(13.0).evaluate_quantum_order(0, &larga, &a);
     assert_eq!(a.pico_capital.load(Relaxed), 13.0, "el papel no sube el pico del saldo real");
     a.capital_exchange.store(0.0, Relaxed);
-    assert_eq!(drawdown::capital_del_freno(&a), 14.04, "sin exchange (backtest), el arena");
+    assert_eq!(drawdown::capital_del_freno(&a), 0.0, "un saldo exchange observado de 0.0 debe gobernar (freno duro inmediato)");
     a.capital_exchange.store(f64::NAN, Relaxed);
-    assert_eq!(drawdown::capital_del_freno(&a), 14.04, "un saldo inválido no cuenta");
+    assert_eq!(drawdown::capital_del_freno(&a), 14.04, "sin exchange observado (backtest NAN), el arena");
 }
 
 /// Fija las tres variables de entorno que deciden el entorno del proceso y

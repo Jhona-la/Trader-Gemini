@@ -210,19 +210,21 @@ pub fn archivo_pico() -> String {
 /// vez, si el venue no tiene el suyo, y lo renombra.
 pub const ARCHIVO_PICO_SIN_VENUE: &str = "pico_capital.txt";
 
-/// CL-132 (R3 de la revisión del PR #62) — EL CAPITAL DE LOS FRENOS DE
-/// DRAWDOWN: el más conservador de los dos planos, el del arena y el saldo
-/// del exchange que publica el host (X-013). El host y el riesgo registran
-/// el pico y miden la caída con él. Antes el riesgo subía el pico con el
-/// capital del arena y el host medía con el mínimo: en papel sobre mainnet
-/// el exchange es el saldo real, que no se mueve, y ganar en papel se veía
-/// como una caída del saldo real. Sin saldo del exchange (backtest), el del
-/// arena.
+/// CL-132 (R3 de la revisión del PR #62) / F2 (Ola Omega220): EL CAPITAL DE LOS
+/// FRENOS DE DRAWDOWN: el más conservador de los dos planos, el del arena y el
+/// saldo del exchange que publica el host (X-013). El host y el riesgo registran
+/// el pico y miden la caída con él.
+///
+/// Si el saldo del exchange es FINITO (incluyendo 0.0 o saldo negativo por deuda),
+/// se toma estrictamente `capital.min(exchange)`: un cero observado en exchange
+/// apaga inmediatamente el sistema por caída de fondos.
+/// Si el exchange no ha sido observado (f64::NAN en backtest o inicio sin conexión),
+/// se utiliza el capital del arena.
 pub fn capital_del_freno(arena: &quantum_arena::GlobalArena) -> f64 {
     use std::sync::atomic::Ordering::Relaxed;
     let capital = arena.unified_capital.load(Relaxed);
     let exchange = arena.capital_exchange.load(Relaxed);
-    if exchange.is_finite() && exchange > 0.0 {
+    if exchange.is_finite() {
         capital.min(exchange)
     } else {
         capital
