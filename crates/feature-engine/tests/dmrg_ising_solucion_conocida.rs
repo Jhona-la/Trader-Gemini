@@ -1,18 +1,23 @@
-//! Contratos DMRG 1-sitio (GLM 152) con SOLUCIÓN CONOCIDA — los límites
-//! analíticos del Ising transverso. El optimizador debe recuperarlos o
-//! declarar ausencia; jamás inventar.
+//! Contratos DMRG 2-sitios (GLM 152→154) con SOLUCIÓN CONOCIDA — los
+//! límites analíticos del Ising transverso. El optimizador debe recuperarlos
+//! o declarar ausencia; jamás inventar.
 //!
-//! ESTADO: OPEN GLM-152 — el sweep DMRG tiene un panic de indexación en
-//! la contracción del entorno derecho (env de len 0 en el primer paso).
-//! Los asserts quedan INTACTOS (convención cf2 de defectos abiertos); la
-//! sonda y el fix entran en el siguiente átomo de la línea MPS.
+//! GLM 154: los 6 contratos ACTIVOS. Cadena de fixes de la línea:
+//! 153 = MPO campo multiplicativo (∏(I−hσˣ)), seed del entorno derecho en
+//! wd=0, último sitio con SVD roto; 154 = MPO estrictamente 2-cuerpos (el
+//! canal pendiente transportaba σᶻ y generaba cadenas σᶻ₀⋯σᶻ_k de muchos
+//! cuerpos — invisible a los límites con J=1 por coincidencia espectral
+//! E_min = −J²(L−1) = −J(L−1)) y optimizador de PARES con re-emisión
+//! U/σVᵀ: el 1-sitio tenía D' ≤ min(dl·d, dr) ≤ dr y JAMÁS crecía
+//! enlaces desde el estado producto, dejando los contratos D>1
+//! matemáticamente inalcanzables.
 use feature_engine::mps::{dmrg_ising, entrelazamiento_corte, mps_desde_estado};
 
-/// Energía exacta del Ising transverso L sitios con PBC/obc por
-/// diagonalización EXHAUSTIVA del Hamiltoniano 2^L×2^L (L ≤ 10: 1024² —
-/// la referencia JW sería frágil de reimplementar; la diagonalización
-/// directa con el MISMO Jacobi del módulo es autocontenida y exacta para
-/// certificar el principio variacional E_DMRG ≥ E₀).
+/// Energía exacta del Ising transverso L sitios (obc) por diagonalización
+/// EXHAUSTIVA del Hamiltoniano 2^L×2^L (L ≤ 10: 1024² — la referencia JW
+/// sería frágil de reimplementar; la diagonalización directa con un Jacobi
+/// cíclico local es autocontenida y exacta para certificar el principio
+/// variacional E_DMRG ≥ E₀).
 fn energia_exacta_ising(l: usize, j: f64, h: f64) -> f64 {
     let dim = 1usize << l;
     let spin_z = |s: usize, i: usize| -> f64 {
@@ -23,12 +28,10 @@ fn energia_exacta_ising(l: usize, j: f64, h: f64) -> f64 {
         }
     };
     let flip = |s: usize, i: usize| -> usize { s ^ (1 << i) };
-    // H[s][s'] construido explícito, luego Jacobi del módulo… como el test
-    // no ve las primitivas privadas, replicamos el mínimo por barrido de
-    // Rayleigh: para L≤10 basta con el mínimo de ⟨s|H|s⟩ + coherencias vía
-    // diagonalización de la matriz completa con potencia inversa simple.
-    // Máquina simple: Jacobis del crate son privados — construimos la matriz
-    // y usamos el algoritmo de la potencias con deflación (mín autovalor).
+    // H[s][s'] construido explícito y mínimo autovalor por Jacobi cíclico
+    // denso LOCAL (exacto y determinista para 2^L ≤ 1024; el del módulo es
+    // privado). El método de potencias del 152 nunca se ejercitó y estaba
+    // roto (E₀ = +5.82 para L=8 crítico).
     let mut hmat = vec![0.0f64; dim * dim];
     for s in 0..dim {
         let mut diag = 0.0;
@@ -48,66 +51,54 @@ fn energia_exacta_ising(l: usize, j: f64, h: f64) -> f64 {
 }
 
 fn min_autovalor(a: &[f64], n: usize) -> f64 {
-    // Deflación de potencias: el mínimo de A = −máximo de −A con
-    // ortogonalización frente a los autovectores máximos previos.
-    let neg: Vec<f64> = a.iter().map(|x| -x).collect();
-    let mut encontrados: Vec<Vec<f64>> = Vec::new();
-    let mut minimo = f64::INFINITY;
-    let mut semilla = 0x243F6A8885A308D3u64;
-    let mut rng = move || {
-        semilla = semilla
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        ((semilla >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0
-    };
-    for _ in 0..3 {
-        // Sólo el menor (basta): potencia con deflación de los 2 mayores.
-        let mut v: Vec<f64> = (0..n).map(|_| rng()).collect();
-        // normalizar
-        let norm: f64 = v.iter().map(|x| x * x).sum::<f64>().sqrt();
-        for x in v.iter_mut() {
-            *x /= norm;
+    // GLM 154: el método de potencias con deflación original del 152 nunca
+    // se ejercitó (los 6 contratos estaban OPEN) y devolvía E₀ = +5.82 para
+    // L=8 crítico — basura. Jacobi cíclico denso local: exacto y
+    // determinista para 2^L ≤ 1024 (el del módulo es privado del crate).
+    let mut m = a.to_vec();
+    const MAX_SWEEPS: usize = 96;
+    for _ in 0..=MAX_SWEEPS {
+        let mut off = 0.0f64;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                off += m[i * n + j] * m[i * n + j];
+            }
         }
-        for _ in 0..500 {
-            // w = A·v − Σ (proyecciones previas)
-            let mut w = vec![0.0; n];
-            for i in 0..n {
-                let mut s = 0.0;
+        if off <= 1e-18 {
+            break;
+        }
+        for p in 0..n {
+            for q in (p + 1)..n {
+                let apq = m[p * n + q];
+                if apq.abs() < 1e-300 {
+                    continue;
+                }
+                let app = m[p * n + p];
+                let aqq = m[q * n + q];
+                let theta = (aqq - app) / (2.0 * apq);
+                let t = theta.signum() / (theta.abs() + (theta * theta + 1.0).sqrt());
+                let c = 1.0 / (t * t + 1.0).sqrt();
+                let s = t * c;
+                // Semejanza completa (filas + columnas) — la lección del 151.
                 for k in 0..n {
-                    s += neg[i * n + k] * v[k];
+                    let mpk = m[p * n + k];
+                    let mqk = m[q * n + k];
+                    m[p * n + k] = c * mpk - s * mqk;
+                    m[q * n + k] = s * mpk + c * mqk;
                 }
-                w[i] = s;
-            }
-            for prev in &encontrados {
-                let dot: f64 = w.iter().zip(prev).map(|(a, b)| a * b).sum();
-                for (wi, pi) in w.iter_mut().zip(prev.iter()) {
-                    *wi -= dot * pi;
+                for k in 0..n {
+                    let mkp = m[k * n + p];
+                    let mkq = m[k * n + q];
+                    m[k * n + p] = c * mkp - s * mkq;
+                    m[k * n + q] = s * mkp + c * mkq;
                 }
-            }
-            let norm: f64 = w.iter().map(|x| x * x).sum::<f64>().sqrt();
-            if norm < 1e-300 {
-                break;
-            }
-            for (vi, wi) in v.iter_mut().zip(w.iter()) {
-                *vi = wi / norm;
             }
         }
-        let lambda: f64 = (0..n)
-            .map(|i| (0..n).map(|k| neg[i * n + k] * v[k]).sum::<f64>() * v[i])
-            .sum();
-        // λ del MÁXIMO de −A = −(mínimo de A); deflar y repetir da los
-        // siguientes — tomamos el menor de A como −λ_máx de la PRIMERA
-        // pasada sin deflación.
-        if encontrados.is_empty() {
-            minimo = -lambda;
-        }
-        encontrados.push(v);
     }
-    minimo
+    (0..n).map(|i| m[i * n + i]).fold(f64::INFINITY, f64::min)
 }
 
 #[test]
-#[ignore = "OPEN GLM-152: DMRG 1-sitio — panic de indexación en entorno derecho; sonda pendiente"]
 fn dmrg_limite_ferromagnetico_h0_exacto() {
     // h=0: H = −J Σσᶻσᶻ, suelo |↑↑…↑⟩ (o ↓…↓) con E₀ = −J(L−1), D=1.
     let (l, j) = (8usize, 1.0f64);
@@ -125,7 +116,6 @@ fn dmrg_limite_ferromagnetico_h0_exacto() {
 }
 
 #[test]
-#[ignore = "OPEN GLM-152"]
 fn dmrg_limite_espin_libre_j0_exacto() {
     // J=0: H = −h Σσˣ, cada espín independiente: E₀ = −h·L, D=1 basta.
     let (l, h) = (8usize, 1.0f64);
@@ -139,7 +129,6 @@ fn dmrg_limite_espin_libre_j0_exacto() {
 }
 
 #[test]
-#[ignore = "OPEN GLM-152"]
 fn dmrg_punto_critico_recupera_el_suelo_exacto() {
     // h=J=1 (punto crítico, máxima entrelazamiento): D=8 con 12 sweeps
     // debe alcanzar el suelo exacto (diagonalización exhaustiva) con error
@@ -160,7 +149,6 @@ fn dmrg_punto_critico_recupera_el_suelo_exacto() {
 }
 
 #[test]
-#[ignore = "OPEN GLM-152"]
 fn dmrg_monotonia_variacional_en_d() {
     // E(D=1) ≥ E(D=2) ≥ E(D=4): subespacios anidados (principio
     // variacional). En h=0 D=1 ya es exacto ⇒ igualdad.
@@ -173,7 +161,6 @@ fn dmrg_monotonia_variacional_en_d() {
 }
 
 #[test]
-#[ignore = "OPEN GLM-152"]
 fn dmrg_energia_vs_entrelazamiento_del_estado_final() {
     // El MPS optimizado del punto crítico debe tener entrelazamiento
     // ~ln2·(escala conformal) > 0 en el corte medio: coherencia física.
@@ -190,12 +177,11 @@ fn reconstruir_estado(mps: &feature_engine::mps::Mps) -> Vec<f64> {
     // env[(a), configuración_parcial] → expandimos sitio a sitio.
     let mut env: Vec<(usize, Vec<f64>)> = vec![(1usize, vec![1.0])]; // (D_izq, coefs)
     for l in 0..mps.largo {
-        let dl = mps.dims[l];
         let dnext = mps.dims[l + 1];
         let a = &mps.tensores[l];
         let nconf = env[0].1.len();
         let mut nueva: Vec<(usize, Vec<f64>)> =
-            (0..dnext).map(|d| (dnext, vec![0.0; nconf * 2])).collect();
+            (0..dnext).map(|_| (dnext, vec![0.0; nconf * 2])).collect();
         for (aix, (_, coefs)) in env.iter().enumerate() {
             for fs in 0..2 {
                 for aj in 0..dnext {
@@ -215,7 +201,6 @@ fn reconstruir_estado(mps: &feature_engine::mps::Mps) -> Vec<f64> {
 }
 
 #[test]
-#[ignore = "OPEN GLM-152"]
 fn dmrg_reconstruccion_norma_uno() {
     // Autoconsistencia: el estado reconstruido del MPS optimizado tiene
     // norma 1 (el DMRG trabaja en el paquete normalizado).
