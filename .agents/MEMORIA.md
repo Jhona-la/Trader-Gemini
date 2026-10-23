@@ -1,5 +1,20 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 (tarde, 5) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω219 (Integración Limpia de Sol F1-093 a Main, Erradicación de 43 Pánicos de Envenenamiento y Saneamiento de Worktrees)
+
+- **Mandato & Entregables**:
+  1. **Integración Limpia de Sol F1-093 a `main` (commit `e646a78db`, PUSHED a `origin/main`)**:
+     - **Problema de Raíz Solucionado**: En `crates/evolution-engine/src/{online_random_forest.rs, online_newton_gbdt.rs}`, 43 sitios de código de producción invocaban `std::sync::RwLock` con `.read().unwrap()` y `.write().unwrap()`. Bajo la configuración del proyecto `panic = "abort"` (LG-28), si cualquier hilo en el proceso sufría un pánico mientras mantenía un guard, el lock quedaba envenenado (`PoisonError`), provocando que cualquier acceso posterior del evolver abortara el proceso entero y dejara posiciones abiertas a merced del mercado sin supervisión.
+     - **Solución Arquitectónica Integrada**: Introducción de `evolution_engine::lock_seguro::{leer, escribir}` que recupera el guard mediante `PoisonError::into_inner()`, garantizando la resiliencia de campos cuyos invariantes sobreviven a un fallo parcial (`Copy`, `Arc`, `Option<Arc>`).
+     - **Trinquete de Pánicos RB-P1 Apretado**: La línea base en `docs/audit/trinquete_panicos_produccion.tsv` fue reducida de 226 a **183** pánicos.
+     - **Contrato de Verificación**: `crates/evolution-engine/tests/lock_sin_veneno_contract.rs` verifica mediante un pánico real en `std::thread::scope` que tras el envenenamiento los accesores continúan respondiendo con estado válido en lugar de abortar.
+  2. **Higiene de Worktrees y Ramas Locales**:
+     - Eliminado el worktree obsoleto y bloqueado `verify-pr65-20261022` y purgada la rama local `codex/verify-pr65-20261022`.
+     - Desregistrado el worktree temporal `sol_lock`.
+     - Limpieza del repositorio confirmada: únicamente `main` activo y el worktree de PR #97 en curso.
+  3. **Recepción del Relevo de Paridad de Tarifas (Codex QRA)**:
+     - Documentado en `COORDINACION_CODEX_2026-09-28.md`: `RealityPhysics` del núcleo conservaba tasas base hardcodeadas (0.0005/0.0002) mientras que `arena.config.live_taker_fee` operaba dinámicamente. Esto se acoplará de raíz en la siguiente etapa junto con los filtros de precisión de Binance `exchangeInfo`.
+
 ## 2026-10-22 (tarde, 4) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω218 (Resolución Total del Hallazgo QRA-BOOT-01: Cerrojo Atómico oms_reconciled en PhaseOrchestrator y Host Fail-Closed)
 
 - **Mandato & Entregables**:
