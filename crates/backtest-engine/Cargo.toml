@@ -19,3 +19,7 @@ serde_json = "1.0"
 lazy_static = "1.4"
 memmap2 = "0.9"
 mimalloc = "0.1.52"
+
+# GLM 155: sólo tests (vehículo de medición mps_entrelazamiento_medicion).
+[dev-dependencies]
+feature-engine = { path = "../feature-engine" }

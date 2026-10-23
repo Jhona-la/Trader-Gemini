@@ -17503,13 +17503,74 @@ entrelazamiento_espectral multiactivo) tras medición sobre tape real.
 NO tocar tick_reparser (Codex). CI de este push: Unit + Replay verificados
 verdes post-push por mí.
 
-
 ## 2026-10-23T08:38:42-05:00 — QRA rescate selectivo AGY103 sobre main75e
 
 Tras más de8h sin commit ni respuesta al aviso, se preserva f174 por merge EN RAMA PROPIA; primary AGY intocado. Del valor restante se integra sólo el shard telemetry-server completo (61tests históricos, resultado de composición nueva aún pendiente), conservando los seis paquetes Sol y doctests sin duplicación. Los112 de AGY eran50comunes+1MXCSR+61server; el test MXCSR inseguro NO se incorpora. No se heredan los10verdes393b733 a esta composición.
 
 Bloqueante formal: _mm_setcsr(mxcsr|0x8040) retorna a Rust con DAZ modificado, UB inmediato según https://doc.rust-lang.org/core/arch/x86_64/fn._mm_setcsr.html . Un asm sólo para cambiar/restaurar bits o RAII no basta: la aritmética afectada debe estar dentro del mismo bloque asm que restaura estado. No se sustituye por un no-op ni se afirma latencia mejorada: os-guardian queda idéntico al main probado. Parsers nuevos no tenían callers vivos; E/T ilegibles podían convertirse en0/fallback y lado inválido enSELL. Se conserva el código en historia f174 para una reconexión posterior con contratos reales, no se añade código huérfano. Ambos archivos Rust finales son idénticos a main75e; QRA no certifica F2/MXCSR ni streams nuevos.
 
+## 2026-10-23 — GLM: 155 — ENTRELAZAMIENTO TEMPORAL NETO MEDIDO SOBRE TAPE REAL: 100/100 bloques ΔS>0, BTC domina (0.49) con dispersión 16× entre símbolos
+
+El átomo de la medición de la línea §56 (trayectoria Koopman 149→150→215):
+el observable vive como módulo REAL certificado y YA tiene números de
+mercado. Trayectoria completa del ciclo en 5 horas.
+
+**Módulo nuevo `feature-engine/src/entrelazamiento.rs`** (titularidad §56,
+construido SOBRE el núcleo MPS del 151): `estado_empirico` (ventanas
+deslizantes L=8 de retornos binarizados → ψ=√p̂ sobre 256 configs, dos
+modos documentados: signo y mediana) e `entrelazamiento_neto` (S del corte
+medio + S del nulo por PERMUTACIÓN DETERMINISTA Fisher–Yates semilla fija
+— misma marginal exacta, orden destruido; ΔS = S − S_nulo = entrelazamiento
+temporal genuino neto del ruido de muestreo). Guardas CL-15: no finitos
+excluidos con recuento, mediana degenerada = error honesto, L ≤ 12.
+
+**Contratos sintéticos en CI (7/7 activos, `entrelazamiento_solucion_conocida.rs`)**:
+iid asimétrico ⇒ |ΔS|<5e-3 (bits iid = estado producto sin importar p);
+Markov persistente ⇒ ΔS>0.02; **serie alternante ⇒ S=ln2 EXACTO por el
+pipeline completo** (ancla GHZ del 151 atravesando binarización+estado+corte);
+0 ≤ S ≤ 4·ln2; NaN excluido con recuento; constante+mediana ⇒ error; bordes L.
+
+**NÚMEROS de la medición** (vehículo `#[ignore]`
+`backtest-engine/tests/mps_entrelazamiento_medicion.rs`, 10 tapes del
+2026-09-01→14, ~2M ticks/símbolo, 10 bloques c/u, ~200k ventanas/bloque,
+recibo `outputs/mps_entrelazamiento_2026-09-14.log` con períodos UTC
+exactos por bloque):
+
+- **100/100 bloques con ΔS > 0** — el entrelazamiento temporal es real,
+  estable y universal en este universo. S_nulo ≈ 0.003 en todas partes
+  (el nulo confirma que el ruido de muestreo es despreciable).
+- Dispersión transversal 16×: **BTC 0.4900** ≫ BNB 0.2669 > XLM 0.1825 >
+  XMR 0.1566 > SOL 0.1464 > ADA 0.1035 > XRP 0.0909 > NEAR 0.0803 >
+  ATOM 0.0709 > **ICP 0.0299**. BTC corre a ~71% del ancla GHZ (ln2=0.693).
+- Interpretación honesta (sin vender señal): ΔS mide dependencia no-lineal
+  entre la primera y segunda mitad de ventanas de 8 ticks — estructura
+  microestructural (clustering de actualizaciones de quote incluido:
+  p(mid cambia)=0.62 en BTC… p(↑)=0.377). El consumo (voz/gate) lo decide
+  el consejo con estos números; candidato natural: mapa S↔(J,h) del Ising
+  (usa el DMRG del 154) para ubicar cada símbolo en el diagrama de fases.
+
+**Hallazgo del censo**: signo y mediana dan IDÉNTICO binarizado en estos
+tapes — la mediana de los log-retornos de mid es EXACTAMENTE 0.0 (el ~62%
+de los ticks no mueve el mid ⇒ pares centrales de la mediana en cero).
+Verificado en python (0 bits discrepantes de 2M). El dual-modo queda como
+guarda para tapes asimétricos, no redundancia inútil.
+
+**Lecciones**:
+- El patrón de candidatos TG_DATA_ROOT del vehículo koopman tenía un bug
+  latente: usaba el env CRUDO como ruta del tape (el DIRECTORIO existe ⇒
+  exists()=true ⇒ open niega). Convención 136: TG_DATA_ROOT es un
+  DIRECTORIO; el tape se resuelve con join(nombre) y el candidato exige
+  is_file(). Arreglado en mi vehículo; koopman_observables lo comparte —
+  NO lo toqué (titularidad compartida, que lo corrija su dueño o el
+  próximo ciclo con su bendición).
+- Diagnóstico honesto del error (clasificar open vs mmap con lectura plana
+  en el mensaje) convirtió un Access Denied críptico en fix de una línea.
+- Sandbox del host: binarios arbitrarios (exes de cargo) reciben Access
+  Denied leyendo paths ajenos al cwd aunque bash/coreutils/python puedan —
+  ejecutar la medición desde el raíz (donde viven tapes y recibos) resuelve.
+
+Suite feature-engine completa verde (91 unit + dmrg 6/6 + mps 7/7 +
+entrelazamiento 7/7). CI del push: Unit + Replay verificados post-push.
 
 ## 2026-10-23T09:56:51-05:00 — QRA F0/F1: código en main y CI propio10/10
 
