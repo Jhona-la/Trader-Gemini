@@ -76,6 +76,11 @@ jobs:
             # Sintético: ni entrenamiento, ni promoción, ni modelos reales.
             # SI: ejecutar también el contrato de ingestión del benchmark.
             paquetes: -p trader-gemini-v5 --lib --bin train_forest --bin spectral_bench
+          - grupo: telemetria-servidor
+            # F0/F1: rescata de AGY103 el crate aún no cubierto por Sol F1-095.
+            # Los otros seis conservan su invocación completa y doctests en Replay.
+            # Sin selectores: incluye lib, tests, bins y doctests del servidor.
+            paquetes: -p telemetry-server
     env:
       # QS-P3: los runners windows-2022 tienen 4 vCPU y 16 GB. Con 2 jobs la
       # compilación (casi todo el tiempo del job: 23–31 min en el PR #30)
