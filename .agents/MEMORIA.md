@@ -1,4 +1,10 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
+## Omega220 E2E — correcciones preparadas; CI propio pendiente
+
+PR102 conserva PR99/AGY y main Sol F1094 eeae8e106 por merge. Fees por símbolo y sesión, nocional efectivo, rebates, recibo local de cierre y adopciones etiquetadas. OMS empieza cerrado en Testnet, valida modo hedge y snapshot de fees/posiciones/órdenes, drena tareas admitidas y no aplica resultados de otra sesión. Publicación local y snapshot comparten gate; balance de transición valida generación. Se conservan cierres defensivos.
+
+Hay 41 contratos Rust nuevos escritos (8 FeeSchedule,5 core,11 reconciliación,1 flujo privado,16 host) y2 anteriores corregidos. Ejecución pendiente, no transferir9/9 AGY5605 a esta composición. Plan docs/audit/OMEGA220_E2E_2026-10-22.md y ledger de rutas porblob; no auditoría total. No Cargo local (RAM2.56/2.69GiB <4), operaciones o modelos reales. No-ID/FX, tarifas históricas de adopción y escenarios de evolvers mantienen límites explícitos. Verificación candidato+push real de main9/9 y recibo final requeridos.
+
 ## 2026-10-22 20:24:00 -05:00 — QRA: turno de merge PR97 hasta21:00 (coordinacion de CI)
 
 PR97 head4ce273a60/base0455e46 incluye Sol F1-093b y GLM153, preservados.
