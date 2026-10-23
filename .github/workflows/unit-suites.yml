@@ -102,6 +102,10 @@ jobs:
           rustup toolchain install nightly-2026-06-30 --profile minimal
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo +nightly-2026-06-30 --version
+      - name: Dependency duplicate inventory (F0)
+        if: matrix.grupo == 'telemetria-servidor'
+        # Metadata only, once per run; no unification across incompatible semver.
+        run: cargo +nightly-2026-06-30 tree --workspace --duplicates --locked
       - name: Tests (${{ matrix.grupo }})
         run: cargo +nightly-2026-06-30 test ${{ matrix.paquetes }} --locked -- --test-threads=1
       - name: Terminal equity report contracts
