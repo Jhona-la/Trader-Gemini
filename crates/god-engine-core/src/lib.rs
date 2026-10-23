@@ -4286,6 +4286,7 @@ impl GodEngineCore {
             // allow defensive closes; they are not fresh exchange observations.
             let observed_fees_valid = self.sync_reality_fees_for_coin(coin_id);
             let allow_entries = allow_entries && observed_fees_valid;
+            let entry_fee_book = self.arena.config.live_fee_schedule.load_full();
             if let Some(accounting) = self.local_close_accounting.get_mut(coin_id) {
                 *accounting = None;
             }
@@ -10113,6 +10114,22 @@ impl GodEngineCore {
                                     .commission_for_notional(qty * real_entry_price, false) else {
                                         continue;
                                     };
+                                // OMS must not scan an empty slot and then erase
+                                // a newly published reservation as a phantom.
+                                let publication_arena = Arc::clone(&self.arena);
+                                let _publication = publication_arena.config.entry_publication_gate
+                                    .lock().unwrap_or_else(|e| e.into_inner());
+                                let current_book = publication_arena.config.live_fee_schedule.load_full();
+                                let same_book = match (&entry_fee_book, &current_book) {
+                                    (Some(before), Some(now)) => Arc::ptr_eq(before, now),
+                                    (None, None) => true,
+                                    _ => false,
+                                };
+                                if publication_arena.config.entry_publication_paused.load(Ordering::Acquire)
+                                    || !same_book
+                                    || publication_arena.config.fee_rates_for(coin_id) != Some(self.reality_fees()) {
+                                    continue;
+                                }
                                 self.arena.used_margin.fetch_add(margin_req, Ordering::Relaxed);
                                 self.arena.unified_capital.fetch_add(-fee_paid, Ordering::Relaxed);
                                 let expected_generation = target_pos.generation

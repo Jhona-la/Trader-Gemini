@@ -71,6 +71,10 @@ pub struct QuantumConfig {
     /// Live admission requires symbol-specific evidence. False permits an
     /// explicit scenario to use the finite legacy scalar rates.
     pub observed_fees_required: AtomicBool,
+    /// Serializes local entry publication with OMS snapshot application.
+    /// The tick's analytics do not acquire this lock.
+    pub entry_publication_gate: std::sync::Mutex<()>,
+    pub entry_publication_paused: AtomicBool,
     pub weight_obi: AtomicF64,
     pub weight_ofi: AtomicF64,
     pub weight_vpin: AtomicF64,
@@ -384,6 +388,8 @@ impl QuantumConfig {
             live_taker_fee: AtomicF64::new(0.0005), // Fracción (VIP0 Taker: 5 bps = 0.05%)
             live_fee_schedule: ArcSwapOption::empty(),
             observed_fees_required: AtomicBool::new(false),
+            entry_publication_gate: std::sync::Mutex::new(()),
+            entry_publication_paused: AtomicBool::new(false),
             global_max_drawdown: AtomicF64::new(genome.global_max_drawdown),
             global_leverage: AtomicF64::new(genome.global_leverage),
             btc_volatility_multiplier: AtomicF64::new(genome.btc_volatility_multiplier),
