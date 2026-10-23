@@ -48,6 +48,11 @@ pub struct SpectralRegimeField {
     /// extrema en la banda micro (reversión violenta). No es una etiqueta:
     /// es la densidad de evidencia de caída del propio campo.
     pub crash_flux: f64,
+    /// Factor de modulación continuo derivado del régimen cuántico del Ising transverso [0.05, 2.0].
+    /// 1.0 = neutro / sin evidencia; >1.0 = coherencia ordenada (BTC); <1.0 = ruido paramagnético (ICP).
+    pub quantum_phase_factor: f64,
+    /// Acoplamiento transverso g estimado para el símbolo (def: 1.0).
+    pub quantum_coupling_g: f64,
 }
 
 /// Parámetros dinámicos desacoplados para la evaluación continua del Campo de Régimen Espectral (Ola Ω127, Ω178).
@@ -69,6 +74,8 @@ pub struct SpectralRegimeParams {
     pub margin_contraction_scale: f64,
     /// Piso mínimo de margen para evitar la asfixia total de liquidez [0.01, 0.50].
     pub min_margin_floor: f64,
+    /// Peso de la modulación cuántica [0.0, 2.0] (def: 1.0).
+    pub w_quantum_coupling: f64,
 }
 
 impl Default for SpectralRegimeParams {
@@ -82,6 +89,7 @@ impl Default for SpectralRegimeParams {
             cadence_regime_ms: 60_000.0,
             margin_contraction_scale: 0.95,
             min_margin_floor: 0.05,
+            w_quantum_coupling: 1.0,
         }
     }
 }
@@ -116,6 +124,10 @@ impl SpectralRegimeParams {
         let floor = registry.get_value_or("regime_min_margin_floor", p.min_margin_floor);
         if floor.is_finite() && floor > 0.0 {
             p.min_margin_floor = floor.clamp(0.01, 0.50);
+        }
+        let w_q = registry.get_value_or("regime_w_quantum_coupling", p.w_quantum_coupling);
+        if w_q.is_finite() && w_q >= 0.0 {
+            p.w_quantum_coupling = w_q;
         }
         p
     }
@@ -158,6 +170,8 @@ impl SpectralRegimeField {
             // Erradica discrepancia entre decisión de entrada (D-742, 1/vol) y carrier_tide (legacy persistencia).
             carrier_tide: spec.spectral_coherence(true),
             crash_flux: 0.0,
+            quantum_phase_factor: 1.0,
+            quantum_coupling_g: 1.0,
         };
         if let (Some(prev_ln), Some(cur_ln)) = (prev_dominant_ln_tau, nonzero_ln(field.resonant_tau_ms))
         {
@@ -308,6 +322,38 @@ impl SpectralRegimeField {
             self.short_margin_multiplier_with_params(params)
         }
     }
+
+    /// Modula el campo de régimen con el estado cuántico observado (Ola Omega220 — Átomo 3.3).
+    #[inline]
+    pub fn with_quantum_phase(&self, phase: &crate::quantum_phase::QuantumPhaseState) -> Self {
+        let mut out = *self;
+        out.quantum_phase_factor = phase.factor_cuantico;
+        out.quantum_coupling_g = phase.g;
+        out
+    }
+
+    /// Multiplicador de margen continuo simétrico integrando la modulación cuántica (Ola Omega220 — Átomo 3.3).
+    ///
+    /// Modula el margen clásico mediante el factor cuántico $f_{\text{cuantico}}$ derivado del modelo de Ising:
+    /// - En fase ordenada ($g < 1.0$, e.g. BTC): amplifica la capacidad de margen hasta 2.0x.
+    /// - En fase crítica ($g \approx 1.0$): aplica amortiguamiento Hermite para mitigar susceptibilidad divergente.
+    /// - En fase paramagnética ($g > 1.0$, e.g. ICP): contrae suavemente el margen según $1/g$.
+    pub fn effective_quantum_margin_multiplier(&self, is_long: bool, params: &SpectralRegimeParams) -> f64 {
+        let base_margin = self.margin_multiplier_with_params(is_long, params);
+        let q_factor = if self.quantum_phase_factor.is_finite() && self.quantum_phase_factor > 0.0 {
+            self.quantum_phase_factor
+        } else {
+            1.0
+        };
+        let w_q = if params.w_quantum_coupling.is_finite() && params.w_quantum_coupling >= 0.0 {
+            params.w_quantum_coupling
+        } else {
+            1.0
+        };
+        // Modulación convexa acotada: w_q modula la influencia cuántica sobre el margen base
+        let modulated = base_margin * (1.0 + w_q * (q_factor - 1.0));
+        modulated.clamp(params.min_margin_floor, 2.0)
+    }
 }
 
 /// Vista legada del campo (mapeo 1:1 con risk-engine::regime::MarketRegime).
@@ -347,6 +393,8 @@ mod tests {
             mass_entropy: 0.10,
             carrier_tide: -0.80,
             crash_flux: 0.0,
+            quantum_phase_factor: 1.0,
+            quantum_coupling_g: 1.0,
         };
         let mut g = f;
         g.crash_flux = (0.35f64 * 1.0 + 0.30 * 1.0 + 0.20 * 1.0 + 0.15 * 0.4).clamp(0.0, 1.0);
@@ -364,6 +412,8 @@ mod tests {
             mass_entropy: 0.5,
             carrier_tide: 0.9,
             crash_flux: 0.9,
+            quantum_phase_factor: 1.0,
+            quantum_coupling_g: 1.0,
         };
         assert_eq!(f.long_margin_multiplier(), 1.0);
     }
@@ -377,6 +427,8 @@ mod tests {
             mass_entropy: 0.10,
             carrier_tide: 0.80, // marea alcista intensa
             crash_flux: 0.85,
+            quantum_phase_factor: 1.0,
+            quantum_coupling_g: 1.0,
         };
         assert!(f.short_margin_multiplier() < 0.3);
         assert_eq!(f.long_margin_multiplier(), 1.0);
@@ -393,6 +445,8 @@ mod tests {
             mass_entropy: f64::NAN,
             carrier_tide: f64::NAN,
             crash_flux: f64::NAN,
+            quantum_phase_factor: f64::NAN,
+            quantum_coupling_g: f64::NAN,
         };
         assert_eq!(f.long_margin_multiplier(), 1.0);
         assert_eq!(f.short_margin_multiplier(), 1.0);
