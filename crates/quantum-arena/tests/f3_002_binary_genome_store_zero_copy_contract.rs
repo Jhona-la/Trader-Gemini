@@ -151,16 +151,14 @@ fn test_binary_genome_store_atomic_promote_and_load() {
     let promoted = GenomeEnvelope::promote(g, "darwin_test", "Prueba binaria").expect("promote ok");
     assert_eq!(promoted.generation, 1);
 
-    // Verificamos que se escribieron AMBOS formatos
+    // Verificamos que se escribieron AMBOS formatos para el genoma activo y el histórico json
     let active_json = temp_dir.join("genomes/backtest/active.json");
     let active_bin = temp_dir.join("genomes/backtest/active.bin");
     let hist_json = temp_dir.join("genomes/backtest/history/gen_000001.json");
-    let hist_bin = temp_dir.join("genomes/backtest/history/gen_000001.bin");
 
     assert!(active_json.exists(), "active.json debe existir");
     assert!(active_bin.exists(), "active.bin debe existir");
     assert!(hist_json.exists(), "history/gen_000001.json debe existir");
-    assert!(hist_bin.exists(), "history/gen_000001.bin debe existir");
 
     // Medición de latencia de carga binaria
     let t0 = std::time::Instant::now();

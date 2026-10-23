@@ -226,11 +226,6 @@ impl GenomeEnvelope {
             match std::fs::read(&bin_p) {
                 Ok(bytes) => match Self::from_binary_bytes(&bytes) {
                     Ok(envelope) => {
-                        let hist_bin = history_bin_path(envelope.generation);
-                        if !std::path::Path::new(&hist_bin).exists() {
-                            let _ = std::fs::create_dir_all(history_dir());
-                            let _ = atomic_write_bytes(&hist_bin, &bytes);
-                        }
                         return Some(envelope);
                     }
                     Err(e) => {
@@ -275,8 +270,6 @@ impl GenomeEnvelope {
                     // Auto-generación de active.bin para acelerar próximos arranques
                     if let Ok(bin_bytes) = envelope.to_binary_bytes() {
                         let _ = atomic_write_bytes(&bin_p, &bin_bytes);
-                        let hist_bin = history_bin_path(envelope.generation);
-                        let _ = atomic_write_bytes(&hist_bin, &bin_bytes);
                     }
                     Some(envelope)
                 }
@@ -609,12 +602,8 @@ impl GenomeEnvelope {
         }
         drop(hist_file);
 
-        // 1b) Historia inmutable binaria (append-only gen_{N}.bin)
+        // 1b) Generación de bytes binarios para publicación active.bin
         let bin_bytes = envelope.to_binary_bytes().ok();
-        if let Some(ref bytes) = bin_bytes {
-            let hist_bin = history_bin_path(envelope.generation);
-            let _ = atomic_write_bytes(&hist_bin, bytes);
-        }
 
         // 2) Active atómico (tmp único + fsync + rename sin remove previo) y
         // MONÓTONO (F1-072b, Sol): un promotor con generación menor no puede
