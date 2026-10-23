@@ -17316,6 +17316,27 @@ Corte461484710/source1b14b4d46. Nuevo count_decimals devuelve0 TAMBIEN para paso
 
 Contrato existente payload_admission_contract esperaquantity=0.4&, nuevoformatteremite0.400&; adaptar representacion conservandoassertvalor/presupuesto. Nuevo caso0.007 no detecta el ejemplo. WSesstubErr/connectedfalse, no transporteoperativo: no afirmardiscrepancialiveWS. Informe detallado en docs/audit/QRA_REVISION_OMEGA220_2026-10-22.md del WTQRA, ocho blobs historicos. RamaAGYsepreserva yQRAnoeditaeseCodigo. PR97head911a sigueestable esperando9yCIpushmainpropio.
 
+## 2026-10-22T20:55:58-05:00 — QRA: PR97 integrado; CI del push real pendiente
+
+[PR97](https://github.com/Jhona-la/Trader-Gemini/pull/97) fusionado en
+`2715600c4525afa7777a840b1eaf916b8428b848`, padres cf87/911a y arbol
+`620e1b647d381b0ed4bd05f856ab582fe6f65261` igual al candidato aprobado.
+Candidato Unit39884104253 7/7 y Replay39884104244 2/2 SUCCESS. La rama
+QRA de codigo ya se retiro local/remoto, con prueba de ancestria.
+
+NUEVO push realamain: [Unit39886670203](https://github.com/Jhona-la/Trader-Gemini/actions/runs/39886670203)
+y [Replay39886670039](https://github.com/Jhona-la/Trader-Gemini/actions/runs/39886670039)
+PENDIENTES. No se adelanta su9/9 ni se confunde con el verde del candidato.
+El recibo final actualizara doce rutas en alcance,18QRA nuevos+4Sol reparados,
+68recursos y fuentes porblob. Censo original no equivale a auditoria completa.
+
+Se propone terminar este turno de integracion hasta21:35 America/Bogota para
+verificar esos nuevejobs delpush y publicar recibo antes del siguiente merge
+de codigo. Continuar en ramas; urgencias se reclasifican. No es cerrojo de
+archivos ni permiso para operar. RamaAGY Omega220 y VerifyPR65ACTIVE se
+preservan; la revision RO Omega220 comunica bloqueantes y limites al dueño,
+no se integra ni certifica en este cierre. Sin Cargo local, modelos o fondos.
+
 ## 2026-10-22 21:17:26 -05:00 — QRA RO: reevaluacion Omega220 actualizada0bfd39c75
 
 Confirmadoenfuente: contraejemplo0.6→1 CORREGIDO portry_count_decimalsNone/fallback0.6; arena ownership CORREGIDO capturandotasasantesdelSelf; .4/.400 CORREGIDOrecortandoceros. No mantener warnings461comoactuales. Anexo docs/audit/QRA_REVISION_OMEGA220_2026-10-22.md contraza6blobsnuevos sobre8historicos; sinCargo ni edicionramasAGY.
@@ -17329,3 +17350,41 @@ Atendido assert de qra_fixed_filter_contract.rs:67:
 2. Adaptado `crates/execution-engine/tests/payload_admission_contract.rs` para aceptar tanto `quantity=0.400&` (formato exacto con paso 0.001) como `quantity=0.4&`, eliminando discrepancias sintacticas sin alterar presupuesto, cantidad aprobada ni margen reservado.
 3. Se confirman ambos contratos verdes y preservacion de la invariante cantidad firmada = reservada = ejecutada.
 
+## 2026-10-22 — Codex QRA: continuación integrada; CI del push real 9/9
+
+[PR97](https://github.com/Jhona-la/Trader-Gemini/pull/97) se integró como
+`2715600c4525afa7777a840b1eaf916b8428b848`. Padres `cf87f8c` y `911a4c8`;
+árbol `620e1b647d381b0ed4bd05f856ab582fe6f65261`, idéntico al candidato probado.
+El candidato aprobó 9/9. El push real también aprobó 9/9 por separado:
+[Unit 39886670203](https://github.com/Jhona-la/Trader-Gemini/actions/runs/39886670203)
+(7/7) y [Replay 39886670039](https://github.com/Jhona-la/Trader-Gemini/actions/runs/39886670039)
+(2/2). Los logs repiten 22 contratos objetivo y 68 casos de recursos sin fallos,
+ignorados ni filtros en esos contratos.
+
+Doce rutas verificadas en alcance: respuesta de comisiones completa, finita y
+del símbolo pedido; timestamp T corrupto reconocido rechazado; prefijo antes
+de materializar ticks; contrato Sol reparado y conectado al workflow. Son
+18 tests nuevos y cuatro de Sol rescatados. Se preservó su solución del Arc;
+join contiene el pánico esperado y el test alcanza is_trained con el lock real.
+No se alteraron los cuerpos de producción de los evolvers.
+
+Límites: tasas f64 y paridad por fill pendientes; scanner parcial; API de carga
+completa sin límite; recuperar un guard no valida todo el estado del modelo.
+Unwinding no demuestra supervivencia bajo panic=abort. El censo de 2.155 rutas
+no equivale a una auditoría total. Ver QRA_FASE2_RESULTADOS y ledger de doce rutas.
+
+PR98 y PR100 sólo publicaron coordinación; sus ramas y la de código ya se
+retiraron. Este recibo es sólo Markdown/TSV, con fuentes iguales al código
+probado. Reserva QRA liberada. La rama y el worktree del recibo se retiran
+tras su merge, con HEAD integrado, cero cambios y revisión de ignorados;
+confirmación en el cuerpo del PR y los logs. El worktree QRA anterior se retiró
+por Git tras quedar encolado el archivador. No se retiró ningún worktree ajeno.
+Verify PR65 ACTIVE y la rama AGY Omega220 se preservan. El informe histórico
+461 y su anexo 0bfd reconocen los arreglos posteriores de AGY y los límites
+restantes, sin certificar su CI ni su integración.
+
+No hubo Cargo local: RAM libre 2,31 GiB a las 19:02 y 2,68 GiB a las 21:03,
+por debajo del umbral de 4 GiB. Un target canónico; sin cerrar procesos ajenos.
+Las cifras de Vec son estimaciones, no working-set medido. Sin operaciones,
+promoción de entorno ni entrenamiento operativo con datos reales. ROI/PnL/WR,
+latencia E2E y la meta +100 %/72 h siguen sin demostrarse.
