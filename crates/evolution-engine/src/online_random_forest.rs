@@ -6,6 +6,7 @@ use smartcore::ensemble::random_forest_regressor::{
 };
 use smartcore::linalg::basic::matrix::DenseMatrix;
 use smartcore::metrics::{accuracy, mean_squared_error};
+use crate::lock_seguro::{escribir, leer};
 use std::sync::{Arc, RwLock};
 
 /// Estructura de observación individual (Data Point) con paridad direccional de lado
@@ -108,7 +109,7 @@ impl TrueOnlineRandomForest {
     }
 
     pub fn is_trained(&self) -> bool {
-        self.classifier.read().unwrap().is_some() || *self.gbdt.is_trained.read().unwrap()
+        leer(&self.classifier).is_some() || *leer(&self.gbdt.is_trained)
     }
 
     /// CL-18 — umbrales calibrados, o `None` si el último reentrenamiento no
@@ -117,11 +118,11 @@ impl TrueOnlineRandomForest {
     /// daemon lo escribía cada 500 ms en los genes del gate ML y lo fijaba
     /// en su lift mínimo.
     pub fn get_optimal_thresholds(&self) -> Option<(f32, f32)> {
-        if !*self.thresholds_identified.read().unwrap() {
+        if !*leer(&self.thresholds_identified) {
             return None;
         }
-        let th_long = *self.shadow_threshold_long.read().unwrap();
-        let th_short = *self.shadow_threshold_short.read().unwrap();
+        let th_long = *leer(&self.shadow_threshold_long);
+        let th_short = *leer(&self.shadow_threshold_short);
         Some((th_long, th_short))
     }
 
@@ -138,7 +139,7 @@ impl TrueOnlineRandomForest {
             return;
         }
 
-        let mut data = self.observations.write().unwrap();
+        let mut data = escribir(&self.observations);
         if data.len() >= self.max_memory_size {
             let drain_count = self.max_memory_size / 10;
             data.drain(0..drain_count);
@@ -147,7 +148,7 @@ impl TrueOnlineRandomForest {
     }
 
     pub fn retrain_models(&self) -> Result<(f64, f64), String> {
-        let data = self.observations.read().unwrap().clone();
+        let data = leer(&self.observations).clone();
         if data.len() < 50 {
             return Err("Insuficientes datos para entrenar el modelo (mínimo 50)".to_string());
         }
@@ -260,19 +261,19 @@ impl TrueOnlineRandomForest {
         // el «óptimo» sería el primer paso de la rejilla, no un dato.
         let identificados = max_l > min_l && max_s > min_s;
         if identificados {
-            *self.shadow_threshold_long.write().unwrap() = best_th_long.clamp(0.50, 0.75);
-            *self.shadow_threshold_short.write().unwrap() = best_th_short.clamp(0.25, 0.50);
+            *escribir(&self.shadow_threshold_long) = best_th_long.clamp(0.50, 0.75);
+            *escribir(&self.shadow_threshold_short) = best_th_short.clamp(0.25, 0.50);
         }
-        *self.thresholds_identified.write().unwrap() = identificados;
+        *escribir(&self.thresholds_identified) = identificados;
 
         // Ola Ω136: Reentrenar el motor analítico Newton GBDT en espacio Hilbert L2
         let _ = self.gbdt.retrain_models();
 
-        *self.classifier.write().unwrap() = Some(Arc::new(classifier));
-        *self.regressor.write().unwrap() = Some(Arc::new(regressor));
+        *escribir(&self.classifier) = Some(Arc::new(classifier));
+        *escribir(&self.regressor) = Some(Arc::new(regressor));
 
         {
-            *self.last_accuracy.write().unwrap() = acc;
+            *escribir(&self.last_accuracy) = acc;
             Ok((acc, mse))
         }
     }
@@ -287,14 +288,14 @@ impl TrueOnlineRandomForest {
 
         // Ola Ω136: Si el motor analítico Newton GBDT está entrenado, usar su predicción
         // continua zero-alloc en stack (<300 ns).
-        if *self.gbdt.is_trained.read().unwrap() {
+        if *leer(&self.gbdt.is_trained) {
             if let Some((prob, pnl)) = self.gbdt.predict_6d(features) {
                 return Some((prob, pnl));
             }
         }
 
-        let clf_guard = self.classifier.read().unwrap();
-        let reg_guard = self.regressor.read().unwrap();
+        let clf_guard = leer(&self.classifier);
+        let reg_guard = leer(&self.regressor);
 
         if let (Some(clf), Some(reg)) = (clf_guard.as_ref(), reg_guard.as_ref()) {
             let x_eval = DenseMatrix::from_2d_vec(&vec![features.to_vec()]);
