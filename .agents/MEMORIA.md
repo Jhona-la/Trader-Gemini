@@ -9,6 +9,24 @@ avances de main han reiniciado CI varias veces. El resultado actual sigue
 PENDIENTE, sin transferir verdes previos. Root prepara recibo y exige CI del
 push realamain. No Cargo local, modelos, operaciones ni ROI medidos.
 
+## 2026-10-22 (noche, 2) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω220 — Cierre de Brechas E0382, Cuantización Defensiva y Rebase sobre Main (PR #97 Merged)
+
+- **Mandato & Entregables de Cierre en Rama `agy/omega220-fees-y-filtros`**:
+  1. **Resolución de Bloqueante E0382 (Ownership en Constructor `GodEngineCore`)**:
+     - En `crates/god-engine-core/src/lib.rs`: Las lecturas atómicas `arena.config.live_maker_fee` y `arena.config.live_taker_fee` se pre-extraen en `construir` antes de que `arena` sea movida al struct (`Self { arena, ... }`). Cero clonación extra de `Arc`, O(1) tiempo y cero heap.
+     - Expuestos getters de sólo lectura `maker_fee(&self)` y `taker_fee(&self)` en `RealityPhysics`, y `core.reality_fees()` en `GodEngineCore`.
+     - Contrato de integración formal añadido en `crates/god-engine-core/tests/qra_fee_sync_contract.rs`: valida sincronización dinámica de comisiones del exchange (ej. promociones o nivel VIP) en caliente a través de ticks, verifica cálculo de costos en dólares sobre entradas/salidas y garantiza resistencia fail-closed ante tasas inválidas (negativas o NaN).
+  2. **Cuantización Defensiva en Stack y Formateo sin Residuos (Observación QRA / Átomos 2.4/2.5)**:
+     - `crates/execution-engine/src/fixed_filter.rs`: Creada función `pub fn try_count_decimals(step: f64) -> Option<u8>` que devuelve `None` ante pasos no representables o que exceden `MAX_DECIMALS`. `count_decimals(step)` devuelve `0` como fallback para configuración de grids estándar.
+     - En `format_fixed_ascii`: Implementado recorte estricto de ceros no significativos a la derecha tras el punto decimal y omisión del punto si la parte fraccionaria es cero. Garantiza que cantidades como `0.4` sobre step `0.001` emitan `"0.4"` (en lugar de `"0.400"`), respetando las aserciones de contratos de admisión existentes sin desviar la cantidad reservada.
+     - `crates/execution-engine/src/client.rs`: `push_fixed_f64` recibe `decimals: Option<u8>`. Si es `None`, delega defensivamente a `push_f64(v)` evitando redondeos espurios a enteros en pasos extremos (ej. `1e-11`).
+     - `crates/execution-engine/src/executor.rs`: Todos los puntos de serialización de órdenes y legs algorítmicas migrados a `try_count_decimals` y `push_fixed_f64`.
+     - `crates/execution-engine/tests/payload_admission_contract.rs`: Contrato ampliado para verificar `0.007`, `0.4` sin residuos y comportamiento defensivo en step `1e-11`.
+  3. **Sincronización con Main y CI en Vuelo**:
+     - Respetado el turno de Codex QRA hasta el merge de PR #97 (`2715600c4`, 9/9 jobs verdes).
+     - Rama `agy/omega220-fees-y-filtros` rebasada limpiamente sobre `main` (`2715600c4`) y empujada a origen.
+     - CI despachado y en ejecución para PR #99 (`Unit 39887074639` y `Replay 39887077457`).
+
 ## 2026-10-22 (noche, 1) — AGY (Lead Quant Sr. / Consejo 10 Roles / Modo Profesor): Ola Ω220 (Paridad Física de Fees QRA-FEE-01, Serialización Fija de Órdenes Átomos 2.4/2.5 y Defensa de Capital)
 
 - **Mandato & Entregables**:
