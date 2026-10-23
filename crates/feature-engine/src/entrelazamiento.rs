@@ -339,3 +339,117 @@ impl CurvaFases {
         Ok(InversionFase { cruces, distancias_log })
     }
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// GLM 157 — ENTRELAZAMIENTO STREAMING: el primitivo vivo que consume el
+// Átomo 3.3 de AGY (acoplamiento de entrelazamiento_neto al Universo
+// Continuo Espectral). Un bucle en vivo no puede reconstruir ψ=√p̂ desde
+// cero por tick: `EntrelazamientoStreaming` mantiene el buffer de
+// retornos ACOTADO (ring sin realocación, push O(1)) y `medir()` delega
+// en el MISMO `entrelazamiento_neto` sobre el contenido actual — paridad
+// bit con el batch POR CONSTRUCCIÓN (misma binarización, misma
+// permutación determinista con semilla fija). Complejidad: push O(1),
+// medir O(W·L + 2^L) ≈ 1.6 MFlops con W=200k/L=8 (µs) — llamado a la
+// cadencia de muestreo (p. ej. %64 como Koopman), no por tick.
+// ══════════════════════════════════════════════════════════════════════
+
+/// Medidor vivo de entrelazamiento temporal neto sobre una ventana acotada
+/// de los últimos `capacidad` retornos (los no finitos se excluyen con
+/// recuento, como el batch — CL-15, nunca contaminan el buffer).
+#[derive(Debug)]
+pub struct EntrelazamientoStreaming {
+    l: usize,
+    modo: ModoBinarizacion,
+    /// Ring de retornos finitos: `buffer[pos..pos+n]` en orden temporal.
+    buffer: Vec<f64>,
+    cabeza: usize,
+    n: usize,
+    /// Retornos no finitos vistos desde la última medición (recuento honesto).
+    descartados_desde_medida: usize,
+    descartados_totales: usize,
+}
+
+impl EntrelazamientoStreaming {
+    /// Crea el medidor. `capacidad` = retornos finitos retenidos (la medida
+    /// cubre sus últimas `capacidad − L + 1` ventanas). Errores tempranos en
+    /// L inválido o capacidad < L (nunca podría formar una ventana).
+    pub fn new(
+        l: usize,
+        modo: ModoBinarizacion,
+        capacidad: usize,
+    ) -> Result<Self, EntrelazamientoError> {
+        if l == 0 || l > MPS_MAX_L {
+            return Err(EntrelazamientoError::LongitudInvalida { l });
+        }
+        if capacidad < l {
+            return Err(EntrelazamientoError::RetornosInsuficientes {
+                recibidos: capacidad,
+                necesarios: l,
+            });
+        }
+        Ok(Self {
+            l,
+            modo,
+            buffer: vec![0.0; capacidad],
+            cabeza: 0,
+            n: 0,
+            descartados_desde_medida: 0,
+            descartados_totales: 0,
+        })
+    }
+
+    /// Capacidad del ring (retornos finitos retenidos).
+    pub fn capacidad(&self) -> usize {
+        self.buffer.len()
+    }
+
+    /// Retornos finitos activos en el buffer ahora.
+    pub fn activos(&self) -> usize {
+        self.n
+    }
+
+    /// Retornos no finitos excluidos desde el arranque.
+    pub fn descartados_totales(&self) -> usize {
+        self.descartados_totales
+    }
+
+    /// Ingresa un retorno: O(1), sin realocación. No finito ⇒ excluido con
+    /// recuento (no entra al ring; semántica idéntica al filtro del batch).
+    pub fn push(&mut self, ret: f64) {
+        if !ret.is_finite() {
+            self.descartados_desde_medida += 1;
+            self.descartados_totales += 1;
+            return;
+        }
+        let cap = self.buffer.len();
+        if self.n < cap {
+            self.buffer[(self.cabeza + self.n) % cap] = ret;
+            self.n += 1;
+        } else {
+            // Ring lleno: el retorno más viejo expira (medida estacionaria
+            // del ÚLTIMO tramo).
+            self.buffer[self.cabeza] = ret;
+            self.cabeza = (self.cabeza + 1) % cap;
+        }
+    }
+
+    /// Contenido actual en orden temporal (los últimos `n` retornos).
+    fn contenido(&self) -> Vec<f64> {
+        let cap = self.buffer.len();
+        (0..self.n)
+            .map(|i| self.buffer[(self.cabeza + i) % cap])
+            .collect()
+    }
+
+    /// Mide el entrelazamiento temporal neto del tramo actual: delega en
+    /// `entrelazamiento_neto` sobre el contenido del ring — paridad bit con
+    /// el batch por construcción. `descartados` del resultado = no finitos
+    /// desde la MEDICIÓN anterior (recuento por tramo, como el vehículo).
+    pub fn medir(&mut self) -> Result<MedidaEntrelazamiento, EntrelazamientoError> {
+        let tramo = self.contenido();
+        let desc = self.descartados_desde_medida;
+        self.descartados_desde_medida = 0;
+        let m = entrelazamiento_neto(&tramo, self.l, self.modo)?;
+        Ok(MedidaEntrelazamiento { descartados: desc, ..m })
+    }
+}

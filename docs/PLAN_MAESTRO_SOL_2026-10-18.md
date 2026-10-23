@@ -10,13 +10,49 @@
 > Regla de oro del ciclo: **ejecución atómica incremental** — un módulo, teoría
 > o fallo concreto a la vez, implementado a fondo, certificado con pruebas
 > reales, integrado a `main`, y sólo entonces el siguiente. Nada a medias.
+>
+> **Revisión desde la base, 2026-10-23 13:02 Bogotá:** baseline `3b85722e2`;
+> estado histórico de las secciones fechadas no equivale al estado actual.
+> Coordinar con `docs/audit/QRA_CONTINUACION_PLAN_2026-10-23.md` y el inventario
+> por blob ya existente, no duplicar un censo para fingir revisión integral.
+> AGY tiene el router de viabilidad/fees; GLM entrelazamiento; Codex controles
+> de recursos en el primary sucio. Sol toma sólo telemetría de pérdidas.
+>
+> Orden operativo renovado: (0) propiedad de archivos/ramas/CI y recursos;
+> (1) invariantes de capital, costos, OMS y causalidad antes de cualquier orden;
+> (2) trazabilidad de observaciones/métricas y reconexiones por archivo/blob;
+> (3) evolución online y persistencia con datasets temporales purgados;
+> (4) teoría espectral contrastada por ablación OOS neta y costo computacional;
+> (5) Demo con evidencia de fills y circuit breakers, sin promoción de fondos
+> automática acreditada por tests offline; (6) observabilidad/visor desacoplado.
+> Cada registro exige productor, consumidor, dominio/unidades, prueba ejecutada,
+> SHA, período/dataset, costo RAM/latencia y métricas brutas/netas. Inventariado,
+> auditado, integrado y económicamente validado son estados diferentes.
+>
+> **Átomo F1-098:** `profile_node!` usa `let _ = queue.push(...)` y descarta
+> muestras cuando el anillo está lleno. Añadir contador saturante de rechazo,
+> consumirlo en el snapshot real y log off-thread, probar conservación
+> intentos = retenidos + rechazados en un intervalo quiescente, sin cambiar
+> sizing/señales/fees ni afirmar mejora de rentabilidad o latencia.
+>
+> **Corrección de F1-097:** no está demostrado que `FreePhysicalMemory` excluya
+> standby; Microsoft lo describe como memoria física no usada y disponible.
+> `Page Faults/sec` incluye fallos blandos; su tasa no prueba por sí sola I/O
+> al pagefile, fuga del kernel ni causalidad de Defender. El cambio de contador
+> no acredita memoria recuperada. No desactivar antivirus, matar procesos
+> ajenos o reiniciar sin decisión del operador. RAM disponible medida hoy:
+> 1,20 GiB; builds locales sólo con admisión real >=4 GiB y target canónico.
+>
+> Perfil vigente: `debug=0`, `strip="symbols"` en dev/test según AGENTS; las
+> recomendaciones históricas debug=1 de este archivo quedan sustituidas.
 
 ---
 
 ## 0. La meta y su marco (no se renegocia)
 
-- **Meta financiera**: crecimiento exponencial compuesto, duplicar la cuenta
-  (13 USD) cada 3 días (≈26 %/día). Se trata como **objetivo a medir**, nunca
+- **Meta financiera**: crecimiento exponencial compuesto, duplicar el capital
+  real de la wallet del entorno cada 3 días (≈26 %/día), sin capital fijo ni
+  forzar apalancamiento para alcanzar la meta. Se trata como **objetivo a medir**, nunca
   como resultado certificable por matemática avanzada: todo incremento debe
   demostrarse fuera de muestra, tras comisiones, con causalidad estricta.
 - **Marco conceptual**: el sistema es un **universo multivariante, continuo,

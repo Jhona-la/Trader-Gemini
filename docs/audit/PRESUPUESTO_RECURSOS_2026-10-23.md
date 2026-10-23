@@ -1,7 +1,24 @@
 # Presupuesto de recursos medido — 2026-10-23 09:00–09:40 Bogotá
 
 Medición directa sobre la máquina del operador (Windows, 23,4 GB visibles).
-**Nada de lo que sigue es estimación: cada cifra tiene su comando.** El objetivo
+**ERRATA — revisión independiente del 2026-10-23 13:10 Bogotá (Sol):** este
+texto conserva el snapshot histórico, NO una prueba de causalidad ni un diagnóstico
+de fuga. `Page Faults/sec` incluye fallos blandos y duros; `Pages/sec` también
+puede incluir lectura de ejecutables y mmap, no sólo `pagefile.sys`. El pool
+paginado alto requiere una serie temporal/etiquetas de asignación, no un umbral
+«típico <1 GB» supuesto. Las unidades de estos cálculos `/1GB` son **GiB**.
+No se demostró que `FreePhysicalMemory` excluya standby: Microsoft lo define
+como memoria física no usada y disponible. A las 13:00:49 Bogotá ambos sensores
+indicaron **1,20 GiB**, no «2 frente a 9». Tampoco se acreditó ahorro de RAM ni
+la atribución del coste de spawn a Defender: las cifras históricas mezclan
+consulta, inicio y terminación; no son un benchmark causal de carga de imagen.
+Por tanto, las propuestas siguientes de matar procesos ajenos, excluir antivirus
+y reiniciar NO son acciones autorizadas ni recomendaciones operativas vigentes.
+No se ejecutan sin investigación adicional y decisión del operador.
+Fuentes primarias: [FreePhysicalMemory](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-operatingsystem),
+[Page faults](https://learn.microsoft.com/en-us/windows/win32/memory/working-set).
+
+**Las cifras siguientes son un snapshot histórico; las interpretaciones previas quedan sujetas a esta errata.** El objetivo
 es responder a la pregunta del operador («el proyecto está ocupando mucha
 memoria y la va a desbordar») distinguiendo **qué recurso** se está desbordando,
 porque la respuesta cambia por completo la política que deben seguir los agentes.
