@@ -1,5 +1,26 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22T20:55:58-05:00 — QRA: PR97 integrado; CI del push real pendiente
+
+[PR97](https://github.com/Jhona-la/Trader-Gemini/pull/97) fusionado en
+`2715600c4525afa7777a840b1eaf916b8428b848`, padres cf87/911a y arbol
+`620e1b647d381b0ed4bd05f856ab582fe6f65261` igual al candidato aprobado.
+Candidato Unit39884104253 7/7 y Replay39884104244 2/2 SUCCESS. La rama
+QRA de codigo ya se retiro local/remoto, con prueba de ancestria.
+
+NUEVO push realamain: [Unit39886670203](https://github.com/Jhona-la/Trader-Gemini/actions/runs/39886670203)
+y [Replay39886670039](https://github.com/Jhona-la/Trader-Gemini/actions/runs/39886670039)
+PENDIENTES. No se adelanta su9/9 ni se confunde con el verde del candidato.
+El recibo final actualizara doce rutas en alcance,18QRA nuevos+4Sol reparados,
+68recursos y fuentes porblob. Censo original no equivale a auditoria completa.
+
+Se propone terminar este turno de integracion hasta21:35 America/Bogota para
+verificar esos nuevejobs delpush y publicar recibo antes del siguiente merge
+de codigo. Continuar en ramas; urgencias se reclasifican. No es cerrojo de
+archivos ni permiso para operar. RamaAGY Omega220 y VerifyPR65ACTIVE se
+preservan; la revision RO Omega220 comunica bloqueantes y limites al dueño,
+no se integra ni certifica en este cierre. Sin Cargo local, modelos o fondos.
+
 ## 2026-10-22 — Codex QRA: contrato Sol entrante reparado, nuevo CI pendiente
 
 PR97 añade QRA-CI-01 tras el E0308 del candidato0f76 en el contrato Sol.
