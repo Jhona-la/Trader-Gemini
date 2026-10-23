@@ -96,5 +96,6 @@ fn f1_093_helper_es_generico_sobre_arc() {
     // igual para ese tipo (no sólo para `Copy`).
     static LOCK: RwLock<Option<std::sync::Arc<u32>>> = RwLock::new(None);
     *escribir(&LOCK) = Some(std::sync::Arc::new(7));
-    assert_eq!(**leer(&LOCK).as_ref().expect("valor sembrado"), 7);
+    let sembrado = leer(&LOCK).clone().expect("valor sembrado");
+    assert_eq!(*sembrado, 7);
 }
