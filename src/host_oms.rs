@@ -143,6 +143,12 @@ impl OmsSession {
         arena: &GlobalArena,
     ) -> Result<u64, String> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        // Also serialize with a core proposal not yet handed to its queued task.
+        let _publication = arena
+            .config
+            .entry_publication_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         self.ready.store(false, Ordering::Release);
         state.approved_universe = None;
         self.reset_fee_requirement(arena, self.executors.load().is_paper_trading());
@@ -150,7 +156,14 @@ impl OmsSession {
             .config
             .entry_publication_paused
             .store(true, Ordering::Release);
-        if state.in_flight > 0 {
+        if state.in_flight > 0
+            || arena.coins.iter().any(|coin| {
+                coin.positions
+                    .slots()
+                    .iter()
+                    .any(|slot| slot.is_open() && !slot.exchange_confirmed.load(Ordering::Acquire))
+            })
+        {
             return Err(
                 "OMS_EXECUTOR_BUSY: entry transport or settlement still owns this session".into(),
             );

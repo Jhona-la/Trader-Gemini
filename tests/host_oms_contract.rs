@@ -526,6 +526,17 @@ fn snapshot_and_core_publication_share_a_gate_so_a_new_reservation_is_never_phan
     );
     assert!(slot.is_open());
     assert_eq!(arena.used_margin.load(Ordering::Relaxed), 1.0);
+    let rejected = session
+        .replace_executor(executor(false, false), &arena)
+        .unwrap_err();
+    assert!(rejected.starts_with("OMS_EXECUTOR_BUSY"));
+    assert_eq!(session.snapshot_token().generation(), token.generation());
+    assert!(Arc::ptr_eq(
+        session.snapshot_token().executor(),
+        token.executor()
+    ));
+    assert!(slot.is_open());
+    assert_eq!(arena.used_margin.load(Ordering::Relaxed), 1.0);
     assert!(!ready.load(Ordering::Acquire));
     assert!(
         arena
