@@ -97,12 +97,12 @@ jobs:
         # Offline library tests; no training, promotion or live engine session.
         run: cargo +nightly-2026-06-30 test -p evolution-engine --lib --locked -- --test-threads=1
 
-      - name: Pre-screen numeraire invariance contract (F1-089d)
+      - name: Pre-screen numeraire invariance and poisoned-lock contracts
         # F1-089d: este contrato existía desde GLM 145 pero NINGÚN workflow lo
         # ejecutaba (`--lib` no corre tests de integración), así que la
         # invariancia del numerario del pre-screen estaba certificada sólo en
         # la máquina de quien la escribió. Aquí se ejecuta de verdad.
-        run: cargo +nightly-2026-06-30 test -p evolution-engine --locked --test wf_numerario_invariancia_contract -- --test-threads=1
+        run: cargo +nightly-2026-06-30 test -p evolution-engine --locked --test wf_numerario_invariancia_contract --test lock_sin_veneno_contract -- --test-threads=1
 
       - name: Shared HTTP client contract (F1-090)
         # F1-090: un solo `reqwest::Client` por proceso con tcp_nodelay, pool
