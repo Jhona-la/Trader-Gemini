@@ -149,7 +149,7 @@ fn test_binary_genome_store_atomic_promote_and_load() {
     let temp_root_str = temp_dir.to_str().unwrap().to_string();
     unsafe {
         std::env::set_var("TG_CONFIG_ROOT", &temp_root_str);
-        std::env::set_var("TG_GENOME_ENV", "test_bin_atomo32");
+        std::env::set_var("TG_GENOME_ENV", "backtest");
     }
 
     let mut g = SuperGenotype::new_baseline(0.0002, 0.0005);
@@ -166,9 +166,9 @@ fn test_binary_genome_store_atomic_promote_and_load() {
     assert_eq!(promoted.generation, 1);
 
     // Verificamos que se escribieron AMBOS formatos para el genoma activo y el histórico json
-    let active_json = temp_dir.join("genomes/test_bin_atomo32/active.json");
-    let active_bin = temp_dir.join("genomes/test_bin_atomo32/active.bin");
-    let hist_json = temp_dir.join("genomes/test_bin_atomo32/history/gen_000001.json");
+    let active_json = temp_dir.join("genomes/backtest/active.json");
+    let active_bin = temp_dir.join("genomes/backtest/active.bin");
+    let hist_json = temp_dir.join("genomes/backtest/history/gen_000001.json");
 
     assert!(active_json.exists(), "active.json debe existir");
     assert!(active_bin.exists(), "active.bin debe existir");
