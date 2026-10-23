@@ -49,7 +49,7 @@ impl EntryReservation {
         if margin > 0.0 {
             arena.used_margin.fetch_sub(margin, Ordering::AcqRel);
         }
-        if fee > 0.0 {
+        if fee.is_finite() && fee != 0.0 {
             arena.unified_capital.fetch_add(fee, Ordering::AcqRel);
         }
         Ok(())
@@ -82,7 +82,7 @@ impl EntryReservation {
             .position(arena)?
             .confirmar_llenado_generation(self.generation, q, &arena.used_margin)
             .map_err(ReservationError::Position)?;
-        if devuelta > 0.0 {
+        if devuelta.is_finite() && devuelta != 0.0 {
             arena.unified_capital.fetch_add(devuelta, Ordering::AcqRel);
         }
         Ok(())

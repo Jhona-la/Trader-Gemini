@@ -42,16 +42,18 @@ impl RealityPhysics {
         }
     }
 
-    /// Construye una instancia con tasas de comisión observadas explícitas.
+    /// Construye la estimación con tasas finitas explícitas. Ante una tasa no
+    /// finita utiliza un escenario VIP0; ese fallback no acredita una tarifa
+    /// observada ni autoriza nuevas entradas del core.
     pub fn with_fees(mode: EngineMode, maker_fee: f64, taker_fee: f64) -> Self {
         Self {
             mode,
-            base_maker_fee: if maker_fee.is_finite() && maker_fee >= 0.0 {
+            base_maker_fee: if maker_fee.is_finite() {
                 maker_fee
             } else {
                 0.0002
             },
-            base_taker_fee: if taker_fee.is_finite() && taker_fee >= 0.0 {
+            base_taker_fee: if taker_fee.is_finite() {
                 taker_fee
             } else {
                 0.0005
@@ -60,12 +62,14 @@ impl RealityPhysics {
     }
 
     /// Sincroniza dinámicamente las comisiones con las observadas en la cuenta viva / arena.
-    /// Resuelve el hallazgo QRA-FEE-01 garantizando paridad física exacta entre el gate y el ledger.
+    /// Las tasas finitas conservan su signo (rebates incluidos). Una observación
+    /// no finita retiene la última estimación para cierres defensivos; el caller
+    /// debe bloquear entradas y no presentarla como una observación fresca.
     pub fn sync_with_arena_fees(&mut self, maker_fee: f64, taker_fee: f64) {
-        if maker_fee.is_finite() && maker_fee >= 0.0 {
+        if maker_fee.is_finite() {
             self.base_maker_fee = maker_fee;
         }
-        if taker_fee.is_finite() && taker_fee >= 0.0 {
+        if taker_fee.is_finite() {
             self.base_taker_fee = taker_fee;
         }
     }
@@ -78,6 +82,15 @@ impl RealityPhysics {
     #[inline(always)]
     pub fn taker_fee(&self) -> f64 {
         self.base_taker_fee
+    }
+
+    /// Comisión local sobre el nocional ya cuantizado y el precio contabilizado.
+    /// No confirma ni convierte una comisión nativa del exchange.
+    pub fn commission_for_notional(&self, notional: f64, is_maker: bool) -> Option<f64> {
+        let rate = if is_maker { self.base_maker_fee } else { self.base_taker_fee };
+        let fee = notional * rate;
+        (notional.is_finite() && notional >= 0.0 && rate.is_finite() && fee.is_finite())
+            .then_some(fee)
     }
 
     /// Estima precio/coste taker con la heurística local; no confirma una ejecución.
@@ -105,7 +118,7 @@ impl RealityPhysics {
             0.0
         };
         // FIX #686: Sanitizar comisiones
-        let safe_taker_fee = if self.base_taker_fee.is_finite() && self.base_taker_fee >= 0.0 {
+        let safe_taker_fee = if self.base_taker_fee.is_finite() {
             self.base_taker_fee
         } else {
             0.0005
@@ -193,7 +206,7 @@ impl RealityPhysics {
         } else {
             0.0
         };
-        let safe_maker_fee = if self.base_maker_fee.is_finite() && self.base_maker_fee >= 0.0 {
+        let safe_maker_fee = if self.base_maker_fee.is_finite() {
             self.base_maker_fee
         } else {
             0.0002
@@ -227,12 +240,12 @@ impl RealityPhysics {
             0.0
         };
         // FIX #686: Sanitizar comisiones
-        let safe_maker_fee = if self.base_maker_fee.is_finite() && self.base_maker_fee >= 0.0 {
+        let safe_maker_fee = if self.base_maker_fee.is_finite() {
             self.base_maker_fee
         } else {
             0.0002
         };
-        let safe_taker_fee = if self.base_taker_fee.is_finite() && self.base_taker_fee >= 0.0 {
+        let safe_taker_fee = if self.base_taker_fee.is_finite() {
             self.base_taker_fee
         } else {
             0.0005

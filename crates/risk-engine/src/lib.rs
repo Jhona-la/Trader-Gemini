@@ -923,8 +923,9 @@ impl RiskEngine {
         // viva única.
         let real_win_rate = coin.metrics.win_rate.load(Ordering::Relaxed);
 
-        let _maker_fee = arena.config.live_maker_fee.load(Ordering::Relaxed);
-        let taker_fee = arena.config.live_taker_fee.load(Ordering::Relaxed);
+        let Some((_maker_fee, taker_fee)) = arena.config.fee_rates_for(coin_id) else {
+            return rej(REJ_INVALID_INPUT);
+        };
         // D-01 — FRICCIÓN REAL EN EL EV GATE: antes el gate comparaba contra
         // solo maker+taker (~7bps), pero el motor EJECUTA 2×(taker + slippage)
         // por roundtrip bajo HyperRealistic. El gate subestimaba la fricción
