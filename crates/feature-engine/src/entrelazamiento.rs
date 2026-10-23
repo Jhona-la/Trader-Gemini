@@ -48,6 +48,11 @@ pub enum EntrelazamientoError {
     NucleoDegenerado,
     /// Cero ventanas válidas tras los filtros.
     SinVentanas,
+    /// Grid/parámetros de la curva de fases degenerados (GLM 156).
+    CurvaDegenerada,
+    /// ΔS fuera de la curva S(g): si s > s_max el mercado es SUPERCRÍTICO
+    /// en entrelazamiento y NO se inventa rama (ausencia honesta CL-15).
+    FueraDeCurva { s: f64, s_min: f64, s_max: f64 },
 }
 
 /// Resultado de una medición de entrelazamiento temporal neto.
@@ -195,4 +200,142 @@ pub fn entrelazamiento_neto(
         ventanas,
         descartados,
     })
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// GLM 156 — MAPA DE FASES S↔g DEL ISING: calibración física del ΔS del
+// 155. El ground state de H = −Σσᶻσᶻ − g·Σσˣ (J=1; g = h/J) recorre el
+// estado GATO coherente (g→0: S→ln2 — en cadena FINITA el suelo es la
+// superposición simétrica, no el producto; esto lo enseñó el propio
+// contrato del 156) → crítico (g≈1: S≈0.42 en L=8) → paramagnético
+// (g→∞: producto en x, S→0). La curva es DECRECIENTE: ΔS ALTO = régimen
+// ordenado/coherente (tendencia), ΔS BAJO = paramagnético (ruido
+// microestructural). La inversión reporta TODOS los cruces (libre de
+// supuestos de forma) y la distancia log a criticidad g_c=1 (teórico,
+// no el máximo empírico). El funcional es IDÉNTICO al del mercado (S del
+// corte medio de ψ sobre 2^L vía `Mps::estado_denso`) — comparación limpia.
+// ══════════════════════════════════════════════════════════════════════
+
+/// Un punto (g, S) de la curva de fases del ground state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PuntoCurva {
+    pub g: f64,
+    pub s: f64,
+}
+
+/// Curva S(g) del ground state del Ising transverso (L sitios, DMRG del
+/// 154). Puntos ordenados por g ascendente; `s_max`/`g_max` anclan el
+/// valor más alto medido (en cadena finita, el extremo ordenado).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CurvaFases {
+    pub puntos: Vec<PuntoCurva>,
+    pub s_max: f64,
+    pub g_max: f64,
+}
+
+/// Inversión de un ΔS medido sobre la curva: TODOS los cruces g con S(g)=s
+/// (interpolación lineal por segmento; sin supuestos de monotonía — ante
+/// wiggle numérico el consumidor ve todos los candidatos) y la distancia
+/// logarítmica a criticidad de cada cruce (ancla teórica g_c = 1).
+#[derive(Debug, Clone, PartialEq)]
+pub struct InversionFase {
+    /// Cruces en g ascendente; vacío sería curva degenerada (no ocurre con
+    /// construir válido y s dentro de rango).
+    pub cruces: Vec<f64>,
+    /// |log g − log g_c| de cada cruce (mismo orden que `cruces`); el
+    /// titular físico es su mínimo.
+    pub distancias_log: Vec<f64>,
+}
+
+impl CurvaFases {
+    /// Construye S(g) en grid LOG-uniforme (densidad simétrica alrededor de
+    /// g≈1, donde la curva es casi simétrica): dmrg_ising(l, 1.0, g_k) →
+    /// estado_denso → entrelazamiento_corte(corte medio). Determinista de
+    /// punta a punta (init fijo, Jacobi propio, sin azar).
+    pub fn construir(
+        l: usize,
+        bond_max: usize,
+        sweeps: usize,
+        g_min: f64,
+        g_max: f64,
+        n: usize,
+    ) -> Result<Self, EntrelazamientoError> {
+        if l < 2 || l > MPS_MAX_L {
+            return Err(EntrelazamientoError::LongitudInvalida { l });
+        }
+        if !(g_min.is_finite() && g_max.is_finite()) || g_min <= 0.0 || g_max <= g_min || n < 4 {
+            return Err(EntrelazamientoError::CurvaDegenerada);
+        }
+        let corte = l / 2;
+        let mut puntos = Vec::with_capacity(n);
+        for k in 0..n {
+            let g = g_min * (g_max / g_min).powf(k as f64 / (n - 1) as f64);
+            let r = mps::dmrg_ising(l, 1.0, g, bond_max, sweeps)
+                .map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
+            let estado = r.mps.estado_denso().map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
+            let s = mps::entrelazamiento_corte(&estado, l, corte)
+                .map_err(|_| EntrelazamientoError::NucleoDegenerado)?;
+            if !s.is_finite() {
+                return Err(EntrelazamientoError::CurvaDegenerada);
+            }
+            puntos.push(PuntoCurva { g, s });
+        }
+        let (s_max, g_max) = puntos
+            .iter()
+            .fold(None::<(f64, f64)>, |acc, p| match acc {
+                None => Some((p.s, p.g)),
+                Some(m) if p.s > m.0 => Some((p.s, p.g)),
+                Some(m) => Some(m),
+            })
+            .ok_or(EntrelazamientoError::CurvaDegenerada)?;
+        Ok(CurvaFases {
+            puntos,
+            s_max,
+            g_max,
+        })
+    }
+
+    /// Invierte un ΔS medido: TODOS los cruces g con S(g)=s por
+    /// interpolación lineal por segmento — sin supuestos de monotonía
+    /// (ante wiggle numérico el consumidor ve todos los candidatos). s
+    /// fuera de (S_bordes, s_max] ⇒ `FueraDeCurva` con los límites reales
+    /// (si el mercado supera S_max es más coherente que el GATO del Ising
+    /// L y NO se inventa cruce — CL-15). Distancias a g_c=1 teórico.
+    pub fn invertir(&self, s_obj: f64) -> Result<InversionFase, EntrelazamientoError> {
+        let s_edge_min = self
+            .puntos
+            .iter()
+            .map(|p| p.s)
+            .fold(f64::INFINITY, f64::min);
+        if !s_obj.is_finite() || s_obj <= s_edge_min || s_obj > self.s_max {
+            return Err(EntrelazamientoError::FueraDeCurva {
+                s: s_obj,
+                s_min: s_edge_min,
+                s_max: self.s_max,
+            });
+        }
+        let mut cruces: Vec<f64> = Vec::new();
+        for w in self.puntos.windows(2) {
+            let (a, b) = (&w[0], &w[1]);
+            // El segmento [a,b] cruza s_obj si lo rodea (cualquier orden).
+            if (a.s <= s_obj && s_obj < b.s) || (b.s <= s_obj && s_obj < a.s) {
+                let t = (s_obj - a.s) / (b.s - a.s);
+                cruces.push(a.g + t * (b.g - a.g));
+            }
+        }
+        // s_obj == s_max exacto: el cruce es el punto ancla.
+        if cruces.is_empty() {
+            if s_obj == self.s_max {
+                cruces.push(self.g_max);
+            } else {
+                return Err(EntrelazamientoError::FueraDeCurva {
+                    s: s_obj,
+                    s_min: s_edge_min,
+                    s_max: self.s_max,
+                });
+            }
+        }
+        let distancias_log = cruces.iter().map(|g| g.ln().abs()).collect();
+        Ok(InversionFase { cruces, distancias_log })
+    }
 }

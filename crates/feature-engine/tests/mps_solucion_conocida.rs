@@ -209,3 +209,48 @@ fn mps_entradas_invalidas_son_ausencia_honesta() {
         otro => panic!("corte 0 ⇒ Err, llegó {otro:?}"),
     }
 }
+
+/// GLM 156 — `estado_denso`: la reconstrucción 2^L del MPS recupera EXACTO
+/// el estado de entrada (ida y vuelta mps_desde_estado → estado_denso) en
+/// las tres anclas del 151 (producto, GHZ, W). Primitiva que consumen la
+/// curva de fases y el mapa S↔g del mercado.
+#[test]
+fn mps_estado_denso_recupera_exacto_ida_y_vuelta() {
+    let l = 4;
+    let dim = 1usize << l;
+    let casos: [(&str, Vec<f64>); 3] = [
+        ("producto", {
+            let mut v = vec![0.0; dim];
+            v[0b0101] = 1.0;
+            v
+        }),
+        ("ghz", {
+            let mut v = vec![0.0; dim];
+            v[0] = std::f64::consts::FRAC_1_SQRT_2;
+            v[dim - 1] = std::f64::consts::FRAC_1_SQRT_2;
+            v
+        }),
+        ("w", {
+            let mut v = vec![0.0; dim];
+            for k in 0..l {
+                v[1usize << k] = (l as f64).recip().sqrt();
+            }
+            v
+        }),
+    ];
+    for (nombre, estado) in casos {
+        let (mps, err) = mps_desde_estado(&estado, l, 8).expect("compresión sin pérdida");
+        assert!(err < 1e-12, "{nombre}: sin truncamiento a D=8 (err {err})");
+        let denso = mps.estado_denso().expect("estado_denso");
+        // El SVD fija cada columna a menos un signo: la amplitud recuperada
+        // coincide con la original O con su negada — siempre módulo exacto.
+        for (a, b) in estado.iter().zip(denso.iter()) {
+            assert!(
+                (a - b).abs() < 1e-10 || (a + b).abs() < 1e-10,
+                "{nombre}: amplitud recuperada {b} vs {a}"
+            );
+        }
+        let norma: f64 = denso.iter().map(|x| x * x).sum();
+        assert!((norma - 1.0).abs() < 1e-10, "{nombre}: norma {norma}");
+    }
+}
