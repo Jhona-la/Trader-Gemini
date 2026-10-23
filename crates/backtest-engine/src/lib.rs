@@ -40,6 +40,8 @@ mod golden_ledger_oracle {
         event_ms: u64,
         bid: f64,
         ask: f64,
+        close_bid: f64,
+        close_ask: f64,
         tp_reconstructed: f64,
         maker_exit: Option<bool>,
         entry_fee: f64,
@@ -62,6 +64,8 @@ mod golden_ledger_oracle {
                 event_ms: 0,
                 bid: f64::NAN,
                 ask: f64::NAN,
+                close_bid: f64::NAN,
+                close_ask: f64::NAN,
                 tp_reconstructed: f64::NAN,
                 maker_exit: None,
                 entry_fee: f64::NAN,
@@ -95,8 +99,10 @@ mod golden_ledger_oracle {
                 ("TP", self.entry.map_or(f64::NAN, |p| p.tp_price)),
                 ("SL", self.entry.map_or(f64::NAN, |p| p.sl_price)),
                 ("TP_reconstructed", self.tp_reconstructed),
-                ("bid", self.bid),
-                ("ask", self.ask),
+                ("bid", if self.receipt.is_some() { self.close_bid } else { self.bid }),
+                ("ask", if self.receipt.is_some() { self.close_ask } else { self.ask }),
+                ("observed_bid", self.bid),
+                ("observed_ask", self.ask),
                 ("rE", TAKER),
                 (
                     "rX",
@@ -231,6 +237,8 @@ mod golden_ledger_oracle {
                 let receipt = receipt
                     .ok_or_else(|| format!("close has no local receipt; {}", self.context()))?;
                 self.receipt = Some(receipt);
+                self.close_bid = bid;
+                self.close_ask = ask;
                 self.require(
                     receipt.event_time_ms == event_ms && is_long == entry.is_long,
                     "close identity/time mismatch",
