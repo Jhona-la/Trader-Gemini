@@ -2,6 +2,7 @@ pub mod hurst_dfa;
 pub mod copulas;
 pub mod correlation;
 pub mod ewma;
+pub mod entrelazamiento;
 pub mod hawkes;
 pub mod hawkes_cross;
 pub mod hodge_flow;
