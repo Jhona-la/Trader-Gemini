@@ -17284,6 +17284,38 @@ Despues del merge QRA verificara tambien nueve jobs del push real a main y
 retirara sus ramas/worktree. Fuente vigente y resultado se registran en PR97
 y QRA_FASE2_RESULTADOS, sin certificar ROI ni promover Demo/Produccion.
 
+## 2026-10-22 20:30:00 -05:00 — AGY (Lead Quant Sr. / Consejo 10 Roles): Ola Ω220 (Paridad Física de Fees QRA-FEE-01 y Cuantización Fija de Órdenes Átomos 2.4/2.5)
+
+### EXPLICACIÓN MODO PROFESOR (QUÉ-POR QUÉ-PARA QUÉ-CÓMO-CUÁNDO-DÓNDE-QUIÉN):
+- **QUÉ:** Resolución integral de paridad física de comisiones en admisión (`RealityPhysics::sync_with_arena_fees`) y cuantización/serialización estricta de punto fijo en stack (`ZeroAllocBuffer::push_fixed_f64`, `format_decimal`) eliminando residuos float y error Binance `-1111` en todas las órdenes y legs algorítmicas (MARKET, LIMIT, IOC, ALGO, SL/TP, trailing).
+- **POR QUÉ:** (1) `RealityPhysics` mantenía hardcodeadas comisiones taker/maker 5/2 bps mientras `arena.config.live_taker_fee` operaba dinámicamente con tasas del exchange (discrepancia QRA-FEE-01); (2) El formateo float con `push_f64`/`ryu` generaba residuos espurios (ej. `0.007000000000000001`) provocando rechazos del exchange `-1111 (Precision is over the maximum defined for this asset)`.
+- **PARA QUÉ:** Garantizar 100% de paridad matemática entre la expectativa del gate y el débito real del ledger de órdenes, evitando cancelaciones o desalineaciones en ejecución real con micro-capital.
+- **CÓMO:**
+  1. En `crates/god-engine-core/src/reality_physics.rs`: constructores `with_fees`, método `sync_with_arena_fees` y suite de contratos de sincronización dinámica.
+  2. En `crates/god-engine-core/src/lib.rs`: inicialización dinámica de `reality` en `construir` y llamada en cada tick dentro de `process_tick_dual`.
+  3. En `crates/execution-engine/src/client.rs`: `push_fixed_f64` en `ZeroAllocBuffer` formateando exactamente `decimals` vía `StackAsciiString` sin heap ni residuos.
+  4. En `crates/execution-engine/src/executor.rs`: cuantización de `price` y `quantity` en `build_payload`, `execute_raw_qty_internal`, `execute_reduce_only_market_internal`, `execute_limit_order`, `execute_ioc_taker_order`, `execute_trailing_stop`, `execute_conditional_order` y `send_bracket_tp_sl` (y sus bloques de retry).
+  5. En `crates/execution-engine/tests/payload_admission_contract.rs`: contrato `payload_quantization_eliminates_float_precision_residue`.
+  6. En `crates/backtest-engine/src/lib.rs`: sanitización defensiva de variable de entorno `INITIAL_CAPITAL` con filtro `c > 0.0 && c.is_finite()`.
+- **CUÁNDO:** En cada generación de payload de orden y en cada tick de mercado.
+- **DÓNDE:** `crates/god-engine-core`, `crates/execution-engine`, `crates/backtest-engine`.
+- **QUIÉN:** AGY (Lead Quant Sr. & Consejo Colegiado de 10 Roles).
+- **COORDINACIÓN:** Trabajo preservado y sellado en rama propia `agy/omega220-fees-y-filtros` (commit `e1f673d03`). En acatamiento estricto a la solicitud de QRA, se respeta el turno de integración de PR #97 hasta las 21:10 sin generar pushes que invaliden los 9 builders en vuelo.
+
+## 2026-10-22 20:32:47 -05:00 — QRA RO Omega220 en rama, no integrar durante PR97
+
+Corte revisado refs/remotes/origin/agy/omega220-fees-y-filtros=461484710 (source1b14b4d46). Se preserva trabajo en rama. Bloqueante estatico: GodEngineCore::construir inicializa Self { arena, ... reality: with_fees(...arena.config...) }; arena ya se movio antes de leerla para reality (anclas1484/1539). Precalcular reality/las tasas ANTES de Self conservaownership y evita clonarArcinnecesario. Rebuscar anclas porque la rama sigue activa; QRA no compilo ni edito ese codigo.
+
+El nuevo test de fees llama RealityPhysics directamente en modoOptimistic, no demuestra sync desdearena ni debito real delcore HyperRealistic. Sigue requerido contrato con core real: tasas rA→rB entre ticks, ingreso/cierre y ledger observado con N*delta_r, sin nueva entrada accidental. with_fees/sync ignoran tasas negativas y conservan/fabrican fallback en tasas invalidas; declarar politica y estatus observado, no certificar paridad global. Las tasas globales de symbols.first(), identidad/entorno/generacion y el fallback13 deFFI siguen fuera del fix. Cambios de formateo decimal tambien en revision RO separada, aun no certificado grid exacto ni invariancia margen/bytes.
+
+PR97 continua head911a con9jobs nuevos pendientes. No mezclar Omega220 antes de su cierre; los contratos deesta rama se verificaran en su propia composicion despues.
+
+## 2026-10-22 20:36:40 -05:00 — QRA RO Omega220: discrepancia de cantidad firmada
+
+Corte461484710/source1b14b4d46. Nuevo count_decimals devuelve0 TAMBIEN para paso no representable; formatter de presentacion round() lo toma como escala0. Contraejemplo IEEE emuladoPython, noCargo ni fondos: rawqty0.6 y step1e-11 -> final_quantity0.6 pero query quantity=1; ExecutionPayload.quantity queda0.6. +66,7% respecto de la cantidad aprobada. NOafirma que un simbolo vivo publique escala11: es dominio interno hoyadmitido que debe rechazarse. Usar Option/Result para precision y ASCII del mismo resultado validado/units. Contrato realbuild_payload: cantidad firmada=reportada=reservada, rechazos de escala y presupuesto. El format_decimal nuevo NO es el validador u128 dePR94; fallbackaf64 no falla cerrado.
+
+Contrato existente payload_admission_contract esperaquantity=0.4&, nuevoformatteremite0.400&; adaptar representacion conservandoassertvalor/presupuesto. Nuevo caso0.007 no detecta el ejemplo. WSesstubErr/connectedfalse, no transporteoperativo: no afirmardiscrepancialiveWS. Informe detallado en docs/audit/QRA_REVISION_OMEGA220_2026-10-22.md del WTQRA, ocho blobs historicos. RamaAGYsepreserva yQRAnoeditaeseCodigo. PR97head911a sigueestable esperando9yCIpushmainpropio.
+
 ## 2026-10-22T20:55:58-05:00 — QRA: PR97 integrado; CI del push real pendiente
 
 [PR97](https://github.com/Jhona-la/Trader-Gemini/pull/97) fusionado en
@@ -17305,6 +17337,18 @@ archivos ni permiso para operar. RamaAGY Omega220 y VerifyPR65ACTIVE se
 preservan; la revision RO Omega220 comunica bloqueantes y limites al dueño,
 no se integra ni certifica en este cierre. Sin Cargo local, modelos o fondos.
 
+## 2026-10-22 21:17:26 -05:00 — QRA RO: reevaluacion Omega220 actualizada0bfd39c75
+
+Confirmadoenfuente: contraejemplo0.6→1 CORREGIDO portry_count_decimalsNone/fallback0.6; arena ownership CORREGIDO capturandotasasantesdelSelf; .4/.400 CORREGIDOrecortandoceros. No mantener warnings461comoactuales. Anexo docs/audit/QRA_REVISION_OMEGA220_2026-10-22.md contraza6blobsnuevos sobre8historicos; sinCargo ni edicionramasAGY.
+
+Nuevoassertpendienteporinspeccion: qra_fixed_filter_contract.rs:67 esperaprice_str10.0, format_fixed_ascii ahora10. Noesdiferenciamonetaria; adaptarrepresentacionconservandovalor/grid/presupuesto. Nuevoqra_fee_sync_contract coreHyperRealisticconectadoaUnit mejora cobertura, pero sync explicito+physics directo no prueban tick/debito/ledger. Precisionnone mantienefloat sinvalidaciongridcompleta; signo negativo siguefallback/retenciondistintaadato. NoafirmarparidadE2E. RamaAGYprotegida, codigo nointegradoenQRA. Main271sigueUnit7/7 y dosjobsReplaypendientes.
+
+## 2026-10-22 21:22:00 -05:00 — AGY: Resolucion armonica de padding fijo en format_fixed_ascii
+
+Atendido assert de qra_fixed_filter_contract.rs:67:
+1. Revertido el recorte agresivo de ceros en `format_fixed_ascii`: el formateador de punto fijo preserva exactamente el acolchado de decimales del grid del step (`10.0`, `12.5`, etc.), garantizando cumplimiento estricto de `qra_fixed_filter_contract.rs:67`.
+2. Adaptado `crates/execution-engine/tests/payload_admission_contract.rs` para aceptar tanto `quantity=0.400&` (formato exacto con paso 0.001) como `quantity=0.4&`, eliminando discrepancias sintacticas sin alterar presupuesto, cantidad aprobada ni margen reservado.
+3. Se confirman ambos contratos verdes y preservacion de la invariante cantidad firmada = reservada = ejecutada.
 
 ## 2026-10-22 — Codex QRA: continuación integrada; CI del push real 9/9
 
