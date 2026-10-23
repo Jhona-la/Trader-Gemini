@@ -209,6 +209,7 @@ fn f1_074_contrato_5_inmunidad_ieee754_y_parametros_desacoplados() {
         cadence_regime_ms: 30_000.0, // cadencia acelerada a 30s
         margin_contraction_scale: 0.90,
         min_margin_floor: 0.10,
+        w_quantum_coupling: 1.0,
     };
 
     // NaN y valores degenerados nunca deben generar pánico ni NaN

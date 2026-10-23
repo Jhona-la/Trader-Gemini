@@ -197,6 +197,7 @@ fn contrato_spectral_regime_params_normalizacion_convexa_y_margen() {
         cadence_regime_ms: 60_000.0,
         margin_contraction_scale: 0.80,
         min_margin_floor: 0.12,
+        w_quantum_coupling: 1.0,
     };
 
     let field = SpectralRegimeField::from_spectrum_with_params(&spec, None, 10_000.0, &custom_params);
