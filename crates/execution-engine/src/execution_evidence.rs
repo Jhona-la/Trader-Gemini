@@ -1,5 +1,5 @@
 //! Exchange observations are not interchangeable with fills or local reservations.
-//! These contracts validate quantity-based USD-M query responses, not profitability,
+//! These contracts validate USD-M query responses, not profitability,
 //! snapshot freshness, or attribution of aggregate exposure to a particular intent.
 use crate::{executor::ActivePosition, OrderAck, OrderResolution, OrderStatus};
 use serde::Deserialize;
@@ -100,6 +100,42 @@ pub fn parse_account_equity(text: &str) -> Result<f64, String> {
         Some(v) if v.is_finite() && v >= 0.0 => Ok(v),
         _ => Err("ACCOUNT_EVIDENCE_INVALID: totalWalletBalance fuera de dominio".to_string()),
     }
+}
+
+// Deserialize directly from the wire so repeated recognized keys remain errors.
+// Unknown venue fields (such as rpiCommissionRate) are intentionally allowed.
+#[derive(Deserialize)]
+struct CommissionRateRow {
+    symbol: String,
+    #[serde(
+        rename = "makerCommissionRate",
+        deserialize_with = "crate::order_types::string_or_f64"
+    )]
+    maker: f64,
+    #[serde(
+        rename = "takerCommissionRate",
+        deserialize_with = "crate::order_types::string_or_f64"
+    )]
+    taker: f64,
+}
+
+/// Require complete, finite commission evidence for the requested symbol.
+/// Signed finite rates retain the existing consumer domain, including rebates;
+/// this boundary does not validate a fee tier or impose a rate cap.
+pub fn parse_commission_rates(text: &str, expected_symbol: &str) -> Result<(f64, f64), String> {
+    if expected_symbol.is_empty() || expected_symbol.trim() != expected_symbol {
+        return Err("COMMISSION_EVIDENCE_INVALID: expected symbol is empty or padded".into());
+    }
+    // Serde structs can also deserialize sequences; the endpoint requires an object.
+    if !text.trim_start().starts_with('{') {
+        return Err("COMMISSION_EVIDENCE_INVALID: expected an object".into());
+    }
+    let row: CommissionRateRow = serde_json::from_str(text)
+        .map_err(|e| format!("COMMISSION_EVIDENCE_INVALID: schema: {e}"))?;
+    if row.symbol != expected_symbol {
+        return Err("COMMISSION_EVIDENCE_INVALID: symbol does not match request".into());
+    }
+    Ok((row.maker, row.taker))
 }
 
 /// Accepted means order evidence, not necessarily a fill (NEW is accepted).

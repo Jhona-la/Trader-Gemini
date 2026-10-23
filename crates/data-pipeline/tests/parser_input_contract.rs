@@ -175,3 +175,65 @@ fn ra_aggressor_rejects_unreadable_price_or_quantity() {
     assert_eq!(event.price, 60050.25);
     assert_eq!(event.qty, 1.500);
 }
+
+#[test]
+fn qra_aggressor_present_corrupt_clock_is_not_missing_clock() {
+    for clock in [
+        "null",
+        "true",
+        "\"123\"",
+        "-1",
+        "+1",
+        "1.5",
+        "1e3",
+        "123x",
+        "01",
+        "",
+        "18446744073709551616",
+        "[]",
+        "{}",
+    ] {
+        for key in ["\"T\":", "\"T\" \r\n\t : ", "\"note\":\"T\",\"T\":"] {
+            let wire = format!("{{\"p\":\"10\",\"q\":\"1\",\"m\":false,{key}{clock}}}");
+            assert!(
+                AggTradeEvent::parse_from_json(wire.as_bytes()).is_none(),
+                "a corrupt exchange clock must reject the whole event: {wire}"
+            );
+        }
+    }
+}
+
+#[test]
+fn qra_aggressor_clock_preserves_value_permutation_and_json_whitespace() {
+    for wire in [
+        br#"{"T":1720000000123,"p":"10","q":"1","m":true}"#.as_slice(),
+        b"{\"p\":\"10\",\"q\":\"1\",\"m\":true,\"T\" \r\n\t : \r\n 1720000000123 \t}",
+        br#"{"p":"10","q":"1","m":true,"note":"T","T":1720000000123}"#.as_slice(),
+    ] {
+        let event = AggTradeEvent::parse_from_json(wire).expect("valid exchange clock");
+        assert_eq!(event.timestamp_ms, 1720000000123);
+        assert_eq!(
+            (event.price, event.qty, event.is_buyer_maker),
+            (10.0, 1.0, true)
+        );
+    }
+    let max = br#"{"p":"10","q":"1","m":true,"T":18446744073709551615}"#;
+    assert_eq!(
+        AggTradeEvent::parse_from_json(max).unwrap().timestamp_ms,
+        u64::MAX
+    );
+}
+
+#[test]
+fn qra_aggressor_legacy_absence_and_explicit_zero_remain_compatible() {
+    for wire in [
+        br#"{"p":"10","q":"1","m":false}"#.as_slice(),
+        br#"{"p":"10","q":"1","m":false,"T":0}"#.as_slice(),
+        br#"{"p":"10","q":"1","m":false,"note":"T"}"#.as_slice(),
+    ] {
+        assert_eq!(
+            AggTradeEvent::parse_from_json(wire).unwrap().timestamp_ms,
+            0
+        );
+    }
+}

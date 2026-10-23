@@ -17222,6 +17222,17 @@ Relevo documentado en docs/audit/QRA_FEES_REALIDAD_2026-10-22.md de la rama PR97
    - Planificado para la siguiente fase: acoplamiento de `RealityPhysics` con `arena.config.live_taker_fee` y filtros de precisión de `ExchangeInfo` (Átomos 2.4/2.5) con contrato estricto de paridad física.
    - Esperando finalización del step de Replay de PR #97 para su fusión coordinada a `main`.
 
+## 2026-10-22 — Codex QRA: reparación CI del contrato Sol entrante
+
+0f76 falló en all-targets por Arc<u32> vs7 del contrato Sol F1-093. Reservo
+solo ese contrato, comentarios de lock_seguro y su selector Replay para reparar
+compilación y ejecución. **Arc y join dentro del scope; tercer caso atraviesa
+is_trained real con lock envenenado. Ningún cuerpo de producción evolutivo
+cambia. Cuatro contratos Sol ahora seleccionados junto a wf_numerario; nuevo
+CI completo obligatorio. Ω219 documental se conserva por unión. Bajo abort
+el primer panic termina el proceso; esta suite prueba unwind, no supervivencia
+ni consistencia multi-campo. Dieciocho tests QRA nuevos y cuatro Sol rescatados,
+doce rutas en alcance. Sin Cargo local, targets ni procesos propios nuevos.
 ## 2026-10-22 20:06:20 -05:00 — Codex QRA: nueva composicion y cobertura F1-093
 
 PR97 reanclado limpiamente a e646a78db (Sol F1-093): head0f76eae73, Unit39881339825/Replay39881340004. Diez blobs QRA y cincoSol identicos comprobados. El posterior main9c888f68 solo modifica MEMORIA, AGENT_SYNC y COORD: se preserva CI de codigo0f76, se resolveran documentos por union y se probara igualdad de todas las fuentes/buildinputs antes del merge. Luego se exige CI propio del push final a main. No consumir RAM local ni reiniciar un build completo por tres MD.

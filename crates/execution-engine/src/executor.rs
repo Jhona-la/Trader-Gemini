@@ -4055,23 +4055,9 @@ impl ExecutionProvider for OrderExecutor {
         match self.get_payload_account(buf.as_str()).await {
             Ok((limits, text)) => {
                 self.update_limits(&limits);
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if let (Some(m_str), Some(t_str)) = (
-                        json["makerCommissionRate"].as_str(),
-                        json["takerCommissionRate"].as_str(),
-                    ) {
-                        let maker = m_str
-                            .parse::<f64>()
-                            .map_err(|e| format!("Parse error maker fee: {}", e))?;
-                        let taker = t_str
-                            .parse::<f64>()
-                            .map_err(|e| format!("Parse error taker fee: {}", e))?;
-                        // CORRECCIÓN: No usar unwrap_or con fallbacks hardcodeados
-                        // Si Binance devuelve datos que no se pueden parsear, es un error real
-                        return Ok((maker, taker));
-                    }
-                }
-                Err(format!("Fallo al extraer comisiones reales de Binance. No se usarán tarifas hardcodeadas. Response: {}", text))
+                // A parseable float can still be NaN/Inf. Only a complete,
+                // finite observation for this symbol may reach live fee state.
+                crate::execution_evidence::parse_commission_rates(&text, symbol)
             }
             Err(e) => Err(e),
         }

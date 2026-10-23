@@ -4,22 +4,23 @@
 //! `RwLock::read()` y `RwLock::write()` devuelven `Result`: el `Err` no es un
 //! fallo de concurrencia ordinario, es **envenenamiento** (`PoisonError`). Un
 //! `RwLock` se envenena cuando un hilo panica mientras mantiene el guard, y
-//! desde entonces **cada** `read()`/`write()` vuelve a fallar. Con
-//! `panic = "abort"` (LG-28) la cadena es: un pánico en cualquier parte del
-//! proceso → lock envenenado → el siguiente `.read().unwrap()` del evolver
-//! online aborta → el proceso muere con posiciones abiertas.
+//! desde entonces **cada** `read()`/`write()` vuelve a fallar. Esto describe
+//! un pánico con unwinding mientras se mantiene el guard de escritura.
+//! Con `panic = "abort"`, el primer pánico termina el proceso; recuperar un
+//! guard no proporciona supervivencia frente a esa política.
 //!
 //! El evolver online tenía 43 de esos `.unwrap()` (16 en
 //! `online_random_forest.rs`, 27 en `online_newton_gbdt.rs`), todos en código
 //! de producción: ninguno bajo `#[cfg(test)]`. Una sola caída ajena bastaba
-//! para convertir el bosque en una cadena de abortos.
+//! para convertir el siguiente acceso en otro pánico bajo unwinding.
 //!
 //! # POR QUÉ `into_inner()` Y NO PROPAGAR
-//! Estos locks guardan campos cuyo invariante sobrevive al pánico del que
-//! mantenía el guard: `Copy` (`f32`, `f64`, `bool`), `Arc` (compartir un Arc
-//! es atómico) u `Option<Arc<...>>`. No hay estructura a medio construir que
-//! pueda quedar inconsistente, así que recuperar el guard es más honesto que
-//! abortar: el estado sigue siendo exactamente el de antes del pánico.
+//! Recuperar el guard exige que el consumidor compruebe que su invariante
+//! sobrevive a la sección crítica interrumpida. `Copy`, `Arc` u
+//! `Option<Arc<...>>` no demuestran por sí mismos validez numérica ni
+//! consistencia entre varios campos. `into_inner()` recupera el último
+//! estado protegido, que puede incluir escrituras previas al pánico;
+//! no restaura automáticamente el estado anterior ni lo valida.
 //!
 //! Cuando el invariante SÍ dependa de una sección crítica multi-paso, el lock
 //! no se recupera: se rediseña para que el pánico no pueda dejar estado
@@ -35,8 +36,8 @@ use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// Lectura que recupera el guard de un lock envenenado.
 ///
-/// Equivalente semántico a `lock.read().unwrap()` para los campos cuyo
-/// invariante sobrevive al pánico (ver la nota del módulo): nunca panica.
+/// Recupera el guard sin propagar el error de envenenamiento. El consumidor
+/// sigue siendo responsable de validar su estado (ver la nota del módulo).
 #[inline]
 pub fn leer<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
     match lock.read() {

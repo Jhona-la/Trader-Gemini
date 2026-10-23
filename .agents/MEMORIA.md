@@ -1,5 +1,33 @@
 # MEMORIA DEL PROYECTO — Trader Gemini (estado vivo)
 
+## 2026-10-22 — Codex QRA: contrato Sol entrante reparado, nuevo CI pendiente
+
+PR97 añade QRA-CI-01 tras el E0308 del candidato0f76 en el contrato Sol.
+Corrección Arc/u32, panic intencional consumido con join y ruta pública
+is_trained realmente ejercitada; cuatro tests conectados a Replay. Las otras
+18 pruebas nuevas FEE/TIME/MEM y doce rutas del ledger siguen pendientes de
+esta composición. Preservados los cuerpos de producción Sol; no hay Cargo local.
+Precisión sobre Ω219: panic=abort termina en el primer panic; los contratos
+prueban unwind, no supervivencia release. Copy/Arc no garantizan consistencia
+multi-campo ni validez numérica. Ver plan QRA_FASE2 y recibo por SHA al cierre.
+
+## 2026-10-22 — Codex QRA: continuación FEE-01 / TIME-01 / MEM-01 en validación
+
+Base pública c2bdba425, rama codex/qra-wallet-parity-20261022. Plan y reservas:
+`docs/audit/QRA_FASE2_2026-10-22.md`. Tres cambios acotados: comisiones vivas
+completas/finitas/del símbolo pedido; timestamp AggTrade corrupto reconocido
+rechaza el evento en vez de convertirse en ausencia; dos vehículos de medición
+cargan sólo el prefijo 2M antes de materializarlo. Las APIs completas, sanitización
+y formato del loader se conservan. Contratos nuevos escritos: 10 fees, 3 tiempo,
+5 prefijo sintético, todavía SIN ejecutar. Workflow conecta el último explícitamente;
+los otros entran en las suites de ejecución/data-pipeline. Exigir 9 jobs del candidato.
+
+RAM 2,31 GiB y dos Cargo ajenos al medir 19:02: sin Cargo propio ni target nuevo.
+Las cifras 1,595 GiB / 91,6 MiB del tape/prefijo son estimaciones de Vec, no working-set
+medido ni ahorro global certificado. Preservados host/OMS AGY, evolución/locks Sol,
+MPS/DMRG GLM y verify PR65 ACTIVE. Omega218 local 94d7 no estaba publicado al corte;
+la meta +100 %/72 h y beneficio OOS siguen sin demostrarse. El archivo administrado
+anterior sigue encolado; no declarar worktree retirado sin comprobarlo.
 ## 2026-10-22T20:26:14-05:00 — Codex QRA: turno propuesto de publicacion PR97 hasta21:10
 
 PR97 incluye fees finitas/identidad, timestamp AggTrade, prefijo de ticks y
