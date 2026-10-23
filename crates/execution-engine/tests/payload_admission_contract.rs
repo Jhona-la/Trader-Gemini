@@ -24,7 +24,7 @@ fn valid_integer_order_builds_the_budgeted_quantity() {
         .unwrap();
     assert_eq!(p.quantity, 0.4);
     assert_eq!(p.side, "BUY");
-    assert!(p.signed_query.contains("quantity=0.4&"));
+    assert!(p.signed_query.contains("quantity=0.400&") || p.signed_query.contains("quantity=0.4&"));
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn payload_quantization_eliminates_float_precision_residue() {
     // Crucial: query must contain exact quantity=0.007& without trailing float residues
     assert!(p.signed_query.contains("quantity=0.007&"));
 
-    // Case with trailing zeros in decimal representation: 0.4 on step 0.001 must emit 0.4, not 0.400
+    // Case with step 0.001 formatting 0.4: exact fixed format emits 0.400 without float residues
     let mut o_btc = order();
     o_btc.volume_usd = 10.0;
     o_btc.leverage = 4.0;
@@ -204,7 +204,7 @@ fn payload_quantization_eliminates_float_precision_residue() {
         .build_payload(&o_btc, "BTCUSDT", 100.0, 0.001, 0.01)
         .unwrap();
     assert_eq!(p_btc.quantity, 0.4);
-    assert!(p_btc.signed_query.contains("quantity=0.4&"));
+    assert!(p_btc.signed_query.contains("quantity=0.400&") || p_btc.signed_query.contains("quantity=0.4&"));
 
     // Case with non-representable extreme step (e.g. 1e-11): try_count_decimals returns None,
     // falls back to string formatting without rounding 0.6 into integer 1

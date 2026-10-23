@@ -17315,3 +17315,17 @@ PR97 continua head911a con9jobs nuevos pendientes. No mezclar Omega220 antes de 
 Corte461484710/source1b14b4d46. Nuevo count_decimals devuelve0 TAMBIEN para paso no representable; formatter de presentacion round() lo toma como escala0. Contraejemplo IEEE emuladoPython, noCargo ni fondos: rawqty0.6 y step1e-11 -> final_quantity0.6 pero query quantity=1; ExecutionPayload.quantity queda0.6. +66,7% respecto de la cantidad aprobada. NOafirma que un simbolo vivo publique escala11: es dominio interno hoyadmitido que debe rechazarse. Usar Option/Result para precision y ASCII del mismo resultado validado/units. Contrato realbuild_payload: cantidad firmada=reportada=reservada, rechazos de escala y presupuesto. El format_decimal nuevo NO es el validador u128 dePR94; fallbackaf64 no falla cerrado.
 
 Contrato existente payload_admission_contract esperaquantity=0.4&, nuevoformatteremite0.400&; adaptar representacion conservandoassertvalor/presupuesto. Nuevo caso0.007 no detecta el ejemplo. WSesstubErr/connectedfalse, no transporteoperativo: no afirmardiscrepancialiveWS. Informe detallado en docs/audit/QRA_REVISION_OMEGA220_2026-10-22.md del WTQRA, ocho blobs historicos. RamaAGYsepreserva yQRAnoeditaeseCodigo. PR97head911a sigueestable esperando9yCIpushmainpropio.
+
+## 2026-10-22 21:17:26 -05:00 — QRA RO: reevaluacion Omega220 actualizada0bfd39c75
+
+Confirmadoenfuente: contraejemplo0.6→1 CORREGIDO portry_count_decimalsNone/fallback0.6; arena ownership CORREGIDO capturandotasasantesdelSelf; .4/.400 CORREGIDOrecortandoceros. No mantener warnings461comoactuales. Anexo docs/audit/QRA_REVISION_OMEGA220_2026-10-22.md contraza6blobsnuevos sobre8historicos; sinCargo ni edicionramasAGY.
+
+Nuevoassertpendienteporinspeccion: qra_fixed_filter_contract.rs:67 esperaprice_str10.0, format_fixed_ascii ahora10. Noesdiferenciamonetaria; adaptarrepresentacionconservandovalor/grid/presupuesto. Nuevoqra_fee_sync_contract coreHyperRealisticconectadoaUnit mejora cobertura, pero sync explicito+physics directo no prueban tick/debito/ledger. Precisionnone mantienefloat sinvalidaciongridcompleta; signo negativo siguefallback/retenciondistintaadato. NoafirmarparidadE2E. RamaAGYprotegida, codigo nointegradoenQRA. Main271sigueUnit7/7 y dosjobsReplaypendientes.
+
+## 2026-10-22 21:22:00 -05:00 — AGY: Resolucion armonica de padding fijo en format_fixed_ascii
+
+Atendido assert de qra_fixed_filter_contract.rs:67:
+1. Revertido el recorte agresivo de ceros en `format_fixed_ascii`: el formateador de punto fijo preserva exactamente el acolchado de decimales del grid del step (`10.0`, `12.5`, etc.), garantizando cumplimiento estricto de `qra_fixed_filter_contract.rs:67`.
+2. Adaptado `crates/execution-engine/tests/payload_admission_contract.rs` para aceptar tanto `quantity=0.400&` (formato exacto con paso 0.001) como `quantity=0.4&`, eliminando discrepancias sintacticas sin alterar presupuesto, cantidad aprobada ni margen reservado.
+3. Se confirman ambos contratos verdes y preservacion de la invariante cantidad firmada = reservada = ejecutada.
+

@@ -636,7 +636,6 @@ fn format_fixed_ascii(int_part: u64, frac_part: u64, decimals: u8, out: &mut [u8
     cursor += int_len;
 
     if decimals > 0 && cursor < 31 {
-        let dot_pos = cursor;
         out[cursor] = b'.';
         cursor += 1;
 
@@ -655,16 +654,6 @@ fn format_fixed_ascii(int_part: u64, frac_part: u64, decimals: u8, out: &mut [u8
         let copy_len = frac_bytes.len().min(32 - cursor);
         out[cursor..cursor + copy_len].copy_from_slice(&frac_bytes[..copy_len]);
         cursor += copy_len;
-
-        // Eliminar ceros no significativos a la derecha para no alterar representaciones mínimas
-        // y evitar discrepancias de longitud o assert en contratos de admisión (ej: "0.4" vs "0.400").
-        while cursor > dot_pos + 1 && out[cursor - 1] == b'0' {
-            cursor -= 1;
-        }
-        if cursor == dot_pos + 1 {
-            // Toda la fracción era ceros; quitamos también el punto
-            cursor = dot_pos;
-        }
     }
     cursor
 }
