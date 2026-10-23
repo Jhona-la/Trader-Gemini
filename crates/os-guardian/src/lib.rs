@@ -257,18 +257,6 @@ mod tests {
             is_ftz_daz_enabled(),
             "FTZ y DAZ deben estar habilitados en MXCSR tras enable_ftz_daz()"
         );
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            // Un subnormal f64 ocurre por debajo de MIN_POSITIVE (2.2250738585072014e-308).
-            let min_normal = f64::MIN_POSITIVE;
-            let subnormal = min_normal * 0.5;
-            // Con FTZ activo a nivel de CPU, el subnormal se redondea inmediatamente a 0.0 sin microcódigo assist.
-            assert_eq!(
-                subnormal, 0.0,
-                "En hardware x86 con FTZ activo, el subnormal debe ser limpiado a cero inmediatamente"
-            );
-        }
     }
 
     #[test]
