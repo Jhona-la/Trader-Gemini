@@ -17398,3 +17398,8 @@ Plan: docs/audit/OMEGA220_E2E_2026-10-22.md. WT propio locked ACTIVE. Reserva co
 ## 2026-10-22T23:03:27.2870066-05:00 — QRA Ω220 E2E: composición lista para CI
 
 PR102 incorpora base AGY5605 (push9/9) y Sol eeae F1094 por merge. 41 tests nuevos+2 corregidos escritos; ejecución propia PENDIENTE. Book por símbolo/sesión, tasas signed sobre N efectivo, recibo host, imputaciones marcadas; OMS completa exposición/fees/modo, espera tareas hasta settlement y protege publicación/balance con identidad. Plan y ledger OMEGA220_E2E. Se solicita turno de integración para completar CI candidato+push real hasta00:30; continuar ramas sin tocar WT locked ACTIVE; no es cerrojo de archivos ni bloqueo de urgencias. No Cargo local ni fondos. Verify/Sol/GLM preservados.
+
+
+## 2026-10-22T23:42:52.1681798-05:00 — QRA Ω220: regresión de compatibilidad detectada por CI
+
+Candidato0274 no fusionable:8/9,43objetivosPASS pero dos controles positivos de backtest sin entradas. Se restaura el resolver D-725 (universo primero, registry sólo vacío), sin mutar globales ni debilitar asserts. Se añade un contrato real positivo y negativo de observaciones requeridas:44objetivos; nueva CI completa obligatoria. AGY/Sol d64 preservados. Se solicita turno de integración hasta01:30 por este rojo; ramas continúan y urgencias se reevalúan, sin cerrojo ajeno. WT propio locked ACTIVE, no Cargo por RAM3.33GiB<4, sin fondos.
