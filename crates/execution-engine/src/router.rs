@@ -243,19 +243,47 @@ impl QuantumOrderRouter {
                 .await;
         }
 
-        // 3. Verificación de Viabilidad Financiera y Selección Adversa (Axioma: E[ΔW] > 3x fricciones)
+        // 3. Verificación de Viabilidad Financiera y Selección Adversa (Axioma: E[ΔW] >= 3x fricciones)
+        let (live_maker_fee, live_funding_cost) = {
+            let exec = self.executor.load();
+            match exec.arena.load_full() {
+                Some(arena) => {
+                    let coin_id_opt = quantum_arena::symbols::get_coin_id(symbol);
+                    let maker = coin_id_opt
+                        .and_then(|id| arena.config.fee_rates_for(id))
+                        .map(|(m, _t)| m)
+                        .unwrap_or(0.0002);
+                    let now_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let tau_ms = if decision.expected_lifetime_ms > 0 {
+                        decision.expected_lifetime_ms as f64
+                    } else {
+                        quantum_arena::temporal_spectrum::TAU_ANCHOR_FAST_MS
+                    };
+                    let funding = coin_id_opt
+                        .and_then(|id| arena.coins.get(id))
+                        .map(|coin| coin.expected_funding_cost(is_long, tau_ms, now_ms))
+                        .unwrap_or(0.0001);
+                    (maker, funding)
+                }
+                None => (0.0002, 0.0001),
+            }
+        };
+
         let (viability, metrics) = AdverseSelectionGuard::evaluate_viability(
             decision.net_confidence * decision.expected_volatility * 2.0,
             spread_pct,
             decision.expected_volatility,
             decision.net_confidence,
-            0.0002, // 2 bps maker
-            0.0001, // 1 bp funding
+            live_maker_fee,
+            live_funding_cost,
             quantity * current_price * 0.5,
             quantity * current_price * 2.0,
         );
 
-        if viability == OrderViability::InsufficientEdge && decision.net_confidence < 0.65 {
+        if viability == OrderViability::InsufficientEdge {
             println!(
                 "⚠️ [QUANTUM ROUTER] Rejection: Edge insuficiente para vencer fricciones y selección adversa. Viability: {:.2}x (< 3.0x), Friction: {:.2} bps (ID: {}).",
                 metrics.viability_ratio,
