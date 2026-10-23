@@ -407,3 +407,374 @@ pub fn entrelazamiento_corte(estado: &[f64], l: usize, corte: usize) -> Result<f
     }
     Ok(entropia)
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// GLM 152 — DMRG DE 1 SITIO (titularidad §56): el optimizador variacional
+// sobre el núcleo MPS del 151. Hamiltoniano de certificación: Ising
+// transverso H = −J·Σ σᶻᶻ − h·Σ σˣ, con MPO de bond 3. El estado inicial
+// es el producto |↑↑…↑⟩ (D=1) y el sweep crece/traga enlaces por SVD.
+// Contratos: h=0 y J=0 exactos con D=1; punto crítico vs Jordan-Wigner;
+// monotonía variacional E(D=2) ≥ E(D=4) ≥ E(D=8) ≥ E₀.
+// ══════════════════════════════════════════════════════════════════════
+
+/// MPO del Ising transverso: W[l][w_up, s, s', w_down] con w ∈ {0,1,2}:
+/// canal 0 = identidad, 1 = σᶻ (acumula para el término ZZ), 2 = cierre.
+/// La matriz local de 3×3 por sitio (fila = w_up, col = w_down):
+///   [ I  0   0 ]   [ I   0  0 ]
+///   [ σᶻ 0   0 ] + [ 0  hσˣ... — construcción estándar abajo.
+pub struct MpoIsing {
+    pub largo: usize,
+    pub j: f64,
+    pub h: f64,
+}
+
+impl MpoIsing {
+    /// Tensor W del sitio l (0-indexado): layout
+    /// W[(w_up·d + s)·d·w_dn + s'·w_dn + w_dn_idx] ≡ flat
+    /// [((w_up·2 + s)·2 + s')·3 + w_dn].
+    fn tensor(&self, l: usize) -> Vec<f64> {
+        let dw = 3usize;
+        let mut w = vec![0.0; dw * MPS_D_FIS * MPS_D_FIS * dw];
+        let idx = |wu: usize, s: usize, sp: usize, wd: usize| {
+            ((wu * MPS_D_FIS + s) * MPS_D_FIS + sp) * dw + wd
+        };
+        let primero = l == 0;
+        let ultimo = l == self.largo - 1;
+        // Matriz de operadores por (fila w_up, col w_dn): I, σᶻ, −J σᶻσᶻ·(cola), h σˣ.
+        // Estándar (Schollwöck eq. Ising MPO): fila superior abre términos.
+        // Canal: 0=I, 1=σᶻ(pendiente ZZ), 2=término completado.
+        // Local (s,s'): I=δ, Z=diag(1,−1), X=antidiag(1,1).
+        for s in 0..MPS_D_FIS {
+            for sp in 0..MPS_D_FIS {
+                let z = if s == sp { if s == 0 { 1.0 } else { -1.0 } } else { 0.0 };
+                let x = if s != sp { 1.0 } else { 0.0 };
+                let i_op = if s == sp { 1.0 } else { 0.0 };
+                let _ = i_op;
+                // Fila 0: [I, 0, 0] + primero también [σᶻ, σˣ·h·(−1 signo H)]
+                w[idx(0, s, sp, 0)] += if s == sp { 1.0 } else { 0.0 }; // I
+                if primero {
+                    // el primer sitio abre el ZZ: (−J)σᶻ en (0→1)
+                    w[idx(0, s, sp, 1)] += -self.j * z;
+                    // abre el campo: (−h)σˣ en (0→2)
+                    w[idx(0, s, sp, 2)] += -self.h * x;
+                }
+                // Fila 1 (σᶻ pendiente): [σᶻ, 0, σᶻσᶻ·(−J) cierra]
+                w[idx(1, s, sp, 1)] += z; // sigue pendiente
+                if !ultimo {
+                    w[idx(1, s, sp, 2)] += -self.j * z; // cierra ZZ: −J σᶻσᶻ
+                }
+                // Fila 2 (completado): [0, 0, I] mantiene el vacío
+                w[idx(2, s, sp, 2)] += if s == sp { 1.0 } else { 0.0 };
+                // σˣ del sitio: en el canal completado, −h σˣ abre y cierra
+                if !primero {
+                    // el término de campo lo llevamos como −h·σˣ insertado en
+                    // la fila 2 (ya completado → se cierra en el mismo sitio)
+                    w[idx(2, s, sp, 2)] += -self.h * x;
+                }
+            }
+        }
+        w
+    }
+}
+
+/// Resultado de un DMRG.
+pub struct DmrgResultado {
+    pub energia: f64,
+    pub mps: Mps,
+    pub sweeps: usize,
+}
+
+/// DMRG 1-sitio con 2N sweeps. Estado inicial |↑…↑⟩ (D=1 en todos los
+/// enlaces); en cada visita de sitio l se contrae L·W·R al operador
+/// efectivo (D·d × D·d), se toma el autovector del MÍNIMO autovalor y se
+/// re-traga por SVD hacia la dirección del barrido (creciendo el enlace).
+/// Devuelve la energía variacional (≥ E₀ exacto siempre).
+pub fn dmrg_ising(
+    l: usize,
+    j: f64,
+    h: f64,
+    bond_max: usize,
+    sweeps: usize,
+) -> Result<DmrgResultado, MpsError> {
+    if l == 0 || l > MPS_MAX_L {
+        return Err(MpsError::LongitudInvalida { l });
+    }
+    if !(j.is_finite() && h.is_finite()) || bond_max == 0 || bond_max > MPS_MAX_D {
+        return Err(MpsError::BondInvalido { d: bond_max });
+    }
+    let hpo = MpoIsing { largo: l, j, h };
+    let mpos: Vec<Vec<f64>> = (0..l).map(|i| hpo.tensor(i)).collect();
+
+    // Estado inicial: |↑…↑⟩ (s=0) con D=1.
+    let mut tensores: Vec<Vec<f64>> = Vec::with_capacity(l);
+    for _sitio in 0..l {
+        // A[l][(0·2+s)·1+0] = δ_{s,0}
+        tensores.push(vec![1.0, 0.0]);
+    }
+    let dims: Vec<usize> = vec![1; l + 1];
+    let mut mps = Mps { tensores, dims, largo: l };
+
+    let dw = 3usize;
+    let mut energia = 0.0f64;
+    for _ in 0..sweeps.max(2) {
+        // ── Barrido izquierda→derecha.
+        for sitio in 0..l {
+            let (nueva_energia, nuevo_tensor, nuevo_dims) =
+                optimizar_sitio(&mps, &mpos, sitio, bond_max, dw, false)?;
+            energia = nueva_energia;
+            mps.tensores[sitio] = nuevo_tensor;
+            mps.dims = nuevo_dims;
+        }
+        // ── Barrido derecha→izquierda.
+        for sitio in (0..l).rev() {
+            let (nueva_energia, nuevo_tensor, nuevo_dims) =
+                optimizar_sitio(&mps, &mpos, sitio, bond_max, dw, true)?;
+            energia = nueva_energia;
+            mps.tensores[sitio] = nuevo_tensor;
+            mps.dims = nuevo_dims;
+        }
+    }
+    if !energia.is_finite() {
+        return Err(MpsError::NormaDegenerada { valor: energia });
+    }
+    Ok(DmrgResultado { energia, mps, sweeps: sweeps.max(2) })
+}
+
+/// Optimiza el sitio `sitio`: contrae entornos L (izquierda), W (local),
+/// R (derecha) al operador efectivo Heff[(a,s),(a',s')] y resuelve el
+/// mínimo autovalor. Devuelve (energía, tensor ingerido hacia la dirección
+/// del barrido, dims actualizadas). `hacia_izquierda` controla el SVD.
+fn optimizar_sitio(
+    mps: &Mps,
+    mpos: &[Vec<f64>],
+    sitio: usize,
+    bond_max: usize,
+    dw: usize,
+    hacia_izquierda: bool,
+) -> Result<(f64, Vec<f64>, Vec<usize>), MpsError> {
+    let l = mps.largo;
+    // Entorno izquierdo: L[wu, a, ap] — contraer sitios 0..sitio-1.
+    let dl = mps.dims[sitio];
+    let dr = mps.dims[sitio + 1];
+    let mut env_l: Vec<f64> = vec![1.0];
+    let mut dim_l_mps = 1usize;
+    let mut dim_l_mpo = 1usize;
+    for s in 0..sitio {
+        let a = &mps.tensores[s];
+        let w = &mpos[s];
+        env_l = contraer_entorno_izq(&env_l, dim_l_mps, dim_l_mpo, w, a, dw);
+        dim_l_mps = mps.dims[s + 1];
+        dim_l_mpo = dw;
+    }
+    // Entorno derecho: R[wd, b, bp] — contraer sitios l-1..sitio+1 (inverso).
+    let mut env_r: Vec<f64> = vec![1.0];
+    let mut dim_r_mps = 1usize;
+    let mut dim_r_mpo = 1usize;
+    for s in ((sitio + 1)..l).rev() {
+        let a = &mps.tensores[s];
+        let w = &mpos[s];
+        let dap = mps.dims[s]; // D_s (lado izquierdo del sitio s)
+        env_r = contraer_entorno_der(&env_r, dim_r_mps, dim_r_mpo, w, a, dw);
+        dim_r_mps = dap;
+        dim_r_mpo = dw;
+    }
+    // Operador efectivo Heff[(a·s·b),(a'·s'·b')] con a ∈ dim_l_mps(=dl),
+    // b ∈ dim_r_mps(=dr), s físico. Dim total n = dl·2·dr ≤ 8·2·8=128.
+    let n = dl * MPS_D_FIS * dr;
+    if n == 0 || n > 256 {
+        return Err(MpsError::BondInvalido { d: n });
+    }
+    let w_local = &mpos[sitio];
+    let a_local = &mps.tensores[sitio];
+    let _ = a_local;
+    let mut heff = vec![0.0; n * n];
+    // Heff[(a,s,b),(a',s',b')] = Σ_{wu,wd} L[wu,a,a']·W[wu,s,s',wd]·R[wd,b,b'].
+    for ia in 0..dl {
+        for ipa in 0..dl {
+            for fs in 0..MPS_D_FIS {
+                for fsp in 0..MPS_D_FIS {
+                    for ib in 0..dr {
+                        for ipb in 0..dr {
+                            let fila = ((ia * MPS_D_FIS + fs) * dr) + ib;
+                            let col = ((ipa * MPS_D_FIS + fsp) * dr) + ipb;
+                            let mut acc = 0.0;
+                            for wu in 0..dim_l_mpo {
+                                let lv = env_l[(wu * dl + ia) * dl + ipa];
+                                if lv == 0.0 {
+                                    continue;
+                                }
+                                for wd in 0..dim_r_mpo {
+                                    let rv = env_r[(wd * dr + ib) * dr + ipb];
+                                    if rv == 0.0 {
+                                        continue;
+                                    }
+                                    let wv = w_local
+                                        [((wu * MPS_D_FIS + fs) * MPS_D_FIS + fsp) * dw + wd];
+                                    acc += lv * wv * rv;
+                                }
+                            }
+                            heff[fila * n + col] = acc;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Mínimo autovalor: Jacobi simétrico completo (Heff es simétrico por H†=H).
+    let espectro = jacobi_simetrico(&heff, n, 1e-18)
+        .ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
+    let (min_e, _) = espectro
+        .iter()
+        .enumerate()
+        .fold((f64::INFINITY, 0usize), |(me, mi), (i, &v)| {
+            if v < me {
+                (v, i)
+            } else {
+                (me, mi)
+            }
+        });
+    // Autovector del mínimo: re-diagonalizar con acumulación de v — usar
+    // autovectores_jacobi con k=1 devuelve el MÁXIMO; invertimos Heff→−Heff.
+    let neg: Vec<f64> = heff.iter().map(|x| -x).collect();
+    let (v, _) = autovectores_jacobi(&neg, n, 1)
+        .ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
+    // theta[(a,s,b)] = v[fila·1 + 0].
+    let mut theta = vec![0.0; n];
+    for fila in 0..n {
+        theta[fila] = v[fila];
+    }
+    // Re-tragar por SVD hacia la dirección del barrido.
+    let filas = if hacia_izquierda { dr } else { dl * MPS_D_FIS };
+    let cols = n / filas.max(1);
+    let (u, lambdas) = svp_truncado(&theta, filas, cols, bond_max)
+        .ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
+    let _ = lambdas;
+    let mut nuevos_dims = mps.dims.clone();
+    if hacia_izquierda {
+        // ingerido hacia la izquierda: el sitio guarda (dr·2 → ...) — en
+        // 1-sitio el enlace que crece es el opuesto a la dirección.
+        // SVD de theta.reshape(dl·2, dr): U → A[l], σVᵀ se tira (se
+        // recompute en el siguiente paso).
+        nuevos_dims[sitio + 1] = u.len() / (dl * MPS_D_FIS);
+        Ok((min_e, u, nuevos_dims))
+    } else {
+        nuevos_dims[sitio + 1] = u.len() / (dl * MPS_D_FIS);
+        Ok((min_e, u, nuevos_dims))
+    }
+}
+
+fn contraer_entorno_izq(
+    env: &[f64],
+    dim_mps: usize,
+    dim_mpo: usize,
+    w: &[f64],
+    a: &[f64],
+    dw: usize,
+) -> Vec<f64> {
+    let dap = a.len() / (dim_mps * MPS_D_FIS);
+    let mut nueva2 = vec![0.0; dw * dap * dap];
+    for wu in 0..dim_mpo {
+        for aix in 0..dim_mps {
+            for aip in 0..dim_mps {
+                let e = env[(wu * dim_mps + aix) * dim_mps + aip];
+                if e == 0.0 {
+                    continue;
+                }
+                for fs in 0..MPS_D_FIS {
+                    for fsp in 0..MPS_D_FIS {
+                        for wup in 0..dw {
+                            let wv = w[((wu * MPS_D_FIS + fs) * MPS_D_FIS + fsp) * dw + wup];
+                            if wv == 0.0 {
+                                continue;
+                            }
+                            for aj in 0..dap {
+                                let av = a[((aix * MPS_D_FIS + fs) * dap) + aj];
+                                if av == 0.0 {
+                                    continue;
+                                }
+                                for apj in 0..dap {
+                                    let apv = a[((aip * MPS_D_FIS + fsp) * dap) + apj];
+                                    nueva2[((wup * dap + aj) * dap) + apj] += e * wv * av * apv;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    nueva2
+}
+
+fn contraer_entorno_der(
+    env: &[f64],
+    dim_mps: usize,
+    dim_mpo: usize,
+    w: &[f64],
+    a: &[f64],
+    dw: usize,
+) -> Vec<f64> {
+    // a tiene forma (D_s·d, D_{s+1}) con D_{s+1} = dim_mps.
+    let dl = a.len() / (dim_mps * MPS_D_FIS);
+    let mut nueva = vec![0.0; dw * dl * dl];
+    for wd in 0..dim_mpo {
+        for bix in 0..dim_mps {
+            for bip in 0..dim_mps {
+                let e = env[(wd * dim_mps + bix) * dim_mps + bip];
+                if e == 0.0 {
+                    continue;
+                }
+                for fs in 0..MPS_D_FIS {
+                    for fsp in 0..MPS_D_FIS {
+                        for wdn in 0..dw {
+                            let wv = w[((wdn * MPS_D_FIS + fs) * MPS_D_FIS + fsp) * dw + wd];
+                            if wv == 0.0 {
+                                continue;
+                            }
+                            for ai in 0..dl {
+                                let av = a[((ai * MPS_D_FIS + fs) * dim_mps) + bix];
+                                if av == 0.0 {
+                                    continue;
+                                }
+                                for api in 0..dl {
+                                    let apv = a[((api * MPS_D_FIS + fsp) * dim_mps) + bip];
+                                    nueva[((wdn * dl + ai) * dl) + api] += e * wv * av * apv;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    nueva
+}
+
+/// SVD-truncado directo de una matriz M (filas × cols) a bond dim ≤ b:
+/// devuelve (U: filas×d_bond, λ: d_bond) con M ≈ U·λ·(normalizado).
+fn svp_truncado(m: &[f64], filas: usize, cols: usize, b: usize) -> Option<(Vec<f64>, Vec<f64>)> {
+    if m.len() != filas * cols {
+        return None;
+    }
+    let mut g = vec![0.0; filas * filas];
+    for i in 0..filas {
+        for j in 0..filas {
+            let mut s = 0.0;
+            for k in 0..cols {
+                s += m[i * cols + k] * m[j * cols + k];
+            }
+            g[i * filas + j] = s;
+        }
+    }
+    let (u, lambdas) = autovectores_jacobi(&g, filas, filas.min(b))?;
+    let k = lambdas.len();
+    let lam_max = lambdas.iter().cloned().fold(0.0f64, f64::max);
+    let d_bond = lambdas.iter().filter(|&&x| x > lam_max * 1e-24).count().max(1).min(b);
+    let mut out_u = vec![0.0; filas * d_bond];
+    for f in 0..filas {
+        for alfa in 0..d_bond {
+            out_u[f * d_bond + alfa] = u[f * k + alfa];
+        }
+    }
+    Some((out_u, lambdas))
+}
