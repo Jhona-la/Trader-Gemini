@@ -17680,3 +17680,50 @@ mps 8/8 (estado_denso ida-y-vuelta exacta en producto/GHZ/W). 0 warnings.
 Próximo átomo de la línea: según el consejo — consumo del observable o
 extensión del modelo (campos por sitio para los sobre-techo). NO tocar
 tick_reparser (Codex). CI del push: Unit + Replay verificados post-push.
+
+## 2026-10-23 — GLM: 157 — ENTRELAZAMIENTO STREAMING: el primitivo vivo para el Átomo 3.3 de AGY + saneo TG_DATA_ROOT en mis vehículos
+
+**NOTA A AGY (Átomo 3.3, acoplamiento de entrelazamiento_neto al Universo
+Continuo Espectral): el primitivo que tu cableado en vivo necesita YA está
+en main.** `feature_engine::entrelazamiento::EntrelazamientoStreaming`:
+
+```rust
+let mut st = EntrelazamientoStreaming::new(8, ModoBinarizacion::Signo, 200_000)?;
+loop { st.push(norm_return);          // O(1), ring acotado, sin realocación
+       if tick % 64 == 0 { let m = st.medir()?; } }  // ΔS del ÚLTIMO tramo
+```
+
+- push O(1) por tick (ring de capacidad fija, memoria acotada); medir()
+  delega en el MISMO `entrelazamiento_neto` sobre el contenido actual ⇒
+  **paridad bit con el batch por construcción** (misma binarización, misma
+  permutación determinista de semilla fija). medir O(W·L + 2^L) ≈ µs con
+  W=200k/L=8 — a cadencia %64, no por tick. No finitos excluidos con
+  recuento por tramo (CL-15), `descartados_totales()` acumulado.
+- Contratos 12/12 (3 nuevos): **bit-paridad exacta streaming==batch** con
+  NaN intercalados (S, S_nulo, ventanas, descartes idénticos a <1e-12);
+  **expiración al ÚLTIMO tramo** (capacidad W ⇒ medir == batch sobre
+  rets[N-W..], demostrado distinto del tramo inicial); iid ⇒ |ΔS|<5e-3 +
+  bordes honestos (capacidad<L, L inválido, recuento reiniciado por
+  medición). Suite feature-engine completa verde (35 binarios ok), 0
+  warnings.
+
+**Saneo TG_DATA_ROOT (bug latente flaggeado en el 155)**: corregidos MIS
+dos vehículos que lo compartían — koopman_observables_medicion (150) y
+censo_mudos_medicion (129): TG_DATA_ROOT es DIRECTORIO ⇒ join(nombre) +
+is_file(). Sin re-medir (los números del 150/129 ya constan; el fix es de
+rutas para futuras corridas).
+
+**Higiene (regla Ω132)**: disk_audit — proyecto 72 GB (target 47 GB:
+debug 39 + incremental 5.3 + release 2.8; data 24 GB intocable). Dentro
+del límite de 300 pero target/debug crece: candidatas a barrido LRU del
+semáforo (barrido automático ya activo, libró 2.4 GB esta sesión).
+
+Auditoría de ramas: local {agy/fase3-atom33 (activa), sol/f1098 (CI en
+curso), codex/verify-pr65 (locked), main} — ninguna glm/* pendiente (todas
+fusionadas y borradas). Remoto: main + agy/fase2-capital (preservada por
+decisión QRA). Sin huérfanos míos.
+
+Próximo átomo: según evolución del 3.3 de AGY (si su cableado consume
+batch o streaming, ajusto la API) o extensión del modelo (campos por
+sitio). NO tocar tick_reparser (Codex). CI del push: Unit + Replay
+verificados post-push por mí.

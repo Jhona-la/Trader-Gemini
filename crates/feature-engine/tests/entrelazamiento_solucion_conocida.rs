@@ -1,9 +1,11 @@
 //! Contratos del entrelazamiento temporal neto (GLM 155) con SOLUCIÓN
 //! CONOCIDA sintética — certifican la lógica en CI sin tape. El vehículo
 //! de tape real es `backtest-engine/tests/mps_entrelazamiento_medicion.rs`
-//! (#[ignore], investigación local).
+//! (#[ignore], investigación local). GLM 156 añadió la curva de fases y
+//! GLM 157 el primitivo vivo `EntrelazamientoStreaming`.
 use feature_engine::entrelazamiento::{
-    EntrelazamientoError, ModoBinarizacion, entrelazamiento_neto, estado_empirico,
+    EntrelazamientoError, EntrelazamientoStreaming, ModoBinarizacion, entrelazamiento_neto,
+    estado_empirico,
 };
 
 /// xorshift64* determinista para las series sintéticas.
@@ -274,4 +276,123 @@ fn curva_fases_es_determinista_y_valida_parametros() {
         feature_engine::entrelazamiento::CurvaFases::construir(L, 4, 3, 0.05, 2.0, 3),
         Err(EntrelazamientoError::CurvaDegenerada)
     );
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// GLM 157 — ENTRELAZAMIENTO STREAMING (el primitivo vivo del Átomo 3.3
+// de AGY): paridad bit con el batch por construcción, ventana acotada al
+// ÚLTIMO tramo, exclusión honesta de no finitos.
+// ══════════════════════════════════════════════════════════════════════
+
+fn serie_markov(n: usize, p_misma: f64, semilla: u64) -> Vec<f64> {
+    let mut rng = Rng(semilla);
+    let mut arriba = true;
+    (0..n)
+        .map(|_| {
+            arriba = rng.uniforme() < if arriba { p_misma } else { 1.0 - p_misma };
+            if arriba { 1.0 } else { -1.0 }
+        })
+        .collect()
+}
+
+#[test]
+fn streaming_es_bit_paridad_con_batch() {
+    // Markov persistente (señal real) + no finitos intercalados: el
+    // streaming (push uno a uno) y el batch sobre la MISMA serie con NaN
+    // deben coincidir EXACTO (misma binarización tras filtrar, misma
+    // permutación determinista del mismo vector filtrado).
+    let limpia = serie_markov(30_000, 0.8, 0x157_C0FFEE);
+    let mut con_nan = limpia.clone();
+    let mut rng = Rng(0x157_DEAD_BEEF);
+    for k in (0..con_nan.len()).step_by(97) {
+        if rng.uniforme() < 0.5 {
+            con_nan[k] = f64::NAN;
+        }
+    }
+    let batch = entrelazamiento_neto(&con_nan, L, ModoBinarizacion::Signo).expect("batch");
+    let mut st = EntrelazamientoStreaming::new(L, ModoBinarizacion::Signo, 100_000)
+        .expect("streaming válido");
+    for &r in &con_nan {
+        st.push(r);
+    }
+    let m = st.medir().expect("streaming mide");
+    assert_eq!(m.ventanas, batch.ventanas, "ventanas idénticas");
+    assert_eq!(m.descartados, batch.descartados, "descartes idénticos");
+    assert!(
+        (m.s - batch.s).abs() < 1e-12 && (m.s_nulo - batch.s_nulo).abs() < 1e-12,
+        "S y S_nulo bit-paridad: {s1} vs {s2} / {n1} vs {n2}",
+        s1 = m.s,
+        s2 = batch.s,
+        n1 = m.s_nulo,
+        n2 = batch.s_nulo
+    );
+    assert!((m.delta - batch.delta).abs() < 1e-12);
+    assert_eq!(st.activos(), batch.ventanas + L - 1, "ring retiene los finitos");
+    assert_eq!(st.descartados_totales(), batch.descartados);
+}
+
+#[test]
+fn streaming_expira_al_ultimo_tramo() {
+    // Capacidad W < N: medir() tras N pushes == batch sobre los ÚLTIMOS W
+    // retornos (el ring descarta los viejos, no los mezcla).
+    let serie = serie_markov(5_000, 0.8, 0x157_ABCDEF);
+    let w = 2_000;
+    let mut st = EntrelazamientoStreaming::new(L, ModoBinarizacion::Signo, w)
+        .expect("streaming válido");
+    for &r in &serie {
+        st.push(r);
+    }
+    let m = st.medir().expect("mide el tramo");
+    let cola = &serie[serie.len() - w..];
+    let batch_cola = entrelazamiento_neto(cola, L, ModoBinarizacion::Signo).expect("batch cola");
+    assert_eq!(m.ventanas, batch_cola.ventanas);
+    assert!((m.s - batch_cola.s).abs() < 1e-12, "mide el ÚLTIMO tramo");
+    assert_eq!(st.activos(), w, "ring lleno exacto en W");
+    // El batch del tramo distinto del inicial demuestra que expiró de verdad.
+    let batch_inicio =
+        entrelazamiento_neto(&serie[..w], L, ModoBinarizacion::Signo).expect("batch inicio");
+    assert!((m.s - batch_inicio.s).abs() > 1e-9, "no es el tramo inicial");
+}
+
+#[test]
+fn streaming_iid_no_inventa_y_bordes_son_honestos() {
+    // iid ⇒ |ΔS| pequeño (el primitivo vivo no fabrica señal).
+    let mut st = EntrelazamientoStreaming::new(L, ModoBinarizacion::Signo, 50_000).unwrap();
+    let mut rng = Rng(0x157_0123);
+    for _ in 0..40_000 {
+        st.push(if rng.uniforme() < 0.42 { 1.0 } else { -1.0 });
+    }
+    let m = st.medir().expect("iid mide");
+    assert!(m.delta.abs() < 5e-3, "iid streaming: |ΔS| {d}", d = m.delta);
+    // Serie corta (< L en el ring): ausencia honesta.
+    let mut corto = EntrelazamientoStreaming::new(L, ModoBinarizacion::Signo, 100).unwrap();
+    for k in 0..3 {
+        corto.push(k as f64);
+    }
+    assert_eq!(
+        corto.medir(),
+        Err(EntrelazamientoError::RetornosInsuficientes { recibidos: 3, necesarios: L })
+    );
+    // Constructor con capacidad < L o L inválido: error temprano
+    // (L=8 ⇒ capacidad 7 insuficiente).
+    assert!(matches!(
+        EntrelazamientoStreaming::new(L, ModoBinarizacion::Signo, 7),
+        Err(EntrelazamientoError::RetornosInsuficientes { recibidos: 7, necesarios: 8 })
+    ));
+    assert!(matches!(
+        EntrelazamientoStreaming::new(0, ModoBinarizacion::Signo, 100),
+        Err(EntrelazamientoError::LongitudInvalida { l: 0 })
+    ));
+    // El recuento de descartes se REINICIA por medición (semántica tramo).
+    let mut st2 = EntrelazamientoStreaming::new(L, ModoBinarizacion::Signo, 100).unwrap();
+    st2.push(f64::NAN);
+    st2.push(f64::INFINITY);
+    for k in 0..100 {
+        st2.push(if k % 2 == 0 { 1.0 } else { -1.0 });
+    }
+    let m2 = st2.medir().expect("mide tras descartes");
+    assert_eq!(m2.descartados, 2, "dos descartes en el tramo");
+    let m3 = st2.medir().expect("segunda medición");
+    assert_eq!(m3.descartados, 0, "recuento por tramo, reiniciado");
+    assert_eq!(st2.descartados_totales(), 2, "total acumulado");
 }

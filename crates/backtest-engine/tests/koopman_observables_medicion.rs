@@ -24,12 +24,18 @@ fn koopman_observables_sobre_tape_btc_sep() {
     println!("[LG-23] modelos cargados de disco: {modelos}");
     let nombre_tape = "BTCUSDT_2026-09-14_REAL.bin";
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    // TG_DATA_ROOT es la CONVENCIÓN de DIRECTORIO (lección 136; bug latente
+    // hallado en GLM 155): el tape se resuelve DENTRO con join(nombre) y el
+    // candidato exige is_file() — el env crudo pasa exists() como directorio
+    // y el open niega con un Access Denied críptico.
     let candidatos = [
-        std::env::var("TG_DATA_ROOT").map(std::path::PathBuf::from).ok(),
+        std::env::var("TG_DATA_ROOT")
+            .map(|root| std::path::PathBuf::from(root).join(nombre_tape))
+            .ok(),
         Some(manifest.join("../..").join("data").join(nombre_tape)),
         Some(manifest.join("../../..").join("data").join(nombre_tape)),
     ];
-    let Some(path) = candidatos.into_iter().flatten().find(|p| p.exists()) else {
+    let Some(path) = candidatos.into_iter().flatten().find(|p| p.is_file()) else {
         eprintln!("[koopman] tape ausente — skip");
         return;
     };
