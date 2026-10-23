@@ -177,3 +177,11 @@ jobs:
         # XC (GLM, 2026-10-06, F8-A-H2): keep these five crates executed,
         # including integration tests and doctests, rather than only checked.
         run: cargo +nightly-2026-06-30 test -p execution-engine -p audit-engine -p data-pipeline -p data-ingest -p dark-alpha-engine --locked -- --test-threads=1
+
+      - name: Storage engine integrity contracts (F1-094)
+        # F1-094: `storage-engine` no aparecia en NINGUN workflow — ni sus 39
+        # tests de lib ni los contratos de mmap y de la zona raw corrian en CI.
+        # Es la capa de persistencia (ticks crudos, ADN, mmap): la que el
+        # operador exige que no se corrompa. Se ejecuta aqui, con el resto de
+        # suites de contrato, ~4 s.
+        run: cargo +nightly-2026-06-30 test -p storage-engine --locked -- --test-threads=1
