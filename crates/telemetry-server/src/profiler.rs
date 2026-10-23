@@ -7,9 +7,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
+// Process-lifetime lower bound on samples rejected by the bounded profiler
+// queue. Saturation means at least u64::MAX drops, never a fabricated reset.
+static DROPPED_PROFILE_SAMPLES: AtomicU64 = AtomicU64::new(0);
+
 lazy_static! {
-    // Lock-free queue for telemetry events (capacity 65536)
-    // Completely wait-free. O(1).
+    // Bounded lock-free queue for profiler samples (capacity 65536).
+    // ArrayQueue may retry under contention: do not claim wait-free latency.
     pub static ref TELEMETRY_QUEUE: ArrayQueue<(&'static str, u64)> = ArrayQueue::new(65536);
     // Slow-path aggregator for Web UI, reads are wait-free using ArcSwap
     pub static ref GLOBAL_AGGREGATOR: ArcSwap<Profiler> = ArcSwap::from_pointee(Profiler::new());
@@ -21,10 +25,52 @@ lazy_static! {
     pub static ref ROI_NET: AtomicU64 = AtomicU64::new(0);
 }
 
+fn count_rejected_sample(counter: &AtomicU64) {
+    let mut current = counter.load(Ordering::Relaxed);
+    loop {
+        if current == u64::MAX {
+            return;
+        }
+        match counter.compare_exchange_weak(
+            current,
+            current + 1,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+fn enqueue_profile_sample(
+    queue: &ArrayQueue<(&'static str, u64)>,
+    dropped: &AtomicU64,
+    sample: (&'static str, u64),
+) {
+    match queue.push(sample) {
+        Ok(()) => {}
+        Err(_) => count_rejected_sample(dropped),
+    }
+}
+
+/// Record a sample without blocking for queue capacity, allocating a fallback
+/// buffer or formatting on the producer path. A full queue rejects the NEW
+/// sample and increments the process-lifetime loss counter. Relaxed atomics
+/// count losses only; ArrayQueue supplies its own publication synchronization.
+/// This is not random sampling, and no unbiased-average claim is made.
+pub fn record_profile_sample(name: &'static str, latency: u64) {
+    enqueue_profile_sample(&TELEMETRY_QUEUE, &DROPPED_PROFILE_SAMPLES, (name, latency));
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Profiler {
     pub metrics: HashMap<&'static str, u64>,
     pub counts: HashMap<&'static str, u64>,
+    /// Process-lifetime rejected samples observed after the last drain.
+    /// u64::MAX is a saturated lower bound, not an exact count. While
+    /// producers are active this snapshot is not a transactional queue census.
+    pub dropped_samples: u64,
     pub roi_net: f64,
     pub total_fees: f64,
     pub win_rate: f64,
@@ -36,6 +82,7 @@ impl Profiler {
         Self {
             metrics: HashMap::new(),
             counts: HashMap::new(),
+            dropped_samples: 0,
             roi_net: 0.0,
             total_fees: 0.0,
             win_rate: 0.0,
@@ -50,6 +97,7 @@ impl Profiler {
             let count = self.counts.entry(name).or_insert(0);
             *count += 1;
         }
+        self.dropped_samples = DROPPED_PROFILE_SAMPLES.load(Ordering::Relaxed);
     }
 
     pub fn get_averages(&self) -> HashMap<&'static str, u64> {
@@ -118,8 +166,9 @@ macro_rules! profile_node {
         let end = unsafe { core::arch::x86_64::_rdtsc() };
         // Approximate conversion: 1 CPU cycle ~ 0.3ns (on 3GHz CPU)
         let latency_ns = (end - start) / 3;
-        // Wait-free, allocation-free push in the hot path. Drops if full (sampler).
-        let _ = $crate::profiler::TELEMETRY_QUEUE.push(($name, latency_ns));
+        // Bounded recording; rejected samples are counted, never silently
+        // treated as unbiased sampling. Formatting stays on the auditor thread.
+        $crate::profiler::record_profile_sample($name, latency_ns);
         result
     }};
 }
@@ -144,6 +193,17 @@ pub fn start_profiler_auditor() {
             aggregator.total_fees = total_fees;
             aggregator.win_rate = win_rate;
             aggregator.total_gross_pnl = gross_pnl;
+
+            // Publish loss even if there are no surviving averages. Queue
+            // overflow can correlate with load: the averages are conditional
+            // on admitted samples, not evidence of complete hot-path coverage.
+            if aggregator.dropped_samples > 0 {
+                crate::telemetry_log!(
+                    "[PROFILER COVERAGE] rejected_samples={} saturated_lower_bound={} averages_conditioned_on_admission=true",
+                    aggregator.dropped_samples,
+                    aggregator.dropped_samples == u64::MAX
+                );
+            }
 
             // Mostrar promedios si existen
             if !averages.is_empty() {
@@ -188,12 +248,77 @@ mod tests {
     #[test]
     fn test_profiler_queue_and_averages() {
         let mut profiler = Profiler::new();
-        let _ = TELEMETRY_QUEUE.push(("OrderbookParse", 500));
-        let _ = TELEMETRY_QUEUE.push(("OrderbookParse", 700));
+        record_profile_sample("OrderbookParse", 500);
+        record_profile_sample("OrderbookParse", 700);
 
         profiler.drain_queue();
         let averages = profiler.get_averages();
-        assert_eq!(*averages.get("OrderbookParse").unwrap(), 600);
+        assert_eq!(averages.get("OrderbookParse"), Some(&600));
+    }
+
+    #[test]
+    fn profiler_loss_rejects_new_sample_without_overwriting_retained_data() {
+        let queue = ArrayQueue::new(2);
+        let dropped = AtomicU64::new(0);
+        enqueue_profile_sample(&queue, &dropped, ("first", 500));
+        enqueue_profile_sample(&queue, &dropped, ("second", 700));
+        enqueue_profile_sample(&queue, &dropped, ("rejected", 900));
+        assert_eq!(queue.len(), 2);
+        assert_eq!(dropped.load(Ordering::Relaxed), 1);
+        assert_eq!(queue.pop(), Some(("first", 500)));
+        assert_eq!(queue.pop(), Some(("second", 700)));
+        assert_eq!(queue.pop(), None);
+    }
+
+    #[test]
+    fn profiler_loss_counter_survives_drain_and_recovery() {
+        let queue = ArrayQueue::new(1);
+        let dropped = AtomicU64::new(0);
+        enqueue_profile_sample(&queue, &dropped, ("first", 1));
+        enqueue_profile_sample(&queue, &dropped, ("lost", 2));
+        assert_eq!(queue.pop(), Some(("first", 1)));
+        enqueue_profile_sample(&queue, &dropped, ("recovered", 3));
+        assert_eq!(queue.pop(), Some(("recovered", 3)));
+        assert_eq!(dropped.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn profiler_loss_counter_saturates_instead_of_wrapping_to_zero() {
+        let queue = ArrayQueue::new(1);
+        let dropped = AtomicU64::new(u64::MAX - 1);
+        enqueue_profile_sample(&queue, &dropped, ("retained", 1));
+        for _ in 0..3 {
+            enqueue_profile_sample(&queue, &dropped, ("lost", 1));
+        }
+        assert_eq!(dropped.load(Ordering::Relaxed), u64::MAX);
+        assert_eq!(queue.pop(), Some(("retained", 1)));
+    }
+
+    #[test]
+    fn profiler_loss_conservation_with_concurrent_real_producers() {
+        let queue = ArrayQueue::new(64);
+        let dropped = AtomicU64::new(0);
+        thread::scope(|scope| {
+            for _ in 0..4 {
+                let queue = &queue;
+                let dropped = &dropped;
+                scope.spawn(move || {
+                    for _ in 0..1024 {
+                        enqueue_profile_sample(queue, dropped, ("parallel", 1));
+                    }
+                });
+            }
+        });
+        // Producers have joined, so this is a quiescent conservation check,
+        // not an unjustified transactional claim about concurrent snapshots.
+        assert_eq!(queue.len(), 64);
+        assert_eq!(dropped.load(Ordering::Relaxed), 4096 - 64);
+        let mut received = 0;
+        while let Some(sample) = queue.pop() {
+            assert_eq!(sample, ("parallel", 1));
+            received += 1;
+        }
+        assert_eq!(received, 64);
     }
 
     #[test]
