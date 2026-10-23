@@ -240,7 +240,11 @@ fn ffi_valid_execution_with_explicit_capital() {
             out_stats.as_mut_ptr(),
             sym.as_ptr(),
         );
-        assert_eq!(res, n, "Ejecución FFI válida debe procesar n barras");
+        assert!(res > 0, "Ejecución FFI válida debe ejecutar al menos un trade");
+        assert_eq!(
+            res, out_stats[1] as usize,
+            "Retorno FFI debe coincidir con el recuento de trades en out_stats[1]"
+        );
         assert!(out_stats[2] > 0.0, "Terminal equity debe ser positivo");
     }
 }
