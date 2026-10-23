@@ -588,7 +588,7 @@ fn project_decimal_grid(
     }
 }
 
-fn format_decimal(value: f64, decimals: u8) -> StackAsciiString {
+pub(crate) fn format_decimal(value: f64, decimals: u8) -> StackAsciiString {
     if !value.is_finite() || value <= 0.0 || decimals > MAX_DECIMALS {
         return StackAsciiString::empty();
     }

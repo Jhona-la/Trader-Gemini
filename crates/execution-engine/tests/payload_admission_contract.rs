@@ -182,3 +182,25 @@ async fn paper_success_does_not_bypass_the_basic_admission_contract() {
             .is_err());
     }
 }
+
+#[test]
+fn payload_quantization_eliminates_float_precision_residue() {
+    let executor = OrderExecutor::new(String::new(), "offline-test".into(), true);
+    let mut o = order();
+    o.volume_usd = 14.0;
+    o.leverage = 1.0;
+    let p = executor
+        .build_payload(&o, "ETHUSDT", 2000.0, 0.001, 0.01)
+        .unwrap();
+    assert_eq!(p.quantity, 0.007);
+    // Crucial: query must contain exact quantity=0.007& without trailing float residues
+    assert!(p.signed_query.contains("quantity=0.007&"));
+
+    // Maker order price formatting
+    o.maker_only = true;
+    let p_maker = executor
+        .build_payload(&o, "ETHUSDT", 2000.0, 0.001, 0.1)
+        .unwrap();
+    // BUY maker passive join price from 2000.0 with tick 0.1: 2000.0 - 0.05 = 1999.95 -> snap_floor gives 1999.9
+    assert!(p_maker.signed_query.contains("price=1999.9"));
+}

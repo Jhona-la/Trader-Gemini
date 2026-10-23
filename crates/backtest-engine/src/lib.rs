@@ -624,6 +624,7 @@ pub unsafe extern "C" fn ffi_run_unified_backtest(
     let initial_capital = std::env::var("INITIAL_CAPITAL")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
+        .filter(|&c| c > 0.0 && c.is_finite())
         .unwrap_or(13.0);
     run_backtest_native(
         closes,
@@ -711,6 +712,7 @@ pub unsafe extern "C" fn ffi_run_unified_backtest_mmap(
     let initial_capital = std::env::var("INITIAL_CAPITAL")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
+        .filter(|&c| c > 0.0 && c.is_finite())
         .unwrap_or(13.0);
     run_backtest_native(
         closes,
@@ -794,6 +796,7 @@ pub unsafe extern "C" fn ffi_run_polars_backtest_mmap(
     let initial_capital = std::env::var("INITIAL_CAPITAL")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
+        .filter(|&c| c > 0.0 && c.is_finite())
         .unwrap_or(13.0);
     let mut out_pnl = vec![0.0f64; len];
     run_backtest_native(
