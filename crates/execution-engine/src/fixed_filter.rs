@@ -468,19 +468,25 @@ fn exact_inverse(step: f64) -> f64 {
     1.0 / step
 }
 
-/// Deduce el número de cifras decimales a partir del tamaño del paso / tick.
-/// Devuelve cero para una precisión no soportada; is_valid_config la rechaza.
-pub fn count_decimals(step: f64) -> u8 {
+/// Deduce de forma estricta el número de cifras decimales a partir del tamaño del paso / tick.
+/// Devuelve None si el paso no es finito, es menor o igual a cero, o no tiene representación exacta <= MAX_DECIMALS.
+pub fn try_count_decimals(step: f64) -> Option<u8> {
     if step.is_finite() && step > 0.0 {
         for decimals in 0..=MAX_DECIMALS {
             if let Some(units) = decimal_units(step, decimals) {
                 if units > 0 {
-                    return decimals;
+                    return Some(decimals);
                 }
             }
         }
     }
-    0
+    None
+}
+
+/// Deduce el número de cifras decimales a partir del tamaño del paso / tick.
+/// Devuelve cero para una precisión no soportada o pasos enteros; is_valid_config la rechaza si excede límites.
+pub fn count_decimals(step: f64) -> u8 {
+    try_count_decimals(step).unwrap_or(0)
 }
 
 fn decimal_units(value: f64, decimals: u8) -> Option<u64> {
@@ -588,7 +594,7 @@ fn project_decimal_grid(
     }
 }
 
-fn format_decimal(value: f64, decimals: u8) -> StackAsciiString {
+pub(crate) fn format_decimal(value: f64, decimals: u8) -> StackAsciiString {
     if !value.is_finite() || value <= 0.0 || decimals > MAX_DECIMALS {
         return StackAsciiString::empty();
     }

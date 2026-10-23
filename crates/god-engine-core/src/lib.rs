@@ -1354,12 +1354,29 @@ impl GodEngineCore {
         }
     }
 
+    /// Sincroniza dinámicamente las comisiones de la física de ejecución con las observadas en el arena.
+    /// Garantiza la paridad física de comisiones (QRA-FEE-01) entre la admisión y el ledger.
+    #[inline(always)]
+    pub fn sync_reality_fees_from_arena(&mut self) {
+        let maker = self.arena.config.live_maker_fee.load(std::sync::atomic::Ordering::Relaxed);
+        let taker = self.arena.config.live_taker_fee.load(std::sync::atomic::Ordering::Relaxed);
+        self.reality.sync_with_arena_fees(maker, taker);
+    }
+
+    /// Devuelve las tasas (maker, taker) actualmente activas en la física de ejecución interna.
+    #[inline(always)]
+    pub fn reality_fees(&self) -> (f64, f64) {
+        (self.reality.maker_fee(), self.reality.taker_fee())
+    }
+
     fn construir(
         arena: Arc<GlobalArena>,
         outcome_context: outcome_context::OutcomeContext,
         trazas_diagnosticas: bool,
     ) -> Self {
         let initial_capital = arena.config.base_capital.load(Ordering::Relaxed);
+        let initial_maker_fee = arena.config.live_maker_fee.load(Ordering::Relaxed);
+        let initial_taker_fee = arena.config.live_taker_fee.load(Ordering::Relaxed);
         // LG-23: construir el núcleo NO carga modelos del disco. Ω144 lo hacía
         // aquí: la clave es el nombre del archivo y `store_global` sustituye la
         // entrada, así que pisaba el predictor que un oráculo (T-1/T-2/T-3)
@@ -1527,7 +1544,11 @@ impl GodEngineCore {
             model_rx: None,
             last_ml_prob: 0.5,
             flight_recorder: None,
-            reality: reality_physics::RealityPhysics::default(),
+            reality: reality_physics::RealityPhysics::with_fees(
+                reality_physics::EngineMode::HyperRealistic,
+                initial_maker_fee,
+                initial_taker_fee,
+            ),
             last_fast_intent: vec![SignalIntent::flat(); n_coins],
             last_slow_intent: vec![SignalIntent::flat(); n_coins],
             last_senior_signals: vec![[[0.0; 11]; quantum_arena::position::MAX_SPECTRAL_SLOTS]; n_coins],
@@ -4226,6 +4247,8 @@ impl GodEngineCore {
         Option<MakerQuote>,
     ) {
         telemetry_server::profile_node!("GodEngineCore::process_tick_dual", {
+            // Paridad física viva de comisiones (QRA-FEE-01)
+            self.sync_reality_fees_from_arena();
             // P1: Actualizar reloj causal del registro omnisciente sin syscalls repetidas
             self.arena.registry.update_event_time(event_time_ms as i64);
             self.fijar_piso_resolucion(coin_id);
