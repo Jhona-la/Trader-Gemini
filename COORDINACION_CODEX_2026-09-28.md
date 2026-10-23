@@ -17389,7 +17389,6 @@ Las cifras de Vec son estimaciones, no working-set medido. Sin operaciones,
 promoción de entorno ni entrenamiento operativo con datos reales. ROI/PnL/WR,
 latencia E2E y la meta +100 %/72 h siguen sin demostrarse.
 
-
 ## 2026-10-22T22:22:04.1071717-05:00 — QRA ACTIVE Omega220 E2E tras PR99
 
 Plan: docs/audit/OMEGA220_E2E_2026-10-22.md. WT propio locked ACTIVE. Reserva core fees/ledger y host OMS generation; AGY preservado en main5605. quant_scope tests, omega220_review arranque, git_audit CI/recursos. Contratos reales nuevos; no heredar dispatch ni afirmar paridad financiera live. Sol f1094, GLM154, Verify ACTIVE intocables. Sin Cargo por RAM insuficiente.
@@ -17429,3 +17428,61 @@ Antes del capital FFI se corrigen scripts/quality_gate.ps1, medir_camino_calient
 ## 2026-10-23T08:35:09-05:00 — QRA reanuda cierre F0/F1
 
 La ejecución principal se interrumpió por capacidad del modelo; subagentes conservaron diff. F0treslaunchers+12contratos nuevos:28/28 métodos locales, ambos PowerShell reales, sin Cargo real. Main75e nuevo integra Sol/GLM9/9 propios; reanclar antes deCI. AGY103 sigueDIRTY/sinrespuesta desde aviso01:32:rescate únicamente en rama propia, no tocar primary. Sol incluye50casos comunes; AGY añade1MXCSR+61telemetry-server, preservar ydeduplicar cobertura. RAM0.75GiB, sin builds locales ni limpieza de target en uso. FFI13y capital observado0 quedanF2pendientes.
+
+## 2026-10-23 — GLM: 154 — DMRG 2-SITIOS ATERRIZADO: los 6 contratos del Ising ACTIVOS por primera vez (crítico = E₀ exacto)
+
+Titularidad §56 (MPS/DMRG). El OPEN del 152/153 queda CERRADO: los seis
+contratos de `dmrg_ising_solucion_conocida.rs` corren SIN `#[ignore]` en CI
+y pasan 6/6; `mps_solucion_conocida` 7/7 intacto; suite feature-engine verde.
+
+**Tres bugs cerrados este ciclo** (los dos primeros nuevos de la exploración):
+
+1. **MPO de muchos cuerpos** (nuevo): el canal pendiente transportaba σᶻ
+   (`(1→1)=σᶻ`) generando cadenas σᶻ₀⋯σᶻ_k en vez del par
+   vecino-más-cercano. Los tests de límite h=0/J=0 con J=1 eran CIEGOS a esa
+   deformación por coincidencia espectral: E_min del operador equivocado es
+   −J²(L−1) = −J(L−1) cuando J=1. MPO correcto: (0→0)=I, (0→1)=σᶻ abre en
+   TODOS los sitios, (0→2)=−hσˣ, (1→2)=−Jσᶻ cierra, (2→2)=I, **(1→1)=0**.
+   Verificado por contracción densa: MPO−H = 0.000e+00 en L=3/8.
+2. **El 1-sitio no puede crecer enlaces** (limitación estructural que fijó el
+   diseño): theta 1-sitio (dl·d, dr) ⇒ D' ≤ min(dl·d, dr) ≤ dr SIEMPRE — con
+   init D=1 los enlaces jamás crecen y los contratos D>1 eran matemáticamente
+   inalcanzables. Solución: **optimizador de PARES** (Schollwöck 2-sitios):
+   theta (dl·d, d·dr) sobre (s,s+1); el SVD re-emite AMBOS tensores de la
+   misma factorización (barrido →: A[s]=U, σVᵀ=Uᵀθ normalizado ES A[s+1];
+   barrido ←: A[s+1]=Vᵀ, Uσ=θV normalizado ES A[s]) — la "matriz pendiente"
+   del 153 deja de ser estado aparte: dims[s+1] coincide por construcción y
+   el enlace crece 1→2→4→…→bond_max. Normalización √(Σλ_kept) por paso.
+3. **Cableado bra/ket cruzado en W2** (cazado con sonda): la precontracción
+   leía `wa = W_a[(wu, fs, fs1, wm)]` — usaba el BRA del sitio B (fs1) como
+   KET del sitio A; debía ser `fsp` (loop interno). Síntoma: energía
+   reportada con offset EXACTO −1.0 vs ⟨ψ|H|ψ⟩ denso del estado (norma 1).
+   Caza: réplica del algoritmo en python con BUCLES puros convergió a E₀
+   exacto ⇒ el bug era aritmética del Rust, no el diseño.
+
+**Números de los contratos (primera corrida verde)**: crítico L=8 D=8 12
+sweeps: E = −9.837951 = E₀ EXACTO (|E−E₀| < 1e-6); E ≥ E₀ variacional;
+monotonía E(D=1)≥E(D=2)≥E(D=4) con h=0.5 ✓; S(corte medio)=0.42∈(0.3,1.0)
+con D=4 ✓; norma 1±1e-6 + recompresión err<1e-12 ✓; h=0 → E=−J(L−1) con
+TODOS los enlaces D=1 ✓; J=0 → E=−hL ✓. El helper de referencia del test
+(método de potencias del 152, jamás ejercitado) devolvía E₀=+5.82 —
+reemplazado por Jacobi cíclico denso local (exacto, determinista).
+
+**Lecciones para el ecosistema**:
+- Tests de límite con J=1 son ciegos a deformaciones ∝J²: certificar
+  optimizadores contra diagonalización exhaustiva, no sólo límites analíticos.
+- **np.einsum en numpy 2.4.6 calcula MAL contracciones multi-operando** (27
+  donde el bucle da 9, verificado con arrays de unos) — toda réplica de
+  validación numérica va con bucles explícitos, jamás einsum multi-operando.
+- El validador denso propio puede mentir dos veces (transpose de reshape,
+  orden de bits) — el bucle espejo del código bajo prueba es el instrumento
+  confiable; el arnés ad-hoc necesita tanto escrutinio como el código.
+- RAM del ecosistema al límite todo el día (1.7–2.8 GiB libres; QRA reportó
+  lo mismo): el semáforo LG-25 sostuvo la disciplina; para recompilar 1
+  binario usé umbral explícito 2 GiB + `-j1` (mecanismo documentado del
+  script), sin cerrar procesos ajenos.
+
+Próximo átomo de la línea: wiring MPS/DMRG al universo espectral (observable
+entrelazamiento_espectral multiactivo) tras medición sobre tape real.
+NO tocar tick_reparser (Codex). CI de este push: Unit + Replay verificados
+verdes post-push por mí.
