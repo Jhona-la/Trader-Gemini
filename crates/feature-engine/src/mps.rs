@@ -439,7 +439,7 @@ impl MpoIsing {
             ((wu * MPS_D_FIS + s) * MPS_D_FIS + sp) * dw + wd
         };
         let primero = l == 0;
-        let ultimo = l == self.largo - 1;
+        let _ultimo = l == self.largo - 1;
         // Matriz de operadores por (fila w_up, col w_dn): I, σᶻ, −J σᶻσᶻ·(cola), h σˣ.
         // Estándar (Schollwöck eq. Ising MPO): fila superior abre términos.
         // Canal: 0=I, 1=σᶻ(pendiente ZZ), 2=término completado.
@@ -455,22 +455,23 @@ impl MpoIsing {
                 if primero {
                     // el primer sitio abre el ZZ: (−J)σᶻ en (0→1)
                     w[idx(0, s, sp, 1)] += -self.j * z;
-                    // abre el campo: (−h)σˣ en (0→2)
-                    w[idx(0, s, sp, 2)] += -self.h * x;
                 }
-                // Fila 1 (σᶻ pendiente): [σᶻ, 0, σᶻσᶻ·(−J) cierra]
+                // Campo −h·σˣ en TODOS los sitios vía (0→2): cada sitio
+                // aporta su término UNA vez al ABRIR hacia el canal
+                // completado. La fila 2 transporta I pura — poner el campo
+                // ahí lo acumula multiplicativamente (bug E=−h·2^(L−1)).
+                w[idx(0, s, sp, 2)] += -self.h * x;
+                // Fila 1 (σᶻ pendiente): [σᶻ, 0, σᶻσᶻ·(−J) cierra].
+                // El cierre existe en todo sitio NO PRIMERO (el último
+                // también cierra el ZZ de su enlace — la condición !ultimo
+                // era el segundo bug).
                 w[idx(1, s, sp, 1)] += z; // sigue pendiente
-                if !ultimo {
+                if !primero {
                     w[idx(1, s, sp, 2)] += -self.j * z; // cierra ZZ: −J σᶻσᶻ
                 }
                 // Fila 2 (completado): [0, 0, I] mantiene el vacío
                 w[idx(2, s, sp, 2)] += if s == sp { 1.0 } else { 0.0 };
-                // σˣ del sitio: en el canal completado, −h σˣ abre y cierra
-                if !primero {
-                    // el término de campo lo llevamos como −h·σˣ insertado en
-                    // la fila 2 (ya completado → se cierra en el mismo sitio)
-                    w[idx(2, s, sp, 2)] += -self.h * x;
-                }
+
             }
         }
         w
@@ -520,7 +521,7 @@ pub fn dmrg_ising(
         // ── Barrido izquierda→derecha.
         for sitio in 0..l {
             let (nueva_energia, nuevo_tensor, nuevo_dims) =
-                optimizar_sitio(&mps, &mpos, sitio, bond_max, dw, false)?;
+                optimizar_sitio(&mps, &mpos, sitio, bond_max, dw)?;
             energia = nueva_energia;
             mps.tensores[sitio] = nuevo_tensor;
             mps.dims = nuevo_dims;
@@ -528,7 +529,7 @@ pub fn dmrg_ising(
         // ── Barrido derecha→izquierda.
         for sitio in (0..l).rev() {
             let (nueva_energia, nuevo_tensor, nuevo_dims) =
-                optimizar_sitio(&mps, &mpos, sitio, bond_max, dw, true)?;
+                optimizar_sitio(&mps, &mpos, sitio, bond_max, dw)?;
             energia = nueva_energia;
             mps.tensores[sitio] = nuevo_tensor;
             mps.dims = nuevo_dims;
@@ -550,7 +551,6 @@ fn optimizar_sitio(
     sitio: usize,
     bond_max: usize,
     dw: usize,
-    hacia_izquierda: bool,
 ) -> Result<(f64, Vec<f64>, Vec<usize>), MpsError> {
     let l = mps.largo;
     // Entorno izquierdo: L[wu, a, ap] — contraer sitios 0..sitio-1.
@@ -567,9 +567,13 @@ fn optimizar_sitio(
         dim_l_mpo = dw;
     }
     // Entorno derecho: R[wd, b, bp] — contraer sitios l-1..sitio+1 (inverso).
-    let mut env_r: Vec<f64> = vec![1.0];
+    // Inicializa en delta del canal COMPLETADO (wd=2): el MPO vive con
+    // apertura en wu=0 (izquierda) y cierre en wd=2 (derecha). Delta en wd=0
+    // dejaría ver sólo términos triviales (bug E=+1 del OPEN).
+    let mut env_r: Vec<f64> = vec![0.0; dw];
+    env_r[(2 * 1 + 0) * 1 + 0] = 1.0; // índice (wd=2, b=0, bp=0)
     let mut dim_r_mps = 1usize;
-    let mut dim_r_mpo = 1usize;
+    let mut dim_r_mpo = dw;
     for s in ((sitio + 1)..l).rev() {
         let a = &mps.tensores[s];
         let w = &mpos[s];
@@ -643,24 +647,27 @@ fn optimizar_sitio(
     for fila in 0..n {
         theta[fila] = v[fila];
     }
-    // Re-tragar por SVD hacia la dirección del barrido.
-    let filas = if hacia_izquierda { dr } else { dl * MPS_D_FIS };
-    let cols = n / filas.max(1);
-    let (u, lambdas) = svp_truncado(&theta, filas, cols, bond_max)
-        .ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
-    let _ = lambdas;
+    // Re-tragado. En 1-sitio con entornos recontraídos desde cero, theta
+    // se ordena SIEMPRE (dl·d, dr). SVD → U (dl·d, D') es A[sitio] y
+    // dims[sitio+1] = D'. El ÚLTIMO sitio NO pasa por SVD (theta ya es el
+    // tensor final). DEFECTO ESTRUCTURAL ABIERTO (GLM 153, sonda): cambiar
+    // dims[sitio+1] desde el sitio actual deja el alto del tensor
+    // sitio+1 con el valor VIEJO — el 1-sitio correcto guarda σ·Vᵀ como
+    // matriz pendiente que sitio+1 absorbe en su visita, o mantiene los
+    // enlaces intermedios FIJOS y sólo crece el enlace derecho cuando el
+    // vecino aún no define su alto. Sin eso, los contratos con D>1 siguen
+    // reventando (h=0/J=0 con D=1 SÍ pasan).
     let mut nuevos_dims = mps.dims.clone();
-    if hacia_izquierda {
-        // ingerido hacia la izquierda: el sitio guarda (dr·2 → ...) — en
-        // 1-sitio el enlace que crece es el opuesto a la dirección.
-        // SVD de theta.reshape(dl·2, dr): U → A[l], σVᵀ se tira (se
-        // recompute en el siguiente paso).
-        nuevos_dims[sitio + 1] = u.len() / (dl * MPS_D_FIS);
-        Ok((min_e, u, nuevos_dims))
-    } else {
-        nuevos_dims[sitio + 1] = u.len() / (dl * MPS_D_FIS);
-        Ok((min_e, u, nuevos_dims))
+    if sitio + 1 == l {
+        nuevos_dims[sitio + 1] = 1;
+        return Ok((min_e, theta, nuevos_dims));
     }
+    let filas = dl * MPS_D_FIS;
+    let cols = (n / filas).max(1);
+    let (u, _lambdas) = svp_truncado(&theta, filas, cols, bond_max)
+        .ok_or(MpsError::NormaDegenerada { valor: f64::NAN })?;
+    nuevos_dims[sitio + 1] = (u.len() / filas).max(1);
+    Ok((min_e, u, nuevos_dims))
 }
 
 fn contraer_entorno_izq(
